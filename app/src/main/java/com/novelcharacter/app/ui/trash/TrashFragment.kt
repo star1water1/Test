@@ -162,10 +162,13 @@ class TrashFragment : Fragment() {
 
     private fun blockerMessage(blocker: TrashRepository.RestoreBlocker, entityType: String): String = when (blocker) {
         // 같은 사유라도 주어가 다르다 — 세력 문구를 등급 체계에 그대로 쓰면 사실과 다른 안내가 된다.
-        TrashRepository.RestoreBlocker.MISSING_UNIVERSE ->
-            if (entityType == TrashSnapshot.TYPE_GRADE_SYSTEM) getString(R.string.trash_restore_blocked_universe_grade_system)
-            else getString(R.string.trash_restore_blocked_universe)
+        TrashRepository.RestoreBlocker.MISSING_UNIVERSE -> when (entityType) {
+            TrashSnapshot.TYPE_GRADE_SYSTEM -> getString(R.string.trash_restore_blocked_universe_grade_system)
+            TrashSnapshot.TYPE_DUEL_AXIS -> getString(R.string.trash_restore_blocked_universe_duel_axis)
+            else -> getString(R.string.trash_restore_blocked_universe)
+        }
         TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)
+        TrashRepository.RestoreBlocker.MISSING_DUEL_AXIS -> getString(R.string.trash_restore_blocked_duel_axis)
         TrashRepository.RestoreBlocker.ALREADY_EXISTS -> getString(R.string.trash_restore_blocked_exists)
     }
 
@@ -624,6 +627,8 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_EVENT -> context.getString(R.string.trash_type_event)
             TrashSnapshot.TYPE_STATE_CHANGE -> context.getString(R.string.trash_type_state_change)
             TrashSnapshot.TYPE_GRADE_SYSTEM -> context.getString(R.string.trash_type_grade_system)
+            TrashSnapshot.TYPE_DUEL_AXIS -> context.getString(R.string.trash_type_duel_axis)
+            TrashSnapshot.TYPE_DUEL_MATCHES -> context.getString(R.string.trash_type_duel_matches)
             TrashSnapshot.TYPE_FIELD_DEFINITION -> context.getString(R.string.trash_type_field_definition)
             else -> entityType
         }

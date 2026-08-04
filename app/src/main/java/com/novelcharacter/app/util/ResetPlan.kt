@@ -42,8 +42,11 @@ object ResetPlan {
     private fun cascade(table: String, via: String) = TableClear(table, Clearing.CASCADE, via)
 
     /**
-     * DB 엔티티 26종 전부의 처분. `AppDatabase.entities`와 1:1이어야 하며,
+     * DB 엔티티 전부의 처분. `AppDatabase.entities`와 1:1이어야 하며,
      * `tools/verify_reset_coverage.py`가 실제 소스와 대조한다.
+     *
+     * **종 수를 여기 적지 않는 것은 일부러다** — "26종"이라 적혀 있던 자리가 대결 셋이
+     * 들어오면서 낡았다. 세는 법은 `AppDatabase`의 `entities` 목록이다.
      */
     val plan: List<TableClear> = listOf(
         // ── 직접 삭제 (FK로 지워지지 않거나, 순서를 통제해야 하는 것) ──
@@ -77,6 +80,12 @@ object ResetPlan {
         cascade("novel_field_values", via = "novels"),
         // 등급 체계(U-1) — universes가 explicit로 지워지므로 함께 사라진다.
         cascade("grade_systems", via = "universes"),
+        // 대결(B-104) — 축은 세계관에 매달리고, 판·처분은 축에 매달린다.
+        // **판이 캐릭터가 아니라 축에 매달린 것은 설계다**(참가자는 코드로 가리킨다) —
+        // 그래서 캐릭터를 지워도 판은 남지만, 초기화는 세계관을 지우므로 축과 함께 사라진다.
+        cascade("duel_axes", via = "universes"),
+        cascade("duel_matches", via = "duel_axes"),
+        cascade("duel_counter_verdicts", via = "duel_axes"),
         cascade("faction_relationships", via = "factions"),
         cascade("field_value_entries", via = "field_definitions"),
         // image_meta를 지우게 된 뒤에야 이 CASCADE가 실제로 성립한다.

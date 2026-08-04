@@ -450,6 +450,8 @@
     <string name="trash_type_event">사건</string>
     <string name="trash_type_state_change">상태변화</string>
     <string name="trash_type_grade_system">등급 체계</string>
+    <string name="trash_type_duel_axis">대결 축</string>
+    <string name="trash_type_duel_matches">대결 기록</string>
     <string name="trash_type_field_definition">필드 정의(덮어쓰기 직전)</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
@@ -466,6 +468,8 @@
     <string name="trash_restore_blocked_universe">이 세력이 속한 세계관이 없어 복원할 수 없습니다. 세력은 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n같은 삭제로 만들어진 세계관 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_character">이 상태변화 이력의 캐릭터가 없어 복원할 수 없습니다. 이력은 캐릭터 없이 존재할 수 없으므로 아무 캐릭터에나 붙이지 않습니다.\n캐릭터를 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_universe_grade_system">이 등급 체계가 속한 세계관이 없어 복원할 수 없습니다. 체계는 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n세계관을 먼저 복원한 뒤 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
+    <string name="trash_restore_blocked_universe_duel_axis">이 대결 축이 속한 세계관이 없어 복원할 수 없습니다. 축은 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n세계관을 먼저 복원한 뒤 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
+    <string name="trash_restore_blocked_duel_axis">이 대결 기록이 붙을 축이 없어 복원할 수 없습니다. 판은 축 없이 존재할 수 없으므로 아무 축에나 붙이지 않습니다.\n같은 삭제로 만들어진 \'대결 축\' 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_title">복원할 수 없음</string>
 
     <string name="trash_item_meta">%1$s · 삭제 %2$s</string>

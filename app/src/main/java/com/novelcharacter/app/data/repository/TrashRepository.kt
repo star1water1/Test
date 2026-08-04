@@ -13,6 +13,11 @@ import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterSnapshot
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelAxisSnapshot
+import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelMatch
+import com.novelcharacter.app.data.model.DuelMatchesSnapshot
 import com.novelcharacter.app.data.model.EntityRefs
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.EventSnapshot
@@ -136,6 +141,14 @@ class TrashRepository(
 
         /** 상태변화 이력은 캐릭터 없이 존재할 수 없다(FK) — 캐릭터를 먼저 복원해야 한다. */
         MISSING_CHARACTER,
+
+        /**
+         * 대결 판은 축 없이 존재할 수 없다(FK) — 축을 먼저 복원해야 한다 (B-104).
+         *
+         * 같은 작업으로 복원하면 축이 먼저 서므로(restorePriority) 이 사유는 뜨지 않는다.
+         * 이어붙임 행 하나만 따로 복원하려 할 때를 위한 것이다.
+         */
+        MISSING_DUEL_AXIS,
 
         /**
          * 같은 이력이 이미 살아 있다 — 되살리면 사본이 하나 더 생긴다 (B-21).
@@ -371,6 +384,13 @@ class TrashRepository(
             universe, entries, charValues, eventValues, novelValues,
             fieldDefRefs, characterCodes, eventCodes, novelCodes
         )
+
+        // 대결(B-104) — 축은 세계관에 FK CASCADE로 매달려 있고, 판·처분은 축에 매달려 있다.
+        // 여기서 담지 않으면 **세계관을 지우는 순간 쌓아 온 판 수만 건이 되돌릴 길 없이 사라진다.**
+        // 축마다 따로 담는 것은 복원이 축 단위로 성립하기 때문이다(하나가 깨져도 나머지는 돌아온다).
+        for (axis in db.duelAxisDao().getByUniverseList(universe.id)) {
+            snapshotDuelAxis(axis, universe.code)
+        }
     }
 
     /**
@@ -680,6 +700,69 @@ class TrashRepository(
     }
 
     /**
+     * 대결 축 스냅샷 (B-104) — 삭제 트랜잭션 안에서, 축을 지우기 **전에** 호출할 것.
+     *
+     * 축만 개별로 지우는 경로와 세계관 삭제가 **같은 함수를 쓴다.** 둘 다 축을 통째로 없애고
+     * 담을 것이 같기 때문이며, 세계관 스냅샷은 축을 담지 않으므로 겹치지도 않는다(R-8).
+     *
+     * **판은 이어붙임 행으로 쪼갠다.** 한 축의 판은 수만 건이 될 수 있어 한 행에 몰아넣으면
+     * payload가 CursorWindow 한도(2MB)를 넘겨 그 백업을 **영영 읽지 못한다** — 값 라이브러리가
+     * 같은 함정에 걸렸던 자리이고([writeUniverseDataChunks]), 대결 기록은 그보다 더 크게 자란다.
+     *
+     * @param universeCodeHint 세계관 삭제 경로가 이미 아는 코드. 넘기지 않으면 조회한다
+     *   (그 경로에서는 아직 세계관 행이 살아 있으므로 조회해도 같은 값이다).
+     */
+    suspend fun snapshotDuelAxis(axis: DuelAxis, universeCodeHint: String? = null) {
+        val uCode = universeCodeHint ?: universeCode(axis.universeId)
+        val verdicts = db.duelCounterVerdictDao().getByAxis(axis.id)
+        val matches = db.duelMatchDao().getByAxis(axis.id)
+
+        insertSnapshot(
+            TrashSnapshot.TYPE_DUEL_AXIS,
+            axis.name,
+            DuelAxisSnapshot(
+                axis = axis,
+                verdicts = verdicts,
+                universeCode = uCode,
+                // 목록이 "판 N개가 함께 들어 있다"를 말할 수 있게 — 이어붙임 행을 세어 보라고
+                // 할 수는 없다(일일이 확인해야 아는 데이터를 만들지 않는다 — 원칙 04).
+                matchCount = matches.size,
+                refs = EntityRefs(universeCode = uCode)
+            ),
+            emptyList()
+        )
+
+        // 참가자는 payload 안에서도 코드다 — 그래서 이 조각들은 캐릭터의 생사와 무관하게 온전하고,
+        // 복원 시점에 없는 참가자의 판도 그대로 되살아난다(그 뒤 캐릭터가 돌아오면 저절로 이어진다).
+        val pending = ArrayList<DuelMatch>()
+        var budget = 0
+
+        suspend fun flush() {
+            if (pending.isEmpty()) return
+            insertSnapshot(
+                TrashSnapshot.TYPE_DUEL_MATCHES,
+                axis.name,
+                DuelMatchesSnapshot(
+                    axisCode = axis.code,
+                    matches = pending.toList(),
+                    universeCode = uCode,
+                    refs = EntityRefs(universeCode = uCode)
+                ),
+                emptyList()
+            )
+            pending.clear()
+            budget = 0
+        }
+
+        for (match in matches) {
+            pending.add(match)
+            budget += gson.toJson(match).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        flush()
+    }
+
+    /**
      * **필드 정의 덮어쓰기 직전 백업** (B-89) — 덮어쓰기 트랜잭션 안에서, 쓰기 **전에** 부를 것.
      *
      * 한 병합이 한 행이다. 필드 열 개를 덮으면 스냅샷은 하나이고, 되돌리기도 한 번이다 —
@@ -859,6 +942,8 @@ class TrashRepository(
             TrashSnapshot.TYPE_EVENT -> eventPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_STATE_CHANGE -> stateChangePlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_GRADE_SYSTEM -> gradeSystemPlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_DUEL_AXIS -> duelAxisPlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_DUEL_MATCHES -> duelMatchesPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_FIELD_DEFINITION -> fieldDefinitionPlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
@@ -936,6 +1021,16 @@ class TrashRepository(
                     val plan = gradeSystemPlan(snap) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
                     result = applyGradeSystem(plan)
+                }
+                TrashSnapshot.TYPE_DUEL_AXIS -> {
+                    val plan = duelAxisPlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyDuelAxis(plan, null)
+                }
+                TrashSnapshot.TYPE_DUEL_MATCHES -> {
+                    val plan = duelMatchesPlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyDuelMatches(plan)
                 }
                 TrashSnapshot.TYPE_FIELD_DEFINITION -> {
                     val plan = fieldDefinitionPlan(snap) ?: return@withTransaction
@@ -1089,6 +1184,10 @@ class TrashRepository(
                 TrashSnapshot.TYPE_EVENT -> parse(item, EventSnapshot::class.java)?.event?.code
                 TrashSnapshot.TYPE_GRADE_SYSTEM ->
                     parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.code
+                // 같은 작업의 판 조각이 이 축을 '곧 되살아날 것'으로 보게 한다 — 없으면 묶음
+                // 미리보기가 "축이 없어 판을 못 살린다"고 사실과 다른 경고를 낸다(유령 유실).
+                TrashSnapshot.TYPE_DUEL_AXIS ->
+                    parse(item, DuelAxisSnapshot::class.java)?.axis?.code
                 else -> null
             }
             code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
@@ -1151,6 +1250,16 @@ class TrashRepository(
                     val plan = gradeSystemPlan(item, session = session) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
                     result = applyGradeSystem(plan)
+                }
+                TrashSnapshot.TYPE_DUEL_AXIS -> {
+                    val plan = duelAxisPlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyDuelAxis(plan, session)
+                }
+                TrashSnapshot.TYPE_DUEL_MATCHES -> {
+                    val plan = duelMatchesPlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyDuelMatches(plan)
                 }
                 // TYPE_FIELD_DEFINITION은 **일부러 없다.** 이 경로는 '작업 전체 복원'이고
                 // 그 버튼은 편집 백업 묶음에 달리지 않는다(TrashGrouping.needsHeader).
@@ -2934,6 +3043,183 @@ class TrashRepository(
                 source.fieldKey == CharacterStateChange.KEY_BIRTH ||
                 source.fieldKey == CharacterStateChange.KEY_DEATH
             ) 1 else 0
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 대결 축과 판 (B-104)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class DuelAxisPlan(
+        val data: DuelAxisSnapshot,
+        val universeId: Long?,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_DUEL_AXIS,
+            entityName = data.axis.name,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun duelAxisPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): DuelAxisPlan? {
+        val data = parse(snap, DuelAxisSnapshot::class.java) ?: return null
+        @Suppress("SENSELESS_COMPARISON")
+        if (data.axis == null || data.axis.name == null || data.axis.code == null ||
+            data.axis.targetType == null
+        ) return null
+
+        val tally = RestoreTally(legacy = data.refs == null, pendingCodes = pendingCodes)
+        val uCode = data.universeCode ?: data.refs?.universeCode
+        val universeId = uCode?.let { code ->
+            session?.lookup(TrashSnapshot.TYPE_UNIVERSE, code)
+                ?: db.universeDao().getUniverseByCode(code)?.id
+                ?: if (code in pendingCodes) RestoreTally.PENDING_ID else null
+        }
+
+        // 같은 code의 축이 아직 살아 있으면 복원은 되돌리기가 아니라 사본이다 —
+        // 등급 체계와 같은 규약으로 막고, 스냅샷은 남긴다(R-4).
+        val sameCodeLives = db.duelAxisDao().getByCode(data.axis.code) != null
+
+        return DuelAxisPlan(
+            data = data,
+            universeId = universeId,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = universeId == RestoreTally.PENDING_ID,
+            blocker = when {
+                universeId == null -> RestoreBlocker.MISSING_UNIVERSE
+                sameCodeLives -> RestoreBlocker.ALREADY_EXISTS
+                else -> null
+            }
+        )
+    }
+
+    private suspend fun applyDuelAxis(plan: DuelAxisPlan, session: RestoreSession?): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 대결 축 계획이 적용 단계까지 왔다" }
+        val universeId = requireNotNull(plan.universeId)
+        val source = plan.data.axis
+
+        // 이름은 (세계관, 대상 종류) 안에서 유니크 — 그 사이 같은 이름이 다시 쓰이고 있으면
+        // 변형해 되살린다(복원이 실패하는 것보다 "이름 (2)"로 돌아오는 편이 낫다. 기록은 같다).
+        var name = source.name
+        var suffix = 2
+        while (db.duelAxisDao().getByUniverseAndName(universeId, source.targetType, name) != null) {
+            name = "${source.name} ($suffix)"
+            suffix++
+        }
+        val safeCode = source.code
+            .takeIf { it.isNotBlank() && db.duelAxisDao().getByCode(it) == null }
+            ?: generateEntityCode()
+        val newId = db.duelAxisDao().insert(
+            source.copy(id = 0, universeId = universeId, name = name, code = safeCode)
+        )
+        // 같은 작업의 판 조각들이 **옛 코드로** 이 축을 찾을 수 있게 등록한다. code가 재발급됐는데
+        // 등록하지 않으면 뒤따르는 조각이 축을 못 찾아 판 전량이 되살아나지 못한다.
+        session?.record(TrashSnapshot.TYPE_DUEL_AXIS, source.code, newId)
+
+        // 층 B의 처분 — 파생이 아니라 사용자 판정이라 함께 되살린다.
+        // memberKey는 축 안에서 유니크이고 새 축이므로 충돌할 수 없다.
+        var lostVerdicts = 0
+        val verdicts = ArrayList<DuelCounterVerdict>()
+        for (verdict in plan.data.verdicts.orEmpty()) {
+            @Suppress("SENSELESS_COMPARISON")
+            if (verdict == null || verdict.memberKey == null || verdict.kind == null ||
+                verdict.shape == null || verdict.memberCodes == null
+            ) { lostVerdicts++; continue }
+            val safeVerdictCode = verdict.code
+                ?.takeIf { it.isNotBlank() && db.duelCounterVerdictDao().getByCode(it) == null }
+                ?: generateEntityCode()
+            verdicts.add(verdict.copy(id = 0, axisId = newId, code = safeVerdictCode))
+        }
+        if (verdicts.isNotEmpty()) db.duelCounterVerdictDao().insertAll(verdicts)
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_DUEL_AXIS,
+            restoredName = name,
+            losses = RestoreLossCounts(duelVerdicts = lostVerdicts)
+        )
+    }
+
+    private data class DuelMatchesPlan(
+        val data: DuelMatchesSnapshot,
+        val axisId: Long?,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_DUEL_MATCHES,
+            entityName = data.matches.orEmpty().size.toString(),
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun duelMatchesPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): DuelMatchesPlan? {
+        val data = parse(snap, DuelMatchesSnapshot::class.java) ?: return null
+        val axisCode = data.axisCode ?: return null
+        val tally = RestoreTally(legacy = data.refs == null, pendingCodes = pendingCodes)
+
+        val axisId = session?.lookup(TrashSnapshot.TYPE_DUEL_AXIS, axisCode)
+            ?: db.duelAxisDao().getByCode(axisCode)?.id
+            ?: if (axisCode in pendingCodes) RestoreTally.PENDING_ID else null
+
+        return DuelMatchesPlan(
+            data = data,
+            axisId = axisId,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = axisId == RestoreTally.PENDING_ID,
+            blocker = if (axisId == null) RestoreBlocker.MISSING_DUEL_AXIS else null
+        )
+    }
+
+    private suspend fun applyDuelMatches(plan: DuelMatchesPlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 대결 판 계획이 적용 단계까지 왔다" }
+        val axisId = requireNotNull(plan.axisId)
+
+        val rows = plan.data.matches.orEmpty()
+        var lost = 0
+        val planned = ArrayList<DuelMatch>(rows.size)
+        val seen = HashSet<String>(rows.size * 2)
+        for (row in rows) {
+            @Suppress("SENSELESS_COMPARISON")
+            if (row == null || row.aCode == null || row.bCode == null) { lost++; continue }
+            planned.add(row)
+            row.code?.takeIf { it.isNotBlank() }?.let { seen.add(it) }
+        }
+        // code 유니크 — 그 사이 같은 판이 엑셀로 다시 들어왔을 수 있다. 살아 있는 code는
+        // 재발급하고 되살리기는 계속한다(같은 판이 둘이 되는 것보다 낫지만, 그렇다고
+        // 되살리지 않으면 사용자가 누른 기록이 사라진다).
+        val taken = HashSet<String>()
+        for (chunk in seen.toList().chunked(IN_CLAUSE_CHUNK)) {
+            taken.addAll(db.duelMatchDao().getExistingCodes(chunk))
+        }
+        val ready = planned.map { row ->
+            val safeCode = row.code
+                ?.takeIf { it.isNotBlank() && it !in taken }
+                ?: generateEntityCode()
+            row.copy(id = 0, axisId = axisId, code = safeCode)
+        }
+        // 한 조각은 크기 예산으로 이미 잘려 있으므로(스냅샷 쪽) 여기서 더 쪼갤 것이 없다.
+        if (ready.isNotEmpty()) db.duelMatchDao().insertAll(ready)
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_DUEL_MATCHES,
+            restoredName = ready.size.toString(),
+            losses = RestoreLossCounts(duelMatches = lost)
         )
     }
 

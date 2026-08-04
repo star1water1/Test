@@ -40,6 +40,12 @@ import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.dao.GradeSystemDao
 import com.novelcharacter.app.data.model.GradeSystem
+import com.novelcharacter.app.data.dao.DuelAxisDao
+import com.novelcharacter.app.data.dao.DuelMatchDao
+import com.novelcharacter.app.data.dao.DuelCounterVerdictDao
+import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelMatch
+import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.dao.OperationLogDao
 import com.novelcharacter.app.data.model.OperationLog
 import com.novelcharacter.app.data.dao.CharacterListPresetDao
@@ -97,9 +103,12 @@ import com.novelcharacter.app.data.model.Universe
         ImageTag::class,
         FieldValueEntry::class,
         NovelFieldValue::class,
-        GradeSystem::class
+        GradeSystem::class,
+        DuelAxis::class,
+        DuelMatch::class,
+        DuelCounterVerdict::class
     ],
-    version = 48,
+    version = 49,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -129,6 +138,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun imageTagDao(): ImageTagDao
     abstract fun fieldValueEntryDao(): FieldValueEntryDao
     abstract fun gradeSystemDao(): GradeSystemDao
+    abstract fun duelAxisDao(): DuelAxisDao
+    abstract fun duelMatchDao(): DuelMatchDao
+    abstract fun duelCounterVerdictDao(): DuelCounterVerdictDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1873,6 +1885,77 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_48_49 = object : Migration(48, 49) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 48 to 49 — 대결(B-104) 데이터 계층")
+
+                // 표 셋을 새로 만드는 **순수 추가**다. 기존 행은 하나도 건드리지 않으므로
+                // 소급 문제가 없다 — 지금까지 대결은 존재하지 않았고, 없던 것을 지어내지 않는다.
+                //
+                // 컬럼·인덱스 이름은 Room이 엔티티에서 생성하는 것과 정확히 맞춘다
+                // (어긋나면 Room이 시작 시 스키마 불일치로 거부한다).
+                // 검증은 tools/verify_room_migration_49.py가 실제 SQLite로 돌린다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `duel_axes` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `universeId` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `targetType` TEXT NOT NULL,
+                        `displayOrder` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `code` TEXT NOT NULL,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_axes_universeId` ON `duel_axes`(`universeId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_axes_universeId_targetType_name` ON `duel_axes`(`universeId`, `targetType`, `name`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_axes_code` ON `duel_axes`(`code`)")
+
+                // 판. 참가자는 **코드**로 담는다(R-1) — id로 담으면 휴지통에서 되살아난 캐릭터의
+                // 판이 안 붙거나 옛 id를 물려받은 남의 캐릭터에 붙는다(오배정은 생략보다 나쁘다).
+                // 그래서 캐릭터 쪽으로 나가는 FK가 **없는 것이 설계다**: 캐릭터가 지워져도 판은
+                // 남아 적합에서만 빠지고(고아로 세어 알린다), 복원하면 그대로 되살아난다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `duel_matches` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `axisId` INTEGER NOT NULL,
+                        `aCode` TEXT NOT NULL,
+                        `bCode` TEXT NOT NULL,
+                        `winnerCode` TEXT,
+                        `groupId` TEXT,
+                        `decidedAt` INTEGER NOT NULL,
+                        `code` TEXT NOT NULL,
+                        FOREIGN KEY(`axisId`) REFERENCES `duel_axes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId` ON `duel_matches`(`axisId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId_aCode` ON `duel_matches`(`axisId`, `aCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId_bCode` ON `duel_matches`(`axisId`, `bCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_matches_groupId` ON `duel_matches`(`groupId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_matches_code` ON `duel_matches`(`code`)")
+
+                // 층 B의 사용자 처분. 파생이 아니라 **판정**이라 저장한다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `duel_counter_verdicts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `axisId` INTEGER NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `shape` TEXT NOT NULL,
+                        `memberCodes` TEXT NOT NULL,
+                        `memberKey` TEXT NOT NULL,
+                        `decidedAt` INTEGER NOT NULL,
+                        `code` TEXT NOT NULL,
+                        FOREIGN KEY(`axisId`) REFERENCES `duel_axes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_duel_counter_verdicts_axisId` ON `duel_counter_verdicts`(`axisId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_counter_verdicts_axisId_memberKey` ON `duel_counter_verdicts`(`axisId`, `memberKey`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_counter_verdicts_code` ON `duel_counter_verdicts`(`code`)")
+
+                Log.i(TAG, "Migration from version 48 to 49 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1880,7 +1963,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }
