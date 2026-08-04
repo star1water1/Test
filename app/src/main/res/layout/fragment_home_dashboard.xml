@@ -331,6 +331,7 @@
                                 android:id="@+id/duelSubtitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
+                                android:text="@string/duel_tile_subtitle"
                                 android:textAppearance="@style/TextAppearance.App.BodySmall"
                                 android:textColor="@color/text_secondary" />
 
