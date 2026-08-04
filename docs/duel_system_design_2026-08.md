@@ -220,7 +220,7 @@ P-10 확정은 **순위표에 "이 축에 상성 N건" 배지 + 눌러서 상세
 
 ---
 
-## 4. 데이터 모델 — **구현 완료 (2026.08.04, DB 버전 49)**
+## 4. 데이터 모델 — **구현 완료 (2026.08.04, DB 버전 49 → 층 C가 50으로 올렸다 — 7장)**
 
 | 저장 | 무엇 | 왜 |
 |---|---|---|
@@ -334,11 +334,11 @@ P-10 확정은 **순위표에 "이 축에 상성 N건" 배지 + 눌러서 상세
 | 자리 | 무엇 |
 |---|---|
 | 순수(pure) | `util/DuelSession` — 대기열 소비·되돌리기·갈아 끼우기 · `util/DuelStandings` — 순위표 행·고지·상성 상세 항목 |
-| 화면 넷 | `ui/duel/DuelAxisListFragment`(축 추가·편집·삭제·순서) · `DuelPlayFragment`(둘 보고 하나) · `DuelStandingsFragment`(점수·±오차·판 수·배지) · `DuelCounterFragment`(천적·순환 · 층 B 처분 셋) |
+| 화면 | `ui/duel/DuelAxisListFragment`(축 추가·편집·삭제·순서 · **필드 연결**) · `DuelPlayFragment`(둘 보고 하나 · **영향 필드 값** · 보기 설정) · `DuelStandingsFragment`(점수·±오차·판 수·배지) · `DuelCounterFragment`(천적·순환 · 층 B 처분 셋) · **`DuelMatchesFragment`(기록 보기·편집 — 7장)**. **수를 적지 않는다** — 종전에 '넷'이라 적혀 있었고 다섯이 되는 순간 낡았다 |
 | 목록 어댑터 | `ui/adapter/DuelAxisAdapter` · `DuelStandingsAdapter` · `DuelCounterAdapter` |
 | 진입점 | **홈 '도구' 타일**(이어하기) + **세계관 카드 표면 버튼** · 판단은 pure `util/DuelEntry` |
 | 배선 | `NovelCharacterApp.duelRepository` · `nav_graph` 목적지 넷 · **작업 이력 `OpResult.CAT_DUEL`** |
-| 검증 | 순수 JVM **1537 → 1573**(`DuelSessionTest` 16 · `DuelStandingsTest` 14 · `DuelEntryTest` 6) · 정적 검사 8종 · 차분 컴파일 신규 0(노이즈 부류 제외) · 프로브 신규 0 · **CI 초록**(단위 테스트 + APK 빌드) |
+| 검증 | 순수 JVM **1537 → 1573**(그 시점의 값 — **현행 기준선은 `remaining_work` 5장 2번이 든다**)(`DuelSessionTest` 16 · `DuelStandingsTest` 14 · `DuelEntryTest` 6) · 정적 검사 8종 · 차분 컴파일 신규 0(노이즈 부류 제외) · 프로브 신규 0 · **CI 초록**(단위 테스트 + APK 빌드) |
 
 **이 슬라이스가 pure를 먼저 판 이유가 곧 이 슬라이스의 방어선이다.** 화면이 *판단*하는 것을
 전부 `DuelSession`·`DuelStandings`로 내리고 `Fragment`에는 그리는 일만 남겼다 —
