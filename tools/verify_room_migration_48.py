@@ -18,10 +18,15 @@ Room 마이그레이션 47→48 검증 하네스 (Android 없이 실제 SQLite�
     남아야 정상이고, 누가 나중에 재작성 방식으로 바꾸면 여기서 잡힌다.
  6. 뗀 표식을 붙이고/지우는 쓰기가 실제로 동작하는가(둘 다 — 푸는 길이 계약이다, D2).
 """
+import os
 import re
 import sqlite3
 
-REPO = "/home/user/Test"
+# 저장소 루트 — **스크립트 위치에서 유도한다**(`tools/`의 부모).
+# 종전에는 `/home/user/Test`가 박혀 있어 **다른 경로로 체크아웃하면 어디서도 못 돌았다**;
+# 개발 컨테이너의 경로와 우연히 같아 로컬에서만 통과했고, 2026.08.04에 이 하네스를
+# CI에 걸면서 처음 드러났다(세션 로그 1-bw). 셸 검사들이 쓰는 규약과 같다.
+REPO = os.environ.get("REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPDB = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt"
 ENTITY = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/model/ImageMeta.kt"
 

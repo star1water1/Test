@@ -13,10 +13,15 @@
 셋이 어긋나면 초기화가 '모든 데이터 삭제' 약속을 어긴다. 특히 ①에만 있고 ②에 없는 것은
 **초기화 뒤에도 살아남는 테이블**이며, 그것이 이 로드맵이 고친 결함 그 자체다.
 """
+import os
 import re
 import sys
 
-REPO = "/home/user/Test"
+# 저장소 루트 — **스크립트 위치에서 유도한다**(`tools/`의 부모).
+# 종전에는 `/home/user/Test`가 박혀 있어 **다른 경로로 체크아웃하면 어디서도 못 돌았다**;
+# 개발 컨테이너의 경로와 우연히 같아 로컬에서만 통과했고, 2026.08.04에 이 하네스를
+# CI에 걸면서 처음 드러났다(세션 로그 1-bw). 셸 검사들이 쓰는 규약과 같다.
+REPO = os.environ.get("REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPDB = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt"
 MODEL_DIR = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/model"
 PLAN = f"{REPO}/app/src/main/java/com/novelcharacter/app/util/ResetPlan.kt"
