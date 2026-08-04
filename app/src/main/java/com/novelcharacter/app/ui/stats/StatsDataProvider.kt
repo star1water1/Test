@@ -2,11 +2,14 @@ package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
+import com.novelcharacter.app.util.CompletionRate
+import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.FieldValueMatcher
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.NumericBinning
+import com.novelcharacter.app.util.RequiredFieldGaps
 import com.novelcharacter.app.util.StatsFieldPolicy
 import com.novelcharacter.app.util.ValueDistributions
 
@@ -39,6 +42,12 @@ data class StatsSnapshot(
     val novelFieldValues: List<NovelFieldValue> = emptyList(),
     // 값 데이터 라이브러리 — 별칭 접기·표시 라벨·카테고리의 단일 소스 (구 valueLabels/valueCategories 대체)
     val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList(),
+    /**
+     * 완성도 필수 가중 (B-100). [StatsDataProvider.loadSnapshot]이 설정에서 읽어 싣는다 —
+     * 계산 함수들이 `Context`를 모르게 하기 위해서다(순수 하네스가 그대로 돈다).
+     * 필터본은 `copy`로 그대로 물려받는다.
+     */
+    val completionWeights: CompletionWeights = CompletionWeights.DEFAULT,
     /**
      * "작품 미배정" 스코프 표시 — novels/universes가 비므로 캐릭터 모수·필드 완성도를
      * novelId 경유 대신 스냅샷 자체(캐릭터 전체·보존 정의) 기준으로 계산해야 한다.
@@ -392,7 +401,15 @@ data class DataOverviewStats(
     val yearDensity: Map<Int, Int>,
     val nameBankUsageRate: Float,
     val nameBankGenderDist: Map<String, Int>,
-    val healthWarnings: HealthWarnings
+    val healthWarnings: HealthWarnings,
+    /**
+     * 이 스코프에서 완성도 가중이 실제로 걸리는 칸의 수 (B-100).
+     * 0이면 화면이 *"필수로 표시한 칸이 없어 모든 칸을 같게 셉니다"*라고 말한다 —
+     * 가중 설정을 만져도 숫자가 안 움직이는 이유를 사용자가 알아야 한다(원칙 04).
+     */
+    val requiredSlotCount: Int = 0,
+    /** 지금 적용 중인 필수 배수 — 화면이 "몇 배로 세고 있는가"를 말할 때 쓴다. */
+    val requiredWeight: Float = CompletionWeights.DEFAULT_REQUIRED_WEIGHT
 )
 
 data class HealthWarnings(
@@ -547,7 +564,11 @@ class StatsDataProvider {
      */
     private val drilldownImageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
-    suspend fun loadSnapshot(app: NovelCharacterApp): StatsSnapshot {
+    /**
+     * @param weights 완성도 필수 가중(B-100). **설정 읽기는 호출부의 몫이다** —
+     *   이 계층이 `Context`를 알게 되면 순수 하네스가 통째로 컴파일되지 않는다.
+     */
+    suspend fun loadSnapshot(app: NovelCharacterApp, weights: CompletionWeights): StatsSnapshot {
         val db = app.database
         return StatsSnapshot(
             characters = app.characterRepository.getAllCharactersList(),
@@ -569,7 +590,8 @@ class StatsDataProvider {
             eventFieldValues = db.eventFieldValueDao().getAllValuesList(),
             novelFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL),
             novelFieldValues = db.novelFieldValueDao().getAllValuesList(),
-            valueEntries = db.fieldValueEntryDao().getAllList()
+            valueEntries = db.fieldValueEntryDao().getAllList(),
+            completionWeights = weights
         )
     }
 
@@ -696,6 +718,50 @@ class StatsDataProvider {
         )
     }
 
+    /**
+     * 캐릭터 id → **값이 비어 있지 않은** 필드 정의 id 집합 (B-100).
+     *
+     * 완성도의 분자는 언제나 이 집합과 *그 캐릭터에 적용되는 정의*의 교집합이다.
+     * 종전에는 여섯 자리가 이 교집합 없이 값의 개수를 그냥 셌고, 그래서
+     * [com.novelcharacter.app.data.repository.CharacterFieldValueMerge]가 일부러 남기는
+     * 보존 값(다른 세계관·사건 정의를 가리키는 값)이 분자에 섞여 완성도를 부풀렸다.
+     */
+    private fun filledCharacterDefIds(s: StatsSnapshot): Map<Long, Set<Long>> =
+        s.fieldValues.asSequence()
+            .filter { it.value.isNotBlank() }
+            .groupBy({ it.characterId }, { it.fieldDefinitionId })
+            .mapValues { (_, ids) -> ids.toSet() }
+
+    /**
+     * 그룹별 완성도 평균 (B-100) — **세 화면이 같은 함수를 쓴다**(통계 캐릭터 상세·데이터 건강·
+     * 데이터 개요). 종전에는 같은 22줄이 세 벌로 복사돼 있었고, 그런 자리는 한쪽만 고쳐지면
+     * 화면마다 다른 답을 낸다(R-33이 다른 계층에서 잡은 것과 같은 부류).
+     *
+     * @param fieldsForChar 이 캐릭터에 적용되는 정의(계산 필드가 섞여 있어도 된다 —
+     *   [CompletionRate]가 거른다). null이면 그 캐릭터는 셈에서 빠진다.
+     */
+    private fun groupCompletionAverages(
+        characters: List<Character>,
+        fieldsForChar: (Character) -> List<FieldDefinition>?,
+        filledDefIdsByChar: Map<Long, Set<Long>>,
+        weights: CompletionWeights
+    ): Map<String, Float> {
+        val groupRates = mutableMapOf<String, MutableList<Float>>()
+        characters.forEach { char ->
+            val fields = fieldsForChar(char) ?: return@forEach
+            val filled = filledDefIdsByChar[char.id].orEmpty()
+            fields.groupBy { it.groupName }.forEach { (group, groupFields) ->
+                // 셀 칸이 없는 그룹(계산 필드뿐)은 평균에 넣지 않는다 — 0%로 넣으면
+                // "사람이 채울 칸이 없는 그룹"이 "아무도 안 채운 그룹"으로 보인다.
+                val rate = CompletionRate.percentOf(groupFields, filled, weights) ?: return@forEach
+                groupRates.getOrPut(group) { mutableListOf() }.add(rate)
+            }
+        }
+        return groupRates.mapValues { (_, rates) ->
+            if (rates.isEmpty()) 0f else rates.average().toFloat()
+        }
+    }
+
     /** 캐릭터 복잡도 경량 계산 (Summary에서 특화 분포용) */
     private fun computeCharacterComplexities(s: StatsSnapshot): List<CharacterComplexity> {
         val relCount = mutableMapOf<Long, Int>()
@@ -708,7 +774,7 @@ class StatsDataProvider {
 
         val novelMap = s.novels.associateBy { it.id }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
-        val charFieldValues = s.fieldValues.groupBy { it.characterId }
+        val filledDefIdsByChar = filledCharacterDefIds(s)
 
         return s.characters.map { char ->
             val relCnt = relCount[char.id] ?: 0
@@ -716,16 +782,14 @@ class StatsDataProvider {
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
 
             val novel = char.novelId?.let { novelMap[it] }
-            // CALCULATED 필드는 자동 계산이므로 완성도 산출에서 제외
-            val fields = novel?.let { fieldDefByUniverse[it.universeId]?.filter { f -> f.type != "CALCULATED" } }
-            val filledCount = charFieldValues[char.id]?.count { it.value.isNotBlank() } ?: 0
-            // 작품 미배정 캐릭터는 필드 완성도 산출 불가 (null)
-            val completion: Float? = if (fields != null && fields.isNotEmpty()) {
-                filledCount.toFloat() / fields.size * 100f
-            } else if (char.novelId == null) {
-                null // 작품 미배정 → 산출 불가
-            } else {
-                0f // 작품은 있지만 필드 정의가 없음
+            // 완성도 판정은 [CompletionRate] 하나다 — 칸 고르기(CALCULATED 제외)·분자 교집합·
+            // 필수 가중이 전부 그 안에 있다. 작품 미배정이거나 셀 칸이 없으면 null(산출 불가)이다.
+            val completion: Float? = novel?.let {
+                CompletionRate.percentOf(
+                    fieldDefByUniverse[it.universeId].orEmpty(),
+                    filledDefIdsByChar[char.id].orEmpty(),
+                    s.completionWeights
+                )
             }
 
             val relWeight = relCnt * 2f
@@ -770,18 +834,17 @@ class StatsDataProvider {
         val isolatedCount = s.characters.count { it.id !in relCharIds }
         val healthIssues = noImageCount + isolatedCount
 
-        // 평균 필드 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 완성도 대상이 아님)
-        val universeFieldCounts = s.fieldDefinitions.filter { it.type != "CALCULATED" }
-            .groupBy { it.universeId }.mapValues { it.value.size }
-        val charFieldCounts = s.fieldValues.groupBy { it.characterId }
-            .mapValues { it.value.count { fv -> fv.value.isNotBlank() } }
+        // 평균 필드 완성도 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
+        val summaryFieldDefs = s.fieldDefinitions.groupBy { it.universeId }
+        val summaryFilledDefIds = filledCharacterDefIds(s)
         val completions = s.characters.mapNotNull { char ->
             val novelId = char.novelId ?: return@mapNotNull null
             val novel = novelMap[novelId] ?: return@mapNotNull null
-            val total = universeFieldCounts[novel.universeId] ?: return@mapNotNull null
-            if (total == 0) return@mapNotNull null
-            val filled = charFieldCounts[char.id] ?: 0
-            filled.toFloat() / total * 100f
+            CompletionRate.percentOf(
+                summaryFieldDefs[novel.universeId].orEmpty(),
+                summaryFilledDefIds[char.id].orEmpty(),
+                s.completionWeights
+            )
         }
         val avgCompletion = if (completions.isNotEmpty()) completions.average().toFloat() else 0f
 
@@ -880,20 +943,20 @@ class StatsDataProvider {
         val topEventChars = eventCountMap.entries.sortedByDescending { it.value }.take(10)
             .map { (charMap[it.key]?.name ?: "?") to it.value }
 
-        // 필드 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 완성도 대상이 아님)
-        val universeFieldCounts = s.fieldDefinitions.filter { it.type != "CALCULATED" }
-            .groupBy { it.universeId }.mapValues { it.value.size }
-        val charFieldCounts = s.fieldValues.groupBy { it.characterId }
-            .mapValues { it.value.count { fv -> fv.value.isNotBlank() } }
+        // 필드 완성도 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
+        val statsFieldDefs = s.fieldDefinitions.groupBy { it.universeId }
+        val filledDefIdsByChar = filledCharacterDefIds(s)
 
         val fieldCompletionById = mutableMapOf<Long, Float>()
         s.characters.forEach { char ->
             val novelId = char.novelId ?: return@forEach
             val novel = novelMap[novelId] ?: return@forEach
-            val totalFields = universeFieldCounts[novel.universeId] ?: return@forEach
-            if (totalFields == 0) return@forEach
-            val filled = charFieldCounts[char.id] ?: 0
-            fieldCompletionById[char.id] = filled.toFloat() / totalFields * 100f
+            val rate = CompletionRate.percentOf(
+                statsFieldDefs[novel.universeId].orEmpty(),
+                filledDefIdsByChar[char.id].orEmpty(),
+                s.completionWeights
+            ) ?: return@forEach
+            fieldCompletionById[char.id] = rate
         }
 
         // 생존기간
@@ -907,28 +970,15 @@ class StatsDataProvider {
             } else null
         }
 
-        // 신규: 그룹별 필드 완성도 (CALCULATED 필드 제외)
-        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
-            .groupBy { it.universeId }
-        val fieldDefIdToField = s.fieldDefinitions.associateBy { it.id }
-        val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
-
-        val groupCompletions = mutableMapOf<String, MutableList<Float>>()
-        s.characters.forEach { char ->
-            val novelId = char.novelId ?: return@forEach
-            val novel = novelMap[novelId] ?: return@forEach
-            val fieldsForUniverse = fieldDefByUniverse[novel.universeId] ?: return@forEach
-            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-            val filledDefIds = charValues.filter { it.value.isNotBlank() }.map { it.fieldDefinitionId }.toSet()
-
-            fieldsForUniverse.groupBy { it.groupName }.forEach { (group, fields) ->
-                val rate = if (fields.isEmpty()) 0f else fields.count { it.id in filledDefIds }.toFloat() / fields.size * 100f
-                groupCompletions.getOrPut(group) { mutableListOf() }.add(rate)
-            }
-        }
-        val fieldCompletionByGroup = groupCompletions.mapValues { (_, rates) ->
-            if (rates.isEmpty()) 0f else rates.average().toFloat()
-        }
+        // 신규: 그룹별 필드 완성도 — 세 화면이 같은 헬퍼를 쓴다(B-100).
+        val fieldCompletionByGroup = groupCompletionAverages(
+            characters = s.characters,
+            fieldsForChar = { char ->
+                char.novelId?.let { novelMap[it] }?.let { statsFieldDefs[it.universeId] }
+            },
+            filledDefIdsByChar = filledDefIdsByChar,
+            weights = s.completionWeights
+        )
 
         // 신규: 캐릭터 복잡도 스코어 + 종합/특화 잠재력
         val complexityScores = s.characters.map { char ->
@@ -1198,29 +1248,22 @@ class StatsDataProvider {
             it.imagePaths.isBlank() || it.imagePaths == "[]"
         }.map { it.name }
 
-        // 필드 미입력률 높은 캐릭터 (CALCULATED 필드 제외 — 자동 계산 필드이므로 수동 완성도에 포함시키지 않음)
-        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
-            .groupBy { it.universeId }
-        val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
+        // 필드 미입력률 높은 캐릭터 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
+        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val filledDefIdsByChar = filledCharacterDefIds(s)
 
-        // 미배정 스코프: novelId 경유가 불가 — 보존 정의(CALCULATED 제외) 대비 채움률로 판정
+        // 미배정 스코프: novelId 경유가 불가 — 보존 정의 대비 채움률로 판정
         // (computeDataOverview의 incompleteCount와 같은 기준 — 개수·명단 일치)
-        val unassignedFields = if (s.unassignedScope) {
-            s.fieldDefinitions.filter { it.type != "CALCULATED" }
-        } else emptyList()
+        val fieldsForChar: (Character) -> List<FieldDefinition>? = { char ->
+            if (s.unassignedScope) s.fieldDefinitions.ifEmpty { null }
+            else char.novelId?.let { novelMap[it] }?.let { fieldDefByUniverse[it.universeId] }
+        }
         val incomplete = s.characters.mapNotNull { char ->
-            val fields = if (s.unassignedScope) {
-                unassignedFields.ifEmpty { return@mapNotNull null }
-            } else {
-                val novelId = char.novelId ?: return@mapNotNull null
-                val novel = novelMap[novelId] ?: return@mapNotNull null
-                fieldDefByUniverse[novel.universeId] ?: return@mapNotNull null
-            }
-            if (fields.isEmpty()) return@mapNotNull null
-            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-            val filled = charValues.count { it.value.isNotBlank() }
-            val rate = filled.toFloat() / fields.size * 100f
-            if (rate < 50f) char.name to rate else null
+            val fields = fieldsForChar(char) ?: return@mapNotNull null
+            val rate = CompletionRate.percentOf(
+                fields, filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
+            ) ?: return@mapNotNull null
+            if (rate < INCOMPLETE_THRESHOLD_PERCENT) char.name to rate else null
         }
 
         // 관계 없는 캐릭터
@@ -1242,23 +1285,15 @@ class StatsDataProvider {
         // 신규: 설명 없는 관계 수
         val emptyDescRels = s.relationships.count { it.description.isBlank() }
 
-        // 신규: 그룹별 필드 완성도
-        val groupCompletions = mutableMapOf<String, MutableList<Float>>()
-        s.characters.forEach { char ->
-            val novelId = char.novelId ?: return@forEach
-            val novel = novelMap[novelId] ?: return@forEach
-            val fieldsForUniverse = fieldDefByUniverse[novel.universeId] ?: return@forEach
-            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-            val filledDefIds = charValues.filter { it.value.isNotBlank() }.map { it.fieldDefinitionId }.toSet()
-
-            fieldsForUniverse.groupBy { it.groupName }.forEach { (group, fields) ->
-                val rate = if (fields.isEmpty()) 0f else fields.count { it.id in filledDefIds }.toFloat() / fields.size * 100f
-                groupCompletions.getOrPut(group) { mutableListOf() }.add(rate)
-            }
-        }
-        val completionByGroup = groupCompletions.mapValues { (_, rates) ->
-            if (rates.isEmpty()) 0f else rates.average().toFloat()
-        }
+        // 신규: 그룹별 필드 완성도 — 세 화면이 같은 헬퍼를 쓴다(B-100).
+        val completionByGroup = groupCompletionAverages(
+            characters = s.characters,
+            fieldsForChar = { char ->
+                char.novelId?.let { novelMap[it] }?.let { fieldDefByUniverse[it.universeId] }
+            },
+            filledDefIdsByChar = filledDefIdsByChar,
+            weights = s.completionWeights
+        )
 
         // 신규: 별명 없는 캐릭터
         val noAnotherName = s.characters.filter { it.anotherName.isBlank() }.map { it.name }
@@ -1839,36 +1874,24 @@ class StatsDataProvider {
     // ===== 데이터 현황 (신규 - 기존 여러 compute 통합) =====
     fun computeDataOverview(s: StatsSnapshot): DataOverviewStats {
         val novelMap = s.novels.associateBy { it.id }
-        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
-            .groupBy { it.universeId }
-        val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
+        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val filledDefIdsByChar = filledCharacterDefIds(s)
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
 
-        // 그룹별 필드 완성도. 미배정 스코프는 novelId 경유가 불가 — 스냅샷에 보존된
-        // 정의 전체(CALCULATED 제외)를 그 캐릭터의 필드셋으로 사용한다
-        val unassignedFieldSet = if (s.unassignedScope) {
-            s.fieldDefinitions.filter { it.type != "CALCULATED" }
-        } else emptyList()
-        val groupCompletions = mutableMapOf<String, MutableList<Float>>()
-        s.characters.forEach { char ->
-            val fieldsForUniverse = if (s.unassignedScope) {
-                unassignedFieldSet.ifEmpty { return@forEach }
-            } else {
-                val novelId = char.novelId ?: return@forEach
-                val novel = novelMap[novelId] ?: return@forEach
-                fieldDefByUniverse[novel.universeId] ?: return@forEach
-            }
-            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-            val filledDefIds = charValues.filter { it.value.isNotBlank() }.map { it.fieldDefinitionId }.toSet()
+        // 미배정 스코프는 novelId 경유가 불가 — 스냅샷에 보존된 정의 전체를 그 캐릭터의
+        // 필드셋으로 쓴다. 계산 필드 거르기는 [CompletionRate]가 한다.
+        val fieldsForChar: (Character) -> List<FieldDefinition>? = { char ->
+            if (s.unassignedScope) s.fieldDefinitions.ifEmpty { null }
+            else char.novelId?.let { novelMap[it] }?.let { fieldDefByUniverse[it.universeId] }
+        }
 
-            fieldsForUniverse.groupBy { it.groupName }.forEach { (group, fields) ->
-                val rate = if (fields.isEmpty()) 0f else fields.count { it.id in filledDefIds }.toFloat() / fields.size * 100f
-                groupCompletions.getOrPut(group) { mutableListOf() }.add(rate)
-            }
-        }
-        val completionByGroup = groupCompletions.mapValues { (_, rates) ->
-            if (rates.isEmpty()) 0f else rates.average().toFloat()
-        }
+        // 그룹별 필드 완성도 — 세 화면이 같은 헬퍼를 쓴다(B-100).
+        val completionByGroup = groupCompletionAverages(
+            characters = s.characters,
+            fieldsForChar = fieldsForChar,
+            filledDefIdsByChar = filledDefIdsByChar,
+            weights = s.completionWeights
+        )
 
         // 개별 필드별 완성도 (CALCULATED 필드 제외). 미배정 스코프 모수 = 스코프 캐릭터 전체
         val fieldCompletionDetails = s.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
@@ -1893,23 +1916,15 @@ class StatsDataProvider {
         // 건강도
         val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
         val incompleteCount = s.characters.count { char ->
-            if (s.unassignedScope) {
-                // 미배정 스코프: '미배정 = 무조건 미완성' 판정은 스코프 전원을 미완성으로 만든다 —
-                // 보존 정의 대비 실제 채움률로 판정 (정의가 없으면 미완성 아님, 기존 관용구)
-                val fields = unassignedFieldSet
-                if (fields.isEmpty()) return@count false
-                val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-                val filled = charValues.count { it.value.isNotBlank() }
-                return@count filled.toFloat() / fields.size < 0.5f
-            }
-            val novelId = char.novelId
-            if (novelId == null) return@count true // 작품 미배정 = 미완성으로 간주 (전체 스코프)
-            val novel = novelMap[novelId] ?: return@count true
-            val fields = fieldDefByUniverse[novel.universeId] ?: return@count false
-            if (fields.isEmpty()) return@count false
-            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
-            val filled = charValues.count { it.value.isNotBlank() }
-            filled.toFloat() / fields.size < 0.5f
+            // 전체 스코프에서 작품 미배정은 그대로 '미완성'이다(종전 판정 유지) — 미배정
+            // 스코프에서는 그 판정이 스코프 전원을 미완성으로 만들므로 보존 정의 대비로 잰다.
+            if (!s.unassignedScope && char.novelId == null) return@count true
+            if (!s.unassignedScope && novelMap[char.novelId] == null) return@count true
+            val fields = fieldsForChar(char) ?: return@count false
+            val rate = CompletionRate.percentOf(
+                fields, filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
+            ) ?: return@count false   // 셀 칸이 없으면 미완성이 아니다(기존 관용구)
+            rate < INCOMPLETE_THRESHOLD_PERCENT
         }
         val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
         val isolatedCount = s.characters.count { it.id !in relCharIds }
@@ -1928,7 +1943,9 @@ class StatsDataProvider {
             yearDensity = yearDensity,
             nameBankUsageRate = nameBankRate,
             nameBankGenderDist = genderDist,
-            healthWarnings = HealthWarnings(noImageCount, incompleteCount, isolatedCount, unlinkedCount)
+            healthWarnings = HealthWarnings(noImageCount, incompleteCount, isolatedCount, unlinkedCount),
+            requiredSlotCount = s.fieldDefinitions.count { RequiredFieldGaps.countsAsSlot(it) },
+            requiredWeight = s.completionWeights.requiredWeight
         )
     }
 
@@ -3515,5 +3532,13 @@ class StatsDataProvider {
 
         /** 레거시 필드 분석 화면이 이산 분포를 그리는 타입. */
         private val DISCRETE_DISTRIBUTION_TYPES = setOf("SELECT", "GRADE", "MULTI_TEXT", "TEXT")
+
+        /**
+         * '입력이 미흡하다'로 세는 완성도 하한(%).
+         *
+         * 데이터 건강의 **명단**과 데이터 개요의 **개수**가 같아야 하므로 값은 하나여야 한다 —
+         * 종전에는 `50f`와 `0.5f`로 두 곳에 따로 박혀 있었다.
+         */
+        const val INCOMPLETE_THRESHOLD_PERCENT = 50f
     }
 }

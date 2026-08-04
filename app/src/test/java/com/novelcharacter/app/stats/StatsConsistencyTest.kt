@@ -667,4 +667,81 @@ class StatsConsistencyTest {
             dist.matchSpecs.values.firstOrNull { it !is FieldValueMatchSpec.NumericPartRange }
         )
     }
+
+    // ===== B-100 완성도 — 화면 간 한 값이어야 한다 =====
+
+    /**
+     * 완성도 대조용 스냅샷: A세계관에 필수 1 + 일반 1, 캐릭터는 필수만 채웠다.
+     * [strayValues]는 **다른 세계관 정의를 가리키는 보존 값**이다
+     * (`CharacterFieldValueMerge`가 작품을 옮긴 캐릭터에게 일부러 남기는 것).
+     */
+    private fun completionSnapshot(
+        weights: com.novelcharacter.app.util.CompletionWeights,
+        strayValues: Boolean = false
+    ): StatsSnapshot {
+        val required = charField(11, "name", "이름").copy(isRequired = true)
+        val optional = charField(12, "hobby", "취미")
+        val foreign = charField(21, "law", "법칙", universeId = uniB)
+        val values = mutableListOf(
+            CharacterFieldValue(characterId = 1, fieldDefinitionId = required.id, value = "홍길동")
+        )
+        if (strayValues) {
+            values += CharacterFieldValue(characterId = 1, fieldDefinitionId = foreign.id, value = "잔류")
+        }
+        return snapshot(
+            characters = listOf(Character(id = 1, name = "홍길동", novelId = 1)),
+            fieldDefinitions = listOf(required, optional, foreign),
+            fieldValues = values
+        ).copy(completionWeights = weights)
+    }
+
+    @Test
+    fun `완성도는 요약과 캐릭터 통계와 복잡도가 같은 값을 낸다`() {
+        // 종전에는 셋이 분자를 다르게 셌다(값 전부 대 교집합) — 같은 캐릭터가 화면마다 달랐다.
+        val s = completionSnapshot(com.novelcharacter.app.util.CompletionWeights(2f))
+        val stats = provider.computeCharacterStats(s)
+        val fromStats = stats.fieldCompletionRates.first { it.first == "홍길동" }.second
+        val fromComplexity = stats.complexityScores.first { it.name == "홍길동" }.fieldCompletionRate!!
+        val fromSummary = provider.computeSummary(s).avgFieldCompletion
+
+        assertEquals(fromStats, fromComplexity, 0.01f)
+        assertEquals(fromStats, fromSummary, 0.01f)
+        // 필수(×2) 채움 + 일반 미채움 = 2 / 3
+        assertEquals(200f / 3f, fromStats, 0.01f)
+    }
+
+    @Test
+    fun `다른 세계관 정의를 가리키는 보존 값은 완성도를 부풀리지 않는다`() {
+        val weights = com.novelcharacter.app.util.CompletionWeights(2f)
+        val clean = provider.computeCharacterStats(completionSnapshot(weights))
+            .fieldCompletionRates.first().second
+        val withStray = provider.computeCharacterStats(completionSnapshot(weights, strayValues = true))
+            .fieldCompletionRates.first().second
+        assertEquals("보존 값은 이 세계관의 칸이 아니다", clean, withStray, 0.01f)
+        assertTrue("완성도가 100%를 넘을 수 없다", withStray <= 100f)
+    }
+
+    @Test
+    fun `필수가 없으면 가중을 바꿔도 완성도가 그대로다`() {
+        // 사용자 확정 ㄴ1 — 필수를 쓰지 않는 사용자의 숫자는 이유 없이 움직이지 않는다.
+        val base = completionSnapshot(com.novelcharacter.app.util.CompletionWeights.NONE)
+        val noRequired = base.copy(
+            fieldDefinitions = base.fieldDefinitions.map { it.copy(isRequired = false) }
+        )
+        val plain = provider.computeCharacterStats(noRequired).fieldCompletionRates.first().second
+        val weighted = provider.computeCharacterStats(
+            noRequired.copy(completionWeights = com.novelcharacter.app.util.CompletionWeights(5f))
+        ).fieldCompletionRates.first().second
+        assertEquals(plain, weighted, 0.0001f)
+        assertEquals(50f, plain, 0.01f)
+    }
+
+    @Test
+    fun `미흡 판정은 데이터 건강의 명단과 데이터 개요의 개수가 일치한다`() {
+        // 임계값이 두 곳에 따로 박혀 있으면(50f 대 0.5f) 한쪽만 바뀌어도 아무도 모른다.
+        val s = completionSnapshot(com.novelcharacter.app.util.CompletionWeights(2f))
+        val named = provider.computeDataHealth(s).incompleteFieldChars.map { it.first }
+        val counted = provider.computeDataOverview(s).healthWarnings.incompleteFieldCount
+        assertEquals(named.size, counted)
+    }
 }

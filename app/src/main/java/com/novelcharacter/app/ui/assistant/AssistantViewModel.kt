@@ -51,7 +51,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _loading.value = true
             val result = withContext(Dispatchers.Default) {
                 loadMutex.withLock {
-                    val snapshot = statsProvider.loadSnapshot(app)
+                    val snapshot = statsProvider.loadSnapshot(
+                        app,
+                        com.novelcharacter.app.ui.stats.CompletionWeightPrefs.weights(getApplication())
+                    )
                     val enabled = prefs.enabledCategories()
                     val all = engine.run(snapshot, statsProvider, enabled)
                     val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }

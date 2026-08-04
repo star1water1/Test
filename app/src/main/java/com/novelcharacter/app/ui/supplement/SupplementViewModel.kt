@@ -8,9 +8,10 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
-import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.ui.stats.CompletionWeightPrefs
+import com.novelcharacter.app.util.CompletionRate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -198,6 +199,8 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                 val eventCharIds = allCrossRefs.map { it.characterId }.toSet()
                 val membershipCharIds = allMemberships.map { it.characterId }.toSet()
                 val factionsByUniverse = allFactions.groupBy { it.universeId }
+                // 완성도 가중은 통계 화면과 같은 설정을 읽는다 — 한 벌만 읽고 돌려 쓴다.
+                val completionWeights = CompletionWeightPrefs.weights(getApplication())
 
                 val audits = mutableListOf<SupplementTarget>()
 
@@ -234,25 +237,22 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
 
-                    // 커스텀 필드 체크
+                    // 커스텀 필드 체크 — 판정은 [CompletionRate] 하나다(B-100. 칸 고르기·
+                    // 분자 교집합·필수 가중이 그 안에 있어 통계 화면과 같은 %가 나온다).
                     var fieldCompletion = -1f
                     if (criteria.checkCustomFields && char.novelId != null) {
                         val novel = novelMap[char.novelId]
                         val universeId = novel?.universeId
                         if (universeId != null) {
                             val fieldDefs = fieldDefsByUniverse[universeId] ?: emptyList()
-                            // CALCULATED 필드 제외
-                            val checkableDefs = fieldDefs.filter {
-                                FieldType.fromName(it.type) != FieldType.CALCULATED
-                            }
-                            if (checkableDefs.isNotEmpty()) {
-                                val values = fieldValuesByCharacter[char.id] ?: emptyList()
-                                val filledDefIds = values
-                                    .filter { it.value.isNotBlank() }
-                                    .map { it.fieldDefinitionId }
-                                    .toSet()
-                                val filled = checkableDefs.count { it.id in filledDefIds }
-                                fieldCompletion = filled.toFloat() / checkableDefs.size * 100f
+                            val values = fieldValuesByCharacter[char.id] ?: emptyList()
+                            val filledDefIds = values
+                                .filter { it.value.isNotBlank() }
+                                .map { it.fieldDefinitionId }
+                                .toSet()
+                            val rate = CompletionRate.percentOf(fieldDefs, filledDefIds, completionWeights)
+                            if (rate != null) {
+                                fieldCompletion = rate
                                 if (fieldCompletion < criteria.fieldCompletionThreshold) {
                                     issues.add(SupplementIssue.INCOMPLETE_FIELDS)
                                 }
