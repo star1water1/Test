@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    minSdk가 26이므로 **모든 기기가 이 파일을 쓴다** — 밀도별 PNG는 한 번도 선택되지 않는다
+    (그래서 2026.08.04에 placeholder PNG 10장을 지웠다).
+
+    monochrome은 Android 13+에서만 쓰이고 그 아래에서는 조용히 무시된다.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>
