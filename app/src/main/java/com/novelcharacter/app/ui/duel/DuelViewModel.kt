@@ -2,12 +2,16 @@ package com.novelcharacter.app.ui.duel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.MutableLiveData
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.repository.DuelRepository
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -33,6 +37,18 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     private val characterRepository = app.characterRepository
 
     /**
+     * 조작 결과 — 화면이 관측해 알리고, [reportResult]가 **작업 이력에도 함께 남긴다.**
+     *
+     * **한 판 한 판은 여기 오지 않는다**([OpResult.CAT_DUEL]의 설명). 대결은 단순반복이라
+     * 누름마다 알리면 그 알림이 다음 짝을 가린다 — 화면이 곧바로 다음 둘을 띄우는 것 자체가
+     * 이미 *"들어갔다"*는 신호다. 여기 오는 것은 **판이 무더기로 오가는 조작**뿐이다.
+     */
+    private val _result = MutableLiveData<OpResult?>()
+    val result: androidx.lifecycle.LiveData<OpResult?> get() = _result
+
+    fun clearResult() { _result.value = null }
+
+    /**
      * 한 축을 화면에 올리는 데 필요한 전부.
      *
      * @property charactersByCode 참가자 코드 → 캐릭터. 순수 계층이 내놓는 것은 코드뿐이라
@@ -55,6 +71,20 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun saveAxis(axis: DuelAxis): DuelAxis = duelRepository.saveAxis(axis)
 
+    /** 축 저장을 알리고 이력에 남긴다 — 순서 바꾸기처럼 사용자가 이미 본 조작은 부르지 않는다. */
+    fun reportAxisSaved(axis: DuelAxis, isNew: Boolean) {
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(
+                    if (isNew) R.string.duel_op_axis_added else R.string.duel_op_axis_edited,
+                    axis.name
+                )
+            )
+        )
+    }
+
     /** 같은 세계관·같은 대상에 같은 이름이 있는가 — 유니크 인덱스가 던지기 **전에** 묻는다. */
     suspend fun nameTaken(axis: DuelAxis): Boolean {
         val existing = app.database.duelAxisDao()
@@ -69,7 +99,17 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * 축을 지운다. 판·처분이 FK CASCADE로 함께 죽으므로 저장소가 **지우기 전에** 휴지통에 담는다.
      * @return 함께 들어간 판 수.
      */
-    suspend fun deleteAxis(axis: DuelAxis): Int = duelRepository.deleteAxis(axis, app.trashRepository)
+    suspend fun deleteAxis(axis: DuelAxis): Int {
+        val matches = duelRepository.deleteAxis(axis, app.trashRepository)
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(R.string.duel_op_axis_deleted, axis.name, matches)
+            )
+        )
+        return matches
+    }
 
     // ──────────────────────────────────────────────────────────────────────
     // 상태
@@ -108,12 +148,44 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     /** 층 B ① — 그 판을 지운다. 점수는 다시 적합하면 그것이 정확한 답이다. */
     suspend fun undo(match: DuelMatch) = duelRepository.undo(match)
 
-    /** 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다. */
-    suspend fun recordVerdict(axisId: Long, members: List<String>, kind: String): DuelCounterVerdict? =
-        duelRepository.recordVerdict(axisId, members, kind)
+    /**
+     * 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다.
+     *
+     * ③은 **그 짝을 점수 적합에서 뺀다.** 즉 판정 하나가 순위표의 다른 줄까지 움직이므로
+     * (둘과 무관한 제3자의 순위가 달라진다 — 설계 3장) 조용히 지나가서는 안 된다.
+     */
+    suspend fun recordVerdict(
+        axisId: Long,
+        members: List<String>,
+        kind: String,
+        relation: String
+    ): DuelCounterVerdict? {
+        val saved = duelRepository.recordVerdict(axisId, members, kind) ?: return null
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(
+                    if (kind == DuelCounterVerdict.KIND_COUNTER) {
+                        R.string.duel_op_verdict_counter
+                    } else {
+                        R.string.duel_op_verdict_undecided
+                    },
+                    relation
+                )
+            )
+        )
+        return saved
+    }
 
-    /** 처분을 물린다 — 되돌리면 그 짝이 점수 적합으로 돌아온다. */
-    suspend fun clearVerdict(verdict: DuelCounterVerdict) = duelRepository.clearVerdict(verdict)
+    /** 처분을 물린다 — 되돌리면 그 짝이 점수 적합으로 돌아온다(여기도 순위가 움직인다). */
+    suspend fun clearVerdict(verdict: DuelCounterVerdict, relation: String) {
+        duelRepository.clearVerdict(verdict)
+        reportResult(
+            _result,
+            OpResult.success(OpResult.CAT_DUEL, app.getString(R.string.duel_op_verdict_cleared, relation))
+        )
+    }
 
     suspend fun verdictById(axisId: Long, id: Long): DuelCounterVerdict? =
         duelRepository.verdicts(axisId).firstOrNull { it.id == id }
@@ -130,7 +202,18 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             .filter { it.aCode in members && it.bCode in members }
     }
 
-    suspend fun deleteMatches(matches: List<DuelMatch>) {
+    /**
+     * 층 B ①의 실행 — **되돌릴 수 없다.** 축 삭제와 달리 휴지통을 거치지 않으므로(판 하나하나가
+     * 스냅샷을 갖지 않는다) **이력에 남기는 것이 유일한 자취**다.
+     */
+    suspend fun deleteMatches(matches: List<DuelMatch>, relation: String) {
         matches.forEach { duelRepository.undo(it) }
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(R.string.duel_op_matches_deleted, relation, matches.size)
+            )
+        )
     }
 }

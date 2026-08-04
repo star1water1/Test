@@ -103,6 +103,12 @@ class DuelPlayFragment : Fragment() {
     }
 
     private fun loadFirst() {
+        // 순위표·상성 상세에 다녀오면 **화면만 다시 만들어지고 이 조각은 살아 있다**(뒤로가기
+        // 스택). 그때 차례는 0부터 다시 세는데 옛 기록이 남아 있으면, 되돌리기가 **이미 지운
+        // 판이나 남의 판을 집는다.** 대기열을 새로 받는 자리에서 함께 비운다.
+        recordedBySeq.clear()
+        pendingRecords = 0
+
         viewLifecycleOwner.lifecycleScope.launch {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded

@@ -37,6 +37,16 @@ data class OpResult(
         const val CAT_BATCH = "batch"
         const val CAT_FIELD_LIBRARY = "field_library"
 
+        /**
+         * 대결(B-104) — 축 관리와 층 B의 처분.
+         *
+         * **한 판 한 판은 여기 남기지 않는다.** 대결은 *단순반복*으로 데이터를 쌓는 기능이라
+         * 누름마다 이력을 남기면 이력 화면이 그것만으로 채워져 **다른 조작을 찾을 수 없게 된다**
+         * (되돌리기는 화면 안에 있다). 남기는 것은 **판이 무더기로 오가는 조작**이다 —
+         * 축 삭제(수만 판이 함께 휴지통으로) · 층 B ①(그 관계의 판을 **되돌릴 수 없게** 지운다).
+         */
+        const val CAT_DUEL = "duel"
+
         fun success(category: String, summary: String, detail: String? = null) =
             OpResult(category, summary, success = true, detail = detail)
 

@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelAxisListBinding
 import com.novelcharacter.app.ui.adapter.DuelAxisAdapter
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
 import kotlinx.coroutines.launch
@@ -63,6 +64,10 @@ class DuelAxisListFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         setupRecyclerView()
         binding.fabAddAxis.setOnClickListener { showAxisEditDialog(null) }
+
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let { notifyResult(it); viewModel.clearResult() }
+        }
     }
 
     override fun onResume() {
@@ -167,7 +172,10 @@ class DuelAxisListFragment : Fragment() {
                 val loaded = viewModel.load(axis, characters)
                 summaries[axis.id] = getString(
                     R.string.duel_axis_summary,
-                    loaded.state.fit.usedMatches,
+                    // **쌓인 판 전부**를 센다(`fit.usedMatches`가 아니다). 저쪽은 점수 적합에
+                    // 들어간 수라 고아·상성 제외·깨진 판이 빠지므로, 삭제 고지가 말하는
+                    // *"쌓인 판 N개"*(전량)와 **같은 것을 두 숫자로 말하게 된다.**
+                    loaded.state.records.matches.size,
                     characters.size,
                     loaded.state.report.count
                 )
@@ -220,7 +228,8 @@ class DuelAxisListFragment : Fragment() {
                     editName.showInlineError(getString(R.string.duel_axis_name_taken))
                     return@launch
                 }
-                viewModel.saveAxis(axis)
+                val saved = viewModel.saveAxis(axis)
+                viewModel.reportAxisSaved(saved, isNew = existing == null)
                 if (!isAdded) return@launch
                 dialog.dismiss()
                 reload()

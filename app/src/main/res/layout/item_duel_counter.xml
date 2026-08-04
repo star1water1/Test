@@ -60,8 +60,11 @@
                 android:layout_weight="1"
                 android:insetLeft="0dp"
                 android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:paddingStart="2dp"
                 android:paddingEnd="2dp"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                app:iconPadding="0dp"
                 android:text="@string/duel_verdict_mistake" />
 
             <com.google.android.material.button.MaterialButton
@@ -72,8 +75,11 @@
                 android:layout_weight="1"
                 android:insetLeft="0dp"
                 android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:paddingStart="2dp"
                 android:paddingEnd="2dp"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                app:iconPadding="0dp"
                 android:text="@string/duel_verdict_undecided" />
 
             <com.google.android.material.button.MaterialButton
@@ -84,8 +90,11 @@
                 android:layout_weight="1"
                 android:insetLeft="0dp"
                 android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:paddingStart="2dp"
                 android:paddingEnd="2dp"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                app:iconPadding="0dp"
                 android:text="@string/duel_verdict_counter" />
 
         </LinearLayout>

@@ -1987,6 +1987,7 @@
     <string name="op_cat_trash">휴지통</string>
     <string name="op_cat_maintenance">유지보수</string>
     <string name="op_cat_batch">일괄 작업</string>
+    <string name="op_cat_duel">대결</string>
 
     <!-- 결과 알림 요약 (Layer 5) — 세계관/작품/세력/프리셋 -->
     <string name="result_universe_saved">세계관 \"%1$s\" 저장됨</string>
@@ -3030,4 +3031,13 @@
     <string name="duel_verdict_undecided_done">미정으로 미뤄 둠 — 점수는 그대로입니다</string>
     <string name="duel_verdict_still_detected">지금도 같은 어긋남이 잡힙니다</string>
     <string name="duel_verdict_clear">판정 물리기</string>
+
+    <!-- 작업 이력 · 알림. 한 판 한 판은 남기지 않는다(OpResult.CAT_DUEL 참조) -->
+    <string name="duel_op_axis_added">대결 축 \'%1$s\' 추가됨</string>
+    <string name="duel_op_axis_edited">대결 축 \'%1$s\' 저장됨</string>
+    <string name="duel_op_axis_deleted">대결 축 \'%1$s\' 삭제됨 (판 %2$d개 함께 휴지통으로)</string>
+    <string name="duel_op_matches_deleted">%1$s의 판 %2$d개 삭제됨</string>
+    <string name="duel_op_verdict_counter">%1$s을(를) 상성으로 판정 — 점수 계산에서 뺍니다</string>
+    <string name="duel_op_verdict_undecided">%1$s을(를) 미정으로 미뤄 둠</string>
+    <string name="duel_op_verdict_cleared">%1$s의 판정을 물렸습니다</string>
 </resources>

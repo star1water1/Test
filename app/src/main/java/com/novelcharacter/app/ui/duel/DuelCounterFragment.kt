@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.databinding.FragmentDuelCounterBinding
 import com.novelcharacter.app.ui.adapter.DuelCounterAdapter
 import com.novelcharacter.app.util.DuelStandings
+import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
 
 /**
@@ -73,8 +74,24 @@ class DuelCounterFragment : Fragment() {
         binding.counterRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.counterRecyclerView.adapter = adapter
 
+        // 처분은 순위표의 다른 줄까지 움직인다 — 무엇이 처리됐는지 알리고 이력에도 남긴다.
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let { notifyResult(it); viewModel.clearResult() }
+        }
         reload()
     }
+
+    /**
+     * 이력·알림에 쓸 관계 이름 — **이름을 차례대로 잇는다.**
+     *
+     * 카드에 보이는 문장(*"A가 위인데 B에게 집니다"*)을 그대로 쓰지 않는 것은 일부러다.
+     * 이력은 한 줄 요약이고 목록에서 훑어 읽는 것이라, 문장보다 **관계의 모양**이 눈에 들어와야
+     * 한다. 순서(뜻이 있는 순서 — 천적은 `[센 쪽, 잡는 쪽]`)는 양쪽이 같다.
+     */
+    private fun relationLabel(item: DuelStandings.CounterItem): String =
+        item.memberCodes.joinToString(" → ") { code ->
+            charactersByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
+        }
 
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
@@ -117,7 +134,7 @@ class DuelCounterFragment : Fragment() {
                 .setMessage(getString(R.string.duel_verdict_mistake_confirm, matches.size))
                 .setPositiveButton(R.string.yes) { _, _ ->
                     viewLifecycleOwner.lifecycleScope.launch {
-                        viewModel.deleteMatches(matches)
+                        viewModel.deleteMatches(matches, relationLabel(item))
                         if (!isAdded) return@launch
                         reload()
                     }
@@ -129,17 +146,19 @@ class DuelCounterFragment : Fragment() {
 
     /** 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다(②를 ③으로 굳히는 흐름이 확정이다). */
     private fun decide(item: DuelStandings.CounterItem, kind: String) {
+        val relation = relationLabel(item)
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.recordVerdict(axisId, item.memberCodes, kind)
+            viewModel.recordVerdict(axisId, item.memberCodes, kind, relation)
             if (!isAdded) return@launch
             reload()
         }
     }
 
     private fun clearVerdict(item: DuelStandings.CounterItem) {
+        val relation = relationLabel(item)
         viewLifecycleOwner.lifecycleScope.launch {
             val verdict = viewModel.verdictById(axisId, item.verdictId)
-            if (verdict != null) viewModel.clearVerdict(verdict)
+            if (verdict != null) viewModel.clearVerdict(verdict, relation)
             if (!isAdded) return@launch
             reload()
         }
