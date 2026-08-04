@@ -338,7 +338,7 @@ P-10 확정은 **순위표에 "이 축에 상성 N건" 배지 + 눌러서 상세
 | 목록 어댑터 | `ui/adapter/DuelAxisAdapter` · `DuelStandingsAdapter` · `DuelCounterAdapter` |
 | 진입점 | **홈 '도구' 타일**(이어하기) + **세계관 카드 표면 버튼** · 판단은 pure `util/DuelEntry` |
 | 배선 | `NovelCharacterApp.duelRepository` · `nav_graph` 목적지 넷 · **작업 이력 `OpResult.CAT_DUEL`** |
-| 검증 | 순수 JVM **1537 → 1567**(`DuelSessionTest` 16 · `DuelStandingsTest` 14) · 정적 검사 8종 · 차분 컴파일 신규 0(노이즈 부류 제외) · 프로브 신규 0 |
+| 검증 | 순수 JVM **1537 → 1573**(`DuelSessionTest` 16 · `DuelStandingsTest` 14 · `DuelEntryTest` 6) · 정적 검사 8종 · 차분 컴파일 신규 0(노이즈 부류 제외) · 프로브 신규 0 · **CI 초록**(단위 테스트 + APK 빌드) |
 
 **이 슬라이스가 pure를 먼저 판 이유가 곧 이 슬라이스의 방어선이다.** 화면이 *판단*하는 것을
 전부 `DuelSession`·`DuelStandings`로 내리고 `Fragment`에는 그리는 일만 남겼다 —
