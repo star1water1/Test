@@ -2958,6 +2958,16 @@
     <string name="duel_tile_subtitle">둘을 견주어 순위와 상성을 얻습니다</string>
     <string name="duel_resume_subtitle">이어하기 — %1$s · %2$s</string>
     <string name="duel_other_axis">다른 축</string>
+
+    <!-- 보기 설정 — 카드 배치와 그림 맞춤(사용자 지적: 세로로 긴 그림에서 얼굴이 잘린다) -->
+    <string name="duel_view_options">보기 설정</string>
+    <string name="duel_view_options_purpose">대결 화면에서 두 카드를 어떻게 놓고 그림을 어떻게 맞출지 정합니다. 쓰는 그림이 세로로 길면 나란히가, 가로로 넓으면 위아래가 덜 잘립니다.</string>
+    <string name="duel_view_layout_label">카드 배치</string>
+    <string name="duel_view_layout_side">나란히 — 세로로 긴 그림에 맞습니다</string>
+    <string name="duel_view_layout_stacked">위아래 — 가로로 넓은 그림에 맞습니다</string>
+    <string name="duel_view_fit_label">그림 맞춤</string>
+    <string name="duel_view_fit_fill">카드를 채웁니다 — 위쪽을 살려 잘라내므로 얼굴이 남습니다</string>
+    <string name="duel_view_fit_whole">전체를 보입니다 — 잘리지 않는 대신 여백이 생깁니다</string>
     <string name="duel_pick_universe">어느 세계관의 대결입니까?</string>
     <string name="duel_need_universe">대결은 세계관 안에서 벌어집니다. 세계관을 먼저 만들어 주세요.</string>
     <string name="duel_axis_purpose">축을 만들면 그 기준으로 캐릭터 둘을 견주게 되고, 쌓인 결과가 순위표와 상성으로 나옵니다.</string>
@@ -2977,8 +2987,9 @@
 
     <!-- 대결 화면 -->
     <string name="duel_versus">vs</string>
-    <string name="duel_pick_left">위쪽 캐릭터 고르기</string>
-    <string name="duel_pick_right">아래쪽 캐릭터 고르기</string>
+    <!-- 배치가 바뀌므로(나란히/위아래) 방향을 말하지 않는다 — '위쪽'은 나란히 놓을 때 거짓이 된다. -->
+    <string name="duel_pick_left">첫 번째 캐릭터 고르기</string>
+    <string name="duel_pick_right">두 번째 캐릭터 고르기</string>
     <string name="duel_undo">방금 그거 취소</string>
     <string name="duel_standings">순위표</string>
     <string name="duel_progress">붙임 %1$d · 접힘 %2$d · 남음 %3$d / 전체 %4$d판</string>

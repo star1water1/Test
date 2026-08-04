@@ -1,15 +1,20 @@
 package com.novelcharacter.app.ui.duel
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.os.Bundle
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.RadioGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
@@ -19,6 +24,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.databinding.FragmentDuelPlayBinding
 import com.novelcharacter.app.util.CharacterImageLoader
 import com.novelcharacter.app.util.CharacterRepresentativeImage
+import com.novelcharacter.app.util.DuelImageFit
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelSession
 import com.novelcharacter.app.util.navigateSafe
@@ -101,8 +107,13 @@ class DuelPlayFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.toolbar.inflateMenu(R.menu.menu_duel_play)
         binding.toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_duel_axes) { openAxisList(); true } else false
+            when (item.itemId) {
+                R.id.action_duel_axes -> { openAxisList(); true }
+                R.id.action_duel_view_options -> { showViewOptions(); true }
+                else -> false
+            }
         }
+        applyViewOptions()
         binding.cardA.setOnClickListener { pick(left = true) }
         binding.cardB.setOnClickListener { pick(left = false) }
         binding.btnUndo.setOnClickListener { undoLast() }
@@ -304,9 +315,119 @@ class DuelPlayFragment : Fragment() {
         DuelPairing.Reason.RECHECK -> R.string.duel_reason_recheck
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // 보기 설정 — 카드 배치와 그림 맞춤
+    // ──────────────────────────────────────────────────────────────────────
+
+    private var cardLayout = DuelImageFit.Layout.SIDE_BY_SIDE
+    private var imageFit = DuelImageFit.Fit.FILL_TOP
+
+    /**
+     * 저장된 보기 설정을 화면에 얹는다.
+     *
+     * **기본이 '나란히'인 것은 그림 규격 때문이다** — 창작 캐릭터 그림은 대개 세로로 길고,
+     * 위아래로 놓으면 카드가 가로로 넓어져 그 그림의 위아래가 잘린다(얼굴이 위에 있다).
+     * 나란히 놓으면 카드가 세로로 길어져 같은 그림이 훨씬 덜 잘린다.
+     */
+    private fun applyViewOptions() {
+        cardLayout = DuelViewPrefs.layout(requireContext())
+        imageFit = DuelViewPrefs.fit(requireContext())
+
+        val sideBySide = cardLayout == DuelImageFit.Layout.SIDE_BY_SIDE
+        binding.duelArea.orientation =
+            if (sideBySide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+
+        fun stretch(view: View) {
+            val lp = view.layoutParams as LinearLayout.LayoutParams
+            if (sideBySide) {
+                lp.width = 0
+                lp.height = LinearLayout.LayoutParams.MATCH_PARENT
+            } else {
+                lp.width = LinearLayout.LayoutParams.MATCH_PARENT
+                lp.height = 0
+            }
+            lp.weight = 1f
+            view.layoutParams = lp
+        }
+        stretch(binding.cardA)
+        stretch(binding.cardB)
+
+        val vsParams = binding.versusLabel.layoutParams as LinearLayout.LayoutParams
+        vsParams.gravity = if (sideBySide) Gravity.CENTER_VERTICAL else Gravity.CENTER_HORIZONTAL
+        binding.versusLabel.layoutParams = vsParams
+
+        // 이미 붙어 있는 그림도 새 규칙으로 다시 놓는다 — 설정을 바꾼 뒤 다음 판까지 기다리게
+        // 하면 사용자는 그 설정이 먹었는지 알 수 없다.
+        render()
+    }
+
+    private fun showViewOptions() {
+        val context = requireContext()
+        var pickedLayout = cardLayout
+        var pickedFit = imageFit
+
+        val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_view_options, null)
+        val layoutGroup = view.findViewById<RadioGroup>(R.id.groupLayout)
+        val fitGroup = view.findViewById<RadioGroup>(R.id.groupFit)
+        layoutGroup.check(
+            if (pickedLayout == DuelImageFit.Layout.SIDE_BY_SIDE) R.id.optionSideBySide else R.id.optionStacked
+        )
+        fitGroup.check(
+            if (pickedFit == DuelImageFit.Fit.WHOLE) R.id.optionWhole else R.id.optionFillTop
+        )
+        layoutGroup.setOnCheckedChangeListener { _, id ->
+            pickedLayout = if (id == R.id.optionSideBySide) {
+                DuelImageFit.Layout.SIDE_BY_SIDE
+            } else {
+                DuelImageFit.Layout.STACKED
+            }
+        }
+        fitGroup.setOnCheckedChangeListener { _, id ->
+            pickedFit = if (id == R.id.optionWhole) DuelImageFit.Fit.WHOLE else DuelImageFit.Fit.FILL_TOP
+        }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.duel_view_options)
+            .setView(view)
+            .setPositiveButton(R.string.save) { _, _ ->
+                DuelViewPrefs.save(context, pickedLayout, pickedFit)
+                if (isAdded) applyViewOptions()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 그림 한 장을 카드에 놓는다 — [DuelImageFit.Fit]이 정한 대로.
+     *
+     * `centerCrop`을 쓰지 않는 것이 요점이다. 그것은 넘치는 축의 **양끝을 고르게** 잘라 내는데,
+     * 세로로 긴 인물화에서 잘려 나가는 위쪽이 곧 얼굴이다. [DuelImageFit.topCrop]은 같은 배율로
+     * 채우되 **위쪽 끝을 기준**으로 놓는다.
+     */
+    private fun placeBitmap(target: ImageView, bitmap: Bitmap) {
+        target.setImageBitmap(bitmap)
+        if (imageFit == DuelImageFit.Fit.WHOLE) {
+            target.scaleType = ImageView.ScaleType.FIT_CENTER
+            return
+        }
+        target.scaleType = ImageView.ScaleType.MATRIX
+        val place = {
+            val crop = DuelImageFit.topCrop(target.width, target.height, bitmap.width, bitmap.height)
+            if (crop != null) {
+                target.imageMatrix = Matrix().apply {
+                    setScale(crop.scale, crop.scale)
+                    postTranslate(crop.dx, crop.dy)
+                }
+            }
+        }
+        // 아직 재지 않은 화면에서는 폭·높이가 0이라 계산할 것이 없다 — 그때는 배치가 끝난 뒤에 놓는다.
+        if (target.width > 0 && target.height > 0) place() else target.post { if (isAdded) place() }
+    }
+
     /** 대표 이미지 한 장 — 판정은 `CharacterRepresentativeImage`가 단일 소스다(B-103 D2·D4). */
     private fun loadPortrait(character: Character?, target: ImageView, previous: Job?): Job? {
         previous?.cancel()
+        target.scaleType = ImageView.ScaleType.FIT_CENTER
         target.setImageResource(R.drawable.ic_character_placeholder)
         if (character == null) return null
 
@@ -328,7 +449,7 @@ class DuelPlayFragment : Fragment() {
                 CharacterImageLoader.decodeThumbnail(path, filesDir, 512)
             }
             // 뒤늦게 도착한 이미지가 이미 넘어간 짝에 붙지 않게 한다.
-            if (isAdded && bitmap != null && boundCode in currentCodes()) target.setImageBitmap(bitmap)
+            if (isAdded && bitmap != null && boundCode in currentCodes()) placeBitmap(target, bitmap)
         }
     }
 
