@@ -29,7 +29,9 @@ class ResetPlanTest {
         "factions", "faction_memberships", "faction_relationships",
         "trash_snapshots", "event_field_values", "novel_field_values", "operation_logs",
         "character_list_presets", "image_meta", "image_tags", "field_value_entries",
-        "grade_systems"
+        "grade_systems",
+        // 대결 (B-104) — 축은 세계관 CASCADE, 판·처분은 축 CASCADE.
+        "duel_axes", "duel_matches", "duel_counter_verdicts"
     )
 
     @Test fun 모든_엔티티_테이블이_초기화_계획에_있다() {

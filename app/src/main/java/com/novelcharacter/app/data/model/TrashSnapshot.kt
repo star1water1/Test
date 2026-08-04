@@ -101,6 +101,22 @@ data class TrashSnapshot(
          */
         const val TYPE_GRADE_SYSTEM = "grade_system"
 
+        /**
+         * 대결 축 하나 (B-104) — 축 본체와 층 B의 처분을 담는다.
+         * **판은 여기 담지 않는다**([TYPE_DUEL_MATCHES]) — 한 축의 판이 수만 건이 될 수 있어
+         * 한 행에 몰아넣으면 payload가 CursorWindow 한도를 넘겨 그 백업을 영영 읽지 못한다.
+         *
+         * 축만 개별로 지운 경로와 세계관 삭제가 **같은 타입을 쓴다** — 어느 쪽이든 축은
+         * 통째로 사라지고 담을 것이 같기 때문이다(세계관 스냅샷은 축을 담지 않는다).
+         */
+        const val TYPE_DUEL_AXIS = "duel_axis"
+
+        /**
+         * 대결 판의 이어붙임 행 — 크기 예산 단위로 잘린다([TYPE_UNIVERSE_DATA]와 같은 규약).
+         * 자기 축([DuelAxisSnapshot])보다 **나중에** 복원되므로 그때 붙을 축이 이미 있다.
+         */
+        const val TYPE_DUEL_MATCHES = "duel_matches"
+
         /** 삭제 백업 — 복원 = 부활. */
         const val KIND_DELETE = "delete"
 
@@ -153,7 +169,13 @@ data class TrashSnapshot(
             TYPE_CHARACTER -> 7
             // 상태변화는 주인 캐릭터가 이미 살아 있어야 붙을 자리가 있다.
             TYPE_STATE_CHANGE -> 8
-            else -> 9
+            // 대결(B-104)은 세계관만 있으면 붙는다 — 판이 참가자를 **코드로** 가리키므로
+            // 캐릭터가 아직 안 돌아왔어도 유실이 아니다(그때는 고아로 세어 알리고, 캐릭터가
+            // 복원되면 그대로 되살아난다). 그래서 맨 뒤에 두어 앞의 번호를 흔들지 않는다.
+            TYPE_DUEL_AXIS -> 9
+            // 판은 자기 축이 선 뒤에 붙는다.
+            TYPE_DUEL_MATCHES -> 10
+            else -> 11
         }
     }
 }

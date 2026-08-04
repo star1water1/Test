@@ -67,6 +67,12 @@ data class RestoreLossCounts(
     /** 다시 잇지 못한 등급 체계 참조 (U-1) — 필드가 삭제됐거나 그 사이 다른 체계를 골랐음 */
     val gradeSystemLinks: Int = 0,
 
+    // ── 대결 복원 (B-104) ──
+    /** 되살리지 못한 층 B 처분 — payload가 깨져 무엇을 판정한 것인지 알 수 없는 행. */
+    val duelVerdicts: Int = 0,
+    /** 되살리지 못한 판 — payload에 참가자가 없어 누가 붙은 것인지 알 수 없는 행. */
+    val duelMatches: Int = 0,
+
     // ── 필드 정의 덮어쓰기 되돌리기 (B-89) ──
     /**
      * 되돌릴 자리가 없어진 필드 정의 — 백업 이후 그 필드가 삭제됐다.
@@ -108,6 +114,8 @@ data class RestoreLossCounts(
             "universeCleared" to if (universeCleared) 1 else 0,
             "gradeSystems" to gradeSystems,
             "gradeSystemLinks" to gradeSystemLinks,
+            "duelVerdicts" to duelVerdicts,
+            "duelMatches" to duelMatches,
             "revertTargetsMissing" to revertTargetsMissing
         )
 
@@ -157,6 +165,8 @@ data class RestoreLossCounts(
         novelFieldValues = novelFieldValues + other.novelFieldValues,
         gradeSystems = gradeSystems + other.gradeSystems,
         gradeSystemLinks = gradeSystemLinks + other.gradeSystemLinks,
+        duelVerdicts = duelVerdicts + other.duelVerdicts,
+        duelMatches = duelMatches + other.duelMatches,
         revertTargetsMissing = revertTargetsMissing + other.revertTargetsMissing
     )
 }

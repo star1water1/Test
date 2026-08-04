@@ -108,6 +108,10 @@ $MAIN/data/dao/NovelFieldValueDao.kt
 $MAIN/data/repository/NovelFieldValueMerge.kt
 $MAIN/data/model/FactionRelationship.kt
 $MAIN/data/model/EntitySnapshots.kt
+$MAIN/data/model/DuelAxis.kt
+$MAIN/data/model/DuelMatch.kt
+$MAIN/data/model/DuelCounterVerdict.kt
+$MAIN/data/model/DuelSnapshots.kt
 $MAIN/data/dao/TrashSnapshotDao.kt
 $MAIN/data/repository/TrashGrouping.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
@@ -167,6 +171,7 @@ $MAIN/util/DetachedImageRule.kt
 $MAIN/util/DuelRating.kt
 $MAIN/util/DuelPairing.kt
 $MAIN/util/DuelCounterRelations.kt
+$MAIN/util/DuelRecords.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -225,6 +230,7 @@ $TEST/util/CompletionRateTest.kt
 $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt
 $TEST/util/DuelCounterRelationsTest.kt
+$TEST/util/DuelRecordsTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
@@ -253,6 +259,7 @@ $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt
 $TEST/data/EntitySnapshotPayloadTest.kt
+$TEST/data/DuelSnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt
 $TEST/data/RestoreTallyTest.kt
 $TEST/data/FieldValueUsageRecountTest.kt
