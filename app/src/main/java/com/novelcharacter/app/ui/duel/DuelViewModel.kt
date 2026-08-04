@@ -11,6 +11,8 @@ import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.repository.DuelRepository
+import com.novelcharacter.app.util.DuelCategoryStats
+import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
@@ -159,6 +161,54 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
                 result.getOrPut(code) { HashMap() }[key] = row.value
             }
             result
+        }
+    }
+
+    /**
+     * **범주형 영향 필드의 집계** (B-112) — 상성 상세가 *"왜 그런가"*를 대는 재료.
+     *
+     * 차례가 없는 값(속성·소속)은 [DuelFieldLinks.predict]에서 넘어가므로 종전에는 **걸어도
+     * 화면 표시가 전부**였다. 여기서 그 값들이 실제로 일을 한다.
+     *
+     * **토큰 나누기는 [FieldValueTokenizer]가 한다** — 통계가 쓰는 것과 같은 함수라야
+     * *"태그 셋 단 캐릭터"*를 두 화면이 같은 수로 센다(각자 콤마를 나누면 반드시 갈린다).
+     *
+     * @param state 이미 읽어 둔 축 상태. 점수 적합([DuelRepository.AxisState.fit])이
+     *   **예상 승수의 출처**라 여기서 다시 적합하지 않는다 — 다시 돌리면 순위표와 이 표가
+     *   서로 다른 적합에서 나온다(파생값을 저장하지 않는 이유와 같은 병이다).
+     * @return 필드 이름과 그 집계. 범주로 읽히지 않는 필드는 빠진다.
+     */
+    suspend fun categoryReports(
+        axis: DuelAxis,
+        characters: List<Character>,
+        state: DuelRepository.AxisState
+    ): List<Pair<String, DuelCategoryStats.Report>> {
+        val influences = axis.fieldLinks.influences
+        if (influences.isEmpty()) return emptyList()
+        val defs = characterFields(axis.universeId).associateBy { it.key }
+        val values = fieldValuesOf(axis.universeId, characters, influences.map { it.key })
+        if (values.isEmpty()) return emptyList()
+
+        return withContext(Dispatchers.Default) {
+            influences.mapNotNull { link ->
+                // 지워진 필드는 이름도 타입도 알 수 없다 — 토큰을 어떻게 나눌지 모르므로 뺀다.
+                val def = defs[link.key] ?: return@mapNotNull null
+                val tokensById = HashMap<Long, List<String>>()
+                for ((code, byKey) in values) {
+                    val raw = byKey[link.key] ?: continue
+                    val id = state.records.idOf(code) ?: continue
+                    val tokens = FieldValueTokenizer.splitForStats(def, raw)
+                    if (tokens.isNotEmpty()) tokensById[id] = tokens
+                }
+                if (!DuelCategoryStats.isCategorical(tokensById)) return@mapNotNull null
+                val report = DuelCategoryStats.report(
+                    key = link.key,
+                    matches = state.records.matches,
+                    fit = state.fit,
+                    tokensById = tokensById
+                )
+                if (report.any) def.name to report else null
+            }
         }
     }
 

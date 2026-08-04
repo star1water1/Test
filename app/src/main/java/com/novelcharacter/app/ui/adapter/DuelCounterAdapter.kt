@@ -1,13 +1,16 @@
 package com.novelcharacter.app.ui.adapter
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.databinding.ItemDuelCategoryBinding
 import com.novelcharacter.app.databinding.ItemDuelCounterBinding
 import com.novelcharacter.app.databinding.ItemDuelCounterHeaderBinding
+import com.novelcharacter.app.util.DuelCategoryStats
 import com.novelcharacter.app.util.DuelStandings
 
 /**
@@ -30,6 +33,15 @@ class DuelCounterAdapter(
         data class Header(val titleRes: Int, val hintRes: Int) : Row()
         data class Entry(val item: DuelStandings.CounterItem) : Row()
         data class Note(val textRes: Int) : Row()
+
+        /** 머리말에 **필드 이름**이 들어가는 자리 — 범주 집계는 필드마다 한 구역이다(B-112). */
+        data class LabeledHeader(val title: String, val hint: String) : Row()
+
+        /** 수를 담은 안내 — 값별 전적·자른 사실·못 센 판. */
+        data class LabeledNote(val text: String) : Row()
+
+        /** 값 둘이 맞붙은 칸. */
+        data class Category(val matchup: DuelCategoryStats.Matchup) : Row()
     }
 
     private var rows: List<Row> = emptyList()
@@ -43,15 +55,16 @@ class DuelCounterAdapter(
 
     override fun getItemViewType(position: Int): Int = when (rows[position]) {
         is Row.Entry -> TYPE_ENTRY
+        is Row.Category -> TYPE_CATEGORY
         else -> TYPE_HEADER
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return if (viewType == TYPE_ENTRY) {
-            EntryViewHolder(ItemDuelCounterBinding.inflate(inflater, parent, false))
-        } else {
-            HeaderViewHolder(ItemDuelCounterHeaderBinding.inflate(inflater, parent, false))
+        return when (viewType) {
+            TYPE_ENTRY -> EntryViewHolder(ItemDuelCounterBinding.inflate(inflater, parent, false))
+            TYPE_CATEGORY -> CategoryViewHolder(ItemDuelCategoryBinding.inflate(inflater, parent, false))
+            else -> HeaderViewHolder(ItemDuelCounterHeaderBinding.inflate(inflater, parent, false))
         }
     }
 
@@ -60,6 +73,9 @@ class DuelCounterAdapter(
             is Row.Header -> (holder as HeaderViewHolder).bind(row)
             is Row.Note -> (holder as HeaderViewHolder).bindNote(row)
             is Row.Entry -> (holder as EntryViewHolder).bind(row.item)
+            is Row.LabeledHeader -> (holder as HeaderViewHolder).bindLabeled(row)
+            is Row.LabeledNote -> (holder as HeaderViewHolder).bindLabeledNote(row)
+            is Row.Category -> (holder as CategoryViewHolder).bind(row.matchup)
         }
     }
 
@@ -76,6 +92,50 @@ class DuelCounterAdapter(
         fun bindNote(row: Row.Note) {
             binding.headerTitle.visibility = View.GONE
             binding.headerHint.setText(row.textRes)
+        }
+
+        fun bindLabeled(row: Row.LabeledHeader) {
+            binding.headerTitle.visibility = View.VISIBLE
+            binding.headerTitle.text = row.title
+            binding.headerHint.text = row.hint
+        }
+
+        fun bindLabeledNote(row: Row.LabeledNote) {
+            binding.headerTitle.visibility = View.GONE
+            binding.headerHint.text = row.text
+        }
+    }
+
+    /**
+     * 값 둘이 맞붙은 칸 (B-112).
+     *
+     * **기울지 않은 칸도 감추지 않는다** — *"예상과 비슷하다"*는 것 자체가 답이다
+     * (그 자리는 값이 아니라 개체의 강함이 갈랐다는 뜻이다).
+     */
+    inner class CategoryViewHolder(
+        private val binding: ItemDuelCategoryBinding
+    ) : RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(matchup: DuelCategoryStats.Matchup) {
+            val context = binding.root.context
+            binding.pairText.text =
+                context.getString(R.string.duel_category_pair, matchup.left, matchup.right)
+            binding.recordText.text = context.getString(
+                R.string.duel_category_record,
+                matchup.matches,
+                matchup.left,
+                countText(matchup.leftWins),
+                countText(matchup.rightWins)
+            )
+            val favored = matchup.favored()
+            binding.leanText.text = if (favored == null) {
+                context.getString(R.string.duel_category_even)
+            } else {
+                val expected =
+                    if (favored == matchup.left) matchup.expectedLeftWins
+                    else matchup.matches - matchup.expectedLeftWins
+                context.getString(R.string.duel_category_lean, favored, countText(expected))
+            }
         }
     }
 
@@ -151,6 +211,15 @@ class DuelCounterAdapter(
     companion object {
         private const val TYPE_HEADER = 0
         private const val TYPE_ENTRY = 1
+        private const val TYPE_CATEGORY = 2
+
+        /**
+         * 승수를 사람이 읽는 글로. **무승부가 0.5로 들어오므로** 정수로 반올림하면
+         * *"3승"*과 *"2.5승"*이 같은 글이 된다 — 반쪽이 있으면 그대로 보인다.
+         */
+        fun countText(value: Double): String =
+            if (value == value.toLong().toDouble()) value.toLong().toString()
+            else String.format(java.util.Locale.US, "%.1f", value)
 
         /** 화면이 목록을 짤 때 쓰는 머리말·안내 묶음 — 문구 선택이 한 자리에 모인다. */
         fun rowsOf(review: DuelStandings.CounterReview): List<Row> {
@@ -166,6 +235,79 @@ class DuelCounterAdapter(
                 rows.add(Row.Note(R.string.duel_counter_decided_empty))
             } else {
                 review.decided.forEach { rows.add(Row.Entry(it)) }
+            }
+            return rows
+        }
+
+        /**
+         * **범주 집계 구역** (B-112) — 필드마다 머리말 하나, 칸 여럿, 그리고 값별 전적과
+         * **못 센 것의 고지**.
+         *
+         * 위 상성 목록 **뒤에** 붙는다: 저 위가 *"무엇이 어긋났는가"*이고 이것이 *"왜 그런가"*라,
+         * 어긋남을 먼저 보고 이유를 읽는 것이 순서다.
+         *
+         * @param reports 필드 이름과 그 필드의 집계. 범주로 읽히지 않는 필드는 호출부가 이미 뺐다.
+         */
+        fun categoryRows(
+            context: Context,
+            reports: List<Pair<String, DuelCategoryStats.Report>>
+        ): List<Row> {
+            val rows = ArrayList<Row>()
+            rows.add(
+                Row.Header(R.string.duel_category_section, R.string.duel_category_section_hint)
+            )
+            if (reports.isEmpty()) {
+                rows.add(Row.Note(R.string.duel_category_empty))
+                return rows
+            }
+            for ((label, report) in reports) {
+                rows.add(
+                    Row.LabeledHeader(
+                        label,
+                        context.getString(R.string.duel_category_field_hint, label)
+                    )
+                )
+                report.matchups.forEach { rows.add(Row.Category(it)) }
+                if (report.matchups.isEmpty()) {
+                    rows.add(Row.LabeledNote(context.getString(R.string.duel_category_no_cell)))
+                }
+                if (report.truncated) {
+                    rows.add(
+                        Row.LabeledNote(
+                            context.getString(
+                                R.string.duel_category_truncated,
+                                report.matchups.size,
+                                report.totalMatchups
+                            )
+                        )
+                    )
+                }
+                if (report.values.isNotEmpty()) {
+                    val summary = report.values.joinToString(" · ") {
+                        context.getString(
+                            R.string.duel_category_value_item,
+                            it.value,
+                            countText(it.wins),
+                            countText(it.losses)
+                        )
+                    }
+                    rows.add(
+                        Row.LabeledNote(context.getString(R.string.duel_category_values, summary))
+                    )
+                }
+                // 못 센 판은 **표에 드러나지 않는다** — 값을 안 적은 캐릭터가 많으면 이 표가
+                // 전체를 대표하지 못하는데, 그 사실을 말하지 않으면 사용자는 모른다.
+                if (report.skippedNoValue > 0 || report.skippedSameValue > 0) {
+                    rows.add(
+                        Row.LabeledNote(
+                            context.getString(
+                                R.string.duel_category_skipped,
+                                report.skippedNoValue,
+                                report.skippedSameValue
+                            )
+                        )
+                    )
+                }
             }
             return rows
         }
