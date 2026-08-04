@@ -1,15 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    런처 아이콘 전경 — '인물 군상' (2026.08.04).
+
+    종전에는 선 네 개짜리 졸라맨이었다. 획 끝 처리(`strokeLineCap`)가 없어 잘린 채였고,
+    얇은 획이라 작은 크기에서 뭉갰다.
+
+    ## 무엇을 그린 것인가
+
+    인물 셋 — 앞의 하나가 짙고 뒤의 둘이 옅다. 이 앱은 캐릭터 **한 명**을 적는 곳이 아니라
+    **군상을 조감하는** 곳이고(통계 철학이 그렇게 적혀 있다: *"내 캐릭터 군상에 어떤 편향과
+    패턴이 있는가"*), 그 사실이 아이콘에 보이는 편이 낫다.
+
+    ## 안전 영역
+
+    런처는 108 캔버스 중 **가운데 66**만 보장한다(21~87). 바깥은 기기 마스크가 잘라 낸다.
+    그림의 실제 경계는 x 24~84, y 32.5~80이라 어느 마스크에서도 잘리지 않는다.
+    **좌표를 고칠 때 이 범위를 벗어나지 말 것** — 원형 마스크 기기에서만 잘리는 결함은
+    한 기기에서 보기 전까지 드러나지 않는다.
+
+    ## 획이 없다
+
+    전부 채운 도형이다. 획으로 그리면 작은 크기에서 굵기가 1dp 아래로 내려가 사라진다
+    (종전 아이콘이 그 상태였다).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#00000000"
-        android:pathData="M54,30 L54,54 M54,54 L42,78 M54,54 L66,78 M44,44 L54,38 L64,44"
-        android:strokeWidth="4"
-        android:strokeColor="#FFFFFF" />
-    <path
-        android:pathData="M54,28 m-6,0 a6,6 0,1 1,12 0 a6,6 0,1 1,-12 0"
-        android:fillColor="#FFFFFF" />
+
+    <!-- 뒤 인물 (왼쪽) — 바탕과 앞 인물 사이의 중간 명도 -->
+    <path android:pathData="M37,50 m-7.5,0 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z M24,78 C24,65.7 29.85,63 37,63 C44.15,63 50,65.7 50,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="40"
+                android:endX="0" android:endY="80">
+                <item android:offset="0" android:color="#A79D88" />
+                <item android:offset="1" android:color="#7E7563" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 뒤 인물 (오른쪽) -->
+    <path android:pathData="M71,50 m-7.5,0 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z M58,78 C58,65.7 63.85,63 71,63 C78.15,63 84,65.7 84,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="40"
+                android:endX="0" android:endY="80">
+                <item android:offset="0" android:color="#A79D88" />
+                <item android:offset="1" android:color="#7E7563" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 앞 인물 — 먹색. 세로 결의 방향은 배경 광원과 같다 -->
+    <path android:pathData="M54,43 m-10.5,0 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0 Z M37,80 C37,64.83 44.65,61.5 54,61.5 C63.35,61.5 71,64.83 71,80 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="22"
+                android:endX="0" android:endY="86">
+                <item android:offset="0" android:color="#2B3245" />
+                <item android:offset="1" android:color="#141926" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

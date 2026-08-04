@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    런처 아이콘 단색 레이어 — Android 13+ '테마 아이콘' (2026.08.04 신설).
+
+    종전에는 이 레이어가 **아예 없었다.** 그래서 배경화면 색에 맞춰 아이콘을 물들이는 기기에서
+    이 앱만 원래 색으로 남아 홀로 튀었다.
+
+    ## 왜 전경과 같은 그림이 아닌가
+
+    시스템이 **한 색으로 눌러 그리기 때문**이다. 전경의 인물 셋은 명도 차(앞 짙음 / 뒤 옅음)로
+    층을 만드는데, 단색이 되면 그 차이가 사라져 **셋이 한 덩어리로 뭉친다.**
+
+    그래서 여기서는 뒤 인물의 어깨를 빼고 **머리만** 남겼다. 앞 인물과 겹치지 않으므로
+    단색으로 눌러도 "여럿"이라는 사실이 그대로 읽힌다. 좌표는 전경과 같은 값을 쓰므로
+    전경을 옮기면 **이 파일도 함께 옮겨야 한다.**
+
+    색은 아무 값이나 무방하다 — 시스템이 자기 색으로 덮는다.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 뒤 인물 — 머리만 (어깨는 뺀다: 단색에서 앞 인물과 뭉친다) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,50 m-7.5,0 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M71,50 m-7.5,0 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
+
+    <!-- 앞 인물 — 전경과 같은 좌표 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,43 m-10.5,0 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0 Z M37,80 C37,64.83 44.65,61.5 54,61.5 C63.35,61.5 71,64.83 71,80 Z" />
+</vector>

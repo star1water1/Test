@@ -1,10 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    런처 아이콘 배경 — '원고지' 색 방향 (2026.08.04).
+
+    종전에는 `#6200EE` 단색이었다. 그 색은 Android Studio가 만들어 주는 기본 보라색이고
+    **앱 어디에도 쓰이지 않는다**(앱의 primary는 `#5E6AD2`). 아이콘만 다른 앱 색을 입고 있던 셈이다.
+
+    ## 왜 브랜드색(인디고)으로 안 갔는가
+
+    그쪽이 자연스러워 보이지만, 그러면 **런처에서 남의 앱과 섞인다** — 파랑·보라 계열 그러데이션은
+    지금 앱 아이콘에서 가장 흔한 조합이다. 런처 아이콘의 일은 *다른 아이콘 사이에서 구별되는 것*이고
+    앱 안 크롬의 일은 *내용 뒤로 물러나는 것*이라 요구가 서로 반대다. 그래서 아이콘만 계열을 달리한다.
+
+    ## 왜 밝은 바탕인가
+
+    이유가 둘이다. ① 앱 아이콘은 대부분 짙은 바탕이라 **밝은 것 하나가 오히려 눈에 띈다.**
+    ② 전경이 인물 셋이라 **명도 층이 셋 필요하다**(앞 인물 / 뒤 인물 / 바탕). 어두운 바탕에서는
+    뒤 인물이 바탕에 붙어 층이 얕아진다 — 밝은 바탕이 그 셋을 가장 뚜렷하게 벌린다.
+
+    ## 그러데이션이 둘인 이유
+
+    대각 그러데이션 하나만으로는 평평해 보였다(첫 판이 실제로 그랬다 — 폭이 좁으면 사실상 단색이다).
+    왼쪽 위 광원을 겹쳐 빛의 방향을 만들고, 전경 도형의 세로 결도 같은 방향으로 맞췄다.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#6200EE"
-        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- 바탕 — 종이색 대각 그러데이션 -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0" android:color="#F6EEDF" />
+                <item android:offset="1" android:color="#DACBAF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 왼쪽 위 광원 — 알파 0x57 ≈ 34% -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="30"
+                android:centerY="24"
+                android:gradientRadius="76">
+                <item android:offset="0" android:color="#57FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>
