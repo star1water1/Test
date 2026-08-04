@@ -346,4 +346,53 @@
             app:argType="long" />
     </fragment>
 
+    <!-- 대결 (B-104) — 축은 세계관 단위다(사용자 확정 ㄷ1). -->
+    <fragment
+        android:id="@+id/duelAxisListFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelAxisListFragment"
+        android:label="@string/duel_title"
+        tools:layout="@layout/fragment_duel_axis_list">
+
+        <argument
+            android:name="universeId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/duelPlayFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelPlayFragment"
+        android:label="@string/duel_title"
+        tools:layout="@layout/fragment_duel_play">
+
+        <argument
+            android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/duelStandingsFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelStandingsFragment"
+        android:label="@string/duel_standings"
+        tools:layout="@layout/fragment_duel_standings">
+
+        <argument
+            android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/duelCounterFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelCounterFragment"
+        android:label="@string/duel_counter_label"
+        tools:layout="@layout/fragment_duel_counter">
+
+        <argument
+            android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
 </navigation>

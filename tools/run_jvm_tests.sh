@@ -172,6 +172,8 @@ $MAIN/util/DuelRating.kt
 $MAIN/util/DuelPairing.kt
 $MAIN/util/DuelCounterRelations.kt
 $MAIN/util/DuelRecords.kt
+$MAIN/util/DuelSession.kt
+$MAIN/util/DuelStandings.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -231,6 +233,8 @@ $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt
 $TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/DuelRecordsTest.kt
+$TEST/util/DuelSessionTest.kt
+$TEST/util/DuelStandingsTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
