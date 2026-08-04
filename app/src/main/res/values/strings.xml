@@ -2981,6 +2981,28 @@
     <string name="duel_axis_name_hint">예: 강함, 아름다움, 카리스마</string>
     <string name="duel_axis_name_required">축 이름을 적어 주세요</string>
     <string name="duel_axis_name_taken">같은 이름의 축이 이미 있습니다</string>
+
+    <!-- 축↔필드 연결 (층 C) — 영향 필드는 순위가 있고, 산출 필드는 방향이 반대다 -->
+    <string name="duel_links_purpose">이 축을 필드와 잇습니다. 영향 필드는 대결 화면에 값이 함께 떠서 고를 때 보이고, 산출 필드는 이 대결이 만들어 내는 값이라 화면에 띄우지 않습니다.</string>
+    <string name="duel_links_influence_label">영향 필드 (순위 순)</string>
+    <string name="duel_links_outcome_label">산출 필드</string>
+    <string name="duel_links_influence_purpose">승패를 가르는 재료가 되는 필드를 고릅니다. 위에 있을수록 영향력이 큽니다 — 1순위가 갈리면 거기서 정해지고, 같으면 다음 순위로 넘어갑니다.</string>
+    <string name="duel_links_outcome_purpose">이 대결의 결과가 이어질 필드를 고릅니다. 순위표와 이 필드가 어긋나면 기록 화면이 그 자리를 짚어 줍니다.</string>
+    <string name="duel_links_edit">고치기</string>
+    <string name="duel_links_none">없음</string>
+    <string name="duel_links_pick">이 필드를 잇기</string>
+    <string name="duel_links_ranked_name">%1$d순위 · %2$s</string>
+    <string name="duel_links_type_note">%1$s · 키 %2$s</string>
+    <string name="duel_links_display_only">%1$s — 차례를 매길 수 없어 화면에 보이기만 합니다</string>
+    <string name="duel_links_move_up">↑</string>
+    <string name="duel_links_move_down">↓</string>
+    <string name="duel_links_higher_wins">높을수록</string>
+    <string name="duel_links_lower_wins">낮을수록</string>
+    <string name="duel_links_lower_marker">%1$s(낮을수록)</string>
+    <string name="duel_links_no_fields">이 세계관에 캐릭터 필드가 아직 없습니다. 세계관의 필드 관리에서 필드를 만든 뒤 다시 열어 주세요.</string>
+    <string name="duel_links_conflict">%1$s이(가) 영향 필드와 산출 필드에 함께 걸려 있습니다. 재료이면서 결과일 수는 없으니 한쪽에서 빼는 편이 좋습니다.</string>
+    <string name="duel_field_value_line">%1$s %2$s</string>
+    <string name="duel_field_value_empty">—</string>
     <string name="duel_image_axis_not_ready">이미지끼리 겨루는 축은 아직 열 수 없습니다. 이미지 폴더를 주고받을 때 파일 이름이 바뀌면 쌓인 판이 엉뚱한 이미지에 붙을 수 있어, 그 처리를 마친 뒤에 엽니다.</string>
     <string name="duel_axis_delete_title">축을 삭제하시겠습니까?</string>
     <string name="duel_axis_delete_message">\'%1$s\' 축을 지웁니다. 쌓인 판 %2$d개와 상성 판정이 함께 사라지며, 휴지통에 보관되어 되돌릴 수 있습니다.</string>

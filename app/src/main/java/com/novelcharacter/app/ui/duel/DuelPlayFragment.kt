@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.databinding.FragmentDuelPlayBinding
 import com.novelcharacter.app.util.CharacterImageLoader
 import com.novelcharacter.app.util.CharacterRepresentativeImage
+import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelSession
@@ -66,6 +67,11 @@ class DuelPlayFragment : Fragment() {
 
     private var session = DuelSession.State()
     private var progress: DuelPairing.Progress? = null
+
+    /** 이 축의 **영향 필드** — 순서가 영향력 순위다. 산출 필드는 이 화면에 들이지 않는다. */
+    private var influences: List<DuelFieldLinks.Link> = emptyList()
+    private var fieldLabels: Map<String, String> = emptyMap()
+    private var fieldValues: Map<String, Map<String, String>> = emptyMap()
 
     /**
      * 되돌리기가 집을 판 — **몇 번째 답이었는가**를 열쇠로 쓴다.
@@ -134,6 +140,11 @@ class DuelPlayFragment : Fragment() {
             axis = loaded
             binding.toolbar.title = loaded.name
             characters = viewModel.participants(loaded)
+            // **영향 필드만** 읽는다 — 산출 필드는 이 화면에 뜨지 않으므로 읽을 이유가 없고,
+            // 읽어 두면 언젠가 무심코 띄우게 된다(설계 5장 ①과 같은 부류).
+            influences = loaded.fieldLinks.influences
+            fieldLabels = viewModel.characterFields(loaded.universeId).associate { it.key to it.name }
+            fieldValues = viewModel.fieldValuesOf(loaded.universeId, characters, influences.map { it.key })
             val state = viewModel.load(loaded, characters)
             if (!isAdded) return@launch
             charactersByCode = state.charactersByCode
@@ -289,8 +300,32 @@ class DuelPlayFragment : Fragment() {
         val b = charactersByCode[codes.second]
         binding.nameA.text = a?.displayName ?: getString(R.string.duel_unknown_participant)
         binding.nameB.text = b?.displayName ?: getString(R.string.duel_unknown_participant)
+        renderFields(binding.fieldsA, codes.first)
+        renderFields(binding.fieldsB, codes.second)
         imageJobA = loadPortrait(a, binding.imageA, imageJobA)
         imageJobB = loadPortrait(b, binding.imageB, imageJobB)
+    }
+
+    /**
+     * 이 참가자의 **영향 필드 값** — 순위 차례대로.
+     *
+     * 값을 안 적은 필드는 *비어 있음*으로 보인다. 줄에서 빼면 두 카드의 줄이 서로 어긋나
+     * 같은 자리를 견주지 못한다 — 대결 화면에서 사용자가 하는 일이 바로 **같은 줄끼리
+     * 견주는 것**이라 자리가 맞아야 한다.
+     */
+    private fun renderFields(target: android.widget.TextView, code: String) {
+        if (influences.isEmpty()) {
+            target.visibility = View.GONE
+            return
+        }
+        val values = fieldValues[code].orEmpty()
+        target.visibility = View.VISIBLE
+        target.text = influences.joinToString("\n") { link ->
+            val label = fieldLabels[link.key] ?: link.key
+            val value = values[link.key]?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.duel_field_value_empty)
+            getString(R.string.duel_field_value_line, label, value)
+        }
     }
 
     private fun renderProgress() {
@@ -358,7 +393,9 @@ class DuelPlayFragment : Fragment() {
 
         // 이미 붙어 있는 그림도 새 규칙으로 다시 놓는다 — 설정을 바꾼 뒤 다음 판까지 기다리게
         // 하면 사용자는 그 설정이 먹었는지 알 수 없다.
-        render()
+        // **아직 축을 읽기 전이면 그리지 않는다** — 그때 그리면 "캐릭터가 둘 이상이어야 합니다"가
+        // 한 번 번쩍이고 곧 짝으로 바뀐다.
+        if (axis != null) render()
     }
 
     private fun showViewOptions() {

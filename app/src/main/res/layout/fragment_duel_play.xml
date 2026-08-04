@@ -121,15 +121,35 @@
                     android:scaleType="fitCenter"
                     android:contentDescription="@string/duel_pick_left" />
 
-                <TextView
-                    android:id="@+id/nameA"
+                <!--
+                  이름과 **영향 필드 값**이 함께 앉는 자리. 산출 필드는 여기 오지 않는다 —
+                  그 값이 곧 이 대결이 물으려는 답이다(util/DuelFieldLinks의 설명).
+                -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_duel_name_scrim"
-                    android:padding="10dp"
-                    android:textAppearance="@style/TextAppearance.App.Title"
-                    android:textColor="@android:color/white" />
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/nameA"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.Title"
+                        android:textColor="@android:color/white" />
+
+                    <TextView
+                        android:id="@+id/fieldsA"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </FrameLayout>
 
@@ -172,15 +192,31 @@
                     android:scaleType="fitCenter"
                     android:contentDescription="@string/duel_pick_right" />
 
-                <TextView
-                    android:id="@+id/nameB"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_duel_name_scrim"
-                    android:padding="10dp"
-                    android:textAppearance="@style/TextAppearance.App.Title"
-                    android:textColor="@android:color/white" />
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/nameB"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.Title"
+                        android:textColor="@android:color/white" />
+
+                    <TextView
+                        android:id="@+id/fieldsB"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </FrameLayout>
 

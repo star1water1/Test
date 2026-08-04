@@ -110,6 +110,7 @@ python3 tools/verify_room_migration_46.py             # 45→46 하네스 23건 
 python3 tools/verify_room_migration_47.py             # 46→47 하네스
 python3 tools/verify_room_migration_48.py             # 47→48 하네스
 python3 tools/verify_room_migration_49.py             # 48→49 하네스 (대결 표 셋, B-104)
+python3 tools/verify_room_migration_50.py             # 49→50 하네스 (대결 축↔필드 연결, B-104 층 C)
 # ↑ 47·48은 2026.08.04에 등재됐다 — 이 블록이 스스로 "마이그레이션 하네스의 단일 소스"라고
 # 선언해 두고 46까지만 적고 있었다(B-104 착수 대조가 발견). **종 수는 여기 적지 않는다** —
 # `ls tools/verify_room_migration*.py`가 세는 법이고, 개수를 적으면 다음 마이그레이션에 또 낡는다.
