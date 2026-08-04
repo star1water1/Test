@@ -243,6 +243,7 @@ $TEST/util/DuelEntryTest.kt
 $TEST/util/DuelImageFitTest.kt
 $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelMatchLogTest.kt
+$TEST/excel/DuelSheetSpecTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt

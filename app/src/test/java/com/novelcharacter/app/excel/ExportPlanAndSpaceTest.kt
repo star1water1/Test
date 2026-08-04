@@ -69,9 +69,26 @@ class ExportPlanAndSpaceTest {
             timeline = false, stateChanges = false, relationships = false, relationshipChanges = false,
             nameBank = false, factions = false, factionMemberships = false, factionRelationships = false,
             presetTemplates = false, searchPresets = false, characterListPresets = false,
-            appSettings = false, imageMeta = false, images = false
+            appSettings = false, imageMeta = false, duels = false, images = false
         )
         assertEquals(listOf(ExportSheetStep.INSTRUCTIONS), ExportSheetStep.of(nothing))
+    }
+
+    /** 대결(B-104) — 축이 기록·상성보다 먼저다. 판·처분은 축을 가리키므로 붙을 자리가 먼저 서야 한다. */
+    @Test
+    fun `대결 축 시트는 기록·상성보다 먼저 온다`() {
+        val plan = ExportSheetStep.of(ExportOptions())
+        assertTrue(plan.indexOf(ExportSheetStep.DUEL_AXES) < plan.indexOf(ExportSheetStep.DUEL_MATCHES))
+        assertTrue(plan.indexOf(ExportSheetStep.DUEL_AXES) < plan.indexOf(ExportSheetStep.DUEL_VERDICTS))
+    }
+
+    /** 한 스위치가 셋을 함께 켜고 끈다 — 축 없이 기록만 들이면 붙을 자리가 없다. */
+    @Test
+    fun `대결 스위치는 시트 셋을 함께 움직인다`() {
+        val off = ExportSheetStep.of(ExportOptions(duels = false))
+        assertFalse(ExportSheetStep.DUEL_AXES in off)
+        assertFalse(ExportSheetStep.DUEL_MATCHES in off)
+        assertFalse(ExportSheetStep.DUEL_VERDICTS in off)
     }
 
     // ── D1: '완전한 백업' 판정 ──

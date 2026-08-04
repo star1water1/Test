@@ -36,6 +36,12 @@ data class ExportOptions(
     val appSettings: Boolean = true,
     /** 이미지 라이브러리 메타(태그·링크 그룹) 시트 — 기본 true라 자동 백업(ExportOptions())에도 포함된다 */
     val imageMeta: Boolean = true,
+    /**
+     * 대결(B-104) 시트 셋 — 축·기록·상성. **한 스위치인 것은 셋이 서로를 가리키기 때문이다**:
+     * 축 없이 기록만 들이면 붙을 자리가 없고, 기록 없이 축만 들이면 빈 축이 된다.
+     * 사용자가 셋을 따로 끄고 켤 실익이 없는데 스위치만 셋으로 늘면 그 조합이 전부 경로가 된다.
+     */
+    val duels: Boolean = true,
     val images: Boolean = false,
     /** MERGE 모드에서 엑셀에 없는 항목을 카테고리별로 삭제할지 여부 */
     val deleteOptions: DeleteOptions = DeleteOptions()
@@ -55,7 +61,7 @@ data class ExportOptions(
         universes, novels, characters, fieldDefinitions,
         timeline, stateChanges, relationships, relationshipChanges,
         nameBank, factions, factionMemberships, factionRelationships,
-        presetTemplates, searchPresets, characterListPresets, appSettings, imageMeta, images
+        presetTemplates, searchPresets, characterListPresets, appSettings, imageMeta, duels, images
     )
 
     companion object {
@@ -69,10 +75,11 @@ data class ExportOptions(
             "이름 은행", "세력", "세력 소속", "세력 관계",
             "필드 템플릿", "검색 프리셋", "목록 프리셋", "앱 설정",
             "이미지 태그·링크",
+            "대결 (축·기록·상성)",
             "이미지 (파일 크기 증가)"
         )
 
-        private const val FIELD_COUNT = 18
+        private const val FIELD_COUNT = 19
 
         fun fromBooleanArray(arr: BooleanArray): ExportOptions {
             require(arr.size >= FIELD_COUNT) {
@@ -96,7 +103,8 @@ data class ExportOptions(
                 characterListPresets = arr[14],
                 appSettings = arr[15],
                 imageMeta = arr[16],
-                images = arr[17]
+                duels = arr[17],
+                images = arr[18]
             )
         }
     }

@@ -1553,6 +1553,14 @@ class ExcelImporter(context: Context) {
         if (imTotal > 0) parts.add("이미지 태그·링크 ${imTotal}건")
         val fvTotal = result.newFieldValueEntries + result.updatedFieldValueEntries
         if (fvTotal > 0) parts.add("필드 데이터 ${fvTotal}건")
+        // 대결(B-104) — 축과 기록·상성을 갈라 말한다. 판은 수만 건이 될 수 있어 한 숫자에
+        // 합치면 *"축 2건"*이 그 안에 묻힌다.
+        val daTotal = result.newDuelAxes + result.updatedDuelAxes
+        if (daTotal > 0) parts.add("대결 축 ${daTotal}건")
+        val dmTotal = result.newDuelMatches + result.updatedDuelMatches
+        if (dmTotal > 0) parts.add("대결 기록 ${dmTotal}건")
+        val dvTotal = result.newDuelVerdicts + result.updatedDuelVerdicts
+        if (dvTotal > 0) parts.add("대결 상성 ${dvTotal}건")
         if (result.restoredSettings > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_settings, result.restoredSettings))
         if (result.skippedRows > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))

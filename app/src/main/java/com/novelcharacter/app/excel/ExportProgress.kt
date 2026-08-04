@@ -55,7 +55,12 @@ enum class ExportSheetStep {
     PRESET_TEMPLATES,
     SEARCH_PRESETS,
     CHARACTER_LIST_PRESETS,
-    APP_SETTINGS;
+    APP_SETTINGS,
+    // 대결(B-104) — **축이 기록·상성보다 먼저다.** 시트 순서가 곧 가져오기 순서는 아니지만
+    // (가져오기는 자기 순서를 따로 정한다) 파일을 여는 사람이 참조 대상을 먼저 보게 된다.
+    DUEL_AXES,
+    DUEL_MATCHES,
+    DUEL_VERDICTS;
 
     companion object {
         /**
@@ -88,6 +93,11 @@ enum class ExportSheetStep {
             if (options.searchPresets) add(SEARCH_PRESETS)
             if (options.characterListPresets) add(CHARACTER_LIST_PRESETS)
             if (options.appSettings) add(APP_SETTINGS)
+            if (options.duels) {
+                add(DUEL_AXES)
+                add(DUEL_MATCHES)
+                add(DUEL_VERDICTS)
+            }
         }
     }
 }

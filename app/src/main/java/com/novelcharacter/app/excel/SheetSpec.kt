@@ -117,6 +117,9 @@ val RESERVED_SHEET_NAMES = setOf(
     imageMetaSpec().sheetName,
     fieldValueLibrarySpec().sheetName,
     characterFieldValueSpec().sheetName,
+    duelAxisSpec().sheetName,
+    duelMatchSpec().sheetName,
+    duelVerdictSpec().sheetName,
     ALL_CHARACTERS_SHEET_NAME
 )
 
@@ -440,6 +443,101 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
         ColumnSpec("필드명", readOnly = true, width = 5000),
         ColumnSpec("대상", readOnly = true, dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
         ColumnSpec("값", width = 8000)
+    )
+)
+
+/**
+ * 대결(B-104) 시트 셋이 쓰는 **화면 밖 어휘** — 내보내기·가져오기 공용 단일 소스.
+ *
+ * 두 곳에 따로 적으면 반드시 드리프트한다(규약 R-7). 코드값이 아니라 사람이 읽는 말을 싣는
+ * 것은 **엑셀이 사람이 고치는 자리**이기 때문이다 — `character`·`counter`를 적으라고 할 수는 없다.
+ * 되읽을 때는 **한국어 말과 저장값을 모두** 받는다(외부 도구가 저장값을 그대로 쓸 수도 있다).
+ */
+object DuelSheetLabels {
+    const val TARGET_CHARACTER = "캐릭터"
+    const val TARGET_IMAGE = "이미지"
+    val TARGETS = listOf(TARGET_CHARACTER, TARGET_IMAGE)
+
+    const val KIND_COUNTER = "상성"
+    const val KIND_UNDECIDED = "미정"
+    val KINDS = listOf(KIND_COUNTER, KIND_UNDECIDED)
+
+    const val SHAPE_DIRECT = "천적"
+    const val SHAPE_CYCLE = "순환"
+
+    /** 무승부를 적는 말. 빈 칸도 무승부로 읽지만, 내보낼 때는 **적어서** 뜻을 분명히 한다. */
+    const val WINNER_DRAW = "비슷함"
+}
+
+/**
+ * 대결 **축** 시트 (B-104 ㄹ1 — 사용자 확정 "엑셀 포함").
+ *
+ * **정의가 기록보다 앞이다** — 판·처분은 축을 가리키므로 축이 먼저 들어와야 붙을 자리가 있다
+ * (확-3의 교훈). 시트 순서와 가져오기 순서를 모두 그렇게 둔다.
+ *
+ * 필드 연결(층 C)은 **키를 쉼표로 이은 글**이다. 앞머리 `-`는 *작을수록 유리*이며 해석은
+ * `util/DuelFieldLinks`가 단일 소스다 — 사람이 손으로 고칠 수 있는 자리라 JSON을 싣지 않는다.
+ */
+fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "대결 축",
+    columns = listOf(
+        ColumnSpec("축이름", required = true, width = 6000),
+        ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("대상", dropdownOptions = DuelSheetLabels.TARGETS, width = 3500),
+        ColumnSpec("영향필드", width = 10000),
+        ColumnSpec("산출필드", width = 8000),
+        ColumnSpec("정렬순서", width = 3000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
+    )
+)
+
+/**
+ * 대결 **기록** 시트 — 한 행이 한 판이다.
+ *
+ * ⚠️ **이 앱에서 가장 큰 시트가 될 수 있다**(수만 행 — `scalability_performance` 4장).
+ *
+ * 참가자를 **이름과 코드 둘 다** 싣는 것은 다른 시트와 같은 규약이다: 코드가 정체이고
+ * 이름은 사람이 읽는 몫이다. 승자는 **이름으로 적는다** — 코드를 적으라고 하면 사람이 고칠 수
+ * 없고, 그러면 이 시트를 엑셀에 싣는 뜻이 없어진다. 비겼으면 `비슷함`이다.
+ */
+fun duelMatchSpec(axisNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "대결 기록",
+    columns = listOf(
+        ColumnSpec("축", required = true, dropdownOptions = axisNames.takeIf { it.isNotEmpty() }, width = 6000),
+        ColumnSpec("축코드", readOnly = true, width = 4000),
+        ColumnSpec("참가자1", required = true, width = 6000),
+        ColumnSpec("참가자1코드", readOnly = true, width = 4000),
+        ColumnSpec("참가자2", required = true, width = 6000),
+        ColumnSpec("참가자2코드", readOnly = true, width = 4000),
+        ColumnSpec("승자", width = 6000),
+        ColumnSpec("묶음", width = 4000),
+        ColumnSpec("판정일", readOnly = true, width = 5000),
+        ColumnSpec("코드", readOnly = true, width = 4000)
+    )
+)
+
+/**
+ * 대결 **상성** 시트 — 층 B의 사용자 처분(②미정 · ③상성).
+ *
+ * **파생이 아니라 판정이라 싣는다.** 점수·순위·상성 후보는 기록에서 다시 낼 수 있지만
+ * 이것은 사용자가 고른 것이라 잃으면 되돌릴 수 없다.
+ *
+ * '모양'을 읽기 전용으로 둔 것은 **참가자 수가 그것을 정하기 때문**이다(둘이면 천적, 셋 이상이면
+ * 순환). 사람이 적은 모양과 참가자 수가 어긋나면 어느 쪽이 진짜인지 알 수 없어진다.
+ */
+fun duelVerdictSpec(axisNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "대결 상성",
+    columns = listOf(
+        ColumnSpec("축", required = true, dropdownOptions = axisNames.takeIf { it.isNotEmpty() }, width = 6000),
+        ColumnSpec("축코드", readOnly = true, width = 4000),
+        ColumnSpec("종류", required = true, dropdownOptions = DuelSheetLabels.KINDS, width = 3500),
+        ColumnSpec("모양", readOnly = true, width = 3500),
+        ColumnSpec("참가자들", required = true, width = 10000),
+        ColumnSpec("참가자코드들", readOnly = true, width = 8000),
+        ColumnSpec("판정일", readOnly = true, width = 5000),
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 

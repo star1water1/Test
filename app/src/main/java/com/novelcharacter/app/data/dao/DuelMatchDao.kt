@@ -25,6 +25,10 @@ interface DuelMatchDao {
     @Query("SELECT COUNT(*) FROM duel_matches WHERE axisId = :axisId")
     suspend fun countByAxis(axisId: Long): Int
 
+    /** 전 축의 판 수 — 덮어쓰기가 *"지울 것이 있는가"*를 판정할 때만 쓴다(행을 읽지 않는다). */
+    @Query("SELECT COUNT(*) FROM duel_matches")
+    suspend fun countAll(): Int
+
     /** 가장 최근 판부터 — 되돌리기(층 B ①)가 "방금 그 판"을 집는 경로다. */
     @Query("SELECT * FROM duel_matches WHERE axisId = :axisId ORDER BY decidedAt DESC, id DESC LIMIT :limit")
     suspend fun getRecent(axisId: Long, limit: Int): List<DuelMatch>
