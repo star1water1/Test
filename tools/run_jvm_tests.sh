@@ -164,6 +164,9 @@ $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImagePathMatch.kt
 $MAIN/util/DetachedImageRule.kt
+$MAIN/util/DuelRating.kt
+$MAIN/util/DuelPairing.kt
+$MAIN/util/DuelCounterRelations.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -219,6 +222,9 @@ $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
+$TEST/util/DuelRatingTest.kt
+$TEST/util/DuelPairingTest.kt
+$TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
