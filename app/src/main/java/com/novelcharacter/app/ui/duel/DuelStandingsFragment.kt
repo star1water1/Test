@@ -11,8 +11,10 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelStandingsBinding
 import com.novelcharacter.app.ui.adapter.DuelStandingsAdapter
+import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelStandings
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.launch
@@ -83,6 +85,8 @@ class DuelStandingsFragment : Fragment() {
             binding.emptyText.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
 
             renderCounterBadge(loaded.state.report.count)
+            val outcomeLines = outcomeLines(axis, characters, rows)
+            if (!isAdded) return@launch
             renderCaveats(
                 DuelStandings.caveats(
                     loaded.state.fit,
@@ -90,9 +94,46 @@ class DuelStandingsFragment : Fragment() {
                     loaded.state.plan,
                     loaded.state.missingParticipants
                 ),
-                loaded.state.report.wobbles.size
+                loaded.state.report.wobbles.size,
+                outcomeLines
             )
         }
+    }
+
+    /**
+     * **산출 필드가 순위와 어긋난 자리** — 층 C가 순위표에서 값을 하는 지점.
+     *
+     * 영향 필드의 대조가 *한 판*을 보는 것과 달리(기록 화면) 이쪽은 **축 전체의 순위**를 본다.
+     * 방향이 반대이기 때문이다 — 산출 필드는 대결의 *결과*가 흘러갈 자리라, 어긋남은
+     * *"판을 잘못 눌렀다"*가 아니라 **"필드를 갱신할 때가 됐다"**를 뜻한다.
+     *
+     * **아무 말도 안 하는 경우를 갈라 말한다** — 견줄 수 있는 값이 하나도 없으면
+     * *"어긋남이 없다"*가 아니라 그 사실을 말한다(개발 의도 2번).
+     */
+    private suspend fun outcomeLines(
+        axis: DuelAxis,
+        characters: List<Character>,
+        rows: List<DuelStandings.Row>
+    ): List<String> {
+        val outcomes = axis.fieldLinks.outcomes
+        if (outcomes.isEmpty() || rows.isEmpty()) return emptyList()
+
+        val labels = viewModel.characterFields(axis.universeId).associate { it.key to it.name }
+        val values = viewModel.fieldValuesOf(axis.universeId, characters, outcomes.map { it.key })
+        val ranked = rows.map { it.code }
+        val lines = ArrayList<String>(outcomes.size)
+        for (link in outcomes) {
+            val label = labels[link.key] ?: link.key
+            val byCode = ranked.associateWith { code -> values[code]?.get(link.key).orEmpty() }
+            val report = DuelFieldLinks.outcomeReport(link, ranked, byCode)
+            when {
+                report.comparable < 2 ->
+                    lines.add(getString(R.string.duel_outcome_not_comparable, label))
+                report.total > 0 ->
+                    lines.add(getString(R.string.duel_outcome_mismatch, label, report.total))
+            }
+        }
+        return lines
     }
 
     /** P-10의 배지 — 0건이어도 감추지 않는다. *"아직 없다"*와 *"안 보고 있다"*는 다르다. */
@@ -106,8 +147,12 @@ class DuelStandingsFragment : Fragment() {
         }
     }
 
-    private fun renderCaveats(caveats: DuelStandings.Caveats, wobbles: Int) {
-        val lines = ArrayList<String>(6)
+    private fun renderCaveats(
+        caveats: DuelStandings.Caveats,
+        wobbles: Int,
+        outcomeLines: List<String>
+    ) {
+        val lines = ArrayList<String>(8)
         if (caveats.orphanMatches > 0) {
             lines.add(
                 getString(
@@ -128,6 +173,9 @@ class DuelStandingsFragment : Fragment() {
         if (caveats.triangleScanCapped) lines.add(getString(R.string.duel_caveat_triangle_capped))
         // 흔들림은 짝의 성질이 아니라 **축 자체의 품질 신호**라 여기(축 단위)에서 읽는다.
         if (wobbles > 0) lines.add(getString(R.string.duel_caveat_wobble, wobbles))
+        // 산출 필드 대조는 맨 뒤다 — 위의 고지들이 *"이 점수를 믿어도 되나"*이고
+        // 이것은 *"이제 필드를 고칠 때인가"*라, 앞의 답이 나온 뒤에 읽는 것이 순서다.
+        lines.addAll(outcomeLines)
 
         binding.caveatText.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
         binding.caveatText.text = lines.joinToString("\n")

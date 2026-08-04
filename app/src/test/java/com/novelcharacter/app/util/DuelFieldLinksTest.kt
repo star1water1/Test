@@ -146,6 +146,73 @@ class DuelFieldLinksTest {
         assertEquals(Agreement.UNDECIDED, DuelFieldLinks.agreementOf(DuelFieldLinks.Prediction(Side.TIE, null, 0, 2), Side.A))
     }
 
+    // ── 산출 필드: 순위와의 대조 ──
+
+    /** 순위가 위인 쪽을 필드가 아래로 보면 어긋남이다 — *"필드를 고칠 때가 됐다"*의 신호. */
+    @Test
+    fun `outcome field reports pairs the ranking disagrees with`() {
+        val report = DuelFieldLinks.outcomeReport(
+            Link("power"),
+            rankedCodes = listOf("A", "B", "C"),          // 대결 순위: A > B > C
+            values = mapOf("A" to "10", "B" to "90", "C" to "50")
+        )
+        // 필드는 B > C > A라고 말한다 → 어긋난 짝은 (A,B)·(A,C) 둘.
+        assertEquals(2, report.total)
+        assertEquals(3, report.comparable)
+        assertEquals(listOf("A" to "B", "A" to "C"), report.mismatches.map { it.higherCode to it.lowerCode })
+    }
+
+    @Test
+    fun `outcome field agrees when the field follows the ranking`() {
+        val report = DuelFieldLinks.outcomeReport(
+            Link("power"),
+            rankedCodes = listOf("A", "B", "C"),
+            values = mapOf("A" to "90", "B" to "50", "C" to "10")
+        )
+        assertEquals(0, report.total)
+        assertTrue(report.mismatches.isEmpty())
+    }
+
+    /**
+     * **견줄 수 있는 값이 없는 것과 어긋남이 없는 것은 다르다** — 둘 다 `total = 0`이지만
+     * 사용자가 할 일이 다르므로 `comparable`이 그것을 가른다.
+     */
+    @Test
+    fun `outcome field separates 'nothing to compare' from 'nothing wrong'`() {
+        val report = DuelFieldLinks.outcomeReport(
+            Link("attr"),
+            rankedCodes = listOf("A", "B"),
+            values = mapOf("A" to "불", "B" to "물")
+        )
+        assertEquals(0, report.total)
+        assertEquals(0, report.comparable)
+    }
+
+    /** 상한에 걸려도 **전량은 센다** — 조용히 자르지 않는다. */
+    @Test
+    fun `outcome field counts everything even when the list is capped`() {
+        // 순위는 A>B>C>D인데 필드값은 정확히 반대라 모든 짝(6)이 어긋난다.
+        val report = DuelFieldLinks.outcomeReport(
+            Link("power"),
+            rankedCodes = listOf("A", "B", "C", "D"),
+            values = mapOf("A" to "1", "B" to "2", "C" to "3", "D" to "4"),
+            limit = 2
+        )
+        assertEquals(6, report.total)
+        assertEquals(2, report.mismatches.size)
+    }
+
+    /** 방향을 뒤집으면 어긋남도 뒤집힌다 — 낮을수록 유리한 산출 필드. */
+    @Test
+    fun `outcome direction flips what counts as a mismatch`() {
+        val report = DuelFieldLinks.outcomeReport(
+            Link("rank", higherWins = false),
+            rankedCodes = listOf("A", "B"),
+            values = mapOf("A" to "1", "B" to "9")   // 낮을수록 유리 → 필드도 A가 위다
+        )
+        assertEquals(0, report.total)
+    }
+
     // ── 축 단위 ──
 
     /** 같은 필드가 영향과 산출에 함께 걸리면 알린다 — 재료이면서 결과일 수는 없다. */

@@ -234,4 +234,65 @@ object DuelFieldLinks {
         prediction.side == winner -> Agreement.AGREE
         else -> Agreement.DISAGREE
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 산출 필드 — 대결이 낸 순위와 그 필드가 어긋난 자리
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 순위가 위인 쪽을 그 필드는 아래로 본 짝.
+     *
+     * @property higherCode 대결 순위가 **위**인 참가자.
+     * @property lowerCode 순위가 아래인데 **필드값은 위**인 참가자.
+     */
+    data class OutcomeMismatch(val key: String, val higherCode: String, val lowerCode: String)
+
+    /**
+     * @property mismatches 어긋난 짝(상한까지만 담는다).
+     * @property total 어긋난 짝 전량 — [mismatches]보다 크면 **목록이 잘렸다는 뜻**이고
+     *   화면이 그 사실을 말해야 한다(조용히 자르지 않는다).
+     * @property comparable 값이 수로 읽힌 참가자 수. 0이면 *"어긋남이 없다"*가 아니라
+     *   **"견줄 수 있는 값이 없다"**이며, 둘은 사용자가 할 일이 다르다.
+     */
+    data class OutcomeReport(
+        val key: String,
+        val mismatches: List<OutcomeMismatch>,
+        val total: Int,
+        val comparable: Int
+    )
+
+    /**
+     * **대결이 낸 순위와 산출 필드가 어긋난 자리를 센다.**
+     *
+     * 영향 필드의 대조가 *한 판*을 보는 것과 달리 이쪽은 **축 전체의 순위**를 본다 —
+     * 방향이 반대이기 때문이다(산출 필드는 대결의 *결과*가 흘러갈 자리라, 어긋남은
+     * *"판을 잘못 눌렀다"*가 아니라 **"필드를 갱신할 때가 됐다"**를 뜻한다).
+     *
+     * @param rankedCodes 점수가 높은 순으로 늘어놓은 참가자 코드.
+     * @param values 참가자 코드 → 그 필드의 값.
+     * @param limit 목록에 담을 상한. 넘친 만큼은 [OutcomeReport.total]이 든다.
+     */
+    fun outcomeReport(
+        link: Link,
+        rankedCodes: List<String>,
+        values: Map<String, String>,
+        limit: Int = 20
+    ): OutcomeReport {
+        val comparable = rankedCodes.filter { numberOf(values[it]) != null }
+        val found = ArrayList<OutcomeMismatch>()
+        var total = 0
+        for (i in comparable.indices) {
+            for (j in i + 1 until comparable.size) {
+                // i가 순위상 위다. 필드가 j를 위로 보면 어긋남이다.
+                if (compareOne(link, values[comparable[i]], values[comparable[j]]) == Side.B) {
+                    total++
+                    if (found.size < limit) {
+                        found.add(OutcomeMismatch(link.key, comparable[i], comparable[j]))
+                    }
+                }
+            }
+        }
+        return OutcomeReport(link.key, found, total, comparable.size)
+    }
+
 }

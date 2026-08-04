@@ -2987,7 +2987,7 @@
     <string name="duel_links_influence_label">영향 필드 (순위 순)</string>
     <string name="duel_links_outcome_label">산출 필드</string>
     <string name="duel_links_influence_purpose">승패를 가르는 재료가 되는 필드를 고릅니다. 위에 있을수록 영향력이 큽니다 — 1순위가 갈리면 거기서 정해지고, 같으면 다음 순위로 넘어갑니다.</string>
-    <string name="duel_links_outcome_purpose">이 대결의 결과가 이어질 필드를 고릅니다. 순위표와 이 필드가 어긋나면 기록 화면이 그 자리를 짚어 줍니다.</string>
+    <string name="duel_links_outcome_purpose">이 대결의 결과가 이어질 필드를 고릅니다. 순위표가 이 필드와 어긋난 자리를 함께 알려 줍니다. 대결 화면에는 뜨지 않습니다 — 그 값이 곧 이 대결이 물으려는 답이기 때문입니다.</string>
     <string name="duel_links_edit">고치기</string>
     <string name="duel_links_none">없음</string>
     <string name="duel_links_pick">이 필드를 잇기</string>
@@ -3067,6 +3067,8 @@
     <string name="duel_caveat_not_converged">점수 계산이 반복 한도에서 멈췄습니다. 결과가 조금 덜 정확할 수 있습니다.</string>
     <string name="duel_caveat_pair_capped">짝이 너무 많아 일부만 훑었습니다. 진행률은 훑은 범위의 값입니다.</string>
     <string name="duel_caveat_triangle_capped">순환 찾기가 한도에 걸려 일부만 훑었습니다. 목록이 전부가 아닐 수 있습니다.</string>
+    <string name="duel_outcome_mismatch">순위와 \'%1$s\' 필드가 어긋난 자리가 %2$d곳 있습니다. 필드를 고칠 때가 됐는지 살펴보세요.</string>
+    <string name="duel_outcome_not_comparable">\'%1$s\' 필드는 숫자로 읽히는 값이 둘 미만이라 순위와 견주지 못했습니다.</string>
     <string name="duel_caveat_wobble">같은 짝인데 결과가 갈린 자리가 %1$d곳 있습니다. 이 축의 기준이 모호할 수 있습니다.</string>
 
     <!-- 상성 상세 (층 B의 처분) -->
