@@ -154,6 +154,7 @@ private class OperationLogAdapter(
                 OpResult.CAT_TRASH -> R.string.op_cat_trash
                 OpResult.CAT_MAINTENANCE -> R.string.op_cat_maintenance
                 OpResult.CAT_BATCH -> R.string.op_cat_batch
+                OpResult.CAT_DUEL -> R.string.op_cat_duel
                 else -> null
             }
             return if (resId != null) ctx.getString(resId) else category

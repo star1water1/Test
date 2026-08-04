@@ -34,6 +34,7 @@ class UniverseAdapter(
     private val onDeleteClick: (Universe) -> Unit,
     private val onFieldManageClick: (Universe) -> Unit,
     private val onFactionManageClick: (Universe) -> Unit = {},
+    private val onDuelClick: (Universe) -> Unit = {},
     var onOrderChanged: ((List<Universe>) -> Unit)? = null
 ) : ListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
 
@@ -186,11 +187,14 @@ class UniverseAdapter(
                 popup.menu.add(0, 1, 0, R.string.menu_edit)
                 popup.menu.add(0, 2, 1, R.string.menu_delete)
                 popup.menu.add(0, 3, 2, R.string.faction_manage)
+                // 대결도 축이 **세계관 단위**라 필드·세력과 같은 자리에서 연다(사용자 확정 ㄷ1).
+                popup.menu.add(0, 4, 3, R.string.duel_title)
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> { onEditClick(universe); true }
                         2 -> { onDeleteClick(universe); true }
                         3 -> { onFactionManageClick(universe); true }
+                        4 -> { onDuelClick(universe); true }
                         else -> false
                     }
                 }

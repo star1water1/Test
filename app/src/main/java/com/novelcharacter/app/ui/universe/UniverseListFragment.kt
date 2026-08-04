@@ -140,6 +140,10 @@ class UniverseListFragment : Fragment() {
             onFactionManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
                 findNavController().navigateSafe(R.id.universeListFragment, R.id.factionManageFragment, bundle)
+            },
+            onDuelClick = { universe ->
+                val bundle = Bundle().apply { putLong("universeId", universe.id) }
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.duelAxisListFragment, bundle)
             }
         )
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
