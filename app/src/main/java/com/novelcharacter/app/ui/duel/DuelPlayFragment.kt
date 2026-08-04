@@ -93,7 +93,16 @@ class DuelPlayFragment : Fragment() {
             return
         }
 
+        // 홈의 '이어하기'가 집는 값 — **화면이 열릴 때** 적는다(끝날 때가 아니다). 사용자가
+        // 앱을 강제로 끄거나 화면이 죽어도 다음에 여기로 돌아오게 하려는 것이라, 끝까지
+        // 정상 종료된 경우에만 적으면 정작 필요한 경우에 비어 있다.
+        DuelEntryPrefs.rememberAxis(requireContext(), axisId)
+
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        binding.toolbar.inflateMenu(R.menu.menu_duel_play)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_duel_axes) { openAxisList(); true } else false
+        }
         binding.cardA.setOnClickListener { pick(left = true) }
         binding.cardB.setOnClickListener { pick(left = false) }
         binding.btnUndo.setOnClickListener { undoLast() }
@@ -332,6 +341,13 @@ class DuelPlayFragment : Fragment() {
     private fun openStandings() {
         val bundle = Bundle().apply { putLong("axisId", axisId) }
         findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelStandingsFragment, bundle)
+    }
+
+    /** 홈에서 바로 들어온 경우 축 목록에 닿을 길이 여기뿐이다(뒤로가기는 홈으로 간다). */
+    private fun openAxisList() {
+        val universeId = axis?.universeId ?: return
+        val bundle = Bundle().apply { putLong("universeId", universeId) }
+        findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelAxisListFragment, bundle)
     }
 
     override fun onDestroyView() {

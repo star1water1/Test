@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material "compare_arrows" — 서로를 향한 화살 둘. 대결(B-104)이 하는 일이 정확히
+     "둘을 마주 세워 견준다"이고, 이 글리프는 그것을 칼이나 트로피 같은 승부의 은유 없이
+     전달한다(docs/design_intent_2026-07.md 규칙 2 — 글리프가 다른 기능으로 오독되지 않을 것).
+     칼을 쓰지 않는 이유: 이 앱의 축은 강함만이 아니라 아름다움·카리스마도 되므로
+     전투를 암시하는 글리프는 기능의 범위를 좁혀 보이게 한다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M9.01,14H2v2h7.01v3L13,15l-3.99,-4v3z M14.99,13v-3H22V8h-7.01V5L11,9l3.99,4z" />
+</vector>

@@ -2955,6 +2955,11 @@
          '매칭'을 쓰지 않는다 — 그 말은 엑셀 왕복의 레코드 대응을 가리키는 자리에 등재된다
          (확정 문서 1장 23번 · 순서 강제 23번↔2번). 여기서는 '대결'과 '판'으로 말한다. -->
     <string name="duel_title">대결</string>
+    <string name="duel_tile_subtitle">둘을 견주어 순위와 상성을 얻습니다</string>
+    <string name="duel_resume_subtitle">이어하기 — %1$s · %2$s</string>
+    <string name="duel_other_axis">다른 축</string>
+    <string name="duel_pick_universe">어느 세계관의 대결입니까?</string>
+    <string name="duel_need_universe">대결은 세계관 안에서 벌어집니다. 세계관을 먼저 만들어 주세요.</string>
     <string name="duel_axis_purpose">축을 만들면 그 기준으로 캐릭터 둘을 견주게 되고, 쌓인 결과가 순위표와 상성으로 나옵니다.</string>
     <string name="duel_axis_empty">아직 축이 없습니다</string>
     <string name="duel_axis_empty_hint">강함·아름다움처럼 겨룰 기준을 더해 보세요</string>

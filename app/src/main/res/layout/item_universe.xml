@@ -120,6 +120,39 @@
                 android:paddingBottom="3dp"
                 android:background="@drawable/bg_count_badge" />
 
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!--
+              대결(B-104)의 카드 진입점.
+
+              **제목 줄이 아니라 이 줄에 둔다.** 제목 줄은 이미 썸네일 72dp + 아이콘 둘(96dp)이
+              차지해, 360dp 화면에서 이름에 남는 폭이 132dp다. 여기에 아이콘을 하나 더 얹으면
+              84dp가 되어 **세계관 이름이 서너 글자마다 줄바꿈된다.** 이 줄은 배지 둘 뒤가
+              통째로 비어 있어 가로를 뺏지 않는다.
+
+              **글자를 붙이는 것도 일부러다** — 아이콘만 있는 진입점은 무엇인지 몰라서 안 눌린다.
+              이 기능이 ⋮ 안에 있어 안 보였던 것을 고치는 자리인데, 정체불명 아이콘으로 바꾸면
+              절반만 고치는 셈이다.
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDuel"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minWidth="0dp"
+                android:minHeight="40dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/duel_title"
+                app:icon="@drawable/ic_duel"
+                app:iconPadding="4dp"
+                app:iconSize="18dp" />
+
         </LinearLayout>
 
     </LinearLayout>

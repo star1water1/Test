@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  대결 화면의 툴바 메뉴.
+
+  '다른 축'이 필요한 것은 **홈에서 바로 들어올 수 있기 때문**이다 — 그때 뒤로가기는 홈으로
+  가므로 축 목록에 닿을 길이 없다. 세계관 카드로 들어온 경우에는 뒤로가기와 같은 곳이지만,
+  두 경로가 같은 자리를 갖는 편이 예측 가능하다.
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_duel_axes"
+        android:title="@string/duel_other_axis"
+        app:showAsAction="never" />
+
+</menu>

@@ -28,10 +28,13 @@ import com.novelcharacter.app.databinding.FragmentHomeDashboardBinding
 import com.novelcharacter.app.excel.ExcelTransferController
 import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
 import com.novelcharacter.app.ui.assistant.AssistantViewModel
+import com.novelcharacter.app.ui.duel.DuelEntryPrefs
 import com.novelcharacter.app.util.BirthdayHelper
+import com.novelcharacter.app.util.DuelEntry
 import com.novelcharacter.app.util.OnboardingPrefs
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * 홈 대시보드 — 시작 화면. 최근 활동·다가오는 생일·바로가기·도구 진입점을 모은다.
@@ -71,6 +74,30 @@ class HomeDashboardViewModel(application: Application) : AndroidViewModel(applic
                     })
                 }
             }
+
+    /**
+     * 대결 타일이 열 곳과 그 부제 — 판단은 [DuelEntry]가 하고 여기서는 **살아 있는지**만 확인해
+     * 넘긴다(기억해 둔 축이 지워졌을 수 있다 — 휴지통·세계관 삭제).
+     */
+    suspend fun duelEntry(lastAxisId: Long): DuelEntryInfo {
+        val axis = if (lastAxisId > 0L) app.duelRepository.axis(lastAxisId) else null
+        val universes = app.database.universeDao().getAllUniversesList()
+        val target = DuelEntry.targetOf(lastAxisId, axis?.universeId, universes.map { it.id })
+        val universeName = axis?.let { a -> universes.firstOrNull { it.id == a.universeId }?.name }
+        return DuelEntryInfo(target, universeName, axis?.name)
+    }
+
+    /** @property universeName·[axisName] 이어할 축이 있을 때만 채워진다 — 부제에 그대로 쓴다. */
+    data class DuelEntryInfo(
+        val target: DuelEntry.Target,
+        val universeName: String?,
+        val axisName: String?
+    )
+
+    suspend fun universeNames(ids: List<Long>): List<Pair<Long, String>> =
+        app.database.universeDao().getAllUniversesList()
+            .filter { it.id in ids }
+            .map { it.id to it.name }
 }
 
 class HomeDashboardFragment : Fragment() {
@@ -117,6 +144,76 @@ class HomeDashboardFragment : Fragment() {
         setupToolCards()
         setupAssistantAlert()
         showWelcomeIfFirstRun(savedInstanceState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 대결을 하고 돌아오면 이어할 자리가 달라져 있다 — 부제가 그것을 말한다.
+        refreshDuelTile()
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 대결 진입점 (B-104)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private fun refreshDuelTile() {
+        val lastAxisId = DuelEntryPrefs.lastAxisId(requireContext())
+        viewLifecycleOwner.lifecycleScope.launch {
+            val info = viewModel.duelEntry(lastAxisId)
+            if (!isAdded) return@launch
+            binding.duelSubtitle.text = if (info.axisName != null) {
+                getString(R.string.duel_resume_subtitle, info.universeName.orEmpty(), info.axisName)
+            } else {
+                getString(R.string.duel_tile_subtitle)
+            }
+        }
+    }
+
+    /**
+     * 이어할 축이 있으면 **바로 그 대결 화면으로**(사용자 확정) — 반복 활동이라 재개가 기본이다.
+     * 없으면 세계관을 정한 뒤 축 목록으로 간다.
+     */
+    private fun openDuel() {
+        val lastAxisId = DuelEntryPrefs.lastAxisId(requireContext())
+        viewLifecycleOwner.lifecycleScope.launch {
+            val info = viewModel.duelEntry(lastAxisId)
+            if (!isAdded) return@launch
+            when (val target = info.target) {
+                is DuelEntry.Target.Resume ->
+                    findNavController().navigateSafe(
+                        R.id.homeFragment, R.id.duelPlayFragment,
+                        bundleOf("axisId" to target.axisId)
+                    )
+                is DuelEntry.Target.AxisList ->
+                    findNavController().navigateSafe(
+                        R.id.homeFragment, R.id.duelAxisListFragment,
+                        bundleOf("universeId" to target.universeId)
+                    )
+                is DuelEntry.Target.PickUniverse -> showUniversePicker(target.universeIds)
+                DuelEntry.Target.NeedUniverse ->
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(R.string.duel_need_universe)
+                        .setPositiveButton(R.string.confirm, null)
+                        .show()
+            }
+        }
+    }
+
+    private fun showUniversePicker(universeIds: List<Long>) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val universes = viewModel.universeNames(universeIds)
+            if (!isAdded || universes.isEmpty()) return@launch
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.duel_pick_universe)
+                .setItems(universes.map { it.second }.toTypedArray()) { _, which ->
+                    findNavController().navigateSafe(
+                        R.id.homeFragment, R.id.duelAxisListFragment,
+                        bundleOf("universeId" to universes[which].first)
+                    )
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun setupToolbar() {
@@ -209,6 +306,9 @@ class HomeDashboardFragment : Fragment() {
         binding.cardImages.setOnClickListener {
             findNavController().navigateSafe(R.id.homeFragment, R.id.imageManagerFragment)
         }
+        // 대결(B-104)은 도구 중 유일한 **반복 활동**이라 열 곳이 상황마다 다르다 — 판단은
+        // `DuelEntry.targetOf`가 하고 여기서는 그 답대로 옮긴다.
+        binding.cardDuel.setOnClickListener { openDuel() }
         binding.cardExcel.setOnClickListener {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.dashboard_tool_excel)
