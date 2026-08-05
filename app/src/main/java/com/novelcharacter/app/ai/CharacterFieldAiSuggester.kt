@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.data.model.RandomConfig
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
+import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.FieldValueTokenizer
 
 /**
@@ -48,6 +49,14 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val factions: List<String>,
         /** "상대이름 – 관계유형" 요약 목록 */
         val relationships: List<String>,
+        /**
+         * 대결 축별 이 캐릭터의 자리 (B-104 소비처 ⓔ). 조립 규칙은 [DuelAiContext]가 단일 소스다.
+         *
+         * **다른 섹션과 성격이 다르다** — 태그·메모·필드값은 사용자가 *적은* 것이지만 이쪽은
+         * 어느 칸에도 적혀 있지 않다. 둘씩 비교해 고른 것이 쌓여 생긴 서수 데이터라,
+         * 이 줄이 없으면 모델은 사용자가 이미 정해 둔 우열을 모른 채 값을 지어낸다.
+         */
+        val duelStandings: List<DuelAiContext.Standing> = emptyList(),
         /** 조회에 실패해 프롬프트에서 빠진 섹션명 — 절단 고지와 같은 경로로 표면화 (변수 제어) */
         val loadFailures: List<String> = emptyList()
     )
@@ -787,7 +796,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                reason에 그 이유를 한국어 한 문장으로 적는다. 항목 자체는 반드시 포함한다.
             6. '옵션'이 제시된 필드는 그 옵션 중 하나를 **그대로** 쓴다. 옵션에 없는 값을 만들지 마라.
             7. '형식' 지시가 있는 필드는 형식을 정확히 지킨다 (예: 생일 MM-DD → 03-15).
-            8. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계)에서 추론했는지 한국어 한 문장으로 쓴다.
+            8. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계·대결 우열)에서 추론했는지 한국어 한 문장으로 쓴다.
             9. '기존 사용값'이 제시된 필드는 그 값들이 이 작품에서 실제로 쓰이는 표기 기조다.
                같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
                기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
@@ -805,6 +814,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             14. '설명'이 붙은 필드는 그 설명이 이 작품에서 그 필드가 뜻하는 바의 정의이자 제약이다.
                 설명과 어긋나는 값을 내지 마라. 설명이 옵션·형식과 충돌하면 옵션·형식을 따르고,
                 무엇이 충돌했는지 reason에 적어라.
+            15. '대결 우열'은 사용자가 캐릭터를 둘씩 비교해 **직접 고른** 결과가 쌓인 순위다.
+                네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나는 값을 내지 마라 —
+                '강함' 축 상위인 캐릭터에게 그 축과 이어지는 필드의 낮은 값을 주지 않는다.
+                등수 차가 작고 오차(±)가 겹치면 근소한 차이이니 값도 그만큼만 벌려라.
+                그 순위를 근거로 삼았으면 reason에 축 이름과 등수를 적어라.
         """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
 
         /**
@@ -815,7 +829,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          */
         private fun confidenceFloorRule(minConfidence: Confidence?): String =
             if (minConfidence == null) "" else "\n" + """
-            15. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
+            16. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
                 값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
             """.trimIndent()
 
@@ -861,6 +875,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             if (context.relationships.isNotEmpty()) {
                 sb.append("관계: ")
                     .append(capList(context.relationships, MAX_RELATIONSHIPS, "관계").joinToString(" / ")).append('\n')
+            }
+            // 대결 우열 — 어느 필드에도 적혀 있지 않은 정보다(위 duelStandings 주석).
+            // 자르는 규칙과 고지 문구 모두 DuelAiContext가 단일 소스다: 서술형 조립기와
+            // 각자 자르면 같은 캐릭터가 경로에 따라 다른 축을 받는다.
+            if (context.duelStandings.isNotEmpty()) {
+                val duel = DuelAiContext.promptLines(context.duelStandings)
+                if (duel.omitted > 0) notes.add(DuelAiContext.omittedNote(duel.omitted))
+                sb.append(DuelAiContext.PROMPT_LABEL)
+                    .append(duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)).append('\n')
             }
 
             // 추천 대상 필드는 [입력된 필드]에서 제외 — 대상의 현재 값은 필드 스펙 쪽에 실린다

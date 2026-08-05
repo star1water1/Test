@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.util.DuelAiContext
 
 /**
  * 서술형 필드(긴 글) 작성 보조 — 초안 · 이어쓰기 · 다듬기 · 늘리기 · 줄이기.
@@ -238,6 +239,10 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                내용·설정·표현을 가져오지 말고 문체만 따른다. 참고에 나온 인물을 등장시키지 마라.
             7. 대상 필드에 '설명'이 붙어 있으면 그 설명이 이 작품에서 그 필드가 뜻하는 바의
                정의이자 제약이다. 설명과 어긋나는 내용을 쓰지 마라.
+            8. '대결 우열'은 사용자가 캐릭터를 둘씩 비교해 **직접 고른** 결과가 쌓인 순위다.
+               네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나게 쓰지 마라 —
+               그 축에서 하위인 인물을 압도적인 강자로 묘사하지 않는다. 다만 **등수를 글에
+               숫자로 적지 마라**: 그것은 작품 설정이 아니라 사용자의 작업 기록이다.
         """.trimIndent() + creativity.promptRule()
 
         fun buildUserPrompt(
@@ -258,6 +263,15 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             if (context.factions.isNotEmpty()) sb.append("소속: ").append(context.factions.joinToString(", ")).append('\n')
             if (context.relationships.isNotEmpty()) {
                 sb.append("관계: ").append(context.relationships.joinToString(" / ")).append('\n')
+            }
+            // 대결 우열 — 짧은 값 경로와 **같은 규칙으로** 자르고 같은 문구로 고지한다
+            // (com.novelcharacter.app.util.DuelAiContext가 단일 소스). 각자 자르면 같은 캐릭터가
+            // 서술형과 짧은 값에서 서로 다른 축을 받는다.
+            if (context.duelStandings.isNotEmpty()) {
+                val duel = DuelAiContext.promptLines(context.duelStandings)
+                if (duel.omitted > 0) notes.add(DuelAiContext.omittedNote(duel.omitted))
+                sb.append(DuelAiContext.PROMPT_LABEL)
+                    .append(duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)).append('\n')
             }
             if (context.imageTags.isNotEmpty()) {
                 sb.append("이미지 태그: ").append(context.imageTags.joinToString(", ")).append('\n')

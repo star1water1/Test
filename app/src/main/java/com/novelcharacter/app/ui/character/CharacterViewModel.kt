@@ -10,6 +10,7 @@ import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
+import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FormulaEvaluator
@@ -1010,6 +1011,46 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } catch (e: Exception) {
                 Log.e("CharacterViewModel", "Failed to load relationships for AI context", e)
+                null
+            }
+        }
+
+    /**
+     * 대결 축별 이 캐릭터의 자리 — AI 프롬프트 컨텍스트용 (B-104 소비처 ⓔ).
+     * 조회 실패는 null (빈 목록과 구별 — 결손 고지용).
+     *
+     * ## 점수는 순위표의 그 수다
+     * [DuelRepository.scoresOf]를 타므로 순위표·목록 정렬·통계와 **같은 진입점**
+     * ([DuelCounterRelations.analyzeTwoPass])에서 나온다. 다른 경로로 내면 프롬프트가
+     * 사용자에게 보이는 것과 다른 수를 말한다(설계 9-1의 갈라짐이 네 번째 소비처에서 재발한다).
+     * 넘기는 참가자도 같은 이유로 **그 세계관의 캐릭터 전부**다 — 좁히면 점수 자체가 달라진다.
+     *
+     * ## 한 판도 안 치른 축은 **적합조차 하지 않는다**
+     * [DuelScoreIndex]의 계약 2가 그런 참가자를 이미 값 없음으로 두므로 적합을 돌려도 결과가
+     * 같은데, 적합은 축 하나당 목표 규모에서 수십~수백 ms다(설계 6장 실측표). 판 수 조회는
+     * 색인 탄 COUNT 하나라, **상한을 새로 만드는 대신 계약이 이미 정해 둔 것을 앞당겨 읽는다.**
+     * 그래서 이 경로가 도는 적합 수는 축 수가 아니라 **이 캐릭터가 실제로 겨룬 축 수**다.
+     */
+    suspend fun getDuelStandingsForCharacter(characterId: Long): List<DuelAiContext.Standing>? =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val character = characterRepository.getCharacterById(characterId)
+                    ?: return@withContext emptyList()
+                val novelId = character.novelId ?: return@withContext emptyList()
+                val universeId = novelRepository.getNovelById(novelId)?.universeId
+                    ?: return@withContext emptyList()
+                // 이미지 축은 참가자가 이미지 경로라 캐릭터 코드로 집을 수 없다 — 대상이 다르다.
+                val axes = duelRepository.axesForTarget(universeId, DuelAxis.TARGET_CHARACTER)
+                    .filter { duelRepository.matchCountFor(it.id, character.code) > 0 }
+                if (axes.isEmpty()) return@withContext emptyList()
+                val participants = characterRepository
+                    .getCharactersByUniverseList(universeId).map { it.code }
+                DuelAiContext.standingsOf(
+                    character.code,
+                    axes.map { duelRepository.scoresOf(it, participants) }
+                )
+            } catch (e: Exception) {
+                Log.e("CharacterViewModel", "Failed to load duel standings for AI context", e)
                 null
             }
         }

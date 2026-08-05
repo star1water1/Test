@@ -181,6 +181,7 @@ $MAIN/util/DuelFieldLinks.kt
 $MAIN/util/DuelMatchLog.kt
 $MAIN/util/DuelCategoryStats.kt
 $MAIN/util/DuelScoreIndex.kt
+$MAIN/util/DuelAiContext.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -248,6 +249,7 @@ $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
+$TEST/util/DuelAiContextTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
