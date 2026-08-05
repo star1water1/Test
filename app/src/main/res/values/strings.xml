@@ -1776,6 +1776,9 @@
     <string name="stats_ranking_sort_toggle">정렬 방향 전환</string>
     <string name="stats_ranking_summary">%1$d명 참여 | %2$d명 제외</string>
     <string name="stats_ranking_empty">순위를 매길 데이터가 없습니다</string>
+    <!-- 점수 분포 (B-117) — 목록을 끝까지 훑어도 안 보이는 것이 군상의 모양이다(원칙 02) -->
+    <string name="stats_ranking_distribution">점수 분포 — %1$s</string>
+    <string name="stats_ranking_distribution_bin">%1$s: %2$d명</string>
     <!-- 대결 축이 같은 목록에 서므로(B-117) '필드'라고만 말하면 목록의 절반이 이름을 잃는다 -->
     <string name="stats_ranking_select_field">기준을 선택하세요 (필드 또는 대결 축)</string>
     <string name="stats_ranking_all_universes">전체 세계관</string>
@@ -2123,6 +2126,7 @@
     <string name="sort_duel_axis_item">%1$s (%2$s · %3$d판)</string>
     <string name="sort_duel_notice">%1$d명은 아직 한 판도 치르지 않아 맨 뒤에 있습니다</string>
     <string name="sort_duel_notice_missing">%1$d명은 아직 한 판도 치르지 않아 맨 뒤에 있고, 지워진 캐릭터의 판 %2$d개는 점수에서 빠져 있습니다</string>
+    <string name="sort_duel_notice_axis_missing">정렬 기준으로 지정한 대결 축을 찾을 수 없어 기본 순서로 보여 드립니다 — 정렬에서 다른 축을 골라 주세요</string>
     <string name="sort_chip_format">정렬: %1$s</string>
     <string name="sort_label_manual">기본</string>
     <string name="sort_label_name">이름</string>

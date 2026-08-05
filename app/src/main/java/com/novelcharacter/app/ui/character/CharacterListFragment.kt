@@ -729,13 +729,22 @@ class CharacterListFragment : Fragment() {
      */
     private fun updateDuelSortNotice() {
         val b = _binding ?: return
-        val scores = viewModel.duelSortNotice()
-        val text = when {
-            scores == null || (scores.unplayed == 0 && scores.orphanMatches == 0) -> null
-            scores.orphanMatches > 0 -> getString(
-                R.string.sort_duel_notice_missing, scores.unplayed, scores.orphanMatches
-            )
-            else -> getString(R.string.sort_duel_notice, scores.unplayed)
+        val notice = viewModel.duelSortNotice()
+        val text = when (notice) {
+            null -> null
+            // 축이 사라졌다 — 목록이 기본 순서인 이유를 말해야 한다. 조용히 두면 사용자는
+            // 정렬이 먹은 줄 알고 목록이 왜 안 바뀌는지 알 길이 없다(개발 의도 2번).
+            is CharacterViewModel.DuelSortNotice.AxisMissing ->
+                getString(R.string.sort_duel_notice_axis_missing)
+            is CharacterViewModel.DuelSortNotice.Scored -> {
+                val s = notice.scores
+                when {
+                    s.unplayed == 0 && s.orphanMatches == 0 -> null
+                    s.orphanMatches > 0 ->
+                        getString(R.string.sort_duel_notice_missing, s.unplayed, s.orphanMatches)
+                    else -> getString(R.string.sort_duel_notice, s.unplayed)
+                }
+            }
         }
         b.duelSortNotice.text = text.orEmpty()
         b.duelSortNotice.visibility = if (text == null) View.GONE else View.VISIBLE

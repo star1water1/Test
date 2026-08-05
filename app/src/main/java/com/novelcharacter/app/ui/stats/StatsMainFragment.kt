@@ -261,6 +261,19 @@ class StatsMainFragment : Fragment() {
             b.rankingSummary.text = getString(
                 R.string.stats_ranking_summary, result.totalCharacters, result.excludedCount
             )
+            // 점수 분포 (B-117) — 나눌 폭이 없으면(전원 동점·둘 미만) 빈 목록이 오고, 그때는
+            // 줄을 통째로 감춘다. **빈 줄을 남겨 두면 "0명"처럼 읽힌다.**
+            if (result.scoreDistribution.isEmpty()) {
+                b.rankingDistribution.visibility = View.GONE
+            } else {
+                b.rankingDistribution.visibility = View.VISIBLE
+                b.rankingDistribution.text = getString(
+                    R.string.stats_ranking_distribution,
+                    result.scoreDistribution.joinToString(" · ") { (label, count) ->
+                        getString(R.string.stats_ranking_distribution_bin, label, count)
+                    }
+                )
+            }
         }
     }
 

@@ -505,36 +505,56 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         var cache = duelSortCache
         if (cache == null || cache.axisCode != axisCode || cache.duelEpoch != dE) {
             val axis = app.database.duelAxisDao().getByCode(axisCode)
-            // 축이 사라졌다(지웠거나 다른 기기의 프리셋이다) → base 순서를 지킨다.
-            // 조용히 이름순으로 바꾸면 사용자는 정렬이 먹은 줄 안다.
-            if (axis == null || axis.isImageAxis) { duelSortCache = null; return chars }
+            // 축이 사라졌다(지웠거나 다른 기기의 프리셋·엑셀이 들여온 코드다) → base 순서를
+            // 지키되 **그 사실을 캐시에 남긴다.** 조용히 되돌리면 사용자는 정렬이 먹은 줄 알고,
+            // 목록이 왜 안 바뀌는지 알 길이 없다(개발 의도 2번 — 말없이 버리지 않는다).
+            if (axis == null || axis.isImageAxis) {
+                duelSortCache = DuelSortCache(axisCode, dE, scores = null)
+                return chars
+            }
             val participants = characterRepository
                 .getCharactersByUniverseList(axis.universeId).map { it.code }
             cache = DuelSortCache(axisCode, dE, duelRepository.scoresOf(axis, participants))
             duelSortCache = cache
         }
 
+        val scores = cache.scores ?: return chars  // 축을 못 찾았다 — 위에서 캐시에 남겼다
         return DuelScoreIndex.sorted(
-            chars, ascending, cache.scores, { it.code }, { it.name }
+            chars, ascending, scores, { it.code }, { it.name }
         )
     }
 
-    /** 대결 점수 정렬 캐시. **증분이 없다** — 판 하나가 전원의 점수를 움직이기 때문이다. */
+    /**
+     * 대결 점수 정렬 캐시. **증분이 없다** — 판 하나가 전원의 점수를 움직이기 때문이다.
+     *
+     * @property scores null이면 **축을 찾지 못했다**는 뜻이다(지웠거나 남의 기기 것이다).
+     *   그 사실 자체를 캐시에 담는 것은 화면이 그것을 말해야 하기 때문이고, 담지 않으면
+     *   *"아직 계산 전"*과 구별되지 않는다.
+     */
     private class DuelSortCache(
         val axisCode: String,
         val duelEpoch: Int,
-        val scores: DuelScoreIndex.AxisScores
+        val scores: DuelScoreIndex.AxisScores?
     )
     private var duelSortCache: DuelSortCache? = null
 
+    /** 대결 정렬이 화면에 말해야 하는 것 — 셋 중 하나다. */
+    sealed interface DuelSortNotice {
+        /** 축을 찾지 못했다 — 정렬이 먹지 않았고 목록은 기본 순서다. */
+        object AxisMissing : DuelSortNotice
+        /** 축은 찾았다. 점수가 없어 뒤로 간 인원과 점수에서 빠진 판을 말한다. */
+        data class Scored(val scores: DuelScoreIndex.AxisScores) : DuelSortNotice
+    }
+
     /**
-     * 지금 정렬에 걸린 축이 함께 말해야 하는 것 — 점수가 없어 최후순에 간 인원 등.
-     * 정렬이 대결이 아니거나 축을 못 찾았으면 null이다(화면이 고지 영역을 감춘다).
+     * 지금 정렬에 걸린 축이 함께 말해야 하는 것.
+     * 정렬이 대결이 아니거나 아직 계산 전이면 null이다(화면이 고지 영역을 감춘다).
      */
-    fun duelSortNotice(): DuelScoreIndex.AxisScores? {
+    fun duelSortNotice(): DuelSortNotice? {
         val sort = _sortSpec.value ?: return null
         if (sort.kind != CharacterListPreset.SORT_DUEL) return null
-        return duelSortCache?.takeIf { it.axisCode == sort.duelAxisCode }?.scores
+        val cache = duelSortCache?.takeIf { it.axisCode == sort.duelAxisCode } ?: return null
+        return cache.scores?.let { DuelSortNotice.Scored(it) } ?: DuelSortNotice.AxisMissing
     }
 
     /** 필드 정렬키 증분 캐시. 정체성(fieldKey/partIndex/scope/fv·struct 에폭)이 바뀌면 통째로 교체된다. */

@@ -244,6 +244,82 @@ class DuelRankingTest {
     }
 
     @Test
+    fun `점수 분포가 순위 결과에 함께 실리고 인원 합이 참여 인원과 같다`() {
+        // 줄 세우기는 *"누가 위인가"*를 답하지만 **군상의 모양**은 답하지 않는다(원칙 02).
+        val ax = axis(1L, "강함", "DAX-1")
+        val chars = (1..4).map { character(it.toLong(), "c$it", "CHR-$it", null) }
+        val scores = scoresOf(ax, chars.map { it.code }, listOf(
+            match("CHR-1", "CHR-2", "CHR-1"), match("CHR-1", "CHR-3", "CHR-1"),
+            match("CHR-1", "CHR-4", "CHR-1"), match("CHR-2", "CHR-3", "CHR-2"),
+            match("CHR-2", "CHR-4", "CHR-2"), match("CHR-3", "CHR-4", "CHR-3")
+        ))
+        val s = snapshot(characters = chars, axes = listOf(ax))
+
+        val result = provider.computeDuelRanking(s, scores)
+
+        assertTrue(result.scoreDistribution.isNotEmpty())
+        assertEquals(
+            "구간이 최댓값을 놓치면 합이 모집단보다 작아진다",
+            result.entries.size, result.scoreDistribution.sumOf { it.second }
+        )
+    }
+
+    @Test
+    fun `분포는 작품 필터에 잘리지 않는다 — 축 전체의 모양이다`() {
+        val ax = axis(1L, "강함", "DAX-1")
+        val chars = listOf(
+            character(1L, "가", "CHR-1", 10L), character(2L, "나", "CHR-2", 11L),
+            character(3L, "다", "CHR-3", 10L), character(4L, "라", "CHR-4", 11L)
+        )
+        val novels = listOf(
+            Novel(id = 10L, title = "1부", universeId = uniA),
+            Novel(id = 11L, title = "외전", universeId = uniA)
+        )
+        val scores = scoresOf(ax, chars.map { it.code }, listOf(
+            match("CHR-1", "CHR-2", "CHR-1"), match("CHR-1", "CHR-3", "CHR-1"),
+            match("CHR-1", "CHR-4", "CHR-1"), match("CHR-2", "CHR-3", "CHR-2"),
+            match("CHR-2", "CHR-4", "CHR-2"), match("CHR-3", "CHR-4", "CHR-3")
+        ))
+        val s = snapshot(characters = chars, axes = listOf(ax), novels = novels)
+
+        val all = provider.computeDuelRanking(s, scores)
+        val scoped = provider.computeDuelRanking(provider.filterByNovel(s, 10L), scores)
+
+        assertEquals(2, scoped.entries.size)
+        assertEquals(
+            "작품으로 자르면 '이 세계관의 강함이 어떤 모양인가'의 답이 아니게 된다",
+            all.scoreDistribution, scoped.scoreDistribution
+        )
+    }
+
+    @Test
+    fun `필드 순위에는 분포가 실리지 않는다`() {
+        // 이 줄은 대결 축의 몫이다 — 필드 순위에 빈 목록이 오는 것이 계약이고,
+        // 화면은 그때 줄을 통째로 감춘다("0명"처럼 읽히지 않게).
+        val s = snapshot(fields = listOf(field(1L, "power", "마력량")))
+
+        val result = provider.computeRanking(s, listOf(1L))
+
+        assertTrue(result.scoreDistribution.isEmpty())
+    }
+
+    @Test
+    fun `표시 값이 순위표처럼 오차를 함께 말한다`() {
+        val ax = axis(1L, "강함", "DAX-1")
+        val chars = listOf(character(1L, "가", "CHR-1", null), character(2L, "나", "CHR-2", null))
+        val scores = scoresOf(ax, chars.map { it.code }, List(3) { match("CHR-1", "CHR-2", "CHR-1") })
+        val s = snapshot(characters = chars, axes = listOf(ax))
+
+        val result = provider.computeDuelRanking(s, scores)
+
+        // 점수만 적으면 **세 판 친 1520과 백 판 친 1520이 같아 보인다** — 순위표가
+        // `1523 ±37`로 말하는 것과 같은 모양이어야 두 화면이 같은 말을 한다.
+        val top = result.entries.first()
+        val entry = scores.entryOf("CHR-1")!!
+        assertEquals("${entry.score} ±${entry.scoreError}", top.displayValue)
+    }
+
+    @Test
     fun `오름차순은 약한 쪽부터다`() {
         val ax = axis(1L, "강함", "DAX-1")
         val chars = listOf(character(1L, "가", "CHR-1", null), character(2L, "나", "CHR-2", null))

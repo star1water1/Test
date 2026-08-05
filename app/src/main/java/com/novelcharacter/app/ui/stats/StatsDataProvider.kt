@@ -549,7 +549,19 @@ data class RankingResult(
     val fieldType: String,
     val ascending: Boolean,
     val totalCharacters: Int,
-    val excludedCount: Int
+    val excludedCount: Int,
+    /**
+     * 점수 분포 — **대결 축일 때만** 채워진다 (B-117. 백로그 원문의 *"점수 분포"*).
+     *
+     * 줄 세우기는 *"누가 위인가"*를 답하지만 **군상의 모양**은 답하지 않는다 —
+     * 원칙 02가 요구하는 것이 후자다(*"편향이나 패턴을 발견할 수 있는 정보"*).
+     * 점수가 좁은 띠에 몰려 있는지 양극으로 갈렸는지는 목록을 끝까지 훑어도 안 보인다.
+     *
+     * 구간은 [com.novelcharacter.app.util.NumericBinning]이 만든다 — 분포를 그리는 쪽과
+     * 조각의 인원을 세는 쪽이 구간을 각자 계산해 **두 수가 어긋난 전례**가 이 저장소에 있다.
+     * 비어 있으면 *나눌 폭이 없다*는 뜻이다(전원이 같은 점수이거나 둘 미만).
+     */
+    val scoreDistribution: List<Pair<String, Int>> = emptyList()
 )
 
 data class RankableField(
@@ -3203,7 +3215,11 @@ class StatsDataProvider {
                     characterName = char.name,
                     rank = currentRank,
                     value = score.toDouble(),
-                    displayValue = score.toString(),
+                    // 순위표가 `1523 ±37`로 말하므로 여기도 같은 모양이다 — **믿어도 되는
+                    // 줄인가를 행이 스스로 말한다**([DuelStandings]의 규칙 2). 점수만 적으면
+                    // 세 판 친 1520과 백 판 친 1520이 같아 보인다.
+                    displayValue = scores.entryOf(char.code)
+                        ?.let { "$score ±${it.scoreError}" } ?: score.toString(),
                     imagePaths = char.imagePaths,
                     representativeImagePath = char.representativeImagePath,
                     novelTitle = char.novelId?.let { novelMap[it] }?.title
@@ -3218,7 +3234,13 @@ class StatsDataProvider {
             ascending = ascending,
             totalCharacters = entries.size,
             // 이 스코프에 있으면서 점수가 없는 캐릭터 — 한 판도 안 치른 쪽이다.
-            excludedCount = s.characters.size - entries.size
+            excludedCount = s.characters.size - entries.size,
+            // **분포는 축 전체로 낸다** — 점수와 같은 이유다(9-3장). 작품으로 잘라 다시 내면
+            // *"이 세계관의 강함이 어떤 모양인가"*가 아니라 *"이 작품 사람들만 모은 모양"*이
+            // 되는데, 축은 세계관 단위라 그 물음의 답이 아니다.
+            scoreDistribution = DuelScoreIndex.distribution(scores).map { (bin, count) ->
+                bin.label to count
+            }
         )
     }
 
