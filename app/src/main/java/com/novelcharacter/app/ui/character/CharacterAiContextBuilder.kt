@@ -55,10 +55,15 @@ object CharacterAiContextBuilder {
             if (characterId != -1L) viewModel.getFactionNamesForCharacter(characterId) else emptyList()
         val relationships =
             if (characterId != -1L) viewModel.getRelationshipSummariesForCharacter(characterId) else emptyList()
+        // 대결 우열도 저장된 캐릭터에만 있다 — 판은 캐릭터 코드로 쌓이므로 미저장 신규는
+        // 애초에 참가자가 아니다(소속·관계와 같은 이유로 -1이면 건너뛴다).
+        val duelStandings =
+            if (characterId != -1L) viewModel.getDuelStandingsForCharacter(characterId) else emptyList()
         val loadFailures = buildList {
             if (imageTags == null) add("이미지 태그")
             if (factions == null) add("소속 세력")
             if (relationships == null) add("관계")
+            if (duelStandings == null) add("대결 우열")
         }
         return CharacterFieldAiSuggester.CharacterAiContext(
             name = name,
@@ -69,6 +74,7 @@ object CharacterAiContextBuilder {
             imageTags = imageTags ?: emptyList(),
             factions = factions ?: emptyList(),
             relationships = relationships ?: emptyList(),
+            duelStandings = duelStandings ?: emptyList(),
             loadFailures = loadFailures
         )
     }

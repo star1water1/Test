@@ -215,10 +215,12 @@ class FieldAiTargetRuleTest {
         val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
         assertTrue(prompt.contains("14."))
         assertTrue(prompt.contains("설명과 어긋나는 값을 내지 마라"))
-        // 근거 강도 하한이 켜지면 15번으로 이어진다 (규칙 번호 충돌 없음)
+        // 기본 규칙은 15번(대결 우열)까지이고, 근거 강도 하한이 켜지면 16번으로 이어진다
+        // (규칙 번호 충돌 없음 — 붙이는 규칙이 늘면 이 자리가 함께 움직여야 한다)
+        assertTrue(prompt.contains("15."))
         val withFloor =
             CharacterFieldAiSuggester.buildSystemPrompt(CharacterFieldAiSuggester.Confidence.HIGH)
-        assertTrue(withFloor.contains("15."))
+        assertTrue(withFloor.contains("16."))
     }
 
     @Test
