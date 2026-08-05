@@ -40,7 +40,7 @@ class StatsMainFragment : Fragment() {
     // 순위 탭
     private var rankingAdapter: RankingAdapter? = null
     private var rankingInitialized = false
-    private var currentRankableFields: List<RankableField> = emptyList()
+    private var currentRankingSources: List<RankingSource> = emptyList()
     private var currentAscending = false
     private var selectedUniverseId: Long? = null
     private var selectedNovelIdForRanking: Long? = null
@@ -160,8 +160,16 @@ class StatsMainFragment : Fragment() {
                     return
                 }
                 selectedFieldIndex = pos - 1
-                val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
-                rankingPrefs.edit().putString("ranking_field_key", field.fieldDef.key).apply()
+                val source = currentRankingSources.getOrNull(selectedFieldIndex) ?: return
+                rankingPrefs.edit().putString("ranking_field_key", source.storageKey).apply()
+
+                val field = source.rankableField
+                if (field == null) {  // 대결 축 — 파트 스피너가 없다
+                    binding.rankingBodySizeRow.visibility = View.GONE
+                    pendingBodyPartRestore = null
+                    executeRanking()
+                    return
+                }
 
                 // BODY_SIZE일 때만 파트 스피너 표시 (adapter만 교체, 리스너는 재등록하지 않음)
                 if (field.fieldDef.type == "BODY_SIZE" && field.bodySizeParts != null) {
@@ -207,26 +215,26 @@ class StatsMainFragment : Fragment() {
         // 뒤이은 필드 로드도 복원된 스코프로 맞춘다(취소 가능 로드라 마지막 것이 확정).
         if (viewModel.getUniverseList().isNotEmpty()) {
             setupRankingUniverseSpinner()
-            viewModel.loadRankableFields(selectedUniverseId)
+            viewModel.loadRankingSources(selectedUniverseId)
         }
     }
 
     private var suppressFieldSpinnerCallback = false
 
     private fun setupRankingObservers() {
-        viewModel.rankableFields.observe(viewLifecycleOwner) { fields ->
-            currentRankableFields = fields
+        viewModel.rankingSources.observe(viewLifecycleOwner) { fields ->
+            currentRankingSources = fields
             // adapter 교체 시 자동 콜백 방지
             suppressFieldSpinnerCallback = true
             populateFieldSpinner(fields)
             _binding?.rankingFieldSpinner?.post {
                 suppressFieldSpinnerCallback = false
                 // 저장된 필드 복원 — 복원된 세계관 스코프의 필드 목록이 도착했을 때만 시도.
-                // (loadRankableFields는 취소 가능하므로 마지막 로드 = 복원 세계관 스코프)
+                // (loadRankingSources는 취소 가능하므로 마지막 로드 = 복원 세계관 스코프)
                 val restore = pendingRankingRestore
                 if (restore != null && selectedUniverseId == restore.universeId) {
                     if (restore.fieldKey != null) {
-                        val idx = currentRankableFields.indexOfFirst { it.fieldDef.key == restore.fieldKey }
+                        val idx = currentRankingSources.indexOfFirst { it.matches(restore.fieldKey) }
                         if (idx >= 0) {
                             pendingBodyPartRestore = restore.bodyPart  // BODY_SIZE 파트 스피너 준비 후 소비
                             binding.rankingFieldSpinner.setSelection(idx + 1)
@@ -253,6 +261,19 @@ class StatsMainFragment : Fragment() {
             b.rankingSummary.text = getString(
                 R.string.stats_ranking_summary, result.totalCharacters, result.excludedCount
             )
+            // 점수 분포 (B-117) — 나눌 폭이 없으면(전원 동점·둘 미만) 빈 목록이 오고, 그때는
+            // 줄을 통째로 감춘다. **빈 줄을 남겨 두면 "0명"처럼 읽힌다.**
+            if (result.scoreDistribution.isEmpty()) {
+                b.rankingDistribution.visibility = View.GONE
+            } else {
+                b.rankingDistribution.visibility = View.VISIBLE
+                b.rankingDistribution.text = getString(
+                    R.string.stats_ranking_distribution,
+                    result.scoreDistribution.joinToString(" · ") { (label, count) ->
+                        getString(R.string.stats_ranking_distribution_bin, label, count)
+                    }
+                )
+            }
         }
     }
 
@@ -281,7 +302,7 @@ class StatsMainFragment : Fragment() {
                 rankingPrefs.edit().apply {
                     if (selectedUniverseId != null) putLong("ranking_universe_id", selectedUniverseId!!) else remove("ranking_universe_id")
                 }.apply()
-                viewModel.loadRankableFields(selectedUniverseId)
+                viewModel.loadRankingSources(selectedUniverseId)
                 selectedFieldIndex = -1
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -324,31 +345,28 @@ class StatsMainFragment : Fragment() {
         }
     }
 
-    private fun populateFieldSpinner(fields: List<RankableField>) {
+    private fun populateFieldSpinner(sources: List<RankingSource>) {
         val ctx = context ?: return
         val items = mutableListOf(getString(R.string.stats_ranking_select_field))
-        items.addAll(fields.map { "${it.fieldDef.name} (${getFieldTypeLabel(it)})" })
+        // 종류 표시는 계산과 **같은 표**를 본다 — 화면에 리터럴을 두면 타입이 늘 때 여기만 뒤처진다.
+        items.addAll(sources.map { "${it.label} (${it.typeLabel})" })
 
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.rankingFieldSpinner.adapter = adapter
     }
 
-    private fun getFieldTypeLabel(field: RankableField): String {
-        return when (field.fieldDef.type) {
-            "NUMBER" -> "숫자"
-            "CALCULATED" -> "계산"
-            "GRADE" -> "등급"
-            "BODY_SIZE" -> "신체"
-            "SELECT" -> "빈도"
-            "TEXT" -> "빈도"
-            "MULTI_TEXT" -> "빈도"
-            else -> field.fieldDef.type
-        }
-    }
-
     private fun executeRanking() {
-        val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
+        val source = currentRankingSources.getOrNull(selectedFieldIndex) ?: return
+        if (source.isDuel) {
+            viewModel.loadDuelRanking(
+                axisCode = source.duelAxisCode ?: return,
+                ascending = currentAscending,
+                novelId = selectedNovelIdForRanking
+            )
+            return
+        }
+        val field = source.rankableField ?: return
         val bodyPartIdx = if (field.fieldDef.type == "BODY_SIZE") selectedBodySizePartIndex else null
         viewModel.loadRanking(
             fieldDefIds = field.mergedFieldDefIds,
@@ -379,12 +397,12 @@ class StatsMainFragment : Fragment() {
                 // 세계관 스피너가 아직 세팅 안 된 경우 (최초 진입)
                 if (binding.rankingUniverseSpinner.adapter == null) {
                     setupRankingUniverseSpinner()
-                    viewModel.loadRankableFields(selectedUniverseId)
+                    viewModel.loadRankingSources(selectedUniverseId)
                 }
                 // onResume 후 데이터 갱신: 스피너 선택은 보존하고 필드 목록만 재로딩
                 else if (rankingNeedsRefresh) {
                     rankingNeedsRefresh = false
-                    viewModel.loadRankableFields(selectedUniverseId)
+                    viewModel.loadRankingSources(selectedUniverseId)
                     if (selectedFieldIndex >= 0) executeRanking()
                 }
             }

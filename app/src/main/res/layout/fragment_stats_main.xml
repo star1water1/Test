@@ -919,6 +919,22 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
+        <!-- 점수 분포 (B-117) — 줄 세우기는 "누가 위인가"를 답하지만 군상의 모양은 답하지 않는다.
+             대결 축을 골랐고 나눌 폭이 있을 때만 뜬다. -->
+        <TextView
+            android:id="@+id/rankingDistribution"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:paddingStart="@dimen/stats_padding_content"
+            android:paddingEnd="@dimen/stats_padding_content"
+            android:paddingBottom="4dp"
+            android:textSize="@dimen/stats_text_body_sm"
+            android:textColor="@color/text_secondary"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/rankingSummary"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rankingRecyclerView"
             android:layout_width="0dp"
@@ -926,7 +942,7 @@
             android:clipToPadding="false"
             android:paddingTop="4dp"
             android:paddingBottom="8dp"
-            app:layout_constraintTop_toBottomOf="@id/rankingSummary"
+            app:layout_constraintTop_toBottomOf="@id/rankingDistribution"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />

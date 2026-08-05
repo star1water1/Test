@@ -592,6 +592,8 @@ class CharacterListFragment : Fragment() {
             adapter.submitList(characters)
             lastListEmpty = characters.isEmpty()
             updateEmptyState()
+            // 대결 점수표는 정렬이 실제로 돌 때 만들어진다 — 결과가 나온 뒤에야 셀 것이 생긴다(B-117).
+            updateDuelSortNotice()
         }
 
         // 정렬/필터/프리셋 상태 관측
@@ -653,6 +655,7 @@ class CharacterListFragment : Fragment() {
         val sheet = CharacterListControlsBottomSheet()
         sheet.currentSort = viewModel.sortSpec.value ?: CharacterSort()
         sheet.loadSortableFields = { viewModel.getSortableFields() }
+        sheet.loadSortableDuelAxes = { viewModel.getSortableDuelAxes() }
         sheet.currentTags = viewModel.tagFilters.value ?: emptySet()
         sheet.currentNovelIds = viewModel.novelFilters.value ?: emptySet()
         // 작품 필터는 전역 목록에서만 의미(이미 한 작품에 스코프된 화면에선 중복이라 숨김).
@@ -688,6 +691,7 @@ class CharacterListFragment : Fragment() {
             }
         }
         updateControlsButtonLabel()
+        updateDuelSortNotice()
         if (isManual) return
         val arrow = if (sort.ascending) "↑" else "↓"
         val staticLabel = when (sort.kind) {
@@ -698,6 +702,16 @@ class CharacterListFragment : Fragment() {
         }
         if (staticLabel != null) {
             binding.sortChip.text = "$staticLabel $arrow"
+        } else if (sort.kind == CharacterListPreset.SORT_DUEL) {
+            // 축 이름도 비동기 조회다. **못 찾으면 코드를 그대로 보인다** — 지워진 축을
+            // 가리키는 프리셋에서 칩이 '기본'이라 말하면 정렬이 먹은 것처럼 읽힌다.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val name = viewModel.getSortableDuelAxes().firstOrNull { it.code == sort.duelAxisCode }?.name
+                    ?: sort.duelAxisCode ?: getString(R.string.sort_label_manual)
+                if (_binding != null) {
+                    binding.sortChip.text = getString(R.string.sort_label_duel, name) + " $arrow"
+                }
+            }
         } else {
             viewLifecycleOwner.lifecycleScope.launch {
                 val name = viewModel.getSortableFields().firstOrNull { it.key == sort.fieldKey }?.name
@@ -705,6 +719,35 @@ class CharacterListFragment : Fragment() {
                 if (_binding != null) binding.sortChip.text = "$name $arrow"
             }
         }
+    }
+
+    /**
+     * 대결 점수 정렬의 고지 (B-117) — 점수가 없어 맨 뒤로 간 인원과 점수에서 빠진 판.
+     *
+     * **목록이 갱신된 뒤에 읽는다.** 점수표는 정렬이 실제로 돌 때 만들어지므로, 정렬을 고른
+     * 직후가 아니라 결과가 나온 뒤에야 셀 것이 생긴다.
+     */
+    private fun updateDuelSortNotice() {
+        val b = _binding ?: return
+        val notice = viewModel.duelSortNotice()
+        val text = when (notice) {
+            null -> null
+            // 축이 사라졌다 — 목록이 기본 순서인 이유를 말해야 한다. 조용히 두면 사용자는
+            // 정렬이 먹은 줄 알고 목록이 왜 안 바뀌는지 알 길이 없다(개발 의도 2번).
+            is CharacterViewModel.DuelSortNotice.AxisMissing ->
+                getString(R.string.sort_duel_notice_axis_missing)
+            is CharacterViewModel.DuelSortNotice.Scored -> {
+                val s = notice.scores
+                when {
+                    s.unplayed == 0 && s.orphanMatches == 0 -> null
+                    s.orphanMatches > 0 ->
+                        getString(R.string.sort_duel_notice_missing, s.unplayed, s.orphanMatches)
+                    else -> getString(R.string.sort_duel_notice, s.unplayed)
+                }
+            }
+        }
+        b.duelSortNotice.text = text.orEmpty()
+        b.duelSortNotice.visibility = if (text == null) View.GONE else View.VISIBLE
     }
 
     /** 컨트롤 버튼 라벨에 활성 상태 수 표기: "정렬·필터 · N" (필터 수 + 비수동 정렬 1). */

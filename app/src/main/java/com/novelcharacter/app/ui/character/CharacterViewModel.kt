@@ -10,12 +10,14 @@ import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
+import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.SortComparators
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterListPreset
+import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.google.gson.Gson
@@ -52,7 +54,20 @@ data class CharacterSort(
     val kind: String = CharacterListPreset.SORT_MANUAL,
     val fieldKey: String? = null,
     val ascending: Boolean = true,
-    val bodySizePartIndex: Int? = null
+    val bodySizePartIndex: Int? = null,
+    /**
+     * `kind == SORT_DUEL`일 때 대상 대결 축의 **코드**(B-117).
+     * id가 아닌 이유는 [CharacterListPreset.sortDuelAxisCode]에 적혀 있다(R-1).
+     */
+    val duelAxisCode: String? = null
+)
+
+/** 정렬 UI가 제시할 대결 축(B-117). 세계관 이름을 함께 드는 것은 축 이름이 세계관마다 겹치기 때문이다. */
+data class SortableDuelAxis(
+    val code: String,
+    val name: String,
+    val universeName: String,
+    val matches: Int
 )
 
 /** 정렬 UI가 제시할 정렬 가능 필드(세계관 간 (key,type) 병합 결과). */
@@ -67,6 +82,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val app = application as NovelCharacterApp
     private val characterRepository = app.characterRepository
+    private val duelRepository = app.duelRepository
     private val novelRepository = app.novelRepository
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
@@ -173,13 +189,21 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val fieldValueEpoch = AtomicInteger(0)  // character_field_values
     private val tagEpoch = AtomicInteger(0)         // character_tags
     private val structEpoch = AtomicInteger(0)      // field_definitions / novels / universes (필드정의·작품→세계관 귀속)
+    /**
+     * duel_matches / duel_axes / duel_counter_verdicts (B-117).
+     *
+     * **판 하나를 누르면 점수 전체가 다시 정해진다** — BT는 결과 집합의 함수라 한 판이
+     * 늘어도 모든 참가자의 강함이 움직인다. 그래서 이 에폭은 *바뀐 캐릭터*가 아니라
+     * **정렬 키 캐시 전체**를 버리게 한다(부분 갱신이 성립하지 않는 축이다).
+     */
+    private val duelEpoch = AtomicInteger(0)
 
     /** 테이블 변경을 메인 스레드로 옮겨 recompute를 재트리거하는 토큰(onInvalidated가 오프메인이므로 postValue). */
     private val _tableInvalidation = MutableLiveData<Unit>()
 
     private val invalidationObserver = object : InvalidationTracker.Observer(
         "character_field_values", "character_tags", "field_definitions", "novels", "universes",
-        "field_value_entries"
+        "field_value_entries", "duel_matches", "duel_axes", "duel_counter_verdicts"
     ) {
         // Room 쿼리 실행자(오프메인)에서 호출된다. 에폭 bump는 원자적이라 즉시 안전, 재계산은 postValue로 메인 위임.
         override fun onInvalidated(tables: Set<String>) {
@@ -191,6 +215,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 "field_value_entries" in tables) fieldValueEpoch.incrementAndGet()
             if ("character_tags" in tables) tagEpoch.incrementAndGet()
             if (fieldDefChanged || "novels" in tables || "universes" in tables) structEpoch.incrementAndGet()
+            // 대결: 판·축·처분 셋 중 어느 것이 바뀌어도 점수가 통째로 다시 정해진다(위 duelEpoch 주석).
+            if ("duel_matches" in tables || "duel_axes" in tables ||
+                "duel_counter_verdicts" in tables) duelEpoch.incrementAndGet()
             _tableInvalidation.postValue(Unit)  // listTrigger → recompute()의 120ms 디바운스가 버스트를 흡수
         }
     }
@@ -374,6 +401,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 chars.sortedWithDir(sort.ascending) { it.updatedAt }
             CharacterListPreset.SORT_FIELD ->
                 sortByField(chars, sort.fieldKey, sort.ascending, sort.bodySizePartIndex)
+            CharacterListPreset.SORT_DUEL ->
+                sortByDuel(chars, sort.duelAxisCode, sort.ascending)
             else ->
                 // SORT_MANUAL: 핀 최상단 + displayOrder + 이름 (검색 결과도 동일 순서로 정규화)
                 chars.sortedWith(
@@ -450,6 +479,96 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
         return if (cache.useNumeric) chars.sortedWith(nullsLastComparator(ascending) { cache.numeric[it.id] })
         else chars.sortedWith(nullsLastComparator(ascending) { cache.text[it.id] })
+    }
+
+    /**
+     * 대결 점수 정렬 (B-117). 점수는 [DuelScoreIndex]가 낸 것을 그대로 쓴다 —
+     * **순위표가 보이는 그 수**여야 두 화면이 같은 말을 한다.
+     *
+     * ## 적합은 **축 전체**로 돈다
+     * 넘기는 참가자는 목록에 남은 캐릭터가 아니라 **그 축이 매달린 세계관의 캐릭터 전부**다.
+     * BT는 결과 집합의 함수라 참가자를 빼면 점수가 달라지고, 좁힌 집합으로 적합하면
+     * **검색어를 한 글자 칠 때마다 순위가 흔들린다.** 필터는 *무엇을 보는가*이지
+     * *누가 겨뤘는가*가 아니다.
+     *
+     * ## 다시 적합하는 때
+     * [duelEpoch]가 오를 때뿐이다(판·축·처분이 바뀐 때). 검색어·필터·방향 반전은 캐시를
+     * 그대로 쓴다 — 필드 정렬 캐시와 같은 규칙이되, 이쪽은 **한 판이 전원의 점수를 움직이므로
+     * 증분이 성립하지 않아 통째로 버린다.**
+     */
+    private suspend fun sortByDuel(
+        chars: List<Character>, axisCode: String?, ascending: Boolean
+    ): List<Character> {
+        if (axisCode.isNullOrEmpty() || chars.isEmpty()) return chars
+
+        val dE = duelEpoch.get()
+        var cache = duelSortCache
+        if (cache == null || cache.axisCode != axisCode || cache.duelEpoch != dE) {
+            val axis = app.database.duelAxisDao().getByCode(axisCode)
+            // 축이 사라졌다(지웠거나 다른 기기의 프리셋·엑셀이 들여온 코드다) → base 순서를
+            // 지키되 **그 사실을 캐시에 남긴다.** 조용히 되돌리면 사용자는 정렬이 먹은 줄 알고,
+            // 목록이 왜 안 바뀌는지 알 길이 없다(개발 의도 2번 — 말없이 버리지 않는다).
+            if (axis == null || axis.isImageAxis) {
+                duelSortCache = DuelSortCache(axisCode, dE, scores = null)
+                return chars
+            }
+            val participants = characterRepository
+                .getCharactersByUniverseList(axis.universeId).map { it.code }
+            cache = DuelSortCache(axisCode, dE, duelRepository.scoresOf(axis, participants))
+            duelSortCache = cache
+        }
+
+        val scores = cache.scores ?: return chars  // 축을 못 찾았다 — 위에서 캐시에 남겼다
+        return DuelScoreIndex.sorted(
+            chars, ascending, scores, { it.code }, { it.name }
+        )
+    }
+
+    /**
+     * 대결 점수 정렬 캐시. **증분이 없다** — 판 하나가 전원의 점수를 움직이기 때문이다.
+     *
+     * @property scores null이면 **축을 찾지 못했다**는 뜻이다(지웠거나 남의 기기 것이다).
+     *   그 사실 자체를 캐시에 담는 것은 화면이 그것을 말해야 하기 때문이고, 담지 않으면
+     *   *"아직 계산 전"*과 구별되지 않는다.
+     */
+    private class DuelSortCache(
+        val axisCode: String,
+        val duelEpoch: Int,
+        val scores: DuelScoreIndex.AxisScores?
+    )
+    /**
+     * **`@Volatile`인 것이 형제 캐시([fieldSortCache])와 다른 점이다.**
+     *
+     * 저쪽은 `cacheMutex` 안에서만 읽고 쓰므로 가시성이 자물쇠에 딸려 온다. 이쪽은
+     * **쓰기는 자물쇠 안(백그라운드)이고 읽기는 화면(메인 스레드)의 [duelSortNotice]**라
+     * 자물쇠를 공유하지 않는다 — 표시하려고 자물쇠를 잡으면 목록 계산이 끝날 때까지
+     * 화면이 멈춘다. 표식 하나면 가시성이 서고, 이 값은 참조 하나라 짝이 갈릴 자리도 없다.
+     */
+    @Volatile private var duelSortCache: DuelSortCache? = null
+
+    /**
+     * 대결 정렬이 화면에 말해야 하는 것.
+     *
+     * **갈래가 둘인 것은 "정렬이 먹지 않았다"와 "먹었는데 몇 명이 빠졌다"가 다른 사실이기
+     * 때문이다.** 앞은 고를 축을 바꾸라는 뜻이고 뒤는 판을 더 붙이라는 뜻이라, 한 문구로
+     * 뭉치면 사용자가 무엇을 해야 할지 알 수 없다.
+     */
+    sealed interface DuelSortNotice {
+        /** 축을 찾지 못했다 — 정렬이 먹지 않았고 목록은 기본 순서다. */
+        object AxisMissing : DuelSortNotice
+        /** 축은 찾았다. 점수가 없어 뒤로 간 인원과 점수에서 빠진 판을 말한다. */
+        data class Scored(val scores: DuelScoreIndex.AxisScores) : DuelSortNotice
+    }
+
+    /**
+     * 지금 정렬에 걸린 축이 함께 말해야 하는 것.
+     * 정렬이 대결이 아니거나 아직 계산 전이면 null이다(화면이 고지 영역을 감춘다).
+     */
+    fun duelSortNotice(): DuelSortNotice? {
+        val sort = _sortSpec.value ?: return null
+        if (sort.kind != CharacterListPreset.SORT_DUEL) return null
+        val cache = duelSortCache?.takeIf { it.axisCode == sort.duelAxisCode } ?: return null
+        return cache.scores?.let { DuelSortNotice.Scored(it) } ?: DuelSortNotice.AxisMissing
     }
 
     /** 필드 정렬키 증분 캐시. 정체성(fieldKey/partIndex/scope/fv·struct 에폭)이 바뀌면 통째로 교체된다. */
@@ -554,6 +673,33 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return seen.values.toList()
     }
 
+    /**
+     * 현재 스코프의 **대결 축**(B-117) — 정렬 UI가 고를 대상.
+     *
+     * **캐릭터 축만 든다.** 이미지 축의 참가자는 이미지 경로라 캐릭터 목록을 줄 세울 수 없다 —
+     * 목록에 올려 두면 골랐을 때 아무 일도 일어나지 않고, 그것은 원칙 02가 금지하는 겉핥기다.
+     *
+     * 판 수를 함께 드는 것은 **아직 한 판도 안 한 축을 고르면 목록이 그대로**이기 때문이다.
+     * 고르기 전에 알 수 있으면 사용자가 "정렬이 고장 났다"고 읽지 않는다.
+     */
+    suspend fun getSortableDuelAxes(): List<SortableDuelAxis> {
+        val result = ArrayList<SortableDuelAxis>()
+        for (uid in scopedUniverseIds()) {
+            val universeName = universeRepository.getUniverseById(uid)?.name.orEmpty()
+            for (axis in duelRepository.axesForTarget(uid, DuelAxis.TARGET_CHARACTER)) {
+                result.add(
+                    SortableDuelAxis(
+                        code = axis.code,
+                        name = axis.name,
+                        universeName = universeName,
+                        matches = duelRepository.matchCount(axis.id)
+                    )
+                )
+            }
+        }
+        return result
+    }
+
     /** 필터 UI용 세계관 목록 (작품 선택 시 그 세계관만, 전체면 모두). */
     suspend fun getScopedUniverses(): List<Universe> {
         val novelId = _currentNovelId.value
@@ -610,7 +756,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         setTagFilters(tags)
         setNovelFilters(parseNovelIds(preset.novelIdsJson))
         setFieldFilters(FieldFilterHelper.filtersFromJson(preset.fieldFiltersJson))
-        setSortSpec(CharacterSort(preset.sortKind, preset.sortFieldKey, preset.sortAscending, preset.bodySizePartIndex))
+        setSortSpec(CharacterSort(
+            preset.sortKind, preset.sortFieldKey, preset.sortAscending,
+            preset.bodySizePartIndex, preset.sortDuelAxisCode
+        ))
     }
 
     /** 이름만 변경 — 저장된 필터/정렬 내용은 유지. */
@@ -663,7 +812,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             sortKind = sort.kind,
             sortFieldKey = sort.fieldKey,
             sortAscending = sort.ascending,
-            bodySizePartIndex = sort.bodySizePartIndex
+            bodySizePartIndex = sort.bodySizePartIndex,
+            sortDuelAxisCode = sort.duelAxisCode
         )
     }
 
@@ -675,7 +825,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             kind = kind,
             fieldKey = prefs.getString("sort_field_key", null),
             ascending = prefs.getBoolean("sort_ascending", true),
-            bodySizePartIndex = prefs.getInt("sort_body_part", -1).takeIf { it >= 0 }
+            bodySizePartIndex = prefs.getInt("sort_body_part", -1).takeIf { it >= 0 },
+            duelAxisCode = prefs.getString("sort_duel_axis", null)
         )
     }
 
@@ -685,6 +836,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             .putString("sort_field_key", sort.fieldKey)
             .putBoolean("sort_ascending", sort.ascending)
             .putInt("sort_body_part", sort.bodySizePartIndex ?: -1)
+            .putString("sort_duel_axis", sort.duelAxisCode)
             .apply()
     }
 

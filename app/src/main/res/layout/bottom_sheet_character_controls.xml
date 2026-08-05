@@ -101,7 +101,29 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/sort_by_field" />
+
+                <RadioButton
+                    android:id="@+id/rbDuel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_by_duel" />
             </RadioGroup>
+
+            <TextView
+                android:id="@+id/sortDuelLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/sort_duel_hint"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:visibility="gone" />
+
+            <Spinner
+                android:id="@+id/spinnerSortDuel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_spinner"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/sortFieldLabel"

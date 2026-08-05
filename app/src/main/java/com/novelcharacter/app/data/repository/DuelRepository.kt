@@ -9,6 +9,8 @@ import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRating
 import com.novelcharacter.app.util.DuelRecords
+import com.novelcharacter.app.util.DuelScoreIndex
+import com.novelcharacter.app.util.DuelStandings
 
 /**
  * 대결(B-104)의 **쓰기 경로와 읽기 조립** — 저장된 행과 순수 계층 사이의 유일한 통로.
@@ -223,4 +225,54 @@ class DuelRepository(private val db: AppDatabase) {
             missingParticipants = records.missingParticipants
         )
     }
+
+    /**
+     * **대결 밖이 쓰는 점수표** (B-117) — 캐릭터 목록 정렬과 통계 순위가 이것을 든다.
+     *
+     * [stateOf]와 **같은 진입점**([DuelCounterRelations.analyzeTwoPass])을 타는 것이 요점이다.
+     * 다른 경로로 점수를 내면 같은 캐릭터가 순위표와 목록에서 다른 수를 갖는다 —
+     * 설계 4장이 파생값을 저장하지 않는 이유가 그것이고, 저장하지 않는 대신 **계산의 출구를
+     * 하나로 묶는 것**이 [DuelScoreIndex]의 몫이다.
+     *
+     * 다른 점은 하나뿐이다: **짝 고르기 계획을 세우지 않는다.** 대기열은 대결 화면의 것이고
+     * 여기서는 아무도 그것을 읽지 않는데, 계획은 짝 전수를 훑느라 목표 규모 위쪽에서 147ms를
+     * 먹는다(설계 6장의 실측표).
+     *
+     * @param participantCodes 지금 살아 있는 참가자의 코드 — **축 전체의 참가자를 넘길 것.**
+     *   목록이 필터·검색으로 좁혀져 있어도 좁힌 집합으로 적합하면 안 된다. BT는 결과 집합의
+     *   함수라 참가자를 빼면 점수 자체가 달라지고, 그러면 **필터를 걸 때마다 순위가 흔들린다.**
+     */
+    suspend fun scoresOf(
+        axis: DuelAxis,
+        participantCodes: Collection<String>,
+        counterOptions: DuelCounterRelations.Options = DuelCounterRelations.Options(),
+        ratingOptions: DuelRating.Options = DuelRating.Options()
+    ): DuelScoreIndex.AxisScores {
+        val matches = db.duelMatchDao().getByAxis(axis.id)
+        val records = DuelRecords.resolve(
+            participantCodes,
+            matches,
+            db.duelCounterVerdictDao().getByAxis(axis.id)
+        )
+        val twoPass = DuelCounterRelations.analyzeTwoPass(
+            participants = records.participants,
+            matches = records.matches,
+            confirmedCounters = records.excludedPairs,
+            ratingOptions = ratingOptions,
+            options = counterOptions
+        )
+        return DuelScoreIndex.of(
+            axisId = axis.id,
+            axisCode = axis.code,
+            axisName = axis.name,
+            universeId = axis.universeId,
+            rows = DuelStandings.rows(twoPass.fit, twoPass.report, records),
+            fit = twoPass.fit,
+            missingParticipants = records.missingParticipants,
+            scanned = matches.size
+        )
+    }
+
+    /** 코드로 축을 집는다 — 프리셋·엑셀이 축을 가리키는 방법이 코드다(R-1). */
+    suspend fun axisByCode(code: String): DuelAxis? = db.duelAxisDao().getByCode(code)
 }

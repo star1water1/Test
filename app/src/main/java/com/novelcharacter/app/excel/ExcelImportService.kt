@@ -1206,6 +1206,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val filters = cols["필드필터(JSON)"] ?: -1
         val sortKind = cols["정렬종류"] ?: -1
         val sortFieldKey = cols["정렬필드키"] ?: -1
+        val sortDuelAxis = cols["대결축코드"] ?: -1
         val sortAsc = cols["정렬오름차순"] ?: -1
         val bodyPart = cols["신체파트번호"] ?: -1
         val novelCodes = cols["작품코드목록"] ?: -1
@@ -1221,6 +1222,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val sortKind: String?,
         val hasSortFieldKeyCol: Boolean,
         val sortFieldKey: String?,
+        val hasDuelAxisCol: Boolean,
+        val sortDuelAxisCode: String?,
         val sortAscending: Boolean?,
         val hasBodyPartCol: Boolean,
         val bodySizePartIndex: Int?,
@@ -1230,12 +1233,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val updatedAt: Long?
     )
 
-    /** 목록 프리셋 정렬종류 유효값 — 단일 소스는 엔티티 companion이다. */
-    private val validListSortKinds = setOf(
-        CharacterListPreset.SORT_MANUAL, CharacterListPreset.SORT_NAME,
-        CharacterListPreset.SORT_CREATED, CharacterListPreset.SORT_RECENT,
-        CharacterListPreset.SORT_FIELD
-    )
+    /**
+     * 목록 프리셋 정렬종류 유효값 — **단일 소스는 엔티티 companion이다.**
+     *
+     * 종전에는 그렇게 적어 놓고 실제로는 다섯을 여기 다시 나열하고 있었다. 그래서 B-117이
+     * 정렬 하나를 더했을 때 **엑셀에 `duel`이 적혀 있어도 조용히 '수동'이 됐다** —
+     * 내보낸 파일을 그대로 되들이는 것만으로 정렬이 사라지는 자리다(개발 의도 4번).
+     */
+    private val validListSortKinds = CharacterListPreset.SORT_KINDS
 
     private suspend fun readListPresetRow(
         row: Row, c: ListPresetCols, ctx: String,
@@ -1276,6 +1281,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             sortKind = sortKind,
             hasSortFieldKeyCol = c.sortFieldKey >= 0,
             sortFieldKey = if (c.sortFieldKey >= 0) getCellString(row, c.sortFieldKey).ifBlank { null } else null,
+            hasDuelAxisCol = c.sortDuelAxis >= 0,
+            sortDuelAxisCode = if (c.sortDuelAxis >= 0)
+                getCellString(row, c.sortDuelAxis).trim().ifBlank { null } else null,
             // 불리언 열 규약(전 시트 공통): null은 '열 없음'(기존값 유지)만을 뜻한다.
             // 열이 있으면 빈칸도 해석 대상 — 빈칸 = N = 비움 의도(F1-A).
             sortAscending = sheetBooleanOrKeep(c.sortAsc >= 0, getCellString(row, c.sortAsc)),
@@ -1294,6 +1302,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             fieldFiltersJson = r.fieldFiltersJson ?: existing.fieldFiltersJson,
             sortKind = r.sortKind ?: existing.sortKind,
             sortFieldKey = if (r.hasSortFieldKeyCol) r.sortFieldKey else existing.sortFieldKey,
+            sortDuelAxisCode = if (r.hasDuelAxisCol) r.sortDuelAxisCode else existing.sortDuelAxisCode,
             sortAscending = r.sortAscending ?: existing.sortAscending,
             bodySizePartIndex = if (r.hasBodyPartCol) r.bodySizePartIndex else existing.bodySizePartIndex,
             novelIdsJson = r.novelIdsJson ?: existing.novelIdsJson,
@@ -3054,6 +3063,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     fieldFiltersJson = r.fieldFiltersJson ?: "{}",
                     sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
                     sortFieldKey = r.sortFieldKey,
+                    sortDuelAxisCode = r.sortDuelAxisCode,
                     sortAscending = r.sortAscending ?: true,
                     bodySizePartIndex = r.bodySizePartIndex,
                     novelIdsJson = r.novelIdsJson ?: "[]",
@@ -5679,6 +5689,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         fieldFiltersJson = r.fieldFiltersJson ?: "{}",
                         sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
                         sortFieldKey = r.sortFieldKey,
+                        sortDuelAxisCode = r.sortDuelAxisCode,
                         sortAscending = r.sortAscending ?: true,
                         bodySizePartIndex = r.bodySizePartIndex,
                         novelIdsJson = r.novelIdsJson ?: "[]",

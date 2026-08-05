@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
 import org.apache.poi.ss.usermodel.Row
@@ -752,8 +753,13 @@ fun characterListPresetSpec() = SheetSpec(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("태그(JSON)", width = 10000),
         ColumnSpec("필드필터(JSON)", width = 15000),
-        ColumnSpec("정렬종류", dropdownOptions = listOf("manual", "name", "created", "recent", "field"), width = 4000),
+        // 드롭다운 목록과 가져오기 유효값 검증이 **같은 상수**를 본다(검색 프리셋과 같은 규약) —
+        // 리터럴로 나열해 두었더니 B-117이 정렬 하나를 더할 때 이 자리가 뒤처졌다.
+        ColumnSpec("정렬종류", dropdownOptions = CharacterListPreset.SORT_KINDS.toList(), width = 4000),
         ColumnSpec("정렬필드키", width = 5000),
+        // 대결 점수 정렬(B-117)의 대상 축. **코드**이지 이름이 아니다 — 축 이름은 세계관마다
+        // 겹치고, 이 앱의 축은 판·처분·휴지통이 전부 코드로 가리킨다(R-1).
+        ColumnSpec("대결축코드", width = 5000),
         ColumnSpec("정렬오름차순", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("신체파트번호", width = 4000),
         ColumnSpec("작품코드목록", width = 10000),

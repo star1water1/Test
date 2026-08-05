@@ -413,24 +413,58 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _rankingResult = MutableLiveData<RankingResult?>()
     val rankingResult: LiveData<RankingResult?> = _rankingResult
 
-    private val _rankableFields = MutableLiveData<List<RankableField>>()
-    val rankableFields: LiveData<List<RankableField>> = _rankableFields
+    /** 순위 화면의 선택지 — 필드 다음에 대결 축이다(B-117. 차례는 `rankingSources`가 정한다). */
+    private val _rankingSources = MutableLiveData<List<RankingSource>>()
+    val rankingSources: LiveData<List<RankingSource>> = _rankingSources
 
-    private var rankableFieldsJob: Job? = null
+    private var rankingSourcesJob: Job? = null
 
-    fun loadRankableFields(universeId: Long?) {
+    fun loadRankingSources(universeId: Long?) {
         // 이전 로드 취소 — 세계관 전환/복원 시 여러 로드가 겹쳐 마지막 것이 아닌 결과가
         // 스피너를 덮어쓰는 경쟁을 막는다(마지막 요청만 확정).
-        rankableFieldsJob?.cancel()
-        rankableFieldsJob = viewModelScope.launch {
+        rankingSourcesJob?.cancel()
+        rankingSourcesJob = viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                val fields = withContext(Dispatchers.IO) {
-                    provider.getRankableFields(snapshot, universeId)
+                val sources = withContext(Dispatchers.IO) {
+                    provider.rankingSources(snapshot, universeId)
                 }
-                _rankableFields.value = fields
+                _rankingSources.value = sources
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: Exception) {
+                reportError(e)
+            }
+        }
+    }
+
+    /**
+     * 대결 점수로 순위를 낸다 (B-117).
+     *
+     * **적합은 축 전체로 돈다** — 넘기는 참가자는 화면 스코프의 캐릭터가 아니라 그 축이
+     * 매달린 세계관의 캐릭터 전부다. BT는 결과 집합의 함수라 참가자를 빼면 점수가 달라지고,
+     * 작품 필터를 걸 때마다 점수가 흔들리면 **순위표와 다른 수**가 된다. 스코프는 표에서
+     * *무엇을 보이는가*에만 쓴다([StatsDataProvider.computeDuelRanking]).
+     */
+    fun loadDuelRanking(axisCode: String, ascending: Boolean = false, novelId: Long? = null) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val axis = withContext(Dispatchers.IO) { app.duelRepository.axisByCode(axisCode) }
+                if (axis == null) {
+                    // 축이 사라졌다(다른 화면에서 지웠다) — 빈 표로 답하고 조용히 죽지 않는다.
+                    _rankingResult.value = RankingResult(emptyList(), "", "", ascending, 0, 0)
+                    return@launch
+                }
+                val scores = withContext(Dispatchers.IO) {
+                    val participants = app.characterRepository
+                        .getCharactersByUniverseList(axis.universeId).map { it.code }
+                    app.duelRepository.scoresOf(axis, participants)
+                }
+                val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+                _rankingResult.value = withContext(Dispatchers.IO) {
+                    provider.computeDuelRanking(scoped, scores, ascending)
+                }
             } catch (e: Exception) {
                 reportError(e)
             }

@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.stats
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.util.CompletionRate
+import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.FieldValueMatcher
@@ -42,6 +43,16 @@ data class StatsSnapshot(
     val novelFieldValues: List<NovelFieldValue> = emptyList(),
     // 값 데이터 라이브러리 — 별칭 접기·표시 라벨·카테고리의 단일 소스 (구 valueLabels/valueCategories 대체)
     val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList(),
+    /**
+     * 대결 축 목록 (B-117) — 순위 화면이 *"무엇으로 줄 세울까"*의 선택지에 싣는다.
+     *
+     * **싣는 것은 축이지 판이 아니다.** 판은 한 축에서만 수만 행이 될 수 있어 스냅샷에 담으면
+     * 그것을 순회하는 계산이 스냅샷 하나에 통째로 붙는다 —
+     * `scalability_performance` 7장 4단계 3번이 묻는 바로 그 질문이고, 이 판의 답은
+     * **"목록은 더하되 계산은 더하지 않는다"**이다. 점수는 사용자가 축 하나를 고른 뒤에
+     * [com.novelcharacter.app.data.repository.DuelRepository.scoresOf]가 그때 낸다.
+     */
+    val duelAxes: List<com.novelcharacter.app.data.model.DuelAxis> = emptyList(),
     /**
      * 완성도 필수 가중 (B-100). [StatsDataProvider.loadSnapshot]이 설정에서 읽어 싣는다 —
      * 계산 함수들이 `Context`를 모르게 하기 위해서다(순수 하네스가 그대로 돈다).
@@ -538,7 +549,19 @@ data class RankingResult(
     val fieldType: String,
     val ascending: Boolean,
     val totalCharacters: Int,
-    val excludedCount: Int
+    val excludedCount: Int,
+    /**
+     * 점수 분포 — **대결 축일 때만** 채워진다 (B-117. 백로그 원문의 *"점수 분포"*).
+     *
+     * 줄 세우기는 *"누가 위인가"*를 답하지만 **군상의 모양**은 답하지 않는다 —
+     * 원칙 02가 요구하는 것이 후자다(*"편향이나 패턴을 발견할 수 있는 정보"*).
+     * 점수가 좁은 띠에 몰려 있는지 양극으로 갈렸는지는 목록을 끝까지 훑어도 안 보인다.
+     *
+     * 구간은 [com.novelcharacter.app.util.NumericBinning]이 만든다 — 분포를 그리는 쪽과
+     * 조각의 인원을 세는 쪽이 구간을 각자 계산해 **두 수가 어긋난 전례**가 이 저장소에 있다.
+     * 비어 있으면 *나눌 폭이 없다*는 뜻이다(전원이 같은 점수이거나 둘 미만).
+     */
+    val scoreDistribution: List<Pair<String, Int>> = emptyList()
 )
 
 data class RankableField(
@@ -550,10 +573,65 @@ data class RankableField(
 )
 
 /**
+ * 순위 화면이 **무엇으로 줄 세울지**의 선택지 (B-117) — 필드와 대결 축이 한 목록에 선다.
+ *
+ * 스피너 하나에 두 부류를 담으므로 **차례가 곧 계약**이다. 화면이 위치로 되짚기 때문에
+ * 목록을 만드는 일을 여기(순수 계산)로 내렸다 — 화면 안에서 인덱스를 셈하면
+ * 「세션 착수 규칙」 4번이 말한 *"자동 검증이 보지 못하는 자리"*가 된다.
+ */
+data class RankingSource(
+    val isDuel: Boolean,
+    /** 스피너에 보이는 이름. */
+    val label: String,
+    /** 괄호 안에 붙는 종류 표시("숫자"·"빈도"·"대결"). */
+    val typeLabel: String,
+    /**
+     * 필드일 때만.
+     *
+     * 이름이 `field`가 아닌 것은 일부러다 — 커스텀 getter 안에서 `field`는 **뒷받침 필드**를
+     * 가리키는 코틀린의 소프트 키워드라, 아래 [storageKey]에서 이 속성을 가리지 못한다.
+     */
+    val rankableField: RankableField? = null,
+    /** 대결 축일 때만 — **코드**다(R-1: 이 앱의 축은 언제나 코드로 가리킨다). */
+    val duelAxisCode: String? = null
+) {
+    /**
+     * 고른 것을 저장·복원하는 열쇠.
+     *
+     * 필드와 축이 한 목록에 서므로 **접두사로 갈라야 한다** — 필드 key `강함`과 축 코드가
+     * 우연히 같으면 다음에 열 때 엉뚱한 것이 골라진다. 위치(인덱스)로 저장하지 않는 것은
+     * 축을 하나 만들기만 해도 뒤가 통째로 밀리기 때문이다.
+     */
+    val storageKey: String
+        get() = if (isDuel) "$DUEL_KEY_PREFIX$duelAxisCode" else "$FIELD_KEY_PREFIX${rankableField?.fieldDef?.key}"
+
+    /**
+     * 저장된 열쇠가 이것을 가리키는가.
+     *
+     * **접두사 없는 값도 필드로 받는다** — B-117 이전에 저장된 선택은 필드 key를 그대로
+     * 담고 있다. 이것을 받지 않으면 업데이트 한 번에 **모든 사용자의 순위 선택이 풀린다**
+     * (앱이 죽지는 않으므로 눈에 띄지 않는 유실이고, 그래서 더 조용하다).
+     */
+    fun matches(savedKey: String): Boolean =
+        savedKey == storageKey ||
+            (!isDuel && !savedKey.startsWith(DUEL_KEY_PREFIX) &&
+                savedKey.removePrefix(FIELD_KEY_PREFIX) == rankableField?.fieldDef?.key)
+
+    companion object {
+        const val FIELD_KEY_PREFIX = "field:"
+        const val DUEL_KEY_PREFIX = "duel:"
+    }
+}
+
+/**
  * 앱 인스턴스는 [loadSnapshot]만 필요로 한다 — 나머지 compute* 함수는 스냅샷만 보는 순수 계산이다.
  * 그래서 생성자에서 앱을 받지 않는다: Android 런타임 없이도 집계 규칙을 실제로 실행해 검증할 수 있다.
  */
 class StatsDataProvider {
+
+
+    /** 대결 점수 순위의 종류 표시 — 화면과 계산이 같은 문자열을 본다(B-117). */
+    private val DUEL_TYPE_LABEL = "대결"
 
     /**
      * 드릴다운 목록의 캐릭터 그림을 고를 때 쓰는 랜덤 시드(B-103 D3).
@@ -591,6 +669,8 @@ class StatsDataProvider {
             novelFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL),
             novelFieldValues = db.novelFieldValueDao().getAllValuesList(),
             valueEntries = db.fieldValueEntryDao().getAllList(),
+            // 축만 든다 — 판은 싣지 않는다(위 duelAxes 주석: 스냅샷에 계산을 붙이지 않는다).
+            duelAxes = db.duelAxisDao().getAllList(),
             completionWeights = weights
         )
     }
@@ -669,7 +749,12 @@ class StatsDataProvider {
             eventFieldValues = s.eventFieldValues.filter { it.eventId in eventIdsForNovel },
             // 작품 스코프의 모수는 그 작품 하나다 — 값도 그 작품 것만 남긴다.
             novelFieldDefinitions = s.novelFieldDefinitions.filter { it.universeId == novel.universeId },
-            novelFieldValues = s.novelFieldValues.filter { it.novelId == novelId }
+            novelFieldValues = s.novelFieldValues.filter { it.novelId == novelId },
+            // 축은 세계관 단위라 그 작품이 속한 세계관의 것만 남는다(B-117).
+            // **점수를 자르지는 않는다** — 점수는 축 전체의 기록에서 나온 값이고, 작품으로
+            // 잘라 다시 적합하면 순위표와 다른 수가 된다. 작품 필터는 *무엇을 보는가*이지
+            // *누가 겨뤘는가*가 아니다.
+            duelAxes = s.duelAxes.filter { it.universeId == novel.universeId }
         )
     }
 
@@ -714,6 +799,10 @@ class StatsDataProvider {
             // 세계관 없는 작품이 보관 중인 값은 전체 스코프의 카드와 엑셀 왕복이 다룬다.
             novelFieldDefinitions = emptyList(),
             novelFieldValues = emptyList(),
+            // **대결 축도 이 스코프에 없다** — 축은 세계관 단위이고 이 스코프에는 세계관이 없다.
+            // 남겨 두면 순위 화면이 축을 제시하는데, 고르면 그 세계관의 캐릭터가 이 스코프에
+            // 하나도 없어 빈 표가 뜬다(고를 수 있는데 아무 일도 안 일어나는 자리 — 원칙 02).
+            duelAxes = emptyList(),
             unassignedScope = true
         )
     }
@@ -3002,6 +3091,19 @@ class StatsDataProvider {
      * 순위를 매길 수 있는 필드 목록을 반환한다.
      * universeId가 null이면 모든 세계관의 필드를 (key, type) 기준으로 머지하여 중복 없이 반환한다.
      */
+    /**
+     * 스피너가 괄호 안에 적는 종류 표시. **계산과 같은 표를 본다** — 리터럴을 화면에 따로
+     * 두면 타입이 늘 때 목록만 뒤처져 사용자에게 거짓을 말한다(`getRankableFields`의 주석).
+     */
+    fun rankingTypeLabel(type: String): String = when (type) {
+        "NUMBER" -> "숫자"
+        "CALCULATED" -> "계산"
+        "GRADE" -> "등급"
+        "BODY_SIZE" -> "신체"
+        "SELECT", "TEXT", "MULTI_TEXT" -> "빈도"
+        else -> type
+    }
+
     fun getRankableFields(s: StatsSnapshot, universeId: Long?): List<RankableField> {
         val fields = if (universeId != null) {
             s.fieldDefinitions.filter { it.universeId == universeId }
@@ -3037,6 +3139,109 @@ class StatsDataProvider {
             RankableField(primaryFd, bodySizeParts, isNumeric,
                 mergedFieldDefIds = fds.map { it.id })
         }
+    }
+
+    /**
+     * 순위 화면의 선택지 전부 — **필드 다음에 대결 축**이다 (B-117).
+     *
+     * 차례를 이렇게 둔 것은 필드가 늘 있고 축은 없을 수도 있기 때문이다. 축을 앞에 두면
+     * 축이 하나도 없는 사용자에게는 목록이 그대로인데 있는 사용자에게만 앞이 밀려,
+     * *"내가 늘 고르던 그 자리"*가 사람마다 달라진다.
+     *
+     * **캐릭터 축만 싣는다.** 이미지 축의 참가자는 이미지 경로라 캐릭터 순위표를 만들 수
+     * 없다 — 목록에 올려 두면 골랐을 때 빈 표가 뜨고, 그것이 원칙 02가 금지하는 겉핥기다.
+     */
+    fun rankingSources(s: StatsSnapshot, universeId: Long?): List<RankingSource> {
+        val fields = getRankableFields(s, universeId).map { field ->
+            RankingSource(
+                isDuel = false,
+                label = field.fieldDef.name,
+                typeLabel = rankingTypeLabel(field.fieldDef.type),
+                rankableField = field
+            )
+        }
+        val axes = s.duelAxes
+            .filter { it.targetType == com.novelcharacter.app.data.model.DuelAxis.TARGET_CHARACTER }
+            .filter { universeId == null || it.universeId == universeId }
+            .sortedWith(compareBy({ it.displayOrder }, { it.name }))
+            .map { axis ->
+                RankingSource(
+                    isDuel = true,
+                    label = axis.name,
+                    typeLabel = DUEL_TYPE_LABEL,
+                    duelAxisCode = axis.code
+                )
+            }
+        return fields + axes
+    }
+
+    /**
+     * 대결 점수로 매긴 순위 (B-117) — 점수는 [DuelScoreIndex]가 이미 낸 것을 **그대로** 쓴다.
+     *
+     * 여기서 하는 일은 *참가자 코드를 캐릭터에 잇는 것*뿐이다. 다시 계산하지 않는 것이
+     * 이 기능의 요점이고([DuelScoreIndex]의 계약 1), 그래서 **순위표가 보이는 그 수**가
+     * 통계에도 뜬다.
+     *
+     * @param scores 축 하나의 점수표. **스코프로 자르기 전의 것**이어야 한다 —
+     *   점수는 축 전체의 기록에서 나온 값이고 작품으로 잘라 다시 적합하면 순위표와 갈린다.
+     * @return 이 스코프에 보이는 캐릭터만 담은 표. [RankingResult.excludedCount]는
+     *   **점수가 없어 빠진 인원**이다(한 판도 안 치른 캐릭터 — 조용히 빠지지 않는다).
+     */
+    fun computeDuelRanking(
+        s: StatsSnapshot,
+        scores: DuelScoreIndex.AxisScores,
+        ascending: Boolean = false
+    ): RankingResult {
+        val novelMap = s.novels.associateBy { it.id }
+        val scored = s.characters.filter { scores.scoreOf(it.code) != null }
+        val ordered = DuelScoreIndex.sorted(
+            scored, ascending, scores, { it.code }, { it.name }
+        )
+
+        val entries = ArrayList<RankingEntry>(ordered.size)
+        var currentRank = 1
+        var previous: Int? = null
+        ordered.forEachIndexed { index, char ->
+            val score = scores.scoreOf(char.code) ?: return@forEachIndexed
+            // 표준 경쟁 순위 — 동점은 같은 등수이고 다음 등수는 그만큼 건너뛴다.
+            // **여기서 다시 매기는 것은 이 스코프의 등수이기 때문이다**: 작품 필터가 걸리면
+            // 축 전체의 등수(1, 4, 9…)가 뜨는데, 화면이 보이는 것은 그중 몇뿐이라
+            // 사용자가 "2위가 없다"고 읽는다. 점수는 그대로이고 등수만 이 표의 것이다.
+            if (index > 0 && score != previous) currentRank = index + 1
+            previous = score
+            entries.add(
+                RankingEntry(
+                    characterId = char.id,
+                    characterName = char.name,
+                    rank = currentRank,
+                    value = score.toDouble(),
+                    // 순위표가 `1523 ±37`로 말하므로 여기도 같은 모양이다 — **믿어도 되는
+                    // 줄인가를 행이 스스로 말한다**([DuelStandings]의 규칙 2). 점수만 적으면
+                    // 세 판 친 1520과 백 판 친 1520이 같아 보인다.
+                    displayValue = scores.entryOf(char.code)
+                        ?.let { "$score ±${it.scoreError}" } ?: score.toString(),
+                    imagePaths = char.imagePaths,
+                    representativeImagePath = char.representativeImagePath,
+                    novelTitle = char.novelId?.let { novelMap[it] }?.title
+                )
+            )
+        }
+
+        return RankingResult(
+            entries = entries,
+            fieldName = scores.axisName,
+            fieldType = DUEL_TYPE_LABEL,
+            ascending = ascending,
+            totalCharacters = entries.size,
+            // 이 스코프에 있으면서 점수가 없는 캐릭터 — 한 판도 안 치른 쪽이다.
+            excludedCount = s.characters.size - entries.size,
+            // **분포는 축 전체로 낸다** — 점수와 같은 이유다(9-3장). 작품으로 잘라 다시 내면
+            // *"이 세계관의 강함이 어떤 모양인가"*가 아니라 *"이 작품 사람들만 모은 모양"*이
+            // 되는데, 축은 세계관 단위라 그 물음의 답이 아니다.
+            scoreDistribution = DuelScoreIndex.distribution(scores).map { (bin, count) ->
+                bin.label to count
+            }
+        )
     }
 
     /**
