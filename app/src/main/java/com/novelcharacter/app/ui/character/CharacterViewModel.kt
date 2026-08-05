@@ -536,7 +536,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val duelEpoch: Int,
         val scores: DuelScoreIndex.AxisScores?
     )
-    private var duelSortCache: DuelSortCache? = null
+    /**
+     * **`@Volatile`인 것이 형제 캐시([fieldSortCache])와 다른 점이다.**
+     *
+     * 저쪽은 `cacheMutex` 안에서만 읽고 쓰므로 가시성이 자물쇠에 딸려 온다. 이쪽은
+     * **쓰기는 자물쇠 안(백그라운드)이고 읽기는 화면(메인 스레드)의 [duelSortNotice]**라
+     * 자물쇠를 공유하지 않는다 — 표시하려고 자물쇠를 잡으면 목록 계산이 끝날 때까지
+     * 화면이 멈춘다. 표식 하나면 가시성이 서고, 이 값은 참조 하나라 짝이 갈릴 자리도 없다.
+     */
+    @Volatile private var duelSortCache: DuelSortCache? = null
 
     /** 대결 정렬이 화면에 말해야 하는 것 — 셋 중 하나다. */
     sealed interface DuelSortNotice {
