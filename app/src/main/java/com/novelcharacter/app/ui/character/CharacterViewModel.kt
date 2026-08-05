@@ -546,7 +546,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      */
     @Volatile private var duelSortCache: DuelSortCache? = null
 
-    /** 대결 정렬이 화면에 말해야 하는 것 — 셋 중 하나다. */
+    /**
+     * 대결 정렬이 화면에 말해야 하는 것.
+     *
+     * **갈래가 둘인 것은 "정렬이 먹지 않았다"와 "먹었는데 몇 명이 빠졌다"가 다른 사실이기
+     * 때문이다.** 앞은 고를 축을 바꾸라는 뜻이고 뒤는 판을 더 붙이라는 뜻이라, 한 문구로
+     * 뭉치면 사용자가 무엇을 해야 할지 알 수 없다.
+     */
     sealed interface DuelSortNotice {
         /** 축을 찾지 못했다 — 정렬이 먹지 않았고 목록은 기본 순서다. */
         object AxisMissing : DuelSortNotice
