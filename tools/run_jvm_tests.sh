@@ -61,6 +61,7 @@ $MAIN/excel/FieldConfigColumns.kt
 $MAIN/data/model/ConfigParseCache.kt
 $MAIN/data/model/DisplayFormat.kt
 $MAIN/data/model/SearchPreset.kt
+$MAIN/data/model/CharacterListPreset.kt
 $MAIN/data/model/Faction.kt
 $MAIN/data/model/StructuredInputConfig.kt
 $MAIN/excel/FieldValueSheetMapper.kt
@@ -179,6 +180,7 @@ $MAIN/util/DuelImageFit.kt
 $MAIN/util/DuelFieldLinks.kt
 $MAIN/util/DuelMatchLog.kt
 $MAIN/util/DuelCategoryStats.kt
+$MAIN/util/DuelScoreIndex.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -245,7 +247,9 @@ $TEST/util/DuelImageFitTest.kt
 $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
+$TEST/util/DuelScoreIndexTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
+$TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
@@ -281,6 +285,7 @@ $TEST/data/FieldValueUsageRecountTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 $TEST/stats/StatsCrossAnalysisTest.kt
 $TEST/stats/StatsDrilldownTest.kt
+$TEST/stats/DuelRankingTest.kt
 $TEST/stats/StatsConsistencyTest.kt
 $TEST/util/ValueDistributionsTest.kt
 $TEST/util/NumericBinningTest.kt

@@ -31,6 +31,8 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
     // ===== 정렬 (CharacterSortBottomSheet 승계) =====
     var currentSort: CharacterSort = CharacterSort()
     var loadSortableFields: (suspend () -> List<SortableField>)? = null
+    /** 대결 점수 정렬(B-117)이 고를 축. 비어 있으면 그 선택지가 꺼진다. */
+    var loadSortableDuelAxes: (suspend () -> List<SortableDuelAxis>)? = null
 
     // ===== 필터 (CharacterFilterBottomSheet 승계) =====
     var currentTags: Set<String> = emptySet()
@@ -58,6 +60,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private var fields: List<SortableField> = emptyList()
+    private var duelAxes: List<SortableDuelAxis> = emptyList()
     private var universes: List<Universe> = emptyList()
     private var filterFields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
@@ -124,6 +127,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             CharacterListPreset.SORT_CREATED -> binding.rbCreated.id
             CharacterListPreset.SORT_RECENT -> binding.rbRecent.id
             CharacterListPreset.SORT_FIELD -> binding.rbField.id
+            CharacterListPreset.SORT_DUEL -> binding.rbDuel.id
             else -> binding.rbManual.id
         })
         binding.dirToggleGroup.check(if (currentSort.ascending) binding.btnDirAsc.id else binding.btnDirDesc.id)
@@ -142,6 +146,37 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         }
 
         loadSortFields()
+        loadSortDuelAxes()
+    }
+
+    /**
+     * 대결 축 목록(B-117). 축이 없으면 선택지를 꺼서 **고를 수 없는 것을 고르게 두지 않는다.**
+     *
+     * 축 이름 뒤에 판 수를 적는다 — 한 판도 없는 축을 고르면 목록이 그대로이고, 그것을
+     * 고르기 **전에** 알 수 있어야 사용자가 "정렬이 고장 났다"고 읽지 않는다(원칙 04).
+     */
+    private fun loadSortDuelAxes() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            duelAxes = loadSortableDuelAxes?.invoke() ?: emptyList()
+            if (!isAdded || _binding == null) return@launch
+            val ctx = context ?: return@launch
+            if (duelAxes.isEmpty()) {
+                binding.rbDuel.isEnabled = false
+                binding.rbDuel.text = getString(R.string.sort_duel_none)
+            } else {
+                // 세계관 이름을 함께 적는 것은 전역 목록에서 축 이름이 겹치기 때문이다
+                // ('강함'은 어느 세계관에나 있다).
+                binding.spinnerSortDuel.adapter = ArrayAdapter(
+                    ctx, android.R.layout.simple_spinner_dropdown_item,
+                    duelAxes.map { axis ->
+                        getString(R.string.sort_duel_axis_item, axis.name, axis.universeName, axis.matches)
+                    }
+                )
+                val idx = duelAxes.indexOfFirst { it.code == currentSort.duelAxisCode }
+                if (idx >= 0) binding.spinnerSortDuel.setSelection(idx)
+            }
+            updateFieldVisibility()
+        }
     }
 
     private fun loadSortFields() {
@@ -165,10 +200,14 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateFieldVisibility() {
         val isField = binding.sortKindGroup.checkedRadioButtonId == binding.rbField.id
+        val isDuel = binding.sortKindGroup.checkedRadioButtonId == binding.rbDuel.id
         val isManual = binding.sortKindGroup.checkedRadioButtonId == binding.rbManual.id
         val vis = if (isField && fields.isNotEmpty()) View.VISIBLE else View.GONE
         binding.sortFieldLabel.visibility = vis
         binding.spinnerSortField.visibility = vis
+        val duelVis = if (isDuel && duelAxes.isNotEmpty()) View.VISIBLE else View.GONE
+        binding.sortDuelLabel.visibility = duelVis
+        binding.spinnerSortDuel.visibility = duelVis
         // 수동 정렬은 방향 개념이 없다
         binding.dirToggleGroup.visibility = if (isManual) View.GONE else View.VISIBLE
         updateBodyPartVisibility()
@@ -197,11 +236,18 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             binding.rbCreated.id -> CharacterListPreset.SORT_CREATED
             binding.rbRecent.id -> CharacterListPreset.SORT_RECENT
             binding.rbField.id -> if (fields.isEmpty()) CharacterListPreset.SORT_MANUAL else CharacterListPreset.SORT_FIELD
+            binding.rbDuel.id -> if (duelAxes.isEmpty()) CharacterListPreset.SORT_MANUAL else CharacterListPreset.SORT_DUEL
             else -> CharacterListPreset.SORT_MANUAL
         }
         val fieldKey = if (kind == CharacterListPreset.SORT_FIELD)
             fields.getOrNull(binding.spinnerSortField.selectedItemPosition)?.key else null
         return kind to fieldKey
+    }
+
+    /** 고른 대결 축의 코드 — 대결 정렬이 아니면 null이다(정렬을 바꿔도 옛 축이 따라붙지 않는다). */
+    private fun selectedDuelAxisCode(): String? {
+        if (binding.sortKindGroup.checkedRadioButtonId != binding.rbDuel.id) return null
+        return duelAxes.getOrNull(binding.spinnerSortDuel.selectedItemPosition)?.code
     }
 
     /** 기준 유지 시 현재 방향 보존, 바뀌면 합리적 기본값 (기존 시트 로직 그대로). */
@@ -212,6 +258,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             CharacterListPreset.SORT_CREATED -> false      // 최신순
             CharacterListPreset.SORT_RECENT -> false       // 최근 수정순
             CharacterListPreset.SORT_FIELD -> false        // 높은 값 먼저
+            CharacterListPreset.SORT_DUEL -> false         // 센 쪽 먼저
             else -> true
         }
     }
@@ -359,7 +406,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         val partIndex = if (field?.type == "BODY_SIZE") binding.spinnerBodyPart.selectedItemPosition.takeIf { it >= 0 } else null
         val ascending = if (kind == CharacterListPreset.SORT_MANUAL) true
                         else binding.dirToggleGroup.checkedButtonId == binding.btnDirAsc.id
-        val sort = CharacterSort(kind, fieldKey, ascending, partIndex)
+        val sort = CharacterSort(kind, fieldKey, ascending, partIndex, selectedDuelAxisCode())
 
         // 작품: 체크된 칩의 tag(작품 id) 수집. 섹션 숨김이거나 로드 전이면 기존 선택 유지(소실 방지).
         val selectedNovelIds = if (showNovelSection && novelsLoaded) {

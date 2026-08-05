@@ -1901,12 +1901,16 @@ class ExcelExporter(context: Context) {
             row.createCell(2).setTextSafe(PortableFieldFilters.augment(preset.fieldFiltersJson, filterStableKeys))
             row.createCell(3).setTextSafe(preset.sortKind)
             row.createCell(4).setTextSafe(preset.sortFieldKey ?: "")
-            row.createCell(5).setTextSafe(if (preset.sortAscending) "Y" else "N")
-            preset.bodySizePartIndex?.let { row.createCell(6).setCellValue(it.toDouble()) }
-            row.createCell(7).setTextSafe(novelCodes.joinToString(", "))
-            row.createCell(8).setTextSafe(if (preset.isDefault) "Y" else "N")
-            row.createCell(9).setCellValue(preset.createdAt.toDouble())
-            row.createCell(10).setCellValue(preset.updatedAt.toDouble())
+            // 대결 정렬 축(B-117). 열 차례는 `characterListPresetSpec()`이 정하고 여기 인덱스가
+            // 그것을 따라간다 — 머리글은 spec 순서인데 데이터 셀은 손으로 번호를 매기므로
+            // **spec에 열을 끼워 넣으면 이 아래를 전부 밀어야 한다**(B-103이 같은 자리에서 겪었다).
+            row.createCell(5).setTextSafe(preset.sortDuelAxisCode ?: "")
+            row.createCell(6).setTextSafe(if (preset.sortAscending) "Y" else "N")
+            preset.bodySizePartIndex?.let { row.createCell(7).setCellValue(it.toDouble()) }
+            row.createCell(8).setTextSafe(novelCodes.joinToString(", "))
+            row.createCell(9).setTextSafe(if (preset.isDefault) "Y" else "N")
+            row.createCell(10).setCellValue(preset.createdAt.toDouble())
+            row.createCell(11).setCellValue(preset.updatedAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, presets.size)
