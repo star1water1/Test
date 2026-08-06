@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 이름 추천 시트 목업 (B-123, 2026-08)</title>
+<style>
+  :root{
+    --bg:#101418; --surface:#1b2127; --surface2:#232b33; --outline:#3a444e;
+    --text:#e8edf2; --text2:#9fb0bf; --accent:#7fc4a8; --accent2:#2e4a3f;
+    --chip:#2a3540; --love:#e08fa4;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#0a0d10; color:var(--text); font-family:'Segoe UI',Roboto,'Noto Sans KR',sans-serif; padding:32px; line-height:1.5;}
+  h1{font-size:20px; margin-bottom:4px;}
+  .doc-note{color:var(--text2); font-size:13px; max-width:880px; margin-bottom:28px;}
+  .doc-note b{color:var(--text);}
+  .stage{display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start;}
+  .col{width:380px;}
+  .col h2{font-size:15px; margin:0 0 10px 2px; color:var(--accent);}
+  .sheet{background:var(--bg); border:1px solid var(--outline); border-radius:22px 22px 16px 16px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.5); padding:10px 16px 16px;}
+  .grabber{width:36px; height:4px; border-radius:2px; background:var(--outline); margin:2px auto 12px;}
+  .ttl{font-size:15px; font-weight:700;}
+  .purpose{font-size:11.5px; color:var(--text2); margin:2px 0 10px;}
+  .modes{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;}
+  .mode{font-size:11.5px; border-radius:14px; padding:4px 11px; background:var(--chip); color:var(--text2);}
+  .mode.on{background:var(--accent2); color:var(--accent); font-weight:700;}
+  .zone{border:1px solid var(--outline); border-radius:12px; padding:9px 11px; margin-bottom:10px; background:var(--surface);}
+  .zone-h{display:flex; align-items:center; font-size:11.5px; color:var(--text2); margin-bottom:7px;}
+  .zone-h .t{flex:1; font-weight:700; color:var(--text);}
+  .shelf{display:flex; gap:6px; flex-wrap:wrap;}
+  .heart-chip{display:flex; align-items:center; gap:5px; font-size:12px; border-radius:14px; padding:4px 11px; background:var(--chip);}
+  .heart-chip .h{color:var(--love); font-size:11px;}
+  .cand{display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--outline); border-radius:9px; padding:7px 9px; margin-bottom:5px;}
+  .cand .nm{font-size:13px; font-weight:700; flex:none;}
+  .cand .why{font-size:10.5px; color:var(--text2); flex:1; margin-left:2px;}
+  .ic{width:26px; height:26px; border-radius:13px; background:var(--chip); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--text2); flex:none;}
+  .ic.h{color:var(--love);}
+  .apply{font-size:11px; color:var(--accent); font-weight:700; flex:none; padding:0 2px;}
+  .cand.rej{opacity:.45;}
+  .cand.rej .nm{text-decoration:line-through;}
+  .fold{display:flex; align-items:center; background:var(--surface2); border:1px solid var(--outline); border-radius:9px; padding:8px 11px; margin-bottom:5px; font-size:12px; color:var(--text2);}
+  .fold .t{flex:1;}
+  .feedback{display:flex; gap:8px; margin:12px 0 4px;}
+  .fb-input{flex:1; background:var(--surface2); border:1px solid var(--outline); border-radius:18px; padding:8px 14px; font-size:12.5px; color:var(--text2);}
+  .btn-tonal{background:var(--accent2); color:var(--accent); font-weight:700; font-size:12.5px; border-radius:18px; padding:8px 14px; flex:none;}
+  .cost{font-size:10.5px; color:var(--text2); margin:2px 2px 10px;}
+  .foot{display:flex; align-items:center; gap:8px; border-top:1px solid var(--outline); padding-top:12px;}
+  .foot .note{font-size:10.5px; color:var(--text2); flex:1;}
+  .btn-fill{background:var(--accent); color:#0d1412; font-weight:700; font-size:13px; border-radius:18px; padding:8px 16px; flex:none;}
+  .notes{margin-top:14px; font-size:12.5px; color:var(--text2); max-width:380px;}
+  .notes li{margin:0 0 7px 16px;}
+  .notes b{color:var(--text);}
+</style>
+</head>
+<body>
+  <h1>AI 이름 추천 시트 목업 — B-123</h1>
+  <p class="doc-note">
+    설계 정본은 <b>docs/feature_roadmap_2026-08.md 7장</b>이다. 진입은 캐릭터 편집 폼 이름 줄의
+    ✨(캐릭터 컨텍스트 포함)과 이름은행의 [AI로 이름 만들기](세계관만 골라 — 8-2 ⓒ) 둘.
+    시트는 위에서부터 <b>♥ 선반 / 최신 라운드 / 지난 라운드(접힘)</b> 세 구역이고,
+    라운드마다 유지·거절·지시를 동봉해 다시 요청한다(멀티턴 없이 — 7-2장).
+  </p>
+
+  <div class="stage">
+    <div class="col">
+      <h2>이름 추천 — 3라운드째의 모습</h2>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="ttl">이름 추천 — 아리네</div>
+        <div class="purpose">고른 이름은 폼에만 들어가고, 저장을 눌러야 캐릭터에 반영됩니다.</div>
+        <div class="modes">
+          <span class="mode on">전체 이름</span><span class="mode">성 고정</span>
+          <span class="mode">이름 고정</span><span class="mode">이명</span>
+        </div>
+
+        <div class="zone">
+          <div class="zone-h"><span class="t">♥ 마음에 든 이름 · 3</span></div>
+          <div class="shelf">
+            <span class="heart-chip"><span class="h">♥</span>세레닌</span>
+            <span class="heart-chip"><span class="h">♥</span>류넬 아르카</span>
+            <span class="heart-chip"><span class="h">♥</span>이스핀</span>
+          </div>
+        </div>
+
+        <div class="zone">
+          <div class="zone-h"><span class="t">3라운드 · 10개</span><span>요청 1건 · 방금</span></div>
+          <div class="cand"><span class="nm">아이렌 벨키아</span><span class="why">북부식 · 성씨 결 유지</span><span class="ic h">♥</span><span class="ic">✕</span><span class="apply">적용</span></div>
+          <div class="cand"><span class="nm">세인 로베르</span><span class="why">부드러운 어감 지시 반영</span><span class="ic">♥</span><span class="ic">✕</span><span class="apply">적용</span></div>
+          <div class="cand rej"><span class="nm">그라브니르</span><span class="why">거절함 — 다음 라운드에서 피합니다</span><span class="ic">↺</span></div>
+          <div class="fold"><span class="t">… 7개 더</span><span>펼치기 ⌄</span></div>
+        </div>
+
+        <div class="zone">
+          <div class="zone-h"><span class="t">지난 라운드</span></div>
+          <div class="fold"><span class="t">2라운드 · 10개 중 ♥2 ✕3</span><span>⌄</span></div>
+          <div class="fold"><span class="t">1라운드 · 10개 중 ♥1 ✕4</span><span>⌄</span></div>
+        </div>
+
+        <div class="feedback">
+          <span class="fb-input">더 부드럽게, 물 느낌으로</span>
+          <span class="btn-tonal">10개 더</span>
+        </div>
+        <div class="cost">다음 라운드는 요청 1건입니다 · ♥ 3개를 따르고 ✕ 7개를 피합니다</div>
+
+        <div class="foot">
+          <span class="note">이번에 나온 이름 27개 중 중복을 걸러 담습니다</span>
+          <span class="btn-fill">은행에 담기 (14)</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li><b>♥ 선반은 상단 고정</b> — 어느 라운드 것이든 모인다. 칩 탭 = 적용 후보로.</li>
+        <li>✕는 회색+취소선으로 <b>남는다</b>(↺로 되살림) — 다음 라운드의 회피 목록이자 [은행에 담기]의 재료다(기본 체크 해제로 담기 목록에 뜬다).</li>
+        <li>[적용]은 모드에 맞는 칸(`name` 또는 성/이름, 이명)에 넣는다 — 폼 위젯에만, 저장은 별도(기존 불변식).</li>
+        <li>[은행에 담기]의 N은 중복(은행·풀·사용 중) 제외 후 수 — 누른 뒤 결과가 "넣음 N · 걸러냄 M"을 센다. 성별·출처는 자동으로 채운다(7-4장).</li>
+        <li>다발 크기·창작도는 ⋮(시트 상단 메뉴)에서 — 기본 10개, 1~30.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
