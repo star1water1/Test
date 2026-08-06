@@ -438,6 +438,10 @@ B-113의 물음 ①(*1500 눈금을 필드 값으로 어떻게 옮기나 — 1~1
 | **자연 단절 제안 (Jenks류 1차원 군집)** | **컷 편집기의 보조로 채택.** [경계 제안] 단추가 현재 점수 분포에서 **±오차 겹침이 없는 큰 간격**을 찾아 %컷 초안을 채워 준다 — 겹침 조건이 핵심이다(오차 안의 간격은 표본 소음이라 제안하지 않는다. 기존 확신 기계를 그대로 쓴다). 사용자가 고쳐서 저장한다 — 자동이 아니라 제안이다(자율성 우선) |
 | 불확실성 반영 배정 | 반영 미리보기에서 **경계에 걸친 캐릭터(±오차가 컷을 가로지름)에 표식** + *"판을 더 쌓으면 확실해집니다"*. 배정을 막지는 않는다(마찰 최소) |
 
+**UI 정본 목업: `docs/mockups/duel_grade_ui_2026-08.html`** — 컷 슬라이더(9단 실사용 예시 ·
+0% 구간 · 선택 경계 스테퍼)와 반영 미리보기(3분류 묶음 · 경계 배지)를 화면 그대로 담았다.
+구현은 이 목업의 구조·비율을 따른다.
+
 **슬라이더의 조작성 — 실사용이 9단이라는 사실을 설계가 받아야 한다.** 표본의 등급 체계는
 F~SSS 아홉 칸이고, 360dp 폭에 아홉 구간이면 칸당 40dp가 안 돼 **드래그만으로는 1% 단위 조정이
 불가능하다.** 그래서 셋을 정한다: ⓐ **구분선을 탭하면 선택**되고 선택된 구분선에 ± 스테퍼와
@@ -496,13 +500,13 @@ F~SSS 아홉 칸이고, 360dp 폭에 아홉 구간이면 칸당 40dp가 안 돼 
 | 화면 | 무엇이 바뀌나 | 정본 |
 |---|---|---|
 | **대결 진행** | 스크림 한 줄 → 그림+정보 패널 카드 · 무승부 버튼 · k지선다 골격 · 보기 설정 확장 | 3-3장 + **`docs/mockups/duel_play_redesign_2026-08.html`**(목업은 2택·격자 두 상태 — **위아래 배치의 가로형 카드는 3-3 산문이 정본**이다) |
-| **필드 편집 다이얼로그** | 고급 탭을 접이식 4구획(입력·표시 / 통계 / AI / **연동**)으로 재편. '연동'에 전역 기본(1장)·시맨틱 역할(기존)·대결 등급(4장)이 모인다. 모든 구획 머리에 목적문 | 1-4 · 4-2장 |
+| **필드 편집 다이얼로그** | 고급 탭을 접이식 4구획(입력·표시 / 통계 / AI / **연동**)으로 재편. '연동'에 전역 기본(1장)·시맨틱 역할(기존)·대결 등급(4장)이 모인다. 모든 구획 머리에 목적문 | 1-4 · 4-2장 + 대결 등급 섹션은 **`mockups/duel_grade_ui_2026-08.html` ①** |
 | **AI 비용 고지 다이얼로그** | 이미지 섹션(스위치 · 장수 · 대표 포함 · 썸네일 미리보기 · 🎲 · 직접 고르기) | 2-2장 |
 | **이미지 탭** | 일괄 작업에 AI 태그 제안 · 설정 시트 · 결정형 진행 · 이미지별 검토 시트 | 2-3장 |
-| **순위표** | [등급 반영] 진입 + 반영 미리보기 다이얼로그 | 4-3장 |
+| **순위표** | [등급 반영] 진입 + 반영 미리보기 다이얼로그 | 4-3장 + **`mockups/duel_grade_ui_2026-08.html` ②** |
 | **필드 관리** | `기본` 배지 · 기본 필드 관리 진입 | 1-4장 |
 | **캐릭터 편집 폼 (이름 줄)** | [은행] 선택 시트 + ✨(이름 추천 시트) 진입 둘이 나란히 | 8-2 ⓐ · 7-1장 |
-| **이름 추천 시트 (신설)** | ♥ 선반 / 최신 라운드 / 지난 라운드 접힘 3구역 · 모드 스위치 · [은행에 담기] | 7-2~7-4장 |
+| **이름 추천 시트 (신설)** | ♥ 선반 / 최신 라운드 / 지난 라운드 접힘 3구역 · 모드 스위치 · [은행에 담기] | 7-2~7-4장 + **`mockups/name_suggest_sheet_2026-08.html`** |
 | **이름은행** | 사용 캐릭터 표시·이동 · [사용 처리]·[캐릭터 만들기]·[AI로 이름 만들기] · 성별 입력 개방 | 8-2 ⓒ장 |
 
 공통 규칙: 문구는 전부 텍스트 스타일 가이드(합니다체 · 목적문 패턴 · 대시 자제)를 따르고,
@@ -538,6 +542,9 @@ F~SSS 아홉 칸이고, 360dp 폭에 아홉 구간이면 칸당 40dp가 안 돼 
 
 화면은 후보 행 목록(이름 + 짧은 근거)이고 행마다 **♥ / ✕ / 적용** 셋이다. 적용은 폼 위젯에만
 쓴다(AI 출력을 DB에 직접 기록하지 않는 기존 불변식). 라운드당 요청 1건을 미리 고지한다.
+
+**UI 정본 목업: `docs/mockups/name_suggest_sheet_2026-08.html`** — 3구역 시트(♥ 선반 ·
+최신 라운드 · 지난 라운드 접힘)와 피드백 줄, [은행에 담기]를 화면 그대로 담았다.
 
 **라운드가 쌓이는 화면의 구성** — 세 라운드면 후보가 30개를 넘는다. 시트는 세 구역이다:
 ⓐ 상단 고정 **♥ 선반**(유지한 이름 칩 — 어느 라운드 것이든 여기 모인다. 칩 탭 = 적용 후보로)
@@ -680,13 +687,13 @@ Q7로 묻는다** — 켜지는 순간 실사용 41건 중 3건이 '사용됨'�
 
 | 슬라이스 | 여는 곳 | 새로 만드는 것 |
 |---|---|---|
-| ① B-113 등급 산정 | `FieldEditDialog`(고급 탭 — GRADE 분기 곁) · `GradeSystemRef`/`GradeTable`(실효 표 라벨) · **`GradeSystemRepository.propagate`(개명 추종 — 4-2)** · `DuelRepository.scoresOf`→`DuelScoreIndex`(백분위 재료 — 계약 2 그대로. **`Entry.rank`를 그대로 나누지 말 것** — 4-2의 재매김) · `DuelStandingsFragment.outcomeLines` 곁([등급 반영] 진입) · 일괄 쓰기·스냅샷은 일괄 편집(B-83)의 경로 재사용 | pure `util/DuelGradeAssign`(컷 검증·배정·경계 판정 — **하네스 필수**) · **`DuelAiContext.rankWithinScored`의 공용화(`DuelScoreIndex`로 올리기)** · 컷 슬라이더 뷰 · 반영 미리보기 다이얼로그 |
+| ① B-113 등급 산정 | `FieldEditDialog`(고급 탭 — GRADE 분기 곁) · `GradeSystemRef`/`GradeTable`(실효 표 라벨) · **`GradeSystemRepository.propagate`(개명 추종 — 4-2)** · `DuelRepository.scoresOf`→`DuelScoreIndex`(백분위 재료 — 계약 2 그대로. **`Entry.rank`를 그대로 나누지 말 것** — 4-2의 재매김) · `DuelStandingsFragment.outcomeLines` 곁([등급 반영] 진입) · 일괄 쓰기·스냅샷은 일괄 편집(B-83)의 경로 재사용 | pure `util/DuelGradeAssign`(컷 검증·배정·경계 판정 — **하네스 필수**) · **`DuelAiContext.rankWithinScored`의 공용화(`DuelScoreIndex`로 올리기)** · 컷 슬라이더 뷰 · 반영 미리보기 다이얼로그 — **둘 다 목업 `mockups/duel_grade_ui_2026-08.html`을 그대로 따른다** |
 | ② B-122 프로필+재설계 | `DuelAxis`(+`profileFieldKeys` — 49→50 마이그레이션과 동형) · `DuelFieldLinks`(encode/decode·다이얼로그 재사용, `rankable=false`) · `DuelPlayFragment`+`fragment_duel_play.xml`(`applyViewOptions`가 배치 확장점) · `DuelViewPrefs`(보기 설정) · `SemanticRole`(**GENDER 신설**) · `TimeStateResolver`(나이) · `SheetSpec` 대결 축 시트 · B-114는 `pick()` 곁에 `record(winnerCode = null)` | 카드 정보 패널 레이아웃 · 프로필 고르기 다이얼로그(기존 재사용) · 축 목록 요약에 "미정 N"(5-1장) |
 | ③ B-119 기본 필드 | `FieldDefinition`(config `defaultField` 키) · `FieldViewModel`/`PresetMerge`(`configEquals`·`importFieldsNow`·`snapshotFieldDefinitions`) · `UniverseViewModel.applyPreset`(신설 시 심는 순서) · `SheetSpec`/`ExcelImportService`(새 시트 + 열 — **가져오기 순서: 기본 필드 → 필드 정의**) · `ResetPlan`+`verify_reset_coverage.py`(엔티티 추가 시) | 엔티티 `DefaultFieldTemplate`+DAO+마이그레이션 · 기본 필드 관리 화면 · 전파 미리보기 |
 | ④ B-120 멀티모달+첨부 | `AiModels`(`AiMessage.images`) · `AiProtocolCodec`(3 직렬화 — **순수, 테스트 필수**) · `AiProviderConfig.hasLearnedFacts`(+`imagesUnsupported` — R-23) · `AiFieldSuggestSheet`(고지 다이얼로그) · `NarrativeWriteSheet` · `CharacterRepresentativeImage.pick`(대표) · `AiPromptSettings`(기본 1장 — Q3) · **약속 문구 3자리 갱신**(`image_folder_tag_ai` 1장 · `ImageFolderTagSuggester` 주석 · 도움말) · `ai_integration`에 **A-7** | `util/AiImagePreparer`(전송용 축소) · 썸네일 줄 UI |
 | ⑤ B-121 일괄 태깅 | `ImageBatchOperationBottomSheet`(진입) · `ImageFolderTagSuggester`(**`buildVocabulary`를 공용으로 추출**) · `ImageFolderTagReviewSheet`(검토 규칙 재사용) · `ImageMetaDao.adopt`/`ImageTagDao`(합치기) · `AiPromptPolicy`(배치 계산) | 배치 태깅 서제스터(번호 봉인·index 검증 — pure 파싱은 하네스로) · 이미지별 검토 시트 |
 | ⑥ B-124 은행 연계 | `CharacterSaveCoordinator`(자동 대조 — Q7) · `NameBankViewModel`(`getAvailableNamesList` 소생 · `markAsUsed` UI 배선) · `NameBankFragment`/`NameBankAdapter`(사용 캐릭터 표시 — `usedByCharacterId` 읽기) · `BulkRegisterPlanner`(단건판) · `StatsNameBankDetailFragment`(이동 액션) · 죽은 코드 4건 처분 | 은행 선택 시트(편집 폼용) |
-| ⑦ B-123 이름 추천 | `CharacterAiContextBuilder`(컨텍스트 재사용) · `NameBankDao`(견본·중복 대조·담기) · `CreativityChipRow` · `AiJsonExtractor`(파싱) · `ai_integration`에 **A-8** | pure `ai/CharacterNameAiSuggester`(프롬프트 조립·파싱·라운드 상태 — 하네스로) · 이름 추천 시트(3구역) |
+| ⑦ B-123 이름 추천 | `CharacterAiContextBuilder`(컨텍스트 재사용) · `NameBankDao`(견본·중복 대조·담기) · `CreativityChipRow` · `AiJsonExtractor`(파싱) · `ai_integration`에 **A-8** | pure `ai/CharacterNameAiSuggester`(프롬프트 조립·파싱·라운드 상태 — 하네스로) · 이름 추천 시트(3구역 — **목업 `mockups/name_suggest_sheet_2026-08.html`을 그대로 따른다**) |
 
 
 
@@ -714,6 +721,7 @@ Q7로 묻는다** — 켜지는 순간 실사용 41건 중 3건이 '사용됨'�
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.5 | 2026.08.07 | **재량이 남아 있던 화면 둘의 목업 추가**(사용자 배경 설명 — 구현을 UI 설계에 약한 모델로 돌릴 예정이라, 구현 세션이 디자인을 발명할 자리를 없앤다): **`mockups/duel_grade_ui_2026-08.html`**(① 컷 슬라이더 — 9단 실사용 예시로 좁은 구간·0% 구간·탭 선택+스테퍼를 화면으로 고정 ② 반영 미리보기 — 3분류 묶음별 기본 체크·경계 배지·요약 줄) · **`mockups/name_suggest_sheet_2026-08.html`**(3구역 시트 — ♥ 선반 상단 고정, ✕는 취소선으로 남고 ↺로 되살림, [은행에 담기]의 N 규칙). 4-3·4-4·7-2와 6장 표, 9-1 착수 지도 ①·⑦ 행에 목업 포인터를 걸었다 — **구현은 목업의 구조·비율을 그대로 따른다** |
 | v1.4 | 2026.08.07 | **콜드 세션 시뮬레이션 검토(12건) 반영 — 차단급 넷을 설계로 닫았다.** ① **백분위 분모·분자 모집단 어긋남**(4-2) — `DuelScoreIndex.Entry.rank`는 무기록 참가자까지 센 순위표 등수라 그대로 나누면 백분위가 100%를 넘는다(ⓔ가 처음 밟은 *"3명 중 4위"*의 재발 경로). *등수는 점수 보유자끼리 다시 매긴다*를 명문화하고 `rankWithinScored` 공용화를 착수 지도에 올렸다 ② **손값 판별 근거 부재**(4-3) — 반영이 `duelGrade.lastApplied{at, assignments}`를 **같은 트랜잭션**에 남기고, 미리보기 분류를 셋(빈 칸/반영값 그대로/그 외)으로. 크기 한도 초과 시 생략+고지로 정직하게 강등 ③ **실효 표 변경 추종 부재**(4-2) — 체계 전파의 개명을 cuts가 따라가고(`renameOverrides` 선례), 라벨 삭제 시 컷 병합+고지, **반영 직전 재검증** ④ **축 code 전역 유니크의 경계 오배정**(4-2·1-2) — 세계관 경계 복사에서 `duelGrade` **강등** + 읽는 쪽 **소속 검사** 이중 방어. 그 외: 4-2 검증 문구를 4-4와 일치(단조 비감소·0% 허용), 6장 대결 행에 목업 범위 주석(STACKED는 산문 정본), duel 설계 7-6 포인터·번호 정정, `ai_integration`에 A-5 결번 명기, 아키텍처 지도 두 행 갱신. **차단 1(신규 설계가 master에 없음)은 이 판이 곧 병합함으로써 닫는다** |
 | v1.3 | 2026.08.07 | **병합 전 자체 검토 — 낡은 곳·빈 곳·UI 부실 보강**(사용자 지시: *"빠진 거, 오류, 부실한 점, ui설계가 부실한 점은 없는지 검토하고 있으면 수정"*). 낡은 곳 셋: 제목·5-2가 "5건"으로 남아 있던 것 → 7건, 2-2의 잘못된 참조(10장 ③ → 5-3장). **UI 부실 넷 보강**: ⓐ 4-4 — 등급 컷 슬라이더의 조작성(실사용이 **9단**이라 드래그만으로 1% 조정 불가 → 구분선 탭 선택+스테퍼, 라벨 교차 배치, **0% 구간 허용** — 검증을 '단조 비감소'로 정정) ⓑ 3-3 — 위아래(STACKED) 배치에서 카드 안을 **이미지 좌+정보 우 가로형**으로 전환(세로로는 정보 패널 높이가 없다) ⓒ 7-2 — 라운드가 쌓이는 시트의 3구역 구성(♥ 선반 / 최신 라운드 / 지난 라운드 접힘 · ✕는 회색으로 남는다) ⓓ 2-3 — 수십 장 검토의 조작 셋(전체 선택/해제 · **새 태그만 보기** · 행 접기). 6장 표에 이름 몫 세 줄 추가(편집 폼 이름 줄 · 이름 추천 시트 · 이름은행). **9-1 착수 지도 신설** — 슬라이스별 앵커(파일·심벌)와 새로 만드는 것을 표로, 콜드 세션이 탐색 없이 코드에 들어가게 |
 | v1.2 | 2026.08.07 | **Q1~Q7 전부 확정 — 착수 게이트가 열렸다**(단일 소스는 확정 문서 8장. 이 문서는 머리 게이트 문구·9장 제목(순서 **확정** — Q6 위임: *"순서는 개발시의 문제에 맞게"*)·10장(기록으로 전환)·4-4장을 갱신). **Q2에서 사용자가 제3안을 냈고 채택했다** — 등급 컷 편집기는 *100%를 총량으로 한 구간 슬라이더*(구분선 드래그 = 러프 / 숫자 입력 = 정밀 — 이중 경로. 합 100 제약이 손이 아니라 구조로 지켜진다). 다음 세션은 묻지 않고 **B-113 마감부터** 9장 순서대로 착수한다 |

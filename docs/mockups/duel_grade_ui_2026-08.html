@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대결 등급 산정 UI 목업 (B-113, 2026-08)</title>
+<style>
+  :root{
+    --bg:#101418; --surface:#1b2127; --surface2:#232b33; --outline:#3a444e;
+    --text:#e8edf2; --text2:#9fb0bf; --accent:#7fc4a8; --accent2:#2e4a3f;
+    --warn:#e0b45c; --chip:#2a3540; --err:#e07b7b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#0a0d10; color:var(--text); font-family:'Segoe UI',Roboto,'Noto Sans KR',sans-serif; padding:32px; line-height:1.5;}
+  h1{font-size:20px; margin-bottom:4px;}
+  .doc-note{color:var(--text2); font-size:13px; max-width:900px; margin-bottom:28px;}
+  .doc-note b{color:var(--text);}
+  .stage{display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start;}
+  .col{width:380px;}
+  .col h2{font-size:15px; margin:0 0 10px 2px; color:var(--accent);}
+  .panel{background:var(--bg); border:1px solid var(--outline); border-radius:20px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.5); padding:18px 16px;}
+  .sec-title{font-size:14px; font-weight:700;}
+  .purpose{font-size:12px; color:var(--text2); margin:3px 0 12px;}
+  .fieldrow{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+  .fieldrow .lbl{font-size:12.5px; color:var(--text2); width:64px; flex:none;}
+  .spinner{flex:1; background:var(--surface2); border:1px solid var(--outline); border-radius:8px; padding:8px 12px; font-size:13px; display:flex; justify-content:space-between;}
+  .spinner .arrow{color:var(--text2);}
+  /* ── 구간 슬라이더 ── */
+  .slider-wrap{margin:18px 0 6px;}
+  .lab-top,.lab-bot{position:relative; height:16px; font-size:10.5px; color:var(--text2);}
+  .lab-top span,.lab-bot span{position:absolute; transform:translateX(-50%); white-space:nowrap;}
+  .bar{position:relative; display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--outline); margin:2px 0;}
+  .seg{position:relative; display:flex; align-items:center; justify-content:center; font-size:10px; color:#0d1412; font-weight:700;}
+  .seg small{font-weight:400; opacity:.75; margin-left:2px;}
+  .s1{background:#e8c9a0;} .s2{background:#dcb98c;} .s3{background:#c9ad85;}
+  .s4{background:#a8c4b4;} .s5{background:#93b8a4;} .s6{background:#7fac95;}
+  .s7{background:#6f9d87;} .s8{background:#5f8d79;} .s9{background:#507e6b;}
+  .div{width:2px; background:#0a0d10; flex:none;}
+  .div.sel{width:4px; background:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.35);}
+  .bubble{position:absolute; top:-30px; transform:translateX(-50%); background:#fff; color:#111; font-size:11px; font-weight:700; border-radius:8px; padding:2px 8px;}
+  .bubble:after{content:''; position:absolute; left:50%; bottom:-4px; transform:translateX(-50%); border:4px solid transparent; border-top-color:#fff; border-bottom:0;}
+  /* 선택된 구분선 미세 조정 줄 */
+  .fine{display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--outline); border-radius:10px; padding:8px 10px; margin-top:14px;}
+  .fine .name{font-size:12px; color:var(--text2); flex:1;}
+  .step{width:30px; height:30px; border-radius:15px; background:var(--chip); color:var(--text); display:flex; align-items:center; justify-content:center; font-size:15px;}
+  .num{width:74px; background:var(--bg); border:1px solid var(--outline); border-radius:8px; padding:6px 8px; font-size:13px; text-align:right;}
+  .num b{font-weight:400; color:var(--text2);}
+  .suggest{display:flex; align-items:center; gap:10px; margin-top:14px;}
+  .btn-tonal{background:var(--accent2); color:var(--accent); font-weight:700; font-size:13px; border-radius:18px; padding:8px 16px;}
+  .suggest .cap{font-size:11px; color:var(--text2); flex:1;}
+  .note-line{font-size:11.5px; color:var(--warn); margin-top:12px;}
+  .notes{margin-top:14px; font-size:12.5px; color:var(--text2); max-width:380px;}
+  .notes li{margin:0 0 7px 16px;}
+  .notes b{color:var(--text);}
+  /* ── 반영 미리보기 ── */
+  .dlg-title{font-size:15px; font-weight:700;}
+  .summary{font-size:12px; color:var(--text2); margin:4px 0 12px;}
+  .grp{margin-bottom:12px;}
+  .grp-head{display:flex; align-items:center; font-size:11.5px; color:var(--text2); margin-bottom:5px;}
+  .grp-head .t{flex:1; font-weight:700; color:var(--text);}
+  .grp-head .act{color:var(--accent); font-size:11.5px;}
+  .row{display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--outline); border-radius:9px; padding:7px 10px; margin-bottom:5px; font-size:12.5px;}
+  .cb{width:16px; height:16px; border-radius:4px; border:2px solid var(--text2); flex:none;}
+  .cb.on{background:var(--accent); border-color:var(--accent);}
+  .row .nm{flex:1;}
+  .chg{color:var(--text2);}
+  .chg b{color:var(--text); font-weight:700;}
+  .badge{font-size:10px; border-radius:8px; padding:1px 7px; background:var(--chip); color:var(--warn); flex:none;}
+  .dlg-foot{display:flex; justify-content:flex-end; gap:8px; margin-top:14px;}
+  .btn-text{color:var(--text2); font-size:13px; padding:8px 12px;}
+  .btn-fill{background:var(--accent); color:#0d1412; font-weight:700; font-size:13px; border-radius:18px; padding:8px 18px;}
+  .foot-note{font-size:11px; color:var(--text2); margin-top:10px;}
+</style>
+</head>
+<body>
+  <h1>대결 등급 산정 UI 목업 — B-113 (첫 슬라이스)</h1>
+  <p class="doc-note">
+    설계 정본은 <b>docs/feature_roadmap_2026-08.md 4장</b>이다. 왼쪽이 필드 편집 다이얼로그
+    고급 탭 '연동' 구획의 <b>대결 등급 산정 섹션</b>(컷 편집기 = 100% 총량 구간 슬라이더 —
+    Q2 사용자 제3안), 오른쪽이 <b>[등급 반영] 미리보기</b>다. 예시는 실사용의 어려운 경우
+    (9단 등급 F~SSS)로 그렸다 — 좁은 구간의 라벨 교차 배치와 탭 선택+스테퍼가 그래서 있다.
+  </p>
+
+  <div class="stage">
+
+    <!-- ============ ① 컷 슬라이더 (필드 편집 섹션) ============ -->
+    <div class="col">
+      <h2>① 필드 편집 — 대결 등급 산정 섹션</h2>
+      <div class="panel">
+        <div class="sec-title">대결 등급 산정</div>
+        <div class="purpose">켜면 아래 대결 축의 순위에 따라 이 필드의 등급이 정해져, [등급 반영]에서 캐릭터 값으로 채울 수 있습니다. 비율은 점수가 있는 캐릭터 기준입니다.</div>
+        <div class="fieldrow"><span class="lbl">대결 축</span>
+          <div class="spinner"><span>강함</span><span class="arrow">▾</span></div>
+        </div>
+
+        <div class="slider-wrap">
+          <!-- 위 라벨 (홀수 구간) -->
+          <div class="lab-top">
+            <span style="left:1%">SSS</span><span style="left:5%">S</span>
+            <span style="left:15%">A</span><span style="left:37.5%">C</span>
+            <span style="left:72.5%">E</span>
+          </div>
+          <div class="bar">
+            <div class="seg s1" style="width:2%"></div><div class="div"></div>
+            <div class="seg s2" style="width:0%"></div><div class="div sel"><span class="bubble">상위 2.0%</span></div>
+            <div class="seg s3" style="width:3%"></div><div class="div"></div>
+            <div class="seg s4" style="width:10%">10<small>%</small></div><div class="div"></div>
+            <div class="seg s5" style="width:15%">15<small>%</small></div><div class="div"></div>
+            <div class="seg s6" style="width:20%">20<small>%</small></div><div class="div"></div>
+            <div class="seg s7" style="width:20%">20<small>%</small></div><div class="div"></div>
+            <div class="seg s8" style="width:15%">15<small>%</small></div><div class="div"></div>
+            <div class="seg s9" style="width:15%">15<small>%</small></div>
+          </div>
+          <!-- 아래 라벨 (짝수 구간) -->
+          <div class="lab-bot">
+            <span style="left:2%">SS 0%</span><span style="left:10%">B</span>
+            <span style="left:55%">D</span><span style="left:92.5%">F</span>
+          </div>
+        </div>
+
+        <div class="fine">
+          <span class="name">선택한 경계 — <b style="color:var(--text)">SS ↔ S</b></span>
+          <span class="step">−</span>
+          <span class="num">2.0 <b>%</b></span>
+          <span class="step">＋</span>
+        </div>
+
+        <div class="suggest">
+          <span class="btn-tonal">경계 제안</span>
+          <span class="cap">점수 분포의 큰 간격에 맞춰 경계를 옮겨 줍니다. 적용 전에 고칠 수 있습니다.</span>
+        </div>
+
+        <div class="note-line">SS 구간이 0%입니다 — 이 축에서는 SS 등급이 배정되지 않습니다.</div>
+      </div>
+      <ul class="notes">
+        <li><b>합은 언제나 100%</b> — 구분선을 끌면 이웃 구간만 줄고 늘어난다(총량 고정). 검증은 '단조 비감소'다.</li>
+        <li><b>드래그 = 러프, 탭 선택 + 스테퍼·숫자 = 정밀</b>(0.5% 단위). 좁은 구간은 라벨을 위아래로 교차 배치하고, 그려지지 않는 폭은 선택 시 말풍선으로만 보인다.</li>
+        <li>구분선 둘이 겹치면 <b>0% 구간</b>(안 쓰는 등급) — 겹친 자리 근처를 탭하면 어느 경계인지 목록으로 물어 고른다.</li>
+        <li>라벨 집합은 필드의 실효 등급 표가 정한다 — 체계 개명은 컷이 따라가고, 삭제된 라벨의 컷은 다음 등급에 합쳐진 뒤 이 섹션이 사유를 말한다(4-2장).</li>
+        <li>축이 없거나 다른 세계관 것이면 슬라이더 대신 사유 한 줄이 선다(오배정 이중 방어 — 4-2장).</li>
+      </ul>
+    </div>
+
+    <!-- ============ ② 반영 미리보기 ============ -->
+    <div class="col">
+      <h2>② [등급 반영] 미리보기 다이얼로그</h2>
+      <div class="panel">
+        <div class="dlg-title">등급 반영 — 강함 → 전투력 등급</div>
+        <div class="summary">점수가 있는 34명 기준입니다. 12명은 아직 판이 없어 그대로 둡니다.</div>
+
+        <div class="grp">
+          <div class="grp-head"><span class="t">빈 칸 → 새 등급 · 18명</span><span class="act">전체 해제</span></div>
+          <div class="row"><span class="cb on"></span><span class="nm">샤샤 프셀류트</span><span class="chg">— → <b>S</b> · 상위 4%</span></div>
+          <div class="row"><span class="cb on"></span><span class="nm">필레인</span><span class="chg">— → <b>A</b> · 상위 9%</span></div>
+          <div class="row"><span class="cb on"></span><span class="nm">레이진 유키하</span><span class="chg">— → <b>B</b> · 상위 22%</span><span class="badge">경계</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grp-head"><span class="t">지난 반영값 갱신 · 3명</span><span class="act">전체 해제</span></div>
+          <div class="row"><span class="cb on"></span><span class="nm">엘 레아</span><span class="chg"><b>A</b> → <b>S</b> · 상위 3%</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grp-head"><span class="t">직접 적은 값을 덮음 · 2명</span><span class="act">전체 선택</span></div>
+          <div class="row"><span class="cb"></span><span class="nm">프로스트 에녹</span><span class="chg"><b>SSS</b> → <b>C</b> · 상위 41%</span></div>
+          <div class="row"><span class="cb"></span><span class="nm">실라키아스 유리엘</span><span class="chg"><b>B</b> → <b>A</b> · 상위 12%</span></div>
+        </div>
+
+        <div class="foot-note">'경계'는 ±오차가 컷을 가로지르는 캐릭터입니다 — 판을 더 쌓으면 확실해집니다. 반영 전 값은 휴지통에 백업됩니다.</div>
+        <div class="dlg-foot">
+          <span class="btn-text">취소</span>
+          <span class="btn-fill">반영 (22)</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>세 묶음의 기본 체크가 다르다 — <b>빈 칸·지난 반영값은 켜짐, 손값은 꺼짐</b>(Q1). 판별은 `duelGrade.lastApplied`가 든다(4-3장).</li>
+        <li>변경 없는 캐릭터는 목록에 없고 요약 줄이 센다. 무기록 12명도 건드리지 않고 센다.</li>
+        <li>[반영 (N)]의 N은 체크된 행 수와 항상 같다 — 무엇이 몇 건 쓰이는지 누르기 전에 보인다.</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>
