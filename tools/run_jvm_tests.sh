@@ -55,6 +55,7 @@ $MAIN/data/model/FieldValueEntry.kt
 $MAIN/data/model/GradeSystem.kt
 $MAIN/data/model/GradeSystemRef.kt
 $MAIN/data/model/DuelGradeRef.kt
+$MAIN/data/model/FieldConfigTransfer.kt
 $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt

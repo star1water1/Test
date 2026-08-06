@@ -112,12 +112,16 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     suspend fun countGradeSystemReferences(system: com.novelcharacter.app.data.model.GradeSystem): Int =
         gradeSystemRepository.referencingFields(system).size
 
-    /** @return 실효 표를 다시 쓴 필드 수. 실패 시 결과 채널로 통보하고 null. */
+    /**
+     * @return 전파 결과(다시 쓴 필드 수 + **대결 컷에서 밀려난 라벨**). 실패 시 결과 채널로
+     *   통보하고 null. 건수만 돌려주던 것을 넓힌 것은, 등급을 지웠을 때 **다른 필드의 대결
+     *   등급 배정 폭이 함께 바뀐 사실**을 화면이 말할 수 있어야 하기 때문이다(B-113).
+     */
     suspend fun saveGradeSystem(
         system: com.novelcharacter.app.data.model.GradeSystem,
         renames: Map<String, String>
-    ): Int? = try {
-        gradeSystemRepository.saveSystem(system, renames).propagatedFields
+    ): com.novelcharacter.app.data.repository.GradeSystemRepository.SaveResult? = try {
+        gradeSystemRepository.saveSystem(system, renames)
     } catch (e: Exception) {
         Log.e("UniverseViewModel", "Failed to save grade system", e)
         reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,

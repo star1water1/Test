@@ -114,6 +114,74 @@ object DuelGradeAssign {
     }
 
     /**
+     * [reconcile]의 산출.
+     *
+     * @property merged 표에서 사라져 컷을 잃은 라벨 — 그 구간은 다음 등급이 흡수했다.
+     * @property added 표에 새로 들어와 컷을 받은 라벨 — **0% 구간으로 들어온다**(아래 참조).
+     */
+    data class Reconciled(
+        val cuts: List<DuelGradeRef.Cut>,
+        val merged: List<String>,
+        val added: List<String>
+    ) {
+        val changed: Boolean get() = merged.isNotEmpty() || added.isNotEmpty()
+    }
+
+    /**
+     * 실효 등급 표가 바뀐 뒤의 컷을 다시 맞춘다 — **아무도 등급이 바뀌지 않는 방향으로.**
+     *
+     * 등급 체계는 필드와 따로 편집되므로(U-1), 라벨이 늘거나 줄면 컷이 표와 어긋난다. 그대로
+     * 두면 반영 직전 재검증이 막고(설계 4-2), 사용자가 한 것은 등급 하나를 더한 것뿐인데
+     * 기능이 죽는다. 그래서 전파가 이 함수로 컷을 따라가게 한다(R-30 — 물질화된 파생값의
+     * 원본을 고치는 경로는 파생값 재작성과 한 몸이다).
+     *
+     * ## 규칙은 하나다 — 기존 배정을 보존한다
+     *
+     * - **사라진 라벨**: 컷을 지운다. 누적 표현이라 그것만으로 구간이 **다음 등급에 합쳐진다.**
+     * - **새 라벨**: **0% 구간**으로 넣는다(앞 등급의 누적값을 그대로 물려받는다). 새 등급이
+     *   누군가를 가져가려면 사용자가 구분선을 끌어야 한다 — 등급을 하나 더했다는 이유로
+     *   캐릭터들의 등급이 조용히 바뀌면 그것이 변수 제어 위반이다.
+     * - **맨 아래에 라벨이 붙은 경우**: 종전의 마지막 등급은 컷이 없었다("나머지 전부"). 이제
+     *   컷이 필요해졌는데 앞 등급의 값을 물려주면 **그 등급이 통째로 비고 새 등급이 사람들을
+     *   가져간다.** 그래서 그 한 자리만 100%를 준다 — 옛 마지막 등급이 갖고 있던 몫 그대로다.
+     *   ([oldLabels]를 받는 이유가 이것이다. 컷만 봐서는 "누가 마지막이었는가"를 알 수 없다.)
+     *
+     * @param oldLabels 이 컷이 쓰이던 시점의 라벨 차례. 모르면 [newLabels]를 그대로 넘긴다
+     *   (그때는 "맨 아래에 붙은 경우"를 가릴 근거가 없고, 없는 근거로 추측하지 않는다).
+     */
+    fun reconcile(
+        cuts: List<DuelGradeRef.Cut>,
+        oldLabels: List<String>,
+        newLabels: List<String>
+    ): Reconciled {
+        if (newLabels.size < 2) return Reconciled(emptyList(), cuts.map { it.label }, emptyList())
+        val byLabel = cuts.associate { it.label to it.topPercent }
+        val merged = cuts.map { it.label }.filter { it !in newLabels }
+        val previousLast = oldLabels.lastOrNull()
+        val needed = newLabels.dropLast(1)
+        val out = ArrayList<DuelGradeRef.Cut>(needed.size)
+        val added = ArrayList<String>()
+        var running = 0.0
+        for (label in needed) {
+            val existing = byLabel[label]
+            val value = when {
+                existing != null -> existing
+                // 옛 마지막 등급이 컷을 갖게 된 자리 — 갖고 있던 몫(나머지 전부)이 100%다.
+                label == previousLast -> 100.0
+                else -> {
+                    added.add(label)
+                    running
+                }
+            }
+            // 단조 비감소는 컷의 불변식이다. 손편집 엑셀에서 온 어긋난 값도 여기서 바로잡힌다.
+            val clamped = round(value.coerceIn(running, 100.0))
+            out.add(DuelGradeRef.Cut(label, clamped))
+            running = clamped
+        }
+        return Reconciled(out, merged, added)
+    }
+
+    /**
      * 한 캐릭터의 배정 결과.
      *
      * @property percentile 상위 %(1~100). 화면이 *"상위 4%"*로 그대로 말한다 — 결정적이고

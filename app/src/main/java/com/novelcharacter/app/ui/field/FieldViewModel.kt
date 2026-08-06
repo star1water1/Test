@@ -364,7 +364,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                         // 가져온 필드의 참조를 그대로 두면 남의 세계관 체계를 가리키는 유령이
                         // 된다. 실효 표는 config에 물질화되어 있어 강등해도 표·값·통계는 그대로다.
                         config = if (field.universeId != targetUniverseId) {
-                            com.novelcharacter.app.data.model.GradeSystemRef.demote(field.config)
+                            com.novelcharacter.app.data.model.FieldConfigTransfer.demoteAcrossUniverse(field.config)
                         } else {
                             field.config
                         }

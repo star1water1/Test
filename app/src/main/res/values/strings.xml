@@ -200,6 +200,7 @@
     <string name="grade_system_name_required_error">체계 이름을 입력하세요.</string>
     <string name="grade_system_name_duplicate_error">같은 이름의 체계가 이 세계관에 이미 있습니다.</string>
     <string name="grade_system_saved_toast">\'%1$s\' 체계를 저장했습니다. 참조하는 필드 %2$d개에 반영되었습니다.</string>
+    <string name="grade_system_duel_cuts_merged">지운 등급(%1$s)의 대결 등급 산정 구간은 다음 등급에 합쳐졌습니다. 필드 편집에서 비율을 확인하세요.</string>
     <string name="grade_system_delete_title">등급 체계 삭제</string>
     <string name="grade_system_delete_confirm">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드는 없습니다. 삭제한 체계는 휴지통에 보관됩니다.</string>
     <string name="grade_system_delete_confirm_refs">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드 %2$d개는 지금 표를 그대로 가진 독자 표로 바뀝니다(값·통계는 그대로). 삭제한 체계는 휴지통에 보관됩니다.</string>

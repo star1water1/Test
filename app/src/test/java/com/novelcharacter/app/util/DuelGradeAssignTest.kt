@@ -271,6 +271,76 @@ class DuelGradeAssignTest {
         )
     }
 
+    // ── 표가 바뀐 뒤의 재조정 ──
+
+    @Test
+    fun `reconcile - 바뀐 것이 없으면 그대로다`() {
+        val even = DuelGradeAssign.evenCuts(labels4)
+        val result = DuelGradeAssign.reconcile(even, labels4, labels4)
+        assertEquals(even, result.cuts)
+        assertFalse(result.changed)
+    }
+
+    @Test
+    fun `reconcile - 가운데 등급을 지우면 그 구간이 다음 등급에 합쳐진다`() {
+        // 설계 4-2 — 누적 표현이라 컷을 지우는 것만으로 합쳐진다. A가 갖던 (5,20]은
+        // B에게 가고, B는 (5,60]이 된다. 다른 캐릭터의 등급은 그대로다.
+        val before = cuts("S" to 5.0, "A" to 20.0, "B" to 60.0)
+        val result = DuelGradeAssign.reconcile(before, labels4, listOf("S", "B", "C"))
+        assertEquals(cuts("S" to 5.0, "B" to 60.0), result.cuts)
+        assertEquals(listOf("A"), result.merged)
+        assertTrue(result.added.isEmpty())
+    }
+
+    @Test
+    fun `reconcile - 마지막 등급을 지우면 위 등급이 나머지를 흡수한다`() {
+        val before = cuts("S" to 5.0, "A" to 20.0, "B" to 60.0)
+        val result = DuelGradeAssign.reconcile(before, labels4, listOf("S", "A", "B"))
+        assertEquals(cuts("S" to 5.0, "A" to 20.0), result.cuts)
+    }
+
+    @Test
+    fun `reconcile - 새 등급은 0퍼센트 구간으로 들어온다 (아무도 등급이 바뀌지 않는다)`() {
+        // 등급을 하나 더했다는 이유로 캐릭터들의 등급이 조용히 바뀌면 변수 제어 위반이다.
+        val before = cuts("S" to 5.0, "A" to 20.0, "B" to 60.0)
+        val result = DuelGradeAssign.reconcile(before, labels4, listOf("S", "새등급", "A", "B", "C"))
+        assertEquals(cuts("S" to 5.0, "새등급" to 5.0, "A" to 20.0, "B" to 60.0), result.cuts)
+        assertEquals(listOf("새등급"), result.added)
+    }
+
+    @Test
+    fun `reconcile - 맨 위에 등급이 붙어도 기존 배정은 그대로다`() {
+        val before = cuts("S" to 5.0, "A" to 20.0, "B" to 60.0)
+        val result = DuelGradeAssign.reconcile(before, labels4, listOf("초월", "S", "A", "B", "C"))
+        assertEquals(cuts("초월" to 0.0, "S" to 5.0, "A" to 20.0, "B" to 60.0), result.cuts)
+    }
+
+    @Test
+    fun `reconcile - 맨 아래에 등급이 붙으면 옛 마지막 등급이 100퍼센트를 받는다`() {
+        // 이 한 자리가 [oldLabels]를 받는 이유다. 앞 등급의 값을 물려주면 C가 통째로 비고
+        // 새 등급이 C의 사람들을 가져간다 — 사용자는 등급 하나를 더했을 뿐이다.
+        val before = cuts("S" to 5.0, "A" to 20.0, "B" to 60.0)
+        val result = DuelGradeAssign.reconcile(before, labels4, labels4 + "바닥")
+        assertEquals(cuts("S" to 5.0, "A" to 20.0, "B" to 60.0, "C" to 100.0), result.cuts)
+        assertTrue("옛 마지막 등급은 '새로 생긴 것'이 아니다", result.added.isEmpty())
+    }
+
+    @Test
+    fun `reconcile - 어긋난 값도 단조 비감소로 바로잡는다`() {
+        // 손으로 고친 엑셀 JSON에서 오는 모양. 재조정을 거친 컷은 언제나 검증을 통과한다.
+        val broken = cuts("S" to 80.0, "A" to 10.0, "B" to 150.0)
+        val result = DuelGradeAssign.reconcile(broken, labels4, labels4)
+        assertTrue(DuelGradeAssign.validate(result.cuts, labels4).isEmpty())
+        assertEquals(listOf(80.0, 80.0, 100.0), result.cuts.map { it.topPercent })
+    }
+
+    @Test
+    fun `reconcile - 등급이 하나만 남으면 컷이 사라진다`() {
+        val result = DuelGradeAssign.reconcile(DuelGradeAssign.evenCuts(labels4), labels4, listOf("S"))
+        assertTrue(result.cuts.isEmpty())
+        assertEquals(listOf("S", "A", "B"), result.merged)
+    }
+
     // ── 미리보기 ──
 
     private fun assignment(code: String, label: String) =
