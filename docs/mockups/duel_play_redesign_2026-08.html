@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대결 진행 화면 재설계 목업 (2026-08)</title>
+<style>
+  :root{
+    --bg:#101418; --surface:#1b2127; --surface2:#232b33; --outline:#3a444e;
+    --text:#e8edf2; --text2:#9fb0bf; --accent:#7fc4a8; --accent2:#2e4a3f;
+    --warn:#e0b45c; --chip:#2a3540;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#0a0d10; color:var(--text); font-family:'Segoe UI',Roboto,'Noto Sans KR',sans-serif; padding:32px; line-height:1.5;}
+  h1{font-size:20px; margin-bottom:4px;}
+  .doc-note{color:var(--text2); font-size:13px; max-width:860px; margin-bottom:28px;}
+  .doc-note b{color:var(--text);}
+  .stage{display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start;}
+  .col{width:360px;}
+  .col h2{font-size:15px; margin:0 0 10px 2px; color:var(--accent);}
+  .phone{width:360px; background:var(--bg); border:1px solid var(--outline); border-radius:24px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.5);}
+  .toolbar{display:flex; align-items:center; gap:10px; padding:14px 16px; background:var(--surface);}
+  .toolbar .back{color:var(--text2);}
+  .toolbar .title{font-size:17px; font-weight:600; flex:1;}
+  .toolbar .action{font-size:13px; color:var(--accent); font-weight:600;}
+  .toolbar .dots{color:var(--text2); letter-spacing:2px;}
+  .progress{padding:10px 16px 8px; background:var(--surface);}
+  .bar{height:4px; border-radius:2px; background:var(--surface2); overflow:hidden;}
+  .bar i{display:block; height:100%; width:38%; background:var(--accent);}
+  .prog-text{font-size:11.5px; color:var(--text2); margin-top:6px;}
+  .reason{display:inline-block; font-size:11px; color:var(--accent); background:var(--accent2); border-radius:10px; padding:2px 9px; margin-top:6px;}
+  .arena{padding:12px; display:flex; gap:10px; align-items:stretch;}
+  .card{flex:1; background:var(--surface); border:1px solid var(--outline); border-radius:14px; overflow:hidden; position:relative;}
+  .img{height:150px; position:relative; background:linear-gradient(160deg,#39536b,#22303c 70%);}
+  .img.b{background:linear-gradient(160deg,#6b4a39,#3c2822 70%);}
+  .img .ph{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.35); font-size:12px;}
+  .info{padding:10px 12px 12px;}
+  .nm{font-size:15px; font-weight:700;}
+  .trio{font-size:12px; color:var(--text2); margin-top:1px;}
+  .profile{margin-top:7px; display:flex; flex-direction:column; gap:3px;}
+  .prow{display:flex; justify-content:space-between; font-size:12px;}
+  .prow .k{color:var(--text2);}
+  .more{font-size:11px; color:var(--text2); margin-top:2px;}
+  .expand{position:absolute; top:150px; right:6px; transform:translateY(6px); width:22px; height:22px; border-radius:11px; background:var(--chip); color:var(--text2); font-size:11px; display:flex; align-items:center; justify-content:center;}
+  .infl{border-top:1px solid var(--outline); margin-top:9px; padding-top:8px; display:flex; flex-direction:column; gap:3px;}
+  .irow{display:flex; gap:7px; font-size:12px; align-items:baseline;}
+  .irow .r{width:13px; height:13px; border-radius:7px; background:var(--chip); color:var(--text2); font-size:9px; display:flex; align-items:center; justify-content:center; flex:none; transform:translateY(1px);}
+  .irow .k{color:var(--text2); flex:1;}
+  .vs{align-self:center; color:var(--text2); font-size:13px; font-weight:700; padding:0 1px;}
+  .bottom{display:flex; align-items:center; padding:10px 14px 16px; gap:8px;}
+  .btn{font-size:13px; padding:8px 12px; border-radius:20px; color:var(--text2);}
+  .btn.tonal{background:var(--accent2); color:var(--accent); font-weight:700; padding:9px 22px;}
+  .spacer{flex:1;}
+  .notes{margin-top:14px; font-size:12.5px; color:var(--text2); max-width:360px;}
+  .notes li{margin:0 0 7px 16px;}
+  .notes b{color:var(--text);}
+  /* k=4 grid state */
+  .grid{padding:12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .gcard{background:var(--surface); border:1px solid var(--outline); border-radius:12px; overflow:hidden;}
+  .gimg{height:96px; background:linear-gradient(160deg,#39536b,#22303c 70%); position:relative;}
+  .gimg.v2{background:linear-gradient(160deg,#6b4a39,#3c2822 70%);}
+  .gimg.v3{background:linear-gradient(160deg,#4a3b6b,#28223c 70%);}
+  .gimg.v4{background:linear-gradient(160deg,#3b6b4a,#223c2c 70%);}
+  .gimg .ph{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.3); font-size:11px;}
+  .ginfo{padding:8px 10px 10px;}
+  .ginfo .nm{font-size:13.5px;}
+  .ginfo .trio{font-size:11px;}
+  .ginfo .peek{font-size:10.5px; color:var(--text2); margin-top:4px; display:flex; justify-content:space-between;}
+  .grid-note{padding:0 16px 6px; font-size:11.5px; color:var(--text2);}
+</style>
+</head>
+<body>
+  <h1>대결 진행 화면 재설계 목업</h1>
+  <p class="doc-note">
+    설계 정본은 <b>docs/feature_roadmap_2026-08.md 3장</b>이다. 카드가 '그림 위 스크림 한 줄'에서
+    <b>'그림 + 정보 패널'</b>로 갈라진다 — 프로필 필드(표시 전용)와 영향 필드(판단 재료)를 시각적으로
+    다른 구역에 둔다. 점수·산출 필드는 종전대로 어디에도 보이지 않는다. 왼쪽이 기본 2택,
+    오른쪽이 k지선다(B-115) 대비 골격이다 — 이 골격은 이번 슬라이스에서 화면 전환만 준비하고 열지 않는다.
+  </p>
+
+  <div class="stage">
+
+    <!-- ============ 2택 (기본) ============ -->
+    <div class="col">
+      <h2>① 2택 — 기본 상태</h2>
+      <div class="phone">
+        <div class="toolbar">
+          <span class="back">←</span>
+          <span class="title">강함</span>
+          <span class="action">다른 축</span>
+          <span class="dots">⋮</span>
+        </div>
+        <div class="progress">
+          <div class="bar"><i></i></div>
+          <div class="prog-text">붙임 128 · 접힘 46 · 남음 1,066 / 전체 1,240판</div>
+          <span class="reason">아직 예측이 반반인 짝입니다</span>
+        </div>
+        <div class="arena">
+          <div class="card">
+            <div class="img"><div class="ph">이미지 A (위 살리는 크롭)</div></div>
+            <div class="expand">⌄</div>
+            <div class="info">
+              <div class="nm">아리네</div>
+              <div class="trio">여 · 17세</div>
+              <div class="profile">
+                <div class="prow"><span class="k">소속</span><span>달빛단</span></div>
+                <div class="prow"><span class="k">출신</span><span>북부 설원</span></div>
+                <div class="more">외 2개</div>
+              </div>
+              <div class="infl">
+                <div class="irow"><span class="r">1</span><span class="k">마력량</span><span>350</span></div>
+                <div class="irow"><span class="r">2</span><span class="k">속성</span><span>물</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="vs">vs</div>
+          <div class="card">
+            <div class="img b"><div class="ph">이미지 B</div></div>
+            <div class="expand">⌄</div>
+            <div class="info">
+              <div class="nm">벨</div>
+              <div class="trio">여 · 21세</div>
+              <div class="profile">
+                <div class="prow"><span class="k">소속</span><span>홍련회</span></div>
+                <div class="prow"><span class="k">출신</span><span>남부 화산대</span></div>
+                <div class="more">외 2개</div>
+              </div>
+              <div class="infl">
+                <div class="irow"><span class="r">1</span><span class="k">마력량</span><span>280</span></div>
+                <div class="irow"><span class="r">2</span><span class="k">속성</span><span>불</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <span class="btn">방금 그거 취소</span>
+          <span class="spacer"></span>
+          <span class="btn tonal">비슷함</span>
+          <span class="spacer"></span>
+          <span class="btn">순위표</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li><b>카드 탭 = 그 캐릭터 승리</b> (현행 유지). ⌄만 예외 — 전체 프로필 시트를 연다.</li>
+        <li>둘째 줄이 <b>필수 트리오</b>(성별·나이 — 시맨틱 역할에서 해석). 프로필 필드는 상한 4줄 + "외 N개".</li>
+        <li>영향 필드는 순위 번호가 붙은 별도 구역 — <b>어느 쪽이 위인지 강조하지 않는다</b>(답 암시 금지).</li>
+        <li>하단 가운데의 <b>비슷함</b>이 B-114(무승부) — 저장 형식은 이미 받고 있다.</li>
+      </ul>
+    </div>
+
+    <!-- ============ k=4 (골격) ============ -->
+    <div class="col">
+      <h2>② 4지선다 — B-115 대비 골격 (이번에 열지 않음)</h2>
+      <div class="phone">
+        <div class="toolbar">
+          <span class="back">←</span>
+          <span class="title">강함</span>
+          <span class="action">다른 축</span>
+          <span class="dots">⋮</span>
+        </div>
+        <div class="progress">
+          <div class="bar"><i style="width:52%"></i></div>
+          <div class="prog-text">붙임 645 · 접힘 121 · 남음 474 / 전체 1,240판</div>
+        </div>
+        <div class="grid-note">넷 중 가장 강한 캐릭터를 누르세요 — 한 번 누르면 3판이 함께 기록됩니다.</div>
+        <div class="grid">
+          <div class="gcard">
+            <div class="gimg"><div class="ph">이미지</div></div>
+            <div class="ginfo">
+              <div class="nm">아리네</div><div class="trio">여 · 17세</div>
+              <div class="peek"><span>마력량 350</span><span>⌄</span></div>
+            </div>
+          </div>
+          <div class="gcard">
+            <div class="gimg v2"><div class="ph">이미지</div></div>
+            <div class="ginfo">
+              <div class="nm">벨</div><div class="trio">여 · 21세</div>
+              <div class="peek"><span>마력량 280</span><span>⌄</span></div>
+            </div>
+          </div>
+          <div class="gcard">
+            <div class="gimg v3"><div class="ph">이미지</div></div>
+            <div class="ginfo">
+              <div class="nm">카시안</div><div class="trio">남 · 34세</div>
+              <div class="peek"><span>마력량 410</span><span>⌄</span></div>
+            </div>
+          </div>
+          <div class="gcard">
+            <div class="gimg v4"><div class="ph">이미지</div></div>
+            <div class="ginfo">
+              <div class="nm">로엔</div><div class="trio">남 · 19세</div>
+              <div class="peek"><span>마력량 190</span><span>⌄</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <span class="btn">방금 묶음 취소</span>
+          <span class="spacer"></span>
+          <span class="btn">순위표</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>3장 이상에서 정보 패널은 <b>이름 + 트리오 + 1순위 영향값</b>으로 접힌다. ⌄이 나머지를 시트로 연다.</li>
+        <li>취소 문구가 <b>"묶음"</b>을 말한다 — k지선다 한 번은 k−1판이라 되돌리기 단위가 묶음이다(`groupId`).</li>
+        <li>'비슷함' 버튼은 2택 전용이다 — k&gt;2에서의 무승부 의미는 B-115 착수 시 정한다.</li>
+        <li>같은 레이아웃 함수(`applyViewOptions` 확장점)가 2택↔격자를 가른다 — 화면을 두 번 만들지 않는다.</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>
