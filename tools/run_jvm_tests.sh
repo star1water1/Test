@@ -54,6 +54,7 @@ $MAIN/data/model/FieldDefinition.kt
 $MAIN/data/model/FieldValueEntry.kt
 $MAIN/data/model/GradeSystem.kt
 $MAIN/data/model/GradeSystemRef.kt
+$MAIN/data/model/DuelGradeRef.kt
 $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt
@@ -182,6 +183,7 @@ $MAIN/util/DuelMatchLog.kt
 $MAIN/util/DuelCategoryStats.kt
 $MAIN/util/DuelScoreIndex.kt
 $MAIN/util/DuelAiContext.kt
+$MAIN/util/DuelGradeAssign.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -224,6 +226,7 @@ $TEST/excel/AllCharactersSheetTest.kt
 $TEST/excel/GradeSystemSheetTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
+$TEST/data/DuelGradeRefTest.kt
 $TEST/data/SemanticRoleEntityScopeTest.kt
 $TEST/data/RequiredEnforcementTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
@@ -250,6 +253,7 @@ $TEST/util/DuelMatchLogTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
 $TEST/util/DuelAiContextTest.kt
+$TEST/util/DuelGradeAssignTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt

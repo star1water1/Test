@@ -16,7 +16,10 @@ package com.novelcharacter.app.util
  *    프롬프트가 순위표와 다른 수를 말하면 사용자가 화면에서 본 것과 AI가 받은 것이 갈린다.
  *    설계 9-1이 세운 *"계산의 출구를 하나로 묶는다"*가 이 경로에도 그대로 적용된다.
  *    **등수는 예외이고 그것이 규칙이다** — 설계 9-3이 세운 *"점수는 그대로이고 등수만 이 표의
- *    것이다"*를 따라, 등수는 **이 목록에 실린 참가자끼리** 다시 매긴다([rankWithinScored]).
+ *    것이다"*를 따라, 등수는 **이 목록에 실린 참가자끼리** 다시 매긴다
+ *    ([DuelScoreIndex.rankWithinScored] — 등급 산정(B-113)이 같은 재매김을 필요로 해
+ *    2026.08.07에 그쪽으로 올렸다. 두 소비처가 각자 매기면 같은 캐릭터가 화면마다 다른
+ *    등수를 갖는다).
  *    통계 순위 탭이 작품 필터에서 하는 그 처분과 같다.
  * 2. **한 판도 안 치른 축은 싣지 않는다.** [DuelScoreIndex]의 계약 2가 그런 참가자를 이미
  *    **값 없음**으로 두었고([DuelStandings.Row.provisional]이 순위표에서 가리는 그 사실이다),
@@ -38,7 +41,7 @@ object DuelAiContext {
     /**
      * 한 캐릭터가 한 축에서 차지한 자리 — 프롬프트가 쓸 것만 남긴 것.
      *
-     * @property rank **점수가 있는 참가자끼리** 다시 매긴 등수([rankWithinScored]).
+     * @property rank **점수가 있는 참가자끼리** 다시 매긴 등수([DuelScoreIndex.rankWithinScored]).
      *   순위표 줄의 등수를 그대로 쓰면 안 된다 — 그 등수는 한 판도 안 친 참가자까지 세는데
      *   그들의 앵커 1500이 **표 한가운데에 끼므로**, 1500보다 낮은 캐릭터의 등수가 분모를
      *   넘어선다(*"3명 중 4위"*). 자기 재검토가 실제로 이 자리를 잡았다.
@@ -95,36 +98,12 @@ object DuelAiContext {
                 axisName = axis.axisName,
                 score = entry.score,
                 scoreError = entry.scoreError,
-                rank = rankWithinScored(axis)[participantCode] ?: return@mapNotNull null,
+                rank = DuelScoreIndex.rankWithinScored(axis)[participantCode] ?: return@mapNotNull null,
                 scored = axis.scored,
                 played = entry.played
             )
         }
         .sortedWith(compareByDescending<Standing> { it.played }.thenBy { it.axisName.lowercase() })
-
-    /**
-     * 점수가 있는 참가자끼리 다시 매긴 등수 — **표준 경쟁 순위**(동점은 같은 등수, 다음 등수는
-     * 그만큼 건너뛴다). 통계 순위 탭(`StatsDataProvider.computeDuelRanking`)이 쓰는 규칙 그대로다.
-     *
-     * **왜 순위표의 등수를 그대로 쓰지 못하는가:** [DuelStandings.rows]는 한 판도 안 친
-     * 참가자에게도 줄과 등수를 주고, 그들의 점수는 앵커([DuelRating.ANCHOR_SCORE]) 그대로라
-     * **점수 순 정렬에서 표 한가운데에 앉는다.** 그러면 앵커보다 낮은 캐릭터의 등수가 계약 2로
-     * 걸러진 인원까지 세게 되어, 분모([Standing.scored])를 넘어서는 *"3명 중 4위"*가 나온다.
-     * 순위표 화면에서는 그 줄들이 함께 보이므로 어긋남이 아니지만, **여기서는 그들이 빠지므로
-     * 등수도 함께 다시 매겨야 한다.**
-     */
-    private fun rankWithinScored(axis: DuelScoreIndex.AxisScores): Map<String, Int> {
-        val ordered = axis.byCode.values.sortedByDescending { it.score }
-        val out = HashMap<String, Int>(ordered.size)
-        var rank = 1
-        var previous: Int? = null
-        ordered.forEachIndexed { index, entry ->
-            if (index > 0 && entry.score != previous) rank = index + 1
-            previous = entry.score
-            out[entry.code] = rank
-        }
-        return out
-    }
 
     /**
      * 상한을 적용한 프롬프트 조각들과 **뺀 수**.
