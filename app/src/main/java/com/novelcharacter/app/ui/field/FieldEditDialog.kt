@@ -2471,10 +2471,17 @@ class FieldEditDialog : DialogFragment() {
         if (!eligible || !binding.switchDuelGrade.isChecked) {
             return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
         }
+        // **집을 수 없을 때는 지우지 않고 그대로 싣는다.**
+        //
+        // 축을 못 집는 경우는 둘이다 — 목록 조회가 실패했거나(위 `catch`가 삼킨다) 가리키던
+        // 축이 지워졌거나. 어느 쪽이든 **사용자가 끈 것이 아니다.** 여기서 키를 지우면
+        // *필드 이름만 고치고 저장해도* 세워 둔 컷이 말없이 사라진다(개발 의도 2번 — 어떤
+        // 경우에도 데이터가 말없이 유실되지 않는다). 지워진 축은 휴지통에서 되살아날 수 있고,
+        // 그때 컷이 남아 있으면 그대로 다시 들어맞는다. **끄는 것은 스위치가 하는 일이다.**
+        // 등급이 둘 미만일 때도 같다 — 나눌 경계가 없다는 것은 컷을 버릴 이유가 아니다.
         val axis = selectedDuelAxis(binding)
-            ?: return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
         val labels = currentGradeLabels()
-        if (labels.size < 2) return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
+        if (axis == null || labels.size < 2) return keepStoredDuelGrade(configJson)
         val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(
             duelGradeCuts.ifEmpty { com.novelcharacter.app.util.DuelGradeAssign.evenCuts(labels) },
             labels, labels
@@ -2487,6 +2494,18 @@ class FieldEditDialog : DialogFragment() {
                 lastApplied = duelGradeLastApplied
             )
         )
+    }
+
+    /**
+     * 저장된 대결 등급 산정 약속을 **그대로 옮겨 싣는다** — 화면이 그것을 판정할 수 없을 때.
+     *
+     * 새 필드거나 원래도 없었으면 걷어낸 결과와 같다(넣을 것이 없다).
+     */
+    private fun keepStoredDuelGrade(configJson: String): String {
+        val stored = existingField?.config
+            ?.let { com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(it) }
+            ?: return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
+        return com.novelcharacter.app.data.model.DuelGradeRef.write(configJson, stored)
     }
 
     /**

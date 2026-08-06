@@ -94,12 +94,17 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
                             .getCharactersByUniverseList(field.universeId)
                         val scores = app.duelRepository.scoresOf(axis, characters.map { it.code })
                         val assigned = DuelGradeAssign.assign(scores, spec.cuts, labels)
-                        val currentValues = app.database.characterFieldValueDao()
+                        // **저장소를 거친다** — DAO를 직접 부르면 `IN (:ids)`가 SQLite 변수
+                        // 상한(999)에 걸려, 캐릭터가 많은 세계관에서 미리보기가 예외로 죽는다.
+                        // 저장소 쪽이 그 청크 분할을 들고 있다.
+                        val codeById = characters.associate { it.id to it.code }
+                        val currentValues = app.characterRepository
                             .getValuesForCharacters(characters.map { it.id })
                             .filter { it.fieldDefinitionId == fieldId }
-                            .associate { value ->
-                                characters.first { it.id == value.characterId }.code to value.value
+                            .mapNotNull { value ->
+                                codeById[value.characterId]?.let { it to value.value }
                             }
+                            .toMap()
                         Loaded.Ready(
                             axisName = axis.name,
                             fieldName = field.name,

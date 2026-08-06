@@ -227,7 +227,9 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun gradeApplyFieldsFor(axis: DuelAxis): List<FieldDefinition> {
         if (axis.isImageAxis) return emptyList()
         return app.database.fieldDefinitionDao()
-            .getFieldsByUniverseList(axis.universeId)
+            // 종류를 **명시한다** — DAO 기본값이 캐릭터라 맞는 결과가 나오지만, 기본값에
+            // 기대는 것이 R-29가 지목한 실패 형태다(잊으면 오류가 아니라 잘못된 정답).
+            .getFieldsByUniverseList(axis.universeId, FieldDefinition.ENTITY_CHARACTER)
             .filter { DuelGradeRef.axisCodeFromConfig(it.config) == axis.code }
     }
 

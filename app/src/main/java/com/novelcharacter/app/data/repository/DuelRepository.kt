@@ -316,10 +316,17 @@ class DuelRepository(private val db: AppDatabase) {
             val byCode = characters.associateBy { it.code }
             // 값은 한 번에 읽는다 — 캐릭터마다 물으면 인원만큼 왕복이 늘고, 그것이 목표 규모에서
             // 이 트랜잭션을 가장 길게 잡는 자리가 된다('받쳐주는 확장성').
-            val currentByCharacter = db.characterFieldValueDao()
-                .getValuesForCharacters(characters.map { it.id })
-                .filter { it.fieldDefinitionId == fieldDefinitionId }
-                .associate { it.characterId to it.value }
+            // **다만 한 번에 다 넘기지는 못한다** — `IN (:ids)`는 SQLite 변수 상한(999)에 걸리므로
+            // 저장소들이 쓰는 그 청크 크기로 쪼갠다. 쪼개지 않으면 캐릭터가 많은 세계관에서
+            // 반영이 통째로 예외가 되고, 그것은 목표 규모(실사용 ×30)에서 먼저 무너지는 자리다.
+            val currentByCharacter = HashMap<Long, String>()
+            for (chunk in characters.map { it.id }.chunked(VALUE_READ_CHUNK)) {
+                for (value in db.characterFieldValueDao().getValuesForCharacters(chunk)) {
+                    if (value.fieldDefinitionId == fieldDefinitionId) {
+                        currentByCharacter[value.characterId] = value.value
+                    }
+                }
+            }
 
             for (code in selected) {
                 val label = assignments[code] ?: continue
@@ -366,5 +373,13 @@ class DuelRepository(private val db: AppDatabase) {
         }
         trash.pruneIfNeeded()
         return written
+    }
+
+    private companion object {
+        /**
+         * `IN (:ids)` 한 번에 넘길 수 있는 id 수. SQLite 변수 상한(999)에 여유를 둔 값이며,
+         * `CharacterRepository`의 청크 상수와 같은 이유·같은 크기다.
+         */
+        const val VALUE_READ_CHUNK = 900
     }
 }
