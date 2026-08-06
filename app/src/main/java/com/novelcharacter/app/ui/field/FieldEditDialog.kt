@@ -557,7 +557,9 @@ class FieldEditDialog : DialogFragment() {
             ).show()
             return
         }
-        DuelGradeApplySheet.newInstance(existing.id, axis.code).show(parentFragmentManager, "duelGradeApply")
+        com.novelcharacter.app.ui.duel.DuelGradeApplySheet
+            .newInstance(existing.id, axis.code)
+            .show(parentFragmentManager, "duelGradeApply")
     }
 
     /** 체계 참조 중에는 행 삭제 버튼을 숨긴다 — 라벨 집합은 체계가 정한다(R-24). */
