@@ -115,8 +115,6 @@ class GradeCutSliderView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun cuts(): List<DuelGradeRef.Cut> = cuts
-
     fun select(index: Int?) {
         val next = index?.takeIf { it in cuts.indices }
         if (next == selectedIndex) return

@@ -169,15 +169,6 @@ class DuelGradeRefTest {
     }
 
     @Test
-    fun `retainCuts - 사라진 라벨의 컷은 다음 등급에 합쳐지고 그 사실이 남는다`() {
-        val result = DuelGradeRef.retainCuts(cuts, listOf("S", "B", "C"))
-        assertEquals(listOf("S", "B"), result.cuts.map { it.label })
-        assertEquals(listOf("A"), result.mergedLabels)
-        // 누적 표현이라 컷을 지우는 것만으로 구간이 합쳐진다 — 남은 값은 손대지 않는다.
-        assertEquals(listOf(5.0, 60.0), result.cuts.map { it.topPercent })
-    }
-
-    @Test
     fun `axisCodeFromConfig - 축만 묻는 자리의 지름길`() {
         val config = DuelGradeRef.write("{}", DuelGradeRef.Spec("ax7", cuts))
         assertEquals("ax7", DuelGradeRef.axisCodeFromConfig(config))

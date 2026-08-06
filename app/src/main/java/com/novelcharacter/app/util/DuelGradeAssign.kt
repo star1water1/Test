@@ -37,9 +37,6 @@ import kotlin.math.roundToInt
  */
 object DuelGradeAssign {
 
-    /** 컷 숫자의 눈금 — 소수 한 자리. 화면의 스테퍼는 이 눈금 위에서 0.5씩 움직인다(목업). */
-    const val PERCENT_DECIMALS = 1
-
     /** 컷 문제 — 문구는 화면 계층(strings.xml)의 일이다([GradeTable.Problem]과 같은 규칙). */
     sealed class Problem {
         /** 실효 등급 표가 비었다 — 나눌 라벨이 없으면 컷은 뜻을 갖지 못한다. */
