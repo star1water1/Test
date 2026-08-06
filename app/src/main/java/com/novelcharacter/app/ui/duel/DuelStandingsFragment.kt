@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.duel
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,6 +10,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
@@ -97,6 +99,7 @@ class DuelStandingsFragment : Fragment() {
                 loaded.state.report.wobbles.size,
                 outcomeLines
             )
+            renderGradeApplyEntry(axis)
         }
     }
 
@@ -179,6 +182,49 @@ class DuelStandingsFragment : Fragment() {
 
         binding.caveatText.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
         binding.caveatText.text = lines.joinToString("\n")
+    }
+
+    /**
+     * **[등급 반영] 진입** (B-113) — 이 축을 가리키는 대결 등급 산정 필드가 있을 때만 선다.
+     *
+     * 어긋남 고지 바로 아래에 두는 것은 그 고지가 곧 *"이제 필드를 갱신할 때"*를 뜻하기
+     * 때문이다(설계 4-3 — 어긋남 감지가 자동 반영의 짝이다). 필드가 없으면 감춘다: 아무
+     * 필드도 이 축에 붙지 않았는데 단추가 서면 눌러 봐야 빈 화면이다(R-17).
+     *
+     * 필드가 **여럿**일 수 있다 — 한 축의 순위를 두 필드가 각자 다른 컷으로 받을 수 있으므로
+     * 조용히 첫 것을 고르지 않고 목록으로 묻는다(오배정 방지).
+     */
+    private fun renderGradeApplyEntry(axis: DuelAxis) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fields = try {
+                viewModel.gradeApplyFieldsFor(axis)
+            } catch (e: Exception) {
+                Log.e("DuelStandingsFragment", "Failed to load duel grade fields", e)
+                emptyList()
+            }
+            if (!isAdded) return@launch
+            binding.btnDuelGradeApply.visibility = if (fields.isEmpty()) View.GONE else View.VISIBLE
+            if (fields.isEmpty()) return@launch
+            binding.btnDuelGradeApply.text = getString(R.string.duel_grade_apply_entry, fields.size)
+            binding.btnDuelGradeApply.setOnClickListener {
+                if (fields.size == 1) {
+                    openGradeApply(fields.first().id, axis.code)
+                } else {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.duel_grade_pick_field_title)
+                        .setItems(fields.map { it.name }.toTypedArray()) { _, which ->
+                            openGradeApply(fields[which].id, axis.code)
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun openGradeApply(fieldId: Long, axisCode: String) {
+        DuelGradeApplySheet.newInstance(fieldId, axisCode)
+            .show(parentFragmentManager, "duelGradeApply")
     }
 
     override fun onDestroyView() {

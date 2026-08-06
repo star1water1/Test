@@ -1505,12 +1505,24 @@ class UniverseListFragment : Fragment() {
                     gradesJson = com.novelcharacter.app.data.model.GradeSystemRef.gradesToJson(outcome.grades)
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
-                    val propagated = viewModel.saveGradeSystem(system, renames)
-                    if (propagated != null) {
-                        if (existing != null && propagated > 0) {
+                    val saved = viewModel.saveGradeSystem(system, renames)
+                    if (saved != null) {
+                        if (existing != null && saved.propagatedFields > 0) {
                             Toast.makeText(
-                                ctx, getString(R.string.grade_system_saved_toast, name, propagated),
+                                ctx, getString(R.string.grade_system_saved_toast, name, saved.propagatedFields),
                                 Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        // 등급을 지우면 대결 등급 산정의 그 구간이 다음 등급에 합쳐진다 —
+                        // 배정 폭이 바뀐 사실을 말하지 않으면 사용자는 다음 반영에서야 안다.
+                        if (saved.duelCutsMerged.isNotEmpty()) {
+                            Toast.makeText(
+                                ctx,
+                                getString(
+                                    R.string.grade_system_duel_cuts_merged,
+                                    saved.duelCutsMerged.joinToString(", ")
+                                ),
+                                Toast.LENGTH_LONG
                             ).show()
                         }
                         onSaved()

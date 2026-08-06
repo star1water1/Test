@@ -45,6 +45,18 @@
             android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="@color/text_secondary" />
 
+        <!-- B-113: 이 축의 순위를 등급으로 반영하는 진입. 대결 등급 산정을 켠 필드가 이 축을
+             가리킬 때만 선다 — 어긋남 고지 바로 아래인 것은 그 고지가 곧 "반영할 때가 됐다"를
+             뜻하기 때문이다(설계 4-3). -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDuelGradeApply"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="start|center_vertical"
+            android:layout_marginTop="6dp"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/emptyText"
             android:layout_width="match_parent"

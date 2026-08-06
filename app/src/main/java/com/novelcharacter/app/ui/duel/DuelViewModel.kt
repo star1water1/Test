@@ -8,6 +8,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.repository.DuelRepository
@@ -215,6 +216,22 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     // ──────────────────────────────────────────────────────────────────────
     // 상태
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * **이 축을 가리키는 대결 등급 산정 필드들** (B-113) — 순위표의 [등급 반영] 진입이 쓴다.
+     *
+     * 소속 검사가 여기서도 선다: 축 code는 전역 유니크라 config가 남의 세계관 축을 정확히
+     * 가리킬 수 있으므로, **이 축의 세계관에 있는 필드만** 본다(설계 4-2 ⓑ의 이중 방어).
+     * 이미지 축은 참가자가 캐릭터가 아니라 애초에 대상이 아니다.
+     */
+    suspend fun gradeApplyFieldsFor(axis: DuelAxis): List<FieldDefinition> {
+        if (axis.isImageAxis) return emptyList()
+        return app.database.fieldDefinitionDao()
+            // 종류를 **명시한다** — DAO 기본값이 캐릭터라 맞는 결과가 나오지만, 기본값에
+            // 기대는 것이 R-29가 지목한 실패 형태다(잊으면 오류가 아니라 잘못된 정답).
+            .getFieldsByUniverseList(axis.universeId, FieldDefinition.ENTITY_CHARACTER)
+            .filter { DuelGradeRef.axisCodeFromConfig(it.config) == axis.code }
+    }
 
     /** 이 축의 참가자 — 캐릭터 축은 세계관의 캐릭터가 그대로 참가자다. */
     suspend fun participants(axis: DuelAxis): List<Character> = participantsOf(axis.universeId)

@@ -59,7 +59,7 @@ object PresetTemplates {
                 key = fd.key,
                 name = fd.name,
                 type = fd.type,
-                config = com.novelcharacter.app.data.model.GradeSystemRef.demote(fd.config),
+                config = com.novelcharacter.app.data.model.FieldConfigTransfer.demoteAcrossUniverse(fd.config),
                 groupName = fd.groupName,
                 isRequired = fd.isRequired,
                 entityType = fd.entityType
@@ -101,7 +101,7 @@ object PresetTemplates {
                 type = data.type,
                 // 저장 시점에 벗겼지만(fieldsToJson) 손편집 JSON·엑셀 '필드 템플릿' 시트로
                 // 들어온 데이터는 그 경로를 안 거쳤다 — 복원 쪽에서도 벗겨야 구멍이 없다.
-                config = com.novelcharacter.app.data.model.GradeSystemRef.demote(data.config),
+                config = com.novelcharacter.app.data.model.FieldConfigTransfer.demoteAcrossUniverse(data.config),
                 groupName = data.groupName,
                 displayOrder = order,
                 isRequired = data.isRequired,

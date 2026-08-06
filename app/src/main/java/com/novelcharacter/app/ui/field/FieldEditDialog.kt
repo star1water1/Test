@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.field
 import android.app.Dialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
@@ -164,6 +165,7 @@ class FieldEditDialog : DialogFragment() {
         setupRequiredSection(binding)
         setupCardDisplaySection(binding)
         setupAiAndDescriptionSection(binding)
+        setupDuelGradeSection(binding)
         setupHelpButtons(binding)
         setupFormulaHelp(binding)
         populateFields(binding)
@@ -208,6 +210,19 @@ class FieldEditDialog : DialogFragment() {
                     gradeSystems = app.database.gradeSystemDao().getByUniverseList(universeId)
                     applyGradeSystemList(binding)
                 } catch (_: Exception) { /* 로드 실패 시 독자 표 편집만 가능 */ }
+            }
+        }
+
+        // 대결 축 목록 (B-113) — 캐릭터 필드이고 세계관이 있을 때만. 이미지 축은 참가자가
+        // 캐릭터가 아니라 그 순위를 캐릭터 필드에 쓸 수 없으므로 목록에서 뺀다.
+        if (universeId != 0L && currentEntityType() == FieldDefinition.ENTITY_CHARACTER) {
+            lifecycleScope.launch {
+                try {
+                    val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                    duelAxes = app.database.duelAxisDao().getByUniverseList(universeId)
+                        .filter { it.targetType == com.novelcharacter.app.data.model.DuelAxis.TARGET_CHARACTER }
+                    applyDuelAxisList(binding)
+                } catch (_: Exception) { /* 로드 실패 시 섹션은 사유 줄만 보인다 */ }
             }
         }
 
@@ -290,6 +305,261 @@ class FieldEditDialog : DialogFragment() {
         binding.btnAddGrade.visibility = View.GONE
     }
 
+    // ── 대결 등급 산정 (B-113) ──
+
+    /**
+     * 이 세계관의 **캐릭터** 대결 축들. 이미지 축은 참가자가 캐릭터가 아니라 그 순위를
+     * 캐릭터 필드에 쓸 수 없다(설계 4-2가 GRADE 타입으로 좁힌 것과 같은 부류의 제약이다).
+     */
+    private var duelAxes: List<com.novelcharacter.app.data.model.DuelAxis> = emptyList()
+
+    /** 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다(체계 참조와 같은 배선). */
+    private var pendingDuelAxisCode: String? = null
+
+    /** 편집 중인 컷. 슬라이더가 진짜 상태를 들고 있고 이쪽은 로드/저장의 통로다. */
+    private var duelGradeCuts: List<com.novelcharacter.app.data.model.DuelGradeRef.Cut> = emptyList()
+
+    /** 직전 반영 흔적 — 화면에서 만들지 않고 **원문을 그대로 실어 나른다**(반영만이 이것을 쓴다). */
+    private var duelGradeLastApplied: com.novelcharacter.app.data.model.DuelGradeRef.LastApplied? = null
+
+    private fun setupDuelGradeSection(binding: DialogFieldEditBinding) {
+        binding.switchDuelGrade.setOnCheckedChangeListener { _, checked ->
+            binding.duelGradeBody.visibility = if (checked) View.VISIBLE else View.GONE
+            if (checked) refreshDuelGradeEditor(binding)
+        }
+        binding.spinnerDuelAxis.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                refreshDuelGradeEditor(binding)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        binding.duelGradeSlider.onCutsChanged = { cuts ->
+            duelGradeCuts = cuts
+            renderDuelGradeNotice(binding)
+            renderDuelGradeBoundaryRow(binding)
+        }
+        binding.duelGradeSlider.onSelectionChanged = { renderDuelGradeBoundaryRow(binding) }
+        // 겹친 구분선(0% 구간) — 어느 경계인지 물어야 한다. 임의로 고르면 사용자가 끌던 것과
+        // 다른 경계가 움직인다(설계 4-4 ⓒ).
+        binding.duelGradeSlider.onAmbiguousTap = { candidates -> askDuelGradeBoundary(binding, candidates) }
+
+        binding.btnDuelGradeMinus.setOnClickListener { binding.duelGradeSlider.nudgeSelected(-STEP_PERCENT) }
+        binding.btnDuelGradePlus.setOnClickListener { binding.duelGradeSlider.nudgeSelected(STEP_PERCENT) }
+        binding.editDuelGradePercent.setOnEditorActionListener { view, _, _ ->
+            view.text.toString().trim().toDoubleOrNull()?.let { binding.duelGradeSlider.setSelectedPercent(it) }
+            renderDuelGradeBoundaryRow(binding)
+            true
+        }
+        binding.btnDuelGradeSuggest.setOnClickListener { suggestDuelGradeCuts(binding) }
+        binding.btnDuelGradeApply.setOnClickListener { openDuelGradeApply(binding) }
+    }
+
+    /** 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 가리키던 축을 선택으로 반영한다. */
+    private fun applyDuelAxisList(binding: DialogFieldEditBinding) {
+        val labels = duelAxes.map { it.name }
+        binding.spinnerDuelAxis.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item,
+            labels.ifEmpty { listOf(getString(R.string.duel_grade_no_axis)) }
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        val pending = pendingDuelAxisCode
+        if (pending != null && duelAxes.isNotEmpty()) {
+            val index = duelAxes.indexOfFirst { it.code == pending }
+            // 못 찾으면 선택을 옮기지 않는다 — 사유는 refreshDuelGradeEditor가 말한다.
+            // 조용히 0번 축으로 옮기면 **다른 축의 순위가 이 필드에 배정된다**(오배정).
+            if (index >= 0) binding.spinnerDuelAxis.setSelection(index)
+        }
+        refreshDuelGradeEditor(binding)
+    }
+
+    /** 지금 화면의 등급 행이 정한 라벨 차례(높은 등급부터) — 슬라이더가 나눌 대상이다. */
+    private fun currentGradeLabels(): List<String> {
+        val outcome = com.novelcharacter.app.util.GradeTable.build(
+            gradeRows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+        )
+        return com.novelcharacter.app.util.DuelGradeAssign.orderedLabels(outcome.grades)
+    }
+
+    private fun selectedDuelAxis(binding: DialogFieldEditBinding): com.novelcharacter.app.data.model.DuelAxis? =
+        duelAxes.getOrNull(binding.spinnerDuelAxis.selectedItemPosition)
+
+    /**
+     * 슬라이더를 지금 상태로 다시 세운다 — **성립하지 않으면 슬라이더 대신 사유 한 줄**이다.
+     *
+     * 막을 것이 셋이고 셋 다 조용히 틀리는 부류다: 축이 없음 · 축이 남의 세계관 것
+     * (오배정 이중 방어, 설계 4-2 ⓑ) · 나눌 등급이 없음.
+     */
+    private fun refreshDuelGradeEditor(binding: DialogFieldEditBinding) {
+        if (!binding.switchDuelGrade.isChecked) return
+        val labels = currentGradeLabels()
+        val axis = selectedDuelAxis(binding)
+        val problem = when {
+            duelAxes.isEmpty() -> getString(R.string.duel_grade_no_axis)
+            axis == null -> getString(R.string.duel_grade_axis_missing)
+            axis.universeId != universeId -> getString(R.string.duel_grade_axis_foreign)
+            labels.isEmpty() -> getString(R.string.duel_grade_no_labels)
+            labels.size < 2 -> getString(R.string.duel_grade_single_label)
+            else -> null
+        }
+        binding.duelGradeProblem.text = problem.orEmpty()
+        binding.duelGradeProblem.visibility = if (problem == null) View.GONE else View.VISIBLE
+        binding.duelGradeEditor.visibility = if (problem == null) View.VISIBLE else View.GONE
+        if (problem != null) return
+
+        // 등급 표가 바뀌었으면 컷을 따라가게 한다 — 기존 배정을 보존하는 방향으로.
+        val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(
+            duelGradeCuts.ifEmpty { com.novelcharacter.app.util.DuelGradeAssign.evenCuts(labels) },
+            labels, labels
+        )
+        duelGradeCuts = reconciled.cuts
+        binding.duelGradeSlider.setData(labels, duelGradeCuts)
+        renderDuelGradeNotice(binding)
+        renderDuelGradeBoundaryRow(binding)
+    }
+
+    /** 0% 구간은 오류가 아니라 사실이다 — 그래도 말하지 않으면 사용자는 등급이 빠진 줄 모른다. */
+    private fun renderDuelGradeNotice(binding: DialogFieldEditBinding) {
+        val labels = currentGradeLabels()
+        var previous = 0.0
+        val empty = mutableListOf<String>()
+        labels.forEachIndexed { index, label ->
+            val until = duelGradeCuts.getOrNull(index)?.topPercent ?: 100.0
+            if (until - previous < 0.05) empty.add(label)
+            previous = until
+        }
+        binding.duelGradeNotice.text =
+            if (empty.isEmpty()) "" else getString(R.string.duel_grade_zero_segment, empty.joinToString(", "))
+        binding.duelGradeNotice.visibility = if (empty.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /** 정밀 조정 줄 — 고른 경계가 없으면 스테퍼·숫자 칸을 죽여 둔다(무엇을 고치는지 모르니까). */
+    private fun renderDuelGradeBoundaryRow(binding: DialogFieldEditBinding) {
+        val index = binding.duelGradeSlider.selectedIndex
+        val labels = currentGradeLabels()
+        val cut = index?.let { duelGradeCuts.getOrNull(it) }
+        val enabled = cut != null
+        binding.btnDuelGradeMinus.isEnabled = enabled
+        binding.btnDuelGradePlus.isEnabled = enabled
+        binding.editDuelGradePercent.isEnabled = enabled
+        if (cut == null || index == null) {
+            binding.duelGradeBoundaryLabel.text = getString(R.string.duel_grade_select_boundary_hint)
+            binding.editDuelGradePercent.setText("")
+            return
+        }
+        binding.duelGradeBoundaryLabel.text = getString(
+            R.string.duel_grade_selected_boundary, cut.label, labels.getOrNull(index + 1).orEmpty()
+        )
+        binding.editDuelGradePercent.setText(formatPercent(cut.topPercent))
+    }
+
+    /** 겹친 구분선을 탭했을 때 — 후보를 목록으로 보여 사용자가 고른다. */
+    private fun askDuelGradeBoundary(binding: DialogFieldEditBinding, candidates: List<Int>) {
+        val labels = currentGradeLabels()
+        val items = candidates.map { index ->
+            val cut = duelGradeCuts[index]
+            getString(
+                R.string.duel_grade_boundary_item,
+                cut.label, labels.getOrNull(index + 1).orEmpty(), formatPercent(cut.topPercent)
+            )
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.duel_grade_pick_boundary_title)
+            .setItems(items) { _, which -> binding.duelGradeSlider.select(candidates[which]) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun formatPercent(value: Double): String =
+        if (value == value.toInt().toDouble()) "${value.toInt()}.0" else value.toString()
+
+    /**
+     * 이 축의 점수표를 읽는다 — 순위표·목록 정렬·통계와 **같은 진입점**
+     * ([com.novelcharacter.app.data.repository.DuelRepository.scoresOf])이라
+     * 여기서 본 수와 순위표의 수가 갈리지 않는다([DuelScoreIndex] 계약 1).
+     */
+    private suspend fun loadDuelScores(
+        axis: com.novelcharacter.app.data.model.DuelAxis
+    ): com.novelcharacter.app.util.DuelScoreIndex.AxisScores {
+        val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+        val participants = app.characterRepository
+            .getCharactersByUniverseList(axis.universeId).map { it.code }
+        return app.duelRepository.scoresOf(axis, participants)
+    }
+
+    /**
+     * [경계 제안] — 점수 분포의 큰 간격으로 구분선을 옮긴다.
+     *
+     * **몇 개를 옮겼는지 말한다.** 라벨이 아홉인데 자연 단절이 셋뿐일 수 있고, 그때 조용히
+     * 셋만 옮기면 사용자는 전부 분포에 맞춰진 줄로 읽는다(변수 제어 — 조용히 덜 하지 않는다).
+     */
+    private fun suggestDuelGradeCuts(binding: DialogFieldEditBinding) {
+        val axis = selectedDuelAxis(binding) ?: return
+        val labels = currentGradeLabels()
+        if (labels.size < 2) return
+        binding.btnDuelGradeSuggest.isEnabled = false
+        lifecycleScope.launch {
+            val suggestion = try {
+                com.novelcharacter.app.util.DuelGradeAssign.suggestCuts(loadDuelScores(axis), labels)
+            } catch (e: Exception) {
+                Log.e("FieldEditDialog", "Failed to suggest duel grade cuts", e)
+                null
+            }
+            if (!isAdded) return@launch
+            binding.btnDuelGradeSuggest.isEnabled = true
+            if (suggestion == null) {
+                android.widget.Toast.makeText(
+                    requireContext(), getString(R.string.duel_grade_suggest_failed), android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            duelGradeCuts = suggestion.cuts
+            binding.duelGradeSlider.setData(labels, duelGradeCuts)
+            renderDuelGradeNotice(binding)
+            renderDuelGradeBoundaryRow(binding)
+            android.widget.Toast.makeText(
+                requireContext(),
+                if (suggestion.moved > 0) getString(R.string.duel_grade_suggest_moved, suggestion.moved)
+                else getString(R.string.duel_grade_suggest_none),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /**
+     * [등급 반영] — 미리보기를 띄운다.
+     *
+     * **저장되지 않은 필드에서는 열지 않는다.** 반영은 이 필드의 값을 캐릭터들에게 쓰는
+     * 일이라 대상 필드가 DB에 있어야 하고, 지금 화면의 컷도 저장돼 있어야 *"미리보기에서
+     * 본 것"*과 *"반영된 것"*이 같다. 새 필드·미저장 변경이면 먼저 저장하라고 말한다.
+     */
+    private fun openDuelGradeApply(binding: DialogFieldEditBinding) {
+        val existing = existingField
+        val axis = selectedDuelAxis(binding)
+        if (existing == null || axis == null) {
+            android.widget.Toast.makeText(
+                requireContext(), getString(R.string.duel_grade_apply_save_first), android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        val labels = currentGradeLabels()
+        val problems = com.novelcharacter.app.util.DuelGradeAssign.validate(duelGradeCuts, labels)
+        if (problems.isNotEmpty()) {
+            android.widget.Toast.makeText(
+                requireContext(), getString(R.string.duel_grade_apply_fix_cuts), android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        // 화면의 컷이 저장본과 다르면 미리보기가 거짓을 말한다 — 저장을 먼저 요구한다.
+        val saved = com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(existing.config)
+        if (saved?.axisCode != axis.code || saved.cuts != duelGradeCuts) {
+            android.widget.Toast.makeText(
+                requireContext(), getString(R.string.duel_grade_apply_save_first), android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        DuelGradeApplySheet.newInstance(existing.id, axis.code).show(parentFragmentManager, "duelGradeApply")
+    }
+
     /** 체계 참조 중에는 행 삭제 버튼을 숨긴다 — 라벨 집합은 체계가 정한다(R-24). */
     private fun setGradeRowRemovable(removable: Boolean) {
         gradeRows.forEach { row ->
@@ -340,6 +610,12 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.SELECT) View.VISIBLE else View.GONE
                 binding.gradeLayout.visibility =
                     if (selectedType == FieldType.GRADE) View.VISIBLE else View.GONE
+                // 대결 등급 산정(B-113)은 GRADE + 캐릭터 필드 + 세계관 안에서만 성립한다.
+                // SELECT까지 넓히지 않는 것은 선택지에 서열이 없어 컷을 정의할 수 없어서다(설계 4-2).
+                binding.duelGradeLayout.visibility = if (
+                    selectedType == FieldType.GRADE && universeId != 0L &&
+                    currentEntityType() == FieldDefinition.ENTITY_CHARACTER
+                ) View.VISIBLE else View.GONE
                 binding.calculatedLayout.visibility =
                     if (selectedType == FieldType.CALCULATED) View.VISIBLE else View.GONE
                 binding.displayFormatLayout.visibility =
@@ -1521,6 +1797,14 @@ class FieldEditDialog : DialogFragment() {
         // 체계 참조 (U-1) — 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다.
         pendingGradeSystemCode =
             com.novelcharacter.app.data.model.GradeSystemRef.codeFromConfig(field.config)
+        // 대결 등급 산정 (B-113) — 같은 배선. 흔적(lastApplied)은 화면이 만들지 않고 그대로
+        // 실어 나른다. 여기서 버리면 다음 반영이 직전 반영값을 전부 '손값'으로 읽는다.
+        com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(field.config)?.let { spec ->
+            pendingDuelAxisCode = spec.axisCode
+            duelGradeCuts = spec.cuts
+            duelGradeLastApplied = spec.lastApplied
+            binding.switchDuelGrade.isChecked = true
+        }
         val allowNeg = config["allowNegative"] as? Boolean ?: false
         binding.switchAllowNegative.isChecked = allowNeg
 
@@ -1767,7 +2051,59 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // 대결 등급 산정을 켰는데 그 축의 산출 필드가 아니면 함께 등재할지 묻는다(설계 4-2).
+        // 연동을 두 곳에서 따로 관리하게 하지 않는다 — 등재해 두면 순위표가 이 필드의 어긋난
+        // 자리를 짚어 주고, 그 고지가 곧 "반영할 때가 됐다"의 신호가 된다(4-3).
+        if (promptDuelOutcomeRegistration(binding, field)) return false
+
         return finishSave(field)
+    }
+
+    /** 한 번 물었으면 다시 묻지 않는다 — 되묻기는 마찰이고, 사용자는 이미 답했다. */
+    private var duelOutcomeAsked = false
+
+    /** @return true면 물었다(저장은 답을 받은 뒤 이어진다 — 수식 경고와 같은 비동기 관례). */
+    private fun promptDuelOutcomeRegistration(
+        binding: DialogFieldEditBinding,
+        field: FieldDefinition
+    ): Boolean {
+        if (duelOutcomeAsked || !binding.switchDuelGrade.isChecked) return false
+        if (binding.duelGradeLayout.visibility != View.VISIBLE) return false
+        val axis = selectedDuelAxis(binding) ?: return false
+        if (axis.fieldLinks.outcomes.any { it.key == field.key }) return false
+        duelOutcomeAsked = true
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.duel_grade_register_outcome_title)
+            .setMessage(getString(R.string.duel_grade_register_outcome, axis.name))
+            .setPositiveButton(R.string.duel_grade_register_outcome_yes) { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                        // 축을 **다시 읽고** 얹는다 — 이 다이얼로그가 열려 있는 동안 축이 편집됐을
+                        // 수 있고, 화면에 든 사본으로 덮으면 그사이의 연결이 사라진다.
+                        val fresh = app.duelRepository.axisByCode(axis.code)
+                        if (fresh != null && fresh.fieldLinks.outcomes.none { it.key == field.key }) {
+                            app.duelRepository.saveAxis(
+                                fresh.copy(
+                                    outcomeFieldKeys = com.novelcharacter.app.util.DuelFieldLinks.encode(
+                                        fresh.fieldLinks.outcomes +
+                                            com.novelcharacter.app.util.DuelFieldLinks.Link(field.key)
+                                    )
+                                )
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.e("FieldEditDialog", "Failed to register duel outcome field", e)
+                    }
+                    if (!isAdded) return@launch
+                    if (finishSave(field)) dismissAllowingStateLoss()
+                }
+            }
+            .setNegativeButton(R.string.duel_grade_register_outcome_no) { _, _ ->
+                if (finishSave(field)) dismissAllowingStateLoss()
+            }
+            .show()
+        return true
     }
 
     /** 타입 변경 영향 분석(비동기) 또는 즉시 전달로 저장을 마무리한다. @return true면 다이얼로그를 닫아도 된다. */
@@ -2079,8 +2415,11 @@ class FieldEditDialog : DialogFragment() {
                 val withBody = if (type == FieldType.BODY_SIZE) {
                     BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
                 } else withRandom
-                return applyAiAndDescriptionConfig(
-                    binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+                return applyDuelGradeConfig(
+                    binding, type,
+                    applyAiAndDescriptionConfig(
+                        binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+                    )
                 )
             }
         }
@@ -2109,6 +2448,64 @@ class FieldEditDialog : DialogFragment() {
         return applyAiAndDescriptionConfig(
             binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
         )
+    }
+
+    /**
+     * 대결 등급 산정을 config에 기록한다 (B-113) — **두 buildConfig 출구가 공유한다.**
+     *
+     * 저장 직전에 컷을 **최종 등급 표에 다시 맞춘다.** 슬라이더는 등급 행의 글자 편집까지
+     * 좇지 않으므로, 사용자가 라벨을 고쳐 놓고 바로 저장하면 컷이 유령 라벨을 가리킨 채
+     * 저장될 수 있다 — 그러면 반영 직전 재검증이 막고, 사용자가 한 것은 이름 바꾸기뿐인데
+     * 기능이 죽는다. 여기서 맞추면 **저장된 config는 언제나 검증을 통과한다.**
+     *
+     * 꺼져 있으면 키를 걷어낸다([DuelGradeRef.remove]) — 끈 것을 남겨 두면 다음에 켤 때
+     * 옛 축이 되살아나고, 그 축은 그사이 지워졌을 수 있다.
+     */
+    private fun applyDuelGradeConfig(
+        binding: DialogFieldEditBinding,
+        type: FieldType,
+        configJson: String
+    ): String {
+        val eligible = type == FieldType.GRADE && universeId != 0L &&
+            currentEntityType() == FieldDefinition.ENTITY_CHARACTER
+        if (!eligible || !binding.switchDuelGrade.isChecked) {
+            return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
+        }
+        // **집을 수 없을 때는 지우지 않고 그대로 싣는다.**
+        //
+        // 축을 못 집는 경우는 둘이다 — 목록 조회가 실패했거나(위 `catch`가 삼킨다) 가리키던
+        // 축이 지워졌거나. 어느 쪽이든 **사용자가 끈 것이 아니다.** 여기서 키를 지우면
+        // *필드 이름만 고치고 저장해도* 세워 둔 컷이 말없이 사라진다(개발 의도 2번 — 어떤
+        // 경우에도 데이터가 말없이 유실되지 않는다). 지워진 축은 휴지통에서 되살아날 수 있고,
+        // 그때 컷이 남아 있으면 그대로 다시 들어맞는다. **끄는 것은 스위치가 하는 일이다.**
+        // 등급이 둘 미만일 때도 같다 — 나눌 경계가 없다는 것은 컷을 버릴 이유가 아니다.
+        val axis = selectedDuelAxis(binding)
+        val labels = currentGradeLabels()
+        if (axis == null || labels.size < 2) return keepStoredDuelGrade(configJson)
+        val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(
+            duelGradeCuts.ifEmpty { com.novelcharacter.app.util.DuelGradeAssign.evenCuts(labels) },
+            labels, labels
+        )
+        return com.novelcharacter.app.data.model.DuelGradeRef.write(
+            configJson,
+            com.novelcharacter.app.data.model.DuelGradeRef.Spec(
+                axisCode = axis.code,
+                cuts = reconciled.cuts,
+                lastApplied = duelGradeLastApplied
+            )
+        )
+    }
+
+    /**
+     * 저장된 대결 등급 산정 약속을 **그대로 옮겨 싣는다** — 화면이 그것을 판정할 수 없을 때.
+     *
+     * 새 필드거나 원래도 없었으면 걷어낸 결과와 같다(넣을 것이 없다).
+     */
+    private fun keepStoredDuelGrade(configJson: String): String {
+        val stored = existingField?.config
+            ?.let { com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(it) }
+            ?: return com.novelcharacter.app.data.model.DuelGradeRef.remove(configJson)
+        return com.novelcharacter.app.data.model.DuelGradeRef.write(configJson, stored)
     }
 
     /**
@@ -2198,6 +2595,9 @@ class FieldEditDialog : DialogFragment() {
         private const val ARG_FIELD_JSON = "fieldJson"
         private const val ARG_ENTITY_TYPE = "entityType"
         private const val ARG_PREFILL_JSON = "prefillJson"
+
+        /** 대결 등급 컷 스테퍼 한 칸 — 목업이 정한 정밀 경로의 눈금이다(B-113). */
+        private const val STEP_PERCENT = 0.5
 
         fun newInstance(
             universeId: Long,

@@ -152,6 +152,32 @@ object DuelScoreIndex {
     }
 
     /**
+     * **점수가 있는 참가자끼리 다시 매긴 등수** — 표준 경쟁 순위(동점은 같은 등수, 다음은 건너뜀).
+     *
+     * [Entry.rank]를 그대로 쓰면 안 되는 자리가 있다. 그 등수는 **순위표 줄의 등수**라
+     * 한 판도 안 친 참가자까지 세는데, 그들의 앵커 1500이 표 한가운데에 끼므로 1500보다 낮은
+     * 캐릭터의 등수가 [AxisScores.scored]를 넘어선다 — *"3명 중 4위"*다. AI 컨텍스트가 자기
+     * 재검토에서 실제로 그 자리를 밟았고, 등급 산정(B-113)의 백분위는 **이 등수 ÷ [AxisScores.scored]**라
+     * 같은 함정 위에 서 있다. 분모를 넘는 백분위는 곧 100%를 넘는 상위 %이고, 그것은
+     * 어떤 컷에도 걸리지 않아 **말없이 최하 등급으로 떨어진다.**
+     *
+     * 그래서 두 소비처가 각자 매기지 않고 여기서 한 번 매긴다 — 두 경로가 다른 등수를 갖는
+     * 것은 이 저장소가 반복해 겪은 실패 형태다(계약 1이 점수에 대해 말하는 것과 같은 이유).
+     */
+    fun rankWithinScored(scores: AxisScores): Map<String, Int> {
+        val ordered = scores.byCode.values.sortedByDescending { it.score }
+        val out = HashMap<String, Int>(ordered.size)
+        var rank = 1
+        var previous: Int? = null
+        ordered.forEachIndexed { index, entry ->
+            if (index > 0 && entry.score != previous) rank = index + 1
+            previous = entry.score
+            out[entry.code] = rank
+        }
+        return out
+    }
+
+    /**
      * 점수로 줄 세운다 — **값 없음은 방향과 무관하게 최후순**이다.
      *
      * 커스텀 필드 정렬(`CharacterViewModel.sortByField`)이 이미 그 규칙을 쓰고 있고, 같은

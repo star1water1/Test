@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.OpResult
@@ -332,7 +333,7 @@ class WorldPackageImporter(context: Context) {
                         continue
                     }
                     val refCode = GradeSystemRef.codeFromConfig(fd.config)
-                    val config = when {
+                    val gradeResolved = when {
                         refCode == null -> fd.config
                         refCode in packageSystemCodes -> GradeSystemRef.remapCode(fd.config, systemCodeRemap)
                         else -> {
@@ -340,6 +341,11 @@ class WorldPackageImporter(context: Context) {
                             GradeSystemRef.demote(fd.config)
                         }
                     }
+                    // 대결 등급 산정(B-113)은 **재발급할 표가 없다** — 패키지는 대결 축을
+                    // 담지 않으므로 새 세계관에 그 순위 자체가 없다. 그런데 축 code는 전역
+                    // 유니크라 남겨 두면 이 기기의 **다른 세계관 축**을 정확히 집어낸다.
+                    // 등급 체계처럼 분기할 것이 없어 언제나 걷어낸다.
+                    val config = DuelGradeRef.remove(gradeResolved)
                     defIdMap[fd.id] =
                         db.fieldDefinitionDao().insert(fd.copy(id = 0, universeId = newUniverseId, config = config))
                 }

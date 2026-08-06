@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [등급 반영] 미리보기 (B-113) — 목업 docs/mockups/duel_grade_ui_2026-08.html ②.
+     본문이 인원만큼 길어지므로 상한 스크롤 안에 둔다(R-31). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.App.BodyStrong"
+        android:textColor="?attr/colorOnSurface" />
+
+    <TextView
+        android:id="@+id/summaryText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:layout_marginTop="4dp" />
+
+    <!-- 직전 반영 기록이 없으면 묶음이 둘로 줄어든다 — 그 사실을 말한다(없는 판별을 믿게 하지 않는다). -->
+    <TextView
+        android:id="@+id/traceNote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_grade_no_trace"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/accent"
+        android:visibility="gone"
+        android:layout_marginTop="4dp" />
+
+    <com.novelcharacter.app.ui.common.CappedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp">
+
+        <LinearLayout
+            android:id="@+id/groupList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </com.novelcharacter.app.ui.common.CappedScrollView>
+
+    <TextView
+        android:id="@+id/emptyText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_grade_apply_empty"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_grade_foot_note"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:layout_marginTop="10dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/applyButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="10dp"
+        android:text="@string/duel_grade_apply" />
+</LinearLayout>
