@@ -180,26 +180,6 @@ object DuelGradeRef {
         return cuts.map { cut -> renames[cut.label]?.let { cut.copy(label = it) } ?: cut }
     }
 
-    /** [retainCuts]의 산출 — 남은 컷과, 표에서 사라져 **다음 등급에 합쳐진** 라벨들. */
-    data class RetainResult(val cuts: List<Cut>, val mergedLabels: List<String>)
-
-    /**
-     * 실효 표에서 사라진 라벨의 컷을 지운다 — **그 구간은 다음(더 낮은) 등급이 흡수한다.**
-     *
-     * 컷은 누적 상위 %라, 없어진 라벨의 컷을 그냥 지우면 그 아래 등급의 컷이 그대로 위로
-     * 이어져 구간이 자동으로 합쳐진다(값 계산이 따로 필요 없다 — 이것이 누적 표현을 고른
-     * 값어치다). 합쳐진 사실은 돌려주어 **필드 편집 섹션이 사유를 말한다**(변수 제어 —
-     * 조용히 좁히지 않는다).
-     */
-    fun retainCuts(cuts: List<Cut>, labels: Collection<String>): RetainResult {
-        val kept = ArrayList<Cut>(cuts.size)
-        val merged = ArrayList<String>()
-        for (cut in cuts) {
-            if (cut.label in labels) kept.add(cut) else merged.add(cut.label)
-        }
-        return RetainResult(kept, merged)
-    }
-
     private fun node(spec: Spec): JSONObject {
         val node = JSONObject()
         node.put(AXIS_CODE_KEY, spec.axisCode)
