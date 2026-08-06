@@ -6506,8 +6506,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeName: String,
         val universeCode: String,
         val targetType: String,
-        val influenceFieldKeys: String,
-        val outcomeFieldKeys: String,
+        /**
+         * 필드 연결 셋. **null은 "그 열이 파일에 없다"**이고 `"[]"`는 *"열은 있는데 비었다"*다 —
+         * 앞은 이 파일이 그 사실을 말하지 않는 것이고 뒤는 **지우라는 뜻**이라, 둘을 같게
+         * 다루면 그 열이 없던 시절에 내보낸 파일을 다시 들이는 것만으로 연결이 지워진다
+         * (`프로필필드`는 v52에 생겼으므로 그전 파일 전부가 이 경우다).
+         */
+        val influenceFieldKeys: String?,
+        val outcomeFieldKeys: String?,
+        val profileFieldKeys: String?,
         val displayOrder: Int,
         val code: String,
         val createdAt: Long
@@ -6516,6 +6523,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun readDuelAxisRow(row: Row, cols: Map<String, Int>, now: Long): DuelAxisRowValues {
         fun cell(header: String, dateHint: Boolean = false) =
             getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+
+        /** 열이 있을 때만 읽는다 — 없으면 null이고, 병합이 그 칸을 건드리지 않는다. */
+        fun links(header: String): String? =
+            if (cols.containsKey(header)) {
+                DuelFieldLinks.encode(DuelFieldLinks.parseText(cell(header)))
+            } else {
+                null
+            }
 
         val targetLabel = cell("대상")
         return DuelAxisRowValues(
@@ -6527,14 +6542,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 DuelSheetLabels.TARGET_IMAGE, DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
                 else -> DuelAxis.TARGET_CHARACTER
             },
-            // 사람이 적은 차례가 곧 영향력 순위다 — 정렬하지 않는다.
-            influenceFieldKeys = DuelFieldLinks.encode(DuelFieldLinks.parseText(cell("영향필드"))),
-            outcomeFieldKeys = DuelFieldLinks.encode(DuelFieldLinks.parseText(cell("산출필드"))),
+            // 사람이 적은 차례가 곧 영향력 순위다(프로필은 표시 차례다) — 정렬하지 않는다.
+            influenceFieldKeys = links("영향필드"),
+            outcomeFieldKeys = links("산출필드"),
+            profileFieldKeys = links("프로필필드"),
             displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt() ?: 0,
             code = cell("코드"),
             createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
         )
     }
+
+    /** 새 축의 연결 — 열이 없으면 빈 연결이다(기존 값이 없으므로 지킬 것도 없다). */
+    private fun newAxisLinks(value: String?): String = value ?: "[]"
 
     /** 병합 규칙의 단일 소스 — 미리보기와 가져오기가 함께 부른다(R-33). */
     private fun mergeDuelAxis(existing: DuelAxis, r: DuelAxisRowValues, universeId: Long): DuelAxis =
@@ -6543,8 +6562,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             universeId = universeId,
             // **대상은 바꾸지 않는다** — 바꾸면 쌓인 판의 참가자가 통째로 뜻을 잃는다(엔티티 주석).
             targetType = existing.targetType,
-            influenceFieldKeys = r.influenceFieldKeys,
-            outcomeFieldKeys = r.outcomeFieldKeys,
+            influenceFieldKeys = r.influenceFieldKeys ?: existing.influenceFieldKeys,
+            outcomeFieldKeys = r.outcomeFieldKeys ?: existing.outcomeFieldKeys,
+            profileFieldKeys = r.profileFieldKeys ?: existing.profileFieldKeys,
             displayOrder = r.displayOrder
         )
 
@@ -6584,8 +6604,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             targetType = r.targetType,
                             displayOrder = r.displayOrder,
                             createdAt = r.createdAt,
-                            influenceFieldKeys = r.influenceFieldKeys,
-                            outcomeFieldKeys = r.outcomeFieldKeys,
+                            influenceFieldKeys = newAxisLinks(r.influenceFieldKeys),
+                            outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
+                            profileFieldKeys = newAxisLinks(r.profileFieldKeys),
                             code = r.code.ifBlank { generateEntityCode() }
                         )
                     )

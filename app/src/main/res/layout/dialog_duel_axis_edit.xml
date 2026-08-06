@@ -108,6 +108,44 @@
 
     </LinearLayout>
 
+    <!-- 프로필 필드 (B-122) — 표시 전용이라 순위도 유리한 방향도 없다. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/duel_links_profile_label"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+            <TextView
+                android:id="@+id/profileSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEditProfile"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_links_edit" />
+
+    </LinearLayout>
+
     <TextView
         android:id="@+id/linkConflictWarning"
         android:layout_width="match_parent"
@@ -115,6 +153,19 @@
         android:layout_marginTop="8dp"
         android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="@color/error"
+        android:visibility="gone" />
+
+    <!--
+      프로필로 걸렸지만 산출 필드라 카드에서 빠지는 것 — 고르는 창이 막지만 엑셀로 들어온
+      파일은 그 창을 지나지 않는다. 조용히 빼지 않고 여기서 말한다(개발 의도 2번).
+    -->
+    <TextView
+        android:id="@+id/profileBlockedWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
         android:visibility="gone" />
 
 </LinearLayout>

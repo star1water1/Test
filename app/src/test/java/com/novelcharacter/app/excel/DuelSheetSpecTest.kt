@@ -100,4 +100,32 @@ class DuelSheetSpecTest {
         assertEquals("", DuelFieldLinks.toText(DuelFieldLinks.parseText("")))
         assertEquals("[]", DuelFieldLinks.encode(DuelFieldLinks.parseText("   ")))
     }
+
+    // ── 프로필 필드 열 (B-122) ──
+
+    /**
+     * 축 시트가 **연결 셋을 전부 싣는다.** 하나라도 빠지면 내보냈다 들이는 왕복에서 그
+     * 연결이 파일에 없는 사실이 되고, 밖에서 고칠 길도 사라진다(개발 의도 4번).
+     */
+    @Test
+    fun `축 시트가 연결 세 종류를 모두 싣는다`() {
+        val headers = axisSpec.columns.map { it.header }
+        assertTrue("영향필드" in headers)
+        assertTrue("산출필드" in headers)
+        assertTrue("프로필필드" in headers)
+        // 연결끼리 붙어 있어야 사람이 한눈에 견준다 — 프로필은 산출 바로 뒤다.
+        assertEquals(headers.indexOf("산출필드") + 1, headers.indexOf("프로필필드"))
+    }
+
+    /**
+     * **읽기 전용 열은 사람이 고칠 자리가 아니다.** 프로필필드는 고쳐야 하는 칸이므로
+     * 읽기 전용이 아니어야 한다 — 잠기면 엑셀에서 프로필을 편집할 길이 없다.
+     */
+    @Test
+    fun `프로필필드 열은 사람이 고칠 수 있다`() {
+        val profile = axisSpec.columns.first { it.header == "프로필필드" }
+        assertTrue(!profile.readOnly)
+        // 드롭다운을 달지 않는다 — 여러 키를 쉼표로 잇는 칸이라 한 값 고르기와 성질이 다르다.
+        assertEquals(null, profile.dropdownOptions)
+    }
 }

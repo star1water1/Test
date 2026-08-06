@@ -18,6 +18,8 @@ object DuelViewPrefs {
     private const val PREFS_NAME = "duel_view"
     private const val KEY_LAYOUT = "card_layout"
     private const val KEY_FIT = "image_fit"
+    private const val KEY_SHOW_PROFILE = "show_profile"
+    private const val KEY_SHOW_INFLUENCE = "show_influence"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -28,10 +30,30 @@ object DuelViewPrefs {
     fun fit(context: Context): DuelImageFit.Fit =
         DuelImageFit.Fit.of(prefs(context).getString(KEY_FIT, null))
 
-    fun save(context: Context, layout: DuelImageFit.Layout, fit: DuelImageFit.Fit) {
+    /**
+     * 프로필 필드를 카드에 띄우는가 (B-122). **기본은 켬** — 축에 프로필을 걸지 않았으면
+     * 어차피 뜰 것이 없으므로 켠 기본값이 아무 말도 하지 않는다. 반대로 기본을 끔으로 두면
+     * 사용자가 필드를 걸어 놓고도 *"왜 안 뜨지"*로 되돌아온다.
+     */
+    fun showProfile(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_PROFILE, true)
+
+    /** 영향 필드를 카드에 띄우는가. 같은 근거로 기본은 켬이다(종전에는 끌 길이 없었다). */
+    fun showInfluence(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_INFLUENCE, true)
+
+    fun save(
+        context: Context,
+        layout: DuelImageFit.Layout,
+        fit: DuelImageFit.Fit,
+        showProfile: Boolean,
+        showInfluence: Boolean
+    ) {
         prefs(context).edit()
             .putString(KEY_LAYOUT, layout.name)
             .putString(KEY_FIT, fit.name)
+            .putBoolean(KEY_SHOW_PROFILE, showProfile)
+            .putBoolean(KEY_SHOW_INFLUENCE, showInfluence)
             .apply()
     }
 }

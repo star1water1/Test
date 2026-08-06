@@ -3118,10 +3118,11 @@ class TrashRepository(
         val safeCode = source.code
             .takeIf { it.isNotBlank() && db.duelAxisDao().getByCode(it) == null }
             ?: generateEntityCode()
-        // influence/outcomeFieldKeys(v50 — 층 C)는 그 이전에 만들어진 payload에 키가 없어
-        // 선언이 non-null이어도 Gson이 null을 주입한다(R-2). **`copy`는 넘기지 않은 인자를
-        // `this`에서 읽어 생성자에 넘기므로 그 자리에서 NPE가 난다** — B-103이 겪은 그 지뢰다.
-        // 명시적으로 넘겨 접으면 되고, 빈 연결(`[]`)이 옛 축의 사실 그대로다.
+        // influence/outcomeFieldKeys(v50 — 층 C)와 profileFieldKeys(v52 — B-122)는 그 이전에
+        // 만들어진 payload에 키가 없어 선언이 non-null이어도 Gson이 null을 주입한다(R-2).
+        // **`copy`는 넘기지 않은 인자를 `this`에서 읽어 생성자에 넘기므로 그 자리에서 NPE가
+        // 난다** — B-103이 겪은 그 지뢰다. 명시적으로 넘겨 접으면 되고, 빈 연결(`[]`)이
+        // 옛 축의 사실 그대로다. **칸이 늘 때마다 이 목록도 함께 는다.**
         val newId = db.duelAxisDao().insert(
             source.copy(
                 id = 0,
@@ -3129,7 +3130,8 @@ class TrashRepository(
                 name = name,
                 code = safeCode,
                 influenceFieldKeys = source.influenceFieldKeys.orEmpty().ifEmpty { "[]" },
-                outcomeFieldKeys = source.outcomeFieldKeys.orEmpty().ifEmpty { "[]" }
+                outcomeFieldKeys = source.outcomeFieldKeys.orEmpty().ifEmpty { "[]" },
+                profileFieldKeys = source.profileFieldKeys.orEmpty().ifEmpty { "[]" }
             )
         )
         // 같은 작업의 판 조각들이 **옛 코드로** 이 축을 찾을 수 있게 등록한다. code가 재발급됐는데

@@ -67,6 +67,20 @@ data class DuelAxis(
      * 한 화면에 놓인다(설계 5장 ①이 점수를 두고 금지한 것과 같은 부류).
      */
     val outcomeFieldKeys: String = "[]",
+    /**
+     * **카드에 함께 띄우는 표시 전용 필드**(프로필 — B-122). 저장 형식은 위 둘과 같지만
+     * 쓰임이 셋째다: *"누구인지 알아보는"* 재료이지 *"누가 이길지 가르는"* 재료가 아니라
+     * 예측·어긋남 감지 어디에도 들어가지 않는다.
+     *
+     * **축 단위로 두는 것이 요점이다** — '강함' 축에서는 전투 관련을, '아름다움' 축에서는
+     * 외모 관련을 띄우고 싶은 것이 실사용이다. 세계관 단위로 두면 축마다 다르게 할 길이 없고,
+     * 캐릭터 단위로 두면 매 캐릭터에 같은 설정을 반복해야 한다.
+     *
+     * 앞머리 `-`는 여기서 **뜻이 없다**(견주지 않으므로 유리한 방향이라는 것이 없다).
+     * 같은 해석기를 쓰는 것은 고르는 일과 저장·엑셀 왕복이 똑같기 때문이고, 새 문법을
+     * 만들면 그 문법을 아는 자리가 코드 전체로 퍼진다.
+     */
+    val profileFieldKeys: String = "[]",
     /** 안정 식별자 — 판·처분·휴지통·엑셀이 이 값으로 축을 가리킨다(R-1). */
     val code: String = generateEntityCode()
 ) {
@@ -76,7 +90,8 @@ data class DuelAxis(
     val fieldLinks: DuelFieldLinks.Axis
         @Ignore get() = DuelFieldLinks.Axis(
             influences = DuelFieldLinks.decode(influenceFieldKeys),
-            outcomes = DuelFieldLinks.decode(outcomeFieldKeys)
+            outcomes = DuelFieldLinks.decode(outcomeFieldKeys),
+            profiles = DuelFieldLinks.decode(profileFieldKeys)
         )
 
     companion object {

@@ -180,6 +180,7 @@ $MAIN/util/DuelStandings.kt
 $MAIN/util/DuelEntry.kt
 $MAIN/util/DuelImageFit.kt
 $MAIN/util/DuelFieldLinks.kt
+$MAIN/util/DuelCardInfo.kt
 $MAIN/util/DuelMatchLog.kt
 $MAIN/util/DuelCategoryStats.kt
 $MAIN/util/DuelScoreIndex.kt
@@ -250,6 +251,7 @@ $TEST/util/DuelStandingsTest.kt
 $TEST/util/DuelEntryTest.kt
 $TEST/util/DuelImageFitTest.kt
 $TEST/util/DuelFieldLinksTest.kt
+$TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt

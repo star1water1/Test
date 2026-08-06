@@ -1651,9 +1651,10 @@ class ExcelExporter(context: Context) {
             )
             row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))
             row.createCell(5).setTextSafe(DuelFieldLinks.toText(links.outcomes))
-            row.createCell(6).setCellValue(axis.displayOrder.toDouble())
-            row.createCell(7).setTextSafe(axis.code)
-            row.createCell(8).setCellValue(axis.createdAt.toDouble())
+            row.createCell(6).setTextSafe(DuelFieldLinks.toText(links.profiles))
+            row.createCell(7).setCellValue(axis.displayOrder.toDouble())
+            row.createCell(8).setTextSafe(axis.code)
+            row.createCell(9).setCellValue(axis.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, axes.size)

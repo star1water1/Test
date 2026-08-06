@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  카드의 영향 필드 한 줄 — 순위 번호 · 이름 · 값 (B-122).
+
+  **어느 쪽이 유리한지 색·굵기로 강조하지 않는다.** 강조하면 사전식 예측을 화면이 대신
+  말하는 셈이라, 점수를 안 띄우는 것과 같은 이유로 금지다(설계 3-3). 번호는 *영향력 순위*이지
+  *누가 이기는가*가 아니다.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="1dp"
+    android:paddingBottom="1dp">
+
+    <TextView
+        android:id="@+id/influenceRank"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:background="@drawable/bg_duel_rank_badge"
+        android:gravity="center"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/influenceLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/influenceValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+</LinearLayout>

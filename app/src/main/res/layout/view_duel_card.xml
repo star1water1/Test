@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  대결 카드 한 장 (B-122) — **그림 + 정보 패널**.
+
+  종전에는 그림 위 스크림에 이름과 영향 필드가 `\n`으로 포개져 있었다. 프로필까지 얹으면
+  글이 그림을 삼키므로 둘을 갈랐다. 정본 목업: docs/mockups/duel_play_redesign_2026-08.html
+
+  **한 벌만 두고 두 번 include하는 것이 요점이다** — k지선다(B-115)가 카드를 셋·넷으로 늘릴 때
+  이 파일은 그대로이고 담는 그릇만 바뀐다(설계 3-3의 *"화면을 두 번 만들지 않는다"*).
+
+  안쪽 방향은 코드가 갈아 끼운다(DuelPlayFragment.applyViewOptions):
+  나란히 배치 → 세로(그림 위), 위아래 배치 → 가로(그림 왼쪽 40%).
+-->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardCornerRadius="12dp">
+
+    <LinearLayout
+        android:id="@+id/cardInner"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!--
+          그림은 **남는 자리를 전부** 가진다(정보 패널이 먼저 필요한 만큼 가져간 뒤).
+          비율을 숫자로 박지 않는 것은 패널 줄 수가 축마다 다르기 때문이다 — 프로필을 안
+          건 축에서는 그림이 크고, 넷을 건 축에서는 그만큼 준다.
+        -->
+        <ImageView
+            android:id="@+id/cardImage"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:minHeight="96dp"
+            android:contentDescription="@string/duel_pick_this"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:id="@+id/cardPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/surface"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="10dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/cardName"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
+
+                <!--
+                  펼침 — 접힌 프로필이 있을 때만 뜬다. **카드 탭(= 그 캐릭터 승리)과 겹치지
+                  않는다**: 버튼이 자기 누름을 삼키므로 카드로 올라가지 않는다.
+                -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnExpand"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/duel_profile_expand"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:text="@string/duel_profile_expand_mark"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <!-- 필수 트리오 — 성별 · 나이(시맨틱 역할이 집는다). 둘 다 없으면 줄이 사라진다. -->
+            <TextView
+                android:id="@+id/cardTrio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+
+            <!-- 프로필 필드 — 표시 전용. 줄은 코드가 채운다(축마다 수가 다르다). -->
+            <LinearLayout
+                android:id="@+id/profileContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/profileMore"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/text_tertiary"
+                android:visibility="gone" />
+
+            <!--
+              영향 필드 구역 — 프로필과 **시각적으로 갈라 둔다**. 순위 번호와 값만 보이고
+              어느 쪽이 큰지는 강조하지 않는다(강조하면 화면이 예측을 대신 말한다).
+            -->
+            <View
+                android:id="@+id/influenceDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="7dp"
+                android:background="@color/outline_variant"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/influenceContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
