@@ -2,9 +2,12 @@ package com.novelcharacter.app.data.repository
 
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
+import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRating
@@ -275,4 +278,93 @@ class DuelRepository(private val db: AppDatabase) {
 
     /** 코드로 축을 집는다 — 프리셋·엑셀이 축을 가리키는 방법이 코드다(R-1). */
     suspend fun axisByCode(code: String): DuelAxis? = db.duelAxisDao().getByCode(code)
+
+    /**
+     * 등급 반영 — 대결 순위에서 나온 등급을 **필드 값으로 써 넣는다** (B-113, 설계 4-3).
+     *
+     * 파생 표시가 아니라 명시적 반영을 고른 이유가 이 함수의 모양이다: 값이 보통 필드 값으로
+     * 실리므로 통계·목록·엑셀이 **공짜로** 그것을 읽는다(원칙 05 — 새 코드 0줄).
+     *
+     * ## 한 트랜잭션에 셋이 들어간다
+     *
+     * 1. **덮이는 값의 스냅샷** — 편집 직전 백업(일괄 편집 B-83과 같은 자리)이라 휴지통에서
+     *    통째로 되돌린다. **값이 실제로 덮이는 캐릭터만** 담는다(빈 칸을 채우는 것은 잃는
+     *    것이 없어 백업할 것도 없다 — 담으면 백업이 인원에 비례해 커진다, R-10).
+     * 2. **값 쓰기.**
+     * 3. **흔적 쓰기**([DuelGradeRef.LastApplied]) — 원본 쓰기와 파생 기록이 한 몸이다(R-30의
+     *    정신). 갈라 두면 값은 들어갔는데 흔적이 없는 상태가 생기고, 그때 다음 반영은
+     *    **직전에 자기가 쓴 값을 '손값'으로 읽어** 기본 체크를 풀어 버린다.
+     *
+     * @param assignments 캐릭터 code → 배정된 라벨. **점수 보유자 전원**이 온다(체크된 것만이
+     *   아니다 — 아래 [selected] 참조).
+     * @param selected 사용자가 미리보기에서 체크한 캐릭터 code. **이들에게만 값을 쓴다.**
+     * @return 실제로 값을 쓴 캐릭터 수.
+     */
+    suspend fun applyGrades(
+        fieldDefinitionId: Long,
+        assignments: Map<String, String>,
+        selected: Set<String>,
+        appliedAt: Long
+    ): Int {
+        if (assignments.isEmpty()) return 0
+        // 인스턴스 하나 = 작업 하나(R-3) — 이 반영이 만든 백업이 정리에서 보호된다.
+        val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
+        var written = 0
+        db.withTransaction {
+            val field = db.fieldDefinitionDao().getFieldById(fieldDefinitionId) ?: return@withTransaction
+            val characters = db.characterDao().getCharactersByUniverseList(field.universeId)
+            val byCode = characters.associateBy { it.code }
+            // 값은 한 번에 읽는다 — 캐릭터마다 물으면 인원만큼 왕복이 늘고, 그것이 목표 규모에서
+            // 이 트랜잭션을 가장 길게 잡는 자리가 된다('받쳐주는 확장성').
+            val currentByCharacter = db.characterFieldValueDao()
+                .getValuesForCharacters(characters.map { it.id })
+                .filter { it.fieldDefinitionId == fieldDefinitionId }
+                .associate { it.characterId to it.value }
+
+            for (code in selected) {
+                val label = assignments[code] ?: continue
+                val character = byCode[code] ?: continue
+                val current = currentByCharacter[character.id].orEmpty()
+                if (current == label) continue
+                if (current.isNotBlank()) {
+                    // 덮이는 값만 백업한다 — 빈 칸을 채우는 것은 잃는 것이 없고, 전원을 담으면
+                    // 백업 한 행이 인원에 비례해 커진다(R-10). 되돌리기 범위를 필드값으로 좁혀
+                    // 두면 복원이 캐릭터 행까지 교체하지 않는다(일괄 편집이 세운 그 규칙).
+                    trash.snapshotCharacter(
+                        character,
+                        imagePaths = emptyList(),
+                        kind = TrashSnapshot.KIND_EDIT_BACKUP,
+                        revertScope = listOf(RestoreModes.SCOPE_FIELD_VALUES)
+                    )
+                }
+                db.characterFieldValueDao().upsert(
+                    CharacterFieldValue(
+                        characterId = character.id,
+                        fieldDefinitionId = fieldDefinitionId,
+                        value = label
+                    )
+                )
+                written++
+            }
+
+            if (written > 0) {
+                val spec = DuelGradeRef.fromConfig(field.config)
+                if (spec != null) {
+                    // **흔적은 배정 전체를 담는다 — 체크된 것만이 아니다.**
+                    //
+                    // 값이 이미 배정과 같아 쓸 일이 없던 캐릭터는 미리보기에 줄조차 서지 않는데,
+                    // 그들을 빼면 다음 반영이 **직전에 자기가 쓴 값을 '손값'으로 읽어** 기본
+                    // 체크를 풀어 버린다(Q1이 없애려던 그 마찰이 되살아난다).
+                    // 체크를 끈 캐릭터를 담아도 거짓이 되지 않는다 — 분류는 흔적을 **현재 값과
+                    // 대조**하므로, 값이 그대로인 손값은 여전히 손값으로 갈린다.
+                    val trace = DuelGradeRef.LastApplied(appliedAt, assignments.filterKeys { it in byCode })
+                    db.fieldDefinitionDao().update(
+                        field.copy(config = DuelGradeRef.write(field.config, spec.copy(lastApplied = trace)))
+                    )
+                }
+            }
+        }
+        trash.pruneIfNeeded()
+        return written
+    }
 }

@@ -346,6 +346,163 @@
                     android:layout_height="wrap_content"
                     android:text="@string/label_allow_negative" />
 
+                <!-- B-113: 대결 등급 산정 — 대결 축의 순위를 상위 %로 잘라 이 필드의 등급으로
+                     쓴다. 컷 편집기는 100%를 총량으로 한 구간 슬라이더(Q2 사용자 제3안).
+                     캐릭터 필드가 아니거나 세계관 밖(프리셋 편집)이면 통째로 숨긴다 — 대결 축은
+                     세계관 안에서만 성립한다(gradeSystemLayout과 같은 규칙, R-24). -->
+                <LinearLayout
+                    android:id="@+id/duelGradeLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:layout_marginTop="8dp">
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchDuelGrade"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/duel_grade_switch" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/duel_grade_purpose"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginBottom="6dp" />
+
+                    <LinearLayout
+                        android:id="@+id/duelGradeBody"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/duel_grade_axis_label"
+                            android:textAppearance="@style/TextAppearance.App.Body" />
+
+                        <Spinner
+                            android:id="@+id/spinnerDuelAxis"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <!-- 축·등급 표가 성립하지 않으면 슬라이더 대신 이 줄 하나가 선다
+                             (오배정 이중 방어 — 설계 4-2 ⓑ). -->
+                        <TextView
+                            android:id="@+id/duelGradeProblem"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="@style/TextAppearance.App.Caption"
+                            android:textColor="@color/error"
+                            android:visibility="gone"
+                            android:layout_marginTop="6dp" />
+
+                        <LinearLayout
+                            android:id="@+id/duelGradeEditor"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+
+                            <com.novelcharacter.app.ui.view.GradeCutSliderView
+                                android:id="@+id/duelGradeSlider"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp" />
+
+                            <!-- 정밀 경로 — 탭으로 고른 경계에만 붙는다(드래그는 러프). -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="6dp">
+
+                                <TextView
+                                    android:id="@+id/duelGradeBoundaryLabel"
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/duel_grade_select_boundary_hint"
+                                    android:textAppearance="@style/TextAppearance.App.Caption"
+                                    android:textColor="@color/text_secondary" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnDuelGradeMinus"
+                                    style="@style/Widget.App.Button.Tonal"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:minWidth="44dp"
+                                    android:enabled="false"
+                                    android:text="@string/duel_grade_step_down" />
+
+                                <EditText
+                                    android:id="@+id/editDuelGradePercent"
+                                    android:layout_width="72dp"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="numberDecimal"
+                                    android:gravity="end"
+                                    android:enabled="false"
+                                    android:importantForAutofill="no"
+                                    android:hint="@string/duel_grade_percent_hint" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnDuelGradePlus"
+                                    style="@style/Widget.App.Button.Tonal"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:minWidth="44dp"
+                                    android:enabled="false"
+                                    android:text="@string/duel_grade_step_up" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="6dp">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnDuelGradeSuggest"
+                                    style="@style/Widget.App.Button.Tonal"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/duel_grade_suggest" />
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/duel_grade_suggest_caption"
+                                    android:textAppearance="@style/TextAppearance.App.Caption"
+                                    android:textColor="@color/text_secondary"
+                                    android:layout_marginStart="8dp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/duelGradeNotice"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textAppearance="@style/TextAppearance.App.Caption"
+                                android:textColor="@color/accent"
+                                android:visibility="gone"
+                                android:layout_marginTop="6dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnDuelGradeApply"
+                                style="@style/Widget.App.Button.Tonal"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/duel_grade_apply"
+                                android:layout_marginTop="6dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
             </LinearLayout>
 
             <!-- CALCULATED 수식 (CALCULATED 타입일 때만 표시) -->

@@ -443,6 +443,6 @@ object DuelGradeAssign {
 
     private const val EPSILON = 1e-9
 
-    /** 눈금 맞춤 — 소수 한 자리([PERCENT_DECIMALS]). */
-    fun round(percent: Double): Double = Math.round(percent * 10.0) / 10.0
+    /** 눈금 맞춤 — 단일 소스는 [DuelGradeRef.roundPercent]다(표현이 눈금을 갖는다). */
+    fun round(percent: Double): Double = DuelGradeRef.roundPercent(percent)
 }

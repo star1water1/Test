@@ -69,6 +69,15 @@ object DuelGradeRef {
     data class Cut(val label: String, val topPercent: Double)
 
     /**
+     * 컷 숫자의 눈금 — **소수 한 자리.** 표현이 눈금을 갖는 것이라 여기에 산다.
+     *
+     * 값을 만드는 쪽(균등 분할·경계 제안·재조정)과 손으로 옮기는 쪽(슬라이더·스테퍼)이
+     * 각자 반올림하면 **같은 조작이 자리마다 다른 값을 낸다** — 0.05 차이가 저장/화면 사이를
+     * 오가며 "손대지 않았는데 바뀐 것"으로 보이는 부류다.
+     */
+    fun roundPercent(percent: Double): Double = Math.round(percent * 10.0) / 10.0
+
+    /**
      * 직전 반영이 남긴 흔적.
      *
      * @property assignments 캐릭터 code → 그때 써 넣은 라벨. 비어 있을 수 있다([omitted] 참조).

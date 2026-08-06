@@ -52,7 +52,15 @@ interface AttributeSet
 EOF
 cat > "$WORK/GraphicsStub.kt" <<'EOF'
 package android.graphics
-class Color { companion object { const val BLACK: Int = 0; const val WHITE: Int = 0 } }
+class Color {
+    companion object {
+        const val BLACK: Int = 0; const val WHITE: Int = 0
+        fun rgb(red: Int, green: Int, blue: Int): Int = 0
+        fun red(color: Int): Int = 0
+        fun green(color: Int): Int = 0
+        fun blue(color: Int): Int = 0
+    }
+}
 class Paint(flags: Int) {
     constructor() : this(0)
     companion object { const val ANTI_ALIAS_FLAG: Int = 1 }
@@ -68,6 +76,7 @@ class Paint(flags: Int) {
     var strokeCap: Cap = Cap.BUTT
     var textSize: Float = 12f
     var textAlign: Align = Align.LEFT
+    var isFakeBoldText: Boolean = false
     var pathEffect: PathEffect? = null
     fun measureText(text: String): Float = 0f
     fun descent(): Float = 0f
@@ -82,14 +91,23 @@ class Path {
     fun cubicTo(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {}
     fun close() {}
 }
-class RectF {
+class RectF() {
+    constructor(left: Float, top: Float, right: Float, bottom: Float) : this()
+    var left: Float = 0f
+    var top: Float = 0f
+    var right: Float = 0f
+    var bottom: Float = 0f
     fun set(left: Float, top: Float, right: Float, bottom: Float) {}
+    fun centerX(): Float = 0f
+    fun centerY(): Float = 0f
 }
 class Canvas {
     fun save(): Int = 0
     fun restore() {}
     fun clipPath(path: Path): Boolean = true
+    fun clipRect(rect: RectF): Boolean = true
     fun drawPath(path: Path, paint: Paint) {}
+    fun drawRect(left: Float, top: Float, right: Float, bottom: Float, paint: Paint) {}
     fun drawCircle(cx: Float, cy: Float, radius: Float, paint: Paint) {}
     fun drawLine(startX: Float, startY: Float, stopX: Float, stopY: Float, paint: Paint) {}
     fun drawOval(oval: RectF, paint: Paint) {}
@@ -126,7 +144,11 @@ open class View(context: android.content.Context, attrs: android.util.AttributeS
     fun invalidate() {}
     protected open fun onDraw(canvas: android.graphics.Canvas) {}
     open fun onTouchEvent(event: android.view.MotionEvent): Boolean = false
+    open fun performClick(): Boolean = false
     protected open fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {}
+    protected fun setMeasuredDimension(measuredWidth: Int, measuredHeight: Int) {}
+    // 실제 API는 View의 public static 메서드다 — 하위 클래스에서 이름만으로 부른다.
+    fun resolveSize(size: Int, measureSpec: Int): Int = size
     // 실제 API는 View의 public static 중첩 클래스다 — 값도 실제와 같게 둔다
     // (모드는 상위 2비트: UNSPECIFIED=0, EXACTLY=1<<30, AT_MOST=2<<30).
     object MeasureSpec {
@@ -183,6 +205,7 @@ EOF
 M="$REPO/app/src/main/java/com/novelcharacter/app"
 {
   echo "$M/ui/character/SilhouetteView.kt"
+  echo "$M/ui/view/GradeCutSliderView.kt"
   echo "$M/ui/common/CappedScrollView.kt"
   echo "$M/util/DialogScrollCap.kt"
   echo "$M/util/BodySilhouetteSpec.kt"
