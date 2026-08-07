@@ -65,6 +65,20 @@
                     android:paddingVertical="1dp"
                     android:visibility="gone" />
 
+                <!-- 전역 기본 필드에서 심긴 필드 (B-119) — 일일이 열어 보지 않아도
+                     이 필드가 어디서 왔는지 목록에서 보인다(원칙 04) -->
+                <TextView
+                    android:id="@+id/fieldDefaultBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:text="@string/default_field_badge"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                    android:textColor="@color/primary"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="1dp"
+                    android:visibility="gone" />
+
             </LinearLayout>
 
             <TextView

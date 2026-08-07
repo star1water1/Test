@@ -38,6 +38,9 @@ enum class ExportSheetStep {
     // 등급 체계를 정의보다 먼저 — 시트 순서가 곧 가져오기 순서는 아니지만(가져오기는 이름으로
     // 찾는다), 파일을 여는 사람이 참조 대상을 먼저 보게 된다.
     GRADE_SYSTEMS,
+    // 전역 기본 필드(B-119)도 정의보다 먼저 — '필드 정의'의 '기본필드코드'가 이 시트의
+    // 템플릿을 가리키고, 가져오기 순서도 그렇다(설계 1-5).
+    DEFAULT_FIELDS,
     FIELD_DEFINITIONS,
     FIELD_VALUE_LIBRARY,
     // 이미지 시트는 반드시 캐릭터 시트보다 먼저 — 세계관 이름이 "이미지"여도 예약 시트가
@@ -76,6 +79,7 @@ enum class ExportSheetStep {
             if (options.novels) add(NOVELS)
             if (options.fieldDefinitions) {
                 add(GRADE_SYSTEMS)
+                add(DEFAULT_FIELDS)
                 add(FIELD_DEFINITIONS)
                 add(FIELD_VALUE_LIBRARY)
             }

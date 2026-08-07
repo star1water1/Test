@@ -21,10 +21,26 @@ class UniverseRepository(
 
     suspend fun getAllUniversesList(): List<Universe> = universeDao.getAllUniversesList()
     suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
+    /**
+     * 세계관을 만든다 — **전역 기본 필드를 함께 심는다** (B-119).
+     *
+     * 심기를 부르는 쪽이 아니라 여기 두는 이유: 세계관을 만드는 길이 하나가 아니다(빈 세계관 ·
+     * 프리셋). 부르는 쪽마다 적으면 **다음에 생기는 길이 그것을 빠뜨리고**, 그 고장은
+     * *"이 세계관에만 기본 필드가 없다"*로 조용히 난다 — 설계 1-2가 참조형을 기각한 그 증상과
+     * 같은 부류라 처방도 같다(한 자리로 모은다).
+     *
+     * **월드패키지·엑셀·휴지통 복원은 이 길로 오지 않는다**(자기 필드를 곧바로 넣으므로 미리
+     * 심으면 그 삽입이 유니크 제약에 걸린다). 그쪽은 기본 필드 관리 화면의 **'다시 심기'**가
+     * 따라잡는다 — 그것이 그 단추가 있는 이유다.
+     *
+     * 심기가 같은 트랜잭션이라 **세계관만 서고 기본 필드는 없는 중간 상태가 남지 않는다.**
+     */
     suspend fun insertUniverse(universe: Universe): Long {
         return db.withTransaction {
             val next = universeDao.getNextDisplayOrder()
-            universeDao.insert(universe.copy(displayOrder = next))
+            val id = universeDao.insert(universe.copy(displayOrder = next))
+            DefaultFieldTemplateRepository(db).plantIntoUniverse(id, universe.name)
+            id
         }
     }
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)

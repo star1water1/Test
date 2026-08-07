@@ -77,6 +77,12 @@ class FieldDefinitionAdapter(
                 binding.fieldSemanticBadge.visibility = View.GONE
             }
 
+            // 전역 기본 필드에서 심긴 필드(B-119) — 표식은 config의 키 하나이고, 그것을
+            // 읽는 규칙은 DefaultFieldRef가 단일 소스다.
+            binding.fieldDefaultBadge.visibility =
+                if (com.novelcharacter.app.data.model.DefaultFieldRef.isLinked(field.config)) View.VISIBLE
+                else View.GONE
+
             binding.dragHandle.setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                     itemTouchHelper?.startDrag(this)

@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelMatch
@@ -138,6 +139,14 @@ data class ImportResult(
     var newGradeSystems: Int = 0,
     var updatedGradeSystems: Int = 0,
     var deletedGradeSystems: Int = 0,
+    // 전역 기본 필드 템플릿 (B-119)
+    var newDefaultFields: Int = 0,
+    var updatedDefaultFields: Int = 0,
+    /**
+     * `기본필드코드`가 가리키는 템플릿을 찾지 못해 **일반 필드로 둔** 연결 수.
+     * 거부가 아니라 수용·교정이며, 조용히 버리지 않으므로 결과 창이 이 수를 말한다(설계 1-5).
+     */
+    var demotedDefaultFieldLinks: Int = 0,
     var newCharacters: Int = 0,
     var updatedCharacters: Int = 0,
     var newEvents: Int = 0,
@@ -589,6 +598,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 만든 체계를 찾아야 한다. 뒤에 두면 신규 기기 복원(빈 DB)에서 같은 파일 안에
                 // 체계가 실려 있는데도 참조가 전부 독자 표로 강등된다(확-3 "순서가 열보다 위험하다").
                 importGradeSystems(workbook, result, onProgress, totalRows)
+                // 전역 기본 필드도 **필드 정의보다 먼저** — '필드 정의' 시트의 '기본필드코드'가
+                // 여기서 만든 템플릿을 찾아야 한다(B-119, 설계 1-5). 등급 체계와 같은 근거다.
+                importDefaultFieldTemplates(workbook, result, onProgress, totalRows)
                 importFieldDefinitions(workbook, result, onProgress, totalRows)
                 // OVERWRITE: 사전 deleteAll 대신 매칭 후 잔여 정의만 정리 — 매칭된 정의는 id가 보존되어
                 // 캐릭터·사건 필드값과 값 라이브러리가 FK CASCADE로 전멸하지 않는다 (위 삭제 블록 주석 참조)
@@ -1380,6 +1392,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 등급 체계 참조 열(U-1) — 같은 3분기 문법. 해석은 코드 우선, 없으면 (세계관, 이름).
         val gradeSystem = cols["등급체계"] ?: -1
         val gradeSystemCode = cols["등급체계코드"] ?: -1
+        // 전역 기본 필드 연결(B-119) — **이름 열이 없는 코드 단독 참조 열**이다.
+        // 위치 폴백 금지: 열이 없으면 -1이고, 그때는 기존 연결을 그대로 둔다(R-36).
+        val defaultFieldCode = cols["기본필드코드"] ?: -1
     }
 
     private data class FieldDefRowValues(
@@ -1400,7 +1415,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val gradeNameColumnPresent: Boolean,
         val gradeCellName: String,
         val gradeCodeColumnPresent: Boolean,
-        val gradeCellCode: String
+        val gradeCellCode: String,
+        /**
+         * R-36 — **열의 존재를 값에 담는다.** `false`면 *"이 파일은 연결을 말하지 않는다"*이고,
+         * `true`면 (빈 칸이라도) 그 칸이 뜻이다. `getCellString(row, -1)`이 두 사실에 똑같이
+         * `""`를 내는 것이 이 함정의 뿌리라, 판별을 `cols.containsKey` 쪽으로 옮긴다.
+         */
+        val defaultFieldColumnPresent: Boolean,
+        val defaultFieldCellCode: String
     )
 
     private fun readFieldDefRow(row: Row, c: FieldDefCols, ctx: String, result: ImportResult?): FieldDefRowValues =
@@ -1422,7 +1444,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             gradeNameColumnPresent = c.gradeSystem >= 0,
             gradeCellName = if (c.gradeSystem >= 0) getCellString(row, c.gradeSystem) else "",
             gradeCodeColumnPresent = c.gradeSystemCode >= 0,
-            gradeCellCode = if (c.gradeSystemCode >= 0) getCellString(row, c.gradeSystemCode) else ""
+            gradeCellCode = if (c.gradeSystemCode >= 0) getCellString(row, c.gradeSystemCode) else "",
+            defaultFieldColumnPresent = c.defaultFieldCode >= 0,
+            defaultFieldCellCode = if (c.defaultFieldCode >= 0) getCellString(row, c.defaultFieldCode) else ""
         )
 
     /**
@@ -1449,7 +1473,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
         // 등급 체계 참조 병합(U-1) — 참조가 해석되면 실효 표를 다시 물질화하고,
         // 가리키는 체계가 없으면 거부 대신 독자 표로 내려앉히고 고지한다(관대 수용).
-        return mergeGradeSystemColumn(
+        val gradeMerged = mergeGradeSystemColumn(
             universeId = universeId,
             rowIndex = rowIndex,
             fieldName = r.name,
@@ -1462,6 +1486,73 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             existingConfig = existing?.config,
             result = result
         )
+        // 전역 기본 필드 연결 병합(B-119) — 같은 3분기 문법이되 **코드 열 하나뿐**이다.
+        return mergeDefaultFieldColumn(
+            rowIndex = rowIndex,
+            fieldName = r.name,
+            config = gradeMerged,
+            columnPresent = r.defaultFieldColumnPresent,
+            cellCode = r.defaultFieldCellCode,
+            existingConfig = existing?.config,
+            result = result
+        )
+    }
+
+    /**
+     * `기본필드코드` 열 병합 (B-119, 설계 1-5) — **R-36의 자리다.**
+     *
+     * | 열 | 칸 | 뜻 |
+     * |---|---|---|
+     * | 없음 | — | *"이 파일은 연결을 말하지 않는다"* → **기존 연결을 그대로 둔다** |
+     * | 있음 | 빔 | *"연결을 지워라"* → 강등 |
+     * | 있음 | 값 | 그 템플릿을 찾는다. 없으면 **강등하고 센다** |
+     *
+     * 위 첫 줄이 없으면 **B-119 이전에 내보낸 모든 파일**을 다시 들이는 것만으로 전 세계관의
+     * 기본 필드 연결이 지워진다. 판정은 [refColumnIntent]가 단일 소스다 — 이름 열 없이 코드
+     * 열만 있는 형태로 부른다(그쪽이 이미 *"이름 열이 아예 없으면 코드 열이 유무까지 결정한다"*를
+     * 규약으로 들고 있다).
+     *
+     * 찾지 못한 연결을 **거부하지 않고 강등하는 것**이 개발 의도 4번이다(수용·교정). 다만
+     * 조용히 하지는 않는다 — 결과 창이 건수를 말한다.
+     */
+    private suspend fun mergeDefaultFieldColumn(
+        rowIndex: Int,
+        fieldName: String,
+        config: String,
+        columnPresent: Boolean,
+        cellCode: String,
+        existingConfig: String?,
+        result: ImportResult?
+    ): String {
+        val ref = com.novelcharacter.app.data.model.DefaultFieldRef
+
+        suspend fun linkOrDemote(code: String): String {
+            if (db.defaultFieldTemplateDao().getByCode(code) != null) return ref.write(config, code)
+            result?.warnings?.add(
+                "필드 정의 행 $rowIndex: 필드 '$fieldName'이(가) 가리키는 기본 필드 '$code'을(를) " +
+                    "찾을 수 없어 일반 필드로 들였습니다 (필드와 값은 그대로입니다)"
+            )
+            result?.let { it.demotedDefaultFieldLinks++ }
+            return ref.remove(config)
+        }
+
+        return when (refColumnIntent(false, columnPresent, "", cellCode)) {
+            RefIntent.CLEAR -> ref.remove(config)
+            RefIntent.LOOKUP -> linkOrDemote(cellCode)
+            // 열이 없다 — config JSON이 표식을 들고 있으면 그것을, 아니면 기존 DB 값을 지킨다.
+            RefIntent.KEEP -> {
+                val jsonCode = ref.codeFromConfig(config)
+                when {
+                    jsonCode != null -> linkOrDemote(jsonCode)
+                    else -> {
+                        val existingCode = existingConfig?.let { ref.codeFromConfig(it) } ?: return config
+                        // 이미 있던 연결은 **다시 검증하지 않는다** — 가져오기가 말하지 않은 것을
+                        // 근거로 기존 상태를 바꾸지 않는다(R-36의 뜻 그대로).
+                        ref.write(config, existingCode)
+                    }
+                }
+            }
+        }
     }
 
     private fun mergeFieldDefinition(existing: FieldDefinition, r: FieldDefRowValues, mergedConfig: String): FieldDefinition =
@@ -2064,6 +2155,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
         if (options.fieldDefinitions) {
             categories.add(analyzeGradeSystems(workbook, onProgress, totalRows))
+            categories.add(analyzeDefaultFieldTemplates(workbook, onProgress, totalRows))
             categories.add(analyzeFieldDefinitions(workbook, options, onProgress, totalRows))
             categories.add(analyzeFieldValueLibrary(workbook, onProgress, totalRows))
         }
@@ -3670,6 +3762,245 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     // ── 필드 정의 가져오기 ──
+
+    // ── 전역 기본 필드 템플릿 가져오기 (B-119 — 필드 정의 직전) ──
+
+    /**
+     * 미리보기 — **가져오기와 같은 판정을 쓴다**(R-33).
+     *
+     * 정체 해석(코드 우선 → (대상, 필드키))과 '바뀌는가'의 판정이 [importDefaultFieldTemplates]와
+     * 어긋나면 *"바뀐다고 말해 놓고 안 바꾸거나, 조용히 바꾸는"* 상태가 된다.
+     */
+    private suspend fun analyzeDefaultFieldTemplates(
+        workbook: Workbook,
+        onProgress: (ImportProgress) -> Unit,
+        totalRows: Int
+    ): CategoryAnalysis {
+        val spec = defaultFieldSpec()
+        val label = "기본 필드"
+        val dao = db.defaultFieldTemplateDao()
+        val existingTotal = dao.getAllList().size
+        val sheet = resolveSpecSheet(workbook, spec)
+        if (sheet == null || sheet.lastRowNum < 1) {
+            return CategoryAnalysis("defaultFields", label, 0, 0, 0, 0, existingTotal)
+        }
+        val headerRow = sheet.getRow(0)
+            ?: return CategoryAnalysis("defaultFields", label, 0, 0, 0, 0, existingTotal)
+
+        val c = DefaultFieldCols(resolveHeaderColumns(headerRow))
+
+        var total = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skipped = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            // 읽기·해석·판정 셋 다 가져오기와 **같은 함수**다 (R-33).
+            val r = readDefaultFieldRow(row, c, "기본 필드 행 $i", result = null)
+            if (r.key.isBlank() && r.name.isBlank()) continue
+            total++
+            if (r.key.isBlank() || r.name.isBlank()) { skipped++; continue }
+            val existing = resolveDefaultFieldTemplate(r)
+            if (existing == null) newCount++
+            else if (mergeDefaultFieldTemplate(existing, r) != existing) updateCount++
+            else unchangedCount++
+        }
+        reportProgress(onProgress, "기본 필드 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("defaultFields", label, total, newCount, updateCount, unchangedCount, existingTotal, skipped)
+    }
+
+    /**
+     * '기본 필드' 시트 → [DefaultFieldTemplate].
+     *
+     * **필드 정의보다 먼저 돈다** — '필드 정의' 시트의 `기본필드코드`가 여기서 만든 템플릿을
+     * 찾아야 한다(설계 1-5). 뒤에 두면 신규 기기 복원(빈 DB)에서 같은 파일 안에 템플릿이
+     * 실려 있는데도 연결이 전부 강등된다 — 등급 체계가 필드 정의보다 앞인 것과 같은 근거다.
+     *
+     * **심지 않는다.** 같은 파일의 '필드 정의' 시트가 심긴 필드를 이미 담고 있으므로 여기서
+     * 심으면 그 삽입과 부딪친다. 템플릿만 있고 심긴 필드가 없는 파일(손으로 만든 것)은 기본
+     * 필드 관리 화면의 **'다시 심기'**가 따라잡는다.
+     *
+     * B-119 이전 백업에는 이 시트가 없는 것이 정상이라 경고하지 않는다 — '등급 체계' 시트와
+     * 같은 관례다.
+     */
+    private suspend fun importDefaultFieldTemplates(
+        workbook: Workbook,
+        result: ImportResult,
+        onProgress: (ImportProgress) -> Unit,
+        totalRows: Int
+    ) {
+        val spec = defaultFieldSpec()
+        val sheet = resolveSpecSheet(workbook, spec) ?: return
+        consumedSheetNames.add(sheet.sheetName)
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        reportUnknownColumns(headerRow, spec, result)
+
+        val c = DefaultFieldCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
+        val dao = db.defaultFieldTemplateDao()
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val r = readDefaultFieldRow(row, c, "기본 필드 행 $i", result)
+            // 둘 다 비면 빈 행이라 조용히 넘긴다. 하나만 비면 사람이 적다 만 것이라 말한다
+            // ('등급 체계' 시트와 같은 관례 — 무음 폐기와 구별한다).
+            if (r.key.isBlank() && r.name.isBlank()) continue
+            if (r.key.isBlank() || r.name.isBlank()) {
+                result.skippedRows++
+                result.errors.add("기본 필드 행 $i: 필드키·필드명은 필수입니다")
+                continue
+            }
+            val existing = resolveDefaultFieldTemplate(r)
+
+            if (existing != null) {
+                val merged = mergeDefaultFieldTemplate(existing, r)
+                if (merged != existing) {
+                    // 자리를 옮기는 편집이 남의 자리와 부딪치면 되돌린다 — 유니크 (대상, 필드키).
+                    val clash = dao.getBySlot(merged.entityType, merged.key)
+                        ?.takeIf { it.id != existing.id }
+                    if (clash != null) {
+                        result.warnings.add(
+                            "기본 필드 행 $i: '${merged.key}'(${merged.entityType}) 자리를 이미 다른 " +
+                                "기본 필드가 쓰고 있어 키·대상은 바꾸지 않았습니다"
+                        )
+                        val kept = merged.copy(key = existing.key, entityType = existing.entityType)
+                        if (kept != existing) { dao.update(kept); result.updatedDefaultFields++ }
+                    } else {
+                        dao.update(merged)
+                        result.updatedDefaultFields++
+                    }
+                }
+            } else {
+                // 코드가 이미 남의 템플릿과 겹치면 재발급한다(전역 유니크 — 정체를 빼앗지 않는다).
+                val wanted = r.code.takeIf { it.isNotBlank() }
+                val safeCode = wanted?.takeIf { dao.getByCode(it) == null }
+                    ?: com.novelcharacter.app.data.model.generateEntityCode().also {
+                        if (wanted != null) result.newCodesGenerated++
+                    }
+                // 새 행에서는 **null이 곧 기본값**이다 — 지킬 기존 값이 없다(R-36 후반부).
+                dao.insert(
+                    DefaultFieldTemplate(
+                        key = r.key,
+                        name = r.name,
+                        type = r.type ?: FieldType.TEXT.name,
+                        config = resolveDefaultFieldConfig(r, existing = null),
+                        groupName = r.groupName ?: "기본 정보",
+                        displayOrder = r.displayOrder ?: ((dao.getMaxOrder(r.entityType) ?: -1) + 1),
+                        isRequired = r.isRequired ?: false,
+                        entityType = r.entityType,
+                        code = safeCode
+                    )
+                )
+                result.newDefaultFields++
+            }
+        }
+        reportProgress(onProgress, "기본 필드", sheet.lastRowNum, totalRows)
+    }
+
+    private class DefaultFieldCols(cols: Map<String, Int>) {
+        val key = cols["필드키"] ?: 0
+        val name = cols["필드명"] ?: 1
+        // 위치 폴백 금지 — 선택 열은 없으면 -1이고, 그때는 기존 값을 지킨다(R-36).
+        val type = cols["타입"] ?: -1
+        val config = cols["설정(JSON)"] ?: -1
+        val group = cols["그룹"] ?: -1
+        val order = cols["순서"] ?: -1
+        val required = cols["필수여부"] ?: -1
+        val aiSuggest = cols[FieldConfigColumns.COLUMN_AI_SUGGEST] ?: -1
+        val description = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
+        val entityType = cols["대상"] ?: -1
+        val code = cols["코드"] ?: -1
+    }
+
+    /**
+     * '기본 필드' 시트 한 행. **null은 *"이 파일은 그것을 말하지 않는다"*** 이다(R-36) —
+     * [mergeDefaultFieldTemplate]이 그때 기존 값을 지킨다.
+     */
+    private data class DefaultFieldRowValues(
+        val key: String,
+        val name: String,
+        val type: String?,
+        val sheetConfig: String,
+        val groupName: String?,
+        val displayOrder: Int?,
+        val isRequired: Boolean?,
+        val entityType: String,
+        val code: String,
+        val aiColumnPresent: Boolean,
+        val aiCellText: String,
+        val descriptionColumnPresent: Boolean,
+        val descriptionCellText: String
+    )
+
+    private fun readDefaultFieldRow(
+        row: Row,
+        c: DefaultFieldCols,
+        ctx: String,
+        result: ImportResult?
+    ): DefaultFieldRowValues = DefaultFieldRowValues(
+        key = getCellString(row, c.key),
+        name = getCellString(row, c.name),
+        type = if (c.type >= 0) getCellString(row, c.type).takeIf { it.isNotBlank() } else null,
+        sheetConfig = if (c.config >= 0) getCellString(row, c.config).ifBlank { "{}" } else "{}",
+        groupName = if (c.group >= 0) getCellString(row, c.group).ifBlank { "기본 정보" } else null,
+        displayOrder = if (c.order >= 0) {
+            getCellString(row, c.order).takeIf { it.isNotBlank() }?.let { parseNumber(it)?.toInt() }
+        } else null,
+        isRequired = sheetBooleanOrKeep(c.required >= 0, getCellString(row, c.required)),
+        entityType = FieldValueSheetMapper.entityTypeOf(
+            if (c.entityType >= 0) getCellString(row, c.entityType) else null
+        ),
+        code = if (c.code >= 0) getCellCode(row, c.code, ctx, result) else "",
+        aiColumnPresent = c.aiSuggest >= 0,
+        aiCellText = getCellString(row, c.aiSuggest),
+        descriptionColumnPresent = c.description >= 0,
+        descriptionCellText = getCellString(row, c.description)
+    )
+
+    /** 정체는 **코드 우선, 없으면 (대상, 필드키)** — 다른 시트와 같은 규약이다(R-1). */
+    private suspend fun resolveDefaultFieldTemplate(r: DefaultFieldRowValues): DefaultFieldTemplate? {
+        val dao = db.defaultFieldTemplateDao()
+        return r.code.takeIf { it.isNotBlank() }?.let { dao.getByCode(it) }
+            ?: dao.getBySlot(r.entityType, r.key)
+    }
+
+    /**
+     * 이 행이 만들 `config`.
+     *
+     * AI추천·필드설명의 3분기 병합은 '필드 정의' 시트와 **같은 함수**를 쓰고
+     * ([FieldConfigColumns.merge]), 그 위에 **세계관 한정 참조를 걷어낸다** — 템플릿은 전역이라
+     * 그런 참조를 가질 수 없는데(설계 1-2) 손으로 고친 파일이 실어 올 수 있고, 그대로 심으면
+     * 모든 세계관에 유령 참조가 하나씩 생긴다.
+     */
+    private fun resolveDefaultFieldConfig(
+        r: DefaultFieldRowValues,
+        existing: DefaultFieldTemplate?
+    ): String = com.novelcharacter.app.data.model.FieldConfigTransfer.demoteAcrossUniverse(
+        FieldConfigColumns.merge(
+            sheetConfig = r.sheetConfig,
+            aiColumnPresent = r.aiColumnPresent,
+            aiCellText = r.aiCellText,
+            descriptionColumnPresent = r.descriptionColumnPresent,
+            descriptionCellText = r.descriptionCellText,
+            existingConfig = existing?.config
+        )
+    )
+
+    /**
+     * 기존 템플릿에 이 행을 얹은 결과 — **미리보기와 가져오기가 부르는 같은 함수**다(R-33).
+     *
+     * 미리보기가 손으로 짠 비교를 쓰면 *"바뀐다고 말해 놓고 안 바꾸거나, 조용히 바꾸는"* 상태가
+     * 된다. `merged != existing` 하나가 두 자리의 판정을 겸한다.
+     */
+    private fun mergeDefaultFieldTemplate(
+        existing: DefaultFieldTemplate,
+        r: DefaultFieldRowValues
+    ): DefaultFieldTemplate = existing.copy(
+        key = r.key,
+        name = r.name,
+        type = r.type ?: existing.type,
+        config = resolveDefaultFieldConfig(r, existing),
+        groupName = r.groupName ?: existing.groupName,
+        displayOrder = r.displayOrder ?: existing.displayOrder,
+        isRequired = r.isRequired ?: existing.isRequired,
+        entityType = r.entityType
+    )
 
     // ── 등급 체계 가져오기 (U-1 — 필드 정의 직전: '등급체계' 열이 여기서 만든 체계를 찾는다) ──
 

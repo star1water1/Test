@@ -56,6 +56,8 @@ $MAIN/data/model/GradeSystem.kt
 $MAIN/data/model/GradeSystemRef.kt
 $MAIN/data/model/DuelGradeRef.kt
 $MAIN/data/model/FieldConfigTransfer.kt
+$MAIN/data/model/DefaultFieldTemplate.kt
+$MAIN/data/model/DefaultFieldRef.kt
 $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt
@@ -209,6 +211,8 @@ $MAIN/util/MembershipTimeline.kt
 $MAIN/data/model/UserPresetTemplate.kt
 $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
+$MAIN/util/FieldTypeCompatibility.kt
+$MAIN/util/DefaultFieldPlan.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -226,6 +230,7 @@ $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
 $TEST/excel/GradeSystemSheetTest.kt
+$TEST/excel/DefaultFieldSheetTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
 $TEST/data/DuelGradeRefTest.kt
@@ -270,6 +275,8 @@ $TEST/ui/assistant/AssistantSortTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
+$TEST/util/DefaultFieldPlanTest.kt
+$TEST/data/model/DefaultFieldRefTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/util/ImagePathMatchTest.kt

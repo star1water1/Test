@@ -1514,6 +1514,11 @@ class ExcelImporter(context: Context) {
         val gsTotal = result.newGradeSystems + result.updatedGradeSystems
         if (gsTotal > 0) parts.add("등급 체계 ${gsTotal}건")
         if (result.deletedGradeSystems > 0) parts.add("등급 체계 삭제 ${result.deletedGradeSystems}건")
+        val dfTotal = result.newDefaultFields + result.updatedDefaultFields
+        if (dfTotal > 0) parts.add("기본 필드 ${dfTotal}건")
+        // 찾지 못한 연결은 **거부가 아니라 강등**이며(B-119, 설계 1-5), 조용히 넘기지 않는다.
+        if (result.demotedDefaultFieldLinks > 0)
+            parts.add("기본 필드 연결 ${result.demotedDefaultFieldLinks}건을 찾지 못해 일반 필드로 두었습니다")
         if (charTotal > 0) {
             parts.add(if (result.updatedCharacters > 0) {
                 r.getString(com.novelcharacter.app.R.string.import_result_characters_updated, charTotal, result.updatedCharacters)

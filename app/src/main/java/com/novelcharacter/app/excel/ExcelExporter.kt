@@ -126,6 +126,7 @@ class ExcelExporter(context: Context) {
                 ExportSheetStep.UNIVERSES -> exportUniverses(workbook, usedSheetNames)
                 ExportSheetStep.NOVELS -> exportNovels(workbook, usedSheetNames)
                 ExportSheetStep.GRADE_SYSTEMS -> exportGradeSystems(workbook, usedSheetNames)
+                ExportSheetStep.DEFAULT_FIELDS -> exportDefaultFieldTemplates(workbook, usedSheetNames)
                 ExportSheetStep.FIELD_DEFINITIONS -> exportFieldDefinitions(workbook, usedSheetNames)
                 ExportSheetStep.FIELD_VALUE_LIBRARY -> exportFieldValueLibrary(workbook, usedSheetNames)
                 ExportSheetStep.IMAGE_META -> exportImageMeta(workbook, usedSheetNames)
@@ -655,6 +656,15 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  기본숫자 변경을 필드까지 반영하려면 '필드 정의' 시트를 뺀 파일로 가져오거나, 해당 필드의 설정(JSON) grades 값도 함께 고치세요."),
             GuideLine("", styles.guideBody, "• 체계에서 등급 행을 지우면 참조 필드의 그 등급도 빠집니다. 캐릭터에 저장된 값은 지워지지 않고 해석만 빠집니다."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("'기본 필드' 시트 (모든 세계관이 갖는 필드)", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "모든 세계관에 기본으로 심기는 필드의 원본입니다. 세계관 열이 없는 것은 이 필드가 특정 세계관에 속하지 않기 때문입니다."),
+            GuideLine("", styles.guideBody, "• 여기 있는 것은 원본이고, 실제로 쓰이는 것은 각 세계관에 심긴 '필드 정의' 시트의 필드입니다."),
+            GuideLine("", styles.guideBody, "• 템플릿은 '코드'로 묶입니다(코드가 없으면 대상+필드키). '필드 정의' 시트의 '기본필드코드' 열에 그 코드를 적으면 그 필드가 기본 필드와 연결됩니다."),
+            GuideLine("", styles.guideBody, "• 기본 필드는 칸이 '있다'는 것만 보장합니다. 세계관마다 이름·설정을 다르게 고쳐도 되고, 고친 것은 앱에서 전파를 고를 때까지 유지됩니다."),
+            GuideLine("", styles.guideBody, "• '기본필드코드' 칸을 비우면 그 필드는 연결이 풀려 보통 필드가 됩니다(필드와 값은 그대로입니다). 열을 통째로 지우면 기존 연결이 유지됩니다."),
+            GuideLine("", styles.guideBody, "• 가리키는 기본 필드가 파일에도 앱에도 없으면 거부하지 않고 보통 필드로 들여온 뒤 결과에 알립니다."),
+            GuideLine("", styles.guideBody, "• 이 시트에서 기본 필드를 지워도 이미 심긴 필드와 값은 지워지지 않습니다 — 연결만 풀립니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("'필드 데이터' 시트 (값 정리)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "필드마다 실제로 쓰인 값이 모이는 시트입니다. 여기서 정리한 표기가 앱의 자동완성·통계·검색에 함께 반영됩니다."),
             GuideLine("", styles.guideBody, "• '표시라벨'·'별칭(콤마구분)'·'카테고리'·'설명'·'숨김' 열을 채워 다시 가져오면 그대로 반영됩니다."),
@@ -809,6 +819,8 @@ class ExcelExporter(context: Context) {
 
         // 등급 체계 참조(U-1)는 전용 열로만 나간다 — code → 체계로 풀어 이름·코드를 싣는다.
         val systemsByCode = db.gradeSystemDao().getAllList().associateBy { it.code }
+        // 전역 기본 필드 연결(B-119)도 같은 규약 — 살아 있는 템플릿만 코드로 나간다.
+        val templatesByCode = db.defaultFieldTemplateDao().getAllList().associateBy { it.code }
         val spec = fieldDefinitionSpec(
             universes.map { it.name },
             systemsByCode.values.map { it.name }.distinct()
@@ -843,9 +855,57 @@ class ExcelExporter(context: Context) {
                 ?.let { systemsByCode[it] }
             row.createCell(12).setTextSafe(refSystem?.name ?: "")
             row.createCell(13).setTextSafe(refSystem?.code ?: "")
+            // 전역 기본 필드 연결(B-119) — 템플릿이 실제로 있을 때만 싣는다. 이미 지워진
+            // 템플릿을 가리키는 잔재는 빈칸으로 나간다(위 등급 체계 참조와 같은 근거:
+            // 그대로 다시 들이면 강등과 같은 결과라, 파일이 앱보다 넓은 약속을 하지 않는다).
+            val linkedTemplate = com.novelcharacter.app.data.model.DefaultFieldRef
+                .codeFromConfig(field.config)?.let { templatesByCode[it] }
+            row.createCell(14).setTextSafe(linkedTemplate?.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
+    }
+
+    // ── 전역 기본 필드 템플릿 (B-119) ──
+
+    /**
+     * '기본 필드' 시트 — 전역이라 세계관 열이 없다(설계 1-5).
+     *
+     * **시트 순서에서 '필드 정의'보다 앞에 둔다** — 가져오기 순서가 그렇고(그쪽이 이 시트의
+     * 템플릿을 찾아야 한다), 사람이 파일을 열었을 때도 *정의가 참조보다 앞*이라는 이 파일의
+     * 규약과 같은 모양이 된다.
+     */
+    private suspend fun exportDefaultFieldTemplates(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val templates = db.defaultFieldTemplateDao().getAllList()
+
+        val spec = defaultFieldSpec()
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        templates.forEachIndexed { index, template ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(template.key)
+            row.createCell(1).setTextSafe(template.name)
+            row.createCell(2).setTextSafe(template.type)
+            // '필드 정의' 시트와 **같은 규약**이다 — AI추천·필드설명은 전용 열로만 나간다.
+            row.createCell(3).setTextSafe(FieldConfigColumns.stripPortableKeys(template.config))
+            row.createCell(4).setTextSafe(template.groupName)
+            row.createCell(5).setCellValue(template.displayOrder.toDouble())
+            row.createCell(6).setTextSafe(if (template.isRequired) "Y" else "N")
+            row.createCell(7).setTextSafe(FieldConfigColumns.aiCellOf(template.config))
+            row.createCell(8).setTextSafe(
+                com.novelcharacter.app.data.model.FieldDescription.fromConfig(template.config)
+            )
+            row.createCell(9).setTextSafe(FieldValueSheetMapper.entityLabel(template.entityType))
+            row.createCell(10).setTextSafe(template.code)
+            row.createCell(11).setCellValue(template.createdAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, templates.size)
     }
 
     // ── 등급 체계 (U-1) ──

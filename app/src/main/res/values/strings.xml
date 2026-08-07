@@ -2978,6 +2978,7 @@
     <string name="purpose_semantic_role">이 필드의 값을 앱 기능(나이 계산·생일 알림·생존 여부 등)과 연결합니다.</string>
     <string name="purpose_structured_input">한 필드를 여러 칸으로 나눠 입력합니다 (예: B-W-H). 칸은 아래에서 추가합니다.</string>
     <string name="purpose_stats">켜면 통계 탭이 이 필드를 분석합니다. 어떤 분석을 보여줄지 아래에서 고릅니다.</string>
+    <string name="purpose_default_field">켜면 이 필드가 모든 세계관에 기본으로 심어져, 어떤 세계관의 캐릭터에도 이 칸이 생깁니다.</string>
     <string name="purpose_field_library">이 필드에 입력된 값들을 목록으로 모아, 자동완성·통계·AI 추천이 함께 씁니다.</string>
     <string name="purpose_field_library_home">필드에 입력된 값이 여기 모입니다. 표시 라벨·별칭·카테고리를 정리하면 입력 자동완성·통계·검색이 함께 씁니다.</string>
     <string name="purpose_body_analysis">신체 사이즈 값으로 체형 분류·컵 사이즈 등을 자동 계산해 캐릭터 상세에 보여줍니다.</string>
@@ -3221,4 +3222,35 @@
     <string name="duel_op_verdict_counter">%1$s을(를) 상성으로 판정 — 점수 계산에서 뺍니다</string>
     <string name="duel_op_verdict_undecided">%1$s을(를) 미정으로 미뤄 둠</string>
     <string name="duel_op_verdict_cleared">%1$s의 판정을 물렸습니다</string>
+
+    <!-- ===== 전역 기본 필드 (B-119) ===== -->
+    <string name="label_default_field">전역 기본 필드</string>
+    <string name="default_field_manage_title">기본 필드 관리</string>
+    <string name="default_field_manage_purpose">여기 있는 필드는 모든 세계관에 기본으로 심깁니다. 세계관마다 이름·설정을 다르게 고쳐도 되고, 고친 것은 전파를 고를 때까지 그대로 둡니다.</string>
+    <string name="default_field_empty">아직 기본 필드가 없습니다. 필드 편집의 \'전역 기본 필드\'를 켜거나 여기서 새로 만드세요.</string>
+    <string name="default_field_add">새 기본 필드</string>
+    <string name="default_field_linked_summary">세계관 %1$d곳 연결 · %2$d곳 다름</string>
+    <string name="default_field_linked_none">아직 심긴 세계관이 없습니다</string>
+    <string name="default_field_badge">기본</string>
+    <string name="default_field_banner">이 필드는 기본 필드 \'%1$s\'와(과) 연결되어 있습니다. 여기서 고치면 이 세계관에서만 달라집니다.</string>
+
+    <!-- 심기 · 전파 · 해제 -->
+    <string name="default_field_action_replant">다시 심기</string>
+    <string name="default_field_action_propagate">전파</string>
+    <string name="default_field_action_unlink">전역 기본 해제</string>
+    <string name="default_field_planted">새로 심음 %1$d곳 · 기존 필드에 연결 %2$d곳</string>
+    <string name="default_field_plant_none">심을 곳도 이을 곳도 없습니다 — 이미 모든 세계관에 있습니다</string>
+    <string name="default_field_demoted">기본 필드 \'%1$s\'을(를) 해제했습니다 — 심긴 필드 %2$d개는 보통 필드로 남습니다</string>
+    <string name="default_field_unlink_confirm_title">전역 기본을 해제하시겠습니까?</string>
+    <string name="default_field_unlink_confirm">모든 세계관에서 연결이 풀려 보통 필드가 됩니다. 필드와 캐릭터 값은 지워지지 않습니다.</string>
+
+    <!-- 전파 미리보기 -->
+    <string name="default_field_propagate_title">어느 세계관에 반영하시겠습니까?</string>
+    <string name="default_field_propagate_purpose">고른 세계관의 필드를 기본 필드 정의로 덮습니다. 덮기 전 정의는 휴지통에 남아 되돌릴 수 있습니다.</string>
+    <string name="default_field_propagate_none">반영할 곳이 없습니다 — 모든 세계관이 기본 필드와 같습니다</string>
+    <string name="default_field_propagate_select_all">모두 선택</string>
+    <string name="default_field_propagate_outdated">아직 못 받음</string>
+    <string name="default_field_propagate_diverged">이 세계관에서 고침</string>
+    <string name="default_field_propagate_type_warning">타입이 바뀝니다 — 값 %1$d개가 초기화됩니다</string>
+    <string name="default_field_propagated">세계관 %1$d곳에 반영했습니다</string>
 </resources>

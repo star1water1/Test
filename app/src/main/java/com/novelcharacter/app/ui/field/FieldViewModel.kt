@@ -70,14 +70,24 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
     fun currentEntityType(): String = _entityType.value ?: FieldDefinition.ENTITY_CHARACTER
 
-    fun insertField(field: FieldDefinition, initialValues: String = "") = viewModelScope.launch {
+    /**
+     * @param defaultField 저장 뒤 **전역 기본 필드 상태를 이 값으로 맞춘다**(B-119).
+     *   null이면 건드리지 않는다 — 이 스위치를 열지 않은 화면의 저장이 남의 상태를 바꾸지
+     *   않게 하는 기본값이다.
+     */
+    fun insertField(
+        field: FieldDefinition,
+        initialValues: String = "",
+        defaultField: Boolean? = null
+    ) = viewModelScope.launch {
         try {
             val newId = universeRepository.insertField(field)
             // 생성 다이얼로그의 값 사전 등록분 — 해석·등재 규칙은 저장소가 단일 소스다
             // (종전에는 이 로직이 작품 경로와 두 벌이었고 실패 처리가 서로 달랐다).
             app.fieldValueLibraryRepository.registerInitialValues(newId, field, initialValues)
+            val note = syncDefaultField(field.copy(id = newId), defaultField)
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                app.getString(R.string.result_field_added, field.name)))
+                app.getString(R.string.result_field_added, field.name), note))
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key: ${field.key}", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
@@ -89,7 +99,8 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateField(field: FieldDefinition) = viewModelScope.launch {
+    /** @param defaultField [insertField]와 같은 뜻 — null이면 전역 기본 필드 상태를 건드리지 않는다. */
+    fun updateField(field: FieldDefinition, defaultField: Boolean? = null) = viewModelScope.launch {
         try {
             // 키 변경 자동 감지: 참조 수식·상태변화 이력이 무통보로 파손되지 않도록 함께 갱신한다
             val old = app.database.fieldDefinitionDao().getFieldById(field.id)
@@ -99,12 +110,15 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                 val detail = if (formulaCount > 0 || historyCount > 0)
                     "필드 키 변경('${old.key}'→'${field.key}'): 참조 수식 ${formulaCount}건, 상태변화 이력 ${historyCount}건을 자동으로 갱신했습니다."
                     else null
+                val note = syncDefaultField(field, defaultField)
                 reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                    app.getString(R.string.result_field_updated, field.name), detail))
+                    app.getString(R.string.result_field_updated, field.name),
+                    listOfNotNull(detail, note).joinToString("\n").ifBlank { null }))
             } else {
                 universeRepository.updateField(field)
+                val note = syncDefaultField(field, defaultField)
                 reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                    app.getString(R.string.result_field_updated, field.name)))
+                    app.getString(R.string.result_field_updated, field.name), note))
             }
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key on update: ${field.key}", e)
@@ -114,6 +128,45 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             Log.e("FieldViewModel", "Failed to update field", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_update_failed), e.message))
+        }
+    }
+
+    /**
+     * 저장 뒤 **전역 기본 필드 상태를 맞춘다** (B-119 — 설계 1-3).
+     *
+     * 승격·해제는 `field_definitions`가 아니라 **별도 표**를 건드리므로 필드 저장과 같은 값에
+     * 담기지 않는다. 저장이 끝난 뒤 한 번 부르고, 결과 한 줄을 돌려준다.
+     *
+     * **해제가 필드를 지우지 않는다는 것이 요점이다** — 심긴 필드는 전 세계관에서 보통 필드로
+     * 강등될 뿐이고 값은 그대로다(이 기능이 캐릭터 데이터를 지우는 경로는 없다).
+     * 해제가 전 세계관에 걸린다는 사실은 화면이 먼저 묻는다([FieldManageFragment]).
+     *
+     * @return 사용자에게 보일 한 줄. 바뀐 것이 없으면 null.
+     */
+    private suspend fun syncDefaultField(field: FieldDefinition, want: Boolean?): String? {
+        if (want == null) return null
+        val repo = app.defaultFieldTemplateRepository
+        val existing = repo.getBySlot(field.entityType, field.key)
+        return when {
+            // 켰다 — 템플릿이 없으면 만들고, **있으면 다시 심는다.**
+            //
+            // 뒤엣것을 빠뜨리면 조용한 무동작이 난다: 스위치는 이 필드의 표식만 보고 켜지므로
+            // (`DefaultFieldRef.isLinked`), *템플릿은 있는데 이 세계관의 필드만 연결이 없는*
+            // 상태에서 사용자가 켜면 **아무 일도 일어나지 않는다.** 그 상태는 실재한다 —
+            // 월드패키지·엑셀·휴지통 복원으로 들어온 세계관은 심기를 지나치지 않는다.
+            // 다시 심기는 이미 있는 필드를 덮지 않으므로(연결만 건다) 안전하고, 겸사겸사
+            // 그 사이 생긴 다른 세계관까지 따라잡는다.
+            want -> {
+                val r = if (existing == null) repo.promoteAndPlant(field) else repo.plantAll(existing)
+                if (r.planted == 0 && r.linked == 0) app.getString(R.string.default_field_plant_none)
+                else app.getString(R.string.default_field_planted, r.planted, r.linked)
+            }
+            existing != null -> {
+                val demoted = repo.deleteTemplate(existing)
+                app.getString(R.string.default_field_demoted, existing.name, demoted)
+            }
+            // 껐는데 템플릿이 애초에 없다 — 아무 일도 하지 않고 아무 말도 하지 않는다.
+            else -> null
         }
     }
 
