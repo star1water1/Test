@@ -64,6 +64,40 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
     suspend fun linkedUniverseCount(code: String): Int =
         linkedFields(code).map { it.universeId }.distinct().size
 
+    /**
+     * 관리 화면 목록의 요약 전량 — 템플릿 code → (연결 수, **다른** 수).
+     *
+     * **한 번만 읽는다.** 행마다 [planPropagate]를 부르면 템플릿 수만큼 전 필드 스캔이 돌고,
+     * 목표 규모(세계관 270 × 세계관당 수십 필드)에서 그것은 화면 하나를 여는 값으로 너무 크다
+     * (`scalability_performance` 7장 2단계 — 비용이 *템플릿 수 × 전체 필드 수* 축에 붙는다).
+     * 여기서는 필드를 한 번 읽어 code로 묶으므로 **템플릿 수와 무관하게 한 번**이다.
+     *
+     * '다름' 판정은 [DefaultFieldPlan]의 것과 **같은 함수**를 지난다 — 목록이 말하는 수와
+     * 전파 미리보기가 보여 주는 줄 수가 갈리면 목록이 거짓말을 한다.
+     */
+    suspend fun linkSummaries(templates: List<DefaultFieldTemplate>): Map<String, Pair<Int, Int>> {
+        if (templates.isEmpty()) return emptyMap()
+        val byCode = templates.associateBy { it.code }
+        val linked = HashMap<String, MutableList<FieldDefinition>>()
+        for (field in fieldDao.getAllFieldsAllTypes()) {
+            val code = DefaultFieldRef.codeFromConfig(field.config) ?: continue
+            if (code !in byCode) continue
+            linked.getOrPut(code) { ArrayList() }.add(field)
+        }
+        return templates.associate { template ->
+            val fields = linked[template.code].orEmpty()
+            // previous = null — 관리 화면은 '직전 템플릿'을 모른다. 그래서 여기서 세는 '다름'은
+            // *템플릿과 다른 전부*이고, 그것이 이 요약이 말하려는 바 그대로다.
+            val plan = DefaultFieldPlan.planPropagate(
+                template, previous = null,
+                linked = fields.map {
+                    DefaultFieldPlan.LinkedField(it.universeId, universeName = "", field = it)
+                }
+            )
+            template.code to (fields.size to plan.actionable.size)
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 심기
     // ──────────────────────────────────────────────────────────────────────

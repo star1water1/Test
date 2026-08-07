@@ -44,14 +44,7 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
 
     fun refreshCounts(templates: List<DefaultFieldTemplate>) = viewModelScope.launch {
         try {
-            val counts = LinkedHashMap<String, Pair<Int, Int>>()
-            for (template in templates) {
-                // previous = null — 관리 화면은 '직전 템플릿'을 모른다. 그래서 여기서 세는
-                // '다름'은 *템플릿과 다른 전부*이고, 그것이 이 요약이 말하려는 바 그대로다.
-                val plan = repository.planPropagate(template)
-                counts[template.code] = plan.items.size to plan.actionable.size
-            }
-            _linkCounts.value = counts
+            _linkCounts.value = repository.linkSummaries(templates)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to count default field links", e)
         }
