@@ -74,6 +74,12 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         variants: Int = DEFAULT_VARIANTS,
         /** 창작도 (A-4) — 창작 폭이 가장 크게 체감되는 자리. 기본은 무회귀(균형). */
         creativity: AiCreativity = AiCreativity.DEFAULT,
+        /**
+         * 함께 보낼 캐릭터 이미지 (A-7). **서술형이 이 기능의 최대 수혜자다** — 외모 묘사는
+         * 글로 적힌 정보가 가장 성긴 자리이고 그림에는 그것이 통째로 들어 있다.
+         * 짧은 값 경로와 달리 요청이 하나뿐이라 이미지도 한 번만 나간다.
+         */
+        images: List<AiImage> = emptyList(),
         errorMessageOf: (AiResult.Failure) -> String
     ): WriteOutcome {
         val wanted = variants.coerceIn(1, MAX_VARIANTS)
@@ -81,11 +87,14 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         // 학습된 미지원 모델 — 샘플링 없이 지시만 적용된다는 사실을 고지한다 (§6-5 ④)
         val temperatureNote =
             creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()
+        // 이미지도 같다 (A-7) — 이미 거부를 배운 모델이면 붙였어도 나가지 않는다는 사실을 말한다
+        val imagesNote = images.isNotEmpty() && aiService.isImagesUnsupported()
         val request = AiRequest(
-            system = buildSystemPrompt(creativity),
+            system = buildSystemPrompt(creativity, images.size),
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
-            temperature = aiService.temperatureFor(creativity)
+            temperature = aiService.temperatureFor(creativity),
+            images = images
         )
         return when (val result = aiService.complete(request)) {
             is AiResult.Success -> {
@@ -102,6 +111,9 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                         if (temperatureNote || result.temperatureOmitted) {
                             add(CharacterFieldAiSuggester.TEMPERATURE_UNSUPPORTED_NOTE)
                         }
+                        if (imagesNote || result.imagesOmitted) {
+                            add(CharacterFieldAiSuggester.IMAGES_UNSUPPORTED_NOTE)
+                        }
                     },
                     truncationNotes = prompt.truncationNotes,
                     truncated = result.truncated,
@@ -115,6 +127,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                 failures = buildList {
                     add(errorMessageOf(result))
                     if (temperatureNote) add(CharacterFieldAiSuggester.TEMPERATURE_UNSUPPORTED_NOTE)
+                    if (imagesNote) add(CharacterFieldAiSuggester.IMAGES_UNSUPPORTED_NOTE)
                 },
                 truncationNotes = prompt.truncationNotes,
                 truncated = false,
@@ -223,7 +236,11 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             if (currentValue.isBlank()) listOf(Mode.DRAFT)
             else Mode.entries.filter { it.requiresExisting }
 
-        fun buildSystemPrompt(creativity: AiCreativity = AiCreativity.DEFAULT): String = """
+        fun buildSystemPrompt(
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            /** 함께 보낸 이미지 장수 (A-7). 0이면 지시를 붙이지 않는다. */
+            imageCount: Int = 0
+        ): String = """
             당신은 소설 캐릭터 설정을 함께 쓰는 작가 보조다. 주어진 캐릭터 정보와 지시에 따라
             지정된 필드에 들어갈 **한국어 산문**을 쓴다.
             규칙:
@@ -243,7 +260,21 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나게 쓰지 마라 —
                그 축에서 하위인 인물을 압도적인 강자로 묘사하지 않는다. 다만 **등수를 글에
                숫자로 적지 마라**: 그것은 작품 설정이 아니라 사용자의 작업 기록이다.
-        """.trimIndent() + creativity.promptRule()
+        """.trimIndent() + creativity.promptRule() + imageRule(imageCount)
+
+        /**
+         * 이미지 첨부 지시 (A-7). 짧은 값 경로와 **다른 점 하나**: 산문에는 "몇 번째
+         * 이미지"라고 적을 자리가 없다 — 그것은 작품 설정이 아니라 작업 기록이라
+         * 대결 등수를 숫자로 적지 말라는 규칙 8과 같은 이유로 금지한다.
+         */
+        fun imageRule(imageCount: Int): String =
+            if (imageCount <= 0) "" else "\n" + """
+            [이미지] 이 요청에는 캐릭터의 이미지 ${imageCount}장이 순서대로 함께 실려 있다.
+            글로 적힌 정보와 어긋나지 않는 선에서 그림에서 읽을 수 있는 것(외모·복장·분위기·
+            소지품 등)을 묘사의 근거로 삼아라. 그림에 없는 것을 있는 것처럼 쓰지 마라.
+            다만 **'이미지 1'처럼 그림을 가리키는 말을 본문에 쓰지 마라** — 본문은 그 필드에
+            그대로 들어갈 작품 설정이지 작업 기록이 아니다.
+            """.trimIndent()
 
         fun buildUserPrompt(
             context: CharacterFieldAiSuggester.CharacterAiContext,

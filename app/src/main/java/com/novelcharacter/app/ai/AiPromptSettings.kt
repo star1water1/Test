@@ -61,6 +61,32 @@ class AiPromptSettings(context: Context) {
         }
 
     /**
+     * 필드 추천·서술형 작성에 **함께 보낼 캐릭터 이미지 장수** (A-7). 0이면 보내지 않는다.
+     *
+     * 기본값 1장은 사용자 확정이다(Q3) — 비용이 붙는 기본값은 보수적으로 두고, 올리는 것을
+     * 사용자 선택으로 남긴다. 범위·상한은 [AiPromptPolicy]가 단일 소스다.
+     */
+    var attachImageCount: Int
+        get() = AiPromptPolicy.clampAttachImages(
+            sp.getInt(KEY_ATTACH_IMAGES, AiPromptPolicy.ATTACH_IMAGES_DEFAULT)
+        )
+        set(value) {
+            sp.edit().putInt(KEY_ATTACH_IMAGES, AiPromptPolicy.clampAttachImages(value)).apply()
+        }
+
+    /**
+     * 첨부에 **지정한 대표 이미지를 반드시 첫 장으로** 넣는가 (A-7).
+     *
+     * 끄면 전부 랜덤이다. 켰는데 지정 대표가 없으면 그 사실을 고지하고 랜덤으로 채운다 —
+     * 조용히 다른 그림을 '대표'라 부르지 않는다([util.AiImageAttach]가 판정한다).
+     */
+    var attachRepresentativeFirst: Boolean
+        get() = sp.getBoolean(KEY_ATTACH_REPRESENTATIVE, AiPromptPolicy.ATTACH_REPRESENTATIVE_DEFAULT)
+        set(value) {
+            sp.edit().putBoolean(KEY_ATTACH_REPRESENTATIVE, value).apply()
+        }
+
+    /**
      * **AI 이미지 태그 기조** — 폴더 이름으로 태그를 제안할 때 함께 보내는 사용자 지침
      * (설계 `image_folder_tag_ai` 4-1). 비우면 보내지 않는다.
      *
@@ -82,5 +108,7 @@ class AiPromptSettings(context: Context) {
         private const val KEY_MIN_CONFIDENCE = "minConfidence"
         private const val KEY_CREATIVITY = "creativity"
         private const val KEY_IMAGE_TAG_POLICY = "imageTagPolicy"
+        private const val KEY_ATTACH_IMAGES = "attachImageCount"
+        private const val KEY_ATTACH_REPRESENTATIVE = "attachRepresentativeFirst"
     }
 }

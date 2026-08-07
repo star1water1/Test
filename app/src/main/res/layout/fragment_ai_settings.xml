@@ -376,6 +376,67 @@
                         android:layout_marginTop="4dp"
                         android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="?attr/colorPrimary" />
+
+                    <!-- AI에 함께 보낼 이미지 (A-7) — 적재량 슬라이더의 형제다.
+                         같은 카드에 두는 이유: 셋 다 "요청에 무엇을 얼마나 싣는가"이고,
+                         나누면 사용자가 비용을 세 자리에서 따로 재게 된다. -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="16dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:baselineAligned="true"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/ai_attach_images_label"
+                            android:textAppearance="@style/TextAppearance.App.BodyStrong" />
+
+                        <TextView
+                            android:id="@+id/attachImagesValue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:textAppearance="@style/TextAppearance.App.BodyStrong"
+                            android:textColor="?attr/colorPrimary" />
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/attachImagesSlider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:stepSize="1"
+                        android:valueFrom="0"
+                        android:valueTo="10" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ai_attach_images_desc"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/attachRepresentativeSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/ai_attach_representative_label" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ai_attach_representative_desc"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

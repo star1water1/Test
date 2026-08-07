@@ -89,6 +89,30 @@ object AiProtocolCodec {
             .any { it in lower }
     }
 
+    /**
+     * 모델이 **이미지를 받지 않는다**고 말하는 400인가 (A-7).
+     *
+     * temperature 판정과 같은 태도로 좁게 잡는다: 이미지를 가리키는 낱말과 거부 표현이
+     * **함께** 있어야 참이다. 무관한 400을 이미지 문제로 오인하면 잘못된 학습값이 남아
+     * **그 모델에는 다시는 이미지를 보내지 않게 되고**, 사용자는 이유를 볼 수 없다.
+     *
+     * 세 프로토콜의 실제 표현이 제각각이라 낱말 쪽을 넓게 연다 — Anthropic은
+     * `messages.0.content.0.image: ... does not support image`, OpenAI 호환은
+     * `Invalid content type. image_url is only supported by certain models`,
+     * Gemini는 `inline_data ... is not supported`로 온다.
+     */
+    fun isImagesUnsupportedError(httpCode: Int, errorBody: String?): Boolean {
+        if (httpCode != 400 || errorBody == null) return false
+        val lower = errorBody.lowercase()
+        val mentionsImage = listOf("image", "image_url", "inline_data", "vision", "multimodal")
+            .any { it in lower }
+        if (!mentionsImage) return false
+        return listOf(
+            "unsupported", "not supported", "does not support", "only supported",
+            "not allowed", "invalid content type", "cannot process"
+        ).any { it in lower }
+    }
+
     private fun buildAnthropic(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
         val body = JsonObject().apply {
             addProperty("model", config.model)
@@ -100,7 +124,27 @@ object AiProtocolCodec {
                 request.messages.forEach { m ->
                     add(JsonObject().apply {
                         addProperty("role", if (m.role == AiRole.USER) "user" else "assistant")
-                        addProperty("content", m.text)
+                        if (m.images.isEmpty()) {
+                            // 이미지가 없으면 종전과 **글자 그대로 같은** 문자열 content다 (회귀 없음)
+                            addProperty("content", m.text)
+                        } else {
+                            add("content", JsonArray().apply {
+                                m.images.forEach { img ->
+                                    add(JsonObject().apply {
+                                        addProperty("type", "image")
+                                        add("source", JsonObject().apply {
+                                            addProperty("type", "base64")
+                                            addProperty("media_type", img.mediaType)
+                                            addProperty("data", img.base64)
+                                        })
+                                    })
+                                }
+                                add(JsonObject().apply {
+                                    addProperty("type", "text")
+                                    addProperty("text", m.text)
+                                })
+                            })
+                        }
                     })
                 }
             })
@@ -129,7 +173,24 @@ object AiProtocolCodec {
                 request.messages.forEach { m ->
                     add(JsonObject().apply {
                         addProperty("role", if (m.role == AiRole.USER) "user" else "assistant")
-                        addProperty("content", m.text)
+                        if (m.images.isEmpty()) {
+                            addProperty("content", m.text)
+                        } else {
+                            add("content", JsonArray().apply {
+                                m.images.forEach { img ->
+                                    add(JsonObject().apply {
+                                        addProperty("type", "image_url")
+                                        add("image_url", JsonObject().apply {
+                                            addProperty("url", dataUri(img))
+                                        })
+                                    })
+                                }
+                                add(JsonObject().apply {
+                                    addProperty("type", "text")
+                                    addProperty("text", m.text)
+                                })
+                            })
+                        }
                     })
                 }
             })
@@ -164,6 +225,14 @@ object AiProtocolCodec {
                     add(JsonObject().apply {
                         addProperty("role", if (m.role == AiRole.USER) "user" else "model")
                         add("parts", JsonArray().apply {
+                            m.images.forEach { img ->
+                                add(JsonObject().apply {
+                                    add("inline_data", JsonObject().apply {
+                                        addProperty("mime_type", img.mediaType)
+                                        addProperty("data", img.base64)
+                                    })
+                                })
+                            }
                             add(JsonObject().apply { addProperty("text", m.text) })
                         })
                     })
@@ -183,6 +252,13 @@ object AiProtocolCodec {
     }
 
     private fun joinUrl(base: String, path: String): String = base.trimEnd('/') + path
+
+    /**
+     * OpenAI 호환이 이미지를 받는 형태 — `data:` URI. 원격 URL은 쓰지 않는다:
+     * 앱의 이미지는 기기 안 파일이라 모델이 가져갈 주소가 없고, 만들려면 어딘가에
+     * 올려야 하는데 그것은 보안 경계를 넘는다(계약: 키·데이터는 제공사 외 어디로도 안 간다).
+     */
+    private fun dataUri(image: AiImage): String = "data:${image.mediaType};base64,${image.base64}"
 
     // ── 응답 해석 ──────────────────────────────────────────────────────────────
 

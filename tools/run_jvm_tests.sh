@@ -189,6 +189,7 @@ $MAIN/util/DuelScoreIndex.kt
 $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/AiImageAttach.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
 $MAIN/util/ImageRecommendationHelper.kt
@@ -258,6 +259,8 @@ $TEST/util/DuelImageFitTest.kt
 $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
+$TEST/util/AiImageAttachTest.kt
+$TEST/ai/AiImageRequestTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
 $TEST/util/DuelAiContextTest.kt

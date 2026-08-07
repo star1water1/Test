@@ -289,6 +289,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         minConfidence: Confidence? = null,
         /** 창작도 (A-4) — 샘플링(temperature) + 지시 2층으로 적용된다. 기본은 무회귀(균형). */
         creativity: AiCreativity = AiCreativity.DEFAULT,
+        /**
+         * 함께 보낼 캐릭터 이미지 (A-7). 비어 있으면 요청이 종전과 동일하다.
+         *
+         * **청크마다 다시 실린다** — 대상 필드가 나뉘어도 각 요청이 그 필드를 판단할 근거를
+         * 갖고 있어야 하기 때문이다. 첫 요청에만 붙이면 뒤쪽 필드는 그림을 못 본 채 답이
+         * 나오고, 사용자에게는 그 차이가 보이지 않는다(조용한 비대칭 금지). 그 대신 **비용
+         * 고지가 연인원을 말한다**([AiPromptPolicy.imageSendCount]).
+         */
+        images: List<AiImage> = emptyList(),
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -307,16 +316,21 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         if (creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()) {
             failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
         }
+        // 이미지도 같다 (A-7) — 이미 거부를 배운 모델이면 붙였어도 나가지 않는다는 사실을 말한다.
+        if (images.isNotEmpty() && aiService.isImagesUnsupported()) {
+            failures.add(IMAGES_UNSUPPORTED_NOTE)
+        }
         val chunks = chunkTargets(targets, maxTokens)
         for ((chunkIndex, chunk) in chunks.withIndex()) {
             val prompt = buildUserPrompt(context, chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(minConfidence, creativity),
+                system = buildSystemPrompt(minConfidence, creativity, images.size),
                 userText = prompt.text,
                 maxTokens = maxTokens,
-                temperature = temperature
+                temperature = temperature,
+                images = images
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
@@ -325,6 +339,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     // 이번 요청에서 temperature 거부를 학습해 빼고 재시도한 성공 — 같은 고지 한 줄
                     if (result.temperatureOmitted && TEMPERATURE_UNSUPPORTED_NOTE !in failures) {
                         failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
+                    }
+                    // 이번 요청에서 이미지 거부를 학습해 빼고 재시도한 성공 — 같은 고지 한 줄
+                    if (result.imagesOmitted && IMAGES_UNSUPPORTED_NOTE !in failures) {
+                        failures.add(IMAGES_UNSUPPORTED_NOTE)
                     }
                     val parsed = parseResponse(result.text, chunk, minConfidence)
                     if (parsed == null) {
@@ -440,6 +458,13 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** temperature 미지원 모델 고지 (A-4 §6-5 ④) — 빠뜨리면 창작도가 조용히 반쪽이 된다 */
         const val TEMPERATURE_UNSUPPORTED_NOTE =
             "이 모델은 창작도의 샘플링 조절을 지원하지 않아 지시 문구만 적용했습니다"
+
+        /**
+         * 이미지 미지원 모델 고지 (A-7). 빠뜨리면 사용자는 그림을 붙였는데 결과가 달라지지
+         * 않는 이유를 모른 채 첨부만 계속 켜 둔다 — 돈은 나가고 근거는 안 들어간다.
+         */
+        const val IMAGES_UNSUPPORTED_NOTE =
+            "이 모델이 이미지를 받지 않아 글만 보냈습니다"
 
         /** 결손 사유에 덧붙이는 원문·모델 사유의 표시 상한 (다이얼로그 한 줄 분량) */
         const val MAX_MISSING_DETAIL_CHARS = 60
@@ -780,7 +805,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          */
         fun buildSystemPrompt(
             minConfidence: Confidence? = null,
-            creativity: AiCreativity = AiCreativity.DEFAULT
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            /** 함께 보낸 이미지 장수 (A-7). 0이면 지시를 붙이지 않는다. */
+            imageCount: Int = 0
         ): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
@@ -819,7 +846,24 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 '강함' 축 상위인 캐릭터에게 그 축과 이어지는 필드의 낮은 값을 주지 않는다.
                 등수 차가 작고 오차(±)가 겹치면 근소한 차이이니 값도 그만큼만 벌려라.
                 그 순위를 근거로 삼았으면 reason에 축 이름과 등수를 적어라.
-        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
+        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule() +
+            imageRule(imageCount)
+
+        /**
+         * 이미지 첨부 지시 (A-7). **번호를 매긴 블록으로 붙인다** — 규칙 16은 근거 강도가
+         * 조건부로 쓰는 자리라, 여기에 또 번호를 매기면 설정 조합에 따라 `16.`이 둘이 된다.
+         * 창작도 지시가 쓰는 것과 같은 형태([AiCreativity.promptRule])이므로 새 문법도 아니다.
+         *
+         * 몇 번째 이미지인지 적게 하는 것이 이 지시의 본체다 — 검토 화면의 근거 줄이 그대로
+         * 보여 주므로, 사용자는 "이 값이 그림의 어디서 왔는가"를 새 UI 없이 확인한다.
+         */
+        fun imageRule(imageCount: Int): String =
+            if (imageCount <= 0) "" else "\n" + """
+            [이미지] 이 요청에는 캐릭터의 이미지 ${imageCount}장이 순서대로 함께 실려 있다.
+            글로 적힌 정보와 어긋나지 않는 선에서 그림에서 읽을 수 있는 것(외모·복장·분위기·
+            소지품 등)을 근거로 삼아라. 그림에서 읽은 값이면 reason에 **몇 번째 이미지인지**
+            '이미지 1'처럼 밝혀라. 그림에 없는 것을 있는 것처럼 적지 마라.
+            """.trimIndent()
 
         /**
          * 근거 강도 하한 지시 — 설정이 '전부 받기'면 아예 붙이지 않는다.

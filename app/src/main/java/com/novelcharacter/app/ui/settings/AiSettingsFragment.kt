@@ -176,6 +176,23 @@ class AiSettingsFragment : Fragment() {
             if (fromUser) settings.styleSampleCount = count
         }
 
+        // AI에 함께 보낼 이미지 (A-7) — 적재량 슬라이더의 형제다. 여기서 정하는 것은
+        // **기본값**이고, 실행 창의 첨부 줄이 요청마다 바꾼다(자율성 우선).
+        binding.attachImagesSlider.valueFrom = 0f
+        binding.attachImagesSlider.valueTo = AiPromptPolicy.ATTACH_IMAGES_MAX.toFloat()
+        binding.attachImagesSlider.stepSize = 1f
+        binding.attachImagesSlider.value = settings.attachImageCount.toFloat()
+        renderAttachImages(settings.attachImageCount)
+        binding.attachImagesSlider.addOnChangeListener { _, value, fromUser ->
+            val count = AiPromptPolicy.clampAttachImages(value.toInt())
+            renderAttachImages(count)
+            if (fromUser) settings.attachImageCount = count
+        }
+        binding.attachRepresentativeSwitch.isChecked = settings.attachRepresentativeFirst
+        binding.attachRepresentativeSwitch.setOnCheckedChangeListener { _, checked ->
+            settings.attachRepresentativeFirst = checked
+        }
+
         // 받아올 근거 강도 — 라디오를 고르는 순간이 곧 확정(저장 단계를 두지 않는다).
         // 저장값 ↔ 버튼 매핑은 여기 한 곳뿐이라 선택지가 늘어도 어긋날 자리가 없다.
         binding.confidenceGroup.check(
@@ -223,6 +240,22 @@ class AiSettingsFragment : Fragment() {
                 AiPromptPolicy.estimatedStyleTokensPerRequest(count)
             )
         }
+    }
+
+    /**
+     * 첨부 장수 표시 (A-7). 0은 "0장"이 아니라 **보내지 않음**이다 — 다른 두 슬라이더와
+     * 같은 태도이며, 그래야 0이 설정 실수가 아니라 선택으로 읽힌다.
+     */
+    private fun renderAttachImages(count: Int) {
+        binding.attachImagesValue.text = if (count == 0) {
+            getString(R.string.ai_attach_images_off)
+        } else {
+            getString(R.string.ai_attach_images_value, count)
+        }
+        // 대표 스위치는 첨부가 꺼져 있으면 아무 일도 하지 않는다 — 성립하지 않는 조합의
+        // 설정은 조작할 수 없게 둔다(R-24). 감추지 않고 흐리게 두는 이유는 켰을 때
+        // 무엇이 함께 켜지는지 보이게 하기 위해서다.
+        binding.attachRepresentativeSwitch.isEnabled = count > 0
     }
 
     /** 0은 숫자가 아니라 상태다 — "0개"보다 "보내지 않음"이 무슨 일이 벌어지는지 말한다. */
@@ -635,7 +668,11 @@ class AiSettingsFragment : Fragment() {
             baseUrl = baseUrl,
             maxOutputTokens = b.maxTokensSlider.value.toInt(),
             detectedOutputLimit = if (identityChanged) null else detectedLimit,
-            temperatureUnsupported = if (identityChanged) null else base.temperatureUnsupported
+            temperatureUnsupported = if (identityChanged) null else base.temperatureUnsupported,
+            // 이미지 거부도 같은 부류다 (A-7) — 비전 지원은 같은 프로토콜 안에서도 모델마다
+            // 갈리므로, 안 받던 모델에서 배운 사실을 받는 모델에 물려주면 **첨부가 영영
+            // 조용히 빠진다**. 새 값을 여기 빠뜨리면 두 학습값의 규칙이 갈린다(R-23 본문).
+            imagesUnsupported = if (identityChanged) null else base.imagesUnsupported
         )
     }
 

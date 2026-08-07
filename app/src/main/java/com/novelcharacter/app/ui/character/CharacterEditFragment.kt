@@ -252,16 +252,24 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             // 경로 분기의 단일 소스는 필드 속성이다(사용자가 직접 정하고, 자동은 표시 형식으로 판단).
             // 서술형은 긴 글 전용 경로 — 짧은 값 추천기에 산문을 끼워 넣으면 둘 다 망가진다.
             if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
-                NarrativeWriteSheet.show(this, field, characterId, formBuilder, viewModel) { buildAiContext() }
+                NarrativeWriteSheet.show(
+                    this, field, characterId, formBuilder, viewModel,
+                    imageStrip.paths.toList(), imageStrip.representativePath
+                ) { buildAiContext() }
             } else {
-                AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel, characterId) { buildAiContext() }
+                AiFieldSuggestSheet.showForField(
+                    this, field, formBuilder, viewModel, characterId,
+                    imageStrip.paths.toList(), imageStrip.representativePath
+                ) { buildAiContext() }
             }
         }
         binding.btnAiSuggest.setOnClickListener {
             AiFieldSuggestSheet.showForCharacter(
                 this, formBuilder, viewModel, characterId,
                 // 보충 플로우에서는 기대치 조정 한 줄 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1)
-                extraNote = if (supplementMode) getString(R.string.ai_supplement_scope_note) else null
+                extraNote = if (supplementMode) getString(R.string.ai_supplement_scope_note) else null,
+                imagePaths = imageStrip.paths.toList(),
+                representativePath = imageStrip.representativePath
             ) { buildAiContext() }
         }
         // AI 추천 실행 상태·결과 관측 — 실행은 VM(회전 생존)이 수행하므로 진행 다이얼로그와
