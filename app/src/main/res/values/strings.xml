@@ -219,7 +219,7 @@
     <string name="duel_grade_zero_segment">%1$s 구간이 0%%입니다 — 이 축에서는 %1$s 등급이 배정되지 않습니다.</string>
     <string name="duel_grade_axis_missing">연결한 대결 축을 찾을 수 없습니다. 축을 다시 고르세요.</string>
     <string name="duel_grade_axis_foreign">연결한 축이 다른 세계관 것입니다. 이 세계관의 축을 고르세요.</string>
-    <string name="duel_grade_no_axis">이 세계관에 캐릭터 대결 축이 없습니다. 대결 탭에서 축을 먼저 만드세요.</string>
+    <string name="duel_grade_no_axis">이 세계관에 캐릭터 대결 축이 없습니다. 아래에서 바로 만들 수 있습니다.</string>
     <string name="duel_grade_no_labels">등급 표가 비어 있어 비율을 나눌 수 없습니다. 위에서 등급을 먼저 추가하세요.</string>
     <string name="duel_grade_single_label">등급이 하나뿐이라 나눌 경계가 없습니다. 등급을 하나 더 추가하세요.</string>
     <string name="duel_grade_pick_boundary_title">고칠 경계를 고르세요</string>
@@ -228,13 +228,13 @@
     <string name="duel_grade_register_outcome">이 필드는 \'%1$s\' 축의 산출 필드가 아닙니다. 함께 등재하면 순위표가 어긋난 자리를 짚어 줍니다.</string>
     <string name="duel_grade_register_outcome_yes">등재</string>
     <string name="duel_grade_register_outcome_no">그냥 저장</string>
-    <string name="duel_grade_apply">등급 반영</string>
+    <string name="duel_grade_apply">순위를 등급 값으로 반영</string>
     <string name="duel_grade_suggest_failed">점수를 읽지 못해 경계를 제안할 수 없습니다.</string>
     <string name="duel_grade_apply_save_first">먼저 이 필드를 저장하세요. 저장된 비율로 반영합니다.</string>
     <string name="duel_grade_apply_fix_cuts">비율에 문제가 있어 반영할 수 없습니다. 구간을 확인하세요.</string>
 
     <!-- [등급 반영] 미리보기 (B-113) — 목업 duel_grade_ui_2026-08.html ② -->
-    <string name="duel_grade_apply_title">등급 반영 — %1$s → %2$s</string>
+    <string name="duel_grade_apply_title">순위를 등급 값으로 — %1$s → %2$s</string>
     <string name="duel_grade_apply_summary">점수가 있는 %1$d명 기준입니다. %2$d명은 아직 판이 없어 그대로 둡니다.</string>
     <string name="duel_grade_apply_summary_scored">점수가 있는 %1$d명 기준입니다.</string>
     <string name="duel_grade_apply_unchanged">값이 그대로인 %1$d명은 목록에 없습니다.</string>
@@ -252,9 +252,19 @@
     <string name="duel_grade_apply_empty">바뀔 값이 없습니다. 순위와 등급이 이미 맞습니다.</string>
     <string name="duel_grade_apply_load_failed">미리보기를 세우지 못했습니다. 축과 등급 표를 확인하세요.</string>
     <string name="duel_grade_apply_failed">등급 반영 실패</string>
+    <!-- 목적문·교정 경로 (2026.08.07 사용자 요청 3건) -->
+    <string name="duel_grade_apply_purpose">지금 순위대로 캐릭터들의 이 필드 값을 채웁니다. 무엇이 바뀌는지 먼저 보여 주고, 바뀌기 전 값은 휴지통에 남습니다.</string>
+    <string name="duel_grade_create_axis">여기서 대결 축 만들기</string>
+    <string name="duel_grade_create_axis_title">대결 축 만들기</string>
+    <string name="duel_grade_create_axis_hint">축 이름 (예: 강함)</string>
+    <string name="duel_grade_create_axis_desc">이 세계관의 캐릭터 대결 축을 만듭니다. 만든 뒤 대결 탭에서 판을 쌓으면 그 순위가 이 필드의 등급이 됩니다.</string>
+    <string name="duel_grade_create_axis_done">대결 축 \'%1$s\'을(를) 만들었습니다</string>
+    <string name="duel_grade_create_axis_failed">대결 축을 만들지 못했습니다</string>
+    <string name="duel_grade_create_axis_name_required">축 이름을 입력하세요</string>
+    <string name="duel_grade_save_blocked">%1$s 이대로 저장하면 대결 등급 산정이 켜지지 않습니다.</string>
     <string name="duel_grade_apply_done">%1$d명의 등급을 반영했습니다. 반영 전 값은 휴지통에 있습니다.</string>
     <string name="duel_grade_op_applied">대결 등급 반영 — %1$d명</string>
-    <string name="duel_grade_apply_entry">등급 반영 — 이 순위를 받는 필드 %1$d개</string>
+    <string name="duel_grade_apply_entry">순위를 등급 값으로 반영 — 받는 필드 %1$d개</string>
     <string name="duel_grade_pick_field_title">어느 필드에 반영할지 고르세요</string>
     <string name="grade_system_delete_title">등급 체계 삭제</string>
     <string name="grade_system_delete_confirm">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드는 없습니다. 삭제한 체계는 휴지통에 보관됩니다.</string>
