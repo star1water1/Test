@@ -2922,8 +2922,22 @@
     <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
     <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>
     <string name="image_tag_review_notice_failed">일부 요청이 실패했습니다: %1$s</string>
+    <!-- AI 이미지 첨부 (A-7) — 이미지가 기기 밖으로 나가는 지점이라 고지가 침묵할 수 없다 -->
+    <string name="ai_image_attach_count">이미지 %1$d장을 함께 보냅니다 (전체 %2$d장 중)</string>
+    <string name="ai_image_attach_none">이미지를 보내지 않습니다</string>
+    <string name="ai_image_reshuffle">🎲 다시 뽑기</string>
+    <string name="ai_image_cost_notice">고른 %1$d장이 요청마다 실려 모두 %2$d장이 나갑니다 — 장당 대략 %3$d~%4$d토큰이 더 들고(제공사마다 다릅니다), 이미지는 AI 제공사 서버로 전송됩니다</string>
+    <string name="ai_image_representative_missing">지정한 대표 이미지가 없어 전부 무작위로 골랐습니다</string>
+    <string name="ai_image_unsupported_notice">이 모델은 이미지를 받지 않는다고 확인된 적이 있습니다 — 글만 전송됩니다</string>
+    <string name="ai_image_skipped">이미지 %d장을 읽지 못해 빼고 보냈습니다</string>
+    <string name="ai_attach_images_label">AI에 함께 보낼 이미지</string>
+    <string name="ai_attach_images_desc">필드 추천과 서술형 작성에 이 캐릭터의 이미지를 함께 보냅니다. 여기서 정한 장수가 기본값이고 실행 창에서 요청마다 바꿀 수 있습니다. 0으로 두면 보내지 않습니다.</string>
+    <string name="ai_attach_images_value">%d장</string>
+    <string name="ai_attach_images_off">보내지 않음</string>
+    <string name="ai_attach_representative_label">대표 이미지를 항상 첫 장으로</string>
+    <string name="ai_attach_representative_desc">켜면 지정한 대표 이미지가 첨부의 첫 장이 되고 나머지만 무작위로 채웁니다. 지정한 대표가 없으면 그 사실을 알리고 전부 무작위로 고릅니다.</string>
     <string name="ai_image_tag_policy_label">AI 이미지 태그 기조</string>
-    <string name="ai_image_tag_policy_desc">쓰면 이미지 폴더 받아오기가 폴더 이름으로 태그를 제안할 때 이 지침을 함께 전달합니다. 비워 두면 보내지 않습니다.</string>
+    <string name="ai_image_tag_policy_desc">쓰면 이미지 폴더 받아오기가 폴더 이름으로 태그를 제안할 때 이 지침을 함께 전달합니다. 이 기능은 폴더 이름만 읽고 이미지 자체는 보내지 않습니다. 비워 두면 보내지 않습니다.</string>
     <string name="ai_image_tag_policy_hint">예: 장면 종류와 복장을 우선으로 하고, 인물 감정은 넣지 마세요.</string>
     <string name="field_image_tag_vocab_label">AI 이미지 태그 어휘에 포함</string>
     <string name="field_image_tag_vocab_desc">켜면 이 필드에 입력된 값들이 이미지 폴더 받아오기의 AI 태그 제안 때 어휘 후보로 함께 전달됩니다. 기조 문구에 적히지 않으며, 이 필드의 값도 바뀌지 않습니다.</string>

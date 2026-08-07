@@ -29,6 +29,17 @@
 # **범위 밖:** UI(`ui/**`)와 `ExcelImporter`·`OrganizeFolderService`는 Android 프레임워크에
 # 너무 깊게 묶여 있어 뺐다. **그 계층의 컴파일 증명은 CI(`assembleDebug`)뿐이다** —
 # 화면을 손대는 변경은 CI 초록과 실기기 확인 전까지 미완으로 다룰 것.
+#
+# **`util/AiImage*.kt` 둘도 뺐다 (2026.08.07 · B-120).** 사유가 서로 다르다:
+#   - `AiImagePreparer` — `android.graphics.Bitmap`·`android.util.Base64`에 묶여 있다
+#     (`ImageImportHelper`가 이 목록에 남아 20건의 미해석을 내는 것과 같은 부류인데,
+#     **그쪽을 뺄지는 이 슬라이스가 정할 일이 아니라 그대로 뒀다** — 새로 들어오는 것만
+#     막는다). 증명은 CI뿐이다.
+#   - `AiImageAttach` — **순수인데 `ai/AiPromptPolicy`를 참조한다.** 이 프로브는 `ai/**`를
+#     통째로 빼므로 원리적으로 해석할 수 없다. 대신 **`run_jvm_tests.sh`가 이 파일을
+#     컴파일하고 실제로 돌린다**(`AiImageAttachTest`) — 프로브보다 강한 증명이라 손실이 없다.
+# 빼는 대신 노이즈로 두지 않는 이유: 남겨 두면 다음 세션이 base 대 cur를 비교할 때마다
+# **이것이 무해하다는 사실을 매번 다시 알아내야 한다.**
 set -eu
 
 SP="${JARS_DIR:?JARS_DIR를 지정하세요 (setup_jvm_env.sh가 만든 곳)}"
@@ -74,7 +85,7 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
-} | grep -v "util/OrganizeFolderService.kt" > "$WORK/files.txt"
+} | grep -vE "util/(OrganizeFolderService|AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
 
 # ── 3. 컴파일 ──
 # 주의: 컴파일러 자신의 클래스패스에도 coroutines가 있어야 한다(없으면 CoroutineScope

@@ -22,4 +22,7 @@ class AiService {
 
     /** temperature 미지원 학습 여부 (A-4). 스텁은 학습된 것이 없는 상태. */
     fun isTemperatureUnsupported(): Boolean = false
+
+    /** 이미지 미지원 학습 여부 (A-7). 스텁은 학습된 것이 없는 상태. */
+    fun isImagesUnsupported(): Boolean = false
 }

@@ -51,7 +51,15 @@ data class AiProviderConfig(
      * 창작도는 지시 문구로만 적용된다(그 사실은 결과 고지 한 줄로 알린다 — 조용한 실패 금지).
      * null = 모름(정상 가정). R-23에 따라 모델·주소가 바뀌면 함께 버린다.
      */
-    val temperatureUnsupported: Boolean? = null
+    val temperatureUnsupported: Boolean? = null,
+    /**
+     * 이 모델이 **이미지를 받지 않는다**고 학습했는가 (A-7).
+     * 같은 프로토콜 안에서도 비전 지원은 모델마다 갈리고, 목록 조회는 그 사실을 알려주지
+     * 않는다 — 알 수 있는 경로는 400뿐이다. 한 번 확인되면 다음부터 싣지 않고 글만 보내며,
+     * 그 사실은 결과 고지 한 줄로 알린다(조용한 실패 금지).
+     * null = 모름(정상 가정). [temperatureUnsupported]와 같은 성격이라 R-23을 함께 탄다.
+     */
+    val imagesUnsupported: Boolean? = null
 ) {
     /**
      * R-23 — 오류·조회 응답에서 **학습한** 사실이 하나라도 있는가.
@@ -59,7 +67,8 @@ data class AiProviderConfig(
      * 전부 null로 되돌리고 사용자에게 고지한다(다음 요청이 다시 배운다 — 손실 없음).
      * 새 학습값이 생기면 반드시 여기에도 등재할 것 — 초기화 고지 판정의 단일 소스다.
      */
-    fun hasLearnedFacts(): Boolean = detectedOutputLimit != null || temperatureUnsupported != null
+    fun hasLearnedFacts(): Boolean =
+        detectedOutputLimit != null || temperatureUnsupported != null || imagesUnsupported != null
 }
 
 /**
@@ -138,7 +147,35 @@ data class AiModelInfo(
 /** 대화 메시지 역할. 미래의 다중 턴 인앱 보조 기능을 위해 처음부터 목록형으로 설계한다. */
 enum class AiRole { USER, ASSISTANT }
 
-data class AiMessage(val role: AiRole, val text: String)
+/**
+ * 요청에 함께 싣는 이미지 1장 (A-7). 파일 경로가 아니라 **전송 직전에 축소·인코딩된 바이트**다 —
+ * 프로토콜 계층이 파일을 읽지 않게 하려는 것이며(순수 유지), 그 덕에 세 직렬화 모양을
+ * JVM 하네스로 고정할 수 있다.
+ *
+ * 축소·인코딩은 [com.novelcharacter.app.util.AiImagePreparer]가 전담하고, 크기 상수는
+ * [AiPromptPolicy]가 단일 소스다.
+ */
+data class AiImage(
+    /** 이미지 바이트의 base64 (줄바꿈 없음 — data URI·JSON 양쪽에 그대로 들어간다). */
+    val base64: String,
+    /** `image/jpeg` 등. 세 프로토콜이 각자의 자리에 그대로 싣는다. */
+    val mediaType: String = DEFAULT_MEDIA_TYPE
+) {
+    companion object {
+        /** 전송용은 JPEG 재인코딩이 기본이다 ([AiPromptPolicy.SEND_LONG_EDGE_PX] 참조). */
+        const val DEFAULT_MEDIA_TYPE = "image/jpeg"
+    }
+}
+
+/**
+ * 대화 메시지 1건. [images]가 비어 있으면 직렬화 결과가 **글자 그대로 종전과 같다** —
+ * 기본값을 둔 이유가 그것이다(이미지를 안 쓰는 기존 호출부는 무변경이고 회귀도 없다).
+ */
+data class AiMessage(
+    val role: AiRole,
+    val text: String,
+    val images: List<AiImage> = emptyList()
+)
 
 /**
  * 프로토콜 중립 요청. 인앱 기능들은 이 형태로만 요청을 만들고,
@@ -159,8 +196,17 @@ data class AiRequest(
         system: String? = null,
         userText: String,
         maxTokens: Int = DEFAULT_MAX_TOKENS,
-        temperature: Double? = null
-    ) : this(system, listOf(AiMessage(AiRole.USER, userText)), maxTokens, temperature)
+        temperature: Double? = null,
+        images: List<AiImage> = emptyList()
+    ) : this(system, listOf(AiMessage(AiRole.USER, userText, images)), maxTokens, temperature)
+
+    /** 이 요청이 이미지를 싣고 있는가 — 거부 재시도·고지 판정의 단일 소스 (A-7). */
+    fun hasImages(): Boolean = messages.any { it.images.isNotEmpty() }
+
+    /** 이미지를 전부 뺀 사본. 모델이 이미지를 거부했을 때의 재시도가 쓴다. */
+    fun withoutImages(): AiRequest =
+        if (!hasImages()) this
+        else copy(messages = messages.map { if (it.images.isEmpty()) it else it.copy(images = emptyList()) })
 
     companion object {
         const val DEFAULT_MAX_TOKENS = 2048
@@ -188,7 +234,13 @@ sealed class AiResult {
          * 이 사실을 고지하지 않으면 사용자는 창작도를 올렸는데 아무 변화가 없는 이유를
          * 영영 모른다 — 호출측은 결과 고지에 한 줄을 남겨야 한다.
          */
-        val temperatureOmitted: Boolean = false
+        val temperatureOmitted: Boolean = false,
+        /**
+         * 모델이 이미지를 거부해 **빼고 재시도**한 성공인가 (A-7).
+         * 고지하지 않으면 사용자는 그림을 붙였는데 결과가 달라지지 않은 이유를 모른 채
+         * 이미지 값만 계속 낸다 — [temperatureOmitted]와 같은 이유로 반드시 한 줄 남긴다.
+         */
+        val imagesOmitted: Boolean = false
     ) : AiResult()
 
     data class Failure(

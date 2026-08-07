@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.widget.Toast
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -30,6 +31,12 @@ object NarrativeWriteSheet {
         characterId: Long,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
+        /**
+         * 폼의 라이브 이미지 목록 (A-7). **서술형이 이 기능의 최대 수혜자다** —
+         * 외모 묘사는 글로 적힌 정보가 가장 성긴 자리이고 그림에는 그것이 통째로 있다.
+         */
+        imagePaths: List<String> = emptyList(),
+        representativePath: String? = null,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -42,14 +49,20 @@ object NarrativeWriteSheet {
 
         // 모드 선택 → 분량 선택 → 실행. 원문이 없으면 모드가 하나뿐이라 곧바로 분량으로 넘어간다.
         if (modes.size == 1) {
-            askLength(fragment, viewModel, contextLoader, field, characterId, spec, modes.first())
+            askLength(
+                fragment, viewModel, contextLoader, field, characterId, spec, modes.first(),
+                imagePaths, representativePath
+            )
             return
         }
         val labels = modes.map { fragment.getString(modeLabel(it)) }.toTypedArray()
         MaterialAlertDialogBuilder(context)
             .setTitle(fragment.getString(R.string.ai_narrative_title, field.name))
             .setItems(labels) { _, which ->
-                askLength(fragment, viewModel, contextLoader, field, characterId, spec, modes[which])
+                askLength(
+                    fragment, viewModel, contextLoader, field, characterId, spec, modes[which],
+                    imagePaths, representativePath
+                )
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -62,14 +75,23 @@ object NarrativeWriteSheet {
         field: FieldDefinition,
         characterId: Long,
         spec: NarrativeFieldAiWriter.FieldSpec,
-        mode: NarrativeFieldAiWriter.Mode
+        mode: NarrativeFieldAiWriter.Mode,
+        imagePaths: List<String>,
+        representativePath: String?
     ) {
         val context = fragment.requireContext()
         val density = context.resources.displayMetrics.density
         val pad = (20 * density).toInt()
         val lengths = NarrativeFieldAiWriter.Length.entries
 
-        // 항목 리스트 대신 패널 — 비용 고지 + 창작도 칩(A-4)을 분량 선택과 한 화면에 담는다.
+        // 항목 리스트 대신 패널 — 비용 고지 + 창작도 칩(A-4) + 이미지 첨부(A-7)를
+        // 분량 선택과 한 화면에 담는다.
+        val imageCostLine = android.widget.TextView(context).apply {
+            textSize = 13f
+            setTextColor(context.getColor(R.color.text_secondary))
+            isVisible = false
+        }
+        val attach = AiImageAttachRow.create(fragment, imagePaths, representativePath)
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
@@ -79,8 +101,26 @@ object NarrativeWriteSheet {
                     R.string.ai_narrative_cost_notice, NarrativeFieldAiWriter.DEFAULT_VARIANTS
                 )
             })
+            addView(imageCostLine)
             addView(CreativityChipRow.create(fragment))
+            attach?.let { addView(it.view) }
         }
+        // 서술형은 후보 여러 개를 **한 요청**으로 받으므로 이미지도 한 번만 나간다 —
+        // 짧은 값 경로와 달리 연인원이 장수 그대로다.
+        fun refreshImageCost() {
+            val count = attach?.selected?.size ?: 0
+            imageCostLine.isVisible = count > 0
+            if (count > 0) {
+                imageCostLine.text = fragment.getString(
+                    R.string.ai_image_cost_notice,
+                    count, count,
+                    com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MIN,
+                    com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MAX
+                )
+            }
+        }
+        attach?.onChanged { refreshImageCost() }
+        refreshImageCost()
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_narrative_length_title)
             .setView(panel)
@@ -94,7 +134,10 @@ object NarrativeWriteSheet {
                     text = fragment.getString(lengthLabel(length), length.hint)
                     setOnClickListener {
                         dialog.dismiss()
-                        run(fragment, viewModel, contextLoader, field, characterId, spec, mode, length)
+                        run(
+                            fragment, viewModel, contextLoader, field, characterId, spec, mode, length,
+                            attach?.selected.orEmpty()
+                        )
                     }
                 }
             )
@@ -110,7 +153,8 @@ object NarrativeWriteSheet {
         characterId: Long,
         spec: NarrativeFieldAiWriter.FieldSpec,
         mode: NarrativeFieldAiWriter.Mode,
-        length: NarrativeFieldAiWriter.Length
+        length: NarrativeFieldAiWriter.Length,
+        imagePaths: List<String>
     ) {
         // 컨텍스트 조립은 뷰 접근이라 뷰 스코프(이 단계 취소는 과금 전이므로 무해),
         // 실행은 VM 위임(회전 생존).
@@ -118,7 +162,8 @@ object NarrativeWriteSheet {
             val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
             val started = viewModel.runAiNarrative(
-                aiContext, field.id, characterId, spec, mode, length, NarrativeFieldAiWriter.DEFAULT_VARIANTS
+                aiContext, field.id, characterId, spec, mode, length,
+                NarrativeFieldAiWriter.DEFAULT_VARIANTS, imagePaths
             )
             if (!started) {
                 // 이미 실행 중 — 무통보로 삼키지 않는다

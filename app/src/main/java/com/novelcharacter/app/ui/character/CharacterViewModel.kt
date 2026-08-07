@@ -1071,7 +1071,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
          * 캐릭터와 비교해 다르면 적용 대신 선택지(돌아가 적용/버리기)를 연다.
          * 편집 화면은 캐릭터가 화면 수명 동안 고정이라 언제나 일치한다(동작 불변).
          */
-        val targetCharacterId: Long = -1L
+        val targetCharacterId: Long = -1L,
+        /**
+         * 이 실행에 함께 보낸 이미지 경로 (A-7). **보완 재요청이 같은 그림을 다시 쓴다** —
+         * 다시 고르게 하면 사용자가 이미 정한 선택을 되풀이시키는 마찰이고(원칙 04),
+         * 아무것도 안 보내면 같은 검토 화면 안에서 근거가 조용히 바뀐다.
+         * base64가 아니라 **경로**를 들고 있는 이유: 유료 응답을 들고 회전을 넘기는
+         * 객체라 수 MB의 바이트를 얹으면 그 자체가 비용이다(다시 읽는 편이 싸다).
+         */
+        val imagePaths: List<String> = emptyList()
     )
 
     val aiSuggestRunning = MutableLiveData(false)
@@ -1094,7 +1102,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
          */
         applyConfidenceFilter: Boolean = true,
         /** 요청 대상 캐릭터 id — [AiSuggestRun.targetCharacterId]로 그대로 실린다 */
-        targetCharacterId: Long = -1L
+        targetCharacterId: Long = -1L,
+        /** 함께 보낼 이미지 경로 (A-7) — 고르기는 [com.novelcharacter.app.util.AiImageAttach]가 이미 끝냈다 */
+        imagePaths: List<String> = emptyList()
     ): Boolean {
         if (aiSuggestRunning.value == true) return false
         aiSuggestRunning.value = true
@@ -1105,18 +1115,36 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
                 val floor = if (applyConfidenceFilter) settings.minConfidence else null
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(imagePaths)
                 val outcome = suggester.suggest(
-                    aiContext, withFieldUsage(targets), floor, settings.creativity
+                    aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
-                aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome, targetCharacterId)
+                aiSuggestResult.value = AiSuggestRun(
+                    targets, singleMode, withImageNotice(outcome, prepared), targetCharacterId, imagePaths
+                )
             } finally {
                 aiSuggestRunning.value = false
             }
         }
         return true
     }
+
+    /**
+     * 읽지 못한 이미지를 **개수로** 결과 고지에 얹는다 (R-14 · A-7).
+     *
+     * 앱 밖에서 파일이 지워졌거나 폴더 왕복이 경로를 바꾼 자리라 사전 확인이 원리적으로
+     * 불가능하다 — 그래서 사후 고지가 유일한 경로이고, 빠뜨리면 사용자는 붙인 줄 알았던
+     * 그림이 빠진 채 결과를 받는다.
+     */
+    private fun withImageNotice(
+        outcome: com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome,
+        prepared: com.novelcharacter.app.util.AiImagePreparer.Prepared
+    ) = if (prepared.skipped <= 0) outcome else outcome.copy(
+        failures = outcome.failures + getApplication<android.app.Application>()
+            .getString(com.novelcharacter.app.R.string.ai_image_skipped, prepared.skipped)
+    )
 
     /**
      * 대상 스펙에 값 라이브러리의 **기존 사용값**을 싣는다 — 모델이 이 작품의 표기 기조를
@@ -1176,7 +1204,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         spec: com.novelcharacter.app.ai.NarrativeFieldAiWriter.FieldSpec,
         mode: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode,
         length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
-        variants: Int
+        variants: Int,
+        /** 함께 보낼 이미지 경로 (A-7) — 외모 묘사가 이 기능의 최대 수혜자다 */
+        imagePaths: List<String> = emptyList()
     ): Boolean {
         if (aiNarrativeRunning.value == true) return false
         aiNarrativeRunning.value = true
@@ -1187,11 +1217,18 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 val enriched = withStyleSamples(spec, fieldId, characterId)
                 val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
-                val outcome = writer.write(aiContext, enriched, mode, length, variants, creativity) { failure ->
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(imagePaths)
+                val outcome = writer.write(
+                    aiContext, enriched, mode, length, variants, creativity, prepared.images
+                ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
+                val noticed = if (prepared.skipped <= 0) outcome else outcome.copy(
+                    failures = outcome.failures + getApplication<android.app.Application>()
+                        .getString(com.novelcharacter.app.R.string.ai_image_skipped, prepared.skipped)
+                )
                 aiNarrativeResult.value =
-                    AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, outcome)
+                    AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, noticed)
             } finally {
                 aiNarrativeRunning.value = false
             }

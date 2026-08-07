@@ -36,6 +36,58 @@ object AiPromptPolicy {
     fun estimatedStyleTokensPerRequest(count: Int): Int =
         clampStyleSamples(count) * STYLE_TOKENS_PER_SAMPLE
 
+    // ── 캐릭터 이미지 첨부 (A-7 · 설계 feature_roadmap 2-1·2-2) ──
+
+    /**
+     * 한 요청에 붙일 수 있는 이미지 최대 장수. 0 = 안 보냄.
+     *
+     * 상한의 근거는 출력이 아니라 **입력 비용**이다 — 장당 수백~천몇백 토큰이 붙고
+     * 짧은 값 추천은 대상 필드를 청킹해 **요청마다 같은 이미지를 다시 싣는다**.
+     */
+    const val ATTACH_IMAGES_MAX = 10
+
+    /**
+     * 기본값 (Q3 사용자 확정 — 1장).
+     *
+     * 비용이 붙는 기본값은 보수적으로 두고 올리는 것을 사용자 선택으로 남긴다
+     * (자율성 우선의 비용판). 0이 아닌 이유는 1장이 이 기능의 값을 실제로 보여 주는
+     * 최소치이고, 켜져 있지 않으면 사용자가 기능의 존재조차 모르기 때문이다.
+     */
+    const val ATTACH_IMAGES_DEFAULT = 1
+
+    /** '대표 이미지 반드시 포함' 기본값 — 지정한 대표가 있으면 그것이 첫 장이다. */
+    const val ATTACH_REPRESENTATIVE_DEFAULT = true
+
+    /**
+     * 전송용 축소의 긴 변 상한(px). 저장용 압축([util.ImageImportHelper])과 **별개**다 —
+     * 그쪽은 로컬 용량이 목적이라 8192px까지 허용하지만, 이쪽은 요청 바이트가 곧 돈이다.
+     *
+     * **이 값은 제안값이며 아직 실호출로 재지 않았다**(설계 2-1이 그렇게 적어 두었다).
+     * 품질·비용의 교환비는 모델마다 다르므로 실사용 측정 뒤 확정한다 — 그때까지
+     * 근거는 "세 제공사가 공통으로 이 부근에서 타일 하나를 소비한다"까지다.
+     */
+    const val SEND_LONG_EDGE_PX = 1024
+
+    /** 전송용 JPEG 품질. 축소된 그림에서 이보다 낮추면 질감이 뭉개져 값이 되레 떨어진다. */
+    const val SEND_JPEG_QUALITY = 82
+
+    /**
+     * 이미지 1장의 입력 토큰 추정 하한·상한. 제공사마다 계산법이 달라 **범위로만** 말한다
+     * — 하나의 수를 고지하면 어느 제공사에서든 거짓이 된다.
+     */
+    const val IMAGE_TOKENS_MIN = 250
+    const val IMAGE_TOKENS_MAX = 1600
+
+    fun clampAttachImages(value: Int): Int = value.coerceIn(0, ATTACH_IMAGES_MAX)
+
+    /**
+     * 이 실행 전체에 실릴 이미지 **연인원**. 짧은 값 추천은 대상 필드를 청킹하므로
+     * 같은 그림이 요청 수만큼 다시 나간다 — 고지가 이 수를 말하지 않으면
+     * 사용자는 1장 값을 예상하고 N배를 낸다(R-4 사전 고지 정확성).
+     */
+    fun imageSendCount(imageCount: Int, requestCount: Int): Int =
+        clampAttachImages(imageCount) * requestCount.coerceAtLeast(0)
+
     // ── 받아올 추천의 근거 강도 (짧은 값 추천) ──
 
     /**

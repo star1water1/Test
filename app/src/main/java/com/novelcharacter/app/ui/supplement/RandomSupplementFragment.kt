@@ -208,11 +208,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             val targetId = displayedCharacter?.id ?: -1L
             if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
                 com.novelcharacter.app.ui.character.NarrativeWriteSheet.show(
-                    this, field, targetId, formBuilder, characterViewModel
+                    this, field, targetId, formBuilder, characterViewModel,
+                    imageStrip.paths.toList(), imageStrip.representativePath
                 ) { buildAiContext() }
             } else {
                 com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showForField(
-                    this, field, formBuilder, characterViewModel, targetId
+                    this, field, formBuilder, characterViewModel, targetId,
+                    imageStrip.paths.toList(), imageStrip.representativePath
                 ) { buildAiContext() }
             }
         }
@@ -350,7 +352,9 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showForCharacter(
                 this, formBuilder, characterViewModel, targetId,
                 // 기대치 조정 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1, 변수 제어)
-                extraNote = getString(R.string.ai_supplement_scope_note)
+                extraNote = getString(R.string.ai_supplement_scope_note),
+                imagePaths = imageStrip.paths.toList(),
+                representativePath = imageStrip.representativePath
             ) { buildAiContext() }
         }
 

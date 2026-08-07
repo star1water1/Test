@@ -113,14 +113,25 @@ class AiService(context: Context) {
         val bounded = if (effective == request.maxTokens) request else request.copy(maxTokens = effective)
 
         // 학습된 temperature 미지원 모델에는 애초에 싣지 않는다 (A-4 — 같은 400을 반복하지 않는다)
-        val request0 =
-            if (bounded.temperature != null && resolved(config).temperatureUnsupported == true) {
+        val saved = resolved(config)
+        val request1 =
+            if (bounded.temperature != null && saved.temperatureUnsupported == true) {
                 bounded.copy(temperature = null)
             } else bounded
 
+        // 이미지도 같은 태도다 (A-7) — 받지 않는다고 이미 배운 모델에는 애초에 싣지 않는다.
+        // 뺐다는 사실은 성공 결과에 실어 보내야 한다: 그러지 않으면 사용자는 그림을 붙였는데
+        // 결과가 그대로인 이유를 영영 모른다.
+        val strippedUpfront = request1.hasImages() && saved.imagesUnsupported == true
+        val request0 = if (strippedUpfront) request1.withoutImages() else request1
+
         val spec = AiProtocolCodec.buildRequest(config, apiKey, request0)
         val first = call(spec, config.protocol, config.model)
-        if (first !is AiResult.Failure) return@withContext first
+        if (first !is AiResult.Failure) {
+            return@withContext if (strippedUpfront && first is AiResult.Success) {
+                first.copy(imagesOmitted = true)
+            } else first
+        }
 
         // ① OpenAI 신형 모델의 max_tokens **파라미터 이름** 거부 → max_completion_tokens 로 1회 재시도.
         if (config.protocol == AiProtocol.OPENAI_COMPAT &&
@@ -164,6 +175,22 @@ class AiService(context: Context) {
             return@withContext second
         }
 
+        // ④ 모델이 **이미지 자체**를 거부 → 빼고 1회 재시도, 성공하면 기억한다 (A-7).
+        //    ②와 같은 형태의 유연한 교정이다. 여기서 물러서지 않으면 비전 미지원 모델을 쓰는
+        //    사용자는 첨부를 켠 순간부터 400만 받게 되고, 그 원인이 이미지라는 것도 알 수 없다.
+        //    학습값은 R-23에 따라 모델·주소가 바뀌면 함께 버려진다.
+        if (request0.hasImages() &&
+            AiProtocolCodec.isImagesUnsupportedError(first.httpCode ?: 0, first.detail)
+        ) {
+            val retrySpec = AiProtocolCodec.buildRequest(config, apiKey, request0.withoutImages())
+            val second = call(retrySpec, config.protocol, config.model)
+            if (second is AiResult.Success) {
+                rememberImagesUnsupported(config.id)
+                return@withContext second.copy(imagesOmitted = true)
+            }
+            return@withContext second
+        }
+
         // ③ 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고 그 값을 기억한다.
         //    정적 표 없이 모델별 상한을 배우는 경로다(표는 새 모델마다 낡는다).
         if (first.httpCode == 400) {
@@ -199,6 +226,21 @@ class AiService(context: Context) {
         if (current.temperatureUnsupported == true) return
         providerStore.save(current.copy(temperatureUnsupported = true))
     }
+
+    /** 이미지 거부를 학습해 기록한다 — 다음 요청부터 싣지 않는다 (A-7, R-23 대상). */
+    fun rememberImagesUnsupported(configId: String) {
+        val current = providerStore.get(configId) ?: return
+        if (current.imagesUnsupported == true) return
+        providerStore.save(current.copy(imagesUnsupported = true))
+    }
+
+    /**
+     * 활성 모델이 이미지를 거부한다고 학습했는가 — 첨부 고지·결과 고지용 (A-7).
+     * 다이얼로그가 이 값을 읽어 **붙이기 전에** 미리 말할 수 있다: 이미 아는 사실을
+     * 알리지 않고 요청부터 보내면 사용자는 같은 실망을 매번 되풀이한다.
+     */
+    fun isImagesUnsupported(): Boolean =
+        providerStore.active()?.imagesUnsupported == true
 
     /**
      * 활성 프로바이더에 실을 창작도 샘플링 값 (A-4). null = 싣지 않는다:

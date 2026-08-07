@@ -47,6 +47,9 @@ object AiFieldSuggestSheet {
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
         targetCharacterId: Long,
+        /** 폼의 라이브 이미지 목록 (A-7) — 첨부 줄이 여기서 고른다 */
+        imagePaths: List<String> = emptyList(),
+        representativePath: String? = null,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -55,17 +58,64 @@ object AiFieldSuggestSheet {
         val currentValue = currentValuesByFieldId(formBuilder)[field.id] ?: ""
         val spec = CharacterFieldAiSuggester.fieldSpecOf(field, currentValue) ?: return
 
+        val density = context.resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+        val attach = AiImageAttachRow.create(fragment, imagePaths, representativePath)
+        val costLine = TextView(context).apply {
+            textSize = 15f
+            text = fragment.getString(R.string.ai_field_cost_notice_single, field.name)
+        }
+        // 이미지가 붙으면 그 사실과 값을 **같은 자리에서** 말한다 — 기존 약속("이미지를
+        // 모델에 보내지 않는다")을 뒤집는 지점이라 침묵이 허용되지 않는다.
+        val imageCostLine = TextView(context).apply {
+            textSize = 13f
+            setTextColor(context.getColor(R.color.text_secondary))
+            isVisible = false
+        }
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(costLine)
+            addView(imageCostLine)
+            attach?.let { addView(it.view) }
+        }
+        fun refreshImageCost() {
+            val count = attach?.selected?.size ?: 0
+            imageCostLine.isVisible = count > 0
+            if (count > 0) imageCostLine.text = imageCostText(fragment, count, requestCount = 1)
+        }
+        attach?.onChanged { refreshImageCost() }
+        refreshImageCost()
+
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_field_suggest_title)
-            .setMessage(fragment.getString(R.string.ai_field_cost_notice_single, field.name))
+            .setView(panel)
             .setPositiveButton(R.string.ai_field_run) { _, _ ->
                 runSuggest(
                     fragment, viewModel, contextLoader, listOf(spec),
-                    singleMode = true, targetCharacterId = targetCharacterId
+                    singleMode = true, targetCharacterId = targetCharacterId,
+                    imagePaths = attach?.selected.orEmpty()
                 )
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * 이미지 비용 고지의 **단일 소스** — 붙는 자리가 셋(필드 1개·전체·서술형)이라
+     * 따로 적으면 한 곳만 고쳐지고 나머지가 낡는다.
+     *
+     * 연인원을 말하는 이유: 짧은 값 추천은 대상을 청킹해 **요청마다 같은 그림을 다시
+     * 싣는다.** 1장이라고만 적으면 사용자는 1장 값을 예상하고 요청 수만큼을 낸다(R-4).
+     */
+    private fun imageCostText(fragment: Fragment, count: Int, requestCount: Int): String {
+        val total = com.novelcharacter.app.ai.AiPromptPolicy.imageSendCount(count, requestCount)
+        return fragment.getString(
+            R.string.ai_image_cost_notice,
+            count, total,
+            com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MIN,
+            com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MAX
+        )
     }
 
     /**
@@ -78,6 +128,9 @@ object AiFieldSuggestSheet {
         viewModel: CharacterViewModel,
         targetCharacterId: Long,
         extraNote: String? = null,
+        /** 폼의 라이브 이미지 목록 (A-7) — 첨부 줄이 여기서 고른다 */
+        imagePaths: List<String> = emptyList(),
+        representativePath: String? = null,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -160,6 +213,16 @@ object AiFieldSuggestSheet {
             addView(CreativityChipRow.create(fragment))
             addView(includeFilledCheck)
         }
+        // 이미지 첨부 줄 (A-7) — 비용 문구 바로 아래에 붙어 "몇 장이 몇 번 나가는가"를
+        // 대상 수와 한 화면에서 보여 준다.
+        val imageCostLine = TextView(context).apply {
+            textSize = 13f
+            setTextColor(context.getColor(R.color.text_secondary))
+            isVisible = false
+        }
+        val attach = AiImageAttachRow.create(fragment, imagePaths, representativePath)
+        panel.addView(imageCostLine)
+        attach?.let { panel.addView(it.view) }
 
         fun currentTargets(): List<CharacterFieldAiSuggester.FieldSpec> =
             if (includeFilledCheck.isChecked) allSpecList else emptySpecs
@@ -170,16 +233,22 @@ object AiFieldSuggestSheet {
 
         fun refreshMessage() {
             val count = currentTargets().size
+            val requests = CharacterFieldAiSuggester.requestCountFor(count, budget)
             message.text = if (count == 0) {
                 fragment.getString(R.string.ai_field_no_empty_fields)
             } else {
                 // 요청 수는 청킹 규칙과 같은 계산 — 사전 고지 정확성 (R-4)
-                fragment.getString(
-                    R.string.ai_field_cost_notice,
-                    count, CharacterFieldAiSuggester.requestCountFor(count, budget)
-                )
+                fragment.getString(R.string.ai_field_cost_notice, count, requests)
+            }
+            // 이미지는 **요청마다 다시 실린다** — 대상 수가 바뀌면 요청 수가 바뀌고,
+            // 그러면 이미지 연인원도 함께 바뀐다. 둘을 같은 함수에서 그리는 이유다.
+            val images = attach?.selected?.size ?: 0
+            imageCostLine.isVisible = images > 0 && count > 0
+            if (images > 0 && count > 0) {
+                imageCostLine.text = imageCostText(fragment, images, requests)
             }
         }
+        attach?.onChanged { refreshMessage() }
         refreshMessage()
 
         val dialog = MaterialAlertDialogBuilder(context)
@@ -201,7 +270,8 @@ object AiFieldSuggestSheet {
                 dialog.dismiss()
                 runSuggest(
                     fragment, viewModel, contextLoader, targets,
-                    singleMode = false, targetCharacterId = targetCharacterId
+                    singleMode = false, targetCharacterId = targetCharacterId,
+                    imagePaths = attach?.selected.orEmpty()
                 )
             }
         }
@@ -239,13 +309,19 @@ object AiFieldSuggestSheet {
         targets: List<CharacterFieldAiSuggester.FieldSpec>,
         singleMode: Boolean,
         applyConfidenceFilter: Boolean = true,
-        targetCharacterId: Long = -1L
+        targetCharacterId: Long = -1L,
+        /**
+         * 함께 보낼 이미지 경로 (A-7). 보완 재요청은 **첫 요청과 같은 것**을 넘긴다 —
+         * 다시 고르게 하면 사용자가 이미 정한 선택을 되풀이시키는 마찰이고, 비우면
+         * 같은 검토 화면 안에서 근거가 조용히 바뀐다.
+         */
+        imagePaths: List<String> = emptyList()
     ) {
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
             if (!viewModel.runAiSuggest(
-                    aiContext, targets, singleMode, applyConfidenceFilter, targetCharacterId
+                    aiContext, targets, singleMode, applyConfidenceFilter, targetCharacterId, imagePaths
                 )
             ) {
                 // 이미 실행 중 — 무통보로 삼키지 않는다
@@ -286,7 +362,9 @@ object AiFieldSuggestSheet {
                     viewModel.clearAiSuggestResult()
                     runSuggest(
                         fragment, viewModel, contextLoader, retry,
-                        singleMode = false, targetCharacterId = run.targetCharacterId
+                        singleMode = false, targetCharacterId = run.targetCharacterId,
+                        // 첫 요청과 같은 그림으로 다시 묻는다 (A-7) — 근거가 조용히 바뀌지 않게
+                        imagePaths = run.imagePaths
                     )
                 }
             }
@@ -404,6 +482,7 @@ object AiFieldSuggestSheet {
                 showRefineDialog(
                     fragment, viewModel, contextLoader, formBuilder, row, listOf(row),
                     targetCharacterId = run.targetCharacterId,
+                    imagePaths = run.imagePaths,
                     dismissReview = {},
                     // 1건 모드에는 돌아갈 목록이 없다 — 수정 확정이 곧 적용이다(단계를 늘리지 않는다)
                     onEdited = { edited ->
@@ -457,7 +536,8 @@ object AiFieldSuggestSheet {
                     viewModel.clearAiSuggestResult()
                     runSuggest(
                         fragment, viewModel, contextLoader, retryTargets,
-                        singleMode = false, targetCharacterId = run.targetCharacterId
+                        singleMode = false, targetCharacterId = run.targetCharacterId,
+                        imagePaths = run.imagePaths
                     )
                 }
             )
@@ -481,6 +561,7 @@ object AiFieldSuggestSheet {
                 showRefineDialog(
                     fragment, viewModel, contextLoader, formBuilder, row, rows,
                     targetCharacterId = run.targetCharacterId,
+                    imagePaths = run.imagePaths,
                     dismissReview = { dialogRef?.dismiss() },
                     onEdited = { edited ->
                         // 손수 고른 값은 곧 채택 의사다 — 체크를 켜 두어 한 번 더 누르게 하지 않는다
@@ -653,6 +734,8 @@ object AiFieldSuggestSheet {
         row: Row,
         allRows: List<Row>,
         targetCharacterId: Long,
+        /** 첫 요청에 실었던 이미지 (A-7) — 보완도 같은 그림으로 묻는다 */
+        imagePaths: List<String>,
         dismissReview: () -> Unit,
         /** 값 수정이 확정된 뒤 할 일 — 검토 목록은 다시 그리고, 1건 모드는 바로 적용한다 */
         onEdited: (Row) -> Unit
@@ -743,7 +826,8 @@ object AiFieldSuggestSheet {
                 runSuggest(
                     fragment, viewModel, contextLoader, listOf(target),
                     singleMode = true, applyConfidenceFilter = false,
-                    targetCharacterId = targetCharacterId
+                    targetCharacterId = targetCharacterId,
+                    imagePaths = imagePaths
                 )
             }
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { dialog.dismiss() }
