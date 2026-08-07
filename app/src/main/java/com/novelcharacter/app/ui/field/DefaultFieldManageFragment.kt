@@ -208,7 +208,8 @@ class DefaultFieldManageFragment : Fragment() {
             })
 
             val selected = plan.defaultSelection().toMutableSet()
-            val boxes = LinkedHashMap<Long, CheckBox>()
+            // null 키 = 전역 구역(무소속) 행 — 세계관들과 같은 표에서 함께 골라진다.
+            val boxes = LinkedHashMap<Long?, CheckBox>()
             for (item in plan.actionable) {
                 val box = CheckBox(requireContext()).apply {
                     text = buildString {
