@@ -2127,9 +2127,18 @@ class FieldEditDialog : DialogFragment() {
         // 그린다(`DuelGradeRef.fromConfig`가 그렇게 정해 둔 자리다).
         // 그래서 **버리는 대신 막고 사유를 말한다**(변수 제어: 검증 → 알림 → 교정 경로.
         // 교정 경로는 바로 그 자리의 [축 만들기]다). 창은 닫히지 않는다(R-27).
+        //
+        // **막는 것은 '저장된 약속이 없는' 경우뿐이다**(같은 날 자기 검토가 좁혔다).
+        // 이미 약속이 저장된 필드는 [keepStoredDuelGrade]가 그대로 보존하므로 잃을 것이
+        // 없고(성립하지 않는 동안 컷 편집기는 숨겨져 있어 화면 편집분도 없다), 여기서
+        // 마저 막으면 — 예컨대 축 목록 조회가 한 번 실패한 세션에서 — **이름 하나 고치는
+        // 저장까지 막히고**, 사용자가 통과하려고 스위치를 끄면 그 remove가 저장된 컷을
+        // 지운다(막으려던 유실을 차단 자신이 만든다).
         if (binding.duelGradeLayout.visibility == View.VISIBLE && binding.switchDuelGrade.isChecked) {
+            val storedSpec = existingField?.config
+                ?.let { com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(it) }
             val problem = duelGradeProblem(binding)
-            if (problem != null) {
+            if (problem != null && storedSpec == null) {
                 android.widget.Toast.makeText(
                     requireContext(),
                     getString(R.string.duel_grade_save_blocked, problem),

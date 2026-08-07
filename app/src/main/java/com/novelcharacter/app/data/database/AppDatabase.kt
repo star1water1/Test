@@ -2097,7 +2097,8 @@ abstract class AppDatabase : RoomDatabase() {
 
                 // 전역 구역 첫 심기는 여기서 하지 않는다 — 템플릿 → 필드 변환(순서·config 정규화)은
                 // `DefaultFieldPlan`이 단일 소스이고, SQL로 그 절반을 다시 쓰면 두 벌이 된다.
-                // 다음 실행 시 저장소 계층이 심는다(seedGlobalScope — 멱등이라 몇 번 돌아도 같다).
+                // 다음 실행 시 저장소 계층이 심는다(DefaultFieldTemplateRepository.globalFields의
+                // 멱등 폴백 — 몇 번 돌아도 같다).
 
                 Log.i(TAG, "Migration from version 53 to 54 completed successfully")
             }

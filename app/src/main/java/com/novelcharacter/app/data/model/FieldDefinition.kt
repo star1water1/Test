@@ -29,9 +29,10 @@ data class FieldDefinition(
      * 이 구역에 실제 행을 심는 것이다(0 센티널은 FK CASCADE를 부수고, 숨은 세계관 행은
      * 모든 목록 화면이 그것을 빼야 한다 — 설계 1-2가 기각한 참조형의 역상).
      *
-     * 전역 구역의 행은 **템플릿의 그림자다** — 세계관 구역과 달리 갈라질 주인이 없으므로
-     * 템플릿 변경이 곧바로 반영되고(명시적 전파 아님), 여기를 편집하는 화면도 없다.
-     * 동기화는 [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository]가 전담한다.
+     * 전역 구역의 행은 템플릿에서 심긴 그림자이고, **세계관과 똑같이 명시적 전파의 대상**이다
+     * (전파 미리보기의 "무소속" 행 — 자동 동기화로 두면 타입이 바뀌는 템플릿 편집이 이 구역의
+     * 값을 영향 분석 없이 깨뜨린다). 정의를 편집하는 화면은 없다 — 심기·전파·삭제 전부
+     * [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository]를 지난다.
      *
      * ⚠️ 유니크 색인 `(universeId, entityType, key)`는 **전역 구역에서는 강제되지 않는다** —
      * SQLite는 NULL끼리를 서로 다른 값으로 본다. 전역 구역의 key 유일성은 심기 로직이
