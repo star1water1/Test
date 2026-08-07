@@ -644,8 +644,11 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         for (row in novelValueDao.getValuesByFieldDef(fd.id)) {
             if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) novelRows++
         }
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER) {
-            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)) {
+        val fdUniverseId = fd.universeId
+        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && fdUniverseId != null) {
+            // 전역 구역 필드(null)는 건너뛴다 — 상태변화는 세계관 캐릭터의 표라 무소속 값에는
+            // 해당 행이 원리적으로 없다(0건 순회를 거르는 것이지 데이터를 거르는 것이 아니다).
+            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fdUniverseId, fd.key)) {
                 if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) stateRows++
             }
         }
@@ -671,8 +674,10 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
             .map { it.eventId }.distinct()
         var stateCount = 0
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER) {
-            stateCount = stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)
+        val fdScope = fd.universeId
+        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && fdScope != null) {
+            // 전역 구역 필드(null)는 상태변화가 원리적으로 없다 — 연표는 세계관 기능이다.
+            stateCount = stateChangeDao.getChangesByFieldKeyForUniverse(fdScope, fd.key)
                 .count { change -> FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens } }
         }
         val novelIds = novelValueDao.getValuesByFieldDef(fd.id)
@@ -866,8 +871,9 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             }
         }
         // 상태변화 이력 — 연도 슬라이더·성장 그래프가 읽는 시간축 데이터 (A2: 무통보 이력 파손 방지)
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER) {
-            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)) {
+        val scopeForState = fd.universeId
+        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && scopeForState != null) {
+            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(scopeForState, fd.key)) {
                 val tokens = FieldValueTokenizer.tokenize(fd, change.newValue)
                 val mapped = mapTokens(tokens) ?: continue
                 affected.add(change.characterId)

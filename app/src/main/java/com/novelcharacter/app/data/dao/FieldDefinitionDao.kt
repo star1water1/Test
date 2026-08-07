@@ -17,6 +17,22 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND entityType = :entityType ORDER BY displayOrder ASC")
     suspend fun getFieldsByUniverseList(universeId: Long, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 
+    // ── 전역 구역 (universeId IS NULL — B-119 확장) ──
+    // `= :universeId`에 null을 넘기면 SQLite가 아무것도 못 찾으므로(NULL은 =로 비교되지 않는다)
+    // IS NULL 질의를 따로 둔다. 이 구역의 행은 템플릿의 그림자다(FieldDefinition KDoc).
+
+    @Query("SELECT * FROM field_definitions WHERE universeId IS NULL AND entityType = :entityType ORDER BY displayOrder ASC")
+    suspend fun getGlobalFieldsList(entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
+
+    @Query("SELECT * FROM field_definitions WHERE universeId IS NULL ORDER BY entityType ASC, displayOrder ASC")
+    suspend fun getGlobalFieldsAllTypes(): List<FieldDefinition>
+
+    @Query("DELETE FROM field_definitions WHERE universeId IS NULL AND id IN (:ids)")
+    suspend fun deleteGlobalByIds(ids: List<Long>)
+
+    @Query("SELECT * FROM field_definitions WHERE universeId IS NULL AND `key` = :key AND entityType = :entityType")
+    suspend fun getGlobalFieldByKey(key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): FieldDefinition?
+
     @Query("SELECT * FROM field_definitions WHERE id = :id")
     suspend fun getFieldById(id: Long): FieldDefinition?
 

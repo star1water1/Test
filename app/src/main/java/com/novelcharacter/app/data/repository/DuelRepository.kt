@@ -312,7 +312,11 @@ class DuelRepository(private val db: AppDatabase) {
         var written = 0
         db.withTransaction {
             val field = db.fieldDefinitionDao().getFieldById(fieldDefinitionId) ?: return@withTransaction
-            val characters = db.characterDao().getCharactersByUniverseList(field.universeId)
+            // 전역 구역 필드(universeId null)는 여기 올 수 없다 — duelGrade는 축이 세계관
+            // 단위라 전역 템플릿이 갖지 못하고(설계 1-2), 그림자 config에서도 강등된다.
+            // 그래도 방어한다: null이면 반영 대상이 없는 것이지 전 세계관이 아니다.
+            val fieldUniverseId = field.universeId ?: return@withTransaction
+            val characters = db.characterDao().getCharactersByUniverseList(fieldUniverseId)
             val byCode = characters.associateBy { it.code }
             // 값은 한 번에 읽는다 — 캐릭터마다 물으면 인원만큼 왕복이 늘고, 그것이 목표 규모에서
             // 이 트랜잭션을 가장 길게 잡는 자리가 된다('받쳐주는 확장성').

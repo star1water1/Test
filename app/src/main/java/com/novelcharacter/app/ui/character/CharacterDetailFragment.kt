@@ -160,7 +160,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         // 경로**를 탄다(키 변경 시의 수식·이력 이관까지) — 여기만 다른 저장을 쓰면 갈린다.
         fieldRenderer.onOpenBodySettings = { field ->
             com.novelcharacter.app.ui.field.FieldEditDialog
-                .newInstance(field.universeId, field)
+                // 전역 구역 필드(universeId null — B-119 확장)는 0을 넘긴다 — 이 다이얼로그의
+                // 기존 관례(0 = 세계관 문맥 없음)이고, 편집 저장은 existingField.copy라
+                // 필드의 실제 구역(null)이 그대로 보존된다. 세계관 전용 섹션(대결 등급 산정)이
+                // 0에서 꺼지는 것도 옳다 — 전역 필드는 그것을 가질 수 없다(설계 1-2).
+                .newInstance(field.universeId ?: 0L, field)
                 .show(childFragmentManager, "body_analysis_settings")
         }
         // 실루엣 탭 — 크게 보기. 작품 평균은 순위 계산이 이미 모아 둔 이웃 수치를 재사용한다.

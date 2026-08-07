@@ -208,8 +208,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                     formulaCount++
                 }
             }
-            historyCount = app.database.characterStateChangeDao()
-                .migrateFieldKeyForUniverse(new.universeId, old.key, new.key)
+            val renameUniverseId = new.universeId
+            historyCount = if (renameUniverseId == null) 0 else app.database.characterStateChangeDao()
+                // 전역 구역(null)은 이관할 이력이 원리적으로 없다 — 연표는 세계관 기능이다.
+                .migrateFieldKeyForUniverse(renameUniverseId, old.key, new.key)
             universeRepository.updateField(new)
         }
         return formulaCount to historyCount
@@ -327,8 +329,13 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         if (entityType == null) this else filter { it.entityType == entityType }
 
     /** 관리 중인 종류에 맞는 필드 조회 — 종류 분기를 한 자리에 모아 호출부가 어긋나지 않게 한다. */
-    private suspend fun fieldsOf(universeId: Long, entityType: String): List<FieldDefinition> =
-        when (entityType) {
+    private suspend fun fieldsOf(universeId: Long?, entityType: String): List<FieldDefinition> =
+        // null = 전역 구역(무소속 — B-119 확장). 참조 수식의 모집단도 그 구역이다 —
+        // 전역 필드의 key를 세계관 수식이 참조할 수는 없다(다른 구역의 필드는 폼에 함께
+        // 뜨지 않으므로 참조가 성립하지 않는다).
+        if (universeId == null) {
+            app.database.fieldDefinitionDao().getGlobalFieldsList(entityType)
+        } else when (entityType) {
             FieldDefinition.ENTITY_EVENT -> universeRepository.getEventFieldsByUniverseList(universeId)
             FieldDefinition.ENTITY_NOVEL -> universeRepository.getNovelFieldsByUniverseList(universeId)
             else -> universeRepository.getFieldsByUniverseList(universeId)
@@ -347,7 +354,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
      * 사건·작품 필드의 키를 바꿀 때 그 종류의 수식이 조용히 깨지고, 삭제 경고도 뜨지 않는다.
      */
     suspend fun getReferencingCalculatedFields(
-        universeId: Long,
+        universeId: Long?,
         fieldKey: String,
         entityType: String = FieldDefinition.ENTITY_CHARACTER
     ): List<FieldDefinition> {

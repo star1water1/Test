@@ -52,7 +52,7 @@ object DefaultFieldPlan {
      */
     fun materialize(
         template: DefaultFieldTemplate,
-        universeId: Long,
+        universeId: Long?,
         displayOrder: Int
     ): FieldDefinition = FieldDefinition(
         id = 0,
@@ -102,7 +102,7 @@ object DefaultFieldPlan {
 
     /** 한 세계관의 사정. [fields]는 **전 종류**여야 한다(R-29 — 한 종류만 보면 중복을 놓친다). */
     data class Target(
-        val universeId: Long,
+        val universeId: Long?,
         val universeName: String,
         val fields: List<FieldDefinition>
     )
@@ -123,7 +123,7 @@ object DefaultFieldPlan {
     }
 
     data class PlantItem(
-        val universeId: Long,
+        val universeId: Long?,
         val universeName: String,
         val placement: Placement,
         /** 그 자리를 이미 차지한 필드. [Placement.PLANT]면 null이다. */
@@ -227,7 +227,7 @@ object DefaultFieldPlan {
      *   `checkTypeChangeImpact`가 미리보기에 실리는 자리).
      */
     data class PropagateItem(
-        val universeId: Long,
+        val universeId: Long?,
         val universeName: String,
         val field: FieldDefinition,
         val divergence: Divergence,
@@ -260,12 +260,12 @@ object DefaultFieldPlan {
 
         val isNoop: Boolean get() = actionable.isEmpty()
 
-        fun defaultSelection(): Set<Long> = outdated.map { it.universeId }.toSet()
+        fun defaultSelection(): Set<Long?> = outdated.map { it.universeId }.toSet()
     }
 
     /** [planPropagate]의 입력 한 줄 — 한 세계관의 심긴 필드와, 그 필드에 저장된 값들. */
     data class LinkedField(
-        val universeId: Long,
+        val universeId: Long?,
         val universeName: String,
         val field: FieldDefinition,
         val values: List<String> = emptyList()
@@ -326,7 +326,7 @@ object DefaultFieldPlan {
     fun resolvePropagate(
         template: DefaultFieldTemplate,
         plan: PropagatePlan,
-        selected: Set<Long>
+        selected: Set<Long?>
     ): PropagateWrites {
         val updates = ArrayList<FieldDefinition>()
         val backups = ArrayList<FieldDefinition>()

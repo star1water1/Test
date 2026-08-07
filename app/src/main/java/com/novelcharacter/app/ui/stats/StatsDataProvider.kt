@@ -3553,7 +3553,7 @@ class StatsDataProvider {
 
         // 세계관별 CALCULATED 필드와 수식을 미리 파싱
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
-        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
                 val formula = try {
@@ -3611,7 +3611,7 @@ class StatsDataProvider {
         val valuesByEvent = s.eventFieldValues.groupBy { it.eventId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
-        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
                 val formula = try {
@@ -3671,7 +3671,7 @@ class StatsDataProvider {
         val valuesByNovel = s.novelFieldValues.groupBy { it.novelId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
-        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
                 val formula = try {

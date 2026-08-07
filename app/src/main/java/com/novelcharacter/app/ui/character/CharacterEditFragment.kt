@@ -474,11 +474,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                         if (universeId != null) {
                             formBuilder.fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
                         } else {
-                            formBuilder.fieldDefinitions = emptyList()
+                            // 세계관 없는 작품 — 전역 필드는 그래도 가진다 (B-119 확장,
+                            // 2026.08.07 사용자 확정). 종전에는 빈 목록이라 무소속 캐릭터만
+                            // "전역" 필드가 없는 역설이 있었다.
+                            formBuilder.fieldDefinitions = viewModel.getGlobalFieldsList()
                         }
                     } else {
                         formBuilder.currentNovelId = null
-                        formBuilder.fieldDefinitions = emptyList()
+                        // 작품 미선택(완전 무소속)도 같다 — 전역 구역의 필드를 그린다.
+                        formBuilder.fieldDefinitions = viewModel.getGlobalFieldsList()
                     }
                     if (_binding == null) return@launch
                     formBuilder.buildForm()

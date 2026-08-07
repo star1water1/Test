@@ -45,6 +45,11 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
 
     suspend fun getAllList(): List<DefaultFieldTemplate> = templateDao.getAllList()
 
+    companion object {
+        /** 전파 미리보기·심기 결과에서 전역 구역(무소속)을 부르는 이름. */
+        const val GLOBAL_SCOPE_NAME = "무소속"
+    }
+
     suspend fun getByCode(code: String): DefaultFieldTemplate? = templateDao.getByCode(code)
 
     suspend fun getBySlot(entityType: String, key: String): DefaultFieldTemplate? =
@@ -111,11 +116,14 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
     suspend fun planPlant(template: DefaultFieldTemplate): DefaultFieldPlan.PlantPlan {
         val universes = db.universeDao().getAllUniversesList()
         val byUniverse = fieldDao.getAllFieldsAllTypes().groupBy { it.universeId }
+        // 전역 구역(무소속 — universeId null)도 심기 대상이다 (2026.08.07 사용자 확정).
+        // 세계관 목록에 없으므로 여기서 명시적으로 더한다 — 더하지 않으면 "전역" 필드가
+        // 정작 소속 없는 캐릭터에게만 없는 역설이 그대로 남는다.
         return DefaultFieldPlan.planPlant(
             template,
             universes.map {
                 DefaultFieldPlan.Target(it.id, it.name, byUniverse[it.id].orEmpty())
-            }
+            } + DefaultFieldPlan.Target(null, GLOBAL_SCOPE_NAME, byUniverse[null].orEmpty())
         )
     }
 
@@ -232,7 +240,11 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         val linked = linkedFields(template.code).map { field ->
             DefaultFieldPlan.LinkedField(
                 universeId = field.universeId,
-                universeName = names[field.universeId] ?: "",
+                // 전역 구역(universeId null)의 그림자도 연결 표식으로 함께 잡힌다 —
+                // 전파 미리보기에 "무소속" 행으로 선다(타입 영향 분석·백업을 세계관과
+                // 똑같이 탄다. 자동 동기화로 두면 타입 변경이 무소속 값을 말없이 깨뜨린다).
+                universeName = if (field.universeId == null) GLOBAL_SCOPE_NAME
+                else names[field.universeId] ?: "",
                 field = field,
                 // 값 조회는 **타입이 바뀔 때만** 한다 — 그 밖에는 세지 않으므로(설계 1-3)
                 // 세계관마다 값 표를 읽는 것은 순전한 낭비다.
@@ -255,7 +267,7 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
     suspend fun applyPropagate(
         template: DefaultFieldTemplate,
         plan: DefaultFieldPlan.PropagatePlan,
-        selected: Set<Long>
+        selected: Set<Long?>
     ): PropagateResult {
         val writes = DefaultFieldPlan.resolvePropagate(template, plan, selected)
         if (writes.isEmpty) return PropagateResult(0)
@@ -283,8 +295,21 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
      * @return 강등된 필드 수.
      */
     suspend fun deleteTemplate(template: DefaultFieldTemplate): Int = db.withTransaction {
-        val demoted = DefaultFieldPlan.demote(linkedFields(template.code))
+        val linked = linkedFields(template.code)
+        // 전역 구역의 그림자는 **값이 있으면 강등, 없으면 삭제**로 가른다 (2026.08.07).
+        // 세계관 필드는 일괄 강등이 맞다 — 그 세계관의 관리 화면이 있어 사용자가 처분할 수
+        // 있다. 전역 구역에는 정의를 관리할 화면이 없으므로, 값 없는 그림자를 강등으로 남기면
+        // **지울 길 없는 행**이 되고, 값 있는 그림자를 지우면 무소속 캐릭터의 값이 사라진다
+        // (개발 의도 2번 — 이 기능이 캐릭터 데이터를 지우는 경우는 없다).
+        val (global, universal) = linked.partition { it.universeId == null }
+        val globalToDelete = ArrayList<Long>()
+        val toDemote = ArrayList(universal)
+        for (shadow in global) {
+            if (valuesOf(shadow).isEmpty()) globalToDelete.add(shadow.id) else toDemote.add(shadow)
+        }
+        val demoted = DefaultFieldPlan.demote(toDemote)
         for (row in demoted) fieldDao.update(row)
+        if (globalToDelete.isNotEmpty()) fieldDao.deleteGlobalByIds(globalToDelete)
         templateDao.delete(template)
         demoted.size
     }
@@ -307,6 +332,39 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         if (demoted.isEmpty()) return 0
         db.withTransaction { for (row in demoted) fieldDao.update(row) }
         return demoted.size
+    }
+
+    /**
+     * 전역 구역의 필드 — **무소속 캐릭터 폼이 읽는 그 목록**이다.
+     *
+     * 템플릿은 있는데 그림자가 하나도 없으면 **여기서 심는다**(멱등). 마이그레이션 54가
+     * 심기를 SQL로 하지 않은 이유가 이것이다 — 템플릿 → 필드 변환은 [DefaultFieldPlan]이
+     * 단일 소스이고, SQL로 그 절반을 다시 쓰면 두 벌이 된다. 새 템플릿은 [plantNow]가
+     * 전역 구역을 대상에 넣으므로 이 폴백은 **마이그레이션 직후 한 번**만 실제로 심는다.
+     */
+    suspend fun globalFields(entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition> {
+        val existing = fieldDao.getGlobalFieldsList(entityType)
+        val templates = templateDao.getAllList().filter { it.entityType == entityType }
+        if (templates.isEmpty()) return existing
+        // 그림자가 이미 하나라도 있으면 심기 완료 상태다 — 지워진 그림자를 여기서 되살리면
+        // 사용자가 '다시 심기'로 되살리기 전까지 지운 상태를 유지할 길이 없다.
+        if (existing.any { DefaultFieldRef.codeFromConfig(it.config) != null }) return existing
+        db.withTransaction {
+            val fields = ArrayList(fieldDao.getGlobalFieldsAllTypes())
+            for (template in templateDao.getAllList()) {
+                val plan = DefaultFieldPlan.planPlant(
+                    template, listOf(DefaultFieldPlan.Target(null, GLOBAL_SCOPE_NAME, fields))
+                )
+                val writes = DefaultFieldPlan.resolvePlant(template, plan)
+                for (row in writes.inserts) fields.add(row.copy(id = fieldDao.insert(row)))
+                for (row in writes.updates) {
+                    fieldDao.update(row)
+                    val at = fields.indexOfFirst { it.id == row.id }
+                    if (at >= 0) fields[at] = row
+                }
+            }
+        }
+        return fieldDao.getGlobalFieldsList(entityType)
     }
 
     /** 그 필드에 저장된 값들 — 종류마다 값 표가 다르다. */

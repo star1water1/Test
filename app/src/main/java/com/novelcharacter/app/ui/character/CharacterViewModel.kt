@@ -928,6 +928,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         universeRepository.getFieldsByUniverseList(universeId)
 
+    /**
+     * 전역 구역(무소속)의 필드 — 세계관 소속이 없는 캐릭터의 폼이 쓴다 (B-119 확장,
+     * 2026.08.07 사용자 확정: "전역필드라면 세계관 소속이 없더라도 가지게").
+     * 템플릿은 있는데 그림자가 없으면 저장소가 심는다(마이그레이션 54 직후 한 번).
+     */
+    suspend fun getGlobalFieldsList(): List<FieldDefinition> =
+        com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository(db).globalFields()
+
     /** 세계관 밖 정의를 가리키는 보관 값을 화면에 드러내기 위한 조회 (N2) */
     suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
         universeRepository.getFieldsByIds(ids)

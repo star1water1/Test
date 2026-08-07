@@ -111,7 +111,7 @@ import com.novelcharacter.app.data.model.Universe
         DuelCounterVerdict::class,
         DefaultFieldTemplate::class
     ],
-    version = 53,
+    version = 54,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -2055,6 +2055,54 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_53_54 = object : Migration(53, 54) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 53 to 54 — 전역 필드의 무소속 구역(B-119 확장)")
+
+                // **이것은 순수 추가가 아니라 표 재건이다** — 이 저장소의 첫 재건 마이그레이션
+                // (2026.08.07 사용자 확정: "전역필드라면 세계관 소속이 없더라도 가지게").
+                // `universeId`의 NOT NULL을 푸는 것인데 SQLite는 제약 변경을 못 하므로
+                // 새 표를 짓고 옮긴다. 절차는 SQLite 공식 12단계 중 Room이 요구하는 핵심 —
+                // 새 표 → 복사 → 옛 표 삭제 → 개명 → 색인 재생성. FK는 표 정의에 그대로 싣는다
+                // (nullable 칼럼의 FK는 NULL을 통과시킨다 — 전역 구역이 그 통로다).
+                //
+                // ⚠️ 칼럼 목록을 SELECT *로 적지 않는 것은 일부러다 — 옛 표의 칼럼 순서에
+                // 기대면, 어떤 이유로든 순서가 다른 기기에서 **값이 옆 칸으로 밀려 들어간다**
+                // (조용한 오배정 — 이 마이그레이션에서 가장 나쁜 실패). 이름으로 짝을 박는다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `field_definitions_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `universeId` INTEGER,
+                        `key` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `config` TEXT NOT NULL,
+                        `groupName` TEXT NOT NULL,
+                        `displayOrder` INTEGER NOT NULL,
+                        `isRequired` INTEGER NOT NULL,
+                        `entityType` TEXT NOT NULL,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("""
+                    INSERT INTO `field_definitions_new`
+                        (`id`, `universeId`, `key`, `name`, `type`, `config`, `groupName`, `displayOrder`, `isRequired`, `entityType`)
+                    SELECT `id`, `universeId`, `key`, `name`, `type`, `config`, `groupName`, `displayOrder`, `isRequired`, `entityType`
+                    FROM `field_definitions`
+                """)
+                db.execSQL("DROP TABLE `field_definitions`")
+                db.execSQL("ALTER TABLE `field_definitions_new` RENAME TO `field_definitions`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_field_definitions_universeId` ON `field_definitions` (`universeId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_field_definitions_universeId_entityType_key` ON `field_definitions` (`universeId`, `entityType`, `key`)")
+
+                // 전역 구역 첫 심기는 여기서 하지 않는다 — 템플릿 → 필드 변환(순서·config 정규화)은
+                // `DefaultFieldPlan`이 단일 소스이고, SQL로 그 절반을 다시 쓰면 두 벌이 된다.
+                // 다음 실행 시 저장소 계층이 심는다(seedGlobalScope — 멱등이라 몇 번 돌아도 같다).
+
+                Log.i(TAG, "Migration from version 53 to 54 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -2062,7 +2110,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }
