@@ -808,14 +808,27 @@ class ExcelExporter(context: Context) {
     private suspend fun exportFieldDefinitions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
-        val allFields = mutableListOf<Pair<Long, FieldDefinition>>()
+        val allFields = mutableListOf<Pair<Long?, FieldDefinition>>()
         for (universe in universes) {
+            // 구역 id를 nullable로 못박아 담는다 — 전역 행(null)과 **한 목록**에 들어가므로
+            // 여기서 타입을 맞춰 두면 아래 행 쓰기가 두 경우를 한 갈래로 다룬다.
+            val scopeId: Long? = universe.id
             // **모든 종류**를 왕복한다(캐릭터·사건·작품) — 정의가 파일에 없으면 신규 기기
             // 복원 시 그 종류의 필드값이 통째로 유실된다(대상 열로 구분). 종류를 늘릴 때
             // 여기를 잊으면 새 종류만 조용히 빠진다(R-29) — 그래서 전 종류 조회를 쓴다.
             val fields = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universe.id)
-            fields.forEach { allFields.add(universe.id to it) }
+            fields.forEach { allFields.add(scopeId to it) }
         }
+        // 전역 구역(universeId IS NULL — B-119 확장)도 **같은 시트에** 싣는다. 세계관·세계관코드
+        // 두 칸이 빈 행이 곧 전역이라는 것이 이 시트의 약속이고(설계 1-9), 가져오기·미리보기는
+        // 이미 그렇게 읽는다 — 셋 중 이 자리만 빠져 있었다(B-130).
+        //
+        // 빠져 있는 동안 **앱이 만든 어떤 백업에도 전역 필드 행이 없었고**, 그 백업을 덮어쓰기로
+        // 되돌리면 pruneUnmatchedFieldDefinitions가 '백업에 없는 정의'로 보고 지웠다 —
+        // 값(CharacterFieldValue)은 FK CASCADE로 함께 사라지고 휴지통도 지나지 않는다.
+        // 세계관 순회와 **한 그릇에 담는** 이유가 이것이다: 그릇을 나누면 아래 행 쓰기·prune·
+        // 미리보기 중 어느 하나가 또 빠져도 드러나지 않는다.
+        db.fieldDefinitionDao().getGlobalFieldsAllTypes().forEach { allFields.add(null to it) }
 
         // 등급 체계 참조(U-1)는 전용 열로만 나간다 — code → 체계로 풀어 이름·코드를 싣는다.
         val systemsByCode = db.gradeSystemDao().getAllList().associateBy { it.code }
@@ -830,7 +843,9 @@ class ExcelExporter(context: Context) {
         writeHeaderRow(sheet, spec)
 
         allFields.forEachIndexed { index, (universeId, field) ->
-            val universe = universeMap[universeId]
+            // 전역 구역은 universeId가 null이라 세계관을 찾지 않는다 — 아래 이름·코드 두 칸이
+            // 빈 칸으로 나가고, 그 빈 칸이 가져오기·미리보기에게 '전역'을 뜻한다(설계 1-9).
+            val universe = if (universeId == null) null else universeMap[universeId]
             val row = sheet.createRow(index + 1)
             row.createCell(0).setTextSafe(universe?.name ?: "")
             row.createCell(1).setTextSafe(field.key)

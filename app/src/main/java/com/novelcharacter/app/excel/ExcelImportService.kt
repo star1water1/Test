@@ -2314,8 +2314,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             // 세계관·필드가 아직 없으면 **신규**다 — 같은 가져오기가 세계관·필드 정의를 먼저
             // 만들고 나서 이 시트를 처리하므로(임포트 순서), 실제로 새 엔트리가 된다.
-            val universe = universesByName[universeName]
-            val fd = universe?.let { fieldsByKey[Triple(it.id, fieldKey, imported.entityType)] }
+            //
+            // 세계관 칸이 빈 행 = 전역 구역(무소속)이라는 판정은 가져오기와 **같아야 한다**(R-33).
+            // 종전에는 여기만 그 갈래가 없어 전역 행을 전부 '신규'로 세었는데, 정작 가져오기는
+            // 그 행을 건너뛰었다 — 미리보기가 약속한 건수가 실제와 다른 거짓 예고였다(B-130).
+            val globalScope = FieldScopeCell.isGlobal(universeName)
+            val universe = if (globalScope) null else universesByName[universeName]
+            val fd = if (globalScope) {
+                fieldsByKey[Triple(null, fieldKey, imported.entityType)]
+            } else {
+                universe?.let { fieldsByKey[Triple(it.id, fieldKey, imported.entityType)] }
+            }
             if (fd == null) { newCount++; continue }
 
             // '동일'은 매칭 키가 아니라 **가져오기가 실제로 쓰는 값 전체**로 가른다(B-87).
@@ -2471,7 +2480,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             val r = readFieldDefRow(row, c, "필드 행 $i", result = null)
             // 세계관·코드 둘 다 빈 행 = 전역 구역(B-119 확장) — 가져오기와 **같은 판정**(R-33).
-            val globalScope = r.universeName.isBlank() && r.universeCode.isBlank()
+            val globalScope = FieldScopeCell.isGlobal(r.universeName, r.universeCode)
             if (r.universeName.isBlank() && !globalScope) continue
             if (r.key.isBlank()) continue
             inBackup++
@@ -4262,7 +4271,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 그 시절 내보내기는 빈 세계관 행을 만들지 않았으므로 옛 파일의 뜻이 바뀌는
                 // 것은 아니다(손으로 만든 빈 행이 있었다면 이제 전역 필드로 들어온다 —
                 // 버려지던 것이 실리는 방향이라 유실이 아니다).
-                val globalScope = universeName.isBlank() && r.universeCode.isBlank()
+                val globalScope = FieldScopeCell.isGlobal(universeName, r.universeCode)
                 if (universeName.isBlank() && !globalScope) continue
 
                 val universe = if (globalScope) null else {
@@ -4449,12 +4458,31 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("덮어쓰기: '${spec.sheetName}' 시트에서 처리된 필드 정의가 하나도 없어 기존 필드 정의를 삭제하지 않았습니다 — 위의 행 오류를 먼저 확인하세요")
             return
         }
-        val stale = db.fieldDefinitionDao().getAllFieldsAllTypes().filter { it.id !in matchedFieldDefinitionIds }
-        for (field in stale) db.fieldDefinitionDao().delete(field)
-        if (stale.isNotEmpty()) {
-            val names = stale.take(5).joinToString(", ") { it.name }
-            val more = if (stale.size > 5) " 외 ${stale.size - 5}개" else ""
-            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 의도한 것이 아니면 삭제 전 백업으로 되돌리세요")
+        // 구역(세계관/전역)마다 매칭 근거를 따로 본다 — 판정의 단일 소스는 순수 로직이다.
+        // '백업에 없다'와 '백업이 그 구역을 말하지 않았다'를 가르지 않으면, 시트가 다루지도
+        // 않은 구역의 정의가 값과 함께 CASCADE로 사라진다(B-130).
+        val outcome = FieldDefinitionPrune.plan(
+            db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds
+        )
+        for (field in outcome.stale) db.fieldDefinitionDao().delete(field)
+        if (outcome.stale.isNotEmpty()) {
+            val names = outcome.stale.take(5).joinToString(", ") { it.name }
+            val more = if (outcome.stale.size > 5) " 외 ${outcome.stale.size - 5}개" else ""
+            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${outcome.stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 의도한 것이 아니면 삭제 전 백업으로 되돌리세요")
+        }
+        // 남긴 것도 반드시 알린다 — 조용히 남기면 사용자는 덮어쓰기가 끝난 줄 알고,
+        // 그 구역만 옛 정의가 살아 있는 상태를 일일이 확인해야만 알게 된다(원칙 04).
+        if (outcome.protectedFields.isNotEmpty()) {
+            val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+            val scopeLabels = outcome.protectedScopes.joinToString(", ") { scopeId ->
+                if (scopeId == null) FieldScopeCell.GLOBAL_LABEL else universeNames[scopeId] ?: "세계관 #$scopeId"
+            }
+            result.warnings.add(
+                "덮어쓰기: '${spec.sheetName}' 시트가 다루지 않은 구역($scopeLabels)의 필드 정의 " +
+                "${outcome.protectedFields.size}개는 삭제하지 않고 유지했습니다 — 그 구역의 행이 " +
+                "백업에 하나도 없어 '지워라'인지 '말한 바 없음'인지 가릴 수 없습니다. " +
+                "정말 지우려면 지금 데이터를 한 번 내보낸 뒤 그 파일에서 해당 행을 지우고 다시 가져오세요"
+            )
         }
     }
 
@@ -4486,7 +4514,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (e in db.fieldValueEntryDao().getAllList()) {
             entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
         }
-        val fieldCache = HashMap<Triple<Long, String, String>, FieldDefinition?>()
+        // null 키 = 전역 구역(무소속) — '필드 정의' 시트와 같은 어휘다(B-119 확장).
+        val fieldCache = HashMap<Triple<Long?, String, String>, FieldDefinition?>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4496,8 +4525,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val value = getCellString(row, valueCol)
                 if (universeName.isBlank() && fieldKey.isBlank() && value.isBlank()) continue
 
-                val universe = universesByName[universeName]
-                if (universe == null) {
+                // 세계관 칸이 빈 행 = 전역 구역(무소속 — B-119 확장). **내보내기가 이미 그렇게
+                // 싣는다**(전역 필드의 값은 `universeMap[null]`이 없어 빈 칸으로 나간다) —
+                // 이 갈래가 없던 동안 그 행들은 전부 skippedRows로 버려져, 덮어쓰기로 지워진
+                // 전역 값을 **파일로 되돌릴 길이 없었다**(B-130).
+                val globalScope = FieldScopeCell.isGlobal(universeName)
+                val universe = if (globalScope) null else universesByName[universeName]
+                if (universe == null && !globalScope) {
                     result.skippedRows++
                     result.warnings.add("필드 데이터 행 $i: 세계관 '$universeName'을(를) 찾을 수 없음")
                     continue
@@ -4515,12 +4549,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     code = if (codeCol >= 0) getCellString(row, codeCol) else null,
                     sourceFlag = if (sourceCol >= 0) getCellString(row, sourceCol) else null
                 )
-                val fd = fieldCache.getOrPut(Triple(universe.id, fieldKey, imported.entityType)) {
-                    db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, imported.entityType)
+                val fd = fieldCache.getOrPut(Triple(universe?.id, fieldKey, imported.entityType)) {
+                    if (universe == null) {
+                        db.fieldDefinitionDao().getGlobalFieldByKey(fieldKey, imported.entityType)
+                    } else {
+                        db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, imported.entityType)
+                    }
                 }
                 if (fd == null) {
                     result.skippedRows++
-                    result.warnings.add("필드 데이터 행 $i: 필드 키 '$fieldKey'(${imported.entityLabel ?: "캐릭터"})을(를) 세계관 '$universeName'에서 찾을 수 없음")
+                    val where = if (globalScope) FieldScopeCell.GLOBAL_LABEL else "세계관 '$universeName'"
+                    result.warnings.add("필드 데이터 행 $i: 필드 키 '$fieldKey'(${imported.entityLabel ?: "캐릭터"})을(를) ${where}에서 찾을 수 없음")
                     continue
                 }
 
@@ -4732,7 +4771,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val allUniverses = db.universeDao().getAllUniversesList()
         val universesByName = allUniverses.associateBy { it.name }
         val universesByCode = allUniverses.associateBy { it.code }
-        val fieldCache = HashMap<Triple<Long, String, String>, FieldDefinition?>()
+        // null 키 = 전역 구역(무소속 — B-119 확장). '필드 정의' 시트와 같은 어휘다.
+        val fieldCache = HashMap<Triple<Long?, String, String>, FieldDefinition?>()
         val seen = HashMap<Pair<Long, Long>, Int>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -4777,20 +4817,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val universe = uCode.takeIf { it.isNotBlank() }?.let { universesByCode[it] } ?: universesByName[uName]
-                if (universe == null) {
+                // 세계관·세계관코드가 **둘 다 빈 행은 전역 구역**(무소속 — B-119 확장).
+                // '필드 정의' 시트와 같은 판정이고(R-33), 이 시트의 내보내기가 이미 그렇게
+                // 싣는다 — **미분류 캐릭터는 필드 열이 아예 없어 값 전부가 이 시트로 오므로**,
+                // 갈래가 없던 동안 무소속 캐릭터의 전역 필드값은 되돌릴 길이 없었다(B-130).
+                val globalScope = FieldScopeCell.isGlobal(uName, uCode)
+                val universe = if (globalScope) null else {
+                    uCode.takeIf { it.isNotBlank() }?.let { universesByCode[it] } ?: universesByName[uName]
+                }
+                if (universe == null && !globalScope) {
                     result.skippedRows++
                     result.warnings.add("$rowLabel: 세계관 '${uName.ifBlank { uCode }}'을(를) 찾을 수 없습니다 — '세계관' 시트를 함께 가져오세요")
                     continue
                 }
 
                 val entityType = FieldValueSheetMapper.entityTypeOf(if (entityCol >= 0) getCellString(row, entityCol) else null)
-                val fd = fieldCache.getOrPut(Triple(universe.id, fieldKey, entityType)) {
-                    db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, entityType)
+                val fd = fieldCache.getOrPut(Triple(universe?.id, fieldKey, entityType)) {
+                    if (universe == null) db.fieldDefinitionDao().getGlobalFieldByKey(fieldKey, entityType)
+                    else db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, entityType)
                 }
                 if (fd == null) {
                     result.skippedRows++
-                    result.warnings.add("$rowLabel: 필드 키 '$fieldKey'을(를) 세계관 '${universe.name}'에서 찾을 수 없습니다 — '필드 정의' 시트를 함께 가져오세요")
+                    val where = if (globalScope) FieldScopeCell.GLOBAL_LABEL else "세계관 '${universe?.name}'"
+                    result.warnings.add("$rowLabel: 필드 키 '$fieldKey'을(를) ${where}에서 찾을 수 없습니다 — '필드 정의' 시트를 함께 가져오세요")
                     continue
                 }
                 // 계산 필드는 수식으로 산출되는 파생값 — 내보내기와 대칭으로 저장하지 않는다
