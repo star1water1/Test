@@ -57,18 +57,20 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    /** 관리 화면의 '새로 만들기' — 만들고 곧바로 전 세계관에 심는다. */
+    /**
+     * 관리 화면의 '새로 만들기' — 만들고 곧바로 전 세계관에 심는다.
+     *
+     * [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository.promoteAndPlant]를
+     * 쓰는 것은 **같은 자리에 이미 템플릿이
+     * 있는 경우를 예외가 아니라 결과로 만들기 위해서다** — 유니크 `(entityType, key)`가 둘째
+     * 템플릿을 거절하므로, 그대로 두면 사용자는 *"저장에 실패했습니다"*만 받는다.
+     * 그쪽은 있는 템플릿을 돌려주고 심기만 다시 돌린다.
+     */
     fun createFromField(field: FieldDefinition) = viewModelScope.launch {
         try {
-            val template = DefaultFieldPlan.promote(
-                field,
-                displayOrder = 0,
-                code = com.novelcharacter.app.data.model.generateEntityCode(),
-                createdAt = System.currentTimeMillis()
-            )
-            val r = repository.createAndPlant(template)
+            val r = repository.promoteAndPlant(field)
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                app.getString(R.string.default_field_manage_title), plantedText(r.planted, r.linked)))
+                r.template.name, plantedText(r.planted, r.linked)))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create default field", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,

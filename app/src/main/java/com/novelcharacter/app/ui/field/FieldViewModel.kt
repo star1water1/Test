@@ -148,16 +148,24 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         val repo = app.defaultFieldTemplateRepository
         val existing = repo.getBySlot(field.entityType, field.key)
         return when {
-            want && existing == null -> {
-                val r = repo.promoteAndPlant(field)
+            // 켰다 — 템플릿이 없으면 만들고, **있으면 다시 심는다.**
+            //
+            // 뒤엣것을 빠뜨리면 조용한 무동작이 난다: 스위치는 이 필드의 표식만 보고 켜지므로
+            // (`DefaultFieldRef.isLinked`), *템플릿은 있는데 이 세계관의 필드만 연결이 없는*
+            // 상태에서 사용자가 켜면 **아무 일도 일어나지 않는다.** 그 상태는 실재한다 —
+            // 월드패키지·엑셀·휴지통 복원으로 들어온 세계관은 심기를 지나치지 않는다.
+            // 다시 심기는 이미 있는 필드를 덮지 않으므로(연결만 건다) 안전하고, 겸사겸사
+            // 그 사이 생긴 다른 세계관까지 따라잡는다.
+            want -> {
+                val r = if (existing == null) repo.promoteAndPlant(field) else repo.plantAll(existing)
                 if (r.planted == 0 && r.linked == 0) app.getString(R.string.default_field_plant_none)
                 else app.getString(R.string.default_field_planted, r.planted, r.linked)
             }
-            !want && existing != null -> {
+            existing != null -> {
                 val demoted = repo.deleteTemplate(existing)
                 app.getString(R.string.default_field_demoted, existing.name, demoted)
             }
-            // 이미 원하는 상태다 — 아무 일도 하지 않고 아무 말도 하지 않는다.
+            // 껐는데 템플릿이 애초에 없다 — 아무 일도 하지 않고 아무 말도 하지 않는다.
             else -> null
         }
     }
