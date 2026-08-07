@@ -52,10 +52,13 @@ class AiProviderCodecTest {
      */
     @Test
     fun 모든_선언_필드가_JSON에_실린다() {
+        // static은 뺀다 — companion이 생기면 `Companion`이 필드로 잡혀 **없는 JSON 키를 요구**하는
+        // 헛된 실패가 난다(이 시험이 잡아야 할 것은 그것이 아니다).
         val declared = AiProviderConfig::class.java.declaredFields
-            .filterNot { it.isSynthetic }
+            .filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
             .map { it.name }
             .toSet()
+        assertTrue("설정 필드를 하나도 못 읽었다 — 이 시험이 무력화된 상태다", declared.isNotEmpty())
         val encoded = JsonParser.parseString(AiProviderCodec.encode(listOf(full())))
             .asJsonArray[0].asJsonObject
         val missing = declared - encoded.keySet()
