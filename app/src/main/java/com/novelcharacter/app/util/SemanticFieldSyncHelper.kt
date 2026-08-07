@@ -108,7 +108,11 @@ class SemanticFieldSyncHelper(
                         upsertFieldValue(characterId, birthYearField.id, birthYear.toString())
                     }
                 }
-                else -> { /* HEIGHT, WEIGHT, BODY_SIZE — 동기화 불필요 */ }
+                // HEIGHT·WEIGHT·BODY_SIZE는 체형 분석이 값을 *읽기만* 하고, GENDER는
+                // 아예 잇는 시스템 필드가 없는 **표식 전용**이다(그 역할의 `linkedKey`가
+                // 비어 있는 것이 그 사실이다). 여기서 아무것도 안 하는 것이 그 역할의 성질이지
+                // 빠뜨린 자리가 아니다.
+                else -> Unit
             }
         }
     }

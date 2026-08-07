@@ -476,8 +476,13 @@ object DuelSheetLabels {
  * **정의가 기록보다 앞이다** — 판·처분은 축을 가리키므로 축이 먼저 들어와야 붙을 자리가 있다
  * (확-3의 교훈). 시트 순서와 가져오기 순서를 모두 그렇게 둔다.
  *
- * 필드 연결(층 C)은 **키를 쉼표로 이은 글**이다. 앞머리 `-`는 *작을수록 유리*이며 해석은
- * `util/DuelFieldLinks`가 단일 소스다 — 사람이 손으로 고칠 수 있는 자리라 JSON을 싣지 않는다.
+ * 필드 연결(층 C·B-122)은 **키를 쉼표로 이은 글**이다. 앞머리 `-`는 *작을수록 유리*이며
+ * 해석은 `util/DuelFieldLinks`가 단일 소스다 — 사람이 손으로 고칠 수 있는 자리라 JSON을
+ * 싣지 않는다. `프로필필드`에는 앞머리 `-`가 뜻이 없다(견주지 않으므로 유리한 방향이 없다).
+ *
+ * ⚠️ **이 셋은 열이 없으면 건드리지 않는다**(`ExcelImportService.readDuelAxisRow`) — 이 열이
+ * 없던 시절에 내보낸 파일을 다시 들이는 것만으로 연결이 지워지면 안 되기 때문이다.
+ * *빈 칸*("지워라")과 *없는 열*("이 파일은 그것을 말하지 않는다")은 다른 사실이다.
  */
 fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 축",
@@ -488,6 +493,7 @@ fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("대상", dropdownOptions = DuelSheetLabels.TARGETS, width = 3500),
         ColumnSpec("영향필드", width = 10000),
         ColumnSpec("산출필드", width = 8000),
+        ColumnSpec("프로필필드", width = 10000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)

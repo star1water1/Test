@@ -100,4 +100,56 @@ class DuelSheetSpecTest {
         assertEquals("", DuelFieldLinks.toText(DuelFieldLinks.parseText("")))
         assertEquals("[]", DuelFieldLinks.encode(DuelFieldLinks.parseText("   ")))
     }
+
+    // ── 프로필 필드 열 (B-122) ──
+
+    /**
+     * 축 시트의 **고정 열 순서 계약** — `ListPresetSpecColumnOrderTest`와 같은 부류다.
+     *
+     * 머리글은 `duelAxisSpec()`의 순서로 쓰이는데 **데이터 셀은 `row.createCell(n)`으로 번호를
+     * 손수 매긴다**(`ExcelExporter.exportDuelAxes`). 둘이 어긋나도 오류가 나지 않고 **그 뒤 열이
+     * 통째로 한 칸씩 밀린다** — `정렬순서` 자리에 축 코드가 들어가고, 그 파일을 되받으면
+     * 코드를 숫자로 읽으려다 0이 된다.
+     *
+     * **B-122가 `산출필드` 뒤에 `프로필필드`를 끼워 넣으면서 실제로 그 위험을 만들었다**
+     * (인덱스 6·7·8이 7·8·9로 밀렸다). 순서를 여기 못 박아 두면 다음에 열을 끼우는 사람은
+     * 이 시험이 깨지는 것으로 **내보내기 쪽 인덱스도 함께 밀어야 한다는 사실을 알게 된다.**
+     */
+    @Test
+    fun `축 시트의 열 순서가 고정돼 있다`() {
+        assertEquals(
+            listOf(
+                "축이름", "세계관", "세계관코드", "대상",
+                "영향필드", "산출필드", "프로필필드",
+                "정렬순서", "코드", "생성일"
+            ),
+            axisSpec.columns.map { it.header }
+        )
+    }
+
+    /**
+     * 축 시트가 **연결 셋을 전부 싣는다.** 하나라도 빠지면 내보냈다 들이는 왕복에서 그
+     * 연결이 파일에 없는 사실이 되고, 밖에서 고칠 길도 사라진다(개발 의도 4번).
+     */
+    @Test
+    fun `축 시트가 연결 세 종류를 모두 싣는다`() {
+        val headers = axisSpec.columns.map { it.header }
+        assertTrue("영향필드" in headers)
+        assertTrue("산출필드" in headers)
+        assertTrue("프로필필드" in headers)
+        // 연결끼리 붙어 있어야 사람이 한눈에 견준다 — 프로필은 산출 바로 뒤다.
+        assertEquals(headers.indexOf("산출필드") + 1, headers.indexOf("프로필필드"))
+    }
+
+    /**
+     * **읽기 전용 열은 사람이 고칠 자리가 아니다.** 프로필필드는 고쳐야 하는 칸이므로
+     * 읽기 전용이 아니어야 한다 — 잠기면 엑셀에서 프로필을 편집할 길이 없다.
+     */
+    @Test
+    fun `프로필필드 열은 사람이 고칠 수 있다`() {
+        val profile = axisSpec.columns.first { it.header == "프로필필드" }
+        assertTrue(!profile.readOnly)
+        // 드롭다운을 달지 않는다 — 여러 키를 쉼표로 잇는 칸이라 한 값 고르기와 성질이 다르다.
+        assertEquals(null, profile.dropdownOptions)
+    }
 }

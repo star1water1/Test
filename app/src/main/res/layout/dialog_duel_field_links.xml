@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  축에 걸 필드를 고르는 창 — 영향 필드(순위 있음)와 산출 필드가 같은 창을 쓴다.
+  축에 걸 필드를 고르는 창 — 영향 필드(순위 있음) · 산출 필드 · 프로필 필드(B-122)가 **같은
+  창**을 쓴다. 갈리는 것은 목적문·제목과 두 축(순위 있는가 / 유리한 방향이 있는가)뿐이다.
 
   scroll-cap-exempt: 목록은 아래 FrameLayout이 높이를 묶고 그 안에서 스크롤된다(R-31의 요구 그대로).
 -->
@@ -29,6 +30,20 @@
         android:layout_marginBottom="8dp"
         android:text="@string/duel_links_no_fields"
         android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
+
+    <!--
+      프로필 고르기에서만 뜬다 — 트리오(성별·나이)가 어디서 오는지, 그리고 **이 세계관에
+      그 역할 필드가 없으면 그 사실**을 말한다(R-17). 없다는 것을 조용히 두면 프로필을
+      아무리 골라도 트리오 줄이 안 뜨는 이유를 알 길이 없다.
+    -->
+    <TextView
+        android:id="@+id/linksRoleNote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="@color/text_secondary"
         android:visibility="gone" />
 

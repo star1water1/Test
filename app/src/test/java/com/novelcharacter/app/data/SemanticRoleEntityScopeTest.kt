@@ -18,7 +18,7 @@ import org.junit.Test
 class SemanticRoleEntityScopeTest {
 
     @Test
-    fun `캐릭터에서는 역할 여덟이 모두 성립한다`() {
+    fun `캐릭터에서는 모든 역할이 성립한다`() {
         val roles = SemanticRole.forEntityType(FieldDefinition.ENTITY_CHARACTER)
         assertEquals(SemanticRole.entries.size, roles.size)
         assertTrue(roles.containsAll(SemanticRole.entries))
@@ -27,7 +27,10 @@ class SemanticRoleEntityScopeTest {
     @Test
     fun `사건과 작품에서는 성립하는 역할이 하나도 없다`() {
         // 0개라는 것이 화면에서 섹션이 사라지는 유일한 근거다.
-        // 역할 여덟이 전부 캐릭터 시스템 필드(__birth·__age·__height…)와 잇기 때문이다.
+        // 지금 역할이 전부 캐릭터 축이기 때문이다 — 대부분은 캐릭터 시스템 필드
+        // (__birth·__age·__height…)와 잇고, GENDER처럼 **잇는 것 없이 표식만인 역할**도
+        // 성별이 캐릭터의 성질이라 캐릭터 축이다.
+        // **수를 적지 않는다** — 적으면 역할이 하나 늘 때마다 낡는다(실제로 GENDER에서 낡았다).
         assertTrue(SemanticRole.forEntityType(FieldDefinition.ENTITY_EVENT).isEmpty())
         assertTrue(SemanticRole.forEntityType(FieldDefinition.ENTITY_NOVEL).isEmpty())
     }

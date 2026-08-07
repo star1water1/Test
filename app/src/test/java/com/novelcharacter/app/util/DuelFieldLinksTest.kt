@@ -226,4 +226,47 @@ class DuelFieldLinksTest {
         assertTrue(axis.hasAny)
         assertTrue(DuelFieldLinks.Axis().conflicts.isEmpty())
     }
+
+    // ── 프로필 필드 (B-122) ──
+
+    /**
+     * 프로필로 걸린 산출 필드를 **세어서 알린다.**
+     *
+     * 고르는 창이 막지만 엑셀은 그 창을 지나지 않는다 — 사람이 `프로필필드` 칸에 산출 필드
+     * 키를 적을 수 있고, 그때 값을 지우지도 조용히 띄우지도 않는 것이 이 목록의 몫이다.
+     */
+    @Test
+    fun `axis reports profile links that are actually outcome fields`() {
+        val axis = DuelFieldLinks.Axis(
+            outcomes = listOf(Link("power")),
+            profiles = listOf(Link("faction"), Link("power"))
+        )
+        assertEquals(listOf("power"), axis.profileBlocked)
+        // 영향↔산출의 겹침과는 **다른 것을 센다** — 여기 영향 필드는 하나도 없다.
+        assertTrue(axis.conflicts.isEmpty())
+    }
+
+    /** 프로필만 걸린 축도 '연결이 있다' — 카드가 그것으로 달라지기 때문이다. */
+    @Test
+    fun `axis with only profile links counts as linked`() {
+        assertTrue(DuelFieldLinks.Axis(profiles = listOf(Link("faction"))).hasAny)
+        assertTrue(DuelFieldLinks.Axis().profileBlocked.isEmpty())
+    }
+
+    /**
+     * 프로필도 같은 저장 형식을 왕복한다 — **차례가 표시 차례**라 지켜야 한다.
+     *
+     * 앞머리 `-`는 프로필에서 뜻이 없지만, 사람이 엑셀에 적어 넣을 수 있으므로 **해석은
+     * 되어야 한다**(깨뜨리지 않는다). 뜻이 없다는 것과 못 읽는다는 것은 다르다.
+     */
+    @Test
+    fun `profile links survive the storage round trip in order`() {
+        val links = listOf(Link("faction"), Link("origin"), Link("hobby"))
+        assertEquals(links, DuelFieldLinks.decode(DuelFieldLinks.encode(links)))
+        assertEquals(links, DuelFieldLinks.parseText(DuelFieldLinks.toText(links)))
+        assertEquals(
+            listOf(Link("faction"), Link("age", higherWins = false)),
+            DuelFieldLinks.parseText("faction, -age")
+        )
+    }
 }

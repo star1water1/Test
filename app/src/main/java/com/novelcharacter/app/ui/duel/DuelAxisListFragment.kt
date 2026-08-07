@@ -16,6 +16,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.databinding.FragmentDuelAxisListBinding
 import com.novelcharacter.app.ui.adapter.DuelAxisAdapter
 import com.novelcharacter.app.ui.adapter.DuelFieldLinkAdapter
@@ -163,12 +166,17 @@ class DuelAxisListFragment : Fragment() {
     }
 
     /**
-     * 목록의 요약 줄 — 축마다 **판 수와 상성 건수**를 낸다.
+     * 목록의 요약 줄 — 축마다 **판 수와 상성 건수**, 그리고 쌓여 있으면 **미정 건수**를 낸다.
      *
      * 상성 건수는 점수 적합을 한 번 돌려야 나오는 값이라 축 하나당 비용이 붙는다. 그래도
      * 여기서 내는 이유는 P-10이 확정한 배지가 *"눌러 보기 전에 볼 것이 있는지 안다"*는
      * 약속이기 때문이다 — 목록이 판 수만 말하면 상성은 다시 일일이 열어야 알 수 있다
      * (원칙 04가 금지하는 부류).
+     *
+     * **미정('아직 안 정했다')이 뒤늦게 붙은 것도 같은 근거다**(로드맵 5-1). 그 판정은
+     * *"나중에 다시 묻는다"*는 약속인데 어디에도 세어지지 않아, 쌓여도 눈에 띄지 않고
+     * 결국 다시 묻히지 않았다. **0건이면 적지 않는다** — 모든 축에 `미정 0`이 붙으면
+     * 그 글자가 정작 쌓인 축을 가린다.
      */
     private fun loadSummaries(axes: List<DuelAxis>) {
         if (axes.isEmpty()) return
@@ -177,7 +185,7 @@ class DuelAxisListFragment : Fragment() {
             val summaries = HashMap<Long, String>(axes.size)
             for (axis in axes) {
                 val loaded = viewModel.load(axis, characters)
-                summaries[axis.id] = getString(
+                val base = getString(
                     R.string.duel_axis_summary,
                     // **쌓인 판 전부**를 센다(`fit.usedMatches`가 아니다). 저쪽은 점수 적합에
                     // 들어간 수라 고아·상성 제외·깨진 판이 빠지므로, 삭제 고지가 말하는
@@ -186,6 +194,12 @@ class DuelAxisListFragment : Fragment() {
                     characters.size,
                     loaded.state.report.count
                 )
+                val undecided = loaded.verdicts.count { it.kind == DuelCounterVerdict.KIND_UNDECIDED }
+                summaries[axis.id] = if (undecided > 0) {
+                    base + getString(R.string.duel_axis_summary_undecided, undecided)
+                } else {
+                    base
+                }
                 if (!isAdded) return@launch
                 adapter.updateSummaries(summaries.toMap())
             }
@@ -206,20 +220,35 @@ class DuelAxisListFragment : Fragment() {
         val links = existing?.fieldLinks ?: DuelFieldLinks.Axis()
         var influences = links.influences
         var outcomes = links.outcomes
+        var profiles = links.profiles
         val influenceSummary = view.findViewById<TextView>(R.id.influenceSummary)
         val outcomeSummary = view.findViewById<TextView>(R.id.outcomeSummary)
+        val profileSummary = view.findViewById<TextView>(R.id.profileSummary)
         val conflictWarning = view.findViewById<TextView>(R.id.linkConflictWarning)
+        val profileBlockedWarning = view.findViewById<TextView>(R.id.profileBlockedWarning)
 
         fun renderLinks() {
             influenceSummary.text = summarize(influences)
             outcomeSummary.text = summarize(outcomes)
+            profileSummary.text = summarize(profiles)
+            val edited = DuelFieldLinks.Axis(influences, outcomes, profiles)
             // 같은 필드가 재료이면서 결과일 수는 없다 — 막지는 않고 **말한다**(자율성 우선).
-            val conflicts = DuelFieldLinks.Axis(influences, outcomes).conflicts
+            val conflicts = edited.conflicts
             conflictWarning.visibility = if (conflicts.isEmpty()) View.GONE else View.VISIBLE
             if (conflicts.isNotEmpty()) {
                 conflictWarning.text = getString(
                     R.string.duel_links_conflict,
                     conflicts.joinToString(", ") { fieldNames[it] ?: it }
+                )
+            }
+            // 프로필로 걸렸는데 산출 필드라 카드에서 빠지는 것 — 고르는 창은 막지만 엑셀로
+            // 들어온 파일은 그 창을 지나지 않으므로 이 자리가 필요하다(조용히 빼지 않는다).
+            val blocked = edited.profileBlocked
+            profileBlockedWarning.visibility = if (blocked.isEmpty()) View.GONE else View.VISIBLE
+            if (blocked.isNotEmpty()) {
+                profileBlockedWarning.text = getString(
+                    R.string.duel_links_profile_blocked_warning,
+                    blocked.joinToString(", ") { fieldNames[it] ?: it }
                 )
             }
         }
@@ -234,6 +263,19 @@ class DuelAxisListFragment : Fragment() {
         view.findViewById<View>(R.id.btnEditOutcome).setOnClickListener {
             showFieldLinkDialog(outcomes, rankable = false) { picked ->
                 outcomes = picked
+                renderLinks()
+            }
+        }
+        view.findViewById<View>(R.id.btnEditProfile).setOnClickListener {
+            showFieldLinkDialog(
+                profiles,
+                rankable = false,
+                directional = false,
+                // 지금 편집 중인 산출 필드로 막는다 — 저장된 것이 아니라, 이 창에서 방금
+                // 산출로 옮긴 필드도 곧바로 막혀야 앞뒤가 맞는다.
+                blockedKeys = outcomes.map { it.key }.toSet()
+            ) { picked ->
+                profiles = picked
                 renderLinks()
             }
         }
@@ -263,7 +305,8 @@ class DuelAxisListFragment : Fragment() {
                 )
                 ).copy(
                 influenceFieldKeys = DuelFieldLinks.encode(influences),
-                outcomeFieldKeys = DuelFieldLinks.encode(outcomes)
+                outcomeFieldKeys = DuelFieldLinks.encode(outcomes),
+                profileFieldKeys = DuelFieldLinks.encode(profiles)
             )
             saving = true
             // 이름 유니크는 인덱스가 지킨다. 인덱스에 걸리면 예외로 죽으므로 **먼저 묻는다** —
@@ -312,6 +355,8 @@ class DuelAxisListFragment : Fragment() {
     private fun showFieldLinkDialog(
         current: List<DuelFieldLinks.Link>,
         rankable: Boolean,
+        directional: Boolean = true,
+        blockedKeys: Set<String> = emptySet(),
         onPicked: (List<DuelFieldLinks.Link>) -> Unit
     ) {
         viewLifecycleOwner.lifecycleScope.launch {
@@ -321,24 +366,73 @@ class DuelAxisListFragment : Fragment() {
 
             val context = requireContext()
             val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_field_links, null)
+            // 프로필은 순위도 방향도 없다 — 그 셋을 한 창으로 가르는 축이 rankable·directional이다.
+            val isProfile = !rankable && !directional
             view.findViewById<TextView>(R.id.linksPurpose).setText(
-                if (rankable) R.string.duel_links_influence_purpose else R.string.duel_links_outcome_purpose
+                when {
+                    rankable -> R.string.duel_links_influence_purpose
+                    isProfile -> R.string.duel_links_profile_purpose
+                    else -> R.string.duel_links_outcome_purpose
+                }
             )
             view.findViewById<View>(R.id.linksEmpty).visibility =
                 if (fields.isEmpty()) View.VISIBLE else View.GONE
 
+            // 트리오(성별·나이)가 어디서 오는지 — **이 세계관에 그 역할 필드가 없으면 그 사실을
+            // 말한다**(R-17). 없다는 것을 조용히 두면 사용자는 프로필을 아무리 골라도 트리오
+            // 줄이 안 뜨는 이유를 알 길이 없다.
+            val roleNote = view.findViewById<TextView>(R.id.linksRoleNote)
+            if (isProfile) {
+                val missing = missingTrioRoles(fields)
+                roleNote.visibility = View.VISIBLE
+                roleNote.text = if (missing.isEmpty()) {
+                    getString(R.string.duel_links_profile_trio_ok)
+                } else {
+                    getString(R.string.duel_links_profile_trio_missing, missing.joinToString(", "))
+                }
+            } else {
+                roleNote.visibility = View.GONE
+            }
+
             val recycler = view.findViewById<RecyclerView>(R.id.linksRecyclerView)
-            val linkAdapter = DuelFieldLinkAdapter(fields, current, rankable) {}
+            val blockedReason = getString(R.string.duel_links_profile_blocked_note)
+            val linkAdapter = DuelFieldLinkAdapter(
+                fields,
+                current,
+                rankable,
+                {},
+                directional,
+                blockedKeys.associateWith { blockedReason }
+            )
             recycler.layoutManager = LinearLayoutManager(context)
             recycler.adapter = linkAdapter
 
             MaterialAlertDialogBuilder(context)
-                .setTitle(if (rankable) R.string.duel_links_influence_label else R.string.duel_links_outcome_label)
+                .setTitle(
+                    when {
+                        rankable -> R.string.duel_links_influence_label
+                        isProfile -> R.string.duel_links_profile_label
+                        else -> R.string.duel_links_outcome_label
+                    }
+                )
                 .setView(view)
                 .setPositiveButton(R.string.confirm) { _, _ -> onPicked(linkAdapter.currentLinks()) }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    /**
+     * 트리오 중 **이 세계관에 역할 필드가 없는 것**의 이름 — 없으면 빈 목록이다.
+     *
+     * 라벨 문자열로 성별·나이 필드를 찾지 않는 것은 R-20이다. 역할이 지정돼 있지 않으면
+     * 그 줄은 뜨지 않으며, 그 사실을 말하는 것이 이 함수의 몫이다.
+     */
+    private fun missingTrioRoles(fields: List<FieldDefinition>): List<String> {
+        val present = fields.mapNotNull { SemanticRole.fromConfig(it.config) }.toSet()
+        return listOf(SemanticRole.GENDER, SemanticRole.AGE)
+            .filter { it !in present }
+            .map { it.label }
     }
 
     private fun confirmDelete(axis: DuelAxis) {

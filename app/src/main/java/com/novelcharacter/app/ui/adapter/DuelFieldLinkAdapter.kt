@@ -19,15 +19,27 @@ import com.novelcharacter.app.util.DuelFieldLinks
  * 사용자가 적은 숫자와 목록의 차례가 어긋날 수 있기 때문이다 — 목록 자체가 순위이면 두 자리가
  * 갈릴 수 없다(순서 편집은 드래그·화살표로 한다는 원칙 04의 요구와도 같은 자리).
  *
- * **산출 필드도 같은 목록을 쓴다.** 그쪽은 순위에 뜻이 없지만([rankable]이 false),
- * 고르는 일과 유리한 방향을 정하는 일은 똑같다 — 창을 둘로 만들면 같은 코드가 둘이 된다.
+ * **산출·프로필 필드도 같은 목록을 쓴다.** 그쪽은 순위에 뜻이 없고([rankable]이 false)
+ * 프로필은 유리한 방향에도 뜻이 없지만([directional]이 false), **고르는 일은 똑같다** —
+ * 창을 셋으로 만들면 같은 코드가 셋이 된다.
  */
 class DuelFieldLinkAdapter(
     private val fields: List<FieldDefinition>,
     initial: List<DuelFieldLinks.Link>,
     /** 순위(위/아래 옮기기)를 보이는가. 영향 필드만 참이다. */
     private val rankable: Boolean,
-    private val onChanged: () -> Unit
+    private val onChanged: () -> Unit,
+    /** 유리한 방향(높을수록/낮을수록)을 고를 수 있는가. 견주지 않는 프로필 필드는 거짓이다. */
+    private val directional: Boolean = true,
+    /**
+     * **고를 수 없는 필드와 그 사유** (R-24 — 성립하지 않는 조합은 막고 이유를 말한다).
+     *
+     * 지금 쓰는 곳은 프로필 고르기이고, 막히는 것은 **산출 필드**다: 그 값이 곧 이 대결이
+     * 물으려는 답이라 프로필 경로로 카드에 올라오면 물음과 답이 한 화면에 놓인다.
+     * 감추지 않고 **비활성 + 사유**로 두는 것은, 목록에서 지우면 사용자가 *"내가 만든 필드가
+     * 왜 없지"*로 되돌아오기 때문이다.
+     */
+    private val blockedKeys: Map<String, String> = emptyMap()
 ) : RecyclerView.Adapter<DuelFieldLinkAdapter.ViewHolder>() {
 
     private val byKey: Map<String, FieldDefinition> = fields.associateBy { it.key }
@@ -78,6 +90,10 @@ class DuelFieldLinkAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) = holder.bind(rows[position])
 
     private fun toggle(key: String, checked: Boolean) {
+        // **막힌 것은 새로 고를 수 없지만 빼는 것은 언제나 된다.** 막기만 하고 빼는 길을
+        // 닫으면, 엑셀로 들어온 잘못된 연결을 이 창에서 바로잡을 수 없다 — 검증 → 알림 →
+        // **바로잡을 경로**의 마지막이 빠진 꼴이다(개발 의도 2번).
+        if (checked && key in blockedKeys) return
         if (checked) {
             if (picked.none { it.key == key }) picked.add(DuelFieldLinks.Link(key))
         } else {
@@ -121,6 +137,8 @@ class DuelFieldLinkAdapter(
         fun bind(row: Row) {
             val context = itemView.context
             val selected = row.link != null
+            val blockedReason = blockedKeys[row.field.key]
+            val blocked = blockedReason != null
 
             // 리스너를 먼저 떼고 상태를 놓는다 — 재활용되는 줄에서 setChecked가 옛 리스너를 부른다.
             check.setOnCheckedChangeListener(null)
@@ -132,19 +150,31 @@ class DuelFieldLinkAdapter(
             }
 
             val type = FieldType.fromName(row.field.type)
-            note.text = if (selected && type != null && !ORDERABLE_TYPES.contains(type)) {
+            note.text = when {
+                // 막혔는데 이미 골라져 있으면 **빼는 법**을 말한다 — 사유만 적어 두면
+                // 사용자는 그 줄을 어떻게 없애는지 알 수 없다.
+                blockedReason != null && selected ->
+                    context.getString(R.string.duel_links_profile_blocked_picked)
+                // 막힌 사유가 다른 무엇보다 앞선다 — 고를 수 없는 줄에서 타입 안내는 소음이다.
+                blockedReason != null -> blockedReason
                 // 견줄 수 없는 값이라는 사실을 **고른 순간에** 말한다 — 나중에 "왜 대조가 안 되지"로
                 // 되돌아오는 것보다 낫다(변수 제어: 조용히 빠뜨리지 않는다).
-                context.getString(R.string.duel_links_display_only, type.label)
-            } else {
-                context.getString(R.string.duel_links_type_note, type?.label ?: row.field.type, row.field.key)
+                selected && directional && type != null && !ORDERABLE_TYPES.contains(type) ->
+                    context.getString(R.string.duel_links_display_only, type.label)
+                else ->
+                    context.getString(R.string.duel_links_type_note, type?.label ?: row.field.type, row.field.key)
             }
 
-            direction.visibility = if (selected) View.VISIBLE else View.GONE
-            up.visibility = if (selected && rankable) View.VISIBLE else View.GONE
-            down.visibility = if (selected && rankable) View.VISIBLE else View.GONE
+            // **막혔어도 이미 골라져 있으면 끌 수는 있다** — 그것이 바로잡는 유일한 길이다
+            // (엑셀로 들어온 연결은 이 창을 지나지 않고 들어온다). 새로 고르는 것만 막힌다.
+            val interactive = !blocked || selected
+            check.isEnabled = interactive
+            name.isEnabled = interactive
+            direction.visibility = if (selected && directional && !blocked) View.VISIBLE else View.GONE
+            up.visibility = if (selected && rankable && !blocked) View.VISIBLE else View.GONE
+            down.visibility = if (selected && rankable && !blocked) View.VISIBLE else View.GONE
 
-            if (row.link != null) {
+            if (row.link != null && !blocked) {
                 direction.setText(
                     if (row.link.higherWins) R.string.duel_links_higher_wins else R.string.duel_links_lower_wins
                 )
@@ -155,8 +185,16 @@ class DuelFieldLinkAdapter(
                 down.setOnClickListener { move(row.field.key, 1) }
             }
 
-            check.setOnCheckedChangeListener { _, checked -> toggle(row.field.key, checked) }
-            itemView.setOnClickListener { check.isChecked = !check.isChecked }
+            if (interactive) {
+                itemView.isClickable = true
+                check.setOnCheckedChangeListener { _, checked -> toggle(row.field.key, checked) }
+                itemView.setOnClickListener { check.isChecked = !check.isChecked }
+            } else {
+                // 누름을 아예 받지 않는다 — 체크만 꺼 두면 줄을 눌렀을 때 아무 일도 안 일어나는
+                // 것처럼 보여 사용자가 고장으로 읽는다.
+                itemView.setOnClickListener(null)
+                itemView.isClickable = false
+            }
         }
     }
 

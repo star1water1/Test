@@ -10,12 +10,18 @@ import org.json.JSONArray
  * *"영향 필드가 여럿이면 순위를 정해도 좋겠다. … 영향력과 상관없이 이 대전의 결과가 이
  * 필드로 이어진다는 또 다른 거니까 산출 필드는 따로 둬야지."*
  *
- * ## 연결이 둘인 것은 방향이 반대이기 때문이다
+ * ## 연결이 셋인 것은 방향과 쓰임이 전부 다르기 때문이다
  *
- * | | 무엇 | 방향 | 대결 화면에 보이는가 |
- * |---|---|---|---|
- * | **영향 필드**([Axis.influences]) | 승패를 **가르는 재료** — 마력량·속성·소속 | 필드 → 대결 | **보인다** |
- * | **산출 필드**([Axis.outcomes]) | 대결이 **만들어 내는 값** — 강함 | 대결 → 필드 | **보이지 않는다** |
+ * | | 무엇 | 방향 | 대결 화면에 보이는가 | 예측에 쓰나 |
+ * |---|---|---|---|---|
+ * | **영향 필드**([Axis.influences]) | 승패를 **가르는 재료** — 마력량·속성 | 필드 → 대결 | **보인다** | **쓴다**(사전식) |
+ * | **산출 필드**([Axis.outcomes]) | 대결이 **만들어 내는 값** — 강함 | 대결 → 필드 | **보이지 않는다** | 안 쓴다 |
+ * | **프로필 필드**([Axis.profiles]) | *누구인지 알아보는* 재료 — 소속·출신 | 표시 전용 | **보인다** | **안 쓴다** |
+ *
+ * **프로필 필드가 예측에 안 들어가는 것이 영향 필드와 갈리는 자리다**(B-122 — 사용자 원문의
+ * 괄호 *"대결에 영향을 주는 필드와는 따로임"*). [predict]도 [agreementOf]도 [outcomeReport]도
+ * 이 목록을 보지 않는다 — 같은 저장 형식을 쓰는 것은 **고르는 일이 똑같기 때문**이지
+ * 쓰임이 같아서가 아니다.
  *
  * **산출 필드를 대결 화면에 띄우지 않는 것은 그것이 곧 답이기 때문이다.** *"누가 더 센가"*를
  * 물으면서 '강함' 필드값을 함께 보이면 물음과 답을 같은 화면에 놓는 셈이고, 그러면 대결이
@@ -48,22 +54,42 @@ object DuelFieldLinks {
     data class Link(val key: String, val higherWins: Boolean = true)
 
     /**
-     * 한 축의 연결 전부 — 저장 형식 둘을 해석한 결과.
+     * 한 축의 연결 전부 — 저장 형식 셋을 해석한 결과.
      *
      * @property influences 승패에 영향을 주는 필드. **순서가 영향력 순위다.**
      * @property outcomes 대결 결과가 이어지는 필드. 보통 하나지만 열어 둔다(원칙 01).
+     * @property profiles 카드에 함께 띄우는 표시 전용 필드(B-122). **순서가 표시 차례다** —
+     *   상한을 넘긴 만큼이 *"외 N개"*로 접히므로(R-14) 앞자리가 곧 사용자가 먼저 보고 싶은 것이다.
      */
     data class Axis(
         val influences: List<Link> = emptyList(),
-        val outcomes: List<Link> = emptyList()
+        val outcomes: List<Link> = emptyList(),
+        val profiles: List<Link> = emptyList()
     ) {
-        val hasAny: Boolean get() = influences.isNotEmpty() || outcomes.isNotEmpty()
+        val hasAny: Boolean
+            get() = influences.isNotEmpty() || outcomes.isNotEmpty() || profiles.isNotEmpty()
 
         /** 같은 필드가 양쪽에 걸린 자리 — 재료이면서 결과일 수는 없다([conflicts]가 근거). */
         val conflicts: List<String>
             get() {
                 val outs = outcomes.map { it.key }.toSet()
                 return influences.map { it.key }.filter { it in outs }.distinct()
+            }
+
+        /**
+         * **프로필로 걸렸지만 카드에 뜨지 않는 산출 필드.**
+         *
+         * 고르는 창이 산출 필드를 비활성으로 막지만(R-24), **엑셀로 들어온 파일은 그 창을
+         * 지나지 않는다** — 사람이 `프로필필드` 칸에 산출 필드 키를 적을 수 있다. 그때
+         * 값을 지우지 않고([decode]가 그대로 담는다) **표시에서만 뺀다**: 물음과 답을 한
+         * 화면에 두지 않는다는 규칙이 저장 경로 하나로 우회되면 안 되기 때문이다.
+         *
+         * 조용히 빼지는 않는다 — 축 편집 창이 이 목록을 사유와 함께 말한다(개발 의도 2번).
+         */
+        val profileBlocked: List<String>
+            get() {
+                val outs = outcomes.map { it.key }.toSet()
+                return profiles.map { it.key }.filter { it in outs }.distinct()
             }
     }
 

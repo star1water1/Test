@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  대결 화면 보기 설정 — 카드 배치와 그림 맞춤.
+  대결 화면 보기 설정 — 카드 배치 · 그림 맞춤 · **무엇을 띄우는가**(B-122).
 
-  scroll-cap-exempt: 라디오 여섯 줄로 높이가 고정된 짧은 본문이라 스크롤이 생기지 않는다.
+  종전에는 `scroll-cap-exempt`(라디오 여섯 줄로 높이가 고정된 짧은 본문)였다. 표시 토글 둘이
+  들어오면서 작은 화면에서 넘칠 수 있게 됐으므로 상한 있는 스크롤로 바꾼다 — 내용이 짧으면
+  그만큼만 차지하므로 종전 모습은 그대로다(R-31).
 -->
-<LinearLayout
+<com.novelcharacter.app.ui.common.CappedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+<LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -73,4 +79,36 @@
 
     </RadioGroup>
 
+    <!-- ── 무엇을 띄우는가 (B-122) ── -->
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/duel_view_show_label"
+        android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+    <!-- 목적문(R-25) — 끄면 무엇이 어디서 사라지는가. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_view_show_purpose"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchShowProfile"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="@string/duel_view_show_profile" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchShowInfluence"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_view_show_influence" />
+
 </LinearLayout>
+
+</com.novelcharacter.app.ui.common.CappedScrollView>

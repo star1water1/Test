@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  카드의 프로필 한 줄 — 이름 왼쪽, 값 오른쪽 (B-122).
+
+  값을 오른쪽에 붙이는 것은 두 카드를 나란히 놓았을 때 **값끼리 가까워지기** 때문이 아니다
+  (프로필은 견주는 재료가 아니다) — 이름 길이가 제각각인 줄에서 값이 들쭉날쭉하지 않게
+  하려는 것이다. 견주는 재료인 영향 필드는 순위 번호가 앞을 잡는 다른 모양을 쓴다.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="true"
+    android:orientation="horizontal"
+    android:paddingTop="1dp"
+    android:paddingBottom="1dp">
+
+    <TextView
+        android:id="@+id/profileLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/profileValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+</LinearLayout>

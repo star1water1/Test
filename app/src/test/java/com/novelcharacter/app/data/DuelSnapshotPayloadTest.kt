@@ -81,12 +81,15 @@ class DuelSnapshotPayloadTest {
     }
 
     /**
-     * v50 이전(층 C 이전)에 만들어진 축 payload — **연결 칸 둘이 없다.**
+     * v50 이전(층 C 이전)에 만들어진 축 payload — **연결 칸 셋이 없다.**
      *
      * 선언은 non-null인데 Gson이 null을 주입하므로, 복원이 `copy()`를 부르는 순간 그 칸에서
      * NPE가 난다(B-103이 실제로 밟은 지뢰다. `copy`는 넘기지 않은 인자를 `this`에서 읽어
-     * 생성자에 넘기고, 생성자가 null 검사를 한다). **그래서 복원 경로가 두 칸을 명시적으로
+     * 생성자에 넘기고, 생성자가 null 검사를 한다). **그래서 복원 경로가 세 칸을 명시적으로
      * 접는다** — 여기서는 그 접기가 성립하는지, 그리고 해석이 빈 연결로 읽히는지를 잰다.
+     *
+     * **칸이 늘 때마다 이 시험도 는다.** `profileFieldKeys`(v52 — B-122)가 그 셋째이며,
+     * v52 이전 payload 전부가 이 경우다.
      */
     @Test
     fun `연결 칸이 없는 구버전 축 payload도 되살아난다`() {
@@ -95,17 +98,39 @@ class DuelSnapshotPayloadTest {
         val old = gson.fromJson(bare, DuelAxisSnapshot::class.java).axis
 
         @Suppress("SENSELESS_COMPARISON")
-        val missing = old.influenceFieldKeys == null && old.outcomeFieldKeys == null
+        val missing = old.influenceFieldKeys == null && old.outcomeFieldKeys == null &&
+            old.profileFieldKeys == null
         assertTrue("구버전 payload에는 연결 칸이 없어 null이 주입된다", missing)
 
-        // 복원이 하는 접기 그대로 — 이 두 줄이 곧 TrashRepository.applyDuelAxis의 계약이다.
+        // 복원이 하는 접기 그대로 — 이 세 줄이 곧 TrashRepository.applyDuelAxis의 계약이다.
         val restored = old.copy(
             influenceFieldKeys = old.influenceFieldKeys.orEmpty().ifEmpty { "[]" },
-            outcomeFieldKeys = old.outcomeFieldKeys.orEmpty().ifEmpty { "[]" }
+            outcomeFieldKeys = old.outcomeFieldKeys.orEmpty().ifEmpty { "[]" },
+            profileFieldKeys = old.profileFieldKeys.orEmpty().ifEmpty { "[]" }
         )
         assertEquals("[]", restored.influenceFieldKeys)
         assertEquals("[]", restored.outcomeFieldKeys)
+        assertEquals("[]", restored.profileFieldKeys)
         assertTrue("옛 축은 연결이 없는 축이다", !restored.fieldLinks.hasAny)
+    }
+
+    /**
+     * v52 이후의 축 payload는 **프로필 연결을 그대로 싣고 되살린다.**
+     *
+     * 위 시험이 *"없어도 안 죽는다"*를 재는 것과 달리 이쪽은 *"있으면 살아 돌아온다"*다 —
+     * 둘 다 없으면 접기만 남고 정작 담기는지는 아무도 안 본다.
+     */
+    @Test
+    fun `프로필 연결은 payload 왕복에서 그대로 살아 돌아온다`() {
+        val axis = DuelAxis(
+            id = 3, universeId = 1, name = "강함", code = "AX-1",
+            profileFieldKeys = """["faction","origin"]"""
+        )
+        val restored = gson.fromJson(
+            gson.toJson(DuelAxisSnapshot(axis = axis)),
+            DuelAxisSnapshot::class.java
+        ).axis
+        assertEquals(listOf("faction", "origin"), restored.fieldLinks.profiles.map { it.key })
     }
 
     @Test
