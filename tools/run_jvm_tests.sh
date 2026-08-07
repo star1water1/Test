@@ -190,6 +190,7 @@ $MAIN/util/DuelCategoryStats.kt
 $MAIN/util/DuelScoreIndex.kt
 $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
+$MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/AiImageAttach.kt
 $MAIN/util/RepresentativeImageCell.kt
@@ -272,6 +273,7 @@ $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
 $TEST/util/DuelAiContextTest.kt
 $TEST/util/DuelGradeAssignTest.kt
+$TEST/util/DuelAxisChoiceTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt

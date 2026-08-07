@@ -307,10 +307,15 @@ class FieldEditDialog : DialogFragment() {
             addGradeRow(
                 container, density, label,
                 currentValues[label] ?: com.novelcharacter.app.util.GradeTable.formatValue(def),
-                lockedLabel = true
+                lockedLabel = true,
+                onRowsChanged = { refreshDuelGradeEditor(binding) }
             )
         }
         binding.btnAddGrade.visibility = View.GONE
+        // 체계를 고르면 등급 표가 통째로 바뀐다 — 컷도 그 자리에서 따라가야 한다 (B-138 곁다리).
+        // 이 경로는 목록 로드가 비동기라 대결 축 로드와 순서가 갈리는데, 재조정은 어느 쪽이
+        // 나중이어도 같은 결과를 낸다([duelGradeLabels]가 그때의 차례를 들고 있다).
+        refreshDuelGradeEditor(binding)
     }
 
     // ── 대결 등급 산정 (B-113) ──
@@ -324,8 +329,30 @@ class FieldEditDialog : DialogFragment() {
     /** 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다(체계 참조와 같은 배선). */
     private var pendingDuelAxisCode: String? = null
 
+    /**
+     * 스피너에 실린 항목 그대로 (B-134) — **null 한 자리는 "축을 고르세요" 자리다.**
+     * 위치→축 되찾기를 [com.novelcharacter.app.util.DuelAxisChoice]가 들므로 이 창은 셈하지 않는다.
+     */
+    private var duelAxisItems: List<com.novelcharacter.app.data.model.DuelAxis?> = emptyList()
+
     /** 편집 중인 컷. 슬라이더가 진짜 상태를 들고 있고 이쪽은 로드/저장의 통로다. */
     private var duelGradeCuts: List<com.novelcharacter.app.data.model.DuelGradeRef.Cut> = emptyList()
+
+    /**
+     * [duelGradeCuts]가 **딛고 선 라벨 차례** — 재조정에 넘길 '옛 차례'다 (B-138).
+     *
+     * `DuelGradeAssign.reconcile`은 *"맨 아래에 등급이 붙은 경우"*를 가리려고 옛 차례를 받는다.
+     * 옛 마지막 등급은 컷이 없었으므로(나머지 전부) 새로 컷을 받을 때 **100%**여야 하는데,
+     * 컷만 봐서는 누가 마지막이었는지 알 수 없기 때문이다. 종전에는 두 호출부가 현재 차례를
+     * 두 번 넘겼고(`labels, labels`), 그러면 그 가지가 **한 번도 실행되지 않아** S/A/B에 C를
+     * 더하는 순간 **B 구간이 0%로 붕괴했다** — 사용자가 한 것은 등급 하나를 더한 것뿐인데
+     * 종전 최하 등급의 사람들이 통째로 새 등급으로 옮겨 간다.
+     *
+     * 그래서 **컷을 세울 때마다 그때의 차례를 함께 적어 둔다.** 비어 있으면(옛 필드·손상 config)
+     * 현재 차례로 떨어지는데, 그것이 `reconcile`이 KDoc에 적어 둔 *"모르면 넘기는 값"*이다 —
+     * 없는 근거로 추측하지 않는다.
+     */
+    private var duelGradeLabels: List<String> = emptyList()
 
     /** 직전 반영 흔적 — 화면에서 만들지 않고 **원문을 그대로 실어 나른다**(반영만이 이것을 쓴다). */
     private var duelGradeLastApplied: com.novelcharacter.app.data.model.DuelGradeRef.LastApplied? = null
@@ -337,6 +364,11 @@ class FieldEditDialog : DialogFragment() {
         }
         binding.spinnerDuelAxis.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                // 실재 축을 고르면 그것이 곧 이 필드가 가리키는 축이다 — 목록을 다시 세울 때
+                // (축을 새로 만든 경우) 방금 고른 것이 유지된다. **자리 표시용 항목에서는
+                // 옮기지 않는다**: 어댑터를 채우는 것만으로도 이 콜백이 0번으로 한 번 오는데,
+                // 거기서 끊긴 code를 지우면 댕글링 표시가 스스로 사라진다(B-134).
+                duelAxisItems.getOrNull(position)?.let { pendingDuelAxisCode = it.code }
                 refreshDuelGradeEditor(binding)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -363,21 +395,23 @@ class FieldEditDialog : DialogFragment() {
         binding.btnDuelAxisCreate.setOnClickListener { promptCreateDuelAxis(binding) }
     }
 
-    /** 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 가리키던 축을 선택으로 반영한다. */
+    /**
+     * 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 가리키던 축을 선택으로 반영한다.
+     *
+     * **항목과 선택을 한 계산이 함께 낸다**([DuelAxisChoice] — B-134). 종전에는 어댑터를 채운 뒤
+     * *"못 찾으면 `setSelection`을 부르지 않는다"*로 두었는데, `AbsSpinner.setAdapter`가 항목이
+     * 있으면 그 자리에서 0번을 고르므로 **안 부르는 것이 곧 0번이었다** — 주석이 바로 그 옆에서
+     * 금지하던 오배정이 그대로 일어났다. 사유와 처방은 그 파일의 KDoc에 있다.
+     */
     private fun applyDuelAxisList(binding: DialogFieldEditBinding) {
-        val labels = duelAxes.map { it.name }
+        val choice = com.novelcharacter.app.util.DuelAxisChoice.resolve(duelAxes, pendingDuelAxisCode)
+        duelAxisItems = choice.items
+        val labels = choice.items.map { it?.name ?: getString(R.string.duel_grade_axis_pick) }
         binding.spinnerDuelAxis.adapter = ArrayAdapter(
             requireContext(), android.R.layout.simple_spinner_item,
             labels.ifEmpty { listOf(getString(R.string.duel_grade_no_axis)) }
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-
-        val pending = pendingDuelAxisCode
-        if (pending != null && duelAxes.isNotEmpty()) {
-            val index = duelAxes.indexOfFirst { it.code == pending }
-            // 못 찾으면 선택을 옮기지 않는다 — 사유는 refreshDuelGradeEditor가 말한다.
-            // 조용히 0번 축으로 옮기면 **다른 축의 순위가 이 필드에 배정된다**(오배정).
-            if (index >= 0) binding.spinnerDuelAxis.setSelection(index)
-        }
+        binding.spinnerDuelAxis.setSelection(choice.selection)
         refreshDuelGradeEditor(binding)
     }
 
@@ -474,8 +508,15 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
+    /**
+     * 지금 고른 축 — **자리 표시용 항목을 고른 상태면 null이다**(가리키던 축이 지워졌다는 뜻).
+     *
+     * `duelAxes`가 아니라 [duelAxisItems]에서 찾는 것이 요점이다(B-134). 댕글링일 때는 앞에
+     * 자리가 하나 더 서므로 두 목록의 위치가 한 칸씩 어긋나는데, 그 셈을 이 창이 따로 하면
+     * 어긋나는 날이 온다 — 위치→축은 [DuelAxisChoice.Choice.axisAt]이 단일 소스다.
+     */
     private fun selectedDuelAxis(binding: DialogFieldEditBinding): com.novelcharacter.app.data.model.DuelAxis? =
-        duelAxes.getOrNull(binding.spinnerDuelAxis.selectedItemPosition)
+        duelAxisItems.getOrNull(binding.spinnerDuelAxis.selectedItemPosition)
 
     /**
      * 대결 등급 산정이 **지금 성립하는가** — 성립하지 않으면 그 사유 문구, 성립하면 null.
@@ -517,11 +558,14 @@ class FieldEditDialog : DialogFragment() {
         if (problem != null) return
 
         // 등급 표가 바뀌었으면 컷을 따라가게 한다 — 기존 배정을 보존하는 방향으로.
+        // 옛 차례를 함께 넘겨야 "맨 아래에 등급이 붙은 경우"가 가려진다([duelGradeLabels], B-138).
         val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(
             duelGradeCuts.ifEmpty { com.novelcharacter.app.util.DuelGradeAssign.evenCuts(labels) },
-            labels, labels
+            duelGradeLabels.ifEmpty { labels },
+            labels
         )
         duelGradeCuts = reconciled.cuts
+        duelGradeLabels = labels
         binding.duelGradeSlider.setData(labels, duelGradeCuts)
         renderDuelGradeNotice(binding)
         renderDuelGradeBoundaryRow(binding)
@@ -623,6 +667,8 @@ class FieldEditDialog : DialogFragment() {
                 return@launch
             }
             duelGradeCuts = suggestion.cuts
+            // 컷을 세우는 자리는 그때의 라벨 차례도 함께 적는다 (B-138) — 이 둘은 늘 짝이다.
+            duelGradeLabels = labels
             binding.duelGradeSlider.setData(labels, duelGradeCuts)
             renderDuelGradeNotice(binding)
             renderDuelGradeBoundaryRow(binding)
@@ -1062,10 +1108,16 @@ class FieldEditDialog : DialogFragment() {
 
         // 등급 추가 버튼 (B-69) + 새 필드의 기본 표 — 기존 필드는 populateFields가 config로 대체한다
         binding.btnAddGrade.setOnClickListener {
-            addGradeRow(binding.gradeRowsContainer, density)
+            addGradeRow(
+                binding.gradeRowsContainer, density,
+                onRowsChanged = { refreshDuelGradeEditor(binding) }
+            )
         }
         com.novelcharacter.app.util.GradeTable.DEFAULT_ROWS.forEach { (label, value) ->
-            addGradeRow(binding.gradeRowsContainer, density, label, value)
+            addGradeRow(
+                binding.gradeRowsContainer, density, label, value,
+                onRowsChanged = { refreshDuelGradeEditor(binding) }
+            )
         }
 
         // 기본 분석 1개 추가
@@ -1255,9 +1307,21 @@ class FieldEditDialog : DialogFragment() {
      */
     private fun addGradeRow(
         container: LinearLayout, density: Float, label: String = "", value: String = "",
-        lockedLabel: Boolean = false
+        lockedLabel: Boolean = false, onRowsChanged: (() -> Unit)? = null
     ) {
         val ctx = requireContext()
+        // 등급 행이 곧 대결 등급 산정의 컷이 나눌 대상이라, 행이 바뀌면 편집기가 따라와야 한다
+        // (B-138 곁다리). 종전에는 추가·삭제·이름 편집 어느 것도 갱신을 부르지 않아 **슬라이더도
+        // 0% 고지도 저장하고 다시 열기 전까지 옛 표를 그렸다** — 사용자는 등급을 더해 놓고
+        // 컷이 그대로인 화면을 본다.
+        //
+        // **글자마다가 아니라 포커스를 뗄 때다.** 타이핑 중간의 이름으로 재조정하면 아직 다 적지도
+        // 않은 라벨에 구간이 붙었다 떨어지고, 재조정은 라벨 이름으로 짝을 찾으므로 그 사이
+        // 사용자가 세워 둔 %가 흔들린다. 숫자 칸도 같이 보는 것은 **숫자가 서열이라**
+        // 값을 고치면 라벨 차례 자체가 뒤바뀌기 때문이다.
+        val notifyOnFocusLost = View.OnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) onRowsChanged?.invoke()
+        }
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -1272,6 +1336,7 @@ class FieldEditDialog : DialogFragment() {
             textSize = 13f
             if (label.isNotEmpty()) setText(label)
             isEnabled = !lockedLabel
+            onFocusChangeListener = notifyOnFocusLost
         }
 
         val editValue = EditText(ctx).apply {
@@ -1282,6 +1347,7 @@ class FieldEditDialog : DialogFragment() {
                 android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
             textSize = 13f
             if (value.isNotEmpty()) setText(value)
+            onFocusChangeListener = notifyOnFocusLost
         }
 
         val btnRemove = ImageButton(ctx).apply {
@@ -1292,6 +1358,7 @@ class FieldEditDialog : DialogFragment() {
             setOnClickListener {
                 container.removeView(row)
                 gradeRows.removeAll { it.container == row }
+                onRowsChanged?.invoke()
             }
         }
 
@@ -1903,7 +1970,10 @@ class FieldEditDialog : DialogFragment() {
             gradeRows.clear()
             val density = resources.displayMetrics.density
             gradeRowsFromConfig.forEach { (label, value) ->
-                addGradeRow(gradeContainer, density, label, value)
+                addGradeRow(
+                    gradeContainer, density, label, value,
+                    onRowsChanged = { refreshDuelGradeEditor(binding) }
+                )
             }
         }
         // 체계 참조 (U-1) — 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다.
@@ -1914,6 +1984,10 @@ class FieldEditDialog : DialogFragment() {
         com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(field.config)?.let { spec ->
             pendingDuelAxisCode = spec.axisCode
             duelGradeCuts = spec.cuts
+            // 저장된 컷이 딛고 선 차례는 **같은 config의 등급 표**다 (B-138) — 위에서 행으로
+            // 방금 그렸으므로 여기서 그대로 읽는다. 이것을 적어 두지 않으면 이 창에서 맨 아래
+            // 등급을 더할 때 옛 최하 등급이 0%로 무너진다.
+            duelGradeLabels = currentGradeLabels()
             duelGradeLastApplied = spec.lastApplied
             binding.switchDuelGrade.isChecked = true
         }
@@ -2604,12 +2678,7 @@ class FieldEditDialog : DialogFragment() {
                 val withBody = if (type == FieldType.BODY_SIZE) {
                     BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
                 } else withRandom
-                return applyDuelGradeConfig(
-                    binding, type,
-                    applyAiAndDescriptionConfig(
-                        binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
-                    )
-                )
+                return applySharedConfig(binding, type, withBody)
             }
         }
 
@@ -2634,13 +2703,42 @@ class FieldEditDialog : DialogFragment() {
         val withBody = if (type == FieldType.BODY_SIZE) {
             BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
         } else withRandom
-        return applyAiAndDescriptionConfig(
-            binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
-        )
+        return applySharedConfig(binding, type, withBody)
     }
 
     /**
-     * 대결 등급 산정을 config에 기록한다 (B-113) — **두 buildConfig 출구가 공유한다.**
+     * [buildConfig]의 **두 출구가 공유하는 꼬리** — 종류와 무관하게 언제나 지나는 후처리다.
+     *
+     * ## 왜 함수 하나로 모았는가 (B-131)
+     *
+     * 종전에는 이 꼬리가 **두 자리에 각각 손으로 적혀 있었고, 한쪽에만 한 줄이 빠져 있었다.**
+     * [applyDuelGradeConfig]가 구조화 입력 출구에만 걸려 있었는데 그 출구는
+     * `type == TEXT || BODY_SIZE` 안쪽이고 그 함수 자신은 `type == GRADE`를 요구한다 —
+     * **GRADE 필드에서 한 번도 실행되지 않았다.** 대결 등급 산정을 켜고 컷을 세워도 저장되지
+     * 않았고, `buildConfig`는 config를 빈 맵에서 새로 지어 행 전체를 갈아 끼우므로
+     * **이미 저장돼 있던 약속까지 다음 저장에 함께 사라졌다.** 그 함수의 KDoc은 그동안
+     * *"두 출구가 공유한다"*고 적고 있었다(주석이 사실이 아니었던 자리다).
+     *
+     * **고침을 "빠진 한 줄을 더하는 것"으로 하지 않은 이유가 이것이다.** 그러면 다음에 후처리가
+     * 하나 늘 때 같은 사고가 그대로 다시 난다 — 두 벌로 적는 구조가 원인이고, 빠진 줄은 증상이다.
+     * 이제 출구는 둘이어도 **꼬리는 하나**라 새 후처리는 여기 한 자리에만 붙는다.
+     *
+     * 순서는 종전 그대로다(입력 방식 → 카드 표시 → 설명·AI → 대결 등급). 각 단계가 config의
+     * 자기 키만 수술적으로 고치므로 순서가 결과를 바꾸지는 않지만, 바꿀 이유도 없다.
+     */
+    private fun applySharedConfig(
+        binding: DialogFieldEditBinding,
+        type: FieldType,
+        configJson: String
+    ): String = applyDuelGradeConfig(
+        binding, type,
+        applyAiAndDescriptionConfig(
+            binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, configJson))
+        )
+    )
+
+    /**
+     * 대결 등급 산정을 config에 기록한다 (B-113) — [applySharedConfig]가 부르는 마지막 단계다.
      *
      * 저장 직전에 컷을 **최종 등급 표에 다시 맞춘다.** 슬라이더는 등급 행의 글자 편집까지
      * 좇지 않으므로, 사용자가 라벨을 고쳐 놓고 바로 저장하면 컷이 유령 라벨을 가리킨 채
@@ -2673,7 +2771,8 @@ class FieldEditDialog : DialogFragment() {
         if (axis == null || labels.size < 2) return keepStoredDuelGrade(configJson)
         val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(
             duelGradeCuts.ifEmpty { com.novelcharacter.app.util.DuelGradeAssign.evenCuts(labels) },
-            labels, labels
+            duelGradeLabels.ifEmpty { labels },
+            labels
         )
         return com.novelcharacter.app.data.model.DuelGradeRef.write(
             configJson,
@@ -2698,7 +2797,7 @@ class FieldEditDialog : DialogFragment() {
     }
 
     /**
-     * 필드 설명(A-2)과 AI 추천 토글(A-1)을 config에 기록 — 두 buildConfig 출구가 공유한다.
+     * 필드 설명(A-2)과 AI 추천 토글(A-1)을 config에 기록 — [applySharedConfig]의 한 단계다.
      * 사건 필드는 설정이 노출되지 않고 스피너 기본 선택(전부)이 유지되므로 키가 남지 않는다(R-24).
      */
     private fun applyAiAndDescriptionConfig(binding: DialogFieldEditBinding, configJson: String): String {
