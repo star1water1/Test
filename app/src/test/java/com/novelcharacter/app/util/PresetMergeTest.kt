@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FieldDefinition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -134,6 +135,30 @@ class PresetMergeTest {
         )
         assertEquals(1, plan.items.size)
         assertEquals("나이", plan.items.single().source.name)
+    }
+
+    @Test
+    fun `itemKey 구분자는 NUL이고 어느 쪽 값에도 섞이지 않는다`() {
+        // B-146 — 이 구분자는 **날바이트로 적혀 있었다.** 이스케이프 표기로 바꾸면서
+        // 값이 함께 바뀌면 화면이 고른 키와 resolve가 받는 키가 갈리고, 그러면
+        // **사용자가 켠 항목이 아닌 것이 처리된다**(조용한 오배정). 값을 코드포인트로 잰다 —
+        // 시험이 같은 이스케이프를 다시 적으면 둘이 함께 틀려도 통과하기 때문이다.
+        val key = PresetMerge.itemKey("character", "gender")
+        assertEquals("character".length, key.indexOf(key[9]))
+        assertEquals(0, key[9].code)
+        assertEquals("character", key.substring(0, 9))
+        assertEquals("gender", key.substring(10))
+
+        // 구분자가 양쪽 어디에도 들어갈 수 없는 문자라야 서로 다른 짝이 한 키로 접히지 않는다.
+        // 밑줄·콜론이었다면 아래 둘이 같은 키가 되어 **다른 필드가 같은 항목으로 보인다.**
+        assertNotEquals(
+            PresetMerge.itemKey("a", "b_c"),
+            PresetMerge.itemKey("a_b", "c")
+        )
+        assertNotEquals(
+            PresetMerge.itemKey(FieldDefinition.ENTITY_CHARACTER, "place"),
+            PresetMerge.itemKey(FieldDefinition.ENTITY_EVENT, "place")
+        )
     }
 
     @Test
