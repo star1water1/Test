@@ -144,6 +144,7 @@ def main():
         "user_preset_templates": "userPresetTemplateDao",
         "search_presets": "searchPresetDao",
         "recent_activities": "recentActivityDao",
+        "default_field_templates": "defaultFieldTemplateDao",
     }
     for t, (how, _) in sorted(plan.items()):
         if how != "EXPLICIT":

@@ -31,7 +31,10 @@ class ResetPlanTest {
         "character_list_presets", "image_meta", "image_tags", "field_value_entries",
         "grade_systems",
         // 대결 (B-104) — 축은 세계관 CASCADE, 판·처분은 축 CASCADE.
-        "duel_axes", "duel_matches", "duel_counter_verdicts"
+        "duel_axes", "duel_matches", "duel_counter_verdicts",
+        // 전역 기본 필드 템플릿 (B-119) — **전역이라 매달릴 부모가 없다.** 세계관을 지워도
+        // 남으므로 유일하게 직접 삭제로만 비워진다.
+        "default_field_templates"
     )
 
     @Test fun 모든_엔티티_테이블이_초기화_계획에_있다() {

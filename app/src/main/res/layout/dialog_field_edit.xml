@@ -555,6 +555,43 @@
             android:orientation="vertical"
             android:visibility="gone">
 
+            <!-- 전역 기본 필드 (B-119) — 타입을 가리지 않는 필드 전체의 성격이라 맨 위에 둔다 -->
+            <LinearLayout
+                android:id="@+id/defaultFieldLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchDefaultField"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_default_field" />
+
+                <!-- 목적문 (R-25) — 켜면 무엇이 어디에 어떻게 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/purpose_default_field"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+                <!-- 이미 심긴 필드를 편집할 때의 배너 — 여기서 고치면 이 세계관만 달라진다 -->
+                <TextView
+                    android:id="@+id/textDefaultFieldBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
             <!-- 상위 % 표기 (NUMBER, CALCULATED, BODY_SIZE, GRADE 전용) -->
             <LinearLayout
                 android:id="@+id/percentileLayout"

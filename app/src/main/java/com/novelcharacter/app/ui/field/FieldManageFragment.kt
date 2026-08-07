@@ -73,14 +73,42 @@ class FieldManageFragment : Fragment() {
         ) { _, bundle ->
             val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
             val savedField = Gson().fromJson(json, FieldDefinition::class.java)
+            val wantsDefault = bundle.getBoolean(FieldEditDialog.RESULT_DEFAULT_FIELD, false)
+            // 스위치를 끈 것이 **해제**인지 아닌지는 종전 상태가 정한다. 다이얼로그는 config를
+            // 건드리지 않으므로 돌아온 필드의 표식이 곧 종전 상태다(B-119).
+            val wasLinked = com.novelcharacter.app.data.model.DefaultFieldRef.isLinked(savedField.config)
             if (savedField.id == 0L) {
                 // 생성 다이얼로그에서 사전 등록한 값들을 저장 직후 라이브러리에 등재
                 val initialValues = bundle.getString(FieldEditDialog.RESULT_INITIAL_VALUES).orEmpty()
-                viewModel.insertField(savedField, initialValues)
+                viewModel.insertField(savedField, initialValues, defaultField = wantsDefault)
+            } else if (!wantsDefault && wasLinked) {
+                // 해제는 **모든 세계관**에 걸린다 — 스위치 하나가 그만큼 넓게 미치므로 먼저 묻는다.
+                // 되돌릴 수 있는 조작이지만(다시 켜면 된다), 되돌릴 수 있음과 예고 없음은 다르다.
+                confirmUnlinkDefaultField(savedField)
             } else {
-                viewModel.updateField(savedField)
+                viewModel.updateField(savedField, defaultField = wantsDefault)
             }
         }
+    }
+
+    /**
+     * '전역 기본 해제'를 묻는다 — 취소하면 **저장은 그대로 두고 연결만 유지한다**(설계 1-3).
+     *
+     * 취소가 저장까지 물리지 않는 것은, 사용자가 고친 이름·설정은 스위치와 무관하게 그 세계관에
+     * 저장하려던 것이기 때문이다. 물리는 것은 스위치 하나뿐이다.
+     */
+    private fun confirmUnlinkDefaultField(field: FieldDefinition) {
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.default_field_unlink_confirm_title)
+            .setMessage(R.string.default_field_unlink_confirm)
+            .setPositiveButton(R.string.default_field_action_unlink) { _, _ ->
+                viewModel.updateField(field, defaultField = false)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                viewModel.updateField(field, defaultField = true)
+            }
+            .setOnCancelListener { viewModel.updateField(field, defaultField = true) }
+            .show()
     }
 
     private fun setupToolbar() {
@@ -99,6 +127,11 @@ class FieldManageFragment : Fragment() {
                         R.id.fieldLibraryHomeFragment,
                         androidx.core.os.bundleOf("universeId" to universeId)
                     )
+                    true
+                }
+                // 전역 기본 필드 관리(B-119) — 세계관에 매이지 않으므로 인자를 넘기지 않는다
+                R.id.action_default_fields -> {
+                    findNavController().navigate(R.id.defaultFieldManageFragment)
                     true
                 }
                 else -> false
@@ -236,7 +269,12 @@ class FieldManageFragment : Fragment() {
     }
 
     private fun showFieldEditDialog(field: FieldDefinition?) {
-        val dialog = FieldEditDialog.newInstance(universeId, field, viewModel.currentEntityType())
+        val dialog = FieldEditDialog.newInstance(
+            universeId, field, viewModel.currentEntityType(),
+            // 이 화면만 '전역 기본 필드' 스위치를 연다 — 결과를 실제로 처리하는 유일한 자리다
+            // (B-119. 처리하지 않는 화면에서 스위치를 보이면 조용한 무동작이 된다).
+            allowDefaultField = true
+        )
         dialog.show(childFragmentManager, "FieldEditDialog")
     }
 

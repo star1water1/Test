@@ -20,6 +20,7 @@ import com.novelcharacter.app.data.repository.TrashRepository
 import com.novelcharacter.app.data.repository.OperationLogRepository
 import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
 import com.novelcharacter.app.data.repository.DuelRepository
+import com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
@@ -64,6 +65,7 @@ class NovelCharacterApp : Application() {
     val operationLogRepository by lazy { OperationLogRepository(database) }
     val fieldValueLibraryRepository by lazy { FieldValueLibraryRepository(database) }
     val duelRepository by lazy { DuelRepository(database) }
+    val defaultFieldTemplateRepository by lazy { DefaultFieldTemplateRepository(database) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
 

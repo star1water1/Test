@@ -71,6 +71,10 @@ object ResetPlan {
         explicit("operation_logs"),
         explicit("character_list_presets"),
         explicit("image_meta"),
+        // 전역 기본 필드 템플릿(B-119) — **전역이라 매달릴 부모가 없다.** 세계관이 지워져도
+        // 남으므로 여기서 직접 지운다. 남겨 두면 초기화 뒤 만든 첫 세계관이 옛 기본 필드를
+        // 그대로 물고 태어나, "모든 데이터 삭제"라는 약속과 화면이 어긋난다.
+        explicit("default_field_templates"),
 
         // ── 부모 CASCADE로 사라지는 것 ──
         cascade("character_field_values", via = "characters"),

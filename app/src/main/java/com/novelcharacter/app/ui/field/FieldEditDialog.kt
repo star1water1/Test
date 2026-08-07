@@ -51,6 +51,13 @@ class FieldEditDialog : DialogFragment() {
 
     /** 생성 모드에서 입력된 값 사전 등록분 (콤마 구분) — 결과 번들로 전달 */
     private var stagedInitialValues: String = ""
+
+    /** 저장 시점의 '전역 기본 필드' 스위치 상태 (B-119). 실행은 호출부가 저장소를 통해 한다. */
+    private var stagedDefaultField: Boolean = false
+
+    /** 스위치를 보일 것인가 — 켜는 호출부만 결과를 처리한다([newInstance] KDoc). */
+    private val allowDefaultField: Boolean
+        get() = arguments?.getBoolean(ARG_ALLOW_DEFAULT_FIELD) == true
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
@@ -166,6 +173,7 @@ class FieldEditDialog : DialogFragment() {
         setupCardDisplaySection(binding)
         setupAiAndDescriptionSection(binding)
         setupDuelGradeSection(binding)
+        setupDefaultFieldSection(binding)
         setupHelpButtons(binding)
         setupFormulaHelp(binding)
         populateFields(binding)
@@ -2037,6 +2045,10 @@ class FieldEditDialog : DialogFragment() {
             binding.editInitialValues.text.toString()
         } else ""
 
+        // 전역 기본 필드 스위치(B-119) — [deliverResult]에는 binding이 없으므로 여기서 담는다
+        // (`stagedInitialValues`와 같은 이유·같은 자리). 스위치를 열지 않은 호출부는 늘 false다.
+        stagedDefaultField = allowDefaultField && binding.switchDefaultField.isChecked
+
         // 수식 검증 — 차단하지 않고 경고 (아직 만들지 않은 필드를 나중에 만드는 작업 순서 존중)
         if (selectedType == FieldType.CALCULATED) {
             val problems = validateFormula(binding.editFormula.text.toString().trim(), key)
@@ -2240,14 +2252,51 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun isValueCompatible(value: String, newType: String): Boolean {
-        return when (newType) {
-            FieldType.NUMBER.name -> value.toDoubleOrNull() != null
-            FieldType.GRADE.name -> value.toIntOrNull() != null
-            FieldType.SELECT.name, FieldType.TEXT.name, FieldType.MULTI_TEXT.name -> true
-            FieldType.BODY_SIZE.name -> false // 구조화 입력은 기존 텍스트와 호환 불가
-            FieldType.CALCULATED.name -> false // 수식 필드는 기존 값과 무관
-            else -> true
+    /**
+     * 판정 원문은 [com.novelcharacter.app.util.FieldTypeCompatibility]로 옮겼다 (B-119).
+     * 전역 기본 필드의 전파 미리보기가 **같은 물음을 세계관마다** 던지므로, 두 벌로 두면
+     * *"미리보기가 괜찮다고 한 전파가 값을 지우는"* 어긋남이 생긴다(R-7).
+     */
+    private fun isValueCompatible(value: String, newType: String): Boolean =
+        com.novelcharacter.app.util.FieldTypeCompatibility.isValueCompatible(value, newType)
+
+    /**
+     * '전역 기본 필드' 스위치 (B-119 — 설계 1-4).
+     *
+     * 스위치가 말하는 것은 **"이 필드가 모든 세계관에 심기는가"**이고, 그 실행은 별도 표를
+     * 건드리는 일이라 config가 아니라 [RESULT_DEFAULT_FIELD]로 나간다.
+     *
+     * 배너는 *이미 심긴 필드를 편집하는 경우*에만 뜬다 — **막지 않는다**(설계 1-3). 여기서
+     * 고치면 그 세계관만 달라지고, 그 사실을 말해 주는 것이 배너의 몫이다.
+     */
+    private fun setupDefaultFieldSection(binding: DialogFieldEditBinding) {
+        if (!allowDefaultField) {
+            binding.defaultFieldLayout.visibility = View.GONE
+            return
+        }
+        val config = existingField?.config ?: prefillField?.config
+        val linkedCode = config?.let {
+            com.novelcharacter.app.data.model.DefaultFieldRef.codeFromConfig(it)
+        }
+        binding.switchDefaultField.isChecked = linkedCode != null
+
+        // 이름은 DB에 있으므로 비동기로 채운다 — 못 찾으면(템플릿이 이미 지워진 잔재)
+        // 배너를 띄우지 않는다. 없는 것을 가리키는 안내는 안내가 아니다.
+        if (linkedCode == null) return
+        lifecycleScope.launch {
+            try {
+                val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                val template = app.defaultFieldTemplateRepository.getByCode(linkedCode)
+                if (template != null && isAdded) {
+                    binding.textDefaultFieldBanner.text =
+                        getString(R.string.default_field_banner, template.name)
+                    binding.textDefaultFieldBanner.visibility = View.VISIBLE
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("FieldEditDialog", "Failed to resolve default field template", e)
+            }
         }
     }
 
@@ -2261,7 +2310,12 @@ class FieldEditDialog : DialogFragment() {
             if (isAdded) {
                 setFragmentResult(RESULT_KEY, bundleOf(
                     RESULT_FIELD_JSON to Gson().toJson(field),
-                    RESULT_INITIAL_VALUES to stagedInitialValues
+                    RESULT_INITIAL_VALUES to stagedInitialValues,
+                    // 전역 기본 필드(B-119)는 config가 아니라 **별도 표**를 건드리는 조작이라
+                    // 필드 JSON에 담기지 않는다. 스위치 상태를 그대로 넘기고, 승격·해제는
+                    // 저장 뒤 호출부가 저장소를 통해 한다.
+                    // 스위치를 열지 않은 호출부는 늘 false라 아무 일도 일어나지 않는다.
+                    RESULT_DEFAULT_FIELD to stagedDefaultField
                 ))
             }
             true
@@ -2593,23 +2647,37 @@ class FieldEditDialog : DialogFragment() {
         const val RESULT_KEY = "field_edit_result"
         const val RESULT_FIELD_JSON = "field_json"
         const val RESULT_INITIAL_VALUES = "initial_values"
+        /** 저장 시점의 '전역 기본 필드' 스위치 상태 (B-119). 스위치를 열지 않은 호출부는 늘 false다. */
+        const val RESULT_DEFAULT_FIELD = "default_field"
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
         private const val ARG_ENTITY_TYPE = "entityType"
         private const val ARG_PREFILL_JSON = "prefillJson"
+        private const val ARG_ALLOW_DEFAULT_FIELD = "allowDefaultField"
 
         /** 대결 등급 컷 스테퍼 한 칸 — 목업이 정한 정밀 경로의 눈금이다(B-113). */
         private const val STEP_PERCENT = 0.5
 
+        /**
+         * @param allowDefaultField '전역 기본 필드' 스위치를 보일 것인가 (B-119).
+         *
+         * **기본이 false인 것이 요점이다.** 이 다이얼로그는 필드 관리 말고도 여러 자리에서
+         * 열린다 — 프리셋 필드 편집(`universeId = 0`)·사건 편집의 즉석 필드 생성처럼
+         * *저장 뒤 저장소를 부르지 않는* 경로가 있다. 거기서 스위치를 보이면 **켜도 아무 일도
+         * 일어나지 않는 조작**이 되고, 그것은 조용한 무동작이라 변수 제어(개발 의도 2번)에
+         * 어긋난다. 그래서 켜는 쪽이 *"나는 이 결과를 처리한다"*고 밝히게 한다.
+         */
         fun newInstance(
             universeId: Long,
             field: FieldDefinition?,
             entityType: String = FieldDefinition.ENTITY_CHARACTER,
-            prefill: FieldDefinition? = null
+            prefill: FieldDefinition? = null,
+            allowDefaultField: Boolean = false
         ): FieldEditDialog {
             return FieldEditDialog().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_UNIVERSE_ID, universeId)
+                    putBoolean(ARG_ALLOW_DEFAULT_FIELD, allowDefaultField)
                     putString(ARG_ENTITY_TYPE, field?.entityType ?: prefill?.entityType ?: entityType)
                     if (field != null) {
                         putString(ARG_FIELD_JSON, Gson().toJson(field))

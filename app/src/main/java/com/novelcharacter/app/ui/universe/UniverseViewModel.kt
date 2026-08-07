@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.PresetMerge
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.Event
 import com.novelcharacter.app.util.OpResult
@@ -270,13 +271,39 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val _presetApplied = MutableLiveData<Event<String>?>()
     val presetApplied: LiveData<Event<String>?> = _presetApplied
 
+    /**
+     * 프리셋으로 세계관을 만든다.
+     *
+     * **기본 필드가 먼저 심기고**([UniverseRepository.insertUniverse]가 그 자리다) 프리셋은
+     * 그 위에 얹힌다 — 그래서 같은 자리를 노리는 프리셋 필드는 걸러야 한다(B-119, 설계 1-3).
+     * 거르지 않으면 `(universeId, entityType, key)` 유니크에 걸려 **세계관 생성이 통째로
+     * 실패한다.**
+     *
+     * 거르는 규칙은 [PresetMerge]가 단일 소스다 — 손으로 `key !in keys`를 쓰면 종류를 빠뜨려
+     * 캐릭터의 `place`와 사건의 `place`가 서로를 중복으로 거는 R-29 부류가 된다.
+     * `defaultSelection()`이 정확히 *"새 것만 들이고 이미 있는 것은 손대지 않는다"*이며,
+     * 그것이 기본 필드를 프리셋이 덮지 않게 한다(존재는 보장하되 내용은 그 세계관의 것이다).
+     */
     fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
             try {
                 db.withTransaction {
                     val universeId = universeRepository.insertUniverse(template.universe)
-                    val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
-                    universeRepository.insertAllFields(fieldsWithId)
+                    val planted = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universeId)
+                    val plan = PresetMerge.buildPlan(
+                        template.fields.map { it.copy(universeId = universeId) },
+                        planted
+                    )
+                    val resolution = PresetMerge.resolve(
+                        plan,
+                        plan.defaultSelection(),
+                        universeId,
+                        planted.groupBy { it.entityType }
+                            .mapValues { (_, fields) -> fields.maxOf { it.displayOrder } }
+                    )
+                    if (resolution.inserts.isNotEmpty()) {
+                        universeRepository.insertAllFields(resolution.inserts)
+                    }
                 }
                 _presetApplied.value = Event(template.universe.name)
                 // 성공은 presetApplied 이벤트로 이미 통보 — 이력만 추가

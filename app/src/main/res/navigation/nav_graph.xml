@@ -60,6 +60,13 @@
             android:defaultValue="-1L" />
     </fragment>
 
+    <!-- 전역 기본 필드 관리 (B-119) — 세계관에 매이지 않으므로 universeId 인자가 없다 -->
+    <fragment
+        android:id="@+id/defaultFieldManageFragment"
+        android:name="com.novelcharacter.app.ui.field.DefaultFieldManageFragment"
+        android:label="기본 필드 관리"
+        tools:layout="@layout/fragment_default_field_manage" />
+
     <fragment
         android:id="@+id/fieldLibraryHomeFragment"
         android:name="com.novelcharacter.app.ui.fieldlibrary.FieldLibraryHomeFragment"

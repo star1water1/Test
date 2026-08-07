@@ -102,6 +102,7 @@ val RESERVED_SHEET_NAMES = setOf(
     novelSpec(emptyList()).sheetName,
     fieldDefinitionSpec(emptyList()).sheetName,
     gradeSystemSpec().sheetName,
+    defaultFieldSpec().sheetName,
     UNCLASSIFIED_SHEET_NAME,
     timelineSpec(emptyList()).sheetName,
     stateChangeSpec().sheetName,
@@ -372,7 +373,49 @@ fun fieldDefinitionSpec(
         // config JSON의 참조 키는 내보내기에서 제거되고 이 열이 그 자리다(같은 사실 두 벌 금지).
         // 해석은 '등급체계코드' 우선, 없으면 (세계관, 이름) — 다른 참조 열들과 같은 규약이다.
         ColumnSpec("등급체계", dropdownOptions = gradeSystemNames.takeIf { it.isNotEmpty() }, width = 5000),
-        ColumnSpec("등급체계코드", readOnly = true, width = 4000)
+        ColumnSpec("등급체계코드", readOnly = true, width = 4000),
+        // 전역 기본 필드 연결(B-119) — '기본 필드' 시트의 '코드'다. 빈 칸 = 연결 없음.
+        //
+        // ⚠️ **이 열은 없으면 건드리지 않는다**(R-36). B-119 이전에 내보낸 모든 파일이
+        // *"이 열이 없는 파일"*이라, 없는 열을 빈 칸("해제하라")으로 읽으면 **다시 들이는
+        // 것만으로 전 세계관의 기본 필드 연결이 지워진다.** 판별은 `cols.containsKey`이며
+        // 해석은 [refColumnIntent]가 단일 소스다(이름 열 없이 코드 열만 있는 형태).
+        //
+        // readOnly로 두지 않는 이유: 엑셀에서 필드를 무더기로 만들 때 이 칸에 코드를 적어
+        // 한 번에 연결하는 것이 실사용 가치가 있다('출처' 열과 같은 판단).
+        ColumnSpec("기본필드코드", width = 4000)
+    )
+)
+
+/**
+ * **전역 기본 필드 템플릿** 시트 (B-119 — 설계 1-5).
+ *
+ * `필드 정의` 시트와 **같은 열에서 `세계관`을 뺀 것** + `코드`다. 전역이라 소속이 없고,
+ * 그 하나가 이 시트가 따로 있는 이유 전부다 — 세계관 열에 무엇을 적어도 뜻이 없다.
+ *
+ * **가져오기 순서는 이 시트 → `필드 정의`**다(설계 1-5). `필드 정의`의 `기본필드코드`가
+ * 여기서 만든 템플릿을 찾아야 하므로, 뒤에 두면 신규 기기 복원(빈 DB)에서 같은 파일 안에
+ * 템플릿이 실려 있는데도 연결이 전부 강등된다 — 등급 체계가 필드 정의보다 앞인 것과
+ * **같은 근거**이며, 확-3이 *"순서가 열보다 위험하다"*로 남긴 교훈이다.
+ *
+ * 첫 열이 '이름'이 아니라 캐릭터 시트 지문(`looksLikeCharacterSheet`)에 걸리지 않고,
+ * 예약명이라 세계관 시트에 자리를 빼앗기지 않는다 — '필드 정의' 시트와 같은 두 겹 방어다.
+ */
+fun defaultFieldSpec() = SheetSpec(
+    sheetName = "기본 필드",
+    columns = listOf(
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", required = true, width = 5000),
+        ColumnSpec("타입", required = true, dropdownOptions = listOf("TEXT", "NUMBER", "SELECT", "MULTI_TEXT", "GRADE", "CALCULATED", "BODY_SIZE"), width = 4000),
+        ColumnSpec("설정(JSON)", width = 10000),
+        ColumnSpec("그룹", width = 5000),
+        ColumnSpec("순서", width = 3000),
+        ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = FieldConfigColumns.AI_CELL_OPTIONS, width = 3500),
+        ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000),
+        ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 

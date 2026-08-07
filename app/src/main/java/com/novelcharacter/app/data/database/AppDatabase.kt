@@ -40,6 +40,8 @@ import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.dao.GradeSystemDao
 import com.novelcharacter.app.data.model.GradeSystem
+import com.novelcharacter.app.data.dao.DefaultFieldTemplateDao
+import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.dao.DuelAxisDao
 import com.novelcharacter.app.data.dao.DuelMatchDao
 import com.novelcharacter.app.data.dao.DuelCounterVerdictDao
@@ -106,9 +108,10 @@ import com.novelcharacter.app.data.model.Universe
         GradeSystem::class,
         DuelAxis::class,
         DuelMatch::class,
-        DuelCounterVerdict::class
+        DuelCounterVerdict::class,
+        DefaultFieldTemplate::class
     ],
-    version = 52,
+    version = 53,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -138,6 +141,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun imageTagDao(): ImageTagDao
     abstract fun fieldValueEntryDao(): FieldValueEntryDao
     abstract fun gradeSystemDao(): GradeSystemDao
+    abstract fun defaultFieldTemplateDao(): DefaultFieldTemplateDao
     abstract fun duelAxisDao(): DuelAxisDao
     abstract fun duelMatchDao(): DuelMatchDao
     abstract fun duelCounterVerdictDao(): DuelCounterVerdictDao
@@ -2010,6 +2014,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_52_53 = object : Migration(52, 53) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 52 to 53 — 전역 기본 필드 템플릿(B-119)")
+
+                // **표 하나를 더하는 순수 추가다.** 기존 필드는 아무것도 달라지지 않는다 —
+                // 연결 표식은 `field_definitions.config` 안의 키라(DefaultFieldRef) 필드 쪽
+                // 스키마 변경이 없고, 표식이 없는 기존 필드는 그냥 *연결 없음*이다.
+                //
+                // 여기서 **템플릿을 하나도 만들지 않는 것**은 v49→50·v51→52와 같은 근거다:
+                // 어느 필드가 "모든 세계관이 가져야 할 것"인지 앱이 알 길이 없고, 지어내면
+                // 사용자가 정하지 않은 것을 전 세계관에 심는 셈이 된다. 승격은 사용자가 한다.
+                //
+                // 유니크 둘의 근거는 엔티티 KDoc에 있다 — `code`는 R-1의 안정 식별자이고,
+                // `(entityType, key)`는 **같은 자리를 노리는 템플릿 둘이 어느 세계관에서든
+                // 반드시 삽입에 실패**하므로 그 충돌을 만드는 순간에 막는 것이다.
+                // ⚠️ 삼중따옴표 뒤에 `.trimIndent()`를 붙이지 말 것 — 하네스의 추출 정규식은
+                // 여는 괄호와 삼중따옴표가 곧바로 닫히는 형태만 읽으므로, 붙이면 **이 문장이
+                // 조용히 검사에서 빠진다**(다른 마이그레이션이 전부 이 형태인 이유).
+                // SQLite는 들여쓰기를 신경 쓰지 않는다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `default_field_templates` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `key` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `config` TEXT NOT NULL,
+                        `groupName` TEXT NOT NULL,
+                        `displayOrder` INTEGER NOT NULL,
+                        `isRequired` INTEGER NOT NULL,
+                        `entityType` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `code` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_default_field_templates_code` ON `default_field_templates` (`code`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_default_field_templates_entityType_key` ON `default_field_templates` (`entityType`, `key`)")
+
+                Log.i(TAG, "Migration from version 52 to 53 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -2017,7 +2062,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

@@ -40,19 +40,23 @@ class ExportPlanAndSpaceTest {
     }
 
     @Test
-    fun `필드 정의를 끄면 등급 체계와 값 라이브러리까지 함께 빠진다`() {
+    fun `필드 정의를 끄면 등급 체계와 기본 필드와 값 라이브러리까지 함께 빠진다`() {
         val plan = ExportSheetStep.of(ExportOptions(fieldDefinitions = false))
         assertFalse(ExportSheetStep.GRADE_SYSTEMS in plan)
+        assertFalse(ExportSheetStep.DEFAULT_FIELDS in plan)
         assertFalse(ExportSheetStep.FIELD_DEFINITIONS in plan)
         assertFalse(ExportSheetStep.FIELD_VALUE_LIBRARY in plan)
-        assertEquals(ExportSheetStep.entries.size - 3, plan.size)
+        assertEquals(ExportSheetStep.entries.size - 4, plan.size)
     }
 
     @Test
-    fun `등급 체계는 필드 정의보다 먼저 온다`() {
-        // 파일을 여는 사람이 참조 대상을 먼저 보게 하는 순서 규약
+    fun `등급 체계와 기본 필드는 필드 정의보다 먼저 온다`() {
+        // 파일을 여는 사람이 참조 대상을 먼저 보게 하는 순서 규약.
+        // 기본 필드(B-119)는 여기에 더해 **가져오기 순서까지** 같아야 한다 — '필드 정의'의
+        // '기본필드코드'가 그 시트의 템플릿을 찾는다(설계 1-5).
         val plan = ExportSheetStep.of(ExportOptions())
         assertTrue(plan.indexOf(ExportSheetStep.GRADE_SYSTEMS) < plan.indexOf(ExportSheetStep.FIELD_DEFINITIONS))
+        assertTrue(plan.indexOf(ExportSheetStep.DEFAULT_FIELDS) < plan.indexOf(ExportSheetStep.FIELD_DEFINITIONS))
     }
 
     @Test

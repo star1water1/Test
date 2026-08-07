@@ -163,6 +163,10 @@ class SettingsFragment : Fragment() {
             findNavController().navigate(R.id.aiSettingsFragment)
         }
 
+        binding.defaultFieldsRow.setOnClickListener {
+            findNavController().navigate(R.id.defaultFieldManageFragment)
+        }
+
         binding.imageCompressRow.setOnClickListener {
             com.novelcharacter.app.ui.image.ImageSettingsDialog.show(this)
         }
@@ -1267,6 +1271,9 @@ class SettingsFragment : Fragment() {
                     // image_meta는 FK가 없어 어떤 부모로도 지워지지 않았다. 이것을 지워야
                     // 자식 image_tags의 CASCADE도 비로소 성립한다(그전까지 태그가 영원히 남았다).
                     db.imageMetaDao().deleteAll()
+                    // 전역 기본 필드 템플릿(B-119)은 세계관에 매달리지 않는다 — 위 universes
+                    // 삭제로는 사라지지 않으므로 직접 지운다(ResetPlan이 explicit로 든 이유).
+                    db.defaultFieldTemplateDao().deleteAll()
                 }
 
                 // SharedPreferences 초기화 (테마 제외) — 초기화가 UI 상태 찌꺼기를 남기지 않게
