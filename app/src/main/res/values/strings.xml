@@ -3090,7 +3090,6 @@
     -->
     <string name="duel_links_profile_trio_ok">이름·성별·나이는 고르지 않아도 카드에 뜹니다 — 성별과 나이는 시스템 연동을 그렇게 지정한 필드에서 옵니다.</string>
     <string name="duel_links_profile_trio_missing">이 세계관에는 시스템 연동을 %1$s(으)로 지정한 필드가 아직 없어 그 줄이 뜨지 않습니다. 필드 관리에서 그 필드의 고급 설정을 열어 지정해 주세요.</string>
-    <string name="duel_field_value_line">%1$s %2$s</string>
     <string name="duel_field_value_empty">—</string>
 
     <!-- 대결 기록 — 인앱 편집(사용자 요청) -->
