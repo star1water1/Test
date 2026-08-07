@@ -174,8 +174,7 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | B-131+B-134+B-138 (등급 산정 배선) | *(이 슬라이스)* | `FieldEditDialog` 하나 | **화면 파일 하나뿐이라 `CLAUDE.md` 4번의 *2~3개* 기준에 못 미친다.** 신규 파일은 `util/`이라 실클래스패스 프로브가 통째로 타입 검사했고(신규 오류 0), `FieldEditDialog`는 차분 컴파일 + `triage_unresolved`가 덮었다(저장소 선언 타입 미해석 0). **다만 그 도구가 못 보는 것이 하나 있다** — 새 문자열 `duel_grade_axis_pick`은 `check_resources.sh`가 참조 유효성을 확인했으나 **ViewBinding·레이아웃 대조는 CI뿐**이다(이 슬라이스는 레이아웃도 새 id도 건드리지 않아 위험은 낮다). **다음 화면 슬라이스와 함께 PR 하나로 덮을 것.** |
-> | *(위 한 건을 제외하면 비어 있음)* | | | **B-119도 B-120도 B-121도 건너뛰지 않았다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
+> | *(비어 있음)* | | | **B-119도 B-120도 B-121도 건너뛰지 않았다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
@@ -203,6 +202,17 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > **B-113이 이 목록의 존재 이유를 끝까지 보여 줬다** — 그 슬라이스가 CI 없이 병합돼 master가
 > 컴파일되지 않았고(v9.103), 고친 뒤의 실행마저 러너를 못 받아 **고친 것이 통과하는지 아무도
 > 모르는 상태**로 하루를 넘겼다. 이 초록이 그 마지막 물음에 답했다.
+>
+> **✅ 둘째 덮기 (2026.08.07 — PR #231, run `31204868360`).** B-131+B-134+B-138(등급 산정 배선).
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ · `Schema harnesses` ✓ ·
+> `Run unit tests` ✓(2분40초) · `Build Debug APK` ✓(1분48초). 릴리스 둘은 `skipped` — 위 ⚠️가
+> 말하는 **정상**이다.
+>
+> **이 건은 목록에 올랐다가 같은 세션에서 지워졌다** — 화면 파일이 `FieldEditDialog` 하나뿐이라
+> `CLAUDE.md` 4번의 *2~3개*에 못 미쳐 등재했는데, **PR을 여는 것이 곧 CI를 도는 것**이라
+> 병합 절차가 그 자리에서 덮었다. **적어 둘 사실:** 이 저장소에서 *"CI를 건너뛴다"*가 실제로
+> 성립하는 것은 **PR 없이 병합할 때뿐**이다(2장 머리의 ⚠️ — 작업 브랜치 push만으로는 실행이
+> 생기지 않는다). PR을 여는 슬라이스라면 화면 파일이 몇 개든 목록에 올릴 일이 없다.
 
 **`tools/setup_jvm_env.sh`가 이 준비를 전부 한다**(jar 수집 + 스텁 컴파일). 세션마다 스크래치패드가
 비므로 매 세션 1회 돌린다. 스텁에서 막히기 쉬운 세 지점(ForeignKey 상수 / @Ignore의 PROPERTY_GETTER /
@@ -3774,9 +3784,13 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > (사용자가 실제로 겪은 것이라 고쳐졌는지부터 봐야 한다).
    > **3-60은 이제 3-67과 한자리에서 본다** — 같은 화면 셋이다.
    >
-   > **⑥ CI 미검증 목록에 한 건이 섰다** — 이 슬라이스다(2장 표). 화면 파일이 `FieldEditDialog`
-   > 하나뿐이라 `CLAUDE.md` 4번의 *2~3개* 기준에 못 미친다. **다음 화면 슬라이스와 함께 PR 하나로
-   > 덮을 것.** 나머지 검증은 전부 초록이었다: 순수 JVM **1885** · 정적 검사 **9종** ·
+   > **⑥ CI 미검증 목록은 비어 있다.** 이 슬라이스를 한 번 올렸다가 **같은 세션에서 지웠다** —
+   > 화면 파일이 `FieldEditDialog` 하나뿐이라 `CLAUDE.md` 4번의 *2~3개*에 못 미쳐 등재했는데,
+   > **PR을 여는 것이 곧 CI를 도는 것**이라 병합 절차가 그 자리에서 덮었다
+   > (PR #231, run `31204868360` — 배지가 아니라 단계를 봤다: `Run unit tests` ✓ 2분40초 ·
+   > `Build Debug APK` ✓ 1분48초). **적어 둘 사실: 이 저장소에서 "CI를 건너뛴다"가 실제로
+   > 성립하는 것은 PR 없이 병합할 때뿐이다** — PR을 여는 슬라이스라면 화면 파일이 몇 개든
+   > 목록에 올릴 일이 없다. 나머지 검증도 전부 초록이었다: 순수 JVM **1885** · 정적 검사 **9종** ·
    > 스키마 하네스 **13종 + 리셋** · 차분 컴파일 + `triage_unresolved`(저장소 선언 타입 미해석 0) ·
    > 프로브(**신규 오류 0** — 452 그대로) · 커스텀 뷰 프로브(기존 1건 그대로).
    >
