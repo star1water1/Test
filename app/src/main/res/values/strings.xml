@@ -3082,6 +3082,7 @@
     <string name="duel_links_profile_label">프로필 필드</string>
     <string name="duel_links_profile_purpose">고른 필드의 값이 대결 카드에 함께 보입니다. 승패 예측에는 쓰이지 않습니다 — 누가 이길지 가르는 재료가 아니라 누구인지 알아보는 재료입니다.</string>
     <string name="duel_links_profile_blocked_note">산출 필드라 고를 수 없습니다 — 그 값이 곧 이 대결이 물으려는 답입니다</string>
+    <string name="duel_links_profile_blocked_picked">산출 필드라 카드에 뜨지 않습니다 — 체크를 끄면 이 목록에서 빠집니다</string>
     <string name="duel_links_profile_blocked_warning">%1$s은(는) 산출 필드라 카드에 뜨지 않습니다. 연결은 그대로 두었으니 산출 필드에서 빼면 프로필로 보입니다.</string>
     <!--
       화면에서 시맨틱 역할을 부르는 말은 '시스템 연동'이다(label_semantic_role) — 여기서만

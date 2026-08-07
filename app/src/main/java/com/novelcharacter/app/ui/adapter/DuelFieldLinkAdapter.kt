@@ -90,6 +90,10 @@ class DuelFieldLinkAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) = holder.bind(rows[position])
 
     private fun toggle(key: String, checked: Boolean) {
+        // **막힌 것은 새로 고를 수 없지만 빼는 것은 언제나 된다.** 막기만 하고 빼는 길을
+        // 닫으면, 엑셀로 들어온 잘못된 연결을 이 창에서 바로잡을 수 없다 — 검증 → 알림 →
+        // **바로잡을 경로**의 마지막이 빠진 꼴이다(개발 의도 2번).
+        if (checked && key in blockedKeys) return
         if (checked) {
             if (picked.none { it.key == key }) picked.add(DuelFieldLinks.Link(key))
         } else {
@@ -147,6 +151,10 @@ class DuelFieldLinkAdapter(
 
             val type = FieldType.fromName(row.field.type)
             note.text = when {
+                // 막혔는데 이미 골라져 있으면 **빼는 법**을 말한다 — 사유만 적어 두면
+                // 사용자는 그 줄을 어떻게 없애는지 알 수 없다.
+                blockedReason != null && selected ->
+                    context.getString(R.string.duel_links_profile_blocked_picked)
                 // 막힌 사유가 다른 무엇보다 앞선다 — 고를 수 없는 줄에서 타입 안내는 소음이다.
                 blockedReason != null -> blockedReason
                 // 견줄 수 없는 값이라는 사실을 **고른 순간에** 말한다 — 나중에 "왜 대조가 안 되지"로
@@ -157,8 +165,11 @@ class DuelFieldLinkAdapter(
                     context.getString(R.string.duel_links_type_note, type?.label ?: row.field.type, row.field.key)
             }
 
-            check.isEnabled = !blocked
-            name.isEnabled = !blocked
+            // **막혔어도 이미 골라져 있으면 끌 수는 있다** — 그것이 바로잡는 유일한 길이다
+            // (엑셀로 들어온 연결은 이 창을 지나지 않고 들어온다). 새로 고르는 것만 막힌다.
+            val interactive = !blocked || selected
+            check.isEnabled = interactive
+            name.isEnabled = interactive
             direction.visibility = if (selected && directional && !blocked) View.VISIBLE else View.GONE
             up.visibility = if (selected && rankable && !blocked) View.VISIBLE else View.GONE
             down.visibility = if (selected && rankable && !blocked) View.VISIBLE else View.GONE
@@ -174,15 +185,15 @@ class DuelFieldLinkAdapter(
                 down.setOnClickListener { move(row.field.key, 1) }
             }
 
-            if (blocked) {
+            if (interactive) {
+                itemView.isClickable = true
+                check.setOnCheckedChangeListener { _, checked -> toggle(row.field.key, checked) }
+                itemView.setOnClickListener { check.isChecked = !check.isChecked }
+            } else {
                 // 누름을 아예 받지 않는다 — 체크만 꺼 두면 줄을 눌렀을 때 아무 일도 안 일어나는
                 // 것처럼 보여 사용자가 고장으로 읽는다.
                 itemView.setOnClickListener(null)
                 itemView.isClickable = false
-            } else {
-                itemView.isClickable = true
-                check.setOnCheckedChangeListener { _, checked -> toggle(row.field.key, checked) }
-                itemView.setOnClickListener { check.isChecked = !check.isChecked }
             }
         }
     }
