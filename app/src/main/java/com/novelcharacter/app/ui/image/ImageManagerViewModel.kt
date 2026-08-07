@@ -63,6 +63,10 @@ class ImageManagerViewModel(
         if (!savedState.contains("filter_tags")) {
             savedState["filter_tags"] = ArrayList(loadPersistedTags())
         }
+        if (!savedState.contains("filter_tag_presence")) {
+            savedState["filter_tag_presence"] =
+                prefs.getString("filter_tag_presence", null) ?: ImageFilterHelper.TagFilter.ANY.name
+        }
         if (!savedState.contains("sort")) {
             savedState["sort"] = prefs.getString("sort", null) ?: Sort.SIZE.name
         }
@@ -91,17 +95,24 @@ class ImageManagerViewModel(
                 ImageFilterHelper.LinkFilter.valueOf(savedState["filter_link"] ?: ImageFilterHelper.LinkFilter.ANY.name)
             }.getOrDefault(ImageFilterHelper.LinkFilter.ANY),
             tags = savedState.get<ArrayList<String>>("filter_tags")?.toSet() ?: emptySet(),
-            query = savedState["filter_query"] ?: ""
+            query = savedState["filter_query"] ?: "",
+            tagPresence = runCatching {
+                ImageFilterHelper.TagFilter.valueOf(
+                    savedState["filter_tag_presence"] ?: ImageFilterHelper.TagFilter.ANY.name
+                )
+            }.getOrDefault(ImageFilterHelper.TagFilter.ANY)
         )
         set(value) {
             savedState["filter_base"] = value.base.name
             savedState["filter_link"] = value.link.name
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
+            savedState["filter_tag_presence"] = value.tagPresence.name
             prefs.edit()
                 .putString("filter_base", value.base.name)
                 .putString("filter_link", value.link.name)
                 .putString("filter_tags", gson.toJson(ArrayList(value.tags)))
+                .putString("filter_tag_presence", value.tagPresence.name)
                 .apply()
         }
 
@@ -1431,17 +1442,7 @@ class ImageManagerViewModel(
             )
         }
 
-        val tagCounts = runCatching {
-            db.imageTagDao().getAllList().groupingBy { it.tag }.eachCount()
-        }.getOrDefault(emptyMap())
-        val vocabFields = runCatching {
-            db.fieldDefinitionDao().getAllFieldsAllTypes()
-                .filter { com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(it.config) }
-                .map { db.fieldValueEntryDao().getByField(it.id) }
-        }.getOrDefault(emptyList())
-
-        val vocab = com.novelcharacter.app.ai.ImageFolderTagSuggester
-            .buildVocabulary(tagCounts, vocabFields)
+        val vocab = loadTagVocabulary()
         val policy = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).imageTagPolicy
         val suggester = com.novelcharacter.app.ai.ImageFolderTagSuggester(
             com.novelcharacter.app.ai.AiService(getApplication())
@@ -1453,6 +1454,102 @@ class ImageManagerViewModel(
             policy
         )
         TagSuggestOutcome(result, pathsByFolder)
+    }
+
+    /**
+     * 어휘를 조립한다 — 두 AI 태그 기능의 **공용 재료** (설계 feature_roadmap 2-3).
+     *
+     * 조립 규칙 자체는 [com.novelcharacter.app.ai.ImageTagVocabulary]가 들고, 여기서는 DB를 읽어
+     * 그 함수에 넘기는 일만 한다. 실패해도 빈 어휘로 진행한다 — 어휘는 표기 일관성을 위한
+     * 참고이지 요청의 전제가 아니다(못 읽었다고 기능 전체를 막으면 되레 손해다).
+     */
+    private suspend fun loadTagVocabulary(): com.novelcharacter.app.ai.ImageTagVocabulary.Vocabulary {
+        val tagCounts = runCatching {
+            db.imageTagDao().getAllList().groupingBy { it.tag }.eachCount()
+        }.getOrDefault(emptyMap())
+        val vocabFields = runCatching {
+            db.fieldDefinitionDao().getAllFieldsAllTypes()
+                .filter { com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(it.config) }
+                .map { db.fieldValueEntryDao().getByField(it.id) }
+        }.getOrDefault(emptyList())
+        return com.novelcharacter.app.ai.ImageTagVocabulary.build(tagCounts, vocabFields)
+    }
+
+    /**
+     * 고른 이미지들을 **내용까지 보내** 태그를 제안받는다 (B-121, 설계 2-3).
+     *
+     * 폴더 이름을 읽는 [suggestFolderTags]와 어휘는 같지만 성질이 다르다 — 그림이 기기 밖으로
+     * 나가고 비용이 장수에 붙는다. 그래서 호출측이 **실행 전에 요청 수·장수를 고지**하고
+     * 이 함수는 결정형 진행도(R-26)의 재료를 흘려보낸다.
+     *
+     * @param perRequest 한 요청에 실을 장수(사용자 설정). 범위는 `AiPromptPolicy`가 든다.
+     */
+    suspend fun suggestImageTags(
+        paths: List<String>,
+        perRequest: Int,
+        onProgress: suspend (done: Int, total: Int, doneImages: Int, totalImages: Int) -> Unit,
+        isCancelled: () -> Boolean
+    ): com.novelcharacter.app.ai.ImageBatchTagSuggester.Result = withContext(Dispatchers.IO) {
+        if (paths.isEmpty()) return@withContext com.novelcharacter.app.ai.ImageBatchTagSuggester.Result()
+        val vocab = loadTagVocabulary()
+        val policy = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).imageTagPolicy
+        val suggester = com.novelcharacter.app.ai.ImageBatchTagSuggester(
+            com.novelcharacter.app.ai.AiService(getApplication())
+        )
+        suggester.suggest(
+            paths = paths,
+            perRequest = perRequest,
+            vocab = vocab,
+            policyRaw = policy,
+            // 경로와 짝지어 넘긴다 — 못 읽은 장이 있어도 응답의 번호가 실린 목록을 그대로 가리킨다.
+            loader = { batch ->
+                com.novelcharacter.app.util.AiImagePreparer.prepareEach(batch).map { (path, image) ->
+                    com.novelcharacter.app.ai.ImageBatchTagSuggester.Loaded(path, image)
+                }
+            },
+            onProgress = { done, total, doneImages, totalImages ->
+                withContext(Dispatchers.Main) { onProgress(done, total, doneImages, totalImages) }
+            },
+            isCancelled = isCancelled
+        )
+    }
+
+    /**
+     * 검토 시트에서 고른 태그를 **이미지별로** 적용한다 — 폴더판([applyFolderTags])과 같은 규칙:
+     * 기존 태그와 **합친다**(덮지 않는다).
+     */
+    fun applyImageTags(
+        picked: Map<String, List<String>>,
+        onDone: (tags: Int, images: Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            var tagCount = 0
+            val touched = LinkedHashSet<String>()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    db.withTransaction {
+                        val now = System.currentTimeMillis()
+                        for ((path, tags) in picked) {
+                            if (tags.isEmpty()) continue
+                            val imageId = db.imageMetaDao().adopt(path, now)
+                            val existing = db.imageTagDao().getTagsByImageList(imageId)
+                                .mapTo(HashSet()) { it.tag }
+                            val fresh = tags.filterNot { it in existing }
+                            if (fresh.isEmpty()) continue
+                            db.imageTagDao().insertAll(
+                                fresh.map {
+                                    com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
+                                }
+                            )
+                            tagCount += fresh.size
+                            touched.add(path)
+                        }
+                    }
+                }
+            }
+            load()
+            onDone(tagCount, touched.size)
+        }
     }
 
     /**

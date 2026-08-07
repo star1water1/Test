@@ -123,12 +123,18 @@ interface CharacterFieldValueDao {
     """)
     suspend fun getCharacterIdsByFieldValueContains(fieldDefId: Long, value: String): List<Long>
 
-    /** 특정 세계관에 속하지 않는 필드값 삭제 (세계관 변경 시 고아 필드값 정리용) */
+    /**
+     * 특정 세계관에 속하지 않는 필드값 삭제 (세계관 변경 시 고아 필드값 정리용).
+     *
+     * **전역 구역(universeId IS NULL — B-119 확장)의 값은 지우지 않는다.** 이 삭제의 동의는
+     * *"이전 세계관의 값"*에 대한 것인데 전역 필드 값은 어느 세계관의 것도 아니다 — 소속이
+     * 바뀌어도 그대로 따라가는 것이 그 필드의 성질이고, 지우면 동의 범위를 넘는 유실이다.
+     */
     @Query("""
         DELETE FROM character_field_values
         WHERE characterId = :characterId
         AND fieldDefinitionId NOT IN (
-            SELECT id FROM field_definitions WHERE universeId = :universeId
+            SELECT id FROM field_definitions WHERE universeId = :universeId OR universeId IS NULL
         )
     """)
     suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long)

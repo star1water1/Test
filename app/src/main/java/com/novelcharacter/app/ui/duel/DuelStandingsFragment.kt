@@ -204,6 +204,9 @@ class DuelStandingsFragment : Fragment() {
             }
             if (!isAdded) return@launch
             binding.btnDuelGradeApply.visibility = if (fields.isEmpty()) View.GONE else View.VISIBLE
+            // 목적문은 단추와 함께 선다 — 단추가 없으면 설명할 대상도 없다(R-17).
+            binding.duelGradeApplyPurpose.visibility =
+                if (fields.isEmpty()) View.GONE else View.VISIBLE
             if (fields.isEmpty()) return@launch
             binding.btnDuelGradeApply.text = getString(R.string.duel_grade_apply_entry, fields.size)
             binding.btnDuelGradeApply.setOnClickListener {

@@ -52,7 +52,7 @@ class DefaultFieldPlanTest {
         entityType = entityType
     )
 
-    private fun target(id: Long, name: String, vararg fields: FieldDefinition) =
+    private fun target(id: Long?, name: String, vararg fields: FieldDefinition) =
         DefaultFieldPlan.Target(id, name, fields.toList())
 
     // ──────────────────────────────────────────────────────────────────────
@@ -110,6 +110,40 @@ class DefaultFieldPlanTest {
         assertEquals("성별(고침)", writes.updates[0].name)
         assertEquals(5L, writes.updates[0].id)
         assertEquals("DFT-1", DefaultFieldRef.codeFromConfig(writes.updates[0].config))
+    }
+
+    // ── 전역 구역 (무소속 — B-119 확장, 2026.08.07 사용자 확정) ──
+
+    /**
+     * **null 대상이 곧 무소속 구역이다.** 이 시험이 무너지면 "전역" 필드가 정작 소속 없는
+     * 캐릭터에게만 없는 역설로 되돌아간다 — 그것이 이 확장이 고친 것의 전부다.
+     */
+    @Test fun 전역_구역에도_심는다() {
+        val plan = DefaultFieldPlan.planPlant(
+            template(),
+            listOf(target(1, "아르카나"), target(null, "무소속"))
+        )
+        assertEquals(2, plan.plants.size)
+        val writes = DefaultFieldPlan.resolvePlant(template(), plan)
+        assertEquals(2, writes.inserts.size)
+        val globalRow = writes.inserts.single { it.universeId == null }
+        assertEquals("gender", globalRow.key)
+        assertEquals("DFT-1", DefaultFieldRef.codeFromConfig(globalRow.config))
+    }
+
+    /**
+     * 전역 구역의 key 유일성은 DB 유니크가 지키지 못한다(SQLite는 NULL끼리를 다른 값으로
+     * 본다 — 마이그레이션 54 하네스가 실증한다). **이 계획 로직이 유일한 방어선이다** —
+     * 같은 key가 이미 있으면 심지 않고 연결만 하는 판정이 null 구역에서도 서는지 잰다.
+     */
+    @Test fun 전역_구역도_찬_자리에는_연결만_한다() {
+        val occupied = field(id = 9, universeId = 1, name = "성별(전역)").copy(universeId = null)
+        val plan = DefaultFieldPlan.planPlant(template(), listOf(target(null, "무소속", occupied)))
+        assertEquals(0, plan.plants.size)
+        assertEquals(1, plan.links.size)
+        val writes = DefaultFieldPlan.resolvePlant(template(), plan)
+        assertEquals(0, writes.inserts.size)
+        assertEquals(9L, writes.updates.single().id)
     }
 
     @Test fun 이미_연결된_세계관은_할_일이_없다() {

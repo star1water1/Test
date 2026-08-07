@@ -360,6 +360,7 @@ class FieldEditDialog : DialogFragment() {
         }
         binding.btnDuelGradeSuggest.setOnClickListener { suggestDuelGradeCuts(binding) }
         binding.btnDuelGradeApply.setOnClickListener { openDuelGradeApply(binding) }
+        binding.btnDuelAxisCreate.setOnClickListener { promptCreateDuelAxis(binding) }
     }
 
     /** 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 가리키던 축을 선택으로 반영한다. */
@@ -388,8 +389,113 @@ class FieldEditDialog : DialogFragment() {
         return com.novelcharacter.app.util.DuelGradeAssign.orderedLabels(outcome.grades)
     }
 
+    /**
+     * 대결 축을 **이 창에서 바로 만든다** (2026.08.07 사용자 요청).
+     *
+     * 종전 사유 줄은 *"대결 탭에서 축을 먼저 만드세요"*라고 내보냈다 — 하던 필드 편집을 접고
+     * 나갔다 와야 하고, 돌아오면 적어 두던 것이 사라져 있다(원칙 04 — 교정 경로는 문제를
+     * 말한 그 자리에 있어야 한다).
+     *
+     * **이름만 묻는다.** `DuelAxis`의 나머지는 전부 기본값이 있고, 필드 연결·순서는 축을
+     * 만든 뒤 대결 탭에서 정하는 것이 원래 동선이다. 여기서 그 전부를 물으면 축 편집 창을
+     * 두 벌 만드는 셈이고, 두 벌이 되는 순간 한쪽이 낡는다.
+     * 참가자 종류는 **캐릭터로 고정**이다 — 이미지 축의 순위는 캐릭터 필드에 쓸 수 없어
+     * 이 자리에서 고를 이유가 없다(축 목록도 같은 기준으로 거른다).
+     */
+    private fun promptCreateDuelAxis(binding: DialogFieldEditBinding) {
+        if (universeId == 0L) return
+        val context = requireContext()
+        val input = EditText(context).apply {
+            hint = getString(R.string.duel_grade_create_axis_hint)
+            setSingleLine()
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 16, 64, 0)
+            addView(TextView(context).apply {
+                text = getString(R.string.duel_grade_create_axis_desc)
+                textSize = 12f
+            })
+            addView(input)
+        }
+        val dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.duel_grade_create_axis_title)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save, null)
+            .create()
+        dialog.show()
+        // 이름이 비면 창을 닫지 않는다 — 닫으면 사용자는 만들어진 줄 알고 돌아온다(R-27).
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val name = input.text.toString().trim()
+            if (name.isEmpty()) {
+                input.error = getString(R.string.duel_grade_create_axis_name_required)
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            createDuelAxis(binding, name)
+        }
+    }
+
+    /** 만든 축을 목록에 넣고 **그것을 고른 상태로** 돌려준다 — 만들고 다시 고르게 하면 마찰이다. */
+    private fun createDuelAxis(binding: DialogFieldEditBinding, name: String) {
+        lifecycleScope.launch {
+            val created = try {
+                val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                val axis = com.novelcharacter.app.data.model.DuelAxis(
+                    universeId = universeId,
+                    name = name,
+                    targetType = com.novelcharacter.app.data.model.DuelAxis.TARGET_CHARACTER,
+                    displayOrder = duelAxes.size
+                )
+                axis.copy(id = app.database.duelAxisDao().insert(axis))
+            } catch (e: Exception) {
+                Log.e("FieldEditDialog", "Failed to create duel axis", e)
+                null
+            }
+            // 이 창은 뷰 바인딩을 필드로 들지 않는다(`binding`은 람다가 잡은 지역값이라
+            // 늘 유효하다) — 확인할 것은 창이 아직 붙어 있는가뿐이다.
+            if (!isAdded) return@launch
+            if (created == null) {
+                android.widget.Toast.makeText(
+                    requireContext(), R.string.duel_grade_create_axis_failed, android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            duelAxes = duelAxes + created
+            pendingDuelAxisCode = created.code
+            applyDuelAxisList(binding)   // 이 안에서 refreshDuelGradeEditor까지 돈다
+            android.widget.Toast.makeText(
+                requireContext(),
+                getString(R.string.duel_grade_create_axis_done, created.name),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     private fun selectedDuelAxis(binding: DialogFieldEditBinding): com.novelcharacter.app.data.model.DuelAxis? =
         duelAxes.getOrNull(binding.spinnerDuelAxis.selectedItemPosition)
+
+    /**
+     * 대결 등급 산정이 **지금 성립하는가** — 성립하지 않으면 그 사유 문구, 성립하면 null.
+     *
+     * **화면(사유 줄)과 저장 검증이 같은 함수를 본다.** 두 벌로 두면 *화면은 괜찮다고 하는데
+     * 저장이 막히는* 또는 그 반대의 어긋남이 생기고, 후자가 실제로 있던 버그다 —
+     * 사유 줄은 떠 있는데 저장은 **말없이 스위치를 되돌렸다**(아래 [saveField] 주석).
+     */
+    private fun duelGradeProblem(binding: DialogFieldEditBinding): String? {
+        val labels = currentGradeLabels()
+        val axis = selectedDuelAxis(binding)
+        return when {
+            duelAxes.isEmpty() -> getString(R.string.duel_grade_no_axis)
+            axis == null -> getString(R.string.duel_grade_axis_missing)
+            axis.universeId != universeId -> getString(R.string.duel_grade_axis_foreign)
+            labels.isEmpty() -> getString(R.string.duel_grade_no_labels)
+            labels.size < 2 -> getString(R.string.duel_grade_single_label)
+            else -> null
+        }
+    }
 
     /**
      * 슬라이더를 지금 상태로 다시 세운다 — **성립하지 않으면 슬라이더 대신 사유 한 줄**이다.
@@ -400,18 +506,14 @@ class FieldEditDialog : DialogFragment() {
     private fun refreshDuelGradeEditor(binding: DialogFieldEditBinding) {
         if (!binding.switchDuelGrade.isChecked) return
         val labels = currentGradeLabels()
-        val axis = selectedDuelAxis(binding)
-        val problem = when {
-            duelAxes.isEmpty() -> getString(R.string.duel_grade_no_axis)
-            axis == null -> getString(R.string.duel_grade_axis_missing)
-            axis.universeId != universeId -> getString(R.string.duel_grade_axis_foreign)
-            labels.isEmpty() -> getString(R.string.duel_grade_no_labels)
-            labels.size < 2 -> getString(R.string.duel_grade_single_label)
-            else -> null
-        }
+        val problem = duelGradeProblem(binding)
         binding.duelGradeProblem.text = problem.orEmpty()
         binding.duelGradeProblem.visibility = if (problem == null) View.GONE else View.VISIBLE
         binding.duelGradeEditor.visibility = if (problem == null) View.VISIBLE else View.GONE
+        // 축이 하나도 없을 때만 만들기를 연다 — 있는데 못 고른 경우는 고르면 되고,
+        // 그 자리에 만들기를 세우면 축이 뜻 없이 불어난다.
+        binding.btnDuelAxisCreate.visibility =
+            if (duelAxes.isEmpty()) View.VISIBLE else View.GONE
         if (problem != null) return
 
         // 등급 표가 바뀌었으면 컷을 따라가게 한다 — 기존 배정을 보존하는 방향으로.
@@ -2010,6 +2112,37 @@ class FieldEditDialog : DialogFragment() {
             if (problem != null) {
                 android.widget.Toast.makeText(
                     requireContext(), gradeProblemMessage(problem), android.widget.Toast.LENGTH_LONG
+                ).show()
+                return false
+            }
+        }
+
+        // 대결 등급 산정을 **켜 두었는데 성립하지 않으면 저장을 막는다** (2026.08.07 사용자 보고).
+        //
+        // 종전에는 그대로 저장이 진행됐고, `applyDuelGradeConfig`가 축을 못 집으면 키를 쓰지
+        // 않았다 — 새 필드에서는 그것이 곧 **켠 스위치가 말없이 꺼지는 것**이다(다시 열면
+        // 꺼져 있다). 사유 줄은 떠 있었지만 저장은 아무 말도 하지 않았고, 사용자는 저장이
+        // 됐다고 믿는다. 켜짐을 config에 남길 수는 없다 — 축 없는 약속은 어느 순위를 나눌지
+        // 말하지 못해 실행할 수 없고, 반쯤 살아 있는 상태로 두면 화면이 그것을 켜진 것처럼
+        // 그린다(`DuelGradeRef.fromConfig`가 그렇게 정해 둔 자리다).
+        // 그래서 **버리는 대신 막고 사유를 말한다**(변수 제어: 검증 → 알림 → 교정 경로.
+        // 교정 경로는 바로 그 자리의 [축 만들기]다). 창은 닫히지 않는다(R-27).
+        //
+        // **막는 것은 '저장된 약속이 없는' 경우뿐이다**(같은 날 자기 검토가 좁혔다).
+        // 이미 약속이 저장된 필드는 [keepStoredDuelGrade]가 그대로 보존하므로 잃을 것이
+        // 없고(성립하지 않는 동안 컷 편집기는 숨겨져 있어 화면 편집분도 없다), 여기서
+        // 마저 막으면 — 예컨대 축 목록 조회가 한 번 실패한 세션에서 — **이름 하나 고치는
+        // 저장까지 막히고**, 사용자가 통과하려고 스위치를 끄면 그 remove가 저장된 컷을
+        // 지운다(막으려던 유실을 차단 자신이 만든다).
+        if (binding.duelGradeLayout.visibility == View.VISIBLE && binding.switchDuelGrade.isChecked) {
+            val storedSpec = existingField?.config
+                ?.let { com.novelcharacter.app.data.model.DuelGradeRef.fromConfig(it) }
+            val problem = duelGradeProblem(binding)
+            if (problem != null && storedSpec == null) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    getString(R.string.duel_grade_save_blocked, problem),
+                    android.widget.Toast.LENGTH_LONG
                 ).show()
                 return false
             }

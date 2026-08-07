@@ -775,17 +775,21 @@ class TrashRepository(
      * @param sourceName 덮어쓴 소스(프리셋·세계관)의 이름 — 목록이 "무엇을 물리는가"를 말한다.
      */
     suspend fun snapshotFieldDefinitions(
-        universeId: Long,
+        universeId: Long?,
         fields: List<FieldDefinition>,
         sourceName: String
     ) {
         if (fields.isEmpty()) return
-        val uCode = universeCode(universeId)
+        // 전역 구역(무소속 — B-119 확장)의 백업은 세계관 code가 없다. 복원이 code로 세계관을
+        // 되찾는 경로에서 null은 "전역 구역으로 되돌린다"로 읽힌다(필드의 universeId가
+        // 스냅샷 본문에 그대로 실려 있어 자리를 잃지 않는다).
+        val uCode = universeId?.let { universeCode(it) }
         val snapshot = FieldDefinitionSnapshot(
             fields = fields,
             universeCode = uCode,
             sourceName = sourceName,
-            refs = EntityRefs(universeCode = uCode)
+            refs = EntityRefs(universeCode = uCode),
+            globalScope = universeId == null
         )
         insertSnapshot(
             TrashSnapshot.TYPE_FIELD_DEFINITION,
@@ -907,7 +911,12 @@ class TrashRepository(
         if (fieldDefRefCache.containsKey(fieldDefinitionId)) return fieldDefRefCache[fieldDefinitionId]
         val fd = db.fieldDefinitionDao().getFieldById(fieldDefinitionId)
         val ref = fd?.let {
-            val uCode = universeCode(it.universeId) ?: return@let null
+            // 전역 구역 필드(universeId null — B-119 확장)는 code 없는 ref로 적는다.
+            // **null code는 "전역"의 표기다** — 유실과 헷갈리지 않는 이유: 유실(세계관 code를
+            // 못 찾음)은 종전대로 ref 자체를 만들지 않으므로, null code ref는 이 경로로만 생긴다.
+            val fdUniverseId = it.universeId
+                ?: return@let FieldDefRef(universeCode = null, entityType = it.entityType, key = it.key)
+            val uCode = universeCode(fdUniverseId) ?: return@let null
             FieldDefRef(universeCode = uCode, entityType = it.entityType, key = it.key)
         }
         fieldDefRefCache[fieldDefinitionId] = ref
@@ -3403,7 +3412,18 @@ class TrashRepository(
 
         val targets = ArrayList<Pair<FieldDefinition, FieldDefinition>>()
         var missing = 0
-        if (universeId != null && !previewOnly) {
+        if (data.globalScope) {
+            // 전역 구역 백업(B-119 확장) — 세계관 code가 없는 것이 정상이다. 살아 있는 대상은
+            // universeId IS NULL에서 자연키로 다시 찾는다(세계관 경로와 같은 R-1 규칙).
+            for (backup in fields) {
+                @Suppress("SENSELESS_COMPARISON")
+                if (backup.key == null || backup.entityType == null) { missing++; continue }
+                val living = db.fieldDefinitionDao()
+                    .getGlobalFieldByKey(backup.key, backup.entityType)
+                if (living == null) { missing++; continue }
+                targets.add(living to backup)
+            }
+        } else if (universeId != null && !previewOnly) {
             for (backup in fields) {
                 @Suppress("SENSELESS_COMPARISON")
                 if (backup.key == null || backup.entityType == null) { missing++; continue }
@@ -3426,6 +3446,8 @@ class TrashRepository(
             legacyPayload = tally.legacyGuess,
             previewOnly = previewOnly,
             blocker = when {
+                // 전역 백업은 세계관이 없는 것이 정상 — universeId 없음이 막을 사유가 아니다.
+                data.globalScope -> if (targets.isEmpty()) RestoreBlocker.MISSING_UNIVERSE else null
                 universeId == null -> RestoreBlocker.MISSING_UNIVERSE
                 // 되돌릴 자리가 하나도 없다 — 되살리지 않는다. 정의만 다시 심으면 그것은
                 // 되돌리기가 아니라 새 필드이고, 옛 값은 이미 CASCADE로 사라진 뒤다.
@@ -3438,7 +3460,8 @@ class TrashRepository(
     private suspend fun applyFieldDefinitionRevert(plan: FieldDefinitionPlan): RestoreResult {
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         check(plan.blocker == null) { "되돌릴 수 없는 필드 정의 계획이 적용 단계까지 왔다" }
-        val universeId = requireNotNull(plan.universeId)
+        // 전역 백업(globalScope)은 universeId가 null인 것이 정상이다 — 그 밖에는 반드시 있다.
+        val universeId = if (plan.data.globalScope) null else requireNotNull(plan.universeId)
 
         // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다(R-4). 복원은 성공 시 스냅샷을
         // 소각하므로 남기지 않으면 어느 쪽으로도 갈 수 없다.
@@ -3660,24 +3683,35 @@ class TrashRepository(
         // 것인데, 휴지통 화면이 쓰는 인스턴스는 앱 수명 내내 살아 있다 — 세계관이 지워졌다
         // 다시 만들어지면 같은 id에 다른 코드가 붙고, 캐시된 옛 코드로 해석하면 **오배정**이
         // 된다(오배정은 생략보다 나쁘다 — R-1). 복원 한 번의 지역 캐시만 쓴다.
-        val localUniverseCodes = HashMap<Long, String?>()
+        val localUniverseCodes = HashMap<Long?, String?>()
         // id 조회는 일괄로 — 캐릭터마다 필드 수만큼 단건 질의하면 세계관 복원이 수만 번을 돈다.
         val defsById = HashMap<Long, com.novelcharacter.app.data.model.FieldDefinition>()
         for (chunk in oldIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
             for (fd in db.fieldDefinitionDao().getFieldsByIds(chunk)) defsById[fd.id] = fd
         }
         for ((id, fd) in defsById) {
+            // 전역 구역(universeId null)의 자연키는 code도 null이다 — 아래 되찾기가 그 짝으로 찾는다.
             val uCode = localUniverseCodes.getOrPut(fd.universeId) {
-                db.universeDao().getUniverseById(fd.universeId)?.code?.takeIf { it.isNotBlank() }
+                fd.universeId?.let { uid ->
+                    db.universeDao().getUniverseById(uid)?.code?.takeIf { it.isNotBlank() }
+                }
             }
             naturalById[id] = FieldDefNaturalKey(uCode, fd.entityType, fd.key)
         }
         // 세계관 코드 → id도 캐시한다. ref가 30개면 같은 세계관을 30번 조회하던 자리다.
         val universeIdByCode = HashMap<String, Long?>()
         for (ref in refs) {
-            val uCode = ref.universeCode?.takeIf { it.isNotBlank() } ?: continue
             val type = ref.entityType?.takeIf { it.isNotBlank() } ?: continue
             val key = ref.key?.takeIf { it.isNotBlank() } ?: continue
+            val uCode = ref.universeCode?.takeIf { it.isNotBlank() }
+            if (uCode == null) {
+                // 전역 구역 ref (B-119 확장) — null code는 전역의 표기이지 유실이 아니다
+                // (유실은 ref 자체가 안 만들어진다). IS NULL 자연키로 되찾는다.
+                if (idByNatural.containsKey(FieldDefNaturalKey(null, type, key))) continue
+                val fd = db.fieldDefinitionDao().getGlobalFieldByKey(key, type) ?: continue
+                idByNatural[FieldDefNaturalKey(null, type, key)] = fd.id
+                continue
+            }
             if (idByNatural.containsKey(FieldDefNaturalKey(uCode, type, key))) continue
             // 세계관도 같은 작업이 방금 복원하며 code를 재발급했을 수 있다 — 그쪽이 이긴다.
             val universeId = universeIdByCode.getOrPut(uCode) {

@@ -238,5 +238,14 @@ data class FieldDefinitionSnapshot(
     val universeCode: String? = null,
     /** 덮어쓴 소스의 이름(프리셋·세계관 이름) — 휴지통 목록이 "무엇을 물리는가"를 말한다. */
     val sourceName: String? = null,
-    val refs: EntityRefs? = null
+    val refs: EntityRefs? = null,
+    /**
+     * true면 **전역 구역**(무소속 — universeId null)의 백업이다 (B-119 확장).
+     *
+     * 표식을 따로 두는 이유: 이 스냅샷에서 `universeCode` 없음은 종전부터 **"되돌릴 자리를
+     * 잃었다"**를 뜻해 복원이 막힌다(MISSING_UNIVERSE). 전역 백업은 처음부터 세계관이 없는
+     * 것이라 그 판정과 갈라야 하는데, code 없음 하나로는 두 경우를 가를 수 없다.
+     * 옛 페이로드에는 이 키가 없고 기본값 false라 종전 판정이 그대로 선다.
+     */
+    val globalScope: Boolean = false
 )

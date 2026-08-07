@@ -1455,7 +1455,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 종전 미리보기는 이 열을 아예 비교하지 않았다.
      */
     private suspend fun resolveFieldDefConfig(
-        universeId: Long,
+        universeId: Long?,
         rowIndex: Int,
         r: FieldDefRowValues,
         existing: FieldDefinition?,
@@ -2470,24 +2470,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readFieldDefRow(row, c, "필드 행 $i", result = null)
-            if (r.universeName.isBlank()) continue
+            // 세계관·코드 둘 다 빈 행 = 전역 구역(B-119 확장) — 가져오기와 **같은 판정**(R-33).
+            val globalScope = r.universeName.isBlank() && r.universeCode.isBlank()
+            if (r.universeName.isBlank() && !globalScope) continue
             if (r.key.isBlank()) continue
             inBackup++
 
-            val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
-                ?: db.universeDao().getUniverseByName(r.universeName)
-            if (universe == null) {
-                // B-102 ⓑ: '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가 맞고,
-                // 빼놓았으면 가져오기가 이 행을 경고와 함께 **건너뛴다**.
-                if (options.universes) newCount++ else skippedCount++
-                continue
+            val universe = if (globalScope) null else {
+                val found = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
+                    ?: db.universeDao().getUniverseByName(r.universeName)
+                if (found == null) {
+                    // B-102 ⓑ: '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가 맞고,
+                    // 빼놓았으면 가져오기가 이 행을 경고와 함께 **건너뛴다**.
+                    if (options.universes) newCount++ else skippedCount++
+                    continue
+                }
+                found
             }
 
-            val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, r.key, r.entityType)
+            val existing = if (universe != null) {
+                db.fieldDefinitionDao().getFieldByKey(universe.id, r.key, r.entityType)
+            } else {
+                db.fieldDefinitionDao().getGlobalFieldByKey(r.key, r.entityType)
+            }
             if (existing == null) { newCount++; continue }
             val merged = mergeFieldDefinition(
                 existing, r,
-                resolveFieldDefConfig(universe.id, i, r, existing, result = null)
+                resolveFieldDefConfig(universe?.id, i, r, existing, result = null)
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
@@ -3564,7 +3573,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val exact = expectedNovelHeaders[header]
             if (exact != null) {
                 novelFieldColumns.add(
-                    EventFieldColumn(ci, header, exact.name, universeNamesById[exact.universeId], exact)
+                    EventFieldColumn(ci, header, exact.name, exact.universeId?.let { universeNamesById[it] }, exact)
                 )
                 continue
             }
@@ -4248,16 +4257,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
                 val r = readFieldDefRow(row, fdc, "필드 행 $i", result)
                 val universeName = r.universeName
-                if (universeName.isBlank()) continue
+                // 세계관·세계관코드가 **둘 다 빈 행은 전역 구역**(무소속 — B-119 확장)이다.
+                // 내보내기가 전역 필드를 그렇게 싣는다. 종전에는 이 행을 조용히 건너뛰었는데,
+                // 그 시절 내보내기는 빈 세계관 행을 만들지 않았으므로 옛 파일의 뜻이 바뀌는
+                // 것은 아니다(손으로 만든 빈 행이 있었다면 이제 전역 필드로 들어온다 —
+                // 버려지던 것이 실리는 방향이라 유실이 아니다).
+                val globalScope = universeName.isBlank() && r.universeCode.isBlank()
+                if (universeName.isBlank() && !globalScope) continue
 
-                val universe = (if (r.universeCode.isNotBlank()) {
-                    db.universeDao().getUniverseByCode(r.universeCode)
-                } else null)
-                    ?: db.universeDao().getUniverseByName(universeName)
-                if (universe == null) {
-                    result.skippedRows++
-                    result.errors.add("필드 정의 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없음")
-                    continue
+                val universe = if (globalScope) null else {
+                    val found = (if (r.universeCode.isNotBlank()) {
+                        db.universeDao().getUniverseByCode(r.universeCode)
+                    } else null)
+                        ?: db.universeDao().getUniverseByName(universeName)
+                    if (found == null) {
+                        result.skippedRows++
+                        result.errors.add("필드 정의 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                    found
                 }
 
                 val key = r.key
@@ -4285,8 +4303,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val isRequired = r.isRequired
                 val entityType = r.entityType
 
-                val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
-                val mergedConfig = resolveFieldDefConfig(universe.id, i, r, existing, result)
+                val existing = if (universe != null) {
+                    db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
+                } else {
+                    db.fieldDefinitionDao().getGlobalFieldByKey(key, entityType)
+                }
+                val mergedConfig = resolveFieldDefConfig(universe?.id, i, r, existing, result)
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
@@ -4302,7 +4324,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.updatedFields++
                 } else {
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
-                        universeId = universe.id, key = key, name = name, type = type,
+                        universeId = universe?.id, key = key, name = name, type = type,
                         config = mergedConfig, groupName = groupName, displayOrder = displayOrder ?: i,
                         isRequired = isRequired ?: false, entityType = entityType
                     ))
@@ -4334,7 +4356,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 체계에 없는 라벨은 빠지되 반드시 고지한다(조용한 좁힘 금지).
      */
     private suspend fun mergeGradeSystemColumn(
-        universeId: Long,
+        universeId: Long?,
         rowIndex: Int,
         fieldName: String,
         fieldType: String,
@@ -4350,6 +4372,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val ref = com.novelcharacter.app.data.model.GradeSystemRef
 
         suspend fun resolve(code: String?, name: String?): com.novelcharacter.app.data.model.GradeSystem? {
+            // 전역 구역(universeId null — B-119 확장)은 체계를 참조할 수 없다(설계 1-2:
+            // 등급 체계는 세계관 단위다). 해석 실패로 두면 아래 강등+고지 경로를 그대로 탄다.
+            if (universeId == null) return null
             if (!code.isNullOrBlank()) {
                 db.gradeSystemDao().getByCode(code)
                     ?.takeIf { it.universeId == universeId }
@@ -4654,7 +4679,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **사건(entityType=event) 필드 정의**를 가리키는 값이 갈렸다 — 그 값은 캐릭터 시트가
         // 열로 담지 못해 오버플로 시트에만 있는데, 이 가드는 '복원 가능'으로 세어
         // 구버전 백업 덮어쓰기에서 무경고로 소멸시켰다. 단일 소스(CharacterFieldValueOverflow)를 쓴다.
-        val charFieldIdsByUniverse: Map<Long, Set<Long>> = fieldsById.values
+        // null 키 = 전역 구역(무소속)의 필드 묶음 (B-119 확장)
+        val charFieldIdsByUniverse: Map<Long?, Set<Long>> = fieldsById.values
             .filter { it.entityType == FieldDefinition.ENTITY_CHARACTER }
             .groupBy { it.universeId }
             .mapValues { (_, list) -> list.mapTo(HashSet()) { it.id } }
@@ -5145,7 +5171,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val exact = expectedEventHeaders[header]
             if (exact != null) {
                 // 내보낸 그대로의 헤더 — 이름·세계관명에 어떤 문자가 있어도 정확히 복원된다
-                eventFieldColumns.add(EventFieldColumn(ci, header, exact.name, universeNamesById[exact.universeId], exact))
+                eventFieldColumns.add(EventFieldColumn(ci, header, exact.name, exact.universeId?.let { universeNamesById[it] }, exact))
                 continue
             }
             val parsed = EntityFieldHeaders.parseFallback(header, knownEventFieldNames, knownUniverseNames) ?: continue

@@ -5,6 +5,7 @@ import com.novelcharacter.app.util.ImageFilterHelper.Criteria
 import com.novelcharacter.app.util.ImageFilterHelper.Facts
 import com.novelcharacter.app.util.ImageFilterHelper.OwnerKind
 import com.novelcharacter.app.util.ImageFilterHelper.StatusKind
+import com.novelcharacter.app.util.ImageFilterHelper.TagFilter
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -33,6 +34,38 @@ class ImageFilterHelperTest {
 
     @Test fun emptyCriteria_isIdentity() {
         assertEquals(all.map { it.name }, apply(Criteria()))
+    }
+
+    // ── 태그 유무 축 (B-121 — 일괄 AI 태깅의 진입 동선) ──
+
+    @Test fun tagPresence_untagged_keepsOnlyImagesWithNoTags() {
+        assertEquals(
+            listOf("novel_b.jpg", "char_d.jpg", "char_e.jpg"),
+            apply(Criteria(tagPresence = TagFilter.UNTAGGED))
+        )
+    }
+
+    @Test fun tagPresence_untagged_treatsBlankTagsAsNoTag() {
+        // 공백만 든 태그는 태그가 아니다 — 옛 데이터·엑셀 들이기가 남길 수 있고,
+        // 그것을 태그로 세면 "태그 없는 것"에서 빠져 일괄 태깅 대상에서 조용히 사라진다.
+        val blankOnly = img("blank.jpg", tags = listOf("  ", ""))
+        val out = ImageFilterHelper.apply(listOf(blankOnly), Criteria(tagPresence = TagFilter.UNTAGGED)) { it.facts }
+        assertEquals(listOf("blank.jpg"), out.map { it.name })
+    }
+
+    @Test fun tagPresence_isActiveOnItsOwn() {
+        // isActive가 이 축을 못 보면 apply가 통째로 건너뛰어 필터가 조용히 무시된다.
+        assertEquals(true, Criteria(tagPresence = TagFilter.UNTAGGED).isActive)
+        assertEquals(false, Criteria().isActive)
+    }
+
+    @Test fun tagPresence_untagged_andNamedTags_yieldsNothing() {
+        // 특례를 두지 않는다 — 태그 없는 이미지가 특정 태그를 가질 수는 없으므로 AND의 정직한 답이다.
+        assertEquals(emptyList<String>(), apply(Criteria(tags = setOf("흑발"), tagPresence = TagFilter.UNTAGGED)))
+    }
+
+    @Test fun tagPresence_combinesWithBaseFilter() {
+        assertEquals(listOf("char_d.jpg"), apply(Criteria(base = BaseFilter.ORPHAN, tagPresence = TagFilter.UNTAGGED)))
     }
 
     @Test fun baseFilter_unassigned_vs_orphan_vs_trash() {

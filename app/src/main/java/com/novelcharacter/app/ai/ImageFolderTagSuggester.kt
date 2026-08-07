@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ai
 
-import com.novelcharacter.app.data.model.FieldValueEntry
 
 /**
  * 이미지 폴더 이름으로 **태그를 제안**한다 (설계 `docs/image_folder_tag_ai_2026-07.md` 3장).
@@ -78,17 +77,6 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         val failures: List<AiResult.Failure> = emptyList()
     )
 
-    /** 프롬프트에 실을 어휘와, 그것을 만들며 잘라낸 양. */
-    data class Vocabulary(
-        val tags: List<String> = emptyList(),
-        val fieldValues: List<String> = emptyList(),
-        val truncated: Int = 0
-    ) {
-        val all: Set<String> get() = LinkedHashSet<String>(tags.size + fieldValues.size).apply {
-            addAll(tags); addAll(fieldValues)
-        }
-    }
-
     companion object {
 
         /** 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 기존 두 소비자와 **같은 집합**이다. */
@@ -97,48 +85,11 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
             AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
         )
 
-        /**
-         * 어휘를 만든다 — 기존 이미지 태그(빈도 상위)와 '어휘에 포함' 필드의 값.
-         *
-         * 필드 값 선별은 [CharacterFieldAiSuggester.selectUsageExamples]를 **그대로 쓴다**
-         * (빈도 상위 2/3 + 균등 간격 1/3, 난수 없음). 같은 문제이므로 같은 함수를 쓴다 —
-         * 규칙이 갈리면 같은 데이터가 화면마다 다른 어휘를 낳는다.
-         *
-         * @param tagCounts 태그 → 사용 횟수.
-         * @param entriesByField '어휘에 포함'이 켜진 필드별 값 라이브러리 엔트리.
-         */
-        fun buildVocabulary(
-            tagCounts: Map<String, Int>,
-            entriesByField: List<List<FieldValueEntry>>
-        ): Vocabulary {
-            val sortedTags = tagCounts.entries
-                .filter { it.key.isNotBlank() }
-                .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-                .map { it.key }
-            val tags = sortedTags.take(AiPromptPolicy.IMAGE_TAG_VOCAB_MAX)
-            var truncated = sortedTags.size - tags.size
-
-            val values = LinkedHashSet<String>()
-            for (entries in entriesByField) {
-                val picked = CharacterFieldAiSuggester.selectUsageExamples(
-                    entries, limit = AiPromptPolicy.IMAGE_TAG_VALUES_PER_FIELD
-                )
-                truncated += (entries.count { it.value.isNotBlank() } - picked.size).coerceAtLeast(0)
-                for (v in picked) {
-                    if (values.size >= AiPromptPolicy.IMAGE_TAG_VALUES_TOTAL_MAX) { truncated++; continue }
-                    values.add(v)
-                }
-            }
-            // 태그와 겹치는 값은 어휘에 두 번 싣지 않는다(토큰 낭비이지 잘라낸 것이 아니다).
-            val tagSet = tags.toHashSet()
-            return Vocabulary(tags, values.filterNot { it in tagSet }, truncated)
-        }
-
         /** 폴더를 요청 단위로 나눈다 — 개수 규칙의 단일 소스는 [AiPromptPolicy]다. */
         fun chunkFolders(folders: List<String>): List<List<String>> =
             folders.chunked(AiPromptPolicy.IMAGE_TAG_FOLDERS_PER_REQUEST)
 
-        fun buildSystemPrompt(vocab: Vocabulary, policy: String): String = buildString {
+        fun buildSystemPrompt(vocab: ImageTagVocabulary.Vocabulary, policy: String): String = buildString {
             append("당신은 창작 자료 이미지의 분류를 돕는다. ")
             append("입력으로 받은 **폴더 이름들**을 읽고, 각 폴더에 어울리는 태그를 제안하라.\n")
             append("- 폴더 이름은 사용자가 이미지를 모아 둔 자리의 이름이다. 이름에서 드러나는 ")
@@ -222,7 +173,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
     suspend fun suggest(
         folders: List<String>,
         imageCounts: Map<String, Int>,
-        vocab: Vocabulary,
+        vocab: ImageTagVocabulary.Vocabulary,
         policyRaw: String
     ): Result {
         if (folders.isEmpty()) return Result()

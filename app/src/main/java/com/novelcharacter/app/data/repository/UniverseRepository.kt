@@ -199,11 +199,14 @@ class UniverseRepository(
                 // 같은 key를 가진 다른 세계관의 필드가 없으면 전체 삭제 (고아 캐릭터 포함)
                 // 있으면 해당 세계관의 캐릭터에 한정하여 삭제
                 val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
+                val fieldUniverseId = field.universeId
                 if (otherFieldsWithSameKey == 0) {
                     db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
-                } else {
-                    db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, field.universeId)
+                } else if (fieldUniverseId != null) {
+                    db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, fieldUniverseId)
                 }
+                // 전역 구역 필드(null)에 같은 key의 형제가 남아 있는 경우는 지울 것이 없다 —
+                // 상태변화는 연표(세계관) 기능이 만들고, 무소속 캐릭터에는 연표가 없다.
             }
             fieldDefinitionDao.delete(field)
         }

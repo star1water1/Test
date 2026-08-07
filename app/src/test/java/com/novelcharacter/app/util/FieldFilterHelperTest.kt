@@ -80,6 +80,10 @@ class FieldFilterHelperTest {
         override suspend fun getFieldById(id: Long): FieldDefinition? = fields[id]
         override suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> = ids.mapNotNull { fields[it] }
         override suspend fun getFieldsByUniverseAllTypes(universeId: Long): List<FieldDefinition> = unused()
+        override suspend fun getGlobalFieldsList(entityType: String): List<FieldDefinition> = unused()
+        override suspend fun getGlobalFieldsAllTypes(): List<FieldDefinition> = unused()
+        override suspend fun deleteGlobalByIds(ids: List<Long>) = unused()
+        override suspend fun getGlobalFieldByKey(key: String, entityType: String): FieldDefinition? = unused()
 
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()

@@ -117,7 +117,8 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
     fun applyPropagate(
         template: DefaultFieldTemplate,
         plan: DefaultFieldPlan.PropagatePlan,
-        selected: Set<Long>
+        // null 원소 = 전역 구역(무소속 — B-119 확장). 전파 미리보기의 "무소속" 행이 이것이다.
+        selected: Set<Long?>
     ) = viewModelScope.launch {
         try {
             val r = repository.applyPropagate(template, plan, selected)

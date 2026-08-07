@@ -49,6 +49,20 @@ class ImageManagerFragment : Fragment() {
          * 언제든 바꿀 수 있으므로 잘못된 인자로 실패할 이유가 없다).
          */
         const val ARG_LINK_FILTER = "linkFilter"
+
+        /**
+         * '1장씩 다시 보내기'로 되받을 수 있는 실패 (B-121).
+         *
+         * **번호가 어긋나 접힌 배치뿐이다** — 장수 1이면 번호 사고가 원리적으로 없으므로
+         * 다시 보내는 것에 근거가 있다. 키 오류·할당량 소진·이미지 미지원은 1장으로 보내도
+         * 같은 결과라, 그 길을 열면 사용자는 돈만 더 쓰고 같은 실패를 다시 본다.
+         */
+        private val AI_TAG_RETRYABLE = setOf(
+            com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.INDEX_OUT_OF_RANGE,
+            com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.INDEX_DUPLICATED,
+            com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.NO_JSON,
+            com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.RESPONSE_TRUNCATED
+        )
     }
 
     private var _binding: FragmentImageManagerBinding? = null
@@ -362,12 +376,18 @@ class ImageManagerFragment : Fragment() {
      * 필터가 적용 중인지 버튼만 보고도 판단할 수 있게 한다(토글 시각화).
      */
     private fun updateTagFilterLabel() {
-        val n = viewModel.criteria.tags.size
-        val active = n > 0
+        val c = viewModel.criteria
+        val n = c.tags.size
+        val untagged = c.tagPresence == com.novelcharacter.app.util.ImageFilterHelper.TagFilter.UNTAGGED
+        val active = n > 0 || untagged
         val button = binding.tagFilterButton
-        button.text =
-            if (!active) getString(R.string.image_manager_tag_filter)
-            else getString(R.string.image_manager_tag_filter_count, n)
+        // 무태그는 개수로 셀 수 없으므로 라벨을 따로 든다 — 켜 두고 버튼이 '태그'라고만
+        // 말하면, 목록이 왜 좁아졌는지 화면 어디에도 없다(원칙 04의 "존재를 알 수 없는 것").
+        button.text = when {
+            untagged -> getString(R.string.image_manager_tag_filter_untagged)
+            n > 0 -> getString(R.string.image_manager_tag_filter_count, n)
+            else -> getString(R.string.image_manager_tag_filter)
+        }
         if (active) {
             button.setIconResource(R.drawable.ic_check)
             val primary = MaterialColors.getColor(button, com.google.android.material.R.attr.colorPrimary)
@@ -390,9 +410,10 @@ class ImageManagerFragment : Fragment() {
     private fun openTagFilterSheet() {
         val sheet = ImageTagFilterBottomSheet()
         sheet.currentTags = viewModel.criteria.tags
+        sheet.currentPresence = viewModel.criteria.tagPresence
         sheet.loadAllTags = { viewModel.getAllImageTags() }
-        sheet.onApply = { tags ->
-            viewModel.criteria = viewModel.criteria.copy(tags = tags)
+        sheet.onApply = { tags, presence ->
+            viewModel.criteria = viewModel.criteria.copy(tags = tags, tagPresence = presence)
             if (_binding != null) { updateTagFilterLabel(); applyView() }
         }
         sheet.show(childFragmentManager, ImageTagFilterBottomSheet.TAG)
@@ -967,12 +988,16 @@ class ImageManagerFragment : Fragment() {
             reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_manager_select_none)))
             return
         }
-        val sheet = ImageBatchOperationBottomSheet.newInstance(items.size)
+        val aiUsable = runCatching {
+            com.novelcharacter.app.ai.AiService(requireContext()).hasUsableProvider()
+        }.getOrDefault(false)
+        val sheet = ImageBatchOperationBottomSheet.newInstance(items.size, aiUsable)
         sheet.onAction = { action ->
             when (action) {
                 ImageBatchOperationBottomSheet.Action.ASSIGN -> startAssignFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.TAG_ADD -> openBatchTagSheet(items.map { it.path }, remove = false)
                 ImageBatchOperationBottomSheet.Action.TAG_REMOVE -> openBatchTagSheet(items.map { it.path }, remove = true)
+                ImageBatchOperationBottomSheet.Action.AI_TAG -> openAiTagFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.LINK -> startLinkFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.UNLINK -> runUnlink(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.UNASSIGN -> confirmBatchUnassign(items.map { it.path })
@@ -982,6 +1007,179 @@ class ImageManagerFragment : Fragment() {
             }
         }
         sheet.show(childFragmentManager, ImageBatchOperationBottomSheet.TAG)
+    }
+
+    // ---------- 이미지 내용 일괄 AI 태깅 (B-121 · 설계 feature_roadmap 2-3) ----------
+
+    /**
+     * 설정 시트 → 실행 → 검토의 세 단계 중 **첫 단계**: 장수를 정하고 비용을 고지한다.
+     *
+     * 고지가 실제보다 적게 말하면 사용자는 예상보다 많이 내고, **그 어긋남은 화면이 아니라
+     * 청구서에서만 드러난다**(R-4). 그래서 요청 수는 `AiPromptPolicy`가 실제 청킹과 같은
+     * 함수로 계산하고, 슬라이더를 움직이면 그 자리에서 다시 센다.
+     *
+     * **이미지가 기기 밖으로 나간다는 사실도 여기서 말한다** — B-120이 첨부 고지에 세운 그
+     * 규칙이 이 경로에도 그대로 붙는다(기존 약속을 뒤집는 지점이므로 침묵 금지).
+     */
+    private fun openAiTagFlow(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val ctx = requireContext()
+        val settings = com.novelcharacter.app.ai.AiPromptSettings(ctx)
+        var perRequest = settings.imageTagBatchSize
+
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(64, 16, 64, 0)
+        }
+        val countLabel = android.widget.TextView(ctx)
+        val slider = com.google.android.material.slider.Slider(ctx).apply {
+            valueFrom = com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TAG_BATCH_MIN.toFloat()
+            valueTo = com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TAG_BATCH_MAX.toFloat()
+            stepSize = 1f
+            value = perRequest.toFloat()
+        }
+        val costLabel = android.widget.TextView(ctx).apply { textSize = 12f }
+
+        fun refresh() {
+            val requests = com.novelcharacter.app.ai.AiPromptPolicy
+                .imageTagBatchRequestCount(paths.size, perRequest)
+            countLabel.text = getString(R.string.image_ai_tag_batch_size, perRequest)
+            costLabel.text = getString(R.string.image_ai_tag_cost, paths.size, perRequest, requests)
+        }
+        slider.addOnChangeListener { _, value, _ ->
+            perRequest = value.toInt()
+            refresh()
+        }
+        refresh()
+
+        container.addView(countLabel)
+        container.addView(slider)
+        container.addView(costLabel)
+        container.addView(android.widget.TextView(ctx).apply {
+            text = getString(R.string.image_ai_tag_privacy)
+            textSize = 12f
+        })
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.image_ai_tag_action)
+            .setView(com.novelcharacter.app.util.cappedScrollView(ctx).apply { addView(container) })
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.image_ai_tag_run) { _, _ ->
+                settings.imageTagBatchSize = perRequest
+                runAiTagSuggest(paths, perRequest)
+            }
+            .show()
+    }
+
+    /**
+     * 실행 — 결정형 진행도(R-26)와 취소를 붙인다.
+     *
+     * 취소는 즉시 중단이 아니라 **더 시작하지 않음**이고, **끝난 배치의 제안은 살린다**
+     * (B-108 ⓕ의 관행 — 완결된 몫은 버리지 않는다). 그래서 취소해도 검토 시트가 뜬다.
+     */
+    private fun runAiTagSuggest(paths: List<String>, perRequest: Int) {
+        val total = com.novelcharacter.app.ai.AiPromptPolicy.imageTagBatchRequestCount(paths.size, perRequest)
+        val progress = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+            requireContext(),
+            titleRes = R.string.image_ai_tag_action,
+            total = total,
+            stageRes = R.string.image_ai_tag_stage,
+            onCancel = { }
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = try {
+                viewModel.suggestImageTags(
+                    paths = paths,
+                    perRequest = perRequest,
+                    onProgress = { done, totalReq, doneImages, totalImages ->
+                        progress.update(
+                            done, totalReq,
+                            stage = getString(R.string.image_ai_tag_progress, doneImages, totalImages)
+                        )
+                    },
+                    isCancelled = { progress.isCancelled }
+                )
+            } finally {
+                progress.dismiss()
+            }
+            if (!isAdded || view == null) return@launch
+            showAiTagReview(result, perRequest)
+        }
+    }
+
+    /** 검토 — 드롭·실패를 사유별로 고지하고(R-14·R-17) 고른 것만 적용한다. */
+    private fun showAiTagReview(
+        result: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result,
+        perRequest: Int
+    ) {
+        val notices = ArrayList<String>()
+        val d = result.drops
+        val dropped = d.blankOrTooLong + d.overPerImageCap
+        if (dropped > 0) notices.add(getString(R.string.image_tag_review_notice_dropped, dropped))
+        if (d.unreadable > 0) notices.add(getString(R.string.image_ai_tag_notice_unreadable, d.unreadable))
+        if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
+        if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
+        if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
+        notices.addAll(aiTagFailureNotices(result))
+
+        if (result.suggestions.isEmpty() && notices.isEmpty()) return
+
+        val sheet = ImageAiTagReviewSheet()
+        sheet.suggestions = result.suggestions
+        sheet.notices = notices
+        // 되받을 수 있는 것은 **번호 사고로 접힌 배치**뿐이다 — 키가 없거나 할당량이 끝난
+        // 실패는 1장씩 보내도 같은 결과라, 그 길을 열면 돈만 더 쓴다.
+        sheet.retryPaths = if (perRequest <= 1) emptyList() else result.failures
+            .filter { it.kind in AI_TAG_RETRYABLE }
+            .flatMap { it.paths }
+            .distinct()
+        sheet.onRetryOneByOne = { retry -> runAiTagSuggest(retry, perRequest = 1) }
+        sheet.onApply = { picked ->
+            viewModel.applyImageTags(picked) { tags, images ->
+                if (!isAdded) return@applyImageTags
+                notifySuccess(getString(R.string.image_tag_review_applied, tags, images))
+            }
+        }
+        sheet.show(childFragmentManager, ImageAiTagReviewSheet.TAG)
+    }
+
+    /** 실패 고지 — 사유마다 한 줄. 같은 사유가 여러 배치에 나면 묶어서 센다. */
+    private fun aiTagFailureNotices(
+        result: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result
+    ): List<String> {
+        val out = ArrayList<String>()
+        val byKind = result.failures.groupBy { it.kind }
+        val truncated = byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.RESPONSE_TRUNCATED]
+            .orEmpty()
+        val sealed = byKind.filterKeys {
+            it in AI_TAG_RETRYABLE &&
+                it != com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.RESPONSE_TRUNCATED
+        }.values.flatten()
+        if (sealed.isNotEmpty()) {
+            // 번호가 어긋난 배치는 통째로 접혔다 — 무엇이 빠졌는지 말하지 않으면
+            // 사용자는 그 이미지들이 '태그가 없는 이미지'라고 잘못 배운다.
+            out.add(getString(R.string.image_ai_tag_notice_sealed, sealed.sumOf { it.paths.size }))
+        }
+        if (truncated.isNotEmpty()) {
+            // 처방이 다르다 — 이쪽은 장수를 줄이거나 출력 상한을 올리는 것이다.
+            out.add(getString(R.string.image_ai_tag_notice_truncated, truncated.sumOf { it.paths.size }))
+        }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.IMAGES_UNSUPPORTED]?.let {
+            out.add(getString(R.string.image_ai_tag_notice_no_vision))
+        }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.IMAGES_UNREADABLE]?.let {
+            out.add(getString(R.string.image_ai_tag_notice_unreadable, it.sumOf { f -> f.paths.size }))
+        }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.REQUEST_FAILED]
+            ?.firstOrNull()?.failure?.let {
+            out.add(
+                getString(
+                    R.string.image_tag_review_notice_failed,
+                    com.novelcharacter.app.ai.AiErrorMessages.of(requireContext(), it)
+                )
+            )
+        }
+        return out
     }
 
     /** 배정 플로우: 대상 피커 → 링크 그룹 확장 확인(선택 밖 추가분 있으면) → 배정 → 종합 고지. */

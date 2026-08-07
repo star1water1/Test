@@ -52,6 +52,15 @@
             android:text="@string/batch_tag_remove_title" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/opAiTag"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="start|center_vertical"
+            android:visibility="gone"
+            android:text="@string/image_ai_tag_action" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/opLink"
             style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
