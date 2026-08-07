@@ -174,8 +174,7 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | **B-150+B-132+B-151**(활성 프로바이더 + 학습값 직렬화 + 탐지 상한) | 미병합 — 브랜치 `claude/task-review-progress-mirlye` | `AiSettingsFragment` 하나 (+ 레이아웃 `item_ai_provider.xml`) | 화면 파일이 하나뿐이라 `CLAUDE.md` 4번의 *2~3개*에 못 미친다. **PR을 열면 그 자리에서 CI가 돌아 이 줄이 덮인다** — 바로 위 판(B-131)이 적어 둔 사실 그대로다: 이 저장소에서 *"CI를 건너뛴다"*가 실제로 성립하는 것은 **PR 없이 병합할 때뿐**이다. 새 레이아웃 id(`activeBadge`)가 하나 생겨 **ViewBinding 대조는 CI만이 볼 수 있다**(로컬 프로브는 `ui/**`를 통째로 뺀다) — 병합 전에 반드시 초록을 볼 것 |
-> | *(위 한 건 외에는 비어 있음)* | | | **B-119도 B-120도 B-121도 건너뛰지 않았다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
+> | *(비어 있음)* | | | **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
@@ -3833,12 +3832,17 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > **그다음이 3-66의 2번**(자기 백업 덮어쓰기 — 되돌릴 수 없다), **그다음이 3-67의 1번과
    > 3-68의 1번**(둘 다 사용자가 실제로 겪은 것이라 고쳐졌는지부터 봐야 한다).
    >
-   > **⑥ CI 미검증 목록에 이 슬라이스가 한 줄 서 있다** — 2장을 볼 것. 화면 파일이
-   > `AiSettingsFragment` 하나라 `CLAUDE.md` 4번의 *2~3개*에 못 미친다. **다만 새 레이아웃 id
-   > (`activeBadge`)가 생겼으므로 ViewBinding 대조는 CI만이 볼 수 있다** — 병합 전에 PR을 열어
-   > 초록을 보고 그 줄을 지울 것. 나머지 로컬 검증은 전부 초록이었다: 순수 JVM **1914** ·
-   > 정적 검사 **9종** · 스키마 하네스 **13종 + 리셋** · 차분 컴파일 + `triage_unresolved`
-   > (저장소 선언 타입 미해석 0) · 프로브(**신규 오류 0** — 452 그대로) · 커스텀 뷰 프로브(기존 1건 그대로).
+   > **⑥ CI 미검증 목록은 비어 있다.** 이 슬라이스를 한 줄 올렸다가 **같은 세션에서 지웠다** —
+   > 화면 파일이 `AiSettingsFragment` 하나라 `CLAUDE.md` 4번의 *2~3개*에 못 미쳐 등재했는데,
+   > 새 레이아웃 id(`activeBadge`)의 ViewBinding 대조는 CI만이 볼 수 있어 병합 전에 PR을 열었고
+   > 그 자리에서 덮였다(PR #233, run `31210563139` — 배지가 아니라 단계를 봤다:
+   > `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 ·
+   > `Build Debug APK` ✓ 1분48초). **적어 둘 사실: `Build Release APK`의 skipped는 실패가 아니다** —
+   > 그 단계는 `if: build_type == 'release'`라 **수동 dispatch에서만 돈다.** PR·push 이벤트에서는
+   > 언제나 건너뛰므로, 초록을 셀 때 이 둘(`Run unit tests` · `Build Debug APK`)만 보면 된다.
+   > 나머지 로컬 검증도 전부 초록이었다: 순수 JVM **1914** · 정적 검사 **9종** ·
+   > 스키마 하네스 **13종 + 리셋** · 차분 컴파일 + `triage_unresolved`(저장소 선언 타입 미해석 0) ·
+   > 프로브(**신규 오류 0** — 452 그대로) · 커스텀 뷰 프로브(기존 1건 그대로).
    >
    > **⑦ 이 판이 남긴 주의 셋.**
    > ⓐ **"두 줄이면 고친다"고 등재된 결함이 두 줄로 안 끝나는 경우가 있다.** B-132는 실제로 두
@@ -3855,11 +3859,18 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 잡았다. 이 저장소의 KDoc은 다른 문서와 경로를 자주 인용하므로 **경로에 `/*`가 들어가면
    > 말로 풀어 적을 것.**
    >
+   > **⑧ 이 판이 CI 판독에 대해 남기는 것 하나.** 진행 중인 실행을 *멈춰 있다*고 오독해
+   > **멀쩡한 실행을 force-push로 죽였다.** 원인은 경과 시간을 재지 않고 *폴링 횟수*로 어림한 것이다 —
+   > 이 환경에서는 도구 호출 왕복이 실제 시간을 거의 쓰지 않아, 여러 번 물어봐도 1~2분밖에 안 지난다.
+   > **`date -u`로 실제 경과를 재고 나서 판단할 것.** 이 저장소의 CI는 5~6분이 정상이고
+   > (`Run unit tests` 약 2분40초 + `Build Debug APK` 약 1분50초), 그보다 짧은 관찰로
+   > *멈췄다*고 결론 내면 안 된다. 죽인 실행은 나중에 보니 **같은 2분43초에 정상 통과할 궤도**였다.
+   >
    > **다음 세션이 가져갈 한 줄: 사용자 보고(활성 프로바이더)가 닫혔다. 다음은 B-146 + B-145
    > (도구·하네스)이고, B-146을 먼저 하면 이후 전부의 검출력이 올라간다. **대기열 앞쪽을 막는
    > 판정은 없다**(살아 있는 대기는 둘이지만 둘 다 뒤쪽이다 — **B-128** · **B-149의 곁다리**).
    > **B-139는 이 판 때문에 심각도가 올랐다**(①-주의).
-   > CI 미검증 **1건**(이 슬라이스 — PR을 열면 덮인다) · 실기기 확인 열셋(3-65 1번 → 3-66 2번 →
+   > **CI 미검증 0**(PR #233 초록이 덮었다) · 실기기 확인 열셋(3-65 1번 → 3-66 2번 →
    > 3-67 1번 · 3-68 1번 순).**
 
    > **📌 세션 인수인계(2026.08.07 B-131+B-134+B-138 등급 산정 배선 구현 종료 — ~~현행~~ **바로 위 'B-150+B-132+B-151 활성 프로바이더' 판이 대체했다. ①의 셋(B-150·B-132·B-151)은 처리 완료이고, 나머지 착수 순서(B-146+B-145 이하)와 ②·③·④의 갈래는 그 판으로 그대로 넘어갔다**). 대기열:**
