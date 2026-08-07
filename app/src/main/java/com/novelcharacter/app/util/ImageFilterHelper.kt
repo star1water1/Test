@@ -32,15 +32,31 @@ object ImageFilterHelper {
      */
     enum class LinkFilter { ANY, LINKED, UNLINKED, AUTO }
 
+    /**
+     * 태그 **유무** 축 — [Criteria.tags](어느 태그인가)와 갈라 둔다.
+     *
+     * 갈라야 하는 이유는 둘이 다른 물음이기 때문이다: `tags`는 *"이 태그가 붙은 것"*을 고르고
+     * [UNTAGGED]는 *"아무 태그도 없는 것"*을 고른다. 후자는 태그 이름으로 표현할 수 없어
+     * (없는 것에는 이름이 없다) 칩 목록에 담기지 않는다.
+     *
+     * **왜 이것이 있는가:** 일괄 AI 태깅(B-121)의 실제 동선이 *"아직 태그 없는 것들을 한꺼번에"*다.
+     * 이 축이 없으면 수백 장에서 무태그를 눈으로 찾아 하나씩 골라야 한다(원칙 04).
+     *
+     * 둘을 함께 걸면 결과가 빈다 — 태그가 없는 이미지가 특정 태그를 가질 수는 없으므로
+     * **AND의 정직한 결과**이며 특례를 두지 않는다. 화면은 둘을 배타로 조작하게 한다.
+     */
+    enum class TagFilter { ANY, UNTAGGED }
+
     data class Criteria(
         val base: BaseFilter = BaseFilter.ALL,
         val link: LinkFilter = LinkFilter.ANY,
         val tags: Set<String> = emptySet(),
-        val query: String = ""
+        val query: String = "",
+        val tagPresence: TagFilter = TagFilter.ANY
     ) {
         val isActive: Boolean
             get() = base != BaseFilter.ALL || link != LinkFilter.ANY ||
-                tags.isNotEmpty() || query.isNotBlank()
+                tags.isNotEmpty() || query.isNotBlank() || tagPresence != TagFilter.ANY
     }
 
     /** 매칭에 필요한 항목 사실 — 호출측이 자기 모델에서 추출한다. */
@@ -68,6 +84,7 @@ object ImageFilterHelper {
         return items.filter { item ->
             val f = facts(item)
             matchesBase(f, criteria.base) && matchesLink(f, criteria.link) &&
+                matchesTagPresence(f, criteria.tagPresence) &&
                 matchesTags(f, criteria.tags) && matchesQuery(f, query)
         }
     }
@@ -92,6 +109,12 @@ object ImageFilterHelper {
         BaseFilter.DETACHED -> f.detachedAt != null
         BaseFilter.ORPHAN -> f.status == StatusKind.ORPHAN
         BaseFilter.TRASH -> f.status == StatusKind.TRASH
+    }
+
+    private fun matchesTagPresence(f: Facts, presence: TagFilter): Boolean = when (presence) {
+        TagFilter.ANY -> true
+        // 공백만 든 태그는 태그가 아니다 — 편집 경로가 막지만 옛 데이터·엑셀 들이기가 남긴다.
+        TagFilter.UNTAGGED -> f.tags.none { it.isNotBlank() }
     }
 
     private fun matchesTags(f: Facts, tags: Set<String>): Boolean =

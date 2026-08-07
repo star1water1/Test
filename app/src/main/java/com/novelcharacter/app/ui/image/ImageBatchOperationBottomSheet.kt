@@ -9,12 +9,16 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetImageBatchOperationsBinding
 
 /**
- * 이미지 선택 모드 "작업" 시트 — 8개 일괄 작업의 단일 진입점
+ * 이미지 선택 모드 "작업" 시트 — 일괄 작업의 단일 진입점
  * (캐릭터 목록 BatchOperationBottomSheet 패턴 준용). 콜백 주입식.
+ *
+ * **[Action.AI_TAG]는 쓸 수 있는 AI 프로바이더가 있을 때만 보인다**(R-24 — 성립하지 않는
+ * 조합의 설정은 보이지 않는다. 폴더 받아오기의 AI 태그 체크박스가 이미 같은 규칙이다).
+ * 판정은 호출측이 하고 [newInstance]로 넘긴다 — 이 시트는 DB·설정을 읽지 않는다.
  */
 class ImageBatchOperationBottomSheet : BottomSheetDialogFragment() {
 
-    enum class Action { ASSIGN, TAG_ADD, TAG_REMOVE, LINK, UNLINK, UNASSIGN, CLEAR_DETACHED, RECOMPRESS, DELETE }
+    enum class Action { ASSIGN, TAG_ADD, TAG_REMOVE, AI_TAG, LINK, UNLINK, UNASSIGN, CLEAR_DETACHED, RECOMPRESS, DELETE }
 
     var onAction: ((Action) -> Unit)? = null
 
@@ -35,11 +39,14 @@ class ImageBatchOperationBottomSheet : BottomSheetDialogFragment() {
 
         val count = arguments?.getInt(ARG_COUNT) ?: 0
         binding.titleText.text = getString(R.string.image_batch_title, count)
+        binding.opAiTag.visibility =
+            if (arguments?.getBoolean(ARG_AI_USABLE) == true) View.VISIBLE else View.GONE
 
         fun run(action: Action) { dismiss(); handler(action) }
         binding.opAssign.setOnClickListener { run(Action.ASSIGN) }
         binding.opTagAdd.setOnClickListener { run(Action.TAG_ADD) }
         binding.opTagRemove.setOnClickListener { run(Action.TAG_REMOVE) }
+        binding.opAiTag.setOnClickListener { run(Action.AI_TAG) }
         binding.opLink.setOnClickListener { run(Action.LINK) }
         binding.opUnlink.setOnClickListener { run(Action.UNLINK) }
         binding.opUnassign.setOnClickListener { run(Action.UNASSIGN) }
@@ -56,10 +63,14 @@ class ImageBatchOperationBottomSheet : BottomSheetDialogFragment() {
     companion object {
         const val TAG = "ImageBatchOperationBottomSheet"
         private const val ARG_COUNT = "count"
+        private const val ARG_AI_USABLE = "aiUsable"
 
-        fun newInstance(count: Int): ImageBatchOperationBottomSheet =
+        fun newInstance(count: Int, aiUsable: Boolean = false): ImageBatchOperationBottomSheet =
             ImageBatchOperationBottomSheet().apply {
-                arguments = Bundle().apply { putInt(ARG_COUNT, count) }
+                arguments = Bundle().apply {
+                    putInt(ARG_COUNT, count)
+                    putBoolean(ARG_AI_USABLE, aiUsable)
+                }
             }
     }
 }

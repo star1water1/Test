@@ -169,6 +169,8 @@ $MAIN/ai/AiProtocolCodec.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/AiPromptPolicy.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
+$MAIN/ai/ImageTagVocabulary.kt
+$MAIN/ai/ImageBatchTagSuggester.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImagePathMatch.kt
@@ -261,6 +263,7 @@ $TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/AiImageAttachTest.kt
 $TEST/ai/AiImageRequestTest.kt
+$TEST/ai/ImageBatchTagSuggesterTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
 $TEST/util/DuelAiContextTest.kt

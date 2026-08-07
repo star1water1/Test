@@ -142,6 +142,46 @@ object AiPromptPolicy {
         if (folderCount <= 0) 0
         else (folderCount + IMAGE_TAG_FOLDERS_PER_REQUEST - 1) / IMAGE_TAG_FOLDERS_PER_REQUEST
 
+    // ── 이미지 내용 일괄 태깅 (B-121 · 설계 feature_roadmap 2-3) ──
+
+    /**
+     * 한 요청에 실을 이미지 장수의 범위·기본값. **사용자가 정한다**(설계 2-3 — 원문이 그렇다).
+     *
+     * 상한이 [ATTACH_IMAGES_MAX]와 같은 10인 것은 우연이 아니다 — 둘 다 *한 요청의 이미지 수*이고
+     * 비용이 붙는 축도 같다. 다만 **기본값은 다르다**: 첨부(B-120)는 곁들이라 1장이 보수적이지만,
+     * 이쪽은 이미지 태깅 그 자체라 1장이면 이미지 수만큼 요청이 나가 되레 비싸다.
+     */
+    const val IMAGE_TAG_BATCH_MIN = 1
+    const val IMAGE_TAG_BATCH_MAX = 10
+    const val IMAGE_TAG_BATCH_DEFAULT = 5
+
+    /**
+     * 이미지 **한 장**에 받아들일 태그 수 — 폴더([IMAGE_TAG_MAX_PER_FOLDER], 6)보다 크다.
+     *
+     * 폴더는 이름 한 줄이 근거의 전부지만 이미지는 인물·복장·배경·구도·분위기가 한 장에
+     * 함께 있어 분류축이 실제로 더 많다. 같은 6으로 두면 모델이 뽑은 유효한 축이 상한에서
+     * 잘리고, 그 잘림은 드롭 집계의 수로만 남아 **사용자는 무엇이 잘렸는지 볼 수 없다**.
+     */
+    const val IMAGE_TAG_MAX_PER_IMAGE = 8
+
+    /**
+     * 검토 화면에서 한 행에 펼쳐 보일 칩 수 — 넘으면 접고 `외 N개`로 말한다(설계 2-3 조작 셋).
+     *
+     * [IMAGE_TAG_MAX_PER_IMAGE]보다 **작아야 접기가 실제로 일어난다.** 둘을 같게 두면
+     * 접기 코드가 영원히 안 도는 죽은 길이 된다.
+     */
+    const val IMAGE_TAG_ROW_COLLAPSE_AT = 6
+
+    fun clampImageTagBatch(value: Int): Int =
+        value.coerceIn(IMAGE_TAG_BATCH_MIN, IMAGE_TAG_BATCH_MAX)
+
+    /** 이미지 수 → 요청 수. 폴더판([imageTagRequestCount])과 달리 **장수를 사용자가 정한다**. */
+    fun imageTagBatchRequestCount(imageCount: Int, perRequest: Int): Int {
+        if (imageCount <= 0) return 0
+        val per = clampImageTagBatch(perRequest)
+        return (imageCount + per - 1) / per
+    }
+
     /** 슬라이더 눈금에 맞춘 값 — 저장값이 눈금 밖이면 슬라이더가 예외로 죽는다 */
     private fun snap(value: Int, step: Int): Int = (value / step) * step
 }

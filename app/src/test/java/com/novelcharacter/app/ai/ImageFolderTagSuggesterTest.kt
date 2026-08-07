@@ -1,7 +1,7 @@
 package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.ai.ImageFolderTagSuggester.Companion.buildSystemPrompt
-import com.novelcharacter.app.ai.ImageFolderTagSuggester.Companion.buildVocabulary
+import com.novelcharacter.app.ai.ImageTagVocabulary.build as buildVocabulary
 import com.novelcharacter.app.ai.ImageFolderTagSuggester.Companion.chunkFolders
 import com.novelcharacter.app.ai.ImageFolderTagSuggester.Companion.parse
 import com.novelcharacter.app.data.model.FieldValueEntry
@@ -65,7 +65,7 @@ class ImageFolderTagSuggesterTest {
     // ── 프롬프트 ──
 
     @Test fun systemPrompt_omitsEmptySections() {
-        val p = buildSystemPrompt(ImageFolderTagSuggester.Vocabulary(), "")
+        val p = buildSystemPrompt(ImageTagVocabulary.Vocabulary(), "")
         assertFalse(p.contains("[기존 이미지 태그]"))
         assertFalse(p.contains("[작품 데이터에서 쓰는 값]"))
         assertFalse(p.contains("[사용자 지침"))

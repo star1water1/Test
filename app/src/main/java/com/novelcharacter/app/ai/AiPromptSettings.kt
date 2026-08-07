@@ -100,6 +100,21 @@ class AiPromptSettings(context: Context) {
             sp.edit().putString(KEY_IMAGE_TAG_POLICY, AiPromptPolicy.clampImageTagPolicy(value)).apply()
         }
 
+    /**
+     * 이미지 **일괄 태깅**에서 한 요청에 실을 장수 (B-121). 사용자가 정한다(설계 2-3).
+     *
+     * 기억해 두는 이유: 이 값은 폴더 구성처럼 매번 달라지는 것이 아니라 **사용자의 모델·요금제에
+     * 달린 취향**이다. 매번 기본값으로 되돌리면 같은 사람이 같은 값을 매번 다시 맞춘다(원칙 04).
+     * 비용 고지는 요청 수를 이 값으로 계산해 실행 전에 보인다.
+     */
+    var imageTagBatchSize: Int
+        get() = AiPromptPolicy.clampImageTagBatch(
+            sp.getInt(KEY_IMAGE_TAG_BATCH, AiPromptPolicy.IMAGE_TAG_BATCH_DEFAULT)
+        )
+        set(value) {
+            sp.edit().putInt(KEY_IMAGE_TAG_BATCH, AiPromptPolicy.clampImageTagBatch(value)).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
@@ -110,5 +125,6 @@ class AiPromptSettings(context: Context) {
         private const val KEY_IMAGE_TAG_POLICY = "imageTagPolicy"
         private const val KEY_ATTACH_IMAGES = "attachImageCount"
         private const val KEY_ATTACH_REPRESENTATIVE = "attachRepresentativeFirst"
+        private const val KEY_IMAGE_TAG_BATCH = "imageTagBatchSize"
     }
 }

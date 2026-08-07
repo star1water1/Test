@@ -38,16 +38,29 @@ object AiImagePreparer {
     }
 
     /** 경로 목록 → 전송용 이미지. IO에서 돈다(디코딩·인코딩이 무겁다). */
-    suspend fun prepare(paths: List<String>): Prepared = withContext(Dispatchers.IO) {
-        if (paths.isEmpty()) return@withContext Prepared.NONE
-        val images = mutableListOf<AiImage>()
-        var skipped = 0
-        for (path in paths) {
-            val encoded = encodeForSend(path)
-            if (encoded == null) skipped++ else images.add(encoded)
-        }
-        Prepared(images, skipped)
+    suspend fun prepare(paths: List<String>): Prepared {
+        val pairs = prepareEach(paths)
+        return Prepared(pairs.map { it.second }, (paths.size - pairs.size).coerceAtLeast(0))
     }
+
+    /**
+     * 경로와 **짝지어** 돌려준다 — 못 읽은 경로는 목록에서 빠진다 (B-121).
+     *
+     * [prepare]가 장수만 세는 것과 갈리는 지점이고, 갈라 둔 이유는 소비처의 요구가 다르기
+     * 때문이다: 첨부(B-120)는 "몇 장 빠졌나"만 고지하면 되지만, 일괄 태깅은 응답의 번호가
+     * **실제로 실린 목록의 자리**를 가리켜야 한다. 짝을 잃으면 가운데 한 장이 빠졌을 때
+     * 태그가 옆 이미지에 붙는다(`ai.ImageBatchTagSuggester.Loaded` 주석이 그 사고를 적는다).
+     */
+    suspend fun prepareEach(paths: List<String>): List<Pair<String, AiImage>> =
+        withContext(Dispatchers.IO) {
+            if (paths.isEmpty()) return@withContext emptyList()
+            val out = ArrayList<Pair<String, AiImage>>(paths.size)
+            for (path in paths) {
+                val encoded = encodeForSend(path) ?: continue
+                out.add(path to encoded)
+            }
+            out
+        }
 
     /**
      * 한 장을 긴 변 [AiPromptPolicy.SEND_LONG_EDGE_PX] 이하로 줄여 JPEG base64로 만든다.

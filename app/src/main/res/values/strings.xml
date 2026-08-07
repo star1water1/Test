@@ -2364,6 +2364,7 @@
     <string name="image_manager_search_hint">파일명·소유자·태그 검색</string>
     <string name="image_manager_tag_filter">태그</string>
     <string name="image_manager_tag_filter_count">태그 %1$d</string>
+    <string name="image_manager_tag_filter_untagged">태그 없음</string>
     <string name="image_manager_actions">작업</string>
     <string name="image_batch_title">선택한 이미지 %1$d장</string>
     <string name="image_assign_action">배정</string>
@@ -2397,6 +2398,8 @@
     <string name="image_tag_filter_title">이미지 태그 필터</string>
     <string name="image_tag_filter_empty">등록된 이미지 태그가 없습니다</string>
     <string name="image_tag_filter_reset">초기화</string>
+    <string name="image_tag_filter_untagged">태그 없는 이미지만</string>
+    <string name="image_tag_filter_untagged_desc">아직 태그가 하나도 없는 이미지만 목록에 남깁니다. 켜면 아래 태그 선택은 잠깁니다.</string>
     <string name="image_manager_import">불러오기</string>
     <string name="image_manager_imported">이미지 %1$d장을 라이브러리(미배정)로 불러왔습니다</string>
     <string name="image_manager_import_failed">이미지 %1$d장 불러옴 · %2$d장 실패</string>
@@ -2922,6 +2925,32 @@
     <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
     <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>
     <string name="image_tag_review_notice_failed">일부 요청이 실패했습니다: %1$s</string>
+
+    <!-- 이미지 내용 일괄 AI 태깅 (B-121) — 폴더 이름을 읽는 위 기능과 달리 그림 자체를 보낸다 -->
+    <string name="image_ai_tag_action">AI 태그 제안 (이미지 보기)</string>
+    <string name="image_ai_tag_run">제안 받기</string>
+    <string name="image_ai_tag_batch_size">한 번에 보낼 장수: %1$d장</string>
+    <string name="image_ai_tag_cost">이미지 %1$d장을 %2$d장씩 %3$d번에 나눠 보냅니다. 적용 전에 검토합니다.</string>
+    <string name="image_ai_tag_privacy">이미지는 AI 제공사 서버로 전송됩니다. 장당 대략 250~1,600토큰이 듭니다(제공사마다 다릅니다).</string>
+    <string name="image_ai_tag_stage">이미지를 보내는 중</string>
+    <string name="image_ai_tag_progress">이미지 %1$d/%2$d</string>
+    <string name="image_ai_tag_notice_unreadable">이미지 %1$d장은 파일을 읽지 못해 빼고 보냈습니다</string>
+    <string name="image_ai_tag_notice_cancelled">취소해서 남은 요청은 보내지 않았습니다. 여기까지 받은 제안은 그대로 고를 수 있습니다</string>
+    <string name="image_ai_tag_notice_sealed">이미지 %1$d장은 응답의 번호가 어긋나 통째로 뺐습니다. 절반만 붙이면 남의 이미지에 태그가 갈 수 있어 버립니다</string>
+    <string name="image_ai_tag_notice_truncated">이미지 %1$d장은 응답이 출력 상한에 걸려 잘려 뺐습니다. 한 번에 보낼 장수를 줄이거나 설정에서 출력 상한을 올려 주세요</string>
+    <string name="image_ai_tag_notice_no_vision">이 모델이 이미지를 받지 않아 태깅을 멈췄습니다. 그림을 보지 않고 나온 태그는 근거가 없어 쓰지 않습니다</string>
+    <string name="image_ai_tag_review_title">AI 태그 검토 (이미지 보기)</string>
+    <string name="image_ai_tag_review_desc">체크한 태그만 적용됩니다. 기존 태그는 지우지 않고 합칩니다.</string>
+    <string name="image_ai_tag_review_empty">제안된 태그가 없습니다.</string>
+    <string name="image_ai_tag_review_thumb_desc">이미지 미리보기</string>
+    <string name="image_ai_tag_review_select_all">전체 선택</string>
+    <string name="image_ai_tag_review_deselect_all">전체 해제</string>
+    <string name="image_ai_tag_review_new_only">새 태그만 보기</string>
+    <string name="image_ai_tag_review_selected">선택 %1$d개</string>
+    <string name="image_ai_tag_review_more">외 %1$d개</string>
+    <string name="image_ai_tag_review_collapse">접기</string>
+    <string name="image_ai_tag_review_hidden">새 태그가 없는 이미지 %1$d장은 접었습니다. 그 태그도 체크된 채 적용됩니다</string>
+    <string name="image_ai_tag_review_retry_one_by_one">1장씩 다시 보내기</string>
     <!-- AI 이미지 첨부 (A-7) — 이미지가 기기 밖으로 나가는 지점이라 고지가 침묵할 수 없다 -->
     <string name="ai_image_attach_count">이미지 %1$d장을 함께 보냅니다 (전체 %2$d장 중)</string>
     <string name="ai_image_attach_none">이미지를 보내지 않습니다</string>

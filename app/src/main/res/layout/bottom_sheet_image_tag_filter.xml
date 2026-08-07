@@ -22,6 +22,20 @@
         android:text="@string/image_tag_filter_title"
         android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/untaggedCheck"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/image_tag_filter_untagged" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/image_tag_filter_untagged_desc"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary" />
+
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/tagChipGroup"
         android:layout_width="match_parent"
