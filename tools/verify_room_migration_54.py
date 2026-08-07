@@ -246,15 +246,21 @@ def declared_children(model_dir):
     "자식 목록이 비어 있는데 아무도 눈치채지 못한 것"이었다.
     """
     found = set()
-    for fname in os.listdir(model_dir):
+    for fname in sorted(os.listdir(model_dir)):
         if not fname.endswith(".kt"):
             continue
         src = read(os.path.join(model_dir, fname))
         if "entity = FieldDefinition::class" not in src:
             continue
         m = re.search(r'tableName\s*=\s*"([^"]+)"', src)
-        if m:
-            found.add(m.group(1))
+        if not m:
+            # **조용히 건너뛰지 않는다.** 자식인데 표 이름을 못 읽으면 이 함수가 세는 집합이
+            # 실제보다 작아지고, 그러면 아래 대조가 **통과한다** — B-145의 원인과 글자 그대로
+            # 같은 모양(목록이 불완전한데 아무도 눈치채지 못하는 것)이 여기서 재현된다.
+            raise SystemExit(
+                f"[7] 자식 판별 실패: {fname}이 FieldDefinition을 부모로 삼는데 tableName을 읽지 못했다.\n"
+                f"     (Room 기본 표 이름을 쓰는 엔티티라면 이 하네스의 declared_children을 함께 고칠 것)")
+        found.add(m.group(1))
     return found
 
 

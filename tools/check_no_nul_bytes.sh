@@ -31,6 +31,18 @@
 # 커밋 전에는 `git ls-files`에 없어서, 추적분만 보면 **이 검사가 한 커밋 늦게 잡는다** —
 # 정작 날바이트는 파일을 만드는 그 순간 들어간다.
 #
+# ── 이 검사가 스스로 조용히 통과하지 않게 하는 둘 (2026.08.07 콜드 검토) ──
+# **첫 판이 이 둘에 다 걸렸다. 조용히 건너뛰는 것을 막으려는 도구가 조용히 건너뛰면 앞뒤가
+# 맞지 않으므로 적어 둔다.**
+#
+#   ⓐ **목록을 NUL 구분으로 다룬다.** 공백이 든 경로를 단어 분리로 넘기면 grep이 없는 파일
+#      둘을 받고, 오류는 억제되며, **그 파일은 검사에서 조용히 빠진다.** 첫 판이 실제로
+#      NUL이 든 파일을 세어 놓고(개수에는 들어갔다) 잡지 못했다.
+#   ⓑ **탐지기 자기 시험을 먼저 돈다.** `grep -P`는 PCRE 빌드에서만 있는데, 없으면 grep이
+#      오류를 내고 그 오류는 억제되어 **결과가 "위반 없음"과 구별되지 않는다.** 그래서
+#      매 실행마다 NUL이 든 파일과 없는 파일을 하나씩 지어 **탐지기가 실제로 반응하는지**
+#      확인하고, 아니면 통과가 아니라 **실패**로 끝낸다.
+#
 # 사용법: tools/check_no_nul_bytes.sh   # 위반 시 exit 1
 set -u
 export LC_ALL=C
@@ -44,6 +56,27 @@ BINARY_EXT="jks jar keystore png jpg jpeg webp gif ico ttf otf so zip apk aab pd
 
 echo "── 소스 날 NUL 바이트 검사 (B-146, R-37) ──"
 
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+# ── ⓑ 탐지기 자기 시험 — 통과를 믿기 전에 탐지기가 산다는 것부터 확인한다 ──
+printf 'a\000b\n' > "$TMP/dirty"
+printf 'ab\n'      > "$TMP/clean"
+if ! grep -laP '\x00' "$TMP/dirty" >/dev/null 2>&1; then
+  echo "  ✗ 탐지기가 죽어 있습니다 — NUL이 든 파일을 grep이 잡지 못합니다." >&2
+  echo "      grep -P(PCRE)가 없는 빌드일 수 있습니다. 이대로면 이 검사는 **아무것도 못 보고 통과**합니다." >&2
+  echo ""
+  echo "소스 날 NUL 바이트 검사 실패" >&2
+  exit 1
+fi
+if grep -laP '\x00' "$TMP/clean" >/dev/null 2>&1; then
+  echo "  ✗ 탐지기가 깨끗한 파일도 잡습니다 — 전수 오탐이라 결과를 믿을 수 없습니다." >&2
+  echo ""
+  echo "소스 날 NUL 바이트 검사 실패" >&2
+  exit 1
+fi
+echo "  ✓ 탐지기 자기 시험 통과 (NUL 있는 파일은 잡고 없는 파일은 안 잡는다)"
+
 is_binary_ext() {
   case "$1" in *.*) ;; *) return 1 ;; esac
   ext="${1##*.}"
@@ -51,20 +84,16 @@ is_binary_ext() {
   return 1
 }
 
+# ── ⓐ 대상 열거 — 경로에 공백·개행이 있어도 빠지지 않도록 전 구간 NUL 구분 ──
 # git이 아는 파일 + 아직 추적되지 않은 새 파일. 빌드 산출물·jar 캐시는 gitignore가 걷어낸다.
-LIST=$( { git ls-files 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
-
-targets=""
 count=0
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
+: > "$TMP/targets"
+while IFS= read -r -d '' f; do
   is_binary_ext "$f" && continue
   [ -f "$f" ] || continue          # 삭제 예정으로 index에만 남은 것
-  targets="$targets $f"
+  printf '%s\000' "$f" >> "$TMP/targets"
   count=$((count + 1))
-done <<EOF
-$LIST
-EOF
+done < <( { git ls-files -z 2>/dev/null; git ls-files --others --exclude-standard -z 2>/dev/null; } | sort -z -u )
 
 if [ "$count" -eq 0 ]; then
   echo "  ✗ 검사 대상이 하나도 없습니다 — git 저장소 안에서 돌리고 있습니까?" >&2
@@ -74,14 +103,15 @@ if [ "$count" -eq 0 ]; then
 fi
 
 # `-a`가 필요한 것이 이 검사의 요점이다 — 없으면 grep이 바로 그 파일을 건너뛴다.
-hits=$(printf '%s\n' $targets | xargs grep -laP '\x00' 2>/dev/null || true)
+# `-Z`로 결과도 NUL 구분으로 받는다(위 ⓐ와 같은 이유).
+xargs -0 grep -laZP '\x00' < "$TMP/targets" > "$TMP/hits" 2>/dev/null || true
 
-if [ -n "$hits" ]; then
+if [ -s "$TMP/hits" ]; then
   echo "  ✗ 날 NUL 바이트가 든 소스가 있습니다 — git이 binary로 보고 grep 도구가 건너뜁니다:"
-  for f in $hits; do
+  while IFS= read -r -d '' f; do
     echo "      $f"
     grep -anP '\x00' "$f" 2>/dev/null | cut -c1-110 | sed 's/^/          /'
-  done
+  done < "$TMP/hits"
   echo ""
   echo "      → 값은 그대로 두고 표기만 고칠 것: 날바이트 → \u0000 이스케이프(여섯 글자)."
   echo "      → 진짜 바이너리라면 이 스크립트의 BINARY_EXT 목록에 확장자를 사유와 함께 올릴 것."
