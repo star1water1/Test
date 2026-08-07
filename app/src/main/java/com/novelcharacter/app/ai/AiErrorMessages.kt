@@ -9,14 +9,19 @@ import com.novelcharacter.app.R
  */
 object AiErrorMessages {
 
-    /** 분류별 안내문. 제공사 원문(detail)이 있으면 줄바꿈 후 병기해 투명하게 보여준다. */
-    fun of(context: Context, failure: AiResult.Failure): String {
-        val base = context.getString(baseRes(failure.kind))
-        val withCode = failure.httpCode?.let { "$base (HTTP $it)" } ?: base
-        return failure.detail?.takeIf { it.isNotBlank() }
-            ?.let { "$withCode\n\n$it" }
-            ?: withCode
-    }
+    /**
+     * 분류별 안내문. 제공사 원문(detail)이 있으면 줄바꿈 후 병기해 투명하게 보여준다.
+     * 실패가 프로바이더 표식을 들고 있으면 **맨 앞 줄**로 세운다 (B-150) —
+     * 조립 규칙 자체는 [AiErrorText]가 단일 소스다(순수라 시험이 잠근다).
+     */
+    fun of(context: Context, failure: AiResult.Failure): String = AiErrorText.compose(
+        base = context.getString(baseRes(failure.kind)),
+        httpCode = failure.httpCode,
+        detail = failure.detail,
+        providerLine = failure.provider?.let {
+            context.getString(R.string.ai_error_provider_line, it.displayName, it.model)
+        }
+    )
 
     private fun baseRes(kind: AiErrorKind): Int = when (kind) {
         AiErrorKind.NO_PROVIDER -> R.string.ai_error_no_provider

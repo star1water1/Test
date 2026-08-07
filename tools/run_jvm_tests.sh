@@ -166,6 +166,9 @@ $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
 $MAIN/ai/AiCreativity.kt
 $MAIN/ai/AiProtocolCodec.kt
+$MAIN/ai/AiProviderCodec.kt
+$MAIN/ai/AiProviderActivation.kt
+$MAIN/ai/AiErrorText.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/AiPromptPolicy.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
@@ -268,6 +271,9 @@ $TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/AiImageAttachTest.kt
 $TEST/ai/AiImageRequestTest.kt
+$TEST/ai/AiProviderCodecTest.kt
+$TEST/ai/AiProviderActivationTest.kt
+$TEST/ai/AiErrorTextTest.kt
 $TEST/ai/ImageBatchTagSuggesterTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt

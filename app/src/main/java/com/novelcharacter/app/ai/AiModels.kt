@@ -69,7 +69,21 @@ data class AiProviderConfig(
      */
     fun hasLearnedFacts(): Boolean =
         detectedOutputLimit != null || temperatureUnsupported != null || imagesUnsupported != null
+
+    /** 오류 문구에 실을 표식 (B-150). 설정 전체가 아니라 **사용자가 알아볼 두 값**만 넘긴다. */
+    fun ref(): AiProviderRef = AiProviderRef(displayName, model)
 }
+
+/**
+ * 실패가 **어느 프로바이더에서 났는지**를 가리키는 표식 (B-150).
+ *
+ * 종전의 실패는 분류·HTTP 코드·제공사 원문만 들고 왔고 *누가 그랬는지*는 말하지 않았다.
+ * 프로바이더가 둘 이상이면 그 침묵이 진단을 통째로 막는다 — 한도에 걸린 옛 프로바이더로
+ * 계속 나가고 있어도 문구가 똑같아 알아챌 방법이 없다(2026.08.07 사용자 보고의 경로다).
+ * 표식은 [AiService]가 관문에서 새긴다 — **호출부가 넘기게 하면 빠뜨리는 자리가 8곳이 되고,
+ * 빠뜨린 자리는 종전과 똑같이 조용하다.**
+ */
+data class AiProviderRef(val displayName: String, val model: String)
 
 /**
  * 출력 토큰 상한 정책 — **순수 판정**(JVM 테스트 대상).
@@ -247,9 +261,23 @@ sealed class AiResult {
         val kind: AiErrorKind,
         /** 제공사가 돌려준 원문 메시지(있으면). 사용자 안내문 뒤에 상세로 병기한다. */
         val detail: String? = null,
-        val httpCode: Int? = null
+        val httpCode: Int? = null,
+        /**
+         * 이 실패를 낸 프로바이더 (B-150). [AiService]가 관문에서 새긴다 —
+         * null은 프로바이더가 정해지기 **전에** 난 실패뿐이다([AiErrorKind.NO_PROVIDER]).
+         */
+        val provider: AiProviderRef? = null
     ) : AiResult()
 }
+
+/**
+ * 관문을 떠나는 실패에 프로바이더 표식을 새긴다 (B-150). 성공은 그대로 지나간다.
+ *
+ * [AiService]의 출구 전부가 이 한 함수를 지나게 해 둔 것이 요점이다 — 새 인앱 기능이
+ * 늘어도 표식은 자동으로 붙고, 붙이는 것을 잊을 자리가 애초에 없다.
+ */
+fun AiResult.withProvider(ref: AiProviderRef): AiResult =
+    if (this is AiResult.Failure) copy(provider = ref) else this
 
 /**
  * 오류 분류 — 잘못된 상태를 조용히 삼키지 않고, 각 분류마다 사용자 안내문과

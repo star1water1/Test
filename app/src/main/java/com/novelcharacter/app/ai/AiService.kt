@@ -39,11 +39,13 @@ class AiService(context: Context) {
      * 네트워크는 IO 디스패처에서 실행되므로 어디서든 suspend 호출만 하면 된다.
      */
     suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult {
+        // 실패에는 **어느 프로바이더였는지**를 반드시 새겨 내보낸다 (B-150). 새기는 자리를
+        // 관문 하나로 둔 이유: 호출부에 맡기면 8곳이 되고 빠뜨린 자리는 종전과 똑같이 조용하다.
         val resolved = config ?: providerStore.active()
-            ?: return AiResult.Failure(AiErrorKind.NO_PROVIDER)
+            ?: return AiResult.Failure(AiErrorKind.NO_PROVIDER) // 프로바이더가 없으니 새길 것도 없다
         val apiKey = keyStore.getKey(resolved.id)
-            ?: return AiResult.Failure(AiErrorKind.NO_KEY)
-        return execute(resolved, apiKey, request)
+            ?: return AiResult.Failure(AiErrorKind.NO_KEY, provider = resolved.ref())
+        return execute(resolved, apiKey, request).withProvider(resolved.ref())
     }
 
     /**
@@ -54,13 +56,13 @@ class AiService(context: Context) {
     suspend fun testConnection(config: AiProviderConfig, keyOverride: String? = null): AiResult {
         val apiKey = keyOverride?.trim()?.takeIf { it.isNotEmpty() }
             ?: keyStore.getKey(config.id)
-            ?: return AiResult.Failure(AiErrorKind.NO_KEY)
+            ?: return AiResult.Failure(AiErrorKind.NO_KEY, provider = config.ref())
         val ping = AiRequest(userText = "Reply with only the word OK.", maxTokens = TEST_MAX_TOKENS)
         val result = execute(config, apiKey, ping)
         // 테스트 목적상 '응답은 왔지만 텍스트가 빈' 경우도 인증 성공이므로 성공으로 승격.
         return if (result is AiResult.Failure && result.kind == AiErrorKind.EMPTY_RESPONSE) {
             AiResult.Success(text = "", model = config.model)
-        } else result
+        } else result.withProvider(config.ref())
     }
 
     /** 인앱 기능들이 진입 전에 안내를 띄울 수 있도록 노출하는 상태 조회. */
@@ -86,17 +88,22 @@ class AiService(context: Context) {
         withContext(Dispatchers.IO) {
             val spec = AiProtocolCodec.buildModelListRequest(config, apiKey)
             when (val raw = executeHttp(spec)) {
-                is RawResponse.NetworkError -> AiModelListResult.Failure(raw.failure)
+                is RawResponse.NetworkError ->
+                    AiModelListResult.Failure(raw.failure.copy(provider = config.ref()))
                 is RawResponse.Http -> if (raw.code in 200..299) {
                     val models = AiProtocolCodec.parseModelInfos(config.protocol, raw.body.orEmpty())
                     if (models.isEmpty()) {
-                        AiModelListResult.Failure(AiResult.Failure(AiErrorKind.EMPTY_RESPONSE))
+                        AiModelListResult.Failure(
+                            AiResult.Failure(AiErrorKind.EMPTY_RESPONSE, provider = config.ref())
+                        )
                     } else {
                         AiModelListResult.Success(models)
                     }
                 } else {
                     AppLogger.error(TAG, "모델 목록 조회 실패 HTTP ${raw.code} (${config.protocol.name})", null)
-                    AiModelListResult.Failure(AiProtocolCodec.parseError(raw.code, raw.body))
+                    AiModelListResult.Failure(
+                        AiProtocolCodec.parseError(raw.code, raw.body).copy(provider = config.ref())
+                    )
                 }
             }
         }
@@ -191,16 +198,26 @@ class AiService(context: Context) {
             return@withContext second
         }
 
-        // ③ 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고 그 값을 기억한다.
-        //    정적 표 없이 모델별 상한을 배우는 경로다(표는 새 모델마다 낡는다).
+        // ③ 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고, **그 재시도가
+        //    성공했을 때만** 그 값을 기억한다. 정적 표 없이 모델별 상한을 배우는 경로다
+        //    (표는 새 모델마다 낡는다).
+        //
+        //    성공 전에 기억하면 안 되는 이유 (B-151): `parseMaxTokensLimitFromError`가 400 본문에서
+        //    엉뚱한 숫자를 집었을 때 그 값이 `detectedOutputLimit`으로 굳고, [AiTokenPolicy.effective]가
+        //    **이후 모든 요청을 거기 맞춰 깎는다** — 사용자가 슬라이더를 올려도 그 합성이 이긴다.
+        //    되돌릴 길은 R-23 초기화뿐인데 그것은 모델이나 주소를 **바꿔야** 도는지라, 값만 잘못
+        //    배운 경우에는 바꿀 것이 없어 그 프로바이더가 영구히 절뚝인다. 증상은 잘린 응답이나
+        //    `EMPTY_RESPONSE`로 나타나 원인을 짚기도 어렵다.
+        //    형제인 ②·④가 이미 쓰는 형태 그대로 맞춘다 — 재시도가 통해야 배운 것이다.
         if (first.httpCode == 400) {
             val learned = AiProtocolCodec.parseMaxTokensLimitFromError(first.detail, request0.maxTokens)
             if (learned != null) {
-                rememberDetectedLimit(config.id, learned)
                 val retrySpec = AiProtocolCodec.buildRequest(
                     config, apiKey, request0.copy(maxTokens = learned)
                 )
-                return@withContext call(retrySpec, config.protocol, config.model)
+                val second = call(retrySpec, config.protocol, config.model)
+                if (second is AiResult.Success) rememberDetectedLimit(config.id, learned)
+                return@withContext second
             }
         }
         first

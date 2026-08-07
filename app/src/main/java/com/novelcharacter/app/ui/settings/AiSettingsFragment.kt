@@ -520,12 +520,22 @@ class AiSettingsFragment : Fragment() {
             // 조용히 바꾸지 않는다(변수 제어): 사용자는 상한이 왜 되돌아갔는지 볼 수 있어야 한다.
             val learnedReset = config.hasLearnedFacts() &&
                 (candidate.model != config.model || candidate.baseUrl != config.baseUrl)
-            providerStore.save(candidate)
+            // 키를 **먼저** 저장한다 — save()의 자동 활성 판정이 "키가 등록됐는가"를 보는데,
+            // 순서를 뒤집으면 방금 만든 항목은 언제나 키 없음으로 읽혀 판정이 영영 돌지 않는다 (B-150).
             val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim().orEmpty()
             if (enteredKey.isNotEmpty()) keyStore.putKey(candidate.id, enteredKey)
+            val activationMoved = providerStore.save(candidate)
             refreshList()
             if (learnedReset) {
                 Toast.makeText(ctx, R.string.ai_edit_learned_reset, Toast.LENGTH_LONG).show()
+            }
+            // 활성이 옮겨 갔으면 반드시 말한다 — 묻지 않고 하는 대신 하고 나서 알리고,
+            // 되돌릴 경로(목록에서 탭)를 함께 준다(확정 판정: `createDuelAxis`·R-23과 같은 관행).
+            if (activationMoved) {
+                Toast.makeText(
+                    ctx, getString(R.string.ai_provider_auto_activated, candidate.displayName),
+                    Toast.LENGTH_LONG
+                ).show()
             }
             true
         }
@@ -786,7 +796,9 @@ class AiSettingsFragment : Fragment() {
                 b.keyStatusText.text =
                     if (hint != null) getString(R.string.ai_key_status_registered, hint)
                     else getString(R.string.ai_key_status_missing)
-                b.activeRadio.isChecked = config.id == activeId
+                val isActive = config.id == activeId
+                b.activeRadio.isChecked = isActive
+                b.activeBadge.visibility = if (isActive) View.VISIBLE else View.GONE
                 b.root.setOnClickListener {
                     providerStore.setActiveId(config.id)
                     refreshList()

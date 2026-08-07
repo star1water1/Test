@@ -2620,7 +2620,7 @@
     <string name="ai_settings_providers_section">등록된 프로바이더</string>
     <string name="ai_settings_empty">아직 등록된 프로바이더가 없습니다.\n아래 버튼으로 첫 프로바이더를 추가해 보세요.</string>
     <string name="ai_settings_add_provider">프로바이더 추가</string>
-    <string name="ai_settings_usage_note">선택된(●) 프로바이더가 앱의 모든 AI 지원 기능에 사용됩니다. AI 기능은 앞으로 계속 추가됩니다.</string>
+    <string name="ai_settings_usage_note">\'사용 중\' 표시가 붙은 프로바이더가 앱의 모든 AI 지원 기능에 사용됩니다. 바꾸려면 목록에서 다른 프로바이더를 누르세요. AI 기능은 앞으로 계속 추가됩니다.</string>
 
     <!-- AI 추천 일관성 — 프롬프트 적재량 설정 -->
     <string name="ai_settings_consistency_section">AI 추천 일관성</string>
@@ -2639,6 +2639,8 @@
     <string name="ai_preset_free_badge">무료 티어</string>
     <string name="ai_key_status_registered">키 등록됨 (%s)</string>
     <string name="ai_key_status_missing">키 미등록 — 편집에서 등록하세요</string>
+    <string name="ai_provider_active_badge">사용 중</string>
+    <string name="ai_provider_auto_activated">\'%s\' 프로바이더를 사용 중으로 지정했습니다. 다른 프로바이더를 쓰려면 목록에서 누르세요.</string>
     <string name="ai_delete_confirm">\'%s\' 프로바이더를 삭제하시겠습니까?\n저장된 API 키도 함께 삭제됩니다.</string>
 
     <!-- 추가/편집 다이얼로그 -->
@@ -2708,6 +2710,7 @@
     <string name="ai_guide_custom">OpenAI 호환 API를 제공하는 어떤 서버든 연결할 수 있습니다.\n1. 서버 주소를 입력합니다. (예: https://api.example.com/v1)\n2. 해당 서비스에서 발급한 API 키를 붙여넣습니다.\n3. 모델명은 그 서버가 제공하는 이름을 입력합니다.\n※ 보안을 위해 https 주소만 지원합니다.</string>
 
     <!-- 오류 안내 (분류별 + 교정 경로) -->
+    <string name="ai_error_provider_line">호출한 프로바이더: %1$s · %2$s</string>
     <string name="ai_error_no_provider">설정된 AI 프로바이더가 없습니다. 설정 → AI 연동에서 프로바이더를 추가해 주세요.</string>
     <string name="ai_error_no_key">등록된 API 키가 없습니다. 프로바이더 편집에서 키를 등록해 주세요.</string>
     <string name="ai_error_invalid_key">API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인하거나 재발급해 주세요.</string>
