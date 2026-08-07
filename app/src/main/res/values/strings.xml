@@ -218,6 +218,7 @@
     <string name="duel_grade_suggest_none">오차 안의 간격뿐이라 옮길 경계를 찾지 못했습니다. 판을 더 쌓으면 달라집니다.</string>
     <string name="duel_grade_zero_segment">%1$s 구간이 0%%입니다 — 이 축에서는 %1$s 등급이 배정되지 않습니다.</string>
     <string name="duel_grade_axis_missing">연결한 대결 축을 찾을 수 없습니다. 축을 다시 고르세요.</string>
+    <string name="duel_grade_axis_pick">축을 고르세요</string>
     <string name="duel_grade_axis_foreign">연결한 축이 다른 세계관 것입니다. 이 세계관의 축을 고르세요.</string>
     <string name="duel_grade_no_axis">이 세계관에 캐릭터 대결 축이 없습니다. 아래에서 바로 만들 수 있습니다.</string>
     <string name="duel_grade_no_labels">등급 표가 비어 있어 비율을 나눌 수 없습니다. 위에서 등급을 먼저 추가하세요.</string>
