@@ -353,8 +353,8 @@ class DefaultFieldPlanTest {
     /**
      * **B-135 — 관리 화면의 '전파'는 `previous = null`로 열린다.**
      *
-     * 그 자리에서 값을 세지 않으면 *"값 N개가 초기화됩니다"* 경고가 **정식 경로에서 통째로
-     * 죽는다**(경고 줄 조건이 `incompatibleValues > 0`이라 참이 될 수 없다). 직전 템플릿을
+     * 그 자리에서 값을 세지 않으면 *"값 N개가 새 타입과 맞지 않게 된다"* 경고가 **정식 경로에서
+     * 통째로 죽는다**(경고 줄 조건이 `incompatibleValues > 0`이라 참이 될 수 없다). 직전 템플릿을
      * 모르는 것은 *기본 선택*을 정하지 못한다는 뜻이지, 타입 변경의 영향을 모른다는 뜻이 아니다 —
      * 영향은 그 세계관의 필드와 템플릿만 견주면 나온다.
      */
@@ -376,8 +376,8 @@ class DefaultFieldPlanTest {
      *
      * 심기의 [DefaultFieldPlan.Placement.LINK]는 config의 표식 한 키만 바꾼다 — 즉 승격 직후부터
      * *같은 key·다른 type*이 연결된 채 선다. 그래서 **템플릿 타입이 한 번도 안 바뀐 편집에서도**
-     * 어떤 세계관은 타입이 바뀌고, 그 세계관의 값은 초기화된다. 템플릿 단위로 물으면 그 줄을
-     * 통째로 놓친다.
+     * 어떤 세계관은 타입이 바뀌고, 그 세계관의 값은 새 타입과 맞지 않게 된다(지워지지는 않는다
+     * — B-137). 템플릿 단위로 물으면 그 줄을 통째로 놓친다.
      */
     @Test fun 템플릿_타입이_그대로여도_세계관_타입이_다르면_센다() {
         val old = template(type = FieldType.NUMBER.name, config = "{}", name = "전투력")
@@ -391,6 +391,53 @@ class DefaultFieldPlanTest {
         )
         assertTrue("템플릿 타입은 그대로여도 이 세계관에서는 바뀐다", plan.items[0].typeChanges)
         assertEquals(2, plan.items[0].incompatibleValues)
+    }
+
+    /**
+     * **B-137 — 센 것은 고지이지 처분이 아니다** (사용자 확정, 설계 1-11).
+     *
+     * 미리보기가 *"값 N개가 새 타입과 맞지 않게 된다"*를 세어 보이므로 **세었으면 지워야 할 것
+     * 같은** 자리다. 실제로 단일 필드 편집(`FieldEditDialog`)은 같은 판정으로 값을 `""`로
+     * 초기화한다 — 그래서 다음 사람이 두 경로를 통일하고 싶어진다.
+     *
+     * 통일하면 셋이 함께 무너진다: 이 기능의 불변식(*"캐릭터 데이터를 지우는 경로는 없다"*) ·
+     * 되돌리기 계약(`FieldDefinitionSnapshot`은 정의만 담아 **지운 값은 되돌려도 안 돌아온다**) ·
+     * 전파의 기본 선택이 *아직 못 받은 곳*을 전부 켠다는 사실(탭 한 번에 전 세계관이 지워진다).
+     *
+     * **잴 수 있는 것이 이것뿐인 이유:** 값을 지우는 코드가 생긴다면 그 자리는 저장소이고,
+     * 저장소는 Room에 매달려 순수 JVM이 원리적으로 못 본다(B-135와 같은 사각). 여기서는
+     * *산출이 값에 흔들리지 않는가*까지 잠그고, *저장소가 값 표에 쓰는가*는
+     * `tools/check_propagate_value_parity.sh`가 본다. **한쪽만 두면 어느 쪽도 못 잡는다.**
+     */
+    @Test fun 못_버티는_값이_있어도_전파의_쓰기는_정의뿐이다() {
+        val old = template(type = FieldType.TEXT.name, config = "{}")
+        val new = template(type = FieldType.NUMBER.name, config = "{}")
+        val linked = linkedField(1, old)
+
+        fun writesFor(values: List<String>): DefaultFieldPlan.PropagateWrites {
+            val plan = DefaultFieldPlan.planPropagate(
+                new, previous = old,
+                linked = listOf(DefaultFieldPlan.LinkedField(1, "아르카나", linked, values))
+            )
+            return DefaultFieldPlan.resolvePropagate(new, plan, selected = setOf(1L))
+        }
+
+        // 못 버티는 값 둘이 있는 경우와, 값이 아예 없는 경우.
+        val withDoomedValues = writesFor(listOf("서른", "많음", "12"))
+        val withNoValues = writesFor(emptyList())
+
+        assertEquals(
+            "값이 무엇이든 덮을 정의는 같다 — 값의 처분이 쓰기에 섞이면 이 등식이 깨진다",
+            withNoValues.updates, withDoomedValues.updates
+        )
+        assertEquals(
+            "백업도 같다 — 값을 지우기 시작하면 정의만 담는 스냅샷으로는 되돌릴 수 없다",
+            withNoValues.backups, withDoomedValues.backups
+        )
+        assertEquals(1, withDoomedValues.updates.size)
+        assertEquals(
+            "쓰기는 그 필드 정의 하나뿐이다", linked.id, withDoomedValues.updates[0].id
+        )
     }
 
     /**

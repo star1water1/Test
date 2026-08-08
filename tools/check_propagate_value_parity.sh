@@ -15,9 +15,21 @@
 # (`DefaultFieldPlanTest.값을_채우는_조건과_세는_조건이_같다`), *저장소가 그 함수를 부르는지*는
 # 이 검사만 본다. B-133이 `naturalKeyOfRow`에서 마주쳤던 것과 같은 사각이다.
 #
+# ── B-137이 여기 얹힌 이유 (2026.08.08) ──
+# 위 결함을 고치자 경고가 **처음으로 실제로 떴고**, 그때 그 문구가 거짓이라는 것이 드러났다:
+# *"값 N개가 초기화됩니다"*라고 약속하면서 `applyPropagate`는 값 행을 손대지 않는다.
+# 사용자 판정은 **값을 지우지 않는 쪽**이었다(설계 1-11) — 문구를 사실대로 고쳤다.
+#
+# 그래서 이 검사가 지키는 것이 둘이 됐다: *세는가*(B-135)와 **지우지 않는가**(B-137).
+# 뒤엣것을 기계로 잠그는 이유는 **더하고 싶어지는 자리**이기 때문이다 — 미리보기가 수를 세어
+# 보이므로 세었으면 지워야 할 것 같고, 단일 필드 편집(`FieldEditDialog`)이 같은 판정으로
+# 실제로 값을 `""`로 만든다. 그러나 전파에는 되돌리기가 붙어 있고 그 스냅샷
+# (`FieldDefinitionSnapshot`)은 정의만 담아, 값을 지우면 **되돌려도 값은 돌아오지 않는다.**
+#
 # ── 무엇을 보는가 ──
 # ① 필수: 저장소의 전파 미리보기가 `DefaultFieldPlan.typeChanges`를 실제로 부르는가.
 # ② 금지: 저장소가 값 채우기를 **직전 템플릿의 타입**으로 정하는가(옛 조건의 부활).
+# ③ 금지: 저장소가 값 표에 **쓰는가** — 값 DAO에서 부를 수 있는 것은 `get*`뿐이다(B-137).
 #
 # 사용법: tools/check_propagate_value_parity.sh   # 위반 시 exit 1
 set -u
@@ -40,6 +52,23 @@ BANNED='previous *\??\.type *[!=]= *[A-Za-z_][A-Za-z0-9_.]*\.type|[A-Za-z_][A-Za
 # 실제로 이 검사를 처음 돌렸을 때 그렇게 걸렸다.
 strip_comments() { grep -nE "$BANNED" "$1" | grep -vE '^[0-9]+: *(//|\*|/\*)' || true; }
 
+# ── ③용 — 값 DAO를 부르는 자리를 **메서드까지** 뽑는다 (B-137) ──
+# 줄바꿈을 지워 한 줄로 만드는 것은 `db.characterFieldValueDao()\n    .update(...)`처럼
+# 끊어 적은 호출을 놓치지 않기 위해서다(코틀린에서 흔한 모양이고, 줄 단위로 보면 조용히 샌다).
+value_dao_calls() {
+  sed -E 's://.*$::' "$1" \
+    | grep -vE '^[[:space:]]*(\*|/\*)' \
+    | tr '\n' ' ' \
+    | grep -oE '[A-Za-z]*FieldValueDao\(\)[[:space:]]*\.[[:space:]]*[A-Za-z_][A-Za-z0-9_]*' \
+    || true
+}
+# 읽기만 허용한다 — 이름이 `get`으로 시작하지 않으면 쓰기로 본다.
+value_dao_writes() {
+  local calls; calls=$(value_dao_calls "$1")
+  [ -n "$calls" ] || return 0
+  printf '%s\n' "$calls" | sed -E 's/.*\.[[:space:]]*//' | grep -vE '^get' || true
+}
+
 # ── 탐지기 자기 시험 — 이 검사가 **조용히 통과할 경로**를 먼저 막는다 ──
 # 정규식이 안 맞으면 위반이 있어도 "위반 없음"과 구별되지 않는다(B-146이 겪은 그 부류).
 SELFTEST=$(mktemp)
@@ -56,6 +85,24 @@ if [ "$hits" -ne 2 ]; then
   exit 1
 fi
 echo "  ✓ 탐지기 자기 시험 통과 (직전 템플릿 타입으로 가르는 식을 잡는다)"
+
+# ── 탐지기 자기 시험 ② — 값 DAO 쓰기 (B-137) ──
+# 끊어 적은 호출과 주석 안의 호출을 각각 세워, **잡는지**와 **잘못 잡지 않는지**를 함께 잰다.
+SELFTEST2=$(mktemp)
+cat > "$SELFTEST2" <<'EOF'
+db.characterFieldValueDao().update(fv.copy(value = ""))
+db.eventFieldValueDao()
+    .deleteByFieldDef(field.id)
+val ok = db.novelFieldValueDao().getValuesByFieldDef(field.id).map { it.value }
+// db.characterFieldValueDao().update(x) 는 주석이라 세지 않는다
+EOF
+w=$(value_dao_writes "$SELFTEST2" | grep -c . || true)
+rm -f "$SELFTEST2"
+if [ "$w" -ne 2 ]; then
+  echo "  ✗ 탐지기 자기 시험 ② 실패 — 지어낸 쓰기 2건 중 ${w}건만 잡았습니다" >&2
+  exit 1
+fi
+echo "  ✓ 탐지기 자기 시험 ② 통과 (끊어 적은 값 DAO 쓰기를 잡고, 주석·읽기는 세지 않는다)"
 
 fail=0
 
@@ -82,10 +129,23 @@ else
     echo "      → 타입 갈라짐은 세계관마다 생긴다. DefaultFieldPlan.typeChanges 로 물을 것."
     fail=1
   fi
+
+  # ③ 값 표에 쓰지 않는가 (B-137)
+  writes=$(value_dao_writes "$STORE")
+  if [ -n "$writes" ]; then
+    echo "  ✗ 전파 저장소가 값 표에 쓰고 있습니다(B-137 판정 위반):"
+    printf '%s\n' "$writes" | sort -u | sed 's/^/      값 DAO 호출: /'
+    echo "      → 전파는 정의만 덮는다. 타입이 안 맞게 된 값도 지우지 않고 그대로 둔다."
+    echo "        미리보기가 세는 수는 고지이지 처분이 아니다(설계 1-11, 사용자 확정)."
+    echo "        지우려면 되돌리기 스냅샷(FieldDefinitionSnapshot)이 값을 담도록 형식부터"
+    echo "        바꿔야 하고, 그것은 사용자 판정이 필요한 일이다."
+    fail=1
+  fi
 fi
 
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 값을 채우는 조건과 세는 조건이 같은 함수를 지난다"
+  echo "  ✓ 전파가 값 표를 읽기만 한다 (B-137 — 세는 것은 고지이지 처분이 아니다)"
   echo ""
   echo "전파 값 채우기 정합 검사 통과"
   exit 0

@@ -228,8 +228,10 @@ class DefaultFieldManageFragment : Fragment() {
                 }
                 container.addView(box)
                 boxes[item.universeId] = box
-                // 타입이 바뀌면 **값이 몇 개 초기화되는지** 그 세계관 줄에 붙인다 — 세는 규칙은
-                // 저장 경로와 같은 FieldTypeCompatibility다(미리보기가 거짓을 말할 자리가 없다).
+                // 타입이 바뀌면 **값이 몇 개나 새 타입과 맞지 않게 되는지** 그 세계관 줄에 붙인다.
+                // 세는 규칙은 단일 필드 편집과 같은 FieldTypeCompatibility이지만 **처분은 다르다** —
+                // 전파는 정의만 덮고 값 행은 손대지 않는다(B-137 사용자 확정). 그래서 문구도
+                // *"초기화됩니다"*가 아니라 *"맞지 않게 되지만 지우지는 않습니다"*라고 말한다.
                 if (item.typeChanges && item.incompatibleValues > 0) {
                     container.addView(TextView(requireContext()).apply {
                         text = getString(R.string.default_field_propagate_type_warning, item.incompatibleValues)
