@@ -84,16 +84,29 @@ object FieldConfigColumns {
      * ③ 열이 없고 JSON에도 키가 없으면 → **기존 DB 값을 다시 얹는다** — 이 분기를 빠뜨리면
      *    전용 열을 지운 파일을 들일 때 설명·토글이 무통보로 유실된다.
      *    신규 필드(existingConfig == null)는 기본값이 된다.
+     *
+     * **[sheetConfig]의 `null`은 *"이 파일에 `설정(JSON)` 열 자체가 없다"*** 이고, 그때 병합의
+     * 베이스는 **기존 config**다(R-36 — 없는 열과 빈 칸은 다른 사실이다). 빈 칸은 `"{}"`로
+     * 들어와 *"설정을 비워라"*로 남는다 — 그쪽은 사용자가 지운 것이라 뜻이 다르다.
+     *
+     * **판별을 호출측에 맡기지 않는 이유(B-142):** 위 3분기는 AI추천·필드설명 **두 키만**
+     * 되살리므로, 열 없는 파일에서 베이스를 `"{}"`로 만들면 나머지가 전부 사라진다 —
+     * SELECT `options` · CALCULATED `formula` · 체형 설정 · 물질화된 등급표. '기본 필드' 시트가
+     * 정확히 그 상태였고(`?: -1`로 열 없음을 알아 놓고 값에서 `"{}"`로 뭉갰다), 이어 '전파'를
+     * 누르면 그 빈 설정이 **모든 세계관으로 퍼진다.** 베이스 결정을 이 안에 두면 두 시트가
+     * 한 벌의 규칙을 쓰고, 새 호출자가 같은 함정에 다시 빠질 자리가 없다.
      */
     fun merge(
-        sheetConfig: String,
+        sheetConfig: String?,
         aiColumnPresent: Boolean,
         aiCellText: String,
         descriptionColumnPresent: Boolean,
         descriptionCellText: String,
         existingConfig: String?
     ): String {
-        var merged = sheetConfig
+        // 열이 없으면 기존 값이 베이스다 — `merge*`의 `r.x ?: existing.x`와 같은 문법(R-36).
+        // 신규 행에서는 지킬 기존 값이 없으므로 빈 설정이 된다.
+        var merged = sheetConfig ?: existingConfig ?: "{}"
         merged = when {
             aiColumnPresent -> FieldAiPolicy.applyMode(merged, parseAiCell(aiCellText))
             hasKey(merged, FieldAiPolicy.CONFIG_KEY) -> merged

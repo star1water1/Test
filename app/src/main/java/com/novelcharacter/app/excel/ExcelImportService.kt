@@ -3934,7 +3934,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val key: String,
         val name: String,
         val type: String?,
-        val sheetConfig: String,
+        val sheetConfig: String?,
         val groupName: String?,
         val displayOrder: Int?,
         val isRequired: Boolean?,
@@ -3955,7 +3955,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         key = getCellString(row, c.key),
         name = getCellString(row, c.name),
         type = if (c.type >= 0) getCellString(row, c.type).takeIf { it.isNotBlank() } else null,
-        sheetConfig = if (c.config >= 0) getCellString(row, c.config).ifBlank { "{}" } else "{}",
+        // 열이 없으면 null — 빈 칸("{}", 설정을 비워라)과 구별한다(R-36).
+        // 형제 시트가 이미 쓰는 형태다([PresetTemplateRowValues.fieldsJson]).
+        sheetConfig = if (c.config >= 0) getCellString(row, c.config).ifBlank { "{}" } else null,
         groupName = if (c.group >= 0) getCellString(row, c.group).ifBlank { "기본 정보" } else null,
         displayOrder = if (c.order >= 0) {
             getCellString(row, c.order).takeIf { it.isNotBlank() }?.let { parseNumber(it)?.toInt() }
@@ -3985,6 +3987,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * ([FieldConfigColumns.merge]), 그 위에 **세계관 한정 참조를 걷어낸다** — 템플릿은 전역이라
      * 그런 참조를 가질 수 없는데(설계 1-2) 손으로 고친 파일이 실어 올 수 있고, 그대로 심으면
      * 모든 세계관에 유령 참조가 하나씩 생긴다.
+     *
+     * **`설정(JSON)` 열이 없는 파일에서 베이스가 기존 config인 것도 그 함수가 든다**(B-142) —
+     * 여기서 `?: "{}"`로 받으면 열 없는 파일을 들이는 것만으로 `options`·`formula`·체형 설정·
+     * 물질화된 등급표가 사라지고, 이어 '전파'가 그 빈 설정을 모든 세계관으로 퍼뜨린다.
      */
     private fun resolveDefaultFieldConfig(
         r: DefaultFieldRowValues,

@@ -16,7 +16,7 @@ import org.junit.Test
 class FieldConfigColumnsTest {
 
     private fun merge(
-        sheetConfig: String,
+        sheetConfig: String?,            // null = '설정(JSON)' 열 자체가 없음
         aiCell: String? = null,          // null = 열 없음
         descCell: String? = null,        // null = 열 없음
         existing: String? = null
@@ -109,6 +109,49 @@ class FieldConfigColumnsTest {
         val json = JSONObject(merged)
         assertEquals(2, json.getJSONArray("options").length())
         assertEquals("short", json.getString("narrativeMode"))
+    }
+
+    // ===== ④ '설정(JSON)' 열 자체가 없음 → 기존 config **전체**가 베이스다 (B-142) =====
+
+    /**
+     * **이 판의 방어선.** 위 ③은 AI추천·필드설명 **두 키만** 되살린다 — 베이스가 `"{}"`이면
+     * 나머지는 그 두 키를 얹기도 전에 이미 없다. '기본 필드' 시트가 그 상태였고, 이어 '전파'를
+     * 누르면 빈 설정이 모든 세계관으로 퍼졌다.
+     */
+    @Test
+    fun jsonColumnAbsent_keepsEntireExistingConfig() {
+        val existing =
+            """{"options":["갑","을"],"formula":"a+b","grades":{"C":0.5},"aiSuggest":false,"description":"설명"}"""
+        val merged = merge(sheetConfig = null, existing = existing)
+        val json = JSONObject(merged)
+        assertEquals("SELECT options가 사라졌다", 2, json.getJSONArray("options").length())
+        assertEquals("CALCULATED formula가 사라졌다", "a+b", json.getString("formula"))
+        assertTrue("물질화된 등급표가 사라졌다", json.has("grades"))
+        assertEquals(FieldAiPolicy.SuggestMode.OFF, FieldAiPolicy.suggestMode(merged))
+        assertEquals("설명", FieldDescription.fromConfig(merged))
+    }
+
+    /** 열이 있는데 칸이 빈 것은 **사용자가 지운 것**이다 — 없는 열과 뜻이 다르다(R-36). */
+    @Test
+    fun jsonCellBlank_clearsConfig() {
+        val merged = merge(sheetConfig = "{}", existing = """{"options":["갑","을"]}""")
+        assertFalse("빈 칸은 지우라는 편집이다", JSONObject(merged).has("options"))
+    }
+
+    /** 새 행에서는 **null이 곧 기본값**이다 — 지킬 기존 값이 없다(R-36 후반부). */
+    @Test
+    fun jsonColumnAbsent_newRow_isEmptyConfig() {
+        assertEquals(0, JSONObject(merge(sheetConfig = null, existing = null)).length())
+    }
+
+    /** 베이스가 기존 config여도 전용 열은 여전히 이긴다 — ①의 우선순위는 그대로다. */
+    @Test
+    fun jsonColumnAbsent_dedicatedColumnsStillWin() {
+        val existing = """{"options":["갑"],"aiSuggest":false,"description":"옛 설명"}"""
+        val merged = merge(sheetConfig = null, aiCell = "Y", descCell = "새 설명", existing = existing)
+        assertEquals(FieldAiPolicy.SuggestMode.ALL, FieldAiPolicy.suggestMode(merged))
+        assertEquals("새 설명", FieldDescription.fromConfig(merged))
+        assertEquals("전용 열이 무관한 키를 건드렸다", 1, JSONObject(merged).getJSONArray("options").length())
     }
 
     // ===== 내보내기: stripPortableKeys =====
