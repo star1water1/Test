@@ -3226,6 +3226,32 @@
     <string name="duel_unknown_participant">(사라진 참가자)</string>
     <string name="duel_record_failed">이 판을 기록하지 못했습니다</string>
 
+    <!-- 후보 필터 (B-168) -->
+    <string name="duel_filter_label">후보 필터</string>
+    <string name="duel_filter_purpose">여기서 정한 조건에 맞는 캐릭터만 이 축의 대결 후보가 됩니다. 조건이 여럿이면 모두 만족해야 하고, 한 조건 안의 값이 여럿이면 하나만 맞아도 됩니다. 이미 겨룬 캐릭터의 전적은 필터를 바꿔도 사라지지 않습니다.</string>
+    <string name="duel_filter_none">조건 없음 — 세계관 전원이 후보입니다</string>
+    <string name="duel_filter_line_exact">%1$s: %2$s</string>
+    <string name="duel_filter_line_contains">%1$s 포함: %2$s</string>
+    <string name="duel_filter_add_section">조건 추가</string>
+    <string name="duel_filter_value_hint">값 직접 입력 (쉼표로 여러 개)</string>
+    <string name="duel_filter_values_empty">이 항목에는 아직 값이 없습니다 — 아래 칸에 직접 입력해 주세요</string>
+    <string name="duel_filter_match_exact">정확히 일치</string>
+    <string name="duel_filter_match_contains">포함</string>
+    <string name="duel_filter_add_condition">이 조건 넣기</string>
+    <string name="duel_filter_add_needs_value">값을 하나 이상 고르거나 입력해 주세요</string>
+    <string name="duel_filter_preview">지금 조건이면 후보 %1$d명입니다</string>
+    <string name="duel_filter_preview_short">지금 조건이면 후보 %1$d명입니다 — 2명은 있어야 대결이 성립합니다</string>
+    <string name="duel_filter_status">후보 %1$d/%2$d명 · %3$s</string>
+    <string name="duel_filter_need_two">후보가 부족합니다</string>
+    <string name="duel_filter_need_two_hint">후보 필터를 통과한 캐릭터가 %1$d명입니다. 2명은 있어야 짝을 낼 수 있습니다 — 축 편집에서 필터를 조정해 주세요.</string>
+    <string name="duel_filter_unresolved_title">후보 필터를 해석할 수 없습니다</string>
+    <string name="duel_filter_unresolved_hint">후보 필터의 \'%1$s\' 항목을 찾을 수 없어 후보를 세우지 않았습니다. 지워진 필드를 가리키고 있을 수 있습니다 — 축 편집에서 그 조건을 고치거나 지워 주세요.</string>
+    <string name="duel_filter_standings_note">후보 필터 적용 중 — 전체 %2$d명 중 %1$d명이 후보입니다</string>
+    <string name="duel_filter_standings_note_outsiders">후보 필터 적용 중 — 전체 %2$d명 중 %1$d명이 후보이고, 전적이 있어 표에 남은 %3$d명은 새 짝에 들어가지 않습니다</string>
+    <string name="duel_row_not_candidate">현재 후보 아님</string>
+    <string name="duel_axis_summary_filtered"> · 후보 %1$d명</string>
+    <string name="duel_filter_system_option">%1$s (시스템 열)</string>
+
     <!-- 순위표 -->
     <string name="duel_standings_title">%1$s 순위표</string>
     <string name="duel_standings_empty">아직 참가자가 없습니다</string>

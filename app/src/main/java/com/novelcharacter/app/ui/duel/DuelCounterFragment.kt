@@ -102,8 +102,10 @@ class DuelCounterFragment : Fragment() {
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
             val axis = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
-            val characters = viewModel.participants(axis)
-            val loaded = viewModel.load(axis, characters)
+            // 상성 상세도 참가자 전부를 본다 — 상성은 쌓인 판의 사실이라 후보 필터와 무관하다.
+            val roster = viewModel.roster(axis)
+            val characters = roster.participants
+            val loaded = viewModel.load(axis, characters, roster.candidateCodes)
             if (!isAdded) return@launch
 
             charactersByCode = loaded.charactersByCode

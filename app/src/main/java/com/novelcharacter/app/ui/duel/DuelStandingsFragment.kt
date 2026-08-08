@@ -75,13 +75,17 @@ class DuelStandingsFragment : Fragment() {
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
             val axis = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
-            val characters = viewModel.participants(axis)
-            val loaded = viewModel.load(axis, characters)
+            val roster = viewModel.roster(axis)
+            val characters = roster.participants
+            val loaded = viewModel.load(axis, characters, roster.candidateCodes)
             if (!isAdded) return@launch
 
             namesByCode = loaded.charactersByCode
             binding.toolbar.title = getString(R.string.duel_standings_title, axis.name)
 
+            // 후보 필터가 걸린 축은 **전적 있는 비후보도 표에 남는다**(B-168 — 지우면 그 판이
+            // 고아가 되어 남의 점수까지 움직인다). 남는 대신 후보가 아니라는 표식이 붙는다.
+            adapter.candidateCodes = roster.candidateCodes
             val rows = DuelStandings.rows(loaded.state.fit, loaded.state.report, loaded.state.records)
             adapter.submitList(rows)
             binding.emptyText.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -97,7 +101,8 @@ class DuelStandingsFragment : Fragment() {
                     loaded.state.missingParticipants
                 ),
                 loaded.state.report.wobbles.size,
-                outcomeLines
+                outcomeLines,
+                roster
             )
             renderGradeApplyEntry(axis)
         }
@@ -162,9 +167,30 @@ class DuelStandingsFragment : Fragment() {
     private fun renderCaveats(
         caveats: DuelStandings.Caveats,
         wobbles: Int,
-        outcomeLines: List<String>
+        outcomeLines: List<String>,
+        roster: DuelViewModel.Roster
     ) {
         val lines = ArrayList<String>(8)
+        // 후보 필터 상태가 맨 앞이다(B-168) — 이 표가 무엇의 순위인가를 정하는 사실이라
+        // "믿어도 되나"류 고지보다 먼저 읽혀야 한다. 해석 실패는 그보다도 앞이다(후보가 0이 된다).
+        if (roster.unresolvedNames.isNotEmpty()) {
+            lines.add(
+                getString(R.string.duel_filter_unresolved_hint, roster.unresolvedNames.joinToString(", "))
+            )
+        }
+        if (roster.filtered) {
+            val outsiders = roster.participants.count { it.code !in roster.candidateCodes.orEmpty() }
+            lines.add(
+                if (outsiders > 0) {
+                    getString(
+                        R.string.duel_filter_standings_note_outsiders,
+                        roster.candidateCount, roster.all.size, outsiders
+                    )
+                } else {
+                    getString(R.string.duel_filter_standings_note, roster.candidateCount, roster.all.size)
+                }
+            )
+        }
         if (caveats.orphanMatches > 0) {
             lines.add(
                 getString(

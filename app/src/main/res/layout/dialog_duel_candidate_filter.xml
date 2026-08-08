@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  대결 후보 필터 편집 창 (B-168).
+
+  위가 "지금 걸려 있는 조건"(칩 — 탭으로 뺀다), 아래가 "조건 추가"(항목 → 값 → 방식 → 넣기)다.
+  값은 이 세계관에 실재하는 값이 칩으로 뜨고, 없는 값은 직접 입력한다(러프/정밀 이중 경로 —
+  원칙 04). 미리보기 줄이 지금 조건의 후보 수를 곧바로 말한다.
+-->
+<com.novelcharacter.app.ui.common.CappedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- 목적문(R-25) — 무엇이 어디서 어떻게. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_filter_purpose"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary" />
+
+        <!-- 지금 조건이면 후보가 몇인가 — 저장 전에 결과를 본다(원칙 04). -->
+        <TextView
+            android:id="@+id/filterPreview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/filterEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/duel_filter_none"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/filterChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/duel_filter_add_section"
+            android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+        <Spinner
+            android:id="@+id/filterFieldSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" />
+
+        <TextView
+            android:id="@+id/filterValuesEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/duel_filter_values_empty"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="@color/text_secondary"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/filterValueChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+
+        <EditText
+            android:id="@+id/filterValueInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:hint="@string/duel_filter_value_hint"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:singleLine="true"
+            android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+        <RadioGroup
+            android:id="@+id/filterMatchModeGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/filterMatchExact"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/duel_filter_match_exact"
+                android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+            <RadioButton
+                android:id="@+id/filterMatchContains"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:text="@string/duel_filter_match_contains"
+                android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+        </RadioGroup>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddCondition"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:text="@string/duel_filter_add_condition" />
+
+    </LinearLayout>
+
+</com.novelcharacter.app.ui.common.CappedScrollView>

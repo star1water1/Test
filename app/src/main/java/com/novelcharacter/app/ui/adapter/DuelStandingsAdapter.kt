@@ -22,6 +22,15 @@ class DuelStandingsAdapter(
     private val nameOf: (String) -> String
 ) : ListAdapter<DuelStandings.Row, DuelStandingsAdapter.RowViewHolder>(DiffCallback()) {
 
+    /**
+     * 후보 필터가 걸린 축의 후보 코드 (B-168). null이면 필터가 없는 것이고 표식이 안 뜬다.
+     *
+     * 전적 있는 비후보는 표에서 빼지 않는다 — 빼면 그 판이 고아가 되어 남의 점수까지 움직인다.
+     * 대신 이 표식이 *"이 줄은 더 이상 새 짝에 들어가지 않는다"*를 말한다(조용히 두면
+     * 사용자는 왜 이 캐릭터의 짝이 더 안 나오는지 알 길이 없다 — 개발 의도 2번).
+     */
+    var candidateCodes: Set<String>? = null
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RowViewHolder =
         RowViewHolder(ItemDuelStandingBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
@@ -37,10 +46,16 @@ class DuelStandingsAdapter(
             binding.nameText.text = nameOf(row.code)
             binding.scoreText.text = context.getString(R.string.duel_score_value, row.score, row.scoreError)
 
-            binding.evidenceText.text = if (row.provisional) {
+            val evidence = if (row.provisional) {
                 context.getString(R.string.duel_row_provisional)
             } else {
                 context.getString(R.string.duel_row_evidence, row.played, winsLabel(row.wins))
+            }
+            val candidates = candidateCodes
+            binding.evidenceText.text = if (candidates != null && row.code !in candidates) {
+                evidence + " · " + context.getString(R.string.duel_row_not_candidate)
+            } else {
+                evidence
             }
 
             if (row.counters > 0) {

@@ -47,6 +47,15 @@ interface DuelMatchDao {
     @Query("SELECT COUNT(*) FROM duel_matches WHERE axisId = :axisId AND (aCode = :code OR bCode = :code)")
     suspend fun countForParticipant(axisId: Long, code: String): Int
 
+    /**
+     * 이 축에서 한 판이라도 겨룬 참가자 코드 (B-168). 후보 필터가 좁혀도 **전적이 있는
+     * 참가자는 적합·순위표에 남아야** 하는데(빼면 그 판이 고아가 되어 남의 점수까지 움직인다),
+     * 그 판정에 필요한 것은 코드 집합뿐이라 수만 행을 통째로 읽지 않는다 —
+     * 두 색인(`axisId, aCode`·`axisId, bCode`)이 각각 받친다.
+     */
+    @Query("SELECT DISTINCT aCode FROM duel_matches WHERE axisId = :axisId UNION SELECT DISTINCT bCode FROM duel_matches WHERE axisId = :axisId")
+    suspend fun participantCodes(axisId: Long): List<String>
+
     @Insert
     suspend fun insert(match: DuelMatch): Long
 

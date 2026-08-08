@@ -120,7 +120,7 @@ class DuelSheetSpecTest {
         assertEquals(
             listOf(
                 "축이름", "세계관", "세계관코드", "대상",
-                "영향필드", "산출필드", "프로필필드",
+                "영향필드", "산출필드", "프로필필드", "후보필터(JSON)",
                 "정렬순서", "코드", "생성일"
             ),
             axisSpec.columns.map { it.header }
@@ -151,5 +151,20 @@ class DuelSheetSpecTest {
         assertTrue(!profile.readOnly)
         // 드롭다운을 달지 않는다 — 여러 키를 쉼표로 잇는 칸이라 한 값 고르기와 성질이 다르다.
         assertEquals(null, profile.dropdownOptions)
+    }
+
+    /**
+     * 후보 필터 열 (B-168) — 연결 셋과 달리 **JSON 그대로**다. 값 목록·일치 방식이 딸린
+     * 구조라 쉼표 문법으로 펴면 값 안의 쉼표와 충돌한다(프리셋 시트의 `필드필터(JSON)` 규약).
+     * 잠그지는 않는다 — 형식이 어긋난 손편집은 가져오기가 기존 값을 지키며 경고한다.
+     */
+    @Test
+    fun `후보필터 열은 JSON 칸이고 사람이 고칠 수 있다`() {
+        val filter = axisSpec.columns.first { it.header == "후보필터(JSON)" }
+        assertTrue(!filter.readOnly)
+        assertEquals(null, filter.dropdownOptions)
+        // 프로필(연결의 끝) 바로 뒤 — 연결 셋과 정렬·코드 사이에 서서 축의 "구성"이 한 덩이로 읽힌다.
+        val headers = axisSpec.columns.map { it.header }
+        assertEquals(headers.indexOf("프로필필드") + 1, headers.indexOf("후보필터(JSON)"))
     }
 }

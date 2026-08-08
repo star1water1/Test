@@ -26,7 +26,24 @@ object CharacterDraftPrefs {
         val novelId: Long = -1L,
         val imagePaths: List<String> = emptyList(),
         val fieldValues: Map<String, String> = emptyMap(),
-        val savedAt: Long = 0L
+        val savedAt: Long = 0L,
+        /**
+         * "앱에서 삭제"로 예약된 경로들 (B-170). 종전에는 컨트롤러의 메모리 필드뿐이라
+         * 화면을 떠나면 **선택만 조용히 사라져** 캐릭터에서는 빠졌는데 파일은 남았다 —
+         * *뺐다는 사실*([imagePaths])은 살아남는데 *지우기로 했다는 사실*만 죽는 비대칭.
+         *
+         * **nullable인 것이 옛 드래프트와의 호환이다**(설계 물음 ⓐ) — Gson은 Kotlin 기본값을
+         * 실행하지 않아 이 칸이 없는 옛 JSON에서 non-null 선언이어도 null이 주입된다(R-2).
+         * null = *그 사실이 기록되지 않았다* = 지울 것 없음으로 읽는다. 없는 사실을 지우기로
+         * 넓혀 읽으면 그것이 새 데이터 유실이다.
+         */
+        val pendingDeletePaths: List<String>? = null,
+        /**
+         * 대표 이미지 지정 (B-170의 형제). 같은 비대칭으로 **회전만 해도 ☆이 조용히 풀려**
+         * 저장하면 지정이 사라졌다. null = 기록되지 않음(DB 값 유지) · "" = 명시적 지정 없음 —
+         * 둘을 가르는 것이 nullable의 몫이다.
+         */
+        val representativePath: String? = null
     )
 
     private fun prefs(context: Context) =

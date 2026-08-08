@@ -133,6 +133,55 @@ class DuelSnapshotPayloadTest {
         assertEquals(listOf("faction", "origin"), restored.fieldLinks.profiles.map { it.key })
     }
 
+    /**
+     * v55 이전 payload에는 후보 필터 칸(B-168)이 없다 — **연결 셋과 달리 접기가 필요 없다.**
+     * 선언이 nullable이라 Gson의 null 주입이 곧 정당한 값이고, `copy`도 해석도 그대로 성립한다.
+     * 이 시험이 없으면 다음 사람이 *"연결 셋처럼 접어야 하지 않나"*로 복원 경로에 접기를
+     * 보태거나, 반대로 **다음 칸을 non-null로 선언하며 이 선례를 잃는다.**
+     */
+    @Test
+    fun `후보 필터 칸이 없는 구버전 축 payload도 되살아난다`() {
+        val bare = """{"axis": {"id": 3, "universeId": 1, "name": "강함",
+                       "targetType": "character", "displayOrder": 0, "createdAt": 0, "code": "AX-1"}}"""
+        val old = gson.fromJson(bare, DuelAxisSnapshot::class.java).axis
+        assertNull(old.candidateFiltersJson)
+        // 복원 경로의 copy 그대로 — 연결 셋은 non-null이라 **접어 넘겨야 하고**(그 지뢰를
+        // 이 시험의 첫 판이 실제로 밟았다), 후보 필터는 nullable이라 안 넘겨도 안 죽는다.
+        // 그 비대칭이 곧 이 시험이 지키는 선례다.
+        val restored = old.copy(
+            id = 0,
+            influenceFieldKeys = old.influenceFieldKeys.orEmpty().ifEmpty { "[]" },
+            outcomeFieldKeys = old.outcomeFieldKeys.orEmpty().ifEmpty { "[]" },
+            profileFieldKeys = old.profileFieldKeys.orEmpty().ifEmpty { "[]" }
+        )
+        assertEquals(
+            emptyList<com.novelcharacter.app.data.model.FieldFilter>(),
+            com.novelcharacter.app.util.DuelCandidateFilter.parse(restored.candidateFiltersJson)
+        )
+    }
+
+    /** *"있으면 살아 돌아온다"* — 필터를 담은 축을 지웠다 되살리면 필터도 함께 돌아온다. */
+    @Test
+    fun `후보 필터는 payload 왕복에서 그대로 살아 돌아온다`() {
+        val filters = listOf(
+            com.novelcharacter.app.data.model.FieldFilter(
+                fieldId = -1L, fieldName = "성별", values = listOf("여성"),
+                matchMode = "exact", fieldKey = "gender"
+            )
+        )
+        val axis = DuelAxis(
+            id = 3, universeId = 1, name = "강함", code = "AX-1",
+            candidateFiltersJson = com.novelcharacter.app.util.DuelCandidateFilter.encode(filters)
+        )
+        val restored = gson.fromJson(
+            gson.toJson(DuelAxisSnapshot(axis = axis)),
+            DuelAxisSnapshot::class.java
+        ).axis
+        val back = com.novelcharacter.app.util.DuelCandidateFilter.parse(restored.candidateFiltersJson)
+        assertEquals(listOf("gender"), back.map { it.fieldKey })
+        assertEquals(listOf(listOf("여성")), back.map { it.values })
+    }
+
     @Test
     fun `판 조각은 참가자를 코드로 담아 왕복한다`() {
         val original = DuelMatchesSnapshot(

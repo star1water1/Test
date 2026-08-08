@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.OpResult
@@ -1727,9 +1728,14 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))
             row.createCell(5).setTextSafe(DuelFieldLinks.toText(links.outcomes))
             row.createCell(6).setTextSafe(DuelFieldLinks.toText(links.profiles))
-            row.createCell(7).setCellValue(axis.displayOrder.toDouble())
-            row.createCell(8).setTextSafe(axis.code)
-            row.createCell(9).setCellValue(axis.createdAt.toDouble())
+            // 후보 필터(B-168) — 필드를 키로 가리키는 JSON이라 그대로 실어도 이식된다.
+            // 필터 없음은 빈 칸이다("{}"를 적으면 사람이 그 칸을 지워야 하는지 헷갈린다).
+            row.createCell(7).setTextSafe(
+                axis.candidateFiltersJson?.takeIf { DuelCandidateFilter.parse(it).isNotEmpty() }.orEmpty()
+            )
+            row.createCell(8).setCellValue(axis.displayOrder.toDouble())
+            row.createCell(9).setTextSafe(axis.code)
+            row.createCell(10).setCellValue(axis.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, axes.size)
