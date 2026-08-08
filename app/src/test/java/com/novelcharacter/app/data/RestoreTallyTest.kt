@@ -33,7 +33,8 @@ class RestoreTallyTest {
             oldId = 12L,
             ref = ref,
             naturalById = emptyMap(),
-            idByNatural = emptyMap()
+            idByNatural = emptyMap(),
+            liveIds = emptySet()
         )
 
     @Test
@@ -61,17 +62,40 @@ class RestoreTallyTest {
 
     @Test
     fun `자연키가 성립하지 않는 구버전 ref는 보류로 봐주지 않는다`() {
-        // universeCode가 없으면 어느 세계관의 정의인지 알 수 없다 — 근거 없이 "괜찮다"고
+        // 세계관 코드가 빈 문자열이면 어느 세계관의 정의인지 알 수 없다 — 근거 없이 "괜찮다"고
         // 말하면 그것이야말로 사실과 다른 안내다.
-        val bare = FieldDefRef(universeCode = null, entityType = "character", key = "mana")
+        // **빈 문자열을 쓰는 이유(B-133):** 종전에는 `universeCode = null`로 이 상태를 표현했는데,
+        // 이제 null은 **전역 구역**의 표기라 자연키가 성립한다. 이 시험이 재려는 것은 그쪽이
+        // 아니라 *"좁혀지지 않는 ref"*이고, 그 모양은 이제 빈 문자열이다(세계관 삭제 경로가
+        // `universe.code`를 빈 값 검사 없이 싣는 자리). 전역 쪽은 아래 시험이 따로 잰다.
+        val bare = FieldDefRef(universeCode = "", entityType = "character", key = "mana")
         val tally = RestoreTally(legacy = false, pendingCodes = setOf("UNI-1"))
         val res = tally.noteFieldDef(
-            SnapshotRefResolver.resolveFieldDef(12L, bare, emptyMap(), emptyMap()),
+            SnapshotRefResolver.resolveFieldDef(12L, bare, emptyMap(), emptyMap(), emptySet()),
             bare
         )
 
         assertFalse(res.found)
         assertFalse(tally.previewOnly)
+    }
+
+    @Test
+    fun `전역 필드는 보류 대상이 아니다 — 기다릴 세계관이 없다`() {
+        // 전역 구역 필드(B-119 확장)의 ref는 세계관 코드가 null이다(B-133). 그 null은
+        // **전역의 표기**라 해석에서는 자연키로 승격되지만, 보류 판정에서는 반대다 —
+        // 전역 필드는 어떤 세계관의 복원도 기다리지 않으므로, 지금 없으면 정말로 없다.
+        // (여기서 pendingCodes를 봐주면 되살아나지 않을 값을 "괜찮다"고 예고하게 된다.)
+        val globalRef = FieldDefRef(universeCode = null, entityType = "character", key = "mana")
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf("UNI-1"))
+        val res = tally.noteFieldDef(
+            SnapshotRefResolver.resolveFieldDef(12L, globalRef, emptyMap(), emptyMap(), emptySet()),
+            globalRef
+        )
+
+        assertFalse(res.found)
+        assertFalse(tally.previewOnly)
+        // 그리고 **거짓 경고도 아니다** — 근거는 자연키였고, 없다는 판정 자체가 사실이다.
+        assertFalse("자연키로 판정했으므로 '근거가 id뿐'이 아니다", tally.legacyGuess)
     }
 
     @Test
@@ -84,7 +108,8 @@ class RestoreTallyTest {
                 oldId = 12L,
                 ref = ref,
                 naturalById = emptyMap(),
-                idByNatural = mapOf(natural to 77L)
+                idByNatural = mapOf(natural to 77L),
+                liveIds = emptySet()
             ),
             ref
         )
@@ -114,7 +139,8 @@ class RestoreTallyTest {
                 oldId = 12L,
                 ref = null,
                 naturalById = mapOf(12L to FieldDefNaturalKey("UNI-1", "character", "mana")),
-                idByNatural = emptyMap()
+                idByNatural = emptyMap(),
+                liveIds = setOf(12L)
             ),
             null
         )
