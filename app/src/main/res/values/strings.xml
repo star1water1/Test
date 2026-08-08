@@ -2968,6 +2968,7 @@
     <string name="image_ai_tag_review_hidden">새 태그가 없는 이미지 %1$d장은 접었습니다. 그 태그도 체크된 채 적용됩니다</string>
     <string name="image_ai_tag_review_retry_one_by_one">1장씩 다시 보내기</string>
     <string name="image_ai_tag_already_running">AI 태그 제안이 이미 실행 중입니다. 끝나면 검토 화면이 열립니다</string>
+    <string name="image_ai_tag_nothing">AI가 태그로 삼을 만한 것을 찾지 못했습니다. 제안이 없어 검토 창은 열지 않았습니다</string>
     <!-- AI 이미지 첨부 (A-7) — 이미지가 기기 밖으로 나가는 지점이라 고지가 침묵할 수 없다 -->
     <string name="ai_image_attach_count">이미지 %1$d장을 함께 보냅니다 (전체 %2$d장 중)</string>
     <string name="ai_image_attach_none">이미지를 보내지 않습니다</string>
