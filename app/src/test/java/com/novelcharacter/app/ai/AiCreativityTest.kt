@@ -144,6 +144,22 @@ class AiCreativityTest {
     }
 
     @Test
+    fun temperatureError_anthropicDeprecatedSample() {
+        // **실사용에서 온 표본이다** (B-160, 2026.08.08 사용자 보고 — claude-opus-5).
+        // 종전 목록은 OpenAI 호환의 낱말 넷뿐이라 "deprecated"에 false를 냈고, 그 한 글자
+        // 때문에 빼고-재시도가 통째로 안 돌아 400이 그대로 화면에 나갔다.
+        assertTrue(
+            AiProtocolCodec.isTemperatureUnsupportedError(
+                400, """{"type":"error","error":{"type":"invalid_request_error","message":"`temperature` is deprecated for this model."}}"""
+            )
+        )
+        // 낱말만 있고 파라미터명이 없으면 여전히 아니다 — 좁게 잡는 태도는 그대로다.
+        assertFalse(
+            AiProtocolCodec.isTemperatureUnsupportedError(400, "`top_p` is deprecated for this model.")
+        )
+    }
+
+    @Test
     fun temperatureError_noFalsePositives() {
         // 무관한 400 — 상한 초과·형식 오류를 온도 문제로 오인하면 잘못된 학습값이 남는다
         assertFalse(
