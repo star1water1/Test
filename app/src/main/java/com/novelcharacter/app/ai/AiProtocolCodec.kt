@@ -77,15 +77,23 @@ object AiProtocolCodec {
 
     /**
      * 모델이 temperature 파라미터를 거부한 400인가 (A-4) — 일부 OpenAI 호환 추론 모델의
-     * "Unsupported value: 'temperature' …" / "'temperature' is not supported …" 형태.
+     * "Unsupported value: 'temperature' …" / "'temperature' is not supported …" 형태와
+     * **Anthropic의 "`temperature` is deprecated for this model." 형태.**
      * 판정을 좁게 잡는다: 파라미터명과 거부 표현이 **함께** 있어야 참 — 무관한 400을
      * 온도 문제로 오인하면 잘못된 학습값(temperatureUnsupported)이 계속 남는다.
+     *
+     * **거부 표현 목록은 관찰로만 늘린다** (B-160, 2026.08.08 사용자 보고). 이 목록은
+     * OpenAI 호환의 표현 넷으로 출발했는데, Anthropic이 *"deprecated"*라는 **다섯째 낱말**로
+     * 거부하면서 판정이 false를 냈다. 그러면 아래 자동 교정이 통째로 안 돌고 400이 그대로
+     * 사용자에게 나가며, 하필 그 문구가 *"모델명과 서버 주소를 확인해 주세요"*라 **멀쩡한
+     * 곳을 고치라고 시킨다.** 새 표현을 만나면 여기 더할 것 — 다만 **짐작으로 넓히지 않는다**
+     * (넓힐수록 오탐이 늘고, 오탐 하나가 그 모델에서 창작도를 영영 죽인다).
      */
     fun isTemperatureUnsupportedError(httpCode: Int, errorBody: String?): Boolean {
         if (httpCode != 400 || errorBody == null) return false
         val lower = errorBody.lowercase()
         if ("temperature" !in lower) return false
-        return listOf("unsupported", "not supported", "does not support", "not allowed")
+        return listOf("unsupported", "not supported", "does not support", "not allowed", "deprecated")
             .any { it in lower }
     }
 
