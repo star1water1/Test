@@ -1573,13 +1573,15 @@ class ImageManagerViewModel(
         if (aiTagRunning.value == true) return false
         if (paths.isEmpty()) return false
         aiTagCancelled = false
-        aiTagRunning.value = true
+        // **총량을 먼저 세운다** — 진행 창은 `aiTagRunning`을 보고 서면서 이 값으로 총량을
+        // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다.
         aiTagProgress.value = AiTagProgress(
             0,
             com.novelcharacter.app.ai.AiPromptPolicy.imageTagBatchRequestCount(paths.size, perRequest),
             0,
             paths.size
         )
+        aiTagRunning.value = true
         viewModelScope.launch {
             try {
                 val fresh = suggestImageTags(
