@@ -349,13 +349,9 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
     data class Loaded(val path: String, val image: AiImage)
 
     /**
-     * 이미지를 준비해 요청에 싣는 몫은 호출측이다 — 이 클래스는 **비트맵을 만들지 않는다**
-     * (순수 유지). 준비기는 `util.AiImagePreparer`이고, 호출측이 배치마다 그것을 돌린다.
-     */
-    /**
      * 한 배치를 실은 결과.
      *
-     * **뺀 장수를 사유별로 받는다** — 종전에는 이 인터페이스가 목록만 돌려주고 여기서
+     * **뺀 장수를 사유별로 받는다** — 종전에는 [ImageLoader]가 목록만 돌려주고 [suggest]가
      * `요청 수 - 실린 수`로 뺐는데, 그 뺄셈은 사유를 하나로 뭉갠다. 사유를 아는 곳은
      * 준비기이고, 고지의 처방이 사유마다 갈리므로 아는 곳이 세어 넘긴다 (B-141).
      *
@@ -369,6 +365,10 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         val blocked: Int = 0
     )
 
+    /**
+     * 이미지를 준비해 요청에 싣는 몫은 호출측이다 — 이 클래스는 **비트맵을 만들지 않는다**
+     * (순수 유지). 준비기는 `util.AiImagePreparer`이고, 호출측이 배치마다 그것을 돌린다.
+     */
     fun interface ImageLoader {
         /** @return 실은 짝과 **뺀 사유별 장수**. 못 읽거나 막힌 경로는 목록에서 빠진다. */
         suspend fun prepare(paths: List<String>): LoadResult

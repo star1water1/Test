@@ -64,11 +64,15 @@ object ImagePathMatch {
     /**
      * [path]가 [dir] **안**의 것인가 — 앱 저장소 봉쇄 가드 (B-141).
      *
-     * 이 저장소는 저장 이미지 경로를 읽는 자리마다 이 판정을 두는데, 지금까지
-     * **일곱 곳에 복붙**돼 있었다(`CharacterImageLoader`·`CharacterImageStripController`·
-     * `ImageImportHelper`·`ImageViewerFragment` 2곳·`WorldPackageExporter`·
-     * `ImageManagerViewModel`). 옛 일곱 곳을 걷어내는 것은 이 슬라이스 밖이라 **B-106**에
-     * 등재돼 있다 — [canonical]이 선 자리와 같은 모양이다. **새 코드는 이것만 쓴다.**
+     * 이 저장소는 "이 경로가 이 뿌리 안인가"를 묻는 자리마다 이 한 줄을 **복붙**해 왔고,
+     * 뿌리는 둘이다 — **filesDir**(저장 이미지를 읽는 자리)와 **압축 해제 디렉터리**
+     * (zip-slip 방어: `WorldPackageImporter`·`ExcelImporter`). 옛 자리를 걷어내는 것은 이
+     * 슬라이스 밖이라 **B-106**에 등재돼 있다 — [canonical]이 선 자리와 같은 모양이다.
+     * **새 코드는 이것만 쓴다.**
+     *
+     * **개수는 여기 적지 않는다** — 세는 법은
+     * `grep -rn 'canonicalPath.startsWith' --include=*.kt app/src/main/java`이고,
+     * 값을 적으면 걷어낼 때마다 낡는다(`CLAUDE.md` v1.6이 배운 것).
      *
      * **경계 문자를 반드시 붙여 견준다** — `startsWith(root)`만 쓰면 `/files_backup/a.jpg`가
      * `/files`의 안으로 판정된다(형제 디렉터리가 접두어를 공유하는 자리).
