@@ -90,11 +90,13 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         // 이미지도 같다 (A-7) — 이미 거부를 배운 모델이면 붙였어도 나가지 않는다는 사실을 말한다
         val imagesNote = images.isNotEmpty() && aiService.isImagesUnsupported()
         val request = AiRequest(
-            system = buildSystemPrompt(creativity, images.size),
+            system = buildSystemPrompt(creativity),
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity),
-            images = images
+            images = images,
+            // 이미지 절은 이미지와 한 몸으로 간다 (B-139) — 짧은 값 경로와 같다.
+            imageSystemRule = imageRule(images.size)
         )
         return when (val result = aiService.complete(request)) {
             is AiResult.Success -> {
@@ -237,9 +239,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             else Mode.entries.filter { it.requiresExisting }
 
         fun buildSystemPrompt(
-            creativity: AiCreativity = AiCreativity.DEFAULT,
-            /** 함께 보낸 이미지 장수 (A-7). 0이면 지시를 붙이지 않는다. */
-            imageCount: Int = 0
+            creativity: AiCreativity = AiCreativity.DEFAULT
         ): String = """
             당신은 소설 캐릭터 설정을 함께 쓰는 작가 보조다. 주어진 캐릭터 정보와 지시에 따라
             지정된 필드에 들어갈 **한국어 산문**을 쓴다.
@@ -260,12 +260,15 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나게 쓰지 마라 —
                그 축에서 하위인 인물을 압도적인 강자로 묘사하지 않는다. 다만 **등수를 글에
                숫자로 적지 마라**: 그것은 작품 설정이 아니라 사용자의 작업 기록이다.
-        """.trimIndent() + creativity.promptRule() + imageRule(imageCount)
+        """.trimIndent() + creativity.promptRule()
 
         /**
          * 이미지 첨부 지시 (A-7). 짧은 값 경로와 **다른 점 하나**: 산문에는 "몇 번째
          * 이미지"라고 적을 자리가 없다 — 그것은 작품 설정이 아니라 작업 기록이라
          * 대결 등수를 숫자로 적지 말라는 규칙 8과 같은 이유로 금지한다.
+         *
+         * 짧은 값 경로와 **같은 점 하나**: 이 절은 [buildSystemPrompt]가 아니라
+         * [AiRequest.imageSystemRule]로 간다 (B-139 — 이미지가 빠지면 지시도 함께 빠져야 한다).
          */
         fun imageRule(imageCount: Int): String =
             if (imageCount <= 0) "" else "\n" + """

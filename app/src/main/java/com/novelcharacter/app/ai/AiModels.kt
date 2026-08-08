@@ -204,20 +204,52 @@ data class AiRequest(
      * 그대로이며 종전 요청과 바이트 단위로 동일하다(회귀 없음). 값 산출은 [AiCreativity]
      * (프로토콜별 상한 반영), 직렬화는 [AiProtocolCodec]이 전담한다.
      */
-    val temperature: Double? = null
+    val temperature: Double? = null,
+    /**
+     * 이미지가 실릴 때만 시스템 프롬프트 끝에 붙는 절 (A-7 — *"이미지 N장이 순서대로 함께
+     * 실려 있다"*). **[system]에 미리 이어 붙이지 않는 것이 이 필드의 존재 이유다.**
+     *
+     * 이미지가 빠지는 경로는 둘이고(`AiService`의 ④ 거부 재시도 · `strippedUpfront` 사전 제거)
+     * 붙여 두면 그 둘이 각자 문자열을 도로 걷어내야 한다. 하나만 빠뜨리면 **모델은 있지도 않은
+     * 그림을 근거로 삼아 날조된 출처를 낸다**(B-139 — 실제로 둘 다 빠뜨리고 있었다).
+     * 갈라 두면 [effectiveSystem]이 [hasImages]로 판정하므로 **빠뜨릴 자리 자체가 없다.**
+     */
+    val imageSystemRule: String? = null
 ) {
     constructor(
         system: String? = null,
         userText: String,
         maxTokens: Int = DEFAULT_MAX_TOKENS,
         temperature: Double? = null,
-        images: List<AiImage> = emptyList()
-    ) : this(system, listOf(AiMessage(AiRole.USER, userText, images)), maxTokens, temperature)
+        images: List<AiImage> = emptyList(),
+        imageSystemRule: String? = null
+    ) : this(
+        system, listOf(AiMessage(AiRole.USER, userText, images)), maxTokens, temperature,
+        imageSystemRule
+    )
 
     /** 이 요청이 이미지를 싣고 있는가 — 거부 재시도·고지 판정의 단일 소스 (A-7). */
     fun hasImages(): Boolean = messages.any { it.images.isNotEmpty() }
 
-    /** 이미지를 전부 뺀 사본. 모델이 이미지를 거부했을 때의 재시도가 쓴다. */
+    /**
+     * 프로토콜 계층이 실제로 싣는 시스템 프롬프트 — **이미지가 없으면 이미지 절도 없다** (B-139).
+     *
+     * [AiProtocolCodec]의 세 프로토콜은 [system]이 아니라 반드시 이것을 읽는다
+     * (`tools/check_ai_image_rule.sh`가 그것을 기계로 잠근다). 실수의 방향이 **빼는 쪽**이라
+     * 새 경로가 이것을 안 쓰더라도 모델이 속지는 않는다.
+     */
+    fun effectiveSystem(): String? =
+        if (imageSystemRule.isNullOrBlank() || !hasImages()) system
+        else (system ?: "") + imageSystemRule
+
+    /**
+     * 이미지를 전부 뺀 사본. 모델이 이미지를 거부했을 때의 재시도가 쓴다.
+     *
+     * [imageSystemRule]은 **일부러 지우지 않는다** — [effectiveSystem]이 [hasImages]로
+     * 판정하므로 이미 나가지 않고, 남겨 두면 *"이 요청이 원래 무엇을 실으려 했는가"*가
+     * 사본에도 남는다. 지우는 것에 기대면 이 함수를 거치지 않는 경로가 생기는 순간
+     * 다시 새기 시작한다(B-139가 그렇게 났다).
+     */
     fun withoutImages(): AiRequest =
         if (!hasImages()) this
         else copy(messages = messages.map { if (it.images.isEmpty()) it else it.copy(images = emptyList()) })

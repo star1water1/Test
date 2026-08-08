@@ -119,7 +119,9 @@ object AiProtocolCodec {
             addProperty("max_tokens", request.maxTokens)
             // null이면 키 자체를 싣지 않는다 — 프로바이더 기본값 유지 (A-4 창작도 '균형')
             request.temperature?.let { addProperty("temperature", it) }
-            request.system?.let { addProperty("system", it) }
+            // `system`이 아니라 `effectiveSystem()`이다 — 이미지 절은 이미지가 실릴 때만
+            // 붙는다 (B-139. 세 프로토콜 공통이며 `check_ai_image_rule.sh`가 잠근다).
+            request.effectiveSystem()?.let { addProperty("system", it) }
             add("messages", JsonArray().apply {
                 request.messages.forEach { m ->
                     add(JsonObject().apply {
@@ -167,7 +169,7 @@ object AiProtocolCodec {
             addProperty(if (useMaxCompletionTokens) "max_completion_tokens" else "max_tokens", request.maxTokens)
             request.temperature?.let { addProperty("temperature", it) }
             add("messages", JsonArray().apply {
-                request.system?.let {
+                request.effectiveSystem()?.let {
                     add(JsonObject().apply { addProperty("role", "system"); addProperty("content", it) })
                 }
                 request.messages.forEach { m ->
@@ -213,7 +215,7 @@ object AiProtocolCodec {
 
     private fun buildGemini(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
         val body = JsonObject().apply {
-            request.system?.let {
+            request.effectiveSystem()?.let {
                 add("system_instruction", JsonObject().apply {
                     add("parts", JsonArray().apply {
                         add(JsonObject().apply { addProperty("text", it) })
