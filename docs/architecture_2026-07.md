@@ -128,6 +128,7 @@ app/src/main/java/com/novelcharacter/app/
 | `RepresentativeImageCell` | 엑셀 `대표이미지` 열의 쓰기·읽기 규약(해석 사다리 5단) | — |
 | `AiImageAttach` / `AiImagePreparer` | **AI 요청에 어느 그림을 몇 장 붙이는가**(순수 — 대표 우선·시드 랜덤·직접 고르기) / 전송용 축소·인코딩(Android) | 고르기 규칙을 화면마다 적으면 짧은 값·서술형·보완 재요청의 근거가 갈린다. 비트맵과 한 파일에 두면 **그 규칙을 실행으로 검증할 길이 없다**(B-120 A-7) |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
+| `DefaultFieldPlan` / `FieldTypeCompatibility` | 전역 기본 필드(B-119)의 **심기·전파·강등 판정** — 자리 판정 `(entityType, key)` · 벌어짐(`SAME`/`OUTDATED`/`DIVERGED`)과 기본 선택 · **`typeChanges`가 "이 세계관에서 타입이 바뀌는가"의 단일 소스**(저장소의 *값 채우기*와 미리보기의 *세기*가 같은 함수를 부른다) / **타입이 바뀌어도 값이 살아남는가**(세는 규칙) | 채우는 조건이 세는 조건보다 좁아 *"값 N개가 초기화됩니다"* 경고가 **정식 경로에서 통째로 죽어 있었다**(B-135) |
 | `FieldScopeCell` | **시트의 세계관 칸이 빈 것이 무슨 뜻인가** — 빈 칸 = 전역(무소속) 구역 | 판정이 다섯 경로에 흩어져 **둘만 알고 있었다**: '필드 정의'는 갈래가 있고 오버플로 두 시트·값 라이브러리 미리보기는 없어서, 내보내기가 빈 칸으로 낸 전역 값을 가져오기가 `skippedRows`로 버렸다(B-130) |
 | `FieldDefinitionPrune` | 덮어쓰기에서 **지울 정의를 고르는 판정**(구역마다 매칭 근거를 따로 본다) | *'백업에 없다'*와 *'백업이 그 구역을 말하지 않았다'*를 가르지 않아, 시트가 다루지도 않은 전역 구역의 정의가 **값과 함께 CASCADE로** 사라졌다. 파일 단위 안전장치 둘(시트 부재·매칭 0건)은 세계관 필드가 매칭돼 그대로 통과했다(B-130) |
 | `CharacterFieldValueMerge` / `EventFieldValueMerge` / `NovelFieldValueMerge` | 부분 저장의 커버 집합 — 종류마다 하나씩, **규칙은 하나** | 사건 필드값이 무통보 폐기됐다(S-6) |
