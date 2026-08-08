@@ -1160,6 +1160,25 @@ class ImageManagerFragment : Fragment() {
         notices.addAll(aiTagFailureNotices(result))
 
         if (result.suggestions.isEmpty() && notices.isEmpty()) {
+            // **말없이 빠지지 않는다** (B-144 · R-17). 이 조합은 실패가 아니라 정상 경로다 —
+            // 프롬프트가 *"근거를 찾을 수 없는 이미지는 빈 배열로 둔다"*고 시키고, `suggest`가
+            // 빈 배열을 어디에도 세지 않고 뺀다(그래서 드롭 집계도 실패도 비어 notices가 없다).
+            // 그런데 그 정상 경로에서 **화면이 아무 말도 하지 않으면 고장과 구분되지 않는다.**
+            //
+            // 폴더판([OrganizeFolderController])은 같은 자리에서 침묵하고 **그쪽은 그것이 옳다**
+            // (빈 창은 그 자체가 소음이다 — 폴더 받아오기에 딸린 곁가지라 사용자가 그것만을
+            // 기다리고 있지 않다). 이쪽은 다르다: **비용을 고지하고 확인받아 단독으로 실행한
+            // 유료 동작**이고, 진행 창까지 닫히고 나면 사용자가 보는 것은 아무 변화도 없는
+            // 화면뿐이다. 침묵의 무게가 갈리므로 형제를 따라가지 않는다.
+            //
+            // 시트를 여는 대신 한 줄로 말하는 것도 그래서다 — 고를 것이 없는 창을 세우면
+            // 폴더판이 피한 소음을 이쪽에서 만든다.
+            //
+            // **`notifyError`가 곧 "실패했다"는 뜻은 아니다.** 이 저장소에서 두 고지 함수의
+            // 차이는 스낵바 길이뿐이고(`notifySuccess`는 SHORT), 이 문구는 두 문장이라 짧게
+            // 띄우면 다 읽기 전에 사라진다. 같은 파일의 `image_ai_tag_already_running`도
+            // 같은 이유로 이쪽을 쓴다.
+            notifyError(getString(R.string.image_ai_tag_nothing))
             viewModel.clearAiTagResult()
             return
         }

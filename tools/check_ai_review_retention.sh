@@ -1,5 +1,5 @@
 #!/bin/bash
-# AI 검토 시트의 유료 응답 보존 검사 (B-136 · B-140 · B-163)
+# AI 검토 시트의 유료 응답 보존·고지 검사 (B-136 · B-140 · B-163 · B-144)
 #
 # 배경: 이미지 일괄 AI 태깅의 검토 시트는 **이미 결제한 응답**을 들고 있다. 그런데 세 자리에서
 # 그것을 조용히 버리고 있었다.
@@ -12,6 +12,11 @@
 #
 # 고장이 조용한 것이 이 검사를 다는 이유다: 아무것도 실패하지 않고, 제안이 줄어든 화면은
 # *"AI가 그만큼만 답했다"*와 구별되지 않는다. 사용자는 잃은 줄도 모른다.
+#
+# **넷째 자리는 응답이 아니라 실행 자체가 조용히 사라진 것이다**(B-144) — 제안도 고지도
+# 없으면 화면이 시트를 열지 않고 그대로 빠져, 비용을 확인받고 돌린 유료 실행이 **아무 흔적도
+# 남기지 않은 채** 끝났다. 잃은 것이 응답이 아니라 *결과를 알 기회*라 위 셋과 축이 다르지만,
+# 사용자가 보는 증상은 같다: 눌렀는데 아무 일도 일어나지 않는다.
 #
 # **순수 시험과 역할이 갈린다.** `ImageBatchTagSuggesterTest`는 *합치는 규칙이 옳은가*를 재고
 # (mergeRetry·retryablePaths), 이 검사는 *화면이 그 규칙을 실제로 지나는가*를 본다.
@@ -26,6 +31,8 @@
 # ⑤ 필수: **적용이 실패하면 유료 응답을 되살린다**(B-163) — 되살리기가 ViewModel에 있는가와
 #         호출측(뷰)이 누른 자리에서 비우지 않는가를 **함께** 본다. 앞의 것만 보면
 #         빈 값을 되살리며 통과한다.
+# ⑥ 필수: **제안도 고지도 없는 실행이 말없이 빠지지 않는다**(B-144) — 시트를 열지 않고
+#         `return`하는 그 블록이 사용자에게 한 줄이라도 말하는가.
 #
 # 사용법: tools/check_ai_review_retention.sh   # 위반 시 exit 1
 set -u
@@ -42,7 +49,7 @@ FOLDER_SHEET="$IMG/ImageFolderTagReviewSheet.kt"
 FOLDER_SHEET_CALLER="$IMG/OrganizeFolderController.kt"
 VM="$IMG/ImageManagerViewModel.kt"
 
-echo "── AI 검토 시트 유료 응답 보존 검사 (B-136 · B-140 · B-163) ──"
+echo "── AI 검토 시트 유료 응답 보존·고지 검사 (B-136 · B-140 · B-163 · B-144) ──"
 
 # 여는 줄부터 **같은 들여쓰기의 닫는 중괄호**까지를 한 블록으로 뜬다.
 # 주석 줄은 빼고 본다 — 이 저장소는 *옛 조건을 고친 자리에 적어 두는* 관행이 있어
@@ -241,14 +248,72 @@ for caller in "$FRAGMENT" "$FOLDER_SHEET_CALLER"; do
   fi
 done
 
+# ── ⑥ 제안도 고지도 없는 실행이 말없이 빠지는가 (B-144) ──
+# 이 조합은 실패가 아니라 정상 경로다 — 프롬프트가 *"근거를 찾을 수 없는 이미지는 빈 배열로
+# 둔다"*고 시키고 빈 배열은 어디에도 세지 않으므로, 모델이 전부 그렇게 답하면 제안도 고지도
+# 없이 끝난다. 그런데 **비용을 고지하고 확인받아 단독 실행한 유료 동작**이라, 그 자리에서
+# 화면이 침묵하면 사용자가 보는 것은 아무 변화도 없는 화면뿐이다(고장과 구분되지 않는다 — R-17).
+#
+# **폴더판은 여기서 침묵하고 그것이 옳다** — 폴더 받아오기에 딸린 곁가지라 빈 창이 소음이다.
+# 그래서 이 항목은 배치판만 본다. 형제를 함께 걸면 옳은 코드를 위반이라 말한다.
+empty_path_notifies() {   # $1: 파일 — 말하면 0, 침묵하면 1, 블록을 못 뜨면 2
+  local blk
+  blk=$(indented_block "$1" 'suggestions[.]isEmpty[(][)] && notices[.]isEmpty[(][)]')
+  [ -n "$blk" ] || return 2
+  printf '%s\n' "$blk" | grep -qE 'notify[A-Za-z]*\(|Toast[.]makeText' && return 0
+  return 1
+}
+
+# ── 탐지기 자기 시험 3 — 침묵을 잡고, 말하는 코드는 잡지 않는가 ──
+# 한쪽만 재면 **아무것도 안 잡는 검사**가 통과로 보인다(B-146이 겪은 부류).
+SELFTEST3=$(mktemp)
+cat > "$SELFTEST3" <<'EOF'
+        if (result.suggestions.isEmpty() && notices.isEmpty()) {
+            viewModel.clearAiTagResult()
+            return
+        }
+EOF
+empty_path_notifies "$SELFTEST3"; st3_silent=$?
+cat > "$SELFTEST3" <<'EOF'
+        if (result.suggestions.isEmpty() && notices.isEmpty()) {
+            notifyError(getString(R.string.image_ai_tag_nothing))
+            viewModel.clearAiTagResult()
+            return
+        }
+EOF
+empty_path_notifies "$SELFTEST3"; st3_spoken=$?
+rm -f "$SELFTEST3"
+if [ "$st3_silent" -ne 1 ] || [ "$st3_spoken" -ne 0 ]; then
+  echo "  ✗ 탐지기 자기 시험 3 실패 — 침묵=$st3_silent(1이어야 한다) · 말함=$st3_spoken(0이어야 한다)" >&2
+  echo "      (침묵이 1이 아니면 이 항목은 아무것도 잡지 못하고, 말함이 0이 아니면 옳은 코드를 잡는다)" >&2
+  exit 1
+fi
+echo "  ✓ 탐지기 자기 시험 3 통과 (빈 결과의 침묵을 잡고 한 줄 말하는 코드는 통과시킨다)"
+
+if [ -f "$FRAGMENT" ]; then
+  empty_path_notifies "$FRAGMENT"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    echo "  ✗ 빈 결과 경로를 찾지 못했습니다: $FRAGMENT (suggestions.isEmpty() && notices.isEmpty())"
+    echo "      → 조건의 모양이 바뀌었으면 이 검사를 함께 고칠 것. 못 찾은 채 통과하면"
+    echo "        *위반 없음*과 구별되지 않는다."
+    fail=1
+  elif [ "$rc" -eq 1 ]; then
+    echo "  ✗ 제안도 고지도 없는 실행이 말없이 빠집니다: $FRAGMENT"
+    echo "      → 비용을 확인받고 돌린 유료 실행이다. 시트를 열지 않는 것은 옳으나(고를 것이"
+    echo "        없는 창은 소음이다) 한 줄은 말해야 한다 — 침묵은 고장과 구분되지 않는다(B-144)."
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
   echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"
+  echo "  ✓ 빈 결과로 끝난 유료 실행도 말한다 (B-144)"
   echo ""
-  echo "AI 검토 시트 유료 응답 보존 검사 통과"
+  echo "AI 검토 시트 유료 응답 보존·고지 검사 통과"
   exit 0
 fi
 echo ""
-echo "AI 검토 시트 유료 응답 보존 검사 실패" >&2
+echo "AI 검토 시트 유료 응답 보존·고지 검사 실패" >&2
 exit 1
