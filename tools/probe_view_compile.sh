@@ -26,6 +26,11 @@ rm -rf "$WORK"
 mkdir -p "$WORK"
 
 # ── 1. 프레임워크 스텁 (그리기·터치에 실제로 쓰는 멤버만) ──
+# 세우는 것: Context·Resources(+Configuration)·DisplayMetrics·Log·Handler·SuppressLint ·
+#   Canvas·Paint·Path·PointF·Color·PathEffect류 · View·MotionEvent·제스처 인식기 둘 ·
+#   FrameLayout·ScrollView·NestedScrollView·Toast · ContextCompat · R.
+# **여기 없는 멤버를 지어 넣지 말 것** — 반환 타입을 얼버무린 스텁은 오류를 못 잡으면서
+# 잡은 척을 한다. 쓰는 것만 세우고, 쓰는 것은 실제 시그니처 그대로 적는다.
 # 패키지마다 파일을 나눈다 — 한 파일에 `package`를 여럿 적으면 컴파일이 **시작조차 못 하고**
 # 오류 0으로 보인다(이 스크립트를 쓰면서 실제로 겪었다. 아래 0건 판정이 그래서 있다).
 cat > "$WORK/ContextStub.kt" <<'EOF'
@@ -40,7 +45,39 @@ open class Context {
 EOF
 cat > "$WORK/ResourcesStub.kt" <<'EOF'
 package android.content.res
-class Resources { val displayMetrics: android.util.DisplayMetrics get() = android.util.DisplayMetrics() }
+class Resources {
+    val displayMetrics: android.util.DisplayMetrics get() = android.util.DisplayMetrics()
+    val configuration: Configuration get() = Configuration()
+}
+// 다크 모드 판정용 — 값도 실제와 같게 둔다(마스크 연산이라 값이 틀리면 조건이 뒤집힌다).
+class Configuration {
+    @JvmField var uiMode: Int = 0
+    companion object {
+        const val UI_MODE_NIGHT_MASK: Int = 0x30
+        const val UI_MODE_NIGHT_NO: Int = 0x10
+        const val UI_MODE_NIGHT_YES: Int = 0x20
+    }
+}
+EOF
+cat > "$WORK/AnnotationStub.kt" <<'EOF'
+package android.annotation
+// 실제 @SuppressLint의 @Target은 TYPE·FIELD·METHOD·PARAMETER·CONSTRUCTOR·LOCAL_VARIABLE이다.
+@Target(
+    AnnotationTarget.CLASS, AnnotationTarget.FIELD, AnnotationTarget.FUNCTION,
+    AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.CONSTRUCTOR,
+    AnnotationTarget.LOCAL_VARIABLE, AnnotationTarget.PROPERTY_GETTER,
+    AnnotationTarget.PROPERTY_SETTER
+)
+@Retention(AnnotationRetention.BINARY)
+annotation class SuppressLint(vararg val value: String)
+EOF
+cat > "$WORK/OsStub.kt" <<'EOF'
+package android.os
+// 길게 누르기 타이머용 — View.getHandler()가 돌려주는 것이다.
+class Handler {
+    fun removeCallbacks(r: Runnable) {}
+    fun postDelayed(r: Runnable, delayMillis: Long): Boolean = true
+}
 EOF
 cat > "$WORK/UtilStub.kt" <<'EOF'
 package android.util
@@ -49,16 +86,25 @@ class DisplayMetrics {
     @JvmField var heightPixels: Int = 0
 }
 interface AttributeSet
+// 실제 API는 int를 돌려주는 static 메서드다.
+object Log {
+    fun w(tag: String, msg: String): Int = 0
+    fun w(tag: String, msg: String, tr: Throwable): Int = 0
+}
 EOF
 cat > "$WORK/GraphicsStub.kt" <<'EOF'
 package android.graphics
 class Color {
     companion object {
-        const val BLACK: Int = 0; const val WHITE: Int = 0
+        const val BLACK: Int = 0; const val WHITE: Int = 0; const val TRANSPARENT: Int = 0
         fun rgb(red: Int, green: Int, blue: Int): Int = 0
+        fun argb(alpha: Int, red: Int, green: Int, blue: Int): Int = 0
         fun red(color: Int): Int = 0
         fun green(color: Int): Int = 0
         fun blue(color: Int): Int = 0
+        // 실제 API는 형식이 어긋나면 IllegalArgumentException을 던진다 — 부르는 쪽이
+        // try/catch로 감싸는 것이 그래서다(코틀린은 검사 예외가 없어 시그니처에 안 적힌다).
+        fun parseColor(colorString: String): Int = 0
     }
 }
 class Paint(flags: Int) {
@@ -84,12 +130,22 @@ class Paint(flags: Int) {
 }
 open class PathEffect
 class DashPathEffect(intervals: FloatArray, phase: Float) : PathEffect()
+class CornerPathEffect(radius: Float) : PathEffect()
 class Path {
     fun reset() {}
+    fun rewind() {}
     fun moveTo(x: Float, y: Float) {}
     fun lineTo(x: Float, y: Float) {}
+    fun quadTo(x1: Float, y1: Float, x2: Float, y2: Float) {}
     fun cubicTo(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {}
     fun close() {}
+}
+// 실제 API는 x·y가 public 필드다(프로퍼티가 아니라). 보조 생성자가 실제로 값을 넣는 것은
+// 이 프로브가 컴파일만 보더라도 스텁이 거짓을 말하지 않게 하기 위함이다.
+class PointF() {
+    constructor(x: Float, y: Float) : this() { this.x = x; this.y = y }
+    @JvmField var x: Float = 0f
+    @JvmField var y: Float = 0f
 }
 class RectF() {
     constructor(left: Float, top: Float, right: Float, bottom: Float) : this()
@@ -104,6 +160,8 @@ class RectF() {
 class Canvas {
     fun save(): Int = 0
     fun restore() {}
+    fun translate(dx: Float, dy: Float) {}
+    fun scale(sx: Float, sy: Float) {}
     fun clipPath(path: Path): Boolean = true
     fun clipRect(rect: RectF): Boolean = true
     fun drawPath(path: Path, paint: Paint) {}
@@ -112,6 +170,8 @@ class Canvas {
     fun drawLine(startX: Float, startY: Float, stopX: Float, stopY: Float, paint: Paint) {}
     fun drawOval(oval: RectF, paint: Paint) {}
     fun drawRoundRect(rect: RectF, rx: Float, ry: Float, paint: Paint) {}
+    // 좌표 7개짜리 오버로드는 API 21에 들어왔다(앱의 minSdk는 26이라 쓸 수 있다).
+    fun drawRoundRect(left: Float, top: Float, right: Float, bottom: Float, rx: Float, ry: Float, paint: Paint) {}
     fun drawText(text: String, x: Float, y: Float, paint: Paint) {}
 }
 EOF
@@ -124,11 +184,50 @@ class MotionEvent {
         const val ACTION_MOVE: Int = 2
         const val ACTION_CANCEL: Int = 3
     }
+    // `action`과 `actionMasked`는 실제로도 **다른** 게터다(전자는 포인터 인덱스를 포함한다).
+    // 하나로 합치면 이 프로브가 둘의 혼동을 못 잡는다.
+    val action: Int get() = 0
     val actionMasked: Int get() = 0
     val x: Float get() = 0f
     val y: Float get() = 0f
 }
 interface ViewParent { fun requestDisallowInterceptTouchEvent(disallow: Boolean) }
+// 제스처 인식기 둘 — 실제 API는 리스너 인터페이스와 그 기본 구현(Simple…)을 중첩으로 둔다.
+// **`onScroll`의 첫 인자가 nullable인 것은 API 33에서 바뀐 시그니처다**(앱의 compileSdk는 35).
+// 여기서 non-null로 적으면 `MotionEvent?`로 재정의한 실제 코드가 "재정의 대상 없음"으로 죽는다.
+open class GestureDetector(context: android.content.Context, listener: OnGestureListener) {
+    interface OnGestureListener {
+        fun onDown(e: MotionEvent): Boolean
+        fun onShowPress(e: MotionEvent)
+        fun onSingleTapUp(e: MotionEvent): Boolean
+        fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean
+        fun onLongPress(e: MotionEvent)
+        fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean
+    }
+    open class SimpleOnGestureListener : OnGestureListener {
+        override fun onDown(e: MotionEvent): Boolean = false
+        override fun onShowPress(e: MotionEvent) {}
+        override fun onSingleTapUp(e: MotionEvent): Boolean = false
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean = false
+        override fun onLongPress(e: MotionEvent) {}
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean = false
+    }
+    fun onTouchEvent(ev: MotionEvent): Boolean = false
+}
+open class ScaleGestureDetector(context: android.content.Context, listener: OnScaleGestureListener) {
+    interface OnScaleGestureListener {
+        fun onScale(detector: ScaleGestureDetector): Boolean
+        fun onScaleBegin(detector: ScaleGestureDetector): Boolean
+        fun onScaleEnd(detector: ScaleGestureDetector)
+    }
+    open class SimpleOnScaleGestureListener : OnScaleGestureListener {
+        override fun onScale(detector: ScaleGestureDetector): Boolean = false
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
+        override fun onScaleEnd(detector: ScaleGestureDetector) {}
+    }
+    fun onTouchEvent(event: MotionEvent): Boolean = false
+    val scaleFactor: Float get() = 1f
+}
 open class View(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int) {
     constructor(context: android.content.Context) : this(context, null, 0)
     val context: android.content.Context = context
@@ -141,10 +240,15 @@ open class View(context: android.content.Context, attrs: android.util.AttributeS
     val paddingRight: Int get() = 0
     val paddingBottom: Int get() = 0
     var contentDescription: CharSequence? = null
+    // 실제 API는 붙어 있지 않으면 null을 준다 — 그래서 부르는 쪽이 `handler?.`로 쓴다.
+    val handler: android.os.Handler? get() = null
     fun invalidate() {}
     protected open fun onDraw(canvas: android.graphics.Canvas) {}
     open fun onTouchEvent(event: android.view.MotionEvent): Boolean = false
     open fun performClick(): Boolean = false
+    open fun performLongClick(): Boolean = false
+    protected open fun onAttachedToWindow() {}
+    protected open fun onDetachedFromWindow() {}
     protected open fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {}
     protected fun setMeasuredDimension(measuredWidth: Int, measuredHeight: Int) {}
     // 실제 API는 View의 public static 메서드다 — 하위 클래스에서 이름만으로 부른다.
@@ -184,6 +288,29 @@ open class NestedScrollView(context: android.content.Context, attrs: android.uti
     constructor(context: android.content.Context) : this(context, null, 0)
 }
 EOF
+# ScrollStub과 같은 `android.widget` 패키지지만 파일을 나눈다 — 한 파일에 `package`를
+# 여럿 적는 것이 금지일 뿐, 한 패키지를 여러 파일이 나눠 갖는 것은 문제가 없다.
+cat > "$WORK/ToastStub.kt" <<'EOF'
+package android.widget
+class Toast {
+    companion object {
+        const val LENGTH_SHORT: Int = 0
+        const val LENGTH_LONG: Int = 1
+        fun makeText(context: android.content.Context, text: CharSequence, duration: Int): Toast = Toast()
+        fun makeText(context: android.content.Context, resId: Int, duration: Int): Toast = Toast()
+    }
+    fun show() {}
+}
+EOF
+# 커스텀 뷰가 색을 읽는 경로다. `Context.getColor`와 갈라 두는 것은 실제로도 다른 API이기
+# 때문이고, 여기 없는 멤버(getDrawable 등)를 지어 넣지 않는 것은 반환 타입을 `Any?` 따위로
+# 적으면 **스텁이 거짓을 말하기** 때문이다 — 쓰는 것만 세운다.
+cat > "$WORK/ContextCompatStub.kt" <<'EOF'
+package androidx.core.content
+object ContextCompat {
+    fun getColor(context: android.content.Context, id: Int): Int = 0
+}
+EOF
 
 # R은 aapt가 만드는 것이라 소스에 없다 — **실제 strings.xml·colors.xml에서 이름을 뽑아** 세운다
 # (손으로 적으면 리소스가 늘 때 낡고, 없는 이름을 통과시켜 거짓 안심을 준다).
@@ -202,27 +329,48 @@ EOF
 } > "$WORK/RProbe.kt"
 
 # ── 2. 대상 — 프레임워크 스텁만으로 서는 커스텀 뷰 ──
+# **`View`를 직접 상속하는 클래스는 전부 여기 있어야 한다.** 세는 법은 손으로 적는 목록이
+# 아니라 실제 소스다:
+#   grep -rn ") : View(" app/src/main/java --include=*.kt
+# 2026.08.08(B-147)에 `RelationshipGraphView`·`EventDensityBar`가 **빠져 있던 것을 넣었다** —
+# 넷 중 둘만 검사받고 있었고, 빠진 둘은 그 사실이 어디에도 드러나지 않았다(조용히 빠진다).
 M="$REPO/app/src/main/java/com/novelcharacter/app"
 {
   echo "$M/ui/character/SilhouetteView.kt"
   echo "$M/ui/view/GradeCutSliderView.kt"
+  echo "$M/ui/graph/RelationshipGraphView.kt"
+  echo "$M/ui/timeline/EventDensityBar.kt"
   echo "$M/ui/common/CappedScrollView.kt"
   echo "$M/util/DialogScrollCap.kt"
   echo "$M/util/BodySilhouetteSpec.kt"
   echo "$M/util/BodyMeasurements.kt"
+  # `data/model/DuelAxis.kt`가 이것을 참조한다. 없는 동안 이 프로브는 **가짜 오류 1건**을
+  # 늘 들고 있었고(B-104 층 C 이래), 그 대가가 둘이었다 — ⓐ 읽는 사람이 절대값 0을 못 믿어
+  # base 대 cur로만 볼 수 있었다 ⓑ **오류가 하나라도 있으면 코틀린 컴파일러가 코드 생성까지
+  # 가지 않으므로**, 아래 "오류 0인데 클래스 파일도 0" 가드가 **영영 뜰 수 없었다**.
+  # 그 가드는 2026-08-01에 실제로 겪은 함정(컴파일이 시작조차 못 했는데 0건으로 보이는 것)을
+  # 막으려고 세운 것이라, 죽어 있으면 이 프로브가 자기 출력을 증명하지 못한다.
+  echo "$M/util/DuelFieldLinks.kt"
   ls "$M"/data/model/*.kt
   echo "$WORK/ContextStub.kt"
   echo "$WORK/ResourcesStub.kt"
+  echo "$WORK/AnnotationStub.kt"
+  echo "$WORK/OsStub.kt"
   echo "$WORK/UtilStub.kt"
   echo "$WORK/GraphicsStub.kt"
   echo "$WORK/ViewStub.kt"
   echo "$WORK/ScrollStub.kt"
   echo "$WORK/NestedScrollStub.kt"
+  echo "$WORK/ToastStub.kt"
+  echo "$WORK/ContextCompatStub.kt"
   echo "$WORK/RProbe.kt"
 } > "$WORK/files.txt"
 
 # ── 3. 컴파일 ──
-CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room:$SP/gson-$GSON_VER.jar:$SP/json-20240303.jar"
+# coroutines는 **컴파일 대상의** 클래스패스에도 있어야 한다(아래 컴파일러 자신의 것과 별개다) —
+# `RelationshipGraphView`가 레이아웃 계산을 `CoroutineScope`로 돌린다. 없으면 그 파일이
+# 미해석 참조 더미로 무너져, 정작 이 프로브가 보려던 그리기 계층이 노이즈에 묻힌다.
+CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room:$SP/gson-$GSON_VER.jar:$SP/json-20240303.jar:$SP/kotlinx-coroutines-core-jvm.jar"
 # 컴파일러 **자신의** 클래스패스에도 coroutines가 있어야 한다 — 없으면 CoroutineScope
 # NoClassDefFoundError로 컴파일이 시작조차 못 한다(probe_compile.sh의 같은 주석).
 java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar" \
