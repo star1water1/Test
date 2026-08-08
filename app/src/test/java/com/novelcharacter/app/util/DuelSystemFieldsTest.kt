@@ -252,6 +252,55 @@ class DuelSystemFieldsTest {
         )
     }
 
+    /**
+     * **걸려 있는 것과 일하는 것을 가르는 자리 — 네 소비처가 이것 하나를 본다.**
+     *
+     * B-167의 첫 판이 순위표에서만 손으로 걸러내고 나머지 셋(카드 감추기·충돌 경고·프로필
+     * 막기)을 그대로 둬, **일하지도 않는 연결이 카드에서 이명을 감추고 없는 충돌을
+     * 경고했다.** 콜드 검토가 잡았고, 갈라진 자리를 다시 붙이는 것이 이 시험의 몫이다.
+     */
+    @Test
+    fun `산출로 일하는 것에서 시스템 열은 빠진다`() {
+        val axis = DuelFieldLinks.Axis(
+            outcomes = DuelFieldLinks.parseText("strength, sys:another_name")
+        )
+        assertEquals(listOf("strength"), axis.effectiveOutcomes.map { it.key })
+        // 저장된 것은 그대로다 — 가려내는 것과 버리는 것은 다른 일이다.
+        assertEquals(2, axis.outcomes.size)
+    }
+
+    /**
+     * **일하지 않는 산출은 프로필을 막지도, 충돌을 만들지도 못한다.**
+     *
+     * *"물음과 답을 한 화면에 두지 않는다"*가 근거인데 **답을 만들지 않으므로** 그 근거가
+     * 성립하지 않는다. 막으면 사용자가 고른 프로필이 근거 없이 카드에서 빠진다.
+     */
+    @Test
+    fun `산출 자리의 시스템 열은 프로필을 막지 않고 충돌도 아니다`() {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.parseText("sys:another_name"),
+            outcomes = DuelFieldLinks.parseText("sys:another_name"),
+            profiles = DuelFieldLinks.parseText("sys:another_name")
+        )
+        assertTrue("없는 충돌을 경고했다", axis.conflicts.isEmpty())
+        assertTrue("근거 없이 프로필을 막았다", axis.profileBlocked.isEmpty())
+        // 다만 **산출로 못 쓴다는 사실은 그대로 말한다** — 조용해지면 안 된다.
+        assertEquals(listOf("sys:another_name"), axis.outcomeBlocked)
+    }
+
+    /** 진짜 산출은 종전 그대로 막고 경고한다 — 위 둘이 그 기능을 끄지 않았는가. */
+    @Test
+    fun `진짜 산출 필드는 여전히 프로필을 막고 충돌을 낸다`() {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.parseText("strength"),
+            outcomes = DuelFieldLinks.parseText("strength"),
+            profiles = DuelFieldLinks.parseText("strength")
+        )
+        assertEquals(listOf("strength"), axis.conflicts)
+        assertEquals(listOf("strength"), axis.profileBlocked)
+        assertTrue(axis.outcomeBlocked.isEmpty())
+    }
+
     @Test
     fun `커스텀 필드만 걸린 축에는 막힌 산출이 없다`() {
         val axis = DuelFieldLinks.Axis(outcomes = DuelFieldLinks.parseText("strength, agility"))

@@ -18,7 +18,6 @@ import com.novelcharacter.app.databinding.FragmentDuelStandingsBinding
 import com.novelcharacter.app.ui.adapter.DuelStandingsAdapter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelStandings
-import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.launch
 
@@ -119,13 +118,16 @@ class DuelStandingsFragment : Fragment() {
         characters: List<Character>,
         rows: List<DuelStandings.Row>
     ): List<String> {
-        // **시스템 열은 산출로 성립하지 않아 건너뛴다**(B-167) — 순위와 대조하려면 값이 수로
-        // 읽혀야 하는데 이명·메모는 그럴 수 없다. 고르는 창이 내지 않으므로 여기 오는 것은
-        // 엑셀로 들어온 것뿐이고, **그 사실은 축 편집 창이 사유와 함께 말한다**
-        // ([DuelFieldLinks.Axis.outcomeBlocked]). 여기서 다시 말하면 같은 사실이 두 자리에서
-        // 서로 다른 말로 뜬다 — 게다가 이 줄이 낼 말은 *"견줄 수 있는 값이 없다"*라
-        // **원인이 아니라 증상**이라 사용자를 엉뚱한 곳으로 보낸다.
-        val outcomes = axis.fieldLinks.outcomes.filterNot { DuelSystemFields.isSystemKey(it.key) }
+        // **일하는 산출만 대조한다**(B-167). 시스템 열은 순위와 견주려면 값이 수로 읽혀야
+        // 하는데 이명·메모는 그럴 수 없다. 여기서 *다시 말하지 않는* 것도 판단이다 —
+        // 그 사실은 축 편집 창이 사유와 함께 말하고([DuelFieldLinks.Axis.outcomeBlocked]),
+        // 이 줄이 낼 말은 *"견줄 수 있는 값이 없다"*라 **원인이 아니라 증상**이라
+        // 사용자를 값 채우러 보낸다(채워도 달라지지 않는다).
+        //
+        // **걸러내기를 여기서 손으로 적지 않는다** — 같은 판정을 카드·충돌 경고·프로필 막기가
+        // 함께 봐야 하고, 자리마다 적으면 갈린다(B-167의 첫 판이 실제로 여기서만 걸러내
+        // 나머지 셋을 빠뜨렸다 — B-131이 *"두 벌로 적는 구조가 원인"*이라 적은 그 부류다).
+        val outcomes = axis.fieldLinks.effectiveOutcomes
         if (outcomes.isEmpty() || rows.isEmpty()) return emptyList()
 
         val labels = viewModel.linkLabels(axis.universeId)

@@ -131,7 +131,11 @@ object DuelCardInfo {
             emptyList()
         } else {
             val hidden = HashSet<String>()
-            hidden += links.outcomes.map { it.key }
+            // **일하는 산출만 감춘다**([DuelFieldLinks.Axis.effectiveOutcomes] — B-167).
+            // 산출 자리에 시스템 열이 적혀 있어도 그것은 답을 만들지 않으므로,
+            // *"물음과 답을 한 화면에 두지 않는다"*는 근거가 성립하지 않는다 —
+            // 근거 없이 사용자가 고른 프로필을 빼면 그것이 곧 조용한 유실이다.
+            hidden += links.effectiveOutcomes.map { it.key }
             hidden += links.influences.map { it.key }
             genderKey?.let { hidden += it }
             ageKey?.let { hidden += it }

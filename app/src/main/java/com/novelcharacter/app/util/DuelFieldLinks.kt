@@ -69,10 +69,22 @@ object DuelFieldLinks {
         val hasAny: Boolean
             get() = influences.isNotEmpty() || outcomes.isNotEmpty() || profiles.isNotEmpty()
 
+        /**
+         * **실제로 산출로 일하는 연결** — [outcomeBlocked]가 가려낸 것을 뺀 나머지 (B-167).
+         *
+         * *걸려 있는 것*과 *일하는 것*을 가르는 자리다. 아래 셋이 전부 이것을 봐야 한다 —
+         * [conflicts]·[profileBlocked]와 카드의 감추기(`DuelCardInfo`), 순위표의 대조.
+         * **각자 걸러내면 반드시 갈린다**: 실제로 B-167의 첫 판이 순위표에서만 걸러내고
+         * 나머지 셋을 그대로 두어, 일하지도 않는 연결이 **카드에서 이명을 감추고**
+         * *"재료이면서 결과일 수는 없다"*는 **없는 충돌**을 경고했다.
+         */
+        val effectiveOutcomes: List<Link>
+            get() = outcomes.filterNot { DuelSystemFields.isSystemKey(it.key) }
+
         /** 같은 필드가 양쪽에 걸린 자리 — 재료이면서 결과일 수는 없다([conflicts]가 근거). */
         val conflicts: List<String>
             get() {
-                val outs = outcomes.map { it.key }.toSet()
+                val outs = effectiveOutcomes.map { it.key }.toSet()
                 return influences.map { it.key }.filter { it in outs }.distinct()
             }
 
@@ -88,7 +100,7 @@ object DuelFieldLinks {
          */
         val profileBlocked: List<String>
             get() {
-                val outs = outcomes.map { it.key }.toSet()
+                val outs = effectiveOutcomes.map { it.key }.toSet()
                 return profiles.map { it.key }.filter { it in outs }.distinct()
             }
 
@@ -102,7 +114,15 @@ object DuelFieldLinks {
          * 고르는 창은 애초에 목록에 내지 않지만 **엑셀로 들어온 파일은 그 창을 지나지 않는다** —
          * 사람이 `산출필드` 칸에 `sys:another_name`을 적을 수 있다. 그때 [decode]는 그대로
          * 담고([profileBlocked]와 같은 규약 — 사용자가 적은 것을 조용히 버리지 않는다)
-         * **쓰는 쪽이 건너뛰며**, 축 편집 창이 이 목록을 사유와 함께 말한다(개발 의도 2번).
+         * **쓰는 쪽이 건너뛰며**([effectiveOutcomes]), 축 편집 창이 이 목록을 사유와 함께
+         * 말한다(개발 의도 2번).
+         *
+         * **판정은 접두 하나이고, 그 키를 무엇이 들고 있는지 묻지 않는다.** 사용자가
+         * `sys:memo`라는 키의 커스텀 필드를 만들었더라도 그 필드는 산출이 될 수 없다 —
+         * `sys:`가 **예약 접두**이기 때문이다(R-40). 값 해석에서는 진짜 필드가 이기지만
+         * (그래야 아무것도 깨지지 않는다) **자리 판정은 언제나 접두가 정한다**: 소유자를
+         * 따져 갈리게 두면 *"이 키가 산출이 될 수 있는가"*의 답이 **세계관마다 달라지고**,
+         * 그러면 엑셀 파일 하나가 세계관에 따라 다르게 해석된다.
          */
         val outcomeBlocked: List<String>
             get() = outcomes.map { it.key }.filter { DuelSystemFields.isSystemKey(it) }.distinct()

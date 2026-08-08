@@ -289,7 +289,10 @@ class DuelAxisListFragment : Fragment() {
                 directional = false,
                 // 지금 편집 중인 산출 필드로 막는다 — 저장된 것이 아니라, 이 창에서 방금
                 // 산출로 옮긴 필드도 곧바로 막혀야 앞뒤가 맞는다.
-                blockedKeys = outcomes.map { it.key }.toSet()
+                // **일하는 산출만 막는다**(B-167) — 산출 자리의 시스템 열은 답을 만들지
+                // 않으므로 프로필로 고르는 것을 막을 근거가 없다.
+                blockedKeys = DuelFieldLinks.Axis(outcomes = outcomes)
+                    .effectiveOutcomes.map { it.key }.toSet()
             ) { picked ->
                 profiles = picked
                 renderLinks()
@@ -392,6 +395,14 @@ class DuelAxisListFragment : Fragment() {
 
             // 커스텀 필드가 먼저다 — 사용자가 만든 것이 목록 앞에 서야 하고, 시스템 열은
             // 늘 같은 자리에 있는 붙박이라 뒤가 자연스럽다.
+            //
+            // **산출 자리에서는 `sys:` 키를 든 진짜 필드도 뺀다.** 접두가 **예약**이라
+            // (R-40) `outcomeBlocked`가 소유자를 묻지 않고 접두만 보는데, 여기서 그 필드를
+            // 내면 **고른 뒤 조용히 일하지 않는다** — 이 슬라이스가 막으려던 바로 그 모양이
+            // 접두를 빌린 필드에서 되살아난다.
+            val pickable = if (allowSystem) fields else fields.filterNot {
+                DuelSystemFields.isSystemKey(it.key)
+            }
             val systemColumns = if (!allowSystem) {
                 emptyList()
             } else {
@@ -401,7 +412,7 @@ class DuelAxisListFragment : Fragment() {
                 DuelSystemFields.available(fields.map { it.key })
             }
             val systemTypeLabel = getString(R.string.duel_links_system_type)
-            val choices = fields.map { DuelFieldLinkAdapter.choiceOf(it) } +
+            val choices = pickable.map { DuelFieldLinkAdapter.choiceOf(it) } +
                 systemColumns.map {
                     DuelFieldLinkAdapter.systemChoice(
                         it.key, viewModel.systemFieldLabel(it), systemTypeLabel
