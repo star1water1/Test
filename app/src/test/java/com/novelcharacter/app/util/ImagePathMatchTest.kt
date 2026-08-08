@@ -1,5 +1,7 @@
 package com.novelcharacter.app.util
 
+import java.io.File
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,5 +62,71 @@ class ImagePathMatchTest {
         assertTrue(ImagePathMatch.containedIn(paths, "$dir/a.jpg"))
         assertFalse(ImagePathMatch.containedIn(paths, "$dir/b.jpg"))
         assertFalse(ImagePathMatch.containedIn(paths, ""))
+    }
+
+    // ── isInside — 봉쇄 가드 (B-141) ──
+    //
+    // 이 판정의 소비처는 **파일 바이트를 제3자 서버로 올려도 되는가**라, 위 대조 함수들과
+    // 실패 처분이 반대다(모르면 막는다). 아래 시험은 그 반대됨까지 함께 잠근다.
+
+    @Test fun isInside_acceptsFilesUnderTheRoot() {
+        val root = File(dir)
+        assertTrue(ImagePathMatch.isInside("$dir/a.jpg", root))
+        assertTrue(ImagePathMatch.isInside("$dir/sub/a.jpg", root))
+        assertTrue(ImagePathMatch.isInside("$dir/./a.jpg", root))
+        assertTrue(ImagePathMatch.isInside("  $dir/a.jpg  ", root))
+    }
+
+    @Test fun isInside_rejectsSiblingSharingThePrefix() {
+        // `startsWith(root)`만 쓰면 통과하는 자리다 — 경계 문자를 붙여야 갈린다.
+        // 형제 디렉터리 이름이 접두어를 공유하는 것은 실제로 흔하다(`files` / `files_backup`).
+        val root = File(dir)
+        assertFalse(ImagePathMatch.isInside("${dir}_backup/a.jpg", root))
+        assertFalse(ImagePathMatch.isInside("${dir}2/a.jpg", root))
+    }
+
+    @Test fun isInside_rejectsEscapeByDotSegments() {
+        // 엑셀 '이미지' 열로 외부에서 들어오는 값이라 `..`은 실재하는 입력이다.
+        val root = File(dir)
+        assertFalse(ImagePathMatch.isInside("$dir/../../../etc/passwd", root))
+        assertFalse(ImagePathMatch.isInside("/sdcard/Download/a.jpg", root))
+    }
+
+    @Test fun isInside_rejectsTheRootItselfAndBlanks() {
+        val root = File(dir)
+        // 루트 자신은 '안의 파일'이 아니다 — 디렉터리를 통째로 실을 자리는 없다.
+        assertFalse(ImagePathMatch.isInside(dir, root))
+        assertFalse(ImagePathMatch.isInside(null, root))
+        assertFalse(ImagePathMatch.isInside("", root))
+        assertFalse(ImagePathMatch.isInside("   ", root))
+    }
+
+    @Test fun isInside_refusesWhenRootIsUnknown() {
+        // 대조 함수들은 실패하면 원본을 들고 가지만(버리지 않는 규약), 봉쇄는 반대다 —
+        // 여기서 true를 내면 그것이 곧 유출이다.
+        assertFalse(ImagePathMatch.isInside("$dir/a.jpg", null))
+    }
+
+    @Test fun isInside_rejectsSymlinkPointingOutOfTheRoot() {
+        // 가드가 canonical을 쓰는 **유일한 이유**가 이것이다. 이름만 보면 루트 안이다.
+        val root = Files.createTempDirectory("files").toFile()
+        val outside = Files.createTempDirectory("outside").toFile()
+        val secret = File(outside, "secret.jpg").apply { writeText("x") }
+        val plain = File(root, "plain.jpg").apply { writeText("x") }
+        val link = File(root, "link.jpg")
+        try {
+            Files.createSymbolicLink(link.toPath(), secret.toPath())
+        } catch (_: Exception) {
+            return // 심볼릭 링크를 못 만드는 파일 시스템이면 이 축은 건너뛴다
+        }
+        assertTrue(ImagePathMatch.isInside(plain.path, root))
+        assertFalse(ImagePathMatch.isInside(link.path, root))
+    }
+
+    @Test fun isInside_neverThrows() {
+        val root = File(dir)
+        for (bad in listOf("a\u0000b", "x".repeat(5000), "relative/path.jpg", "~/a.jpg", "\\\\server\\a.jpg")) {
+            assertFalse(ImagePathMatch.isInside(bad, root))
+        }
     }
 }

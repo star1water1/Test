@@ -158,14 +158,28 @@ class ImageBatchTagSuggesterTest {
     }
 
     @Test fun dropTally_addsComponentwise() {
-        val a = ImageBatchTagSuggester.DropTally(blankOrTooLong = 1, unreadable = 2)
-        val b = ImageBatchTagSuggester.DropTally(blankOrTooLong = 3, overPerImageCap = 4)
+        val a = ImageBatchTagSuggester.DropTally(blankOrTooLong = 1, unreadable = 2, blocked = 5)
+        val b = ImageBatchTagSuggester.DropTally(blankOrTooLong = 3, overPerImageCap = 4, blocked = 2)
         val sum = a + b
         assertEquals(4, sum.blankOrTooLong)
         assertEquals(2, sum.unreadable)
         assertEquals(4, sum.overPerImageCap)
+        assertEquals(7, sum.blocked)
         assertFalse(sum.isEmpty)
         assertTrue(ImageBatchTagSuggester.DropTally().isEmpty)
+    }
+
+    @Test fun dropTally_blockedAloneIsNotEmpty() {
+        // **막힌 것만 있는 집계가 '빈 것'으로 접히면 고지가 통째로 사라진다** — 봉쇄는
+        // 조용히 일어나는 축이라(사용자가 한 일이 없다) 이 한 줄이 유일한 알림 경로다.
+        assertFalse(ImageBatchTagSuggester.DropTally(blocked = 1).isEmpty)
+    }
+
+    @Test fun dropTally_mergeRetryDoesNotInflateBlocked() {
+        // 가드는 경로만 보므로 되받아도 **같은 장이 또 막힌다** — 더하면 1장이 2장이 된다.
+        val tally = ImageBatchTagSuggester.DropTally(blocked = 3)
+        val merged = ImageBatchTagSuggester.DropTally().mergeRetry(tally).mergeRetry(tally)
+        assertEquals(3, merged.blocked)
     }
 
     // ── ② 프롬프트 — 무엇을 말하고 무엇을 말하지 않는가 ──

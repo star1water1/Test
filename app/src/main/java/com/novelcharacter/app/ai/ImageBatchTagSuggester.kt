@@ -41,6 +41,9 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
      * @param blankOrTooLong 빈 태그·공백만·길이 초과.
      * @param overPerImageCap 이미지당 상한을 넘어 버린 건수.
      * @param unreadable 파일이 없거나 읽지 못해 요청에 싣지 못한 장수.
+     * @param blocked 앱 저장소 밖이라 **보내지 않은** 장수 (B-141). [unreadable]과 갈라 세는
+     *   이유는 처방이 다르기 때문이다 — 못 읽은 것은 파일을 확인할 일이고, 막힌 것은 그
+     *   그림을 앱에 들여야 할 일이다(같은 판단이 [BatchFailKind.RESPONSE_TRUNCATED]를 갈랐다).
      * @param vocabTruncated 프롬프트에 싣지 못하고 자른 어휘 수.
      * @param policyTruncated 기조 문구를 자른 글자 수(0이면 자르지 않았다).
      */
@@ -48,17 +51,19 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         val blankOrTooLong: Int = 0,
         val overPerImageCap: Int = 0,
         val unreadable: Int = 0,
+        val blocked: Int = 0,
         val vocabTruncated: Int = 0,
         val policyTruncated: Int = 0
     ) {
         val isEmpty: Boolean
             get() = blankOrTooLong == 0 && overPerImageCap == 0 && unreadable == 0 &&
-                vocabTruncated == 0 && policyTruncated == 0
+                blocked == 0 && vocabTruncated == 0 && policyTruncated == 0
 
         operator fun plus(other: DropTally) = DropTally(
             blankOrTooLong + other.blankOrTooLong,
             overPerImageCap + other.overPerImageCap,
             unreadable + other.unreadable,
+            blocked + other.blocked,
             vocabTruncated + other.vocabTruncated,
             policyTruncated + other.policyTruncated
         )
@@ -74,15 +79,17 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
          * 그래서 축을 둘로 가른다:
          * - **응답이 만든 것**([blankOrTooLong]·[overPerImageCap])은 **더한다** — 두 실행의
          *   응답은 서로 다른 응답이고, 각각이 실제로 그만큼 버렸다.
-         * - **프롬프트와 파일이 만든 것**([vocabTruncated]·[policyTruncated]·[unreadable])은
-         *   **큰 쪽을 든다** — 어휘·기조는 두 실행이 같은 것을 싣고 같은 자리에서 잘리고,
-         *   못 읽는 파일은 다시 불러도 여전히 못 읽는다. 더하면 어휘 120개를 한 번 자른 것이
-         *   되받기 한 번에 240개가 된다.
+         * - **프롬프트와 파일이 만든 것**([vocabTruncated]·[policyTruncated]·[unreadable]·
+         *   [blocked])은 **큰 쪽을 든다** — 어휘·기조는 두 실행이 같은 것을 싣고 같은 자리에서
+         *   잘리고, 못 읽는 파일은 다시 불러도 여전히 못 읽으며 **막히는 경로는 다시 불러도
+         *   여전히 막힌다**(가드가 경로만 보므로 판정이 실행마다 같다). 더하면 어휘 120개를
+         *   한 번 자른 것이 되받기 한 번에 240개가 된다.
          */
         fun mergeRetry(retry: DropTally) = DropTally(
             blankOrTooLong = blankOrTooLong + retry.blankOrTooLong,
             overPerImageCap = overPerImageCap + retry.overPerImageCap,
             unreadable = maxOf(unreadable, retry.unreadable),
+            blocked = maxOf(blocked, retry.blocked),
             vocabTruncated = maxOf(vocabTruncated, retry.vocabTruncated),
             policyTruncated = maxOf(policyTruncated, retry.policyTruncated)
         )
@@ -101,6 +108,13 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
 
         /** 이 배치의 이미지를 한 장도 읽지 못해 보낼 것이 없었다. */
         IMAGES_UNREADABLE,
+
+        /**
+         * 이 배치가 **통째로 앱 저장소 밖**이라 보낼 것이 없었다 (B-141).
+         * [IMAGES_UNREADABLE]과 갈라 두는 이유는 [DropTally.blocked]와 같다 — 파일은 멀쩡히
+         * 있으므로 *"읽지 못했다"*고 말하면 사용자가 없는 문제를 찾는다.
+         */
+        IMAGES_BLOCKED,
 
         /** 모델이 이미지를 받지 않아 글만 나갔다 — 그림이 근거의 전부인 기능이라 버린다. */
         IMAGES_UNSUPPORTED,
@@ -335,12 +349,29 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
     data class Loaded(val path: String, val image: AiImage)
 
     /**
+     * 한 배치를 실은 결과.
+     *
+     * **뺀 장수를 사유별로 받는다** — 종전에는 [ImageLoader]가 목록만 돌려주고 [suggest]가
+     * `요청 수 - 실린 수`로 뺐는데, 그 뺄셈은 사유를 하나로 뭉갠다. 사유를 아는 곳은
+     * 준비기이고, 고지의 처방이 사유마다 갈리므로 아는 곳이 세어 넘긴다 (B-141).
+     *
+     * @property loaded 실제로 실은 (경로, 이미지) 짝. 순서가 곧 응답의 번호다.
+     * @property unreadable 파일이 없거나 읽지 못해 뺀 장수.
+     * @property blocked 앱 저장소 밖이라 보내지 않은 장수.
+     */
+    data class LoadResult(
+        val loaded: List<Loaded>,
+        val unreadable: Int = 0,
+        val blocked: Int = 0
+    )
+
+    /**
      * 이미지를 준비해 요청에 싣는 몫은 호출측이다 — 이 클래스는 **비트맵을 만들지 않는다**
      * (순수 유지). 준비기는 `util.AiImagePreparer`이고, 호출측이 배치마다 그것을 돌린다.
      */
     fun interface ImageLoader {
-        /** @return 실제로 실을 (경로, 이미지) 짝. 읽지 못한 경로는 **목록에서 빠진다**. */
-        suspend fun prepare(paths: List<String>): List<Loaded>
+        /** @return 실은 짝과 **뺀 사유별 장수**. 못 읽거나 막힌 경로는 목록에서 빠진다. */
+        suspend fun prepare(paths: List<String>): LoadResult
     }
 
     /**
@@ -381,14 +412,21 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         for (batch in batches) {
             if (isCancelled()) { cancelled = true; break }
 
-            val loaded = loader.prepare(batch)
-            val skipped = (batch.size - loaded.size).coerceAtLeast(0)
-            if (skipped > 0) drops += DropTally(unreadable = skipped)
+            val prepared = loader.prepare(batch)
+            val loaded = prepared.loaded
+            if (prepared.unreadable > 0 || prepared.blocked > 0) {
+                drops += DropTally(unreadable = prepared.unreadable, blocked = prepared.blocked)
+            }
 
             var stop = false
             if (loaded.isEmpty()) {
-                // 한 장도 못 읽었으면 보낼 것이 없다 — 요청을 만들지 않는다(돈만 쓴다).
-                failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNREADABLE))
+                // 한 장도 싣지 못했으면 보낼 것이 없다 — 요청을 만들지 않는다(돈만 쓴다).
+                // **사유는 뭉뚱그리지 않는다** — 통째로 막힌 배치에 "읽지 못했다"고 말하면
+                // 사용자는 멀쩡히 있는 파일을 찾아 헤맨다(B-141).
+                val kind =
+                    if (prepared.blocked > 0 && prepared.unreadable == 0) BatchFailKind.IMAGES_BLOCKED
+                    else BatchFailKind.IMAGES_UNREADABLE
+                failures.add(BatchFailure(batch, kind))
             } else {
                 // **번호가 가리키는 목록은 `loaded`다** — 못 읽은 장은 batch에서 빠졌으므로
                 // 원본 자리로 되돌리면 그것이 곧 오배정이다.

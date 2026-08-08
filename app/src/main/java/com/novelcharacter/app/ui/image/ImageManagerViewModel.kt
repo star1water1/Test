@@ -1637,10 +1637,17 @@ class ImageManagerViewModel(
             vocab = vocab,
             policyRaw = policy,
             // 경로와 짝지어 넘긴다 — 못 읽은 장이 있어도 응답의 번호가 실린 목록을 그대로 가리킨다.
+            // 뺀 사유(못 읽음 / 앱 저장소 밖)는 준비기가 세어 그대로 얹는다 (B-141).
             loader = { batch ->
-                com.novelcharacter.app.util.AiImagePreparer.prepareEach(batch).map { (path, image) ->
-                    com.novelcharacter.app.ai.ImageBatchTagSuggester.Loaded(path, image)
-                }
+                val prepared = com.novelcharacter.app.util.AiImagePreparer
+                    .prepareEach(batch, getApplication<Application>().filesDir)
+                com.novelcharacter.app.ai.ImageBatchTagSuggester.LoadResult(
+                    loaded = prepared.loaded.map { (path, image) ->
+                        com.novelcharacter.app.ai.ImageBatchTagSuggester.Loaded(path, image)
+                    },
+                    unreadable = prepared.skipped,
+                    blocked = prepared.blocked
+                )
             },
             onProgress = { done, total, doneImages, totalImages ->
                 withContext(Dispatchers.Main) { onProgress(done, total, doneImages, totalImages) }
