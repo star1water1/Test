@@ -222,9 +222,9 @@ object DefaultFieldPlan {
     }
 
     /**
-     * @param values 그 세계관의 이 필드에 저장된 값들. **타입이 바뀌는 전파에서만 쓴다** —
-     *   [incompatibleValues]가 *"밀면 몇 개가 초기화되는가"*를 말한다(설계 1-3의
-     *   `checkTypeChangeImpact`가 미리보기에 실리는 자리).
+     * @param values 그 세계관의 이 필드에 저장된 값들. **타입이 바뀌는 세계관에서만 쓴다**
+     *   ([typeChanges]) — [incompatibleValues]가 *"밀면 몇 개가 초기화되는가"*를 말한다
+     *   (설계 1-3의 `checkTypeChangeImpact`가 미리보기에 실리는 자리).
      */
     data class PropagateItem(
         val universeId: Long?,
@@ -263,6 +263,24 @@ object DefaultFieldPlan {
         fun defaultSelection(): Set<Long?> = outdated.map { it.universeId }.toSet()
     }
 
+    /**
+     * **이 세계관에서 타입이 바뀌는가** — 값을 읽어야 하는지도, 세어야 하는지도 이것이 정한다.
+     *
+     * 판정을 여기 하나로 둔 이유(B-135): 종전에는 *값을 채우는 조건*이 저장소에 `previous.type
+     * != template.type`으로, *세는 조건*이 여기 [diff]에 `field.type != template.type`으로
+     * **두 벌** 적혀 있었다. 둘은 같은 것을 묻는 문장이 아니다 — 타입 갈라짐은 **세계관마다**
+     * 생기고(심기의 [Placement.LINK]는 config 표식 한 키만 바꾸므로 승격 직후부터 같은 key·
+     * 다른 type이 연결된 채 선다), 관리 화면의 '전파'는 `previous = null`로 열린다.
+     * 그래서 채우는 조건이 쓰는 조건보다 좁아 `incompatibleValues`가 **항상 0**이었고,
+     * *"값 N개가 초기화됩니다"* 경고가 정식 경로에서 통째로 죽어 있었다.
+     *
+     * **성능 우려는 그대로 지켜진다** — 조건이 세계관 단위라 타입이 같은 세계관의 값 표는
+     * 여전히 읽지 않는다. 저장소는 이 함수에 물어서 읽을지를 정하고([LinkedField.values]),
+     * 세는 쪽도 이 함수를 지난다.
+     */
+    fun typeChanges(field: FieldDefinition, template: DefaultFieldTemplate): Boolean =
+        field.type != template.type
+
     /** [planPropagate]의 입력 한 줄 — 한 세계관의 심긴 필드와, 그 필드에 저장된 값들. */
     data class LinkedField(
         val universeId: Long?,
@@ -296,7 +314,8 @@ object DefaultFieldPlan {
                 divergence = divergence,
                 changes = changes,
                 // 타입이 그대로면 값은 전부 살아남는다 — 세지 않는다.
-                incompatibleValues = if (PresetMerge.Change.TYPE in changes) {
+                // 조건은 [typeChanges] 하나다(= 저장소가 값을 채운 조건. B-135).
+                incompatibleValues = if (typeChanges(row.field, template)) {
                     FieldTypeCompatibility.incompatibleCount(row.values, template.type)
                 } else 0
             )
@@ -387,7 +406,7 @@ object DefaultFieldPlan {
     private fun diff(field: FieldDefinition, template: DefaultFieldTemplate): Set<PresetMerge.Change> {
         val changes = linkedSetOf<PresetMerge.Change>()
         if (field.name != template.name) changes.add(PresetMerge.Change.NAME)
-        if (field.type != template.type) changes.add(PresetMerge.Change.TYPE)
+        if (typeChanges(field, template)) changes.add(PresetMerge.Change.TYPE)
         if (!PresetMerge.configEquals(field.config, linkedConfig(template))) {
             changes.add(PresetMerge.Change.CONFIG)
         }
