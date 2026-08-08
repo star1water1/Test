@@ -10,6 +10,7 @@ import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifyError
 import com.novelcharacter.app.util.notifySuccess
+import com.novelcharacter.app.util.reportAndNotify
 import kotlinx.coroutines.launch
 
 /**
@@ -439,11 +440,9 @@ class OrganizeFolderController(
         val sheet = existing ?: ImageFolderTagReviewSheet()
         sheet.onApply = { picked ->
             viewModel.clearFolderTagResult()
-            viewModel.applyFolderTags(picked, outcome.pathsByFolder) { tags, images ->
+            viewModel.applyFolderTags(picked, outcome.pathsByFolder) { applied ->
                 if (!fragment.isAdded) return@applyFolderTags
-                fragment.notifySuccess(
-                    fragment.getString(R.string.image_tag_review_applied, tags, images)
-                )
+                fragment.reportAndNotify(fragment.tagApplyResult(applied))
             }
         }
         sheet.onDismissed = { viewModel.clearFolderTagResult() }

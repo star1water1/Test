@@ -1657,19 +1657,37 @@ class ImageManagerViewModel(
     }
 
     /**
+     * 태그 적용의 결과 — **실패를 0과 가른다** (R-17 · B-143).
+     *
+     * 한 숫자로 합칠 수 없는 이유는 **0이 이 경로의 정상 결과이기 때문**이다: 고른 태그가
+     * 이미 전부 붙어 있으면 [Done]`(0, 0)`이 나온다. 그러므로 형제 쓰기들처럼 *실패 시 0을
+     * 말하는* 관행([addTagsToImages] 등)을 그대로 가져오면 **"이미 다 있었다"와 "하나도
+     * 저장하지 못했다"가 화면에서 같은 문장이 된다.** 갈래를 타입으로 두면 새 호출자도
+     * 실패를 다루지 않고는 지날 수 없다(`when`이 exhaustive라 컴파일이 막는다).
+     */
+    sealed class TagApplyOutcome {
+        data class Done(val tags: Int, val images: Int) : TagApplyOutcome()
+        object Failed : TagApplyOutcome()
+    }
+
+    /**
      * 검토 시트에서 고른 태그를 **이미지별로** 적용한다 — 폴더판([applyFolderTags])과 같은 규칙:
      * 기존 태그와 **합친다**(덮지 않는다).
+     *
+     * **집계는 트랜잭션의 반환값이다.** 종전에는 누적 변수가 [withContext] 밖에 살고 증가만
+     * 람다 안에서 일어나, 롤백돼도 **되돌아가지 않은 부분 누적치**가 그대로 남아 성공 고지에
+     * 실렸다(B-143). 형제 쓰기들이 전부 집계를 트랜잭션 성공 이후로 확정하는 그 형태를 따른다.
      */
     fun applyImageTags(
         picked: Map<String, List<String>>,
-        onDone: (tags: Int, images: Int) -> Unit
+        onDone: (TagApplyOutcome) -> Unit
     ) {
         viewModelScope.launch {
-            var tagCount = 0
-            val touched = LinkedHashSet<String>()
-            withContext(Dispatchers.IO) {
-                runCatching {
+            val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
+                try {
                     db.withTransaction {
+                        var tagCount = 0
+                        val touched = LinkedHashSet<String>()
                         val now = System.currentTimeMillis()
                         for ((path, tags) in picked) {
                             if (tags.isEmpty()) continue
@@ -1686,29 +1704,35 @@ class ImageManagerViewModel(
                             tagCount += fresh.size
                             touched.add(path)
                         }
+                        TagApplyOutcome.Done(tagCount, touched.size)
                     }
+                } catch (e: Exception) {
+                    TagApplyOutcome.Failed
                 }
             }
             load()
-            onDone(tagCount, touched.size)
+            onDone(outcome)
         }
     }
 
     /**
      * 검토 시트에서 고른 태그를 적용한다. 기존 태그와 **합친다**(덮지 않는다) — 사용자가 이미
      * 붙여 둔 태그를 AI 제안이 지우면 그것이 곧 무통보 유실이다.
+     *
+     * 집계를 트랜잭션의 반환값으로 확정하는 이유는 이미지판([applyImageTags])과 같다 — 두
+     * 함수가 같은 결함을 함께 들고 있었다(B-143).
      */
     fun applyFolderTags(
         picked: Map<String, List<String>>,
         pathsByFolder: Map<String, List<String>>,
-        onDone: (tags: Int, images: Int) -> Unit
+        onDone: (TagApplyOutcome) -> Unit
     ) {
         viewModelScope.launch {
-            var tagCount = 0
-            val touched = LinkedHashSet<String>()
-            withContext(Dispatchers.IO) {
-                runCatching {
+            val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
+                try {
                     db.withTransaction {
+                        var tagCount = 0
+                        val touched = LinkedHashSet<String>()
                         val now = System.currentTimeMillis()
                         for ((folder, tags) in picked) {
                             if (tags.isEmpty()) continue
@@ -1727,11 +1751,14 @@ class ImageManagerViewModel(
                                 touched.add(path)
                             }
                         }
+                        TagApplyOutcome.Done(tagCount, touched.size)
                     }
+                } catch (e: Exception) {
+                    TagApplyOutcome.Failed
                 }
             }
             load()
-            onDone(tagCount, touched.size)
+            onDone(outcome)
         }
     }
 
