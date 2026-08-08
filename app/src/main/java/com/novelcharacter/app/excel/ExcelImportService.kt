@@ -1378,7 +1378,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val key = cols["필드키"] ?: 1
         val name = cols["필드명"] ?: 2
         val type = cols["타입"] ?: 3
-        val config = cols["설정(JSON)"] ?: 4
+        // 위치 폴백 금지 — 이 열만 앞쪽에서 내렸다(B-162, 사용자 판정 2026.08.08).
+        // 4번 자리를 폴백으로 두면 **열을 지운 파일에서 5번의 `그룹`이 올라와** 그룹명이
+        // config가 되고 `options`·`formula`·등급표를 통째로 덮는다. 없으면 -1이고,
+        // 그때는 기존 설정을 지킨다(R-36 — `FieldConfigColumns.merge`가 그렇게 받는다).
+        // **앞의 넷은 그대로 둔다** — 행의 정체를 이루는 열이라 없으면 행 자체를 못 읽는다.
+        val config = cols["설정(JSON)"] ?: -1
         val group = cols["그룹"] ?: 5
         val order = cols["순서"] ?: -1
         // 위치 폴백 금지 — 열을 지우면 '세계관코드'를 필수여부로 오독한다
@@ -1403,7 +1408,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val key: String,
         val name: String,
         val type: String,
-        val config: String,
+        /** `null`이면 *"이 파일은 설정 열을 말하지 않는다"* — 기존 설정을 지킨다(R-36 · B-162). */
+        val config: String?,
         val groupName: String,
         val displayOrder: Int?,
         val isRequired: Boolean?,
@@ -1432,7 +1438,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             key = getCellString(row, c.key),
             name = getCellString(row, c.name),
             type = getCellString(row, c.type),
-            config = getCellString(row, c.config).ifBlank { "{}" },
+            // 열이 없으면 null — 빈 칸("{}", 설정을 비워라)과 구별한다(R-36 · B-162).
+            // 형제 시트('기본 필드')가 B-142에서 세운 형태 그대로다.
+            config = if (c.config >= 0) getCellString(row, c.config).ifBlank { "{}" } else null,
             groupName = getCellString(row, c.group).ifBlank { "기본 정보" },
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
             isRequired = sheetBooleanOrKeep(c.required >= 0, getCellString(row, c.required)),
@@ -4310,7 +4318,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 // F4: 설정(JSON)이 손상(절단·구문 오류)됐으면 조용히 넘기지 않고 경고 (필드 동작 무력화 방지)
-                if (r.config != "{}" && !isValidJson(r.config)) {
+                // 열이 없으면(null) 잴 것이 없다 — 그 파일은 설정을 말하지 않았다(B-162).
+                if (r.config != null && r.config != "{}" && !isValidJson(r.config)) {
                     result.warnings.add("필드 정의 행 $i: 필드 '$name'의 설정(JSON)이 올바른 형식이 아닙니다(절단·오타 가능) — 그대로 저장되나 해당 기능이 동작하지 않을 수 있습니다")
                 }
                 val groupName = r.groupName

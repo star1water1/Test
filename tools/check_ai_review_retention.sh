@@ -1,12 +1,14 @@
 #!/bin/bash
-# AI 검토 시트의 유료 응답 보존 검사 (B-136 · B-140)
+# AI 검토 시트의 유료 응답 보존 검사 (B-136 · B-140 · B-163)
 #
-# 배경: 이미지 일괄 AI 태깅의 검토 시트는 **이미 결제한 응답**을 들고 있다. 그런데 두 자리에서
+# 배경: 이미지 일괄 AI 태깅의 검토 시트는 **이미 결제한 응답**을 들고 있다. 그런데 세 자리에서
 # 그것을 조용히 버리고 있었다.
 #   ① 회전(B-136) — 제안이 Fragment의 지역 변수에만 살아, 재생성된 시트는 빈 껍데기였다.
 #   ② 되받기(B-140) — '1장씩 다시 보내기'가 시트를 **먼저 닫고** 앞 실행의 성공분을 실어 나를
 #      자리 없이 재실행해, 25장을 5요청에 돌려 1요청만 접혔을 때 20장분 제안이 소멸했다.
 #      되받으려면 이미 성공한 4요청을 **다시 결제**해야 했다.
+#   ③ 적용 실패(B-163) — 시트가 [적용]에 곧바로 닫히는데 호출측이 그 자리에서 결과를 비워,
+#      트랜잭션이 깨졌을 때 되돌아가 다시 적용할 자리가 없었다. 다시 얻으려면 재결제다.
 #
 # 고장이 조용한 것이 이 검사를 다는 이유다: 아무것도 실패하지 않고, 제안이 줄어든 화면은
 # *"AI가 그만큼만 답했다"*와 구별되지 않는다. 사용자는 잃은 줄도 모른다.
@@ -21,6 +23,9 @@
 # ② 금지: 되받기 핸들러가 넘기기 **전에 시트를 닫는다**(dismiss).
 # ③ 필수: 검토 시트가 **검토 상태를 회전에 넘긴다**(onSaveInstanceState).
 # ④ 필수: 유료 응답의 실행 엔진이 **뷰에 열려 있지 않다**(입구는 결과를 보관하는 run* 하나다).
+# ⑤ 필수: **적용이 실패하면 유료 응답을 되살린다**(B-163) — 되살리기가 ViewModel에 있는가와
+#         호출측(뷰)이 누른 자리에서 비우지 않는가를 **함께** 본다. 앞의 것만 보면
+#         빈 값을 되살리며 통과한다.
 #
 # 사용법: tools/check_ai_review_retention.sh   # 위반 시 exit 1
 set -u
@@ -33,9 +38,11 @@ IMG="$SRC/ui/image"
 FRAGMENT="$IMG/ImageManagerFragment.kt"
 SHEET="$IMG/ImageAiTagReviewSheet.kt"
 FOLDER_SHEET="$IMG/ImageFolderTagReviewSheet.kt"
+# 폴더판의 시트를 **띄우고 콜백을 붙이는 쪽**은 Fragment가 아니라 컨트롤러다(⑤가 본다).
+FOLDER_SHEET_CALLER="$IMG/OrganizeFolderController.kt"
 VM="$IMG/ImageManagerViewModel.kt"
 
-echo "── AI 검토 시트 유료 응답 보존 검사 (B-136 · B-140) ──"
+echo "── AI 검토 시트 유료 응답 보존 검사 (B-136 · B-140 · B-163) ──"
 
 # 여는 줄부터 **같은 들여쓰기의 닫는 중괄호**까지를 한 블록으로 뜬다.
 # 주석 줄은 빼고 본다 — 이 저장소는 *옛 조건을 고친 자리에 적어 두는* 관행이 있어
@@ -73,6 +80,55 @@ if [ "$selftest_hits" -ne 1 ]; then
   exit 1
 fi
 echo "  ✓ 탐지기 자기 시험 통과 (되받기 블록만 떠서 그 안의 dismiss를 잡는다)"
+
+# 여는 줄의 **들여쓰기와 같은 깊이**의 닫는 중괄호까지를 한 블록으로 뜬다.
+#
+# `block_after`로는 함수 본문을 못 뜬다 — 그쪽은 들여쓰기를 보지 않아 `}`만 있는 **첫** 줄에서
+# 끊긴다. 짧은 리스너 블록에는 맞지만 중첩이 깊은 함수에서는 안쪽 람다가 닫히는 자리에서
+# 잘린다. **이 검사를 세우며 실제로 그렇게 잘렸다** — `applyImageTags`의 `fresh.map { … }`가
+# 닫히는 줄에서 끝나 그 아래 되살리기를 못 보고 **위반 없는 코드를 위반이라 말했다.**
+indented_block() {
+  awk -v pat="$2" '
+    !inblk && $0 ~ pat {
+      inblk = 1
+      match($0, /^[[:space:]]*/)
+      close_re = "^" substr($0, 1, RLENGTH) "\\}[[:space:]]*$"
+      print
+      next
+    }
+    inblk {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      if (line !~ /^(\/\/|\*|\/\*)/) print
+      if ($0 ~ close_re) inblk = 0
+    }
+  ' "$1"
+}
+
+# ── 탐지기 자기 시험 2 — 깊은 중첩을 넘고, 옆 함수는 삼키지 않는가 ──
+SELFTEST2=$(mktemp)
+cat > "$SELFTEST2" <<'EOF'
+    fun applyThing() {
+        launch {
+            val x = listOf(1).map {
+                it + 1
+            }
+            target()
+        }
+    }
+
+    fun other() {
+        target()
+    }
+EOF
+st2=$(indented_block "$SELFTEST2" 'fun +applyThing' | grep -c 'target()' || true)
+rm -f "$SELFTEST2"
+if [ "$st2" -ne 1 ]; then
+  echo "  ✗ 탐지기 자기 시험 2 실패 — 함수 블록의 target 1건 중 ${st2}건을 잡았습니다" >&2
+  echo "      (0이면 안쪽 람다가 닫히는 자리에서 잘린 것이고, 2면 옆 함수까지 삼킨 것이다)" >&2
+  exit 1
+fi
+echo "  ✓ 탐지기 자기 시험 2 통과 (안쪽 람다를 넘고 옆 함수 앞에서 멈춘다)"
 
 fail=0
 
@@ -151,9 +207,44 @@ else
   done
 fi
 
+# ── ⑤ 적용이 실패했을 때 유료 응답을 되살리는가 (B-163) ──
+# 검토 시트는 [적용]을 누르면 결과를 기다리지 않고 곧바로 닫힌다. 그래서 호출측이 **누른 시점에 비우면**
+# 트랜잭션이 깨졌을 때 되돌아가 다시 적용할 자리가 없고, 다시 얻으려면 재결제다 —
+# ①②③이 막은 회전·되받기와 **같은 손실의 셋째 자리**다.
+# 소비를 결과를 아는 곳(ViewModel)이 들어야 하는 이유는 그것만이 아니다: 되살리기가 뷰에 있으면
+# **적용 중에 회전이 나면 되살리는 코드 자체가 사라진다.**
+# 그래서 둘을 함께 본다 — 적용 함수 안에 되살리기가 있는가 · 호출측(뷰)이 누른 자리에서 비우지 않는가.
+for apply_fn in applyImageTags applyFolderTags; do
+  apply_block=$(indented_block "$VM" "fun +$apply_fn")
+  if [ -z "$apply_block" ]; then
+    echo "  ✗ 적용 함수를 찾지 못했습니다: $VM ($apply_fn)"
+    fail=1
+  elif ! printf '%s\n' "$apply_block" | grep -qE '(aiTagResult|folderTagResult)\.value = pending'; then
+    echo "  ✗ 적용이 실패해도 유료 응답을 되살리지 않습니다: $VM ($apply_fn)"
+    echo "      → 시트는 [적용]을 누르면 곧바로 닫힌다. 실패를 알았을 때 되살릴 것이 없으면"
+    echo "        이미 결제한 제안이 소멸하고 다시 얻으려면 재결제다(B-163)."
+    fail=1
+  fi
+done
+# 호출측이 누른 자리에서 비우면 위 되살리기는 빈 값을 되살린다 — 통과하면서 아무 일도 안 한다.
+for caller in "$FRAGMENT" "$FOLDER_SHEET_CALLER"; do
+  [ -f "$caller" ] || continue
+  apply_wiring=$(block_after "$caller" 'onApply[[:space:]]*=')
+  if [ -z "$apply_wiring" ]; then
+    echo "  ✗ 적용 배선을 찾지 못했습니다: $caller (onApply =)"
+    fail=1
+  elif printf '%s\n' "$apply_wiring" | grep -qE 'clear(AiTag|FolderTag)Result\(\)'; then
+    echo "  ✗ 누른 시점에 유료 응답을 비웁니다: $caller"
+    echo "      → 소비는 결과를 아는 곳(ViewModel)이 **성공했을 때만** 한다. 여기서 비우면"
+    echo "        되살릴 것이 남지 않는다(B-163)."
+    fail=1
+  fi
+done
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
+  echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"
   echo ""
   echo "AI 검토 시트 유료 응답 보존 검사 통과"
   exit 0

@@ -2935,6 +2935,7 @@
     <string name="image_tag_review_option">폴더 이름으로 태그 제안</string>
     <string name="image_tag_review_option_desc">그 외 폴더 %1$d개의 이름을 AI가 읽고 태그를 제안합니다. 요청 %2$d건 · 적용 전에 검토합니다.</string>
     <string name="image_tag_review_applied">태그 %1$d개를 이미지 %2$d장에 적용했습니다</string>
+    <string name="image_tag_review_apply_failed">태그를 저장하지 못했습니다. 하나도 적용되지 않았으니 저장 공간을 확인한 뒤 검토 창에서 다시 적용해 주세요</string>
     <string name="image_tag_review_notice_dropped">모델이 되돌린 것 중 %1$d건은 형식에 맞지 않아 제외했습니다</string>
     <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
     <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>

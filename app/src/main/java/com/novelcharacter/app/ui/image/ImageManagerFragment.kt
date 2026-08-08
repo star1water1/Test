@@ -1169,8 +1169,12 @@ class ImageManagerFragment : Fragment() {
         val retryPaths = com.novelcharacter.app.ai.ImageBatchTagSuggester
             .retryablePaths(result, AI_TAG_RETRYABLE)
 
-        val existing = childFragmentManager
-            .findFragmentByTag(ImageAiTagReviewSheet.TAG) as? ImageAiTagReviewSheet
+        // `isAdded`로 거르는 이유: 적용 실패로 결과가 **되살아나는** 경로에서는 시트가 이미
+        // 닫히는 중이라 태그로는 아직 찾히지만 다시 먹여도 화면에 닿지 않는다(B-163).
+        // 회전으로 되살아난 시트는 붙어 있으므로 그쪽은 종전대로 다시 먹인다.
+        val existing = (childFragmentManager
+            .findFragmentByTag(ImageAiTagReviewSheet.TAG) as? ImageAiTagReviewSheet)
+            ?.takeIf { it.isAdded }
         val sheet = existing ?: ImageAiTagReviewSheet()
         bindAiTagReviewCallbacks(sheet, result)
         if (existing != null) {
@@ -1196,11 +1200,13 @@ class ImageManagerFragment : Fragment() {
         sheet.onRetryOneByOne = { retry ->
             runAiTagSuggest(retry, perRequest = 1, carryOver = result)
         }
+        // **비우는 일은 여기서 하지 않는다** — 적용이 실패하면 이미 결제한 제안을 되살려야
+        // 하는데, 누른 시점에 비우면 되살릴 것이 남지 않는다. 소비는 결과를 아는 곳
+        // (ViewModel)이 성공했을 때만 한다(R-38 · B-163).
         sheet.onApply = { picked ->
-            viewModel.clearAiTagResult()
-            viewModel.applyImageTags(picked) { tags, images ->
+            viewModel.applyImageTags(picked) { outcome ->
                 if (!isAdded) return@applyImageTags
-                notifySuccess(getString(R.string.image_tag_review_applied, tags, images))
+                reportAndNotify(tagApplyResult(outcome))
             }
         }
         // 사용자가 검토를 접었으면 보관 중인 결과도 버린다 — 남기면 다음 회전에 되살아난다.
@@ -1582,3 +1588,25 @@ class ImageManagerFragment : Fragment() {
         _binding = null
     }
 }
+
+/**
+ * 태그 적용 결과를 사용자 문장으로 옮긴다 — **이미지판과 폴더판이 한 벌을 쓴다.**
+ *
+ * 두 화면이 각자 적으면 한쪽만 고쳐진다. B-143이 정확히 그 모양이었다(같은 결함이
+ * `applyImageTags`·`applyFolderTags` 두 함수에 나란히 있었다). 문장이 한 자리에 있으면
+ * 다음에 고칠 사람도 한 자리만 본다.
+ *
+ * 실패를 **이력에도 남긴다** — 종전에는 성공만 스낵바로 흘려 보내 실패가 어디에도 안 남았고,
+ * 그래서 *"적용했다는데 태그가 없다"*를 나중에 되짚을 근거가 없었다.
+ */
+internal fun Fragment.tagApplyResult(outcome: ImageManagerViewModel.TagApplyOutcome): OpResult =
+    when (outcome) {
+        is ImageManagerViewModel.TagApplyOutcome.Done -> OpResult.success(
+            OpResult.CAT_MAINTENANCE,
+            getString(R.string.image_tag_review_applied, outcome.tags, outcome.images)
+        )
+        ImageManagerViewModel.TagApplyOutcome.Failed -> OpResult.failure(
+            OpResult.CAT_MAINTENANCE,
+            getString(R.string.image_tag_review_apply_failed)
+        )
+    }
