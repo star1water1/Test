@@ -179,12 +179,24 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | **B-143 + B-163 + B-162** (한 브랜치) | *(미병합 — `claude/task-review-xt42v7`)* | `ImageManagerViewModel` · `ImageManagerFragment` · `OrganizeFolderController` **셋** (B-162가 바꾼 `excel/ExcelImportService`는 **프로브 범위 안**이라 타입 검사를 받았다) | 화면 파일 셋이라 `CLAUDE.md` 4번의 *2~3개*에 **혼자 닿았다.** 그런데 이 저장소는 CI가 **PR을 열어야** 돌고(위 경고), PR 생성은 사용자 지시가 있을 때만 한다 — 그래서 **로컬 전량 초록으로 병합 대기 상태**로 둔다. **로컬이 못 본 것을 적어 둔다:** 프로브가 `ui/**`를 통째로 빼므로 **셋 다 타입 검사를 받지 못했다**(차분 컴파일은 신규 0 · `triage_unresolved` 통과지만 그쪽은 미해석 참조를 걸러 보는 도구다). 특히 새 sealed 타입 `TagApplyOutcome`과 새 최상위 함수 `Fragment.tagApplyResult`는 **호출 세 자리가 전부 `ui/**`** 라 컴파일 증명이 CI뿐이다. **`Run unit tests`가 main+test 소스셋을 함께 짓는 것이 그 증명이다**(B-141이 실측했다). **2026.08.08 사용자 확정 — *나중에 몰아서*** (판정 기록 12장). **차분 컴파일이 낸 신규 둘(`takeIf`)은 노이즈다** — 그 도구는 `-classpath`를 아예 주지 않아 Android 파생 수신자 위의 stdlib 호출이 죄다 `unresolved`로 뜬다(`takeIf`는 56개 파일이 쓰는데 36개가 기준선에서 이미 그 오류를 든다). **그 모양만 떼어 같은 kotlinc로 컴파일해 확인했다** — 통과한다 |
-> | *(위 한 건 외에는 비어 있음)* | | | **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
+> | *(비어 있음)* | | | **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
 > 2026.08.07에 실제로 그 모양이었다.
+>
+> **✅ 2026.08.08 — PR #244, run `31263227045`이 B-143+B-163+B-162를 덮었다.**
+> 그 세 건은 **화면 파일 셋**(`ImageManagerViewModel`·`ImageManagerFragment`·`OrganizeFolderController`)이라
+> `CLAUDE.md` 4번의 *2~3개*에 닿았는데, 사용자가 ***나중에 몰아서*로 확정**해 목록에 올려 두었다가
+> (판정 기록 12장) 같은 세션에서 *"필요하면 CI하고 병합까지"* 지시를 받아 그 자리에서 PR을 열었다.
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 22초 · `Schema harnesses` ✓ ·
+> `Run unit tests` ✓ 2분52초 · `Build Debug APK` ✓ 1분54초.
+> `Build Release APK`·`Upload Release APK`는 `skipped`이고 **이쪽은 정상**이다
+> (`workflow_dispatch` + `build_type == 'release'` 조건).
+> **이 실행이 증명한 것을 적어 둔다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 새 sealed 타입
+> `TagApplyOutcome`과 새 최상위 함수 `Fragment.tagApplyResult`는 **호출 세 자리가 전부 `ui/**`** 라
+> `Run unit tests`가 **처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다).
+> 아울러 **차분 컴파일이 낸 신규 둘(`takeIf`)이 노이즈라는 판단도 이 실행이 확인해 줬다.**
 >
 > **✅ 첫 덮기 (2026.08.07 — PR #223, run `31157053353`).** 목록에 있던 둘
 > (B-113 등급 산정 · B-122 프로필+재설계)을 **한 실행이 함께 덮었다** — 그것이 이 목록을
@@ -4323,13 +4335,19 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > **3-78은 3-76의 형제다** — 같은 열 삭제인데 증상이 다르므로(비는 것이 아니라
    > **그룹명이 설정을 덮는다**) 3-76을 이미 봤더라도 따로 봐야 한다.
    >
-   > **⑧ CI 미검증 목록에 이 판을 올렸다 — 2장 표를 볼 것.**
+   > **⑧ CI를 돌려 초록을 확인했고 미검증 목록은 다시 비었다 — 2장 표를 볼 것.**
    > **화면 파일 셋이라 `CLAUDE.md` 4번의 *2~3개*에 혼자 닿았는데**, 이 저장소는 CI가
    > **PR을 열어야** 돌고 PR 생성은 사용자 지시가 있을 때만 한다. 그래서 **로컬 전량 초록으로
    > 병합 대기** 상태이고, **로컬이 무엇을 못 봤는지**를 그 행에 적었다 — 프로브가 `ui/**`를
    > 통째로 빼므로 **셋 다 타입 검사를 받지 못했고**, 새 sealed 타입과 새 최상위 함수는
    > **호출 세 자리가 전부 `ui/**`** 라 컴파일 증명이 CI뿐이다.
-   > **2026.08.08 사용자 확정 — *나중에 몰아서*** (판정 기록 12장). 다음 화면 슬라이스와 묶어 돈다.
+   > **처음에는 *나중에 몰아서*로 확정받아 목록에 올렸다가**(판정 기록 12장), 같은 세션에서
+   > *"필요하면 CI하고 병합까지"* 지시를 받아 그 자리에서 PR을 열었다(#244, run `31263227045`).
+   > **배지가 아니라 단계를 봤다:** `Static checks` ✓ 22초 · `Schema harnesses` ✓ ·
+   > `Run unit tests` ✓ 2분52초 · `Build Debug APK` ✓ 1분54초.
+   > `Build Release APK`·`Upload Release APK`의 `skipped`는 **정상**이다(조건부 단계).
+   > **그 실행이 `takeIf` 둘이 노이즈라는 판단도 확인해 줬다** — `Run unit tests`가 세 화면
+   > 파일을 실제로 컴파일했고 초록이었다.
    > 로컬 실측: 순수 JVM **1956 유지**(화면 계층이라 하네스가 원리적으로 못 닿는다 —
    > 숫자가 안 오른 것이 정상이고, **오르기를 기대하면 안 되는 부류**다) ·
    > 프로브 신규 0(452=452 — **B-162가 바꾼 `ExcelImportService`는 프로브 범위 안이라
