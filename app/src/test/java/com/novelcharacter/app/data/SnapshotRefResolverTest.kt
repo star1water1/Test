@@ -331,6 +331,47 @@ class SnapshotRefResolverTest {
     }
 
     @Test
+    fun `DB 행의 자연키도 같은 규칙을 쓴다 — 전역만 null 자리를 갖는다`() {
+        // 색인 쪽(`buildFieldDefIndex`)이 이 규칙을 어겨도 순수 JVM 시험이 원리적으로 못 본다 —
+        // 그 함수는 Room에 매달려 있다. 그래서 판정을 ref 쪽 옆에 두고 여기서 직접 잰다.
+        assertEquals(
+            globalNatural,
+            SnapshotRefResolver.naturalKeyOfRow(null, null, "character", "mana")
+        )
+        assertEquals(
+            "전역 행은 우연히 딸려 온 세계관 코드를 무시한다",
+            globalNatural,
+            SnapshotRefResolver.naturalKeyOfRow(null, "U1", "character", "mana")
+        )
+        assertEquals(
+            natural,
+            SnapshotRefResolver.naturalKeyOfRow(7L, "U1", "character", "mana")
+        )
+        assertNull(
+            "세계관 소속인데 코드를 못 얻으면 자연키가 없다 — null을 주면 전역과 겹친다",
+            SnapshotRefResolver.naturalKeyOfRow(7L, null, "character", "mana")
+        )
+        assertNull(
+            SnapshotRefResolver.naturalKeyOfRow(7L, "", "character", "mana")
+        )
+    }
+
+    @Test
+    fun `ref 쪽과 DB 행 쪽의 자연키가 같은 대상에서 맞물린다`() {
+        // 두 쪽이 갈리면 해석이 찾을 자리를 색인이 안 채우거나(값 유실) 엉뚱한 자리를
+        // 채운다(오배정). 같은 대상을 넣어 **같은 키가 나오는지**를 직접 잰다 —
+        // 각자 따로 재면 둘이 함께 어긋나도 통과한다.
+        assertEquals(
+            SnapshotRefResolver.naturalKeyOf(globalRef),
+            SnapshotRefResolver.naturalKeyOfRow(null, null, "character", "mana")
+        )
+        assertEquals(
+            SnapshotRefResolver.naturalKeyOf(ref),
+            SnapshotRefResolver.naturalKeyOfRow(7L, "U1", "character", "mana")
+        )
+    }
+
+    @Test
     fun `자연키가 불완전해도 살아 있는 id는 자연키 없이 확인한다`() {
         // `liveIds`가 `naturalById`와 갈린 이유 — 자연키를 못 만드는 행(세계관 코드가
         // 비었다)도 **살아 있기는 하다.** 종전처럼 색인 하나로 겸하면, 그 행을 색인에서

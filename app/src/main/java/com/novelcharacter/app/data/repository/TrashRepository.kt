@@ -3696,20 +3696,15 @@ class TrashRepository(
         for ((id, fd) in defsById) {
             // 생존 판정은 자연키와 무관하다 — 아래에서 자연키를 못 만들고 빠져나가도 여기 남는다.
             liveIds.add(id)
+            // 전역 구역(universeId null)의 자연키는 code 자리도 null이고, 세계관 소속인데
+            // 코드를 못 얻은 행은 자연키를 만들지 않는다 — 그 둘을 가르는 규칙은
+            // `SnapshotRefResolver.naturalKeyOfRow`가 ref 쪽과 한 자리에서 든다(B-133).
             val universeId = fd.universeId
-            if (universeId == null) {
-                // 전역 구역(universeId null)의 자연키는 code 자리도 null이다 — 아래 되찾기가
-                // 그 짝(`getGlobalFieldByKey`)으로 찾고, 해석도 그 null을 전역으로 읽는다(B-133).
-                naturalById[id] = FieldDefNaturalKey(null, fd.entityType, fd.key)
-                continue
-            }
-            // 세계관 소속인데 코드를 못 얻으면 **자연키를 만들지 않는다.** 여기서 null을 넣으면
-            // 그 행이 전역 필드와 같은 자연키를 갖게 되어, 전역 ref가 남의 세계관 필드에
-            // ID_CONFIRMED로 붙는다(오배정 > 생략 — R-1). 생존은 위 liveIds가 이미 받았다.
-            val uCode = localUniverseCodes.getOrPut(universeId) {
+            val uCode = if (universeId == null) null else localUniverseCodes.getOrPut(universeId) {
                 db.universeDao().getUniverseById(universeId)?.code?.takeIf { it.isNotBlank() }
-            } ?: continue
-            naturalById[id] = FieldDefNaturalKey(uCode, fd.entityType, fd.key)
+            }
+            val natural = SnapshotRefResolver.naturalKeyOfRow(universeId, uCode, fd.entityType, fd.key)
+            if (natural != null) naturalById[id] = natural
         }
         // 세계관 코드 → id도 캐시한다. ref가 30개면 같은 세계관을 30번 조회하던 자리다.
         val universeIdByCode = HashMap<String, Long?>()

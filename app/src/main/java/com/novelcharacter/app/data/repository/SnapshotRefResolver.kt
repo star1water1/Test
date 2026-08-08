@@ -137,4 +137,31 @@ object SnapshotRefResolver {
         if (u != null && u.isBlank()) return null
         return FieldDefNaturalKey(u, t, k)
     }
+
+    /**
+     * 현행 DB의 **필드 정의 행**이 갖는 자연키 — [naturalKeyOf]의 짝이다.
+     *
+     * 두 쪽은 반드시 같은 규칙이어야 한다. 스냅샷 ref 쪽만 전역을 인정하고 DB 행 쪽이
+     * 안 하면 **해석이 찾을 자리를 색인이 안 채우고**(값 유실), 반대로 DB 행 쪽이 넓게
+     * 인정하면 **전역 ref가 남의 세계관 필드에 붙는다**(오배정). 그래서 판정을 ref 쪽
+     * 한 줄 옆에 둔다 — `TrashRepository`에만 있으면 **순수 JVM 시험이 원리적으로 못 본다**
+     * (Room에 매달려 있다). 규칙이 무너져도 조용히 통과할 경로를 남기지 않는다.
+     *
+     * @param universeId   행의 `universeId`. `null`이면 전역 구역이다.
+     * @param universeCode 그 세계관의 코드. 전역이면 무시된다.
+     *   **세계관 소속인데 이것이 null/빈 값이면 자연키를 만들지 않는다** — 여기서 전역과 같은
+     *   `null` 자리를 내주면 그 행이 전역 필드와 **같은 자연키**를 갖는다. 생존 판정은
+     *   [resolveFieldDef]의 `liveIds`가 따로 받으므로 여기서 빠져도 잃는 것이 없다.
+     */
+    fun naturalKeyOfRow(
+        universeId: Long?,
+        universeCode: String?,
+        entityType: String,
+        key: String
+    ): FieldDefNaturalKey? {
+        if (entityType.isBlank() || key.isBlank()) return null
+        if (universeId == null) return FieldDefNaturalKey(null, entityType, key)
+        if (universeCode.isNullOrBlank()) return null
+        return FieldDefNaturalKey(universeCode, entityType, key)
+    }
 }
