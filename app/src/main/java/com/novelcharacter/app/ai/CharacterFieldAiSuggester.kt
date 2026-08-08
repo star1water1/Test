@@ -326,11 +326,14 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(minConfidence, creativity, images.size),
+                system = buildSystemPrompt(minConfidence, creativity),
                 userText = prompt.text,
                 maxTokens = maxTokens,
                 temperature = temperature,
-                images = images
+                images = images,
+                // 이미지 절은 이미지와 한 몸으로 간다 (B-139) — 빼는 경로가 둘이라
+                // 시스템 프롬프트에 이어 붙이면 반드시 한쪽이 샌다.
+                imageSystemRule = imageRule(images.size)
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
@@ -805,9 +808,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          */
         fun buildSystemPrompt(
             minConfidence: Confidence? = null,
-            creativity: AiCreativity = AiCreativity.DEFAULT,
-            /** 함께 보낸 이미지 장수 (A-7). 0이면 지시를 붙이지 않는다. */
-            imageCount: Int = 0
+            creativity: AiCreativity = AiCreativity.DEFAULT
         ): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
@@ -846,8 +847,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 '강함' 축 상위인 캐릭터에게 그 축과 이어지는 필드의 낮은 값을 주지 않는다.
                 등수 차가 작고 오차(±)가 겹치면 근소한 차이이니 값도 그만큼만 벌려라.
                 그 순위를 근거로 삼았으면 reason에 축 이름과 등수를 적어라.
-        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule() +
-            imageRule(imageCount)
+        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
 
         /**
          * 이미지 첨부 지시 (A-7). **번호를 매긴 블록으로 붙인다** — 규칙 16은 근거 강도가
@@ -856,6 +856,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          *
          * 몇 번째 이미지인지 적게 하는 것이 이 지시의 본체다 — 검토 화면의 근거 줄이 그대로
          * 보여 주므로, 사용자는 "이 값이 그림의 어디서 왔는가"를 새 UI 없이 확인한다.
+         *
+         * **[buildSystemPrompt]가 아니라 [AiRequest.imageSystemRule]로 간다** (B-139):
+         * 이미지가 빠지는 경로가 둘인데 시스템 프롬프트에 미리 이어 붙이면 그 둘이 각자
+         * 문자열을 걷어내야 하고, 실제로 둘 다 빠뜨려 **없는 그림을 근거로 삼으라는 지시가
+         * 그대로 나갔다.** 이제 이미지와 한 몸으로 다녀 빠뜨릴 자리가 없다.
          */
         fun imageRule(imageCount: Int): String =
             if (imageCount <= 0) "" else "\n" + """

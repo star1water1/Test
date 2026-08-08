@@ -21,6 +21,14 @@ import org.junit.Test
  * ② *거부 판정이 좁다* — 무관한 400을 이미지 문제로 오인하면 `imagesUnsupported`가 남아
  *   **그 모델에는 다시는 이미지가 나가지 않고**, 사용자는 이유를 볼 수 없다.
  * ③ *뺀 사본이 글은 그대로 둔다* — 재시도가 본문까지 잃으면 유료 요청 하나가 통째로 헛된다.
+ *
+ * **④는 B-139가 더했다 — *그림을 빼면 그림 지시도 빠진다*.** 시스템 프롬프트는
+ * *"이미지 N장이 순서대로 함께 실려 있다"*고 말하는데 이미지가 빠지는 경로가 둘이다
+ * (④ 거부 재시도 · `strippedUpfront` 사전 제거). 종전에는 `withoutImages()`가 `system`을
+ * 손대지 않아 **둘 다** 그 지시를 그대로 내보냈고, 모델은 없는 그림을 근거로 삼아
+ * **날조된 출처**를 낼 수 있었다(후자는 학습된 뒤 **매 요청** 어긋난다).
+ * 여기서 세 프로토콜 전부를 세우는 이유: 실을지 말지는 요청이 정하지만 **싣는 것은 코덱**이라,
+ * 한 프로토콜만 `request.system`으로 되돌아가도 그 경로에서만 조용히 되살아난다.
  */
 class AiImageRequestTest {
 
@@ -162,6 +170,93 @@ class AiImageRequestTest {
         val plain = AiRequest(userText = "글")
         assertFalse(plain.hasImages())
         assertTrue(plain === plain.withoutImages())
+    }
+
+    // ── ④ 그림을 빼면 그림 지시도 빠진다 (B-139) ─────────────────────────────
+
+    /** 실제 지시문과 같은 모양 — 장수를 말하는 한 줄이 이 결함의 본체였다. */
+    private fun ruleFor(count: Int) = "\n[이미지] 이 요청에는 캐릭터의 이미지 ${count}장이 실려 있다."
+
+    private fun withRule(images: List<AiImage>) = AiRequest(
+        system = "sys", userText = "본문", maxTokens = 512,
+        images = images, imageSystemRule = ruleFor(images.size)
+    )
+
+    @Test
+    fun `이미지가 실리면 시스템 프롬프트에 이미지 절이 붙는다`() {
+        val sys = withRule(twoImages).effectiveSystem()!!
+        assertTrue("이미지를 실었는데 지시가 빠지면 모델이 그림을 근거로 쓰라는 말을 못 듣는다", "sys" in sys)
+        assertTrue(ruleFor(2) in sys)
+    }
+
+    @Test
+    fun `withoutImages가 만든 사본에는 이미지 절이 없다`() {
+        val stripped = withRule(twoImages).withoutImages()
+        assertFalse(stripped.hasImages())
+        assertEquals(
+            "이미지를 뺐는데 '이미지 2장이 실려 있다'가 남으면 모델이 없는 그림을 근거로 답한다",
+            "sys", stripped.effectiveSystem()
+        )
+    }
+
+    @Test
+    fun `이미지 절만 있고 이미지가 없으면 싣지 않는다`() {
+        // `strippedUpfront`가 도달하는 상태다 — 거부를 학습한 모델에는 애초에 싣지 않는데,
+        // 지시를 걷어내는 일을 그 자리에 맡기면 **경로가 셋째로 늘 때 또 샌다.**
+        // 판정을 `hasImages()`에 두었으므로 어느 경로로 비워졌든 결과가 같다.
+        val request = AiRequest(
+            system = "sys", userText = "본문", imageSystemRule = ruleFor(3)
+        )
+        assertEquals("sys", request.effectiveSystem())
+    }
+
+    @Test
+    fun `세 프로토콜 모두 이미지를 뺀 요청에 이미지 절을 싣지 않는다`() {
+        val stripped = withRule(twoImages).withoutImages()
+        val rule = ruleFor(2)
+
+        val anthropic = JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.ANTHROPIC), "k", stripped).bodyJson)
+            .asJsonObject.get("system").asString
+        assertEquals("sys", anthropic)
+
+        val openai = JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.OPENAI_COMPAT), "k", stripped).bodyJson)
+            .asJsonObject.getAsJsonArray("messages")[0].asJsonObject.get("content").asString
+        assertEquals("sys", openai)
+
+        val gemini = JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.GEMINI), "k", stripped).bodyJson)
+            .asJsonObject.getAsJsonObject("system_instruction")
+            .getAsJsonArray("parts")[0].asJsonObject.get("text").asString
+        assertEquals("sys", gemini)
+
+        // 같은 요청에 이미지가 붙어 있으면 세 곳 모두 실어야 한다 — 안 싣는 것으로
+        // 통과하는 시험은 이 결함을 못 잡는다(빼는 쪽만 재면 늘 초록이다).
+        val carried = withRule(twoImages)
+        assertTrue(rule in JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.ANTHROPIC), "k", carried).bodyJson)
+            .asJsonObject.get("system").asString)
+        assertTrue(rule in JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.OPENAI_COMPAT), "k", carried).bodyJson)
+            .asJsonObject.getAsJsonArray("messages")[0].asJsonObject.get("content").asString)
+        assertTrue(rule in JsonParser
+            .parseString(AiProtocolCodec.buildRequest(config(AiProtocol.GEMINI), "k", carried).bodyJson)
+            .asJsonObject.getAsJsonObject("system_instruction")
+            .getAsJsonArray("parts")[0].asJsonObject.get("text").asString)
+    }
+
+    @Test
+    fun `두 조립기의 시스템 프롬프트에는 이미지 절이 들어 있지 않다`() {
+        // 이어붙이기의 부활을 여기서도 잡는다 — `check_ai_image_rule.sh`가 모양을 보고
+        // 이 시험이 결과를 본다. 둘 중 하나만으로는 이름을 바꾼 부활을 놓친다.
+        assertFalse(CharacterFieldAiSuggester.buildSystemPrompt().contains("[이미지]"))
+        assertFalse(NarrativeFieldAiWriter.buildSystemPrompt().contains("[이미지]"))
+        // 절 자체는 살아 있어야 한다 — 사라지면 이미지를 실어도 모델이 지시를 못 받는다.
+        assertTrue(CharacterFieldAiSuggester.imageRule(2).contains("[이미지]"))
+        assertTrue(NarrativeFieldAiWriter.imageRule(2).contains("[이미지]"))
+        assertEquals("", CharacterFieldAiSuggester.imageRule(0))
+        assertEquals("", NarrativeFieldAiWriter.imageRule(0))
     }
 
     // ── ② 거부 판정은 좁다 ───────────────────────────────────────────────────
