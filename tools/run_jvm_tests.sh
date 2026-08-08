@@ -188,6 +188,7 @@ $MAIN/util/DuelEntry.kt
 $MAIN/util/DuelImageFit.kt
 $MAIN/util/DuelFieldLinks.kt
 $MAIN/util/DuelSystemFields.kt
+$MAIN/util/DuelCandidateFilter.kt
 $MAIN/util/DuelCardInfo.kt
 $MAIN/util/DuelMatchLog.kt
 $MAIN/util/DuelCategoryStats.kt
@@ -261,6 +262,7 @@ $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
 $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt
+$TEST/util/DuelCandidateFilterTest.kt
 $TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/DuelRecordsTest.kt
 $TEST/util/DuelSessionTest.kt

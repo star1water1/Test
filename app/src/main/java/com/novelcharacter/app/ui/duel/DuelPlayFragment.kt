@@ -75,6 +75,9 @@ class DuelPlayFragment : Fragment() {
     private var characters: List<Character> = emptyList()
     private var charactersByCode: Map<String, Character> = emptyMap()
 
+    /** 후보 필터의 결과 (B-168) — 대기열·빈 화면 문구·필터 줄이 이것을 본다. */
+    private var roster: DuelViewModel.Roster? = null
+
     private var session = DuelSession.State()
     private var progress: DuelPairing.Progress? = null
 
@@ -166,7 +169,9 @@ class DuelPlayFragment : Fragment() {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded
             binding.toolbar.title = loaded.name
-            characters = viewModel.participants(loaded)
+            val currentRoster = viewModel.roster(loaded)
+            roster = currentRoster
+            characters = currentRoster.participants
             links = loaded.fieldLinks
             val fields = viewModel.characterFields(loaded.universeId)
             // 시스템 열의 이름도 함께 든다(B-167) — 없으면 이명 줄의 라벨이 `sys:another_name`이 된다
@@ -184,7 +189,7 @@ class DuelPlayFragment : Fragment() {
                 characters,
                 DuelCardInfo.keysToLoad(links, genderKey, ageKey)
             )
-            val state = viewModel.load(loaded, characters)
+            val state = viewModel.load(loaded, characters, currentRoster.candidateCodes)
             if (!isAdded) return@launch
             charactersByCode = state.charactersByCode
             codeById = state.state.records.codeById
@@ -285,7 +290,7 @@ class DuelPlayFragment : Fragment() {
         refreshJob?.cancel()
         val planSeq = session.seq
         refreshJob = viewLifecycleOwner.lifecycleScope.launch {
-            val loaded = viewModel.load(axis, characters)
+            val loaded = viewModel.load(axis, characters, roster?.candidateCodes)
             if (!isAdded) return@launch
             charactersByCode = loaded.charactersByCode
             codeById = loaded.state.records.codeById
@@ -327,12 +332,30 @@ class DuelPlayFragment : Fragment() {
             binding.emptyState.visibility = View.VISIBLE
             binding.reasonText.visibility = View.GONE
             binding.btnDraw.isEnabled = false
-            binding.emptyTitle.text = getString(
-                if (characters.size < 2) R.string.duel_need_two else R.string.duel_queue_empty
-            )
-            binding.emptyHint.text = getString(
-                if (characters.size < 2) R.string.duel_need_two_hint else R.string.duel_queue_empty_hint
-            )
+            // 왜 빈 화면인가를 가른다(B-168) — 필터가 후보를 좁혀 짝이 없는 것과 캐릭터 자체가
+            // 모자란 것은 사용자가 할 일이 다르다(필터를 고치러 vs 캐릭터를 만들러).
+            val unresolved = roster?.unresolvedNames.orEmpty()
+            val candidateShort = roster?.filtered == true && (roster?.candidateCount ?: 0) < 2
+            when {
+                unresolved.isNotEmpty() -> {
+                    binding.emptyTitle.text = getString(R.string.duel_filter_unresolved_title)
+                    binding.emptyHint.text =
+                        getString(R.string.duel_filter_unresolved_hint, unresolved.joinToString(", "))
+                }
+                candidateShort -> {
+                    binding.emptyTitle.text = getString(R.string.duel_filter_need_two)
+                    binding.emptyHint.text =
+                        getString(R.string.duel_filter_need_two_hint, roster?.candidateCount ?: 0)
+                }
+                characters.size < 2 -> {
+                    binding.emptyTitle.text = getString(R.string.duel_need_two)
+                    binding.emptyHint.text = getString(R.string.duel_need_two_hint)
+                }
+                else -> {
+                    binding.emptyTitle.text = getString(R.string.duel_queue_empty)
+                    binding.emptyHint.text = getString(R.string.duel_queue_empty_hint)
+                }
+            }
             return
         }
 
@@ -465,6 +488,7 @@ class DuelPlayFragment : Fragment() {
         (value * resources.displayMetrics.density).toInt()
 
     private fun renderProgress() {
+        renderFilterLine()
         val value = progress ?: return
         binding.progressBar.progress = (value.settledPercent * 10).toInt().coerceIn(0, 1000)
         val base = getString(
@@ -477,6 +501,25 @@ class DuelPlayFragment : Fragment() {
         } else {
             base + " " + getString(R.string.duel_progress_capped)
         }
+    }
+
+    /**
+     * 후보 필터 줄 (B-168) — 걸려 있으면 *"후보 12/45 · 성별: 여성"*을 상시 보인다.
+     * 일일이 편집 창을 열어야 필터의 존재를 아는 구조는 원칙 04가 금지하는 그것이다.
+     */
+    private fun renderFilterLine() {
+        val value = roster
+        if (value == null || !value.filtered) {
+            binding.filterText.visibility = View.GONE
+            return
+        }
+        binding.filterText.visibility = View.VISIBLE
+        binding.filterText.text = getString(
+            R.string.duel_filter_status,
+            value.candidateCount,
+            value.all.size,
+            value.filters.joinToString(" · ") { viewModel.filterSummary(it) }
+        )
     }
 
     private fun reasonTextOf(reason: DuelPairing.Reason): Int = when (reason) {

@@ -532,9 +532,15 @@ object DuelSheetLabels {
  * 없어서다. 적어 들어와도 연결은 지우지 않고(사용자가 적은 것을 버리지 않는다) 순위표의
  * 대조에서 빠지며, 축 편집 창이 그 사실을 사유와 함께 말한다.
  *
- * ⚠️ **이 셋은 열이 없으면 건드리지 않는다**(`ExcelImportService.readDuelAxisRow`) — 이 열이
- * 없던 시절에 내보낸 파일을 다시 들이는 것만으로 연결이 지워지면 안 되기 때문이다.
+ * ⚠️ **연결 셋과 `후보필터(JSON)`은 열이 없으면 건드리지 않는다**
+ * (`ExcelImportService.readDuelAxisRow`) — 그 열이 없던 시절에 내보낸 파일을 다시 들이는
+ * 것만으로 값이 지워지면 안 되기 때문이다.
  * *빈 칸*("지워라")과 *없는 열*("이 파일은 그것을 말하지 않는다")은 다른 사실이다.
+ *
+ * `후보필터(JSON)`(B-168)은 연결 셋과 달리 **JSON을 그대로 싣는다** — 값 목록·일치 방식이
+ * 딸린 구조라 쉼표 문법으로 펴면 값 안의 쉼표와 충돌한다. 프리셋 시트의 `필드필터(JSON)`과
+ * 같은 규약이되, 필드를 id가 아니라 **키**(`fieldKey`)로 가리키므로 그쪽의 id 재해석
+ * (`PortableFieldFilters`)이 필요 없다 — 키는 세계관 안에서 그 자체로 이식된다.
  */
 fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 축",
@@ -546,6 +552,7 @@ fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("영향필드", width = 10000),
         ColumnSpec("산출필드", width = 8000),
         ColumnSpec("프로필필드", width = 10000),
+        ColumnSpec("후보필터(JSON)", width = 12000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)

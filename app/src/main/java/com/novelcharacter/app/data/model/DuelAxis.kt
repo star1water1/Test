@@ -81,6 +81,21 @@ data class DuelAxis(
      * 만들면 그 문법을 아는 자리가 코드 전체로 퍼진다.
      */
     val profileFieldKeys: String = "[]",
+    /**
+     * **후보 필터** (B-168) — *"이 대결에선 여성끼리만"* 을 이 축에 저장한 것.
+     * `FieldFilterHelper` JSON 규약의 [com.novelcharacter.app.data.model.FieldFilter] 목록이며
+     * 해석·적용은 [com.novelcharacter.app.util.DuelCandidateFilter]가 단일 소스다.
+     *
+     * **프리셋을 가리키지 않고 조건을 직접 담는다** — 목록 프리셋을 참조로 걸면 프리셋을
+     * 고치는 것만으로 대결 후보가 조용히 바뀐다(개발 의도 2번이 막는 무음 변경). 조건 안의
+     * 필드는 id가 아니라 **키**로 가리킨다(`FieldFilter.fieldKey`) — 복원이 id를 재발급해도
+     * 필터가 남의 필드를 집지 않고, 엑셀 왕복이 그대로 성립한다(R-1과 같은 계열).
+     *
+     * null·빈 값·`"{}"` 전부 *필터 없음*(세계관 전원이 후보)이다. nullable인 것은 휴지통
+     * payload가 이 엔티티를 Gson으로 되살리기 때문이다 — 구버전 payload에 이 칸이 없고,
+     * Gson은 Kotlin 기본값을 실행하지 않아 non-null 선언이어도 null이 주입된다(R-2).
+     */
+    val candidateFiltersJson: String? = null,
     /** 안정 식별자 — 판·처분·휴지통·엑셀이 이 값으로 축을 가리킨다(R-1). */
     val code: String = generateEntityCode()
 ) {

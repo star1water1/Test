@@ -71,6 +71,24 @@ class CharacterImageStripController(
     /** 저장이 끝났거나 편집을 버렸을 때 — 대기 목록을 비운다. */
     fun clearPendingDeletes() = pendingDeletePaths.clear()
 
+    /**
+     * 화면 상태 복원이 "지우기로 했다"는 사실을 되살린다 (B-170).
+     *
+     * 이 목록은 이 컨트롤러의 메모리 필드뿐이라, 회전·화면 이동으로 뷰가 다시 서면
+     * **선택만 조용히 사라져** 캐릭터에서는 빠졌는데 파일은 앱에 남는 고아가 생겼다 —
+     * *뺐다는 사실*(imagePaths)은 Bundle·드래프트에 실려 살아남는데 *지우기로 했다는
+     * 사실*만 죽는 비대칭이 결함의 핵심이었다. 호스트가 Bundle·드래프트에 실어 두 값을
+     * 같은 수명으로 만든다.
+     *
+     * 거른 원문을 담는다 — [pendingDeletes] 게터가 다시 붙은 경로를 매번 거르므로
+     * 여기서 거르면 두 벌이 된다. 내부 저장소 검증은 호스트가 [validateInternalPaths]로
+     * 이미 했다(imagePaths와 같은 규칙).
+     */
+    fun restorePendingDeletes(paths: List<String>) {
+        pendingDeletePaths.clear()
+        pendingDeletePaths.addAll(paths)
+    }
+
     /** 현재 이미지 경로 목록 (읽기 전용 뷰) */
     val paths: List<String> get() = imagePaths
 

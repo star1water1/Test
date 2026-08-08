@@ -93,7 +93,9 @@ class DuelMatchesFragment : Fragment() {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded
             binding.toolbar.title = getString(R.string.duel_matches_title_of, loaded.name)
-            characters = viewModel.participants(loaded)
+            // 기록 화면은 **참가자 전부**를 본다(후보 필터와 무관하다 — 이미 기록된 판의
+            // 참가자 이름이 필터 때문에 '알 수 없음'이 되면 안 된다).
+            characters = viewModel.roster(loaded).participants
 
             val links = loaded.fieldLinks
             // 시스템 열까지 든다(B-167) — 기록 줄이 카드와 같은 이름을 말해야 한다.

@@ -146,6 +146,44 @@
 
     </LinearLayout>
 
+    <!-- 후보 필터 (B-168) — "이 대결에선 여성끼리만"을 이 축에 저장한다. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/duel_filter_label"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+            <TextView
+                android:id="@+id/candidateFilterSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEditCandidateFilter"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_links_edit" />
+
+    </LinearLayout>
+
     <TextView
         android:id="@+id/linkConflictWarning"
         android:layout_width="match_parent"

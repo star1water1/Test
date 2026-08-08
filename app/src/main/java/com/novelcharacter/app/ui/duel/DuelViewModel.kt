@@ -11,9 +11,12 @@ import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.repository.DuelRepository
+import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelCategoryStats
 import com.novelcharacter.app.util.DuelSystemFields
+import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -346,8 +349,108 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             .filter { DuelGradeRef.axisCodeFromConfig(it.config) == axis.code }
     }
 
-    /** 이 축의 참가자 — 캐릭터 축은 세계관의 캐릭터가 그대로 참가자다. */
-    suspend fun participants(axis: DuelAxis): List<Character> = participantsOf(axis.universeId)
+    /**
+     * 한 축의 참가자 구성 (B-168) — 후보 필터를 적용한 결과 전부.
+     *
+     * @property participants 적합·순위표에 넘길 목록 — **후보 ∪ 전적 보유**
+     *   ([DuelCandidateFilter.participants]의 처분). 필터가 없으면 세계관 전원이다.
+     * @property candidateCodes 짝이 될 수 있는 캐릭터의 코드. **null이면 필터가 없는 것**이고
+     *   (전원 후보), 비어 있으면 *아무도 통과하지 못한 것*이다 — 화면이 둘을 갈라 말해야 한다.
+     * @property unresolvedNames 해석하지 못한 필터의 표시명. 비어 있지 않으면 후보는 0이고
+     *   (조용히 넓히지 않는다 — [DuelCandidateFilter]의 규칙) 화면이 이 이름들로 이유를 말한다.
+     */
+    data class Roster(
+        val all: List<Character>,
+        val participants: List<Character>,
+        val candidateCodes: Set<String>?,
+        val filters: List<FieldFilter>,
+        val unresolvedNames: List<String>
+    ) {
+        val filtered: Boolean get() = candidateCodes != null
+
+        /** 후보 수 — 필터가 없으면 전원이다. */
+        val candidateCount: Int get() = candidateCodes?.size ?: all.size
+    }
+
+    /** 이 축의 참가자 구성 — 후보 필터(B-168)가 여기서 적용된다. */
+    suspend fun roster(axis: DuelAxis): Roster {
+        val all = participantsOf(axis.universeId)
+        val filters = DuelCandidateFilter.parse(axis.candidateFiltersJson)
+        if (filters.isEmpty()) return Roster(all, all, null, filters, emptyList())
+
+        val fields = characterFields(axis.universeId)
+        val resolved = DuelCandidateFilter.resolve(filters, fields)
+        val unresolvedNames = resolved.filter { it.unresolved }
+            .map { it.filter.fieldName.ifBlank { it.filter.fieldKey ?: "?" } }
+        // 커스텀 필드 필터는 기존 엔진이 그대로 대조한다(값 별칭·토큰 규칙 포함 — 두 벌 금지).
+        // 키가 정본이므로 id는 지금 이 세계관의 것으로 바꿔 넘긴다.
+        val customFilters = resolved.mapNotNull { r -> r.field?.let { r.filter.copy(fieldId = it.id) } }
+        val customIds: Set<Long>? = if (customFilters.isEmpty()) {
+            null
+        } else {
+            FieldFilterHelper.applyFieldFilters(
+                app.database.characterFieldValueDao(),
+                app.database.fieldDefinitionDao(),
+                app.database.fieldValueEntryDao(),
+                customFilters
+            )
+        }
+        val systemKeys = resolved.mapNotNull { it.column?.key }
+        val extrasById = systemExtrasOf(all, systemKeys)
+        val withMatches = app.database.duelMatchDao().participantCodes(axis.id).toSet()
+        return withContext(Dispatchers.Default) {
+            val candidateCodes = DuelCandidateFilter.candidateCodes(all, resolved, customIds, extrasById)
+            Roster(
+                all = all,
+                participants = DuelCandidateFilter.participants(all, candidateCodes, withMatches),
+                candidateCodes = candidateCodes,
+                filters = filters,
+                unresolvedNames = unresolvedNames
+            )
+        }
+    }
+
+    /**
+     * 필터 한 줄의 사람이 읽는 요약 — *"성별: 여성, 남성"* / *"메모 포함: 기사"*.
+     * 축 편집 창과 대결 화면이 같은 문구를 쓴다(각자 만들면 갈린다).
+     */
+    fun filterSummary(filter: FieldFilter): String {
+        val values = filter.values.joinToString(", ")
+        return if (filter.matchMode == "contains") {
+            app.getString(R.string.duel_filter_line_contains, filter.fieldName, values)
+        } else {
+            app.getString(R.string.duel_filter_line_exact, filter.fieldName, values)
+        }
+    }
+
+    /**
+     * 필터 값 고르기의 제안 목록 (B-168) — 이 세계관에 **실재하는 값**들.
+     *
+     * 커스텀 필드는 캐릭터 탭 필터와 같은 소스(값 라이브러리 canonical)를 쓰고, 시스템 열은
+     * 열마다 실재 값을 센다. 메모만 제안이 없다 — 문장이라 칩으로 고를 값이 아니고,
+     * 그 자리는 `contains` + 직접 입력이 맞는 길이다(창이 그 길을 함께 연다).
+     */
+    suspend fun filterValueSuggestions(universeId: Long, key: String): List<String> {
+        val fields = characterFields(universeId)
+        val field = fields.firstOrNull { it.key == key }
+        if (field != null) {
+            return characterRepository.getFieldValuesForUniverse(universeId, field.id)
+        }
+        val column = DuelSystemFields.columnOf(key) ?: return emptyList()
+        if (column == DuelSystemFields.Column.MEMO) return emptyList()
+        if (column == DuelSystemFields.Column.NOVEL) {
+            return app.database.novelDao().getNovelsByUniverseList(universeId)
+                .map { it.title }.filter { it.isNotBlank() }.distinct().sorted()
+        }
+        val characters = participantsOf(universeId)
+        val extrasById = systemExtrasOf(characters, listOf(column.key))
+        return characters.flatMap { character ->
+            DuelSystemFields.tokensOf(
+                column,
+                DuelSystemFields.valueOf(column, character, extrasById[character.id] ?: DuelSystemFields.Extras())
+            )
+        }.filter { it.isNotBlank() }.distinct().sorted()
+    }
 
     /** 세계관의 참가자. 축 목록처럼 **여러 축이 같은 참가자를 보는 자리**가 이것을 직접 부른다. */
     suspend fun participantsOf(universeId: Long): List<Character> =
@@ -358,13 +461,21 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 축의 현재 상태. 무거운 계산이라 [Dispatchers.Default]에서 돈다.
      *
-     * @param characters [participants]가 낸 목록. 화면이 이미 들고 있으면 다시 읽지 않는다 —
-     *   매 판 뒤 다시 계산하는 경로라 캐릭터 표를 그때마다 훑으면 그것이 더 비싸진다.
+     * @param characters [roster]의 participants — 후보 ∪ 전적 보유. 화면이 이미 들고 있으면
+     *   다시 읽지 않는다 — 매 판 뒤 다시 계산하는 경로라 캐릭터 표를 그때마다 훑으면
+     *   그것이 더 비싸진다.
+     * @param candidateCodes [roster]의 candidateCodes — 대기열이 이 안에서만 짝을 낸다(B-168).
      */
-    suspend fun load(axis: DuelAxis, characters: List<Character>): Loaded =
+    suspend fun load(
+        axis: DuelAxis,
+        characters: List<Character>,
+        candidateCodes: Set<String>? = null
+    ): Loaded =
         withContext(Dispatchers.Default) {
             val byCode = characters.associateBy { it.code }
-            val state = duelRepository.stateOf(axis, characters.map { it.code })
+            val state = duelRepository.stateOf(
+                axis, characters.map { it.code }, candidateCodes = candidateCodes
+            )
             Loaded(axis, state, byCode, duelRepository.verdicts(axis.id))
         }
 

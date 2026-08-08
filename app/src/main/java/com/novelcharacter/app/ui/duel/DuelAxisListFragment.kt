@@ -22,6 +22,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.databinding.FragmentDuelAxisListBinding
 import com.novelcharacter.app.ui.adapter.DuelAxisAdapter
 import com.novelcharacter.app.ui.adapter.DuelFieldLinkAdapter
+import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.navigateSafe
@@ -184,25 +185,32 @@ class DuelAxisListFragment : Fragment() {
     private fun loadSummaries(axes: List<DuelAxis>) {
         if (axes.isEmpty()) return
         viewLifecycleOwner.lifecycleScope.launch {
-            val characters = viewModel.participantsOf(universeId)
             val summaries = HashMap<Long, String>(axes.size)
             for (axis in axes) {
-                val loaded = viewModel.load(axis, characters)
+                // 축마다 로스터를 새로 읽는다(B-168) — 후보 필터가 축 단위라 참가자 구성이
+                // 축마다 다르다. 필터 없는 축은 로스터가 캐릭터 목록 한 번으로 끝난다.
+                val roster = viewModel.roster(axis)
+                val loaded = viewModel.load(axis, roster.participants, roster.candidateCodes)
                 val base = getString(
                     R.string.duel_axis_summary,
                     // **쌓인 판 전부**를 센다(`fit.usedMatches`가 아니다). 저쪽은 점수 적합에
                     // 들어간 수라 고아·상성 제외·깨진 판이 빠지므로, 삭제 고지가 말하는
                     // *"쌓인 판 N개"*(전량)와 **같은 것을 두 숫자로 말하게 된다.**
                     loaded.state.records.matches.size,
-                    characters.size,
+                    roster.all.size,
                     loaded.state.report.count
                 )
                 val undecided = loaded.verdicts.count { it.kind == DuelCounterVerdict.KIND_UNDECIDED }
-                summaries[axis.id] = if (undecided > 0) {
+                var summary = if (undecided > 0) {
                     base + getString(R.string.duel_axis_summary_undecided, undecided)
                 } else {
                     base
                 }
+                // 필터가 걸린 축은 목록에서도 보인다 — 눌러 봐야 아는 상태를 만들지 않는다(원칙 04).
+                if (roster.filtered) {
+                    summary += getString(R.string.duel_axis_summary_filtered, roster.candidateCount)
+                }
+                summaries[axis.id] = summary
                 if (!isAdded) return@launch
                 adapter.updateSummaries(summaries.toMap())
             }
@@ -224,9 +232,12 @@ class DuelAxisListFragment : Fragment() {
         var influences = links.influences
         var outcomes = links.outcomes
         var profiles = links.profiles
+        // 후보 필터(B-168)도 같은 계약이다 — 저장을 눌러야 축에 실린다.
+        var candidateFilters = DuelCandidateFilter.parse(existing?.candidateFiltersJson)
         val influenceSummary = view.findViewById<TextView>(R.id.influenceSummary)
         val outcomeSummary = view.findViewById<TextView>(R.id.outcomeSummary)
         val profileSummary = view.findViewById<TextView>(R.id.profileSummary)
+        val candidateFilterSummary = view.findViewById<TextView>(R.id.candidateFilterSummary)
         val conflictWarning = view.findViewById<TextView>(R.id.linkConflictWarning)
         val profileBlockedWarning = view.findViewById<TextView>(R.id.profileBlockedWarning)
         val outcomeBlockedWarning = view.findViewById<TextView>(R.id.outcomeBlockedWarning)
@@ -235,6 +246,11 @@ class DuelAxisListFragment : Fragment() {
             influenceSummary.text = summarize(influences)
             outcomeSummary.text = summarize(outcomes)
             profileSummary.text = summarize(profiles)
+            candidateFilterSummary.text = if (candidateFilters.isEmpty()) {
+                getString(R.string.duel_filter_none)
+            } else {
+                candidateFilters.joinToString(" · ") { viewModel.filterSummary(it) }
+            }
             val edited = DuelFieldLinks.Axis(influences, outcomes, profiles)
             // 같은 필드가 재료이면서 결과일 수는 없다 — 막지는 않고 **말한다**(자율성 우선).
             val conflicts = edited.conflicts
@@ -298,6 +314,12 @@ class DuelAxisListFragment : Fragment() {
                 renderLinks()
             }
         }
+        view.findViewById<View>(R.id.btnEditCandidateFilter).setOnClickListener {
+            showCandidateFilterDialog(existing, candidateFilters) { picked ->
+                candidateFilters = picked
+                renderLinks()
+            }
+        }
 
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(if (existing == null) R.string.duel_axis_add else R.string.duel_axis_edit)
@@ -325,7 +347,13 @@ class DuelAxisListFragment : Fragment() {
                 ).copy(
                 influenceFieldKeys = DuelFieldLinks.encode(influences),
                 outcomeFieldKeys = DuelFieldLinks.encode(outcomes),
-                profileFieldKeys = DuelFieldLinks.encode(profiles)
+                profileFieldKeys = DuelFieldLinks.encode(profiles),
+                // 저장 표기는 한 가지다 — 조건이 없으면 "{}"가 아니라 null(마이그레이션 55 주석).
+                candidateFiltersJson = if (candidateFilters.isEmpty()) {
+                    null
+                } else {
+                    DuelCandidateFilter.encode(candidateFilters)
+                }
             )
             saving = true
             // 이름 유니크는 인덱스가 지킨다. 인덱스에 걸리면 예외로 죽으므로 **먼저 묻는다** —
@@ -474,6 +502,171 @@ class DuelAxisListFragment : Fragment() {
                 )
                 .setView(view)
                 .setPositiveButton(R.string.confirm) { _, _ -> onPicked(linkAdapter.currentLinks()) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 후보 필터 (B-168)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 후보 필터 편집 창.
+     *
+     * 값 고르기는 이 세계관에 **실재하는 값**의 칩이 기본이고, 없는 값은 직접 입력한다
+     * (러프/정밀 이중 경로 — 원칙 04). 조건을 넣고 뺄 때마다 **후보 수 미리보기**가 곧바로
+     * 갱신된다 — 저장하고 대결 화면에 가서야 후보가 0인 것을 아는 구조를 만들지 않는다.
+     *
+     * @param existing 편집 중인 축. 새 축이면 null이고, 미리보기는 임시 축(id 0 — 판이 없어
+     *   전적 합집합이 후보와 같다)으로 돈다.
+     */
+    private fun showCandidateFilterDialog(
+        existing: DuelAxis?,
+        current: List<com.novelcharacter.app.data.model.FieldFilter>,
+        onPicked: (List<com.novelcharacter.app.data.model.FieldFilter>) -> Unit
+    ) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fields = viewModel.characterFields(universeId)
+            if (!isAdded) return@launch
+            fieldNames = viewModel.linkLabels(fields)
+
+            // 고를 수 있는 항목 — 커스텀 필드가 먼저, 시스템 열이 뒤(연결 고르기와 같은 차례).
+            // 가려진 시스템 열은 내지 않는다(같은 키의 진짜 필드가 이미 위에 있다 — B-167).
+            val options = ArrayList<Pair<String, String>>()
+            fields.forEach { options.add(it.key to it.name) }
+            DuelSystemFields.available(fields.map { it.key }).forEach { column ->
+                options.add(
+                    column.key to getString(
+                        R.string.duel_filter_system_option, viewModel.systemFieldLabel(column)
+                    )
+                )
+            }
+
+            val context = requireContext()
+            val view = LayoutInflater.from(context)
+                .inflate(R.layout.dialog_duel_candidate_filter, null)
+            val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.filterChipGroup)
+            val emptyText = view.findViewById<TextView>(R.id.filterEmpty)
+            val preview = view.findViewById<TextView>(R.id.filterPreview)
+            val fieldSpinner = view.findViewById<android.widget.Spinner>(R.id.filterFieldSpinner)
+            val valuesEmpty = view.findViewById<TextView>(R.id.filterValuesEmpty)
+            val valueChips = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.filterValueChipGroup)
+            val valueInput = view.findViewById<EditText>(R.id.filterValueInput)
+            val matchContains = view.findViewById<android.widget.RadioButton>(R.id.filterMatchContains)
+
+            var edited = current
+            var previewJob: kotlinx.coroutines.Job? = null
+
+            fun renderPreview() {
+                previewJob?.cancel()
+                previewJob = viewLifecycleOwner.lifecycleScope.launch {
+                    // 미리보기는 실제 적용과 **같은 길**(roster)을 지난다 — 따로 세면 갈린다.
+                    val probe = (existing ?: DuelAxis(universeId = universeId, name = ""))
+                        .copy(
+                            candidateFiltersJson = if (edited.isEmpty()) {
+                                null
+                            } else {
+                                DuelCandidateFilter.encode(edited)
+                            }
+                        )
+                    val roster = viewModel.roster(probe)
+                    if (!isAdded) return@launch
+                    val count = roster.candidateCount
+                    preview.text = getString(
+                        if (count < 2) R.string.duel_filter_preview_short else R.string.duel_filter_preview,
+                        count
+                    )
+                }
+            }
+
+            fun renderConditions() {
+                chipGroup.removeAllViews()
+                emptyText.visibility = if (edited.isEmpty()) View.VISIBLE else View.GONE
+                edited.forEach { filter ->
+                    val chip = com.google.android.material.chip.Chip(context).apply {
+                        text = viewModel.filterSummary(filter)
+                        isCloseIconVisible = true
+                        setOnCloseIconClickListener {
+                            edited = edited - filter
+                            renderConditions()
+                        }
+                    }
+                    chipGroup.addView(chip)
+                }
+                renderPreview()
+            }
+
+            var valueLoadJob: kotlinx.coroutines.Job? = null
+            fun loadValues(key: String) {
+                valueLoadJob?.cancel()
+                valueLoadJob = viewLifecycleOwner.lifecycleScope.launch {
+                    val values = viewModel.filterValueSuggestions(universeId, key)
+                    if (!isAdded) return@launch
+                    valueChips.removeAllViews()
+                    valuesEmpty.visibility = if (values.isEmpty()) View.VISIBLE else View.GONE
+                    values.forEach { value ->
+                        valueChips.addView(
+                            com.google.android.material.chip.Chip(context).apply {
+                                text = value
+                                isCheckable = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            fieldSpinner.adapter = android.widget.ArrayAdapter(
+                context, android.R.layout.simple_spinner_dropdown_item, options.map { it.second }
+            )
+            fieldSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?, v: View?, position: Int, id: Long
+                ) {
+                    options.getOrNull(position)?.let { loadValues(it.first) }
+                }
+
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+            if (options.isNotEmpty()) loadValues(options[0].first)
+
+            view.findViewById<View>(R.id.btnAddCondition).setOnClickListener {
+                val picked = options.getOrNull(fieldSpinner.selectedItemPosition) ?: return@setOnClickListener
+                val values = ArrayList<String>()
+                for (i in 0 until valueChips.childCount) {
+                    (valueChips.getChildAt(i) as? com.google.android.material.chip.Chip)
+                        ?.takeIf { it.isChecked }
+                        ?.let { values.add(it.text.toString()) }
+                }
+                valueInput.text.toString().split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && it !in values }
+                    .forEach { values.add(it) }
+                if (values.isEmpty()) {
+                    valueInput.showInlineError(getString(R.string.duel_filter_add_needs_value))
+                    return@setOnClickListener
+                }
+                edited = edited + com.novelcharacter.app.data.model.FieldFilter(
+                    fieldId = -1L,
+                    // 시스템 열 접두를 이름표에 남기지 않는다 — 요약 줄은 사람이 읽는 말이다.
+                    fieldName = fieldNames[picked.first] ?: picked.second,
+                    values = values,
+                    matchMode = if (matchContains.isChecked) "contains" else "exact",
+                    fieldKey = picked.first
+                )
+                valueInput.setText("")
+                for (i in 0 until valueChips.childCount) {
+                    (valueChips.getChildAt(i) as? com.google.android.material.chip.Chip)?.isChecked = false
+                }
+                renderConditions()
+            }
+
+            renderConditions()
+
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.duel_filter_label)
+                .setView(view)
+                .setPositiveButton(R.string.confirm) { _, _ -> onPicked(edited) }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
