@@ -435,11 +435,14 @@ class OrganizeFolderController(
 
         // 이미 떠 있으면(회전으로 되살아난 시트) 새로 만들지 않고 다시 먹인다 — 새로 만들면
         // 사용자의 체크가 날아가고 창이 겹친다.
-        val existing = fragment.childFragmentManager
-            .findFragmentByTag(ImageFolderTagReviewSheet.TAG) as? ImageFolderTagReviewSheet
+        // `isAdded` — 이미지판과 같은 이유다(B-163). 적용 실패로 되살아나는 경로에서는
+        // 시트가 닫히는 중이라 태그로는 찾히지만 다시 먹여도 화면에 닿지 않는다.
+        val existing = (fragment.childFragmentManager
+            .findFragmentByTag(ImageFolderTagReviewSheet.TAG) as? ImageFolderTagReviewSheet)
+            ?.takeIf { it.isAdded }
         val sheet = existing ?: ImageFolderTagReviewSheet()
+        // 비우는 일은 여기서 하지 않는다 — 실패 시 되살릴 것이 남아야 한다(R-38 · B-163).
         sheet.onApply = { picked ->
-            viewModel.clearFolderTagResult()
             viewModel.applyFolderTags(picked, outcome.pathsByFolder) { applied ->
                 if (!fragment.isAdded) return@applyFolderTags
                 fragment.reportAndNotify(fragment.tagApplyResult(applied))

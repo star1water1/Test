@@ -1169,8 +1169,12 @@ class ImageManagerFragment : Fragment() {
         val retryPaths = com.novelcharacter.app.ai.ImageBatchTagSuggester
             .retryablePaths(result, AI_TAG_RETRYABLE)
 
-        val existing = childFragmentManager
-            .findFragmentByTag(ImageAiTagReviewSheet.TAG) as? ImageAiTagReviewSheet
+        // `isAdded`로 거르는 이유: 적용 실패로 결과가 **되살아나는** 경로에서는 시트가 이미
+        // 닫히는 중이라 태그로는 아직 찾히지만 다시 먹여도 화면에 닿지 않는다(B-163).
+        // 회전으로 되살아난 시트는 붙어 있으므로 그쪽은 종전대로 다시 먹인다.
+        val existing = (childFragmentManager
+            .findFragmentByTag(ImageAiTagReviewSheet.TAG) as? ImageAiTagReviewSheet)
+            ?.takeIf { it.isAdded }
         val sheet = existing ?: ImageAiTagReviewSheet()
         bindAiTagReviewCallbacks(sheet, result)
         if (existing != null) {
@@ -1196,8 +1200,10 @@ class ImageManagerFragment : Fragment() {
         sheet.onRetryOneByOne = { retry ->
             runAiTagSuggest(retry, perRequest = 1, carryOver = result)
         }
+        // **비우는 일은 여기서 하지 않는다** — 적용이 실패하면 이미 결제한 제안을 되살려야
+        // 하는데, 누른 시점에 비우면 되살릴 것이 남지 않는다. 소비는 결과를 아는 곳
+        // (ViewModel)이 성공했을 때만 한다(R-38 · B-163).
         sheet.onApply = { picked ->
-            viewModel.clearAiTagResult()
             viewModel.applyImageTags(picked) { outcome ->
                 if (!isAdded) return@applyImageTags
                 reportAndNotify(tagApplyResult(outcome))
