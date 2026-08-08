@@ -32,6 +32,64 @@ class DuelPairingTest {
         assertTrue(plan.queue.all { it.reason == DuelPairing.Reason.NEW })
     }
 
+    // ── 후보 필터 (B-168) — 대기열은 후보끼리만, 진행률도 후보의 조합으로 ──
+
+    /**
+     * **비후보는 대기열에 오르지 않는다.** 적합에는 남아 점수를 지키지만(전적 있는 비후보 —
+     * `DuelCandidateFilter.participants`), 필터의 뜻은 *새로 붙일 짝*이므로 여기서 갈라진다.
+     * 이 구별이 없으면 필터를 걸어도 세계관 전원이 그대로 짝에 나온다 — 기능이 통째로
+     * 없는 것과 같다.
+     */
+    @Test
+    fun `후보가 아닌 참가자는 짝에 나오지 않는다`() {
+        val fit = DuelRating.fit(listOf(1L, 2L, 3L, 4L), emptyList())
+        val plan = DuelPairing.plan(fit, eligibleIds = setOf(1L, 2L, 3L))
+        assertTrue(plan.queue.isNotEmpty())
+        assertTrue(
+            "4번이 낀 짝이 대기열에 있으면 필터가 일하지 않는 것이다",
+            plan.queue.none { it.pair.lowId == 4L || it.pair.highId == 4L }
+        )
+    }
+
+    /**
+     * **진행률의 분모도 후보의 조합이다.** 비후보가 낀 짝은 이 대기열이 영영 내지 않으므로,
+     * 분모에 넣으면 진행률이 끝에 못 닿는 거짓 척도가 된다 — "1,234 / 44,850판"이 약속하는
+     * 것은 *물을 수 있는 것 전부*다.
+     */
+    @Test
+    fun `진행률은 후보끼리의 조합으로 센다`() {
+        val fit = DuelRating.fit(listOf(1L, 2L, 3L, 4L), emptyList())
+        val plan = DuelPairing.plan(fit, eligibleIds = setOf(1L, 2L, 3L))
+        assertEquals(3L, plan.progress.total)
+        assertEquals(3L, plan.progress.remaining)
+    }
+
+    /** 비후보의 판은 적합에는 남지만 **후보 진행률에는 세지 않는다** — 분자·분모가 같은 집합이어야 한다. */
+    @Test
+    fun `비후보가 낀 판은 진행률의 붙임에 세지 않는다`() {
+        val fit = DuelRating.fit(listOf(1L, 2L, 3L), wins(1L, 3L, 2))
+        val plan = DuelPairing.plan(fit, eligibleIds = setOf(1L, 2L))
+        assertEquals(1L, plan.progress.total)
+        assertEquals(0L, plan.progress.played)
+    }
+
+    @Test
+    fun `후보 제한이 없으면 종전과 같다`() {
+        val fit = DuelRating.fit(listOf(1L, 2L, 3L, 4L), emptyList())
+        val with = DuelPairing.plan(fit, eligibleIds = null)
+        val without = DuelPairing.plan(fit)
+        assertEquals(without.progress, with.progress)
+        assertEquals(without.queue, with.queue)
+    }
+
+    @Test
+    fun `후보가 둘 미만이면 물을 짝이 없다`() {
+        val fit = DuelRating.fit(listOf(1L, 2L, 3L), emptyList())
+        val plan = DuelPairing.plan(fit, eligibleIds = setOf(1L))
+        assertTrue(plan.queue.isEmpty())
+        assertEquals(0L, plan.progress.total)
+    }
+
     @Test
     fun `이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다`() {
         val plan = DuelPairing.plan(chainFit())

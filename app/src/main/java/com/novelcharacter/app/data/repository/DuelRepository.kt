@@ -200,7 +200,13 @@ class DuelRepository(private val db: AppDatabase) {
         participantCodes: Collection<String>,
         pairingOptions: DuelPairing.Options = DuelPairing.Options(),
         counterOptions: DuelCounterRelations.Options = DuelCounterRelations.Options(),
-        ratingOptions: DuelRating.Options = DuelRating.Options()
+        ratingOptions: DuelRating.Options = DuelRating.Options(),
+        /**
+         * 짝이 될 수 있는 참가자의 **코드** (B-168 후보 필터). null이면 전원이다.
+         * [participantCodes]는 전적 있는 비후보까지 담아야 하고(점수가 흔들리지 않게 —
+         * `DuelCandidateFilter.participants`가 그 합집합을 만든다) 대기열만 이것으로 좁힌다.
+         */
+        candidateCodes: Collection<String>? = null
     ): AxisState {
         val records = DuelRecords.resolve(
             participantCodes,
@@ -217,7 +223,8 @@ class DuelRepository(private val db: AppDatabase) {
         val plan = DuelPairing.plan(
             fit = twoPass.fit,
             recheckTargets = twoPass.report.involvedIds,
-            options = pairingOptions
+            options = pairingOptions,
+            eligibleIds = candidateCodes?.mapNotNull { records.idOf(it) }?.toSet()
         )
         return AxisState(
             axis = axis,

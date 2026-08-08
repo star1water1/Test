@@ -65,6 +65,20 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private lateinit var imageStrip: CharacterImageStripController
     private var restoredFromSavedState = false
 
+    /**
+     * 뷰가 죽을 때 챙겨 두는 폼 상태 (B-169·B-170) — **화면 이동 복귀의 복원 원천.**
+     *
+     * 썸네일을 탭해 뷰어로 갔다 오면 백스택 복귀라 `savedInstanceState`가 null이고, 조각
+     * 인스턴스만 살아남는다. 종전에는 그 경로가 회전용 Bundle을 못 타 폼이 DB에서 다시 서고
+     * 사용자에게 *롤백 + [복원] 다이얼로그*로 보였다(B-169) — 잃은 적 없는 것을 되찾겠냐고
+     * 묻는 것 자체가 마찰이다(원칙 04). 이 필드가 그 경로를 무음 복원으로 바꾼다.
+     *
+     * **진짜 태스크 종료 후 복원과는 갈린다**(설계 물음 ⓒ) — 그쪽은 조각도 새로 나
+     * 이 필드가 null이고, 종전대로 영구 드래프트 다이얼로그가 묻는다. 시스템 프로세스
+     * 재생성은 `savedInstanceState`가 맡는다(같은 내용을 담는다 — [saveFormState]).
+     */
+    private var pendingViewState: Bundle? = null
+
     // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
     private lateinit var formBuilder: DynamicFieldFormBuilder
     // ✨ AI 추천 진행 다이얼로그 — 실행 상태는 VM(aiSuggestRunning), 표시만 뷰 수명에 묶는다
@@ -108,6 +122,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        saveFormState(outState)
+    }
+
+    /**
+     * 폼 상태를 한 벌로 담는다 — 회전·프로세스 재생성([onSaveInstanceState])과 화면 이동
+     * 복귀([pendingViewState] — onDestroyView)가 **같은 내용**을 들어야 두 경로의 복원이
+     * 갈리지 않는다.
+     */
+    private fun saveFormState(outState: Bundle) {
         outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
 
         // 동적 필드 입력값 보존.
@@ -118,6 +141,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         if (::formBuilder.isInitialized) formBuilder.saveStateTo(fieldValues)
         outState.putBundle("fieldValues", fieldValues)
         outState.putBoolean(STATE_FIELDS_HYDRATED, hydrated)
+
+        // "지우기로 했다"와 "대표로 골랐다"도 폼 상태다 (B-170) — imagePaths만 싣고 이 둘을
+        // 빠뜨리면, *뺐다는 사실*은 살아남고 *지우기로 했다는 사실*만 사라지는 비대칭이 된다
+        // (사용자가 명시적으로 고른 조작이 말없이 무시되는 것 — 개발 의도 2번의 정면 위반).
+        outState.putStringArrayList(STATE_PENDING_DELETES, ArrayList(imageStrip.pendingDeletes))
+        outState.putString(STATE_REPRESENTATIVE, imageStrip.representativePath)
+
+        // 미저장 입력 전체 — 복귀 시 무음 복원의 재료(B-169). 드래프트와 같은 그릇을 쓰는
+        // 것은 적용 경로([applyDraft])를 하나로 두기 위해서다(두 벌이면 갈린다).
+        if (hasUnsavedChanges && _binding != null && ::formBuilder.isInitialized) {
+            outState.putString(STATE_DRAFT, gson.toJson(collectDraft()))
+        }
     }
 
     /**
@@ -147,7 +182,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             novelId = selectedNovelId,
             imagePaths = imageStrip.paths.toList(),
             fieldValues = fieldValues,
-            savedAt = System.currentTimeMillis()
+            savedAt = System.currentTimeMillis(),
+            // B-170 — 이 둘이 빠져 있던 것이 결함의 본체다(Draft KDoc).
+            pendingDeletePaths = imageStrip.pendingDeletes,
+            representativePath = imageStrip.representativePath
         )
     }
 
@@ -193,8 +231,21 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imageStrip.setPaths(validated)
         }
 
-        // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용
-        if (draft.novelId != -1L) {
+        // "지우기로 했다"·"대표로 골랐다"의 복원 (B-170). null은 *기록되지 않았다*이지
+        // *없앴다*가 아니다 — 옛 드래프트(칸이 없던 시절)에서 없는 사실을 지우기로 넓혀
+        // 읽으면 그것이 새 데이터 유실이다(Draft KDoc의 계약).
+        draft.pendingDeletePaths?.let { pending ->
+            imageStrip.restorePendingDeletes(
+                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+            )
+        }
+        draft.representativePath?.let { imageStrip.setRepresentativePath(it) }
+
+        // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용.
+        // **빈 값 묶음은 보관하지 않는다** — 폼 적재 전에 담긴 드래프트가 그 모양인데,
+        // 빈 묶음을 소비하면 DB 적재를 건너뛰어 필드값이 전량 삭제된다(saveFormState의
+        // STATE_FIELDS_HYDRATED가 막는 것과 같은 무음 유실의 드래프트판).
+        if (draft.novelId != -1L && draft.fieldValues.isNotEmpty()) {
             val index = novels.indexOfFirst { it.id == draft.novelId }
             if (index >= 0) {
                 val bundle = Bundle()
@@ -366,8 +417,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             setupSupplementMode()
         }
 
-        // Restore imagePaths from saved state (rotation), filtering invalid paths
-        savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
+        // 복원 원천은 둘이다 (B-169): 회전·프로세스 재생성은 savedInstanceState, **화면 이동
+        // 복귀(백스택)는 pendingViewState** — 종전에는 뒤엣것이 없어 뷰어에 갔다 오는 것만으로
+        // 폼이 DB로 롤백됐다. 회전은 둘 다 있고 내용이 같다([saveFormState] 한 벌).
+        val restoreSource = savedInstanceState ?: pendingViewState
+        pendingViewState = null
+
+        // Restore imagePaths from saved state, filtering invalid paths
+        restoreSource?.getStringArrayList("imagePaths")?.let { saved ->
             val validated = CharacterImageStripController.validateInternalPaths(
                 saved, context?.filesDir
             )
@@ -377,8 +434,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 회전 시점에 동적 폼이 아직 적재되지 않았다면 그때 저장된 빈 Bundle은 "값이 없다"가
         // 아니라 "아직 모른다"다. 그걸 복원값으로 소비하면 DB 적재 경로를 건너뛰어 폼이 빈 채로
         // 남고, 저장이 폼 커버 범위의 필드값을 전량 삭제한다 (N2와 같은 무음 유실의 다른 문).
-        pendingFieldValues = if (savedInstanceState?.getBoolean(STATE_FIELDS_HYDRATED) == true) {
-            savedInstanceState.getBundle("fieldValues")
+        pendingFieldValues = if (restoreSource?.getBoolean(STATE_FIELDS_HYDRATED) == true) {
+            restoreSource.getBundle("fieldValues")
         } else {
             null
         }
@@ -431,11 +488,43 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 initialLoadsDone = true
                 maybeOpenSaveGate()
             }
-            // 회전 재생성(savedInstanceState 보유)이 아니면 영구 드래프트 복원 제안 (B-6)
-            if (savedInstanceState == null) {
+            if (restoreSource != null) {
+                // **무음 복원** (B-169) — 같은 세션의 상태가 눈앞에 있는데 *되찾겠냐고* 묻는
+                // 것이 종전의 마찰이었다(사용자가 잃은 적 없는 것이다 — 원칙 04). DB 적재
+                // 뒤에 얹어야 하므로 여기이고, 적용 경로는 드래프트와 같은 한 벌이다.
+                restoreFormStateSilently(restoreSource)
+            } else {
+                // 조각이 새로 났다 = 진짜 새 진입이거나 태스크 종료 후다(설계 물음 ⓒ의
+                // 구별) — 영구 드래프트는 세션을 넘은 값이라 종전대로 **묻는다** (B-6).
                 maybeOfferDraftRestore()
             }
         }
+    }
+
+    /**
+     * 화면 이동·회전 복귀의 무음 복원 (B-169·B-170) — [saveFormState]가 담은 것을 되살린다.
+     *
+     * 이미지·필드값 묶음은 onViewCreated 앞머리가 이미 복원했고([restoredFromSavedState] ·
+     * [pendingFieldValues]), 여기서는 나머지를 얹는다: 미저장 입력 전체(있을 때만 — 없으면
+     * DB 값이 곧 진실이라 얹을 것이 없다)와 **삭제 예약·대표 지정**(미저장 여부와 무관하게
+     * 폼 상태다 — 회전만 해도 ☆이 풀리던 것이 이 두 줄로 닫힌다).
+     */
+    private fun restoreFormStateSilently(state: Bundle) {
+        if (_binding == null) return
+        state.getString(STATE_DRAFT)?.let { json ->
+            val draft = try {
+                gson.fromJson(json, CharacterDraftPrefs.Draft::class.java)
+            } catch (_: Exception) {
+                null
+            }
+            draft?.let { applyDraft(it) }
+        }
+        state.getStringArrayList(STATE_PENDING_DELETES)?.let { pending ->
+            imageStrip.restorePendingDeletes(
+                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+            )
+        }
+        state.getString(STATE_REPRESENTATIVE)?.let { imageStrip.setRepresentativePath(it) }
     }
 
     /**
@@ -918,6 +1007,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     override fun onDestroyView() {
+        // 화면 이동 복귀(백스택)의 복원 원천을 챙긴다 (B-169·B-170) — 이 조각은 살아남고
+        // 뷰만 죽는 경로라 savedInstanceState가 없다. **detach·binding 해제보다 먼저**여야
+        // 읽을 것이 남아 있다.
+        if (_binding != null) {
+            pendingViewState = Bundle().also { saveFormState(it) }
+        }
         // 회전 시 액티비티 파괴 전에 진행 다이얼로그를 닫는다 — 파괴된 윈도우 dismiss 크래시 방지.
         // 재생성 뷰의 aiSuggestRunning 관측이 필요하면 다시 띄운다.
         aiProgressDialog?.dismiss()
@@ -933,5 +1028,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private companion object {
         /** 회전 저장 시점에 동적 폼이 적재돼 있었는가 — 빈 Bundle의 의미를 가르는 표시 */
         const val STATE_FIELDS_HYDRATED = "fieldsHydrated"
+
+        /** "앱에서 삭제" 예약 (B-170) — imagePaths와 같은 수명이어야 하는 폼 상태다. */
+        const val STATE_PENDING_DELETES = "pendingDeletePaths"
+
+        /** 대표 이미지 지정 (B-170의 형제) — 회전만 해도 풀리던 ☆. */
+        const val STATE_REPRESENTATIVE = "representativePath"
+
+        /** 미저장 입력 전체(드래프트 JSON) — 화면 이동·회전 복귀의 무음 복원 재료 (B-169). */
+        const val STATE_DRAFT = "silentRestoreDraft"
     }
 }

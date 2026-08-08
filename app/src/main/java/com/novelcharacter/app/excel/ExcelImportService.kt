@@ -30,6 +30,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
@@ -6936,6 +6937,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val influenceFieldKeys: String?,
         val outcomeFieldKeys: String?,
         val profileFieldKeys: String?,
+        /**
+         * 후보 필터 (B-168). 겹으로 nullable인 것이 사실 셋을 가른다 —
+         * 바깥 null = *열이 없다*(v55 전 파일 · **읽을 수 없는 칸**도 여기로 접어 기존 값을
+         * 지킨다), 안쪽 null = *지워라*, 값 = *이 필터로 바꿔라*.
+         */
+        val candidateFiltersJson: DuelCandidateFilter.SheetCell.Value?,
+        /** 후보필터 칸이 있는데 읽을 수 없었다 — 가져오기가 경고 한 줄을 낸다. */
+        val candidateFiltersMalformed: Boolean,
         val displayOrder: Int,
         val code: String,
         val createdAt: Long
@@ -6953,6 +6962,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 null
             }
 
+        // 후보 필터 — 같은 "없는 열은 건드리지 않는다" 규약에 해석 실패 한 갈래가 더 있다.
+        val filterCell = if (cols.containsKey("후보필터(JSON)")) {
+            DuelCandidateFilter.fromSheetCell(cell("후보필터(JSON)"))
+        } else {
+            null
+        }
+
         val targetLabel = cell("대상")
         return DuelAxisRowValues(
             name = cell("축이름"),
@@ -6967,6 +6983,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             influenceFieldKeys = links("영향필드"),
             outcomeFieldKeys = links("산출필드"),
             profileFieldKeys = links("프로필필드"),
+            candidateFiltersJson = filterCell as? DuelCandidateFilter.SheetCell.Value,
+            candidateFiltersMalformed = filterCell is DuelCandidateFilter.SheetCell.Malformed,
             displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt() ?: 0,
             code = cell("코드"),
             createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
@@ -6986,6 +7004,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             influenceFieldKeys = r.influenceFieldKeys ?: existing.influenceFieldKeys,
             outcomeFieldKeys = r.outcomeFieldKeys ?: existing.outcomeFieldKeys,
             profileFieldKeys = r.profileFieldKeys ?: existing.profileFieldKeys,
+            // 열이 없거나 읽을 수 없으면 기존 값을 지킨다(위 KDoc — 사실 셋을 가른다).
+            candidateFiltersJson = if (r.candidateFiltersJson != null) {
+                r.candidateFiltersJson.json
+            } else {
+                existing.candidateFiltersJson
+            },
             displayOrder = r.displayOrder
         )
 
@@ -7015,6 +7039,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
                     ?: db.duelAxisDao().getByUniverseAndName(universe.id, r.targetType, r.name)
+                if (r.candidateFiltersMalformed) {
+                    // 기존 값을 지키고 그 사실을 말한다 — 괄호 하나 틀린 손편집이 멀쩡한
+                    // 필터를 조용히 지우면 안 된다(개발 의도 2번·4번).
+                    result.warnings.add(
+                        "대결 축 행 $i: 후보필터(JSON) 칸을 읽을 수 없어 기존 필터를 유지했습니다 — 앱에서 다시 내보낸 파일의 형식을 참고해 고쳐 주세요"
+                    )
+                }
                 if (existing == null) {
                     // 같은 (세계관, 대상, 이름)이 이미 있으면 유니크 인덱스가 던진다 — 위에서
                     // 이미 찾아봤으므로 여기 오는 것은 진짜 새 축이다.
@@ -7028,6 +7059,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             influenceFieldKeys = newAxisLinks(r.influenceFieldKeys),
                             outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
                             profileFieldKeys = newAxisLinks(r.profileFieldKeys),
+                            candidateFiltersJson = r.candidateFiltersJson?.json,
                             code = r.code.ifBlank { generateEntityCode() }
                         )
                     )

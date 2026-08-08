@@ -43,6 +43,19 @@
             android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="@color/text_secondary" />
 
+        <!--
+          후보 필터가 걸린 축의 표시 줄(B-168) — 걸려 있다는 사실이 눌러 보기 전에 보여야 한다
+          (원칙 04: 일일이 확인해야 존재를 아는 데이터 금지). 없으면 통째로 숨는다.
+        -->
+        <TextView
+            android:id="@+id/filterText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="@color/text_secondary"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/reasonText"
             android:layout_width="match_parent"

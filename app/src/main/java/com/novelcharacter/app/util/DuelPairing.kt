@@ -126,15 +126,23 @@ object DuelPairing {
     /**
      * @param recheckTargets 층 3이 우선해 다시 꺼낼 캐릭터 — 상성 후보에 얽힌 쪽
      *   ([DuelCounterRelations.Report.involvedIds]를 그대로 넣으면 된다).
+     * @param eligibleIds **짝이 될 수 있는** 참가자 (B-168 후보 필터). null이면 전원이다.
+     *   적합([fit])은 전적이 있는 비후보까지 담고 있어야 점수가 흔들리지 않지만(설계 9-3),
+     *   **새로 붙일 짝은 후보끼리만** 낸다 — 그것이 필터의 뜻이다. 진행률·접힘 수도 후보끼리의
+     *   조합으로 센다: 비후보가 낀 짝은 이 대기열이 영영 내지 않을 것이라, 분모에 넣으면
+     *   진행률이 끝에 못 닿는 거짓 척도가 된다.
      */
     fun plan(
         fit: DuelRating.Fit,
         recheckTargets: Set<Long> = emptySet(),
-        options: Options = Options()
+        options: Options = Options(),
+        eligibleIds: Set<Long>? = null
     ): Plan {
-        val ranked = fit.ratings.sortedWith(
-            compareByDescending<DuelRating.Rating> { it.strength }.thenBy { it.id }
-        )
+        val ranked = fit.ratings
+            .let { ratings -> if (eligibleIds == null) ratings else ratings.filter { it.id in eligibleIds } }
+            .sortedWith(
+                compareByDescending<DuelRating.Rating> { it.strength }.thenBy { it.id }
+            )
         val n = ranked.size
         val total = if (n < 2) 0L else n.toLong() * (n - 1L) / 2L
         if (n < 2) {
