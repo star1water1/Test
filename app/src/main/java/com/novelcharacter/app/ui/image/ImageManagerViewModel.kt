@@ -1571,7 +1571,11 @@ class ImageManagerViewModel(
         carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
     ): Boolean {
         if (aiTagRunning.value == true) return false
-        if (paths.isEmpty()) return false
+        // **부를 것이 없으면 true다** — 여기서 false를 내면 호출측이 *"이미 실행 중입니다"*라는
+        // **틀린 사유**를 말한다(B-121 ④가 잘림과 번호 사고를 가른 것과 같은 부류 — 고지가
+        // 틀린 곳을 고치라고 시키면 없느니만 못하다). 호출측 가드가 이미 막는 자리라
+        // 실제로 뜨지는 않지만, 사유를 하나로 뭉뚱그려 두면 다음 사람이 그 위에 쌓는다.
+        if (paths.isEmpty()) return true
         aiTagCancelled = false
         // **총량을 먼저 세운다** — 진행 창은 `aiTagRunning`을 보고 서면서 이 값으로 총량을
         // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다.
