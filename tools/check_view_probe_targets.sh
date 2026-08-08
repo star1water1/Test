@@ -54,6 +54,19 @@ view_files() {
   grep -rlE "$VIEW_RE" --include=*.kt "$1" 2>/dev/null | sort -u
 }
 
+# **등재됐다 = 주석이 아닌 줄에 `echo "$M/<경로>"`가 있다.**
+# 경로 문자열이 파일 어딘가에 있기만 하면 통과시키던 판이 있었는데, 그러면
+# **주석에 이름만 적어 두고 실제 등재 줄을 지워도 초록이 뜬다**(이 검사를 세운 뒤
+# 콜드 검토가 실제로 그 구멍을 잡았다 — 등재 줄을 지우고 그 경로를 주석에 남기니 통과했다).
+# 하필 이 검사가 막으려는 것이 *조용히 빠지는 것*이라, 그 구멍은 검사 자체를 무의미하게 만든다.
+#
+# **형태를 좁게 요구하는 것은 일부러다.** 목록의 형태가 바뀌면 이 검사는 **큰소리로 실패**하고
+# 사람이 여기를 고치게 된다 — 느슨하게 두어 조용히 통과하는 것보다 그쪽이 낫다(실패의 방향).
+listed() {
+  local rel="$1"
+  grep -v '^[[:space:]]*#' "$PROBE" | grep -qF 'echo "$M/'"$rel"'"'
+}
+
 echo "── 커스텀 뷰 프로브 대상 목록 검사 (R-31 · B-147) ──"
 
 # ── 탐지기 자기 시험 — 진짜를 잡고, 닮은 것은 안 잡는가 ──
@@ -91,6 +104,25 @@ if [ ! -f "$PROBE" ]; then
   exit 1
 fi
 
+# `listed`의 자기 시험 — **주석만으로는 등재가 아니다**를 실제로 잰다.
+# 위 탐지기 시험이 *무엇이 커스텀 뷰인가*를 쟀다면 이쪽은 *무엇이 등재인가*를 잰다.
+SELFPROBE=$(mktemp)
+{
+  echo '  echo "$M/ui/real/Listed.kt"'
+  echo '  # 주석에만 적힌 것: ui/fake/CommentOnly.kt'
+  echo '  # echo "$M/ui/fake/CommentedOut.kt"'
+} > "$SELFPROBE"
+_real_probe="$PROBE"; PROBE="$SELFPROBE"
+listed "ui/real/Listed.kt"        && l_ok=1 || l_ok=0
+listed "ui/fake/CommentOnly.kt"   && l_c1=1 || l_c1=0
+listed "ui/fake/CommentedOut.kt"  && l_c2=1 || l_c2=0
+PROBE="$_real_probe"; rm -f "$SELFPROBE"
+if [ "$l_ok" -ne 1 ] || [ "$l_c1" -ne 0 ] || [ "$l_c2" -ne 0 ]; then
+  echo "  ✗ 등재 판정 자기 시험 실패 — 진짜 ${l_ok}(1) · 주석 언급 ${l_c1}(0) · 주석 처리된 등재 ${l_c2}(0)" >&2
+  echo "      (주석을 등재로 읽으면 이 검사는 자기가 막으려는 것을 그대로 통과시킨다)" >&2
+  exit 1
+fi
+
 FOUND=$(view_files "$SRC")
 COUNT=$(printf '%s\n' "$FOUND" | grep -c . || true)
 
@@ -106,7 +138,7 @@ MISSING=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#"$SRC"/}"                       # 예: ui/graph/RelationshipGraphView.kt
-  if grep -qF "$rel" "$PROBE"; then
+  if listed "$rel"; then
     echo "  ✓ $rel"
   else
     echo "  ✗ $rel — $PROBE 대상 목록에 없다(조용히 검사에서 빠진다)" >&2
