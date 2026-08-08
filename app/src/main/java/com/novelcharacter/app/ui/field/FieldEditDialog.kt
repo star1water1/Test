@@ -2290,6 +2290,11 @@ class FieldEditDialog : DialogFragment() {
     ): Boolean {
         if (duelOutcomeAsked || !binding.switchDuelGrade.isChecked) return false
         if (binding.duelGradeLayout.visibility != View.VISIBLE) return false
+        // **`sys:` 접두는 예약이라 산출이 될 수 없다**(R-40 · B-167) — 사용자가 그 접두로
+        // 필드 키를 지었으면 여기서 등록해 봐야 순위표 대조가 건너뛴다. 묻지 않는 것이
+        // 옳다: *"등록할까요"*에 예라고 답했는데 아무 일도 안 일어나는 자리가 된다.
+        // **등급 산정 자체는 그대로 돈다** — 그쪽은 이 필드에 값을 쓰는 일이라 키와 무관하다.
+        if (com.novelcharacter.app.util.DuelSystemFields.isSystemKey(field.key)) return false
         val axis = selectedDuelAxis(binding) ?: return false
         if (axis.fieldLinks.outcomes.any { it.key == field.key }) return false
         duelOutcomeAsked = true

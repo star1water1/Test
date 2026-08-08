@@ -96,7 +96,8 @@ class DuelMatchesFragment : Fragment() {
             characters = viewModel.participants(loaded)
 
             val links = loaded.fieldLinks
-            val labels = viewModel.characterFields(loaded.universeId).associate { it.key to it.name }
+            // 시스템 열까지 든다(B-167) — 기록 줄이 카드와 같은 이름을 말해야 한다.
+            val labels = viewModel.linkLabels(loaded.universeId)
             val values = viewModel.fieldValuesOf(
                 loaded.universeId, characters, links.influences.map { it.key }
             )

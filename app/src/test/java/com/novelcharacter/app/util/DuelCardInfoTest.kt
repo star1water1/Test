@@ -58,6 +58,35 @@ class DuelCardInfoTest {
         assertEquals(listOf("faction"), card.allProfiles.map { it.key })
     }
 
+    /**
+     * **산출 자리의 시스템 열은 카드를 막지 못한다** (B-167 — 콜드 검토가 잡았다).
+     *
+     * 위 규칙의 근거는 *"그 값이 곧 이 대결이 물으려는 답"*이라는 것인데, 시스템 열은
+     * 산출로 **아무 답도 만들지 않는다**(`DuelFieldLinks.Axis.outcomeBlocked`가 가려낸다).
+     * 근거가 성립하지 않는데 감추면 **사용자가 고른 프로필이 이유 없이 카드에서 사라진다** —
+     * 막는 것과 버리는 것을 가르는 자리다.
+     *
+     * **위 시험만으로는 이 자리가 잠기지 않는다.** 감추기가 `outcomes`를 통째로 보든
+     * `effectiveOutcomes`를 보든 위쪽은 똑같이 통과한다(거기 걸린 것이 진짜 필드라서다).
+     * 둘을 함께 세워야 *구별*이 잠긴다.
+     */
+    @Test
+    fun `산출에 적힌 시스템 열은 프로필을 막지 않는다`() {
+        val card = DuelCardInfo.build(
+            name = "아리네",
+            values = mapOf("sys:another_name" to "검은 늑대", "faction" to "달빛단"),
+            labels = labels + ("sys:another_name" to "이명"),
+            links = DuelFieldLinks.Axis(
+                // 엑셀로만 들어올 수 있는 모양이다 — 고르는 창은 산출에 시스템 열을 내지 않는다.
+                outcomes = listOf(link("sys:another_name")),
+                profiles = listOf(link("sys:another_name"), link("faction"))
+            )
+        )
+        assertEquals(listOf("sys:another_name", "faction"), card.profiles.map { it.key })
+        assertEquals("검은 늑대", card.profiles.first().value)
+        assertEquals("이명", card.profiles.first().label)
+    }
+
     @Test
     fun `막힌 산출 필드는 접힌 수에도 세지 않는다`() {
         val card = DuelCardInfo.build(
