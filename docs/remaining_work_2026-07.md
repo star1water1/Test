@@ -193,12 +193,16 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
 > 2026.08.07에 실제로 그 모양이었다.
 >
-> **⏳ 2026.08.08 — B-168 + B-169·B-170 슬라이스가 올라 있다(PR 초록 확인 전).**
-> 화면 파일 여덟(`DuelAxisListFragment`·`DuelPlayFragment`·`DuelStandingsFragment`·
-> `DuelCounterFragment`·`DuelMatchesFragment`·`DuelStandingsAdapter`·`CharacterEditFragment`·
-> `CharacterImageStripController`) + 새 레이아웃 하나(`dialog_duel_candidate_filter`)와
-> 기존 레이아웃 둘의 새 id(`filterText`·후보 필터 줄)라 `CLAUDE.md` 4번의 *2~3개*를 훌쩍
-> 넘겼다 — **이 판이 PR을 열어 초록을 확인한 뒤 병합한다.** 확인되면 이 줄을 ✅로 바꾼다.
+> **✅ 2026.08.08 — PR #248, run `31275312354`가 B-168 + B-169·B-170을 덮었다. 목록이 다시 비었다.**
+> 이 슬라이스는 **화면 파일 여덟 + 새 레이아웃 하나 + 새 id들**이라 `CLAUDE.md` 4번의
+> *2~3개*를 훌쩍 넘겨 같은 세션에서 PR을 열었다. **배지가 아니라 단계를 봤다:**
+> `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분42초 ·
+> `Build Debug APK` ✓ 1분45초 · `Upload Debug APK` ✓. `Build Release APK`·`Upload Release
+> APK`의 `skipped`는 **정상**이다(조건부 단계). **이 실행이 증명한 것:** 로컬 프로브는
+> `ui/**`를 통째로 빼므로 대결 화면 다섯의 로스터 배선·새 필터 창의 ViewBinding 대조·
+> `CharacterEditFragment`의 무음 복원 경로, 그리고 5장 ⑨가 잡음으로 판정한
+> `ExcelExporter`의 새 프로퍼티 참조는 **이 실행이 처음으로 컴파일한 것**이다
+> (잡음 판정이 맞았다 — B-117의 `sortDuelAxisCode`와 같은 길).
 
 > **✅ 2026.08.08 — PR #247, run `31271992168`이 B-167을 덮었다. 목록이 다시 비었다.**
 > 이 슬라이스는 **화면 파일 여섯 + 레이아웃 새 id 하나**라 `CLAUDE.md` 4번의 *2~3개*를 혼자
@@ -4519,12 +4523,15 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > **3-81(후보 필터 — 일곱 항목)·3-82(편집창 상태 — 여섯 항목)가 이 판의 것이다.**
    > **B-170은 등재 때부터 실기기가 유일한 검출이었으므로 3-82의 3번이 이 판의 본체 검증이다.**
    >
-   > **⑧ 이 판의 CI·검증: 로컬 전부 초록, CI는 PR에서 확인한다.** 로컬 — **JVM 2006건**
+   > **⑧ 이 판의 CI·검증: 둘 다 초록이다.** 로컬 — **JVM 2006건**
    > (1977 → +29) · 정적 검사 17종 · 스키마 하네스 14종(신설 55 포함) · 리셋 커버리지 ·
    > 차분 컴파일 신규는 전부 스텁 잡음(`triage_unresolved` 통과 — 저장소 선언 타입 미해석 0) ·
    > 실클래스패스 프로브 신규 1은 **알려진 잡음 부류**(아래 ⑨) · **커스텀 뷰 프로브 절대값 0**.
-   > 화면 파일이 여덟(대결 다섯 + 편집창 셋)이라 `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼다 —
-   > **PR을 열어 CI 초록을 확인한 뒤 병합한다**(2장 ⏳ 목록이 그 사이의 장부다).
+   > **CI도 받았다** — PR #248, run `31275312354`(단계: `Static checks` ✓ · `Schema harnesses` ✓ ·
+   > `Run unit tests` ✓ · `Build Debug APK` ✓ · `Upload Debug APK` ✓. Release 단계의 `skipped`는
+   > 조건부라 정상이다). **2장 ⏳ 목록에 올렸다가 같은 세션에서 지웠다.** 로컬 프로브가
+   > `ui/**`를 빼므로 대결 화면 다섯의 로스터 배선과 새 필터 창의 ViewBinding 대조,
+   > 편집창의 무음 복원 경로는 **이 실행이 처음으로 컴파일한 것**이다.
    >
    > **⑨ 검증 도구의 알려진 잡음 부류 하나를 적어 둔다 — 다음 사람이 또 조사하지 않게.**
    > 실클래스패스 프로브의 base 대 cur 비교에서 `ExcelExporter.kt`의
