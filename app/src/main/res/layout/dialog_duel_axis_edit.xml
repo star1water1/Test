@@ -168,4 +168,17 @@
         android:textColor="@color/text_secondary"
         android:visibility="gone" />
 
+    <!--
+      산출로 걸린 시스템 열(B-167) — 고르는 창은 내지 않지만 엑셀은 그 창을 지나지 않는다.
+      위 프로필 경고와 같은 근거로 여기 있다: 조용히 버리지도, 조용히 무시하지도 않는다.
+    -->
+    <TextView
+        android:id="@+id/outcomeBlockedWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
+
 </LinearLayout>

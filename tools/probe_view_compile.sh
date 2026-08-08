@@ -351,6 +351,11 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   # 그 가드는 2026-08-01에 실제로 겪은 함정(컴파일이 시작조차 못 했는데 0건으로 보이는 것)을
   # 막으려고 세운 것이라, 죽어 있으면 이 프로브가 자기 출력을 증명하지 못한다.
   echo "$M/util/DuelFieldLinks.kt"
+  # 그 파일이 다시 이것을 참조한다(B-167 — 산출로 걸린 시스템 열을 가려내는 자리).
+  # **딸린 것을 함께 넣지 않으면 바로 위 문단이 없앴다는 가짜 오류가 그대로 되살아난다** —
+  # 실제로 B-167 구현 중에 이 프로브가 그 1건을 다시 냈고, 그래서 여기 등재한다.
+  echo "$M/util/DuelSystemFields.kt"
+  echo "$M/util/FieldValueTokenizer.kt"
   ls "$M"/data/model/*.kt
   echo "$WORK/ContextStub.kt"
   echo "$WORK/ResourcesStub.kt"

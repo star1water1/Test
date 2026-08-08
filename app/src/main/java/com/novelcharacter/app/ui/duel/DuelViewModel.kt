@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.repository.DuelRepository
 import com.novelcharacter.app.util.DuelCategoryStats
+import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -124,14 +125,55 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         app.database.fieldDefinitionDao()
             .getFieldsByUniverseList(universeId, FieldDefinition.ENTITY_CHARACTER)
 
+    /** 시스템 열의 사람이 읽는 이름 — 말글은 화면 계층의 몫이라 여기서 문자열로 바꾼다. */
+    fun systemFieldLabel(column: DuelSystemFields.Column): String = app.getString(
+        when (column) {
+            DuelSystemFields.Column.NAME -> R.string.duel_system_field_name
+            DuelSystemFields.Column.FIRST_NAME -> R.string.duel_system_field_first_name
+            DuelSystemFields.Column.LAST_NAME -> R.string.duel_system_field_last_name
+            DuelSystemFields.Column.ANOTHER_NAME -> R.string.duel_system_field_another_name
+            DuelSystemFields.Column.MEMO -> R.string.duel_system_field_memo
+            DuelSystemFields.Column.NOVEL -> R.string.duel_system_field_novel
+            DuelSystemFields.Column.TAGS -> R.string.duel_system_field_tags
+        }
+    )
+
+    /**
+     * 연결에 뜨는 **모든** 키의 이름 — 커스텀 필드와 시스템 열을 함께 든다 (B-167).
+     *
+     * **시스템 열을 먼저 넣고 진짜 필드로 덮는다.** 그 차례가 곧
+     * [DuelSystemFields.shadowed]의 규칙이다 — 사용자가 `sys:memo`라는 키의 필드를 만들었으면
+     * 그 이름이 남아야 하고, 화면 셋(카드·기록·순위표)이 각자 정하면 같은 키가 화면마다 다른
+     * 이름으로 뜬다.
+     */
+    suspend fun linkLabels(universeId: Long): Map<String, String> =
+        linkLabels(characterFields(universeId))
+
+    /**
+     * 필드를 **이미 읽어 둔** 쪽을 위한 갈래 — 같은 세계관을 두 번 훑지 않게 한다.
+     *
+     * 축 편집 창과 대결 화면이 역할 필드(성별·나이)를 집으려고 이미 목록을 들고 있다.
+     */
+    fun linkLabels(fields: List<FieldDefinition>): Map<String, String> {
+        val labels = LinkedHashMap<String, String>()
+        DuelSystemFields.Column.entries.forEach { labels[it.key] = systemFieldLabel(it) }
+        fields.forEach { labels[it.key] = it.name }
+        return labels
+    }
+
     /**
      * 참가자들의 **연결 필드 값** — `참가자 코드 → (필드 키 → 값)`.
      *
      * @param keys 볼 필드의 키. 비어 있으면 아무것도 읽지 않는다 — 연결이 없는 축에서
      *   캐릭터 전원의 필드값을 훑으면 그 비용이 순전히 낭비다(목표 규모는 캐릭터 수백 명이다).
+     *   **시스템 열 키(`sys:`)가 섞여 있어도 된다**(B-167) — 그쪽은 캐릭터 행에서 온다.
      *
      * **한 번에 읽는 것이 요점이다.** 짝이 뜰 때마다 둘씩 읽으면 수백 판을 누르는 동안 질의가
      * 그만큼 늘어난다 — 대결은 *단순반복*이 성질인 기능이라 판당 비용이 그대로 누적된다.
+     *
+     * **시스템 열은 질의를 늘리지 않는다** — 이름·이명·메모는 이미 받아 둔 [characters] 행에
+     * 들어 있다. 작품 제목과 태그만 다른 표에 살고, 그 둘은 **실제로 걸렸을 때만** 읽는다
+     * (위의 *"연결이 없으면 읽지 않는다"*와 같은 규약).
      */
     suspend fun fieldValuesOf(
         universeId: Long,
@@ -141,27 +183,90 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         if (keys.isEmpty() || characters.isEmpty()) return emptyMap()
         return withContext(Dispatchers.Default) {
             val wanted = keys.toSet()
-            val fieldsById = app.database.fieldDefinitionDao()
+            val fields = app.database.fieldDefinitionDao()
                 .getFieldsByUniverseList(universeId, FieldDefinition.ENTITY_CHARACTER)
-                .filter { it.key in wanted }
-                .associateBy({ it.id }, { it.key })
-            if (fieldsById.isEmpty()) return@withContext emptyMap()
-
-            val codeById = characters.associate { it.id to it.code }
-            // **`IN`을 청크로 나눈다** — SQLite의 변수 상한은 999이고 목표 규모는 캐릭터 수백
-            // 명이라 한 번에 넣으면 언젠가 넘는다. 넘으면 예외가 나고, 그것을 삼키면 값이
-            // 조용히 사라진다(이 저장소가 이미 한 번 겪은 부류 — `removeTagsFromImages`).
-            val values = characters.map { it.id }
-                .chunked(900)
-                .flatMap { app.database.characterFieldValueDao().getValuesForCharacters(it) }
             val result = HashMap<String, MutableMap<String, String>>()
-            for (row in values) {
-                val key = fieldsById[row.fieldDefinitionId] ?: continue
-                val code = codeById[row.characterId] ?: continue
-                if (row.value.isBlank()) continue
-                result.getOrPut(code) { HashMap() }[key] = row.value
+
+            // ① 커스텀 필드. **가려진 시스템 키도 여기서 답해진다** — 사용자가 `sys:memo`라는
+            // 키의 필드를 만들었으면 그 필드가 이 걸러내기에 걸리고, 아래 ②가 그것을 비껴간다.
+            val fieldsById = fields.filter { it.key in wanted }.associateBy({ it.id }, { it.key })
+            if (fieldsById.isNotEmpty()) {
+                val codeById = characters.associate { it.id to it.code }
+                // **`IN`을 청크로 나눈다** — SQLite의 변수 상한은 999이고 목표 규모는 캐릭터 수백
+                // 명이라 한 번에 넣으면 언젠가 넘는다. 넘으면 예외가 나고, 그것을 삼키면 값이
+                // 조용히 사라진다(이 저장소가 이미 한 번 겪은 부류 — `removeTagsFromImages`).
+                val values = characters.map { it.id }
+                    .chunked(900)
+                    .flatMap { app.database.characterFieldValueDao().getValuesForCharacters(it) }
+                for (row in values) {
+                    val key = fieldsById[row.fieldDefinitionId] ?: continue
+                    val code = codeById[row.characterId] ?: continue
+                    if (row.value.isBlank()) continue
+                    result.getOrPut(code) { HashMap() }[key] = row.value
+                }
+            }
+
+            // ② 시스템 열 (B-167) — 진짜 필드가 같은 키를 들었으면 ①이 이미 답했으므로 뺀다.
+            val takenKeys = fields.map { it.key }.toSet()
+            val systemKeys = wanted.filter { key ->
+                DuelSystemFields.columnOf(key)?.let { it.key !in takenKeys } == true
+            }
+            if (systemKeys.isNotEmpty()) {
+                val extrasById = systemExtrasOf(characters, systemKeys)
+                for (character in characters) {
+                    val values = DuelSystemFields.valuesOf(
+                        character, systemKeys, extrasById[character.id] ?: DuelSystemFields.Extras()
+                    )
+                    if (values.isNotEmpty()) result.getOrPut(character.code) { HashMap() } += values
+                }
             }
             result
+        }
+    }
+
+    /**
+     * 캐릭터 행에 **없는** 시스템 열 재료 — 작품 제목과 태그.
+     *
+     * **걸린 열만 읽는다.** `sys:tags`가 없는 축에서 태그 표를 훑는 것은 순전히 낭비이고,
+     * 그것이 이 함수가 [DuelSystemFields.valuesOf] 안이 아니라 밖에 있는 이유다
+     * (순수 계층은 질의를 몰라야 시험이 실제로 돈다).
+     */
+    private suspend fun systemExtrasOf(
+        characters: List<Character>,
+        systemKeys: Collection<String>
+    ): Map<Long, DuelSystemFields.Extras> {
+        val columns = systemKeys.mapNotNull { DuelSystemFields.columnOf(it) }.toSet()
+        val wantsNovel = DuelSystemFields.Column.NOVEL in columns
+        val wantsTags = DuelSystemFields.Column.TAGS in columns
+        if (!wantsNovel && !wantsTags) return emptyMap()
+
+        val titleByNovelId: Map<Long, String> = if (!wantsNovel) {
+            emptyMap()
+        } else {
+            // 중복을 걷어내므로 작품 수는 캐릭터 수보다 훨씬 적지만 **청크는 그대로 나눈다** —
+            // 상한은 *실제로 넘는가*가 아니라 *넘을 수 있는가*로 봐야 하고(캐릭터마다 다른 작품이면
+            // 둘이 같은 수다), 넘으면 예외가 나서 값이 통째로 사라진다.
+            characters.mapNotNull { it.novelId }
+                .distinct()
+                .chunked(900)
+                .flatMap { app.database.novelDao().getNovelsByIds(it) }
+                .associate { it.id to it.title }
+        }
+        val tagsById: Map<Long, List<String>> = if (!wantsTags) {
+            emptyMap()
+        } else {
+            // 위 ①과 같은 청크 규약 — 이쪽도 캐릭터 수만큼의 `IN` 인자가 든다.
+            characters.map { it.id }
+                .chunked(900)
+                .flatMap { app.database.characterTagDao().getTagsForCharacters(it) }
+                .groupBy({ it.characterId }, { it.tag })
+        }
+
+        return characters.associate { character ->
+            character.id to DuelSystemFields.Extras(
+                novelTitle = character.novelId?.let { titleByNovelId[it] }.orEmpty(),
+                tags = tagsById[character.id].orEmpty()
+            )
         }
     }
 
@@ -192,13 +297,21 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
 
         return withContext(Dispatchers.Default) {
             influences.mapNotNull { link ->
+                val def = defs[link.key]
+                // 진짜 필드가 이긴다 — 같은 키의 필드가 있으면 시스템 열로 읽지 않는다(B-167).
+                val column = if (def != null) null else DuelSystemFields.columnOf(link.key)
                 // 지워진 필드는 이름도 타입도 알 수 없다 — 토큰을 어떻게 나눌지 모르므로 뺀다.
-                val def = defs[link.key] ?: return@mapNotNull null
+                // 시스템 열은 그 규칙을 [DuelSystemFields.Column.multiToken]이 들고 있어 남는다.
+                if (def == null && column == null) return@mapNotNull null
                 val tokensById = HashMap<Long, List<String>>()
                 for ((code, byKey) in values) {
                     val raw = byKey[link.key] ?: continue
                     val id = state.records.idOf(code) ?: continue
-                    val tokens = FieldValueTokenizer.splitForStats(def, raw)
+                    val tokens = if (def != null) {
+                        FieldValueTokenizer.splitForStats(def, raw)
+                    } else {
+                        DuelSystemFields.tokensOf(column!!, raw)
+                    }
                     if (tokens.isNotEmpty()) tokensById[id] = tokens
                 }
                 if (!DuelCategoryStats.isCategorical(tokensById)) return@mapNotNull null
@@ -208,7 +321,7 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
                     fit = state.fit,
                     tokensById = tokensById
                 )
-                if (report.any) def.name to report else null
+                if (report.any) (def?.name ?: systemFieldLabel(column!!)) to report else null
             }
         }
     }

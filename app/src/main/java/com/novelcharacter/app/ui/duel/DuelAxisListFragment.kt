@@ -23,6 +23,7 @@ import com.novelcharacter.app.databinding.FragmentDuelAxisListBinding
 import com.novelcharacter.app.ui.adapter.DuelAxisAdapter
 import com.novelcharacter.app.ui.adapter.DuelFieldLinkAdapter
 import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -155,7 +156,9 @@ class DuelAxisListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             // 필드 이름을 먼저 받아 둔다 — 축 편집 창의 연결 요약이 **키가 아니라 이름**을
             // 말해야 하는데, 그 창은 목록에서 곧바로 열리므로 그때 읽으면 늦는다.
-            fieldNames = viewModel.characterFields(universeId).associate { it.key to it.name }
+            // 시스템 열도 함께 든다(B-167) — 그러지 않으면 이명을 건 축의 요약이 `sys:another_name`이라
+            // 적힌다.
+            fieldNames = viewModel.linkLabels(universeId)
             val axes = viewModel.axes(universeId)
             if (!isAdded) return@launch
             adapter.submitList(axes)
@@ -226,6 +229,7 @@ class DuelAxisListFragment : Fragment() {
         val profileSummary = view.findViewById<TextView>(R.id.profileSummary)
         val conflictWarning = view.findViewById<TextView>(R.id.linkConflictWarning)
         val profileBlockedWarning = view.findViewById<TextView>(R.id.profileBlockedWarning)
+        val outcomeBlockedWarning = view.findViewById<TextView>(R.id.outcomeBlockedWarning)
 
         fun renderLinks() {
             influenceSummary.text = summarize(influences)
@@ -251,6 +255,17 @@ class DuelAxisListFragment : Fragment() {
                     blocked.joinToString(", ") { fieldNames[it] ?: it }
                 )
             }
+            // 산출로 걸린 시스템 열 — 같은 근거로 여기 있다(B-167). 고르는 창은 애초에 내지
+            // 않지만 엑셀은 그 창을 지나지 않으므로, 들어온 것을 조용히 버리지도 조용히
+            // 무시하지도 않고 **말한다**(개발 의도 2번).
+            val systemOutcomes = edited.outcomeBlocked
+            outcomeBlockedWarning.visibility = if (systemOutcomes.isEmpty()) View.GONE else View.VISIBLE
+            if (systemOutcomes.isNotEmpty()) {
+                outcomeBlockedWarning.text = getString(
+                    R.string.duel_links_outcome_system_warning,
+                    systemOutcomes.joinToString(", ") { fieldNames[it] ?: it }
+                )
+            }
         }
         renderLinks()
 
@@ -261,7 +276,8 @@ class DuelAxisListFragment : Fragment() {
             }
         }
         view.findViewById<View>(R.id.btnEditOutcome).setOnClickListener {
-            showFieldLinkDialog(outcomes, rankable = false) { picked ->
+            // 시스템 열은 내지 않는다(B-167) — 대결 결과가 이명·메모로 흘러갈 수 없다.
+            showFieldLinkDialog(outcomes, rankable = false, allowSystem = false) { picked ->
                 outcomes = picked
                 renderLinks()
             }
@@ -334,7 +350,10 @@ class DuelAxisListFragment : Fragment() {
     // 필드 연결 (층 C)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** 이 세계관의 캐릭터 필드 — 키 → 이름. 요약 줄이 키가 아니라 **사람이 읽는 이름**을 말하게 한다. */
+    /**
+     * 걸 수 있는 것 전부 — 키 → 이름. 요약 줄이 키가 아니라 **사람이 읽는 이름**을 말하게 한다.
+     * 커스텀 필드와 시스템 열이 함께 든다([DuelViewModel.linkLabels]가 단일 소스다 — B-167).
+     */
     private var fieldNames: Map<String, String> = emptyMap()
 
     private fun summarize(links: List<DuelFieldLinks.Link>): String {
@@ -357,12 +376,37 @@ class DuelAxisListFragment : Fragment() {
         rankable: Boolean,
         directional: Boolean = true,
         blockedKeys: Set<String> = emptySet(),
+        /**
+         * 시스템 열을 목록에 내는가 (B-167). **산출 자리에서만 거짓이다** — 대결 결과가
+         * 이명·메모로 흘러갈 수는 없어, 고를 수 있는데 아무 일도 안 일어나는 자리가 된다.
+         */
+        allowSystem: Boolean = true,
         onPicked: (List<DuelFieldLinks.Link>) -> Unit
     ) {
         viewLifecycleOwner.lifecycleScope.launch {
             val fields = viewModel.characterFields(universeId)
             if (!isAdded) return@launch
-            fieldNames = fields.associate { it.key to it.name }
+            // 방금 읽은 목록으로 이름표를 짠다 — `linkLabels(universeId)`를 부르면 같은
+            // 세계관의 필드를 한 번 더 훑는다.
+            fieldNames = viewModel.linkLabels(fields)
+
+            // 커스텀 필드가 먼저다 — 사용자가 만든 것이 목록 앞에 서야 하고, 시스템 열은
+            // 늘 같은 자리에 있는 붙박이라 뒤가 자연스럽다.
+            val systemColumns = if (!allowSystem) {
+                emptyList()
+            } else {
+                // **가려진 열은 아예 내지 않는다**(DuelSystemFields.shadowed) — 같은 키의 진짜
+                // 필드가 이미 위에 서 있고, 두 줄이 한 키를 다투면 고르기가 어느 쪽을 집었는지
+                // 말할 수 없게 된다. 사용자가 잃는 것은 없다: 그 키의 줄은 **자기 필드**로 떠 있다.
+                DuelSystemFields.available(fields.map { it.key })
+            }
+            val systemTypeLabel = getString(R.string.duel_links_system_type)
+            val choices = fields.map { DuelFieldLinkAdapter.choiceOf(it) } +
+                systemColumns.map {
+                    DuelFieldLinkAdapter.systemChoice(
+                        it.key, viewModel.systemFieldLabel(it), systemTypeLabel
+                    )
+                }
 
             val context = requireContext()
             val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_field_links, null)
@@ -375,8 +419,10 @@ class DuelAxisListFragment : Fragment() {
                     else -> R.string.duel_links_outcome_purpose
                 }
             )
+            // **고를 것이 하나도 없을 때만** 안내를 띄운다 — 커스텀 필드가 없어도 시스템 열은
+            // 늘 있으므로(B-167), `fields`만 보면 고를 것이 뻔히 있는 창에 *"필드가 없다"*가 뜬다.
             view.findViewById<View>(R.id.linksEmpty).visibility =
-                if (fields.isEmpty()) View.VISIBLE else View.GONE
+                if (choices.isEmpty()) View.VISIBLE else View.GONE
 
             // 트리오(성별·나이)가 어디서 오는지 — **이 세계관에 그 역할 필드가 없으면 그 사실을
             // 말한다**(R-17). 없다는 것을 조용히 두면 사용자는 프로필을 아무리 골라도 트리오
@@ -397,7 +443,7 @@ class DuelAxisListFragment : Fragment() {
             val recycler = view.findViewById<RecyclerView>(R.id.linksRecyclerView)
             val blockedReason = getString(R.string.duel_links_profile_blocked_note)
             val linkAdapter = DuelFieldLinkAdapter(
-                fields,
+                choices,
                 current,
                 rankable,
                 {},

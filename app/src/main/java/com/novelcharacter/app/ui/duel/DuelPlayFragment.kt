@@ -169,7 +169,10 @@ class DuelPlayFragment : Fragment() {
             characters = viewModel.participants(loaded)
             links = loaded.fieldLinks
             val fields = viewModel.characterFields(loaded.universeId)
-            fieldLabels = fields.associate { it.key to it.name }
+            // 시스템 열의 이름도 함께 든다(B-167) — 없으면 이명 줄의 라벨이 `sys:another_name`이 된다
+            // (`DuelCardInfo.build`가 *"없는 키는 키를 그대로 쓴다"*로 정해 둔 자리).
+            // 방금 읽은 목록을 넘긴다 — 아래 역할 필드도 그것을 보므로 두 번 훑을 까닭이 없다.
+            fieldLabels = viewModel.linkLabels(fields)
             // 역할 필드는 세계관에 **하나여야 하지만** 사용자가 둘에 같은 역할을 줄 수도 있다.
             // 그때 첫 번째를 쓰는 것은 필드 관리의 차례가 사용자가 정한 차례이기 때문이다.
             genderKey = fields.firstOrNull { SemanticRole.fromConfig(it.config) == SemanticRole.GENDER }?.key

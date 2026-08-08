@@ -22,9 +22,14 @@ import com.novelcharacter.app.util.DuelFieldLinks
  * **산출·프로필 필드도 같은 목록을 쓴다.** 그쪽은 순위에 뜻이 없고([rankable]이 false)
  * 프로필은 유리한 방향에도 뜻이 없지만([directional]이 false), **고르는 일은 똑같다** —
  * 창을 셋으로 만들면 같은 코드가 셋이 된다.
+ *
+ * **줄이 `FieldDefinition`이 아니라 [Choice]인 것은 B-167 때문이다.** 이명 같은 시스템 열은
+ * `FieldDefinition` 행이 아예 없어(`Character`의 열이다) 그 타입으로는 목록에 낼 수가 없었다.
+ * 가짜 `FieldDefinition`을 지어 끼우는 길도 있었지만, 그 가짜가 저장 경로로 새어 나가면
+ * **없는 필드가 DB에 생긴다** — 줄이 무엇인지를 한 겹 갈라 두는 편이 값이 싸다.
  */
 class DuelFieldLinkAdapter(
-    private val fields: List<FieldDefinition>,
+    private val choices: List<Choice>,
     initial: List<DuelFieldLinks.Link>,
     /** 순위(위/아래 옮기기)를 보이는가. 영향 필드만 참이다. */
     private val rankable: Boolean,
@@ -42,7 +47,27 @@ class DuelFieldLinkAdapter(
     private val blockedKeys: Map<String, String> = emptyMap()
 ) : RecyclerView.Adapter<DuelFieldLinkAdapter.ViewHolder>() {
 
-    private val byKey: Map<String, FieldDefinition> = fields.associateBy { it.key }
+    /**
+     * 고를 수 있는 것 한 줄 — 커스텀 필드이거나 시스템 열이다(B-167).
+     *
+     * @property key 연결에 실리는 키. 커스텀 필드는 `FieldDefinition.key`,
+     *   시스템 열은 `sys:` 의사키다([com.novelcharacter.app.util.DuelSystemFields]).
+     * @property label 사람이 읽는 이름.
+     * @property typeLabel 안내 줄에 뜨는 부류 — 타입 이름이거나 *"시스템 열"*이다.
+     * @property orderable 크고 작음을 말할 수 있는 부류인가. **힌트일 뿐이고 최종 판정자는
+     *   값이다**([com.novelcharacter.app.util.DuelFieldLinks.numberOf]가 실제 값을 본다) —
+     *   거짓이면 고른 순간에 *"차례를 매길 수 없다"*를 말해 줄 뿐 고르기를 막지는 않는다.
+     *   **모르는 타입은 참이다**([choiceOf]) — 모르는 것을 두고 *매길 수 없다*고 단언할
+     *   근거가 없고, 그 단언은 값이 실제로 수로 읽히면 거짓말이 된다.
+     */
+    data class Choice(
+        val key: String,
+        val label: String,
+        val typeLabel: String,
+        val orderable: Boolean
+    )
+
+    private val byKey: Map<String, Choice> = choices.associateBy { it.key }
 
     /** 고른 것 — **차례가 순위다.** 지금 세계관에 없는 키는 버리지 않고 그대로 둔다(아래 설명). */
     private val picked: MutableList<DuelFieldLinks.Link> = initial.toMutableList()
@@ -62,7 +87,7 @@ class DuelFieldLinkAdapter(
      * `private`이 아닌 것은 [ViewHolder.bind]가 이것을 받기 때문이다 — 안쪽 클래스의 공개
      * 함수가 바깥 클래스의 private 타입을 노출하면 Kotlin이 거부한다.
      */
-    data class Row(val field: FieldDefinition, val rank: Int, val link: DuelFieldLinks.Link?)
+    data class Row(val choice: Choice, val rank: Int, val link: DuelFieldLinks.Link?)
 
     init {
         rebuild()
@@ -73,7 +98,7 @@ class DuelFieldLinkAdapter(
             byKey[link.key]?.let { Row(it, index + 1, link) }
         }
         val pickedKeys = picked.map { it.key }.toSet()
-        val rest = fields.filter { it.key !in pickedKeys }.map { Row(it, 0, null) }
+        val rest = choices.filter { it.key !in pickedKeys }.map { Row(it, 0, null) }
         rows = pickedRows + rest
     }
 
@@ -137,19 +162,18 @@ class DuelFieldLinkAdapter(
         fun bind(row: Row) {
             val context = itemView.context
             val selected = row.link != null
-            val blockedReason = blockedKeys[row.field.key]
+            val blockedReason = blockedKeys[row.choice.key]
             val blocked = blockedReason != null
 
             // 리스너를 먼저 떼고 상태를 놓는다 — 재활용되는 줄에서 setChecked가 옛 리스너를 부른다.
             check.setOnCheckedChangeListener(null)
             check.isChecked = selected
             name.text = if (selected && rankable) {
-                context.getString(R.string.duel_links_ranked_name, row.rank, row.field.name)
+                context.getString(R.string.duel_links_ranked_name, row.rank, row.choice.label)
             } else {
-                row.field.name
+                row.choice.label
             }
 
-            val type = FieldType.fromName(row.field.type)
             note.text = when {
                 // 막혔는데 이미 골라져 있으면 **빼는 법**을 말한다 — 사유만 적어 두면
                 // 사용자는 그 줄을 어떻게 없애는지 알 수 없다.
@@ -159,10 +183,12 @@ class DuelFieldLinkAdapter(
                 blockedReason != null -> blockedReason
                 // 견줄 수 없는 값이라는 사실을 **고른 순간에** 말한다 — 나중에 "왜 대조가 안 되지"로
                 // 되돌아오는 것보다 낫다(변수 제어: 조용히 빠뜨리지 않는다).
-                selected && directional && type != null && !ORDERABLE_TYPES.contains(type) ->
-                    context.getString(R.string.duel_links_display_only, type.label)
+                selected && directional && !row.choice.orderable ->
+                    context.getString(R.string.duel_links_display_only, row.choice.typeLabel)
+                // 키를 함께 말하는 것은 **엑셀에서 손으로 적을 때 쓰라고**다 — 시스템 열의
+                // `sys:` 의사키를 사용자가 알 다른 길이 없다(B-167).
                 else ->
-                    context.getString(R.string.duel_links_type_note, type?.label ?: row.field.type, row.field.key)
+                    context.getString(R.string.duel_links_type_note, row.choice.typeLabel, row.choice.key)
             }
 
             // **막혔어도 이미 골라져 있으면 끌 수는 있다** — 그것이 바로잡는 유일한 길이다
@@ -178,16 +204,16 @@ class DuelFieldLinkAdapter(
                 direction.setText(
                     if (row.link.higherWins) R.string.duel_links_higher_wins else R.string.duel_links_lower_wins
                 )
-                direction.setOnClickListener { flipDirection(row.field.key) }
+                direction.setOnClickListener { flipDirection(row.choice.key) }
                 up.isEnabled = row.rank > 1
                 down.isEnabled = row.rank < picked.size
-                up.setOnClickListener { move(row.field.key, -1) }
-                down.setOnClickListener { move(row.field.key, 1) }
+                up.setOnClickListener { move(row.choice.key, -1) }
+                down.setOnClickListener { move(row.choice.key, 1) }
             }
 
             if (interactive) {
                 itemView.isClickable = true
-                check.setOnCheckedChangeListener { _, checked -> toggle(row.field.key, checked) }
+                check.setOnCheckedChangeListener { _, checked -> toggle(row.choice.key, checked) }
                 itemView.setOnClickListener { check.isChecked = !check.isChecked }
             } else {
                 // 누름을 아예 받지 않는다 — 체크만 꺼 두면 줄을 눌렀을 때 아무 일도 안 일어나는
@@ -208,5 +234,33 @@ class DuelFieldLinkAdapter(
          * 하기 때문이다(자율성 우선).
          */
         private val ORDERABLE_TYPES = setOf(FieldType.NUMBER, FieldType.CALCULATED, FieldType.TEXT)
+
+        /**
+         * 커스텀 필드 한 줄.
+         *
+         * **타입을 못 알아본 필드는 [Choice.orderable]이 참이다** — 종전 동작 그대로다.
+         * 거짓으로 두면 *"차례를 매길 수 없다"*를 **모르는 것을 두고 단언하는** 셈이고,
+         * 그 필드에 숫자가 적혀 있으면 실제로는 견줘지므로 안내가 거짓이 된다.
+         */
+        fun choiceOf(field: FieldDefinition): Choice {
+            val type = FieldType.fromName(field.type)
+            return Choice(
+                key = field.key,
+                label = field.name,
+                typeLabel = type?.label ?: field.type,
+                orderable = type == null || type in ORDERABLE_TYPES
+            )
+        }
+
+        /**
+         * 시스템 열 한 줄 (B-167).
+         *
+         * **[orderable]이 언제나 거짓인 것**은 이 열들이 전부 글이기 때문이다 — 이름·이명·메모·
+         * 작품·태그 어디에도 크고 작음이 없다. 그래도 **막지는 않는다**: 값이 최종 판정자라
+         * 나이를 이명에 적어 둔 사용자가 있다면 그것도 견줘진다(자율성 우선). 여기서 하는 일은
+         * 고른 순간에 *"차례를 매길 수 없다"*를 말해 주는 것뿐이다.
+         */
+        fun systemChoice(key: String, label: String, typeLabel: String): Choice =
+            Choice(key = key, label = label, typeLabel = typeLabel, orderable = false)
     }
 }

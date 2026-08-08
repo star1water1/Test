@@ -91,6 +91,21 @@ object DuelFieldLinks {
                 val outs = outcomes.map { it.key }.toSet()
                 return profiles.map { it.key }.filter { it in outs }.distinct()
             }
+
+        /**
+         * **산출로 걸렸지만 성립하지 않는 시스템 열** (B-167).
+         *
+         * 시스템 열은 영향·프로필로는 걸리지만 산출로는 걸리지 않는다 — 산출은 등급 산정이
+         * 값을 **써 넣는** 자리이고 순위표가 그 값을 **수로 읽는** 자리인데, 이명·메모·이름은
+         * 둘 다 성립하지 않는다([DuelSystemFields]의 설계 물음 ⓑ).
+         *
+         * 고르는 창은 애초에 목록에 내지 않지만 **엑셀로 들어온 파일은 그 창을 지나지 않는다** —
+         * 사람이 `산출필드` 칸에 `sys:another_name`을 적을 수 있다. 그때 [decode]는 그대로
+         * 담고([profileBlocked]와 같은 규약 — 사용자가 적은 것을 조용히 버리지 않는다)
+         * **쓰는 쪽이 건너뛰며**, 축 편집 창이 이 목록을 사유와 함께 말한다(개발 의도 2번).
+         */
+        val outcomeBlocked: List<String>
+            get() = outcomes.map { it.key }.filter { DuelSystemFields.isSystemKey(it) }.distinct()
     }
 
     // ──────────────────────────────────────────────────────────────────────
