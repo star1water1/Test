@@ -1467,7 +1467,8 @@ class TrashRepository(
                     v.fieldDefinitionId,
                     fieldRef,
                     fieldIndex.naturalById,
-                    fieldIndex.idByNatural
+                    fieldIndex.idByNatural,
+                    fieldIndex.liveIds
                 ),
                 fieldRef
             )
@@ -2140,7 +2141,7 @@ class TrashRepository(
             val ref = fieldRefs[oldId.toString()]
             return tally.noteFieldDef(
                 SnapshotRefResolver.resolveFieldDef(
-                    oldId, ref, fieldIndex.naturalById, fieldIndex.idByNatural
+                    oldId, ref, fieldIndex.naturalById, fieldIndex.idByNatural, fieldIndex.liveIds
                 ),
                 ref
             ).id
@@ -2769,7 +2770,7 @@ class TrashRepository(
             val res = tally.noteFieldDef(
                 SnapshotRefResolver.resolveFieldDef(
                     v.fieldDefinitionId, fieldRef,
-                    fieldIndex.naturalById, fieldIndex.idByNatural
+                    fieldIndex.naturalById, fieldIndex.idByNatural, fieldIndex.liveIds
                 ),
                 fieldRef
             )
@@ -3669,7 +3670,9 @@ class TrashRepository(
 
     private class FieldDefIndex(
         val naturalById: Map<Long, FieldDefNaturalKey>,
-        val idByNatural: Map<FieldDefNaturalKey, Long>
+        val idByNatural: Map<FieldDefNaturalKey, Long>,
+        /** 살아 있는 필드정의 id 전체 — 자연키를 만들지 못한 행까지 포함한다. */
+        val liveIds: Set<Long>
     )
 
     private suspend fun buildFieldDefIndex(
@@ -3679,49 +3682,57 @@ class TrashRepository(
     ): FieldDefIndex {
         val naturalById = HashMap<Long, FieldDefNaturalKey>()
         val idByNatural = HashMap<FieldDefNaturalKey, Long>()
+        val liveIds = HashSet<Long>()
         // 복원 경로는 스냅샷 생성용 캐시를 쓰지 않는다. 그 캐시는 삭제 트랜잭션 한 번을 위한
         // 것인데, 휴지통 화면이 쓰는 인스턴스는 앱 수명 내내 살아 있다 — 세계관이 지워졌다
         // 다시 만들어지면 같은 id에 다른 코드가 붙고, 캐시된 옛 코드로 해석하면 **오배정**이
         // 된다(오배정은 생략보다 나쁘다 — R-1). 복원 한 번의 지역 캐시만 쓴다.
-        val localUniverseCodes = HashMap<Long?, String?>()
+        val localUniverseCodes = HashMap<Long, String?>()
         // id 조회는 일괄로 — 캐릭터마다 필드 수만큼 단건 질의하면 세계관 복원이 수만 번을 돈다.
         val defsById = HashMap<Long, com.novelcharacter.app.data.model.FieldDefinition>()
         for (chunk in oldIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
             for (fd in db.fieldDefinitionDao().getFieldsByIds(chunk)) defsById[fd.id] = fd
         }
         for ((id, fd) in defsById) {
-            // 전역 구역(universeId null)의 자연키는 code도 null이다 — 아래 되찾기가 그 짝으로 찾는다.
-            val uCode = localUniverseCodes.getOrPut(fd.universeId) {
-                fd.universeId?.let { uid ->
-                    db.universeDao().getUniverseById(uid)?.code?.takeIf { it.isNotBlank() }
-                }
+            // 생존 판정은 자연키와 무관하다 — 아래에서 자연키를 못 만들고 빠져나가도 여기 남는다.
+            liveIds.add(id)
+            // 전역 구역(universeId null)의 자연키는 code 자리도 null이고, 세계관 소속인데
+            // 코드를 못 얻은 행은 자연키를 만들지 않는다 — 그 둘을 가르는 규칙은
+            // `SnapshotRefResolver.naturalKeyOfRow`가 ref 쪽과 한 자리에서 든다(B-133).
+            val universeId = fd.universeId
+            val uCode = if (universeId == null) null else localUniverseCodes.getOrPut(universeId) {
+                db.universeDao().getUniverseById(universeId)?.code?.takeIf { it.isNotBlank() }
             }
-            naturalById[id] = FieldDefNaturalKey(uCode, fd.entityType, fd.key)
+            val natural = SnapshotRefResolver.naturalKeyOfRow(universeId, uCode, fd.entityType, fd.key)
+            if (natural != null) naturalById[id] = natural
         }
         // 세계관 코드 → id도 캐시한다. ref가 30개면 같은 세계관을 30번 조회하던 자리다.
         val universeIdByCode = HashMap<String, Long?>()
         for (ref in refs) {
-            val type = ref.entityType?.takeIf { it.isNotBlank() } ?: continue
-            val key = ref.key?.takeIf { it.isNotBlank() } ?: continue
-            val uCode = ref.universeCode?.takeIf { it.isNotBlank() }
+            // 자연키가 성립하는가는 해석과 같은 판정을 써야 한다 — 갈리면 해석이 찾을 자리를
+            // 색인이 안 채우거나(값 유실), 색인이 엉뚱한 자리를 채운다(오배정). 단일 소스는
+            // `SnapshotRefResolver.naturalKeyOf`다.
+            val wanted = SnapshotRefResolver.naturalKeyOf(ref) ?: continue
+            if (idByNatural.containsKey(wanted)) continue
+            val type = wanted.entityType
+            val key = wanted.key
+            val uCode = wanted.universeCode
             if (uCode == null) {
                 // 전역 구역 ref (B-119 확장) — null code는 전역의 표기이지 유실이 아니다
                 // (유실은 ref 자체가 안 만들어진다). IS NULL 자연키로 되찾는다.
-                if (idByNatural.containsKey(FieldDefNaturalKey(null, type, key))) continue
                 val fd = db.fieldDefinitionDao().getGlobalFieldByKey(key, type) ?: continue
-                idByNatural[FieldDefNaturalKey(null, type, key)] = fd.id
+                idByNatural[wanted] = fd.id
                 continue
             }
-            if (idByNatural.containsKey(FieldDefNaturalKey(uCode, type, key))) continue
             // 세계관도 같은 작업이 방금 복원하며 code를 재발급했을 수 있다 — 그쪽이 이긴다.
             val universeId = universeIdByCode.getOrPut(uCode) {
                 session?.lookup(TrashSnapshot.TYPE_UNIVERSE, uCode)
                     ?: db.universeDao().getUniverseByCode(uCode)?.id
             } ?: continue
             val fd = db.fieldDefinitionDao().getFieldByKey(universeId, key, type) ?: continue
-            idByNatural[FieldDefNaturalKey(uCode, type, key)] = fd.id
+            idByNatural[wanted] = fd.id
         }
-        return FieldDefIndex(naturalById, idByNatural)
+        return FieldDefIndex(naturalById, idByNatural, liveIds)
     }
 
     // ──────────────────────────────────────────────────────────────────────

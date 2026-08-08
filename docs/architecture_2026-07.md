@@ -120,7 +120,7 @@ app/src/main/java/com/novelcharacter/app/
 | `FormulaEvaluator` / `FormulaValidator` / `FormulaDisplay` | 수식 평가 / 저장 시점 검증 / 표시 서식 | 서식·NaN 처리가 7곳에 복제(U-9) |
 | `GradeValueResolver` | 등급 라벨 → 숫자 | — |
 | `GradeSystemRef` | 등급 체계 참조·재정의·실효 표의 config 표현 + 강등·재배선 규칙 (원본을 고치는 쓰기·전파는 `GradeSystemRepository` 경유 — R-30. 전파가 공허한 신설 삽입·복원·프룬 경로는 예외이며, 직접 호출 자리는 R-30 위반 후보로 점검한다) | — |
-| `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
+| `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 (**`naturalKeyOf`가 "이 ref가 자연키로 성립하는가"의 단일 소스** — 해석과 색인 만들기가 같은 함수를 부른다. 전역 구역은 세계관 코드 자리가 `null`, 빈 문자열은 전역이 **아니다** — R-1) | 복원이 남의 엔티티에 붙었다(R-1) · 전역 자연키를 해석만 떨어뜨려 색인이 죽은 코드였다(B-133) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
 | `CharacterRepresentativeImage` / `ImagePathMatch` | **어느 이미지가 이 캐릭터를 대표하는가**(사다리·시드 랜덤·쓰기 정합) / 경로 대조 | 같은 판정이 아홉 종류로 갈려 규칙이 넷이었다(B-103) |
 | `DetachedImageRule` / `DetachedImageMarker` | **무엇이 "캐릭터에서 뗀 것"인가**(순수 판정) / 그 표식을 읽고 쓰는 손 | 붙는 자리 셋·푸는 자리 셋에 규칙을 나눠 적으면 "뗐다가 다시 붙였는데 서랍에 남아 있다"가 생기고 어느 쪽이 틀렸는지 알 길이 없다(B-107 D2). 불변식은 하나다 — **캐릭터가 쓰고 있는 이미지는 뗀 것이 아니다** |

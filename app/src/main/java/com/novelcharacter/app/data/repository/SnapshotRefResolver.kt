@@ -83,19 +83,28 @@ object SnapshotRefResolver {
     /**
      * 필드 정의의 해석 — code가 없으므로 자연키 `(세계관코드, entityType, key)`를 안정 식별자로 쓴다.
      *
-     * @param naturalById 현행 DB: 필드정의 id → 자연키
+     * 전역 구역 필드(`universeId IS NULL` — B-119 확장)는 세계관 코드 자리가 **null인 채로**
+     * 자연키가 성립한다. 그 null은 "전역"의 표기이지 유실이 아니다 — 유실이면 ref 자체가
+     * 만들어지지 않는다(`TrashRepository.fieldDefRef`).
+     *
+     * @param naturalById 현행 DB: 필드정의 id → 자연키. **자연키를 만들 수 있는 행만** 담는다
+     *   (세계관 소속인데 그 세계관 코드를 얻지 못한 행은 빠진다 — [liveIds]가 그쪽을 받는다).
      * @param idByNatural 현행 DB: 자연키 → 필드정의 id
+     * @param liveIds     현행 DB: 살아 있는 필드정의 id 전체 (자연키를 못 만드는 행까지 포함).
+     *   [resolveByCode]의 `liveIds`와 같은 역할이다 — **생존 판정과 동일성 판정은 다른 질문**이라
+     *   한 색인이 겸할 수 없다. 겸하게 두면 자연키 없는 행을 색인에서 빼는 순간 구버전 payload가
+     *   멀쩡히 살아 있는 대상을 '없음'으로 보고 값을 버린다.
      */
     fun resolveFieldDef(
         oldId: Long,
         ref: FieldDefRef?,
         naturalById: Map<Long, FieldDefNaturalKey>,
-        idByNatural: Map<FieldDefNaturalKey, Long>
+        idByNatural: Map<FieldDefNaturalKey, Long>,
+        liveIds: Set<Long>
     ): Resolution {
-        val wanted = ref?.toNaturalKey()
+        val wanted = if (ref == null) null else naturalKeyOf(ref)
         if (wanted == null) {
-            return if (naturalById.containsKey(oldId)) Resolution(oldId, Origin.LEGACY_ID)
-            else LEGACY_NOT_FOUND
+            return if (oldId in liveIds) Resolution(oldId, Origin.LEGACY_ID) else LEGACY_NOT_FOUND
         }
         if (naturalById[oldId] == wanted) return Resolution(oldId, Origin.ID_CONFIRMED)
         val byNatural = idByNatural[wanted]
@@ -104,15 +113,55 @@ object SnapshotRefResolver {
     }
 
     /**
-     * 자연키가 성립하는 [FieldDefRef]만 조회 키로 승격한다.
+     * 자연키가 성립하는 [FieldDefRef]만 조회 키로 승격한다 — **이 판정의 단일 소스다.**
+     *
+     * 해석([resolveFieldDef])과 색인 만들기(`TrashRepository.buildFieldDefIndex`)가 같은 질문을
+     * 각자 적고 있었고, 그래서 한쪽이 `""`를 전역으로 읽는 동안 다른 쪽은 아니었다.
+     * 두 벌로 적힌 한 줄은 언제든 갈라지므로 여기 하나만 둔다(B-130이 `FieldScopeCell`로
+     * 내린 처방과 같다).
+     *
      * entityType/key가 비어 있는 ref는 근거로 쓸 수 없으므로 null(=구버전 취급)로 떨어뜨린다.
-     * (세계관 없는 필드 정의는 존재하지 않지만, universeCode가 비어도 key 쌍만으로는 좁히지 않는다)
+     *
+     * 세계관 코드 자리는 **null과 빈 문자열을 가른다.**
+     * - `null` = 전역 구역 필드(B-119 확장). 그 자체로 대상이 하나로 좁혀지므로 자연키가 성립한다
+     *   (`field_definitions`의 `universeId IS NULL` + `(entityType, key)`).
+     * - `""`  = 세계관 소속인데 그 코드를 얻지 못한 것(세계관 삭제 경로는 `universe.code`를
+     *   빈 값 검사 없이 그대로 싣는다). 어느 세계관인지 좁혀지지 않으므로 근거에서 뺀다 —
+     *   전역으로 승격하면 남의 세계관 값이 전역 필드에 붙는다(오배정 > 생략).
      */
-    private fun FieldDefRef.toNaturalKey(): FieldDefNaturalKey? {
-        val t = entityType
-        val k = key
+    fun naturalKeyOf(ref: FieldDefRef): FieldDefNaturalKey? {
+        val t = ref.entityType
+        val k = ref.key
         if (t.isNullOrBlank() || k.isNullOrBlank()) return null
+        val u = ref.universeCode
+        if (u != null && u.isBlank()) return null
+        return FieldDefNaturalKey(u, t, k)
+    }
+
+    /**
+     * 현행 DB의 **필드 정의 행**이 갖는 자연키 — [naturalKeyOf]의 짝이다.
+     *
+     * 두 쪽은 반드시 같은 규칙이어야 한다. 스냅샷 ref 쪽만 전역을 인정하고 DB 행 쪽이
+     * 안 하면 **해석이 찾을 자리를 색인이 안 채우고**(값 유실), 반대로 DB 행 쪽이 넓게
+     * 인정하면 **전역 ref가 남의 세계관 필드에 붙는다**(오배정). 그래서 판정을 ref 쪽
+     * 한 줄 옆에 둔다 — `TrashRepository`에만 있으면 **순수 JVM 시험이 원리적으로 못 본다**
+     * (Room에 매달려 있다). 규칙이 무너져도 조용히 통과할 경로를 남기지 않는다.
+     *
+     * @param universeId   행의 `universeId`. `null`이면 전역 구역이다.
+     * @param universeCode 그 세계관의 코드. 전역이면 무시된다.
+     *   **세계관 소속인데 이것이 null/빈 값이면 자연키를 만들지 않는다** — 여기서 전역과 같은
+     *   `null` 자리를 내주면 그 행이 전역 필드와 **같은 자연키**를 갖는다. 생존 판정은
+     *   [resolveFieldDef]의 `liveIds`가 따로 받으므로 여기서 빠져도 잃는 것이 없다.
+     */
+    fun naturalKeyOfRow(
+        universeId: Long?,
+        universeCode: String?,
+        entityType: String,
+        key: String
+    ): FieldDefNaturalKey? {
+        if (entityType.isBlank() || key.isBlank()) return null
+        if (universeId == null) return FieldDefNaturalKey(null, entityType, key)
         if (universeCode.isNullOrBlank()) return null
-        return FieldDefNaturalKey(universeCode, t, k)
+        return FieldDefNaturalKey(universeCode, entityType, key)
     }
 }
