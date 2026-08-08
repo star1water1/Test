@@ -71,6 +71,10 @@ class ImageManagerFragment : Fragment() {
     private val viewModel: ImageManagerViewModel by viewModels()
     private val gson = Gson()
 
+    // 일괄 AI 태깅 진행 다이얼로그 — 실행 상태는 VM(aiTagRunning)이 들고 **창만** 뷰 수명에 묶는다.
+    // 회전하면 이 창은 사라지고, 재생성된 뷰의 관측이 다시 세운다(B-136).
+    private var aiTagProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
+
     // 탭 직접 임포트 — 시스템 픽커 다중 선택 → img_ 라이브러리(미배정) 편입
     private val imagePickerLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
@@ -231,6 +235,8 @@ class ImageManagerFragment : Fragment() {
             )
         }
         viewModel.images.observe(viewLifecycleOwner) { applyView() }
+        observeAiTagRun()
+        organizeFolder.observeFolderTagRun()
 
         updateSelectionUi()
         viewModel.load()
@@ -1076,42 +1082,72 @@ class ImageManagerFragment : Fragment() {
      *
      * 취소는 즉시 중단이 아니라 **더 시작하지 않음**이고, **끝난 배치의 제안은 살린다**
      * (B-108 ⓕ의 관행 — 완결된 몫은 버리지 않는다). 그래서 취소해도 검토 시트가 뜬다.
+     *
+     * **실행 자체는 ViewModel이 한다**(B-136) — 회전으로 이 뷰가 사라져도 요청은 계속 돌고,
+     * 진행도·결과는 아래 관측이 재생성된 화면에 다시 붙인다. 종전에는 실행이
+     * `viewLifecycleOwner.lifecycleScope`에 있어 **회전 한 번이 결제 중인 요청을 끊었다.**
      */
-    private fun runAiTagSuggest(paths: List<String>, perRequest: Int) {
-        val total = com.novelcharacter.app.ai.AiPromptPolicy.imageTagBatchRequestCount(paths.size, perRequest)
-        val progress = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
-            requireContext(),
-            titleRes = R.string.image_ai_tag_action,
-            total = total,
-            stageRes = R.string.image_ai_tag_stage,
-            onCancel = { }
-        )
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = try {
-                viewModel.suggestImageTags(
-                    paths = paths,
-                    perRequest = perRequest,
-                    onProgress = { done, totalReq, doneImages, totalImages ->
-                        progress.update(
-                            done, totalReq,
-                            stage = getString(R.string.image_ai_tag_progress, doneImages, totalImages)
-                        )
-                    },
-                    isCancelled = { progress.isCancelled }
-                )
-            } finally {
-                progress.dismiss()
-            }
-            if (!isAdded || view == null) return@launch
-            showAiTagReview(result, perRequest)
+    private fun runAiTagSuggest(
+        paths: List<String>,
+        perRequest: Int,
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
+    ) {
+        if (!viewModel.runImageTagSuggest(paths, perRequest, carryOver)) {
+            // 무통보 무시 금지 — 눌렀는데 아무 일도 안 일어나면 고장과 구분되지 않는다.
+            notifyError(getString(R.string.image_ai_tag_already_running))
         }
     }
 
-    /** 검토 — 드롭·실패를 사유별로 고지하고(R-14·R-17) 고른 것만 적용한다. */
-    private fun showAiTagReview(
-        result: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result,
-        perRequest: Int
-    ) {
+    /**
+     * 일괄 AI 태깅의 진행·결과 관측 — **회전을 넘기는 배선이 전부 여기 있다** (B-136).
+     *
+     * 진행 다이얼로그는 뷰 수명에 묶고(창은 뷰의 것이다) 실행 상태는 ViewModel이 든다.
+     * 그래서 회전 뒤 재생성된 뷰가 `aiTagRunning`을 다시 보고 창을 **다시 세운다.**
+     */
+    private fun observeAiTagRun() {
+        viewModel.aiTagRunning.observe(viewLifecycleOwner) { running ->
+            if (running == true) {
+                if (aiTagProgressDialog == null) {
+                    aiTagProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        requireContext(),
+                        titleRes = R.string.image_ai_tag_action,
+                        total = viewModel.aiTagProgress.value?.totalRequests ?: 0,
+                        stageRes = R.string.image_ai_tag_stage,
+                        // 취소 깃발은 ViewModel이 든다 — 이 창은 회전으로 사라졌다 다시 서는데,
+                        // 깃발이 창에 붙어 있으면 그때 취소가 실행에 닿지 못한다.
+                        onCancel = { viewModel.cancelAiTagRun() }
+                    )
+                    // 다시 세운 창은 눈금이 0에서 시작한다 — 마지막 값으로 곧바로 맞춘다.
+                    viewModel.aiTagProgress.value?.let { applyAiTagProgress(it) }
+                }
+            } else {
+                aiTagProgressDialog?.dismiss()
+                aiTagProgressDialog = null
+            }
+        }
+        viewModel.aiTagProgress.observe(viewLifecycleOwner) { p ->
+            if (p != null) applyAiTagProgress(p)
+        }
+        viewModel.aiTagResult.observe(viewLifecycleOwner) { result ->
+            if (result != null) showAiTagReview(result)
+        }
+    }
+
+    private fun applyAiTagProgress(p: ImageManagerViewModel.AiTagProgress) {
+        aiTagProgressDialog?.update(
+            p.doneRequests, p.totalRequests,
+            stage = getString(R.string.image_ai_tag_progress, p.doneImages, p.totalImages)
+        )
+    }
+
+    /**
+     * 검토 — 드롭·실패를 사유별로 고지하고(R-14·R-17) 고른 것만 적용한다.
+     *
+     * **이미 떠 있는 시트가 있으면 다시 띄우지 않고 다시 먹인다.** 두 경로가 여기로 온다:
+     * 회전으로 되살아난 빈 시트, 그리고 되받기가 합쳐 온 결과. 둘 다 시트를 새로 만들면
+     * 사용자의 체크가 날아가고 창이 겹친다.
+     */
+    private fun showAiTagReview(result: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result) {
         val notices = ArrayList<String>()
         val d = result.drops
         val dropped = d.blankOrTooLong + d.overPerImageCap
@@ -1122,25 +1158,52 @@ class ImageManagerFragment : Fragment() {
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
         notices.addAll(aiTagFailureNotices(result))
 
-        if (result.suggestions.isEmpty() && notices.isEmpty()) return
+        if (result.suggestions.isEmpty() && notices.isEmpty()) {
+            viewModel.clearAiTagResult()
+            return
+        }
 
-        val sheet = ImageAiTagReviewSheet()
-        sheet.suggestions = result.suggestions
-        sheet.notices = notices
-        // 되받을 수 있는 것은 **번호 사고로 접힌 배치**뿐이다 — 키가 없거나 할당량이 끝난
-        // 실패는 1장씩 보내도 같은 결과라, 그 길을 열면 돈만 더 쓴다.
-        sheet.retryPaths = if (perRequest <= 1) emptyList() else result.failures
-            .filter { it.kind in AI_TAG_RETRYABLE }
-            .flatMap { it.paths }
-            .distinct()
-        sheet.onRetryOneByOne = { retry -> runAiTagSuggest(retry, perRequest = 1) }
+        // 되받을 수 있는 것은 **번호 사고로 접힌, 여러 장이 실렸던 배치**뿐이다 — 키가 없거나
+        // 할당량이 끝난 실패는 1장씩 보내도 같은 결과라, 그 길을 열면 돈만 더 쓴다.
+        val retryPaths = com.novelcharacter.app.ai.ImageBatchTagSuggester
+            .retryablePaths(result, AI_TAG_RETRYABLE)
+
+        val existing = childFragmentManager
+            .findFragmentByTag(ImageAiTagReviewSheet.TAG) as? ImageAiTagReviewSheet
+        val sheet = existing ?: ImageAiTagReviewSheet()
+        bindAiTagReviewCallbacks(sheet, result)
+        if (existing != null) {
+            sheet.rebind(result.suggestions, notices, retryPaths)
+        } else {
+            sheet.suggestions = result.suggestions
+            sheet.notices = notices
+            sheet.retryPaths = retryPaths
+            sheet.show(childFragmentManager, ImageAiTagReviewSheet.TAG)
+        }
+    }
+
+    /**
+     * 시트의 콜백을 붙인다 — 재생성된 시트의 람다는 null이라 **다시 붙이지 않으면 눌러도
+     * 아무 일이 없다**(고장과 구분되지 않는다 — 통계 드릴다운 시트가 세운 선례).
+     */
+    private fun bindAiTagReviewCallbacks(
+        sheet: ImageAiTagReviewSheet,
+        result: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result
+    ) {
+        // 되받기는 **앞 실행의 결과를 들고 간다** — 그러지 않으면 이미 결제한 제안이
+        // 통째로 사라지고, 되받으려면 성공한 요청까지 다시 결제해야 한다(B-140).
+        sheet.onRetryOneByOne = { retry ->
+            runAiTagSuggest(retry, perRequest = 1, carryOver = result)
+        }
         sheet.onApply = { picked ->
+            viewModel.clearAiTagResult()
             viewModel.applyImageTags(picked) { tags, images ->
                 if (!isAdded) return@applyImageTags
                 notifySuccess(getString(R.string.image_tag_review_applied, tags, images))
             }
         }
-        sheet.show(childFragmentManager, ImageAiTagReviewSheet.TAG)
+        // 사용자가 검토를 접었으면 보관 중인 결과도 버린다 — 남기면 다음 회전에 되살아난다.
+        sheet.onDismissed = { viewModel.clearAiTagResult() }
     }
 
     /** 실패 고지 — 사유마다 한 줄. 같은 사유가 여러 배치에 나면 묶어서 센다. */
@@ -1502,6 +1565,10 @@ class ImageManagerFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        // 회전 시 액티비티 파괴 전에 진행 다이얼로그를 닫는다 — 파괴된 윈도우 dismiss 크래시 방지.
+        // 실행은 VM에서 계속 돌고, 재생성 뷰의 aiTagRunning 관측이 창을 다시 세운다.
+        aiTagProgressDialog?.dismiss()
+        aiTagProgressDialog = null
         galleryPageCallback?.let { binding.galleryPager.unregisterOnPageChangeCallback(it) }
         galleryPageCallback = null
         binding.galleryPager.adapter = null

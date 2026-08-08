@@ -1419,13 +1419,51 @@ class ImageManagerViewModel(
         val pathsByFolder: Map<String, List<String>>
     )
 
+    val folderTagRunning = MutableLiveData(false)
+
+    /**
+     * 폴더 태그 제안의 결과 — **이쪽도 유료 응답이라 회전을 넘긴다** (B-136).
+     *
+     * 이미지판([aiTagResult])과 같은 결함이 이 선행 기능에도 그대로 있었다. 실행이 뷰 스코프에
+     * 있어 회전이 요청을 끊었고, 결과는 컨트롤러의 지역 변수에만 살아 되살아난 시트가 빈
+     * 껍데기였다. **한 시트만의 이탈이 아니라 검토 시트 부류가 통째로 빠져 있던 것**이라
+     * 둘을 같은 자리에서 세운다.
+     */
+    val folderTagResult = MutableLiveData<TagSuggestOutcome?>()
+
+    fun clearFolderTagResult() { folderTagResult.value = null }
+
+    /**
+     * 폴더 태그 제안 실행 — [viewModelScope]에서 돌아 **회전을 넘긴다**.
+     *
+     * @return 이미 실행 중이면 false(무통보 무시 금지 — 호출측이 알린다).
+     */
+    fun runFolderTagSuggest(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
+        folders: List<String>
+    ): Boolean {
+        if (folderTagRunning.value == true) return false
+        folderTagRunning.value = true
+        viewModelScope.launch {
+            try {
+                folderTagResult.value = suggestFolderTags(bundle, applied, folders)
+            } finally {
+                folderTagRunning.value = false
+            }
+        }
+        return true
+    }
+
     /**
      * 폴더 이름으로 태그를 제안받는다(설계 image_folder_tag_ai 3장).
      *
      * 어휘는 **기존 이미지 태그 전량 + '어휘에 포함'이 켜진 필드의 값**이다. 후자를 켠 필드가
      * 하나도 없어도 동작한다 — 그때는 기존 태그만으로 표기를 맞춘다.
+     *
+     * **바깥에 열지 않는다** — 입구는 [runFolderTagSuggest] 하나다(B-136과 같은 이유).
      */
-    suspend fun suggestFolderTags(
+    private suspend fun suggestFolderTags(
         bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
         applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
         folders: List<String>
@@ -1476,15 +1514,108 @@ class ImageManagerViewModel(
     }
 
     /**
+     * 결정형 진행도(R-26)의 재료 — **회전 뒤 다시 띄우는 다이얼로그가 이것으로 눈금을 되찾는다.**
+     * 실행이 ViewModel로 올라갔으니 진행도도 함께 올라와야 한다(뷰에 두면 회전이 0으로 되돌린다).
+     */
+    data class AiTagProgress(
+        val doneRequests: Int,
+        val totalRequests: Int,
+        val doneImages: Int,
+        val totalImages: Int
+    )
+
+    val aiTagRunning = MutableLiveData(false)
+    val aiTagProgress = MutableLiveData<AiTagProgress?>()
+
+    /**
+     * 일괄 AI 태깅의 결과 — **유료 응답을 들고 회전을 넘긴다** (B-136).
+     *
+     * 종전에는 이 결과가 Fragment의 지역 변수에만 살아서, 검토 중 회전하면 **이미 결제한
+     * 응답이 통째로 사라지고** 빈 껍데기 시트만 남았다. 저장소가 같은 부류에 이미 세워 둔
+     * 관행(`CharacterViewModel.aiSuggestResult` — *유료 응답은 ViewModel이 들고 회전을
+     * 넘긴다*)을 이 경로에도 그대로 세운다.
+     *
+     * **결과 하나로 충분하다** — 고지도 되받기 목록도 전부 이것에서 다시 뽑히므로 회전 뒤
+     * 화면이 이 값 하나로 재구성된다. 판을 돌린 장수를 곁들여 들지 않는 이유가 그것이다:
+     * 되받아 볼 만한지는 [com.novelcharacter.app.ai.ImageBatchTagSuggester.retryablePaths]가
+     * **그 배치에 실렸던 장수로** 판정하는 편이 정확하다(판 단위 설정값은 합친 결과에서
+     * 이미 낡는다 — 되받기는 1장씩 돌지만 남은 접힌 배치는 5장짜리일 수 있다).
+     *
+     * 소비(clear)는 **검토 시트의 액션 시점**이다 — 그래야 검토 중 회전에도 결과가 산다.
+     */
+    val aiTagResult = MutableLiveData<com.novelcharacter.app.ai.ImageBatchTagSuggester.Result?>()
+
+    fun clearAiTagResult() { aiTagResult.value = null }
+
+    /**
+     * 취소 요청 — 실행이 뷰 밖으로 나갔으므로 **취소 깃발도 뷰 밖에 있어야 한다.**
+     * 종전에는 진행 다이얼로그의 손잡이가 이 깃발을 들고 있어, 회전으로 그 창이 사라지면
+     * 실행이 취소를 영영 못 본다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다.
+     */
+    @Volatile
+    private var aiTagCancelled = false
+
+    fun cancelAiTagRun() { aiTagCancelled = true }
+
+    /**
+     * 일괄 AI 태깅 실행 — [viewModelScope]에서 돌아 **회전을 넘긴다**.
+     *
+     * @param carryOver 되받기('1장씩 다시 보내기')일 때 **앞 실행의 결과**. 새 결과를 그 위에
+     *   얹어 이미 결제한 제안을 살린다(B-140 — 합치는 규칙은
+     *   [com.novelcharacter.app.ai.ImageBatchTagSuggester.mergeRetry]가 든다).
+     * @return 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알릴 것(무통보 무시 금지).
+     */
+    fun runImageTagSuggest(
+        paths: List<String>,
+        perRequest: Int,
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
+    ): Boolean {
+        if (aiTagRunning.value == true) return false
+        if (paths.isEmpty()) return false
+        aiTagCancelled = false
+        // **총량을 먼저 세운다** — 진행 창은 `aiTagRunning`을 보고 서면서 이 값으로 총량을
+        // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다.
+        aiTagProgress.value = AiTagProgress(
+            0,
+            com.novelcharacter.app.ai.AiPromptPolicy.imageTagBatchRequestCount(paths.size, perRequest),
+            0,
+            paths.size
+        )
+        aiTagRunning.value = true
+        viewModelScope.launch {
+            try {
+                val fresh = suggestImageTags(
+                    paths = paths,
+                    perRequest = perRequest,
+                    onProgress = { done, total, doneImages, totalImages ->
+                        aiTagProgress.value = AiTagProgress(done, total, doneImages, totalImages)
+                    },
+                    isCancelled = { aiTagCancelled }
+                )
+                aiTagResult.value = carryOver?.let {
+                    com.novelcharacter.app.ai.ImageBatchTagSuggester.mergeRetry(it, fresh)
+                } ?: fresh
+            } finally {
+                aiTagRunning.value = false
+                aiTagProgress.value = null
+            }
+        }
+        return true
+    }
+
+    /**
      * 고른 이미지들을 **내용까지 보내** 태그를 제안받는다 (B-121, 설계 2-3).
      *
      * 폴더 이름을 읽는 [suggestFolderTags]와 어휘는 같지만 성질이 다르다 — 그림이 기기 밖으로
      * 나가고 비용이 장수에 붙는다. 그래서 호출측이 **실행 전에 요청 수·장수를 고지**하고
      * 이 함수는 결정형 진행도(R-26)의 재료를 흘려보낸다.
      *
+     * **바깥에 열지 않는다** — 유료 응답이 뷰의 지역 변수로 흘러 회전에 사라지던 것이 B-136이라,
+     * 입구는 [runImageTagSuggest] 하나다(그쪽이 결과를 [aiTagResult]에 보관한다).
+     *
      * @param perRequest 한 요청에 실을 장수(사용자 설정). 범위는 `AiPromptPolicy`가 든다.
      */
-    suspend fun suggestImageTags(
+    private suspend fun suggestImageTags(
         paths: List<String>,
         perRequest: Int,
         onProgress: suspend (done: Int, total: Int, doneImages: Int, totalImages: Int) -> Unit,

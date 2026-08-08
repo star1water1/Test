@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.image
 
+import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -32,10 +33,22 @@ import com.novelcharacter.app.util.loadCharacterThumbnail
  *   세는 [updateCount]도 접힌 것을 함께 센다.
  * - **행 접기** — 칩이 [AiPromptPolicy.IMAGE_TAG_ROW_COLLAPSE_AT]개를 넘으면 접고 `외 N개`로
  *   말한다. **접힌 칩도 체크 상태는 그대로다**(숨긴 것과 뺀 것은 다르다 — R-19).
+ *
+ * ## 회전을 넘긴다 (B-136)
+ *
+ * 이 시트가 들고 있는 것은 **이미 결제한 응답**이라, 재생성 시 콜백이 null이면 닫아 버리는
+ * 이 저장소의 관행(`ImageBatchOperationBottomSheet` 등 — *주입 유실 시 안전 종료*)을 **여기에는
+ * 쓸 수 없다.** 닫는 것이 곧 돈을 버리는 것이기 때문이다. 그래서 갈래를 둘로 나눈다:
+ *
+ * - **제안·고지·되받기 목록**은 [ImageManagerViewModel.aiTagResult]가 들고, 재생성 뒤
+ *   호출부가 [rebind]로 다시 먹인다(`StatsFieldAnalysisDetailFragment`의 재배선 선례).
+ * - **사용자의 검토 상태**(체크·필터·펼침)는 이 시트가 [onSaveInstanceState]로 지킨다.
+ *   제안만 되살리고 체크를 초기화하면 **수십 장을 훑어 지운 일이 통째로 되돌아간다** —
+ *   화면은 멀쩡해 보이므로 사용자는 그 사실을 알아채지도 못한다.
  */
 class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
 
-    /** 이미지별 제안. 시트를 띄우기 전에 호출부가 채운다. */
+    /** 이미지별 제안. 시트를 띄우기 전에 호출부가 채우고, 재생성 뒤에는 [rebind]가 다시 채운다. */
     var suggestions: List<ImageBatchTagSuggester.ImageSuggestion> = emptyList()
 
     /** 드롭·절단·실패 고지 문구(이미 조립된 줄들). 비어 있으면 그 영역을 감춘다(R-17). */
@@ -47,20 +60,33 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
     /** 사용자가 고른 것 — 경로 → 태그 목록. */
     var onApply: (Map<String, List<String>>) -> Unit = {}
 
-    /** '1장씩 다시 보내기'. 시트를 닫고 호출부가 다시 돌린다. */
+    /**
+     * '1장씩 다시 보내기'. **시트를 닫지 않는다** — 되받은 결과는 앞의 성공분 위에 얹혀
+     * 이 시트로 돌아온다(B-140). 닫고 되돌려받던 종전 방식은 이미 받아 둔 제안을 통째로 버렸다.
+     */
     var onRetryOneByOne: (List<String>) -> Unit = {}
+
+    /**
+     * 사용자가 검토를 **접었다**(취소 버튼·뒤로가기·바깥 탭). 호출부가 보관 중인 결과를
+     * 여기서 버린다 — 남겨 두면 다음 회전에 시트가 혼자 되살아난다.
+     *
+     * **회전은 이 길로 오지 않는다** — `onCancel`은 사용자가 취소한 경우에만 불린다.
+     */
+    var onDismissed: () -> Unit = {}
 
     private val checked = LinkedHashMap<String, MutableSet<String>>()
     private val rows = ArrayList<Row>()
+    private val expandedPaths = LinkedHashSet<String>()
 
     /** 행 하나의 뷰와 상태 — 접기·필터가 이 목록을 훑어 다시 그린다. */
     private class Row(
         val suggestion: ImageBatchTagSuggester.ImageSuggestion,
         val root: View,
         val chipGroup: ChipGroup,
-        val expandButton: MaterialButton,
+        val expandButton: MaterialButton
+    ) {
         var expanded: Boolean = false
-    )
+    }
 
     private var newOnly = false
 
@@ -71,6 +97,65 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
     ): View = inflater.inflate(R.layout.sheet_image_ai_tag_review, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        restoreReviewState(savedInstanceState)
+        // 리스너를 붙이기 **전에** 맞춘다 — 복원값을 나중에 넣으면 그 대입이 리스너를 깨워
+        // 아직 그리지도 않은 행들을 훑는다.
+        view.findViewById<Chip>(R.id.newOnlyChip).isChecked = newOnly
+        bindStaticActions(view)
+        render(view)
+    }
+
+    /**
+     * 재생성 뒤 호출부가 제안을 다시 먹인다 — **체크 상태는 건드리지 않는다.**
+     * 되받기 결과가 도착했을 때도 이 길로 들어온다(합친 결과가 통째로 다시 온다).
+     */
+    fun rebind(
+        suggestions: List<ImageBatchTagSuggester.ImageSuggestion>,
+        notices: List<String>,
+        retryPaths: List<String>
+    ) {
+        this.suggestions = suggestions
+        this.notices = notices
+        this.retryPaths = retryPaths
+        view?.let { render(it) }
+    }
+
+    /** 수명을 넘지 않는 배선 — 버튼의 클릭 처리는 뷰마다 한 번만 붙이면 된다. */
+    private fun bindStaticActions(view: View) {
+        view.findViewById<MaterialButton>(R.id.retryButton).setOnClickListener {
+            // **닫지 않는다** — 이 시트가 들고 있는 제안이 곧 이미 결제한 몫이다(B-140).
+            onRetryOneByOne(retryPaths)
+        }
+        view.findViewById<MaterialButton>(R.id.applyButton).setOnClickListener {
+            onApply(checked.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() })
+            dismiss()
+        }
+        view.findViewById<MaterialButton>(R.id.cancelButton).setOnClickListener {
+            onDismissed()
+            dismiss()
+        }
+        view.findViewById<Chip>(R.id.newOnlyChip).setOnCheckedChangeListener { _, isChecked ->
+            newOnly = isChecked
+            for (row in rows) bindRow(row)
+            updateHiddenNotice(view)
+        }
+        val toggleAll = view.findViewById<MaterialButton>(R.id.toggleAllButton)
+        toggleAll.setOnClickListener {
+            // 하나라도 켜져 있으면 '전체 해제', 전부 꺼져 있으면 '전체 선택'이다.
+            val anyChecked = checked.values.any { it.isNotEmpty() }
+            for (row in rows) {
+                val picked = checked.getValue(row.suggestion.path)
+                picked.clear()
+                if (!anyChecked) picked.addAll(row.suggestion.tags.map { it.tag })
+                bindRow(row)
+            }
+            updateToggleLabel(toggleAll)
+            updateCount(view)
+        }
+    }
+
+    /** 제안에서 나오는 것 전부를 다시 그린다 — 첫 표시와 재생성·되받기 도착이 같은 길을 쓴다. */
+    private fun render(view: View) {
         val list = view.findViewById<LinearLayout>(R.id.imageList)
         val noticeView = view.findViewById<TextView>(R.id.noticeText)
         val emptyView = view.findViewById<TextView>(R.id.emptyText)
@@ -78,7 +163,6 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
         val applyButton = view.findViewById<MaterialButton>(R.id.applyButton)
         val retryButton = view.findViewById<MaterialButton>(R.id.retryButton)
         val toggleAll = view.findViewById<MaterialButton>(R.id.toggleAllButton)
-        val newOnlyChip = view.findViewById<Chip>(R.id.newOnlyChip)
 
         noticeView.visibility = if (notices.isEmpty()) View.GONE else View.VISIBLE
         noticeView.text = notices.joinToString("\n")
@@ -92,12 +176,9 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
 
         // 접힌 배치가 있으면 되받을 길을 그 자리에서 연다 — 장수 1이면 번호 사고가 원리적으로 없다.
         retryButton.visibility = if (retryPaths.isEmpty()) View.GONE else View.VISIBLE
-        retryButton.setOnClickListener {
-            val paths = retryPaths
-            dismiss()
-            onRetryOneByOne(paths)
-        }
 
+        rows.clear()
+        list.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())
         for (s in suggestions) {
             val row = inflater.inflate(R.layout.item_image_tag_review, list, false)
@@ -107,12 +188,18 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
             )
             val group = row.findViewById<ChipGroup>(R.id.tagChipGroup)
             val expand = row.findViewById<MaterialButton>(R.id.expandButton)
+
+            // **처음 보는 경로만 전부 체크한다**(원칙 04 — 훑어 지우는 편이 짧다).
+            // 이미 아는 경로에 다시 부으면 회전·되받기 때마다 **사용자가 지운 체크가 되살아난다.**
+            val fresh = s.path !in checked
             val picked = checked.getOrPut(s.path) { LinkedHashSet() }
-            picked.addAll(s.tags.map { it.tag })   // 기본은 전부 체크(원칙 04 — 훑어 지우는 편이 짧다)
+            if (fresh) picked.addAll(s.tags.map { it.tag })
 
             val entry = Row(s, row, group, expand)
+            entry.expanded = s.path in expandedPaths
             expand.setOnClickListener {
                 entry.expanded = !entry.expanded
+                if (entry.expanded) expandedPaths.add(s.path) else expandedPaths.remove(s.path)
                 bindRow(entry)
                 updateCount(view)
             }
@@ -120,31 +207,6 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
             bindRow(entry)
             list.addView(row)
         }
-
-        toggleAll.setOnClickListener {
-            // 하나라도 켜져 있으면 '전체 해제', 전부 꺼져 있으면 '전체 선택'이다.
-            val anyChecked = checked.values.any { it.isNotEmpty() }
-            for (row in rows) {
-                val picked = checked.getValue(row.suggestion.path)
-                picked.clear()
-                if (!anyChecked) picked.addAll(row.suggestion.tags.map { it.tag })
-                bindRow(row)
-            }
-            updateToggleLabel(toggleAll)
-            updateCount(view)
-        }
-
-        newOnlyChip.setOnCheckedChangeListener { _, isChecked ->
-            newOnly = isChecked
-            for (row in rows) bindRow(row)
-            updateHiddenNotice(view)
-        }
-
-        applyButton.setOnClickListener {
-            onApply(checked.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() })
-            dismiss()
-        }
-        view.findViewById<MaterialButton>(R.id.cancelButton).setOnClickListener { dismiss() }
 
         updateToggleLabel(toggleAll)
         updateCount(view)
@@ -226,8 +288,45 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
         root.findViewById<MaterialButton>(R.id.toggleAllButton)?.let { updateToggleLabel(it) }
     }
 
+    /**
+     * 사용자가 접었다 — 보관 중인 결과를 버리라고 알린다.
+     * **회전은 여기 오지 않는다**(`onCancel`은 뒤로가기·바깥 탭에서만 불린다).
+     */
+    override fun onCancel(dialog: DialogInterface) {
+        onDismissed()
+        super.onCancel(dialog)
+    }
+
+    /**
+     * 검토 상태를 지킨다 — 제안은 ViewModel이 들지만 **어느 칩을 껐는지는 여기밖에 모른다.**
+     * 이것이 없으면 회전 뒤 시트가 되살아나도 훑어 지운 일이 전부 되돌아간다(B-136).
+     */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val picked = Bundle()
+        for ((path, tags) in checked) picked.putStringArrayList(path, ArrayList(tags))
+        outState.putBundle(STATE_CHECKED, picked)
+        outState.putBoolean(STATE_NEW_ONLY, newOnly)
+        outState.putStringArrayList(STATE_EXPANDED, ArrayList(expandedPaths))
+    }
+
+    private fun restoreReviewState(savedInstanceState: Bundle?) {
+        val state = savedInstanceState ?: return
+        newOnly = state.getBoolean(STATE_NEW_ONLY, false)
+        expandedPaths.clear()
+        expandedPaths.addAll(state.getStringArrayList(STATE_EXPANDED).orEmpty())
+        checked.clear()
+        val picked = state.getBundle(STATE_CHECKED) ?: return
+        for (path in picked.keySet()) {
+            checked[path] = LinkedHashSet(picked.getStringArrayList(path).orEmpty())
+        }
+    }
+
     companion object {
         const val TAG = "ImageAiTagReviewSheet"
         private const val THUMB_PX = 128
+        private const val STATE_CHECKED = "checkedTags"
+        private const val STATE_NEW_ONLY = "newOnly"
+        private const val STATE_EXPANDED = "expandedPaths"
     }
 }

@@ -8,6 +8,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.notifyError
 import com.novelcharacter.app.util.notifySuccess
 import kotlinx.coroutines.launch
 
@@ -391,35 +392,66 @@ class OrganizeFolderController(
         applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
         folders: List<String>
     ) {
-        fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val outcome = viewModel.suggestFolderTags(bundle, applied, folders)
-            if (!fragment.isAdded || fragment.view == null) return@launch
-            val notices = ArrayList<String>()
-            val d = outcome.result.drops
-            val dropped = d.unknownFolder + d.blankOrTooLong + d.overPerFolderCap
-            if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
-            if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
-            if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
-            if (outcome.result.failures.isNotEmpty()) {
-                val reason = com.novelcharacter.app.ai.AiErrorMessages.of(
-                    fragment.requireContext(), outcome.result.failures.first()
-                )
-                notices.add(fragment.getString(R.string.image_tag_review_notice_failed, reason))
-            }
-            // 제안도 없고 할 말도 없으면 시트를 띄우지 않는다 — 빈 창은 그 자체가 소음이다.
-            if (outcome.result.suggestions.isEmpty() && notices.isEmpty()) return@launch
+        // 실행은 ViewModel이 한다 — 회전이 결제 중인 요청을 끊지 않게(B-136).
+        // 결과는 [observeFolderTagRun]의 관측이 받아 시트를 세우거나 다시 먹인다.
+        if (!viewModel.runFolderTagSuggest(bundle, applied, folders)) {
+            // 무통보 무시 금지 — 받아오기는 끝났는데 태그 제안만 조용히 빠지면
+            // 사용자는 그 폴더에 제안할 것이 없었다고 잘못 배운다.
+            fragment.notifyError(fragment.getString(R.string.image_ai_tag_already_running))
+        }
+    }
 
-            val sheet = ImageFolderTagReviewSheet()
+    /**
+     * 폴더 태그 제안 결과 관측 — **회전을 넘기는 배선** (B-136). 화면이 붙을 때 한 번 부른다.
+     *
+     * 종전에는 결과가 이 컨트롤러의 지역 변수에만 살아, 검토 중 회전하면 되살아난 시트가
+     * 빈 껍데기였고 이미 결제한 응답이 사라졌다.
+     */
+    fun observeFolderTagRun() {
+        viewModel.folderTagResult.observe(fragment.viewLifecycleOwner) { outcome ->
+            if (outcome != null) showFolderTagReview(outcome)
+        }
+    }
+
+    private fun showFolderTagReview(outcome: ImageManagerViewModel.TagSuggestOutcome) {
+        val notices = ArrayList<String>()
+        val d = outcome.result.drops
+        val dropped = d.unknownFolder + d.blankOrTooLong + d.overPerFolderCap
+        if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
+        if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
+        if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
+        if (outcome.result.failures.isNotEmpty()) {
+            val reason = com.novelcharacter.app.ai.AiErrorMessages.of(
+                fragment.requireContext(), outcome.result.failures.first()
+            )
+            notices.add(fragment.getString(R.string.image_tag_review_notice_failed, reason))
+        }
+        // 제안도 없고 할 말도 없으면 시트를 띄우지 않는다 — 빈 창은 그 자체가 소음이다.
+        if (outcome.result.suggestions.isEmpty() && notices.isEmpty()) {
+            viewModel.clearFolderTagResult()
+            return
+        }
+
+        // 이미 떠 있으면(회전으로 되살아난 시트) 새로 만들지 않고 다시 먹인다 — 새로 만들면
+        // 사용자의 체크가 날아가고 창이 겹친다.
+        val existing = fragment.childFragmentManager
+            .findFragmentByTag(ImageFolderTagReviewSheet.TAG) as? ImageFolderTagReviewSheet
+        val sheet = existing ?: ImageFolderTagReviewSheet()
+        sheet.onApply = { picked ->
+            viewModel.clearFolderTagResult()
+            viewModel.applyFolderTags(picked, outcome.pathsByFolder) { tags, images ->
+                if (!fragment.isAdded) return@applyFolderTags
+                fragment.notifySuccess(
+                    fragment.getString(R.string.image_tag_review_applied, tags, images)
+                )
+            }
+        }
+        sheet.onDismissed = { viewModel.clearFolderTagResult() }
+        if (existing != null) {
+            sheet.rebind(outcome.result.suggestions, notices)
+        } else {
             sheet.suggestions = outcome.result.suggestions
             sheet.notices = notices
-            sheet.onApply = { picked ->
-                viewModel.applyFolderTags(picked, outcome.pathsByFolder) { tags, images ->
-                    if (!fragment.isAdded) return@applyFolderTags
-                    fragment.notifySuccess(
-                        fragment.getString(R.string.image_tag_review_applied, tags, images)
-                    )
-                }
-            }
             sheet.show(fragment.childFragmentManager, ImageFolderTagReviewSheet.TAG)
         }
     }

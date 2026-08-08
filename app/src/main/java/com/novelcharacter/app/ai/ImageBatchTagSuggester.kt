@@ -62,6 +62,30 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
             vocabTruncated + other.vocabTruncated,
             policyTruncated + other.policyTruncated
         )
+
+        /**
+         * **되받은 실행의 집계를 앞 실행 위에 얹는다** — [plus]와 규칙이 다르다(B-140).
+         *
+         * [plus]는 *한 실행 안에서 배치를 쌓는* 셈이라 전부 더하는 것이 맞다. 되받기는 다르다:
+         * **같은 파일·같은 프롬프트를 다시 부르는 것**이라, 그대로 더하면 한 번 일어난 일이
+         * 되받은 횟수만큼 부풀어 고지가 거짓말을 한다(R-14가 세운 것은 *개수로 알린다*이지
+         * *많아 보이게 한다*가 아니다).
+         *
+         * 그래서 축을 둘로 가른다:
+         * - **응답이 만든 것**([blankOrTooLong]·[overPerImageCap])은 **더한다** — 두 실행의
+         *   응답은 서로 다른 응답이고, 각각이 실제로 그만큼 버렸다.
+         * - **프롬프트와 파일이 만든 것**([vocabTruncated]·[policyTruncated]·[unreadable])은
+         *   **큰 쪽을 든다** — 어휘·기조는 두 실행이 같은 것을 싣고 같은 자리에서 잘리고,
+         *   못 읽는 파일은 다시 불러도 여전히 못 읽는다. 더하면 어휘 120개를 한 번 자른 것이
+         *   되받기 한 번에 240개가 된다.
+         */
+        fun mergeRetry(retry: DropTally) = DropTally(
+            blankOrTooLong = blankOrTooLong + retry.blankOrTooLong,
+            overPerImageCap = overPerImageCap + retry.overPerImageCap,
+            unreadable = maxOf(unreadable, retry.unreadable),
+            vocabTruncated = maxOf(vocabTruncated, retry.vocabTruncated),
+            policyTruncated = maxOf(policyTruncated, retry.policyTruncated)
+        )
     }
 
     /** 배치 하나가 통째로 접힌 사유. 전부 "절반만 믿는 것보다 낫다"는 같은 판단의 갈래다. */
@@ -129,6 +153,67 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         fun chunkImages(paths: List<String>, perRequest: Int): List<List<String>> =
             if (paths.isEmpty()) emptyList()
             else paths.chunked(AiPromptPolicy.clampImageTagBatch(perRequest))
+
+        /**
+         * **되받아 볼 만한 경로** — '1장씩 다시 보내기'가 무엇을 다시 부를지 정한다.
+         *
+         * 조건이 둘이고 **둘 다 필요하다**:
+         * - 사유가 [kinds]에 있을 것 — 키 오류·할당량 소진처럼 다시 불러도 같은 답인 실패는
+         *   길을 열면 사용자가 돈만 더 쓴다(호출측이 그 집합을 든다).
+         * - **그 배치에 두 장 이상 실려 있었을 것** — 되받기는 1장씩 보내는 것이고, 1장이
+         *   실렸던 배치를 1장으로 다시 보내는 것은 **같은 요청을 한 번 더 결제하는 것**이다.
+         *   번호 사고는 여러 장이 한 요청에 실려서 나는 것이라, 애초에 성립하지 않는다.
+         *
+         * 판 단위 설정값(`perRequest`)이 아니라 **배치에 실렸던 장수로** 재는 이유: 되받기의
+         * 결과를 [mergeRetry]로 합치고 나면 한 결과 안에 **5장짜리 배치의 실패와 1장짜리
+         * 되받기의 실패가 섞인다.** 판 하나에 값 하나를 매기면 그 둘을 가를 수 없어, 되받기를
+         * 또 권하거나(돈) 남은 5장짜리의 길을 닫는다(기회).
+         */
+        fun retryablePaths(result: Result, kinds: Set<BatchFailKind>): List<String> =
+            result.failures
+                .filter { it.kind in kinds && it.paths.size > 1 }
+                .flatMap { it.paths }
+                .distinct()
+
+        /**
+         * **'1장씩 다시 보내기'의 결과를 앞 실행 위에 얹는다** (B-140).
+         *
+         * [Result]가 *"끝난 배치의 제안은 살린다"*를 선언해 두고도 **화면 계층에서 뒤집히고
+         * 있었다** — 되받기가 앞 실행을 통째로 갈아치워, 25장을 5요청으로 돌려 4요청이 성공한
+         * 뒤 1요청만 접혔을 때 **20장분 제안이 소멸했다.** 되받으려면 이미 결제한 4요청을
+         * 다시 결제해야 했다. 되받기는 접힌 배치만 다시 부르므로 **앞의 성공분은 손댈 이유가
+         * 없다**(완결된 몫은 버리지 않는다 — B-108 ⓕ).
+         *
+         * 규칙 셋:
+         * - **되받은 쪽이 이긴다** — 한 경로에 두 답이 있으면 나중 것이 그 장의 답이다.
+         * - **처분은 '실제로 다시 물은 것'에만 한다** — 되받기가 중간에 취소되면 시작조차 못 한
+         *   장이 남는다. 그 장의 앞선 실패까지 지우면 **되받을 길이 사라지고**(재시도 목록은
+         *   실패에서 나온다) 사용자는 그 장이 성공한 줄 안다. 그래서 [retry]가 답을 낸
+         *   경로(성공이든 새 실패든)만 앞 결과에서 걷어낸다.
+         * - **취소는 둘 중 하나만 서도 선다** — 앞 실행이 취소돼 시작조차 못 한 배치는
+         *   되받기가 성공해도 여전히 시작되지 않은 채다.
+         *
+         * 집계 합산은 [DropTally.mergeRetry]가 따로 든다(더하는 축과 큰 쪽을 드는 축이 갈린다).
+         */
+        fun mergeRetry(previous: Result, retry: Result): Result {
+            // 되받기가 답을 낸 경로 — 성공했든 새로 접혔든 "다시 물어 답이 나온" 것이다.
+            val answered = (retry.suggestions.map { it.path } + retry.failures.flatMap { it.paths }).toSet()
+
+            val keptFailures = previous.failures.mapNotNull { failure ->
+                val remaining = failure.paths.filterNot { it in answered }
+                when {
+                    remaining.isEmpty() -> null                       // 전부 다시 물었다
+                    remaining.size == failure.paths.size -> failure   // 손댈 것이 없다
+                    else -> failure.copy(paths = remaining)           // 일부만 다시 물었다
+                }
+            }
+            return Result(
+                suggestions = previous.suggestions.filterNot { it.path in answered } + retry.suggestions,
+                drops = previous.drops.mergeRetry(retry.drops),
+                failures = keptFailures + retry.failures,
+                cancelled = previous.cancelled || retry.cancelled
+            )
+        }
 
         /**
          * 어휘에 같은 말이 이미 있으면 **그 표기로 접는다** — 공백·대소문자 무시 일치
