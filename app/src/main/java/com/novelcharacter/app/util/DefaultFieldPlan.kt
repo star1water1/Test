@@ -24,6 +24,13 @@ import com.novelcharacter.app.data.model.FieldDefinition
  * 템플릿 삭제·승격 해제는 [demote]로 표식만 걷어내고, 심기는 **이미 있는 필드를 덮지 않으며**
  * ([Placement.LINK]), 덮어쓰기는 사용자가 고른 전파에서만 일어나고 그때도 백업이 함께 난다.
  * 이 파일에 필드를 지우는 함수가 없는 것은 빠뜨린 것이 아니라 설계다.
+ *
+ * **값도 마찬가지다 — 전파가 타입을 바꿔도 값 행은 손대지 않는다**(B-137, 사용자 확정.
+ * 설계 1-11). [PropagateWrites]에 값을 담을 자리가 없는 것도 같은 이유이며, 더하고 싶어지는
+ * 자리다: 미리보기가 *"값 N개가 맞지 않게 된다"*를 세므로 **세었으면 지워야 할 것 같다.**
+ * 그러나 이 기능의 되돌리기 계약이 그 위에 서 있다 — `FieldDefinitionSnapshot`은 정의만 담고
+ * *"되돌리기는 값의 해석을 원래대로 되돌린다"*고 적는데, 값을 지우면 **되돌려도 돌아올 것이
+ * 없다.** 지우려면 스냅샷 형식부터 바꿔야 하고, 그것은 사용자 판정이 필요한 일이다.
  */
 object DefaultFieldPlan {
 
@@ -223,8 +230,12 @@ object DefaultFieldPlan {
 
     /**
      * @param values 그 세계관의 이 필드에 저장된 값들. **타입이 바뀌는 세계관에서만 쓴다**
-     *   ([typeChanges]) — [incompatibleValues]가 *"밀면 몇 개가 초기화되는가"*를 말한다
-     *   (설계 1-3의 `checkTypeChangeImpact`가 미리보기에 실리는 자리).
+     *   ([typeChanges]) — [incompatibleValues]가 *"밀면 몇 개가 새 타입과 맞지 않게 되는가"*를
+     *   말한다 (설계 1-3의 `checkTypeChangeImpact`가 미리보기에 실리는 자리).
+     *
+     *   **이 수는 고지이지 처분이 아니다**(B-137, 사용자 확정 — 설계 1-11). 전파는 정의만
+     *   덮고 값 행은 손대지 않으므로, 여기서 센 값들은 **지워지지 않고 그대로 남는다.**
+     *   *"초기화됩니다"*로 읽는 순간 화면 문구가 거짓이 되고, 사용자는 확인하러 가지 않는다.
      */
     data class PropagateItem(
         val universeId: Long?,
@@ -323,7 +334,12 @@ object DefaultFieldPlan {
         return PropagatePlan(items)
     }
 
-    /** [resolvePropagate]의 산출 — 덮을 행과, 덮이기 **직전**의 행(같은 순서)이다. */
+    /**
+     * [resolvePropagate]의 산출 — 덮을 행과, 덮이기 **직전**의 행(같은 순서)이다.
+     *
+     * **담기는 것은 정의뿐이고, 값 행은 여기 없다**(B-137 — 위 파일 KDoc의 근거). 타입이 바뀌어
+     * 못 버티는 값이 있어도 이 산출은 달라지지 않는다 — 그 사실을 시험이 잠근다.
+     */
     data class PropagateWrites(
         val updates: List<FieldDefinition>,
         /**

@@ -273,6 +273,17 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
      *
      * 스냅샷은 **세계관마다 하나**다. 휴지통 항목이 세계관 단위로 서고, 되돌리기가 그 단위로
      * 이뤄져야 *"두 세계관에 밀었는데 하나만 되돌리고 싶다"*가 가능해진다.
+     *
+     * ## 이 트랜잭션이 값 표를 건드리지 않는 것은 설계다 (B-137, 사용자 확정 — 설계 1-11)
+     *
+     * 타입이 바뀌어 못 버티는 값이 있어도 **지우지 않는다.** 미리보기가 그 수를 세어 보이므로
+     * *"세었으면 지워야 할 것 같은"* 자리인데, 지우면 셋이 함께 무너진다: ⓐ 이 기능의 불변식
+     * (*"캐릭터 데이터를 지우는 경로는 없다"* — 설계 1-3) ⓑ 되돌리기 계약([FieldDefinitionSnapshot]은
+     * 정의만 담고 *"되돌리기가 값의 해석을 되돌린다"*고 적는다 — 값을 지우면 돌아올 것이 없다)
+     * ⓒ 폼 계층의 관행(`DynamicFieldFormBuilder`가 목록에 없는 값을 **되레 보태어 보존한다**).
+     *
+     * 지우려면 스냅샷 형식부터 바꿔야 하므로 **사용자 판정 없이 열지 않는다.**
+     * 되살아나는 것을 `tools/check_propagate_value_parity.sh`가 막는다.
      */
     suspend fun applyPropagate(
         template: DefaultFieldTemplate,
