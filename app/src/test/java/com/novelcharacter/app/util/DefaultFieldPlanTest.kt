@@ -350,6 +350,77 @@ class DefaultFieldPlanTest {
         assertEquals(0, plan.items[0].incompatibleValues)
     }
 
+    /**
+     * **B-135 — 관리 화면의 '전파'는 `previous = null`로 열린다.**
+     *
+     * 그 자리에서 값을 세지 않으면 *"값 N개가 초기화됩니다"* 경고가 **정식 경로에서 통째로
+     * 죽는다**(경고 줄 조건이 `incompatibleValues > 0`이라 참이 될 수 없다). 직전 템플릿을
+     * 모르는 것은 *기본 선택*을 정하지 못한다는 뜻이지, 타입 변경의 영향을 모른다는 뜻이 아니다 —
+     * 영향은 그 세계관의 필드와 템플릿만 견주면 나온다.
+     */
+    @Test fun 직전_템플릿을_몰라도_못_버티는_값을_센다() {
+        val old = template(type = FieldType.TEXT.name, config = "{}")
+        val new = template(type = FieldType.NUMBER.name, config = "{}")
+        val plan = DefaultFieldPlan.planPropagate(
+            new, previous = null,
+            linked = listOf(DefaultFieldPlan.LinkedField(
+                1, "아르카나", linkedField(1, old), values = listOf("12", "서른", "많음")
+            ))
+        )
+        assertTrue(plan.items[0].typeChanges)
+        assertEquals(2, plan.items[0].incompatibleValues)
+    }
+
+    /**
+     * **B-135 — 타입 갈라짐은 템플릿이 아니라 세계관마다 생긴다.**
+     *
+     * 심기의 [DefaultFieldPlan.Placement.LINK]는 config의 표식 한 키만 바꾼다 — 즉 승격 직후부터
+     * *같은 key·다른 type*이 연결된 채 선다. 그래서 **템플릿 타입이 한 번도 안 바뀐 편집에서도**
+     * 어떤 세계관은 타입이 바뀌고, 그 세계관의 값은 초기화된다. 템플릿 단위로 물으면 그 줄을
+     * 통째로 놓친다.
+     */
+    @Test fun 템플릿_타입이_그대로여도_세계관_타입이_다르면_센다() {
+        val old = template(type = FieldType.NUMBER.name, config = "{}", name = "전투력")
+        val new = template(type = FieldType.NUMBER.name, config = "{}", name = "전투 수치")
+        val linkedText = linkedField(1, old).copy(type = FieldType.TEXT.name)
+        val plan = DefaultFieldPlan.planPropagate(
+            new, previous = old,
+            linked = listOf(DefaultFieldPlan.LinkedField(
+                1, "아르카나", linkedText, values = listOf("강함", "12", "보통")
+            ))
+        )
+        assertTrue("템플릿 타입은 그대로여도 이 세계관에서는 바뀐다", plan.items[0].typeChanges)
+        assertEquals(2, plan.items[0].incompatibleValues)
+    }
+
+    /**
+     * **B-135의 재발 방지 — 값을 *채우는* 조건과 *세는* 조건이 같은 함수를 지나는가.**
+     *
+     * 저장소는 [DefaultFieldPlan.typeChanges]에 물어 그 행의 값 표를 읽을지 정하고,
+     * [DefaultFieldPlan.planPropagate]는 **같은 함수**로 센다. 둘이 따로 적히면 갈린다 —
+     * 실제로 갈려 있었고 그 방향이 나빴다(채우는 쪽이 좁아 경고가 영영 안 뜬다).
+     * 저장소는 Room에 매달려 순수 시험이 못 보므로, **여기서는 두 조건이 같은 함수를 지나는지
+     * 까지만 잴 수 있고** *저장소가 그 함수를 부르는지*는 `tools/check_propagate_value_parity.sh`가 본다.
+     */
+    @Test fun 값을_채우는_조건과_세는_조건이_같다() {
+        val t = template(type = FieldType.NUMBER.name, config = "{}")
+        val fields = listOf(
+            linkedField(1, t),                                        // 타입 같음
+            linkedField(2, t).copy(type = FieldType.TEXT.name),       // 타입 다름
+            linkedField(3, t).copy(type = FieldType.BODY_SIZE.name)   // 타입 다름
+        )
+        // 저장소가 값을 읽는 조건 그대로.
+        val toRead = fields.filter { DefaultFieldPlan.typeChanges(it, t) }.map { it.id }.toSet()
+        // 미리보기가 값을 세는 조건 그대로.
+        val counted = DefaultFieldPlan.planPropagate(
+            t, previous = null,
+            linked = fields.map { DefaultFieldPlan.LinkedField(it.universeId, "세계관", it) }
+        ).items.filter { it.typeChanges }.map { it.field.id }.toSet()
+
+        assertEquals("채우는 집합과 세는 집합이 글자 그대로 같아야 한다", counted, toRead)
+        assertEquals("타입이 같은 세계관은 값 표를 읽지 않는다 — 성능 약속", setOf(2L, 3L), toRead)
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 강등 · 승격
     // ──────────────────────────────────────────────────────────────────────

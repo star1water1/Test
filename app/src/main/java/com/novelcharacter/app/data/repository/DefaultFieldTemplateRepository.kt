@@ -93,6 +93,9 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
             val fields = linked[template.code].orEmpty()
             // previous = null — 관리 화면은 '직전 템플릿'을 모른다. 그래서 여기서 세는 '다름'은
             // *템플릿과 다른 전부*이고, 그것이 이 요약이 말하려는 바 그대로다.
+            // 값을 싣지 않는 것도 일부러다 — 이 요약이 쓰는 것은 `actionable.size`뿐이라
+            // `incompatibleValues`를 묻지 않는다(값 표를 목록 화면에서 읽으면 세계관 수만큼의
+            // 조회가 목록 하나를 여는 값에 붙는다). **읽는 자리는 전파 미리보기 하나다.**
             val plan = DefaultFieldPlan.planPropagate(
                 template, previous = null,
                 linked = fields.map {
@@ -236,7 +239,12 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         previous: DefaultFieldTemplate? = null
     ): DefaultFieldPlan.PropagatePlan {
         val names = db.universeDao().getAllUniversesList().associate { it.id to it.name }
-        val typeChanging = previous != null && previous.type != template.type
+        // 어느 행의 값을 읽을지는 **순수 계층의 판정 하나가 정한다**(B-135 —
+        // `DefaultFieldPlan.typeChanges`). 여기서 조건을 다시 적으면 그 순간 *채우는 조건*과
+        // *세는 조건*이 두 벌이 되고, 갈리는 방향이 나쁘다: 종전에는 이 자리가
+        // `previous != null && 직전 템플릿의 타입 비교`라 **템플릿 단위**로 물었고, 그래서
+        // 관리 화면의 '전파'(`previous = null`)에서는 값이 한 번도 실리지 않아
+        // *"값 N개가 초기화됩니다"* 경고가 정식 경로에서 통째로 죽어 있었다.
         val linked = linkedFields(template.code).map { field ->
             DefaultFieldPlan.LinkedField(
                 universeId = field.universeId,
@@ -246,9 +254,11 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
                 universeName = if (field.universeId == null) GLOBAL_SCOPE_NAME
                 else names[field.universeId] ?: "",
                 field = field,
-                // 값 조회는 **타입이 바뀔 때만** 한다 — 그 밖에는 세지 않으므로(설계 1-3)
-                // 세계관마다 값 표를 읽는 것은 순전한 낭비다.
-                values = if (typeChanging) valuesOf(field) else emptyList()
+                // 값 조회는 **그 세계관에서 타입이 바뀔 때만** 한다 — 그 밖에는 세지 않으므로
+                // (설계 1-3) 값 표를 읽는 것은 순전한 낭비다. 타입이 같은 세계관을 건너뛰는
+                // 성능 약속은 그대로다.
+                values = if (DefaultFieldPlan.typeChanges(field, template)) valuesOf(field)
+                else emptyList()
             )
         }
         return DefaultFieldPlan.planPropagate(template, previous, linked)

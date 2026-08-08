@@ -176,6 +176,8 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/check_completion_rate.sh` | 필드 완성도 백분율을 `CompletionRate` 하나가 내는가 — 분모가 필드 수인 백분율이 단일 소스 밖에 있는가 · 등재된 소비처가 실제로 그것을 부르는가(R-34 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/check_config_boundary.sh` | 세계관 경계를 넘는 config 복사가 **두 참조를 함께** 걷어내는가 — 경계를 아는 파일(`GradeSystemRef.demote`·`remapCode` 호출자)이 대결 몫도 걷어내는가(R-35 위반) | **fail-closed** — 목록 밖의 새 호출자는 통과하지 못한다 |
 | `tools/check_no_nul_bytes.sh` | 소스에 날 제어문자(NUL)가 있는가 — 있으면 git이 binary로 보아 **diff가 사라지고 grep 기반 도구가 그 파일을 통째로 건너뛴다**(R-37 위반) | **fail-closed** — 추적 파일 + 추적되지 않은 새 파일까지 본다. 본성이 바이너리인 확장자만 예외이고, 목록 밖의 새 확장자는 통과하지 못한다 |
+| `tools/check_backlog_markers.sh` | `remaining_work` 4장 백로그에서 **닫힌 행이 살아 있는 심각도(🔴🟠🟡🟢)를 들고 있는가**(그 장 머리 규약) — 들고 있으면 *"무엇이 급한가"*를 심각도로 훑는 콜드 세션이 행 본문을 끝까지 읽어야 갈린다 | **fail-closed** — 탐지기 자기 시험을 매 실행 앞에 둔다(python3이 없으면 *"위반 없음"*과 구별되지 않는다) |
+| `tools/check_propagate_value_parity.sh` | 기본 필드 전파 미리보기에서 값을 **채우는 조건**(저장소)과 **세는 조건**(`DefaultFieldPlan`)이 한 벌인가 — 저장소가 `typeChanges`를 실제로 부르는가 · *직전 템플릿의 타입*으로 가르던 옛 조건이 되살아났는가(B-135) | 0건 동결 — 새 위반 즉시 실패. 저장소는 Room에 매달려 **순수 시험이 원리적으로 못 보는 자리**라 이 검사가 유일한 눈이다 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
 | `tools/verify_room_migration*.py` | 마이그레이션 하네스(마이그레이션마다 하나씩 는다 — 종 수는 `ls tools/verify_room_migration*.py`로 센다)를 **실제 SQLite로** 실행 | 각 스크립트 출력이 든다 |
 | `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 스크립트 출력이 든다(엔티티가 늘면 함께 는다) |
