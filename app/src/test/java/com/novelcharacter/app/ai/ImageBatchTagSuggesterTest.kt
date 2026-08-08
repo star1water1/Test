@@ -230,4 +230,160 @@ class ImageBatchTagSuggesterTest {
                 AiPromptPolicy.IMAGE_TAG_BATCH_MIN..AiPromptPolicy.IMAGE_TAG_BATCH_MAX
         )
     }
+
+    // ── ④ 되받기가 앞의 성공분을 살린다 (B-140) ──
+    //
+    // 이 구간의 방어선은 건수가 아니라 셋이다:
+    //  ⓐ **앞의 성공분이 살아남는다** — 이것이 무너지면 25장을 5요청에 돌려 1요청만 접혔을 때
+    //     20장분 제안이 사라지고, 되받으려면 성공한 4요청을 **다시 결제**해야 한다.
+    //  ⓑ **다시 물은 것만 걷어낸다** — 되받기가 중간에 취소되면 시작조차 못 한 장이 남는데,
+    //     그 장의 앞선 실패까지 지우면 되받을 길이 사라지고 사용자는 성공한 줄 안다.
+    //  ⓒ **프롬프트가 만든 집계는 더하지 않는다** — 같은 어휘를 두 번 실어 같은 자리에서
+    //     잘린 것이라, 더하면 한 번 일어난 일이 되받은 횟수만큼 부풀어 고지가 거짓말을 한다.
+
+    private fun suggestion(path: String, vararg tags: String) =
+        ImageBatchTagSuggester.ImageSuggestion(path, tags.map { ImageBatchTagSuggester.Suggestion(it, false) })
+
+    private fun failure(kind: BatchFailKind, vararg paths: String) =
+        ImageBatchTagSuggester.BatchFailure(paths.toList(), kind)
+
+    @Test fun mergeRetry_keepsSuggestionsAlreadyPaidFor() {
+        val previous = ImageBatchTagSuggester.Result(
+            suggestions = listOf(suggestion("a", "숲"), suggestion("b", "밤")),
+            failures = listOf(failure(BatchFailKind.INDEX_OUT_OF_RANGE, "c", "d"))
+        )
+        val retry = ImageBatchTagSuggester.Result(suggestions = listOf(suggestion("c", "검")))
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry)
+
+        // ⓐ 앞 실행에서 받아 둔 a·b가 그대로 있고, 되받은 c가 더해졌다.
+        assertEquals(listOf("a", "b", "c"), merged.suggestions.map { it.path })
+    }
+
+    @Test fun mergeRetry_dropsFailuresThatWereReasked() {
+        val previous = ImageBatchTagSuggester.Result(
+            failures = listOf(failure(BatchFailKind.INDEX_DUPLICATED, "c", "d"))
+        )
+        // 둘 다 다시 물었고 둘 다 답이 나왔다(하나는 성공, 하나는 새 실패).
+        val retry = ImageBatchTagSuggester.Result(
+            suggestions = listOf(suggestion("c", "검")),
+            failures = listOf(failure(BatchFailKind.REQUEST_FAILED, "d"))
+        )
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry)
+
+        // 앞선 실패는 통째로 사라지고 되받기의 실패만 남는다 — 같은 장을 두 번 세지 않는다.
+        assertEquals(1, merged.failures.size)
+        assertEquals(BatchFailKind.REQUEST_FAILED, merged.failures[0].kind)
+        assertEquals(listOf("d"), merged.failures[0].paths)
+    }
+
+    @Test fun mergeRetry_keepsFailureForPathsThatWereNeverReasked() {
+        val previous = ImageBatchTagSuggester.Result(
+            failures = listOf(failure(BatchFailKind.NO_JSON, "c", "d", "e"))
+        )
+        // 되받기가 c만 처리하고 취소됐다 — d·e는 **시작조차 못 했다**.
+        val retry = ImageBatchTagSuggester.Result(
+            suggestions = listOf(suggestion("c", "검")),
+            cancelled = true
+        )
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry)
+
+        // ⓑ 앞선 실패가 d·e만 남긴 채 살아 있어야 한다. 통째로 지우면 되받을 길이 사라지고,
+        //    그대로 두면 이미 성공한 c를 또 보내 돈을 쓴다.
+        assertEquals(1, merged.failures.size)
+        assertEquals(listOf("d", "e"), merged.failures[0].paths)
+        assertTrue("취소는 둘 중 하나만 서도 선다", merged.cancelled)
+    }
+
+    @Test fun mergeRetry_laterAnswerWinsForSamePath() {
+        val previous = ImageBatchTagSuggester.Result(suggestions = listOf(suggestion("a", "낡은답")))
+        val retry = ImageBatchTagSuggester.Result(suggestions = listOf(suggestion("a", "새답")))
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry)
+
+        assertEquals(1, merged.suggestions.size)
+        assertEquals(listOf("새답"), merged.suggestions[0].tags.map { it.tag })
+    }
+
+    @Test fun mergeRetry_doesNotInflatePromptShapedTallies() {
+        // 같은 어휘·같은 기조를 두 번 실었으니 잘린 것도 **같은 것 한 번**이다.
+        val tally = ImageBatchTagSuggester.DropTally(
+            blankOrTooLong = 2, overPerImageCap = 1,
+            unreadable = 3, vocabTruncated = 120, policyTruncated = 40
+        )
+        val previous = ImageBatchTagSuggester.Result(drops = tally)
+        val retry = ImageBatchTagSuggester.Result(drops = tally)
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry).drops
+
+        // 응답이 만든 것은 더한다 — 두 실행의 응답은 서로 다른 응답이다.
+        assertEquals(4, merged.blankOrTooLong)
+        assertEquals(2, merged.overPerImageCap)
+        // ⓒ 프롬프트·파일이 만든 것은 큰 쪽을 든다(더하면 120이 240이 된다).
+        assertEquals(120, merged.vocabTruncated)
+        assertEquals(40, merged.policyTruncated)
+        assertEquals(3, merged.unreadable)
+    }
+
+    @Test fun mergeRetry_emptyRetryChangesNothing() {
+        // 되받기가 한 건도 답을 못 냈으면 앞 결과가 **글자 그대로** 남아야 한다 —
+        // 여기서 뭔가 사라지면 그것이 곧 B-140이 고친 그 손실이다.
+        val previous = ImageBatchTagSuggester.Result(
+            suggestions = listOf(suggestion("a", "숲")),
+            failures = listOf(failure(BatchFailKind.NO_JSON, "c", "d"))
+        )
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, ImageBatchTagSuggester.Result())
+
+        assertEquals(previous.suggestions.map { it.path }, merged.suggestions.map { it.path })
+        assertEquals(previous.failures, merged.failures)
+    }
+
+    // ── ⑤ 되받아 볼 만한 것만 되받는다 ──
+
+    @Test fun retryablePaths_skipsSingleImageBatches() {
+        val result = ImageBatchTagSuggester.Result(
+            failures = listOf(
+                failure(BatchFailKind.NO_JSON, "a", "b"),   // 두 장 — 번호 사고가 성립한다
+                failure(BatchFailKind.NO_JSON, "c")         // 한 장 — 이미 1장씩 보낸 것이다
+            )
+        )
+
+        // 1장짜리를 1장으로 다시 보내는 것은 **같은 요청을 한 번 더 결제하는 것**이다.
+        assertEquals(listOf("a", "b"), ImageBatchTagSuggester.retryablePaths(result, setOf(BatchFailKind.NO_JSON)))
+    }
+
+    @Test fun retryablePaths_skipsKindsThatWouldFailAgain() {
+        val result = ImageBatchTagSuggester.Result(
+            failures = listOf(failure(BatchFailKind.REQUEST_FAILED, "a", "b"))
+        )
+        // 키 오류·할당량 소진은 1장으로 보내도 같은 답이라 길을 열면 돈만 더 쓴다.
+        assertTrue(
+            ImageBatchTagSuggester.retryablePaths(result, setOf(BatchFailKind.NO_JSON)).isEmpty()
+        )
+    }
+
+    @Test fun retryablePaths_afterMergeOffersOnlyTheMultiImageLeftovers() {
+        // 합친 결과에는 **5장짜리 배치의 실패와 1장짜리 되받기의 실패가 섞인다.**
+        // 판 단위 설정값 하나로는 그 둘을 가를 수 없다 — 배치에 실렸던 장수로 재야 한다.
+        val previous = ImageBatchTagSuggester.Result(
+            failures = listOf(
+                failure(BatchFailKind.NO_JSON, "a", "b", "c"),
+                failure(BatchFailKind.NO_JSON, "d", "e")
+            )
+        )
+        val retry = ImageBatchTagSuggester.Result(
+            suggestions = listOf(suggestion("a", "숲"), suggestion("b", "밤")),
+            failures = listOf(failure(BatchFailKind.NO_JSON, "c")),   // 1장씩 보낸 되받기의 실패
+            cancelled = true                                          // d·e는 시작 못 했다
+        )
+
+        val merged = ImageBatchTagSuggester.mergeRetry(previous, retry)
+        val retryable = ImageBatchTagSuggester.retryablePaths(merged, setOf(BatchFailKind.NO_JSON))
+
+        // d·e만 다시 권한다 — c는 이미 1장으로 보내 봤으므로 또 권하면 돈만 쓴다.
+        assertEquals(listOf("d", "e"), retryable)
+    }
 }
