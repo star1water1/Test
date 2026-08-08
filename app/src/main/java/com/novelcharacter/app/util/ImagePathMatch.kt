@@ -21,6 +21,9 @@ import java.io.File
  *   버리지 않는 것이 이 앱의 규약이다(개발 의도 2번: 말없이 유실되지 않는다).
  * - null·공백은 **빈 문자열**로 접는다. `""`은 "지정 없음"의 값이고, 빈 것끼리는 [same]이 아니다
  *   (지정 없음 둘을 "같은 이미지"로 보면 대표 판정이 통째로 틀린다).
+ * - [isInside]는 **실패 처분이 반대다** — 위 셋과 갈리는 유일한 함수라 여기 함께 적어 둔다.
+ *   대조는 *"모르면 원본을 들고 간다"*가 안전하지만 봉쇄는 *"모르면 막는다"*가 안전하다.
+ *   그 함수의 KDoc이 근거를 든다.
  */
 object ImagePathMatch {
 
@@ -57,4 +60,30 @@ object ImagePathMatch {
 
     /** [paths] 안에 [target]과 같은 파일이 있는가. */
     fun containedIn(paths: List<String>, target: String?): Boolean = indexIn(paths, target) >= 0
+
+    /**
+     * [path]가 [dir] **안**의 것인가 — 앱 저장소 봉쇄 가드 (B-141).
+     *
+     * 이 저장소는 저장 이미지 경로를 읽는 자리마다 이 판정을 두는데, 지금까지
+     * **일곱 곳에 복붙**돼 있었다(`CharacterImageLoader`·`CharacterImageStripController`·
+     * `ImageImportHelper`·`ImageViewerFragment` 2곳·`WorldPackageExporter`·
+     * `ImageManagerViewModel`). 옛 일곱 곳을 걷어내는 것은 이 슬라이스 밖이라 **B-106**에
+     * 등재돼 있다 — [canonical]이 선 자리와 같은 모양이다. **새 코드는 이것만 쓴다.**
+     *
+     * **경계 문자를 반드시 붙여 견준다** — `startsWith(root)`만 쓰면 `/files_backup/a.jpg`가
+     * `/files`의 안으로 판정된다(형제 디렉터리가 접두어를 공유하는 자리).
+     *
+     * **실패 처분이 [canonical]과 반대인 이유:** 이 판정의 소비처는 *파일 바이트를 기기 밖으로
+     * 내보내도 되는가*이고, 거기서 "모르겠으면 통과"는 곧 유출이다. 그래서 [dir]이 null이거나
+     * 정규화가 실패하면 **막는다.** 막힌 것이 조용히 사라지지는 않는다 — 호출측이 개수로
+     * 고지한다(R-14). 던지지 않는 것은 [canonical]과 같다.
+     */
+    fun isInside(path: String?, dir: File?): Boolean {
+        if (dir == null) return false
+        val raw = path?.trim().orEmpty()
+        if (raw.isEmpty()) return false
+        return runCatching {
+            File(raw).canonicalPath.startsWith(dir.canonicalPath + File.separator)
+        }.getOrDefault(false)
+    }
 }

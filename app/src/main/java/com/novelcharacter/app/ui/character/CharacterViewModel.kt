@@ -1123,14 +1123,18 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
                 val floor = if (applyConfidenceFilter) settings.minConfidence else null
-                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(imagePaths)
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
+                    imagePaths, getApplication<android.app.Application>().filesDir
+                )
                 val outcome = suggester.suggest(
                     aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiSuggestResult.value = AiSuggestRun(
-                    targets, singleMode, withImageNotice(outcome, prepared), targetCharacterId, imagePaths
+                    targets, singleMode,
+                    outcome.copy(failures = outcome.failures + imageNotices(prepared)),
+                    targetCharacterId, imagePaths
                 )
             } finally {
                 aiSuggestRunning.value = false
@@ -1140,19 +1144,32 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 읽지 못한 이미지를 **개수로** 결과 고지에 얹는다 (R-14 · A-7).
+     * 싣지 못한 이미지를 **사유별 개수로** 결과 고지에 얹는다 (R-14 · A-7).
      *
      * 앱 밖에서 파일이 지워졌거나 폴더 왕복이 경로를 바꾼 자리라 사전 확인이 원리적으로
      * 불가능하다 — 그래서 사후 고지가 유일한 경로이고, 빠뜨리면 사용자는 붙인 줄 알았던
      * 그림이 빠진 채 결과를 받는다.
+     *
+     * **사유를 둘로 가른다** (B-141): 못 읽은 것과 앱 저장소 밖이라 막힌 것은 **처방이
+     * 다르다.** 뭉뚱그리면 멀쩡히 있는 파일을 두고 *"읽지 못했습니다"*라고 말하게 된다.
+     *
+     * 짧은 값 경로와 서술형 경로가 **이 함수 하나를 쓴다** — 종전에는 같은 조립이 두 벌로
+     * 적혀 있어, 한쪽만 고치면 같은 사건을 두 화면이 다르게 말할 자리였다.
      */
-    private fun withImageNotice(
-        outcome: com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome,
+    private fun imageNotices(
         prepared: com.novelcharacter.app.util.AiImagePreparer.Prepared
-    ) = if (prepared.skipped <= 0) outcome else outcome.copy(
-        failures = outcome.failures + getApplication<android.app.Application>()
-            .getString(com.novelcharacter.app.R.string.ai_image_skipped, prepared.skipped)
-    )
+    ): List<String> {
+        if (prepared.skipped <= 0 && prepared.blocked <= 0) return emptyList()
+        val app = getApplication<android.app.Application>()
+        val out = ArrayList<String>(2)
+        if (prepared.skipped > 0) {
+            out.add(app.getString(com.novelcharacter.app.R.string.ai_image_skipped, prepared.skipped))
+        }
+        if (prepared.blocked > 0) {
+            out.add(app.getString(com.novelcharacter.app.R.string.ai_image_blocked, prepared.blocked))
+        }
+        return out
+    }
 
     /**
      * 대상 스펙에 값 라이브러리의 **기존 사용값**을 싣는다 — 모델이 이 작품의 표기 기조를
@@ -1225,16 +1242,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 val enriched = withStyleSamples(spec, fieldId, characterId)
                 val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
-                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(imagePaths)
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
+                    imagePaths, getApplication<android.app.Application>().filesDir
+                )
                 val outcome = writer.write(
                     aiContext, enriched, mode, length, variants, creativity, prepared.images
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
-                val noticed = if (prepared.skipped <= 0) outcome else outcome.copy(
-                    failures = outcome.failures + getApplication<android.app.Application>()
-                        .getString(com.novelcharacter.app.R.string.ai_image_skipped, prepared.skipped)
-                )
+                // 고지 조립은 짧은 값 경로와 공유한다 — 같은 사건을 두 화면이 다르게 말하지 않게.
+                val noticed = outcome.copy(failures = outcome.failures + imageNotices(prepared))
                 aiNarrativeResult.value =
                     AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, noticed)
             } finally {

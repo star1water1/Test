@@ -1153,6 +1153,7 @@ class ImageManagerFragment : Fragment() {
         val dropped = d.blankOrTooLong + d.overPerImageCap
         if (dropped > 0) notices.add(getString(R.string.image_tag_review_notice_dropped, dropped))
         if (d.unreadable > 0) notices.add(getString(R.string.image_ai_tag_notice_unreadable, d.unreadable))
+        if (d.blocked > 0) notices.add(getString(R.string.image_ai_tag_notice_blocked, d.blocked))
         if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
@@ -1232,6 +1233,10 @@ class ImageManagerFragment : Fragment() {
         }
         byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.IMAGES_UNREADABLE]?.let {
             out.add(getString(R.string.image_ai_tag_notice_unreadable, it.sumOf { f -> f.paths.size }))
+        }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.IMAGES_BLOCKED]?.let {
+            // 처방이 다르다 — 파일은 멀쩡히 있고, 할 일은 그 그림을 앱에 들이는 것이다.
+            out.add(getString(R.string.image_ai_tag_notice_blocked, it.sumOf { f -> f.paths.size }))
         }
         byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.REQUEST_FAILED]
             ?.firstOrNull()?.failure?.let {
