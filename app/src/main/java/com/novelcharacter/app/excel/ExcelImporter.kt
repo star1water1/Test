@@ -712,7 +712,7 @@ class ExcelImporter(context: Context) {
                             imagePathRemap.filter { (old, new) -> old != new }
                         )
                     }
-                    // 같은 재매핑을 대결의 이미지 축도 따라간다(R-39). **이 기기에서도 일어난다** —
+                    // 같은 재매핑을 대결의 이미지 축도 따라간다(R-42). **이 기기에서도 일어난다** —
                     // 원 파일이 사라진 자리를 복원이 새 UUID로 채우면, 그 경로를 참가자로 담고
                     // 있던 판이 여기서 옮겨지지 않는 한 통째로 고아가 된다.
                     runCatching {

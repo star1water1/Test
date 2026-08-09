@@ -140,7 +140,7 @@ class DuelAxisListFragment : Fragment() {
      *
      * 종전에 이 자리는 이미지 축을 **막고 이유를 말했다** — 개명 추종 경로가 없어 판이
      * 남의 이미지에 붙을 수 있었기 때문이다(설계 4장 ①의 ⚠️). 그 빗장은
-     * `DuelRepository.followImageRenames`(R-39)가 풀었다.
+     * `DuelRepository.followImageRenames`(R-42)가 풀었다.
      */
     private fun openAxis(axis: DuelAxis, destination: Int) {
         if (axis.isImageAxis) {

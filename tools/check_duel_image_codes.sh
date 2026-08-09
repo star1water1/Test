@@ -1,5 +1,5 @@
 #!/bin/bash
-# 이미지 축 참가자 코드의 개명 추종 검사 (R-39) — 파일을 개명해 놓고 대결의 참가자 코드를
+# 이미지 축 참가자 코드의 개명 추종 검사 (R-42) — 파일을 개명해 놓고 대결의 참가자 코드를
 # 함께 옮기지 않는 자리를 찾는다.
 #
 # 배경: 이미지 축의 참가자 코드는 **이미지 경로**다(`DuelMatch.aCode`의 규약). 경로를 바꾸면서
@@ -53,7 +53,7 @@ for f in files:
     violations.append((f, hits))
 
 if violations:
-    print("파일을 개명하고 대결 참가자 코드를 안 옮기는 자리 %d건 (R-39)" % len(violations))
+    print("파일을 개명하고 대결 참가자 코드를 안 옮기는 자리 %d건 (R-42)" % len(violations))
     print()
     for f, hits in violations:
         print("  %s:%s" % (f, ",".join(str(h) for h in hits)))

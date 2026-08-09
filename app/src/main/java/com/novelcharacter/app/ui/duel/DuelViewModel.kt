@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  * [DuelImageRoster]가 pure로 정한다.
  *
  * 참가자 코드가 경로라 **파일이 개명되면 함께 옮겨야 한다** — 그 빗장은
- * [DuelRepository.followImageRenames](R-39)이고, 이 축을 열 수 있게 된 것이 그 덕이다
+ * [DuelRepository.followImageRenames](R-42)이고, 이 축을 열 수 있게 된 것이 그 덕이다
  * (설계 4장 ①의 ⚠️가 닫아 두었던 자리).
  */
 class DuelViewModel(application: Application) : AndroidViewModel(application) {
