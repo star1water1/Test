@@ -34,6 +34,30 @@ data class AiProviderConfig(
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     /**
+     * 자동 전환 우선순위 — **작을수록 먼저** (B-108, 확정 ⓒ: 전역 하나). 사용자가 설정 화면에서
+     * 끌어 놓아 정한다([AiProviderFallback.withPriorities]).
+     *
+     * 기본값 0이 회귀를 막는다: 한 번도 손대지 않은 사용자는 전부 0이라 정렬이 [createdAt]으로
+     * 떨어져 **종전 목록 순서 그대로**다. 그래서 이 칸이 늘어도 마이그레이션이 없다
+     * (프로바이더 설정은 Room이 아니라 SharedPreferences + [AiProviderCodec]이다).
+     *
+     * **학습값이 아니다** — 사용자가 정한 것이므로 R-23 초기화 대상이 아니고
+     * [hasLearnedFacts]에도 들어가지 않는다. 모델을 바꿨다고 사용자가 정한 순서를 지우면
+     * 그것이야말로 조용한 데이터 유실이다.
+     */
+    val priority: Int = 0,
+    /**
+     * 한도로 밀려 **이 시각까지 뒤로 미루는** 프로바이더인가 (B-108, 확정 ⓔ — 10분).
+     * null이면 쿨다운 없음. 판정은 [AiProviderFallback.isCoolingDown]이 단일 소스다
+     * (벽시계가 어긋난 경우까지 거기서 처리한다).
+     *
+     * **학습한 사실이다** — *"이 키는 한도에 걸렸다"*는 그 모델·그 서버에서 배운 것이라
+     * [hasLearnedFacts]에 등재한다(확정 7-1의 착수 지시). 등재하지 않으면 R-23 초기화 고지에서
+     * 빠져, 모델을 바꿨는데도 옛 쿨다운 때문에 그 프로바이더가 뒤로 밀리는 이유를
+     * 사용자가 볼 수 없다.
+     */
+    val cooldownUntilMillis: Long? = null,
+    /**
      * 사용자가 슬라이더로 정한 출력 상한. null이면 자동([AiTokenPolicy.DEFAULT_REQUEST]).
      * 모델이 실제로 허용하는 값을 넘길 수는 없다 — [AiTokenPolicy.effective]가 [detectedOutputLimit]로 깎는다.
      */
@@ -68,7 +92,8 @@ data class AiProviderConfig(
      * 새 학습값이 생기면 반드시 여기에도 등재할 것 — 초기화 고지 판정의 단일 소스다.
      */
     fun hasLearnedFacts(): Boolean =
-        detectedOutputLimit != null || temperatureUnsupported != null || imagesUnsupported != null
+        detectedOutputLimit != null || temperatureUnsupported != null ||
+            imagesUnsupported != null || cooldownUntilMillis != null
 
     /** 오류 문구에 실을 표식 (B-150). 설정 전체가 아니라 **사용자가 알아볼 두 값**만 넘긴다. */
     fun ref(): AiProviderRef = AiProviderRef(displayName, model)
@@ -286,7 +311,22 @@ sealed class AiResult {
          * 고지하지 않으면 사용자는 그림을 붙였는데 결과가 달라지지 않은 이유를 모른 채
          * 이미지 값만 계속 낸다 — [temperatureOmitted]와 같은 이유로 반드시 한 줄 남긴다.
          */
-        val imagesOmitted: Boolean = false
+        val imagesOmitted: Boolean = false,
+        /**
+         * 이 답을 **실제로 낸** 프로바이더 (B-108). [AiService]가 관문에서 새긴다.
+         *
+         * 종전에는 표식이 실패에만 붙었다(B-150) — 성공은 늘 사용자가 고른 그곳에서 왔으므로
+         * 물을 것이 없었기 때문이다. 자동 전환이 들어오면서 **그 전제가 깨졌다**: 성공도
+         * 어디서 왔는지 말할 수 있어야 [switchedFrom]과 짝지어 고지 한 줄이 성립한다.
+         */
+        val provider: AiProviderRef? = null,
+        /**
+         * 한도로 밀려 **넘어오기 전** 프로바이더 (B-108, 확정 ⓑ). null이면 전환이 없었다.
+         *
+         * 고지는 [AiProviderFallback.switchNoteOf]가 단일 소스다 — 호출부는 그 한 줄을
+         * 자기 고지 채널에 얹기만 한다.
+         */
+        val switchedFrom: AiProviderRef? = null
     ) : AiResult()
 
     data class Failure(
@@ -303,13 +343,25 @@ sealed class AiResult {
 }
 
 /**
- * 관문을 떠나는 실패에 프로바이더 표식을 새긴다 (B-150). 성공은 그대로 지나간다.
+ * 관문을 떠나는 결과에 프로바이더 표식을 새긴다 (B-150 — 실패 · B-108 — 성공까지 확장).
  *
  * [AiService]의 출구 전부가 이 한 함수를 지나게 해 둔 것이 요점이다 — 새 인앱 기능이
  * 늘어도 표식은 자동으로 붙고, 붙이는 것을 잊을 자리가 애초에 없다.
+ *
+ * 성공까지 새기게 된 것은 자동 전환 때문이다: *"누가 답했는가"*가 종전에는 물을 필요 없는
+ * 것(사용자가 고른 그곳)이었지만, 이제는 한도로 밀려 **다른 곳**이 답했을 수 있다.
  */
-fun AiResult.withProvider(ref: AiProviderRef): AiResult =
-    if (this is AiResult.Failure) copy(provider = ref) else this
+fun AiResult.withProvider(ref: AiProviderRef): AiResult = when (this) {
+    is AiResult.Failure -> copy(provider = ref)
+    is AiResult.Success -> copy(provider = ref)
+}
+
+/**
+ * 성공에 *"어디서 밀려 왔는가"*를 새긴다 (B-108). [from]이 null이면 전환이 없었으므로 그대로 둔다.
+ * 실패에는 붙이지 않는다 — 전부 실패했으면 사용자가 볼 것은 마지막 오류이지 경로가 아니다.
+ */
+fun AiResult.withSwitchedFrom(from: AiProviderRef?): AiResult =
+    if (from != null && this is AiResult.Success) copy(switchedFrom = from) else this
 
 /**
  * 오류 분류 — 잘못된 상태를 조용히 삼키지 않고, 각 분류마다 사용자 안내문과

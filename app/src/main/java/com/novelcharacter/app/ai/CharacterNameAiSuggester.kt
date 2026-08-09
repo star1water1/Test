@@ -235,6 +235,8 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
                         if (temperatureNote || result.temperatureOmitted) {
                             add(CharacterFieldAiSuggester.TEMPERATURE_UNSUPPORTED_NOTE)
                         }
+                        // 한도로 밀려 다른 프로바이더가 낸 이름 (B-108 확정 ⓑ).
+                        AiProviderFallback.switchNoteOf(result)?.let { add(it) }
                     },
                     truncationNotes = prompt.truncationNotes,
                     truncated = result.truncated,

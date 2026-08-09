@@ -62,6 +62,10 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
                 is AiResult.Success -> {
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
+                    // 한도로 밀려 다른 프로바이더가 답한 구간 (B-108 확정 ⓑ) — 구간마다
+                    // 뜰 수 있으므로 같은 줄은 한 번만 남긴다.
+                    AiProviderFallback.switchNoteOf(result)
+                        ?.let { if (it !in failures) failures.add(it) }
                     val parsed = parseResponse(result.text, entries)
                     if (parsed == null) {
                         // 잘린 것과 형식이 깨진 것은 원인도 교정 경로도 다르다 (CharacterFieldAiSuggester와 동일 규약).

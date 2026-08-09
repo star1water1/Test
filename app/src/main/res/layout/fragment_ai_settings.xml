@@ -50,6 +50,16 @@
                 android:paddingTop="20dp"
                 android:paddingBottom="4dp" />
 
+            <!-- 목적문 (R-25) — 무엇이 어디서 어떻게 되는가. 자동 전환은 사용자가 켠 적
+                 없는데 결과가 다른 모델에서 오는 일이라, 규칙을 여기서 미리 말해 둔다. -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="8dp"
+                android:text="@string/ai_settings_providers_order_note"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
             <TextView
                 android:id="@+id/emptyText"
                 android:layout_width="match_parent"

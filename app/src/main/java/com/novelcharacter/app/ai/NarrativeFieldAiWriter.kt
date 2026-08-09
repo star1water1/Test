@@ -116,6 +116,9 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                         if (imagesNote || result.imagesOmitted) {
                             add(CharacterFieldAiSuggester.IMAGES_UNSUPPORTED_NOTE)
                         }
+                        // 한도로 밀려 다른 프로바이더가 이어 쓴 초안 (B-108 확정 ⓑ) —
+                        // 서술형은 문체가 곧 결과물이라 누가 썼는지가 특히 중요하다.
+                        AiProviderFallback.switchNoteOf(result)?.let { add(it) }
                     },
                     truncationNotes = prompt.truncationNotes,
                     truncated = result.truncated,

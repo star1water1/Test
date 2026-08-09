@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.text.SpannableString
 import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
@@ -18,6 +19,7 @@ import androidx.core.util.PatternsCompat
 import androidx.core.view.children
 import androidx.core.widget.doOnTextChanged
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
@@ -37,6 +39,7 @@ import com.novelcharacter.app.ai.AiPromptPolicy
 import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiProtocolCodec
 import com.novelcharacter.app.ai.AiProviderConfig
+import com.novelcharacter.app.ai.AiProviderFallback
 import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.AiResult
 import com.novelcharacter.app.ai.AiService
@@ -72,6 +75,9 @@ class AiSettingsFragment : Fragment() {
 
     private val adapter = ProviderAdapter()
 
+    /** 손잡이가 드래그를 시작시키려면 붙잡고 있어야 한다 (B-108 — 드래그는 손잡이 전용). */
+    private var touchHelper: ItemTouchHelper? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -90,6 +96,7 @@ class AiSettingsFragment : Fragment() {
         binding.providerList.layoutManager = LinearLayoutManager(ctx)
         binding.providerList.adapter = adapter
         binding.addProviderButton.setOnClickListener { showPresetPicker() }
+        attachReorder()
 
         setupConsistencySliders()
         setupCreativityGroup()
@@ -262,6 +269,67 @@ class AiSettingsFragment : Fragment() {
     private fun countLabel(count: Int): String =
         if (count == 0) getString(R.string.ai_settings_prompt_off)
         else getString(R.string.ai_settings_prompt_count, count)
+
+    /**
+     * 전환 우선순위를 끌어 놓기로 정한다 (B-108 확정 ⓒ — 전역 하나).
+     *
+     * 숫자를 직접 적게 하지 않는 것이 원칙 04다. 저장은 **손을 뗀 순간**(`clearView`)에 한 번만
+     * 한다 — 끄는 동안 매 프레임 저장하면 SharedPreferences에 목록 전체를 되풀이해 쓴다.
+     *
+     * 저장 대상을 [AiProviderFallback.withPriorities]가 고르므로 **값이 실제로 바뀐 항목만**
+     * 나간다. 안 그러면 자리를 지킨 항목까지 `updatedAt`이 갱신되어, 편집한 적 없는 프로바이더가
+     * 방금 손댄 것처럼 보인다(형제 화면들이 `displayOrder`에서 쓰는 그 관행이다).
+     */
+    private fun attachReorder() {
+        val helper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+        ) {
+            /**
+             * **드래그는 손잡이 전용이다** — 세계관·작품·캐릭터·연표·필드 목록과 같은 배선이고
+             * `FieldDefinitionAdapter`가 그 관행을 주석으로 적어 두었다.
+             *
+             * 길게 눌러 끄는 길을 함께 열지 않는 이유가 이 화면에서는 특히 분명하다: 행을 누르면
+             * **사용 중 프로바이더가 바뀐다.** 길게 누르기가 드래그를 시작하면 사용자는 자기가
+             * 무엇을 하려던 것인지(고르기인가 옮기기인가)를 손가락을 떼기 전에는 알 수 없다.
+             */
+            override fun isLongPressDragEnabled(): Boolean = false
+
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                return adapter.move(from, to)
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                val ordered = adapter.takePendingOrder() ?: return
+                // **견주는 상대는 저장된 값이지 화면이 들고 있는 값이 아니다.** 화면의 항목은
+                // 방금 저장한 뒤 다시 읽기 전까지 옛 우선순위를 들고 있어서, 그것과 견주면
+                // **자리가 바뀌었는데도 같아 보여 저장에서 빠지는 항목**이 생긴다(그 항목만
+                // 옛 자리에 남아 순서가 조용히 어긋난다).
+                val changed = AiProviderFallback.withPriorities(ordered)
+                    .filter { providerStore.get(it.id)?.priority != it.priority }
+                if (changed.isEmpty()) return
+                changed.forEach { providerStore.save(it) }
+                // 목록 갱신은 **다음 프레임으로 미룬다** — `clearView`는 드래그가 끝나는 자리라
+                // RecyclerView가 아직 레이아웃 중일 수 있고, 그 안에서 어댑터를 통째로 갈면
+                // 던진다. 화면의 줄 순서는 이미 맞으므로 미뤄도 사용자에게는 차이가 없다.
+                recyclerView.post { if (_binding != null) refreshList() }
+                Toast.makeText(
+                    requireContext(), R.string.ai_provider_order_saved, Toast.LENGTH_SHORT
+                ).show()
+            }
+        })
+        helper.attachToRecyclerView(binding.providerList)
+        touchHelper = helper
+    }
 
     private fun refreshList() {
         val configs = providerStore.list()
@@ -682,7 +750,13 @@ class AiSettingsFragment : Fragment() {
             // 이미지 거부도 같은 부류다 (A-7) — 비전 지원은 같은 프로토콜 안에서도 모델마다
             // 갈리므로, 안 받던 모델에서 배운 사실을 받는 모델에 물려주면 **첨부가 영영
             // 조용히 빠진다**. 새 값을 여기 빠뜨리면 두 학습값의 규칙이 갈린다(R-23 본문).
-            imagesUnsupported = if (identityChanged) null else base.imagesUnsupported
+            imagesUnsupported = if (identityChanged) null else base.imagesUnsupported,
+            // 한도 쿨다운도 같은 부류다 (B-108) — *"이 키는 한도에 걸렸다"*는 그 모델·그 서버에서
+            // 배운 사실이라, 남겨 두면 **모델을 바꿔 놓고도 그 프로바이더가 계속 뒤로 밀린다**.
+            // 사용자가 볼 수 있는 표시가 없는 미룸이라, 원인을 짚을 길이 없는 침묵이 된다.
+            cooldownUntilMillis = if (identityChanged) null else base.cooldownUntilMillis
+            // priority는 여기 없다 — 사용자가 정한 값이라 R-23 대상이 아니고, base.copy가
+            // 그대로 나른다. 목록 순서는 끌어 놓기가 정한다([applyReorder]).
         )
     }
 
@@ -774,10 +848,35 @@ class AiSettingsFragment : Fragment() {
         private var items: List<AiProviderConfig> = emptyList()
         private var activeId: String? = null
 
+        /**
+         * 끄는 중인 순서 — 손을 뗄 때까지 저장하지 않는다 (B-108).
+         * null이면 끌어 놓은 적이 없다는 뜻이고, 그때는 저장할 것도 없다.
+         */
+        private var pendingOrder: List<AiProviderConfig>? = null
+
         fun submit(configs: List<AiProviderConfig>, active: String?) {
             items = configs
             activeId = active
+            pendingOrder = null   // 목록이 새로 왔으면 끌던 것은 이미 반영됐거나 무효다
             notifyDataSetChanged() // 목록이 소수라 diff 계산이 오히려 과함
+        }
+
+        /** 끌어 놓기 한 칸 — 화면만 바꾸고 저장은 [takePendingOrder]를 받은 쪽이 한다. */
+        fun move(from: Int, to: Int): Boolean {
+            val list = items.toMutableList()
+            if (from !in list.indices || to !in list.indices) return false
+            list.add(to, list.removeAt(from))
+            items = list
+            pendingOrder = list
+            notifyItemMoved(from, to)
+            return true
+        }
+
+        /** 끌어 놓기 결과를 한 번만 꺼낸다 — 두 번째 호출은 null이라 중복 저장이 없다. */
+        fun takePendingOrder(): List<AiProviderConfig>? {
+            val pending = pendingOrder
+            pendingOrder = null
+            return pending
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
@@ -796,12 +895,31 @@ class AiSettingsFragment : Fragment() {
                 b.keyStatusText.text =
                     if (hint != null) getString(R.string.ai_key_status_registered, hint)
                     else getString(R.string.ai_key_status_missing)
+                // 한도로 밀린 상태 (B-108) — 뒤로 미루는 일이 화면에 안 보이면 "왜 이
+                // 프로바이더가 안 쓰이지"를 알아낼 길이 없다(원칙 04 — 일일이 확인하지
+                // 않으면 존재를 알 수 없는 데이터를 두지 않는다).
+                val now = System.currentTimeMillis()
+                if (AiProviderFallback.isCoolingDown(config, now)) {
+                    // 올림한다 — 30초 남았는데 "0분"이라 적으면 지금 쓰인다는 뜻으로 읽힌다.
+                    val minutes =
+                        (((config.cooldownUntilMillis ?: now) - now + 59_999) / 60_000).toInt()
+                    b.cooldownText.text = getString(R.string.ai_provider_cooldown, minutes)
+                    b.cooldownText.visibility = View.VISIBLE
+                } else {
+                    b.cooldownText.visibility = View.GONE
+                }
                 val isActive = config.id == activeId
                 b.activeRadio.isChecked = isActive
                 b.activeBadge.visibility = if (isActive) View.VISIBLE else View.GONE
                 b.root.setOnClickListener {
                     providerStore.setActiveId(config.id)
                     refreshList()
+                }
+                // 손잡이를 누르는 순간 드래그가 시작된다 (길게 누르기는 꺼 두었다 —
+                // 이 행은 누르면 '사용 중'이 바뀌므로 두 뜻이 겹치면 안 된다).
+                b.dragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) touchHelper?.startDrag(this)
+                    false
                 }
                 b.overflowButton.setOnClickListener { showRowMenu(config, it) }
             }

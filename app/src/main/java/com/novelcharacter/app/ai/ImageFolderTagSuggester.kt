@@ -74,7 +74,13 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         val suggestions: List<FolderSuggestion> = emptyList(),
         val drops: DropTally = DropTally(),
         /** 청크 단위 실패. 비어 있지 않아도 [suggestions]는 쓸 수 있다. */
-        val failures: List<AiResult.Failure> = emptyList()
+        val failures: List<AiResult.Failure> = emptyList(),
+        /**
+         * 실패가 아닌 고지 — 지금은 프로바이더 자동 전환 한 줄이다 (B-108 확정 ⓑ).
+         * [failures]가 [AiResult.Failure] 타입이라 문자열 고지를 담을 자리가 아니고,
+         * 담으면 화면이 *"실패했습니다"*로 렌더한다.
+         */
+        val notes: List<String> = emptyList()
     )
 
     companion object {
@@ -184,12 +190,16 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
 
         val all = ArrayList<FolderSuggestion>()
         val failures = ArrayList<AiResult.Failure>()
+        val notes = ArrayList<String>()
         var drops = DropTally(vocabTruncated = vocab.truncated, policyTruncated = policyTruncated)
 
         for (chunk in chunkFolders(folders)) {
             val request = AiRequest(system = system, userText = buildUserText(chunk, imageCounts))
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
+                    // 한도로 밀려 다른 프로바이더가 답한 청크 (B-108 확정 ⓑ).
+                    AiProviderFallback.switchNoteOf(result)
+                        ?.let { if (it !in notes) notes.add(it) }
                     val (parsed, tally) = parse(result.text, chunk, known)
                     all.addAll(parsed)
                     drops += tally
@@ -201,6 +211,6 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                 }
             }
         }
-        return Result(all, drops, failures)
+        return Result(all, drops, failures, notes)
     }
 }

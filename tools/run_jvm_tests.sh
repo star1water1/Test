@@ -168,6 +168,7 @@ $MAIN/ai/AiCreativity.kt
 $MAIN/ai/AiProtocolCodec.kt
 $MAIN/ai/AiProviderCodec.kt
 $MAIN/ai/AiProviderActivation.kt
+$MAIN/ai/AiProviderFallback.kt
 $MAIN/ai/AiErrorText.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/CharacterNameAiSuggester.kt
@@ -292,6 +293,7 @@ $TEST/util/AiImageAttachTest.kt
 $TEST/ai/AiImageRequestTest.kt
 $TEST/ai/AiProviderCodecTest.kt
 $TEST/ai/AiProviderActivationTest.kt
+$TEST/ai/AiProviderFallbackTest.kt
 $TEST/ai/AiErrorTextTest.kt
 $TEST/ai/ImageBatchTagSuggesterTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
