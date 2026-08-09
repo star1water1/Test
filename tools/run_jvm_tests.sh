@@ -188,6 +188,8 @@ $MAIN/util/DuelImageRoster.kt
 $MAIN/util/DuelImagePrune.kt
 $MAIN/util/RepresentativeWeighting.kt
 $MAIN/util/DuelSession.kt
+$MAIN/util/DuelRound.kt
+$MAIN/util/DuelCardGrid.kt
 $MAIN/util/DuelStandings.kt
 $MAIN/util/DuelEntry.kt
 $MAIN/util/DuelImageFit.kt
@@ -277,6 +279,8 @@ $TEST/util/DuelImageRosterTest.kt
 $TEST/util/DuelImagePruneTest.kt
 $TEST/util/RepresentativeWeightingTest.kt
 $TEST/util/DuelSessionTest.kt
+$TEST/util/DuelRoundTest.kt
+$TEST/util/DuelCardGridTest.kt
 $TEST/util/DuelStandingsTest.kt
 $TEST/util/DuelEntryTest.kt
 $TEST/util/DuelImageFitTest.kt

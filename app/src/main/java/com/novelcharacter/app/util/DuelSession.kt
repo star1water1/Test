@@ -33,8 +33,18 @@ object DuelSession {
      * 이번 자리에서 답한 한 짝.
      *
      * @property seq 몇 번째 답인가. [refresh]가 *"이 계획이 이 답을 보았는가"*를 가리는 데 쓴다.
+     * @property alsoHandled [candidate] 말고 **이 한 번의 답이 함께 답한 짝들**
+     *   (k지선다 — [DuelRound.handledPairs]가 낸다). 비어 있으면 1:1이다.
+     *   이것을 담지 않으면 방금 답한 짝이 곧바로 다시 뜬다.
      */
-    data class Answered(val candidate: DuelPairing.Candidate, val seq: Long)
+    data class Answered(
+        val candidate: DuelPairing.Candidate,
+        val seq: Long,
+        val alsoHandled: Set<DuelRating.PairKey> = emptySet()
+    ) {
+        /** 이 답이 걷어 낸 짝 전부 — 머리 짝과 거들린 것들. */
+        val pairs: Set<DuelRating.PairKey> get() = alsoHandled + candidate.pair
+    }
 
     /**
      * @property current 화면에 떠 있는 짝. null이면 낼 짝이 없다([exhausted]).
@@ -71,12 +81,18 @@ object DuelSession {
      * 답한 짝을 대기열에서 걷어 내는 것은 **이 대기열에 한해서**다. 다시 계산이 그 짝을 또
      * 내면 그때는 낸다 — 모델이 *"아직 더 봐야 한다"*고 말한 것이라, 화면이 자기 판단으로
      * 막으면 천적 검출에 필요한 표본이 영영 모이지 않는다.
+     *
+     * @param alsoHandled 이 한 번의 답이 머리 짝과 **함께** 답한 짝들(k지선다).
+     *   [DuelRound.handledPairs]를 그대로 넘긴다. 1:1이면 비운다.
      */
-    fun answer(state: State): State {
+    fun answer(
+        state: State,
+        alsoHandled: Set<DuelRating.PairKey> = emptySet()
+    ): State {
         val answered = state.current ?: return state
         val seq = state.seq + 1
-        val history = state.history + Answered(answered, seq)
-        val handled = history.mapTo(HashSet()) { it.candidate.pair }
+        val history = state.history + Answered(answered, seq, alsoHandled)
+        val handled = history.flatMapTo(HashSet()) { it.pairs }
         val next = state.queue.indexOfFirst { !handled.contains(it.pair) }
         return State(
             current = if (next < 0) null else state.queue[next],
@@ -115,7 +131,7 @@ object DuelSession {
      *   맨 앞이 올라온다(바닥났던 화면이 스스로 되살아나는 경로다).
      */
     fun refresh(state: State, plan: DuelPairing.Plan, planSeq: Long): State {
-        val unseen = state.history.filter { it.seq > planSeq }.mapTo(HashSet()) { it.candidate.pair }
+        val unseen = state.history.filter { it.seq > planSeq }.flatMapTo(HashSet()) { it.pairs }
         val fresh = plan.queue.filter { it.pair !in unseen && it.pair != state.current?.pair }
         if (state.current != null) return state.copy(queue = fresh)
 
@@ -123,8 +139,11 @@ object DuelSession {
         // 모델은 그 짝을 더 보고 싶어 할 수 있지만(그래서 대기열 맨 앞에 있다), 사용자에게는
         // 누른 직후 같은 둘이 다시 뜨는 것이라 *"내 누름이 먹었나"*가 된다. 다른 짝이 하나도
         // 없을 때만 그대로 낸다 — **미루는 것이지 빼는 것이 아니다.**
-        val justAnswered = state.history.lastOrNull()?.candidate?.pair
-        val index = fresh.indexOfFirst { it.pair != justAnswered }.takeIf { it >= 0 } ?: 0
+        //
+        // k지선다에서는 **그 화면이 답한 짝 전부**를 미룬다(머리 짝만 미루면 방금 함께 뜬
+        // 셋째·넷째와의 짝이 곧바로 되돌아와, 사용자에게는 같은 얼굴이 연속으로 뜬다).
+        val justAnswered = state.history.lastOrNull()?.pairs.orEmpty()
+        val index = fresh.indexOfFirst { it.pair !in justAnswered }.takeIf { it >= 0 } ?: 0
         return state.copy(
             current = fresh.getOrNull(index),
             queue = fresh.filterIndexed { i, _ -> i != index }

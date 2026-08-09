@@ -3202,8 +3202,9 @@
 
     <!-- 보기 설정 — 카드 배치와 그림 맞춤(사용자 지적: 세로로 긴 그림에서 얼굴이 잘린다) -->
     <string name="duel_view_options">보기 설정</string>
-    <string name="duel_view_options_purpose">대결 화면에서 두 카드를 어떻게 놓고 그림을 어떻게 맞출지 정합니다. 쓰는 그림이 세로로 길면 나란히가, 가로로 넓으면 위아래가 덜 잘립니다.</string>
-    <string name="duel_view_layout_label">카드 배치</string>
+    <string name="duel_view_options_purpose">대결 화면에 카드를 몇 장 놓을지, 어떻게 배치하고 그림을 어떻게 맞출지 정합니다. 쓰는 그림이 세로로 길면 나란히가, 가로로 넓으면 위아래가 덜 잘립니다.</string>
+    <!-- 배치는 1:1일 때만 뜻이 있다 — 셋 이상은 두 줄 격자로 고정이라 고를 것이 없다(B-115). -->
+    <string name="duel_view_layout_label">카드 배치 — 둘일 때만</string>
     <string name="duel_view_layout_side">나란히 — 세로로 긴 그림에 맞습니다</string>
     <string name="duel_view_layout_stacked">위아래 — 가로로 넓은 그림에 맞습니다</string>
     <string name="duel_view_fit_label">그림 맞춤</string>
@@ -3214,6 +3215,15 @@
     <string name="duel_view_show_purpose">대결 카드에 필드값을 함께 띄울지 정합니다. 끄면 그림과 이름만 남고, 축에 걸어 둔 연결 자체는 그대로입니다.</string>
     <string name="duel_view_show_profile">프로필 필드 — 소속·출신처럼 알아보는 재료</string>
     <string name="duel_view_show_influence">영향 필드 — 승패를 가르는 재료(순위 번호가 붙습니다)</string>
+    <!--
+      k지선다(B-115). 목적문(R-25)이 말하는 것은 **무엇과 무엇을 맞바꾸는가**다 —
+      누르는 횟수는 줄지만 카드가 작아져 필드값이 접힌다. 어느 쪽이 나은지는 사용자가 가린다.
+    -->
+    <string name="duel_view_group_label">한 화면에 몇</string>
+    <string name="duel_view_group_purpose">한 화면에 올릴 캐릭터 수입니다. 셋 이상이면 한 번 고를 때마다 여러 판이 한꺼번에 쌓여 누르는 횟수가 줄고, 대신 카드가 작아져 필드값은 접히고 이름과 성별·나이만 남습니다(⌄로 펼쳐 볼 수 있습니다).</string>
+    <string name="duel_view_group_two">둘 — 하나씩 견줍니다</string>
+    <string name="duel_view_group_three">셋 중 하나 — 한 번에 2판이 쌓입니다</string>
+    <string name="duel_view_group_four">넷 중 하나 — 한 번에 3판이 쌓입니다</string>
     <string name="duel_pick_universe">어느 세계관의 대결입니까?</string>
     <string name="duel_need_universe">대결은 세계관 안에서 벌어집니다. 세계관을 먼저 만들어 주세요.</string>
     <string name="duel_axis_purpose">축을 만들면 그 기준으로 캐릭터 둘을 견주게 되고, 쌓인 결과가 순위표와 상성으로 나옵니다.</string>
@@ -3332,8 +3342,20 @@
     -->
     <string name="duel_pick_this">이 캐릭터 고르기</string>
     <string name="duel_undo">방금 그거 취소</string>
+    <!--
+      묶음 취소(B-115) — 한 번 고른 것이 여러 판을 남겼으면 **몇 판이 사라지는지 말한다.**
+      '방금 그거 취소'만 두면 사용자는 판 하나가 지워질 줄 알고 누르는데, 실제로는 그 화면이
+      낸 판 전부가 지워진다. 반쪽 되돌리기를 만들지 않는 대신 그 사실이 버튼에 적혀 있어야 한다.
+    -->
+    <string name="duel_undo_group">방금 %1$d판 취소</string>
     <!-- 무승부(B-114). '무승부'가 아니라 '비슷함'인 것은 이 앱이 재는 것이 승패가 아니라 우열의 감각이기 때문이다. -->
     <string name="duel_draw">비슷함</string>
+    <!--
+      k지선다의 '비슷함'(B-115) — 셋 이상에서는 **화면에 뜬 것들끼리 다 비슷하다**는 뜻이라
+      기준이 되는 한 명이 없다. 그 차이를 말글로 가른다(같은 버튼에 같은 말을 두면 사용자는
+      둘 중 하나를 고르다 만 것으로 읽는다).
+    -->
+    <string name="duel_draw_group">다 비슷함</string>
     <string name="duel_standings">순위표</string>
 
     <!-- 카드 정보 패널 (B-122) -->

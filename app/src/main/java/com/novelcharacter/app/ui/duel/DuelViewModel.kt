@@ -537,12 +537,29 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     // 기록 · 처분
     // ──────────────────────────────────────────────────────────────────────
 
-    /** 한 판. 승자가 두 참가자 중 어느 쪽도 아니면 저장소가 거절하고 null을 낸다. */
-    suspend fun record(axisId: Long, aCode: String, bCode: String, winnerCode: String?): DuelMatch? =
-        duelRepository.record(axisId, aCode, bCode, winnerCode)
+    /**
+     * 한 화면이 낸 판들 (k지선다 — B-115). 하나라도 어긋나면 **빈 목록**이고 DB는 그대로다.
+     *
+     * **1:1도 이 길을 탄다** — 판이 하나면 저장소가 묶음 값을 붙이지 않으므로 저장 모양이
+     * 종전과 같다([DuelRepository.recordGroup]). 판 하나짜리 `record`를 따로 두지 않는 것은
+     * 승자 검증이 두 곳으로 갈리지 않게 하려는 것이다.
+     */
+    suspend fun recordGroup(
+        axisId: Long,
+        outcomes: List<Triple<String, String, String?>>
+    ): List<DuelMatch> = duelRepository.recordGroup(axisId, outcomes)
 
     /** 층 B ① — 그 판을 지운다. 점수는 다시 적합하면 그것이 정확한 답이다. */
     suspend fun undo(match: DuelMatch) = duelRepository.undo(match)
+
+    /**
+     * 층 B ①의 묶음판 — 한 화면이 낸 판을 **통째로** 지운다.
+     *
+     * 판 목록이 아니라 묶음 값으로 지우는 것이 요점이다. 화면이 들고 있는 목록으로 지우면
+     * 그 사이에 기록 화면에서 한 판이 지워졌을 때 남은 것을 못 지우고, 그러면 사용자가
+     * 취소한 화면의 절반이 살아남는다.
+     */
+    suspend fun undoGroup(groupId: String) = duelRepository.undoGroup(groupId)
 
     /**
      * 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다.

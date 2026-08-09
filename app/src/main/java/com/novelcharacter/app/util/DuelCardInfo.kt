@@ -66,7 +66,12 @@ object DuelCardInfo {
      * @property profileOverflow 카드에서 접힌 프로필 수. 0이면 *"외 N개"*가 뜨지 않는다.
      * @property allProfiles 펼침 시트가 여는 전량 — **값이 빈 것도 담는다.** 좁은 카드와
      *   달리 여기서는 *"그 필드가 걸려 있는데 비었다"*가 알 값어치가 있는 사실이다.
-     * @property influences 영향 줄 — 순위 순, 빈 값도 남는다.
+     * @property influences 영향 줄 — 순위 순, 빈 값도 남는다. **접힌 카드([build]의 `compact`)
+     *   에서는 비어 있고** 전량은 [allInfluences]에 있다.
+     * @property allInfluences 펼침 시트가 여는 영향 줄 전량. 보기 설정으로 **끈** 경우에는
+     *   여기도 비어 있다 — 자리가 없어 접은 것과 사용자가 안 보겠다고 한 것은 다르다.
+     * @property compact 이 카드가 접혀 있는가(k지선다). 그리는 쪽이 *"이름+트리오만 남긴다"*를
+     *   자기 판단으로 다시 세지 않게 [build]가 받은 그대로 담아 둔다.
      */
     data class Card(
         val name: String,
@@ -75,13 +80,32 @@ object DuelCardInfo {
         val profiles: List<Line> = emptyList(),
         val profileOverflow: Int = 0,
         val allProfiles: List<Line> = emptyList(),
-        val influences: List<RankedLine> = emptyList()
+        val influences: List<RankedLine> = emptyList(),
+        val allInfluences: List<RankedLine> = emptyList(),
+        val compact: Boolean = false
     ) {
         /** 트리오 줄을 그릴 것이 있는가 — 둘 다 없으면 그 줄 자체가 뜨지 않는다. */
         val hasTrio: Boolean get() = gender != null || age != null
 
-        /** 펼침(⌄)을 띄울 것인가 — 접힌 것이 있을 때만이다(눌러도 같은 것만 나오면 마찰이다). */
-        val canExpand: Boolean get() = profileOverflow > 0
+        /**
+         * *"외 N개"* 줄을 띄우는가.
+         *
+         * **접힌 카드에서는 안 띄운다** — 위에 아무 줄도 없이 *"외 3개"*만 남으면 무엇의
+         * 나머지인지 알 수 없다. 그 카드에서 더 있다는 신호는 펼침(⌄)이 든다.
+         * 접히지 않은 카드에서는 종전 그대로 **값이 빈 프로필만 있는 경우에도 띄운다** —
+         * *"필드는 걸려 있는데 이 캐릭터는 다 비었다"*가 알 값어치가 있는 사실이라서다.
+         */
+        val showProfileMore: Boolean get() = profileOverflow > 0 && !compact
+
+        /**
+         * 펼침(⌄)을 띄울 것인가 — **접힌 것이 있을 때만**이다(눌러도 같은 것만 나오면 마찰이다).
+         *
+         * 두 구역을 함께 본다. k지선다의 접힌 카드는 프로필이 하나도 없어도 **영향 줄이
+         * 통째로 접혀 있어** 펼칠 것이 있다 — 프로필만 세면 그 카드의 판단 재료가 화면
+         * 어디에서도 닿을 수 없게 된다.
+         */
+        val canExpand: Boolean
+            get() = allProfiles.size > profiles.size || allInfluences.size > influences.size
     }
 
     /**
@@ -96,6 +120,11 @@ object DuelCardInfo {
      * @param ageKey 같은 방식의 나이 역할 필드 키.
      * @param showProfiles 보기 설정 — 끄면 프로필 구역이 통째로 빈다(펼침도 함께 사라진다).
      * @param showInfluences 보기 설정 — 끄면 영향 구역이 통째로 빈다.
+     * @param compact **카드에 뜨는 것을 이름+트리오로 접는다** (k지선다 — [DuelCardGrid.Plan.compact]).
+     *   셋 이상이면 카드가 화면의 4분의 1이라 프로필·영향 줄을 넣을 높이가 없다.
+     *   **거두는 것이 아니라 옮기는 것**이라 [Card.allProfiles]·[Card.allInfluences]는 그대로
+     *   차고, 펼침(⌄)이 전량을 연다 — 러프하게 보고 필요하면 정밀히(원칙 04의 이중 경로).
+     *   보기 설정으로 끈 구역은 여기서도 비어 있다(끈 것을 접었다고 되살리지 않는다).
      */
     fun build(
         name: String,
@@ -106,7 +135,8 @@ object DuelCardInfo {
         ageKey: String? = null,
         showProfiles: Boolean = true,
         showInfluences: Boolean = true,
-        profileLimit: Int = PROFILE_LIMIT
+        profileLimit: Int = PROFILE_LIMIT,
+        compact: Boolean = false
     ): Card {
         fun valueOf(key: String?): String? =
             key?.let { values[it] }?.trim()?.takeIf { it.isNotEmpty() }
@@ -146,7 +176,11 @@ object DuelCardInfo {
 
         // 카드에는 **값이 있는 것만** 올린다. 접힌 수는 *전량 − 올린 것*이라, 값이 빈 줄도
         // "외 N개"에 세어진다 — 펼치면 그것이 비어 있음을 그대로 보여 주므로 거짓말이 아니다.
-        val shown = allProfiles.filter { it.value.isNotEmpty() }.take(profileLimit.coerceAtLeast(0))
+        val shown = if (compact) {
+            emptyList()
+        } else {
+            allProfiles.filter { it.value.isNotEmpty() }.take(profileLimit.coerceAtLeast(0))
+        }
 
         return Card(
             name = name,
@@ -155,7 +189,9 @@ object DuelCardInfo {
             profiles = shown,
             profileOverflow = allProfiles.size - shown.size,
             allProfiles = allProfiles,
-            influences = influences
+            influences = if (compact) emptyList() else influences,
+            allInfluences = influences,
+            compact = compact
         )
     }
 

@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.TrashSnapshot
+import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelImageRoster
@@ -182,30 +183,56 @@ class DuelRepository(private val db: AppDatabase) {
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * 한 판을 기록한다.
+     * 대결 화면이 낸 판들을 기록한다 — **판 하나짜리(1:1)도 이 길이다** (B-115).
      *
-     * @param winnerCode 이긴 쪽. **null이면 무승부**다. 두 참가자 중 어느 쪽도 아니면 저장하지
-     *   않고 null을 돌려준다 — 잘못된 입력을 조용히 받아 두면 적합이 나중에 '깨진 판'으로
-     *   세는 수밖에 없다(검증은 들어오는 자리에서 하는 것이 싸다).
-     * @param groupId k지선다 한 화면이 낸 판들을 묶는 값. 되돌리기가 그 단위로 돈다.
+     * ## 쓰는 길이 하나인 것이 요점이다
+     * 종전에는 판 하나를 적는 `record`가 따로 있었다. k지선다가 들어오면서 그 옆에 묶음용을
+     * 세우면 **승자 검증이 두 곳에 생기고**, 한쪽만 고쳐지는 순간 *어느 길로 들어왔는가*에
+     * 따라 깨진 판이 통과한다 — 그 어긋남은 화면에 아무 표시도 내지 않고 적합의
+     * `malformedMatches`에서만 뒤늦게 드러난다. 그래서 `record`를 없애고 여기로 합쳤다
+     * (`k=2`가 특수한 경우가 아니라는 [DuelRound]의 뼈대와 같은 근거다).
+     *
+     * ## 하나라도 어긋나면 아무것도 적지 않는다
+     * [record]는 판 하나를 거절하면 그만이지만, 여기서는 거절이 **반쪽 묶음**을 남긴다 —
+     * `a>b`는 적히고 `a>c`는 빠지면 사용자가 한 번 누른 일이 절반만 기록된 것이고,
+     * 되돌리기가 지울 대상도 절반이다. 그 상태는 화면 어디에서도 보이지 않으므로
+     * **적기 전에 전부 검사하고, 하나라도 걸리면 빈 목록을 낸다**(화면이 그 사실을 말한다).
+     *
+     * ## 묶음 값은 판이 둘 이상일 때만 붙인다
+     * [DuelMatch.groupId]의 계약이 *"null이면 단독 판"*이다. 1:1과 '비슷함'은 판이 하나라
+     * 종전과 **한 글자도 다르지 않게** 저장된다 — k지선다를 켠 적 없는 사용자의 데이터가
+     * 이 슬라이스로 달라지지 않는다는 뜻이다.
+     *
+     * @param outcomes `(왼쪽 코드, 오른쪽 코드, 이긴 코드 — null이면 무승부)`.
+     * @return 적힌 판들. 하나라도 어긋났으면 **빈 목록**이고 DB는 손대지 않았다.
      */
-    suspend fun record(
+    suspend fun recordGroup(
         axisId: Long,
-        aCode: String,
-        bCode: String,
-        winnerCode: String?,
-        groupId: String? = null
-    ): DuelMatch? {
-        if (aCode.isBlank() || bCode.isBlank() || aCode == bCode) return null
-        if (winnerCode != null && winnerCode != aCode && winnerCode != bCode) return null
-        val row = DuelMatch(
-            axisId = axisId,
-            aCode = aCode,
-            bCode = bCode,
-            winnerCode = winnerCode,
-            groupId = groupId
-        )
-        return row.copy(id = db.duelMatchDao().insert(row))
+        outcomes: List<Triple<String, String, String?>>
+    ): List<DuelMatch> {
+        if (outcomes.isEmpty()) return emptyList()
+        val wellFormed = outcomes.all { (aCode, bCode, winnerCode) ->
+            aCode.isNotBlank() && bCode.isNotBlank() && aCode != bCode &&
+                (winnerCode == null || winnerCode == aCode || winnerCode == bCode)
+        }
+        if (!wellFormed) return emptyList()
+
+        // 판이 하나면 묶지 않는다 — 위 계약 그대로.
+        val groupId = if (outcomes.size > 1) generateEntityCode() else null
+        val rows = outcomes.map { (aCode, bCode, winnerCode) ->
+            DuelMatch(
+                axisId = axisId,
+                aCode = aCode,
+                bCode = bCode,
+                winnerCode = winnerCode,
+                groupId = groupId
+            )
+        }
+        // 집계를 트랜잭션 **반환값**으로 뺀다(B-143) — 바깥 변수에 모으면 롤백이 DB만
+        // 되돌리고 그 변수는 되돌리지 못해, 실패한 묶음이 성공한 것처럼 화면에 실린다.
+        return db.withTransaction {
+            rows.map { row -> row.copy(id = db.duelMatchDao().insert(row)) }
+        }
     }
 
     /**

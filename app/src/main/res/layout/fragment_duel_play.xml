@@ -112,24 +112,63 @@
         app:layout_constraintTop_toBottomOf="@id/progressSection">
 
         <!--
-          카드 두 장은 **같은 한 벌**(view_duel_card.xml)이다 — k지선다(B-115)가 셋·넷으로
-          늘릴 때 그 파일은 그대로이고 여기 include가 늘 뿐이다(설계 3-3).
+          **슬롯 넷 · 두 줄** — k지선다(B-115)의 그릇. 카드는 같은 한 벌(view_duel_card.xml)을
+          네 번 include한 것이고, *어느 슬롯을 쓰는가*는 DuelCardGrid가 정한다:
+
+              cardA │ cardB     ← rowTop
+              ──────┼──────
+              cardC │ cardD     ← rowBottom
+
+          1:1 나란히 = A·B(아랫줄 통째로 사라짐) · 1:1 위아래 = A·C · 셋 = A·B·C(+D는 자리만)
+          · 넷 = 전부. **카드를 다른 부모로 옮겨 붙이지 않는 것이 요점**이라 배치가 바뀌어도
+          붙어 있던 그림·리스너가 흔들리지 않는다(연타하는 화면이다).
+
+          줄이 무게를 반씩 갖고 카드가 줄 안에서 폭을 반씩 가지므로, **종전 두 배치의 크기가
+          그대로 나온다** — 나란히는 아랫줄이 사라져 윗줄이 높이를 다 갖고, 위아래는 두 줄이
+          절반씩 갖는다.
         -->
-        <include
-            android:id="@+id/cardA"
-            layout="@layout/view_duel_card"
+        <LinearLayout
+            android:id="@+id/rowTop"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="4dp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <!--
-          배치(위아래/나란히)는 실행 중에 바뀐다 — 가로/세로 폭과 gravity를 코드가 함께
-          갈아 끼운다(DuelPlayFragment.applyViewOptions). 여기 적힌 값은 '위아래'일 때의 것이다.
-        -->
+            <include
+                android:id="@+id/cardA"
+                layout="@layout/view_duel_card"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp" />
+
+            <!-- 나란히 1:1에서만 뜬다 — 셋 이상에서는 'vs'가 가리킬 상대가 하나가 아니다. -->
+            <TextView
+                android:id="@+id/versusInline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:text="@string/duel_versus"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                android:textColor="@color/text_secondary" />
+
+            <include
+                android:id="@+id/cardB"
+                layout="@layout/view_duel_card"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp" />
+
+        </LinearLayout>
+
+        <!-- 위아래 1:1에서만 뜬다 — 두 줄 사이가 그 배치의 'vs' 자리다. -->
         <TextView
-            android:id="@+id/versusLabel"
+            android:id="@+id/versusStack"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
@@ -137,16 +176,37 @@
             android:paddingEnd="6dp"
             android:text="@string/duel_versus"
             android:textAppearance="@style/TextAppearance.App.LabelSmall"
-            android:textColor="@color/text_secondary" />
+            android:textColor="@color/text_secondary"
+            android:visibility="gone" />
 
-        <include
-            android:id="@+id/cardB"
-            layout="@layout/view_duel_card"
+        <LinearLayout
+            android:id="@+id/rowBottom"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="4dp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <include
+                android:id="@+id/cardC"
+                layout="@layout/view_duel_card"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp" />
+
+            <include
+                android:id="@+id/cardD"
+                layout="@layout/view_duel_card"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

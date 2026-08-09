@@ -26,9 +26,53 @@
         android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="@color/text_secondary" />
 
+    <!-- ── 한 화면에 몇 (B-115) ── 배치보다 먼저 묻는다: 이것이 정해져야 배치의 뜻이 정해진다. -->
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:text="@string/duel_view_group_label"
+        android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+    <!-- 목적문(R-25) — 무엇과 무엇을 맞바꾸는가. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_view_group_purpose"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary" />
+
+    <RadioGroup
+        android:id="@+id/groupSize"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/optionGroupTwo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_group_two" />
+
+        <RadioButton
+            android:id="@+id/optionGroupThree"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_group_three" />
+
+        <RadioButton
+            android:id="@+id/optionGroupFour"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_group_four" />
+
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
         android:text="@string/duel_view_layout_label"
         android:textAppearance="@style/TextAppearance.App.LabelSmall" />
 
