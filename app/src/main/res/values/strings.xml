@@ -1491,6 +1491,10 @@
     <string name="export_options_select_all">전부 선택</string>
     <string name="export_options_clear_all">전부 해제</string>
     <string name="export_options_title">내보내기 항목 선택</string>
+    <string name="export_ai_keys_title">AI API 키 포함 여부</string>
+    <string name="export_ai_keys_message">엑셀 파일은 암호가 걸리지 않습니다. 키를 함께 넣으면 이 파일을 여는 사람은 누구나 키를 그대로 볼 수 있고, 그 키로 요금이 나갈 수 있습니다.\n\n기기를 옮기려고 내보내는 것이 아니라면 빼는 쪽을 권합니다. 빼도 나머지 AI 설정(제공자 주소·모델·순서)은 그대로 실립니다.</string>
+    <string name="export_ai_keys_exclude">키 빼고 내보내기</string>
+    <string name="export_ai_keys_include">키도 함께 넣기</string>
     <string name="import_options_title">가져오기 항목 선택</string>
     <string name="import_zip_no_data">ZIP 파일에 데이터 파일이 없습니다</string>
     <string name="import_result_skipped">오류 %d건 건너뜀</string>

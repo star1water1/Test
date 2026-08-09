@@ -80,7 +80,12 @@ EOF
 # ── 2. 대상 파일 목록 ──
 M="$REPO/app/src/main/java/com/novelcharacter/app"
 {
-  ls "$M"/excel/*.kt | grep -v "ExcelImporter.kt"
+  # `AppSettingsBindings.kt`도 뺀다(B-105) — 그 파일은 **설정 저장소를 잇는 것이 일**이라
+  # `ai/`·`backup/`·`ui/`를 import 하는데 이 프로브의 범위는 excel·model·dao·util·repository다.
+  # 넣으면 그 import가 전부 미해석으로 떠 신규 오류만 수십 줄 늘고 **진짜 결함을 덮는다.**
+  # 그 파일의 컴파일 증명은 CI뿐이다(`ExcelImporter.kt`와 같은 부류이며, 짝인 선언
+  # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
+  ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"

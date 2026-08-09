@@ -22,7 +22,6 @@ import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.OpResult
-import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -143,7 +142,7 @@ class ExcelExporter(context: Context) {
                 ExportSheetStep.PRESET_TEMPLATES -> exportUserPresetTemplates(workbook, usedSheetNames)
                 ExportSheetStep.SEARCH_PRESETS -> exportSearchPresets(workbook, usedSheetNames)
                 ExportSheetStep.CHARACTER_LIST_PRESETS -> exportCharacterListPresets(workbook, usedSheetNames)
-                ExportSheetStep.APP_SETTINGS -> exportAppSettings(workbook, usedSheetNames)
+                ExportSheetStep.APP_SETTINGS -> exportAppSettings(workbook, usedSheetNames, options)
                 ExportSheetStep.DUEL_AXES -> exportDuelAxes(workbook, usedSheetNames)
                 ExportSheetStep.DUEL_MATCHES -> exportDuelMatches(workbook, usedSheetNames)
                 ExportSheetStep.DUEL_VERDICTS -> exportDuelVerdicts(workbook, usedSheetNames)
@@ -2001,42 +2000,37 @@ class ExcelExporter(context: Context) {
         applySpecFormatting(sheet, spec, presets.size)
     }
 
-    private suspend fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportAppSettings(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>,
+        options: ExportOptions
+    ) {
         val spec = appSettingsSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
         // 사용자 설정 왕복 — 새 기기 복원 시 설정을 다시 맞추지 않아도 되게 한다.
-        // key/value 구조라 항목 추가는 가져오기(when 분기)와 짝으로 확장한다.
-        val backupSettings = com.novelcharacter.app.backup.BackupSettingsStore(appContext).getSettings()
-        val imageSettings = com.novelcharacter.app.util.ImageSettingsStore(appContext).getSettings()
-        val editorRemovePolicy = com.novelcharacter.app.util.ImageSettingsStore(appContext).getEditorRemovePolicy()
-        val autoLinkByCharacter = com.novelcharacter.app.util.ImageSettingsStore(appContext).getAutoLinkByCharacter()
-
+        //
+        // **무엇을 싣는가는 여기서 정하지 않는다**(B-105). 종전에는 이 자리가 손으로 적은
+        // 나열이고 가져오기가 손수 짠 `when`이라 **설정 하나를 늘리려면 두 곳을 고쳐야 했고,
+        // 그래서 늘지 않았다.** 이제 목록도 읽기도 [AppSettingsBindings] 하나가 든다.
+        //
+        // 비밀(API 키)은 **별도 동의가 있을 때만** 나간다 — 사용자 확정 3번 ㄴ1.
         var rowIndex = 1
-        fun writeTextRow(key: String, value: String) {
+        for (binding in AppSettingsBindings.exported(options.aiKeys)) {
+            // 값이 없으면 행 자체를 만들지 않는다(빈 칸과 '값 없음'은 다른 사실이다).
+            val value = binding.read(appContext) ?: continue
             val row = sheet.createRow(rowIndex++)
-            row.createCell(0).setTextSafe(key)
-            row.createCell(1).setTextSafe(value)
+            row.createCell(0).setTextSafe(binding.spec.key)
+            if (binding.spec.kind == AppSettingsKeys.Kind.NUMBER) {
+                val number = value.toDoubleOrNull()
+                if (number != null) row.createCell(1).setCellValue(number)
+                else row.createCell(1).setTextSafe(value)
+            } else {
+                row.createCell(1).setTextSafe(value)
+            }
         }
-        fun writeNumberRow(key: String, value: Double) {
-            val row = sheet.createRow(rowIndex++)
-            row.createCell(0).setTextSafe(key)
-            row.createCell(1).setCellValue(value)
-        }
-
-        writeNumberRow("theme_mode", ThemeHelper.getSavedTheme(appContext).toDouble())
-        writeTextRow("backup_include_images", if (backupSettings.includeImages) "Y" else "N")
-        writeNumberRow("backup_max_backups", backupSettings.maxBackups.toDouble())
-        writeTextRow("image_compress_enabled", if (imageSettings.enabled) "Y" else "N")
-        writeNumberRow("image_quality_percent", imageSettings.qualityPercent.toDouble())
-        writeTextRow("image_cap_dimension", if (imageSettings.capDimension) "Y" else "N")
-        writeNumberRow("image_max_long_edge_px", imageSettings.maxLongEdgePx.toDouble())
-        writeTextRow("image_skip_below_enabled", if (imageSettings.skipBelowEnabled) "Y" else "N")
-        writeNumberRow("image_skip_below_bytes", imageSettings.skipBelowBytes.toDouble())
-        writeTextRow("image_editor_remove_policy", editorRemovePolicy.name)
-        writeTextRow("image_auto_link_by_character", if (autoLinkByCharacter) "Y" else "N")
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
     }

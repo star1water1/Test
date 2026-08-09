@@ -1,0 +1,156 @@
+package com.novelcharacter.app.excel
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * '앱 설정' 시트의 왕복 계약 — [AppSettingsKeys]가 단일 소스다 (B-105).
+ *
+ * **여기서 잴 수 있는 것과 없는 것을 먼저 적는다.** 실제 읽기·쓰기는 `Context`를 쥐므로
+ * ([AppSettingsBindings]) 순수 JVM이 원리적으로 못 본다 — 그쪽의 짝 맞음은
+ * `tools/check_app_settings_catalog.sh`(규약 R-45)와 실기기가 지킨다.
+ * **이 시험이 지키는 것은 *시트가 무슨 말을 하는가*다.**
+ *
+ * 방어선 넷:
+ * ① *"키가 겹치지 않는다"* — 겹치면 뒤 행이 앞 행을 덮는데 **화면 어디에도 표시가 없다.**
+ * ② *"비밀은 동의 없이는 안 나간다"* — 이 판의 안전 약속 전부가 이 한 줄이다.
+ * ③ *"종전 11개의 이름이 그대로다"* — 구조를 갈면서 이름을 갈면 **옛 파일이 그 설정을 잃는다.**
+ * ④ *"싣지 않는 저장소에는 사유가 있다"* — 이름만 있는 목록은 다음 사람이 못 쓴다.
+ */
+class AppSettingsKeysTest {
+
+    // ── ① 키가 겹치지 않는다 ──
+
+    @Test
+    fun `설정 키는 겹치지 않는다`() {
+        val keys = AppSettingsKeys.SPECS.map { it.key }
+        assertEquals("같은 키가 두 번 선언됐다 — 뒤 행이 앞 행을 조용히 덮는다", keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun `키에 공백이 없다`() {
+        // 셀에서 잘라 읽는 값이라 앞뒤 공백이 붙은 키는 영영 안 맞는다.
+        for (spec in AppSettingsKeys.SPECS) {
+            assertEquals(spec.key, spec.key.trim())
+            assertTrue("빈 키", spec.key.isNotEmpty())
+        }
+    }
+
+    // ── ② 비밀은 동의 없이 나가지 않는다 ──
+
+    @Test
+    fun `동의가 없으면 비밀은 내보내지지 않는다`() {
+        val exported = AppSettingsKeys.exported(includeSecrets = false)
+        assertTrue(
+            "동의 없이 비밀이 실렸다 — 이 판의 안전 약속이 이 한 줄이다",
+            exported.none { it.disposition == AppSettingsKeys.Disposition.SECRET }
+        )
+        assertTrue("API 키가 실렸다", AppSettingsKeys.AI_API_KEYS !in exported)
+    }
+
+    @Test
+    fun `동의하면 비밀도 함께 나간다`() {
+        // ①만 있으면 `exported`가 늘 빈 목록을 돌려줘도 통과한다 — 반대쪽을 함께 세워야
+        // *가르는가*가 잠긴다.
+        val exported = AppSettingsKeys.exported(includeSecrets = true)
+        assertTrue(AppSettingsKeys.AI_API_KEYS in exported)
+        assertEquals(AppSettingsKeys.SPECS.size, exported.size)
+    }
+
+    @Test
+    fun `비밀은 API 키 하나뿐이다`() {
+        // 비밀이 늘면 동의 문구와 실기기 확인이 함께 늘어야 한다 — 조용히 늘면 사용자가
+        // 동의한 것과 실제로 나가는 것이 갈린다.
+        assertEquals(
+            listOf(AppSettingsKeys.AI_API_KEYS),
+            AppSettingsKeys.SPECS.filter { it.disposition == AppSettingsKeys.Disposition.SECRET }
+        )
+    }
+
+    // ── ③ 옛 파일이 뜻을 잃지 않는다 ──
+
+    @Test
+    fun `종전에 실리던 열한 개의 이름이 그대로다`() {
+        // 2026.08.09 이전 앱이 실제로 내보내던 키다. 이름을 갈면 옛 파일의 그 설정이
+        // '모르는 키'가 되어 통째로 안 들어온다 — 구조 개편이 왕복 무결성을 깨는 자리.
+        val before = listOf(
+            "theme_mode",
+            "backup_include_images", "backup_max_backups",
+            "image_compress_enabled", "image_quality_percent", "image_cap_dimension",
+            "image_max_long_edge_px", "image_skip_below_enabled", "image_skip_below_bytes",
+            "image_editor_remove_policy", "image_auto_link_by_character"
+        )
+        for (key in before) {
+            assertNotNull("옛 키 '$key'가 사라졌다", AppSettingsKeys.specOf(key))
+        }
+    }
+
+    @Test
+    fun `옛 이름은 별칭을 지나 현행 키에 닿는다`() {
+        // 지금 별칭은 비어 있다(이름을 하나도 안 갈았다). 그래도 경로 자체는 세워 둔다 —
+        // 이름을 갈 때 여기 한 줄이면 옛 파일이 살아난다는 것이 이 함수의 약속이다.
+        for ((old, canonical) in AppSettingsKeys.ALIASES) {
+            assertEquals("별칭 '$old'가 가리키는 키가 없다", canonical, AppSettingsKeys.specOf(old)?.key)
+        }
+    }
+
+    @Test
+    fun `모르는 키는 없다고 답한다`() {
+        assertNull(AppSettingsKeys.specOf("이런 설정은 없다"))
+        assertNull(AppSettingsKeys.specOf(""))
+    }
+
+    @Test
+    fun `키 앞뒤 공백은 잘라서 찾는다`() {
+        // 엑셀 셀은 공백이 잘 붙는다 — 관대하게 받는다(개발 의도 4번).
+        assertEquals("theme_mode", AppSettingsKeys.specOf("  theme_mode ")?.key)
+    }
+
+    // ── ④ 싣지 않는 것에는 사유가 있다 ──
+
+    @Test
+    fun `싣지 않는 저장소에는 전부 사유가 적혀 있다`() {
+        for ((store, reason) in AppSettingsKeys.EXCLUDED_STORES) {
+            assertTrue("'$store'의 사유가 비어 있다", reason.isNotBlank())
+            assertTrue("'$store'의 사유가 너무 짧아 근거가 되지 못한다", reason.length >= 10)
+        }
+    }
+
+    @Test
+    fun `앱 내부 이행 기록은 싣지 않는다`() {
+        // 이 하나는 '소음'이 아니라 **위험**이라 따로 못 박는다: 실어서 되돌리면 아직 안 한
+        // 이행을 했다고 표시하게 되어 그 기기의 데이터가 조용히 옛 형식으로 남는다.
+        assertTrue("app_migrations" in AppSettingsKeys.EXCLUDED_STORES)
+        assertTrue(AppSettingsKeys.SPECS.none { it.key.startsWith("app_migrations") })
+    }
+
+    // ── 형식 ──
+
+    @Test
+    fun `숫자 설정만 숫자 셀로 나간다`() {
+        // 불리언을 NUMBER로 적으면 "Y"가 숫자 셀에 들어가려다 글자로 떨어지고, 그러면
+        // 같은 열에 두 형식이 섞여 엑셀에서 정렬·필터가 어긋난다.
+        val numbers = AppSettingsKeys.SPECS.filter { it.kind == AppSettingsKeys.Kind.NUMBER }.map { it.key }
+        assertEquals(
+            listOf(
+                "theme_mode", "backup_max_backups", "image_quality_percent", "image_max_long_edge_px",
+                "image_skip_below_bytes", "ai_usage_example_count", "ai_style_sample_count",
+                "ai_attach_image_count", "ai_image_tag_batch_size", "ai_name_suggest_batch_size",
+                "stats_completion_required_weight", "supplement_field_threshold"
+            ),
+            numbers
+        )
+    }
+
+    @Test
+    fun `싣는 설정이 종전보다 늘었다`() {
+        // 이 판의 목적 자체다 — 구조를 갈고도 11개면 아무것도 고치지 못한 것이다.
+        assertTrue(
+            "종전 11개보다 늘지 않았다 — 이 판이 고치려던 것이 '개수가 아니라 구조'이긴 하나, 구조를 갈았으면 늘 수 있어야 한다",
+            AppSettingsKeys.SPECS.size > 11
+        )
+    }
+}

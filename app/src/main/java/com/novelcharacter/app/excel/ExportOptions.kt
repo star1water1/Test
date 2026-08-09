@@ -43,6 +43,18 @@ data class ExportOptions(
      */
     val duels: Boolean = true,
     val images: Boolean = false,
+    /**
+     * **API 키를 함께 내보내는가** — 기본 제외 (B-105, 사용자 확정 3번 ㄴ1).
+     *
+     * **일부러 [toBooleanArray]에 넣지 않았다.** 그 배열은 '전체 선택' 한 번에 전부 켜지고
+     * [isCompleteBackup]의 판정 대상이기도 하다 — 거기 넣으면 **'전체 백업'을 누른 것만으로
+     * 평문 키가 파일에 실린다.** 확정이 요구한 것은 항목 하나가 아니라 *별도 동의*이고,
+     * 그 뜻은 **다른 선택에 딸려 켜지지 않는 것**이다. 그래서 자동 백업(`ExportOptions()`)도
+     * 영영 키를 싣지 않는다.
+     *
+     * [appSettings]가 꺼져 있으면 이 값은 무의미하다 — 시트 자체가 안 나간다.
+     */
+    val aiKeys: Boolean = false,
     /** MERGE 모드에서 엑셀에 없는 항목을 카테고리별로 삭제할지 여부 */
     val deleteOptions: DeleteOptions = DeleteOptions()
 ) {

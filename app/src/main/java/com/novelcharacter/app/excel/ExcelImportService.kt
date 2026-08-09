@@ -6170,6 +6170,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val keyColIndex = cols["설정키"] ?: 0
         val valueColIndex = cols["설정값"] ?: 1
+        // 같은 키가 여러 행에 있어도 한 번만 센다(집합) — 행 수가 아니라 *무엇을* 모르는가가 사실이다.
+        val unknownSettingKeys = linkedSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6179,73 +6181,36 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val value = getCellString(row, valueColIndex)
 
                 val ctx = appContext ?: continue
-                // 스토어 setter가 자체 클램프를 수행하므로 범위 밖 값도 안전하게 수용된다(관대 임포트)
-                when (key) {
-                    "theme_mode" -> {
-                        val mode = parseNumber(value)?.toInt() ?: 0
-                        val validMode = mode.coerceIn(0, 2)
-                        com.novelcharacter.app.util.ThemeHelper.saveTheme(ctx, validMode)
-                        result.restoredSettings++
-                    }
-                    "backup_include_images" -> {
-                        com.novelcharacter.app.backup.BackupSettingsStore(ctx).setIncludeImages(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "backup_max_backups" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.backup.BackupSettingsStore(ctx).setMaxBackups(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_compress_enabled" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setEnabled(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_quality_percent" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setQualityPercent(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_cap_dimension" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setCapDimension(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_max_long_edge_px" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setMaxLongEdgePx(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_skip_below_enabled" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setSkipBelowEnabled(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_skip_below_bytes" -> {
-                        parseNumber(value)?.toLong()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setSkipBelowBytes(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_editor_remove_policy" -> {
-                        val policy = com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.entries
-                            .firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
-                        if (policy != null) {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setEditorRemovePolicy(policy)
-                            result.restoredSettings++
-                        } else if (value.isNotBlank()) {
-                            result.warnings.add("앱 설정 행 $i: image_editor_remove_policy 값 '$value'을(를) 인식할 수 없어 기존 설정을 유지합니다")
-                        }
-                    }
-                    "image_auto_link_by_character" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setAutoLinkByCharacter(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    // 알 수 없는 키는 조용히 무시 — 상위 버전 파일을 하위 버전 앱에서 가져올 때 대비
+                // 무엇을 어떻게 쓰는가는 여기서 정하지 않는다 — [AppSettingsBindings]가 단일
+                // 소스다(B-105). 종전에는 이 자리가 손수 짠 `when (key)`라 **내보내기의 나열과
+                // 짝으로만 늘 수 있었고, 그래서 둘 다 늘지 않았다.**
+                //
+                // 저장소 setter가 대개 자체 클램프를 하므로 범위 밖 값도 안전하게 수용된다(관대 임포트).
+                // 다만 **뜻을 알 수 없는 값은 조용히 넘기지 않는다** — 사용자가 적은 것이 왜
+                // 안 먹었는지 알 길이 없으면 그것이 말없는 유실이다(개발 의도 2번).
+                val binding = AppSettingsBindings.bindingOf(key)
+                if (binding == null) {
+                    // 알 수 없는 키는 세어서 한 줄로 알린다 — 상위 버전 파일을 하위 버전 앱에서
+                    // 열면 정상적으로 생기는 일이라 행마다 경고할 것은 아니지만, 아무 말도 없으면
+                    // 오타로 적은 키가 영영 안 먹는 채로 남는다.
+                    unknownSettingKeys.add(key.trim())
+                    continue
+                }
+                when (val applied = binding.write(ctx, value)) {
+                    is AppSettingsBindings.Applied.Yes -> result.restoredSettings++
+                    is AppSettingsBindings.Applied.No ->
+                        result.warnings.add("앱 설정 행 $i: $key 값 '$value' — ${applied.reason}")
                 }
             } catch (e: Exception) {
                 result.errors.add("앱 설정 행 $i: ${e.message}")
             }
+        }
+        if (unknownSettingKeys.isNotEmpty()) {
+            result.warnings.add(
+                "앱 설정: 이 버전이 모르는 설정 ${unknownSettingKeys.size}개를 건너뛰었습니다" +
+                    "(${unknownSettingKeys.take(8).joinToString(", ")}${if (unknownSettingKeys.size > 8) " 외" else ""}) — " +
+                    "앱을 올리면 들어올 수 있고, 키를 잘못 적었다면 고쳐서 다시 가져오세요"
+            )
         }
     }
 
