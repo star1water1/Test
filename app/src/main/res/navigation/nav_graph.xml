@@ -366,6 +366,19 @@
             android:defaultValue="-1L" />
     </fragment>
 
+    <!-- 이미지 축은 캐릭터마다 따로 돈다(사용자 확정) — 축을 열면 이 화면이 먼저다. -->
+    <fragment
+        android:id="@+id/duelImageCharacterFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelImageCharacterFragment"
+        android:label="@string/duel_image_character_title"
+        tools:layout="@layout/fragment_duel_image_character">
+
+        <argument
+            android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
     <fragment
         android:id="@+id/duelPlayFragment"
         android:name="com.novelcharacter.app.ui.duel.DuelPlayFragment"
@@ -374,6 +387,12 @@
 
         <argument
             android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+
+        <!-- 이미지 축에서 누구의 그림을 겨루는가. 캐릭터 축이면 쓰이지 않는다. -->
+        <argument
+            android:name="characterId"
             app:argType="long"
             android:defaultValue="-1L" />
     </fragment>
@@ -386,6 +405,12 @@
 
         <argument
             android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+
+        <!-- 이미지 축의 순위는 **그 캐릭터 안의 순위**다(설계 13장). -->
+        <argument
+            android:name="characterId"
             app:argType="long"
             android:defaultValue="-1L" />
     </fragment>

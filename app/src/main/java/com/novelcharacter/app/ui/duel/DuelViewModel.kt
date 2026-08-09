@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.repository.DuelRepository
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelCategoryStats
+import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueTokenizer
@@ -34,9 +35,17 @@ import kotlinx.coroutines.withContext
  * 이 감싸기와 겹치지 않는다.
  *
  * **참가자가 무엇인가는 축이 정하고, 그것을 아는 것은 이 계층이다**
- * ([DuelRepository.stateOf]의 계약). 캐릭터 축은 세계관의 캐릭터 코드이며,
- * **이미지 축은 아직 열지 않았다** — 폴더 왕복이 파일을 개명하면 참가자 코드(=경로)도
- * 함께 옮겨야 하는데 그 경로가 아직 없다(설계 4장 ①의 ⚠️). 열려면 그 슬라이스가 먼저다.
+ * ([DuelRepository.stateOf]의 계약). 캐릭터 축은 세계관의 캐릭터 코드이고,
+ * **이미지 축은 한 캐릭터의 이미지 경로**다(설계 13장 — 2026.08.09에 열었다).
+ *
+ * **이미지 축은 캐릭터마다 따로 논다**(사용자 확정 — *"다른 캐릭터랑 붙는 게 아니라 자기
+ * 이미지중에 하는 거야"*). 그래서 [loadImages]가 넘기는 참가자는 **그 캐릭터의 경로뿐**이고,
+ * 세계관 전체를 넘기면 짝 고르기가 캐릭터를 넘는 짝을 내놓는다. 무엇을 넘길지는
+ * [DuelImageRoster]가 pure로 정한다.
+ *
+ * 참가자 코드가 경로라 **파일이 개명되면 함께 옮겨야 한다** — 그 빗장은
+ * [DuelRepository.followImageRenames](R-39)이고, 이 축을 열 수 있게 된 것이 그 덕이다
+ * (설계 4장 ①의 ⚠️가 닫아 두었던 자리).
  */
 class DuelViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -478,6 +487,44 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             )
             Loaded(axis, state, byCode, duelRepository.verdicts(axis.id))
         }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 이미지 축 (설계 13장)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 이 이미지 축의 **캐릭터별 현황** — 고르는 화면이 이것으로 목록을 만든다.
+     *
+     * 판정은 전부 [DuelImageRoster]가 pure로 든다. 여기가 하는 일은 읽어 넘기는 것뿐이다.
+     */
+    suspend fun imageRoster(axis: DuelAxis): DuelImageRoster.Roster {
+        val characters = participantsOf(axis.universeId)
+        val matches = app.database.duelMatchDao().getByAxis(axis.id)
+        return withContext(Dispatchers.Default) { DuelImageRoster.build(characters, matches) }
+    }
+
+    /**
+     * **한 캐릭터 몫의 이미지 대결 상태.**
+     *
+     * 참가자로 넘기는 것은 그 캐릭터의 이미지 경로뿐이다 — 세계관 전체의 이미지를 넘기면
+     * 짝 고르기가 **캐릭터를 넘는 짝**을 내놓는다(사용자 확정: *"다른 캐릭터랑 붙는 게 아니라"*).
+     * 적합도 그만큼만 돌아 훨씬 싸다([DuelImageRoster]의 머리 주석).
+     *
+     * @return 참가자가 둘 미만이면 null — 붙일 짝이 없다는 뜻이고, 화면이 그 사실을 말한다.
+     */
+    suspend fun loadImages(axis: DuelAxis, entry: DuelImageRoster.Entry): Loaded? {
+        if (entry.paths.size < 2) return null
+        return withContext(Dispatchers.Default) {
+            val state = duelRepository.stateOf(axis, entry.paths)
+            // 이미지 축의 참가자는 캐릭터가 아니다 — 카드가 이름·필드를 붙일 곳이 없으므로
+            // 표를 비워 넘긴다(화면이 코드=경로에서 파일 이름을 낸다).
+            Loaded(axis, state, emptyMap(), duelRepository.verdicts(axis.id))
+        }
+    }
+
+    /** 이 축의 그 캐릭터 — 고르기 화면을 거치지 않고 곧바로 들어온 경우에도 현황이 필요하다. */
+    suspend fun imageEntry(axis: DuelAxis, characterId: Long): DuelImageRoster.Entry? =
+        imageRoster(axis).entryOf(characterId)
 
     // ──────────────────────────────────────────────────────────────────────
     // 기록 · 처분

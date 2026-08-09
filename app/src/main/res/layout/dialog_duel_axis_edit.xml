@@ -24,7 +24,55 @@
         android:importantForAutofill="no"
         android:singleLine="true" />
 
-    <!-- ── 필드 연결 (층 C) ── -->
+    <!-- ── 겨루는 대상 (설계 13장) ──
+         만든 뒤에는 바꾸지 않는다(DuelAxis.targetType) — 바꾸면 쌓인 판의 참가자가 통째로
+         뜻을 잃는다. 그래서 이 구역은 **새 축일 때만** 보인다. -->
+    <LinearLayout
+        android:id="@+id/targetSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_axis_target_purpose"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary" />
+
+        <RadioGroup
+            android:id="@+id/targetGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/targetCharacter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/duel_axis_target_character" />
+
+            <RadioButton
+                android:id="@+id/targetImage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/duel_axis_target_image" />
+
+        </RadioGroup>
+
+    </LinearLayout>
+
+    <!-- ── 필드 연결 (층 C) ──
+         이미지 축에는 뜻이 없어 통째로 감춘다 — 두 참가자가 같은 캐릭터의 그림이라
+         어떤 필드값도 양쪽에 똑같이 뜬다(고르는 재료가 되지 않는다). -->
+    <LinearLayout
+        android:id="@+id/linkSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
     <TextView
         android:layout_width="match_parent"
@@ -218,5 +266,7 @@
         android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="@color/text_secondary"
         android:visibility="gone" />
+
+    </LinearLayout>
 
 </LinearLayout>

@@ -42,6 +42,17 @@ class DuelStandingsFragment : Fragment() {
     private var axisId: Long = -1L
     private var namesByCode: Map<String, Character> = emptyMap()
 
+    /**
+     * 이미지 축일 때 **누구의 그림을 줄 세우는가** (설계 13장). 캐릭터 축이면 -1이다.
+     *
+     * 이미지 축의 순위는 언제나 **한 캐릭터 안의 순위**다 — 캐릭터를 넘는 점수 비교는 붙인
+     * 판이 하나도 없어 아무것도 근거하지 않는 수다([DuelImageRoster]의 머리 주석).
+     */
+    private var characterId: Long = -1L
+
+    /** 이미지 축인가 — 참가자 이름을 캐릭터가 아니라 **파일 이름**에서 낸다. */
+    private var imageAxis: Boolean = false
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -53,6 +64,7 @@ class DuelStandingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         axisId = arguments?.getLong("axisId", -1L) ?: -1L
+        characterId = arguments?.getLong("characterId", -1L) ?: -1L
         if (axisId == -1L) {
             findNavController().popBackStack()
             return
@@ -60,7 +72,10 @@ class DuelStandingsFragment : Fragment() {
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         adapter = DuelStandingsAdapter { code ->
-            namesByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
+            // 이미지 축의 참가자 코드는 경로다 — 줄에 경로를 통째로 적으면 앞부분이 전부
+            // 같아 오히려 못 가른다. 폴더에서 사용자가 실제로 보는 **파일 이름**을 쓴다.
+            if (imageAxis) code.substringAfterLast('/').ifBlank { code }
+            else namesByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
         }
         binding.standingsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.standingsRecyclerView.adapter = adapter
@@ -75,6 +90,8 @@ class DuelStandingsFragment : Fragment() {
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
             val axis = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
+            imageAxis = axis.isImageAxis
+            if (imageAxis) { reloadImages(axis); return@launch }
             val roster = viewModel.roster(axis)
             val characters = roster.participants
             val loaded = viewModel.load(axis, characters, roster.candidateCodes)
@@ -106,6 +123,58 @@ class DuelStandingsFragment : Fragment() {
             )
             renderGradeApplyEntry(axis)
         }
+    }
+
+    /**
+     * 이미지 축의 순위표 — **한 캐릭터의 그림들** (설계 13장).
+     *
+     * 캐릭터 축이 하는 일 중 **셋을 하지 않는다:** 후보 필터(캐릭터를 좁히는 것이라 대상이
+     * 다르다) · 산출 필드 대조(이미지 순위를 받을 캐릭터 필드가 없다) · 등급 반영 진입
+     * (`DuelViewModel.gradeApplyFieldsFor`가 이미 이미지 축에 빈 목록을 준다). 셋 다
+     * **자리를 비워 두는 것이 아니라 애초에 뜻이 없는 것**이라 감춘다.
+     */
+    private suspend fun reloadImages(axis: DuelAxis) {
+        val entry = if (characterId > 0) viewModel.imageEntry(axis, characterId) else null
+        if (entry == null) {
+            // 캐릭터를 정하지 못하면 줄 세울 집합이 없다 — 빈 표를 띄우면 *"아직 안 했다"*로
+            // 읽히지만 사실은 *"누구 것인지 모른다"*이므로, 그 사실을 그대로 말한다.
+            if (!isAdded) return
+            binding.toolbar.title = getString(R.string.duel_standings_title, axis.name)
+            adapter.submitList(emptyList())
+            binding.emptyText.visibility = View.VISIBLE
+            renderCounterBadge(0)
+            return
+        }
+        val loaded = viewModel.loadImages(axis, entry)
+        if (!isAdded) return
+
+        namesByCode = emptyMap()
+        binding.toolbar.title =
+            getString(R.string.duel_image_standings_title, axis.name, entry.name)
+        adapter.candidateCodes = null
+
+        if (loaded == null) {
+            adapter.submitList(emptyList())
+            binding.emptyText.visibility = View.VISIBLE
+            renderCounterBadge(0)
+            return
+        }
+        val rows = DuelStandings.rows(loaded.state.fit, loaded.state.report, loaded.state.records)
+        adapter.submitList(rows)
+        binding.emptyText.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        renderCounterBadge(loaded.state.report.count)
+        renderCaveats(
+            DuelStandings.caveats(
+                loaded.state.fit,
+                loaded.state.report,
+                loaded.state.plan,
+                loaded.state.missingParticipants
+            ),
+            loaded.state.report.wobbles.size,
+            emptyList(),
+            null
+        )
+        renderGradeApplyEntry(axis)
     }
 
     /**
@@ -168,17 +237,23 @@ class DuelStandingsFragment : Fragment() {
         caveats: DuelStandings.Caveats,
         wobbles: Int,
         outcomeLines: List<String>,
-        roster: DuelViewModel.Roster
+        /**
+         * 후보 필터의 결과. **이미지 축이면 null이다** — 그쪽은 캐릭터를 좁히는 필터가
+         * 대상 자체를 잘못 겨눈다(참가자가 캐릭터가 아니다). null을 *"필터 없음"*과 같이
+         * 다루지 않고 갈라 둔 것은, 없음은 *"전원이 후보"*라는 **말할 내용**이고
+         * null은 **말할 것이 없음**이라 줄을 아예 내지 않기 위해서다.
+         */
+        roster: DuelViewModel.Roster?
     ) {
         val lines = ArrayList<String>(8)
         // 후보 필터 상태가 맨 앞이다(B-168) — 이 표가 무엇의 순위인가를 정하는 사실이라
         // "믿어도 되나"류 고지보다 먼저 읽혀야 한다. 해석 실패는 그보다도 앞이다(후보가 0이 된다).
-        if (roster.unresolvedNames.isNotEmpty()) {
+        if (roster != null && roster.unresolvedNames.isNotEmpty()) {
             lines.add(
                 getString(R.string.duel_filter_unresolved_hint, roster.unresolvedNames.joinToString(", "))
             )
         }
-        if (roster.filtered) {
+        if (roster != null && roster.filtered) {
             val outsiders = roster.participants.count { it.code !in roster.candidateCodes.orEmpty() }
             lines.add(
                 if (outsiders > 0) {
