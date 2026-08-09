@@ -78,8 +78,8 @@ class RepresentativeWeightingTest {
             RepresentativeWeighting.Strength.STRONG
         )
         assertNotNull(w)
-        assertEquals(1.0, w!![canon(a)]!!, 1e-9)
-        assertTrue("아래 순위는 1보다 작다", w[canon(b)]!! < 1.0)
+        assertEquals(1.0, w!!.byPath[canon(a)]!!, 1e-9)
+        assertTrue("아래 순위는 1보다 작다", w.byPath[canon(b)]!! < 1.0)
     }
 
     @Test
@@ -91,8 +91,8 @@ class RepresentativeWeightingTest {
         val weak = RepresentativeWeighting.weights(
             listOf(a, b), scores, RepresentativeWeighting.Strength.WEAK
         )!!
-        assertEquals(0.1, strong[canon(b)]!!, 1e-9)
-        assertEquals(0.316227766, weak[canon(b)]!!, 1e-6)
+        assertEquals(0.1, strong.byPath[canon(b)]!!, 1e-9)
+        assertEquals(0.316227766, weak.byPath[canon(b)]!!, 1e-6)
     }
 
     @Test
@@ -103,7 +103,7 @@ class RepresentativeWeightingTest {
             mapOf(canon(a) to 2500, canon(b) to 1500),
             RepresentativeWeighting.Strength.STRONG
         )!!
-        assertEquals("세게의 최악 비율은 10:1이다", 0.1, w[canon(b)]!!, 1e-9)
+        assertEquals("세게의 최악 비율은 10:1이다", 0.1, w.byPath[canon(b)]!!, 1e-9)
     }
 
     // ── 3. 안 겨룬 그림 ──
@@ -116,10 +116,10 @@ class RepresentativeWeightingTest {
             mapOf(canon(a) to 1700, canon(b) to 1300),
             RepresentativeWeighting.Strength.STRONG
         )!!
-        val wc = w[canon(c)]!!
+        val wc = w.byPath[canon(c)]!!
         assertTrue("새 그림이 영영 안 뜨면 안 된다", wc > 0.0)
-        assertTrue(wc > w[canon(b)]!!)
-        assertTrue(wc < w[canon(a)]!!)
+        assertTrue(wc > w.byPath[canon(b)]!!)
+        assertTrue(wc < w.byPath[canon(a)]!!)
     }
 
     @Test
@@ -131,7 +131,7 @@ class RepresentativeWeightingTest {
             RepresentativeWeighting.Strength.STRONG
         )
         assertNotNull("대조에 실패하면 둘 다 앵커가 되어 null이 나온다", w)
-        assertEquals(0.1, w!![canon(b)]!!, 1e-9)
+        assertEquals(0.1, w!!.byPath[canon(b)]!!, 1e-9)
     }
 
     @Test
@@ -144,9 +144,26 @@ class RepresentativeWeightingTest {
             mapOf(canon(raw) to 1900, canon(b) to 1500),
             RepresentativeWeighting.Strength.STRONG
         )!!
-        assertNotNull("넘긴 표기 그대로도 맞아야 한다", w[raw])
-        assertNotNull("정규 표기로도 여전히 맞는다", w[canon(raw)])
-        assertEquals(w[canon(raw)]!!, w[raw]!!, 1e-12)
+        assertNotNull("넘긴 표기 그대로도 맞아야 한다", w.byPath[raw])
+        assertNotNull("정규 표기로도 여전히 맞는다", w.byPath[canon(raw)])
+        assertEquals(w.byPath[canon(raw)]!!, w.byPath[raw]!!, 1e-12)
+    }
+
+    @Test
+    fun `표에 없는 경로는 앵커의 무게다 — 1이 아니다`() {
+        // **1.0은 곧 1위의 무게다**(모든 무게가 (0,1]이고 1위가 정확히 1.0). 표에 없는 경로를
+        // 1로 치면 *방금 넣은 그림이 가장 자주 뜨는* 꼴이 되어, 위 시험이 못 박은 앵커 규칙과
+        // 정면으로 어긋난다. 무게표가 그 값을 **스스로 들고 다녀야** 두 층이 같은 말을 한다.
+        val w = RepresentativeWeighting.weights(
+            listOf(a, b),
+            mapOf(canon(a) to 1900, canon(b) to 1500),
+            RepresentativeWeighting.Strength.STRONG
+        )!!
+        assertEquals("앵커(1500)에 선 b와 같은 무게여야 한다", w.byPath[canon(b)]!!, w.unknown, 1e-12)
+        assertTrue("1위의 무게보다 가벼워야 한다", w.unknown < w.byPath[canon(a)]!!)
+        // 표에 없는 경로를 물어보면 그 값이 나온다 — 읽는 쪽이 따로 셈하지 않는다.
+        assertEquals(w.unknown, w.of("$dir/never-seen.jpg"), 1e-12)
+        assertEquals("null도 앵커로 접힌다(Gson이 목록에 null을 섞을 수 있다)", w.unknown, w.of(null), 1e-12)
     }
 
     // ── 4. 저장된 값 읽기 ──

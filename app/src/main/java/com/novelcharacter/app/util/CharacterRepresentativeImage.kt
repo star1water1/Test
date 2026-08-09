@@ -90,23 +90,23 @@ object CharacterRepresentativeImage {
         representativePath: String?,
         seed: Long,
         characterId: Long,
-        weights: Map<String, Double>? = null
+        weights: RepresentativeWeighting.Weights? = null
     ): Pick = pickFrom(paths(imagePathsJson), representativePath, seed, characterId, weights)
 
     /**
      * 이미 경로 목록을 손에 들고 있는 호출부용(통계 드릴다운 등).
      *
-     * @param weights 경로별 추첨 무게 — 키는 **정규 경로**이고 [RepresentativeWeighting]이 만든다.
-     *   null이면 균등이다. 목록에 있으나 표에 없는 경로는 무게 1로 친다(그쪽 KDoc 참조).
-     *   **시드와 함께 다녀야 한다** — 무게가 화면 도중에 바뀌면 같은 시드가 다른 그림을 골라,
-     *   B-103이 없앤 *"화면마다 다른 그림"*이 되살아난다.
+     * @param weights 경로별 추첨 무게 — [RepresentativeWeighting]이 만든다. null이면 균등이다.
+     *   목록에 있으나 표에 없는 경로는 [RepresentativeWeighting.Weights.unknown](= 앵커에 선
+     *   그림의 무게)로 친다. **시드와 함께 다녀야 한다** — 무게가 화면 도중에 바뀌면 같은
+     *   시드가 다른 그림을 골라, B-103이 없앤 *"화면마다 다른 그림"*이 되살아난다.
      */
     fun pickFrom(
         paths: List<String>,
         representativePath: String?,
         seed: Long,
         characterId: Long,
-        weights: Map<String, Double>? = null
+        weights: RepresentativeWeighting.Weights? = null
     ): Pick {
         val pinned = ImagePathMatch.canonical(representativePath)
         val pinnedIndex = if (pinned.isEmpty()) -1 else ImagePathMatch.indexIn(paths, pinned)
@@ -131,7 +131,7 @@ object CharacterRepresentativeImage {
         representativePath: String?,
         seed: Long,
         characterId: Long,
-        weights: Map<String, Double>? = null
+        weights: RepresentativeWeighting.Weights? = null
     ): String? = pick(imagePathsJson, representativePath, seed, characterId, weights).path
 
     /**
@@ -162,24 +162,23 @@ object CharacterRepresentativeImage {
         seed: Long,
         characterId: Long,
         paths: List<String>,
-        weights: Map<String, Double>?
+        weights: RepresentativeWeighting.Weights?
     ): Int {
         if (paths.size <= 1) return 0
-        if (weights.isNullOrEmpty()) return randomIndex(seed, characterId, paths.size)
+        if (weights == null || weights.byPath.isEmpty()) return randomIndex(seed, characterId, paths.size)
 
         var total = 0.0
         val each = DoubleArray(paths.size) { index ->
-            val path = paths[index]
-            // **넘긴 표기로 먼저 맞힌다** — `canonical`은 파일 시스템 호출이고 이 함수는
-            // 어댑터의 bind에서 불린다(목록을 튕길 때마다 그림 수만큼 붙는다).
-            // [RepresentativeWeighting]이 두 표기를 함께 담아 두므로 보통 여기서 끝난다.
-            // 표기가 갈린 경우(개명 추종이 원본 표기를 지킨다)에만 정규화로 되짚는다.
-            // 표에 없는 경로는 무게 1 — *"아직 안 겨룬 그림"*이고, 0으로 두면 영영 안 뜬다.
-            val w = weights[path]
-                ?: weights[path.trim()]
-                ?: weights[ImagePathMatch.canonical(path)]
-                ?: 1.0
-            val safe = if (w.isFinite() && w > 0.0) w else 1.0
+            // **경로를 `String?`로 받는다** — 선언은 `List<String>`이지만 이 목록은 Gson이
+            // 파싱한 `imagePaths`라 **런타임에 null·빈 문자열이 섞여 들어온다**(어댑터가 날
+            // Gson으로 읽는다). 여기서 `path.trim()`을 바로 부르면 그 자리에서 죽는다.
+            //
+            // 표에 없는 경로는 [RepresentativeWeighting.Weights.unknown] — *"아직 안 겨룬 그림"*의
+            // 무게이고 **앵커에 선다.** 1.0으로 치면 그것이 곧 1위의 무게라(모든 무게가 `(0,1]`)
+            // 방금 넣은 그림이 가장 자주 뜬다. 0으로 치면 반대로 영영 안 뜬다.
+            val path: String? = paths.getOrNull(index)
+            val w = weights.of(path)
+            val safe = if (w.isFinite() && w > 0.0) w else weights.unknown.takeIf { it > 0.0 } ?: 1.0
             total += safe
             safe
         }

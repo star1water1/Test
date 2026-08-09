@@ -532,10 +532,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // 대표 이미지 추첨의 가중치 (B-104 소비처 ⓑ — 설계 13-5)
     // ──────────────────────────────────────────────────────────────────────
 
-    private val _representativeWeights = MutableLiveData<Map<Long, Map<String, Double>>>(emptyMap())
+    private val _representativeWeights = MutableLiveData<Map<Long, RepresentativeWeighting.Weights>>(emptyMap())
 
-    /** 캐릭터 id → (정규 경로 → 추첨 무게). 기준 축이 없으면 **언제까지나 빈 표**다. */
-    val representativeWeights: LiveData<Map<Long, Map<String, Double>>> = _representativeWeights
+    /** 캐릭터 id → 그 캐릭터의 추첨 무게표. 기준 축이 없으면 **언제까지나 빈 표**다. */
+    val representativeWeights: LiveData<Map<Long, RepresentativeWeighting.Weights>> = _representativeWeights
 
     /** 마지막으로 계산한 (대결 에폭, 세기) — 같은 값이면 다시 계산하지 않는다. */
     @Volatile private var weightsStamp: Pair<Int, RepresentativeWeighting.Strength>? = null
@@ -565,7 +565,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 if (strength == RepresentativeWeighting.Strength.OFF) return@withContext emptyMap()
                 runCatching {
                     val scan = duelRepository.basisImageScores()
-                    val out = HashMap<Long, Map<String, Double>>(scan.byCharacter.size)
+                    val out = HashMap<Long, RepresentativeWeighting.Weights>(scan.byCharacter.size)
                     for ((characterId, entry) in scan.byCharacter) {
                         val w = RepresentativeWeighting.weights(entry.paths, entry.scoreByPath, strength)
                         if (w != null) out[characterId] = w

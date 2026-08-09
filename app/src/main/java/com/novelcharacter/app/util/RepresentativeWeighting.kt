@@ -63,6 +63,36 @@ object RepresentativeWeighting {
     const val SPREAD_CAP = DuelRating.SCALE
 
     /**
+     * 한 캐릭터의 추첨 무게표.
+     *
+     * **[unknown]이 따로 있는 것이 요점이다.** 표는 만든 시점의 목록으로 세우는데 쓰는 시점의
+     * 목록은 더 길 수 있다(그 사이에 그림을 넣었고 대결 에폭은 아직 안 올랐다). 그때 표에 없는
+     * 경로를 **1.0으로 치면 1위와 같은 무게**가 되어(모든 무게가 `(0,1]`이고 1위가 정확히 1.0이다)
+     * *방금 넣은 그림이 가장 자주 뜨는* 꼴이 된다 — [weights]가 안 겨룬 그림을 **앵커**에
+     * 세우는 규칙과 정면으로 어긋난다. 같은 기능의 두 층이 같은 개념을 두고 다르게 말하면
+     * 어느 쪽이 옳은지 아무도 모른다(R-7이 막는 그 모양).
+     *
+     * @property byPath 정규 경로와 넘긴 표기 둘 다를 키로 담는다(아래 [weights] 참조).
+     * @property unknown 표에 없는 경로의 무게 — **앵커에 선 그림과 같은 값**이다.
+     */
+    data class Weights(
+        val byPath: Map<String, Double>,
+        val unknown: Double
+    ) {
+        /** 이 경로의 무게. 표에 없으면 [unknown]. **정규화를 부르지 않는 빠른 길이 먼저다.** */
+        fun of(path: String?): Double {
+            if (path != null) {
+                byPath[path]?.let { return it }
+                val trimmed = path.trim()
+                if (trimmed != path) byPath[trimmed]?.let { return it }
+            }
+            // 여기까지 왔으면 표기가 갈린 것이다(개명 추종이 원본 표기를 지킨다).
+            // `canonical`은 파일 시스템 호출이라 **마지막에만** 부른다.
+            return byPath[ImagePathMatch.canonical(path)] ?: unknown
+        }
+    }
+
+    /**
      * 이 캐릭터의 그림별 추첨 무게 — **넘긴 표기와 정규 경로 둘 다를 키로 담는다.**
      *
      * 위치가 아니라 경로로 키를 두는 것은 무게를 만든 시점과 쓰는 시점 사이에 목록이
@@ -88,7 +118,7 @@ object RepresentativeWeighting {
         paths: List<String>,
         scores: Map<String, Int>,
         strength: Strength
-    ): Map<String, Double>? {
+    ): Weights? {
         if (strength == Strength.OFF || paths.size < 2 || scores.isEmpty()) return null
 
         val canonScores = HashMap<String, Int>(scores.size)
@@ -110,11 +140,13 @@ object RepresentativeWeighting {
         val top = scoreByPath.values.max()
         if (scoreByPath.values.all { it == top }) return null
 
-        val out = LinkedHashMap<String, Double>(scoreByPath.size * 2)
-        for ((key, score) in scoreByPath) {
+        fun weightOf(score: Int): Double {
             val delta = (score - top).toDouble().coerceAtLeast(-SPREAD_CAP)
-            out[key] = 10.0.pow(strength.alpha * delta / DuelRating.SCALE)
+            return 10.0.pow(strength.alpha * delta / DuelRating.SCALE)
         }
+
+        val out = LinkedHashMap<String, Double>(scoreByPath.size * 2)
+        for ((key, score) in scoreByPath) out[key] = weightOf(score)
         // 넘긴 표기로도 맞을 수 있게 한 벌 더 담는다(위 KDoc — 읽는 쪽의 파일 시스템 호출을
         // 없애려는 것이다). 이미 정규 표기인 경로는 같은 키라 덮어써도 값이 같다.
         for (path in paths) {
@@ -123,6 +155,8 @@ object RepresentativeWeighting {
             val weight = out[ImagePathMatch.canonical(raw)] ?: continue
             out[raw] = weight
         }
-        return out
+        // **표에 없는 경로도 앵커에 선다** — 여기 담긴 그림들이 앵커를 그렇게 다루는 것과
+        // 같은 규칙이다(그러지 않으면 나중에 넣은 그림이 1위와 같은 무게를 갖는다).
+        return Weights(out, weightOf(DuelRating.ANCHOR_SCORE))
     }
 }

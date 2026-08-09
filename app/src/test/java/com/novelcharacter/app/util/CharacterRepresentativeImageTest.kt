@@ -255,14 +255,15 @@ class CharacterRepresentativeImageTest {
         val paths = listOf(a, b, c)
         assertEquals(
             CharacterRepresentativeImage.randomIndex(7L, 5L, paths.size),
-            CharacterRepresentativeImage.weightedIndex(7L, 5L, paths, emptyMap())
+            CharacterRepresentativeImage.weightedIndex(7L, 5L, paths, RepresentativeWeighting.Weights(emptyMap(), 1.0))
         )
     }
 
     @Test fun weights_doNotBeatPinnedRepresentative() {
         // 무게가 c에 쏠려 있어도 지정한 대표(a)가 이긴다 — 사다리 1번은 무게 위에 있다.
         val pick = CharacterRepresentativeImage.pickFrom(
-            listOf(a, b, c), a, 42L, 9L, mapOf(canon(c) to 1.0, canon(a) to 0.001, canon(b) to 0.001)
+            listOf(a, b, c), a, 42L, 9L,
+            RepresentativeWeighting.Weights(mapOf(canon(c) to 1.0, canon(a) to 0.001, canon(b) to 0.001), 1.0)
         )
         assertEquals(CharacterRepresentativeImage.Source.PINNED, pick.source)
         assertEquals(a, pick.path)
@@ -270,7 +271,7 @@ class CharacterRepresentativeImageTest {
 
     @Test fun weights_sameSeedGivesSameResult() {
         val paths = listOf(a, b, c)
-        val weights = mapOf(canon(a) to 1.0, canon(b) to 0.3, canon(c) to 0.1)
+        val weights = RepresentativeWeighting.Weights(mapOf(canon(a) to 1.0, canon(b) to 0.3, canon(c) to 0.1), 1.0)
         val first = CharacterRepresentativeImage.weightedIndex(99L, 3L, paths, weights)
         repeat(50) {
             assertEquals(first, CharacterRepresentativeImage.weightedIndex(99L, 3L, paths, weights))
@@ -280,7 +281,7 @@ class CharacterRepresentativeImageTest {
     @Test fun weights_shiftTheDistribution() {
         // 열 배 무거운 그림이 실제로 더 자주 뽑히는가 — 시드를 많이 돌려 분포로 본다.
         val paths = listOf(a, b)
-        val weights = mapOf(canon(a) to 1.0, canon(b) to 0.1)
+        val weights = RepresentativeWeighting.Weights(mapOf(canon(a) to 1.0, canon(b) to 0.1), 1.0)
         var first = 0
         val trials = 3000
         for (seed in 1L..trials) {
@@ -291,24 +292,48 @@ class CharacterRepresentativeImageTest {
         assertTrue("그래도 고정은 아니다 — 아래 순위도 뽑힌다", first < trials)
     }
 
-    @Test fun weights_unknownPathCountsAsOne() {
-        // 표에 없는 경로는 무게 1 — 0으로 치면 새로 넣은 그림이 영영 안 뜬다.
+    @Test fun weights_unknownPathUsesTheAnchorWeight() {
+        // 표에 없는 경로는 **표가 스스로 들고 온 앵커 무게**다 — 0으로 치면 새로 넣은 그림이
+        // 영영 안 뜨고, 1로 치면 그것이 곧 1위의 무게라 새 그림이 가장 자주 뜬다.
         val paths = listOf(a, b)
-        val weights = mapOf(canon(a) to 0.0001)   // b는 표에 없다
+        val weights = RepresentativeWeighting.Weights(mapOf(canon(a) to 0.0001), unknown = 1.0)
         var second = 0
         for (seed in 1L..500L) {
             if (CharacterRepresentativeImage.weightedIndex(seed, 2L, paths, weights) == 1) second++
         }
         assertTrue("표에 없는 그림이 거의 언제나 뽑혀야 한다 (실제 $second/500)", second > 450)
+
+        // 앵커가 가벼우면 반대로 거의 안 뽑힌다 — 값이 실제로 쓰인다는 뜻이다.
+        val light = RepresentativeWeighting.Weights(mapOf(canon(a) to 1.0), unknown = 0.0001)
+        var lightSecond = 0
+        for (seed in 1L..500L) {
+            if (CharacterRepresentativeImage.weightedIndex(seed, 2L, paths, light) == 1) lightSecond++
+        }
+        assertTrue("앵커 무게가 그대로 반영돼야 한다 (실제 $lightSecond/500)", lightSecond < 50)
     }
 
     @Test fun weights_zeroOrBrokenValuesDoNotFreezeThePick() {
-        // 0·음수·NaN이 섞여 들어와도 그 그림이 영영 안 뜨는 일은 없다(무게 1로 접는다).
+        // 0·음수·NaN이 섞여 들어와도 그 그림이 영영 안 뜨는 일은 없다(앵커 무게로 접는다).
         val paths = listOf(a, b, c)
-        val weights = mapOf(canon(a) to 0.0, canon(b) to -5.0, canon(c) to Double.NaN)
+        val weights = RepresentativeWeighting.Weights(
+            mapOf(canon(a) to 0.0, canon(b) to -5.0, canon(c) to Double.NaN), unknown = 1.0
+        )
         val seen = (1L..300L)
             .map { CharacterRepresentativeImage.weightedIndex(it, 4L, paths, weights) }
             .toSet()
         assertEquals("셋 다 뽑혀야 한다", setOf(0, 1, 2), seen)
+    }
+
+    @Test fun weights_nullEntriesDoNotCrash() {
+        // **선언은 `List<String>`이지만 런타임에 null이 섞인다** — 어댑터가 `imagePaths`를
+        // 날 Gson으로 읽고 `[null]` 같은 값이 실제로 들어온다. 여기서 죽으면 목록이 통째로 못 뜬다.
+        @Suppress("UNCHECKED_CAST")
+        val paths = listOf(a, null, b) as List<String>
+        val weights = RepresentativeWeighting.Weights(mapOf(canon(a) to 1.0), unknown = 0.5)
+        val seen = (1L..200L)
+            .map { CharacterRepresentativeImage.weightedIndex(it, 6L, paths, weights) }
+            .toSet()
+        assertTrue("셈이 돌아야 한다", seen.isNotEmpty())
+        assertTrue("범위를 벗어나지 않는다", seen.all { it in paths.indices })
     }
 }

@@ -67,15 +67,17 @@ class CharacterAdapter(
     }
 
     /**
-     * 대표 추첨의 가중치 — 캐릭터 id → (정규 경로 → 무게) (B-104 소비처 ⓑ).
+     * 대표 추첨의 가중치 — 캐릭터 id → 그 캐릭터의 무게표 (B-104 소비처 ⓑ).
      *
      * **시드와 함께 갈린다.** 무게만 바꾸면 같은 시드가 다른 그림을 골라 목록이 손대지 않았는데
      * 움직인다 — B-103이 없앤 *"화면마다 다른 그림"*의 축소판이다. 그래서 무게가 실제로
      * 바뀔 때 **시드도 함께 새로 뽑아** 진입 1회 재추첨과 같은 한 번의 갱신으로 만든다.
      */
-    private var representativeWeights: Map<Long, Map<String, Double>> = emptyMap()
+    private var representativeWeights: Map<Long, com.novelcharacter.app.util.RepresentativeWeighting.Weights> = emptyMap()
 
-    fun setRepresentativeWeights(weights: Map<Long, Map<String, Double>>) {
+    fun setRepresentativeWeights(
+        weights: Map<Long, com.novelcharacter.app.util.RepresentativeWeighting.Weights>
+    ) {
         if (weights == representativeWeights) return
         representativeWeights = weights
         refreshRandomImages()

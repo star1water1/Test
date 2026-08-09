@@ -209,13 +209,24 @@ class DuelImageRosterTest {
         assertTrue(splits.isEmpty())
     }
 
+    /**
+     * **나누는 데까지만** 증명하는 시험이다 — 여기서 더 나가지 않는 것이 요점이다.
+     *
+     * `split`의 주인 찾기는 정규 경로로 하지만 그 산출물을 받는 `DuelRecords.resolve`는
+     * 참가자를 **글자 그대로** 대조한다. 그래서 표기가 갈린 판은 **여기서는 나뉘고 적합에서는
+     * 고아가 된다.** 이 시험이 *"그러니 점수에도 반영된다"*까지 주장하면 **없는 보장을 증명한
+     * 것처럼 보인다** — 그 자리는 `split`의 KDoc이 사실대로 적고 백로그 **B-174**가 든다.
+     */
     @Test
-    fun `판의 표기가 목록과 달라도 나뉜다 — 개명 추종이 원본 표기를 지킨다`() {
+    fun `판의 표기가 목록과 달라도 나뉜다 — 다만 나누기까지다`() {
         val splits = DuelImageRoster.split(
             listOf(character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg")),
             listOf(match("$dir/./a1.jpg", "$dir/a2.jpg", "$dir/a2.jpg")),
             emptyList()
         )
         assertEquals(1, splits.single().matches.size)
+        // **판의 코드는 손대지 않고 그대로 넘긴다** — 여기서 정규 표기로 고쳐 적으면
+        // 저장된 값과 다른 문자열이 적합으로 흘러가 `build`와 또 다른 방식으로 어긋난다.
+        assertEquals("$dir/./a1.jpg", splits.single().matches.single().aCode)
     }
 }

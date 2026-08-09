@@ -2378,6 +2378,7 @@
     <string name="image_manager_prune_no_basis">기준 이미지 축이 없습니다. 대결 탭에서 이미지 축을 열고 \'이 축을 대표·정리의 기준으로\'를 켜면 여기에 후보가 뜹니다.</string>
     <string name="image_manager_prune_none">조건에 맞는 후보가 없습니다 — 하위 %1$d%% · %2$d판 이상. 이미지 설정에서 기준을 바꾸거나 대결을 더 치러 보세요.</string>
     <string name="image_manager_prune_found">캐릭터 %1$d명에서 후보 %2$d장을 골랐습니다. 지우기 전에 눈으로 확인하세요 — 제안일 뿐입니다.</string>
+    <string name="image_manager_prune_reason">걸러낼 후보 — %1$d장 중 %2$d위 · %3$d판</string>
     <string name="image_manager_search_hint">파일명·소유자·태그 검색</string>
     <string name="image_manager_tag_filter">태그</string>
     <string name="image_manager_tag_filter_count">태그 %1$d</string>

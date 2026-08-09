@@ -476,6 +476,8 @@ class ImageManagerFragment : Fragment() {
     /** 현재 필터·검색·정렬을 적용해 어댑터에 반영(매칭은 ImageFilterHelper 단일 소스). */
     private fun applyView() {
         val all = viewModel.images.value ?: emptyList()
+        // 람다 밖에서 한 번 집는다 — 항목마다 LiveData를 되짚지 않는다.
+        val pruneCandidates = pruneCandidatePaths
         val filtered = com.novelcharacter.app.util.ImageFilterHelper.apply(all, viewModel.criteria) { item ->
             com.novelcharacter.app.util.ImageFilterHelper.Facts(
                 fileName = item.path.substringAfterLast('/'),
@@ -496,11 +498,12 @@ class ImageManagerFragment : Fragment() {
                 },
                 linkGroupId = item.meta?.linkGroupId,
                 detachedAt = item.meta?.detachedAt,
-                // 계산은 VM이 이미 해 뒀다 — 여기서는 명단 조회 하나다(bind마다 도는 자리라
-                // 무거운 판정을 넣지 않는다). 아직 계산 중이면 아무도 후보가 아니다.
-                pruneCandidate = pruneCandidatePaths.contains(
-                    com.novelcharacter.app.util.ImagePathMatch.canonical(item.path)
-                )
+                // 계산은 VM이 이미 해 뒀다 — 여기서는 명단 조회 하나다. **정규 경로도 VM이
+                // 들고 온 것을 쓴다**(`ManagedImage.canonicalPath`) — 여기서 다시 정규화하면
+                // 파일 시스템 호출이 **항목 전부에** 붙는다: `ImageFilterHelper.apply`는
+                // 필터가 하나라도 걸려 있으면 `Facts`를 전량 조립하므로 단축 평가가 없고,
+                // 그러면 검색어 한 글자마다 이미지 수만큼의 호출이 메인 스레드에 선다.
+                pruneCandidate = pruneCandidates.contains(item.canonicalPath)
             )
         }
         val sorted = when (viewModel.sort) {
@@ -677,6 +680,20 @@ class ImageManagerFragment : Fragment() {
 
         sheetBinding.detailSizeText.text = StorageAnalyzer.formatBytes(item.sizeBytes)
         sheetBinding.detailOwnerText.text = ownerLabel(item)
+
+        // 걸러낼 후보라면 **왜 후보인지** 말한다 (B-104 소비처 ⓒ · 원칙 02).
+        // 이 창의 다음 동작이 삭제라, 근거 없이 목록에만 올려 두면 앱이 지어낸 서열이 된다.
+        val candidate = (viewModel.pruneState.value as? ImageManagerViewModel.PruneState.Ready)
+            ?.byPath?.get(item.canonicalPath)
+        if (candidate != null) {
+            sheetBinding.detailPruneReasonText.text = getString(
+                R.string.image_manager_prune_reason,
+                candidate.scored, candidate.rank, candidate.played
+            )
+            sheetBinding.detailPruneReasonText.visibility = View.VISIBLE
+        } else {
+            sheetBinding.detailPruneReasonText.visibility = View.GONE
+        }
 
         // 태그 칩(라이브러리 이미지) — 태그 편집은 어떤 이미지든 가능(편집 시 라이브러리로 입양).
         val tags = item.meta?.tags.orEmpty()
