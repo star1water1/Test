@@ -8,6 +8,17 @@
     android:paddingVertical="10dp"
     android:background="?attr/selectableItemBackground">
 
+    <!-- 전환 우선순위 손잡이 (B-108) — 위에 있을수록 먼저 이어받는다. 숫자를 직접
+         적게 하지 않는 것은 원칙 04다(순서 편집은 드래그앤드롭을 우선 제공한다). -->
+    <ImageView
+        android:id="@+id/dragHandle"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="10dp"
+        android:src="@drawable/ic_drag_handle"
+        android:contentDescription="@string/drag_handle_desc"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
     <RadioButton
         android:id="@+id/activeRadio"
         android:layout_width="wrap_content"
@@ -70,6 +81,17 @@
             android:layout_marginTop="2dp"
             android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <!-- 한도로 밀린 상태 (B-108) — 뒤로 미루는 일이 화면 어디에도 안 보이면
+             "왜 이 프로바이더가 안 쓰이지"를 알아낼 길이 없다(원칙 04). -->
+        <TextView
+            android:id="@+id/cooldownText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="?attr/colorError"
+            android:visibility="gone" />
 
     </LinearLayout>
 

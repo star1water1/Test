@@ -84,10 +84,21 @@ class AiErrorTextTest {
         assertEquals(402, stamped.httpCode)
     }
 
+    /**
+     * **B-108이 이 계약을 넓혔다.** 종전에는 *"성공은 그대로 지나간다"*였고 그때는 그것이 맞았다 —
+     * 성공은 늘 사용자가 고른 그곳에서 왔으므로 *누가 답했는가*를 물을 이유가 없었다.
+     * 자동 전환이 들어오면서 그 전제가 깨졌다: 한도로 밀려 **다른 곳**이 답했을 수 있고,
+     * 그 사실을 새기지 않으면 고지 한 줄(확정 ⓑ)이 성립하지 않는다.
+     *
+     * 새기는 것 **말고는** 아무것도 바꾸지 않는다는 성질은 그대로다 — 그것까지 놓으면
+     * 관문이 결과를 손대는 자리가 되어 회귀의 근원이 된다.
+     */
     @Test
-    fun 성공은_표식이_지나가도_그대로다() {
-        val success = AiResult.Success(text = "ok", model = "m")
-        assertEquals(success, success.withProvider(ref))
+    fun 성공에도_표식이_새겨지되_나머지는_그대로다() {
+        val success = AiResult.Success(text = "ok", model = "m", truncated = true)
+        val stamped = success.withProvider(ref) as AiResult.Success
+        assertEquals(ref, stamped.provider)
+        assertEquals(success, stamped.copy(provider = null))
     }
 
     @Test

@@ -146,7 +146,15 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         val drops: DropTally = DropTally(),
         val failures: List<BatchFailure> = emptyList(),
         /** 사용자가 취소해 **시작하지 않은** 배치가 있는가. 중단 시점까지의 제안은 위에 있다. */
-        val cancelled: Boolean = false
+        val cancelled: Boolean = false,
+        /**
+         * 실패가 아닌 고지 — 지금은 프로바이더 자동 전환 한 줄이다 (B-108 확정 ⓑ).
+         *
+         * [failures]에 섞지 않는 이유: 그쪽은 **되받아 볼 경로**([retryablePaths])와 실패 요약을
+         * 정하는 타입이라, 성공한 배치의 고지를 넣으면 *"이 배치를 1장씩 다시 보내시겠습니까"*가
+         * 뜬다 — 이미 답을 받은 배치에 대고 돈을 더 쓰라는 권유가 된다.
+         */
+        val notes: List<String> = emptyList()
     )
 
     /** 배치 하나의 파싱 결과 — 통째로 접히거나, 번호별 태그를 준다. */
@@ -225,7 +233,10 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
                 suggestions = previous.suggestions.filterNot { it.path in answered } + retry.suggestions,
                 drops = previous.drops.mergeRetry(retry.drops),
                 failures = keptFailures + retry.failures,
-                cancelled = previous.cancelled || retry.cancelled
+                cancelled = previous.cancelled || retry.cancelled,
+                // 앞 실행에서 프로바이더가 바뀌었다는 사실은 되받기로 사라지지 않는다 —
+                // 살아남은 제안 중에 그 프로바이더가 낸 것이 섞여 있다(B-108 ⓑ).
+                notes = (previous.notes + retry.notes).distinct()
             )
         }
 
@@ -403,6 +414,7 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
 
         val all = ArrayList<ImageSuggestion>()
         val failures = ArrayList<BatchFailure>()
+        val notes = ArrayList<String>()
         var drops = DropTally(vocabTruncated = vocab.truncated, policyTruncated = policyTruncated)
         var doneRequests = 0
         var doneImages = 0
@@ -440,23 +452,31 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
                     images = loaded.map { it.image }
                 )
                 when (val result = aiService.complete(request)) {
-                    is AiResult.Success -> when {
-                        // 그림이 근거의 전부인 기능이라 글만 나온 답은 쓰지 않는다.
-                        result.imagesOmitted -> {
-                            failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNSUPPORTED))
-                            stop = true   // 학습된 사실이라 남은 배치도 같은 결과다
-                        }
-                        result.truncated -> failures.add(BatchFailure(batch, BatchFailKind.RESPONSE_TRUNCATED))
-                        else -> when (val parsed = parse(result.text, loaded.size, vocab)) {
-                            is ParseOutcome.Ok -> {
-                                for ((index, tags) in parsed.tagsByIndex) {
-                                    if (tags.isEmpty()) continue   // 근거 없음은 결손이 아니다
-                                    val hit = loaded.getOrNull(index - 1) ?: continue
-                                    all.add(ImageSuggestion(hit.path, tags))
-                                }
-                                drops += parsed.drops
+                    is AiResult.Success -> {
+                        // 한도로 밀려 다른 프로바이더가 답한 배치 (B-108 확정 ⓑ).
+                        // 아래 갈래 **밖**에 적는다 — 어디로 떨어지든 *"누가 답했는가"*는 같고,
+                        // 갈래마다 적으면 반드시 한쪽이 빠진다.
+                        AiProviderFallback.switchNoteOf(result)
+                            ?.let { if (it !in notes) notes.add(it) }
+                        when {
+                            // 그림이 근거의 전부인 기능이라 글만 나온 답은 쓰지 않는다.
+                            result.imagesOmitted -> {
+                                failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNSUPPORTED))
+                                stop = true   // 학습된 사실이라 남은 배치도 같은 결과다
                             }
-                            is ParseOutcome.Rejected -> failures.add(BatchFailure(batch, parsed.kind))
+                            result.truncated ->
+                                failures.add(BatchFailure(batch, BatchFailKind.RESPONSE_TRUNCATED))
+                            else -> when (val parsed = parse(result.text, loaded.size, vocab)) {
+                                is ParseOutcome.Ok -> {
+                                    for ((index, tags) in parsed.tagsByIndex) {
+                                        if (tags.isEmpty()) continue   // 근거 없음은 결손이 아니다
+                                        val hit = loaded.getOrNull(index - 1) ?: continue
+                                        all.add(ImageSuggestion(hit.path, tags))
+                                    }
+                                    drops += parsed.drops
+                                }
+                                is ParseOutcome.Rejected -> failures.add(BatchFailure(batch, parsed.kind))
+                            }
                         }
                     }
                     is AiResult.Failure -> {
@@ -471,6 +491,6 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
             onProgress(doneRequests, totalRequests, doneImages, totalImages)
             if (stop) break
         }
-        return Result(all, drops, failures, cancelled)
+        return Result(all, drops, failures, cancelled, notes)
     }
 }

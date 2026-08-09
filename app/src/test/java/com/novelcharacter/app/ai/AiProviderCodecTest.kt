@@ -36,9 +36,11 @@ class AiProviderCodecTest {
         createdAt = 1_000L,
         updatedAt = 2_000L,
         maxOutputTokens = 4096,
+        priority = 3,
         detectedOutputLimit = 8192,
         temperatureUnsupported = true,
-        imagesUnsupported = true
+        imagesUnsupported = true,
+        cooldownUntilMillis = 5_000L
     )
 
     // ── ① 부류째 막는 잠금 ────────────────────────────────────────────────────
@@ -162,12 +164,66 @@ class AiProviderCodecTest {
         assertEquals(0, decoded.skipped)
     }
 
-    /** 목록 순서는 등록순이다 — 화면의 행 순서가 저장 순서에 따라 흔들리지 않게 한다. */
+    /**
+     * 목록 순서는 **전환 우선순위 → 등록순**이다 (B-108). 우선순위가 같으면 종전과 같은
+     * 등록순이라, 한 번도 끌어 놓지 않은 사용자의 화면은 글자 그대로 옛 순서 그대로다.
+     */
     @Test
     fun 등록순으로_정렬된다() {
-        val late = full().copy(id = "late", createdAt = 9_000L)
-        val early = full().copy(id = "early", createdAt = 1L)
+        val late = full().copy(id = "late", createdAt = 9_000L, priority = 0)
+        val early = full().copy(id = "early", createdAt = 1L, priority = 0)
         val decoded = AiProviderCodec.decode(AiProviderCodec.encode(listOf(late, early)))
         assertEquals(listOf("early", "late"), decoded.configs.map { it.id })
+    }
+
+    @Test
+    fun 우선순위가_등록순을_이긴다() {
+        val old = full().copy(id = "old", createdAt = 1L, priority = 2)
+        val young = full().copy(id = "young", createdAt = 9_000L, priority = 0)
+        val decoded = AiProviderCodec.decode(AiProviderCodec.encode(listOf(old, young)))
+        assertEquals(listOf("young", "old"), decoded.configs.map { it.id })
+    }
+
+    // ── B-108: 우선순위·쿨다운의 왕복 ─────────────────────────────────────────
+
+    /**
+     * **우선순위는 0도 뜻이 있는 값이라 null 생략 규칙을 쓰지 않는다.**
+     * 생략하면 맨 앞자리(0)가 저장되지 않아, 끌어 놓아 1위로 올린 프로바이더가
+     * 앱을 다시 켜는 순간 옛 자리로 돌아간다 — 사용자 조작이 말없이 사라지는 부류다.
+     */
+    @Test
+    fun 우선순위_0도_JSON에_적힌다() {
+        val o = JsonParser.parseString(AiProviderCodec.encode(listOf(full().copy(priority = 0))))
+            .asJsonArray[0].asJsonObject
+        assertTrue("priority 키가 없다", o.has("priority"))
+        assertEquals(0, o.get("priority").asInt)
+    }
+
+    @Test
+    fun 쿨다운이_왕복한다() {
+        val decoded = AiProviderCodec
+            .decode(AiProviderCodec.encode(listOf(full().copy(cooldownUntilMillis = 1_700_000_000_000L))))
+        assertEquals(1_700_000_000_000L, decoded.configs.single().cooldownUntilMillis)
+    }
+
+    /** 쿨다운 없음은 키 자체를 쓰지 않는다 — "미설정"과 "0에 만료"는 다른 상태다. */
+    @Test
+    fun 쿨다운_없음은_키를_쓰지_않는다() {
+        val o = JsonParser
+            .parseString(AiProviderCodec.encode(listOf(full().copy(cooldownUntilMillis = null))))
+            .asJsonArray[0].asJsonObject
+        assertTrue("cooldownUntilMillis 키가 남아 있다", !o.has("cooldownUntilMillis"))
+    }
+
+    /** 구버전 설정에는 둘 다 없다 — 우선순위는 0, 쿨다운은 없음으로 읽혀 종전과 같다. */
+    @Test
+    fun 옛_JSON은_우선순위_0에_쿨다운_없음으로_읽힌다() {
+        val legacy = """
+            [{"id":"p1","protocol":"OPENAI_COMPAT","displayName":"옛것",
+              "baseUrl":"https://x.test","model":"m","createdAt":1,"updatedAt":1}]
+        """.trimIndent()
+        val c = AiProviderCodec.decode(legacy).configs.single()
+        assertEquals(0, c.priority)
+        assertNull(c.cooldownUntilMillis)
     }
 }

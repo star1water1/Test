@@ -52,7 +52,12 @@ object AiProviderCodec {
                 null
             }
         }
-        return DecodeResult(configs.sortedBy { it.createdAt }, skipped = skipped)
+        // 정렬은 **우선순위 → 만든 순서**다 (B-108). 우선순위를 한 번도 손대지 않으면 전부 0이라
+        // 종전과 글자 그대로 같은 순서가 나온다 — 그것이 이 칸에 마이그레이션이 없는 이유다.
+        return DecodeResult(
+            configs.sortedWith(compareBy({ it.priority }, { it.createdAt })),
+            skipped = skipped
+        )
     }
 
     fun toJson(c: AiProviderConfig): JsonObject = JsonObject().apply {
@@ -66,12 +71,16 @@ object AiProviderCodec {
         addProperty("updatedAt", c.updatedAt)
         // null은 키 자체를 쓰지 않는다 — "미설정(자동)"과 "0으로 설정"은 다른 상태다.
         c.maxOutputTokens?.let { addProperty("maxOutputTokens", it) }
-        // ── 학습값(R-23) — 셋이 함께 쓰이고 함께 읽힌다.
+        // 우선순위는 **학습값이 아니라 사용자 설정**이다 (B-108) — 0도 뜻이 있는 값이라
+        // null 생략 규칙을 쓰지 않고 언제나 적는다.
+        addProperty("priority", c.priority)
+        // ── 학습값(R-23) — 넷이 함께 쓰이고 함께 읽힌다.
         //    새 학습값을 더하면 여기·[fromJson]·`hasLearnedFacts()` 세 자리가 같이 는다.
         //    B-132는 그중 이 두 자리만 빠뜨린 사고였다.
         c.detectedOutputLimit?.let { addProperty("detectedOutputLimit", it) }
         c.temperatureUnsupported?.let { addProperty("temperatureUnsupported", it) }
         c.imagesUnsupported?.let { addProperty("imagesUnsupported", it) }
+        c.cooldownUntilMillis?.let { addProperty("cooldownUntilMillis", it) }
     }
 
     fun fromJson(o: JsonObject): AiProviderConfig = AiProviderConfig(
@@ -85,8 +94,11 @@ object AiProviderCodec {
         updatedAt = o.get("updatedAt")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
         // 구버전 설정에는 이 키들이 없다 — 없으면 null(자동)이고 종전과 동일하게 동작한다.
         maxOutputTokens = o.get("maxOutputTokens")?.takeIf { it.isJsonPrimitive }?.asInt,
+        // 우선순위가 없는 구버전은 전부 0 — 정렬이 createdAt으로 떨어져 옛 순서 그대로다.
+        priority = o.get("priority")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
         detectedOutputLimit = o.get("detectedOutputLimit")?.takeIf { it.isJsonPrimitive }?.asInt,
         temperatureUnsupported = o.get("temperatureUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
-        imagesUnsupported = o.get("imagesUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean
+        imagesUnsupported = o.get("imagesUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
+        cooldownUntilMillis = o.get("cooldownUntilMillis")?.takeIf { it.isJsonPrimitive }?.asLong
     )
 }

@@ -2656,6 +2656,11 @@
     <string name="ai_key_status_missing">키 미등록 — 편집에서 등록하세요</string>
     <string name="ai_provider_active_badge">사용 중</string>
     <string name="ai_provider_auto_activated">\'%s\' 프로바이더를 사용 중으로 지정했습니다. 다른 프로바이더를 쓰려면 목록에서 누르세요.</string>
+    <!-- B-108 자동 전환 — 목적문(R-25)과 상태 표시. 사용자가 켠 적 없는데 결과가 다른
+         모델에서 오는 일이라, 규칙과 현재 상태를 화면이 먼저 말한다. -->
+    <string name="ai_settings_providers_order_note">사용 중인 프로바이더가 사용량 한도에 걸리면 아래 순서대로 다음 프로바이더가 이어받습니다. 손잡이를 끌어 순서를 바꾸세요.</string>
+    <string name="ai_provider_cooldown">한도로 %d분간 뒤로 미룸 — 그동안은 다음 순서가 먼저 쓰입니다</string>
+    <string name="ai_provider_order_saved">전환 순서를 저장했습니다</string>
     <string name="ai_delete_confirm">\'%s\' 프로바이더를 삭제하시겠습니까?\n저장된 API 키도 함께 삭제됩니다.</string>
 
     <!-- 추가/편집 다이얼로그 -->
@@ -2684,7 +2689,7 @@
     <string name="ai_edit_max_tokens_hint">한 번에 받을 응답의 최대 길이입니다. 올리면 한 요청에 더 많이 처리해 요청 수가 줄고, 실제 생성된 만큼만 과금됩니다. 모델이 허용하는 값보다 크게는 요청하지 않습니다.</string>
     <string name="ai_edit_max_tokens_learned">이 모델의 출력 상한을 %1$d 토큰으로 확인했습니다 — 상한을 그 값에 맞췄습니다.</string>
     <!-- R-23: 학습값은 그 모델·주소에 한정된 사실 — 대상이 바뀌면 초기화하고 조용히 두지 않는다 -->
-    <string name="ai_edit_learned_reset">모델이 바뀌어 이 모델에 대해 학습한 상한을 초기화했습니다 (다음 요청에서 다시 감지)</string>
+    <string name="ai_edit_learned_reset">모델이 바뀌어 이 모델에 대해 학습한 값을 초기화했습니다 (다음 요청에서 다시 감지)</string>
     <string name="ai_edit_error_required">필수 입력입니다</string>
     <string name="ai_edit_error_https">https:// 로 시작하는 올바른 주소를 입력하세요</string>
 

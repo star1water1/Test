@@ -347,6 +347,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     if (result.imagesOmitted && IMAGES_UNSUPPORTED_NOTE !in failures) {
                         failures.add(IMAGES_UNSUPPORTED_NOTE)
                     }
+                    // 한도로 밀려 다른 프로바이더가 답한 청크 (B-108 확정 ⓑ) — 조용히 바꾸면
+                    // 사용자는 자기가 고른 모델의 답인 줄 알고 다른 회사 글을 받는다.
+                    // 청크마다 뜰 수 있으므로 같은 줄은 한 번만 남긴다.
+                    AiProviderFallback.switchNoteOf(result)
+                        ?.let { if (it !in failures) failures.add(it) }
                     val parsed = parseResponse(result.text, chunk, minConfidence)
                     if (parsed == null) {
                         // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.

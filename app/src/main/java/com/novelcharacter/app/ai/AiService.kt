@@ -4,6 +4,7 @@ import android.content.Context
 import com.novelcharacter.app.util.AppLogger
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -37,6 +38,13 @@ class AiService(context: Context) {
     /**
      * 활성 프로바이더(또는 지정 [config])로 요청을 수행한다.
      * 네트워크는 IO 디스패처에서 실행되므로 어디서든 suspend 호출만 하면 된다.
+     *
+     * **한도에 걸리면 다음 프로바이더로 이어간다** (B-108) — 순서·방아쇠·쿨다운의 판정은
+     * [AiProviderFallback]이 단일 소스이고 여기서는 그 답을 실행만 한다. 전환을 관문에 둔 것이
+     * 이 구현의 요점이다: 인앱 기능 여섯이 각자 폴백을 짜면 여섯 벌이 되고, **한 벌만 빠뜨려도
+     * 그 기능에서만 조용히 종전처럼 죽는다.** 관문에 있으면 이미 나온 답(앞선 청크)은 그대로
+     * 살고 덜 나온 것만 새 프로바이더로 이어진다 — 확정 ⓕ가 요구한 *"필드 단위로 가른다"*가
+     * 호출부에 새 장치 없이 성립하는 이유다.
      */
     suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult {
         // 실패에는 **어느 프로바이더였는지**를 반드시 새겨 내보낸다 (B-150). 새기는 자리를
@@ -45,7 +53,69 @@ class AiService(context: Context) {
             ?: return AiResult.Failure(AiErrorKind.NO_PROVIDER) // 프로바이더가 없으니 새길 것도 없다
         val apiKey = keyStore.getKey(resolved.id)
             ?: return AiResult.Failure(AiErrorKind.NO_KEY, provider = resolved.ref())
-        return execute(resolved, apiKey, request).withProvider(resolved.ref())
+
+        // **명시 지정은 전환하지 않는다.** 그 인자는 *"이것으로 해 보라"*는 뜻이라(연결 테스트가
+        // 저장 전 설정을 넘기는 자리) 다른 곳의 성공으로 답하면 검사 자체가 거짓이 된다.
+        if (config != null) return execute(resolved, apiKey, request).withProvider(resolved.ref())
+
+        return completeWithFallback(resolved, apiKey, request)
+    }
+
+    /**
+     * 자동 전환 루프 (B-108). [first]는 관문이 이미 키까지 확인한 활성 프로바이더다.
+     *
+     * 실패를 **마지막 것으로** 돌려주는 이유: 사용자가 고칠 것은 경로가 아니라 지금 막힌 자리이고,
+     * 전부 한도면 마지막 한도 오류가 그 사실을 그대로 말한다. 표식(B-150)이 붙어 있어 어느
+     * 프로바이더의 실패인지도 함께 나간다.
+     */
+    private suspend fun completeWithFallback(
+        first: AiProviderConfig, firstKey: String, request: AiRequest
+    ): AiResult {
+        val now = System.currentTimeMillis()
+        val chain = AiProviderFallback.order(
+            configs = providerStore.list(),
+            active = first,
+            hasKey = { keyStore.hasKey(it) },
+            nowMillis = now
+        )
+        // 활성이 쿨다운 중이면 순서가 다른 곳부터 시작한다 — 그 자체가 전환이므로 고지 대상이다.
+        var switchedFrom: AiProviderRef? =
+            if (chain.firstOrNull()?.id != first.id) first.ref() else null
+        var last: AiResult.Failure? = null
+
+        for (candidate in chain) {
+            val apiKey =
+                if (candidate.id == first.id) firstKey else keyStore.getKey(candidate.id) ?: continue
+            var retriesUsed = 0
+            while (true) {
+                val result = execute(candidate, apiKey, request)
+                if (result !is AiResult.Failure) {
+                    // 지금 되는 것이 쿨다운이 낡았다는 증거다 — 남아 있으면 지운다.
+                    // 만료를 쓸어 담는 별도 경로를 두지 않는 이유: 성공한 자리에서만 지우면
+                    // 요청마다 저장소를 쓰지 않으면서도 낡은 값이 쌓이지 않는다.
+                    if (candidate.cooldownUntilMillis != null) clearCooldown(candidate.id)
+                    return result.withProvider(candidate.ref()).withSwitchedFrom(switchedFrom)
+                }
+                last = result.copy(provider = candidate.ref())
+                when (AiProviderFallback.dispositionOf(result.kind, retriesUsed)) {
+                    AiProviderFallback.Disposition.RETRY_SAME -> {
+                        retriesUsed++
+                        delay(AiProviderFallback.RATE_LIMIT_BACKOFF_MILLIS)
+                    }
+                    AiProviderFallback.Disposition.SWITCH -> {
+                        rememberCooldown(candidate.id, AiProviderFallback.cooldownUntil(now))
+                        // 고지가 가리킬 곳은 **처음 밀린 곳**이다 — 판정은 순수 계층이 든다.
+                        switchedFrom =
+                            AiProviderFallback.firstSwitchSource(switchedFrom, candidate.ref())
+                        break
+                    }
+                    AiProviderFallback.Disposition.STOP -> return last
+                }
+            }
+        }
+        // chain이 비는 경우는 없다(활성이 언제나 들어간다). 그래도 값으로 돌려준다 —
+        // 여기서 예외를 던지면 관문의 계약(실패는 값이다)이 깨진다.
+        return last ?: AiResult.Failure(AiErrorKind.UNKNOWN, provider = first.ref())
     }
 
     /**
@@ -242,6 +312,23 @@ class AiService(context: Context) {
         val current = providerStore.get(configId) ?: return
         if (current.temperatureUnsupported == true) return
         providerStore.save(current.copy(temperatureUnsupported = true))
+    }
+
+    /**
+     * 한도로 밀린 프로바이더를 쿨다운에 넣는다 (B-108, R-23 대상).
+     * 없애는 것이 아니라 **뒤로 미루는** 것이다 — [AiProviderFallback.order]가 맨 뒤에 둔다.
+     */
+    fun rememberCooldown(configId: String, untilMillis: Long) {
+        val current = providerStore.get(configId) ?: return
+        if (current.cooldownUntilMillis == untilMillis) return
+        providerStore.save(current.copy(cooldownUntilMillis = untilMillis))
+    }
+
+    /** 쿨다운을 지운다 — 그 프로바이더가 실제로 응답한 순간이 유일한 근거다 (B-108). */
+    fun clearCooldown(configId: String) {
+        val current = providerStore.get(configId) ?: return
+        if (current.cooldownUntilMillis == null) return
+        providerStore.save(current.copy(cooldownUntilMillis = null))
     }
 
     /** 이미지 거부를 학습해 기록한다 — 다음 요청부터 싣지 않는다 (A-7, R-23 대상). */

@@ -421,6 +421,8 @@ class OrganizeFolderController(
         if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
         if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
+        // 프로바이더 자동 전환 고지 (B-108 확정 ⓑ) — 실패가 아니므로 실패 요약보다 앞에 둔다.
+        notices.addAll(outcome.result.notes)
         if (outcome.result.failures.isNotEmpty()) {
             val reason = com.novelcharacter.app.ai.AiErrorMessages.of(
                 fragment.requireContext(), outcome.result.failures.first()

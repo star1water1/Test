@@ -1256,6 +1256,8 @@ class ImageManagerFragment : Fragment() {
         if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
+        // 프로바이더 자동 전환 고지 (B-108 확정 ⓑ) — 실패가 아니므로 실패 요약보다 앞에 둔다.
+        notices.addAll(result.notes)
         notices.addAll(aiTagFailureNotices(result))
 
         if (result.suggestions.isEmpty() && notices.isEmpty()) {
