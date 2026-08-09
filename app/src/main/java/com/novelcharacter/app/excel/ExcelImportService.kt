@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
@@ -4274,6 +4275,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
 
         val entitySeen = mutableMapOf<Long, Int>()
+        // 파싱이 읽지 않는 `설정(JSON)` 키 — 행마다 고지하면 수백 줄이 되므로 모아서 한 줄로
+        // 낸다(P-5 · B-95). 재는 대상은 **파일이 말한 config**이지 병합 결과가 아니다 —
+        // 열이 없는 파일은 기존 DB config가 베이스가 되는데(B-142), 그것까지 세면
+        // 이번 파일과 무관한 옛 흔적을 이 파일 탓으로 고지하게 된다.
+        val unusedConfigKeys = linkedMapOf<String, Int>()
+        var unusedConfigFields = 0
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4323,6 +4330,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (r.config != null && r.config != "{}" && !isValidJson(r.config)) {
                     result.warnings.add("필드 정의 행 $i: 필드 '$name'의 설정(JSON)이 올바른 형식이 아닙니다(절단·오타 가능) — 그대로 저장되나 해당 기능이 동작하지 않을 수 있습니다")
                 }
+                // 없앤 설정이 담긴 옛 파일을 조용히 삼키지 않는다(P-5 확정 — 한 줄 고지).
+                if (r.config != null) {
+                    val unused = BodyAnalysisConfig.unusedKeysIn(r.config)
+                    if (unused.isNotEmpty()) {
+                        unusedConfigFields++
+                        for (k in unused) unusedConfigKeys[k] = (unusedConfigKeys[k] ?: 0) + 1
+                    }
+                }
                 val groupName = r.groupName
                 val displayOrder: Int? = r.displayOrder
                 val isRequired = r.isRequired
@@ -4361,6 +4376,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.skippedRows++
                 result.errors.add("필드 정의 행 $i: ${e.message}")
             }
+        }
+        if (unusedConfigKeys.isNotEmpty()) {
+            result.warnings.add(
+                "필드 정의: 더 이상 쓰지 않는 설정 ${unusedConfigKeys.size}개를 건너뛰었습니다" +
+                    "(${unusedConfigKeys.keys.joinToString(", ")}) — 필드 ${unusedConfigFields}개에 있었습니다. " +
+                    "나머지 설정은 그대로 들어왔고, 해당 필드를 앱에서 한 번 저장하면 이 설정이 사라집니다"
+            )
         }
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
     }
@@ -6148,6 +6170,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val keyColIndex = cols["설정키"] ?: 0
         val valueColIndex = cols["설정값"] ?: 1
+        // 같은 키가 여러 행에 있어도 한 번만 센다(집합) — 행 수가 아니라 *무엇을* 모르는가가 사실이다.
+        val unknownSettingKeys = linkedSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6157,73 +6181,36 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val value = getCellString(row, valueColIndex)
 
                 val ctx = appContext ?: continue
-                // 스토어 setter가 자체 클램프를 수행하므로 범위 밖 값도 안전하게 수용된다(관대 임포트)
-                when (key) {
-                    "theme_mode" -> {
-                        val mode = parseNumber(value)?.toInt() ?: 0
-                        val validMode = mode.coerceIn(0, 2)
-                        com.novelcharacter.app.util.ThemeHelper.saveTheme(ctx, validMode)
-                        result.restoredSettings++
-                    }
-                    "backup_include_images" -> {
-                        com.novelcharacter.app.backup.BackupSettingsStore(ctx).setIncludeImages(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "backup_max_backups" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.backup.BackupSettingsStore(ctx).setMaxBackups(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_compress_enabled" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setEnabled(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_quality_percent" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setQualityPercent(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_cap_dimension" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setCapDimension(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_max_long_edge_px" -> {
-                        parseNumber(value)?.toInt()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setMaxLongEdgePx(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_skip_below_enabled" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setSkipBelowEnabled(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    "image_skip_below_bytes" -> {
-                        parseNumber(value)?.toLong()?.let {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setSkipBelowBytes(it)
-                            result.restoredSettings++
-                        }
-                    }
-                    "image_editor_remove_policy" -> {
-                        val policy = com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.entries
-                            .firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
-                        if (policy != null) {
-                            com.novelcharacter.app.util.ImageSettingsStore(ctx).setEditorRemovePolicy(policy)
-                            result.restoredSettings++
-                        } else if (value.isNotBlank()) {
-                            result.warnings.add("앱 설정 행 $i: image_editor_remove_policy 값 '$value'을(를) 인식할 수 없어 기존 설정을 유지합니다")
-                        }
-                    }
-                    "image_auto_link_by_character" -> {
-                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setAutoLinkByCharacter(parseBoolean(value))
-                        result.restoredSettings++
-                    }
-                    // 알 수 없는 키는 조용히 무시 — 상위 버전 파일을 하위 버전 앱에서 가져올 때 대비
+                // 무엇을 어떻게 쓰는가는 여기서 정하지 않는다 — [AppSettingsBindings]가 단일
+                // 소스다(B-105). 종전에는 이 자리가 손수 짠 `when (key)`라 **내보내기의 나열과
+                // 짝으로만 늘 수 있었고, 그래서 둘 다 늘지 않았다.**
+                //
+                // 저장소 setter가 대개 자체 클램프를 하므로 범위 밖 값도 안전하게 수용된다(관대 임포트).
+                // 다만 **뜻을 알 수 없는 값은 조용히 넘기지 않는다** — 사용자가 적은 것이 왜
+                // 안 먹었는지 알 길이 없으면 그것이 말없는 유실이다(개발 의도 2번).
+                val binding = AppSettingsBindings.bindingOf(key)
+                if (binding == null) {
+                    // 알 수 없는 키는 세어서 한 줄로 알린다 — 상위 버전 파일을 하위 버전 앱에서
+                    // 열면 정상적으로 생기는 일이라 행마다 경고할 것은 아니지만, 아무 말도 없으면
+                    // 오타로 적은 키가 영영 안 먹는 채로 남는다.
+                    unknownSettingKeys.add(key.trim())
+                    continue
+                }
+                when (val applied = binding.write(ctx, value)) {
+                    is AppSettingsBindings.Applied.Yes -> result.restoredSettings++
+                    is AppSettingsBindings.Applied.No ->
+                        result.warnings.add("앱 설정 행 $i: $key 값 '$value' — ${applied.reason}")
                 }
             } catch (e: Exception) {
                 result.errors.add("앱 설정 행 $i: ${e.message}")
             }
+        }
+        if (unknownSettingKeys.isNotEmpty()) {
+            result.warnings.add(
+                "앱 설정: 이 버전이 모르는 설정 ${unknownSettingKeys.size}개를 건너뛰었습니다" +
+                    "(${unknownSettingKeys.take(8).joinToString(", ")}${if (unknownSettingKeys.size > 8) " 외" else ""}) — " +
+                    "앱을 올리면 들어올 수 있고, 키를 잘못 적었다면 고쳐서 다시 가져오세요"
+            )
         }
     }
 

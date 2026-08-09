@@ -1551,7 +1551,14 @@ class FieldEditDialog : DialogFragment() {
             for ((key, switch) in insightToggleSwitches) {
                 switch.isChecked = BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS[key] ?: true
             }
+            // 기본 체형 이름도 함께 되돌린다 — 이 버튼이 되돌리지 않는 칸이 한 자리라도
+            // 남으면 '기본값 복원'이 무엇을 되돌리는지 사용자가 알 수 없다.
+            binding.editDefaultBodyType.setText(BodyAnalysisConfig.DEFAULT.defaultBodyType)
         }
+
+        // 기본 체형 이름 — 새 필드는 기본값을 미리 채운다(빈 칸을 보고 "안 쓰는 설정"으로
+        // 읽지 않게. 기존 필드는 populateFields가 저장된 값으로 덮는다).
+        binding.editDefaultBodyType.setText(BodyAnalysisConfig.DEFAULT.defaultBodyType)
 
         // 체형 분류 프리셋 스피너
         val presetLabels = listOf(
@@ -1908,11 +1915,15 @@ class FieldEditDialog : DialogFragment() {
             com.novelcharacter.app.util.BodyMeasurements.slotsToStore(selected, inferredPartSlots)
         }
 
+        // 기본 체형 이름 — 어느 규칙에도 걸리지 않은 캐릭터가 받는 이름이다(B-95).
+        // **빈 칸은 기본값**이다: 이름이 없으면 카드의 그 자리가 통째로 비어 무엇을 뜻하는지
+        // 알 수 없으므로, 지우는 것은 선택지가 아니라 되돌리기다.
+        val defaultBodyType = binding.editDefaultBodyType.text.toString().trim()
+            .ifEmpty { BodyAnalysisConfig.DEFAULT.defaultBodyType }
+
         return BodyAnalysisConfig(
             cupMapping = cupMapping,
-            // 아래 둘은 UI가 없다 — 기존값을 이어받지 않으면 저장할 때마다 조용히 기본값으로 돌아간다.
-            underbustEstimation = existingConfig?.underbustEstimation ?: BodyAnalysisConfig.DEFAULT.underbustEstimation,
-            defaultBodyType = existingConfig?.defaultBodyType ?: BodyAnalysisConfig.DEFAULT.defaultBodyType,
+            defaultBodyType = defaultBodyType,
             bodyTypeRules = bodyTypeRules,
             enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
             ribOffset = ribOffset,
@@ -2117,6 +2128,9 @@ class FieldEditDialog : DialogFragment() {
                 binding.spinnerBodyTypePreset.setSelection(2) // 사용자 정의
                 currentBodyTypeRules = bodyConfig.bodyTypeRules
             }
+            // 기본 체형 이름 복원 — 저장된 그대로 채운다(기본값도 보인다. 무엇이 쓰이고 있는지
+            // 칸을 열어 봐야 아는 상태로 두지 않는다 — 원칙 04).
+            binding.editDefaultBodyType.setText(bodyConfig.defaultBodyType)
             // 인사이트 토글 복원
             for ((key, switch) in insightToggleSwitches) {
                 switch.isChecked = bodyConfig.isInsightEnabled(key)

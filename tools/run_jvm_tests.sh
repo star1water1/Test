@@ -239,6 +239,7 @@ $MAIN/share/WorldPackageCodes.kt
 $MAIN/excel/ImportFileFormat.kt
 $MAIN/excel/FieldDefinitionPrune.kt
 $MAIN/excel/FieldScopeCell.kt
+$MAIN/excel/AppSettingsKeys.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -254,6 +255,7 @@ $TEST/excel/GradeSystemSheetTest.kt
 $TEST/excel/DefaultFieldSheetTest.kt
 $TEST/excel/FieldDefinitionPruneTest.kt
 $TEST/excel/FieldScopeCellTest.kt
+$TEST/excel/AppSettingsKeysTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
 $TEST/data/DuelGradeRefTest.kt
@@ -389,6 +391,7 @@ $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt
+$TEST/data/BodyAnalysisConfigKeysTest.kt
 $TEST/util/BodySilhouetteSpecTest.kt
 $TEST/util/BodyEditorModelTest.kt
 $TEST/util/BodyCupContractTest.kt

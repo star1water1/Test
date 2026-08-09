@@ -2,8 +2,10 @@ package com.novelcharacter.app.excel
 
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
+import kotlinx.coroutines.launch
 
 /**
  * 내보낼 항목을 고르는 다이얼로그의 **단일 소스**.
@@ -38,9 +40,53 @@ object ExportOptionsDialog {
             context = fragment.requireContext(),
             titleRes = R.string.export_options_title,
             initial = ExportOptions.ALL.toBooleanArray(),
-            onConfirm = onConfirm,
+            onConfirm = { options -> askAiKeyConsent(fragment, options, onConfirm) },
             onCancel = {}
         )
+    }
+
+    /**
+     * API 키를 함께 실을지 **따로** 묻는다 — 사용자 확정 3번 ㄴ1('기본 제외 + 별도 동의').
+     *
+     * **묻는 자리를 항목 목록 밖에 둔 이유**는 [ExportOptions.aiKeys]의 주석이 든다:
+     * 목록 안에 두면 '전체 선택' 한 번에 켜지고, 그것은 동의가 아니다.
+     *
+     * **키가 하나도 없으면 묻지 않는다.** 물을 것이 없는데 창을 하나 더 띄우면 그것은
+     * 마찰일 뿐이다(원칙 04) — 대부분의 내보내기가 여기 해당한다.
+     * '앱 설정'을 껐을 때도 묻지 않는다(시트 자체가 안 나간다).
+     */
+    private fun askAiKeyConsent(
+        fragment: Fragment,
+        options: ExportOptions,
+        onConfirm: (ExportOptions) -> Unit
+    ) {
+        if (!options.appSettings) {
+            onConfirm(options)
+            return
+        }
+        // *무엇이 비밀인가*는 카탈로그가 안다 — 이 창이 `AiKeyStore`를 직접 뒤지면 비밀이
+        // 늘 때 **묻는 쪽과 싣는 쪽이 갈린다**(그러면 동의 없이 새 비밀이 실린다).
+        // `lifecycleScope`(뷰가 아니라 프래그먼트의 것)를 쓴다 — `viewLifecycleOwner`는
+        // 뷰가 없는 순간에 부르면 던지는데, 이 창은 뷰를 건드리지 않고 다이얼로그만 띄운다.
+        fragment.lifecycleScope.launch {
+            val hasSecrets = AppSettingsBindings.hasStoredSecrets(fragment.requireContext())
+            if (!fragment.isAdded) return@launch
+            if (!hasSecrets) {
+                onConfirm(options)
+                return@launch
+            }
+            MaterialAlertDialogBuilder(fragment.requireContext())
+                .setTitle(R.string.export_ai_keys_title)
+                .setMessage(R.string.export_ai_keys_message)
+                // **기본이 '빼고'다** — 긍정 버튼이 안전한 쪽이어야 습관적인 확인이 키를 흘리지 않는다.
+                .setPositiveButton(R.string.export_ai_keys_exclude) { _, _ -> onConfirm(options) }
+                .setNegativeButton(R.string.export_ai_keys_include) { _, _ -> onConfirm(options.copy(aiKeys = true)) }
+                .setCancelable(true)
+                // 바깥을 탭해 닫아도 **빼는 쪽**으로 진행한다 — 되돌릴 수 없는 유출에서
+                // 침묵이 동의가 되어서는 안 된다(창을 닫았을 뿐인데 키가 나가면 안 된다).
+                .setOnCancelListener { onConfirm(options) }
+                .show()
+        }
     }
 
     /**

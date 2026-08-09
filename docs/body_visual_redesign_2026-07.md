@@ -122,8 +122,11 @@ enum class BodySlot { BUST, UNDERBUST, WAIST, HIP, SHOULDER, NONE }
 
 `UNDERBUST`(밑가슴)는 선택 슬롯이다 — 매핑돼 있으면 흉곽 폭과 컵 계산이 **실측 밑가슴**을
 쓰고(갈비뼈가 큰 캐릭터를 정확히 표현할 수 있다 — 4-1 분리 규정), 없으면 현행 근사
-(허리 + `ribOffset` 보정 — `BodyAnalysisConfig.underbustEstimation`이 이미 이 대체를
-예비해 둔 자리다)로 동작한다. 추론 라벨: `밑가슴`/`언더`/`underbust`.
+(허리 + `ribOffset` 보정)로 동작한다.
+**종전 이 자리는 `BodyAnalysisConfig.underbustEstimation`이 *"이미 이 대체를 예비해 둔
+자리"*라고 적고 있었는데, 그 설정은 2026.08.09에 없앴다**(B-95 — 값이 하나뿐이라 어떤
+분기도 그것을 읽지 않았다. *예비해 둔 자리*는 실제로는 **아무도 밟지 않는 자리**였고,
+대체를 실제로 낸 것은 이 절이 신설한 `UNDERBUST` 슬롯이다). 추론 라벨: `밑가슴`/`언더`/`underbust`.
 
 - 저장: `BodyAnalysisConfig`에 `partSlots: List<BodySlot>`(파트 인덱스 순) 추가 —
   config JSON `bodyAnalysis.partSlots` 배열. **기본값(추론과 같음)은 저장하지 않는다**
@@ -685,6 +688,8 @@ v1이 한 세션을 넘치면 자르는 선: 오버레이(P3) → **측면 뷰(P
    > **저장할 때마다 `collectBodyAnalysisConfig`가 `partSlots`를 조용히 지우던 것**
    > (엑셀로 넣은 연결이 필드를 한 번 저장하면 사라지는 자리였다).
    > 남은 둘(`underbustEstimation`·`defaultBodyType`)의 UI는 **B-95**로 등재.
+   > **→ 소진 (2026.08.09, B-95 구현).** 둘의 처분이 갈렸다: `underbustEstimation`은 **없앴고**
+   > (선택지가 하나뿐이면 설정이 아니다 — 사용자 확정 ㄱ2), `defaultBodyType`은 **칸이 됐다**.
 
    **설계를 한 곳 넓혔다**: 5-4-5의 드롭다운에 **밑가슴**을 넣었다(위 절 참조 — P4와 화면
    문구가 이미 약속한 경로였다). 실기기 확인 절은 **3-35**에 신설했다.

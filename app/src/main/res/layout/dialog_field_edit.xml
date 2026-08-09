@@ -940,6 +940,35 @@
                         android:fontFamily="monospace" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- 기본 체형 이름 (B-95) -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/body_default_type_title"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="12dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_body_default_type"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginBottom="4dp" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/body_default_type_hint">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editDefaultBodyType"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <!-- 인사이트 표시 토글 -->
                 <TextView
                     android:layout_width="wrap_content"

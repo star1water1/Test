@@ -27,10 +27,13 @@ enum class BodySlot { BUST, UNDERBUST, WAIST, HIP, SHOULDER, NONE }
  *
  * config에 "bodyAnalysis" 키가 없으면 DEFAULT를 사용하므로
  * 기존 데이터의 마이그레이션이 불필요하다.
+ *
+ * **파싱이 읽지 않는 키는 [unusedKeysIn]이 센다**(B-95 · P-5). 없앤 설정이 담긴 옛 파일을
+ * 들일 때 그 사실을 조용히 삼키지 않기 위해서다 — 세는 쪽이 [READ_KEYS] 하나이므로
+ * 키를 새로 읽기 시작하면 그 순간 '모르는 키'에서 빠진다(적어 두면 낡는 부류를 만들지 않는다).
  */
 data class BodyAnalysisConfig(
     val cupMapping: List<CupMappingEntry> = DEFAULT_CUP_MAPPING,
-    val underbustEstimation: String = "waist",
     val bodyTypeRules: List<BodyTypeRule> = DEFAULT_BODY_TYPE_RULES,
     val defaultBodyType: String = "보통체형",
     val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
@@ -89,6 +92,38 @@ data class BodyAnalysisConfig(
 
     companion object {
         private const val KEY = "bodyAnalysis"
+
+        /**
+         * [fromConfig]가 실제로 읽는 `bodyAnalysis` 키 전수 — [unusedKeysIn]의 기준이다.
+         *
+         * **여기 없는 키는 파싱이 통째로 버린다.** 그 사실을 세어 알리는 것이 P-5의 처분이고
+         * (B-95 — 없앤 `underbustEstimation`이 담긴 옛 파일이 실재한다), 알리지 않으면
+         * 사용자가 적어 둔 설정이 말없이 사라진다(개발 의도 2번).
+         *
+         * **키를 새로 읽기 시작하면 이 목록에 함께 넣을 것** — 빠뜨리면 멀쩡한 설정이
+         * *"더 이상 쓰지 않는 것"*으로 고지된다. 그 누락은 `BodyAnalysisConfigKeysTest`가
+         * 잡는다(내보내기가 쓰는 키를 그대로 되읽혀 '모르는 키' 0을 요구한다) —
+         * **손으로 대조하지 않아야 낡지 않는다.**
+         */
+        val READ_KEYS = setOf(
+            "cupMapping", "bodyTypeRules", "defaultBodyType", "ribOffset",
+            "bodyTagRules", "goldenRatioIdeals", "idealBody", "partSlots", "enabledInsights"
+        )
+
+        /**
+         * `bodyAnalysis`에 담겼으나 [fromConfig]가 읽지 않는 키 — 이름 그대로 돌려준다.
+         *
+         * 손상 JSON이나 `bodyAnalysis`가 없는 config는 **빈 목록**이다(잴 것이 없는 것과
+         * 버려지는 것은 다른 사실이고, 손상은 이미 가져오기가 따로 경고한다).
+         */
+        fun unusedKeysIn(configJson: String): List<String> = try {
+            val obj = JSONObject(configJson).optJSONObject(KEY)
+            if (obj == null) emptyList() else obj.keys().asSequence()
+                .filterNot { it in READ_KEYS }
+                .toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
         // 인사이트 키 상수
         const val INSIGHT_BODY_TYPE = "bodyType"
@@ -240,8 +275,6 @@ data class BodyAnalysisConfig(
                     }
                 }
 
-                val underbustEstimation = obj.optString("underbustEstimation", "waist")
-
                 // Body type rules
                 val bodyTypeRules = mutableListOf<BodyTypeRule>()
                 val rulesArr = obj.optJSONArray("bodyTypeRules")
@@ -356,7 +389,6 @@ data class BodyAnalysisConfig(
 
                 BodyAnalysisConfig(
                     cupMapping = cupMapping.ifEmpty { DEFAULT_CUP_MAPPING },
-                    underbustEstimation = underbustEstimation,
                     bodyTypeRules = bodyTypeRules.ifEmpty { DEFAULT_BODY_TYPE_RULES },
                     defaultBodyType = defaultBodyType,
                     enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights,
@@ -389,10 +421,6 @@ data class BodyAnalysisConfig(
                     })
                 }
                 put("cupMapping", cupArr)
-
-                if (config.underbustEstimation != "waist") {
-                    put("underbustEstimation", config.underbustEstimation)
-                }
 
                 // Body type rules
                 val rulesArr = JSONArray()
