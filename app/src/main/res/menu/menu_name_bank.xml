@@ -15,6 +15,13 @@
         android:visible="false"
         app:showAsAction="never" />
 
+    <!-- 은행이 소비 창고에서 생성 도구가 되는 자리 (B-123 · 설계 8-2 ⓒ).
+         B-124에서는 열 시트가 없어 빠져 있던 항목이다 — 이제 그 시트가 섰다. -->
+    <item
+        android:id="@+id/action_ai_name"
+        android:title="@string/name_bank_ai_create"
+        app:showAsAction="never" />
+
     <item
         android:id="@+id/action_select"
         android:title="@string/name_bank_select_mode"

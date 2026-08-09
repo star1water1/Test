@@ -216,6 +216,15 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     suspend fun getAllNovelsList(): List<com.novelcharacter.app.data.model.Novel> =
         app.novelRepository.getAllNovelsList()
 
+    /**
+     * [AI로 이름 만들기]가 고를 세계관 목록 (B-123 · 설계 8-2 ⓒ).
+     *
+     * 작품이 아니라 세계관인 것은 **이름의 결이 세계관 단위**이기 때문이다 — 같은 세계관의
+     * 여러 작품은 같은 이름 관행을 쓰고, 견본을 뜨는 조회도 세계관 단위다.
+     */
+    suspend fun getAllUniversesList(): List<com.novelcharacter.app.data.model.Universe> =
+        app.universeRepository.getAllUniversesList()
+
     /** 중복 사전 고지용 기존 캐릭터 이름 집합 (저장 규약과 동일하게 Character.name 기준) */
     suspend fun getExistingCharacterNames(): Set<String> =
         app.characterRepository.getAllCharactersList().mapTo(HashSet()) { it.name.trim() }

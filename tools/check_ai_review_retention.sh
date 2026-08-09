@@ -1,5 +1,5 @@
 #!/bin/bash
-# AI 검토 시트의 유료 응답 보존·고지 검사 (B-136 · B-140 · B-163 · B-144)
+# AI 검토 시트의 유료 응답 보존·고지 검사 (B-136 · B-140 · B-163 · B-144 · B-123)
 #
 # 배경: 이미지 일괄 AI 태깅의 검토 시트는 **이미 결제한 응답**을 들고 있다. 그런데 세 자리에서
 # 그것을 조용히 버리고 있었다.
@@ -33,6 +33,10 @@
 #         빈 값을 되살리며 통과한다.
 # ⑥ 필수: **제안도 고지도 없는 실행이 말없이 빠지지 않는다**(B-144) — 시트를 열지 않고
 #         `return`하는 그 블록이 사용자에게 한 줄이라도 말하는가.
+# ⑦ 필수: **이름 추천 시트도 같은 셋을 지킨다**(B-123) — 회전 보존(onSaveInstanceState) ·
+#         실행 엔진이 뷰 밖 · 재생성된 시트에 호스트가 콜백을 다시 붙이는가.
+#         **③④의 패턴은 이때 함께 조였다** — `onSaveInstanceState`는 접두만 맞아도,
+#         `val pool`은 지역 변수여도 통과하고 있었다(새 항목 자기 시험에서 실제로 새 나갔다).
 #
 # 사용법: tools/check_ai_review_retention.sh   # 위반 시 exit 1
 set -u
@@ -180,7 +184,7 @@ for sheet in "$SHEET" "$FOLDER_SHEET"; do
   if [ ! -f "$sheet" ]; then
     echo "  ✗ 등재된 시트가 없습니다: $sheet"
     fail=1
-  elif ! grep -q 'override fun onSaveInstanceState' "$sheet"; then
+  elif ! grep -q 'override fun onSaveInstanceState(' "$sheet"; then
     echo "  ✗ 검토 상태가 회전을 넘지 못합니다: $sheet"
     echo "      → onSaveInstanceState로 체크 상태를 지킬 것. 제안만 되살리면 사용자가 훑어"
     echo "        지운 일이 조용히 되돌아간다(B-136)."
@@ -305,11 +309,61 @@ if [ -f "$FRAGMENT" ]; then
   fi
 fi
 
+# ── ⑦ 이름 추천 시트도 같은 부류다 (B-123) ──
+# 라운드 후보는 **이미 결제한 응답**이고, 이 시트는 라운드가 쌓일수록 잃을 것이 커진다
+# (세 라운드면 후보 30개 + 그 위에 찍은 ♥·✕가 통째로 날아간다). 이미지 시트 둘과 축이
+# 셋으로 같아 여기서 함께 본다 — **규약으로만 적어 두면 다음 사람이 새 시트를 옛 모양으로 만든다**
+# (B-147이 커스텀 뷰 등재에서 실증한 그것).
+#   ⓐ 검토 상태(펼침)를 회전에 넘기는가 — onSaveInstanceState
+#   ⓑ 유료 응답과 **실행**이 뷰 밖(ViewModel)에 있는가 — 시트가 추천기를 직접 부르지 않는가
+#   ⓒ 재생성된 시트에 호스트가 콜백을 **다시 붙이는가** — 안 붙이면 [적용]이 죽은 버튼이다
+NAME_SHEET="$SRC/ui/namebank/NameSuggestSheet.kt"
+NAME_VM="$SRC/ui/namebank/NameSuggestViewModel.kt"
+NAME_HOST="$SRC/ui/character/CharacterEditFragment.kt"
+for f in "$NAME_SHEET" "$NAME_VM" "$NAME_HOST"; do
+  if [ ! -f "$f" ]; then
+    echo "  ✗ 등재된 파일이 없습니다: $f (이름이 바뀌었으면 이 검사를 함께 고칠 것)"
+    fail=1
+  fi
+done
+if [ -f "$NAME_SHEET" ] && [ -f "$NAME_VM" ] && [ -f "$NAME_HOST" ]; then
+  if ! grep -q 'override fun onSaveInstanceState(' "$NAME_SHEET"; then
+    echo "  ✗ 검토 상태가 회전을 넘지 못합니다: $NAME_SHEET"
+    echo "      → 펼침 상태를 onSaveInstanceState로 지킬 것. 후보만 되살아나면 30개를 훑던"
+    echo "        자리를 잃는다(B-136과 같은 부류)."
+    fail=1
+  fi
+  # 주석은 빼고 본다 — 이 저장소는 *왜 그러지 않는가*를 주석으로 남기는 관행이 있다.
+  if grep -vE '^[[:space:]]*(//|\*|/\*)' "$NAME_SHEET" | grep -q 'CharacterNameAiSuggester('; then
+    echo "  ✗ 유료 응답의 실행 엔진이 뷰에 있습니다: $NAME_SHEET"
+    echo "      → 추천기 호출은 ViewModel(runRound)만 한다. 시트가 직접 부르면 회전이"
+    echo "        결제 중인 요청을 끊는다(B-136)."
+    fail=1
+  fi
+  if ! grep -q 'val pool: LiveData' "$NAME_VM"; then
+    echo "  ✗ 유료 응답을 보관하는 자리가 없습니다: $NAME_VM (val pool: LiveData)"
+    echo "      → 지역 변수 \`val pool = …\`은 보관이 아니다. 선언 타입까지 보는 것은"
+    echo "        느슨한 패턴이 자기 시험에서 실제로 새 나갔기 때문이다(B-123)."
+    fail=1
+  fi
+  if ! grep -q 'viewModelScope.launch' "$NAME_VM"; then
+    echo "  ✗ 실행이 ViewModel 스코프에 있지 않습니다: $NAME_VM"
+    fail=1
+  fi
+  if ! grep -q 'findFragmentByTag(NameSuggestSheet.TAG)' "$NAME_HOST"; then
+    echo "  ✗ 재생성된 시트에 콜백을 다시 붙이지 않습니다: $NAME_HOST"
+    echo "      → 후보는 ViewModel이 들고 회전을 넘지만 **람다는 넘지 않는다.** 다시 붙이지"
+    echo "        않으면 [적용]이 눌리는데 아무 일도 안 나는 버튼이 된다(R-38)."
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
   echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"
   echo "  ✓ 빈 결과로 끝난 유료 실행도 말한다 (B-144)"
+  echo "  ✓ 이름 추천 시트도 같은 셋을 지킨다 (B-123)"
   echo ""
   echo "AI 검토 시트 유료 응답 보존·고지 검사 통과"
   exit 0

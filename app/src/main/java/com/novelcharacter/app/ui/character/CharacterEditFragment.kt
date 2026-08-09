@@ -42,6 +42,8 @@ import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
 import com.novelcharacter.app.ui.namebank.NameBankPickerSheet
+import com.novelcharacter.app.ui.namebank.NameSuggestSheet
+import com.novelcharacter.app.ui.namebank.NameSuggestViewModel
 import com.novelcharacter.app.ui.timeline.EventEditDialogFragment
 import com.novelcharacter.app.util.CharacterDraftPrefs
 import kotlinx.coroutines.launch
@@ -183,9 +185,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     private fun collectDraft(): CharacterDraftPrefs.Draft {
-        val novelPosition = binding.spinnerNovel.selectedItemPosition
-        val selectedNovelId =
-            if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else -1L
+        // 미지정을 -1L로 적는 것은 **드래프트 형식의 사정**이다(nullable을 쓰지 않는다) —
+        // 고르는 계산 자체는 저장 스냅샷과 같은 함수에서 온다.
+        val selectedNovelId = selectedNovelId() ?: -1L
         val fieldValues = formBuilder.widgetStateStrings()
         return CharacterDraftPrefs.Draft(
             name = binding.editName.text.toString(),
@@ -480,6 +482,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         setupRecommendations()
         setupSaveButton()
         setupNameBankButton()
+        setupNameSuggestButton()
         setupEventButton()
         setupChangeTracking()
 
@@ -899,6 +902,100 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     /**
+     * 이름 줄의 ✨ — AI 이름 추천 시트를 연다 (B-123 · 설계 7-1).
+     *
+     * **필드 ✨과 같은 문법이다**(새 문법을 만들지 않는다): 미설정이면 설정 경로를 안내하고,
+     * 결과는 폼 위젯에만 들어간다. 다만 대상이 필드가 아니라 엔티티 컬럼이라 추천기·시트가
+     * 따로다 — 필드 추천의 대상식(`bulkTargetsOf`)이 `FieldDefinition` 기반이기 때문이다.
+     *
+     * 시트는 `childFragmentManager`로 띄운다 — 재생성 뒤 [rebindNameSuggestSheet]가
+     * `findFragmentByTag`로 찾아 콜백을 다시 붙일 수 있어야 한다(R-38).
+     */
+    private fun setupNameSuggestButton() {
+        binding.btnNameSuggest.setOnClickListener {
+            // 미설정 안내는 두 진입이 같은 함수를 쓴다 — 들어온 문에 따라 다르게 말하지 않는다.
+            if (!NameSuggestSheet.guardProvider(this)) return@setOnClickListener
+            viewLifecycleOwner.lifecycleScope.launch {
+                val aiContext = buildAiContext()
+                val universe = viewModel.universeForNovel(selectedNovelId())
+                if (_binding == null || !isAdded) return@launch
+                if (childFragmentManager.isStateSaved) return@launch
+                val sheet = NameSuggestSheet()
+                sheet.setup(
+                    NameSuggestViewModel.Setup(
+                        character = aiContext,
+                        universeId = universe?.id,
+                        universeName = universe?.name.orEmpty(),
+                        title = aiContext.name.ifBlank { getString(R.string.add_character) },
+                        gender = currentGenderValue().orEmpty(),
+                        fixedSurname = binding.editLastName.text.toString().trim(),
+                        fixedGiven = binding.editFirstName.text.toString().trim()
+                    )
+                )
+                sheet.onApply = { mode, name -> applySuggestedName(mode, name) }
+                sheet.show(childFragmentManager, NameSuggestSheet.TAG)
+            }
+        }
+        rebindNameSuggestSheet()
+    }
+
+    /**
+     * 재생성된 시트에 콜백을 다시 붙인다 (R-38).
+     *
+     * 유료 응답과 표식은 시트의 ViewModel이 들고 회전을 넘지만 **람다는 넘지 않는다** —
+     * 다시 붙이지 않으면 [적용]이 눌리는데 아무 일도 안 나는 버튼이 된다
+     * (`ImageManagerFragment.bindAiTagReviewCallbacks`가 세운 선례).
+     */
+    private fun rebindNameSuggestSheet() {
+        (childFragmentManager.findFragmentByTag(NameSuggestSheet.TAG) as? NameSuggestSheet)
+            ?.onApply = { mode, name -> applySuggestedName(mode, name) }
+    }
+
+    /**
+     * 고른 이름을 폼 칸에 넣는다 — **모드가 칸을 정한다**(설계 7-3).
+     *
+     * 이명만 덧붙이기다: `anotherName`은 콤마 목록이라 덮어쓰면 이미 적어 둔 칭호가 사라진다.
+     * 나머지 셋은 한 칸에 하나뿐이라 갈아 끼운다.
+     *
+     * **[은행]에서 고른 항목([pendingNameBankEntryId])은 건드리지 않는다** — 이름을 고쳐
+     * 적은 것과 같은 사건이고, 그 처분은 저장 시점의 순수 판정이 이미 정해 두었다
+     * (`NameBankMatch.planOnSave` — 이름이 달라진 선택은 조용히 자동 대조로 넘어간다).
+     * 여기서 따로 지우면 손으로 고쳐 쓴 경우와 동작이 갈린다.
+     */
+    private fun applySuggestedName(mode: com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode, name: String) {
+        if (_binding == null) return
+        when (mode) {
+            com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode.FULL ->
+                binding.editName.setText(name)
+            com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode.GIVEN ->
+                binding.editFirstName.setText(name)
+            com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode.SURNAME ->
+                binding.editLastName.setText(name)
+            com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode.ALIAS -> {
+                val current = binding.editAnotherName.text.toString()
+                val parts = current.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                if (parts.none { it.equals(name, ignoreCase = true) }) {
+                    binding.editAnotherName.setText((parts + name).joinToString(", "))
+                }
+            }
+        }
+        hasUnsavedChanges = true
+        updateSaveButtonState()
+    }
+
+    /**
+     * 스피너가 가리키는 작품 id — 미지정이면 null.
+     *
+     * **이 계산은 이 화면에 네 벌로 흩어져 있었다**(저장 스냅샷 · 드래프트 · 사건 다이얼로그 ·
+     * 그리고 B-123이 더한 이름 추천). 같은 스피너를 네 곳이 각자 읽으면 위치 규칙(0번은
+     * '미지정')이 한 곳만 어긋나도 **다른 작품으로 저장된다.** 한 자리로 모은다.
+     */
+    private fun selectedNovelId(): Long? {
+        val position = binding.spinnerNovel.selectedItemPosition
+        return if (position > 0 && position - 1 < novels.size) novels[position - 1].id else null
+    }
+
+    /**
      * 폼에 지금 적혀 있는 성별 값 — [SemanticRole.GENDER]를 단 필드에서 읽는다. 없거나 비면 null이고, 그때 선택 시트의 성별 축은 무효다.
      *
      * **DB가 아니라 폼에서 읽는다** — 편집 중에 성별을 바꾼 사용자에게는 그쪽이 지금의 사실이다.
@@ -934,8 +1031,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     /** 저장 시점의 폼 입력 스냅샷 — 코디네이터가 최신 폼 기준으로 Character를 조립할 때 사용 */
     private fun formSnapshot(): CharacterSaveCoordinator.FormSnapshot {
-        val novelPosition = binding.spinnerNovel.selectedItemPosition
-        val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+        val selectedNovelId = selectedNovelId()
         return CharacterSaveCoordinator.FormSnapshot(
             name = binding.editName.text.toString(),
             firstName = binding.editFirstName.text.toString(),
@@ -956,8 +1052,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 Toast.makeText(requireContext(), R.string.save_character_first, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val novelPosition = binding.spinnerNovel.selectedItemPosition
-            val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+            val selectedNovelId = selectedNovelId()
             EventEditDialogFragment.show(
                 childFragmentManager,
                 preSelectedCharacterIds = setOf(characterId),
