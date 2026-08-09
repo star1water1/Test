@@ -25,6 +25,7 @@ import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsNameBankDetailBinding
+import com.novelcharacter.app.util.navigateSafe
 
 class StatsNameBankDetailFragment : Fragment() {
 
@@ -131,6 +132,12 @@ class StatsNameBankDetailFragment : Fragment() {
         }
     }
 
+    /**
+     * 미사용 이름 목록 — **표시 전용이던 자리에 행동 하나를 뒀다** (B-124 ⓒ).
+     *
+     * 종전에는 여기서 미사용 이름을 알아도 할 수 있는 일이 없어, 사용자가 은행 화면을
+     * 손으로 다시 찾아가야 했다(원칙 04의 마찰). 이름을 탭하면 은행으로 간다.
+     */
     private fun populateUnusedNames(names: List<String>) {
         val container = binding.listUnusedNames
         container.removeAllViews()
@@ -139,11 +146,16 @@ class StatsNameBankDetailFragment : Fragment() {
             return
         }
         names.take(30).forEach { name ->
-            container.addView(makeTextView(name))
+            container.addView(makeTextView(name, clickable = true))
         }
         if (names.size > 30) {
             container.addView(makeTextView(getString(R.string.stats_and_more, names.size - 30)))
         }
+        container.addView(makeTextView(getString(R.string.stats_name_bank_open), clickable = true))
+    }
+
+    private fun openNameBank() {
+        findNavController().navigateSafe(R.id.statsNameBankDetailFragment, R.id.nameBankFragment, null)
     }
 
     private fun setupGenderPieChart(data: Map<String, Int>) {
@@ -209,13 +221,22 @@ class StatsNameBankDetailFragment : Fragment() {
         }
     }
 
-    private fun makeTextView(text: String): TextView {
+    private fun makeTextView(text: String, clickable: Boolean = false): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
         val marginXs = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
         return TextView(requireContext()).apply {
             this.text = text
             textSize = textSizeSp
-            setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
+            setTextColor(
+                ContextCompat.getColor(
+                    requireContext(),
+                    if (clickable) R.color.primary_dark else R.color.on_surface
+                )
+            )
+            if (clickable) {
+                setPadding(0, marginXs, 0, marginXs)
+                setOnClickListener { openNameBank() }
+            }
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT

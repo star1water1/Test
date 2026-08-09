@@ -114,20 +114,40 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
-            <!-- Character name input -->
-            <com.google.android.material.textfield.TextInputLayout
+            <!-- Character name input + 이름은행 진입 (B-124 ⓐ).
+                 이름 줄 곁에 두는 이유는 이름을 정하는 자리가 여기이기 때문이다 —
+                 은행 화면까지 가서 고르고 돌아오는 왕복이 종전의 "따로 논다"의 절반이었다. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:hint="@string/character_name">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
 
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/editName"
-                    android:layout_width="match_parent"
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:inputType="text" />
+                    android:layout_weight="1"
+                    android:hint="@string/character_name">
 
-            </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnNameBank"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:minWidth="0dp"
+                    android:text="@string/tab_name_bank" />
+
+            </LinearLayout>
 
             <!-- First name / Last name row -->
             <LinearLayout

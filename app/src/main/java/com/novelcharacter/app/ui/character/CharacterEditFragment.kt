@@ -41,6 +41,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
+import com.novelcharacter.app.ui.namebank.NameBankPickerSheet
 import com.novelcharacter.app.ui.timeline.EventEditDialogFragment
 import com.novelcharacter.app.util.CharacterDraftPrefs
 import kotlinx.coroutines.launch
@@ -78,6 +79,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      * 재생성은 `savedInstanceState`가 맡는다(같은 내용을 담는다 — [saveFormState]).
      */
     private var pendingViewState: Bundle? = null
+
+    /**
+     * [은행] 시트에서 고른 이름은행 엔트리 id (B-124 ⓐ) — **저장 시점에** 사용 표시가 걸린다.
+     *
+     * 즉시 걸지 않는 것이 이 화면의 계약이다(취소하면 무해해야 한다 — `pendingDeletes`와 같다).
+     * 그래서 이것도 폼 상태이고, R-41이 요구하는 세 자리
+     * ([saveFormState]·[collectDraft]·[applyDraft])에 함께 등재돼 있다.
+     */
+    private var pendingNameBankEntryId: Long? = null
 
     // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
     private lateinit var formBuilder: DynamicFieldFormBuilder
@@ -148,6 +158,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         outState.putStringArrayList(STATE_PENDING_DELETES, ArrayList(imageStrip.pendingDeletes))
         outState.putString(STATE_REPRESENTATIVE, imageStrip.representativePath)
 
+        // "은행에서 이 항목을 골랐다"도 폼 상태다 (B-124 ⓐ · R-41). 이름 글자만 살아남고
+        // 어느 항목을 골랐는지가 사라지면 저장이 자동 대조로 조용히 강등된다 —
+        // 동명 항목이 둘일 때 고른 것과 다른 것이 걸리는, B-170과 같은 부류의 비대칭이다.
+        pendingNameBankEntryId?.let { outState.putLong(STATE_NAME_BANK_ENTRY, it) }
+
         // 미저장 입력 전체 — 복귀 시 무음 복원의 재료(B-169). 드래프트와 같은 그릇을 쓰는
         // 것은 적용 경로([applyDraft])를 하나로 두기 위해서다(두 벌이면 갈린다).
         if (hasUnsavedChanges && _binding != null && ::formBuilder.isInitialized) {
@@ -185,7 +200,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             savedAt = System.currentTimeMillis(),
             // B-170 — 이 둘이 빠져 있던 것이 결함의 본체다(Draft KDoc).
             pendingDeletePaths = imageStrip.pendingDeletes,
-            representativePath = imageStrip.representativePath
+            representativePath = imageStrip.representativePath,
+            // R-41 — 새 폼 상태 필드는 세 자리에 함께 등재한다(여기가 둘째).
+            nameBankEntryId = pendingNameBankEntryId
         )
     }
 
@@ -240,6 +257,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             )
         }
         draft.representativePath?.let { imageStrip.setRepresentativePath(it) }
+        // R-41 — 세 자리 중 셋째. null은 *고른 적 없다*이지 *고르기를 취소했다*가 아니다.
+        draft.nameBankEntryId?.let { pendingNameBankEntryId = it }
 
         // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용.
         // **빈 값 묶음은 보관하지 않는다** — 폼 적재 전에 담긴 드래프트가 그 모양인데,
@@ -409,6 +428,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                         ).show()
                     }
                 }
+                override fun requestedNameBankEntryId() = pendingNameBankEntryId
+                override fun onNameBankLinkApplied() {
+                    // 한 저장이 한 번만 쓴다 — 남겨 두면 다음 저장이 옛 선택을 다시 걸려 든다.
+                    pendingNameBankEntryId = null
+                }
             }
         )
         saveCoordinator.registerResultListeners() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록
@@ -455,6 +479,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         setupImageButton()
         setupRecommendations()
         setupSaveButton()
+        setupNameBankButton()
         setupEventButton()
         setupChangeTracking()
 
@@ -525,6 +550,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             )
         }
         state.getString(STATE_REPRESENTATIVE)?.let { imageStrip.setRepresentativePath(it) }
+        // 은행에서 고른 항목 (B-124 ⓐ). `containsKey`로 보는 이유는 **없는 것과 0이 다른
+        // 사실**이기 때문이다 — `getLong`의 기본값 0L을 그대로 받으면 고른 적 없는 폼이
+        // *id 0번을 골랐다*고 말하게 된다(R-36이 엑셀 열에서 가른 것과 같은 축).
+        if (state.containsKey(STATE_NAME_BANK_ENTRY)) {
+            pendingNameBankEntryId = state.getLong(STATE_NAME_BANK_ENTRY)
+        }
     }
 
     /**
@@ -817,6 +848,74 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     /**
+     * 이름 줄의 [은행] — 창고에서 꺼내고 넣는 두 방향을 한 창에 연다 (B-124 ⓐ).
+     *
+     * 고른 것을 **즉시 쓰지 않는다**: 이름 칸만 채우고 [pendingNameBankEntryId]에 담아
+     * 저장 시점에 사용 표시가 걸린다(편집 취소 계약). 반대로 **담기는 즉시 쓴다** —
+     * 그쪽은 캐릭터 편집과 무관한 창고 조작이라 취소로 되돌릴 대상이 아니다.
+     */
+    private fun setupNameBankButton() {
+        binding.btnNameBank.setOnClickListener {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val (entries, usedByNames) = viewModel.nameBankPickerData()
+                if (_binding == null || !isAdded) return@launch
+                // 상태 저장 후면 show()가 IllegalStateException — 생략해도 1탭으로 재시도된다
+                // (주입식 시트 공통 계약, `openBulkRegisterSheet`와 같은 가드).
+                if (parentFragmentManager.isStateSaved) return@launch
+                val sheet = NameBankPickerSheet()
+                sheet.setup = NameBankPickerSheet.Setup(
+                    entries = entries,
+                    usedByNames = usedByNames,
+                    preferredGender = currentGenderValue(),
+                    currentName = binding.editName.text.toString()
+                )
+                sheet.onPick = { entry ->
+                    if (_binding != null) {
+                        binding.editName.setText(entry.name)
+                        // 사용 중인 항목은 걸리지 않으므로(빼앗기 금지) 들고 갈 필요가 없다 —
+                        // 들고 가면 저장 때 "옮기지 않았습니다" 고지만 한 번 더 뜬다.
+                        pendingNameBankEntryId = if (entry.isUsed) null else entry.id
+                        hasUnsavedChanges = true
+                        updateSaveButtonState()
+                    }
+                }
+                sheet.onSaveCurrent = { name ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val ctx = context?.applicationContext
+                        try {
+                            viewModel.saveNameToBank(name, currentGenderValue().orEmpty())
+                            ctx?.let {
+                                Toast.makeText(it, getString(R.string.name_bank_save_current_done, name), Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("CharacterEditFragment", "Failed to save name to bank", e)
+                            ctx?.let { Toast.makeText(it, R.string.name_bank_save_current_failed, Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                }
+                sheet.show(parentFragmentManager, NameBankPickerSheet.TAG)
+            }
+        }
+    }
+
+    /**
+     * 폼에 지금 적혀 있는 성별 값 — [SemanticRole.GENDER]를 단 필드에서 읽는다. 없거나 비면 null이고, 그때 선택 시트의 성별 축은 무효다.
+     *
+     * **DB가 아니라 폼에서 읽는다** — 편집 중에 성별을 바꾼 사용자에게는 그쪽이 지금의 사실이다.
+     * **라벨로 추측하지 않는다**(R-20) — 역할 표식이 유일한 근거다.
+     */
+    private fun currentGenderValue(): String? {
+        if (!::formBuilder.isInitialized) return null
+        val genderField = formBuilder.fieldDefinitions.firstOrNull {
+            SemanticRole.fromConfig(it.config) == SemanticRole.GENDER
+        } ?: return null
+        return formBuilder.collectFieldValues(characterId)
+            .firstOrNull { it.fieldDefinitionId == genderField.id }
+            ?.value
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * AI 추천 컨텍스트 조립 — 규칙은 [CharacterAiContextBuilder]가 단일 소스다
      * (보충 랜덤 탭 인라인 편집과 공유 — 복사하면 두 화면의 추천 근거가 갈린다).
      */
@@ -1037,5 +1136,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         /** 미저장 입력 전체(드래프트 JSON) — 화면 이동·회전 복귀의 무음 복원 재료 (B-169). */
         const val STATE_DRAFT = "silentRestoreDraft"
+
+        /** [은행]에서 고른 항목 (B-124 ⓐ) — 저장 시점에 쓰이므로 저장 전까지 살아 있어야 한다. */
+        const val STATE_NAME_BANK_ENTRY = "nameBankEntryId"
     }
 }

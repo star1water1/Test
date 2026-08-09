@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 은행 선택 시트의 한 줄 (B-124 ⓐ). 은행 화면의 item_name_bank와 갈라 두는 이유는
+     쓰임이 다르기 때문이다 — 그쪽은 창고 관리(선택 체크·메모)이고 이쪽은 고르기다. -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="8dp"
-    android:layout_marginVertical="4dp"
+    android:layout_marginVertical="3dp"
     app:cardCornerRadius="8dp">
 
     <LinearLayout
@@ -19,16 +20,6 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
-
-            <!-- 일괄 캐릭터 등록 선택 모드 체크 (탭은 카드 전체가 받는다) -->
-            <CheckBox
-                android:id="@+id/selectCheckBox"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:clickable="false"
-                android:focusable="false"
-                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/nameText"
@@ -50,6 +41,7 @@
                 android:textAppearance="@style/TextAppearance.App.Caption"
                 android:visibility="gone" />
 
+            <!-- 사용 중임을 숨기지 않는다 — 고를 수는 있으나 사용 표시는 안 옮긴다는 사실을 함께 말한다 -->
             <TextView
                 android:id="@+id/usedIndicator"
                 android:layout_width="wrap_content"
@@ -64,29 +56,8 @@
 
         </LinearLayout>
 
-        <!-- 누가 쓰는가 (B-124 ⓒ) — 종전에는 이 연결이 **엑셀 시트에만** 있었다.
-             탭하면 그 캐릭터로 간다(역방향 이동). -->
         <TextView
-            android:id="@+id/usedByText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:paddingVertical="4dp"
-            android:textAppearance="@style/TextAppearance.App.BodySmall"
-            android:textColor="@color/primary_dark"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/originText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="@style/TextAppearance.App.BodySmall"
-            android:textColor="@color/text_secondary"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/notesText"
+            android:id="@+id/subText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"

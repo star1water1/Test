@@ -43,7 +43,19 @@ object CharacterDraftPrefs {
          * 저장하면 지정이 사라졌다. null = 기록되지 않음(DB 값 유지) · "" = 명시적 지정 없음 —
          * 둘을 가르는 것이 nullable의 몫이다.
          */
-        val representativePath: String? = null
+        val representativePath: String? = null,
+        /**
+         * [은행] 시트에서 고른 이름은행 엔트리 id (B-124 ⓐ).
+         *
+         * 고른 것은 **저장 시점에** 사용 표시가 걸리므로(편집 취소 계약), 저장 전에 화면을
+         * 떠났다 오면 *이름 칸의 글자는 남았는데 어느 항목을 고른 것인지만 사라지는* 비대칭이
+         * 된다 — B-170이 겪은 그 모양이라 처방도 같다(R-41: 새 폼 상태 필드는
+         * `saveFormState`·`collectDraft`·`applyDraft` 세 자리에 함께 등재한다).
+         *
+         * **nullable인 것이 그 규약의 요구다** — null = *고른 적 없다*(자동 대조만 받는다).
+         * 옛 드래프트에는 이 칸이 없어 Gson이 null을 주입하는데, 그것이 정확히 옳은 뜻이다(R-2).
+         */
+        val nameBankEntryId: Long? = null
     )
 
     private fun prefs(context: Context) =

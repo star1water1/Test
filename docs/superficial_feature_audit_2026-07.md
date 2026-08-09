@@ -276,7 +276,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 | 하 | 조용한 실패 | `CharacterStateChangeDao.kt:67` | 필드 키 변경 자동 마이그레이션이 미분류(작품 미배정) 캐릭터의 상태변화 이력을 제외 — 알려진 백로그 B-13 | B-13 |
 | 하 | 원칙 위반 | `AssistantProviders.kt:385` | '사용됨'의 정의가 화면마다 다름 — 은행·통계는 isUsed, 어시스턴트 넛지는 usedByCharacterId |  |
 | 하 | 원칙 위반 | `NameBankFragment.kt:248` | 이름은행 성별 입력이 고정 3옵션 스피너 — 열린 구조 원칙과 어긋나는 닫힌 어휘 |  |
-| 하 | 죽은 코드/미배선 | `NameBankDao.kt:22` | 이름은행 데이터 계층의 죽은 코드 4건 — searchNames·insertAll·getAllNameBankList·getAvailableNamesList |  |
+| 하 | 죽은 코드/미배선 | `NameBankDao.kt:22` | 이름은행 데이터 계층의 죽은 코드 4건 — searchNames·insertAll·getAllNameBankList·getAvailableNamesList | ✅ **처리 완료 (2026.08.09, B-124 ⓓ)** — 설계가 정한 처분(*"걷거나 쓰임을 단다"*)대로 갈랐다. **걷어낸 둘:** `searchNames`(은행 화면의 검색은 VM이 메모리에서 거른다 — DAO LiveData 판은 처음부터 소비처가 없었다) · `NameBankDao.insertAll`(일괄 삽입 경로가 전부 단건 `insert`를 쓴다). **쓰임을 단 둘:** `getAvailableNamesList`는 편집 폼 [은행] 선택 시트가, `getAllNameBankList`는 성별 자유 입력의 제안 목록이 소비한다. **함께 닫힌 미배선 하나:** `markAsUsed`(API·결과 문구는 있고 진입점만 없던 자리)에 은행 행 롱클릭 **[사용 처리]**가 붙었다. |
 | 하 | 죽은 코드/미배선 | `AiProviderStore.kt:50` | AiProviderConfig.updatedAt — 저장·직렬화만 되고 어디서도 읽히지 않는 설정값 |  |
 | 하 | 껍데기 구현 | `AiProtocolCodec.kt:131` | baseUrl 유연 수용이 OPENAI_COMPAT에만 구현 — Anthropic·Gemini는 /v1 포함 주소 입력 시 전 호출 404 |  |
 | 하 | 조용한 실패 | `AiKeyStore.kt:32` | AiKeyStore.putKey — 암호화 실패 무방비: 복호화는 방어하면서 저장은 예외 시 크래시 |  |

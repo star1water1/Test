@@ -29,12 +29,14 @@ class BulkRegisterPlannerTest {
     private fun options(
         mapGender: Boolean = true,
         genderOptions: List<String> = listOf("남", "여", "?"),
+        genderFreeText: Boolean = false,
         includeOriginNotes: Boolean = true,
         policy: DuplicatePolicy = DuplicatePolicy.REGISTER_ALL
     ) = BulkRegisterPlanner.Options(
         novelId = 1L,
         mapGender = mapGender,
         genderOptions = genderOptions,
+        genderFreeText = genderFreeText,
         includeOriginNotes = includeOriginNotes,
         originPrefixFormat = "출처: %1\$s",
         policy = policy
@@ -77,6 +79,29 @@ class BulkRegisterPlannerTest {
     fun gender_blank_notRecordedNotCounted() {
         // "미지정"("")을 "?"로 임의 변환하지 않는다 — 두 값은 다른 의미 (R-11)
         val plan = BulkRegisterPlanner.plan(listOf(entry("가", gender = "")), emptySet(), options())
+        assertNull(plan.toCreate[0].genderValue)
+        assertEquals(0, plan.genderUnmatched)
+    }
+
+    @Test
+    fun gender_freeTextField_recordedWithoutOptionCheck() {
+        // 자유 입력(TEXT) 성별 필드에는 허용 값 목록이 없어 거를 근거가 없다 (B-124 ⓓ).
+        // 이 칸이 없던 동안 GENDER 역할을 TEXT 필드에 달아도 아무 일도 일어나지 않았다.
+        val plan = BulkRegisterPlanner.plan(
+            listOf(entry("가", gender = "무성")), emptySet(),
+            options(genderOptions = emptyList(), genderFreeText = true)
+        )
+        assertEquals("무성", plan.toCreate[0].genderValue)
+        assertEquals(0, plan.genderUnmatched)
+    }
+
+    @Test
+    fun gender_freeTextField_blankStillNotRecorded() {
+        // 자유 입력이어도 빈 값은 기록하지 않는다 — "미지정"은 값이 아니다 (R-11 그대로).
+        val plan = BulkRegisterPlanner.plan(
+            listOf(entry("가", gender = "")), emptySet(),
+            options(genderOptions = emptyList(), genderFreeText = true)
+        )
         assertNull(plan.toCreate[0].genderValue)
         assertEquals(0, plan.genderUnmatched)
     }

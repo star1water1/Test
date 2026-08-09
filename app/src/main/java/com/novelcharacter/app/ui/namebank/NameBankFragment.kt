@@ -8,19 +8,21 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
-import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.databinding.FragmentNameBankBinding
 import com.novelcharacter.app.ui.adapter.NameBankAdapter
+import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.Job
@@ -85,7 +87,8 @@ class NameBankFragment : Fragment() {
         adapter = NameBankAdapter(
             onClick = { entry -> showEditDialog(entry) },
             onLongClick = { entry -> showOptionsDialog(entry) },
-            onToggleSelect = { entry -> toggleSelection(entry) }
+            onToggleSelect = { entry -> toggleSelection(entry) },
+            onOpenCharacter = { characterId -> openCharacter(characterId) }
         )
         binding.nameBankRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.nameBankRecyclerView.adapter = adapter
@@ -143,8 +146,13 @@ class NameBankFragment : Fragment() {
         }
     }
 
-    private fun openBulkRegisterSheet() {
-        val ids = selectedIds.toList()
+    /**
+     * 일괄 등록 시트 — 선택 모드의 여러 건과 **롱클릭의 단건**이 같은 경로를 탄다.
+     *
+     * 설계 8-2 ⓒ가 *"기존 일괄 등록 계획기의 단건판 — 새 기계 없음"*이라 적은 자리다.
+     * 갈라 두면 중복 정책·성별 기록·결과 집계가 두 벌이 되고, 그 둘은 반드시 어긋난다.
+     */
+    private fun openBulkRegisterSheet(ids: List<Long> = selectedIds.toList()) {
         if (ids.isEmpty()) {
             Toast.makeText(requireContext(), R.string.name_bank_bulk_select_first, Toast.LENGTH_SHORT).show()
             return
@@ -168,7 +176,7 @@ class NameBankFragment : Fragment() {
             )
             sheet.onConfirm = { novelId, mapGender, includeOriginNotes, policy ->
                 viewModel.bulkRegister(ids, novelId, mapGender, includeOriginNotes, policy)
-                exitSelectionMode()
+                if (selectionMode) exitSelectionMode()
             }
             sheet.show(parentFragmentManager, BulkRegisterBottomSheet.TAG)
         }
@@ -245,6 +253,9 @@ class NameBankFragment : Fragment() {
             }
         }
 
+        // 사용 캐릭터 이름표 (B-124 ⓒ) — 링크가 바뀌면 함께 바뀐다
+        viewModel.usedByNames.observe(viewLifecycleOwner) { adapter.setUsedByNames(it) }
+
         // 삭제된 엔트리만 선택에서 정리 — 은행 전체 기준 (표시 필터와 무관)
         viewModel.allEntries.observe(viewLifecycleOwner) { all ->
             if (!selectionMode) return@observe
@@ -268,19 +279,24 @@ class NameBankFragment : Fragment() {
         val context = requireContext()
         val layout = LayoutInflater.from(context).inflate(R.layout.dialog_name_bank_edit, null)
         val editName = layout.findViewById<TextInputEditText>(R.id.editNameBank)
-        val spinnerGender = layout.findViewById<Spinner>(R.id.spinnerGender)
+        val editGender = layout.findViewById<MaterialAutoCompleteTextView>(R.id.editGender)
         val editOrigin = layout.findViewById<TextInputEditText>(R.id.editOrigin)
         val editNotes = layout.findViewById<TextInputEditText>(R.id.editNotes)
 
-        val genderOptions = listOf(getString(R.string.gender_unspecified), getString(R.string.gender_male), getString(R.string.gender_female))
-        spinnerGender.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, genderOptions).also {
-            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        // 성별은 고정 3옵션 스피너였다 (B-124 ⓓ) — 창작자가 정하는 축을 셋으로 닫아 둔 자리라
+        // 열린 구조(원칙 01)에 어긋났다. 기본 둘은 제안으로 남기고, **은행이 이미 쓰고 있는 값**을
+        // 함께 올린다(사용자가 만든 어휘가 다음에도 한 번에 나온다).
+        val defaultGenders = listOf(getString(R.string.gender_male), getString(R.string.gender_female))
+        editGender.setSimpleItems(defaultGenders.toTypedArray())
+        viewLifecycleOwner.lifecycleScope.launch {
+            val used = viewModel.getGenderSuggestions()
+            if (!isAdded) return@launch
+            editGender.setSimpleItems((defaultGenders + used).distinct().toTypedArray())
         }
 
         if (existing != null) {
             editName.setText(existing.name)
-            val genderIndex = genderOptions.indexOf(existing.gender)
-            if (genderIndex >= 0) spinnerGender.setSelection(genderIndex)
+            editGender.setText(existing.gender, false)
             editOrigin.setText(existing.origin)
             editNotes.setText(existing.notes)
         }
@@ -298,8 +314,7 @@ class NameBankFragment : Fragment() {
                 Toast.makeText(context, R.string.enter_name, Toast.LENGTH_SHORT).show()
                 return@setValidatedPositiveButton false
             }
-            val gender = if (spinnerGender.selectedItemPosition > 0)
-                genderOptions[spinnerGender.selectedItemPosition] else ""
+            val gender = editGender.text.toString().trim()
             val origin = editOrigin.text.toString().trim()
             val notes = editNotes.text.toString().trim()
 
@@ -321,10 +336,20 @@ class NameBankFragment : Fragment() {
         val editStr = getString(R.string.edit)
         val deleteStr = getString(R.string.delete)
         val markAvailableStr = getString(R.string.mark_as_available)
+        val markUsedStr = getString(R.string.name_bank_mark_used)
+        val createCharacterStr = getString(R.string.name_bank_create_character)
+        val openCharacterStr = getString(R.string.name_bank_open_character)
         val selectModeStr = getString(R.string.name_bank_select_mode)
         val options = mutableListOf(editStr, deleteStr)
         if (entry.isUsed) {
             options.add(markAvailableStr)
+            // 목록 줄 탭으로도 가지만 롱클릭 메뉴에도 둔다 — 줄에 이름표가 없는 상태
+            // (캐릭터를 못 찾는 경우)에서는 탭할 자리가 없다.
+            if (entry.usedByCharacterId != null) options.add(openCharacterStr)
+        } else {
+            // 죽어 있던 `markAsUsed`가 여기서 UI 진입점을 얻는다 (B-124 ⓒ·ⓓ).
+            options.add(markUsedStr)
+            options.add(createCharacterStr)
         }
         options.add(selectModeStr)
 
@@ -341,10 +366,41 @@ class NameBankFragment : Fragment() {
                             .show()
                     }
                     markAvailableStr -> viewModel.markAsAvailable(entry.id)
+                    markUsedStr -> showMarkUsedPicker(entry)
+                    createCharacterStr -> openBulkRegisterSheet(listOf(entry.id))
+                    openCharacterStr -> entry.usedByCharacterId?.let { openCharacter(it) }
                     selectModeStr -> enterSelectionMode(entry)
                 }
             }
             .show()
+    }
+
+    /**
+     * [사용 처리] — 이 이름을 쓰는 캐릭터를 고른다 (B-124 ⓒ).
+     *
+     * `markAsUsed` API와 결과 문구는 처음부터 있었고 **진입점만 없었다**(감사 문서 등재분).
+     */
+    private fun showMarkUsedPicker(entry: NameBankEntry) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val characters = viewModel.getAllCharactersList()
+            if (!isAdded || _binding == null) return@launch
+            if (characters.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.name_bank_mark_used_no_characters, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val labels = characters.map { it.name }.toTypedArray()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.name_bank_mark_used_pick)
+                .setItems(labels) { _, which -> viewModel.markAsUsed(entry.id, characters[which].id) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    /** 사용 캐릭터로 이동 — 지금까지 엑셀 시트에만 있던 연결을 화면으로 (B-124 ⓒ). */
+    private fun openCharacter(characterId: Long) {
+        val bundle = Bundle().apply { putLong("characterId", characterId) }
+        findNavController().navigateSafe(R.id.nameBankFragment, R.id.characterDetailFragment, bundle)
     }
 
     override fun onDestroyView() {

@@ -8,6 +8,7 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
+import com.novelcharacter.app.data.repository.NameBankLinkOutcome
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.DuelAiContext
@@ -1316,6 +1317,69 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 app.fieldValueLibraryRepository.addEntry(fd.id, token)
             }
         }
+    }
+
+    // ===== 이름은행 연계 (B-124) =====
+
+    /**
+     * 저장된 캐릭터 이름을 이름은행과 대조해 사용 링크를 맞춘다 (ⓑ — Q7 확정: 자동 + 고지).
+     *
+     * 판정은 순수 계층([com.novelcharacter.app.util.NameBankMatch])이 하고 여기서는 **읽고
+     * 쓰기만** 한다. 조회와 쓰기가 한 트랜잭션인 이유는 *풀고 거는 것이 한 사실*이라서다 —
+     * 갈라지면 이름을 바꾼 저장이 옛 링크만 풀고 새 링크를 못 건 상태로 남을 수 있다.
+     *
+     * **실패해도 저장을 되돌리지 않는다** — 캐릭터는 이미 저장됐고 은행 링크는 부가 정보다.
+     * 다만 조용히 넘기지도 않는다: 호출측이 [NameBankLinkOutcome]으로 결과를 받아 한 줄 고지한다.
+     *
+     * @param requestedEntryId 편집 폼의 [은행] 시트에서 고른 엔트리(ⓐ). 없으면 자동 대조만.
+     */
+    suspend fun applyNameBankLink(
+        characterId: Long,
+        savedName: String,
+        requestedEntryId: Long?
+    ): NameBankLinkOutcome = app.database.withTransaction {
+        val candidates = app.nameBankRepository.findByName(savedName)
+        val linked = app.nameBankRepository.getEntriesUsedByCharacter(characterId)
+        val plan = com.novelcharacter.app.util.NameBankMatch.planOnSave(
+            savedName = savedName,
+            characterId = characterId,
+            requestedEntryId = requestedEntryId,
+            candidates = candidates,
+            currentlyLinked = linked
+        )
+        for (id in plan.releaseEntryIds) app.nameBankRepository.markNameBankAsAvailable(id)
+        val linkedName = plan.linkEntryId?.let { id ->
+            app.nameBankRepository.markNameBankAsUsed(id, characterId)
+            candidates.firstOrNull { it.id == id }?.name
+        }
+        NameBankLinkOutcome(
+            linkedName = linkedName,
+            releasedCount = plan.releaseEntryIds.size,
+            requestedTaken = plan.requestedTaken
+        )
+    }
+
+    /**
+     * [은행] 선택 시트의 재료 (ⓐ) — 은행 전체와 *누가 쓰는가*의 이름표.
+     *
+     * **미사용만 주지 않는다.** 사용 중인 것도 보여야 사용자가 *"내가 등록한 이름이 왜 없지"*를
+     * 겪지 않는다(원칙 04). 고를 수는 있고 사용 표시만 안 옮긴다 — 그 판정은 `NameBankMatch`다.
+     */
+    suspend fun nameBankPickerData(): Pair<List<com.novelcharacter.app.data.model.NameBankEntry>, Map<Long, String>> {
+        val entries = app.database.nameBankDao().getAllNamesList()
+        val usedIds = entries.mapNotNull { it.usedByCharacterId }.toSet()
+        val names = if (usedIds.isEmpty()) emptyMap() else
+            characterRepository.getAllCharactersList()
+                .filter { it.id in usedIds }
+                .associate { it.id to it.name }
+        return entries to names
+    }
+
+    /** 역방향 담기 (ⓐ) — 폼의 이름을 은행에 넣는다. 성별은 GENDER 역할 필드의 현재 값을 그대로 싣는다. */
+    suspend fun saveNameToBank(name: String, gender: String) {
+        app.nameBankRepository.insertNameBankEntry(
+            com.novelcharacter.app.data.model.NameBankEntry(name = name.trim(), gender = gender.trim())
+        )
     }
 
     /** restricted 필드의 허용 값 미리보기 (다이얼로그 안내용) */

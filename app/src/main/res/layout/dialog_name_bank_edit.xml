@@ -25,18 +25,32 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- 성별은 고정 3옵션 스피너였다 (B-124 ⓓ — 감사 문서 등재분).
+             창작자가 정하는 축을 개발자가 셋으로 닫아 둔 자리라 열린 구조(원칙 01)에 어긋났다.
+             제안은 뜨되 목록 밖의 값도 그대로 적힌다. -->
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/gender_label"
+            android:hint="@string/name_bank_gender_hint">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/editGender"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:completionThreshold="0" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 목적문 — "무엇이 어디서 어떻게" (새 기능 체크리스트 7) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="@string/name_bank_gender_purpose"
             android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
-
-        <Spinner
-            android:id="@+id/spinnerGender"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginBottom="8dp" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

@@ -18,8 +18,23 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE isUsed = 0 ORDER BY createdAt DESC")
     suspend fun getAvailableNamesList(): List<NameBankEntry>
 
-    @Query("SELECT * FROM name_bank WHERE name LIKE '%' || :query || '%' ESCAPE '\\' OR notes LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY createdAt DESC")
-    fun searchNames(query: String): LiveData<List<NameBankEntry>>
+    /**
+     * 이름이 같은 엔트리 — 저장 시 자동 대조의 후보 조회 (B-124 ⓑ).
+     *
+     * **조건이 [com.novelcharacter.app.util.NameBankMatch.normalize]와 한 벌이다:**
+     * 앞뒤 공백을 걷고(`TRIM`) ASCII 대소문자를 접는다(`COLLATE NOCASE`). 순수 규칙을
+     * 유니코드 전체로 넓히면 이 조회가 후보를 주지 않는 자리에서 판정만 일치해 어긋난다 —
+     * 그래서 좁은 쪽(SQL)에 맞춰 두었고, 그 사실을 양쪽 KDoc과 하네스가 함께 잠근다.
+     *
+     * 최종 판정은 여기가 아니라 `NameBankMatch.planOnSave`다 — 이 조회는 **후보를 좁히는
+     * 것까지만** 한다(넓게 줘도 무해하도록 그쪽이 다시 거른다).
+     *
+     * `name`에는 색인이 없어 작은 표 전수 훑기다. 저장마다 1회이고 목표 규모(×30)에서
+     * 1,230행이라 새 비용 축이 아니다 — 색인을 더하려면 마이그레이션이 따라오므로
+     * 실사용이 요구할 때 연다(설계 8-4의 *"색인 있는 작은 표"*는 실제 스키마와 달랐다).
+     */
+    @Query("SELECT * FROM name_bank WHERE TRIM(name) = :name COLLATE NOCASE")
+    suspend fun findByName(name: String): List<NameBankEntry>
 
     /** 엑셀 가져오기 왕복 매칭용 코드 조회 (F3-D) */
     @Query("SELECT * FROM name_bank WHERE code = :code LIMIT 1")
@@ -55,9 +70,6 @@ interface NameBankDao {
 
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId = :characterId")
     suspend fun resetUsageByCharacter(characterId: Long)
-
-    @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insertAll(entries: List<NameBankEntry>)
 
     /** 여러 캐릭터의 이름뱅크 사용 상태 일괄 해제 (배치 삭제용) */
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId IN (:characterIds)")
