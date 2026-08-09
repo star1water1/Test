@@ -17,8 +17,17 @@ object BulkRegisterPlanner {
     data class Options(
         val novelId: Long?,
         val mapGender: Boolean,
-        /** 대상 세계관 성별 필드의 SELECT 옵션 — 없으면 빈 목록(매핑 무효) */
+        /** 대상 세계관 성별 필드의 SELECT 옵션 — 없으면 빈 목록(기록 무효) */
         val genderOptions: List<String>,
+        /**
+         * 성별 필드가 **자유 입력**인가 (B-124 ⓓ).
+         *
+         * 옵션 대조는 SELECT의 계약이지 모든 필드의 계약이 아니다 — TEXT 필드에는 허용 값
+         * 목록이 없으므로 걸러 낼 근거도 없다. 이 칸이 없던 동안 `SemanticRole.GENDER`를
+         * TEXT 필드에 달아도 **아무 일도 일어나지 않았다**(고를 수는 있는데 동작하지 않는
+         * 자리 — R-40의 주석이 짚은 그 부류).
+         */
+        val genderFreeText: Boolean = false,
         val includeOriginNotes: Boolean,
         /** 출처 표기 접두 형식 (예: "출처: %1$s") — 호출측이 리소스에서 주입 */
         val originPrefixFormat: String,
@@ -85,7 +94,8 @@ object BulkRegisterPlanner {
             if (entry.isUsed) alreadyUsed++
 
             val genderValue: String? = if (options.mapGender && entry.gender.isNotBlank()) {
-                if (entry.gender in options.genderOptions) {
+                // 자유 입력 필드는 허용 값 목록이 없어 거를 근거가 없다 — 그대로 기록한다.
+                if (options.genderFreeText || entry.gender in options.genderOptions) {
                     entry.gender
                 } else {
                     genderUnmatched++

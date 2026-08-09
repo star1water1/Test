@@ -160,6 +160,54 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     suspend fun getAvailableNamesList(): List<NameBankEntry> =
         nameBankRepository.getAvailableNameBankList()
 
+    // ===== 사용 캐릭터 표시·행동 (B-124 ⓒ) =====
+
+    /**
+     * 사용 캐릭터 id → 이름 (행 표시용).
+     *
+     * `allEntries`에 맞물려 갱신된다 — 링크가 바뀌면 이름표도 함께 바뀌어야 한다.
+     * 캐릭터 목록을 통째로 보는 것은 은행이 세계관 스코프가 없어서다(v1 밖 — 설계 8-3).
+     */
+    val usedByNames: LiveData<Map<Long, String>> =
+        MediatorLiveData<Map<Long, String>>().apply {
+            val characters = app.characterRepository.allCharacters
+            var latestEntries: List<NameBankEntry> = emptyList()
+            var latestCharacters: List<com.novelcharacter.app.data.model.Character> = emptyList()
+
+            fun update() {
+                val usedIds = latestEntries.mapNotNull { it.usedByCharacterId }.toSet()
+                value = if (usedIds.isEmpty()) emptyMap()
+                else latestCharacters.filter { it.id in usedIds }.associate { it.id to it.name }
+            }
+            addSource(nameBankRepository.allNameBankEntries) { latestEntries = it; update() }
+            addSource(characters) { latestCharacters = it; update() }
+        }
+
+    /**
+     * [사용 처리]의 캐릭터 고르기 재료 (죽어 있던 `markAsUsed`에 UI를 다는 자리).
+     *
+     * `EntityPickerBottomSheet`의 행 타입을 그대로 쓴다 — 그 시트를 재사용하기 위해서다
+     * (`AlertDialog.setItems`는 검색이 없어 목표 규모 6,420명에서 부적합하다는 판정이
+     * 그 파일 머리에 이미 있다). 부제는 작품명이라 **동명이인을 가려 준다.**
+     */
+    suspend fun getCharacterPickRows(): List<com.novelcharacter.app.ui.image.ImageManagerViewModel.PickRow> =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val novels = app.database.novelDao().getAllNovelsList().associateBy({ it.id }, { it.title })
+            app.characterRepository.getAllCharactersList().sortedBy { it.name }.map {
+                com.novelcharacter.app.ui.image.ImageManagerViewModel.PickRow(
+                    it.id, it.name, it.novelId?.let { n -> novels[n] } ?: ""
+                )
+            }
+        }
+
+    /** 이름은행이 쓰고 있는 성별 값들 — 자유 입력의 제안 목록 (ⓓ, 고정 3옵션을 연 자리) */
+    suspend fun getGenderSuggestions(): List<String> =
+        nameBankRepository.getAllNameBankList()
+            .map { it.gender.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+
     // ===== 일괄 캐릭터 등록 =====
 
     suspend fun getEntriesByIds(ids: List<Long>): List<NameBankEntry> =
@@ -218,20 +266,45 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 universeId = novel.universeId
             }
 
-            // 성별 필드 해석 — SELECT 타입 gender 필드가 있을 때만 매핑 유효
+            // 성별 필드 해석 (B-124 ⓓ) — **역할이 먼저, key는 뒤다.**
+            //
+            // 종전에는 `getFieldByKey(universeId, "gender")`로 key를 고정해, 사용자가 다른
+            // key로 만든 성별 필드는 영영 안 잡혔다(열린 구조 위반 — 이 앱에서 key는 자유
+            // 입력이다). Q4가 세운 `SemanticRole.GENDER`가 *"이 필드가 무엇인가"*를 라벨
+            // 추측 없이 말해 주므로 그것이 정본이다(R-20).
+            //
+            // **key 폴백을 남기는 것은 의도다** — 역할을 아직 안 단 기존 세계관에서 걷어내면
+            // 잘 돌던 기능이 조용히 죽는다. 역할이 서면 자연히 그쪽이 이긴다.
             var genderField: com.novelcharacter.app.data.model.FieldDefinition? = null
             var genderOptions: List<String> = emptyList()
+            var genderFreeText = false
             var genderFieldMissing = false
             if (mapGender && universeId != null) {
-                val fd = app.database.fieldDefinitionDao().getFieldByKey(universeId, "gender")
-                if (fd != null &&
-                    com.novelcharacter.app.data.model.FieldType.fromName(fd.type) ==
-                    com.novelcharacter.app.data.model.FieldType.SELECT
-                ) {
-                    genderField = fd
-                    genderOptions = com.novelcharacter.app.util.FieldOptionParser.parseSelectOptions(fd.config)
-                } else {
-                    genderFieldMissing = true
+                val fields = app.database.fieldDefinitionDao().getFieldsByUniverseList(universeId)
+                // 역할 필드는 세계관에 하나여야 하지만 사용자가 둘에 같은 역할을 줄 수도 있다 —
+                // 그때 첫 번째를 쓰는 것은 필드 관리의 차례가 사용자가 정한 차례이기 때문이다
+                // (`DuelPlayFragment`가 같은 자리에서 정해 둔 규칙).
+                val fd = fields.firstOrNull {
+                    com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
+                        com.novelcharacter.app.data.model.SemanticRole.GENDER
+                // 폴백도 **이미 읽은 목록에서** 찾는다 — 두 번째 조회를 하면 그 둘이
+                // 같은 entityType을 보는지가 두 자리의 기본값에 달리게 된다(R-29의 부류).
+                } ?: fields.firstOrNull { it.key == "gender" }
+                val type = fd?.let { com.novelcharacter.app.data.model.FieldType.fromName(it.type) }
+                when (type) {
+                    com.novelcharacter.app.data.model.FieldType.SELECT -> {
+                        genderField = fd
+                        genderOptions = com.novelcharacter.app.util.FieldOptionParser.parseSelectOptions(fd!!.config)
+                    }
+                    // 자유 입력 — 허용 값 목록이 없어 거를 근거가 없다. 그대로 기록한다.
+                    com.novelcharacter.app.data.model.FieldType.TEXT,
+                    com.novelcharacter.app.data.model.FieldType.MULTI_TEXT -> {
+                        genderField = fd
+                        genderFreeText = true
+                    }
+                    // 숫자·등급·자동 계산·신체 사이즈에 성별 문자열을 밀어 넣지 않는다 —
+                    // 타입이 못 받는 값을 강제 기입하는 것은 R-11이 금지한 그것이다.
+                    else -> genderFieldMissing = true
                 }
             } else if (mapGender) {
                 // 작품 미지정 또는 세계관 미연결 작품 — 기록할 성별 필드 자체가 없다.
@@ -244,6 +317,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 novelId = novelId,
                 mapGender = genderField != null,
                 genderOptions = genderOptions,
+                genderFreeText = genderFreeText,
                 includeOriginNotes = includeOriginNotes,
                 originPrefixFormat = app.getString(R.string.name_bank_bulk_origin_prefix),
                 policy = policy

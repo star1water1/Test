@@ -91,6 +91,18 @@ class CharacterSaveCoordinator(
 
         /** 대기 삭제를 실제로 실행한 뒤 호출된다 — 호스트가 목록을 비운다(중복 실행 방지). */
         fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int) {}
+
+        /**
+         * 편집 폼의 **[은행] 시트에서 고른** 이름은행 엔트리 id (B-124 ⓐ). 없으면 null.
+         *
+         * 고른 즉시가 아니라 저장할 때 거는 것이 이 화면의 계약이다 — 취소하면 무해해야 한다
+         * (`pendingImageDeletes`와 같은 계약). 기본 구현이 null이라, 이 조작이 없는 호스트는
+         * 자동 대조(ⓑ)만 받는다.
+         */
+        fun requestedNameBankEntryId(): Long? = null
+
+        /** 은행 링크를 실제로 맞춘 뒤 호출된다 — 호스트가 고른 값을 비운다(다음 저장에 재사용 방지). */
+        fun onNameBankLinkApplied() {}
     }
 
     private val gson = Gson()
@@ -378,11 +390,62 @@ class CharacterSaveCoordinator(
         val tagList = snapshot.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
         viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
+        syncNameBankLink(savedCharId, character.name)
+
         resetSavingState()
         if (fragment.isAdded && fragment.view != null) {
             Toast.makeText(fragment.requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
         }
         host.onSaved(savedCharId)
+    }
+
+    /**
+     * 저장된 이름을 이름은행과 맞춘다 (B-124 ⓑ — Q7 확정: 자동 + 고지).
+     *
+     * **저장이 끝난 뒤에 부른다.** 신규 캐릭터는 그 전까지 id가 없어 걸 자리가 없고, 기존
+     * 캐릭터도 이름이 DB에 들어간 뒤라야 은행과 화면이 같은 사실을 말한다.
+     *
+     * **실패해도 저장을 되돌리지 않는다** — 캐릭터는 이미 저장됐고 링크는 부가 정보다.
+     * 다만 *조용히* 넘기지는 않는다: 결과 한 줄을 반드시 낸다(개발 의도 2번). 고지가
+     * `Toast`인 것은 [notifyPreservedFieldValues]와 같은 이유다 — 저장 직후 호스트가
+     * `popBackStack`하므로 뷰에 붙는 고지는 사용자에게 도달하지 못한다.
+     */
+    private suspend fun syncNameBankLink(savedCharacterId: Long, savedName: String) {
+        val requested = host.requestedNameBankEntryId()
+        val outcome = try {
+            viewModel.applyNameBankLink(savedCharacterId, savedName, requested)
+        } catch (e: Exception) {
+            android.util.Log.e("CharacterSaveCoordinator", "Failed to sync name bank link", e)
+            // 고른 것이 있었는데 못 걸었다면 그 사실만은 말한다 — 자동 대조뿐이었다면
+            // 사용자가 지시한 조작이 아니므로 실패를 알릴 것이 없다(소음).
+            if (requested != null) notifyNameBank(R.string.name_bank_link_failed)
+            host.onNameBankLinkApplied()
+            return
+        }
+        host.onNameBankLinkApplied()
+        if (outcome.isSilent) return
+        val ctx = fragment.context?.applicationContext ?: return
+        val message = buildString {
+            outcome.linkedName?.let { append(ctx.getString(R.string.name_bank_link_marked_used, it)) }
+            if (outcome.releasedCount > 0) {
+                if (isNotEmpty()) append(" ")
+                append(ctx.getString(R.string.name_bank_link_released, outcome.releasedCount))
+            }
+            if (outcome.requestedTaken) {
+                if (isNotEmpty()) append(" ")
+                append(ctx.getString(R.string.name_bank_link_taken))
+            }
+            if (outcome.requestedMissing) {
+                if (isNotEmpty()) append(" ")
+                append(ctx.getString(R.string.name_bank_link_missing))
+            }
+        }
+        Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun notifyNameBank(messageRes: Int) {
+        val ctx = fragment.context?.applicationContext ?: return
+        Toast.makeText(ctx, messageRes, Toast.LENGTH_LONG).show()
     }
 
     /** restricted 위반 안내 — 사유(위반 토큰)와 허용 값 미리보기 + 두 가지 교정 경로 */

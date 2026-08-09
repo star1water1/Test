@@ -2861,6 +2861,36 @@
     <string name="name_bank_bulk_novel_missing">선택한 작품을 찾을 수 없습니다. 작품이 삭제되었는지 확인하세요.</string>
     <string name="name_bank_bulk_failed">일괄 등록 실패 — 변경 사항이 적용되지 않았습니다.</string>
 
+    <!-- 이름은행 연계 (B-124) — 편집 폼 ↔ 은행 · 저장 시 자동 대조 · 은행 화면의 행동 -->
+    <string name="name_bank_pick_title">이름은행에서 고르기</string>
+    <string name="name_bank_pick_purpose">고른 이름이 이름 칸에 들어가고, 저장할 때 그 항목이 사용됨으로 표시됩니다.</string>
+    <string name="name_bank_pick_search_hint">이름·출처·메모 검색</string>
+    <string name="name_bank_pick_empty">이름은행이 비어 있습니다 — 은행 화면에서 이름을 먼저 등록하세요.</string>
+    <string name="name_bank_pick_empty_search">검색과 맞는 이름이 없습니다.</string>
+    <string name="name_bank_pick_used_by">사용 중 · %1$s</string>
+    <string name="name_bank_pick_used_unknown">사용 중</string>
+    <string name="name_bank_pick_used_blocked">이미 다른 캐릭터가 쓰는 이름입니다 — 이름 칸에는 넣지만 사용 표시는 옮기지 않습니다.</string>
+    <string name="name_bank_pick_gender_hint">성별이 같은 이름을 먼저 보여 줍니다.</string>
+    <string name="name_bank_save_current">지금 이름을 은행에 저장</string>
+    <string name="name_bank_save_current_empty">이름 칸이 비어 있어 저장할 것이 없습니다.</string>
+    <string name="name_bank_save_current_exists">이름은행에 이미 있는 이름입니다.</string>
+    <string name="name_bank_save_current_done">이름은행에 \'%1$s\'을(를) 저장했습니다.</string>
+    <string name="name_bank_save_current_failed">이름은행에 저장하지 못했습니다.</string>
+    <string name="name_bank_link_marked_used">이름은행의 \'%1$s\'을(를) 사용됨으로 표시했습니다.</string>
+    <string name="name_bank_link_released">이름이 바뀌어 은행 항목 %1$d개의 사용 표시를 풀었습니다.</string>
+    <string name="name_bank_link_taken">고른 은행 항목이 이미 다른 캐릭터의 것이라 사용 표시를 옮기지 않았습니다.</string>
+    <string name="name_bank_link_missing">고른 은행 항목이 사라져 사용 표시를 옮기지 않았습니다.</string>
+    <string name="name_bank_link_failed">이름은행 사용 표시를 맞추지 못했습니다 — 캐릭터는 저장됐습니다.</string>
+    <string name="name_bank_used_by_label">사용 · %1$s</string>
+    <string name="name_bank_used_by_missing">사용 · 캐릭터를 찾을 수 없음</string>
+    <string name="name_bank_open_character">캐릭터 열기</string>
+    <string name="name_bank_mark_used">사용 처리</string>
+    <string name="name_bank_mark_used_pick">이 이름을 쓰는 캐릭터 고르기</string>
+    <string name="name_bank_create_character">이 이름으로 캐릭터 만들기</string>
+    <string name="name_bank_gender_hint">성별 (직접 입력)</string>
+    <string name="name_bank_gender_purpose">쓰던 성별이 제안으로 뜨고, 목록에 없는 값도 그대로 적을 수 있습니다.</string>
+    <string name="stats_name_bank_open">이름은행에서 보기</string>
+
     <!-- ✨ AI 서술형 작성 (NarrativeFieldAiWriter / NarrativeWriteSheet) -->
     <string name="ai_narrative_title">%s — AI 작성</string>
     <string name="ai_narrative_title_plain">AI 작성</string>

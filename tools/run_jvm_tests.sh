@@ -212,6 +212,8 @@ $MAIN/ui/assistant/AssistantSort.kt
 $MAIN/util/DetailListSort.kt
 $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
+$MAIN/util/NameBankMatch.kt
+$MAIN/util/NameBankPickOrder.kt
 $MAIN/excel/StreamingXlsxReader.kt
 $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/ImportSource.kt
@@ -345,6 +347,8 @@ $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
+$TEST/util/NameBankMatchTest.kt
+$TEST/util/NameBankPickOrderTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
 $TEST/util/ResetPlanTest.kt
