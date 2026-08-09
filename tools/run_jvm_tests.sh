@@ -170,6 +170,7 @@ $MAIN/ai/AiProviderCodec.kt
 $MAIN/ai/AiProviderActivation.kt
 $MAIN/ai/AiErrorText.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
+$MAIN/ai/CharacterNameAiSuggester.kt
 $MAIN/ai/AiPromptPolicy.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/ai/ImageTagVocabulary.kt
@@ -366,6 +367,7 @@ $TEST/ai/AiProtocolCodecTest.kt
 $TEST/ai/AiCreativityTest.kt
 $TEST/ai/AiTokenPolicyTest.kt
 $TEST/ai/NarrativeFieldTest.kt
+$TEST/ai/CharacterNameAiSuggesterTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt
 $TEST/excel/MergedCellMapTest.kt
 $TEST/share/WorldPackageParserTest.kt

@@ -147,6 +147,18 @@
                     android:minWidth="0dp"
                     android:text="@string/tab_name_bank" />
 
+                <!-- ✨ AI 이름 추천 (B-123 · 설계 7-1) — [은행]과 나란히 선다:
+                     이미 있는 이름 창고와 새로 만드는 기계가 이름을 정하는 그 자리에 함께 있다. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnNameSuggest"
+                    style="@style/Widget.App.Button.Tonal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:minWidth="0dp"
+                    android:contentDescription="@string/ai_name_entry"
+                    android:text="@string/ai_sparkle" />
+
             </LinearLayout>
 
             <!-- First name / Last name row -->

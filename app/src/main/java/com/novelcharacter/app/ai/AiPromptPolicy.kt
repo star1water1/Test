@@ -182,6 +182,22 @@ object AiPromptPolicy {
         return (imageCount + per - 1) / per
     }
 
+    // ── AI 이름 추천 (B-123 · 설계 feature_roadmap 7장) ──
+
+    /**
+     * 한 라운드에 받을 이름 개수의 범위·기본값. **사용자가 정한다**(설계 7-2 — *"한번에 많이"*).
+     *
+     * 이미지 배치([IMAGE_TAG_BATCH_MAX], 10)보다 상한이 큰 것은 **비용 축이 다르기 때문**이다:
+     * 저쪽은 장수가 곧 입력 토큰(이미지)이라 요청이 무거워지지만, 이쪽은 짧은 문자열 N개라
+     * 30개도 한 요청에 들어간다. 기본 10은 설계가 정한 값이다.
+     */
+    const val NAME_SUGGEST_BATCH_MIN = 1
+    const val NAME_SUGGEST_BATCH_MAX = 30
+    const val NAME_SUGGEST_BATCH_DEFAULT = 10
+
+    fun clampNameSuggestBatch(value: Int): Int =
+        value.coerceIn(NAME_SUGGEST_BATCH_MIN, NAME_SUGGEST_BATCH_MAX)
+
     /** 슬라이더 눈금에 맞춘 값 — 저장값이 눈금 밖이면 슬라이더가 예외로 죽는다 */
     private fun snap(value: Int, step: Int): Int = (value / step) * step
 }

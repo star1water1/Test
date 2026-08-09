@@ -713,6 +713,17 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * 이 작품이 속한 세계관 (B-123 — 이름 견본을 뜰 범위이자 시트가 이름 결을 부르는 이름).
+     *
+     * 작품 미지정이거나 세계관에 연결되지 않은 작품이면 null이고, 그때 이름 추천은 **견본 없이**
+     * 간다 — 견본이 없다고 기능이 서지 않으면 세계관을 아직 안 만든 사용자가 못 쓴다.
+     */
+    suspend fun universeForNovel(novelId: Long?): Universe? {
+        val uid = novelId?.let { novelRepository.getNovelById(it)?.universeId } ?: return null
+        return universeRepository.getUniverseById(uid)
+    }
+
     /** 필터 UI용 필드 목록 (CALCULATED 제외 — DB 값이 없어 필터 불가). */
     suspend fun getFilterableFields(universeId: Long): List<FieldDefinition> =
         universeRepository.getFieldsByUniverseList(universeId).filter { it.type != "CALCULATED" }

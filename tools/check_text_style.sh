@@ -33,6 +33,7 @@ STRINGS="app/src/main/res/values/strings.xml"
 KT_USER_FACING="
 app/src/main/java/com/novelcharacter/app/ai/CharacterFieldAiSuggester.kt
 app/src/main/java/com/novelcharacter/app/ai/NarrativeFieldAiWriter.kt
+app/src/main/java/com/novelcharacter/app/ai/CharacterNameAiSuggester.kt
 app/src/main/java/com/novelcharacter/app/ai/FieldLibraryAiOrganizer.kt
 app/src/main/java/com/novelcharacter/app/util/DuelAiContext.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt

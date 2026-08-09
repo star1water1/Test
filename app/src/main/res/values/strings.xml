@@ -2891,6 +2891,68 @@
     <string name="name_bank_gender_purpose">쓰던 성별이 제안으로 뜨고, 목록에 없는 값도 그대로 적을 수 있습니다.</string>
     <string name="stats_name_bank_open">이름은행에서 보기</string>
 
+    <!-- ✨ AI 이름 추천 (B-123 · CharacterNameAiSuggester / NameSuggestSheet) -->
+    <string name="ai_name_entry">✨ AI 이름 추천</string>
+    <!-- 인라인 ✨ 버튼의 글자 — 필드 인라인 버튼(DynamicFieldFormBuilder)과 같은 문법이다 -->
+    <string name="ai_sparkle">✨</string>
+    <string name="ai_name_title">이름 추천 — %1$s</string>
+    <string name="ai_name_title_plain">이름 추천</string>
+    <string name="ai_name_purpose">고른 이름은 폼에만 들어가고, 저장을 눌러야 캐릭터에 반영됩니다.</string>
+    <string name="ai_name_purpose_bank">만든 이름은 아래 \'은행에 담기\'를 눌러야 이름은행에 저장됩니다.</string>
+    <string name="ai_name_not_configured">AI 연동이 설정되어 있지 않습니다. 설정에서 프로바이더와 API 키를 먼저 등록하세요.</string>
+    <string name="ai_name_options">추천 설정</string>
+    <string name="ai_name_batch_purpose">한 라운드에 받을 이름 개수입니다. 여기서 정한 값은 다음 라운드에도 그대로 쓰입니다.</string>
+    <string name="ai_name_batch_value">한 라운드에 %1$d개</string>
+    <string name="ai_name_mode_full">전체 이름</string>
+    <string name="ai_name_mode_given">성 고정</string>
+    <string name="ai_name_mode_surname">이름 고정</string>
+    <string name="ai_name_mode_alias">이명</string>
+    <string name="ai_name_mode_switch_title">모드를 바꾸면 지금 후보를 비웁니다</string>
+    <string name="ai_name_mode_switch_message">지금까지 받은 이름 %1$d개와 ♥·✕ 표시가 사라집니다. 남길 이름이 있으면 먼저 은행에 담으세요.</string>
+    <string name="ai_name_empty">아직 받은 이름이 없습니다 — 아래에서 요청하세요.</string>
+    <string name="ai_name_shelf_title">♥ 마음에 든 이름 · %1$d</string>
+    <string name="ai_name_shelf_chip">♥ %1$s</string>
+    <string name="ai_name_round_title">%1$d라운드 · %2$d개</string>
+    <string name="ai_name_past_rounds">지난 라운드</string>
+    <string name="ai_name_past_round_title">%1$d라운드 · %2$d개 중 ♥%3$d ✕%4$d</string>
+    <string name="ai_name_expand">펼치기</string>
+    <string name="ai_name_collapse">접기</string>
+    <string name="ai_name_expand_more">… %1$d개 더 펼치기</string>
+    <string name="ai_name_mark_heart">♥</string>
+    <string name="ai_name_mark_heart_on">♥ 유지</string>
+    <string name="ai_name_mark_reject">✕</string>
+    <string name="ai_name_mark_restore">↺ 되살리기</string>
+    <string name="ai_name_apply">적용</string>
+    <string name="ai_name_applied">\'%1$s\'을(를) 폼에 넣었습니다 — 저장 시 반영됩니다</string>
+    <string name="ai_name_apply_unavailable">적용할 편집 폼을 찾지 못했습니다 — 시트를 닫고 다시 열어 주세요.</string>
+    <string name="ai_name_more">%1$d개 더</string>
+    <string name="ai_name_first_run">이름 %1$d개 만들기</string>
+    <string name="ai_name_instruction_hint">AI에게 지시 (선택) — 예: 더 부드럽게, 북부식으로</string>
+    <string name="ai_name_running">이미 이름을 만드는 중입니다.</string>
+    <string name="ai_name_running_short">만드는 중…</string>
+    <string name="ai_name_cost_notice">다음 라운드는 요청 1건입니다 — 등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
+    <string name="ai_name_cost_marks">" · ♥ %1$d개를 따르고 ✕ %2$d개를 피합니다"</string>
+    <string name="ai_name_dropped">형식에 맞지 않는 응답 %1$d건은 제외했습니다</string>
+    <string name="ai_name_repeated">이미 나온 이름 %1$d개는 제외했습니다 — 지시를 덧붙이면 다른 결로 갑니다</string>
+    <string name="ai_name_round_failed">이름을 받지 못했습니다 — 잠시 후 다시 시도해 주세요.</string>
+    <!-- 빈 라운드는 목록에 쌓지 않는다(직전 라운드가 접혀 내려간다) — 대신 이 줄로 말한다 -->
+    <string name="ai_name_round_empty">이번 라운드에서 새 이름을 받지 못했습니다.</string>
+    <string name="ai_name_deposit">은행에 담기 (%1$d)</string>
+    <string name="ai_name_deposit_title">이름은행에 담을 이름</string>
+    <string name="ai_name_deposit_note">이번에 나온 이름 %1$d개를 담습니다</string>
+    <string name="ai_name_deposit_note_filtered">이번에 나온 이름 %1$d개 중 중복 %2$d개를 걸렀습니다</string>
+    <string name="ai_name_deposit_used_mark">" · 캐릭터가 쓰는 중"</string>
+    <string name="ai_name_deposit_rejected_mark">" · ✕"</string>
+    <string name="ai_name_deposit_done">이름 %1$d개를 이름은행에 담았습니다</string>
+    <string name="ai_name_deposit_skipped">" · 중복 제외 %1$d개"</string>
+    <string name="ai_name_deposit_none">담을 이름을 고르지 않았습니다.</string>
+    <string name="ai_name_deposit_failed">이름은행에 담지 못했습니다.</string>
+    <!-- 담은 항목의 출처 칸에 자동으로 적히는 값 (설계 7-4 — 자동으로 채울 수 있는 칸은 앱이 채운다) -->
+    <string name="ai_name_deposit_origin">AI 추천</string>
+    <string name="name_bank_ai_create">AI로 이름 만들기</string>
+    <string name="name_bank_ai_pick_universe">어느 세계관의 결로 만들지 고르세요</string>
+    <string name="name_bank_ai_no_universe">세계관 없이 만들기</string>
+
     <!-- ✨ AI 서술형 작성 (NarrativeFieldAiWriter / NarrativeWriteSheet) -->
     <string name="ai_narrative_title">%s — AI 작성</string>
     <string name="ai_narrative_title_plain">AI 작성</string>

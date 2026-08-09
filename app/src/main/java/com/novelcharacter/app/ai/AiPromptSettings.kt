@@ -115,6 +115,20 @@ class AiPromptSettings(context: Context) {
             sp.edit().putInt(KEY_IMAGE_TAG_BATCH, AiPromptPolicy.clampImageTagBatch(value)).apply()
         }
 
+    /**
+     * 이름 추천 한 라운드의 **다발 크기** (B-123). 사용자가 시트의 ⋮에서 정한다(설계 7-2).
+     *
+     * 기억해 두는 이유는 [imageTagBatchSize]와 같다 — 매번 기본값으로 되돌리면 같은 사람이
+     * 같은 값을 매번 다시 맞춘다(원칙 04). 범위·기본값은 [AiPromptPolicy]가 단일 소스다.
+     */
+    var nameSuggestBatchSize: Int
+        get() = AiPromptPolicy.clampNameSuggestBatch(
+            sp.getInt(KEY_NAME_SUGGEST_BATCH, AiPromptPolicy.NAME_SUGGEST_BATCH_DEFAULT)
+        )
+        set(value) {
+            sp.edit().putInt(KEY_NAME_SUGGEST_BATCH, AiPromptPolicy.clampNameSuggestBatch(value)).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
@@ -126,5 +140,6 @@ class AiPromptSettings(context: Context) {
         private const val KEY_ATTACH_IMAGES = "attachImageCount"
         private const val KEY_ATTACH_REPRESENTATIVE = "attachRepresentativeFirst"
         private const val KEY_IMAGE_TAG_BATCH = "imageTagBatchSize"
+        private const val KEY_NAME_SUGGEST_BATCH = "nameSuggestBatchSize"
     }
 }

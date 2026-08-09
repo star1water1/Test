@@ -70,6 +70,7 @@ class NameBankFragment : Fragment() {
                 R.id.action_select -> { enterSelectionMode(null); true }
                 R.id.action_select_all -> { selectAllDisplayed(); true }
                 R.id.action_bulk_register -> { openBulkRegisterSheet(); true }
+                R.id.action_ai_name -> { openNameSuggestSheet(); true }
                 else -> false
             }
         }
@@ -179,6 +180,62 @@ class NameBankFragment : Fragment() {
             }
             sheet.show(parentFragmentManager, BulkRegisterBottomSheet.TAG)
         }
+    }
+
+    /**
+     * [AI로 이름 만들기] — 캐릭터 없이 세계관의 결로만 이름을 짓는다 (B-123 · 설계 8-2 ⓒ).
+     *
+     * **B-124가 일부러 남긴 한 항목이 여기서 닫힌다** — 그때는 열 시트가 없어 진입점만 달면
+     * *고를 수는 있는데 아무 일도 안 일어나는 자리*가 됐을 것이라 미뤘다.
+     *
+     * 세계관을 먼저 묻는 이유는 견본 때문이다: 은행은 전역이라 스코프 칸이 없고(설계 8-3 —
+     * v1 밖), 어느 작품의 결로 지을지는 사용자만 안다. **세계관이 없어도 막지 않는다** —
+     * 견본 없이 가는 길을 남겨 두지 않으면 세계관을 아직 안 만든 사용자가 이 기능을 못 쓴다.
+     */
+    private fun openNameSuggestSheet() {
+        if (!com.novelcharacter.app.ai.AiService(requireContext()).hasUsableProvider()) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.ai_name_title_plain)
+                .setMessage(R.string.ai_name_not_configured)
+                .setPositiveButton(R.string.ai_settings_title) { _, _ ->
+                    findNavController().navigateSafe(R.id.nameBankFragment, R.id.aiSettingsFragment)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val universes = viewModel.getAllUniversesList()
+            if (!isAdded || _binding == null) return@launch
+            if (universes.isEmpty()) {
+                showNameSuggestSheet(null)
+                return@launch
+            }
+            val labels = (universes.map { it.name } + getString(R.string.name_bank_ai_no_universe))
+                .toTypedArray()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.name_bank_ai_pick_universe)
+                .setItems(labels) { _, which ->
+                    showNameSuggestSheet(universes.getOrNull(which))
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun showNameSuggestSheet(universe: com.novelcharacter.app.data.model.Universe?) {
+        if (parentFragmentManager.isStateSaved) return
+        val sheet = NameSuggestSheet()
+        sheet.setup(
+            NameSuggestViewModel.Setup(
+                // 캐릭터가 없다 — 적용할 폼도 없으므로 시트가 [적용]을 세우지 않는다.
+                character = null,
+                universeId = universe?.id,
+                universeName = universe?.name.orEmpty(),
+                title = universe?.name.orEmpty()
+            )
+        )
+        sheet.show(parentFragmentManager, NameSuggestSheet.TAG)
     }
 
     private var searchJob: Job? = null
