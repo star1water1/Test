@@ -193,8 +193,21 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
 > 2026.08.07에 실제로 그 모양이었다.
 >
-> | B-124 이름은행 연계 | *(PR 열기 전)* | 아홉 — `CharacterEditFragment`·`CharacterSaveCoordinator`·`CharacterViewModel`·`EntityPickerBottomSheet`(콜드 검토가 재사용하며 칸 둘 추가)·`NameBankFragment`·`NameBankViewModel`·`NameBankAdapter`·`StatsNameBankDetailFragment`·신규 `NameBankPickerSheet` (+ 새 레이아웃 둘 `bottom_sheet_name_bank_picker`·`item_name_bank_pick`, 새 id 여럿) | `CLAUDE.md` 4번의 *2~3개*를 혼자 넘긴다. **로컬 프로브가 `ui/**`를 통째로 빼므로 새 시트의 ViewBinding 대조와 편집 폼의 [은행] 배선·은행 행의 `usedByText`는 CI가 처음으로 컴파일하는 자리다.** **이 세션은 PR을 열지 않았다** — 작업 브랜치 push만으로는 실행이 하나도 생기지 않으므로(위 ⚠️ 블록) **이 슬라이스는 컴파일 증명을 아직 못 받았다.** 다음 PR이 이 줄을 덮는다. |
 >
+>
+> **✅ 2026.08.09 — PR #249, run `31290760927`이 B-124를 덮었다. 목록이 다시 비었다.**
+> 이 슬라이스는 **화면 파일 아홉 + 새 레이아웃 둘 + 새 id 여럿**이라 `CLAUDE.md` 4번의
+> *2~3개*를 훌쩍 넘겨, 사용자가 **"콜드 검토하고 pr열고 병합까지"**를 지시한 그 자리에서 열었다.
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 25초 · `Schema harnesses` ✓ ·
+> `Run unit tests` ✓ 3분08초 · `Build Debug APK` ✓ 2분01초 · `Upload Debug APK` ✓.
+> `Build Release APK`·`Upload Release APK`의 `skipped`는 **정상**이다(조건부 단계).
+> **이 실행이 증명한 것:** 로컬 프로브는 `ui/**`를 통째로 빼므로 **새 시트
+> `NameBankPickerSheet`의 ViewBinding 대조**(새 레이아웃 둘의 id 전부) · 편집 폼의 [은행]
+> 배선과 `SemanticRole` 읽기 · 은행 행의 `usedByText` · 콜드 검토가 `EntityPickerBottomSheet`에
+> 더한 `lockedType`·`titleRes`는 **이 실행이 처음으로 컴파일한 것**이다.
+> **앞선 실행 하나(run `31290670063`)는 콜드 검토 수정 전 커밋의 것이라 세지 않는다** —
+> 덮은 것은 최종 커밋을 돈 이 실행이다.
+
 > **✅ 2026.08.08 — PR #248, run `31275312354`가 B-168 + B-169·B-170을 덮었다. 목록이 다시 비었다.**
 > 이 슬라이스는 **화면 파일 여덟 + 새 레이아웃 하나 + 새 id들**이라 `CLAUDE.md` 4번의
 > *2~3개*를 훌쩍 넘겨 같은 세션에서 PR을 열었다. **배지가 아니라 단계를 봤다:**
@@ -4626,7 +4639,11 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > **커스텀 뷰 프로브 절대값 0** · 차분 컴파일 신규는 전부 스텁 잡음
    > (`triage_unresolved` 통과 — 저장소 선언 타입 미해석 0).
    > **마이그레이션은 없다** — 스키마 무변경이라 새 하네스가 따라오지 않는다.
-   > **CI 상태는 2장 `⏳ CI 미검증 목록`이 든다**(여기 두 벌로 적지 않는다).
+   > **CI도 받았다** — PR #249, run `31290760927`(단계: `Static checks` ✓ ·
+   > `Schema harnesses` ✓ · `Run unit tests` ✓ · `Build Debug APK` ✓ · `Upload Debug APK` ✓.
+   > Release 단계의 `skipped`는 조건부라 정상이다). **2장 ⏳ 목록에 올렸다가 같은 세션에서
+   > 지웠다.** 로컬 프로브가 `ui/**`를 빼므로 새 시트의 ViewBinding 대조와 편집 폼의 [은행]
+   > 배선, `EntityPickerBottomSheet`의 새 칸 둘은 **이 실행이 처음으로 컴파일한 것**이다.
    >
    > **⑩ 마무리 콜드 검토가 셋을 잡았다 — 셋 다 이 판의 산출물이다**(로드맵 **8-7**).
    > ⓐ *고른 뒤 이름을 고쳐 적으면 화면이 **없는 사실**을 말했다* — 고른 항목의 처분은 셋인데
