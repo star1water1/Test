@@ -96,7 +96,15 @@ class DuelMatchesFragment : Fragment() {
             binding.toolbar.title = getString(R.string.duel_matches_title_of, loaded.name)
             // 기록 화면은 **참가자 전부**를 본다(후보 필터와 무관하다 — 이미 기록된 판의
             // 참가자 이름이 필터 때문에 '알 수 없음'이 되면 안 된다).
-            characters = viewModel.roster(loaded).participants
+            //
+            // 이미지 축은 로스터를 아예 거치지 않는다. 그쪽 후보 필터는 화면이 감춰 두었지만
+            // **엑셀로는 들어올 수 있고**(감추되 저장값은 이어받는다 — 설계 13-3), 그때
+            // 걸러진 캐릭터의 그림이 이름표에서 빠져 멀쩡한 판이 '알 수 없음'으로 뜬다.
+            characters = if (loaded.isImageAxis) {
+                viewModel.participantsOf(loaded.universeId)
+            } else {
+                viewModel.roster(loaded).participants
+            }
 
             val links = loaded.fieldLinks
             // 시스템 열까지 든다(B-167) — 기록 줄이 카드와 같은 이름을 말해야 한다.

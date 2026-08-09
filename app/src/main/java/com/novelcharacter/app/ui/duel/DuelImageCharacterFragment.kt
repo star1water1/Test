@@ -72,8 +72,8 @@ class DuelImageCharacterFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.characterRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.characterRecyclerView.adapter = adapter
-
-        load()
+        // 여기서 읽지 않는다 — [onResume]이 곧바로 이어 부르므로 두 번 읽게 되고,
+        // 둘이 나란히 돌면서 섬네일 작업도 두 벌이 뜬다.
     }
 
     /**

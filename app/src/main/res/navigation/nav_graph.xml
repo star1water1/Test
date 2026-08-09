@@ -437,6 +437,12 @@
             android:name="axisId"
             app:argType="long"
             android:defaultValue="-1L" />
+
+        <!-- 이미지 축의 상성은 **그 캐릭터 안의 관계**다(설계 13-2). -->
+        <argument
+            android:name="characterId"
+            app:argType="long"
+            android:defaultValue="-1L" />
     </fragment>
 
 </navigation>

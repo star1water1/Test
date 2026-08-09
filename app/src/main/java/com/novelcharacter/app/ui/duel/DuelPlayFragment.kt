@@ -345,7 +345,16 @@ class DuelPlayFragment : Fragment() {
         refreshJob?.cancel()
         val planSeq = session.seq
         refreshJob = viewLifecycleOwner.lifecycleScope.launch {
-            val loaded = viewModel.load(axis, characters, roster?.candidateCodes)
+            // **참가자 집합을 어디서 얻는가가 축마다 다르다.** 이미지 축에서 [characters]는
+            // 언제나 비어 있으므로(그쪽 참가자는 캐릭터가 아니라 경로다) 캐릭터 축의 경로를
+            // 그대로 타면 **참가자 0으로 다시 적합해 대기열이 통째로 마른다** — 화면에서는
+            // *한 판 누르면 그대로 빈 화면이 되는* 것으로 나타난다.
+            val loaded = if (axis.isImageAxis) {
+                val entry = imageEntry ?: return@launch
+                viewModel.loadImages(axis, entry) ?: return@launch
+            } else {
+                viewModel.load(axis, characters, roster?.candidateCodes)
+            }
             if (!isAdded) return@launch
             charactersByCode = loaded.charactersByCode
             codeById = loaded.state.records.codeById
@@ -848,12 +857,21 @@ class DuelPlayFragment : Fragment() {
         findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelMatchesFragment, bundle)
     }
 
-    /** 이미지 축에서 **누구의 그림을 겨룰지** 고르는 자리. */
+    /**
+     * 이미지 축에서 **누구의 그림을 겨룰지** 고르는 자리.
+     *
+     * **이 화면을 백스택에서 빼고 간다.** 캐릭터를 못 정해 여기로 튕겨 온 것이므로 남겨 두면
+     * 뒤로가기가 이 조각으로 돌아오고, 돌아오면 다시 튕겨 나가 **뒤로가기가 영영 안 먹는다**
+     * (홈 '이어하기'가 이미지 축을 기억하고 있으면 실제로 그 길로 들어온다).
+     */
     private fun openImageCharacters() {
+        val controller = findNavController()
+        if (controller.currentDestination?.id != R.id.duelPlayFragment) return
         val bundle = Bundle().apply { putLong("axisId", axisId) }
-        findNavController().navigateSafe(
-            R.id.duelPlayFragment, R.id.duelImageCharacterFragment, bundle
-        )
+        val options = androidx.navigation.NavOptions.Builder()
+            .setPopUpTo(R.id.duelPlayFragment, true)
+            .build()
+        controller.navigateSafe(R.id.duelImageCharacterFragment, bundle, options)
     }
 
     /** 홈에서 바로 들어온 경우 축 목록에 닿을 길이 여기뿐이다(뒤로가기는 홈으로 간다). */

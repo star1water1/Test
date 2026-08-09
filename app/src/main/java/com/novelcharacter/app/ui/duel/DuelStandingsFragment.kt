@@ -226,7 +226,12 @@ class DuelStandingsFragment : Fragment() {
     private fun renderCounterBadge(count: Int) {
         binding.btnCounters.text = getString(R.string.duel_counter_badge, count)
         binding.btnCounters.setOnClickListener {
-            val bundle = Bundle().apply { putLong("axisId", axisId) }
+            // 이미지 축은 상성도 **그 캐릭터 안의 관계**다 — 안 넘기면 상세가 캐릭터를
+            // 참가자로 세워 이 축의 판을 전부 고아로 읽는다(설계 13-2).
+            val bundle = Bundle().apply {
+                putLong("axisId", axisId)
+                putLong("characterId", characterId)
+            }
             findNavController().navigateSafe(
                 R.id.duelStandingsFragment, R.id.duelCounterFragment, bundle
             )
