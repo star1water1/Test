@@ -3133,6 +3133,16 @@ class TrashRepository(
         // **`copy`는 넘기지 않은 인자를 `this`에서 읽어 생성자에 넘기므로 그 자리에서 NPE가
         // 난다** — B-103이 겪은 그 지뢰다. 명시적으로 넘겨 접으면 되고, 빈 연결(`[]`)이
         // 옛 축의 사실 그대로다. **칸이 늘 때마다 이 목록도 함께 는다.**
+        // 기준 축 표식(v56 — B-104 ⓑ·ⓒ)은 **살아 있는 지정이 있으면 되붙이지 않는다.**
+        // 이 값은 대표 그림을 좌우하므로, 옛 축을 되살리는 것만으로 지금 쓰는 기준이 바뀌면
+        // 사용자는 그림이 왜 달라졌는지 알 길이 없다. 그 사실은 아래 losses가 고지한다.
+        //
+        // **이미지 축일 때만 따진다.** 캐릭터 축의 표식은 아무 일도 하지 않는 값이라
+        // (`DuelAxis.isImageBasis`가 판정의 단일 소스다) 되붙여도 뺏을 것이 없고,
+        // 그런데도 *"되붙이지 않았다"*고 고지하면 **잃지 않은 것을 잃었다고 말하는** 거짓 경고가 된다.
+        val basisTaken = source.isImageAxis &&
+            db.duelAxisDao().getBasisAxis(universeId, source.targetType) != null
+        val keepBasis = source.isBasisAxis && !basisTaken
         val newId = db.duelAxisDao().insert(
             source.copy(
                 id = 0,
@@ -3141,7 +3151,8 @@ class TrashRepository(
                 code = safeCode,
                 influenceFieldKeys = source.influenceFieldKeys.orEmpty().ifEmpty { "[]" },
                 outcomeFieldKeys = source.outcomeFieldKeys.orEmpty().ifEmpty { "[]" },
-                profileFieldKeys = source.profileFieldKeys.orEmpty().ifEmpty { "[]" }
+                profileFieldKeys = source.profileFieldKeys.orEmpty().ifEmpty { "[]" },
+                isBasisAxis = keepBasis
             )
         )
         // 같은 작업의 판 조각들이 **옛 코드로** 이 축을 찾을 수 있게 등록한다. code가 재발급됐는데
@@ -3167,7 +3178,10 @@ class TrashRepository(
         return RestoreResult(
             entityType = TrashSnapshot.TYPE_DUEL_AXIS,
             restoredName = name,
-            losses = RestoreLossCounts(duelVerdicts = lostVerdicts)
+            losses = RestoreLossCounts(
+                duelVerdicts = lostVerdicts,
+                duelBasisAxisCleared = source.isBasisAxis && !keepBasis
+            )
         )
     }
 

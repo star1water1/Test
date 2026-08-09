@@ -185,6 +185,8 @@ $MAIN/util/DuelCounterRelations.kt
 $MAIN/util/DuelRecords.kt
 $MAIN/util/DuelImageParticipants.kt
 $MAIN/util/DuelImageRoster.kt
+$MAIN/util/DuelImagePrune.kt
+$MAIN/util/RepresentativeWeighting.kt
 $MAIN/util/DuelSession.kt
 $MAIN/util/DuelStandings.kt
 $MAIN/util/DuelEntry.kt
@@ -272,6 +274,8 @@ $TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/DuelRecordsTest.kt
 $TEST/util/DuelImageParticipantsTest.kt
 $TEST/util/DuelImageRosterTest.kt
+$TEST/util/DuelImagePruneTest.kt
+$TEST/util/RepresentativeWeightingTest.kt
 $TEST/util/DuelSessionTest.kt
 $TEST/util/DuelStandingsTest.kt
 $TEST/util/DuelEntryTest.kt
@@ -306,6 +310,7 @@ $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
 $TEST/util/DefaultFieldPlanTest.kt
 $TEST/data/model/DefaultFieldRefTest.kt
+$TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/util/ImagePathMatchTest.kt

@@ -100,7 +100,16 @@ class ImageManagerViewModel(
                 ImageFilterHelper.TagFilter.valueOf(
                     savedState["filter_tag_presence"] ?: ImageFilterHelper.TagFilter.ANY.name
                 )
-            }.getOrDefault(ImageFilterHelper.TagFilter.ANY)
+            }.getOrDefault(ImageFilterHelper.TagFilter.ANY),
+            // **걸러낼 후보는 세션 한정이다**(B-104 ⓒ) — 다른 축과 달리 prefs에 남기지 않는다.
+            // 이 필터는 *"지금 정리하는 중"*의 작업 상태이고, 켠 채로 탭을 떠났다가 며칠 뒤
+            // 다시 열면 **이미지 대부분이 사라진 화면**을 보게 된다(그 사이 판이 쌓여 후보가
+            // 달라져 있을 수도 있다). 검색어를 세션 한정으로 둔 것과 같은 근거다.
+            prune = runCatching {
+                ImageFilterHelper.PruneFilter.valueOf(
+                    savedState["filter_prune"] ?: ImageFilterHelper.PruneFilter.ANY.name
+                )
+            }.getOrDefault(ImageFilterHelper.PruneFilter.ANY)
         )
         set(value) {
             savedState["filter_base"] = value.base.name
@@ -108,6 +117,7 @@ class ImageManagerViewModel(
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
             savedState["filter_tag_presence"] = value.tagPresence.name
+            savedState["filter_prune"] = value.prune.name
             prefs.edit()
                 .putString("filter_base", value.base.name)
                 .putString("filter_link", value.link.name)
@@ -180,7 +190,20 @@ class ImageManagerViewModel(
          * 삭제 확인창이 결과를 미리 말하려면 필요하다 — 소유자 목록만으로는
          * "쓰는 사람"과 "대표로 삼은 사람"을 구별할 수 없다.
          */
-        val representativeOf: List<String> = emptyList()
+        val representativeOf: List<String> = emptyList(),
+        /**
+         * 대조용 정규 경로 — **여기서 들고 다니는 것이 요점이다** (B-104 소비처 ⓒ).
+         *
+         * `buildItems`가 이미 IO 스레드에서 파일마다 한 번 계산하는 값이라(`f.canonicalPath`)
+         * 담아 두면 공짜다. 담지 않으면 **화면이 필터를 걸 때마다 다시 계산하는데**, 그 자리가
+         * 하필 `ImageFilterHelper.apply`의 `Facts` 조립이라 **항목 전부에 대해 무조건 돈다**
+         * (필터가 하나라도 걸려 있으면 단축 평가가 없다). 그러면 검색어 한 글자에
+         * **이미지 수만큼의 파일 시스템 호출이 메인 스레드에** 붙는다.
+         *
+         * 비어 있으면 [path]로 갈음한다 — 정규화가 실패한 경우이며, 실패 처분은
+         * [com.novelcharacter.app.util.ImagePathMatch]의 규약과 같다(원본을 그대로 쓴다).
+         */
+        val canonicalPath: String = path
     )
     data class Summary(
         val totalBytes: Long,
@@ -273,6 +296,110 @@ class ImageManagerViewModel(
 
     private val _loading = MutableLiveData(false)
     val loading: LiveData<Boolean> = _loading
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 걸러낼 후보 (B-104 소비처 ⓒ — 설계 13-5)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 칩이 켜졌을 때의 상태. **꺼져 있으면 계산하지 않는다** — 질의조차 열지 않으므로
+     * 이 기능을 쓰지 않는 사용자에게 비용이 0이다.
+     *
+     * 갈래를 셋으로 두는 것은 화면이 할 말이 다르기 때문이다: *"계산 중"* · *"기준 축이
+     * 없다(대결 축에서 지정하세요)"* · *"기준은 있는데 조건에 맞는 그림이 없다"*.
+     * 한 갈래로 뭉치면 빈 화면이 고장과 구별되지 않는다(원칙 02).
+     */
+    sealed interface PruneState {
+        /** 칩이 꺼져 있다 — 아무것도 계산하지 않았다. */
+        object Off : PruneState
+
+        object Loading : PruneState
+
+        /**
+         * @property byPath 후보의 **정규 경로 → 그 후보가 왜 후보인가**.
+         *   **근거를 함께 들고 다니는 것이 요점이다** — 지우기 직전 화면에서 *"왜 이것이
+         *   후보인가"*를 말할 수 없으면 앱이 지어낸 서열이 된다(원칙 02). 경로만 담아 두면
+         *   화면이 그 물음에 답할 재료가 아예 없다.
+         * @property basisUniverses 기준 이미지 축을 가진 세계관 수. **0이면 지정이 없다** —
+         *   화면은 후보 0건이 아니라 *"기준 축을 먼저 지정하세요"*를 말해야 한다.
+         * @property scannedCharacters 점수를 낸 캐릭터 수 — *"몇 명분을 봤는가"*의 규모.
+         */
+        data class Ready(
+            val byPath: Map<String, com.novelcharacter.app.util.DuelImagePrune.Candidate>,
+            val basisUniverses: Int,
+            val scannedCharacters: Int
+        ) : PruneState {
+            val paths: Set<String> get() = byPath.keys
+            val hasBasis: Boolean get() = basisUniverses > 0
+        }
+    }
+
+    private val _pruneState = MutableLiveData<PruneState>(PruneState.Off)
+    val pruneState: LiveData<PruneState> = _pruneState
+
+    /**
+     * *"제안까지가 끝"* 고지를 아직 안 했는가 — **화면이 아니라 여기서 센다.**
+     *
+     * 조각 필드로 세면 회전 한 번에 도로 `false`가 되어(관측은 뷰 재생성마다 되돌아온다)
+     * **같은 말이 회전마다 반복된다.** 칩을 다시 켤 때만 되살린다.
+     */
+    private var pruneNoticePending = false
+
+    /**
+     * 돌고 있는 후보 계산. **끄거나 다시 켤 때 반드시 끊는다.**
+     *
+     * 안 끊으면 칩을 껐는데 **뒤늦게 끝난 계산이 `Off`를 덮어** 꺼진 칩에 개수가 붙는다
+     * (그리고 `PruneState.Off`가 스스로 선언한 *"아무것도 계산하지 않았다"*가 거짓이 된다).
+     * 빠르게 껐다 켜면 계산 둘이 순서 보장 없이 경쟁한다.
+     */
+    private var pruneJob: kotlinx.coroutines.Job? = null
+
+    /** 고지할 차례인가 — 한 번 읽으면 소진된다. */
+    fun consumePruneNotice(): Boolean {
+        if (!pruneNoticePending) return false
+        pruneNoticePending = false
+        return true
+    }
+
+    /**
+     * 칩을 켜고 끈다 — 켜는 순간 계산이 돈다.
+     *
+     * **`load()`에 얹지 않은 것이 요점이다.** 이미지 탭은 `onResume`마다 목록을 다시 읽는데,
+     * 거기 얹으면 칩을 쓰지 않는 사용자도 탭에 올 때마다 대결 표를 훑게 된다.
+     */
+    fun setPruneFilter(on: Boolean) {
+        criteria = criteria.copy(
+            prune = if (on) ImageFilterHelper.PruneFilter.CANDIDATE else ImageFilterHelper.PruneFilter.ANY
+        )
+        // 앞선 계산은 결과가 무엇이든 이제 낡았다 — 켜든 끄든 먼저 끊는다.
+        pruneJob?.cancel()
+        pruneJob = null
+        if (!on) { _pruneState.value = PruneState.Off; pruneNoticePending = false; return }
+        pruneNoticePending = true
+        _pruneState.value = PruneState.Loading
+        pruneJob = viewModelScope.launch {
+            val state = withContext(Dispatchers.IO) { computePruneCandidates() }
+            _pruneState.value = state
+        }
+    }
+
+    /**
+     * 기준 이미지 축이 지정된 **모든 세계관**의 후보를 모은다.
+     *
+     * **훑는 일은 저장소가 한다**([DuelRepository.basisImageScores]) — 대표 추첨(ⓑ)이 쓰는
+     * 그 진입점이다. 여기서 따로 훑으면 두 소비처가 다른 순위를 볼 수 있다.
+     */
+    private suspend fun computePruneCandidates(): PruneState {
+        val options = com.novelcharacter.app.util.DuelImageBasisPrefs.pruneOptions(getApplication())
+        val scan = app.duelRepository.basisImageScores()
+        val byPath = LinkedHashMap<String, com.novelcharacter.app.util.DuelImagePrune.Candidate>()
+        for (perCharacter in scan.byCharacter.values) {
+            for (candidate in com.novelcharacter.app.util.DuelImagePrune.candidates(perCharacter.scores, options)) {
+                byPath[com.novelcharacter.app.util.ImagePathMatch.canonical(candidate.path)] = candidate
+            }
+        }
+        return PruneState.Ready(byPath, scan.basisUniverses, scan.byCharacter.size)
+    }
 
     fun load() {
         _loading.value = true
@@ -384,7 +511,9 @@ class ImageManagerViewModel(
             }
             items.add(ManagedImage(
                 f.absolutePath, size, f.lastModified(), owners, status, meta,
-                representativeOf = representativeMap[canon] ?: emptyList()
+                representativeOf = representativeMap[canon] ?: emptyList(),
+                // 이미 여기서 한 번 계산한 값이다 — 화면이 다시 계산하지 않게 함께 싣는다.
+                canonicalPath = canon
             ))
         }
         items.sortByDescending { it.sizeBytes }  // 기본 정렬: 큰 것부터(정리 우선)

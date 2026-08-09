@@ -51,6 +51,18 @@
             android:visibility="gone"
             tools:text="링크 그룹 · 3장" />
 
+        <!-- 걸러낼 후보의 근거 (B-104 소비처 ⓒ) — 후보로 오른 이미지에만 노출.
+             제안 옆에 근거가 없으면 앱이 지어낸 서열이 된다(원칙 02). -->
+        <TextView
+            android:id="@+id/detailPruneReasonText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="?attr/colorError"
+            android:visibility="gone"
+            tools:text="걸러낼 후보 — 12장 중 11위 · 7판" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailTagEditButton"
             style="@style/Widget.App.Button.Outlined"

@@ -7,7 +7,10 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.DialogImageSettingsBinding
+import com.novelcharacter.app.util.DuelImageBasisPrefs
+import com.novelcharacter.app.util.DuelImagePrune
 import com.novelcharacter.app.util.ImageSettingsStore
+import com.novelcharacter.app.util.RepresentativeWeighting
 import com.novelcharacter.app.util.StorageAnalyzer
 import kotlinx.coroutines.launch
 
@@ -94,6 +97,61 @@ object ImageSettingsDialog {
             // 캐릭터 자동 링크 — 기본 켜짐
             binding.autoLinkSwitch.isChecked = currentAutoLink
 
+            // ── 대결 기준 축의 쓰임 (B-104 소비처 ⓑ·ⓒ · 설계 13-5) ──
+            //
+            // **어느 축인가는 여기서 고르지 않는다** — 그 값은 DB(축 편집 창)이고 여기 셋은
+            // 기기 설정이다. 같은 창에 섞으면 백업을 따라가는 값과 안 가는 값이 한 줄에 선다.
+            var strength = DuelImageBasisPrefs.strength(ctx)
+            var pruneOptions = DuelImageBasisPrefs.pruneOptions(ctx)
+            when (strength) {
+                RepresentativeWeighting.Strength.OFF -> binding.strengthOff.isChecked = true
+                RepresentativeWeighting.Strength.WEAK -> binding.strengthWeak.isChecked = true
+                RepresentativeWeighting.Strength.STRONG -> binding.strengthStrong.isChecked = true
+            }
+            binding.duelStrengthGroup.setOnCheckedChangeListener { _, id ->
+                strength = when (id) {
+                    R.id.strengthOff -> RepresentativeWeighting.Strength.OFF
+                    R.id.strengthStrong -> RepresentativeWeighting.Strength.STRONG
+                    else -> RepresentativeWeighting.Strength.WEAK
+                }
+            }
+
+            fun refreshPruneLabels() {
+                binding.pruneBottomValue.text =
+                    ctx.getString(R.string.image_settings_duel_prune_bottom, pruneOptions.percent)
+                binding.pruneMinPlayedValue.text =
+                    ctx.getString(R.string.image_settings_duel_prune_min_played, pruneOptions.played)
+            }
+            refreshPruneLabels()
+            binding.pruneBottomValue.setOnClickListener {
+                val choices = DuelImagePrune.BOTTOM_PERCENT_CHOICES
+                val labels = choices
+                    .map { ctx.getString(R.string.image_settings_duel_prune_bottom, it) }
+                    .toTypedArray()
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.image_settings_duel_basis_title)
+                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.percent).coerceAtLeast(0)) { d, w ->
+                        pruneOptions = pruneOptions.copy(bottomPercent = choices[w])
+                        refreshPruneLabels(); d.dismiss()
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+            binding.pruneMinPlayedValue.setOnClickListener {
+                val choices = DuelImagePrune.MIN_PLAYED_CHOICES
+                val labels = choices
+                    .map { ctx.getString(R.string.image_settings_duel_prune_min_played, it) }
+                    .toTypedArray()
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.image_settings_duel_basis_title)
+                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.played).coerceAtLeast(0)) { d, w ->
+                        pruneOptions = pruneOptions.copy(minPlayed = choices[w])
+                        refreshPruneLabels(); d.dismiss()
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.image_settings_title)
                 .setView(binding.root)
@@ -109,6 +167,7 @@ object ImageSettingsDialog {
                             if (binding.policyAlwaysAdopt.isChecked) ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT
                             else ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY
                         )
+                        DuelImageBasisPrefs.save(ctx, strength, pruneOptions)
                         val autoLinkOn = binding.autoLinkSwitch.isChecked
                         store.setAutoLinkByCharacter(autoLinkOn)
                         // 끔 → 켬 전환은 즉시 전체 정리 — 캐릭터를 일일이 다시 저장하지 않아도

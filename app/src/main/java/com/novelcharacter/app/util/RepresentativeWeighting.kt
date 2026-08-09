@@ -1,0 +1,162 @@
+package com.novelcharacter.app.util
+
+import kotlin.math.pow
+
+/**
+ * **대표 이미지 추첨의 가중치** (B-104 소비처 ⓑ — 설계 `docs/duel_system_design_2026-08.md` 13-5).
+ *
+ * ## 왜 '고정 1위'가 아니라 '가중 추첨'인가 (사용자 확정 2026.08.09)
+ * 물었을 때 사용자가 되물어 갈음한 자리다: *"대결 1위 그림이 대표가 되면 이미지 다양성이
+ * 아쉽잖아. 확률이면 모를까."* 그래서 `representative_image_design_2026-08.md` **D9**의
+ * 사다리 ②칸(*이미지 축 승자를 살아 있는 칸으로 두는 안*)은 **폐기됐고**, 처방은
+ * [CharacterRepresentativeImage]가 이미 하고 있는 **시드 랜덤을 균등에서 가중으로 바꾸는 것**이다.
+ * 사다리는 그대로 셋이다 — 지정한 대표가 이기고, 없을 때의 추첨만 기울어진다.
+ *
+ * ## 가중치는 지어내지 않는다 — γ가 그대로 확률이다
+ * 적합이 내는 강함 γ는 **"i가 j를 이길 확률 = γi/(γi+γj)"**로 정의된 수이고
+ * ([DuelRating]), 표시 점수는 `앵커 + SCALE·log₁₀γ`다. 그래서 점수를 되돌린 γ를 그대로
+ * 추첨 무게로 쓰면 **"이길 확률이 두 배인 그림이 두 배 자주 뜬다"**가 되어, 무게의 뜻을
+ * 따로 설명할 필요가 없다. 세기는 그 γ에 지수 α를 씌워 조절한다(`γ^α`) —
+ * α=0이면 균등, α=1이면 강함 그대로다.
+ *
+ * ## 두 개의 빗장
+ * 1. **한 판도 안 친 그림은 앵커에 선다**(γ=1). 그래서 **대결을 한 번도 안 한 캐릭터는
+ *    무게가 전부 같고, [weights]가 그때 null을 내어 종전 균등 추첨이 그대로 돈다** —
+ *    *"지금과 완전히 같다"*가 문서의 약속이 아니라 코드의 성질이 된다.
+ * 2. **벌어진 차이를 [SPREAD_CAP]에서 끊는다.** 안 끊으면 점수가 크게 벌어진 캐릭터에서
+ *    1위 그림의 무게가 수백 배가 되어 *확률*이 사실상 *고정*이 된다 — 사용자가 물리친
+ *    바로 그 모양이다. 끊으면 최악의 비율이 `10^α`로 묶인다(약하게 ≈ 3.2:1, 세게 10:1).
+ *
+ * **Android 무의존 순수 계층이다** — 무게가 틀려도 앱은 죽지 않고 그림만 조용히 기울며,
+ * 컴파일도 정적 검사도 전부 통과한다. 실행으로 재는 자리에 둔다(「세션 착수 규칙」 4번).
+ */
+object RepresentativeWeighting {
+
+    /**
+     * 추첨을 얼마나 기울이는가 — **약하게가 기본이다**(사용자 확정).
+     *
+     * @property alpha γ에 씌우는 지수. 0이면 균등이고 1이면 강함 그대로다.
+     */
+    enum class Strength(val alpha: Double) {
+        /** 꺼둠 — 종전 그대로의 균등 추첨. 점수를 읽지도 않는다. */
+        OFF(0.0),
+
+        /** 약하게 — γ의 제곱근. [SPREAD_CAP]까지 벌어져도 약 3.2배 안에 든다. */
+        WEAK(0.5),
+
+        /** 세게 — γ 그대로. [SPREAD_CAP]까지 벌어지면 10배다. */
+        STRONG(1.0);
+
+        companion object {
+            /** 저장된 값을 읽는다. 모르는 값은 기본값으로 — 외부에서 편집된 설정이 앱을 막지 않는다. */
+            fun of(name: String?): Strength = entries.firstOrNull { it.name == name } ?: WEAK
+        }
+    }
+
+    /**
+     * 무게를 낼 때 세는 점수 차의 상한(1위 대비).
+     *
+     * **[DuelRating.SCALE]과 같은 값인 것은 우연이 아니다** — 그 눈금 한 칸이 곧 *강함 10배*라
+     * 여기서 끊으면 *"세게 두어도 열 배까지"*라고 말할 수 있다. 이보다 더 벌어진 차이를
+     * 그대로 세면 추첨이 아니라 고정이 되고, 그것이 이 기능이 갈음한 그 안이다.
+     */
+    const val SPREAD_CAP = DuelRating.SCALE
+
+    /**
+     * 한 캐릭터의 추첨 무게표.
+     *
+     * **[unknown]이 따로 있는 것이 요점이다.** 표는 만든 시점의 목록으로 세우는데 쓰는 시점의
+     * 목록은 더 길 수 있다(그 사이에 그림을 넣었고 대결 에폭은 아직 안 올랐다). 그때 표에 없는
+     * 경로를 **1.0으로 치면 1위와 같은 무게**가 되어(모든 무게가 `(0,1]`이고 1위가 정확히 1.0이다)
+     * *방금 넣은 그림이 가장 자주 뜨는* 꼴이 된다 — [weights]가 안 겨룬 그림을 **앵커**에
+     * 세우는 규칙과 정면으로 어긋난다. 같은 기능의 두 층이 같은 개념을 두고 다르게 말하면
+     * 어느 쪽이 옳은지 아무도 모른다(R-7이 막는 그 모양).
+     *
+     * @property byPath 정규 경로와 넘긴 표기 둘 다를 키로 담는다(아래 [weights] 참조).
+     * @property unknown 표에 없는 경로의 무게 — **앵커에 선 그림과 같은 값**이다.
+     */
+    data class Weights(
+        val byPath: Map<String, Double>,
+        val unknown: Double
+    ) {
+        /** 이 경로의 무게. 표에 없으면 [unknown]. **정규화를 부르지 않는 빠른 길이 먼저다.** */
+        fun of(path: String?): Double {
+            if (path != null) {
+                byPath[path]?.let { return it }
+                val trimmed = path.trim()
+                if (trimmed != path) byPath[trimmed]?.let { return it }
+            }
+            // 여기까지 왔으면 표기가 갈린 것이다(개명 추종이 원본 표기를 지킨다).
+            // `canonical`은 파일 시스템 호출이라 **마지막에만** 부른다.
+            return byPath[ImagePathMatch.canonical(path)] ?: unknown
+        }
+    }
+
+    /**
+     * 이 캐릭터의 그림별 추첨 무게 — **넘긴 표기와 정규 경로 둘 다를 키로 담는다.**
+     *
+     * 위치가 아니라 경로로 키를 두는 것은 무게를 만든 시점과 쓰는 시점 사이에 목록이
+     * 바뀔 수 있기 때문이다(편집·폴더 왕복). 위치로 두면 그때 **남의 그림의 무게**가 적용되고,
+     * 그것은 오류가 나지 않아 아무도 모른다.
+     *
+     * **두 키를 함께 담는 것은 값이 아니라 비용 때문이다.** [ImagePathMatch.canonical]은
+     * `File.canonicalPath` — 즉 **파일 시스템 호출**이다. 정규 경로만 키로 두면 읽는 쪽이
+     * 대조할 때마다 그것을 불러야 하는데, 그 자리가 하필 **어댑터의 `bind`**라 목록을 튕길
+     * 때마다 그림 수만큼의 호출이 메인 스레드에 붙는다. 여기서 한 번 더 담아 두면 읽는 쪽은
+     * **넘긴 표기 그대로 맞혀** 그 호출을 건너뛰고, 표기가 갈린 경우에만 정규화로 되짚는다.
+     *
+     * @param paths 이 캐릭터의 이미지 경로.
+     * @param scores 경로별 표시 점수. **여기 없는 경로는 앵커**(=γ 1)로 친다 — 한 판도
+     *   안 친 그림이고, [DuelScoreIndex]의 계약 2가 그런 참가자를 표에서 빼기 때문에
+     *   *"빠졌다"*와 *"평균이다"*가 여기서 같은 뜻이 된다. **키는 어느 표기로 넘겨도 된다** —
+     *   이 함수가 정규화해 맞춘다(판에 적힌 표기와 목록의 표기는 갈릴 수 있다. 개명 추종이
+     *   원본 표기를 지키기 때문이며, 그때 대조에 실패하면 멀쩡한 점수가 통째로 무시된다).
+     * @return 기울일 것이 없으면 **null**이다 — 세기가 꺼져 있거나, 점수가 하나도 없거나,
+     *   전원이 같은 점수일 때. 호출부는 null을 받으면 종전 균등 추첨을 그대로 쓴다.
+     */
+    fun weights(
+        paths: List<String>,
+        scores: Map<String, Int>,
+        strength: Strength
+    ): Weights? {
+        if (strength == Strength.OFF || paths.size < 2 || scores.isEmpty()) return null
+
+        val canonScores = HashMap<String, Int>(scores.size)
+        for ((key, score) in scores) {
+            val canon = ImagePathMatch.canonical(key)
+            if (canon.isNotEmpty()) canonScores[canon] = score
+        }
+
+        val scoreByPath = LinkedHashMap<String, Int>(paths.size)
+        for (path in paths) {
+            val key = ImagePathMatch.canonical(path)
+            if (key.isEmpty()) continue
+            scoreByPath[key] = canonScores[key] ?: DuelRating.ANCHOR_SCORE
+        }
+        if (scoreByPath.size < 2) return null
+        // 전원이 같은 점수면 기울일 것이 없다 — null을 내어 **종전 추첨 그대로**가 되게 한다.
+        // 여기서 전부 1.0인 표를 내면 뽑는 방법이 나머지 연산에서 누적합으로 갈려,
+        // 같은 시드가 다른 그림을 고른다(대결을 안 한 캐릭터의 그림이 이유 없이 바뀐다).
+        val top = scoreByPath.values.max()
+        if (scoreByPath.values.all { it == top }) return null
+
+        fun weightOf(score: Int): Double {
+            val delta = (score - top).toDouble().coerceAtLeast(-SPREAD_CAP)
+            return 10.0.pow(strength.alpha * delta / DuelRating.SCALE)
+        }
+
+        val out = LinkedHashMap<String, Double>(scoreByPath.size * 2)
+        for ((key, score) in scoreByPath) out[key] = weightOf(score)
+        // 넘긴 표기로도 맞을 수 있게 한 벌 더 담는다(위 KDoc — 읽는 쪽의 파일 시스템 호출을
+        // 없애려는 것이다). 이미 정규 표기인 경로는 같은 키라 덮어써도 값이 같다.
+        for (path in paths) {
+            val raw = path.trim()
+            if (raw.isEmpty()) continue
+            val weight = out[ImagePathMatch.canonical(raw)] ?: continue
+            out[raw] = weight
+        }
+        // **표에 없는 경로도 앵커에 선다** — 여기 담긴 그림들이 앵커를 그렇게 다루는 것과
+        // 같은 규칙이다(그러지 않으면 나중에 넣은 그림이 1위와 같은 무게를 갖는다).
+        return Weights(out, weightOf(DuelRating.ANCHOR_SCORE))
+    }
+}

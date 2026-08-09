@@ -1733,9 +1733,12 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(
                 axis.candidateFiltersJson?.takeIf { DuelCandidateFilter.parse(it).isNotEmpty() }.orEmpty()
             )
-            row.createCell(8).setCellValue(axis.displayOrder.toDouble())
-            row.createCell(9).setTextSafe(axis.code)
-            row.createCell(10).setCellValue(axis.createdAt.toDouble())
+            // 기준 축(B-104 ⓑ·ⓒ) — 대표 추첨의 가중치와 걸러낼 후보가 이 축을 따른다.
+            // 다른 불리언 열과 같은 표기(Y/N)라 사람이 고치는 법이 시트 전체에서 하나다.
+            row.createCell(8).setTextSafe(if (axis.isBasisAxis) "Y" else "N")
+            row.createCell(9).setCellValue(axis.displayOrder.toDouble())
+            row.createCell(10).setTextSafe(axis.code)
+            row.createCell(11).setCellValue(axis.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, axes.size)

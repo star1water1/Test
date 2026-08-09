@@ -47,16 +47,32 @@ object ImageFilterHelper {
      */
     enum class TagFilter { ANY, UNTAGGED }
 
+    /**
+     * **걸러낼 후보** 축 (B-104 소비처 ⓒ — 설계 `duel_system_design_2026-08.md` 13-5).
+     *
+     * 다른 축들과 마찬가지로 **직교**라 독립 축이다 — *"캐릭터에 배정됐고 걸러낼 후보인 것"*은
+     * 두 축의 교집합이고, [BaseFilter]에 값으로 넣으면 소유·상태 분류와 뒤섞인다.
+     *
+     * **판정이 이 파일에 없는 것이 [LinkFilter]와 다른 점이다.** 링크 여부는 항목이 스스로
+     * 들고 있지만(그래서 [Facts.linkGroupId] 한 칸이면 된다) 걸러낼 후보는 **기준 축의 순위
+     * 전체를 적합해야** 나온다([DuelImagePrune]). 그래서 [Facts.pruneCandidate]는 *계산된
+     * 사실*을 받아 오는 칸이고, 그 계산은 호출부(ViewModel)가 켜져 있을 때만 한다 —
+     * 꺼져 있으면 질의조차 열지 않는다.
+     */
+    enum class PruneFilter { ANY, CANDIDATE }
+
     data class Criteria(
         val base: BaseFilter = BaseFilter.ALL,
         val link: LinkFilter = LinkFilter.ANY,
         val tags: Set<String> = emptySet(),
         val query: String = "",
-        val tagPresence: TagFilter = TagFilter.ANY
+        val tagPresence: TagFilter = TagFilter.ANY,
+        val prune: PruneFilter = PruneFilter.ANY
     ) {
         val isActive: Boolean
             get() = base != BaseFilter.ALL || link != LinkFilter.ANY ||
-                tags.isNotEmpty() || query.isNotBlank() || tagPresence != TagFilter.ANY
+                tags.isNotEmpty() || query.isNotBlank() || tagPresence != TagFilter.ANY ||
+                prune != PruneFilter.ANY
     }
 
     /** 매칭에 필요한 항목 사실 — 호출측이 자기 모델에서 추출한다. */
@@ -75,7 +91,15 @@ object ImageFilterHelper {
          * **작품·세계관이 아직 쓰는 이미지도 값이 있을 수 있다** — 캐릭터 축의 이력이라
          * 현재 소유와 독립이다(설계 D2). 그래서 [BaseFilter.DETACHED]는 [status]를 보지 않는다.
          */
-        val detachedAt: Long? = null
+        val detachedAt: Long? = null,
+        /**
+         * 기준 이미지 축에서 **걸러낼 후보로 오른 그림인가** (B-104 ⓒ).
+         *
+         * 항목이 스스로 아는 사실이 아니라 **호출부가 계산해 넣는 값**이다(위 [PruneFilter] 참조).
+         * 기본값 false는 *"계산하지 않았다"*와 *"후보가 아니다"*를 같게 다루는데, 둘의 처분이
+         * 같아서 그렇다 — 칩이 꺼져 있으면 이 칸을 아무도 읽지 않는다.
+         */
+        val pruneCandidate: Boolean = false
     )
 
     fun <T> apply(items: List<T>, criteria: Criteria, facts: (T) -> Facts): List<T> {
@@ -85,8 +109,14 @@ object ImageFilterHelper {
             val f = facts(item)
             matchesBase(f, criteria.base) && matchesLink(f, criteria.link) &&
                 matchesTagPresence(f, criteria.tagPresence) &&
+                matchesPrune(f, criteria.prune) &&
                 matchesTags(f, criteria.tags) && matchesQuery(f, query)
         }
+    }
+
+    private fun matchesPrune(f: Facts, prune: PruneFilter): Boolean = when (prune) {
+        PruneFilter.ANY -> true
+        PruneFilter.CANDIDATE -> f.pruneCandidate
     }
 
     private fun matchesLink(f: Facts, link: LinkFilter): Boolean = when (link) {

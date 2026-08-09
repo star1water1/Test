@@ -227,6 +227,9 @@ class TrashFragment : Fragment() {
         if (losses.gradeSystemLinks > 0) {
             details.add(getString(R.string.trash_skip_grade_system_links, losses.gradeSystemLinks))
         }
+        if (losses.duelBasisAxisCleared) {
+            details.add(getString(R.string.trash_skip_duel_basis_axis))
+        }
         if (losses.fieldValueEntries > 0) {
             details.add(getString(R.string.trash_skip_field_value_entries, losses.fieldValueEntries))
         }

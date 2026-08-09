@@ -13,10 +13,14 @@ import com.novelcharacter.app.data.model.Character
  *
  * 사다리(D2):
  * 1. 지정한 대표가 **그 캐릭터의 목록 안에 있으면** 그것 ([Source.PINNED])
- * 2. *(비어 있는 칸 — B-104 대결이 이미지 축 승자를 내면 여기 들어간다. D9.
- *    **지금 인자를 미리 만들지 않는다** — 쓰지 않는 인자는 방편식이다)*
- * 3. 시드 랜덤 ([Source.RANDOM])
- * 4. 목록이 비었으면 없음 ([Source.NONE])
+ * 2. 시드 랜덤 ([Source.RANDOM]) — **대결 점수가 있으면 균등이 아니라 가중이다**(B-104 ⓑ)
+ * 3. 목록이 비었으면 없음 ([Source.NONE])
+ *
+ * **D9의 '비어 있는 칸'은 칸으로 채워지지 않았다.** 종전 이 자리는 *"대결이 이미지 축 승자를
+ * 내면 2번 칸에 들어간다"*고 적혀 있었는데, 물었을 때 사용자가 되물어 갈음했다 —
+ * *"대결 1위 그림이 대표가 되면 이미지 다양성이 아쉽잖아. 확률이면 모를까."* 그래서 승자는
+ * **사다리의 칸이 아니라 3번 추첨의 무게**가 됐다([RepresentativeWeighting], 설계 13-5).
+ * 사다리가 셋으로 줄어든 것이 그 갈음의 자취다.
  *
  * 랜덤 주기(D3 · 사용자 확정 ㄴ3·P-3): **시드 하나 = 화면 진입 한 번.**
  * 화면이 [newSeed]로 시드를 하나 뽑아 들고 있으면, 같은 화면 안에서는 스크롤 재바인드·검색·
@@ -75,20 +79,34 @@ object CharacterRepresentativeImage {
         return list.orEmpty().filterNotNull().filter { it.isNotBlank() }
     }
 
-    /** [paths] + [pickFrom]. 호출부 대부분이 이것을 쓴다. */
+    /**
+     * [paths] + [pickFrom]. 호출부 대부분이 이것을 쓴다.
+     *
+     * @param weights 추첨 무게(B-104 ⓑ). 기본값 null이 **종전 그대로의 균등 추첨**이므로,
+     *   가중치를 들지 않는 호출부는 한 글자도 바뀌지 않는다.
+     */
     fun pick(
         imagePathsJson: String?,
         representativePath: String?,
         seed: Long,
-        characterId: Long
-    ): Pick = pickFrom(paths(imagePathsJson), representativePath, seed, characterId)
+        characterId: Long,
+        weights: RepresentativeWeighting.Weights? = null
+    ): Pick = pickFrom(paths(imagePathsJson), representativePath, seed, characterId, weights)
 
-    /** 이미 경로 목록을 손에 들고 있는 호출부용(통계 드릴다운 등). */
+    /**
+     * 이미 경로 목록을 손에 들고 있는 호출부용(통계 드릴다운 등).
+     *
+     * @param weights 경로별 추첨 무게 — [RepresentativeWeighting]이 만든다. null이면 균등이다.
+     *   목록에 있으나 표에 없는 경로는 [RepresentativeWeighting.Weights.unknown](= 앵커에 선
+     *   그림의 무게)로 친다. **시드와 함께 다녀야 한다** — 무게가 화면 도중에 바뀌면 같은
+     *   시드가 다른 그림을 골라, B-103이 없앤 *"화면마다 다른 그림"*이 되살아난다.
+     */
     fun pickFrom(
         paths: List<String>,
         representativePath: String?,
         seed: Long,
-        characterId: Long
+        characterId: Long,
+        weights: RepresentativeWeighting.Weights? = null
     ): Pick {
         val pinned = ImagePathMatch.canonical(representativePath)
         val pinnedIndex = if (pinned.isEmpty()) -1 else ImagePathMatch.indexIn(paths, pinned)
@@ -103,7 +121,7 @@ object CharacterRepresentativeImage {
 
         if (paths.isEmpty()) return NONE.copy(pinnedMissing = missing)
 
-        val index = randomIndex(seed, characterId, paths.size)
+        val index = weightedIndex(seed, characterId, paths, weights)
         return Pick(paths[index], Source.RANDOM, pinnedMissing = missing, index = index)
     }
 
@@ -112,8 +130,9 @@ object CharacterRepresentativeImage {
         imagePathsJson: String?,
         representativePath: String?,
         seed: Long,
-        characterId: Long
-    ): String? = pick(imagePathsJson, representativePath, seed, characterId).path
+        characterId: Long,
+        weights: RepresentativeWeighting.Weights? = null
+    ): String? = pick(imagePathsJson, representativePath, seed, characterId, weights).path
 
     /**
      * `index = floorMod(mix(seed, characterId), size)` (D3).
@@ -127,6 +146,54 @@ object CharacterRepresentativeImage {
         val hash = splitMix64(seed xor splitMix64(characterId))
         val n = size.toLong()
         return (((hash % n) + n) % n).toInt()
+    }
+
+    /**
+     * 무게가 있으면 가중 추첨, 없으면 [randomIndex] (B-104 ⓑ).
+     *
+     * **무게가 없는 길이 종전 코드 그대로인 것이 요점이다.** 무게가 전부 같을 때도 여기로
+     * 오지 않게 [RepresentativeWeighting.weights]가 null을 내므로, 대결을 안 한 캐릭터는
+     * **한 비트도 다르지 않은 그림**을 본다.
+     *
+     * 뽑는 법: 같은 splitMix64 해시를 `[0,1)` 실수로 펴서 누적 무게를 걷는다. 시드가 같으면
+     * 결과도 같다([randomIndex]와 같은 성질) — 스크롤 재바인드에 그림이 튀지 않는다.
+     */
+    fun weightedIndex(
+        seed: Long,
+        characterId: Long,
+        paths: List<String>,
+        weights: RepresentativeWeighting.Weights?
+    ): Int {
+        if (paths.size <= 1) return 0
+        if (weights == null || weights.byPath.isEmpty()) return randomIndex(seed, characterId, paths.size)
+
+        var total = 0.0
+        val each = DoubleArray(paths.size) { index ->
+            // **경로를 `String?`로 받는다** — 선언은 `List<String>`이지만 이 목록은 Gson이
+            // 파싱한 `imagePaths`라 **런타임에 null·빈 문자열이 섞여 들어온다**(어댑터가 날
+            // Gson으로 읽는다). 여기서 `path.trim()`을 바로 부르면 그 자리에서 죽는다.
+            //
+            // 표에 없는 경로는 [RepresentativeWeighting.Weights.unknown] — *"아직 안 겨룬 그림"*의
+            // 무게이고 **앵커에 선다.** 1.0으로 치면 그것이 곧 1위의 무게라(모든 무게가 `(0,1]`)
+            // 방금 넣은 그림이 가장 자주 뜬다. 0으로 치면 반대로 영영 안 뜬다.
+            val path: String? = paths.getOrNull(index)
+            val w = weights.of(path)
+            val safe = if (w.isFinite() && w > 0.0) w else weights.unknown.takeIf { it > 0.0 } ?: 1.0
+            total += safe
+            safe
+        }
+        if (total <= 0.0 || !total.isFinite()) return randomIndex(seed, characterId, paths.size)
+
+        val hash = splitMix64(seed xor splitMix64(characterId))
+        // 위 53비트를 [0,1)로 편다 — 나머지 연산과 달리 무게 비율을 그대로 쓸 수 있다.
+        val unit = (hash ushr 11).toDouble() / (1L shl 53).toDouble()
+        var cursor = unit * total
+        for (index in each.indices) {
+            cursor -= each[index]
+            if (cursor < 0.0) return index
+        }
+        // 부동소수 반올림으로 끝을 넘겼다 — 마지막 자리가 답이다(빈손으로 돌아가지 않는다).
+        return paths.size - 1
     }
 
     private fun splitMix64(input: Long): Long {

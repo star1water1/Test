@@ -12,7 +12,9 @@ import com.novelcharacter.app.data.repository.NameBankLinkOutcome
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.DuelAiContext
+import com.novelcharacter.app.util.DuelImageBasisPrefs
 import com.novelcharacter.app.util.DuelScoreIndex
+import com.novelcharacter.app.util.RepresentativeWeighting
 import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.SortComparators
@@ -524,6 +526,61 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return DuelScoreIndex.sorted(
             chars, ascending, scores, { it.code }, { it.name }
         )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 대표 이미지 추첨의 가중치 (B-104 소비처 ⓑ — 설계 13-5)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private val _representativeWeights = MutableLiveData<Map<Long, RepresentativeWeighting.Weights>>(emptyMap())
+
+    /** 캐릭터 id → 그 캐릭터의 추첨 무게표. 기준 축이 없으면 **언제까지나 빈 표**다. */
+    val representativeWeights: LiveData<Map<Long, RepresentativeWeighting.Weights>> = _representativeWeights
+
+    /** 마지막으로 계산한 (대결 에폭, 세기) — 같은 값이면 다시 계산하지 않는다. */
+    @Volatile private var weightsStamp: Pair<Int, RepresentativeWeighting.Strength>? = null
+
+    /**
+     * 대표 추첨의 가중치를 채운다 — **화면 진입 때 부른다.**
+     *
+     * ## 왜 목록 방출이 아니라 진입인가
+     * 무게가 바뀌면 같은 시드가 다른 그림을 고른다. 목록이 갱신될 때마다 다시 계산하면
+     * 검색어 한 글자에 썸네일이 흔들리고, 그것이 B-103이 없앤 *"화면마다 다른 그림"*이다.
+     * 진입 1회는 이미 시드를 새로 뽑는 자리라(`CharacterAdapter.refreshRandomImages`)
+     * 그 한 번의 갱신에 얹으면 눈에 보이는 변화가 하나로 합쳐진다.
+     *
+     * ## 다시 계산하는 때
+     * 대결 에폭이 올랐거나 세기 설정이 바뀌었을 때뿐이다. 그러지 않으면 탭을 오갈 때마다
+     * 기준 축을 훑는다 — 정렬 캐시([duelSortCache])와 같은 규칙이다.
+     *
+     * **세기가 꺼져 있으면 질의조차 열지 않는다**(`RepresentativeWeighting.weights`가 어차피
+     * null을 내므로, 훑고 나서 버리는 것은 순전한 낭비다).
+     */
+    fun loadRepresentativeWeights() {
+        val strength = DuelImageBasisPrefs.strength(app)
+        val stamp = duelEpoch.get() to strength
+        if (weightsStamp == stamp) return
+        viewModelScope.launch {
+            val weights = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (strength == RepresentativeWeighting.Strength.OFF) return@withContext emptyMap()
+                runCatching {
+                    val scan = duelRepository.basisImageScores()
+                    val out = HashMap<Long, RepresentativeWeighting.Weights>(scan.byCharacter.size)
+                    for ((characterId, entry) in scan.byCharacter) {
+                        val w = RepresentativeWeighting.weights(entry.paths, entry.scoreByPath, strength)
+                        if (w != null) out[characterId] = w
+                    }
+                    out
+                }.getOrElse {
+                    // 무게는 **있으면 좋은 것**이지 목록의 전제가 아니다 — 실패하면 균등으로
+                    // 돌아가면 그만이라, 목록 전체를 못 그리게 만들지 않는다.
+                    Log.e("CharacterViewModel", "Failed to load representative weights", it)
+                    emptyMap()
+                }
+            }
+            weightsStamp = stamp
+            _representativeWeights.value = weights
+        }
     }
 
     /**

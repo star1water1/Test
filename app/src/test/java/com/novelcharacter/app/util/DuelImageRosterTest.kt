@@ -143,4 +143,90 @@ class DuelImageRosterTest {
         assertFalse(roster.hasSkipped)
         assertNull(roster.entryOf(1L))
     }
+
+    // ── 캐릭터 몫으로 나누기 (B-104 소비처 ⓑ·ⓒ · 설계 13-5) ──
+    //
+    // 이 함수의 산출물로 **적합이 캐릭터마다 따로 돈다.** 잘못 나누면 남의 판이 섞여
+    // 대표 추첨과 걸러낼 후보가 아무 판도 근거하지 않은 순위를 따른다.
+
+    private fun verdict(vararg members: String) = com.novelcharacter.app.data.model.DuelCounterVerdict(
+        axisId = 1L,
+        kind = com.novelcharacter.app.data.model.DuelCounterVerdict.KIND_COUNTER,
+        shape = DuelRecords.shapeOf(members.toList())!!,
+        memberCodes = DuelRecords.encodeMembers(members.toList()),
+        memberKey = DuelRecords.memberKey(members.toList())
+    )
+
+    @Test
+    fun `판은 두 참가자가 같은 캐릭터일 때만 그 캐릭터 몫이다`() {
+        val splits = DuelImageRoster.split(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+                character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+            ),
+            listOf(
+                match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg"),
+                match("$dir/b1.jpg", "$dir/b2.jpg", "$dir/b2.jpg"),
+                // 캐릭터를 넘는 판 — 엑셀·백업이 만들 수 있다. 어느 쪽에도 세지 않는다.
+                match("$dir/a1.jpg", "$dir/b1.jpg", "$dir/a1.jpg")
+            ),
+            emptyList()
+        )
+        assertEquals(listOf(1L, 2L), splits.map { it.characterId })
+        assertEquals(1, splits[0].matches.size)
+        assertEquals(1, splits[1].matches.size)
+    }
+
+    @Test
+    fun `처분은 참가자가 전부 같은 캐릭터일 때만 따라간다`() {
+        val splits = DuelImageRoster.split(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg", "$dir/a3.jpg"),
+                character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+            ),
+            emptyList(),
+            listOf(
+                verdict("$dir/a1.jpg", "$dir/a2.jpg"),
+                // 반쪽이 남의 그림이다 — 반쪽만 세면 짝이 맞지 않는 제외가 생긴다.
+                verdict("$dir/a3.jpg", "$dir/b1.jpg"),
+                verdict("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a3.jpg")
+            )
+        )
+        assertEquals(2, splits[0].verdicts.size)
+        assertTrue(splits[1].verdicts.isEmpty())
+    }
+
+    @Test
+    fun `두 장이 없는 캐릭터는 나눌 몫이 없다 — build와 같은 규칙이다`() {
+        val splits = DuelImageRoster.split(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg"),
+                character(2L, "나")
+            ),
+            listOf(match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg")),
+            emptyList()
+        )
+        assertTrue(splits.isEmpty())
+    }
+
+    /**
+     * **나누는 데까지만** 증명하는 시험이다 — 여기서 더 나가지 않는 것이 요점이다.
+     *
+     * `split`의 주인 찾기는 정규 경로로 하지만 그 산출물을 받는 `DuelRecords.resolve`는
+     * 참가자를 **글자 그대로** 대조한다. 그래서 표기가 갈린 판은 **여기서는 나뉘고 적합에서는
+     * 고아가 된다.** 이 시험이 *"그러니 점수에도 반영된다"*까지 주장하면 **없는 보장을 증명한
+     * 것처럼 보인다** — 그 자리는 `split`의 KDoc이 사실대로 적고 백로그 **B-174**가 든다.
+     */
+    @Test
+    fun `판의 표기가 목록과 달라도 나뉜다 — 다만 나누기까지다`() {
+        val splits = DuelImageRoster.split(
+            listOf(character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg")),
+            listOf(match("$dir/./a1.jpg", "$dir/a2.jpg", "$dir/a2.jpg")),
+            emptyList()
+        )
+        assertEquals(1, splits.single().matches.size)
+        // **판의 코드는 손대지 않고 그대로 넘긴다** — 여기서 정규 표기로 고쳐 적으면
+        // 저장된 값과 다른 문자열이 적합으로 흘러가 `build`와 또 다른 방식으로 어긋난다.
+        assertEquals("$dir/./a1.jpg", splits.single().matches.single().aCode)
+    }
 }
