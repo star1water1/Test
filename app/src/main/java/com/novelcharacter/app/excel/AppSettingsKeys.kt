@@ -163,6 +163,33 @@ object AppSettingsKeys {
     fun exported(includeSecrets: Boolean): List<Spec> =
         if (includeSecrets) SPECS else SPECS.filter { it.disposition != Disposition.SECRET }
 
+    // ── 셀 값의 표기 — 순수이므로 여기 있다(시트가 무슨 글자를 담는가도 왕복 계약이다) ──
+
+    /** 불리언의 셀 표기. 읽기는 `parseSheetBoolean`이 관대하게 받는다(Y/예/1/TRUE…). */
+    fun formatBoolean(value: Boolean): String = if (value) "Y" else "N"
+
+    /**
+     * 숫자의 셀 표기 — 정수면 소수점을 붙이지 않는다(`3.0`이 아니라 `3`).
+     *
+     * **[Float]를 [Double]로 넓혀서 적으면 안 된다.** `1.3f.toDouble()`은
+     * `1.2999999523162842`이고, 그대로 셀에 적으면 **사용자가 엑셀에서 보는 것이 그 숫자**이며
+     * 왕복도 같은 글자로 돌아오지 않는다(완성도 가중이 실제로 `Float`다).
+     * `Float`는 그 폭 그대로 문자열로 만든다 — `1.3f.toString()`은 `"1.3"`이다.
+     */
+    fun formatNumber(value: Number): String = when (value) {
+        is Float -> if (value == value.toLong().toFloat()) value.toLong().toString() else value.toString()
+        else -> {
+            val d = value.toDouble()
+            if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
+        }
+    }
+
+    /**
+     * 셀 글자 → 정수. **[Double]을 거치는 것이 일부러다** — 숫자 셀은 `51200`을 `51200.0`으로
+     * 돌려주기도 하므로 `toIntOrNull()`로 바로 받으면 멀쩡한 값이 *"숫자가 아닙니다"*가 된다.
+     */
+    fun parseIntCell(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
+
     /**
      * 싣지 않는 저장소와 **그 사유** — 확정 3번의 ⓒ('실을 값어치가 없는 것').
      *

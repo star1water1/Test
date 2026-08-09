@@ -2019,8 +2019,18 @@ class ExcelExporter(context: Context) {
         // 비밀(API 키)은 **별도 동의가 있을 때만** 나간다 — 사용자 확정 3번 ㄴ1.
         var rowIndex = 1
         for (binding in AppSettingsBindings.exported(options.aiKeys)) {
+            // **한 설정이 실패해도 백업 전체를 잃지 않는다.** 종전에는 저장소 셋에서 열한 번
+            // 읽었고 지금은 열 곳에서 서른일곱 번 읽는다 — 그중 하나가 던지면(손상된 prefs,
+            // 복호화 실패한 키) 잡지 않는 한 **내보내기가 통째로 죽는다.** 늘어난 것이
+            // 편의인데 그 대가가 백업 유실이어서는 안 된다.
+            //
             // 값이 없으면 행 자체를 만들지 않는다(빈 칸과 '값 없음'은 다른 사실이다).
-            val value = binding.read(appContext) ?: continue
+            val value = try {
+                binding.read(appContext)
+            } catch (e: Exception) {
+                Log.w("ExcelExporter", "앱 설정 '${binding.spec.key}'을(를) 읽지 못해 건너뜁니다", e)
+                null
+            } ?: continue
             val row = sheet.createRow(rowIndex++)
             row.createCell(0).setTextSafe(binding.spec.key)
             if (binding.spec.kind == AppSettingsKeys.Kind.NUMBER) {

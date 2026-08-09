@@ -145,6 +145,46 @@ class AppSettingsKeysTest {
         )
     }
 
+    // ── 셀 표기 ──
+
+    @Test
+    fun `Float은 Double을 거치지 않고 적힌다`() {
+        // **콜드 검토가 잡은 자리다.** `1.3f.toDouble()`은 `1.2999999523162842`이고,
+        // 그대로 셀에 적으면 사용자가 엑셀에서 보는 것이 그 숫자이며 왕복도 같은 글자로
+        // 돌아오지 않는다 — 완성도 가중(`stats_completion_required_weight`)이 실제로 Float다.
+        assertEquals("1.3", AppSettingsKeys.formatNumber(1.3f))
+        assertEquals("2.7", AppSettingsKeys.formatNumber(2.7f))
+        assertEquals("1.5", AppSettingsKeys.formatNumber(1.5f))
+    }
+
+    @Test
+    fun `정수는 소수점을 달지 않는다`() {
+        // `3.0`이 셀에 적히면 사람이 고쳐 넣을 때 형식이 갈린다.
+        assertEquals("2", AppSettingsKeys.formatNumber(2f))
+        assertEquals("3", AppSettingsKeys.formatNumber(3))
+        assertEquals("51200", AppSettingsKeys.formatNumber(51200L))
+        assertEquals("100", AppSettingsKeys.formatNumber(100.0))
+    }
+
+    @Test
+    fun `숫자 셀이 소수로 돌아와도 정수로 읽는다`() {
+        // 숫자 셀은 `51200`을 `51200.0`으로 돌려주기도 한다 — `toIntOrNull()`로 바로 받으면
+        // 멀쩡한 값이 "숫자가 아닙니다"가 된다.
+        assertEquals(51200, AppSettingsKeys.parseIntCell("51200.0"))
+        assertEquals(3, AppSettingsKeys.parseIntCell(" 3 "))
+        assertNull(AppSettingsKeys.parseIntCell("셋"))
+        assertNull(AppSettingsKeys.parseIntCell(""))
+    }
+
+    @Test
+    fun `불리언 표기는 관대한 파서가 되읽는다`() {
+        assertEquals("Y", AppSettingsKeys.formatBoolean(true))
+        assertEquals("N", AppSettingsKeys.formatBoolean(false))
+        // 내보낸 글자를 그대로 되읽어야 왕복이 성립한다.
+        assertTrue(parseSheetBoolean(AppSettingsKeys.formatBoolean(true)))
+        assertTrue(!parseSheetBoolean(AppSettingsKeys.formatBoolean(false)))
+    }
+
     @Test
     fun `싣는 설정이 종전보다 늘었다`() {
         // 이 판의 목적 자체다 — 구조를 갈고도 11개면 아무것도 고치지 못한 것이다.

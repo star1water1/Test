@@ -18,6 +18,8 @@ import com.novelcharacter.app.ui.supplement.SupplementCriteria
 import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.ThemeHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -59,15 +61,11 @@ object AppSettingsBindings {
         val write: suspend (Context, String) -> Applied
     )
 
-    private fun bool(value: Boolean) = if (value) "Y" else "N"
-
-    /** 셀의 숫자 — 정수면 소수점을 붙이지 않는다(`3.0`이 아니라 `3`으로 나가게). */
-    private fun num(value: Number): String {
-        val d = value.toDouble()
-        return if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
-    }
-
-    private fun intOf(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
+    // 셀 표기는 순수 계층이 든다([AppSettingsKeys]) — *시트가 무슨 글자를 담는가*도 왕복
+    // 계약이라 시험이 닿아야 한다. 여기서 다시 적으면 두 벌이 되어 한쪽만 고쳐지는 날이 온다.
+    private fun bool(value: Boolean) = AppSettingsKeys.formatBoolean(value)
+    private fun num(value: Number) = AppSettingsKeys.formatNumber(value)
+    private fun intOf(value: String) = AppSettingsKeys.parseIntCell(value)
 
     private val BINDINGS: List<Binding> = listOf(
         Binding(AppSettingsKeys.THEME_MODE,
@@ -329,6 +327,13 @@ object AppSettingsBindings {
      *
      * 읽기가 `null`을 내면 그 비밀은 담긴 값이 없다는 뜻이다([Binding.read]의 규약).
      */
-    suspend fun hasStoredSecrets(context: Context): Boolean =
-        BINDINGS.any { it.spec.disposition == AppSettingsKeys.Disposition.SECRET && it.read(context) != null }
+    suspend fun hasStoredSecrets(context: Context): Boolean = withContext(Dispatchers.IO) {
+        // **IO로 옮기는 것이 이 함수의 조건이다** — 부르는 곳이 내보내기 창(주 스레드)이고,
+        // 비밀을 읽는 일은 저장소 읽기 + 복호화다(`AiKeyStore`는 AES/GCM을 지난다).
+        // 나머지 read·write는 이미 배경에서 도는 내보내기·가져오기가 부르므로 여기만 감싼다.
+        BINDINGS.any {
+            it.spec.disposition == AppSettingsKeys.Disposition.SECRET &&
+                runCatching { it.read(context) }.getOrNull() != null
+        }
+    }
 }
