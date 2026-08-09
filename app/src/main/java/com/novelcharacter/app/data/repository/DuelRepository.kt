@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.util.DuelCounterRelations
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRating
 import com.novelcharacter.app.util.DuelRecords
@@ -73,6 +74,81 @@ class DuelRepository(private val db: AppDatabase) {
     /** 이 참가자가 이 축에서 치른 판 수 — 삭제·정리가 결과를 먼저 알릴 때 쓴다. */
     suspend fun matchCountFor(axisId: Long, participantCode: String): Int =
         db.duelMatchDao().countForParticipant(axisId, participantCode)
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 경로 재작성 추종 — 이미지 축의 빗장 (설계 13장)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * **파일이 개명되면 이미지 축의 참가자 코드도 함께 옮긴다** (B-104 ⓑ·ⓒ의 빗장, R-39).
+     *
+     * 이미지 축의 참가자 코드는 이미지 경로다([DuelMatch.aCode]). 경로를 바꾸는 자리가 이것을
+     * 부르지 않으면 **쌓아 둔 판이 통째로 고아가 되거나 남의 이미지에 붙는다** — 설계 4장 ①의
+     * ⚠️가 이미지 축을 닫아 두었던 이유가 그것이고, 이 함수가 그 빗장을 연다.
+     *
+     * **부르는 자리는 `FolderRoundtripPrefs.recordRenames`를 부르는 자리와 같다** — 그쪽 KDoc이
+     * 이미 *"경로를 바꾸는 모든 지점이 불러야 한다"*고 선언해 둔, 이 앱에서 개명의 유일한 관문이다.
+     * 짝이 맞는지는 `tools/check_duel_image_codes.sh`가 기계로 본다(규약으로만 적으면 빠진다 —
+     * R-31이 닷새를 빠져 있던 그 실패 형태).
+     *
+     * **캐릭터 축은 훑지 않는다.** `Character.code`는 개명되지 않으므로 그쪽에 이 문제가 없고,
+     * 훑으면 이 앱에서 가장 큰 표를 이유 없이 한 번 더 읽는다.
+     *
+     * @param renames 옛 경로 → 새 경로. 빈 표면 아무것도 하지 않는다(질의조차 열지 않는다).
+     * @return 무엇을 옮겼고 무엇을 못 옮겼는가. 호출부가 [FollowResult.hasCaveat]일 때
+     *   사용자에게 알린다 — 조용히 넘어가면 개발 의도 2번을 어긴다.
+     */
+    suspend fun followImageRenames(renames: Map<String, String>): FollowResult {
+        if (renames.isEmpty()) return FollowResult.NONE
+        val imageAxes = db.duelAxisDao().getAllList().filter { it.isImageAxis }
+        if (imageAxes.isEmpty()) return FollowResult.NONE
+
+        var movedMatches = 0
+        var movedVerdicts = 0
+        var collapsed = 0
+        var conflicts = 0
+        for (axis in imageAxes) {
+            val plan = DuelImageParticipants.plan(
+                matches = db.duelMatchDao().getByAxis(axis.id),
+                verdicts = db.duelCounterVerdictDao().getByAxis(axis.id),
+                renames = renames
+            )
+            collapsed += plan.collapsedMatches
+            conflicts += plan.verdictConflicts
+            if (!plan.any) continue
+            // 축 하나가 한 트랜잭션이다 — 전량을 한 트랜잭션에 묶으면 축이 여럿일 때
+            // 한 축의 실패가 다른 축의 성공까지 되돌린다(옮길 수 있었던 것은 옮기는 편이 낫다).
+            db.withTransaction {
+                for (match in plan.matches) db.duelMatchDao().update(match)
+                for (verdict in plan.verdicts) db.duelCounterVerdictDao().update(verdict)
+            }
+            movedMatches += plan.matches.size
+            movedVerdicts += plan.verdicts.size
+        }
+        return FollowResult(movedMatches, movedVerdicts, collapsed, conflicts)
+    }
+
+    /**
+     * [followImageRenames]의 결과.
+     *
+     * @property collapsedMatches 개명이 두 참가자를 하나로 모아 뜻을 잃은 판 수. **지우지 않았다** —
+     *   적합이 '깨진 판'으로 세어 화면이 이미 알리는 자리로 흘러간다.
+     * @property verdictConflicts 옮기면 정규 키가 부딪히거나 참가자가 접혀 **손대지 않은** 처분 수.
+     */
+    data class FollowResult(
+        val movedMatches: Int,
+        val movedVerdicts: Int,
+        val collapsedMatches: Int,
+        val verdictConflicts: Int
+    ) {
+        val moved: Int get() = movedMatches + movedVerdicts
+        val hasCaveat: Boolean get() = collapsedMatches > 0 || verdictConflicts > 0
+
+        companion object {
+            /** 옮길 이미지 축이 없거나 개명이 없다 — 예외가 아니라 가장 흔한 결과다. */
+            val NONE = FollowResult(0, 0, 0, 0)
+        }
+    }
 
     // ──────────────────────────────────────────────────────────────────────
     // 한 판 기록하기 / 되돌리기

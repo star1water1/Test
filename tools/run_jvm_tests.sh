@@ -183,6 +183,7 @@ $MAIN/util/DuelRating.kt
 $MAIN/util/DuelPairing.kt
 $MAIN/util/DuelCounterRelations.kt
 $MAIN/util/DuelRecords.kt
+$MAIN/util/DuelImageParticipants.kt
 $MAIN/util/DuelSession.kt
 $MAIN/util/DuelStandings.kt
 $MAIN/util/DuelEntry.kt
@@ -268,6 +269,7 @@ $TEST/util/DuelPairingTest.kt
 $TEST/util/DuelCandidateFilterTest.kt
 $TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/DuelRecordsTest.kt
+$TEST/util/DuelImageParticipantsTest.kt
 $TEST/util/DuelSessionTest.kt
 $TEST/util/DuelStandingsTest.kt
 $TEST/util/DuelEntryTest.kt
