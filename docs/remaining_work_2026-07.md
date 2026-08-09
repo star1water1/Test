@@ -190,7 +190,6 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | **B-104 소비처 ⓑ·ⓒ**(대표 가중 추첨 + 걸러낼 후보) | *(미병합 — 이 판이 만든 브랜치)* | 아홉 (`CharacterAdapter`·`CharacterListFragment`·`CharacterViewModel`·`DuelAxisListFragment`·`DuelViewModel`·`ImageManagerFragment`·`ImageManagerViewModel`·`ImageSettingsDialog`·`TrashFragment`) + 새 레이아웃 구역 셋 | **`CLAUDE.md` 4번의 *2~3개*를 혼자 넘긴다** — 로컬 프로브가 `ui/**`를 통째로 빼므로 이 아홉의 컴파일과 새 id 열(`basisSection`·`basisSwitch`·`basisTakenNotice`·`duelStrengthGroup`·`strengthOff/Weak/Strong`·`pruneBottomValue`·`pruneMinPlayedValue`·`chipPruneCandidate`·`detailPruneReasonText`)의 ViewBinding 대조는 **CI가 처음 보는 것**이다. 마이그레이션 **56**과 엑셀 열 하나가 함께 들어가 `Schema harnesses`·`Run unit tests`도 이 슬라이스에서 값이 크다 |
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
@@ -199,6 +198,20 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 >
 >
+> **✅ 2026.08.09 — PR #252, run `31328684059`가 B-104 소비처 ⓑ·ⓒ를 덮었다. 목록이 다시 비었다.**
+> 이 슬라이스는 **화면 파일 아홉 + 새 레이아웃 구역 셋 + 새 id 열**이라 `CLAUDE.md` 4번의
+> *2~3개*를 혼자 넘겼고, 사용자가 **"콜드 검토하고 필요하면 ci하고 병합까지해"**를 지시한
+> 그 자리에서 열었다. **배지가 아니라 단계를 봤다:** `Static checks` ✓ 21초 ·
+> `Schema harnesses` ✓ · `Run unit tests` ✓ 2분08초 · `Build Debug APK` ✓ 1분25초 ·
+> `Upload Debug APK` ✓. Release 두 단계의 `skipped`는 조건부라 **정상**이다.
+> **이 실행이 증명한 것:** 로컬 프로브가 `ui/**`를 통째로 빼므로 **화면 파일 아홉의 컴파일과
+> 새 id 열의 ViewBinding 대조는 이 실행이 처음 본 것**이다.
+> **적어 둘 것 하나 — 이 판은 CI를 두 번 받았다**(첫 실행 `31327290854`도 초록이었다).
+> 그 사이에 들어간 것이 **두 번째 콜드 검토가 잡은 넷**이고, 그중 🔴 하나가
+> **첫 검토의 처방이 옮겨 놓은 결함**이었다(설계 13-8-7). 초록이 뜬 뒤에도 검토를 한 판 더
+> 돈 값이 그 자리에 있다 — **CI는 컴파일되는가를 볼 뿐 *메인 스레드에서 무엇을 하는가*는
+> 보지 않는다.**
+
 > **✅ 2026.08.09 — PR #250, run `31314590555`이 B-123을 덮었다. 목록이 다시 비었다.**
 > 이 슬라이스는 **화면 파일 넷 + 신규 둘 + 새 레이아웃 셋**이라 `CLAUDE.md` 4번의 *2~3개*를
 > 넘겨, 사용자가 **"콜드 검토하고 필요하면 ci하고 병합까지해"**를 지시한 그 자리에서 열었다.
@@ -4827,12 +4840,16 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | ~~②~~ | ~~ⓒ~~ | ~~걸러낼 후보 — 이미지 탭 칩~~ | **✅ 이 판이 처리했다**(같은 자리 · 같은 진입점을 탄다) |
    > | **①** | — | **기존 대기열** | B-115 · B-108 · B-95→B-105 · 정리 부채 · B-27②+B-38 · `매칭` 표1 (아래 ⑤가 전수다) |
    >
-   > **⏳ CI 미검증 — 2장의 목록에 이 판이 한 줄 올라가 있다.** 화면 파일이 **아홉**
-   > (`CharacterAdapter`·`CharacterListFragment`·`CharacterViewModel`·`DuelAxisListFragment`·
-   > `DuelViewModel`·`ImageManagerFragment`·`ImageManagerViewModel`·`ImageSettingsDialog`·
-   > `TrashFragment`)에 새 레이아웃 구역 셋·새 id 열이라 `CLAUDE.md` 4번의 *2~3개*를 혼자
-   > 넘긴다. **로컬 프로브가 `ui/**`를 통째로 빼므로 그 아홉의 컴파일과 ViewBinding 대조는
-   > CI가 처음 보는 것이다** — **PR을 열면 그때 돈다.**
+   > **✅ CI 초록 · master 병합 완료** — PR #252, run `31328684059`. 화면 파일이 **아홉**에
+   > 새 레이아웃 구역 셋·새 id 열이라 `CLAUDE.md` 4번 기준을 혼자 넘겨 같은 세션에서 열었고,
+   > **⏳ 미검증 목록은 이 실행이 덮어 다시 비었다.** 배지가 아니라 단계를 봤다:
+   > `Static checks` ✓ 21초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분08초 ·
+   > `Build Debug APK` ✓ 1분25초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 정상).
+   > **`Run unit tests`가 이 판에서 특히 값지다** — 로컬 프로브가 `ui/**`를 빼므로 화면 아홉의
+   > 컴파일과 새 id 열의 ViewBinding 대조는 **그 단계가 처음 본 것**이다.
+   > **이 판은 CI를 두 번 받았고 그 사이가 값졌다** — 첫 실행도 초록이었는데, 그 뒤 두 번째
+   > 콜드 검토가 넷을 잡았고 그중 🔴 하나가 **첫 검토의 처방이 옮겨 놓은 결함**이었다.
+   > **CI는 *컴파일되는가*를 볼 뿐 *메인 스레드에서 무엇을 하는가*는 보지 않는다.**
    >
    > **② 이 판이 정한 것 다섯 — 전부 13-8에 원문이 있다.**
    > ⓐ **기준 축은 DB 칸이고 유일성은 쓰기가 지킨다**(`isBasisAxis` · DB **56**). *"켜진 것이
