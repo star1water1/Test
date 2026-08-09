@@ -193,7 +193,7 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > 앞 단계가 실패하면 APK 빌드는 `skipped`가 되므로, **초록 배지만 보고 덮었다고 판단하지 말 것** —
 > 2026.08.07에 실제로 그 모양이었다.
 >
-> | B-124 이름은행 연계 | *(PR 열기 전)* | 여덟 — `CharacterEditFragment`·`CharacterSaveCoordinator`·`CharacterViewModel`·`NameBankFragment`·`NameBankViewModel`·`NameBankAdapter`·`StatsNameBankDetailFragment`·신규 `NameBankPickerSheet` (+ 새 레이아웃 둘 `bottom_sheet_name_bank_picker`·`item_name_bank_pick`, 새 id 여럿) | `CLAUDE.md` 4번의 *2~3개*를 혼자 넘긴다. **로컬 프로브가 `ui/**`를 통째로 빼므로 새 시트의 ViewBinding 대조와 편집 폼의 [은행] 배선·은행 행의 `usedByText`는 CI가 처음으로 컴파일하는 자리다** — 같은 세션에서 PR을 연다. |
+> | B-124 이름은행 연계 | *(PR 열기 전)* | 여덟 — `CharacterEditFragment`·`CharacterSaveCoordinator`·`CharacterViewModel`·`NameBankFragment`·`NameBankViewModel`·`NameBankAdapter`·`StatsNameBankDetailFragment`·신규 `NameBankPickerSheet` (+ 새 레이아웃 둘 `bottom_sheet_name_bank_picker`·`item_name_bank_pick`, 새 id 여럿) | `CLAUDE.md` 4번의 *2~3개*를 혼자 넘긴다. **로컬 프로브가 `ui/**`를 통째로 빼므로 새 시트의 ViewBinding 대조와 편집 폼의 [은행] 배선·은행 행의 `usedByText`는 CI가 처음으로 컴파일하는 자리다.** **이 세션은 PR을 열지 않았다** — 작업 브랜치 push만으로는 실행이 하나도 생기지 않으므로(위 ⚠️ 블록) **이 슬라이스는 컴파일 증명을 아직 못 받았다.** 다음 PR이 이 줄을 덮는다. |
 >
 > **✅ 2026.08.08 — PR #248, run `31275312354`가 B-168 + B-169·B-170을 덮었다. 목록이 다시 비었다.**
 > 이 슬라이스는 **화면 파일 여덟 + 새 레이아웃 하나 + 새 id들**이라 `CLAUDE.md` 4번의
