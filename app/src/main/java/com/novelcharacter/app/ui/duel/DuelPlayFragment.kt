@@ -30,6 +30,7 @@ import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.DuelCardInfo
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
+import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelSession
 import com.novelcharacter.app.util.cappedScrollView
@@ -74,6 +75,19 @@ class DuelPlayFragment : Fragment() {
     private var axis: DuelAxis? = null
     private var characters: List<Character> = emptyList()
     private var charactersByCode: Map<String, Character> = emptyMap()
+
+    /**
+     * 이미지 축일 때 **누구의 이미지를 겨루는가** (설계 13장). 캐릭터 축이면 -1이다.
+     *
+     * 이미지 축은 캐릭터마다 따로 논다(사용자 확정) — 그래서 이 화면은 축 하나가 아니라
+     * **(축, 캐릭터) 하나**를 연다. 인자를 받지 못하면 고르는 화면으로 돌려보낸다.
+     */
+    private var characterId: Long = -1L
+
+    /** 이미지 축의 참가자 현황 — 참가자 코드(=경로)와 진행률의 출처. */
+    private var imageEntry: DuelImageRoster.Entry? = null
+
+    private val isImageAxis: Boolean get() = axis?.isImageAxis == true
 
     /** 후보 필터의 결과 (B-168) — 대기열·빈 화면 문구·필터 줄이 이것을 본다. */
     private var roster: DuelViewModel.Roster? = null
@@ -125,6 +139,7 @@ class DuelPlayFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         axisId = arguments?.getLong("axisId", -1L) ?: -1L
+        characterId = arguments?.getLong("characterId", -1L) ?: -1L
         if (axisId == -1L) {
             findNavController().popBackStack()
             return
@@ -169,6 +184,7 @@ class DuelPlayFragment : Fragment() {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded
             binding.toolbar.title = loaded.name
+            if (loaded.isImageAxis) { loadImageFirst(loaded); return@launch }
             val currentRoster = viewModel.roster(loaded)
             roster = currentRoster
             characters = currentRoster.participants
@@ -197,6 +213,45 @@ class DuelPlayFragment : Fragment() {
             session = DuelSession.begin(state.state.plan)
             render()
         }
+    }
+
+    /**
+     * 이미지 축의 짐 싣기 — **(축, 캐릭터) 하나**를 연다 (설계 13장).
+     *
+     * 캐릭터 축이 하는 일 중 여기서 **하지 않는 것 넷**이 있고 전부 같은 이유다 —
+     * 두 참가자가 **같은 캐릭터의 그림**이라 그 값이 양쪽에 똑같이 뜬다:
+     * 필드 연결(영향·프로필)·역할 필드(성별·나이)·필드값 읽기·후보 필터.
+     * 붙여 봐야 두 카드에 같은 글이 두 번 뜰 뿐이고, 그것은 고르는 데 아무 재료도 되지 않는다
+     * (원칙 02가 금지하는 겉핥기). **읽지도 않으므로 질의도 늘지 않는다.**
+     */
+    private suspend fun loadImageFirst(loaded: DuelAxis) {
+        val entry = if (characterId > 0) viewModel.imageEntry(loaded, characterId) else null
+        if (entry == null) {
+            // 캐릭터를 정하지 못하면 고르는 화면이 먼저다 — 빈 대결 화면을 띄우면
+            // 사용자는 "고장 났다"로 읽는다. 어디로 가야 하는지를 화면이 말한다.
+            if (isAdded) openImageCharacters()
+            return
+        }
+        imageEntry = entry
+        roster = null
+        characters = emptyList()
+        links = DuelFieldLinks.Axis()
+        fieldLabels = emptyMap()
+        fieldValues = emptyMap()
+        genderKey = null
+        ageKey = null
+        // 제목이 축 이름만이면 **누구의 이미지를 보고 있는지 알 수 없다** — 캐릭터마다 따로
+        // 도는 대결이라 그 이름이 제목의 절반이다.
+        binding.toolbar.title = getString(R.string.duel_image_play_title, loaded.name, entry.name)
+
+        val state = viewModel.loadImages(loaded, entry)
+        if (!isAdded) return
+        if (state == null) { render(); return }
+        charactersByCode = emptyMap()
+        codeById = state.state.records.codeById
+        progress = state.state.plan.progress
+        session = DuelSession.begin(state.state.plan)
+        render()
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -290,7 +345,16 @@ class DuelPlayFragment : Fragment() {
         refreshJob?.cancel()
         val planSeq = session.seq
         refreshJob = viewLifecycleOwner.lifecycleScope.launch {
-            val loaded = viewModel.load(axis, characters, roster?.candidateCodes)
+            // **참가자 집합을 어디서 얻는가가 축마다 다르다.** 이미지 축에서 [characters]는
+            // 언제나 비어 있으므로(그쪽 참가자는 캐릭터가 아니라 경로다) 캐릭터 축의 경로를
+            // 그대로 타면 **참가자 0으로 다시 적합해 대기열이 통째로 마른다** — 화면에서는
+            // *한 판 누르면 그대로 빈 화면이 되는* 것으로 나타난다.
+            val loaded = if (axis.isImageAxis) {
+                val entry = imageEntry ?: return@launch
+                viewModel.loadImages(axis, entry) ?: return@launch
+            } else {
+                viewModel.load(axis, characters, roster?.candidateCodes)
+            }
             if (!isAdded) return@launch
             charactersByCode = loaded.charactersByCode
             codeById = loaded.state.records.codeById
@@ -347,6 +411,12 @@ class DuelPlayFragment : Fragment() {
                     binding.emptyHint.text =
                         getString(R.string.duel_filter_need_two_hint, roster?.candidateCount ?: 0)
                 }
+                // 이미지 축은 모자란 것이 캐릭터가 아니라 **그 캐릭터의 그림**이다 —
+                // 캐릭터를 더 만들라고 하면 엉뚱한 곳으로 보내는 셈이다.
+                isImageAxis && (imageEntry?.imageCount ?: 0) < 2 -> {
+                    binding.emptyTitle.text = getString(R.string.duel_image_need_two)
+                    binding.emptyHint.text = getString(R.string.duel_image_need_two_hint)
+                }
                 characters.size < 2 -> {
                     binding.emptyTitle.text = getString(R.string.duel_need_two)
                     binding.emptyHint.text = getString(R.string.duel_need_two_hint)
@@ -382,8 +452,14 @@ class DuelPlayFragment : Fragment() {
         paintCard(binding.cardB, cardB)
         // 비슷함은 짝이 떠 있을 때만 뜻이 있다 — 빈 화면에서 누르면 아무 일도 안 일어난다.
         binding.btnDraw.isEnabled = true
-        imageJobA = loadPortrait(a, binding.cardA.cardImage, imageJobA)
-        imageJobB = loadPortrait(b, binding.cardB.cardImage, imageJobB)
+        if (isImageAxis) {
+            // 참가자 코드가 곧 경로다 — 대표 고르기를 거치지 않고 그 파일을 그대로 띄운다.
+            imageJobA = loadImageAt(codes.first, binding.cardA.cardImage, imageJobA)
+            imageJobB = loadImageAt(codes.second, binding.cardB.cardImage, imageJobB)
+        } else {
+            imageJobA = loadPortrait(a, binding.cardA.cardImage, imageJobA)
+            imageJobB = loadPortrait(b, binding.cardB.cardImage, imageJobB)
+        }
     }
 
     /** 지금 떠 있는 카드 — 펼침 시트가 다시 계산하지 않고 이것을 연다(두 자리가 갈릴 수 없다). */
@@ -393,7 +469,12 @@ class DuelPlayFragment : Fragment() {
     /** 이 참가자의 카드 — **무엇이 뜨는가는 [DuelCardInfo]가 정한다.** */
     private fun cardOf(character: Character?, code: String): DuelCardInfo.Card =
         DuelCardInfo.build(
-            name = character?.displayName ?: getString(R.string.duel_unknown_participant),
+            // 이미지 축의 이름은 **파일 이름**이다. 경로를 통째로 적으면 카드 폭을 다 먹으면서
+            // 두 카드가 앞부분이 똑같아 오히려 못 가른다. 파일 이름은 폴더를 열었을 때
+            // 사용자가 실제로 보는 이름이라 정리할 때 그대로 이어진다.
+            name = if (isImageAxis) fileNameOf(code) else {
+                character?.displayName ?: getString(R.string.duel_unknown_participant)
+            },
             values = fieldValues[code].orEmpty(),
             labels = fieldLabels,
             links = links,
@@ -402,6 +483,10 @@ class DuelPlayFragment : Fragment() {
             showProfiles = showProfile,
             showInfluences = showInfluence
         )
+
+    /** 경로에서 파일 이름만. 비어 있으면 *"이름 없음"*이 아니라 경로 그대로다(없는 척하지 않는다). */
+    private fun fileNameOf(path: String): String =
+        path.substringAfterLast('/').ifBlank { path }
 
     /** 정해진 것을 붙인다 — 여기서 정하는 것은 **말글뿐**이다(단위·빈 값 표시). */
     private fun paintCard(views: ViewDuelCardBinding, card: DuelCardInfo.Card) {
@@ -730,6 +815,26 @@ class DuelPlayFragment : Fragment() {
         }
     }
 
+    /**
+     * 이미지 축의 카드 그림 — **참가자 코드가 곧 경로**라 대표 고르기를 거치지 않는다.
+     *
+     * 뒤늦게 도착한 비트맵이 이미 넘어간 짝에 붙지 않게 막는 것은 캐릭터 축과 같다
+     * ([loadPortrait]와 같은 가드) — 대결은 빠르게 연타하는 화면이라 그 사이가 실제로 벌어진다.
+     */
+    private fun loadImageAt(path: String, target: ImageView, previous: Job?): Job? {
+        previous?.cancel()
+        target.scaleType = ImageView.ScaleType.FIT_CENTER
+        target.setImageResource(R.drawable.ic_character_placeholder)
+        if (path.isBlank()) return null
+        val filesDir = requireContext().filesDir
+        return viewLifecycleOwner.lifecycleScope.launch {
+            val bitmap: Bitmap? = withContext(Dispatchers.IO) {
+                CharacterImageLoader.decodeThumbnail(path, filesDir, 512)
+            }
+            if (isAdded && bitmap != null && path in currentCodes()) placeBitmap(target, bitmap)
+        }
+    }
+
     private fun currentCodes(): Set<String> {
         val current = session.current ?: return emptySet()
         val codes = codesOf(current) ?: return emptySet()
@@ -737,7 +842,12 @@ class DuelPlayFragment : Fragment() {
     }
 
     private fun openStandings() {
-        val bundle = Bundle().apply { putLong("axisId", axisId) }
+        // 이미지 축의 순위는 **그 캐릭터 안의 순위**다 — 캐릭터를 안 넘기면 순위표가
+        // 누구의 그림을 줄 세우는지 알 수 없다(설계 13장).
+        val bundle = Bundle().apply {
+            putLong("axisId", axisId)
+            putLong("characterId", characterId)
+        }
         findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelStandingsFragment, bundle)
     }
 
@@ -745,6 +855,23 @@ class DuelPlayFragment : Fragment() {
     private fun openMatches() {
         val bundle = Bundle().apply { putLong("axisId", axisId) }
         findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelMatchesFragment, bundle)
+    }
+
+    /**
+     * 이미지 축에서 **누구의 그림을 겨룰지** 고르는 자리.
+     *
+     * **이 화면을 백스택에서 빼고 간다.** 캐릭터를 못 정해 여기로 튕겨 온 것이므로 남겨 두면
+     * 뒤로가기가 이 조각으로 돌아오고, 돌아오면 다시 튕겨 나가 **뒤로가기가 영영 안 먹는다**
+     * (홈 '이어하기'가 이미지 축을 기억하고 있으면 실제로 그 길로 들어온다).
+     */
+    private fun openImageCharacters() {
+        val controller = findNavController()
+        if (controller.currentDestination?.id != R.id.duelPlayFragment) return
+        val bundle = Bundle().apply { putLong("axisId", axisId) }
+        val options = androidx.navigation.NavOptions.Builder()
+            .setPopUpTo(R.id.duelPlayFragment, true)
+            .build()
+        controller.navigateSafe(R.id.duelImageCharacterFragment, bundle, options)
     }
 
     /** 홈에서 바로 들어온 경우 축 목록에 닿을 길이 여기뿐이다(뒤로가기는 홈으로 간다). */

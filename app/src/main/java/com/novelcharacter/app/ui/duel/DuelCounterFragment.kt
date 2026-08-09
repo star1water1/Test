@@ -51,6 +51,22 @@ class DuelCounterFragment : Fragment() {
     private var axisId: Long = -1L
     private var charactersByCode: Map<String, Character> = emptyMap()
 
+    /**
+     * 이미지 축일 때 **누구의 그림들 사이의 상성인가** (설계 13장). 캐릭터 축이면 -1이다.
+     *
+     * 순위표와 같은 이유로 필요하다 — 참가자 집합이 캐릭터마다 다르므로, 안 받으면 이 화면이
+     * 캐릭터를 참가자로 세워 **이미지 축의 판을 전부 고아로 읽는다**(상성이 하나도 안 보인다).
+     */
+    private var characterId: Long = -1L
+
+    /** 이미지 축인가 — 관계의 이름을 캐릭터가 아니라 **파일 이름**에서 낸다. */
+    private var imageAxis: Boolean = false
+
+    /** 경로에서 파일 이름만 — 대결 카드·순위표와 같은 규칙이다(설계 13-4). */
+    private fun participantName(code: String): String =
+        if (imageAxis) code.substringAfterLast('/').ifBlank { code }
+        else charactersByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -62,6 +78,7 @@ class DuelCounterFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         axisId = arguments?.getLong("axisId", -1L) ?: -1L
+        characterId = arguments?.getLong("characterId", -1L) ?: -1L
         if (axisId == -1L) {
             findNavController().popBackStack()
             return
@@ -69,9 +86,7 @@ class DuelCounterFragment : Fragment() {
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         adapter = DuelCounterAdapter(
-            nameOf = { code ->
-                charactersByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
-            },
+            nameOf = { code -> participantName(code) },
             onMistake = { item -> confirmMistake(item) },
             onUndecided = { item -> decide(item, DuelCounterVerdict.KIND_UNDECIDED) },
             onCounter = { item -> decide(item, DuelCounterVerdict.KIND_COUNTER) },
@@ -95,18 +110,35 @@ class DuelCounterFragment : Fragment() {
      * 한다. 순서(뜻이 있는 순서 — 천적은 `[센 쪽, 잡는 쪽]`)는 양쪽이 같다.
      */
     private fun relationLabel(item: DuelStandings.CounterItem): String =
-        item.memberCodes.joinToString(" → ") { code ->
-            charactersByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
-        }
+        item.memberCodes.joinToString(" → ") { code -> participantName(code) }
 
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
             val axis = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
-            // 상성 상세도 참가자 전부를 본다 — 상성은 쌓인 판의 사실이라 후보 필터와 무관하다.
-            val roster = viewModel.roster(axis)
-            val characters = roster.participants
-            val loaded = viewModel.load(axis, characters, roster.candidateCodes)
+            imageAxis = axis.isImageAxis
+            // **참가자 집합이 축마다 다르다.** 이미지 축에서 캐릭터를 넘기면 이 화면이 그 축의
+            // 판을 전부 고아로 읽어 **상성이 하나도 없다고 말한다** — 배지가 N건이라 적어 놓고
+            // 눌러 들어오면 비어 있는, 원칙 02가 금지하는 그 모양이 된다.
+            val characters: List<Character>
+            val loaded: DuelViewModel.Loaded?
+            if (imageAxis) {
+                characters = emptyList()
+                val entry = if (characterId > 0) viewModel.imageEntry(axis, characterId) else null
+                loaded = entry?.let { viewModel.loadImages(axis, it) }
+            } else {
+                // 상성 상세도 참가자 전부를 본다 — 상성은 쌓인 판의 사실이라 후보 필터와 무관하다.
+                val roster = viewModel.roster(axis)
+                characters = roster.participants
+                loaded = viewModel.load(axis, characters, roster.candidateCodes)
+            }
             if (!isAdded) return@launch
+            if (loaded == null) {
+                // 캐릭터를 정하지 못했다 — 판정할 관계 집합 자체가 없다. 빈 목록을 그대로
+                // 두면 *"상성이 없다"*로 읽히므로 제목만 세우고 물러난다.
+                binding.toolbar.title = getString(R.string.duel_counter_title, axis.name)
+                adapter.submit(emptyList())
+                return@launch
+            }
 
             charactersByCode = loaded.charactersByCode
             binding.toolbar.title = getString(R.string.duel_counter_title, axis.name)

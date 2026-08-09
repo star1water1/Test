@@ -3284,7 +3284,25 @@
     <string name="duel_match_delete_message">%1$s의 판 하나를 지웁니다. 이 판은 휴지통을 거치지 않으므로 되돌릴 수 없습니다.</string>
     <string name="duel_op_match_edited">%1$s의 판을 \'%2$s\'(으)로 고쳤습니다</string>
     <string name="duel_op_match_deleted">%1$s의 판 하나를 지웠습니다</string>
-    <string name="duel_image_axis_not_ready">이미지끼리 겨루는 축은 아직 열 수 없습니다. 이미지 폴더를 주고받을 때 파일 이름이 바뀌면 쌓인 판이 엉뚱한 이미지에 붙을 수 있어, 그 처리를 마친 뒤에 엽니다.</string>
+    <!-- 이미지 축 (B-104 소비처 ⓑ·ⓒ, 설계 13장) — 이미지 대결은 캐릭터마다 따로 돕니다. -->
+    <string name="duel_axis_target_purpose">무엇끼리 겨루는 축인지 고릅니다. 만든 뒤에는 바꿀 수 없습니다.</string>
+    <string name="duel_axis_target_character">캐릭터끼리</string>
+    <string name="duel_axis_target_image">같은 캐릭터의 이미지끼리</string>
+    <string name="duel_image_character_title">이미지를 겨룰 캐릭터</string>
+    <string name="duel_image_character_purpose">이미지 대결은 캐릭터마다 따로 진행합니다. 고른 캐릭터의 이미지끼리만 겨룹니다.</string>
+    <string name="duel_image_character_empty">겨룰 캐릭터가 없습니다</string>
+    <string name="duel_image_character_empty_hint">이미지를 두 장 이상 등록한 캐릭터가 있어야 합니다</string>
+    <string name="duel_image_character_thumb_desc">캐릭터 이미지</string>
+    <string name="duel_image_character_summary">이미지 %1$d장 · %2$d판 · 남은 짝 %3$d</string>
+    <string name="duel_image_character_untouched">이미지 %1$d장 · 아직 시작하지 않았습니다(짝 %2$d)</string>
+    <string name="duel_image_character_skipped_single">이미지가 한 장뿐인 캐릭터 %1$d명은 목록에 없습니다. 한 장을 더 등록하면 겨룰 수 있습니다.</string>
+    <string name="duel_image_character_skipped_none">이미지가 없는 캐릭터 %1$d명은 목록에 없습니다.</string>
+    <string name="duel_image_character_skipped_both">이미지가 한 장뿐인 캐릭터 %1$d명과 이미지가 없는 캐릭터 %2$d명은 목록에 없습니다.</string>
+    <string name="duel_image_play_title">%1$s · %2$s</string>
+    <string name="duel_image_standings_title">%1$s 순위 · %2$s</string>
+    <string name="duel_image_need_two">겨룰 이미지가 모자랍니다</string>
+    <string name="duel_image_need_two_hint">이 캐릭터에 이미지를 두 장 이상 등록하면 겨룰 수 있습니다</string>
+    <string name="duel_image_match_participant">%1$s (%2$s)</string>
     <string name="duel_axis_delete_title">축을 삭제하시겠습니까?</string>
     <string name="duel_axis_delete_message">\'%1$s\' 축을 지웁니다. 쌓인 판 %2$d개와 상성 판정이 함께 사라지며, 휴지통에 보관되어 되돌릴 수 있습니다.</string>
 

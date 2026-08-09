@@ -131,26 +131,28 @@ class DuelAxisListFragment : Fragment() {
     }
 
     /**
-     * 축을 연다. **이미지 축은 아직 열지 않는다.**
+     * 축을 연다.
      *
-     * 이미지 축의 참가자 코드는 이미지 경로인데, 폴더 왕복이 파일을 개명하면 그 코드도 함께
-     * 옮겨야 한다 — 그 경로가 아직 없다(설계 4장 ①의 ⚠️). 지금 열면 개명 한 번에 쌓아 둔
-     * 판이 통째로 남의 이미지에 붙거나 고아가 된다(R-1이 막는 오배정). 그래서 **막고 이유를
-     * 말한다** — 조용히 캐릭터를 참가자로 세우면 그것이 바로 그 오배정이다.
+     * **이미지 축은 대결·순위표로 곧바로 가지 않는다** — 캐릭터마다 따로 도는 대결이라
+     * (사용자 확정) *누구의 그림인가*가 정해지지 않으면 참가자 집합 자체가 없다. 그래서
+     * 고르는 화면([DuelImageCharacterFragment])을 먼저 열고, 거기서 고른 캐릭터가
+     * 대결·순위표로 함께 넘어간다(설계 13장).
      *
-     * 이 화면은 이미지 축을 **만들지 않으므로** 지금 이 자리에 걸릴 축은 없다. 엑셀·백업으로
-     * 들어올 수 있어 미리 세워 둔다.
+     * 종전에 이 자리는 이미지 축을 **막고 이유를 말했다** — 개명 추종 경로가 없어 판이
+     * 남의 이미지에 붙을 수 있었기 때문이다(설계 4장 ①의 ⚠️). 그 빗장은
+     * `DuelRepository.followImageRenames`(R-42)가 풀었다.
      */
     private fun openAxis(axis: DuelAxis, destination: Int) {
-        if (axis.isImageAxis) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setMessage(R.string.duel_image_axis_not_ready)
-                .setPositiveButton(R.string.confirm, null)
-                .show()
-            return
-        }
         val bundle = Bundle().apply { putLong("axisId", axis.id) }
-        findNavController().navigateSafe(R.id.duelAxisListFragment, destination, bundle)
+        // **기록 화면만은 캐릭터를 묻지 않는다** — 그 화면은 축 전체의 판을 늘어놓는 자리라
+        // (설계 13-4) 참가자 집합이 필요 없다. 대결·순위표는 *누구의 그림인가*가 정해지지
+        // 않으면 참가자 집합 자체가 없으므로 고르는 화면을 먼저 연다.
+        val target = if (axis.isImageAxis && destination != R.id.duelMatchesFragment) {
+            R.id.duelImageCharacterFragment
+        } else {
+            destination
+        }
+        findNavController().navigateSafe(R.id.duelAxisListFragment, target, bundle)
     }
 
     private fun reload() {
@@ -226,6 +228,28 @@ class DuelAxisListFragment : Fragment() {
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_axis_edit, null)
         val editName = view.findViewById<EditText>(R.id.editAxisName)
         editName.setText(existing?.name.orEmpty())
+
+        // ── 겨루는 대상 (설계 13장) ──
+        //
+        // **만든 뒤에는 바꾸지 않는다**(`DuelAxis.targetType`) — 바꾸면 쌓인 판의 참가자가
+        // 통째로 뜻을 잃는다(캐릭터 코드였던 것이 경로로 읽히거나 그 반대). 그래서 편집일
+        // 때는 이 구역을 감춘다. **막고 이유를 말하는 대신 감추는 것**은, 여기서 고를 수
+        // 있는 것이 아무것도 없어 남겨 두면 눌러 보고 안 되는 자리가 되기 때문이다.
+        val targetSection = view.findViewById<View>(R.id.targetSection)
+        val targetImage = view.findViewById<android.widget.RadioButton>(R.id.targetImage)
+        val targetCharacter = view.findViewById<android.widget.RadioButton>(R.id.targetCharacter)
+        val linkSection = view.findViewById<View>(R.id.linkSection)
+        targetSection.visibility = if (existing == null) View.VISIBLE else View.GONE
+        if (existing?.isImageAxis == true) targetImage.isChecked = true else targetCharacter.isChecked = true
+
+        // 필드 연결·후보 필터는 이미지 축에 뜻이 없다 — 두 참가자가 **같은 캐릭터의 그림**이라
+        // 어떤 필드값도 양쪽에 똑같이 뜨고, 산출 필드는 이미지 순위를 받을 자리가 없다
+        // (`DuelViewModel.gradeApplyFieldsFor`가 이미 그렇게 정해 두었다).
+        fun applyTargetVisibility() {
+            linkSection.visibility = if (targetImage.isChecked) View.GONE else View.VISIBLE
+        }
+        applyTargetVisibility()
+        targetImage.setOnCheckedChangeListener { _, _ -> applyTargetVisibility() }
 
         // 필드 연결 — 창을 여는 동안 편집 중인 값이고, 저장을 눌러야 축에 실린다.
         val links = existing?.fieldLinks ?: DuelFieldLinks.Axis()
@@ -337,22 +361,31 @@ class DuelAxisListFragment : Fragment() {
                 editName.showInlineError(getString(R.string.duel_axis_name_required))
                 return@setValidatedPositiveButton false
             }
+            val isImage = existing?.isImageAxis ?: targetImage.isChecked
             val axis = (
                 existing?.copy(name = name) ?: DuelAxis(
                     universeId = universeId,
                     name = name,
-                    targetType = DuelAxis.TARGET_CHARACTER,
+                    targetType =
+                        if (targetImage.isChecked) DuelAxis.TARGET_IMAGE else DuelAxis.TARGET_CHARACTER,
                     displayOrder = adapter.itemCount
                 )
                 ).copy(
-                influenceFieldKeys = DuelFieldLinks.encode(influences),
-                outcomeFieldKeys = DuelFieldLinks.encode(outcomes),
-                profileFieldKeys = DuelFieldLinks.encode(profiles),
+                // 이미지 축에는 연결을 **적지 않는다.** 창에서 감췄으니 편집 중인 값은
+                // 언제나 비어 있지만, 엑셀로 연결이 실려 들어온 축을 이 창에서 저장할 때
+                // 그것을 조용히 지우면 안 된다 — 그래서 기존 값을 그대로 이어받는다
+                // (개발 의도 2번: 말없이 유실되지 않는다).
+                influenceFieldKeys =
+                    if (isImage) existing?.influenceFieldKeys ?: "[]" else DuelFieldLinks.encode(influences),
+                outcomeFieldKeys =
+                    if (isImage) existing?.outcomeFieldKeys ?: "[]" else DuelFieldLinks.encode(outcomes),
+                profileFieldKeys =
+                    if (isImage) existing?.profileFieldKeys ?: "[]" else DuelFieldLinks.encode(profiles),
                 // 저장 표기는 한 가지다 — 조건이 없으면 "{}"가 아니라 null(마이그레이션 55 주석).
-                candidateFiltersJson = if (candidateFilters.isEmpty()) {
-                    null
-                } else {
-                    DuelCandidateFilter.encode(candidateFilters)
+                candidateFiltersJson = when {
+                    isImage -> existing?.candidateFiltersJson
+                    candidateFilters.isEmpty() -> null
+                    else -> DuelCandidateFilter.encode(candidateFilters)
                 }
             )
             saving = true

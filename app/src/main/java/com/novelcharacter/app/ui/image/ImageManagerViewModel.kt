@@ -598,6 +598,9 @@ class ImageManagerViewModel(
                 com.novelcharacter.app.util.FolderRoundtripPrefs
                     .recordRenames(getApplication(), result.pathRemap)
             }
+            // 같은 개명을 대결의 이미지 축도 따라가야 한다(R-42) — 참가자 코드가 곧 경로라,
+            // 여기서 옮기지 않으면 쌓아 둔 판이 통째로 고아가 된다.
+            runCatching { app.duelRepository.followImageRenames(result.pathRemap) }
             load()
             onDone(result)
         }
@@ -772,6 +775,9 @@ class ImageManagerViewModel(
                 // 내보낸 사본의 토큰이 사라진 파일을 가리킨 채 끊긴다(C-1).
                 com.novelcharacter.app.util.FolderRoundtripPrefs
                     .recordRenames(getApplication(), mapOf(e.finalPath to e.originalPath))
+                // 되돌리기도 개명이라 대결의 이미지 축이 함께 물러나야 한다(R-42) —
+                // 안 물리면 커밋 때 옮겨 둔 판이 이제 없는 재압축본을 가리킨다.
+                app.duelRepository.followImageRenames(mapOf(e.finalPath to e.originalPath))
             }.onFailure { allOk = false }
         }
         return allOk

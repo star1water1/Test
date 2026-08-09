@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelMatchesBinding
 import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
+import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.DuelMatchLog
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
@@ -95,22 +96,40 @@ class DuelMatchesFragment : Fragment() {
             binding.toolbar.title = getString(R.string.duel_matches_title_of, loaded.name)
             // 기록 화면은 **참가자 전부**를 본다(후보 필터와 무관하다 — 이미 기록된 판의
             // 참가자 이름이 필터 때문에 '알 수 없음'이 되면 안 된다).
-            characters = viewModel.roster(loaded).participants
+            //
+            // 이미지 축은 로스터를 아예 거치지 않는다. 그쪽 후보 필터는 화면이 감춰 두었지만
+            // **엑셀로는 들어올 수 있고**(감추되 저장값은 이어받는다 — 설계 13-3), 그때
+            // 걸러진 캐릭터의 그림이 이름표에서 빠져 멀쩡한 판이 '알 수 없음'으로 뜬다.
+            characters = if (loaded.isImageAxis) {
+                viewModel.participantsOf(loaded.universeId)
+            } else {
+                viewModel.roster(loaded).participants
+            }
 
             val links = loaded.fieldLinks
             // 시스템 열까지 든다(B-167) — 기록 줄이 카드와 같은 이름을 말해야 한다.
             val labels = viewModel.linkLabels(loaded.universeId)
-            val values = viewModel.fieldValuesOf(
-                loaded.universeId, characters, links.influences.map { it.key }
-            )
+            // 이미지 축에는 영향 필드가 없다(축 편집 창이 아예 감춘다) — 값을 읽을 것이
+            // 없으므로 질의도 열지 않는다.
+            val values = if (loaded.isImageAxis) {
+                emptyMap()
+            } else {
+                viewModel.fieldValuesOf(loaded.universeId, characters, links.influences.map { it.key })
+            }
             val matches = viewModel.recentMatches(axisId, limit)
             val total = viewModel.matchCount(axisId)
             if (!isAdded) return@launch
 
             rows = DuelMatchLog.rows(
                 matches = matches,
-                namesByCode = characters.associate { it.code to it.displayName },
-                influences = links.influences,
+                // 이미지 축의 참가자 코드는 경로다 — 캐릭터 이름표로 찾으면 전부 '알 수 없음'이
+                // 된다. **어느 캐릭터의 그림인지까지 붙인다**: 이 화면은 축 전체의 판을 한 줄로
+                // 늘어놓으므로 파일 이름만으로는 누구의 것인지 알 수 없다(대결·순위표와 달리
+                // 여기는 캐릭터가 섞여 있다).
+                namesByCode = if (loaded.isImageAxis) imageNames() else {
+                    characters.associate { it.code to it.displayName }
+                },
+                influences = if (loaded.isImageAxis) emptyList() else links.influences,
                 labels = labels,
                 valuesByCode = values
             )
@@ -123,6 +142,27 @@ class DuelMatchesFragment : Fragment() {
             binding.btnLoadMore.text = getString(R.string.duel_matches_load_more, summary.total - summary.shown)
             renderRows()
         }
+    }
+
+    /**
+     * 이미지 축의 참가자 이름표 — `경로 → "파일 이름 (캐릭터)"`.
+     *
+     * 캐릭터 이름을 함께 붙이는 것은 이 화면이 **축 전체의 판**을 한 줄로 늘어놓기 때문이다.
+     * 대결·순위표는 한 캐릭터 안에 있어 파일 이름만으로 충분하지만, 여기서는 여러 캐릭터의
+     * 판이 섞여 있어 파일 이름만 적으면 *"이게 누구 그림이었지"*를 알 길이 없다.
+     */
+    private fun imageNames(): Map<String, String> {
+        val out = HashMap<String, String>()
+        for (character in characters) {
+            for (path in CharacterRepresentativeImage.paths(character.imagePaths)) {
+                out[path] = getString(
+                    R.string.duel_image_match_participant,
+                    path.substringAfterLast('/').ifBlank { path },
+                    character.displayName
+                )
+            }
+        }
+        return out
     }
 
     private fun renderRows() {
