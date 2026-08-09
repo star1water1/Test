@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
@@ -4274,6 +4275,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
 
         val entitySeen = mutableMapOf<Long, Int>()
+        // 파싱이 읽지 않는 `설정(JSON)` 키 — 행마다 고지하면 수백 줄이 되므로 모아서 한 줄로
+        // 낸다(P-5 · B-95). 재는 대상은 **파일이 말한 config**이지 병합 결과가 아니다 —
+        // 열이 없는 파일은 기존 DB config가 베이스가 되는데(B-142), 그것까지 세면
+        // 이번 파일과 무관한 옛 흔적을 이 파일 탓으로 고지하게 된다.
+        val unusedConfigKeys = linkedMapOf<String, Int>()
+        var unusedConfigFields = 0
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4323,6 +4330,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (r.config != null && r.config != "{}" && !isValidJson(r.config)) {
                     result.warnings.add("필드 정의 행 $i: 필드 '$name'의 설정(JSON)이 올바른 형식이 아닙니다(절단·오타 가능) — 그대로 저장되나 해당 기능이 동작하지 않을 수 있습니다")
                 }
+                // 없앤 설정이 담긴 옛 파일을 조용히 삼키지 않는다(P-5 확정 — 한 줄 고지).
+                if (r.config != null) {
+                    val unused = BodyAnalysisConfig.unusedKeysIn(r.config)
+                    if (unused.isNotEmpty()) {
+                        unusedConfigFields++
+                        for (k in unused) unusedConfigKeys[k] = (unusedConfigKeys[k] ?: 0) + 1
+                    }
+                }
                 val groupName = r.groupName
                 val displayOrder: Int? = r.displayOrder
                 val isRequired = r.isRequired
@@ -4361,6 +4376,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.skippedRows++
                 result.errors.add("필드 정의 행 $i: ${e.message}")
             }
+        }
+        if (unusedConfigKeys.isNotEmpty()) {
+            result.warnings.add(
+                "필드 정의: 더 이상 쓰지 않는 설정 ${unusedConfigKeys.size}개를 건너뛰었습니다" +
+                    "(${unusedConfigKeys.keys.joinToString(", ")}) — 필드 ${unusedConfigFields}개에 있었습니다. " +
+                    "나머지 설정은 그대로 들어왔고, 해당 필드를 앱에서 한 번 저장하면 이 설정이 사라집니다"
+            )
         }
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
     }

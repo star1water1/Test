@@ -389,6 +389,7 @@ $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt
+$TEST/data/BodyAnalysisConfigKeysTest.kt
 $TEST/util/BodySilhouetteSpecTest.kt
 $TEST/util/BodyEditorModelTest.kt
 $TEST/util/BodyCupContractTest.kt

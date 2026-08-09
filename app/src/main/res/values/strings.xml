@@ -1671,6 +1671,9 @@
     <string name="body_type_preset_title">체형 분류 프리셋</string>
     <string name="purpose_body_type_preset">캐릭터를 어떤 체형 이름으로 부를지 정하는 규칙입니다. 사용자 정의를 고르면 규칙을 직접 쓸 수 있습니다.</string>
     <string name="body_type_custom_json_hint">체형 분류 규칙 (JSON)</string>
+    <string name="body_default_type_title">기본 체형 이름</string>
+    <string name="purpose_body_default_type">어느 분류 규칙에도 걸리지 않은 캐릭터가 체형 분석 카드에서 받는 이름입니다. 비워 두면 기본값으로 돌아갑니다.</string>
+    <string name="body_default_type_hint">기본 체형 이름</string>
     <string name="body_insight_toggle_title">표시할 분석</string>
     <string name="purpose_body_insight_toggle">켠 항목만 캐릭터 상세의 체형 분석 카드에 나타납니다. 이름은 카드에 뜨는 이름과 같습니다.</string>
 
