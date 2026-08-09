@@ -248,4 +248,81 @@ class DuelSessionTest {
             (1 until asked.size).count { asked[it] == asked[it - 1] }
         )
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // k지선다 — 한 번의 답이 여러 짝을 답한다 (B-115)
+    //
+    // 대기열은 여전히 짝 단위인데 한 화면이 여러 짝을 한꺼번에 답하므로, **함께 답한 것을
+    // 알려 주지 않으면 방금 고른 얼굴이 곧바로 다시 뜬다.**
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `함께 답한 짝은 대기열에서 함께 빠진다`() {
+        val state = DuelSession.begin(plan(candidate(1, 2), candidate(1, 3), candidate(4, 5)))
+
+        // {1,2,3}을 띄우고 1을 골랐다 — (1,2)와 (1,3)이 함께 답해졌다.
+        val next = DuelSession.answer(
+            state,
+            setOf(DuelRating.PairKey.of(1, 2), DuelRating.PairKey.of(1, 3))
+        )
+
+        assertEquals(DuelRating.PairKey.of(4, 5), next.current?.pair)
+        assertTrue(next.queue.isEmpty())
+    }
+
+    @Test
+    fun `안 물은 짝은 걷어 내지 않는다`() {
+        // {1,2,3}에서 3을 골랐으면 (1,2)는 **답이 없다** — 모델이 다시 낼 수 있어야 한다.
+        val state = DuelSession.begin(plan(candidate(1, 3), candidate(1, 2), candidate(2, 3)))
+        val next = DuelSession.answer(
+            state,
+            setOf(DuelRating.PairKey.of(1, 3), DuelRating.PairKey.of(2, 3))
+        )
+
+        assertEquals(DuelRating.PairKey.of(1, 2), next.current?.pair)
+    }
+
+    @Test
+    fun `함께 답한 짝은 낡은 계획에서도 걸러진다`() {
+        var state = DuelSession.begin(plan(candidate(1, 2), candidate(1, 3)))
+        val planSeq = state.seq
+        state = DuelSession.answer(
+            state,
+            setOf(DuelRating.PairKey.of(1, 2), DuelRating.PairKey.of(1, 3))
+        )
+
+        // 답하기 전에 뜬 계획이 뒤늦게 도착했다 — 그 계획은 이 답을 못 봤다.
+        val stale = plan(candidate(1, 2), candidate(1, 3), candidate(6, 7))
+        val refreshed = DuelSession.refresh(state, stale, planSeq)
+
+        assertEquals(DuelRating.PairKey.of(6, 7), refreshed.current?.pair)
+        assertTrue(refreshed.queue.isEmpty())
+    }
+
+    @Test
+    fun `대기열이 마르면 방금 화면의 짝 전부를 뒤로 미룬다`() {
+        var state = DuelSession.begin(plan(candidate(1, 2)))
+        state = DuelSession.answer(
+            state,
+            setOf(DuelRating.PairKey.of(1, 2), DuelRating.PairKey.of(1, 3))
+        )
+        assertNull(state.current)
+
+        // 새 계획이 방금 화면의 짝을 다시 냈다 — 머리 짝만 미루면 (1,3)이 곧바로 떠서
+        // 사용자에게는 같은 얼굴이 연속으로 뜨는 것으로 보인다.
+        val next = DuelSession.refresh(
+            state,
+            plan(candidate(1, 3), candidate(8, 9)),
+            state.seq
+        )
+
+        assertEquals(DuelRating.PairKey.of(8, 9), next.current?.pair)
+    }
+
+    @Test
+    fun `함께 답한 것이 없으면 종전과 같다`() {
+        val state = DuelSession.begin(plan(candidate(1, 2), candidate(3, 4)))
+
+        assertEquals(DuelSession.answer(state), DuelSession.answer(state, emptySet()))
+    }
 }

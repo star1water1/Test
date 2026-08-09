@@ -330,4 +330,134 @@ class DuelCardInfoTest {
         )
         assertEquals(setOf("power"), keys)
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 5. 접힌 카드 (k지선다 — B-115)
+    //
+    // **접는 것은 거두는 것이 아니라 옮기는 것이다.** 카드가 화면의 4분의 1이라 줄을 넣을
+    // 높이가 없을 뿐이고, 펼침 시트가 전량을 진다. 이 구별이 무너지면 셋 이상으로 두는
+    // 순간 그 축의 판단 재료가 화면 어디에서도 닿을 수 없게 된다.
+    // ──────────────────────────────────────────────────────────────────────
+
+    private fun compactCard(): DuelCardInfo.Card = DuelCardInfo.build(
+        name = "아리네",
+        values = mapOf("power" to "12", "faction" to "은빛탑", "gender" to "여", "age" to "17"),
+        labels = labels,
+        links = DuelFieldLinks.Axis(
+            influences = listOf(link("power")),
+            profiles = listOf(link("faction"))
+        ),
+        genderKey = "gender",
+        ageKey = "age",
+        compact = true
+    )
+
+    @Test
+    fun `접힌 카드는 이름과 트리오만 남는다`() {
+        val card = compactCard()
+
+        assertEquals("아리네", card.name)
+        assertEquals("여", card.gender)
+        assertEquals("17", card.age)
+        assertTrue(card.hasTrio)
+        assertTrue("프로필 줄이 카드에 뜨지 않는다", card.profiles.isEmpty())
+        assertTrue("영향 줄도 카드에 뜨지 않는다", card.influences.isEmpty())
+        assertTrue(card.compact)
+    }
+
+    @Test
+    fun `접힌 것은 사라지지 않고 펼침 시트로 간다`() {
+        val card = compactCard()
+
+        assertEquals(listOf("faction"), card.allProfiles.map { it.key })
+        assertEquals(listOf("power"), card.allInfluences.map { it.key })
+        assertTrue("펼칠 것이 있으므로 ⌄가 뜬다", card.canExpand)
+    }
+
+    /**
+     * 프로필이 하나도 없어도 **영향 줄이 통째로 접혀 있으면** 펼칠 것이 있다.
+     * 종전처럼 프로필만 세면 그 카드의 판단 재료가 어디에서도 닿을 수 없다.
+     */
+    @Test
+    fun `프로필이 없어도 접힌 영향 줄이 있으면 펼침이 뜬다`() {
+        val card = DuelCardInfo.build(
+            name = "아리네",
+            values = mapOf("power" to "12"),
+            labels = labels,
+            links = DuelFieldLinks.Axis(influences = listOf(link("power"))),
+            compact = true
+        )
+
+        assertTrue(card.allProfiles.isEmpty())
+        assertTrue(card.canExpand)
+    }
+
+    /** 위에 아무 줄도 없이 *"외 3개"*만 남으면 무엇의 나머지인지 알 수 없다. */
+    @Test
+    fun `접힌 카드는 외 N개 줄을 띄우지 않는다`() {
+        val card = compactCard()
+
+        assertTrue(card.profileOverflow > 0)
+        assertFalse(card.showProfileMore)
+    }
+
+    /**
+     * **끈 것을 접었다고 되살리지 않는다.** 자리가 없어 접은 것과 사용자가 안 보겠다고 한
+     * 것은 다르고, 뒤엣것은 펼침에서도 안 보여야 한다.
+     */
+    @Test
+    fun `보기 설정으로 끈 구역은 펼침 시트에도 없다`() {
+        val card = DuelCardInfo.build(
+            name = "아리네",
+            values = mapOf("power" to "12", "faction" to "은빛탑"),
+            labels = labels,
+            links = DuelFieldLinks.Axis(
+                influences = listOf(link("power")),
+                profiles = listOf(link("faction"))
+            ),
+            showProfiles = false,
+            showInfluences = false,
+            compact = true
+        )
+
+        assertTrue(card.allProfiles.isEmpty())
+        assertTrue(card.allInfluences.isEmpty())
+        assertFalse("펼쳐도 아무것도 없으면 ⌄를 띄우지 않는다", card.canExpand)
+    }
+
+    /** 접지 않은 카드의 동작이 이 슬라이스로 달라지지 않았다는 잠금. */
+    @Test
+    fun `접지 않은 카드는 종전 그대로다`() {
+        val card = DuelCardInfo.build(
+            name = "아리네",
+            values = mapOf("power" to "12", "faction" to "은빛탑"),
+            labels = labels,
+            links = DuelFieldLinks.Axis(
+                influences = listOf(link("power")),
+                profiles = listOf(link("faction"))
+            )
+        )
+
+        assertEquals(listOf("faction"), card.profiles.map { it.key })
+        assertEquals(listOf("power"), card.influences.map { it.key })
+        assertEquals(card.influences, card.allInfluences)
+        assertEquals(0, card.profileOverflow)
+        assertFalse(card.compact)
+        assertFalse(card.canExpand)
+    }
+
+    /** 값이 빈 프로필만 있는 카드는 접지 않았으면 *"외 N개"*를 띄운다(종전 동작). */
+    @Test
+    fun `접지 않은 카드는 빈 프로필만 있어도 외 N개를 띄운다`() {
+        val card = DuelCardInfo.build(
+            name = "아리네",
+            values = emptyMap(),
+            labels = labels,
+            links = DuelFieldLinks.Axis(profiles = listOf(link("faction"), link("origin")))
+        )
+
+        assertTrue(card.profiles.isEmpty())
+        assertEquals(2, card.profileOverflow)
+        assertTrue(card.showProfileMore)
+    }
 }

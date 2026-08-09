@@ -3,7 +3,6 @@ package com.novelcharacter.app.ui.duel
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.Bundle
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -27,11 +26,13 @@ import com.novelcharacter.app.databinding.FragmentDuelPlayBinding
 import com.novelcharacter.app.databinding.ViewDuelCardBinding
 import com.novelcharacter.app.util.CharacterImageLoader
 import com.novelcharacter.app.util.CharacterRepresentativeImage
+import com.novelcharacter.app.util.DuelCardGrid
 import com.novelcharacter.app.util.DuelCardInfo
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
 import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelPairing
+import com.novelcharacter.app.util.DuelRound
 import com.novelcharacter.app.util.DuelSession
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.navigateSafe
@@ -41,12 +42,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * **대결 화면** (B-104) — 둘을 보고 하나를 고른다.
+ * **대결 화면** (B-104) — 올라온 것들을 보고 하나를 고른다.
  *
- * 화면이 하는 일은 셋뿐이다: 짝을 띄우고 · 누름을 판 하나로 기록하고 · 다음 짝을 띄운다.
- * *무엇을 물을 것인가*는 [DuelPairing]이, *언제 무엇으로 갈아 끼울 것인가*는 [DuelSession]이
- * 정한다 — **화면에 판단을 두지 않는 것은 이 저장소의 자동 검증이 화면을 못 보기 때문이다**
- * (「세션 착수 규칙」 4번).
+ * 화면이 하는 일은 셋뿐이다: 후보를 띄우고 · 누름을 판으로 기록하고 · 다음을 띄운다.
+ * *무엇을 물을 것인가*는 [DuelPairing]이, *언제 무엇으로 갈아 끼울 것인가*는 [DuelSession]이,
+ * *한 화면에 누구를 올리고 그 누름이 어떤 판이 되는가*는 [DuelRound]가, *그 카드를 어느 자리에
+ * 놓는가*는 [DuelCardGrid]가 정한다 — **화면에 판단을 두지 않는 것은 이 저장소의 자동 검증이
+ * 화면을 못 보기 때문이다**(「세션 착수 규칙」 4번).
+ *
+ * ## 1:1은 `k=2`다 (B-115)
+ * 한 화면에 둘·셋·넷을 올릴 수 있고(보기 설정), **둘일 때가 특수한 경우가 아니다.** 고르면
+ * `k−1`판이, '비슷함'이면 전 조합이 남는다는 한 규칙이 셋 다 낸다 — `k=2`를 넣으면 종전과
+ * 글자 그대로 같은 것이 나오므로 이 조각에 *"둘일 때는 이렇게"*라는 갈래가 없다.
  *
  * ## 누르면 곧바로 다음 짝이 뜬다
  * 한 판을 기록하면 점수가 달라지고 대기열도 달라지지만, 그 다시 계산(실측 900명에서 300ms대)이
@@ -113,20 +120,38 @@ class DuelPlayFragment : Fragment() {
     private var ageKey: String? = null
 
     /**
+     * 한 번의 누름이 남긴 것 — 되돌리기가 집는 단위 (B-115).
+     *
+     * @property groupId 판이 둘 이상이라 묶인 경우의 묶음 값. 판이 하나면 null이고 그때는
+     *   [matches]의 그 하나를 지운다([DuelRepository.recordGroup]의 계약).
+     */
+    private data class Recorded(val groupId: String?, val matches: List<DuelMatch>)
+
+    /**
      * 되돌리기가 집을 판 — **몇 번째 답이었는가**를 열쇠로 쓴다.
      *
      * 목록의 마지막을 집으면 안 된다. 기록은 중단 함수라 누름보다 늦게 끝나므로, 사용자가
      * 빠르게 누르면 *"방금 답한 판"*이 아직 목록에 없다 — 그때 마지막을 집으면 **엉뚱한 판을
      * 지운다.** 차례를 열쇠로 두면 집는 대상이 언제나 그 답의 판이다.
      */
-    private val recordedBySeq = HashMap<Long, DuelMatch>()
+    private val recordedBySeq = HashMap<Long, Recorded>()
 
     /** 아직 저장이 끝나지 않은 누름 수. 0이 아닌 동안은 되돌리기를 잠근다. */
     private var pendingRecords = 0
 
     private var refreshJob: Job? = null
-    private var imageJobA: Job? = null
-    private var imageJobB: Job? = null
+
+    /** 슬롯마다 도는 그림 읽기 — 슬롯 번호가 곧 자리다([DuelCardGrid]). */
+    private val imageJobs = arrayOfNulls<Job>(SLOT_COUNT)
+
+    /** 화면에 떠 있는 한 판 — 누구를 올렸고 머리 짝이 무엇인가. */
+    private var round: DuelRound.Round? = null
+
+    /** [round]의 참가자와 **같은 차례**의 카드. 펼침 시트가 다시 계산하지 않고 이것을 연다. */
+    private var cards: List<DuelCardInfo.Card> = emptyList()
+
+    /** 지금 쓰는 슬롯 배치. `슬롯 번호 → 참가자 차례` — 카드 누름이 누구를 가리키는지의 출처다. */
+    private var slotToMember: Map<Int, Int> = emptyMap()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -161,12 +186,15 @@ class DuelPlayFragment : Fragment() {
             }
         }
         applyViewOptions()
-        binding.cardA.root.setOnClickListener { answer(Winner.A) }
-        binding.cardB.root.setOnClickListener { answer(Winner.B) }
-        binding.cardA.btnExpand.setOnClickListener { showProfileSheet(left = true) }
-        binding.cardB.btnExpand.setOnClickListener { showProfileSheet(left = false) }
+        // 슬롯은 넷이고 자리가 고정이다 — 누름이 **누구**를 가리키는지는 [slotToMember]가 든다
+        // (배치가 바뀔 때마다 리스너를 다시 걸면 그 사이의 누름이 옛 참가자로 간다).
+        cardSlots.forEachIndexed { slot, views ->
+            views.root.setOnClickListener { pickSlot(slot) }
+            views.btnExpand.setOnClickListener { expandSlot(slot) }
+        }
         // **무승부**(B-114) — 저장 형식은 처음부터 받고 있었고 화면만 없었다.
-        binding.btnDraw.setOnClickListener { answer(Winner.DRAW) }
+        // 셋 이상에서는 *"다 비슷함"*이 되어 전 조합이 무승부로 남는다(B-115 · [DuelRound]).
+        binding.btnDraw.setOnClickListener { answer(null) }
         binding.btnUndo.setOnClickListener { undoLast() }
         binding.btnStandings.setOnClickListener { openStandings() }
 
@@ -258,37 +286,49 @@ class DuelPlayFragment : Fragment() {
     // 한 판
     // ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * 한 판의 답 — 왼쪽 · 오른쪽 · **비슷함**(B-114).
-     *
-     * 무승부를 `null` 코드 하나로 다루지 않고 종류로 두는 것은, 코드가 null인 상태가
-     * *"비겼다"*와 *"참가자를 못 찾았다"* 둘 다일 수 있기 때문이다 — 뒤엣것은 답이 아니라
-     * 오류이고 판으로 남아서는 안 된다.
-     */
-    private enum class Winner { A, B, DRAW }
+    /** 카드를 눌렀다 — 그 슬롯에 누가 있는지는 [slotToMember]가 든다. */
+    private fun pickSlot(slot: Int) {
+        val index = slotToMember[slot] ?: return
+        val member = round?.members?.getOrNull(index) ?: return
+        answer(member)
+    }
 
-    private fun answer(winner: Winner) {
-        val current = session.current ?: return
+    /**
+     * 한 화면의 답 — 고른 참가자, **null이면 '비슷함'**.
+     *
+     * 무엇이 판으로 남는가는 [DuelRound.outcomes]가 정한다: 고르면 `k−1`판, 비슷함이면
+     * 전 조합. **1:1도 같은 길을 탄다** — `k=2`를 넣으면 종전과 글자 그대로 같은 것이 나오고,
+     * 그래서 이 화면에 *"둘일 때는 이렇게, 셋일 때는 저렇게"*라는 갈래가 없다.
+     */
+    private fun answer(winnerId: Long?) {
         val axis = this.axis ?: return
-        val (aCode, bCode) = codesOf(current) ?: return
-        val winnerCode = when (winner) {
-            Winner.A -> aCode
-            Winner.B -> bCode
-            // 순수 계층이 0.5승으로 처리한다(DuelMatch.winnerCode의 계약).
-            Winner.DRAW -> null
+        val shown = round ?: return
+        val outcomes = DuelRound.outcomes(shown, winnerId)
+        if (outcomes.isEmpty()) return
+
+        val rows = ArrayList<Triple<String, String, String?>>(outcomes.size)
+        for (outcome in outcomes) {
+            val a = codeById[outcome.aId]
+            val b = codeById[outcome.bId]
+            // 코드를 못 찾으면 **아무것도 적지 않는다.** 그 한 판만 빼면 사용자가 한 번 누른
+            // 일이 절반만 남고, 되돌리기가 지울 대상도 절반이 된다(반쪽 묶음).
+            if (a == null || b == null) return
+            val winnerCode = if (outcome.winnerId == null) null else codeById[outcome.winnerId] ?: return
+            rows += Triple(a, b, winnerCode)
         }
 
         // 화면은 기다리지 않는다 — 다음 짝을 먼저 올리고 기록·재계산은 뒤에서 돈다.
-        session = DuelSession.answer(session)
+        // 이 화면이 함께 답한 짝을 알려 주지 않으면 방금 고른 얼굴이 곧바로 다시 뜬다.
+        session = DuelSession.answer(session, DuelRound.handledPairs(shown, winnerId))
         val seq = session.seq
         pendingRecords++
         render()
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val row = viewModel.record(axis.id, aCode, bCode, winnerCode)
+            val saved = viewModel.recordGroup(axis.id, rows)
             pendingRecords--
             if (!isAdded) return@launch
-            if (row == null) {
+            if (saved.isEmpty()) {
                 // 저장소가 거절한 값(승자가 두 참가자 중 어느 쪽도 아님)은 조용히 넘기지 않는다.
                 android.widget.Toast.makeText(
                     requireContext(), R.string.duel_record_failed, android.widget.Toast.LENGTH_SHORT
@@ -296,7 +336,7 @@ class DuelPlayFragment : Fragment() {
                 updateUndoButton()
                 return@launch
             }
-            recordedBySeq[seq] = row
+            recordedBySeq[seq] = Recorded(saved.first().groupId, saved)
             updateUndoButton()
             scheduleRefresh()
         }
@@ -310,6 +350,25 @@ class DuelPlayFragment : Fragment() {
      */
     private fun updateUndoButton() {
         binding.btnUndo.isEnabled = session.canUndo && pendingRecords == 0
+
+        // **몇 판이 사라지는지 버튼이 말한다**(B-115). 묶음 되돌리기는 판 하나가 아니라
+        // 그 화면이 낸 것 전부를 지우므로, 문구가 '방금 그거'에 머물면 사용자는 판 하나만
+        // 지워질 줄 알고 누른다. 수는 **실제로 적힌 판**에서 든다 — 화면에 뜬 카드 수로
+        // 세면 저장소가 거절한 경우에 틀린 수를 말한다.
+        val last = session.lastAnswered
+        val recorded = last?.let { recordedBySeq[it.seq] }
+        when {
+            last == null -> binding.btnUndo.setText(R.string.duel_undo)
+            recorded != null && recorded.matches.size > 1 ->
+                binding.btnUndo.text = getString(R.string.duel_undo_group, recorded.matches.size)
+            recorded != null -> binding.btnUndo.setText(R.string.duel_undo)
+            // 아직 저장 중 — 잠긴 버튼의 글자가 깜빡이지 않게 그대로 둔다.
+            pendingRecords > 0 -> Unit
+            // 저장이 거절됐다(위 [answer]의 고지). **지울 판이 없으므로 묶음 문구를 남기면
+            // 거짓말이 된다** — 되돌리기 자체는 여전히 돌아야 하고(그 짝을 다시 묻는다),
+            // 다만 사라지는 판은 0이다.
+            else -> binding.btnUndo.setText(R.string.duel_undo)
+        }
     }
 
     /**
@@ -322,13 +381,28 @@ class DuelPlayFragment : Fragment() {
     private fun undoLast() {
         if (pendingRecords > 0) return
         val last = session.lastAnswered ?: return
-        val match = recordedBySeq.remove(last.seq) ?: return
+        val recorded = recordedBySeq.remove(last.seq)
         session = DuelSession.undo(session)
         updateUndoButton()
         render()
 
+        // **저장이 거절된 답에도 되돌리기는 돈다 — 지울 것이 없을 뿐이다.**
+        // 종전에는 여기서 그냥 나갔는데(`?: return`), 그러면 버튼은 켜져 있는데 눌러도
+        // 아무 일이 없는 상태가 남는다 — 사용자는 자기 누름이 먹었는지 알 길이 없고,
+        // 되돌아오지 않은 그 짝을 다시 물을 방법도 없다. 다시 계산은 띄우지 않는다:
+        // DB가 그대로라 새 계획이 옛 계획과 같고, 짝은 [DuelSession.undo]가 이미 되돌렸다.
+        if (recorded == null) return
+
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.undo(match)
+            // **묶음이면 묶음 값으로 지운다** — 들고 있는 목록으로 지우면 그 사이 기록
+            // 화면에서 한 판이 손편집·삭제됐을 때 남은 것을 못 지워, 취소한 화면의 절반이
+            // 살아남는다. 판이 하나면 묶음 값이 없고(단독 판) 그것 하나를 지운다.
+            val groupId = recorded.groupId
+            if (groupId != null) {
+                viewModel.undoGroup(groupId)
+            } else {
+                recorded.matches.forEach { viewModel.undo(it) }
+            }
             if (!isAdded) return@launch
             scheduleRefresh()
         }
@@ -368,11 +442,9 @@ class DuelPlayFragment : Fragment() {
     // 그리기
     // ──────────────────────────────────────────────────────────────────────
 
-    private fun codesOf(candidate: DuelPairing.Candidate): Pair<String, String>? {
-        val a = codeById[candidate.pair.lowId] ?: return null
-        val b = codeById[candidate.pair.highId] ?: return null
-        return a to b
-    }
+    /** 머리 짝의 두 참가자가 코드로 풀리는가 — 안 풀리면 낼 판이 없는 것과 같다. */
+    private fun leadResolved(candidate: DuelPairing.Candidate): Boolean =
+        codeById.containsKey(candidate.pair.lowId) && codeById.containsKey(candidate.pair.highId)
 
     /**
      * 순수 계층의 id → 참가자 코드. **다시 계산할 때마다 갈아 끼워도 안전하다.**
@@ -392,6 +464,8 @@ class DuelPlayFragment : Fragment() {
         updateUndoButton()
 
         if (current == null) {
+            round = null
+            cards = emptyList()
             binding.duelArea.visibility = View.GONE
             binding.emptyState.visibility = View.VISIBLE
             binding.reasonText.visibility = View.GONE
@@ -429,8 +503,21 @@ class DuelPlayFragment : Fragment() {
             return
         }
 
-        val codes = codesOf(current)
-        if (codes == null) {
+        // **화면 하나를 짠다**(B-115) — 머리 짝에 대기열에서 뽑은 거들 참가자를 더한다.
+        //
+        // **떠 있는 판은 답하기 전에 다시 짜지 않는다**([DuelRound.canReuse]). 매번 짜면
+        // 배경에서 새 계획이 도착할 때마다 머리 짝은 그대로인데 셋째·넷째 카드만 갈려,
+        // 사용자가 고르려던 얼굴이 손가락 아래에서 바뀐다(DuelSession 규칙 1을 화면 전체로
+        // 넓힌 것이다). 이 화면은 판마다 뒤에서 다시 계산하므로 실제로 자주 벌어질 자리다.
+        val reusable = DuelRound.canReuse(round, current, groupSize) { codeById.containsKey(it) }
+        val built = if (reusable) round!! else DuelRound.build(current, session.queue, groupSize)
+
+        // 코드로 안 풀리는 참가자는 카드에 못 올리므로 걷어 내되, 머리 짝이 그렇다면
+        // 낼 판이 없는 것과 같다(종전 동작 그대로).
+        val members = built.members.filter { codeById.containsKey(it) }
+        if (!leadResolved(current) || members.size < 2) {
+            round = null
+            cards = emptyList()
             binding.duelArea.visibility = View.GONE
             binding.emptyState.visibility = View.VISIBLE
             binding.btnDraw.isEnabled = false
@@ -438,36 +525,69 @@ class DuelPlayFragment : Fragment() {
             binding.emptyHint.text = getString(R.string.duel_queue_empty_hint)
             return
         }
+        val shown = if (members.size == built.members.size) built else built.copy(members = members)
+        round = shown
 
         binding.duelArea.visibility = View.VISIBLE
         binding.emptyState.visibility = View.GONE
         binding.reasonText.visibility = View.VISIBLE
-        binding.reasonText.text = getString(reasonTextOf(current.reason))
+        binding.reasonText.text = getString(reasonTextOf(shown.reason))
 
-        val a = charactersByCode[codes.first]
-        val b = charactersByCode[codes.second]
-        cardA = cardOf(a, codes.first)
-        cardB = cardOf(b, codes.second)
-        paintCard(binding.cardA, cardA)
-        paintCard(binding.cardB, cardB)
+        val plan = DuelCardGrid.plan(shown.size, cardLayout == DuelImageFit.Layout.STACKED)
+        applyGrid(plan)
+
+        cards = shown.members.map { id ->
+            val code = codeById[id].orEmpty()
+            cardOf(charactersByCode[code], code, plan.compact)
+        }
+        shown.members.forEachIndexed { index, id ->
+            val slot = plan.slots[index]
+            val views = cardSlots[slot]
+            paintCard(views, cards[index])
+            val code = codeById[id].orEmpty()
+            imageJobs[slot] = if (isImageAxis) {
+                // 참가자 코드가 곧 경로다 — 대표 고르기를 거치지 않고 그 파일을 그대로 띄운다.
+                loadImageAt(code, views.cardImage, imageJobs[slot])
+            } else {
+                loadPortrait(charactersByCode[code], views.cardImage, imageJobs[slot])
+            }
+        }
+
         // 비슷함은 짝이 떠 있을 때만 뜻이 있다 — 빈 화면에서 누르면 아무 일도 안 일어난다.
         binding.btnDraw.isEnabled = true
-        if (isImageAxis) {
-            // 참가자 코드가 곧 경로다 — 대표 고르기를 거치지 않고 그 파일을 그대로 띄운다.
-            imageJobA = loadImageAt(codes.first, binding.cardA.cardImage, imageJobA)
-            imageJobB = loadImageAt(codes.second, binding.cardB.cardImage, imageJobB)
-        } else {
-            imageJobA = loadPortrait(a, binding.cardA.cardImage, imageJobA)
-            imageJobB = loadPortrait(b, binding.cardB.cardImage, imageJobB)
-        }
+        binding.btnDraw.setText(
+            if (shown.size > 2) R.string.duel_draw_group else R.string.duel_draw
+        )
     }
 
-    /** 지금 떠 있는 카드 — 펼침 시트가 다시 계산하지 않고 이것을 연다(두 자리가 갈릴 수 없다). */
-    private var cardA = DuelCardInfo.Card(name = "")
-    private var cardB = DuelCardInfo.Card(name = "")
+    /**
+     * 계획대로 슬롯을 켜고 끈다 — **판단은 [DuelCardGrid]가 이미 했다.**
+     *
+     * `INVISIBLE`과 `GONE`을 가르는 것이 이 함수의 유일한 요점이다: 셋일 때 넷째 슬롯은
+     * 사라지지 않고 **자리를 지킨다**(안 그러면 셋째 카드가 혼자 두 배로 커져 눈을 끈다).
+     */
+    private fun applyGrid(plan: DuelCardGrid.Plan) {
+        slotToMember = plan.slots.withIndex().associate { (index, slot) -> slot to index }
+        val slots = cardSlots
+        for (slot in 0 until SLOT_COUNT) {
+            val views = slots[slot]
+            views.root.visibility = when {
+                slot in plan.slots -> View.VISIBLE
+                slot in plan.spacers -> View.INVISIBLE
+                else -> View.GONE
+            }
+            // 자리만 지키는 슬롯은 눌러도 아무 일이 없어야 한다 — 보이지 않는 카드를 골라
+            // 판이 기록되면 사용자는 무엇을 눌렀는지도 모른다.
+            views.root.isClickable = slot in plan.slots
+            applyCardInner(views, plan.horizontalCard)
+        }
+        binding.rowBottom.visibility = if (plan.bottomRow) View.VISIBLE else View.GONE
+        binding.versusInline.visibility = if (plan.inlineVersus) View.VISIBLE else View.GONE
+        binding.versusStack.visibility = if (plan.stackVersus) View.VISIBLE else View.GONE
+    }
 
     /** 이 참가자의 카드 — **무엇이 뜨는가는 [DuelCardInfo]가 정한다.** */
-    private fun cardOf(character: Character?, code: String): DuelCardInfo.Card =
+    private fun cardOf(character: Character?, code: String, compact: Boolean): DuelCardInfo.Card =
         DuelCardInfo.build(
             // 이미지 축의 이름은 **파일 이름**이다. 경로를 통째로 적으면 카드 폭을 다 먹으면서
             // 두 카드가 앞부분이 똑같아 오히려 못 가른다. 파일 이름은 폴더를 열었을 때
@@ -481,7 +601,8 @@ class DuelPlayFragment : Fragment() {
             genderKey = genderKey,
             ageKey = ageKey,
             showProfiles = showProfile,
-            showInfluences = showInfluence
+            showInfluences = showInfluence,
+            compact = compact
         )
 
     /** 경로에서 파일 이름만. 비어 있으면 *"이름 없음"*이 아니라 경로 그대로다(없는 척하지 않는다). */
@@ -503,8 +624,8 @@ class DuelPlayFragment : Fragment() {
             row.findViewById<android.widget.TextView>(R.id.profileValue).text = line.value
             views.profileContainer.addView(row)
         }
-        views.profileMore.visibility = if (card.profileOverflow > 0) View.VISIBLE else View.GONE
-        if (card.profileOverflow > 0) {
+        views.profileMore.visibility = if (card.showProfileMore) View.VISIBLE else View.GONE
+        if (card.showProfileMore) {
             views.profileMore.text = getString(R.string.duel_profile_more, card.profileOverflow)
         }
         // 눌러도 같은 것만 나오면 마찰이다 — 접힌 것이 있을 때만 띄운다.
@@ -536,8 +657,12 @@ class DuelPlayFragment : Fragment() {
      * **값이 빈 줄도 보인다.** 좁은 카드에서는 그것이 자리 낭비지만 여기서는 *"그 필드가
      * 걸려 있는데 이 캐릭터는 비었다"*가 알 값어치가 있는 사실이다(개발 의도 2번).
      */
-    private fun showProfileSheet(left: Boolean) {
-        val card = if (left) cardA else cardB
+    private fun expandSlot(slot: Int) {
+        val index = slotToMember[slot] ?: return
+        showProfileSheet(cards.getOrNull(index) ?: return)
+    }
+
+    private fun showProfileSheet(card: DuelCardInfo.Card) {
         val context = requireContext()
         val scroll = cappedScrollView(context)
         val body = LinearLayout(context).apply {
@@ -559,6 +684,21 @@ class DuelPlayFragment : Fragment() {
             row.findViewById<android.widget.TextView>(R.id.profileValue).text =
                 line.value.ifEmpty { getString(R.string.duel_field_value_empty) }
             body.addView(row)
+        }
+        // **접힌 카드에서는 영향 줄도 여기서만 볼 수 있다**(B-115) — 카드가 이름+트리오로
+        // 접혔으면 판단 재료가 통째로 이 시트에 있다. 접히지 않은 카드에서는 이미 카드에
+        // 떠 있으므로 두 번 적지 않는다.
+        if (card.influences.isEmpty() && card.allInfluences.isNotEmpty()) {
+            for (line in card.allInfluences) {
+                val row = LayoutInflater.from(context)
+                    .inflate(R.layout.item_duel_card_influence, body, false)
+                row.findViewById<android.widget.TextView>(R.id.influenceRank).text =
+                    line.rank.toString()
+                row.findViewById<android.widget.TextView>(R.id.influenceLabel).text = line.label
+                row.findViewById<android.widget.TextView>(R.id.influenceValue).text =
+                    line.value.ifEmpty { getString(R.string.duel_field_value_empty) }
+                body.addView(row)
+            }
         }
         scroll.addView(body)
 
@@ -623,6 +763,9 @@ class DuelPlayFragment : Fragment() {
     private var showProfile = true
     private var showInfluence = true
 
+    /** 한 화면에 몇을 올리는가 (B-115). 2면 종전 1:1이다. */
+    private var groupSize = DuelRound.MIN_SIZE
+
     /**
      * 저장된 보기 설정을 화면에 얹는다 — **배치를 가르는 단 하나의 자리**.
      *
@@ -635,10 +778,12 @@ class DuelPlayFragment : Fragment() {
      * 패널까지 세로로 이어 붙일 높이가 없다. 그래서 그 배치에서는 **카드 안을 가로로**
      * 돌린다 — 그림(좌 40%) + 정보 패널(우). 접기 규칙(프로필 넷 + *"외 N개"*)은 그대로다.
      *
-     * ## k지선다(B-115)가 열리는 자리도 여기다
-     * 카드는 한 벌(`view_duel_card.xml`)을 두 번 include한 것이라 셋·넷으로 늘어도 카드
-     * 자체는 그대로다. 그 슬라이스가 바꿀 것은 **담는 그릇**([FragmentDuelPlayBinding.duelArea]를
-     * 2×2 격자로)과 접기 규칙(3장 이상이면 이름+트리오까지)뿐이며, 그 둘이 다 이 함수 안에 있다.
+     * ## k지선다(B-115)가 열린 자리도 여기다
+     * 카드는 한 벌(`view_duel_card.xml`)을 **네 번** include한 것이고, *어느 슬롯을 쓰는가*는
+     * [DuelCardGrid]가 정한다. **폭·높이를 여기서 계산하지 않는 것이 종전과 달라진 점**이다 —
+     * 두 줄과 줄 안의 무게가 레이아웃에 박혀 있어 슬롯을 켜고 끄는 것만으로 종전 두 배치의
+     * 크기가 그대로 나온다(나란히는 아랫줄이 사라져 윗줄이 높이를 다 갖는다).
+     * 그래서 이 함수에 남은 일은 **설정을 읽어 다시 그리는 것**뿐이다.
      */
     private fun applyViewOptions() {
         val context = requireContext()
@@ -646,32 +791,7 @@ class DuelPlayFragment : Fragment() {
         imageFit = DuelViewPrefs.fit(context)
         showProfile = DuelViewPrefs.showProfile(context)
         showInfluence = DuelViewPrefs.showInfluence(context)
-
-        val sideBySide = cardLayout == DuelImageFit.Layout.SIDE_BY_SIDE
-        binding.duelArea.orientation =
-            if (sideBySide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-
-        fun stretch(view: View) {
-            val lp = view.layoutParams as LinearLayout.LayoutParams
-            if (sideBySide) {
-                lp.width = 0
-                lp.height = LinearLayout.LayoutParams.MATCH_PARENT
-            } else {
-                lp.width = LinearLayout.LayoutParams.MATCH_PARENT
-                lp.height = 0
-            }
-            lp.weight = 1f
-            view.layoutParams = lp
-        }
-
-        for (card in listOf(binding.cardA, binding.cardB)) {
-            stretch(card.root)
-            applyCardInner(card, sideBySide)
-        }
-
-        val vsParams = binding.versusLabel.layoutParams as LinearLayout.LayoutParams
-        vsParams.gravity = if (sideBySide) Gravity.CENTER_VERTICAL else Gravity.CENTER_HORIZONTAL
-        binding.versusLabel.layoutParams = vsParams
+        groupSize = DuelViewPrefs.groupSize(context)
 
         // 이미 붙어 있는 그림도 새 규칙으로 다시 놓는다 — 설정을 바꾼 뒤 다음 판까지 기다리게
         // 하면 사용자는 그 설정이 먹었는지 알 수 없다.
@@ -687,27 +807,31 @@ class DuelPlayFragment : Fragment() {
      * 비율을 숫자로 박으면 프로필을 안 건 축에서 그림이 공연히 작아진다. 가로(카드가 낮을 때)
      * 에서는 폭을 4:6으로 나눈다: 그림은 세로로 길어야 얼굴이 살고, 패널은 값 줄이 잘리지
      * 않을 만큼 넓어야 한다.
+     *
+     * **격자(셋 이상)에서는 언제나 세로다** — 카드가 화면의 4분의 1이라 가로로 가르면 그림도
+     * 패널도 둘 다 못 쓸 만큼 좁아진다. 그쪽은 패널이 이름+트리오로 접히므로(compact) 세로로
+     * 두어도 그림이 자리를 거의 다 갖는다.
      */
-    private fun applyCardInner(card: ViewDuelCardBinding, sideBySide: Boolean) {
+    private fun applyCardInner(card: ViewDuelCardBinding, horizontal: Boolean) {
         card.cardInner.orientation =
-            if (sideBySide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
 
         val imageParams = card.cardImage.layoutParams as LinearLayout.LayoutParams
         val panelParams = card.cardPanel.layoutParams as LinearLayout.LayoutParams
-        if (sideBySide) {
-            imageParams.width = LinearLayout.LayoutParams.MATCH_PARENT
-            imageParams.height = 0
-            imageParams.weight = 1f
-            panelParams.width = LinearLayout.LayoutParams.MATCH_PARENT
-            panelParams.height = LinearLayout.LayoutParams.WRAP_CONTENT
-            panelParams.weight = 0f
-        } else {
+        if (horizontal) {
             imageParams.width = 0
             imageParams.height = LinearLayout.LayoutParams.MATCH_PARENT
             imageParams.weight = 4f
             panelParams.width = 0
             panelParams.height = LinearLayout.LayoutParams.MATCH_PARENT
             panelParams.weight = 6f
+        } else {
+            imageParams.width = LinearLayout.LayoutParams.MATCH_PARENT
+            imageParams.height = 0
+            imageParams.weight = 1f
+            panelParams.width = LinearLayout.LayoutParams.MATCH_PARENT
+            panelParams.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            panelParams.weight = 0f
         }
         card.cardImage.layoutParams = imageParams
         card.cardPanel.layoutParams = panelParams
@@ -718,11 +842,28 @@ class DuelPlayFragment : Fragment() {
         var pickedLayout = cardLayout
         var pickedFit = imageFit
 
+        var pickedGroupSize = groupSize
+
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_view_options, null)
         val layoutGroup = view.findViewById<RadioGroup>(R.id.groupLayout)
         val fitGroup = view.findViewById<RadioGroup>(R.id.groupFit)
+        val sizeGroup = view.findViewById<RadioGroup>(R.id.groupSize)
         val profileSwitch = view.findViewById<MaterialSwitch>(R.id.switchShowProfile)
         val influenceSwitch = view.findViewById<MaterialSwitch>(R.id.switchShowInfluence)
+        sizeGroup.check(
+            when (pickedGroupSize) {
+                3 -> R.id.optionGroupThree
+                4 -> R.id.optionGroupFour
+                else -> R.id.optionGroupTwo
+            }
+        )
+        sizeGroup.setOnCheckedChangeListener { _, id ->
+            pickedGroupSize = when (id) {
+                R.id.optionGroupThree -> 3
+                R.id.optionGroupFour -> 4
+                else -> DuelRound.MIN_SIZE
+            }
+        }
         layoutGroup.check(
             if (pickedLayout == DuelImageFit.Layout.SIDE_BY_SIDE) R.id.optionSideBySide else R.id.optionStacked
         )
@@ -751,7 +892,8 @@ class DuelPlayFragment : Fragment() {
                     pickedLayout,
                     pickedFit,
                     profileSwitch.isChecked,
-                    influenceSwitch.isChecked
+                    influenceSwitch.isChecked,
+                    pickedGroupSize
                 )
                 if (isAdded) applyViewOptions()
             }
@@ -835,10 +977,15 @@ class DuelPlayFragment : Fragment() {
         }
     }
 
+    /**
+     * 지금 화면에 떠 있는 참가자 코드 — 뒤늦게 도착한 그림이 **넘어간 판에 붙지 않게** 막는다.
+     *
+     * 카드가 넷이 될 수 있으므로 짝 둘이 아니라 [round]의 참가자 전부를 본다. 여기가 좁으면
+     * 셋째·넷째 카드의 그림이 도착하는 족족 버려져 **그 자리가 영영 자리표시자로 남는다.**
+     */
     private fun currentCodes(): Set<String> {
-        val current = session.current ?: return emptySet()
-        val codes = codesOf(current) ?: return emptySet()
-        return setOf(codes.first, codes.second)
+        val members = round?.members ?: return emptySet()
+        return members.mapNotNullTo(HashSet()) { codeById[it] }
     }
 
     private fun openStandings() {
@@ -884,12 +1031,20 @@ class DuelPlayFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         refreshJob = null
-        imageJobA = null
-        imageJobB = null
+        imageJobs.fill(null)
+        round = null
+        cards = emptyList()
         _binding = null
     }
 
+    /** 슬롯 넷 — 차례가 곧 [DuelCardGrid]의 슬롯 번호다. */
+    private val cardSlots: List<ViewDuelCardBinding>
+        get() = listOf(binding.cardA, binding.cardB, binding.cardC, binding.cardD)
+
     companion object {
+        /** [DuelCardGrid]의 슬롯 수. 레이아웃의 include 수와 같아야 한다. */
+        private const val SLOT_COUNT = 4
+
         private val gson = Gson()
         private val imagePathsType = object : TypeToken<List<String>>() {}.type
     }
