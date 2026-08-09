@@ -143,15 +143,16 @@ class DuelAxisListFragment : Fragment() {
      * `DuelRepository.followImageRenames`(R-42)가 풀었다.
      */
     private fun openAxis(axis: DuelAxis, destination: Int) {
-        if (axis.isImageAxis) {
-            val bundle = Bundle().apply { putLong("axisId", axis.id) }
-            findNavController().navigateSafe(
-                R.id.duelAxisListFragment, R.id.duelImageCharacterFragment, bundle
-            )
-            return
-        }
         val bundle = Bundle().apply { putLong("axisId", axis.id) }
-        findNavController().navigateSafe(R.id.duelAxisListFragment, destination, bundle)
+        // **기록 화면만은 캐릭터를 묻지 않는다** — 그 화면은 축 전체의 판을 늘어놓는 자리라
+        // (설계 13-4) 참가자 집합이 필요 없다. 대결·순위표는 *누구의 그림인가*가 정해지지
+        // 않으면 참가자 집합 자체가 없으므로 고르는 화면을 먼저 연다.
+        val target = if (axis.isImageAxis && destination != R.id.duelMatchesFragment) {
+            R.id.duelImageCharacterFragment
+        } else {
+            destination
+        }
+        findNavController().navigateSafe(R.id.duelAxisListFragment, target, bundle)
     }
 
     private fun reload() {
