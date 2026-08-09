@@ -130,7 +130,7 @@ object ImageSettingsDialog {
                     .toTypedArray()
                 MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_settings_duel_basis_title)
-                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.percent)) { d, w ->
+                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.percent).coerceAtLeast(0)) { d, w ->
                         pruneOptions = pruneOptions.copy(bottomPercent = choices[w])
                         refreshPruneLabels(); d.dismiss()
                     }
@@ -144,7 +144,7 @@ object ImageSettingsDialog {
                     .toTypedArray()
                 MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_settings_duel_basis_title)
-                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.played)) { d, w ->
+                    .setSingleChoiceItems(labels, choices.indexOf(pruneOptions.played).coerceAtLeast(0)) { d, w ->
                         pruneOptions = pruneOptions.copy(minPlayed = choices[w])
                         refreshPruneLabels(); d.dismiss()
                     }

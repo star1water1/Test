@@ -7002,17 +7002,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun newAxisLinks(value: String?): String = value ?: "[]"
 
     /**
-     * 기준 축은 **세계관당 하나** — 켠 행이 나오면 형제의 표식을 내린다 (B-104 ⓑ·ⓒ).
+     * 기준 축은 **세계관의 이미지 축들 사이에서 하나** — 켠 행이 나오면 형제의 표식을 내린다
+     * (B-104 ⓑ·ⓒ).
      *
      * `DuelRepository.saveAxis`가 화면 경로에서 지키는 그 계약을 가져오기 경로에서도 지킨다.
      * 여기가 저장소를 부르지 않고 DAO를 직접 쓰는 자리라, 빠뜨리면 **엑셀로 들어온 파일만
      * 기준이 둘인 상태**가 되고 그때 대표 그림이 어느 축을 따르는지 아무도 말할 수 없다.
      *
+     * **대상이 이미지일 때만 내린다.** 시트는 모든 축 행에 Y/N 드롭다운을 싣는데, 캐릭터 축
+     * 행에 `Y`를 적는 것은 시트 설명이 *"값은 남되 아무 일도 하지 않는다"*고 약속한 자리다.
+     * 그것으로 형제를 내리면 **한 칸 손편집이 살아 있는 이미지 축의 기준을 조용히 푼다** —
+     * 그리고 다음 내보내기가 `N`을 적어 **파일에서 되살릴 길도 사라진다**(개발 의도 2번).
+     *
      * 한 세계관에 `Y`가 여럿 적힌 파일은 **거부하지 않는다** — 행 차례대로 켜면서 형제를
      * 내리므로 마지막 행이 이기고, 그것이 *"거부가 아니라 유연한 수용·교정"*이다(개발 의도 4번).
      */
-    private suspend fun enforceSingleBasisAxis(universeId: Long, axisId: Long, isBasis: Boolean) {
-        if (isBasis && axisId > 0) db.duelAxisDao().clearBasisExcept(universeId, axisId)
+    private suspend fun enforceSingleBasisAxis(
+        universeId: Long,
+        targetType: String,
+        axisId: Long,
+        isBasis: Boolean
+    ) {
+        if (!isBasis || axisId <= 0 || targetType != DuelAxis.TARGET_IMAGE) return
+        db.duelAxisDao().clearBasisExcept(universeId, targetType, axisId)
     }
 
     /** 병합 규칙의 단일 소스 — 미리보기와 가져오기가 함께 부른다(R-33). */
@@ -7088,7 +7100,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             code = r.code.ifBlank { generateEntityCode() }
                         )
                     )
-                    enforceSingleBasisAxis(universe.id, newId, r.isBasisAxis ?: false)
+                    enforceSingleBasisAxis(universe.id, r.targetType, newId, r.isBasisAxis ?: false)
                     result.newDuelAxes++
                     if (r.code.isNotBlank()) {
                         warnCreatedNewByCode("duelAxes", "대결 축 행 $i: 코드 '${r.code}'가 기존 축에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
@@ -7099,7 +7111,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelAxisDao().update(merged)
                         result.updatedDuelAxes++
                     }
-                    enforceSingleBasisAxis(universe.id, merged.id, merged.isBasisAxis)
+                    // **대상은 기존 축의 것이다** — `mergeDuelAxis`가 targetType을 바꾸지 않으므로
+                    // 행에 적힌 대상이 아니라 실제 축의 대상으로 판정해야 한다.
+                    enforceSingleBasisAxis(
+                        universe.id, merged.targetType, merged.id, merged.isBasisAxis
+                    )
                 }
             } catch (e: Exception) {
                 result.skippedRows++

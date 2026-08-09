@@ -97,8 +97,6 @@ class ImageManagerFragment : Fragment() {
     }
 
     private var selectionMode = false
-    /** 걸러낼 후보의 *"제안까지가 끝"* 고지를 이미 했는가 — 켤 때마다 한 번씩만 말한다. */
-    private var pruneNoticeShown = false
     private val selectedPaths = LinkedHashSet<String>()
     private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
     private var searchJob: kotlinx.coroutines.Job? = null
@@ -205,7 +203,6 @@ class ImageManagerFragment : Fragment() {
 
         // 걸러낼 후보 (B-104 ⓒ) — 켤 때만 계산이 돈다. 결과는 관측으로 되돌아와 목록을 다시 건다.
         binding.chipPruneCandidate.setOnCheckedChangeListener { _, on ->
-            if (!on) pruneNoticeShown = false
             viewModel.setPruneFilter(on)
             applyView()
         }
@@ -213,11 +210,11 @@ class ImageManagerFragment : Fragment() {
             applyView()
             updatePruneChipLabel(state)
             // **제안까지가 끝이다**(백로그 원문) — 후보를 골랐다는 사실과 함께 그 말을 한 번 한다.
-            // 한 번인 것은 관측이 뷰 재생성마다 되돌아오기 때문이다(같은 말을 반복하면 소음이 된다).
-            if (!pruneNoticeShown && state is ImageManagerViewModel.PruneState.Ready &&
-                state.hasBasis && state.paths.isNotEmpty()
+            // **한 번인지 세는 것은 ViewModel이다** — 관측은 뷰 재생성마다 되돌아오는데
+            // 조각 필드로 세면 회전 한 번에 도로 0이 되어 **같은 말이 회전마다 반복된다.**
+            if (state is ImageManagerViewModel.PruneState.Ready &&
+                state.hasBasis && state.paths.isNotEmpty() && viewModel.consumePruneNotice()
             ) {
-                pruneNoticeShown = true
                 notifySuccess(
                     getString(R.string.image_manager_prune_found, state.scannedCharacters, state.paths.size)
                 )
@@ -544,13 +541,16 @@ class ImageManagerFragment : Fragment() {
         }
         return when (prune) {
             is ImageManagerViewModel.PruneState.Loading -> getString(R.string.image_manager_prune_loading)
-            is ImageManagerViewModel.PruneState.Ready ->
-                if (!prune.hasBasis) {
-                    getString(R.string.image_manager_prune_no_basis)
-                } else {
+            is ImageManagerViewModel.PruneState.Ready -> when {
+                !prune.hasBasis -> getString(R.string.image_manager_prune_no_basis)
+                // **후보가 있는데도 화면이 비었으면 원인은 이 칩이 아니다** — 검색어나 다른
+                // 칩이 좁힌 것이다. 그때 기준값을 탓하면 사용자가 엉뚱한 설정을 고치러 간다.
+                prune.paths.isNotEmpty() -> getString(R.string.image_manager_empty)
+                else -> {
                     val options = com.novelcharacter.app.util.DuelImageBasisPrefs.pruneOptions(requireContext())
                     getString(R.string.image_manager_prune_none, options.percent, options.played)
                 }
+            }
             else -> getString(R.string.image_manager_empty)
         }
     }

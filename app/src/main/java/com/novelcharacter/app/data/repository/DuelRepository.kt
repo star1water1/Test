@@ -61,11 +61,18 @@ class DuelRepository(private val db: AppDatabase) {
      * 같은 트랜잭션에서 형제 축의 표식을 내리는 것이 요점이다 — 갈라 두면 *"둘 다 켜짐"*이나
      * *"둘 다 꺼짐"*인 순간이 생기고, 그 사이에 대표 추첨이 돌면 사용자가 지정한 적 없는
      * 축을 따르거나 아무 축도 따르지 않는다.
+     *
+     * **판정이 [DuelAxis.isImageBasis]인 것이 요점이다** — `isBasisAxis`만 보면 캐릭터 축에
+     * 켜져 들어온 *아무 일도 하지 않아야 할* 표식이 형제를 내리게 된다. 그러면 **축 목록을
+     * 드래그해 순서만 바꿔도**(이 함수가 축마다 불린다) 살아 있는 이미지 축의 기준이 풀린다 —
+     * 사용자가 한 일과 결과 사이에 아무 연결도 없어 원인을 찾을 수 없는 부류다.
      */
     suspend fun saveAxis(axis: DuelAxis): DuelAxis = db.withTransaction {
         val saved = if (axis.id == 0L) axis.copy(id = db.duelAxisDao().insert(axis))
         else { db.duelAxisDao().update(axis); axis }
-        if (saved.isBasisAxis) db.duelAxisDao().clearBasisExcept(saved.universeId, saved.id)
+        if (saved.isImageBasis) {
+            db.duelAxisDao().clearBasisExcept(saved.universeId, saved.targetType, saved.id)
+        }
         saved
     }
 

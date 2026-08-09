@@ -51,14 +51,23 @@ interface DuelAxisDao {
     suspend fun getBasisAxis(universeId: Long, targetType: String): DuelAxis?
 
     /**
-     * 이 세계관에서 [exceptId]를 뺀 나머지의 기준 표식을 내린다 — **세계관당 하나**의 실행.
+     * 이 세계관에서 [exceptId]를 뺀 **같은 대상의** 축들에서 기준 표식을 내린다.
      *
-     * 대상을 가리지 않는 것이 [getBasisAxis]와 다른 점이다: 캐릭터 축에 잘못 켜져 있던
-     * 표식도 이 기회에 함께 내린다(읽는 쪽이 무시하더라도, 남겨 두면 엑셀 왕복에서
-     * *"기준이 둘"*로 보인다).
+     * **[getBasisAxis]와 대상 범위가 같아야 한다.** 종전 판은 여기서만 대상을 가리지 않아
+     * (*"캐릭터 축에 잘못 켜진 표식도 함께 내린다"*는 뜻이었다) 실제로는 **거꾸로 동작했다** —
+     * `기준축=Y`가 적힌 **캐릭터 축 행 하나가 엑셀로 들어오면 살아 있는 이미지 축의 기준을
+     * 조용히 풀었고**, 축 목록을 드래그해 순서만 바꿔도 같은 일이 났다(`saveAxis`가 매번
+     * 부른다). 사용자가 한 일과 결과 사이에 아무 연결도 없는 부류라 원인을 찾을 수 없다.
+     *
+     * **표식은 이미지 축의 속성이다**([DuelAxis.isImageBasis]) — 캐릭터 축에 켜져 들어온 값은
+     * *아무 일도 하지 않는 채 그대로 남는다*(엔티티 KDoc과 엑셀 시트가 약속한 그대로다.
+     * 사용자가 적은 것을 지우지 않는다). 그러므로 유일성도 **대상 안에서** 성립하면 충분하다.
      */
-    @Query("UPDATE duel_axes SET isBasisAxis = 0 WHERE universeId = :universeId AND id != :exceptId")
-    suspend fun clearBasisExcept(universeId: Long, exceptId: Long)
+    @Query(
+        "UPDATE duel_axes SET isBasisAxis = 0 " +
+            "WHERE universeId = :universeId AND targetType = :targetType AND id != :exceptId"
+    )
+    suspend fun clearBasisExcept(universeId: Long, targetType: String, exceptId: Long)
 
     @Insert
     suspend fun insert(axis: DuelAxis): Long

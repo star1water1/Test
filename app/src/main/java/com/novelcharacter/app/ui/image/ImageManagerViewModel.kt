@@ -326,11 +326,27 @@ class ImageManagerViewModel(
      * **`load()`에 얹지 않은 것이 요점이다.** 이미지 탭은 `onResume`마다 목록을 다시 읽는데,
      * 거기 얹으면 칩을 쓰지 않는 사용자도 탭에 올 때마다 대결 표를 훑게 된다.
      */
+    /**
+     * *"제안까지가 끝"* 고지를 아직 안 했는가 — **화면이 아니라 여기서 센다.**
+     *
+     * 조각 필드로 세면 회전 한 번에 도로 `false`가 되어(관측은 뷰 재생성마다 되돌아온다)
+     * **같은 말이 회전마다 반복된다.** 칩을 다시 켤 때만 되살린다.
+     */
+    private var pruneNoticePending = false
+
+    /** 고지할 차례인가 — 한 번 읽으면 소진된다. */
+    fun consumePruneNotice(): Boolean {
+        if (!pruneNoticePending) return false
+        pruneNoticePending = false
+        return true
+    }
+
     fun setPruneFilter(on: Boolean) {
         criteria = criteria.copy(
             prune = if (on) ImageFilterHelper.PruneFilter.CANDIDATE else ImageFilterHelper.PruneFilter.ANY
         )
-        if (!on) { _pruneState.value = PruneState.Off; return }
+        if (!on) { _pruneState.value = PruneState.Off; pruneNoticePending = false; return }
+        pruneNoticePending = true
         _pruneState.value = PruneState.Loading
         viewModelScope.launch {
             val state = withContext(Dispatchers.IO) { computePruneCandidates() }

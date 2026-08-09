@@ -134,6 +134,21 @@ class RepresentativeWeightingTest {
         assertEquals(0.1, w!![canon(b)]!!, 1e-9)
     }
 
+    @Test
+    fun `무게표는 넘긴 표기로도 맞는다 — 읽는 쪽의 파일 시스템 호출을 없앤다`() {
+        // `canonical`은 File.canonicalPath, 즉 파일 시스템 호출이다. 읽는 자리가 어댑터의
+        // bind라 목록을 튕길 때마다 그림 수만큼 붙는데, 두 표기를 함께 담아 두면 건너뛴다.
+        val raw = "$dir/./a.jpg"
+        val w = RepresentativeWeighting.weights(
+            listOf(raw, b),
+            mapOf(canon(raw) to 1900, canon(b) to 1500),
+            RepresentativeWeighting.Strength.STRONG
+        )!!
+        assertNotNull("넘긴 표기 그대로도 맞아야 한다", w[raw])
+        assertNotNull("정규 표기로도 여전히 맞는다", w[canon(raw)])
+        assertEquals(w[canon(raw)]!!, w[raw]!!, 1e-12)
+    }
+
     // ── 4. 저장된 값 읽기 ──
 
     @Test

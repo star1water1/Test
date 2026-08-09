@@ -217,6 +217,20 @@ def main():
     check("isBasisAxis = keepBasis" in trash_src,
           "휴지통 복원이 살아 있는 지정을 뒤엎지 않는다 (되살린 축이 기준을 훔치지 않는다)")
 
+    # **대상 범위가 읽기와 쓰기에서 같아야 한다** — 콜드 검토가 잡은 실결함이다.
+    # 내리는 쪽만 대상을 안 가리면 `기준축=Y`가 적힌 **캐릭터 축 행 하나가** 살아 있는
+    # 이미지 축의 기준을 조용히 풀고(엑셀 왕복), 축 목록을 드래그해 순서만 바꿔도 같은 일이 난다
+    # (`saveAxis`가 축마다 불린다). 사용자가 한 일과 결과 사이에 아무 연결도 없다.
+    check(re.search(r"clearBasisExcept\(universeId: Long, targetType: String, exceptId: Long\)", dao_src)
+          is not None,
+          "clearBasisExcept가 **대상을 받는다** — 읽기(getBasisAxis)와 범위가 같아야 한다")
+    check("if (saved.isImageBasis)" in repo_src,
+          "saveAxis가 `isBasisAxis`가 아니라 **`isImageBasis`**로 판정한다 (캐릭터 축의 표식은 형제를 내리지 않는다)")
+    check("targetType != DuelAxis.TARGET_IMAGE" in import_src,
+          "가져오기도 이미지 축일 때만 내린다 (시트는 모든 축 행에 Y/N 드롭다운을 싣는다)")
+    check("source.isImageAxis &&" in trash_src,
+          "복원의 빗장도 이미지 축일 때만 따진다 (캐릭터 축의 표식은 뺏을 것이 없어 거짓 고지가 된다)")
+
     print("\n[7] FK CASCADE가 새 칸과 무관하게 그대로 도는가")
     con.execute("DELETE FROM universes WHERE id = 1")
     axes_left = con.execute("SELECT COUNT(*) FROM duel_axes").fetchone()[0]

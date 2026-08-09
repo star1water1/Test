@@ -169,8 +169,16 @@ object CharacterRepresentativeImage {
 
         var total = 0.0
         val each = DoubleArray(paths.size) { index ->
+            val path = paths[index]
+            // **넘긴 표기로 먼저 맞힌다** — `canonical`은 파일 시스템 호출이고 이 함수는
+            // 어댑터의 bind에서 불린다(목록을 튕길 때마다 그림 수만큼 붙는다).
+            // [RepresentativeWeighting]이 두 표기를 함께 담아 두므로 보통 여기서 끝난다.
+            // 표기가 갈린 경우(개명 추종이 원본 표기를 지킨다)에만 정규화로 되짚는다.
             // 표에 없는 경로는 무게 1 — *"아직 안 겨룬 그림"*이고, 0으로 두면 영영 안 뜬다.
-            val w = weights[ImagePathMatch.canonical(paths[index])] ?: 1.0
+            val w = weights[path]
+                ?: weights[path.trim()]
+                ?: weights[ImagePathMatch.canonical(path)]
+                ?: 1.0
             val safe = if (w.isFinite() && w > 0.0) w else 1.0
             total += safe
             safe

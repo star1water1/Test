@@ -310,6 +310,7 @@ $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
 $TEST/util/DefaultFieldPlanTest.kt
 $TEST/data/model/DefaultFieldRefTest.kt
+$TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/util/ImagePathMatchTest.kt

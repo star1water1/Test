@@ -63,11 +63,17 @@ object RepresentativeWeighting {
     const val SPREAD_CAP = DuelRating.SCALE
 
     /**
-     * 이 캐릭터의 그림별 추첨 무게 — 키는 **정규 경로**([ImagePathMatch.canonical])다.
+     * 이 캐릭터의 그림별 추첨 무게 — **넘긴 표기와 정규 경로 둘 다를 키로 담는다.**
      *
      * 위치가 아니라 경로로 키를 두는 것은 무게를 만든 시점과 쓰는 시점 사이에 목록이
      * 바뀔 수 있기 때문이다(편집·폴더 왕복). 위치로 두면 그때 **남의 그림의 무게**가 적용되고,
      * 그것은 오류가 나지 않아 아무도 모른다.
+     *
+     * **두 키를 함께 담는 것은 값이 아니라 비용 때문이다.** [ImagePathMatch.canonical]은
+     * `File.canonicalPath` — 즉 **파일 시스템 호출**이다. 정규 경로만 키로 두면 읽는 쪽이
+     * 대조할 때마다 그것을 불러야 하는데, 그 자리가 하필 **어댑터의 `bind`**라 목록을 튕길
+     * 때마다 그림 수만큼의 호출이 메인 스레드에 붙는다. 여기서 한 번 더 담아 두면 읽는 쪽은
+     * **넘긴 표기 그대로 맞혀** 그 호출을 건너뛰고, 표기가 갈린 경우에만 정규화로 되짚는다.
      *
      * @param paths 이 캐릭터의 이미지 경로.
      * @param scores 경로별 표시 점수. **여기 없는 경로는 앵커**(=γ 1)로 친다 — 한 판도
@@ -104,10 +110,18 @@ object RepresentativeWeighting {
         val top = scoreByPath.values.max()
         if (scoreByPath.values.all { it == top }) return null
 
-        val out = LinkedHashMap<String, Double>(scoreByPath.size)
+        val out = LinkedHashMap<String, Double>(scoreByPath.size * 2)
         for ((key, score) in scoreByPath) {
             val delta = (score - top).toDouble().coerceAtLeast(-SPREAD_CAP)
             out[key] = 10.0.pow(strength.alpha * delta / DuelRating.SCALE)
+        }
+        // 넘긴 표기로도 맞을 수 있게 한 벌 더 담는다(위 KDoc — 읽는 쪽의 파일 시스템 호출을
+        // 없애려는 것이다). 이미 정규 표기인 경로는 같은 키라 덮어써도 값이 같다.
+        for (path in paths) {
+            val raw = path.trim()
+            if (raw.isEmpty()) continue
+            val weight = out[ImagePathMatch.canonical(raw)] ?: continue
+            out[raw] = weight
         }
         return out
     }
