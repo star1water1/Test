@@ -54,10 +54,11 @@ object AiProviderCodec {
         }
         // 정렬은 **우선순위 → 만든 순서**다 (B-108). 우선순위를 한 번도 손대지 않으면 전부 0이라
         // 종전과 글자 그대로 같은 순서가 나온다 — 그것이 이 칸에 마이그레이션이 없는 이유다.
-        return DecodeResult(
-            configs.sortedWith(compareBy({ it.priority }, { it.createdAt })),
-            skipped = skipped
-        )
+        //
+        // 규칙을 여기 다시 적지 않고 [AiProviderFallback.displayOrder]를 부르는 것이 요점이다 —
+        // 화면의 줄 순서가 곧 전환 우선순위인데, 두 곳이 각자 정렬하면 **보여 주는 순서와 실제
+        // 전환 순서가 갈리고** 그 어긋남은 한도에 걸리기 전까지 아무 데도 드러나지 않는다.
+        return DecodeResult(AiProviderFallback.displayOrder(configs), skipped = skipped)
     }
 
     fun toJson(c: AiProviderConfig): JsonObject = JsonObject().apply {

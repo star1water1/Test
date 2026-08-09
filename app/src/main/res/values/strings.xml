@@ -2659,7 +2659,7 @@
     <!-- B-108 자동 전환 — 목적문(R-25)과 상태 표시. 사용자가 켠 적 없는데 결과가 다른
          모델에서 오는 일이라, 규칙과 현재 상태를 화면이 먼저 말한다. -->
     <string name="ai_settings_providers_order_note">사용 중인 프로바이더가 사용량 한도에 걸리면 아래 순서대로 다음 프로바이더가 이어받습니다. 손잡이를 끌어 순서를 바꾸세요.</string>
-    <string name="ai_provider_cooldown">한도로 %d분간 뒤로 미룸 — 그동안은 다음 순서가 먼저 쓰입니다</string>
+    <string name="ai_provider_cooldown">한도에 걸려 %d분간 뒤로 미룹니다 — 다른 프로바이더가 있으면 그쪽이 먼저 쓰입니다</string>
     <string name="ai_provider_order_saved">전환 순서를 저장했습니다</string>
     <string name="ai_delete_confirm">\'%s\' 프로바이더를 삭제하시겠습니까?\n저장된 API 키도 함께 삭제됩니다.</string>
 

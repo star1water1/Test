@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.text.SpannableString
 import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
@@ -73,6 +74,9 @@ class AiSettingsFragment : Fragment() {
     private lateinit var aiService: AiService
 
     private val adapter = ProviderAdapter()
+
+    /** 손잡이가 드래그를 시작시키려면 붙잡고 있어야 한다 (B-108 — 드래그는 손잡이 전용). */
+    private var touchHelper: ItemTouchHelper? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -277,9 +281,19 @@ class AiSettingsFragment : Fragment() {
      * 방금 손댄 것처럼 보인다(형제 화면들이 `displayOrder`에서 쓰는 그 관행이다).
      */
     private fun attachReorder() {
-        val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+        val helper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
+            /**
+             * **드래그는 손잡이 전용이다** — 세계관·작품·캐릭터·연표·필드 목록과 같은 배선이고
+             * `FieldDefinitionAdapter`가 그 관행을 주석으로 적어 두었다.
+             *
+             * 길게 눌러 끄는 길을 함께 열지 않는 이유가 이 화면에서는 특히 분명하다: 행을 누르면
+             * **사용 중 프로바이더가 바뀐다.** 길게 누르기가 드래그를 시작하면 사용자는 자기가
+             * 무엇을 하려던 것인지(고르기인가 옮기기인가)를 손가락을 떼기 전에는 알 수 없다.
+             */
+            override fun isLongPressDragEnabled(): Boolean = false
+
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -296,22 +310,25 @@ class AiSettingsFragment : Fragment() {
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
                 val ordered = adapter.takePendingOrder() ?: return
-                var changed = false
-                AiProviderFallback.withPriorities(ordered).forEachIndexed { index, config ->
-                    if (config.priority != ordered[index].priority) {
-                        providerStore.save(config)
-                        changed = true
-                    }
-                }
-                if (changed) {
-                    refreshList()
-                    Toast.makeText(
-                        requireContext(), R.string.ai_provider_order_saved, Toast.LENGTH_SHORT
-                    ).show()
-                }
+                // **견주는 상대는 저장된 값이지 화면이 들고 있는 값이 아니다.** 화면의 항목은
+                // 방금 저장한 뒤 다시 읽기 전까지 옛 우선순위를 들고 있어서, 그것과 견주면
+                // **자리가 바뀌었는데도 같아 보여 저장에서 빠지는 항목**이 생긴다(그 항목만
+                // 옛 자리에 남아 순서가 조용히 어긋난다).
+                val changed = AiProviderFallback.withPriorities(ordered)
+                    .filter { providerStore.get(it.id)?.priority != it.priority }
+                if (changed.isEmpty()) return
+                changed.forEach { providerStore.save(it) }
+                // 목록 갱신은 **다음 프레임으로 미룬다** — `clearView`는 드래그가 끝나는 자리라
+                // RecyclerView가 아직 레이아웃 중일 수 있고, 그 안에서 어댑터를 통째로 갈면
+                // 던진다. 화면의 줄 순서는 이미 맞으므로 미뤄도 사용자에게는 차이가 없다.
+                recyclerView.post { if (_binding != null) refreshList() }
+                Toast.makeText(
+                    requireContext(), R.string.ai_provider_order_saved, Toast.LENGTH_SHORT
+                ).show()
             }
         })
-        touchHelper.attachToRecyclerView(binding.providerList)
+        helper.attachToRecyclerView(binding.providerList)
+        touchHelper = helper
     }
 
     private fun refreshList() {
@@ -897,6 +914,12 @@ class AiSettingsFragment : Fragment() {
                 b.root.setOnClickListener {
                     providerStore.setActiveId(config.id)
                     refreshList()
+                }
+                // 손잡이를 누르는 순간 드래그가 시작된다 (길게 누르기는 꺼 두었다 —
+                // 이 행은 누르면 '사용 중'이 바뀌므로 두 뜻이 겹치면 안 된다).
+                b.dragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) touchHelper?.startDrag(this)
+                    false
                 }
                 b.overflowButton.setOnClickListener { showRowMenu(config, it) }
             }

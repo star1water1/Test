@@ -131,7 +131,9 @@ class AiService(context: Context) {
         val result = execute(config, apiKey, ping)
         // 테스트 목적상 '응답은 왔지만 텍스트가 빈' 경우도 인증 성공이므로 성공으로 승격.
         return if (result is AiResult.Failure && result.kind == AiErrorKind.EMPTY_RESPONSE) {
-            AiResult.Success(text = "", model = config.model)
+            // 승격한 성공도 관문의 출구다 — 표식을 빼면 *"관문을 떠나는 결과에는 표식이 있다"*가
+            // 여기 하나에서만 깨지고, 그런 예외는 다음 사람이 믿는 순간 결함이 된다 (R-44).
+            AiResult.Success(text = "", model = config.model).withProvider(config.ref())
         } else result.withProvider(config.ref())
     }
 

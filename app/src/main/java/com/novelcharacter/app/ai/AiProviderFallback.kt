@@ -140,9 +140,12 @@ object AiProviderFallback {
     }
 
     /**
-     * 목록 화면이 쓰는 표시 순서 — [order]와 **같은 우선순위 규칙**이되 활성·쿨다운·키 유무로
-     * 자리를 바꾸지 않는다. 사용자가 끌어 놓은 그 줄 순서가 곧 우선순위이므로, 목록이 다른
-     * 규칙으로 정렬하면 **화면이 보여 주는 순서와 실제 전환 순서가 갈린다.**
+     * **저장된 목록이 서는 순서** — [AiProviderCodec.decode]가 읽어 들이는 자리에서 부르므로
+     * 화면·전환·엑셀 어디서 보든 같은 줄 순서다.
+     *
+     * [order]와 **같은 우선순위 규칙**이되 활성·쿨다운·키 유무로 자리를 바꾸지 않는다.
+     * 사용자가 끌어 놓은 그 줄 순서가 곧 우선순위이므로, 읽는 쪽이 각자 정렬하면 **화면이 보여
+     * 주는 순서와 실제 전환 순서가 갈리고**, 그 어긋남은 한도에 걸리기 전까지 드러나지 않는다.
      */
     fun displayOrder(configs: List<AiProviderConfig>): List<AiProviderConfig> =
         configs.sortedWith(compareBy({ it.priority }, { it.createdAt }))
