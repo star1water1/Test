@@ -36,6 +36,28 @@ class EntityPickerBottomSheet : BottomSheetDialogFragment() {
      */
     var onCreateNewCharacter: (() -> Unit)? = null
 
+    /**
+     * 유형을 하나로 못 박는다 — 라디오 줄이 사라지고 그 유형만 고른다 (B-124 ⓒ에서 추가).
+     *
+     * 이름은행의 **[사용 처리]**처럼 *"이 이름을 쓰는 **캐릭터**를 고른다"*가 이미 정해진
+     * 자리에서는 유형 선택이 뜻을 갖지 않는다(작품·세계관을 고를 수 있으면 그것이 오히려
+     * 오조작이다). **null이면 종전 그대로 셋 다 고를 수 있다** — 이미지 탭은 이 값을
+     * 주지 않으므로 동작이 바뀌지 않는다.
+     *
+     * 이 시트를 재사용하는 것이 요점이다: `AlertDialog.setItems`는 **검색이 없어 부적합**
+     * 하다는 판정이 이 파일 머리에 이미 적혀 있고, 목표 규모의 캐릭터는 6,420명이다.
+     */
+    var lockedType: ImageManagerViewModel.OwnerType? = null
+
+    /**
+     * 머리글 문구 교체 — null이면 종전의 이미지 배정 문구를 그대로 쓴다 (B-124 ⓒ에서 추가).
+     *
+     * [lockedType]과 짝이다: 유형을 못 박아 다른 화면이 이 시트를 빌리면 **제목이 그
+     * 화면의 일을 말해야 한다.** 안 바꾸면 이름은행의 [사용 처리]가 *"이미지 배정 대상"*을
+     * 띄운다 — 기능은 맞고 문구만 남의 것인, 눈으로만 잡히는 부류다.
+     */
+    var titleRes: Int? = null
+
     private var _binding: BottomSheetEntityPickerBinding? = null
     private val binding get() = _binding!!
 
@@ -61,6 +83,13 @@ class EntityPickerBottomSheet : BottomSheetDialogFragment() {
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+
+        // 유형이 못 박혔으면 라디오 줄을 걷는다 — 고를 것이 없는 선택지는 마찰이다(원칙 04).
+        lockedType?.let { locked ->
+            currentType = locked
+            binding.typeGroup.visibility = View.GONE
+        }
+        titleRes?.let { binding.titleText.setText(it) }
 
         binding.typeGroup.setOnCheckedChangeListener { _, checkedId ->
             currentType = when (checkedId) {

@@ -1340,10 +1340,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     ): NameBankLinkOutcome = app.database.withTransaction {
         val candidates = app.nameBankRepository.findByName(savedName)
         val linked = app.nameBankRepository.getEntriesUsedByCharacter(characterId)
+        // **이름으로 거르기 전의 실물을 넘긴다** — 그래야 판정이 *사라졌다*와 *이름을 고쳐
+        // 적어 무의미해졌다*를 가른다(둘을 뭉뚱그리면 화면이 없는 사실을 말한다).
+        val requested = requestedEntryId?.let { id ->
+            candidates.firstOrNull { it.id == id }
+                ?: app.nameBankRepository.getByIds(listOf(id)).firstOrNull()
+        }
         val plan = com.novelcharacter.app.util.NameBankMatch.planOnSave(
             savedName = savedName,
             characterId = characterId,
-            requestedEntryId = requestedEntryId,
+            requested = requested,
             candidates = candidates,
             currentlyLinked = linked
         )
@@ -1355,7 +1361,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         NameBankLinkOutcome(
             linkedName = linkedName,
             releasedCount = plan.releaseEntryIds.size,
-            requestedTaken = plan.requestedTaken
+            requestedTaken = plan.requestedTaken,
+            requestedMissing = plan.requestedMissing
         )
     }
 

@@ -51,10 +51,13 @@ object NameBankMatch {
     data class LinkPlan(
         val linkEntryId: Long? = null,
         val releaseEntryIds: List<Long> = emptyList(),
-        val requestedTaken: Boolean = false
+        val requestedTaken: Boolean = false,
+        /** 고른 항목이 은행에서 사라졌다(삭제) — [requestedTaken]과 사유가 달라 문구도 다르다. */
+        val requestedMissing: Boolean = false
     ) {
         /** 은행에 쓸 것이 하나도 없는가 — 고지할 것도 없다는 뜻이다. */
-        val isNoop: Boolean get() = linkEntryId == null && releaseEntryIds.isEmpty() && !requestedTaken
+        val isNoop: Boolean
+            get() = linkEntryId == null && releaseEntryIds.isEmpty() && !requestedTaken && !requestedMissing
     }
 
     /**
@@ -62,7 +65,9 @@ object NameBankMatch {
      *
      * @param savedName 저장된 캐릭터의 이름(`Character.name`).
      * @param characterId 저장된 캐릭터 id.
-     * @param requestedEntryId 편집 폼에서 **명시적으로 고른** 엔트리(ⓐ). 없으면 null이고 자동 대조만 한다.
+     * @param requested 편집 폼에서 **명시적으로 고른** 엔트리(ⓐ) — 호출측이 id로 찾아 넘긴다.
+     *   고른 적 없으면 null(자동 대조만). **이름으로 거르기 *전*의 실물을 넘길 것** — 그래야
+     *   *사라졌다*와 *이름을 바꿔 적어 무의미해졌다*를 가를 수 있다(아래 셋째 규칙).
      * @param candidates [savedName]과 이름이 같은 은행 엔트리 — 호출측이 조회로 좁혀 준다.
      *   좁히기가 이 함수의 규칙보다 넓어도 무해하다(여기서 [sameName]으로 다시 거른다).
      * @param currentlyLinked 지금 이 캐릭터에 걸려 있는 엔트리들.
@@ -73,11 +78,15 @@ object NameBankMatch {
      *   저장할 때마다 *"연결했습니다"*가 뜨면 그것이 소음이다(원칙 04).
      * - 동명 미사용 엔트리가 여럿이면 **먼저 등록된 것**(id 오름차순)을 고른다. 목록 순서에
      *   판정을 맡기면 같은 저장이 실행마다 다른 엔트리를 문다.
+     * - **고른 뒤 이름을 고쳐 적었으면 그 선택은 조용히 버린다**(고지 없음 — 자동 대조로 간다).
+     *   사용자가 스스로 덮어쓴 것이라 알릴 사건이 아니다. 이것을 *막혔다*로 뭉뚱그리면
+     *   화면이 **거짓말을 한다** — 아무도 가져가지 않은 항목을 두고 *"이미 다른 캐릭터의
+     *   것"*이라 말하게 된다(콜드 검토가 잡은 자리다).
      */
     fun planOnSave(
         savedName: String,
         characterId: Long,
-        requestedEntryId: Long?,
+        requested: NameBankEntry?,
         candidates: List<NameBankEntry>,
         currentlyLinked: List<NameBankEntry>
     ): LinkPlan {
@@ -92,12 +101,18 @@ object NameBankMatch {
         // 남이 쓰는 것은 후보가 아니다. 내가 쓰는 것은 후보다(같은 캐릭터의 재저장).
         fun free(e: NameBankEntry) = !e.isUsed || e.usedByCharacterId == null || e.usedByCharacterId == characterId
 
-        if (requestedEntryId != null) {
-            val requested = matching.firstOrNull { it.id == requestedEntryId }
+        // 고른 항목의 처분은 셋으로 갈린다 — **사유가 다르면 문구도 달라야 한다**(R-17).
+        //   ⓐ 이름을 고쳐 적어 무의미해졌다 → 조용히 버리고 자동 대조로 간다(사용자가 덮어썼다)
+        //   ⓑ 은행에서 사라졌다(삭제)        → 말한다
+        //   ⓒ 남이 가져갔다                  → 말한다(문구가 ⓑ와 다르다)
+        if (requested != null && name.isNotEmpty() && sameName(requested.name, name)) {
             return when {
-                requested == null || !free(requested) ->
-                    // 고른 것이 사라졌거나(삭제) 남의 것이 됐다(그 사이 다른 저장) — 갈아치우지 않고 말한다.
+                !free(requested) ->
+                    // 그 사이 다른 저장이 물었다 — 다른 동명으로 갈아치우지 않고 말한다.
                     LinkPlan(releaseEntryIds = release, requestedTaken = true)
+                matching.none { it.id == requested.id } ->
+                    // 이름은 맞는데 후보 목록에 없다 = 은행에서 사라졌다.
+                    LinkPlan(releaseEntryIds = release, requestedMissing = true)
                 keep.any { it.id == requested.id } ->
                     // 이미 그 엔트리를 물고 있다 — 다시 걸 것도 말할 것도 없다.
                     LinkPlan(releaseEntryIds = release)

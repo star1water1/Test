@@ -183,9 +183,22 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
             addSource(characters) { latestCharacters = it; update() }
         }
 
-    /** [사용 처리]의 캐릭터 고르기 재료 (죽어 있던 `markAsUsed`에 UI를 다는 자리) */
-    suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> =
-        app.characterRepository.getAllCharactersList()
+    /**
+     * [사용 처리]의 캐릭터 고르기 재료 (죽어 있던 `markAsUsed`에 UI를 다는 자리).
+     *
+     * `EntityPickerBottomSheet`의 행 타입을 그대로 쓴다 — 그 시트를 재사용하기 위해서다
+     * (`AlertDialog.setItems`는 검색이 없어 목표 규모 6,420명에서 부적합하다는 판정이
+     * 그 파일 머리에 이미 있다). 부제는 작품명이라 **동명이인을 가려 준다.**
+     */
+    suspend fun getCharacterPickRows(): List<com.novelcharacter.app.ui.image.ImageManagerViewModel.PickRow> =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val novels = app.database.novelDao().getAllNovelsList().associateBy({ it.id }, { it.title })
+            app.characterRepository.getAllCharactersList().sortedBy { it.name }.map {
+                com.novelcharacter.app.ui.image.ImageManagerViewModel.PickRow(
+                    it.id, it.name, it.novelId?.let { n -> novels[n] } ?: ""
+                )
+            }
+        }
 
     /** 이름은행이 쓰고 있는 성별 값들 — 자유 입력의 제안 목록 (ⓓ, 고정 3옵션을 연 자리) */
     suspend fun getGenderSuggestions(): List<String> =
@@ -274,7 +287,9 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 val fd = fields.firstOrNull {
                     com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
                         com.novelcharacter.app.data.model.SemanticRole.GENDER
-                } ?: app.database.fieldDefinitionDao().getFieldByKey(universeId, "gender")
+                // 폴백도 **이미 읽은 목록에서** 찾는다 — 두 번째 조회를 하면 그 둘이
+                // 같은 entityType을 보는지가 두 자리의 기본값에 달리게 된다(R-29의 부류).
+                } ?: fields.firstOrNull { it.key == "gender" }
                 val type = fd?.let { com.novelcharacter.app.data.model.FieldType.fromName(it.type) }
                 when (type) {
                     com.novelcharacter.app.data.model.FieldType.SELECT -> {

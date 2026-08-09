@@ -15,10 +15,20 @@ data class NameBankLinkOutcome(
     val linkedName: String? = null,
     /** 이름이 바뀌어 사용 표시를 푼 엔트리 수 */
     val releasedCount: Int = 0,
-    /** 폼에서 고른 엔트리가 이미 남의 것이거나 사라져 걸지 못했다 */
-    val requestedTaken: Boolean = false
+    /** 폼에서 고른 엔트리를 **남이 이미 쓰고 있어** 걸지 못했다 */
+    val requestedTaken: Boolean = false,
+    /**
+     * 폼에서 고른 엔트리가 **은행에서 사라져** 걸지 못했다.
+     *
+     * [requestedTaken]과 갈라 두는 것은 사유가 다르면 처방도 다르기 때문이다(R-17) —
+     * 빼앗긴 것은 *다른 이름을 고르라*이고 사라진 것은 *다시 등록하라*다.
+     * **이름을 고쳐 적어 선택이 무의미해진 경우는 둘 다 아니다** — 사용자가 스스로
+     * 덮어쓴 것이라 알릴 사건이 아니고, 판정이 조용히 자동 대조로 넘긴다.
+     */
+    val requestedMissing: Boolean = false
 ) {
-    val isSilent: Boolean get() = linkedName == null && releasedCount == 0 && !requestedTaken
+    val isSilent: Boolean
+        get() = linkedName == null && releasedCount == 0 && !requestedTaken && !requestedMissing
 }
 
 class NameBankRepository(

@@ -2879,13 +2879,13 @@
     <string name="name_bank_link_marked_used">이름은행의 \'%1$s\'을(를) 사용됨으로 표시했습니다.</string>
     <string name="name_bank_link_released">이름이 바뀌어 은행 항목 %1$d개의 사용 표시를 풀었습니다.</string>
     <string name="name_bank_link_taken">고른 은행 항목이 이미 다른 캐릭터의 것이라 사용 표시를 옮기지 않았습니다.</string>
+    <string name="name_bank_link_missing">고른 은행 항목이 사라져 사용 표시를 옮기지 않았습니다.</string>
     <string name="name_bank_link_failed">이름은행 사용 표시를 맞추지 못했습니다 — 캐릭터는 저장됐습니다.</string>
     <string name="name_bank_used_by_label">사용 · %1$s</string>
     <string name="name_bank_used_by_missing">사용 · 캐릭터를 찾을 수 없음</string>
     <string name="name_bank_open_character">캐릭터 열기</string>
     <string name="name_bank_mark_used">사용 처리</string>
     <string name="name_bank_mark_used_pick">이 이름을 쓰는 캐릭터 고르기</string>
-    <string name="name_bank_mark_used_no_characters">등록된 캐릭터가 없습니다.</string>
     <string name="name_bank_create_character">이 이름으로 캐릭터 만들기</string>
     <string name="name_bank_gender_hint">성별 (직접 입력)</string>
     <string name="name_bank_gender_purpose">쓰던 성별이 제안으로 뜨고, 목록에 없는 값도 그대로 적을 수 있습니다.</string>

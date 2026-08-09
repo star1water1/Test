@@ -39,6 +39,9 @@ class NameBankAdapter(
     }
 
     fun setUsedByNames(names: Map<Long, String>) {
+        // 캐릭터 표가 바뀔 때마다 새 Map이 오지만 내용은 대개 그대로다 —
+        // 같으면 다시 그리지 않는다(전량 rebind가 스크롤 중에 튄다).
+        if (usedByNames == names) return
         usedByNames = names
         notifyDataSetChanged()
     }
@@ -95,7 +98,15 @@ class NameBankAdapter(
                     itemView.context.getString(R.string.name_bank_used_by_missing)
                 }
                 usedByText.visibility = View.VISIBLE
-                usedByText.setOnClickListener { if (who != null) onOpenCharacter(usedById) }
+                // **못 찾은 캐릭터 줄은 누를 수 없게 둔다** — 리스너만 달아 두면 눌리는 것처럼
+                // 보이면서 아무 일도 안 일어난다(고장과 구별되지 않는다).
+                if (who != null) {
+                    usedByText.isClickable = true
+                    usedByText.setOnClickListener { onOpenCharacter(usedById) }
+                } else {
+                    usedByText.setOnClickListener(null)
+                    usedByText.isClickable = false
+                }
             } else {
                 usedByText.visibility = View.GONE
                 usedByText.setOnClickListener(null)

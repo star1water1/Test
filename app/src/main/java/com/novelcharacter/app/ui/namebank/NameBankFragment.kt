@@ -7,7 +7,6 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -379,22 +378,21 @@ class NameBankFragment : Fragment() {
      * [사용 처리] — 이 이름을 쓰는 캐릭터를 고른다 (B-124 ⓒ).
      *
      * `markAsUsed` API와 결과 문구는 처음부터 있었고 **진입점만 없었다**(감사 문서 등재분).
+     *
+     * **고르는 창은 `EntityPickerBottomSheet`를 그대로 쓴다** — 그 파일 머리가 이미
+     * *"수백 명 캐릭터 스케일 대응(`AlertDialog.setItems` 선례는 검색이 없어 부적합)"*이라
+     * 판정해 뒀고, 목표 규모의 캐릭터는 **6,420명**이다(`scalability_performance` 2장).
+     * 첫 구현이 `setItems`였다가 콜드 검토에서 바꿨다 — 저장소가 이미 내린 판정을
+     * 되돌리는 자리였다. 유형은 캐릭터로 못 박는다(`lockedType`).
      */
     private fun showMarkUsedPicker(entry: NameBankEntry) {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val characters = viewModel.getAllCharactersList()
-            if (!isAdded || _binding == null) return@launch
-            if (characters.isEmpty()) {
-                Toast.makeText(requireContext(), R.string.name_bank_mark_used_no_characters, Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val labels = characters.map { it.name }.toTypedArray()
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.name_bank_mark_used_pick)
-                .setItems(labels) { _, which -> viewModel.markAsUsed(entry.id, characters[which].id) }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
+        if (parentFragmentManager.isStateSaved) return
+        val sheet = com.novelcharacter.app.ui.image.EntityPickerBottomSheet()
+        sheet.lockedType = com.novelcharacter.app.ui.image.ImageManagerViewModel.OwnerType.CHARACTER
+        sheet.titleRes = R.string.name_bank_mark_used_pick
+        sheet.loadTargets = { viewModel.getCharacterPickRows() }
+        sheet.onPicked = { _, row -> viewModel.markAsUsed(entry.id, row.id) }
+        sheet.show(parentFragmentManager, "namebank_mark_used")
     }
 
     /** 사용 캐릭터로 이동 — 지금까지 엑셀 시트에만 있던 연결을 화면으로 (B-124 ⓒ). */

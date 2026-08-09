@@ -57,7 +57,7 @@ class NameBankMatchTest {
     @Test
     fun `남이 쓰는 동명 엔트리는 자동으로 걸지 않는다`() {
         val plan = NameBankMatch.planOnSave(
-            savedName = "아리아", characterId = 7L, requestedEntryId = null,
+            savedName = "아리아", characterId = 7L, requested = null,
             candidates = listOf(entry(1, "아리아", used = true, usedBy = 99L)),
             currentlyLinked = emptyList()
         )
@@ -88,9 +88,10 @@ class NameBankMatchTest {
 
     @Test
     fun `고른 엔트리가 있으면 동명 미사용이 먼저 있어도 고른 것을 건다`() {
+        val picked = entry(5, "아리아")
         val plan = NameBankMatch.planOnSave(
-            "아리아", 7L, requestedEntryId = 5L,
-            candidates = listOf(entry(2, "아리아"), entry(5, "아리아")),
+            "아리아", 7L, requested = picked,
+            candidates = listOf(entry(2, "아리아"), picked),
             currentlyLinked = emptyList()
         )
         assertEquals(5L, plan.linkEntryId)
@@ -101,7 +102,7 @@ class NameBankMatchTest {
         val held = entry(1, "아리아", used = true, usedBy = 7L)
         val picked = entry(2, "아리아")
         val plan = NameBankMatch.planOnSave(
-            "아리아", 7L, requestedEntryId = 2L,
+            "아리아", 7L, requested = picked,
             candidates = listOf(held, picked), currentlyLinked = listOf(held)
         )
         assertEquals(2L, plan.linkEntryId)
@@ -110,34 +111,51 @@ class NameBankMatchTest {
 
     @Test
     fun `고른 엔트리가 남의 것이 됐으면 다른 동명으로 갈아치우지 않고 말한다`() {
+        val taken = entry(5, "아리아", used = true, usedBy = 99L)
         val plan = NameBankMatch.planOnSave(
-            "아리아", 7L, requestedEntryId = 5L,
-            candidates = listOf(entry(2, "아리아"), entry(5, "아리아", used = true, usedBy = 99L)),
-            currentlyLinked = emptyList()
+            "아리아", 7L, requested = taken,
+            candidates = listOf(entry(2, "아리아"), taken), currentlyLinked = emptyList()
         )
         assertNull(plan.linkEntryId)
         assertTrue(plan.requestedTaken)
+        assertFalse(plan.requestedMissing)
     }
 
     @Test
-    fun `고른 엔트리가 사라졌으면 말한다`() {
+    fun `고른 엔트리가 사라졌으면 빼앗긴 것과 다른 사유로 말한다`() {
+        // 사유가 다르면 처방도 다르다 — 빼앗긴 것은 *다른 이름을 고르라*, 사라진 것은 *다시 등록하라*.
+        val gone = entry(5, "아리아")
         val plan = NameBankMatch.planOnSave(
-            "아리아", 7L, requestedEntryId = 5L,
+            "아리아", 7L, requested = gone,
             candidates = listOf(entry(2, "아리아")), currentlyLinked = emptyList()
         )
         assertNull(plan.linkEntryId)
-        assertTrue(plan.requestedTaken)
+        assertTrue(plan.requestedMissing)
+        assertFalse(plan.requestedTaken)
     }
 
     @Test
-    fun `고른 엔트리의 이름이 폼의 이름과 다르면 걸지 않는다`() {
-        // 고른 뒤 이름 칸을 고쳐 쓴 경우 — 은행이 *다른 이름을 그 캐릭터가 쓴다*고 말하면 안 된다.
+    fun `고른 뒤 이름을 고쳐 적었으면 조용히 버리고 자동 대조로 간다`() {
+        // 콜드 검토가 잡은 자리: 종전에는 이것을 "막혔다"로 뭉뚱그려, 아무도 가져가지 않은
+        // 항목을 두고 *"이미 다른 캐릭터의 것"*이라 **없는 사실을 말했다.**
+        val picked = entry(5, "아리아")
         val plan = NameBankMatch.planOnSave(
-            "다른이름", 7L, requestedEntryId = 5L,
+            "브린", 7L, requested = picked,
+            candidates = listOf(entry(9, "브린")), currentlyLinked = emptyList()
+        )
+        assertEquals(9L, plan.linkEntryId)   // 자동 대조가 이어받는다
+        assertFalse(plan.requestedTaken)
+        assertFalse(plan.requestedMissing)
+    }
+
+    @Test
+    fun `고른 뒤 이름을 고쳐 적었는데 맞는 것이 없으면 아무 말도 하지 않는다`() {
+        val picked = entry(5, "아리아")
+        val plan = NameBankMatch.planOnSave(
+            "없는이름", 7L, requested = picked,
             candidates = emptyList(), currentlyLinked = emptyList()
         )
-        assertNull(plan.linkEntryId)
-        assertTrue(plan.requestedTaken)
+        assertTrue(plan.isNoop)
     }
 
     // ── ③ 이름이 바뀌면 푼다 ──

@@ -435,6 +435,10 @@ class CharacterSaveCoordinator(
                 if (isNotEmpty()) append(" ")
                 append(ctx.getString(R.string.name_bank_link_taken))
             }
+            if (outcome.requestedMissing) {
+                if (isNotEmpty()) append(" ")
+                append(ctx.getString(R.string.name_bank_link_missing))
+            }
         }
         Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
     }
