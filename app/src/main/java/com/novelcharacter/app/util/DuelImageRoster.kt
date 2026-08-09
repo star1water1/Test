@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelMatch
 
 /**
@@ -140,5 +141,81 @@ object DuelImageRoster {
             skippedSingleImage = singles,
             skippedNoImage = none
         )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 캐릭터 몫으로 나누기 — 소비처 ⓑ·ⓒ가 점수를 낼 때 쓴다 (설계 13-5)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 한 캐릭터 몫의 대결 재료 — **이대로 적합 한 번이면 그 캐릭터의 순위표가 나온다.**
+     *
+     * @property paths 참가자 코드(=경로) 전부. 점수가 없는 그림도 들어 있다.
+     * @property matches 두 참가자가 **모두** 이 캐릭터의 그림인 판만.
+     * @property verdicts 참가자가 **전부** 이 캐릭터의 그림인 처분만.
+     */
+    data class Split(
+        val characterId: Long,
+        val paths: List<String>,
+        val matches: List<DuelMatch>,
+        val verdicts: List<DuelCounterVerdict>
+    )
+
+    /**
+     * 축의 판·처분을 캐릭터별로 나눈다 — **적합을 캐릭터마다 따로 돌리기 위한 재료**다(13-2).
+     *
+     * **여기가 그 판정의 유일한 자리다.** 소비처가 둘이라(대표 추첨 ⓑ · 걸러낼 후보 ⓒ)
+     * 나누는 규칙을 두 벌로 적으면 **대표가 보는 순위와 순위표가 갈린다** — 인수인계 ③이
+     * 다음 세션에 남긴 못이 그것이다.
+     *
+     * **판을 한 번만 읽는다.** 캐릭터마다 질의하면 인원만큼 왕복이 늘고, 그것이 목표 규모에서
+     * 먼저 무너지는 자리다(`scalability_performance` 7장 2단계).
+     *
+     * @return 이미지가 둘 이상인 캐릭터만. 순서는 [characters]가 준 순서 그대로다.
+     */
+    fun split(
+        characters: List<Character>,
+        matches: List<DuelMatch>,
+        verdicts: List<DuelCounterVerdict>
+    ): List<Split> {
+        val ownerByPath = HashMap<String, Long>()
+        val pathsBy = LinkedHashMap<Long, List<String>>()
+        for (character in characters) {
+            val paths = CharacterRepresentativeImage.paths(character.imagePaths)
+            if (paths.size < 2) continue
+            for (path in paths) ownerByPath[ImagePathMatch.canonical(path)] = character.id
+            pathsBy[character.id] = paths
+        }
+        if (pathsBy.isEmpty()) return emptyList()
+
+        val matchesBy = HashMap<Long, MutableList<DuelMatch>>()
+        for (match in matches) {
+            val owner = ownerByPath[ImagePathMatch.canonical(match.aCode)] ?: continue
+            // 캐릭터를 넘는 판은 이 화면이 만들지 않지만 엑셀·백업으로 들어온다. 어느 한쪽에
+            // 세면 그 캐릭터의 적합에 **상대가 없는 판**이 섞여 점수가 흔들린다(`build`와 같은 규칙).
+            if (ownerByPath[ImagePathMatch.canonical(match.bCode)] != owner) continue
+            matchesBy.getOrPut(owner) { ArrayList() }.add(match)
+        }
+
+        val verdictsBy = HashMap<Long, MutableList<DuelCounterVerdict>>()
+        for (verdict in verdicts) {
+            val members = DuelRecords.decodeMembers(verdict.memberCodes)
+            if (members.isEmpty()) continue
+            val owners = members.map { ownerByPath[ImagePathMatch.canonical(it)] }
+            val owner = owners.first() ?: continue
+            // 처분은 셋 이상일 수 있다(순환). **하나라도 남의 그림이면 통째로 뺀다** —
+            // 반쪽만 세면 그 캐릭터의 적합에서 짝이 맞지 않는 제외가 생긴다.
+            if (owners.any { it != owner }) continue
+            verdictsBy.getOrPut(owner) { ArrayList() }.add(verdict)
+        }
+
+        return pathsBy.map { (characterId, paths) ->
+            Split(
+                characterId = characterId,
+                paths = paths,
+                matches = matchesBy[characterId].orEmpty(),
+                verdicts = verdictsBy[characterId].orEmpty()
+            )
+        }
     }
 }

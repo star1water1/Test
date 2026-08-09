@@ -100,7 +100,16 @@ class ImageManagerViewModel(
                 ImageFilterHelper.TagFilter.valueOf(
                     savedState["filter_tag_presence"] ?: ImageFilterHelper.TagFilter.ANY.name
                 )
-            }.getOrDefault(ImageFilterHelper.TagFilter.ANY)
+            }.getOrDefault(ImageFilterHelper.TagFilter.ANY),
+            // **걸러낼 후보는 세션 한정이다**(B-104 ⓒ) — 다른 축과 달리 prefs에 남기지 않는다.
+            // 이 필터는 *"지금 정리하는 중"*의 작업 상태이고, 켠 채로 탭을 떠났다가 며칠 뒤
+            // 다시 열면 **이미지 대부분이 사라진 화면**을 보게 된다(그 사이 판이 쌓여 후보가
+            // 달라져 있을 수도 있다). 검색어를 세션 한정으로 둔 것과 같은 근거다.
+            prune = runCatching {
+                ImageFilterHelper.PruneFilter.valueOf(
+                    savedState["filter_prune"] ?: ImageFilterHelper.PruneFilter.ANY.name
+                )
+            }.getOrDefault(ImageFilterHelper.PruneFilter.ANY)
         )
         set(value) {
             savedState["filter_base"] = value.base.name
@@ -108,6 +117,7 @@ class ImageManagerViewModel(
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
             savedState["filter_tag_presence"] = value.tagPresence.name
+            savedState["filter_prune"] = value.prune.name
             prefs.edit()
                 .putString("filter_base", value.base.name)
                 .putString("filter_link", value.link.name)
@@ -273,6 +283,78 @@ class ImageManagerViewModel(
 
     private val _loading = MutableLiveData(false)
     val loading: LiveData<Boolean> = _loading
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 걸러낼 후보 (B-104 소비처 ⓒ — 설계 13-5)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 칩이 켜졌을 때의 상태. **꺼져 있으면 계산하지 않는다** — 질의조차 열지 않으므로
+     * 이 기능을 쓰지 않는 사용자에게 비용이 0이다.
+     *
+     * 갈래를 셋으로 두는 것은 화면이 할 말이 다르기 때문이다: *"계산 중"* · *"기준 축이
+     * 없다(대결 축에서 지정하세요)"* · *"기준은 있는데 조건에 맞는 그림이 없다"*.
+     * 한 갈래로 뭉치면 빈 화면이 고장과 구별되지 않는다(원칙 02).
+     */
+    sealed interface PruneState {
+        /** 칩이 꺼져 있다 — 아무것도 계산하지 않았다. */
+        object Off : PruneState
+
+        object Loading : PruneState
+
+        /**
+         * @property paths 후보의 **정규 경로**.
+         * @property basisUniverses 기준 이미지 축을 가진 세계관 수. **0이면 지정이 없다** —
+         *   화면은 후보 0건이 아니라 *"기준 축을 먼저 지정하세요"*를 말해야 한다.
+         * @property scannedCharacters 점수를 낸 캐릭터 수 — *"몇 명분을 봤는가"*의 규모.
+         */
+        data class Ready(
+            val paths: Set<String>,
+            val basisUniverses: Int,
+            val scannedCharacters: Int
+        ) : PruneState {
+            val hasBasis: Boolean get() = basisUniverses > 0
+        }
+    }
+
+    private val _pruneState = MutableLiveData<PruneState>(PruneState.Off)
+    val pruneState: LiveData<PruneState> = _pruneState
+
+    /**
+     * 칩을 켜고 끈다 — 켜는 순간 계산이 돈다.
+     *
+     * **`load()`에 얹지 않은 것이 요점이다.** 이미지 탭은 `onResume`마다 목록을 다시 읽는데,
+     * 거기 얹으면 칩을 쓰지 않는 사용자도 탭에 올 때마다 대결 표를 훑게 된다.
+     */
+    fun setPruneFilter(on: Boolean) {
+        criteria = criteria.copy(
+            prune = if (on) ImageFilterHelper.PruneFilter.CANDIDATE else ImageFilterHelper.PruneFilter.ANY
+        )
+        if (!on) { _pruneState.value = PruneState.Off; return }
+        _pruneState.value = PruneState.Loading
+        viewModelScope.launch {
+            val state = withContext(Dispatchers.IO) { computePruneCandidates() }
+            _pruneState.value = state
+        }
+    }
+
+    /**
+     * 기준 이미지 축이 지정된 **모든 세계관**의 후보를 모은다.
+     *
+     * **훑는 일은 저장소가 한다**([DuelRepository.basisImageScores]) — 대표 추첨(ⓑ)이 쓰는
+     * 그 진입점이다. 여기서 따로 훑으면 두 소비처가 다른 순위를 볼 수 있다.
+     */
+    private suspend fun computePruneCandidates(): PruneState {
+        val options = com.novelcharacter.app.util.DuelImageBasisPrefs.pruneOptions(getApplication())
+        val scan = app.duelRepository.basisImageScores()
+        val paths = HashSet<String>()
+        for (perCharacter in scan.byCharacter.values) {
+            for (candidate in com.novelcharacter.app.util.DuelImagePrune.candidates(perCharacter.scores, options)) {
+                paths.add(com.novelcharacter.app.util.ImagePathMatch.canonical(candidate.path))
+            }
+        }
+        return PruneState.Ready(paths, scan.basisUniverses, scan.byCharacter.size)
+    }
 
     fun load() {
         _loading.value = true

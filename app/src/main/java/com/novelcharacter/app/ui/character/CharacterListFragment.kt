@@ -584,6 +584,11 @@ class CharacterListFragment : Fragment() {
         // 진입 1회 재추첨은 P2-1의 취지(방출마다 전 목록 재랜덤·O(N) 쓰기 금지)를 지키면서
         // 방문할 때마다 다른 이미지가 나오게 한다. 재배정·저장은 실제로 bind되는 행에서만 일어난다.
         adapter.refreshRandomImages()
+        // 대표 추첨의 가중치(B-104 ⓑ)도 진입 1회다 — 무게가 목록 도중에 바뀌면 같은 시드가
+        // 다른 그림을 골라 손대지 않았는데 썸네일이 흔들린다. 어댑터가 무게를 받을 때 시드도
+        // 함께 새로 뽑아 **한 번의 갱신**으로 합친다.
+        viewModel.loadRepresentativeWeights()
+        viewModel.representativeWeights.observe(viewLifecycleOwner) { adapter.setRepresentativeWeights(it) }
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             // 리스트 갱신마다 이미지 인덱스를 초기화하지 않는다(P2-1). 매 emission(핀·필터·정렬·검색)마다
             // clearAll하면 영속 인덱스가 무력화되고 전 캐릭터 썸네일이 재랜덤·O(N) 메인스레드 쓰기가 발생했다.

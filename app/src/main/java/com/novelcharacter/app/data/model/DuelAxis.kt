@@ -96,10 +96,39 @@ data class DuelAxis(
      * Gson은 Kotlin 기본값을 실행하지 않아 non-null 선언이어도 null이 주입된다(R-2).
      */
     val candidateFiltersJson: String? = null,
+    /**
+     * **이 축을 대표·정리의 기준으로 삼는가** (B-104 소비처 ⓑ·ⓒ, 사용자 확정 2026.08.09).
+     * 설계 정본은 `docs/duel_system_design_2026-08.md` **13-5**다.
+     *
+     * 켜면 이 축의 순위가 두 자리에서 일한다 — **대표 이미지 추첨의 가중치**
+     * ([com.novelcharacter.app.util.RepresentativeWeighting])와 **걸러낼 후보 제안**
+     * ([com.novelcharacter.app.util.DuelImagePrune]).
+     *
+     * **세계관당 하나뿐이다.** 둘이 켜져 있으면 대표 그림이 어느 축을 따르는지 사용자가
+     * 알 길이 없다 — 유일성은 저장소가 지킨다(`DuelRepository.saveAxis`가 같은 트랜잭션에서
+     * 형제 축의 표식을 내린다). DB 유니크 인덱스로 걸지 않은 것은 *"켜진 것이 없음"*이
+     * 정상 상태라 부분 인덱스가 필요한데, 그 문법이 Room 스키마 대조와 어긋나기 때문이다.
+     *
+     * **이미지 축에만 뜻이 있다.** 캐릭터 축에 켜져 들어와도(엑셀·구버전) 소비처가 이미지
+     * 축만 찾으므로 아무 일도 하지 않는다 — 값을 지우지는 않는다(사용자가 적은 것을 버리지
+     * 않는다. 축의 대상을 이미지로 바꿀 길은 없지만, 지우는 쪽이 더 놀라운 처분이다).
+     *
+     * **기기 로컬 설정이 아니라 DB인 것이 요점이다**(설계 13-5) — 이 값이 대표 그림을
+     * 좌우하므로 백업·엑셀을 따라 넘어가야 두 기기가 갈리지 않는다. 반면 추첨의 *세기*와
+     * 걸러낼 후보의 *기준값*은 취향이라 기기 설정이다([com.novelcharacter.app.util.DuelImageBasisPrefs]).
+     */
+    val isBasisAxis: Boolean = false,
     /** 안정 식별자 — 판·처분·휴지통·엑셀이 이 값으로 축을 가리킨다(R-1). */
     val code: String = generateEntityCode()
 ) {
     val isImageAxis: Boolean get() = targetType == TARGET_IMAGE
+
+    /**
+     * 대표 추첨·걸러낼 후보가 실제로 따르는 축인가 — **이미지 축이면서 기준으로 켜진 것.**
+     *
+     * 소비처가 둘이라 이 판정을 두 벌로 적으면 한쪽만 고쳐지는 날이 온다(R-7의 정신).
+     */
+    val isImageBasis: Boolean get() = isImageAxis && isBasisAxis
 
     /** 이 축의 필드 연결 — 저장 형식을 해석한 결과. 해석 규칙은 [DuelFieldLinks]가 단일 소스다. */
     val fieldLinks: DuelFieldLinks.Axis

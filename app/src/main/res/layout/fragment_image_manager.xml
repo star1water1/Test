@@ -216,6 +216,24 @@
                 android:layout_height="wrap_content"
                 android:text="@string/image_manager_link_auto" />
         </com.google.android.material.chip.ChipGroup>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <!-- 걸러낼 후보 (B-104 소비처 ⓒ · 설계 13-5)
+             기준 이미지 축의 하위권 + 최소 판 수를 채운 그림. 켤 때만 계산한다.
+             **혼자 선 칩 하나**인 것은 이 축이 켬/끔 둘뿐이라 그룹이 필요 없기 때문이고,
+             다른 두 그룹과 AND로 조합된다. -->
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipPruneCandidate"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/image_manager_prune_candidate" />
         </LinearLayout>
     </HorizontalScrollView>
 

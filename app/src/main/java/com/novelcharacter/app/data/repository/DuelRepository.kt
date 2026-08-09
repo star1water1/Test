@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.repository
 
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
@@ -10,6 +11,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelImageParticipants
+import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRating
 import com.novelcharacter.app.util.DuelRecords
@@ -53,10 +55,28 @@ class DuelRepository(private val db: AppDatabase) {
 
     suspend fun axis(id: Long): DuelAxis? = db.duelAxisDao().getById(id)
 
+    /**
+     * 축을 저장한다. **기준 축([DuelAxis.isBasisAxis])의 유일성을 여기서 지킨다.**
+     *
+     * 같은 트랜잭션에서 형제 축의 표식을 내리는 것이 요점이다 — 갈라 두면 *"둘 다 켜짐"*이나
+     * *"둘 다 꺼짐"*인 순간이 생기고, 그 사이에 대표 추첨이 돌면 사용자가 지정한 적 없는
+     * 축을 따르거나 아무 축도 따르지 않는다.
+     */
     suspend fun saveAxis(axis: DuelAxis): DuelAxis = db.withTransaction {
-        if (axis.id == 0L) axis.copy(id = db.duelAxisDao().insert(axis))
+        val saved = if (axis.id == 0L) axis.copy(id = db.duelAxisDao().insert(axis))
         else { db.duelAxisDao().update(axis); axis }
+        if (saved.isBasisAxis) db.duelAxisDao().clearBasisExcept(saved.universeId, saved.id)
+        saved
     }
+
+    /**
+     * 이 세계관의 **기준 이미지 축** — 대표 추첨(ⓑ)과 걸러낼 후보(ⓒ)가 따르는 축.
+     *
+     * 지정이 없으면 null이고, **그것이 가장 흔한 상태다**(예외가 아니다). 소비처는 null을
+     * 받으면 종전 그대로 동작한다 — 균등 추첨이고, 후보 제안은 *"기준 축이 없다"*를 말한다.
+     */
+    suspend fun basisImageAxis(universeId: Long): DuelAxis? =
+        db.duelAxisDao().getBasisAxis(universeId, DuelAxis.TARGET_IMAGE)
 
     /**
      * 축 삭제 — 판·처분이 FK CASCADE로 함께 사라지므로 **먼저 휴지통에 담는다**.
@@ -357,6 +377,128 @@ class DuelRepository(private val db: AppDatabase) {
             missingParticipants = records.missingParticipants,
             scanned = matches.size
         )
+    }
+
+    /**
+     * **이미지 축의 점수를 캐릭터 몫으로 나눠 낸다** (B-104 소비처 ⓑ·ⓒ — 설계 13-5).
+     *
+     * 이미지 축은 **캐릭터마다 독립된 대결**이라(13-2) 축 전체를 한 번에 적합하면 캐릭터
+     * 사이의 점수 차가 **아무 판도 근거하지 않은 수**가 된다. 그래서 [DuelImageRoster.split]이
+     * 나눈 몫마다 따로 적합한다 — 그 수가 아예 생기지 않고, 제곱 비용도 전원이 아니라
+     * 한 캐릭터의 이미지 수에만 붙는다.
+     *
+     * **[scoresOf]와 같은 진입점을 탄다**([DuelCounterRelations.analyzeTwoPass]) — 순위표가
+     * 보이는 그 수여야 대표 추첨과 순위표가 같은 말을 한다([DuelScoreIndex]의 계약 1).
+     *
+     * **판을 한 번만 읽는다.** 캐릭터마다 질의하면 인원만큼 왕복이 는다.
+     *
+     * @return 캐릭터 id → 그 캐릭터 몫의 점수표. **한 판도 없는 캐릭터는 아예 담기지 않는다** —
+     *   빈 표를 담으면 소비처가 *"계산했는데 값이 없다"*와 *"계산할 것이 없었다"*를 구별하려
+     *   또 세어야 하고, 어느 쪽이든 처분이 같다(균등 추첨 · 후보 없음).
+     */
+    suspend fun imageScoresByCharacter(
+        axis: DuelAxis,
+        characters: List<Character>,
+        counterOptions: DuelCounterRelations.Options = DuelCounterRelations.Options(),
+        ratingOptions: DuelRating.Options = DuelRating.Options()
+    ): Map<Long, DuelScoreIndex.AxisScores> {
+        if (!axis.isImageAxis || characters.isEmpty()) return emptyMap()
+        val matches = db.duelMatchDao().getByAxis(axis.id)
+        if (matches.isEmpty()) return emptyMap()
+        val verdicts = db.duelCounterVerdictDao().getByAxis(axis.id)
+
+        val out = LinkedHashMap<Long, DuelScoreIndex.AxisScores>()
+        for (split in DuelImageRoster.split(characters, matches, verdicts)) {
+            if (split.matches.isEmpty()) continue
+            val records = DuelRecords.resolve(split.paths, split.matches, split.verdicts)
+            val twoPass = DuelCounterRelations.analyzeTwoPass(
+                participants = records.participants,
+                matches = records.matches,
+                confirmedCounters = records.excludedPairs,
+                ratingOptions = ratingOptions,
+                options = counterOptions
+            )
+            out[split.characterId] = DuelScoreIndex.of(
+                axisId = axis.id,
+                axisCode = axis.code,
+                axisName = axis.name,
+                universeId = axis.universeId,
+                rows = DuelStandings.rows(twoPass.fit, twoPass.report, records),
+                fit = twoPass.fit,
+                missingParticipants = records.missingParticipants,
+                scanned = split.matches.size
+            )
+        }
+        return out
+    }
+
+    /**
+     * 한 캐릭터의 이미지 대결 결과 — 소비처 둘이 함께 쓰는 재료.
+     *
+     * @property paths 그 캐릭터의 이미지 경로(목록 순서 그대로). 점수가 없는 그림도 들어 있다 —
+     *   대표 추첨은 **안 겨룬 그림도 뽑아야** 하므로 점수표만으로는 부족하다.
+     */
+    data class CharacterImageScores(
+        val characterId: Long,
+        val paths: List<String>,
+        val scores: DuelScoreIndex.AxisScores
+    ) {
+        /** 경로 → 표시 점수. [com.novelcharacter.app.util.RepresentativeWeighting]이 받는 모양이다. */
+        val scoreByPath: Map<String, Int> get() = scores.byCode.mapValues { it.value.score }
+    }
+
+    /**
+     * @property byCharacter 점수가 난 캐릭터만.
+     * @property basisUniverses 기준 이미지 축을 가진 세계관 수. **0이면 지정 자체가 없다** —
+     *   화면은 *"후보 0건"*이 아니라 *"기준 축을 먼저 지정하세요"*를 말해야 한다(원칙 02).
+     */
+    data class BasisScan(
+        val byCharacter: Map<Long, CharacterImageScores>,
+        val basisUniverses: Int
+    ) {
+        val hasBasis: Boolean get() = basisUniverses > 0
+
+        companion object {
+            /** 기준 축이 하나도 없다 — **가장 흔한 상태이지 예외가 아니다.** */
+            val NONE = BasisScan(emptyMap(), 0)
+        }
+    }
+
+    /**
+     * **기준 이미지 축이 지정된 모든 세계관을 훑는다** (B-104 소비처 ⓑ·ⓒ의 공통 진입점).
+     *
+     * 소비처가 둘이고 둘 다 *"어느 축을 따르고 누구의 그림을 세는가"*를 알아야 한다 —
+     * 대표 추첨(캐릭터 목록·상세)과 걸러낼 후보(이미지 탭). **두 화면이 각자 훑으면 한쪽만
+     * 고쳐지는 날이 오고**, 그때 대표가 보는 순위와 정리가 보는 순위가 갈린다(R-7의 정신이자
+     * 인수인계 ③이 남긴 못이다).
+     *
+     * 세계관을 가리지 않는 것은 이미지 탭이 앱 안의 모든 이미지를 한 그리드에 놓기 때문이고,
+     * 캐릭터 목록도 그 상위집합을 받아 쓰면 그만이다(자기 세계관 것만 집어 쓴다).
+     *
+     * **지정이 없으면 축 표를 한 번 읽고 끝난다** — 이 기능을 쓰지 않는 사용자의 비용이 0이다.
+     */
+    suspend fun basisImageScores(): BasisScan {
+        val basisAxes = db.duelAxisDao().getAllList().filter { it.isImageBasis }
+        if (basisAxes.isEmpty()) return BasisScan.NONE
+
+        val out = LinkedHashMap<Long, CharacterImageScores>()
+        // 한 세계관에 기준이 둘일 수는 없지만(쓰기가 지킨다) 여기서 그것을 전제하지 않는다 —
+        // 전제가 깨졌을 때 조용히 한쪽을 버리는 대신 먼저 만난 축이 그 캐릭터를 차지한다.
+        for (axis in basisAxes) {
+            val characters = db.characterDao().getCharactersByUniverseList(axis.universeId)
+            if (characters.isEmpty()) continue
+            val byId = characters.associateBy { it.id }
+            for ((characterId, scores) in imageScoresByCharacter(axis, characters)) {
+                if (out.containsKey(characterId)) continue
+                val character = byId[characterId] ?: continue
+                out[characterId] = CharacterImageScores(
+                    characterId = characterId,
+                    paths = com.novelcharacter.app.util.CharacterRepresentativeImage.paths(character.imagePaths),
+                    scores = scores
+                )
+            }
+        }
+        return BasisScan(out, basisAxes.size)
     }
 
     /** 코드로 축을 집는다 — 프리셋·엑셀이 축을 가리키는 방법이 코드다(R-1). */

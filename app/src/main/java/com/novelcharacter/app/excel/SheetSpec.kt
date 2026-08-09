@@ -537,6 +537,12 @@ object DuelSheetLabels {
  * 것만으로 값이 지워지면 안 되기 때문이다.
  * *빈 칸*("지워라")과 *없는 열*("이 파일은 그것을 말하지 않는다")은 다른 사실이다.
  *
+ * `기준축`(B-104 ⓑ·ⓒ)은 *"이 축을 대표·정리의 기준으로"*다 — 켜진 축의 순위가 대표 이미지
+ * 추첨의 가중치와 걸러낼 후보 제안을 정한다. **세계관당 하나뿐이고**, 한 세계관에 `Y`가
+ * 여럿 적혀 들어오면 **마지막 행이 이긴다**(가져오기가 행 차례대로 켜면서 형제를 내리므로
+ * 자연히 그렇게 된다 — 거부하지 않고 받아 정리하는 쪽이 개발 의도 4번에 맞는다).
+ * 이미지 축이 아닌 행에 적혀 있으면 값은 남되 아무 일도 하지 않는다.
+ *
  * `후보필터(JSON)`(B-168)은 연결 셋과 달리 **JSON을 그대로 싣는다** — 값 목록·일치 방식이
  * 딸린 구조라 쉼표 문법으로 펴면 값 안의 쉼표와 충돌한다. 프리셋 시트의 `필드필터(JSON)`과
  * 같은 규약이되, 필드를 id가 아니라 **키**(`fieldKey`)로 가리키므로 그쪽의 id 재해석
@@ -553,6 +559,7 @@ fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("산출필드", width = 8000),
         ColumnSpec("프로필필드", width = 10000),
         ColumnSpec("후보필터(JSON)", width = 12000),
+        ColumnSpec("기준축", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)

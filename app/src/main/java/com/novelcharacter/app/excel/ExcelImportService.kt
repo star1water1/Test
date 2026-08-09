@@ -6945,6 +6945,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val candidateFiltersJson: DuelCandidateFilter.SheetCell.Value?,
         /** 후보필터 칸이 있는데 읽을 수 없었다 — 가져오기가 경고 한 줄을 낸다. */
         val candidateFiltersMalformed: Boolean,
+        /**
+         * 기준 축인가 (B-104 ⓑ·ⓒ). **null은 "그 열이 파일에 없다"**이고 false는 *"내려라"*다 —
+         * F1-A 불리언 규약(`sheetBooleanOrKeep`)이며, 둘을 같게 다루면 v56 전에 내보낸 파일을
+         * 다시 들이는 것만으로 **대표 그림의 기준이 조용히 풀린다.**
+         */
+        val isBasisAxis: Boolean?,
         val displayOrder: Int,
         val code: String,
         val createdAt: Long
@@ -6985,6 +6991,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             profileFieldKeys = links("프로필필드"),
             candidateFiltersJson = filterCell as? DuelCandidateFilter.SheetCell.Value,
             candidateFiltersMalformed = filterCell is DuelCandidateFilter.SheetCell.Malformed,
+            isBasisAxis = sheetBooleanOrKeep(cols.containsKey("기준축"), cell("기준축")),
             displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt() ?: 0,
             code = cell("코드"),
             createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
@@ -6993,6 +7000,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     /** 새 축의 연결 — 열이 없으면 빈 연결이다(기존 값이 없으므로 지킬 것도 없다). */
     private fun newAxisLinks(value: String?): String = value ?: "[]"
+
+    /**
+     * 기준 축은 **세계관당 하나** — 켠 행이 나오면 형제의 표식을 내린다 (B-104 ⓑ·ⓒ).
+     *
+     * `DuelRepository.saveAxis`가 화면 경로에서 지키는 그 계약을 가져오기 경로에서도 지킨다.
+     * 여기가 저장소를 부르지 않고 DAO를 직접 쓰는 자리라, 빠뜨리면 **엑셀로 들어온 파일만
+     * 기준이 둘인 상태**가 되고 그때 대표 그림이 어느 축을 따르는지 아무도 말할 수 없다.
+     *
+     * 한 세계관에 `Y`가 여럿 적힌 파일은 **거부하지 않는다** — 행 차례대로 켜면서 형제를
+     * 내리므로 마지막 행이 이기고, 그것이 *"거부가 아니라 유연한 수용·교정"*이다(개발 의도 4번).
+     */
+    private suspend fun enforceSingleBasisAxis(universeId: Long, axisId: Long, isBasis: Boolean) {
+        if (isBasis && axisId > 0) db.duelAxisDao().clearBasisExcept(universeId, axisId)
+    }
 
     /** 병합 규칙의 단일 소스 — 미리보기와 가져오기가 함께 부른다(R-33). */
     private fun mergeDuelAxis(existing: DuelAxis, r: DuelAxisRowValues, universeId: Long): DuelAxis =
@@ -7010,6 +7031,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             } else {
                 existing.candidateFiltersJson
             },
+            // 열이 없으면 기존 값을 지킨다(F1-A) — 그러지 않으면 v56 전 파일이 기준을 푼다.
+            isBasisAxis = r.isBasisAxis ?: existing.isBasisAxis,
             displayOrder = r.displayOrder
         )
 
@@ -7049,7 +7072,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing == null) {
                     // 같은 (세계관, 대상, 이름)이 이미 있으면 유니크 인덱스가 던진다 — 위에서
                     // 이미 찾아봤으므로 여기 오는 것은 진짜 새 축이다.
-                    db.duelAxisDao().insert(
+                    val newId = db.duelAxisDao().insert(
                         DuelAxis(
                             universeId = universe.id,
                             name = r.name,
@@ -7060,9 +7083,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
                             profileFieldKeys = newAxisLinks(r.profileFieldKeys),
                             candidateFiltersJson = r.candidateFiltersJson?.json,
+                            // 새 축이라 지킬 기존 값이 없다 — 열이 없으면 엔티티 기본값(꺼짐)이다.
+                            isBasisAxis = r.isBasisAxis ?: false,
                             code = r.code.ifBlank { generateEntityCode() }
                         )
                     )
+                    enforceSingleBasisAxis(universe.id, newId, r.isBasisAxis ?: false)
                     result.newDuelAxes++
                     if (r.code.isNotBlank()) {
                         warnCreatedNewByCode("duelAxes", "대결 축 행 $i: 코드 '${r.code}'가 기존 축에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
@@ -7073,6 +7099,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelAxisDao().update(merged)
                         result.updatedDuelAxes++
                     }
+                    enforceSingleBasisAxis(universe.id, merged.id, merged.isBasisAxis)
                 }
             } catch (e: Exception) {
                 result.skippedRows++

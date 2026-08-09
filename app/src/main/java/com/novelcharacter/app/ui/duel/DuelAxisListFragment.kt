@@ -242,14 +242,34 @@ class DuelAxisListFragment : Fragment() {
         targetSection.visibility = if (existing == null) View.VISIBLE else View.GONE
         if (existing?.isImageAxis == true) targetImage.isChecked = true else targetCharacter.isChecked = true
 
+        // ── 기준 축 (설계 13-5) ──
+        //
+        // **이미지 축에만 뜻이 있다** — 대표 추첨의 가중치와 걸러낼 후보가 이미지 축의 순위를
+        // 쓴다. 캐릭터 축에서는 켤 자리조차 두지 않는다(눌러 보고 아무 일도 없는 자리를
+        // 만들지 않는다 — 대상 구역을 편집일 때 감추는 것과 같은 근거).
+        val basisSection = view.findViewById<View>(R.id.basisSection)
+        val basisSwitch = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.basisSwitch)
+        val basisTakenNotice = view.findViewById<TextView>(R.id.basisTakenNotice)
+        basisSwitch.isChecked = existing?.isBasisAxis == true
+
         // 필드 연결·후보 필터는 이미지 축에 뜻이 없다 — 두 참가자가 **같은 캐릭터의 그림**이라
         // 어떤 필드값도 양쪽에 똑같이 뜨고, 산출 필드는 이미지 순위를 받을 자리가 없다
         // (`DuelViewModel.gradeApplyFieldsFor`가 이미 그렇게 정해 두었다).
         fun applyTargetVisibility() {
             linkSection.visibility = if (targetImage.isChecked) View.GONE else View.VISIBLE
+            basisSection.visibility = if (targetImage.isChecked) View.VISIBLE else View.GONE
         }
         applyTargetVisibility()
         targetImage.setOnCheckedChangeListener { _, _ -> applyTargetVisibility() }
+
+        // **지금 무엇이 기준인지 눌러 보기 전에 말한다**(원칙 04). 켜서 저장하면 그쪽이
+        // 풀리는데, 그 사실을 저장 뒤에 알면 사용자는 대표 그림이 왜 바뀌었는지 모른다.
+        viewLifecycleOwner.lifecycleScope.launch {
+            val current = viewModel.basisImageAxis(universeId)
+            if (!isAdded || current == null || current.id == existing?.id) return@launch
+            basisTakenNotice.text = getString(R.string.duel_axis_basis_taken, current.name)
+            basisTakenNotice.visibility = View.VISIBLE
+        }
 
         // 필드 연결 — 창을 여는 동안 편집 중인 값이고, 저장을 눌러야 축에 실린다.
         val links = existing?.fieldLinks ?: DuelFieldLinks.Axis()
@@ -386,7 +406,11 @@ class DuelAxisListFragment : Fragment() {
                     isImage -> existing?.candidateFiltersJson
                     candidateFilters.isEmpty() -> null
                     else -> DuelCandidateFilter.encode(candidateFilters)
-                }
+                },
+                // 기준 축은 이미지 축의 것이다. 캐릭터 축에서는 구역을 감췄으므로 스위치가
+                // 무엇을 들고 있든 기존 값을 그대로 이어받는다 — 연결 셋과 같은 규약이다
+                // (감추되 저장된 값은 지운다는 뜻이 아니다).
+                isBasisAxis = if (isImage) basisSwitch.isChecked else existing?.isBasisAxis ?: false
             )
             saving = true
             // 이름 유니크는 인덱스가 지킨다. 인덱스에 걸리면 예외로 죽으므로 **먼저 묻는다** —

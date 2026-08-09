@@ -72,6 +72,16 @@ data class RestoreLossCounts(
     val duelVerdicts: Int = 0,
     /** 되살리지 못한 판 — payload에 참가자가 없어 누가 붙은 것인지 알 수 없는 행. */
     val duelMatches: Int = 0,
+    /**
+     * 되살아난 축의 **기준 축 표식을 되붙이지 못했다** (B-104 ⓑ·ⓒ) — 그 사이 같은 세계관의
+     * 다른 축이 기준이 됐다.
+     *
+     * **복원이 살아 있는 설정을 뒤엎지 않는다**가 이 칸의 근거다. 기준 축은 대표 그림을
+     * 좌우하므로, 휴지통에서 옛 축을 되살리는 것만으로 지금 쓰는 기준이 바뀌면
+     * 사용자는 그림이 왜 달라졌는지 알 길이 없다. 그렇다고 조용히 넘기면 표식이 말없이
+     * 사라진 것이라(개발 의도 2번), 되붙이지 않은 사실을 여기 담아 고지한다.
+     */
+    val duelBasisAxisCleared: Boolean = false,
 
     // ── 필드 정의 덮어쓰기 되돌리기 (B-89) ──
     /**
@@ -116,6 +126,7 @@ data class RestoreLossCounts(
             "gradeSystemLinks" to gradeSystemLinks,
             "duelVerdicts" to duelVerdicts,
             "duelMatches" to duelMatches,
+            "duelBasisAxisCleared" to if (duelBasisAxisCleared) 1 else 0,
             "revertTargetsMissing" to revertTargetsMissing
         )
 
@@ -167,6 +178,7 @@ data class RestoreLossCounts(
         gradeSystemLinks = gradeSystemLinks + other.gradeSystemLinks,
         duelVerdicts = duelVerdicts + other.duelVerdicts,
         duelMatches = duelMatches + other.duelMatches,
+        duelBasisAxisCleared = duelBasisAxisCleared || other.duelBasisAxisCleared,
         revertTargetsMissing = revertTargetsMissing + other.revertTargetsMissing
     )
 }

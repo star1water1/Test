@@ -231,4 +231,84 @@ class CharacterRepresentativeImageTest {
         val seeds = (1..64).map { CharacterRepresentativeImage.newSeed() }.toSet()
         assertNotEquals(1, seeds.size)
     }
+
+    // ── 가중 추첨 (B-104 소비처 ⓑ · 설계 13-5) ──
+    //
+    // 여기서 지키는 것 넷: **무게가 없으면 한 비트도 안 바뀐다**(사용자에게 한 약속) ·
+    // **지정한 대표가 여전히 무게를 이긴다**(사다리 1번은 그대로다) · **같은 시드면 결과가
+    // 고정**(스크롤 재바인드에 안 튄다) · **무게가 실제로 분포를 기울인다**.
+
+    private fun canon(path: String) = ImagePathMatch.canonical(path)
+
+    @Test fun weights_null_isIdenticalToUniform() {
+        val paths = listOf(a, b, c)
+        for (seed in 1L..200L) {
+            assertEquals(
+                "무게가 없으면 종전 경로 그대로여야 한다",
+                CharacterRepresentativeImage.randomIndex(seed, 5L, paths.size),
+                CharacterRepresentativeImage.weightedIndex(seed, 5L, paths, null)
+            )
+        }
+    }
+
+    @Test fun weights_emptyMap_isIdenticalToUniform() {
+        val paths = listOf(a, b, c)
+        assertEquals(
+            CharacterRepresentativeImage.randomIndex(7L, 5L, paths.size),
+            CharacterRepresentativeImage.weightedIndex(7L, 5L, paths, emptyMap())
+        )
+    }
+
+    @Test fun weights_doNotBeatPinnedRepresentative() {
+        // 무게가 c에 쏠려 있어도 지정한 대표(a)가 이긴다 — 사다리 1번은 무게 위에 있다.
+        val pick = CharacterRepresentativeImage.pickFrom(
+            listOf(a, b, c), a, 42L, 9L, mapOf(canon(c) to 1.0, canon(a) to 0.001, canon(b) to 0.001)
+        )
+        assertEquals(CharacterRepresentativeImage.Source.PINNED, pick.source)
+        assertEquals(a, pick.path)
+    }
+
+    @Test fun weights_sameSeedGivesSameResult() {
+        val paths = listOf(a, b, c)
+        val weights = mapOf(canon(a) to 1.0, canon(b) to 0.3, canon(c) to 0.1)
+        val first = CharacterRepresentativeImage.weightedIndex(99L, 3L, paths, weights)
+        repeat(50) {
+            assertEquals(first, CharacterRepresentativeImage.weightedIndex(99L, 3L, paths, weights))
+        }
+    }
+
+    @Test fun weights_shiftTheDistribution() {
+        // 열 배 무거운 그림이 실제로 더 자주 뽑히는가 — 시드를 많이 돌려 분포로 본다.
+        val paths = listOf(a, b)
+        val weights = mapOf(canon(a) to 1.0, canon(b) to 0.1)
+        var first = 0
+        val trials = 3000
+        for (seed in 1L..trials) {
+            if (CharacterRepresentativeImage.weightedIndex(seed, 1L, paths, weights) == 0) first++
+        }
+        // 이론값은 1/1.1 ≈ 0.909. 넉넉히 잡아도 균등(0.5)과는 확실히 갈린다.
+        assertTrue("무게가 분포를 기울여야 한다 (실제 $first/$trials)", first > (trials * 0.85).toInt())
+        assertTrue("그래도 고정은 아니다 — 아래 순위도 뽑힌다", first < trials)
+    }
+
+    @Test fun weights_unknownPathCountsAsOne() {
+        // 표에 없는 경로는 무게 1 — 0으로 치면 새로 넣은 그림이 영영 안 뜬다.
+        val paths = listOf(a, b)
+        val weights = mapOf(canon(a) to 0.0001)   // b는 표에 없다
+        var second = 0
+        for (seed in 1L..500L) {
+            if (CharacterRepresentativeImage.weightedIndex(seed, 2L, paths, weights) == 1) second++
+        }
+        assertTrue("표에 없는 그림이 거의 언제나 뽑혀야 한다 (실제 $second/500)", second > 450)
+    }
+
+    @Test fun weights_zeroOrBrokenValuesDoNotFreezeThePick() {
+        // 0·음수·NaN이 섞여 들어와도 그 그림이 영영 안 뜨는 일은 없다(무게 1로 접는다).
+        val paths = listOf(a, b, c)
+        val weights = mapOf(canon(a) to 0.0, canon(b) to -5.0, canon(c) to Double.NaN)
+        val seen = (1L..300L)
+            .map { CharacterRepresentativeImage.weightedIndex(it, 4L, paths, weights) }
+            .toSet()
+        assertEquals("셋 다 뽑혀야 한다", setOf(0, 1, 2), seen)
+    }
 }

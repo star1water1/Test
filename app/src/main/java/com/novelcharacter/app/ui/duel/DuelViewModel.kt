@@ -88,6 +88,13 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun saveAxis(axis: DuelAxis): DuelAxis = duelRepository.saveAxis(axis)
 
+    /**
+     * 이 세계관의 기준 이미지 축 (B-104 ⓑ·ⓒ). 축 편집 창이 *"지금은 무엇이 기준인가"*를
+     * 켜기 **전에** 말하려고 쓴다 — 저장 뒤에 알면 대표 그림이 왜 바뀌었는지 알 수 없다.
+     */
+    suspend fun basisImageAxis(universeId: Long): DuelAxis? =
+        duelRepository.basisImageAxis(universeId)
+
     /** 축 저장을 알리고 이력에 남긴다 — 순서 바꾸기처럼 사용자가 이미 본 조작은 부르지 않는다. */
     fun reportAxisSaved(axis: DuelAxis, isNew: Boolean) {
         reportResult(

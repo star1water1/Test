@@ -65,6 +65,41 @@
 
     </LinearLayout>
 
+    <!-- ── 기준 축 (B-104 소비처 ⓑ·ⓒ · 설계 13-5) ──
+         이미지 축에만 뜻이 있어 그때만 보인다. 세계관당 하나이며, 켜면 형제 축의 표식이
+         저장 시점에 내려간다(DuelRepository.saveAxis). -->
+    <LinearLayout
+        android:id="@+id/basisSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_axis_basis_purpose"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/basisSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/duel_axis_basis_switch" />
+
+        <TextView
+            android:id="@+id/basisTakenNotice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
     <!-- ── 필드 연결 (층 C) ──
          이미지 축에는 뜻이 없어 통째로 감춘다 — 두 참가자가 같은 캐릭터의 그림이라
          어떤 필드값도 양쪽에 똑같이 뜬다(고르는 재료가 되지 않는다). -->

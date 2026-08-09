@@ -97,6 +97,8 @@ class ImageManagerFragment : Fragment() {
     }
 
     private var selectionMode = false
+    /** 걸러낼 후보의 *"제안까지가 끝"* 고지를 이미 했는가 — 켤 때마다 한 번씩만 말한다. */
+    private var pruneNoticeShown = false
     private val selectedPaths = LinkedHashSet<String>()
     private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
     private var searchJob: kotlinx.coroutines.Job? = null
@@ -201,6 +203,27 @@ class ImageManagerFragment : Fragment() {
             applyView()
         }
 
+        // 걸러낼 후보 (B-104 ⓒ) — 켤 때만 계산이 돈다. 결과는 관측으로 되돌아와 목록을 다시 건다.
+        binding.chipPruneCandidate.setOnCheckedChangeListener { _, on ->
+            if (!on) pruneNoticeShown = false
+            viewModel.setPruneFilter(on)
+            applyView()
+        }
+        viewModel.pruneState.observe(viewLifecycleOwner) { state ->
+            applyView()
+            updatePruneChipLabel(state)
+            // **제안까지가 끝이다**(백로그 원문) — 후보를 골랐다는 사실과 함께 그 말을 한 번 한다.
+            // 한 번인 것은 관측이 뷰 재생성마다 되돌아오기 때문이다(같은 말을 반복하면 소음이 된다).
+            if (!pruneNoticeShown && state is ImageManagerViewModel.PruneState.Ready &&
+                state.hasBasis && state.paths.isNotEmpty()
+            ) {
+                pruneNoticeShown = true
+                notifySuccess(
+                    getString(R.string.image_manager_prune_found, state.scannedCharacters, state.paths.size)
+                )
+            }
+        }
+
         // 검색 — 300ms 디바운스(캐릭터 목록 검색 패턴)
         binding.searchEdit.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -269,6 +292,16 @@ class ImageManagerFragment : Fragment() {
             com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.AUTO -> R.id.chipLinkAuto
             com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY -> R.id.chipLinkAny
         })
+        // 걸러낼 후보는 SavedStateHandle에 남으므로 프로세스가 죽었다 살아나도 켠 채로 돌아온다.
+        // 그때 계산 결과는 함께 살아나지 않으므로 **체크를 다시 걸어 계산을 되살린다** —
+        // 켜져 있는데 후보가 0인 화면은 *"정말 없다"*와 구별되지 않는다.
+        binding.chipPruneCandidate.isChecked =
+            c.prune == com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
+        if (binding.chipPruneCandidate.isChecked &&
+            viewModel.pruneState.value is ImageManagerViewModel.PruneState.Off
+        ) {
+            viewModel.setPruneFilter(true)
+        }
         if (c.query.isNotBlank()) binding.searchEdit.setText(c.query)
         updateTagFilterLabel()
         applyViewMode()
@@ -425,6 +458,24 @@ class ImageManagerFragment : Fragment() {
         sheet.show(childFragmentManager, ImageTagFilterBottomSheet.TAG)
     }
 
+    /**
+     * 칩에 후보 수를 적는다 — **눌러 보기 전에 규모가 보인다**(원칙 04).
+     * 계산 전·꺼짐이면 이름만 남긴다(0을 적으면 *"후보 없음"*으로 읽혀 계산 중과 구별되지 않는다).
+     */
+    private fun updatePruneChipLabel(state: ImageManagerViewModel.PruneState) {
+        val base = getString(R.string.image_manager_prune_candidate)
+        binding.chipPruneCandidate.text =
+            if (state is ImageManagerViewModel.PruneState.Ready && state.hasBasis) {
+                "$base ${state.paths.size}"
+            } else {
+                base
+            }
+    }
+
+    /** 걸러낼 후보의 정규 경로 — 계산 전·꺼짐이면 빈 집합이다(아무도 후보가 아니다). */
+    private val pruneCandidatePaths: Set<String>
+        get() = (viewModel.pruneState.value as? ImageManagerViewModel.PruneState.Ready)?.paths.orEmpty()
+
     /** 현재 필터·검색·정렬을 적용해 어댑터에 반영(매칭은 ImageFilterHelper 단일 소스). */
     private fun applyView() {
         val all = viewModel.images.value ?: emptyList()
@@ -447,7 +498,12 @@ class ImageManagerFragment : Fragment() {
                     ImageManagerViewModel.Status.UNASSIGNED -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.UNASSIGNED
                 },
                 linkGroupId = item.meta?.linkGroupId,
-                detachedAt = item.meta?.detachedAt
+                detachedAt = item.meta?.detachedAt,
+                // 계산은 VM이 이미 해 뒀다 — 여기서는 명단 조회 하나다(bind마다 도는 자리라
+                // 무거운 판정을 넣지 않는다). 아직 계산 중이면 아무도 후보가 아니다.
+                pruneCandidate = pruneCandidatePaths.contains(
+                    com.novelcharacter.app.util.ImagePathMatch.canonical(item.path)
+                )
             )
         }
         val sorted = when (viewModel.sort) {
@@ -471,6 +527,32 @@ class ImageManagerFragment : Fragment() {
         }
         val empty = sorted.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
+        if (empty) binding.emptyText.text = emptyMessage()
+    }
+
+    /**
+     * 빈 화면이 **왜 비었는지** 말한다 (원칙 02 — 빈 화면은 고장과 구별되지 않는다).
+     *
+     * 걸러낼 후보 칩이 켜져 있을 때 할 말이 셋으로 갈린다: 계산 중 · 기준 축이 없다 ·
+     * 기준은 있는데 조건에 맞는 그림이 없다. 앞의 둘은 **사용자가 할 일이 다르다**
+     * (기다리기 vs 대결 축에서 기준 지정하기)라 한 문구로 뭉칠 수 없다.
+     */
+    private fun emptyMessage(): CharSequence {
+        val prune = viewModel.pruneState.value
+        if (viewModel.criteria.prune != com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE) {
+            return getString(R.string.image_manager_empty)
+        }
+        return when (prune) {
+            is ImageManagerViewModel.PruneState.Loading -> getString(R.string.image_manager_prune_loading)
+            is ImageManagerViewModel.PruneState.Ready ->
+                if (!prune.hasBasis) {
+                    getString(R.string.image_manager_prune_no_basis)
+                } else {
+                    val options = com.novelcharacter.app.util.DuelImageBasisPrefs.pruneOptions(requireContext())
+                    getString(R.string.image_manager_prune_none, options.percent, options.played)
+                }
+            else -> getString(R.string.image_manager_empty)
+        }
     }
 
     // ---------- 선택 모드 ----------

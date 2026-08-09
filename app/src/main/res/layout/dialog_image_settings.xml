@@ -245,5 +245,76 @@
                 android:layout_height="wrap_content"
                 android:text="@string/image_settings_remove_policy_always_adopt" />
         </RadioGroup>
+
+        <!-- ── 대결 기준 축의 쓰임 (B-104 소비처 ⓑ·ⓒ · 설계 13-5) ──
+             어느 축을 따르는가는 대결 축 편집 창이 정한다(그 값은 DB라 백업·엑셀을 따라간다).
+             여기 셋은 그 순위를 얼마나 세게 쓰는가이고, 취향이라 기기 설정이다. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/image_settings_duel_basis_title"
+            android:textAppearance="@style/TextAppearance.App.Subtitle"
+            android:textColor="?attr/colorOnSurface" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/image_settings_duel_basis_desc"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/image_settings_duel_strength_label"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="?attr/colorOnSurface" />
+
+        <RadioGroup
+            android:id="@+id/duelStrengthGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <RadioButton
+                android:id="@+id/strengthOff"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_settings_duel_strength_off" />
+
+            <RadioButton
+                android:id="@+id/strengthWeak"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_settings_duel_strength_weak" />
+
+            <RadioButton
+                android:id="@+id/strengthStrong"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_settings_duel_strength_strong" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/pruneBottomValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="?attr/selectableItemBackground"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textAppearance="@style/TextAppearance.App.Body"
+            android:textColor="?attr/colorOnSurface" />
+
+        <TextView
+            android:id="@+id/pruneMinPlayedValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textAppearance="@style/TextAppearance.App.Body"
+            android:textColor="?attr/colorOnSurface" />
     </LinearLayout>
 </com.novelcharacter.app.ui.common.CappedScrollView>

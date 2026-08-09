@@ -111,7 +111,7 @@ import com.novelcharacter.app.data.model.Universe
         DuelCounterVerdict::class,
         DefaultFieldTemplate::class
     ],
-    version = 55,
+    version = 56,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -2123,6 +2123,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_55_56 = object : Migration(55, 56) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 55 to 56 — 대결 기준 축(B-104 ⓑ·ⓒ)")
+
+                // 칸 하나를 더하는 **순수 추가**다. 기존 축은 0(기준 아님)이 되어 종전과
+                // 똑같이 동작한다 — 대표 추첨은 균등 그대로이고 걸러낼 후보는 아무것도
+                // 제안하지 않는다. **소급해서 아무 축이나 기준으로 세우지 않는 것**이 요점이다:
+                // 이 값은 대표 그림을 좌우하므로, 앱이 골라 주면 사용자가 지정한 적 없는
+                // 기준으로 그림이 바뀐다(개발 의도 3번 — 쓸모는 사용자가 가린다).
+                //
+                // **형제 칸들과 달리 NOT NULL + 기본값 0이다.** 여기서 NULL을 허용하면
+                // *"기준 아님"*의 표기가 NULL과 0 둘이 되는데, 이 칸은 스위치라 중간 상태가
+                // 없다(`candidateFiltersJson`이 nullable인 것은 *없는 열*과 *빈 필터*를 갈라야
+                // 했기 때문이고, 여기는 가를 것이 없다). 휴지통 payload(Gson)가 구버전
+                // 스냅샷을 되살릴 때도 Boolean 칸은 false로 채워져 같은 뜻이 된다(R-2).
+                db.execSQL("ALTER TABLE `duel_axes` ADD COLUMN `isBasisAxis` INTEGER NOT NULL DEFAULT 0")
+
+                Log.i(TAG, "Migration from version 55 to 56 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -2130,7 +2151,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }
