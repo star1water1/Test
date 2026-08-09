@@ -152,8 +152,22 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
                 val outcome = suggester.suggest(context, request, settings.creativity) { failure ->
                     AiErrorMessages.of(getApplication(), failure)
                 }
+                // **응답이 오는 사이 풀이 바뀌었을 수 있다.** 시작 시점의 pool에 그대로 얹으면
+                // 두 가지가 조용히 뒤집힌다: ⓐ 요청 중에 찍은 ♥·✕가 사라지고(그 사이의 표식이
+                // 담긴 것은 지금 값이다) ⓑ 모드를 바꿨다면 **비운 풀이 되살아난다** — 게다가
+                // 새 후보는 *옛 모드로 만든 이름*이라 화면이 없는 사실을 말하게 된다.
+                // 그래서 쓰는 시점의 값에 얹고, 모드가 갈렸으면 얹지 않고 **말한다**.
+                val latest = _pool.value ?: pool
+                if (latest.mode != request.mode) {
+                    reportResult(_result, OpResult.failure(
+                        OpResult.CAT_NAMEBANK,
+                        app.getString(R.string.ai_name_round_mode_changed),
+                        outcome.candidates.joinToString(", ") { it.name }.ifBlank { null }
+                    ))
+                    return@launch
+                }
                 // 되풀이는 **응답이 준 것과 풀이 아는 것의 차이**라 순수 계층이 판정한다.
-                val fresh = pool.freshOnly(outcome.candidates)
+                val fresh = latest.freshOnly(outcome.candidates)
                 val notices = buildNotices(outcome, fresh.repeated)
                 if (fresh.candidates.isEmpty()) {
                     // **빈 판은 쌓지 않는다.** 쌓으면 직전 라운드가 '지난 라운드'로 접혀 내려가
@@ -166,7 +180,7 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
                         notices.joinToString("\n").ifBlank { null }
                     ))
                 } else {
-                    _pool.value = pool.addRound(fresh.candidates, instruction, notices)
+                    _pool.value = latest.addRound(fresh.candidates, instruction, notices)
                 }
                 // 담은 것이 없어도 은행은 다른 화면에서 바뀔 수 있다 — 라운드마다 다시 뜬다.
                 refreshDepositMaterials()

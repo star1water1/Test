@@ -185,9 +185,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     private fun collectDraft(): CharacterDraftPrefs.Draft {
-        val novelPosition = binding.spinnerNovel.selectedItemPosition
-        val selectedNovelId =
-            if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else -1L
+        // 미지정을 -1L로 적는 것은 **드래프트 형식의 사정**이다(nullable을 쓰지 않는다) —
+        // 고르는 계산 자체는 저장 스냅샷과 같은 함수에서 온다.
+        val selectedNovelId = selectedNovelId() ?: -1L
         val fieldValues = formBuilder.widgetStateStrings()
         return CharacterDraftPrefs.Draft(
             name = binding.editName.text.toString(),
@@ -913,17 +913,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      */
     private fun setupNameSuggestButton() {
         binding.btnNameSuggest.setOnClickListener {
-            if (!com.novelcharacter.app.ai.AiService(requireContext()).hasUsableProvider()) {
-                com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(R.string.ai_name_title_plain)
-                    .setMessage(R.string.ai_name_not_configured)
-                    .setPositiveButton(R.string.ai_settings_title) { _, _ ->
-                        findNavController().navigate(R.id.aiSettingsFragment)
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
-                return@setOnClickListener
-            }
+            // 미설정 안내는 두 진입이 같은 함수를 쓴다 — 들어온 문에 따라 다르게 말하지 않는다.
+            if (!NameSuggestSheet.guardProvider(this)) return@setOnClickListener
             viewLifecycleOwner.lifecycleScope.launch {
                 val aiContext = buildAiContext()
                 val universe = viewModel.universeForNovel(selectedNovelId())
@@ -992,7 +983,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         updateSaveButtonState()
     }
 
-    /** 스피너가 가리키는 작품 id — 미지정이면 null (저장 스냅샷과 같은 규칙). */
+    /**
+     * 스피너가 가리키는 작품 id — 미지정이면 null.
+     *
+     * **이 계산은 이 화면에 네 벌로 흩어져 있었다**(저장 스냅샷 · 드래프트 · 사건 다이얼로그 ·
+     * 그리고 B-123이 더한 이름 추천). 같은 스피너를 네 곳이 각자 읽으면 위치 규칙(0번은
+     * '미지정')이 한 곳만 어긋나도 **다른 작품으로 저장된다.** 한 자리로 모은다.
+     */
     private fun selectedNovelId(): Long? {
         val position = binding.spinnerNovel.selectedItemPosition
         return if (position > 0 && position - 1 < novels.size) novels[position - 1].id else null
@@ -1034,8 +1031,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     /** 저장 시점의 폼 입력 스냅샷 — 코디네이터가 최신 폼 기준으로 Character를 조립할 때 사용 */
     private fun formSnapshot(): CharacterSaveCoordinator.FormSnapshot {
-        val novelPosition = binding.spinnerNovel.selectedItemPosition
-        val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+        val selectedNovelId = selectedNovelId()
         return CharacterSaveCoordinator.FormSnapshot(
             name = binding.editName.text.toString(),
             firstName = binding.editFirstName.text.toString(),
@@ -1056,8 +1052,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 Toast.makeText(requireContext(), R.string.save_character_first, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val novelPosition = binding.spinnerNovel.selectedItemPosition
-            val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+            val selectedNovelId = selectedNovelId()
             EventEditDialogFragment.show(
                 childFragmentManager,
                 preSelectedCharacterIds = setOf(characterId),

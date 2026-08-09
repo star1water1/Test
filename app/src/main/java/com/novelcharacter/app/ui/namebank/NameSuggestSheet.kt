@@ -7,7 +7,9 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.isVisible
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
@@ -16,11 +18,13 @@ import com.google.android.material.slider.Slider
 import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiPromptPolicy
 import com.novelcharacter.app.ai.AiPromptSettings
+import com.novelcharacter.app.ai.AiService
 import com.novelcharacter.app.ai.CharacterNameAiSuggester
 import com.novelcharacter.app.ai.CharacterNameAiSuggester.Mark
 import com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode
 import com.novelcharacter.app.databinding.BottomSheetNameSuggestBinding
 import com.novelcharacter.app.ui.character.CreativityChipRow
+import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 
 /**
@@ -253,6 +257,12 @@ class NameSuggestSheet : BottomSheetDialogFragment() {
 
         binding.emptyText.isVisible = pool.isEmpty && !running
         binding.btnMore.isEnabled = !running
+        // 요청 중에는 모드를 못 바꾼다 — 바꾸면 **옛 모드로 만들어진 이름**이 돌아온다.
+        // ViewModel도 그 경우를 막지만(도착 시점에 모드를 대조한다) 막힌 뒤 말하는 것보다
+        // 애초에 못 누르는 편이 낫다: 사용자가 잃는 것이 요청 1건의 값이다.
+        for (i in 0 until binding.modeChips.childCount) {
+            binding.modeChips.getChildAt(i).isEnabled = !running
+        }
         binding.btnMore.text = when {
             running -> getString(R.string.ai_name_running_short)
             // 첫 라운드에 "10개 더"라고 적으면 무엇에 더한다는 것인지가 없다.
@@ -483,6 +493,31 @@ class NameSuggestSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "NameSuggestSheet"
+
+        /**
+         * 쓸 수 있는 프로바이더가 없으면 **조용히 아무 일도 하지 않는 대신 설정 경로를 안내한다**
+         * (필드 ✨·서술형 시트와 같은 규약).
+         *
+         * **진입 둘이 이 함수 하나를 쓴다** — 편집 폼의 ✨과 은행의 [AI로 이름 만들기]가 각자
+         * 창을 세우면 같은 기능이 들어온 문에 따라 다르게 말하게 된다. 감추지 않고 안내하는
+         * 것은 설계 7-1이 *"필드 ✨과 같은 문법"*이라 적었기 때문이다(R-24로 줄을 감추는
+         * 일괄 태깅과 갈리는 자리이며, 그쪽은 목록의 한 줄이고 이쪽은 상시 버튼이다).
+         */
+        fun guardProvider(fragment: Fragment): Boolean {
+            val context = fragment.requireContext()
+            if (AiService(context).hasUsableProvider()) return true
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.ai_name_title_plain)
+                .setMessage(R.string.ai_name_not_configured)
+                // 두 진입의 현재 목적지가 다르므로 `navigateSafe`를 쓴다 — 목적지가 안 맞는
+                // 상황에서 `navigate`는 예외를 던진다(이 저장소가 그 래퍼를 둔 이유다).
+                .setPositiveButton(R.string.ai_settings_title) { _, _ ->
+                    fragment.findNavController().navigateSafe(R.id.aiSettingsFragment)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return false
+        }
 
         /** 최신 라운드에서 접지 않고 보일 줄 수 — 다발 기본값(10)보다 작아야 접기가 실제로 돈다. */
         const val PREVIEW_ROWS = 5

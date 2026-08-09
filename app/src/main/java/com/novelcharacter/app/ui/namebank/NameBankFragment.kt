@@ -193,17 +193,9 @@ class NameBankFragment : Fragment() {
      * 견본 없이 가는 길을 남겨 두지 않으면 세계관을 아직 안 만든 사용자가 이 기능을 못 쓴다.
      */
     private fun openNameSuggestSheet() {
-        if (!com.novelcharacter.app.ai.AiService(requireContext()).hasUsableProvider()) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.ai_name_title_plain)
-                .setMessage(R.string.ai_name_not_configured)
-                .setPositiveButton(R.string.ai_settings_title) { _, _ ->
-                    findNavController().navigateSafe(R.id.nameBankFragment, R.id.aiSettingsFragment)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-            return
-        }
+        // 미설정 안내는 편집 폼의 ✨과 **같은 함수**다(시트가 든다) — 같은 기능이 들어온 문에
+        // 따라 다르게 말하지 않는다.
+        if (!NameSuggestSheet.guardProvider(this)) return
         viewLifecycleOwner.lifecycleScope.launch {
             val universes = viewModel.getAllUniversesList()
             if (!isAdded || _binding == null) return@launch
