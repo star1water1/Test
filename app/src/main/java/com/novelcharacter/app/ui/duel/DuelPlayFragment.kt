@@ -356,11 +356,17 @@ class DuelPlayFragment : Fragment() {
         // 지워질 줄 알고 누른다. 수는 **실제로 적힌 판**에서 든다 — 화면에 뜬 카드 수로
         // 세면 저장소가 거절한 경우에 틀린 수를 말한다.
         val last = session.lastAnswered
-        val count = last?.let { recordedBySeq[it.seq] }?.matches?.size
+        val recorded = last?.let { recordedBySeq[it.seq] }
         when {
             last == null -> binding.btnUndo.setText(R.string.duel_undo)
-            count == null -> Unit // 아직 저장 중 — 잠긴 버튼의 글자가 깜빡이지 않게 그대로 둔다.
-            count > 1 -> binding.btnUndo.text = getString(R.string.duel_undo_group, count)
+            recorded != null && recorded.matches.size > 1 ->
+                binding.btnUndo.text = getString(R.string.duel_undo_group, recorded.matches.size)
+            recorded != null -> binding.btnUndo.setText(R.string.duel_undo)
+            // 아직 저장 중 — 잠긴 버튼의 글자가 깜빡이지 않게 그대로 둔다.
+            pendingRecords > 0 -> Unit
+            // 저장이 거절됐다(위 [answer]의 고지). **지울 판이 없으므로 묶음 문구를 남기면
+            // 거짓말이 된다** — 되돌리기 자체는 여전히 돌아야 하고(그 짝을 다시 묻는다),
+            // 다만 사라지는 판은 0이다.
             else -> binding.btnUndo.setText(R.string.duel_undo)
         }
     }
@@ -375,10 +381,17 @@ class DuelPlayFragment : Fragment() {
     private fun undoLast() {
         if (pendingRecords > 0) return
         val last = session.lastAnswered ?: return
-        val recorded = recordedBySeq.remove(last.seq) ?: return
+        val recorded = recordedBySeq.remove(last.seq)
         session = DuelSession.undo(session)
         updateUndoButton()
         render()
+
+        // **저장이 거절된 답에도 되돌리기는 돈다 — 지울 것이 없을 뿐이다.**
+        // 종전에는 여기서 그냥 나갔는데(`?: return`), 그러면 버튼은 켜져 있는데 눌러도
+        // 아무 일이 없는 상태가 남는다 — 사용자는 자기 누름이 먹었는지 알 길이 없고,
+        // 되돌아오지 않은 그 짝을 다시 물을 방법도 없다. 다시 계산은 띄우지 않는다:
+        // DB가 그대로라 새 계획이 옛 계획과 같고, 짝은 [DuelSession.undo]가 이미 되돌렸다.
+        if (recorded == null) return
 
         viewLifecycleOwner.lifecycleScope.launch {
             // **묶음이면 묶음 값으로 지운다** — 들고 있는 목록으로 지우면 그 사이 기록
