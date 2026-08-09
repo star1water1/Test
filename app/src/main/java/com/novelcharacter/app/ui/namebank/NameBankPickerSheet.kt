@@ -122,6 +122,9 @@ class NameBankPickerSheet : BottomSheetDialogFragment() {
     }
 
     private fun render() {
+        // 뷰가 죽은 뒤 검색 워처가 늦게 울면 `binding` 게터가 던진다 — 이 화면의 다른
+        // 콜백들과 같은 가드를 둔다.
+        if (_binding == null) return
         val setup = this.setup ?: return
         val ordered = NameBankPickOrder.order(setup.entries, query, setup.preferredGender)
         adapter.submitList(ordered)
