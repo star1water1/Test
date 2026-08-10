@@ -344,7 +344,8 @@ class CharacterSaveCoordinator(
             val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
                 ?: host.collectFieldValues(targetCharacterId)
             // 다른 세계관으로 이동하는 저장이면 유실 고지·이관 처리(변수 제어: 조용한 필드값 유실 방지)
-            val crossUniv = crossUniverseTargetId(character, targetCharacterId)
+            val scopeMove = scopeMoveOf(character, targetCharacterId)
+            val crossUniv = scopeMove.crossUniverseId
             if (crossUniv != null && !crossUniverseConfirmed) {
                 val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
                 if (loss.hasRemoval) {
@@ -363,7 +364,7 @@ class CharacterSaveCoordinator(
                     return
                 }
             }
-            applyCharacterUpdate(character, fieldValues, crossUniv)
+            applyCharacterUpdate(character, fieldValues, crossUniv, scopeMove.leavingUniverse)
             savedCharId = targetCharacterId
             // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
             // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
@@ -577,22 +578,33 @@ class CharacterSaveCoordinator(
      * 기존 값을 폼 값으로 통째로 대체했다 — 일괄 편집은 같은 조작에서 재매핑 + 휴지통
      * 백업 + 사후 고지를 한다. 이제 **새 세계관이 있고 기존과 다르면** 이동으로 본다.
      *
-     * 반대 방향(세계관 → 미분류)은 이동이 아니라 '이탈'이므로 여기서 null을 돌려주고,
+     * 반대 방향(세계관 → 미분류)은 이동이 아니라 '이탈'이라 [ScopeMove.crossUniverseId]가 null이고,
      * 저장 경로가 폼 커버 밖 값을 보존한다(일괄 편집의 `newUniverseId == null` 가드와 동형).
+     * **다만 값을 전역 구역의 짝으로 이어 주는 일은 그쪽에서도 한다** — [ScopeMove.leavingUniverse]가
+     * 그 경로를 가른다(B-128). 세력 소속까지 이동으로 다루면 소속이 말없이 지워지므로 갈라 둔다.
      *
      * '기존 세계관'은 **저장 대상**([targetCharacterId])의 것을 본다. 중복 이름 다이얼로그에서
      * '기존에 덮어쓰기'를 고르면 저장 대상이 편집 중인 캐릭터가 아니라 다른 캐릭터가 되는데,
      * 편집 중인 쪽을 기준으로 판정하면 이동이 아닌 저장을 이동으로 오판한다.
      */
-    private suspend fun crossUniverseTargetId(character: Character, targetCharacterId: Long): Long? {
+    private data class ScopeMove(val old: Long?, val new: Long?) {
+        /** 세계관 **안으로** 들어가는 저장이면 새 세계관 id, 아니면 null. */
+        val crossUniverseId: Long? get() = if (new != null && old != new) new else null
+
+        /** 세계관을 **떠나** 무소속이 되는 저장인가 (B-128 반대 방향). */
+        val leavingUniverse: Boolean get() = new == null && old != null
+    }
+
+    private suspend fun scopeMoveOf(character: Character, targetCharacterId: Long): ScopeMove {
         val existingNovelId = if (targetCharacterId != -1L) {
             viewModel.getCharacterByIdSuspend(targetCharacterId)?.novelId
         } else {
             host.existingCharacter()?.novelId
         }
-        val old = viewModel.universeIdForNovel(existingNovelId)
-        val new = viewModel.universeIdForNovel(character.novelId) ?: return null
-        return if (old != new) new else null
+        return ScopeMove(
+            old = viewModel.universeIdForNovel(existingNovelId),
+            new = viewModel.universeIdForNovel(character.novelId)
+        )
     }
 
     /**
@@ -604,10 +616,19 @@ class CharacterSaveCoordinator(
     private suspend fun applyCharacterUpdate(
         character: Character,
         values: List<CharacterFieldValue>,
-        crossUniverseId: Long?
+        crossUniverseId: Long?,
+        leavingUniverse: Boolean
     ) {
         if (crossUniverseId != null) {
-            viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
+            val counts = viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
+            if (counts.keptGlobalValues > 0) notifyKeptGlobalValues(counts.keptGlobalValues)
+        } else if (leavingUniverse) {
+            // 세계관을 떠나는 저장 — 값을 전역 구역의 짝으로 이어 준다 (B-128).
+            val outcome = viewModel.updateCharacterLeavingUniverse(
+                character, values, host.coveredFieldDefinitionIds()
+            )
+            if (outcome.kept > 0) notifyKeptGlobalValues(outcome.kept)
+            else if (outcome.preserved > 0) notifyPreservedFieldValues(outcome.preserved)
         } else {
             val preserved = viewModel.updateCharacterWithFields(
                 character, values, host.coveredFieldDefinitionIds()
@@ -627,6 +648,25 @@ class CharacterSaveCoordinator(
         // Snackbar가 아니라 Toast인 이유: 저장이 끝나면 host.onSaved가 곧바로 popBackStack해
         // 프래그먼트 뷰가 사라진다. 뷰에 붙는 고지는 사용자에게 도달하지 못한다.
         Toast.makeText(ctx, ctx.getString(R.string.field_values_preserved, count), Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * **안전하지 않아 이어 주지 못한 값을 알린다** (B-128 — 확정이 착수 세션에 맡긴 자리).
+     *
+     * 확정은 *"보관 값으로 남기고 **그 사유를 고지**한다"*까지를 정했고, 어디서 말할지는
+     * 남겨 두었다. 저장 경로에 이미 서 있는 고지 표면([notifyPreservedFieldValues])을 그대로
+     * 쓴다 — 이관은 저장이 끝나는 그 순간에 일어나고, 같은 자리에서 같은 방식으로 말해야
+     * 사용자가 두 고지를 다른 사건으로 오해하지 않는다. **묻지 않는 것도 확정이다**
+     * (*항상 묻기*는 안전한 대부분에 마찰을 물린다는 이유로 기각됐다 — 원칙 04).
+     *
+     * 옮긴 것은 알리지 않는다 — 알릴 것은 *사용자가 손댈 것이 남았다*는 사실이지
+     * *잘 처리됐다*는 사실이 아니다(활성 프로바이더 고지가 '첫 등록'에는 침묵하는 것과 같은 규칙).
+     */
+    private fun notifyKeptGlobalValues(count: Int) {
+        val ctx = fragment.context?.applicationContext ?: return
+        Toast.makeText(
+            ctx, ctx.getString(R.string.global_field_values_kept, count), Toast.LENGTH_LONG
+        ).show()
     }
 
     /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */

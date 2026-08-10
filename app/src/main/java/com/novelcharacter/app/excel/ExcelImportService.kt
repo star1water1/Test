@@ -4748,7 +4748,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         unclassifiedSheetImported = true
-        importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
+        // 전역 구역의 필드를 넘긴다 (B-149) — 내보내기가 이 시트에 그 열을 싣기 때문이다.
+        // **넘기지 않으면 값이 사라진다:** 내보내기가 전역 필드를 `coveredFieldIds`에 넣어
+        // 오버플로 시트에서 뺐으므로 그 값은 이제 이 시트에만 있는데, 필드 목록이 비어 있으면
+        // `buildColumnFieldMap`이 열마다 *"필드 정의를 찾을 수 없어 무시됨"*으로 흘려 버린다.
+        // 세계관이 null이라 자동 필드 생성은 여전히 안 된다 — 전역 필드는 템플릿이 심는 것이라
+        // 엑셀의 낯선 열을 근거로 만들어 낼 대상이 아니고, 그 경고는 종전 그대로 남는다.
+        val globalFields = db.fieldDefinitionDao().getGlobalFieldsList()
+        importCharacterRows(sheet, headerRow, null, globalFields, result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
     }
 
     /** [countUnrestorableFieldValues] 결과 — 캐릭터 시트로는 복원할 수 없는 필드값의 규모. */
@@ -4782,7 +4789,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var values = 0
         for ((charId, charValues) in allValues.groupBy { it.characterId }) {
             val ownUniverseId = universeIdByCharId[charId]
-            val covered = ownUniverseId?.let { charFieldIdsByUniverse[it] } ?: emptySet()
+            // 무소속(null)도 **자기 묶음이 있다** — 전역 구역의 필드다 (B-149).
+            // 종전에는 여기서 null을 빈 집합으로 떨어뜨려, '미분류 캐릭터' 시트가 이제 열로
+            // 담는 값까지 *"이 백업으로는 복원할 수 없다"*고 세었다. 그러면 덮어쓰기 직전
+            // 경고가 실제보다 크게 나와, **되돌릴 수 있는 백업을 되돌릴 수 없다고 말한다.**
+            val covered = charFieldIdsByUniverse[ownUniverseId] ?: emptySet()
             val n = CharacterFieldValueOverflow.select(charValues, covered, fieldsById).size
             if (n > 0) { characters++; values += n }
         }

@@ -1979,6 +1979,7 @@
     <string name="batch_novel_unassign_notice">작품을 미지정으로 두면 필드값은 지워지지 않고 그대로 보관됩니다. 다시 작품에 배정하면 값이 그대로 보입니다.</string>
     <!-- 편집 화면 저장 시, 폼이 렌더하지 않아 보존된 값 고지 (원칙 04: 존재를 알 수 없는 데이터 금지) -->
     <string name="field_values_preserved">화면에 없는 필드값 %1$d개는 지우지 않고 보관했습니다 — 작품을 다시 배정하면 그대로 보입니다</string>
+    <string name="global_field_values_kept">필드값 %1$d개는 옮길 곳의 값이 이미 있거나 형식이 달라 옮기지 않고 보관했습니다 — 값은 그대로 남아 있으니 필요하면 직접 옮겨 적으세요</string>
     <string name="event_field_values_preserved">화면에 없는 사건 필드값 %1$d개는 지우지 않고 보관했습니다 — 원래 세계관의 작품만 선택하면 그대로 보입니다</string>
     <string name="novel_field_values_preserved">화면에 없는 작품 필드값 %1$d개는 지우지 않고 보관했습니다 — 원래 세계관으로 되돌리면 그대로 보입니다</string>
     <string name="result_batch_move_detail">필드 %1$d개 이관 · %2$d개 제거 · 세력 %3$d개 제거(휴지통 백업)</string>
@@ -2183,6 +2184,7 @@
     <string name="batch_success_append_skipped">%1$s · 기존 기록 %2$d건 제외</string>
     <!-- 일괄 결과 합산 고지용 조각 (여러 경고가 동시에 날 때 " · "로 이어 붙임) -->
     <string name="batch_note_moved_removed">필드값 %1$d·세력 %2$d 제거(휴지통 복원 가능)</string>
+    <string name="batch_note_moved_kept">필드값 %1$d개는 옮길 곳의 값이 이미 있거나 형식이 달라 보관(그대로 남아 있습니다)</string>
     <string name="batch_note_sync_failed">동기화 실패 %1$d건</string>
     <string name="batch_note_skipped">제외 %1$d건(다른 세계관/미배정·중복)</string>
     <string name="result_excel_exported">엑셀 내보내기 완료 — 시트 %1$d개 · %2$d행</string>
@@ -2676,6 +2678,7 @@
     <string name="ai_key_status_missing">키 미등록 — 편집에서 등록하세요</string>
     <string name="ai_provider_active_badge">사용 중</string>
     <string name="ai_provider_auto_activated">\'%s\' 프로바이더를 사용 중으로 지정했습니다. 다른 프로바이더를 쓰려면 목록에서 누르세요.</string>
+    <string name="ai_provider_succeeded_after_delete">사용 중이던 프로바이더를 삭제해 \'%s\'(으)로 넘겼습니다. 다른 프로바이더를 쓰려면 목록에서 누르세요.</string>
     <!-- B-108 자동 전환 — 목적문(R-25)과 상태 표시. 사용자가 켠 적 없는데 결과가 다른
          모델에서 오는 일이라, 규칙과 현재 상태를 화면이 먼저 말한다. -->
     <string name="ai_settings_providers_order_note">사용 중인 프로바이더가 사용량 한도에 걸리면 아래 순서대로 다음 프로바이더가 이어받습니다. 손잡이를 끌어 순서를 바꾸세요.</string>
@@ -2752,6 +2755,7 @@
     <!-- 오류 안내 (분류별 + 교정 경로) -->
     <string name="ai_error_provider_line">호출한 프로바이더: %1$s · %2$s</string>
     <string name="ai_error_no_provider">설정된 AI 프로바이더가 없습니다. 설정 → AI 연동에서 프로바이더를 추가해 주세요.</string>
+    <string name="ai_error_active_not_set">쓸 AI 프로바이더가 지정되지 않았습니다. 설정 → AI 연동의 목록에서 쓸 프로바이더를 눌러 주세요.</string>
     <string name="ai_error_no_key">등록된 API 키가 없습니다. 프로바이더 편집에서 키를 등록해 주세요.</string>
     <string name="ai_error_invalid_key">API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인하거나 재발급해 주세요.</string>
     <string name="ai_error_rate_limited">요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.</string>

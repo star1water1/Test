@@ -44,4 +44,34 @@ object AiProviderActivation {
         hasKey -> Outcome.ACTIVATE_MOVED
         else -> Outcome.KEEP
     }
+
+    /**
+     * **활성 프로바이더를 지웠을 때 누가 이어받는가** — 순수 판정 (B-153).
+     *
+     * 종전에는 이어받는 것이 없었다: `delete`의 마지막 줄이 활성 id를 지우고 끝이라
+     * **남은 프로바이더가 몇 개든 활성이 비었다.** 그러면 인앱 AI가 전부 `NO_PROVIDER`로 죽는데
+     * 목록에는 키까지 등록된 프로바이더가 그대로 서 있다 — 화면이 사실과 다른 말을 한다.
+     * 한도에 걸린 프로바이더를 *지우고* 다른 것을 쓰려는 동선이라 사용자가 밟기 쉬운 길이다.
+     *
+     * 판정은 2026.08.10 사용자 확정이다(`docs/judgment_confirmations_2026-08.md` 13-1):
+     * **키가 있는 첫째, 없으면 등록순 첫째.**
+     *
+     * **'키가 있는 첫째'인 이유:** 키 없는 것을 세우면 실패가 `NO_PROVIDER`에서 `NO_KEY`로
+     * **자리만 옮긴다** — 사용자는 여전히 쓸 수 있는 프로바이더를 두고 실패를 받는다.
+     * 그래도 키 있는 것이 하나도 없으면 등록순 첫째를 세운다: 그 경우 `NO_KEY`(*"키를 등록해
+     * 주세요"*)가 남는데, 그것은 [decide]의 ③이 이미 같은 근거로 택한 안내다.
+     *
+     * **기각한 쪽(최근 수정순):** *"방금 만진 것"*이 곧 *"쓰려는 것"*이라는 전제가 약하다 —
+     * 한도에 걸린 프로바이더를 지우려고 방금 연 자리가 정확히 이 동선이다.
+     *
+     * @param remaining 지운 뒤 **남은** 프로바이더. 순서는 화면에 보이는 그 순서여야 한다
+     *   (`AiProviderStore.list()`가 이미 `AiProviderFallback.displayOrder`를 지난다) —
+     *   '등록순 첫째'는 사용자가 목록 맨 위에서 보는 그것이라는 뜻이고, 여기서 따로 정렬하면
+     *   **보여 주는 순서와 이어받는 순서가 갈린다.**
+     * @return 활성을 이어받을 프로바이더. [remaining]이 비어 있으면 null(이어받을 것이 없다).
+     */
+    fun succeedAfterDelete(
+        remaining: List<AiProviderConfig>,
+        hasKey: (String) -> Boolean
+    ): AiProviderConfig? = remaining.firstOrNull { hasKey(it.id) } ?: remaining.firstOrNull()
 }

@@ -1492,6 +1492,22 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return preserved
     }
 
+    /**
+     * 세계관을 떠나 무소속이 되는 저장 (B-128 반대 방향).
+     *
+     * 세력 소속·스냅샷을 건드리지 않는 것이 [updateCharacterAcrossUniverse]와 다른 점이다 —
+     * 이탈은 이동이 아니고, 확정이 정한 것은 값의 처분뿐이다.
+     * 시맨틱 동기화는 세계관 스코프가 있어야 성립하므로 여기서는 부르지 않는다(무소속이 됐다).
+     *
+     * @return 이어 준 수 · 보관한 수 · 폼 밖이라 보존된 수 — 호출부가 고지에 쓴다.
+     */
+    suspend fun updateCharacterLeavingUniverse(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        coveredFieldDefinitionIds: Set<Long>?
+    ): com.novelcharacter.app.data.repository.CharacterRepository.LeaveUniverseResult =
+        characterRepository.updateCharacterLeavingUniverse(character, values, coveredFieldDefinitionIds)
+
     private suspend fun getUniverseIdForCharacter(characterId: Long): Long? {
         val character = characterRepository.getCharacterById(characterId) ?: return null
         val novelId = character.novelId ?: return null

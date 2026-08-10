@@ -25,6 +25,7 @@ object AiErrorMessages {
 
     private fun baseRes(kind: AiErrorKind): Int = when (kind) {
         AiErrorKind.NO_PROVIDER -> R.string.ai_error_no_provider
+        AiErrorKind.ACTIVE_NOT_SET -> R.string.ai_error_active_not_set
         AiErrorKind.NO_KEY -> R.string.ai_error_no_key
         AiErrorKind.INVALID_KEY -> R.string.ai_error_invalid_key
         AiErrorKind.RATE_LIMITED -> R.string.ai_error_rate_limited

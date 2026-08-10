@@ -1066,8 +1066,17 @@ class ExcelExporter(context: Context) {
             }
         }
 
-        // 미분류 캐릭터 — 세계관이 없어 필드 열을 만들 수 없다.
-        // 그 필드값은 아래 '캐릭터 필드값' 시트가 (세계관, 필드키)로 담는다(무음 유실 차단).
+        // 미분류 캐릭터 — 세계관은 없지만 **전역 구역의 필드는 가진다**(B-119 확장, B-149).
+        //
+        // 종전에는 여기에 `emptyList()`를 넘겼다("세계관이 없어 필드 열을 만들 수 없다"는 그 시절
+        // 전제 그대로). B-119 확장이 무소속에 전역 필드를 준 순간 그 전제가 낡았고, 값은
+        // 오버플로 시트로 나가 **유실되지는 않았지만** 엑셀에서 고치려면 캐릭터 시트가 아니라
+        // 오버플로 시트를 찾아가야 했다 — '무소속이 일급 개념'이라는 설계 1-9의 취지와 어긋난다.
+        //
+        // **읽기 전용으로 조회한다** — `DefaultFieldTemplateRepository.globalFields()`는 그림자가
+        // 없으면 심는데, 내보내기가 DB를 바꾸는 것은 이 함수가 할 일이 아니다. 심기지 않았다면
+        // 그 필드를 가리키는 값도 없으므로 열이 없어도 왕복은 그대로 성립한다.
+        val globalFields = db.fieldDefinitionDao().getGlobalFieldsList()
         val unassignedChars = allCharacters.filter { char ->
             val novel = novelMap[char.novelId]
             novel?.universeId == null
@@ -1076,14 +1085,28 @@ class ExcelExporter(context: Context) {
             val tags = unassignedChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
-            unassignedChars.forEach { coveredFieldIds[it.id] = emptySet() }
+            // 열로 담은 것과 오버플로 판정을 **함께** 옮긴다 — 한쪽만 고치면 같은 값이 두 시트에
+            // 겹쳐 나가고(열 + 오버플로), 가져오기에서 어느 쪽이 권위인지가 값마다 갈린다.
+            val globalFieldIds = globalFields.mapTo(HashSet()) { it.id }
+            unassignedChars.forEach { coveredFieldIds[it.id] = globalFieldIds }
+            val unassignedResolved = unassignedChars.associate { char ->
+                char.id to resolveFieldDisplayValues(
+                    globalFields,
+                    (allFieldValuesMap[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
+                )
+            }
             exportCharacterSheet(
                 workbook, usedSheetNames, UNCLASSIFIED_SHEET_NAME,
-                unassignedChars, emptyList(), novelMap, emptyMap(), tags,
+                unassignedChars, globalFields, novelMap, unassignedResolved, tags,
                 sheetOwnerOf = UNCLASSIFIED_SHEET_NAME
             )
             // 미분류 캐릭터도 '전체'에 들어간다 — 빠지면 이 시트의 합계가 앱의 인원수와 어긋나고,
             // 그것을 알아채려면 일일이 세어 봐야 한다(원칙 04).
+            //
+            // **여기에는 전역 필드를 넘기지 않는다 — 의도한 제외다**(B-149, 2026.08.10 사용자 확정).
+            // 이 시트는 *두 세계관 이상이 공유하는 필드*를 모으는 집계 시트이고([sharedFields]가
+            // `universeIdsWithCharacters`로 거른다), 전역 필드를 넣으면 시트의 정의가 *공유 필드*에서
+            // *모든 필드*로 달라진다 — 고치는 것이 아니라 **다른 시트를 만드는 것**이다.
             if (allSheet != null) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allRowCount, sharedFields, "",

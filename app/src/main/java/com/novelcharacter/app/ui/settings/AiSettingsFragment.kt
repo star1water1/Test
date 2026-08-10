@@ -823,8 +823,17 @@ class AiSettingsFragment : Fragment() {
             .setTitle(R.string.delete)
             .setMessage(getString(R.string.ai_delete_confirm, config.displayName))
             .setPositiveButton(R.string.delete) { _, _ ->
-                providerStore.delete(config.id) // 암호화 키도 함께 삭제됨
+                val heir = providerStore.delete(config.id) // 암호화 키도 함께 삭제됨
                 refreshList()
+                // 활성이 넘어갔으면 반드시 말한다 — 묻지 않고 하는 대신 하고 나서 알리고,
+                // 되돌릴 경로(목록에서 탭)를 함께 준다 (B-153. 저장 쪽 고지와 같은 관행).
+                if (heir != null) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.ai_provider_succeeded_after_delete, heir.displayName),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
