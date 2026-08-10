@@ -90,13 +90,14 @@ class AppDatabaseMigrationTest {
             .build()
         try {
             // 여는 순간 Room이 스키마를 대조한다 — 어긋나면 여기서 던진다.
-            db.openHelper.writableDatabase.use { open ->
-                assertEquals(
-                    "커밋된 최신 스키마($latest)와 코드의 DB 버전이 다르다 — " +
-                        "버전을 올렸으면 새 스키마 JSON도 함께 커밋할 것.",
-                    latest, open.version
-                )
-            }
+            // **`use`로 감싸지 않는다** — 그러면 Room이 들고 있는 열린 DB를 밑에서 닫아 버리고,
+            // 뒤따르는 `db.close()`가 이미 닫힌 것을 다시 닫는다. 닫는 일은 아래 `finally` 하나가 진다.
+            val open = db.openHelper.writableDatabase
+            assertEquals(
+                "커밋된 최신 스키마($latest)와 코드의 DB 버전이 다르다 — " +
+                    "버전을 올렸으면 새 스키마 JSON도 함께 커밋할 것.",
+                latest, open.version
+            )
         } finally {
             db.close()
         }
