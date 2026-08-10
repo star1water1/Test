@@ -614,7 +614,7 @@ class UniverseListFragment : Fragment() {
 
     private fun observeData() {
         viewModel.allUniverses.observe(viewLifecycleOwner) { universes ->
-            adapter.refreshRandomImages(context)
+            adapter.refreshRandomImages()
             adapter.submitList(universes)
             binding.emptyText.visibility = if (universes.isEmpty()) View.VISIBLE else View.GONE
             viewModel.loadCounts(universes)

@@ -44,16 +44,23 @@ class NovelAdapter(
     /** 작품에 속한 캐릭터의 랜덤/선택 이미지 경로를 반환하는 콜백 */
     var resolveCharacterImage: ((novelId: Long, characterId: Long?, callback: (String?) -> Unit) -> Unit)? = null
 
-    /** 작품별 커스텀 이미지 인덱스 (영속 저장) */
-    private val imageIndexMap = mutableMapOf<Long, Int>()
-    private var prefsLoaded = false
-    private companion object { const val ENTITY_TYPE = "novel" }
+    /**
+     * 이 화면 진입의 랜덤 시드 (B-106 ⓑ · 확정 7-3) — **캐릭터와 같은 주기다.**
+     *
+     * 종전에는 `ImageIndexPrefs`에 **인덱스를 영속 저장**했고 주기도 달랐다(재방출마다 재추첨).
+     * 그 방식의 실질적 결함은 튀는 것이 아니라 **`idx % size`가 가려 두던 것**이다 —
+     * 카드에서 이미지를 빼 목록이 줄면 저장된 인덱스가 **다른 그림을 가리킨다.**
+     * 캐릭터 몫에서 B-103이 이미 없앤 병이고, 이제 작품·세계관도 같은 규칙을 쓴다.
+     *
+     * 시드 하나 = 화면 진입 한 번: 같은 화면 안에서는 스크롤 재바인드·정렬·필터에 그림이
+     * 튀지 않고(같은 시드 → 같은 결과) 나갔다 들어오면 바뀐다.
+     * **상태를 저장하지 않으므로 쓰기가 0이다.**
+     */
+    private var imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
-    /** 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
-    fun refreshRandomImages(context: android.content.Context? = null) {
-        context?.let { com.novelcharacter.app.util.ImageIndexPrefs.clearAll(it, ENTITY_TYPE) }
-        imageIndexMap.clear()
-        prefsLoaded = false
+    /** 이미지 표시를 랜덤으로 재설정 (화면 진입 1회 호출) */
+    fun refreshRandomImages() {
+        imageSeed = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
     }
 
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -217,18 +224,12 @@ class NovelAdapter(
                 Novel.IMAGE_MODE_CUSTOM -> {
                     val paths = parseImagePaths(novel.imagePaths)
                     if (paths.isNotEmpty()) {
-                        val ctx = itemView.context
-                        if (!prefsLoaded) {
-                            imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(ctx, ENTITY_TYPE))
-                            prefsLoaded = true
-                        }
-                        val idx = imageIndexMap.getOrPut(novel.id) {
-                            val randomIdx = (0 until paths.size).random()
-                            com.novelcharacter.app.util.ImageIndexPrefs.save(ctx, ENTITY_TYPE, novel.id, randomIdx)
-                            randomIdx
-                        }
+                        // 시드 하나로 고른다 (B-106 ⓑ) — 목록 크기를 그때그때 넘기므로
+                        // `idx % size`가 다른 그림을 가리키던 자리가 사라진다.
+                        val idx = com.novelcharacter.app.util.CharacterRepresentativeImage
+                            .randomIndex(imageSeed, novel.id, paths.size)
                         binding.novelImage.visibility = View.VISIBLE
-                        loadImageFromPath(paths[idx % paths.size], novel.id)
+                        loadImageFromPath(paths[idx], novel.id)
                     }
                 }
                 Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER -> {

@@ -53,16 +53,16 @@ class UniverseAdapter(
     /** 특정 작품의 이미지 경로를 반환하는 콜백 */
     var resolveNovelImageById: ((novelId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
-    /** 세계관별 커스텀 이미지 인덱스 (영속 저장) */
-    private val imageIndexMap = mutableMapOf<Long, Int>()
-    private var prefsLoaded = false
-    private companion object { const val ENTITY_TYPE = "universe" }
+    /**
+     * 이 화면 진입의 랜덤 시드 (B-106 ⓑ · 확정 7-3) — **캐릭터·작품과 같은 주기다.**
+     * 근거는 [NovelAdapter]의 같은 자리에 적어 두었다(영속 인덱스가 목록이 줄면
+     * `idx % size`로 **다른 그림**을 가리키던 것).
+     */
+    private var imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
-    /** 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
-    fun refreshRandomImages(context: android.content.Context? = null) {
-        context?.let { com.novelcharacter.app.util.ImageIndexPrefs.clearAll(it, ENTITY_TYPE) }
-        imageIndexMap.clear()
-        prefsLoaded = false
+    /** 이미지 표시를 랜덤으로 재설정 (화면 진입 1회 호출) */
+    fun refreshRandomImages() {
+        imageSeed = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
     }
 
     // 이미지 캐시 — CharacterAdapter 패턴
@@ -228,17 +228,9 @@ class UniverseAdapter(
                 Universe.IMAGE_MODE_CUSTOM -> {
                     val paths = parseImagePaths(universe.imagePaths)
                     if (paths.isNotEmpty()) {
-                        val ctx = itemView.context
-                        if (!prefsLoaded) {
-                            imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(ctx, ENTITY_TYPE))
-                            prefsLoaded = true
-                        }
-                        val idx = imageIndexMap.getOrPut(universe.id) {
-                            val randomIdx = (0 until paths.size).random()
-                            com.novelcharacter.app.util.ImageIndexPrefs.save(ctx, ENTITY_TYPE, universe.id, randomIdx)
-                            randomIdx
-                        }
-                        loadImageFromPath(paths[idx % paths.size], universe.id)
+                        val idx = com.novelcharacter.app.util.CharacterRepresentativeImage
+                            .randomIndex(imageSeed, universe.id, paths.size)
+                        loadImageFromPath(paths[idx], universe.id)
                     }
                 }
                 Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
