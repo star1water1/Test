@@ -36,17 +36,16 @@ object FieldValueSheetMapper {
             else -> FieldDefinition.ENTITY_CHARACTER
         }
 
-    fun aliasesToCsv(entry: FieldValueEntry): String = entry.aliases().joinToString(", ")
+    /** 별칭 결합 — 쉼표를 품은 별칭은 감싼다 (B-27 ② · 규약 R-47). */
+    fun aliasesToCsv(entry: FieldValueEntry): String = joinCsv(entry.aliases())
 
-    /** 콤마 구분 별칭 파싱 — 전각 콤마(，·、)도 수용, trim·중복 제거 */
+    /**
+     * 콤마 구분 별칭 파싱 — 전각 콤마(，·、)도 수용, trim·중복 제거.
+     * 쪼개기 규칙 자체는 [splitCsv] 단일 소스가 든다(따옴표로 감싼 별칭이 파손되지 않게).
+     * `、`는 [toHalfWidth]의 범위(U+FF01–FF5E) 밖이라 여기서 먼저 낮춘다 — 이 시트 고유의 관대함이다.
+     */
     fun csvToAliases(csv: String?): List<String> =
-        csv.orEmpty()
-            .replace('，', ',')
-            .replace('、', ',')
-            .split(',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
+        splitCsv(csv.orEmpty().replace('、', ',')).distinct()
 
     /**
      * 불리언 판정은 [parseSheetBoolean](SheetSpec.kt) 단일 소스에 위임한다 — 시트마다 다른

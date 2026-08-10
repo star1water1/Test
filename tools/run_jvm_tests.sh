@@ -266,6 +266,7 @@ $TEST/data/SemanticRoleEntityScopeTest.kt
 $TEST/data/RequiredEnforcementTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
+$TEST/excel/SheetSpecCsvTest.kt
 $TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExportPlanAndSpaceTest.kt

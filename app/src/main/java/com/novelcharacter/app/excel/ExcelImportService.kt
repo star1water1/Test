@@ -7340,9 +7340,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // 코드 목록이 정체이고 이름은 사람이 읽는 몫이다 — 순서에 뜻이 있으므로 지키고,
                 // 이름으로 되찾을 때도 적힌 차례 그대로 옮긴다.
-                val rawCodes = cell("참가자코드들").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                val rawCodes = splitCsv(cell("참가자코드들"))
                 val members = rawCodes.ifEmpty {
-                    cell("참가자들").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    splitCsv(cell("참가자들"))
                         .mapNotNull { name -> codeByName[name]?.singleOrNull() }
                 }
                 val shape = DuelRecords.shapeOf(members)

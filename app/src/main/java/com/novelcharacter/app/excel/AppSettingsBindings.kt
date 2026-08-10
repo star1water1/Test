@@ -240,9 +240,9 @@ object AppSettingsBindings {
         // 유형 목록은 쉼표로 적는다 — 사람이 엑셀에서 고치는 자리라 집합을 JSON으로 두면
         // 손으로 못 만진다(원칙 04). 모르는 이름은 그 저장소가 조용히 버리므로 여기서 먼저 세어 알린다.
         Binding(AppSettingsKeys.STATS_PATTERN_TYPES,
-            read = { PatternTypePrefs.enabled(it).joinToString(",") { t -> t.name } },
+            read = { joinCsv(PatternTypePrefs.enabled(it)) { t -> t.name } },
             write = { ctx, v ->
-                val names = v.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val names = splitCsv(v)
                 val known = names.mapNotNull { name -> PatternType.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
                 val unknown = names.size - known.size
                 PatternTypePrefs.save(ctx, known.toSet())
@@ -277,9 +277,9 @@ object AppSettingsBindings {
 
         // ── 어시스턴트 ──
         Binding(AppSettingsKeys.ASSISTANT_CATEGORIES,
-            read = { AssistantPrefs(it).enabledCategories().joinToString(",") { c -> c.name } },
+            read = { joinCsv(AssistantPrefs(it).enabledCategories()) { c -> c.name } },
             write = { ctx, v ->
-                val names = v.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val names = splitCsv(v)
                 val known = names.mapNotNull { name -> InsightCategory.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
                 val prefs = AssistantPrefs(ctx)
                 // 적힌 것만 켜고 나머지는 끈다 — '전부 기본 켜짐'이라 빼기만으로는 끌 수 없다.

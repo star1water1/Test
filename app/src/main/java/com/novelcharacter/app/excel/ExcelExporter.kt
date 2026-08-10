@@ -1193,7 +1193,7 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setTextSafe(character.firstName)
             row.createCell(col++).setTextSafe(character.anotherName)
             row.createCell(col++).setTextSafe(
-                (allTags[character.id] ?: emptyList()).joinToString(", ") { it.tag }
+                joinCsv(allTags[character.id] ?: emptyList()) { it.tag }
             )
             row.createCell(col++).setTextSafe(if (character.isPinned) "Y" else "N")
             row.createCell(col++).setCellValue(character.displayOrder.toDouble())
@@ -1317,7 +1317,7 @@ class ExcelExporter(context: Context) {
 
             // 태그
             val tags = allTags[character.id] ?: emptyList()
-            row.createCell(col++).setTextSafe(tags.joinToString(", ") { it.tag })
+            row.createCell(col++).setTextSafe(joinCsv(tags) { it.tag })
 
             // 코드 (readOnly)
             row.createCell(col++).setTextSafe(character.code)
@@ -1387,16 +1387,16 @@ class ExcelExporter(context: Context) {
 
             val novelIds = eventNovelIdMap[event.id] ?: emptyList()
             val novels = novelIds.mapNotNull { novelMap[it] }
-            row.createCell(6).setTextSafe(novels.joinToString(", ") { it.title })
+            row.createCell(6).setTextSafe(joinCsv(novels) { it.title })
 
             val eventCharIds = eventCharIdMap[event.id] ?: emptyList()
             val characterNames = eventCharIds.mapNotNull { charMap[it]?.name }
-            row.createCell(7).setTextSafe(characterNames.joinToString(", "))
+            row.createCell(7).setTextSafe(joinCsv(characterNames))
 
             // 관련작품코드 (readOnly)
-            row.createCell(8).setTextSafe(novels.mapNotNull { it.code }.joinToString(", "))
+            row.createCell(8).setTextSafe(joinCsv(novels.mapNotNull { it.code }))
             // 관련캐릭터코드 (readOnly) — 동명이인 오결합 방지(P1-I). 가져오기 시 코드 우선 매칭.
-            row.createCell(9).setTextSafe(eventCharIds.mapNotNull { charMap[it]?.code }.joinToString(", "))
+            row.createCell(9).setTextSafe(joinCsv(eventCharIds.mapNotNull { charMap[it]?.code }))
             row.createCell(10).setCellValue(event.displayOrder.toDouble())
             row.createCell(11).setTextSafe(if (event.isTemporary) "Y" else "N")
             // 코드 (readOnly) — 왕복 안정 식별자: 설명·연도를 외부에서 편집해도 같은 사건으로 인식
@@ -1568,7 +1568,7 @@ class ExcelExporter(context: Context) {
         metas.forEachIndexed { i, meta ->
             val row = sheet.createRow(i + 1)
             row.createCell(0).setTextSafe(java.io.File(meta.path).name)
-            row.createCell(1).setTextSafe(tagsByImage[meta.id]?.joinToString(", ") ?: "")
+            row.createCell(1).setTextSafe(tagsByImage[meta.id]?.let { joinCsv(it) } ?: "")
             row.createCell(2).setTextSafe(meta.linkGroupId ?: "")
             // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
             // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
@@ -1840,8 +1840,8 @@ class ExcelExporter(context: Context) {
                     }
                 )
                 // 뜻이 있는 순서다(천적은 [센 쪽, 잡는 쪽], 순환은 이기는 차례) — 정렬하지 않는다.
-                row.createCell(4).setTextSafe(members.joinToString(", ") { nameByCode[it] ?: it })
-                row.createCell(5).setTextSafe(members.joinToString(", "))
+                row.createCell(4).setTextSafe(joinCsv(members) { nameByCode[it] ?: it })
+                row.createCell(5).setTextSafe(joinCsv(members))
                 row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
                 row.createCell(7).setTextSafe(verdict.code)
             }
@@ -2014,7 +2014,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setTextSafe(preset.sortDuelAxisCode ?: "")
             row.createCell(6).setTextSafe(if (preset.sortAscending) "Y" else "N")
             preset.bodySizePartIndex?.let { row.createCell(7).setCellValue(it.toDouble()) }
-            row.createCell(8).setTextSafe(novelCodes.joinToString(", "))
+            row.createCell(8).setTextSafe(joinCsv(novelCodes))
             row.createCell(9).setTextSafe(if (preset.isDefault) "Y" else "N")
             row.createCell(10).setCellValue(preset.createdAt.toDouble())
             row.createCell(11).setCellValue(preset.updatedAt.toDouble())
