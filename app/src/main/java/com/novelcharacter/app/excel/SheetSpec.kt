@@ -4,6 +4,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
 
 /**
@@ -230,9 +231,101 @@ fun toHalfWidth(value: String): String {
     }
 }
 
-/** Split a comma-separated string into a trimmed, non-blank list. 전각 쉼표(，)도 관대 수용 (F4). */
-fun splitCsv(value: String): List<String> =
-    toHalfWidth(value).split(",").map { it.trim() }.filter { it.isNotBlank() }
+/**
+ * 목록 셀의 **분해** — 내보내기의 [joinCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
+ *
+ * 값 안의 쉼표는 **따옴표로 감싼다**(엑셀·CSV와 같은 방식 — 사용자 확정 2026.08.04,
+ * `judgment_confirmations_2026-08.md` 7-6). 그래서 이름·제목에 쉼표가 있어도 두 값으로
+ * 파손되지 않는다: `"Smith, John", Alice` → [`Smith, John`, `Alice`].
+ *
+ * ## 옛 파일을 계속 읽는 경로가 이 함수의 절반이다
+ *
+ * 이것은 **저장·교환 형식 변경**이라 되돌리기 어려운 축이다(착수 규칙 3번 셋째). 그래서
+ * 따옴표가 없는 옛 파일은 **옛 규칙과 글자 그대로 같은 결과**를 받는다 — 아래 빠른 길이
+ * 종전 구현 그 자체이고, 시험이 그 동일성을 못 박는다. 따옴표가 있어도 **CSV 규칙에 어긋나면**
+ * (닫히지 않음 · 닫은 뒤 군더더기) 옛 규칙으로 되돌린다 — 즉 `"인용" 시리즈`처럼 따옴표를
+ * 글자로 쓰던 옛 값은 그대로 살아난다. 거부가 아니라 수용이다(개발 의도 4번).
+ *
+ * **단 하나 갈리는 자리가 있고, 그것은 CSV 자체의 모호함이다:** 옛 파일에서 값 전체가
+ * 따옴표로 감싸여 있으면(`"전체"`) 새 규칙은 그것을 *감싼 것*으로 읽어 `전체`를 돌려준다.
+ * 새 형식이 같은 글자를 만들 수 있으므로 원리적으로 가릴 수 없다 — 엑셀도 똑같이 동작하며,
+ * 사용자가 이 규약을 고른 이유가 바로 그 익숙함이다. 시험이 이 동작을 명시로 잠근다.
+ *
+ * 전각 쉼표(，)도 관대 수용한다 (F4).
+ */
+fun splitCsv(value: String): List<String> {
+    val normalized = toHalfWidth(value)
+    if (!normalized.contains('"')) return splitCsvLegacy(normalized)
+    return parseQuotedCsv(normalized) ?: splitCsvLegacy(normalized)
+}
+
+/** 종전 구현 그 자체 — 따옴표가 없거나 CSV 규칙에 어긋날 때의 경로. */
+private fun splitCsvLegacy(normalized: String): List<String> =
+    normalized.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+/**
+ * 표준 CSV 규칙으로 판다. 규칙에 어긋나면 **null** — 호출측이 옛 규칙으로 되돌린다.
+ * 따옴표는 **칸의 첫 글자일 때만** 감싼 것이고, 그 안의 `""`는 따옴표 한 글자다.
+ */
+private fun parseQuotedCsv(s: String): List<String>? {
+    val fields = ArrayList<String>()
+    var i = 0
+    while (true) {
+        // **공백의 뜻을 아래 `trim()`과 맞춘다.** 칸 앞을 `' '`만 건너뛰면, 엑셀에서 줄바꿈
+        // (Alt+Enter)이나 붙여넣기로 들어온 탭이 앞에 붙는 순간 감싼 칸을 못 알아보고
+        // 옛 규칙으로 쪼개진다 — 사용자는 규약대로 감쌌는데 아무 말 없이 값이 갈린다.
+        // 판정에 실패하면 어차피 옛 규칙으로 되돌아가므로 넓히는 쪽이 손해가 없다.
+        while (i < s.length && s[i].isWhitespace()) i++
+        if (i < s.length && s[i] == '"') {
+            i++
+            val buf = StringBuilder()
+            var closed = false
+            while (i < s.length) {
+                if (s[i] == '"') {
+                    if (i + 1 < s.length && s[i + 1] == '"') { buf.append('"'); i += 2 }
+                    else { i++; closed = true; break }
+                } else { buf.append(s[i]); i++ }
+            }
+            if (!closed) return null                       // 닫히지 않은 따옴표
+            while (i < s.length && s[i].isWhitespace()) i++
+            if (i < s.length && s[i] != ',') return null   // 닫은 뒤 군더더기
+            fields.add(buf.toString())
+        } else {
+            val next = s.indexOf(',', i)
+            val end = if (next < 0) s.length else next
+            fields.add(s.substring(i, end).trim())
+            i = end
+        }
+        if (i < s.length && s[i] == ',') { i++ } else break
+    }
+    return fields.filter { it.isNotBlank() }
+}
+
+/**
+ * 목록 셀의 **결합** — 가져오기의 [splitCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
+ * 값이 구분자를 품고 있으면 감싸고, 안의 따옴표는 겹쳐 쓴다(엑셀·CSV와 같은 방식).
+ */
+fun joinCsv(values: Collection<String>): String = values.joinToString(", ") { quoteCsvToken(it) }
+
+/**
+ * 셀렉터를 받는 짝 — 호출부가 `joinToString(", ") { ... }`로 되돌아가지 않게 한다.
+ * **`List`가 아니라 `Collection`을 받는다** — 설정 저장소는 목록을 `Set`으로 들고 있어서
+ * `List`로 좁히면 그 자리가 컴파일되지 않는데, 그 파일은 로컬 프로브 범위 밖이라 조용하다.
+ */
+fun <T> joinCsv(values: Collection<T>, selector: (T) -> String): String =
+    values.joinToString(", ") { quoteCsvToken(selector(it)) }
+
+/**
+ * 한 값의 감싸기 판정. **감쌀지는 정규화한 모양으로 정한다** — 가져오기가 [toHalfWidth] 뒤에
+ * 파싱하므로 전각 쉼표(，)를 품은 값도 감싸지 않으면 그쪽에서 쪼개진다.
+ */
+fun quoteCsvToken(value: String): String {
+    val probe = toHalfWidth(value)
+    if (probe.none { it == ',' || it == '"' }) return value
+    // 따옴표만 반각으로 고정한다 — 전각 따옴표를 그대로 두면 가져오기의 정규화가
+    // 그것을 따옴표로 바꿔 이스케이프 자리와 어긋난다(다른 전각 글자는 건드리지 않는다).
+    return "\"" + value.replace('＂', '"').replace("\"", "\"\"") + "\""
+}
 
 /**
  * '커스텀관계유형' 셀이 JSON 배열이 아닐 때의 관대 해석 — 앱 공통 복수값 규약(쉼표 구분)을 그대로 쓴다.
@@ -634,7 +727,11 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
             } else null
             val disambiguate = collidesWithFixedHeader(field.name) || (fieldNameCounts[field.name] ?: 0) > 1
             val core = characterFieldHeader(field.name, field.key, disambiguate)
-            val headerName = if (field.type == "MULTI_TEXT") "$core (쉼표 구분)" else core
+            // 쉼표를 쪼개는 **모든** 필드에 안내를 붙인다 (B-38). 종전에는 `type == "MULTI_TEXT"`
+            // 하나만 보았고, 그래서 '콤마 목록' 표시 형식의 TEXT 필드는 외부 편집자가 쉼표의 뜻을
+            // 모른 채 값을 넣었다 — 안내 없이 넣은 쉼표는 들이기에서 토큰 구조를 조용히 가른다.
+            // 판정은 앱이 이미 쓰는 단일 소스가 든다(B-37이 정렬에서 없앤 하드코딩의 쌍둥이).
+            val headerName = if (FieldValueTokenizer.isMultiToken(field)) "$core (쉼표 구분)" else core
             add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))

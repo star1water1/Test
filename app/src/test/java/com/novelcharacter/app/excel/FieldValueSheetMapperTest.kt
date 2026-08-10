@@ -136,6 +136,20 @@ class FieldValueSheetMapperTest {
     }
 
     @Test
+    fun aliasWithComma_survivesRoundtrip() {
+        // 별칭은 사람이 적는 글이라 쉼표가 든다("서울, 한양"). 감싸지 않으면 왕복 한 번에
+        // 별칭 하나가 둘로 갈리고, 갈린 쪽은 원래 별칭으로 되돌릴 방법이 없다 (B-27 ② · R-47).
+        val aliases = listOf("서울, 한양", "Seoul")
+        assertEquals(aliases, FieldValueSheetMapper.csvToAliases(joinCsv(aliases)))
+    }
+
+    @Test
+    fun aliasCsv_legacyFileStillParses() {
+        // 따옴표가 없는 옛 파일은 종전 그대로 읽힌다 — 형식 변경의 필수 조건이다.
+        assertEquals(listOf("서울시", "한양"), FieldValueSheetMapper.csvToAliases("서울시, 한양"))
+    }
+
+    @Test
     fun hiddenFlag_tolerantParsing() {
         assertTrue(FieldValueSheetMapper.parseHidden("Y"))
         assertTrue(FieldValueSheetMapper.parseHidden("예"))
