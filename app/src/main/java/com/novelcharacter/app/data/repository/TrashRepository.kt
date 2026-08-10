@@ -3037,11 +3037,10 @@ class TrashRepository(
             listOf(source.copy(id = 0, characterId = characterId, code = safeCode))
         )
 
-        // 복원도 값 쓰기 경로다 — 삽입 경로(insertStateChange)가 수확하는 것을 여기서 빠뜨리면
-        // 되살린 값이 값 라이브러리에서만 사라진 채로 남는다. 특수키(__birth 등)는 이 함수가
-        // 스스로 걸러 낸다.
-        FieldValueLibraryRepository(db)
-            .harvestStateChange(characterId, source.fieldKey, source.newValue)
+        // 값 라이브러리는 건드리지 않는다 — 삽입 경로(insertStateChange)와 같은 처분이다.
+        // 상태변화는 이력이고 카탈로그의 모집단은 **현재 값**이라(B-60 · 확정 20번 ㄱ1)
+        // 되살린 이력에는 수확할 것이 없다. 종전에 이 자리가 삽입 경로를 따라 수확했으므로
+        // **함께 걷지 않으면 복원만 옛 모집단으로 도는 비대칭이 남는다.**
 
         return RestoreResult(
             entityType = TrashSnapshot.TYPE_STATE_CHANGE,

@@ -31,6 +31,12 @@ object AiErrorPolicy {
      * [AiErrorKind.ACTIVE_NOT_SET]이 여기 있는 이유는 [AiErrorKind.NO_PROVIDER]와 같다:
      * 쓸 프로바이더가 정해지지 않은 채로는 **몇 번을 보내도 관문을 넘지 못한다.** 둘을 가른
      * 것은 사용자에게 할 말이지 처분이 아니다(B-153).
+     *
+     * [AiErrorKind.UNSUPPORTED_PARAM]이 여기 있는 이유도 같은 기준이다 (B-161): 모델이
+     * 받지 않는 항목은 **청크가 바뀐다고 받아 주지 않는다** — 남은 요청은 전부 같은 항목을
+     * 실어 같은 400을 받으므로 돈만 쓴다. **뭉뚱그려진 [AiErrorKind.BAD_REQUEST]는 여기
+     * 넣지 않는다**: 그쪽은 본문이 원인을 지목하지 않은 나머지라, 재시도로 풀릴 여지가
+     * 있는 것까지 섞여 있다. 좁은 판정 위에서만 중단이 정당하다.
      */
     val TERMINAL: Set<AiErrorKind> = setOf(
         AiErrorKind.NO_PROVIDER,
@@ -38,7 +44,8 @@ object AiErrorPolicy {
         AiErrorKind.NO_KEY,
         AiErrorKind.INVALID_KEY,
         AiErrorKind.QUOTA_EXCEEDED,
-        AiErrorKind.MODEL_NOT_FOUND
+        AiErrorKind.MODEL_NOT_FOUND,
+        AiErrorKind.UNSUPPORTED_PARAM
     )
 
     /** 이 실패를 만나면 남은 청크를 보내지 않는다. */

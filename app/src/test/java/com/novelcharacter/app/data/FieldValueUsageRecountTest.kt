@@ -91,6 +91,33 @@ class FieldValueUsageRecountTest {
         assertEquals(0, changed[0].usageCount)
     }
 
+    /**
+     * **`usageCount`는 "지금 쓰이는 횟수"다** — 쓰인 적 있는 횟수가 아니다
+     * (2026.08.10 사용자 확정 20번 ㄱ1 · B-60).
+     *
+     * 여기 넘기는 `rawValues`는 **현재 값 세 표**(캐릭터·사건·작품)에서만 온다. 상태변화
+     * 이력은 넘어오지 않으므로, 이력에만 있던 값의 엔트리는 **0으로 떨어지는 것이 옳다.**
+     *
+     * **이 시험이 지키는 것은 산수가 아니라 정의다.** 종전에는 수확이 이력까지 담고 집계는
+     * 현재 값만 세서 두 쪽이 다른 모집단을 봤고, 그 엔트리는 `usageCount`가 영원히 0인 채
+     * **'미사용 자동수집 정리'의 대상**이 됐다 — 살아 있는 값을 지우자고 권하는 자리였다.
+     * 수확 쪽을 좁혀 맞췄고(`FieldValueLibraryRepository.harvestUniversesOrThrow`),
+     * 그것이 다시 넓어지지 않는지는 `tools/check_harvest_population.sh`가 기계로 지킨다.
+     */
+    @Test
+    fun `현재 값에 없는 엔트리는 이력에 있어도 0이다`() {
+        val fd = field(1L)
+        val entries = listOf(entry(10L, "흑발", usageCount = 1), entry(11L, "은발", usageCount = 1))
+        // '은발'은 상태변화 이력에만 있던 값이라 현재 값 목록에 없다.
+        val currentValues = listOf("흑발", "흑발")
+
+        val changed = FieldValueRules.recountedEntries(fd, entries, currentValues)
+            .associateBy { it.id }
+
+        assertEquals(2, changed[10L]?.usageCount)
+        assertEquals(0, changed[11L]?.usageCount)
+    }
+
     /** 무변화면 갱신 대상이 0건이어야 한다 — 무효화 폭풍 방지(diff-only 계약). */
     @Test
     fun `이미 맞는 집계는 갱신 대상에 들어가지 않는다`() {

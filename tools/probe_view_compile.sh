@@ -174,6 +174,14 @@ class Canvas {
     fun drawRoundRect(left: Float, top: Float, right: Float, bottom: Float, rx: Float, ry: Float, paint: Paint) {}
     fun drawText(text: String, x: Float, y: Float, paint: Paint) {}
 }
+// 확대·이동을 다루는 뷰가 쓰는 행렬 (B-166 — `ui/character/ZoomableImageView.kt`).
+// 실제 API는 `post*`가 **Boolean을 돌려준다**(성공 여부). void로 적으면 반환값을 쓰는
+// 코드를 이 프로브가 통과시켜 버린다.
+class Matrix {
+    fun reset() {}
+    fun postScale(sx: Float, sy: Float, px: Float, py: Float): Boolean = true
+    fun postTranslate(dx: Float, dy: Float): Boolean = true
+}
 EOF
 cat > "$WORK/ViewStub.kt" <<'EOF'
 package android.view
@@ -204,13 +212,23 @@ open class GestureDetector(context: android.content.Context, listener: OnGesture
         fun onLongPress(e: MotionEvent)
         fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean
     }
-    open class SimpleOnGestureListener : OnGestureListener {
+    // 실제 API는 두 번 누르기를 **별도 인터페이스**로 두고 `SimpleOnGestureListener`가 둘 다
+    // 구현한다 — 합쳐 적으면 `OnGestureListener`만 구현한 코드가 여기서 죽는다.
+    interface OnDoubleTapListener {
+        fun onSingleTapConfirmed(e: MotionEvent): Boolean
+        fun onDoubleTap(e: MotionEvent): Boolean
+        fun onDoubleTapEvent(e: MotionEvent): Boolean
+    }
+    open class SimpleOnGestureListener : OnGestureListener, OnDoubleTapListener {
         override fun onDown(e: MotionEvent): Boolean = false
         override fun onShowPress(e: MotionEvent) {}
         override fun onSingleTapUp(e: MotionEvent): Boolean = false
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean = false
         override fun onLongPress(e: MotionEvent) {}
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean = false
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean = false
+        override fun onDoubleTap(e: MotionEvent): Boolean = false
+        override fun onDoubleTapEvent(e: MotionEvent): Boolean = false
     }
     fun onTouchEvent(ev: MotionEvent): Boolean = false
 }
@@ -227,6 +245,9 @@ open class ScaleGestureDetector(context: android.content.Context, listener: OnSc
     }
     fun onTouchEvent(event: MotionEvent): Boolean = false
     val scaleFactor: Float get() = 1f
+    // 확대의 중심점 — 이것이 없으면 확대가 늘 화면 좌상단을 기준으로 돈다 (B-166).
+    val focusX: Float get() = 0f
+    val focusY: Float get() = 0f
 }
 open class View(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int) {
     constructor(context: android.content.Context) : this(context, null, 0)
@@ -302,6 +323,33 @@ class Toast {
     fun show() {}
 }
 EOF
+# 확대 뷰(B-166)의 상위 타입 둘 — `ui/character/ZoomableImageView.kt`가 `AppCompatImageView`를
+# 상속하고, 그것이 다시 `ImageView`를 상속한다.
+#
+# **`scaleType`은 프로퍼티로, `setImageMatrix`는 함수로 적는다 — 그것이 실제 모양이다.**
+# 자바의 getter/setter 쌍(`getScaleType`/`setScaleType`)은 코틀린에서 합성 프로퍼티로 보이고,
+# `setImageMatrix`는 짝이 되는 게터를 부르는 쪽이 안 쓰므로 함수 그대로 남는다. 둘을 뒤집어
+# 적으면 **실제로는 컴파일되는 코드가 여기서 죽거나 그 반대**가 되어 프로브가 거짓을 말한다.
+#
+# `getImageMatrix`는 **일부러 안 세운다.** 쓰는 것만 세운다는 이 파일의 규칙이기도 하고,
+# 하필 `ZoomableImageView`가 같은 이름의 private 필드를 들고 있어 있으나 마나다.
+cat > "$WORK/ImageViewStub.kt" <<'EOF'
+package android.widget
+open class ImageView(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : android.view.View(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
+    enum class ScaleType { MATRIX, FIT_XY, FIT_START, FIT_CENTER, FIT_END, CENTER, CENTER_CROP, CENTER_INSIDE }
+    var scaleType: ScaleType = ScaleType.FIT_CENTER
+    fun setImageMatrix(matrix: android.graphics.Matrix) {}
+}
+EOF
+cat > "$WORK/AppCompatImageViewStub.kt" <<'EOF'
+package androidx.appcompat.widget
+open class AppCompatImageView(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : android.widget.ImageView(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
+}
+EOF
 # 커스텀 뷰가 색을 읽는 경로다. `Context.getColor`와 갈라 두는 것은 실제로도 다른 API이기
 # 때문이고, 여기 없는 멤버(getDrawable 등)를 지어 넣지 않는 것은 반환 타입을 `Any?` 따위로
 # 적으면 **스텁이 거짓을 말하기** 때문이다 — 쓰는 것만 세운다.
@@ -341,6 +389,11 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$M/ui/graph/RelationshipGraphView.kt"
   echo "$M/ui/timeline/EventDensityBar.kt"
   echo "$M/ui/common/CappedScrollView.kt"
+  # B-166 — `AppCompatImageView` 상속이라 `View` 직접 상속 넷에 안 들었고, 그래서 B-147이
+  # 목록을 세울 때 **어느 로컬 검사에도 안 잡히는 유일한 뷰**로 남아 있었다. 스텁 셋
+  # (Matrix·ImageView·AppCompatImageView)을 먼저 세우고 여기 넣는다 — 순서를 뒤집어
+  # 등재부터 하면 프로브가 못 서는 것을 요구해 빨간불이 되고, 다음 사람이 검사를 끈다.
+  echo "$M/ui/character/ZoomableImageView.kt"
   echo "$M/util/DialogScrollCap.kt"
   echo "$M/util/BodySilhouetteSpec.kt"
   echo "$M/util/BodyMeasurements.kt"
@@ -366,6 +419,8 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/ViewStub.kt"
   echo "$WORK/ScrollStub.kt"
   echo "$WORK/NestedScrollStub.kt"
+  echo "$WORK/ImageViewStub.kt"
+  echo "$WORK/AppCompatImageViewStub.kt"
   echo "$WORK/ToastStub.kt"
   echo "$WORK/ContextCompatStub.kt"
   echo "$WORK/RProbe.kt"
