@@ -201,4 +201,51 @@ class StatsDataProviderUnassignedTest {
         val overview = provider.computeDataOverview(snapshot())
         assertEquals(1, overview.healthWarnings.incompleteFieldCount)
     }
+
+    // ===== B-30: 계산 필드는 산출하지 않되, 그 사실을 센다 (확정 7-4) =====
+    //
+    // **이 셋의 방어선은 건수가 아니라 그 안의 둘이고, 둘이 서로를 받친다.**
+    // ① *"값을 만들지 않는다"* — 기각된 쪽(필드값으로 세계관 역추적)은 참조 필드가 빠지면
+    //    수식이 **조용히 다른 값**을 내어 틀린 값이 맞는 값처럼 보인다.
+    // ② *"만들지 않는다는 사실이 세어진다"* — ①만 있으면 `calculatedUnavailable`이 **늘 0을
+    //    돌려줘도 통과한다.** 그러면 고지가 영영 안 뜨고, 화면에서는 계산 필드가 *존재하지
+    //    않는 것*과 구별되지 않는다 — 그 구별이 이 항목의 전부다(결함이 아니라 고지 누락).
+
+    private fun withCalculatedField(): StatsSnapshot = snapshot().let { s ->
+        s.copy(
+            fieldDefinitions = s.fieldDefinitions + FieldDefinition(
+                id = 60L, universeId = 100L, key = "power", name = "전투력", type = "CALCULATED",
+                config = """{"formula":"1+1"}"""
+            )
+        )
+    }
+
+    @Test
+    fun unassignedScope_calculatedFieldIsNotFabricated() {
+        val filtered = provider.filterByNovel(withCalculatedField(), UnassignedFilter.NO_NOVEL_ID)
+        // 계산 필드는 저장 행이 없어 '참조된 정의' 필터에 걸려 정의째 빠진다 — 값도 정의도 없다.
+        assertTrue(filtered.fieldDefinitions.none { it.type == "CALCULATED" })
+    }
+
+    @Test
+    fun unassignedScope_countsWhatItCannotCompute() {
+        val filtered = provider.filterByNovel(withCalculatedField(), UnassignedFilter.NO_NOVEL_ID)
+        assertEquals(1, filtered.calculatedUnavailable)
+    }
+
+    @Test
+    fun unassignedScope_saysNothingWhenThereIsNothingToSay() {
+        // 계산 필드가 애초에 없으면 고지할 것이 없다 — 0이어야 화면이 줄을 감춘다.
+        val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
+        assertEquals(0, filtered.calculatedUnavailable)
+    }
+
+    @Test
+    fun assignedScope_doesNotClaimAnythingIsUnavailable() {
+        // 작품 스코프에서는 수식을 돌릴 수 있으므로 이 고지가 뜨면 안 된다 —
+        // 뜨면 멀쩡히 계산되는 필드를 두고 "산출하지 않는다"고 **거짓말**하게 된다.
+        val filtered = provider.filterByNovel(withCalculatedField(), 10L)
+        assertEquals(0, filtered.calculatedUnavailable)
+        assertTrue(filtered.fieldDefinitions.any { it.type == "CALCULATED" })
+    }
 }

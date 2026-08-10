@@ -2,6 +2,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -74,25 +75,45 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
+                    android:orientation="vertical"
                     android:padding="@dimen/stats_padding_card">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/stats_filter_novel"
-                        android:textSize="@dimen/stats_text_body"
-                        android:textStyle="bold"
-                        android:textColor="@color/on_surface"
-                        android:layout_marginEnd="@dimen/stats_margin_sm" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
 
-                    <Spinner
-                        android:id="@+id/spinnerNovelFilter"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:contentDescription="@string/stats_filter_novel" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/stats_filter_novel"
+                            android:textSize="@dimen/stats_text_body"
+                            android:textStyle="bold"
+                            android:textColor="@color/on_surface"
+                            android:layout_marginEnd="@dimen/stats_margin_sm" />
+
+                        <Spinner
+                            android:id="@+id/spinnerNovelFilter"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:contentDescription="@string/stats_filter_novel" />
+
+                    </LinearLayout>
+
+                    <!-- B-30: 계산 필드 산출 불가 고지. 스코프를 고르는 자리 **바로 밑**에 둔다 —
+                         사유가 곧 그 선택이므로, 떨어뜨려 놓으면 무엇 때문인지 읽히지 않는다. -->
+                    <TextView
+                        android:id="@+id/calculatedUnavailableNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/stats_margin_sm"
+                        android:textSize="@dimen/stats_text_caption"
+                        android:textColor="@color/text_secondary"
+                        android:visibility="gone"
+                        tools:text="@string/stats_calculated_unavailable"
+                        tools:visibility="visible" />
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

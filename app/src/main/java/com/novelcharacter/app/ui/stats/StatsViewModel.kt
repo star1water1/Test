@@ -38,6 +38,15 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _summary = MutableLiveData<SummaryStats>()
     val summary: LiveData<SummaryStats> = _summary
 
+    /**
+     * 이 스코프에서 산출할 수 없는 계산 필드의 수 (B-30). 0이면 화면이 고지를 감춘다.
+     *
+     * **요약에 얹지 않고 따로 낸 이유:** 이것은 *집계 결과*가 아니라 *스코프의 성질*이라
+     * 요약이 아직 안 왔을 때도 말할 수 있어야 하고, 스코프를 바꾸면 요약보다 먼저 바뀐다.
+     */
+    private val _calculatedUnavailable = MutableLiveData(0)
+    val calculatedUnavailable: LiveData<Int> = _calculatedUnavailable
+
     // ===== 신규: 필드 인사이트 =====
     private val _fieldInsights = MutableLiveData<List<FieldInsightResult>>()
     val fieldInsights: LiveData<List<FieldInsightResult>> = _fieldInsights
@@ -222,6 +231,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val filtered = getFilteredSnapshot(snapshot)
+                // 계산 필드 산출 불가 고지 (B-30) — 스코프의 성질이라 집계를 기다리지 않는다.
+                _calculatedUnavailable.value = filtered.calculatedUnavailable
 
                 // 모든 통계를 병렬로 계산한 후 한 번에 LiveData에 반영
                 val summaryDeferred = async(Dispatchers.IO) { provider.computeSummary(filtered) }
