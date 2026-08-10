@@ -613,8 +613,10 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun observeData() {
+        // **화면 진입 1회만 재추첨한다** (B-106 ⓑ · 확정 7-3). 근거는 `NovelListFragment`의
+        // 같은 자리에 적어 두었다 — 관찰자 안에서 부르면 재방출마다 전 카드가 갈린다.
+        adapter.refreshRandomImages()
         viewModel.allUniverses.observe(viewLifecycleOwner) { universes ->
-            adapter.refreshRandomImages()
             adapter.submitList(universes)
             binding.emptyText.visibility = if (universes.isEmpty()) View.VISIBLE else View.GONE
             viewModel.loadCounts(universes)

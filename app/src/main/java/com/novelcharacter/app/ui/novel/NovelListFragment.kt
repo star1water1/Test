@@ -239,8 +239,11 @@ class NovelListFragment : Fragment() {
     }
 
     private fun observeData() {
+        // **화면 진입 1회만 재추첨한다** (B-106 ⓑ · 확정 7-3 — 캐릭터 목록과 같은 자리·같은 이유).
+        // 관찰자 **안**에서 부르면 작품이 하나 바뀔 때마다(이름·경계선·이미지·개수 갱신) 전 카드의
+        // 그림이 함께 갈린다 — 그것이 이 항목이 없애려던 "재방출마다 재추첨"이다.
+        adapter.refreshRandomImages()
         viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
-            adapter.refreshRandomImages()
             adapter.submitList(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
         }
