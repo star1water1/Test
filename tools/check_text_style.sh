@@ -38,6 +38,7 @@ app/src/main/java/com/novelcharacter/app/ai/FieldLibraryAiOrganizer.kt
 app/src/main/java/com/novelcharacter/app/util/DuelAiContext.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt
+app/src/main/java/com/novelcharacter/app/excel/PresetTemplateMatcher.kt
 app/src/main/java/com/novelcharacter/app/data/repository/TrashRepository.kt
 app/src/main/java/com/novelcharacter/app/data/repository/EventFieldValueMerge.kt
 app/src/main/java/com/novelcharacter/app/data/model/EntitySnapshots.kt
@@ -49,6 +50,12 @@ app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt
 # 등재 누락을 사람 기억에 맡기지 않는 법 — 전개 5단계에서 실제로 한 건 더 나왔다
 # (`FieldEditDialog`의 측정값 토글 라벨 13개가 코드 하드코딩이라 '정규화 비율'이 표1 위반인
 # 채로 검사·기준선 양쪽에 안 잡혔다. 파일럿 화면이었는데도 그랬다).
+# **2026.08.10에 세 번째가 나왔다 — `PresetTemplateMatcher.kt`**(위 목록에 방금 넣은 것).
+# 가져오기 경고문 다섯을 화면에 올리는데 미등재라, R1·R2·R3 **전부가 그 파일을 못 보고 있었다**
+# (`매칭` 판정의 착수 대조가 발견 — 등재된 26곳을 세는 동안 이 파일의 2곳이 어느 셈에도
+# 들어가지 않았다. 실제 사용자 노출은 28곳이다). 등재해도 새 위반은 0건이라 등재 자체는 무료였다 —
+# **무료인 채로 닷새가 아니라 열흘을 빠져 있었다는 것이 이 항목의 요지다.**
+# 세 번 다 같은 병이므로, 아래 훑기 명령을 **새 문구를 넣은 세션은 반드시 한 번 돌릴 것.**
 # 아래를 돌리면 미등재 파일의 위반 후보가 나온다 — 새 문구를 넣은 세션은 한 번 돌려 볼 것:
 #   find app/src/main -name '*.kt' | while read f; do
 #     grep -qxF "$f" <<<"$KT_USER_FACING" && continue
@@ -63,6 +70,9 @@ app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt
 # R2 SPACING   보조용언 붙여쓰기 금지 — '해 주세요/해 보세요'로 띄운다.
 # R3 TERM      화면 금지 용어 — 우리말 대체가 있는 개발·문서 어휘 (가이드 5장 표1).
 #              JSON·API 키·토큰·프로바이더 등 실존 외부 개념은 금지가 아니다(유지+도움말).
+# R4 DUEL-TERM 대결 영역 한정 금지 — `매칭`은 표2(유지)지만 **대결에는 쓰지 않는다**.
+#              R3와 방향이 다르다: R3는 저장소 전역에서 그 말을 없애고, R4는 **한 영역에만**
+#              걸어 나머지에서는 그대로 쓰게 둔다. 뜻이 둘로 갈리는 것을 막는 것이 목적이다.
 # '게요'는 -(으)ㄹ게요 종결 전용이라 어간을 열거하지 않는다 — 종전의 '볼게요|할게요'는
 # 열거된 둘만 잡아 실제로 0건을 검출했고, 그사이 '알려드릴게요'가 통과했다(전개 2단계에서 발견).
 YO_RE='(어요|에요|예요|아요|해요|께요|네요|데요|래요|게요|까요)'
@@ -79,6 +89,25 @@ LEXICALIZED_RE='(도와주|알아보|물어보|돌아보|살펴보|지켜보|여
 # 판정만으로는 소급되지 않는다는 것이 이 도구가 있는 이유다. 소거한 자리에서 바로 잠근다.
 # 문서(통계 철학) 어휘로는 유지이며, R3는 strings.xml 값과 KT_USER_FACING만 보므로 문서에 닿지 않는다.
 TERM_RE='(산출물|카탈로그|매핑|그룹핑|파싱|렌더링|시맨틱|직렬화|정규화|인사이트)'
+# R4 DUEL-TERM 대결 영역에서 `매칭` 금지 (규약 R-48) — 사용자 확정이 만든 규칙이다
+# (확정 문서 1장 23번 · 4장 순서 강제 23번↔2번).
+# `매칭`은 **표2(유지)**로 확정됐다. 금지어가 아니라 그 반대로, **엑셀 왕복에서 파일의 행과
+# 앱의 레코드를 잇는 것**을 가리키는 자리를 받았다. 확정이 함께 단 조건이 이 규칙이다 —
+# **대결은 '대결'·'판'·'짝'으로 말한다.** 한 단어가 두 가지를 가리키면 그 확정이 무너지므로,
+# 유지 판정과 이 금지는 한 벌이다(둘 중 하나만 있으면 뜻이 갈린다).
+#
+# **종전에 이 약속을 지킨 것은 strings.xml 대결 절의 주석 한 줄뿐이었다.** 주석은 어겨도
+# 아무 일도 일어나지 않고, 어긴 것을 아무도 세지 못한다 — R-40이 배운 그것이다.
+# 그래서 확정을 기록이 아니라 **기계**에 건다.
+#
+# **이 규칙이 못 보는 자리 — 적어 두지 않으면 다음 사람이 검사가 있다고 믿는다(R-40).**
+# ① **레이아웃 XML을 안 본다.** R1~R4 전부 그렇다 — 이 스크립트는 `strings.xml` 값과
+#    코틀린 리터럴만 읽는다. `android:text`에 한국어를 박으면 네 규칙 모두 조용하다.
+#    **지금 대결 레이아웃에 하드코딩 한국어는 0건이라 R4는 실제로 온전하다**(2026.08.10 실측:
+#    `grep -rn 'android:text="[^@"]*[가-힣]' app/src/main/res/layout/*duel*.xml` → 없음).
+#    저장소 전체로는 한 건 있고 대결 밖이다(B-181).
+# ② **`duel_` 접두를 안 쓰는 대결 문자열은 못 본다.** 지금은 전량 그 접두를 쓴다(288개).
+DUEL_TERM_RE='매칭'
 
 # 보조용언 붙여쓰기 판정 — 한 단어로 굳은 합성동사를 먼저 지운 뒤 구조 규칙을 적용한다.
 # 순서가 중요하다: 지우지 않고 검사하면 '알아보세요'가, 구조 규칙 없이 지우면 '메모해주세요'가 샌다.
@@ -99,6 +128,9 @@ violations() {
     echo "$value" | grep -qE "${YO_RE}([^가-힣]|$)" && echo "TONE-YO|strings.xml|$name"
     has_spacing "$value" && echo "SPACING|strings.xml|$name"
     echo "$value" | grep -qE "$TERM_RE" && echo "TERM|strings.xml|$name"
+    case "$name" in
+      duel_*) echo "$value" | grep -qE "$DUEL_TERM_RE" && echo "DUEL-TERM|strings.xml|$name" ;;
+    esac
   done
   # 코드 속 사용자 노출 문구 — 한국어를 담은 문자열 리터럴만 검사 (주석·로그 태그 제외)
   # 주석 제외는 이 줄이 한다. 종전에는 '주석 제외'라고 적어 두고도 실제로는 걸러내지 않아,
@@ -112,6 +144,19 @@ violations() {
       echo "$lit" | grep -qE "${YO_RE}([^가-힣]|$)" && echo "TONE-YO|$f|$lit"
       has_spacing "$lit" && echo "SPACING|$f|$lit"
       echo "$lit" | grep -qE "$TERM_RE" && echo "TERM|$f|$lit"
+    done
+  done
+  # R4 — 대결 코드의 한국어 리터럴. **KT_USER_FACING과 별개로 경로로 연다.**
+  # 위 목록에 기대지 않는 이유는 이 파일이 이미 세 번 겪은 그것이다 — 등재 누락 = 검사 사각.
+  # 여기서 찾는 것이 우리말 한 낱말('매칭')뿐이라 그렇게 열 수 있다: 키·태그·로그처럼
+  # 사용자에게 안 나가는 리터럴과 겹칠 일이 없으므로, 대결 파일을 통째로 훑어도 거짓 경보가 없다
+  # (거짓 경보를 내는 검사는 곧 꺼진다 — R-47이 창을 좁히며 배운 것과 같은 기준을
+  # 반대 방향으로 적용한 자리다. 그쪽은 흔한 관용구라 좁혔고, 이쪽은 드문 낱말이라 넓혔다).
+  find app/src/main/java -name '*.kt' -path '*[Dd]uel*' | sort |
+  while read -r f; do
+    grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" | grep -oE '"[^"]*[가-힣][^"]*"' | sort -u |
+    while read -r lit; do
+      echo "$lit" | grep -qE "$DUEL_TERM_RE" && echo "DUEL-TERM|$f|$lit"
     done
   done
 }
