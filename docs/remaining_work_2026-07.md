@@ -201,7 +201,6 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | **정리 부채 일괄**(B-37·B-159·B-106 ⓐⓑ·B-30·B-109·B-111·B-48) | *(미병합 — 작업 브랜치)* | **열넷**(`StatsMainFragment`·`StatsViewModel`·`NovelAdapter`·`UniverseAdapter`·`NovelListFragment`·`UniverseListFragment`·`ImageManagerViewModel`·`CharacterViewModel`·`CharacterEditFragment`·`CharacterImageStripController`·`ImageViewerFragment`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`) + 레이아웃 셋 + 새 id 넷(`calculatedUnavailableNotice`·`btnSortFields`·`sortLockedNotice`) | `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼다. **로컬이 원리적으로 못 보는 것이 많은 판이다** — 프로브가 `ui/**`를 통째로 빼므로 화면 파일 열넷의 컴파일과 새 id 넷의 ViewBinding 대조는 CI가 처음 본다. `share/`·`data/maintenance/`도 프로브 범위 밖이라 B-106 ⓐ가 그쪽에 넣은 네 자리도 같다. |
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
@@ -210,6 +209,23 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 >
 >
+> **✅ 2026.08.10 — PR #256, run `31378928491`이 정리 부채 일괄을 덮었다. 목록이 다시 비었다.**
+> 이 슬라이스는 **화면 파일 열넷 + 레이아웃 셋 + 새 id 셋**이라 `CLAUDE.md` 4번의 *2~3개*를
+> 훌쩍 넘겼고, 사용자가 **"콜드 검토하고 필요하면 ci하고 병합까지해"**를 지시한 그 자리에서 열었다.
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 25초 · `Schema harnesses` ✓ ·
+> `Run unit tests` ✓ 2분01초 · `Build Debug APK` ✓ 1분15초 · `Upload Debug APK` ✓ (22MB).
+> Release 두 단계의 `skipped`는 조건부라 **정상**이다.
+> **이 실행이 증명한 것:** 로컬 프로브가 `ui/**`를 통째로 빼므로 **화면 파일 열넷의 컴파일과
+> 새 id 셋**(`calculatedUnavailableNotice`·`btnSortFields`·`sortLockedNotice`)**의 ViewBinding
+> 대조는 이 실행이 처음 본 것**이다. `share/`·`data/maintenance/`도 프로브 범위 밖이라
+> B-106 ⓐ가 그쪽에 넣은 네 자리도 같다.
+> **적어 둘 것 하나 — 이 판이 신설·확장한 검사 둘이 CI에서 실제로 돌았다**
+> (`이미지 경로 판단 단일 소스 검사 통과` · `복원 미리보기 정합 검사 통과`). 로컬에서만 돌던
+> 것이 워크플로의 `Static checks`에 자동으로 편입되는 것을 확인한 셈이다(그 단계가
+> `tools/check_*.sh`를 훑는다 — 새 검사를 워크플로에 등재할 일이 없다).
+> **그리고 CI가 못 본 것도 적어 둔다:** 콜드 검토가 잡은 🔴(재추첨 주기)은 **컴파일되는
+> 코드였다.** CI는 *컴파일되는가*를 볼 뿐 *언제 불리는가*는 보지 않는다.
+
 > **✅ 2026.08.09 — PR #254, run `31339959487`이 B-108을 덮었다. 목록이 다시 비었다.**
 > 이 슬라이스는 **화면 파일 셋**(`AiSettingsFragment`·`ImageManagerFragment`·`OrganizeFolderController`)에
 > **레이아웃 둘 + 새 id 하나**(`cooldownText`)라 `CLAUDE.md` 4번의 *2~3개*에 혼자 닿았고,
@@ -5375,8 +5391,13 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | ~~⑧~~ | ~~B-48~~ | ~~필드 관리 보기 정렬~~ | **✅** 실기기 **3-95** |
    > | **①** | — | **기존 대기열** | B-27②+B-38 · `매칭` 표1 (아래 ⑤가 전수다) |
    >
-   > **⏳ CI 미검증 — 이 판은 아직 초록을 못 받았다.** 화면 파일이 열넷이라
-   > `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼다. 2장의 **⏳ CI 미검증 목록**에 올려 두었다.
+   > **✅ CI 초록 · master 병합 완료** — PR **#256**, run `31378928491`.
+   > 화면 파일 열넷 + 레이아웃 셋 + 새 id 셋이라 `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼고,
+   > **⏳ 미검증 목록은 이 실행이 덮어 다시 비었다.** 배지가 아니라 단계를 봤다:
+   > `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분01초 ·
+   > `Build Debug APK` ✓ 1분15초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상).
+   > **이 판이 신설·확장한 검사 둘이 CI에서 실제로 돌았다** — `Static checks`가
+   > `tools/check_*.sh`를 훑으므로 워크플로에 따로 등재할 일이 없다.
    >
    > **② 이 묶음에서 배운 것 하나 — 등재된 개수는 거의 언제나 적게 세어져 있다.**
    > B-106 ⓐ는 정규화 여덟·봉쇄 아홉으로 등재됐는데 실측은 **일곱 자리가 더** 있었다
