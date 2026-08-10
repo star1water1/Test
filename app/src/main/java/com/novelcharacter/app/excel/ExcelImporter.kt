@@ -638,7 +638,8 @@ class ExcelImporter(context: Context) {
                                 return
                             }
                             val imageFile = File(extractDir, entry.name)
-                            if (!imageFile.canonicalPath.startsWith(extractDir.canonicalPath + File.separator)) {
+                            // zip-slip 방어 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
+                            if (!com.novelcharacter.app.util.ImagePathMatch.isInside(imageFile.path, extractDir)) {
                                 Log.w("ExcelImporter", "Skipping suspicious zip entry: ${entry.name}")
                                 continue
                             }

@@ -177,7 +177,7 @@ class SystemMaintenanceService(
         var orphanCount = 0
         val gson = Gson()
         val appDir = context.filesDir
-        val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
+        val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
 
         fun scan(label: String, imagePathsJson: String) {
             val paths: List<String> = try {
@@ -233,8 +233,13 @@ class SystemMaintenanceService(
             return OrphanCleanupResult(aborted = true)
         }
 
+        // 정규화 실패 경로를 버리지 않는다 (B-106 ⓐ) — **이 함수는 실제로 파일을 지운다.**
+        // 종전 `mapNotNull { getOrNull() }`은 실패한 경로를 보호 집합에서 떨어뜨렸고,
+        // 그러면 바로 아래 루프가 그 파일을 고아로 보고 삭제한다. 이 파일의 (2)·(1b)가
+        // *"보호 집합이 불완전하면 삭제를 중단한다"*를 두 번이나 세워 둔 자리라, 같은 취지다.
         val referenced = collect.paths
-            .mapNotNull { runCatching { java.io.File(it).canonicalPath }.getOrNull() }
+            .map { com.novelcharacter.app.util.ImagePathMatch.canonical(it) }
+            .filter { it.isNotEmpty() }
             .toSet()
         val trashHeld = trashStatus.paths
         // (1) 드래프트 이미지 포함
@@ -242,7 +247,8 @@ class SystemMaintenanceService(
         // (1b) 라이브러리(image_meta) 이미지 — 미배정이어도 사용자 자산이므로 절대 정리 대상이 아니다.
         //      조회 실패 시엔 보호 집합이 불완전하므로 (2)와 동일하게 삭제를 중단한다(fail-safe).
         val metaHeld = runCatching { db.imageMetaDao().getAllPaths() }.getOrNull()
-            ?.mapNotNull { runCatching { java.io.File(it).canonicalPath }.getOrNull() }
+            ?.map { com.novelcharacter.app.util.ImagePathMatch.canonical(it) }
+            ?.filter { it.isNotEmpty() }
             ?.toSet()
             ?: return OrphanCleanupResult(aborted = true)
         val keep = referenced + trashHeld + draftHeld + metaHeld
@@ -254,7 +260,7 @@ class SystemMaintenanceService(
         var skippedRecent = 0
         for (f in rootFiles) {
             if (!com.novelcharacter.app.util.StorageAnalyzer.isImageFile(f.name)) continue
-            val canonical = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
+            val canonical = com.novelcharacter.app.util.ImagePathMatch.canonical(f.absolutePath)
             if (canonical in keep) continue
             // (3) 최근 수정 파일 보호 (편집/임포트 in-flight)
             if (now - f.lastModified() < recentGuardMillis) { skippedRecent++; continue }

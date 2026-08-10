@@ -169,10 +169,12 @@ object ImageImportHelper {
         false
     }
 
-    /** [file]이 filesDir 하위(직속)인지 확인 — 경로 우회 방지. */
-    private fun isInsideFilesDir(context: Context, file: File): Boolean = runCatching {
-        file.canonicalPath.startsWith(context.filesDir.canonicalPath + File.separator)
-    }.getOrDefault(false)
+    /**
+     * [file]이 filesDir 하위(직속)인지 확인 — 경로 우회 방지.
+     * 판정은 [ImagePathMatch.isInside]가 든다 (B-106 ⓐ · R-39) — 실패하면 **막는다.**
+     */
+    private fun isInsideFilesDir(context: Context, file: File): Boolean =
+        ImagePathMatch.isInside(file.path, context.filesDir)
 
     /** Uri를 [maxBytes] 상한 내에서 바이트로 읽는다. 초과·오류 시 null. */
     private fun readBounded(context: Context, uri: Uri, maxBytes: Long): ByteArray? = try {

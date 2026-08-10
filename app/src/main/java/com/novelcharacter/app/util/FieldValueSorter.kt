@@ -43,14 +43,20 @@ object FieldValueSorter {
     }
 
     /**
-     * 문자열형 필드값 → 가나다 비교키(소문자 정규화). MULTI_TEXT는 토큰 중 사전순 최소값 기준.
-     * 빈 값은 null → 최후순.
+     * 문자열형 필드값 → 가나다 비교키(소문자 정규화).
+     * **여러 토큰을 담는 필드는 토큰 중 사전순 최소값**이 대표값이다. 빈 값은 null → 최후순.
+     *
+     * **쪼갤지 말지를 여기서 판단하지 않는다 (B-37).** 종전에는 `field.type == "MULTI_TEXT"`를
+     * 직접 견줘, **쉼표 목록 표시 형식의 TEXT가 `"검, 활"` 통문자열로 정렬**됐다 — 같은 값이
+     * 통계에서는 두 토큰인데 목록 정렬에서는 하나였다(S-18이 순위에서 없앤 하드코딩의 쌍둥이).
+     * 이제 [FieldValueTokenizer]가 그 판단의 단일 소스이므로, 다중 토큰 타입이 늘어도
+     * 이 함수는 따라 움직인다.
+     *
+     * **대표값 규칙은 바뀌지 않았다** — `minOrNull()`은 종전 `MULTI_TEXT`가 쓰던 그대로이고
+     * (KDoc도 *"토큰 중 사전순 최소값"*이라 적어 두었다), 확정 7-5가 그것을 나머지 타입으로
+     * 넓히기로 정했다. 그래서 **기존 `MULTI_TEXT` 필드의 정렬 결과는 하나도 안 바뀐다** —
+     * 기각된 쪽(맨 앞 토큰)이었다면 전부 조용히 달라졌을 자리다.
      */
-    fun textValue(field: FieldDefinition, rawValue: String): String? {
-        val v = when (field.type) {
-            "MULTI_TEXT" -> rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }.minOrNull()
-            else -> rawValue.trim().takeIf { it.isNotEmpty() }
-        }
-        return v?.lowercase()
-    }
+    fun textValue(field: FieldDefinition, rawValue: String): String? =
+        FieldValueTokenizer.tokenize(field, rawValue).minOrNull()?.lowercase()
 }

@@ -1927,8 +1927,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      */
     suspend fun getRecommendationCandidates(): RecommendationData = withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            // 경로 정규화의 단일 소스 (B-106 ⓐ) — 실패 시 원본을 들고 간다.
             fun canonical(p: String): String =
-                try { java.io.File(p).canonicalPath } catch (_: Exception) { p }
+                com.novelcharacter.app.util.ImagePathMatch.canonical(p)
 
             val gson = com.google.gson.Gson()
             val owned = HashSet<String>()
@@ -1986,8 +1987,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      */
     suspend fun getLibraryImages(): LibraryPickerData = withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            // 경로 정규화의 단일 소스 (B-106 ⓐ) — 실패 시 원본을 들고 간다.
             fun canonical(p: String): String =
-                try { java.io.File(p).canonicalPath } catch (_: Exception) { p }
+                com.novelcharacter.app.util.ImagePathMatch.canonical(p)
 
             val gson = com.google.gson.Gson()
             // canonical 경로 → (소유자 이름, 종류). 한 이미지에 여럿이 붙을 수 있다.

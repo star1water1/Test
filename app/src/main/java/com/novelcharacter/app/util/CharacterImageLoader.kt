@@ -37,8 +37,9 @@ object CharacterImageLoader {
      */
     fun decodeThumbnail(path: String, filesDir: File, reqPx: Int = 128): Bitmap? = runCatching {
         val file = File(path)
-        // canonicalPath는 IOException을 던질 수 있으므로 전체를 runCatching으로 감싼다(메인스레드 크래시 방지).
-        if (!file.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)) return@runCatching null
+        // 봉쇄 판정은 [ImagePathMatch.isInside]가 든다 (B-106 ⓐ · R-39) — 던지지 않고,
+        // 정규화가 실패하면 **막는다**(모르면 통과가 곧 유출인 축이다).
+        if (!ImagePathMatch.isInside(path, filesDir)) return@runCatching null
         if (!file.exists()) return@runCatching null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)

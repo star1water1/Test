@@ -54,7 +54,7 @@ object ImageZipHelper {
         }
 
         // 담을 수 있는 것 / 파일 없음 / 앱 저장소 밖 — 판정은 ImagePathClassifier 단일 소스
-        val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
+        val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
         val classified = ImagePathClassifier.classify(imagePathSet, appDirCanonical)
         val existingImages = classified.includable
 
@@ -165,7 +165,7 @@ object ImageZipHelper {
                 addAll(collectAllImagePaths(db, gson))
                 addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
             }
-            val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
+            val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
             ImagePathClassifier.classify(imagePathSet, appDirCanonical).includable
                 .sumOf { runCatching { File(it).length() }.getOrDefault(0L) }
         }.getOrDefault(0L)

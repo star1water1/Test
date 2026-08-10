@@ -48,13 +48,7 @@ object AiImagePreparer {
      *   *"읽지 못했습니다"*라는 **틀린 사유**를 말하고, 사용자는 멀쩡히 있는 파일을 찾아
      *   헤맨다(`ImageBatchTagSuggester.BatchFailKind.RESPONSE_TRUNCATED`가 세운 선례).
      */
-    data class Prepared(val images: List<AiImage>, val skipped: Int, val blocked: Int = 0) {
-        val isEmpty: Boolean get() = images.isEmpty()
-
-        companion object {
-            val NONE = Prepared(emptyList(), 0)
-        }
-    }
+    data class Prepared(val images: List<AiImage>, val skipped: Int, val blocked: Int = 0)
 
     /**
      * 경로와 **짝지어** 돌려준 결과 (B-121).

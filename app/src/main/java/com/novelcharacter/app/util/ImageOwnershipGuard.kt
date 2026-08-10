@@ -22,12 +22,16 @@ object ImageOwnershipGuard {
     /**
      * 보호 집합 조합(순수 함수) — 모든 입력을 canonical로 정규화해 합친다.
      * canonical 변환 실패 경로는 원문 그대로 포함(보수적 — 보호가 삭제보다 안전).
+     *
+     * **그 처분은 이제 [ImagePathMatch.canonical]이 든다 (B-106 ⓐ).** 종전에는 같은 한 줄이
+     * 이 파일에만 셋, 저장소 전체로는 여덟 벌 복붙돼 있었고 **자리마다 실패 처분이 같지
+     * 않았다** — 여기는 원문을 지켰지만 드래프트·저장 공간 쪽은 조용히 버렸다.
      */
     fun computeProtected(vararg pathSets: Collection<String>): Set<String> {
         val result = HashSet<String>()
         for (set in pathSets) {
             for (p in set) {
-                val canon = runCatching { File(p).canonicalPath }.getOrNull() ?: p
+                val canon = ImagePathMatch.canonical(p)
                 result.add(canon)
             }
         }
@@ -106,7 +110,7 @@ object ImageOwnershipGuard {
     fun deleteUnprotectedIn(candidates: Collection<String>, protectedSet: Set<String>): Int {
         var deleted = 0
         for (p in candidates) {
-            val canon = runCatching { File(p).canonicalPath }.getOrNull() ?: p
+            val canon = ImagePathMatch.canonical(p)
             if (canon in protectedSet) continue
             val f = File(p)
             if (runCatching { f.exists() && f.delete() }.getOrDefault(false)) deleted++
@@ -124,7 +128,7 @@ object ImageOwnershipGuard {
         var adopted = 0
         val now = System.currentTimeMillis()
         for (p in candidates) {
-            val canon = runCatching { File(p).canonicalPath }.getOrNull() ?: p
+            val canon = ImagePathMatch.canonical(p)
             if (canon in protectedSet) continue          // 아직 참조·보류·meta 보호 중 — 입양 불필요
             if (!File(p).exists()) continue
             runCatching { db.imageMetaDao().adopt(p, now) }.onSuccess { adopted++ }

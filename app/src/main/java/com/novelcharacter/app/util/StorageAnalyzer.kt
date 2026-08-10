@@ -54,14 +54,19 @@ object StorageAnalyzer {
 
         // 참조 집합: DB(캐릭터/세계관/작품) + 휴지통 보류 + 미저장 편집 드래프트 이미지.
         // 드래프트(B-6)는 DB 미커밋이지만 사용자 작업물이므로 '고아'로 오분류하지 않는다.
+        // 정규화 실패 경로를 버리지 않는다 (B-106 ⓐ) — 종전 `mapNotNull { getOrNull() }`은
+        // **참조된 이미지를 참조 집합에서 떨어뜨려 곧바로 '고아'로 분류**했다. 바로 위 주석이
+        // 막겠다고 적어 둔 그 오분류이며, 화면에는 그저 정리 대상 숫자로만 보인다.
         val referencedPaths = (ImageZipHelper.collectAllImagePaths(db, gson) +
             com.novelcharacter.app.util.CharacterDraftPrefs.collectAllDraftImagePaths(context))
-            .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
+            .map { ImagePathMatch.canonical(it) }
+            .filter { it.isNotEmpty() }
             .toSet()
         val trashHeldPaths = collectTrashHeldPaths(db, gson)  // suspend — DB 접근
         // 라이브러리(image_meta) 경로 — 미배정 이미지를 고아로 오분류하지 않기 위한 분류 집합
         val libraryPaths = runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList())
-            .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
+            .map { ImagePathMatch.canonical(it) }
+            .filter { it.isNotEmpty() }
             .toSet()
 
         // filesDir 루트 파일 순회 (하위 디렉토리는 별도 계산)
@@ -75,7 +80,9 @@ object StorageAnalyzer {
         var otherBytes = 0L; var otherCount = 0
 
         for (f in rootFiles) {
-            val canonical = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
+            // 훑는 쪽은 실제 파일이라 실패가 드물지만, 실패 처분은 위 참조 집합과 같아야 한다
+            // (한쪽만 정규화되면 같은 파일이 서로 다른 키가 되어 그대로 고아로 떨어진다).
+            val canonical = ImagePathMatch.canonical(f.absolutePath)
             when {
                 // 재압축 임시 산출물은 커밋 전 과도기 파일 — 고아(orphan)로 오분류하지 않는다(관리 탭 통계와 일치).
                 f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER) -> { otherBytes += f.length(); otherCount++ }
@@ -151,7 +158,7 @@ object StorageAnalyzer {
             }.getOrNull()
             if (paths == null) { anyFailed = true; continue }
             paths.filterNotNull().forEach { p ->
-                runCatching { File(p).canonicalPath }.getOrNull()?.let { result.add(it) }
+                ImagePathMatch.canonical(p).takeIf { it.isNotEmpty() }?.let { result.add(it) }
             }
         }
         return ImageZipHelper.CollectResult(result, anyFailed)

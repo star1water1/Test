@@ -102,16 +102,10 @@ class ImageViewerFragment : Fragment() {
         } catch (e: Exception) {
             emptyList()
         }
-        // Filter out paths outside app directory to prevent path traversal
-        val dir = appDir
-        imagePaths = if (dir != null) {
-            rawPaths.filter { path ->
-                try {
-                    java.io.File(path).canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)
-                } catch (_: Exception) { false }
-            }
-        } else {
-            emptyList()
+        // 앱 디렉터리 밖 경로를 걸러 경로 우회를 막는다 — 판정은 [ImagePathMatch.isInside]
+        // (B-106 ⓐ · R-39). `dir`이 null이면 그 함수가 전부 false로 접으므로 빈 목록이 된다.
+        imagePaths = rawPaths.filter {
+            com.novelcharacter.app.util.ImagePathMatch.isInside(it, appDir)
         }
 
         if (imagePaths.isEmpty()) {
@@ -178,9 +172,7 @@ class ImageViewerFragment : Fragment() {
 
     private fun decodeBitmap(path: String): android.graphics.Bitmap? {
         return try {
-            val file = java.io.File(path)
-            val dir = appDir ?: return null
-            if (!file.canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)) return null
+            if (!com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir)) return null
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
             var inSampleSize = 1
