@@ -210,8 +210,10 @@ else
       fail=1
     fi
   done
+  # 이름 뒤에 글자가 더 붙은 것은 다른 이름이다 — 접두 일치로 두면 `aiTagResultX`처럼
+  # **이름만 바꾼 위반이 그대로 통과한다**(⑧의 자기 시험에서 실제로 새 나가 여기까지 조였다).
   for holder in aiTagResult folderTagResult; do
-    if ! grep -q "val $holder" "$VM"; then
+    if ! grep -qE "val $holder[^A-Za-z0-9_]" "$VM"; then
       echo "  ✗ 유료 응답을 보관하는 자리가 없습니다: $VM ($holder)"
       fail=1
     fi
@@ -358,12 +360,92 @@ if [ -f "$NAME_SHEET" ] && [ -f "$NAME_VM" ] && [ -f "$NAME_HOST" ]; then
   fi
 fi
 
+# ── ⑧ 값 라이브러리 AI 정리도 같은 부류다 — R-38이 이름 붙인 그것의 **셋째** (B-155) ──
+# 이 기능은 `docs/ai_integration.md`가 **'첫 실데이터 AI 기능'**으로 적어 둔 자리다 —
+# 청킹·환각 검증·부분 실패 동반 반환의 공용 자산이 여기서 나왔다. 그런데 보존은 셋 중
+# 가장 나빴다: 실행이 `viewLifecycleOwner.lifecycleScope`에 있어 회전이 **결제 중인 요청을
+# 끊었고**, 체크리스트는 맨 `AlertDialog`라 되살릴 자리조차 없었다(시트판보다 나쁘다).
+# **본보기가 위반한 채로 서 있으면 다음 AI 검토 화면이 그것을 베낀다** — 그것이 이 항목을
+# 규약이 아니라 검사로 다는 이유다(⑦과 같은 근거).
+ORG_SHEET="$SRC/ui/fieldlibrary/AiOrganizeReviewSheet.kt"
+ORG_VM="$SRC/ui/fieldlibrary/FieldValueLibraryViewModel.kt"
+ORG_HOST="$SRC/ui/fieldlibrary/AiOrganizeSheet.kt"
+for f in "$ORG_SHEET" "$ORG_VM" "$ORG_HOST"; do
+  if [ ! -f "$f" ]; then
+    echo "  ✗ 등재된 파일이 없습니다: $f (이름이 바뀌었으면 이 검사를 함께 고칠 것)"
+    fail=1
+  fi
+done
+if [ -f "$ORG_SHEET" ] && [ -f "$ORG_VM" ] && [ -f "$ORG_HOST" ]; then
+  if ! grep -q 'override fun onSaveInstanceState(' "$ORG_SHEET"; then
+    echo "  ✗ 검토 상태가 회전을 넘지 못합니다: $ORG_SHEET"
+    echo "      → 어느 칸을 켰는지는 시트밖에 모른다. 제안만 되살리면 골라 켠 일이 되돌아간다(B-136)."
+    fail=1
+  fi
+  # 주석은 빼고 본다 — 이 저장소는 *왜 그러지 않는가*를 주석으로 남기는 관행이 있다.
+  for view_file in "$ORG_SHEET" "$ORG_HOST"; do
+    if grep -vE '^[[:space:]]*(//|\*|/\*)' "$view_file" | grep -q 'FieldLibraryAiOrganizer('; then
+      echo "  ✗ 유료 응답의 실행 엔진이 뷰에 있습니다: $view_file"
+      echo "      → 정리기 호출은 ViewModel(runAiOrganize)만 한다. 뷰가 직접 부르면"
+      echo "        회전이 결제 중인 요청을 끊는다(B-155가 난 경로 그대로)."
+      fail=1
+    fi
+  done
+  # **선언 타입까지 본다.** 접두만 맞으면 통과하는 판이었는데, 이 항목의 자기 시험에서
+  # `aiOrganizeResultX`로 이름만 바꾼 위반이 그대로 새 나갔다 — ⑦의 `val pool`이 배운 것과
+  # 같은 구멍이다(그쪽도 그래서 `: LiveData`까지 요구한다).
+  if ! grep -qE 'val aiOrganizeResult *: *MutableLiveData' "$ORG_VM"; then
+    echo "  ✗ 유료 응답을 보관하는 자리가 없습니다: $ORG_VM (val aiOrganizeResult: MutableLiveData)"
+    echo "      → 지역 변수나 이름만 닮은 것은 보관이 아니다. 선언 타입까지 요구하는 것은"
+    echo "        접두 일치가 실제로 위반을 통과시킨 적이 있기 때문이다."
+    fail=1
+  fi
+  if ! grep -q 'viewModelScope.launch' "$ORG_VM"; then
+    echo "  ✗ 실행이 ViewModel 스코프에 있지 않습니다: $ORG_VM"
+    fail=1
+  fi
+  if ! grep -q 'findFragmentByTag(AiOrganizeReviewSheet.TAG)' "$ORG_HOST"; then
+    echo "  ✗ 재생성된 창에 콜백을 다시 붙이지 않습니다: $ORG_HOST"
+    echo "      → 제안은 ViewModel이 들고 회전을 넘지만 **람다는 넘지 않는다.** 다시 붙이지"
+    echo "        않으면 [적용]이 눌리는데 아무 일도 안 나는 버튼이 된다(R-38)."
+    fail=1
+  fi
+  # 적용 실패에 되살리는가 — 여기는 **되살리는** 대신 **성공 전에는 비우지 않는** 형태다.
+  # 두 형태가 지키는 것은 같다: 실패를 알았을 때 다시 적용할 재료가 남아 있는가.
+  # 그래서 보는 것은 *catch 뒤에 비우는 줄이 없는가*이고, 그것이 이 형태의 유일한 실패 지점이다.
+  org_apply=$(indented_block "$ORG_VM" 'fun +applyAiOrganize')
+  if [ -z "$org_apply" ]; then
+    echo "  ✗ 적용 함수를 찾지 못했습니다: $ORG_VM (applyAiOrganize)"
+    fail=1
+  elif ! printf '%s\n' "$org_apply" | grep -q 'clearAiOrganizeResult()'; then
+    echo "  ✗ 소비가 ViewModel에 없습니다: $ORG_VM (applyAiOrganize)"
+    echo "      → 성공했을 때 비우는 일까지 결과를 아는 곳이 져야 한다. 뷰가 비우면"
+    echo "        적용 중 회전에 그 코드 자체가 사라진다(B-163과 같은 근거)."
+    fail=1
+  elif printf '%s\n' "$org_apply" | awk '/catch[[:space:]]*\(/ { seen = 1 } seen && /clearAiOrganizeResult\(\)/ { found = 1 } END { exit !found }'; then
+    echo "  ✗ 적용이 실패해도 유료 응답을 비웁니다: $ORG_VM (applyAiOrganize)"
+    echo "      → 실패 경로에서 비우면 되돌아가 다시 적용할 재료가 없고, 다시 얻으려면"
+    echo "        재결제다(B-163)."
+    fail=1
+  fi
+  # 호출측이 누른 자리에서 비우면 위의 보존이 통째로 무의미해진다(⑤의 뷰 쪽과 같은 자리).
+  org_apply_wiring=$(block_after "$ORG_HOST" 'onApply[[:space:]]*=')
+  if [ -z "$org_apply_wiring" ]; then
+    echo "  ✗ 적용 배선을 찾지 못했습니다: $ORG_HOST (onApply =)"
+    fail=1
+  elif printf '%s\n' "$org_apply_wiring" | grep -q 'clearAiOrganizeResult()'; then
+    echo "  ✗ 누른 시점에 유료 응답을 비웁니다: $ORG_HOST"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
   echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"
   echo "  ✓ 빈 결과로 끝난 유료 실행도 말한다 (B-144)"
   echo "  ✓ 이름 추천 시트도 같은 셋을 지킨다 (B-123)"
+  echo "  ✓ 값 라이브러리 AI 정리도 같은 셋을 지킨다 (B-155)"
   echo ""
   echo "AI 검토 시트 유료 응답 보존·고지 검사 통과"
   exit 0
