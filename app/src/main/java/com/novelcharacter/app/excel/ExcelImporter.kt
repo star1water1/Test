@@ -638,7 +638,8 @@ class ExcelImporter(context: Context) {
                                 return
                             }
                             val imageFile = File(extractDir, entry.name)
-                            if (!imageFile.canonicalPath.startsWith(extractDir.canonicalPath + File.separator)) {
+                            // zip-slip 방어 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
+                            if (!com.novelcharacter.app.util.ImagePathMatch.isInside(imageFile.path, extractDir)) {
                                 Log.w("ExcelImporter", "Skipping suspicious zip entry: ${entry.name}")
                                 continue
                             }
@@ -1609,6 +1610,15 @@ class ExcelImporter(context: Context) {
             parts.add("⚠ ${result.warnings.size}건 경고")
         }
 
+        // **'바뀐 것 없음'과 '데이터 없음'을 가른다 (B-111).** `updated*`가 *실제로 바뀐 행*만
+        // 세게 되면서, 아무것도 고치지 않은 파일을 다시 넣으면 모든 수가 0이 된다. 그때
+        // *"데이터 없음"*이라 말하면 **파일에는 데이터가 가득했는데 가져오기가 실패한 것처럼
+        // 읽힌다** — 고치려던 거짓말을 더 나쁜 거짓말로 바꾸는 셈이다.
+        if (parts.isEmpty() && result.unchangedRows > 0) {
+            return r.getString(
+                com.novelcharacter.app.R.string.import_result_unchanged, result.unchangedRows
+            )
+        }
         return if (parts.isEmpty()) r.getString(com.novelcharacter.app.R.string.import_result_empty)
         else r.getString(com.novelcharacter.app.R.string.import_result_complete, parts.joinToString(", "))
     }

@@ -805,8 +805,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         })
     }
 
+    // 경로 정규화의 단일 소스 (B-106 ⓐ) — 실패 시 원본을 들고 간다.
     private fun canonicalOrSelf(path: String): String =
-        try { java.io.File(path).canonicalPath } catch (_: Exception) { path }
+        com.novelcharacter.app.util.ImagePathMatch.canonical(path)
 
     private fun refreshRecommendations() {
         if (!recFetched || _binding == null) return

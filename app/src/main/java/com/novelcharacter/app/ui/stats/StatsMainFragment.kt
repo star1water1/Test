@@ -450,6 +450,19 @@ class StatsMainFragment : Fragment() {
             binding.spinnerNovelFilter.setSelection(restoredPos, false)
         }
 
+        // 계산 필드 산출 불가 고지 (B-30) — 값을 지어내지 않는 대신 **왜 없는지**를 말한다.
+        // 0이면 감춘다: 이 스코프에 계산 필드가 애초에 없으면 할 말이 없다.
+        viewModel.calculatedUnavailable.observe(viewLifecycleOwner) { count ->
+            binding.calculatedUnavailableNotice.apply {
+                if (count > 0) {
+                    text = getString(R.string.stats_calculated_unavailable, count)
+                    visibility = View.VISIBLE
+                } else {
+                    visibility = View.GONE
+                }
+            }
+        }
+
         viewModel.summary.observe(viewLifecycleOwner) { summary ->
             binding.summaryCharCount.text = summary.totalCharacters.toString()
             binding.summaryEventCount.text = summary.totalEvents.toString()

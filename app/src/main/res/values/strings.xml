@@ -391,6 +391,14 @@
     <string name="relationship_label">관계</string>
     <!-- 캐릭터 목록의 reorder_needs_manual_sort와 형제 문구 — 같은 사정(정렬된 부분집합에 순서를 찍으면 손상)을 같은 말로 알린다. -->
     <string name="relationship_sort_drag_locked">정렬을 \'기본 (수동 순서)\'로 두어야 드래그로 순서를 바꿀 수 있습니다</string>
+    <!-- B-48: 필드 관리의 보기 정렬. 위 둘과 형제 문구지만 **잠긴 사유가 한 겹 더 있다** —
+         필드의 수동 순서는 이 목록만의 것이 아니라 편집 폼의 칸 순서이자 엑셀 열 순서다. -->
+    <string name="field_sort_view">보기 정렬</string>
+    <string name="field_sort_manual">기본 (수동 순서)</string>
+    <string name="field_sort_name">이름순</string>
+    <string name="field_sort_type">종류순</string>
+    <string name="field_sort_group">그룹순</string>
+    <string name="field_sort_drag_locked">정렬을 \'기본 (수동 순서)\'로 두어야 드래그로 순서를 바꿀 수 있습니다. 이 순서는 편집 폼의 칸 순서이자 엑셀 열 순서입니다.</string>
     <string name="target_character">대상 캐릭터</string>
     <string name="relationship_type">관계 유형</string>
     <string name="description_optional">설명 (선택)</string>
@@ -1105,6 +1113,8 @@
     <string name="stats_origin_distribution">출신 분포</string>
     <string name="stats_no_another_name">별명 미작성</string>
     <string name="stats_no_novel_assigned">작품 미배정</string>
+    <!-- B-30: 미배정 스코프에서 계산 필드는 산출할 수 없다. 값을 지어내지 않고 사유를 말한다. -->
+    <string name="stats_calculated_unavailable">계산 필드 %d개는 이 목록에서 산출하지 않습니다. 계산식은 세계관에 속하는데, 작품이 없으면 어느 세계관의 식을 쓸지 정할 수 없습니다. 작품을 배정하면 나타납니다.</string>
     <string name="stats_duplicate_tags">중복 태그</string>
     <string name="stats_individual_detail">개별 캐릭터 상세</string>
     <string name="stats_select_character">캐릭터 선택</string>
@@ -1502,6 +1512,9 @@
     <string name="import_result_new_codes">새 코드 %d건 발급</string>
     <string name="import_result_complete">가져오기 완료: %s</string>
     <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
+    <!-- B-111: 찾아 맞췄으나 고칠 것이 없던 경우. '데이터 없음'과 반드시 갈라야 한다 —
+         왕복 멱등 확인에서 그 둘을 섞으면 가져오기가 실패한 것처럼 읽힌다. -->
+    <string name="import_result_unchanged">가져오기 완료: 바뀐 것 없음 (%d행이 파일과 이미 같습니다)</string>
     <string name="import_result_title">가져오기 결과</string>
     <string name="import_result_details">상세 보기</string>
 

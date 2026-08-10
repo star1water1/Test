@@ -90,6 +90,7 @@ $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/FieldValueTokenizer.kt
+$MAIN/util/FieldValueSorter.kt
 $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
 $MAIN/util/NumericBinning.kt
@@ -307,6 +308,7 @@ $TEST/excel/DuelSheetSpecTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
+$TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt
 $TEST/util/FormulaEvaluatorTest.kt
 $TEST/util/FormulaValidatorTest.kt

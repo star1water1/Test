@@ -16,6 +16,7 @@ import com.novelcharacter.app.util.GsonTypes
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.ImageLinkResolver
+import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.withImagePaths
@@ -395,7 +396,7 @@ class ImageManagerViewModel(
         val byPath = LinkedHashMap<String, com.novelcharacter.app.util.DuelImagePrune.Candidate>()
         for (perCharacter in scan.byCharacter.values) {
             for (candidate in com.novelcharacter.app.util.DuelImagePrune.candidates(perCharacter.scores, options)) {
-                byPath[com.novelcharacter.app.util.ImagePathMatch.canonical(candidate.path)] = candidate
+                byPath[ImagePathMatch.canonical(candidate.path)] = candidate
             }
         }
         return PruneState.Ready(byPath, scan.basisUniverses, scan.byCharacter.size)
@@ -425,7 +426,10 @@ class ImageManagerViewModel(
         val ownerMap = HashMap<String, MutableList<Owner>>()
         fun addOwners(imagePathsJson: String, type: OwnerType, name: String, id: Long) {
             for (p in parsePaths(imagePathsJson)) {
-                val canon = runCatching { File(p).canonicalPath }.getOrNull() ?: continue
+                // 정규화 실패를 건너뛰지 않는다 (B-106 ⓐ) — 건너뛰면 **참조가 있는 이미지가
+                // 소유자 0으로 보이고**, 이 화면은 그것을 곧 '미배정'으로 그린다.
+                val canon = ImagePathMatch.canonical(p)
+                if (canon.isEmpty()) continue
                 ownerMap.getOrPut(canon) { mutableListOf() }.add(Owner(type, name, id))
             }
         }
@@ -436,7 +440,7 @@ class ImageManagerViewModel(
         val nameByCode = HashMap<String, String>()
         for (c in db.characterDao().getAllCharactersList()) {
             addOwners(c.imagePaths, OwnerType.CHARACTER, c.name, c.id)
-            val rep = com.novelcharacter.app.util.ImagePathMatch.canonical(c.representativeImagePath)
+            val rep = ImagePathMatch.canonical(c.representativeImagePath)
             if (rep.isNotEmpty()) representativeMap.getOrPut(rep) { mutableListOf() }.add(c.name)
             nameByCode[c.code] = c.name
         }
@@ -456,7 +460,7 @@ class ImageManagerViewModel(
         val metaMap = HashMap<String, MetaInfo>()
         for (m in metas) {
             val exists = runCatching { File(m.path).exists() }.getOrDefault(false)
-            val canon = runCatching { File(m.path).canonicalPath }.getOrNull() ?: m.path
+            val canon = ImagePathMatch.canonical(m.path)
             if (!exists) {
                 if (now - m.importedAt > 24L * 60 * 60 * 1000 && !ownerMap.containsKey(canon)) {
                     staleMetaPaths.add(m.path)
@@ -485,7 +489,7 @@ class ImageManagerViewModel(
         var unassignedCount = 0
         var detachedCount = 0
         for (f in files) {
-            val canon = runCatching { f.canonicalPath }.getOrNull() ?: f.absolutePath
+            val canon = ImagePathMatch.canonical(f.absolutePath)
             val owners = ownerMap[canon] ?: emptyList()
             val meta = metaMap[canon]
             // 우선순위: 참조 > 휴지통 보류 > 라이브러리 미배정 > 고아
@@ -560,7 +564,7 @@ class ImageManagerViewModel(
 
     private fun removePath(json: String, path: String, canon: String): String {
         val kept = parsePaths(json).filter {
-            val c = runCatching { File(it).canonicalPath }.getOrNull() ?: it
+            val c = ImagePathMatch.canonical(it)
             it != path && c != canon
         }
         return gson.toJson(kept)
@@ -761,15 +765,14 @@ class ImageManagerViewModel(
             val temp = File(plan.tempPath)
             if (!temp.exists()) continue
             val finalFile = File(filesDir, "${plan.prefix}_${UUID.randomUUID()}.jpg")
-            val guardOk = runCatching {
-                finalFile.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)
-            }.getOrDefault(false)
+            // 봉쇄 판정의 단일 소스 (B-106 ⓐ · R-39) — 실패하면 막는다.
+            val guardOk = ImagePathMatch.isInside(finalFile.path, filesDir)
             if (!guardOk) { temp.delete(); continue }
             val moved = temp.renameTo(finalFile) || runCatching {
                 finalFile.writeBytes(temp.readBytes()); temp.delete(); true
             }.getOrDefault(false)
             if (!moved) { temp.delete(); continue }
-            val oldCanon = runCatching { File(plan.item.path).canonicalPath }.getOrNull() ?: plan.item.path
+            val oldCanon = ImagePathMatch.canonical(plan.item.path)
             committed.add(Triple(plan, finalFile.absolutePath, oldCanon))
         }
 
@@ -876,7 +879,7 @@ class ImageManagerViewModel(
             }.getOrDefault(false))
             if (!restored) { allOk = false; continue }
             // 2) DB 경로를 재압축본 → 원본으로 되돌림(트랜잭션) 후 3) 재압축 산출물 삭제
-            val finalCanon = runCatching { File(e.finalPath).canonicalPath }.getOrNull() ?: e.finalPath
+            val finalCanon = ImagePathMatch.canonical(e.finalPath)
             runCatching {
                 db.withTransaction {
                     for (owner in e.owners) {
@@ -1165,13 +1168,13 @@ class ImageManagerViewModel(
         onEach: () -> Unit = {}
     ): Triple<String, Int, Int> {
         val current = parsePaths(json)
-        val canonSet = current.mapTo(HashSet()) { runCatching { File(it).canonicalPath }.getOrNull() ?: it }
+        val canonSet = current.mapTo(HashSet()) { ImagePathMatch.canonical(it) }
         val result = current.toMutableList()
         var added = 0
         var skipped = 0
         for (p in adds) {
             onEach()
-            val c = runCatching { File(p).canonicalPath }.getOrNull() ?: p
+            val c = ImagePathMatch.canonical(p)
             if (c in canonSet) { skipped++ } else { result.add(p); canonSet.add(c); added++ }
         }
         return Triple(gson.toJson(result), added, skipped)
@@ -1210,7 +1213,7 @@ class ImageManagerViewModel(
                             val item = byPath[path] ?: continue
                             val targets = ownerFilter?.filter { it in item.owners } ?: item.owners
                             if (targets.isEmpty()) continue
-                            val canon = runCatching { File(path).canonicalPath }.getOrNull() ?: path
+                            val canon = ImagePathMatch.canonical(path)
                             for (owner in targets) {
                                 when (owner.type) {
                                     OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
@@ -1993,7 +1996,7 @@ class ImageManagerViewModel(
     /** imagePaths JSON에서 [oldPath]/[oldCanon]에 해당하는 항목을 [newPath]로 교체해 재직렬화. */
     private fun replacePath(json: String, oldPath: String, oldCanon: String, newPath: String): String {
         val updated = parsePaths(json).map {
-            val c = runCatching { File(it).canonicalPath }.getOrNull() ?: it
+            val c = ImagePathMatch.canonical(it)
             if (it == oldPath || c == oldCanon) newPath else it
         }
         return gson.toJson(updated)

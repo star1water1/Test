@@ -1282,6 +1282,10 @@ class SettingsFragment : Fragment() {
                 // graph_prefs→graph_ui_state, universe_list_state→character_list_ui)
                 withContext(Dispatchers.IO) {
                     listOf(
+                        // **`image_index_prefs`는 이제 쓰는 코드가 없다 (B-106 ⓑ)** — 작품·세계관
+                        // 카드도 시드 방식으로 옮겨 가며 저장소가 사라졌다. **그래도 목록에 남긴다:**
+                        // 옛 버전에서 올라온 기기에는 그 파일이 그대로 있고, 지우는 경로가 여기뿐이다.
+                        // 쓰는 코드가 없다는 이유로 이 줄을 걷어내면 **그 찌꺼기가 영영 남는다.**
                         "image_index_prefs", "timeline_ui_state", "stats_prefs",
                         "supplement_criteria", "supplement_ui_state", "search_ui_state",
                         "namebank_ui_state", "graph_ui_state", "character_list_ui",

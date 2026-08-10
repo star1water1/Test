@@ -2,6 +2,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -62,7 +63,7 @@
         android:paddingEnd="12dp"
         app:selectionRequired="true"
         app:singleSelection="true"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/btnSortFields"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/toolbar">
 
@@ -90,6 +91,39 @@
 
     </com.google.android.material.chip.ChipGroup>
 
+    <!-- B-48: 보기 정렬. 대상 칩과 한 줄에 둔다 — 둘 다 "무엇을 어떻게 보는가"이고,
+         정렬이 걸리면 바로 밑의 잠금 안내가 이어져 사유가 한자리에서 읽힌다. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSortFields"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:minWidth="0dp"
+        android:text="@string/field_sort_view"
+        android:contentDescription="@string/field_sort_view"
+        app:layout_constraintBottom_toBottomOf="@id/entityTypeChipGroup"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/entityTypeChipGroup" />
+
+    <!-- 잠긴 사유는 화면에 적는다(B-85 선례 · 확정 7-7) — 드래그가 안 먹는 것을
+         고장으로 읽지 않게 한다. 기본 정렬에서는 숨는다. -->
+    <TextView
+        android:id="@+id/sortLockedNotice"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        android:text="@string/field_sort_drag_locked"
+        android:textColor="@color/text_secondary"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/entityTypeChipGroup"
+        tools:visibility="visible" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/fieldRecyclerView"
         android:layout_width="0dp"
@@ -102,7 +136,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/entityTypeChipGroup" />
+        app:layout_constraintTop_toBottomOf="@id/sortLockedNotice" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabAddField"

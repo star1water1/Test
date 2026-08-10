@@ -48,8 +48,8 @@ object CharacterImageAutoLinker {
     suspend fun resync(db: AppDatabase): ResyncResult = withContext(Dispatchers.IO) {
         val gson = Gson()
 
-        fun canonical(p: String): String =
-            runCatching { File(p).canonicalPath }.getOrNull() ?: p
+        // 경로 정규화의 단일 소스 (B-106 ⓐ) — 실패 시 원본을 들고 간다.
+        fun canonical(p: String): String = ImagePathMatch.canonical(p)
 
         fun parsePaths(json: String): List<String> {
             if (json.isBlank() || json == "[]") return emptyList()

@@ -5,15 +5,21 @@ import java.io.File
 /**
  * 이미지 **경로 대조의 단일 소스** (순수 로직 — JVM 테스트로 검증).
  *
- * "이 경로와 저 경로가 같은 파일인가"를 판정한다. 지금까지 이 판단은
- * `runCatching { File(p).canonicalPath }.getOrNull() ?: p`라는 한 줄로
- * **여덟 곳에 복붙**돼 있었고(`ImageOwnershipGuard`·`CharacterImageAutoLinker`·
- * `StorageAnalyzer`·`OrganizeFolderService`·`ImageManagerViewModel`·`CharacterDraftPrefs`),
- * 실패 처분(예외 시 원본 반환)이 자리마다 같은지 아무도 보증하지 않았다.
+ * "이 경로와 저 경로가 같은 파일인가"를 판정한다. 이 판단은
+ * `runCatching { File(p).canonicalPath }.getOrNull() ?: p`라는 한 줄로 저장소 곳곳에
+ * 복붙돼 있었고, **실패 처분이 자리마다 같지 않았다.**
  *
- * **이 파일은 대표 이미지(B-103)가 세우는 새 단일 소스이고, 옛 여덟 곳은 아직 그대로다** —
- * 그쪽을 함께 걷어내는 것은 이 슬라이스 밖이라 백로그 **B-106**에 등재돼 있다
- * (세션 착수 규칙 2번: 범위 밖이면 등재만 하고 진행). **새 코드는 이것만 쓴다.**
+ * **2026.08.10(B-106 ⓐ)에 그 복붙을 전부 걷어 이 파일로 모았다.** 걷어내며 드러난 것이
+ * 요점이다 — 여섯 자리가 정규화 실패 시 경로를 **조용히 버리고** 있었고, 그 여섯이 하필
+ * *보호 집합*(`ImageOwnershipGuard`가 삭제해도 되는가) · *참조 집합*(`StorageAnalyzer`가
+ * 고아인가) · *소유자 역맵*(이미지 탭이 미배정으로 그리는가) · **실제로 파일을 지우는
+ * `SystemMaintenanceService`의 고아 정리**였다. 즉 정규화가 실패한 경로는 **보호를 잃었다.**
+ * 바로 옆 `computeProtected`는 정반대로 *"실패하면 원문 그대로 포함 — 보호가 삭제보다
+ * 안전"*이라 적어 두었으니, **같은 한 줄이 자리마다 반대로 동작하고 있었던 셈**이다.
+ *
+ * **새 코드는 이것만 쓴다.** 걷어내지 않은 예외가 하나 있고 그 사유는 그쪽에 적혀 있다
+ * (`excel/ImageZipReport.classify` — 실패 처분이 **반대여야 하는** 자리라 옮기면 가드가
+ * 느슨해진다).
  *
  * 규약:
  * - [canonical]은 **절대 던지지 않는다.** 심볼릭 링크 해석은 IO이고 IOException을 낼 수 있어
@@ -66,13 +72,16 @@ object ImagePathMatch {
      *
      * 이 저장소는 "이 경로가 이 뿌리 안인가"를 묻는 자리마다 이 한 줄을 **복붙**해 왔고,
      * 뿌리는 둘이다 — **filesDir**(저장 이미지를 읽는 자리)와 **압축 해제 디렉터리**
-     * (zip-slip 방어: `WorldPackageImporter`·`ExcelImporter`). 옛 자리를 걷어내는 것은 이
-     * 슬라이스 밖이라 **B-106**에 등재돼 있다 — [canonical]이 선 자리와 같은 모양이다.
+     * (zip-slip 방어: `WorldPackageImporter`·`ExcelImporter`).
+     * **2026.08.10(B-106 ⓐ)에 옛 자리를 전부 걷어 이리로 모았다** — 남은 것은 이 함수뿐이고,
+     * 세는 법은 `grep -rn 'canonicalPath.startsWith' --include=*.kt app/src/main/java`다
+     * (개수는 적지 않는다 — 값을 적으면 걷어낼 때마다 낡는다. `CLAUDE.md` v1.6이 배운 것).
      * **새 코드는 이것만 쓴다.**
      *
-     * **개수는 여기 적지 않는다** — 세는 법은
-     * `grep -rn 'canonicalPath.startsWith' --include=*.kt app/src/main/java`이고,
-     * 값을 적으면 걷어낼 때마다 낡는다(`CLAUDE.md` v1.6이 배운 것).
+     * **걷어내며 함께 고친 것:** 옛 벌 둘은 `runCatching`이 없어 `canonicalPath`가 던지면
+     * *그 항목만*이 아니라 **작업 전체가 죽었다**(`WorldPackageImporter`는 가져오기가,
+     * `WorldPackageExporter`는 그 엔티티의 남은 장이 통째로). 이 함수는 던지지 않으므로
+     * 이제 막히는 것은 그 한 장뿐이다.
      *
      * **경계 문자를 반드시 붙여 견준다** — `startsWith(root)`만 쓰면 `/files_backup/a.jpg`가
      * `/files`의 안으로 판정된다(형제 디렉터리가 접두어를 공유하는 자리).

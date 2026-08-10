@@ -59,6 +59,19 @@ object ImagePathClassifier {
         val broken: List<String> get() = missing + outsideAppDir
     }
 
+    /**
+     * **[canonicalOf]는 일부러 `ImagePathMatch.canonical`을 쓰지 않는다 (B-106 ⓐ).**
+     *
+     * 모양은 같은 한 줄이지만 **실패 처분이 반대여야 하는 자리**다 — 여기서 정규화가 실패하면
+     * `null`이 되고 아래 `?.startsWith(prefix) != true`가 그 경로를 **저장소 밖으로 민다(막는다).**
+     * `ImagePathMatch.canonical`은 규약상 **원본을 그대로 돌려주므로**, 그것으로 바꾸면
+     * `../`가 든 원본 문자열이 접두어만 맞으면 `includable`로 통과할 수 있다 —
+     * **가드가 조용히 느슨해진다.**
+     *
+     * 봉쇄 판정의 단일 소스는 `ImagePathMatch.isInside`이지만 그쪽은 `File`을 받고,
+     * 이 함수는 파일 시스템에 닿지 않는 **순수·주입 가능**한 형태(시험이 `exists`·[canonicalOf]를
+     * 갈아 끼운다)라 그대로 받을 수 없다. 그래서 걷어내지 않고 이 주석을 남긴다.
+     */
     fun classify(
         paths: Collection<String>,
         appDirCanonicalPath: String,

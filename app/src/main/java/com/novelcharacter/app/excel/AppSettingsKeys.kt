@@ -203,7 +203,6 @@ object AppSettingsKeys {
             "그 기기의 데이터가 조용히 옛 형식으로 남는다 — 소음이 아니라 위험이다.",
         "onboarding_prefs" to "첫 실행 안내를 봤는가. 기기마다 처음이 다르다.",
         "character_edit_drafts" to "저장하지 않은 편집 초안. 그 기기의 화면 상태다.",
-        "image_index_prefs" to "이미지 색인 캐시. 파일이 그 기기에 있어야 뜻이 있다.",
         "folder_roundtrip_prefs" to "폴더 왕복이 기억한 기기 경로·URI. 다른 기기에서는 가리킬 곳이 없다.",
         "theme_cache" to "테마 캐시 — 값 자체는 ${THEME_MODE.key}로 실린다(저장소가 아니라 키로 등재된 자리).",
         "settings" to "테마의 DataStore 본체. 값은 ${THEME_MODE.key}로 실린다.",

@@ -17,6 +17,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
+import com.novelcharacter.app.util.DetailListSort
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
@@ -42,6 +43,25 @@ class FieldManageFragment : Fragment() {
     private var universeId: Long = -1L
     private var itemTouchHelper: ItemTouchHelper? = null
 
+    /**
+     * 보기 정렬 (B-48 · 확정 7-7). **저장 순서와 다른 것이다** — 이 값은 보이는 순서만 정하고
+     * `displayOrder`를 읽지도 쓰지도 않는다. 드래그 콜백이 매 이벤트에 이 값을 보므로
+     * ViewModel의 LiveData를 그대로 두지 않고 화면에 한 벌 들고 있는다.
+     */
+    private var sortMode: DetailListSort.FieldMode = DetailListSort.FieldMode.MANUAL
+
+    /** 정렬을 걸기 **전**의 순서(=`displayOrder` 순서). 저장은 언제나 이쪽을 기준으로 한다. */
+    private var manualOrderFields: List<FieldDefinition> = emptyList()
+
+    /**
+     * 목록이 한 번이라도 도착했는가.
+     *
+     * 정렬 상태는 `MutableLiveData(초기값)`이라 **구독 즉시** 통보되는데 목록은 세계관 id를
+     * 기다린다. 그 사이에 그리면 빈 목록으로 판정해 *"필드 없음"*이 한 번 번쩍인다 —
+     * 화면 진입마다 보이므로 사용자에게는 깜빡임이지 정보가 아니다.
+     */
+    private var fieldsDelivered = false
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -61,6 +81,7 @@ class FieldManageFragment : Fragment() {
         viewModel.setUniverseId(universeId)
         setupToolbar()
         setupEntityTypeToggle()
+        setupSortMenu()
         setupRecyclerView()
         setupFab()
         observeData()
@@ -192,6 +213,13 @@ class FieldManageFragment : Fragment() {
             // 세계관·작품·캐릭터·연표 목록과 같은 규약이며, 행에 스위치가 얹혀도 오조작이 없다.
             override fun isLongPressDragEnabled(): Boolean = false
 
+            // 비기본 정렬에서는 **잡히지도 않게** 한다 (B-48 · 확정 7-7). onMove에서 막으면
+            // 항목이 손에 붙었다가 제자리로 튀어 "되는데 안 먹는" 것처럼 보인다(B-85가 택한 모양).
+            override fun getDragDirs(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder
+            ): Int = if (sortMode.allowsManualReorder) super.getDragDirs(recyclerView, viewHolder) else 0
+
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -217,6 +245,10 @@ class FieldManageFragment : Fragment() {
                 // 이동이 한 번도 없었다면(pending == null) 저장할 변경도 없다
                 val listToSave = pendingOrderList ?: return
                 pendingOrderList = null
+                // **쓰는 자리에서 한 번 더 막는다** (B-48). getDragDirs가 이미 잡기를 닫았지만,
+                // 이 순서는 이 목록만의 것이 아니라 **편집 폼의 칸 순서이자 엑셀 열 순서**라
+                // 한 번 덮이면 되돌릴 방법이 없다 — 두 자리를 닫는 것이 B-85의 처방이다.
+                if (!sortMode.allowsManualReorder) return
                 viewModel.updateFieldOrder(listToSave)
             }
         })
@@ -232,10 +264,14 @@ class FieldManageFragment : Fragment() {
 
     private fun observeData() {
         viewModel.fields.observe(viewLifecycleOwner) { fields ->
-            adapter.submitList(fields)
-            val isEmpty = fields.isEmpty()
-            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
-            binding.fieldRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            manualOrderFields = fields
+            fieldsDelivered = true
+            renderFields()
+        }
+        viewModel.sortMode.observe(viewLifecycleOwner) { mode ->
+            sortMode = mode
+            renderFields()
+            updateSortUi()
         }
         // 데이터 처리 결과 알림 (성공/실패·자동 교정 즉시 통보 + 작업 이력 기록)
         viewModel.result.observe(viewLifecycleOwner) { result ->
@@ -244,6 +280,60 @@ class FieldManageFragment : Fragment() {
                 viewModel.clearResult()
             }
         }
+    }
+
+    /**
+     * 저장 순서 목록과 화면 목록을 **갈라 든다** (B-48 · B-85 선례).
+     *
+     * 화면에 정렬을 걸어도 [manualOrderFields]는 `displayOrder` 순서 그대로다 — 드래그가
+     * 열린 기본 정렬에서만 화면 목록이 곧 저장 대상이 되고, 그 보장은 `getDragDirs`가 한다.
+     */
+    private fun renderFields() {
+        if (_binding == null || !fieldsDelivered) return
+        val cmp = DetailListSort.fields(
+            sortMode,
+            name = { f: FieldDefinition -> f.name },
+            type = { f: FieldDefinition -> f.type },
+            group = { f: FieldDefinition -> f.groupName }
+        )
+        val shown = if (cmp == null) manualOrderFields else manualOrderFields.sortedWith(cmp)
+        adapter.submitList(shown)
+        val isEmpty = shown.isEmpty()
+        binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        binding.fieldRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+    }
+
+    /** 보기 정렬 고르기 (B-48). 라벨은 화면이 붙인다 — 순수 계층은 안드로이드를 모른다. */
+    private fun setupSortMenu() {
+        binding.btnSortFields.setOnClickListener { anchor ->
+            val modes = DetailListSort.FieldMode.entries
+            android.widget.PopupMenu(requireContext(), anchor).apply {
+                modes.forEachIndexed { i, mode -> menu.add(0, i, i, getString(sortLabel(mode))) }
+                setOnMenuItemClickListener { item ->
+                    modes.getOrNull(item.itemId)?.let { viewModel.setSortMode(it) }
+                    true
+                }
+                show()
+            }
+        }
+    }
+
+    private fun sortLabel(mode: DetailListSort.FieldMode): Int = when (mode) {
+        DetailListSort.FieldMode.MANUAL -> R.string.field_sort_manual
+        DetailListSort.FieldMode.NAME -> R.string.field_sort_name
+        DetailListSort.FieldMode.TYPE -> R.string.field_sort_type
+        DetailListSort.FieldMode.GROUP -> R.string.field_sort_group
+    }
+
+    /**
+     * 고른 기준을 버튼에 적고, **드래그가 잠긴 사유를 화면에 적는다**(확정 7-7).
+     * 사유를 적지 않으면 드래그가 안 먹는 것이 고장으로 읽힌다 — B-85가 같은 처방을 썼다.
+     */
+    private fun updateSortUi() {
+        if (_binding == null) return
+        binding.btnSortFields.text = getString(sortLabel(sortMode))
+        binding.sortLockedNotice.visibility =
+            if (sortMode.allowsManualReorder) View.GONE else View.VISIBLE
     }
 
     /** 캐릭터 / 사건 / 작품 필드 관리 대상 전환 (B-10 · 확-3) */

@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 import android.view.ViewGroup
 import com.google.gson.Gson
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,17 +103,13 @@ class CharacterImageStripController(
     private val appDir: File? get() = fragment.context?.filesDir
 
     companion object {
-        /** 내부 저장소 경로만 수용하는 검증 — 회전 복원·드래프트 복원이 같은 규칙을 공유한다 */
-        fun validateInternalPaths(paths: List<String>, appDir: File?): List<String> {
-            if (appDir == null) return emptyList()
-            return paths.filter { path ->
-                try {
-                    File(path).canonicalPath.startsWith(appDir.canonicalPath + File.separator)
-                } catch (_: Exception) {
-                    false
-                }
-            }
-        }
+        /**
+         * 내부 저장소 경로만 수용하는 검증 — 회전 복원·드래프트 복원이 같은 규칙을 공유한다.
+         * 판정은 [ImagePathMatch.isInside]가 든다 (B-106 ⓐ · R-39) — `appDir`이 null이거나
+         * 정규화가 실패하면 **막는다**(그 함수가 두 경우를 모두 false로 접는다).
+         */
+        fun validateInternalPaths(paths: List<String>, appDir: File?): List<String> =
+            paths.filter { ImagePathMatch.isInside(it, appDir) }
     }
 
     /** 호스트 onViewCreated에서 호출 — 리사이클러뷰 레이아웃 매니저 설정 */

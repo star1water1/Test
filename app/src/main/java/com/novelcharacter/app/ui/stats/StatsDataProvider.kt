@@ -64,7 +64,23 @@ data class StatsSnapshot(
      * novelId 경유 대신 스냅샷 자체(캐릭터 전체·보존 정의) 기준으로 계산해야 한다.
      * [StatsDataProvider.filterByNovel]의 sentinel 분기만 true로 만든다.
      */
-    val unassignedScope: Boolean = false
+    val unassignedScope: Boolean = false,
+    /**
+     * 이 스코프에서 **산출할 수 없는** 계산(CALCULATED) 필드의 수 (B-30).
+     *
+     * 0이 아니면 화면이 *"작품 미배정이라 계산 필드는 산출할 수 없다"*를 한 줄로 알린다.
+     * **값을 만들어 내지 않는다** — 확정 7-4가 기각한 쪽(필드값으로 세계관 역추적)은 참조
+     * 필드가 빠지면 수식이 **조용히 다른 값**을 내어, 틀린 값이 맞는 값처럼 보인다.
+     *
+     * **왜 '빈 칸'이 아니라 '고지'여야 하는가:** 계산 필드는 저장 행이 없어
+     * [StatsDataProvider.filterByNovelUnassigned]의 *참조된 정의만 남긴다*는 규칙에
+     * 걸려 **정의째 사라진다.** 그래서 사용자가 보는 것은 빈 값이 아니라 **필드의 부재**이고,
+     * 부재는 *"값이 없구나"*가 아니라 *"내가 안 만들었나?"*로 읽힌다.
+     * 같은 처분이 이미 옆에 있다 — [CharacterComplexity.hasNovelAssignment]와
+     * `fieldCompletionRate: Float?`가 완성도에서 *"작품 미배정으로 산출 불가"*를 정직하게
+     * 고지한다. **완성도는 이미 말하고 있었고 계산 필드만 말없이 빠졌다.**
+     */
+    val calculatedUnavailable: Int = 0
 )
 
 // ===== 요약 통계 =====
@@ -803,7 +819,14 @@ class StatsDataProvider {
             // 남겨 두면 순위 화면이 축을 제시하는데, 고르면 그 세계관의 캐릭터가 이 스코프에
             // 하나도 없어 빈 표가 뜬다(고를 수 있는데 아무 일도 안 일어나는 자리 — 원칙 02).
             duelAxes = emptyList(),
-            unassignedScope = true
+            unassignedScope = true,
+            // **계산 필드는 이 스코프에서 산출할 수 없고, 그 사실을 말한다** (B-30 · 확정 7-4).
+            // `Character`에는 `universeId`가 없어 캐릭터는 **작품을 경유해야만** 세계관을 안다.
+            // 작품이 없으면 *어느 세계관의 수식인가*를 구조적으로 알 수 없으므로 값을 만들지
+            // 않는다 — 그러나 위 `fieldDefinitions` 필터가 **저장 행이 없는 계산 필드를
+            // 정의째 걷어내므로**, 고지가 없으면 사용자에게는 그 필드가 *존재하지 않는* 것처럼
+            // 보인다. 세는 것은 원본 스냅샷의 계산 필드다(이 스코프에는 이미 하나도 없다).
+            calculatedUnavailable = s.fieldDefinitions.count { it.type == "CALCULATED" }
         )
     }
 

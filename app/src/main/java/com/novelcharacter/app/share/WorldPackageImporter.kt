@@ -8,6 +8,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.copyWithLimit
 import com.novelcharacter.app.util.withImagePaths
@@ -82,7 +83,10 @@ class WorldPackageImporter(context: Context) {
                         name.startsWith(WorldPackageEntries.IMAGES_PREFIX) -> {
                             if (imageCount >= MAX_IMAGE_ENTRY_COUNT) return ReadResult.ImagesTooLarge
                             val target = File(extractDir, name)
-                            if (!target.canonicalPath.startsWith(extractDir.canonicalPath + File.separator)) {
+                            // zip-slip 방어 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
+                            // 종전 한 줄은 `canonicalPath`가 던지면 **가져오기 전체가 죽었다**;
+                            // 이제 그 항목만 막고 나머지는 이어 간다.
+                            if (!ImagePathMatch.isInside(target.path, extractDir)) {
                                 Log.w(TAG, "Skipping suspicious zip entry: $name")
                                 continue
                             }

@@ -1042,8 +1042,8 @@ object OrganizeFolderService {
 
     // ── 공용 유틸 ──
 
-    private fun canonical(path: String): String =
-        runCatching { File(path).canonicalPath }.getOrNull() ?: path
+    // 경로 정규화의 단일 소스 (B-106 ⓐ) — 실패 시 원본을 들고 간다.
+    private fun canonical(path: String): String = ImagePathMatch.canonical(path)
 
     private fun parsePaths(gson: Gson, json: String): List<String> {
         if (json.isBlank() || json == "[]") return emptyList()

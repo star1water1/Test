@@ -248,7 +248,10 @@ class WorldPackageExporter(private val context: Context) {
                 // 건너뛰므로(아래) 담긴 수로 세면 막대가 총량에 못 미친 채 끝난다.
                 onEach()
                 val imageFile = File(path)
-                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) {
+                // 기기 밖으로 나가는 자리다 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
+                // 종전 한 줄이 던지면 바깥 catch가 **그 엔티티의 남은 장을 통째로 버렸다.**
+                if (imageFile.exists() &&
+                    com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir)) {
                     zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
                     imageFile.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()

@@ -87,6 +87,14 @@ object CharacterDraftPrefs {
      *
      * 드래프트 이미지는 DB에 아직 커밋되지 않았지만 사용자의 미저장 작업물이므로,
      * 고아 이미지 정리·저장 공간 분석의 "참조 집합"에 반드시 포함해야 오삭제/오분류를 막는다.
+     *
+     * **정규화 실패 경로를 버리지 않는다 (B-106 ⓐ).** 종전에는 `getOrNull()?.let { add }`라
+     * **실패한 경로가 집합에서 조용히 빠졌고**, 이 집합의 소비처가 하필
+     * [ImageOwnershipGuard.collectProtectedPaths](삭제해도 되는가)와
+     * [StorageAnalyzer](고아인가)다 — 즉 **빠진 경로는 보호를 잃고 고아로 분류된다.**
+     * 같은 한 줄을 든 `computeProtected`는 정반대로 *"실패하면 원문 그대로 포함(보수적 —
+     * 보호가 삭제보다 안전)"*이라 적어 두었으니, **커밋된 이미지는 지켜지고 미저장 작업물만
+     * 덜 지켜지고 있었다.** 이제 [ImagePathMatch.canonical]이 그 처분을 한 곳에서 든다.
      */
     fun collectAllDraftImagePaths(context: Context): Set<String> {
         val gson = Gson()
@@ -97,7 +105,7 @@ object CharacterDraftPrefs {
             val json = v as? String ?: continue
             val draft = try { gson.fromJson(json, Draft::class.java) } catch (_: Exception) { null } ?: continue
             for (p in draft.imagePaths) {
-                runCatching { java.io.File(p).canonicalPath }.getOrNull()?.let { result.add(it) }
+                ImagePathMatch.canonical(p).takeIf { it.isNotEmpty() }?.let { result.add(it) }
             }
         }
         return result

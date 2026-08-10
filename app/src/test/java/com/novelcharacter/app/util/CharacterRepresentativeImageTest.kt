@@ -132,6 +132,30 @@ class CharacterRepresentativeImageTest {
         }
     }
 
+    @Test fun shrinkingTheListNeverPointsSomewhereElse() {
+        // **B-106 ⓑ가 없앤 병을 못 박는다.** 작품·세계관 카드는 인덱스를 **저장**해 두고
+        // `idx % size`로 꺼냈고, 그래서 카드에서 이미지를 하나 빼면 남은 그림이 아니라
+        // **엉뚱한 그림**이 떴다(3장짜리에서 2번을 골라 뒀는데 한 장을 빼면 0번이 된다).
+        //
+        // 여기서 재는 것은 *어떤 그림이 뽑히는가*가 아니라 **뽑힌 것이 언제나 현재 목록 안을
+        // 가리키는가**다 — 크기를 그때그때 넘기는 한 그 사실이 깨질 수 없고, 다시 저장 방식으로
+        // 돌아가면 이 시험이 원리적으로 못 세우게 된다(그때는 이 함수에 크기가 안 온다).
+        val seed = 4242L
+        for (id in 1L..50L) {
+            for (size in 1..8) {
+                val idx = CharacterRepresentativeImage.randomIndex(seed, id, size)
+                assertTrue("id=$id size=$size idx=$idx 이 목록 밖", idx in 0 until size)
+            }
+        }
+    }
+
+    @Test fun sameSeedAndSizeIsStableAcrossRebinds() {
+        // 스크롤 재바인드·정렬·필터에 카드 그림이 튀면 안 된다(진입 1회 재추첨 — 확정 7-3).
+        // 어댑터가 bind마다 부르는 함수이므로 순수 함수로서 같은 답을 내야 한다.
+        val first = CharacterRepresentativeImage.randomIndex(999L, 12L, 5)
+        repeat(50) { assertEquals(first, CharacterRepresentativeImage.randomIndex(999L, 12L, 5)) }
+    }
+
     @Test fun indexIsAlwaysInRange() {
         for (size in 1..17) {
             for (seed in -50L..50L) {

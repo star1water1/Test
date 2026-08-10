@@ -200,4 +200,76 @@ class DetailListSortTest {
             assertNotNull(DetailListSort.events(mode))
         }
     }
+
+    // ===== 필드 관리 보기 정렬 (B-48) =====
+    //
+    // **방어선은 그 안의 둘이다.**
+    // ① *"기본은 정렬하지 않는다(comparator == null)"* — 이것이 **저장 순서와 보기 순서를
+    //    가르는 유일한 신호**다. 여기에 비교자를 하나 끼우면 화면이 `displayOrder`가 아닌
+    //    순서로 서고, 드래그가 열려 있으므로 그 순서가 그대로 저장된다 —
+    //    **편집 폼의 칸 순서와 엑셀 열 순서가 함께 어긋난다**(확정 7-7이 짚은 고유 위험).
+    // ② *"비기본 정렬은 드래그를 허용하지 않는다"* — 호출부가 잡기·쓰기 두 자리를 닫는 근거가
+    //    이 플래그 하나다. 뒤집히면 코드는 멀쩡한데 순서가 조용히 덮인다.
+
+    private data class Fd(val name: String, val type: String, val group: String)
+
+    private fun sortFields(rows: List<Fd>, mode: DetailListSort.FieldMode): List<String> {
+        val cmp = DetailListSort.fields<Fd>(
+            mode, name = { it.name }, type = { it.type }, group = { it.group }
+        )
+        return (if (cmp == null) rows else rows.sortedWith(cmp)).map { it.name }
+    }
+
+    @Test
+    fun fields_manual_doesNotSort() {
+        // ① 저장 순서를 건드리지 않는다는 신호.
+        assertNull(DetailListSort.fields<Fd>(DetailListSort.FieldMode.MANUAL, { "" }, { "" }, { "" }))
+    }
+
+    @Test
+    fun fields_onlyManualAllowsDrag() {
+        // ② 잡기·쓰기 두 자리가 이 플래그 하나를 본다.
+        assertTrue(DetailListSort.FieldMode.MANUAL.allowsManualReorder)
+        for (mode in DetailListSort.FieldMode.entries.filter { it != DetailListSort.FieldMode.MANUAL }) {
+            assertFalse("$mode 에서 드래그가 열려 있다", mode.allowsManualReorder)
+        }
+    }
+
+    @Test
+    fun fields_name_isKoreanCollation() {
+        val rows = listOf(Fd("힘", "NUMBER", ""), Fd("가문", "TEXT", ""), Fd("나이", "NUMBER", ""))
+        assertEquals(listOf("가문", "나이", "힘"), sortFields(rows, DetailListSort.FieldMode.NAME))
+    }
+
+    @Test
+    fun fields_type_groupsThenNames() {
+        val rows = listOf(
+            Fd("힘", "NUMBER", ""), Fd("가문", "TEXT", ""),
+            Fd("나이", "NUMBER", ""), Fd("성격", "TEXT", "")
+        )
+        // 같은 종류 안에서는 이름으로 마무리한다 — 안 그러면 같은 종류끼리 순서가 흔들린다.
+        assertEquals(listOf("나이", "힘", "가문", "성격"), sortFields(rows, DetailListSort.FieldMode.TYPE))
+    }
+
+    @Test
+    fun fields_group_pushesUngroupedToTheEnd() {
+        // 빈 문자열은 사전순 맨 앞이라, 그냥 두면 목록 머리가 '그룹 없음' 덩어리가 되어
+        // 그룹으로 묶어 보려던 목적이 무너진다.
+        val rows = listOf(
+            Fd("무소속", "TEXT", ""), Fd("키", "NUMBER", "외형"), Fd("가문", "TEXT", "배경")
+        )
+        // 그룹은 가나다순('배경' → '외형'), 그룹 없는 것만 맨 뒤로 민다.
+        assertEquals(listOf("가문", "키", "무소속"), sortFields(rows, DetailListSort.FieldMode.GROUP))
+    }
+
+    @Test
+    fun fields_sortingNeverChangesMembership() {
+        val rows = listOf(
+            Fd("힘", "NUMBER", "능력"), Fd("가문", "TEXT", ""), Fd("나이", "NUMBER", "기본")
+        )
+        val expected = rows.map { it.name }.toSet()
+        for (mode in DetailListSort.FieldMode.entries) {
+            assertEquals("$mode 에서 구성이 변했다", expected, sortFields(rows, mode).toSet())
+        }
+    }
 }
