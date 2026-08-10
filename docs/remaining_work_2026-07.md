@@ -201,6 +201,7 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
+> | **정리 부채 일괄**(B-37·B-159·B-106 ⓐⓑ·B-30·B-109·B-111·B-48) | *(미병합 — 작업 브랜치)* | **열넷**(`StatsMainFragment`·`StatsViewModel`·`NovelAdapter`·`UniverseAdapter`·`NovelListFragment`·`UniverseListFragment`·`ImageManagerViewModel`·`CharacterViewModel`·`CharacterEditFragment`·`CharacterImageStripController`·`ImageViewerFragment`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`) + 레이아웃 셋 + 새 id 넷(`calculatedUnavailableNotice`·`btnSortFields`·`sortLockedNotice`) | `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼다. **로컬이 원리적으로 못 보는 것이 많은 판이다** — 프로브가 `ui/**`를 통째로 빼므로 화면 파일 열넷의 컴파일과 새 id 넷의 ViewBinding 대조는 CI가 처음 본다. `share/`·`data/maintenance/`도 프로브 범위 밖이라 B-106 ⓐ가 그쪽에 넣은 네 자리도 같다. |
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
 > **초록이 뜨면 확인할 것:** `Run unit tests` **와** `Build Debug APK` **둘 다**.
@@ -5354,7 +5355,87 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > **닫힌 것 둘**(되살리려면 사용자 판정이 필요하다): **B-66**(작품 축 교차분석 — 보류 확정) ·
    > **B-26**(되돌리기 덮어쓰기 — 현행 유지 확정).
 
-   > **📌 세션 인수인계(2026.08.09 B-95 + B-105 구현 종료. 아래 판들을 대체한다). 대기열:**
+   > **📌 세션 인수인계(2026.08.10 정리 부채 일괄 종료. 아래 판들을 대체한다). 대기열:**
+   >
+   > **먼저 읽을 것:** 이 문서 5장 1·2번(착수 절차·재현 기준선) → **아래 ①**(다음 차례가
+   > 정해져 있지 않다 — 사용자가 고른다) → **4장에서 머리가 ✅가 아닌 나머지 행**.
+   > **다시 묻지 않는다** — 판정은 `docs/judgment_confirmations_2026-08.md`와 4장 각 행에 있다.
+   >
+   > **① 대기열 맨 앞의 '정리 부채' 묶음이 통째로 닫혔다. 다음은 아래 ⑤에서 사용자가 고른다.**
+   >
+   > | 순서 | 건 | 무엇 | 상태 |
+   > |---|---|---|---|
+   > | ~~①~~ | ~~B-37~~ | ~~목록 정렬이 통계와 다른 규칙으로 쪼갠다~~ | **✅**(마이그레이션 없음) |
+   > | ~~②~~ | ~~B-159~~ | ~~`Prepared`의 `NONE`·`isEmpty`가 소비처 0~~ | **✅**(마이그레이션 없음) |
+   > | ~~③~~ | ~~B-106 ⓐ~~ | ~~경로 정규화·봉쇄 복붙~~ | **✅** 규약 **R-46** · 검사 신설 |
+   > | ~~④~~ | ~~B-30~~ | ~~미배정 스코프 계산 필드~~ | **✅** 실기기 **3-92** |
+   > | ~~⑤~~ | ~~B-109~~ | ~~같은 번호가 둘~~ | **✅**(문서만) |
+   > | ~~⑥~~ | ~~B-106 ⓑ~~ | ~~카드 사진 랜덤 주기~~ | **✅** 실기기 **3-93** |
+   > | ~~⑦~~ | ~~B-111~~ | ~~'갱신 N'이 매칭 전부를 센다~~ | **✅** **R-33 확장** · 실기기 **3-94** |
+   > | ~~⑧~~ | ~~B-48~~ | ~~필드 관리 보기 정렬~~ | **✅** 실기기 **3-95** |
+   > | **①** | — | **기존 대기열** | B-27②+B-38 · `매칭` 표1 (아래 ⑤가 전수다) |
+   >
+   > **⏳ CI 미검증 — 이 판은 아직 초록을 못 받았다.** 화면 파일이 열넷이라
+   > `CLAUDE.md` 4번의 *2~3개*를 훌쩍 넘겼다. 2장의 **⏳ CI 미검증 목록**에 올려 두었다.
+   >
+   > **② 이 묶음에서 배운 것 하나 — 등재된 개수는 거의 언제나 적게 세어져 있다.**
+   > B-106 ⓐ는 정규화 여덟·봉쇄 아홉으로 등재됐는데 실측은 **일곱 자리가 더** 있었다
+   > (`SystemMaintenanceService` 넷 · `ImageZipHelper` 둘 · `CharacterEditFragment` 하나).
+   > 그 행 자신이 *"손으로 세다 빠뜨린 것이 이 사고"*라 적어 두었는데 **또 났다.**
+   > **착수 첫 단계는 등재 문구를 믿는 것이 아니라 세는 법을 실제로 돌리는 것이다.**
+   >
+   > **③ 그리고 그 개수보다 중요한 것이 방향이었다.**
+   > B-106 ⓐ에서 정규화 실패 시 경로를 **조용히 버리던 자리가 여섯**이었고, 하필
+   > *보호 집합*(삭제해도 되는가) · *참조 집합*(고아인가) · *소유자 역맵*(미배정으로 그리는가) ·
+   > **실제로 파일을 지우는 고아 정리**였다. 바로 옆 `computeProtected`는 정반대로
+   > *"실패하면 원문 그대로 포함 — 보호가 삭제보다 안전"*이라 적어 두었으니,
+   > **커밋된 이미지는 지켜지고 미저장 드래프트만 덜 지켜지고 있었다.**
+   > 어느 검사도 못 봤다 — 코드가 전부 멀쩡해 보이고 증상은 *드물게 파일이 사라지는 것*이다.
+   > → **배울 것: 같은 한 줄이 복붙돼 있으면 세어야 할 것은 개수가 아니라 *처분의 방향*이다.**
+   >
+   > **④ 고치는 변경이 더 나쁜 거짓말을 낳을 뻔한 자리가 하나 있었다 (B-111).**
+   > '갱신'을 *실제로 바뀐 행*으로 좁히면, 결과창이 `new + updated`를 합쳐 적으므로
+   > **아무것도 안 고친 파일에서 합이 0이 되어 *"데이터 없음"*이라 말한다** — 그런데 그것이
+   > 바로 이 변경이 노린 시나리오(왕복 멱등 확인 A7)다. `unchangedRows`를 세워
+   > *바뀐 것 없음*과 *아무것도 없음*을 갈랐다.
+   > → **배울 것: 수를 좁히는 변경은 그 수를 읽는 화면까지 따라가 볼 것.**
+   >
+   > **⑤ 기존 갈래는 그대로다 — 이 판이 새로 연 것은 없다.**
+   > **B-27 ② + B-38** · **`매칭` 표1 등재** · **B-116** · **B-118** · **B-125** ·
+   > **B-126** · **B-127** · **B-128** · **B-129** · **B-148** · **B-149** · **B-152** ·
+   > **B-153** · **B-154** · **B-155** · **B-156** · **B-157** · **B-158** ·
+   > **B-161** · **B-164** · **B-165** · **B-166** · **B-171** · **B-172** · **B-173** ·
+   > **B-174** · **B-175** · **B-176**.
+   >
+   > **⑥ 확정돼 있으나 아직 안 건드린 것들도 그대로다** — B-36+B-70(묶어서) · B-43 · B-44 ·
+   > B-63 · B-65 · B-67 · B-74 · B-75 · B-60 · B-93 · B-94 · B-18(단 **측정이 먼저**, P-9).
+   > **건수는 적지 않는다. 4장에서 `판정 확정`을 세는 것이 원문이다.**
+   >
+   > **⑦ 실기기 확인이 넷 늘어 3-95까지다.** 3-56(남은 3~8번) · 3-57 ~ **3-95**
+   > (대표 이미지 절은 **3-50 → 3-91**로 옮겼다 — B-109 ⓐ).
+   > **3-65의 1번이 여전히 다른 모든 확인보다 앞선다.**
+   > **이 판에서 가장 먼저 볼 것은 3-95의 6번**이다 — *보기 정렬이 폼·엑셀 열 순서로 샜는가*.
+   > 새면 사용자가 잡아 둔 순서가 지워지고 **되돌릴 방법이 없다**(되돌리기 어려운 축).
+   >
+   > **⑧ 이 판의 로컬 검증: 전부 초록이다.** **JVM 2232 → 2253**(+21) · 정적 검사 **22종**
+   > (이 판이 `check_image_path_single_source.sh`를 더했다 — **세는 법은 `ls tools/check_*.sh`다**) ·
+   > 마이그레이션 하네스 **전부 통과**(이 판은 DB를 안 건드렸다) · 실클래스패스 프로브
+   > **신규 0**(절대값은 461 → 447로 줄었다 — `ImageIndexPrefs`를 지운 몫이다) ·
+   > 커스텀 뷰 프로브 **절대값 0** · 차분 컴파일은 `triage_unresolved` 통과.
+   > **차분의 신규 줄에 *미해석이 아닌* 것이 하나 있었고, 적기 전에 실제로 재 봤다** —
+   > `FieldManageFragment`의 `'getDragDirs' overrides nothing`이다. 미해석이 아니므로
+   > `triage_unresolved`가 원리적으로 못 보는 부류라 그냥 넘길 수 없었고,
+   > **기준선에 같은 모양이 668건**(그중 `RelationshipHelper.getDragDirs` — **실제로 도는
+   > 같은 구문**)임을 세어 잡음으로 판정했다. 원인은 `-classpath`가 없어
+   > `ItemTouchHelper.SimpleCallback`이 미해석이 되고 그 위의 `override`가 전부 무너지는 것이다.
+   > → **배울 것(v9.131이 등재한 사각의 재확인): `triage_unresolved`는 *미해석*만 본다.**
+   >
+   > **다음 세션이 가져갈 한 줄: 정리 부채가 통째로 닫혔고 다음 차례는 정해져 있지 않다 —
+   > ⑤의 목록에서 사용자가 고른다. ⚠️ 이 판은 **CI 미검증**이고 실기기 3-92~3-95가 남았다.
+   > 그중 3-95의 6번(*보기 정렬이 폼·엑셀 열 순서로 샜는가*)이 되돌릴 수 없는 축이라
+   > 가장 먼저 볼 자리다.**
+
+   > **📌 ~~세션 인수인계(2026.08.09 B-95 + B-105 구현 종료)~~ — ~~현행~~ **바로 위 '정리 부채 일괄' 판이 대체했다. ⑤의 맨 앞 **정리 부채**(B-111 · B-106 · B-109 · B-30 · B-37 · B-48)가 **B-159와 함께 전부 처리 완료**이고, 나머지 갈래와 ⑥·⑦의 목록은 그 판으로 그대로 넘어갔다**. 대기열:**
    >
    > **먼저 읽을 것:** 이 문서 5장 1·2번(착수 절차·재현 기준선) → **아래 ①**(다음 차례가
    > 정해져 있지 않다 — 사용자가 고른다) → **4장에서 머리가 ✅가 아닌 나머지 행**.
