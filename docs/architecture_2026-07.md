@@ -177,7 +177,7 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | 기준선은 `remaining_work` 5장이 든다 |
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선은 `tools/text_style_baseline.txt`가 든다(그 파일이 단일 소스) — 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
-| `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
+| `tools/check_dialog_validation.sh` | R-27 위반 둘 — **[A] 자동 닫힘 버튼 안의 조기 return**(낱말 `return@setPositiveButton`) + **[B] 가드-래핑**(저장을 `if`로 감싸 실패 경로가 아무것도 보존하지 않는 형태. 2026.08.10 · B-76). **[A]만으로는 [B]가 원리적으로 안 잡힌다** — 같은 유실이 낱말 없이도 나기 때문이다(`if (name.isNotEmpty()) save()`는 비면 아무 말 없이 닫힌다). 실패 분기가 알림뿐인 것도 [B]로 센다(창이 닫히는 것은 매한가지다) | **[A] 0건 동결** · **[B] `tools/dialog_validation_baseline.txt`로 동결**(줄이는 갱신만 정상 — `--rebaseline`). **열쇠는 `파일\|바깥 함수\|조건`이고 줄 번호를 안 쓴다** — 쓰면 그 자리 위의 한 줄이 기준선을 통째로 어긋나게 한다. 판정기 자기 시험을 매 실행 앞에 둔다(구조를 읽으므로 판정기가 틀리면 어디에도 안 드러난다) |
 | `tools/check_prefs_keys.sh` | 같은 prefs 키를 두 곳이 다른 타입으로 쓰는가(R-28 위반) | 충돌 0 — 새 충돌 즉시 실패 |
 | `tools/check_image_pointer.sh` | 캐릭터 `imagePaths` 쓰기가 대표 포인터를 함께 고치는가(R-32 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/check_restore_preview_parity.sh` | 복원 미리보기(`analyze*`)가 가져오기와 같은 `merge*`로 '변경/동일'을 판정하는가(R-33 위반) | 0건 동결 — 새 위반 즉시 실패 |
