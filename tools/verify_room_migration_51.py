@@ -97,8 +97,9 @@ def main():
 
     print("\n[1] 등록 확인")
     check(db_version_at_least(src, 51), "@Database(version)이 51 이상이다")
-    check(re.search(r"addMigrations\([^)]*MIGRATION_50_51", src, re.S) is not None,
-          "MIGRATION_50_51이 addMigrations에 등록됐다 (빠뜨리면 실행 시 IllegalStateException)")
+    check(re.search(r"ALL_MIGRATIONS\b[^=]*=\s*arrayOf\([^)]*?MIGRATION_50_51\b", src, re.S) is not None
+                and "addMigrations(*ALL_MIGRATIONS)" in src,
+          "MIGRATION_50_51이 등록 목록(ALL_MIGRATIONS)에 있고 그 목록이 그대로 Room에 넘어간다 (빠뜨리면 실행 시 IllegalStateException)")
     check("val sortDuelAxisCode: String? = null" in preset_src,
           "엔티티가 sortDuelAxisCode를 **nullable**로 선언했다")
     check('const val SORT_DUEL = "duel"' in preset_src,

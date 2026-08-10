@@ -2144,6 +2144,76 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 이 DB가 아는 마이그레이션 **전부** — 앱과 시험이 **같은 목록**을 본다 (B-9).
+         *
+         * 종전에는 `addMigrations(...)` 인자에만 있어서, 마이그레이션을 하나 만들고
+         * **거기 등재하는 것을 잊어도 아무것도 알려 주지 않았다** — 증상은 그 버전에서
+         * 앱이 죽는 것이고, 그때는 이미 사용자 기기다. 목록을 밖으로 빼면
+         * `AppDatabaseMigrationTest`가 실제 Room으로 그 사슬을 끝까지 밟아 본다.
+         *
+         * **시험이 같은 목록을 쓰는 것이 요점이다.** 시험이 자기 목록을 따로 들면
+         * 두 벌이 되고, 빠뜨린 쪽이 어느 쪽인지 아무도 모르게 된다.
+         */
+        @JvmField
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11,
+            MIGRATION_11_12,
+            MIGRATION_12_13,
+            MIGRATION_13_14,
+            MIGRATION_14_15,
+            MIGRATION_15_16,
+            MIGRATION_16_17,
+            MIGRATION_17_18,
+            MIGRATION_18_19,
+            MIGRATION_19_20,
+            MIGRATION_20_21,
+            MIGRATION_21_22,
+            MIGRATION_22_23,
+            MIGRATION_23_24,
+            MIGRATION_24_25,
+            MIGRATION_25_26,
+            MIGRATION_26_27,
+            MIGRATION_27_28,
+            MIGRATION_28_29,
+            MIGRATION_29_30,
+            MIGRATION_30_31,
+            MIGRATION_31_32,
+            MIGRATION_32_33,
+            MIGRATION_33_34,
+            MIGRATION_34_35,
+            MIGRATION_35_36,
+            MIGRATION_36_37,
+            MIGRATION_37_38,
+            MIGRATION_38_39,
+            MIGRATION_39_40,
+            MIGRATION_40_41,
+            MIGRATION_41_42,
+            MIGRATION_42_43,
+            MIGRATION_43_44,
+            MIGRATION_44_45,
+            MIGRATION_45_46,
+            MIGRATION_46_47,
+            MIGRATION_47_48,
+            MIGRATION_48_49,
+            MIGRATION_49_50,
+            MIGRATION_50_51,
+            MIGRATION_51_52,
+            MIGRATION_52_53,
+            MIGRATION_53_54,
+            MIGRATION_54_55,
+            MIGRATION_55_56
+        )
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -2151,7 +2221,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56)
+                    .addMigrations(*ALL_MIGRATIONS)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

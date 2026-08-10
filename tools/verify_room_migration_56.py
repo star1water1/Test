@@ -111,8 +111,9 @@ def main():
 
     print("\n[1] 등록 확인")
     check(db_version_at_least(src, 56), "@Database(version)이 56 이상이다")
-    check(re.search(r"addMigrations\([^)]*MIGRATION_55_56", src, re.S) is not None,
-          "MIGRATION_55_56이 addMigrations에 등록됐다 (빠뜨리면 실행 시 IllegalStateException)")
+    check(re.search(r"ALL_MIGRATIONS\b[^=]*=\s*arrayOf\([^)]*?MIGRATION_55_56\b", src, re.S) is not None
+                and "addMigrations(*ALL_MIGRATIONS)" in src,
+          "MIGRATION_55_56이 등록 목록(ALL_MIGRATIONS)에 있고 그 목록이 그대로 Room에 넘어간다 (빠뜨리면 실행 시 IllegalStateException)")
     check("val isBasisAxis: Boolean = false" in axis_src,
           "엔티티가 isBasisAxis를 **non-null Boolean**으로 선언했다 (스위치라 중간 상태가 없다)")
 

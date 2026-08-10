@@ -71,8 +71,9 @@ def main():
     check(db_version_at_least(src, 46), "@Database(version)이 46 이상이다")
     check("GradeSystem::class" in src, "엔티티가 @Database entities에 등재됐다")
     check("gradeSystemDao()" in src, "DAO 접근자가 선언됐다")
-    check(re.search(r"addMigrations\([^)]*MIGRATION_45_46", src, re.S) is not None,
-          "MIGRATION_45_46이 addMigrations에 등록됐다 (빠뜨리면 실행 시 IllegalStateException)")
+    check(re.search(r"ALL_MIGRATIONS\b[^=]*=\s*arrayOf\([^)]*?MIGRATION_45_46\b", src, re.S) is not None
+                and "addMigrations(*ALL_MIGRATIONS)" in src,
+          "MIGRATION_45_46이 등록 목록(ALL_MIGRATIONS)에 있고 그 목록이 그대로 Room에 넘어간다 (빠뜨리면 실행 시 IllegalStateException)")
 
     stmts, block = extract_migration_sql(src)
     check(len(stmts) >= 4, f"마이그레이션이 표 1 + 인덱스 3을 만든다 (추출 {len(stmts)}문)")

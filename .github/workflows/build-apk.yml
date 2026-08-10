@@ -103,6 +103,25 @@ jobs:
         if: github.event.inputs.build_type == 'release'
         run: ./gradlew assembleRelease --no-daemon
 
+      # Room 스키마 JSON 업로드 (B-9) — **커밋의 재료다.**
+      #   `room.schemaLocation`이 켜져 있어 빌드마다 `app/schemas/`에 나오지만, 종전에는
+      #   러너와 함께 버려졌다. 여기서 올려야 그것을 받아 저장소에 커밋할 수 있고,
+      #   커밋된 JSON이 곧 마이그레이션 계측 시험의 재료가 된다.
+      #
+      #   **손으로 적지 않는 이유:** JSON에는 Room이 엔티티에서 계산한 `identityHash`가
+      #   들어 있어 한 글자만 달라도 Room이 DB 열기를 거부한다. 빌드 산출물을 그대로 쓴다.
+      #
+      #   `if: always()`가 아니다 — 빌드가 깨졌으면 스키마도 못 믿는다.
+      - name: Upload Room schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+          retention-days: 30
+          # 스키마가 안 나왔으면 **조용히 넘어가지 않는다** — 빈 아티팩트를 받아 놓고
+          # "커밋했다"고 여기는 것이 이 축에서 가장 나쁜 결말이다.
+          if-no-files-found: error
+
       # Debug APK 업로드
       - name: Upload Debug APK
         if: github.event.inputs.build_type != 'release'
