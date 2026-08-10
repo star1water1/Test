@@ -85,11 +85,8 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
 
     companion object {
 
-        /** 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 기존 두 소비자와 **같은 집합**이다. */
-        private val TERMINAL_ERRORS = setOf(
-            AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,
-            AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
-        )
+        /** 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 집합은 [AiErrorPolicy]가 단일 소스다. */
+        private val TERMINAL_ERRORS = AiErrorPolicy.TERMINAL
 
         /** 폴더를 요청 단위로 나눈다 — 개수 규칙의 단일 소스는 [AiPromptPolicy]다. */
         fun chunkFolders(folders: List<String>): List<List<String>> =

@@ -115,10 +115,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             "AI 응답이 출력 상한에 걸려 잘려 일부 구간을 건너뛰었습니다 — " +
                 "설정 → AI 연동에서 출력 토큰 상한을 올리면 한 번에 더 많이 정리할 수 있습니다."
 
-        private val TERMINAL_ERRORS = setOf(
-            AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,
-            AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
-        )
+        /** 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 집합은 [AiErrorPolicy]가 단일 소스다. */
+        private val TERMINAL_ERRORS = AiErrorPolicy.TERMINAL
 
         fun chunkEntries(entries: List<FieldValueEntry>): List<List<FieldValueEntry>> {
             if (entries.isEmpty()) return emptyList()

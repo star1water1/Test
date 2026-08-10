@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
+import com.novelcharacter.app.util.GlobalScopeFieldMove
 import com.novelcharacter.app.util.GsonTypes
 import java.io.File
 
@@ -20,16 +21,25 @@ data class UniverseMoveCounts(
     val remappedValues: Int = 0,
     val removedValues: Int = 0,
     val removedMemberships: Int = 0,
-    val snapshotted: Int = 0
+    val snapshotted: Int = 0,
+    /**
+     * 전역 구역의 값 중 **안전하지 않아 보관 값으로 남긴** 수 (B-128).
+     *
+     * [removedValues]와 갈라 두는 것이 요점이다 — 이쪽은 **유실이 아니다.** 값은 그대로 살아
+     * 원래 정의를 가리키고, 캐릭터를 되돌리면 다시 보인다. 합치면 확인 다이얼로그가
+     * *"제거됩니다"*라고 말하는데 실제로는 제거되지 않는 거짓 고지가 된다.
+     */
+    val keptGlobalValues: Int = 0
 ) {
     operator fun plus(o: UniverseMoveCounts) = UniverseMoveCounts(
         remappedValues + o.remappedValues,
         removedValues + o.removedValues,
         removedMemberships + o.removedMemberships,
-        snapshotted + o.snapshotted
+        snapshotted + o.snapshotted,
+        keptGlobalValues + o.keptGlobalValues
     )
 
-    /** 실제 제거(유실)가 발생했는가 — 고지 필요 여부. */
+    /** 실제 제거(유실)가 발생했는가 — 고지 필요 여부. **보관은 유실이 아니라 여기 들지 않는다.** */
     val hasRemoval: Boolean get() = removedValues > 0 || removedMemberships > 0
 }
 
@@ -106,6 +116,76 @@ class CharacterRepository(
         fieldLibrary.harvestForCharacter(character.id)
         return preserved
     }
+
+    /**
+     * **세계관을 떠나 무소속이 되는 저장** (B-128의 반대 방향).
+     *
+     * 이 방향은 '이동'이 아니라 '이탈'이라 세력 소속·스냅샷을 건드리지 않는다 —
+     * [updateCharacterAcrossUniverse]로 태우면 *"새 세계관에 없는 소속"*이 전부 고아가 되어
+     * **세력 소속이 말없이 지워진다.** 확정이 정한 것은 값의 처분뿐이므로 거기까지만 한다.
+     *
+     * 하는 일은 [updateCharacterWithFields]와 같되(폼 커버 밖 값은 그대로 보존 — N2),
+     * 그 보존분 중 **전역 구역에 짝이 있는 것을 확정 규칙대로 이어 준다**: 타입이 호환되고
+     * 대상이 비어 있을 때만 옮기고, 아니면 보관 값으로 남긴다. 어느 쪽이든 값은 살아 있다.
+     *
+     * @return 이어 준 수와 보관한 수, 그리고 폼 밖이라 보존된 수([UniverseMoveCounts.snapshotted]는
+     *   쓰지 않는다 — 이 경로는 파괴가 없어 백업할 것이 없다).
+     */
+    suspend fun updateCharacterLeavingUniverse(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        coveredFieldDefinitionIds: Set<Long>?
+    ): LeaveUniverseResult {
+        var result = LeaveUniverseResult()
+        db.withTransaction {
+            characterDao.update(character)
+            val existing = characterFieldValueDao.getValuesByCharacterList(character.id)
+            val merged = if (coveredFieldDefinitionIds == null) values
+            else CharacterFieldValueMerge.merge(values, coveredFieldDefinitionIds, existing)
+            val preserved = if (coveredFieldDefinitionIds == null) 0
+            else CharacterFieldValueMerge.preservedCount(values, coveredFieldDefinitionIds, existing)
+
+            val allDefsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
+            val globalFields = db.fieldDefinitionDao().getGlobalFieldsList()
+            // 옮길 후보는 **세계관에 속한 캐릭터 필드값**이고, 도착지는 전역 구역이다.
+            // '대상이 비었는가'에는 병합 결과에서 이미 값이 있는 전역 필드를 넣는다.
+            val occupied = merged.filter { it.value.isNotBlank() }.mapTo(HashSet()) { it.fieldDefinitionId }
+            val moving = merged.mapNotNull { v ->
+                val def = allDefsById[v.fieldDefinitionId] ?: return@mapNotNull null
+                if (def.universeId == null) return@mapNotNull null
+                if (def.entityType != FieldDefinition.ENTITY_CHARACTER) return@mapNotNull null
+                GlobalScopeFieldMove.Candidate(def, v.value)
+            }
+            val plan = GlobalScopeFieldMove.plan(moving, globalFields, occupied)
+
+            val finalValues = if (plan.transfers.isEmpty()) merged else {
+                // **옮긴 값이 먼저 자리를 잡는다.** 대상 전역 필드에 빈 값 행이 남아 있을 수 있는데
+                // (빈 값은 '점유'가 아니라 이관을 막지 않는다), 목록 순서대로 걸러 내면 그 빈 행이
+                // 앞서서 이기고 **옮긴 값이 조용히 버려진다.**
+                val moved = merged.mapNotNull { v ->
+                    val to = plan.transfers[v.fieldDefinitionId] ?: return@mapNotNull null
+                    v.copy(id = 0, fieldDefinitionId = to)
+                }
+                val rest = merged.filter { it.fieldDefinitionId !in plan.transfers }
+                val taken = HashSet<Long>()
+                (moved + rest).filter { taken.add(it.fieldDefinitionId) }
+            }
+            characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
+            result = LeaveUniverseResult(plan.transfers.size, plan.kept.size, preserved)
+        }
+        fieldLibrary.harvestForCharacter(character.id)
+        return result
+    }
+
+    /** [updateCharacterLeavingUniverse]의 결과 — 호출부가 고지에 쓴다. 어느 값도 유실되지 않는다. */
+    data class LeaveUniverseResult(
+        /** 전역 구역의 짝으로 이어 준 값 수. */
+        val transferred: Int = 0,
+        /** 안전하지 않아 보관 값으로 남긴 값 수(타입 불일치·대상 점유·짝 없음). */
+        val kept: Int = 0,
+        /** 폼이 렌더하지 않아 그대로 둔 값 수 (N2). */
+        val preserved: Int = 0
+    )
 
     suspend fun deleteCharacter(character: Character) {
         val trash = TrashRepository(db)
@@ -425,6 +505,14 @@ class CharacterRepository(
         val usedDefIds = HashSet<Long>()
         var remapped = 0
         var removedValues = 0
+        var keptGlobal = 0
+        // 전역 구역의 값은 여기서도 확정 규칙을 따른다 (B-128) — 이 경로는 일괄 편집과
+        // **엑셀 가져오기**가 쓴다. 아래 일반 규칙에 맡기면 짝이 없을 때 *제거*되는데,
+        // 편집 폼 경로는 같은 값을 *보관*한다. **한 저장소 안에서 처분의 방향이 갈리면**
+        // 사용자는 같은 조작을 어디서 했는지에 따라 값을 잃거나 잃지 않는다.
+        val globalPlan = planGlobalScopeMove(
+            oldValues, allDefsById, newDefByKey.values.toList(), occupiedTargetFieldIds = emptySet()
+        )
         for (v in oldValues) {
             val def = allDefsById[v.fieldDefinitionId]
             // 캐릭터 필드가 아닌 정의(사건 필드 등)를 가리키는 값은 세계관 이동의 대상이 아니다 —
@@ -432,6 +520,17 @@ class CharacterRepository(
             // 종전에는 '대응 필드 없음'으로 분류되어 제거됐다.
             if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) {
                 if (usedDefIds.add(v.fieldDefinitionId)) finalValues.add(v)
+                continue
+            }
+            if (def != null && def.universeId == null) {
+                val target = globalPlan.transfers[def.id]
+                if (target == null) {
+                    // 보관 — 값은 그대로 살아 원래 정의를 가리킨다(유실이 아니다).
+                    if (usedDefIds.add(v.fieldDefinitionId)) finalValues.add(v)
+                    if (def.id in globalPlan.kept) keptGlobal++
+                } else if (usedDefIds.add(target)) {
+                    finalValues.add(v.copy(fieldDefinitionId = target)); remapped++
+                }
                 continue
             }
             val key = def?.key
@@ -458,7 +557,7 @@ class CharacterRepository(
         }
         characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
         if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
-        return UniverseMoveCounts(remapped, removedValues, orphanMemberships, if (willLose) 1 else 0)
+        return UniverseMoveCounts(remapped, removedValues, orphanMemberships, if (willLose) 1 else 0, keptGlobal)
     }
 
     /**
@@ -491,11 +590,39 @@ class CharacterRepository(
         return counts
     }
 
+    /**
+     * 전역 구역의 값이 이 이동에서 어떻게 처분되는가 (B-128) — **세는 쪽과 적용하는 쪽의 단일 소스.**
+     *
+     * 둘이 갈리면 확인 다이얼로그가 *"N개가 제거됩니다"*라고 해 놓고 실제로는 보관하거나 그 반대가
+     * 되는데, 사용자가 그 어긋남을 알아챌 길은 저장한 뒤 값을 하나씩 세어 보는 것뿐이다.
+     *
+     * 판정 자체는 [GlobalScopeFieldMove]가 든다(순수라 시험이 잠근다). 여기서는 *무엇을 물을지* —
+     * 곧 **전역 구역의 캐릭터 필드값만** 골라 넘기는 일만 한다.
+     */
+    private fun planGlobalScopeMove(
+        oldValues: List<CharacterFieldValue>,
+        allDefsById: Map<Long, FieldDefinition>,
+        targetFields: List<FieldDefinition>,
+        occupiedTargetFieldIds: Set<Long>
+    ): GlobalScopeFieldMove.Plan {
+        val moving = oldValues.mapNotNull { v ->
+            val def = allDefsById[v.fieldDefinitionId] ?: return@mapNotNull null
+            if (def.universeId != null) return@mapNotNull null
+            if (def.entityType != FieldDefinition.ENTITY_CHARACTER) return@mapNotNull null
+            GlobalScopeFieldMove.Candidate(def, v.value)
+        }
+        return GlobalScopeFieldMove.plan(moving, targetFields, occupiedTargetFieldIds)
+    }
+
     /** 세계관 이동 시 유실될 값·세력 소속 수를 미리 센다(편집화면 확인 다이얼로그·고지용, 파괴 없음). */
     suspend fun countCrossUniverseLoss(characterId: Long, newUniverseId: Long): UniverseMoveCounts {
         val old = characterFieldValueDao.getValuesByCharacterList(characterId)
         val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
-        val newKeys = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).map { it.key }.toSet()
+        val newFields = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId)
+        val newKeys = newFields.map { it.key }.toSet()
+        // 전역 구역의 값은 **제거 대상이 아니다** (B-128) — 옮기거나 보관한다. 적용 쪽과 같은
+        // 판정을 써서 세지 않으면 이 수가 다이얼로그에서 그대로 거짓말이 된다.
+        val globalPlan = planGlobalScopeMove(old, allDefsById, newFields, occupiedTargetFieldIds = emptySet())
         var removed = 0
         var remappable = 0
         for (v in old) {
@@ -503,11 +630,15 @@ class CharacterRepository(
             // 캐릭터 필드가 아닌 정의를 가리키는 값은 이동 대상이 아니다 — 세지 않는다
             // (이 집계가 확인 다이얼로그의 '제거됩니다' 문구를 만든다: 사실과 달라선 안 된다)
             if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) continue
+            if (def != null && def.universeId == null) {
+                if (globalPlan.transfers.containsKey(def.id)) remappable++
+                continue
+            }
             val key = def?.key
             if (key == null || key !in newKeys) removed++ else remappable++
         }
         val memberships = db.factionMembershipDao().countMembershipsNotInUniverse(characterId, newUniverseId)
-        return UniverseMoveCounts(remappable, removed, memberships, 0)
+        return UniverseMoveCounts(remappable, removed, memberships, 0, globalPlan.kept.size)
     }
 
     /**
@@ -525,14 +656,24 @@ class CharacterRepository(
         val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
         return db.withTransaction {
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
-            val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
+            val newFields = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId)
+            val newDefByKey = newFields.associateBy { it.key }
             val old = characterFieldValueDao.getValuesByCharacterList(character.id)
             val formNonBlank = formValues.filter { it.value.isNotBlank() }
             val formDefIds = formNonBlank.map { it.fieldDefinitionId }.toHashSet()
 
+            // 전역 구역의 값은 확정 규칙으로 따로 처분한다 (B-128) — 타입이 호환되고 대상이
+            // 비어 있을 때만 옮기고, 아니면 **보관 값으로 남긴다.** 아래 일반 경로에 맡기면
+            // 타입을 보지 않고 밀어 넣거나(오염), 짝이 없다고 제거해 버린다(유실).
+            //
+            // '대상이 비었는가'에는 폼이 방금 채운 것까지 넣는다 — 사용자가 지금 적은 값이
+            // 옛 값에 덮이면 그것이 가장 나쁜 덮어쓰기다.
+            val globalPlan = planGlobalScopeMove(old, allDefsById, newFields, formDefIds)
+
             val gapFills = LinkedHashMap<Long, CharacterFieldValue>() // 새 defId -> 이관값(폼 미입력분)
             var remapped = 0
             var removed = 0
+            var keptGlobal = 0
             for (v in old) {
                 if (v.value.isBlank()) continue
                 val def = allDefsById[v.fieldDefinitionId]
@@ -540,6 +681,18 @@ class CharacterRepository(
                 // 재매핑도 제거도 하지 않고 그대로 보존한다(폼도 이 값을 렌더하지 않는다).
                 if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) {
                     if (v.fieldDefinitionId !in formDefIds) gapFills.getOrPut(v.fieldDefinitionId) { v }
+                    continue
+                }
+                if (def != null && def.universeId == null) {
+                    val target = globalPlan.transfers[def.id]
+                    if (target == null) {
+                        // 보관 — 값은 그대로 살아 원래 정의를 가리킨다(유실이 아니다).
+                        gapFills.getOrPut(v.fieldDefinitionId) { v }
+                        if (def.id in globalPlan.kept) keptGlobal++
+                    } else if (!gapFills.containsKey(target)) {
+                        gapFills[target] = v.copy(fieldDefinitionId = target)
+                        remapped++
+                    }
                     continue
                 }
                 val key = def?.key
@@ -565,7 +718,7 @@ class CharacterRepository(
             characterDao.update(character)
             characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)
             if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
-            UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0)
+            UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0, keptGlobal)
         }.also {
             trash.pruneIfNeeded()
             // 세계관 간 이동 저장도 폼 값 저장 경로 — 새 세계관 필드로 수확 (검토 A6)

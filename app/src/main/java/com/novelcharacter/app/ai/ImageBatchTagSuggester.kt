@@ -165,11 +165,8 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
 
     companion object {
 
-        /** 재시도해도 같은 결과인 실패 — 잔여 배치 중단 기준. 형제 서제스터와 **같은 집합**이다. */
-        private val TERMINAL_ERRORS = setOf(
-            AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,
-            AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
-        )
+        /** 재시도해도 같은 결과인 실패 — 잔여 배치 중단 기준. 집합은 [AiErrorPolicy]가 단일 소스다. */
+        private val TERMINAL_ERRORS = AiErrorPolicy.TERMINAL
 
         /** 이미지를 요청 단위로 나눈다. 장수는 사용자 설정이고 범위는 [AiPromptPolicy]가 든다. */
         fun chunkImages(paths: List<String>, perRequest: Int): List<List<String>> =

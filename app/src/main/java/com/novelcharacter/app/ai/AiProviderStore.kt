@@ -65,11 +65,29 @@ class AiProviderStore(context: Context) {
         return outcome == AiProviderActivation.Outcome.ACTIVATE_MOVED
     }
 
-    /** 삭제 — 연결된 암호화 키도 반드시 함께 지운다. 활성이었다면 활성 해제. */
-    fun delete(id: String) {
-        persist(list().filterNot { it.id == id })
+    /**
+     * 삭제 — 연결된 암호화 키도 반드시 함께 지운다.
+     *
+     * **활성이었다면 남은 것 중 하나가 이어받는다** (B-153) — 누가 이어받는지는
+     * [AiProviderActivation.succeedAfterDelete]가 단일 소스다(순수라 시험이 잠근다).
+     * 종전에는 활성 id를 지우고 끝이라 **남은 프로바이더가 몇 개든 활성이 비었고**,
+     * 그러면 인앱 AI가 전부 실패하는데 목록에는 쓸 수 있는 프로바이더가 그대로 서 있었다.
+     *
+     * @return 활성을 새로 이어받은 프로바이더. null이면 승계가 없었다는 뜻이고 이유는 둘이다 —
+     *   지운 것이 활성이 아니었거나, 남은 것이 하나도 없거나. 호출측은 null이 아닐 때
+     *   반드시 사용자에게 알린다(묻지 않고 하는 대신 하고 나서 말한다 — [save]와 같은 관행).
+     */
+    fun delete(id: String): AiProviderConfig? {
+        val remaining = list().filterNot { it.id == id }
+        val wasActive = activeId() == id
+        persist(remaining)
         keyStore.removeKey(id)
-        if (activeId() == id) sp.edit().remove(KEY_ACTIVE).apply()
+        if (!wasActive) return null
+
+        // 키 조회는 **지운 뒤** 남은 것들에만 묻는다 — 방금 지운 키를 세면 이미 없는 것을 본다.
+        val heir = AiProviderActivation.succeedAfterDelete(remaining) { keyStore.hasKey(it) }
+        if (heir == null) sp.edit().remove(KEY_ACTIVE).apply() else setActiveId(heir.id)
+        return heir
     }
 
     fun activeId(): String? = sp.getString(KEY_ACTIVE, null)

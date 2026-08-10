@@ -12,7 +12,7 @@ import org.junit.Test
  */
 class CharacterFieldValueOverflowTest {
 
-    private fun field(id: Long, universeId: Long, key: String, type: String = "TEXT", order: Int = 0) =
+    private fun field(id: Long, universeId: Long?, key: String, type: String = "TEXT", order: Int = 0) =
         FieldDefinition(id = id, universeId = universeId, key = key, name = key, type = type, displayOrder = order)
 
     private fun value(charId: Long, fieldId: Long, v: String) =
@@ -22,16 +22,43 @@ class CharacterFieldValueOverflowTest {
         field(1, 10, "gender"),
         field(2, 10, "residence"),
         field(3, 20, "rank"),                      // 다른 세계관
-        field(4, 10, "age", type = "CALCULATED")   // 파생값
+        field(4, 10, "age", type = "CALCULATED"),  // 파생값
+        field(5, null, "theme"),                   // 전역 구역(무소속) — B-119 확장
+        field(6, null, "motif")
     ).associateBy { it.id }
 
     @Test
-    fun unclassifiedCharacter_allValuesOverflow() {
-        // 미분류 캐릭터는 세계관이 없어 필드 열이 하나도 없다 → 값 전량이 오버플로
-        val values = listOf(value(1, 1, "여성"), value(1, 2, "서울"))
-        val picked = CharacterFieldValueOverflow.select(values, emptySet(), fields)
-        assertEquals(2, picked.size)
+    fun unclassifiedCharacter_valuesOutsideItsColumns_overflow() {
+        // 미분류 캐릭터도 **전역 구역의 필드는 열로 담는다**(B-149). 그 열 밖의 값 —
+        // 세계관에 속했다가 빠져나온 잔여값 — 만 오버플로로 나간다.
+        val values = listOf(value(1, 5, "설원"), value(1, 1, "여성"), value(1, 2, "서울"))
+        val picked = CharacterFieldValueOverflow.select(values, setOf(5L, 6L), fields)
         assertEquals(listOf("gender", "residence"), picked.map { it.second.key })
+    }
+
+    /**
+     * **B-149의 본체** — 무소속의 전역 필드 값이 두 시트에 겹쳐 나가지 않는다.
+     *
+     * 내보내기는 이 값을 '미분류 캐릭터' 시트의 열로 싣는다. 그런데 `coveredFieldIds`를 함께
+     * 옮기지 않으면 **같은 값이 오버플로 시트에도 실려**, 가져오기에서 어느 쪽이 권위인지가
+     * 값마다 갈린다. 열을 채우는 쪽과 여기가 한 벌이어야 한다는 것이 이 시험이 잠그는 것이다.
+     */
+    @Test
+    fun unclassifiedCharacter_globalFieldValues_areNotDuplicatedIntoOverflow() {
+        val values = listOf(value(1, 5, "설원"), value(1, 6, "귀향"))
+        assertTrue(CharacterFieldValueOverflow.select(values, setOf(5L, 6L), fields).isEmpty())
+    }
+
+    /**
+     * 반대쪽 — 전역 필드를 열로 담지 **않았다면** 오버플로가 그것을 받아야 한다.
+     * 이 시험이 없으면 위 시험은 *"덮으면 안 나간다"*만 말하고, 그림자가 심기지 않아 열이 없는
+     * 상태(템플릿만 있고 심기 전)에서 **값이 어느 시트에도 안 나가는 것**을 못 본다.
+     */
+    @Test
+    fun unclassifiedCharacter_globalFieldValues_overflowWhenNotColumns() {
+        val values = listOf(value(1, 5, "설원"), value(1, 6, "귀향"))
+        val picked = CharacterFieldValueOverflow.select(values, emptySet(), fields)
+        assertEquals(listOf("theme", "motif"), picked.map { it.second.key })
     }
 
     @Test

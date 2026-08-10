@@ -49,8 +49,15 @@ class AiService(context: Context) {
     suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult {
         // 실패에는 **어느 프로바이더였는지**를 반드시 새겨 내보낸다 (B-150). 새기는 자리를
         // 관문 하나로 둔 이유: 호출부에 맡기면 8곳이 되고 빠뜨린 자리는 종전과 똑같이 조용하다.
+        // 활성이 안 풀리는 이유는 둘이고, 사용자가 할 일이 다르다 (B-153 ⓑ) — 등록이 0건이면
+        // *추가*해야 하고, 등록은 있는데 활성이 매달렸으면 *목록에서 하나 누르면* 된다.
+        // 종전에는 둘 다 "설정된 AI 프로바이더가 없습니다"라, 눈앞에 프로바이더를 두고 없다는
+        // 말을 듣는 사용자는 무엇을 고쳐야 하는지 알 수 없었다.
         val resolved = config ?: providerStore.active()
-            ?: return AiResult.Failure(AiErrorKind.NO_PROVIDER) // 프로바이더가 없으니 새길 것도 없다
+            ?: return AiResult.Failure( // 프로바이더가 정해지지 않았으니 표식으로 새길 것도 없다
+                if (providerStore.list().isEmpty()) AiErrorKind.NO_PROVIDER
+                else AiErrorKind.ACTIVE_NOT_SET
+            )
         val apiKey = keyStore.getKey(resolved.id)
             ?: return AiResult.Failure(AiErrorKind.NO_KEY, provider = resolved.ref())
 

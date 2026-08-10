@@ -455,11 +455,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         fun targetsPerRequest(maxTokens: Int): Int =
             AiTokenPolicy.itemsPerRequest(maxTokens, TOKENS_PER_SUGGESTION, HARD_MAX_TARGETS_PER_REQUEST)
 
-        // 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준 (FieldLibraryAiOrganizer와 동일 집합)
-        private val TERMINAL_ERRORS = setOf(
-            AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,
-            AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
-        )
+        // 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 집합은 [AiErrorPolicy]가 단일 소스다
+        // (종전에는 네 소비자가 각자 적고 주석으로만 "동일 집합"이라 선언했다 — B-153).
+        private val TERMINAL_ERRORS = AiErrorPolicy.TERMINAL
 
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
 

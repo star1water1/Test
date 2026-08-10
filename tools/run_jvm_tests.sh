@@ -171,6 +171,7 @@ $MAIN/ai/AiProviderCodec.kt
 $MAIN/ai/AiProviderActivation.kt
 $MAIN/ai/AiProviderFallback.kt
 $MAIN/ai/AiErrorText.kt
+$MAIN/ai/AiErrorPolicy.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/CharacterNameAiSuggester.kt
 $MAIN/ai/AiPromptPolicy.kt
@@ -232,6 +233,7 @@ $MAIN/data/model/UserPresetTemplate.kt
 $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
 $MAIN/util/FieldTypeCompatibility.kt
+$MAIN/util/GlobalScopeFieldMove.kt
 $MAIN/util/DefaultFieldPlan.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
@@ -298,6 +300,7 @@ $TEST/ai/AiProviderCodecTest.kt
 $TEST/ai/AiProviderActivationTest.kt
 $TEST/ai/AiProviderFallbackTest.kt
 $TEST/ai/AiErrorTextTest.kt
+$TEST/ai/AiErrorPolicyTest.kt
 $TEST/ai/ImageBatchTagSuggesterTest.kt
 $TEST/util/DuelCategoryStatsTest.kt
 $TEST/util/DuelScoreIndexTest.kt
@@ -319,6 +322,7 @@ $TEST/util/EpochMemoTest.kt
 $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
 $TEST/util/DefaultFieldPlanTest.kt
+$TEST/util/GlobalScopeFieldMoveTest.kt
 $TEST/data/model/DefaultFieldRefTest.kt
 $TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt

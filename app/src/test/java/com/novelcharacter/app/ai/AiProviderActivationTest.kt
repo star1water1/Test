@@ -2,6 +2,7 @@ package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.ai.AiProviderActivation.Outcome
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -100,5 +101,64 @@ class AiProviderActivationTest {
             AiProviderActivation.decide(isNew, hasKey, hasActive) == Outcome.ACTIVATE_MOVED
         }
         assertEquals(listOf(Triple(true, true, true)), announced)
+    }
+
+    // ── ④ 활성을 지우면 남은 것이 이어받는다 (B-153, 2026.08.10 사용자 확정) ─────
+    //
+    // **이 넷의 방어선은 개수가 아니라 그 안의 둘이다:**
+    // ⓐ *"키가 있는 첫째"* — 목록 맨 앞을 그냥 세우고 싶어지는 자리인데, 그러면 키 없는
+    //    것이 활성이 되어 실패가 `NO_PROVIDER`에서 `NO_KEY`로 **자리만 옮긴다.** 사용자는
+    //    여전히 쓸 수 있는 프로바이더를 두고 실패를 받고, 고친 것이 없다.
+    // ⓑ *"여기서 정렬하지 않는다"* — 넘겨받은 순서가 곧 화면의 순서다. 판정 안에서 다시
+    //    정렬하면 **보여 주는 순서와 이어받는 순서가 갈리고**, 그 어긋남은 사용자가
+    //    활성 표식을 눈으로 좇기 전까지 아무 데도 드러나지 않는다.
+
+    private fun config(id: String) = AiProviderConfig(
+        id = id,
+        protocol = AiProtocol.OPENAI_COMPAT,
+        displayName = id,
+        baseUrl = "https://example.test/v1",
+        model = "m"
+    )
+
+    @Test
+    fun 키가_있는_첫째가_이어받는다_맨_앞이라도_키가_없으면_건너뛴다() {
+        val remaining = listOf(config("a"), config("b"), config("c"))
+        val heir = AiProviderActivation.succeedAfterDelete(remaining) { it == "b" || it == "c" }
+        assertEquals("b", heir?.id)
+    }
+
+    /**
+     * 키 있는 것이 하나도 없으면 등록순 첫째다 — 그때 남는 `NO_KEY`(*"키를 등록해 주세요"*)는
+     * 활성이 빈 채 뜨는 문구보다 정확한 안내다([decide]의 ③이 같은 근거로 택한 것).
+     */
+    @Test
+    fun 키가_하나도_없으면_등록순_첫째가_이어받는다() {
+        val remaining = listOf(config("a"), config("b"))
+        val heir = AiProviderActivation.succeedAfterDelete(remaining) { false }
+        assertEquals("a", heir?.id)
+    }
+
+    @Test
+    fun 남은_것이_없으면_이어받을_것도_없다() {
+        assertNull(AiProviderActivation.succeedAfterDelete(emptyList()) { true })
+    }
+
+    /** ⓑ — 넘겨받은 순서를 그대로 쓴다. 안에서 다시 정렬하면 화면과 갈린다. */
+    @Test
+    fun 넘겨받은_순서를_그대로_쓴다_안에서_다시_정렬하지_않는다() {
+        val hasKey: (String) -> Boolean = { true }
+        assertEquals(
+            "c",
+            AiProviderActivation.succeedAfterDelete(
+                listOf(config("c"), config("a"), config("b")), hasKey
+            )?.id
+        )
+        assertEquals(
+            "a",
+            AiProviderActivation.succeedAfterDelete(
+                listOf(config("a"), config("b"), config("c")), hasKey
+            )?.id
+        )
     }
 }
