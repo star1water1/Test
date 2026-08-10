@@ -132,6 +132,21 @@ class SheetSpecCsvTest {
     }
 
     @Test
+    fun leadingWhitespaceBeforeQuoteStillCountsAsQuoted() {
+        // 엑셀은 줄바꿈(Alt+Enter)·붙여넣기 탭을 칸 앞에 남긴다. 공백만 건너뛰면 사용자가
+        // 규약대로 감쌌는데도 **아무 말 없이** 옛 규칙으로 갈린다 — 칸 앞의 공백 뜻을
+        // 아래 `trim()`과 맞춰 둔 이유다.
+        assertEquals(listOf("Smith, John", "Alice"), splitCsv("\n\"Smith, John\",\t\"Alice\""))
+    }
+
+    @Test
+    fun whitespaceLeniencyNeverLosesLegacyMeaning() {
+        // 넓힌 판정이 실패하면 어차피 옛 규칙으로 되돌아간다 — 넓히는 쪽이 손해가 없다는 근거.
+        val raw = "\t\"인용\" 시리즈, 다른 것"
+        assertEquals(legacySplit(raw), splitCsv(raw))
+    }
+
+    @Test
     fun emptyAndBlankTokensAreDropped() {
         assertEquals(emptyList<String>(), splitCsv(""))
         assertEquals(listOf("가나"), splitCsv("가나, , "))

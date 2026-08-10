@@ -271,7 +271,11 @@ private fun parseQuotedCsv(s: String): List<String>? {
     val fields = ArrayList<String>()
     var i = 0
     while (true) {
-        while (i < s.length && s[i] == ' ') i++
+        // **공백의 뜻을 아래 `trim()`과 맞춘다.** 칸 앞을 `' '`만 건너뛰면, 엑셀에서 줄바꿈
+        // (Alt+Enter)이나 붙여넣기로 들어온 탭이 앞에 붙는 순간 감싼 칸을 못 알아보고
+        // 옛 규칙으로 쪼개진다 — 사용자는 규약대로 감쌌는데 아무 말 없이 값이 갈린다.
+        // 판정에 실패하면 어차피 옛 규칙으로 되돌아가므로 넓히는 쪽이 손해가 없다.
+        while (i < s.length && s[i].isWhitespace()) i++
         if (i < s.length && s[i] == '"') {
             i++
             val buf = StringBuilder()
@@ -283,7 +287,7 @@ private fun parseQuotedCsv(s: String): List<String>? {
                 } else { buf.append(s[i]); i++ }
             }
             if (!closed) return null                       // 닫히지 않은 따옴표
-            while (i < s.length && s[i] == ' ') i++
+            while (i < s.length && s[i].isWhitespace()) i++
             if (i < s.length && s[i] != ',') return null   // 닫은 뒤 군더더기
             fields.add(buf.toString())
         } else {
