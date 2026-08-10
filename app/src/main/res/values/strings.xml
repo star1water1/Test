@@ -391,6 +391,14 @@
     <string name="relationship_label">관계</string>
     <!-- 캐릭터 목록의 reorder_needs_manual_sort와 형제 문구 — 같은 사정(정렬된 부분집합에 순서를 찍으면 손상)을 같은 말로 알린다. -->
     <string name="relationship_sort_drag_locked">정렬을 \'기본 (수동 순서)\'로 두어야 드래그로 순서를 바꿀 수 있습니다</string>
+    <!-- B-48: 필드 관리의 보기 정렬. 위 둘과 형제 문구지만 **잠긴 사유가 한 겹 더 있다** —
+         필드의 수동 순서는 이 목록만의 것이 아니라 편집 폼의 칸 순서이자 엑셀 열 순서다. -->
+    <string name="field_sort_view">보기 정렬</string>
+    <string name="field_sort_manual">기본 (수동 순서)</string>
+    <string name="field_sort_name">이름순</string>
+    <string name="field_sort_type">종류순</string>
+    <string name="field_sort_group">그룹순</string>
+    <string name="field_sort_drag_locked">정렬을 \'기본 (수동 순서)\'로 두어야 드래그로 순서를 바꿀 수 있습니다. 이 순서는 편집 폼의 칸 순서이자 엑셀 열 순서입니다.</string>
     <string name="target_character">대상 캐릭터</string>
     <string name="relationship_type">관계 유형</string>
     <string name="description_optional">설명 (선택)</string>

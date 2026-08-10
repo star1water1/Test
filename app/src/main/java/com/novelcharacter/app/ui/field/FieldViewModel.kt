@@ -17,6 +17,7 @@ import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import android.util.Log
+import com.novelcharacter.app.util.DetailListSort
 import kotlinx.coroutines.launch
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,6 +35,29 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     private val _result = MutableLiveData<OpResult?>()
     val result: LiveData<OpResult?> = _result
     fun clearResult() { _result.value = null }
+
+    /**
+     * 보기 정렬 (B-48 · 확정 7-7). **저장 순서와 다른 것이다** —
+     * 이 값은 화면에 보이는 순서만 정하고 `displayOrder`를 읽지도 쓰지도 않는다.
+     *
+     * 화면별로 기억한다(캐릭터 상세의 보기 정렬과 같은 규약): "나는 필드를 종류끼리 모아
+     * 본다"는 사용자의 보기 습관이지 세계관 하나의 속성이 아니다. 세계관마다 따로 두면
+     * 세계관을 옮길 때마다 다시 골라야 한다(원칙 04).
+     *
+     * 모르는 값은 기본으로 떨어진다 — 구버전·손상에 죽지 않는다.
+     */
+    private val _sortMode = MutableLiveData(
+        DetailListSort.FieldMode.entries
+            .firstOrNull { it.name == prefs.getString(KEY_SORT_MODE, null) }
+            ?: DetailListSort.FieldMode.MANUAL
+    )
+    val sortMode: LiveData<DetailListSort.FieldMode> = _sortMode
+
+    fun setSortMode(mode: DetailListSort.FieldMode) {
+        if (_sortMode.value == mode) return
+        prefs.edit().putString(KEY_SORT_MODE, mode.name).apply()
+        _sortMode.value = mode
+    }
 
     // 관리 대상 (B-10 · 확-3): 캐릭터 / 사건 / 작품 필드 전환 — 저장된 세그먼트에서 복원
     private val _entityType = MutableLiveData(
@@ -494,5 +518,13 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return resolution
+    }
+
+    private companion object {
+        /**
+         * 같은 prefs 파일의 `entity_type`과 **다른 키여야 한다**(규약 R-28 —
+         * `tools/check_prefs_keys.sh`). 둘 다 이 화면의 보기 상태이므로 한 파일에 둔다.
+         */
+        const val KEY_SORT_MODE = "sort_mode"
     }
 }
