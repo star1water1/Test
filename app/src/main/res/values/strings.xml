@@ -2184,6 +2184,7 @@
     <string name="batch_success_append_skipped">%1$s · 기존 기록 %2$d건 제외</string>
     <!-- 일괄 결과 합산 고지용 조각 (여러 경고가 동시에 날 때 " · "로 이어 붙임) -->
     <string name="batch_note_moved_removed">필드값 %1$d·세력 %2$d 제거(휴지통 복원 가능)</string>
+    <string name="batch_note_moved_kept">필드값 %1$d개는 옮길 곳의 값이 이미 있거나 형식이 달라 보관(그대로 남아 있습니다)</string>
     <string name="batch_note_sync_failed">동기화 실패 %1$d건</string>
     <string name="batch_note_skipped">제외 %1$d건(다른 세계관/미배정·중복)</string>
     <string name="result_excel_exported">엑셀 내보내기 완료 — 시트 %1$d개 · %2$d행</string>

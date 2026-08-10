@@ -507,13 +507,21 @@ class CharacterListFragment : Fragment() {
                     if (result.move.hasRemoval) {
                         parts.add(getString(R.string.batch_note_moved_removed, result.move.removedValues, result.move.removedMemberships))
                     }
+                    // 보관분도 말한다 (B-128). 유실은 아니지만 **이 캐릭터는 이제 세계관 안에 있어**
+                    // 그 값이 화면 어디에도 그려지지 않는다 — 말하지 않으면 '일일이 확인하지 않으면
+                    // 존재를 알 수 없는 데이터'가 된다(원칙 04). 이 자리가 여러 고지를 합쳐 내도록
+                    // 만들어져 있는 이유가 정확히 이것이다.
+                    if (result.move.keptGlobalValues > 0) {
+                        parts.add(getString(R.string.batch_note_moved_kept, result.move.keptGlobalValues))
+                    }
                     if (result.syncFailures > 0) {
                         parts.add(getString(R.string.batch_note_sync_failed, result.syncFailures))
                     }
                     if (result.skipped > 0) {
                         parts.add(getString(R.string.batch_note_skipped, result.skipped))
                     }
-                    val hasNotice = result.move.hasRemoval || result.syncFailures > 0 || result.skipped > 0
+                    val hasNotice = result.move.hasRemoval || result.move.keptGlobalValues > 0 ||
+                        result.syncFailures > 0 || result.skipped > 0
                     Snackbar.make(
                         binding.root, parts.joinToString(" · "),
                         if (hasNotice) Snackbar.LENGTH_LONG else Snackbar.LENGTH_SHORT
@@ -525,6 +533,9 @@ class CharacterListFragment : Fragment() {
                         detailParts.add(getString(R.string.result_batch_move_detail, result.move.remappedValues, result.move.removedValues, result.move.removedMemberships))
                     } else if (result.move.remappedValues > 0) {
                         detailParts.add(getString(R.string.result_batch_move_remapped, result.move.remappedValues))
+                    }
+                    if (result.move.keptGlobalValues > 0) {
+                        detailParts.add(getString(R.string.batch_note_moved_kept, result.move.keptGlobalValues))
                     }
                     if (result.syncFailures > 0) detailParts.add(getString(R.string.result_batch_sync_warning, result.syncFailures))
                     if (result.skipped > 0) detailParts.add(getString(R.string.batch_note_skipped, result.skipped))

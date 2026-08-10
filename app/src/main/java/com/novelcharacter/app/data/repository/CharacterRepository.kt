@@ -171,7 +171,16 @@ class CharacterRepository(
                 (moved + rest).filter { taken.add(it.fieldDefinitionId) }
             }
             characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
-            result = LeaveUniverseResult(plan.transfers.size, plan.kept.size, preserved)
+            // **보존 수에서 옮긴 것을 뺀다.** `preserved`는 이관 전에 센 것이라 옮겨 간 값까지
+            // 들어 있는데, 그것을 그대로 고지하면 *"화면에 없는 필드값 N개를 보관했습니다 —
+            // 작품을 다시 배정하면 그대로 보입니다"*라고 말하게 된다. 옮긴 값은 **지금 화면에
+            // 보이고** 되돌릴 것도 없으니 두 문장이 다 거짓이다.
+            // 옮길 후보는 폼이 렌더하지 않는 세계관 필드뿐이라 이관분은 언제나 보존분의 부분집합이다.
+            result = LeaveUniverseResult(
+                transferred = plan.transfers.size,
+                kept = plan.kept.size,
+                preserved = (preserved - plan.transfers.size).coerceAtLeast(0)
+            )
         }
         fieldLibrary.harvestForCharacter(character.id)
         return result
@@ -183,7 +192,7 @@ class CharacterRepository(
         val transferred: Int = 0,
         /** 안전하지 않아 보관 값으로 남긴 값 수(타입 불일치·대상 점유·짝 없음). */
         val kept: Int = 0,
-        /** 폼이 렌더하지 않아 그대로 둔 값 수 (N2). */
+        /** 폼이 렌더하지 않아 그대로 둔 값 수 (N2) — **이관분은 빠져 있다**(그쪽은 화면에 보인다). */
         val preserved: Int = 0
     )
 
@@ -468,12 +477,13 @@ class CharacterRepository(
             val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             if (newUniverseId != null) {
                 val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
-                val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
+                val newFields = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId)
+                val newDefByKey = newFields.associateBy { it.key }
                 for (chunk in ids.chunked(CHUNK_SIZE)) {
                     for (character in characterDao.getCharactersByIds(chunk)) {
                         val curUniverse = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
                         if (curUniverse == newUniverseId) continue // 같은 세계관 내 이동은 정리 불필요
-                        agg += migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
+                        agg += migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, newFields, trash)
                     }
                 }
             }
@@ -498,6 +508,13 @@ class CharacterRepository(
         newUniverseId: Long,
         allDefsById: Map<Long, FieldDefinition>,
         newDefByKey: Map<String, FieldDefinition>,
+        /**
+         * 새 세계관의 필드 **전부** — 전역 값의 이관 대상을 찾는 데 쓴다 (B-128).
+         * [newDefByKey]로 대신할 수 없다: 그 맵은 `associateBy { it.key }`라 **종류를 가리지 않고
+         * 키로 뭉개므로**, 같은 세계관에 키가 같은 사건 필드가 있으면 캐릭터 필드가 밀려 사라진다.
+         * 그러면 짝이 있는데도 못 찾아 값이 조용히 보관 값으로 굳는다.
+         */
+        newFields: List<FieldDefinition>,
         trash: TrashRepository
     ): UniverseMoveCounts {
         val oldValues = characterFieldValueDao.getValuesByCharacterList(character.id)
@@ -511,7 +528,7 @@ class CharacterRepository(
         // 편집 폼 경로는 같은 값을 *보관*한다. **한 저장소 안에서 처분의 방향이 갈리면**
         // 사용자는 같은 조작을 어디서 했는지에 따라 값을 잃거나 잃지 않는다.
         val globalPlan = planGlobalScopeMove(
-            oldValues, allDefsById, newDefByKey.values.toList(), occupiedTargetFieldIds = emptySet()
+            oldValues, allDefsById, newFields, occupiedTargetFieldIds = emptySet()
         )
         for (v in oldValues) {
             val def = allDefsById[v.fieldDefinitionId]
@@ -581,8 +598,9 @@ class CharacterRepository(
         val counts = db.withTransaction {
             val trashRepo = trash ?: ownedTrash!!
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
-            val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
-            migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trashRepo)
+            val newFields = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId)
+            val newDefByKey = newFields.associateBy { it.key }
+            migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, newFields, trashRepo)
         }
         ownedTrash?.pruneIfNeeded()
         // 재매핑된 값이 새 세계관 필드의 라이브러리에 등재되도록 수확
