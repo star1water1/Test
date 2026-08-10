@@ -26,9 +26,21 @@
 #   REPO=/tmp/base-wt JARS_DIR=/path/to/jars tools/probe_compile.sh /tmp/probe-base.txt
 #   comm -13 /tmp/probe-base.txt /tmp/probe-cur.txt      # 신규 오류만 남는다
 #
-# **범위 밖:** UI(`ui/**`)와 `ExcelImporter`·`OrganizeFolderService`는 Android 프레임워크에
-# 너무 깊게 묶여 있어 뺐다. **그 계층의 컴파일 증명은 CI(`assembleDebug`)뿐이다** —
-# 화면을 손대는 변경은 CI 초록과 실기기 확인 전까지 미완으로 다룰 것.
+# **범위 밖:** UI(`ui/**`)와 `ExcelImporter`는 Android 프레임워크에 너무 깊게 묶여 있어 뺐다.
+# **그 계층의 컴파일 증명은 CI(`assembleDebug`)뿐이다** — 화면을 손대는 변경은
+# **실기기 확인 전까지 미완으로 다룰 것**이고, CI는 화면 파일을 건드린 변경이 2~3개 쌓이면
+# 한 번 돌린다(CLAUDE.md v2.0 — 둘은 증명하는 것이 다르다: CI는 *컴파일되는가*,
+# 실기기는 *제대로 보이는가*. 종전 이 줄은 *"CI 초록과 실기기 확인 전까지"*로 둘을 묶고 있었다).
+#
+# **`OrganizeFolderService.kt`는 2026.08.10에 범위 안으로 들여왔다 (B-110).** 이 자리는
+# *"Android 프레임워크에 너무 깊게 묶여 있어"*라고 그 파일까지 함께 적고 있었는데
+# **실측이 그것을 반증했다** — 넣어도 컴파일은 정상으로 끝나고, 느는 것은 **25건뿐이며
+# 그 전부가 기존 447건과 같은 부류**다(`ContentResolver`·`DocumentsContract`·`Uri`·
+# 커서 메서드 등 프레임워크 스텁의 빈자리. 2026.08.03 B-107 세션의 실측 25건과도 같다).
+# **프로브는 어차피 기준선 대비 비교라 상수 노이즈는 아무것도 가리지 않는다** — 그 원칙으로
+# `excel/`도 세 자릿수를 내면서 들어와 있다. 반대로 빼 두는 값은 컸다: 이 파일은 **되돌릴 수
+# 없는 일**(파일 편입·`_처리됨/` 이동·`_삭제승인` 삭제)을 하는데 순수 하네스에도 없어
+# **어떤 로컬 검사에도 안 잡혔다**(B-89이 같은 이유로 `data/repository`를 들인 것과 같은 부류).
 #
 # **`util/AiImage*.kt` 둘도 뺐다 (2026.08.07 · B-120).** 사유가 서로 다르다:
 #   - `AiImagePreparer` — `android.graphics.Bitmap`·`android.util.Base64`에 묶여 있다
@@ -90,7 +102,7 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
-} | grep -vE "util/(OrganizeFolderService|AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
+} | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
 
 # ── 3. 컴파일 ──
 # 주의: 컴파일러 자신의 클래스패스에도 coroutines가 있어야 한다(없으면 CoroutineScope

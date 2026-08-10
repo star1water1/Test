@@ -1,0 +1,8 @@
+com/novelcharacter/app/ui/character/CharacterListFragment.kt|showRenamePresetDialog|name.isNotEmpty()
+com/novelcharacter/app/ui/character/CharacterListFragment.kt|showSavePresetDialog|name.isNotEmpty()
+com/novelcharacter/app/ui/search/GlobalSearchFragment.kt|showEditPresetDialog|newName.isNotBlank()
+com/novelcharacter/app/ui/search/GlobalSearchFragment.kt|showSavePresetDialog|name.isBlank()
+com/novelcharacter/app/ui/timeline/QuickAddEventDialogFragment.kt|onCreateDialog|desc.isNotEmpty()
+com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showEditPresetNameDialog|name.isNotEmpty()
+com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showPresetNameInputDialog|name.isNotEmpty()
+com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showUniverseEditDialog|name.isNotEmpty()
