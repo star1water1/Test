@@ -107,6 +107,35 @@ pcount=$(printf '%s\n' "$PAIRING" | sed -n 's/^__PCOUNT__\([0-9]*\).*/\1/p')
 ptotal=$(printf '%s\n' "$PAIRING" | sed -n 's/.*__TOTAL__\([0-9]*\)$/\1/p')
 pbody=$(printf '%s\n' "$PAIRING" | grep -v '^__PCOUNT__' || true)
 
+# ── ③ '갱신 N'이 세는 것이 미리보기와 같은가 (B-111 · 확정 7-2) ──
+# 미리보기는 `merged != existing`으로 **실제로 바뀌는 행**만 '변경'으로 센다. 가져오기의
+# `result.updated*++`가 그 판정 없이 서 있으면 **매칭된 행 전부**를 세고, 그래서 같은 파일에서
+# 미리보기가 "변경 3 · 동일 7"이라 하고 결과가 "갱신 10"이라 하던 것이 B-111이다.
+# 이것도 시험이 못 막는다 — `ExcelImportService`는 DB에 묶여 순수 하네스가 원리적으로 못 닿고,
+# 새 범주가 늘 때 게이트를 빠뜨리는 것이 정확히 ①과 같은 부류의 침묵이다.
+TALLY=$(python3 - "$TARGET" <<'PY3'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+INC = re.compile(r'result\.updated[A-Za-z0-9_]*\+\+')
+# 게이트로 인정하는 모양: 같은 줄이나 위쪽 가까이에 `X != Y` 비교가 있는 것.
+GATE = re.compile(r'!=\s*(existing[A-Za-z0-9_]*|current)\b|\b(merged|kept|saved|updated|candidate|target)\s*!=')
+bad = []
+for i, line in enumerate(lines):
+    code = line.split('//')[0]
+    if not INC.search(code):
+        continue
+    # 같은 줄 + 바로 위 6줄까지를 창으로 본다(블록형 `if (merged != existing) { … }` 수용).
+    window = '\n'.join(l.split('//')[0] for l in lines[max(0, i - 6):i + 1])
+    if not GATE.search(window):
+        bad.append((i + 1, line.strip()))
+for ln, text in bad:
+    print(f"{ln}\t{text}")
+print(f"__TCOUNT__{len(bad)}")
+PY3
+)
+tcount=$(printf '%s\n' "$TALLY" | sed -n 's/^__TCOUNT__//p')
+tbody=$(printf '%s\n' "$TALLY" | grep -v '^__TCOUNT__' || true)
+
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
@@ -139,7 +168,25 @@ if [ "${pcount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${tcount:-0}" -gt 0 ]; then
+  echo "  ✗ '갱신' 집계가 변경 판정 없이 올라갑니다 (${tcount}건) — 매칭된 행 전부를 셉니다"
+  echo
+  printf '%s\n' "$tbody" | while IFS=$'\t' read -r ln text; do
+    [ -z "${ln:-}" ] && continue
+    echo "    ExcelImportService.kt:$ln"
+    echo "      $text"
+  done
+  echo
+  echo "  '갱신'은 **실제로 바뀐 행**입니다(확정 7-2). 미리보기와 같은 판정을 쓰세요:"
+  echo "      val merged = mergeX(existing, …)"
+  echo "      db.xDao().update(merged)"
+  echo "      if (merged != existing) result.updatedX++ else result.unchangedRows++"
+  echo "  else 쪽을 빠뜨리면 아무것도 안 바뀐 파일에서 결과창이 '데이터 없음'이라 말합니다."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
+echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo
 echo "복원 미리보기 정합 검사 통과"

@@ -194,6 +194,18 @@ data class ImportResult(
     var updatedDuelMatches: Int = 0,
     var newDuelVerdicts: Int = 0,
     var updatedDuelVerdicts: Int = 0,
+    /**
+     * **찾아 맞췄으나 고칠 것이 없던 행** (B-111 · 확정 7-2).
+     *
+     * `updated*`가 *실제로 바뀐 행*만 세게 되면서 생긴 자리다. 이것이 없으면 아무것도 고치지
+     * 않은 파일을 다시 넣었을 때 **모든 수가 0이 되어 결과창이 *"데이터 없음"*이라 말한다** —
+     * 파일에는 데이터가 가득했고 단지 바꿀 것이 없었을 뿐인데, 사용자는 **가져오기가 실패했거나
+     * 파일이 빈 것으로 읽는다.** 고치려던 거짓말(*"갱신 10"*)을 더 나쁜 거짓말로 바꾸는 셈이다.
+     *
+     * 그래서 *"바뀐 것 없음"*과 *"아무것도 없음"*을 가른다 — 왕복 멱등 확인(A7)이
+     * 그 둘을 반드시 구별해야 하는 자리다.
+     */
+    var unchangedRows: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
@@ -3523,10 +3535,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     // 이미지 참조는 여기서 null로 두고 Phase 2가 코드로 되붙인다 — 그 캐릭터·작품이
                     // 아직 없을 수 있기 때문이다. 미리보기는 되붙은 뒤의 값을 넣어 같은 함수를 부른다.
-                    db.universeDao().update(mergeUniverse(existing, r, imageCharacterId = null, imageNovelId = null))
+                    val mergedUniverse = mergeUniverse(existing, r, imageCharacterId = null, imageNovelId = null)
+                    db.universeDao().update(mergedUniverse)
                     if (imageCharCode != null) deferredUniverseImageCharCodes[existing.id] = imageCharCode
                     if (imageNovelCode != null) deferredUniverseImageNovelCodes[existing.id] = imageNovelCode
-                    result.updatedUniverses++
+                    if (mergedUniverse != existing) result.updatedUniverses++ else result.unchangedRows++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
@@ -3686,9 +3699,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     // 이미지 캐릭터는 여기서 null로 두고 Phase 2가 코드로 되붙인다.
-                    db.novelDao().update(mergeNovel(existing, r, effectiveUniverseId, imageCharacterId = null))
+                    val mergedNovel = mergeNovel(existing, r, effectiveUniverseId, imageCharacterId = null)
+                    db.novelDao().update(mergedNovel)
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[existing.id] = novelImageCharCode
-                    result.updatedNovels++
+                    if (mergedNovel != existing) result.updatedNovels++ else result.unchangedRows++
                     // 소속이 이 행에서 바뀌었으면 **새 소속**의 필드가 적용 대상이다(위 val과 같은 값).
                     applyNovelFieldColumns(
                         row, existing.id, effectiveUniverseId,
@@ -3889,9 +3903,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         )
                         val kept = merged.copy(key = existing.key, entityType = existing.entityType)
                         if (kept != existing) { dao.update(kept); result.updatedDefaultFields++ }
+                        else result.unchangedRows++
                     } else {
                         dao.update(merged)
-                        result.updatedDefaultFields++
+                        if (merged != existing) result.updatedDefaultFields++ else result.unchangedRows++
                     }
                 }
             } else {
@@ -4187,7 +4202,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // (행의 정체가 라벨 그 자체다) 라벨 변경은 삭제+추가로 다룬다.
                     repository.saveSystem(saved)
                     result.updatedGradeSystems++
-                } // 변경 없음은 세지 않는다
+                } else result.unchangedRows++  // 변경 없음은 '갱신'이 아니라 '동일'로 센다 (B-111)
                 matchedGradeSystemIds.add(existing.id)
             } else {
                 // 코드가 다른 세계관의 체계와 겹치면 재발급한다(전역 유니크 — 소속을 옮기지 않는다).
@@ -4359,9 +4374,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
                     }
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.fieldDefinitionDao().update(mergeFieldDefinition(existing, r, mergedConfig))
+                    val mergedFieldDef = mergeFieldDefinition(existing, r, mergedConfig)
+                    db.fieldDefinitionDao().update(mergedFieldDef)
                     matchedFieldDefinitionIds.add(existing.id)
-                    result.updatedFields++
+                    if (mergedFieldDef != existing) result.updatedFields++ else result.unchangedRows++
                 } else {
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
                         universeId = universe?.id, key = key, name = name, type = type,
@@ -4649,7 +4665,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.fieldValueEntryDao().update(candidate)
                     siblings.removeAll { it.id == candidate.id }
                     siblings.add(candidate)
-                    result.updatedFieldValueEntries++
+                    if (candidate != existing) result.updatedFieldValueEntries++ else result.unchangedRows++
                 } else {
                     // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용)
                     val codeOwner = db.fieldValueEntryDao().getByCode(candidate.code)
@@ -5051,8 +5067,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
                     // 따라가고, 다른 기기에서 온 목록에 그 파일이 없으면 풀린다(D5).
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.characterDao().update(mergeCharacter(existingChar, r, novelId, i, nowMillis, result))
-                    result.updatedCharacters++
+                    // **한 번만 부른다** — 이 함수는 `result`를 받아 대표 셀 고지를 쌓으므로
+                    // 세는 김에 다시 부르면 그 고지가 두 번 붙는다.
+                    val mergedChar = mergeCharacter(existingChar, r, novelId, i, nowMillis, result)
+                    db.characterDao().update(mergedChar)
+                    if (mergedChar != existingChar) result.updatedCharacters++ else result.unchangedRows++
 
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
                     if (universe != null && conflict?.cleanupOldFields == true) {
@@ -5300,7 +5319,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existingEvent != null) {
                     eventId = existingEvent.id
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.timelineDao().update(mergeTimelineEvent(existingEvent, r, links, generateEntityCode()))
+                    val mergedEvent = mergeTimelineEvent(existingEvent, r, links, generateEntityCode())
+                    db.timelineDao().update(mergedEvent)
                     // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
                     if (novelIds.isNotEmpty()) {
                         db.timelineDao().replaceEventNovels(eventId, novelIds)
@@ -5313,7 +5333,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.clearedFields++
                         }
                     }
-                    result.updatedEvents++
+                    if (mergedEvent != existingEvent) result.updatedEvents++ else result.unchangedRows++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = r.month, day = r.day,
@@ -5538,9 +5558,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 if (existing != null) {
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.characterStateChangeDao().update(mergeStateChange(existing, r, character.id, generateEntityCode()))
+                    val mergedStateChange = mergeStateChange(existing, r, character.id, generateEntityCode())
+                    db.characterStateChangeDao().update(mergedStateChange)
                     matchedStateChangeIds.add(existing.id)
-                    result.updatedStateChanges++
+                    if (mergedStateChange != existing) result.updatedStateChanges++ else result.unchangedRows++
                 } else {
                     val newId = db.characterStateChangeDao().insert(CharacterStateChange(
                         characterId = character.id, year = year, month = r.month, day = r.day,
@@ -5711,11 +5732,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (existing.factionId != null && effectiveFactionId == null) result.clearedFields++
                     if (existing.factionId == null && effectiveFactionId != null) factionAttachedRows.add(i)
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.characterRelationshipDao().update(
+                    val mergedRelationship =
                         mergeRelationship(existing, rv, effectiveFactionId, generateEntityCode())
-                    )
+                    db.characterRelationshipDao().update(mergedRelationship)
                     matchedRelationshipIds.add(existing.id)
-                    result.updatedRelationships++
+                    if (mergedRelationship != existing) result.updatedRelationships++ else result.unchangedRows++
                 } else {
                     // 잔여 관계 고지는 행마다 하지 않는다 — 같은 쌍의 다른 행이 아직 처리되지 않았을 뿐인데
                     // "정리하세요"라고 안내하면 사용자가 멀쩡한 데이터를 지운다. 루프 종료 후 1회 집계한다.
@@ -5863,11 +5884,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수
                     if (rv.hasDescCol && description == "" && existing.description.isNotBlank()) result.clearedFields++
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.characterRelationshipChangeDao().update(
+                    val mergedRelChange =
                         mergeRelationshipChange(existing, rv, relationship.id, eventId, generateEntityCode())
-                    )
+                    db.characterRelationshipChangeDao().update(mergedRelChange)
                     matchedRelationshipChangeIds.add(existing.id)
-                    result.updatedRelationshipChanges++
+                    if (mergedRelChange != existing) result.updatedRelationshipChanges++ else result.unchangedRows++
                 } else {
                     val newId = db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
                         relationshipId = relationship.id,
@@ -5933,7 +5954,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.nameBankDao().update(merged)
                     existingNamesMap[merged.mapKeyForNameBank()] = merged
                     matchedNameBankIds.add(existing.id)
-                    result.updatedNameBank++
+                    if (merged != existing) result.updatedNameBank++ else result.unchangedRows++
                 } else {
                     // 파일의 코드를 보존해 백업/기기이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
                     val newCode = if (r.code.isNotBlank()) r.code else generateEntityCode()
@@ -5994,8 +6015,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.errors.add("필드 템플릿 행 $i: 템플릿(id=${match.id})을 다시 읽지 못해 건너뛰었습니다")
                         } else {
                             // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                            db.userPresetTemplateDao().update(mergePresetTemplate(existing, r, nowMillis))
-                            result.updatedPresetTemplates++
+                            val mergedTemplate = mergePresetTemplate(existing, r, nowMillis)
+                            db.userPresetTemplateDao().update(mergedTemplate)
+                            if (mergedTemplate != existing) result.updatedPresetTemplates++ else result.unchangedRows++
                         }
                     }
                     is PresetTemplateMatcher.Match.New -> {
@@ -6069,8 +6091,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing = existingByName[name]
                 if (existing != null) {
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.searchPresetDao().update(mergeSearchPreset(existing, r, nowMillis))
-                    result.updatedSearchPresets++
+                    val mergedSearchPreset = mergeSearchPreset(existing, r, nowMillis)
+                    db.searchPresetDao().update(mergedSearchPreset)
+                    if (mergedSearchPreset != existing) result.updatedSearchPresets++ else result.unchangedRows++
                 } else {
                     val newPreset = SearchPreset(
                         name = name,
@@ -6124,8 +6147,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing = existingByName[name]
                 if (existing != null) {
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.characterListPresetDao().update(mergeListPreset(existing, r, nowMillis))
-                    result.updatedListPresets++
+                    val mergedListPreset = mergeListPreset(existing, r, nowMillis)
+                    db.characterListPresetDao().update(mergedListPreset)
+                    if (mergedListPreset != existing) result.updatedListPresets++ else result.unchangedRows++
                 } else {
                     val newPreset = CharacterListPreset(
                         name = name,
@@ -6310,9 +6334,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     entitySeen[existing.id] = i
                     if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
-                    db.factionDao().update(mergeFaction(existing, r, universeId))
+                    val mergedFaction = mergeFaction(existing, r, universeId)
+                    db.factionDao().update(mergedFaction)
                     matchedFactionIds.add(existing.id)
-                    result.updatedFactions++
+                    if (mergedFaction != existing) result.updatedFactions++ else result.unchangedRows++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
@@ -6519,7 +6544,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                     db.factionMembershipDao().update(updated)
                     matchedFactionMembershipIds.add(existingMembership.id)
-                    result.updatedFactionMemberships++
+                    if (updated != existingMembership) result.updatedFactionMemberships++ else result.unchangedRows++
                 } else {
                     // Insert new membership
                     val membershipId = db.factionMembershipDao().insert(FactionMembership(
@@ -6707,9 +6732,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     // 열 없음 = 기존값 유지(무음 손실 방지), 빈칸=삭제 집계 — 캐릭터 관계 시트와 동일 의미론
                     if (descColIndex >= 0 && rowValues.description == "" && existing.description.isNotBlank()) result.clearedFields++
-                    db.factionRelationshipDao().update(FactionRelationshipMatcher.apply(existing, rowValues, presence))
+                    val mergedFactionRel = FactionRelationshipMatcher.apply(existing, rowValues, presence)
+                    db.factionRelationshipDao().update(mergedFactionRel)
                     matchedFactionRelationshipIds.add(existing.id)
-                    result.updatedFactionRelationships++
+                    if (mergedFactionRel != existing) result.updatedFactionRelationships++ else result.unchangedRows++
                 } else {
                     val newRel = FactionRelationship(
                         factionId1 = faction1.id,
@@ -6805,7 +6831,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val existing = db.imageMetaDao().getByPath(path)
                 val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
-                if (existing != null) result.updatedImageMeta++ else result.newImageMeta++
+                if (existing == null) result.newImageMeta++
 
                 // 무엇이 바뀌는가의 판정도 같은 함수다. 태그는 열이 있을 때만 읽는다 —
                 // 없으면 비교 대상이 아니라 조회도 낭비다.
@@ -6815,6 +6841,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     detachedAt = existing?.detachedAt
                 )
                 val target = mergeImageMetaState(current, r)
+                // '갱신'은 **실제로 바뀐 행**이다 (B-111 · 확정 7-2) — 미리보기가 쓰는 판정과
+                // 글자 그대로 같다(`mergeImageMetaState(current, r) != current`).
+                if (existing != null) {
+                    if (target != current) result.updatedImageMeta++ else result.unchangedRows++
+                }
 
                 // F1-A: '태그' 열이 없으면 기존 태그 유지. 열이 있고 빈칸이면 비움 의도로 존중.
                 // 바뀌지 않으면 쓰지 않는다 — replaceAllForImage는 전량 삭제+재삽입이다.
@@ -7097,7 +7128,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (merged != existing) {
                         db.duelAxisDao().update(merged)
                         result.updatedDuelAxes++
-                    }
+                    } else result.unchangedRows++
                     // **대상은 기존 축의 것이다** — `mergeDuelAxis`가 targetType을 바꾸지 않으므로
                     // 행에 적힌 대상이 아니라 실제 축의 대상으로 판정해야 한다.
                     enforceSingleBasisAxis(
@@ -7254,7 +7285,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (merged != existing) {
                         db.duelMatchDao().update(merged)
                         result.updatedDuelMatches++
-                    }
+                    } else result.unchangedRows++
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -7347,7 +7378,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (merged != existing) {
                         db.duelCounterVerdictDao().update(merged)
                         result.updatedDuelVerdicts++
-                    }
+                    } else result.unchangedRows++
                 }
             } catch (e: Exception) {
                 result.skippedRows++

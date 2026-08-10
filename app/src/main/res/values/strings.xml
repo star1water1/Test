@@ -1504,6 +1504,9 @@
     <string name="import_result_new_codes">새 코드 %d건 발급</string>
     <string name="import_result_complete">가져오기 완료: %s</string>
     <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
+    <!-- B-111: 찾아 맞췄으나 고칠 것이 없던 경우. '데이터 없음'과 반드시 갈라야 한다 —
+         왕복 멱등 확인에서 그 둘을 섞으면 가져오기가 실패한 것처럼 읽힌다. -->
+    <string name="import_result_unchanged">가져오기 완료: 바뀐 것 없음 (%d행이 파일과 이미 같습니다)</string>
     <string name="import_result_title">가져오기 결과</string>
     <string name="import_result_details">상세 보기</string>
 
