@@ -30,6 +30,10 @@ package com.novelcharacter.app.ai
  * 읽는다"는 목적 자체가 반쯤 사라진다. 대신 [Suggestion.isNew]로 표시해 사용자가 판단한다
  * (자율성 우선 + 변수 제어).
  *
+ * **단 '어휘 밖'의 판정은 정확 일치가 아니다** — 공백·대소문자만 다른 것은 기존 표기로
+ * 접고 새 태그로 세지 않는다([ImageTagVocabulary.fold] · B-127). 표기가 갈리는 것과
+ * 새 개념이 나오는 것은 다른 일이고, 앞엣것까지 새 태그로 부르면 필터가 둘로 쪼개진다.
+ *
  * 프롬프트 조립·응답 파싱·검증은 전부 [AiService] 미호출 순수 함수라 단위 테스트된다.
  */
 class ImageFolderTagSuggester(private val aiService: AiService) {
@@ -133,11 +137,26 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         /**
          * 응답을 검증하며 읽는다. **요청한 폴더만** 통과시키고 나머지는 사유별로 센다.
          *
+         * **어휘 대조는 [ImageBatchTagSuggester.foldToVocabulary]와 같은 규칙이다** — 공백·대소문자를
+         * 무시해 일치하면 **기존 표기로 접는다**(B-127, 확정 14장 8번 ⓐ). 종전에는 이쪽만
+         * `it !in vocab`이라 정확 일치로만 봐서, 폴더 `물의 정령`이 태그 `물의정령`을 두고도
+         * **새 태그로 갈렸다** — 같은 앱의 두 AI 태깅 경로가 같은 말에 다른 태그를 만드는 것이다.
+         * 어휘 조립은 [ImageTagVocabulary] 하나로 합쳐 두었는데 **대조 규칙만 두 벌로 남아 있었다.**
+         *
+         * 접힌 것은 새 태그가 아니므로 [Suggestion.isNew] 표식도 붙지 않는다.
+         *
          * @param requested 이 요청에 실제로 보낸 폴더명. 여기 없는 이름은 환각이다.
+         * @param vocab 접기 대조와 `새 태그` 판정에 함께 쓰는 어휘.
          */
-        fun parse(raw: String, requested: Collection<String>, vocab: Set<String>): Pair<List<FolderSuggestion>, DropTally> {
+        fun parse(
+            raw: String,
+            requested: Collection<String>,
+            vocab: ImageTagVocabulary.Vocabulary
+        ): Pair<List<FolderSuggestion>, DropTally> {
             val json = AiJsonExtractor.extractObject(raw) ?: return emptyList<FolderSuggestion>() to DropTally()
             val wanted = requested.toHashSet()
+            val folding = vocab.forFolding
+            val known = vocab.all
             val out = ArrayList<FolderSuggestion>()
             var unknown = 0
             var blank = 0
@@ -153,17 +172,22 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                 if (!seen.add(name)) { unknown++; continue }
 
                 val tagsArr = obj.optJSONArray("tags")
-                val picked = LinkedHashSet<String>()
+                val picked = LinkedHashMap<String, Suggestion>()
                 if (tagsArr != null) {
                     for (t in 0 until tagsArr.length()) {
-                        val tag = tagsArr.optString(t).trim()
-                        if (tag.isEmpty() || tag.length > AiPromptPolicy.IMAGE_TAG_MAX_LENGTH) { blank++; continue }
+                        val answered = tagsArr.optString(t).trim()
+                        if (answered.isEmpty() ||
+                            answered.length > AiPromptPolicy.IMAGE_TAG_MAX_LENGTH) { blank++; continue }
+                        val folded = ImageTagVocabulary.fold(answered, folding)
+                        val tag = folded ?: answered
+                        // 접은 뒤에 같아진 것은 드롭이 아니다 — 같은 말을 두 번 받은 것뿐이다.
+                        if (picked.containsKey(tag)) continue
                         if (picked.size >= AiPromptPolicy.IMAGE_TAG_MAX_PER_FOLDER) { over++; continue }
-                        picked.add(tag)
+                        picked[tag] = Suggestion(tag, isNew = folded == null && tag !in known)
                     }
                 }
                 if (picked.isEmpty()) continue   // 근거 없음은 결손이 아니다(프롬프트가 허용한 답)
-                out.add(FolderSuggestion(name, picked.map { Suggestion(it, it !in vocab) }))
+                out.add(FolderSuggestion(name, picked.values.toList()))
             }
             return out to DropTally(unknownFolder = unknown, blankOrTooLong = blank, overPerFolderCap = over)
         }
@@ -183,7 +207,6 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         val policy = AiPromptPolicy.clampImageTagPolicy(policyRaw)
         val policyTruncated = (policyRaw.trim().length - policy.length).coerceAtLeast(0)
         val system = buildSystemPrompt(vocab, policy)
-        val known = vocab.all
 
         val all = ArrayList<FolderSuggestion>()
         val failures = ArrayList<AiResult.Failure>()
@@ -197,7 +220,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                     // 한도로 밀려 다른 프로바이더가 답한 청크 (B-108 확정 ⓑ).
                     AiProviderFallback.switchNoteOf(result)
                         ?.let { if (it !in notes) notes.add(it) }
-                    val (parsed, tally) = parse(result.text, chunk, known)
+                    val (parsed, tally) = parse(result.text, chunk, vocab)
                     all.addAll(parsed)
                     drops += tally
                 }

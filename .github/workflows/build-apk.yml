@@ -42,6 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # 스키마 JSON을 CI가 스스로 커밋하기 위해 필요하다 (B-9 ② · 사용자 지시 2026.08.11).
+    # **여기 적은 것 말고는 전부 `none`이 된다** — 이 워크플로가 쓰는 것은 저장소 내용뿐이다
+    # (아티팩트 업로드는 GITHUB_TOKEN 스코프가 아니라 런타임 토큰을 쓴다).
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -102,6 +108,106 @@ jobs:
       - name: Build Release APK
         if: github.event.inputs.build_type == 'release'
         run: ./gradlew assembleRelease --no-daemon
+
+      # Room 스키마 JSON 업로드 (B-9) — **커밋의 재료다.**
+      #   `room.schemaLocation`이 켜져 있어 빌드마다 `app/schemas/`에 나오지만, 종전에는
+      #   러너와 함께 버려졌다. 여기서 올려야 그것을 받아 저장소에 커밋할 수 있고,
+      #   커밋된 JSON이 곧 마이그레이션 계측 시험의 재료가 된다.
+      #
+      #   **손으로 적지 않는 이유:** JSON에는 Room이 엔티티에서 계산한 `identityHash`가
+      #   들어 있어 한 글자만 달라도 Room이 DB 열기를 거부한다. 빌드 산출물을 그대로 쓴다.
+      #
+      #   `if: always()`가 아니다 — 빌드가 깨졌으면 스키마도 못 믿는다.
+      - name: Upload Room schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+          retention-days: 30
+          # 스키마가 안 나왔으면 **조용히 넘어가지 않는다** — 빈 아티팩트를 받아 놓고
+          # "커밋했다"고 여기는 것이 이 축에서 가장 나쁜 결말이다.
+          if-no-files-found: error
+
+      # Room 스키마 JSON을 **CI가 스스로 커밋한다** (B-9 ② · 사용자 지시 2026.08.11).
+      #
+      # ## 왜 사람이 아니라 CI인가
+      #
+      # 이 JSON은 **손으로 적을 수 없다** — Room이 엔티티에서 계산한 `identityHash`가 들어 있어
+      # 한 글자만 달라도 DB 열기를 거부한다. 그러니 누군가는 빌드 산출물을 그대로 옮겨야 하는데,
+      # 그 일이 사람 손에 남아 있으면 **DB를 바꾼 판마다 잊힐 자리**가 하나 생긴다. 잊으면
+      # 계측 시험이 옛 스키마로 돌아 *"맞다"*고 말한다 — 조용한 실패다.
+      #
+      # ## 안전 장치 넷 (이 순서로 읽을 것)
+      #
+      # ⓐ **포크 PR에서는 돌지 않는다.** 남의 브랜치에 쓸 수도 없고 써서도 안 된다.
+      # ⓑ **바뀐 것이 없으면 커밋하지 않는다.** 그래서 스키마가 그대로인 판에서는 아무 일도
+      #    일어나지 않고, 커밋이 쌓이지 않는다.
+      # ⓒ **되풀이가 생기지 않는다.** `GITHUB_TOKEN`으로 민 푸시는 워크플로를 다시 트리거하지
+      #    않는 것이 GitHub의 기본 규칙이다 — ⓑ와 합쳐 이중으로 막힌다.
+      #    **대신 그 커밋으로는 `migration-test.yml`도 자동으로 깨어나지 않는다** —
+      #    그 워크플로의 `workflow_dispatch`로 한 번 돌리거나 다음 푸시를 기다린다.
+      # ⓓ **경쟁 푸시에 지지 않는다.** 밀려나면 다시 받아 얹고 한 번 더 민다.
+      #
+      # `app/schemas`는 추적되지 않는 산출물이라 브랜치를 갈아타도 그대로 남는다 —
+      # 그래서 PR의 병합 커밋에서 빌드하고 **머리 브랜치로 옮겨 커밋**할 수 있다.
+      # `core.fileMode=false`는 `chmod +x gradlew`가 남긴 모드 변경 때문이다(내용 변경이 아니다).
+      - name: Commit Room schemas
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+        run: |
+          set -e
+          if [ ! -d app/schemas ] || [ -z "$(find app/schemas -name '*.json' -print -quit)" ]; then
+            echo "::error::스키마가 산출되지 않았습니다 — 앞 단계가 초록인데 여기가 비면 배선이 깨진 것입니다."
+            exit 1
+          fi
+
+          git config core.fileMode false
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 산출물을 따로 보관한다 — 브랜치를 갈아타는 동안에도, 밀려나 다시 시도할 때도
+          # **같은 것을 다시 얹을 수 있어야 한다.** (얕은 클론에서 `rebase`로 푸는 것보다
+          # 이 방식이 확실하다: 되돌릴 이력이 없어도 늘 성립한다.)
+          rm -rf /tmp/room-schemas
+          cp -r app/schemas /tmp/room-schemas
+
+          # 브랜치에 스키마를 얹고 커밋한다. 바뀐 것이 없으면 0을 돌려준다(= 할 일 없음).
+          stage_schemas() {
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            rm -rf app/schemas
+            cp -r /tmp/room-schemas app/schemas
+            git add -f app/schemas
+            git diff --cached --quiet -- app/schemas && return 1
+            # 스키마만 담는다 — 빌드가 남긴 다른 흔적이 섞이면 이 커밋의 뜻이 흐려진다.
+            git commit -q -m "chore(room): 빌드가 산출한 스키마 JSON 커밋 (B-9)" \
+                       -m "손으로 적지 않는다 — identityHash가 어긋나면 Room이 DB 열기를 거부한다." \
+                       -- app/schemas
+            return 0
+          }
+
+          if ! stage_schemas; then
+            echo "스키마 변경 없음 — 커밋하지 않습니다."
+            echo "- Room 스키마: 변경 없음" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # 밀려났으면 새 끝에 다시 얹고 한 번 더 민다(다른 실행이 먼저 밀었을 수 있다).
+          # 그 사이 같은 스키마가 이미 들어왔으면 두 번째 `stage_schemas`가 할 일 없음을 알린다.
+          if ! git push origin "HEAD:$BRANCH"; then
+            if ! stage_schemas; then
+              echo "다른 실행이 같은 스키마를 이미 밀었습니다 — 할 일 없음."
+              echo "- Room 스키마: 다른 실행이 이미 커밋" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git push origin "HEAD:$BRANCH"
+          fi
+
+          echo "- Room 스키마: **커밋했습니다** (\`$BRANCH\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo "  \`migration-test.yml\` 은 이 커밋으로 자동으로 깨어나지 않습니다 — 필요하면 수동 실행하세요." >> "$GITHUB_STEP_SUMMARY"
 
       # Debug APK 업로드
       - name: Upload Debug APK

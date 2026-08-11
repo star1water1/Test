@@ -274,8 +274,9 @@ def main():
 
     print("\n[1] 등록 확인")
     check(db_version_at_least(src, 54), "@Database(version)이 54 이상이다")
-    check(re.search(r"addMigrations\([^)]*MIGRATION_53_54", src, re.S) is not None,
-          "MIGRATION_53_54가 addMigrations에 등록됐다")
+    check(re.search(r"ALL_MIGRATIONS\b[^=]*=\s*arrayOf\([^)]*?MIGRATION_53_54\b", src, re.S) is not None
+                and "addMigrations(*ALL_MIGRATIONS)" in src,
+          "MIGRATION_53_54가 등록 목록(ALL_MIGRATIONS)에 있고 그 목록이 그대로 Room에 넘어간다")
     check("val universeId: Long?," in entity_src,
           "엔티티의 universeId가 Long?다 (스키마만 풀고 타입을 안 풀면 NULL 행 읽기에서 죽는다)")
 

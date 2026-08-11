@@ -121,6 +121,53 @@ object AiProtocolCodec {
         ).any { it in lower }
     }
 
+    /**
+     * 400이 **요청의 어떤 항목을 지목해** 거부했는가 (B-161).
+     *
+     * ## 왜 있는가 — 400의 일반 문구가 멀쩡한 곳을 고치라고 시킨다
+     *
+     * `BAD_REQUEST`의 안내는 *"모델명과 서버 주소를 확인해 주세요"*인데, 그것은 **모델명·주소가
+     * 원인인 400에서만 참**이다. 본문이 파라미터를 지목하는 400에서는 거짓이고, 사용자는
+     * 멀쩡한 두 칸을 들여다보며 시간을 쓴다(2026.08.08 화면 캡처로 확인된 실제 보고).
+     *
+     * 형제 둘([isTemperatureUnsupportedError]·[isImagesUnsupportedError])이 잡는 것은
+     * **자동 교정 대상**이라 화면에 닿지 않는다. 여기가 맡는 것은 **교정 목록에 없는 나머지** —
+     * 그쪽은 종전에 그대로 저 문구를 받았다. 저장소가 같은 판단을 한 선례가 있다:
+     * `BatchFailKind.RESPONSE_TRUNCATED`(*"뭉뚱그리면 사용자가 엉뚱한 곳을 고치려 든다"*).
+     *
+     * ## 판정을 좁게 잡는다 — 형제 둘과 같은 두 겹 구조
+     *
+     * **항목을 지목하는 표현**과 **거부 표현**이 *함께* 있어야 참이다. 한 겹만 보면 무관한
+     * 400이 휩쓸려 들어오고, 그러면 이 분류가 `BAD_REQUEST`보다 나을 것이 없다.
+     *
+     * **낱말 목록은 관찰된 표현에서만 늘린다** — 형제 둘의 KDoc이 규약으로 박아 둔 그대로다.
+     * 지목 표현 넷은 세 프로토콜에서 실제로 관찰된 모양이다: OpenAI의
+     * `Unsupported value: 'temperature' …` / `Unrecognized request argument supplied: …` /
+     * `Unknown parameter: 'foo'.`, Anthropic의 `` `temperature` is deprecated for this model. ``
+     * **짐작으로 넓히지 않는다** — 넓힐수록 오탐이 늘고, 오탐은 남은 청크를 통째로 접는다(아래).
+     *
+     * ## 종단 실패로 세는 이유
+     *
+     * [AiErrorPolicy.TERMINAL]의 기준은 *"다시 보내는 것으로는 절대 풀리지 않는다"*이고,
+     * 같은 본문을 다시 보내면 같은 항목이 같은 이유로 거부된다 — 남은 청크는 **돈만 쓴다.**
+     */
+    fun isParameterRejectedError(httpCode: Int, errorBody: String?): Boolean {
+        if (httpCode != 400 || errorBody == null) return false
+        val lower = errorBody.lowercase()
+        val pointsAtParam = "parameter" in lower ||
+            "argument" in lower ||
+            "unsupported value" in lower ||
+            BACKTICKED_NAME_RE.containsMatchIn(lower)
+        if (!pointsAtParam) return false
+        return listOf(
+            "unsupported", "not supported", "does not support",
+            "not allowed", "deprecated", "unrecognized", "unknown", "invalid"
+        ).any { it in lower }
+    }
+
+    /** Anthropic이 항목을 지목하는 모양 — `` `temperature` is deprecated … ``. */
+    private val BACKTICKED_NAME_RE = Regex("`[a-z_][a-z0-9_.]*`\\s+is\\s")
+
     private fun buildAnthropic(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
         val body = JsonObject().apply {
             addProperty("model", config.model)
@@ -460,7 +507,11 @@ object AiProtocolCodec {
             in 500..599 -> AiErrorKind.SERVER
             400 ->
                 // Gemini는 잘못된 키를 400 INVALID_ARGUMENT("API key not valid")로 돌려준다.
+                // **이 갈래가 먼저다** — 그 본문에도 `argument`가 들어 있어 순서를 바꾸면
+                // 키 문제가 파라미터 문제로 읽히고, 고칠 곳을 다시 놓친다.
                 if (detail?.contains("API key not valid", ignoreCase = true) == true) AiErrorKind.INVALID_KEY
+                // 본문이 요청 항목을 지목하면 모델명·주소를 확인하라는 일반 문구는 거짓이다 (B-161).
+                else if (isParameterRejectedError(httpCode, detail)) AiErrorKind.UNSUPPORTED_PARAM
                 else AiErrorKind.BAD_REQUEST
             else -> AiErrorKind.UNKNOWN
         }

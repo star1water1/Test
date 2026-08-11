@@ -287,6 +287,7 @@ $TEST/util/DuelImagePruneTest.kt
 $TEST/util/RepresentativeWeightingTest.kt
 $TEST/util/DuelSessionTest.kt
 $TEST/util/DuelRoundTest.kt
+$TEST/util/DuelPlackettLuceComparisonTest.kt
 $TEST/util/DuelCardGridTest.kt
 $TEST/util/DuelStandingsTest.kt
 $TEST/util/DuelEntryTest.kt

@@ -127,6 +127,10 @@ class FieldValueListFragment : Fragment() {
 
         binding.fabAddValue.setOnClickListener { showAddDialog() }
 
+        // AI 정리의 유료 응답은 ViewModel이 든다 — **여기서 잇지 않으면 회전 뒤 되살아난
+        // 화면에 그 응답이 닿지 못하고, 사용자는 결제한 제안을 다시 볼 길이 없다**(R-38 · B-155).
+        AiOrganizeSheet.observe(this, viewModel)
+
         viewModel.result.observe(viewLifecycleOwner) { r ->
             r?.let {
                 notifyResult(it)

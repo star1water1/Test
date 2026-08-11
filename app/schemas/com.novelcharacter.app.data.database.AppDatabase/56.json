@@ -1,0 +1,3382 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 56,
+    "identityHash": "702e6b36603c50439517eeb13438fd9c",
+    "entities": [
+      {
+        "tableName": "novels",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `universeId` INTEGER, `createdAt` INTEGER NOT NULL, `code` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `borderColor` TEXT NOT NULL, `borderWidthDp` REAL NOT NULL, `inheritUniverseBorder` INTEGER NOT NULL, `isPinned` INTEGER NOT NULL, `imagePaths` TEXT NOT NULL, `imageMode` TEXT NOT NULL, `imageCharacterId` INTEGER, `standardYear` INTEGER, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "borderColor",
+            "columnName": "borderColor",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "borderWidthDp",
+            "columnName": "borderWidthDp",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inheritUniverseBorder",
+            "columnName": "inheritUniverseBorder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPinned",
+            "columnName": "isPinned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagePaths",
+            "columnName": "imagePaths",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageMode",
+            "columnName": "imageMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageCharacterId",
+            "columnName": "imageCharacterId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "standardYear",
+            "columnName": "standardYear",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_novels_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novels_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_novels_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novels_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          },
+          {
+            "name": "index_novels_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_novels_code` ON `${TABLE_NAME}` (`code`)"
+          },
+          {
+            "name": "index_novels_imageCharacterId",
+            "unique": false,
+            "columnNames": [
+              "imageCharacterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novels_imageCharacterId` ON `${TABLE_NAME}` (`imageCharacterId`)"
+          },
+          {
+            "name": "index_novels_universeId_isPinned_displayOrder",
+            "unique": false,
+            "columnNames": [
+              "universeId",
+              "isPinned",
+              "displayOrder"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novels_universeId_isPinned_displayOrder` ON `${TABLE_NAME}` (`universeId`, `isPinned`, `displayOrder`)"
+          },
+          {
+            "name": "index_novels_isPinned_displayOrder",
+            "unique": false,
+            "columnNames": [
+              "isPinned",
+              "displayOrder"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novels_isPinned_displayOrder` ON `${TABLE_NAME}` (`isPinned`, `displayOrder`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "characters",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "imageCharacterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "characters",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `firstName` TEXT NOT NULL, `lastName` TEXT NOT NULL, `anotherName` TEXT NOT NULL, `novelId` INTEGER, `imagePaths` TEXT NOT NULL, `representativeImagePath` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `memo` TEXT NOT NULL, `code` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `isPinned` INTEGER NOT NULL, FOREIGN KEY(`novelId`) REFERENCES `novels`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstName",
+            "columnName": "firstName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastName",
+            "columnName": "lastName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anotherName",
+            "columnName": "anotherName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "novelId",
+            "columnName": "novelId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "imagePaths",
+            "columnName": "imagePaths",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "representativeImagePath",
+            "columnName": "representativeImagePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memo",
+            "columnName": "memo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPinned",
+            "columnName": "isPinned",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_characters_novelId",
+            "unique": false,
+            "columnNames": [
+              "novelId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_characters_novelId` ON `${TABLE_NAME}` (`novelId`)"
+          },
+          {
+            "name": "index_characters_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_characters_code` ON `${TABLE_NAME}` (`code`)"
+          },
+          {
+            "name": "index_characters_novelId_isPinned_displayOrder",
+            "unique": false,
+            "columnNames": [
+              "novelId",
+              "isPinned",
+              "displayOrder"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_characters_novelId_isPinned_displayOrder` ON `${TABLE_NAME}` (`novelId`, `isPinned`, `displayOrder`)"
+          },
+          {
+            "name": "index_characters_isPinned_displayOrder",
+            "unique": false,
+            "columnNames": [
+              "isPinned",
+              "displayOrder"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_characters_isPinned_displayOrder` ON `${TABLE_NAME}` (`isPinned`, `displayOrder`)"
+          },
+          {
+            "name": "index_characters_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_characters_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "novels",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "novelId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "timeline_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `year` INTEGER NOT NULL, `month` INTEGER, `day` INTEGER, `calendarType` TEXT NOT NULL, `description` TEXT NOT NULL, `eventType` TEXT NOT NULL, `universeId` INTEGER, `displayOrder` INTEGER NOT NULL, `isTemporary` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `code` TEXT, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "month",
+            "columnName": "month",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "calendarType",
+            "columnName": "calendarType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isTemporary",
+            "columnName": "isTemporary",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_timeline_events_year",
+            "unique": false,
+            "columnNames": [
+              "year"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_events_year` ON `${TABLE_NAME}` (`year`)"
+          },
+          {
+            "name": "index_timeline_events_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_events_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_timeline_events_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_timeline_events_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "timeline_character_cross_ref",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` INTEGER NOT NULL, `characterId` INTEGER NOT NULL, PRIMARY KEY(`eventId`, `characterId`), FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId",
+            "columnName": "characterId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId",
+            "characterId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_timeline_character_cross_ref_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_character_cross_ref_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          },
+          {
+            "name": "index_timeline_character_cross_ref_characterId",
+            "unique": false,
+            "columnNames": [
+              "characterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_character_cross_ref_characterId` ON `${TABLE_NAME}` (`characterId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "timeline_events",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "timeline_event_novel_cross_ref",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` INTEGER NOT NULL, `novelId` INTEGER NOT NULL, PRIMARY KEY(`eventId`, `novelId`), FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`novelId`) REFERENCES `novels`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "novelId",
+            "columnName": "novelId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId",
+            "novelId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_timeline_event_novel_cross_ref_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_event_novel_cross_ref_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          },
+          {
+            "name": "index_timeline_event_novel_cross_ref_novelId",
+            "unique": false,
+            "columnNames": [
+              "novelId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_event_novel_cross_ref_novelId` ON `${TABLE_NAME}` (`novelId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "timeline_events",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "novels",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "novelId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "universes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `code` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `borderColor` TEXT NOT NULL, `borderWidthDp` REAL NOT NULL, `imagePaths` TEXT NOT NULL, `imageMode` TEXT NOT NULL, `imageCharacterId` INTEGER, `imageNovelId` INTEGER, `customRelationshipTypes` TEXT NOT NULL, `customRelationshipColors` TEXT NOT NULL, FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`imageNovelId`) REFERENCES `novels`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "borderColor",
+            "columnName": "borderColor",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "borderWidthDp",
+            "columnName": "borderWidthDp",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagePaths",
+            "columnName": "imagePaths",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageMode",
+            "columnName": "imageMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageCharacterId",
+            "columnName": "imageCharacterId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "imageNovelId",
+            "columnName": "imageNovelId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "customRelationshipTypes",
+            "columnName": "customRelationshipTypes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customRelationshipColors",
+            "columnName": "customRelationshipColors",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_universes_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_universes_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_universes_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_universes_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          },
+          {
+            "name": "index_universes_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_universes_code` ON `${TABLE_NAME}` (`code`)"
+          },
+          {
+            "name": "index_universes_imageCharacterId",
+            "unique": false,
+            "columnNames": [
+              "imageCharacterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_universes_imageCharacterId` ON `${TABLE_NAME}` (`imageCharacterId`)"
+          },
+          {
+            "name": "index_universes_imageNovelId",
+            "unique": false,
+            "columnNames": [
+              "imageNovelId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_universes_imageNovelId` ON `${TABLE_NAME}` (`imageNovelId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "imageCharacterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "novels",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "imageNovelId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "field_definitions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `universeId` INTEGER, `key` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `config` TEXT NOT NULL, `groupName` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `isRequired` INTEGER NOT NULL, `entityType` TEXT NOT NULL, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "config",
+            "columnName": "config",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupName",
+            "columnName": "groupName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isRequired",
+            "columnName": "isRequired",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_field_definitions_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_field_definitions_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_field_definitions_universeId_entityType_key",
+            "unique": true,
+            "columnNames": [
+              "universeId",
+              "entityType",
+              "key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_field_definitions_universeId_entityType_key` ON `${TABLE_NAME}` (`universeId`, `entityType`, `key`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "character_field_values",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId` INTEGER NOT NULL, `fieldDefinitionId` INTEGER NOT NULL, `value` TEXT NOT NULL, FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId",
+            "columnName": "characterId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldDefinitionId",
+            "columnName": "fieldDefinitionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_field_values_characterId",
+            "unique": false,
+            "columnNames": [
+              "characterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_field_values_characterId` ON `${TABLE_NAME}` (`characterId`)"
+          },
+          {
+            "name": "index_character_field_values_fieldDefinitionId",
+            "unique": false,
+            "columnNames": [
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_field_values_fieldDefinitionId` ON `${TABLE_NAME}` (`fieldDefinitionId`)"
+          },
+          {
+            "name": "index_character_field_values_characterId_fieldDefinitionId",
+            "unique": true,
+            "columnNames": [
+              "characterId",
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_field_values_characterId_fieldDefinitionId` ON `${TABLE_NAME}` (`characterId`, `fieldDefinitionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "field_definitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fieldDefinitionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "character_state_changes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId` INTEGER NOT NULL, `year` INTEGER NOT NULL, `month` INTEGER, `day` INTEGER, `fieldKey` TEXT NOT NULL, `newValue` TEXT NOT NULL, `description` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `code` TEXT, FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId",
+            "columnName": "characterId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "month",
+            "columnName": "month",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fieldKey",
+            "columnName": "fieldKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newValue",
+            "columnName": "newValue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_state_changes_characterId",
+            "unique": false,
+            "columnNames": [
+              "characterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_state_changes_characterId` ON `${TABLE_NAME}` (`characterId`)"
+          },
+          {
+            "name": "index_character_state_changes_year",
+            "unique": false,
+            "columnNames": [
+              "year"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_state_changes_year` ON `${TABLE_NAME}` (`year`)"
+          },
+          {
+            "name": "index_character_state_changes_fieldKey",
+            "unique": false,
+            "columnNames": [
+              "fieldKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_state_changes_fieldKey` ON `${TABLE_NAME}` (`fieldKey`)"
+          },
+          {
+            "name": "index_character_state_changes_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_state_changes_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "character_tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId` INTEGER NOT NULL, `tag` TEXT NOT NULL, FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId",
+            "columnName": "characterId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_tags_characterId",
+            "unique": false,
+            "columnNames": [
+              "characterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_tags_characterId` ON `${TABLE_NAME}` (`characterId`)"
+          },
+          {
+            "name": "index_character_tags_tag",
+            "unique": false,
+            "columnNames": [
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_tags_tag` ON `${TABLE_NAME}` (`tag`)"
+          },
+          {
+            "name": "index_character_tags_characterId_tag",
+            "unique": true,
+            "columnNames": [
+              "characterId",
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_tags_characterId_tag` ON `${TABLE_NAME}` (`characterId`, `tag`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "name_bank",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `gender` TEXT NOT NULL, `origin` TEXT NOT NULL, `notes` TEXT NOT NULL, `isUsed` INTEGER NOT NULL, `usedByCharacterId` INTEGER, `createdAt` INTEGER NOT NULL, `code` TEXT NOT NULL DEFAULT '', FOREIGN KEY(`usedByCharacterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gender",
+            "columnName": "gender",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isUsed",
+            "columnName": "isUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usedByCharacterId",
+            "columnName": "usedByCharacterId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_name_bank_isUsed",
+            "unique": false,
+            "columnNames": [
+              "isUsed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_name_bank_isUsed` ON `${TABLE_NAME}` (`isUsed`)"
+          },
+          {
+            "name": "index_name_bank_usedByCharacterId",
+            "unique": false,
+            "columnNames": [
+              "usedByCharacterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_name_bank_usedByCharacterId` ON `${TABLE_NAME}` (`usedByCharacterId`)"
+          },
+          {
+            "name": "index_name_bank_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_name_bank_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          },
+          {
+            "name": "index_name_bank_isUsed_createdAt",
+            "unique": false,
+            "columnNames": [
+              "isUsed",
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_name_bank_isUsed_createdAt` ON `${TABLE_NAME}` (`isUsed`, `createdAt`)"
+          },
+          {
+            "name": "index_name_bank_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_name_bank_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "usedByCharacterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "character_relationships",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId1` INTEGER NOT NULL, `characterId2` INTEGER NOT NULL, `relationshipType` TEXT NOT NULL, `description` TEXT NOT NULL, `intensity` INTEGER NOT NULL, `isBidirectional` INTEGER NOT NULL, `displayOrder` INTEGER NOT NULL, `code` TEXT, `createdAt` INTEGER NOT NULL, `factionId` INTEGER, FOREIGN KEY(`characterId1`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`characterId2`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`factionId`) REFERENCES `factions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId1",
+            "columnName": "characterId1",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId2",
+            "columnName": "characterId2",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relationshipType",
+            "columnName": "relationshipType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intensity",
+            "columnName": "intensity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBidirectional",
+            "columnName": "isBidirectional",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "factionId",
+            "columnName": "factionId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_relationships_characterId1",
+            "unique": false,
+            "columnNames": [
+              "characterId1"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId1` ON `${TABLE_NAME}` (`characterId1`)"
+          },
+          {
+            "name": "index_character_relationships_characterId2",
+            "unique": false,
+            "columnNames": [
+              "characterId2"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId2` ON `${TABLE_NAME}` (`characterId2`)"
+          },
+          {
+            "name": "index_character_relationships_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationships_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          },
+          {
+            "name": "index_character_relationships_characterId1_characterId2_relationshipType",
+            "unique": true,
+            "columnNames": [
+              "characterId1",
+              "characterId2",
+              "relationshipType"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationships_characterId1_characterId2_relationshipType` ON `${TABLE_NAME}` (`characterId1`, `characterId2`, `relationshipType`)"
+          },
+          {
+            "name": "index_character_relationships_displayOrder_createdAt",
+            "unique": false,
+            "columnNames": [
+              "displayOrder",
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationships_displayOrder_createdAt` ON `${TABLE_NAME}` (`displayOrder`, `createdAt`)"
+          },
+          {
+            "name": "index_character_relationships_factionId",
+            "unique": false,
+            "columnNames": [
+              "factionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationships_factionId` ON `${TABLE_NAME}` (`factionId`)"
+          },
+          {
+            "name": "index_character_relationships_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationships_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId1"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId2"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "factions",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "factionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "character_relationship_changes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `relationshipId` INTEGER NOT NULL, `year` INTEGER NOT NULL, `month` INTEGER, `day` INTEGER, `relationshipType` TEXT NOT NULL, `description` TEXT NOT NULL, `intensity` INTEGER NOT NULL, `isBidirectional` INTEGER NOT NULL, `eventId` INTEGER, `createdAt` INTEGER NOT NULL, `code` TEXT, FOREIGN KEY(`relationshipId`) REFERENCES `character_relationships`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relationshipId",
+            "columnName": "relationshipId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "month",
+            "columnName": "month",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "relationshipType",
+            "columnName": "relationshipType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intensity",
+            "columnName": "intensity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBidirectional",
+            "columnName": "isBidirectional",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_relationship_changes_relationshipId",
+            "unique": false,
+            "columnNames": [
+              "relationshipId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_relationshipId` ON `${TABLE_NAME}` (`relationshipId`)"
+          },
+          {
+            "name": "index_character_relationship_changes_year",
+            "unique": false,
+            "columnNames": [
+              "year"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_year` ON `${TABLE_NAME}` (`year`)"
+          },
+          {
+            "name": "index_character_relationship_changes_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          },
+          {
+            "name": "index_character_relationship_changes_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationship_changes_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "character_relationships",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "relationshipId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "timeline_events",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "recent_activities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `entityType` TEXT NOT NULL, `entityId` INTEGER NOT NULL, `title` TEXT NOT NULL, `accessedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityId",
+            "columnName": "entityId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accessedAt",
+            "columnName": "accessedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_recent_activities_entityType_entityId",
+            "unique": true,
+            "columnNames": [
+              "entityType",
+              "entityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_recent_activities_entityType_entityId` ON `${TABLE_NAME}` (`entityType`, `entityId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "search_presets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `query` TEXT NOT NULL, `filtersJson` TEXT NOT NULL, `sortMode` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isDefault` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "query",
+            "columnName": "query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filtersJson",
+            "columnName": "filtersJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortMode",
+            "columnName": "sortMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "isDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_search_presets_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_search_presets_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "user_preset_templates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `fieldsJson` TEXT NOT NULL, `isBuiltIn` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldsJson",
+            "columnName": "fieldsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBuiltIn",
+            "columnName": "isBuiltIn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_user_preset_templates_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_preset_templates_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_user_preset_templates_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_preset_templates_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "factions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `universeId` INTEGER NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `color` TEXT NOT NULL, `autoRelationType` TEXT NOT NULL, `autoRelationIntensity` INTEGER NOT NULL, `code` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "color",
+            "columnName": "color",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoRelationType",
+            "columnName": "autoRelationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoRelationIntensity",
+            "columnName": "autoRelationIntensity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_factions_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_factions_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_factions_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_factions_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "faction_memberships",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `factionId` INTEGER NOT NULL, `characterId` INTEGER NOT NULL, `joinYear` INTEGER, `leaveYear` INTEGER, `leaveType` TEXT, `departedRelationType` TEXT, `departedIntensity` INTEGER, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`factionId`) REFERENCES `factions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "factionId",
+            "columnName": "factionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "characterId",
+            "columnName": "characterId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "joinYear",
+            "columnName": "joinYear",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "leaveYear",
+            "columnName": "leaveYear",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "leaveType",
+            "columnName": "leaveType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "departedRelationType",
+            "columnName": "departedRelationType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "departedIntensity",
+            "columnName": "departedIntensity",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_faction_memberships_factionId",
+            "unique": false,
+            "columnNames": [
+              "factionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_faction_memberships_factionId` ON `${TABLE_NAME}` (`factionId`)"
+          },
+          {
+            "name": "index_faction_memberships_characterId",
+            "unique": false,
+            "columnNames": [
+              "characterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_faction_memberships_characterId` ON `${TABLE_NAME}` (`characterId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "factions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "factionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "characters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "characterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "faction_relationships",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `factionId1` INTEGER NOT NULL, `factionId2` INTEGER NOT NULL, `relationType` TEXT NOT NULL, `description` TEXT NOT NULL, `intensity` INTEGER NOT NULL, `isBidirectional` INTEGER NOT NULL, `displayOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`factionId1`) REFERENCES `factions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`factionId2`) REFERENCES `factions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "factionId1",
+            "columnName": "factionId1",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "factionId2",
+            "columnName": "factionId2",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relationType",
+            "columnName": "relationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intensity",
+            "columnName": "intensity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBidirectional",
+            "columnName": "isBidirectional",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_faction_relationships_factionId1",
+            "unique": false,
+            "columnNames": [
+              "factionId1"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_faction_relationships_factionId1` ON `${TABLE_NAME}` (`factionId1`)"
+          },
+          {
+            "name": "index_faction_relationships_factionId2",
+            "unique": false,
+            "columnNames": [
+              "factionId2"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_faction_relationships_factionId2` ON `${TABLE_NAME}` (`factionId2`)"
+          },
+          {
+            "name": "index_faction_relationships_factionId1_factionId2_relationType",
+            "unique": true,
+            "columnNames": [
+              "factionId1",
+              "factionId2",
+              "relationType"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_faction_relationships_factionId1_factionId2_relationType` ON `${TABLE_NAME}` (`factionId1`, `factionId2`, `relationType`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "factions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "factionId1"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "factions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "factionId2"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "trash_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `entityType` TEXT NOT NULL, `entityName` TEXT NOT NULL, `payload` TEXT NOT NULL, `imagePaths` TEXT NOT NULL, `deletedAt` INTEGER NOT NULL, `operationId` TEXT, `operationKind` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityName",
+            "columnName": "entityName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagePaths",
+            "columnName": "imagePaths",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "operationKind",
+            "columnName": "operationKind",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_trash_snapshots_deletedAt",
+            "unique": false,
+            "columnNames": [
+              "deletedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_trash_snapshots_deletedAt` ON `${TABLE_NAME}` (`deletedAt`)"
+          },
+          {
+            "name": "index_trash_snapshots_operationId",
+            "unique": false,
+            "columnNames": [
+              "operationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_trash_snapshots_operationId` ON `${TABLE_NAME}` (`operationId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "event_field_values",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventId` INTEGER NOT NULL, `fieldDefinitionId` INTEGER NOT NULL, `value` TEXT NOT NULL, FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldDefinitionId",
+            "columnName": "fieldDefinitionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_event_field_values_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_event_field_values_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          },
+          {
+            "name": "index_event_field_values_fieldDefinitionId",
+            "unique": false,
+            "columnNames": [
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_event_field_values_fieldDefinitionId` ON `${TABLE_NAME}` (`fieldDefinitionId`)"
+          },
+          {
+            "name": "index_event_field_values_eventId_fieldDefinitionId",
+            "unique": true,
+            "columnNames": [
+              "eventId",
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_event_field_values_eventId_fieldDefinitionId` ON `${TABLE_NAME}` (`eventId`, `fieldDefinitionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "timeline_events",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "field_definitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fieldDefinitionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "operation_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `category` TEXT NOT NULL, `summary` TEXT NOT NULL, `detail` TEXT, `success` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "success",
+            "columnName": "success",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_operation_logs_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_operation_logs_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "character_list_presets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `tagsJson` TEXT NOT NULL, `fieldFiltersJson` TEXT NOT NULL, `sortKind` TEXT NOT NULL, `sortFieldKey` TEXT, `sortAscending` INTEGER NOT NULL, `bodySizePartIndex` INTEGER, `sortDuelAxisCode` TEXT, `novelIdsJson` TEXT NOT NULL DEFAULT '[]', `isDefault` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagsJson",
+            "columnName": "tagsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldFiltersJson",
+            "columnName": "fieldFiltersJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortKind",
+            "columnName": "sortKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortFieldKey",
+            "columnName": "sortFieldKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sortAscending",
+            "columnName": "sortAscending",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bodySizePartIndex",
+            "columnName": "bodySizePartIndex",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sortDuelAxisCode",
+            "columnName": "sortDuelAxisCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "novelIdsJson",
+            "columnName": "novelIdsJson",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "isDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_character_list_presets_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_list_presets_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "image_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `path` TEXT NOT NULL, `linkGroupId` TEXT, `importedAt` INTEGER NOT NULL, `adoptSource` TEXT, `detachedAt` INTEGER, `detachedFromCode` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkGroupId",
+            "columnName": "linkGroupId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "importedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "adoptSource",
+            "columnName": "adoptSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detachedAt",
+            "columnName": "detachedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "detachedFromCode",
+            "columnName": "detachedFromCode",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_image_meta_path",
+            "unique": true,
+            "columnNames": [
+              "path"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_image_meta_path` ON `${TABLE_NAME}` (`path`)"
+          },
+          {
+            "name": "index_image_meta_linkGroupId",
+            "unique": false,
+            "columnNames": [
+              "linkGroupId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_image_meta_linkGroupId` ON `${TABLE_NAME}` (`linkGroupId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "image_tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `imageId` INTEGER NOT NULL, `tag` TEXT NOT NULL, FOREIGN KEY(`imageId`) REFERENCES `image_meta`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageId",
+            "columnName": "imageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_image_tags_imageId",
+            "unique": false,
+            "columnNames": [
+              "imageId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_image_tags_imageId` ON `${TABLE_NAME}` (`imageId`)"
+          },
+          {
+            "name": "index_image_tags_tag",
+            "unique": false,
+            "columnNames": [
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_image_tags_tag` ON `${TABLE_NAME}` (`tag`)"
+          },
+          {
+            "name": "index_image_tags_imageId_tag",
+            "unique": true,
+            "columnNames": [
+              "imageId",
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_image_tags_imageId_tag` ON `${TABLE_NAME}` (`imageId`, `tag`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "image_meta",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "imageId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "field_value_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fieldDefinitionId` INTEGER NOT NULL, `value` TEXT NOT NULL, `displayLabel` TEXT NOT NULL, `aliasesJson` TEXT NOT NULL, `category` TEXT NOT NULL, `description` TEXT NOT NULL, `isHidden` INTEGER NOT NULL, `source` TEXT NOT NULL, `usageCount` INTEGER NOT NULL, `code` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldDefinitionId",
+            "columnName": "fieldDefinitionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayLabel",
+            "columnName": "displayLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aliasesJson",
+            "columnName": "aliasesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isHidden",
+            "columnName": "isHidden",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usageCount",
+            "columnName": "usageCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_field_value_entries_fieldDefinitionId",
+            "unique": false,
+            "columnNames": [
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_field_value_entries_fieldDefinitionId` ON `${TABLE_NAME}` (`fieldDefinitionId`)"
+          },
+          {
+            "name": "index_field_value_entries_fieldDefinitionId_value",
+            "unique": true,
+            "columnNames": [
+              "fieldDefinitionId",
+              "value"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_field_value_entries_fieldDefinitionId_value` ON `${TABLE_NAME}` (`fieldDefinitionId`, `value`)"
+          },
+          {
+            "name": "index_field_value_entries_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_field_value_entries_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "field_definitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fieldDefinitionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "novel_field_values",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `novelId` INTEGER NOT NULL, `fieldDefinitionId` INTEGER NOT NULL, `value` TEXT NOT NULL, FOREIGN KEY(`novelId`) REFERENCES `novels`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "novelId",
+            "columnName": "novelId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldDefinitionId",
+            "columnName": "fieldDefinitionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_novel_field_values_novelId",
+            "unique": false,
+            "columnNames": [
+              "novelId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novel_field_values_novelId` ON `${TABLE_NAME}` (`novelId`)"
+          },
+          {
+            "name": "index_novel_field_values_fieldDefinitionId",
+            "unique": false,
+            "columnNames": [
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_novel_field_values_fieldDefinitionId` ON `${TABLE_NAME}` (`fieldDefinitionId`)"
+          },
+          {
+            "name": "index_novel_field_values_novelId_fieldDefinitionId",
+            "unique": true,
+            "columnNames": [
+              "novelId",
+              "fieldDefinitionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_novel_field_values_novelId_fieldDefinitionId` ON `${TABLE_NAME}` (`novelId`, `fieldDefinitionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "novels",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "novelId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "field_definitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fieldDefinitionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "grade_systems",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `universeId` INTEGER NOT NULL, `name` TEXT NOT NULL, `gradesJson` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `code` TEXT NOT NULL, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gradesJson",
+            "columnName": "gradesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_grade_systems_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_grade_systems_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_grade_systems_universeId_name",
+            "unique": true,
+            "columnNames": [
+              "universeId",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_grade_systems_universeId_name` ON `${TABLE_NAME}` (`universeId`, `name`)"
+          },
+          {
+            "name": "index_grade_systems_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_grade_systems_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "duel_axes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `universeId` INTEGER NOT NULL, `name` TEXT NOT NULL, `targetType` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `influenceFieldKeys` TEXT NOT NULL, `outcomeFieldKeys` TEXT NOT NULL, `profileFieldKeys` TEXT NOT NULL, `candidateFiltersJson` TEXT, `isBasisAxis` INTEGER NOT NULL, `code` TEXT NOT NULL, FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "universeId",
+            "columnName": "universeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetType",
+            "columnName": "targetType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "influenceFieldKeys",
+            "columnName": "influenceFieldKeys",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcomeFieldKeys",
+            "columnName": "outcomeFieldKeys",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileFieldKeys",
+            "columnName": "profileFieldKeys",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateFiltersJson",
+            "columnName": "candidateFiltersJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isBasisAxis",
+            "columnName": "isBasisAxis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_duel_axes_universeId",
+            "unique": false,
+            "columnNames": [
+              "universeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_axes_universeId` ON `${TABLE_NAME}` (`universeId`)"
+          },
+          {
+            "name": "index_duel_axes_universeId_targetType_name",
+            "unique": true,
+            "columnNames": [
+              "universeId",
+              "targetType",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_axes_universeId_targetType_name` ON `${TABLE_NAME}` (`universeId`, `targetType`, `name`)"
+          },
+          {
+            "name": "index_duel_axes_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_axes_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "universes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "universeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "duel_matches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `axisId` INTEGER NOT NULL, `aCode` TEXT NOT NULL, `bCode` TEXT NOT NULL, `winnerCode` TEXT, `groupId` TEXT, `decidedAt` INTEGER NOT NULL, `code` TEXT NOT NULL, FOREIGN KEY(`axisId`) REFERENCES `duel_axes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "axisId",
+            "columnName": "axisId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aCode",
+            "columnName": "aCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bCode",
+            "columnName": "bCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "winnerCode",
+            "columnName": "winnerCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "groupId",
+            "columnName": "groupId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "decidedAt",
+            "columnName": "decidedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_duel_matches_axisId",
+            "unique": false,
+            "columnNames": [
+              "axisId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId` ON `${TABLE_NAME}` (`axisId`)"
+          },
+          {
+            "name": "index_duel_matches_axisId_aCode",
+            "unique": false,
+            "columnNames": [
+              "axisId",
+              "aCode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId_aCode` ON `${TABLE_NAME}` (`axisId`, `aCode`)"
+          },
+          {
+            "name": "index_duel_matches_axisId_bCode",
+            "unique": false,
+            "columnNames": [
+              "axisId",
+              "bCode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_matches_axisId_bCode` ON `${TABLE_NAME}` (`axisId`, `bCode`)"
+          },
+          {
+            "name": "index_duel_matches_groupId",
+            "unique": false,
+            "columnNames": [
+              "groupId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_matches_groupId` ON `${TABLE_NAME}` (`groupId`)"
+          },
+          {
+            "name": "index_duel_matches_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_matches_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "duel_axes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "axisId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "duel_counter_verdicts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `axisId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `shape` TEXT NOT NULL, `memberCodes` TEXT NOT NULL, `memberKey` TEXT NOT NULL, `decidedAt` INTEGER NOT NULL, `code` TEXT NOT NULL, FOREIGN KEY(`axisId`) REFERENCES `duel_axes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "axisId",
+            "columnName": "axisId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shape",
+            "columnName": "shape",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memberCodes",
+            "columnName": "memberCodes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memberKey",
+            "columnName": "memberKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "decidedAt",
+            "columnName": "decidedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_duel_counter_verdicts_axisId",
+            "unique": false,
+            "columnNames": [
+              "axisId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_duel_counter_verdicts_axisId` ON `${TABLE_NAME}` (`axisId`)"
+          },
+          {
+            "name": "index_duel_counter_verdicts_axisId_memberKey",
+            "unique": true,
+            "columnNames": [
+              "axisId",
+              "memberKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_counter_verdicts_axisId_memberKey` ON `${TABLE_NAME}` (`axisId`, `memberKey`)"
+          },
+          {
+            "name": "index_duel_counter_verdicts_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_duel_counter_verdicts_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "duel_axes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "axisId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "default_field_templates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `key` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `config` TEXT NOT NULL, `groupName` TEXT NOT NULL, `displayOrder` INTEGER NOT NULL, `isRequired` INTEGER NOT NULL, `entityType` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `code` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "config",
+            "columnName": "config",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupName",
+            "columnName": "groupName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "displayOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isRequired",
+            "columnName": "isRequired",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_default_field_templates_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_default_field_templates_code` ON `${TABLE_NAME}` (`code`)"
+          },
+          {
+            "name": "index_default_field_templates_entityType_key",
+            "unique": true,
+            "columnNames": [
+              "entityType",
+              "key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_default_field_templates_entityType_key` ON `${TABLE_NAME}` (`entityType`, `key`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '702e6b36603c50439517eeb13438fd9c')"
+    ]
+  }
+}

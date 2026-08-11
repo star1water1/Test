@@ -39,8 +39,13 @@ class AiErrorPolicyTest {
         AiErrorKind.INVALID_KEY to true,
         AiErrorKind.QUOTA_EXCEEDED to true,
         AiErrorKind.MODEL_NOT_FOUND to true,
+        // 모델이 받지 않는 항목은 청크가 바뀐다고 받아 주지 않는다 (B-161) — 남은 요청은
+        // 전부 같은 항목을 실어 같은 400을 받으므로 돈만 쓴다.
+        AiErrorKind.UNSUPPORTED_PARAM to true,
         // 다음 청크가 성공할 수 있는 것 — 중단하면 될 일을 안 하는 것이 된다
         AiErrorKind.RATE_LIMITED to false,
+        // 뭉뚱그려진 400은 여기 남는다 — 본문이 원인을 지목하지 않은 나머지라 재시도로
+        // 풀릴 여지가 섞여 있다. 좁은 판정(UNSUPPORTED_PARAM) 위에서만 중단이 정당하다.
         AiErrorKind.BAD_REQUEST to false,
         AiErrorKind.NETWORK to false,
         AiErrorKind.TIMEOUT to false,

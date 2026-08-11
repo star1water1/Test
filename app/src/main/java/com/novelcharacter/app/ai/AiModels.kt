@@ -403,6 +403,18 @@ enum class AiErrorKind {
     /** 400 등 요청 형식 문제 */
     BAD_REQUEST,
 
+    /**
+     * 400인데 **본문이 요청의 어떤 항목을 지목해** 거부한 것 (B-161).
+     *
+     * [BAD_REQUEST]와 가른 이유는 [ACTIVE_NOT_SET]을 [NO_PROVIDER]와 가른 것과 같다 —
+     * **문구가 사실과 달랐다.** 일반 400 안내는 *"모델명과 서버 주소를 확인해 주세요"*인데,
+     * 파라미터를 지목하는 400에서 그것은 거짓이라 **멀쩡한 두 칸을 고치라고 시킨다.**
+     *
+     * 판정은 [AiProtocolCodec.isParameterRejectedError]가 단일 소스이고, 좁게 잡는다
+     * (지목 표현과 거부 표현이 함께 있어야 참).
+     */
+    UNSUPPORTED_PARAM,
+
     /** 연결 불가(호스트/SSL 포함) */
     NETWORK,
 

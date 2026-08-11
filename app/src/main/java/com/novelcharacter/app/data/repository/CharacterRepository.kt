@@ -303,24 +303,20 @@ class CharacterRepository(
     suspend fun getChangeById(id: Long): CharacterStateChange? =
         characterStateChangeDao.getChangeById(id)
 
-    suspend fun insertStateChange(change: CharacterStateChange): Long {
-        val id = characterStateChangeDao.insert(change)
-        // 이력에만 존재하는 값도 라이브러리가 보게 한다 (검토 A2, 시스템 키는 내부에서 스킵)
-        fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
-        return id
-    }
+    // 상태변화 쓰기는 값 라이브러리를 건드리지 않는다 (B-60 · 확정 20번 ㄱ1) —
+    // `usageCount`가 '지금 쓰이는 횟수'로 정해졌고, 이력 쓰기는 **현재 값을 바꾸지 않으므로**
+    // 셀 것도 새로 등재할 것도 없다(`__birth`·`__death`의 필드 동기화는 그 경로가 따로 지고,
+    // 그쪽은 현재 값 쓰기라 원래 수확 대상이다). 모집단 규약은
+    // [FieldValueLibraryRepository.harvestUniversesOrThrow]가 단일 소스다.
 
-    suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) {
+    suspend fun insertStateChange(change: CharacterStateChange): Long =
+        characterStateChangeDao.insert(change)
+
+    suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) =
         characterStateChangeDao.insertAll(changes)
-        for (change in changes) {
-            fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
-        }
-    }
 
-    suspend fun updateStateChange(change: CharacterStateChange) {
+    suspend fun updateStateChange(change: CharacterStateChange) =
         characterStateChangeDao.update(change)
-        fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
-    }
 
     /**
      * 상태변화 이력 삭제 — 삭제 전 휴지통 스냅샷을 남긴다.

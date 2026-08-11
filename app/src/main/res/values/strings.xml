@@ -2762,6 +2762,7 @@
     <string name="ai_error_quota">크레딧(할당량)이 부족합니다. 해당 서비스의 결제 상태를 확인해 주세요.</string>
     <string name="ai_error_model_not_found">모델을 찾을 수 없습니다. 모델명(또는 서버 주소)을 확인해 주세요.</string>
     <string name="ai_error_bad_request">요청 형식 오류입니다. 모델명과 서버 주소를 확인해 주세요.</string>
+    <string name="ai_error_unsupported_param">이 모델이 받지 않는 항목이 요청에 있습니다. 아래 원문이 가리키는 항목을 확인해 주세요.</string>
     <string name="ai_error_network">서버에 연결할 수 없습니다. 인터넷 연결과 서버 주소를 확인해 주세요.</string>
     <string name="ai_error_timeout">응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.</string>
     <string name="ai_error_server">제공사 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.</string>
@@ -2856,6 +2857,7 @@
     <string name="field_library_ai_cost_notice">값 %1$d개를 %2$d개 요청으로 나눠 분석합니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
     <string name="field_library_ai_run">분석 실행</string>
     <string name="field_library_ai_running">AI가 값 목록을 분석하는 중…</string>
+    <string name="field_library_ai_already_running">이미 분석이 돌고 있습니다. 끝나면 제안이 뜹니다.</string>
     <string name="field_library_ai_nothing">적용할 제안이 없습니다.</string>
     <string name="field_library_ai_dropped">존재하지 않는 값을 언급한 제안 %1$d건은 제외했습니다</string>
     <string name="field_library_ai_token_usage">토큰 사용: 입력 %1$d · 출력 %2$d</string>

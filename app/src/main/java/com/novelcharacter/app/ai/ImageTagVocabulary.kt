@@ -29,12 +29,28 @@ object ImageTagVocabulary {
         /**
          * 접기 대조용 목록 — **기존 이미지 태그가 필드 값보다 앞선다.**
          *
-         * 순서가 뜻을 갖는 이유는 [ImageBatchTagSuggester.foldToVocabulary]가 첫 일치를 쓰기
-         * 때문이다: `흑발`이 이미 태그로 쓰이고 있고 필드 값에도 `흑 발`이 있다면, 접힐 곳은
-         * **이미 태그인 쪽**이어야 한다(태그 목록이 곧 사용자가 써 온 표기다).
+         * 순서가 뜻을 갖는 이유는 [fold]가 첫 일치를 쓰기 때문이다: `흑발`이 이미 태그로
+         * 쓰이고 있고 필드 값에도 `흑 발`이 있다면, 접힐 곳은 **이미 태그인 쪽**이어야 한다
+         * (태그 목록이 곧 사용자가 써 온 표기다).
          */
         val forFolding: List<String> get() = tags + fieldValues
     }
+
+    /**
+     * 어휘에 같은 말이 이미 있으면 **그 표기로 접는다** — 공백·대소문자 무시 일치
+     * ([CharacterFieldAiSuggester.matchOption]이 SELECT 값에 이미 쓰는 그 규칙).
+     * 접을 것이 없으면 `null`이고, 그때만 호출측이 `새 태그` 표식을 단다.
+     *
+     * 이것이 없으면 `물의정령`과 `물의 정령`이 **두 태그로 갈려** 필터도 통계도 둘로 쪼개진다.
+     *
+     * **이 자리가 여기인 이유 (B-127, 2026.08.10):** 조립(`build`)은 2026.08.07에 이미 여기
+     * 하나로 합쳤는데 **대조 규칙은 [ImageBatchTagSuggester]의 companion에 남아 두 벌이었다** —
+     * 배치판은 접고 폴더판은 `it !in vocab`으로 정확 일치만 봐서, **같은 앱의 두 AI 태깅
+     * 경로가 같은 말에 다른 태그를 만들었다.** 조립과 대조는 같은 어휘를 두고 하는 한 쌍의
+     * 판단이므로 갈라 두면 이런 식으로 어긋난다. 확정 14장 8번 ⓐ(접는다)가 이 자리를 열었다.
+     */
+    fun fold(tag: String, vocab: List<String>): String? =
+        CharacterFieldAiSuggester.matchOption(tag, vocab)
 
     /**
      * 어휘를 만든다 — 기존 이미지 태그(빈도 상위)와 '어휘에 포함' 필드의 값.

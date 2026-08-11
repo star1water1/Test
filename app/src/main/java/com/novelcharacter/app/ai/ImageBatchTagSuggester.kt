@@ -238,14 +238,16 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         }
 
         /**
-         * 어휘에 같은 말이 이미 있으면 **그 표기로 접는다** — 공백·대소문자 무시 일치
-         * ([CharacterFieldAiSuggester.matchOption]이 SELECT 값에 이미 쓰는 그 규칙).
+         * 어휘 접기 — 규칙 자체는 [ImageTagVocabulary.fold]가 단일 소스다.
          *
-         * 이것이 없으면 `물의정령`과 `물의 정령`이 **두 태그로 갈려** 필터도 통계도 둘로 쪼개진다.
-         * 접힌 것은 새 태그가 아니므로 `새 태그` 표식도 붙지 않는다.
+         * **이 자리는 위임만 남았다 (B-127, 2026.08.10).** 종전에는 규칙이 여기 있었고
+         * 폴더 제안기는 정확 일치로만 봐서 **두 경로가 같은 말에 다른 태그를 만들었다.**
+         * 어휘 조립이 이미 [ImageTagVocabulary]에 모여 있으므로 대조도 그리로 옮겼다 —
+         * 폴더판이 *배치 기능의 이름을 부르며* 규칙을 얻는 모양을 만들지 않으려는 것이다
+         * (조립을 옮길 때와 같은 근거).
          */
         fun foldToVocabulary(tag: String, vocab: List<String>): String? =
-            CharacterFieldAiSuggester.matchOption(tag, vocab)
+            ImageTagVocabulary.fold(tag, vocab)
 
         fun buildSystemPrompt(vocab: ImageTagVocabulary.Vocabulary, policy: String): String = buildString {
             append("당신은 창작 자료 이미지의 분류를 돕는다. ")

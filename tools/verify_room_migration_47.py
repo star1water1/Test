@@ -93,8 +93,9 @@ def main():
 
     print("\n[1] 등록 확인")
     check(db_version_at_least(src, 47), "@Database(version)이 47 이상이다")
-    check(re.search(r"addMigrations\([^)]*MIGRATION_46_47", src, re.S) is not None,
-          "MIGRATION_46_47이 addMigrations에 등록됐다 (빠뜨리면 실행 시 IllegalStateException)")
+    check(re.search(r"ALL_MIGRATIONS\b[^=]*=\s*arrayOf\([^)]*?MIGRATION_46_47\b", src, re.S) is not None
+                and "addMigrations(*ALL_MIGRATIONS)" in src,
+          "MIGRATION_46_47이 등록 목록(ALL_MIGRATIONS)에 있고 그 목록이 그대로 Room에 넘어간다 (빠뜨리면 실행 시 IllegalStateException)")
     check("val representativeImagePath: String = \"\"" in entity_src,
           "엔티티가 non-null + 기본값 \"\"로 선언했다 (마이그레이션의 NOT NULL DEFAULT ''와 짝)")
 

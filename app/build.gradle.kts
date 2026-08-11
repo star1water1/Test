@@ -16,6 +16,9 @@ android {
         // 덮어쓰기 업데이트가 깨지지 않도록 매 릴리스마다 반드시 올라가야 한다.
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "1.1"
+        // 계측 시험(마이그레이션 — B-9)의 러너. 없으면 `connectedAndroidTest`가
+        // *"러너가 없다"*로 죽고, 그 실패는 마이그레이션이 틀린 것과 구별되지 않는다.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // 고정 서명키 — 모든 빌드(디버그 포함)가 항상 같은 인증서로 서명되어야
@@ -62,6 +65,15 @@ android {
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
+    }
+
+    // 산출된 스키마 JSON을 계측 시험의 **assets로 넣는다** (B-9).
+    // `MigrationTestHelper`는 이 자리에서 옛 버전의 DB를 만들어 낸다 — assets에 없으면
+    // 시험이 *"스키마를 못 찾았다"*로 죽고, 그때는 **마이그레이션이 틀린 것과 구별되지 않는다.**
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
     }
 
     testOptions {
@@ -154,4 +166,12 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // android.jar의 org.json 스텁 대체 — config 파싱 모델(FieldStatsConfig 등)·토크나이저 테스트용
     testImplementation("org.json:json:20240303")
+
+    // ===== 계측 시험 (에뮬레이터 필요 — 마이그레이션을 **실제 Room**으로 밟는다, B-9) =====
+    // 순수 JVM 시험과 역할이 갈린다: 그쪽은 *산수가 옳은가*를, 이쪽은 *DB가 실제로
+    // 열리는가*를 본다. `tools/verify_room_migration*.py`(소스만 읽는 하네스)가 **원리적으로
+    // 못 보는 것**이 이 축이다 — SQL이 문법은 맞는데 실제로는 실패하는 자리.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.7.0")
 }

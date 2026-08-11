@@ -232,6 +232,59 @@ class AiProtocolCodecTest {
         assertEquals(AiErrorKind.UNKNOWN, AiProtocolCodec.parseError(418, null).kind)
     }
 
+    // ── 400이 항목을 지목했는가 (B-161) ──────────────────────────────────────
+
+    /**
+     * 세 프로토콜에서 관찰된 지목 표현 — 전부 `UNSUPPORTED_PARAM`이어야 한다.
+     * 종전에는 이 넷이 전부 `BAD_REQUEST`로 떨어져 *"모델명과 서버 주소를 확인해 주세요"*를
+     * 받았고, 그 안내는 이 400들에서 **거짓**이라 멀쩡한 두 칸을 고치라고 시켰다.
+     */
+    @Test
+    fun `항목을 지목한 400은 UNSUPPORTED_PARAM이다`() {
+        val bodies = listOf(
+            """{"error":{"message":"Unsupported value: 'temperature' is not supported with this model."}}""",
+            """{"error":{"message":"Unrecognized request argument supplied: reasoning_effort"}}""",
+            """{"error":{"message":"Unknown parameter: 'top_k'."}}""",
+            """{"error":{"message":"`temperature` is deprecated for this model."}}"""
+        )
+        for (body in bodies) {
+            assertEquals(body, AiErrorKind.UNSUPPORTED_PARAM, AiProtocolCodec.parseError(400, body).kind)
+        }
+    }
+
+    /**
+     * 지목이 없는 400은 그대로 `BAD_REQUEST`다 — **판정을 좁게 잡은 것이 이 분류의 값이다.**
+     * 넓히면 이 분류가 `BAD_REQUEST`보다 나을 것이 없고, 종단으로 세므로 남은 청크가 통째로 접힌다.
+     */
+    @Test
+    fun `지목도 거부 표현도 없는 400은 BAD_REQUEST로 남는다`() {
+        val onlyRejection = """{"error":{"message":"The request is not supported."}}"""
+        val onlyPointer = """{"error":{"message":"parameter accepted"}}"""
+        val plain = """{"error":{"message":"Bad request"}}"""
+        for (body in listOf(onlyRejection, onlyPointer, plain)) {
+            assertEquals(body, AiErrorKind.BAD_REQUEST, AiProtocolCodec.parseError(400, body).kind)
+        }
+    }
+
+    /**
+     * **키 갈래가 먼저다.** Gemini의 잘못된 키 400 본문은 `INVALID_ARGUMENT`를 달고 오므로
+     * 순서를 바꾸면 키 문제가 파라미터 문제로 읽히고, 사용자는 고칠 곳을 다시 놓친다.
+     */
+    @Test
+    fun `잘못된 키 400은 파라미터 판정보다 앞선다`() {
+        val body = """{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}"""
+        assertEquals(AiErrorKind.INVALID_KEY, AiProtocolCodec.parseError(400, body).kind)
+    }
+
+    /** 400이 아닌 것은 본문이 무엇을 말하든 이 판정의 대상이 아니다. */
+    @Test
+    fun `파라미터 지목 판정은 400에서만 참이다`() {
+        val body = "Unknown parameter: 'x' is not supported"
+        assertFalse(AiProtocolCodec.isParameterRejectedError(500, body))
+        assertFalse(AiProtocolCodec.isParameterRejectedError(400, null))
+        assertTrue(AiProtocolCodec.isParameterRejectedError(400, body))
+    }
+
     @Test
     fun `openai 잔액 소진 429는 QUOTA로 구분한다`() {
         val body = """{"error":{"message":"You exceeded your current quota","type":"insufficient_quota","code":"insufficient_quota"}}"""

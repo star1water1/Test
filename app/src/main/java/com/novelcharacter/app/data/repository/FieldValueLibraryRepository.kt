@@ -7,7 +7,6 @@ import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.FieldEntryCount
 import com.novelcharacter.app.data.model.Character
-import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldValueEntry
@@ -89,7 +88,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     // ===== 자동 수확 (insert-only, 실패 무해) =====
 
-    /** 캐릭터 저장/복원/이동 후 — 해당 캐릭터의 값·상태변화를 수확 */
+    /** 캐릭터 저장/복원/이동 후 — 해당 캐릭터의 **현재 값**을 수확 (이력은 대상이 아니다 — B-60) */
     suspend fun harvestForCharacter(characterId: Long) = safely("harvestForCharacter") {
         val values = charValueDao.getValuesByCharacterList(characterId)
         val defsById = supportedDefsById()
@@ -99,19 +98,8 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             tokensByField.getOrPut(fd.id) { linkedSetOf() }
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
-        // 상태변화에만 존재하는 값도 라이브러리가 보게 한다 (A2)
+        // 상태변화 이력은 수확하지 않는다 — 모집단 규약은 [harvestUniversesOrThrow]가 든다 (B-60).
         val universeId = universeOfCharacter(characterId)
-        if (universeId != null) {
-            val defsByKey = defsById.values
-                .filter { it.universeId == universeId && it.entityType == FieldDefinition.ENTITY_CHARACTER }
-                .associateBy { it.key }
-            for (change in stateChangeDao.getChangesByCharacterList(characterId)) {
-                if (change.fieldKey.startsWith("__")) continue
-                val fd = defsByKey[change.fieldKey] ?: continue
-                tokensByField.getOrPut(fd.id) { linkedSetOf() }
-                    .addAll(FieldValueTokenizer.tokenize(fd, change.newValue))
-            }
-        }
         insertNewTokens(tokensByField)
         scheduleRecount(recountTargetsForCharacter(universeId, defsById.values, tokensByField.keys))
     }
@@ -171,19 +159,6 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         scheduleRecount(listOf(fd.id))
     }
 
-    /** 상태변화 쓰기 후 — 지원 필드의 이력 값 수확 (시스템 키 스킵) */
-    suspend fun harvestStateChange(characterId: Long, fieldKey: String, newValue: String) =
-        safely("harvestStateChange") {
-            if (fieldKey.startsWith("__") || newValue.isBlank()) return@safely
-            val universeId = universeOfCharacter(characterId) ?: return@safely
-            val fd = fieldDao.getFieldByKey(universeId, fieldKey) ?: return@safely
-            if (!FieldValueTokenizer.supportsLibrary(fd)) return@safely
-            insertNewTokens(mapOf(fd.id to FieldValueTokenizer.tokenize(fd, newValue).toSet()))
-            // 상태변화 자체는 [recountUsageForFieldsOrThrow]의 계수 대상이 아니지만(현재 값만 센다),
-            // 상태변화 저장은 대개 현재 값 쓰기와 짝을 이루므로 같은 필드를 함께 예약해 둔다.
-            scheduleRecount(listOf(fd.id))
-        }
-
     /** 엑셀 임포트 후 — 임포트가 건드린 세계관들 일괄 수확. null이면 전체(백필 시드). */
     suspend fun harvestUniverses(universeIds: Set<Long>?) = safely("harvestUniverses") {
         harvestUniversesOrThrow(universeIds)
@@ -193,6 +168,25 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
      * 백필·임포트 재시도 플래그 관리자용 throwing 변형 — 실패가 조용히 삼켜지면
      * seeded/harvest_pending 플래그가 잘못 기록되어 재시도 계약이 깨진다 (검토 후속).
      * 훅 경로는 [harvestUniverses]의 안전 래퍼를 그대로 쓴다.
+     *
+     * ## 수확의 모집단 — **현재 값 세 표뿐이다** (B-60 · 확정 20번 ㄱ1)
+     *
+     * 캐릭터·사건·작품의 **현재** 필드값만 읽는다. **상태변화 이력은 읽지 않는다.**
+     *
+     * 종전에는 이력도 토큰화해 엔트리를 만들었는데, 집계([recountUsageForFieldsOrThrow])는
+     * 처음부터 현재 값 세 표만 셌다 — **수확과 집계가 서로 다른 모집단을 본 것이다.**
+     * 그 비대칭의 증상은 조용하다: 이력에만 있는 값은 엔트리로 들어오고도 `usageCount`가
+     * **영원히 0**이라, '미사용 자동수집 정리'가 그것을 지우자고 권한다.
+     *
+     * 둘 중 어느 쪽에 맞출 것인가는 *집계의 의미*를 정하는 일이라 사용자 판정을 받았고,
+     * 답은 **`usageCount` = "지금 쓰이는 횟수"**였다. 그래서 **수확 쪽을 좁혔다** —
+     * 집계를 넓히면 라이브러리가 *지금은 아무도 안 쓰는 값*을 쓰이는 것으로 세게 된다.
+     *
+     * **대가를 적어 둔다:** 이력에만 있던 값은 이제 카탈로그에 자동으로 오르지 않으므로
+     * 자동완성 후보에서도 빠진다. 그것이 이 확정이 고른 쪽이다 — 카탈로그는 *쓰이는 값*의
+     * 목록이고, 이력의 값이 필요하면 사용자가 직접 등재한다(자율성 우선). **이력 자체는
+     * 아무것도 잃지 않는다** — 전파(rename/merge/delete)는 `character_state_changes`를
+     * 그대로 대상에 넣으므로 표기를 바꾸면 이력도 함께 따라간다.
      */
     suspend fun harvestUniversesOrThrow(universeIds: Set<Long>?) {
         val defs = fieldDao.getAllFieldsAllTypes()
@@ -213,18 +207,6 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         for (v in novelValueDao.getAllValuesList()) {
             val fd = defsById[v.fieldDefinitionId] ?: continue
             tokensByField.getOrPut(fd.id) { linkedSetOf() }.addAll(FieldValueTokenizer.tokenize(fd, v.value))
-        }
-        // 상태변화: 캐릭터 → 세계관 매핑 후 (세계관, key)로 필드 해석
-        val universeByChar = characterUniverseMap()
-        val defsByUniverseKey = defs
-            .filter { it.entityType == FieldDefinition.ENTITY_CHARACTER }
-            .associateBy { it.universeId to it.key }
-        for (change in stateChangeDao.getAllChangesList()) {
-            if (change.fieldKey.startsWith("__")) continue
-            val uid = universeByChar[change.characterId] ?: continue
-            val fd = defsByUniverseKey[uid to change.fieldKey] ?: continue
-            tokensByField.getOrPut(fd.id) { linkedSetOf() }
-                .addAll(FieldValueTokenizer.tokenize(fd, change.newValue))
         }
         insertNewTokens(tokensByField)
         // 수확 범위 **전체**를 예약한다(토큰이 새로 생긴 필드만이 아니다) — 임포트·복원은
@@ -972,13 +954,6 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val character = db.characterDao().getCharacterById(characterId) ?: return null
         val novelId = character.novelId ?: return null
         return db.novelDao().getNovelById(novelId)?.universeId
-    }
-
-    private suspend fun characterUniverseMap(): Map<Long, Long> {
-        val novels = db.novelDao().getAllNovelsList().associate { it.id to it.universeId }
-        return db.characterDao().getAllCharactersList()
-            .mapNotNull { c -> c.novelId?.let { nid -> novels[nid]?.let { c.id to it } } }
-            .toMap()
     }
 
     private fun parseImagePathList(imagePathsJson: String): List<String> {

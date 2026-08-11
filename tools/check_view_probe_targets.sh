@@ -26,15 +26,20 @@
 #   - 순수 JVM 시험: 못 본다. `ui/**`는 Room·Android에 매달려 있어 원리적으로 닿지 않는다.
 #   - 프로브 자신: **가장 못 본다.** 자기 대상 목록이 맞는지는 자기가 물을 수 없다.
 #
-# ## 범위 — 왜 `View` 직접 상속만인가
+# ## 범위 — 왜 이 둘인가
 #
-# 프로브가 세운 프레임워크 스텁으로 **설 수 있는 것**이 그 부류이기 때문이다.
+# 프로브가 세운 프레임워크 스텁으로 **설 수 있는 것**만 요구한다. 세울 수 없는 것을 요구하면
+# 이 검사가 늘 빨간불이 되고, 그러면 다음 사람이 검사를 끈다.
+#   - **`View` 직접 상속** — 처음부터의 범위다.
+#   - **`AppCompatImageView` 상속** — 2026.08.10(B-166)에 넓혔다. `ZoomableImageView` 하나가
+#     그 부류이고, 종전에는 **어느 로컬 검사에도 안 잡히는 유일한 뷰**였다. 넓히기 전에
+#     `probe_view_compile.sh`에 스텁 셋(Matrix·ImageView·AppCompatImageView)을 먼저 세웠고,
+#     세우고 나서 실제로 프로브가 초록인 것을 확인한 뒤 이 정규식을 고쳤다 — **순서가 규약이다.**
 #   - `CappedScrollView`(ScrollView·NestedScrollView 상속)는 대상 목록에 이미 있다 —
 #     그쪽 상위 타입도 스텁이 서 있다. 여기서는 세지 않지만 빠져 있지도 않다.
-#   - `ZoomableImageView`(AppCompatImageView 상속)는 **아직 대상이 아니다** —
-#     ImageView·Drawable·Matrix까지 스텁이 넓어져야 서므로 B-147의 몫이 아니었다(B-166 등재).
-# 범위를 넓히려면 **스텁을 먼저 세우고** 이 검사의 정규식을 함께 넓힐 것. 정규식만 넓히면
-# 세울 수 없는 것을 요구해 이 검사가 늘 빨간불이 되고, 그러면 다음 사람이 검사를 끈다.
+#
+# **다음에 또 넓힐 때도 순서는 같다: 스텁 → 프로브 초록 확인 → 이 정규식.**
+# `AppCompat*` 전부로 한 번에 넓히지 않은 것도 같은 이유다 — 스텁이 있는 것만 요구한다.
 #
 # 사용법: tools/check_view_probe_targets.sh   # 위반 시 exit 1
 set -u
@@ -46,9 +51,10 @@ cd "$REPO"
 SRC="app/src/main/java/com/novelcharacter/app"
 PROBE="tools/probe_view_compile.sh"
 
-# `) : View(` 꼴만 잡는다. `: RecyclerView.ViewHolder(`처럼 **이름이 View로 끝나는 다른
-# 타입**은 콜론 바로 뒤가 `View`가 아니므로 걸리지 않는다 — 그 구별이 이 정규식의 요점이다.
-VIEW_RE="\)[[:space:]]*:[[:space:]]*(android\.view\.)?View[[:space:]]*\("
+# `) : View(`와 `) : AppCompatImageView(` 꼴만 잡는다. `: RecyclerView.ViewHolder(`처럼
+# **이름이 View로 끝나는 다른 타입**은 콜론 바로 뒤가 그 둘이 아니므로 걸리지 않는다 —
+# 그 구별이 이 정규식의 요점이다.
+VIEW_RE="\)[[:space:]]*:[[:space:]]*((android\.view\.)?View|(androidx\.appcompat\.widget\.)?AppCompatImageView)[[:space:]]*\("
 
 view_files() {
   grep -rlE "$VIEW_RE" --include=*.kt "$1" 2>/dev/null | sort -u
@@ -83,18 +89,30 @@ cat > "$SELFDIR/Qualified.kt" <<'EOF'
 class QualifiedView(context: Context) : android.view.View(context) {
 }
 EOF
+cat > "$SELFDIR/Image.kt" <<'EOF'
+class ZoomableImageView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
+) : AppCompatImageView(context, attrs, defStyleAttr) {
+}
+EOF
 cat > "$SELFDIR/Lookalike.kt" <<'EOF'
 class VH(view: View) : RecyclerView.ViewHolder(view)
 class Capped(context: Context) : NestedScrollView(context) {
 }
+class Chip(context: Context) : AppCompatTextView(context) {
+}
 EOF
 real_hits=$(view_files "$SELFDIR/Real.kt" | grep -c . || true)
 qual_hits=$(view_files "$SELFDIR/Qualified.kt" | grep -c . || true)
+img_hits=$(view_files "$SELFDIR/Image.kt" | grep -c . || true)
 look_hits=$(view_files "$SELFDIR/Lookalike.kt" | grep -c . || true)
 rm -rf "$SELFDIR"
-if [ "$real_hits" -ne 1 ] || [ "$qual_hits" -ne 1 ] || [ "$look_hits" -ne 0 ]; then
-  echo "  ✗ 탐지기 자기 시험 실패 — 실제 ${real_hits}건(1) · 정규화 ${qual_hits}건(1) · 닮은꼴 ${look_hits}건(0)" >&2
+if [ "$real_hits" -ne 1 ] || [ "$qual_hits" -ne 1 ] || [ "$img_hits" -ne 1 ] || [ "$look_hits" -ne 0 ]; then
+  echo "  ✗ 탐지기 자기 시험 실패 — 실제 ${real_hits}건(1) · 정규화 ${qual_hits}건(1) ·" >&2
+  echo "      이미지뷰 ${img_hits}건(1) · 닮은꼴 ${look_hits}건(0)" >&2
   echo "      (진짜를 못 잡으면 이 검사는 장식이고, 닮은꼴을 잡으면 오검출로 다음 사람이 끈다)" >&2
+  echo "      닮은꼴에 AppCompatTextView를 둔 것은 일부러다 — **스텁이 있는 것만 요구한다**는" >&2
+  echo "      범위 규칙이 깨지면 여기서 큰소리로 실패한다." >&2
   exit 1
 fi
 
