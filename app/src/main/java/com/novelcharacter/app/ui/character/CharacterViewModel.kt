@@ -1351,7 +1351,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     data class AiNarrativeBulkRun(
         val items: List<AiNarrativeBulkItem>,
         val notRequested: List<String>,
-        val length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length
+        val length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
+        /**
+         * 실행 자체가 도중에 깨진 사유 — 정상 종료면 null.
+         *
+         * **이것이 없으면 중간에 끊긴 실행과 *"AI가 그만큼만 답했다"*가 구별되지 않는다.**
+         * 이미 받은 초안은 [items]에 그대로 남으므로 사용자는 그것을 여전히 쓸 수 있고,
+         * 왜 나머지가 없는지만 알면 된다.
+         */
+        val runFailure: String? = null
     )
 
     val aiNarrativeBulkRunning = MutableLiveData(false)
@@ -1394,6 +1402,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val items = mutableListOf<AiNarrativeBulkItem>()
             val notRequested = mutableListOf<String>()
+            var runFailure: String? = null
             try {
                 val writer = com.novelcharacter.app.ai.NarrativeFieldAiWriter(
                     com.novelcharacter.app.ai.AiService(getApplication())
@@ -1426,10 +1435,22 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     // 판정은 [WriteOutcome.terminalFailure]가 든다(문구 비교 금지).
                     if (outcome.terminalFailure) aborted = true
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 뷰모델이 정리되는 중이다 — 삼키면 취소가 깨진다. 그대로 올려보낸다.
+                throw e
+            } catch (e: Exception) {
+                // **크래시 금지.** 여기서 던지면 이미 결제한 초안까지 함께 사라지고,
+                // 사용자는 앱이 죽는 것으로 그 사실을 안다. 사유를 들고 아래로 내려간다.
+                Log.e("CharacterViewModel", "ai narrative bulk failed", e)
+                runFailure = e.message ?: app.getString(R.string.ai_error_unknown)
+                // 아직 보내지 않은 대상은 '요청 안 함'으로 남긴다 — 실패한 것과 처분이 다르다
+                // (설정을 고치고 다시 돌리면 된다).
+                for (rest in targets.drop(items.size)) notRequested.add(rest.spec.name)
             } finally {
                 // **부분 결과라도 반드시 내보낸다** — 예외로 빠져나가도 이미 결제한 응답은
                 // 사용자 것이다. 빈 실행도 결과로 낸다(무통보 소멸 금지 — B-144와 같은 갈래).
-                aiNarrativeBulkResult.value = AiNarrativeBulkRun(items, notRequested, length)
+                aiNarrativeBulkResult.value =
+                    AiNarrativeBulkRun(items, notRequested, length, runFailure)
                 aiNarrativeBulkRunning.value = false
             }
         }

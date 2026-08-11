@@ -36,15 +36,6 @@ import kotlinx.coroutines.launch
  */
 object NarrativeBulkSheet {
 
-    /**
-     * 이 폼에 일괄 초안 대상이 몇 개인가 — 진입 버튼을 띄울지 정하는 자리가 쓴다.
-     * 대상 규칙은 [NarrativeFieldAiWriter.bulkDraftTargetsOf] 하나이므로 여기서 다시 세지 않는다.
-     */
-    fun targetCountOf(formBuilder: DynamicFieldFormBuilder): Int =
-        NarrativeFieldAiWriter.bulkDraftTargetsOf(
-            formBuilder.fieldDefinitions, currentValuesByFieldId(formBuilder)
-        ).targets.size
-
     fun show(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
@@ -181,7 +172,12 @@ object NarrativeBulkSheet {
                 ).apply {
                     text = fragment.getString(lengthLabel(length), length.hint)
                     setOnClickListener {
-                        if (!NarrativeFieldAiWriter.draftFitsBudget(budget, length)) {
+                        if (NarrativeFieldAiWriter.draftFitsBudget(budget, length)) {
+                            // **경고를 반드시 거둔다.** 종전 판은 켜기만 해서, [길게]로 경고를
+                            // 띄운 뒤 [보통]을 누르면 *보통에는 해당하지 않는 경고*가 그대로
+                            // 남은 채였다 — 거짓 고지다(콜드 검토가 잡았다).
+                            budgetWarning.isVisible = false
+                        } else {
                             // 막지 않는다 — 추정이지 확정이 아니다(자율성 우선). 한 번 보이고,
                             // 그래도 누르면 그대로 돌린다.
                             budgetWarning.isVisible = true
@@ -244,8 +240,12 @@ object NarrativeBulkSheet {
         val density = context.resources.displayMetrics.density
         val pad = (20 * density).toInt()
 
+        // **초안은 받았는데 필드가 사라진 것**(검토 중 다른 화면에서 삭제 등)을 따로 센다.
+        // 종전 판은 이것을 `usable` 필터로 걸러 내기만 하고 고지에서도 빠뜨려, **결제한 초안이
+        // 아무 말 없이 사라졌다** — 이 저장소가 가장 경계하는 그 모양이다(콜드 검토가 잡았다).
+        val gone = run.items.filter { it.hasDraft && fieldOf(it.fieldId) == null }
         val usable = run.items.filter { it.hasDraft && fieldOf(it.fieldId) != null }
-        val notices = buildNotices(fragment, run)
+        val notices = buildNotices(fragment, run, gone)
 
         if (usable.isEmpty()) {
             MaterialAlertDialogBuilder(context)
@@ -326,13 +326,27 @@ object NarrativeBulkSheet {
      */
     private fun buildNotices(
         fragment: Fragment,
-        run: CharacterViewModel.AiNarrativeBulkRun
+        run: CharacterViewModel.AiNarrativeBulkRun,
+        gone: List<CharacterViewModel.AiNarrativeBulkItem> = emptyList()
     ): String = buildList {
         val inTokens = run.items.sumOf { it.outcome.inputTokens }
         val outTokens = run.items.sumOf { it.outcome.outputTokens }
         add(fragment.getString(R.string.field_library_ai_token_usage, inTokens, outTokens))
+        // 실행 자체가 도중에 깨진 경우 — 이미 받은 초안은 아래에 그대로 있고, 왜 중간에
+        // 멈췄는지를 여기서 말한다(말하지 않으면 *"AI가 그만큼만 답했다"*와 구별되지 않는다).
+        run.runFailure?.let { add(fragment.getString(R.string.ai_narrative_bulk_run_failed, it)) }
         for (item in run.items.filter { !it.hasDraft }) {
             add(fragment.getString(R.string.ai_narrative_bulk_field_failed, item.fieldName))
+        }
+        for (item in gone) {
+            add(fragment.getString(R.string.ai_narrative_bulk_field_gone, item.fieldName))
+        }
+        // 형식이 틀려 버린 후보 — 후보가 1개라 대개 실패로 잡히지만, 0이 아니면 반드시 말한다.
+        val dropped = run.items.sumOf { it.outcome.droppedCount }
+        if (dropped > 0) add(fragment.getString(R.string.ai_field_dropped, dropped))
+        // 프롬프트에 다 못 실은 컨텍스트 (R-14) — 필드마다 같은 사유가 나오므로 중복을 접는다.
+        run.items.flatMap { it.outcome.truncationNotes }.distinct().forEach {
+            add(fragment.getString(R.string.ai_field_truncated_prefix, it))
         }
         // 실패 문구는 같은 것이 필드마다 되풀이되므로 중복을 접는다 — 열 필드가 같은 이유로
         // 실패하면 같은 줄이 열 번 뜨고, 그러면 사용자가 읽기를 그만둔다.
