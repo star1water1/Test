@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelRecords
@@ -637,6 +638,20 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
             GuideLine("", styles.guideBody, "• 캐릭터를 다시 작품에 배정하면 값이 캐릭터 시트로 옮겨가 이 시트에서 사라집니다(정상)."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("'작품 필드값'·'사건 필드값' 시트", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 작품·연표 시트는 모든 세계관의 필드를 열로 싣습니다. 열 이름이 맞으면 다른 세계관의"),
+            GuideLine("", styles.guideBody, "  필드여도 값이 그대로 되돌아옵니다 — 세계관을 옮긴 뒤 남은 값도 유실되지 않습니다."),
+            GuideLine("", styles.guideBody, "• 같은 이름의 필드가 한 구역에 둘 있으면 열이 하나만 서므로, 나머지 값이 이 시트로 옵니다."),
+            GuideLine("", styles.guideBody, "  담을 값이 없으면 시트 자체가 만들어지지 않습니다(정상입니다)."),
+            GuideLine("", styles.guideBody, "• 정체성은 작품코드/사건코드 + 세계관 + 필드키입니다 — 이 열들을 수정하면 값이 다른 곳에 붙습니다."),
+            GuideLine("", styles.guideBody, "• 같은 항목이 작품·연표 시트에도 있으면 그쪽이 우선하며 이 시트의 행은 무시됩니다."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("필드 열의 '(쉼표 구분)' 표시", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 열 머리에 '(쉼표 구분)'이 붙은 칸은 쉼표로 여러 값을 적는 칸입니다(캐릭터·작품·연표 공통)."),
+            GuideLine("", styles.guideBody, "• 값 자체에 쉼표를 넣으려면 그 값을 따옴표로 감싸세요: \"홍길동, 어릴 적 이름\", 아무개"),
+            GuideLine("", styles.guideBody, "  값 안의 따옴표는 두 번 겹쳐 씁니다(엑셀·CSV와 같은 방식)."),
+            GuideLine("", styles.guideBody, "• 표시가 없는 옛 파일도 그대로 읽습니다 — 열 이름을 고치지 않아도 됩니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("'전체 캐릭터' 시트 (읽기 전용)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "모든 세계관의 캐릭터를 한 장에 모은 시트입니다. 전체 인원에 정렬·필터·피벗을 걸 때 쓰세요."),
             GuideLine("", styles.guideBody, "• 가져오기는 이 시트를 읽지 않습니다. 값을 고치려면 세계관 이름의 캐릭터 시트에서 고치세요."),
@@ -763,10 +778,12 @@ class ExcelExporter(context: Context) {
         // 작품 커스텀 필드 (확-3) — 헤더 규칙은 EntityFieldHeaders 단일 소스이고
         // 가져오기가 같은 규칙의 역함수로 되짚는다(연표 시트의 사건 필드 열과 같은 방식).
         val novelFields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL)
-        val novelFieldColumns = EntityFieldHeaders.headersFor(
+        // 열은 헤더가 유일한 것만 선다 — 나머지는 '작품 필드값' 시트가 담는다(B-65).
+        val novelFieldPlan = EntityFieldHeaders.plan(
             novelFields,
             universeMap.mapValues { (_, u) -> u.name }
         )
+        val novelFieldColumns = novelFieldPlan.columns
         val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
 
         val spec = novelSpec(universes.map { it.name }, novelFieldColumns.map { it.second })
@@ -801,6 +818,57 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, novels.size)
+
+        exportNovelFieldValueOverflow(
+            workbook, usedSheetNames, novels, novelFieldValuesByNovel,
+            novelFieldPlan.coveredFieldIds, novelFields, universeMap
+        )
+    }
+
+    /**
+     * '작품 필드값' 오버플로 (B-65) — 작품 시트가 열로 담지 못한 값만 담는다.
+     *
+     * 선별은 [NovelFieldValueOverflow]가 단일 소스이고, `covered`는 **열을 실제로 그린 그 계획**이
+     * 낸 집합이다(`EntityFieldHeaders.plan`). 채우는 쪽과 고르는 쪽이 갈리면 같은 값이 두 시트에
+     * 겹쳐 나가거나 어느 시트에도 안 나간다.
+     */
+    private suspend fun exportNovelFieldValueOverflow(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>,
+        novels: List<Novel>,
+        valuesByNovel: Map<Long, List<com.novelcharacter.app.data.model.NovelFieldValue>>,
+        coveredFieldIds: Set<Long>,
+        novelFields: List<FieldDefinition>,
+        universeMap: Map<Long, Universe>
+    ) {
+        val fieldsById = novelFields.associateBy { it.id }
+        // 정렬을 (작품 displayOrder, 필드 displayOrder, 필드키)로 고정 — 무편집 왕복 멱등성의 근거
+        val rows = novels.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            .flatMap { novel ->
+                NovelFieldValueOverflow
+                    .select(valuesByNovel[novel.id].orEmpty(), coveredFieldIds, fieldsById)
+                    .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
+                    .map { (value, fd) -> Triple(novel, fd, value.value) }
+            }
+        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+
+        val spec = novelFieldValueSpec(universeMap.values.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        rows.forEachIndexed { index, (novel, fd, value) ->
+            val universe = fd.universeId?.let { universeMap[it] }
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(novel.code)
+            row.createCell(1).setTextSafe(novel.title)
+            row.createCell(2).setTextSafe(universe?.name ?: "")
+            row.createCell(3).setTextSafe(universe?.code ?: "")
+            row.createCell(4).setTextSafe(fd.key)
+            row.createCell(5).setTextSafe(fd.name)
+            row.createCell(6).setTextSafe(value)
+        }
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 필드 정의 ──
@@ -1350,11 +1418,13 @@ class ExcelExporter(context: Context) {
             com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
         )
         val universesById = db.universeDao().getAllUniversesList().associateBy { it.id }
-        // 헤더 규칙은 EntityFieldHeaders 단일 소스 — 가져오기가 같은 규칙의 역함수로 정확히 되짚는다
-        val eventFieldColumns = EntityFieldHeaders.headersFor(
+        // 헤더 규칙은 EntityFieldHeaders 단일 소스 — 가져오기가 같은 규칙의 역함수로 정확히 되짚는다.
+        // 열은 헤더가 유일한 것만 선다 — 나머지는 '사건 필드값' 시트가 담는다(B-65).
+        val eventFieldPlan = EntityFieldHeaders.plan(
             eventFields,
             universesById.mapValues { (_, u) -> u.name }
         )
+        val eventFieldColumns = eventFieldPlan.columns
 
         val spec = timelineSpec(
             novels.map { it.title },
@@ -1416,6 +1486,57 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, events.size)
+
+        exportEventFieldValueOverflow(
+            workbook, usedSheetNames, events, eventFieldValuesByEvent,
+            eventFieldPlan.coveredFieldIds, eventFields, universesById
+        )
+    }
+
+    /**
+     * '사건 필드값' 오버플로 (B-65) — 근거·구조는 [exportNovelFieldValueOverflow]와 같다.
+     *
+     * **정체는 사건 코드 하나다**(연도·설명으로 되짚으면 남의 사건에 붙는다 — R-1). 코드가 비어
+     * 있는 사건(구버전 행)의 값도 **행은 그대로 싣는다** — 빼면 파일에서 그 값이 사라져 사용자가
+     * 존재조차 모르게 되고, 실으면 가져오기가 *"코드가 비어 확정할 수 없다"*고 말해 코드 칸을
+     * 채워 바로잡을 길이 남는다(검증 → 알림 → 교정 경로. 개발 의도 2번).
+     */
+    private suspend fun exportEventFieldValueOverflow(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>,
+        events: List<TimelineEvent>,
+        valuesByEvent: Map<Long, List<com.novelcharacter.app.data.model.EventFieldValue>>,
+        coveredFieldIds: Set<Long>,
+        eventFields: List<FieldDefinition>,
+        universesById: Map<Long, Universe>
+    ) {
+        val fieldsById = eventFields.associateBy { it.id }
+        val rows = events.sortedWith(compareBy({ it.year }, { it.displayOrder }, { it.id }))
+            .flatMap { event ->
+                EventFieldValueOverflow
+                    .select(valuesByEvent[event.id].orEmpty(), coveredFieldIds, fieldsById)
+                    .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
+                    .map { (value, fd) -> Triple(event, fd, value.value) }
+            }
+        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+
+        val spec = eventFieldValueSpec(universesById.values.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        rows.forEachIndexed { index, (event, fd, value) ->
+            val universe = fd.universeId?.let { universesById[it] }
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(event.code ?: "")
+            row.createCell(1).setTextSafe(event.description)
+            row.createCell(2).setTextSafe(universe?.name ?: "")
+            row.createCell(3).setTextSafe(universe?.code ?: "")
+            row.createCell(4).setTextSafe(fd.key)
+            row.createCell(5).setTextSafe(fd.name)
+            row.createCell(6).setTextSafe(value)
+        }
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 캐릭터 상태변화 ──

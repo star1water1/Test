@@ -13,7 +13,23 @@ import org.json.JSONObject
  *
  * - [tokenize]/[join]: 라이브러리·검색·자동완성용. trim 후 빈 토큰 제거.
  * - [splitForStats]: 통계 전용 분리(BODY_SIZE·구조화 입력 파트 분기 포함) — StatsDataProvider의
- *   기존 Step 1 로직을 그대로 옮긴 것으로, 통계 결과가 바뀌면 안 된다.
+ *   기존 Step 1 로직을 옮긴 것이다.
+ *
+ * ## 쉼표의 규칙은 [CsvTokens]가 든다 (B-178, 2026.08.11)
+ *
+ * 종전에는 여기가 예외 없는 `rawValue.split(",")`이라 **한 필드값 안에 쉼표를 담을 길이 원리적으로
+ * 없었고**(원칙 01·03의 천장), 동시에 엑셀 목록 셀(R-47)은 이미 따옴표 규약을 갖고 있어
+ * **같은 앱 안에서 같은 개념이 두 규칙**이었다(개발 의도 4번): `태그` 칸의 `"주인공, 남자"`는 한
+ * 값인데 복수 텍스트 필드 칸의 같은 글자는 따옴표째 두 토큰으로 갈렸다. 이제 둘이 한 규칙이다.
+ *
+ * **인앱 값은 좁혀서 읽는다** — 감싼 것으로 보는 것은 [CsvTokens.quote]가 그렇게 감쌌을 값일
+ * 때뿐이다(`quotedOnlyIfNeeded`). 그래서 `"별칭"`처럼 **따옴표를 글자로 쓰던 기존 값은 한 글자도
+ * 바뀌지 않는다.** 뜻이 바뀌는 것은 따옴표 안에 쉼표가 든 값뿐이고, 그것은 지금도 `"a`·`b"`로
+ * 갈려 있어 잃을 뜻이 없다 — 사유 원문은 확정 문서 14-2의 19번과 그 항의 착수 조건이다.
+ *
+ * **네 소비처가 함께 바뀐다**(통계·폼 자동완성·값 라이브러리·검색). 그 사실 자체가 이 판정을
+ * 마지막까지 유보하게 한 이유이므로, 소비처를 세는 법을 여기 적어 둔다 —
+ * `grep -rn 'FieldValueTokenizer' app/src/main/java` (개수는 적지 않는다. 적으면 낡는다).
  */
 object FieldValueTokenizer {
 
@@ -35,14 +51,34 @@ object FieldValueTokenizer {
     /** 라이브러리·검색·자동완성용 토큰화: trim + 빈 토큰 제거 */
     fun tokenize(fd: FieldDefinition, rawValue: String): List<String> {
         if (rawValue.isBlank()) return emptyList()
-        return if (isMultiToken(fd)) {
-            rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        } else {
-            listOf(rawValue.trim())
-        }
+        return if (isMultiToken(fd)) splitTokens(rawValue) else listOf(rawValue.trim())
     }
 
-    /** 통계용 분리 — 기존 StatsDataProvider.getFieldValues Step 1과 동일 동작 (변경 금지) */
+    /**
+     * **다중값이 이미 확정된 칸**을 토큰으로 나눈다 — 쉼표 규칙의 유일한 호출 자리(B-178).
+     *
+     * `FieldDefinition`을 손에 쥐지 않은 자리(읽기 화면의 표시 형식 분기 · AI 제안의 `FieldSpec` ·
+     * 필드 설정의 사전 등록 문자열)가 **각자 `split(",")`을 적지 않게 하려고 공개한다.**
+     * 그렇게 적힌 자리가 실제로 다섯 있었고, 그중 하나는 **붙이기만 새 규칙이라 값을 망가뜨렸다**
+     * (AI 접기가 `join`으로 감싸 놓고 자기 `split`으로 되쪼갰다).
+     *
+     * 갈라짐은 언제나 *값이 조용히 쪼개지는* 모양으로만 드러난다 — 읽기 화면이 한 값을 두 조각으로
+     * 그리는데 통계는 하나로 세는 식이라, 어느 쪽이 틀렸는지 사용자가 알아낼 방법이 없다.
+     */
+    fun splitMulti(rawValue: String): List<String> =
+        CsvTokens.split(rawValue, quotedOnlyIfNeeded = true)
+
+    private fun splitTokens(rawValue: String): List<String> = splitMulti(rawValue)
+
+    /**
+     * 통계용 분리 — BODY_SIZE·구조화 입력의 파트 분기를 포함한다.
+     *
+     * **다중값 갈래는 [tokenize]와 같은 함수를 지난다**(B-178). 종전 이 자리는 *"변경 금지"*라
+     * 적혀 있었는데 그것은 *리팩터링이 통계 결과를 바꾸지 말 것*이라는 뜻이었고, 쉼표 규칙 자체가
+     * 바뀌는 지금은 **오히려 함께 바뀌어야 한다** — 통계만 옛 규칙으로 남으면 라이브러리가 한 값으로
+     * 세는 것을 분포는 두 조각으로 세어, 같은 데이터가 화면마다 다른 수를 낸다(개발 의도 2번).
+     * BODY_SIZE·구조화 입력 갈래는 쉼표를 쓰지 않으므로 그대로다.
+     */
     fun splitForStats(fd: FieldDefinition, rawValue: String): List<String> {
         return when {
             fd.type == "BODY_SIZE" || StructuredInputConfig.fromConfig(fd.config).enabled -> {
@@ -59,13 +95,18 @@ object FieldValueTokenizer {
                     if (parts.size >= 2) parts else listOf(rawValue.trim())
                 }
             }
-            isMultiToken(fd) -> rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            isMultiToken(fd) -> splitTokens(rawValue)
             else -> listOf(rawValue.trim())
         }
     }
 
-    /** rename/merge 전파 시 토큰 재조합. 다중값 렌더러·폼 관례인 ", " 결합을 따른다. */
-    fun join(tokens: List<String>): String = tokens.joinToString(", ")
+    /**
+     * rename/merge 전파 시 토큰 재조합. 다중값 렌더러·폼 관례인 ", " 결합을 따르되,
+     * **구분자를 품은 토큰은 감싼다**(B-178) — 그러지 않으면 전파가 저장한 값을 다음 읽기가
+     * 두 토큰으로 되쪼개, 값 하나에 쉼표를 담게 한 이번 변경이 전파 한 번에 무효가 된다.
+     * 규칙은 엑셀 목록 셀(R-47)과 **같은 함수**다.
+     */
+    fun join(tokens: List<String>): String = CsvTokens.join(tokens)
 
     private val LIBRARY_TYPES = setOf("TEXT", "SELECT", "MULTI_TEXT", "GRADE")
 }

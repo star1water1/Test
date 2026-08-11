@@ -79,6 +79,7 @@ $MAIN/excel/ExportProgress.kt
 $MAIN/excel/OverwriteGuard.kt
 $MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EntityFieldHeaders.kt
+$MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
@@ -89,6 +90,7 @@ $MAIN/util/DialogScrollCap.kt
 $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
 $MAIN/util/BackupWorkerPolicy.kt
+$MAIN/util/CsvTokens.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueSorter.kt
 $MAIN/util/StatsFieldPolicy.kt
@@ -255,6 +257,8 @@ TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
+$TEST/excel/EntityFieldColumnResolverTest.kt
+$TEST/excel/EntityFieldValueOverflowTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
@@ -316,6 +320,7 @@ $TEST/util/DuelAxisChoiceTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
+$TEST/util/CsvTokensTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt

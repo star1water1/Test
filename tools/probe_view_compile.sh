@@ -409,6 +409,10 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   # 실제로 B-167 구현 중에 이 프로브가 그 1건을 다시 냈고, 그래서 여기 등재한다.
   echo "$M/util/DuelSystemFields.kt"
   echo "$M/util/FieldValueTokenizer.kt"
+  # 그 파일이 쉼표 규칙을 이것에 위임한다(B-178). 위 두 줄과 **같은 부류의 등재**다 —
+  # 딸린 것을 함께 넣지 않으면 가짜 오류 1건이 되살아나고, 그러면 아래 "오류 0인데 클래스도 0"
+  # 가드가 다시 죽는다(실제로 이 판에서 그 1건이 떴다).
+  echo "$M/util/CsvTokens.kt"
   ls "$M"/data/model/*.kt
   echo "$WORK/ContextStub.kt"
   echo "$WORK/ResourcesStub.kt"
