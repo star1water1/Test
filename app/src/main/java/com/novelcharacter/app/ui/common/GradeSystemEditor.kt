@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.repository.GradeSystemRepository
 import com.novelcharacter.app.util.GradeTable
+import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
@@ -199,10 +200,20 @@ object GradeSystemEditor {
                         repository.saveSystem(system, renames)
                     } catch (e: Exception) {
                         android.util.Log.e("GradeSystemEditor", "Failed to save grade system", e)
-                        Toast.makeText(
-                            ctx, ctx.getString(R.string.result_grade_system_save_failed, system.name),
-                            Toast.LENGTH_LONG
-                        ).show()
+                        // **작업 이력에도 남긴다.** 종전 경로는 `UniverseViewModel.saveGradeSystem`이
+                        // `reportResult`를 불렀고 그 함수가 *알림 + 이력 기록*을 한 몸으로 했다
+                        // (`ResultReporting` KDoc — "이력 기록을 중복 배선하지 않기 위한 단일 진입점").
+                        // 뗀 뒤 토스트만 남기면 **실패가 작업 이력에서 사라진다** — 사용자가 나중에
+                        // *"그때 왜 안 저장됐지"*를 되짚을 자리가 없어진다(개발 의도 2번).
+                        // 이 창은 ViewModel도 Fragment도 아니라 저장소를 직접 부른다
+                        // (`logOperation`·`logResult`가 안에서 하는 것과 같은 일이다).
+                        val failure = OpResult.failure(
+                            OpResult.CAT_UNIVERSE,
+                            ctx.getString(R.string.result_grade_system_save_failed, system.name),
+                            e.message
+                        )
+                        app.operationLogRepository.logAsync(failure)
+                        Toast.makeText(ctx, failure.summary, Toast.LENGTH_LONG).show()
                         null
                     }
                     saving = false

@@ -458,9 +458,17 @@ class FieldManageFragment : Fragment() {
 
             // 종류를 바꿔 심어도 되는 필드 타입 (B-63 · 확정 14번). 사용자가 정한 값이고
             // 창을 여는 시점에 한 번 읽는다 — 아래 '허용 타입' 창이 고치면 함께 갱신된다.
+            //
+            // **읽기 실패는 여기서 삼킨다.** 저장소는 실패를 그대로 올린다(`TrashSettingsStore`가
+            // 세운 규약 — *부르는 쪽이 처분을 정한다*). 이쪽의 처분이 저장소와 다른 이유는
+            // **잃는 것이 다르기 때문**이다: 휴지통 정책은 추측한 값이 곧 동의 없는 영구 삭제가
+            // 되지만, 여기서는 아무것도 지워지지 않고 **사용자가 미리보기를 보고 확인을 눌러야**
+            // 심긴다. 반대로 삼키지 않으면 이 코루틴이 죽어 **'필드 합치기'가 아무 반응도 없다** —
+            // 그쪽이 훨씬 나쁘다. 못 읽었으면 기본값으로 간다(키가 없을 때와 같은 처분이다).
             val settingsStore = com.novelcharacter.app.data.settings
                 .FieldImportSettingsStore(ctx.applicationContext)
-            var convertibleTypes = settingsStore.getConvertibleTypes()
+            var convertibleTypes = runCatching { settingsStore.getConvertibleTypes() }
+                .getOrElse { PresetMerge.DEFAULT_CONVERTIBLE_TYPES }
 
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
@@ -763,7 +771,10 @@ class FieldManageFragment : Fragment() {
             val store = com.novelcharacter.app.data.settings
                 .FieldImportSettingsStore(ctx.applicationContext)
             val types = FieldType.entries.toList()
-            val current = store.getConvertibleTypes()
+            // 읽기 실패의 처분은 위 [showImportFieldsDialog]와 같다 — 삼키지 않으면 창이
+            // 아예 안 뜬다(사용자에게는 '허용 타입 고치기'가 죽은 버튼으로 보인다).
+            val current = runCatching { store.getConvertibleTypes() }
+                .getOrElse { PresetMerge.DEFAULT_CONVERTIBLE_TYPES }
             val checked = BooleanArray(types.size) { types[it].name in current }
 
             MaterialAlertDialogBuilder(ctx)
@@ -779,7 +790,21 @@ class FieldManageFragment : Fragment() {
                     viewLifecycleOwner.lifecycleScope.launch {
                         // **하나도 안 고른 것도 값이다** — 종류 바꿔 심기를 닫아 둔 상태이고,
                         // 기본값으로 되돌리면 사용자가 끈 것이 켜진다.
-                        store.setConvertibleTypes(picked)
+                        //
+                        // **쓰기 실패는 반드시 말한다** — 읽기와 처분이 갈리는 자리다.
+                        // 못 읽은 것은 다음에 다시 읽으면 되지만, 못 쓴 것을 조용히 넘기면
+                        // 사용자는 **고친 줄 알고 돌아간다**(개발 의도 2번). 그리고 여기서
+                        // 삼키지 않으면 launch가 예외를 그대로 올려 **앱이 죽는다.**
+                        val saved = runCatching { store.setConvertibleTypes(picked) }.isSuccess
+                        if (!isAdded) return@launch
+                        if (!saved) {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.merge_convert_types_save_failed,
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@launch
+                        }
                         convertibleTypesChanged?.invoke(picked)
                     }
                 }
