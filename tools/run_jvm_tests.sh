@@ -247,6 +247,7 @@ $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
 $MAIN/share/WorldPackageCodes.kt
 $MAIN/share/WorldPackageDuels.kt
+$MAIN/excel/ExportWorkbook.kt
 $MAIN/excel/ImportFileFormat.kt
 $MAIN/excel/FieldDefinitionPrune.kt
 $MAIN/excel/FieldScopeCell.kt
@@ -415,6 +416,7 @@ $TEST/excel/MergedCellMapTest.kt
 $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/share/WorldPackageDuelsTest.kt
+$TEST/excel/ExportWorkbookParityTest.kt
 $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt
 $TEST/data/BodyAnalysisConfigKeysTest.kt
