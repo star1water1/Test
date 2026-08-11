@@ -63,6 +63,11 @@ object AppSettingsKeys {
     val TRASH_MAX_OPERATIONS = Spec("trash_max_operations", Kind.NUMBER)
     val TRASH_RETENTION_DAYS = Spec("trash_retention_days", Kind.NUMBER)
 
+    // ── 필드 가져오기 (B-63 · 확정 14번) ──
+    // 종류를 바꿔 심어도 되는 필드 타입 목록. 콤마로 잇는다 — 타입은 앞으로 늘 수 있어
+    // 스위치를 타입마다 두면 옛 파일에 그 키가 없을 때 켬·끔을 가릴 수 없다.
+    val FIELD_IMPORT_CONVERTIBLE_TYPES = Spec("field_import_convertible_types", Kind.TEXT)
+
     // ── 이미지 저장 ──
     val IMAGE_COMPRESS_ENABLED = Spec("image_compress_enabled", Kind.BOOLEAN)
     val IMAGE_QUALITY_PERCENT = Spec("image_quality_percent", Kind.NUMBER)
@@ -133,6 +138,7 @@ object AppSettingsKeys {
         THEME_MODE,
         BACKUP_INCLUDE_IMAGES, BACKUP_MAX_BACKUPS,
         TRASH_MAX_OPERATIONS, TRASH_RETENTION_DAYS,
+        FIELD_IMPORT_CONVERTIBLE_TYPES,
         IMAGE_COMPRESS_ENABLED, IMAGE_QUALITY_PERCENT, IMAGE_CAP_DIMENSION,
         IMAGE_MAX_LONG_EDGE_PX, IMAGE_SKIP_BELOW_ENABLED, IMAGE_SKIP_BELOW_BYTES,
         IMAGE_EDITOR_REMOVE_POLICY, IMAGE_AUTO_LINK_BY_CHARACTER,
@@ -215,6 +221,8 @@ object AppSettingsKeys {
         "image_settings" to "이미지 저장 설정의 DataStore. 값은 `image_`로 시작하는 키들로 실린다.",
         "trash_settings" to
             "휴지통 보관 정책의 DataStore. 값은 ${TRASH_MAX_OPERATIONS.key}·${TRASH_RETENTION_DAYS.key}로 실린다.",
+        "field_import_settings" to
+            "필드 가져오기의 종류 변환 허용 타입 DataStore. 값은 ${FIELD_IMPORT_CONVERTIBLE_TYPES.key}로 실린다.",
         "backup_status" to
             "마지막 백업의 성공·실패 시각과 사유. **설정이 아니라 그 기기에서 일어난 일의 기록이다** — " +
             "옮기면 새 기기가 하지도 않은 백업을 했다고 말한다.",

@@ -69,6 +69,38 @@ interface CharacterStateChangeDao {
     """)
     suspend fun migrateFieldKeyForUniverse(universeId: Long, oldKey: String, newKey: String): Int
 
+    /**
+     * 위 조인이 **원리적으로 빠뜨리는 캐릭터** — `novelId IS NULL`(미분류)이면서 옛 키의
+     * 이력을 실제로 든 것들 (B-13).
+     *
+     * NULL 외래키는 내부 조인에서 떨어지므로 [migrateFieldKeyForUniverse]는 이 캐릭터들을
+     * 절대 만나지 못한다. 처분은 `UnassignedHistoryScope`가 정한다 — 여기서 통째로 옮기면
+     * 다른 세계관의 같은 키 이력까지 갈아엎는다.
+     *
+     * **이력이 있는 캐릭터만 돌려준다** — 미분류 전체를 돌려주면 아무 일도 없던 캐릭터가
+     * '가리지 못해 남긴 것'으로 세어져 고지가 거짓이 된다.
+     */
+    @Query("""
+        SELECT DISTINCT c.id FROM characters c
+        JOIN character_state_changes s ON s.characterId = c.id
+        WHERE c.novelId IS NULL AND s.fieldKey = :oldKey
+    """)
+    suspend fun getUnassignedCharactersWithFieldKey(oldKey: String): List<Long>
+
+    /** 가려낸 캐릭터만 이관한다 (B-13) — 대상은 `UnassignedHistoryScope`가 고른다. */
+    @Query("""
+        UPDATE character_state_changes SET fieldKey = :newKey
+        WHERE fieldKey = :oldKey AND characterId IN (:characterIds)
+    """)
+    suspend fun migrateFieldKeyForCharacters(characterIds: List<Long>, oldKey: String, newKey: String): Int
+
+    /** 옛 키로 남는 이력 건수 — 고지가 캐릭터 수가 아니라 **실제 건수**를 말하게 한다 (B-13). */
+    @Query("""
+        SELECT COUNT(*) FROM character_state_changes
+        WHERE fieldKey = :oldKey AND characterId IN (:characterIds)
+    """)
+    suspend fun countByFieldKeyForCharacters(characterIds: List<Long>, oldKey: String): Int
+
     /** 값 라이브러리 rename/merge 전파용 — 해당 세계관 캐릭터들의 특정 필드 이력.
      *  newValue 치환은 SQL이 아니라 토크나이저(다중값 콤마 결합)로 행 단위 처리한다. */
     @Query("""

@@ -91,7 +91,12 @@ class FieldEditDialog : DialogFragment() {
     private data class GradeRow(
         val container: View,
         val editLabel: EditText,
-        val editValue: EditText
+        val editValue: EditText,
+        /**
+         * '재정의' 표식 (B-71 ②). 체계를 참조할 때만 서고, 독자 표에서는 null이다 —
+         * 재정의란 **체계의 기본 숫자와 다르다**는 뜻이라 기준이 있어야 성립한다.
+         */
+        val overrideBadge: TextView? = null
     )
     private val gradeRows = mutableListOf<GradeRow>()
 
@@ -253,6 +258,34 @@ class FieldEditDialog : DialogFragment() {
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        binding.btnCreateGradeSystem.setOnClickListener { createGradeSystemInline(binding) }
+    }
+
+    /**
+     * **여기서 체계를 만든다** (B-71 ①) — 만든 것을 **고른 상태로** 돌려준다.
+     *
+     * 종전에는 체계가 0개인 첫 사용에서 이 창을 닫아야 했고(입력 유실) 세계관 편집 → 체계
+     * 추가 → 필드 재편집까지 화면 2개·다이얼로그 3개를 왕복했다. 만들고 나서 다시 고르게
+     * 하는 것도 마찰이라, `createDuelAxis`와 같은 규약으로 **고른 상태까지** 끝낸다.
+     *
+     * 창 본체는 세계관 편집과 한 벌이다([GradeSystemEditor]) — 베끼면 검증·개명 추적·전파
+     * 고지가 두 벌이 되고 그중 한 벌만 고쳐지는 날이 온다.
+     */
+    private fun createGradeSystemInline(binding: DialogFieldEditBinding) {
+        if (universeId == 0L) return
+        com.novelcharacter.app.ui.common.GradeSystemEditor.show(
+            requireContext(), lifecycleScope, universeId, existing = null
+        ) { created ->
+            if (!isAdded) return@show
+            gradeSystems = gradeSystems + created
+            pendingGradeSystemCode = created.code
+            applyGradeSystemList(binding)
+            android.widget.Toast.makeText(
+                requireContext(),
+                getString(R.string.grade_system_created_toast, created.name),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     /** 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 참조하던 체계를 선택으로 반영한다. */
@@ -293,11 +326,25 @@ class FieldEditDialog : DialogFragment() {
         }
         val container = binding.gradeRowsContainer
         val density = resources.displayMetrics.density
+
+        // 요약 줄을 갱신하는 통로 (B-71 ②). 행이 붙기 **전에** 걸어 둬야 첫 그리기에서도 돈다.
+        fun renderOverrideNotice() {
+            val count = countGradeOverrides()
+            binding.textGradeOverrideNotice.visibility = if (count > 0) View.VISIBLE else View.GONE
+            if (count > 0) {
+                binding.textGradeOverrideNotice.text = getString(R.string.grade_override_notice, count)
+            }
+        }
+        onGradeOverridesChanged = { renderOverrideNotice() }
+
         if (system == null) {
             // 독자 표 — 잠금만 풀면 되므로 행을 다시 그리지 않고 상태만 되돌린다.
             gradeRows.forEach { it.editLabel.isEnabled = true }
             binding.btnAddGrade.visibility = View.VISIBLE
             setGradeRowRemovable(true)
+            // 견줄 기준이 없어졌으므로 재정의라는 말도 성립하지 않는다 — 표식과 요약을 함께 내린다.
+            gradeRows.forEach { it.overrideBadge?.visibility = View.GONE }
+            binding.textGradeOverrideNotice.visibility = View.GONE
             return
         }
         container.removeAllViews()
@@ -308,10 +355,13 @@ class FieldEditDialog : DialogFragment() {
                 container, density, label,
                 currentValues[label] ?: com.novelcharacter.app.util.GradeTable.formatValue(def),
                 lockedLabel = true,
-                onRowsChanged = { refreshDuelGradeEditor(binding) }
+                onRowsChanged = { refreshDuelGradeEditor(binding) },
+                // 체계를 골랐으므로 견줄 기준이 생겼다 — 여기부터 '재정의'가 성립한다(B-71 ②).
+                systemDefault = def
             )
         }
         binding.btnAddGrade.visibility = View.GONE
+        renderOverrideNotice()
         // 체계를 고르면 등급 표가 통째로 바뀐다 — 컷도 그 자리에서 따라가야 한다 (B-138 곁다리).
         // 이 경로는 목록 로드가 비동기라 대결 축 로드와 순서가 갈리는데, 재조정은 어느 쪽이
         // 나중이어도 같은 결과를 낸다([duelGradeLabels]가 그때의 차례를 들고 있다).
@@ -1304,10 +1354,13 @@ class FieldEditDialog : DialogFragment() {
     /**
      * 등급 행 추가 (B-69) — 구간 행(addBinRangeRow)과 같은 방식의 동적 행.
      * @param lockedLabel 체계 참조 중(U-1)에는 라벨이 체계의 것이라 편집·삭제를 잠근다(R-24).
+     * @param systemDefault 체계가 정한 이 등급의 기본 숫자. null이면 독자 표라 '재정의'라는
+     *   말 자체가 성립하지 않는다(B-71 ②).
      */
     private fun addGradeRow(
         container: LinearLayout, density: Float, label: String = "", value: String = "",
-        lockedLabel: Boolean = false, onRowsChanged: (() -> Unit)? = null
+        lockedLabel: Boolean = false, onRowsChanged: (() -> Unit)? = null,
+        systemDefault: Double? = null
     ) {
         val ctx = requireContext()
         // 등급 행이 곧 대결 등급 산정의 컷이 나눌 대상이라, 행이 바뀌면 편집기가 따라와야 한다
@@ -1362,11 +1415,64 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // '재정의' 표식 (B-71 ②) — 종전에는 등급 행이 **실효 숫자만** 보여, 그것이 체계의
+        // 기본인지 이 필드에서 고친 값인지 구분할 길이 없었다. 캡션은 "고치면 참조 필드
+        // 전체에 반영됩니다"라고 말하는데 재정의한 숫자는 설계상 따라가지 않으므로,
+        // 재정의한 사실을 잊은 사용자에게 그 약속은 **신호 없이** 어긋난다.
+        val badge = if (systemDefault == null) null else TextView(ctx).apply {
+            text = getString(R.string.grade_override_badge)
+            textSize = 11f
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding((4 * density).toInt(), (10 * density).toInt(), 0, 0)
+            visibility = View.GONE
+        }
+        if (badge != null) {
+            // 값을 고치는 즉시 표식이 붙고 떨어진다 — 저장 뒤에야 알면 신호가 아니다.
+            editValue.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {
+                    badge.visibility =
+                        if (isGradeOverridden(s?.toString(), systemDefault)) View.VISIBLE else View.GONE
+                    onGradeOverridesChanged?.invoke()
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+            badge.visibility =
+                if (isGradeOverridden(value, systemDefault)) View.VISIBLE else View.GONE
+        }
+
         row.addView(editLabel)
         row.addView(editValue)
+        if (badge != null) row.addView(badge)
         row.addView(btnRemove)
         container.addView(row)
-        gradeRows.add(GradeRow(row, editLabel, editValue))
+        gradeRows.add(GradeRow(row, editLabel, editValue, badge))
+    }
+
+    /**
+     * 재정의 수가 바뀌었음을 알리는 통로 (B-71 ②) — 행이 붙는 시점에는 요약 줄의 뷰를
+     * 아직 모르므로 콜백으로 잇는다. 체계를 고르는 자리에서 채워 넣는다.
+     */
+    private var onGradeOverridesChanged: (() -> Unit)? = null
+
+    /** 지금 화면에 선 등급 행 중 체계 기본과 다른 숫자를 든 것의 수. */
+    private fun countGradeOverrides(): Int =
+        gradeRows.count { it.overrideBadge?.visibility == View.VISIBLE }
+
+    /**
+     * 지금 적힌 숫자가 체계의 기본과 다른가 (B-71 ②).
+     *
+     * **문자열이 아니라 값으로 견준다** — `10`과 `10.0`은 같은 숫자이고, 그 둘을 다르다고
+     * 하면 사용자가 손대지도 않은 행에 '재정의'가 붙는다(표식이 거짓말을 하면 아무도 안 믿는다).
+     * 읽을 수 없는 입력은 재정의로 보지 않는다 — 저장 자체가 막히는 자리라 여기서 또 말할 것이 없다.
+     *
+     * [systemDefault]가 null이면 **독자 표**라 견줄 기준이 없다 — 재정의라는 말 자체가
+     * 성립하지 않으므로 false다(호출부가 널 검사를 되풀이하지 않게 여기서 받는다).
+     */
+    private fun isGradeOverridden(text: String?, systemDefault: Double?): Boolean {
+        if (systemDefault == null) return false
+        val current = text?.trim()?.toDoubleOrNull() ?: return false
+        return current != systemDefault
     }
 
     /**

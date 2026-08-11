@@ -347,18 +347,26 @@ class UniverseListFragment : Fragment() {
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
-        MaterialAlertDialogBuilder(ctx)
+        // R-27(B-76): 종전에는 이름을 비운 채 저장을 누르면 **아무 말도 없이** 창이 닫히고
+        // 설명까지 함께 사라졌다. 문구는 프리셋 이름 창들이 한 벌로 쓴다(`preset_name_required`).
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_edit_name)
             .setView(layout)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = nameEdit.text.toString().trim()
-                val desc = descEdit.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    viewModel.updateUserPreset(preset.copy(name = name, description = desc))
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = nameEdit.text.toString().trim()
+            if (name.isEmpty()) {
+                nameEdit.showInlineError(getString(R.string.preset_name_required))
+                return@setValidatedPositiveButton false
+            }
+            viewModel.updateUserPreset(
+                preset.copy(name = name, description = descEdit.text.toString().trim())
+            )
+            true
+        }
+        dialog.show()
     }
 
     private fun showPresetFieldEditDialog(preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
@@ -601,19 +609,24 @@ class UniverseListFragment : Fragment() {
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
-        MaterialAlertDialogBuilder(ctx)
+        // R-27(B-76): 이름이 비면 알리고 창을 유지한다 — 종전에는 조용히 닫혀 설명까지 사라졌다.
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_save_title)
             .setView(layout)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = nameEdit.text.toString().trim()
-                val desc = descEdit.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    // 결과는 viewModel.result 채널이 통보 (중복 알림 방지)
-                    viewModel.saveAsUserPreset(universe.id, name, desc)
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = nameEdit.text.toString().trim()
+            if (name.isEmpty()) {
+                nameEdit.showInlineError(getString(R.string.preset_name_required))
+                return@setValidatedPositiveButton false
+            }
+            // 결과는 viewModel.result 채널이 통보 (중복 알림 방지)
+            viewModel.saveAsUserPreset(universe.id, name, descEdit.text.toString().trim())
+            true
+        }
+        dialog.show()
     }
 
     private fun observeData() {
@@ -1231,50 +1244,62 @@ class UniverseListFragment : Fragment() {
             isFillViewport = true
         }
 
-        MaterialAlertDialogBuilder(ctx)
+        // R-27(B-76) — **이 창이 그 항목의 실증이다.** 종전에는 이름을 비운 채 저장을 누르면
+        // 아무 말도 없이 닫히면서 설명·테두리 색·이미지·관계 유형까지 **통째로 사라졌다.**
+        // 형제 창(작품 편집·등급 체계)은 이미 이 형태였고 호스트만 옛 형태로 남아 있었다.
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
             .setView(scrollView)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = nameEdit.text.toString().trim()
-                val desc = descEdit.text.toString().trim()
-                val borderColor = colorHexEdit.text.toString().trim()
-                val finalImagePaths = org.json.JSONArray(pendingImagePaths).toString()
-                // 관계 유형을 JSON 배열로 직렬화 (기본값과 동일하면 빈 문자열 저장)
-                val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
-                    else org.json.JSONArray(currentTypes).toString()
-                // 기본 색상과 동일하면 빈 문자열, 아니면 JSON 저장
-                val relColorsJson = run {
-                    val customOnly = currentColors.filter { (k, v) ->
-                        Universe.DEFAULT_RELATIONSHIP_COLORS[k] != v
-                    }
-                    if (customOnly.isEmpty()) "" else org.json.JSONObject(customOnly as Map<*, *>).toString()
-                }
-                if (name.isNotEmpty()) {
-                    val finalCharId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) selectedCharacterId else null
-                    val finalNovelId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) selectedNovelId else null
-                    if (universe == null) {
-                        viewModel.insertUniverse(Universe(
-                            name = name, description = desc, borderColor = borderColor,
-                            imagePaths = finalImagePaths, imageMode = selectedImageMode,
-                            imageCharacterId = finalCharId,
-                            imageNovelId = finalNovelId,
-                            customRelationshipTypes = relTypesJson,
-                            customRelationshipColors = relColorsJson
-                        ))
-                    } else {
-                        viewModel.updateUniverse(universe.copy(
-                            name = name, description = desc, borderColor = borderColor,
-                            imagePaths = finalImagePaths, imageMode = selectedImageMode,
-                            imageCharacterId = finalCharId,
-                            imageNovelId = finalNovelId,
-                            customRelationshipTypes = relTypesJson,
-                            customRelationshipColors = relColorsJson
-                        ))
-                    }
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = nameEdit.text.toString().trim()
+            if (name.isEmpty()) {
+                // 이 창은 길어서 스크롤을 쥐고 있다(위 [cappedScrollView]) — 아래를 보고 있으면
+                // 이름 칸의 인라인 오류가 **화면 밖**이라 사용자에게는 여전히 무반응이다.
+                // 오류를 붙이기 전에 그 칸을 화면으로 데려온다.
+                scrollView.smoothScrollTo(0, 0)
+                nameEdit.showInlineError(getString(R.string.universe_name_required))
+                return@setValidatedPositiveButton false
+            }
+            val desc = descEdit.text.toString().trim()
+            val borderColor = colorHexEdit.text.toString().trim()
+            val finalImagePaths = org.json.JSONArray(pendingImagePaths).toString()
+            // 관계 유형을 JSON 배열로 직렬화 (기본값과 동일하면 빈 문자열 저장)
+            val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
+                else org.json.JSONArray(currentTypes).toString()
+            // 기본 색상과 동일하면 빈 문자열, 아니면 JSON 저장
+            val relColorsJson = run {
+                val customOnly = currentColors.filter { (k, v) ->
+                    Universe.DEFAULT_RELATIONSHIP_COLORS[k] != v
+                }
+                if (customOnly.isEmpty()) "" else org.json.JSONObject(customOnly as Map<*, *>).toString()
+            }
+            val finalCharId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) selectedCharacterId else null
+            val finalNovelId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) selectedNovelId else null
+            if (universe == null) {
+                viewModel.insertUniverse(Universe(
+                    name = name, description = desc, borderColor = borderColor,
+                    imagePaths = finalImagePaths, imageMode = selectedImageMode,
+                    imageCharacterId = finalCharId,
+                    imageNovelId = finalNovelId,
+                    customRelationshipTypes = relTypesJson,
+                    customRelationshipColors = relColorsJson
+                ))
+            } else {
+                viewModel.updateUniverse(universe.copy(
+                    name = name, description = desc, borderColor = borderColor,
+                    imagePaths = finalImagePaths, imageMode = selectedImageMode,
+                    imageCharacterId = finalCharId,
+                    imageNovelId = finalNovelId,
+                    customRelationshipTypes = relTypesJson,
+                    customRelationshipColors = relColorsJson
+                ))
+            }
+            true
+        }
+        dialog.show()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1353,191 +1378,20 @@ class UniverseListFragment : Fragment() {
     // ── 등급 체계 편집·삭제 (U-1) ──
 
     /**
-     * 등급 체계 편집 다이얼로그 — 이름 + 동적 (등급, 기본숫자) 행. 검증 규칙은 필드의 등급
-     * 표와 같은 [com.novelcharacter.app.util.GradeTable]이고, 실패 시 창을 닫지 않는다(R-27).
-     * 저장은 참조 필드 전파와 한 몸이다(GradeSystemRepository).
+     * 등급 체계 편집·생성 — **본체는 [com.novelcharacter.app.ui.common.GradeSystemEditor]다** (B-71).
+     *
+     * 종전에는 그 본체가 이 파일 안에만 있어 필드 편집에서 체계를 만들 길이 없었다. 떼어 낸
+     * 뒤로 두 화면이 같은 창·같은 검증·같은 전파 고지를 쓴다 — 베껴 두면 그중 한 벌만
+     * 고쳐지는 날이 온다(개명 추적이 특히 그렇다: 재정의가 개명을 따라가는 유일한 근거다).
      */
     private fun showGradeSystemEditDialog(
         universeId: Long,
         existing: com.novelcharacter.app.data.model.GradeSystem?,
         onSaved: () -> Unit
     ) {
-        val ctx = requireContext()
-        val dp = ctx.resources.displayMetrics.density
-        viewLifecycleOwner.lifecycleScope.launch {
-            // 이름 유니크 검증용 형제 목록 — DB 유니크 인덱스가 최후의 방어선이고, 여기서는
-            // 창을 닫기 전에 잡아 입력을 지키는 것이 목적이다(R-27).
-            val siblings = viewModel.getGradeSystems(universeId)
-
-            val layout = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                val dp24 = (24 * dp).toInt()
-                setPadding(dp24, (16 * dp).toInt(), dp24, (8 * dp).toInt())
-            }
-            val nameEdit = EditText(ctx).apply {
-                hint = getString(R.string.grade_system_name_hint)
-                existing?.let { setText(it.name) }
-            }
-            layout.addView(nameEdit)
-
-            val rowsContainer = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, (8 * dp).toInt(), 0, 0)
-            }
-            layout.addView(rowsContainer)
-
-            data class SystemRow(val editLabel: EditText, val editValue: EditText, val originalLabel: String?)
-            val rows = mutableListOf<SystemRow>()
-
-            fun addRow(label: String = "", value: String = "", originalLabel: String? = null) {
-                val row = LinearLayout(ctx).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = (4 * dp).toInt() }
-                }
-                val editLabel = EditText(ctx).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
-                    hint = getString(R.string.hint_grade_label)
-                    textSize = 13f
-                    if (label.isNotEmpty()) setText(label)
-                }
-                val editValue = EditText(ctx).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    hint = getString(R.string.hint_grade_value)
-                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or
-                        android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
-                        android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
-                    textSize = 13f
-                    if (value.isNotEmpty()) setText(value)
-                }
-                val entry = SystemRow(editLabel, editValue, originalLabel)
-                val btnRemove = TextView(ctx).apply {
-                    text = "✕"
-                    setTextColor(ctx.getColor(R.color.primary))
-                    setPadding((8 * dp).toInt(), (8 * dp).toInt(), 0, 0)
-                    setOnClickListener {
-                        rowsContainer.removeView(row)
-                        rows.remove(entry)
-                    }
-                }
-                row.addView(editLabel)
-                row.addView(editValue)
-                row.addView(btnRemove)
-                rowsContainer.addView(row)
-                rows.add(entry)
-            }
-
-            val initialGrades = existing
-                ?.let { com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(it.gradesJson) }
-            if (initialGrades != null && initialGrades.isNotEmpty()) {
-                initialGrades.entries.sortedBy { it.value }.forEach { (label, value) ->
-                    addRow(label, com.novelcharacter.app.util.GradeTable.formatValue(value), originalLabel = label)
-                }
-            } else {
-                com.novelcharacter.app.util.GradeTable.DEFAULT_ROWS.forEach { (label, value) ->
-                    addRow(label, value)
-                }
-            }
-
-            val addGradeBtn = TextView(ctx).apply {
-                text = getString(R.string.label_add_grade)
-                setTextColor(ctx.getColor(R.color.primary))
-                setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
-                setOnClickListener { addRow() }
-            }
-            layout.addView(addGradeBtn)
-
-            // 등급 줄은 '등급 추가'로 무한히 는다 — 상한 없이는 추가한 줄이 화면 밖으로 밀린다(B-91).
-            val scroll = cappedScrollView(ctx).apply { addView(layout) }
-            val dialog = MaterialAlertDialogBuilder(ctx)
-                .setTitle(if (existing == null) R.string.grade_system_add_title else R.string.grade_system_edit_title)
-                .setView(scroll)
-                .setPositiveButton(R.string.save, null)
-                .setNegativeButton(R.string.cancel, null)
-                .create()
-
-            dialog.setValidatedPositiveButton {
-                val name = nameEdit.text.toString().trim()
-                if (name.isEmpty()) {
-                    nameEdit.showInlineError(getString(R.string.grade_system_name_required_error))
-                    return@setValidatedPositiveButton false
-                }
-                if (siblings.any { it.name == name && it.id != (existing?.id ?: 0L) }) {
-                    nameEdit.showInlineError(getString(R.string.grade_system_name_duplicate_error))
-                    return@setValidatedPositiveButton false
-                }
-                val outcome = com.novelcharacter.app.util.GradeTable.build(
-                    rows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
-                )
-                val problem = outcome.problems.firstOrNull()
-                if (problem != null) {
-                    // 오류는 고칠 자리에 붙인다(B-28) — 문제의 행을 라벨로 되찾고, 못 찾으면 이름 칸.
-                    val message = com.novelcharacter.app.ui.common.gradeProblemMessage(ctx, problem)
-                    val target = when (problem) {
-                        is com.novelcharacter.app.util.GradeTable.Problem.BadNumber ->
-                            rows.firstOrNull { it.editLabel.text.toString().trim() == problem.label }?.editValue
-                        is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel,
-                        is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel ->
-                            rows.lastOrNull {
-                                it.editLabel.text.toString().trim() == when (problem) {
-                                    is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel -> problem.label
-                                    is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel -> problem.label
-                                    else -> ""
-                                }
-                            }?.editLabel
-                        is com.novelcharacter.app.util.GradeTable.Problem.BlankLabel ->
-                            rows.firstOrNull {
-                                it.editLabel.text.toString().isBlank() &&
-                                    it.editValue.text.toString().trim() == problem.valueText
-                            }?.editLabel
-                        com.novelcharacter.app.util.GradeTable.Problem.Empty -> nameEdit
-                    }
-                    (target ?: nameEdit).showInlineError(message)
-                    return@setValidatedPositiveButton false
-                }
-
-                // 라벨 개명 추적 — 행의 정체(originalLabel)로 재정의가 개명을 따라가게 한다.
-                val renames = rows.mapNotNull { row ->
-                    val original = row.originalLabel ?: return@mapNotNull null
-                    val current = row.editLabel.text.toString().trim()
-                    if (current.isNotEmpty() && current != original) original to current else null
-                }.toMap()
-
-                val system = (existing ?: com.novelcharacter.app.data.model.GradeSystem(
-                    universeId = universeId, name = name, displayOrder = siblings.size
-                )).copy(
-                    name = name,
-                    gradesJson = com.novelcharacter.app.data.model.GradeSystemRef.gradesToJson(outcome.grades)
-                )
-                viewLifecycleOwner.lifecycleScope.launch {
-                    val saved = viewModel.saveGradeSystem(system, renames)
-                    if (saved != null) {
-                        if (existing != null && saved.propagatedFields > 0) {
-                            Toast.makeText(
-                                ctx, getString(R.string.grade_system_saved_toast, name, saved.propagatedFields),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                        // 등급을 지우면 대결 등급 산정의 그 구간이 다음 등급에 합쳐진다 —
-                        // 배정 폭이 바뀐 사실을 말하지 않으면 사용자는 다음 반영에서야 안다.
-                        if (saved.duelCutsMerged.isNotEmpty()) {
-                            Toast.makeText(
-                                ctx,
-                                getString(
-                                    R.string.grade_system_duel_cuts_merged,
-                                    saved.duelCutsMerged.joinToString(", ")
-                                ),
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                        onSaved()
-                    }
-                }
-                true
-            }
-            dialog.show()
-        }
+        com.novelcharacter.app.ui.common.GradeSystemEditor.show(
+            requireContext(), viewLifecycleOwner.lifecycleScope, universeId, existing
+        ) { onSaved() }
     }
 
     /** 삭제 확인(R-4) — 참조 필드가 어떻게 되는지(독자 표 전환)를 먼저 말한다. */

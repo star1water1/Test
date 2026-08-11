@@ -155,4 +155,26 @@ interface CharacterFieldValueDao {
     /** 필드값 upsert (일괄 설정용 — 기존 값이 있으면 교체, 없으면 삽입) */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(value: CharacterFieldValue): Long
+
+    /**
+     * **이 캐릭터들의 값이 어느 세계관을 가리키는가** (B-13 — `UnassignedHistoryScope`의 입력).
+     *
+     * 이력(`character_state_changes`)은 문자열 `fieldKey`만 들어 세계관을 되찾을 수 없는데,
+     * 값은 `fieldDefinitionId`로 정의를 직접 가리키므로 되찾을 수 있다. 미분류 캐릭터가
+     * 세계관에서 나올 때 짝 없는 값은 **보관 값**으로 그 세계관의 정의를 계속 가리킨다(B-128) —
+     * 그것이 *"이 캐릭터의 데이터가 어디 것인가"*의 단서다.
+     *
+     * **전역 구역(`universeId IS NULL`)은 뺀다** — 어느 세계관도 아니므로 귀속의 근거가
+     * 되지 못한다(그 값을 세면 모든 미분류 캐릭터가 '단서 있음'으로 잘못 분류된다).
+     */
+    @Query("""
+        SELECT DISTINCT v.characterId AS characterId, f.universeId AS universeId
+        FROM character_field_values v
+        JOIN field_definitions f ON f.id = v.fieldDefinitionId
+        WHERE v.characterId IN (:characterIds) AND f.universeId IS NOT NULL
+    """)
+    suspend fun getValueUniversesForCharacters(characterIds: List<Long>): List<CharacterValueUniverse>
 }
+
+/** [CharacterFieldValueDao.getValueUniversesForCharacters]의 한 줄 — 캐릭터와 그 값이 든 세계관. */
+data class CharacterValueUniverse(val characterId: Long, val universeId: Long)

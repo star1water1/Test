@@ -117,6 +117,106 @@ object PresetMerge {
         fun defaultSelection(): Set<String> = additions.map { it.itemKey }.toSet()
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // 종류 바꿔 심기 (B-63 · 확정 14번)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * **종류를 바꿔 심을 때 기본으로 허용하는 필드 타입** (P-6 — 2026.08.04 사용자 확정,
+     * "안전 우선"). 나머지는 사용자가 연다 — 고정된 틀을 두지 않는다(원칙 01).
+     *
+     * 글자·선택·숫자만인 것은 **뜻이 종류에 매이지 않는 타입**이기 때문이다. `BODY_SIZE`는
+     * 체형 분석이, `GRADE`는 등급 체계가, `CALCULATED`는 같은 종류의 다른 필드를 가리키는
+     * 수식이 함께 있어야 뜻이 서고, 그 셋 다 사건·작품에는 없다.
+     *
+     * **현행에서 한 칸 넓히는 값이지 좁히는 값이 아니다** — 지금은 옵션 자체가 없고
+     * 같은 종류만 들어오므로, 이 기본값으로 처음 열리는 길이 셋 생긴다.
+     */
+    val DEFAULT_CONVERTIBLE_TYPES: Set<String> = setOf("TEXT", "SELECT", "NUMBER")
+
+    /**
+     * 종류를 바꾼 결과. **미리보기가 보여 준 것과 심기는 것이 갈리지 않게** [fields]를
+     * 그대로 [buildPlan]에 넘긴다 — 걸러 내는 자리와 심는 자리가 갈리면 화면에 없는 것이
+     * 들어가거나 고른 것이 사라진다(R-29).
+     */
+    data class Conversion(
+        /** 바뀐 종류로 다시 쓴 필드. 종류가 그대로인 것도 함께 담긴다. */
+        val fields: List<FieldDefinition>,
+        /** 허용 타입 밖이라 넘어가지 못한 필드 — **버리지 않고 화면이 사유와 함께 보인다.** */
+        val blocked: List<FieldDefinition>,
+        /** 넘어가되 설정 일부를 잃는 필드: [Item.itemKey] → 잃는 config 키. */
+        val configLoss: Map<String, List<String>>
+    ) {
+        /** 바뀐 것이 하나도 없는가 — 화면이 '종류 그대로'와 같게 그릴 수 있다. */
+        val isNoop: Boolean get() = blocked.isEmpty() && configLoss.isEmpty()
+    }
+
+    /**
+     * 소스 필드를 [targetEntityType]으로 바꿔 심을 준비를 한다 (B-63).
+     *
+     * P5의 F2가 소스·중복·순서·삽입을 같은 `entityType`으로 맞춘 뒤로 **캐릭터 필드를 사건
+     * 필드로 들이는 길이 없었다.** 이미 만들어 둔 '장소'·'분위기'를 사건에서 재사용하려면
+     * 처음부터 다시 만드는 수밖에 없었고, 그것이 이 함수가 있는 이유다.
+     *
+     * ## 세 가지가 이 함수의 계약이다
+     *
+     * ① **허용 타입은 *종류가 실제로 바뀌는* 필드에만 건다.** 이미 대상 종류인 필드까지
+     *    거르면 오늘 되던 가져오기가 안 되는 자리가 생긴다 — 이 항목은 길을 넓히는 것이지
+     *    좁히는 것이 아니다.
+     * ② **막힌 것은 버리지 않고 [Conversion.blocked]로 돌려준다.** 조용히 사라지면 사용자는
+     *    자기가 고른 필드가 왜 목록에 없는지 알 길이 없다(개발 의도 2번).
+     * ③ **잃는 설정은 심기 **전에** 센다**([FieldConfigTransfer.droppedKeys]). 걷는 쪽과
+     *    세는 쪽이 같은 함수라 미리보기가 예고한 것과 실제가 갈리지 않는다.
+     *
+     * `key`는 그대로 둔다 — 종류가 달라지면 유니크 인덱스도 다른 자리라(`(universeId,
+     * entityType, key)`) 캐릭터의 '장소'와 사건의 '장소'가 서로를 중복으로 걸지 않는다(R-29).
+     *
+     * @param allowedTypes 종류를 바꿔도 되는 **필드 타입** 집합. 사용자가 정한다(확정 14번).
+     */
+    fun convertEntityType(
+        sourceFields: List<FieldDefinition>,
+        targetEntityType: String,
+        allowedTypes: Set<String> = DEFAULT_CONVERTIBLE_TYPES
+    ): Conversion {
+        val fields = ArrayList<FieldDefinition>(sourceFields.size)
+        val blocked = ArrayList<FieldDefinition>()
+        val configLoss = LinkedHashMap<String, List<String>>()
+        // **`buildPlan`이 같은 자리를 접을 때 쓰는 규칙을 여기서도 그대로 쓴다 — 먼저 온 것이
+        // 이긴다.** 종류를 한쪽으로 모으면 서로 다른 종류였던 둘이 **같은 자리로 접히는데**
+        // (캐릭터 '장소'와 사건 '장소'), 두 규칙이 갈리면 *버려진 필드의 손실*이 *남은 필드의
+        // 줄*에 붙어 잃는 것이 없는 항목에 "설정이 빠집니다"가 뜬다 — 미리보기의 거짓말이다.
+        val seen = HashSet<String>()
+        for (source in sourceFields) {
+            if (source.entityType == targetEntityType) {
+                // 바뀌는 것이 없다 — 오늘의 경로 그대로다. 허용 타입도 묻지 않는다(①).
+                // **접힘에는 함께 센다** — 이쪽이 먼저 오면 뒤엣것의 손실은 기록되지 않는다.
+                seen.add(itemKey(targetEntityType, source.key))
+                fields.add(source)
+                continue
+            }
+            if (source.type !in allowedTypes) {
+                // 막힌 것은 심기지 않으므로 접힘 대상이 아니다 — `seen`에 넣지 않는다.
+                blocked.add(source)
+                continue
+            }
+            val converted = source.copy(
+                entityType = targetEntityType,
+                config = FieldConfigTransfer.demoteAcrossEntityType(
+                    source.config, source.entityType, targetEntityType
+                )
+            )
+            val key = itemKey(targetEntityType, source.key)
+            if (seen.add(key)) {
+                val lost = FieldConfigTransfer.droppedKeys(
+                    source.config, source.entityType, targetEntityType
+                )
+                if (lost.isNotEmpty()) configLoss[key] = lost
+            }
+            fields.add(converted)
+        }
+        return Conversion(fields, blocked, configLoss)
+    }
+
     /**
      * 계획을 세운다.
      *

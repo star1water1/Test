@@ -1,4 +1,1 @@
 com/novelcharacter/app/ui/timeline/QuickAddEventDialogFragment.kt|onCreateDialog|desc.isNotEmpty()
-com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showEditPresetNameDialog|name.isNotEmpty()
-com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showPresetNameInputDialog|name.isNotEmpty()
-com/novelcharacter/app/ui/universe/UniverseListFragment.kt|showUniverseEditDialog|name.isNotEmpty()
