@@ -24,6 +24,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
 import com.novelcharacter.app.util.OpResult
@@ -455,6 +456,12 @@ class FieldManageFragment : Fragment() {
             val density = resources.displayMetrics.density
             fun dp(value: Int) = (value * density).toInt()
 
+            // 종류를 바꿔 심어도 되는 필드 타입 (B-63 · 확정 14번). 사용자가 정한 값이고
+            // 창을 여는 시점에 한 번 읽는다 — 아래 '허용 타입' 창이 고치면 함께 갱신된다.
+            val settingsStore = com.novelcharacter.app.data.settings
+                .FieldImportSettingsStore(ctx.applicationContext)
+            var convertibleTypes = settingsStore.getConvertibleTypes()
+
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(8), dp(16), 0)
@@ -466,6 +473,35 @@ class FieldManageFragment : Fragment() {
                 ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             }
             container.addView(sourceSpinner)
+
+            // ── 종류 바꿔 심기 (B-63) ──
+            // 첫 항목이 '그대로'인 것이 이 스피너의 요점이다 — **오늘의 동작이 기본**이라
+            // 이 창을 늘 쓰던 사용자에게 아무것도 달라지지 않는다(변환은 고를 때만 일어난다).
+            val convertTargets: List<String?> = listOf(
+                null,
+                FieldDefinition.ENTITY_CHARACTER,
+                FieldDefinition.ENTITY_EVENT,
+                FieldDefinition.ENTITY_NOVEL
+            )
+            val convertSpinner = Spinner(ctx).apply {
+                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
+                    convertTargets.map {
+                        if (it == null) getString(R.string.merge_convert_keep)
+                        else getString(R.string.merge_convert_as, entityTypeLabel(it))
+                    }
+                ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            }
+            container.addView(TextView(ctx).apply {
+                setText(R.string.merge_convert_label)
+                textSize = 13f
+                setPadding(0, dp(8), 0, dp(2))
+            })
+            container.addView(convertSpinner)
+            container.addView(TextView(ctx).apply {
+                setText(R.string.merge_convert_purpose)
+                textSize = 12f
+                setPadding(0, dp(2), 0, dp(2))
+            })
 
             // R-25 목적문 — 이 창이 무엇을 어디에 어떻게 하는가를 한 줄로 말한다.
             container.addView(TextView(ctx).apply {
@@ -491,14 +527,21 @@ class FieldManageFragment : Fragment() {
                 )
             )
 
-            // 화면이 쥐는 상태는 이 둘뿐이다 — 지금 보고 있는 계획과, 켜 둔 항목.
+            // 화면이 쥐는 상태는 셋이다 — 지금 보고 있는 계획, 켜 둔 항목, 그리고 종류 변환의
+            // 결과(막힌 것·잃는 설정). 셋째는 '그대로'일 때 null이다.
             var plan = PresetMerge.Plan(emptyList())
             val selected = linkedSetOf<String>()
+            var conversion: PresetMerge.Conversion? = null
 
             fun renderSummary() {
-                summaryView.text = getString(
+                val base = getString(
                     R.string.merge_summary, plan.additions.size, plan.duplicates.size
                 )
+                // 막힌 것을 요약에 함께 적는다 — 목록에서만 말하면 스크롤 밖으로 나가는
+                // 순간 사라지고, 사용자는 자기가 고른 필드가 왜 없는지 알 길이 없다.
+                val blocked = conversion?.blocked.orEmpty()
+                summaryView.text = if (blocked.isEmpty()) base
+                else base + getString(R.string.merge_convert_blocked_summary, blocked.size)
             }
 
             fun changeLabel(changes: Set<PresetMerge.Change>): String = changes.joinToString(
@@ -545,13 +588,21 @@ class FieldManageFragment : Fragment() {
                                 R.string.merge_item_label,
                                 item.source.groupName, item.source.name, item.source.type
                             )
+                            // 종류를 바꾸느라 잃는 설정은 **심기 전에** 그 항목에 붙인다 —
+                            // 조용히 떨어뜨리면 변수 제어 위반이고, 결과 고지로 미루면
+                            // 이미 심긴 뒤라 되돌리는 것 말고는 손쓸 방법이 없다.
+                            val lost = conversion?.configLoss?.get(item.itemKey).orEmpty()
+                            val lostNote = if (lost.isEmpty()) "" else getString(
+                                R.string.merge_convert_config_lost,
+                                lost.joinToString(getString(R.string.merge_change_separator))
+                            )
                             text = when {
-                                !item.isDuplicate -> label
+                                !item.isDuplicate -> label + lostNote
                                 item.isIdentical ->
-                                    label + getString(R.string.merge_item_identical)
+                                    label + getString(R.string.merge_item_identical) + lostNote
                                 else -> label + getString(
                                     R.string.merge_item_overwrite, changeLabel(item.changes)
-                                )
+                                ) + lostNote
                             }
                             // 같은 정의는 덮어써도 결과가 같다 — 아무 일도 하지 않는 조작을
                             // 선택지로 주지 않는다. 지우지는 않는다(있다는 사실은 알려야 한다).
@@ -577,24 +628,77 @@ class FieldManageFragment : Fragment() {
                         boxes.filter { it.isEnabled }.forEach { it.isChecked = on }
                     }
                 }
+
+                // 막힌 필드는 **지우지 않고 사유와 함께 보인다**(B-63) — 목록에서 빼면
+                // 사용자는 자기가 고른 소스에 그 필드가 있었다는 것조차 모른다.
+                val blocked = conversion?.blocked.orEmpty()
+                if (blocked.isNotEmpty()) {
+                    listHolder.addView(TextView(ctx).apply {
+                        text = getString(R.string.merge_convert_blocked_header, blocked.size)
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                        setPadding(0, dp(10), 0, dp(2))
+                    })
+                    for (field in blocked) {
+                        listHolder.addView(TextView(ctx).apply {
+                            text = getString(
+                                R.string.merge_convert_blocked_item,
+                                field.name, field.type
+                            )
+                            textSize = 13f
+                            setTextColor(ctx.getColor(R.color.text_secondary))
+                            setPadding(dp(8), dp(2), 0, dp(2))
+                        })
+                    }
+                    // 사유를 말했으면 **바로잡을 경로**도 함께 준다(개발 의도 2번) —
+                    // 설정 화면까지 나갔다 돌아오게 하면 그 자체가 조작 마찰이다(원칙 04).
+                    listHolder.addView(TextView(ctx).apply {
+                        setText(R.string.merge_convert_open_types)
+                        setTextColor(ctx.getColor(R.color.primary))
+                        setPadding(dp(8), dp(6), 0, dp(4))
+                        setOnClickListener { showConvertibleTypesDialog() }
+                    })
+                }
             }
 
             /**
-             * 마지막으로 요청된 소스. 스피너를 빠르게 넘기면 코루틴 여럿이 동시에 뜨고,
-             * **먼저 요청한 것이 나중에 끝나면** 화면과 `plan`이 다른 소스를 가리킨다 —
+             * 이번 요청의 번호. 소스 스피너와 종류 스피너를 빠르게 넘기면 코루틴 여럿이 동시에
+             * 뜨고, **먼저 요청한 것이 나중에 끝나면** 화면과 `plan`이 다른 조합을 가리킨다 —
              * 그러면 미리보기에 보이는 것과 실제로 심기는 것이 갈린다.
+             *
+             * **소스 이름이 아니라 번호인 것이 B-63이 바꾼 자리다** — 축이 둘이 되면서 같은
+             * 소스를 종류만 바꿔 다시 부르는 일이 생겼는데, 이름으로 견주면 그 둘이 같아
+             * 늦게 온 옛 결과가 새 결과를 덮는다.
              */
-            var pendingSource: String? = null
+            var loadToken = 0
 
-            suspend fun loadSource(name: String) {
-                pendingSource = name
-                val built = viewModel.buildMergePlan(universeId, allSources[name] ?: emptyList())
-                if (pendingSource != name) return
+            suspend fun loadSource(name: String, target: String?) {
+                val token = ++loadToken
+                val raw = allSources[name] ?: emptyList()
+                // 변환은 **계획을 세우기 전에** 끝난다 — 소스·중복·순서·삽입이 모두 같은
+                // 종류를 봐야 한다(R-29). 여기서 바꾸면 그 아래는 손댈 것이 없다.
+                val converted = if (target == null) null
+                    else PresetMerge.convertEntityType(raw, target, convertibleTypes)
+                val built = viewModel.buildMergePlan(universeId, converted?.fields ?: raw)
+                if (token != loadToken) return
+                conversion = converted
                 plan = built
                 selected.clear()
                 selected.addAll(plan.defaultSelection())
                 renderSummary()
                 renderList()
+            }
+
+            fun reload() {
+                val name = sourceNames.getOrNull(sourceSpinner.selectedItemPosition) ?: return
+                val target = convertTargets.getOrNull(convertSpinner.selectedItemPosition)
+                viewLifecycleOwner.lifecycleScope.launch { loadSource(name, target) }
+            }
+
+            // 허용 타입을 고친 뒤에는 **보고 있는 미리보기를 다시 세운다** — 안 그러면
+            // 방금 켠 타입이 목록에 없는 채로 남아 설정이 안 먹은 것처럼 보인다.
+            convertibleTypesChanged = { types ->
+                convertibleTypes = types
+                reload()
             }
 
             val dialog = MaterialAlertDialogBuilder(ctx)
@@ -606,12 +710,18 @@ class FieldManageFragment : Fragment() {
                 .setNegativeButton(R.string.cancel, null)
                 .create()
 
-            sourceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            val reloadOnSelect = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    viewLifecycleOwner.lifecycleScope.launch { loadSource(sourceNames[position]) }
+                    reload()
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
+            sourceSpinner.onItemSelectedListener = reloadOnSelect
+            convertSpinner.onItemSelectedListener = reloadOnSelect
+
+            // 창이 닫히면 위 콜백이 가리키는 뷰가 죽는다 — 남겨 두면 설정 창만 다시 열었을 때
+            // 사라진 미리보기를 다시 그리려 든다.
+            dialog.setOnDismissListener { convertibleTypesChanged = null }
 
             dialog.show()
             dialog.setValidatedPositiveButton {
@@ -625,9 +735,56 @@ class FieldManageFragment : Fragment() {
                 }
             }
             // 첫 소스는 스피너가 붙으면서 리스너를 부르지만, 그것은 다음 레이아웃 패스의 일이라
-            // 창이 잠깐 빈 채로 뜬다. 여기서 한 번 부르고, 겹쳐도 위 [pendingSource]가 뒤엣것만
+            // 창이 잠깐 빈 채로 뜬다. 여기서 한 번 부르고, 겹쳐도 위 [loadToken]이 뒤엣것만
             // 반영하므로 두 번 그려지지 않는다.
-            loadSource(sourceNames[0])
+            loadSource(sourceNames[0], null)
+        }
+    }
+
+    /**
+     * 열린 병합 창에게 *"허용 타입이 바뀌었다"*를 알리는 통로 (B-63).
+     *
+     * 설정 창은 병합 창 위에 떠 있고 그 창의 지역 변수를 볼 수 없다. 통로가 없으면 사용자가
+     * 타입을 켠 뒤에도 **미리보기가 옛 목록 그대로**라 설정이 안 먹은 것처럼 보인다.
+     * 창이 닫힐 때 null로 되돌린다(죽은 뷰를 다시 그리지 않게).
+     */
+    private var convertibleTypesChanged: ((Set<String>) -> Unit)? = null
+
+    /**
+     * **종류를 바꿔 심어도 되는 필드 타입을 고른다** (B-63 · 확정 14번 — "허용 타입을 고정하지
+     * 말고 사용자가 정하게").
+     *
+     * 목록은 [FieldType]에서 그대로 끌어온다 — 여기 손으로 적으면 타입이 하나 늘 때
+     * **그 타입만 이 창에서 조용히 빠진다**(R-29가 종류를 손으로 더하는 형태에서 겪은 결함).
+     */
+    private fun showConvertibleTypesDialog() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val ctx = requireContext()
+            val store = com.novelcharacter.app.data.settings
+                .FieldImportSettingsStore(ctx.applicationContext)
+            val types = FieldType.entries.toList()
+            val current = store.getConvertibleTypes()
+            val checked = BooleanArray(types.size) { types[it].name in current }
+
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.merge_convert_types_title)
+                .setMultiChoiceItems(
+                    types.map { getString(R.string.merge_convert_type_entry, it.label, it.name) }
+                        .toTypedArray(),
+                    checked
+                ) { _, which, isChecked -> checked[which] = isChecked }
+                .setPositiveButton(R.string.save) { _, _ ->
+                    val picked = types.filterIndexed { i, _ -> checked[i] }
+                        .mapTo(linkedSetOf()) { it.name }
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        // **하나도 안 고른 것도 값이다** — 종류 바꿔 심기를 닫아 둔 상태이고,
+                        // 기본값으로 되돌리면 사용자가 끈 것이 켜진다.
+                        store.setConvertibleTypes(picked)
+                        convertibleTypesChanged?.invoke(picked)
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 

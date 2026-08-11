@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import androidx.lifecycle.LiveData
 import com.novelcharacter.app.data.dao.CharacterFieldValueDao
+import com.novelcharacter.app.data.dao.CharacterValueUniverse
 import com.novelcharacter.app.data.dao.FieldDefinitionDao
 import com.novelcharacter.app.data.dao.FieldEntryCount
 import com.novelcharacter.app.data.dao.FieldValueEntryDao
@@ -76,6 +77,7 @@ class FieldFilterHelperTest {
         override suspend fun countValuesByUniverse(universeId: Long): Int = unused()
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()
         override suspend fun upsert(value: CharacterFieldValue): Long = unused()
+        override suspend fun getValueUniversesForCharacters(characterIds: List<Long>): List<CharacterValueUniverse> = unused()
         override suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
         override suspend fun getOrphanValuesForUniverseFields(fieldDefIds: List<Long>, universeId: Long): List<CharacterFieldValue> = unused()
 

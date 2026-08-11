@@ -327,4 +327,114 @@ class PresetMergeTest {
         )
         assertTrue(resolution.updatesByEntityType().isEmpty())
     }
+
+    // ── 종류 바꿔 심기 (B-63 · 확정 14번) ──
+    //
+    // **이 갈래의 방어선은 시험 수가 아니라 그 안의 넷이다:**
+    // ① *"이미 대상 종류인 필드는 허용 타입을 묻지 않는다"* — 무너지면 **오늘 되던
+    //    가져오기가 안 된다.** 이 항목은 길을 넓히는 것이지 좁히는 것이 아닌데, 필터를
+    //    전부에 걸면 GRADE 사건 필드를 사건에 심던 사람이 갑자기 못 심는다.
+    // ② *"막힌 것은 버리지 않는다"* — 조용히 사라지면 사용자는 자기가 고른 소스에 그 필드가
+    //    있었다는 것조차 모른다(개발 의도 2번). 화면이 사유와 함께 보이려면 여기서 와야 한다.
+    // ③ *"잃는 설정을 심기 전에 센다"* — 걷는 쪽(demoteAcrossEntityType)과 세는 쪽
+    //    (droppedKeys)이 갈리면 미리보기가 예고한 것과 실제가 달라진다.
+    // ④ *"key는 그대로 둔다"* — 유니크 인덱스가 `(universeId, entityType, key)`라 종류가
+    //    달라지면 다른 자리다. 키를 손대면 캐릭터의 '장소'와 사건의 '장소'가 서로를 중복으로
+    //    걸어 멀쩡한 필드를 못 넣는다(R-29).
+
+    @Test
+    fun `허용 타입이면 종류가 바뀐다`() {
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("place")), FieldDefinition.ENTITY_EVENT
+        )
+        assertEquals(1, conv.fields.size)
+        assertEquals(FieldDefinition.ENTITY_EVENT, conv.fields[0].entityType)
+        // ④ key는 그대로다 — 종류가 다르면 애초에 다른 자리다.
+        assertEquals("place", conv.fields[0].key)
+        assertTrue(conv.blocked.isEmpty())
+    }
+
+    @Test
+    fun `허용 타입 밖이면 막히고 버려지지 않는다`() {
+        // 기본값은 글자·선택·숫자다(P-6 — 안전 우선). BODY_SIZE는 사건에 뜻이 없다.
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("body", type = "BODY_SIZE")), FieldDefinition.ENTITY_EVENT
+        )
+        assertTrue(conv.fields.isEmpty())
+        assertEquals(listOf("body"), conv.blocked.map { it.key })
+    }
+
+    @Test
+    fun `사용자가 허용 타입을 넓히면 그 타입도 넘어간다`() {
+        // 확정 14번의 본체 — 허용 타입은 고정이 아니라 사용자가 정한다.
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("body", type = "BODY_SIZE")),
+            FieldDefinition.ENTITY_EVENT,
+            allowedTypes = PresetMerge.DEFAULT_CONVERTIBLE_TYPES + "BODY_SIZE"
+        )
+        assertEquals(listOf("body"), conv.fields.map { it.key })
+        assertTrue(conv.blocked.isEmpty())
+    }
+
+    @Test
+    fun `이미 대상 종류인 필드는 허용 타입을 묻지 않는다`() {
+        // ① 오늘의 경로다 — 사건 필드를 사건에 심는 것은 변환이 아니다.
+        // 여기에 필터를 걸면 오늘 되던 가져오기가 안 되는 자리가 생긴다.
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("rank", type = "GRADE", entityType = FieldDefinition.ENTITY_EVENT)),
+            FieldDefinition.ENTITY_EVENT
+        )
+        assertEquals(listOf("rank"), conv.fields.map { it.key })
+        assertTrue(conv.blocked.isEmpty())
+    }
+
+    @Test
+    fun `종류를 넘으면 뜻을 잃는 설정이 빠지고 그것을 먼저 센다`() {
+        // ③ 세는 쪽과 걷는 쪽이 한 함수라 미리보기와 실제가 갈리지 않는다.
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("age", type = "NUMBER", config = """{"semanticRole":"age","label":"나이"}""")),
+            FieldDefinition.ENTITY_EVENT
+        )
+        val key = PresetMerge.itemKey(FieldDefinition.ENTITY_EVENT, "age")
+        assertEquals(listOf("semanticRole"), conv.configLoss[key])
+        assertFalse(conv.fields[0].config.contains("semanticRole"))
+        // 나머지 설정은 그대로다 — 걷는 것은 종류를 넘지 못하는 키뿐이다.
+        assertTrue(conv.fields[0].config.contains("label"))
+    }
+
+    @Test
+    fun `잃을 것이 없으면 고지도 없다`() {
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("place", config = """{"label":"장소"}""")), FieldDefinition.ENTITY_EVENT
+        )
+        assertTrue(conv.configLoss.isEmpty())
+        assertTrue(conv.isNoop)
+    }
+
+    @Test
+    fun `변환한 목록이 그대로 계획으로 이어진다`() {
+        // 소스·중복·순서·삽입이 같은 종류를 봐야 한다(R-29) — 변환이 계획 앞에서
+        // 끝나므로 아래는 손댈 것이 없다. 대상 세계관의 사건 '장소'와 중복이 잡힌다.
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("place")), FieldDefinition.ENTITY_EVENT
+        )
+        val existing = listOf(
+            field("place", id = 5, universeId = 9, entityType = FieldDefinition.ENTITY_EVENT),
+            field("place", id = 6, universeId = 9)   // 캐릭터 '장소' — 다른 자리다
+        )
+        val plan = PresetMerge.buildPlan(conv.fields, existing)
+        assertEquals(1, plan.items.size)
+        assertTrue(plan.items[0].isDuplicate)
+        assertEquals(5L, plan.items[0].existing?.id)
+    }
+
+    @Test
+    fun `종류가 그대로면 원문 config를 손대지 않는다`() {
+        val config = """{"semanticRole":"age","bodyAnalysis":{"ribOffset":2}}"""
+        val conv = PresetMerge.convertEntityType(
+            listOf(field("age", config = config)), FieldDefinition.ENTITY_CHARACTER
+        )
+        assertEquals(config, conv.fields[0].config)
+        assertTrue(conv.configLoss.isEmpty())
+    }
 }

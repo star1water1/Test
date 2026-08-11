@@ -246,6 +246,7 @@ $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
 $MAIN/util/FieldTypeCompatibility.kt
 $MAIN/util/GlobalScopeFieldMove.kt
+$MAIN/util/UnassignedHistoryScope.kt
 $MAIN/util/DefaultFieldPlan.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
@@ -281,6 +282,7 @@ $TEST/data/DuelGradeRefTest.kt
 $TEST/data/SemanticRoleEntityScopeTest.kt
 $TEST/data/RequiredEnforcementTest.kt
 $TEST/data/PresetLimitTest.kt
+$TEST/data/FieldConfigEntityTypeTransferTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/SheetSpecCsvTest.kt
@@ -344,6 +346,7 @@ $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
 $TEST/util/DefaultFieldPlanTest.kt
 $TEST/util/GlobalScopeFieldMoveTest.kt
+$TEST/util/UnassignedHistoryScopeTest.kt
 $TEST/data/model/DefaultFieldRefTest.kt
 $TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt

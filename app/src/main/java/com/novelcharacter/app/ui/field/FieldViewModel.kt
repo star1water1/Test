@@ -13,6 +13,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.PresetMerge
+import com.novelcharacter.app.util.UnassignedHistoryScope
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -115,11 +116,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key: ${field.key}", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
-                "필드 키 '${field.key}'이(가) 이미 존재합니다."))
+                app.getString(R.string.result_field_key_duplicate, field.key)))
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to insert field", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
-                "필드 저장에 실패했습니다.", e.message))
+                app.getString(R.string.result_field_save_failed), e.message))
         }
     }
 
@@ -129,15 +130,21 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             // 키 변경 자동 감지: 참조 수식·상태변화 이력이 무통보로 파손되지 않도록 함께 갱신한다
             val old = app.database.fieldDefinitionDao().getFieldById(field.id)
             if (old != null && old.key != field.key) {
-                val (formulaCount, historyCount) = migrateFieldKey(old, field)
+                val migration = migrateFieldKey(old, field)
                 // 자동 교정이 일어났으면 상세로 노출 (조용한 파급 방지)
-                val detail = if (formulaCount > 0 || historyCount > 0)
-                    "필드 키 변경('${old.key}'→'${field.key}'): 참조 수식 ${formulaCount}건, 상태변화 이력 ${historyCount}건을 자동으로 갱신했습니다."
-                    else null
+                val detail = if (migration.changedSomething) app.getString(
+                    R.string.result_field_key_migrated,
+                    old.key, field.key, migration.formulas, migration.history
+                ) else null
+                // 가리지 못해 옛 키로 남긴 이력은 **별도 문장**이다 — 위 문장에 붙이면
+                // '자동으로 갱신했습니다'의 일부로 읽혀 손댈 것이 남았다는 사실이 묻힌다.
+                val unresolved = if (migration.unresolvedHistory > 0) app.getString(
+                    R.string.result_field_key_history_unresolved, migration.unresolvedHistory, old.key
+                ) else null
                 val note = syncDefaultField(field, defaultField)
                 reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                     app.getString(R.string.result_field_updated, field.name),
-                    listOfNotNull(detail, note).joinToString("\n").ifBlank { null }))
+                    listOfNotNull(detail, unresolved, note).joinToString("\n").ifBlank { null }))
             } else {
                 universeRepository.updateField(field)
                 val note = syncDefaultField(field, defaultField)
@@ -147,7 +154,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key on update: ${field.key}", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
-                "필드 키 '${field.key}'이(가) 이미 존재합니다."))
+                app.getString(R.string.result_field_key_duplicate, field.key)))
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
@@ -208,10 +215,26 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 키 변경 시 참조 수식과 상태변화 이력을 필드 저장과 함께 단일 트랜잭션으로 갱신한다. */
-    private suspend fun migrateFieldKey(old: FieldDefinition, new: FieldDefinition): Pair<Int, Int> {
+    /**
+     * 키 변경의 파급 — 참조 수식과 상태변화 이력을 필드 저장과 **한 트랜잭션**으로 갱신한다.
+     *
+     * @param formulas 키를 고쳐 준 참조 수식 수.
+     * @param history 새 키로 옮긴 상태변화 이력 건수(작품에 든 캐릭터 + 가려낸 미분류 캐릭터).
+     * @param unresolvedHistory **옛 키로 남긴** 이력 건수 — 어느 세계관 것인지 가리지 못한
+     *   미분류 캐릭터의 몫이다(B-13 · [UnassignedHistoryScope]). 0이면 말하지 않는다.
+     */
+    private data class KeyMigration(
+        val formulas: Int = 0,
+        val history: Int = 0,
+        val unresolvedHistory: Int = 0
+    ) {
+        val changedSomething: Boolean get() = formulas > 0 || history > 0
+    }
+
+    private suspend fun migrateFieldKey(old: FieldDefinition, new: FieldDefinition): KeyMigration {
         var formulaCount = 0
         var historyCount = 0
+        var unresolvedCount = 0
         app.database.withTransaction {
             // 참조 수식 모집단은 **바뀌는 필드와 같은 종류**다 — 종류가 다르면 같은 key가
             // 공존할 수 있고(인덱스가 (universeId, entityType, key)), 남의 종류 수식을 고치면
@@ -233,12 +256,36 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             val renameUniverseId = new.universeId
-            historyCount = if (renameUniverseId == null) 0 else app.database.characterStateChangeDao()
+            if (renameUniverseId != null) {
+                val changeDao = app.database.characterStateChangeDao()
                 // 전역 구역(null)은 이관할 이력이 원리적으로 없다 — 연표는 세계관 기능이다.
-                .migrateFieldKeyForUniverse(renameUniverseId, old.key, new.key)
+                historyCount = changeDao.migrateFieldKeyForUniverse(renameUniverseId, old.key, new.key)
+
+                // 위 질의의 `JOIN novels`가 **원리적으로 빠뜨리는** 미분류 캐릭터(B-13).
+                // 통째로 옮길 수는 없다 — 키는 세계관 안에서만 유일해서, 이력 행 하나만으로는
+                // 그것이 어느 세계관의 것인지 알 수 없다. 값이 가리키는 세계관으로 가린다.
+                val candidates = changeDao.getUnassignedCharactersWithFieldKey(old.key)
+                if (candidates.isNotEmpty()) {
+                    val attribution = app.database.characterFieldValueDao()
+                        .getValueUniversesForCharacters(candidates)
+                        .groupBy({ it.characterId }, { it.universeId })
+                        .mapValues { (_, ids) -> ids.toSet() }
+                    val plan = UnassignedHistoryScope.plan(candidates, attribution, renameUniverseId)
+                    if (plan.migrate.isNotEmpty()) {
+                        historyCount += changeDao
+                            .migrateFieldKeyForCharacters(plan.migrate, old.key, new.key)
+                    }
+                    // 가리지 못한 것은 **건드리지 않고 센다** — 조용히 넘기면 사용자는 자기
+                    // 연표 일부가 옛 키에 남은 것을 영영 모른다(개발 의도 2번).
+                    if (plan.reportable.isNotEmpty()) {
+                        unresolvedCount =
+                            changeDao.countByFieldKeyForCharacters(plan.reportable, old.key)
+                    }
+                }
+            }
             universeRepository.updateField(new)
         }
-        return formulaCount to historyCount
+        return KeyMigration(formulaCount, historyCount, unresolvedCount)
     }
 
     fun deleteField(field: FieldDefinition) = viewModelScope.launch {

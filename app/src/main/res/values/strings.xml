@@ -89,6 +89,20 @@
     <string name="merge_result_none">반영된 필드가 없습니다</string>
     <string name="merge_result_revert_hint">덮어쓰기 직전 상태는 휴지통에 백업했습니다. 되돌리려면 휴지통에서 복원하십시오.</string>
     <string name="merge_failed">필드를 합치지 못했습니다</string>
+
+    <!-- B-63: 종류 바꿔 심기 — 캐릭터 필드를 사건 필드로 들이는 길. 확정 14번(옵션화) ·
+         P-6(기본은 글자·선택·숫자만). 기본 선택이 '그대로'라 오늘의 동작은 달라지지 않는다. -->
+    <string name="merge_convert_label">심을 종류</string>
+    <string name="merge_convert_keep">그대로 (소스가 정한 종류)</string>
+    <string name="merge_convert_as">모두 %1$s 필드로</string>
+    <string name="merge_convert_purpose">고르면 소스의 필드를 그 종류로 바꿔 심습니다. 이미 만들어 둔 캐릭터 필드를 사건에서 다시 쓸 때 씁니다. 종류에서 뜻을 잃는 설정은 아래 목록이 먼저 알려 줍니다.</string>
+    <string name="merge_convert_config_lost">\n종류를 바꾸며 빠지는 설정: %1$s</string>
+    <string name="merge_convert_blocked_summary">\n허용 타입 밖이라 넘어가지 못한 필드 %1$d개</string>
+    <string name="merge_convert_blocked_header">넘어가지 못한 필드 %1$d개</string>
+    <string name="merge_convert_blocked_item">%1$s (%2$s) — 이 타입은 종류를 바꿔 심도록 켜져 있지 않습니다</string>
+    <string name="merge_convert_open_types">허용 타입 고치기</string>
+    <string name="merge_convert_types_title">종류를 바꿔 심어도 되는 타입</string>
+    <string name="merge_convert_type_entry">%1$s (%2$s)</string>
     <string name="field_source_recommended">추천 (기본 제공)</string>
     <string name="help_event_field_title">사건 필드</string>
     <string name="help_event_field_body">사건에 직접 만들어 붙이는 항목입니다. 캐릭터에 성별·나이 칸을 두는 것과 같은 방식이며, 무엇을 둘지는 작품마다 다르므로 미리 정해 두지 않았습니다.\n\n<b>어디에 나타나는가</b>\n만들면 세 곳에 함께 나타납니다. 사건을 적는 편집 폼, 연표의 사건 카드, 그리고 통계의 교차분석입니다. 값을 쌓으면 \u0027절정에 몰린 사건이 몇 건인가\u0027 같은 것을 볼 수 있습니다.\n\n<b>무엇을 만들면 되는가</b>\n처음이라면 \u0027추천에서 고르기\u0027로 시작하십시오. 회차·장소·시점 인물처럼 자주 쓰는 항목이 설명과 함께 준비돼 있고, 골라서 넣은 뒤 이름도 선택지도 자유롭게 고칠 수 있습니다. 직접 만들려면 \u0027사건 필드 추가\u0027를 누르십시오.\n\n<b>작품을 먼저 고르십시오</b>\n사건 필드는 세계관에 속하므로, 작품을 고르기 전에는 어느 세계관에 만들지 알 수 없어 이 항목들이 보이지 않습니다. 작품을 고르면 나타납니다.</string>
@@ -196,6 +210,13 @@
     <string name="grade_system_row_format">%1$s — %2$s</string>
     <string name="grade_system_add_title">등급 체계 추가</string>
     <string name="grade_system_edit_title">등급 체계 편집</string>
+    <!-- B-71 ① 인라인 생성 · ② 재정의 가시성. 종전에는 체계를 참조만 하고 만들 수 없었고,
+         필드마다 고친 숫자(gradeOverrides)를 어느 화면도 표시하지 않아 "고치면 참조 필드
+         전체에 반영"이라는 안내가 재정의한 필드에서 신호 없이 어긋났다. -->
+    <string name="grade_system_create_inline">+ 여기서 체계 만들기</string>
+    <string name="grade_system_created_toast">등급 체계 \'%1$s\'을(를) 만들어 이 필드에 걸었습니다.</string>
+    <string name="grade_override_badge">재정의</string>
+    <string name="grade_override_notice">이 필드에서 숫자를 %1$d개 재정의했습니다. 재정의한 등급은 체계를 고쳐도 따라가지 않습니다.</string>
     <string name="grade_system_name_hint">체계 이름 (예: 능력 등급)</string>
     <string name="grade_system_name_required_error">체계 이름을 입력하세요.</string>
     <string name="grade_system_name_duplicate_error">같은 이름의 체계가 이 세계관에 이미 있습니다.</string>
@@ -1024,6 +1045,7 @@
     <string name="preset_limit_advisory">저장했습니다 — 프리셋이 권장 개수(%d개)를 넘었습니다. 안 쓰는 프리셋은 길게 눌러 지울 수 있습니다</string>
     <!-- 검색·캐릭터 목록 두 화면의 프리셋 이름 창이 함께 쓴다(B-76 이행 — R-27 인라인 오류). -->
     <string name="preset_name_required">프리셋 이름을 입력하세요</string>
+    <string name="universe_name_required">세계관 이름을 입력하세요</string>
     <string name="search_preset_default_cannot_delete">기본 프리셋은 삭제할 수 없습니다</string>
     <string name="search_preset_default_recent">최근검색</string>
     <string name="search_preset_default_name_first">이름우선</string>
@@ -2178,6 +2200,10 @@
     <string name="result_field_imported">필드 %1$d개 불러옴</string>
     <string name="result_field_import_none">불러올 새 필드가 없습니다 (모두 중복)</string>
     <string name="result_field_import_failed">필드 불러오기 실패</string>
+    <string name="result_field_key_migrated">필드 키 변경(\'%1$s\'→\'%2$s\'): 참조 수식 %3$d건, 상태변화 이력 %4$d건을 자동으로 갱신했습니다.</string>
+    <string name="result_field_key_history_unresolved">작품이 없는 캐릭터의 상태변화 이력 %1$d건은 어느 세계관 것인지 가릴 수 없어 옛 키 \'%2$s\'로 남겼습니다. 그 캐릭터에 작품을 배정한 뒤 이력의 필드를 다시 고르면 이어집니다.</string>
+    <string name="result_field_key_duplicate">필드 키 \'%1$s\'이(가) 이미 존재합니다.</string>
+    <string name="result_field_save_failed">필드 저장에 실패했습니다.</string>
     <string name="result_relationship_added">관계 추가됨</string>
     <string name="result_relationship_updated">관계 수정됨</string>
     <string name="result_relationship_deleted">관계 삭제됨</string>
@@ -3245,7 +3271,7 @@
     <string name="purpose_random">켜면 입력 폼에 🎲 버튼이 생겨, 아래 범위 안에서 값을 무작위로 만들어 줍니다.</string>
     <string name="purpose_semantic_role">이 필드의 값을 앱 기능(나이 계산·생일 알림·생존 여부 등)과 연결합니다.</string>
     <string name="purpose_structured_input">한 필드를 여러 칸으로 나눠 입력합니다 (예: B-W-H). 칸은 아래에서 추가합니다.</string>
-    <string name="purpose_stats">켜면 통계 탭이 이 필드를 분석합니다. 어떤 분석을 보여줄지 아래에서 고릅니다.</string>
+    <string name="purpose_stats">켜면 통계 탭이 이 필드를 분석합니다. 어떤 분석을 보여줄지 아래에서 고릅니다. 끄면 분포·패턴 감지·순위·교차분석에서 이 필드가 스스로 나타나지 않습니다. 단 필드 완성도와 데이터 건강도에는 그대로 남고, 목록에서 직접 고르면 그때는 분석합니다.</string>
     <string name="purpose_default_field">켜면 이 필드가 모든 세계관에 기본으로 심어져, 어떤 세계관의 캐릭터에도 이 칸이 생깁니다.</string>
     <string name="purpose_field_library">이 필드에 입력된 값들을 목록으로 모아, 자동완성·통계·AI 추천이 함께 씁니다.</string>
     <string name="purpose_field_library_home">필드에 입력된 값이 여기 모입니다. 표시 라벨·별칭·카테고리를 정리하면 입력 자동완성·통계·검색이 함께 씁니다.</string>

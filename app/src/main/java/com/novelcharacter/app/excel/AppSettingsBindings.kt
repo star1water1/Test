@@ -9,6 +9,7 @@ import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.backup.BackupSettingsStore
 import com.novelcharacter.app.data.settings.TrashSettingsStore
+import com.novelcharacter.app.data.settings.FieldImportSettingsStore
 import com.novelcharacter.app.ui.assistant.AssistantPrefs
 import com.novelcharacter.app.ui.assistant.InsightCategory
 import com.novelcharacter.app.ui.stats.CompletionWeightPrefs
@@ -101,6 +102,20 @@ object AppSettingsBindings {
             write = { ctx, v ->
                 intOf(v)?.let { TrashSettingsStore(ctx).setRetentionDays(it); Applied.Yes }
                     ?: Applied.No("숫자가 아닙니다")
+            }),
+
+        // ── 필드 가져오기 종류 변환 (B-63) ──
+        // 모르는 타입 이름을 **버리지 않는다** — 새 타입이 생긴 기기의 파일을 옛 기기가
+        // 읽고 다시 내보낼 때 사용자가 켜 둔 것이 왕복에서 사라지면 안 된다(개발 의도 4번).
+        Binding(AppSettingsKeys.FIELD_IMPORT_CONVERTIBLE_TYPES,
+            read = {
+                FieldImportSettingsStore.format(FieldImportSettingsStore(it).getConvertibleTypes())
+            },
+            write = { ctx, v ->
+                // **빈 칸도 값이다** — 전부 꺼서 '종류 바꿔 심기'를 닫아 둔 상태다.
+                FieldImportSettingsStore(ctx)
+                    .setConvertibleTypes(FieldImportSettingsStore.parse(v))
+                Applied.Yes
             }),
 
         // ── 이미지 저장 ──
