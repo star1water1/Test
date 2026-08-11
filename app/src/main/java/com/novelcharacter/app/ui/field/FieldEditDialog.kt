@@ -1104,10 +1104,14 @@ class FieldEditDialog : DialogFragment() {
 
     /**
      * 필드 설명(A-2) + AI 추천 토글(A-1) 섹션.
-     * AI 추천 경로가 있는 것은 **캐릭터 필드뿐**이라 그 외 종류에는 토글을 노출하지 않는다
-     * (R-24 — 사건은 B-43, 작품은 확-3 잔여). 설명은 AI와 무관하게 인앱에서 값을 가지므로
-     * 모든 종류에 노출한다. 조건을 '캐릭터인가'로 쓰는 이유는 종류가 늘 때 이 자리가
-     * 조용히 뒤처지지 않게 하기 위해서다.
+     *
+     * 토글은 **AI 추천 경로가 실제로 있는 종류에만** 보인다(R-24 — 아무 일도 하지 않는
+     * 스위치를 두지 않는다). 설명은 AI와 무관하게 인앱에서 값을 가지므로 모든 종류에 노출한다.
+     *
+     * **2026.08.11(B-43)에 사건이 들어왔다** — 종전에는 캐릭터뿐이었고 이 자리가
+     * *"사건은 B-43"*이라 적어 두고 있었다. 남은 것은 작품(확-3 잔여)이다.
+     * 판정을 [AI_CAPABLE_ENTITY_TYPES] 한 곳에 모아 둔 이유는 다음 종류가 열릴 때
+     * **경로는 생겼는데 토글이 안 보이는** 반쪽 상태를 한 줄로 끝내기 위해서다.
      */
     private fun setupAiAndDescriptionSection(binding: DialogFieldEditBinding) {
         binding.fieldDescriptionLayout.counterMaxLength =
@@ -1115,8 +1119,8 @@ class FieldEditDialog : DialogFragment() {
         binding.editFieldDescription.filters = arrayOf(
             android.text.InputFilter.LengthFilter(com.novelcharacter.app.data.model.FieldDescription.MAX_CHARS)
         )
-        val isCharacterField = currentEntityType() == FieldDefinition.ENTITY_CHARACTER
-        binding.aiSectionLayout.visibility = if (isCharacterField) View.VISIBLE else View.GONE
+        val hasAiPath = currentEntityType() in AI_CAPABLE_ENTITY_TYPES
+        binding.aiSectionLayout.visibility = if (hasAiPath) View.VISIBLE else View.GONE
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {
@@ -3011,6 +3015,18 @@ class FieldEditDialog : DialogFragment() {
         private const val ARG_ENTITY_TYPE = "entityType"
         private const val ARG_PREFILL_JSON = "prefillJson"
         private const val ARG_ALLOW_DEFAULT_FIELD = "allowDefaultField"
+
+        /**
+         * AI 추천 경로가 **실제로 있는** 필드 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).
+         *
+         * 세는 법은 `ai/`에 그 종류의 Suggester가 있는가다:
+         * 캐릭터는 `CharacterFieldAiSuggester`, 사건은 `EventFieldAiSuggester`(B-43).
+         * **작품은 아직 없다**(확-3 잔여) — 열리면 여기 한 줄을 더한다.
+         */
+        private val AI_CAPABLE_ENTITY_TYPES = setOf(
+            FieldDefinition.ENTITY_CHARACTER,
+            FieldDefinition.ENTITY_EVENT
+        )
 
         /** 대결 등급 컷 스테퍼 한 칸 — 목업이 정한 정밀 경로의 눈금이다(B-113). */
         private const val STEP_PERCENT = 0.5

@@ -79,7 +79,7 @@ class TimelineAdapter(
             if (field == value) return
             field = value
             // 재정렬 중에는 목록을 다시 만들지 않는다. reprocessEvents는 rawEvents 순서로 되돌리는데,
-            // getReorderedEvents가 읽는 것은 사용자가 끌어 옮긴 currentList다 —
+            // getVisualOrderEvents가 읽는 것은 사용자가 끌어 옮긴 currentList다 —
             // 비동기로 도착한 요약이 여기서 끼어들면 드래그한 순서가 통째로 사라진다.
             // 재정렬을 끝내면 순서 저장 → 목록 재방출로 이어져 요약이 다시 실린다.
             if (!isReorderMode) reprocessEvents()
@@ -112,13 +112,14 @@ class TimelineAdapter(
     }
 
     /**
-     * Get the reordered events with updated displayOrder values.
+     * 드래그가 끝난 뒤 **사용자가 화면에서 만든 차례** 그대로의 사건 목록.
+     *
+     * `displayOrder`를 여기서 매기지 않는 것이 요점이다 (B-47) — 화면은 역순일 수 있고,
+     * 그때 보이는 차례는 저장 순서의 뒤집힌 모습이다. 번호를 매기는 일은 표시 방향을
+     * 아는 쪽(`TimelineViewModel` → [com.novelcharacter.app.util.TimelineDisplayOrder])이 한다.
      */
-    fun getReorderedEvents(): List<TimelineEvent> {
-        return currentList
-            .filterIsInstance<TimelineDisplayItem.EventItem>()
-            .mapIndexed { index, item -> item.event.copy(displayOrder = index) }
-    }
+    fun getVisualOrderEvents(): List<TimelineEvent> =
+        currentList.filterIsInstance<TimelineDisplayItem.EventItem>().map { it.event }
 
     private fun eventItem(event: TimelineEvent) = TimelineDisplayItem.EventItem(
         event, fieldSummaries[event.id] ?: CardFieldSummary.empty()

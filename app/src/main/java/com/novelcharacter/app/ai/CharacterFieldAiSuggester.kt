@@ -244,6 +244,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val excludedCount: Int get() = excluded.values.sumOf { it.size }
     }
 
+    /**
+     * 조립된 사용자 프롬프트 + 그 과정에서 생긴 고지.
+     *
+     * **companion이 아니라 클래스 본문에 둔다** — 다른 축이 [FieldPromptSource]로 이 타입을
+     * 돌려주는데, companion 안의 중첩 타입은 `Outer.Companion.Inner`로만 닿아
+     * 시그니처마다 `Companion`이 끼어든다.
+     */
+    data class PromptBuild(val text: String, val truncationNotes: List<String>)
+
     /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
     sealed class Normalized {
         /**
@@ -285,6 +294,36 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
     suspend fun suggest(
         context: CharacterAiContext,
         targets: List<FieldSpec>,
+        minConfidence: Confidence? = null,
+        creativity: AiCreativity = AiCreativity.DEFAULT,
+        images: List<AiImage> = emptyList(),
+        errorMessageOf: (AiResult.Failure) -> String
+    ): SuggestOutcome = suggest(
+        prompts = object : FieldPromptSource {
+            override fun system(minConfidence: Confidence?, creativity: AiCreativity) =
+                buildSystemPrompt(minConfidence, creativity)
+
+            override fun user(targets: List<FieldSpec>) = buildUserPrompt(context, targets)
+        },
+        targets = targets,
+        minConfidence = minConfidence,
+        creativity = creativity,
+        images = images,
+        errorMessageOf = errorMessageOf
+    )
+
+    /**
+     * 위 [suggest]의 본체이자 **다른 축이 프롬프트만 갈아 끼우는 입구** (B-43).
+     *
+     * 여기 있는 것은 프롬프트가 아니라 **실행 규칙**이다 — 청킹, 프로바이더 전환 고지,
+     * 부분 실패 격리, 잘린 응답의 사유 교체, 결손 0 보장, 토큰 집계. 그 규칙은 축과 무관하고
+     * 무엇보다 **틀렸을 때 조용히 틀린다**(유료 응답이 소리 없이 사라지는 부류). 축마다
+     * 베껴 두면 한쪽만 고쳐지고 다른 쪽은 그 사실이 어디에도 드러나지 않는다.
+     * 그래서 사건 축은 [EventFieldAiSuggester]가 프롬프트만 들고 이 함수로 들어온다 (R-13).
+     */
+    suspend fun suggest(
+        prompts: FieldPromptSource,
+        targets: List<FieldSpec>,
         /** 받아올 최소 근거 강도 (사용자 설정). null이면 강도와 무관하게 전부 받는다 */
         minConfidence: Confidence? = null,
         /** 창작도 (A-4) — 샘플링(temperature) + 지시 2층으로 적용된다. 기본은 무회귀(균형). */
@@ -322,11 +361,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         }
         val chunks = chunkTargets(targets, maxTokens)
         for ((chunkIndex, chunk) in chunks.withIndex()) {
-            val prompt = buildUserPrompt(context, chunk)
+            val prompt = prompts.user(chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(minConfidence, creativity),
+                system = prompts.system(minConfidence, creativity),
                 userText = prompt.text,
                 maxTokens = maxTokens,
                 temperature = temperature,
@@ -887,8 +926,6 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
             """.trimIndent()
 
-        data class PromptBuild(val text: String, val truncationNotes: List<String>)
-
         fun buildUserPrompt(context: CharacterAiContext, targets: List<FieldSpec>): PromptBuild {
             val notes = mutableListOf<String>()
             // 조회 실패로 빠진 섹션 — 절단과 같은 경로로 반드시 고지 (조용한 결손 금지, R-14)
@@ -956,6 +993,23 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 if (longValues > 0) notes.add("긴 필드값 ${longValues}건을 ${MAX_VALUE_CHARS}자로 절단")
             }
 
+            appendTargetSection(sb, targets, notes)
+            return PromptBuild(sb.toString(), notes)
+        }
+
+        /**
+         * `[추천할 필드]` 절 — **축이 갈리지 않는 부분**이다 (R-13의 '공통 조립만 공유').
+         *
+         * 앞의 컨텍스트 블록은 캐릭터냐 사건이냐에 따라 통째로 다르지만, 이 절이 말하는 것은
+         * *"이 스펙의 값을 하나씩 내라"*이고 그 계약은 축과 무관하다 — [parseResponse]가
+         * 읽는 것도 이 절이 약속한 형태 하나뿐이다. 두 벌로 두면 옵션·형식·기존 사용값·
+         * 재요청 맥락의 규칙이 축마다 갈려 **한쪽 화면에서만 검증이 느슨해진다.**
+         */
+        fun appendTargetSection(
+            sb: StringBuilder,
+            targets: List<FieldSpec>,
+            notes: MutableList<String>
+        ) {
             // 개수를 프롬프트에 못 박는다 — 목록만 주면 모델이 '고를 수 있는 만큼'으로 읽는다.
             sb.append("[추천할 필드] 총 ").append(targets.size).append("개 — 아래 ")
                 .append(targets.size).append("개 전부에 대해 항목을 내라\n")
@@ -1018,7 +1072,6 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             sb.append("위 ").append(targets.size).append("개 필드 각각에 항목을 하나씩, 총 ")
                 .append(targets.size).append("개 항목으로 응답하라. ")
                 .append("정할 근거가 없는 필드도 빼지 말고 value를 \"\"로 두고 reason에 이유를 적어라.\n")
-            return PromptBuild(sb.toString(), notes)
         }
 
         data class ParsedSuggestions(

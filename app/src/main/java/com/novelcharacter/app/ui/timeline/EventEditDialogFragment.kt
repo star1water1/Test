@@ -22,6 +22,9 @@ import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.ai.CharacterFieldAiSuggester
+import com.novelcharacter.app.ai.EventFieldAiSuggester
+import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.RequiredFieldMark
@@ -197,6 +200,7 @@ class EventEditDialogFragment : DialogFragment() {
         }
 
         setupAddEventFieldPath()
+        observeAiSuggest()
 
         // 목록/선택 상태 비동기 로드. 정적 입력값은 재생성 시 뷰 상태로 자동 복원되므로
         // 초기값 채우기는 최초 생성(savedInstanceState == null)에만 수행한다.
@@ -506,6 +510,10 @@ class EventEditDialogFragment : DialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+        // 진행 창은 이 화면의 창이다 — 두고 가면 응답이 늦게 끝났을 때 붙일 화면이 없어
+        // 새는 창이 된다(실행 자체는 VM이 들고 계속 간다. 그것이 이 구조의 요점이다).
+        aiProgressDialog?.dismiss()
+        aiProgressDialog = null
     }
 
     private fun fillInitialValues(event: TimelineEvent) {
@@ -815,6 +823,7 @@ class EventEditDialogFragment : DialogFragment() {
                         textSize = 13f
                     }
                     binding.eventFieldContainer.addView(label)
+                    // (✨은 아래 위젯 줄에 함께 얹는다 — 라벨 줄에 붙이면 값과 떨어져 보인다)
 
                     val options = mutableListOf(getString(R.string.no_selection))
                     options.addAll(
@@ -834,7 +843,7 @@ class EventEditDialogFragment : DialogFragment() {
                         val idx = options.indexOf(saved)
                         if (idx > 0) setSelection(idx)
                     }
-                    binding.eventFieldContainer.addView(spinner)
+                    addEventFieldRow(ctx, density, field, spinner)
                     eventFieldInputMap[field.id] = spinner
                 }
                 else -> {
@@ -853,12 +862,233 @@ class EventEditDialogFragment : DialogFragment() {
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                         ).apply { bottomMargin = (4 * density).toInt() }
                     }
-                    binding.eventFieldContainer.addView(editText)
+                    addEventFieldRow(ctx, density, field, editText)
                     eventFieldInputMap[field.id] = editText
                 }
             }
         }
         attachEventFieldSuggestions()
+    }
+
+    /**
+     * 입력 위젯 + ✨ 한 줄 (B-43).
+     *
+     * 캐릭터 폼의 인라인 버튼과 **같은 문법**이다(`DynamicFieldFormBuilder`의 🎲·✨·ⓘ) —
+     * 사용자가 한 화면에서 배운 조작이 다른 화면에서 다르게 생기면 그 자체가 마찰이다.
+     * 노출 판정도 같은 단일 소스를 쓴다([FieldAiPolicy.isInlineSparkleEnabled]) — '개별만'은
+     * 여기서 살아 있어야 하는 상태이고, '끄기'는 버튼 자체가 없어야 하는 상태다.
+     */
+    private fun addEventFieldRow(
+        ctx: android.content.Context,
+        density: Float,
+        field: FieldDefinition,
+        input: View
+    ) {
+        val spec = aiSpecOf(field)
+        if (spec == null) {
+            binding.eventFieldContainer.addView(input)
+            return
+        }
+        val row = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+        // 아래 여백은 **줄에 준다** — 입력칸에 주면 그만큼 ✨과 세로로 어긋난다.
+        input.layoutParams = android.widget.LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        )
+        row.addView(input)
+        row.addView(
+            com.google.android.material.button.MaterialButton(
+                ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply {
+                text = "✨"; textSize = 14f; minWidth = 0; minimumWidth = 0
+                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                contentDescription = getString(R.string.ai_field_suggest_title)
+                setOnClickListener { requestAiSuggestion(field) }
+            }
+        )
+        binding.eventFieldContainer.addView(row)
+    }
+
+    /**
+     * 이 필드가 AI 추천 대상인가 — 대상이면 요청에 쓸 스펙을 돌려준다.
+     *
+     * 판정을 한 함수에 모으는 이유는 R-29가 세운 것과 같다: 버튼을 그리는 자리와 요청을
+     * 만드는 자리가 각자 판정하면 **버튼은 보이는데 눌러도 아무 일이 없는** 조합이 생긴다.
+     */
+    private fun aiSpecOf(field: FieldDefinition): CharacterFieldAiSuggester.FieldSpec? {
+        if (!FieldAiPolicy.isInlineSparkleEnabled(field.config)) return null
+        val current = eventFieldInputMap[field.id]?.let { eventFieldWidgetValue(it) }
+            ?: pendingEventFieldValues?.get(field.id.toString()).orEmpty()
+        return CharacterFieldAiSuggester.fieldSpecOf(field, current)
+    }
+
+    // ===== 사건 필드 AI 추천 (B-43) =====
+
+    /**
+     * 실행은 창 스코프의 VM이 든다 — 회전이 유료 응답을 폐기하지 않게 ([EventFieldAiViewModel]).
+     * `by lazy`가 아니라 필요할 때 얻는 이유: `onCreateDialog` 이전에 건드리면 안 된다.
+     */
+    private fun aiViewModel(): EventFieldAiViewModel =
+        ViewModelProvider(this)[EventFieldAiViewModel::class.java]
+
+    private var aiProgressDialog: AlertDialog? = null
+
+    /** 진행 표시와 결과 수신 — 창이 다시 만들어져도 VM에 남아 있던 결과가 그대로 뜬다. */
+    private fun observeAiSuggest() {
+        val vm = aiViewModel()
+        vm.running.observe(this) { running ->
+            if (running == true) {
+                if (aiProgressDialog == null && isAdded) {
+                    aiProgressDialog = MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(R.string.ai_event_field_running)
+                        .setCancelable(false)
+                        .show()
+                }
+            } else {
+                aiProgressDialog?.dismiss()
+                aiProgressDialog = null
+            }
+        }
+        vm.result.observe(this) { run ->
+            if (run == null || !isAdded) return@observe
+            EventAiSuggestSheet.showResult(
+                fragment = this,
+                viewModel = vm,
+                run = run,
+                currentEventId = editingEvent?.id ?: -1L,
+                applyValues = ::applyAiSuggestions
+            )
+        }
+    }
+
+    private fun requestAiSuggestion(field: FieldDefinition) {
+        val spec = aiSpecOf(field) ?: return
+        EventAiSuggestSheet.showForField(
+            fragment = this,
+            fieldName = field.name,
+            spec = spec,
+            viewModel = aiViewModel(),
+            eventId = editingEvent?.id ?: -1L,
+            contextLoader = { buildEventAiContext() }
+        )
+    }
+
+    /**
+     * 채택분을 폼에 기입한다. **저장하지 않는다** — 사용자가 창에서 마저 손보고 저장을 누르는
+     * 것이 이 창의 규약이고, AI 값만 다른 경로로 저장되면 검토 뒤 취소가 통하지 않는다.
+     *
+     * 위젯이 아직 없으면 false를 돌려준다 — 호출측이 그것을 보고 유료 응답을 되살린다(B-163).
+     */
+    private fun applyAiSuggestions(
+        suggestions: List<CharacterFieldAiSuggester.Suggestion>
+    ): Boolean {
+        if (_binding == null) return false
+        val byKey = eventFields.associateBy { it.key }
+        var applied = 0
+        for (suggestion in suggestions) {
+            val field = byKey[suggestion.fieldKey] ?: continue
+            when (val widget = eventFieldInputMap[field.id]) {
+                is android.widget.Spinner -> {
+                    val adapter = widget.adapter as? ArrayAdapter<String> ?: continue
+                    val idx = (0 until adapter.count).firstOrNull {
+                        adapter.getItem(it) == suggestion.value
+                    } ?: run {
+                        // 목록에 없는 값이면 **버리지 않고 항목을 늘려 담는다** — 이 폼이 저장된
+                        // 고아 값에 대해 이미 하는 처분과 같다(위 '고아 값 보존'). 조용히 빠지면
+                        // 사용자는 적용을 눌렀는데 값이 안 바뀐 이유를 알 수 없다.
+                        adapter.add(suggestion.value)
+                        adapter.count - 1
+                    }
+                    widget.setSelection(idx); applied++
+                }
+                is android.widget.EditText -> { widget.setText(suggestion.value); applied++ }
+                else -> Unit
+            }
+        }
+        return applied > 0
+    }
+
+    /**
+     * 프롬프트에 실을 사건 컨텍스트 — **창의 라이브 입력값**이 기준이다(저장된 값이 아니라).
+     * 사건을 쓰다가 ✨를 누르는 것이 정상 동선이고, 그때 저장은 아직 안 됐다.
+     *
+     * 조회 실패는 '없음'과 갈라 [EventFieldAiSuggester.EventAiContext.loadFailures]로 고지한다 —
+     * 근거가 빠진 채 답이 나오면 사용자는 왜 빈약한지 알 길이 없다(변수 제어).
+     */
+    private suspend fun buildEventAiContext(): EventFieldAiSuggester.EventAiContext? {
+        if (_binding == null) return null
+        val universeId = resolvedFieldUniverseId ?: return null
+        val year = binding.editYear.text.toString().trim().toIntOrNull()
+        val month = binding.editMonth.text.toString().trim().toIntOrNull()
+        val day = binding.editDay.text.toString().trim().toIntOrNull()
+        val calendarType = binding.editCalendarType.text.toString().trim()
+        // 날짜 표기는 모델이 든다([TimelineEvent.getFormattedDate]) — 여기서 다시 조립하면
+        // 카드·연표와 다른 모양의 날짜가 프롬프트에만 실린다. 역법을 안 적었으면 기본값 그대로.
+        val dateLabel = if (year == null) "" else {
+            val probe = TimelineEvent(year = year, month = month, day = day, description = "")
+            (if (calendarType.isBlank()) probe else probe.copy(calendarType = calendarType))
+                .getFormattedDate()
+        }
+        val typeIndex = binding.spinnerEventType.selectedItemPosition
+        val typeLabel = if (typeIndex > 0) eventTypes.getOrNull(typeIndex)?.second.orEmpty() else ""
+
+        val novelNames = novels.filter { it.id in selectedNovelIds }.map { it.title }
+        val characterNames = characters.filter { it.id in selectedCharIds }.map { it.name }
+
+        // 조회 실패는 **전부 고지로 나간다** — 근거가 빠진 채 답이 나오면 사용자는 왜 빈약한지
+        // 알 수 없다. 조용히 빈 값으로 떨어뜨리는 것이 이 저장소가 반복해 잡아 온 결함이다.
+        val failures = mutableListOf<String>()
+        val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp
+        // Room의 suspend 질의라 스레드를 여기서 옮기지 않는다(이 파일의 다른 조회와 같다).
+        val universeName = try {
+            app?.universeRepository?.getUniverseById(universeId)?.name.orEmpty()
+        } catch (e: Exception) {
+            Log.w("EventEditDialog", "Failed to load universe name for AI context", e)
+            failures.add("세계관 이름")
+            ""
+        }
+
+        // 앞뒤 사건 — 같은 연표에 이미 적힌 사실이라 값을 지어내기 전에 맞춰 볼 근거가 된다.
+        // 스코프 조회는 이미 있는 경로를 쓴다(사건 밀기가 쓰는 그것) — 새 질의를 만들면
+        // '어느 사건이 이웃인가'의 답이 두 벌이 된다.
+        val neighbors = try {
+            requireProvider().getEventsInScope(selectedNovelIds.toList(), universeId)
+        } catch (e: Exception) {
+            Log.w("EventEditDialog", "Failed to load neighbor events for AI context", e)
+            failures.add("가까운 사건")
+            emptyList()
+        }
+        val editingId = editingEvent?.id
+        val neighborLines = if (year == null) emptyList() else neighbors
+            .asSequence()
+            .filter { it.id != editingId }
+            .sortedBy { kotlin.math.abs(it.year - year) }
+            .take(EventFieldAiSuggester.MAX_NEIGHBORS)
+            .map { "${it.year}년 – ${it.description}" }
+            .toList()
+
+        val filled = eventFields.mapNotNull { field ->
+            val widget = eventFieldInputMap[field.id] ?: return@mapNotNull null
+            val value = eventFieldWidgetValue(widget)
+            if (value.isBlank()) null else field.name to value
+        }
+
+        return EventFieldAiSuggester.EventAiContext(
+            description = binding.editDescription.text.toString(),
+            dateLabel = dateLabel,
+            eventTypeLabel = typeLabel,
+            universeName = universeName,
+            novels = novelNames,
+            characters = characterNames,
+            neighborEvents = neighborLines,
+            filledFields = filled,
+            loadFailures = failures
+        )
     }
 
     /** 사건 필드 자동완성 — 라이브러리 제안 (1쿼리 배치, 빈 필드는 제안 없음) */

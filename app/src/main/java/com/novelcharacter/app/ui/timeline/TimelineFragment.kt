@@ -68,6 +68,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     toggleReorderMode()
                     true
                 }
+                R.id.action_sort_order -> {
+                    viewModel.toggleSortDescending()
+                    true
+                }
                 else -> false
             }
         }
@@ -287,6 +291,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     private fun toggleReorderMode() {
         isReorderMode = !isReorderMode
         adapter.isReorderMode = isReorderMode
+        // 순서 편집 중에는 표시 순서를 못 바꾸게 한다 (B-47) — 뒤집으면 목록이 통째로 다시
+        // 방출돼 **끌어 옮기던 배치가 말없이 사라진다.** 막지 않으면 사용자는 저장 전에
+        // 그것을 알 방법이 없다(비활성 버튼은 적어도 보인다).
+        binding.toolbar.menu.findItem(R.id.action_sort_order)?.isEnabled = !isReorderMode
 
         if (isReorderMode) {
             Toast.makeText(requireContext(), R.string.reorder_mode, Toast.LENGTH_SHORT).show()
@@ -322,7 +330,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             adapter.onStartDrag = { holder -> itemTouchHelper?.startDrag(holder) }
         } else {
             // 재정렬 모드 종료 — displayOrder 저장
-            val reorderedEvents = adapter.getReorderedEvents()
+            val reorderedEvents = adapter.getVisualOrderEvents()
             if (reorderedEvents.isNotEmpty()) {
                 viewModel.updateDisplayOrders(reorderedEvents)
             }
@@ -387,8 +395,17 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         // 연결 작품명 최초 로드
         loadNovelNamesMap()
 
-        // Observe search results (falls back to filteredEvents when query is empty)
-        viewModel.searchResults.observe(viewLifecycleOwner) { events ->
+        // 표시 순서 — 메뉴 문구는 **누르면 무엇이 되는가**를 말한다 (B-47).
+        // 밀도 바·연도 슬라이더는 함께 뒤집지 않는다(연도 축이라 그렇다 — 근거는
+        // [com.novelcharacter.app.util.TimelineDisplayOrder] KDoc).
+        viewModel.sortDescending.observe(viewLifecycleOwner) { descending ->
+            binding.toolbar.menu.findItem(R.id.action_sort_order)?.setTitle(
+                if (descending == true) R.string.timeline_sort_ascending else R.string.timeline_sort_descending
+            )
+        }
+
+        // Observe display list (검색 결과에 표시 순서를 입힌 것 — B-47)
+        viewModel.displayEvents.observe(viewLifecycleOwner) { events ->
             adapter.submitEventList(events)
             val isEmpty = events.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE

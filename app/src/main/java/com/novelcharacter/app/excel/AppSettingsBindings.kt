@@ -7,6 +7,7 @@ import com.novelcharacter.app.ai.AiPromptPolicy
 import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
+import com.novelcharacter.app.ai.EventAiMaterial
 import com.novelcharacter.app.backup.BackupSettingsStore
 import com.novelcharacter.app.data.settings.TrashSettingsStore
 import com.novelcharacter.app.data.settings.FieldImportSettingsStore
@@ -235,6 +236,21 @@ object AppSettingsBindings {
         Binding(AppSettingsKeys.AI_NAME_SUGGEST_BATCH_SIZE,
             read = { num(AiPromptSettings(it).nameSuggestBatchSize) },
             write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).nameSuggestBatchSize = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
+        // 재료 범위는 **빈 칸이 '전부 끔'**이라 최소 확신과 같은 부류다 — 빈 칸을 유실로
+        // 보면 사용자가 전부 꺼 둔 설정이 왕복 한 번에 기본값으로 되살아난다.
+        // 모르는 이름은 조용히 버리지 않고 거절한다: 오타를 무시하면 **적어 넣은 재료가
+        // 빠진 채로 "적용됨"이 뜬다.**
+        Binding(AppSettingsKeys.AI_EVENT_CONTEXT_SCOPE,
+            read = { EventAiMaterial.serialize(AiPromptSettings(it).eventContextScope) },
+            write = { ctx, v ->
+                // 쪼개기는 순수 계층이 든다 — 여기서 다시 적으면 이 칸만 따옴표·전각 쉼표를 모른다(R-47)
+                val unknown = EventAiMaterial.unknownTokens(v)
+                if (unknown.isNotEmpty()) {
+                    Applied.No("모르는 재료: ${unknown.joinToString()} — 허용: ${EventAiMaterial.entries.joinToString { it.key }} 또는 빈 칸(전부 끔)")
+                } else {
+                    AiPromptSettings(ctx).eventContextScope = EventAiMaterial.parse(v); Applied.Yes
+                }
+            }),
 
         // 비밀 — 읽기는 **키가 하나라도 있을 때만** 값을 낸다(위 [Binding.read]의 null 규약).
         Binding(AppSettingsKeys.AI_API_KEYS,

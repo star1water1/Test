@@ -812,6 +812,9 @@
     <!-- Reorder mode -->
     <string name="reorder_mode">순서 편집</string>
     <string name="reorder_saved">순서가 저장되었습니다</string>
+    <!-- 연표 표시 순서 토글 (B-47). 라벨은 **누르면 무엇이 되는가**를 적는다. -->
+    <string name="timeline_sort_descending">최근 사건부터 보기</string>
+    <string name="timeline_sort_ascending">오래된 사건부터 보기</string>
     <string name="reorder_hint">드래그 핸들(≡)을 잡아 순서를 변경하세요</string>
 
     <!-- Another name -->
@@ -1047,6 +1050,7 @@
     <!-- 검색·캐릭터 목록 두 화면의 프리셋 이름 창이 함께 쓴다(B-76 이행 — R-27 인라인 오류). -->
     <string name="preset_name_required">프리셋 이름을 입력하세요</string>
     <string name="universe_name_required">세계관 이름을 입력하세요</string>
+    <string name="event_description_required">사건 설명을 입력하세요</string>
     <string name="search_preset_default_cannot_delete">기본 프리셋은 삭제할 수 없습니다</string>
     <string name="search_preset_default_recent">최근검색</string>
     <string name="search_preset_default_name_first">이름우선</string>
@@ -2737,6 +2741,10 @@
     <!-- AI 추천 일관성 — 프롬프트 적재량 설정 -->
     <string name="ai_settings_consistency_section">AI 추천 일관성</string>
     <string name="ai_settings_consistency_intro">AI가 이 작품의 기존 표기·문체를 따르도록 참고 자료를 함께 보냅니다. 많이 보낼수록 결과는 기존 데이터에 가까워지고 입력 토큰은 늘어납니다. 0으로 두면 보내지 않습니다.</string>
+    <!-- 사건 AI 재료 범위 (B-43, 확정 16번). 목적문은 '무엇이 어디서 어떻게'를 다 말한다(R-25). -->
+    <string name="ai_settings_event_scope">사건 AI 재료 범위</string>
+    <string name="ai_settings_event_scope_desc">연표의 사건 편집 창에서 사건 필드의 ✨를 눌렀을 때, 사건 설명·때·세계관과 함께 보낼 재료를 고릅니다. 많이 켤수록 추천이 맥락에 맞고 입력 토큰은 늘어납니다. 끈 재료는 검토 창에 \'설정으로 제외\'라고 표시되므로, 추천이 빈약한 이유를 바로 알 수 있습니다. 캐릭터 필드 추천에는 영향이 없습니다.</string>
+    <string name="ai_settings_event_scope_empty">전부 꺼 두면 사건 설명·때·세계관만 보냅니다 — 가장 싸지만 추천은 일반적인 값에 가까워집니다.</string>
     <string name="ai_settings_usage_examples">기존 값 예시 · 짧은 값 추천</string>
     <string name="ai_settings_usage_examples_hint">이 작품에서 이미 쓰고 있는 값을 필드마다 예시로 함께 보내, 추천 값의 표기가 기존 값과 어긋나지 않게 합니다(예: \'흑발·은발\'을 쓰는 작품에 \'짙은 밤하늘빛 흑청색\'이 나오지 않도록). 값이 많은 필드는 사용 빈도와 분포를 함께 반영해 중복 없이 선별합니다.\n제한 목록(허용 값만 입력) 필드는 허용 값이 곧 규칙이므로 이 설정과 무관하게 함께 보냅니다.</string>
     <string name="ai_settings_style_samples">문체 참고 · 서술형 작성</string>
@@ -3152,6 +3160,10 @@
 <!-- "저장을 눌러야"가 아니라 "저장 시" — 자동저장(보충 탭 옵트인) 상태에서도 거짓이 되지 않는 문구 (A-3 §5-5) -->
     <string name="ai_field_applied">AI 추천 %1$d건을 폼에 적용했습니다 — 저장 시 반영됩니다</string>
     <string name="ai_field_apply_none">적용하지 못했습니다 — 폼이 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.</string>
+    <!-- 사건 필드 AI 추천 (B-43). 진행 문구가 캐릭터판과 갈리는 이유는 분석 대상이 실제로 다르기 때문이다. -->
+    <string name="ai_event_field_running">AI가 사건 정보를 분석하는 중…</string>
+    <string name="ai_event_context_unavailable">사건 정보를 아직 불러오지 못했습니다 — 작품을 고르거나 잠시 후 다시 시도하세요</string>
+    <string name="ai_event_target_changed">요청한 사건과 지금 편집 중인 사건이 다릅니다 — 값을 적용하지 않습니다</string>
 
     <!-- A-1 필드별 AI 추천 토글 / A-2 필드 설명 -->
     <string name="field_ai_suggest_label">AI 추천 대상</string>

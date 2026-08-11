@@ -446,7 +446,14 @@ object AiFieldSuggestSheet {
      * 요청 수와 수신 수를 **항상** 밝힌다: 열몇 개를 요청하고 서너 개만 받았을 때 그 사실이
      * 화면 어디에도 없으면 사용자는 앱이 제대로 동작한 줄 안다 (변수 제어 — 조용한 결손 금지).
      */
-    private fun buildNoticeLines(
+    /**
+     * 결과 고지 줄 — **무엇을 말하는가의 단일 소스**다 (사건 축도 이것을 쓴다, B-43).
+     *
+     * 토큰 사용량·결손 사유·'목록 밖' 뜻·환각 key·드롭 수·절단·실패는 전부 *유료 응답에서
+     * 무엇이 어떻게 됐는가*이고, 그 판단은 축을 타지 않는다. 축마다 따로 적으면 같은 사건을
+     * 화면마다 다른 말로 알리게 된다(이 저장소가 반복해 겪은 모양).
+     */
+    fun buildNoticeLines(
         fragment: Fragment,
         outcome: CharacterFieldAiSuggester.SuggestOutcome
     ): List<String> = buildList {
@@ -473,10 +480,16 @@ object AiFieldSuggestSheet {
         addAll(outcome.failures)
     }
 
-    private fun buildNotices(
+    fun buildNotices(
         fragment: Fragment,
         outcome: CharacterFieldAiSuggester.SuggestOutcome
     ): String = buildNoticeLines(fragment, outcome).joinToString("\n")
+
+    /**
+     * 제공사 가드 — 쓸 수 있는 프로바이더가 없으면 **설정으로 가는 길과 함께** 막는다.
+     * 사건 축도 같은 것을 쓴다: 문구가 갈리면 같은 상태를 두 화면이 다르게 설명한다.
+     */
+    fun guardUsableProvider(fragment: Fragment): Boolean = guardProvider(fragment)
 
     /** 필드 1개 모드: 체크리스트 대신 단일 확인 — 1건에 체크리스트는 조작 마찰만 추가 (원칙 04) */
     private fun showSingleConfirm(
