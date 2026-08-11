@@ -7790,7 +7790,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
             val trimmedHeader = headerName.trim()
-                .removeSuffix(" (쉼표 구분)")
+                .removeSuffix(EntityFieldHeaders.MULTI_SUFFIX)
 
             // 매칭 규약(안정 식별자 우선 → 자연키 폴백):
             // 0차: "이름(필드키)" 병기 헤더 — 내보내기가 충돌·동명 시 붙인다

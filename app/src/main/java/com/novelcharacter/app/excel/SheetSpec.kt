@@ -713,7 +713,10 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
             // 하나만 보았고, 그래서 '콤마 목록' 표시 형식의 TEXT 필드는 외부 편집자가 쉼표의 뜻을
             // 모른 채 값을 넣었다 — 안내 없이 넣은 쉼표는 들이기에서 토큰 구조를 조용히 가른다.
             // 판정은 앱이 이미 쓰는 단일 소스가 든다(B-37이 정렬에서 없앤 하드코딩의 쌍둥이).
-            val headerName = if (FieldValueTokenizer.isMultiToken(field)) "$core (쉼표 구분)" else core
+            // 접미사 글자는 [EntityFieldHeaders.MULTI_SUFFIX] 하나가 든다 — 연표·작품 시트도 같은 말을
+            // 쓰고(B-177), 시트마다 다른 말로 안내하면 외부 편집자가 시트마다 다시 배운다.
+            // 리터럴을 두 벌로 두면 한쪽만 고쳐질 때 **가져오기가 그 열을 못 알아본다.**
+            val headerName = if (FieldValueTokenizer.isMultiToken(field)) core + EntityFieldHeaders.MULTI_SUFFIX else core
             add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))

@@ -200,5 +200,10 @@ class SheetSpecCsvTest {
         // 그 열이 통째로 '알 수 없는 열'이 되어 값이 조용히 버려진다.
         val header = headersFor(field("성격", "personality", "MULTI_TEXT")).first { it.contains("쉼표") }
         assertEquals("성격", header.removeSuffix(" (쉼표 구분)"))
+        // **세 자리가 한 글자를 쓴다** — 캐릭터 시트가 붙이고(여기), 가져오기가 벗기고,
+        // 연표·작품 시트가 같은 말로 안내한다(B-177). 리터럴을 두 벌로 두면 한쪽만 고쳐질 때
+        // 가져오기가 그 열을 못 알아보고 값이 조용히 버려진다.
+        assertEquals(" (쉼표 구분)", EntityFieldHeaders.MULTI_SUFFIX)
+        assertEquals("성격", header.removeSuffix(EntityFieldHeaders.MULTI_SUFFIX))
     }
 }
