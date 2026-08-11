@@ -408,14 +408,24 @@ class WorldPackageImporter(context: Context) {
                 // `duelGrade.lastApplied`의 배정 키(캐릭터 code)를 함께 옮겨야 하는데, 그 표가
                 // 정의를 쓰는 시점에 있어야 하기 때문이다. claim 순서는 종전과 같아
                 // 어느 코드가 재발급되는지도 그대로다.
-                val charCodeByOldId = HashMap<Long, String>()
+                // **자리(순서)로 들고 id로 들지 않는다.** `Character.code`는 유니크 인덱스라,
+                // 손편집 패키지가 같은 `id`를 둘에 적어 두면 id로 담은 표는 둘에게 **같은 code를
+                // 주고** 삽입이 예외로 죽는다 — 트랜잭션이 하나라 세계관 전체가 들어오지 못한다.
+                // (종전에는 각자 claim했으므로 그 입력에서도 죽지 않았다.)
+                val claimedCharCodes = contents.characters.map { charReg.claim(it.code) }
                 val charCodeRemap = HashMap<String, String>()
-                for (character in contents.characters) {
-                    val claimed = charReg.claim(character.code)
-                    charCodeByOldId[character.id] = claimed
+                val ambiguousCharCodes = HashSet<String>()
+                contents.characters.forEachIndexed { index, character ->
                     val oldCode: String? = character.code
-                    if (!oldCode.isNullOrBlank()) charCodeRemap[oldCode] = claimed
+                    if (oldCode.isNullOrBlank()) return@forEachIndexed
+                    if (charCodeRemap.put(oldCode, claimedCharCodes[index]) != null) {
+                        ambiguousCharCodes.add(oldCode)
+                    }
                 }
+                // 같은 code를 둘이 들고 온 패키지에서는 그 code가 **누구인지 알 수 없다.**
+                // 표에서 지우면 그 코드를 가리키는 판·상성이 제외 + 계수된다 — 아무나 골라
+                // 붙이는 것보다 낫다(R-1: 오배정은 생략보다 나쁘다).
+                for (code in ambiguousCharCodes) charCodeRemap.remove(code)
 
                 // 2. 필드 정의 (전 entityType — v3). 유니크 (universeId, entityType, key) 방어적 중복 제거.
                 //    등급 체계 참조는 재발급 표로 다시 잇고, 패키지에 없는 체계를 가리키면
@@ -480,7 +490,7 @@ class WorldPackageImporter(context: Context) {
 
                 // 4. 캐릭터
                 val charIdMap = HashMap<Long, Long>()
-                for (character in contents.characters) {
+                contents.characters.forEachIndexed { index, character ->
                     val mappedNovel = character.novelId?.let { old ->
                         novelIdMap[old].also { if (it == null) danglingRefs++ }
                     }
@@ -492,7 +502,8 @@ class WorldPackageImporter(context: Context) {
                             // code는 위(1.6 뒤)에서 이미 claim했다 — 필드 정의가 그 표를 먼저
                             // 봐야 했기 때문이다. 여기서 다시 claim하면 **같은 캐릭터에 코드가
                             // 두 번 발급되어** 판·상성이 가리키는 코드와 갈린다.
-                            code = charCodeByOldId[character.id] ?: charReg.claim(character.code),
+                            // **자리로 집는다** — id는 손편집 패키지에서 겹칠 수 있다.
+                            code = claimedCharCodes[index],
                             // v47 이전 패키지에는 이 키가 없어 Gson이 null을 주입한다(R-2).
                             // **명시로 넘겨야 한다** — 넘기지 않으면 기본값으로 채워지면서
                             // Kotlin이 거는 copy 인자 null 검사에 그대로 걸려 죽는다.
