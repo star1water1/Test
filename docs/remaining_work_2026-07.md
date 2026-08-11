@@ -6191,11 +6191,23 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 하나는 `ExcelTransferController`의 *'onStart' overrides nothing*으로 **base의
    > *'onDestroy' overrides nothing*과 형제**다(`DefaultLifecycleObserver` 자체가 미해석이다).
    >
-   > **⑤ CI를 돌렸다 — ⏳ 목록은 비어 있다.** 화면 파일이 `CLAUDE.md` 4번의 *2~3개*를 넘겼고
-   > (`ExcelImporter` · `ExcelTransferController` · `HelpDialog` · `NotificationHelper` ·
+   > **⑤ CI는 돌았고 초록이다 — ⏳ 목록은 비어 있다.** PR **#268**, head `8c6cdda`,
+   > run `31507794099`(build) · `31507794131`(migration).
+   > **배지가 아니라 단계를 봤다:** `Static checks` ✓ 30초 · `Schema harnesses` ✓ ·
+   > **`Run unit tests` ✓ 3분01초** · `Build Debug APK` ✓ 50초 · `Upload/Commit Room schemas` ✓ ·
+   > `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
+   > **이 판에서 CI를 돌린 이유가 실제로 값을 했다:** 화면 파일이 `CLAUDE.md` 4번의 *2~3개*를
+   > 넘겼고(`ExcelImporter` · `ExcelTransferController` · `HelpDialog` · `NotificationHelper` ·
    > `NovelCharacterApp`), 무엇보다 **새 리소스 참조 셋**(`R.style.TextAppearance_App_TitleLarge` ·
    > `R.drawable.ic_help` · 새 문자열 여섯)은 **로컬에 증명 수단이 아예 없다** — 차분 컴파일은
-   > `-classpath`가 없어 `R`째 미해석이고 프로브는 이 파일들을 안 본다.
+   > `-classpath`가 없어 `R`째 미해석이고 프로브는 이 파일들을 안 본다. `Run unit tests`가 그것들을
+   > 처음 컴파일했고 **`Build Debug APK`가 리소스 링크를 처음 확인했다**(그 단계가 없으면
+   > 없는 스타일·드로어블을 가리켜도 로컬은 초록이다).
+   > **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `8c6cdda` 그대로인 것이
+   > 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다.
+   > **마이그레이션 워크플로도 돌았고 초록이다** — 트리거가 `data/model/**`을 담고 있고 이 판이
+   > `DuelAxis.kt`의 **주석**을 건드렸기 때문이다(스키마는 그대로다). 에뮬레이터에서
+   > `Run migration instrumentation tests` ✓ **5분08초**.
    >
    > **⑥ 실기기 확인이 하나 늘었다** — **3-105**(ㄱ 수식 경고 · ㄴ `sys:` 오타 · ㄷ **`▼` 표식** ·
    > ㄹ 결과 창 `?` · ㅁ **화면을 벗어나도 결과가 닿는가**). **ㅁ이 본론이다** — B-56의 유일한 증명이다.
