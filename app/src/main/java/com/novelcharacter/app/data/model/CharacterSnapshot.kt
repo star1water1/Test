@@ -6,13 +6,25 @@ package com.novelcharacter.app.data.model
  */
 data class CharacterSnapshot(
     val character: Character,
-    val fieldValues: List<CharacterFieldValue> = emptyList(),
-    val stateChanges: List<CharacterStateChange> = emptyList(),
-    val tags: List<CharacterTag> = emptyList(),
-    val relationships: List<CharacterRelationship> = emptyList(),
-    val relationshipChanges: List<CharacterRelationshipChange> = emptyList(),
-    val factionMemberships: List<FactionMembership> = emptyList(),
-    val eventIds: List<Long> = emptyList(),
+    /**
+     * 아래 일곱 목록은 **전부 nullable이다** — 앱이 만드는 payload에는 늘 키가 있지만,
+     * Gson은 키가 통째로 없으면 non-null 선언에도 null을 주입한다(R-2). 그래서 손으로 편집한
+     * payload가 하나 들어오면 non-null 선언은 **복원 순간 NPE로 터진다**(B-19).
+     * 실제로 겪은 사고는 아니고 — 터져도 "복원 실패"로 떨어져 무통보 유실은 아니다 —
+     * **`refs`·`nameBankCodes`·`revertScope`는 이미 nullable이라 캐릭터 payload만 규약을
+     * 어긴 상태였다.** 규약을 어긴 채로 두면 다음에 목록을 늘리는 사람이 그 모양을 따라 적는다.
+     *
+     * **원소 타입은 절대 바꾸지 말 것** — 구버전 payload의 역직렬화가 깨진다. 널 허용은
+     * 읽는 쪽 `.orEmpty()`와 짝이고, **그 짝을 강제하는 것은 시험이 아니라 컴파일러다**
+     * (선언을 non-null로 되돌리면 읽는 쪽은 그대로 컴파일되고 시험도 그대로 초록이다).
+     */
+    val fieldValues: List<CharacterFieldValue>? = null,
+    val stateChanges: List<CharacterStateChange>? = null,
+    val tags: List<CharacterTag>? = null,
+    val relationships: List<CharacterRelationship>? = null,
+    val relationshipChanges: List<CharacterRelationshipChange>? = null,
+    val factionMemberships: List<FactionMembership>? = null,
+    val eventIds: List<Long>? = null,
     /**
      * 위 목록들이 담은 DB id의 안정 식별자 (N1). 구버전 payload에는 이 키가 없어 Gson이
      * null을 주입하며, 그때는 종전대로 id 단독 해석으로 폴백한다. 상세는 [SnapshotRefs].
