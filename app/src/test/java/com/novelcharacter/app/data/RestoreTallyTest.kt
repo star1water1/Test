@@ -6,6 +6,7 @@ import com.novelcharacter.app.data.repository.RestoreTally
 import com.novelcharacter.app.data.repository.SnapshotRefResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,6 +100,51 @@ class RestoreTallyTest {
     }
 
     @Test
+    fun `entityType이 비어 자연키가 서지 않으면 세계관이 복원 예정이어도 보류가 아니다`() {
+        // B-154 — **미리보기와 실제 복원이 갈리던 자리다.** 보류 판정이 `ref.universeCode`만
+        // 보던 동안, entityType이 빈 ref는 그 세계관이 같은 작업에 있다는 이유로 PENDING을 받아
+        // 유실 집계에서 빠졌다. 정작 복원에서는 `naturalKeyOf`가 그 ref를 떨어뜨리고
+        // `buildFieldDefIndex`의 refs 루프도 건너뛰므로, 세계관이 살아나 옛 id가 죽은 뒤에는
+        // LEGACY_MISSING으로 **값이 버려진다** — 예고는 '유실 없음', 결과는 유실이었다.
+        val noType = FieldDefRef(universeCode = "UNI-1", entityType = null, key = "mana")
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf("UNI-1"))
+        val res = tally.noteFieldDef(
+            SnapshotRefResolver.resolveFieldDef(12L, noType, emptyMap(), emptyMap(), emptySet()),
+            noType
+        )
+
+        assertFalse("자연키가 안 서는 ref에 보류를 주면 되살아나지 않을 값을 '괜찮다'고 예고한다", res.found)
+        assertNull(res.id)
+        assertFalse(tally.previewOnly)
+    }
+
+    @Test
+    fun `key가 비어 자연키가 서지 않을 때도 마찬가지다`() {
+        // 자연키는 세 요소가 함께 있어야 선다. 셋 중 어느 하나가 빠져도 판정은 같아야 하는데,
+        // **한 요소만 시험하면 다음 사람이 나머지 둘을 다르게 고쳐도 초록이다.**
+        val noKey = FieldDefRef(universeCode = "UNI-1", entityType = "character", key = "")
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf("UNI-1"))
+        val res = tally.noteFieldDef(
+            SnapshotRefResolver.resolveFieldDef(12L, noKey, emptyMap(), emptyMap(), emptySet()),
+            noKey
+        )
+
+        assertFalse(res.found)
+        assertFalse(tally.previewOnly)
+    }
+
+    @Test
+    fun `자연키가 서면 종전대로 세계관 코드로 보류를 판정한다`() {
+        // B-154가 좁힌 것이 **필요한 보류까지 좁히지는 않았는지**를 잰다. 이쪽이 무너지면
+        // 고친 거짓 경고(세계관 삭제 미리보기의 규모 비례 경고)가 통째로 되돌아온다.
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf("UNI-1"))
+        val res = tally.noteFieldDef(missingFieldDef(), ref)
+
+        assertTrue(res.found)
+        assertEquals(RestoreTally.PENDING_ID, res.id)
+    }
+
+    @Test
     fun `필드 정의가 살아 있으면 보류 판정을 거치지 않고 그대로 해석된다`() {
         // 코드로 다시 찾은 건수(relinked)는 R-1 수정의 실효를 보여 주는 값이라 함께 고정한다.
         val natural = FieldDefNaturalKey("UNI-1", "character", "mana")
@@ -128,6 +174,71 @@ class RestoreTallyTest {
 
         assertEquals(RestoreTally.PENDING_ID, res.id)
         assertTrue(tally.previewOnly)
+    }
+
+    // ── B-25 — 코드가 없는 참조의 보류 키 ──
+
+    @Test
+    fun `코드가 있으면 코드가 곧 보류 키다`() {
+        assertEquals("EVT-1", RestoreTally.pendingKeyOf("event", 41L, "EVT-1"))
+    }
+
+    @Test
+    fun `코드가 없으면 타입과 옛 id가 보류 키가 된다`() {
+        // v35 이전 사건은 `TimelineEvent.code`가 null이다. 근거가 옛 id뿐이지만 **그 id도
+        // 식별자다** — 복원이 비어 있는 옛 id를 그대로 되살리기 때문이다(applyEvent).
+        val key = RestoreTally.pendingKeyOf("event", 41L, null)
+        assertEquals(key, RestoreTally.pendingKeyOf("event", 41L, ""))
+        assertEquals("빈 코드는 코드가 없는 것과 같다", key, RestoreTally.pendingKeyOf("event", 41L, "  "))
+    }
+
+    @Test
+    fun `보류 키는 타입과 id로 갈린다`() {
+        // 사건 41번과 캐릭터 41번은 다른 대상이다. 한 키로 뭉치면 **엉뚱한 참조가 보류를 받아**
+        // 유실을 '유실 없음'으로 예고한다 — B-25가 고치려던 것의 정반대다.
+        val event = RestoreTally.pendingKeyOf("event", 41L, null)
+        assertNotEquals(event, RestoreTally.pendingKeyOf("character", 41L, null))
+        assertNotEquals(event, RestoreTally.pendingKeyOf("event", 42L, null))
+    }
+
+    @Test
+    fun `보류 키는 진짜 엔티티 코드와 겹치지 않는다`() {
+        // 엔티티 코드는 16자리 hex다(generateEntityCode). 겹치면 **코드 없는 사건 하나가
+        // 남의 코드 자리를 차지해** 그 참조까지 보류로 만든다.
+        val key = RestoreTally.pendingKeyOf("event", 41L, null)
+        assertFalse("진짜 코드가 될 수 없는 모양이어야 한다", key.matches(Regex("[0-9a-f]{16}")))
+        assertTrue(key.startsWith("#"))
+    }
+
+    @Test
+    fun `코드 없는 사건이 같은 작업에 있으면 유실로 세지 않는다`() {
+        // B-25의 본체. 같은 작업으로 지워진 code 없는 사건을 참조하는 캐릭터가, 종전에는
+        // "사건을 찾을 수 없음"으로 집계됐다 — 실제 복원은 사건이 먼저 살아나
+        // (restorePriority 6 < 7) id 폴백으로 그대로 이어지는데도.
+        val pendingKey = RestoreTally.pendingKeyOf("event", 41L, null)
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf(pendingKey))
+        // 스냅샷에 코드가 없고 옛 id도 살아 있지 않다 → LEGACY_MISSING
+        val missing = SnapshotRefResolver.resolveByCode(41L, null, emptyMap(), emptyMap(), emptySet())
+        assertFalse("전제 확인 — 해석 자체는 못 찾는다", missing.found)
+
+        val res = tally.note(missing, pendingKey)
+
+        assertTrue("같은 작업이 되살릴 대상이다", res.found)
+        assertEquals(RestoreTally.PENDING_ID, res.id)
+        assertTrue("자리표시자가 섞였으므로 미리보기 전용이다", tally.previewOnly)
+    }
+
+    @Test
+    fun `같은 작업에 없는 코드 없는 사건은 사실대로 유실로 센다`() {
+        // 거짓 경고를 없앤다고 진짜 유실까지 감추면 그것이 무음 유실이다 — B-25의 경계선.
+        val tally = RestoreTally(legacy = false, pendingCodes = setOf(RestoreTally.pendingKeyOf("event", 99L, null)))
+        val missing = SnapshotRefResolver.resolveByCode(41L, null, emptyMap(), emptyMap(), emptySet())
+
+        val res = tally.note(missing, RestoreTally.pendingKeyOf("event", 41L, null))
+
+        assertFalse(res.found)
+        assertNull(res.id)
+        assertFalse(tally.previewOnly)
     }
 
     @Test

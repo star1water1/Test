@@ -1114,6 +1114,13 @@ class TrashRepository(
         val peerCodes = collectOperationCodes(items).peers
         val harvestTargets = ArrayList<Long>()
 
+        // ── B-18 ① 계측 ── 아래 세 구간의 **합**이 5판에서 한 트랜잭션이 될 범위다
+        // (확정 22번 ㄱ2 = 전부 한 덩어리). 지금은 항목마다 트랜잭션이 열리고 뒷정리 둘은
+        // 트랜잭션 밖이라 **잠금이 짧게 끊긴다** — 합치면 그 시간이 통째로 잠금이 되므로,
+        // 상한을 정하려면 먼저 이 셋을 따로 재야 한다(P-9: 답은 값이 아니라 순서다).
+        // **동작은 바꾸지 않는다** — 재기만 한다.
+        val startNanos = System.nanoTime()
+
         for (item in items) {
             val outcome = try {
                 restoreOne(item, deferredLinks, session, peerCodes, harvestTargets)
@@ -1122,6 +1129,7 @@ class TrashRepository(
             }
             if (outcome == null) failed.add(item.entityName) else restored.add(outcome)
         }
+        val afterLoopNanos = System.nanoTime()
 
         // 값 라이브러리 수확은 묶음이 끝난 뒤 세계관 단위로 한 번 — 캐릭터마다 부르면
         // 전 필드 정의와 라이브러리를 매번 다시 읽어 항목 수의 제곱이 된다.
@@ -1136,8 +1144,18 @@ class TrashRepository(
         if (harvestTargets.isNotEmpty() || restoredUniverseIds.isNotEmpty()) {
             runCatching { harvestRestoredCharacters(harvestTargets, restoredUniverseIds) }
         }
+        val afterHarvestNanos = System.nanoTime()
 
         val lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
+        logRestoreTiming(
+            items = items.size,
+            restored = restored.size,
+            failed = failed.size,
+            startNanos = startNanos,
+            afterLoopNanos = afterLoopNanos,
+            afterHarvestNanos = afterHarvestNanos,
+            endNanos = System.nanoTime()
+        )
         val withImages = if (lostImageLinks > 0 && restored.isNotEmpty()) {
             restored.toMutableList().also { list ->
                 val first = list[0]
@@ -1147,6 +1165,36 @@ class TrashRepository(
             restored
         }
         OperationRestoreResult(withImages, failed)
+    }
+
+    /**
+     * 묶음 복원의 실제 소요를 한 줄로 남긴다 (B-18 ①) — **동작에 관여하지 않는다.**
+     *
+     * 셋을 갈라 적는 이유는 5판이 정할 것이 *"몇 건까지 한 트랜잭션인가"*이기 때문이다.
+     * 합계만 알면 상한을 항목 수로 환산할 수 없다 — 뒷정리 둘(수확·이미지 링크)은 **항목 수가
+     * 아니라 세계관·이미지 수를 따라가므로**, 셋의 비율이 곧 *"무엇을 줄여야 잠금이 짧아지는가"*다.
+     *
+     * 재는 자리가 `withContext(Dispatchers.IO)` 안이라 [System.nanoTime]으로 충분하다
+     * (벽시계가 아니라 경과가 필요하고, 기기 시각 변경에 흔들리지 않아야 한다).
+     */
+    private fun logRestoreTiming(
+        items: Int,
+        restored: Int,
+        failed: Int,
+        startNanos: Long,
+        afterLoopNanos: Long,
+        afterHarvestNanos: Long,
+        endNanos: Long
+    ) {
+        fun ms(from: Long, to: Long): Long = (to - from) / 1_000_000
+        android.util.Log.i(
+            RESTORE_TIMING_TAG,
+            "묶음 복원 계측 — 항목 $items (복원 $restored · 실패 $failed) | " +
+                "반복 ${ms(startNanos, afterLoopNanos)}ms · " +
+                "수확 ${ms(afterLoopNanos, afterHarvestNanos)}ms · " +
+                "이미지링크 ${ms(afterHarvestNanos, endNanos)}ms | " +
+                "합계 ${ms(startNanos, endNanos)}ms"
+        )
     }
 
     /**
@@ -1181,16 +1229,36 @@ class TrashRepository(
         val characters = HashSet<String>()
         val factions = HashSet<String>()
         for (item in items) {
+            // 코드가 없는 구버전 행의 보류 키는 (타입, 옛 id)다 — **id를 보존하며 되살리는
+            // 타입에만** 채운다(그 판정의 근거는 아래 등급 체계·대결 축 갈래의 주석에 있다).
+            // null로 두면 그 항목은 코드가 없을 때 보류를 주지 못한다 — 그것이 의도다.
+            var idPreserved: Long? = null
             val code = when (item.entityType) {
                 TrashSnapshot.TYPE_CHARACTER ->
-                    parse(item, CharacterSnapshot::class.java)?.character?.code
-                        ?.also { if (it.isNotBlank()) characters.add(it) }
-                TrashSnapshot.TYPE_UNIVERSE -> parse(item, UniverseSnapshot::class.java)?.universe?.code
-                TrashSnapshot.TYPE_NOVEL -> parse(item, NovelSnapshot::class.java)?.novel?.code
+                    parse(item, CharacterSnapshot::class.java)?.character
+                        ?.also {
+                            if (it.code.isNotBlank()) characters.add(it.code)
+                            idPreserved = it.id
+                        }?.code
+                TrashSnapshot.TYPE_UNIVERSE ->
+                    parse(item, UniverseSnapshot::class.java)?.universe
+                        ?.also { idPreserved = it.id }?.code
+                TrashSnapshot.TYPE_NOVEL ->
+                    parse(item, NovelSnapshot::class.java)?.novel
+                        ?.also { idPreserved = it.id }?.code
                 TrashSnapshot.TYPE_FACTION ->
-                    parse(item, FactionSnapshot::class.java)?.faction?.code
-                        ?.also { if (it.isNotBlank()) factions.add(it) }
-                TrashSnapshot.TYPE_EVENT -> parse(item, EventSnapshot::class.java)?.event?.code
+                    parse(item, FactionSnapshot::class.java)?.faction
+                        ?.also {
+                            if (it.code.isNotBlank()) factions.add(it.code)
+                            idPreserved = it.id
+                        }?.code
+                TrashSnapshot.TYPE_EVENT ->
+                    parse(item, EventSnapshot::class.java)?.event
+                        ?.also { idPreserved = it.id }?.code
+                // 등급 체계와 대결 축은 **id를 보존하지 않는다** — applyGradeSystem·applyDuelAxis가
+                // 언제나 `id = 0`으로 넣어 새 id를 받는다. 그래서 코드가 없으면 보류를 줄 수 없다:
+                // 주면 "유실 없음"이라 예고해 놓고 실제로는 잃는다(B-25가 고친 것의 정반대 방향이고,
+                // 거짓 안심은 거짓 경고보다 나쁘다).
                 TrashSnapshot.TYPE_GRADE_SYSTEM ->
                     parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.code
                 // 같은 작업의 판 조각이 이 축을 '곧 되살아날 것'으로 보게 한다 — 없으면 묶음
@@ -1199,7 +1267,15 @@ class TrashRepository(
                     parse(item, DuelAxisSnapshot::class.java)?.axis?.code
                 else -> null
             }
-            code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
+            val nonBlank = code?.takeIf { it.isNotBlank() }
+            val legacyId = idPreserved
+            when {
+                nonBlank != null -> pending.add(nonBlank)
+                // B-25 — 코드가 없어도 옛 id가 곧 되살아난다. 그 사실을 예고가 알아야
+                // "찾을 수 없음"이라 말하지 않는다(id 폴백이 실제로 잇는다).
+                legacyId != null ->
+                    pending.add(RestoreTally.pendingKeyOf(item.entityType, legacyId, null))
+            }
         }
         return OperationCodes(pending, PeerCodes(characters, factions))
     }
@@ -1443,7 +1519,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     old, refs?.novelCode, novelIndex.codeById, novelIndex.idByCode, novelIndex.liveIds
                 ),
-                refs?.novelCode
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_NOVEL, old, refs?.novelCode)
             )
             if (!res.found) novelCleared = true
             res.id
@@ -1452,15 +1528,15 @@ class TrashRepository(
         // ── 필드 정의 (code가 없어 자연키로 해석) ──
         val fieldRefs = refs?.fieldDefs.orEmpty()
         val fieldIndex = buildFieldDefIndex(
-            oldIds = data.fieldValues.map { it.fieldDefinitionId }.distinct(),
+            oldIds = data.fieldValues.orEmpty().map { it.fieldDefinitionId }.distinct(),
             refs = fieldRefs.values,
             session = session
         )
-        val resolvedFieldValues = ArrayList<CharacterFieldValue>(data.fieldValues.size)
+        val resolvedFieldValues = ArrayList<CharacterFieldValue>(data.fieldValues.orEmpty().size)
         val usedFieldDefIds = HashSet<Long>()
         var skippedFieldValues = 0
         var mergedFieldValues = 0
-        for (v in data.fieldValues) {
+        for (v in data.fieldValues.orEmpty()) {
             val fieldRef = fieldRefs[v.fieldDefinitionId.toString()]
             val res = tally.noteFieldDef(
                 SnapshotRefResolver.resolveFieldDef(
@@ -1490,15 +1566,16 @@ class TrashRepository(
         }
 
         // ── 관계 상대 캐릭터 ──
-        val otherIds = data.relationships
+        val otherIds = data.relationships.orEmpty()
             .flatMap { listOf(it.characterId1, it.characterId2) }
             .filter { it != data.character.id }
             .distinct()
         val charIndex = characterIndex(otherIds, refs?.characters?.values.orEmpty(), session)
-        val factionIds = (data.relationships.mapNotNull { it.factionId } +
-            data.factionMemberships.map { it.factionId }).distinct()
+        val factionIds = (data.relationships.orEmpty().mapNotNull { it.factionId } +
+            data.factionMemberships.orEmpty().map { it.factionId }).distinct()
         val factionIndex = factionIndex(factionIds, refs?.factions?.values.orEmpty(), session)
-        val eventIdsAll = (data.eventIds + data.relationshipChanges.mapNotNull { it.eventId }).distinct()
+        val eventIdsAll = (data.eventIds.orEmpty() +
+            data.relationshipChanges.orEmpty().mapNotNull { it.eventId }).distinct()
         val eventIndex = eventIndex(eventIdsAll, refs?.events?.values.orEmpty(), session)
 
         fun resolveCharacter(oldId: Long) = tally.note(
@@ -1506,7 +1583,9 @@ class TrashRepository(
                 oldId, refs?.characters?.get(oldId.toString()),
                 charIndex.codeById, charIndex.idByCode, charIndex.liveIds
             ),
-            refs?.characters?.get(oldId.toString())
+            RestoreTally.pendingKeyOf(
+                TrashSnapshot.TYPE_CHARACTER, oldId, refs?.characters?.get(oldId.toString())
+            )
         )
 
         fun resolveFaction(oldId: Long) = tally.note(
@@ -1514,7 +1593,9 @@ class TrashRepository(
                 oldId, refs?.factions?.get(oldId.toString()),
                 factionIndex.codeById, factionIndex.idByCode, factionIndex.liveIds
             ),
-            refs?.factions?.get(oldId.toString())
+            RestoreTally.pendingKeyOf(
+                TrashSnapshot.TYPE_FACTION, oldId, refs?.factions?.get(oldId.toString())
+            )
         )
 
         fun resolveEvent(oldId: Long) = tally.note(
@@ -1522,16 +1603,18 @@ class TrashRepository(
                 oldId, refs?.events?.get(oldId.toString()),
                 eventIndex.codeById, eventIndex.idByCode, eventIndex.liveIds
             ),
-            refs?.events?.get(oldId.toString())
+            RestoreTally.pendingKeyOf(
+                TrashSnapshot.TYPE_EVENT, oldId, refs?.events?.get(oldId.toString())
+            )
         )
 
-        val plannedRelationships = ArrayList<PlannedRelationship>(data.relationships.size)
+        val plannedRelationships = ArrayList<PlannedRelationship>(data.relationships.orEmpty().size)
         var skippedRelationships = 0
         var skippedRelationshipChanges = 0
         var clearedRelationshipFactions = 0
         var clearedChangeEvents = 0
-        for (rel in data.relationships) {
-            val changes = data.relationshipChanges.filter { it.relationshipId == rel.id }
+        for (rel in data.relationships.orEmpty()) {
+            val changes = data.relationshipChanges.orEmpty().filter { it.relationshipId == rel.id }
             val selfIsFirst = rel.characterId1 == data.character.id
             val selfIsSecond = rel.characterId2 == data.character.id
             if (!selfIsFirst && !selfIsSecond) {
@@ -1582,13 +1665,13 @@ class TrashRepository(
             )
         }
 
-        val plannedMemberships = ArrayList<FactionMembership>(data.factionMemberships.size)
+        val plannedMemberships = ArrayList<FactionMembership>(data.factionMemberships.orEmpty().size)
         // faction_memberships에는 유니크 제약이 없다(재가입 이력 보존). 서로 다른 옛 세력 id가
         // 같은 세력으로 수렴하면 실패가 아니라 **조용한 중복 행**이 되므로 여기서 접는다.
         // 접는 키는 임포터가 쓰는 자연키와 같다(ExcelImportService의 세력 소속 매칭 사다리).
         val seenMemberships = HashSet<List<Any?>>()
         var skippedMemberships = 0
-        for (m in data.factionMemberships) {
+        for (m in data.factionMemberships.orEmpty()) {
             val res = resolveFaction(m.factionId)
             val newId = res.id
             if (newId == null) {
@@ -1601,7 +1684,7 @@ class TrashRepository(
 
         val plannedEvents = LinkedHashSet<Long>()
         var skippedEvents = 0
-        for (old in data.eventIds) {
+        for (old in data.eventIds.orEmpty()) {
             val res = resolveEvent(old)
             val newId = res.id
             // 서로 다른 옛 id가 같은 사건으로 수렴하는 것은 유실이 아니라 병합이다 — 집계하지 않는다.
@@ -1748,7 +1831,7 @@ class TrashRepository(
         // code 충돌 시 재발급 (캐릭터 code와 동일 규칙): 복원 전 엑셀 임포트로 같은 코드가
         // 재생성된 경우 유니크 위반으로 복원 전체가 실패하는 것을 방지. 레거시(null) 코드는 신규 발급.
         db.characterStateChangeDao().insertAll(
-            data.stateChanges.map { change ->
+            data.stateChanges.orEmpty().map { change ->
                 val safeCode = change.code
                     ?.takeIf { c -> db.characterStateChangeDao().getChangeByCode(c) == null }
                     ?: generateEntityCode()
@@ -1756,7 +1839,7 @@ class TrashRepository(
             }
         )
         db.characterTagDao().insertAll(
-            data.tags.map { it.copy(id = 0, characterId = targetId) }
+            data.tags.orEmpty().map { it.copy(id = 0, characterId = targetId) }
         )
 
         var duplicateRelationships = 0
@@ -1904,7 +1987,7 @@ class TrashRepository(
 
         var restoredStateChanges = 0
         if (RestoreModes.SCOPE_STATE_CHANGES in scope) {
-            for (change in data.stateChanges) {
+            for (change in data.stateChanges.orEmpty()) {
                 // 같은 이력이 이미 있으면 그 사이 사용자가 다시 만든 것이다 — 덮어쓰지 않는다
                 // (applyEvent와 같은 규약).
                 val dao = db.characterStateChangeDao()
@@ -2170,7 +2253,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     v.characterId, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, v.characterId, code)
             ).id
             val defId = resolveDef(v.fieldDefinitionId)
             if (owner == null || defId == null) {
@@ -2193,7 +2276,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     v.eventId, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_EVENT, v.eventId, code)
             ).id
             val defId = resolveDef(v.fieldDefinitionId)
             if (owner == null || defId == null) {
@@ -2215,7 +2298,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     v.novelId, code, novIndex.codeById, novIndex.idByCode, novIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_NOVEL, v.novelId, code)
             ).id
             val defId = resolveDef(v.fieldDefinitionId)
             if (owner == null || defId == null) {
@@ -2365,7 +2448,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     old, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_EVENT, old, code)
             )
             if (res.id == null) lostEvents++ else plannedEvents.add(res.id)
         }
@@ -2518,7 +2601,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     oldId, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, oldId, code)
             ).id
         }
 
@@ -2549,7 +2632,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     otherOld, code, facIndex.codeById, facIndex.idByCode, facIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_FACTION, otherOld, code)
             )
             if (res.id == null) {
                 // 상대 세력이 **같은 작업 안에** 있으면 유실이 아니다 — 그쪽 스냅샷도 이 관계를
@@ -2584,7 +2667,7 @@ class TrashRepository(
                     SnapshotRefResolver.resolveByCode(
                         old, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
                     ),
-                    code
+                    RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_EVENT, old, code)
                 )
                 if (!res.found) clearedChangeEvents++
                 res.id
@@ -2796,7 +2879,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     old, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, old, code)
             )
             if (res.id == null) lostChars++ else plannedChars.add(res.id)
         }
@@ -2820,7 +2903,7 @@ class TrashRepository(
                 SnapshotRefResolver.resolveByCode(
                     old, code, novIndex.codeById, novIndex.idByCode, novIndex.liveIds
                 ),
-                code
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_NOVEL, old, code)
             )
             if (res.id == null) lostNovels++ else plannedNovels.add(res.id)
         }
@@ -2840,7 +2923,7 @@ class TrashRepository(
                     SnapshotRefResolver.resolveByCode(
                         change.characterId, code, ownerIndex.codeById, ownerIndex.idByCode, ownerIndex.liveIds
                     ),
-                    code
+                    RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, change.characterId, code)
                 )
                 val newCharId = res.id
                 if (newCharId == null) lostStateChanges++
@@ -2982,7 +3065,7 @@ class TrashRepository(
             SnapshotRefResolver.resolveByCode(
                 data.change.characterId, code, index.codeById, index.idByCode, index.liveIds
             ),
-            code
+            RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, data.change.characterId, code)
         )
 
         // 같은 code의 이력이 아직 살아 있으면 이 스냅샷은 삭제 백업이 아니다(그 사이 다시
@@ -3539,7 +3622,7 @@ class TrashRepository(
         )
         val res = tally.note(
             SnapshotRefResolver.resolveByCode(oldId, code, index.codeById, index.idByCode, index.liveIds),
-            code
+            RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_UNIVERSE, oldId, code)
         )
         return UniverseResolution(res.id, !res.found)
     }
@@ -3863,6 +3946,16 @@ class TrashRepository(
     private companion object {
         /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
         const val IN_CLAUSE_CHUNK = 900
+
+        /**
+         * 묶음 복원 계측 로그의 태그 (B-18 ①) — `adb logcat -s TrashRestore`로 본다.
+         *
+         * **이 계측은 5판이 상한을 정할 때까지 산다.** 확정 22번은 묶음 복원을 한 덩어리
+         * 트랜잭션으로 바꾸라 했고, P-9는 *"답은 값이 아니라 순서 — 실기기에서 잰 뒤 상한을
+         * 정한다"*로 닫혔다. 그 '잰다'가 여기다. 5판이 값을 박고 진행률을 붙이면 이 줄은
+         * 그 진행률 계측으로 대체된다.
+         */
+        const val RESTORE_TIMING_TAG = "TrashRestore"
 
         /**
          * payload 한 행의 크기 예산(문자 수).

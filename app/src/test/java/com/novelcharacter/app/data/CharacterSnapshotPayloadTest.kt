@@ -45,9 +45,61 @@ class CharacterSnapshotPayloadTest {
         val snap = gson.fromJson(legacyPayload, CharacterSnapshot::class.java)
         assertNull("refs 키가 없으면 null이어야 폴백 경로가 성립한다", snap.refs)
         assertEquals("가온", snap.character.name)
-        assertEquals(1, snap.fieldValues.size)
-        assertEquals(12L, snap.fieldValues[0].fieldDefinitionId)
+        assertEquals(1, snap.fieldValues.orEmpty().size)
+        assertEquals(12L, snap.fieldValues.orEmpty()[0].fieldDefinitionId)
         assertEquals(listOf(41L, 42L), snap.eventIds)
+    }
+
+    @Test
+    fun `목록 키가 통째로 없으면 일곱 전부 null이다 — 읽는 쪽이 폴백해야 한다`() {
+        // B-19. **손편집 payload가 실제 경로다** — 앱이 만드는 payload에는 늘 키가 있지만,
+        // 이 저장소의 규약은 *"들어온 것을 거부가 아니라 유연하게 수용한다"*이고 R-2는
+        // Gson이 키 부재에 null을 주입한다는 사실 자체를 계약으로 세운 것이다.
+        // 선언이 non-null이던 동안 이 payload는 **복원 순간 NPE로 터질 자리였다**(실제 사고는 없었다).
+        //
+        // ⚠️ **이 시험은 선언이 non-null로 되돌아가도 초록이다** — 런타임에는 여전히 null이
+        // 오므로 assertNull이 통과한다. 여기서 잠그는 것은 *위험의 존재*이고, 널 처분을
+        // 강제하는 것은 **읽는 쪽을 컴파일하는 컴파일러**다. 둘을 헷갈리지 말 것.
+        val onlyCharacter = """
+            {
+              "character": {"id": 5, "name": "가온", "code": "CHR-1",
+                            "imagePaths": "[]", "displayOrder": 0}
+            }
+        """.trimIndent()
+        val snap = gson.fromJson(onlyCharacter, CharacterSnapshot::class.java)
+
+        assertNull(snap.fieldValues)
+        assertNull(snap.stateChanges)
+        assertNull(snap.tags)
+        assertNull(snap.relationships)
+        assertNull(snap.relationshipChanges)
+        assertNull(snap.factionMemberships)
+        assertNull(snap.eventIds)
+
+        // 그리고 읽는 쪽 규약(.orEmpty())이 그 null을 그대로 받는다 — 이 두 줄이 짝이다.
+        assertEquals(emptyList<Long>(), snap.eventIds.orEmpty())
+        assertEquals(0, snap.fieldValues.orEmpty().size)
+    }
+
+    @Test
+    fun `목록 하나만 빠져도 그 하나만 null이다 — 나머지는 멀쩡히 살아난다`() {
+        // 전부 빠지는 것보다 **하나만 빠지는 쪽이 위험하다.** 나머지가 정상이라 복원이
+        // 시작되고, 그 하나를 읽는 자리에서 비로소 터진다 — 그때는 앞 항목이 이미 복원돼 있다.
+        val noTags = """
+            {
+              "character": {"id": 5, "name": "가온", "code": "CHR-1",
+                            "imagePaths": "[]", "displayOrder": 0},
+              "fieldValues": [{"id": 1, "characterId": 5, "fieldDefinitionId": 12, "value": "높음"}],
+              "stateChanges": [], "relationships": [], "relationshipChanges": [],
+              "factionMemberships": [], "eventIds": [41]
+            }
+        """.trimIndent()
+        val snap = gson.fromJson(noTags, CharacterSnapshot::class.java)
+
+        assertNull("tags 키만 없다", snap.tags)
+        assertEquals(1, snap.fieldValues.orEmpty().size)
+        assertEquals(listOf(41L), snap.eventIds)
+        assertEquals(emptyList<Any>(), snap.tags.orEmpty())
     }
 
     @Test
@@ -181,10 +233,12 @@ class CharacterSnapshotPayloadTest {
     }
 
     @Test
-    fun `eventIds 타입은 유지된다 — 코드는 refs로 병기한다`() {
-        // 기존 필드의 타입을 바꾸면 구버전 payload의 역직렬화가 깨지므로,
+    fun `eventIds 원소 타입은 유지된다 — 코드는 refs로 병기한다`() {
+        // 기존 필드의 **원소** 타입을 바꾸면 구버전 payload의 역직렬화가 깨지므로,
         // List<Long>은 그대로 두고 코드를 refs.events에 병기하는 형태를 고정한다.
+        // **널 허용은 원소 타입 변경이 아니다**(B-19) — 같은 JSON이 그대로 읽히고,
+        // 바뀌는 것은 *키가 없을 때* null이 오는 것을 선언이 인정하는가뿐이다.
         val snap = gson.fromJson(legacyPayload, CharacterSnapshot::class.java)
-        assertTrue(snap.eventIds.all { it is Long })
+        assertTrue(snap.eventIds.orEmpty().all { it is Long })
     }
 }
