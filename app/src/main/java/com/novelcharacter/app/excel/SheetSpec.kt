@@ -4,6 +4,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.CsvTokens
 import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
 
@@ -120,6 +121,8 @@ val RESERVED_SHEET_NAMES = setOf(
     imageMetaSpec().sheetName,
     fieldValueLibrarySpec().sheetName,
     characterFieldValueSpec().sheetName,
+    novelFieldValueSpec().sheetName,
+    eventFieldValueSpec().sheetName,
     duelAxisSpec().sheetName,
     duelMatchSpec().sheetName,
     duelVerdictSpec().sheetName,
@@ -223,89 +226,32 @@ fun isSuffixedVariantOf(sheetName: String, base: String): Boolean {
 /**
  * 전각 ASCII(U+FF01–FF5E)를 반각으로 정규화한다. 엑셀에 CJK 입력기로 넣은 전각 쉼표(，)·
  * 전각 영숫자(Ｙ／１ 등)를 관대하게 수용하기 위한 공용 유틸 (F4). CJK 문자(예/참 등)는 그대로 둔다.
+ *
+ * 정의는 [CsvTokens]에 있다 — 인앱 토큰 규칙(B-178)이 같은 정규화를 쓰는데 `util`은 `excel`을
+ * 바라볼 수 없어서다(아키텍처 2장의 의존 방향). 이 이름은 `excel/`의 호출부를 위한 위임이다.
  */
-fun toHalfWidth(value: String): String {
-    if (value.none { it.code in 0xFF01..0xFF5E }) return value
-    return buildString(value.length) {
-        for (c in value) append(if (c.code in 0xFF01..0xFF5E) (c.code - 0xFEE0).toChar() else c)
-    }
-}
+fun toHalfWidth(value: String): String = CsvTokens.toHalfWidth(value)
 
 /**
  * 목록 셀의 **분해** — 내보내기의 [joinCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
  *
+ * **규칙의 정의는 [CsvTokens]에 있다**(2026.08.11, B-178) — 인앱 필드값 토큰([FieldValueTokenizer])이
+ * 같은 규칙을 쓰는데 `util`은 `excel`을 바라볼 수 없어서다(아키텍처 2장의 의존 방향).
+ * 종전에는 이 파일이 정의를 들고 있었고 인앱 쪽은 예외 없는 `split(",")`이라 **같은 앱 안에서
+ * 같은 개념이 두 규칙**이었다. 이 이름은 `excel/`의 호출부(열한 자리)를 위한 위임으로 남긴다.
+ *
  * 값 안의 쉼표는 **따옴표로 감싼다**(엑셀·CSV와 같은 방식 — 사용자 확정 2026.08.04,
- * `judgment_confirmations_2026-08.md` 7-6). 그래서 이름·제목에 쉼표가 있어도 두 값으로
- * 파손되지 않는다: `"Smith, John", Alice` → [`Smith, John`, `Alice`].
- *
- * ## 옛 파일을 계속 읽는 경로가 이 함수의 절반이다
- *
- * 이것은 **저장·교환 형식 변경**이라 되돌리기 어려운 축이다(착수 규칙 3번 셋째). 그래서
- * 따옴표가 없는 옛 파일은 **옛 규칙과 글자 그대로 같은 결과**를 받는다 — 아래 빠른 길이
- * 종전 구현 그 자체이고, 시험이 그 동일성을 못 박는다. 따옴표가 있어도 **CSV 규칙에 어긋나면**
- * (닫히지 않음 · 닫은 뒤 군더더기) 옛 규칙으로 되돌린다 — 즉 `"인용" 시리즈`처럼 따옴표를
- * 글자로 쓰던 옛 값은 그대로 살아난다. 거부가 아니라 수용이다(개발 의도 4번).
- *
- * **단 하나 갈리는 자리가 있고, 그것은 CSV 자체의 모호함이다:** 옛 파일에서 값 전체가
- * 따옴표로 감싸여 있으면(`"전체"`) 새 규칙은 그것을 *감싼 것*으로 읽어 `전체`를 돌려준다.
- * 새 형식이 같은 글자를 만들 수 있으므로 원리적으로 가릴 수 없다 — 엑셀도 똑같이 동작하며,
- * 사용자가 이 규약을 고른 이유가 바로 그 익숙함이다. 시험이 이 동작을 명시로 잠근다.
- *
- * 전각 쉼표(，)도 관대 수용한다 (F4).
+ * `judgment_confirmations_2026-08.md` 7-6): `"Smith, John", Alice` → [`Smith, John`, `Alice`].
+ * 옛 파일을 계속 읽는 경로와 그 한 자리 모호함(`"전체"` → `전체`)은 [CsvTokens]가 든다 —
+ * **엑셀 셀은 좁히지 않는다**(CSV 관용 그대로. 좁히는 쪽은 인앱 값이고 사유는 그 문서에 있다).
  */
-fun splitCsv(value: String): List<String> {
-    val normalized = toHalfWidth(value)
-    if (!normalized.contains('"')) return splitCsvLegacy(normalized)
-    return parseQuotedCsv(normalized) ?: splitCsvLegacy(normalized)
-}
-
-/** 종전 구현 그 자체 — 따옴표가 없거나 CSV 규칙에 어긋날 때의 경로. */
-private fun splitCsvLegacy(normalized: String): List<String> =
-    normalized.split(",").map { it.trim() }.filter { it.isNotBlank() }
-
-/**
- * 표준 CSV 규칙으로 판다. 규칙에 어긋나면 **null** — 호출측이 옛 규칙으로 되돌린다.
- * 따옴표는 **칸의 첫 글자일 때만** 감싼 것이고, 그 안의 `""`는 따옴표 한 글자다.
- */
-private fun parseQuotedCsv(s: String): List<String>? {
-    val fields = ArrayList<String>()
-    var i = 0
-    while (true) {
-        // **공백의 뜻을 아래 `trim()`과 맞춘다.** 칸 앞을 `' '`만 건너뛰면, 엑셀에서 줄바꿈
-        // (Alt+Enter)이나 붙여넣기로 들어온 탭이 앞에 붙는 순간 감싼 칸을 못 알아보고
-        // 옛 규칙으로 쪼개진다 — 사용자는 규약대로 감쌌는데 아무 말 없이 값이 갈린다.
-        // 판정에 실패하면 어차피 옛 규칙으로 되돌아가므로 넓히는 쪽이 손해가 없다.
-        while (i < s.length && s[i].isWhitespace()) i++
-        if (i < s.length && s[i] == '"') {
-            i++
-            val buf = StringBuilder()
-            var closed = false
-            while (i < s.length) {
-                if (s[i] == '"') {
-                    if (i + 1 < s.length && s[i + 1] == '"') { buf.append('"'); i += 2 }
-                    else { i++; closed = true; break }
-                } else { buf.append(s[i]); i++ }
-            }
-            if (!closed) return null                       // 닫히지 않은 따옴표
-            while (i < s.length && s[i].isWhitespace()) i++
-            if (i < s.length && s[i] != ',') return null   // 닫은 뒤 군더더기
-            fields.add(buf.toString())
-        } else {
-            val next = s.indexOf(',', i)
-            val end = if (next < 0) s.length else next
-            fields.add(s.substring(i, end).trim())
-            i = end
-        }
-        if (i < s.length && s[i] == ',') { i++ } else break
-    }
-    return fields.filter { it.isNotBlank() }
-}
+fun splitCsv(value: String): List<String> = CsvTokens.split(value)
 
 /**
  * 목록 셀의 **결합** — 가져오기의 [splitCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
  * 값이 구분자를 품고 있으면 감싸고, 안의 따옴표는 겹쳐 쓴다(엑셀·CSV와 같은 방식).
  */
-fun joinCsv(values: Collection<String>): String = values.joinToString(", ") { quoteCsvToken(it) }
+fun joinCsv(values: Collection<String>): String = CsvTokens.join(values)
 
 /**
  * 셀렉터를 받는 짝 — 호출부가 `joinToString(", ") { ... }`로 되돌아가지 않게 한다.
@@ -313,19 +259,10 @@ fun joinCsv(values: Collection<String>): String = values.joinToString(", ") { qu
  * `List`로 좁히면 그 자리가 컴파일되지 않는데, 그 파일은 로컬 프로브 범위 밖이라 조용하다.
  */
 fun <T> joinCsv(values: Collection<T>, selector: (T) -> String): String =
-    values.joinToString(", ") { quoteCsvToken(selector(it)) }
+    CsvTokens.join(values, selector)
 
-/**
- * 한 값의 감싸기 판정. **감쌀지는 정규화한 모양으로 정한다** — 가져오기가 [toHalfWidth] 뒤에
- * 파싱하므로 전각 쉼표(，)를 품은 값도 감싸지 않으면 그쪽에서 쪼개진다.
- */
-fun quoteCsvToken(value: String): String {
-    val probe = toHalfWidth(value)
-    if (probe.none { it == ',' || it == '"' }) return value
-    // 따옴표만 반각으로 고정한다 — 전각 따옴표를 그대로 두면 가져오기의 정규화가
-    // 그것을 따옴표로 바꿔 이스케이프 자리와 어긋난다(다른 전각 글자는 건드리지 않는다).
-    return "\"" + value.replace('＂', '"').replace("\"", "\"\"") + "\""
-}
+/** 한 값의 감싸기 판정 — 정의는 [CsvTokens.quote]다. */
+fun quoteCsvToken(value: String): String = CsvTokens.quote(value)
 
 /**
  * '커스텀관계유형' 셀이 JSON 배열이 아닐 때의 관대 해석 — 앱 공통 복수값 규약(쉼표 구분)을 그대로 쓴다.
@@ -579,6 +516,51 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
         ColumnSpec("대상", readOnly = true, dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
+        ColumnSpec("값", width = 8000)
+    )
+)
+
+/**
+ * 작품 필드값 오버플로 — 작품 시트가 **열로 표현할 수 없는** 작품 필드값을 담는다 (B-65).
+ *
+ * 작품 시트는 전 구역의 작품 필드를 열로 싣지만, 같은 이름의 필드가 한 구역에 둘 있으면
+ * 두 열의 머리가 글자까지 같아져 **열은 하나만 선다**([EntityFieldHeaders.plan]). 그 나머지가
+ * 이 시트로 온다 — 종전에는 같은 이름의 열이 둘 그려졌고 가져오기가 뒤쪽을 경고와 함께 버려,
+ * 그 필드의 값은 내보내도 결코 되돌아오지 못했다.
+ *
+ * 정체성은 '캐릭터 필드값' 시트와 **같은 (구역, 필드키, 대상) 삼중키**다 — 새 헤더 문법을
+ * 만들면 내보내기/가져오기가 반드시 드리프트한다. 첫 열이 '제목'이 아니어야 이 시트가 작품
+ * 시트로 오인되지 않는다(`characterFieldValueSpec`이 첫 열을 '캐릭터코드'로 둔 것과 같은 이유).
+ */
+fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "작품 필드값",
+    columns = listOf(
+        ColumnSpec("작품코드", required = true, readOnly = true, width = 4000),
+        ColumnSpec("작품제목", readOnly = true, width = 8000),
+        ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", readOnly = true, width = 5000),
+        ColumnSpec("값", width = 8000)
+    )
+)
+
+/**
+ * 사건 필드값 오버플로 — 연표 시트가 **열로 표현할 수 없는** 사건 필드값을 담는다 (B-65).
+ * 근거와 삼중키는 [novelFieldValueSpec]과 같다.
+ *
+ * **정체는 사건 코드 하나로만 잡는다.** 연도·설명으로 되짚으면 같은 해에 비슷한 문장이 둘 있을 때
+ * 값이 남의 사건에 붙는데, 오배정은 생략보다 나쁘다(R-1). 코드가 빈 행은 경고하고 건너뛴다.
+ */
+fun eventFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "사건 필드값",
+    columns = listOf(
+        ColumnSpec("사건코드", required = true, readOnly = true, width = 4000),
+        ColumnSpec("사건설명", readOnly = true, width = 10000),
+        ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", readOnly = true, width = 5000),
         ColumnSpec("값", width = 8000)
     )
 )

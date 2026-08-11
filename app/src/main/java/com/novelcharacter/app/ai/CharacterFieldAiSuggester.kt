@@ -773,7 +773,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         fun foldToLibrary(raw: String, spec: FieldSpec): String {
             if (spec.canonicalByVariant.isEmpty()) return raw
             if (!spec.multiToken) return spec.canonicalByVariant[raw.trim()] ?: raw
-            val tokens = raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            // **붙이는 쪽과 같은 규칙이어야 한다** — 아래 join이 구분자를 품은 토큰을 감싸므로,
+            // 여기서 옛 규칙으로 쪼개면 감싼 값을 되쪼개 따옴표째 망가뜨린다(B-178).
+            val tokens = FieldValueTokenizer.splitMulti(raw)
             if (tokens.isEmpty()) return raw
             // 서로 다른 별칭이 같은 canonical로 접히면 중복이 생긴다 — 접은 뒤 중복 제거
             return FieldValueTokenizer.join(tokens.map { spec.canonicalByVariant[it] ?: it }.distinct())
@@ -789,7 +791,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         fun isAllowedByLibrary(value: String, spec: FieldSpec): Boolean {
             if (!spec.restrictedToLibrary || spec.canonicalByVariant.isEmpty()) return true
             val tokens = if (spec.multiToken) {
-                value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                FieldValueTokenizer.splitMulti(value)
             } else {
                 listOf(value.trim())
             }

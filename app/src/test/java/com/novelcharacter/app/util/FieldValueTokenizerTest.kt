@@ -135,4 +135,51 @@ class FieldValueTokenizerTest {
         assertEquals("불, 얼음", FieldValueTokenizer.join(listOf("불", "얼음")))
         assertEquals("서울", FieldValueTokenizer.join(listOf("서울")))
     }
+
+    // ===== B-178 — 인앱 값도 따옴표를 안다. 규칙은 엑셀 목록 셀과 한 벌 =====
+
+    @Test
+    fun tokenize_quotedComma_isOneToken() {
+        // 여는 쪽 근거 — 지금까지 한 필드값 안에 쉼표를 담을 길이 **원리적으로** 없었다
+        assertEquals(
+            listOf("홍길동, 어릴 적 이름", "본명"),
+            FieldValueTokenizer.tokenize(fd("MULTI_TEXT"), "\"홍길동, 어릴 적 이름\", 본명")
+        )
+    }
+
+    @Test
+    fun tokenize_quotesAsLiteral_areUnchanged() {
+        // **이 시험이 착수 조건을 대신한다.** *양끝이 따옴표인 기존 값*은 셀 수 없어서(사용자 데이터가
+        // 있어야 한다) 대신 **뜻이 바뀌지 않도록** 규칙을 좁혔다. 좁힘이 무너지면 세지도 못한 값들이
+        // 조용히 바뀌므로, 이 케이스가 이 판정의 유일한 방어선이다.
+        assertEquals(
+            listOf("\"별칭\"", "본명"),
+            FieldValueTokenizer.tokenize(fd("MULTI_TEXT"), "\"별칭\", 본명")
+        )
+        assertEquals(listOf("a\"b"), FieldValueTokenizer.tokenize(fd("MULTI_TEXT"), "a\"b"))
+    }
+
+    @Test
+    fun statsSplit_followsTheSameRule() {
+        // 통계만 옛 규칙으로 남으면 같은 데이터가 화면마다 다른 수를 낸다(개발 의도 2번)
+        val raw = "\"홍길동, 어릴 적 이름\", 본명"
+        assertEquals(
+            FieldValueTokenizer.tokenize(fd("MULTI_TEXT"), raw),
+            FieldValueTokenizer.splitForStats(fd("MULTI_TEXT"), raw)
+        )
+    }
+
+    @Test
+    fun joinThenTokenize_roundTrips() {
+        // 전파(rename/merge)가 저장한 값을 다음 읽기가 되쪼개면 이번 변경이 전파 한 번에 무효가 된다
+        val tokens = listOf("홍길동, 어릴 적 이름", "본명")
+        val joined = FieldValueTokenizer.join(tokens)
+        assertEquals(tokens, FieldValueTokenizer.tokenize(fd("MULTI_TEXT"), joined))
+    }
+
+    @Test
+    fun singleTokenField_isUntouchedByTheRule() {
+        // 쪼개지 않는 필드는 원문 그대로 — 따옴표도 글자다
+        assertEquals(listOf("\"인용\" 시리즈"), FieldValueTokenizer.tokenize(fd("TEXT"), "\"인용\" 시리즈"))
+    }
 }

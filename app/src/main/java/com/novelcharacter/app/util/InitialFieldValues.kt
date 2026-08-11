@@ -23,9 +23,7 @@ object InitialFieldValues {
      */
     fun parse(raw: String, field: FieldDefinition): List<String> {
         if (!FieldValueTokenizer.supportsLibrary(field)) return emptyList()
-        return raw.split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
+        // 쉼표 규칙은 앱 단일 소스가 든다(B-178) — 사전 등록에도 값 하나에 쉼표를 담을 수 있다
+        return FieldValueTokenizer.splitMulti(raw).distinct()
     }
 }

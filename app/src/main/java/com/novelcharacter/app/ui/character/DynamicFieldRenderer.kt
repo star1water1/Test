@@ -133,7 +133,9 @@ class DynamicFieldRenderer(
                     }
                     cardContent.addView(labelView)
 
-                    val items = fieldValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    // 쉼표 규칙은 앱 단일 소스가 든다(B-178) — 여기서 따로 쪼개면 읽기 화면만
+                    // 따옴표를 모르게 되어, 한 값으로 저장·집계된 것이 두 조각으로 그려진다.
+                    val items = com.novelcharacter.app.util.FieldValueTokenizer.splitMulti(fieldValue)
                     if (format == DisplayFormat.COMMA_LIST) {
                         val chipGroup = ChipGroup(context).apply {
                             layoutParams = LinearLayout.LayoutParams(
