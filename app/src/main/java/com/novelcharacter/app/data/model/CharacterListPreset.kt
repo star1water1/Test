@@ -63,7 +63,8 @@ data class CharacterListPreset(
         const val SORT_RECENT = "recent"     // 최근 수정
         const val SORT_FIELD = "field"       // 커스텀 필드값
         const val SORT_DUEL = "duel"         // 대결 점수 (B-117) — 대상 축은 sortDuelAxisCode
-        const val MAX_PRESETS = 20
+        // 개수 한도는 `util.PresetLimit`가 든다 — 검색 프리셋과 **같은 수를 두 벌로 두면**
+        // 한쪽만 바뀌고, 실제로 그 두 벌이 법과 권고로 갈려 있었다(B-75).
 
         /**
          * 저장·가져오기가 받아들이는 정렬 종류 전부. **여기 없는 값은 [SORT_MANUAL]로 떨어진다.**

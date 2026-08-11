@@ -400,7 +400,10 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             .map { it.filter.fieldName.ifBlank { it.filter.fieldKey ?: "?" } }
         // 커스텀 필드 필터는 기존 엔진이 그대로 대조한다(값 별칭·토큰 규칙 포함 — 두 벌 금지).
         // 키가 정본이므로 id는 지금 이 세계관의 것으로 바꿔 넘긴다.
-        val customFilters = resolved.mapNotNull { r -> r.field?.let { r.filter.copy(fieldId = it.id) } }
+        // **키는 떼고 넘긴다(B-11)** — 해석은 여기서 이미 끝났고, 대결은 세계관 단위다(확정 2번).
+        // 키를 남기면 그쪽 사다리가 다른 세계관의 같은 키까지 함께 걸어 이 축과 무관한 필드를 읽는다
+        // (후보는 이 세계관 캐릭터로 다시 걸리므로 답은 같지만, 안 해도 되는 조회가 세계관 수만큼 는다).
+        val customFilters = resolved.mapNotNull { r -> r.field?.let { r.filter.copy(fieldId = it.id, fieldKey = null) } }
         val customIds: Set<Long>? = if (customFilters.isEmpty()) {
             null
         } else {

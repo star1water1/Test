@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.FieldValueEntry
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -23,6 +24,11 @@ class FieldFilterHelperTest {
 
     private fun fd(id: Long, type: String = "TEXT", config: String = "{}") = FieldDefinition(
         id = id, universeId = 1L, key = "k$id", name = "필드$id", type = type, config = config
+    )
+
+    /** 키를 공유하는 세계관별 필드 — 크로스-세계관 필터(B-11)의 재료. */
+    private fun fdKeyed(id: Long, universeId: Long, key: String, type: String = "TEXT") = FieldDefinition(
+        id = id, universeId = universeId, key = key, name = "성별", type = type
     )
 
     private fun row(charId: Long, fieldId: Long, value: String) =
@@ -77,8 +83,14 @@ class FieldFilterHelperTest {
     }
 
     private class FakeFieldDao(val fields: Map<Long, FieldDefinition> = emptyMap()) : FieldDefinitionDao {
+        var keyLookups = 0
+
         override suspend fun getFieldById(id: Long): FieldDefinition? = fields[id]
         override suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> = ids.mapNotNull { fields[it] }
+        override suspend fun getFieldsByKey(key: String, entityType: String): List<FieldDefinition> {
+            keyLookups++
+            return fields.values.filter { it.key == key && it.entityType == entityType }
+        }
         override suspend fun getFieldsByUniverseAllTypes(universeId: Long): List<FieldDefinition> = unused()
         override suspend fun getGlobalFieldsList(entityType: String): List<FieldDefinition> = unused()
         override suspend fun getGlobalFieldsAllTypes(): List<FieldDefinition> = unused()
@@ -215,6 +227,150 @@ class FieldFilterHelperTest {
         val entries = mapOf(10L to listOf(entry))
         assertEquals(setOf(1L, 2L), apply(dao, listOf(byCanonical), fields, entries))
         assertEquals(setOf(1L, 2L), apply(dao, listOf(byAlias), fields, entries))
+    }
+
+    // ── 키 사다리 — 전역 뷰가 세계관 A·B·C의 같은 키를 한 번에 거른다 (B-11) ──
+
+    @Test
+    fun key_matchesSameKeyAcrossUniverses_idOnlyMatchesOne() = runTest {
+        // 세계관 셋이 같은 키 'gender'를 각자의 id로 들고 있다(키는 세계관 안에서만 유니크).
+        val fields = mapOf(
+            10L to fdKeyed(10, 1, "gender"),
+            20L to fdKeyed(20, 2, "gender"),
+            30L to fdKeyed(30, 3, "gender")
+        )
+        val dao = FakeValueDao(rows = listOf(
+            row(1, 10, "여성"), row(2, 20, "여성"), row(3, 30, "여성"), row(4, 20, "남성")
+        ))
+        val byKey = FieldFilter(10L, "성별", listOf("여성"), "exact", fieldKey = "gender")
+        assertEquals(setOf(1L, 2L, 3L), apply(dao, listOf(byKey), fields))
+
+        // 키가 없으면 종전 그대로 — id 하나만 걸린다(이 행이 열려 있던 이유 그 자체다).
+        val byId = FieldFilter(10L, "성별", listOf("여성"), "exact", fieldKey = null)
+        assertEquals(setOf(1L), apply(dao, listOf(byId), fields))
+    }
+
+    @Test
+    fun key_resolvesAliasesPerField_notOnceForAll() = runTest {
+        // **착수 조건이 요구한 실측**(로드맵 9판 — "세 세계관 표본으로 현행 별칭 처리를 실측").
+        // 값 라이브러리는 필드마다 다르다: A는 '여성'을 canonical로 두고 'F'를 별칭에,
+        // B는 반대로 'F'를 canonical로 두고 '여성'을 별칭에 뒀다. C는 라이브러리가 없다.
+        // 해석을 한 번만 하고 돌려쓰면 B의 저장값('F')이 조용히 빠진다 —
+        // 그래서 필드마다 다시 해석한다.
+        val fields = mapOf(
+            10L to fdKeyed(10, 1, "gender"),
+            20L to fdKeyed(20, 2, "gender"),
+            30L to fdKeyed(30, 3, "gender")
+        )
+        val entries = mapOf(
+            10L to listOf(FieldValueEntry(
+                id = 1, fieldDefinitionId = 10, value = "여성",
+                aliasesJson = FieldValueEntry.aliasesToJson(listOf("F"))
+            )),
+            20L to listOf(FieldValueEntry(
+                id = 2, fieldDefinitionId = 20, value = "F",
+                aliasesJson = FieldValueEntry.aliasesToJson(listOf("여성"))
+            ))
+        )
+        val dao = FakeValueDao(rows = listOf(
+            row(1, 10, "여성"), row(2, 10, "F"),   // A: canonical과 별칭 저장값이 섞여 있다
+            row(3, 20, "F"),                       // B: 이 기기의 canonical은 'F'다
+            row(4, 30, "여성"),                    // C: 라이브러리 없음 — 글자 그대로
+            row(5, 20, "남성")
+        ))
+        val filter = FieldFilter(10L, "성별", listOf("여성"), "exact", fieldKey = "gender")
+        assertEquals(setOf(1L, 2L, 3L, 4L), apply(dao, listOf(filter), fields, entries))
+    }
+
+    @Test
+    fun key_perFieldTokenRules_multiValueInOneUniverseOnly() = runTest {
+        // 토큰 규칙도 필드마다다 — 같은 키인데 A만 다중값(콤마 분해) 필드인 경우.
+        val fields = mapOf(
+            10L to fdKeyed(10, 1, "trait", type = "MULTI_TEXT"),
+            20L to fdKeyed(20, 2, "trait", type = "TEXT")
+        )
+        val dao = FakeValueDao(rows = listOf(
+            row(1, 10, "불, 얼음"),   // 다중값 — '얼음' 토큰이 산다
+            row(2, 20, "불, 얼음"),   // 단일값 — 통째로 한 값이라 '얼음'과 다르다
+            row(3, 20, "얼음")
+        ))
+        val filter = FieldFilter(10L, "속성", listOf("얼음"), "exact", fieldKey = "trait")
+        assertEquals(setOf(1L, 3L), apply(dao, listOf(filter), fields))
+    }
+
+    @Test
+    fun key_containsMode_alsoSpansUniverses() = runTest {
+        val fields = mapOf(10L to fdKeyed(10, 1, "city"), 20L to fdKeyed(20, 2, "city"))
+        val dao = FakeValueDao(contains = mapOf(
+            (10L to "서울") to listOf(1L),
+            (20L to "서울") to listOf(2L)
+        ))
+        val filter = FieldFilter(10L, "거주지", listOf("서울"), "contains", fieldKey = "city")
+        assertEquals(setOf(1L, 2L), apply(dao, listOf(filter), fields))
+    }
+
+    @Test
+    fun key_deadKey_matchesNothing_neverFallsBackToId() = runTest {
+        // **id로 떨어뜨리지 않는 것이 요점이다.** id는 기기 이전·복원에서 재발급되므로,
+        // 키가 죽은 필터를 id로 구제하면 '성별' 라벨 아래 실제로는 '거주지'를 거르게 된다.
+        // 20번 필드는 실재하지만 키가 다르다 — 그 자리에 옛 id가 그대로 남아 있는 상황.
+        val fields = mapOf(20L to fdKeyed(20, 2, "residence"))
+        val dao = FakeValueDao(rows = listOf(row(1, 20, "여성")))
+        val dead = FieldFilter(20L, "성별", listOf("여성"), "exact", fieldKey = "gender")
+        assertEquals(emptySet<Long>(), apply(dao, listOf(dead), fields))
+    }
+
+    @Test
+    fun key_systemKey_matchesNothing_notOwnedByThisResolver() = runTest {
+        // `sys:` 어휘(태그·작품 같은 표의 열)는 DuelCandidateFilter.matchesSystem이 든다.
+        // 여기로 흘러들면(손편집 엑셀이 검색 프리셋에 적어 넣는 길) 아무도 통과시키지 않는다 —
+        // id로 떨어뜨려 엉뚱한 커스텀 필드를 거르는 것보다 낫다.
+        val fields = mapOf(10L to fdKeyed(10, 1, "gender"))
+        val dao = FakeValueDao(rows = listOf(row(1, 10, "여성")))
+        val sys = FieldFilter(10L, "태그", listOf("여성"), "exact", fieldKey = "sys:tags")
+        assertEquals(emptySet<Long>(), apply(dao, listOf(sys), fields))
+    }
+
+    @Test
+    fun key_realFieldWins_overSystemVocabulary() = runTest {
+        // 사용자가 `sys:tags`라는 키의 진짜 필드를 만들었으면 그 필드가 답한다
+        // (B-167이 세운 규칙 그대로 — DuelCandidateFilter.resolve와 같은 순서다).
+        val fields = mapOf(10L to fdKeyed(10, 1, "sys:tags"))
+        val dao = FakeValueDao(rows = listOf(row(1, 10, "여성")))
+        val filter = FieldFilter(10L, "태그", listOf("여성"), "exact", fieldKey = "sys:tags")
+        assertEquals(setOf(1L), apply(dao, listOf(filter), fields))
+    }
+
+    @Test
+    fun noKey_neverAsksForKeyLookup() = runTest {
+        // 키가 없으면 조회 자체를 하지 않는다 — 옛 프리셋이 세계관 수만큼 질의를 늘리지 않는다.
+        val fieldDao = FakeFieldDao(mapOf(10L to fd(10)))
+        val dao = FakeValueDao(rows = listOf(row(1, 10, "red")))
+        FieldFilterHelper.applyFieldFilters(
+            dao, fieldDao, FakeEntryDao(),
+            listOf(FieldFilter(10L, "color", listOf("red"), "exact"))
+        )
+        assertEquals(0, fieldDao.keyLookups)
+    }
+
+    // ── 같은 대상 판정 — 칩 교체·제거의 동일성 (B-11) ──
+
+    @Test
+    fun sameTarget_keyWinsWhenBothHaveIt_idOtherwise() {
+        val a = FieldFilter(10L, "성별", listOf("여성"), "exact", fieldKey = "gender")
+        val b = FieldFilter(20L, "성별", listOf("남성"), "exact", fieldKey = "gender")
+        val c = FieldFilter(20L, "거주지", listOf("서울"), "exact", fieldKey = "residence")
+        // 세계관이 달라 id는 다르지만 같은 조건 자리다 — 덧붙지 않고 갈려야 한다.
+        assertTrue(FieldFilterHelper.sameTarget(a, b))
+        assertTrue(!FieldFilterHelper.sameTarget(b, c))
+
+        // 한쪽이라도 키가 없으면 옛 규약대로 id로 가른다.
+        val legacy = FieldFilter(20L, "성별", listOf("여성"), "exact")
+        assertTrue(FieldFilterHelper.sameTarget(legacy, c))
+        assertTrue(!FieldFilterHelper.sameTarget(legacy, a))
+        // 빈 문자열 키는 키가 없는 것과 같게 다룬다(엑셀 손편집이 빈 칸을 남기는 자리).
+        val blankKey = FieldFilter(20L, "성별", listOf("여성"), "exact", fieldKey = "")
+        assertTrue(FieldFilterHelper.sameTarget(blankKey, c))
     }
 
     @Test

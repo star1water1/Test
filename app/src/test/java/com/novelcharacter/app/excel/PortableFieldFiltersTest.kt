@@ -40,8 +40,45 @@ class PortableFieldFiltersTest {
         assertEquals("거주지", obj.getString("fieldName"))
         assertEquals(2, obj.getJSONArray("values").length())
         assertEquals("exact", obj.getString("matchMode"))
-        // 저장 JSON에는 왕복 보조 속성이 남지 않는다
-        assertTrue(!obj.has("fieldKey") && !obj.has("universeCode"))
+        // 왕복 보조 속성 중 **세계관코드만** 파일 전용이다 — 키는 인앱 필터의 정본이라 남는다(B-11).
+        assertEquals("residence", obj.getString("fieldKey"))
+        assertTrue(!obj.has("universeCode"))
+    }
+
+    // ── 키는 왕복에서 살아남는다 (B-11) ──
+
+    @Test
+    fun resolve_keepsDeviceFieldKey_soCrossUniverseFilterSurvivesRoundTrip() {
+        // 인앱 필터의 정본이 키로 올라갔으므로(B-11), 가져오기가 표준 속성만 남기며 키를 떨어뜨리면
+        // **엑셀을 한 번 다녀온 것만으로** 세계관 A·B를 함께 걸던 필터가 한쪽만 거르게 된다.
+        // 사용자에게는 캐릭터가 줄어든 것으로만 보여 원인을 알 길이 없다.
+        val aug = augmented()
+        val resolved = PortableFieldFilters.resolve(aug, index(field(42, "univA", "residence", "거주지")))
+        assertEquals("residence", JSONArray(resolved.json).getJSONObject(0).getString("fieldKey"))
+    }
+
+    @Test
+    fun resolve_nameFallback_keepsDeviceKeyNotFileKey() {
+        // 자연키(필드명)로 해석된 자리 — 파일의 키와 이 기기의 키가 다를 수 있다.
+        // id는 기기 것으로 바꿔 놓고 키만 파일 것을 남기면 **둘이 서로 다른 필드를 가리킨다.**
+        val fileJson =
+            """[{"fieldId":7,"fieldName":"거주지","fieldKey":"residence","universeCode":"univA","values":["서울"],"matchMode":"exact"}]"""
+        val resolved = PortableFieldFilters.resolve(fileJson, index(field(42, "univZ", "home_town", "거주지")))
+        val obj = JSONArray(resolved.json).getJSONObject(0)
+        assertEquals(42L, obj.getLong("fieldId"))
+        assertEquals("home_town", obj.getString("fieldKey"))
+    }
+
+    @Test
+    fun resolve_blankDeviceKey_omitsFieldKey_soIdRungStaysInCharge() {
+        // 키가 빈 필드로 해석되면 키를 싣지 않는다 — 빈 키를 실으면 해석기의 키 사다리가
+        // *키가 있다*고 읽고 id 폴백을 건너뛰어, 걸리는 것이 하나도 없는 필터가 된다.
+        val fileJson =
+            """[{"fieldId":7,"fieldName":"거주지","fieldKey":"residence","universeCode":"univA","values":["서울"],"matchMode":"exact"}]"""
+        val resolved = PortableFieldFilters.resolve(fileJson, index(field(42, "univA", "", "거주지")))
+        val obj = JSONArray(resolved.json).getJSONObject(0)
+        assertEquals(42L, obj.getLong("fieldId"))
+        assertTrue(!obj.has("fieldKey"))
     }
 
     @Test

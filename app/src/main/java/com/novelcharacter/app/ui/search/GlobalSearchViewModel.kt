@@ -252,16 +252,16 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
     fun addFieldFilter(filter: FieldFilter) {
         val current = _fieldFilters.value?.toMutableList() ?: mutableListOf()
-        // 같은 필드에 대한 기존 필터 제거 후 추가
-        current.removeAll { it.fieldId == filter.fieldId }
+        // 같은 대상에 대한 기존 필터 제거 후 추가 — 동일성은 키가 정본이다(B-11).
+        current.removeAll { FieldFilterHelper.sameTarget(it, filter) }
         current.add(filter)
         _fieldFilters.value = current
         persistFieldFilters(current)
     }
 
-    fun removeFieldFilter(fieldId: Long) {
+    fun removeFieldFilter(filter: FieldFilter) {
         val current = _fieldFilters.value?.toMutableList() ?: mutableListOf()
-        current.removeAll { it.fieldId == fieldId }
+        current.removeAll { FieldFilterHelper.sameTarget(it, filter) }
         _fieldFilters.value = current
         persistFieldFilters(current)
     }
@@ -322,20 +322,20 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         _presetAppliedEvent.value = Event(preset.name)
     }
 
-    fun saveCurrentAsPreset(name: String) {
-        viewModelScope.launch {
-            try {
-                val preset = SearchPreset(
-                    name = name,
-                    query = _searchQuery.value ?: "",
-                    filtersJson = getFiltersJson(),
-                    sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
-                )
-                searchPresetRepository.insertPreset(preset)
-            } catch (_: IllegalStateException) {
-                // Max limit reached - handled in UI
-            }
-        }
+    /**
+     * 저장하고 **권고 개수를 넘었는지**를 돌려준다 (B-75 — 개수로 막지 않는다).
+     * 저장은 언제나 일어나므로 호출부가 할 일은 *무엇을 말할지*를 고르는 것뿐이다.
+     */
+    suspend fun saveCurrentAsPreset(name: String): Boolean {
+        searchPresetRepository.insertPreset(
+            SearchPreset(
+                name = name,
+                query = _searchQuery.value ?: "",
+                filtersJson = getFiltersJson(),
+                sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
+            )
+        )
+        return searchPresetRepository.exceedsRecommended()
     }
 
     fun deletePreset(id: Long) {
@@ -350,5 +350,4 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    suspend fun getPresetCount(): Int = searchPresetRepository.getPresetCount()
 }

@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.data.repository.NameBankLinkOutcome
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
+import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.DuelImageBasisPrefs
 import com.novelcharacter.app.util.DuelScoreIndex
@@ -317,13 +318,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun addFieldFilter(filter: FieldFilter) {
         val cur = _fieldFilters.value?.toMutableList() ?: mutableListOf()
-        cur.removeAll { it.fieldId == filter.fieldId }  // 같은 필드 기존 필터 교체
+        cur.removeAll { FieldFilterHelper.sameTarget(it, filter) }  // 같은 대상 기존 필터 교체(키가 정본 — B-11)
         cur.add(filter)
         setFieldFilters(cur)
     }
 
-    fun removeFieldFilter(fieldId: Long) {
-        setFieldFilters((_fieldFilters.value ?: emptyList()).filter { it.fieldId != fieldId })
+    fun removeFieldFilter(filter: FieldFilter) {
+        setFieldFilters((_fieldFilters.value ?: emptyList()).filterNot { FieldFilterHelper.sameTarget(it, filter) })
     }
 
     fun setTagFilters(tags: Set<String>) {
@@ -807,11 +808,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun saveAsPreset(name: String) = viewModelScope.launch {
         try {
             app.characterListPresetRepository.insertPreset(currentPreset(name))
-            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
-                app.getString(R.string.result_preset_saved, name)))
-        } catch (e: IllegalStateException) {
-            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
-                app.getString(R.string.search_preset_limit_reached, CharacterListPreset.MAX_PRESETS)))
+            // 개수 한도는 권고다(B-75) — 저장은 이미 됐고, 넘었을 때만 그 사실과 정리 경로를 덧붙인다.
+            val message =
+                if (app.characterListPresetRepository.exceedsRecommended()) {
+                    app.getString(R.string.preset_limit_advisory, PresetLimit.RECOMMENDED_MAX)
+                } else {
+                    app.getString(R.string.result_preset_saved, name)
+                }
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET, message))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to save preset", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,

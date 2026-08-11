@@ -23,7 +23,10 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.databinding.FragmentGlobalSearchBinding
 import com.novelcharacter.app.ui.adapter.GlobalSearchAdapter
+import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -148,34 +151,43 @@ class GlobalSearchFragment : Fragment() {
     }
 
     private fun showSavePresetDialog() {
+        val ctx = context ?: return
+        val editText = EditText(ctx).apply {
+            hint = getString(R.string.search_preset_name_hint)
+            setPadding(48, 32, 48, 16)
+        }
+
+        // R-27: 리스너 없이 만들고 setValidatedPositiveButton으로 검증한다 —
+        // 종전에는 이름을 비운 채 누르면 창이 닫히며 적어 둔 것이 사라졌다(B-76).
+        // 개수 확인은 여기서 하지 않는다 — 한도는 권고이고(B-75), 넘었다는 말은 저장 뒤에 붙는다.
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.search_preset_save_title)
+            .setView(editText)
+            .setPositiveButton(R.string.save, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = editText.text.toString().trim()
+            if (name.isBlank()) {
+                editText.showInlineError(getString(R.string.preset_name_required))
+                false
+            } else {
+                saveCurrentAsPreset(name)
+                true
+            }
+        }
+        dialog.show()
+    }
+
+    /** 저장은 언제나 되고, 권고 개수를 넘었을 때만 그 사실과 정리 경로를 덧붙인다(B-75). */
+    private fun saveCurrentAsPreset(name: String) {
         viewLifecycleOwner.lifecycleScope.launch {
-            val count = viewModel.getPresetCount()
-            if (!isAdded || _binding == null) return@launch
+            val overRecommended = viewModel.saveCurrentAsPreset(name)
             val ctx = context ?: return@launch
-            if (count >= SearchPreset.MAX_PRESETS) {
-                Toast.makeText(ctx, getString(R.string.search_preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-
-            val editText = EditText(ctx).apply {
-                hint = getString(R.string.search_preset_name_hint)
-                setPadding(48, 32, 48, 16)
-            }
-
-            MaterialAlertDialogBuilder(ctx)
-                .setTitle(R.string.search_preset_save_title)
-                .setView(editText)
-                .setPositiveButton(R.string.save) { _, _ ->
-                    val name = editText.text.toString().trim()
-                    if (name.isBlank()) {
-                        Toast.makeText(ctx, R.string.search_preset_name_required, Toast.LENGTH_SHORT).show()
-                    } else {
-                        viewModel.saveCurrentAsPreset(name)
-                        Toast.makeText(ctx, R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            val message =
+                if (overRecommended) getString(R.string.preset_limit_advisory, PresetLimit.RECOMMENDED_MAX)
+                else getString(R.string.search_preset_saved)
+            Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -212,23 +224,30 @@ class GlobalSearchFragment : Fragment() {
             setPadding(48, 32, 48, 16)
         }
 
-        MaterialAlertDialogBuilder(ctx)
+        // R-27: 종전에는 이름을 비우면 **아무 말도 없이** 창이 닫혔다 — 토스트조차 없어
+        // 사용자가 보기에는 저장된 것과 구별되지 않았다(B-76).
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.search_preset_edit_title)
             .setView(editText)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val newName = editText.text.toString().trim()
-                if (newName.isNotBlank()) {
-                    viewModel.updatePreset(preset.copy(
-                        name = newName,
-                        query = binding.searchEdit.text.toString(),
-                        sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE,
-                        filtersJson = viewModel.getFiltersJson()
-                    ))
-                    Toast.makeText(ctx, R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val newName = editText.text.toString().trim()
+            if (newName.isBlank()) {
+                editText.showInlineError(getString(R.string.preset_name_required))
+                return@setValidatedPositiveButton false
+            }
+            viewModel.updatePreset(preset.copy(
+                name = newName,
+                query = binding.searchEdit.text.toString(),
+                sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE,
+                filtersJson = viewModel.getFiltersJson()
+            ))
+            Toast.makeText(ctx, R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
+            true
+        }
+        dialog.show()
     }
 
     private fun showDeletePresetConfirm(preset: SearchPreset) {
@@ -312,7 +331,7 @@ class GlobalSearchFragment : Fragment() {
                 ).apply { marginEnd = (4 * resources.displayMetrics.density).toInt() }
                 layoutParams = params
                 setOnCloseIconClickListener {
-                    viewModel.removeFieldFilter(filter.fieldId)
+                    viewModel.removeFieldFilter(filter)
                 }
             }
             container.addView(chip)

@@ -138,6 +138,11 @@ $MAIN/data/repository/QueryUtils.kt
 $MAIN/data/dao/CharacterFieldValueDao.kt
 $MAIN/data/dao/FieldDefinitionDao.kt
 $MAIN/data/dao/FieldValueEntryDao.kt
+$MAIN/data/dao/SearchPresetDao.kt
+$MAIN/data/dao/CharacterListPresetDao.kt
+$MAIN/data/repository/SearchPresetRepository.kt
+$MAIN/data/repository/CharacterListPresetRepository.kt
+$MAIN/util/PresetLimit.kt
 $MAIN/util/FieldFilterHelper.kt
 $MAIN/data/model/FieldStatsConfig.kt
 $MAIN/data/model/FieldType.kt
@@ -275,6 +280,7 @@ $TEST/data/GradeSystemRefTest.kt
 $TEST/data/DuelGradeRefTest.kt
 $TEST/data/SemanticRoleEntityScopeTest.kt
 $TEST/data/RequiredEnforcementTest.kt
+$TEST/data/PresetLimitTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/SheetSpecCsvTest.kt

@@ -24,7 +24,8 @@ data class SearchPreset(
         const val SORT_NAME = "name"
         const val SORT_TAG = "tag"
         const val SORT_RECENT = "recent"
-        const val MAX_PRESETS = 20
+        // 개수 한도는 `util.PresetLimit`가 든다 — 목록 프리셋과 **같은 수를 두 벌로 두면**
+        // 한쪽만 바뀌고, 실제로 그 두 벌이 법과 권고로 갈려 있었다(B-75).
 
         /**
          * 저장 가능한 정렬모드 전체 — 엑셀 드롭다운·가져오기 유효값 검증·사용 안내 문구가
