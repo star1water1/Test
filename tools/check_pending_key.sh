@@ -26,6 +26,10 @@
 #    **코드 키와 함께 심는다** — 어느 쪽으로 찾는가는 *참조하는 쪽*이 정하기 때문이다:
 #    참조당하는 쪽에 코드가 없거나(v35 이전 사건), **참조하는 쪽 payload에 refs가 통째로 없으면**
 #    (구버전) 옛 id로만 가리킨다. 둘 중 하나만 심으면 나머지 절반에서 거짓 경고가 그대로 남는다.
+# ④ **동료 검사도 같은 모양으로 묻는가** — `in pendingPeerCodes` 검사가 `pendingKeyOf`로 만든 키를
+#    쓰는가. `peers`는 *같은 우선순위라 순서가 없다*는 다른 물음이지만 **묻는 모양은 같아야 한다.**
+#    코드로만 물으면 구버전 payload(refs 없음)의 짝을 영영 못 찾아, 미리보기는 보류로 보는데
+#    실제 복원만 유실을 세어 **예고와 결과가 갈린다**(2026.08.11 Codex 리뷰가 잡은 자리).
 # ③ **심지 말아야 할 자리** — 등급 체계·대결 축 갈래가 옛 id를 보류 키로 쓰지 않는가.
 #    `applyGradeSystem`·`applyDuelAxis`는 **언제나 `id = 0`으로 넣어** 새 id를 받는다.
 #    id 폴백이 성립할 수 없는 타입에 보류를 주면 거짓 안심이 된다.
@@ -156,12 +160,39 @@ else:
                 ln = base + body.count(chr(10), 0, wstart + pos)
                 print(f"C\t{ln}\t{name}")
 
-print(f"__NOTES__{notes}")
+# ── ④ 동료 검사 ──
+peers = 0
+for m in re.finditer(r'\bin\s+pendingPeerCodes\b', text):
+    peers += 1
+    ln = offset_to_line(m.start())
+    line = code[ln - 1]
+    # **좌변식만 본다.** 앞 몇 줄을 창으로 잡는 판정은 못 쓴다 — 바로 위 `tally.note`가
+    # 이미 `pendingKeyOf`를 부르고 있어 **무엇을 적어도 통과한다**(첫 판이 실제로 그랬고,
+    # 자기 시험만 우연히 잡았다. 본보기와 실제 코드의 간격이 그 우연을 만들었다).
+    lhs = line[:line.index('in ', max(0, line.find('in pendingPeerCodes') - 1))] \
+        if 'in pendingPeerCodes' in line else ''
+    ok = 'pendingKeyOf' in lhs
+    if not ok:
+        # 변수에 담아 두는 모양을 받는다 — 그 변수의 대입을 거슬러 찾는다.
+        names = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\s*$', lhs.rstrip())
+        if names:
+            name = names[-1]
+            for back in range(ln - 2, max(-1, ln - 12), -1):
+                assign = re.search(r'\bval\s+' + re.escape(name) + r'\b\s*=', code[back])
+                if assign:
+                    # 대입이 여러 줄에 걸칠 수 있어 그 줄부터 아래 4줄까지 본다.
+                    ok = 'pendingKeyOf' in '\n'.join(code[back:back + 5])
+                    break
+    if not ok:
+        print(f"D\t{ln}\t{' '.join(line.split())[:70]}")
+
+print(f"__NOTES__{notes}\t__PEERS__{peers}")
 PY
 }
 
 FOUND=$(scan "$TARGET")
-notes=$(printf '%s\n' "$FOUND" | sed -n 's/^__NOTES__//p')
+notes=$(printf '%s\n' "$FOUND" | sed -n 's/^__NOTES__\([0-9]*\).*/\1/p')
+peers=$(printf '%s\n' "$FOUND" | sed -n 's/.*__PEERS__\([0-9]*\)$/\1/p')
 body=$(printf '%s\n' "$FOUND" | grep -v '^__NOTES__' || true)
 
 # 추출기가 죽으면 출력이 비고 **"위반 0건"으로 초록이 뜬다** — 그 자리를 먼저 막는다.
@@ -174,7 +205,14 @@ fail=0
 a=$(printf '%s\n' "$body" | grep -c '^A' || true)
 b=$(printf '%s\n' "$body" | grep -c '^B' || true)
 c=$(printf '%s\n' "$body" | grep -c '^C' || true)
+d=$(printf '%s\n' "$body" | grep -c '^D' || true)
 x=$(printf '%s\n' "$body" | grep -c '^X' || true)
+
+# 동료 검사가 아예 안 잡히면 추출기가 죽은 것이다 — 초록으로 오인하지 않는다.
+if [ "${peers:-0}" -lt 2 ]; then
+  echo "  ✗ 추출기가 동료 검사를 ${peers:-0}건밖에 못 찾았습니다 — 검사가 성립하지 않습니다" >&2
+  exit 2
+fi
 
 if [ "$x" -gt 0 ]; then
   echo "  ✗ 대상 함수를 찾지 못했습니다 — 이름이 바뀌었다면 이 검사도 함께 옮기세요"
@@ -210,6 +248,18 @@ if [ "$c" -gt 0 ]; then
   echo
   echo "  applyGradeSystem·applyDuelAxis는 언제나 id = 0으로 넣습니다 — 옛 id로 다시 찾을 수"
   echo "  없으므로, 보류를 주면 '유실 없음'이라 예고하고 실제로는 잃습니다."
+fi
+
+if [ "$d" -gt 0 ]; then
+  fail=1
+  echo "  ✗ 동료 검사가 pendingKeyOf로 묻지 않습니다 (${d}건)"
+  printf '%s\n' "$body" | grep '^D' | while IFS=$'\t' read -r _ ln txt; do
+    echo "    TrashRepository.kt:$ln"
+    echo "      $txt"
+  done
+  echo
+  echo "  구버전 payload는 refs가 없어 코드로 물으면 언제나 빗나갑니다 — 그러면 미리보기는"
+  echo "  보류로 보는데 실제 복원만 유실을 세어 예고와 결과가 갈립니다."
 fi
 
 [ "$fail" -eq 0 ] || exit 1
@@ -254,6 +304,18 @@ class Sample {
         refs?.characters?.get(oldId.toString())
     )
 
+    fun peerGood(otherOld: Long) {
+        val otherKey = RestoreTally.pendingKeyOf(
+            TrashSnapshot.TYPE_CHARACTER, otherOld, refs?.characters?.get(otherOld.toString())
+        )
+        if (otherKey in pendingPeerCodes) return
+    }
+
+    fun peerBad(otherOld: Long) {
+        val code = refs?.factions?.get(otherOld.toString())
+        if (code != null && code in pendingPeerCodes) return
+    }
+
     // tally.note(res, code) — 주석 속 본보기는 잡지 않는다
     fun more(oldId: Long) = tally.note(resolve(oldId), RestoreTally.pendingKeyOf(T, oldId, null))
     fun more2(oldId: Long) = tally.note(resolve(oldId), RestoreTally.pendingKeyOf(T, oldId, null))
@@ -263,22 +325,27 @@ EOF
 SELF=$(scan "$SELFDIR/Self.kt")
 self_a=$(printf '%s\n' "$SELF" | grep -c '^A' || true)
 self_bc=$(printf '%s\n' "$SELF" | grep -cE '^[BCX]' || true)
-self_notes=$(printf '%s\n' "$SELF" | sed -n 's/^__NOTES__//p')
+self_notes=$(printf '%s\n' "$SELF" | sed -n 's/^__NOTES__\([0-9]*\).*/\1/p')
 
 # ③의 반대 방향도 함께 시험한다 — 멀쩡한 갈래에 idPreserved를 얹으면 잡아야 한다.
 sed 's|parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.code|parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.also { idPreserved = it.id }?.code|' \
   "$SELFDIR/Self.kt" > "$SELFDIR/SelfC.kt"
 self_c=$(scan "$SELFDIR/SelfC.kt" | grep -c '^C' || true)
+self_d=$(printf '%s\n' "$SELF" | grep -c '^D' || true)
+self_peers=$(printf '%s\n' "$SELF" | sed -n 's/.*__PEERS__\([0-9]*\)$/\1/p')
 rm -rf "$SELFDIR"
 
-if [ "${self_notes:-0}" -ne 5 ] || [ "$self_a" -ne 1 ] || [ "$self_bc" -ne 0 ] || [ "$self_c" -ne 1 ]; then
+if [ "${self_notes:-0}" -ne 5 ] || [ "$self_a" -ne 1 ] || [ "$self_bc" -ne 0 ] ||
+   [ "$self_c" -ne 1 ] || [ "${self_peers:-0}" -ne 2 ] || [ "$self_d" -ne 1 ]; then
   echo "  ✗ 추출기 자기 시험 실패 — note ${self_notes:-0}건(5) · 위반 ${self_a}건(1) ·" >&2
-  echo "    오검출 ${self_bc}건(0) · 보존 없는 타입 검출 ${self_c}건(1)" >&2
+  echo "    오검출 ${self_bc}건(0) · 보존 없는 타입 검출 ${self_c}건(1) ·" >&2
+  echo "    동료 검사 ${self_peers:-0}자리(2) 중 코드로만 묻는 것 ${self_d}건(1)" >&2
   exit 2
 fi
 
 echo "  ✓ tally.note ${notes}자리가 전부 pendingKeyOf로 보류 키를 만듭니다"
 echo "  ✓ collectOperationCodes가 코드 없는 행에 (타입, 옛 id) 키를 심습니다"
 echo "  ✓ id를 보존하지 않는 타입(등급 체계·대결 축)에는 심지 않습니다"
+echo "  ✓ 동료 검사 ${peers}자리가 전부 같은 모양으로 묻습니다"
 echo
 echo "복원 보류 키 검사 통과"

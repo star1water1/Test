@@ -1218,10 +1218,14 @@ class TrashRepository(
     /**
      * 이 작업이 복원하면 존재하게 될 엔티티의 **보류 키** — 전체와, 같은 우선순위 동료끼리의 것.
      *
-     * `pending`은 코드만 담지 않는다 — [RestoreTally.pendingKeyOf]가 만든 키를 담으며, 한 항목이
-     * **코드 키와 옛 id 키를 둘 다** 낼 수 있다(어느 쪽으로 찾는가는 참조하는 쪽이 정한다).
-     * `peers`는 종전대로 코드뿐이다 — 그쪽은 *같은 우선순위끼리 순서가 없다*는 다른 물음이고,
-     * 캐릭터·세력의 코드는 비어 있지 않다.
+     * **둘 다 [RestoreTally.pendingKeyOf]가 만든 키를 담는다** — 한 항목이 **코드 키와 옛 id 키를
+     * 둘 다** 낸다. 어느 쪽으로 찾는가는 *참조하는 쪽*이 정하기 때문이다(구버전 payload는 refs가
+     * 없어 옛 id로만 가리킨다).
+     *
+     * `peers`가 다른 것은 담는 값이 아니라 **묻는 물음**이다 — `pending`은 *복원 순서상 뒤에
+     * 존재하게 되는가*를, `peers`는 *같은 우선순위라 순서가 없으니 상대가 이 작업 안에 있는가*를
+     * 묻는다. **묻는 모양은 반드시 같아야 한다** — 한쪽만 코드로 물으면 구버전 짝에서 예고와
+     * 결과가 갈린다(2026.08.11에 실제로 그랬다).
      *
      * payload를 파싱해 얻는다(목록 행의 entityName만으로는 코드를 알 수 없다).
      * **한 번만 파싱한다** — 종전에는 pending/peer 수집이 각각 전량을 훑어, 수백 항목짜리
@@ -1242,7 +1246,11 @@ class TrashRepository(
                 TrashSnapshot.TYPE_CHARACTER ->
                     parse(item, CharacterSnapshot::class.java)?.character
                         ?.also {
-                            if (it.code.isNotBlank()) characters.add(it.code)
+                            // 동료 키도 보류 키와 **같은 모양이다.** 구버전 payload는 상대의
+                            // 코드를 모른 채 옛 id로만 가리키므로, 코드만 담으면 그 짝을 영영
+                            // 못 찾아 **먼저 복원되는 쪽이 유령 유실을 센다**(아래 동료 검사).
+                            characters.add(RestoreTally.pendingKeyOf(item.entityType, it.id, it.code))
+                            characters.add(RestoreTally.pendingKeyOf(item.entityType, it.id, null))
                             idPreserved = it.id
                         }?.code
                 TrashSnapshot.TYPE_UNIVERSE ->
@@ -1254,7 +1262,8 @@ class TrashRepository(
                 TrashSnapshot.TYPE_FACTION ->
                     parse(item, FactionSnapshot::class.java)?.faction
                         ?.also {
-                            if (it.code.isNotBlank()) factions.add(it.code)
+                            factions.add(RestoreTally.pendingKeyOf(item.entityType, it.id, it.code))
+                            factions.add(RestoreTally.pendingKeyOf(item.entityType, it.id, null))
                             idPreserved = it.id
                         }?.code
                 TrashSnapshot.TYPE_EVENT ->
@@ -1640,8 +1649,13 @@ class TrashRepository(
                     // 상대 캐릭터가 **같은 작업 안에** 있으면 유실이 아니다 — 관계는 양쪽
                     // 스냅샷이 모두 담으므로 나중에 복원되는 쪽이 실제로 만든다.
                     // 여기서 세면 먼저 복원되는 쪽마다 유령 유실이 쌓인다.
-                    val otherCode = refs?.characters?.get(otherOld.toString())
-                    if (otherCode != null && otherCode in pendingPeerCodes) continue
+                    // **묻는 모양이 심는 모양과 같아야 한다** — 구버전 payload는 refs가 없어
+                    // 코드로 물으면 언제나 빗나가고, 그러면 이 짝은 양쪽 모두에서 유실로 세진다
+                    // (미리보기는 보류로 보는데 실제 복원만 세어 예고와 결과가 갈렸다).
+                    val otherKey = RestoreTally.pendingKeyOf(
+                        TrashSnapshot.TYPE_CHARACTER, otherOld, refs?.characters?.get(otherOld.toString())
+                    )
+                    if (otherKey in pendingPeerCodes) continue
                     skippedRelationships++
                     // 관계가 사라지면 그 이력도 함께 사라진다 — 종전에는 집계조차 없었다.
                     skippedRelationshipChanges += changes.size
@@ -2644,7 +2658,8 @@ class TrashRepository(
             if (res.id == null) {
                 // 상대 세력이 **같은 작업 안에** 있으면 유실이 아니다 — 그쪽 스냅샷도 이 관계를
                 // 담고 있고, 아직 복원되지 않았을 뿐이다. 여기서 세면 유령 유실이 된다.
-                if (code != null && code in pendingPeerCodes) continue
+                // 묻는 모양은 심는 모양과 같다(캐릭터 쪽 주석 참조 — 구버전 payload 때문이다).
+                if (RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_FACTION, otherOld, code) in pendingPeerCodes) continue
                 lostFactionRels++
                 continue
             }
