@@ -384,6 +384,7 @@ $TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
+$TEST/ai/NarrativeBulkDraftTest.kt
 $TEST/ai/ImageFolderTagSuggesterTest.kt
 $TEST/data/FieldConfigPolicyTest.kt
 $TEST/excel/FieldConfigColumnsTest.kt

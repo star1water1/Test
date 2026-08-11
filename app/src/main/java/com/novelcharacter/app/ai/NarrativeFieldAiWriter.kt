@@ -1,6 +1,8 @@
 package com.novelcharacter.app.ai
 
+import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.util.DuelAiContext
 
 /**
@@ -59,7 +61,17 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         /** 출력이 상한에 걸려 잘렸는지 — 후보가 문장 중간에서 끊겼을 수 있다. */
         val truncated: Boolean,
         val inputTokens: Int,
-        val outputTokens: Int
+        val outputTokens: Int,
+        /**
+         * 재시도해도 같은 결과인 실패인가 ([AiErrorPolicy.TERMINAL]) — **일괄 초안이
+         * 남은 필드를 보낼지 말지의 기준이다**(B-45). 키가 틀렸거나 한도를 넘긴 상태에서
+         * 남은 필드를 계속 보내면 같은 실패를 필드 수만큼 결제한다.
+         *
+         * 필드 하나짜리 경로에는 '남은 것'이 없어 쓰이지 않지만, **판정을 여기 두는 것이
+         * 요점이다** — 호출측이 오류 문구를 문자열로 견주기 시작하면 그 판정이 문구를
+         * 바꿀 때마다 조용히 틀린다.
+         */
+        val terminalFailure: Boolean = false
     )
 
     /**
@@ -137,7 +149,8 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                 truncationNotes = prompt.truncationNotes,
                 truncated = false,
                 inputTokens = 0,
-                outputTokens = 0
+                outputTokens = 0,
+                terminalFailure = AiErrorPolicy.isTerminal(result.kind)
             )
         }
     }
@@ -164,6 +177,43 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
 
     data class ParsedDrafts(val drafts: List<Draft>, val droppedCount: Int)
     data class PromptBuild(val text: String, val truncationNotes: List<String>)
+
+    // ===== 일괄 초안 (B-45) =====
+
+    /** 일괄 초안 대상 1건 — '이미 쓴 필드' 판정에 폼 값이 필요하므로 fieldId를 함께 나른다. */
+    data class BulkDraftTarget(val fieldId: Long, val spec: FieldSpec)
+
+    /**
+     * 일괄 초안에서 빠진 사유 — 교정 경로가 다르므로 하나로 뭉뚱그리지 않는다.
+     * [CharacterFieldAiSuggester.BulkExcludeCause]와 **같은 축이지만 집합이 다르다**:
+     * 그쪽의 `NARRATIVE_PATH`가 여기서는 대상 그 자체이고, 대신 여기에만 [ALREADY_WRITTEN]이 있다.
+     */
+    enum class BulkDraftExcludeCause(val label: String) {
+        /** 사용자가 필드 관리에서 AI 추천을 끔 */
+        AI_DISABLED("AI 추천 꺼짐"),
+
+        /** 개별만 받기로 둠 — 일괄에서만 빠지고 필드별 ✨은 그대로다(B-80과 같은 규약) */
+        MANUAL_ONLY("개별 추천만"),
+
+        /**
+         * 이미 글이 있다 — **초안은 빈 칸을 채우는 모드다.**
+         * 쓰던 글을 다루는 것(이어쓰기·다듬기·늘리기·줄이기)은 필드별 ✨의 몫이라,
+         * 여기서 덮어쓸 후보를 들이밀지 않는다.
+         */
+        ALREADY_WRITTEN("이미 작성됨")
+    }
+
+    /**
+     * 일괄 초안 대상 산출 결과. [targets] + [excluded]의 합은 **서술형 필드 전체**다 —
+     * 서술형이 아닌 필드는 애초에 이 경로의 관심사가 아니라 어느 쪽에도 담기지 않는다
+     * (담으면 "제외 N개"가 짧은 값 필드까지 세어 고지가 거짓이 된다).
+     */
+    data class BulkDraftTargets(
+        val targets: List<BulkDraftTarget>,
+        val excluded: Map<BulkDraftExcludeCause, List<String>>
+    ) {
+        val excludedCount: Int get() = excluded.values.sumOf { it.size }
+    }
 
     companion object {
         const val DEFAULT_VARIANTS = 2
@@ -240,6 +290,136 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         fun availableModes(currentValue: String): List<Mode> =
             if (currentValue.isBlank()) listOf(Mode.DRAFT)
             else Mode.entries.filter { it.requiresExisting }
+
+        // ===== 일괄 초안 — 대상 규칙과 비용 (B-45) =====
+
+        /**
+         * **일괄 초안 대상 규칙의 단일 소스.**
+         *
+         * 짧은 값 일괄([CharacterFieldAiSuggester.bulkTargetsOf])이 `NARRATIVE_PATH`로 빼던
+         * 그 필드들이 여기서는 대상이다 — **그쪽의 제외는 옳고**(산문을 "근거 한 문장" 틀에
+         * 끼우면 한 줄짜리 값이 나온다), 빠진 뒤 갈 곳이 없던 것이 결함이었다.
+         *
+         * 서술형이 아닌 필드는 [excluded]에도 담지 않는다 — 이 경로의 관심사가 아니다.
+         * 담으면 "제외 N개" 고지가 짧은 값 필드까지 세어 거짓이 된다.
+         */
+        fun bulkDraftTargetsOf(
+            fields: List<FieldDefinition>,
+            currentValues: Map<Long, String>
+        ): BulkDraftTargets {
+            val targets = mutableListOf<BulkDraftTarget>()
+            val excluded = LinkedHashMap<BulkDraftExcludeCause, MutableList<String>>()
+            fun exclude(cause: BulkDraftExcludeCause, name: String) {
+                excluded.getOrPut(cause) { mutableListOf() }.add(name)
+            }
+            for (field in fields) {
+                if (!NarrativeMode.isNarrative(field)) continue
+                val current = currentValues[field.id].orEmpty()
+                when {
+                    FieldAiPolicy.suggestMode(field.config) == FieldAiPolicy.SuggestMode.OFF ->
+                        exclude(BulkDraftExcludeCause.AI_DISABLED, field.name)
+                    !FieldAiPolicy.isBulkTarget(field.config) ->
+                        exclude(BulkDraftExcludeCause.MANUAL_ONLY, field.name)
+                    current.isNotBlank() ->
+                        exclude(BulkDraftExcludeCause.ALREADY_WRITTEN, field.name)
+                    else -> targets.add(BulkDraftTarget(field.id, fieldSpecOf(field, current)))
+                }
+            }
+            return BulkDraftTargets(targets, excluded)
+        }
+
+        /** 제외 요약 한 줄 — "이미 작성됨 2개 · AI 추천 꺼짐 1개". 제외가 없으면 null */
+        fun bulkDraftExcludedSummary(excluded: Map<BulkDraftExcludeCause, List<String>>): String? {
+            val parts = BulkDraftExcludeCause.entries.mapNotNull { cause ->
+                excluded[cause]?.takeIf { it.isNotEmpty() }?.let { "${cause.label} ${it.size}개" }
+            }
+            return if (parts.isEmpty()) null else parts.joinToString(" · ")
+        }
+
+        /**
+         * 제외 상세 — 사유별 필드명 나열. **교정 경로를 병기한다**(변수 제어) — 제외가
+         * 기능 부재로 읽히면 사용자는 그 필드를 영영 손대지 못한다고 여긴다.
+         * 나열 상한은 짧은 값 경로와 같은 값을 쓴다(두 고지가 같은 화면에서 이어 뜬다).
+         */
+        fun bulkDraftExcludedDetailLines(
+            excluded: Map<BulkDraftExcludeCause, List<String>>
+        ): List<String> = BulkDraftExcludeCause.entries.mapNotNull { cause ->
+            val names = excluded[cause]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val shown = names.take(CharacterFieldAiSuggester.MAX_EXCLUDED_NAMES_PER_CAUSE)
+            buildString {
+                append(cause.label).append(' ').append(names.size).append("개: ")
+                append(shown.joinToString(", "))
+                if (names.size > shown.size) append(" 외 ").append(names.size - shown.size).append("개")
+                when (cause) {
+                    BulkDraftExcludeCause.ALREADY_WRITTEN ->
+                        append(" — 필드별 ✨에서 이어쓰기·다듬기로 고칩니다")
+                    BulkDraftExcludeCause.MANUAL_ONLY ->
+                        append(" — 필드별 ✨을 누르면 이 필드도 초안을 받습니다")
+                    BulkDraftExcludeCause.AI_DISABLED ->
+                        append(" — 필드 관리에서 AI 추천을 켜면 대상이 됩니다")
+                }
+            }
+        }
+
+        /**
+         * **일괄 초안의 요청 수 — 필드 하나에 요청 하나다.**
+         *
+         * 짧은 값 일괄([CharacterFieldAiSuggester.requestCountFor])은 여러 필드를 한 요청에
+         * 묶어 *필드 15개 = 요청 1건*이 되지만, 서술형은 필드 하나가 출력 예산을 통째로 쓰므로
+         * 묶을 수 없다. **자릿수가 다르고, 같은 문구로 고지하면 사용자가 비용을 오해한다**
+         * (B-45 백로그 행이 착수 조건으로 건 것이 이것이다).
+         *
+         * 함수가 하는 일이 항등에 가깝지만 **단일 소스로 세운다** — 고지와 실행이 각자 세면
+         * 한쪽만 고쳐졌을 때 *고지된 요청 수와 실제 과금이 어긋난다*(R-4).
+         */
+        fun draftRequestCount(targetCount: Int): Int = targetCount.coerceAtLeast(0)
+
+        /**
+         * 일괄 초안의 필드당 후보 수 — **1개다.**
+         *
+         * 필드별 ✨은 [DEFAULT_VARIANTS]개(2)를 주는데 여기만 1인 것은 비용이 아니라
+         * **검토 부담** 때문이다. 후보는 한 요청 안에서 나오므로 2개로 늘려도 요청 수는
+         * 그대로다 — 대신 필드 5개면 사용자가 고를 것이 10개가 되고, 그 시점에 일괄이
+         * *"한 번에 깔아 두는 것"*이기를 그친다.
+         *
+         * 이것이 원칙 04의 **이중 경로**다: 일괄은 러프하게 깔고(후보 1개), 마음에 안 드는
+         * 필드만 필드별 ✨으로 정밀 조정한다(후보 2개 + 이어쓰기·다듬기). 후보를 더 보고
+         * 싶은 사용자는 그 경로가 이미 있으므로 **여기서 막는 것이 아니다.**
+         *
+         * 곁들여: 후보가 하나면 그 하나가 출력 예산을 통째로 쓰므로 **절단 확률도 가장 낮다.**
+         */
+        const val BULK_DRAFT_VARIANTS = 1
+
+        /**
+         * 초안 1편의 출력 토큰 추정치 — 분량 지시에서 역산한다.
+         *
+         * 근거는 짧은 값 경로의 [CharacterFieldAiSuggester.TOKENS_PER_SUGGESTION](=270,
+         * *키+값+근거 한 문장*)이다. 거기서 키·값·JSON 껍데기를 덜면 **한국어 한 문장 ≈ 80토큰**이
+         * 남고, 그 값에 분량 지시의 문장 수를 곱했다. 상수를 새로 지어내지 않고 이미 이 저장소가
+         * 쓰고 있는 수에 맞춘 것은, **두 경로의 추정이 어긋나면 어느 쪽이 틀렸는지 알 수 없기**
+         * 때문이다. JSON 껍데기 몫으로 각 단계에 여유를 얹었다.
+         *
+         * 정확한 값일 필요는 없다 — 이 수가 하는 일은 [draftFitsBudget] 하나이고,
+         * 그것은 *"이 설정으로 돌리면 잘릴 수 있다"*를 **미리** 말하기 위한 것이다.
+         */
+        fun tokensPerDraft(length: Length): Int = when (length) {
+            Length.SHORT -> 260    // 2~3문장
+            Length.MEDIUM -> 560   // 한 문단(4~6문장)
+            Length.LONG -> 1300    // 두세 문단
+        }
+
+        /**
+         * 이 출력 상한으로 후보 [variants]개를 요청해도 잘리지 않겠는가.
+         *
+         * `false`면 **막지 않고 고지한다** — 추정이지 확정이 아니고, 상한을 낮게 두고도
+         * 짧게 받으면 그만인 사용자가 있다(자율성 우선). 다만 잘린 뒤에 알리면 이미
+         * 결제가 끝났으므로 **실행 전에** 말한다.
+         */
+        fun draftFitsBudget(
+            maxTokens: Int,
+            length: Length,
+            variants: Int = BULK_DRAFT_VARIANTS
+        ): Boolean = maxTokens >= tokensPerDraft(length) * variants.coerceAtLeast(1)
 
         fun buildSystemPrompt(
             creativity: AiCreativity = AiCreativity.DEFAULT

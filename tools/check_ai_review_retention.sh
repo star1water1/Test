@@ -439,7 +439,32 @@ if [ -f "$ORG_SHEET" ] && [ -f "$ORG_VM" ] && [ -f "$ORG_HOST" ]; then
   fi
 fi
 
+# ⑧ **유료 엔진은 뷰가 세우지 못한다** (B-45에서 부류째 잠갔다).
+#
+# ④는 자리마다 *"이 시트가 그 엔진을 부르지 않는가"*를 하나씩 물어 왔다. 그 방식은 **새 시트가
+# 생길 때마다 규칙을 손으로 늘려야 하고**, 늘리는 것을 잊으면 조용히 빠진다(뷰 프로브 대상
+# 목록이 정확히 그렇게 둘을 닷새 놓쳤다 — 2장 검증 요령). 그래서 자리를 세는 대신 **부류를 막는다:**
+# 유료 응답을 내는 엔진은 `ui/**` 어디에서도 직접 세울 수 없고, 반드시 ViewModel을 지난다.
+#
+# 그 자리를 지나야 결과가 `viewModelScope`에서 돌고 LiveData에 보관되어 **회전을 넘는다.**
+# 뷰가 직접 세우면 그 코루틴은 뷰와 함께 죽고, 죽은 자리에 남는 것은 결제 기록뿐이다.
+AI_ENGINES='NarrativeFieldAiWriter|CharacterFieldAiSuggester|FieldLibraryAiOrganizer|ImageBatchTagSuggester|ImageFolderTagSuggester|CharacterNameAiSuggester'
+# 생성자 호출만 본다 — `Foo.bar(` 같은 정적 호출(순수 규칙 함수)은 대상이 아니다.
+# 그쪽은 대상 선별·비용 계산이라 뷰가 불러야 하고, 돈이 나가지 않는다.
+#
+# **ViewModel은 뺀다 — 이 저장소는 ViewModel도 `ui/**` 아래 둔다.** 거기가 바로 이 규칙이
+# *"지나야 한다"*고 말하는 그 자리라, 넣으면 옳은 코드를 위반으로 잡는다(실측: 셋이 걸렸다).
+engine_ctor=$(grep -rnE "(^|[^.A-Za-z0-9_])($AI_ENGINES)\(" "$SRC/ui" --include=*.kt 2>/dev/null \
+  | grep -v 'ViewModel\.kt:' \
+  | grep -vE ':[0-9]+:\s*(\*|//)' || true)
+if [ -n "$engine_ctor" ]; then
+  echo "  ✗ 뷰가 유료 AI 엔진을 직접 세웁니다 — ViewModel을 지나야 회전을 넘깁니다:"
+  printf '%s\n' "$engine_ctor" | sed 's/^/      /'
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
+  echo "  ✓ 유료 엔진은 뷰가 세우지 못한다 — 입구가 ViewModel뿐이다 (B-45)"
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
   echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"

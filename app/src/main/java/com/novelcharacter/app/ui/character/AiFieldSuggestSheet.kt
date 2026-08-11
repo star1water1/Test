@@ -131,6 +131,19 @@ object AiFieldSuggestSheet {
         /** 폼의 라이브 이미지 목록 (A-7) — 첨부 줄이 여기서 고른다 */
         imagePaths: List<String> = emptyList(),
         representativePath: String? = null,
+        /**
+         * 서술형 일괄 초안으로 넘어가는 길 (B-45). null이면 그 버튼을 띄우지 않는다.
+         *
+         * **보충(랜덤) 탭이 null인 것은 일부러다.** 그 화면은 `aiNarrativeBulkResult`를
+         * 관측하지 않으므로, 버튼만 달면 **유료 실행이 끝나고도 검토 창이 뜨지 않는다** —
+         * 눌렀는데 아무 일도 일어나지 않고 돈만 나가는 그 모양이다(B-144가 잡은 부류).
+         * 잇는다면 **관측을 먼저 달고** 그다음에 이 인자를 넘긴다(백로그 B-184).
+         *
+         * **여기에 붙이는 이유:** 서술형이 일괄에서 빠진다는 사실을 사용자가 처음 아는 자리가
+         * 이 창의 제외 고지다. 종전에는 *"필드별 ✨에서 작성합니다"*라고 **알려 주기만 하고**
+         * 갈 길은 주지 않아, 필드 수만큼 ✨을 반복하는 수밖에 없었다(B-45가 적은 결함).
+         */
+        onNarrativeBulk: (() -> Unit)? = null,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -140,6 +153,12 @@ object AiFieldSuggestSheet {
         // 조립하면 두 화면이 갈린다 (A-1: AI 꺼짐·서술형·계산 필드가 사유별로 제외된다).
         val currentValues = currentValuesByFieldId(formBuilder)
         val bulk = CharacterFieldAiSuggester.bulkTargetsOf(formBuilder.fieldDefinitions, currentValues)
+        // 서술형 일괄 초안으로 넘길 것이 몇 개인가 (B-45) — 대상 규칙은 그쪽이 단일 소스라
+        // 여기서 조건을 다시 적지 않는다(적으면 두 화면이 갈린다).
+        val narrativeCount = if (onNarrativeBulk == null) 0 else
+            com.novelcharacter.app.ai.NarrativeFieldAiWriter
+                .bulkDraftTargetsOf(formBuilder.fieldDefinitions, currentValues).targets.size
+
         if (bulk.targets.isEmpty()) {
             // 대상 0이어도 왜 0인지는 밝힌다 — 전부 꺼짐/서술형일 때 침묵하면 기능 고장으로 읽힌다
             val message = buildString {
@@ -150,6 +169,16 @@ object AiFieldSuggestSheet {
             MaterialAlertDialogBuilder(context)
                 .setMessage(message)
                 .setPositiveButton(R.string.confirm, null)
+                .apply {
+                    // **짧은 값 대상이 0인데 서술형은 있는 경우가 이 기능의 대표 사례다** —
+                    // 성격·배경만 채워 넣은 폼이 정확히 그 모양이다. 여기서 길을 주지 않으면
+                    // 사용자는 "AI 추천이 안 된다"로 읽고 창을 닫는다.
+                    if (narrativeCount > 0) {
+                        setNeutralButton(
+                            fragment.getString(R.string.ai_narrative_bulk_entry, narrativeCount)
+                        ) { _, _ -> onNarrativeBulk?.invoke() }
+                    }
+                }
                 .show()
             return
         }
@@ -256,6 +285,15 @@ object AiFieldSuggestSheet {
             .setView(panel)
             .setPositiveButton(R.string.ai_field_run, null)
             .setNegativeButton(R.string.cancel, null)
+            .apply {
+                // 서술형이 이 일괄에서 빠진다는 사실을 위 제외 고지가 말한 그 자리에서
+                // 갈 길도 함께 준다 (B-45).
+                if (narrativeCount > 0) {
+                    setNeutralButton(
+                        fragment.getString(R.string.ai_narrative_bulk_entry, narrativeCount)
+                    ) { _, _ -> onNarrativeBulk?.invoke() }
+                }
+            }
             .create()
         dialog.setOnShowListener {
             val runButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
