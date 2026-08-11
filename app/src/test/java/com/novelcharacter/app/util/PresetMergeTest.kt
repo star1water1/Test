@@ -437,4 +437,23 @@ class PresetMergeTest {
         assertEquals(config, conv.fields[0].config)
         assertTrue(conv.configLoss.isEmpty())
     }
+
+    @Test
+    fun `같은 자리가 겹치면 손실 고지도 먼저 온 것을 따른다`() {
+        // buildPlan은 같은 (entityType, key)를 **먼저 온 것으로** 접는다. 손실 고지가
+        // 그 규칙과 다르면 **버려진 필드의 손실이 남은 필드의 줄에 붙어**, 잃는 것이 없는
+        // 항목에 "설정이 빠집니다"가 뜬다 — 미리보기가 사용자에게 거짓을 말하는 자리다.
+        val sources = listOf(
+            // 먼저 온 것: 이미 사건 필드라 변환도 손실도 없다.
+            field("place", entityType = FieldDefinition.ENTITY_EVENT, config = """{"label":"장소"}"""),
+            // 나중 온 것: 캐릭터 필드라 변환되고 semanticRole을 잃는다 — 그런데 접혀서 버려진다.
+            field("place", config = """{"semanticRole":"age"}""")
+        )
+        val conv = PresetMerge.convertEntityType(sources, FieldDefinition.ENTITY_EVENT)
+        val plan = PresetMerge.buildPlan(conv.fields, emptyList())
+
+        assertEquals(1, plan.items.size)
+        // 남은 것은 손실이 없는 쪽이므로 그 줄에 붙을 고지도 없어야 한다.
+        assertTrue(conv.configLoss[plan.items[0].itemKey].isNullOrEmpty())
+    }
 }

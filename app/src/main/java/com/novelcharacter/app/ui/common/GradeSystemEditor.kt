@@ -152,7 +152,14 @@ object GradeSystemEditor {
                 .setNegativeButton(R.string.cancel, null)
                 .create()
 
+            /**
+             * 저장이 도는 중인가 — **두 번 눌러도 한 번만 저장한다.**
+             * 이 창은 저장이 끝난 뒤에야 닫히므로 그사이 버튼이 살아 있다.
+             */
+            var saving = false
+
             dialog.setValidatedPositiveButton {
+                if (saving) return@setValidatedPositiveButton false
                 val name = nameEdit.text.toString().trim()
                 if (name.isEmpty()) {
                     nameEdit.showInlineError(ctx.getString(R.string.grade_system_name_required_error))
@@ -186,6 +193,7 @@ object GradeSystemEditor {
                     name = name,
                     gradesJson = GradeSystemRef.gradesToJson(outcome.grades)
                 )
+                saving = true
                 scope.launch {
                     val saved = try {
                         repository.saveSystem(system, renames)
@@ -196,7 +204,11 @@ object GradeSystemEditor {
                             Toast.LENGTH_LONG
                         ).show()
                         null
-                    } ?: return@launch
+                    }
+                    saving = false
+                    // **실패하면 창을 열어 둔다** — 적어 둔 등급 표가 그대로 남아야 다시 누를 수 있다(R-27).
+                    if (saved == null) return@launch
+                    dialog.dismiss()
                     if (existing != null && saved.propagatedFields > 0) {
                         Toast.makeText(
                             ctx, ctx.getString(R.string.grade_system_saved_toast, name, saved.propagatedFields),
@@ -219,7 +231,16 @@ object GradeSystemEditor {
                     // 고른 상태로 돌아가야 하고, code는 저장 뒤에야 확정된다.
                     onSaved(saved.system)
                 }
-                true
+                // **여기서 닫지 않는다** — 저장이 끝난 뒤 위 코루틴이 닫는다.
+                //
+                // 지금 닫으면 저장은 `scope`에 매달린 채 창만 사라진다. 그 스코프가 화면 수명을
+                // 타므로(호출부가 `viewLifecycleOwner.lifecycleScope`·`lifecycleScope`를 넘긴다),
+                // 저장을 누른 직후 회전·이동으로 화면이 사라지면 **코루틴이 취소돼 체계가
+                // 저장되지 않는다.** 오류도 안 뜨므로 사용자는 저장된 줄 안다(조용한 유실).
+                // 같은 자리를 이 저장소가 이미 한 번 겪었다(로드맵 9판 — 프리셋 저장).
+                // 비동기 완료 시점에 창을 직접 닫는 것은 `FieldEditDialog`의 타입 변경 영향
+                // 분석이 세워 둔 규약과 같다.
+                false
             }
             dialog.show()
         }

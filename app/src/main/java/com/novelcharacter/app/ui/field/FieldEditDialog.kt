@@ -1354,8 +1354,6 @@ class FieldEditDialog : DialogFragment() {
     /**
      * 등급 행 추가 (B-69) — 구간 행(addBinRangeRow)과 같은 방식의 동적 행.
      * @param lockedLabel 체계 참조 중(U-1)에는 라벨이 체계의 것이라 편집·삭제를 잠근다(R-24).
-     */
-    /**
      * @param systemDefault 체계가 정한 이 등급의 기본 숫자. null이면 독자 표라 '재정의'라는
      *   말 자체가 성립하지 않는다(B-71 ②).
      */

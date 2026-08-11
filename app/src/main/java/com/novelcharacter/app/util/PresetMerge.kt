@@ -181,26 +181,37 @@ object PresetMerge {
         val fields = ArrayList<FieldDefinition>(sourceFields.size)
         val blocked = ArrayList<FieldDefinition>()
         val configLoss = LinkedHashMap<String, List<String>>()
+        // **`buildPlan`이 같은 자리를 접을 때 쓰는 규칙을 여기서도 그대로 쓴다 — 먼저 온 것이
+        // 이긴다.** 종류를 한쪽으로 모으면 서로 다른 종류였던 둘이 **같은 자리로 접히는데**
+        // (캐릭터 '장소'와 사건 '장소'), 두 규칙이 갈리면 *버려진 필드의 손실*이 *남은 필드의
+        // 줄*에 붙어 잃는 것이 없는 항목에 "설정이 빠집니다"가 뜬다 — 미리보기의 거짓말이다.
+        val seen = HashSet<String>()
         for (source in sourceFields) {
             if (source.entityType == targetEntityType) {
                 // 바뀌는 것이 없다 — 오늘의 경로 그대로다. 허용 타입도 묻지 않는다(①).
+                // **접힘에는 함께 센다** — 이쪽이 먼저 오면 뒤엣것의 손실은 기록되지 않는다.
+                seen.add(itemKey(targetEntityType, source.key))
                 fields.add(source)
                 continue
             }
             if (source.type !in allowedTypes) {
+                // 막힌 것은 심기지 않으므로 접힘 대상이 아니다 — `seen`에 넣지 않는다.
                 blocked.add(source)
                 continue
             }
-            val lost = FieldConfigTransfer.droppedKeys(
-                source.config, source.entityType, targetEntityType
-            )
             val converted = source.copy(
                 entityType = targetEntityType,
                 config = FieldConfigTransfer.demoteAcrossEntityType(
                     source.config, source.entityType, targetEntityType
                 )
             )
-            if (lost.isNotEmpty()) configLoss[itemKey(targetEntityType, source.key)] = lost
+            val key = itemKey(targetEntityType, source.key)
+            if (seen.add(key)) {
+                val lost = FieldConfigTransfer.droppedKeys(
+                    source.config, source.entityType, targetEntityType
+                )
+                if (lost.isNotEmpty()) configLoss[key] = lost
+            }
             fields.add(converted)
         }
         return Conversion(fields, blocked, configLoss)
