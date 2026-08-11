@@ -810,7 +810,7 @@ class WorldPackageImporter(context: Context) {
         }
         if (duplicateAxesSkipped > 0) warnings.add("이름이 겹치는 대결 축 ${duplicateAxesSkipped}건 제외")
         if (demotedBasisAxes > 0) {
-            warnings.add("기준 축이 둘 이상이라 ${demotedBasisAxes}개의 기준 표식을 내렸습니다 (세계관당 하나만 켤 수 있습니다)")
+            warnings.add("기준 축이 둘 이상이라 ${demotedBasisAxes}개의 기준 표식을 내렸습니다 (같은 대상끼리는 하나만 켤 수 있습니다)")
         }
         if (droppedDuelGradeRefs > 0) {
             warnings.add("패키지에 없는 대결 축을 가리키던 필드 ${droppedDuelGradeRefs}개의 등급 산정 설정을 걷어냈습니다 (등급 표는 그대로입니다)")

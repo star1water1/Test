@@ -122,20 +122,26 @@ object WorldPackageDuels {
     data class AxesResult(val axes: List<DuelAxis>, val demotedBasisAxes: Int)
 
     /**
-     * 가져올 축을 삽입 전에 다듬는다 — **기준 축은 세계관당 하나뿐**이라는 불변식을 세운다.
+     * 가져올 축을 삽입 전에 다듬는다 — **기준 축은 대상 종류마다 하나뿐**이라는 불변식을 세운다.
      *
      * 둘이 켜진 채로 들어오면 대표 이미지 추첨이 어느 축을 따르는지 **사용자가 알 길이 없다**
      * ([DuelAxis.isBasisAxis]). 첫 축만 남기는 것은 순서가 곧 사용자가 보는 차례이기 때문이고,
      * **내린 수를 세는 것이 이 함수의 절반**이다(조용히 고치면 사용자는 자기가 켜 둔 것이
      * 왜 꺼졌는지 모른다).
+     *
+     * **[DuelAxis.targetType]마다 따로 세는 것이 요점이다** — 저장소가 지키는 범위가 그것이고
+     * (`DuelAxisDao.clearBasisExcept(universeId, targetType, …)`), 세계관 하나로 뭉쳐 세면
+     * **뜻 없는 표식이 뜻 있는 표식을 밀어낸다.** 캐릭터 축의 이 표식은 소비처가 이미지 축만
+     * 찾으므로 아무 일도 하지 않는데(그래도 *"사용자가 적은 것을 버리지 않는다"*는 이유로
+     * 지우지 않는다 — 엔티티 주석), 그것이 먼저 오는 패키지에서는 **이미지 축의 진짜 기준이
+     * 내려간다.** 그러면 받아온 쪽의 대표 그림 추첨이 조용히 종전처럼 돌아간다.
      */
     fun normalizeImportedAxes(axes: List<DuelAxis>): AxesResult {
-        var seenBasis = false
+        val seenBasisTargets = HashSet<String>()
         var demoted = 0
         val normalized = axes.map { axis ->
             if (!axis.isBasisAxis) return@map axis
-            if (!seenBasis) {
-                seenBasis = true
+            if (seenBasisTargets.add(axis.targetType)) {
                 axis
             } else {
                 demoted++

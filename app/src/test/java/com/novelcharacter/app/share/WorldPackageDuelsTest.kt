@@ -153,7 +153,7 @@ class WorldPackageDuelsTest {
     // ── 기준 축 유일성 ──
 
     @Test
-    fun `기준 축이 둘이면 첫 하나만 남기고 센다`() {
+    fun `같은 종류의 기준 축이 둘이면 첫 하나만 남기고 센다`() {
         val result = WorldPackageDuels.normalizeImportedAxes(
             listOf(
                 axis(1L, "AX-1", basis = true),
@@ -162,6 +162,35 @@ class WorldPackageDuelsTest {
             )
         )
         assertEquals(listOf(true, false, false), result.axes.map { it.isBasisAxis })
+        assertEquals(1, result.demotedBasisAxes)
+    }
+
+    @Test
+    fun `기준 축은 대상 종류마다 따로 센다`() {
+        // **뜻 없는 표식이 뜻 있는 표식을 밀어내지 않아야 한다.** 캐릭터 축의 기준 표식은
+        // 소비처가 이미지 축만 찾으므로 아무 일도 하지 않는데, 세계관 하나로 뭉쳐 세면 그것이
+        // 먼저 온 패키지에서 **이미지 축의 진짜 기준이 내려간다** — 받아온 쪽의 대표 그림
+        // 추첨이 조용히 종전처럼 돌아간다.
+        val result = WorldPackageDuels.normalizeImportedAxes(
+            listOf(
+                axis(1L, "AX-1", basis = true),
+                axis(2L, "AX-2", name = "아름다움", target = DuelAxis.TARGET_IMAGE, basis = true)
+            )
+        )
+        assertEquals(listOf(true, true), result.axes.map { it.isBasisAxis })
+        assertEquals(0, result.demotedBasisAxes)
+    }
+
+    @Test
+    fun `같은 종류에 기준 축이 둘이면 내린다`() {
+        val result = WorldPackageDuels.normalizeImportedAxes(
+            listOf(
+                axis(1L, "AX-1", name = "가", target = DuelAxis.TARGET_IMAGE, basis = true),
+                axis(2L, "AX-2", name = "나", target = DuelAxis.TARGET_IMAGE, basis = true),
+                axis(3L, "AX-3", name = "다", basis = true)
+            )
+        )
+        assertEquals(listOf(true, false, true), result.axes.map { it.isBasisAxis })
         assertEquals(1, result.demotedBasisAxes)
     }
 
