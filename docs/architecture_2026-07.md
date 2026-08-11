@@ -273,6 +273,14 @@ AI 정책(`FieldAiPolicy`).
 > 앞에 있어 빈 DB 복원에서 값이 통째로 버려질 참이었다 — 새 시트가 필드 열을 실으면
 > **그 시트가 언제 처리되는지**부터 확인할 것.
 
+> **AI 추천 경로도 종류마다 연다 (2026.08.11, B-43).** 지금 서 있는 축은 **캐릭터·사건 둘**이고
+> 작품은 아직 없다(확-3 잔여). 여는 데 드는 자리는 **셋뿐이다**: ⓐ `ai/`에 그 종류의 프롬프트
+> (`FieldPromptSource` 구현 — 컨텍스트 블록만 새로 쓰고 `[추천할 필드]` 절은
+> `CharacterFieldAiSuggester.appendTargetSection`을 부른다) ⓑ 화면의 ✨ 진입 + 검토 창
+> ⓒ `FieldEditDialog.AI_CAPABLE_ENTITY_TYPES`에 한 줄. **실행 규칙(청킹·부분 실패 격리·결손 0
+> 보장·토큰 집계)은 베끼지 않는다** — 그쪽이 갈리면 한쪽 축에서만 유료 응답이 조용히 사라진다.
+> 세는 법: `ls app/src/main/java/com/novelcharacter/app/ai/*AiSuggester.kt`.
+
 ### 5-3. 새 통계 분석
 
 **적응적 통계 원칙**(CLAUDE.md)상 분석 항목은 필드 구성에서 **동적으로 생성**된다.
