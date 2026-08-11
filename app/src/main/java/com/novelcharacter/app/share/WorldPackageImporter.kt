@@ -159,6 +159,9 @@ class WorldPackageImporter(context: Context) {
         val factions: Int,
         val factionMemberships: Int,
         val factionRelationships: Int,
+        val duelAxes: Int,
+        val duelMatches: Int,
+        val duelVerdicts: Int,
         val libraryEntries: Int,
         val nameBankNew: Int,
         val nameBankLinked: Int,
@@ -184,6 +187,12 @@ class WorldPackageImporter(context: Context) {
         }
         if (version < 3) {
             warnings.add(appContext.getString(com.novelcharacter.app.R.string.world_package_legacy_v2, version))
+        }
+        // B-118의 ⓐ(고지)가 여기서 값을 한다 — 축을 담게 된 뒤에도 **옛 패키지를 읽을 때**
+        // 그 패키지에 대결이 없다는 것을 말해 줄 자리가 필요하다(확정 15번: *"ⓐ는 ⓑ의 폴백
+        // 경로에 편입된다 — 같은 코드가 두 번 값을 한다"*).
+        if (version < 6) {
+            warnings.add(appContext.getString(com.novelcharacter.app.R.string.world_package_legacy_v5, version))
         }
         for ((entry, n) in contents.droppedRows) {
             warnings.add("형식 이탈 행 제외: $entry ${n}건")
@@ -217,9 +226,27 @@ class WorldPackageImporter(context: Context) {
         val nameBankReg = WorldPackageCodes.Registry(existingNameBank.map { it.code })
         val entryReg = WorldPackageCodes.Registry(db.fieldValueEntryDao().getAllList().map { it.code })
         val gradeSystemReg = WorldPackageCodes.Registry(db.gradeSystemDao().getAllList().map { it.code })
+        // 대결 표 셋(v6 — B-118)은 **전량이 아니라 겹치는 것만** 읽는다. 판 표는 이 앱에서
+        // 가장 커질 수 있는 표라(수만 행) 전량 조회를 붙이면 가져오기 비용이 *기기에 쌓인 양*에
+        // 비례해 늘고, 알아야 하는 것은 *이 패키지가 원하는 코드가 겹치는가* 하나다.
+        // 세 벌로 적은 것은 일부러다 — `share/`는 로컬 컴파일 증명이 없는 계층이라
+        // (검증은 CI뿐) 여기서는 짧은 것보다 **읽으면 아는 것**을 고른다.
+        // IN 청크는 저장소 공통 관례(900)를 따른다.
+        val wantedAxisCodes = codesToCheck(contents.duelAxes.map { it.code })
+        val duelAxisReg = WorldPackageCodes.Registry(
+            wantedAxisCodes.chunked(900).flatMap { db.duelAxisDao().getExistingCodes(it) }
+        )
+        val wantedMatchCodes = codesToCheck(contents.duelMatches.map { it.code })
+        val duelMatchReg = WorldPackageCodes.Registry(
+            wantedMatchCodes.chunked(900).flatMap { db.duelMatchDao().getExistingCodes(it) }
+        )
+        val wantedVerdictCodes = codesToCheck(contents.duelVerdicts.map { it.code })
+        val duelVerdictReg = WorldPackageCodes.Registry(
+            wantedVerdictCodes.chunked(900).flatMap { db.duelCounterVerdictDao().getExistingCodes(it) }
+        )
         val registries = listOf(
             uniReg, novelReg, charReg, eventReg, scReg, relReg, relChangeReg, factionReg, nameBankReg, entryReg,
-            gradeSystemReg
+            gradeSystemReg, duelAxisReg, duelMatchReg, duelVerdictReg
         )
 
         val pkgName: String = contents.universe.name
@@ -283,12 +310,34 @@ class WorldPackageImporter(context: Context) {
         val novelImagePaths = contents.novels.associate { it.id to restoreImagePaths(it.imagePaths, "novel_${it.id}_").json }
         val charImagePaths = contents.characters.associate { it.id to restoreImagePaths(it.imagePaths, "${it.id}_") }
 
+        // 이미지 축의 참가자는 **경로**다(B-118) — 판·상성이 그 경로를 따라가려면 옛 경로 →
+        // 이 기기의 경로 표가 있어야 한다. 두 갈래를 함께 담는다:
+        //   · 복사된 장 → `renames`가 그대로 답이다.
+        //   · 같은 기기 재가져오기로 **원 경로를 그대로 재사용한 장** → `renames`에 없다
+        //     (바뀐 것이 없으니 그 표의 뜻대로 비어 있는 것이 맞다). 그 자리는 새 목록에
+        //     옛 경로가 그대로 들어 있으므로 **제자리 대응**으로 담는다.
+        // 담기지 않은 경로(장을 못 찾았거나 이미지 미포함 패키지)는 그래서 미해석이 되고,
+        // 매퍼가 그 판을 세어 알린다 — 조용히 남의 그림에 붙는 것보다 낫다.
+        val imagePathRemap = HashMap<String, String>()
+        for (restored in charImagePaths.values) {
+            imagePathRemap.putAll(restored.renames)
+            for (path in com.novelcharacter.app.util.CharacterRepresentativeImage.paths(restored.json)) {
+                imagePathRemap.putIfAbsent(path, path)
+            }
+        }
+
         var importedUniverseId = 0L
         var danglingRefs = 0
         var crossUniverseRelsDropped = 0
         var detachedEvents = 0
         var duplicateDefsSkipped = 0
         var demotedGradeRefs = 0
+        var droppedDuelGradeRefs = 0
+        var duplicateAxesSkipped = 0
+        var demotedBasisAxes = 0
+        var unresolvedDuelMatches = 0
+        var unresolvedDuelVerdicts = 0
+        var duplicateDuelVerdicts = 0
         var nameBankSkippedUnrelated = 0
         var nameBankLinkConflicts = 0
         var unresolvedFactionRels = 0
@@ -326,6 +375,58 @@ class WorldPackageImporter(context: Context) {
                     db.gradeSystemDao().insert(gs.copy(id = 0, universeId = newUniverseId, code = claimed))
                 }
 
+                // 1.6. 대결 축 (v6 — B-118). **필드 정의보다 먼저** 넣는 이유가 등급 체계와 같다:
+                //      필드 config의 `duelGrade.axisCode`가 축을 code로 가리키므로, 정의를 쓸 때
+                //      새 code를 이미 알고 있어야 한다.
+                //      기준 축 유일성은 삽입 전에 순수 계층이 세운다([WorldPackageDuels]) —
+                //      저장소를 지나지 않는 삽입이라 그 불변식을 여기서 지켜 줄 것이 없다.
+                val axesToInsert = WorldPackageDuels.normalizeImportedAxes(contents.duelAxes)
+                demotedBasisAxes = axesToInsert.demotedBasisAxes
+                val axisIdByOldId = HashMap<Long, Long>()
+                val axisTargetTypeByOldId = HashMap<Long, String>()
+                val axisCodeRemap = HashMap<String, String>()
+                val packageAxisCodes = HashSet<String>()
+                val seenAxisKeys = HashSet<Pair<String, String>>()
+                for (axis in axesToInsert.axes) {
+                    // 유니크 (universeId, targetType, name) 방어 — 손편집 패키지가 같은 축을 두 번
+                    // 담으면 삽입이 예외로 죽고, 트랜잭션이 하나라 세계관 전체가 들어오지 못한다.
+                    if (!seenAxisKeys.add(axis.targetType to axis.name)) {
+                        duplicateAxesSkipped++
+                        continue
+                    }
+                    val claimed = duelAxisReg.claim(axis.code)
+                    if (claimed != axis.code) axisCodeRemap[axis.code] = claimed
+                    packageAxisCodes.add(axis.code)
+                    val newId = db.duelAxisDao().insert(
+                        axis.copy(id = 0, universeId = newUniverseId, code = claimed)
+                    )
+                    axisIdByOldId[axis.id] = newId
+                    axisTargetTypeByOldId[axis.id] = axis.targetType
+                }
+
+                // 캐릭터 code는 **삽입보다 먼저 확정한다**(4번에서 그대로 쓴다). 필드 정의가
+                // `duelGrade.lastApplied`의 배정 키(캐릭터 code)를 함께 옮겨야 하는데, 그 표가
+                // 정의를 쓰는 시점에 있어야 하기 때문이다. claim 순서는 종전과 같아
+                // 어느 코드가 재발급되는지도 그대로다.
+                // **자리(순서)로 들고 id로 들지 않는다.** `Character.code`는 유니크 인덱스라,
+                // 손편집 패키지가 같은 `id`를 둘에 적어 두면 id로 담은 표는 둘에게 **같은 code를
+                // 주고** 삽입이 예외로 죽는다 — 트랜잭션이 하나라 세계관 전체가 들어오지 못한다.
+                // (종전에는 각자 claim했으므로 그 입력에서도 죽지 않았다.)
+                val claimedCharCodes = contents.characters.map { charReg.claim(it.code) }
+                val charCodeRemap = HashMap<String, String>()
+                val ambiguousCharCodes = HashSet<String>()
+                contents.characters.forEachIndexed { index, character ->
+                    val oldCode: String? = character.code
+                    if (oldCode.isNullOrBlank()) return@forEachIndexed
+                    if (charCodeRemap.put(oldCode, claimedCharCodes[index]) != null) {
+                        ambiguousCharCodes.add(oldCode)
+                    }
+                }
+                // 같은 code를 둘이 들고 온 패키지에서는 그 code가 **누구인지 알 수 없다.**
+                // 표에서 지우면 그 코드를 가리키는 판·상성이 제외 + 계수된다 — 아무나 골라
+                // 붙이는 것보다 낫다(R-1: 오배정은 생략보다 나쁘다).
+                for (code in ambiguousCharCodes) charCodeRemap.remove(code)
+
                 // 2. 필드 정의 (전 entityType — v3). 유니크 (universeId, entityType, key) 방어적 중복 제거.
                 //    등급 체계 참조는 재발급 표로 다시 잇고, 패키지에 없는 체계를 가리키면
                 //    독자 표로 내려앉힌다(실효 표가 config에 있어 필드는 그대로 동작한다 — 관대 수용).
@@ -345,11 +446,28 @@ class WorldPackageImporter(context: Context) {
                             GradeSystemRef.demote(fd.config)
                         }
                     }
-                    // 대결 등급 산정(B-113)은 **재발급할 표가 없다** — 패키지는 대결 축을
-                    // 담지 않으므로 새 세계관에 그 순위 자체가 없다. 그런데 축 code는 전역
-                    // 유니크라 남겨 두면 이 기기의 **다른 세계관 축**을 정확히 집어낸다.
-                    // 등급 체계처럼 분기할 것이 없어 언제나 걷어낸다.
-                    val config = DuelGradeRef.remove(gradeResolved)
+                    // 대결 등급 산정(B-113)은 이제 **재발급할 표가 있다**(v6 — B-118: 패키지가
+                    // 축을 담는다). 그래서 등급 체계와 **같은 3분기**가 된다:
+                    //   · 가리키는 축이 이 패키지에 함께 왔다 → 새 code로 다시 잇는다.
+                    //     배정 흔적의 캐릭터 code도 같은 자리에서 옮긴다(둘은 한 몸이다 —
+                    //     [DuelGradeRef.remapCodes]가 그 이유를 적었다).
+                    //   · 안 왔다(v5 이하 패키지 · 다른 세계관 축을 가리키던 config) → 걷어낸다.
+                    //     축 code는 전역 유니크라 남겨 두면 이 기기의 **다른 세계관 축**을
+                    //     정확히 집어낸다 — 못 찾는 것이 아니라 오배정이다(R-1 · R-35).
+                    //   · 애초에 대결과 무관한 필드 → 손대지 않는다.
+                    // **걷어낸 수를 센다.** 형제인 등급 체계 강등은 세어 경고하는데 이쪽은 세지
+                    // 않고 있었다(B-118 등재가 지적한 자리) — 사용자가 세계관을 옮긴 뒤 등급이
+                    // 왜 안 나오는지 알 길이 없었다.
+                    val duelRefCode = DuelGradeRef.axisCodeFromConfig(gradeResolved)
+                    val config = when {
+                        duelRefCode == null -> gradeResolved
+                        duelRefCode in packageAxisCodes ->
+                            DuelGradeRef.remapCodes(gradeResolved, axisCodeRemap, charCodeRemap)
+                        else -> {
+                            droppedDuelGradeRefs++
+                            DuelGradeRef.remove(gradeResolved)
+                        }
+                    }
                     defIdMap[fd.id] =
                         db.fieldDefinitionDao().insert(fd.copy(id = 0, universeId = newUniverseId, config = config))
                 }
@@ -372,7 +490,7 @@ class WorldPackageImporter(context: Context) {
 
                 // 4. 캐릭터
                 val charIdMap = HashMap<Long, Long>()
-                for (character in contents.characters) {
+                contents.characters.forEachIndexed { index, character ->
                     val mappedNovel = character.novelId?.let { old ->
                         novelIdMap[old].also { if (it == null) danglingRefs++ }
                     }
@@ -381,7 +499,11 @@ class WorldPackageImporter(context: Context) {
                         character.copy(
                             id = 0,
                             novelId = mappedNovel,
-                            code = charReg.claim(character.code),
+                            // code는 위(1.6 뒤)에서 이미 claim했다 — 필드 정의가 그 표를 먼저
+                            // 봐야 했기 때문이다. 여기서 다시 claim하면 **같은 캐릭터에 코드가
+                            // 두 번 발급되어** 판·상성이 가리키는 코드와 갈린다.
+                            // **자리로 집는다** — id는 손편집 패키지에서 겹칠 수 있다.
+                            code = claimedCharCodes[index],
                             // v47 이전 패키지에는 이 키가 없어 Gson이 null을 주입한다(R-2).
                             // **명시로 넘겨야 한다** — 넘기지 않으면 기본값으로 채워지면서
                             // Kotlin이 거는 copy 인자 null 검사에 그대로 걸려 죽는다.
@@ -602,6 +724,27 @@ class WorldPackageImporter(context: Context) {
                     }
                 }
 
+                // 17-b. 대결 판·상성 (v6 — B-118). 축은 1.6에서 이미 섰고, 여기 오는 이유는
+                //       **참가자**다: 캐릭터 code는 위에서 확정됐고 이미지 경로는 복사가 끝나
+                //       새 경로가 정해진 뒤여야 한다. 재배선과 계수는 [WorldPackageDuels]가 한다.
+                val duelResult = WorldPackageDuels.fromPortable(
+                    matches = contents.duelMatches,
+                    verdicts = contents.duelVerdicts,
+                    axisIdByOldId = axisIdByOldId,
+                    axisTargetTypeByOldId = axisTargetTypeByOldId,
+                    characterCodeRemap = charCodeRemap,
+                    imagePathRemap = imagePathRemap
+                )
+                unresolvedDuelMatches = duelResult.unresolvedMatches
+                unresolvedDuelVerdicts = duelResult.unresolvedVerdicts
+                duplicateDuelVerdicts = duelResult.duplicateVerdicts
+                // code는 삽입 직전에 claim한다 — 매퍼는 순수 계층이라 이 기기의 사용 중 코드를
+                // 모른다(세력 간 관계도 같은 모양이다: 매퍼가 행을 만들고 배선이 코드를 준다).
+                val duelMatchRows = duelResult.matches.map { it.copy(code = duelMatchReg.claim(it.code)) }
+                duelMatchRows.chunked(CHUNK).forEach { db.duelMatchDao().insertAll(it) }
+                val duelVerdictRows = duelResult.verdicts.map { it.copy(code = duelVerdictReg.claim(it.code)) }
+                duelVerdictRows.chunked(CHUNK).forEach { db.duelCounterVerdictDao().insertAll(it) }
+
                 // 18. 이미지 연동 참조 재배선 (세계관·작품의 select_character/select_novel 모드)
                 val uniImageChar = oldUniverse.imageCharacterId?.let { charIdMap[it] }
                 val uniImageNovel = oldUniverse.imageNovelId?.let { novelIdMap[it] }
@@ -638,6 +781,9 @@ class WorldPackageImporter(context: Context) {
                     factions = factionIdMap.size,
                     factionMemberships = membershipRows.size,
                     factionRelationships = factionRelResult.relationships.size,
+                    duelAxes = axisIdByOldId.size,
+                    duelMatches = duelMatchRows.size,
+                    duelVerdicts = duelVerdictRows.size,
                     libraryEntries = insertedLibraryEntries,
                     nameBankNew = nameBankNew,
                     nameBankLinked = nameBankLinked,
@@ -660,6 +806,25 @@ class WorldPackageImporter(context: Context) {
         if (duplicateDefsSkipped > 0) warnings.add("중복 필드 정의 ${duplicateDefsSkipped}건 제외")
         if (demotedGradeRefs > 0) {
             warnings.add("패키지에 없는 등급 체계를 가리키던 필드 ${demotedGradeRefs}개를 독자 등급 표로 전환했습니다 (표 내용은 그대로입니다)")
+        }
+        // 대결(v6 — B-118). 다섯 다 **뜻이 다른 사실**이라 한 줄로 합치지 않는다:
+        // 참가자를 잇지 못한 것 / 같은 관계가 두 번인 것 / 축이 겹친 것 / 기준 표식을 내린 것 /
+        // 등급 산정 약속을 걷어낸 것. 합치면 사용자가 무엇을 고쳐야 하는지 알 수 없다.
+        if (unresolvedDuelMatches > 0) {
+            warnings.add("참가자를 잇지 못한 대결 기록 ${unresolvedDuelMatches}건 제외")
+        }
+        if (unresolvedDuelVerdicts > 0) {
+            warnings.add("참가자를 잇지 못한 대결 상성 ${unresolvedDuelVerdicts}건 제외")
+        }
+        if (duplicateDuelVerdicts > 0) {
+            warnings.add("같은 관계가 두 번 담긴 대결 상성 ${duplicateDuelVerdicts}건 제외")
+        }
+        if (duplicateAxesSkipped > 0) warnings.add("이름이 겹치는 대결 축 ${duplicateAxesSkipped}건 제외")
+        if (demotedBasisAxes > 0) {
+            warnings.add("기준 축이 둘 이상이라 ${demotedBasisAxes}개의 기준 표식을 내렸습니다 (같은 대상끼리는 하나만 켤 수 있습니다)")
+        }
+        if (droppedDuelGradeRefs > 0) {
+            warnings.add("패키지에 없는 대결 축을 가리키던 필드 ${droppedDuelGradeRefs}개의 등급 산정 설정을 걷어냈습니다 (등급 표는 그대로입니다)")
         }
         if (nameBankSkippedUnrelated > 0) warnings.add("패키지 캐릭터와 무관한 이름 은행 항목 ${nameBankSkippedUnrelated}건 제외")
         if (nameBankLinkConflicts > 0) warnings.add("이름 은행 사용 표시 ${nameBankLinkConflicts}건은 다른 캐릭터가 사용 중이라 잇지 않았습니다")
@@ -687,6 +852,13 @@ class WorldPackageImporter(context: Context) {
 
     private fun claimNullable(registry: WorldPackageCodes.Registry, wanted: String?): String? =
         wanted?.takeIf { it.isNotBlank() }?.let { registry.claim(it) }
+
+    /**
+     * 충돌을 물어볼 코드만 남긴다 — null·공란은 어차피 신규 발급이라 물을 것이 없고,
+     * 중복은 한 번만 물으면 된다(IN 절이 짧아진다).
+     */
+    private fun codesToCheck(wanted: List<String?>): List<String> =
+        wanted.filterNotNull().filter { it.isNotBlank() }.distinct()
 
     companion object {
         private const val TAG = "WorldPackageImporter"

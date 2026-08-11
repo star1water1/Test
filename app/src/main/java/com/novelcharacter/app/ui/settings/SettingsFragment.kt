@@ -495,16 +495,27 @@ class SettingsFragment : Fragment() {
                 val result = withContext(Dispatchers.IO) { exporter.export(config, sink) }
 
                 if (!isAdded) return@launch
-                if (result.droppedFactionRelationships > 0) {
-                    // 세계관 밖 세력에 걸친 관계는 패키지에 실을 수 없다 — 무통보 유실 금지
-                    Toast.makeText(
-                        requireContext(),
-                        getString(
-                            R.string.world_package_dropped_faction_relationships,
-                            result.droppedFactionRelationships
-                        ),
-                        Toast.LENGTH_LONG
-                    ).show()
+                // 패키지에 싣지 못한 것은 전부 고지한다(무통보 유실 금지 — 개발 의도 2번).
+                // **한 토스트에 모아 띄우는 것이 요점이다**: 셋이 각자 뜨면 뒤엣것이 앞엣것을
+                // 밀어내 사용자가 마지막 줄만 본다(B-118에서 둘이 더 늘어 그 자리가 됐다).
+                val dropNotices = buildList {
+                    if (result.droppedFactionRelationships > 0) {
+                        add(
+                            getString(
+                                R.string.world_package_dropped_faction_relationships,
+                                result.droppedFactionRelationships
+                            )
+                        )
+                    }
+                    if (result.droppedDuelMatches > 0) {
+                        add(getString(R.string.world_package_dropped_duel_matches, result.droppedDuelMatches))
+                    }
+                    if (result.droppedDuelVerdicts > 0) {
+                        add(getString(R.string.world_package_dropped_duel_verdicts, result.droppedDuelVerdicts))
+                    }
+                }
+                if (dropNotices.isNotEmpty()) {
+                    Toast.makeText(requireContext(), dropNotices.joinToString("\n"), Toast.LENGTH_LONG).show()
                 }
                 val uri = FileProvider.getUriForFile(
                     requireContext(),

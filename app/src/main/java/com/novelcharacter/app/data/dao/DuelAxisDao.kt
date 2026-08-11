@@ -28,6 +28,14 @@ interface DuelAxisDao {
     @Query("SELECT * FROM duel_axes WHERE code = :code LIMIT 1")
     suspend fun getByCode(code: String): DuelAxis?
 
+    /**
+     * 주어진 코드 중 **이미 쓰이고 있는 것**만 — 월드패키지 가져오기의 코드 충돌 판정
+     * ([com.novelcharacter.app.share.WorldPackageCodes.Registry])이 쓴다. 비용이 기기에 쌓인
+     * 양이 아니라 **패키지 크기**에 붙는다(형제 표 둘과 같은 규약).
+     */
+    @Query("SELECT code FROM duel_axes WHERE code IN (:codes)")
+    suspend fun getExistingCodes(codes: List<String>): List<String>
+
     @Query(
         "SELECT * FROM duel_axes WHERE universeId = :universeId AND targetType = :targetType " +
             "AND name = :name LIMIT 1"

@@ -169,6 +169,48 @@ object DuelGradeRef {
     fun axisCodeFromConfig(configJson: String): String? = fromConfig(configJson)?.axisCode
 
     /**
+     * 코드 재발급 표를 따라 참조를 다시 잇는다 — **월드패키지가 축을 함께 담게 된 뒤(B-118 ⓑ)의
+     * 자리**다. [GradeSystemRef.remapCode]와 형제이며, 부르는 조건도 같다: 가리키는 대상이
+     * **이 패키지에 함께 왔을 때만** 잇고, 안 왔으면 [remove]로 걷어낸다(그쪽은 세어 고지한다).
+     *
+     * ## 왜 축 code 하나로는 부족한가
+     *
+     * [LastApplied.assignments]의 키는 **캐릭터 code**다. 축만 옮기고 이 키를 두면, 재발급으로
+     * 비게 된 옛 코드가 **이 기기에 이미 있던 다른 캐릭터**를 가리킨다 — 그러면 다음 반영이
+     * 그 남의 손값을 *"직전에 내가 쓴 값"*으로 판정하고, 미리보기가 **기본 체크된 채로 덮는다**
+     * (이 파일 머리의 규칙 3이 말하는 판별이 정확히 반대로 뒤집힌다). 축과 배정은 한 몸이라
+     * 두 표를 같은 자리에서 받는다.
+     *
+     * 표에 없는 배정 키는 **버린다.** 그 캐릭터는 이 패키지에 오지 않았으므로 흔적의 주체가
+     * 없고, 남겨 두는 것이 위의 오배정이다. 흔적이 줄면 그 캐릭터들의 값은 다음 반영에서
+     * *손값*으로 다뤄지는데, 그것이 안전한 쪽이다(기본 해제 = 덮지 않는다).
+     *
+     * 바뀔 것이 없으면 **원문 그대로** 돌려준다([remove]와 같은 규칙 — 재직렬화는 키 순서를
+     * 흔들어 무관한 config까지 "바뀐 것"으로 만든다).
+     */
+    fun remapCodes(
+        configJson: String,
+        axisCodeRemap: Map<String, String>,
+        characterCodeRemap: Map<String, String>
+    ): String {
+        val spec = fromConfig(configJson) ?: return configJson
+        val nextAxis = axisCodeRemap[spec.axisCode] ?: spec.axisCode
+        val applied = spec.lastApplied
+        val nextApplied = if (applied == null || applied.assignments.isEmpty()) {
+            applied
+        } else {
+            val remapped = LinkedHashMap<String, String>(applied.assignments.size)
+            for ((code, label) in applied.assignments) {
+                val mapped = characterCodeRemap[code] ?: continue
+                remapped[mapped] = label
+            }
+            applied.copy(assignments = remapped)
+        }
+        if (nextAxis == spec.axisCode && nextApplied?.assignments == applied?.assignments) return configJson
+        return write(configJson, spec.copy(axisCode = nextAxis, lastApplied = nextApplied))
+    }
+
+    /**
      * 컷의 라벨을 개명 표에 따라 바꾼다 — 등급 체계 편집이 라벨 이름을 고쳤을 때
      * ([GradeSystemRepository.propagate]의 `renames`가 재정의에 하는 그 일과 한 몸이다).
      *

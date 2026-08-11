@@ -28,15 +28,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.BorderStyle
+import org.apache.poi.ss.usermodel.CellStyle
 import org.apache.poi.ss.usermodel.DataValidation
 import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.HorizontalAlignment
 import org.apache.poi.ss.usermodel.IndexedColors
+import org.apache.poi.ss.usermodel.Row
+import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.VerticalAlignment
+import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.util.CellRangeAddressList
-import org.apache.poi.xssf.usermodel.XSSFCellStyle
-import org.apache.poi.xssf.usermodel.XSSFSheet
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -92,7 +93,7 @@ class ExcelExporter(context: Context) {
      * @return 32,767자(XLSX 셀 규격) 초과로 잘린 셀 수
      */
     suspend fun populateWorkbook(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         options: ExportOptions = ExportOptions(),
         progress: ExportProgressSink? = null
     ): Int {
@@ -175,12 +176,16 @@ class ExcelExporter(context: Context) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
                 }
             }
-            var workbook: XSSFWorkbook? = null
+            var workbook: Workbook? = null
             // 취소·실패 시 지울 산출물. 사용자에게 건넨 뒤에는 null로 되돌려 놓는다 —
             // 그때부터는 공유 시트·SAF가 쓰는 파일이라 우리가 지울 것이 아니다.
             var orphanFile: File? = null
             try {
-                workbook = XSSFWorkbook()
+                // 스트리밍 워크북 — 메모리가 데이터 양에 비례하지 않는다(B-72 · S7).
+                // 임시 파일 자리를 먼저 못박는다(그러지 않으면 앱이 모르는 자리에 백업 크기의
+                // 임시 파일이 생긴다). 두 구현이 같은 파일을 낸다는 것은 시험이 잠근다.
+                ExportWorkbooks.useTempDirectory(appContext.cacheDir)
+                workbook = ExportWorkbooks.create(streaming = true)
                 populateWorkbook(workbook, options, progress)
 
                 // 내보내기 요약(시트/행 건수) — 사용 안내 시트는 데이터가 아니므로 제외
@@ -283,7 +288,8 @@ class ExcelExporter(context: Context) {
                     appContext.getString(R.string.result_excel_export_failed),
                     listOfNotNull(if (outOfSpace) message else null, e.message).joinToString("\n").ifBlank { null }))
             } finally {
-                try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
+                // 임시 파일까지 함께 놓는다 — 남으면 그 크기가 백업 한 판 분량이다([ExportWorkbooks.release]).
+                try { ExportWorkbooks.release(workbook) } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 isExporting.set(false)
                 if (onFinished != null) {
                     // 스코프 취소(화면 이탈) 중에도 다이얼로그 해제는 보장한다
@@ -339,8 +345,8 @@ class ExcelExporter(context: Context) {
 
     // ── 스타일 관리 ──
 
-    private class ExcelStyles(workbook: XSSFWorkbook) {
-        val header: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+    private class ExcelStyles(workbook: Workbook) {
+        val header: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.bold = true
             font.color = IndexedColors.WHITE.index
@@ -353,7 +359,7 @@ class ExcelExporter(context: Context) {
             setBorderBottom(BorderStyle.THIN)
         }
 
-        val requiredHeader: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val requiredHeader: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.bold = true
             font.color = IndexedColors.WHITE.index
@@ -366,7 +372,7 @@ class ExcelExporter(context: Context) {
             setBorderBottom(BorderStyle.THIN)
         }
 
-        val readOnly: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val readOnly: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.color = IndexedColors.GREY_50_PERCENT.index
             setFont(font)
@@ -374,7 +380,7 @@ class ExcelExporter(context: Context) {
             fillPattern = FillPatternType.SOLID_FOREGROUND
         }
 
-        val readOnlyHeader: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val readOnlyHeader: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.bold = true
             font.color = IndexedColors.WHITE.index
@@ -387,14 +393,14 @@ class ExcelExporter(context: Context) {
             setBorderBottom(BorderStyle.THIN)
         }
 
-        val guideTitle: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val guideTitle: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.bold = true
             font.fontHeightInPoints = 14
             setFont(font)
         }
 
-        val guideSection: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val guideSection: CellStyle = workbook.createCellStyle().apply {
             val font = workbook.createFont()
             font.bold = true
             font.fontHeightInPoints = 11
@@ -402,7 +408,7 @@ class ExcelExporter(context: Context) {
             setFont(font)
         }
 
-        val guideBody: XSSFCellStyle = (workbook.createCellStyle() as XSSFCellStyle).apply {
+        val guideBody: CellStyle = workbook.createCellStyle().apply {
             wrapText = true
             verticalAlignment = VerticalAlignment.TOP
         }
@@ -410,7 +416,7 @@ class ExcelExporter(context: Context) {
 
     // ── SheetSpec 기반 유틸리티 ──
 
-    private fun writeHeaderRow(sheet: XSSFSheet, spec: SheetSpec) {
+    private fun writeHeaderRow(sheet: Sheet, spec: SheetSpec) {
         val headerRow = sheet.createRow(0)
         spec.columns.forEachIndexed { index, col ->
             val cell = headerRow.createCell(index)
@@ -423,7 +429,31 @@ class ExcelExporter(context: Context) {
         }
     }
 
-    private fun applySpecFormatting(sheet: XSSFSheet, spec: SheetSpec, dataRowCount: Int) {
+    /**
+     * 한 데이터 행을 마무리한다 — **읽기 전용 칸에 스타일을 입히는 유일한 자리**(B-72).
+     *
+     * ⚠️ **이 호출은 그 행을 쓴 직후에, 같은 반복 안에서** 일어나야 한다. 종전에는 시트를 다
+     * 쓴 뒤 [applySpecFormatting]이 되돌아가 입혔는데, 스트리밍 워크북은 창을 넘긴 행을
+     * 디스크로 흘려보내고 메모리에서 버리므로 그 되돌아가기가 **조용히 아무 일도 하지
+     * 않는다**(실측: 500행 중 100행만 입혀졌다 — [ExportWorkbooks] 주석). 오류가 아니라
+     * 회색이 안 보이는 것뿐이라, 되돌아가는 방식으로는 빠뜨렸다는 사실 자체를 알 수 없다.
+     *
+     * 행마다 도는 비용이 붙지만 순회 자체는 종전과 같다 — 전에도 열마다 행 전체를 다시 돌았다
+     * (오히려 읽기 전용 열이 여럿이면 그만큼 반복했다).
+     */
+    private fun finishDataRow(row: Row, spec: SheetSpec) {
+        spec.columns.forEachIndexed { colIndex, col ->
+            if (!col.readOnly) return@forEachIndexed
+            val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
+            cell.cellStyle = styles.readOnly
+        }
+    }
+
+    /**
+     * 시트 수준 서식 — 목록·너비·고정·필터. **셀을 만지지 않는다**(위 [finishDataRow] 참조).
+     * 넷 다 스트리밍 워크북에서 그대로 동작하는 것을 실측으로 확인했다.
+     */
+    private fun applySpecFormatting(sheet: Sheet, spec: SheetSpec, dataRowCount: Int) {
         // Dropdowns
         spec.columns.forEachIndexed { colIndex, col ->
             col.dropdownOptions?.let { options ->
@@ -434,18 +464,12 @@ class ExcelExporter(context: Context) {
         spec.columns.forEachIndexed { index, col ->
             sheet.setColumnWidth(index, col.width)
         }
-        // Read-only cell styles
-        spec.columns.forEachIndexed { colIndex, col ->
-            if (col.readOnly) {
-                applyReadOnlyColumn(sheet, colIndex, dataRowCount)
-            }
-        }
         sheet.freezeAndFilter(spec.columns.size, dataRowCount)
     }
 
     // ── 기존 유틸리티 ──
 
-    private fun XSSFSheet.freezeAndFilter(lastCol: Int, dataRowCount: Int) {
+    private fun Sheet.freezeAndFilter(lastCol: Int, dataRowCount: Int) {
         createFreezePane(0, 1)
         if (dataRowCount > 0) {
             setAutoFilter(org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, lastCol - 1))
@@ -453,7 +477,7 @@ class ExcelExporter(context: Context) {
     }
 
     private fun addDropdownValidation(
-        sheet: XSSFSheet,
+        sheet: Sheet,
         colIndex: Int,
         dataRowCount: Int,
         options: List<String>
@@ -476,15 +500,7 @@ class ExcelExporter(context: Context) {
         sheet.addValidationData(validation)
     }
 
-    private fun applyReadOnlyColumn(sheet: XSSFSheet, colIndex: Int, dataRowCount: Int) {
-        for (i in 1..dataRowCount) {
-            val row = sheet.getRow(i) ?: continue
-            val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
-            cell.cellStyle = styles.readOnly
-        }
-    }
-
-    private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String): File {
+    private fun saveWorkbook(workbook: Workbook, fileName: String): File {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         exportsDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
@@ -517,9 +533,9 @@ class ExcelExporter(context: Context) {
 
     // ── 사용 안내 시트 ──
 
-    private data class GuideLine(val section: String, val style: XSSFCellStyle, val text: String)
+    private data class GuideLine(val section: String, val style: CellStyle, val text: String)
 
-    private fun exportInstructions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private fun exportInstructions(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val sheetName = assignSheetName(GUIDE_SHEET_NAME, usedSheetNames, ownerOf = GUIDE_SHEET_NAME)
         val sheet = workbook.createSheet(sheetName)
 
@@ -743,7 +759,7 @@ class ExcelExporter(context: Context) {
 
     // ── 세계관 ──
 
-    private suspend fun exportUniverses(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportUniverses(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
 
         // imageCharacterId/imageNovelId → code 해석용 맵
@@ -770,6 +786,7 @@ class ExcelExporter(context: Context) {
             universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
             universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setTextSafe(it) } }
             row.createCell(12).setCellValue(universe.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -777,7 +794,7 @@ class ExcelExporter(context: Context) {
 
     // ── 작품 ──
 
-    private suspend fun exportNovels(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportNovels(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val novels = db.novelDao().getAllNovelsList()
         val universes = db.universeDao().getAllUniversesList()
 
@@ -824,6 +841,7 @@ class ExcelExporter(context: Context) {
             novelFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
                 fieldValues[fieldDef.id]?.let { row.createCell(15 + fi).setTextSafe(it.value) }
             }
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -842,7 +860,7 @@ class ExcelExporter(context: Context) {
      * 겹쳐 나가거나 어느 시트에도 안 나간다.
      */
     private suspend fun exportNovelFieldValueOverflow(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         usedSheetNames: MutableSet<String>,
         novels: List<Novel>,
         valuesByNovel: Map<Long, List<com.novelcharacter.app.data.model.NovelFieldValue>>,
@@ -876,13 +894,14 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(fd.key)
             row.createCell(5).setTextSafe(fd.name)
             row.createCell(6).setTextSafe(value)
+            finishDataRow(row, spec)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 필드 정의 ──
 
-    private suspend fun exportFieldDefinitions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportFieldDefinitions(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
         val allFields = mutableListOf<Pair<Long?, FieldDefinition>>()
@@ -953,6 +972,7 @@ class ExcelExporter(context: Context) {
             val linkedTemplate = com.novelcharacter.app.data.model.DefaultFieldRef
                 .codeFromConfig(field.config)?.let { templatesByCode[it] }
             row.createCell(14).setTextSafe(linkedTemplate?.code ?: "")
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
@@ -968,7 +988,7 @@ class ExcelExporter(context: Context) {
      * 규약과 같은 모양이 된다.
      */
     private suspend fun exportDefaultFieldTemplates(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         usedSheetNames: MutableSet<String>
     ) {
         val templates = db.defaultFieldTemplateDao().getAllList()
@@ -995,6 +1015,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setTextSafe(FieldValueSheetMapper.entityLabel(template.entityType))
             row.createCell(10).setTextSafe(template.code)
             row.createCell(11).setCellValue(template.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, templates.size)
@@ -1002,7 +1023,7 @@ class ExcelExporter(context: Context) {
 
     // ── 등급 체계 (U-1) ──
 
-    private suspend fun exportGradeSystems(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportGradeSystems(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
         val systems = db.gradeSystemDao().getAllList()
@@ -1026,6 +1047,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(3).setCellValue(value)
                 row.createCell(4).setTextSafe(universe?.code ?: "")
                 row.createCell(5).setTextSafe(system.code)
+                finishDataRow(row, spec)
             }
         }
 
@@ -1034,7 +1056,7 @@ class ExcelExporter(context: Context) {
 
     // ── 필드 데이터 라이브러리 (값 카탈로그 — 별칭·라벨·카테고리 왕복) ──
 
-    private suspend fun exportFieldValueLibrary(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportFieldValueLibrary(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
         val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
@@ -1063,6 +1085,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setTextSafe(entry.source)
             row.createCell(11).setCellValue(entry.usageCount.toDouble())
             row.createCell(12).setTextSafe(entry.code)
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -1070,7 +1093,7 @@ class ExcelExporter(context: Context) {
 
     // ── 캐릭터 (세계관별 + 미분류 통합) ──
 
-    private suspend fun exportCharacters(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportCharacters(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
         val allCharacters = db.characterDao().getAllCharactersList()
@@ -1137,7 +1160,7 @@ class ExcelExporter(context: Context) {
 
             if (allSheet != null) {
                 allRowCount += appendAllCharacterRows(
-                    allSheet, allRowCount, sharedFields, universe.name,
+                    allSheet, allSpec, allRowCount, sharedFields, universe.name,
                     universeChars, fields, novelMap, resolved, tags
                 )
             }
@@ -1186,7 +1209,7 @@ class ExcelExporter(context: Context) {
             // *모든 필드*로 달라진다 — 고치는 것이 아니라 **다른 시트를 만드는 것**이다.
             if (allSheet != null) {
                 allRowCount += appendAllCharacterRows(
-                    allSheet, allRowCount, sharedFields, "",
+                    allSheet, allSpec, allRowCount, sharedFields, "",
                     unassignedChars, emptyList(), novelMap, emptyMap(), tags
                 )
             }
@@ -1245,7 +1268,8 @@ class ExcelExporter(context: Context) {
      * 시트를 한 번만 순회하려고 세계관 루프 안에서 부른다(행을 모아 두지 않는다).
      */
     private fun appendAllCharacterRows(
-        sheet: XSSFSheet,
+        sheet: Sheet,
+        spec: SheetSpec,
         startRow: Int,
         sharedFields: List<AllCharactersSheet.SharedField>,
         universeName: String,
@@ -1281,6 +1305,7 @@ class ExcelExporter(context: Context) {
                 val fieldId = fieldIdByKeyType[shared.key to shared.type]
                 row.createCell(col++).setTextSafe(fieldId?.let { values[it] } ?: "")
             }
+            finishDataRow(row, spec)
         }
         return characters.size
     }
@@ -1290,7 +1315,7 @@ class ExcelExporter(context: Context) {
      * 이 시트가 없으면 해당 값은 내보내기에서 무음 폐기되고, 덮어쓰기 복원 시 CASCADE로 영구 소멸한다.
      */
     private suspend fun exportCharacterFieldValueOverflow(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         sheetName: String,
         characters: List<Character>,
         allFieldValuesMap: Map<Long, List<CharacterFieldValue>>,
@@ -1325,12 +1350,13 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setTextSafe(fd.name)
             row.createCell(6).setTextSafe(FieldValueSheetMapper.entityLabel(fd.entityType))
             row.createCell(7).setTextSafe(value)
+            finishDataRow(row, spec)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
 
     private fun exportCharacterSheet(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         usedSheetNames: MutableSet<String>,
         sheetLabel: String,
         characters: List<Character>,
@@ -1410,6 +1436,7 @@ class ExcelExporter(context: Context) {
 
             // 생성일
             row.createCell(col).setCellValue(character.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, characters.size)
@@ -1417,7 +1444,7 @@ class ExcelExporter(context: Context) {
 
     // ── 사건 연표 ──
 
-    private suspend fun exportTimeline(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportTimeline(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val events = db.timelineDao().getAllEventsList()
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
@@ -1492,6 +1519,7 @@ class ExcelExporter(context: Context) {
             eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
                 fieldValues[fieldDef.id]?.let { row.createCell(16 + fi).setTextSafe(it.value) }
             }
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, events.size)
@@ -1511,7 +1539,7 @@ class ExcelExporter(context: Context) {
      * 채워 바로잡을 길이 남는다(검증 → 알림 → 교정 경로. 개발 의도 2번).
      */
     private suspend fun exportEventFieldValueOverflow(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         usedSheetNames: MutableSet<String>,
         events: List<TimelineEvent>,
         valuesByEvent: Map<Long, List<com.novelcharacter.app.data.model.EventFieldValue>>,
@@ -1544,13 +1572,14 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(fd.key)
             row.createCell(5).setTextSafe(fd.name)
             row.createCell(6).setTextSafe(value)
+            finishDataRow(row, spec)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 캐릭터 상태변화 ──
 
-    private suspend fun exportStateChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportStateChanges(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allChangesRaw = db.characterStateChangeDao().getAllChangesList()
 
         val changesByCharId = allChangesRaw.groupBy { it.characterId }
@@ -1588,6 +1617,7 @@ class ExcelExporter(context: Context) {
             // 코드 (readOnly) — 왕복 안정 식별자: 값·연도를 외부에서 편집해도 같은 이력으로 인식
             row.createCell(9).setTextSafe(change.code ?: "")
             row.createCell(10).setCellValue(change.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -1595,7 +1625,7 @@ class ExcelExporter(context: Context) {
 
     // ── 캐릭터 관계 ──
 
-    private suspend fun exportRelationships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportRelationships(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allRelationships = db.characterRelationshipDao().getAllRelationships()
 
         val allCharacters = db.characterDao().getAllCharactersList()
@@ -1630,6 +1660,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setTextSafe(rel.factionId?.let { factionMap[it]?.code } ?: "")
             row.createCell(11).setCellValue(rel.createdAt.toDouble())
             row.createCell(12).setTextSafe(rel.code ?: "")
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1637,7 +1668,7 @@ class ExcelExporter(context: Context) {
 
     // ── 관계 변화 ──
 
-    private suspend fun exportRelationshipChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportRelationshipChanges(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allChanges = db.characterRelationshipChangeDao().getAllChanges()
 
         val allRelationships = db.characterRelationshipDao().getAllRelationships()
@@ -1675,6 +1706,7 @@ class ExcelExporter(context: Context) {
             // 부모 관계 식별 — 코드가 있으면 유형을 고쳐도 정확히 따라간다(유형은 코드 없는 구파일용 폴백)
             row.createCell(14).setTextSafe(rel.relationshipType)
             row.createCell(15).setTextSafe(rel.code ?: "")
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -1686,7 +1718,7 @@ class ExcelExporter(context: Context) {
      * 라이브러리 관리 이미지(meta 행)의 태그·링크 그룹을 시트로 기록한다.
      * 파일명은 basename만 — 절대경로는 기기 간 이식성이 없다(가져오기에서 zip 리맵/로컬 존재로 해석).
      */
-    private suspend fun exportImageMeta(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportImageMeta(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val metas = db.imageMetaDao().getAllList()
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
 
@@ -1705,6 +1737,7 @@ class ExcelExporter(context: Context) {
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
             meta.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
             row.createCell(4).setTextSafe(meta.detachedFromCode ?: "")
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, metas.size)
@@ -1712,7 +1745,7 @@ class ExcelExporter(context: Context) {
 
     // ── 이름 은행 ──
 
-    private suspend fun exportNameBank(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportNameBank(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allNames = db.nameBankDao().getAllNamesList()
 
         val allCharacters = db.characterDao().getAllCharactersList()
@@ -1737,6 +1770,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(entry.createdAt.toDouble())
             // 코드 (readOnly) — 이름 은행 항목 자체의 왕복 안정 식별자 (F3-D)
             row.createCell(8).setTextSafe(entry.code)
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
@@ -1744,7 +1778,7 @@ class ExcelExporter(context: Context) {
 
     // ── 세력 ──
 
-    private suspend fun exportFactions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportFactions(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allFactions = db.factionDao().getAllFactionsList()
 
         val universes = db.universeDao().getAllUniversesList()
@@ -1768,6 +1802,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction.code)
             row.createCell(8).setCellValue(faction.displayOrder.toDouble())
             row.createCell(9).setCellValue(faction.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allFactions.size)
@@ -1775,7 +1810,7 @@ class ExcelExporter(context: Context) {
 
     // ── 세력 소속 ──
 
-    private suspend fun exportFactionMemberships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportFactionMemberships(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allMemberships = db.factionMembershipDao().getAllMembershipsList()
 
         val allFactions = db.factionDao().getAllFactionsList()
@@ -1808,6 +1843,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction?.code ?: "")
             row.createCell(8).setTextSafe(character?.code ?: "")
             row.createCell(9).setCellValue(membership.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allMemberships.size)
@@ -1815,7 +1851,7 @@ class ExcelExporter(context: Context) {
 
     // ── 세력 관계 (B-3) ──
 
-    private suspend fun exportFactionRelationships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportFactionRelationships(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val allRelationships = db.factionRelationshipDao().getAllRelationshipsList()
 
         val allFactions = db.factionDao().getAllFactionsList()
@@ -1842,6 +1878,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction1?.code ?: "")
             row.createCell(8).setTextSafe(faction2?.code ?: "")
             row.createCell(9).setCellValue(rel.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1858,7 +1895,7 @@ class ExcelExporter(context: Context) {
      * 필드 연결은 키를 쉼표로 이은 글이다(`util/DuelFieldLinks.toText`) — 사람이 손으로 고칠
      * 자리라 JSON을 싣지 않는다. **순서가 곧 영향력 순위**이므로 이어 붙이는 차례를 지킨다.
      */
-    private suspend fun exportDuelAxes(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportDuelAxes(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
         val universeMap = db.universeDao().getAllUniversesList().associateBy { it.id }
 
@@ -1891,6 +1928,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setCellValue(axis.displayOrder.toDouble())
             row.createCell(10).setTextSafe(axis.code)
             row.createCell(11).setCellValue(axis.createdAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, axes.size)
@@ -1905,7 +1943,7 @@ class ExcelExporter(context: Context) {
      * **승자를 이름으로 적는 것이 이 시트의 요점이다.** 코드를 적으라고 하면 사람이 고칠 수
      * 없고, 그러면 이 시트를 엑셀에 싣는 뜻이 없어진다(사용자 요청: *"엑셀에서도 편집"*).
      */
-    private suspend fun exportDuelMatches(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportDuelMatches(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
         val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
 
@@ -1932,6 +1970,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())
                 row.createCell(9).setTextSafe(match.code)
+                finishDataRow(row, spec)
             }
         }
 
@@ -1939,7 +1978,7 @@ class ExcelExporter(context: Context) {
     }
 
     /** 대결 **상성** — 층 B의 사용자 판정. 파생이 아니라 판정이라 싣는다. */
-    private suspend fun exportDuelVerdicts(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportDuelVerdicts(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
         val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
 
@@ -1974,6 +2013,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(5).setTextSafe(joinCsv(members))
                 row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
                 row.createCell(7).setTextSafe(verdict.code)
+                finishDataRow(row, spec)
             }
         }
 
@@ -2043,7 +2083,7 @@ class ExcelExporter(context: Context) {
 
     // ── 필드 템플릿 ──
 
-    private suspend fun exportUserPresetTemplates(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportUserPresetTemplates(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val templates = db.userPresetTemplateDao().getAllTemplatesList()
 
         val spec = userPresetTemplateSpec()
@@ -2059,6 +2099,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setTextSafe(if (t.isBuiltIn) "Y" else "N")
             row.createCell(4).setCellValue(t.createdAt.toDouble())
             row.createCell(5).setCellValue(t.updatedAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, templates.size)
@@ -2066,7 +2107,7 @@ class ExcelExporter(context: Context) {
 
     // ── 검색 프리셋 ──
 
-    private suspend fun exportSearchPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportSearchPresets(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val presets = db.searchPresetDao().getAllPresetsList()
 
         val spec = searchPresetSpec()
@@ -2084,6 +2125,7 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(if (p.isDefault) "Y" else "N")
             row.createCell(5).setCellValue(p.createdAt.toDouble())
             row.createCell(6).setCellValue(p.updatedAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, presets.size)
@@ -2115,7 +2157,7 @@ class ExcelExporter(context: Context) {
      * 캐릭터 목록 프리셋 왕복 — 이름이 유니크 키.
      * novelIdsJson(DB id 배열)은 기기 간 이식성이 없으므로 작품코드 콤마 목록으로 변환해 기록한다.
      */
-    private suspend fun exportCharacterListPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportCharacterListPresets(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val presets = db.characterListPresetDao().getAllPresetsList()
 
         val novelCodeById = db.novelDao().getAllNovelsList().associate { it.id to it.code }
@@ -2148,13 +2190,14 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setTextSafe(if (preset.isDefault) "Y" else "N")
             row.createCell(10).setCellValue(preset.createdAt.toDouble())
             row.createCell(11).setCellValue(preset.updatedAt.toDouble())
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, presets.size)
     }
 
     private suspend fun exportAppSettings(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         usedSheetNames: MutableSet<String>,
         options: ExportOptions
     ) {
@@ -2193,6 +2236,7 @@ class ExcelExporter(context: Context) {
             } else {
                 row.createCell(1).setTextSafe(value)
             }
+            finishDataRow(row, spec)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)

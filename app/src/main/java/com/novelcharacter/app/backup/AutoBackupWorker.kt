@@ -7,7 +7,8 @@ import androidx.work.WorkerParameters
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.excel.ExcelExporter
 import com.novelcharacter.app.excel.ExportOptions
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import com.novelcharacter.app.excel.ExportWorkbooks
+import org.apache.poi.ss.usermodel.Workbook
 import com.novelcharacter.app.util.AppLogger
 import java.io.File
 import java.text.SimpleDateFormat
@@ -75,7 +76,11 @@ class AutoBackupWorker(
         val progress = cancellationSink()
         return try {
             Log.i(TAG, "Starting auto backup...")
-            val workbook = XSSFWorkbook()
+            // 스트리밍 워크북 — 이 경로가 B-72가 말한 **마지막 방어선**이다: 배경에서 도는
+            // 백업이 워크북 전량을 메모리에 세우면 저사양 기기에서 죽고, 그 실패는 사용자가
+            // 보지 못한 자리에서 일어난다. 임시 파일 자리를 먼저 못박는다.
+            ExportWorkbooks.useTempDirectory(appContext.cacheDir)
+            val workbook = ExportWorkbooks.create(streaming = true)
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
             try {
                 // 공유·저장 내보내기와 동일한 단일 소스(ExcelExporter)를 재사용한다.
@@ -87,7 +92,8 @@ class AutoBackupWorker(
                 // Write workbook to bytes, encrypt, and save to internal storage
                 imageReport = saveEncryptedBackup(workbook, settings.includeImages, progress)
             } finally {
-                try { workbook.close() } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
+                // 임시 파일까지 함께 놓는다 — 배경 경로라 남은 것을 아무도 알아채지 못한다.
+                try { ExportWorkbooks.release(workbook) } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
             }
 
             // Rotate old backups (non-critical: rotation failure must not fail a completed backup)
@@ -156,7 +162,7 @@ class AutoBackupWorker(
     }
 
     private suspend fun saveEncryptedBackup(
-        workbook: XSSFWorkbook,
+        workbook: Workbook,
         includeImages: Boolean,
         progress: com.novelcharacter.app.excel.ExportProgressSink?
     ): com.novelcharacter.app.excel.ImageZipReport {
