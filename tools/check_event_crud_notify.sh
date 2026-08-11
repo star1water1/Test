@@ -37,7 +37,15 @@ NOTIFY_RE='reportResult|showError|toastAndLogResult'
 
 # 사건 CRUD 함수 이름 — `deleteEvent`도 넣는다. 지금은 지키고 있지만 **본보기가 무너지면
 # 나머지가 따라 무너진다**(이 결함이 처음 눈에 띈 것도 그것과 견줘서였다).
-FN_RE='fun[ \t]+(insertEvent|updateEvent|updateEventAndShiftOthers|deleteEvent)[ \t]*\('
+#
+# ⚠️ **여는 괄호를 `\(`가 아니라 `[(]`로 적는다 — 백슬래시를 쓰면 awk 구현마다 갈린다.**
+# 이 문자열은 `awk -v`로 넘어가 **먼저 문자열 이스케이프 처리를 거친 뒤** 정규식이 된다.
+# 그 처리에서 `\(`의 백슬래시를 떼는 awk가 있고(그러면 `(`만 남아 *짝 없는 괄호*로 죽는다)
+# 떼지 않는 awk가 있다. 2026.08.11에 **로컬 mawk는 통과하고 CI는 죽었다**:
+#   `awk: fatal: invalid regexp: Unmatched ( or \(: /fun[ \t]+(...)[ \t]*(/`
+# 대괄호는 어느 구현에서도 이스케이프가 필요 없어 이 갈림이 원리적으로 없다.
+# **같은 함정이 `-v`로 넘기는 모든 정규식에 있다** — 정규식 리터럴(`/…/`)은 해당하지 않는다.
+FN_RE='fun[ \t]+(insertEvent|updateEvent|updateEventAndShiftOthers|deleteEvent)[ \t]*[(]'
 
 # 함수 하나를 여는 줄부터 같은 깊이의 닫는 중괄호까지 통째로 뜬다.
 # 깊이 계산용 사본에서만 문자열·줄 주석을 지운다 — 주석에 든 중괄호가 경계를 밀지 않게.
@@ -96,10 +104,10 @@ offenders_in() {
         fname = $1 ":" $2; depth = 0; bad = 0; inCatch = 0
         fnLabel = body
         sub(/^.*fun[ \t]+/, "", fnLabel)
-        sub(/[ \t]*\(.*$/, "", fnLabel)
+        sub(/[ \t]*[(].*$/, "", fnLabel)
       }
 
-      pending = (!inCatch && probe ~ /catch[ \t]*\(/)
+      pending = (!inCatch && probe ~ /catch[ \t]*[(]/)
       opens = gsub(/\{/, "{", probe)
       closes = gsub(/\}/, "}", probe)
       depth += opens - closes
