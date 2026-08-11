@@ -1845,7 +1845,14 @@ class ExcelImporter(context: Context) {
             android.widget.ImageButton(act).apply {
                 setImageResource(com.novelcharacter.app.R.drawable.ic_help)
                 contentDescription = appContext.getString(com.novelcharacter.app.R.string.help_icon_desc)
-                background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                // 배경은 지우되 **눌림 표시는 남긴다** — 투명 색으로 덮으면 리플까지 없어져
+                // 눌리는 것인지 알 수 없다(레이아웃 쪽 `?attr/selectableItemBackground`와 같은 뜻).
+                background = android.util.TypedValue().let { tv ->
+                    act.theme.resolveAttribute(
+                        android.R.attr.selectableItemBackgroundBorderless, tv, true
+                    )
+                    androidx.core.content.ContextCompat.getDrawable(act, tv.resourceId)
+                }
                 setOnClickListener {
                     com.novelcharacter.app.ui.common.HelpDialog.showHelp(
                         act, com.novelcharacter.app.ui.common.HelpDialog.Topic.EXCEL_MATCHING
