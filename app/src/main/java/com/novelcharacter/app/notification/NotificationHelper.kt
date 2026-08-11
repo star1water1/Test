@@ -17,6 +17,52 @@ object NotificationHelper {
 
     private const val BIRTHDAY_NOTIFICATION_ID = 1001
     private const val BACKUP_FAILED_NOTIFICATION_ID = 1002
+    private const val IMPORT_RESULT_NOTIFICATION_ID = 1003
+
+    /**
+     * **가져오기 결과를 앱 밖으로 알린다** (B-56).
+     *
+     * 가져오기는 화면이 사라져도 계속 도는데, 끝났을 때 결과 창을 띄울 자리가 없으면
+     * 종전에는 토스트로 물러섰다 — **앱이 앞에 없으면 안드로이드가 그 토스트를 막고**
+     * (API 30+), 떠도 사라져 오류·경고 상세가 통째로 없어진다.
+     *
+     * **이것 하나에 고지를 걸지는 않는다** — 알림 권한은 사용자가 거절할 수 있고(API 33+)
+     * 거절은 정당한 선택이다. 그래서 [com.novelcharacter.app.util.ImportNoticeRelay]가
+     * 같은 고지를 보관해 다음 진입에서 한 번 더 낸다. 둘은 대체재가 아니라 **서로의
+     * 사각을 메우는 짝**이다.
+     *
+     * @param body 요약 한 줄. 알림은 상세를 담을 자리가 아니므로 상세는 앱 안에서 본다.
+     */
+    fun showImportResultNotification(context: Context, title: String, body: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+        }
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 3, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, NovelCharacterApp.TRANSFER_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_character_placeholder)
+            .setContentTitle(title)
+            .setContentText(context.getString(R.string.import_notice_notification_text))
+            // 요약이 한 줄을 넘기므로 펼침 형식을 함께 둔다 — 잘리면 정작 건수가 안 보인다.
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(IMPORT_RESULT_NOTIFICATION_ID, notification)
+    }
 
     /**
      * 자동 백업 실패를 시스템 알림으로 능동 통지한다(설정 화면을 열지 않아도 인지).

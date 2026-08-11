@@ -33,6 +33,8 @@ import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.FormulaValidator
+import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.withImagePaths
@@ -4322,6 +4324,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이번 파일과 무관한 옛 흔적을 이 파일 탓으로 고지하게 된다.
         val unusedConfigKeys = linkedMapOf<String, Int>()
         var unusedConfigFields = 0
+        // 이번 파일이 넣거나 고친 필드 — 구역(세계관 · 대상)별로 모은다. 수식 검증은
+        // **행을 다 읽은 뒤** 이것을 가지고 돈다(B-54): 행마다 검사하면 뒷 행에 정의된
+        // 필드를 참조하는 수식이 전부 거짓 경고를 받는다. 시트의 행 차례는 사용자가 정하는
+        // 것이지 의존 순서가 아니다.
+        val touchedFormulaScopes = linkedMapOf<Pair<Long?, String>, MutableSet<String>>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4389,6 +4396,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     db.fieldDefinitionDao().getGlobalFieldByKey(key, entityType)
                 }
+                // 이 행이 건드리는 자리를 적어 둔다 — 실제로 저장됐는지는 아래에서 갈리지만,
+                // 타입이 바뀌거나 병합 결과가 그대로여도 **이 파일이 말한 필드**인 것은 같다.
+                touchedFormulaScopes
+                    .getOrPut(universe?.id to entityType) { linkedSetOf() }
+                    .add(key)
                 val mergedConfig = resolveFieldDefConfig(universe?.id, i, r, existing, result)
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
@@ -4426,7 +4438,73 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     "나머지 설정은 그대로 들어왔고, 해당 필드를 앱에서 한 번 저장하면 이 설정이 사라집니다"
             )
         }
+        // 수식 검증은 **전량 적재 뒤**에 돈다 (B-54).
+        warnImportedFormulaProblems(touchedFormulaScopes, result)
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
+    }
+
+    /**
+     * **엑셀로 들어온 수식의 문제를 결과에 싣는다** (B-54).
+     *
+     * 종전에는 `FormulaValidator`가 **필드 편집 창에서만** 돌아, 필드 정의 시트로 들어온
+     * 수식(자기참조·미지 함수·미인식 잔여)이 아무 고지 없이 저장됐다. 화면에서 `오류`로
+     * 보이는 것은 **평가가 NaN을 낼 때뿐**이고, 흔한 실수 여럿은 NaN조차 내지 않는다 —
+     * 알아보지 못한 글자가 조용히 버려져 남은 조각만으로 **그럴듯한 수**가 나온다.
+     *
+     * **거부가 아니라 고지다** — 값은 이미 저장됐고 여기서 되돌리지 않는다(왕복 무결성상
+     * 들어온 값은 들어와야 한다). 4장 B-54 행이 그렇게 못박아 두었다.
+     *
+     * 판정은 [ImportedFormulaAudit]가 하고 여기서는 문구만 입힌다 — 아는 키의 범위와
+     * *이번 파일이 건드린 것*의 경계가 그 계층에서 갈리고, 그래야 순수 JVM 시험이 닿는다.
+     *
+     * **구역의 필드 목록을 DB에서 다시 읽는 것**은 이 시점이 적재 뒤라 그 목록이 곧
+     * *최종 상태*이기 때문이다. 편집 창이 아는 키를 세는 범위(같은 세계관·같은 대상)와
+     * 같은 자리를 읽어 **두 경로가 같은 답을 내게** 한다.
+     */
+    private suspend fun warnImportedFormulaProblems(
+        touchedScopes: Map<Pair<Long?, String>, Set<String>>,
+        result: ImportResult
+    ) {
+        for ((scope, keys) in touchedScopes) {
+            val (universeId, entityType) = scope
+            val scopeFields = if (universeId == null) {
+                db.fieldDefinitionDao().getGlobalFieldsList(entityType)
+            } else {
+                db.fieldDefinitionDao().getFieldsByUniverseList(universeId, entityType)
+            }
+            for (finding in ImportedFormulaAudit.audit(scopeFields, keys)) {
+                result.warnings.add(
+                    "필드 정의: 계산 필드 '${finding.name}'의 수식을 확인하세요 — " +
+                        finding.problems.joinToString("; ") { formulaProblemText(it) } +
+                        ". 값은 그대로 저장됐습니다"
+                )
+            }
+        }
+    }
+
+    /**
+     * 수식 문제 한 줄 — **필드 편집 창의 리소스 문구와 일부러 나눠 둔다.**
+     *
+     * 그쪽은 *"그대로 저장하시겠습니까?"*를 묻는 대화라 고치는 법까지 적고(쓸 수 있는 함수
+     * 목록 등), 이쪽은 **여러 필드가 한 목록에 쌓이는 보고**라 한 줄이 짧아야 한다.
+     * 같은 사실을 두 자리에서 말하는 것이 아니라 **부르는 자리가 아예 다르다** — 이 서비스는
+     * `appContext`가 nullable이라 리소스를 쓸 수도 없다(이 파일의 다른 고지가 전부 그렇다).
+     */
+    private fun formulaProblemText(problem: FormulaValidator.Problem): String = when (problem) {
+        is FormulaValidator.Problem.UnbalancedParen -> "괄호 짝이 맞지 않습니다"
+        is FormulaValidator.Problem.SelfReference -> "자기 자신('${problem.key}')을 참조합니다"
+        is FormulaValidator.Problem.CircularReference ->
+            "수식이 서로 돌아옵니다(${problem.path.joinToString(" → ")})"
+        is FormulaValidator.Problem.UnknownKeys ->
+            "이 세계관에 없는 필드 키 ${problem.keys.joinToString(", ")} (그 자리는 0으로 계산됩니다)"
+        is FormulaValidator.Problem.PaddedKeys ->
+            "필드 키 앞뒤의 공백까지 이름으로 읽습니다: ${problem.keys.joinToString(", ")}"
+        is FormulaValidator.Problem.UnknownFunctions ->
+            "없는 함수 ${problem.names.joinToString(", ")} (이름은 버려지고 괄호 안 값만 남습니다)"
+        is FormulaValidator.Problem.MalformedCalls ->
+            "함수 표기가 어긋나 계산에서 빠집니다: ${problem.names.joinToString(", ")}"
+        is FormulaValidator.Problem.UnrecognizedText ->
+            "계산에서 빠지는 부분이 있습니다: ${problem.fragments.joinToString(", ")}"
     }
 
     /**
@@ -7314,6 +7392,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun newAxisLinks(value: String?): String = value ?: "[]"
 
     /**
+     * **이 앱이 모르는 `sys:` 키를 알린다** (B-172).
+     *
+     * `sys:anothername`(밑줄 빠짐)처럼 사람이 낸 오타는 화면에 글자 그대로 뜨고 값은 영영
+     * 비어 있다. **모르는 커스텀 필드 키와 겉모습이 같지만 성질이 다르다** — 그쪽은 나중에
+     * 그 필드를 만들면 살아나므로 남겨 두는 것이 옳고, 이쪽은 살아날 길이 없다.
+     *
+     * **왜 가져오기 결과인가**(자리를 하나로 정한 근거 — 4장 B-172 행에도 적었다):
+     * ⓐ 이 키는 **엑셀 경로로만 생긴다** — 고르는 창은 아는 열만 내므로 오타를 만들 수 없다.
+     * 그래서 결과 창 앞에 선 사람이 곧 그것을 만든 사람이다.
+     * ⓑ 축 편집 창은 축을 **하나씩 열어야** 보이므로, 축이 여럿인 파일에서는 오타가 있다는
+     * 사실 자체를 알려면 전부 열어 봐야 한다(원칙 04).
+     * ⓒ 축 편집 창이 이미 말하는 둘(`profileBlocked`·`outcomeBlocked`)은 *자리* 위반이라
+     * 이어지는 상태이고, 이것은 *존재* 문제라 파일을 읽는 순간의 사실이다 — 물음이 달라
+     * 같은 말이 두 자리에서 뜨는 것이 아니다.
+     *
+     * **열이 없는 칸은 재지 않는다** — null은 *"이 파일이 그것을 말하지 않았다"*라
+     * 이번 파일 탓으로 고지할 것이 없다(연결 셋의 nullable 규약과 같은 근거).
+     */
+    private fun warnUnknownSystemKeys(r: DuelAxisRowValues, rowIndex: Int, result: ImportResult) {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.decode(r.influenceFieldKeys),
+            outcomes = DuelFieldLinks.decode(r.outcomeFieldKeys),
+            profiles = DuelFieldLinks.decode(r.profileFieldKeys)
+        )
+        val unknown = axis.unknownSystemKeys
+        if (unknown.isEmpty()) return
+        result.warnings.add(
+            "대결 축 행 $rowIndex: 이 앱에 없는 시스템 열 ${unknown.joinToString(", ")} — " +
+                "값이 채워지지 않습니다. 연결은 지우지 않았으니 철자를 고쳐 다시 가져오거나 " +
+                "축 편집에서 지우세요(쓸 수 있는 이름은 '사용 안내' 시트에 있습니다)"
+        )
+    }
+
+    /**
      * 기준 축은 **세계관의 이미지 축들 사이에서 하나** — 켠 행이 나오면 형제의 표식을 내린다
      * (B-104 ⓑ·ⓒ).
      *
@@ -7393,6 +7505,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         "대결 축 행 $i: 후보필터(JSON) 칸을 읽을 수 없어 기존 필터를 유지했습니다 — 앱에서 다시 내보낸 파일의 형식을 참고해 고쳐 주세요"
                     )
                 }
+                // 이 앱이 모르는 `sys:` 키 — 오타는 **영영 살아나지 않는다**(B-172).
+                // 값은 그대로 담고 사실만 말한다: 거부하면 나머지 멀쩡한 연결까지 잃는다.
+                warnUnknownSystemKeys(r, i, result)
                 if (existing == null) {
                     // 같은 (세계관, 대상, 이름)이 이미 있으면 유니크 인덱스가 던진다 — 위에서
                     // 이미 찾아봤으므로 여기 오는 것은 진짜 새 축이다.

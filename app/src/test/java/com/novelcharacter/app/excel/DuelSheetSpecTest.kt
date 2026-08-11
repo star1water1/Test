@@ -86,11 +86,31 @@ class DuelSheetSpecTest {
      */
     @Test
     fun `필드 연결은 엑셀 글과 저장 형식 사이를 왕복한다`() {
-        val text = "mana, -age, attr"
+        val text = "mana, ▼age, attr"
         val stored = DuelFieldLinks.encode(DuelFieldLinks.parseText(text))
         assertEquals(text, DuelFieldLinks.toText(DuelFieldLinks.decode(stored)))
 
         // 순위는 적은 차례 그대로다 — 정렬하면 1순위가 바뀐다.
+        assertEquals(listOf("mana", "age", "attr"), DuelFieldLinks.decode(stored).map { it.key })
+        assertEquals(listOf(true, false, true), DuelFieldLinks.decode(stored).map { it.higherWins })
+    }
+
+    /**
+     * **옛 표식으로 적힌 칸은 뜻을 지킨 채 새 표식으로 정규화된다** (B-173).
+     *
+     * 이 시험이 재는 것은 *글자가 같은가*가 아니라 **뜻이 같은가**다 — 표식을 바꾼 판이라
+     * 글자는 일부러 달라진다(읽기 셋, 쓰기 하나). 종전에 이 자리가 글자 동일성을 재고
+     * 있었고, 그것을 그대로 두면 이 판은 통과할 수 없다.
+     *
+     * **왜 정규화가 옳은가:** `-`로 시작하는 칸은 엑셀이 수식으로 읽어 사람이 손으로 적을 수
+     * 없다. 되읽을 때 옛 표식을 그대로 되뱉으면 그 칸은 영원히 손댈 수 없는 채로 남는다 —
+     * 한 번 왕복시키면 고쳐지는 쪽이 개발 의도 4번에 맞는다.
+     */
+    @Test
+    fun `옛 표식으로 적힌 칸은 뜻을 지킨 채 새 표식으로 나간다`() {
+        val stored = DuelFieldLinks.encode(DuelFieldLinks.parseText("mana, -age, attr"))
+        assertEquals("mana, ▼age, attr", DuelFieldLinks.toText(DuelFieldLinks.decode(stored)))
+        // 뜻은 한 글자도 바뀌지 않았다.
         assertEquals(listOf("mana", "age", "attr"), DuelFieldLinks.decode(stored).map { it.key })
         assertEquals(listOf(true, false, true), DuelFieldLinks.decode(stored).map { it.higherWins })
     }

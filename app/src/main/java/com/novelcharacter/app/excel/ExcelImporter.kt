@@ -6,6 +6,7 @@ import androidx.appcompat.app.AlertDialog
 import android.content.Context
 import android.net.Uri
 import android.view.Gravity
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.CheckBox
@@ -147,6 +148,66 @@ class ExcelImporter(context: Context) {
         withContext(Dispatchers.Main) { handle.dismiss() }
     }
 
+    /**
+     * **화면이 없을 때의 고지** (B-56).
+     *
+     * 종전에는 이 자리가 전부 `Toast.makeText(appContext, …)`였다. 토스트는
+     * ⓐ **앱이 앞에 없으면 안드로이드가 막고**(API 30+) ⓑ 떠도 사라져 상세가 없어진다.
+     * 즉 *"화면이 없을 때"*라는 이 함수의 전제와 토스트가 실제로 보이는 조건이 정확히
+     * 어긋나 있었다 — 가장 필요한 순간에 아무 일도 하지 않는 고지였다.
+     *
+     * **둘로 보낸다.** 알림은 앱 밖에 있는 사용자에게 지금 닿고, 보관함은 알림을 못 봤거나
+     * 권한을 거절한 사용자에게 다음 진입에서 닿는다. 알림 권한 거절은 정당한 선택이라
+     * 그것 하나에 걸면 거절한 사용자에게는 종전과 똑같이 아무 말도 없게 된다.
+     *
+     * **화면이 있으면 부르지 않는다** — 부르는 자리마다 먼저 창을 시도하고, 못 띄웠을 때만
+     * 여기로 온다. 둘 다 하면 같은 결과가 창과 알림으로 두 번 뜬다.
+     */
+    /**
+     * 화면 없이 보낼 요약 — **볼 것이 남아 있다는 사실을 한 줄에 담는다** (B-56).
+     *
+     * 창을 못 띄웠으면 '상세 보기' 버튼으로 갈 길도 없다. 건수마저 빼면 사용자는
+     * *"들어왔다"*만 읽고 오류가 있었다는 것을 영영 모른다 — 이 판이 고치려는 것이
+     * 정확히 그 침묵이다.
+     */
+    /**
+     * 화면이 있으면 토스트, 없으면 알림 + 다음 진입 고지 (B-56).
+     *
+     * **어디까지 화면 밖으로 보내는가 — 경계를 여기 적어 둔다.** *작업이 실제로 돈 뒤의
+     * 종결 고지*(결과 · 실패 · 월드 결과 · 물을 화면이 없었던 충돌)만 보낸다. 파일이 너무
+     * 크다·형식이 아니다 같은 **거절은 토스트로 남긴다** — 그 시점에는 아무것도 돌지 않았고
+     * 사용자가 방금 파일을 고른 직후라 화면이 있다. 취소도 마찬가지다(사용자가 방금 눌렀다).
+     *
+     * 전부 알림으로 보내면 파일을 잘못 고른 것 하나에 알림이 쌓여, 정작 **진짜 사고**를
+     * 말하는 알림이 그 소음에 묻힌다.
+     */
+    private fun deliverTerminal(title: String, body: String) {
+        val act = currentActivityRef?.get()
+        if (act != null && !act.isFinishing && !act.isDestroyed) {
+            Toast.makeText(appContext, body, Toast.LENGTH_LONG).show()
+            return
+        }
+        deliverOffscreen(title, body)
+    }
+
+    private fun offscreenSummary(summary: String, errorCount: Int, warningCount: Int): String {
+        val parts = mutableListOf<String>()
+        if (errorCount > 0) parts.add("오류 ${errorCount}건")
+        if (warningCount > 0) parts.add("경고 ${warningCount}건")
+        if (parts.isEmpty()) return summary
+        return "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱에서 상세를 확인하세요"
+    }
+
+    private fun deliverOffscreen(title: String, body: String) {
+        com.novelcharacter.app.util.ImportNoticeRelay.store(appContext, title, body)
+        runCatching {
+            com.novelcharacter.app.notification.NotificationHelper
+                .showImportResultNotification(appContext, title, body)
+        }.onFailure {
+            android.util.Log.w("ExcelImporter", "Failed to post import result notification", it)
+        }
+    }
+
     fun showImportDialog(fragment: Fragment) {
         val launcher = importLauncher
         if (launcher != null) {
@@ -178,7 +239,11 @@ class ExcelImporter(context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+                    // 작업이 돈 뒤의 종결 고지라 화면이 없으면 알림으로 보낸다 (B-56).
+                    deliverTerminal(
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_retry)
+                    )
                 }
             }
         }
@@ -245,7 +310,10 @@ class ExcelImporter(context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+                    deliverTerminal(
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_retry)
+                    )
                 }
             } finally {
                 dismissTaskProgress(progress)
@@ -320,7 +388,23 @@ class ExcelImporter(context: Context) {
             if (conflict == null) {
                 mode = com.novelcharacter.app.share.WorldPackageImporter.Mode.CLEAN
             } else {
-                mode = showWorldConflictDialog(contents.universe.name, conflict) ?: return
+                mode = when (val choice = showWorldConflictDialog(contents.universe.name, conflict)) {
+                    is ConflictChoice.Chosen -> choice.mode
+                    // 사용자가 건너뛰기를 골랐다 — 그 뜻대로 조용히 끝낸다.
+                    ConflictChoice.Skipped -> return
+                    // **물을 화면이 없었다.** 종전에는 이것이 건너뛰기와 같은 `null`이라
+                    // 가져오기가 통째로 조용히 사라졌다 — 사용자는 파일을 열었는데 아무 일도
+                    // 안 일어난 것으로 본다(B-56). **고를 수 없으면 고르지 않는 것이 맞다**:
+                    // 덮어쓰기는 파괴적이고 새로 만들기는 중복을 남기므로 어느 쪽도 대신
+                    // 정해 줄 수 없다. 대신 **아무것도 바꾸지 않았다는 사실을 말한다.**
+                    ConflictChoice.NoScreen -> {
+                        deliverOffscreen(
+                            appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
+                            appContext.getString(com.novelcharacter.app.R.string.import_notice_no_screen_conflict)
+                        )
+                        return
+                    }
+                }
                 if (mode == com.novelcharacter.app.share.WorldPackageImporter.Mode.OVERWRITE) {
                     val target = conflict.target ?: return
                     // 파괴적 동작은 실행 전에 결과를 알리고 취소 경로를 남긴다 (R-4)
@@ -350,7 +434,13 @@ class ExcelImporter(context: Context) {
                     } else {
                         com.novelcharacter.app.R.string.world_package_import_failed
                     }
-                    Toast.makeText(appContext, messageRes, Toast.LENGTH_LONG).show()
+                    // **이 자리가 이 판에서 가장 값진 전환이다** — 덮어쓰기 경로의 실패는
+                    // 기존 세계관이 **이미 휴지통으로 간 뒤**라, 고지가 막히면 사용자는
+                    // 세계관이 그냥 사라진 것으로 본다. 토스트는 앱이 앞에 없으면 안 뜬다.
+                    deliverTerminal(
+                        appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
+                        appContext.getString(messageRes)
+                    )
                 }
                 return
             }
@@ -363,7 +453,10 @@ class ExcelImporter(context: Context) {
             android.util.Log.e("ExcelImporter", "World package import failed", e)
             withContext(Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
-                Toast.makeText(appContext, com.novelcharacter.app.R.string.world_package_import_failed, Toast.LENGTH_LONG).show()
+                deliverTerminal(
+                    appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
+                    appContext.getString(com.novelcharacter.app.R.string.world_package_import_failed)
+                )
             }
         } finally {
             extractDir.deleteRecursively()
@@ -383,25 +476,46 @@ class ExcelImporter(context: Context) {
         }
     }
 
-    /** @return 선택된 모드, null이면 건너뛰기/취소 */
+    /**
+     * 세계관 충돌에서 사용자가 고른 것 (B-56).
+     *
+     * **종전에는 이 자리가 `Mode?`였고, 그 `null`이 두 가지를 한 값에 담고 있었다** —
+     * *"사용자가 건너뛰기를 골랐다"*와 *"물을 화면이 없었다"*. 부르는 쪽은 둘을 가릴 수 없어
+     * 후자에서도 조용히 끝냈고, 그러면 **사용자는 파일을 열었는데 아무 일도 일어나지 않은
+     * 것으로 본다.** 타입을 갈라 두면 그 혼동이 컴파일 단계에서 불가능해진다.
+     */
+    private sealed class ConflictChoice {
+        data class Chosen(val mode: com.novelcharacter.app.share.WorldPackageImporter.Mode) : ConflictChoice()
+
+        /** 사용자가 건너뛰기를 골랐거나 창을 닫았다 — 그 뜻대로 끝낸다. */
+        object Skipped : ConflictChoice()
+
+        /** 물을 화면이 없었다 — **아무것도 바꾸지 않았고, 그 사실을 말해야 한다.** */
+        object NoScreen : ConflictChoice()
+    }
+
     private suspend fun showWorldConflictDialog(
         universeName: String,
         conflict: com.novelcharacter.app.share.WorldPackageImporter.Conflict
-    ): com.novelcharacter.app.share.WorldPackageImporter.Mode? {
+    ): ConflictChoice {
         val activity = currentActivityRef?.get()
-        if (activity == null || activity.isFinishing || activity.isDestroyed) return null
+        if (activity == null || activity.isFinishing || activity.isDestroyed) return ConflictChoice.NoScreen
         return withContext(Dispatchers.Main) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val act = currentActivityRef?.get()
                 if (act == null || act.isFinishing || act.isDestroyed) {
-                    cont.resume(null, null)
+                    // 위에서 살아 있었는데 메인으로 건너오는 사이 사라졌다 — 같은 처분이다.
+                    cont.resume(ConflictChoice.NoScreen, null)
                     return@suspendCancellableCoroutine
                 }
                 var resumed = false
                 fun finish(mode: com.novelcharacter.app.share.WorldPackageImporter.Mode?) {
                     if (!resumed) {
                         resumed = true
-                        cont.resume(mode, null)
+                        cont.resume(
+                            if (mode == null) ConflictChoice.Skipped else ConflictChoice.Chosen(mode),
+                            null
+                        )
                     }
                 }
                 val message = when {
@@ -524,7 +638,11 @@ class ExcelImporter(context: Context) {
         )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
-            Toast.makeText(appContext, summary, Toast.LENGTH_LONG).show()
+            // 월드패키지도 같은 처분이다(B-56) — 안내 건수까지 실어야 '볼 것이 있다'가 남는다.
+            deliverOffscreen(
+                appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
+                offscreenSummary(summary, errorCount = 0, warningCount = outcome.warnings.size)
+            )
             return
         }
         val message = if (outcome.warnings.isEmpty()) summary else "$summary\n\n⚠ ${outcome.warnings.size}건 안내"
@@ -1027,7 +1145,12 @@ class ExcelImporter(context: Context) {
             rollbackRestoredImages()
             withContext(Dispatchers.Main) {
                 stageProgress?.dismiss()
-                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_oom, Toast.LENGTH_LONG).show()
+                // 작업이 한참 돈 뒤의 종결 고지다 — OOM은 큰 파일에서 나고, 큰 파일일수록
+                // 사용자가 기다리다 앱을 벗어나 있다(B-56).
+                deliverTerminal(
+                    appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                    appContext.getString(com.novelcharacter.app.R.string.import_oom)
+                )
             }
         } finally {
             // 어느 갈래로 빠져나가든 진행 창은 닫힌다 — 위 catch들이 이미 닫았어도 무해하다.
@@ -1626,13 +1749,22 @@ class ExcelImporter(context: Context) {
     private fun showResultDialog(result: ImportResult, summaryMessage: String) {
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
-            Toast.makeText(appContext, summaryMessage, Toast.LENGTH_LONG).show()
+            // 화면이 사라진 뒤에 끝났다 — 알림 + 다음 진입 고지로 보낸다(B-56).
+            // **오류·경고 건수를 요약에 함께 싣는다**: 창을 못 띄우면 '상세 보기'로 갈 길이
+            // 없으므로, 적어도 *볼 것이 있다*는 사실은 이 한 줄이 말해야 한다.
+            deliverOffscreen(
+                appContext.getString(com.novelcharacter.app.R.string.import_result_title),
+                offscreenSummary(summaryMessage, result.errors.size, result.warnings.size)
+            )
             return
         }
 
         val hasDetails = result.errors.isNotEmpty() || result.warnings.isNotEmpty()
         val builder = MaterialAlertDialogBuilder(act)
-            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_title))
+            // 제목을 글자가 아니라 뷰로 두는 것은 **`?`를 붙일 자리가 여기뿐**이기 때문이다
+            // (B-180). 버튼 세 자리는 이미 상세 보기·확인이 쓰고 있고, 남은 한 자리에
+            // 도움말을 넣으면 그것을 누른 사용자가 **결과를 잃는다**(창이 닫힌다).
+            .setCustomTitle(matchingHelpTitle(act))
             .setMessage(summaryMessage)
 
         if (hasDetails) {
@@ -1665,7 +1797,12 @@ class ExcelImporter(context: Context) {
         val body = appContext.getString(com.novelcharacter.app.R.string.import_failed_nothing_applied, where)
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
-            Toast.makeText(appContext, body, Toast.LENGTH_LONG).show()
+            // **이 고지야말로 사라지면 안 된다** — 전부 아니면 전무라는 사실과 멈춘 자리를
+            // 말하는 자리라, 못 보면 사용자는 반쯤 들어온 줄 알고 다시 가져온다(B-56).
+            deliverOffscreen(
+                appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                body
+            )
             return
         }
         MaterialAlertDialogBuilder(act)
@@ -1673,6 +1810,50 @@ class ExcelImporter(context: Context) {
             .setMessage(body)
             .setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
             .show()
+    }
+
+    /**
+     * 가져오기 결과 창의 제목 줄 — 제목 + `?` 도움말(B-180).
+     *
+     * **`?`가 여기 붙는 이유:** `매칭`은 표2(유지) 판정을 받은 말이고, 표2는 *"처음 등장하는
+     * 화면에 `?` 도움말을 단다"*를 의무로 건다. 그 말이 사용자에게 **처음 나타나는 자리가
+     * 바로 이 결과·경고 화면**이다("이름 매칭 N건" · 매칭 경고들).
+     *
+     * 도움말을 눌러도 **결과 창은 그대로 있다** — 도움말은 그 위에 뜨고, 닫으면 결과가
+     * 다시 보인다. 버튼 자리에 넣었다면 누르는 순간 결과를 잃었을 것이고, 그러면
+     * *"경고를 읽으려고 열었는데 없어졌다"*가 된다.
+     */
+    private fun matchingHelpTitle(act: android.app.Activity): View {
+        val dp = act.resources.displayMetrics.density
+        val dp24 = (24 * dp).toInt()
+        val dp16 = (16 * dp).toInt()
+        val row = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp24, dp16 + (dp16 / 2), dp24, 0)
+        }
+        row.addView(
+            TextView(act).apply {
+                text = appContext.getString(com.novelcharacter.app.R.string.import_result_title)
+                // 앱 스타일을 쓴다 — 이 저장소는 크기·굵기를 코드에 적지 않고
+                // `TextAppearance.App.*`로 모아 두는 규약이다(styles.xml 머리 주석).
+                setTextAppearance(com.novelcharacter.app.R.style.TextAppearance_App_TitleLarge)
+            },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        row.addView(
+            android.widget.ImageButton(act).apply {
+                setImageResource(com.novelcharacter.app.R.drawable.ic_help)
+                contentDescription = appContext.getString(com.novelcharacter.app.R.string.help_icon_desc)
+                background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                setOnClickListener {
+                    com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                        act, com.novelcharacter.app.ui.common.HelpDialog.Topic.EXCEL_MATCHING
+                    )
+                }
+            }
+        )
+        return row
     }
 
     private fun showErrorDetailDialog(act: android.app.Activity, result: ImportResult) {

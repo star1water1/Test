@@ -28,10 +28,86 @@ class DuelFieldLinksTest {
     @Test
     fun `excel text round trip keeps order and direction`() {
         val links = listOf(Link("mana"), Link("age", higherWins = false))
-        assertEquals("mana, -age", DuelFieldLinks.toText(links))
-        assertEquals(links, DuelFieldLinks.parseText("mana, -age"))
+        assertEquals("mana, ▼age", DuelFieldLinks.toText(links))
+        assertEquals(links, DuelFieldLinks.parseText("mana, ▼age"))
         // 사람이 적은 것이라 공백·줄바꿈이 섞여도 같은 결과여야 한다.
-        assertEquals(links, DuelFieldLinks.parseText("  mana ,\n  - age  "))
+        assertEquals(links, DuelFieldLinks.parseText("  mana ,\n  ▼ age  "))
+    }
+
+    // ── B-173: 표식이 `-`에서 `▼`로 바뀌었다 (읽기 셋 · 쓰기 하나) ──
+
+    /**
+     * **쓰기는 `▼` 하나다.** 되돌리면 `-`가 다시 나가고, 그러면 사용자가 그 칸을 손으로 고칠 때
+     * 엑셀이 수식으로 읽어 `#NAME?`를 돌려준다 — B-173이 고친 것의 전부다.
+     *
+     * 앞머리를 **키의 일부로 착각하지 않는지**도 여기서 잰다: `▼`가 키에 남으면 축은 있지도
+     * 않은 필드를 가리키게 되고, 그 값은 영영 비어 있다.
+     */
+    @Test
+    fun `writes only the new marker`() {
+        val text = DuelFieldLinks.toText(listOf(Link("age", higherWins = false)))
+        assertEquals("▼age", text)
+        assertTrue("옛 표식이 아직 나간다 — 엑셀이 수식으로 읽는다", !text.startsWith("-"))
+        assertEquals(listOf(Link("age", higherWins = false)), DuelFieldLinks.parseText(text))
+    }
+
+    /**
+     * **옛 표식이 그대로 읽힌다** — 이것이 이 판의 방어선이다.
+     *
+     * 표식을 바꾸면서 마이그레이션을 하지 않았으므로 **이미 내보낸 파일과 DB에 저장된 축이
+     * 전부 `-` 표기**다. 이 폴백을 걷으면 그것들의 *작을수록 유리*가 통째로 뜻을 잃고
+     * (앞머리가 키에 눌어붙어) 연결 자체가 죽는다. `'-`는 안내가 없던 동안 작은따옴표
+     * 회피를 스스로 찾아 쓴 사람의 파일이다 — 거부가 아니라 수용이다(개발 의도 4번).
+     */
+    @Test
+    fun `legacy markers still read as lower wins`() {
+        val expected = listOf(Link("age", higherWins = false))
+        assertEquals("옛 `-` 표식이 죽었다 — 이미 내보낸 파일 전부가 여기 매달려 있다", expected, DuelFieldLinks.parseText("-age"))
+        assertEquals("작은따옴표 회피로 적은 파일이 안 읽힌다", expected, DuelFieldLinks.parseText("'-age"))
+        // 저장된 JSON도 옛 표기 그대로다 — 같은 경로로 풀린다.
+        assertEquals(expected, DuelFieldLinks.decode("""["-age"]"""))
+    }
+
+    /**
+     * **`'-`를 `-`보다 먼저 잰다.** 짧은 것부터 보면 `'-age`의 앞머리가 `'`만 남긴 채 안 잡혀
+     * 키가 `'-age`가 되고, 그 축은 없는 필드를 가리킨다. 순서가 곧 계약이라 시험으로 적는다.
+     */
+    @Test
+    fun `longest legacy marker wins the match`() {
+        assertEquals(listOf(Link("age", higherWins = false)), DuelFieldLinks.parseText("'-age"))
+    }
+
+    /**
+     * **앞머리는 한 번만 뗀다.** 되풀이해 떼면 `-age`라는 *이름의* 필드를 가리킬 길이
+     * 없어지고, 사용자가 적은 키를 앱이 마음대로 깎는 셈이 된다(개발 의도 2번).
+     */
+    @Test
+    fun `prefix is stripped once only`() {
+        assertEquals(listOf(Link("-age", higherWins = false)), DuelFieldLinks.parseText("▼-age"))
+        assertEquals(listOf(Link("▼age", higherWins = false)), DuelFieldLinks.parseText("-▼age"))
+    }
+
+    /** 표식만 있고 키가 없는 칸은 옛 표식에서도 버려진다(종전과 같다). */
+    @Test
+    fun `marker without a key yields nothing`() {
+        assertEquals(emptyList<Link>(), DuelFieldLinks.parseText("▼"))
+        assertEquals(emptyList<Link>(), DuelFieldLinks.parseText("'-"))
+    }
+
+    /**
+     * **시스템 열과 겹쳐 적을 수 있다** — 시트 안내가 `▼sys:name`을 예로 든다.
+     * 접두 둘이 겹치는 자리라, 앞머리를 뗀 뒤에도 `sys:`가 온전해야 한다.
+     */
+    @Test
+    fun `marker composes with the system column prefix`() {
+        assertEquals(
+            listOf(Link("sys:name", higherWins = false)),
+            DuelFieldLinks.parseText("▼sys:name")
+        )
+        assertEquals(
+            listOf(Link("sys:name", higherWins = false)),
+            DuelFieldLinks.parseText("-sys:name")
+        )
     }
 
     @Test
