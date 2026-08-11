@@ -5,9 +5,14 @@ import com.novelcharacter.app.data.model.FieldDefRef
 /**
  * 해석 집계 — 코드로 다시 찾은 건수와 '근거가 id뿐인 해석'이 있었는지를 모은다.
  *
- * [pendingCodes]는 같은 작업으로 **함께 복원될 예정**인 코드다. 지금 DB에 없어도 복원
- * 순서상 그때는 존재하므로 유실로 세지 않는다 — 이것이 없으면 작업 전체 미리보기가
+ * [pendingCodes]는 같은 작업으로 **함께 복원될 예정**인 대상의 **보류 키**다. 지금 DB에 없어도
+ * 복원 순서상 그때는 존재하므로 유실로 세지 않는다 — 이것이 없으면 작업 전체 미리보기가
  * "세력을 되살릴 수 없다"처럼 사실과 다른 경고를 낸다.
+ *
+ * **이름과 달리 코드만 담기지 않는다** — [pendingKeyOf]가 만든 키가 담긴다(코드가 있으면
+ * 코드, 코드로 가리킬 수 없는 참조는 `(타입, 옛 id)`). 이름은 코드뿐이던 시절 것이고,
+ * 그 이름을 믿고 **코드만 심으면 구버전 참조자가 보류를 못 받아 거짓 경고가 남는다**(B-25).
+ * 채우는 쪽은 `TrashRepository.collectOperationCodes` 하나다.
  */
 class RestoreTally(legacy: Boolean, private val pendingCodes: Set<String>) {
     var relinked = 0

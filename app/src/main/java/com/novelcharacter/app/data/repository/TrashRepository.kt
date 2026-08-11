@@ -1216,7 +1216,12 @@ class TrashRepository(
     }
 
     /**
-     * 이 작업이 복원하면 존재하게 될 엔티티 코드 — 전체와, 같은 우선순위 동료끼리의 것.
+     * 이 작업이 복원하면 존재하게 될 엔티티의 **보류 키** — 전체와, 같은 우선순위 동료끼리의 것.
+     *
+     * `pending`은 코드만 담지 않는다 — [RestoreTally.pendingKeyOf]가 만든 키를 담으며, 한 항목이
+     * **코드 키와 옛 id 키를 둘 다** 낼 수 있다(어느 쪽으로 찾는가는 참조하는 쪽이 정한다).
+     * `peers`는 종전대로 코드뿐이다 — 그쪽은 *같은 우선순위끼리 순서가 없다*는 다른 물음이고,
+     * 캐릭터·세력의 코드는 비어 있지 않다.
      *
      * payload를 파싱해 얻는다(목록 행의 entityName만으로는 코드를 알 수 없다).
      * **한 번만 파싱한다** — 종전에는 pending/peer 수집이 각각 전량을 훑어, 수백 항목짜리
@@ -1267,15 +1272,17 @@ class TrashRepository(
                     parse(item, DuelAxisSnapshot::class.java)?.axis?.code
                 else -> null
             }
-            val nonBlank = code?.takeIf { it.isNotBlank() }
-            val legacyId = idPreserved
-            when {
-                nonBlank != null -> pending.add(nonBlank)
-                // B-25 — 코드가 없어도 옛 id가 곧 되살아난다. 그 사실을 예고가 알아야
-                // "찾을 수 없음"이라 말하지 않는다(id 폴백이 실제로 잇는다).
-                legacyId != null ->
-                    pending.add(RestoreTally.pendingKeyOf(item.entityType, legacyId, null))
-            }
+            // B-25 — **둘 다 심는다.** 이 항목이 되살아나면 뒤 항목은 코드로도, 옛 id로도
+            // 그것을 찾는다. 어느 쪽으로 찾는가는 **참조하는 쪽**이 정하기 때문이다:
+            //   ⓐ 참조당하는 쪽에 코드가 없다(v35 이전 사건) → 뒤 항목의 refs에도 그 자리가 없다
+            //   ⓑ **참조하는 쪽이 구버전이다**(payload에 refs가 통째로 없다) → 코드가 멀쩡히
+            //      있는 대상도 옛 id로만 가리킨다
+            // ⓑ를 빠뜨리면 같은 거짓 경고가 그대로 남는다 — 예고는 "찾을 수 없음"인데 복원은
+            // id 폴백으로 멀쩡히 잇는다. **거짓 안심이 되지는 않는다:** 옛 id 키는 그 id가 지금
+            // 비어 있을 때만 조회되고(살아 있으면 해석이 이미 성공한다), 비어 있으면 apply*가
+            // 그 id를 그대로 되살린다.
+            code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
+            idPreserved?.let { pending.add(RestoreTally.pendingKeyOf(item.entityType, it, null)) }
         }
         return OperationCodes(pending, PeerCodes(characters, factions))
     }

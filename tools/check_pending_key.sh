@@ -12,7 +12,7 @@
 #
 # `collectOperationCodes`는 **private이고 Room에 매달려 있다.** 순수 JVM 하네스가
 # 원리적으로 못 닿는다 — 2026.08.11에 실제로 확인했다: 심는 줄을 통째로 지워도
-# `run_jvm_tests` 2337건이 **전부 초록**이었다. 키의 *모양*은 `RestoreTallyTest`가 재지만
+# `run_jvm_tests` **전수가 초록**이었다(건수는 적지 않는다 — 적으면 낡는다). 키의 *모양*은 `RestoreTallyTest`가 재지만
 # *배선*은 아무것도 재지 못한다. 그 자리를 기계가 본다.
 #
 # ── 축이 셋이다 ──
@@ -21,8 +21,11 @@
 #    날 `code`를 그대로 넘기면 **그 자리만** 코드 없는 참조의 보류를 못 본다. 참조 해석은
 #    타입마다 자리가 따로라(캐릭터·사건·세력·작품·세계관) 새 자리가 계속 는다 — 이 축이
 #    없으면 다음에 추가되는 자리가 조용히 옛 모양으로 들어온다.
-# ② **심는 쪽** — `collectOperationCodes`가 코드 없는 행에 `pendingKeyOf(…, null)`을 심는가.
+# ② **심는 쪽** — `collectOperationCodes`가 옛 id 키(`pendingKeyOf(…, null)`)를 심는가.
 #    이것이 B-25 수정의 본체이고, 지워도 아무 시험도 빨개지지 않는 그 줄이다.
+#    **코드 키와 함께 심는다** — 어느 쪽으로 찾는가는 *참조하는 쪽*이 정하기 때문이다:
+#    참조당하는 쪽에 코드가 없거나(v35 이전 사건), **참조하는 쪽 payload에 refs가 통째로 없으면**
+#    (구버전) 옛 id로만 가리킨다. 둘 중 하나만 심으면 나머지 절반에서 거짓 경고가 그대로 남는다.
 # ③ **심지 말아야 할 자리** — 등급 체계·대결 축 갈래가 옛 id를 보류 키로 쓰지 않는가.
 #    `applyGradeSystem`·`applyDuelAxis`는 **언제나 `id = 0`으로 넣어** 새 id를 받는다.
 #    id 폴백이 성립할 수 없는 타입에 보류를 주면 거짓 안심이 된다.
@@ -228,12 +231,8 @@ class Sample {
                     parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.code
                 else -> null
             }
-            val legacyId = idPreserved
-            when {
-                code != null -> pending.add(code)
-                legacyId != null ->
-                    pending.add(RestoreTally.pendingKeyOf(item.entityType, legacyId, null))
-            }
+            code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
+            idPreserved?.let { pending.add(RestoreTally.pendingKeyOf(item.entityType, it, null)) }
         }
     }
 

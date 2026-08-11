@@ -229,6 +229,22 @@ class RestoreTallyTest {
     }
 
     @Test
+    fun `구버전 참조자는 대상에 코드가 있어도 옛 id로 묻는다 — 그래서 둘 다 심는다`() {
+        // **어느 키로 묻는가는 참조하는 쪽이 정한다.** payload에 refs가 통째로 없는 구버전
+        // 참조자는 대상의 코드를 알 방법이 없어 **옛 id로만** 가리킨다. 그래서 심는 쪽
+        // (`collectOperationCodes`)이 코드만 심으면, 대상이 같은 작업에 멀쩡히 있는데도
+        // 이 참조는 못 찾아 **거짓 경고가 그대로 남는다** — 마무리 콜드 검토가 잡은 자리다.
+        val asked = RestoreTally.pendingKeyOf("event", 41L, null)
+        val codeOnly = RestoreTally.pendingKeyOf("event", 41L, "EVT-1")
+        assertNotEquals("코드만 심으면 구버전 참조자의 물음과 만나지 않는다", asked, codeOnly)
+
+        // 둘 다 심은 상태 — 구버전 참조자도 보류를 받는다.
+        val tally = RestoreTally(legacy = true, pendingCodes = setOf(codeOnly, asked))
+        val missing = SnapshotRefResolver.resolveByCode(41L, null, emptyMap(), emptyMap(), emptySet())
+        assertTrue(tally.note(missing, asked).found)
+    }
+
+    @Test
     fun `같은 작업에 없는 코드 없는 사건은 사실대로 유실로 센다`() {
         // 거짓 경고를 없앤다고 진짜 유실까지 감추면 그것이 무음 유실이다 — B-25의 경계선.
         val tally = RestoreTally(legacy = false, pendingCodes = setOf(RestoreTally.pendingKeyOf("event", 99L, null)))
