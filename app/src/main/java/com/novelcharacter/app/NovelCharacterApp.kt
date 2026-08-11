@@ -338,6 +338,19 @@ class NovelCharacterApp : Application() {
             description = getString(R.string.notification_channel_backup_desc)
         }
         manager.createNotificationChannel(backup)
+
+        // 가져오기 결과 통지용 채널 (B-56) — 백업과 나눈 것은 **따로 끌 수 있어야 하기**
+        // 때문이다. 한 채널에 묶으면 가져오기 알림이 성가셔 끈 사용자가 자동 백업 실패
+        // 통지까지 함께 잃는다. 중요도를 DEFAULT로 두는 것도 그 갈래다 — 끝난 일의
+        // 보고이지 지금 손대야 하는 사고가 아니다.
+        val transfer = NotificationChannel(
+            TRANSFER_CHANNEL_ID,
+            getString(R.string.notification_channel_transfer_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = getString(R.string.notification_channel_transfer_desc)
+        }
+        manager.createNotificationChannel(transfer)
     }
 
     private fun scheduleBirthdayCheck() {
@@ -383,5 +396,6 @@ class NovelCharacterApp : Application() {
     companion object {
         const val BIRTHDAY_CHANNEL_ID = "birthday_channel"
         const val BACKUP_CHANNEL_ID = "backup_channel"
+        const val TRANSFER_CHANNEL_ID = "transfer_channel"
     }
 }

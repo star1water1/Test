@@ -53,8 +53,8 @@ data class DuelAxis(
     val createdAt: Long = System.currentTimeMillis(),
     /**
      * **승패에 영향을 주는 필드** — `FieldDefinition.key`의 JSON 배열이고 **순서가 영향력
-     * 순위다**(1순위가 맨 앞). 앞머리 `-`는 *작을수록 유리*를 뜻한다.
-     * 해석·비교는 [com.novelcharacter.app.util.DuelFieldLinks]가 단일 소스다.
+     * 순위다**(1순위가 맨 앞). 앞머리 `▼`는 *작을수록 유리*를 뜻한다(옛 표식 `-`도 그대로
+     * 읽힌다 — B-173). 해석·비교는 [com.novelcharacter.app.util.DuelFieldLinks]가 단일 소스다.
      *
      * 이 값들은 **대결 화면에 보인다** — 고를 때 보는 판단 재료이기 때문이다.
      */

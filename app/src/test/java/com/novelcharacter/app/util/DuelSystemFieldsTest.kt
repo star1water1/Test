@@ -75,8 +75,11 @@ class DuelSystemFieldsTest {
     fun `앞머리에 구분자가 들어 있지 않다`() {
         assertFalse(DuelSystemFields.PREFIX.contains(","))
         assertFalse(DuelSystemFields.PREFIX.contains("\n"))
-        // `-`로 시작하면 *작을수록 유리* 표식과 구별되지 않는다.
+        // *작을수록 유리* 표식으로 시작하면 그것과 구별되지 않는다. **옛 표식도 함께 잰다** —
+        // `-`는 이제 읽기 전용이지만 여전히 앞머리로 해석되므로 겹치면 같은 사고가 난다(B-173).
         assertFalse(DuelSystemFields.PREFIX.startsWith("-"))
+        assertFalse(DuelSystemFields.PREFIX.startsWith("▼"))
+        assertFalse(DuelSystemFields.PREFIX.startsWith("'"))
     }
 
     @Test
@@ -87,6 +90,70 @@ class DuelSystemFieldsTest {
         assertTrue(DuelSystemFields.isSystemKey("sys:오타"))
         assertFalse(DuelSystemFields.isSystemKey("mana_affinity"))
         assertFalse(DuelSystemFields.isSystemKey(null))
+    }
+
+    // ── B-172: 모르는 `sys:` 키를 세 자리 전부에서 모은다 ──
+
+    /**
+     * **영향·프로필 자리가 이 행이 열린 이유다.** 산출 자리는 `outcomeBlocked`가 접두로
+     * 잡아 이미 말하고 있었고, 남은 구멍이 이 둘이었다 — 값이 영영 비는데 아무 말도 없었다.
+     */
+    @Test
+    fun `모르는 sys 키를 영향과 프로필 자리에서 모은다`() {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.parseText("sys:anothername, mana_affinity"),
+            profiles = DuelFieldLinks.parseText("sys:오타, sys:tags")
+        )
+        assertEquals(listOf("sys:anothername", "sys:오타"), axis.unknownSystemKeys)
+    }
+
+    /**
+     * **아는 열과 커스텀 필드는 걸리지 않는다.** 여기가 무너지면 멀쩡한 연결에 경고가 붙어
+     * 진짜 오타가 그 소음에 묻힌다 — 거짓 경고는 침묵만큼 나쁘다.
+     */
+    @Test
+    fun `아는 열과 커스텀 필드는 미해석으로 세지 않는다`() {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.parseText("sys:another_name, ▼sys:name"),
+            outcomes = DuelFieldLinks.parseText("power"),
+            profiles = DuelFieldLinks.parseText("sys:tags, 없는_커스텀_필드")
+        )
+        assertTrue("아는 열·커스텀 키에 경고가 붙었다", axis.unknownSystemKeys.isEmpty())
+    }
+
+    /**
+     * **자리 판정과 존재 판정은 다른 물음이다.** 산출 자리의 오타는 둘 다에 걸리는데,
+     * 겹치는 것이 아니라 사실이 둘이다 — 자리를 옮겨도 없는 열인 것은 그대로다.
+     * 하나로 합치면 *"산출로는 못 건다"*만 듣고 철자를 고치지 않는다.
+     */
+    @Test
+    fun `산출 자리의 오타는 자리 위반이면서 동시에 미해석이다`() {
+        val axis = DuelFieldLinks.Axis(outcomes = DuelFieldLinks.parseText("sys:오타"))
+        assertEquals(listOf("sys:오타"), axis.outcomeBlocked)
+        assertEquals(listOf("sys:오타"), axis.unknownSystemKeys)
+    }
+
+    /** 앞머리가 붙어 들어와도 판정은 키로 한다 — 표식은 방향이지 이름이 아니다(B-173). */
+    @Test
+    fun `작을수록 유리 표식이 붙어도 미해석 판정은 같다`() {
+        assertEquals(
+            listOf("sys:오타"),
+            DuelFieldLinks.Axis(influences = DuelFieldLinks.parseText("▼sys:오타")).unknownSystemKeys
+        )
+        assertEquals(
+            listOf("sys:오타"),
+            DuelFieldLinks.Axis(influences = DuelFieldLinks.parseText("-sys:오타")).unknownSystemKeys
+        )
+    }
+
+    /** 같은 오타가 두 자리에 있어도 한 번만 말한다 — 같은 사실을 두 번 세지 않는다. */
+    @Test
+    fun `같은 미해석 키는 한 번만 센다`() {
+        val axis = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.parseText("sys:오타"),
+            profiles = DuelFieldLinks.parseText("sys:오타")
+        )
+        assertEquals(listOf("sys:오타"), axis.unknownSystemKeys)
     }
 
     @Test
@@ -316,7 +383,7 @@ class DuelSystemFieldsTest {
     /**
      * 엑셀 칸 ↔ 연결의 왕복 (설계 물음 ⓒ).
      *
-     * 접두가 쉼표를 담지 않는다는 것만으로는 부족하다 — `-`(작을수록 유리)와 겹쳐 적히는
+     * 접두가 쉼표를 담지 않는다는 것만으로는 부족하다 — `▼`(작을수록 유리)와 겹쳐 적히는
      * 자리가 있어 **둘이 함께 성립하는지**를 실제로 왕복시켜 잰다.
      */
     @Test
@@ -327,7 +394,7 @@ class DuelSystemFieldsTest {
             DuelFieldLinks.Link("mana_affinity")
         )
         val text = DuelFieldLinks.toText(links)
-        assertEquals("sys:another_name, -sys:name, mana_affinity", text)
+        assertEquals("sys:another_name, ▼sys:name, mana_affinity", text)
         assertEquals(links, DuelFieldLinks.parseText(text))
         // DB 저장 형식도 같은 왕복을 지킨다.
         assertEquals(links, DuelFieldLinks.decode(DuelFieldLinks.encode(links)))

@@ -11,6 +11,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.databinding.DialogExportFullBackupBinding
 import com.novelcharacter.app.ui.common.TaskProgressDialog
+import com.novelcharacter.app.util.ImportNoticeRelay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,12 +59,46 @@ class ExcelTransferController(private val fragment: Fragment) {
     init {
         importer.registerLauncher(fragment)
         fragment.lifecycle.addObserver(object : DefaultLifecycleObserver {
+            /**
+             * **화면 없이 끝난 가져오기의 결과를 여기서 갚는다** (B-56).
+             *
+             * 가져오기는 화면이 사라져도 계속 도는데, 끝났을 때 결과 창을 띄울 자리가 없으면
+             * 종전에는 토스트로 물러섰다 — 앱이 앞에 없으면 안드로이드가 그 토스트를 막으므로
+             * (API 30+) **정작 필요한 순간에 아무 일도 안 하는 고지**였다.
+             *
+             * 알림과 짝이다: 알림은 앱 밖에서 지금 닿고 이쪽은 **알림을 못 봤거나 권한을
+             * 거절한 사용자**에게 닿는다. 알림 권한 거절은 정당한 선택이라 그것 하나에 걸면
+             * 거절한 사용자에게는 종전과 똑같이 침묵이다.
+             *
+             * **가져오기 진입이 있는 화면에 붙이는 것**이 자리 판정이다 — 파일을 들인 사람이
+             * 다시 오는 자리이고, 이 컨트롤러가 곧 그 진입이다.
+             */
+            override fun onStart(owner: LifecycleOwner) {
+                showPendingImportNotice()
+            }
+
             override fun onDestroy(owner: LifecycleOwner) {
                 exporter?.cancel()
                 exporter = null
                 importer.cleanup()
             }
         })
+    }
+
+    /**
+     * 보관된 고지를 한 번만 낸다 — 읽으면서 지운다([ImportNoticeRelay.consume]).
+     * 남겨 두면 앱을 열 때마다 지난 결과가 다시 떠 **새 결과로 오인**된다.
+     *
+     * `isAdded`를 먼저 보는 것은 지우기만 하고 못 보여 주는 경우를 막기 위해서다.
+     */
+    private fun showPendingImportNotice() {
+        if (!fragment.isAdded) return
+        val notice = ImportNoticeRelay.consume(fragment.requireContext().applicationContext) ?: return
+        MaterialAlertDialogBuilder(fragment.requireContext())
+            .setTitle(fragment.getString(R.string.import_notice_pending_title))
+            .setMessage("${notice.title}\n\n${notice.body}")
+            .setPositiveButton(R.string.confirm, null)
+            .show()
     }
 
     /**

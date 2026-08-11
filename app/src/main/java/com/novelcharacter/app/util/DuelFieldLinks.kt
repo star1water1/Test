@@ -130,14 +130,72 @@ object DuelFieldLinks {
          */
         val outcomeBlocked: List<String>
             get() = outcomes.map { it.key }.filter { DuelSystemFields.isSystemKey(it) }.distinct()
+
+        /**
+         * **이 앱이 모르는 `sys:` 키** — 세 자리 전부에서 (B-172).
+         *
+         * `sys:anothername`(밑줄 빠짐)처럼 사람이 엑셀에서 낸 오타가 여기 온다. 값은 영영
+         * 비어 있고 화면은 그 키를 **글자 그대로** 띄운다.
+         *
+         * **모르는 커스텀 필드 키와 겉모습이 같지만 성질이 다르다.** 그쪽은 나중에 그 필드를
+         * 만들면 살아나므로 **남겨 두는 것이 옳고**(`DuelFieldLinkAdapter`가 그렇게 정해 둔
+         * 자리다), `sys:` 오타는 **영영 살아나지 않는다** — `sys:`가 예약 접두라(R-40) 그
+         * 이름의 필드를 만들어도 자리 판정은 접두가 이긴다.
+         *
+         * **[outcomeBlocked]와 묻는 것이 다르다.** 그쪽은 *자리*를 묻고(시스템 열은 산출이 될
+         * 수 없다) 이쪽은 *존재*를 묻는다(이런 열이 아예 없다). 그래서 산출 자리의 오타는
+         * 둘 다에 걸리는데, **겹치는 것이 아니라 사실이 둘인 것이다** — 자리를 고쳐도
+         * 존재하지 않는 것은 그대로다. 두 목록이 뜨는 자리도 다르다: 자리 위반은 축 편집
+         * 창이(이어지는 상태라 고칠 자리가 거기다), 미해석 키는 **가져오기 결과**가 말한다
+         * (엑셀 경로로만 생기고, 고르는 창은 이 키를 낼 수 없다 — 4장 B-172 행에 근거를 적었다).
+         *
+         * 값은 지우지 않는다 — 사용자가 적은 것을 조용히 버리지 않는다는 규약은 여기서도 같다.
+         */
+        val unknownSystemKeys: List<String>
+            get() = (influences + outcomes + profiles)
+                .map { it.key }
+                .filter { DuelSystemFields.isSystemKey(it) && DuelSystemFields.columnOf(it) == null }
+                .distinct()
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // 저장 형식 — JSON 배열(DB)과 사람이 적는 글(엑셀)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** 작을수록 유리함을 나타내는 앞머리. 엑셀에서 사람이 직접 적을 수 있어야 해 한 글자로 뒀다. */
-    private const val LOWER_WINS_PREFIX = "-"
+    /**
+     * 작을수록 유리함을 나타내는 앞머리 — **쓰기는 이것 하나다** (B-173).
+     *
+     * **`-`에서 `▼`로 바꾼 이유는 엑셀이 `-`를 수식으로 읽기 때문이다.** 이 토큰은
+     * `영향필드` 칸에 그대로 실려 **사람이 손으로 고칠 수 있어야 하는데**(개발 의도 4번),
+     * 외부 편집기에 `-age`를 치면 `#NAME?`가 뜬다. 앱이 써 내보낸 파일은
+     * `setTextSafe`로 나가 멀쩡했으므로 **왕복 자체는 성립했지만**, 시트 안내가
+     * *"사람이 손으로 고칠 수 있는 자리"*라 선언한 그 손편집이 이 한 갈래에서만 막혀 있었다.
+     *
+     * **기호를 바꾸는 쪽을 고른 것은 사용자가 아무것도 안 해도 되기 때문이다.** 다른 갈래는
+     * 안내 시트에 *"앞에 작은따옴표를 붙이세요"*를 적는 것이었는데, 그 회피는 사용자가
+     * **매번** 해야 한다(개발 의도 3번 — 가능성은 넓게, 실사용은 간편하게). `▼`는
+     * 엑셀·구글시트가 수식으로 읽지 않고 *작을수록 유리*라는 뜻도 모양이 함께 말한다.
+     *
+     * 원문·근거는 `docs/judgment_confirmations_2026-08.md` 14-2의 16번이다.
+     */
+    private const val LOWER_WINS_PREFIX = "▼"
+
+    /**
+     * 읽기만 하는 옛 앞머리 — **쓰지 않는다** (R-2: 옛 것을 계속 읽는 경로).
+     *
+     * **이미 내보낸 파일과 저장된 축이 전부 `-`로 적혀 있어** 이 폴백이 없으면 표식을 바꾸는
+     * 순간 그것들이 통째로 뜻을 잃는다. 마이그레이션을 하지 않았으므로 **DB에 든 JSON도
+     * 옛 표기 그대로**이며, 그 값들은 이 목록에 매달려 있다.
+     *
+     * `'-`가 함께 있는 것은 **사람이 회피를 배워 적은 파일**을 위해서다. 안내가 없던 동안
+     * 작은따옴표 요령을 스스로 찾아 쓴 사용자가 있을 수 있고, 그 파일도 그대로 들어와야 한다
+     * (개발 의도 4번 — 거부가 아니라 유연한 수용). 엑셀은 보통 그 따옴표를 셀 값이 아니라
+     * 서식으로 들고 있어 POI에는 `-`만 오지만, CSV·다른 도구를 거치면 글자로 남는다.
+     *
+     * **긴 것부터 본다** — `'-`를 `-`보다 먼저 재지 않으면 `'-age`의 앞머리가 안 잡혀
+     * 키가 `'-age`가 되어 버린다.
+     */
+    private val LEGACY_LOWER_WINS_PREFIXES = listOf("'-", "-")
 
     /**
      * 저장 형식으로. **JSON 배열인 것은 [DuelRecords.encodeMembers]와 같은 근거다** —
@@ -160,7 +218,8 @@ object DuelFieldLinks {
     }
 
     /**
-     * 엑셀 한 칸에서. 쉼표로 나누고 앞머리 `-`는 *작을수록 유리*로 읽는다.
+     * 엑셀 한 칸에서. 쉼표로 나누고 앞머리 `▼`는 *작을수록 유리*로 읽는다 —
+     * **옛 표식 `-`·`'-`도 그대로 받는다**([LEGACY_LOWER_WINS_PREFIXES]).
      * **순서가 그대로 영향력 순위**라 사람이 적은 차례를 지킨다.
      */
     fun parseText(text: String?): List<Link> {
@@ -175,12 +234,19 @@ object DuelFieldLinks {
     private fun token(link: Link): String =
         if (link.higherWins) link.key else LOWER_WINS_PREFIX + link.key
 
+    /**
+     * 한 토큰에서. **읽기는 새 표식과 옛 표식을 모두 받는다**(B-173 — 읽기 둘, 쓰기 하나).
+     *
+     * 앞머리를 **한 번만** 떼는 것이 중요하다: 되풀이해 떼면 `▼-age`라는 이름의 필드를
+     * 가리킬 길이 없어지고, 무엇보다 사용자가 적은 키를 앱이 마음대로 깎게 된다.
+     */
     private fun parseToken(raw: String): Link? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
-        val lower = trimmed.startsWith(LOWER_WINS_PREFIX)
-        val key = (if (lower) trimmed.removePrefix(LOWER_WINS_PREFIX) else trimmed).trim()
-        return if (key.isEmpty()) null else Link(key, higherWins = !lower)
+        val prefix = (listOf(LOWER_WINS_PREFIX) + LEGACY_LOWER_WINS_PREFIXES)
+            .firstOrNull { trimmed.startsWith(it) }
+        val key = (if (prefix != null) trimmed.substring(prefix.length) else trimmed).trim()
+        return if (key.isEmpty()) null else Link(key, higherWins = prefix == null)
     }
 
     /**

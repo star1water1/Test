@@ -65,7 +65,18 @@ object HelpDialog {
         REPRESENTATIVE_IMAGE(
             R.string.help_representative_image_title,
             R.string.help_representative_image_body
-        )
+        ),
+
+        /**
+         * 매칭(B-180) — H13~H15와 같은 계열이다(설명만으로 끝나지 않아 절이 넷으로 나뉜다:
+         * 무엇인가 → 무엇으로 잇는가 → 하지 말 것 → 헷갈릴 것).
+         *
+         * **`매칭`은 표2(유지) 판정을 받은 말이고, 유지 판정이 도움말을 면제하지 않는다** —
+         * 오히려 그 반대다: 바꾸지 않기로 한 말일수록 처음 만나는 사람에게 뜻을 한 번은
+         * 말해 줘야 한다. 이 말이 사용자에게 처음 나타나는 자리가 **엑셀 가져오기 결과**라
+         * `?`도 그 창에 붙는다. 초안·승인 근거는 가이드 9-2 H16 · 확정 14-1-a.
+         */
+        EXCEL_MATCHING(R.string.help_excel_matching_title, R.string.help_excel_matching_body)
     }
 
     /** 앱 도움말 표시 — `?` 아이콘의 진입점. */

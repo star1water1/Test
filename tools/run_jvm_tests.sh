@@ -157,6 +157,7 @@ $MAIN/util/FieldOptionParser.kt
 $MAIN/util/FormulaLexer.kt
 $MAIN/util/FormulaEvaluator.kt
 $MAIN/util/FormulaValidator.kt
+$MAIN/util/ImportedFormulaAudit.kt
 $MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/util/GradeTable.kt
@@ -326,6 +327,7 @@ $TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt
 $TEST/util/FormulaEvaluatorTest.kt
 $TEST/util/FormulaValidatorTest.kt
+$TEST/util/ImportedFormulaAuditTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/DetailListSortTest.kt
 $TEST/ui/assistant/AssistantSortTest.kt
