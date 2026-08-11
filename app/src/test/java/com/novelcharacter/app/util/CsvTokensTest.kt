@@ -40,6 +40,15 @@ class CsvTokensTest {
     }
 
     @Test
+    fun narrow_mixedQuoting_followsTheCellRule() {
+        // 사람은 CSV 습관대로 **전부** 감싼다(`"가, 나", "다"`). 칸마다 따져 하나라도 불필요하면
+        // 통째로 옛 규칙에 넘기면, 엑셀 셀은 한 값으로 읽는 같은 글자가 **앱에서만 갈린다** —
+        // 통일이 목적인 판정이 정작 두 규칙을 다시 만드는 자리다(콜드 검토가 잡았다).
+        assertEquals(listOf("가, 나", "다"), CsvTokens.split("\"가, 나\", \"다\"", quotedOnlyIfNeeded = true))
+        assertEquals(listOf("가, 나", "다"), CsvTokens.split("\"가, 나\", \"다\""))
+    }
+
+    @Test
     fun narrow_wrappedValueWithEscapedQuote_isUnwrapped() {
         // 우리가 감쌌을 모양(안에 따옴표가 있어 이스케이프가 필요했다)이면 되돌린다
         assertEquals(listOf("a\"b"), CsvTokens.split("\"a\"\"b\"", quotedOnlyIfNeeded = true))

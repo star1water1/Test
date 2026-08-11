@@ -32,8 +32,8 @@ object CsvTokens {
      *
      * @param quotedOnlyIfNeeded **감싼 칸을 인정하는 조건을 좁힌다.** false면 CSV 관용 그대로라
      *   `"전체"`가 `전체`로 읽힌다(엑셀도 똑같이 동작한다 — 엑셀 셀은 그 익숙함이 규약을 고른
-     *   이유이므로 방언으로 피하지 않는다). true면 **우리 쓰기 규칙([quote])이 그렇게 감쌌을
-     *   값일 때만** 감싼 것으로 본다 — 즉 안쪽에 쉼표나 따옴표가 있을 때만이다.
+     *   이유이므로 방언으로 피하지 않는다). true면 **감싼 칸 중 하나라도 감쌀 필요가 있었을 때만**
+     *   (안쪽에 쉼표나 따옴표가 있는 칸이 하나라도 있을 때만) 감싼 것으로 본다.
      *
      *   **인앱 필드값이 true인 이유가 이 판정의 안전장치다**(B-178 착수 조건). 좁히지 않으면
      *   *양끝이 따옴표인 기존 값* 전부가 뜻이 바뀌는데, 그 집합은 사용자 데이터를 봐야 셀 수 있고
@@ -95,6 +95,13 @@ object CsvTokens {
      */
     private fun parseQuoted(s: String, quotedOnlyIfNeeded: Boolean): List<String>? {
         val fields = ArrayList<String>()
+        // 좁힌 모드의 인정 조건 — **감싼 칸 중 하나라도 감쌀 필요가 있었는가.**
+        // *칸마다* 따지면(하나라도 불필요하면 통째로 옛 규칙) 사람이 CSV 습관대로 적은
+        // `"가, 나", "다"`가 앱에서만 갈린다 — 엑셀 셀은 같은 글자를 한 값으로 읽으므로
+        // **통일이 목적인 판정이 정작 두 규칙을 다시 만든다.** 반대로 *하나도 필요 없었으면*
+        // 그것은 따옴표를 글자로 쓰던 옛 값이므로(`"별칭", 본명`) 손대지 않는다 —
+        // 지키려는 것은 그 집합이고, 그 성질은 이 완화로 조금도 약해지지 않는다.
+        var anyNeededQuoting = false
         var i = 0
         while (true) {
             // **공백의 뜻을 아래 `trim()`과 맞춘다.** 칸 앞을 `' '`만 건너뛰면, 엑셀에서 줄바꿈
@@ -115,10 +122,7 @@ object CsvTokens {
                 if (!closed) return null                       // 닫히지 않은 따옴표
                 while (i < s.length && s[i].isWhitespace()) i++
                 if (i < s.length && s[i] != ',') return null   // 닫은 뒤 군더더기
-                // 좁힌 모드: 우리 쓰기 규칙이 감쌌을 값이 아니면 **감싼 것으로 보지 않는다**.
-                // 칸 하나라도 걸리면 칸 단위로 봐주지 않고 통째로 옛 규칙에 넘긴다 —
-                // 한 칸만 벗기고 다른 칸은 두면 같은 셀 안에서 규칙이 갈린다.
-                if (quotedOnlyIfNeeded && !needsQuoting(buf.toString())) return null
+                if (needsQuoting(buf.toString())) anyNeededQuoting = true
                 fields.add(buf.toString())
             } else {
                 val next = s.indexOf(',', i)
@@ -128,6 +132,8 @@ object CsvTokens {
             }
             if (i < s.length && s[i] == ',') { i++ } else break
         }
+        // 감싼 칸이 하나도 감쌀 필요가 없었으면 이 글자는 우리가 쓴 것이 아니다 — 옛 규칙에 넘긴다
+        if (quotedOnlyIfNeeded && !anyNeededQuoting) return null
         return fields.filter { it.isNotBlank() }
     }
 }
