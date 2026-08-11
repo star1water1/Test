@@ -31,10 +31,15 @@ class WorldPackageExporter(private val context: Context) {
     /**
      * @property droppedFactionRelationships 내보내는 세계관 밖 세력에 걸쳐 있어 패키지에
      *   싣지 못한 세력 간 관계 수. 0이 아니면 호출부가 반드시 고지할 것(무통보 유실 금지).
+     * @property droppedDuelMatches 참가자가 이번 패키지 밖이라 싣지 못한 대결 판 수
+     *   (B-118 — 작품 일부만 고른 내보내기, 또는 참가자가 지워진 고아 판).
+     * @property droppedDuelVerdicts 같은 이유로 싣지 못한 상성 판정 수.
      */
     data class ExportResult(
         val file: File,
-        val droppedFactionRelationships: Int
+        val droppedFactionRelationships: Int,
+        val droppedDuelMatches: Int,
+        val droppedDuelVerdicts: Int
     )
 
     /**
@@ -57,7 +62,28 @@ class WorldPackageExporter(private val context: Context) {
         val isCancelled: () -> Boolean = { false }
     )
 
-    /** imagePaths JSON이 담은 경로 수. 형식이 깨졌으면 0(내보내기를 막을 일은 아니다). */
+    /**
+     * imagePaths JSON이 담은 경로들. 형식이 깨졌으면 빈 목록(내보내기를 막을 일은 아니다).
+     * 이미지 축의 참가자가 곧 이 경로라, 대결을 거르는 범위도 여기서 나온다(B-118).
+     */
+    private fun imagePathsOf(imagePathsJson: String?): List<String> {
+        if (imagePathsJson.isNullOrBlank() || imagePathsJson == "[]") return emptyList()
+        return runCatching {
+            gson.fromJson(imagePathsJson, Array<String>::class.java)
+                ?.filterNotNull()
+                ?.filter { it.isNotBlank() }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * imagePaths JSON이 담은 경로 수. 형식이 깨졌으면 0(내보내기를 막을 일은 아니다).
+     *
+     * ⚠️ **[imagePathsOf]로 갈음하지 말 것.** 이 값은 진행도의 **총량**이고, 실제로 도는
+     * [writeImageEntries]는 null·공란 자리도 한 장으로 세어 지나간다(결번은 임포터가
+     * "유실된 이미지"로 고지한다). 걸러낸 수로 총량을 잡으면 막대가 총량을 넘는다 —
+     * *도는 목록과 총량이 한 값에서 나온다*는 R-26의 규칙이 이 자리에 걸린다.
+     */
     private fun countImagePaths(imagePathsJson: String): Int {
         if (imagePathsJson.isBlank() || imagePathsJson == "[]") return 0
         return runCatching {
@@ -138,6 +164,21 @@ class WorldPackageExporter(private val context: Context) {
             db.factionRelationshipDao().getAllRelationshipsList()
         )
 
+        // v6: 대결 (B-118) — 축은 **세계관 단위**라 전부 싣고, 판·상성은 참가자가 이번
+        // 패키지에 함께 가는 것만 싣는다. 거르는 규칙과 계수는 [WorldPackageDuels]가 단일
+        // 소스다(순수 계층 — 참가자 재배선의 위험이 전부 거기 있고, 배선에 묻으면 시험이 없다).
+        val duelAxes = db.duelAxisDao().getByUniverseList(config.universeId)
+        val duelMatches = duelAxes.flatMap { db.duelMatchDao().getByAxis(it.id) }
+        val duelVerdicts = duelAxes.flatMap { db.duelCounterVerdictDao().getByAxis(it.id) }
+        // 이미지 축의 참가자는 **경로**다 — 실리는 캐릭터의 imagePaths가 그 범위다.
+        val duelResult = WorldPackageDuels.toPortable(
+            axes = duelAxes,
+            matches = duelMatches,
+            verdicts = duelVerdicts,
+            characterCodesInScope = characters.map { it.code }.filter { it.isNotBlank() }.toSet(),
+            imagePathsInScope = characters.flatMap { imagePathsOf(it.imagePaths) }.toSet()
+        )
+
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
         val exportsDir = File(context.cacheDir, "exports")
@@ -174,7 +215,10 @@ class WorldPackageExporter(private val context: Context) {
                 WorldPackageEntries.EVENT_FIELD_VALUES to eventFieldValues,
                 WorldPackageEntries.FIELD_VALUE_ENTRIES to fieldValueEntries,
                 WorldPackageEntries.NOVEL_FIELD_VALUES to novelFieldValues,
-                WorldPackageEntries.GRADE_SYSTEMS to gradeSystems
+                WorldPackageEntries.GRADE_SYSTEMS to gradeSystems,
+                WorldPackageEntries.DUEL_AXES to duelResult.axes,
+                WorldPackageEntries.DUEL_MATCHES to duelResult.matches,
+                WorldPackageEntries.DUEL_VERDICTS to duelResult.verdicts
             )
 
             // 이미지 구간도 같은 원칙 — 도는 목록과 총량이 한 값에서 나온다.
@@ -218,7 +262,12 @@ class WorldPackageExporter(private val context: Context) {
             throw e
         }
 
-        return ExportResult(outputFile, factionRelResult.droppedCount)
+        return ExportResult(
+            file = outputFile,
+            droppedFactionRelationships = factionRelResult.droppedCount,
+            droppedDuelMatches = duelResult.droppedMatches,
+            droppedDuelVerdicts = duelResult.droppedVerdicts
+        )
     }
 
     private fun <T> writeJsonEntry(zip: ZipOutputStream, name: String, data: T) {

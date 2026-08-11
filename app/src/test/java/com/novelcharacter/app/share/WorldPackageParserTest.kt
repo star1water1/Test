@@ -3,6 +3,9 @@ package com.novelcharacter.app.share
 import com.google.gson.Gson
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -100,8 +103,29 @@ class WorldPackageParserTest {
                 gradesJson = """{"C":0.5,"S":3}""", code = "GS91"))
         )
 
+        entries[WorldPackageEntries.DUEL_AXES] = gson.toJson(
+            listOf(DuelAxis(id = 101, universeId = 7, name = "강함", code = "AX101"))
+        )
+        entries[WorldPackageEntries.DUEL_MATCHES] = gson.toJson(
+            listOf(
+                DuelMatch(id = 111, axisId = 101, aCode = "CH11", bCode = "CH12", winnerCode = "CH11", code = "MT111")
+            )
+        )
+        entries[WorldPackageEntries.DUEL_VERDICTS] = gson.toJson(
+            listOf(
+                DuelCounterVerdict(
+                    id = 121, axisId = 101, kind = DuelCounterVerdict.KIND_COUNTER,
+                    shape = DuelCounterVerdict.SHAPE_DIRECT,
+                    memberCodes = """["CH11","CH12"]""", memberKey = "CH11|CH12", code = "VD121"
+                )
+            )
+        )
+
         val contents = success(entries)
         assertEquals(WorldPackageEntries.CURRENT_SCHEMA_VERSION, contents.manifest.schemaVersion)
+        assertEquals("AX101", contents.duelAxes.single().code)
+        assertEquals("CH11", contents.duelMatches.single().winnerCode)
+        assertEquals("VD121", contents.duelVerdicts.single().code)
         assertEquals("아르카나", contents.universe.name)
         assertEquals(7L, contents.universe.id)
         assertEquals(1, contents.novels.size)
@@ -142,6 +166,74 @@ class WorldPackageParserTest {
         val contents = success(entries)
         assertEquals(1, contents.gradeSystems.size)
         assertEquals(1, contents.droppedRows[WorldPackageEntries.GRADE_SYSTEMS])
+    }
+
+    // ── v6 대결 (B-118) ──
+
+    @Test
+    fun `대결 엔트리가 없는 v5 이하 패키지는 빈 목록이다 - 파손과 다르다`() {
+        // **이 갈래가 ⓐ 고지의 근거다** — 옛 패키지를 읽는 것이 실패가 아니라 "대결이 없는
+        // 형식"이고, 임포터가 그 사실을 고지한다(확정 15번: ⓐ는 ⓑ의 폴백 경로에 편입된다).
+        val contents = success(baseEntries(version = 5))
+        assertTrue(contents.duelAxes.isEmpty())
+        assertTrue(contents.duelMatches.isEmpty())
+        assertTrue(contents.duelVerdicts.isEmpty())
+    }
+
+    @Test
+    fun `대결 엔트리가 깨지면 그 이름으로 Malformed다`() {
+        for (entry in listOf(
+            WorldPackageEntries.DUEL_AXES,
+            WorldPackageEntries.DUEL_MATCHES,
+            WorldPackageEntries.DUEL_VERDICTS
+        )) {
+            val entries = baseEntries()
+            entries[entry] = "[ not json"
+            assertEquals(WorldPackageParseResult.Malformed(entry), WorldPackageParser.parse(entries))
+        }
+    }
+
+    @Test
+    fun `축의 후보 필터가 없어도 행이 살아남는다`() {
+        // `candidateFiltersJson`은 nullable이 곧 *필터 없음*이다 — 필수로 검사하면
+        // **필터를 안 쓰는 축이 전부 사라진다**(R-2 · 캐릭터의 대표 이미지 칸과 같은 부류).
+        val entries = baseEntries()
+        entries[WorldPackageEntries.DUEL_AXES] =
+            """[{"id":1,"universeId":7,"name":"강함","targetType":"character","displayOrder":0,
+                 "createdAt":0,"influenceFieldKeys":"[]","outcomeFieldKeys":"[]",
+                 "profileFieldKeys":"[]","isBasisAxis":false,"code":"AX1"}]"""
+        val contents = success(entries)
+        assertEquals("AX1", contents.duelAxes.single().code)
+        assertNull(contents.duelAxes.single().candidateFiltersJson)
+        assertTrue(contents.droppedRows.isEmpty())
+    }
+
+    @Test
+    fun `비긴 판은 승자 없이 그대로 읽힌다`() {
+        // `winnerCode` null은 **무승부**다 — 필수로 검사하면 비긴 판이 통째로 사라진다.
+        val entries = baseEntries()
+        entries[WorldPackageEntries.DUEL_MATCHES] =
+            """[{"id":1,"axisId":1,"aCode":"CH1","bCode":"CH2","decidedAt":0,"code":"MT1"}]"""
+        val contents = success(entries)
+        assertNull(contents.duelMatches.single().winnerCode)
+        assertTrue(contents.droppedRows.isEmpty())
+    }
+
+    @Test
+    fun `대결 행의 필수 문자열이 null이면 걸러 세고 나머지는 살린다`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.DUEL_MATCHES] =
+            """[{"id":1,"axisId":1,"aCode":"CH1","bCode":"CH2","decidedAt":0,"code":"MT1"},
+                {"id":2,"axisId":1,"bCode":"CH3","decidedAt":0,"code":"MT2"}]"""
+        entries[WorldPackageEntries.DUEL_VERDICTS] =
+            """[{"id":1,"axisId":1,"kind":"counter","shape":"direct",
+                 "memberCodes":"[\"CH1\",\"CH2\"]","memberKey":"CH1|CH2","decidedAt":0,"code":"VD1"},
+                {"id":2,"axisId":1,"kind":"counter","decidedAt":0,"code":"VD2"}]"""
+        val contents = success(entries)
+        assertEquals(1, contents.duelMatches.size)
+        assertEquals(1, contents.droppedRows[WorldPackageEntries.DUEL_MATCHES])
+        assertEquals(1, contents.duelVerdicts.size)
+        assertEquals(1, contents.droppedRows[WorldPackageEntries.DUEL_VERDICTS])
     }
 
     @Test

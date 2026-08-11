@@ -8,6 +8,9 @@ import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
@@ -41,6 +44,11 @@ import com.novelcharacter.app.data.model.Universe
  * - 5 (U-1): grade_systems.json 추가 (세계관 등급 체계 — 라벨 집합 + 기본 숫자).
  *   필드 config의 참조는 체계 code라 별도 재배선 표가 필요 없다. 다만 code가 이 기기에서
  *   충돌해 재발급되면 임포터가 config의 참조를 새 code로 다시 잇는다(R-1).
+ * - 6 (B-118): duel_axes.json · duel_matches.json · duel_counter_verdicts.json 추가
+ *   (세계관의 **대결** — 축·판·상성). 종전에는 세계관을 통째로 주고받아도 대결만 통째로
+ *   사라진 채 도착했다. 판·상성은 참가자를 코드로 가리키므로 재발급 표를 따라가야 하며,
+ *   그 매핑은 [WorldPackageDuels]가 단일 소스다. **v1~v5 패키지는 그대로 읽히고**
+ *   임포터가 "대결이 없는 형식"임을 고지한다(그 고지가 B-118 ⓐ의 재사용이다).
  */
 data class WorldPackageManifest(
     val schemaVersion: Int = WorldPackageEntries.CURRENT_SCHEMA_VERSION,
@@ -56,7 +64,7 @@ data class WorldPackageManifest(
  * 한쪽만 바뀌어 왕복이 조용히 깨지는 일이 없다.
  */
 object WorldPackageEntries {
-    const val CURRENT_SCHEMA_VERSION = 5
+    const val CURRENT_SCHEMA_VERSION = 6
 
     const val MANIFEST = "manifest.json"
     const val UNIVERSE = "universe.json"
@@ -79,6 +87,9 @@ object WorldPackageEntries {
     const val FIELD_VALUE_ENTRIES = "field_value_entries.json"
     const val NOVEL_FIELD_VALUES = "novel_field_values.json"
     const val GRADE_SYSTEMS = "grade_systems.json"
+    const val DUEL_AXES = "duel_axes.json"
+    const val DUEL_MATCHES = "duel_matches.json"
+    const val DUEL_VERDICTS = "duel_counter_verdicts.json"
 
     /** 이미지 엔트리 접두사 — `images/{캐릭터id}_{i}.jpg` · `images/universe_{i}.jpg` · `images/novel_{작품id}_{i}.jpg` */
     const val IMAGES_PREFIX = "images/"
@@ -115,6 +126,9 @@ data class WorldPackageContents(
     val fieldValueEntries: List<FieldValueEntry>,
     val novelFieldValues: List<NovelFieldValue>,
     val gradeSystems: List<GradeSystem>,
+    val duelAxes: List<DuelAxis>,
+    val duelMatches: List<DuelMatch>,
+    val duelVerdicts: List<DuelCounterVerdict>,
     val droppedRows: Map<String, Int>
 )
 
@@ -235,6 +249,12 @@ object WorldPackageParser {
             ?: return malformed(e.NOVEL_FIELD_VALUES)
         val gradeSystems = read(e.GRADE_SYSTEMS, object : TypeToken<List<GradeSystem?>>() {})
             ?: return malformed(e.GRADE_SYSTEMS)
+        val duelAxes = read(e.DUEL_AXES, object : TypeToken<List<DuelAxis?>>() {})
+            ?: return malformed(e.DUEL_AXES)
+        val duelMatches = read(e.DUEL_MATCHES, object : TypeToken<List<DuelMatch?>>() {})
+            ?: return malformed(e.DUEL_MATCHES)
+        val duelVerdicts = read(e.DUEL_VERDICTS, object : TypeToken<List<DuelCounterVerdict?>>() {})
+            ?: return malformed(e.DUEL_VERDICTS)
 
         return WorldPackageParseResult.Success(
             WorldPackageContents(
@@ -294,6 +314,23 @@ object WorldPackageParser {
                 novelFieldValues = scrub(e.NOVEL_FIELD_VALUES, novelFieldValues) { allPresent(it.value) },
                 gradeSystems = scrub(e.GRADE_SYSTEMS, gradeSystems) {
                     allPresent(it.name, it.gradesJson, it.code)
+                },
+                // v6(B-118) — **`candidateFiltersJson`은 검사하지 않는다.** 그 칸은 선언이
+                // nullable이고 null이 곧 *필터 없음*이라, 넣으면 필터 없는 축이 전부 버려진다.
+                // 나중에 칸이 더 늘어도 같은 규칙이다: **v6 이후에 생긴 칸은 여기 넣지 않는다**
+                // (넣으면 이 목록이 만들어지기 전 패키지의 축이 통째로 사라진다 — 위 캐릭터
+                // 주석의 `representativeImagePath` 교훈이 그 자리다).
+                duelAxes = scrub(e.DUEL_AXES, duelAxes) {
+                    allPresent(
+                        it.name, it.targetType, it.influenceFieldKeys, it.outcomeFieldKeys,
+                        it.profileFieldKeys, it.code
+                    )
+                },
+                // 승자(`winnerCode`)와 묶음(`groupId`)은 nullable이 뜻을 갖는다 —
+                // 승자 null은 **무승부**이고, 검사에 넣으면 비긴 판이 통째로 사라진다.
+                duelMatches = scrub(e.DUEL_MATCHES, duelMatches) { allPresent(it.aCode, it.bCode, it.code) },
+                duelVerdicts = scrub(e.DUEL_VERDICTS, duelVerdicts) {
+                    allPresent(it.kind, it.shape, it.memberCodes, it.memberKey, it.code)
                 },
                 droppedRows = dropped
             )

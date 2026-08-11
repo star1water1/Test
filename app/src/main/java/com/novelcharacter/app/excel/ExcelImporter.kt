@@ -625,6 +625,11 @@ class ExcelImporter(context: Context) {
         if (outcome.factions > 0) parts.add("세력 ${outcome.factions}")
         if (outcome.factionMemberships > 0) parts.add("세력 소속 ${outcome.factionMemberships}")
         if (outcome.factionRelationships > 0) parts.add("세력 관계 ${outcome.factionRelationships}")
+        // v6(B-118) — 축·판·상성은 뜻이 다른 셋이라 따로 센다. 이 줄이 없으면 대결이 담겨
+        // 들어왔는지 사용자가 요약만 보고는 알 수 없다(그것을 아는 것이 이 판의 목적이다).
+        if (outcome.duelAxes > 0) parts.add("대결 축 ${outcome.duelAxes}")
+        if (outcome.duelMatches > 0) parts.add("대결 기록 ${outcome.duelMatches}")
+        if (outcome.duelVerdicts > 0) parts.add("대결 상성 ${outcome.duelVerdicts}")
         if (outcome.libraryEntries > 0) parts.add("값 라이브러리 ${outcome.libraryEntries}")
         val nameBankTotal = outcome.nameBankNew + outcome.nameBankLinked
         if (nameBankTotal > 0) parts.add("이름 은행 $nameBankTotal")

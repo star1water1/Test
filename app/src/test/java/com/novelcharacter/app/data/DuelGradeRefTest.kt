@@ -174,4 +174,62 @@ class DuelGradeRefTest {
         assertEquals("ax7", DuelGradeRef.axisCodeFromConfig(config))
         assertNull(DuelGradeRef.axisCodeFromConfig("{}"))
     }
+
+    // ── 코드 재발급 추종 (B-118 — 월드패키지가 축을 함께 담게 된 뒤) ──
+
+    @Test
+    fun `remapCodes - 축과 배정 캐릭터를 함께 옮긴다`() {
+        // **둘이 한 몸인 것이 요점이다.** 축만 옮기고 배정 키를 두면 재발급으로 비게 된 옛
+        // 코드가 이 기기의 다른 캐릭터를 가리키고, 다음 반영이 그 남의 손값을 "직전에 내가 쓴
+        // 값"으로 판정해 **기본 체크된 채로 덮는다**(가장 나쁜 방향이다).
+        val config = DuelGradeRef.write(
+            """{"grades":{"S":3}}""",
+            DuelGradeRef.Spec("ax1", cuts, DuelGradeRef.LastApplied(9L, mapOf("CH-1" to "S", "CH-2" to "A")))
+        )
+        val moved = DuelGradeRef.remapCodes(
+            config,
+            axisCodeRemap = mapOf("ax1" to "ax9"),
+            characterCodeRemap = mapOf("CH-1" to "CH-NEW", "CH-2" to "CH-2")
+        )
+        val spec = DuelGradeRef.fromConfig(moved)!!
+        assertEquals("ax9", spec.axisCode)
+        assertEquals(mapOf("CH-NEW" to "S", "CH-2" to "A"), spec.lastApplied!!.assignments)
+        assertEquals(9L, spec.lastApplied!!.at)
+        assertEquals(cuts, spec.cuts)
+        // 수술적 편집 — 옆에 사는 키는 그대로다
+        assertEquals(3, JSONObject(moved).getJSONObject("grades").getInt("S"))
+    }
+
+    @Test
+    fun `remapCodes - 표에 없는 배정 키는 버린다`() {
+        // 그 캐릭터는 이 패키지에 오지 않았으므로 흔적의 주체가 없다. 남기면 오배정이고,
+        // 버리면 그 값들이 다음 반영에서 손값으로 다뤄진다(기본 해제 = 덮지 않는다).
+        val config = DuelGradeRef.write(
+            "{}",
+            DuelGradeRef.Spec("ax1", cuts, DuelGradeRef.LastApplied(9L, mapOf("CH-1" to "S", "CH-GONE" to "A")))
+        )
+        val moved = DuelGradeRef.remapCodes(config, mapOf("ax1" to "ax1"), mapOf("CH-1" to "CH-1"))
+        assertEquals(mapOf("CH-1" to "S"), DuelGradeRef.fromConfig(moved)!!.lastApplied!!.assignments)
+        // 흔적 자체는 살아 있다 — 생략(omitted)과 혼동되면 미리보기가 3분류를 잘못 줄인다.
+        assertFalse(DuelGradeRef.fromConfig(moved)!!.lastApplied!!.omitted)
+    }
+
+    @Test
+    fun `remapCodes - 바뀔 것이 없으면 원문 문자열을 그대로 돌려준다`() {
+        val config = DuelGradeRef.write("{}", DuelGradeRef.Spec("ax1", cuts))
+        assertSame(config, DuelGradeRef.remapCodes(config, emptyMap(), emptyMap()))
+        // 대결과 무관한 config·손상 JSON도 손대지 않는다
+        val plain = """{"grades":{"S":3}}"""
+        assertSame(plain, DuelGradeRef.remapCodes(plain, mapOf("ax1" to "ax9"), emptyMap()))
+        assertSame("not json", DuelGradeRef.remapCodes("not json", mapOf("ax1" to "ax9"), emptyMap()))
+    }
+
+    @Test
+    fun `remapCodes - 표에 없는 축은 그대로 둔다 - 걷어내는 판단은 호출부의 몫이다`() {
+        // 이 함수는 기계적으로 옮기기만 한다. *패키지에 함께 왔는가*를 보고 remap과 remove를
+        // 가르는 것은 배선의 몫이고(월드패키지 임포터), 그 자리가 걷어낸 수를 센다.
+        val config = DuelGradeRef.write("{}", DuelGradeRef.Spec("axOther", cuts))
+        val moved = DuelGradeRef.remapCodes(config, mapOf("ax1" to "ax9"), emptyMap())
+        assertEquals("axOther", DuelGradeRef.fromConfig(moved)!!.axisCode)
+    }
 }
