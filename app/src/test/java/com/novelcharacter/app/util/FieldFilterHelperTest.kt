@@ -229,6 +229,37 @@ class FieldFilterHelperTest {
         assertEquals(setOf(1L, 2L), apply(dao, listOf(byAlias), fields, entries))
     }
 
+    @Test
+    fun exact_filterWithNoUsableValue_isSkipped_notTreatedAsNoMatch() = runTest {
+        // **조건이 되지 못하는 값만 든 필터는 조건이 없는 것과 같다 — 건너뛴다.**
+        // 종전 코드의 `if (targets.isEmpty()) continue`가 그것이고, 키 사다리를 들이면서
+        // 그 `continue`가 *필터 하나*에서 *필드 하나*로 좁아질 뻔했다. 좁아지면 빈 값 필터가
+        // 교집합을 0으로 만들어 **결과가 통째로 사라진다**(엑셀에서 손편집한 프리셋이 그 입력이다).
+        // 걸리는 필드가 아예 없는 것(죽은 키·`sys:`)과는 다른 사건이라 처분도 다르다.
+        val dao = FakeValueDao(rows = listOf(row(1, 10, "red"), row(1, 20, "tall"), row(2, 20, "tall")))
+        val fields = mapOf(10L to fd(10), 20L to fd(20))
+        val real = FieldFilter(20L, "height", listOf("tall"), "exact")
+        val blank = FieldFilter(10L, "color", listOf("  "), "exact")
+        assertEquals(setOf(1L, 2L), apply(dao, listOf(real, blank), fields))
+        // 빈 값 필터 하나뿐이면 아무것도 안 거른 것과 같다(빈 필터 목록과 같은 답).
+        assertEquals(emptySet<Long>(), apply(dao, listOf(blank), fields))
+    }
+
+    @Test
+    fun key_someFieldsHaveNoUsableValue_othersStillMatch() = runTest {
+        // 필드마다 토큰 규칙이 달라 **어떤 필드에서만** 값이 조건이 되지 못할 수 있다.
+        // 그때 그 필드만 건너뛰고 나머지는 그대로 걸려야 한다 — 건너뛰기가 필터 전체로
+        // 번지면 나머지 세계관이 함께 사라진다.
+        val fields = mapOf(
+            10L to fdKeyed(10, 1, "trait", type = "MULTI_TEXT"),
+            20L to fdKeyed(20, 2, "trait")
+        )
+        val dao = FakeValueDao(rows = listOf(row(1, 10, ","), row(2, 20, ",")))
+        // 다중값 필드에서는 ","가 토큰 0개로 갈리고, 단일값 필드에서는 ","가 그대로 한 토큰이다.
+        val filter = FieldFilter(10L, "속성", listOf(","), "exact", fieldKey = "trait")
+        assertEquals(setOf(2L), apply(dao, listOf(filter), fields))
+    }
+
     // ── 키 사다리 — 전역 뷰가 세계관 A·B·C의 같은 키를 한 번에 거른다 (B-11) ──
 
     @Test

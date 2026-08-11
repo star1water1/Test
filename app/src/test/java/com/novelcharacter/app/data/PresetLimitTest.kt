@@ -123,10 +123,8 @@ class PresetLimitTest {
         // 인앱과 엑셀이 **같은 상수**를 봐야 한 쪽만 바뀌는 드리프트가 안 생긴다.
         // 종전에는 `CharacterListPreset.MAX_PRESETS`와 `SearchPreset.MAX_PRESETS`가 두 벌이었다.
         assertEquals(20, PresetLimit.RECOMMENDED_MAX)
+        // 경계는 하나뿐이다 — *넘은 뒤*. 딱 한도면 아직 아무 말도 하지 않는다.
         assertTrue(!PresetLimit.exceeded(PresetLimit.RECOMMENDED_MAX))
         assertTrue(PresetLimit.exceeded(PresetLimit.RECOMMENDED_MAX + 1))
-        // 저장 *전에* 묻는 자리와 *뒤에* 묻는 자리가 같은 경계를 본다.
-        assertTrue(!PresetLimit.wouldExceed(PresetLimit.RECOMMENDED_MAX - 1))
-        assertTrue(PresetLimit.wouldExceed(PresetLimit.RECOMMENDED_MAX))
     }
 }

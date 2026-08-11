@@ -41,9 +41,19 @@ object FieldFilterHelper {
         for (filter in filters) {
             val idsForFilter = mutableSetOf<Long>()
             // 한 필터가 여러 필드를 가리킬 수 있다(같은 키의 세계관별 필드) — 그 합집합이 이 필터의 답이다.
-            for (fieldId in resolveFieldIds(fieldDefinitionDao, filter)) {
-                matchOneField(dao, fieldDefinitionDao, entryDao, filter, fieldId, idsForFilter)
+            val fieldIds = resolveFieldIds(fieldDefinitionDao, filter)
+            var evaluated = false
+            for (fieldId in fieldIds) {
+                if (matchOneField(dao, fieldDefinitionDao, entryDao, filter, fieldId, idsForFilter)) {
+                    evaluated = true
+                }
             }
+            // **걸 필드는 있는데 값이 하나도 조건이 되지 못하면 그 필터는 조건이 없는 것과 같다 —
+            // 종전 그대로 건너뛴다.** 좁히지도 넓히지도 않는 자리이고, 여기서 빈 집합으로 떨어뜨리면
+            // 빈 값 하나가 교집합을 0으로 만들어 **결과가 통째로 사라진다**(손편집 엑셀 프리셋이 그 입력).
+            // 걸 필드가 **아예 없는 것**(죽은 키·`sys:`)은 다른 사건이라 여기 걸리지 않는다 —
+            // 그쪽은 아무도 통과시키지 않는 것이 답이다([resolveFieldIds] 2번).
+            if (fieldIds.isNotEmpty() && !evaluated) continue
             resultIds = resultIds?.intersect(idsForFilter) ?: idsForFilter
         }
         return resultIds ?: emptySet()
@@ -73,7 +83,9 @@ object FieldFilterHelper {
     }
 
     /**
-     * 필드 **하나**의 대조 — 결과를 [into]에 더한다.
+     * 필드 **하나**의 대조 — 결과를 [into]에 더하고, **이 필드에서 조건이 실제로 섰는가**를 돌려준다.
+     * false는 *걸린 것이 없다*가 아니라 **잴 조건 자체가 없었다**는 뜻이다(필터 값이 이 필드의
+     * 토큰 규칙으로는 빈 것이 된 경우). 그 구분을 호출부가 써서 필터를 건너뛴다.
      *
      * 값 라이브러리(별칭)와 토큰 규칙은 **필드마다 다르다**. 그래서 여러 필드를 걸 때도 해석을
      * 필드별로 다시 한다: 세계관 A가 `남성`을 canonical로, 세계관 B가 `male`을 canonical로
@@ -87,12 +99,14 @@ object FieldFilterHelper {
         filter: FieldFilter,
         fieldId: Long,
         into: MutableSet<Long>
-    ) {
+    ): Boolean {
         if (filter.matchMode == "contains") {
+            // contains는 종전에도 값을 거르지 않았다(빈 값은 LIKE '%%'로 그 필드를 가진 전원) —
+            // 조건이 선 것으로 본다. 두 모드의 이 차이는 이 판이 만든 것이 아니다.
             for (value in filter.values) {
                 into.addAll(dao.getCharacterIdsByFieldValueContains(fieldId, sanitizeLikeQuery(value)))
             }
-            return
+            return true
         }
         val fd = fieldDefinitionDao.getFieldById(fieldId)
         val resolver = FieldValueResolver(entryDao.getByField(fieldId))
@@ -103,7 +117,7 @@ object FieldFilterHelper {
             .map { resolver.canonical(it) }              // trim + 별칭→canonical
             .flatMap { resolver.expandForFilter(it) }    // canonical + 별칭 전체
             .toSet()
-        if (targets.isEmpty()) return
+        if (targets.isEmpty()) return false
         if (fd == null) {
             // 필드 정의가 사라진 필터 — 기존 정확일치로 관대 처리
             for (value in targets) {
@@ -116,6 +130,7 @@ object FieldFilterHelper {
                 }
             }
         }
+        return true
     }
 
     /**

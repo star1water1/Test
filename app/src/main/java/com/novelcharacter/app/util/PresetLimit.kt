@@ -20,18 +20,18 @@ package com.novelcharacter.app.util
  */
 object PresetLimit {
 
-    /** 권고 한도. **넘어도 저장은 된다** — 판정은 [exceeded]·[wouldExceed]가 든다. */
+    /** 권고 한도. **넘어도 저장은 된다** — 판정은 [exceeded]가 든다. */
     const val RECOMMENDED_MAX = 20
 
-    /** 지금 [totalCount]개가 있는 상태가 권고를 넘었는가 (가져오기 뒤 집계·저장 뒤 확인용). */
-    fun exceeded(totalCount: Int): Boolean = totalCount > RECOMMENDED_MAX
-
     /**
-     * [currentCount]개인 상태에서 **하나 더 저장하면** 권고를 넘는가.
+     * 지금 [totalCount]개가 있는 상태가 권고를 넘었는가.
      *
-     * 저장 *전에* 묻는 자리를 따로 둔 것은, 고지가 저장 뒤에 붙으면 사용자가 이미 창을 닫은
-     * 뒤라 어느 동작에 대한 말인지 흐려지기 때문이다. 두 물음이 같은 수를 보게 [exceeded]와
-     * 한 자리에 둔다.
+     * **묻는 자리는 언제나 *저장·가져오기가 끝난 뒤*다** — 인앱 저장 뒤(`exceedsRecommended`)와
+     * 엑셀 가져오기 집계 뒤, 둘뿐이다. *저장 전에* 묻는 짝(`wouldExceed`)을 두지 않은 것은
+     * **쓸 자리가 없기 때문**이다: 막지 않기로 한 이상 미리 아는 것이 바꾸는 동작이 없고,
+     * 창을 열기 전에 말하면 *"넘겠지만 어차피 저장된다"*는 빈 경고가 된다(종전의 하드 차단이
+     * 정확히 그 자리에서 저장을 되돌려 보냈다). 쓰이지 않는 짝을 남겨 두면 다음 사람이
+     * **경계가 둘이라고 읽는다.**
      */
-    fun wouldExceed(currentCount: Int): Boolean = exceeded(currentCount + 1)
+    fun exceeded(totalCount: Int): Boolean = totalCount > RECOMMENDED_MAX
 }

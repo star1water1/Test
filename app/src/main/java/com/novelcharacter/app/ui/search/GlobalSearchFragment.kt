@@ -111,6 +111,16 @@ class GlobalSearchFragment : Fragment() {
                 Toast.makeText(ctx, getString(R.string.search_preset_applied, name), Toast.LENGTH_SHORT).show()
             }
         }
+        // 저장은 언제나 되고, 권고 개수를 넘었을 때만 그 사실과 정리 경로를 덧붙인다(B-75).
+        viewModel.presetSavedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let { overRecommended ->
+                val ctx = context ?: return@observe
+                val message =
+                    if (overRecommended) getString(R.string.preset_limit_advisory, PresetLimit.RECOMMENDED_MAX)
+                    else getString(R.string.search_preset_saved)
+                Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun updatePresetChips(presets: List<SearchPreset>) {
@@ -172,23 +182,12 @@ class GlobalSearchFragment : Fragment() {
                 editText.showInlineError(getString(R.string.preset_name_required))
                 false
             } else {
-                saveCurrentAsPreset(name)
+                // 저장은 ViewModel 스코프에서 돈다 — 뷰가 사라져도 끝난다. 고지는 이벤트로 온다.
+                viewModel.saveCurrentAsPreset(name)
                 true
             }
         }
         dialog.show()
-    }
-
-    /** 저장은 언제나 되고, 권고 개수를 넘었을 때만 그 사실과 정리 경로를 덧붙인다(B-75). */
-    private fun saveCurrentAsPreset(name: String) {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val overRecommended = viewModel.saveCurrentAsPreset(name)
-            val ctx = context ?: return@launch
-            val message =
-                if (overRecommended) getString(R.string.preset_limit_advisory, PresetLimit.RECOMMENDED_MAX)
-                else getString(R.string.search_preset_saved)
-            Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun showPresetOptionsDialog(preset: SearchPreset) {
