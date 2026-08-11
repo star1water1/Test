@@ -35,6 +35,7 @@ import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.FormulaValidator
 import com.novelcharacter.app.util.ImportedFormulaAudit
+import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.withImagePaths
@@ -6485,6 +6486,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("검색 프리셋 행 $i: ${e.message}")
             }
         }
+
+        // 목록 프리셋 쪽에만 있던 초과 고지를 여기에도 세운다(B-75) — 같은 권고 한도인데
+        // **한쪽만 말하고 있었다.** 인앱 저장이 하드 차단이던 시절에는 검색 프리셋이 20개를
+        // 넘는 길이 파일뿐이었고, 그 유일한 길에 고지가 없었다.
+        val totalAfter = db.searchPresetDao().getPresetCount()
+        if (PresetLimit.exceeded(totalAfter)) {
+            result.warnings.add("검색 프리셋이 ${totalAfter}개로 인앱 권장 한도(${PresetLimit.RECOMMENDED_MAX}개)를 초과했습니다 — 검색 화면에서 정리할 수 있습니다")
+        }
         reportProgress(onProgress, "검색 프리셋", sheet.lastRowNum, totalRows)
     }
 
@@ -6548,8 +6557,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         val totalAfter = db.characterListPresetDao().getPresetCount()
-        if (totalAfter > CharacterListPreset.MAX_PRESETS) {
-            result.warnings.add("목록 프리셋이 ${totalAfter}개로 인앱 권장 한도(${CharacterListPreset.MAX_PRESETS}개)를 초과했습니다 — 캐릭터 탭에서 정리할 수 있습니다")
+        if (PresetLimit.exceeded(totalAfter)) {
+            result.warnings.add("목록 프리셋이 ${totalAfter}개로 인앱 권장 한도(${PresetLimit.RECOMMENDED_MAX}개)를 초과했습니다 — 캐릭터 탭에서 정리할 수 있습니다")
         }
         reportProgress(onProgress, "목록 프리셋", sheet.lastRowNum, totalRows)
     }

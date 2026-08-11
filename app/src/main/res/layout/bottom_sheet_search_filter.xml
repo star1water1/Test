@@ -101,7 +101,7 @@
         android:paddingBottom="8dp"
         android:visibility="gone" />
 
-    <!-- 매칭 모드 -->
+    <!-- 일치 기준 (B-179 — '매칭'은 엑셀 왕복의 레코드 대응 하나로 못박혀 있다. R-48) -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

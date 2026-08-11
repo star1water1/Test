@@ -1020,8 +1020,10 @@
     <string name="search_preset_applied">프리셋 \"%s\" 적용됨</string>
     <string name="search_preset_saved">프리셋이 저장되었습니다</string>
     <string name="search_preset_deleted">프리셋이 삭제되었습니다</string>
-    <string name="search_preset_limit_reached">프리셋은 최대 %d개까지 저장할 수 있습니다</string>
-    <string name="search_preset_name_required">프리셋 이름을 입력하세요</string>
+    <!-- 프리셋 개수는 **권고**다(B-75) — 저장은 되고, 넘었다는 사실과 정리 경로만 말한다. -->
+    <string name="preset_limit_advisory">저장했습니다 — 프리셋이 권장 개수(%d개)를 넘었습니다. 안 쓰는 프리셋은 길게 눌러 지울 수 있습니다</string>
+    <!-- 검색·캐릭터 목록 두 화면의 프리셋 이름 창이 함께 쓴다(B-76 이행 — R-27 인라인 오류). -->
+    <string name="preset_name_required">프리셋 이름을 입력하세요</string>
     <string name="search_preset_default_cannot_delete">기본 프리셋은 삭제할 수 없습니다</string>
     <string name="search_preset_default_recent">최근검색</string>
     <string name="search_preset_default_name_first">이름우선</string>
@@ -1039,7 +1041,7 @@
     <string name="search_filter_select_universe">세계관 선택</string>
     <string name="search_filter_select_field">필드 선택</string>
     <string name="search_filter_select_values">값 선택</string>
-    <string name="search_filter_match_mode">매칭 모드</string>
+    <string name="search_filter_match_mode">일치 기준</string>
     <string name="search_filter_exact">정확히 일치</string>
     <string name="search_filter_contains">포함</string>
     <string name="search_filter_apply">필터 적용</string>

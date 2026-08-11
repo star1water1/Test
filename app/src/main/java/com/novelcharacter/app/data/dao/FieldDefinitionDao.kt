@@ -47,6 +47,20 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND `key` = :key AND entityType = :entityType")
     suspend fun getFieldByKey(universeId: Long, key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): FieldDefinition?
 
+    /**
+     * 세계관을 가리지 않고 **같은 키를 든 필드 전부** (B-11 — 크로스-세계관 필드 필터).
+     *
+     * 키는 세계관 안에서만 유니크하므로 여기 여러 건이 나오는 것이 정상이다 — 세계관 A의
+     * '성별'과 세계관 B의 '성별'은 **다른 id에 같은 키**다. 전역 뷰(통합 검색·캐릭터 탭)의
+     * 정렬이 이미 키로 병합되므로(`CharacterListPreset.sortFieldKey`) 필터도 같은 잣대를
+     * 써야 한 화면 안에서 두 규칙이 갈리지 않는다.
+     *
+     * **무소속(전역) 필드도 함께 나온다** — `universeId IS NULL`을 거르지 않는 것은
+     * 그쪽도 같은 키의 같은 뜻이기 때문이다(B-119 확장이 연 구역).
+     */
+    @Query("SELECT * FROM field_definitions WHERE `key` = :key AND entityType = :entityType")
+    suspend fun getFieldsByKey(key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
+
     @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND type = :type AND entityType = :entityType ORDER BY displayOrder ASC")
     suspend fun getFieldsByType(universeId: Long, type: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 

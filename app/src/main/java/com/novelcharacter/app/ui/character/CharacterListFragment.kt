@@ -35,6 +35,8 @@ import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 
 class CharacterListFragment : Fragment() {
 
@@ -823,7 +825,7 @@ class CharacterListFragment : Fragment() {
             binding.filterChipGroup.addView(Chip(ctx).apply {
                 text = getString(R.string.filter_chip_field_format, f.fieldName, f.values.joinToString(", "))
                 isCloseIconVisible = true
-                setOnCloseIconClickListener { viewModel.removeFieldFilter(f.fieldId) }
+                setOnCloseIconClickListener { viewModel.removeFieldFilter(f) }
             })
         }
     }
@@ -850,15 +852,23 @@ class CharacterListFragment : Fragment() {
         val input = android.widget.EditText(ctx).apply { hint = getString(R.string.character_preset_name_hint) }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        MaterialAlertDialogBuilder(ctx)
+        // R-27: 종전에는 이름을 비운 채 누르면 **아무 말도 없이** 창이 닫혔다(B-76).
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.character_preset_save)
             .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotEmpty()) viewModel.saveAsPreset(name)
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = input.text.toString().trim()
+            if (name.isEmpty()) {
+                input.showInlineError(getString(R.string.preset_name_required))
+                return@setValidatedPositiveButton false
+            }
+            viewModel.saveAsPreset(name)
+            true
+        }
+        dialog.show()
     }
 
     private fun showPresetOptionsDialog(preset: CharacterListPreset) {
@@ -895,15 +905,23 @@ class CharacterListFragment : Fragment() {
         }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        MaterialAlertDialogBuilder(ctx)
+        // R-27: 같은 부류다 — 비운 채 누르면 이름이 사라진 것처럼 보이고 창은 닫혔다(B-76).
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_edit_name)
             .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotEmpty()) viewModel.renamePreset(preset, name)
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = input.text.toString().trim()
+            if (name.isEmpty()) {
+                input.showInlineError(getString(R.string.preset_name_required))
+                return@setValidatedPositiveButton false
+            }
+            viewModel.renamePreset(preset, name)
+            true
+        }
+        dialog.show()
     }
 
     /** 필터/정렬 바는 일반 탐색 모드에서만 노출(배치/비교/재정렬 중 숨김). */

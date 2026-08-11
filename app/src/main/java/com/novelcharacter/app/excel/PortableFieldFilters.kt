@@ -144,12 +144,21 @@ object PortableFieldFilters {
                     }
                 }
                 val finalId = resolvedId ?: continue
+                val deviceField = index.fieldById(finalId)
                 kept.put(JSONObject().apply {
                     put("fieldId", finalId)
                     // 라벨은 이 기기의 현재 필드명으로 — 파일의 낡은 표시명이 라벨-대상 불일치를 만들지 않게
-                    put("fieldName", index.fieldById(finalId)?.name?.ifBlank { name } ?: name)
+                    put("fieldName", deviceField?.name?.ifBlank { name } ?: name)
                     put("values", obj.optJSONArray("values") ?: JSONArray())
                     put("matchMode", obj.optString("matchMode").ifBlank { "exact" })
+                    // **키를 다시 싣는다 (B-11).** 인앱 필터의 정본이 키로 올라갔으므로, 여기서
+                    // 표준 속성만 남기며 키를 떨어뜨리면 **엑셀 왕복이 그 정본을 조용히 지운다** —
+                    // 내보내기 전에는 세계관 A·B의 '성별'이 함께 걸리던 필터가, 한 번 다녀오면
+                    // id 하나짜리로 주저앉아 한쪽만 거른다(사용자에게는 캐릭터가 줄어든 것으로만 보인다).
+                    // **파일의 키가 아니라 해석된 기기 필드의 키다** — id를 이 기기 것으로 바꿔 놓고
+                    // 키만 파일 것을 남기면 둘이 서로 다른 필드를 가리킬 수 있다(자연키 폴백으로
+                    // 해석된 경우가 정확히 그 자리다).
+                    deviceField?.key?.takeIf { it.isNotBlank() }?.let { put("fieldKey", it) }
                 })
             }
             Resolution(if (kept.length() == 0) "{}" else kept.toString(), warnings, nameBased)

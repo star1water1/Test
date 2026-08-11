@@ -164,11 +164,13 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
             val matchMode = if (binding.radioContains.isChecked) "contains" else "exact"
 
+            // 키를 함께 싣는다(B-11) — 전역 뷰라 세계관 A에서 고른 '성별'이 B의 '성별'에도 걸려야 한다.
             val filter = FieldFilter(
                 fieldId = field.id,
                 fieldName = field.name,
                 values = selectedValues,
-                matchMode = matchMode
+                matchMode = matchMode,
+                fieldKey = field.key
             )
 
             onFilterApplied?.invoke(filter)

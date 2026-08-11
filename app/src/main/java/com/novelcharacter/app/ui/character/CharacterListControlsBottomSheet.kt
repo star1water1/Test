@@ -431,7 +431,8 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         }
         val filter = if (filterField != null && selectedValues.isNotEmpty()) {
             val matchMode = if (binding.radioContains.isChecked) "contains" else "exact"
-            FieldFilter(filterField.id, filterField.name, selectedValues, matchMode)
+            // 키를 함께 싣는다(B-11) — 정렬이 이미 키로 병합되므로 필터도 같은 잣대를 쓴다.
+            FieldFilter(filterField.id, filterField.name, selectedValues, matchMode, filterField.key)
         } else null
 
         onApplyAll?.invoke(sort, selectedTags, selectedNovelIds, filter)
