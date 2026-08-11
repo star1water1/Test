@@ -1330,6 +1330,133 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return true
     }
 
+    // ===== 서술형 필드 일괄 초안 (B-45) =====
+
+    /** 일괄 초안 1필드분 결과 — 실패한 필드도 담는다(빠지면 사용자가 뭘 잃었는지 모른다). */
+    data class AiNarrativeBulkItem(
+        val fieldId: Long,
+        val fieldName: String,
+        val outcome: com.novelcharacter.app.ai.NarrativeFieldAiWriter.WriteOutcome
+    ) {
+        val hasDraft: Boolean get() = outcome.drafts.isNotEmpty()
+    }
+
+    /**
+     * 일괄 초안 1회 실행분.
+     *
+     * [notRequested]는 **보내지도 않은 필드들**이다 — 결정적 실패를 만나 남은 요청을
+     * 접었을 때 생긴다. 빈 목록으로 두면 그 필드들이 *"AI가 못 썼다"*와 구별되지 않는데,
+     * 실제로는 *"아직 시도조차 안 했다"*라 교정 경로가 정반대다(설정을 고치고 다시 돌린다).
+     */
+    data class AiNarrativeBulkRun(
+        val items: List<AiNarrativeBulkItem>,
+        val notRequested: List<String>,
+        val length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
+        /**
+         * 실행 자체가 도중에 깨진 사유 — 정상 종료면 null.
+         *
+         * **이것이 없으면 중간에 끊긴 실행과 *"AI가 그만큼만 답했다"*가 구별되지 않는다.**
+         * 이미 받은 초안은 [items]에 그대로 남으므로 사용자는 그것을 여전히 쓸 수 있고,
+         * 왜 나머지가 없는지만 알면 된다.
+         */
+        val runFailure: String? = null
+    )
+
+    val aiNarrativeBulkRunning = MutableLiveData(false)
+
+    /** 지금까지 몇 필드를 끝냈는가 — 진행 표시용(필드마다 요청 하나라 체감이 길다). */
+    val aiNarrativeBulkProgress = MutableLiveData(0 to 0)
+
+    /**
+     * 일괄 초안 결과 — **이미 결제한 응답이라 회전을 넘긴다** (R-38).
+     *
+     * 여기 걸린 돈이 다른 AI 경로보다 크다: 필드 하나에 요청 하나라 필드 5개면 응답 5건이
+     * 이 한 값에 들어 있다. 검토 중 회전으로 날리면 **다섯 번을 다시 결제**한다.
+     */
+    val aiNarrativeBulkResult = MutableLiveData<AiNarrativeBulkRun?>()
+    fun clearAiNarrativeBulkResult() { aiNarrativeBulkResult.value = null }
+
+    /**
+     * 일괄 초안 실행 — 대상마다 요청 하나를 **순차로** 보낸다.
+     *
+     * 순차인 이유는 둘이다. ① 결정적 실패(키 없음·한도 초과)를 만나면 남은 필드를 보내지
+     * 않아야 하는데, 병렬로 띄우면 그 판정이 서기 전에 이미 다 나가 **같은 실패를 필드 수만큼
+     * 결제한다.** ② 프로바이더의 분당 요청 제한에 스스로 걸리지 않는다.
+     *
+     * **부분 성공을 반드시 들고 나온다** — 3번째에서 죽어도 1·2번의 응답은 이미 결제된 것이라
+     * 버리지 않는다(R-38 ②가 이미 겪은 자리다).
+     *
+     * @return 이미 실행 중이면 false — 호출측이 알린다(무통보 무시 금지).
+     */
+    fun runAiNarrativeBulk(
+        aiContext: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
+        characterId: Long,
+        targets: List<com.novelcharacter.app.ai.NarrativeFieldAiWriter.BulkDraftTarget>,
+        length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
+        imagePaths: List<String> = emptyList()
+    ): Boolean {
+        if (aiNarrativeBulkRunning.value == true) return false
+        if (targets.isEmpty()) return false
+        aiNarrativeBulkRunning.value = true
+        aiNarrativeBulkProgress.value = 0 to targets.size
+        viewModelScope.launch {
+            val items = mutableListOf<AiNarrativeBulkItem>()
+            val notRequested = mutableListOf<String>()
+            var runFailure: String? = null
+            try {
+                val writer = com.novelcharacter.app.ai.NarrativeFieldAiWriter(
+                    com.novelcharacter.app.ai.AiService(getApplication())
+                )
+                val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
+                // 이미지는 대상마다 다시 실린다 — 준비는 한 번만 한다(디코딩·리사이즈가 비싸다).
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
+                    imagePaths, getApplication<android.app.Application>().filesDir
+                )
+                var aborted = false
+                for ((index, target) in targets.withIndex()) {
+                    if (aborted) {
+                        notRequested.add(target.spec.name)
+                        continue
+                    }
+                    val enriched = withStyleSamples(target.spec, target.fieldId, characterId)
+                    val outcome = writer.write(
+                        aiContext, enriched,
+                        com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.DRAFT,
+                        length,
+                        com.novelcharacter.app.ai.NarrativeFieldAiWriter.BULK_DRAFT_VARIANTS,
+                        creativity, prepared.images
+                    ) { failure ->
+                        com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
+                    }
+                    val noticed = outcome.copy(failures = outcome.failures + imageNotices(prepared))
+                    items.add(AiNarrativeBulkItem(target.fieldId, target.spec.name, noticed))
+                    aiNarrativeBulkProgress.value = (index + 1) to targets.size
+                    // 재시도해도 같은 결과인 실패 — 남은 필드는 요청조차 하지 않는다.
+                    // 판정은 [WriteOutcome.terminalFailure]가 든다(문구 비교 금지).
+                    if (outcome.terminalFailure) aborted = true
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 뷰모델이 정리되는 중이다 — 삼키면 취소가 깨진다. 그대로 올려보낸다.
+                throw e
+            } catch (e: Exception) {
+                // **크래시 금지.** 여기서 던지면 이미 결제한 초안까지 함께 사라지고,
+                // 사용자는 앱이 죽는 것으로 그 사실을 안다. 사유를 들고 아래로 내려간다.
+                Log.e("CharacterViewModel", "ai narrative bulk failed", e)
+                runFailure = e.message ?: app.getString(R.string.ai_error_unknown)
+                // 아직 보내지 않은 대상은 '요청 안 함'으로 남긴다 — 실패한 것과 처분이 다르다
+                // (설정을 고치고 다시 돌리면 된다).
+                for (rest in targets.drop(items.size)) notRequested.add(rest.spec.name)
+            } finally {
+                // **부분 결과라도 반드시 내보낸다** — 예외로 빠져나가도 이미 결제한 응답은
+                // 사용자 것이다. 빈 실행도 결과로 낸다(무통보 소멸 금지 — B-144와 같은 갈래).
+                aiNarrativeBulkResult.value =
+                    AiNarrativeBulkRun(items, notRequested, length, runFailure)
+                aiNarrativeBulkRunning.value = false
+            }
+        }
+        return true
+    }
+
     /**
      * 서술형 스펙에 **문체 참고**를 싣는다 — 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판.
      * 값 목록으로는 어투·시점·문장 길이 같은 문체를 전할 수 없어서 같은 필드에 다른 캐릭터가
@@ -2077,8 +2204,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             }
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert event", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_save_failed), e.message))
         }
     }
 
@@ -2104,8 +2235,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_update_failed), e.message))
         }
     }
 
@@ -2168,8 +2303,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to shift events", e)
+            // 연쇄 이동은 트랜잭션 하나라 실패하면 **사건 수정 자체가 안 된 것**이다 —
+            // 수정 실패 문구를 그대로 쓴다(별도 문구를 두면 같은 사실을 두 가지로 말한다).
+            reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_update_failed), e.message))
         }
     }
 

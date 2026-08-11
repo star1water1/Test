@@ -28,6 +28,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
@@ -95,6 +96,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private lateinit var formBuilder: DynamicFieldFormBuilder
     // ✨ AI 추천 진행 다이얼로그 — 실행 상태는 VM(aiSuggestRunning), 표시만 뷰 수명에 묶는다
     private var aiProgressDialog: androidx.appcompat.app.AlertDialog? = null
+
+    /**
+     * 서술형 일괄 초안 전용 진행 창 (B-45) — 추천 경로와 **공유하지 않는다.**
+     * 이쪽만 진행 수(몇/몇)를 갱신하는데, 창을 공유하면 다른 경로가 끝낼 때 이 창이 함께
+     * 닫히거나 그쪽 문구가 진행 수를 덮어쓴다.
+     */
+    private var aiBulkProgressDialog: androidx.appcompat.app.AlertDialog? = null
     // 저장 체인(검증→중복→연동 충돌→교차 세계관→DB) — 공용 코디네이터에 위임
     private lateinit var saveCoordinator: CharacterSaveCoordinator
     private var hasUnsavedChanges = false
@@ -341,7 +349,16 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 // 보충 플로우에서는 기대치 조정 한 줄 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1)
                 extraNote = if (supplementMode) getString(R.string.ai_supplement_scope_note) else null,
                 imagePaths = imageStrip.paths.toList(),
-                representativePath = imageStrip.representativePath
+                representativePath = imageStrip.representativePath,
+                // 서술형 일괄 초안으로 넘어가는 길 (B-45) — **제외 고지를 누른 그 자리에서 준다.**
+                // 별도 버튼을 세우지 않는 이유는 여기가 사용자가 "서술형은 빠졌다"를 처음 아는
+                // 자리이기 때문이다. 알게 된 자리와 고치는 자리가 떨어져 있으면 조작 마찰이다.
+                onNarrativeBulk = {
+                    NarrativeBulkSheet.show(
+                        this, formBuilder, viewModel, characterId,
+                        imageStrip.paths.toList(), imageStrip.representativePath
+                    ) { buildAiContext() }
+                }
             ) { buildAiContext() }
         }
         // AI 추천 실행 상태·결과 관측 — 실행은 VM(회전 생존)이 수행하므로 진행 다이얼로그와
@@ -383,6 +400,47 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run) { id ->
                     formBuilder.fieldDefinitions.firstOrNull { it.id == id }
                 }
+            }
+        }
+        // 서술형 일괄 초안 (B-45) — 진행 표시가 다른 AI 경로와 다르다: 필드마다 요청 하나라
+        // 체감이 길어, 몇 번째를 쓰는 중인지 보이지 않으면 멈춘 것으로 읽힌다.
+        viewModel.aiNarrativeBulkRunning.observe(viewLifecycleOwner) { running ->
+            if (running == true) {
+                if (aiBulkProgressDialog == null) {
+                    aiBulkProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(R.string.ai_field_running)
+                        .setCancelable(false)
+                        .show()
+                }
+            } else {
+                aiBulkProgressDialog?.dismiss()
+                aiBulkProgressDialog = null
+            }
+        }
+        viewModel.aiNarrativeBulkProgress.observe(viewLifecycleOwner) { (done, total) ->
+            if (total > 0) {
+                aiBulkProgressDialog?.setMessage(
+                    getString(R.string.ai_narrative_bulk_running, done, total)
+                )
+            }
+        }
+        viewModel.aiNarrativeBulkResult.observe(viewLifecycleOwner) { run ->
+            if (run != null) {
+                NarrativeBulkSheet.showResult(this, formBuilder, viewModel, run) { id ->
+                    formBuilder.fieldDefinitions.firstOrNull { it.id == id }
+                }
+            }
+        }
+
+        // 데이터 처리 결과 알림 (B-29) — **이 화면에는 이 관측이 없었다.**
+        // 사건 편집 창은 상세 화면과 편집 화면 **양쪽**에서 뜨는데 결과 채널을 상세만 보고
+        // 있어서, 같은 조작이 어디서 떴느냐에 따라 알려지기도 하고 침묵하기도 했다.
+        // ViewModel이 결과를 내도 관측이 없으면 아무 데도 닿지 않으므로, 고지 배선은
+        // ViewModel 쪽만으로 끝나지 않는다.
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
             }
         }
 
