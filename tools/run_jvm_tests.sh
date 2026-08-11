@@ -120,6 +120,10 @@ $MAIN/data/model/DuelCounterVerdict.kt
 $MAIN/data/model/DuelSnapshots.kt
 $MAIN/data/dao/TrashSnapshotDao.kt
 $MAIN/data/repository/TrashGrouping.kt
+$MAIN/data/repository/TrashFilter.kt
+$MAIN/data/repository/TrashListPlan.kt
+$MAIN/data/repository/TrashRetentionPolicy.kt
+$MAIN/data/repository/TrashPayloadCodec.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt
 $MAIN/data/repository/TrashPruneSelector.kt
@@ -343,6 +347,10 @@ $TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt
+$TEST/data/TrashListPlanTest.kt
+$TEST/data/TrashFilterTest.kt
+$TEST/data/TrashRetentionPolicyTest.kt
+$TEST/data/TrashPayloadCodecTest.kt
 $TEST/data/EntitySnapshotPayloadTest.kt
 $TEST/data/DuelSnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt

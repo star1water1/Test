@@ -11,10 +11,24 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="12dp"
+    android:background="?attr/selectableItemBackground"
+    android:paddingStart="4dp"
     android:paddingEnd="8dp"
     android:paddingTop="14dp"
     android:paddingBottom="6dp">
+
+    <!--
+      펼침/접힘 표시 (B-16). 머리글 줄 전체가 누르면 토글되므로 이 아이콘은 상태를 *말할* 뿐
+      따로 클릭을 받지 않는다 — 누를 곳이 둘이면 어느 쪽이 무엇을 하는지 헷갈린다.
+    -->
+    <ImageView
+        android:id="@+id/opExpandIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="4dp"
+        android:src="@drawable/ic_expand_more"
+        app:tint="?attr/colorOnSurfaceVariant"
+        android:importantForAccessibility="no" />
 
     <LinearLayout
         android:layout_width="0dp"

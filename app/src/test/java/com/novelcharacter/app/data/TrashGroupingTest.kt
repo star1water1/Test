@@ -31,6 +31,33 @@ class TrashGroupingTest {
     )
 
     @Test
+    fun `접기와 일괄 동작은 다른 물음이다 (B-16)`() {
+        // 편집 직전 백업 묶음은 '전체 복원'을 받지 못한다(원클릭 복제가 된다). 그러나 **접기는
+        // 받는다** — 엑셀 임포트 한 번이 편집 백업 수백 개를 만들고, 그 묶음이 머리글 없이
+        // 수백 줄로 펼쳐지던 것이 B-16이 말한 바로 그 증상이다. 둘을 한 깃발로 묶으면
+        // 그 자리를 영영 못 고친다.
+        val edits = (1..3).map { editBackup("덮은$it", "op1") }
+        val editGroup = TrashGrouping.group(edits).single()
+        assertTrue("접을 수 있어야 한다", editGroup.isCollapsible)
+        assertFalse("일괄 동작은 주지 않는다", editGroup.needsHeader)
+
+        // 항목이 하나면 접을 것이 없다 — 머리글을 만들면 같은 내용이 두 줄이 된다.
+        val lone = TrashGrouping.group(listOf(snap(TrashSnapshot.TYPE_CHARACTER, "가온", "op2"))).single()
+        assertFalse(lone.isCollapsible)
+        assertFalse(lone.needsHeader)
+
+        // 삭제 묶음은 둘 다 받는다.
+        val deletes = TrashGrouping.group(
+            listOf(
+                snap(TrashSnapshot.TYPE_UNIVERSE, "아스테리아", "op3"),
+                snap(TrashSnapshot.TYPE_CHARACTER, "가온", "op3")
+            )
+        ).single()
+        assertTrue(deletes.isCollapsible)
+        assertTrue(deletes.needsHeader)
+    }
+
+    @Test
     fun `한 작업의 항목은 복원 순서대로 정렬된다`() {
         val items = listOf(
             snap(TrashSnapshot.TYPE_CHARACTER, "가온", "op1"),

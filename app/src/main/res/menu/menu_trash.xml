@@ -3,6 +3,11 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/action_trash_retention"
+        android:title="@string/trash_retention_settings"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_empty_trash"
         android:title="@string/trash_empty_all"
         app:showAsAction="always" />

@@ -18,6 +18,7 @@ import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.repository.TrashRetentionPolicy
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.databinding.DialogNovelEditBinding
@@ -164,7 +165,13 @@ class NovelListFragment : Fragment() {
                         append(getString(R.string.confirm_delete_novel, novel.title))
                         if (characterCount > 0) {
                             append("\n\n")
-                            append(getString(R.string.delete_impact_novel, characterCount))
+                            // 보관 한도는 사용자가 정한다(B-74) — 문구가 실제 정책을 말해야
+                            // 사용자가 "먼저 복원할지"를 판단할 수 있다.
+                            val policy = TrashRetentionPolicy.currentOrDefault()
+                            append(getString(
+                                R.string.delete_impact_novel,
+                                characterCount, policy.maxOperations, policy.retentionDays
+                            ))
                         }
                     }
                     MaterialAlertDialogBuilder(requireContext())

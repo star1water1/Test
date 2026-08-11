@@ -91,6 +91,14 @@ class NovelCharacterApp : Application() {
                 android.util.Log.e("NovelCharacterApp", "Theme cache migration failed — falling back to system theme", e)
             }
         }
+        // 휴지통 보관 정책을 정리 경로가 읽을 수 있는 자리에 올린다 (B-74).
+        // **읽기 전까지 정리는 통째로 건너뛴다** — 기본값으로 대신 정리하면 사용자가 올려 둔
+        // 한도를 모른 채 영구 삭제하게 되고, 그것은 되돌릴 수 없다(TrashRetentionPolicy).
+        // 그래서 실패해도 앱을 죽이지 않고 조용히 비워 둔다 — 다음 실행이 다시 시도한다.
+        appScope.launch(Dispatchers.IO) {
+            com.novelcharacter.app.data.settings.TrashSettingsStore(this@NovelCharacterApp)
+                .primeQuietly()
+        }
         createNotificationChannel()
         checkBackupKeyAvailability()
         try {

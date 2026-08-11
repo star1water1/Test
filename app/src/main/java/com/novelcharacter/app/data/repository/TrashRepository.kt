@@ -813,7 +813,9 @@ class TrashRepository(
             TrashSnapshot(
                 entityType = entityType,
                 entityName = entityName,
-                payload = gson.toJson(payload),
+                // 압축은 여기 한 곳에서만 걸린다 — 스냅샷을 만드는 자리가 이 함수 하나라
+                // 새 타입이 생겨도 형식이 갈리지 않는다. 이득이 없으면 평문이다(B-17).
+                payload = TrashPayloadCodec.encode(gson.toJson(payload)),
                 imagePaths = gson.toJson(imagePaths),
                 operationId = operationId,
                 operationKind = kind
@@ -1442,8 +1444,13 @@ class TrashRepository(
         return lost
     }
 
+    /**
+     * payload를 되살린다. 압축분·평문분을 **같은 자리에서** 받는다(B-17 — 읽기 둘·쓰기 하나).
+     * 압축이 깨졌으면 [TrashPayloadCodec.decode]가 던지고, 여기서 파싱 실패와 같은 처분
+     * (=이 스냅샷은 읽을 수 없다)으로 흡수된다.
+     */
     private fun <T> parse(snap: TrashSnapshot, type: Class<T>): T? = try {
-        gson.fromJson(snap.payload, type)
+        gson.fromJson(TrashPayloadCodec.decode(snap.payload), type)
     } catch (_: Exception) {
         null
     }
@@ -3925,8 +3932,13 @@ class TrashRepository(
      *
      * **이 인스턴스가 방금 만든 작업은 정리 대상에서 제외한다**(R-3). 한도를 넘긴 잔여분은
      * 다음 삭제 작업의 정리에서 자연히 소진된다.
+     *
+     * **보관 정책을 아직 읽지 못했으면 아무것도 지우지 않는다**(B-74). 기본값으로 대신 정리하면
+     * 사용자가 올려 둔 한도를 모른 채 영구 삭제하게 되는데, 그것은 되돌릴 수 없다. 건너뛴 잔여분은
+     * 위와 같은 이유로 다음 삭제의 정리가 소진한다 — 근거는 [TrashRetentionPolicy].
      */
     suspend fun pruneIfNeeded() {
+        val policy = TrashRetentionPolicy.current() ?: return
         // (작업, 종류) 단위 계획(S-4) — purge가 종류까지 맞는 행만 지우므로 계획도 같은 축.
         // 종류를 모르던 종전 구현은 순수 편집 백업 작업을 뽑고도 0행을 지워, 편집 백업이
         // 기한·한도 어느 쪽으로도 정리되지 않고 무한 축적됐다(한도 계산까지 왜곡).
@@ -3936,9 +3948,9 @@ class TrashRepository(
         if (operations.isEmpty()) return
         val targets = TrashPruneSelector.plan(
             operations,
-            System.currentTimeMillis() - TrashSnapshot.RETENTION_MS,
+            System.currentTimeMillis() - policy.retentionMs,
             protectedOperationKeys,
-            TrashSnapshot.MAX_OPERATIONS
+            policy.maxOperations
         )
         for (t in targets) purgeOperation(t.key, editBackup = t.editBackup)
     }
@@ -3980,11 +3992,23 @@ class TrashRepository(
         const val RESTORE_TIMING_TAG = "TrashRestore"
 
         /**
-         * payload 한 행의 크기 예산(문자 수).
+         * payload 한 행의 크기 예산(문자 수) — **압축 전 JSON 기준이다**(B-17에서 뜻이 갈렸다).
          *
          * Android의 CursorWindow는 기본 2MB이고 **한 행이 그것을 넘으면 읽을 수 없다** —
          * 백업이 통째로 사라지는 것과 같다. UTF-8·UTF-16 확장과 Gson 이스케이프를 감안해
          * 넉넉히 낮춰 잡는다. 예산을 넘기면 다음 행으로 넘어간다(유실 없음).
+         *
+         * ## 압축이 들어온 뒤 이 숫자가 재는 것 (B-17)
+         *
+         * 이어붙임을 세는 다섯 자리는 전부 **`gson.toJson(...)`의 길이**를 더한다 — 즉 압축
+         * *전*의 크기다. 실제로 행에 들어가는 것은 [TrashPayloadCodec.encode]를 지난 값이고
+         * 그것은 **결코 이보다 길지 않다**(압축이 이득이 아니면 평문을 그대로 쓴다). 그래서
+         * 이 예산은 압축 뒤에도 **상한으로서 그대로 유효하고, 다만 종전보다 헐거워졌다.**
+         *
+         * **압축 후 크기로 고쳐 재지 않는 것은 일부러다.** 조각을 나누는 시점에는 그 조각을
+         * 아직 직렬화하지 않았고, 조각마다 시험 압축을 하면 삭제 경로가 그만큼 느려진다.
+         * 헐거운 상한은 조각 수를 조금 늘릴 뿐이지만(유실 없음), 뚫린 상한은 그 백업을 영영
+         * 못 읽게 만든다 — 두 오차의 값이 이렇게 다르므로 안전한 쪽으로 남겨 둔다.
          */
         const val PAYLOAD_BUDGET_CHARS = 400_000
 

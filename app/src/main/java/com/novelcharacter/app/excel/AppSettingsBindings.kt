@@ -8,6 +8,7 @@ import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.backup.BackupSettingsStore
+import com.novelcharacter.app.data.settings.TrashSettingsStore
 import com.novelcharacter.app.ui.assistant.AssistantPrefs
 import com.novelcharacter.app.ui.assistant.InsightCategory
 import com.novelcharacter.app.ui.stats.CompletionWeightPrefs
@@ -83,6 +84,22 @@ object AppSettingsBindings {
             read = { num(BackupSettingsStore(it).getSettings().maxBackups) },
             write = { ctx, v ->
                 intOf(v)?.let { BackupSettingsStore(ctx).setMaxBackups(it); Applied.Yes }
+                    ?: Applied.No("숫자가 아닙니다")
+            }),
+
+        // ── 휴지통 보관 정책 (B-74) ──
+        // 범위를 벗어난 값은 거절하지 않고 **좁혀서 받는다**(개발 의도 4번 — 밖에서 편집된
+        // 파일을 유연하게 수용). 좁히는 규칙은 TrashRetentionPolicy.sanitize 한 벌이다.
+        Binding(AppSettingsKeys.TRASH_MAX_OPERATIONS,
+            read = { num(TrashSettingsStore(it).getSettings().maxOperations) },
+            write = { ctx, v ->
+                intOf(v)?.let { TrashSettingsStore(ctx).setMaxOperations(it); Applied.Yes }
+                    ?: Applied.No("숫자가 아닙니다")
+            }),
+        Binding(AppSettingsKeys.TRASH_RETENTION_DAYS,
+            read = { num(TrashSettingsStore(it).getSettings().retentionDays) },
+            write = { ctx, v ->
+                intOf(v)?.let { TrashSettingsStore(ctx).setRetentionDays(it); Applied.Yes }
                     ?: Applied.No("숫자가 아닙니다")
             }),
 

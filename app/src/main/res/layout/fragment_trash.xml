@@ -16,22 +16,122 @@
         app:title="@string/trash_title"
         app:navigationIcon="?attr/homeAsUpIndicator" />
 
+    <!--
+      보관 안내 — 문구의 '몇 건·며칠'은 사용자 설정이라(B-74) 코드에서 채운다.
+      XML에 text를 두면 30건·30일이 다시 박히고, 설정을 바꾼 사용자에게 거짓을 말하게 된다.
+    -->
     <TextView
         android:id="@+id/retentionCaption"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:padding="12dp"
-        android:text="@string/trash_retention_caption"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:textAppearance="@style/TextAppearance.App.Caption"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
+    <!-- 종류·기간 필터와 이름 검색 (B-50) — 판정은 TrashFilter가 한다. -->
+    <LinearLayout
+        android:id="@+id/filterLayout"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/retentionCaption">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/searchLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/trash_search_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/searchEdit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:imeOptions="actionSearch"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- 기간은 하나만 고른다 — 겹치는 기간을 함께 고르는 것은 뜻이 없다. -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/periodChips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleLine="true"
+                    app:singleSelection="true"
+                    app:selectionRequired="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPeriodAll"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/trash_period_all" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPeriod24h"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/trash_period_24h" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPeriod7d"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/trash_period_7d" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPeriod30d"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/trash_period_30d" />
+                </com.google.android.material.chip.ChipGroup>
+
+                <!--
+                  종류는 여럿 고를 수 있어 창으로 연다 — 칩 열한 개를 늘어놓으면 줄이 길어진다.
+
+                  **누르면 스스로 체크되지 않는다(checkable=false).** 이 칩이 하는 일은 창을 여는
+                  것이라, 체크가 살아 있으면 누르는 순간 켜졌다가 창을 취소해도 켜진 채로 남아
+                  *걸리지도 않은 필터가 걸린 것처럼* 보인다. 상태는 글자가 말한다("종류 3개").
+                -->
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTypeFilter"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:checkable="false"
+                    android:text="@string/trash_type_filter_all" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
+
     <TextView
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:padding="24dp"
+        android:gravity="center"
         android:text="@string/trash_empty_hint"
         android:textColor="@color/text_secondary"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
@@ -39,7 +139,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/retentionCaption" />
+        app:layout_constraintTop_toBottomOf="@id/filterLayout" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/trashRecyclerView"
@@ -50,6 +150,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/retentionCaption" />
+        app:layout_constraintTop_toBottomOf="@id/filterLayout" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

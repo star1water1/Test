@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  휴지통 보관 정책 창 (B-74) — 보관 **작업 수**와 보관 **기간**.
+
+  종전에는 둘 다 상수(30건·30일)였고 초과분의 결과는 영구 삭제였다. 고를 수 있는 것이 하나도
+  없다는 뜻이라, 대청소를 반복하는 사용자는 30건을 빠르게 소진해 되살릴 것을 잃었다.
+
+  scroll-cap-exempt: 창 본문이 두 줄짜리 고정 높이라 스크롤이 없다. 목적문과 선택기 둘이
+  전부이고 늘어나는 목록이 아니므로 상한을 씌울 대상이 아니다(R-31).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="4dp">
+
+    <!-- 목적문 — 무엇이 어디서 어떻게 (R-25) -->
+    <TextView
+        android:id="@+id/retentionPurpose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/trash_retention_purpose"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textAppearance="@style/TextAppearance.App.Caption" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/trash_retention_max_label"
+        android:textColor="?attr/colorOnSurface"
+        android:textAppearance="@style/TextAppearance.App.Body" />
+
+    <Spinner
+        android:id="@+id/maxOperationsSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/trash_retention_days_label"
+        android:textColor="?attr/colorOnSurface"
+        android:textAppearance="@style/TextAppearance.App.Body" />
+
+    <Spinner
+        android:id="@+id/retentionDaysSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" />
+
+</LinearLayout>
