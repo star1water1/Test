@@ -149,6 +149,12 @@ class TrashFragment : Fragment() {
         }
 
         binding.chipTypeFilter.setOnClickListener { showTypeFilterDialog() }
+
+        // **고른 종류를 칩 글자에 다시 적는다.** 고른 값은 프래그먼트가 들고 있어 화면이 다시
+        // 만들어져도(회전·되돌아오기) 살아남는데, 칩 글자는 XML 기본값("종류 전체")으로 되돌아간다.
+        // 그러면 목록은 걸러진 채로 칩만 *안 걸렸다*고 말하게 된다 — 검색칸·기간 칩은 안드로이드가
+        // 스스로 되살리므로 이 하나만 어긋났다.
+        updateTypeChipLabel()
     }
 
     /**
