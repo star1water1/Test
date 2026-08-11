@@ -27,6 +27,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.repository.TrashRetentionPolicy
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
@@ -122,7 +123,10 @@ class UniverseListFragment : Fragment() {
                         getString(
                             R.string.delete_impact_universe,
                             impact.novels, impact.characters, impact.events,
-                            impact.fieldDefinitions, impact.fieldValues
+                            impact.fieldDefinitions, impact.fieldValues,
+                            // 보관 한도는 사용자가 정한다(B-74).
+                            TrashRetentionPolicy.currentOrDefault().maxOperations,
+                            TrashRetentionPolicy.currentOrDefault().retentionDays
                         )
                     MaterialAlertDialogBuilder(requireContext())
                         .setMessage(message)

@@ -10,6 +10,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.repository.TrashRetentionPolicy
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.databinding.BottomSheetBatchOperationsBinding
 import kotlinx.coroutines.launch
@@ -106,7 +107,13 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
 
     /** 기본 확인 문구 + (연관 데이터가 있으면) 연쇄 정리 규모 요약을 덧붙인다. */
     private fun buildDeleteMessage(count: Int, impact: CharacterRepository.DeleteImpact): String {
-        val base = getString(R.string.batch_delete_confirm_message, count)
+        // 보관 한도는 사용자가 정한다(B-74) — 30건·30일을 문구에 박아 두면 설정을 바꾼 사용자에게
+        // 거짓을 말하게 된다.
+        val policy = TrashRetentionPolicy.currentOrDefault()
+        val base = getString(
+            R.string.batch_delete_confirm_message,
+            count, policy.retentionDays, policy.maxOperations
+        )
         if (!impact.hasLinkedData) return base
         val parts = mutableListOf<String>()
         if (impact.relationships > 0) parts.add(getString(R.string.batch_delete_impact_relationships, impact.relationships))

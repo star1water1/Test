@@ -58,6 +58,11 @@ object AppSettingsKeys {
     val BACKUP_INCLUDE_IMAGES = Spec("backup_include_images", Kind.BOOLEAN)
     val BACKUP_MAX_BACKUPS = Spec("backup_max_backups", Kind.NUMBER)
 
+    // ── 휴지통 보관 정책 (B-74) ──
+    // 초과분의 결과가 **영구 삭제**라, 기기를 옮길 때 함께 가야 하는 설정이다.
+    val TRASH_MAX_OPERATIONS = Spec("trash_max_operations", Kind.NUMBER)
+    val TRASH_RETENTION_DAYS = Spec("trash_retention_days", Kind.NUMBER)
+
     // ── 이미지 저장 ──
     val IMAGE_COMPRESS_ENABLED = Spec("image_compress_enabled", Kind.BOOLEAN)
     val IMAGE_QUALITY_PERCENT = Spec("image_quality_percent", Kind.NUMBER)
@@ -127,6 +132,7 @@ object AppSettingsKeys {
     val SPECS: List<Spec> = listOf(
         THEME_MODE,
         BACKUP_INCLUDE_IMAGES, BACKUP_MAX_BACKUPS,
+        TRASH_MAX_OPERATIONS, TRASH_RETENTION_DAYS,
         IMAGE_COMPRESS_ENABLED, IMAGE_QUALITY_PERCENT, IMAGE_CAP_DIMENSION,
         IMAGE_MAX_LONG_EDGE_PX, IMAGE_SKIP_BELOW_ENABLED, IMAGE_SKIP_BELOW_BYTES,
         IMAGE_EDITOR_REMOVE_POLICY, IMAGE_AUTO_LINK_BY_CHARACTER,
@@ -207,6 +213,8 @@ object AppSettingsKeys {
         "theme_cache" to "테마 캐시 — 값 자체는 ${THEME_MODE.key}로 실린다(저장소가 아니라 키로 등재된 자리).",
         "settings" to "테마의 DataStore 본체. 값은 ${THEME_MODE.key}로 실린다.",
         "image_settings" to "이미지 저장 설정의 DataStore. 값은 `image_`로 시작하는 키들로 실린다.",
+        "trash_settings" to
+            "휴지통 보관 정책의 DataStore. 값은 ${TRASH_MAX_OPERATIONS.key}·${TRASH_RETENTION_DAYS.key}로 실린다.",
         "backup_status" to
             "마지막 백업의 성공·실패 시각과 사유. **설정이 아니라 그 기기에서 일어난 일의 기록이다** — " +
             "옮기면 새 기기가 하지도 않은 백업을 했다고 말한다.",

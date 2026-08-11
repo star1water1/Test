@@ -48,6 +48,21 @@ object TrashGrouping {
          * 개별 행은 그대로 남아 항목마다 '편집 직전 백업' 경고를 거쳐 복원할 수 있다.
          */
         val needsHeader: Boolean get() = items.size > 1 && !isEditBackup
+
+        /**
+         * 접을 수 있는 묶음인가 (B-16) — **[needsHeader]와 갈라 두는 것이 요점이다.**
+         *
+         * 접기는 *일괄 동작을 내주는가*와 다른 물음이다. 항목이 여럿이면 접을 값이 있고,
+         * 그것은 그 묶음이 삭제든 편집 직전 백업이든 같다 — 엑셀 임포트 한 번이 캐릭터
+         * 수백 개의 **편집 백업**을 만들고, 그 묶음은 [needsHeader]가 false라 종전에는
+         * 머리글 없이 수백 줄로 펼쳐졌다. B-16이 말한 "행이 수백 개가 된다"가 그 자리에도
+         * 그대로 있으므로 접기만 내준다.
+         *
+         * **일괄 동작은 따라오지 않는다** — 접기 머리글은 '무엇이 몇 건인가'만 말하고,
+         * '전체 복원'·'묶음 영구 삭제'는 [needsHeader]가 여전히 혼자 정한다. 편집 백업에
+         * 복원 버튼을 주지 않는 이유(원클릭 복제)는 접기와 무관하게 그대로다.
+         */
+        val isCollapsible: Boolean get() = items.size > 1
     }
 
     private val ITEM_ORDER = compareBy<TrashSnapshotSummary>(

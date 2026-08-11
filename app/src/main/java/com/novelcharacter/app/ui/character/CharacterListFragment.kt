@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.repository.TrashRetentionPolicy
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
 import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
@@ -108,6 +109,15 @@ class CharacterListFragment : Fragment() {
         }
     }
 
+    /**
+     * 휴지통 보관 안내 — 보관 한도는 사용자가 정하므로(B-74) 문구에 박지 않고 현행 정책을 읽는다.
+     * 이 화면의 두 갈래(연관 데이터 있음/없음)가 같은 문구를 써야 해서 한 곳에서 만든다.
+     */
+    private fun trashNoticeText(): String {
+        val policy = TrashRetentionPolicy.currentOrDefault()
+        return getString(R.string.delete_trash_notice, policy.retentionDays, policy.maxOperations)
+    }
+
     private fun setupRecyclerView() {
         adapter = CharacterAdapter(
             coroutineScope = viewLifecycleOwner.lifecycleScope,
@@ -137,11 +147,11 @@ class CharacterListFragment : Fragment() {
                         if (impact.images > 0) add(getString(R.string.delete_impact_images, impact.images))
                     }
                     val message = if (details.isEmpty()) {
-                        getString(R.string.confirm_delete) + "\n\n" + getString(R.string.delete_trash_notice)
+                        getString(R.string.confirm_delete) + "\n\n" + trashNoticeText()
                     } else {
                         getString(R.string.confirm_delete) + "\n\n" +
                             getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n") +
-                            "\n\n" + getString(R.string.delete_trash_notice)
+                            "\n\n" + trashNoticeText()
                     }
                     MaterialAlertDialogBuilder(requireContext())
                         .setIcon(R.drawable.ic_warning)

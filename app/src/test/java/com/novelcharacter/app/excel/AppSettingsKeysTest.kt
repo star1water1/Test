@@ -136,7 +136,10 @@ class AppSettingsKeysTest {
         val numbers = AppSettingsKeys.SPECS.filter { it.kind == AppSettingsKeys.Kind.NUMBER }.map { it.key }
         assertEquals(
             listOf(
-                "theme_mode", "backup_max_backups", "image_quality_percent", "image_max_long_edge_px",
+                "theme_mode", "backup_max_backups",
+                // 휴지통 보관 정책 (B-74) — 초과분의 결과가 영구 삭제라 기기를 옮길 때 함께 간다.
+                "trash_max_operations", "trash_retention_days",
+                "image_quality_percent", "image_max_long_edge_px",
                 "image_skip_below_bytes", "ai_usage_example_count", "ai_style_sample_count",
                 "ai_attach_image_count", "ai_image_tag_batch_size", "ai_name_suggest_batch_size",
                 "stats_completion_required_weight", "supplement_field_threshold"

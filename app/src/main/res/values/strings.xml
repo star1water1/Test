@@ -339,7 +339,7 @@
     <string name="dialog_edit_universe">세계관 편집</string>
     <string name="confirm_delete_universe">\" %s\" 세계관을 삭제하시겠습니까?\n하위 작품·캐릭터·사건·세력·필드 정의가 모두 함께 삭제되며, 하나의 묶음으로 휴지통에 보관됩니다.</string>
     <string name="confirm_delete_novel">\" %s\" 작품을 삭제하시겠습니까?</string>
-    <string name="delete_impact_novel">소속 캐릭터 %1$d명이 함께 삭제됩니다.\n작품과 캐릭터가 하나의 묶음으로 휴지통에 보관됩니다(최근 30건, 30일). \'전체 복원\'을 누르면 작품이 먼저 되살아나 캐릭터가 원래 작품에 다시 붙습니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
+    <string name="delete_impact_novel">소속 캐릭터 %1$d명이 함께 삭제됩니다.\n작품과 캐릭터가 하나의 묶음으로 휴지통에 보관됩니다(최근 %2$d건, %3$d일). \'전체 복원\'을 누르면 작품이 먼저 되살아나 캐릭터가 원래 작품에 다시 붙습니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="menu_edit">편집</string>
     <string name="menu_delete">삭제</string>
     <string name="month_valid_range">월은 1~12 사이로 입력하세요</string>
@@ -516,7 +516,7 @@
     <string name="trash_title">휴지통</string>
     <string name="settings_trash_desc">삭제된 캐릭터·세계관·작품·세력·사건·상태변화를 보관·복원합니다</string>
     <string name="trash_empty_hint">휴지통이 비어 있습니다</string>
-    <string name="trash_retention_caption">삭제된 캐릭터·세계관·작품·세력·사건·상태변화가 연관 데이터와 함께 보관됩니다. 보관 단위는 한 번의 삭제이며, 삭제 백업과 편집 직전 백업이 각각 최근 30건·30일까지 유지됩니다 — 세계관 하나를 지워 수백 항목이 생겨도 그 묶음은 통째로 남거나 통째로 사라지므로 반쪽 백업이 되지 않습니다. 오래된 것부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
+    <string name="trash_retention_caption">삭제된 캐릭터·세계관·작품·세력·사건·상태변화가 연관 데이터와 함께 보관됩니다. 보관 단위는 한 번의 삭제이며, 삭제 백업과 편집 직전 백업이 각각 최근 %1$d건·%2$d일까지 유지됩니다 — 세계관 하나를 지워 수백 항목이 생겨도 그 묶음은 통째로 남거나 통째로 사라지므로 반쪽 백업이 되지 않습니다. 오래된 것부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="trash_type_character">캐릭터</string>
     <string name="trash_type_universe">세계관</string>
     <string name="trash_type_universe_data">세계관 부가 데이터</string>
@@ -532,6 +532,38 @@
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
     <string name="trash_operation_meta">항목 %1$d개 · %2$s</string>
+    <!-- 편집 직전 백업 묶음의 머리글 — 지워진 적이 없으므로 '삭제'라 부르지 않는다 (B-16) -->
+    <string name="trash_operation_title_edit_backup">%1$s \'%2$s\' 편집 직전 백업</string>
+    <!--
+      필터가 걸려 있을 때의 머리글 — 걸린 수와 **묶음 전체 수**를 함께 적는다.
+      '전체 복원'·'묶음 영구 삭제'는 언제나 작업 전체에 작용하므로(R-9), 걸린 수만 적으면
+      3개인 줄 알고 눌러 214개가 복원된다.
+    -->
+    <string name="trash_operation_meta_filtered">항목 %1$d/%2$d개 · %3$s</string>
+
+    <!-- 휴지통 필터·검색 (B-50) -->
+    <string name="trash_search_hint">이름으로 찾기</string>
+    <string name="trash_period_all">전체 기간</string>
+    <string name="trash_period_24h">24시간</string>
+    <string name="trash_period_7d">7일</string>
+    <string name="trash_period_30d">30일</string>
+    <string name="trash_type_filter_all">종류 전체</string>
+    <string name="trash_type_filter_some">종류 %1$d개</string>
+    <string name="trash_type_filter_title">종류 고르기</string>
+    <string name="trash_filter_empty">조건에 맞는 항목이 없습니다. 검색어나 필터를 바꿔 보세요.</string>
+    <string name="trash_filter_reset">필터 지우기</string>
+
+    <!-- 휴지통 보관 정책 (B-74) -->
+    <string name="trash_retention_settings">보관 설정</string>
+    <string name="trash_retention_purpose">휴지통이 삭제 작업을 몇 건, 며칠까지 보관할지 정합니다. 한도를 넘긴 작업은 오래된 것부터 통째로 영구 삭제되며 되돌릴 수 없습니다.</string>
+    <string name="trash_retention_max_label">보관 개수 (삭제 작업 수)</string>
+    <string name="trash_retention_days_label">보관 기간</string>
+    <string name="trash_retention_count_value">%1$d건</string>
+    <string name="trash_retention_days_value">%1$d일</string>
+    <string name="trash_retention_saved">보관 설정을 저장했습니다 (%1$d건 · %2$d일).</string>
+    <string name="trash_retention_failed">보관 설정을 저장하지 못했습니다.</string>
+    <!-- 줄이는 쪽은 영구 삭제로 이어지므로 무엇이 얼마나 사라지는지 세어서 먼저 알린다 -->
+    <string name="trash_retention_shrink_warning">지금 보관 중인 작업 %1$d건 중 %2$d건이 다음 삭제 정리에서 영구 삭제됩니다. 되살릴 것이 있으면 먼저 복원하십시오.\n\n계속하시겠습니까?</string>
     <string name="trash_restore_operation">전체 복원</string>
     <string name="trash_operation_restore_confirm">이 삭제로 지워진 %1$d개 항목을 전부 복원하시겠습니까?\n세계관 → 작품 → 세력 → 사건 → 캐릭터 → 상태변화 순서로 되살아나므로 서로의 참조도 다시 이어집니다.</string>
     <string name="trash_operation_purge_confirm">이 삭제로 만들어진 %1$d개 항목을 모두 영구 삭제하시겠습니까? 되돌릴 수 없습니다.</string>
@@ -669,8 +701,8 @@
     <string name="delete_impact_state_changes">· 상태변화 이력 %1$d건</string>
     <string name="delete_impact_memberships">· 세력 소속 %1$d건</string>
     <string name="delete_impact_images">· 이미지 %1$d장 (휴지통 정리 시 파일 삭제)</string>
-    <string name="delete_trash_notice">삭제 후 30일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n보관 단위는 한 번의 삭제이며 최근 30건까지 유지됩니다 — 한 삭제가 만든 백업은 통째로 남거나 통째로 사라지고, 한도를 넘기면 오래된 삭제부터 영구 삭제됩니다.</string>
-    <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n세계관·작품·캐릭터·세력·사건이 하나의 묶음으로 휴지통에 보관됩니다(최근 30건, 30일). 휴지통에서 \'전체 복원\'을 누르면 세계관부터 순서대로 되살아나 참조도 다시 이어집니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
+    <string name="delete_trash_notice">삭제 후 %1$d일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n보관 단위는 한 번의 삭제이며 최근 %2$d건까지 유지됩니다 — 한 삭제가 만든 백업은 통째로 남거나 통째로 사라지고, 한도를 넘기면 오래된 삭제부터 영구 삭제됩니다.</string>
+    <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n세계관·작품·캐릭터·세력·사건이 하나의 묶음으로 휴지통에 보관됩니다(최근 %6$d건, %7$d일). 휴지통에서 \'전체 복원\'을 누르면 세계관부터 순서대로 되살아나 참조도 다시 이어집니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
     <string name="import_xlsx_too_large">백업 안의 데이터 시트가 너무 큽니다 (최대 1GB). 파일이 손상되었을 수 있으니 다시 내보낸 백업으로 시도해 주세요.</string>
     <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
@@ -1953,7 +1985,7 @@
     <string name="batch_error_format">오류: %s</string>
     <string name="batch_enter_hint">캐릭터를 탭하여 선택하세요</string>
     <string name="batch_delete_confirm_title">일괄 삭제 확인</string>
-    <string name="batch_delete_confirm_message">%d명의 캐릭터를 삭제하시겠습니까?\n삭제 후 30일간 휴지통에서 복원할 수 있습니다. 이 삭제는 하나의 묶음으로 보관되며(최근 30건까지), 한도를 넘기면 오래된 삭제부터 통째로 영구 삭제됩니다.</string>
+    <string name="batch_delete_confirm_message">%1$d명의 캐릭터를 삭제하시겠습니까?\n삭제 후 %2$d일간 휴지통에서 복원할 수 있습니다. 이 삭제는 하나의 묶음으로 보관되며(최근 %3$d건까지), 한도를 넘기면 오래된 삭제부터 통째로 영구 삭제됩니다.</string>
     <string name="batch_delete_impact_summary">이 캐릭터들과 연결된 %s도 함께 정리됩니다.\n(휴지통에서 이 삭제를 통째로 복원하면 서로의 참조까지 다시 이어집니다. 개별 복원만 하면 상대가 아직 없어 일부 연결이 빠질 수 있습니다.)</string>
     <string name="batch_delete_impact_relationships">관계 %d개</string>
     <string name="batch_delete_impact_state_changes">상태 변화 %d건</string>
