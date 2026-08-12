@@ -90,5 +90,46 @@ if [ "$XFAIL" -ne 0 ]; then
 fi
 
 echo "  ✓ 다이얼로그 레이아웃 XML 루트 전부 상한 있음(또는 사유 명시)"
+
+# ── 긴 창인데 **스크롤이 아예 없는** 축 (B-171, 2026.08.12) ──
+#
+# 위 두 축은 *스크롤이 있는데 상한이 없는 것*만 본다. **스크롤이 없는 창은 원리적으로 못 본다** —
+# 그런데 그쪽이 더 나쁘다: 상한 없는 스크롤은 잘린 채로도 일부는 움직이지만, 스크롤이 없으면
+# 화면을 넘긴 부분에 **닿을 방법이 아예 없다**(저장 버튼이 그 아래면 저장을 못 한다).
+#
+# 실증: `dialog_duel_axis_edit.xml`이 뷰 38개를 스크롤 없이 세우고 있었고(이름·겨루는 대상·
+# 기준 축·연결 셋·후보 필터·경고 셋), 이 검사가 두 축 모두에서 초록이었다. B-91·B-98이
+# 닫았다고 믿은 결함이 **검사가 안 보는 모양으로** 그대로 살아 있던 자리다.
+#
+# **금은 오늘의 실측이 정한다**(값을 지어내지 않는다): 상한을 가진 창의 최소가 뷰 11개이고,
+# 상한 없는 창의 최대가 8개(그것도 자기 스크롤 목록을 든 창)다. 그 사이가 자연스러운 금이라
+# 10을 넘기면 묻는다. 자기 스크롤 목록만으로 본문이 끝나는 창은 마커로 사유를 적으면 된다 —
+# 목록을 여기서 자동 예외로 두면 *목록 + 긴 폼*인 창이 조용히 빠진다.
+MAX_VIEWS_WITHOUT_SCROLL=10
+LFAIL=0
+for f in "$LAYOUT"/dialog_*.xml; do
+  [ -e "$f" ] || continue
+  root=$(grep -m1 -o '^<[A-Za-z][A-Za-z0-9_.]*' "$f" | tail -c +2)
+  case "$root" in
+    com.novelcharacter.app.ui.common.Capped*) continue ;;
+  esac
+  head -12 "$f" | grep -q "scroll-cap-exempt" && continue
+  views=$(grep -cE '^[[:space:]]*<[A-Za-z]' "$f")
+  [ "$views" -le "$MAX_VIEWS_WITHOUT_SCROLL" ] && continue
+  if [ "$LFAIL" -eq 0 ]; then
+    echo "  ✗ 스크롤이 없는 긴 다이얼로그 — 화면을 넘긴 부분에 닿을 방법이 없습니다"
+    LFAIL=1
+  fi
+  echo "      $f  (루트: $root · 뷰 ${views}개 > $MAX_VIEWS_WITHOUT_SCROLL)"
+done
+
+if [ "$LFAIL" -ne 0 ]; then
+  echo ""
+  echo "  고치는 법: 루트를 com.novelcharacter.app.ui.common.CappedScrollView 로 감쌀 것"
+  echo "             (본문이 자기 스크롤 목록 하나로 끝나면 scroll-cap-exempt: <이유>를 적을 것)"
+  exit 1
+fi
+
+echo "  ✓ 상한 없는 다이얼로그는 전부 짧음(또는 사유 명시)"
 echo ""
 echo "다이얼로그 스크롤 상한 검사 통과"

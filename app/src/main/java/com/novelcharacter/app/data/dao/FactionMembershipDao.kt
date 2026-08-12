@@ -35,6 +35,25 @@ interface FactionMembershipDao {
     @Query("SELECT * FROM faction_memberships WHERE factionId = :factionId AND characterId = :characterId ORDER BY createdAt ASC, id ASC")
     suspend fun getAllMembershipsForPair(factionId: Long, characterId: Long): List<FactionMembership>
 
+    /**
+     * 여러 캐릭터의 **지금 소속**을 한 번에 (B-171 — 대결 축의 `sys:faction`).
+     *
+     * ⚠️ **`leaveType IS NULL`은 [com.novelcharacter.app.util.FactionStanding.SQL_CURRENT]의
+     * 쌍둥이다.** Room 질의는 코틀린 함수를 부를 수 없어 같은 술어가 여기 글자로 한 벌 더
+     * 사는데, 갈리면 대결 카드와 통계가 다른 세력을 말한다. **그 한 벌은
+     * `tools/check_faction_standing.sh`가 지킨다** — 술어를 고치면 검사가 먼저 운다.
+     *
+     * 이력 전량이 아니라 지금 것만 읽는 것은 비용 때문이다 — 탈퇴 줄까지 끌어오면 캐릭터
+     * 수백 명 × 재가입 이력만큼이 그대로 메모리에 올라오고, 부르는 쪽은 그중 지금 것만 쓴다.
+     * (그래도 부르는 쪽이 [com.novelcharacter.app.util.FactionStanding]을 다시 지나는 것은
+     * 일부러다 — 이 질의가 언젠가 넓어져도 답이 흔들리지 않는다.)
+     */
+    @Query(
+        "SELECT * FROM faction_memberships WHERE characterId IN (:characterIds) " +
+            "AND leaveType IS NULL ORDER BY characterId ASC, createdAt ASC, id ASC"
+    )
+    suspend fun getCurrentMembershipsForCharacters(characterIds: List<Long>): List<FactionMembership>
+
     @Query("SELECT * FROM faction_memberships WHERE id = :id")
     suspend fun getById(id: Long): FactionMembership?
 

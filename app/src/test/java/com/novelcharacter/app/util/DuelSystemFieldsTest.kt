@@ -399,4 +399,94 @@ class DuelSystemFieldsTest {
         // DB 저장 형식도 같은 왕복을 지킨다.
         assertEquals(links, DuelFieldLinks.decode(DuelFieldLinks.encode(links)))
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 세력 열과 다중값 규약 (B-171)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * **잇는 쪽과 되쪼개는 쪽이 한 벌이다.**
+     *
+     * [DuelSystemFields.valueOf]는 [FieldValueTokenizer.join]으로 잇는데(쉼표를 품은 값은
+     * 감싼다 — R-47 · B-178) 종전 [DuelSystemFields.tokensOf]는 맨 `split(",")`이었다.
+     * 그래서 `"기사, 단"`이라는 세력 하나가 두 조각으로 갈렸고, **범주 집계가 없는 값 둘을
+     * 세고 후보 필터의 `exact`가 실재하는 값을 영영 못 찾았다**(칩으로 고른 값인데도).
+     * 세력 이름은 조직명이라 쉼표를 품을 여지가 크다.
+     */
+    @Test
+    fun `쉼표를 품은 세력 이름이 한 토큰으로 살아 돌아온다`() {
+        val raw = DuelSystemFields.valueOf(
+            DuelSystemFields.Column.FACTION,
+            character(),
+            DuelSystemFields.Extras(factions = listOf("기사, 단", "상단"))
+        )
+        assertEquals(
+            listOf("기사, 단", "상단"),
+            DuelSystemFields.tokensOf(DuelSystemFields.Column.FACTION, raw)
+        )
+    }
+
+    @Test
+    fun `태그도 같은 규약을 지난다`() {
+        // 세력을 고치면서 함께 닫힌 자리다 — 같은 함수를 쓰므로 한쪽만 맞을 수가 없다.
+        val raw = DuelSystemFields.valueOf(
+            DuelSystemFields.Column.TAGS,
+            character(),
+            DuelSystemFields.Extras(tags = listOf("주인공, 남자", "기사"))
+        )
+        assertEquals(
+            listOf("주인공, 남자", "기사"),
+            DuelSystemFields.tokensOf(DuelSystemFields.Column.TAGS, raw)
+        )
+    }
+
+    /**
+     * **반대편** — 감싸기를 몰랐던 옛 값은 종전 그대로 갈린다.
+     *
+     * 위 시험만 있으면 *"따옴표가 있으면 언제나 CSV"*인 구현이 통과하는데, 그러면
+     * `"별칭", 본명`처럼 **따옴표를 글자로 쓰던 이명**이 뜻을 잃는다. `splitMulti`가
+     * 좁힌 판정(`quotedOnlyIfNeeded`)을 쓰는 이유가 그것이고, 여기서 그 성질을 잠근다.
+     */
+    @Test
+    fun `따옴표를 글자로 쓰던 옛 값은 옛 규칙 그대로 나뉜다`() {
+        assertEquals(
+            listOf("\"별칭\"", "본명"),
+            DuelSystemFields.tokensOf(DuelSystemFields.Column.ANOTHER_NAME, "\"별칭\", 본명")
+        )
+        // 따옴표가 없던 값도 한 글자도 달라지지 않는다.
+        assertEquals(
+            listOf("붉은 검", "방랑자"),
+            DuelSystemFields.tokensOf(DuelSystemFields.Column.ANOTHER_NAME, "붉은 검, 방랑자")
+        )
+    }
+
+    @Test
+    fun `메모는 여전히 통째로 한 토큰이다`() {
+        // 다중값이 아닌 열까지 규약을 바꾸면 문장 하나가 범주 여럿으로 흩어진다.
+        assertEquals(
+            listOf("기사단 출신, 북부에서 태어났다"),
+            DuelSystemFields.tokensOf(DuelSystemFields.Column.MEMO, "기사단 출신, 북부에서 태어났다")
+        )
+    }
+
+    @Test
+    fun `세력이 없으면 값 자체가 담기지 않는다`() {
+        // 빈 값을 담으면 카드가 *"값이 없다"*와 *"키가 없다"*를 다르게 그린다(방어선 4).
+        val values = DuelSystemFields.valuesOf(
+            character(), listOf("sys:faction"), DuelSystemFields.Extras(factions = emptyList())
+        )
+        assertTrue(values.isEmpty())
+    }
+
+    @Test
+    fun `세력 키는 산출 자리에서 막힌다`() {
+        // 대결 결과를 소속에 써 넣을 수는 없다 — 시스템 열의 규칙이 새 열에도 그대로 선다.
+        val axis = DuelFieldLinks.Axis(outcomes = DuelFieldLinks.parseText("sys:faction"))
+        assertEquals(listOf("sys:faction"), axis.outcomeBlocked)
+        assertTrue(axis.effectiveOutcomes.isEmpty())
+        // 영향·프로필로는 성립한다.
+        val ok = DuelFieldLinks.Axis(profiles = DuelFieldLinks.parseText("sys:faction"))
+        assertTrue(ok.outcomeBlocked.isEmpty())
+        assertTrue(ok.unknownSystemKeys.isEmpty())
+    }
 }

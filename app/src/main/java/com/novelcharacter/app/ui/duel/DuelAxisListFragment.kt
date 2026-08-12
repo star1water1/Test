@@ -4,8 +4,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -70,6 +74,15 @@ class DuelAxisListFragment : Fragment() {
         }
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        // 축 불러오기(B-116) — 필드 관리와 같은 자리에 둔다(툴바 오버플로). 만드는 화면에서
+        // *이미 만들어 둔 것을 데려오는* 길이라 같은 화면 안에 있어야 한다(원칙 05).
+        binding.toolbar.inflateMenu(R.menu.duel_axis_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_import_axes -> { showAxisImportDialog(); true }
+                else -> false
+            }
+        }
         setupRecyclerView()
         binding.fabAddAxis.setOnClickListener { showAxisEditDialog(null) }
 
@@ -432,6 +445,141 @@ class DuelAxisListFragment : Fragment() {
             false
         }
         dialog.show()
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 축 불러오기 (B-116)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * **다른 세계관의 축을 이 세계관으로** — 필드 관리의 '필드 가져오기'와 같은 짜임새다
+     * (세계관 고르기 → 여럿 고르기 → 이미 있는 것은 사유와 함께 막기).
+     *
+     * **막되 감추지 않는다.** 이름이 겹치는 축은 고를 수 없지만 목록에는 남아 *"이미 있음"*을
+     * 말한다 — 빼 버리면 사용자는 자기가 찾던 축이 왜 없는지 알 길이 없다(필드 가져오기가
+     * 같은 자리에서 정해 둔 처분이다).
+     *
+     * **이 세계관에 없는 필드는 세어서 말한다**(4장 B-116 행 ⓐ). 연결을 떼고 가져오지 않는
+     * 것은 나중에 같은 키의 필드를 만들면 그대로 이어지기 때문이고, 그래도 *지금은 몇 개가
+     * 비어 있는지*를 누르기 전에 알아야 축을 열어 보고서야 아는 일이 없다(원칙 04).
+     */
+    private fun showAxisImportDialog() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            // **읽기 실패를 삼키는 것이 여기서는 옳다** — 삼키지 않으면 이 코루틴이 죽어
+            // **메뉴를 눌렀는데 아무 반응도 없다**(조용한 무동작 — R-27이 막는 부류). 아무것도
+            // 지워지지 않는 자리이고, 못 읽었으면 *가져올 축이 없다*와 같은 처분이면 된다
+            // (필드 관리의 '필드 합치기'가 같은 근거로 같은 처분을 한다).
+            val sources = runCatching { viewModel.axisImportSources(universeId) }
+                .getOrElse {
+                    android.util.Log.e("DuelAxisList", "Failed to collect axis import sources", it)
+                    emptyList()
+                }
+            if (!isAdded) return@launch
+            if (sources.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.duel_axis_import_none, Toast.LENGTH_LONG)
+                    .show()
+                return@launch
+            }
+
+            val context = requireContext()
+            val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_axis_import, null)
+            val spinner = view.findViewById<Spinner>(R.id.importSourceSpinner)
+            val holder = view.findViewById<LinearLayout>(R.id.importAxisHolder)
+            spinner.adapter = ArrayAdapter(
+                context,
+                android.R.layout.simple_spinner_item,
+                sources.map {
+                    getString(R.string.duel_axis_import_source, it.label, it.plans.size)
+                }
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+            // 고른 것은 **스피너를 옮겨도 풀리지 않는다** — 다른 세계관을 훑어보고 돌아왔을 때
+            // 켜 둔 것이 꺼져 있으면 처음부터 다시 골라야 한다(원칙 04). 확인은 **세계관을 가리지
+            // 않고 켜 둔 전부**를 한 번에 심는다(축 code가 전역 유니크라 열쇠로 그대로 쓴다).
+            val picked = linkedMapOf<String, DuelAxis>()
+
+            fun renderSource(index: Int) {
+                holder.removeAllViews()
+                val source = sources.getOrNull(index) ?: return
+                for (plan in source.plans) {
+                    val row = android.widget.CheckBox(context).apply {
+                        // **이미지 축은 이름 뒤에 표식을 단다** — 같은 이름의 캐릭터 축과
+                        // 이미지 축은 서로 다른 축이라 둘 다 목록에 설 수 있고(유니크 인덱스가
+                        // 대상을 함께 묶는다), 표식이 없으면 **글자가 같은 줄 둘 중 하나만
+                        // [이미 있음]인 상태**가 되어 어느 쪽을 고르는지 알 수 없다.
+                        text = if (plan.source.isImageAxis) {
+                            getString(R.string.duel_axis_import_image_badge, plan.source.name)
+                        } else {
+                            plan.source.name
+                        }
+                        isEnabled = plan.importable
+                        isChecked = plan.source.code in picked
+                        setOnCheckedChangeListener { _, checked ->
+                            if (checked) picked[plan.source.code] = plan.source
+                            else picked.remove(plan.source.code)
+                        }
+                    }
+                    holder.addView(row)
+                    val notes = ArrayList<String>(2)
+                    if (plan.duplicateName) notes.add(getString(R.string.duel_axis_import_duplicate))
+                    if (plan.missingKeys.isNotEmpty()) {
+                        notes.add(
+                            getString(R.string.duel_axis_import_missing, plan.missingKeys.size) +
+                                " — " + plan.missingKeys.joinToString(", ")
+                        )
+                    }
+                    if (notes.isEmpty()) continue
+                    holder.addView(TextView(context).apply {
+                        text = notes.joinToString(" · ")
+                        textSize = 12f
+                        setTextColor(
+                            androidx.core.content.ContextCompat
+                                .getColor(context, R.color.text_secondary)
+                        )
+                        setPadding(
+                            (32 * resources.displayMetrics.density).toInt(), 0, 0,
+                            (6 * resources.displayMetrics.density).toInt()
+                        )
+                    })
+                }
+            }
+            renderSource(0)
+            spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?, v: View?, position: Int, id: Long
+                ) = renderSource(position)
+
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            }
+
+            val dialog = MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.duel_axis_import)
+                .setView(view)
+                .setPositiveButton(R.string.confirm, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+
+            // 아무것도 안 골랐으면 창을 닫지 않는다 — 닫으면 스피너를 옮겨 가며 훑어본
+            // 것이 통째로 사라진다(R-27).
+            var importing = false
+            dialog.setValidatedPositiveButton {
+                if (importing) return@setValidatedPositiveButton false
+                if (picked.isEmpty()) {
+                    Toast.makeText(context, R.string.duel_axis_import_pick_none, Toast.LENGTH_SHORT)
+                        .show()
+                    return@setValidatedPositiveButton false
+                }
+                importing = true
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewModel.importAxes(universeId, picked.values.toList())
+                    if (!isAdded) return@launch
+                    dialog.dismiss()
+                    reload()
+                }
+                false
+            }
+            dialog.show()
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────

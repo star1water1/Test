@@ -12,6 +12,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.repository.MemberAddResult
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.MembershipTimeline
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -161,7 +162,7 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         val rows = factionRepository.getMembershipsByFactionList(factionId)
         return rows.groupBy { it.characterId }.mapValues { (_, group) ->
             MembershipSummary(
-                state = if (group.any { it.leaveType == null }) MemberState.ACTIVE else MemberState.DEPARTED,
+                state = if (FactionStanding.hasCurrent(group)) MemberState.ACTIVE else MemberState.DEPARTED,
                 latestLeaveYear = MembershipTimeline.latestKnownLeaveYear(group.map { it.leaveYear })
             )
         }
@@ -303,7 +304,7 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
     suspend fun getActiveMemberCountsForFactions(factionIds: List<Long>): Map<Long, Int> {
         return try {
             factionIds.associateWith { id ->
-                factionRepository.getMembershipsByFactionList(id).count { it.leaveType == null }
+                FactionStanding.countCurrent(factionRepository.getMembershipsByFactionList(id))
             }
         } catch (e: Exception) {
             Log.e("FactionViewModel", "Failed to get member counts", e)

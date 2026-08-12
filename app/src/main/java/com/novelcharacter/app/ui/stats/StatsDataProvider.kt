@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.stats
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.util.CompletionRate
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldValueMatchSpec
@@ -2845,8 +2846,7 @@ class StatsDataProvider {
         val factionMap = s.factions.associateBy { it.id }
 
         // 세력별 활성 멤버 수
-        val factionMemberCounts = activeMemberships
-            .filter { it.leaveType == null } // 현재 활성 중인 멤버만
+        val factionMemberCounts = FactionStanding.current(activeMemberships)
             .groupBy { it.factionId }
             .mapNotNull { (factionId, members) ->
                 val factionName = factionMap[factionId]?.name ?: return@mapNotNull null
@@ -2855,8 +2855,7 @@ class StatsDataProvider {
             .toMap()
 
         // 2개 이상 세력에 속한 캐릭터 수
-        val membershipsByChar = activeMemberships
-            .filter { it.leaveType == null }
+        val membershipsByChar = FactionStanding.current(activeMemberships)
             .groupBy { it.characterId }
         val multiMemberCharacters = membershipsByChar.count { it.value.size >= 2 }
 
@@ -2867,8 +2866,7 @@ class StatsDataProvider {
         val departureCount = s.factionMemberships.count { it.leaveType == FactionMembership.LEAVE_DEPARTED }
 
         // 세력 미소속 캐릭터 수
-        val charsInFactions = activeMemberships
-            .filter { it.leaveType == null }
+        val charsInFactions = FactionStanding.current(activeMemberships)
             .map { it.characterId }.toSet()
         val factionlessCharacterCount = s.characters.count { it.id !in charsInFactions }
 
@@ -3185,7 +3183,7 @@ class StatsDataProvider {
 
         // 패턴: 세력 관련
         if (s.factions.isNotEmpty()) {
-            val activeMemberships = s.factionMemberships.filter { it.leaveType == null }
+            val activeMemberships = FactionStanding.current(s.factionMemberships)
             val factionMemberCounts = activeMemberships.groupBy { it.factionId }.mapValues { it.value.size }
 
             // 세력이 존재하지만 멤버가 0명인 경우

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  축 불러오기 창 (B-116) — 다른 세계관의 축을 이 세계관으로.
+
+  루트가 CappedScrollView인 것은 규약 R-31이다 — 고를 축의 수가 남의 세계관에 달려 있어
+  본문 길이에 상한이 없다. 안의 목록은 RecyclerView가 아니라 곧바로 붙는 줄들이라
+  (항목마다 체크박스 하나 + 설명 두 줄) 중첩 스크롤이 필요 없다.
+-->
+<com.novelcharacter.app.ui.common.CappedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- 목적문(R-25) — 이 창이 무엇을 어디로 어떻게 옮기는가 한 줄. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_axis_import_purpose"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="12dp" />
+
+        <Spinner
+            android:id="@+id/importSourceSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:id="@+id/importMissingDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_axis_import_missing_detail"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="12dp" />
+
+        <LinearLayout
+            android:id="@+id/importAxisHolder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="8dp" />
+
+    </LinearLayout>
+
+</com.novelcharacter.app.ui.common.CappedScrollView>

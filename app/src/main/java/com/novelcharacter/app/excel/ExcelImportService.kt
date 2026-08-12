@@ -32,6 +32,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.DuelCandidateFilter
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.FormulaValidator
 import com.novelcharacter.app.util.ImportedFormulaAudit
@@ -6945,7 +6946,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // ② 캐릭터1/2 순서가 (min,max)로 정규화돼 단방향 방향이 뒤집히며
                     // ③ 세력의 자동관계유형이 바뀐 경우 관계가 중복 증식한다.
                     // 관계 시트가 권위이므로 시트 처리가 끝난 뒤에 남은 쌍만 채운다.
-                    if (leaveType == null && membershipId > 0) {
+                    if (FactionStanding.isCurrent(leaveType) && membershipId > 0) {
                         pendingAutoRelationMemberships.add(faction.id to character.id)
                     }
 
