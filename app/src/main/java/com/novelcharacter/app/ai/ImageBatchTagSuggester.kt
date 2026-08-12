@@ -25,6 +25,20 @@ package com.novelcharacter.app.ai
  * [AiResult.Success.imagesOmitted]가 서면 그 배치를 [BatchFailKind.IMAGES_UNSUPPORTED]로
  * 접고 **남은 배치도 돌리지 않는다**(학습된 사실이라 뒤에도 같은 일이 난다 — 돈만 쓴다).
  *
+ * ## 이미 아는 거부에는 요청조차 만들지 않는다 (B-157)
+ *
+ * 위 갈래는 **답을 받고 나서** 버리는 자리다 — 결론은 옳은데 **버릴 답에 이미 돈이 나간
+ * 뒤**다. 거부를 이미 학습한 모델이면 `AiService`가 이미지만 빼고 요청은 그대로 보내므로,
+ * 응답을 받아 통째로 버리는 데까지 과금된다. 이미지당 상한까지 채운 배치라 그 한 번이 작지 않다.
+ * 그래서 배치마다 **요청을 만들기 전에** [AiService.isImagesUnsupported]를 보고 접는다 —
+ * 짧은 값·서술형 경로가 첨부 자리에서 미리 고지하는 데 쓰는 그 가드이고(A-7), 이쪽만 빠져 있었다.
+ *
+ * **배치마다 보는 것이 요점이다** — 실행 도중 한도로 밀려 다른 프로바이더로 넘어갈 수 있고
+ * (B-108), 그 프로바이더는 그림을 받을 수도 있다. 실행 앞에서 한 번만 보면 그 전환을 놓친다.
+ *
+ * **학습 전 첫 실행은 막지 않는다.** 가드는 *배운 사실*만 말하고, 배우는 유일한 경로가
+ * 그 첫 실행이다(막으면 영영 못 배운다).
+ *
  * 프롬프트 조립·응답 파싱·검증·접기는 전부 [AiService] 미호출 순수 함수라 단위 테스트된다.
  */
 class ImageBatchTagSuggester(private val aiService: AiService) {
@@ -423,64 +437,75 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
         for (batch in batches) {
             if (isCancelled()) { cancelled = true; break }
 
-            val prepared = loader.prepare(batch)
-            val loaded = prepared.loaded
-            if (prepared.unreadable > 0 || prepared.blocked > 0) {
-                drops += DropTally(unreadable = prepared.unreadable, blocked = prepared.blocked)
-            }
-
             var stop = false
-            if (loaded.isEmpty()) {
-                // 한 장도 싣지 못했으면 보낼 것이 없다 — 요청을 만들지 않는다(돈만 쓴다).
-                // **사유는 뭉뚱그리지 않는다** — 통째로 막힌 배치에 "읽지 못했다"고 말하면
-                // 사용자는 멀쩡히 있는 파일을 찾아 헤맨다(B-141).
-                val kind =
-                    if (prepared.blocked > 0 && prepared.unreadable == 0) BatchFailKind.IMAGES_BLOCKED
-                    else BatchFailKind.IMAGES_UNREADABLE
-                failures.add(BatchFailure(batch, kind))
+            if (aiService.isImagesUnsupported()) {
+                // **요청을 만들기 전에 접는다** (B-157). 아래 `imagesOmitted` 갈래와 결론은
+                // 같지만 그쪽은 답을 받고서 버리는 자리라 이미 결제된 뒤다. 준비기도 부르지
+                // 않는다 — 보내지 않을 그림을 디코드·인코드하는 비용까지 함께 없앤다.
+                failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNSUPPORTED))
+                stop = true   // 학습된 사실이라 남은 배치도 같은 결과다 (아래 갈래와 같은 처분)
             } else {
-                // **번호가 가리키는 목록은 `loaded`다** — 못 읽은 장은 batch에서 빠졌으므로
-                // 원본 자리로 되돌리면 그것이 곧 오배정이다.
-                val request = AiRequest(
-                    system = system,
-                    userText = buildUserText(loaded.size),
-                    // 사용자가 올려 둔 출력 상한을 그대로 쓴다 — 기본값(2048)을 박아 두면
-                    // 장수를 최대로 올린 사용자가 **설정을 올려도 계속 잘린다**(A-4의 교집합
-                    // 규칙상 요청값은 천장이지 바닥이 아니다).
-                    maxTokens = aiService.effectiveMaxTokens(),
-                    images = loaded.map { it.image }
-                )
-                when (val result = aiService.complete(request)) {
-                    is AiResult.Success -> {
-                        // 한도로 밀려 다른 프로바이더가 답한 배치 (B-108 확정 ⓑ).
-                        // 아래 갈래 **밖**에 적는다 — 어디로 떨어지든 *"누가 답했는가"*는 같고,
-                        // 갈래마다 적으면 반드시 한쪽이 빠진다.
-                        AiProviderFallback.switchNoteOf(result)
-                            ?.let { if (it !in notes) notes.add(it) }
-                        when {
-                            // 그림이 근거의 전부인 기능이라 글만 나온 답은 쓰지 않는다.
-                            result.imagesOmitted -> {
-                                failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNSUPPORTED))
-                                stop = true   // 학습된 사실이라 남은 배치도 같은 결과다
-                            }
-                            result.truncated ->
-                                failures.add(BatchFailure(batch, BatchFailKind.RESPONSE_TRUNCATED))
-                            else -> when (val parsed = parse(result.text, loaded.size, vocab)) {
-                                is ParseOutcome.Ok -> {
-                                    for ((index, tags) in parsed.tagsByIndex) {
-                                        if (tags.isEmpty()) continue   // 근거 없음은 결손이 아니다
-                                        val hit = loaded.getOrNull(index - 1) ?: continue
-                                        all.add(ImageSuggestion(hit.path, tags))
-                                    }
-                                    drops += parsed.drops
+                val prepared = loader.prepare(batch)
+                val loaded = prepared.loaded
+                if (prepared.unreadable > 0 || prepared.blocked > 0) {
+                    drops += DropTally(unreadable = prepared.unreadable, blocked = prepared.blocked)
+                }
+
+                if (loaded.isEmpty()) {
+                    // 한 장도 싣지 못했으면 보낼 것이 없다 — 요청을 만들지 않는다(돈만 쓴다).
+                    // **사유는 뭉뚱그리지 않는다** — 통째로 막힌 배치에 "읽지 못했다"고 말하면
+                    // 사용자는 멀쩡히 있는 파일을 찾아 헤맨다(B-141).
+                    val kind =
+                        if (prepared.blocked > 0 && prepared.unreadable == 0) BatchFailKind.IMAGES_BLOCKED
+                        else BatchFailKind.IMAGES_UNREADABLE
+                    failures.add(BatchFailure(batch, kind))
+                } else {
+                    // **번호가 가리키는 목록은 `loaded`다** — 못 읽은 장은 batch에서 빠졌으므로
+                    // 원본 자리로 되돌리면 그것이 곧 오배정이다.
+                    val request = AiRequest(
+                        system = system,
+                        userText = buildUserText(loaded.size),
+                        // 사용자가 올려 둔 출력 상한을 그대로 쓴다 — 기본값(2048)을 박아 두면
+                        // 장수를 최대로 올린 사용자가 **설정을 올려도 계속 잘린다**(A-4의 교집합
+                        // 규칙상 요청값은 천장이지 바닥이 아니다).
+                        maxTokens = aiService.effectiveMaxTokens(),
+                        images = loaded.map { it.image }
+                    )
+                    when (val result = aiService.complete(request)) {
+                        is AiResult.Success -> {
+                            // 한도로 밀려 다른 프로바이더가 답한 배치 (B-108 확정 ⓑ).
+                            // 아래 갈래 **밖**에 적는다 — 어디로 떨어지든 *"누가 답했는가"*는 같고,
+                            // 갈래마다 적으면 반드시 한쪽이 빠진다.
+                            AiProviderFallback.switchNoteOf(result)
+                                ?.let { if (it !in notes) notes.add(it) }
+                            when {
+                                // 그림이 근거의 전부인 기능이라 글만 나온 답은 쓰지 않는다.
+                                // **여기까지 오면 이미 결제된 뒤다** — 그래서 위 B-157 가드가
+                                // 배운 다음부터는 이 자리에 닿지 않게 한다. 이 갈래가 남아 있는
+                                // 것은 **배우는 그 한 번**이 여기를 지나기 때문이다.
+                                result.imagesOmitted -> {
+                                    failures.add(BatchFailure(batch, BatchFailKind.IMAGES_UNSUPPORTED))
+                                    stop = true   // 학습된 사실이라 남은 배치도 같은 결과다
                                 }
-                                is ParseOutcome.Rejected -> failures.add(BatchFailure(batch, parsed.kind))
+                                result.truncated ->
+                                    failures.add(BatchFailure(batch, BatchFailKind.RESPONSE_TRUNCATED))
+                                else -> when (val parsed = parse(result.text, loaded.size, vocab)) {
+                                    is ParseOutcome.Ok -> {
+                                        for ((index, tags) in parsed.tagsByIndex) {
+                                            if (tags.isEmpty()) continue   // 근거 없음은 결손이 아니다
+                                            val hit = loaded.getOrNull(index - 1) ?: continue
+                                            all.add(ImageSuggestion(hit.path, tags))
+                                        }
+                                        drops += parsed.drops
+                                    }
+                                    is ParseOutcome.Rejected -> failures.add(BatchFailure(batch, parsed.kind))
+                                }
                             }
                         }
-                    }
-                    is AiResult.Failure -> {
-                        failures.add(BatchFailure(batch, BatchFailKind.REQUEST_FAILED, result))
-                        stop = result.kind in TERMINAL_ERRORS
+                        is AiResult.Failure -> {
+                            failures.add(BatchFailure(batch, BatchFailKind.REQUEST_FAILED, result))
+                            stop = result.kind in TERMINAL_ERRORS
+                        }
                     }
                 }
             }

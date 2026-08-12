@@ -23,6 +23,15 @@ class AiService {
     /** temperature 미지원 학습 여부 (A-4). 스텁은 학습된 것이 없는 상태. */
     fun isTemperatureUnsupported(): Boolean = false
 
-    /** 이미지 미지원 학습 여부 (A-7). 스텁은 학습된 것이 없는 상태. */
-    fun isImagesUnsupported(): Boolean = false
+    /**
+     * 이미지 미지원 학습 여부 (A-7). 기본은 **학습된 것이 없는 상태**라 실제 기본 동작과 같다.
+     *
+     * 형제들과 달리 이 하나만 값을 바꿀 수 있게 둔 것은 **B-157 가드가 이 값에서 갈리기
+     * 때문**이다. 켜 두고 [ImageBatchTagSuggester.suggest]를 부르면 요청 경로가 [complete]에
+     * 닿는 순간 위 예외로 죽으므로, *"요청을 만들지 않는다"*가 시험에서 그대로 증명된다 —
+     * 반환값을 꾸며 낸 가짜 성공으로는 얻을 수 없는 증명이다.
+     */
+    var imagesUnsupported: Boolean = false
+
+    fun isImagesUnsupported(): Boolean = imagesUnsupported
 }

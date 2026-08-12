@@ -29,6 +29,7 @@ import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.reportAndNotify
 import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.notifyWithAction
 import com.novelcharacter.app.util.notifySuccess
 import com.novelcharacter.app.util.notifyError
@@ -1125,6 +1126,13 @@ class ImageManagerFragment : Fragment() {
      *
      * **이미지가 기기 밖으로 나간다는 사실도 여기서 말한다** — B-120이 첨부 고지에 세운 그
      * 규칙이 이 경로에도 그대로 붙는다(기존 약속을 뒤집는 지점이므로 침묵 금지).
+     *
+     * **모델이 그림을 안 받는다고 이미 학습했으면 그것도 여기서 말한다** (B-157) —
+     * 실행기는 그 경우 요청조차 만들지 않으므로, 말하지 않으면 사용자는 눌러 놓고
+     * *"아무것도 안 나왔다"*만 본다. 짧은 값·서술형 경로가 첨부 자리에서 미리 고지하는
+     * 그 규칙과 같은 자리다(A-7 — `AiImageAttachRow`가 같은 가드를 같은 모양으로 읽는다).
+     * **막지는 않는다** — 학습값은 모델·주소를 바꾸면 함께 버려지므로(R-23) 사용자가 그
+     * 사이에 설정을 고쳤을 수 있고, 그때 눌러 보는 것이 유일한 재확인 경로다.
      */
     private fun openAiTagFlow(paths: List<String>) {
         if (paths.isEmpty()) return
@@ -1164,6 +1172,15 @@ class ImageManagerFragment : Fragment() {
             text = getString(R.string.image_ai_tag_privacy)
             textSize = 12f
         })
+        // 이미 배운 거부는 **누르기 전에** 말한다 (B-157). 붙이는 자리를 갈라 두지 않는 것은
+        // 비용 고지와 같은 창에서 함께 읽혀야 판단이 서기 때문이다("얼마 드는데 헛돈이다").
+        if (com.novelcharacter.app.ai.AiService(ctx).isImagesUnsupported()) {
+            container.addView(android.widget.TextView(ctx).apply {
+                text = getString(R.string.image_ai_tag_no_vision_upfront)
+                textSize = 12f
+                setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorError))
+            })
+        }
 
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_ai_tag_action)
@@ -1323,11 +1340,11 @@ class ImageManagerFragment : Fragment() {
         // **비우는 일은 여기서 하지 않는다** — 적용이 실패하면 이미 결제한 제안을 되살려야
         // 하는데, 누른 시점에 비우면 되살릴 것이 남지 않는다. 소비는 결과를 아는 곳
         // (ViewModel)이 성공했을 때만 한다(R-38 · B-163).
+        // **여기서 이력을 남기지 않는다** — 화면이 이미 떨어져 나갔을 수 있고, 그때 이 자리가
+        // 문지기면 유료 응답이 걸린 실패가 어디에도 안 남는다(B-164). 문장·이력은 ViewModel이
+        // 들고, 이 람다는 *"화면이 알렸는가"*만 돌려준다(못 알렸으면 그쪽이 토스트로 대신한다).
         sheet.onApply = { picked ->
-            viewModel.applyImageTags(picked) { outcome ->
-                if (!isAdded) return@applyImageTags
-                reportAndNotify(tagApplyResult(outcome))
-            }
+            viewModel.applyImageTags(picked) { result -> notifyResult(result) }
         }
         // 사용자가 검토를 접었으면 보관 중인 결과도 버린다 — 남기면 다음 회전에 되살아난다.
         sheet.onDismissed = { viewModel.clearAiTagResult() }
@@ -1709,24 +1726,11 @@ class ImageManagerFragment : Fragment() {
     }
 }
 
-/**
- * 태그 적용 결과를 사용자 문장으로 옮긴다 — **이미지판과 폴더판이 한 벌을 쓴다.**
+/*
+ * 태그 적용 결과의 문장 조립은 **`ImageManagerViewModel.finishTagApply`로 내려갔다** (B-164).
  *
- * 두 화면이 각자 적으면 한쪽만 고쳐진다. B-143이 정확히 그 모양이었다(같은 결함이
- * `applyImageTags`·`applyFolderTags` 두 함수에 나란히 있었다). 문장이 한 자리에 있으면
- * 다음에 고칠 사람도 한 자리만 본다.
- *
- * 실패를 **이력에도 남긴다** — 종전에는 성공만 스낵바로 흘려 보내 실패가 어디에도 안 남았고,
- * 그래서 *"적용했다는데 태그가 없다"*를 나중에 되짚을 근거가 없었다.
+ * 여기(뷰 확장함수)에 있는 동안에는 **이력을 남길지 말지가 화면의 부착 상태에 매여** 있었다 —
+ * 적용 직후 탭을 떠나면 `if (!isAdded) return`이 고지와 함께 기록까지 막아, 하필 유료 응답이
+ * 걸린 실패가 어디에도 남지 않았다. 한 벌로 두는 이유(이미지판·폴더판이 같은 문장을 쓴다)는
+ * 그대로이고, 그 한 벌의 자리만 뷰 밖으로 옮겼다.
  */
-internal fun Fragment.tagApplyResult(outcome: ImageManagerViewModel.TagApplyOutcome): OpResult =
-    when (outcome) {
-        is ImageManagerViewModel.TagApplyOutcome.Done -> OpResult.success(
-            OpResult.CAT_MAINTENANCE,
-            getString(R.string.image_tag_review_applied, outcome.tags, outcome.images)
-        )
-        ImageManagerViewModel.TagApplyOutcome.Failed -> OpResult.failure(
-            OpResult.CAT_MAINTENANCE,
-            getString(R.string.image_tag_review_apply_failed)
-        )
-    }

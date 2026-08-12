@@ -17,10 +17,17 @@ import com.novelcharacter.app.R
  * - detail이 있으면 '상세' 액션으로 전체 내역 다이얼로그 제공
  */
 
-/** OpResult를 성공/실패 스타일로 알린다. detail이 있으면 '상세' 액션 노출. */
-fun Fragment.notifyResult(result: OpResult) {
+/**
+ * OpResult를 성공/실패 스타일로 알린다. detail이 있으면 '상세' 액션 노출.
+ *
+ * **@return 실제로 알렸는가** — 화면이 이미 떨어져 나갔으면 `false`다(B-164). 부르는 쪽이
+ * 이 값을 봐야 하는 경우가 있다: 화면 밖에서 끝나는 조작은 여기서 침묵하면 **어디에도
+ * 알려지지 않으므로**, 호출측이 토스트 같은 뷰 밖 경로로 대신 알릴 수 있어야 한다.
+ * 그 판단을 뷰가 아닌 곳에서 하려면 *"알렸는가"*가 값으로 나와야 한다.
+ */
+fun Fragment.notifyResult(result: OpResult): Boolean {
     val duration = if (result.success && result.detail == null) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
-    showResultSnackbar(result.summary, duration, result.detail)
+    return showResultSnackbar(result.summary, duration, result.detail)
 }
 
 /**
@@ -63,14 +70,15 @@ fun Fragment.notifyWithAction(message: String, actionLabel: CharSequence, onActi
         .show()
 }
 
-private fun Fragment.showResultSnackbar(message: String, duration: Int, detail: String?) {
-    if (!isAdded) return
+/** @return 스낵바든 토스트든 **사용자에게 닿았는가**. 닿지 못한 경로는 전부 `false`다. */
+private fun Fragment.showResultSnackbar(message: String, duration: Int, detail: String?): Boolean {
+    if (!isAdded) return false
     val root = view
     if (root == null || !root.isAttachedToWindow) {
         // 뷰가 아직/이미 없으면 Toast 폴백
-        val ctx = context ?: return
+        val ctx = context ?: return false
         Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
-        return
+        return true
     }
     val snackbar = Snackbar.make(root, message, duration)
     if (!detail.isNullOrBlank()) {
@@ -83,4 +91,5 @@ private fun Fragment.showResultSnackbar(message: String, duration: Int, detail: 
         }
     }
     snackbar.show()
+    return true
 }

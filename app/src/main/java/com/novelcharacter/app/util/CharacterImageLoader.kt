@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.widget.ImageView
 import com.google.gson.Gson
 import com.novelcharacter.app.R
@@ -65,19 +66,44 @@ object CharacterImageLoader {
  * ImageView에 캐릭터 첫 이미지를 **재활용-안전**하게 로드한다.
  * placeholder를 먼저 세팅 → IO에서 디코드 → [isValid]가 true일 때만 반영.
  * 반환된 [Job]을 리스트 항목이라면 `onViewRecycled`에서 cancel할 것.
+ *
+ * @param cache **부르는 쪽이 소유하는** 썸네일 캐시(선택). 넘기면 적중 시 코루틴을 띄우지
+ *   않고 그 자리에서 그린다 — 스크롤 되돌아올 때의 재디코드와 **플레이스홀더 깜빡임**이
+ *   함께 없어진다(B-12). 넘기지 않으면 종전 그대로다.
+ *
+ *   **여기에 캐시를 두지 않는 것이 요점이다.** 이 파일이 캐시를 소유하면 자기 캐시를 이미
+ *   든 어댑터들과 이중이 되고, 그 소유 재편은 아직 미측정·미판정인 B-58의 몫이다(확정 16번
+ *   = ⓑ). 인자로 받으면 소유는 어댑터에 그대로 있고, **넘기지 않는 화면은 동작이 한 바이트도
+ *   바뀌지 않는다** — 이 판이 이미지 관리 탭 하나만 건드리는 근거가 그것이다.
+ *
+ *   디코드가 끝나면 [isValid]와 **무관하게** 캐시에 넣는다: 스크롤이 지나가 버려 그릴 곳이
+ *   없어진 결과도 다음 바인드에는 쓸모가 있다(버리면 그 장을 두 번 디코드한다).
  */
 fun ImageView.loadCharacterThumbnail(
     imagePath: String?,
     scope: CoroutineScope,
     reqPx: Int = 128,
     placeholderRes: Int = R.drawable.ic_character_placeholder,
+    cache: LruCache<String, Bitmap>? = null,
     isValid: () -> Boolean = { true }
 ): Job? {
+    if (!imagePath.isNullOrBlank()) {
+        val hit = cache?.get(imagePath)
+        if (hit != null) {
+            // 적중이면 플레이스홀더를 거치지 않는다 — 거치면 이미 가진 그림을 두고 한 프레임
+            // 회색으로 깜빡인다(재활용 셀에서 특히 눈에 띈다).
+            setImageBitmap(hit)
+            return null
+        }
+    }
     setImageResource(placeholderRes)
     if (imagePath.isNullOrBlank()) return null
     val dir = context.filesDir
     return scope.launch {
         val bmp = withContext(Dispatchers.IO) { CharacterImageLoader.decodeThumbnail(imagePath, dir, reqPx) }
-        if (bmp != null && isValid()) setImageBitmap(bmp)
+        if (bmp != null) {
+            cache?.put(imagePath, bmp)
+            if (isValid()) setImageBitmap(bmp)
+        }
     }
 }
