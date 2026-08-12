@@ -78,6 +78,13 @@ object CharacterImageLoader {
  *
  *   디코드가 끝나면 [isValid]와 **무관하게** 캐시에 넣는다: 스크롤이 지나가 버려 그릴 곳이
  *   없어진 결과도 다음 바인드에는 쓸모가 있다(버리면 그 장을 두 번 디코드한다).
+ *
+ *   **열쇠에 [reqPx]가 함께 들어간다** — 담기는 것이 *그 경로의 그림*이 아니라 **그 크기로
+ *   디코드한 그림**이기 때문이다. 경로만으로 잠그면 한 캐시를 두 크기가 나눠 쓰는 순간
+ *   **먼저 담긴 쪽이 조용히 이긴다**(작은 것이 늘어나 흐리거나, 큰 것이 메모리를 두 배로
+ *   먹는다 — 어느 쪽이든 화면에서는 원인이 안 보인다). 지금은 캐시를 넘기는 자리가 하나뿐이라
+ *   부딪히지 않지만, **부딪히지 않는 것과 부딪힐 수 없는 것은 다른 명제**이고 이 저장소가
+ *   반복해 물린 것이 그 차이다. 셈은 바인드마다 짧은 문자열 하나이고 디코드 앞에서는 없는 값이다.
  */
 fun ImageView.loadCharacterThumbnail(
     imagePath: String?,
@@ -87,8 +94,9 @@ fun ImageView.loadCharacterThumbnail(
     cache: LruCache<String, Bitmap>? = null,
     isValid: () -> Boolean = { true }
 ): Job? {
-    if (!imagePath.isNullOrBlank()) {
-        val hit = cache?.get(imagePath)
+    val key = if (imagePath.isNullOrBlank()) null else "$reqPx@$imagePath"
+    if (key != null) {
+        val hit = cache?.get(key)
         if (hit != null) {
             // 적중이면 플레이스홀더를 거치지 않는다 — 거치면 이미 가진 그림을 두고 한 프레임
             // 회색으로 깜빡인다(재활용 셀에서 특히 눈에 띈다).
@@ -97,12 +105,12 @@ fun ImageView.loadCharacterThumbnail(
         }
     }
     setImageResource(placeholderRes)
-    if (imagePath.isNullOrBlank()) return null
+    if (imagePath.isNullOrBlank() || key == null) return null
     val dir = context.filesDir
     return scope.launch {
         val bmp = withContext(Dispatchers.IO) { CharacterImageLoader.decodeThumbnail(imagePath, dir, reqPx) }
         if (bmp != null) {
-            cache?.put(imagePath, bmp)
+            cache?.put(key, bmp)
             if (isValid()) setImageBitmap(bmp)
         }
     }

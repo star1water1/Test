@@ -22,7 +22,7 @@ import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.logResult
-import com.novelcharacter.app.util.toastAndLogResult
+import com.novelcharacter.app.util.toastResult
 import com.novelcharacter.app.util.withImagePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1828,9 +1828,13 @@ class ImageManagerViewModel(
      *
      * ## 고지도 잃지 않는다
      *
-     * [onDone]은 *"화면이 알렸는가"*를 돌려준다. 알렸으면 이력만 남기고([logResult]),
-     * 못 알렸으면 **토스트로 대신 알린다**([toastAndLogResult] — 뷰 계층과 무관하게 닿는다).
-     * 화면이 있을 때 토스트로 통일하지 않는 이유는 스낵바가 '상세' 액션을 달 수 있어서다.
+     * [onDone]은 *"화면이 알렸는가"*를 돌려준다. 못 알렸으면 **토스트로 대신 알린다**
+     * ([toastResult] — 뷰 계층과 무관하게 닿는다). 화면이 있을 때 토스트로 통일하지 않는
+     * 이유는 스낵바가 '상세' 액션을 달 수 있어서다.
+     *
+     * **이력을 [onDone]보다 *먼저* 남기는 것이 요점이다.** 순서를 뒤집으면 *"무조건 남는다"*가
+     * **고지 경로가 던지지 않는 한**으로 조용히 약해진다 — 이 함수가 없애려는 것이 바로
+     * *뷰의 사정이 기록을 좌우하는* 그 모양이라, 같은 모양을 한 겹 얇게 남겨 둘 이유가 없다.
      */
     private fun finishTagApply(outcome: TagApplyOutcome, onDone: (OpResult) -> Boolean) {
         val result = when (outcome) {
@@ -1843,7 +1847,8 @@ class ImageManagerViewModel(
                 app.getString(R.string.image_tag_review_apply_failed)
             )
         }
-        if (onDone(result)) logResult(result) else toastAndLogResult(result)
+        logResult(result)
+        if (!onDone(result)) toastResult(result)
     }
 
     /**
