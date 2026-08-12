@@ -158,6 +158,7 @@ $MAIN/util/BodyEditorModel.kt
 $MAIN/util/BodyGenerator.kt
 $MAIN/data/model/CardDisplayConfig.kt
 $MAIN/util/CardFieldSummary.kt
+$MAIN/util/FieldSuggestionEntries.kt
 $MAIN/util/GsonTypes.kt
 $MAIN/util/FieldOptionParser.kt
 $MAIN/util/FormulaLexer.kt
@@ -391,6 +392,7 @@ $TEST/util/ValueDistributionsTest.kt
 $TEST/util/NumericBinningTest.kt
 $TEST/util/StatsFieldPolicyTest.kt
 $TEST/util/CardFieldSummaryTest.kt
+$TEST/util/FieldSuggestionEntriesTest.kt
 $TEST/util/UnassignedFilterTest.kt
 $TEST/util/DetachedImageRuleTest.kt
 $TEST/util/FieldValueResolverTest.kt

@@ -130,4 +130,46 @@ class CardFieldSummaryTest {
         assertFalse(org.json.JSONObject(backOn).has("cardDisplay"))
         assertTrue(org.json.JSONObject(backOn).has("stats"))
     }
+
+    // ===== 작품 카드 (B-67) — 사건과 달리 **한 목록이 여러 구역을 걸친다** =====
+
+    private fun novelField(id: Long, name: String, universeId: Long?, order: Int = 0) =
+        FieldDefinition(
+            id = id, universeId = universeId, key = "k$id", name = name, type = "TEXT",
+            config = "{}", displayOrder = order, entityType = FieldDefinition.ENTITY_NOVEL
+        )
+
+    @Test
+    fun `작품 카드는 구역이 다른 정의를 함께 받아도 값을 섞지 않는다`() {
+        // 작품 목록은 세계관 필터 없이 열릴 수 있어 정의를 **전 구역**으로 읽는다(소비처 결정).
+        // 그때 어느 정의를 쓸지는 값 행이 고르므로, 남의 구역 정의가 카드에 서면 안 된다.
+        val defs = listOf(
+            novelField(1, "장르", universeId = 100),
+            novelField(2, "연재처", universeId = 200),
+            novelField(3, "집필 상태", universeId = null)
+        )
+        val rows = mapOf(
+            10L to listOf(1L to "판타지"),
+            20L to listOf(2L to "웹연재"),
+            30L to listOf(3L to "연재 중")
+        )
+        val out = CardFieldSummary.build(defs, rows, listOf(10L, 20L, 30L))
+        assertEquals(listOf("장르"), out.getValue(10L).lines.map { it.label })
+        assertEquals(listOf("연재처"), out.getValue(20L).lines.map { it.label })
+        // 무소속 작품은 전역 구역의 필드값을 든다 (B-129) — 그 값이 카드에 서야 한다.
+        assertEquals(listOf("집필 상태"), out.getValue(30L).lines.map { it.label })
+    }
+
+    @Test
+    fun `구역이 달라도 표시 순서 하나로 줄을 세운다`() {
+        // 구역별로 순서를 따로 매기면 같은 카드 안에서 두 규칙이 부딪친다 — 전역 필드를
+        // 앞이나 뒤로 몰지 않고 `displayOrder` 한 잣대로만 세운다.
+        val defs = listOf(
+            novelField(1, "장르", universeId = 100, order = 5),
+            novelField(2, "집필 상태", universeId = null, order = 1)
+        )
+        val rows = mapOf(10L to listOf(1L to "판타지", 2L to "연재 중"))
+        val s = CardFieldSummary.build(defs, rows, listOf(10L)).getValue(10L)
+        assertEquals(listOf("집필 상태", "장르"), s.lines.map { it.label })
+    }
 }

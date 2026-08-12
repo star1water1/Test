@@ -98,8 +98,10 @@ class NovelListFragment : Fragment() {
 
     /**
      * @param universeId 이 폼이 필드를 조회·생성하는 세계관. **폼을 여는 시점에 확정**되고
-     *   도중에 바뀌지 않는다(작품 편집에는 세계관 선택기가 없다). 값이 null이면 필드를
-     *   만들 자리를 모르므로 만드는 경로 자체를 열지 않는다.
+     *   도중에 바뀌지 않는다(작품 편집에는 세계관 선택기가 없다). **null이면 전역 구역**이고
+     *   (B-129 — 무소속 작품도 전역 기본 필드를 든다) 읽고 쓰는 것은 그대로 되지만
+     *   **만드는 경로만 열지 않는다** — 그 구역의 필드는 기본 필드 템플릿의 그림자라
+     *   만들고 지우는 자리가 설정 화면 하나다.
      * @param covered 폼이 조회한 정의 전체(CALCULATED 포함) — 저장 권한의 범위(R-5).
      * @param inputs 실제로 렌더한 입력 위젯. 커버와 다른 이유는 위 [covered] 주석 참조.
      */
@@ -252,6 +254,7 @@ class NovelListFragment : Fragment() {
         adapter.refreshRandomImages()
         viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
             adapter.submitList(novels)
+            loadNovelFieldSummaries(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
         }
 
@@ -269,6 +272,21 @@ class NovelListFragment : Fragment() {
                 notifyResult(it)
                 viewModel.clearResult()
             }
+        }
+    }
+
+    /** 목록에 그려지는 작품의 필드값 요약만 조회한다 (B-67 — 연표가 B-5에서 세운 규약 그대로다). */
+    private var fieldSummaryJob: kotlinx.coroutines.Job? = null
+
+    private fun loadNovelFieldSummaries(novels: List<Novel>) {
+        // 앞선 조회는 이미 낡았다 — 취소하지 않으면 늦게 끝난 쪽이 최신 결과를 덮는다.
+        fieldSummaryJob?.cancel()
+        if (novels.isEmpty()) {
+            adapter.fieldSummaries = emptyMap()
+            return
+        }
+        fieldSummaryJob = viewLifecycleOwner.lifecycleScope.launch {
+            adapter.fieldSummaries = viewModel.getNovelFieldSummaries(novels.map { it.id })
         }
     }
 
@@ -435,9 +453,14 @@ class NovelListFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        // 작품 커스텀 필드 섹션 (확-3) — 세계관은 **폼을 여는 시점에 확정**된다.
+        // 작품 커스텀 필드 섹션 (확-3) — 구역은 **폼을 여는 시점에 확정**된다.
         // 편집이면 그 작품의 세계관, 신규면 이 목록이 필터 중인 세계관이다.
-        val fieldUniverseId = novel?.universeId ?: universeId.takeIf { it != -1L }
+        // **`novel?.universeId ?: …`로 쓰지 않는다**(B-129) — 엘비스는 *작품이 없다*와
+        // *작품에 세계관이 없다*를 뭉개고, null이 '전역 구역'이라는 뜻을 가진 뒤로는 그 뭉갬이
+        // **무소속 작품에 남의 세계관 필드를 그리는** 형태로 나타난다. 오늘은 세계관으로 거른
+        // 목록에 무소속 작품이 뜨지 않아 닿지 않지만, 그 안전이 **다른 화면의 성질**에 기대고 있다.
+        val fieldUniverseId =
+            if (novel != null) novel.universeId else universeId.takeIf { it != -1L }
         val section = NovelFieldSection(dialogBinding, fieldUniverseId)
         novelFieldSection = section
         dialogBinding.btnAddNovelField.setOnClickListener {
@@ -669,7 +692,8 @@ class NovelListFragment : Fragment() {
     private var novelIdOfSection: Long? = null
 
     /**
-     * 세계관의 작품 필드를 읽어 입력 섹션을 만든다. 입력 중이던 값은 보존한다.
+     * 이 작품이 속한 구역의 작품 필드를 읽어 입력 섹션을 만든다 — 세계관이면 그 세계관,
+     * 무소속이면 전역 구역이다(B-129). 입력 중이던 값은 보존한다.
      *
      * 커버는 조회된 정의 **전체**(CALCULATED 포함)이고 렌더는 입력 가능한 것만이다 —
      * 계산 필드를 가리키는 잔여 저장 행이 있으면 저장 시 함께 정리되고, 매 저장마다
@@ -682,25 +706,11 @@ class NovelListFragment : Fragment() {
             section.pendingValues[fieldId] = novelFieldWidgetValue(widget)
         }
 
-        val uid = section.universeId
-        val binding = section.binding
-        if (uid == null) {
-            // 세계관이 없으면 작품 필드가 성립하지 않는다. 섹션을 통째로 감추는 대신
-            // **사유를 남긴다** — 빈 화면은 고장과 구분되지 않는다(R-17).
-            section.fields = emptyList()
-            section.covered = emptySet()
-            section.inputs.clear()
-            binding.novelFieldContainer.removeAllViews()
-            binding.novelFieldContainer.visibility = View.GONE
-            binding.novelFieldSectionLabel.visibility = View.VISIBLE
-            binding.novelFieldEmptyHint.visibility = View.VISIBLE
-            binding.novelFieldEmptyHint.text = getString(R.string.novel_field_needs_universe)
-            binding.btnAddNovelField.visibility = View.GONE
-            return
-        }
-
+        // 세계관이 없으면 **전역 구역**을 읽는다(B-129) — 종전에는 여기서 사유만 남기고
+        // 돌아서 무소속 작품 폼이 필드를 0개로 그렸다. 무소속 캐릭터는 B-119 확장이 이미
+        // 그 구역을 받고 있었으므로, 작품만 못 보는 상태가 원칙 01·05에 어긋났다.
         viewLifecycleOwner.lifecycleScope.launch {
-            val fields = viewModel.getNovelFieldsForUniverse(uid)
+            val fields = viewModel.getNovelFields(section.universeId)
             val existing = if (novelId != null) viewModel.getNovelFieldValues(novelId) else emptyList()
             // 다이얼로그가 이미 닫혔으면 옛 위젯을 건드리지 않는다
             if (!isAdded || novelFieldSection !== section) return@launch
@@ -729,21 +739,33 @@ class NovelListFragment : Fragment() {
         val binding = section.binding
         section.inputs.clear()
         binding.novelFieldContainer.removeAllViews()
+        binding.novelFieldSectionLabel.visibility = View.VISIBLE
 
+        // **전역 구역에는 여기서 만드는 경로가 없다**(B-129). 그 구역의 필드는 기본 필드
+        // 템플릿의 그림자이고, 만들고 고치고 지우는 자리가 설정 화면 하나다. 단추를 열면
+        // **관리 화면이 없는 필드**가 생겨 만든 사람도 다시 찾아가 고칠 수 없다(원칙 04).
         // 세계관을 아는 한 만드는 경로는 항상 남긴다 — 필드가 있을 때도 하나 더 필요할 수 있다.
-        binding.btnAddNovelField.visibility = View.VISIBLE
+        val globalScope = section.universeId == null
+        binding.btnAddNovelField.visibility = if (globalScope) View.GONE else View.VISIBLE
 
         if (section.fields.isEmpty()) {
             binding.novelFieldContainer.visibility = View.GONE
             // 빈 상태에서도 머리글과 사유를 남긴다(B-31이 세운 규약과 같은 취지).
-            binding.novelFieldSectionLabel.visibility = View.VISIBLE
             binding.novelFieldEmptyHint.visibility = View.VISIBLE
-            binding.novelFieldEmptyHint.text = getString(R.string.novel_field_empty_hint)
+            binding.novelFieldEmptyHint.text = getString(
+                if (globalScope) R.string.novel_field_global_scope else R.string.novel_field_empty_hint
+            )
             return
         }
         binding.novelFieldContainer.visibility = View.VISIBLE
-        binding.novelFieldSectionLabel.visibility = View.VISIBLE
-        binding.novelFieldEmptyHint.visibility = View.GONE
+        // 전역 구역에서는 필드가 있어도 안내를 남긴다 — 만드는 단추가 없으므로 **어디서
+        // 만드는지를 말하는 자리가 여기뿐**이다(P4의 교훈: 발견성).
+        if (globalScope) {
+            binding.novelFieldEmptyHint.visibility = View.VISIBLE
+            binding.novelFieldEmptyHint.text = getString(R.string.novel_field_global_scope)
+        } else {
+            binding.novelFieldEmptyHint.visibility = View.GONE
+        }
 
         val density = resources.displayMetrics.density
         for (field in section.fields) {
@@ -804,26 +826,30 @@ class NovelListFragment : Fragment() {
         attachNovelFieldSuggestions(section)
     }
 
-    /** 작품 필드 자동완성 — 값 라이브러리 제안 (1쿼리 배치, 제안 꺼진 필드는 제외) */
+    /**
+     * 작품 필드 자동완성 — **폼이 이미 읽어 둔 엔트리에서 고른다**(B-129. 제안 꺼진 필드는 제외).
+     *
+     * 종전에는 여기서 세계관 단위 질의를 한 번 더 했다. 그 질의는 세계관에 묶여 있어
+     * **전역 구역에서는 원리적으로 아무것도 돌려주지 못했고**, 같은 필드의 엔트리를
+     * `entriesByField`로 이미 읽어 둔 뒤라 조회 자체가 두 번째였다. 잣대(숨김 제외 ·
+     * 사용 횟수 내림차순)는 [com.novelcharacter.app.util.FieldSuggestionEntries]가 한 벌로 든다.
+     */
     private fun attachNovelFieldSuggestions(section: NovelFieldSection) {
-        val universeIdForFields = section.universeId ?: return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val suggestions = viewModel.novelFieldSuggestions(universeIdForFields)
-            if (!isAdded || novelFieldSection !== section) return@launch
-            for (field in section.fields) {
-                val widget = section.inputs[field.id]
-                    as? com.google.android.material.textfield.MaterialAutoCompleteTextView ?: continue
-                if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig
-                        .fromConfig(field.config).isSuggestEnabled
-                ) continue
-                val entries = suggestions[field.id].orEmpty()
-                if (entries.isNotEmpty()) {
-                    widget.setAdapter(
-                        com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(
-                            requireContext(), entries
-                        )
-                    )
-                }
+        val ctx = context ?: return
+        val suggestions = com.novelcharacter.app.util.FieldSuggestionEntries
+            .from(section.entriesByField)
+        if (suggestions.isEmpty()) return
+        for (field in section.fields) {
+            val widget = section.inputs[field.id]
+                as? com.google.android.material.textfield.MaterialAutoCompleteTextView ?: continue
+            if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig
+                    .fromConfig(field.config).isSuggestEnabled
+            ) continue
+            val entries = suggestions[field.id].orEmpty()
+            if (entries.isNotEmpty()) {
+                widget.setAdapter(
+                    com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(ctx, entries)
+                )
             }
         }
     }

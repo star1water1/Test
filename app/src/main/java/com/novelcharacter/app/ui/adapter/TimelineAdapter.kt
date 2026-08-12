@@ -254,12 +254,12 @@ class TimelineAdapter(
                 binding.eventFieldsMoreText.visibility = android.view.View.GONE
             } else {
                 binding.eventFieldsText.text = fieldSummary.lines.joinToString("\n") {
-                    binding.root.context.getString(R.string.event_field_line_format, it.label, it.value)
+                    binding.root.context.getString(R.string.card_field_line_format, it.label, it.value)
                 }
                 binding.eventFieldsText.visibility = android.view.View.VISIBLE
                 if (fieldSummary.hiddenCount > 0) {
                     binding.eventFieldsMoreText.text = binding.root.context.getString(
-                        R.string.event_field_more_format, fieldSummary.hiddenCount
+                        R.string.card_field_more_format, fieldSummary.hiddenCount
                     )
                     binding.eventFieldsMoreText.visibility = android.view.View.VISIBLE
                 } else {
