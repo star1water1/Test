@@ -1107,15 +1107,21 @@ class DynamicFieldRenderer(
 
         fun render(override: BodyAnalysisConfig.TargetRatioSource?) {
             body.removeAllViews()
-            val height = data.measured.heightCm?.takeIf { it > 0 } ?: return
+            // 넷을 **한자리에서** 여읜다 — 인자 목록 안에 `?: return`을 흩으면 읽는 사람이
+            // 어느 조건에서 이 절이 비는지 매번 다시 짚어야 한다. 여기까지 오는 길에서는
+            // 넷 다 있는 것이 보장돼 있고(호출부가 `result != null`을 걸었다), 이 가드는
+            // 그 보장이 나중에 끊겨도 빈 절로 끝나게 하는 몫이다.
+            val m = data.measured
+            val height = m.heightCm?.takeIf { it > 0 } ?: return
+            val bust = m.bust ?: return
+            val waist = m.waist ?: return
+            val hip = m.hip ?: return
+
             val basis = com.novelcharacter.app.util.BodyTargetRatio.basis(
                 data.config, height, bodyPeerAverage, override
             )
             current = basis.source
-            val items = com.novelcharacter.app.util.BodyTargetRatio.items(
-                data.measured.bust ?: return, data.measured.waist ?: return,
-                data.measured.hip ?: return, height, basis
-            )
+            val items = com.novelcharacter.app.util.BodyTargetRatio.items(bust, waist, hip, height, basis)
             val score = com.novelcharacter.app.util.BodyTargetRatio.score(items) ?: return
 
             fun sub(text: String) = body.addView(bodyDetailSubText(context, density, text))
@@ -1157,6 +1163,12 @@ class DynamicFieldRenderer(
                 )
                 for (source in sources) {
                     addView(Chip(context).apply {
+                        // **id를 직접 준다 — 단일 선택은 id로 돌아간다.** `ChipGroup`은 고른 것을
+                        // `checkedChipId`로 기억하고 나머지를 그 id로 찾아 끄는데, 코드로 만든 칩은
+                        // 기본이 `NO_ID`(-1)라 **전부 같은 키가 된다.** 라이브러리가 알아서
+                        // 붙여 주기도 하지만 그것은 내부 구현이고, 여기서 보장하면 그 의존이 없다.
+                        // 틀렸을 때의 모양이 *여러 칩이 함께 켜져 보이는 것*이라 눈으로도 늦게 잡힌다.
+                        id = View.generateViewId()
                         text = getString(
                             com.novelcharacter.app.ui.common.BodyTargetRatioLabels.chipLabelOf(source)
                         )

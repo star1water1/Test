@@ -212,9 +212,12 @@ class BodyAnalysisHelper {
         val targetRatioBasis = safeHeight?.let {
             BodyTargetRatio.basis(config, it, peerAverage, targetRatioOverride)
         }
-        val goldenRatioDetails = targetRatioBasis?.let {
-            BodyTargetRatio.items(bust, waist, hip, safeHeight!!, it)
-        }?.takeIf { it.isNotEmpty() }
+        // `!!`를 쓰지 않는다 — 여기서 그것은 *`targetRatioBasis`가 있으면 키도 있다*는 추론이고,
+        // 둘 중 하나만 조건이 바뀌는 날 조용히 죽는다. 두 값을 함께 검사하면 그 추론이 필요 없다.
+        val goldenRatioDetails = if (safeHeight != null && targetRatioBasis != null) {
+            BodyTargetRatio.items(bust, waist, hip, safeHeight, targetRatioBasis)
+                .takeIf { it.isNotEmpty() }
+        } else null
 
         val goldenRatioScore = goldenRatioDetails?.let { BodyTargetRatio.score(it) }
 
