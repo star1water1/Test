@@ -263,12 +263,31 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > |---|---|---|---|
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **로드맵 9판도 올렸다가 같은 세션에서 지웠다** (PR **#270**, run `31525468923`(build) · `31525469030`(migration), head `edbbcca`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **이 판에서 그 실행의 값이 특히 컸다** — 화면 파일이 **여섯**이라 로컬 프로브가 원리적으로 못 보는 몫이 그만큼이었고, `Run unit tests`가 두 Fragment의 재작성과 `presetSavedEvent` 배선을 **처음 컴파일했다.** 개명한 문자열 `preset_name_required`의 리소스 링크도 `Build Debug APK`가 처음 확인했다(로컬에 증명 수단이 아예 없는 부류다). 배지가 아니라 단계를 봤다: `Static checks` ✓ 33초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 2분57초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `edbbcca` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **마이그레이션 워크플로도 돌았고 초록이다** — 트리거가 `data/dao/**`를 담고 있고 이 판이 DAO에 조회 하나를 더했기 때문이다(스키마는 그대로다). `Room 스키마가 커밋돼 있는가` ✓ · 에뮬레이터에서 **`Run migration instrumentation tests` ✓ 5분20초.** **로드맵 6판도 올렸다가 같은 세션에서 지웠다** (PR **#267**, run `31501431238`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **로드맵이 예고한 *화면 파일 0*이 깨진 판이라 이 실행의 값이 특히 컸다** — `DynamicFieldRenderer`·`DynamicFieldFormBuilder`·`ai/CharacterFieldAiSuggester` 셋은 로컬 프로브 범위 밖이라 **`Run unit tests`가 그것들을 처음 컴파일했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ **3분02초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `96d5eff` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
-> **⏳ 2026.08.12 — 로드맵 19판(B-116 · B-171)이 한 줄 올렸다.** 18판의 초록(run `31641386028`)이
-> 그 시점까지를 덮었으므로 **이 줄이 지금 목록의 전부다.**
+> **✅ 2026.08.12 — 로드맵 19판(PR #287, run `31648130917`, head `0dc2e3a`)이 마지막으로 덮었다.
+> ~~19판이 한 줄 올렸다.~~ → 목록은 비어 있다 — 20판은 자기 몫만 지면 된다.**
+> 사용자 지시(*"콜드검토 하고 pr하고 병합까지"*)로 그 자리에서 열었다 — **다섯 판 연속이다**
+> (로드맵 19판의 CI 칸이 *없음*이었는데 지시가 그것을 앞당겼다).
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 28초 · `Schema harnesses` ✓ ·
+> **`Run unit tests` ✓ 2분59초** · **`Build Debug APK` ✓ 46초** · `Upload/Commit Room schemas` ✓ ·
+> `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
+> **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `0dc2e3a` 그대로인 것을
+> `git rev-parse`로 실측했고, 그것이 *마이그레이션 없음*을 기계가 확인해 준 자리다.
+> **돌린 값이 예상한 자리에서 났다:** 새 뷰 id 셋(`importSourceSpinner`·`importAxisHolder`·
+> `importMissingDetail`)과 새 메뉴 id(`action_import_axes`)의 `R` 링크, `dialog_duel_axis_edit.xml`의
+> **루트 교체**는 로컬에 증명 수단이 아예 없어 **`Build Debug APK`가 처음** 확인했고,
+> 화면 파일 여섯은 `ui/**`라 **`Run unit tests`가 처음** 컴파일했다.
+> **새 검사도 러너에서 처음 돌았다**(`check_faction_standing.sh` — 18판이 awk 구현 차이로 CI를 태운
+> 그 자리다. 이 검사는 awk를 안 쓰고 로컬에서 gawk로 미리 재실행해 두었으며 실제로 초록이었다).
+> **곁다리 사실 하나 — 문서만 바뀐 push에도 체크가 새로 붙어 실행이 둘이 됐다**(`31647940871` →
+> `31648130917`). 이 문서가 이미 적어 둔 그대로다: `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는
+> 체크가 안 달린다*는 뜻이지 *기존 PR의 push가 체크를 건너뛴다*는 뜻이 아니다.
+> **초록으로 세는 것은 병합된 head의 실행 하나다.**
+> **그리고 이 실행이 이 줄의 옛 본문을 바로잡았다** — *"마이그레이션 워크플로는 돌 것이다"*라고
+> 적었는데 돌지 않았다(트리거에 `data/dao/**`가 없다. 아래 표 줄에 정정을 남겼다).
 >
 > | 슬라이스 | 병합 커밋 | 화면 파일 | 사유 |
 > |---|---|---|---|
-> | 로드맵 19판 — 축 불러오기 + 세력 축 (B-116 · B-171) | *(이 판의 병합 커밋)* | `DuelAxisListFragment` · `DuelViewModel` · `FactionManageFragment` · `CharacterViewModel` · `FactionViewModel` · `StatsDataProvider` + 신규 레이아웃 `dialog_duel_axis_import.xml` · 신규 메뉴 `duel_axis_menu.xml` · **`dialog_duel_axis_edit.xml` 루트 교체** | 계획대로 건너뛰었다(로드맵 19판의 CI 칸 = *없음*, **20판 PR이 덮는다**). **20판이 특히 볼 자리 셋:** ⑴ 새 뷰 id 셋(`importSourceSpinner`·`importAxisHolder`·`importMissingDetail`)과 새 메뉴 id(`action_import_axes`)의 **ViewBinding·R 링크** — 로컬에 증명 수단이 아예 없다 ⑵ `dialog_duel_axis_edit.xml`의 **루트가 `CappedScrollView`로 바뀐 것**(잘못 감싸면 인플레이트 시점에 죽는데 XML 파싱은 통과한다) ⑶ 화면 파일 여섯이 `ui/**`라 **`Run unit tests`가 처음 컴파일한다.** **마이그레이션 워크플로는 돌지 않는다 — 이 줄을 쓸 때 틀리게 적었다가 실행이 바로잡았다.** 트리거 경로에 **`data/dao/**`는 없다**(`app/schemas/**` · `data/database/**` · `data/model/**` · `androidTest/**` · `app/build.gradle.kts` · 그 워크플로 자신 — `.github/workflows/migration-test.yml`을 직접 읽어 확인했다). 이 판은 DAO에만 조회를 더했으므로 대상이 아니다. **같은 오해가 이 문서에 이미 한 번 적혀 있다** — 아래 이력 칸의 로드맵 9판 줄이 *"트리거가 `data/dao/**`를 담고 있고"*라 적었고 이 줄이 그것을 그대로 베꼈다. **그 판은 실제로 워크플로가 돌았는데**, 이유는 DAO가 아니라 그 판이 `data/model/**`도 건드렸기 때문이다(사유를 잘못 짚은 것이지 관측이 틀린 것은 아니다). **경로 목록을 여기 두 벌로 적지 않는다** — 워크플로 파일이 원문이고, 그것을 읽는 것이 세는 법이다 |
+> | ~~로드맵 19판 — 축 불러오기 + 세력 축 (B-116 · B-171)~~ | ~~`21ed41e`~~ | | **덮였다** — 같은 세션에서 PR #287을 열어 초록을 받았다(위 ✅). 올렸다가 지운 것이라 줄만 남긴다. **이 줄이 처음에 *마이그레이션 워크플로는 돌 것이다*라고 적었는데 틀렸다** — 트리거 경로에 `data/dao/**`는 없다(`.github/workflows/migration-test.yml`을 직접 읽어 확인했다). **같은 오해가 아래 이력 칸의 로드맵 9판 줄에도 있다** — 그 판은 실제로 워크플로가 돌았지만 이유는 DAO가 아니라 `data/model/**`을 함께 건드려서였다(사유를 잘못 짚은 것이지 관측이 틀린 것은 아니다). **경로 목록을 두 벌로 적지 않는다** — 워크플로 파일이 원문이다 |
 >
 > **로드맵 2판(2026.08.10)은 CI를 돌린다 — 목록에 올리지 않는다.**
 > 화면 파일이 셋(`FieldValueListFragment` · 신규 `AiOrganizeReviewSheet` · `AiOrganizeSheet`)에
@@ -7157,12 +7176,21 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | **⑤** | 21판 이후 | 구조·인프라(B-55) 등 | 21판은 20판을 선행으로 둔다 |
    > | **⑥** | 22판 | **B-10** | 선행이 풀려 있다(B-9이 2판에서 닫혔다). **이 판만 DB 마이그레이션이 있다** |
    >
-   > **② CI는 안 돌렸다 — 계획대로다. 20판이 덮는다.**
-   > 로드맵 19판의 CI 칸이 *없음*이고(*"20판 PR이 덮고 ⏳ 목록에 한 줄 남긴다"*), **네 판 연속 이어지던
-   > *사용자 지시로 앞당기기*가 이번엔 없었다.** 2장 **⏳ 미검증 목록**에 한 줄 올렸다 —
-   > **20판이 볼 자리 셋을 그 줄에 적어 두었다**(새 뷰 id 셋 + 새 메뉴 id의 R 링크 · `dialog_duel_axis_edit.xml`의
-   > **루트 교체** · 화면 파일 여섯의 첫 컴파일). **마이그레이션 워크플로는 돌 것이다**(트리거가 `data/dao/**`를
-   > 담고 이 판이 조회 하나를 더했다 — 스키마는 그대로다).
+   > **② CI를 돌렸고 초록이다 · 병합 완료.** 계획의 CI 칸은 *없음*이었는데
+   > **다섯 판 연속으로 사용자 지시**(*"콜드검토 하고 pr하고 병합까지"*)가 그것을 앞당겼다.
+   > **PR #287 · run `31648130917`(head `0dc2e3a`) — 배지가 아니라 단계를 봤다:**
+   > `Static checks` ✓ 28초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 2분59초** ·
+   > **`Build Debug APK` ✓ 46초** · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓
+   > (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** —
+   > 브랜치 머리가 `0dc2e3a` 그대로인 것을 `git rev-parse`로 실측했고, 그것이 *마이그레이션 없음*을
+   > 기계가 확인해 준 자리다. **⏳ 미검증 목록은 이 실행이 덮어 비었다 — 20판은 자기 몫만 지면 된다.**
+   >
+   > **그 실행이 이 판의 문서를 하나 바로잡았다.** ⏳ 줄에 *"마이그레이션 워크플로는 돌 것이다 —
+   > 트리거가 `data/dao/**`를 담고"*라 적었는데 **돌지 않았다.** 워크플로 파일을 직접 읽으니 트리거는
+   > `app/schemas/**` · `data/database/**` · `data/model/**` · `androidTest/**` · `app/build.gradle.kts` ·
+   > 그 워크플로 자신이고 **`data/dao/**`는 없다.** **같은 오해가 이 문서에 이미 있었고 이 판이 그것을
+   > 그대로 베꼈다**(⏳ 이력 칸의 로드맵 9판 줄) — 그 판은 실제로 돌았지만 이유가 DAO가 아니라
+   > `data/model/**`을 함께 건드려서였다. **베낀 문장은 검증된 문장이 아니다**가 이 자리의 배울 거리다.
    >
    > **③ 이 판이 남긴 것 중 다음 사람이 알아야 할 넷.**
    > ⓐ **등재가 가리킨 단일 소스는 실은 없었다.** 4장 B-171 행은 *"그 판정의 단일 소스가 이미 다른 곳에
