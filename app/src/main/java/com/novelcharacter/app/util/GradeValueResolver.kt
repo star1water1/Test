@@ -14,6 +14,16 @@ import com.novelcharacter.app.data.model.FieldDefinition
 object GradeValueResolver {
 
     /**
+     * 한 벌을 돌려쓴다 — `Gson()`은 타입 어댑터 팩토리를 통째로 짓는 무거운 생성이고,
+     * 이 함수는 **값 하나마다** 불린다(수식 평가·통계 랭킹, 그리고 2026.08.12부터 데이터
+     * 건강도의 타입 불일치 판정). 종전에는 부를 때마다 새로 만들었다.
+     *
+     * 인스턴스는 상태가 없고 스레드 안전하다 — 같은 근거로 [GradeTable]이 이미 그렇게 두고
+     * 있었고, 로드맵 13판이 드릴다운 목록에서 같은 자리를 같은 방식으로 고쳤다.
+     */
+    private val gson = Gson()
+
+    /**
      * config에 grades가 없는 필드를 표시할 때의 폴백 기본값 (표준 등급 체계).
      * 수식·랭킹 등 "계산" 경로에서는 사용하지 않는다 — 계산은 사용자가 정의한 config만 신뢰한다.
      */
@@ -32,7 +42,7 @@ object GradeValueResolver {
      */
     fun resolveFromConfig(fieldDef: FieldDefinition, gradeLabel: String): Double? {
         val config = try {
-            Gson().fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP)
+            gson.fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP)
         } catch (e: Exception) {
             Log.w("GradeValueResolver", "Failed to parse grade config for field '${fieldDef.key}'", e)
             null

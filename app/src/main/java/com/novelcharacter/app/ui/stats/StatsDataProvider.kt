@@ -1817,6 +1817,11 @@ class StatsDataProvider {
      * 그중 하나를 훑는다(`filledCharacterDefIds`). 여기 붙는 것은 그 축(필드값 수)에서의
      * 상수배 한 번이고, 정의는 id로 미리 색인해 값마다 다시 찾지 않는다
      * (`scalability_performance` 7장 2단계 — 새 상한도, 스냅샷의 새 목록도 없다).
+     *
+     * **축 안에서는 이름·필드 순으로 정렬해 돌려준다.** 표시 계층이 축마다 상한을 걸어
+     * 뒷부분을 접으므로([TypeMismatchList]), 순서가 값 표의 행 순서면 **무엇이 접히는지가
+     * 사실상 임의로 정해진다** — 같은 데이터를 다시 열었을 때 다른 50개가 보일 수 있다.
+     * 접는 장치에는 결정적 순서가 함께 있어야 한다(R-14).
      */
     private fun collectTypeMismatchedValues(s: StatsSnapshot): List<TypeMismatchedValue> {
         val out = mutableListOf<TypeMismatchedValue>()
@@ -1832,12 +1837,13 @@ class StatsDataProvider {
         ) {
             if (defs.isEmpty() || values.isEmpty()) return
             val defById = defs.associateBy { it.id }
+            val found = mutableListOf<TypeMismatchedValue>()
             values.forEach { row ->
                 val def = defById[fieldDefIdOf(row)] ?: return@forEach
                 val raw = valueOf(row)
                 val reason = FieldValueTypeMismatch.reasonFor(def, raw) ?: return@forEach
                 val ownerId = ownerIdOf(row)
-                out.add(
+                found.add(
                     TypeMismatchedValue(
                         ownerType = ownerType,
                         ownerId = ownerId,
@@ -1851,6 +1857,7 @@ class StatsDataProvider {
                     )
                 )
             }
+            out.addAll(found.sortedWith(compareBy({ it.ownerName }, { it.fieldName })))
         }
 
         collect(

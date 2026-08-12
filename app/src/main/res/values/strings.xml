@@ -1436,8 +1436,7 @@
 
     <!-- Stats: 타입이 안 맞는 값 (B-156) · 입력 현황 (B-59) -->
     <string name="stats_type_mismatch">타입이 안 맞는 값</string>
-    <string name="stats_type_mismatch_purpose">필드의 종류가 바뀌어 지금 값으로는 읽히지 않는 칸입니다. 지우지는 않았지만 수식에서 0으로 읽히고 수치 분포에서 빠집니다. 눌러 그 칸으로 갑니다.</string>
-    <string name="stats_type_mismatch_count">%d개</string>
+    <string name="stats_type_mismatch_purpose">필드의 종류로 읽히지 않는 값입니다. 지우지는 않았지만 수식에서 0으로 읽히고 수치 분포에서 빠집니다. 캐릭터 줄은 눌러 그 캐릭터로 갑니다.</string>
     <string name="stats_health_type_mismatch_preview"> | 타입 불일치 %d개</string>
     <string name="stats_type_mismatch_row">%1$s · %2$s = %3$s</string>
     <string name="stats_type_mismatch_more">외 %d개</string>

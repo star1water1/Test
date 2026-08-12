@@ -197,6 +197,33 @@ class DataHealthReorgTest {
         assertEquals("#99", row.ownerName)
     }
 
+    /**
+     * 표시 계층이 축마다 뒷부분을 접으므로(R-14), 순서가 값 표의 행 순서면 **무엇이 접히는지가
+     * 사실상 임의로 정해진다** — 같은 데이터를 다시 열었을 때 다른 50개가 보일 수 있다.
+     */
+    @Test
+    fun `축 안에서는 이름 필드 순으로 결정적으로 정렬된다`() {
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "하늘", novelId = 1),
+                Character(id = 2, name = "가온", novelId = 1)
+            ),
+            fieldDefinitions = listOf(def(10, "키", "NUMBER"), def(11, "몸무게", "NUMBER")),
+            // 일부러 뒤섞어 넣는다 — 값 표의 행 순서가 그대로 나오면 이 시험이 빨간불이다.
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "큼"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "큼"),
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 11, value = "무거움"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 11, value = "무거움")
+            )
+        )
+        val rows = provider.computeDataHealth(s).typeMismatchedValues
+        assertEquals(
+            listOf("가온·몸무게", "가온·키", "하늘·몸무게", "하늘·키"),
+            rows.map { "${it.ownerName}·${it.fieldName}" }
+        )
+    }
+
     // ===== 표시 상한 (R-14) =====
 
     private fun rows(ownerType: String, n: Int) = (1..n).map {

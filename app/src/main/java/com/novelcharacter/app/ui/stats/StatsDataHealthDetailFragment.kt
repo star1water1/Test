@@ -58,7 +58,7 @@ class StatsDataHealthDetailFragment : Fragment() {
 
             // 타입이 안 맞는 값 (B-156) — 이 화면에서 유일하게 **값 단위**인 항목이다.
             binding.textTypeMismatchCount.text =
-                getString(R.string.stats_type_mismatch_count, stats.typeMismatchedValues.size)
+                getString(R.string.stats_count_format, stats.typeMismatchedValues.size)
             populateTypeMismatchList(stats.typeMismatchedValues)
 
             populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
@@ -205,7 +205,15 @@ class StatsDataHealthDetailFragment : Fragment() {
             )
             row.addView(makeCaptionTextView(reasonText(item.reason)))
             if (item.ownerType == FieldDefinition.ENTITY_CHARACTER) {
+                // 누를 수 있는 줄과 없는 줄이 한 목록에 섞이므로 **보여서 알 수 있어야 한다** —
+                // 목적문이 말은 하지만 어느 줄인지까지는 말하지 못한다(원칙 04).
                 row.isClickable = true
+                row.isFocusable = true
+                val ta = requireContext().obtainStyledAttributes(
+                    intArrayOf(android.R.attr.selectableItemBackground)
+                )
+                row.foreground = ta.getDrawable(0)
+                ta.recycle()
                 row.setOnClickListener {
                     val bundle = Bundle().apply { putLong("characterId", item.ownerId) }
                     findNavController().navigateSafe(
