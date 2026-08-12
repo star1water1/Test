@@ -503,7 +503,15 @@ class DuelAxisListFragment : Fragment() {
                 val source = sources.getOrNull(index) ?: return
                 for (plan in source.plans) {
                     val row = android.widget.CheckBox(context).apply {
-                        text = plan.source.name
+                        // **이미지 축은 이름 뒤에 표식을 단다** — 같은 이름의 캐릭터 축과
+                        // 이미지 축은 서로 다른 축이라 둘 다 목록에 설 수 있고(유니크 인덱스가
+                        // 대상을 함께 묶는다), 표식이 없으면 **글자가 같은 줄 둘 중 하나만
+                        // [이미 있음]인 상태**가 되어 어느 쪽을 고르는지 알 수 없다.
+                        text = if (plan.source.isImageAxis) {
+                            getString(R.string.duel_axis_import_image_badge, plan.source.name)
+                        } else {
+                            plan.source.name
+                        }
                         isEnabled = plan.importable
                         isChecked = plan.source.code in picked
                         setOnCheckedChangeListener { _, checked ->

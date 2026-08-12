@@ -203,6 +203,31 @@ class DuelAxisTransferTest {
         assertEquals(listOf("출신"), DuelAxisTransfer.missingKeys(src, setOf("성별")))
     }
 
+    /**
+     * **연결과 필터의 잣대가 갈리는 자리** — 같은 오타 키가 한쪽에서는 결손이 아니고
+     * 다른 쪽에서는 결손이다. 무게가 다르기 때문이다: 연결은 카드에서 한 줄이 비고,
+     * **필터는 후보를 0으로 닫아 축이 통째로 못 쓰게 된다.**
+     */
+    @Test
+    fun `모르는 sys 키가 필터에 있으면 결손으로 센다`() {
+        val src = axis(
+            profiles = DuelFieldLinks.encode(listOf(DuelFieldLinks.Link("sys:facton"))),
+            filters = filtersJson(
+                FieldFilter(fieldId = 0L, fieldName = "세력", values = listOf("기사단"), fieldKey = "sys:facton")
+            )
+        )
+        // 연결 쪽은 봐준다(어디에도 없는 것이지 *이 세계관에 없는 것*이 아니다).
+        // 필터 쪽은 못 봐준다 — 그 한 줄이 후보를 0으로 만든다.
+        assertEquals(listOf("sys:facton"), DuelAxisTransfer.missingKeys(src, emptySet()))
+        // 아는 sys 키는 어느 쪽에서도 결손이 아니다 — 세계관을 타지 않는다.
+        val ok = axis(
+            filters = filtersJson(
+                FieldFilter(fieldId = 0L, fieldName = "세력", values = listOf("기사단"), fieldKey = "sys:faction")
+            )
+        )
+        assertEquals(emptyList<String>(), DuelAxisTransfer.missingKeys(ok, emptySet()))
+    }
+
     @Test
     fun `조건이 없으면 저장 표기는 null 하나다`() {
         assertNull(DuelAxisTransfer.transfer(axis(filters = null), 42L, 0, "N", 1L).candidateFiltersJson)

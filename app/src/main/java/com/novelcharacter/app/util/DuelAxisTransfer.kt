@@ -78,6 +78,19 @@ object DuelAxisTransfer {
         key in targetFieldKeys || DuelSystemFields.isSystemKey(key)
 
     /**
+     * **후보 필터의 키는 잣대가 다르다 — 모르는 `sys:` 키를 봐준다.**
+     *
+     * 위 [resolves]가 오타 `sys:` 키를 결손에서 빼는 근거는 *"이미 다른 자리가 말한다"*인데
+     * (`DuelFieldLinks.Axis.unknownSystemKeys`), **그 목록은 연결 셋만 본다 — 필터는 안 본다.**
+     * 그리고 무엇보다 **결과의 무게가 다르다:** 연결의 모르는 키는 카드에서 한 줄이 비는 것이지만,
+     * 필터의 모르는 키는 `DuelCandidateFilter`가 **후보를 0으로 닫는다**(그쪽 KDoc이 정한 처분이다 —
+     * 조용히 넓히지 않으려고 일부러 그렇게 한다). 축이 통째로 못 쓰게 되는 것을 **누르기 전에**
+     * 말하지 않으면 이 창의 약속이 깨진다(원칙 04).
+     */
+    private fun filterResolves(key: String, targetFieldKeys: Set<String>): Boolean =
+        key in targetFieldKeys || DuelSystemFields.columnOf(key) != null
+
+    /**
      * 이 축이 가리키는 키 중 받는 세계관에 없는 것 — **차례를 지키고 중복은 걷어낸다.**
      *
      * 연결 셋(영향·산출·프로필)과 후보 필터를 **함께** 본다. 필터를 빼면 *"필드는 다 있는데
@@ -104,7 +117,7 @@ object DuelAxisTransfer {
                 // 키 없는 필터는 **이 세계관에서 되살릴 길이 없다** — id는 남의 것이라 지우고
                 // 넘기므로(클래스 KDoc) 해석이 닫힌다. 이름이라도 적어 어느 조건인지 말한다.
                 missing.add(filter.fieldName.ifBlank { filterlessLabel })
-            } else if (!resolves(key, targetFieldKeys)) {
+            } else if (!filterResolves(key, targetFieldKeys)) {
                 missing.add(key)
             }
         }

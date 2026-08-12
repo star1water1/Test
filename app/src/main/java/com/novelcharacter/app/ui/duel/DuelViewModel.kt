@@ -168,12 +168,14 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             val count = nameCount.getOrDefault(universe.name, 0)
             nameCount[universe.name] = count + 1
             val label = if (count > 0) "${universe.name} (${count + 1})" else universe.name
-            sources.add(
-                AxisSource(
-                    label,
-                    DuelAxisTransfer.plan(axes, targetAxes, targetKeys, filterlessLabel)
-                )
-            )
+            // **계획 셈은 주 스레드에서 돌리지 않는다.** 축마다 JSON을 넷 판다
+            // (연결 셋 + 후보 필터) — 세계관 수 × 축 수만큼이라 창을 여는 순간 그만큼이 쌓인다.
+            // 조회는 Room이 스스로 옮기지만 이 셈은 부른 쪽 스레드에 그대로 남는다
+            // (17판이 카드 요약에서 고친 것과 같은 자리다).
+            val plans = withContext(Dispatchers.Default) {
+                DuelAxisTransfer.plan(axes, targetAxes, targetKeys, filterlessLabel)
+            }
+            sources.add(AxisSource(label, plans))
         }
         return sources
     }
