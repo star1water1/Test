@@ -1754,7 +1754,7 @@
     <!-- 🎲 생성 축·프리셋 편집 (B-93) -->
     <string name="body_gen_edit">축·프리셋 편집</string>
     <string name="body_gen_edit_title">생성 축·프리셋</string>
-    <string name="body_gen_edit_purpose">이 세계관의 🎲 축과 프리셋을 정합니다. 저장하면 이 세계관의 체형 필드에만 적용되고, 다른 작품은 그대로입니다.</string>
+    <string name="body_gen_edit_purpose">이 세계관의 🎲 축과 프리셋을 정합니다. 저장하면 이 세계관의 캐릭터 전체에 적용되고, 다른 세계관은 그대로입니다.</string>
     <string name="body_gen_edit_height">키 축</string>
     <string name="body_gen_edit_torso">몸통 축 (허리÷키)</string>
     <string name="body_gen_edit_bust">가슴 축 (컵차 cm)</string>

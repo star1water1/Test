@@ -435,19 +435,28 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     /**
      * 축·프리셋 줄을 세운다 — **다시 세울 수 있어야 한다**(편집 뒤 그 자리에서 새로 선다).
-     * 라디오 그룹과 프리셋 줄을 먼저 비우는 것이 그 재진입의 전부다.
+     *
+     * 다시 세울 때 **고르던 자리를 지킨다** — 개수는 열지 않으므로(확정 ㄴ1) 자리의 뜻이
+     * 그대로이고, 이름 하나 고쳤다고 고르던 축이 말없이 옮겨 가면 그 자체가 유실이다.
+     * 처음 세울 때는 지킬 것이 없으므로 기본 선택(가운데)을 그대로 둔다.
      */
     private fun buildAxes(density: Float) {
         val options = generatorOptions
+        val groups = listOf(binding.rgHeight, binding.rgTorso, binding.rgBust, binding.rgHip)
+        val keep = if (binding.rgTorso.childCount > 0) groups.map { selectedIndex(it) } else null
         binding.presetRow.removeAllViews()
-        for (group in listOf(binding.rgHeight, binding.rgTorso, binding.rgBust, binding.rgHip)) {
-            group.removeAllViews()
-        }
+        for (group in groups) group.removeAllViews()
         buildPresetRow(density, options)
         buildAxisGroup(binding.rgHeight, options.heightOptions.map { it.label }, checked = 1, density, anyOption = true)
         buildAxisGroup(binding.rgTorso, options.torsoOptions.map { it.label }, checked = 1, density)
         buildAxisGroup(binding.rgBust, options.bustOptions.map { it.label }, checked = 1, density)
         buildAxisGroup(binding.rgHip, options.hipOptions.map { it.label }, checked = 1, density)
+        keep?.forEachIndexed { i, index -> check(groups[i], index) }
+        // 컵 지정이 켜져 있으면 **새로 선 가슴 축도 잠가 둔다** — 다시 세운 라디오는
+        // 기본이 '사용 가능'이라, 흐려 보이는데 눌리는 줄이 생긴다(화면이 거짓을 말한다).
+        if (cupMode) {
+            for (i in 0 until binding.rgBust.childCount) binding.rgBust.getChildAt(i).isEnabled = false
+        }
     }
 
     /**

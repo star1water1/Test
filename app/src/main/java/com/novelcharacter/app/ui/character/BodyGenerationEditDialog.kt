@@ -201,10 +201,15 @@ object BodyGenerationEditDialog {
         return layout to edit
     }
 
-    /** 소수점 뒤 0을 달지 않는다 — `18.5`는 그대로, `24.0`은 `24`로 보인다. */
+    /**
+     * 소수점 뒤 0을 달지 않는다 — `18.5`는 그대로, `24.0`은 `24`로 보인다.
+     *
+     * 자릿수가 **교정이 미는 폭(`Limits.TORSO_END_STEP` = .001)보다 잘아야 한다** —
+     * 굵으면 창을 열었다 저장만 해도 값이 반올림되어, 손대지 않은 설정이 조용히 바뀐다.
+     */
     private fun format(value: Double): String =
         if (value == Math.floor(value) && !value.isInfinite()) value.toLong().toString()
-        else String.format(Locale.US, "%.3f", value).trimEnd('0').trimEnd('.')
+        else String.format(Locale.US, "%.4f", value).trimEnd('0').trimEnd('.')
 
     private fun resetTo(
         context: Context,
