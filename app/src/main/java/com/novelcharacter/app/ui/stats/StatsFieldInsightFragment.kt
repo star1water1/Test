@@ -271,7 +271,15 @@ class StatsFieldInsightFragment : Fragment() {
                 val summary = result.numericSummary ?: return wrapper
                 wrapper.addView(createNumericSummaryView(summary))
                 if (summary.histogram.isNotEmpty()) {
-                    wrapper.addView(createHistogramChart(summary.histogram))
+                    // 막대도 조각이다 — 분포·순위와 같은 드릴다운을 갖는다(B-39). 스펙은 구간을
+                    // 만든 쪽이 실어 보낸 것을 그대로 쓴다: 라벨은 계산 결과라 값 일치가
+                    // 성립하지 않고, 라벨로 조회하면 어떤 입력에서도 0명이 된다(S-16).
+                    val slices = summary.histogram.map { (label, count) ->
+                        ChartSlice(label, count, summary.matchSpecs[label] ?: FieldValueMatchSpec.Values(label))
+                    }
+                    val chart = createHistogramChart(summary.histogram)
+                    attachChartTapListener(chart, slices, insight)
+                    wrapper.addView(chart)
                 }
             }
         }

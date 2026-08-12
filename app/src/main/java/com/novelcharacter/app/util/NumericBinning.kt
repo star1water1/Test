@@ -76,6 +76,36 @@ object NumericBinning {
         }
     }
 
+    /** 구간 하나와 그 구간에 든 건수. 분포를 만든 쪽과 드릴다운이 **같은 구간 객체**를 쓰게 한다. */
+    data class BinCount(val bin: Bin, val count: Int)
+
+    /**
+     * 원문 목록에서 수치를 뽑는 **단일 소스**.
+     *
+     * 파트 없는 값(NUMBER·CALCULATED)은 `separator=""`·`partIndex=0`으로 부른다 —
+     * 이 경우 [partValue]가 원문 전체를 하나의 파트로 본다.
+     *
+     * **호출부가 `toFloatOrNull()`을 직접 쓰지 않는 것이 요점이다.** 둘은 일반 공백에서는 같게
+     * 동작하지만(`parseFloat`가 ASCII 공백을 건너뛴다) **줄바꿈 없는 공백(U+00A0)에서 갈린다** —
+     * 코틀린 `trim()`은 `isSpaceChar`도 보므로 지우는데 `parseFloat`는 지우지 않는다.
+     * 엑셀·웹에서 붙여 넣은 값이 실제로 그 문자를 달고 오고, 그때 분포를 만드는 쪽이
+     * `toFloatOrNull()`을 쓰면 그 값이 **분포에서는 빠지고 드릴다운 목록에는 뜬다.**
+     * 조각의 수와 목록의 인원이 어긋나는 그 모양이 S-16이 고친 결함이다.
+     */
+    fun numericValuesOf(rawValues: List<String>, separator: String, partIndex: Int): List<Float> =
+        rawValues.mapNotNull { partValue(it, separator, partIndex) }
+
+    /**
+     * [values]를 자동 구간에 담아 (구간, 건수)로 돌려준다. 구간을 나눌 수 없으면 빈 목록.
+     *
+     * 세는 일을 여기 모으는 이유는 **경계 규칙이 한 벌이어야 하기 때문**이다 —
+     * 각 호출부가 `count { it >= min && it < max }`를 손으로 적으면 마지막 구간의 상한 포함
+     * ([Bin.inclusiveMax])을 한 곳이라도 빠뜨리는 순간 최댓값이 어느 구간에도 안 들어
+     * 분포 합이 모집단보다 작아진다.
+     */
+    fun autoDistribution(values: List<Float>, binCount: Int = DEFAULT_BIN_COUNT): List<BinCount> =
+        autoBins(values, binCount).map { bin -> BinCount(bin, values.count { bin.contains(it) }) }
+
     /** 구간 라벨. [decimals]는 [autoBins]가 겹치지 않는 최소 자릿수로 정한다. */
     fun label(min: Float, max: Float, decimals: Int = 0): String =
         "${format(min, decimals)}~${format(max, decimals)}"

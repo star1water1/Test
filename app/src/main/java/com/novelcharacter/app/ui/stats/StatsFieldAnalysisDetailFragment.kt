@@ -237,9 +237,11 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             row.addView(makeTextView(getString(R.string.stats_number_summary,
                 s.min, s.max, s.avg, s.median, s.count)))
 
-            // 히스토그램 BarChart
-            if (s.values.size >= 2) {
-                val histogram = buildHistogram(s.values)
+            // 히스토그램 BarChart — 구간은 계산 계층이 [NumericBinning]으로 이미 정해 보냈다(B-39).
+            // 종전에는 이 화면이 값 목록을 받아 **자체 8등분**을 해서 같은 필드가 인사이트
+            // 화면과 다른 모양으로 보였고, 폭이 좁으면 라벨이 겹쳐 막대가 서로를 덮어썼다.
+            if (s.histogram.isNotEmpty()) {
+                val histogram = s.histogram.entries.toList()
                 val chart = BarChart(requireContext()).apply {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -247,9 +249,9 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                     ).apply { topMargin = marginSm }
                 }
                 val barEntries = histogram.mapIndexed { i, bucket ->
-                    BarEntry(i.toFloat(), bucket.second.toFloat())
+                    BarEntry(i.toFloat(), bucket.value.toFloat())
                 }
-                val labels = histogram.map { it.first }
+                val labels = histogram.map { it.key }
                 val dataSet = BarDataSet(barEntries, "").apply {
                     color = ContextCompat.getColor(requireContext(), R.color.primary)
                     valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
@@ -271,7 +273,21 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                     axisLeft.granularity = 1f
                     axisRight.isEnabled = false
                     legend.isEnabled = false
-                    setTouchEnabled(false)
+                    // 막대도 조각이다 — 파이와 같은 드릴다운을 갖는다(B-39). 종전에는 탭이
+                    // 아예 꺼져 있어 "이 구간에 누가 있는가"를 볼 길이 없었다.
+                    setTouchEnabled(true)
+                    setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                        override fun onValueSelected(e: Entry?, h: Highlight?) {
+                            val bucket = histogram.getOrNull(h?.x?.toInt() ?: return) ?: return
+                            // 구간 라벨은 계산 결과라 값 일치가 성립하지 않는다 — 구간을 만든
+                            // 쪽이 실어 보낸 규칙 그대로 조회한다(S-16).
+                            val spec = s.matchSpecs[bucket.key] ?: return
+                            showCharacterListBottomSheet(
+                                s.fieldDefId, s.fieldName, bucket.key, spec, bucket.value
+                            )
+                        }
+                        override fun onNothingSelected() {}
+                    })
                     animateY(400)
                     invalidate()
                 }
@@ -279,27 +295,6 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             }
 
             container.addView(row)
-        }
-    }
-
-    private fun buildHistogram(values: List<Float>): List<Pair<String, Int>> {
-        if (values.isEmpty()) return emptyList()
-        val min = values.first()
-        val max = values.last()
-        if (min == max) return listOf(String.format("%.0f", min) to values.size)
-        val bucketCount = minOf(8, values.size).coerceAtLeast(3)
-        val range = max - min
-        val bucketSize = range / bucketCount
-        val buckets = Array(bucketCount) { 0 }
-        values.forEach { v ->
-            val idx = ((v - min) / bucketSize).toInt().coerceIn(0, bucketCount - 1)
-            buckets[idx]++
-        }
-        return buckets.mapIndexed { i, count ->
-            val lo = min + i * bucketSize
-            val hi = lo + bucketSize
-            val label = if (bucketSize >= 1f) "${lo.toInt()}~${hi.toInt()}" else String.format("%.1f~%.1f", lo, hi)
-            label to count
         }
     }
 

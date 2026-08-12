@@ -382,6 +382,7 @@ $TEST/stats/StatsCrossAnalysisTest.kt
 $TEST/stats/StatsDrilldownTest.kt
 $TEST/stats/DuelRankingTest.kt
 $TEST/stats/StatsConsistencyTest.kt
+$TEST/stats/NumericBinDrilldownTest.kt
 $TEST/util/ValueDistributionsTest.kt
 $TEST/util/NumericBinningTest.kt
 $TEST/util/StatsFieldPolicyTest.kt
