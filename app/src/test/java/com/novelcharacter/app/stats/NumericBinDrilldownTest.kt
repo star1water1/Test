@@ -265,6 +265,19 @@ class NumericBinDrilldownTest {
     }
 
     @Test
+    fun `값이 전부 같고 정수가 아니면 라벨이 그 값을 그대로 말한다`() {
+        // 자릿수를 0으로 고정하면 `170.5`가 **`170~170`**이 된다 — 라벨이 실제 값을 잘못
+        // 말하는 것이고, 막대가 하나뿐이라 옆과 견줘 알아챌 수도 없다.
+        val s = snapshot(listOf(numberField("""{"stats":{"analyses":[{"type":"numeric"}]}}""")),
+            listOf("170.5", "170.5"))
+        val summary = provider.computeFieldAnalysis(s).numberFieldSummaries.first { it.fieldName == "키" }
+
+        val label = summary.histogram.keys.single()
+        assertEquals("170.5~170.5", label)
+        assertEquals(2, provider.getCharactersByFieldValue(s, listOf(10L), summary.matchSpecs.getValue(label))!!.size)
+    }
+
+    @Test
     fun `값이 전부 같으면 구간 분포는 만들지 않는다`() {
         // 한 칸짜리 파이는 "100%"만 말하고 아무 정보가 없다 — 수치 요약이 그 자리를 대신한다.
         val s = snapshot(listOf(numberField()), listOf("170", "170", "170"))

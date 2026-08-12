@@ -274,11 +274,19 @@ class StatsFieldInsightFragment : Fragment() {
                     // 막대도 조각이다 — 분포·순위와 같은 드릴다운을 갖는다(B-39). 스펙은 구간을
                     // 만든 쪽이 실어 보낸 것을 그대로 쓴다: 라벨은 계산 결과라 값 일치가
                     // 성립하지 않고, 라벨로 조회하면 어떤 입력에서도 0명이 된다(S-16).
-                    val slices = summary.histogram.map { (label, count) ->
-                        ChartSlice(label, count, summary.matchSpecs[label] ?: FieldValueMatchSpec.Values(label))
-                    }
+                    //
+                    // **스펙이 없으면 라벨로 대신하지 않는다.** `Values(구간 라벨)`은 곧 그
+                    // 0명짜리 조회이고, 그것을 폴백으로 두면 **고장이 '아무도 없음'처럼 보인다.**
+                    // 하나라도 비면 아예 안 붙인다 — 막대만 걸러내면 조각 순서가 차트 인덱스와
+                    // 어긋나 **엉뚱한 구간의 목록이 열린다**(그쪽이 더 나쁘다).
                     val chart = createHistogramChart(summary.histogram)
-                    attachChartTapListener(chart, slices, insight)
+                    val specs = summary.histogram.keys.map { summary.matchSpecs[it] }
+                    if (specs.none { it == null }) {
+                        val slices = summary.histogram.entries.mapIndexed { i, e ->
+                            ChartSlice(e.key, e.value, specs[i]!!)
+                        }
+                        attachChartTapListener(chart, slices, insight)
+                    }
                     wrapper.addView(chart)
                 }
             }

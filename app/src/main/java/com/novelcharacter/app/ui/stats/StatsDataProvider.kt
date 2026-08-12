@@ -1963,13 +1963,12 @@ class StatsDataProvider {
         } else {
             val range = max - min
             if (range <= 0) {
-                // 값이 하나뿐이거나 전부 같다 — 나눌 구간이 없다. 라벨은 [NumericBinning]의
-                // 서식을 쓴다(`min.toString()`은 Float의 `"170.0"`이라 다른 막대와 모양이 갈렸다).
-                val only = NumericBinning.label(min, max)
-                histogram[only] = values.size
-                specs[only] = FieldValueMatchSpec.NumericPartRange(
-                    partIndex, separator, min, max, inclusiveMax = true
-                )
+                // 값이 하나뿐이거나 전부 같다 — 나눌 구간이 없다. 구간 하나도 [NumericBinning]이
+                // 만든다(`min.toString()`은 Float의 `"170.0"`이라 다른 막대와 모양이 갈렸고,
+                // 라벨을 여기서 손으로 지으면 자릿수가 틀려 `170.5`가 `"170~170"`이 된다).
+                val only = NumericBinning.singleBin(min)
+                histogram[only.label] = values.size
+                specs[only.label] = FieldValueMatchSpec.of(only, partIndex, separator)
             } else {
                 // 구간 생성은 단일 소스([NumericBinning])를 쓴다 — 자체 5등분은 정수 범위가
                 // 좁은 필드(자녀 수 0~2, 레벨 1~3)에서 라벨이 겹쳐 맵 키가 충돌했고,

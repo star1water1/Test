@@ -18,6 +18,9 @@ object NumericBinning {
     /** 자동 구간 분할의 기본 구간 수. 분포·드릴다운이 같은 값을 보도록 상수가 단일 소스다. */
     const val DEFAULT_BIN_COUNT = 5
 
+    /** 라벨이 쓸 수 있는 소수 자리 상한. 넘어가면 축 라벨이 읽히지 않는다. */
+    private const val MAX_DECIMALS = 3
+
     /**
      * 하나의 수치 구간.
      *
@@ -106,6 +109,29 @@ object NumericBinning {
     fun autoDistribution(values: List<Float>, binCount: Int = DEFAULT_BIN_COUNT): List<BinCount> =
         autoBins(values, binCount).map { bin -> BinCount(bin, values.count { bin.contains(it) }) }
 
+    /**
+     * 나눌 구간이 없는 분포(값이 하나뿐이거나 전부 같다)의 **유일한 구간**.
+     *
+     * [autoBins]는 이 경우 빈 목록을 돌려주므로(나눌 폭이 없다) 호출부가 막대 한 칸을
+     * 직접 만들어야 하는데, **그 자리에서 라벨을 손으로 지으면 자릿수가 틀린다** —
+     * [label]의 기본 자릿수가 0이라 값이 `170.5`인 필드가 `"170~170"`으로 보인다.
+     * 라벨이 실제 값을 잘못 말하는 것이라, 자릿수는 **값이 되살아나는 최소 자리**로 정한다.
+     */
+    fun singleBin(value: Float): Bin {
+        val decimals = if (value == value.toInt().toFloat()) 0
+        else (1..MAX_DECIMALS).firstOrNull { d ->
+            String.format("%.${d}f", value).toFloatOrNull() == value
+        } ?: MAX_DECIMALS
+        return Bin(
+            index = 0,
+            min = value,
+            max = value,
+            // 하한만 포함하면 그 값 자체가 어느 구간에도 안 든다 — 유일한 구간이므로 닫는다.
+            inclusiveMax = true,
+            label = label(value, value, decimals)
+        )
+    }
+
     /** 구간 라벨. [decimals]는 [autoBins]가 겹치지 않는 최소 자릿수로 정한다. */
     fun label(min: Float, max: Float, decimals: Int = 0): String =
         "${format(min, decimals)}~${format(max, decimals)}"
@@ -127,11 +153,11 @@ object NumericBinning {
         val allIntegral = bounds.all { (lo, hi) ->
             lo == lo.toInt().toFloat() && hi == hi.toInt().toFloat()
         }
-        for (decimals in (if (allIntegral) 0 else 1)..3) {
+        for (decimals in (if (allIntegral) 0 else 1)..MAX_DECIMALS) {
             val labels = bounds.map { label(it.first, it.second, decimals) }
             if (labels.toSet().size == labels.size) return decimals
         }
-        return 3
+        return MAX_DECIMALS
     }
 
     private fun format(value: Float, decimals: Int): String =
