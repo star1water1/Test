@@ -453,9 +453,14 @@ class NovelListFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        // 작품 커스텀 필드 섹션 (확-3) — 세계관은 **폼을 여는 시점에 확정**된다.
+        // 작품 커스텀 필드 섹션 (확-3) — 구역은 **폼을 여는 시점에 확정**된다.
         // 편집이면 그 작품의 세계관, 신규면 이 목록이 필터 중인 세계관이다.
-        val fieldUniverseId = novel?.universeId ?: universeId.takeIf { it != -1L }
+        // **`novel?.universeId ?: …`로 쓰지 않는다**(B-129) — 엘비스는 *작품이 없다*와
+        // *작품에 세계관이 없다*를 뭉개고, null이 '전역 구역'이라는 뜻을 가진 뒤로는 그 뭉갬이
+        // **무소속 작품에 남의 세계관 필드를 그리는** 형태로 나타난다. 오늘은 세계관으로 거른
+        // 목록에 무소속 작품이 뜨지 않아 닿지 않지만, 그 안전이 **다른 화면의 성질**에 기대고 있다.
+        val fieldUniverseId =
+            if (novel != null) novel.universeId else universeId.takeIf { it != -1L }
         val section = NovelFieldSection(dialogBinding, fieldUniverseId)
         novelFieldSection = section
         dialogBinding.btnAddNovelField.setOnClickListener {

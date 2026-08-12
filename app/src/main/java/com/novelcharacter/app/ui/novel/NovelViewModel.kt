@@ -127,7 +127,9 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun getNovelFields(universeId: Long?) =
         if (universeId == null) {
-            com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository(db)
+            // 앱의 저장소를 쓴다 — `globalFields`는 **심을 수도 있는**(쓰기) 함수라, 옆에서
+            // 새 인스턴스를 지으면 *둘 중 무엇이 맞는가*를 다음 사람이 매번 다시 묻는다.
+            app.defaultFieldTemplateRepository
                 .globalFields(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL)
         } else {
             universeRepository.getNovelFieldsByUniverseList(universeId)
