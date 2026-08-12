@@ -404,12 +404,20 @@ class ImageBatchTagSuggesterTest {
 
     // ── ④ 버릴 답에 과금하지 않는다 (B-157) ──
     //
-    // **이 절의 증명은 반환값이 아니라 '죽지 않았다'는 사실이다.** 하네스의 AiService 스텁은
-    // `complete`가 예외를 던지므로, 요청을 만들면 시험이 그 자리에서 죽는다. 가짜 성공을
-    // 돌려주는 스텁이었다면 *"요청은 갔지만 결과가 같다"*와 구별할 수 없었다.
+    // **이 절의 증명은 반환값이 아니라 '부르지 않았다'는 사실이다.** `complete` 자리에 던지는
+    // 람다를 세워 두므로, 요청을 만들면 시험이 그 자리에서 죽는다 — 가짜 성공을 돌려주는
+    // 짝퉁이었다면 *"요청은 갔지만 결과가 같다"*와 구별할 수 없었다.
+    //
+    // **`AiService`를 이름조차 부르지 않는 것이 요점이다.** 순수 JVM 하네스는 그 클래스를
+    // 스텁으로 대신하는데 스텁의 생성자는 인자가 없고 진짜는 `Context`를 받는다 —
+    // 그 차이 위에 시험을 세우면 **로컬에서만 컴파일되고 Gradle(CI)에서 깨진다**(2026.08.12에
+    // 실제로 그렇게 깨졌다). 람다로 받으면 두 환경이 같은 것을 보고 시험이 CI에서도 돈다.
 
-    private fun suggester(imagesUnsupported: Boolean) =
-        ImageBatchTagSuggester(AiService().apply { this.imagesUnsupported = imagesUnsupported })
+    private fun suggester(imagesUnsupported: Boolean) = ImageBatchTagSuggester(
+        complete = { throw AssertionError("요청을 만들면 안 된다 — 이미 아는 거부다 (B-157)") },
+        effectiveMaxTokens = { 2048 },
+        imagesUnsupported = { imagesUnsupported }
+    )
 
     /** 준비기가 불렸는지까지 센다 — 보내지 않을 그림을 디코드하는 비용도 함께 없어져야 한다. */
     private class CountingLoader : ImageBatchTagSuggester.ImageLoader {
@@ -440,7 +448,7 @@ class ImageBatchTagSuggesterTest {
 
     @Test fun suggest_stillTriesOnceWhenNothingIsLearnedYet() = runBlocking {
         // **배우는 유일한 경로가 그 첫 실행이다** — 가드가 학습 전까지 막으면 영영 못 배운다.
-        // 그래서 여기서는 요청 경로로 들어가고, 스텁의 `complete`가 던져 그 사실이 드러난다.
+        // 그래서 여기서는 요청 경로로 들어가고, 던지는 `complete`가 그 사실을 드러낸다.
         val loader = CountingLoader()
         val threw = runCatching {
             suggester(imagesUnsupported = false).suggest(
@@ -448,7 +456,7 @@ class ImageBatchTagSuggesterTest {
             )
         }.exceptionOrNull()
 
-        assertTrue("학습 전에는 요청 경로로 가야 한다", threw is UnsupportedOperationException)
+        assertTrue("학습 전에는 요청 경로로 가야 한다", threw is AssertionError)
         assertEquals(1, loader.calls)
     }
 

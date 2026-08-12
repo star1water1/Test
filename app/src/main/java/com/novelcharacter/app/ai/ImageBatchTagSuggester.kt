@@ -41,7 +41,30 @@ package com.novelcharacter.app.ai
  *
  * 프롬프트 조립·응답 파싱·검증·접기는 전부 [AiService] 미호출 순수 함수라 단위 테스트된다.
  */
-class ImageBatchTagSuggester(private val aiService: AiService) {
+class ImageBatchTagSuggester(
+    /** 요청을 실제로 보내는 자리. */
+    private val complete: suspend (AiRequest) -> AiResult,
+    /** 사용자가 올려 둔 출력 상한(A-4의 교집합 규칙). */
+    private val effectiveMaxTokens: () -> Int,
+    /** 활성 모델이 그림을 거부한다고 **이미 배웠는가**(A-7). 배치마다 다시 묻는다 — B-157. */
+    private val imagesUnsupported: () -> Boolean
+) {
+
+    /**
+     * 앱이 쓰는 입구 — [AiService] 하나를 넘기면 된다(호출측은 종전과 글자 그대로 같다).
+     *
+     * **셋으로 갈라 받는 것은 시험 때문만이 아니다.** 이 클래스가 `AiService`에서 실제로 쓰는
+     * 몫이 정확히 이 셋이라는 것이 서명에 드러난다. 다만 갈라야 했던 계기는 시험이 맞다:
+     * 순수 JVM 하네스는 `AiService`를 **스텁으로 대신**하는데(진짜는 `Context`·okhttp에 묶여 있다),
+     * 스텁의 생성자는 인자가 없고 진짜는 `Context`를 받는다 — **그 차이 위에 시험을 세우면
+     * 로컬에서만 컴파일되고 Gradle(CI)에서 깨진다.** 2026.08.12에 실제로 그렇게 깨졌고,
+     * 람다로 받으면 두 환경이 같은 것을 본다(시험이 CI에서도 돈다 — 그쪽이 더 강하다).
+     */
+    constructor(aiService: AiService) : this(
+        complete = { aiService.complete(it) },
+        effectiveMaxTokens = { aiService.effectiveMaxTokens() },
+        imagesUnsupported = { aiService.isImagesUnsupported() }
+    )
 
     /** 태그 하나의 제안. [isNew]면 기존 어휘에 없던 값이다(검토 시트가 표식을 단다). */
     data class Suggestion(val tag: String, val isNew: Boolean)
@@ -438,7 +461,7 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
             if (isCancelled()) { cancelled = true; break }
 
             var stop = false
-            if (aiService.isImagesUnsupported()) {
+            if (imagesUnsupported()) {
                 // **요청을 만들기 전에 접는다** (B-157). 아래 `imagesOmitted` 갈래와 결론은
                 // 같지만 그쪽은 답을 받고서 버리는 자리라 이미 결제된 뒤다. 준비기도 부르지
                 // 않는다 — 보내지 않을 그림을 디코드·인코드하는 비용까지 함께 없앤다.
@@ -468,10 +491,10 @@ class ImageBatchTagSuggester(private val aiService: AiService) {
                         // 사용자가 올려 둔 출력 상한을 그대로 쓴다 — 기본값(2048)을 박아 두면
                         // 장수를 최대로 올린 사용자가 **설정을 올려도 계속 잘린다**(A-4의 교집합
                         // 규칙상 요청값은 천장이지 바닥이 아니다).
-                        maxTokens = aiService.effectiveMaxTokens(),
+                        maxTokens = effectiveMaxTokens(),
                         images = loaded.map { it.image }
                     )
-                    when (val result = aiService.complete(request)) {
+                    when (val result = complete(request)) {
                         is AiResult.Success -> {
                             // 한도로 밀려 다른 프로바이더가 답한 배치 (B-108 확정 ⓑ).
                             // 아래 갈래 **밖**에 적는다 — 어디로 떨어지든 *"누가 답했는가"*는 같고,
