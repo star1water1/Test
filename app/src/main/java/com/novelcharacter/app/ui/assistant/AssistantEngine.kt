@@ -96,9 +96,13 @@ class AssistantEngine(
             // 사용자가 통계에서 끈 인사이트 유형은 어시스턴트에도 뜨지 않는다.
             // 종전에는 인자를 넘기지 않아 기본값(전 유형)으로 돌았고, '편중'을 꺼도 편향 카드가
             // 그대로 떴다 — 한 설정을 두 화면이 다르게 해석하는 상태였다(B-31 인접).
+            // **민감도도 같은 이유로 함께 넘긴다**(B-70): 유형만 따라가고 기준을 안 따라가면
+            // 통계에서 '편중 80%'로 올려 둔 사용자에게 어시스턴트만 60% 기준으로 카드를 낸다 —
+            // 한 설정을 두 화면이 다르게 해석하는 바로 그 상태가 값만 바꿔 되살아난다.
             patterns = statsProvider.detectPatterns(
                 snapshot,
-                com.novelcharacter.app.ui.stats.PatternTypePrefs.enabled(context)
+                com.novelcharacter.app.ui.stats.PatternTypePrefs.enabled(context),
+                com.novelcharacter.app.ui.stats.PatternTypePrefs.thresholds(context)
             ),
             statsProvider = statsProvider,
             valuesByDefId = snapshot.fieldValues.groupBy { it.fieldDefinitionId }

@@ -29,7 +29,10 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
 import com.novelcharacter.app.ui.adapter.RankingAdapter
 import com.novelcharacter.app.util.ValueDistributions
+import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 
 class StatsMainFragment : Fragment() {
 
@@ -628,28 +631,135 @@ class StatsMainFragment : Fragment() {
 
     // ===== 패턴 인사이트 (개선 3) =====
 
+    /**
+     * 패턴 유형 설정 — 유형 on/off와 **유형별 민감도**를 한 창에서 다룬다 (B-70, 확정 11번).
+     *
+     * 한 창인 이유: 둘은 한 질문의 두 부분이다 — *이 유형을 볼 것인가*와 *무엇부터를 그 유형이라
+     * 부를 것인가*. 민감도만 다른 화면에 두면 "편중이 너무 많이 뜬다"는 사용자가 끄는 쪽밖에
+     * 못 찾는다(원칙 04 — 접근은 최대한 짧게).
+     *
+     * 종전의 `setMultiChoiceItems`는 목록 항목에 입력칸을 넣을 수 없어 본문을 직접 짠다.
+     * 높이는 [cappedScrollView]가 묶는다(R-31) — 유형이 늘면 창이 화면을 넘는다.
+     */
     private fun showPatternSettingsDialog() {
         val ctx = context ?: return
         val allTypes = PatternType.values()
         // 저장·해석은 단일 소스([PatternTypePrefs])를 탄다 — 다이얼로그가 자기 파싱을 갖고 있으면
         // 기본값 규칙이 갈린다.
         val enabledSet = PatternTypePrefs.enabled(ctx).toMutableSet()
+        val current = viewModel.patternThresholds()
 
-        val labels = allTypes.map { it.label }
-        val checked = allTypes.map { it in enabledSet }.toBooleanArray()
+        val density = resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+        val gap = (8 * density).toInt()
 
-        MaterialAlertDialogBuilder(ctx)
+        val body = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, gap, pad, gap)
+        }
+
+        // 목적문 — 이 창이 무엇을 어디에 어떻게 하는가 한 줄(텍스트 가이드 · 체크리스트 7번).
+        body.addView(TextView(ctx).apply {
+            setText(R.string.stats_pattern_settings_purpose)
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+        })
+
+        // 유형 하나당 한 줄: [체크박스 유형명] [기준 입력칸] [단위]
+        val inputs = HashMap<PatternType, android.widget.EditText>()
+        for (type in allTypes) {
+            val spec = PatternSensitivitySpec.of(type)
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = gap }
+            }
+            row.addView(android.widget.CheckBox(ctx).apply {
+                text = type.label
+                isChecked = type in enabledSet
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) enabledSet.add(type) else enabledSet.remove(type)
+                }
+            })
+            // **끈 유형의 칸도 편집할 수 있게 둔다.** 비활성으로 잠그면 잘못 적은 값을 남긴 채
+            // 유형을 껐을 때 그 칸을 고칠 길이 없어져 저장이 막힌다 — 되돌릴 방법이 창을
+            // 취소하는 것뿐인 막다른 골목이 된다. 켜고 끄는 것은 *감지 여부*이고 기준은 그대로 남는다.
+            val input = android.widget.EditText(ctx).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                    if (spec.allowsDecimal) android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL else 0
+                setText(spec.format(current))
+                minEms = 4
+                gravity = android.view.Gravity.END
+                contentDescription = getString(R.string.stats_pattern_sensitivity_desc, type.label)
+            }
+            inputs[type] = input
+            row.addView(input)
+            row.addView(TextView(ctx).apply {
+                text = spec.unit
+                textSize = 13f
+                setPadding(gap / 2, 0, 0, 0)
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            })
+            body.addView(row)
+            body.addView(TextView(ctx).apply {
+                text = getString(spec.hintRes)
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            })
+        }
+
+        val scroll = cappedScrollView(ctx).apply { addView(body) }
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.stats_pattern_settings))
-            .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
-                if (isChecked) enabledSet.add(allTypes[which])
-                else enabledSet.remove(allTypes[which])
-            }
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                viewModel.saveEnabledPatternTypes(enabledSet)
-                viewModel.loadPatternInsights()
-            }
+            .setView(scroll)
+            // 리스너를 null로 두고 아래에서 직접 검증한다 — 트레일링 람다는 무조건 닫히므로
+            // 잘못 적은 칸 하나에 나머지 입력이 통째로 사라진다(R-27).
+            .setPositiveButton(android.R.string.ok, null)
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .setNeutralButton(R.string.stats_pattern_sensitivity_reset, null)
+            .create()
+
+        // 중립 버튼 배선을 이 함수에 맡긴다 — 밖에서 `setOnShowListener`를 한 번 더 달면
+        // 양성 버튼 검증을 덮어 버린다(그쪽 주석 참조).
+        dialog.setValidatedPositiveButton(onShow = { shown ->
+            // 기본값 복원은 창을 닫지 않고 **칸만 되돌린다** — 결과를 보고 확인·취소를 고를 수
+            // 있어야 한다(기본 리스너를 달면 무조건 닫힌다).
+            shown.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                for (type in allTypes) {
+                    inputs[type]?.setText(PatternSensitivitySpec.of(type).format(PatternThresholds.DEFAULT))
+                }
+            }
+        }) {
+            var parsed = current
+            var firstBad: android.widget.EditText? = null
+            for (type in allTypes) {
+                val field = inputs[type] ?: continue
+                val spec = PatternSensitivitySpec.of(type)
+                val next = spec.parse(parsed, field.text.toString().trim())
+                if (next == null) {
+                    // 실패는 고칠 칸에 붙인다 — 창은 열린 채로 남아 나머지 입력이 살아 있다.
+                    field.showInlineError(getString(R.string.stats_pattern_sensitivity_invalid, spec.min, spec.max))
+                    if (firstBad == null) firstBad = field
+                } else {
+                    parsed = next
+                }
+            }
+            if (firstBad != null) {
+                firstBad.requestFocus()
+                false
+            } else {
+                viewModel.saveEnabledPatternTypes(enabledSet)
+                viewModel.savePatternThresholds(parsed)
+                viewModel.loadPatternInsights()
+                true
+            }
+        }
+        dialog.show()
     }
 
     private fun populatePatternInsights(patterns: List<PatternInsight>) {

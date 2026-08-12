@@ -117,6 +117,7 @@ app/src/main/java/com/novelcharacter/app/
 | `FieldStatsConfig` / `StatsFieldPolicy` | '통계에 포함' 설정의 적용 규칙 | 패턴 감지가 설정을 무시했다(S-14) |
 | `NumericBinning` + `FieldValueMatchSpec` | 수치 구간 + 드릴다운 매칭 | 라벨 문자열로 매칭해 항상 0명이었다(S-16 → R-20) |
 | `ValueDistributions` | 분포 전량 + 잘라낸 개수 | 비율 분모가 상위 N 합이라 편향이 왜곡됐다(S-17 → R-19) |
+| `PatternAxis` / `PatternThresholds` | 패턴 감지의 **축**(제목 접두·개수 단위·조언 문구·모집단의 뜻)과 **기준**(유형별 민감도 + 받아들이는 범위 `*_RANGE`). 감지는 `detectFieldPatterns` 하나가 축을 인자로 받아 캐릭터·사건·작품을 함께 돈다 | **사건·작품 필드가 패턴 감지에서 통째로 빠져 있었다**(B-36 — 축마다 함수를 따로 두는 구조라 캐릭터판만 자랐다). **기준은 전부 개발자 상수였다**(B-70 — 특히 '공백 100년'은 수천 년 역법 사용자에게 아무 뜻이 없었다). 범위를 창과 저장소가 각자 들면 **창이 통과시킨 값을 저장소가 조용히 접어** 적은 것과 저장된 것이 갈린다 — 그래서 `*_RANGE`가 단일 소스이고, **처분만 방향이 다르다**(사람 앞에서는 되돌려 묻고 R-27, 파일에서 온 값은 접되 말한다) |
 | `FormulaLexer` | 수식 어휘 규칙 + **버려지는 구간** | 미지 함수가 조용히 버려져 그럴듯한 오답이 됐다(로드맵 5) |
 | `FormulaEvaluator` / `FormulaValidator` / `FormulaDisplay` | 수식 평가 / 저장 시점 검증 / 표시 서식 | 서식·NaN 처리가 7곳에 복제(U-9) |
 | `GradeValueResolver` | 등급 라벨 → 숫자 | — |

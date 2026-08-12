@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.assistant
 
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.ui.stats.PatternAxis
 import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternType
@@ -482,7 +483,13 @@ class BiasProvider : InsightProvider {
         val detail = if (p.suggestion.isBlank()) p.description else "${p.description}\n\n${p.suggestion}"
 
         // 드릴다운(편중/이상치): 해당 값 캐릭터를 펼쳐 각자 열어볼 수 있게 → 카드가 실제로 쓸모 있어진다.
-        if (p.drilldownValues.isNotEmpty() && p.mergedFieldDefIds.isNotEmpty()) {
+        //
+        // **축을 먼저 묻는다(R-13).** 이 시트는 캐릭터 모양이다 — 행이 `characterId`를 들고,
+        // 썸네일을 그리고, 누르면 캐릭터 편집으로 간다. 사건·작품 축 카드의 `mergedFieldDefIds`를
+        // 여기 넘기면 `s.fieldDefinitions`에서 정의를 못 찾아 **null → 빈 목록 → 말없이 아래
+        // 폴백**으로 떨어진다. 계산 못 하는 것과 조용히 안 하는 것은 다르므로 **애초에 묻지 않고**,
+        // 그 축은 아래 폴백(필드 화면 이동)이 정식 경로다 — 그 화면은 세 축의 카드를 모두 그린다.
+        if (p.axis == PatternAxis.CHARACTER && p.drilldownValues.isNotEmpty() && p.mergedFieldDefIds.isNotEmpty()) {
             // null = 대상 필드 정의를 스냅샷에서 찾지 못함(R-17). 여기서는 mergedFieldDefIds가
             // 같은 스냅샷의 detectPatterns에서 나오므로 정상 경로에선 발생하지 않는다 —
             // 발생하면 드릴다운 없이 카드만 낸다(빈 목록과 같은 처리이되 의미는 구분해 둔다).

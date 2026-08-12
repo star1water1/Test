@@ -463,6 +463,205 @@ enum class PatternSeverity(val label: String) {
     LOW("정보")
 }
 
+/**
+ * 패턴 카드가 **무엇을 세는가** — 셀 단위(R-13).
+ *
+ * 종전에는 축이 하나뿐이라 이 구분이 필요 없었다. 사건·작품 필드가 편입되면서
+ * 같은 카드 목록에 **단위가 다른 숫자**가 섞이므로, 축을 값으로 들고 다닌다.
+ * 그러지 않으면 두 가지가 조용히 어긋난다:
+ *
+ * - **문구** — "각 1명에게만 해당됩니다"가 사건 카드에 그대로 나간다.
+ * - **드릴다운** — 어시스턴트 편향 카드는 `mergedFieldDefIds`를 캐릭터 조회에 넘기는데,
+ *   사건 필드 id를 넘기면 캐릭터 정의를 못 찾아 **빈 목록으로 떨어진 뒤 아무 말 없이**
+ *   필드 화면 이동으로 대체된다. R-13이 금지하는 *"계산 못 하는 것과 조용히 안 하는 것"*의
+ *   그 자리다 — 축을 물어보고 애초에 넘기지 않는다.
+ */
+enum class PatternAxis(
+    /**
+     * 카드 제목 접두. **캐릭터만 비어 있다** — 대다수라 접두를 달면 소음이고,
+     * 나머지 둘은 접두가 없으면 같은 이름의 필드가 축마다 있을 때 두 카드가 똑같이 보인다
+     * (원칙 04 — 일일이 열어봐야 아는 데이터를 만들지 않는다).
+     */
+    val titlePrefix: String,
+    /** 개수의 단위 — "각 1**명**"·"각 1**건**"·"각 1**개**". */
+    val countUnit: String,
+    /** 제안 문구가 가리키는 대상 — "다른 값을 가진 **캐릭터** 추가". */
+    val entityWord: String,
+    /**
+     * 희소 값을 어떻게 되물을 것인가. 축마다 다른 이유는 *드문 값이 무엇을 뜻하는가*가
+     * 다르기 때문이다 — 캐릭터의 드문 값은 대개 일부러 준 개성이고, 사건·작품의 드문 값은
+     * 그냥 오타이기 쉽다. 한 문장으로 뭉뚱그리면 캐릭터 쪽 조언이 값을 잃는다.
+     */
+    val rarityHint: String
+) {
+    CHARACTER("", "명", "캐릭터", "의도적인 개성 부여인지, 오입력인지 확인하세요."),
+    EVENT("사건 · ", "건", "사건", "의도한 구분인지, 오입력인지 확인하세요."),
+    NOVEL("작품 · ", "개", "작품", "의도한 구분인지, 오입력인지 확인하세요.")
+}
+
+/**
+ * 패턴 감지의 **기준값** — 무엇을 편중이라 부를지의 정의 (B-70, 사용자 확정 11번).
+ *
+ * 종전에는 여섯 유형의 임계값이 전부 `detectPatterns` 본문의 리터럴이었다. 특히 '공백 100년'은
+ * **스케일 의존**이라, 수천 년 단위 역법을 쓰는 사용자에게는 개발자가 재단한 숫자가 된다.
+ * 어떤 편향을 편향이라 부를지는 작품마다 다르므로 사용자가 정한다(자율성 우선).
+ *
+ * **유형당 하나다.** 유형 on/off와 같은 축에 놓아야 설정 화면이 한 줄로 읽힌다 —
+ * 한 유형이 여러 상수를 쓰는 경우(편중의 '높음' 승급선, 균형의 하한)는 **기준에서 파생**시켜
+ * 손잡이가 늘지 않게 했다. 기본값은 현행 동작을 그대로 재현한다.
+ *
+ * 순수 데이터다 — `Context`를 쥐지 않으므로 순수 JVM 시험이 경계값을 그대로 잰다.
+ * 저장·왕복은 [PatternTypePrefs]와 `AppSettingsKeys.STATS_PATTERN_SENSITIVITY`가 맡고,
+ * **형식은 [encode]/[decode] 한 벌**이라 두 소비처가 갈리지 않는다(R-45의 취지).
+ */
+data class PatternThresholds(
+    /** 한 값이 이 %를 넘게 차지하면 '편중'. */
+    val dominancePercent: Float = 60f,
+    /** 모든 값이 이 % 이하로 들어오면 '균형'. */
+    val balanceMaxPercent: Float = 35f,
+    /** 1건짜리 값들이 전체의 이 % 이하일 때만 '희소'로 짚는다. */
+    val outlierSingletonPercent: Float = 5f,
+    /** 한 10년대에 이 % 이상 몰리면 '집중'. */
+    val clusterPercent: Float = 50f,
+    /** 사건이 이 연수를 넘게 비면 '공백'. */
+    val absenceGapYears: Int = 100,
+    /** 작품 간 캐릭터 수가 이 배수 이상 벌어지면 '불균형'. */
+    val crossNovelRatio: Float = 3f
+) {
+    /**
+     * 편중이 '보통'에서 '높음'으로 오르는 지점 — 기준과 100% 사이의 **한가운데**.
+     * 기본 60%에서 정확히 80%가 되어 종전 동작과 같다. 손잡이를 하나 더 두지 않는 것은
+     * 이 값이 기준을 따라 움직여야 뜻이 유지되기 때문이다(기준을 90%로 올려 두고
+     * 승급선만 80%에 남으면 감지된 것이 **전부** '높음'이 된다).
+     */
+    val dominanceHighPercent: Float get() = dominancePercent + (100f - dominancePercent) / 2f
+
+    /**
+     * 균형의 하한 — 몫이 이보다 작은 값이 하나라도 있으면 '고르다'고 하지 않는다.
+     * 상한과 달리 **고정**이다: 상한은 *얼마나 고르면 고른 것인가*라는 민감도지만,
+     * 하한은 *존재감이 없는 값을 고른 축에 넣지 않는다*는 별개의 진술이라 함께 움직이면
+     * 상한을 올릴수록 하한도 따라 올라 되레 덜 관대해진다(민감도가 단조롭지 않게 된다).
+     * 상한을 하한 아래로 내린 경우에만 따라 내려간다 — 그러지 않으면 구간이 뒤집힌다.
+     */
+    val balanceMinPercent: Float get() = minOf(BALANCE_MIN_PERCENT, balanceMaxPercent)
+
+    /** 사람이 엑셀에서 고치는 자리라 `키=값` 쉼표 목록이다 — 집합을 JSON으로 두면 손으로 못 만진다(원칙 04). */
+    fun encode(): String = listOf(
+        KEY_DOMINANCE to num(dominancePercent),
+        KEY_BALANCE to num(balanceMaxPercent),
+        KEY_OUTLIER to num(outlierSingletonPercent),
+        KEY_CLUSTER to num(clusterPercent),
+        KEY_ABSENCE to absenceGapYears.toString(),
+        KEY_CROSS_NOVEL to num(crossNovelRatio)
+    ).joinToString(",") { "${it.first}=${it.second}" }
+
+    companion object {
+        val DEFAULT = PatternThresholds()
+
+        const val BALANCE_MIN_PERCENT = 10f
+
+        const val KEY_DOMINANCE = "dominance"
+        const val KEY_BALANCE = "balance"
+        const val KEY_OUTLIER = "outlier"
+        const val KEY_CLUSTER = "cluster"
+        const val KEY_ABSENCE = "absence_years"
+        const val KEY_CROSS_NOVEL = "cross_novel_ratio"
+
+        /**
+         * 손잡이마다 받아들이는 범위 — **여기가 단일 소스다.**
+         *
+         * [clamp]와 설정 창의 입력 검증이 각자 숫자를 들면 갈린다: 창이 통과시킨 값을 저장소가
+         * 조용히 접어 **적은 것과 저장된 것이 달라진다.** 창에 뜨는 안내 문구("10부터 100까지")도
+         * 이 값으로 채운다(R-14 — 숫자를 문구에 박지 않는다).
+         *
+         * 하한이 0이 아닌 이유: 편중 0%는 *모든 값이 편중*이라 카드가 필드 수만큼 쏟아져
+         * 화면이 통째로 무의미해진다. 상한이 크게 열린 것(공백 100만 년)은 반대 이유다 —
+         * 역법 스케일은 작품마다 다르고 앱이 재단할 자리가 아니다.
+         */
+        val DOMINANCE_RANGE = 10f..100f
+        val BALANCE_RANGE = 10f..100f
+        val OUTLIER_RANGE = 1f..100f
+        val CLUSTER_RANGE = 10f..100f
+        val ABSENCE_YEARS_RANGE = 1..1_000_000
+        val CROSS_NOVEL_RANGE = 1.1f..1_000f
+
+        /**
+         * 받은 값을 쓸 수 있는 범위로 접는다. **거부가 아니라 교정이다** — 엑셀에서 손으로 적다
+         * 0을 하나 더 붙인 값 때문에 가져오기 전체가 서는 것이 사용자에게 더 나쁘다.
+         * 다만 [decode]가 접힌 사실을 따로 세어 알린다(말없이 바꾸지 않는다).
+         *
+         * 화면 쪽은 접지 않고 **되돌려 묻는다**(R-27) — 사람이 보는 앞에서는 고칠 기회를 주는
+         * 것이 낫고, 파일에서 들어온 값은 물을 사람이 없으므로 접는다. 범위는 같다.
+         */
+        fun clamp(t: PatternThresholds) = PatternThresholds(
+            dominancePercent = t.dominancePercent.coerceIn(DOMINANCE_RANGE.start, DOMINANCE_RANGE.endInclusive),
+            balanceMaxPercent = t.balanceMaxPercent.coerceIn(BALANCE_RANGE.start, BALANCE_RANGE.endInclusive),
+            outlierSingletonPercent = t.outlierSingletonPercent.coerceIn(OUTLIER_RANGE.start, OUTLIER_RANGE.endInclusive),
+            clusterPercent = t.clusterPercent.coerceIn(CLUSTER_RANGE.start, CLUSTER_RANGE.endInclusive),
+            absenceGapYears = t.absenceGapYears.coerceIn(ABSENCE_YEARS_RANGE.first, ABSENCE_YEARS_RANGE.last),
+            crossNovelRatio = t.crossNovelRatio.coerceIn(CROSS_NOVEL_RANGE.start, CROSS_NOVEL_RANGE.endInclusive)
+        )
+
+        /**
+         * [encode]의 역. **모르는 키와 못 읽는 값을 조용히 버리지 않는다** — 세어서 돌려주고,
+         * 부르는 쪽이 사용자에게 말한다(개발 의도 2번 '변수 제어').
+         *
+         * **적히지 않은 키는 [base]를 그대로 둔다.** 내보내기는 언제나 여섯을 다 적으므로
+         * *일부만 적힌 파일은 사람이 손으로 만든 것*이고, 그때 한 줄을 고친 사람의 뜻은
+         * **그 한 줄을 바꾸라**이지 나머지를 지우라가 아니다. 그래서 엑셀 바인딩은 지금 저장된
+         * 값을 [base]로 넘긴다 — `DEFAULT`로 두면 한 줄만 남긴 파일이 **나머지 다섯을 말없이
+         * 초기화한다.** 순수 계약을 재는 자리에서는 기본값(`DEFAULT`)에서 시작한다.
+         */
+        fun decode(raw: String, base: PatternThresholds = DEFAULT): Decoded {
+            var t = base
+            val unknown = mutableListOf<String>()
+            val invalid = mutableListOf<String>()
+            for (piece in raw.split(',')) {
+                val token = piece.trim()
+                if (token.isEmpty()) continue
+                val eq = token.indexOf('=')
+                if (eq <= 0) { invalid.add(token); continue }
+                val key = token.substring(0, eq).trim().lowercase()
+                val value = token.substring(eq + 1).trim()
+                val f = value.toFloatOrNull()
+                if (f == null || f.isNaN() || f.isInfinite()) {
+                    // 키를 모르는 것과 값을 못 읽는 것을 가른다 — 사용자가 고칠 자리가 다르다.
+                    if (key in KNOWN_KEYS) invalid.add(key) else unknown.add(key)
+                    continue
+                }
+                when (key) {
+                    KEY_DOMINANCE -> t = t.copy(dominancePercent = f)
+                    KEY_BALANCE -> t = t.copy(balanceMaxPercent = f)
+                    KEY_OUTLIER -> t = t.copy(outlierSingletonPercent = f)
+                    KEY_CLUSTER -> t = t.copy(clusterPercent = f)
+                    KEY_ABSENCE -> t = t.copy(absenceGapYears = f.toInt())
+                    KEY_CROSS_NOVEL -> t = t.copy(crossNovelRatio = f)
+                    else -> unknown.add(key)
+                }
+            }
+            val clamped = clamp(t)
+            return Decoded(clamped, unknown, invalid, coerced = clamped != t)
+        }
+
+        val KNOWN_KEYS = setOf(
+            KEY_DOMINANCE, KEY_BALANCE, KEY_OUTLIER, KEY_CLUSTER, KEY_ABSENCE, KEY_CROSS_NOVEL
+        )
+
+        /** 정수면 소수점을 떼고 적는다 — `60`이 `60.0`으로 보이면 손으로 고치기 나쁘다. */
+        private fun num(v: Float): String =
+            if (v == v.toInt().toFloat()) v.toInt().toString() else v.toString()
+    }
+
+    /** [decode]의 결과 — 무엇을 못 읽었는지까지 함께 돌려준다(R-17). */
+    data class Decoded(
+        val thresholds: PatternThresholds,
+        val unknownKeys: List<String>,
+        val invalidKeys: List<String>,
+        /** 값이 범위 밖이라 접혔는가. 접힌 것도 '적은 대로 되지 않은 것'이라 말해야 한다. */
+        val coerced: Boolean
+    )
+}
+
 data class PatternInsight(
     val type: PatternType,
     val severity: PatternSeverity,
@@ -481,7 +680,13 @@ data class PatternInsight(
     val mergedFieldDefIds: List<Long> = emptyList(),
     val drilldownValues: List<String> = emptyList(),
     val drilldownExclude: Boolean = false,
-    val population: Int = 0
+    val population: Int = 0,
+    /**
+     * [population]과 [mergedFieldDefIds]가 **무엇의** 것인가 (R-13).
+     * 기본이 캐릭터인 것은 종전 카드가 전부 그랬기 때문이고, 새 축은 반드시 스스로 밝힌다 —
+     * 밝히지 않은 카드가 캐릭터로 통하는 것이 이 기본값의 유일한 의미다.
+     */
+    val axis: PatternAxis = PatternAxis.CHARACTER
 )
 
 // ===== 세력 통계 =====
@@ -532,6 +737,22 @@ data class SubgroupAnalysis(
 
 /** 하위 그룹 분석이 한 번에 보여주는 값 종류 상한 — 문구도 이 상수로 채운다(R-14). */
 const val SUBGROUP_DISTRIBUTION_LIMIT = 15
+
+/**
+ * '희소'를 말하기 전에 있어야 할 최소 값 건수.
+ *
+ * **민감도가 아니라 표본 조건이라 [PatternThresholds]에 넣지 않았다** — 값이 셋뿐인 필드에서
+ * "1건짜리가 전체의 5% 이하"는 산술적으로 성립할 수가 없다(1/3 = 33%). 사용자가 이 수를
+ * 내려도 카드가 늘지 않고, 올리면 감지가 조용히 죽는다. 손잡이는 [PatternThresholds]의
+ * 비율 쪽 하나뿐이어야 뜻이 하나로 읽힌다.
+ */
+const val OUTLIER_MIN_VALUES = 10
+
+/**
+ * '작품별 주요값'의 기준 — **정의이지 민감도가 아니다**(과반이라는 말이 곧 50%다).
+ * 편중 기준(사용자 조정)과 섞으면 카드가 말하는 "주요값"이 과반이 아닐 수도 있게 된다.
+ */
+const val CROSS_NOVEL_MAJORITY_PERCENT = 50f
 
 /**
  * 인사이트 카드와 같은 축으로 묶인 필드 하나 — 화면에 보이는 이름은 [primary],
@@ -2373,7 +2594,158 @@ class StatsDataProvider {
 
     // ===== 개선 3: 패턴 감지 & 서사적 인사이트 =====
 
-    fun detectPatterns(s: StatsSnapshot, enabledTypes: Set<PatternType> = PatternType.values().toSet()): List<PatternInsight> {
+    /** 축 하나의 "이 대상이 이 값을 가졌다" 한 줄 — 저장 행이 없는 계산값을 담을 그릇. */
+    private data class AxisValue(val ownerId: Long, val value: String)
+
+    /**
+     * 저장 값 + 계산 값을 fieldDefId 버킷으로 모은다 — [augmentedCharacterValues]의 축 일반형.
+     * 계산 필드를 함께 싣는 것이 R-16이고, 빈 값을 거르는 것은 분포에 빈 칸이 값으로 서지 않게 하기 위함이다.
+     *
+     * **캐릭터 축은 이 함수를 쓰지 않는다** — 그쪽은 이미 버킷이 만들어져 있고(가장 큰 목록이다),
+     * 여기 통과시키면 값 하나마다 그릇을 새로 지어 *계산 중 할당*이 그만큼 늘어난다.
+     * 이 문서가 남은 성능 표적으로 짚은 축이 바로 그것이라(S6) [detectFieldPatterns]가
+     * 대신 접근자를 받는다.
+     */
+    private fun axisValues(
+        stored: List<Triple<Long, Long, String>>,          // (fieldDefId, ownerId, value)
+        calculated: Map<Long, Map<Long, String>>           // ownerId → (fieldDefId → value)
+    ): Map<Long, List<AxisValue>> {
+        val byDef = HashMap<Long, MutableList<AxisValue>>()
+        for ((defId, ownerId, value) in stored) {
+            if (value.isBlank()) continue
+            byDef.getOrPut(defId) { mutableListOf() }.add(AxisValue(ownerId, value))
+        }
+        for ((ownerId, fieldMap) in calculated) {
+            for ((defId, value) in fieldMap) {
+                if (value.isBlank()) continue
+                byDef.getOrPut(defId) { mutableListOf() }.add(AxisValue(ownerId, value))
+            }
+        }
+        return byDef
+    }
+
+    /**
+     * 한 축의 필드 편중·균형·희소를 감지해 [out]에 담는다 (B-36).
+     *
+     * **셀 단위는 [axis] 하나가 든다** — 백분율의 분모는 값 건수, 게이트의 모집단은 대상 수이고
+     * 문구의 단위("명"/"건"/"개")도 여기서 나온다. 축을 인자로 받는 대신 함수를 세 벌 베끼면
+     * 그중 하나만 고쳐지는 날이 오고, 그것이 이 항목이 열린 이유다.
+     *
+     * 값의 **행 타입을 열어 둔 것**([ownerOf]·[valueOf])은 취향이 아니다 — 축마다 이미 갖고 있는
+     * 목록을 그대로 받아야 캐릭터 축(가장 큰 목록)을 한 벌 더 베끼지 않는다.
+     */
+    private fun <T> detectFieldPatterns(
+        s: StatsSnapshot,
+        axis: PatternAxis,
+        fieldGroups: Collection<List<FieldDefinition>>,
+        ownerValuesByDefId: Map<Long, List<T>>,
+        ownerOf: (T) -> Long,
+        valueOf: (T) -> String,
+        statsCache: StatsFieldPolicy.ConfigCache,
+        enabledTypes: Set<PatternType>,
+        thresholds: PatternThresholds,
+        out: MutableList<PatternInsight>
+    ) {
+        for (fieldDefs in fieldGroups) {
+            // 동일 키의 모든 세계관 필드 값 합산 (사전 그룹 버킷 재사용)
+            val rawValues = fieldDefs.flatMap { ownerValuesByDefId[it.id].orEmpty() }
+            if (rawValues.isEmpty()) continue
+
+            val fd = fieldDefs.first()
+            val statsConfig = statsCache.of(fd)
+            val allValues = rawValues.flatMap { getFieldValues(s, fd, valueOf(it), statsConfig) }
+            if (allValues.isEmpty()) continue
+
+            // 집계·정렬 규칙은 인사이트 분포와 같은 단일 소스를 쓴다 — 동수일 때 두 화면이
+            // 서로 다른 값을 '최다'로 지목하지 않게 한다.
+            val dist = ValueDistributions.of(allValues)
+            val total = allValues.size
+            val fieldName = "${axis.titlePrefix}${fd.name}"
+            // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 대상 수(다값 필드 보정).
+            val ownerCount = rawValues.mapTo(HashSet()) { ownerOf(it) }.size
+
+            // 패턴 1: 편중 (한 값이 기준 % 이상)
+            // 이미 (건수 내림차순, 값 이름 오름차순)으로 정렬돼 있다 — maxByOrNull은 동수에서
+            // 첫 등장 순서를 따라 인사이트 차트의 1위와 다른 값을 지목할 수 있다.
+            val topEntry = dist.entries.firstOrNull()
+            if (PatternType.DOMINANCE in enabledTypes && topEntry != null) {
+                val topPct = topEntry.value * 100f / total
+                if (topPct >= thresholds.dominancePercent) {
+                    out.add(PatternInsight(
+                        type = PatternType.DOMINANCE,
+                        severity = if (topPct >= thresholds.dominanceHighPercent) PatternSeverity.HIGH
+                                   else PatternSeverity.MEDIUM,
+                        title = "${fieldName}: '${topEntry.key}' 편중",
+                        description = "${fieldName} 분포에서 '${topEntry.key}'이(가) ${String.format("%.0f", topPct)}%를 차지하여 편중되어 있습니다.",
+                        suggestion = "다양성을 위해 다른 ${fd.name} 값을 가진 ${axis.entityWord} 추가를 고려하세요.",
+                        fieldDefId = fd.id,
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        // 기준 def(fd=first)를 맨 앞에 둔다 — 드릴다운도 이 def의 config로 파싱해 %와 일치.
+                        mergedFieldDefIds = fieldDefs.map { it.id },
+                        // 편중된 그 값(최빈)을 가진 대상을 그대로 펼친다 — "누가 이 편중을 이루나"가 직관적.
+                        drilldownValues = listOf(topEntry.key),
+                        drilldownExclude = false,
+                        population = ownerCount,
+                        axis = axis
+                    ))
+                }
+            }
+
+            // 패턴 2: 균형 (모든 값이 하한~상한 구간에)
+            if (PatternType.BALANCE in enabledTypes && dist.size >= 3) {
+                val pcts = dist.values.map { it * 100f / total }
+                val allBalanced = pcts.all { it in thresholds.balanceMinPercent..thresholds.balanceMaxPercent }
+                if (allBalanced) {
+                    out.add(PatternInsight(
+                        type = PatternType.BALANCE,
+                        severity = PatternSeverity.LOW,
+                        title = "${fieldName}: 균형 양호",
+                        description = "${fieldName}의 값이 ${dist.size}개 범주에 고르게 분포되어 있습니다.",
+                        suggestion = "",
+                        fieldDefId = fd.id,
+                        // 드릴다운은 없지만 최소 모집단 게이트가 적용되도록 필드 식별/모집단은 채운다.
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        mergedFieldDefIds = fieldDefs.map { it.id },
+                        population = ownerCount,
+                        axis = axis
+                    ))
+                }
+            }
+
+            // 패턴 3: 이상치 (1건짜리 희소 값이 전체의 기준 % 이하이고, 나머지는 밀집)
+            if (PatternType.OUTLIER in enabledTypes && total >= OUTLIER_MIN_VALUES) {
+                val singletons = dist.entries.filter { it.value == 1 }
+                val singletonPct = singletons.size * 100f / total
+                if (singletons.isNotEmpty() && singletonPct <= thresholds.outlierSingletonPercent && dist.size > 3) {
+                    val outlierNames = singletons.take(3).joinToString(", ") { "'${it.key}'" }
+                    out.add(PatternInsight(
+                        type = PatternType.OUTLIER,
+                        severity = PatternSeverity.LOW,
+                        title = "${fieldName}: 희소 값 발견",
+                        description = "${fieldName}에서 $outlierNames 등이 각 1${axis.countUnit}에만 해당됩니다.",
+                        suggestion = axis.rarityHint,
+                        fieldDefId = fd.id,
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        mergedFieldDefIds = fieldDefs.map { it.id },
+                        // 희소 값(각 1건)을 가진 대상 전부를 펼친다.
+                        drilldownValues = singletons.map { it.key },
+                        drilldownExclude = false,
+                        population = ownerCount,
+                        axis = axis
+                    ))
+                }
+            }
+        }
+    }
+
+    fun detectPatterns(
+        s: StatsSnapshot,
+        enabledTypes: Set<PatternType> = PatternType.values().toSet(),
+        thresholds: PatternThresholds = PatternThresholds.DEFAULT
+    ): List<PatternInsight> {
         val insights = mutableListOf<PatternInsight>()
 
         // 필드값을 fieldDefinitionId로 **한 번만** 그룹화 — 필드 그룹마다 전체 테이블을 재필터하던
@@ -2392,95 +2764,38 @@ class StatsDataProvider {
         // 필드별 분포 패턴 감지
         val fieldsByKey = statsCache.analyzable(s.fieldDefinitions).groupBy { Pair(it.key, it.type) }
 
-        for ((keyType, fieldDefs) in fieldsByKey) {
-            // 동일 키의 모든 세계관 필드 값 합산 (사전 그룹 버킷 재사용)
-            val rawValues = fieldDefs.flatMap { valuesByDefId[it.id].orEmpty() }
-            if (rawValues.isEmpty()) continue
-
-            val fd = fieldDefs.first()
-            val statsConfig = statsCache.of(fd)
-            val allValues = rawValues.flatMap { getFieldValues(s, fd, it.value, statsConfig) }
-            if (allValues.isEmpty()) continue
-
-            // 집계·정렬 규칙은 인사이트 분포와 같은 단일 소스를 쓴다 — 동수일 때 두 화면이
-            // 서로 다른 값을 '최다'로 지목하지 않게 한다.
-            val dist = ValueDistributions.of(allValues)
-            val total = allValues.size
-            val fieldName = fd.name
-            // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 캐릭터 수(다값 필드 보정).
-            val peopleCount = rawValues.map { it.characterId }.distinct().size
-
-            // 패턴 1: 편중 (단일 값 60%+)
-            // 이미 (건수 내림차순, 값 이름 오름차순)으로 정렬돼 있다 — maxByOrNull은 동수에서
-            // 첫 등장 순서를 따라 인사이트 차트의 1위와 다른 값을 지목할 수 있다.
-            val topEntry = dist.entries.firstOrNull()
-            if (PatternType.DOMINANCE in enabledTypes && topEntry != null) {
-                val topPct = topEntry.value * 100f / total
-                if (topPct >= 60f) {
-                    insights.add(PatternInsight(
-                        type = PatternType.DOMINANCE,
-                        severity = if (topPct >= 80f) PatternSeverity.HIGH else PatternSeverity.MEDIUM,
-                        title = "${fieldName}: '${topEntry.key}' 편중",
-                        description = "${fieldName} 분포에서 '${topEntry.key}'이(가) ${String.format("%.0f", topPct)}%를 차지하여 편중되어 있습니다.",
-                        suggestion = "다양성을 위해 다른 ${fieldName} 값을 가진 캐릭터 추가를 고려하세요.",
-                        fieldDefId = fd.id,
-                        fieldKey = fd.key,
-                        fieldType = fd.type,
-                        // 기준 def(fd=first)를 맨 앞에 둔다 — 드릴다운도 이 def의 config로 파싱해 %와 일치.
-                        mergedFieldDefIds = fieldDefs.map { it.id },
-                        // 편중된 그 값(최빈)을 가진 캐릭터를 그대로 펼친다 — "누가 이 편중을 이루나"가 직관적.
-                        drilldownValues = listOf(topEntry.key),
-                        drilldownExclude = false,
-                        population = peopleCount
-                    ))
-                }
-            }
-
-            // 패턴 2: 균형 (모든 값 10~30% 사이)
-            if (PatternType.BALANCE in enabledTypes && dist.size >= 3) {
-                val pcts = dist.values.map { it * 100f / total }
-                val allBalanced = pcts.all { it in 10f..35f }
-                if (allBalanced) {
-                    insights.add(PatternInsight(
-                        type = PatternType.BALANCE,
-                        severity = PatternSeverity.LOW,
-                        title = "${fieldName}: 균형 양호",
-                        description = "${fieldName}의 값이 ${dist.size}개 범주에 고르게 분포되어 있습니다.",
-                        suggestion = "",
-                        fieldDefId = fd.id,
-                        // 드릴다운은 없지만 최소 모집단 게이트가 적용되도록 필드 식별/모집단은 채운다.
-                        fieldKey = fd.key,
-                        fieldType = fd.type,
-                        mergedFieldDefIds = fieldDefs.map { it.id },
-                        population = peopleCount
-                    ))
-                }
-            }
-
-            // 패턴 3: 이상치 (1개 값만 가진 희소 항목이 전체의 2% 미만이고, 나머지는 밀집)
-            if (PatternType.OUTLIER in enabledTypes && total >= 10) {
-                val singletons = dist.entries.filter { it.value == 1 }
-                val singletonPct = singletons.size * 100f / total
-                if (singletons.isNotEmpty() && singletonPct <= 5f && dist.size > 3) {
-                    val outlierNames = singletons.take(3).joinToString(", ") { "'${it.key}'" }
-                    insights.add(PatternInsight(
-                        type = PatternType.OUTLIER,
-                        severity = PatternSeverity.LOW,
-                        title = "${fieldName}: 희소 값 발견",
-                        description = "${fieldName}에서 $outlierNames 등이 각 1명에게만 해당됩니다.",
-                        suggestion = "의도적인 개성 부여인지, 오입력인지 확인하세요.",
-                        fieldDefId = fd.id,
-                        fieldKey = fd.key,
-                        fieldType = fd.type,
-                        mergedFieldDefIds = fieldDefs.map { it.id },
-                        // 희소 값(각 1명)을 가진 캐릭터 전부를 펼친다.
-                        drilldownValues = singletons.map { it.key },
-                        drilldownExclude = false,
-                        population = peopleCount
-                    ))
-                }
-            }
-        }
+        // ── 세 축의 필드 편중·균형·희소 (B-36) ──
+        // **축마다 함수를 다시 적지 않는다.** R-13이 나누라는 것은 *셀 단위가 섞이는 것*이지
+        // 조립 자체가 아니고("공통 조립만 공유"), 이 자리에서 세 벌을 베끼면 **한쪽만 고쳐지는**
+        // 그 결함이 그대로 재생산된다 — 사건 축이 통째로 없던 것(B-36)이 애초에 그렇게 생겼다.
+        // 단위·문구·모집단은 [PatternAxis]가 들고 다니므로 섞일 자리가 없다.
+        detectFieldPatterns(
+            s, PatternAxis.CHARACTER, fieldsByKey.values,
+            // 이미 만들어져 있는 버킷을 그대로 준다 — 이 축이 세 축 중 압도적으로 크다.
+            ownerValuesByDefId = valuesByDefId,
+            ownerOf = { it.characterId }, valueOf = { it.value },
+            statsCache, enabledTypes, thresholds, insights
+        )
+        detectFieldPatterns(
+            s, PatternAxis.EVENT,
+            statsCache.analyzable(s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
+            ownerValuesByDefId = axisValues(
+                stored = s.eventFieldValues.map { Triple(it.fieldDefinitionId, it.eventId, it.value) },
+                calculated = computeAllEventCalculatedValues(s)
+            ),
+            ownerOf = { it.ownerId }, valueOf = { it.value },
+            statsCache, enabledTypes, thresholds, insights
+        )
+        detectFieldPatterns(
+            s, PatternAxis.NOVEL,
+            statsCache.analyzable(s.novelFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
+            ownerValuesByDefId = axisValues(
+                stored = s.novelFieldValues.map { Triple(it.fieldDefinitionId, it.novelId, it.value) },
+                calculated = computeAllNovelCalculatedValues(s)
+            ),
+            ownerOf = { it.ownerId }, valueOf = { it.value },
+            statsCache, enabledTypes, thresholds, insights
+        )
 
         // 패턴 4: 사건 연도 집중 (특정 10년에 50%+ 집중)
         val clusterOrAbsence = PatternType.CLUSTER in enabledTypes || PatternType.ABSENCE in enabledTypes
@@ -2490,28 +2805,30 @@ class StatsDataProvider {
             val topDecade = byDecade.maxByOrNull { it.value.size }
             if (PatternType.CLUSTER in enabledTypes && topDecade != null) {
                 val pct = topDecade.value.size * 100f / totalEvents
-                if (pct >= 50f) {
+                if (pct >= thresholds.clusterPercent) {
                     insights.add(PatternInsight(
                         type = PatternType.CLUSTER,
                         severity = PatternSeverity.MEDIUM,
                         title = "사건 연대 집중",
                         description = "전체 사건의 ${String.format("%.0f", pct)}%가 ${topDecade.key}~${topDecade.key + 9}년에 집중되어 있습니다.",
-                        suggestion = "서사적 밀도가 높은 시기입니다. 다른 시기에도 사건을 분산시킬지 검토하세요."
+                        suggestion = "서사적 밀도가 높은 시기입니다. 다른 시기에도 사건을 분산시킬지 검토하세요.",
+                        axis = PatternAxis.EVENT
                     ))
                 }
             }
 
-            // 공백 구간 (100년 이상 사건 없는 구간)
+            // 공백 구간 — 몇 년부터 '공백'인가는 역법 스케일에 달렸으므로 사용자가 정한다(B-70).
             val years = s.events.map { it.year }.sorted()
             if (PatternType.ABSENCE in enabledTypes && years.size >= 2) {
-                val gaps = years.zipWithNext().filter { it.second - it.first > 100 }
+                val gaps = years.zipWithNext().filter { it.second - it.first > thresholds.absenceGapYears }
                 for (gap in gaps.take(2)) {
                     insights.add(PatternInsight(
                         type = PatternType.ABSENCE,
                         severity = PatternSeverity.LOW,
                         title = "서사 공백 구간",
                         description = "${gap.first}년~${gap.second}년 사이에 사건이 없습니다 (${gap.second - gap.first}년 간격).",
-                        suggestion = "의도적 공백기인지, 추가할 사건이 있는지 검토하세요."
+                        suggestion = "의도적 공백기인지, 추가할 사건이 있는지 검토하세요.",
+                        axis = PatternAxis.EVENT
                     ))
                 }
             }
@@ -2530,7 +2847,7 @@ class StatsDataProvider {
                 val smallest = novelSizes.last()
                 if (largest.second > 0 && smallest.second > 0) {
                     val ratio = largest.second.toFloat() / smallest.second
-                    if (ratio >= 3f) {
+                    if (ratio >= thresholds.crossNovelRatio) {
                         insights.add(PatternInsight(
                             type = PatternType.CROSS_NOVEL,
                             severity = PatternSeverity.MEDIUM,
@@ -2555,7 +2872,10 @@ class StatsDataProvider {
                     val topVal = ValueDistributions.of(values).entries.firstOrNull()
                     if (topVal != null && values.isNotEmpty()) {
                         val pct = topVal.value * 100f / values.size
-                        if (pct >= 50f) {
+                        // **이 50%는 민감도가 아니라 정의다** — 작품마다의 '주요값'을 과반으로 잡는
+                        // 것이고, 과반이라는 말이 곧 50%다. 편중 기준(사용자 조정)과 섞으면
+                        // "주요값"이 작품별로 과반이 아닐 수도 있게 되어 카드 문구가 거짓이 된다.
+                        if (pct >= CROSS_NOVEL_MAJORITY_PERCENT) {
                             novelPatterns.add(Pair(novel.title, "${topVal.key}(${String.format("%.0f", pct)}%)"))
                         }
                     }

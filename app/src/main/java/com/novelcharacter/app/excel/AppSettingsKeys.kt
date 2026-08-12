@@ -119,6 +119,12 @@ object AppSettingsKeys {
     val STATS_COMPLETION_REQUIRED_WEIGHT = Spec("stats_completion_required_weight", Kind.NUMBER)
     val STATS_PATTERN_TYPES = Spec("stats_pattern_types", Kind.TEXT)
 
+    /**
+     * 유형별 민감도 (B-70). `키=값` 쉼표 목록이라 엑셀에서 한 줄만 고칠 수 있다 —
+     * 형식의 단일 소스는 `PatternThresholds.encode`/`decode`다.
+     */
+    val STATS_PATTERN_SENSITIVITY = Spec("stats_pattern_sensitivity", Kind.TEXT)
+
     // ── 보충 기준 ──
     val SUPPLEMENT_CHECK_IMAGES = Spec("supplement_check_images", Kind.BOOLEAN)
     val SUPPLEMENT_CHECK_MEMO = Spec("supplement_check_memo", Kind.BOOLEAN)
@@ -156,7 +162,7 @@ object AppSettingsKeys {
         AI_IMAGE_TAG_POLICY, AI_IMAGE_TAG_BATCH_SIZE, AI_NAME_SUGGEST_BATCH_SIZE,
         AI_EVENT_CONTEXT_SCOPE,
         AI_API_KEYS,
-        STATS_COMPLETION_REQUIRED_WEIGHT, STATS_PATTERN_TYPES,
+        STATS_COMPLETION_REQUIRED_WEIGHT, STATS_PATTERN_TYPES, STATS_PATTERN_SENSITIVITY,
         SUPPLEMENT_CHECK_IMAGES, SUPPLEMENT_CHECK_MEMO, SUPPLEMENT_CHECK_ALIASES,
         SUPPLEMENT_CHECK_NOVEL, SUPPLEMENT_CHECK_TAGS, SUPPLEMENT_CHECK_CUSTOM_FIELDS,
         SUPPLEMENT_CHECK_RELATIONSHIPS, SUPPLEMENT_CHECK_EVENTS, SUPPLEMENT_CHECK_FACTIONS,
