@@ -141,6 +141,19 @@ class EventEditDialogFragment : DialogFragment() {
                 "EventEditDialogFragment host must implement EventEditDialogFragment.Host"
             )
 
+    /**
+     * AI 관측자는 **여기서** 단다 (B-43).
+     *
+     * `onCreateDialog`가 아닌 이유: 그쪽은 뷰가 다시 만들어질 때 함께 다시 도는데, 관측자를
+     * 창 수명(`this`)에 달면 **같은 인스턴스에 둘이 쌓여 검토 창이 두 번 뜬다.** 유료 응답을
+     * 두 번 보여 주는 것은 그 자체로 오해를 만든다(두 번 적용될 것처럼 보인다).
+     * `onCreate`는 인스턴스당 한 번이라 그 자리가 없다.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        observeAiSuggest()
+    }
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         _binding = DialogTimelineEditBinding.inflate(layoutInflater)
         editingEvent = arguments?.getString(ARG_EVENT_JSON)?.let {
@@ -200,7 +213,6 @@ class EventEditDialogFragment : DialogFragment() {
         }
 
         setupAddEventFieldPath()
-        observeAiSuggest()
 
         // 목록/선택 상태 비동기 로드. 정적 입력값은 재생성 시 뷰 상태로 자동 복원되므로
         // 초기값 채우기는 최초 생성(savedInstanceState == null)에만 수행한다.

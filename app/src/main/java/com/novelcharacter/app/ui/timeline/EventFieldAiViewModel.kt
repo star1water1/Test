@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiService
@@ -70,21 +71,52 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         if (running.value == true) return false
         running.value = true
         viewModelScope.launch {
-            try {
+            val outcome = try {
                 val settings = AiPromptSettings(getApplication())
-                val outcome = EventFieldAiSuggester(AiService(getApplication())).suggest(
+                EventFieldAiSuggester(AiService(getApplication())).suggest(
                     context = context,
                     targets = withFieldUsage(targets, settings),
                     scope = settings.eventContextScope,
                     minConfidence = settings.minConfidence,
                     creativity = settings.creativity
                 ) { failure -> AiErrorMessages.of(getApplication(), failure) }
-                result.value = Run(targets, outcome, eventId)
-            } finally {
-                running.value = false
+            } catch (e: Exception) {
+                // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
+                // 여기서 그냥 던지면 ⓐ 코루틴이 죽어 앱이 내려가고 ⓑ 살아남아도 결과가 없어
+                // 검토 창이 안 열려, **비용을 확인받고 돌린 유료 실행이 아무 흔적도 남기지 않는다.**
+                // 사용자가 보는 증상은 *눌렀는데 아무 일도 안 일어남*이라 실패인지도 모른다.
+                Log.e("EventFieldAiViewModel", "Event field AI suggest failed", e)
+                failureOutcome(targets, e)
             }
+            result.value = Run(targets, outcome, eventId)
+            running.value = false
         }
         return true
+    }
+
+    /**
+     * 요청 자체가 무너졌을 때의 결과 — **고지 한 줄 + 대상 전부를 결손으로** 담는다.
+     * `suggestions + missing = 요청 대상 전체`라는 계약을 실패 경로에서도 지킨다.
+     */
+    private fun failureOutcome(
+        targets: List<CharacterFieldAiSuggester.FieldSpec>,
+        error: Exception
+    ): CharacterFieldAiSuggester.SuggestOutcome {
+        val base = getApplication<Application>().getString(R.string.ai_error_unknown)
+        val detail = error.message.orEmpty()
+        return CharacterFieldAiSuggester.SuggestOutcome(
+            suggestions = emptyList(),
+            droppedCount = 0,
+            failures = listOf(if (detail.isBlank()) base else "$base\n$detail"),
+            truncationNotes = emptyList(),
+            inputTokens = 0,
+            outputTokens = 0,
+            missing = targets.map {
+                CharacterFieldAiSuggester.MissingField(
+                    it.key, it.name, CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED, detail
+                )
+            }
+        )
     }
 
     /**
