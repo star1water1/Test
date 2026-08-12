@@ -54,6 +54,13 @@ object AppSettingsKeys {
     // ── 화면 ──
     val THEME_MODE = Spec("theme_mode", Kind.NUMBER)
 
+    /**
+     * 읽기 화면에도 필드 설명 ⓘ를 보이는가 (B-44 · 확정 17번 · P-8 기본 꺼짐).
+     *
+     * **화면 흔적이 아니라 취향 설정이라 싣는다** — 새 기기에서 다시 찾아 켜야 하는 부류다.
+     */
+    val READ_FIELD_NOTE_ENABLED = Spec("read_field_note_enabled", Kind.BOOLEAN)
+
     // ── 백업 ──
     val BACKUP_INCLUDE_IMAGES = Spec("backup_include_images", Kind.BOOLEAN)
     val BACKUP_MAX_BACKUPS = Spec("backup_max_backups", Kind.NUMBER)
@@ -149,7 +156,7 @@ object AppSettingsKeys {
      * `ai_`·`image_`·`supplement_`가 서로를 끊는다.
      */
     val SPECS: List<Spec> = listOf(
-        THEME_MODE,
+        THEME_MODE, READ_FIELD_NOTE_ENABLED,
         BACKUP_INCLUDE_IMAGES, BACKUP_MAX_BACKUPS,
         TRASH_MAX_OPERATIONS, TRASH_RETENTION_DAYS,
         FIELD_IMPORT_CONVERTIBLE_TYPES,
@@ -232,6 +239,8 @@ object AppSettingsKeys {
         "character_edit_drafts" to "저장하지 않은 편집 초안. 그 기기의 화면 상태다.",
         "folder_roundtrip_prefs" to "폴더 왕복이 기억한 기기 경로·URI. 다른 기기에서는 가리킬 곳이 없다.",
         "theme_cache" to "테마 캐시 — 값 자체는 ${THEME_MODE.key}로 실린다(저장소가 아니라 키로 등재된 자리).",
+        "field_display_prefs" to
+            "읽기 화면의 필드 설명 ⓘ 표시 여부. 값은 ${READ_FIELD_NOTE_ENABLED.key}로 실린다.",
         "settings" to "테마의 DataStore 본체. 값은 ${THEME_MODE.key}로 실린다.",
         "image_settings" to "이미지 저장 설정의 DataStore. 값은 `image_`로 시작하는 키들로 실린다.",
         "trash_settings" to

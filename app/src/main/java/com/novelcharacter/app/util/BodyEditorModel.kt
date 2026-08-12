@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.BodySlot
 import com.novelcharacter.app.util.BodySilhouetteSpec.Measures
 
@@ -166,6 +167,32 @@ object BodyEditorModel {
         peers: List<BodyMeasurements>,
         ribOffset: Double = BodySilhouetteSpec.FIGURE_RIB_OFFSET_CM
     ): Measures? {
+        val mean = peerMean(peers) ?: return null
+        return BodySilhouetteSpec.measuresFrom(mean, ribOffset)
+    }
+
+    /**
+     * 같은 작품 캐릭터들의 평균 몸 — **목표 비율 '작품 평균' 기준의 재료**다(B-94).
+     *
+     * 셋(B·W·H)이 다 모여야 비율을 낼 수 있으므로 하나라도 비면 null이고, 그때 카드는
+     * 그 기준을 내놓지 않는다(고를 수는 있는데 아무것도 안 바뀌는 칩은 구색이다).
+     *
+     * **평균은 [peerAverage]와 같은 셈을 쓴다** — 그림의 유령 실루엣과 점수의 기준이
+     * 서로 다른 수를 말하면 같은 이름을 단 두 벌이 된다.
+     */
+    fun peerAverageBody(peers: List<BodyMeasurements>): BodyAnalysisConfig.IdealBody? {
+        val mean = peerMean(peers) ?: return null
+        if (!mean.hasCoreThree) return null
+        return BodyAnalysisConfig.IdealBody(
+            bust = mean.bust, waist = mean.waist, hip = mean.hip, heightCm = mean.heightCm
+        )
+    }
+
+    /**
+     * 평균의 **단일 소스**. 부위별로 값이 있는 캐릭터만 세고, 부위가 하나도 안 모이면 null.
+     * 빈 칸을 0으로 세면 평균이 무너지고, 그 무너짐은 화면에서 "작은 몸"으로만 보여 안 잡힌다.
+     */
+    private fun peerMean(peers: List<BodyMeasurements>): BodyMeasurements? {
         if (peers.isEmpty()) return null
         fun avg(pick: (BodyMeasurements) -> Double?): Double? =
             peers.mapNotNull(pick).takeIf { it.isNotEmpty() }?.average()
@@ -176,24 +203,20 @@ object BodyEditorModel {
         val shoulder = avg { it.shoulder }
         if (bust == null && waist == null && hip == null && shoulder == null) return null
 
-        val height = avg { it.heightCm }
-        return BodySilhouetteSpec.measuresFrom(
-            BodyMeasurements(
-                values = buildMap {
-                    bust?.let { put(BodySlot.BUST, it) }
-                    waist?.let { put(BodySlot.WAIST, it) }
-                    hip?.let { put(BodySlot.HIP, it) }
-                    shoulder?.let { put(BodySlot.SHOULDER, it) }
-                    avg { it.underbust }?.let { put(BodySlot.UNDERBUST, it) }
-                },
-                mode = BodyMeasurements.MappingMode.EXPLICIT,
-                partSlots = emptyList(),
-                partValues = emptyList(),
-                unmappedParts = emptyList(),
-                heightCm = height,
-                weightKg = null
-            ),
-            ribOffset
+        return BodyMeasurements(
+            values = buildMap {
+                bust?.let { put(BodySlot.BUST, it) }
+                waist?.let { put(BodySlot.WAIST, it) }
+                hip?.let { put(BodySlot.HIP, it) }
+                shoulder?.let { put(BodySlot.SHOULDER, it) }
+                avg { it.underbust }?.let { put(BodySlot.UNDERBUST, it) }
+            },
+            mode = BodyMeasurements.MappingMode.EXPLICIT,
+            partSlots = emptyList(),
+            partValues = emptyList(),
+            unmappedParts = emptyList(),
+            heightCm = avg { it.heightCm },
+            weightKg = null
         )
     }
 }

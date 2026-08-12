@@ -44,6 +44,9 @@ class BodyAnalysisConfigKeysTest {
         goldenRatioIdeals = mapOf("whr" to 0.7),
         partSlots = listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP),
         idealBody = BodyAnalysisConfig.IdealBody(bust = 88.0, waist = 60.0, hip = 90.0, heightCm = 165.0),
+        // 목표 비율 기준도 **기본값이 아닐 때만** 실린다(B-94) — 기본값으로 두면 ①이 이 키를
+        // 아예 안 지나므로, 여기 세워야 파싱 목록 누락이 이 시험에 걸린다.
+        targetRatioSource = BodyAnalysisConfig.TargetRatioSource.NOVEL_AVERAGE,
         // 🎲 생성 축도 **손댄 한 벌**이어야 실린다(기본값이면 적지 않는 키다 — B-93).
         generation = BodyAnalysisConfig.DEFAULT_GENERATION.copy(
             bustOptions = BodyAnalysisConfig.DEFAULT_BUST_OPTIONS.map { it.copy(cupDiff = it.cupDiff - 4) }

@@ -45,6 +45,25 @@ class DynamicFieldRenderer(
     var bodyRankingInfo: RankingInfo? = null
 
     /**
+     * 같은 작품 캐릭터의 평균 몸 — 목표 비율 '작품 평균' 기준의 재료다(B-94).
+     *
+     * 순위 계산이 이미 모아 둔 이웃 수치에서 나온다(같은 조회를 두 번 하지 않는다).
+     * 주입하지 않으면 그 기준은 **성립하지 않고 칩도 나오지 않는다** — 고를 수는 있는데
+     * 아무것도 안 바뀌는 칩은 구색이다(크게 보기의 작품 평균 토글과 같은 규칙).
+     */
+    var bodyPeerAverage: BodyAnalysisConfig.IdealBody? = null
+
+    /**
+     * 읽기 화면에도 필드 설명 ⓘ를 보이는가 (B-44 · P-8 기본 꺼짐).
+     *
+     * **호스트가 주입하는 것이 아니라 렌더 시작 때 한 번 읽는다** — 주입으로 두면 화면
+     * 하나가 그 줄을 빠뜨렸을 때 *설정을 켰는데 그 화면만 안 바뀌는* 상태가 되고, 그것은
+     * 사용자에게 고장으로 보인다. SharedPreferences는 첫 읽기 뒤 메모리에 있으므로
+     * 렌더당 한 번은 값이 없다.
+     */
+    private var showFieldNotes: Boolean = false
+
+    /**
      * 체형 분석 카드의 ⚙ — 그 필드의 편집 다이얼로그(체형 분석 설정)를 연다.
      *
      * 주입하지 않으면 아이콘 자체가 나오지 않는다. 눌러도 아무 데도 안 가는 버튼은 구색이다.
@@ -76,6 +95,58 @@ class DynamicFieldRenderer(
     private fun displayToken(field: FieldDefinition, token: String): String =
         valueResolvers[field.id]?.display(token) ?: token
 
+    /**
+     * 필드 한 줄을 카드에 넣는다 — 설명이 있고 설정이 켜져 있으면 ⓘ를 나란히 붙인다(B-44).
+     *
+     * 설명이 없는 필드는 **행 구조 자체가 종전 그대로**다(TextView 하나). 전부를 가로 행으로
+     * 감싸면 설명을 안 쓴 사용자의 화면에도 뷰가 두 배로 늘고, 이 항목은 그 값을 치를
+     * 만한 것이 아니다 — 목록이 수십 필드인 화면이라 렌더 비용이 그대로 체감된다.
+     */
+    private fun addFieldView(
+        content: LinearLayout,
+        context: Context,
+        density: Float,
+        field: FieldDefinition,
+        view: TextView
+    ) {
+        val hasNote = showFieldNotes &&
+            com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config).isNotBlank()
+        if (!hasNote) {
+            content.addView(view)
+            return
+        }
+        // 아래 여백은 **행이 든다** — 안쪽 뷰에 남기면 아이콘과 글이 서로 다른 만큼 내려간다.
+        val inner = view.layoutParams as? LinearLayout.LayoutParams
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = inner?.bottomMargin ?: 0 }
+        }
+        view.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        row.addView(view)
+        row.addView(ImageButton(context).apply {
+            setImageResource(R.drawable.ic_info)
+            setBackgroundResource(borderlessBackground(context))
+            setColorFilter(context.getColor(R.color.text_secondary))
+            contentDescription = getString(R.string.field_description_info_desc)
+            // 터치 48dp — **`minimumWidth`로는 안 된다.** 정확한 폭을 준 LayoutParams가
+            // 이기므로 그 조합은 32dp짜리 표적을 만들어 놓고 48로 적어 둔 꼴이 된다.
+            // 여백으로 그림만 줄인다(카드 머리의 ⚙과 같은 규격).
+            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
+            setPadding(
+                (12 * density).toInt(), (12 * density).toInt(),
+                (12 * density).toInt(), (12 * density).toInt()
+            )
+            setOnClickListener {
+                com.novelcharacter.app.ui.common.HelpDialog.showFieldNote(context, field)
+            }
+        })
+        content.addView(row)
+    }
+
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
         values: List<CharacterFieldValue>,
@@ -84,6 +155,10 @@ class DynamicFieldRenderer(
     ) {
         val container = containerGetter()
         container.removeAllViews()
+
+        // 렌더당 한 번 (B-44) — 필드마다 읽으면 수십 번이 되고, 주입으로 두면 빠뜨린 화면이 생긴다.
+        showFieldNotes = com.novelcharacter.app.util.FieldNoteDisplayPrefs
+            .isReadScreenNoteEnabled(contextGetter())
 
         val valueMap = values.associateBy { it.fieldDefinitionId }
 
@@ -131,7 +206,7 @@ class DynamicFieldRenderer(
                             bottomMargin = (2 * density).toInt()
                         }
                     }
-                    cardContent.addView(labelView)
+                    addFieldView(cardContent, context, density, field, labelView)
 
                     // 쉼표 규칙은 앱 단일 소스가 든다(B-178) — 여기서 따로 쪼개면 읽기 화면만
                     // 따옴표를 모르게 되어, 한 값으로 저장·집계된 것이 두 조각으로 그려진다.
@@ -180,7 +255,7 @@ class DynamicFieldRenderer(
                             bottomMargin = (2 * density).toInt()
                         }
                     }
-                    cardContent.addView(labelView)
+                    addFieldView(cardContent, context, density, field, labelView)
                     val multiView = TextView(context).apply {
                         text = fieldValue
                         textSize = 14f
@@ -239,7 +314,7 @@ class DynamicFieldRenderer(
                             bottomMargin = (4 * density).toInt()
                         }
                     }
-                    cardContent.addView(rowView)
+                    addFieldView(cardContent, context, density, field, rowView)
                 }
             }
 
@@ -259,6 +334,11 @@ class DynamicFieldRenderer(
     ) {
         val container = containerGetter()
         container.removeAllViews()
+
+        // 시간 보기도 **같은 화면의 다른 모드**다(B-44) — 여기서 안 읽으면 설정을 켠 사용자가
+        // 슬라이더를 미는 순간 ⓘ가 사라지고, 그것은 선택이 아니라 고장으로 보인다.
+        showFieldNotes = com.novelcharacter.app.util.FieldNoteDisplayPrefs
+            .isReadScreenNoteEnabled(contextGetter())
 
         val context = contextGetter()
         val density = resourcesGetter().displayMetrics.density
@@ -361,7 +441,7 @@ class DynamicFieldRenderer(
                         bottomMargin = (4 * density).toInt()
                     }
                 }
-                cardContent.addView(rowView)
+                addFieldView(cardContent, context, density, field, rowView)
             }
 
             card.addView(cardContent)
@@ -546,7 +626,7 @@ class DynamicFieldRenderer(
         content.addView(bodySubText(context, density, getString(R.string.body_analysis_female_notice)))
 
         // 자세히 ▾ — 나머지 전부(현행 행 형식 유지). 접힘 상태는 영속하지 않는다(5-1).
-        val detail = buildBodyDetail(context, density, data.config, result)
+        val detail = buildBodyDetail(context, density, data, result)
         if (detail.childCount > 0) {
             detail.visibility = View.GONE
             content.addView(TextView(context).apply {
@@ -822,9 +902,10 @@ class DynamicFieldRenderer(
     private fun buildBodyDetail(
         context: Context,
         density: Float,
-        config: BodyAnalysisConfig,
+        data: BodyCardData,
         result: BodyAnalysisResult?
     ): LinearLayout {
+        val config = data.config
         val box = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -945,30 +1026,13 @@ class DynamicFieldRenderer(
         }
 
         // 목표 비율 (P8 — '골든 비율'의 개명. 공식은 그대로이고 이상값은 설정이 든다)
+        // 기준 전환은 이 절 안에서만 다시 그린다(B-94 · 확정 8번 ㄱ2) — 카드를 통째로 다시
+        // 그리면 접어 둔 자세히가 닫히고 스크롤이 튄다.
         if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO) &&
-            result.goldenRatioScore != null
+            result.goldenRatioScore != null && result.targetRatioBasis != null
         ) {
             addSectionTitle(getString(R.string.body_target_ratio_label))
-            // 무엇과의 거리인지 말한다(5-3) — 이상 몸 > 비율 고정 > 장르 기준 순으로 밝힌다.
-            val idealBody = config.idealBody
-            addSubRow(
-                when {
-                    idealBody != null && idealBody.isComplete -> {
-                        val fmt = { v: Double -> com.novelcharacter.app.util.BodyEditorModel.formatValue(v) }
-                        context.getString(
-                            R.string.body_target_ratio_hint_body,
-                            fmt(idealBody.bust!!), fmt(idealBody.waist!!), fmt(idealBody.hip!!),
-                            fmt(idealBody.heightCm ?: com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height)
-                        )
-                    }
-                    config.goldenRatioIdeals.isNotEmpty() -> getString(R.string.body_target_ratio_hint_custom)
-                    else -> getString(R.string.body_target_ratio_hint_auto)
-                }
-            )
-            addSubRow(getStringWithArg(R.string.body_target_ratio_score, "%.0f".format(result.goldenRatioScore)))
-            result.goldenRatioDetails?.forEach { item ->
-                addSubRow("${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)".format(item.deviationPercent))
-            }
+            box.addView(buildTargetRatioSection(context, density, data))
         }
 
         // 작품 내 순위 — 축별로(P8: 가슴·힙·키). 허리는 뒤에 남긴다.
@@ -989,6 +1053,172 @@ class DynamicFieldRenderer(
         }
         return box
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 목표 비율 — 기준 즉석 전환 (B-94 · 확정 8번 ㄱ2)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 카드에서 고를 수 있는 기준 — **실제로 다른 답을 내는 것만** 세운다.
+     *
+     * [BodyAnalysisConfig.TargetRatioSource.AUTO]는 여기 없다: *"설정을 따라간다"*는 정책이지
+     * 잣대가 아니고, 결과는 언제나 장르 기준이나 이상 몸 둘 중 하나와 **정확히 같다.**
+     * 같은 답을 내는 칩을 나란히 두면 사용자는 둘의 차이를 찾다가 없다는 것을 알게 된다.
+     */
+    private fun usableTargetRatioSources(
+        data: BodyCardData
+    ): List<BodyAnalysisConfig.TargetRatioSource> = buildList {
+        add(BodyAnalysisConfig.TargetRatioSource.GENRE)
+        if (data.config.idealBody?.isComplete == true) {
+            add(BodyAnalysisConfig.TargetRatioSource.IDEAL_BODY)
+        }
+        if (bodyPeerAverage != null) add(BodyAnalysisConfig.TargetRatioSource.NOVEL_AVERAGE)
+    }
+
+    /**
+     * 목표 비율 절 — 칩 · 기준 문장 · 점수 · 네 행. 칩을 누르면 **이 절만** 다시 선다.
+     *
+     * 고를 것이 하나뿐이면 칩을 내지 않는다(누를 데가 없는 칩 줄은 구색이다) — 그때 이 절은
+     * 이 항목 이전과 글자 하나까지 같다.
+     */
+    private fun buildTargetRatioSection(
+        context: Context,
+        density: Float,
+        data: BodyCardData
+    ): LinearLayout {
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val sources = usableTargetRatioSources(data)
+        // 처음 선 자리는 **실제로 쓰인 기준**이다 — 설정이 AUTO여도 칩은 그것이 풀린 결과를 든다.
+        var current: BodyAnalysisConfig.TargetRatioSource? = null
+
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        fun render(override: BodyAnalysisConfig.TargetRatioSource?) {
+            body.removeAllViews()
+            // 넷을 **한자리에서** 여읜다 — 인자 목록 안에 `?: return`을 흩으면 읽는 사람이
+            // 어느 조건에서 이 절이 비는지 매번 다시 짚어야 한다. 여기까지 오는 길에서는
+            // 넷 다 있는 것이 보장돼 있고(호출부가 `result != null`을 걸었다), 이 가드는
+            // 그 보장이 나중에 끊겨도 빈 절로 끝나게 하는 몫이다.
+            val m = data.measured
+            val height = m.heightCm?.takeIf { it > 0 } ?: return
+            val bust = m.bust ?: return
+            val waist = m.waist ?: return
+            val hip = m.hip ?: return
+
+            val basis = com.novelcharacter.app.util.BodyTargetRatio.basis(
+                data.config, height, bodyPeerAverage, override
+            )
+            current = basis.source
+            val items = com.novelcharacter.app.util.BodyTargetRatio.items(bust, waist, hip, height, basis)
+            val score = com.novelcharacter.app.util.BodyTargetRatio.score(items) ?: return
+
+            fun sub(text: String) = body.addView(bodyDetailSubText(context, density, text))
+
+            // 고른 것을 못 썼으면 **먼저 그 사실을 말한다** — 아래 문장이 다른 기준을 설명하므로,
+            // 사유가 뒤에 오면 사용자는 자기 선택이 먹은 줄 알고 한 줄을 읽는다.
+            if (basis.fellBack) {
+                sub(
+                    getStringWithArg(
+                        R.string.body_target_ratio_fallback,
+                        getString(com.novelcharacter.app.ui.common.BodyTargetRatioLabels
+                            .chipLabelOf(basis.requested))
+                    )
+                )
+            }
+            sub(targetRatioHint(context, data.config, basis))
+            if (basis.pinnedKeys.isNotEmpty()) {
+                sub(getStringWithArg(R.string.body_target_ratio_pinned, basis.pinnedKeys.size))
+            }
+            sub(getStringWithArg(R.string.body_target_ratio_score, "%.0f".format(score)))
+            for (item in items) {
+                sub(
+                    "${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)"
+                        .format(item.deviationPercent)
+                )
+            }
+        }
+
+        render(null)
+
+        if (sources.size > 1) {
+            box.addView(ChipGroup(context).apply {
+                isSingleLine = false
+                isSingleSelection = true
+                isSelectionRequired = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                for (source in sources) {
+                    addView(Chip(context).apply {
+                        // **id를 직접 준다 — 단일 선택은 id로 돌아간다.** `ChipGroup`은 고른 것을
+                        // `checkedChipId`로 기억하고 나머지를 그 id로 찾아 끄는데, 코드로 만든 칩은
+                        // 기본이 `NO_ID`(-1)라 **전부 같은 키가 된다.** 라이브러리가 알아서
+                        // 붙여 주기도 하지만 그것은 내부 구현이고, 여기서 보장하면 그 의존이 없다.
+                        // 틀렸을 때의 모양이 *여러 칩이 함께 켜져 보이는 것*이라 눈으로도 늦게 잡힌다.
+                        id = View.generateViewId()
+                        text = getString(
+                            com.novelcharacter.app.ui.common.BodyTargetRatioLabels.chipLabelOf(source)
+                        )
+                        isCheckable = true
+                        isChecked = source == current
+                        setOnClickListener { if (isChecked) render(source) }
+                    })
+                }
+            })
+        }
+        box.addView(body)
+        return box
+    }
+
+    /** 무엇과의 거리인지 한 줄(5-3). 기준이 든 수치를 그대로 되짚어 준다. */
+    private fun targetRatioHint(
+        context: Context,
+        config: BodyAnalysisConfig,
+        basis: com.novelcharacter.app.util.BodyTargetRatio.Basis
+    ): String {
+        val fmt = { v: Double -> com.novelcharacter.app.util.BodyEditorModel.formatValue(v) }
+        fun bodyHint(res: Int, b: BodyAnalysisConfig.IdealBody): String = context.getString(
+            res, fmt(b.bust!!), fmt(b.waist!!), fmt(b.hip!!),
+            fmt(b.heightCm ?: com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height)
+        )
+        return when (basis.source) {
+            BodyAnalysisConfig.TargetRatioSource.IDEAL_BODY ->
+                config.idealBody?.takeIf { it.isComplete }
+                    ?.let { bodyHint(R.string.body_target_ratio_hint_body, it) }
+                    ?: getString(R.string.body_target_ratio_hint_auto)
+            BodyAnalysisConfig.TargetRatioSource.NOVEL_AVERAGE ->
+                bodyPeerAverage?.takeIf { it.isComplete }
+                    ?.let { bodyHint(R.string.body_target_ratio_hint_novel_average, it) }
+                    ?: getString(R.string.body_target_ratio_hint_auto)
+            // AUTO는 여기 오지 않는다(basis.source는 늘 구체적이다) — 와도 장르 기준이 맞다.
+            else -> getString(R.string.body_target_ratio_hint_auto)
+        }
+    }
+
+    /** 자세히 영역의 부제 한 줄 — [buildBodyDetail]의 `addSubRow`와 같은 모양이다. */
+    private fun bodyDetailSubText(context: Context, density: Float, text: String): TextView =
+        TextView(context).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(context.getColor(R.color.text_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (2 * density).toInt() }
+        }
 
     private fun createGroupTitle(context: Context, density: Float, groupName: String): TextView {
         return TextView(context).apply {

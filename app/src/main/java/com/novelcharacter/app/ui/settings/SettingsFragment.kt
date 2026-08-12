@@ -123,6 +123,16 @@ class SettingsFragment : Fragment() {
             showThemeDialog()
         }
 
+        // 읽기 화면의 필드 설명 ⓘ (B-44) — 저장은 즉시다(별도 확인 단계를 두지 않는다, 원칙 04).
+        // 리스너를 붙이기 **전에** 상태를 세운다: 순서를 바꾸면 화면을 여는 것만으로
+        // 저장된 값이 그대로 다시 저장돼 무해해 보이지만, 나중에 부수 효과가 붙으면 문다.
+        binding.switchReadFieldNote.isChecked =
+            com.novelcharacter.app.util.FieldNoteDisplayPrefs.isReadScreenNoteEnabled(requireContext())
+        binding.switchReadFieldNote.setOnCheckedChangeListener { _, checked ->
+            com.novelcharacter.app.util.FieldNoteDisplayPrefs
+                .setReadScreenNoteEnabled(requireContext(), checked)
+        }
+
         // Data management — 백업(전부 보관)과 데이터 추출(표로 뽑기)은 원하는 기본값이
         // 정반대라 행부터 갈라 둔다(설계 D1·D3)
         binding.fullBackupRow.setOnClickListener {

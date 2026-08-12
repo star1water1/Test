@@ -50,6 +50,9 @@ data class BodyAnalysisConfig(
     // 있어야 효력이 있고, 비율 환산·키 적응은 BodyGenerator.idealsFromBody가 든다.
     // 부분 입력도 저장은 한다 — 적다 만 값을 버리면 말없는 유실이다(R-27 결).
     val idealBody: IdealBody? = null,
+    // 목표 비율의 **기본 기준** — 무엇과 견줄 것인가(B-94 · 확정 8번 ㄱ1).
+    // 카드에서 즉석 전환한 것은 여기 저장되지 않는다(그쪽이 ㄱ2 — 보는 동안만이다).
+    val targetRatioSource: TargetRatioSource = TargetRatioSource.AUTO,
     // 🎲 생성 축·프리셋 — 세계관 단위 사용자 정의(B-93 · 확정 7번). 기본값이면 저장하지 않는다.
     val generation: GenerationPreset = GenerationPreset()
 ) {
@@ -71,6 +74,36 @@ data class BodyAnalysisConfig(
 
         val isEmpty: Boolean
             get() = bust == null && waist == null && hip == null && heightCm == null
+    }
+
+    /**
+     * 목표 비율이 **무엇과의 거리인가** (B-94 · 확정 8번).
+     *
+     * [AUTO]만 겹이고 나머지 셋은 바닥을 하나로 못박는다 — *"작품 평균과 견주고 싶다"*는
+     * 뜻은 *"작품 평균 위에 내 이상형을 얹어라"*가 아니기 때문이다. **어느 기준을 골라도
+     * [goldenRatioIdeals]의 키별 고정은 그 위에 얹힌다** — 그쪽은 기준이 아니라
+     * *"이 비율만은 이 값으로 못박는다"*라서다.
+     *
+     * [AUTO]가 기본값인 것이 계약이다: 옛 필드에는 이 키가 없고, 그때 동작이
+     * **이 항목 이전과 한 글자도 다르지 않아야** 한다(장르 기준 → 이상 몸 순으로 겹치는
+     * 종전 규칙 그대로). 기본값을 [GENRE]로 두면 이상 몸을 적어 둔 사용자가
+     * **설정을 그대로 둔 채 효력만 잃는다.**
+     *
+     * [NOVEL_AVERAGE]는 **재료가 있어야 성립한다**(같은 작품의 다른 캐릭터 수치).
+     * 없는 자리에서는 [AUTO]로 떨어지고 **카드가 그 사실을 말한다** — 조용히 다른 것을
+     * 재고 같은 이름을 붙이면 그것이 거짓 고지다(개발 의도 2번).
+     */
+    enum class TargetRatioSource(val key: String) {
+        AUTO("auto"),
+        GENRE("genre"),
+        IDEAL_BODY("idealBody"),
+        NOVEL_AVERAGE("novelAverage");
+
+        companion object {
+            /** 모르는 이름은 [AUTO] — 밖에서 편집된 파일이 화면을 죽이지 않게 한다. */
+            fun fromKey(raw: String?): TargetRatioSource =
+                entries.firstOrNull { it.key.equals(raw?.trim(), ignoreCase = true) } ?: AUTO
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -304,7 +337,7 @@ data class BodyAnalysisConfig(
         val READ_KEYS = setOf(
             "cupMapping", "bodyTypeRules", "defaultBodyType", "ribOffset",
             "bodyTagRules", "goldenRatioIdeals", "idealBody", "partSlots", "enabledInsights",
-            "generation"
+            "generation", "targetRatioSource"
         )
 
         /**
@@ -641,6 +674,11 @@ data class BodyAnalysisConfig(
                 // (손으로 고친 값이 그대로 생성기에 들어가지 않게 — GenerationPreset.sanitized).
                 val generation = parseGeneration(obj.optJSONObject("generation"))
 
+                // 목표 비율 기준 — 없거나 모르는 이름이면 AUTO(종전 동작 그대로).
+                val targetRatioSource = TargetRatioSource.fromKey(
+                    obj.optString("targetRatioSource").takeIf { it.isNotBlank() }
+                )
+
                 BodyAnalysisConfig(
                     cupMapping = cupMapping.ifEmpty { DEFAULT_CUP_MAPPING },
                     bodyTypeRules = bodyTypeRules.ifEmpty { DEFAULT_BODY_TYPE_RULES },
@@ -652,6 +690,7 @@ data class BodyAnalysisConfig(
                     goldenRatioIdeals = goldenRatioIdeals,
                     partSlots = partSlots,
                     idealBody = idealBody,
+                    targetRatioSource = targetRatioSource,
                     generation = generation
                 )
             } catch (_: Exception) {
@@ -742,6 +781,12 @@ data class BodyAnalysisConfig(
                         body.hip?.let { put("hip", it) }
                         body.heightCm?.let { put("height", it) }
                     })
+                }
+
+                // 목표 비율 기준 — 기본값(AUTO)이면 적지 않는다(ribOffset 선례).
+                // 옛 파일에 이 키가 없는 것과 AUTO가 같은 뜻이므로 굽지 않아야 왕복이 항등이다.
+                if (config.targetRatioSource != TargetRatioSource.AUTO) {
+                    put("targetRatioSource", config.targetRatioSource.key)
                 }
 
                 // Part → BodySlot 매핑은 명시했을 때만 싣는다 — 추론과 같은 기본값을 굽지 않아야

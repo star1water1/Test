@@ -565,6 +565,10 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
                 // 체형 분석 순위 데이터 계산
                 fieldRenderer.bodyRankingInfo = computeBodyRanking(fields, values, character, novel)
+                // 목표 비율 '작품 평균' 기준의 재료 (B-94) — 위 계산이 모아 둔 이웃 수치를
+                // 그대로 쓴다(같은 조회를 두 번 하지 않는다. 크게 보기의 오버레이와 같은 자리).
+                fieldRenderer.bodyPeerAverage =
+                    com.novelcharacter.app.util.BodyEditorModel.peerAverageBody(bodyPeerMeasurements)
 
                 // 값 라이브러리 표시 라벨 — 통계·칩과 카드 표기 일치 (검토 A12)
                 fieldRenderer.valueResolvers = runCatching {
@@ -603,6 +607,9 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     // 백분위·체형 순위는 세계관 스코프가 있어야 성립하므로 계산하지 않는다.
                     fieldRenderer.valueResolvers = emptyMap()
                     fieldRenderer.bodyRankingInfo = null
+                    // 작품이 없으면 '작품 평균'도 없다 — 앞 캐릭터의 재료가 남아 있으면
+                    // 미분류 캐릭터가 남의 작품 평균으로 채점된다.
+                    fieldRenderer.bodyPeerAverage = null
                     fieldRenderer.displayDynamicFields(orphanFields, values, emptyMap(), emptyMap())
                 }
             }

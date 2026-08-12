@@ -20,6 +20,7 @@ import com.novelcharacter.app.ui.stats.PatternTypePrefs
 import com.novelcharacter.app.ui.supplement.RandomSupplementSettings
 import com.novelcharacter.app.ui.supplement.SupplementCriteria
 import com.novelcharacter.app.util.CompletionWeights
+import com.novelcharacter.app.util.FieldNoteDisplayPrefs
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +77,13 @@ object AppSettingsBindings {
             read = { num(ThemeHelper.getSavedTheme(it)) },
             write = { ctx, v ->
                 ThemeHelper.saveTheme(ctx, (intOf(v) ?: 0).coerceIn(0, 2))
+                Applied.Yes
+            }),
+        // 읽기 화면의 필드 설명 ⓘ (B-44) — 불리언 셀은 Y/예/1/TRUE를 관대하게 받는다.
+        Binding(AppSettingsKeys.READ_FIELD_NOTE_ENABLED,
+            read = { bool(FieldNoteDisplayPrefs.isReadScreenNoteEnabled(it)) },
+            write = { ctx, v ->
+                FieldNoteDisplayPrefs.setReadScreenNoteEnabled(ctx, parseSheetBoolean(v))
                 Applied.Yes
             }),
 

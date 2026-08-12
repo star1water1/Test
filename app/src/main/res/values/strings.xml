@@ -886,6 +886,9 @@
     <string name="settings_theme_system">시스템 설정</string>
     <string name="settings_theme_light">라이트</string>
     <string name="settings_theme_dark">다크</string>
+    <!-- 읽기 화면의 필드 설명 ⓘ (B-44 · 확정 17번 · P-8 기본 꺼짐) -->
+    <string name="settings_read_field_note">읽기 화면에 필드 설명 ⓘ</string>
+    <string name="settings_read_field_note_purpose">캐릭터 상세와 보충 화면에서, 설명을 적어 둔 필드 옆에 ⓘ를 보입니다. 눌러 설명을 읽습니다. 설명이 없는 필드에는 나타나지 않습니다.</string>
     <string name="settings_data">데이터 관리</string>
     <!-- App Reset -->
     <string name="settings_reset_app">앱 초기화</string>
@@ -1722,9 +1725,20 @@
     <string name="body_part_index">%1$d번째 값</string>
     <string name="body_target_ratio_label">목표 비율</string>
     <string name="body_target_ratio_hint_auto">같은 키의 장르 기준 몸(X라인 중심)과의 거리입니다. 이상값은 체형 분석 설정에서 직접 정할 수 있습니다.</string>
-    <string name="body_target_ratio_hint_custom">직접 정한 이상값과의 거리입니다.</string>
     <string name="body_target_ratio_hint_body">직접 정한 이상 몸 %1$s-%2$s-%3$s(키 %4$s 기준)과의 거리입니다. 캐릭터 키에 맞춰 조정됩니다.</string>
     <string name="body_target_ratio_score">%1$s점 / 100점</string>
+
+    <!-- 목표 비율 기준 (B-94 · 확정 8번) — 필드 설정에 기본 기준, 카드에서 즉석 전환 -->
+    <string name="body_target_ratio_source_title">목표 비율 기준</string>
+    <string name="body_target_ratio_source_purpose">목표 비율을 무엇과 견줄지 정합니다. 이 세계관의 캐릭터 전체에 적용되며, 캐릭터 상세의 체형 카드에서 잠깐 다른 기준으로 바꿔 볼 수 있습니다(그 전환은 저장되지 않습니다).</string>
+    <string name="body_target_ratio_source_auto">자동 — 이상 몸을 적었으면 그것, 아니면 장르 기준</string>
+    <string name="body_target_ratio_source_auto_short">자동</string>
+    <string name="body_target_ratio_source_genre">장르 기준</string>
+    <string name="body_target_ratio_source_ideal_body">이상 몸</string>
+    <string name="body_target_ratio_source_novel_average">작품 평균</string>
+    <string name="body_target_ratio_hint_novel_average">같은 작품 캐릭터의 평균 몸 %1$s-%2$s-%3$s(키 %4$s)과의 거리입니다. 캐릭터 키에 맞춰 조정됩니다.</string>
+    <string name="body_target_ratio_pinned">이 중 %1$d칸은 비율로 직접 고정한 값입니다.</string>
+    <string name="body_target_ratio_fallback">%1$s 기준을 쓸 수 없어 아래 기준으로 쟀습니다.</string>
     <string name="body_rank_bust">가슴 %1$d위</string>
     <string name="body_rank_hip">엉덩이 %1$d위</string>
     <string name="body_rank_height">키 %1$d위</string>
