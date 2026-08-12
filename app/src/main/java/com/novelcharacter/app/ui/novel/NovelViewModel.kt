@@ -142,6 +142,12 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
      * 정의는 **구역을 가리지 않고** 읽는다: 목록이 전 세계관을 걸칠 수 있고(세계관 필터 없음),
      * 무소속 작품은 전역 구역의 정의를 든다(B-129). 어느 정의를 쓸지는 값 행이 고르므로
      * 남의 구역 정의가 섞여 들어와도 카드에 남의 값이 서지 않는다.
+     *
+     * **셈은 기본 디스패처에서 한다.** DAO는 Room이 알아서 자기 실행기로 보내지만 그 뒤의
+     * `groupBy`·[com.novelcharacter.app.util.CardFieldSummary.build]는 **부른 쪽 스레드에서
+     * 그대로 돈다** — 호출부가 `lifecycleScope`(주 스레드)라 목록이 방출될 때마다 정의마다의
+     * config JSON 파싱과 값 행 묶기가 주 스레드에 얹힌다. 목록은 작품 표가 바뀔 때마다
+     * 다시 방출되므로 그 비용이 스크롤에 그대로 붙는다.
      */
     suspend fun getNovelFieldSummaries(
         novelIds: List<Long>
@@ -156,11 +162,13 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
             val values = distinctIds.chunked(900).flatMap { chunk ->
                 db.novelFieldValueDao().getValuesByNovels(chunk)
             }
-            com.novelcharacter.app.util.CardFieldSummary.build(
-                defs = defs,
-                rowsByEntity = values.groupBy({ it.novelId }, { it.fieldDefinitionId to it.value }),
-                entityIds = distinctIds
-            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.novelcharacter.app.util.CardFieldSummary.build(
+                    defs = defs,
+                    rowsByEntity = values.groupBy({ it.novelId }, { it.fieldDefinitionId to it.value }),
+                    entityIds = distinctIds
+                )
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // **취소는 실패가 아니다.** 목록이 다시 방출되면 앞선 조회는 취소되는데, 그것까지
             // 아래 갈래가 삼키면 낡은 호출이 살아나 빈 결과를 최신 요약 위에 덮어쓴다.
