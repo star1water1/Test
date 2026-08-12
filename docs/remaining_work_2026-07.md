@@ -216,19 +216,22 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > **이 판에서 특히 볼 단계가 둘 늘었다:** `Upload Room schemas`가 실제로 아티팩트를 내는가
 > (`if-no-files-found: error`라 스키마가 안 나오면 그 자리에서 빨간불이다) · `Run unit tests`가
 > `AppDatabase`의 `ALL_MIGRATIONS` 추출을 컴파일하는가.
-> **⏳ 2026.08.12 — 로드맵 13판(B-39)이 이 목록의 첫 줄이다.**
-> 병합 커밋 `09e6ab4`. 화면 파일 **둘**(`StatsFieldAnalysisDetailFragment` ·
-> `StatsFieldInsightFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 아직 못 미쳤고,
-> **로드맵 항목이 애초에 *CI 안 돎*으로 계획돼 14판 PR이 덮기로 돼 있다.**
-> **못 본 것이 무엇인지 적어 둔다:** 두 Fragment의 편집이 컴파일되는가 —
-> 레거시 쪽은 `buildHistogram`을 **지우고** 요약의 새 필드(`histogram`·`matchSpecs`·
-> `fieldDefId`)로 갈아탔고, 인사이트 쪽은 히스토그램에 `attachChartTapListener`를 붙였다.
-> **`ui/**`는 실클래스패스 프로브가 통째로 빼므로 로컬에 증명 수단이 없다**(11·12판이
-> 같은 자리에서 import 누락을 겪었다 — 그 부류는 `triage_unresolved.sh`가 잡고 이번엔 초록이다).
-> 계산 계층(`StatsDataProvider`·`NumericBinning`)은 프로브와 순수 JVM이 모두 덮었다.
+> **✅ 2026.08.12 — 로드맵 13판(PR #278, run `31594340702`, head `9cdecbf`)이 마지막으로 덮었다.
+> 목록은 비어 있다.** 사용자 지시(*"콜드검토 하고 pr하고 병합까지"*)로 그 자리에서 열었다 —
+> **로드맵은 이 판을 *CI 안 돎*으로 계획했고 14판이 덮기로 돼 있었는데, 지시가 그것을 앞당겼다.**
+> **돌린 값이 컸다** — 로컬에 증명 수단이 아예 없던 자리를 이 실행이 처음 확인했다:
+> `StatsFieldAnalysisDetailFragment`가 `buildHistogram`을 **지우고** 요약의 새 필드
+> (`histogram`·`matchSpecs`·`fieldDefId`)로 갈아탄 것 · `StatsFieldInsightFragment`가 히스토그램에
+> `attachChartTapListener`를 붙인 것. 둘 다 `ui/**`라 실클래스패스 프로브 밖이다.
+> 배지가 아니라 단계를 봤다: `Static checks` ✓ 32초 · `Schema harnesses` ✓ ·
+> **`Run unit tests` ✓ 3분02초** · `Build Debug APK` ✓ 47초 · `Upload/Commit Room schemas` ✓ ·
+> `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
+> **`Commit Room schemas`가 아무것도 얹지 않았다** — 병합 직전 브랜치 머리가 `9cdecbf` 그대로인
+> 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다(`git rev-parse`로 실측했다).
+> **마이그레이션 워크플로는 돌지 않았고 그것이 맞다** — 트리거가 `data/dao/**`인데 DAO를 안 건드렸다.
+> **14판은 자기 몫만 지고 시작한다.**
 >
-> **✅ 2026.08.12 — 로드맵 12판(PR #276, run `31583673700`, head `c7c4300`)이 마지막으로 덮었다.
-> 그 시점까지의 목록은 비어 있었다.** 그 전에는 11판(PR #274)이, 그 전에는 10판(PR #272)이 덮었다.
+> **✅ 2026.08.12 — 그 전에는 로드맵 12판(PR #276, run `31583673700`, head `c7c4300`)이 덮었다.** 그 전에는 11판(PR #274)이, 그 전에는 10판(PR #272)이 덮었다.
 > 배지가 아니라 단계를 봤다: `Static checks` ✓ 32초 · `Schema harnesses` ✓ ·
 > **`Run unit tests` ✓ 2분59초** · `Build Debug APK` ✓ 47초 · `Upload/Commit Room schemas` ✓ ·
 > `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
@@ -6704,7 +6707,14 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | **⑤** | 22판 | **B-10** | 선행이 풀려 있다(B-9이 2판에서 닫혔다) |
    > | **⑥** | 15·17·18판 | 선행이 아예 없는 판들 | 순서를 바꿔 잡고 싶으면 여기서 고른다 |
    >
-   > **② CI를 안 돌렸다 — 계획대로다. ⏳ 미검증 목록에 이 판이 첫 줄로 서 있다.**
+   > **② ~~CI를 안 돌렸다~~ CI는 돌았고 초록이다 · 병합 완료. ⏳ 미검증 목록은 다시 비었다.**
+   > **PR #278, run `31594340702`, head `9cdecbf`.** 사용자 지시(*"콜드검토 하고 pr하고 병합까지"*)로
+   > 그 자리에서 열었다 — 로드맵은 *CI 안 돎*으로 계획했고 14판이 덮기로 돼 있었는데 지시가 앞당겼다.
+   > **14판은 자기 몫만 지고 시작한다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 32초 ·
+   > `Schema harnesses` ✓ · **`Run unit tests` ✓ 3분02초** · `Build Debug APK` ✓ 47초 ·
+   > `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓. **`Commit Room schemas`가 아무것도
+   > 얹지 않았다**(머리가 `9cdecbf` 그대로 — *마이그레이션 없음*을 기계가 확인해 준 자리다).
+   > **종전 ② 본문(못 본 것이 무엇인가)은 2장 ⏳ 항목이 기록으로 든다.**
    > 로드맵 13판 항목이 애초에 *"CI: 이번엔 안 돈다(⏳ 목록에 등재)"*로 계획됐고, 화면 파일이
    > **둘**이라 `CLAUDE.md` 4번의 *2~3개*에도 못 미쳤다. **못 본 것을 2장에 적어 뒀다** —
    > 두 Fragment의 편집(레거시는 `buildHistogram`을 **지우고** 요약의 새 필드로 갈아탔고,
