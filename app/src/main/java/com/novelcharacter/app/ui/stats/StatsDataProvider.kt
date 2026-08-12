@@ -298,7 +298,22 @@ data class NumberFieldSummary(
     val avg: Float,
     val median: Float,
     val count: Int,
-    val values: List<Float> = emptyList()
+    /**
+     * 드릴다운 대상 필드 (B-39). 종전에는 이 요약이 **이름 문자열만** 들고 있어서
+     * 히스토그램에 리스너를 달아도 어느 필드를 조회할지 정할 수 없었다 —
+     * BODY_SIZE 파트 요약의 이름은 `"신체 — 키"`처럼 조립된 것이라 되짚을 수도 없다.
+     */
+    val fieldDefId: Long = 0,
+    /**
+     * 구간 라벨 → 건수. 구간 생성은 [NumericBinning]이 단일 소스다 (B-39).
+     *
+     * 종전에는 화면이 값 목록을 받아 **자체 8등분**을 했다. 그래서 같은 필드가 인사이트
+     * 화면(5등분)과 이 화면(8등분)에서 다른 모양으로 보였고, 폭이 좁으면 라벨이 겹쳐
+     * 맵 키가 충돌했다(그 부류를 막으려고 [NumericBinning]이 만들어졌다).
+     */
+    val histogram: Map<String, Int> = emptyMap(),
+    /** 라벨 → 드릴다운 매치 스펙. 근거는 [NumericSummaryData.matchSpecs]와 같다. */
+    val matchSpecs: Map<String, FieldValueMatchSpec> = emptyMap()
 )
 
 data class FieldCompletionDetail(
@@ -340,7 +355,18 @@ data class NumericSummaryData(
     val avg: Float,
     val median: Float,
     val stdDev: Float,
-    val histogram: Map<String, Int>
+    val histogram: Map<String, Int>,
+    /**
+     * 히스토그램 막대 라벨 → 드릴다운 매치 스펙 (B-39).
+     *
+     * 구간 라벨은 **계산 결과**라 저장값과 같을 수 없다. 라벨을 그대로 매칭 키로 넘기면
+     * 어떤 입력에서도 0명이 나온다(S-16이 BODY_SIZE 파이에서 겪은 그 결함) — 그래서
+     * 막대를 만든 구간 규칙 자체를 [FieldValueMatchSpec.NumericPartRange]로 실어 보낸다.
+     * 자동 구간과 사용자 구간이 **같은 종류의 스펙**을 쓰는 것도 요점이다: 사용자 구간은
+     * 라벨 매칭으로도 우연히 동작하지만(그쪽만 `getFieldValues`가 라벨을 돌려준다)
+     * BODY_SIZE 파트에서는 그 우연이 성립하지 않아 한쪽만 조용히 죽는다.
+     */
+    val matchSpecs: Map<String, FieldValueMatchSpec> = emptyMap()
 )
 
 // ===== 교차 분석 (신규) =====
@@ -1804,22 +1830,21 @@ class StatsDataProvider {
                     structuredConfig.parts[partIdx].label
                 } else "칸${partIdx + 1}"
 
-                val numericValues = rawValues.mapNotNull { value ->
-                    val parts = value.split(separator).map { it.trim() }
-                    parts.getOrNull(partIdx)?.toFloatOrNull()
-                }
+                // 값 추출은 [NumericBinning]이 단일 소스다 — 드릴다운도 같은 함수로 읽으므로
+                // 여기서만 다른 규칙을 쓰면 조각의 수와 목록의 인원이 갈린다(B-39).
+                val numericValues = NumericBinning.numericValuesOf(rawValues, separator, partIdx)
                 if (numericValues.isNotEmpty()) {
                     AnalysisResult(
                         entry.copy(label = partLabel),
                         null,
-                        computeNumericSummary(numericValues, statsConfig.binning)
+                        computeNumericSummary(numericValues, statsConfig.binning, partIdx, separator)
                     )
                 } else null
             }
         }
 
-        // 기본 NUMERIC 분석
-        val numericValues = rawValues.mapNotNull { it.toFloatOrNull() }
+        // 기본 NUMERIC 분석 — 파트가 없으므로 원문 전체가 0번 파트다.
+        val numericValues = NumericBinning.numericValuesOf(rawValues, "", 0)
         val summary = if (numericValues.isNotEmpty()) {
             computeNumericSummary(numericValues, statsConfig.binning)
         } else null
@@ -1888,9 +1913,16 @@ class StatsDataProvider {
         return categorized
     }
 
+    /**
+     * [partIndex]·[separator]는 이 수치가 원문의 **어디에서 나왔는가**다 — 드릴다운 스펙이
+     * 같은 자리를 다시 읽으려면 필요하다. 파트 없는 값(NUMBER·CALCULATED)은 기본값
+     * (`0`·`""`)으로 원문 전체를 가리킨다.
+     */
     private fun computeNumericSummary(
         values: List<Float>,
-        binning: FieldStatsConfig.BinningConfig?
+        binning: FieldStatsConfig.BinningConfig?,
+        partIndex: Int = 0,
+        separator: String = ""
     ): NumericSummaryData? {
         if (values.isEmpty()) return null
         val sorted = values.sorted()
@@ -1905,35 +1937,50 @@ class StatsDataProvider {
         val variance = values.map { (it - avg) * (it - avg) }.average().toFloat()
         val stdDev = kotlin.math.sqrt(variance.toDouble()).toFloat()
 
-        // 히스토그램
-        val histogram = if (binning != null && binning.mode == "custom") {
+        // 히스토그램 — 막대와 그 막대의 드릴다운 규칙을 **함께** 만든다(B-39).
+        // 둘을 따로 만들면 라벨은 있는데 스펙이 없는 막대가 생기고, 그 막대는 눌러도
+        // 아무 일이 없거나 0명짜리 시트가 뜬다.
+        val histogram = linkedMapOf<String, Int>()
+        val specs = linkedMapOf<String, FieldValueMatchSpec>()
+
+        if (binning != null && binning.mode == "custom") {
             val ranges = binning.parseRanges()
             val lastRange = ranges.lastOrNull()
-            val counts = mutableMapOf<String, Int>()
             for (range in ranges) {
-                counts[range.label] = values.count {
+                histogram[range.label] = values.count {
                     if (range === lastRange) range.containsInclusive(it) else range.contains(it)
                 }
+                // 열린 구간(`~100`·`200~`)은 ±무한으로 싣는다 — 스펙의 경계는 non-null이고,
+                // 무한 비교는 유한값에 대해 '경계 없음'과 정확히 같은 뜻이다.
+                specs[range.label] = FieldValueMatchSpec.NumericPartRange(
+                    partIndex = partIndex,
+                    separator = separator,
+                    min = range.min ?: Float.NEGATIVE_INFINITY,
+                    max = range.max ?: Float.POSITIVE_INFINITY,
+                    inclusiveMax = range === lastRange
+                )
             }
-            counts
         } else {
-            // 자동 5등분
             val range = max - min
             if (range <= 0) {
-                mapOf(min.toString() to values.size)
+                // 값이 하나뿐이거나 전부 같다 — 나눌 구간이 없다. 구간 하나도 [NumericBinning]이
+                // 만든다(`min.toString()`은 Float의 `"170.0"`이라 다른 막대와 모양이 갈렸고,
+                // 라벨을 여기서 손으로 지으면 자릿수가 틀려 `170.5`가 `"170~170"`이 된다).
+                val only = NumericBinning.singleBin(min)
+                histogram[only.label] = values.size
+                specs[only.label] = FieldValueMatchSpec.of(only, partIndex, separator)
             } else {
                 // 구간 생성은 단일 소스([NumericBinning])를 쓴다 — 자체 5등분은 정수 범위가
                 // 좁은 필드(자녀 수 0~2, 레벨 1~3)에서 라벨이 겹쳐 맵 키가 충돌했고,
                 // 앞 구간의 인원이 개수 고지도 없이 사라졌다.
-                val counts = linkedMapOf<String, Int>()
-                for (bin in NumericBinning.autoBins(values)) {
-                    counts[bin.label] = values.count { bin.contains(it) }
+                for ((bin, count) in NumericBinning.autoDistribution(values)) {
+                    histogram[bin.label] = count
+                    specs[bin.label] = FieldValueMatchSpec.of(bin, partIndex, separator)
                 }
-                counts
             }
         }
 
-        return NumericSummaryData(min, max, avg, median, stdDev, histogram)
+        return NumericSummaryData(min, max, avg, median, stdDev, histogram, specs)
     }
 
     // ===== 교차 분석 (신규) =====
@@ -2313,13 +2360,36 @@ class StatsDataProvider {
             )
         }
 
-        // ── 수치형(NUMBER·CALCULATED) 사용자 구간 분포 ──
-        // getFieldValues가 구간 라벨을 돌려주므로 라벨이 곧 파싱 값이다(드릴다운은 값 일치).
-        // 자동 구간(binning=auto)의 분포는 여기서 만들지 않는다 — 별건 백로그(개-5)다.
+        // ── 수치형(NUMBER·CALCULATED) 구간 분포 ──
+        // 사용자 구간은 getFieldValues가 구간 라벨을 돌려주므로 라벨이 곧 파싱 값이다(값 일치).
+        // 자동 구간은 라벨이 **계산 결과**라 값 일치가 성립하지 않으므로 구간 규칙 자체를
+        // 스펙으로 싣는다 — BODY_SIZE 파트 분포가 아래에서 쓰는 그 길이다(B-39).
         for (fd in analyzableFields.filter { it.type in BINNABLE_TYPES }) {
             val statsConfig = statsCache.of(fd)
-            if (statsConfig.binning?.mode != "custom") continue
             val values = valuesByFieldDef[fd.id] ?: continue
+            if (statsConfig.binning?.mode != "custom") {
+                // 파트가 없는 값이므로 원문 전체가 0번 파트다(B-39 행이 지시한 그 형태).
+                val rawValues = values.filter { it.value.isNotBlank() }.map { it.value }
+                val numericValues = NumericBinning.numericValuesOf(rawValues, "", 0)
+                val binned = NumericBinning.autoDistribution(numericValues)
+                // 값이 2개 미만이거나 폭이 0이면 나눌 구간이 없다 — 분포를 만들지 않는다.
+                // (수치 요약은 그래도 나온다: 최소·최대·평균은 값 하나로도 말이 된다.)
+                if (binned.isEmpty()) continue
+                val dist = linkedMapOf<String, Int>()
+                val specs = linkedMapOf<String, FieldValueMatchSpec>()
+                for ((bin, count) in binned) {
+                    dist[bin.label] = count
+                    specs[bin.label] = FieldValueMatchSpec.of(bin, partIndex = 0, separator = "")
+                }
+                fieldValueDists.add(
+                    FieldValueDistribution(
+                        fd.id, fd.name, fd.type, fd.groupName, dist,
+                        matchSpecs = specs,
+                        orderedByValue = true
+                    )
+                )
+                continue
+            }
             val keys = values.filter { it.value.isNotBlank() }
                 .flatMap { fv -> getFieldValues(s, fd, fv.value, statsConfig) }
             if (keys.isEmpty()) continue
@@ -2382,11 +2452,11 @@ class StatsDataProvider {
 
         // NUMBER와 CALCULATED는 같은 수치다 — 수식 필드라고 요약에서 빠질 이유가 없다(S-15).
         for (fd in analyzableFields.filter { it.type in BINNABLE_TYPES }) {
-            val values = valuesByFieldDef[fd.id]
-                ?.mapNotNull { it.value.toFloatOrNull() }
-                ?: continue
+            val raw = valuesByFieldDef[fd.id] ?: continue
+            val values = NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
             if (values.isEmpty()) continue
-            numberSummaries.add(numberSummary(fd.name, values))
+            numberSummary(fd.name, fd.id, values, statsCache.of(fd).binning)
+                ?.let { numberSummaries.add(it) }
         }
 
         // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median)
@@ -2395,14 +2465,17 @@ class StatsDataProvider {
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
             val partCount = bodySizePartCount(structuredConfig, rawValues.firstOrNull()?.value, separator)
+            val binning = statsCache.of(fd).binning
 
             for (partIdx in 0 until partCount) {
                 val partLabel = bodySizePartLabel(structuredConfig, partIdx)
-                val numericValues = rawValues.mapNotNull {
-                    NumericBinning.partValue(it.value, separator, partIdx)
-                }
+                val numericValues = NumericBinning.numericValuesOf(
+                    rawValues.map { it.value }, separator, partIdx
+                )
                 if (numericValues.isEmpty()) continue
-                numberSummaries.add(numberSummary("${fd.name} — $partLabel", numericValues))
+                numberSummary(
+                    "${fd.name} — $partLabel", fd.id, numericValues, binning, partIdx, separator
+                )?.let { numberSummaries.add(it) }
             }
         }
 
@@ -2453,20 +2526,36 @@ class StatsDataProvider {
         if (config.enabled && partIdx < config.parts.size) config.parts[partIdx].label
         else "칸${partIdx + 1}"
 
-    /** 수치 요약 조립 — min/max/avg/median 계산이 세 곳에 흩어지지 않게 한다. */
-    private fun numberSummary(fieldName: String, values: List<Float>): NumberFieldSummary {
-        val sorted = values.sorted()
-        val median = if (sorted.size % 2 == 0) {
-            (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
-        } else sorted[sorted.size / 2]
+    /**
+     * 수치 요약 조립 — min/max/avg/median 계산이 세 곳에 흩어지지 않게 한다.
+     *
+     * **히스토그램도 여기서 만든다**(B-39). 종전에는 이 요약이 값 목록을 통째로 실어 보내고
+     * 화면이 자체 8등분을 했다 — 같은 필드가 화면마다 다른 모양이 됐고, 값 목록은 수치 필드
+     * 수만큼 스냅샷 파생 객체에 그대로 남았다. 구간을 여기서 정하면 그 목록은 이 함수가
+     * 끝나는 자리에서 버려진다.
+     */
+    private fun numberSummary(
+        fieldName: String,
+        fieldDefId: Long,
+        values: List<Float>,
+        binning: FieldStatsConfig.BinningConfig?,
+        partIndex: Int = 0,
+        separator: String = ""
+    ): NumberFieldSummary? {
+        // **인사이트 화면과 같은 함수가 전부 계산한다.** 종전에 이 함수는 min/max/median을
+        // 자기가 다시 구했는데, 그러면 **같은 목록을 두 번 정렬하고 중앙값 식이 두 벌**이 된다 —
+        // 짝수 개일 때의 처리 같은 것이 한쪽에서만 고쳐지면 두 화면의 숫자가 갈린다.
+        val summary = computeNumericSummary(values, binning, partIndex, separator) ?: return null
         return NumberFieldSummary(
             fieldName = fieldName,
-            min = sorted.first(),
-            max = sorted.last(),
-            avg = values.average().toFloat(),
-            median = median,
+            min = summary.min,
+            max = summary.max,
+            avg = summary.avg,
+            median = summary.median,
             count = values.size,
-            values = sorted
+            fieldDefId = fieldDefId,
+            histogram = summary.histogram,
+            matchSpecs = summary.matchSpecs
         )
     }
 
@@ -2985,7 +3074,7 @@ class StatsDataProvider {
             if (result.containsKey(charId)) return
             val char = charMap[charId] ?: return
             val images = try {
-                com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+                DRILLDOWN_GSON.fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
             } catch (_: Exception) { emptyList() }
             result[charId] = FieldValueCharacter(
                 characterId = char.id,
@@ -3211,7 +3300,7 @@ class StatsDataProvider {
             val char = charMap[charId] ?: continue
             val shownValue = matched ?: vals.firstOrNull { it !in values } ?: vals.firstOrNull() ?: ""
             val images = try {
-                com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+                DRILLDOWN_GSON.fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
             } catch (_: Exception) { emptyList() }
             result.add(
                 FieldValueCharacter(
@@ -4066,6 +4155,16 @@ class StatsDataProvider {
     }
 
     companion object {
+        /**
+         * 드릴다운 목록이 캐릭터 이미지 경로를 읽는 데 쓰는 **공용** Gson.
+         *
+         * 종전에는 `record()` 안에서 `Gson()`을 **행마다 새로** 만들었다. Gson 생성은 타입
+         * 어댑터 팩토리를 통째로 짓는 무거운 작업이라, 300명짜리 조각을 누르면 300번을 짓는다.
+         * 인스턴스는 상태가 없고 스레드 안전하므로 한 벌을 돌려쓴다 — B-39가 히스토그램 둘을
+         * 이 경로로 새로 흘려보내면서 함께 고쳤다.
+         */
+        private val DRILLDOWN_GSON = com.google.gson.Gson()
+
         /** 사용자 구간(binning) 설정을 받는 수치형 타입. 타입이 늘면 여기만 고친다. */
         private val BINNABLE_TYPES = setOf("NUMBER", "CALCULATED")
 
