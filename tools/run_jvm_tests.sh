@@ -175,6 +175,8 @@ $MAIN/data/model/RandomConfig.kt
 $MAIN/data/model/SemanticRole.kt
 $MAIN/data/model/RequiredEnforcement.kt
 $MAIN/ai/CharacterFieldAiSuggester.kt
+$MAIN/ai/FieldPromptSource.kt
+$MAIN/ai/EventFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
 $MAIN/ai/AiCreativity.kt
@@ -241,6 +243,7 @@ $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/ImportSource.kt
 $MAIN/util/ResetPlan.kt
 $MAIN/util/MembershipTimeline.kt
+$MAIN/util/TimelineDisplayOrder.kt
 $MAIN/data/model/UserPresetTemplate.kt
 $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
@@ -405,10 +408,12 @@ $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
 $TEST/util/ResetPlanTest.kt
 $TEST/util/MembershipTimelineTest.kt
+$TEST/util/TimelineDisplayOrderTest.kt
 $TEST/util/FactionMembershipMatcherTest.kt
 $TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
+$TEST/ai/EventFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
 $TEST/ai/NarrativeBulkDraftTest.kt
 $TEST/ai/ImageFolderTagSuggesterTest.kt

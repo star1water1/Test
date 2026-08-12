@@ -9,6 +9,8 @@ import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.DialogQuickAddEventBinding
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 
 /**
  * 간편 사건 추가 다이얼로그 (연도 + 한줄 설명).
@@ -21,20 +23,31 @@ class QuickAddEventDialogFragment : DialogFragment() {
         val year = requireArguments().getInt(ARG_YEAR)
         val binding = DialogQuickAddEventBinding.inflate(layoutInflater)
 
-        return MaterialAlertDialogBuilder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.quick_add_event_title, year))
             .setView(binding.root)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val desc = binding.editQuickEventDesc.text.toString().trim()
-                if (desc.isNotEmpty()) {
-                    parentFragmentManager.setFragmentResult(
-                        RESULT_KEY,
-                        bundleOf(RESULT_YEAR to year, RESULT_DESCRIPTION to desc)
-                    )
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+
+        // R-27 — 설명이 비면 창을 닫지 않는다. 종전에는 `if (desc.isNotEmpty())`가 저장을
+        // **감싸고** 있어서(가드-래핑), 비운 채 저장을 누르면 아무 말 없이 창만 닫히고
+        // 적어 둔 것이 사라졌다. 이 창은 밀도 바 롱프레스로 들어오는 러프 입력 자리라
+        // "썼는데 없다"가 특히 알아채기 어렵다(B-76 마지막 자리).
+        dialog.setValidatedPositiveButton {
+            val desc = binding.editQuickEventDesc.text.toString().trim()
+            if (desc.isEmpty()) {
+                binding.editQuickEventDesc.showInlineError(getString(R.string.event_description_required))
+                false
+            } else {
+                parentFragmentManager.setFragmentResult(
+                    RESULT_KEY,
+                    bundleOf(RESULT_YEAR to year, RESULT_DESCRIPTION to desc)
+                )
+                true
+            }
+        }
+        return dialog
     }
 
     companion object {

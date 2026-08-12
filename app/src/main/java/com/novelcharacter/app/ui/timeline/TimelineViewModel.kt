@@ -18,6 +18,7 @@ import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
+import com.novelcharacter.app.util.TimelineDisplayOrder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -92,6 +93,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
+
+    // ===== 표시 순서 (B-47) =====
+    // 뒤집기는 **표시 계층 한 자리**에서만 한다 — 근거는 [TimelineDisplayOrder] KDoc(실측).
+    private val _sortDescending = MutableLiveData(
+        prefs.getBoolean(TimelineDisplayOrder.PREF_KEY_DESCENDING, TimelineDisplayOrder.DEFAULT_DESCENDING)
+    )
+    val sortDescending: LiveData<Boolean> = _sortDescending
+
+    private fun isDescending(): Boolean = _sortDescending.value == true
+
+    /** 시간순 ↔ 역순 전환. 보기 설정이므로 기기에 남는다(다시 열 때 같은 방향). */
+    fun toggleSortDescending() {
+        val next = !isDescending()
+        _sortDescending.value = next
+        prefs.edit().putBoolean(TimelineDisplayOrder.PREF_KEY_DESCENDING, next).apply()
+    }
 
     // 소설 필터에 연동된 캐릭터 목록
     private val _filteredCharacters = MediatorLiveData<List<Character>>().apply {
@@ -248,6 +265,21 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 화면이 그리는 목록 — [searchResults](시간순)에 표시 순서를 입힌 것 (B-47).
+     *
+     * 화면은 이것 하나만 본다. `searchResults`를 직접 관측하는 자리가 남으면 그 자리만
+     * 토글을 모른 채 시간순으로 남는다.
+     */
+    val displayEvents: LiveData<List<TimelineEvent>> = MediatorLiveData<List<TimelineEvent>>().apply {
+        fun update() {
+            val events = searchResults.value ?: return
+            value = TimelineDisplayOrder.arrange(events, isDescending())
+        }
+        addSource(searchResults) { update() }
+        addSource(_sortDescending) { update() }
+    }
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
@@ -364,17 +396,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
         if (filtered.isEmpty()) return EventNavState(false, false, -1, 0)
 
-        val hasPrev = filtered.any { it.year < center }
-        val hasNext = filtered.any { it.year > center }
+        val descending = isDescending()
+        // '이전'은 언제나 **목록 위쪽**이다 — 역순이면 그것이 더 늦은 연도다(B-47).
+        // 방향을 여기서 갈라 두지 않으면 `N / M`은 표시 순서로 세는데 버튼만 시간순이라,
+        // '다음'을 누를 때마다 번호가 줄어든다.
+        val hasPrev = filtered.any { TimelineDisplayOrder.isEarlierInDisplay(it.year, center, descending) }
+        val hasNext = filtered.any { TimelineDisplayOrder.isEarlierInDisplay(center, it.year, descending) }
 
-        // 현재 center에 가장 가까운 위치 찾기
+        // 현재 center에 가장 가까운 위치 찾기 (시간순 기준으로 구한 뒤 표시 순서로 옮긴다)
         val exactIdx = filtered.indexOfFirst { it.year >= center }
-        val currentIdx = when {
+        val ascIdx = when {
             exactIdx == -1 -> filtered.lastIndex               // 모든 사건이 center 이전
             filtered[exactIdx].year == center -> exactIdx      // 정확히 일치
             exactIdx > 0 -> exactIdx - 1                       // center가 두 사건 사이
             else -> -1                                         // center가 첫 사건 이전
         }
+        val currentIdx = TimelineDisplayOrder.displayIndexOf(ascIdx, filtered.size, descending)
 
         return EventNavState(hasPrev, hasNext, currentIdx, filtered.size)
     }
@@ -390,19 +427,26 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         addSource(_searchQuery, update)
     }
 
-    /** 현재 center year 기준으로 직전 사건의 연도로 이동 */
-    fun navigateToPreviousEvent() {
-        val filtered = getFilteredEventsInMemory()
-        val center = _centerYear.value ?: 0
-        val target = filtered.lastOrNull { it.year < center } ?: return
-        setSelectedYear(target.year)
-    }
+    /** 표시 순서에서 **한 칸 위**의 사건으로 이동 (시간순이면 직전, 역순이면 직후 연도) */
+    fun navigateToPreviousEvent() = navigateInDisplayOrder(towardEnd = false)
 
-    /** 현재 center year 기준으로 직후 사건의 연도로 이동 */
-    fun navigateToNextEvent() {
-        val filtered = getFilteredEventsInMemory()
+    /** 표시 순서에서 **한 칸 아래**의 사건으로 이동 */
+    fun navigateToNextEvent() = navigateInDisplayOrder(towardEnd = true)
+
+    /**
+     * 버튼이 가리키는 것은 목록의 위/아래이지 연도의 과거/미래가 아니다 (B-47).
+     * 역순에서는 두 방향이 서로 바뀐다 — 그것이 이 함수가 하나인 이유다
+     * (두 벌로 두면 한쪽만 토글을 아는 상태가 생긴다).
+     */
+    private fun navigateInDisplayOrder(towardEnd: Boolean) {
+        val filtered = getFilteredEventsInMemory()   // 시간순
         val center = _centerYear.value ?: 0
-        val target = filtered.firstOrNull { it.year > center } ?: return
+        val toLaterYear = towardEnd != isDescending()
+        val target = if (toLaterYear) {
+            filtered.firstOrNull { it.year > center }
+        } else {
+            filtered.lastOrNull { it.year < center }
+        } ?: return
         setSelectedYear(target.year)
     }
 
@@ -703,8 +747,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun updateDisplayOrders(events: List<TimelineEvent>) = viewModelScope.launch {
+    /**
+     * 드래그 재정렬 저장 — 넘어오는 [visualOrder]는 **화면에 보이던 차례**다.
+     * 저장 번호는 언제나 시간순 기준이므로 역순 화면이면 뒤에서부터 매긴다(B-47).
+     */
+    fun updateDisplayOrders(visualOrder: List<TimelineEvent>) = viewModelScope.launch {
         try {
+            val events = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
             db.timelineDao().updateAll(events)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update display orders", e)

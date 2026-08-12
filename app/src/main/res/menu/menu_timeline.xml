@@ -7,4 +7,10 @@
         android:title="@string/reorder_mode"
         app:showAsAction="never" />
 
+    <!-- 문구는 **누르면 무엇이 되는가**로 적는다(현재 상태가 아니라) — 화면이 실행 시 갱신한다. -->
+    <item
+        android:id="@+id/action_sort_order"
+        android:title="@string/timeline_sort_descending"
+        app:showAsAction="never" />
+
 </menu>

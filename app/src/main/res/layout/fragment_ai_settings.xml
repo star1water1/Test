@@ -167,6 +167,52 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 사건 AI 재료 범위 (B-43) — 켤 것을 사용자가 고른다(확정 16번). 저장 버튼 없음(원칙 04) -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ai_settings_event_scope"
+                        android:textAppearance="@style/TextAppearance.App.BodyStrong" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="@string/ai_settings_event_scope_desc"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/eventScopeContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/eventScopeEmptyNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/ai_settings_event_scope_empty"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorPrimary"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- 받아올 근거 강도 — 슬라이더가 아니라 택일이라 RadioGroup. 저장 버튼 없음(원칙 04) -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"

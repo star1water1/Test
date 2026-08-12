@@ -158,8 +158,41 @@ class AiSettingsFragment : Fragment() {
      * 눈금·범위는 레이아웃이 아니라 [AiPromptPolicy]가 단일 소스다 — 저장값이 눈금 밖이면
      * Material Slider가 예외로 죽는다.
      */
+    /**
+     * 사건 AI 재료 범위 (B-43 · 확정 16번 ㄱ1/ㄱ2 인앱 선택).
+     *
+     * 체크박스를 **목록에서 만들어 낸다** — 재료가 늘 때 화면을 고칠 자리가 없게 하기 위해서다
+     * (레이아웃에 네 칸을 박아 두면 다섯째 재료가 생겨도 화면은 조용히 넷만 보여 준다).
+     * 저장 버튼은 없다: 누르는 즉시 반영이 이 저장소의 설정 규약이다(원칙 04).
+     */
+    private fun setupEventAiScope() {
+        val settings = AiPromptSettings(requireContext())
+        val container = binding.eventScopeContainer
+        container.removeAllViews()
+        val boxes = com.novelcharacter.app.ai.EventAiMaterial.entries.map { material ->
+            val box = android.widget.CheckBox(requireContext()).apply {
+                text = material.label
+                isChecked = material in settings.eventContextScope
+            }
+            container.addView(box)
+            material to box
+        }
+        fun apply() {
+            val picked = boxes.filter { it.second.isChecked }.map { it.first }.toSet()
+            settings.eventContextScope = picked
+            // 전부 껐다는 사실을 그 자리에서 말한다 — 그때 무엇이 남는지 모르면
+            // 사용자는 추천이 빈약해진 이유를 설정에서 찾지 못한다(변수 제어).
+            binding.eventScopeEmptyNotice.visibility =
+                if (picked.isEmpty()) View.VISIBLE else View.GONE
+        }
+        boxes.forEach { (_, box) -> box.setOnCheckedChangeListener { _, _ -> apply() } }
+        binding.eventScopeEmptyNotice.visibility =
+            if (settings.eventContextScope.isEmpty()) View.VISIBLE else View.GONE
+    }
+
     private fun setupConsistencySliders() {
         val settings = AiPromptSettings(requireContext())
+        setupEventAiScope()
 
         binding.usageExamplesSlider.valueFrom = 0f
         binding.usageExamplesSlider.valueTo = AiPromptPolicy.USAGE_EXAMPLES_MAX.toFloat()

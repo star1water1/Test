@@ -99,6 +99,14 @@ object AppSettingsKeys {
     val AI_NAME_SUGGEST_BATCH_SIZE = Spec("ai_name_suggest_batch_size", Kind.NUMBER)
 
     /**
+     * 사건 AI 추천의 재료 범위 — 켠 재료의 키를 쉼표로 이은 것 (B-43).
+     *
+     * **빈 칸이 뜻을 갖는다**([AI_MIN_CONFIDENCE]와 같은 부류) — '전부 끔'이라서다.
+     * 그래서 이 행은 값이 비어도 유실이 아니고, 가져오기도 빈 칸을 값으로 읽는다.
+     */
+    val AI_EVENT_CONTEXT_SCOPE = Spec("ai_event_context_scope", Kind.TEXT)
+
+    /**
      * API 키 전부 — `{"프로바이더id":"키"}` JSON 한 칸.
      *
      * **기본 제외다**(사용자 확정 3번 ㄴ1). 켜려면 내보내기에서 별도 동의를 눌러야 하고,
@@ -146,6 +154,7 @@ object AppSettingsKeys {
         AI_USAGE_EXAMPLE_COUNT, AI_STYLE_SAMPLE_COUNT, AI_MIN_CONFIDENCE, AI_CREATIVITY,
         AI_ATTACH_IMAGE_COUNT, AI_ATTACH_REPRESENTATIVE_FIRST,
         AI_IMAGE_TAG_POLICY, AI_IMAGE_TAG_BATCH_SIZE, AI_NAME_SUGGEST_BATCH_SIZE,
+        AI_EVENT_CONTEXT_SCOPE,
         AI_API_KEYS,
         STATS_COMPLETION_REQUIRED_WEIGHT, STATS_PATTERN_TYPES,
         SUPPLEMENT_CHECK_IMAGES, SUPPLEMENT_CHECK_MEMO, SUPPLEMENT_CHECK_ALIASES,

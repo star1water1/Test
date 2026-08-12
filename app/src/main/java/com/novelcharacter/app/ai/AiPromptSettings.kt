@@ -129,6 +129,22 @@ class AiPromptSettings(context: Context) {
             sp.edit().putInt(KEY_NAME_SUGGEST_BATCH, AiPromptPolicy.clampNameSuggestBatch(value)).apply()
         }
 
+    /**
+     * 사건 필드 AI 추천에 실을 **재료 범위** (B-43, 확정 16번 ㄱ1/ㄱ2 인앱 선택).
+     *
+     * **앱 전체다**(P-7 해소 — 2026.08.04 사용자 확정). 근거는 실측이었다: AI 설정 저장소
+     * 셋(`AiKeyStore`·`AiPromptSettings`·`AiProviderStore`)이 전부 앱 전체이고 세계관 단위
+     * AI 설정은 하나도 없다 — 여기서만 세계관 단위로 가면 AI 설정이 두 축으로 갈린다.
+     *
+     * **키가 없는 것과 빈 값은 다르다** — 없으면 기본(전부 켬)이고, 빈 값은 사용자가 전부
+     * 끈 것이다. 둘을 합치면 *"전부 끄기"*가 저장되지 않아 다음에 열 때 되살아난다.
+     */
+    var eventContextScope: Set<EventAiMaterial>
+        get() = EventAiMaterial.parse(sp.getString(KEY_EVENT_CONTEXT_SCOPE, null))
+        set(value) {
+            sp.edit().putString(KEY_EVENT_CONTEXT_SCOPE, EventAiMaterial.serialize(value)).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
@@ -141,5 +157,6 @@ class AiPromptSettings(context: Context) {
         private const val KEY_ATTACH_REPRESENTATIVE = "attachRepresentativeFirst"
         private const val KEY_IMAGE_TAG_BATCH = "imageTagBatchSize"
         private const val KEY_NAME_SUGGEST_BATCH = "nameSuggestBatchSize"
+        private const val KEY_EVENT_CONTEXT_SCOPE = "eventContextScope"
     }
 }
