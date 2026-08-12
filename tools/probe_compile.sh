@@ -76,6 +76,26 @@ class Context {
 }
 EOF
 
+# `android.util.LruCache` — 2026.08.12(B-12)에 들어왔다. 종전에는 이 타입을 **`ui/**`의
+# 어댑터 넷만** 썼고 그쪽은 프로브의 범위 밖이라 스텁이 필요 없었는데, 썸네일 캐시를
+# 인자로 받는 공용 로더(`util/CharacterImageLoader.kt`)가 생기며 범위 안으로 들어왔다.
+# **없는 채로 두면 신규 오류 2건이 기준선에 얹혀 진짜 결함을 덮는다** — 프로브의 값은
+# base 대 cur의 차이가 0이라는 데 있으므로, 가짜 오류를 남겨 두면 그 값이 줄어든다.
+# 시그니처는 실제 프레임워크와 같게 둔다(`sizeOf` 재정의가 컴파일돼야 의미가 있다).
+cat > "$WORK/AndroidUtilStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package android.util
+open class LruCache<K : Any, V : Any>(maxSize: Int) {
+    open fun get(key: K): V? = null
+    open fun put(key: K, value: V): V? = null
+    open fun remove(key: K): V? = null
+    open fun evictAll() {}
+    open fun size(): Int = 0
+    open fun maxSize(): Int = 0
+    protected open fun sizeOf(key: K, value: V): Int = 1
+}
+EOF
+
 # AppDatabase는 **실제 파일에서 DAO 접근자만 뽑아** 세운다 — 손으로 적으면 접근자가 늘 때 낡는다.
 {
   echo "// 프로브 전용 — 실제 AppDatabase의 DAO 접근자만 뽑아 세운다(생성 시각의 실제 목록)."
@@ -100,6 +120,7 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
   echo "$WORK/AndroidProbeStubs.kt"
+  echo "$WORK/AndroidUtilStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
 } | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"

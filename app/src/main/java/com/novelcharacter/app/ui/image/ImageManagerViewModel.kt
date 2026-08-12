@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import com.novelcharacter.app.util.FolderRoundtripPrefs
@@ -18,7 +19,10 @@ import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.ImageLinkResolver
 import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.ImageSettingsStore
+import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
+import com.novelcharacter.app.util.logResult
+import com.novelcharacter.app.util.toastResult
 import com.novelcharacter.app.util.withImagePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1809,6 +1813,45 @@ class ImageManagerViewModel(
     }
 
     /**
+     * 태그 적용의 **끝맺음** — 문장을 만들고, 이력을 남기고, 화면에 넘긴다 (B-164).
+     *
+     * ## 왜 뷰가 아니라 여기인가
+     *
+     * 종전에는 문장 조립과 이력 기록을 **호출측 콜백이 함께** 했다
+     * (`if (!isAdded) return` → `reportAndNotify`). 화면이 붙어 있는 정상 경로에서는 옳지만,
+     * 사용자가 적용 직후 다른 화면으로 넘어가면 **그 return이 기록까지 함께 막았다** —
+     * 하필 **유료 응답이 걸린 실패**가 어디에도 남지 않아 나중에 되짚을 수 없었다.
+     *
+     * 그래서 **뷰가 이력의 문지기가 되지 못하게** 자리를 옮겼다. 이력은 이 함수가 무조건
+     * 남기므로, 호출측이 무엇을 하든(혹은 아무것도 못 하든) 기록은 선다 — 검사로 지키는
+     * 것이 아니라 **구조적으로 막을 자리가 없어진 것**이 요점이다.
+     *
+     * ## 고지도 잃지 않는다
+     *
+     * [onDone]은 *"화면이 알렸는가"*를 돌려준다. 못 알렸으면 **토스트로 대신 알린다**
+     * ([toastResult] — 뷰 계층과 무관하게 닿는다). 화면이 있을 때 토스트로 통일하지 않는
+     * 이유는 스낵바가 '상세' 액션을 달 수 있어서다.
+     *
+     * **이력을 [onDone]보다 *먼저* 남기는 것이 요점이다.** 순서를 뒤집으면 *"무조건 남는다"*가
+     * **고지 경로가 던지지 않는 한**으로 조용히 약해진다 — 이 함수가 없애려는 것이 바로
+     * *뷰의 사정이 기록을 좌우하는* 그 모양이라, 같은 모양을 한 겹 얇게 남겨 둘 이유가 없다.
+     */
+    private fun finishTagApply(outcome: TagApplyOutcome, onDone: (OpResult) -> Boolean) {
+        val result = when (outcome) {
+            is TagApplyOutcome.Done -> OpResult.success(
+                OpResult.CAT_MAINTENANCE,
+                app.getString(R.string.image_tag_review_applied, outcome.tags, outcome.images)
+            )
+            TagApplyOutcome.Failed -> OpResult.failure(
+                OpResult.CAT_MAINTENANCE,
+                app.getString(R.string.image_tag_review_apply_failed)
+            )
+        }
+        logResult(result)
+        if (!onDone(result)) toastResult(result)
+    }
+
+    /**
      * 검토 시트에서 고른 태그를 **이미지별로** 적용한다 — 폴더판([applyFolderTags])과 같은 규칙:
      * 기존 태그와 **합친다**(덮지 않는다).
      *
@@ -1824,7 +1867,7 @@ class ImageManagerViewModel(
      */
     fun applyImageTags(
         picked: Map<String, List<String>>,
-        onDone: (TagApplyOutcome) -> Unit
+        onDone: (OpResult) -> Boolean
     ) {
         // 누른 **그 시점**에 든다. 코루틴 안에서 읽으면 이미 시트가 닫히며 비운 뒤다.
         val pending = aiTagResult.value
@@ -1861,7 +1904,7 @@ class ImageManagerViewModel(
             // 되살리기는 고지보다 **먼저** 한다 — 사용자가 실패 문구를 읽는 순간 이미 검토 창이
             // 돌아와 있어야 "다시 적용해 주세요"가 가리킬 자리가 있다.
             if (outcome is TagApplyOutcome.Failed) aiTagResult.value = pending
-            onDone(outcome)
+            finishTagApply(outcome, onDone)
         }
     }
 
@@ -1876,7 +1919,7 @@ class ImageManagerViewModel(
     fun applyFolderTags(
         picked: Map<String, List<String>>,
         pathsByFolder: Map<String, List<String>>,
-        onDone: (TagApplyOutcome) -> Unit
+        onDone: (OpResult) -> Boolean
     ) {
         val pending = folderTagResult.value
         folderTagResult.value = null
@@ -1912,7 +1955,7 @@ class ImageManagerViewModel(
             }
             load()
             if (outcome is TagApplyOutcome.Failed) folderTagResult.value = pending
-            onDone(outcome)
+            finishTagApply(outcome, onDone)
         }
     }
 

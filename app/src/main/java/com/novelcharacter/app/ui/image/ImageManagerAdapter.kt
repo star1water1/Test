@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ui.image
 
+import android.graphics.Bitmap
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +20,9 @@ import kotlinx.coroutines.Job
  * 썸네일 디코드는 공용 [loadCharacterThumbnail](재활용-안전)을 쓰고, 반환 Job을 onViewRecycled에서 취소한다.
  *
  * 선택 모드에서는 셀 위에 선택 스크림·체크 표식을 덧씌우고, 탭이 상세 열기가 아니라 선택 토글로 동작한다.
+ *
+ * **디코드한 썸네일은 [thumbnailCache]에 남는다** (B-12) — 이 화면은 앱에서 그림이 가장
+ * 촘촘한 격자라, 캐시가 없으면 스크롤을 되돌릴 때마다 같은 파일을 다시 디코드한다.
  */
 class ImageManagerAdapter(
     private val scope: CoroutineScope,
@@ -28,6 +33,27 @@ class ImageManagerAdapter(
 
     private var selectionMode = false
     private var selectedPaths: Set<String> = emptySet()
+
+    /**
+     * 썸네일 캐시 — **형제 넷(`CharacterAdapter`·`UniverseAdapter`·`NovelAdapter`·`RankingAdapter`)과
+     * 같은 자리·같은 셈**이다(어댑터가 소유하고, 화면을 떠날 때 통째로 비운다).
+     *
+     * 공용 로더로 소유를 올리지 않은 것은 의도한 선택이다 — 자기 캐시를 이미 든 어댑터 넷과
+     * 이중이 되고, 그 재편은 아직 미측정·미판정인 B-58의 몫이다(확정 16번 = ⓑ '아직').
+     * 로더는 캐시를 **인자로 받기만** 하므로 넘기지 않는 화면 다섯은 그대로다.
+     *
+     * 몫을 형제 중 큰 쪽(`maxMemory/8`)에 맞춘 것은 이 격자가 한 화면에 드는 셀이 가장 많고
+     * 셀당 요청 크기도 256px로 큰 축이기 때문이다. 상한을 두는 것은 [LruCache]가
+     * `sizeOf`로 실제 바이트를 세기 때문에 큰 힙에서 캐시가 화면 하나를 위해 과하게 자라지
+     * 않게 하려는 것이다(형제와 같은 관행).
+     */
+    private val thumbnailCache: LruCache<String, Bitmap> = run {
+        val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+        val cacheSize = maxMemory / 8
+        object : LruCache<String, Bitmap>(cacheSize.coerceIn(1024, 20 * 1024)) {
+            override fun sizeOf(key: String, bitmap: Bitmap): Int = bitmap.byteCount / 1024
+        }
+    }
 
     /** 선택 모드/선택 집합 갱신 — 오버레이만 부분 갱신(payload)해 썸네일 재디코드를 피한다(선택 토글 잔렉 제거). */
     fun setSelectionState(mode: Boolean, selected: Set<String>) {
@@ -56,7 +82,8 @@ class ImageManagerAdapter(
         val binding = ItemManagedImageBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return VH(binding, scope, onClick, onToggleSelect, onLongPress, ::getItem,
             selectionModeProvider = { selectionMode },
-            selectedProvider = { selectedPaths })
+            selectedProvider = { selectedPaths },
+            thumbnailCache = thumbnailCache)
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
@@ -74,6 +101,12 @@ class ImageManagerAdapter(
         holder.recycle()
     }
 
+    /** 화면을 떠나면 통째로 비운다 — 형제 넷과 같은 관행(들고 있을 이유가 없는 순간이다). */
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        thumbnailCache.evictAll()
+    }
+
     class VH(
         private val binding: ItemManagedImageBinding,
         private val scope: CoroutineScope,
@@ -82,7 +115,8 @@ class ImageManagerAdapter(
         private val onLongPress: (ImageManagerViewModel.ManagedImage) -> Unit,
         private val itemAt: (Int) -> ImageManagerViewModel.ManagedImage,
         private val selectionModeProvider: () -> Boolean,
-        private val selectedProvider: () -> Set<String>
+        private val selectedProvider: () -> Set<String>,
+        private val thumbnailCache: LruCache<String, Bitmap>
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var thumbJob: Job? = null
@@ -141,6 +175,7 @@ class ImageManagerAdapter(
             thumbJob?.cancel()
             thumbJob = binding.thumbnail.loadCharacterThumbnail(
                 item.path, scope, reqPx = 256,
+                cache = thumbnailCache,
                 isValid = { bindingAdapterPosition != RecyclerView.NO_POSITION }
             )
         }

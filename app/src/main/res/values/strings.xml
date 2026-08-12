@@ -3266,6 +3266,9 @@
     <string name="image_ai_tag_batch_size">한 번에 보낼 장수: %1$d장</string>
     <string name="image_ai_tag_cost">이미지 %1$d장을 %2$d장씩 %3$d번에 나눠 보냅니다. 적용 전에 검토합니다.</string>
     <string name="image_ai_tag_privacy">이미지는 AI 제공사 서버로 전송됩니다. 장당 대략 250~1,600토큰이 듭니다(제공사마다 다릅니다).</string>
+    <!-- B-157: 이미 배운 거부는 누르기 전에 말한다. 실행기가 요청조차 만들지 않으므로,
+         말하지 않으면 "눌렀는데 아무것도 안 나왔다"만 남는다. -->
+    <string name="image_ai_tag_no_vision_upfront">지금 모델은 이미지를 받지 않는 것으로 확인됐습니다. 이대로 보내면 요청 없이 멈추니, 설정에서 이미지를 읽는 모델로 바꾼 뒤 실행해 주세요.</string>
     <string name="image_ai_tag_stage">이미지를 보내는 중</string>
     <string name="image_ai_tag_progress">이미지 %1$d/%2$d</string>
     <string name="image_ai_tag_notice_unreadable">이미지 %1$d장은 파일을 읽지 못해 빼고 보냈습니다</string>
@@ -3304,10 +3307,20 @@
     <string name="ai_attach_representative_label">대표 이미지를 항상 첫 장으로</string>
     <string name="ai_attach_representative_desc">켜면 지정한 대표 이미지가 첨부의 첫 장이 되고 나머지만 무작위로 채웁니다. 지정한 대표가 없으면 그 사실을 알리고 전부 무작위로 고릅니다.</string>
     <string name="ai_image_tag_policy_label">AI 이미지 태그 기조</string>
-    <string name="ai_image_tag_policy_desc">쓰면 이미지 폴더 받아오기가 폴더 이름으로 태그를 제안할 때 이 지침을 함께 전달합니다. 이 기능은 폴더 이름만 읽고 이미지 자체는 보내지 않습니다. 비워 두면 보내지 않습니다.</string>
+    <!-- 소비처 등재 (B-165) — 이 문구는 아래 둘을 **다** 말해야 한다. 늘거나 줄면
+         tools/check_ai_tag_consumers.sh 가 실패하며 여기로 보낸다.
+           · suggestFolderTags — 이미지 폴더 받아오기 (폴더 이름만 읽는다)
+           · suggestImageTags  — 이미지 관리 탭의 AI 태그 제안 (그림 자체를 보낸다)
+         종전 문구는 앞의 하나만 말하면서 "이미지 자체는 보내지 않습니다"라고 단언했는데,
+         B-121이 그림을 보내는 둘째 소비처를 붙이면서 그 문장이 거짓이 됐다. 프라이버시
+         문장이라 무게가 다르고, 배치판은 image_ai_tag_privacy로 반대되는 말을 하고 있었다. -->
+    <string name="ai_image_tag_policy_desc">쓰면 이미지 폴더 받아오기의 태그 제안과 이미지 관리 탭의 AI 태그 제안(이미지 보기)이 이 지침을 함께 전달합니다. 폴더 받아오기는 폴더 이름만 읽지만, 이미지 관리 탭의 제안은 그림 자체를 AI 제공사 서버로 보냅니다. 비워 두면 보내지 않습니다.</string>
     <string name="ai_image_tag_policy_hint">예: 장면 종류와 복장을 우선으로 하고, 인물 감정은 넣지 마세요.</string>
     <string name="field_image_tag_vocab_label">AI 이미지 태그 어휘에 포함</string>
-    <string name="field_image_tag_vocab_desc">켜면 이 필드에 입력된 값들이 이미지 폴더 받아오기의 AI 태그 제안 때 어휘 후보로 함께 전달됩니다. 기조 문구에 적히지 않으며, 이 필드의 값도 바뀌지 않습니다.</string>
+    <!-- 소비처 등재 (B-165) — 어휘도 기조와 **같은 둘**에 실린다(loadTagVocabulary가 한 벌을
+         만들어 양쪽에 넘긴다). 기조 문구와 같은 사고를 함께 겪고 있었다: 종전에는 폴더 쪽만
+         말해, 이미지 관리 탭의 제안이 마음에 안 드는 사용자가 이 스위치를 조종간으로 못 봤다. -->
+    <string name="field_image_tag_vocab_desc">켜면 이 필드에 입력된 값들이 이미지 폴더 받아오기와 이미지 관리 탭의 AI 태그 제안 때 어휘 후보로 함께 전달됩니다. 기조 문구에 적히지 않으며, 이 필드의 값도 바뀌지 않습니다.</string>
     <string name="hint_field_description">필드 설명 (선택)</string>
     <string name="helper_field_description">이 필드가 무엇인지 적어 두세요 — ⓘ로 확인할 수 있고, AI 추천이 이 설명을 규칙으로 따릅니다.</string>
     <string name="field_description_info_desc">필드 설명 보기</string>

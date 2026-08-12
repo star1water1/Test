@@ -7,6 +7,7 @@ import com.novelcharacter.app.ai.ImageBatchTagSuggester.Companion.chunkImages
 import com.novelcharacter.app.ai.ImageBatchTagSuggester.Companion.foldToVocabulary
 import com.novelcharacter.app.ai.ImageBatchTagSuggester.Companion.parse
 import com.novelcharacter.app.ai.ImageBatchTagSuggester.ParseOutcome
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -399,5 +400,75 @@ class ImageBatchTagSuggesterTest {
 
         // d·e만 다시 권한다 — c는 이미 1장으로 보내 봤으므로 또 권하면 돈만 쓴다.
         assertEquals(listOf("d", "e"), retryable)
+    }
+
+    // ── ④ 버릴 답에 과금하지 않는다 (B-157) ──
+    //
+    // **이 절의 증명은 반환값이 아니라 '부르지 않았다'는 사실이다.** `complete` 자리에 던지는
+    // 람다를 세워 두므로, 요청을 만들면 시험이 그 자리에서 죽는다 — 가짜 성공을 돌려주는
+    // 짝퉁이었다면 *"요청은 갔지만 결과가 같다"*와 구별할 수 없었다.
+    //
+    // **`AiService`를 이름조차 부르지 않는 것이 요점이다.** 순수 JVM 하네스는 그 클래스를
+    // 스텁으로 대신하는데 스텁의 생성자는 인자가 없고 진짜는 `Context`를 받는다 —
+    // 그 차이 위에 시험을 세우면 **로컬에서만 컴파일되고 Gradle(CI)에서 깨진다**(2026.08.12에
+    // 실제로 그렇게 깨졌다). 람다로 받으면 두 환경이 같은 것을 보고 시험이 CI에서도 돈다.
+
+    private fun suggester(imagesUnsupported: Boolean) = ImageBatchTagSuggester(
+        complete = { throw AssertionError("요청을 만들면 안 된다 — 이미 아는 거부다 (B-157)") },
+        effectiveMaxTokens = { 2048 },
+        imagesUnsupported = { imagesUnsupported }
+    )
+
+    /** 준비기가 불렸는지까지 센다 — 보내지 않을 그림을 디코드하는 비용도 함께 없어져야 한다. */
+    private class CountingLoader : ImageBatchTagSuggester.ImageLoader {
+        var calls = 0
+        override suspend fun prepare(paths: List<String>): ImageBatchTagSuggester.LoadResult {
+            calls++
+            return ImageBatchTagSuggester.LoadResult(
+                loaded = paths.map { ImageBatchTagSuggester.Loaded(it, AiImage(base64 = "ZmFrZQ==")) }
+            )
+        }
+    }
+
+    @Test fun suggest_foldsWithoutRequestWhenModelIsKnownToRejectImages() = runBlocking {
+        val loader = CountingLoader()
+        val result = suggester(imagesUnsupported = true).suggest(
+            paths = listOf("a", "b", "c"), perRequest = 2, vocab = vocab(), policyRaw = "",
+            loader = loader
+        )
+
+        // 첫 배치를 접고 멈춘다 — 학습된 사실이라 남은 배치도 같은 결과다.
+        assertEquals(1, result.failures.size)
+        assertEquals(BatchFailKind.IMAGES_UNSUPPORTED, result.failures.first().kind)
+        assertEquals(listOf("a", "b"), result.failures.first().paths)
+        assertTrue(result.suggestions.isEmpty())
+        // 준비기조차 부르지 않는다.
+        assertEquals(0, loader.calls)
+    }
+
+    @Test fun suggest_stillTriesOnceWhenNothingIsLearnedYet() = runBlocking {
+        // **배우는 유일한 경로가 그 첫 실행이다** — 가드가 학습 전까지 막으면 영영 못 배운다.
+        // 그래서 여기서는 요청 경로로 들어가고, 던지는 `complete`가 그 사실을 드러낸다.
+        val loader = CountingLoader()
+        val threw = runCatching {
+            suggester(imagesUnsupported = false).suggest(
+                paths = listOf("a"), perRequest = 1, vocab = vocab(), policyRaw = "", loader = loader
+            )
+        }.exceptionOrNull()
+
+        assertTrue("학습 전에는 요청 경로로 가야 한다", threw is AssertionError)
+        assertEquals(1, loader.calls)
+    }
+
+    @Test fun suggest_reportsProgressForTheFoldedBatch() = runBlocking {
+        // 접힌 배치도 진행도에서는 '끝난 요청'이다 — 세지 않으면 눈금이 총계에 닿지 못하고
+        // 멈춘 것처럼 보인다(R-26의 결정형 진행도가 깨진다).
+        val seen = ArrayList<Pair<Int, Int>>()
+        suggester(imagesUnsupported = true).suggest(
+            paths = listOf("a", "b"), perRequest = 1, vocab = vocab(), policyRaw = "",
+            loader = CountingLoader(),
+            onProgress = { done, total, _, _ -> seen.add(done to total) }
+        )
+        assertEquals(listOf(0 to 2, 1 to 2), seen)
     }
 }

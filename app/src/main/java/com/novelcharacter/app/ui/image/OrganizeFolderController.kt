@@ -9,8 +9,8 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifyError
+import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.notifySuccess
-import com.novelcharacter.app.util.reportAndNotify
 import kotlinx.coroutines.launch
 
 /**
@@ -444,10 +444,11 @@ class OrganizeFolderController(
             ?.takeIf { it.isAdded }
         val sheet = existing ?: ImageFolderTagReviewSheet()
         // 비우는 일은 여기서 하지 않는다 — 실패 시 되살릴 것이 남아야 한다(R-38 · B-163).
+        // 이미지판과 같은 규칙이다 — 문장·이력은 ViewModel이 들고 이 람다는 *"화면이 알렸는가"*만
+        // 돌려준다(B-164). 두 자리가 같은 모양이라야 한쪽만 고쳐지는 일이 없다.
         sheet.onApply = { picked ->
-            viewModel.applyFolderTags(picked, outcome.pathsByFolder) { applied ->
-                if (!fragment.isAdded) return@applyFolderTags
-                fragment.reportAndNotify(fragment.tagApplyResult(applied))
+            viewModel.applyFolderTags(picked, outcome.pathsByFolder) { result ->
+                fragment.notifyResult(result)
             }
         }
         sheet.onDismissed = { viewModel.clearFolderTagResult() }
