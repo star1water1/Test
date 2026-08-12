@@ -30,7 +30,6 @@ import com.novelcharacter.app.util.DuelCardGrid
 import com.novelcharacter.app.util.DuelCardInfo
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
-import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRound
 import com.novelcharacter.app.util.DuelSession
@@ -91,8 +90,14 @@ class DuelPlayFragment : Fragment() {
      */
     private var characterId: Long = -1L
 
-    /** 이미지 축의 참가자 현황 — 참가자 코드(=경로)와 진행률의 출처. */
-    private var imageEntry: DuelImageRoster.Entry? = null
+    /**
+     * 이미지 축의 참가자 현황 — 참가자 코드(=경로)와 진행률의 출처.
+     *
+     * **소유 표까지 함께 들고 있는 것이 요점이다**(B-175). 다시 계산은 한 판 누를 때마다 도는데,
+     * 몫 가르기가 그 표를 필요로 한다 — 그때마다 새로 만들면 세계관 그림 수만큼의 파일 시스템
+     * 호출이 **판마다** 붙는다.
+     */
+    private var imageTarget: DuelViewModel.ImageTarget? = null
 
     private val isImageAxis: Boolean get() = axis?.isImageAxis == true
 
@@ -253,14 +258,15 @@ class DuelPlayFragment : Fragment() {
      * (원칙 02가 금지하는 겉핥기). **읽지도 않으므로 질의도 늘지 않는다.**
      */
     private suspend fun loadImageFirst(loaded: DuelAxis) {
-        val entry = if (characterId > 0) viewModel.imageEntry(loaded, characterId) else null
-        if (entry == null) {
+        val target = if (characterId > 0) viewModel.imageTarget(loaded, characterId) else null
+        val entry = target?.entry
+        if (target == null || entry == null) {
             // 캐릭터를 정하지 못하면 고르는 화면이 먼저다 — 빈 대결 화면을 띄우면
             // 사용자는 "고장 났다"로 읽는다. 어디로 가야 하는지를 화면이 말한다.
             if (isAdded) openImageCharacters()
             return
         }
-        imageEntry = entry
+        imageTarget = target
         roster = null
         characters = emptyList()
         links = DuelFieldLinks.Axis()
@@ -272,7 +278,7 @@ class DuelPlayFragment : Fragment() {
         // 도는 대결이라 그 이름이 제목의 절반이다.
         binding.toolbar.title = getString(R.string.duel_image_play_title, loaded.name, entry.name)
 
-        val state = viewModel.loadImages(loaded, entry)
+        val state = viewModel.loadImages(loaded, target)
         if (!isAdded) return
         if (state == null) { render(); return }
         charactersByCode = emptyMap()
@@ -424,8 +430,8 @@ class DuelPlayFragment : Fragment() {
             // 그대로 타면 **참가자 0으로 다시 적합해 대기열이 통째로 마른다** — 화면에서는
             // *한 판 누르면 그대로 빈 화면이 되는* 것으로 나타난다.
             val loaded = if (axis.isImageAxis) {
-                val entry = imageEntry ?: return@launch
-                viewModel.loadImages(axis, entry) ?: return@launch
+                val target = imageTarget ?: return@launch
+                viewModel.loadImages(axis, target) ?: return@launch
             } else {
                 viewModel.load(axis, characters, roster?.candidateCodes)
             }
@@ -487,7 +493,7 @@ class DuelPlayFragment : Fragment() {
                 }
                 // 이미지 축은 모자란 것이 캐릭터가 아니라 **그 캐릭터의 그림**이다 —
                 // 캐릭터를 더 만들라고 하면 엉뚱한 곳으로 보내는 셈이다.
-                isImageAxis && (imageEntry?.imageCount ?: 0) < 2 -> {
+                isImageAxis && (imageTarget?.entry?.imageCount ?: 0) < 2 -> {
                     binding.emptyTitle.text = getString(R.string.duel_image_need_two)
                     binding.emptyHint.text = getString(R.string.duel_image_need_two_hint)
                 }

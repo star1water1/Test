@@ -230,4 +230,77 @@ class DuelRecordsTest {
         assertEquals(2, resolved.participants.size)
         assertEquals(2, resolved.participants.distinct().size)
     }
+
+    // ── 대조 방식 (B-175 — 로드맵 20판) ──
+    //
+    // 이미지 축의 코드는 **경로**라 같은 파일이 여러 표기를 가질 수 있다. 글자로 견주면 그런 판이
+    // 고아가 되고, `DuelImageRoster`는 처음부터 정규 경로로 나눠 왔으므로 **나누기와 적합이
+    // 서로 다른 판 수를 갖는다.** 이 절이 그 둘을 한 잣대로 묶은 것을 잠근다.
+
+    private val dir = "/data/user/0/com.novelcharacter.app/files"
+
+    @Test
+    fun `이미지 축은 표기가 갈려도 같은 참가자다`() {
+        val resolved = DuelRecords.resolve(
+            listOf("$dir/a1.jpg", "$dir/a2.jpg"),
+            listOf(match("$dir/./a1.jpg", "$dir/sub/../a2.jpg", "$dir/./a1.jpg")),
+            matching = DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        assertEquals(2, resolved.participants.size)
+        assertEquals("표기가 셋이어도 참가자는 둘이다", 2, resolved.idByCode.size)
+        assertEquals(0, resolved.missingParticipants)
+
+        val fit = DuelRating.fit(resolved.participants, resolved.matches)
+        assertEquals(1, fit.usedMatches)
+        assertEquals(0, fit.orphanMatches)
+        // 승자도 같은 잣대로 견준다 — 갈리면 멀쩡한 판이 '깨진 판'으로 세어진다.
+        assertEquals(0, fit.malformedMatches)
+    }
+
+    @Test
+    fun `글자 대조에서는 같은 파일이 두 참가자로 갈린다 — 이 판이 고친 것이 그것이다`() {
+        val exact = DuelRecords.resolve(
+            listOf("$dir/a1.jpg", "$dir/a2.jpg"),
+            listOf(match("$dir/./a1.jpg", "$dir/a2.jpg", "$dir/a2.jpg"))
+        )
+        assertEquals("종전 동작 — 표기가 갈리면 없는 참가자가 하나 생긴다", 1, exact.missingParticipants)
+        assertEquals(1, DuelRating.fit(exact.participants, exact.matches).orphanMatches)
+    }
+
+    @Test
+    fun `표시 코드는 목록의 표기가 이긴다`() {
+        // 저장에 들어가는 값은 원본 표기다(R-42). 새 판·엑셀·화면이 `codeById`를 그대로 쓰므로
+        // 정규 표기가 여기 새면 저장에도 새고, 정규화가 실패하는 날 코드가 죽는다.
+        val resolved = DuelRecords.resolve(
+            listOf("$dir/./a1.jpg", "$dir/a2.jpg"),
+            listOf(match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg")),
+            matching = DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        val id = resolved.idOf("$dir/a1.jpg")!!
+        assertEquals("$dir/./a1.jpg", resolved.codeOf(id))
+        // 어느 표기로 물어도 같은 대표를 준다 — 열쇠를 문자열로 맞추는 자리가 이것을 쓴다.
+        assertEquals("$dir/./a1.jpg", resolved.canonicalCode("$dir/sub/../a1.jpg"))
+        // 모르는 코드는 버리지 않고 그대로 돌려준다.
+        assertEquals("$dir/없다.jpg", resolved.canonicalCode("$dir/없다.jpg"))
+    }
+
+    @Test
+    fun `캐릭터 축의 코드는 정규화하지 않는다`() {
+        // `Character.code`를 경로로 읽으면 작업 디렉터리가 앞에 붙어 코드가 통째로 달라진다.
+        // 기본값이 EXACT인 것이 그래서이고, 이 시험이 그 기본값을 잠근다.
+        val resolved = DuelRecords.resolve(listOf("C-7", "C-8"), listOf(match("C-7", "C-8", "C-7")))
+        assertEquals(DuelRecords.CodeMatch.EXACT, resolved.matching)
+        assertEquals("C-7", resolved.codeOf(resolved.idOf("C-7")!!))
+        assertEquals(setOf("C-7", "C-8"), resolved.idByCode.keys)
+    }
+
+    @Test
+    fun `빈 코드는 참가자가 아니다 — 이미지 축에서도 같다`() {
+        val resolved = DuelRecords.resolve(
+            listOf("", "   ", "$dir/a1.jpg"),
+            emptyList(),
+            matching = DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        assertEquals(1, resolved.participants.size)
+    }
 }

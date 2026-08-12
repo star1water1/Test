@@ -44,6 +44,34 @@ object ImagePathMatch {
     }
 
     /**
+     * **한 작업짜리 정규화기** — 같은 문자열을 두 번 재지 않는다 (B-175).
+     *
+     * [canonical]은 `File.canonicalPath`, 즉 **파일 시스템 호출**이다(경로 조각마다 stat이
+     * 붙는다). 대결의 몫 가르기처럼 **같은 경로가 판 수만큼 되풀이되는 자리**에서는 그 비용이
+     * 그림 수가 아니라 **판 수**에 비례해 붙는다 — 이미지 n장이면 짝이 `n(n-1)/2`이라
+     * 한 경로가 대략 n번 재어지고, 그 자리가 하필 **한 판 누를 때마다 다시 도는 경로**다
+     * (`DuelPlayFragment`의 다시 계산). 여기 담아 두면 **한 문자열당 한 번**이다.
+     *
+     * **작업보다 오래 살려 두지 말 것.** 파일이 옮겨지면 이 표의 값이 낡는데 이 객체는 그것을
+     * 알 길이 없다 — 한 화면 한 번의 계산 안에서 만들고 버리는 것이 이 클래스의 수명이다.
+     * 전역 캐시로 두지 않은 것이 그래서이고, 그 판단은 [canonical]이 *"실패해도 원본을
+     * 돌려준다"*와 같은 뿌리다(모르면 버리지 않는다 — 낡은 값을 들고 있느니 다시 잰다).
+     */
+    class Canonicalizer {
+        private val cache = HashMap<String, String>()
+
+        /** [canonical]과 **글자 그대로 같은 답**을 준다 — 다르면 자리마다 대조가 갈린다. */
+        fun of(path: String?): String {
+            val raw = path?.trim().orEmpty()
+            if (raw.isEmpty()) return ""
+            return cache.getOrPut(raw) { canonical(raw) }
+        }
+
+        /** 지금까지 실제로 잰 문자열 수 — 시험이 *"두 번 재지 않았다"*를 확인하는 자리다. */
+        val measured: Int get() = cache.size
+    }
+
+    /**
      * 두 경로가 같은 파일을 가리키는가. **둘 중 하나라도 비어 있으면 false다** —
      * "지정 없음"은 무엇과도 같지 않다.
      */

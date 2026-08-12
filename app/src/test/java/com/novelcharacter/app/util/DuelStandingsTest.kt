@@ -264,4 +264,50 @@ class DuelStandingsTest {
         assertTrue(review.decided[0].isCycle)
         assertTrue(review.decided[0].stillDetected)
     }
+
+    @Test
+    fun `이미지 축은 표기가 갈린 처분도 한 줄이다`() {
+        // B-175. 후보 쪽 열쇠는 해석을 거친 **대표 표기**로 만들어지는데 저장된 `memberKey`는
+        // 원본 표기다(R-42). 저장된 값을 그대로 열쇠로 쓰면 **이미 판정한 처분이 후보로 한 번 더
+        // 뜬다** — 사용자는 같은 관계를 두 번 판정하게 되고, 두 판정은 서로를 덮는다.
+        val dir = "/data/user/0/com.novelcharacter.app/files"
+        val a = "$dir/a1.jpg"
+        val b = "$dir/a2.jpg"
+        val c = "$dir/a3.jpg"
+        val matches = listOf(match(a, b, a), match(b, c, b), match("$dir/./a3.jpg", a, c))
+        // 사용자가 판정할 때 적힌 표기가 목록의 것과 갈려 있다(엑셀·백업으로 들어온 모양).
+        val cycle = listOf(
+            verdict(listOf("$dir/./a1.jpg", b, "$dir/sub/../a3.jpg"), DuelCounterVerdict.KIND_UNDECIDED)
+        )
+        val records = DuelRecords.resolve(
+            listOf(a, b, c), matches, cycle, DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        val twoPass = DuelCounterRelations.analyzeTwoPass(
+            participants = records.participants,
+            matches = records.matches,
+            confirmedCounters = records.excludedPairs
+        )
+
+        assertTrue("이 배치는 순환이 잡혀야 한다", twoPass.report.cycles.isNotEmpty())
+        val review = DuelStandings.counterReview(twoPass.report, records, cycle)
+
+        assertTrue("표기가 갈렸다고 같은 관계가 두 줄이 되면 안 된다", review.candidates.isEmpty())
+        assertEquals(1, review.decided.size)
+        assertTrue(review.decided[0].stillDetected)
+        // **표시는 저장된 표기 그대로다** — 화면이 파일 이름을 그 값에서 내므로, 여기서 대표
+        // 표기로 갈아 끼우면 사용자가 파일 관리자에서 보는 이름과 갈릴 수 있다.
+        assertEquals("$dir/./a1.jpg", review.decided[0].memberCodes.first())
+    }
+
+    @Test
+    fun `캐릭터 축에서는 정규 키가 저장된 열쇠와 글자 그대로 같다`() {
+        // 위 시험이 바꾼 것이 캐릭터 축에 새지 않는다는 것 — EXACT에서는 대표 표기가 코드
+        // 그대로라 `memberKey`와 정규 키가 같은 문자열이어야 한다.
+        val decided = listOf(verdict(listOf("A", "B"), DuelCounterVerdict.KIND_COUNTER))
+        val (records, _, _) = stateOf(listOf("A", "B"), listOf(match("A", "B", "A")), decided)
+        assertEquals(
+            decided[0].memberKey,
+            DuelRecords.memberKey(listOf("A", "B").map { records.canonicalCode(it) })
+        )
+    }
 }

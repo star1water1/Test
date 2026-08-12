@@ -46,7 +46,12 @@ class DuelRepository(private val db: AppDatabase) {
         val report: DuelCounterRelations.Report,
         val plan: DuelPairing.Plan,
         val records: DuelRecords.Resolved,
-        val missingParticipants: Int
+        val missingParticipants: Int,
+        /**
+         * **이미지 축에서만** 0이 아니다 (B-175) — 이 캐릭터의 그림과 남의 그림이 함께 적힌
+         * 판 수다. 어느 캐릭터의 대결도 아니라 점수에 들지 않으며, 화면이 그 사실을 말한다.
+         */
+        val crossCharacterMatches: Int = 0
     )
 
     suspend fun axes(universeId: Long): List<DuelAxis> =
@@ -351,8 +356,20 @@ class DuelRepository(private val db: AppDatabase) {
     // ──────────────────────────────────────────────────────────────────────
 
     /**
+     * 이 축의 참가자 코드를 **무엇으로 견주는가** (B-175).
+     *
+     * 축의 종류가 곧 답이라 **판정을 여기 한 줄로 둔다** — 부르는 자리마다 적으면 한 자리가
+     * 빠지고, 빠진 자리는 오류가 나지 않는다(같은 파일의 판이 조용히 고아가 될 뿐이다).
+     */
+    private fun matchingOf(axis: DuelAxis): DuelRecords.CodeMatch =
+        if (axis.isImageAxis) DuelRecords.CodeMatch.IMAGE_PATH else DuelRecords.CodeMatch.EXACT
+
+    /**
      * 축의 현재 상태를 낸다. **2단 적합이 권장 진입점**이라 그것을 쓴다 — 한 번만 적합하면
      * 천적 관계 자체가 점수를 오염시켜 잔차를 지운다(설계 3장).
+     *
+     * **이미지 축은 [imageStateOf]를 쓴다** — 이 함수는 축의 판을 **전부** 넘기는데, 이미지
+     * 대결은 캐릭터마다 따로 돌아(설계 13-2) 남의 캐릭터 판이 전부 고아로 읽힌다.
      *
      * @param participantCodes 지금 살아 있는 참가자의 코드. 캐릭터 축이면 세계관의 캐릭터
      *   코드이고, 이미지 축이면 그 캐릭터의 이미지 경로다 — **무엇이 참가자인가는 호출부가
@@ -380,7 +397,8 @@ class DuelRepository(private val db: AppDatabase) {
         val records = DuelRecords.resolve(
             participantCodes,
             db.duelMatchDao().getByAxis(axis.id),
-            db.duelCounterVerdictDao().getByAxis(axis.id)
+            db.duelCounterVerdictDao().getByAxis(axis.id),
+            matching = matchingOf(axis)
         )
         val twoPass = DuelCounterRelations.analyzeTwoPass(
             participants = records.participants,
@@ -402,6 +420,85 @@ class DuelRepository(private val db: AppDatabase) {
             plan = plan,
             records = records,
             missingParticipants = records.missingParticipants
+        )
+    }
+
+    /**
+     * **이미지 축 한 캐릭터 몫의 상태** (B-175 — 로드맵 20판).
+     *
+     * @property state 그 캐릭터의 그림들만으로 낸 상태.
+     * @property verdicts 그 캐릭터 몫의 처분만. **축 전체를 넘기지 않는 것이 요점이다** —
+     *   상성 상세가 축 전체를 받으면 *"이 캐릭터의 관계"*를 묻는 화면에 **남의 그림 사이의
+     *   판정**이 줄로 뜬다.
+     */
+    data class ImageAxisState(
+        val state: AxisState,
+        val verdicts: List<DuelCounterVerdict>
+    )
+
+    /**
+     * **이미지 축은 한 캐릭터 몫만 본다** (B-175 — 설계 13-2).
+     *
+     * [stateOf]가 축의 판을 전부 넘기는 것이 이미지 축에서 왜 틀렸는가가 이 함수의 전부다.
+     * 참가자는 그 캐릭터의 그림뿐인데 판은 세계관 전원의 것이라, **남의 캐릭터 판이 모두
+     * 고아로 읽혔다** — 화면에는 *"지워진 참가자 N명의 판 M개가 점수에서 빠져 있습니다.
+     * 휴지통에서 되살리면 그 판도 함께 돌아옵니다"*로 나타난다. **아무것도 지워지지 않았고
+     * 되살릴 것도 없다.** 점수는 그 고아들을 빼고 냈으므로 맞았지만, 사용자가 읽는 문장이
+     * 거짓이었고 그것이 개발 의도 2번이 금지한 자리다.
+     *
+     * 몫을 가르는 잣대는 [DuelImageRoster.split]이고 **점수표([imageScoresByCharacter])와
+     * 같은 것**이다 — 두 벌로 적으면 순위표와 대표 추첨이 다른 판 수를 말한다(계약 1).
+     *
+     * @param characters 세계관의 캐릭터 전부. **화면이 이미 들고 있으면 그것을 넘길 것** —
+     *   한 판 누를 때마다 다시 도는 경로라, 여기서 다시 읽으면 그 조회가 판마다 붙는다.
+     * @return 그 캐릭터가 목록에 없으면(그림이 둘 미만) null — 붙일 짝이 없다는 뜻이다.
+     */
+    suspend fun imageStateOf(
+        axis: DuelAxis,
+        characters: List<Character>,
+        characterId: Long,
+        owners: DuelImageRoster.Owners = DuelImageRoster.owners(characters),
+        pairingOptions: DuelPairing.Options = DuelPairing.Options(),
+        counterOptions: DuelCounterRelations.Options = DuelCounterRelations.Options(),
+        ratingOptions: DuelRating.Options = DuelRating.Options()
+    ): ImageAxisState? {
+        val split = DuelImageRoster.splitOf(
+            characterId,
+            characters,
+            db.duelMatchDao().getByAxis(axis.id),
+            db.duelCounterVerdictDao().getByAxis(axis.id),
+            owners
+        ) ?: return null
+
+        val records = DuelRecords.resolve(
+            split.paths,
+            split.matches,
+            split.verdicts,
+            matching = DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        val twoPass = DuelCounterRelations.analyzeTwoPass(
+            participants = records.participants,
+            matches = records.matches,
+            confirmedCounters = records.excludedPairs,
+            ratingOptions = ratingOptions,
+            options = counterOptions
+        )
+        val plan = DuelPairing.plan(
+            fit = twoPass.fit,
+            recheckTargets = twoPass.report.involvedIds,
+            options = pairingOptions
+        )
+        return ImageAxisState(
+            state = AxisState(
+                axis = axis,
+                fit = twoPass.fit,
+                report = twoPass.report,
+                plan = plan,
+                records = records,
+                missingParticipants = records.missingParticipants,
+                crossCharacterMatches = split.crossCharacterMatches
+            ),
+            verdicts = split.verdicts
         )
     }
 
@@ -431,7 +528,8 @@ class DuelRepository(private val db: AppDatabase) {
         val records = DuelRecords.resolve(
             participantCodes,
             matches,
-            db.duelCounterVerdictDao().getByAxis(axis.id)
+            db.duelCounterVerdictDao().getByAxis(axis.id),
+            matching = matchingOf(axis)
         )
         val twoPass = DuelCounterRelations.analyzeTwoPass(
             participants = records.participants,
@@ -483,7 +581,12 @@ class DuelRepository(private val db: AppDatabase) {
         val out = LinkedHashMap<Long, DuelScoreIndex.AxisScores>()
         for (split in DuelImageRoster.split(characters, matches, verdicts)) {
             if (split.matches.isEmpty()) continue
-            val records = DuelRecords.resolve(split.paths, split.matches, split.verdicts)
+            val records = DuelRecords.resolve(
+                split.paths,
+                split.matches,
+                split.verdicts,
+                matching = DuelRecords.CodeMatch.IMAGE_PATH
+            )
             val twoPass = DuelCounterRelations.analyzeTwoPass(
                 participants = records.participants,
                 matches = records.matches,
