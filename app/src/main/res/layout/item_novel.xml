@@ -60,6 +60,25 @@
                 android:maxLines="2"
                 android:ellipsize="end" />
 
+            <!-- 작품 커스텀 필드값 (B-67): 편집 창을 열지 않아도 목록에서 보이게 -->
+            <TextView
+                android:id="@+id/novelFieldsText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                android:textColor="@color/on_surface"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/novelFieldsMoreText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+
         </LinearLayout>
 
         <ImageView

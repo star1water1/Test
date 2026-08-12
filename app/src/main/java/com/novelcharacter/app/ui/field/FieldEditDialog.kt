@@ -1050,8 +1050,12 @@ class FieldEditDialog : DialogFragment() {
      * 캐릭터 목록 카드가 같은 설정을 쓰게 되면 조건만 넓히면 된다(설정 자체는 필드 종류를 가리지 않는다).
      */
     private fun setupCardDisplaySection(binding: DialogFieldEditBinding) {
-        val isEventField = currentEntityType() == FieldDefinition.ENTITY_EVENT
-        binding.cardDisplayLayout.visibility = if (isEventField) View.VISIBLE else View.GONE
+        // **요약을 실제로 그리는 목록이 있는 종류만 연다** — 사건 카드(B-5)와 작품 카드(B-67)다.
+        // 캐릭터에도 열면 켜도 아무 데도 나오지 않는 스위치가 되어 겉핥기가 된다(원칙 02).
+        // 캐릭터 목록이 같은 요약을 쓰게 되는 날 이 조건에 한 줄이 붙는다.
+        val hasCardSummary = currentEntityType() == FieldDefinition.ENTITY_EVENT ||
+            currentEntityType() == FieldDefinition.ENTITY_NOVEL
+        binding.cardDisplayLayout.visibility = if (hasCardSummary) View.VISIBLE else View.GONE
         // 상한은 상수가 단일 소스다 — 문구에 숫자를 박아 두면 상한을 옮길 때 안내가 거짓이 된다.
         binding.textCardDisplayDesc.text = getString(
             R.string.label_card_display_desc,

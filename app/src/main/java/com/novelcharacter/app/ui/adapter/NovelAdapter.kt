@@ -19,6 +19,7 @@ import com.google.android.material.card.MaterialCardView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.ItemNovelBinding
+import com.novelcharacter.app.util.CardFieldSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,6 +63,20 @@ class NovelAdapter(
     fun refreshRandomImages() {
         imageSeed = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
     }
+
+    /**
+     * 작품 id → 카드에 얹을 필드값 요약 (B-67, 외부에서 설정).
+     *
+     * 요약은 목록 방출보다 **한 걸음 늦게** 온다(별도 조회다). 그때 통짜로 다시 그리면
+     * 카드마다 이미지 로드가 취소·재시작되므로, [PAYLOAD_FIELD_SUMMARY]로 **그 두 줄만**
+     * 갈아 끼운다. 목록이 자주 재방출되는 화면이라 이 차이가 스크롤에 그대로 붙는다.
+     */
+    var fieldSummaries: Map<Long, CardFieldSummary.Summary> = emptyMap()
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount, PAYLOAD_FIELD_SUMMARY)
+        }
 
     private val thumbnailCache: LruCache<String, Bitmap> = run {
         val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
@@ -111,9 +126,24 @@ class NovelAdapter(
     }
 
     override fun onBindViewHolder(holder: NovelViewHolder, position: Int) {
-        val item = if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
-        holder.bind(item)
+        holder.bind(itemAt(position))
     }
+
+    /**
+     * 요약만 바뀐 갱신은 **그 두 줄만** 다시 그린다(B-67). payload가 섞여 오면(다른 이유의
+     * 갱신이 함께 들어오면) 통짜 재바인드로 떨어뜨린다 — 부분 갱신은 *전부 이 payload일 때만*
+     * 안전하다.
+     */
+    override fun onBindViewHolder(holder: NovelViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it == PAYLOAD_FIELD_SUMMARY }) {
+            holder.bindFieldSummary(itemAt(position))
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
+    private fun itemAt(position: Int): Novel =
+        if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
 
     override fun getItemCount(): Int = if (isReorderMode) reorderList.size else super.getItemCount()
 
@@ -147,6 +177,7 @@ class NovelAdapter(
                 novel.title
             }
             binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
+            bindFieldSummary(novel)
 
             binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
             binding.btnMore.setImageResource(R.drawable.ic_more_vert)
@@ -212,6 +243,31 @@ class NovelAdapter(
                     card.strokeColor = 0
                     card.strokeWidth = 0
                 }
+            }
+        }
+
+        /**
+         * 작품 커스텀 필드값 (B-67). 상한을 넘어 잘린 줄은 **개수로 존재를 알린다** —
+         * 열어보지 않으면 값이 더 있다는 것조차 모르는 상태를 만들지 않는다(원칙 04).
+         */
+        fun bindFieldSummary(novel: Novel) {
+            val summary = fieldSummaries[novel.id] ?: CardFieldSummary.empty()
+            if (summary.isEmpty) {
+                binding.novelFieldsText.visibility = View.GONE
+                binding.novelFieldsMoreText.visibility = View.GONE
+                return
+            }
+            val ctx = binding.root.context
+            binding.novelFieldsText.text = summary.lines.joinToString("\n") {
+                ctx.getString(R.string.card_field_line_format, it.label, it.value)
+            }
+            binding.novelFieldsText.visibility = View.VISIBLE
+            if (summary.hiddenCount > 0) {
+                binding.novelFieldsMoreText.text =
+                    ctx.getString(R.string.card_field_more_format, summary.hiddenCount)
+                binding.novelFieldsMoreText.visibility = View.VISIBLE
+            } else {
+                binding.novelFieldsMoreText.visibility = View.GONE
             }
         }
 
@@ -292,5 +348,10 @@ class NovelAdapter(
     class NovelDiffCallback : DiffUtil.ItemCallback<Novel>() {
         override fun areItemsTheSame(oldItem: Novel, newItem: Novel) = oldItem.id == newItem.id
         override fun areContentsTheSame(oldItem: Novel, newItem: Novel) = oldItem == newItem
+    }
+
+    companion object {
+        /** 필드값 요약만 갈아 끼우는 부분 갱신 표식 (B-67) */
+        private const val PAYLOAD_FIELD_SUMMARY = "fieldSummary"
     }
 }

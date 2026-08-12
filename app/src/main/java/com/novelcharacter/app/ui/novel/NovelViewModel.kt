@@ -117,9 +117,60 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── 작품 커스텀 필드 (확-3) ──
 
-    /** 작품 편집 폼이 렌더할 정의 — 종류를 저장소 한 자리에서 고른다(R-29) */
-    suspend fun getNovelFieldsForUniverse(universeId: Long) =
-        universeRepository.getNovelFieldsByUniverseList(universeId)
+    /**
+     * 작품 편집 폼이 렌더할 정의 — 종류를 저장소 한 자리에서 고른다(R-29).
+     *
+     * **세계관이 없으면 전역 구역이다**(B-129). 종전에는 이 자리가 *성립하지 않는다*고 보아
+     * 폼이 필드를 0개로 그렸는데, 무소속 **캐릭터**는 B-119 확장이 이미 전역 필드를 받고 있어
+     * 같은 앱 안에서 **작품만 그 구역을 못 보는** 상태였다(원칙 01·05).
+     * 전역 구역의 필드는 기본 필드 템플릿의 그림자이고, 그 심기는 저장소가 멱등으로 한다.
+     */
+    suspend fun getNovelFields(universeId: Long?) =
+        if (universeId == null) {
+            com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository(db)
+                .globalFields(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL)
+        } else {
+            universeRepository.getNovelFieldsByUniverseList(universeId)
+        }
+
+    /**
+     * 작품 카드에 얹을 필드값 요약 (B-67 — 사건 카드가 B-5에서 세운 규약 그대로다).
+     *
+     * 목록에 실제로 그려지는 작품만 조회한다 — 전량 조회는 화면에 보이는 작품 수와 무관하게
+     * 값 표 전체를 읽는다. SQLite 999-변수 상한 때문에 900개씩 청크한다.
+     *
+     * 정의는 **구역을 가리지 않고** 읽는다: 목록이 전 세계관을 걸칠 수 있고(세계관 필터 없음),
+     * 무소속 작품은 전역 구역의 정의를 든다(B-129). 어느 정의를 쓸지는 값 행이 고르므로
+     * 남의 구역 정의가 섞여 들어와도 카드에 남의 값이 서지 않는다.
+     */
+    suspend fun getNovelFieldSummaries(
+        novelIds: List<Long>
+    ): Map<Long, com.novelcharacter.app.util.CardFieldSummary.Summary> {
+        if (novelIds.isEmpty()) return emptyMap()
+        return try {
+            val defs = db.fieldDefinitionDao()
+                .getAllFieldsList(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL)
+            if (defs.isEmpty()) return emptyMap()
+
+            val distinctIds = novelIds.distinct()
+            val values = distinctIds.chunked(900).flatMap { chunk ->
+                db.novelFieldValueDao().getValuesByNovels(chunk)
+            }
+            com.novelcharacter.app.util.CardFieldSummary.build(
+                defs = defs,
+                rowsByEntity = values.groupBy({ it.novelId }, { it.fieldDefinitionId to it.value }),
+                entityIds = distinctIds
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // **취소는 실패가 아니다.** 목록이 다시 방출되면 앞선 조회는 취소되는데, 그것까지
+            // 아래 갈래가 삼키면 낡은 호출이 살아나 빈 결과를 최신 요약 위에 덮어쓴다.
+            throw e
+        } catch (e: Exception) {
+            // 카드 부가 정보다 — 실패해도 목록 자체는 그려야 한다. 다만 조용히 삼키지는 않는다.
+            Log.e("NovelViewModel", "Failed to load novel field summaries", e)
+            emptyMap()
+        }
+    }
 
     suspend fun getNovelFieldValues(novelId: Long) =
         db.novelFieldValueDao().getValuesByNovelList(novelId)
@@ -161,12 +212,9 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun novelFieldSuggestions(universeId: Long) =
-        runCatching {
-            app.fieldValueLibraryRepository.suggestionsForUniverse(
-                universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL
-            )
-        }.getOrDefault(emptyMap())
+    // 제안(자동완성)은 더 이상 여기서 따로 조회하지 않는다 (B-129) — 폼이 위 [novelFieldEntries]로
+    // 이미 읽어 둔 엔트리에서 `FieldSuggestionEntries`가 고른다. 종전의 세계관 단위 질의는
+    // **전역 구역에서 원리적으로 아무것도 돌려주지 못했고**, 같은 필드를 두 번 읽는 것이기도 했다.
 
     /** 삭제 확인 다이얼로그용 — 함께 삭제될 소속 캐릭터 수 집계(계단식 삭제 사전 고지) */
     suspend fun getNovelDeleteImpact(novelId: Long): Int =
