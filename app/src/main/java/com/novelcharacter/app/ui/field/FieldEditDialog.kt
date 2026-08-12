@@ -1772,6 +1772,37 @@ class FieldEditDialog : DialogFragment() {
         fun refOf(key: String) = String.format(java.util.Locale.US, "%.2f", genreRef[key] ?: 0.0)
         val baseHeight = com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height.toInt()
 
+        // 기본 기준 — **무엇과 견줄 것인가**(B-94 · 확정 8번 ㄱ1). 아래 두 칸(이상 몸·비율
+        // 고정)보다 위에 있어야 한다: 그 둘은 *이 기준의 재료*이지 기준 자체가 아니다.
+        val sourceLabel = TextView(ctx).apply {
+            text = ctx.getString(R.string.body_target_ratio_source_title)
+            textSize = 12f
+            alpha = 0.7f
+            setPadding(0, (12 * density).toInt(), 0, (2 * density).toInt())
+        }
+        binding.insightTogglesContainer.addView(sourceLabel, 2)
+        val sourceSpinner = android.widget.Spinner(ctx).apply {
+            tag = "targetRatioSource"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, (48 * density).toInt()
+            )
+            adapter = ArrayAdapter(
+                ctx, android.R.layout.simple_spinner_item,
+                com.novelcharacter.app.ui.common.BodyTargetRatioLabels.SOURCES
+                    .map { ctx.getString(com.novelcharacter.app.ui.common.BodyTargetRatioLabels.labelOf(it)) }
+            ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        }
+        binding.insightTogglesContainer.addView(sourceSpinner, 3)
+        // 목적문 (R-25) — 무엇이 어디서 어떻게. **'세계관'이라 적는 것이 사실이다**:
+        // 필드 정의가 세계관 소속이라 같은 세계관의 다른 작품도 함께 바뀐다(15판 콜드 검토가
+        // 같은 자리를 '작품'이라 잘못 적었다).
+        binding.insightTogglesContainer.addView(TextView(ctx).apply {
+            text = ctx.getString(R.string.body_target_ratio_source_purpose)
+            textSize = 11f
+            alpha = 0.7f
+            setPadding(0, 0, 0, (4 * density).toInt())
+        }, 4)
+
         // 이상 몸(치수) — 창작자는 비율이 아니라 "165에 88-58-88"로 생각한다(2026.08.02 요청).
         val idealBodyLabel = TextView(ctx).apply {
             text = ctx.getString(R.string.body_ideal_body_title)
@@ -1779,7 +1810,7 @@ class FieldEditDialog : DialogFragment() {
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
         }
-        binding.insightTogglesContainer.addView(idealBodyLabel, 2)
+        binding.insightTogglesContainer.addView(idealBodyLabel, 5)
         val idealBodyRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -1801,7 +1832,7 @@ class FieldEditDialog : DialogFragment() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
         }
-        binding.insightTogglesContainer.addView(idealBodyRow, 3)
+        binding.insightTogglesContainer.addView(idealBodyRow, 6)
 
         // 비율 직접 고정 — 이상 몸보다 세밀한 경로(키별 병용 가능).
         val idealEntries = listOf(
@@ -1817,8 +1848,8 @@ class FieldEditDialog : DialogFragment() {
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
         }
-        binding.insightTogglesContainer.addView(idealLabel, 4)
-        var insertIdx = 5
+        binding.insightTogglesContainer.addView(idealLabel, 7)
+        var insertIdx = 8
         for ((key, hint) in idealEntries) {
             val edit = EditText(ctx).apply {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -2011,6 +2042,19 @@ class FieldEditDialog : DialogFragment() {
             edit?.text?.toString()?.toDoubleOrNull()?.let { goldenIdeals[key] = it }
         }
 
+        // 목표 비율 기본 기준 (B-94). 스피너를 못 찾으면(그 절을 안 그린 상태) **저장돼 있던
+        // 것을 그대로 둔다** — 화면에 없다는 이유로 사용자의 설정을 지우면 말없는 유실이다
+        // (partSlots가 같은 근거로 같은 처분을 한다).
+        val sourceSpinner = binding.insightTogglesContainer
+            .findViewWithTag<android.widget.Spinner>("targetRatioSource")
+        val targetRatioSource = sourceSpinner
+            ?.let {
+                com.novelcharacter.app.ui.common.BodyTargetRatioLabels.SOURCES
+                    .getOrNull(it.selectedItemPosition)
+            }
+            ?: existingConfig?.targetRatioSource
+            ?: BodyAnalysisConfig.TargetRatioSource.AUTO
+
         // 이상 몸 — 적힌 그대로 담는다(부분 입력도 보존 — R-27. 효력은 셋이 갖춰질 때).
         fun idealBodyNum(tagName: String): Double? =
             binding.insightTogglesContainer.findViewWithTag<EditText>(tagName)
@@ -2046,6 +2090,7 @@ class FieldEditDialog : DialogFragment() {
             goldenRatioIdeals = goldenIdeals,
             partSlots = partSlots,
             idealBody = idealBody,
+            targetRatioSource = targetRatioSource,
             // 🎲 생성 축·프리셋도 이 창에 없다 — **편집 자리는 실루엣 편집기**이므로(B-93)
             // 여기서 기본값으로 세우면 이 창을 한 번 여는 것만으로 사용자가 정한 축이 사라진다.
             generation = existingConfig?.generation ?: BodyAnalysisConfig.DEFAULT_GENERATION
@@ -2256,6 +2301,13 @@ class FieldEditDialog : DialogFragment() {
             // ribOffset 복원 (V2)
             val ribOffsetView = binding.insightTogglesContainer.findViewWithTag<EditText>("ribOffsetEdit")
             ribOffsetView?.setText(bodyConfig.ribOffset.toString())
+            // 목표 비율 기본 기준 복원 (B-94) — 모르는 이름은 파싱이 이미 AUTO로 접었다.
+            binding.insightTogglesContainer
+                .findViewWithTag<android.widget.Spinner>("targetRatioSource")
+                ?.setSelection(
+                    com.novelcharacter.app.ui.common.BodyTargetRatioLabels.SOURCES
+                        .indexOf(bodyConfig.targetRatioSource).coerceAtLeast(0)
+                )
             // 목표 비율 이상값 복원 — 직접 정한 키만 채워진다(빈 칸 = 자동)
             for ((key, value) in bodyConfig.goldenRatioIdeals) {
                 val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")

@@ -151,6 +151,7 @@ $MAIN/data/model/TimelineCharacterCrossRef.kt
 $MAIN/data/model/TimelineEventNovelCrossRef.kt
 $MAIN/data/model/BodyAnalysisConfig.kt
 $MAIN/util/BodyAnalysisHelper.kt
+$MAIN/util/BodyTargetRatio.kt
 $MAIN/util/BodyMeasurements.kt
 $MAIN/util/BodySilhouetteSpec.kt
 $MAIN/util/BodyEditorModel.kt
@@ -443,6 +444,7 @@ $TEST/util/BodySilhouetteSpecTest.kt
 $TEST/util/BodyEditorModelTest.kt
 $TEST/util/BodyCupContractTest.kt
 $TEST/util/BodyTargetRatioTest.kt
+$TEST/util/BodyTargetRatioSourceTest.kt
 $TEST/util/BodyGeneratorTest.kt
 $TEST/data/BodyGenerationConfigTest.kt
 "

@@ -64,6 +64,38 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
+            <!-- 읽기 화면의 필드 설명 ⓘ (B-44) — 기본 꺼짐(P-8). 켜면 읽기 화면에만 아이콘이 는다. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchReadFieldNote"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_read_field_note"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <!-- 목적문 (R-25) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_read_field_note_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOnSurfaceVariant"
+                android:alpha="0.2" />
+
             <!-- Section: AI 연동 (BYOK 프로바이더 관리) -->
             <TextView
                 android:layout_width="wrap_content"

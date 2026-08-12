@@ -54,6 +54,12 @@ data class BodyAnalysisResult(
     val goldenRatioScore: Double? = null,
     val goldenRatioDetails: List<GoldenRatioItem>? = null,
 
+    /**
+     * 그 점수가 **무엇과의 거리인가** (B-94). 카드가 기준을 말할 때 이것을 읽는다 —
+     * 표시 계층이 설정을 다시 해석하면 *"쟀다고 말하는 것"*과 *"실제로 잰 것"*이 갈린다.
+     */
+    val targetRatioBasis: BodyTargetRatio.Basis? = null,
+
     // 실루엣 설명
     val silhouetteDescription: String? = null,
 
@@ -79,10 +85,18 @@ data class RankingInfo(
 
 class BodyAnalysisHelper {
 
+    /**
+     * @param peerAverage 같은 작품 캐릭터의 평균 몸 — 목표 비율 '작품 평균' 기준의 재료다
+     *   (B-94). 호스트가 주입하지 않으면 그 기준은 성립하지 않고 카드가 그 사실을 말한다.
+     * @param targetRatioOverride 카드에서 즉석 전환한 기준(확정 8번 ㄱ2). `null`이면
+     *   필드 설정의 기본 기준이다.
+     */
     fun analyze(
         bust: Double, waist: Double, hip: Double,
         heightCm: Double?, weightKg: Double?,
-        config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT
+        config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT,
+        peerAverage: BodyAnalysisConfig.IdealBody? = null,
+        targetRatioOverride: BodyAnalysisConfig.TargetRatioSource? = null
     ): BodyAnalysisResult {
         // 기본 차이/비율 계산
         val bustWaistDiff = bust - waist
@@ -193,28 +207,16 @@ class BodyAnalysisHelper {
         val curvesIndex = safeHeight?.let { (bustWaistDiff + waistHipDiff) / it }
 
         // 11. 목표 비율 점수 (P8 재의미화 — 종전 '골든 비율') — 공식은 무변경이고 이상값의
-        //     근거만 바뀐다. 겹은 셋이고 구체적인 것이 이긴다:
-        //     장르 기준(자동) < 이상 몸(치수 입력, 키 적응) < 키별 직접 고정.
-        //     종전의 키별 리터럴 폴백(.70/1.00/.40/.52)은 황금비 잔재의 세 번째 사본이었다.
-        val goldenRatioDetails = if (safeHeight != null) {
-            // 장르 기준은 **이 세계관의 생성 축**에서 파생된다(B-93) — 축을 열면 목표 비율
-            // 기준도 함께 움직인다. 축은 그대로 두고 이상값만 옛 상수로 남으면 두 벌이 된다.
-            val ideals = BodyGenerator.genreTargetIdeals(safeHeight, config.ribOffset, config.generation) +
-                (config.idealBody?.let { BodyGenerator.idealsFromBody(it, safeHeight, config.ribOffset) }
-                    ?: emptyMap()) +
-                config.goldenRatioIdeals
-            listOf(
-                goldenRatioItem("허리/엉덩이", whr, ideals.getValue("whr")),
-                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals.getValue("bustHipRatio")),
-                goldenRatioItem("허리/키", waist / safeHeight, ideals.getValue("waistHeight")),
-                goldenRatioItem("가슴/키", bust / safeHeight, ideals.getValue("bustHeight"))
-            )
-        } else null
-
-        val goldenRatioScore = goldenRatioDetails?.let { details ->
-            val avgDeviation = details.map { abs(it.deviationPercent) }.average()
-            (100.0 - avgDeviation * 5).coerceIn(0.0, 100.0)
+        //     근거만 바뀐다. **기준을 정하고 이상값을 내는 일은 [BodyTargetRatio] 하나가 한다**
+        //     (B-94): 카드의 즉석 전환이 같은 함수를 부르므로 두 자리가 갈릴 수 없다.
+        val targetRatioBasis = safeHeight?.let {
+            BodyTargetRatio.basis(config, it, peerAverage, targetRatioOverride)
         }
+        val goldenRatioDetails = targetRatioBasis?.let {
+            BodyTargetRatio.items(bust, waist, hip, safeHeight!!, it)
+        }?.takeIf { it.isNotEmpty() }
+
+        val goldenRatioScore = goldenRatioDetails?.let { BodyTargetRatio.score(it) }
 
         // 12. 실루엣 설명 — 다층 태그 통합 (V2)
         val silhouetteDescription = buildSilhouetteDescription(
@@ -235,6 +237,7 @@ class BodyAnalysisHelper {
             bustHeightRatio = bustHeightRatio, waistHeightRatio = waistHeightRatio, hipHeightRatio = hipHeightRatio,
             frameSize = frameSize, volumeIndex = volumeIndex, curvesIndex = curvesIndex,
             goldenRatioScore = goldenRatioScore, goldenRatioDetails = goldenRatioDetails,
+            targetRatioBasis = targetRatioBasis,
             silhouetteDescription = silhouetteDescription
         )
     }
@@ -244,11 +247,6 @@ class BodyAnalysisHelper {
             val v = values[key] ?: return@all false
             (range.min == null || v >= range.min) && (range.max == null || v <= range.max)
         }
-    }
-
-    private fun goldenRatioItem(label: String, actual: Double, ideal: Double): GoldenRatioItem {
-        val deviation = if (ideal != 0.0) ((actual - ideal) / ideal) * 100.0 else 0.0
-        return GoldenRatioItem(label, actual, ideal, deviation)
     }
 
     private fun buildSilhouetteDescription(

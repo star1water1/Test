@@ -36,6 +36,7 @@ app/src/main/java/com/novelcharacter/app/ai/NarrativeFieldAiWriter.kt
 app/src/main/java/com/novelcharacter/app/ai/CharacterNameAiSuggester.kt
 app/src/main/java/com/novelcharacter/app/ai/FieldLibraryAiOrganizer.kt
 app/src/main/java/com/novelcharacter/app/util/DuelAiContext.kt
+app/src/main/java/com/novelcharacter/app/util/BodyTargetRatio.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt
 app/src/main/java/com/novelcharacter/app/excel/PresetTemplateMatcher.kt
