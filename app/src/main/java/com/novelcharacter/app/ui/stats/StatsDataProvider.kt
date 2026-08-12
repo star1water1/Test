@@ -2456,7 +2456,8 @@ class StatsDataProvider {
             val raw = valuesByFieldDef[fd.id] ?: continue
             val values = NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
             if (values.isEmpty()) continue
-            numberSummaries.add(numberSummary(fd.name, fd.id, values, statsCache.of(fd).binning))
+            numberSummary(fd.name, fd.id, values, statsCache.of(fd).binning)
+                ?.let { numberSummaries.add(it) }
         }
 
         // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median)
@@ -2473,9 +2474,9 @@ class StatsDataProvider {
                     rawValues.map { it.value }, separator, partIdx
                 )
                 if (numericValues.isEmpty()) continue
-                numberSummaries.add(numberSummary(
+                numberSummary(
                     "${fd.name} — $partLabel", fd.id, numericValues, binning, partIdx, separator
-                ))
+                )?.let { numberSummaries.add(it) }
             }
         }
 
@@ -2541,23 +2542,21 @@ class StatsDataProvider {
         binning: FieldStatsConfig.BinningConfig?,
         partIndex: Int = 0,
         separator: String = ""
-    ): NumberFieldSummary {
-        val sorted = values.sorted()
-        val median = if (sorted.size % 2 == 0) {
-            (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
-        } else sorted[sorted.size / 2]
-        // 인사이트 화면과 **같은 함수**가 구간을 정한다 — 두 화면의 막대가 갈리지 않는 유일한 길이다.
-        val summary = computeNumericSummary(values, binning, partIndex, separator)
+    ): NumberFieldSummary? {
+        // **인사이트 화면과 같은 함수가 전부 계산한다.** 종전에 이 함수는 min/max/median을
+        // 자기가 다시 구했는데, 그러면 **같은 목록을 두 번 정렬하고 중앙값 식이 두 벌**이 된다 —
+        // 짝수 개일 때의 처리 같은 것이 한쪽에서만 고쳐지면 두 화면의 숫자가 갈린다.
+        val summary = computeNumericSummary(values, binning, partIndex, separator) ?: return null
         return NumberFieldSummary(
             fieldName = fieldName,
-            min = sorted.first(),
-            max = sorted.last(),
-            avg = values.average().toFloat(),
-            median = median,
+            min = summary.min,
+            max = summary.max,
+            avg = summary.avg,
+            median = summary.median,
             count = values.size,
             fieldDefId = fieldDefId,
-            histogram = summary?.histogram.orEmpty(),
-            matchSpecs = summary?.matchSpecs.orEmpty()
+            histogram = summary.histogram,
+            matchSpecs = summary.matchSpecs
         )
     }
 
