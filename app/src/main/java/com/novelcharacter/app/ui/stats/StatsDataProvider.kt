@@ -555,9 +555,6 @@ data class PatternThresholds(
         KEY_CROSS_NOVEL to num(crossNovelRatio)
     ).joinToString(",") { "${it.first}=${it.second}" }
 
-    /** 사용자가 손댄 것이 하나도 없는가 — 설정 화면의 '기본값' 표시용. */
-    fun isDefault(): Boolean = this == DEFAULT
-
     companion object {
         val DEFAULT = PatternThresholds()
 
@@ -607,11 +604,16 @@ data class PatternThresholds(
 
         /**
          * [encode]의 역. **모르는 키와 못 읽는 값을 조용히 버리지 않는다** — 세어서 돌려주고,
-         * 부르는 쪽이 사용자에게 말한다(개발 의도 2번 '변수 제어'). 적히지 않은 키는
-         * 기본값을 그대로 쓴다: 엑셀에서 한 줄만 고쳐도 나머지가 초기화되면 안 된다.
+         * 부르는 쪽이 사용자에게 말한다(개발 의도 2번 '변수 제어').
+         *
+         * **적히지 않은 키는 [base]를 그대로 둔다.** 내보내기는 언제나 여섯을 다 적으므로
+         * *일부만 적힌 파일은 사람이 손으로 만든 것*이고, 그때 한 줄을 고친 사람의 뜻은
+         * **그 한 줄을 바꾸라**이지 나머지를 지우라가 아니다. 그래서 엑셀 바인딩은 지금 저장된
+         * 값을 [base]로 넘긴다 — `DEFAULT`로 두면 한 줄만 남긴 파일이 **나머지 다섯을 말없이
+         * 초기화한다.** 순수 계약을 재는 자리에서는 기본값(`DEFAULT`)에서 시작한다.
          */
-        fun decode(raw: String): Decoded {
-            var t = DEFAULT
+        fun decode(raw: String, base: PatternThresholds = DEFAULT): Decoded {
+            var t = base
             val unknown = mutableListOf<String>()
             val invalid = mutableListOf<String>()
             for (piece in raw.split(',')) {

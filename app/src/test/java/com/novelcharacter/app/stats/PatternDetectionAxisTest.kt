@@ -291,6 +291,28 @@ class PatternDetectionAxisTest {
     }
 
     /**
+     * **일부만 적힌 파일이 나머지를 지우지 않는다.** 내보내기는 언제나 여섯을 다 적으므로
+     * 일부만 적힌 파일은 사람이 손으로 만든 것이고, 한 줄을 고친 뜻은 *그 한 줄을 바꾸라*이지
+     * 나머지를 초기화하라가 아니다 — 그래서 엑셀 바인딩은 **지금 저장된 값**을 base로 넘긴다.
+     * base 없이 읽으면 다섯이 말없이 기본값으로 돌아간다.
+     */
+    @Test
+    fun `적히지 않은 항목은 base를 그대로 둔다`() {
+        val stored = PatternThresholds(
+            dominancePercent = 85f, balanceMaxPercent = 20f, outlierSingletonPercent = 2f,
+            clusterPercent = 70f, absenceGapYears = 3000, crossNovelRatio = 5f
+        )
+        val decoded = PatternThresholds.decode("absence_years=4000", stored)
+        assertEquals(4000, decoded.thresholds.absenceGapYears)
+        // 나머지 다섯은 손대지 않았다 — 기본값으로 돌아가면 사용자가 설정을 잃고도 모른다.
+        assertEquals(85f, decoded.thresholds.dominancePercent, 0.001f)
+        assertEquals(20f, decoded.thresholds.balanceMaxPercent, 0.001f)
+        assertEquals(5f, decoded.thresholds.crossNovelRatio, 0.001f)
+        // 못 읽은 항목도 base를 지킨다(기본값으로 떨어지지 않는다).
+        assertEquals(85f, PatternThresholds.decode("dominance=abc", stored).thresholds.dominancePercent, 0.001f)
+    }
+
+    /**
      * **못 읽은 것을 조용히 버리지 않는다**(개발 의도 2번 '변수 제어'). 모르는 항목과 숫자가
      * 아닌 값은 사용자가 고칠 자리가 다르므로 갈라서 센다.
      */

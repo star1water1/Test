@@ -304,17 +304,27 @@ object AppSettingsBindings {
         Binding(AppSettingsKeys.STATS_PATTERN_SENSITIVITY,
             read = { PatternTypePrefs.thresholds(it).encode() },
             write = { ctx, v ->
-                val decoded = PatternThresholds.decode(v)
-                PatternTypePrefs.saveThresholds(ctx, decoded.thresholds)
-                val notes = buildList {
-                    if (decoded.unknownKeys.isNotEmpty())
-                        add("알 수 없는 항목 ${decoded.unknownKeys.size}개")
-                    if (decoded.invalidKeys.isNotEmpty())
-                        add("숫자가 아닌 항목 ${decoded.invalidKeys.size}개")
-                    if (decoded.coerced) add("범위를 벗어난 값")
+                // **빈 칸은 저장하지 않는다.** 비어 있는 것은 *전부 기본값으로 되돌리라*가 아니라
+                // *이 칸에 아무것도 없다*이고, 그대로 쓰면 여섯 손잡이가 말없이 초기화된다
+                // (같은 시트의 다른 숫자 항목도 빈 값을 거절한다).
+                if (v.isBlank()) Applied.No("값이 비어 있습니다")
+                else {
+                    // **지금 저장된 값에서 시작한다** — 내보내기는 여섯을 다 적으므로 일부만 적힌
+                    // 파일은 사람이 손으로 만든 것이고, 한 줄을 고친 뜻은 나머지를 지우라가 아니다.
+                    val decoded = PatternThresholds.decode(v, PatternTypePrefs.thresholds(ctx))
+                    PatternTypePrefs.saveThresholds(ctx, decoded.thresholds)
+                    val notes = buildList {
+                        if (decoded.unknownKeys.isNotEmpty())
+                            add("알 수 없는 항목 ${decoded.unknownKeys.size}개")
+                        if (decoded.invalidKeys.isNotEmpty())
+                            add("숫자로 읽을 수 없는 항목 ${decoded.invalidKeys.size}개")
+                        if (decoded.coerced) add("허용 범위를 벗어난 값")
+                    }
+                    if (notes.isEmpty()) Applied.Yes
+                    // 셋은 처분이 다르다 — 못 읽은 것은 종전 값으로 남고, 범위 밖은 접혀서 들어간다.
+                    // 한 문장으로 뭉뚱그리면 사용자가 무엇이 어떻게 됐는지 알 수 없다.
+                    else Applied.No("${notes.joinToString(", ")} — 그 자리는 종전 값이나 허용 범위로 두고 나머지를 적용했습니다")
                 }
-                if (notes.isEmpty()) Applied.Yes
-                else Applied.No("${notes.joinToString(", ")}은(는) 기본값이나 허용 범위로 맞췄습니다")
             }),
 
         // ── 보충 기준 ──
