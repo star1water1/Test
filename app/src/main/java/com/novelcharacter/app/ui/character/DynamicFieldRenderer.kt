@@ -650,11 +650,12 @@ class DynamicFieldRenderer(
             }
         }
 
-        // 3축 요약 — 편집기와 **같은 문자열·같은 경계 상수**를 쓴다(두 화면이 같은 말을 하게).
+        // 3축 요약 — 편집기와 **같은 설정 한 벌**을 쓴다(두 화면이 같은 말을 하게).
+        // 축 이름·경계가 세계관 설정이 된 뒤로(B-93) config를 통째로 넘긴다.
         com.novelcharacter.app.util.BodySilhouetteSpec
             .measuresFrom(data.measured, data.config.ribOffset)?.let { m ->
                 val axis = com.novelcharacter.app.util.BodySilhouetteSpec
-                    .axisSummary(m, data.config.cupMapping)
+                    .axisSummary(m, data.config)
                 col.addView(TextView(context).apply {
                     // 인자가 둘 이상인 서식은 주입된 getString(1인자)이 못 받는다 — 컨텍스트로 짠다.
                     text = context.getString(

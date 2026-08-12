@@ -353,6 +353,27 @@ class DynamicFieldFormBuilder(
             measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
         sheet.noWritableSlot = slots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
         sheet.openWithGenerator = openGenerator
+        // 🎲 축·프리셋은 **이 필드의 config**에 담긴다(B-93 — 필드가 세계관 소속이므로
+        // 그것이 곧 '세계관 단위'다). 화면은 저장 성공을 받은 뒤에야 새 축을 세운다.
+        sheet.onSaveGeneration = { generation, done ->
+            scopeGetter().launch {
+                val saved = viewModel.saveBodyGeneration(bodySizeField.id, generation)
+                if (!isAlive()) return@launch
+                // 들고 있던 사본을 갈아 둔다 — 갈지 않으면 편집기를 닫았다 다시 여는 것만으로
+                // 옛 축이 되살아나고, 사용자는 저장이 안 된 줄로 안다.
+                if (saved != null) {
+                    fieldDefinitions = fieldDefinitions.map { if (it.id == saved.id) saved else it }
+                }
+                contextGetter()?.let {
+                    android.widget.Toast.makeText(
+                        it,
+                        if (saved != null) R.string.body_gen_edit_saved else R.string.body_gen_edit_no_field,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                done(saved != null)
+            }
+        }
         sheet.onApply = { parts, heightCm, weightKg ->
             writeBodyParts(widget, parts, structured)
             heightCm?.let { h -> heightField?.let { setSingleValue(fieldInputMap[it.id], formatMeasure(h)) } }

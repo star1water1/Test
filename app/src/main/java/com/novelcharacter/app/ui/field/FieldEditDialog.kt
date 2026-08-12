@@ -1763,7 +1763,12 @@ class FieldEditDialog : DialogFragment() {
         // 겹 셋: 전부 비우면 장르 기준 자동 → 이상 몸(치수)을 적으면 그 몸에서 계산 →
         // 비율 칸에 적은 키는 그 값으로 고정(가장 구체적인 것이 이긴다).
         // 힌트의 참고 숫자는 파생 함수에서 그때그때 계산한다 — 적어 두면 낡는다(B-92의 교훈).
-        val genreRef = com.novelcharacter.app.util.BodyGenerator.genreTargetIdeals()
+        // 참고 숫자는 **이 필드의 생성 축**에서 나온다(B-93) — 축을 손본 세계관에서 기본 축의
+        // 숫자를 힌트로 보이면, 힌트가 실제 자동값과 다른 것을 말하게 된다.
+        val genreRef = com.novelcharacter.app.util.BodyGenerator.genreTargetIdeals(
+            options = existingField?.let { BodyAnalysisConfig.fromConfig(it.config).generation }
+                ?: BodyAnalysisConfig.DEFAULT_GENERATION
+        )
         fun refOf(key: String) = String.format(java.util.Locale.US, "%.2f", genreRef[key] ?: 0.0)
         val baseHeight = com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height.toInt()
 
@@ -2040,7 +2045,10 @@ class FieldEditDialog : DialogFragment() {
             bodyTagRules = existingConfig?.bodyTagRules ?: emptyList(),  // UI 미노출 → 기존값 보존
             goldenRatioIdeals = goldenIdeals,
             partSlots = partSlots,
-            idealBody = idealBody
+            idealBody = idealBody,
+            // 🎲 생성 축·프리셋도 이 창에 없다 — **편집 자리는 실루엣 편집기**이므로(B-93)
+            // 여기서 기본값으로 세우면 이 창을 한 번 여는 것만으로 사용자가 정한 축이 사라진다.
+            generation = existingConfig?.generation ?: BodyAnalysisConfig.DEFAULT_GENERATION
         )
     }
 

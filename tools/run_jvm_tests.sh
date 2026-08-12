@@ -444,6 +444,7 @@ $TEST/util/BodyEditorModelTest.kt
 $TEST/util/BodyCupContractTest.kt
 $TEST/util/BodyTargetRatioTest.kt
 $TEST/util/BodyGeneratorTest.kt
+$TEST/data/BodyGenerationConfigTest.kt
 "
 # 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.
 # 선택 소스: 존재하고 순수 JVM이면 추가

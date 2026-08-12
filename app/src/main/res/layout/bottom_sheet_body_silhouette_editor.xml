@@ -434,6 +434,15 @@
 
                 </LinearLayout>
 
+                <!-- 축·프리셋 편집 (B-93) — 손보고 싶어지는 순간은 굴려 본 직후다 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEditGeneration"
+                    style="@style/Widget.App.Button.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/body_gen_edit" />
+
             </LinearLayout>
 
         </LinearLayout>

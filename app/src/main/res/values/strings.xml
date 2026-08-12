@@ -1751,6 +1751,30 @@
     <string name="body_gen_roll">🎲 굴리기</string>
     <string name="body_gen_undo_roll">직전으로</string>
 
+    <!-- 🎲 생성 축·프리셋 편집 (B-93) -->
+    <string name="body_gen_edit">축·프리셋 편집</string>
+    <string name="body_gen_edit_title">생성 축·프리셋</string>
+    <string name="body_gen_edit_purpose">이 세계관의 🎲 축과 프리셋을 정합니다. 저장하면 이 세계관의 캐릭터 전체에 적용되고, 다른 세계관은 그대로입니다.</string>
+    <string name="body_gen_edit_height">키 축</string>
+    <string name="body_gen_edit_torso">몸통 축 (허리÷키)</string>
+    <string name="body_gen_edit_bust">가슴 축 (컵차 cm)</string>
+    <string name="body_gen_edit_hip">힙 축 (엉덩이−허리 cm)</string>
+    <string name="body_gen_edit_preset">프리셋 (세 축을 한 번에)</string>
+    <string name="body_gen_edit_name">이름</string>
+    <string name="body_gen_edit_center">중심</string>
+    <string name="body_gen_edit_variance">흔들림</string>
+    <string name="body_gen_edit_waist_ratio">허리÷키</string>
+    <string name="body_gen_edit_bmi">BMI</string>
+    <string name="body_gen_edit_max">구간 끝</string>
+    <string name="body_gen_edit_cup_diff">컵차</string>
+    <string name="body_gen_edit_hip_bonus">힙−허리</string>
+    <string name="body_gen_edit_reset">기본값으로</string>
+    <string name="body_gen_edit_error_name">이름을 적어 주세요</string>
+    <string name="body_gen_edit_error_range">%1$s ~ %2$s 사이로 적어 주세요</string>
+    <string name="body_gen_edit_error_order">앞 축의 구간 끝보다 커야 합니다</string>
+    <string name="body_gen_edit_saved">축·프리셋을 저장했습니다</string>
+    <string name="body_gen_edit_no_field">이 체형 필드에는 저장할 수 없습니다</string>
+
     <!-- Random Field -->
     <string name="random_enabled">랜덤 생성</string>
     <string name="random_min">최솟값</string>
