@@ -30,6 +30,7 @@ import com.novelcharacter.app.databinding.FragmentFactionManageBinding
 import com.novelcharacter.app.ui.adapter.FactionAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberItem
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.MembershipTimeline
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.factionSpanLabel
@@ -627,7 +628,7 @@ class FactionManageFragment : Fragment() {
         // 종전에는 탈퇴한 멤버를 길게 누르면 **아무 일도 일어나지 않았다**(조용한 무동작).
         // 화면상 눌리기는 하므로 사용자는 앱이 멈춘 줄 안다 — R-27과 같은 부류다.
         // 끝난 소속에는 끝난 소속에 맞는 선택지를 준다.
-        if (item.membership.leaveType != null) {
+        if (!FactionStanding.isCurrent(item.membership)) {
             showDepartedMemberOptionsDialog(faction, item)
             return
         }

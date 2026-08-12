@@ -169,6 +169,7 @@ $MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/util/GradeTable.kt
 $MAIN/util/FactionMembershipMatcher.kt
+$MAIN/util/FactionStanding.kt
 $MAIN/util/FactionRelationshipMatcher.kt
 $MAIN/util/InitialFieldValues.kt
 $MAIN/ui/stats/StatsDataProvider.kt
@@ -214,6 +215,7 @@ $MAIN/util/DuelEntry.kt
 $MAIN/util/DuelImageFit.kt
 $MAIN/util/DuelFieldLinks.kt
 $MAIN/util/DuelSystemFields.kt
+$MAIN/util/DuelAxisTransfer.kt
 $MAIN/util/DuelCandidateFilter.kt
 $MAIN/util/DuelCardInfo.kt
 $MAIN/util/DuelMatchLog.kt
@@ -319,6 +321,8 @@ $TEST/util/DuelEntryTest.kt
 $TEST/util/DuelImageFitTest.kt
 $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelSystemFieldsTest.kt
+$TEST/util/DuelAxisTransferTest.kt
+$TEST/util/FactionStandingTest.kt
 $TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/AiImageAttachTest.kt

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- 축 불러오기 (B-116) — 필드 관리의 '필드 가져오기'와 같은 자리·같은 규약이다
+         (field_manage_menu.xml의 action_import_fields). 축 이름은 작품을 넘어 반복되므로
+         (강함·아름다움) 매번 다시 만드는 것이 마찰이다(원칙 01·04·05). -->
+    <item
+        android:id="@+id/action_import_axes"
+        android:title="@string/duel_axis_import"
+        app:showAsAction="never" />
+
+</menu>

@@ -61,8 +61,10 @@ object DuelSystemFields {
      * @property suffix [PREFIX] 뒤에 붙는 이름. **바꾸면 이미 저장된 연결이 끊긴다** —
      *   축에 실린 것도 엑셀 파일에 적힌 것도 이 글자 그대로다(`FieldDefinition.key`를
      *   id가 아니라 키로 둔 것과 같은 근거).
-     * @property multiToken 쉼표로 나뉘는 다중값인가 (설계 물음 ⓓ). 이명이 그렇고
-     *   ([Character.aliases]가 같은 규칙으로 나눈다) 태그가 그렇다.
+     * @property multiToken 쉼표로 나뉘는 다중값인가 (설계 물음 ⓓ). 이명·태그·세력이 그렇고,
+     *   나누는 규약은 [FieldValueTokenizer.splitMulti](=R-47의 감싸기)로 통일돼 있다
+     *   ([tokensOf]의 ⚠️가 그 근거다). **[Character.aliases]는 아직 맨 `split(",")`이라
+     *   같지 않다** — 그쪽 소비처는 AI 문맥·통계라 이 슬라이스 밖이고 백로그에 올렸다(B-207).
      */
     enum class Column(val suffix: String, val multiToken: Boolean) {
         NAME("name", false),
@@ -77,7 +79,22 @@ object DuelSystemFields {
         NOVEL("novel", false),
 
         /** 캐릭터 태그. 다른 표(`character_tags`)에 살아 [Extras]가 들고 온다. */
-        TAGS("tags", true);
+        TAGS("tags", true),
+
+        /**
+         * **지금 속한 세력의 이름** (B-171).
+         *
+         * 앞의 일곱과 갈리는 자리가 하나 있다 — **이 값은 열을 읽어 나오는 것이 아니라
+         * 파생된다.** `faction_memberships`에는 가입·탈퇴 시점과 상태 표식이 있고, 그중
+         * 무엇이 *지금*인지는 규칙이며 그 규칙의 단일 소스는 [FactionStanding]이다.
+         * 여기가 그것을 다시 적으면 대결 카드와 통계가 다른 세력 수를 말한다(원칙 05).
+         *
+         * **다중값인 것은 겸직이 정상이기 때문이다** — 한 캐릭터가 두 세력에 동시에 속할 수
+         * 있고 이 앱은 그것을 막지 않는다(`faction_memberships`에 unique 제약이 없는 이유가
+         * 그것이다). 이름에 쉼표가 들어가도 [FieldValueTokenizer]의 감싸기 규약(R-47)이
+         * 지키므로 토큰이 갈라지지 않는다 — [tokensOf]가 같은 규약으로 되쪼갠다.
+         */
+        FACTION("faction", true);
 
         /** 연결에 실리는 키. */
         val key: String get() = PREFIX + suffix
@@ -118,11 +135,18 @@ object DuelSystemFields {
     /**
      * 캐릭터 행에 **없는** 재료.
      *
-     * 작품 제목과 태그는 다른 표에 살아 부르는 쪽이 읽어 온다. 둘을 여기서 읽지 않는 것은
+     * 작품 제목·태그·세력은 다른 표에 살아 부르는 쪽이 읽어 온다. 셋을 여기서 읽지 않는 것은
      * 이 계층이 순수해야 시험이 실제로 돌기 때문이고, **읽는 비용을 부르는 쪽이 보게**
      * 하려는 것이기도 하다 — `sys:tags`가 걸리지 않은 축에서는 그 질의가 아예 없다.
+     *
+     * @property factions **지금** 속한 세력의 이름 (B-171). *지금*의 판정은 [FactionStanding]이
+     *   하고 부르는 쪽이 그 결과만 담아 넘긴다 — 이 계층은 세력 표도 시간 규칙도 모른다.
      */
-    data class Extras(val novelTitle: String = "", val tags: List<String> = emptyList())
+    data class Extras(
+        val novelTitle: String = "",
+        val tags: List<String> = emptyList(),
+        val factions: List<String> = emptyList()
+    )
 
     /** 한 열의 값. 없으면 빈 문자열이다 — *"안 적었다"*의 표시는 화면의 몫이다. */
     fun valueOf(column: Column, character: Character, extras: Extras = Extras()): String =
@@ -134,6 +158,7 @@ object DuelSystemFields {
             Column.MEMO -> character.memo
             Column.NOVEL -> extras.novelTitle
             Column.TAGS -> FieldValueTokenizer.join(extras.tags)
+            Column.FACTION -> FieldValueTokenizer.join(extras.factions)
         }.trim()
 
     /**
@@ -163,13 +188,21 @@ object DuelSystemFields {
      *
      * 커스텀 필드는 [FieldValueTokenizer.splitForStats]가 `FieldDefinition`의 타입·config를
      * 보고 나누는데 **시스템 열에는 그 정의가 없다.** 그래서 나누는 규칙을 [Column.multiToken]이
-     * 든다 — 이명·태그는 쉼표로 나뉘고 나머지는 통째로 한 토큰이다.
+     * 든다 — 이명·태그·세력은 쉼표로 나뉘고 나머지는 통째로 한 토큰이다.
+     *
+     * ⚠️ **나누는 함수가 [valueOf]가 잇는 함수와 한 벌이어야 한다** (B-171에서 고쳤다).
+     * 종전 이 자리는 맨 `split(",")`이었는데 [valueOf]는 [FieldValueTokenizer.join]으로 이어
+     * **쉼표를 품은 값을 따옴표로 감싸고 있었다**(R-47 · B-178). 그래서 `"주인공, 남자"`라는
+     * 태그 하나가 여기서 `"주인공` · `남자"`로 갈렸다 — 범주 집계가 없는 값 둘을 세고,
+     * 후보 필터의 `exact`가 **실재하는 태그를 영영 못 찾는다**(칩으로 고른 값인데도).
+     * 세력 이름은 조직명이라 쉼표를 품을 여지가 태그보다 크고, 그것이 이 자리를 이 슬라이스에서
+     * 고친 이유다. **잇는 쪽과 되쪼개는 쪽은 언제나 같은 규약을 지나야 한다.**
      */
     fun tokensOf(column: Column, raw: String?): List<String> {
         val value = raw?.trim().orEmpty()
         if (value.isEmpty()) return emptyList()
         return if (column.multiToken) {
-            value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            FieldValueTokenizer.splitMulti(value)
         } else {
             listOf(value)
         }

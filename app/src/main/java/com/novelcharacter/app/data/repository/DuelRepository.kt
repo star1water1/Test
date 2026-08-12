@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
+import com.novelcharacter.app.util.DuelAxisTransfer
 import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelImageRoster
@@ -75,6 +76,44 @@ class DuelRepository(private val db: AppDatabase) {
             db.duelAxisDao().clearBasisExcept(saved.universeId, saved.targetType, saved.id)
         }
         saved
+    }
+
+    /**
+     * **다른 세계관의 축을 이 세계관으로 옮긴다** (B-116) — 규칙은 [DuelAxisTransfer]가 단일 소스다.
+     *
+     * 이 저장소가 맡는 것은 셋뿐이다: **한 트랜잭션**(반만 들어간 상태를 남기지 않는다) ·
+     * `displayOrder`를 받는 목록 끝에 이어 붙이기 · **새 code 발급**. 무엇이 새로 나야
+     * 하는지의 판단은 순수 계층에 있고, 그래서 그 판단이 이 저장소의 시험 밖에서도 재어진다.
+     *
+     * **이름이 겹치는 축은 넣지 않는다** — 계획을 짤 때 이미 걸러지지만
+     * ([DuelAxisTransfer.Plan.importable]) 여기서 한 번 더 본다. 사이에 다른 화면이
+     * 같은 이름의 축을 만들었을 수 있고, 그때 삽입은 유니크 위반으로 **죽는다**
+     * (사용자에게는 *"가져오기가 실패했다"*로만 보이고 무엇이 겹쳤는지 알 길이 없다).
+     *
+     * @return 실제로 들어간 축들. 겹쳐서 빠진 것은 여기 없다 — 부르는 쪽이 고른 수와
+     *   견주어 *"N개 중 M개"*를 말한다(조용히 줄이지 않는다).
+     */
+    suspend fun importAxes(targetUniverseId: Long, sources: List<DuelAxis>): List<DuelAxis> {
+        if (sources.isEmpty()) return emptyList()
+        return db.withTransaction {
+            val existing = db.duelAxisDao().getByUniverseList(targetUniverseId)
+            val taken = existing.map { it.targetType to it.name }.toMutableSet()
+            var order = (existing.maxOfOrNull { it.displayOrder } ?: -1) + 1
+            val inserted = ArrayList<DuelAxis>(sources.size)
+            val now = System.currentTimeMillis()
+            for (source in sources) {
+                if (!taken.add(source.targetType to source.name)) continue
+                val axis = DuelAxisTransfer.transfer(
+                    source = source,
+                    targetUniverseId = targetUniverseId,
+                    displayOrder = order++,
+                    code = generateEntityCode(),
+                    createdAt = now
+                )
+                inserted.add(axis.copy(id = db.duelAxisDao().insert(axis)))
+            }
+            inserted
+        }
     }
 
     /**

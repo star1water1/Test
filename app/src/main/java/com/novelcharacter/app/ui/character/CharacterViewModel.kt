@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.toastAndLogResult
@@ -1091,10 +1092,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFactionNamesForCharacter(characterId: Long): List<String>? =
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val activeFactionIds = db.factionMembershipDao().getMembershipsByCharacterList(characterId)
-                    .filter { it.leaveType == null }
-                    .map { it.factionId }
-                    .distinct()
+                val activeFactionIds = FactionStanding.currentFactionIds(
+                    db.factionMembershipDao().getMembershipsByCharacterList(characterId)
+                )
                 if (activeFactionIds.isEmpty()) return@withContext emptyList()
                 val nameById = activeFactionIds.chunked(900)
                     .flatMap { db.factionDao().getByIds(it) }

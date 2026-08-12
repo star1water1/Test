@@ -605,7 +605,8 @@ object DuelSheetLabels {
  *
  * **키에는 커스텀 필드 말고 시스템 열도 적을 수 있다**(B-167) — `sys:another_name`(이명) ·
  * `sys:name` · `sys:first_name` · `sys:last_name` · `sys:memo` · `sys:novel`(작품 제목) ·
- * `sys:tags`. 종류의 원문은 `util/DuelSystemFields`의 `Column`이고 **여기 두 벌로 적지
+ * `sys:tags` · `sys:faction`(지금 속한 세력 — 겸직이면 쉼표로 여럿이다).
+ * 종류의 원문은 `util/DuelSystemFields`의 `Column`이고 **여기 두 벌로 적지
  * 않는다**(적으면 낡는다 — 위 목록은 읽는 사람을 위한 예시다).
  * `▼` 앞머리와 겹쳐 `▼sys:name`처럼 적을 수 있다.
  * ⚠️ **`산출필드`에는 시스템 열이 성립하지 않는다** — 대결 결과를 이명·메모에 써 넣을 수

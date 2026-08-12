@@ -16,7 +16,9 @@ import com.novelcharacter.app.data.repository.DuelRepository
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelCategoryStats
 import com.novelcharacter.app.util.DuelImageRoster
+import com.novelcharacter.app.util.DuelAxisTransfer
 import com.novelcharacter.app.util.DuelSystemFields
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.OpResult
@@ -136,6 +138,82 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 축 불러오기 (B-116)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** 불러오기 창의 소스 한 묶음 — `세계관 이름 → 그 세계관의 축`. */
+    data class AxisSource(val label: String, val plans: List<DuelAxisTransfer.Plan>)
+
+    /**
+     * **다른 세계관의 축 목록과 그 계획** (B-116).
+     *
+     * 짜임새를 필드 가져오기(`FieldViewModel.collectSources`)에서 그대로 가져온다 —
+     * 세계관마다 한 묶음이고, **이름이 같은 세계관은 뒤에 번호를 붙인다**(그러지 않으면
+     * 고르는 자리에서 어느 쪽인지 알 수 없다). **축이 없는 세계관은 아예 내지 않는다** —
+     * 빈 묶음이 목록을 채우면 고를 것이 있는 묶음이 그만큼 밀린다.
+     *
+     * 프리셋은 소스가 아니다 — 프리셋이 담는 것은 필드이지 축이 아니고, 없는 것을 있는 척
+     * 하는 빈 항목을 만들지 않는다(원칙 02).
+     */
+    suspend fun axisImportSources(targetUniverseId: Long): List<AxisSource> {
+        val targetAxes = duelRepository.axes(targetUniverseId)
+        val targetKeys = characterFields(targetUniverseId).map { it.key }.toSet()
+        val filterlessLabel = app.getString(R.string.duel_axis_import_missing_unnamed)
+        val nameCount = mutableMapOf<String, Int>()
+        val sources = ArrayList<AxisSource>()
+        for (universe in app.database.universeDao().getAllUniversesList()) {
+            if (universe.id == targetUniverseId) continue
+            val axes = duelRepository.axes(universe.id)
+            if (axes.isEmpty()) continue
+            val count = nameCount.getOrDefault(universe.name, 0)
+            nameCount[universe.name] = count + 1
+            val label = if (count > 0) "${universe.name} (${count + 1})" else universe.name
+            sources.add(
+                AxisSource(
+                    label,
+                    DuelAxisTransfer.plan(axes, targetAxes, targetKeys, filterlessLabel)
+                )
+            )
+        }
+        return sources
+    }
+
+    /**
+     * 고른 축들을 심고 **무엇이 들어갔는지 말한다**.
+     *
+     * 고른 수와 들어간 수를 함께 내는 것이 요점이다 — 사이에 이름이 겹치면 저장소가 그것을
+     * 건너뛰는데(`DuelRepository.importAxes`) 수를 하나만 말하면 그 사실이 사라진다.
+     *
+     * @return 실제로 들어간 축 수.
+     */
+    suspend fun importAxes(targetUniverseId: Long, sources: List<DuelAxis>): Int {
+        val inserted = try {
+            duelRepository.importAxes(targetUniverseId, sources)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 취소는 실패가 아니다 — 삼키면 화면을 떠났을 뿐인데 **작업 이력에 거짓 실패가 남는다**
+            // (B-204가 연표에서 지적한 그 모양이고, 이 저장소의 다른 자리는 이미 이렇게 한다).
+            throw e
+        } catch (e: Exception) {
+            reportResult(
+                _result,
+                OpResult.failure(
+                    OpResult.CAT_DUEL,
+                    app.getString(R.string.duel_op_axis_import_failed), e.message
+                )
+            )
+            return 0
+        }
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(R.string.duel_op_axis_imported, inserted.size, sources.size)
+            )
+        )
+        return inserted.size
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 필드 연결 (층 C)
     // ──────────────────────────────────────────────────────────────────────
 
@@ -154,6 +232,7 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             DuelSystemFields.Column.MEMO -> R.string.duel_system_field_memo
             DuelSystemFields.Column.NOVEL -> R.string.duel_system_field_novel
             DuelSystemFields.Column.TAGS -> R.string.duel_system_field_tags
+            DuelSystemFields.Column.FACTION -> R.string.duel_system_field_faction
         }
     )
 
@@ -244,11 +323,15 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 캐릭터 행에 **없는** 시스템 열 재료 — 작품 제목과 태그.
+     * 캐릭터 행에 **없는** 시스템 열 재료 — 작품 제목·태그·세력.
      *
      * **걸린 열만 읽는다.** `sys:tags`가 없는 축에서 태그 표를 훑는 것은 순전히 낭비이고,
      * 그것이 이 함수가 [DuelSystemFields.valuesOf] 안이 아니라 밖에 있는 이유다
      * (순수 계층은 질의를 몰라야 시험이 실제로 돈다).
+     *
+     * **세력은 질의가 둘이다**(B-171) — 소속 이력과 세력 이름. 그래도 새 비용 축은 아니다:
+     * `sys:tags`가 태그 표를 한 번 훑는 것과 같은 모양이고(캐릭터 수만큼의 `IN` 인자),
+     * 세력 표는 **세계관 단위라 캐릭터 수와 무관하게 작다.**
      */
     private suspend fun systemExtrasOf(
         characters: List<Character>,
@@ -257,7 +340,8 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val columns = systemKeys.mapNotNull { DuelSystemFields.columnOf(it) }.toSet()
         val wantsNovel = DuelSystemFields.Column.NOVEL in columns
         val wantsTags = DuelSystemFields.Column.TAGS in columns
-        if (!wantsNovel && !wantsTags) return emptyMap()
+        val wantsFaction = DuelSystemFields.Column.FACTION in columns
+        if (!wantsNovel && !wantsTags && !wantsFaction) return emptyMap()
 
         val titleByNovelId: Map<Long, String> = if (!wantsNovel) {
             emptyMap()
@@ -281,10 +365,38 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
                 .groupBy({ it.characterId }, { it.tag })
         }
 
+        // 세력 이름 (B-171). **판정은 [FactionStanding]이 한다** — *지금 소속*은 파생 사실이라
+        // 여기서 `leaveType`을 다시 읽으면 통계·세력 관리와 갈릴 자리가 하나 더 생긴다(원칙 05).
+        val factionsById: Map<Long, List<String>> = if (!wantsFaction) {
+            emptyMap()
+        } else {
+            // 소속은 캐릭터 수만큼의 `IN` 인자가 드므로 위와 같은 청크 규약이다.
+            val memberships = characters.map { it.id }
+                .chunked(900)
+                .flatMap {
+                    app.database.factionMembershipDao().getCurrentMembershipsForCharacters(it)
+                }
+                .groupBy { it.characterId }
+            // 세력 표는 **세계관 단위라 작다** — id 집합이 아니라 이름 사전 하나로 끝난다.
+            val nameById = FactionStanding.current(memberships.values.flatten())
+                .map { it.factionId }
+                .distinct()
+                .chunked(900)
+                .flatMap { app.database.factionDao().getByIds(it) }
+                .associate { it.id to it.name }
+            characters.associate { character ->
+                character.id to FactionStanding
+                    .currentFactionIds(memberships[character.id].orEmpty())
+                    .mapNotNull { nameById[it] }
+                    .filter { it.isNotBlank() }
+            }
+        }
+
         return characters.associate { character ->
             character.id to DuelSystemFields.Extras(
                 novelTitle = character.novelId?.let { titleByNovelId[it] }.orEmpty(),
-                tags = tagsById[character.id].orEmpty()
+                tags = tagsById[character.id].orEmpty(),
+                factions = factionsById[character.id].orEmpty()
             )
         }
     }
@@ -460,6 +572,13 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         if (column == DuelSystemFields.Column.NOVEL) {
             return app.database.novelDao().getNovelsByUniverseList(universeId)
                 .map { it.title }.filter { it.isNotBlank() }.distinct().sorted()
+        }
+        // 세력도 자기 표가 있다(B-171) — 작품과 같은 근거로 **표에서** 낸다. 캐릭터를 훑어
+        // 모으면 *지금 아무도 안 속한 세력*이 목록에서 빠지는데, 그것이야말로 사용자가
+        // 걸고 싶은 조건일 수 있다(*"아직 아무도 없는 세력에 넣을 후보를 겨룬다"*).
+        if (column == DuelSystemFields.Column.FACTION) {
+            return app.database.factionDao().getFactionsByUniverseList(universeId)
+                .map { it.name }.filter { it.isNotBlank() }.distinct().sorted()
         }
         val characters = participantsOf(universeId)
         val extrasById = systemExtrasOf(characters, listOf(column.key))
