@@ -197,7 +197,9 @@ class BodyAnalysisHelper {
         //     장르 기준(자동) < 이상 몸(치수 입력, 키 적응) < 키별 직접 고정.
         //     종전의 키별 리터럴 폴백(.70/1.00/.40/.52)은 황금비 잔재의 세 번째 사본이었다.
         val goldenRatioDetails = if (safeHeight != null) {
-            val ideals = BodyGenerator.genreTargetIdeals(safeHeight, config.ribOffset) +
+            // 장르 기준은 **이 세계관의 생성 축**에서 파생된다(B-93) — 축을 열면 목표 비율
+            // 기준도 함께 움직인다. 축은 그대로 두고 이상값만 옛 상수로 남으면 두 벌이 된다.
+            val ideals = BodyGenerator.genreTargetIdeals(safeHeight, config.ribOffset, config.generation) +
                 (config.idealBody?.let { BodyGenerator.idealsFromBody(it, safeHeight, config.ribOffset) }
                     ?: emptyMap()) +
                 config.goldenRatioIdeals

@@ -45,7 +45,7 @@ class BodyCupContractTest {
     /** 그림(3축 요약)이 내는 컵 글자. */
     private fun figureCup(m: BodyMeasurements, config: BodyAnalysisConfig): String {
         val measures = BodySilhouetteSpec.measuresFrom(m, config.ribOffset)!!
-        return BodySilhouetteSpec.axisSummary(measures, config.cupMapping).cup
+        return BodySilhouetteSpec.axisSummary(measures, config).cup
     }
 
     // ── 기본 설정에서 두 계층이 같은 글자를 낸다 ──────────────────────────────

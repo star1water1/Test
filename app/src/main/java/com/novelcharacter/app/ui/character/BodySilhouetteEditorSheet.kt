@@ -105,6 +105,17 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
      */
     var onApply: ((parts: List<String>, heightCm: Double?, weightKg: Double?) -> Unit)? = null
 
+    /**
+     * 🎲 축·프리셋을 **세계관 설정에 담는 자리**(B-93) — 호스트가 필드 config에 쓴다.
+     *
+     * 결과를 콜백으로 되돌려 받는 것은 쓰기가 비동기이고 **실패할 수 있기 때문이다**:
+     * 성공을 기다리지 않고 화면을 세우면, 저장되지 않은 축을 보여 주다가 다음에 열 때
+     * 조용히 옛 축으로 돌아간다(개발 의도 2번 — 말없는 유실이자 거짓 고지).
+     *
+     * null이면 편집 단추가 서지 않는다 — 저장할 자리가 없는 화면이 있을 수 있다.
+     */
+    var onSaveGeneration: ((BodyAnalysisConfig.GenerationPreset, (Boolean) -> Unit) -> Unit)? = null
+
     // ── 편집 상태 ───────────────────────────────────────────────────────────
 
     private lateinit var start: Measures
@@ -135,7 +146,14 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
      */
     private val touched = mutableSetOf<BodySlot>()
 
-    private val generatorOptions = BodyGenerator.GenerationPreset()
+    /**
+     * 🎲가 쓰는 축·프리셋 — **세계관 설정에서 그때그때 읽는다**(B-93).
+     *
+     * 값으로 굳혀 두지 않는 것은 이 시트에서 축을 고칠 수 있기 때문이다([editGeneration]):
+     * 굳히면 방금 고친 축과 화면의 축이 갈리고, 그 갈림은 저장 뒤 다시 열기 전까지 안 보인다.
+     */
+    private val generatorOptions: BodyAnalysisConfig.GenerationPreset
+        get() = analysisConfig.generation.usable
     private var cupMode = false
     private var cupSizeDiffs: List<Pair<String, Double>> = emptyList()
     private var overlayOn = false
@@ -371,7 +389,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         if (from != SyncSource.HANDLE) binding.silhouette.measures = current
         else binding.silhouette.invalidate()
 
-        val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig.cupMapping)
+        val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)
         binding.axisSummary.text =
             getString(R.string.silhouette_axis_summary, summary.torso, summary.cup, summary.hip, summary.line)
         binding.clampCaption.visibility = if (binding.silhouette.isClamped) View.VISIBLE else View.GONE
@@ -399,11 +417,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     private fun setupGeneratorPanel() {
         val density = resources.displayMetrics.density
-        buildPresetRow(density)
-        buildAxisGroup(binding.rgHeight, generatorOptions.heightOptions.map { it.label }, checked = 1, density, anyOption = true)
-        buildAxisGroup(binding.rgTorso, generatorOptions.torsoOptions.map { it.label }, checked = 1, density)
-        buildAxisGroup(binding.rgBust, generatorOptions.bustOptions.map { it.label }, checked = 1, density)
-        buildAxisGroup(binding.rgHip, generatorOptions.hipOptions.map { it.label }, checked = 1, density)
+        buildAxes(density)
         buildCupOptions(density)
         setupRelative(density)
         showDistribution()
@@ -411,7 +425,48 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         binding.generatorHeader.setOnClickListener { toggleGeneratorPanel() }
         binding.btnRoll.setOnClickListener { roll() }
         binding.btnUndoRoll.setOnClickListener { undoRoll() }
+        binding.btnEditGeneration.setOnClickListener { editGeneration() }
+        // 저장할 자리가 없으면 고칠 것도 없다 — 호스트가 저장을 붙이지 않은 화면에서는
+        // 단추를 세우지 않는다(눌러서 아무 일도 안 일어나는 자리를 만들지 않는다).
+        binding.btnEditGeneration.visibility =
+            if (onSaveGeneration == null) View.GONE else View.VISIBLE
         if (openWithGenerator) toggleGeneratorPanel()
+    }
+
+    /**
+     * 축·프리셋 줄을 세운다 — **다시 세울 수 있어야 한다**(편집 뒤 그 자리에서 새로 선다).
+     * 라디오 그룹과 프리셋 줄을 먼저 비우는 것이 그 재진입의 전부다.
+     */
+    private fun buildAxes(density: Float) {
+        val options = generatorOptions
+        binding.presetRow.removeAllViews()
+        for (group in listOf(binding.rgHeight, binding.rgTorso, binding.rgBust, binding.rgHip)) {
+            group.removeAllViews()
+        }
+        buildPresetRow(density, options)
+        buildAxisGroup(binding.rgHeight, options.heightOptions.map { it.label }, checked = 1, density, anyOption = true)
+        buildAxisGroup(binding.rgTorso, options.torsoOptions.map { it.label }, checked = 1, density)
+        buildAxisGroup(binding.rgBust, options.bustOptions.map { it.label }, checked = 1, density)
+        buildAxisGroup(binding.rgHip, options.hipOptions.map { it.label }, checked = 1, density)
+    }
+
+    /**
+     * 축·프리셋 편집 창을 연다 — 저장은 호스트가 필드 config에 담는다([onSaveGeneration]).
+     *
+     * **저장 결과를 기다려 화면을 세운다** — 먼저 세우고 저장에 실패하면 화면이 저장되지
+     * 않은 축을 보여 주게 되고, 다음에 열 때 조용히 되돌아간다(거짓 고지).
+     */
+    private fun editGeneration() {
+        val save = onSaveGeneration ?: return
+        BodyGenerationEditDialog.show(requireContext(), generatorOptions) { updated ->
+            save(updated) { ok ->
+                if (_binding == null) return@save
+                if (!ok) return@save
+                analysisConfig = analysisConfig.copy(generation = updated)
+                buildAxes(resources.displayMetrics.density)
+                syncAll(null)
+            }
+        }
     }
 
     private fun toggleGeneratorPanel() {
@@ -422,8 +477,8 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         )
     }
 
-    private fun buildPresetRow(density: Float) {
-        for ((i, preset) in generatorOptions.bodyPresets.withIndex()) {
+    private fun buildPresetRow(density: Float, options: BodyAnalysisConfig.GenerationPreset) {
+        for ((i, preset) in options.bodyPresets.withIndex()) {
             val btn = MaterialButton(
                 requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle
             ).apply {
@@ -638,17 +693,17 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
                 heightMultiplier = hMul, volumeMultiplier = vMul
             )
         }
-        val hIdx = selectedIndex(binding.rgHeight)
-        val heightOption = if (hIdx < 0) generatorOptions.heightOptions.random()
-        else generatorOptions.heightOptions.getOrNull(hIdx) ?: generatorOptions.heightOptions[1]
         val cupDiff = if (cupMode) cupSizeDiffs.getOrNull(selectedIndex(binding.rgCupSize))?.second else null
+        // 축은 **인덱스로** 넘긴다 — 구간이 목록에서의 자리에서 파생되므로(B-93) 옵션 객체만
+        // 넘기면 겨눌 폭을 생성기가 알 수 없다. 목록 밖·미선택의 처분도 그쪽 한 자리에 있다.
         return BodyGenerator.generate(
-            heightOption,
-            generatorOptions.torsoOptions.getOrNull(selectedIndex(binding.rgTorso)) ?: generatorOptions.torsoOptions[1],
-            generatorOptions.bustOptions.getOrNull(selectedIndex(binding.rgBust)) ?: generatorOptions.bustOptions[1],
-            generatorOptions.hipOptions.getOrNull(selectedIndex(binding.rgHip)) ?: generatorOptions.hipOptions[1],
-            cupDiff,
-            analysisConfig.ribOffset
+            options = generatorOptions,
+            heightIndex = selectedIndex(binding.rgHeight),
+            torsoIndex = selectedIndex(binding.rgTorso),
+            bustIndex = selectedIndex(binding.rgBust),
+            hipIndex = selectedIndex(binding.rgHip),
+            targetCupDiff = cupDiff,
+            ribOffset = analysisConfig.ribOffset
         )
     }
 

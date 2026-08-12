@@ -1013,6 +1013,39 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
         universeRepository.getFieldsByIds(ids)
 
+    /**
+     * 체형 필드의 🎲 생성 축·프리셋을 저장한다 (B-93 — 실루엣 편집기에서 부른다).
+     *
+     * **저장 직전에 그 필드를 다시 읽는다** — 화면이 들고 있는 사본은 창을 여는 동안
+     * 낡을 수 있고, 그 사본을 통째로 되쓰면 그사이 필드 설정 창에서 바뀐 컵 표·규칙이
+     * 조용히 옛 값으로 되돌아간다. 축만 얹고 나머지는 방금 읽은 것을 그대로 둔다.
+     *
+     * 실패를 삼키지 않는다 — 부르는 쪽이 결과를 보고 화면을 세운다(성공했다고 먼저
+     * 그리면 저장되지 않은 축을 보여 주게 된다).
+     *
+     * @return 저장된 필드 정의(실패면 null). **호스트가 들고 있는 사본을 이것으로 갈아야
+     *   한다** — 갈지 않으면 편집기를 닫았다 다시 여는 것만으로 옛 축이 되살아난다.
+     */
+    suspend fun saveBodyGeneration(
+        fieldId: Long,
+        generation: com.novelcharacter.app.data.model.BodyAnalysisConfig.GenerationPreset
+    ): FieldDefinition? = try {
+        val field = universeRepository.getFieldsByIds(listOf(fieldId)).firstOrNull()
+        if (field == null) null else {
+            val body = com.novelcharacter.app.data.model.BodyAnalysisConfig
+                .fromConfig(field.config).copy(generation = generation)
+            val updated = field.copy(
+                config = com.novelcharacter.app.data.model.BodyAnalysisConfig
+                    .applyToConfig(field.config, body)
+            )
+            universeRepository.updateField(updated)
+            updated
+        }
+    } catch (e: Exception) {
+        Log.e("CharacterViewModel", "saveBodyGeneration failed", e)
+        null
+    }
+
     // ===== CharacterFieldValue =====
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
         characterRepository.getValuesByCharacterList(characterId)

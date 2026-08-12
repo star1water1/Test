@@ -43,7 +43,11 @@ class BodyAnalysisConfigKeysTest {
         ),
         goldenRatioIdeals = mapOf("whr" to 0.7),
         partSlots = listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP),
-        idealBody = BodyAnalysisConfig.IdealBody(bust = 88.0, waist = 60.0, hip = 90.0, heightCm = 165.0)
+        idealBody = BodyAnalysisConfig.IdealBody(bust = 88.0, waist = 60.0, hip = 90.0, heightCm = 165.0),
+        // 🎲 생성 축도 **손댄 한 벌**이어야 실린다(기본값이면 적지 않는 키다 — B-93).
+        generation = BodyAnalysisConfig.DEFAULT_GENERATION.copy(
+            bustOptions = BodyAnalysisConfig.DEFAULT_BUST_OPTIONS.map { it.copy(cupDiff = it.cupDiff - 4) }
+        )
     )
 
     // ── ① 쓰는 키는 '모르는 키'가 아니다 ──

@@ -24,6 +24,7 @@ enum class BodySlot { BUST, UNDERBUST, WAIST, HIP, SHOULDER, NONE }
  * - bodyTypeRules: 체형 분류 규칙 (조건 기반, priority 순 평가)
  * - enabledInsights: 인사이트 항목별 표시/숨김 토글
  * - partSlots: 구조화 입력 파트 인덱스 → [BodySlot] 명시 매핑 (비어 있으면 추론)
+ * - generation: 🎲 생성 축·프리셋 ([GenerationPreset] — B-93)
  *
  * config에 "bodyAnalysis" 키가 없으면 DEFAULT를 사용하므로
  * 기존 데이터의 마이그레이션이 불필요하다.
@@ -48,7 +49,9 @@ data class BodyAnalysisConfig(
     // 이상 몸(치수 입력 — P8 '사용자 이상형', 2026.08.02 사용자 요청). 셋(B·W·H)이 다
     // 있어야 효력이 있고, 비율 환산·키 적응은 BodyGenerator.idealsFromBody가 든다.
     // 부분 입력도 저장은 한다 — 적다 만 값을 버리면 말없는 유실이다(R-27 결).
-    val idealBody: IdealBody? = null
+    val idealBody: IdealBody? = null,
+    // 🎲 생성 축·프리셋 — 세계관 단위 사용자 정의(B-93 · 확정 7번). 기본값이면 저장하지 않는다.
+    val generation: GenerationPreset = GenerationPreset()
 ) {
     /**
      * 사용자가 치수로 적은 이상 몸. [heightCm]가 없으면 기준 몸 키로 읽는다.
@@ -68,6 +71,199 @@ data class BodyAnalysisConfig(
 
         val isEmpty: Boolean
             get() = bust == null && waist == null && hip == null && heightCm == null
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 🎲 생성 축·프리셋 (B-93 · 확정 7번 ㄱ1·ㄴ1)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** 키 축 — 중심 키(cm)와 흔들림 폭. [variance]가 0이면 흔들리지 않는다(정확히 [center]). */
+    data class HeightOption(val label: String, val center: Double, val variance: Double)
+
+    /**
+     * 몸통 축 — 허리를 키 비율로 잡는다(마름 정도의 수치 실체가 허리/키다).
+     *
+     * [maxRatio]는 **이 축이 끝나는 자리**(허리÷키)이고, 축의 구간은 목록 순서에서 파생된다 —
+     * 앞 축의 [maxRatio]부터 자기 [maxRatio]까지, 첫 축은 0부터([GenerationPreset.torsoBand]).
+     * **경계를 축마다 한 번씩만 적는 것이 이 형태의 요점이다**: 종전에는 구간의 양 끝을
+     * 이웃한 두 축이 각각 들고 있어 한쪽만 고치면 틈이나 겹침이 생겼다.
+     * 마지막 축의 [maxRatio]는 열린 끝이라 요약이 그 위의 값도 이 축으로 읽는다.
+     */
+    data class TorsoOption(
+        val label: String,
+        val waistRatio: Double,     // 허리 ÷ 키 (구간 한가운데를 겨눈다)
+        val bmiTarget: Double,      // 목표 BMI (몸무게 역산용)
+        val maxRatio: Double        // 이 축의 끝 (허리÷키)
+    )
+
+    /**
+     * 가슴 축 — **컵차 목표(cm)**. 가슴 = 허리 + 흉곽 보정 + 이 값이다.
+     *
+     * 종전에는 "허리 대비 증가량"(보정 포함 값)이었다 — 보정이 기본 6일 때만 라벨과 컵이
+     * 맞고, 사용자가 보정을 바꾸면 아담을 골라도 D가 나왔다(B-92).
+     * 구간이 없는 것은 일부러다 — 돌아오는 컵 글자는 [cupMapping] 하나가 정하므로,
+     * 여기 경계를 또 적으면 같은 사실이 두 자리에 산다.
+     */
+    data class BustOption(val label: String, val cupDiff: Double)
+
+    /** 힙 축 — 허리 대비 증가량(cm). [maxDiff]의 뜻은 [TorsoOption.maxRatio]와 같다. */
+    data class HipOption(val label: String, val hipBonus: Double, val maxDiff: Double)
+
+    /**
+     * 체형 프리셋 — 세 축을 한 번에 세우는 러프 경로. 인덱스는 같은 [GenerationPreset]의
+     * 축 목록 기준이다. 프리셋을 고른 뒤 축을 따로 바꾸는 것이 정밀 경로다(둘은 배타가 아니다).
+     */
+    data class BodyPreset(val label: String, val torso: Int, val bust: Int, val hip: Int)
+
+    /**
+     * 🎲 생성기가 쓰는 축과 프리셋 한 벌 — **세계관 단위로 사용자가 정한다**
+     * (B-93 · 확정 7번: ㄱ1 세계관 단위 · ㄴ1 수치와 이름만, **단계 개수는 열지 않는다**).
+     *
+     * 필드 정의가 이미 세계관 소속이므로 *"세계관 단위"*는 곧 이 config다 — 별도 표도,
+     * 마이그레이션도 없다. `bodyAnalysis.generation`이 없는 필드는 아래 기본값 그대로 돈다.
+     *
+     * **개수를 열지 않는 것이 계약이다:** 파싱은 언제나 기본 목록과 같은 길이를 돌려준다
+     * (모자라면 기본값으로 채우고 넘치면 자른다 — [sanitized]). 그래서 프리셋의 축 인덱스가
+     * 가리킬 자리가 사라지지 않고, 화면도 늘 같은 수의 칸을 그린다.
+     *
+     * **축 구간은 이 목록에서 파생된다**([torsoBand]·[hipBand]) — 생성기가 겨누는 자리와
+     * 요약이 가르는 자리가 같은 배열 하나에서 나오므로, 사용자가 경계를 옮겨도
+     * *고른 축과 돌아오는 요약*이 갈라질 수 없다(`BodySilhouetteSpec.axisSummary`).
+     */
+    data class GenerationPreset(
+        val heightOptions: List<HeightOption> = DEFAULT_HEIGHT_OPTIONS,
+        val torsoOptions: List<TorsoOption> = DEFAULT_TORSO_OPTIONS,
+        val bustOptions: List<BustOption> = DEFAULT_BUST_OPTIONS,
+        val hipOptions: List<HipOption> = DEFAULT_HIP_OPTIONS,
+        val bodyPresets: List<BodyPreset> = DEFAULT_BODY_PRESETS
+    ) {
+        /** 몸통 축 [index]의 구간(허리÷키). 앞 축의 끝에서 자기 끝까지, 첫 축은 0부터. */
+        fun torsoBand(index: Int): ClosedFloatingPointRange<Double> =
+            bandOf(index, torsoOptions.map { it.maxRatio })
+
+        /** 힙 축 [index]의 구간(엉덩이−허리 cm). 뜻은 [torsoBand]와 같다. */
+        fun hipBand(index: Int): ClosedFloatingPointRange<Double> =
+            bandOf(index, hipOptions.map { it.maxDiff })
+
+        private fun bandOf(index: Int, ends: List<Double>): ClosedFloatingPointRange<Double> {
+            if (index !in ends.indices) return 0.0..0.0
+            val low = if (index == 0) 0.0 else ends[index - 1]
+            return low..ends[index]
+        }
+
+        /**
+         * 사람이 손으로 고친 값도 도는 형태로 — **거부가 아니라 교정이다**(개발 의도 4번).
+         *
+         * 엑셀 '설정(JSON)' 칸은 외부에서 편집되므로 무엇이든 들어올 수 있다. 여기서 하는 일:
+         * 개수를 기본과 맞추고(모자라면 채우고 넘치면 자른다 — 확정 ㄴ1),
+         * 빈 이름을 기본 이름으로 되돌리고, 수가 아닌 값과 범위 밖 값을 눌러 담고,
+         * 축의 끝을 **엄격한 오름차순으로** 밀어 올리고,
+         * 프리셋이 없는 축을 가리키면 그 프리셋의 기본 축으로 되돌린다.
+         */
+        fun sanitized(): GenerationPreset = GenerationPreset(
+            heightOptions = heightOptions.fit(DEFAULT_HEIGHT_OPTIONS) { v, d ->
+                HeightOption(
+                    label = v.label.trim().ifEmpty { d.label },
+                    center = v.center.finiteOr(d.center).coerceIn(Limits.HEIGHT_CENTER),
+                    variance = v.variance.finiteOr(d.variance).coerceIn(Limits.HEIGHT_VARIANCE)
+                )
+            },
+            torsoOptions = ascending(
+                torsoOptions.fit(DEFAULT_TORSO_OPTIONS) { v, d ->
+                    TorsoOption(
+                        label = v.label.trim().ifEmpty { d.label },
+                        waistRatio = v.waistRatio.finiteOr(d.waistRatio).coerceIn(Limits.WAIST_RATIO),
+                        bmiTarget = v.bmiTarget.finiteOr(d.bmiTarget).coerceIn(Limits.BMI),
+                        maxRatio = v.maxRatio.finiteOr(d.maxRatio).coerceIn(Limits.TORSO_END)
+                    )
+                },
+                Limits.TORSO_END_STEP, { it.maxRatio }, { o, m -> o.copy(maxRatio = m) }
+            ),
+            bustOptions = bustOptions.fit(DEFAULT_BUST_OPTIONS) { v, d ->
+                BustOption(
+                    label = v.label.trim().ifEmpty { d.label },
+                    cupDiff = v.cupDiff.finiteOr(d.cupDiff).coerceIn(Limits.CUP_DIFF)
+                )
+            },
+            hipOptions = ascending(
+                hipOptions.fit(DEFAULT_HIP_OPTIONS) { v, d ->
+                    HipOption(
+                        label = v.label.trim().ifEmpty { d.label },
+                        hipBonus = v.hipBonus.finiteOr(d.hipBonus).coerceIn(Limits.HIP_BONUS),
+                        maxDiff = v.maxDiff.finiteOr(d.maxDiff).coerceIn(Limits.HIP_END)
+                    )
+                },
+                Limits.HIP_END_STEP, { it.maxDiff }, { o, m -> o.copy(maxDiff = m) }
+            ),
+            bodyPresets = bodyPresets.fit(DEFAULT_BODY_PRESETS) { v, d ->
+                BodyPreset(
+                    label = v.label.trim().ifEmpty { d.label },
+                    // 없는 축을 가리키면 **그 프리셋의 기본 축**으로 되돌린다 —
+                    // 0번으로 접으면 프리셋 넷이 조용히 서로 닮아 버린다.
+                    torso = v.torso.orDefaultIndex(d.torso, DEFAULT_TORSO_OPTIONS.size),
+                    bust = v.bust.orDefaultIndex(d.bust, DEFAULT_BUST_OPTIONS.size),
+                    hip = v.hip.orDefaultIndex(d.hip, DEFAULT_HIP_OPTIONS.size)
+                )
+            }
+        )
+
+        /** 손대지 않은 한 벌인가 — 기본값이면 config에 적지 않는다(파일이 불어나지 않게). */
+        val isDefault: Boolean get() = this == DEFAULT_GENERATION
+
+        /**
+         * 빈 축이 하나도 없는 한 벌 — 비어 있는 축만 기본값으로 세운다.
+         *
+         * 파싱은 [sanitized]가 길이를 보장하므로 이 자리가 잡는 것은 **코드가 잘못 세운 한 벌**
+         * 이다. 그럼에도 두는 이유는 소비처가 읽기 화면이 캐릭터마다 지나는 경로(목표 비율)라,
+         * 빈 목록 하나가 세계관 하나의 화면을 통째로 죽일 수 있기 때문이다 —
+         * 축을 사용자에게 연 이 판이 새로 만든 위험이라 이 판이 함께 막는다.
+         *
+         * 고칠 것이 없으면 **자기 자신을 그대로 돌려준다**(평소 경로에 할당이 붙지 않는다).
+         */
+        val usable: GenerationPreset
+            get() = if (heightOptions.isNotEmpty() && torsoOptions.isNotEmpty() &&
+                bustOptions.isNotEmpty() && hipOptions.isNotEmpty() && bodyPresets.isNotEmpty()
+            ) this else GenerationPreset(
+                heightOptions = heightOptions.ifEmpty { DEFAULT_HEIGHT_OPTIONS },
+                torsoOptions = torsoOptions.ifEmpty { DEFAULT_TORSO_OPTIONS },
+                bustOptions = bustOptions.ifEmpty { DEFAULT_BUST_OPTIONS },
+                hipOptions = hipOptions.ifEmpty { DEFAULT_HIP_OPTIONS },
+                bodyPresets = bodyPresets.ifEmpty { DEFAULT_BODY_PRESETS }
+            )
+
+        /**
+         * 축 값이 설 수 있는 범위와 순서 규칙 — **창의 검증과 파일 교정이 같은 잣대를 쓴다.**
+         *
+         * 두 벌로 두면 *"창은 거부하는데 엑셀로는 들어오는"* 값이 생긴다 — 그 값은 화면
+         * 어디에도 고칠 자리가 없고, 사용자는 왜 이상한지 알 길이 없다. 편집 창이 화면
+         * 계층이라 순수 시험이 닿지 않으므로, **잣대만이라도 여기 두어야 잴 수 있다.**
+         */
+        object Limits {
+            val HEIGHT_CENTER = 100.0..250.0
+            val HEIGHT_VARIANCE = 0.0..30.0
+            val WAIST_RATIO = .2..0.6
+            val BMI = 10.0..40.0
+            val TORSO_END = .2..1.0
+            val CUP_DIFF = 0.0..60.0
+            val HIP_BONUS = 0.0..60.0
+            val HIP_END = 0.0..99.0
+
+            /**
+             * 축의 끝이 같아도 안 되는 이유 — 폭이 0인 구간은 **그 이름이 영영 안 돌아온다.**
+             * 셀렉터에 있는데 요약이 절대 답하지 않는 축은 이름표일 뿐 조작이 아니다.
+             * 그래서 교정은 겹친 끝을 이만큼 밀어 올린다(창은 같은 자리를 붉은 글씨로 막는다).
+             */
+            const val TORSO_END_STEP = .001
+            const val HIP_END_STEP = .5
+
+            /**
+             * 오름차순을 깬 자리 — 창이 그 칸에 붉은 글씨를 단다.
+             * [sanitized]는 사람이 없는 자리라 되묻지 못하므로 같은 자리를 밀어 올린다.
+             * **둘이 같은 규칙을 쓰는 것이 요점이다** — 갈리면 창이 막는 값이 파일로 들어온다.
+             */
+            fun ascendingViolations(ends: List<Double>): List<Int> =
+                ends.indices.filter { it > 0 && ends[it] <= ends[it - 1] }
+        }
     }
 
     data class CupMappingEntry(val maxDiff: Double, val label: String)
@@ -107,7 +303,8 @@ data class BodyAnalysisConfig(
          */
         val READ_KEYS = setOf(
             "cupMapping", "bodyTypeRules", "defaultBodyType", "ribOffset",
-            "bodyTagRules", "goldenRatioIdeals", "idealBody", "partSlots", "enabledInsights"
+            "bodyTagRules", "goldenRatioIdeals", "idealBody", "partSlots", "enabledInsights",
+            "generation"
         )
 
         /**
@@ -253,6 +450,59 @@ data class BodyAnalysisConfig(
             INSIGHT_PROPORTION to true
         )
 
+        // ── 🎲 생성 축·프리셋 기본값 (B-93) ────────────────────────────────
+        // 어휘는 전부 긍정 프레이밍이다 — 고르는 말은 전부 매력적이어야 한다(P5-③).
+        // **[DEFAULT] 선언보다 위에 있어야 한다** — 그쪽이 이 목록들을 읽어 세워진다.
+
+        val DEFAULT_HEIGHT_OPTIONS = listOf(
+            HeightOption("아담", 152.0, 5.0),
+            HeightOption("보통", 163.0, 4.0),
+            HeightOption("장신", 172.0, 4.0),
+            HeightOption("초장신", 180.0, 5.0)
+        )
+
+        /**
+         * 허리/키 목표와 축의 끝. 각 목표값은 자기 구간의 한가운데다.
+         *
+         * 경계(.362·.402)는 종전 `BodySilhouetteSpec`의 상수 자리였다 — 축이 사용자 것이
+         * 되면서 **상수가 아니라 축의 일부**가 됐고, 요약도 이 목록을 읽는다.
+         */
+        val DEFAULT_TORSO_OPTIONS = listOf(
+            TorsoOption("슬림", .350, 18.5, maxRatio = .362),
+            TorsoOption("표준", .382, 20.5, maxRatio = .402),
+            TorsoOption("소프트", .420, 23.0, maxRatio = 1.0)
+        )
+
+        /**
+         * 컵차 목표(cm). 흔들림 ±2를 합치면 8~12 / 13~17 / 18~22 / 24~28 — 기본 컵 표로
+         * **A~B · C~D · E~F · G~I**다. 가장 작은 축이 컵차 8~12인 것이 P5-② '장르 상향'의
+         * 이행이다(종전 최소는 컵차 2 상당).
+         */
+        val DEFAULT_BUST_OPTIONS = listOf(
+            BustOption("아담", 10.0),
+            BustOption("내추럴", 15.0),
+            BustOption("볼륨", 20.0),
+            BustOption("글래머", 26.0)
+        )
+
+        /** 엉덩이 − 허리(cm)와 축의 끝. 마지막 축의 끝은 열린 끝이다. */
+        val DEFAULT_HIP_OPTIONS = listOf(
+            HipOption("힙 슬림", 22.0, maxDiff = 24.0),
+            HipOption("힙 표준", 27.0, maxDiff = 31.0),
+            HipOption("볼륨힙", 34.0, maxDiff = 99.0)
+        )
+
+        /** 세 축 세트. 네 귀퉁이 + 곡선형 하나 — 프리셋만으로도 폭이 나오게 골랐다. */
+        val DEFAULT_BODY_PRESETS = listOf(
+            BodyPreset("슬렌더", torso = 0, bust = 0, hip = 0),
+            BodyPreset("내추럴", torso = 1, bust = 1, hip = 1),
+            BodyPreset("아워글래스", torso = 0, bust = 2, hip = 2),
+            BodyPreset("글래머", torso = 2, bust = 3, hip = 2)
+        )
+
+        /** 손대지 않은 한 벌 — [GenerationPreset.isDefault]의 기준이자 저장 생략의 기준이다. */
+        val DEFAULT_GENERATION = GenerationPreset()
+
         val DEFAULT = BodyAnalysisConfig()
 
         fun fromConfig(configJson: String): BodyAnalysisConfig {
@@ -387,6 +637,10 @@ data class BodyAnalysisConfig(
                     }
                 }
 
+                // 🎲 생성 축·프리셋 — 없으면 기본값 한 벌. 있으면 읽은 뒤 반드시 교정한다
+                // (손으로 고친 값이 그대로 생성기에 들어가지 않게 — GenerationPreset.sanitized).
+                val generation = parseGeneration(obj.optJSONObject("generation"))
+
                 BodyAnalysisConfig(
                     cupMapping = cupMapping.ifEmpty { DEFAULT_CUP_MAPPING },
                     bodyTypeRules = bodyTypeRules.ifEmpty { DEFAULT_BODY_TYPE_RULES },
@@ -397,7 +651,8 @@ data class BodyAnalysisConfig(
                     // 비어 있으면 빈 채로 둔다 — '장르 기준 자동'이라는 뜻이 있는 값이다.
                     goldenRatioIdeals = goldenRatioIdeals,
                     partSlots = partSlots,
-                    idealBody = idealBody
+                    idealBody = idealBody,
+                    generation = generation
                 )
             } catch (_: Exception) {
                 DEFAULT
@@ -503,10 +758,85 @@ data class BodyAnalysisConfig(
                     insightsObj.put(k, v)
                 }
                 put("enabledInsights", insightsObj)
+
+                // 🎲 생성 축·프리셋 — 손댔을 때만 싣는다(ribOffset·partSlots 선례).
+                // 기본값을 구워 두면 기존 필드 정의의 JSON이 통째로 불어나고, 나중에
+                // 기본값을 손보면 **옛 값이 굳은 필드만 옛 축으로 남는다**.
+                if (!config.generation.isDefault) {
+                    put("generation", generationToJson(config.generation))
+                }
             }
 
             root.put(KEY, obj)
             return root.toString()
+        }
+
+        /**
+         * `generation` 객체를 읽는다 — **읽은 뒤 반드시 [GenerationPreset.sanitized]를 지난다.**
+         *
+         * 없는 칸은 [JSONObject.optDouble]이 NaN을 돌려주고 그것을 교정이 기본값으로 세우므로,
+         * 여기서 칸마다 기본값을 다시 적지 않는다(두 벌로 적으면 갈린다).
+         * 프리셋의 축 인덱스만 −1을 표식으로 쓴다 — 0은 실제로 첫 축을 뜻하기 때문이다.
+         */
+        private fun parseGeneration(obj: JSONObject?): GenerationPreset {
+            if (obj == null) return DEFAULT_GENERATION
+            fun <T> read(name: String, item: (JSONObject) -> T): List<T> {
+                val arr = obj.optJSONArray(name) ?: return emptyList()
+                return (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(item) }
+            }
+            return GenerationPreset(
+                heightOptions = read("heights") {
+                    HeightOption(it.optString("label"), it.optDouble("center"), it.optDouble("variance"))
+                },
+                torsoOptions = read("torsos") {
+                    TorsoOption(
+                        it.optString("label"), it.optDouble("waistRatio"),
+                        it.optDouble("bmi"), it.optDouble("maxRatio")
+                    )
+                },
+                bustOptions = read("busts") {
+                    BustOption(it.optString("label"), it.optDouble("cupDiff"))
+                },
+                hipOptions = read("hips") {
+                    HipOption(it.optString("label"), it.optDouble("hipBonus"), it.optDouble("maxDiff"))
+                },
+                bodyPresets = read("presets") {
+                    BodyPreset(
+                        it.optString("label"), it.optInt("torso", -1),
+                        it.optInt("bust", -1), it.optInt("hip", -1)
+                    )
+                }
+            ).sanitized()
+        }
+
+        /** [parseGeneration]의 짝. 키 이름이 갈리면 왕복이 조용히 기본값으로 돌아간다. */
+        private fun generationToJson(gen: GenerationPreset): JSONObject = JSONObject().apply {
+            put("heights", JSONArray().apply {
+                for (o in gen.heightOptions) put(JSONObject().apply {
+                    put("label", o.label); put("center", o.center); put("variance", o.variance)
+                })
+            })
+            put("torsos", JSONArray().apply {
+                for (o in gen.torsoOptions) put(JSONObject().apply {
+                    put("label", o.label); put("waistRatio", o.waistRatio)
+                    put("bmi", o.bmiTarget); put("maxRatio", o.maxRatio)
+                })
+            })
+            put("busts", JSONArray().apply {
+                for (o in gen.bustOptions) put(JSONObject().apply {
+                    put("label", o.label); put("cupDiff", o.cupDiff)
+                })
+            })
+            put("hips", JSONArray().apply {
+                for (o in gen.hipOptions) put(JSONObject().apply {
+                    put("label", o.label); put("hipBonus", o.hipBonus); put("maxDiff", o.maxDiff)
+                })
+            })
+            put("presets", JSONArray().apply {
+                for (p in gen.bodyPresets) put(JSONObject().apply {
+                    put("label", p.label); put("torso", p.torso); put("bust", p.bust); put("hip", p.hip)
+                })
+            })
         }
 
         fun removeFromConfig(existingConfig: String): String {
@@ -518,5 +848,44 @@ data class BodyAnalysisConfig(
             root.remove(KEY)
             return root.toString()
         }
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// 생성 축 교정 도우미 — [BodyAnalysisConfig.GenerationPreset.sanitized]만 쓴다.
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 목록의 길이를 [defaults]에 맞춘다 — **개수를 열지 않기 때문에**(확정 ㄴ1) 파싱 결과는
+ * 언제나 기본과 같은 길이다. 남는 것은 자르고, 모자란 자리는 기본값이 그대로 선다.
+ */
+private fun <T> List<T>.fit(defaults: List<T>, merge: (T, T) -> T): List<T> =
+    defaults.mapIndexed { i, d -> getOrNull(i)?.let { merge(it, d) } ?: d }
+
+/** 수가 아닌 값(NaN·무한대)은 기본값으로 — 한 칸이 망가져도 나머지 축은 그대로 돈다. */
+private fun Double.finiteOr(fallback: Double): Double = if (isFinite()) this else fallback
+
+/** 목록 밖을 가리키는 축 인덱스는 기본값으로. 파싱이 못 읽은 자리도 여기로 온다(−1). */
+private fun Int.orDefaultIndex(fallback: Int, size: Int): Int = if (this in 0 until size) this else fallback
+
+/**
+ * 축의 끝을 **엄격한 오름차순**으로 밀어 올린다.
+ *
+ * 뒤집힌 채로 두면 구간이 음의 폭이 되어 생성기가 겨눌 자리가 사라지고, 같은 값이면 폭이
+ * 0이라 그 축의 이름이 요약에서 영영 안 돌아온다(셀렉터가 이름표로 격하된다).
+ * 값을 버리지 않고 앞 값 바로 위로 올리는 것은, 교정이 곧 사용자의 의도(*"여기서 나눈다"*)를
+ * 최대한 남기는 길이기 때문이다. 판정 기준은 `Limits.ascendingViolations`와 한 벌이다.
+ */
+private fun <T> ascending(
+    items: List<T>, step: Double, end: (T) -> Double, withEnd: (T, Double) -> T
+): List<T> {
+    var floor: Double? = null
+    return items.map { item ->
+        val raw = end(item)
+        val previous = floor
+        val e = if (previous == null || raw > previous) raw else previous + step
+        floor = e
+        if (e == raw) item else withEnd(item, e)
     }
 }

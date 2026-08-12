@@ -1,6 +1,11 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
+import com.novelcharacter.app.data.model.BodyAnalysisConfig.BodyPreset
+import com.novelcharacter.app.data.model.BodyAnalysisConfig.BustOption
+import com.novelcharacter.app.data.model.BodyAnalysisConfig.GenerationPreset
+import com.novelcharacter.app.data.model.BodyAnalysisConfig.HipOption
+import com.novelcharacter.app.data.model.BodyAnalysisConfig.TorsoOption
 import kotlin.random.Random
 
 /**
@@ -11,49 +16,17 @@ import kotlin.random.Random
  * 마름 정도·가슴·힙이 **각각 따로**이고, 수치 실체(허리/키 · 컵차 · 힙−허리)도 이미
  * 독립이다. 그래서 축 셀렉터 셋(정밀)과 프리셋(러프)의 이중 경로를 제공한다(원칙 04).
  *
- * 축의 목표값은 [BodySilhouetteSpec.axisSummary]의 밴드 한가운데를 겨눈다 — **고른 말과
- * 돌아오는 말이 같아야** 생성기가 쓸모를 갖는다(슬림을 고르면 요약이 슬림이라고 답한다).
- * 분포는 장르 상향돼 있다(P5-② — 가장 작은 가슴 축도 절벽이 아니라 컵차 8~12).
+ * **축과 프리셋 자체는 사용자 것이다**(B-93 · 확정 7번) — 값은
+ * [BodyAnalysisConfig.GenerationPreset]에 세계관 단위로 담기고, 이 파일은 *그 값으로
+ * 무엇을 하는가*만 든다. 그래서 생성 함수는 축 목록과 **인덱스**를 함께 받는다:
+ * 축의 구간이 목록에서의 자리에서 파생되므로(앞 축의 끝 → 자기 끝), 옵션 객체만으로는
+ * 겨눌 폭을 알 수 없다.
+ *
+ * 축의 목표값은 [BodySilhouetteSpec.axisSummary]가 그 라벨을 돌려주는 구간의 한가운데를
+ * 겨눈다 — **고른 말과 돌아오는 말이 같아야** 생성기가 쓸모를 갖는다(슬림을 고르면 요약이
+ * 슬림이라고 답한다). 분포는 장르 상향돼 있다(P5-② — 가장 작은 가슴 축도 컵차 8~12).
  */
 object BodyGenerator {
-
-    data class HeightOption(val label: String, val center: Double, val variance: Double)
-
-    /**
-     * 몸통 축 — 허리를 키 비율로 잡는다(마름 정도의 수치 실체가 허리/키다).
-     *
-     * [ratioBand]는 [BodySilhouetteSpec.axisSummary]가 이 라벨을 돌려주는 구간이며
-     * **경계 상수는 그쪽이 정본이다.** 생성 결과는 이 구간 안으로 접힌다.
-     */
-    data class TorsoOption(
-        val label: String,
-        val waistRatio: Double,     // 허리 ÷ 키 (구간 한가운데)
-        val bmiTarget: Double,      // 목표 BMI (몸무게 역산용)
-        val ratioBand: ClosedFloatingPointRange<Double>
-    )
-
-    /**
-     * 가슴 축 — **컵차 목표(cm)**. 가슴 = 허리 + 흉곽 보정 + 이 값이다.
-     *
-     * 종전에는 "허리 대비 증가량"(보정 포함 값)이었다 — 보정이 기본 6일 때만 라벨과 컵이
-     * 맞고, 사용자가 보정을 바꾸면 아담을 골라도 D가 나왔다(B-92를 닫으며 요약이 설정을
-     * 따르게 되자 드러난 자리). 컵차로 적으면 **어느 보정에서도 고른 축과 돌아오는 컵
-     * 글자가 같다** — 몸통·힙 축이 밴드 상수로 지키는 계약의 가슴 축 판이다.
-     */
-    data class BustOption(val label: String, val cupDiff: Double)
-
-    /** 힙 축 — 허리 대비 증가량(cm). [diffBand]의 근거는 [TorsoOption.ratioBand]와 같다. */
-    data class HipOption(
-        val label: String,
-        val hipBonus: Double,
-        val diffBand: ClosedFloatingPointRange<Double>
-    )
-
-    /**
-     * 체형 프리셋 — 세 축을 한 번에 세우는 러프 경로. 인덱스는 아래 기본 목록 기준이다.
-     * 프리셋을 고른 뒤 축을 따로 바꾸는 것이 정밀 경로다(둘은 배타가 아니다).
-     */
-    data class BodyPreset(val label: String, val torso: Int, val bust: Int, val hip: Int)
 
     data class GeneratedBody(
         val height: Double,
@@ -64,50 +37,6 @@ object BodyGenerator {
     ) {
         val bwhString: String get() = "${bust.toInt()}-${waist.toInt()}-${hip.toInt()}"
     }
-
-    // ── 기본 옵션 (어휘는 전부 긍정 프레이밍 — 고르는 말은 전부 매력적이어야 한다, P5-③) ──
-
-    val DEFAULT_HEIGHT_OPTIONS = listOf(
-        HeightOption("아담", 152.0, 5.0),
-        HeightOption("보통", 163.0, 4.0),
-        HeightOption("장신", 172.0, 4.0),
-        HeightOption("초장신", 180.0, 5.0)
-    )
-
-    /** 허리/키 목표 — 구간은 `axisSummary`의 경계 상수가 가른다. 각 값은 구간 한가운데다. */
-    val DEFAULT_TORSO_OPTIONS = listOf(
-        TorsoOption("슬림", .350, 18.5, .0..BodySilhouetteSpec.TORSO_SLIM_MAX_RATIO),
-        TorsoOption("표준", .382, 20.5, BodySilhouetteSpec.TORSO_SLIM_MAX_RATIO..BodySilhouetteSpec.TORSO_STANDARD_MAX_RATIO),
-        TorsoOption("소프트", .420, 23.0, BodySilhouetteSpec.TORSO_STANDARD_MAX_RATIO..1.0)
-    )
-
-    /**
-     * 컵차 목표(cm). 흔들림 ±2를 합치면 8~12 / 13~17 / 18~22 / 24~28 — 기본 컵 표로
-     * **A~B · C~D · E~F · G~I**다. 가장 작은 축이 컵차 8~12인 것이 P5-② '장르 상향'의
-     * 이행이다(종전 최소는 컵차 2 상당). 값은 종전 증가량 16/21/26/32에서 기본 보정 6을
-     * 뺀 것이라 **기본 설정의 산출은 종전과 동일하다.**
-     */
-    val DEFAULT_BUST_OPTIONS = listOf(
-        BustOption("아담", 10.0),
-        BustOption("내추럴", 15.0),
-        BustOption("볼륨", 20.0),
-        BustOption("글래머", 26.0)
-    )
-
-    /** 엉덩이 − 허리(cm). 구간은 `axisSummary`의 경계 상수가 가른다. */
-    val DEFAULT_HIP_OPTIONS = listOf(
-        HipOption("힙 슬림", 22.0, .0..BodySilhouetteSpec.HIP_SLIM_MAX_DIFF),
-        HipOption("힙 표준", 27.0, BodySilhouetteSpec.HIP_SLIM_MAX_DIFF..BodySilhouetteSpec.HIP_STANDARD_MAX_DIFF),
-        HipOption("볼륨힙", 34.0, BodySilhouetteSpec.HIP_STANDARD_MAX_DIFF..99.0)
-    )
-
-    /** 세 축 세트. 네 귀퉁이 + 곡선형 하나 — 프리셋만으로도 폭이 나오게 골랐다. */
-    val DEFAULT_BODY_PRESETS = listOf(
-        BodyPreset("슬렌더", torso = 0, bust = 0, hip = 0),
-        BodyPreset("내추럴", torso = 1, bust = 1, hip = 1),
-        BodyPreset("아워글래스", torso = 0, bust = 2, hip = 2),
-        BodyPreset("글래머", torso = 2, bust = 3, hip = 2)
-    )
 
     /**
      * 축 구간의 안쪽 여백(cm) — 산출값은 정수 cm로 반올림되므로 경계에 붙으면
@@ -123,6 +52,21 @@ object BodyGenerator {
     }
 
     /**
+     * 목록 밖 인덱스는 가운데 축으로 접는다 — **빈손으로 돌려보내지 않는다.**
+     * 빈 목록은 호출부가 [BodyAnalysisConfig.GenerationPreset.usable]로 미리 막는다.
+     */
+    private fun <T> List<T>.fold(index: Int): Int = if (index in indices) index else size / 2
+
+    /**
+     * 흔들림 — 폭이 0 이하면 흔들지 않는다.
+     *
+     * [Random.nextDouble]은 `from >= until`에 예외를 던진다. 축의 폭이 사용자 값이 된
+     * 이상(B-93) 0은 *"정확히 이 키로"*라는 정당한 설정이고, 그것으로 🎲가 죽어서는 안 된다.
+     */
+    private fun Random.jitter(width: Double): Double =
+        if (width > 0) nextDouble(-width, width) else 0.0
+
+    /**
      * 몸무게 보정의 기준점 — 축 기본값(내추럴 · 힙 표준)에서 0이 되게 잡는다.
      * 가슴 쪽 21 = 내추럴 컵차 15 + 기본 흉곽 보정 6 (실제 가슴−허리를 재므로 보정이
      * 크면 몸무게도 조금 붙는다 — 흉곽이 큰 몸이 무거운 것은 물리적으로 맞다).
@@ -130,16 +74,19 @@ object BodyGenerator {
     private const val BUST_BONUS_REF = 21.0
     private const val HIP_BONUS_REF = 27.0
 
-    data class GenerationPreset(
-        val heightOptions: List<HeightOption> = DEFAULT_HEIGHT_OPTIONS,
-        val torsoOptions: List<TorsoOption> = DEFAULT_TORSO_OPTIONS,
-        val bustOptions: List<BustOption> = DEFAULT_BUST_OPTIONS,
-        val hipOptions: List<HipOption> = DEFAULT_HIP_OPTIONS,
-        val bodyPresets: List<BodyPreset> = DEFAULT_BODY_PRESETS
-    )
-
-    /** 목표 비율의 장르 기준이 파생되는 프리셋 라벨 — 존재는 테스트가 못 박는다. */
+    /** 목표 비율의 장르 기준이 파생되는 **기본** 프리셋 라벨 — 존재는 테스트가 못 박는다. */
     const val GENRE_IDEAL_PRESET_LABEL = "아워글래스"
+
+    /**
+     * 장르 기준이 파생되는 프리셋의 **자리**(위 라벨이 기본 목록에서 선 자리).
+     *
+     * 이름이 아니라 자리로 찾는 것이 B-93 이후의 규약이다 — 사용자가 프리셋 이름을 바꿀 수
+     * 있게 된 순간 라벨로 찾는 코드는 **못 찾거나(빈손) 예외로 죽는다.** 자리로 찾으면
+     * *"X라인 중심 칸"*이라는 뜻이 이름과 무관하게 남고, 사용자가 그 칸을 다시 정의하면
+     * 목표 비율 기준도 함께 움직인다(세계관마다 장르가 다르다 — 이 항목의 출발점).
+     */
+    val GENRE_IDEAL_PRESET_INDEX =
+        BodyAnalysisConfig.DEFAULT_BODY_PRESETS.indexOfFirst { it.label == GENRE_IDEAL_PRESET_LABEL }
 
     /**
      * 목표 비율의 **장르 기준 이상값** (P8 재의미화 — 2026.08.02 사용자 요청 "장르문법상
@@ -158,10 +105,15 @@ object BodyGenerator {
      */
     fun genreTargetIdeals(
         heightCm: Double = BodySilhouetteSpec.BASE.height,
-        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET,
+        options: GenerationPreset = BodyAnalysisConfig.DEFAULT_GENERATION
     ): Map<String, Double> {
-        val preset = DEFAULT_BODY_PRESETS.first { it.label == GENRE_IDEAL_PRESET_LABEL }
-        val (torso, bust, hip) = axesOf(preset)
+        // 자리로 찾고, 그 자리가 비면 기본 프리셋으로 — **여기서 예외가 나면 안 된다.**
+        // 목표 비율은 읽기 카드가 캐릭터마다 부르는 경로라, 한 세계관의 축 설정이 망가지면
+        // 그 화면이 통째로 죽는다(축을 연 이 판이 새로 만든 위험이고, 그래서 여기서 막는다).
+        val preset = options.bodyPresets.getOrNull(GENRE_IDEAL_PRESET_INDEX)
+            ?: BodyAnalysisConfig.DEFAULT_BODY_PRESETS[GENRE_IDEAL_PRESET_INDEX]
+        val (torso, bust, hip) = axesOf(preset, options)
         return idealsFromFigure(torso.waistRatio, bust.cupDiff, hip.hipBonus, heightCm, ribOffset)
     }
 
@@ -224,12 +176,14 @@ object BodyGenerator {
      */
     fun axesOf(
         preset: BodyPreset,
-        options: GenerationPreset = GenerationPreset()
-    ): Triple<TorsoOption, BustOption, HipOption> = Triple(
-        options.torsoOptions.getOrNull(preset.torso) ?: options.torsoOptions[options.torsoOptions.size / 2],
-        options.bustOptions.getOrNull(preset.bust) ?: options.bustOptions[options.bustOptions.size / 2],
-        options.hipOptions.getOrNull(preset.hip) ?: options.hipOptions[options.hipOptions.size / 2]
-    )
+        options: GenerationPreset = BodyAnalysisConfig.DEFAULT_GENERATION
+    ): Triple<TorsoOption, BustOption, HipOption> = options.usable.let { o ->
+        Triple(
+            o.torsoOptions[o.torsoOptions.fold(preset.torso)],
+            o.bustOptions[o.bustOptions.fold(preset.bust)],
+            o.hipOptions[o.hipOptions.fold(preset.hip)]
+        )
+    }
 
     // ── 생성 알고리즘 ──
 
@@ -239,20 +193,40 @@ object BodyGenerator {
      * 축 목표값의 흔들림 폭은 **밴드를 넘지 않게** 잡혀 있다. 고른 축과 다른 요약이
      * 돌아오면 셀렉터가 거짓말을 하는 셈이라, 흔들림은 밴드 안에서만 준다.
      *
+     * **축을 인덱스로 받는 것이 B-93 이후의 형태다** — 구간이 목록에서의 자리에서
+     * 파생되므로(앞 축의 끝 → 자기 끝) 옵션 객체만으로는 겨눌 폭을 알 수 없다.
+     * 목록 밖을 가리키면 가운데 축으로 접는다([axesOf]와 같은 처분 — 빈손으로 돌려보내지 않는다).
+     *
+     * @param heightIndex 음수면 키 축을 무작위로 고른다('아무거나')
      * @param targetCupDiff non-null이면 컵 사이즈 역산으로 가슴 결정 (가슴 축보다 우선)
      * @param ribOffset 흉곽 보정값 (BodyAnalysisConfig.ribOffset) — 가슴 축·컵 역산 모두
      *   `가슴 = 허리 + 보정 + 컵차`로 여기를 지난다(B-92의 규약 한 벌이 생성에도 성립)
      */
     fun generate(
-        heightOption: HeightOption,
-        torsoOption: TorsoOption,
-        bustOption: BustOption,
-        hipOption: HipOption,
+        options: GenerationPreset,
+        heightIndex: Int,
+        torsoIndex: Int,
+        bustIndex: Int,
+        hipIndex: Int,
         targetCupDiff: Double? = null,
         ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET,
         random: Random = Random.Default
     ): GeneratedBody {
-        val height = (heightOption.center + random.nextDouble(-heightOption.variance, heightOption.variance))
+        val opts = options.usable
+        val heightOption = if (heightIndex < 0) opts.heightOptions.random(random)
+        else opts.heightOptions[opts.heightOptions.fold(heightIndex)]
+        val torsoAt = opts.torsoOptions.fold(torsoIndex)
+        val bustAt = opts.bustOptions.fold(bustIndex)
+        val hipAt = opts.hipOptions.fold(hipIndex)
+        val torsoOption = opts.torsoOptions[torsoAt]
+        val bustOption = opts.bustOptions[bustAt]
+        val hipOption = opts.hipOptions[hipAt]
+        val torsoBand = opts.torsoBand(torsoAt)
+        val hipBand = opts.hipBand(hipAt)
+
+        // 흔들림 폭 0은 "정확히 이 값"이라는 뜻이다 — 사용자가 정할 수 있는 값이므로
+        // 난수 호출에 그대로 넘기지 않는다(`nextDouble(-0.0, 0.0)`은 예외를 던진다).
+        val height = (heightOption.center + random.jitter(heightOption.variance))
             .coerceIn(140.0, 200.0)
 
         // 흔들림은 구간 안에서만 준다 — 넘으면 요약이 다른 축 이름을 돌려준다.
@@ -262,7 +236,7 @@ object BodyGenerator {
         val waist = Math.round(
             bandFold(
                 height * torsoOption.waistRatio + random.nextDouble(-1.5, 1.5),
-                torsoOption.ratioBand.start * height, torsoOption.ratioBand.endInclusive * height
+                torsoBand.start * height, torsoBand.endInclusive * height
             ).coerceIn(45.0, 110.0)
         ).toDouble()
 
@@ -275,7 +249,7 @@ object BodyGenerator {
 
         val hip = bandFold(
             waist + hipOption.hipBonus + random.nextDouble(-2.5, 2.5),
-            waist + hipOption.diffBand.start, waist + hipOption.diffBand.endInclusive
+            waist + hipBand.start, waist + hipBand.endInclusive
         ).coerceIn(60.0, 150.0)
 
         // 체중 보정: 가슴/엉덩이 축이 기준점에서 벗어난 만큼 체적 변화를 반영

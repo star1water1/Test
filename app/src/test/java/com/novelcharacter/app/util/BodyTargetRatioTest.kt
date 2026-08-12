@@ -19,9 +19,13 @@ class BodyTargetRatioTest {
 
     @Test
     fun `장르 기준이 파생되는 프리셋이 존재한다`() {
-        // 라벨로 찾으므로 프리셋 이름이 바뀌면 여기가 시끄럽게 깨진다 — 조용한 소실 방지.
-        assertTrue(
-            BodyGenerator.DEFAULT_BODY_PRESETS.any { it.label == BodyGenerator.GENRE_IDEAL_PRESET_LABEL }
+        // **자리로** 찾으므로(B-93 이후) 그 자리가 실재하는지를 잰다. 라벨은 기본값의
+        // 정체성이라 함께 확인한다 — 기본 프리셋 이름이 바뀌면 여기가 시끄럽게 깨진다.
+        val index = BodyGenerator.GENRE_IDEAL_PRESET_INDEX
+        assertTrue("장르 기준이 파생될 자리가 없다", index in BodyAnalysisConfig.DEFAULT_BODY_PRESETS.indices)
+        assertEquals(
+            BodyGenerator.GENRE_IDEAL_PRESET_LABEL,
+            BodyAnalysisConfig.DEFAULT_BODY_PRESETS[index].label
         )
     }
 

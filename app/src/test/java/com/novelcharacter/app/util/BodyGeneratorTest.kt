@@ -15,8 +15,7 @@ import kotlin.random.Random
  */
 class BodyGeneratorTest {
 
-    private val options = BodyGenerator.GenerationPreset()
-    private val heights = options.heightOptions
+    private val options = BodyAnalysisConfig.DEFAULT_GENERATION
 
     /**
      * 축 하나를 여러 난수·여러 키로 굴려 본다 — 흔들림이 밴드를 넘는지는 표본으로만 보인다.
@@ -27,13 +26,19 @@ class BodyGeneratorTest {
     private fun roll(
         torso: Int = 1, bust: Int = 1, hip: Int = 1, cupDiff: Double? = null,
         ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
+    ): List<BodyGenerator.GeneratedBody> = roll(options, torso, bust, hip, cupDiff, ribOffset)
+
+    /** 같은 굴리기를 **사용자가 정의한 축 한 벌**로도 돌린다 — 계약은 축이 누구 것이든 같다. */
+    private fun roll(
+        opts: BodyAnalysisConfig.GenerationPreset,
+        torso: Int = 1, bust: Int = 1, hip: Int = 1, cupDiff: Double? = null,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
     ): List<BodyGenerator.GeneratedBody> = buildList {
-        for (h in heights.indices) {
+        for (h in opts.heightOptions.indices) {
             for (seed in 0 until 40) {
                 add(
                     BodyGenerator.generate(
-                        heights[h], options.torsoOptions[torso], options.bustOptions[bust],
-                        options.hipOptions[hip], cupDiff, ribOffset, Random(seed * 31 + h)
+                        opts, h, torso, bust, hip, cupDiff, ribOffset, Random(seed * 31 + h)
                     )
                 )
             }
@@ -132,7 +137,7 @@ class BodyGeneratorTest {
     @Test
     fun `프리셋 인덱스가 목록 밖이면 가운데 축으로 접는다`() {
         val (torso, bust, hip) = BodyGenerator.axesOf(
-            BodyGenerator.BodyPreset("깨진 프리셋", torso = 9, bust = 9, hip = 9), options
+            BodyAnalysisConfig.BodyPreset("깨진 프리셋", torso = 9, bust = 9, hip = 9), options
         )
         assertEquals(options.torsoOptions[options.torsoOptions.size / 2], torso)
         assertEquals(options.bustOptions[options.bustOptions.size / 2], bust)
@@ -185,8 +190,7 @@ class BodyGeneratorTest {
     @Test
     fun `분석은 생성 결과를 그대로 읽는다`() {
         val body = BodyGenerator.generate(
-            heights[1], options.torsoOptions[1], options.bustOptions[2], options.hipOptions[2],
-            random = Random(3)
+            options, heightIndex = 1, torsoIndex = 1, bustIndex = 2, hipIndex = 2, random = Random(3)
         )
         val result = BodyGenerator.analyzeGenerated(body, BodyAnalysisConfig.DEFAULT)
         assertEquals(body.bwhString, "${body.bust.toInt()}-${body.waist.toInt()}-${body.hip.toInt()}")

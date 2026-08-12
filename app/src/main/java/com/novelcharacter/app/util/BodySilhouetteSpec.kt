@@ -1062,34 +1062,29 @@ object BodySilhouetteSpec {
     }
 
     /**
-     * 축 밴드의 경계 — 요약이 가르는 자리이자 **🎲 생성기가 겨누는 자리**다
-     * (`BodyGenerator`가 이 상수로 축의 폭을 짓는다 — 고른 축과 돌아오는 요약이 갈리면
-     * 셀렉터가 이름표로 격하된다). 목-⑤ 잠정치이며 작품 평균 실측으로 함께 교정한다.
+     * 3축 요약과 종합 인상을 낸다.
+     *
+     * **몸통·힙 라벨과 그 경계는 [config]의 생성 축이 정한다**(B-93) — 요약이 가르는 자리와
+     * 🎲가 겨누는 자리가 **같은 배열 하나**라, 사용자가 축 이름이나 경계를 바꿔도
+     * *고른 축과 돌아오는 요약*이 갈라질 수 없다. 종전에는 이 자리에 경계 상수 넷과
+     * 라벨 문자열 여섯이 따로 적혀 있어, 축을 열면 그 둘이 곧바로 두 벌이 될 자리였다.
+     * 컵 글자는 같은 이유로 이미 [BodyAnalysisConfig.cupMapping] 하나가 정한다(B-92).
+     *
+     * 종합 인상(X/I/A/V/O)의 문턱은 **축과 무관한 별개의 잣대**라 상수로 둔다 —
+     * 목-⑤ 잠정치이며 작품 평균 실측으로 교정한다.
      */
-    const val TORSO_SLIM_MAX_RATIO = .362
-    const val TORSO_STANDARD_MAX_RATIO = .402
-    const val HIP_SLIM_MAX_DIFF = 24.0
-    const val HIP_STANDARD_MAX_DIFF = 31.0
-
-    /** 3축 요약과 종합 인상을 낸다. 문턱값은 목-⑤의 잠정치이며 작품 평균 실측으로 교정한다. */
     fun axisSummary(
         m: Measures,
-        cupMapping: List<BodyAnalysisConfig.CupMappingEntry> = BodyAnalysisConfig.DEFAULT_CUP_MAPPING
+        config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT
     ): AxisSummary {
         val cd = cupDiff(m)
         val torsoR = m.waist / m.height
         val hipD = m.hip - m.waist
         val whr = if (m.hip > 0) m.waist / m.hip else 1.0
-        val torso = when {
-            torsoR <= TORSO_SLIM_MAX_RATIO -> "슬림"
-            torsoR <= TORSO_STANDARD_MAX_RATIO -> "표준"
-            else -> "소프트"
-        }
-        val hip = when {
-            hipD <= HIP_SLIM_MAX_DIFF -> "힙 슬림"
-            hipD <= HIP_STANDARD_MAX_DIFF -> "힙 표준"
-            else -> "볼륨힙"
-        }
+        val gen = config.generation.usable
+        // 마지막 축은 열린 끝이다 — 그 위의 값도 그 축의 이름으로 읽는다.
+        val torso = (gen.torsoOptions.firstOrNull { torsoR <= it.maxRatio } ?: gen.torsoOptions.last()).label
+        val hip = (gen.hipOptions.firstOrNull { hipD <= it.maxDiff } ?: gen.hipOptions.last()).label
         // 종합 인상 한 개 — X/I/A/V/O. 종전 '배형'은 O/A로 흡수했다(긍정 프레이밍).
         val line = when {
             torsoR >= .43 -> "O라인"
@@ -1099,7 +1094,7 @@ object BodySilhouetteSpec {
             cd < 12 && hipD < 24 -> "I라인"
             else -> "밸런스"
         }
-        return AxisSummary(torso = torso, cup = cupLabel(cd, cupMapping), hip = hip, line = line)
+        return AxisSummary(torso = torso, cup = cupLabel(cd, config.cupMapping), hip = hip, line = line)
     }
 
     /** 두 스펙이 같은 그림인가 — 회귀 테스트가 쓰는 허용 오차 비교. */
