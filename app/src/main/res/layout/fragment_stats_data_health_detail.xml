@@ -58,24 +58,31 @@
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 이미지 미등록 -->
+            <!-- 타입이 안 맞는 값 (B-156) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/stats_no_image"
+                android:text="@string/stats_type_mismatch"
                 android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_xs" />
             <TextView
-                android:id="@+id/textNoImageCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_type_mismatch_purpose"
+                android:textSize="@dimen/stats_text_caption"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textTypeMismatchCount"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="@dimen/stats_text_body"
                 android:textColor="@color/accent"
                 android:layout_marginBottom="@dimen/stats_margin_xs" />
             <LinearLayout
-                android:id="@+id/listNoImage"
+                android:id="@+id/listTypeMismatch"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -108,29 +115,6 @@
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
             <LinearLayout
                 android:id="@+id/listGroupCompletion"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="@dimen/stats_margin_lg" />
-
-            <!-- 메모 미작성 (신규) -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/stats_no_memo"
-                android:textSize="@dimen/stats_text_heading"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-            <TextView
-                android:id="@+id/textNoMemoCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/accent"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-            <LinearLayout
-                android:id="@+id/listNoMemo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -218,29 +202,6 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 별명 미작성 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/stats_no_another_name"
-                android:textSize="@dimen/stats_text_heading"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-            <TextView
-                android:id="@+id/textNoAnotherNameCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/accent"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-            <LinearLayout
-                android:id="@+id/listNoAnotherName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="@dimen/stats_margin_lg" />
-
             <!-- 작품 미배정 캐릭터 -->
             <TextView
                 android:layout_width="wrap_content"
@@ -259,6 +220,97 @@
                 android:layout_marginBottom="@dimen/stats_margin_xs" />
             <LinearLayout
                 android:id="@+id/listNoNovel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- ── 입력 현황 (B-59) — 여기부터는 잘못이 아니라 "아직 안 쓴 칸"이다 ── -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/outline_variant"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_input_progress"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_input_progress_purpose"
+                android:textSize="@dimen/stats_text_caption"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 이미지 미등록 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_no_image"
+                android:textSize="@dimen/stats_text_body"
+                android:textStyle="bold"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textNoImageCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <LinearLayout
+                android:id="@+id/listNoImage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 메모 미작성 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_no_memo"
+                android:textSize="@dimen/stats_text_body"
+                android:textStyle="bold"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textNoMemoCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <LinearLayout
+                android:id="@+id/listNoMemo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 별명 미작성 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_no_another_name"
+                android:textSize="@dimen/stats_text_body"
+                android:textStyle="bold"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textNoAnotherNameCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <LinearLayout
+                android:id="@+id/listNoAnotherName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"

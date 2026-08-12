@@ -8,6 +8,7 @@ import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.FieldValueMatcher
 import com.novelcharacter.app.util.FieldValueTokenizer
+import com.novelcharacter.app.util.FieldValueTypeMismatch
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.NumericBinning
 import com.novelcharacter.app.util.RequiredFieldGaps
@@ -246,20 +247,140 @@ data class NameBankStats(
 )
 
 // ===== 데이터 건강도 =====
-data class DataHealthStats(
+
+/**
+ * 타입과 맞지 않게 된 값 하나 (B-156).
+ *
+ * **어느 칸인지까지 말한다.** 종전에 이 부류를 말하는 자리는 전파 미리보기의
+ * *"값 N개가 새 타입과 맞지 않게 됩니다"* 하나였고, 그것은 **창을 닫으면 사라지는 고지**에
+ * 세계관별 개수뿐이라 고치러 갈 수가 없었다(개발 의도 2번 — 검증 → 알림 → **바로잡을 경로**).
+ */
+data class TypeMismatchedValue(
+    /** 값이 붙은 대상의 종류 — [FieldDefinition.ENTITY_CHARACTER] 등. */
+    val ownerType: String,
+    /** 대상 id. 캐릭터라면 화면이 이 id로 상세를 연다. */
+    val ownerId: Long,
+    val ownerName: String,
+    val fieldName: String,
+    /** [FieldType] 이름. 화면이 *"숫자 필드인데"*를 말하는 근거다. */
+    val fieldType: String,
+    val value: String,
+    val reason: FieldValueTypeMismatch.Reason
+)
+
+/**
+ * 타입 불일치 목록의 **표시 상한 적용** (R-14 · S-17과 같은 분업).
+ *
+ * 계산은 전량을 들고 다니고([DataHealthStats.typeMismatchedValues]) 자르는 일은 표시 직전에
+ * 여기서 한 번만 한다 — 계산이 자르면 위에 뜨는 총 건수와 목록이 서로 다른 모집단을 말한다.
+ *
+ * **상한을 축마다 따로 두는 것이 이 함수의 요점이다.** 통짜 상한이면 캐릭터 값 하나가
+ * 무더기로 어긋났을 때 그것만으로 자리가 차서 **사건·작품 축이 통째로 안 보인다** — 이 판이
+ * 없애려는 바로 그 상태(*"일일이 확인하지 않으면 존재를 알 수 없는 데이터"*, 원칙 04)를
+ * 표시 계층에서 다시 만드는 꼴이다.
+ */
+object TypeMismatchList {
+
+    /**
+     * 축(캐릭터·사건·작품)마다의 표시 상한. 문구는 이 상수로 채운다(R-14).
+     *
+     * **버려지는 것은 같은 축의 뒷부분**이고, 개수는 축마다 [View.hiddenByOwnerType]가 든다.
+     * 전체 건수는 목록 위 요약이 여전히 전량으로 말하므로 *존재*가 사라지지는 않는다.
+     */
+    const val DISPLAY_LIMIT_PER_OWNER = 50
+
+    data class View(
+        val shown: List<TypeMismatchedValue>,
+        /** 축 → 잘린 수. 빈 맵이면 전부 보이고 있다. */
+        val hiddenByOwnerType: Map<String, Int>
+    )
+
+    fun view(
+        all: List<TypeMismatchedValue>,
+        limitPerOwnerType: Int = DISPLAY_LIMIT_PER_OWNER
+    ): View {
+        val shown = mutableListOf<TypeMismatchedValue>()
+        val hidden = LinkedHashMap<String, Int>()
+        // groupBy는 첫 등장 순서를 지킨다 — 수집 순서(캐릭터 → 사건 → 작품)가 그대로 남는다.
+        all.groupBy { it.ownerType }.forEach { (ownerType, rows) ->
+            shown.addAll(rows.take(limitPerOwnerType))
+            val over = rows.size - limitPerOwnerType
+            if (over > 0) hidden[ownerType] = over
+        }
+        return View(shown, hidden)
+    }
+}
+
+/**
+ * **입력 현황** — "아직 안 썼다"이지 잘못이 아닌 것 (B-59).
+ *
+ * 이 셋은 종전에 [DataHealthStats]에 평평하게 얹혀 있었고, 그래서 통계 메인 카드의
+ * *"발견 사항 N건"*이 **메모를 안 쓴 캐릭터 수를 문제로 셌다.** CLAUDE.md 통계 Don't의 첫 줄
+ * (*"'데이터 입력량'만 보여주는 통계"*)에 정면으로 걸리는 자리이며, 해악은 문구가 아니라
+ * **묻힘**이다 — 진짜 점검거리(타입이 안 맞는 값 몇 개)가 입력량 수백 건에 섞여 보이지 않는다.
+ *
+ * **지우지 않고 가른 이유**(B-59가 *"삭제가 아니라 재배치"*라 적은 그대로): 이미지·메모·별명이
+ * 비었다는 사실 자체는 쓸모가 있다. 잘못인 것은 그것을 **문제로 세는 것**이다.
+ *
+ * 중첩으로 둔 것은 주석이 아니라 **구조로** 가르기 위해서다 — 평평하게 두면 다음 사람이
+ * 다시 합계에 더한다. 이제 더하려면 `inputProgress.`를 지나야 하고, 그 이름이 무엇인지 말한다.
+ */
+data class DataInputProgress(
     val noImageChars: List<String>,
+    val noMemoChars: List<String>,
+    val noAnotherNameChars: List<String>
+)
+
+data class DataHealthStats(
+    // ── 점검: 앱이 "틀렸다" 또는 "끊겼다"고 말할 수 있는 것 ──
+    /** 타입과 맞지 않게 된 값 (B-156). 캐릭터·사건·작품 세 축을 모두 훑는다. */
+    val typeMismatchedValues: List<TypeMismatchedValue>,
     val incompleteFieldChars: List<Pair<String, Float>>,
     val isolatedChars: List<String>,
     val unlinkedChars: List<String>,
     val duplicateTags: List<String>,
-    // 신규
-    val noMemoChars: List<String>,
     val emptyDescRelationships: Int,
     val fieldCompletionByGroup: Map<String, Float>,
-    val noAnotherNameChars: List<String>,
     val lowPrecisionEvents: Int, // 년도만 있는 사건 수
-    val noNovelChars: List<String> = emptyList() // 작품 미배정 캐릭터
-)
+    val noNovelChars: List<String> = emptyList(), // 작품 미배정 캐릭터
+    // ── 입력 현황: 문제가 아니다 (B-59) ──
+    val inputProgress: DataInputProgress
+) {
+    /**
+     * 통계 메인 건강도 카드가 말하는 **"발견 사항 N건"** (B-59).
+     *
+     * 세는 기준은 하나다 — **앱이 *"틀렸다"* 또는 *"끊겼다"*고 말할 수 있는가.**
+     *
+     * | | 세는가 | 왜 |
+     * |---|---|---|
+     * | 타입이 안 맞는 값 | ✅ | 값이 수식에서 0으로 읽힌다 — 틀렸다 |
+     * | 필드 미입력률·관계 고립·사건 미연계·관계 설명 없음 | ✅ | 연결이 끊겼거나 산출이 안 된다 |
+     * | **중복 태그·작품 미배정** | ✅ | 둘 다 실제 결함이고 도우미가 이미 고칠 카드를 세운다 |
+     * | 시간 정밀도 낮은 사건 | ❌ | 연도만 적힌 사건은 **틀린 것이 아니다.** 아래 요약이 따로 말한다 |
+     * | [inputProgress] | ❌ | *"아직 안 썼다"*이지 잘못이 아니다 |
+     *
+     * **왜 [inputProgress]를 뺐는가:** 종전에는 이미지·메모 미작성이 이 합계에 들어가
+     * *"발견 사항 300건"*의 대부분이 *"아직 안 썼다"*였고, 그래서 진짜 점검거리(타입이
+     * 안 맞는 값 몇 개)가 그 안에 묻혔다 — 상한도 필터도 없는 화면에서 **묻히는 것은 곧
+     * 없는 것**이다(원칙 04).
+     *
+     * **왜 중복 태그·작품 미배정을 더했는가:** 상세 화면이 점검거리로 보여 주는데 카드가
+     * 안 세면, 카드가 약속한 범위와 그 카드에서 뻗는 경로의 범위가 갈린다(R-15). 종전에
+     * 실제로 갈려 있었고, *"입력량은 세면서 진짜 결함은 안 세는"* 모양이라 B-59가 지적한
+     * 것과 같은 잘못의 반대편이다.
+     *
+     * **화면이 아니라 여기 있는 이유:** 합계가 Fragment 안의 덧셈이면 이 표를 잠글 시험이
+     * 없다. 실제로 그 자리가 그렇게 어긋난 채 있었다.
+     */
+    val issueCount: Int
+        get() = typeMismatchedValues.size +
+            incompleteFieldChars.size +
+            isolatedChars.size +
+            unlinkedChars.size +
+            emptyDescRelationships +
+            duplicateTags.size +
+            noNovelChars.size
+}
 
 // ===== 커스텀 필드 분석 (레거시 - 호환용) =====
 data class FieldAnalysisStats(
@@ -1664,18 +1785,91 @@ class StatsDataProvider {
         val noNovel = s.characters.filter { it.novelId == null }.map { it.name }
 
         return DataHealthStats(
-            noImageChars = noImage,
+            typeMismatchedValues = collectTypeMismatchedValues(s),
             incompleteFieldChars = incomplete,
             isolatedChars = isolated,
             unlinkedChars = unlinked,
             duplicateTags = dupTags,
-            noMemoChars = noMemo,
             emptyDescRelationships = emptyDescRels,
             fieldCompletionByGroup = completionByGroup,
-            noAnotherNameChars = noAnotherName,
             lowPrecisionEvents = lowPrecision,
-            noNovelChars = noNovel
+            noNovelChars = noNovel,
+            inputProgress = DataInputProgress(
+                noImageChars = noImage,
+                noMemoChars = noMemo,
+                noAnotherNameChars = noAnotherName
+            )
         )
+    }
+
+    /**
+     * 타입과 맞지 않게 된 값 전수 (B-156). 판정은 [FieldValueTypeMismatch] 하나다.
+     *
+     * **원인을 가리지 않는다.** 전파가 만든 것뿐 아니라 단일 필드 편집·엑셀 가져오기가 만든
+     * 것도 같은 부류이고, 사용자에게는 *어쩌다 그렇게 됐는지*가 아니라 *지금 어느 칸이
+     * 틀렸는지*가 필요하다. 그래서 값을 보고 판정하지 출처를 묻지 않는다.
+     *
+     * **세 축을 모두 훑는다.** 사건·작품 커스텀 필드도 같은 타입 시스템을 쓰므로 같은
+     * 방식으로 망가진다. 캐릭터 축만 세면 *"일일이 확인하지 않으면 존재를 알 수 없는
+     * 데이터"*(원칙 04)를 두 축에 남기게 된다.
+     *
+     * **비용은 새 축을 만들지 않는다** — 세 값 목록은 스냅샷이 이미 싣고 있고 건강도가 이미
+     * 그중 하나를 훑는다(`filledCharacterDefIds`). 여기 붙는 것은 그 축(필드값 수)에서의
+     * 상수배 한 번이고, 정의는 id로 미리 색인해 값마다 다시 찾지 않는다
+     * (`scalability_performance` 7장 2단계 — 새 상한도, 스냅샷의 새 목록도 없다).
+     */
+    private fun collectTypeMismatchedValues(s: StatsSnapshot): List<TypeMismatchedValue> {
+        val out = mutableListOf<TypeMismatchedValue>()
+
+        fun <T> collect(
+            defs: List<FieldDefinition>,
+            values: List<T>,
+            ownerType: String,
+            ownerIdOf: (T) -> Long,
+            fieldDefIdOf: (T) -> Long,
+            valueOf: (T) -> String,
+            ownerNames: Map<Long, String>
+        ) {
+            if (defs.isEmpty() || values.isEmpty()) return
+            val defById = defs.associateBy { it.id }
+            values.forEach { row ->
+                val def = defById[fieldDefIdOf(row)] ?: return@forEach
+                val raw = valueOf(row)
+                val reason = FieldValueTypeMismatch.reasonFor(def, raw) ?: return@forEach
+                val ownerId = ownerIdOf(row)
+                out.add(
+                    TypeMismatchedValue(
+                        ownerType = ownerType,
+                        ownerId = ownerId,
+                        // 이름을 못 찾는 행은 대상이 지워졌다는 뜻이라 건너뛰지 않고 id로 말한다 —
+                        // 조용히 빼면 개수와 목록이 갈린다.
+                        ownerName = ownerNames[ownerId] ?: "#$ownerId",
+                        fieldName = def.name,
+                        fieldType = def.type,
+                        value = raw,
+                        reason = reason
+                    )
+                )
+            }
+        }
+
+        collect(
+            s.fieldDefinitions, s.fieldValues, FieldDefinition.ENTITY_CHARACTER,
+            { it.characterId }, { it.fieldDefinitionId }, { it.value },
+            s.characters.associate { it.id to it.name }
+        )
+        collect(
+            s.eventFieldDefinitions, s.eventFieldValues, FieldDefinition.ENTITY_EVENT,
+            { it.eventId }, { it.fieldDefinitionId }, { it.value },
+            // 사건에는 제목 칸이 없다 — 목록에서 사건을 알아보는 이름은 설명이다.
+            s.events.associate { it.id to it.description }
+        )
+        collect(
+            s.novelFieldDefinitions, s.novelFieldValues, FieldDefinition.ENTITY_NOVEL,
+            { it.novelId }, { it.fieldDefinitionId }, { it.value },
+            s.novels.associate { it.id to it.title }
+        )
+        return out
     }
 
     // ===== 필드 인사이트 (신규) =====

@@ -577,17 +577,18 @@ class StatsMainFragment : Fragment() {
         }
 
         viewModel.dataHealthStats.observe(viewLifecycleOwner) { healthStats ->
-            val totalIssues = healthStats.noImageChars.size +
-                healthStats.incompleteFieldChars.size +
-                healthStats.isolatedChars.size +
-                healthStats.unlinkedChars.size +
-                healthStats.noMemoChars.size +
-                healthStats.emptyDescRelationships
+            // 세는 규칙은 [DataHealthStats.issueCount] 하나다 — 입력 현황을 빼는 판정이
+            // 여기 덧셈으로 있으면 잠글 시험이 없다(B-59).
+            val totalIssues = healthStats.issueCount
             binding.healthPreview.text = buildString {
                 if (totalIssues == 0) append(getString(R.string.stats_health_no_issues))
                 else {
                     append(getString(R.string.stats_health_issues_found, totalIssues))
-                    if (healthStats.noImageChars.isNotEmpty()) append(getString(R.string.stats_health_no_image_preview, healthStats.noImageChars.size))
+                    // 타입 불일치를 맨 앞에 세운다 — 값이 수식에서 0으로 읽히는 유일한 부류라
+                    // 나머지와 급이 다르고, 뒤에 두면 다시 묻힌다.
+                    if (healthStats.typeMismatchedValues.isNotEmpty()) {
+                        append(getString(R.string.stats_health_type_mismatch_preview, healthStats.typeMismatchedValues.size))
+                    }
                     if (healthStats.lowPrecisionEvents > 0) append(" | ${getString(R.string.stats_low_precision_events, healthStats.lowPrecisionEvents)}")
                 }
             }
