@@ -12,14 +12,24 @@ import com.novelcharacter.app.ui.common.CappedScrollView
  * 양성(저장) 버튼을 수동 처리하여 [onValid]가 true를 반환할 때만 다이얼로그를 닫는다.
  * 검증 실패(false) 시 다이얼로그가 유지되어 사용자의 입력이 유실되지 않는다.
  * 반드시 setPositiveButton(text, null)로 리스너 없이 생성한 다이얼로그에 사용한다.
+ *
+ * [onShow]는 **창이 뜬 뒤에 해야 하는 나머지 배선**을 받는다(중립 버튼 등). 이 자리가 있는
+ * 이유는 `setOnShowListener`가 **하나뿐**이기 때문이다 — 부르는 쪽이 따로 한 번 더 달면
+ * 나중 것이 이것을 덮어 **양성 버튼 검증이 통째로 죽는다.** 그러면 잘못 적은 칸이 있어도
+ * 창이 그냥 닫히고, 이 함수가 막으려던 유실이 정확히 그대로 되살아난다(B-28).
+ * 밖에서 관측할 수 없는 종류의 고장이라(화면은 멀쩡히 뜬다) 자리를 여기 둔다.
  */
-fun AlertDialog.setValidatedPositiveButton(onValid: () -> Boolean) {
+fun AlertDialog.setValidatedPositiveButton(
+    onShow: (AlertDialog) -> Unit = {},
+    onValid: () -> Boolean
+) {
     setOnShowListener {
         getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             if (onValid()) {
                 dismiss()
             }
         }
+        onShow(this)
     }
 }
 

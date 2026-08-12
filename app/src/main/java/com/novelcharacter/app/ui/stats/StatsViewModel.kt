@@ -244,7 +244,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val healthDeferred = async(Dispatchers.IO) { provider.computeDataHealth(filtered) }
                 val fieldAnalysisDeferred = async(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
                 val enabledPatternTypes = getEnabledPatternTypes()
-                val patternsDeferred = async(Dispatchers.IO) { provider.detectPatterns(filtered, enabledPatternTypes) }
+                val patternThresholds = getPatternThresholds()
+                val patternsDeferred = async(Dispatchers.IO) {
+                    provider.detectPatterns(filtered, enabledPatternTypes, patternThresholds)
+                }
                 val factionDeferred = async(Dispatchers.IO) { provider.computeFactionStats(filtered) }
 
                 val summary = summaryDeferred.await()
@@ -522,8 +525,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 val enabledTypes = getEnabledPatternTypes()
+                val thresholds = getPatternThresholds()
                 _patternInsights.value = withContext(Dispatchers.IO) {
-                    provider.detectPatterns(filtered, enabledTypes)
+                    provider.detectPatterns(filtered, enabledTypes, thresholds)
                 }
             } catch (e: Exception) {
                 reportError(e)
@@ -544,6 +548,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     /** 사용자가 선택한 패턴 유형을 저장한다. */
     fun saveEnabledPatternTypes(enabledTypes: Set<PatternType>) {
         PatternTypePrefs.save(getApplication(), enabledTypes)
+    }
+
+    /** 설정 창이 현재 값을 채워 넣을 수 있게 공개한다 — 창이 자기 기본값을 들면 저장소와 갈린다. */
+    fun patternThresholds(): PatternThresholds = getPatternThresholds()
+
+    private fun getPatternThresholds(): PatternThresholds =
+        PatternTypePrefs.thresholds(getApplication())
+
+    /** 유형별 민감도를 저장한다 (B-70). 접기는 저장소가 한다 — 두 곳에서 접으면 규칙이 갈린다. */
+    fun savePatternThresholds(thresholds: PatternThresholds) {
+        PatternTypePrefs.saveThresholds(getApplication(), thresholds)
     }
 
     // ===== 개선 6: 차트 탭 → 캐릭터 목록 =====

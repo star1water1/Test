@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.settings.FieldImportSettingsStore
 import com.novelcharacter.app.ui.assistant.AssistantPrefs
 import com.novelcharacter.app.ui.assistant.InsightCategory
 import com.novelcharacter.app.ui.stats.CompletionWeightPrefs
+import com.novelcharacter.app.ui.stats.PatternThresholds
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.PatternTypePrefs
 import com.novelcharacter.app.ui.supplement.RandomSupplementSettings
@@ -296,6 +297,24 @@ object AppSettingsBindings {
                 PatternTypePrefs.save(ctx, known.toSet())
                 if (unknown > 0) Applied.No("알 수 없는 유형 ${unknown}개를 빼고 나머지를 적용했습니다")
                 else Applied.Yes
+            }),
+        // 민감도도 같은 이유로 `키=값` 쉼표 목록이다. 형식·범위·교정은 전부
+        // `PatternThresholds`가 들고, 여기서는 **무엇이 그대로 되지 않았는지 말하는 일**만 한다 —
+        // 모르는 키·못 읽는 값·범위 밖을 갈라 세는 것이 그 자리다(말없이 버리지 않는다).
+        Binding(AppSettingsKeys.STATS_PATTERN_SENSITIVITY,
+            read = { PatternTypePrefs.thresholds(it).encode() },
+            write = { ctx, v ->
+                val decoded = PatternThresholds.decode(v)
+                PatternTypePrefs.saveThresholds(ctx, decoded.thresholds)
+                val notes = buildList {
+                    if (decoded.unknownKeys.isNotEmpty())
+                        add("알 수 없는 항목 ${decoded.unknownKeys.size}개")
+                    if (decoded.invalidKeys.isNotEmpty())
+                        add("숫자가 아닌 항목 ${decoded.invalidKeys.size}개")
+                    if (decoded.coerced) add("범위를 벗어난 값")
+                }
+                if (notes.isEmpty()) Applied.Yes
+                else Applied.No("${notes.joinToString(", ")}은(는) 기본값이나 허용 범위로 맞췄습니다")
             }),
 
         // ── 보충 기준 ──

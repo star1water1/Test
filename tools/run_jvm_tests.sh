@@ -401,6 +401,7 @@ $TEST/util/FolderRoundtripLedgerTest.kt
 $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
+$TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/util/NameBankMatchTest.kt
 $TEST/util/NameBankPickOrderTest.kt

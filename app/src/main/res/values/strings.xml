@@ -1268,6 +1268,20 @@
     <string name="stats_pattern_none_detected">감지된 패턴이 없습니다. 데이터가 쌓이면 편중·균형·이상치 등을 알려 드립니다.</string>
     <string name="stats_pattern_none_detected_some_off">감지된 패턴이 없습니다. 패턴 유형 %d개가 꺼져 있으니, 기대한 패턴이 안 보이면 오른쪽 위 설정을 확인해 주세요.</string>
     <string name="stats_pattern_all_types_off">모든 패턴 유형이 꺼져 있습니다. 오른쪽 위 설정에서 유형을 켜면 다시 분석합니다.</string>
+    <!-- Stats: 패턴 유형별 민감도 (B-70) — 무엇부터를 그 패턴이라 부를지 사용자가 정한다 -->
+    <string name="stats_pattern_settings_purpose">볼 유형을 고르고, 무엇부터를 그 패턴이라 부를지 정합니다. 이 기준은 통계와 도우미 카드에 함께 적용됩니다.</string>
+    <string name="stats_pattern_sensitivity_reset">기본값</string>
+    <string name="stats_pattern_sensitivity_desc">%1$s 기준</string>
+    <string name="stats_pattern_sensitivity_invalid">%1$s부터 %2$s까지의 수를 적어 주세요.</string>
+    <string name="stats_pattern_hint_dominance">한 값이 이 비율을 넘게 차지하면 편중으로 봅니다.</string>
+    <string name="stats_pattern_hint_balance">모든 값이 이 비율 이하로 들어오면 고르다고 봅니다.</string>
+    <string name="stats_pattern_hint_outlier">1건짜리 값이 전체에서 이 비율 이하일 때만 희소로 짚습니다.</string>
+    <string name="stats_pattern_hint_cluster">한 10년대에 이 비율 이상 몰리면 집중으로 봅니다.</string>
+    <string name="stats_pattern_hint_absence">사건이 이 기간을 넘게 비면 공백으로 봅니다. 역법 규모에 맞춰 정하세요.</string>
+    <string name="stats_pattern_hint_cross_novel">작품 간 캐릭터 수가 이 배수 이상 벌어지면 불균형으로 봅니다.</string>
+
+    <!-- Stats: 세력 절 제목 — 레이아웃에 박혀 있던 것을 옮겼다 (B-181). 옮기는 순간 문구 검사 R1~R4가 걸린다 -->
+    <string name="stats_faction_section_title">세력 통계</string>
 
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>
