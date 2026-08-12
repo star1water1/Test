@@ -548,9 +548,15 @@
 > (`OUTLIER_MIN_VALUES`는 표본 조건 · `CROSS_NOVEL_MAJORITY_PERCENT`는 *과반*의 정의).
 > **전부 여는 것이 늘 옳지는 않고, 열지 않은 자리는 이유가 코드에 있어야 한다.**
 >
-> **⏳ CI는 아직이다** — 이 판의 로컬 27종·JVM 2594는 전부 초록이고, 남은 것은 신규 파일
-> (`PatternSensitivitySpec.kt`, `ui/**`라 프로브 밖)·새 문자열 열하나·`@string/`으로 바뀐
-> 레이아웃 한 자리의 **컴파일·링크 증명**이다. 2장 ⏳ 목록에 한 줄 올렸다.
+> **✅ CI 초록 · 병합 완료** — PR **#276**, run `31583673700`, head `c7c4300`.
+> 항목이 *"CI: 필요"*로 예고한 그대로 돌렸고, **그 예고가 값을 했다** — 로컬에 증명 수단이
+> 아예 없던 셋(신규 `PatternSensitivitySpec.kt`의 컴파일 · 새 문자열 열하나의 `R.string` 링크 ·
+> `@string/`으로 바뀐 레이아웃 한 자리의 aapt 링크)을 이 실행이 처음 확인했다.
+> 배지가 아니라 단계를 봤다: `Static checks` ✓ 32초 · `Schema harnesses` ✓ ·
+> **`Run unit tests` ✓ 2분59초** · `Build Debug APK` ✓ 47초 · `Upload/Commit Room schemas` ✓ ·
+> `Upload Debug APK` ✓. **`Commit Room schemas`가 아무것도 얹지 않았다**(머리가 `c7c4300` 그대로).
+> **⏳ 미검증 목록은 이 실행이 덮어 비었다 — 13판은 자기 몫만 지고 시작한다.**
+> **마이그레이션 워크플로는 돌지 않았고 그것이 맞다**(트리거가 `data/dao/**`인데 DAO를 안 건드렸다).
 
 ### 13판 — 필드 분포 — 자동 구간 히스토그램과 조각 드릴다운
 
