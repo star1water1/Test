@@ -50,6 +50,10 @@ object DuelStandings {
      * @property notConverged 적합이 반복 상한에서 멈췄다. 점수를 그대로 믿기 어렵다.
      * @property pairScanCapped 짝 전수를 다 훑지 못했다 — 진행률이 **훑은 범위의 값**이다.
      * @property triangleScanCapped 순환 훑기가 상한에 걸렸다. 순환 목록이 전부가 아니다.
+     * @property crossCharacterMatches **이미지 축에서만** 0이 아니다 (B-175) — 내 그림과 남의
+     *   그림이 함께 적힌 판이다. 이미지 대결은 캐릭터마다 따로 도므로(설계 13-2) 그런 판은
+     *   **어느 캐릭터의 순위에도 들지 않는데**, [orphanMatches]에 섞어 세면 화면이 그것을
+     *   *"지워진 참가자의 판"*이라 말한다 — 지워지지 않았으므로 **거짓 고지**다. 갈라 센다.
      */
     data class Caveats(
         val orphanMatches: Int,
@@ -58,12 +62,14 @@ object DuelStandings {
         val malformedMatches: Int,
         val notConverged: Boolean,
         val pairScanCapped: Boolean,
-        val triangleScanCapped: Boolean
+        val triangleScanCapped: Boolean,
+        val crossCharacterMatches: Int = 0
     ) {
         /** 하나라도 말할 것이 있는가 — 없으면 화면이 고지 영역을 통째로 감춘다. */
         val any: Boolean
             get() = orphanMatches > 0 || missingParticipants > 0 || excludedMatches > 0 ||
-                malformedMatches > 0 || notConverged || pairScanCapped || triangleScanCapped
+                malformedMatches > 0 || notConverged || pairScanCapped || triangleScanCapped ||
+                crossCharacterMatches > 0
     }
 
     /**
@@ -157,7 +163,8 @@ object DuelStandings {
         fit: DuelRating.Fit,
         report: DuelCounterRelations.Report,
         plan: DuelPairing.Plan,
-        missingParticipants: Int
+        missingParticipants: Int,
+        crossCharacterMatches: Int = 0
     ): Caveats = Caveats(
         orphanMatches = fit.orphanMatches,
         missingParticipants = missingParticipants,
@@ -165,7 +172,8 @@ object DuelStandings {
         malformedMatches = fit.malformedMatches,
         notConverged = !fit.converged,
         pairScanCapped = plan.scanCapped,
-        triangleScanCapped = report.triangleScanCapped
+        triangleScanCapped = report.triangleScanCapped,
+        crossCharacterMatches = crossCharacterMatches
     )
 
     /**
@@ -174,13 +182,24 @@ object DuelStandings {
      * 회전(`A>B>C` vs `B>C>A`)이나 반전으로 적힌 같은 관계가 후보에도 처분에도 있으면
      * **한 관계가 두 줄로 보인다.** [DuelRecords.memberKey]가 그 순서를 지운 키이고,
      * 저장 쪽 유니크 인덱스도 같은 값 위에 서 있다 — 대조를 다른 방법으로 하면 두 자리가 갈린다.
+     *
+     * **열쇠를 저장된 `memberKey`로 쓰지 않는다** (B-175). 후보 쪽 열쇠는 [DuelRecords.Resolved]를
+     * 거쳐 나온 **대표 표기**로 만들어지는데, 저장된 값은 원본 표기다(R-42). 이미지 축에서 그
+     * 둘이 갈리면 — 같은 파일의 표기가 둘일 때다 — **이미 판정한 처분이 후보로 한 번 더 뜬다.**
+     * 양쪽을 같은 표로 옮겨 견주면 그 길이 아예 없다([DuelRecords.Resolved.canonicalCode]).
+     * 캐릭터 축에서는 대표 표기가 코드 그대로라 **글자 하나 달라지지 않는다.**
      */
     fun counterReview(
         report: DuelCounterRelations.Report,
         records: DuelRecords.Resolved,
         verdicts: List<DuelCounterVerdict>
     ): CounterReview {
-        val verdictByKey = verdicts.associateBy { it.memberKey }
+        // 처분마다 (풀어낸 참가자, 정규 키)를 한 번만 만든다 — 아래에서 두 번 쓴다.
+        val decoded = verdicts.map { verdict ->
+            val members = DuelRecords.decodeMembers(verdict.memberCodes)
+            Triple(verdict, members, DuelRecords.memberKey(members.map { records.canonicalCode(it) }))
+        }
+        val verdictByKey = decoded.associate { (verdict, _, key) -> key to verdict }
         val candidates = ArrayList<CounterItem>(report.count)
         val detected = HashMap<String, DuelCounterRelations.Candidate>()
         var unresolved = 0
@@ -202,13 +221,12 @@ object DuelStandings {
             )
         }
 
-        val decided = verdicts
-            .sortedByDescending { it.decidedAt }
-            .map { verdict ->
-                val members = DuelRecords.decodeMembers(verdict.memberCodes)
+        val decided = decoded
+            .sortedByDescending { (verdict, _, _) -> verdict.decidedAt }
+            .map { (verdict, members, key) ->
                 // 어긋남의 크기는 **지금 기록에서 다시 낸 것**을 쓴다. 처분할 때의 값을 저장해
                 // 두면 기록이 바뀐 뒤에도 옛 숫자를 들고 있게 된다(파생값을 저장하지 않는 이유).
-                val current = detected[verdict.memberKey]
+                val current = detected[key]
                 CounterItem(
                     kind = if (verdict.shape == DuelCounterVerdict.SHAPE_CYCLE) {
                         DuelCounterRelations.Kind.CYCLE

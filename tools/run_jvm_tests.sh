@@ -310,6 +310,7 @@ $TEST/util/DuelCounterRelationsTest.kt
 $TEST/util/DuelRecordsTest.kt
 $TEST/util/DuelImageParticipantsTest.kt
 $TEST/util/DuelImageRosterTest.kt
+$TEST/util/DuelImageStandingsShiftTest.kt
 $TEST/util/DuelImagePruneTest.kt
 $TEST/util/RepresentativeWeightingTest.kt
 $TEST/util/DuelSessionTest.kt

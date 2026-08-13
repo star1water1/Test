@@ -134,8 +134,9 @@ class DuelStandingsFragment : Fragment() {
      * **자리를 비워 두는 것이 아니라 애초에 뜻이 없는 것**이라 감춘다.
      */
     private suspend fun reloadImages(axis: DuelAxis) {
-        val entry = if (characterId > 0) viewModel.imageEntry(axis, characterId) else null
-        if (entry == null) {
+        val target = if (characterId > 0) viewModel.imageTarget(axis, characterId) else null
+        val entry = target?.entry
+        if (target == null || entry == null) {
             // 캐릭터를 정하지 못하면 줄 세울 집합이 없다 — 빈 표를 띄우면 *"아직 안 했다"*로
             // 읽히지만 사실은 *"누구 것인지 모른다"*이므로, 그 사실을 그대로 말한다.
             if (!isAdded) return
@@ -145,7 +146,7 @@ class DuelStandingsFragment : Fragment() {
             renderCounterBadge(0)
             return
         }
-        val loaded = viewModel.loadImages(axis, entry)
+        val loaded = viewModel.loadImages(axis, target)
         if (!isAdded) return
 
         namesByCode = emptyMap()
@@ -168,7 +169,8 @@ class DuelStandingsFragment : Fragment() {
                 loaded.state.fit,
                 loaded.state.report,
                 loaded.state.plan,
-                loaded.state.missingParticipants
+                loaded.state.missingParticipants,
+                loaded.state.crossCharacterMatches
             ),
             loaded.state.report.wobbles.size,
             emptyList(),
@@ -278,6 +280,13 @@ class DuelStandingsFragment : Fragment() {
                     caveats.orphanMatches,
                     caveats.missingParticipants
                 )
+            )
+        }
+        // 남의 그림이 낀 판은 **지워진 참가자와 갈라 말한다**(B-175) — 지워진 것이 아니라
+        // 애초에 누구의 대결도 아니고, 되살릴 것도 없어 위 문장의 처방이 통하지 않는다.
+        if (caveats.crossCharacterMatches > 0) {
+            lines.add(
+                getString(R.string.duel_caveat_cross_character, caveats.crossCharacterMatches)
             )
         }
         if (caveats.excludedMatches > 0) {

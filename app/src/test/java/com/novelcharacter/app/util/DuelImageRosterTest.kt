@@ -210,15 +210,15 @@ class DuelImageRosterTest {
     }
 
     /**
-     * **나누는 데까지만** 증명하는 시험이다 — 여기서 더 나가지 않는 것이 요점이다.
+     * **나누기에서 점수까지 한 잣대다** (B-175 — 로드맵 20판).
      *
-     * `split`의 주인 찾기는 정규 경로로 하지만 그 산출물을 받는 `DuelRecords.resolve`는
-     * 참가자를 **글자 그대로** 대조한다. 그래서 표기가 갈린 판은 **여기서는 나뉘고 적합에서는
-     * 고아가 된다.** 이 시험이 *"그러니 점수에도 반영된다"*까지 주장하면 **없는 보장을 증명한
-     * 것처럼 보인다** — 그 자리는 `split`의 KDoc이 사실대로 적고 백로그 **B-174**가 든다.
+     * 종전에는 여기까지만 성립했다 — `split`의 주인 찾기는 정규 경로인데 그 산출물을 받는
+     * `DuelRecords.resolve`가 참가자를 **글자 그대로** 대조해, 표기가 갈린 판은 *나뉘고
+     * 적합에서는 고아가* 됐다. 그 자리를 이 판이 닫았으므로 이 시험은 **점수까지** 재고,
+     * 아래 한 줄(`usedMatches`)이 종전이면 0이었다.
      */
     @Test
-    fun `판의 표기가 목록과 달라도 나뉜다 — 다만 나누기까지다`() {
+    fun `판의 표기가 목록과 달라도 나뉘고 점수에도 든다`() {
         val splits = DuelImageRoster.split(
             listOf(character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg")),
             listOf(match("$dir/./a1.jpg", "$dir/a2.jpg", "$dir/a2.jpg")),
@@ -228,5 +228,252 @@ class DuelImageRosterTest {
         // **판의 코드는 손대지 않고 그대로 넘긴다** — 여기서 정규 표기로 고쳐 적으면
         // 저장된 값과 다른 문자열이 적합으로 흘러가 `build`와 또 다른 방식으로 어긋난다.
         assertEquals("$dir/./a1.jpg", splits.single().matches.single().aCode)
+
+        val split = splits.single()
+        val resolved = DuelRecords.resolve(
+            split.paths, split.matches, split.verdicts, DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        val fit = DuelRating.fit(resolved.participants, resolved.matches)
+        assertEquals("표기가 갈렸어도 점수에 든다", 1, fit.usedMatches)
+        assertEquals(0, fit.orphanMatches)
+        // 참가자 수가 늘지 않는다 — 같은 파일이 두 참가자로 갈라지면 순위표에 같은 그림이 두 줄이다.
+        assertEquals(2, resolved.participants.size)
+        assertEquals(0, resolved.missingParticipants)
+    }
+
+    // ── 몫을 가르는 잣대 (B-175 — 로드맵 20판) ──
+    //
+    // 종전에는 *"내 것"*과 *"내 것 아님"* 둘로만 갈라, **성격이 다른 둘이 한 자루에** 있었다:
+    // 지워진 그림이 낀 판(내 대결의 일부였다)과 남의 그림이 낀 판(누구의 대결도 아니다)이다.
+    // 화면이 할 말이 서로 다르므로 갈라야 하고, 갈리지 않은 동안 순위표는 남의 판을
+    // *"지워진 참가자의 판"*이라 말했다 — 지워지지 않았으므로 거짓 고지다.
+
+    @Test
+    fun `소유 표는 두 장 미만인 캐릭터의 그림도 담는다`() {
+        // 두 장이었다가 한 장이 된 캐릭터가 표에서 빠지면 그 남은 그림이 **주인 없는 그림**으로
+        // 보여, 그 그림이 낀 판이 상대 캐릭터의 몫으로 넘어간다(그쪽 순위표가 그것을
+        // *"지워진 그림의 판"*이라 잘못 고지한다).
+        val owners = DuelImageRoster.owners(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+                character(2L, "나", "$dir/b1.jpg")
+            )
+        )
+        assertEquals(3, owners.size)
+        assertEquals(2L, owners.of("$dir/b1.jpg"))
+        // 목록에 올릴지는 build가 따로 가린다 — **누가 가졌는가**와 **대결할 수 있는가**는 다르다.
+        val roster = DuelImageRoster.build(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+                character(2L, "나", "$dir/b1.jpg")
+            ),
+            emptyList()
+        )
+        assertNull(roster.entryOf(2L))
+        assertEquals(1, roster.skippedSingleImage)
+    }
+
+    @Test
+    fun `몫 판정은 셋으로 갈린다 — 내 것 · 캐릭터를 넘음 · 주인 없음`() {
+        val owners = DuelImageRoster.owners(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+                character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+            )
+        )
+        assertEquals(
+            DuelImageRoster.Claim.Owned(1L, complete = true),
+            DuelImageRoster.claimOf("$dir/a1.jpg", "$dir/a2.jpg", owners)
+        )
+        // 한쪽이 지워졌어도 **내 몫이다** — 그 판은 내 대결의 일부였다. complete만 false다.
+        assertEquals(
+            DuelImageRoster.Claim.Owned(1L, complete = false),
+            DuelImageRoster.claimOf("$dir/a1.jpg", "$dir/사라진.jpg", owners)
+        )
+        assertEquals(
+            DuelImageRoster.Claim.Cross(setOf(1L, 2L)),
+            DuelImageRoster.claimOf("$dir/a1.jpg", "$dir/b1.jpg", owners)
+        )
+        assertEquals(
+            DuelImageRoster.Claim.None,
+            DuelImageRoster.claimOf("$dir/없다1.jpg", "$dir/없다2.jpg", owners)
+        )
+        // 처분은 셋 이상일 수 있다(순환) — 잣대는 판과 **같은 것**이다.
+        assertEquals(
+            DuelImageRoster.Claim.Cross(setOf(1L, 2L)),
+            DuelImageRoster.claimOf(
+                listOf("$dir/a1.jpg", "$dir/a2.jpg", "$dir/b1.jpg"), owners
+            )
+        )
+    }
+
+    @Test
+    fun `지워진 그림의 판은 내 몫으로 남고 남의 그림이 낀 판은 세어서 갈라 말한다`() {
+        val splits = DuelImageRoster.split(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+                character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+            ),
+            listOf(
+                match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg"),
+                // 그림 하나를 지웠다 — 이 판은 여전히 '가'의 대결이고, 적합이 고아로 세어 알린다.
+                match("$dir/a1.jpg", "$dir/사라진.jpg", "$dir/a1.jpg"),
+                // 캐릭터를 넘는 판 — 어느 몫도 아니지만 **낀 둘이 각자 센다.**
+                match("$dir/a2.jpg", "$dir/b1.jpg", "$dir/a2.jpg"),
+                // 둘 다 주인이 없다 — 어느 캐릭터 화면의 몫도 아니다(기록 화면이 든다).
+                match("$dir/없다1.jpg", "$dir/없다2.jpg")
+            ),
+            emptyList()
+        )
+        val mine = splits.single { it.characterId == 1L }
+        assertEquals("지워진 그림의 판이 몫에 남는다", 2, mine.matches.size)
+        assertEquals(1, mine.crossCharacterMatches)
+        assertEquals(1, splits.single { it.characterId == 2L }.crossCharacterMatches)
+
+        // 그 판이 **적합에서 고아로 세어진다** — 종전에는 split이 통째로 버려 어느 화면에서도
+        // 세어지지 않았고, 그것이 *"쌓아 둔 판이 조용히 사라졌다"*였다.
+        val resolved = DuelRecords.resolve(
+            mine.paths, mine.matches, mine.verdicts, DuelRecords.CodeMatch.IMAGE_PATH
+        )
+        val fit = DuelRating.fit(resolved.participants, resolved.matches)
+        assertEquals(1, fit.usedMatches)
+        assertEquals(1, fit.orphanMatches)
+        assertEquals(1, resolved.missingParticipants)
+    }
+
+    @Test
+    fun `남의 그림이 낀 처분도 갈라 센다`() {
+        val splits = DuelImageRoster.split(
+            listOf(
+                character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg", "$dir/a3.jpg"),
+                character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+            ),
+            emptyList(),
+            listOf(
+                verdict("$dir/a1.jpg", "$dir/a2.jpg"),
+                verdict("$dir/a3.jpg", "$dir/b1.jpg"),
+                // 지워진 그림이 낀 처분은 **남긴다** — 빼면 사용자가 물릴 수도 없는 처분이 된다.
+                verdict("$dir/a1.jpg", "$dir/사라진.jpg")
+            )
+        )
+        val mine = splits.single { it.characterId == 1L }
+        assertEquals(2, mine.verdicts.size)
+        assertEquals(1, mine.crossCharacterVerdicts)
+        assertEquals(1, splits.single { it.characterId == 2L }.crossCharacterVerdicts)
+    }
+
+    /**
+     * **훑는 벌이 둘이고, 그 둘이 같다는 사실 자체를 재는 시험이다.**
+     *
+     * `split`은 전원의 몫을 한 번에 짜고(점수표가 쓴다) `splitOf`는 한 몫만 짠다
+     * (순위표·대결 화면이 쓴다 — **한 판 누를 때마다 도는 자리**라 인원마다 버킷을 지어 하나만
+     * 쓰는 비용을 치를 수 없다). 잣대(`claimOf`)는 공유하지만 버킷 짜기가 갈려 있으므로,
+     * **둘이 같은 답을 낸다는 것을 여기서 잠근다** — 갈리면 *"순위표가 세는 판"*과 *"점수표가
+     * 세는 판"*이 달라지고 그것이 정확히 B-175가 등재된 이유다.
+     *
+     * 네 갈래를 한 자료에 다 담는다: 내 판 · 남의 판 · 캐릭터를 넘는 판 · 지워진 그림이 낀 판.
+     */
+    @Test
+    fun `splitOf는 split과 글자 그대로 같은 몫을 낸다`() {
+        val characters = listOf(
+            character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+            character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+        )
+        val matches = listOf(
+            match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg"),
+            match("$dir/b1.jpg", "$dir/b2.jpg", "$dir/b1.jpg"),
+            match("$dir/a1.jpg", "$dir/b1.jpg", "$dir/a1.jpg"),
+            match("$dir/a2.jpg", "$dir/사라진.jpg", "$dir/a2.jpg"),
+            match("$dir/없다1.jpg", "$dir/없다2.jpg")
+        )
+        val verdicts = listOf(
+            verdict("$dir/a1.jpg", "$dir/a2.jpg"),
+            verdict("$dir/a1.jpg", "$dir/b1.jpg"),
+            verdict("$dir/b1.jpg", "$dir/b2.jpg")
+        )
+        val owners = DuelImageRoster.owners(characters)
+        val all = DuelImageRoster.split(characters, matches, verdicts, owners)
+        for (character in characters) {
+            val paths = CharacterRepresentativeImage.paths(character.imagePaths)
+            assertEquals(
+                all.single { it.characterId == character.id },
+                DuelImageRoster.splitOf(character.id, paths, matches, verdicts, owners)
+            )
+        }
+        // 이 자료가 네 갈래를 다 담고 있는지 확인한다 — 안 담으면 위 대조가 헐거워진다.
+        val mine = all.single { it.characterId == 1L }
+        assertEquals(2, mine.matches.size)
+        assertEquals(1, mine.crossCharacterMatches)
+        assertEquals(1, mine.crossCharacterVerdicts)
+    }
+
+    @Test
+    fun `splitOf는 캐릭터 표를 받지 않는다 — 내 경로와 소유 표만으로 선다`() {
+        // 한 판 누를 때마다 도는 자리라 화면이 캐릭터 표를 붙들고 있지 않아야 한다.
+        // 소유 표는 세계관 전체를 알지만 **그것 하나만** 넘긴다.
+        val characters = listOf(
+            character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"),
+            character(2L, "나", "$dir/b1.jpg", "$dir/b2.jpg")
+        )
+        val owners = DuelImageRoster.owners(characters)
+        val split = DuelImageRoster.splitOf(
+            1L,
+            listOf("$dir/a1.jpg", "$dir/a2.jpg"),
+            listOf(match("$dir/a1.jpg", "$dir/b1.jpg", "$dir/a1.jpg")),
+            emptyList(),
+            owners
+        )
+        // 남의 그림인 것을 **소유 표만으로** 알아낸 자리다(캐릭터 표 없이).
+        assertEquals(0, split.matches.size)
+        assertEquals(1, split.crossCharacterMatches)
+    }
+
+    @Test
+    fun `소유 표를 넘기면 정규화를 다시 하지 않는다`() {
+        // 한 판 누를 때마다 다시 도는 경로라, 표를 새로 만들면 그림 수만큼의 파일 시스템
+        // 호출이 판마다 붙는다. 넘긴 표를 그대로 쓰는지 **잰 문자열 수**로 확인한다.
+        val characters = listOf(character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg"))
+        val canon = ImagePathMatch.Canonicalizer()
+        assertEquals(0, canon.measured)
+        canon.of("$dir/a1.jpg")
+        canon.of("$dir/a1.jpg")
+        assertEquals("같은 문자열은 한 번만 잰다", 1, canon.measured)
+
+        val owners = DuelImageRoster.owners(characters)
+        val matches = List(20) { match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg") }
+        assertEquals(
+            DuelImageRoster.split(characters, matches, emptyList()),
+            DuelImageRoster.split(characters, matches, emptyList(), owners)
+        )
+    }
+
+    /**
+     * **여기서 재는 것과 못 재는 것을 갈라 적는다** — 안 그러면 없는 보장을 증명한 것처럼 보인다.
+     *
+     * **재는 것:** 몫 가르기가 판을 훑을 때 **새로 재는 문자열이 없다**(같은 경로가 판 수만큼
+     * 되풀이돼도 표가 그대로다). 이것이 이 표를 넘겨받는 이유 전부다.
+     *
+     * **못 재는 것:** *"안에서 `ImagePathMatch.canonical`을 직접 부르지 않는가."* 직접 부르면
+     * 이 표를 지나치므로 **여기 담기지도 않고 숫자도 안 움직인다** — 결과가 같고 느려지기만
+     * 하므로 어떤 셈으로도 안 걸린다. 이 판의 첫 벌이 실제로 `build`에서 그랬고 **시험도 검사도
+     * 전부 초록이었다.** 그 자리는 호출부의 주석이 든다(기계로 볼 축이 없다는 사실을 여기 적어
+     * 두는 것이, 다음 사람이 이 시험을 그 보장으로 잘못 읽지 않게 하는 유일한 방법이다).
+     */
+    @Test
+    fun `판이 아무리 쌓여도 넘겨받은 표는 새로 재지 않는다`() {
+        val characters = listOf(character(1L, "가", "$dir/a1.jpg", "$dir/a2.jpg", "$dir/a3.jpg"))
+        val owners = DuelImageRoster.owners(characters)
+        assertEquals("표를 만들며 그림 수만큼 잰다", 3, owners.measured)
+
+        val matches = List(50) { match("$dir/a1.jpg", "$dir/a2.jpg", "$dir/a1.jpg") }
+        DuelImageRoster.build(characters, matches, owners)
+        DuelImageRoster.split(characters, matches, emptyList(), owners)
+        assertEquals("판 50개를 훑어도 새로 잴 문자열이 없다", 3, owners.measured)
+
+        // 표기가 갈린 판이 들어오면 **그때만** 는다 — 목록에 없던 문자열이라 잴 수밖에 없고,
+        // 그것도 문자열당 한 번이다(같은 표기가 50번 더 와도 그대로다).
+        val odd = List(50) { match("$dir/./a1.jpg", "$dir/a2.jpg", "$dir/./a1.jpg") }
+        DuelImageRoster.split(characters, odd, emptyList(), owners)
+        assertEquals(4, owners.measured)
     }
 }

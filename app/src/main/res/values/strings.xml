@@ -3657,6 +3657,7 @@
     <string name="duel_caveat_orphan">지워진 참가자 %2$d명의 판 %1$d개가 점수에서 빠져 있습니다. 휴지통에서 되살리면 그 판도 함께 돌아옵니다.</string>
     <string name="duel_caveat_excluded">상성으로 판정한 판 %1$d개가 점수에서 빠져 있습니다.</string>
     <string name="duel_caveat_malformed">승자가 두 참가자 중 어느 쪽도 아닌 판이 %1$d개 있습니다. 외부에서 편집한 파일을 들였다면 그 행을 확인해 주세요.</string>
+    <string name="duel_caveat_cross_character">다른 캐릭터의 이미지가 함께 적힌 판이 %1$d개 있습니다. 이미지 대결은 캐릭터마다 따로 하므로 어느 순위에도 들지 않습니다. 기록에서 그 판을 확인해 주세요.</string>
     <string name="duel_caveat_not_converged">점수 계산이 반복 한도에서 멈췄습니다. 결과가 조금 덜 정확할 수 있습니다.</string>
     <string name="duel_caveat_pair_capped">짝이 너무 많아 일부만 훑었습니다. 진행률은 훑은 범위의 값입니다.</string>
     <string name="duel_caveat_triangle_capped">순환 찾기가 한도에 걸려 일부만 훑었습니다. 목록이 전부가 아닐 수 있습니다.</string>

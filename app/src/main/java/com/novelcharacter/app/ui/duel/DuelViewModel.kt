@@ -635,27 +635,59 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * 이미지 축이 **한 캐릭터를 열 때 필요한 것 전부** (B-175).
+     *
+     * @property entry 그 캐릭터의 현황(참가자 경로·진행률).
+     * @property owners 세계관에서 **어느 그림이 누구 것인가.** 판을 몫으로 가르는 데 필요하고,
+     *   화면이 **들고 있어야 한다** — 한 판 누를 때마다 다시 도는 경로에서 이것을 새로 만들면
+     *   그림 수만큼의 파일 시스템 호출이 판마다 붙는다.
+     *
+     * **캐릭터 표는 담지 않는다.** 몫 가르기가 필요한 것은 *내 경로*([entry])와 *소유 표*뿐이라,
+     * 표를 담으면 화면이 세계관 인원 전부를 대결이 끝날 때까지 붙들고 있게 된다.
+     */
+    data class ImageTarget(
+        val entry: DuelImageRoster.Entry,
+        val owners: DuelImageRoster.Owners
+    )
+
+    /**
      * **한 캐릭터 몫의 이미지 대결 상태.**
      *
      * 참가자로 넘기는 것은 그 캐릭터의 이미지 경로뿐이다 — 세계관 전체의 이미지를 넘기면
      * 짝 고르기가 **캐릭터를 넘는 짝**을 내놓는다(사용자 확정: *"다른 캐릭터랑 붙는 게 아니라"*).
      * 적합도 그만큼만 돌아 훨씬 싸다([DuelImageRoster]의 머리 주석).
      *
+     * **판·처분도 그 캐릭터 몫만 받는다**(B-175 — [DuelRepository.imageStateOf]). 종전에는 축
+     * 전체를 넘겨 남의 캐릭터 판이 전부 고아로 읽혔고, 화면이 그것을 *"지워진 참가자의 판"*
+     * 이라 말했다 — 지워지지 않았으므로 거짓 고지였다.
+     *
      * @return 참가자가 둘 미만이면 null — 붙일 짝이 없다는 뜻이고, 화면이 그 사실을 말한다.
      */
-    suspend fun loadImages(axis: DuelAxis, entry: DuelImageRoster.Entry): Loaded? {
-        if (entry.paths.size < 2) return null
+    suspend fun loadImages(axis: DuelAxis, target: ImageTarget): Loaded? {
+        if (target.entry.paths.size < 2) return null
         return withContext(Dispatchers.Default) {
-            val state = duelRepository.stateOf(axis, entry.paths)
+            val image = duelRepository.imageStateOf(
+                axis, target.entry.characterId, target.entry.paths, target.owners
+            ) ?: return@withContext null
             // 이미지 축의 참가자는 캐릭터가 아니다 — 카드가 이름·필드를 붙일 곳이 없으므로
             // 표를 비워 넘긴다(화면이 코드=경로에서 파일 이름을 낸다).
-            Loaded(axis, state, emptyMap(), duelRepository.verdicts(axis.id))
+            Loaded(axis, image.state, emptyMap(), image.verdicts)
         }
     }
 
-    /** 이 축의 그 캐릭터 — 고르기 화면을 거치지 않고 곧바로 들어온 경우에도 현황이 필요하다. */
-    suspend fun imageEntry(axis: DuelAxis, characterId: Long): DuelImageRoster.Entry? =
-        imageRoster(axis).entryOf(characterId)
+    /**
+     * 이 축의 그 캐릭터 — 고르기 화면을 거치지 않고 곧바로 들어온 경우에도 현황이 필요하다.
+     *
+     * **소유 표를 함께 돌려주는 것이 요점이다**(B-175) — 그것 없이는 *"주인이 없는 그림"*과
+     * *"남의 그림"*을 가릴 수 없고, 그 둘은 화면이 할 말이 서로 다르다.
+     */
+    suspend fun imageTarget(axis: DuelAxis, characterId: Long): ImageTarget? {
+        val characters = participantsOf(axis.universeId)
+        val matches = app.database.duelMatchDao().getByAxis(axis.id)
+        val roster = withContext(Dispatchers.Default) { DuelImageRoster.build(characters, matches) }
+        val entry = roster.entryOf(characterId) ?: return null
+        return ImageTarget(entry, roster.owners)
+    }
 
     // ──────────────────────────────────────────────────────────────────────
     // 기록 · 처분
