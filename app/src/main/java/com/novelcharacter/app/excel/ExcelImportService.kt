@@ -8485,8 +8485,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /**
      * 캐릭터를 썼다고 기록한다(insert·update 양쪽 — DB에 쓴 **그 행**을 넘길 것).
      * 이름·코드가 바뀌었으면 옛 키는 색인이 끊는다([ImportLookupIndex] 성질 3).
+     *
+     * **먼저 싣고 나서 쓴다.** 게으른 적재보다 쓰기가 앞서면 — 첫 행이 *충돌 해결된 행*이라
+     * 코드·이름으로 물어보지 않고 곧장 insert로 가는 경우가 그것이다 — 나중에 도는 [load]가
+     * **이미 있는 버킷의 뒤에 붙어** 순서가 뒤집힌다. 그러면 동명이인에서 `LIMIT 1`이 고르던
+     * 상대가 바뀐다([ImportLookupIndex] 성질 1). *"쓰기 앞에 반드시 읽기가 있다"*에 기대지
+     * 않는 것이 이 한 줄의 값이다.
      */
-    private fun rememberCharacter(character: Character) {
+    private suspend fun rememberCharacter(character: Character) {
+        ensureCharacterIndex()
         characterCodes.put(character)
         characterNames.put(character)
     }
@@ -8537,8 +8544,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (event in db.timelineDao().getAllEventsList().sortedBy { it.id }) rememberEvent(event)
     }
 
-    /** 사건을 썼다고 기록한다(insert·update 양쪽). 연도·설명·코드가 바뀌면 옛 키는 색인이 끊는다. */
-    private fun rememberEvent(event: TimelineEvent) {
+    /**
+     * 사건을 썼다고 기록한다(insert·update 양쪽). 연도·설명·코드가 바뀌면 옛 키는 색인이 끊는다.
+     * [rememberCharacter]와 같은 이유로 **먼저 싣는다** — 쓰기가 적재보다 앞서면 순서가 뒤집힌다.
+     */
+    private suspend fun rememberEvent(event: TimelineEvent) {
+        ensureEventIndex()
         eventCodes.put(event)
         eventNaturalKeys.put(event)
         eventsByEventId.put(event)
@@ -8576,8 +8587,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (novel in db.novelDao().getAllNovelsList().sortedBy { it.id }) novelCodes.put(novel)
     }
 
-    /** 작품을 썼다고 기록한다 — 코드가 바뀌었으면 옛 코드는 색인이 끊는다. */
-    private fun rememberNovel(novel: Novel) {
+    /**
+     * 작품을 썼다고 기록한다 — 코드가 바뀌었으면 옛 코드는 색인이 끊는다.
+     * [rememberCharacter]와 같은 이유로 **먼저 싣는다**(코드 칸이 빈 첫 행은 코드로 물어보지
+     * 않고 제목 폴백으로 가므로, 적재보다 쓰기가 앞서는 경로가 실재한다).
+     */
+    private suspend fun rememberNovel(novel: Novel) {
+        ensureNovelIndex()
         novelCodes.put(novel)
     }
 
@@ -8603,8 +8619,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (universe in db.universeDao().getAllUniversesList().sortedBy { it.id }) rememberUniverse(universe)
     }
 
-    /** 세계관을 썼다고 기록한다 — 이름·코드가 바뀌면 옛 키는 색인이 끊는다. */
-    private fun rememberUniverse(universe: Universe) {
+    /**
+     * 세계관을 썼다고 기록한다 — 이름·코드가 바뀌면 옛 키는 색인이 끊는다.
+     * [rememberCharacter]와 같은 이유로 **먼저 싣는다.**
+     */
+    private suspend fun rememberUniverse(universe: Universe) {
+        ensureUniverseIndex()
         universeCodes.put(universe)
         universeNames.put(universe)
         universesByUniverseId.put(universe)

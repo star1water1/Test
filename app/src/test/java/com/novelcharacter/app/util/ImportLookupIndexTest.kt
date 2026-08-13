@@ -169,7 +169,32 @@ class ImportLookupIndexTest {
         assertEquals(1L, index.first(ChangeKey(10L, 1993, null))?.id)
     }
 
-    // ── ⑥ 가져오기마다 비운다 ────────────────────────────────────────────────
+    // ── ⑥ 싣기는 쓰기보다 앞서야 한다 ─────────────────────────────────────────
+    // [ImportLookupIndex.load]는 **뒤에 붙인다**(성질 1). 그래서 쓰기가 적재보다 앞서면
+    // 나중에 도는 적재분이 **이미 쓴 것의 뒤로** 가고, `LIMIT 1`이 고르던 상대가 바뀐다.
+    // 이 절은 그 위험을 **성질로 못박아 둔다** — 색인이 스스로 막을 수 있는 것이 아니라
+    // (무엇이 먼저인지 알 길이 없다) 호출부가 `ensure…Index()`를 먼저 부르는 것이 처방이고,
+    // `ExcelImportService`의 `remember*`가 그래서 전부 적재를 먼저 부른다.
+
+    @Test
+    fun `쓴 뒤에 실으면 실린 것이 뒤로 간다 — 호출부가 순서를 지켜야 한다`() {
+        val index = byCode()
+        index.put(Row(100L, "C-1"))          // 아직 안 실었는데 먼저 썼다
+        index.load(listOf(Row(5L, "C-1")))   // 뒤늦은 적재
+        // SQL이라면 rowid가 작은 5가 나온다. 색인은 100을 준다 — **그래서 순서를 지켜야 한다.**
+        assertEquals(100L, index.first("C-1")?.id)
+        assertEquals(listOf(100L, 5L), index.all("C-1").map { it.id })
+    }
+
+    @Test
+    fun `먼저 싣고 쓰면 LIMIT 1의 답이 그대로다`() {
+        val index = byCode()
+        index.load(listOf(Row(5L, "C-1")))
+        index.put(Row(100L, "C-1"))
+        assertEquals(5L, index.first("C-1")?.id)
+    }
+
+    // ── ⑦ 가져오기마다 비운다 ────────────────────────────────────────────────
     // 시트를 넘어 사는 색인(캐릭터 정체성)은 서비스와 수명이 같은데, 두 가져오기 사이에
     // 사용자가 앱에서 값을 고칠 수 있다. 안 비우면 둘째 가져오기가 **DB가 아니라 지난번
     // 사본**을 보고 판단한다.
