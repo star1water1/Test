@@ -266,23 +266,26 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > |---|---|---|---|
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **로드맵 9판도 올렸다가 같은 세션에서 지웠다** (PR **#270**, run `31525468923`(build) · `31525469030`(migration), head `edbbcca`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **이 판에서 그 실행의 값이 특히 컸다** — 화면 파일이 **여섯**이라 로컬 프로브가 원리적으로 못 보는 몫이 그만큼이었고, `Run unit tests`가 두 Fragment의 재작성과 `presetSavedEvent` 배선을 **처음 컴파일했다.** 개명한 문자열 `preset_name_required`의 리소스 링크도 `Build Debug APK`가 처음 확인했다(로컬에 증명 수단이 아예 없는 부류다). 배지가 아니라 단계를 봤다: `Static checks` ✓ 33초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 2분57초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `edbbcca` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **마이그레이션 워크플로도 돌았고 초록이다** — 트리거가 `data/dao/**`를 담고 있고 이 판이 DAO에 조회 하나를 더했기 때문이다(스키마는 그대로다). `Room 스키마가 커밋돼 있는가` ✓ · 에뮬레이터에서 **`Run migration instrumentation tests` ✓ 5분20초.** **로드맵 6판도 올렸다가 같은 세션에서 지웠다** (PR **#267**, run `31501431238`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **로드맵이 예고한 *화면 파일 0*이 깨진 판이라 이 실행의 값이 특히 컸다** — `DynamicFieldRenderer`·`DynamicFieldFormBuilder`·`ai/CharacterFieldAiSuggester` 셋은 로컬 프로브 범위 밖이라 **`Run unit tests`가 그것들을 처음 컴파일했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ **3분02초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `96d5eff` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
-> | S6 2차 — 통계 계산 안의 겹(`perSnapshot` 메모이즈) | (병합 전 — PR CI 초록 확인 후 이 줄을 지운다) | 0 (`StatsDataProvider.kt`는 Fragment·Dialog·ViewModel이 아니고 순수 시험이 전부 덮는다) | 화면 파일 0이라 `CLAUDE.md` 4번 기준 미달 — 다만 PR을 열면 CI가 자동으로 돌므로 초록 확인 후 지운다 |
->
-> **✅ 2026.08.13 — 관계도 노드 상한 자리(PR #295, run `31742128509`, head `bf1278e`)가 마지막으로
+> **✅ 2026.08.13 — S6 2차 자리(PR #297, run `31753553899`, head `c8c8135`)가 마지막으로
 > 덮었다. 목록은 비어 있다.**
 >
-> **계획은 *몰아 돌리기*였고 사용자 지시가 앞당겼다**(*"콜드검토 하고 pr하고 병합까지"*) —
-> 화면 파일이 둘이라 `CLAUDE.md` 4번의 *2~3개*에 미치지 않아 목록에 한 줄 올렸다가
-> **같은 세션에서 지웠다.**
+> **화면 파일 0이라 `CLAUDE.md` 4번 기준 미달인 판이었는데, PR을 여니 CI가 그대로 돌았다**
+> (이 저장소의 병합 경로가 PR뿐이라 *"건너뛴다"*는 실제로는 *"PR을 열기 전까지 안 돌린다"*다 —
+> 위 이력 B-137 자리가 내린 그 결론). 목록에 한 줄 올렸다가 **같은 세션에서 지웠다.**
 >
-> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 37초 · `Schema harnesses` ✓ ·
-> **`Run unit tests` ✓ 3분05초** · **`Build Debug APK` ✓ 48초** · `Upload Room schemas` ✓ ·
+> **배지가 아니라 단계를 봤다:** `Static checks` ✓ 34초 · `Schema harnesses` ✓ ·
+> **`Run unit tests` ✓ 3분30초** · **`Build Debug APK` ✓ 53초** · `Upload Room schemas` ✓ ·
 > `Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
-> **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `bf1278e` 그대로인 것을
+> **`Commit Room schemas`가 아무것도 얹지 않았다** — 원격 머리가 `c8c8135` 그대로인 것을
 > `git rev-parse`로 실측했고, 그것이 *마이그레이션 없음*을 기계가 확인해 준 자리다.
 > **마이그레이션 워크플로는 돌지 않았고 그것이 정상이다** — 이 판이 건드린 파일 중
 > 그 트리거(`app/schemas/**` · `data/database/**` · `data/model/**` · `app/src/androidTest/**` ·
-> `app/build.gradle.kts`)에 드는 것이 하나도 없다.
+> `app/build.gradle.kts` · 워크플로 자신 — 실측: `migration-test.yml`의 `paths`)에 드는 것이
+> 하나도 없다(`StatsDataProvider.kt`는 `ui/stats/`이고 시험은 `app/src/test/`다).
+>
+> *(직전 초록 — 관계도 노드 상한 자리: PR #295, run `31742128509`, head `bf1278e`.
+> `Run unit tests` ✓ 3분05초 · `Build Debug APK` ✓ 48초 · `Commit Room schemas` 무추가 실측.
+> 그 판도 화면 파일 둘로 기준 미달이었고 사용자 지시가 앞당겼다 — 상세는 그 판의 인수인계 ⑫.)*
 >
 > **이 판에서 CI가 더한 것은 둘이다.** ① **`RelationshipGraphFragment`의 컴파일** — 뷰 프로브는
 > `RelationshipGraphView`를 보지만 Fragment는 안 보고, 실클래스패스 프로브는 `ui` 계층을 통째로
@@ -7530,7 +7533,7 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | **①** | 5판 잔여 | **B-18** | ⬜ **3-102 ㄴ의 측정 대기**(기기가 있어야 한다 — 확정 22번·P-9) |
    > | **②** | 8판 ⓑ 잔여 | **B-72 ⓑ** | ⬜ **실기기 측정 셋 — 3-106 ㄷ**(힙 · 임시 파일 디스크 · 배경 백업 시간 상한) |
    > | **③** | — | **다음 차례** | **정해져 있지 않다.** 살아 있는 백로그에서 고른다(세는 법은 `check_backlog_markers.sh` 출력). 성능 축이면 **B-215**(이 판이 재 두었다 — 판정 조건까지 행에 있다)와 `scalability` S3·S5·B-214가 후보다 |
-   > | **④** | — | **⏳ CI 미검증 목록** | ⬜ **이 판이 한 줄 올렸다** — PR CI가 초록으로 끝나면 그 결과를 ⑦에 적고 목록을 지운다 |
+   > | **④** | — | **⏳ CI 미검증 목록** | ✅ **비어 있다** — 올렸다가 같은 세션에서 지웠다(PR #297 초록, 아래 ⑦) |
    > | **⑤** | — | **실기기 확인 3-120** | ⬜ 그대로(관계도 한 방문 — B-213 판이 신설. **이 판은 새 실기기 확인을 만들지 않았다** — 화면 파일 0 · 결과 동일성은 시험이 잠근다) |
    >
    > **① 사용자 지시가 이 판을 골랐다** — *"개발의 제1원칙은 앱이 낼 수 있는 최고의 퍼포먼스를
@@ -7573,13 +7576,16 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 0 — 손댄 프로덕션 파일은 `StatsDataProvider.kt` 하나이고, 그 파일은 순수 JVM 시험이
    > 컴파일·실행까지 전부 덮는다.
    >
-   > **⑦ CI: PR을 열면 자동으로 돈다**(트리거가 `pull_request`이고 md 제외 경로에 .kt·.sh가
-   > 있어 건너뛰기가 성립하지 않는 판이다). **이 자리는 실행 전이다 — 초록을 보면 run 번호와
-   > 단계를 여기 적고 2장 ⏳ 목록의 이 판 줄을 지운다**(배지가 아니라 단계를 볼 것 —
-   > `Commit Room schemas`가 아무것도 안 얹는 것이 *마이그레이션 없음*의 기계 확인이다).
-   > **CI가 로컬에 더하는 것:** `StatsDataProvider`의 실클래스패스 컴파일(로컬 프로브는 `ui/**`를
+   > **⑦ CI: PR에서 자동으로 돌았고 초록이다**(트리거가 `pull_request`이고 md 제외 경로에
+   > .kt·.sh가 있어 건너뛰기가 성립하지 않는 판이었다). **PR #297 · run `31753553899`(head
+   > `c8c8135`) — 배지가 아니라 단계를 봤다:** `Static checks` ✓ 34초 · `Schema harnesses` ✓ ·
+   > **`Run unit tests` ✓ 3분30초** · **`Build Debug APK` ✓ 53초** · `Upload/Commit Room schemas` ✓ ·
+   > `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가
+   > 아무것도 얹지 않았다** — 원격 머리가 `c8c8135` 그대로인 것을 `git rev-parse`로 실측했고,
+   > 그것이 *마이그레이션 없음*의 기계 확인이다.
+   > **CI가 로컬에 더한 것:** `StatsDataProvider`의 실클래스패스 컴파일(로컬 프로브는 `ui/**`를
    > 빼고, 순수 시험은 스텁 위라 스텁 그림자만 못 본다 — `check_stub_shadow_use.sh`가 알려진
-   > 부류를 덮지만 전수는 CI뿐이다).
+   > 부류를 덮지만 전수는 CI뿐이다). **새로 잡은 것은 없다.**
    >
    > **다음 세션이 가져갈 한 줄: "캐시 규약이 섰다"와 "전부 그 규약을 지난다"는 다른 명제다 —
    > 이 파일은 규약을 두 곳(calcCache·resolversOf)에 세워 두고도 같은 성질의 헬퍼 다섯이 밖에
