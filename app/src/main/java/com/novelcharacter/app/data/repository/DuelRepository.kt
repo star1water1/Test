@@ -446,8 +446,11 @@ class DuelRepository(private val db: AppDatabase) {
      * 되살릴 것도 없다.** 점수는 그 고아들을 빼고 냈으므로 맞았지만, 사용자가 읽는 문장이
      * 거짓이었고 그것이 개발 의도 2번이 금지한 자리다.
      *
-     * 몫을 가르는 잣대는 [DuelImageRoster.split]이고 **점수표([imageScoresByCharacter])와
-     * 같은 것**이다 — 두 벌로 적으면 순위표와 대표 추첨이 다른 판 수를 말한다(계약 1).
+     * 몫을 가르는 **잣대**는 [DuelImageRoster.claimOf]이고 점수표([imageScoresByCharacter])와
+     * **같은 것**이다 — 두 벌로 적으면 순위표와 대표 추첨이 다른 판 수를 말한다(계약 1).
+     * 버킷을 짜는 벌만 갈려 있고(이쪽은 [DuelImageRoster.splitOf], 저쪽은
+     * [DuelImageRoster.split]) **둘이 같은 답을 낸다는 사실은 시험이 잰다** — 갈린 이유는
+     * 성능이고 그 근거는 `splitOf`의 KDoc이 든다.
      *
      * **받는 것이 캐릭터 표가 아니라 *내 경로 + 소유 표*인 것이 요점이다.** 이 함수가 도는 자리가
      * **한 판 누를 때마다**여서, 캐릭터 표를 받으면 화면이 그것을 들고 있어야 하고 몫 가르기가
