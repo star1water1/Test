@@ -21,6 +21,13 @@ interface DuelCounterVerdictDao {
     suspend fun getByCode(code: String): DuelCounterVerdict?
 
     /**
+     * 표 전체 — 가져오기가 **행마다** [getByCode]·[getByMemberKey]를 치던 자리를 한 번 읽기로
+     * 바꾸려고 둔다 (B-210). 화면에서 쓰지 말 것 — 축 단위로 받는 [getByAxis]가 그쪽의 자리다.
+     */
+    @Query("SELECT * FROM duel_counter_verdicts")
+    suspend fun getAllList(): List<DuelCounterVerdict>
+
+    /**
      * 주어진 코드 중 **이미 쓰이고 있는 것**만 — 월드패키지 가져오기의 코드 충돌 판정
      * ([com.novelcharacter.app.share.WorldPackageCodes.Registry])이 쓴다.
      *
