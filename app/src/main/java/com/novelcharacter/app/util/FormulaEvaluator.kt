@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import android.util.Log
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.google.gson.Gson
 import kotlin.math.abs
 import kotlin.math.max
@@ -36,7 +37,7 @@ class FormulaEvaluator(
         try {
             val fieldDef = fieldDefinitions.find { it.key == key }
             // CALCULATED 필드는 저장값(엑셀 유입 정적 값 포함) 대신 항상 수식을 재귀 평가한다
-            if (fieldDef != null && fieldDef.type == "CALCULATED") {
+            if (fieldDef != null && fieldDef.fieldType == FieldType.CALCULATED) {
                 calculatedCache[key]?.let { return it }
                 val formula = extractFormula(fieldDef)
                 if (formula.isNullOrBlank()) {
@@ -52,7 +53,7 @@ class FormulaEvaluator(
                 Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
                 return 0.0
             }
-            if (fieldDef != null && fieldDef.type == "GRADE") {
+            if (fieldDef != null && fieldDef.fieldType == FieldType.GRADE) {
                 return resolveGradeValue(fieldDef, value)
             }
             return value.toDoubleOrNull() ?: 0.0
@@ -77,7 +78,7 @@ class FormulaEvaluator(
     }
 
     private fun sumAllGrades(): Double {
-        return fieldDefinitions.filter { it.type == "GRADE" }.sumOf { fd ->
+        return fieldDefinitions.filter { it.fieldType == FieldType.GRADE }.sumOf { fd ->
             val value = fieldValues[fd.key] ?: return@sumOf 0.0
             resolveGradeValue(fd, value)
         }

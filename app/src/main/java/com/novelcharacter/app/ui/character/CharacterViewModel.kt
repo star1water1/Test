@@ -54,6 +54,7 @@ import androidx.room.InvalidationTracker
 import androidx.room.withTransaction
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
+import com.novelcharacter.app.data.model.FieldType
 
 /** 캐릭터 목록 정렬 사양. [kind]는 CharacterListPreset.SORT_* 상수. */
 data class CharacterSort(
@@ -80,7 +81,14 @@ data class SortableDuelAxis(
 data class SortableField(
     val key: String,
     val name: String,
-    val type: String,
+    /**
+     * **글자가 아니라 타입을 담는다** (B-55 · R-52) — 이 모델은 저장되지도 직렬화되지도 않고
+     * 정렬 UI가 묻는 것은 타입 분기뿐이라, 좁히는 자리를 만드는 쪽이 화면보다 낫다.
+     *
+     * **병합 키는 여전히 글자를 쓴다**([getSortableFields]) — 서로 다른 미지의 타입 둘이
+     * 똑같이 `null`이 되어 한 줄로 접히면 안 되기 때문이다(R-52의 예외 ②와 같은 이유).
+     */
+    val fieldType: FieldType?,
     val bodySizePartLabels: List<String> = emptyList()
 )
 
@@ -447,8 +455,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         ) {
             val fieldDefs = getCharacterFieldsForKey(fieldKey)
             if (fieldDefs.isEmpty()) { fieldSortCache = null; return chars }  // 정렬 필드 없음 → base 순서 유지
-            val useNumeric = fieldDefs.values.any { FieldValueSorter.isNumericSortType(it.type) }
-            val allCalc = fieldDefs.values.all { it.type == "CALCULATED" }
+            val useNumeric = fieldDefs.values.any { FieldValueSorter.isNumericSortType(it.fieldType) }
+            val allCalc = fieldDefs.values.all { it.fieldType == FieldType.CALCULATED }
             cache = FieldSortKeyCache(fieldKey, partIndex, scopeSig, fvE, stE, useNumeric, allCalc, fieldDefs)
             fieldSortCache = cache
         }
@@ -681,7 +689,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 else novelUniverseCache.getOrPut(novelId) { novelRepository.getNovelById(novelId)?.universeId }
             if (uid == null) { result[c.id] = null; continue }
             val uFields = universeFieldsCache.getOrPut(uid) { universeRepository.getFieldsByUniverseList(uid) }
-            val calcFd = uFields.firstOrNull { it.key == fieldKey && it.type == "CALCULATED" }
+            val calcFd = uFields.firstOrNull { it.key == fieldKey && it.fieldType == FieldType.CALCULATED }
             if (calcFd == null) { result[c.id] = null; continue }
             val formula = try { org.json.JSONObject(calcFd.config).optString("formula", "") } catch (_: Exception) { "" }
             if (formula.isBlank()) { result[c.id] = null; continue }
@@ -722,12 +730,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             for (fd in universeRepository.getFieldsByUniverseList(uid)) {
                 val mk = "${fd.key}|${fd.type}"
                 if (mk !in seen) {
-                    val parts = if (fd.type == "BODY_SIZE") {
+                    val parts = if (fd.fieldType == FieldType.BODY_SIZE) {
                         val sic = StructuredInputConfig.fromConfig(fd.config)
                         if (sic.enabled && sic.parts.isNotEmpty()) sic.parts.map { it.label }
                         else listOf("가슴(B)", "허리(W)", "엉덩이(H)")
                     } else emptyList()
-                    seen[mk] = SortableField(fd.key, fd.name, fd.type, parts)
+                    seen[mk] = SortableField(fd.key, fd.name, fd.fieldType, parts)
                 }
             }
         }
@@ -785,7 +793,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     /** 필터 UI용 필드 목록 (CALCULATED 제외 — DB 값이 없어 필터 불가). */
     suspend fun getFilterableFields(universeId: Long): List<FieldDefinition> =
-        universeRepository.getFieldsByUniverseList(universeId).filter { it.type != "CALCULATED" }
+        universeRepository.getFieldsByUniverseList(universeId).filter { it.fieldType != FieldType.CALCULATED }
 
     /** 필터 UI용 특정 필드의 유니크 값 목록 — 토큰화·trim·별칭 접기 (GlobalSearch와 동일 규칙, 검토 A16). */
     suspend fun getFieldValues(fieldDefId: Long): List<String> {

@@ -68,14 +68,14 @@ object ImportedFormulaAudit {
         // 순환 참조는 **구역 전체**를 따라가야 보인다 — 건드린 필드만 담으면 A→B→A에서
         // B가 옛 필드일 때 고리가 끊긴 것처럼 보인다.
         val calculatedFormulas = scopeFields
-            .filter { it.type == FieldType.CALCULATED.name }
+            .filter { it.fieldType == FieldType.CALCULATED }
             .mapNotNull { def -> formulaOf(def)?.takeIf { it.isNotBlank() }?.let { def.key to it } }
             .toMap()
 
         val findings = mutableListOf<Finding>()
         for (def in scopeFields) {
             if (def.key !in touchedKeys) continue
-            if (def.type != FieldType.CALCULATED.name) continue
+            if (def.fieldType != FieldType.CALCULATED) continue
             val formula = formulaOf(def)?.takeIf { it.isNotBlank() } ?: continue
             val problems = FormulaValidator.validate(
                 formula = formula,

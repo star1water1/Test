@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -1233,7 +1234,7 @@ class ExcelExporter(context: Context) {
         fieldValueMap: Map<Long, CharacterFieldValue>
     ): Map<Long, String> {
         if (fields.isEmpty()) return emptyMap()
-        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        val calculatedFields = fields.filter { it.fieldType == FieldType.CALCULATED }
         val calculatedResults: Map<Long, String> = if (calculatedFields.isNotEmpty()) {
             val fieldKeyValues = mutableMapOf<String, String>()
             for (f in fields) {
@@ -1255,7 +1256,7 @@ class ExcelExporter(context: Context) {
         } else emptyMap()
 
         return fields.associate { field ->
-            field.id to if (field.type == "CALCULATED") {
+            field.id to if (field.fieldType == FieldType.CALCULATED) {
                 calculatedResults[field.id] ?: ""
             } else {
                 fieldValueMap[field.id]?.value ?: ""

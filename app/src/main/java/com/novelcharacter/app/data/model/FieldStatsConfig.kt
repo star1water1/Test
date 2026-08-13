@@ -83,11 +83,19 @@ data class FieldStatsConfig(
 
             fun labels(): List<String> = entries.map { it.label }
 
-            fun forFieldType(fieldType: String): List<StatsType> = when (fieldType) {
-                "NUMBER", "CALCULATED" -> listOf(DISTRIBUTION, NUMERIC, RANKING)
-                "TEXT", "SELECT", "MULTI_TEXT", "GRADE" -> listOf(DISTRIBUTION, RANKING)
-                "BODY_SIZE" -> listOf(DISTRIBUTION, NUMERIC, RANKING)
-                else -> listOf(DISTRIBUTION, RANKING)
+            /**
+             * 이 타입에 열어 줄 분석 방법 (B-55 — 종전에는 타입 이름 문자열을 견줬다).
+             *
+             * **[NUMERIC]이 열리는가가 이 표의 전부다** — 값이 수로 읽히지 않는 타입에서
+             * 최소/최대/평균은 뜻이 없다. `null`(모르는 타입)은 [DISTRIBUTION]·[RANKING]만
+             * 주는데, 그 둘은 값을 **글자 그대로** 세므로 어떤 값이 와도 거짓을 말하지 않는다.
+             */
+            fun forFieldType(fieldType: FieldType?): List<StatsType> = when (fieldType) {
+                FieldType.NUMBER, FieldType.CALCULATED, FieldType.BODY_SIZE ->
+                    listOf(DISTRIBUTION, NUMERIC, RANKING)
+                FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT, FieldType.GRADE ->
+                    listOf(DISTRIBUTION, RANKING)
+                null -> listOf(DISTRIBUTION, RANKING)
             }
         }
     }

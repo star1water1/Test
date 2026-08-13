@@ -3461,7 +3461,7 @@ class TrashRepository(
             val entityType = ref?.entityType
             if (key == null || entityType == null) { lostLinks++; continue }
             val field = db.fieldDefinitionDao().getFieldByKey(universeId, key, entityType)
-            if (field == null || field.type != com.novelcharacter.app.data.model.FieldType.GRADE.name ||
+            if (field == null || field.fieldType != com.novelcharacter.app.data.model.FieldType.GRADE ||
                 GradeSystemRef.codeFromConfig(field.config) != null
             ) { lostLinks++; continue }
             val current = GradeSystemRef.gradesFromConfig(field.config)

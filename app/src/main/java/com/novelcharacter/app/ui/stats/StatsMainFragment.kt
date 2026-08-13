@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import com.novelcharacter.app.data.model.FieldType
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.launch
@@ -175,7 +176,7 @@ class StatsMainFragment : Fragment() {
                 }
 
                 // BODY_SIZE일 때만 파트 스피너 표시 (adapter만 교체, 리스너는 재등록하지 않음)
-                if (field.fieldDef.type == "BODY_SIZE" && field.bodySizeParts != null) {
+                if (field.fieldDef.fieldType == FieldType.BODY_SIZE && field.bodySizeParts != null) {
                     binding.rankingBodySizeRow.visibility = View.VISIBLE
                     val partAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, field.bodySizeParts)
                     partAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -370,7 +371,7 @@ class StatsMainFragment : Fragment() {
             return
         }
         val field = source.rankableField ?: return
-        val bodyPartIdx = if (field.fieldDef.type == "BODY_SIZE") selectedBodySizePartIndex else null
+        val bodyPartIdx = if (field.fieldDef.fieldType == FieldType.BODY_SIZE) selectedBodySizePartIndex else null
         viewModel.loadRanking(
             fieldDefIds = field.mergedFieldDefIds,
             ascending = currentAscending,

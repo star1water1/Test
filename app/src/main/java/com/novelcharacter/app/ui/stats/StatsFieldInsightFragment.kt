@@ -1006,7 +1006,7 @@ class StatsFieldInsightFragment : Fragment() {
         val density = resources.displayMetrics.density
         val pad = (16 * density).toInt()
 
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(fieldDef.type)
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(fieldDef.fieldType)
         val chartTypes = FieldStatsConfig.ChartType.entries
         val limitOptions = listOf(5, 10, 15, 20)
 

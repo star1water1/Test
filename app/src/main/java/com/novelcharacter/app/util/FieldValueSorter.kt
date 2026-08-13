@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.StructuredInputConfig
 
 /**
@@ -15,9 +16,24 @@ import com.novelcharacter.app.data.model.StructuredInputConfig
  */
 object FieldValueSorter {
 
-    /** 필드 타입이 수치 정렬 대상인지. (CALCULATED 포함 — 실제 계산은 호출부가 수행) */
-    fun isNumericSortType(type: String): Boolean =
-        type == "NUMBER" || type == "GRADE" || type == "BODY_SIZE" || type == "CALCULATED"
+    /**
+     * 필드 타입이 수치 정렬 대상인지. (CALCULATED 포함 — 실제 계산은 호출부가 수행)
+     *
+     * **"이 타입이 수를 내는가"의 단일 소스다** (B-55, 2026.08.13). 같은 집합이 종전에 세 벌로
+     * 적혀 있었다 — 여기 · 통계의 `NUMERIC_RANKING_TYPES` · 읽기 화면의 `numericTypes`. 셋이
+     * 우연히 같았을 뿐이고, **갈리면 목록에서 수로 줄 세워지는 필드가 통계에서는 빈도로 세지는**
+     * 모양이 된다. 위 KDoc이 이미 *"통계 랭킹과 동일한 하위 헬퍼를 재사용해 일치시킨다"*고
+     * 적어 두었으므로, 여기서는 그 약속을 함수 하나로 만든 것뿐이다.
+     *
+     * **`when`을 쓰고 `in setOf(...)`를 안 쓰는 것이 요점이다** — 집합은 타입이 늘어도 조용히
+     * 빠지지만 exhaustive `when`은 컴파일을 깨서 답을 강요한다(이 판의 전부).
+     */
+    fun isNumericSortType(type: FieldType?): Boolean = when (type) {
+        FieldType.NUMBER, FieldType.GRADE, FieldType.BODY_SIZE, FieldType.CALCULATED -> true
+        FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT -> false
+        // 모르는 타입은 수로 읽지 않는다 — 문자 정렬로 가면 적어도 값이 보인다.
+        null -> false
+    }
 
     /**
      * 수치형 필드값 → Double 비교키. 반드시 값이 속한 [ownerField](세계관별 config 차이 대응)로 해석한다.
@@ -25,10 +41,10 @@ object FieldValueSorter {
      */
     fun numericValue(ownerField: FieldDefinition, rawValue: String, bodySizePartIndex: Int?): Double? {
         if (rawValue.isBlank()) return null
-        return when (ownerField.type) {
-            "NUMBER" -> rawValue.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
-            "GRADE" -> GradeValueResolver.resolveFromConfig(ownerField, rawValue.trim())
-            "BODY_SIZE" -> {
+        return when (ownerField.fieldType) {
+            FieldType.NUMBER -> rawValue.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
+            FieldType.GRADE -> GradeValueResolver.resolveFromConfig(ownerField, rawValue.trim())
+            FieldType.BODY_SIZE -> {
                 val sic = StructuredInputConfig.fromConfig(ownerField.config)
                 val partIdx = (bodySizePartIndex ?: 0).coerceAtLeast(0)
                 val parts = if (sic.enabled) {
@@ -38,7 +54,11 @@ object FieldValueSorter {
                 }
                 parts.getOrNull(partIdx)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             }
-            else -> null
+            // CALCULATED는 캐릭터별 전체 필드맵이 필요해 호출부(ViewModel)가 계산한다 —
+            // [isNumericSortType]은 참인데 여기서 null인 유일한 타입이라 따로 적어 둔다.
+            FieldType.CALCULATED -> null
+            FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT -> null
+            null -> null
         }
     }
 

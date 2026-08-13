@@ -24,6 +24,7 @@ import com.novelcharacter.app.util.BodyAnalysisHelper
 import com.novelcharacter.app.util.BodyAnalysisResult
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.RankingInfo
+import com.novelcharacter.app.data.model.FieldType
 
 class DynamicFieldRenderer(
     private val containerGetter: () -> LinearLayout,
@@ -189,7 +190,7 @@ class DynamicFieldRenderer(
 
             for (field in groupFields) {
                 val fieldValue = valueMap[field.id]?.value ?: ""
-                val isCalculated = field.type == "CALCULATED"
+                val isCalculated = field.fieldType == FieldType.CALCULATED
                 val format = DisplayFormat.fromConfig(field.config)
 
                 if (!isCalculated && fieldValue.isNotEmpty() &&
@@ -500,7 +501,7 @@ class DynamicFieldRenderer(
         fields: List<FieldDefinition>,
         valueMap: Map<Long, CharacterFieldValue>
     ): Map<Long, String> {
-        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        val calculatedFields = fields.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
         // fieldKey → value 맵 구성
@@ -545,7 +546,7 @@ class DynamicFieldRenderer(
     ): BodyCardData? {
         // BODY_SIZE 필드 찾기 (SemanticRole 또는 type/key 기반)
         val bodySizeField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BODY_SIZE }
-            ?: fields.find { it.type == "BODY_SIZE" }
+            ?: fields.find { it.fieldType == FieldType.BODY_SIZE }
             ?: fields.find { it.key in listOf("body_size", "body_type", "three_sizes") }
             ?: return null
 

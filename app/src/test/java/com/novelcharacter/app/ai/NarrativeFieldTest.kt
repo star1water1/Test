@@ -64,13 +64,13 @@ class NarrativeFieldTest {
         // 편집 화면에서 설정 자체가 보이지 않는다(isEligibleType).
         for (t in listOf(FieldType.SELECT, FieldType.GRADE, FieldType.NUMBER,
                          FieldType.BODY_SIZE, FieldType.CALCULATED, FieldType.MULTI_TEXT)) {
-            assertFalse("$t 는 서술형 대상이 아니다", NarrativeMode.isEligibleType(t.name))
+            assertFalse("$t 는 서술형 대상이 아니다", NarrativeMode.isEligibleType(t))
             assertFalse(
                 "$t 에 narrative를 박아도 서술형이 되면 안 된다",
                 NarrativeMode.isNarrative(field(type = t, config = cfg("narrativeMode" to "narrative")))
             )
         }
-        assertTrue(NarrativeMode.isEligibleType(FieldType.TEXT.name))
+        assertTrue(NarrativeMode.isEligibleType(FieldType.TEXT))
     }
 
     @Test

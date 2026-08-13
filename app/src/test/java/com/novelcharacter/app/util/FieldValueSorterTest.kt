@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -86,9 +87,11 @@ class FieldValueSorterTest {
 
     @Test
     fun isNumericSortType_unchanged() {
-        assertEquals(true, FieldValueSorter.isNumericSortType("NUMBER"))
-        assertEquals(true, FieldValueSorter.isNumericSortType("BODY_SIZE"))
-        assertEquals(false, FieldValueSorter.isNumericSortType("MULTI_TEXT"))
+        assertEquals(true, FieldValueSorter.isNumericSortType(FieldType.NUMBER))
+        assertEquals(true, FieldValueSorter.isNumericSortType(FieldType.BODY_SIZE))
+        assertEquals(false, FieldValueSorter.isNumericSortType(FieldType.MULTI_TEXT))
+        // 모르는 타입(월드패키지·손으로 고친 DB로 들어올 수 있다)은 수로 읽지 않는다 — B-55.
+        assertEquals(false, FieldValueSorter.isNumericSortType(null))
     }
 
     @Test

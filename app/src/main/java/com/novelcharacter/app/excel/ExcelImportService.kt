@@ -3808,7 +3808,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 continue
             }
-            if (fieldDef.type == "CALCULATED") {
+            if (fieldDef.fieldType == FieldType.CALCULATED) {
                 if (getCellString(row, ci).isNotBlank() && droppedHeaders.add(col.header)) {
                     result.warnings.add(
                         "작품 시트의 '${col.header}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)"
@@ -4537,7 +4537,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         existingConfig: String?,
         result: ImportResult?
     ): String {
-        if (fieldType != FieldType.GRADE.name) return config
+        // 들어온 글자를 타입으로 좁혀 견준다 (B-55) — 모르는 글자는 등급이 아니므로 그대로 나간다.
+        if (FieldType.fromName(fieldType) != FieldType.GRADE) return config
         val ref = com.novelcharacter.app.data.model.GradeSystemRef
 
         suspend fun resolve(code: String?, name: String?): com.novelcharacter.app.data.model.GradeSystem? {
@@ -5014,7 +5015,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 // 계산 필드는 수식으로 산출되는 파생값 — 내보내기와 대칭으로 저장하지 않는다
-                if (fd.type == "CALCULATED") {
+                if (fd.fieldType == FieldType.CALCULATED) {
                     result.skippedRows++
                     result.warnings.add("$rowLabel: '${fd.name}'은(는) 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)")
                     continue
@@ -5153,7 +5154,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 // 계산 필드는 수식으로 산출되는 파생값 — 내보내기와 대칭으로 저장하지 않는다
-                if (fd.type == "CALCULATED") {
+                if (fd.fieldType == FieldType.CALCULATED) {
                     result.skippedRows++
                     result.warnings.add("$rowLabel: '${fd.name}'은(는) 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)")
                     continue
@@ -5265,7 +5266,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("$rowLabel: 필드 키 '$fieldKey'을(를) ${where}에서 찾을 수 없습니다 — '필드 정의' 시트(대상=사건)를 함께 가져오세요")
                     continue
                 }
-                if (fd.type == "CALCULATED") {
+                if (fd.fieldType == FieldType.CALCULATED) {
                     result.skippedRows++
                     result.warnings.add("$rowLabel: '${fd.name}'은(는) 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)")
                     continue
@@ -5502,7 +5503,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
-                    if (field.type == "CALCULATED") {
+                    if (field.fieldType == FieldType.CALCULATED) {
                         // U-10: 종전에는 **무통보 폐기**였다 — 엑셀에서 계산 열에 값을 적어 넣고
                         // 가져와도 아무 말 없이 사라져, 사용자는 반영된 줄 안다.
                         // 형제 경고(사건 시트·'캐릭터 필드값' 시트)와 같은 문구로 맞춘다.
@@ -5522,16 +5523,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val value = getCellString(row, colIndex, dateHint = isDateField)
                     // 필드 타입 검증 (F1-B): 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴)
                     if (value.isNotBlank()) {
-                        when (field.type) {
-                            "NUMBER" -> if (value.toDoubleOrNull() == null) {
+                        // **타입이 늘면 여기가 컴파일을 깬다** (B-55). 코틀린은 enum을 받는
+                        // `when` **문**도 전부 덮기를 요구하므로, 새 타입은 "이 값을 어떻게
+                        // 검증하는가"를 여기서 반드시 답하게 된다 — 종전(문자열 분기)에는
+                        // 아무 말 없이 검증 없는 타입이 하나 늘었다.
+                        when (field.fieldType) {
+                            FieldType.NUMBER -> if (value.toDoubleOrNull() == null) {
                                 result.warnings.add("캐릭터 행 $i: 숫자 필드 '${field.name}'에 숫자가 아닌 값 '$value'이(가) 저장됨 — 통계에서 제외될 수 있습니다")
                             }
-                            "GRADE" -> if (GradeValueResolver.resolveForDisplay(field, value) == null) {
+                            FieldType.GRADE -> if (GradeValueResolver.resolveForDisplay(field, value) == null) {
                                 result.warnings.add("캐릭터 행 $i: 등급 필드 '${field.name}'의 값 '$value'을(를) 인식할 수 없습니다 — 통계·수식에서 제외될 수 있습니다")
                             }
-                            "BODY_SIZE" -> if (!value.any { it.isDigit() }) {
+                            FieldType.BODY_SIZE -> if (!value.any { it.isDigit() }) {
                                 result.warnings.add("캐릭터 행 $i: 신체 사이즈 필드 '${field.name}'의 값 '$value'에 숫자가 없어 통계에 반영되지 않을 수 있습니다")
                             }
+                            // 글자·선택·복수 텍스트는 어떤 값이든 그 타입의 값이다 — 잴 것이 없다.
+                            FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT -> Unit
+                            // 계산 필드는 위에서 이미 `continue`로 걸러졌다(저장 대상이 아니다).
+                            FieldType.CALCULATED -> Unit
+                            // 모르는 타입 — 잣대가 없으니 재지 않는다. 값은 그대로 저장된다
+                            // (거부가 아니라 수용·교정. 개발 의도 4번).
+                            null -> Unit
                         }
                     }
                     // 별칭 표기 감지 — F1-B 원문 저장 원칙 유지(무편집 왕복 불변), 치환하지 않고 고지만 한다.
@@ -5758,7 +5770,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 계산 필드는 수식으로 산출되는 파생값 — 캐릭터 시트(F4)와 대칭으로 저장하지 않는다.
                         // resolvedFieldIds에도 넣지 않아 기존 행을 건드리지 않는다(잔여 행 정리는
                         // 편집 저장의 커버 규칙이 맡는다 — EventFieldValueMerge).
-                        if (fieldDef.type == "CALCULATED") {
+                        if (fieldDef.fieldType == FieldType.CALCULATED) {
                             if (getCellString(row, ci).isNotBlank() && droppedEntityFieldHeaders.add(col.header)) {
                                 result.warnings.add(
                                     "사건 시트의 '${col.header}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)"
@@ -7958,7 +7970,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     universeId = universe.id,
                     key = autoKey,
                     name = trimmedHeader,
-                    type = "TEXT",
+                    type = FieldType.TEXT.name,
                     groupName = "자동 생성",
                     displayOrder = maxOrder + 1 + autoCreateCount++
                 )

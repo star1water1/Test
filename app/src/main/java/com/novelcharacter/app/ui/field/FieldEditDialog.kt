@@ -145,10 +145,13 @@ class FieldEditDialog : DialogFragment() {
 
     private var fieldTypeSpinner: Spinner? = null
 
-    private fun currentFieldType(): String {
+    /**
+     * 지금 스피너가 가리키는 타입. 스피너는 [FieldType.entries] 순서로 채워지므로 위치가 곧
+     * 타입이다 — 위치가 범위를 벗어나면(스피너가 아직 안 붙었을 때) [FieldType.TEXT]다.
+     */
+    private fun currentFieldType(): FieldType {
         val pos = fieldTypeSpinner?.selectedItemPosition ?: 0
-        val types = FieldType.entries.toTypedArray()
-        return if (pos in types.indices) types[pos].name else "TEXT"
+        return FieldType.entries.getOrNull(pos) ?: FieldType.TEXT
     }
 
     /** [listener]가 false를 반환하면(예: 키 중복 거부) 다이얼로그가 닫히지 않고 입력이 유지된다. */
@@ -204,7 +207,7 @@ class FieldEditDialog : DialogFragment() {
                     universeFieldKeys = defs.map { it.key }.toSet()
                     // 편집 중인 필드는 뺀다 — 그 수식은 저장된 것이 아니라 지금 입력 중인 것이다.
                     calculatedFormulas = defs
-                        .filter { it.type == FieldType.CALCULATED.name && it.id != existingField?.id }
+                        .filter { it.fieldType == FieldType.CALCULATED && it.id != existingField?.id }
                         .mapNotNull { def -> formulaOf(def)?.let { def.key to it } }
                         .toMap()
                 } catch (_: Exception) { /* 로드 실패 시 키 존재·순환 검사만 생략 */ }
@@ -830,7 +833,7 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.MULTI_TEXT) View.VISIBLE else View.GONE
                 // 서술형은 TEXT에서만 성립한다(SELECT는 옵션 계약, NUMBER·BODY_SIZE는 형식 계약).
                 binding.narrativeModeLayout.visibility =
-                    if (NarrativeMode.isEligibleType(selectedType.name)) View.VISIBLE else View.GONE
+                    if (NarrativeMode.isEligibleType(selectedType)) View.VISIBLE else View.GONE
                 // 시스템 연동: CALCULATED 제외 + **이 종류에서 성립하는 역할이 있을 때만** (B-81).
                 // 두 조건 다 "성립하지 않으면 보이지 않는다"(R-24)의 같은 적용이다.
                 binding.semanticRoleLayout.visibility =
@@ -1213,7 +1216,7 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: String = currentFieldType()) {
+    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: FieldType? = currentFieldType()) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2232,9 +2235,9 @@ class FieldEditDialog : DialogFragment() {
         val density = resources.displayMetrics.density
         binding.analysisListContainer.removeAllViews()
         analysisRows.clear()
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.type)
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.fieldType)
         for (entry in statsConfig.analyses) {
-            addAnalysisRow(binding.analysisListContainer, density, field.type)
+            addAnalysisRow(binding.analysisListContainer, density, field.fieldType)
             val row = analysisRows.last()
             val typeIdx = allowedTypes.indexOf(entry.type)
             if (typeIdx >= 0) row.spinnerType.setSelection(typeIdx)
@@ -2280,7 +2283,7 @@ class FieldEditDialog : DialogFragment() {
         }
 
         // 체형 분석 설정 복원
-        if (field.type == "BODY_SIZE") {
+        if (field.fieldType == FieldType.BODY_SIZE) {
             val bodyConfig = BodyAnalysisConfig.fromConfig(field.config)
             // 컵 매핑 복원
             val density2 = resources.displayMetrics.density
@@ -2574,6 +2577,10 @@ class FieldEditDialog : DialogFragment() {
     } catch (_: Exception) { null }
 
     private fun checkTypeChangeImpact(field: FieldDefinition, oldType: String, newType: String) {
+        // **글자와 타입을 갈라 쓴다** (B-55): 확인창 문구는 사용자가 고른 그대로를 보여야 하므로
+        // 저장된 글자를 쓰고, 값이 살아남는가의 판정은 enum으로 한다. 한 번만 풀어 두 자리가
+        // 같은 답을 보게 한다 — 값마다 다시 풀면 목록이 길 때 그 비용이 값 수만큼 든다.
+        val newFieldType = FieldType.fromName(newType)
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         val fieldValueDao = app.database.characterFieldValueDao()
 
@@ -2590,7 +2597,7 @@ class FieldEditDialog : DialogFragment() {
                     return@launch
                 }
 
-                val compatible = nonEmptyValues.count { isValueCompatible(it.value, newType) }
+                val compatible = nonEmptyValues.count { isValueCompatible(it.value, newFieldType) }
                 val incompatible = nonEmptyValues.size - compatible
 
                 if (incompatible == 0) {
@@ -2604,7 +2611,7 @@ class FieldEditDialog : DialogFragment() {
                     .setMessage(getString(R.string.field_type_change_message,
                         oldType, newType, nonEmptyValues.size, compatible, incompatible))
                     .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
-                        resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newType)
+                        resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newFieldType)
                     }
                     .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                         setSaveButtonEnabled(true)
@@ -2626,7 +2633,7 @@ class FieldEditDialog : DialogFragment() {
         app: com.novelcharacter.app.NovelCharacterApp,
         field: FieldDefinition,
         nonEmptyValues: List<CharacterFieldValue>,
-        newType: String
+        newType: FieldType?
     ) {
         val fieldValueDao = app.database.characterFieldValueDao()
         lifecycleScope.launch(Dispatchers.IO) {
@@ -2658,7 +2665,7 @@ class FieldEditDialog : DialogFragment() {
      * 전역 기본 필드의 전파 미리보기가 **같은 물음을 세계관마다** 던지므로, 두 벌로 두면
      * *"미리보기가 괜찮다고 한 전파가 값을 지우는"* 어긋남이 생긴다(R-7).
      */
-    private fun isValueCompatible(value: String, newType: String): Boolean =
+    private fun isValueCompatible(value: String, newType: FieldType?): Boolean =
         com.novelcharacter.app.util.FieldTypeCompatibility.isValueCompatible(value, newType)
 
     /**
@@ -2759,7 +2766,7 @@ class FieldEditDialog : DialogFragment() {
         }
 
         // 서술형 여부 (TEXT 전용). AUTO는 키를 쓰지 않는다 — 기본값과 명시적 자동을 구분할 이유가 없다.
-        if (NarrativeMode.isEligibleType(type.name)) {
+        if (NarrativeMode.isEligibleType(type)) {
             val mode = NarrativeMode.entries[binding.spinnerNarrativeMode.selectedItemPosition]
             if (mode != NarrativeMode.AUTO) config["narrativeMode"] = mode.key
         }
@@ -3034,7 +3041,7 @@ class FieldEditDialog : DialogFragment() {
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
         val enabled = binding.switchStatsEnabled.isChecked
 
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type.name)
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type)
         val analyses = analysisRows.map { row ->
             val chartTypes = FieldStatsConfig.ChartType.entries
             val typePos = row.spinnerType.selectedItemPosition.coerceIn(0, allowedTypes.size - 1)

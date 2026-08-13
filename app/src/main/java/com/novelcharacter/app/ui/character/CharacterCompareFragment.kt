@@ -19,6 +19,7 @@ import android.widget.Toast
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 class CharacterCompareFragment : Fragment() {
 
@@ -86,7 +87,7 @@ class CharacterCompareFragment : Fragment() {
                             valueMap[field.key] = v
                         }
                         // CALCULATED 필드: FormulaEvaluator로 실시간 계산
-                        val calculatedFields = sortedFields.filter { it.type == "CALCULATED" }
+                        val calculatedFields = sortedFields.filter { it.fieldType == FieldType.CALCULATED }
                         if (calculatedFields.isNotEmpty()) {
                             val evaluator = com.novelcharacter.app.util.FormulaEvaluator(valueMap, fields)
                             for (field in calculatedFields) {

@@ -45,15 +45,20 @@ object FieldTypeCompatibility {
      *
      * **빈 값은 묻지 않는다** — 부르는 쪽이 미리 거른다(빈 값은 어느 타입으로도 빈 값이다).
      */
-    fun isValueCompatible(value: String, newType: String): Boolean = when (newType) {
-        FieldType.NUMBER.name -> value.toDoubleOrNull() != null
-        FieldType.GRADE.name -> value.toIntOrNull() != null
-        FieldType.SELECT.name, FieldType.TEXT.name, FieldType.MULTI_TEXT.name -> true
+    fun isValueCompatible(value: String, newType: FieldType?): Boolean = when (newType) {
+        FieldType.NUMBER -> value.toDoubleOrNull() != null
+        FieldType.GRADE -> value.toIntOrNull() != null
+        FieldType.SELECT, FieldType.TEXT, FieldType.MULTI_TEXT -> true
         // 구조화 입력은 기존 텍스트와 호환되지 않는다.
-        FieldType.BODY_SIZE.name -> false
+        FieldType.BODY_SIZE -> false
         // 수식 필드의 값은 파생이라 기존 저장값과 무관하다.
-        FieldType.CALCULATED.name -> false
-        else -> true
+        FieldType.CALCULATED -> false
+        // 모르는 타입으로는 바꿀 수 없다 — 고를 길이 화면에 없다. 종전 `else -> true`가
+        // 이 자리를 덮고 있었고, **그 기본값의 방향이 나빴다** (B-55): 새 타입을 하나 더하면
+        // 이 함수는 아무 말 없이 *"값이 전부 살아남는다"*고 답한다. 그 답을 믿고 화면은
+        // 확인창을 건너뛰고, 전파는 "못 버티는 값 0개"라 예고한다 — 둘 다 거짓일 수 있다.
+        // 이제 `when`이 전부를 덮으므로 새 타입은 여기서 컴파일을 깨고 답을 받아 간다.
+        null -> true
     }
 
     /**
@@ -64,6 +69,6 @@ object FieldTypeCompatibility {
      *
      * **이 수가 곧 "지워질 수"는 아니다** — 무엇을 할지는 부르는 쪽이 정한다(위 표).
      */
-    fun incompatibleCount(values: List<String>, newType: String): Int =
+    fun incompatibleCount(values: List<String>, newType: FieldType?): Int =
         values.count { it.isNotBlank() && !isValueCompatible(it, newType) }
 }

@@ -65,25 +65,29 @@ object FieldValueTypeMismatch {
      */
     fun reasonFor(fieldDef: FieldDefinition, value: String): Reason? {
         if (value.isBlank()) return null
-        return when (fieldDef.type) {
+        return when (fieldDef.fieldType) {
             // 같은 질문이라 위임한다 — 두 벌로 적으면 전파가 센 것을 건강도가 못 찾는다.
-            FieldType.NUMBER.name ->
-                if (FieldTypeCompatibility.isValueCompatible(value, FieldType.NUMBER.name)) null
+            FieldType.NUMBER ->
+                if (FieldTypeCompatibility.isValueCompatible(value, FieldType.NUMBER)) null
                 else Reason.NOT_A_NUMBER
 
             // 등급은 라벨이라 config의 실효 표를 봐야 안다. 표가 통째로 없는 필드도 여기서
             // 걸리는데, 그것도 참이다 — 그 필드의 모든 값이 수식에서 0.0으로 읽힌다.
-            FieldType.GRADE.name ->
+            FieldType.GRADE ->
                 if (GradeValueResolver.resolveFromConfig(fieldDef, value) != null) null
                 else Reason.UNKNOWN_GRADE
 
             // 파트 하나라도 수치로 읽히면 체형 값으로 동작한다(부분 입력은 정상이다).
             // 하나도 못 읽는 것만이 "이 값은 체형이 아니다"이다.
-            FieldType.BODY_SIZE.name ->
+            FieldType.BODY_SIZE ->
                 if (BodyMeasurements.splitPlain(value).any { BodyMeasurements.parseNumber(it) != null }) null
                 else Reason.NOT_MEASUREMENTS
 
-            else -> null
+            // 글자·선택·복수 텍스트는 어떤 값이든 그 타입의 값이다 — 안 맞을 수가 없다.
+            // CALCULATED는 저장 행이 아니라 파생이라 잴 값이 없고, 모르는 타입은 잣대가 없다
+            // (있지도 않은 잣대로 "안 맞는다"고 하면 건강도가 거짓을 말한다 — B-55).
+            FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT,
+            FieldType.CALCULATED, null -> null
         }
     }
 }

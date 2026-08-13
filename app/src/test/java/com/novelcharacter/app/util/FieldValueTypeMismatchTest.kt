@@ -51,7 +51,7 @@ class FieldValueTypeMismatchTest {
         listOf("170", "170.5", "-3", "abc", "1,000", " ", "12cm").forEach { v ->
             val mismatched = FieldValueTypeMismatch.reasonFor(field(FieldType.NUMBER), v) != null
             val incompatible = v.isNotBlank() &&
-                !FieldTypeCompatibility.isValueCompatible(v, FieldType.NUMBER.name)
+                !FieldTypeCompatibility.isValueCompatible(v, FieldType.NUMBER)
             assertEquals(v, incompatible, mismatched)
         }
     }
@@ -77,7 +77,7 @@ class FieldValueTypeMismatchTest {
         }
         // 되돌리기 방지: 전파의 판정이라면 셋 다 "안 맞는다"고 답한다.
         listOf("S", "A", "B").forEach {
-            assertEquals(false, FieldTypeCompatibility.isValueCompatible(it, FieldType.GRADE.name))
+            assertEquals(false, FieldTypeCompatibility.isValueCompatible(it, FieldType.GRADE))
         }
     }
 
@@ -110,7 +110,7 @@ class FieldValueTypeMismatchTest {
         }
         assertEquals(
             false,
-            FieldTypeCompatibility.isValueCompatible("86-60-88", FieldType.BODY_SIZE.name)
+            FieldTypeCompatibility.isValueCompatible("86-60-88", FieldType.BODY_SIZE)
         )
     }
 

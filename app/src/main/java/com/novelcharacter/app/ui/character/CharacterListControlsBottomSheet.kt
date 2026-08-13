@@ -19,6 +19,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetCharacterControlsBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 /**
  * 통합 목록 컨트롤 시트 — 프리셋 / 정렬(기준+방향) / 필터를 한 표면에 담는다.
@@ -216,7 +217,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
     private fun updateBodyPartVisibility() {
         val isField = binding.sortKindGroup.checkedRadioButtonId == binding.rbField.id
         val field = if (isField) fields.getOrNull(binding.spinnerSortField.selectedItemPosition) else null
-        if (field != null && field.type == "BODY_SIZE" && field.bodySizePartLabels.isNotEmpty()) {
+        if (field != null && field.fieldType == FieldType.BODY_SIZE && field.bodySizePartLabels.isNotEmpty()) {
             val ctx = context ?: return
             binding.spinnerBodyPart.adapter = ArrayAdapter(
                 ctx, android.R.layout.simple_spinner_dropdown_item, field.bodySizePartLabels
@@ -403,7 +404,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         val (kind, fieldKey) = selectedSortKind()
         val field = if (kind == CharacterListPreset.SORT_FIELD)
             fields.getOrNull(binding.spinnerSortField.selectedItemPosition) else null
-        val partIndex = if (field?.type == "BODY_SIZE") binding.spinnerBodyPart.selectedItemPosition.takeIf { it >= 0 } else null
+        val partIndex = if (field?.fieldType == FieldType.BODY_SIZE) binding.spinnerBodyPart.selectedItemPosition.takeIf { it >= 0 } else null
         val ascending = if (kind == CharacterListPreset.SORT_MANUAL) true
                         else binding.dirToggleGroup.checkedButtonId == binding.btnDirAsc.id
         val sort = CharacterSort(kind, fieldKey, ascending, partIndex, selectedDuelAxisCode())

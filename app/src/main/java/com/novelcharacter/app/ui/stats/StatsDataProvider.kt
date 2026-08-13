@@ -7,6 +7,7 @@ import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldValueMatchSpec
+import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FieldValueMatcher
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.FieldValueTypeMismatch
@@ -1195,7 +1196,7 @@ class StatsDataProvider {
             // 않는다 — 그러나 위 `fieldDefinitions` 필터가 **저장 행이 없는 계산 필드를
             // 정의째 걷어내므로**, 고지가 없으면 사용자에게는 그 필드가 *존재하지 않는* 것처럼
             // 보인다. 세는 것은 원본 스냅샷의 계산 필드다(이 스코프에는 이미 하나도 없다).
-            calculatedUnavailable = s.fieldDefinitions.count { it.type == "CALCULATED" }
+            calculatedUnavailable = s.fieldDefinitions.count { it.fieldType == FieldType.CALCULATED }
         )
     }
 
@@ -2018,7 +2019,7 @@ class StatsDataProvider {
         statsConfig: FieldStatsConfig,
         entry: FieldStatsConfig.AnalysisEntry
     ): List<AnalysisResult> {
-        if (fd.type == "BODY_SIZE") {
+        if (fd.fieldType == FieldType.BODY_SIZE) {
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
             val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
@@ -2105,7 +2106,7 @@ class StatsDataProvider {
         // 지워, 카드가 "채움 20"이라 해놓고 분포 합은 15인 상태를 아무 설명 없이 만들었다.
         // 세계관마다 구간이 다른 필드를 합산할 때는 형제 세계관 값이 통째로 사라지기도 한다.
         // 값이 있는데 안 보이는 것보다, 어디에도 안 든다는 사실을 보여 주는 편이 낫다(R-17).
-        if (fd.type in BINNABLE_TYPES && statsConfig.binning?.mode == "custom") {
+        if (isBinnable(fd.fieldType) && statsConfig.binning?.mode == "custom") {
             return categorized.map { v ->
                 val numeric = v.toFloatOrNull()
                 numeric?.let { statsConfig.applyBinning(it) } ?: OUT_OF_RANGE_LABEL
@@ -2448,7 +2449,7 @@ class StatsDataProvider {
 
     /** 한 캐릭터가 여러 값을 가질 수 있는 필드인가 (교차분석 해석 고지용) */
     private fun isMultiValueField(fd: FieldDefinition): Boolean {
-        if (fd.type == "BODY_SIZE") return true
+        if (fd.fieldType == FieldType.BODY_SIZE) return true
         if (StructuredInputConfig.fromConfig(fd.config).enabled) return true
         return FieldValueTokenizer.isMultiToken(fd)
     }
@@ -2476,7 +2477,7 @@ class StatsDataProvider {
         )
 
         // 개별 필드별 완성도 (CALCULATED 필드 제외). 미배정 스코프 모수 = 스코프 캐릭터 전체
-        val fieldCompletionDetails = s.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
+        val fieldCompletionDetails = s.fieldDefinitions.filter { it.fieldType != FieldType.CALCULATED }.map { fd ->
             val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
             val relevantChars = if (s.unassignedScope) s.characters
                 else s.characters.filter { it.novelId in universeNovels }
@@ -2546,7 +2547,7 @@ class StatsDataProvider {
         val fieldValueDists = mutableListOf<FieldValueDistribution>()
 
         // ── 이산 값 분포: 값 자체가 분포 키이므로 드릴다운도 값 일치 ──
-        for (fd in analyzableFields.filter { it.type in DISCRETE_DISTRIBUTION_TYPES }) {
+        for (fd in analyzableFields.filter { isDiscreteDistribution(it.fieldType) }) {
             val values = valuesByFieldDef[fd.id] ?: continue
             val statsConfig = statsCache.of(fd)
             val dist = ValueDistributions.of(
@@ -2566,7 +2567,7 @@ class StatsDataProvider {
         // 사용자 구간은 getFieldValues가 구간 라벨을 돌려주므로 라벨이 곧 파싱 값이다(값 일치).
         // 자동 구간은 라벨이 **계산 결과**라 값 일치가 성립하지 않으므로 구간 규칙 자체를
         // 스펙으로 싣는다 — BODY_SIZE 파트 분포가 아래에서 쓰는 그 길이다(B-39).
-        for (fd in analyzableFields.filter { it.type in BINNABLE_TYPES }) {
+        for (fd in analyzableFields.filter { isBinnable(it.fieldType) }) {
             val statsConfig = statsCache.of(fd)
             val values = valuesByFieldDef[fd.id] ?: continue
             if (statsConfig.binning?.mode != "custom") {
@@ -2619,7 +2620,7 @@ class StatsDataProvider {
         // 라벨("160~170")은 **계산 결과**라 저장값과 절대 같지 않다. 종전에는 그 라벨을
         // 드릴다운 매칭 키로 그대로 넘겨 어떤 입력에서도 0명이 나왔다(S-16). 이제 구간을
         // 만든 규칙 자체를 스펙으로 실어 보내고, 구간 생성은 [NumericBinning]이 단일 소스다.
-        for (fd in analyzableFields.filter { it.type == "BODY_SIZE" }) {
+        for (fd in analyzableFields.filter { it.fieldType == FieldType.BODY_SIZE }) {
             val rawValues = valuesByFieldDef[fd.id] ?: continue
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
@@ -2653,7 +2654,7 @@ class StatsDataProvider {
         val numberSummaries = mutableListOf<NumberFieldSummary>()
 
         // NUMBER와 CALCULATED는 같은 수치다 — 수식 필드라고 요약에서 빠질 이유가 없다(S-15).
-        for (fd in analyzableFields.filter { it.type in BINNABLE_TYPES }) {
+        for (fd in analyzableFields.filter { isBinnable(it.fieldType) }) {
             val raw = valuesByFieldDef[fd.id] ?: continue
             val values = NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
             if (values.isEmpty()) continue
@@ -2662,7 +2663,7 @@ class StatsDataProvider {
         }
 
         // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median)
-        for (fd in analyzableFields.filter { it.type == "BODY_SIZE" }) {
+        for (fd in analyzableFields.filter { it.fieldType == FieldType.BODY_SIZE }) {
             val rawValues = valuesByFieldDef[fd.id] ?: continue
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
@@ -2686,7 +2687,7 @@ class StatsDataProvider {
         // 메모성 필드를 분석에서 뺀 사용자가 그 필드의 입력 누락까지 안 보이길 원한다고
         // 볼 근거가 없다(예외에는 이유를 적는다 — R-16).
         val fieldCompletionDetails = s.fieldDefinitions
-            .filter { it.type != "CALCULATED" }
+            .filter { it.fieldType != FieldType.CALCULATED }
             .map { fd ->
                 // 이 필드가 속한 유니버스의 캐릭터들. 미배정 스코프 모수 = 스코프 캐릭터 전체
                 val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
@@ -3285,10 +3286,10 @@ class StatsDataProvider {
         }
 
         // 저장 값을 가진 def (CALCULATED는 저장 행이 없다)
-        if (defById.values.any { it.type != "CALCULATED" }) {
+        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
             for (fv in s.fieldValues) {
                 if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.characterId, fv.value)
                 }
@@ -3296,7 +3297,7 @@ class StatsDataProvider {
         }
 
         // CALCULATED def: FormulaEvaluator 계산값으로 매칭
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllCalculatedValues(s)
             for ((charId, fieldMap) in calculatedValues) {
@@ -3355,17 +3356,17 @@ class StatsDataProvider {
             )
         }
 
-        if (defById.values.any { it.type != "CALCULATED" }) {
+        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
             for (fv in s.eventFieldValues) {
                 if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.eventId, fv.value)
                 }
             }
         }
 
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllEventCalculatedValues(s)
             for ((eventId, fieldMap) in calculatedValues) {
@@ -3413,17 +3414,17 @@ class StatsDataProvider {
             )
         }
 
-        if (defById.values.any { it.type != "CALCULATED" }) {
+        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
             for (fv in s.novelFieldValues) {
                 if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.novelId, fv.value)
                 }
             }
         }
 
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllNovelCalculatedValues(s)
             for ((novelId, fieldMap) in calculatedValues) {
@@ -3468,7 +3469,7 @@ class StatsDataProvider {
         // 기준 def(fieldDefIds.first())로 파싱해야 값 공간이 일치하고 인원이 %와 어긋나지 않는다
         // (같은 필드라도 세계관별 config(값 카테고리 등)가 다를 때의 과소/과대집계 방지).
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
-        if (refDef.type != "CALCULATED") {
+        if (refDef.fieldType != FieldType.CALCULATED) {
             val refCfg = FieldStatsConfig.fromConfig(refDef.config)
             // 관련 def 값만 순회 — 편향 카드마다 전체 fieldValues를 스캔하던 것 방지(P1-D).
             // 사전 그룹([valuesByDefId])이 있으면 재사용해 카드 수 × 전체스캔의 제곱 폭발을 없앤다.
@@ -3479,7 +3480,7 @@ class StatsDataProvider {
                 if (parsed.isNotEmpty()) perChar.getOrPut(fv.characterId) { mutableSetOf() }.addAll(parsed)
             }
         }
-        val calcDefs = defById.values.filter { it.type == "CALCULATED" }
+        val calcDefs = defById.values.filter { it.fieldType == FieldType.CALCULATED }
         if (calcDefs.isNotEmpty()) {
             val calc = computeAllCalculatedValues(s)
             for ((charId, fieldMap) in calc) {
@@ -3557,12 +3558,12 @@ class StatsDataProvider {
         for (fv in s.fieldValues) {
             if (fv.fieldDefinitionId !in idSet) continue
             if (fv.characterId !in characterIds) continue
-            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.characterId, fv.value)
         }
 
         // CALCULATED 계산값 — 부분집합(characterIds)만 집계한다
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllCalculatedValues(s)
             for (charId in characterIds) {
@@ -3616,11 +3617,11 @@ class StatsDataProvider {
         for (fv in s.eventFieldValues) {
             if (fv.fieldDefinitionId !in idSet) continue
             if (fv.eventId !in eventIds) continue
-            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.eventId, fv.value)
         }
 
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllEventCalculatedValues(s)
             for (eventId in eventIds) {
@@ -3670,11 +3671,11 @@ class StatsDataProvider {
         for (fv in s.novelFieldValues) {
             if (fv.fieldDefinitionId !in idSet) continue
             if (fv.novelId !in novelIds) continue
-            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.novelId, fv.value)
         }
 
-        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllNovelCalculatedValues(s)
             for (novelId in novelIds) {
@@ -3726,13 +3727,15 @@ class StatsDataProvider {
      * 스피너가 괄호 안에 적는 종류 표시. **계산과 같은 표를 본다** — 리터럴을 화면에 따로
      * 두면 타입이 늘 때 목록만 뒤처져 사용자에게 거짓을 말한다(`getRankableFields`의 주석).
      */
-    fun rankingTypeLabel(type: String): String = when (type) {
-        "NUMBER" -> "숫자"
-        "CALCULATED" -> "계산"
-        "GRADE" -> "등급"
-        "BODY_SIZE" -> "신체"
-        "SELECT", "TEXT", "MULTI_TEXT" -> "빈도"
-        else -> type
+    fun rankingTypeLabel(fd: FieldDefinition): String = when (fd.fieldType) {
+        FieldType.NUMBER -> "숫자"
+        FieldType.CALCULATED -> "계산"
+        FieldType.GRADE -> "등급"
+        FieldType.BODY_SIZE -> "신체"
+        FieldType.SELECT, FieldType.TEXT, FieldType.MULTI_TEXT -> "빈도"
+        // 모르는 타입은 **저장된 글자를 그대로 보인다** (B-55 — 종전 `else -> type`과 같은 답).
+        // 정의를 통째로 받는 것이 그래서다: 이름을 잃으면 사용자가 무엇이 잘못됐는지 못 본다.
+        null -> fd.type
     }
 
     fun getRankableFields(s: StatsSnapshot, universeId: Long?): List<RankableField> {
@@ -3755,11 +3758,11 @@ class StatsDataProvider {
 
         return grouped.map { (_, fds) ->
             val primaryFd = fds.first()
-            val type = primaryFd.type
+            val type = primaryFd.fieldType
             // 순위 화면이 "빈도"라고 표시할지 "수치"라고 표시할지는 계산과 **같은 표**를 봐야 한다.
             // 리터럴을 따로 두면 타입이 늘 때 목록 화면만 뒤처져 사용자에게 거짓을 말한다.
-            val isNumeric = type in NUMERIC_RANKING_TYPES
-            val bodySizeParts = if (type == "BODY_SIZE") {
+            val isNumeric = isNumericRanking(type)
+            val bodySizeParts = if (type == FieldType.BODY_SIZE) {
                 val sic = StructuredInputConfig.fromConfig(primaryFd.config)
                 if (sic.enabled && sic.parts.isNotEmpty()) {
                     sic.parts.map { it.label }
@@ -3787,7 +3790,7 @@ class StatsDataProvider {
             RankingSource(
                 isDuel = false,
                 label = field.fieldDef.name,
-                typeLabel = rankingTypeLabel(field.fieldDef.type),
+                typeLabel = rankingTypeLabel(field.fieldDef),
                 rankableField = field
             )
         }
@@ -3894,7 +3897,7 @@ class StatsDataProvider {
 
         val charMap = s.characters.associateBy { it.id }
         val novelMap = s.novels.associateBy { it.id }
-        val isNumeric = fd.type in NUMERIC_RANKING_TYPES
+        val isNumeric = isNumericRanking(fd.fieldType)
 
         // 관련 세계관 ID 집합 (머지된 모든 필드의 세계관). 미배정 스코프 모수 = 스코프 캐릭터 전체
         // (novelId 경유 시 모수 0 → noValueCount 음수 결함까지 함께 해소)
@@ -3929,8 +3932,8 @@ class StatsDataProvider {
         // 계산은 [computeAllCalculatedNumbers] **하나**가 한다. 종전에는 이 자리에 수식 평가가
         // 다시 구현돼 있어 단일 소스 규약이 깨져 있었고, 서식이 `%.1f`(여기) 대 `%.2f`(그쪽)로
         // 갈려 같은 필드가 순위표와 분포에서 다른 값으로 보였다(B-33).
-        if (fd.type == "CALCULATED") {
-            val calcDefIds = allFds.filter { it.type == "CALCULATED" }.map { it.id }.toSet()
+        if (fd.fieldType == FieldType.CALCULATED) {
+            val calcDefIds = allFds.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }.toSet()
             val defUniverseById = allFds.associate { it.id to it.universeId }
             val numbers = computeAllCalculatedNumbers(s)
             for ((charId, byField) in numbers) {
@@ -3982,8 +3985,8 @@ class StatsDataProvider {
                 val ownerFd = fieldDefMap[fv.fieldDefinitionId] ?: fd
                 val ownerUniverseId = ownerFd.universeId
 
-                when (fd.type) {
-                    "NUMBER" -> {
+                when (fd.fieldType) {
+                    FieldType.NUMBER -> {
                         val v = fv.value.toDoubleOrNull()
                         if (v != null && v.isFinite()) {
                             // 표시는 **저장 원문**이다(GRADE·BODY_SIZE와 같은 규칙). 다시 서식하면
@@ -3992,7 +3995,7 @@ class StatsDataProvider {
                             putValue(CharValue(char.id, v, fv.value.trim()), ownerUniverseId)
                         } else parseFailed++
                     }
-                    "GRADE" -> {
+                    FieldType.GRADE -> {
                         // 값이 속한 FieldDefinition의 config으로 등급 해석 (세계관별 맵핑 차이 대응).
                         // 저장값이 **별칭**일 수 있다(값 라이브러리). 분포는 canonical로 접어 세므로
                         // 등급 해석만 원문으로 조회하면 차트에는 있는 캐릭터가 순위에서만 빠진다.
@@ -4003,7 +4006,7 @@ class StatsDataProvider {
                             putValue(CharValue(char.id, numericValue, fv.value), ownerUniverseId)
                         } else parseFailed++
                     }
-                    "BODY_SIZE" -> {
+                    FieldType.BODY_SIZE -> {
                         // 값이 속한 FieldDefinition의 config으로 파싱 (세계관별 separator 차이 대응)
                         val sic = StructuredInputConfig.fromConfig(ownerFd.config)
                         val partIdx = (bodySizePartIndex ?: 0).coerceAtLeast(0)
@@ -4017,8 +4020,13 @@ class StatsDataProvider {
                             putValue(CharValue(char.id, partValue, fv.value), ownerUniverseId)
                         } else parseFailed++
                     }
-                    else -> {
-                        // 빈도 모드: SELECT, TEXT, MULTI_TEXT + 콤마 목록 표시 형식 TEXT까지 동일 경로.
+                    // 빈도 모드: SELECT, TEXT, MULTI_TEXT + 콤마 목록 표시 형식 TEXT까지 동일 경로.
+                    // **CALCULATED는 여기 못 온다** — 바깥 갈래가 이미 갈랐다(아래 `} // else
+                    // (non-CALCULATED)`). 그래도 적는 것은 `when`을 전부 덮게 해 새 타입이
+                    // 조용히 빠지지 않게 하기 위해서다. 모르는 타입도 이 경로가 맞다 —
+                    // 값을 **글자 그대로** 세므로 어떤 값이 와도 거짓을 말하지 않는다(B-55).
+                    FieldType.SELECT, FieldType.TEXT, FieldType.MULTI_TEXT,
+                    FieldType.CALCULATED, null -> {
                         // 한 캐릭터가 여러 토큰을 가지면 **가장 흔한 토큰**을 대표로 삼는다
                         // (종전 MULTI_TEXT 규칙을 모든 다중값 필드로 넓힌 것이다).
                         val tokens = tokensByValue[fv.characterId to fv.fieldDefinitionId].orEmpty()
@@ -4174,7 +4182,7 @@ class StatsDataProvider {
         java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, Double>>>()
 
     private fun evaluateAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
-        val calculatedFields = s.fieldDefinitions.filter { it.type == "CALCULATED" }
+        val calculatedFields = s.fieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val novelMap = s.novels.associateBy { it.id }
@@ -4186,7 +4194,7 @@ class StatsDataProvider {
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
         val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
-            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+            val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
                     org.json.JSONObject(fd.config).optString("formula", "")
                 } catch (_: Exception) { "" }
@@ -4234,7 +4242,7 @@ class StatsDataProvider {
      * @return Map<eventId, Map<fieldDefinitionId, 계산값 문자열>>
      */
     private fun computeAllEventCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
-        val calculatedFields = s.eventFieldDefinitions.filter { it.type == "CALCULATED" }
+        val calculatedFields = s.eventFieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.eventFieldDefinitions.groupBy { it.universeId }
@@ -4244,7 +4252,7 @@ class StatsDataProvider {
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
         val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
-            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+            val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
                     org.json.JSONObject(fd.config).optString("formula", "")
                 } catch (_: Exception) { "" }
@@ -4294,7 +4302,7 @@ class StatsDataProvider {
      * @return Map<novelId, Map<fieldDefinitionId, 계산값 문자열>>
      */
     private fun computeAllNovelCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
-        val calculatedFields = s.novelFieldDefinitions.filter { it.type == "CALCULATED" }
+        val calculatedFields = s.novelFieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.novelFieldDefinitions.groupBy { it.universeId }
@@ -4304,7 +4312,7 @@ class StatsDataProvider {
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
         val calcFieldsByUniverse = mutableMapOf<Long?, List<CalcFieldInfo>>()
         for ((universeId, fields) in fieldDefByUniverse) {
-            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+            val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
                     org.json.JSONObject(fd.config).optString("formula", "")
                 } catch (_: Exception) { "" }
@@ -4364,11 +4372,32 @@ class StatsDataProvider {
          */
         private val DRILLDOWN_GSON = com.google.gson.Gson()
 
-        /** 사용자 구간(binning) 설정을 받는 수치형 타입. 타입이 늘면 여기만 고친다. */
-        private val BINNABLE_TYPES = setOf("NUMBER", "CALCULATED")
+        /**
+         * 사용자 구간(binning) 설정을 받는 **연속 수치** 타입.
+         *
+         * 집합이 아니라 `when`인 것이 요점이다 (B-55) — 종전 주석은 *"타입이 늘면 여기만
+         * 고친다"*였는데, 집합은 **안 고쳐도 아무 일이 없다.** 새 타입은 구간 설정이 조용히
+         * 안 뜨고 사용자는 그것이 의도인지 누락인지 알 길이 없다.
+         *
+         * [FieldType.GRADE]·[FieldType.BODY_SIZE]가 빠진 것은 수를 못 내서가 아니라
+         * **연속값이 아니어서다** — 등급은 라벨이 유한하고, 체형은 파트를 먼저 골라야 한다.
+         */
+        private fun isBinnable(type: FieldType?): Boolean = when (type) {
+            FieldType.NUMBER, FieldType.CALCULATED -> true
+            FieldType.GRADE, FieldType.BODY_SIZE -> false
+            FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT -> false
+            null -> false
+        }
 
-        /** 순위에서 값을 수치로 해석하는 타입(그 외는 빈도 모드). */
-        private val NUMERIC_RANKING_TYPES = setOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+        /**
+         * 순위에서 값을 수치로 해석하는 타입(그 외는 빈도 모드).
+         *
+         * **판정은 [FieldValueSorter.isNumericSortType]가 한다** (B-55) — 같은 집합이 종전에
+         * 세 벌이었고(여기 · 그쪽 · 읽기 화면), 갈리면 목록에서 수로 줄 세워지는 필드가
+         * 통계에서는 빈도로 세진다. 위 KDoc이 이미 *"계산과 같은 표를 본다"*고 적어 둔 약속이다.
+         */
+        private fun isNumericRanking(type: FieldType?): Boolean =
+            FieldValueSorter.isNumericSortType(type)
 
         /** 사용자 구간 어디에도 들지 않는 값의 표시 키 — 조용히 버리지 않는다(R-17). */
         const val OUT_OF_RANGE_LABEL = "구간 밖"
@@ -4376,8 +4405,13 @@ class StatsDataProvider {
         /** 계산값 캐시가 들고 있을 스냅샷 수 상한 — 넘으면 통째로 비운다(무한 축적 방지). */
         private const val MAX_CACHED_SNAPSHOTS = 4
 
-        /** 레거시 필드 분석 화면이 이산 분포를 그리는 타입. */
-        private val DISCRETE_DISTRIBUTION_TYPES = setOf("SELECT", "GRADE", "MULTI_TEXT", "TEXT")
+        /** 레거시 필드 분석 화면이 이산 분포를 그리는 타입 (B-55 — 종전 집합). */
+        private fun isDiscreteDistribution(type: FieldType?): Boolean = when (type) {
+            FieldType.SELECT, FieldType.GRADE, FieldType.MULTI_TEXT, FieldType.TEXT -> true
+            // 연속값은 구간(binning) 쪽이 그린다. CALCULATED는 저장 행이 없어 별도 경로다.
+            FieldType.NUMBER, FieldType.CALCULATED, FieldType.BODY_SIZE -> false
+            null -> false
+        }
 
         /**
          * '입력이 미흡하다'로 세는 완성도 하한(%).

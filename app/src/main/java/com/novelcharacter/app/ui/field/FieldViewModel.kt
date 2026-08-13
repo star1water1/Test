@@ -20,6 +20,7 @@ import com.novelcharacter.app.util.reportResult
 import android.util.Log
 import com.novelcharacter.app.util.DetailListSort
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -431,7 +432,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     ): List<FieldDefinition> {
         val allFields = fieldsOf(universeId, entityType)
         return allFields.filter { field ->
-            if (field.type != "CALCULATED") return@filter false
+            if (field.fieldType != FieldType.CALCULATED) return@filter false
             val formula = try {
                 org.json.JSONObject(field.config).optString("formula", "")
             } catch (_: Exception) { "" }

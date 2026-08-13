@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.model
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -41,7 +42,12 @@ data class FieldDefinition(
     val universeId: Long?,
     val key: String,               // 고유 키: "mana_affinity"
     val name: String,              // 표시 이름: "마나친화"
-    val type: String,              // FieldType.name: TEXT, NUMBER, SELECT, MULTI_TEXT, GRADE, CALCULATED, BODY_SIZE
+    /**
+     * 저장된 타입 이름([FieldType.name]). **분기에 쓰지 말 것 — [fieldType]이 그 자리다**(B-55).
+     * 여기 글자를 그대로 견주면 새 타입이 그 자리에서 조용히 빠진다.
+     * 이 문자열을 그대로 쓰는 곳은 저장·직렬화(엑셀 열·JSON·SQL)뿐이다.
+     */
+    val type: String,
     val config: String = "{}",     // JSON: 타입별 설정
     val groupName: String = "기본 정보",
     val displayOrder: Int = 0,
@@ -50,6 +56,29 @@ data class FieldDefinition(
     // 조회는 DAO 레벨에서 entityType으로 격리되므로 기존 캐릭터 경로는 영향받지 않는다.
     val entityType: String = ENTITY_CHARACTER
 ) {
+    /**
+     * [type] 문자열이 가리키는 타입 — **타입 분기의 유일한 입구다** (B-55, 2026.08.13).
+     *
+     * 모르는 글자면 `null`이다. 그 값이 실제로 들어올 수 있는가는 경로마다 다르다 —
+     * 엑셀 '필드 정의' 시트는 가져오기가 미리 걸러 내지만(알 수 없는 타입은 행을 건너뛰고
+     * 오류로 알린다), **월드패키지·프리셋 JSON·손으로 고친 DB는 그 관문을 안 지난다.**
+     * 그래서 `null`을 없는 상태로 치지 않고, 분기마다 답하게 둔다.
+     *
+     * ## 왜 계산해 두지 않고 게터인가
+     *
+     * `@Ignore val fieldType = FieldType.fromName(type)`로 두면 인스턴스마다 한 번만 풀려
+     * 더 빠르다. **그런데 그것은 백킹 필드를 만든다.** 이 클래스는 Room 엔티티인 동시에
+     * **Gson으로 월드패키지·프리셋·화면 간 전달에 실려 나가는 클래스**라(`WorldPackageContents` ·
+     * `PresetTemplates.fieldsToJson`), 필드가 생기면 그 JSON에 `"fieldType"`이 **말없이
+     * 한 칸 늘어난다.** 저장·교환 형식이 바뀌는 것은 이 판의 성격(동작 무변경 치환)이 아니고,
+     * 착수 규칙 3번이 *"되돌리기 어려운 것"*으로 묶어 둔 부류다.
+     *
+     * 게터는 백킹 필드가 없어 Room도 Gson도 못 본다. 값은 [FieldType.fromName]이 표에서
+     * 집어 오므로 대신할 자리(생문자열 비교)와 비용이 사실상 같다.
+     */
+    val fieldType: FieldType?
+        @Ignore get() = FieldType.fromName(type)
+
     companion object {
         const val ENTITY_CHARACTER = "character"
         const val ENTITY_EVENT = "event"
