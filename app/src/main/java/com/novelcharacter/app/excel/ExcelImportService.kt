@@ -36,6 +36,7 @@ import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.FormulaValidator
+import com.novelcharacter.app.util.ImportLookupIndex
 import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelRecords
@@ -313,6 +314,58 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // (캐릭터, 필드) 값의 현재 상태 장부 — 캐릭터 시트와 '캐릭터 필드값' 시트가 **함께** 쓴다(B-72 ②).
     // 둘이 같은 항목을 다룰 수 있으므로 장부도 하나여야 한다. 위 형제들과 같이 가져오기마다 비운다.
     private val valueLedger = CharacterValueLedger()
+    /**
+     * 캐릭터 **정체성** 색인 — 코드로 찾는 자리 (B-210. 값 쪽은 바로 위 [valueLedger]다).
+     *
+     * 캐릭터를 코드로 되찾는 시트가 다섯이다(캐릭터 · 캐릭터 필드값 · 연표 참가자 · 상태변화 ·
+     * 이름 은행). 시트마다 따로 캐시하면 **캐릭터 시트가 방금 만든 캐릭터**를 뒷 시트가 못 보는
+     * 창이 생기므로 색인은 하나여야 한다 — 그래서 시트가 아니라 **가져오기** 수명이고,
+     * 캐릭터를 쓰는 유일한 자리([importCharacterRows])가 insert·update마다 갱신한다.
+     *
+     * 위 형제들과 같이 **가져오기마다 비운다** — 두 가져오기 사이에 사용자가 앱에서 캐릭터를
+     * 고칠 수 있어, 안 비우면 둘째 가져오기가 DB가 아니라 지난번 사본을 보고 판단한다.
+     */
+    private val characterCodes = ImportLookupIndex<String, Character>(
+        idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+    )
+    /**
+     * 같은 색인의 **이름** 축 — `getCharacterByName`(LIMIT 1)과 `getAllCharactersByName`이
+     * 함께 쓴다. 이름은 코드와 달리 **겹치는 것이 정상**(동명이인)이라 `all`로 받아
+     * 호출부가 모호성을 판정한다. 캐릭터 시트는 이름을 **고칠 수 있으므로**, 갱신은
+     * [ImportLookupIndex.put]이 옛 이름을 끊어 주는 것에 기댄다.
+     */
+    private val characterNames = ImportLookupIndex<String, Character>(
+        idOf = { it.id }, keyOf = { it.name }
+    )
+    /** 색인을 실었는가 — 가져오기마다 한 번만 읽는다(빈 DB 복원에서도 한 번은 친다). */
+    private var characterIndexLoaded = false
+    /**
+     * 사건 정체성 색인 — 캐릭터와 같은 이유로 **가져오기** 수명이다 (B-210).
+     * 사건을 되찾는 자리가 셋인데(연표 · 사건 필드값 · 관계 변화의 연결사건) 시트마다 따로
+     * 캐시하면 **연표가 방금 만든 사건**을 뒤 둘이 못 보는 창이 생긴다. 쓰는 자리는
+     * [importTimeline] 하나이고 그것이 insert·update마다 갱신한다.
+     */
+    private val eventCodes = ImportLookupIndex<String, TimelineEvent>(
+        idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+    )
+    /** 코드 없는 구버전 파일의 폴백 축 — `getEventByNaturalKey(연도, 설명)`의 자리. */
+    private val eventNaturalKeys = ImportLookupIndex<EventNaturalKey, TimelineEvent>(
+        idOf = { it.id }, keyOf = { EventNaturalKey(it.year, it.description) }
+    )
+    /** `getEventById`의 자리 — 구버전 파일의 '연결사건ID' 실존 검증이 쓴다. */
+    private val eventsByEventId = ImportLookupIndex<Long, TimelineEvent>(
+        idOf = { it.id }, keyOf = { it.id }
+    )
+    private var eventIndexLoaded = false
+    /**
+     * 작품 **코드** 색인 — 캐릭터·사건과 같은 이유로 가져오기 수명이다 (B-210).
+     * 작품을 코드로 되찾는 자리가 셋이다(작품 시트 · 캐릭터 시트의 소속 · '작품 필드값').
+     * 쓰는 자리는 [importNovels]와 [resolveNovelId] 둘이고, 둘 다 insert 뒤에 갱신한다.
+     */
+    private val novelCodes = ImportLookupIndex<String, Novel>(
+        idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+    )
+    private var novelIndexLoaded = false
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
     private val matchedRelationshipChangeIds = mutableSetOf<Long>()
@@ -603,6 +656,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             importedEventFieldPairs.clear()
             universeMovedCharacterIds.clear()
             valueLedger.reset()
+            resetCharacterIndex()
+            resetEventIndex()
+            resetNovelIndex()
             matchedEventIds.clear()
             matchedRelationshipIds.clear()
             matchedRelationshipChangeIds.clear()
@@ -706,6 +762,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (strategy == ImportStrategy.MERGE) {
                 if (effectiveOptions.deleteOptions.hasAny) {
                     deleteUnmatchedEntities(effectiveOptions, result)
+                    // 이 패스는 **표에서 행을 지운다** — 정체성 색인이 든 사본은 그 순간 낡는다.
+                    // 지금은 뒤에서 읽는 자리가 없지만(Phase 6은 DAO·리포지터리로 간다),
+                    // 색인을 살려 두면 다음에 뒤쪽에 붙는 코드가 **지워진 행을 찾아낸다.**
+                    // 비워 두면 그때는 표를 다시 읽는다 — 늦게 틀리느니 다시 읽는 편이 낫다 (B-210).
+                    resetCharacterIndex()
+                    resetEventIndex()
+                    resetNovelIndex()
                 }
                 // U-12b: 꺼진 종류는 남겨 뒀다는 사실을 그 자리에서 고지한다(삭제 뒤 최종 상태 기준).
                 countKeptUnmatchedEntities(effectiveOptions, result)
@@ -1160,7 +1223,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         RefIntent.KEEP -> existing?.usedByCharacterId
         RefIntent.CLEAR -> null
         RefIntent.LOOKUP ->
-            (if (r.usedByCharCode.isNotBlank()) db.characterDao().getCharacterByCode(r.usedByCharCode)?.id else null)
+            (if (r.usedByCharCode.isNotBlank()) characterByCode(r.usedByCharCode)?.id else null)
                 ?: when (val lr = resolveCharByNameNovel(r.usedByCharName, null)) {  // F3-B: 동명이인 안전
                     is CharLookupResult.Found -> lr.character.id
                     is CharLookupResult.Ambiguous -> {
@@ -1311,7 +1374,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelIdsJson: String? = if (c.novelCodes >= 0) {
             val ids = mutableListOf<Long>()
             for (code in splitCsv(getCellString(row, c.novelCodes))) {
-                val novel = db.novelDao().getNovelByCode(code)
+                val novel = novelByCode(code)
                 if (novel != null) ids.add(novel.id)
                 else result?.warnings?.add("$ctx: 작품코드 '$code'을(를) 찾을 수 없어 프리셋의 작품 필터에서 제외합니다")
             }
@@ -1698,8 +1761,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         row: Row, c: TimelineCols, r: TimelineRowValues, allNovels: List<Novel>, ctx: String, result: ImportResult?
     ): TimelineLinks {
         // 작품 해석: 콤마 구분 복수 작품 지원
-        val novelCodes = splitCsv(r.novelCode)
-        val resolvedNovels = (if (novelCodes.isNotEmpty()) novelCodes.mapNotNull { db.novelDao().getNovelByCode(it) } else emptyList())
+        val novelCodeCells = splitCsv(r.novelCode)
+        val resolvedNovels = (if (novelCodeCells.isNotEmpty()) novelCodeCells.mapNotNull { novelByCode(it) } else emptyList())
             .ifEmpty { splitCsv(r.novelTitle).mapNotNull { title -> allNovels.find { it.title == title } } }
         // 세계관 소속: 명시 열(코드 우선 → 이름) 우선, 없으면 관련 작품에서 유도(구버전 호환).
         val explicitUniverse = run {
@@ -1957,7 +2020,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /** 연결 사건 해석: 코드 우선 (id는 복원·기기 이전 시 변하므로 구버전 폴백 전용). */
     private suspend fun resolveRelChangeEventId(r: RelChangeRowValues, ctx: String, result: ImportResult?): Long? = when {
         r.eventCode.isNotBlank() -> {
-            val found = db.timelineDao().getEventByCode(r.eventCode)?.id
+            val found = eventByCode(r.eventCode)?.id
             if (found == null) {
                 result?.warnings?.add("$ctx: 연결사건코드 '${r.eventCode}'에 해당하는 사건을 찾을 수 없어 연결을 비웁니다")
             }
@@ -1966,7 +2029,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         r.hasEventIdCol -> {
             // 구버전 id 폴백도 실존 검증 — 복원 후 재발급된 id가 엉뚱한 사건을 가리키거나 FK 오류로 행이 죽는 것 방지
             val rawId = r.rawEventId
-            if (rawId != null && db.timelineDao().getEventById(rawId) == null) {
+            if (rawId != null && eventById(rawId) == null) {
                 result?.warnings?.add("$ctx: 연결사건ID '$rawId'에 해당하는 사건이 없어 연결을 비웁니다 — 최신 백업의 연결사건코드 열을 사용하세요")
                 null
             } else rawId
@@ -2205,6 +2268,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 분석은 세계관을 실제로 가져오지 않아 별칭을 쌓지 않는다. 비우지 않으면 직전 가져오기의
         // 별칭이 남아 이 파일과 무관한 세계관으로 프리셋 필터를 해석한다(같은 인스턴스 재사용).
         universeCodeAliases.clear()
+        // 캐릭터 정체성 색인도 같은 이유로 비운다 (B-210) — 미리보기는 **직전 가져오기 뒤에**
+        // 돌 수 있고, 그 사이에 캐릭터가 바뀌었다. 안 비우면 미리보기가 DB가 아니라
+        // 지난 실행의 사본을 세어 *"바뀔 것"*을 사실과 다르게 말한다. 분석은 쓰지 않으므로
+        // 여기서 실린 색인은 이 한 번의 분석 동안만 답한다.
+        resetCharacterIndex()
+        resetEventIndex()
+        resetNovelIndex()
         val totalRows = countTotalRows(workbook)
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
@@ -2472,8 +2542,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 코드가 비었거나 해석되지 않으면 가져오기도 결국 null로 두므로 null이 맞다.
             val merged = mergeUniverse(
                 existing, r,
-                imageCharacterId = r.imageCharCode?.let { db.characterDao().getCharacterByCode(it)?.id },
-                imageNovelId = r.imageNovelCode?.let { db.novelDao().getNovelByCode(it)?.id }
+                imageCharacterId = r.imageCharCode?.let { characterByCode(it)?.id },
+                imageNovelId = r.imageNovelCode?.let { novelByCode(it)?.id }
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
@@ -2506,14 +2576,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 제목+세계관으로 폴백한다.
             // 괄호 필수 — 괄호 없이 쓰면 엘비스가 `else` 가지(null)에만 붙어
             // 코드 미해석 시 제목 폴백이 죽는다(가져오기 쪽 주석과 같은 함정).
-            val existing = (if (r.code.isNotBlank()) db.novelDao().getNovelByCode(r.code) else null)
+            val existing = novelByCode(r.code)
                 ?: (if (universeId != null) db.novelDao().getNovelByTitleAndUniverse(r.title, universeId)
                     else db.novelDao().getNovelByTitleNoUniverse(r.title))
             if (existing == null) { newCount++; continue }
             val merged = mergeNovel(
                 existing, r,
                 effectiveUniverseId = effectiveNovelUniverseId(existing, r, universeId),
-                imageCharacterId = r.imageCharCode?.let { db.characterDao().getCharacterByCode(it)?.id }
+                imageCharacterId = r.imageCharCode?.let { characterByCode(it)?.id }
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
@@ -2628,7 +2698,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 종전에는 이름·메모·이명 셋만 봤다: 성·이름(First)·작품·정렬순서·고정·생성일·
         // 이미지경로·대표이미지를 고쳐도 '변경 없음'이라 말했다.
         suspend fun countAgainst(existing: Character, r: CharacterRowValues, rowIndex: Int) {
-            val novelId = (if (r.novelCode.isNotBlank()) db.novelDao().getNovelByCode(r.novelCode)?.id else null)
+            val novelId = novelByCode(r.novelCode)?.id
                 ?: (if (r.novelTitle.isNotBlank()) db.novelDao().getAllNovelsList().find { it.title == r.novelTitle }?.id else null)
             if (mergeCharacter(existing, r, novelId, rowIndex, now, result = null) != existing) updateCount++
         }
@@ -2642,12 +2712,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             if (r.code.isNotBlank()) {
                 // 코드 기반 매칭: 충돌 없음 (코드가 권위적)
-                val existing = db.characterDao().getCharacterByCode(r.code)
+                val existing = characterByCode(r.code)
                 if (existing == null) { newCount++; continue }
                 countAgainst(existing, r, i)
             } else {
                 // 코드 없음: 이름 기반 매칭 — 동명이인 충돌 가능
-                val allMatches = db.characterDao().getAllCharactersByName(name)
+                val allMatches = charactersByName(name)
                 if (allMatches.isEmpty()) {
                     newCount++
                 } else if (allMatches.size == 1) {
@@ -2694,8 +2764,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             inBackup++
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = (if (r.fileCode.isNotBlank()) db.timelineDao().getEventByCode(r.fileCode) else null)
-                ?: db.timelineDao().getEventByNaturalKey(year, r.description)
+            val existing = eventByCode(r.fileCode) ?: eventByNaturalKey(year, r.description)
             if (existing == null) { newCount++; continue }
             // 종전에는 **자연키로 매칭된 행을 무조건 '동일'**로 셌다 — 월·일·역법·유형·세계관·
             // 정렬순서·임시배치를 고쳐도 미리보기가 '변경 없음'이라 말했다.
@@ -2734,7 +2803,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.newValue.isBlank()) continue
             inBackup++
 
-            val character = (if (r.charCode.isNotBlank()) db.characterDao().getCharacterByCode(r.charCode) else null)
+            val character = characterByCode(r.charCode)
                 ?: run {
                     val novelId = if (r.novelTitle.isNotBlank()) allNovels.find { it.title == r.novelTitle }?.id else null
                     findCharacterByName(r.charName, novelId)
@@ -2782,9 +2851,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.relationshipType.isBlank()) continue
             inBackup++
 
-            val char1 = (if (r.char1Code.isNotBlank()) db.characterDao().getCharacterByCode(r.char1Code) else null)
+            val char1 = characterByCode(r.char1Code)
                 ?: findCharacterByName(r.char1Name, null)
-            val char2 = (if (r.char2Code.isNotBlank()) db.characterDao().getCharacterByCode(r.char2Code) else null)
+            val char2 = characterByCode(r.char2Code)
                 ?: findCharacterByName(r.char2Name, null)
 
             // 실제 임포트와 동일한 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백
@@ -2841,9 +2910,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val year = r.year ?: continue
             inBackup++
 
-            val char1 = (if (r.char1Code.isNotBlank()) db.characterDao().getCharacterByCode(r.char1Code) else null)
+            val char1 = characterByCode(r.char1Code)
                 ?: findCharacterByName(r.char1Name, null)
-            val char2 = (if (r.char2Code.isNotBlank()) db.characterDao().getCharacterByCode(r.char2Code) else null)
+            val char2 = characterByCode(r.char2Code)
                 ?: findCharacterByName(r.char2Name, null)
             // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
             if (char1 == null || char2 == null) {
@@ -3017,8 +3086,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
 
             // 캐릭터를 먼저 — 세력의 동명 해소 힌트가 된다(실제 임포트와 같은 순서)
-            val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
-                ?: db.characterDao().getCharacterByName(charName)
+            val character = characterByCode(charCode)
+                ?: characterByName(charName)
             if (character == null) { continue }
             // NotFound·Ambiguous 모두 기존 null 분기와 동일하게 처리해 계수 의미를 보존한다
             val faction = (factionIndex.resolve(factionName, factionCode, universeIdOfCharacter(character))
@@ -3687,7 +3756,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // Code-first matching (Sprint A) + F1-C: 미지 코드 → 자연키 폴백 + 경고
                 val existing: Novel?
                 if (code.isNotBlank()) {
-                    val byCode = db.novelDao().getNovelByCode(code)
+                    val byCode = novelByCode(code)
                     if (byCode != null) {
                         existing = byCode
                     } else {
@@ -3737,6 +3806,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 이미지 캐릭터는 여기서 null로 두고 Phase 2가 코드로 되붙인다.
                     val mergedNovel = mergeNovel(existing, r, effectiveUniverseId, imageCharacterId = null)
                     db.novelDao().update(mergedNovel)
+                    // 코드가 바뀌었을 수 있다 — 옛 코드를 끊어야 뒤 행·뒤 시트가 SQL과 같은 답을 본다(B-210).
+                    rememberNovel(mergedNovel)
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[existing.id] = novelImageCharCode
                     if (mergedNovel != existing) result.updatedNovels++ else result.unchangedRows++
                     // 소속이 이 행에서 바뀌었으면 **새 소속**의 필드가 적용 대상이다(위 val과 같은 값).
@@ -3748,7 +3819,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    val newId = db.novelDao().insert(Novel(
+                    val newNovel = Novel(
                         title = title, description = r.description ?: "", universeId = universeId,
                         code = newCode, displayOrder = r.displayOrder ?: i.toLong(),
                         borderColor = r.borderColor ?: "", borderWidthDp = r.borderWidthDp ?: 1.5f,
@@ -3757,7 +3828,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imageCharacterId = null, // deferred
                         standardYear = r.standardYear,
                         createdAt = r.createdAt ?: nowMillis
-                    ))
+                    )
+                    val newId = db.novelDao().insert(newNovel)
+                    // 방금 만든 작품을 곧바로 읽히게 한다 — 캐릭터 시트가 이 코드로 소속을 찾는다.
+                    rememberNovel(newNovel.copy(id = newId))
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[newId] = novelImageCharCode
                     entitySeen[newId] = i
                     result.newNovels++
@@ -4687,8 +4761,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 배치 로드: 행마다 쿼리하지 않는다 (검토 A7 — 대용량 파일 성능)
         val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
         val entriesByField = HashMap<Long, MutableList<com.novelcharacter.app.data.model.FieldValueEntry>>()
-        for (e in db.fieldValueEntryDao().getAllList()) {
+        // 코드 유일성 확인도 **같은 목록**에서 답한다 (B-210) — 종전에는 신규 엔트리마다
+        // `getByCode`를 한 번 더 쳤는데, 그 행들은 방금 전부 읽어 손에 들고 있었다.
+        // 빈 DB로 복원하면 그 조회 수가 곧 엔트리 수다(목표 규모 14,460).
+        val entryCodes = ImportLookupIndex<String, com.novelcharacter.app.data.model.FieldValueEntry>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        for (e in db.fieldValueEntryDao().getAllList().sortedBy { it.id }) {
             entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
+            entryCodes.put(e)
         }
         // null 키 = 전역 구역(무소속) — '필드 정의' 시트와 같은 어휘다(B-119 확장).
         val fieldCache = HashMap<Triple<Long?, String, String>, FieldDefinition?>()
@@ -4787,16 +4868,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.fieldValueEntryDao().update(candidate)
                     siblings.removeAll { it.id == candidate.id }
                     siblings.add(candidate)
+                    // 코드가 바뀌었을 수 있다(파일의 코드를 받는 갈래) — 색인이 옛 코드를
+                    // 계속 가리키면 그 코드를 든 다음 행이 **남의 것을 자기 것으로 본다**.
+                    entryCodes.put(candidate)
                     if (candidate != existing) result.updatedFieldValueEntries++ else result.unchangedRows++
                 } else {
-                    // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용)
-                    val codeOwner = db.fieldValueEntryDao().getByCode(candidate.code)
+                    // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용).
+                    // **같은 파일 안에서 방금 만든 엔트리도 상대다** — 그래서 색인은 아래에서 함께 갱신한다.
+                    val codeOwner = entryCodes.first(candidate.code)
                     if (codeOwner != null) {
                         candidate = candidate.copy(code = generateEntityCode())
                         result.newCodesGenerated++
                     }
                     val newId = db.fieldValueEntryDao().insert(candidate)
-                    siblings.add(candidate.copy(id = newId))
+                    val inserted = candidate.copy(id = newId)
+                    siblings.add(inserted)
+                    entryCodes.put(inserted)
                     result.newFieldValueEntries++
                 }
             } catch (e: Exception) {
@@ -4972,8 +5059,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // *이 시트가 가리키는 캐릭터*인데, `StreamingImportWorkbook`은 이미 **시트 하나를
         // 통째로** 들고 있고(행×열의 정규화 전 셀) 그 양이 여기 담기는 것보다 항상 크다 —
         // 캐릭터 한 명이 최소 한 행이기 때문이다. 함수가 끝나면 함께 풀린다.
-        val charByCode = HashMap<String, Character?>()
-        val charsByName = HashMap<String, List<Character>>()
+        // **B-210에서 시트 지역 캐시를 걷었다.** 위 문단이 세운 두 맵(`charByCode`·`charsByName`)은
+        // *처음 만나는 코드마다* 한 번씩 쳤고, 이 시트는 캐릭터가 6,420명이면 그만큼 다른 코드를
+        // 만난다 — 캐시가 없앤 것은 되풀이분뿐이었다. 정체성 색인은 표를 **한 번** 읽어
+        // 그 6,420회까지 없애고, 게다가 **캐릭터 시트가 방금 만든 캐릭터**도 함께 본다
+        // (지역 캐시는 그 창을 못 봤다 — 시트가 갈리면 캐시도 갈렸다).
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4987,12 +5077,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (charCode.isBlank() && charName.isBlank() && fieldKey.isBlank()) continue
 
                 // 매칭 규약: 코드(안정 식별자) 우선 → 자연키 폴백 + 고지
-                var character = charCode.takeIf { it.isNotBlank() }?.let { code ->
-                    if (charByCode.containsKey(code)) charByCode[code]
-                    else db.characterDao().getCharacterByCode(code).also { charByCode[code] = it }
-                }
+                var character = characterByCode(charCode)
                 if (character == null && charName.isNotBlank()) {
-                    val byName = charsByName.getOrPut(charName) { db.characterDao().getAllCharactersByName(charName) }
+                    val byName = charactersByName(charName)
                     when {
                         byName.size == 1 -> {
                             character = byName.first()
@@ -5148,7 +5235,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (code.isBlank() && title.isBlank() && fieldKey.isBlank()) continue
 
                 // 매칭 규약: 코드(안정 식별자) 우선 → 제목 폴백 + 고지 (캐릭터판과 같은 순서)
-                var novel = code.takeIf { it.isNotBlank() }?.let { db.novelDao().getNovelByCode(it) }
+                var novel = novelByCode(code)
                 if (novel == null && title.isNotBlank()) {
                     val index = novelsByTitle ?: db.novelDao().getAllNovelsList()
                         .groupBy { it.title }.also { novelsByTitle = it }
@@ -5280,7 +5367,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("$rowLabel: '사건코드'가 비어 어느 사건의 값인지 확정할 수 없습니다 — 연표 시트의 '코드' 칸에서 값을 복사해 채워 주세요")
                     continue
                 }
-                val event = db.timelineDao().getEventByCode(code)
+                val event = eventByCode(code)
                 if (event == null) {
                     result.skippedRows++
                     result.warnings.add("$rowLabel: 사건(코드 '$code')을 찾을 수 없습니다 — '사건 연표' 시트를 함께 가져왔는지 확인하세요")
@@ -5374,6 +5461,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
+        // "이 캐릭터에 태그가 있었는가"만 묻던 자리 — 빈 셀로 태그를 비우는 행마다 표를 다시
+        // 읽었다(목표 규모에서 캐릭터 6,420명). 태그표를 **한 번** 읽어 가진 캐릭터의 id 집합으로
+        // 답하고, 아래 교체·삭제가 그 집합을 함께 옮긴다 (B-210).
+        // **이 시트 함수는 세계관마다 다시 불리므로 집합도 그때마다 새로 뜬다** — 앞 시트의
+        // 쓰기는 이미 표에 있으니 다시 읽는 쪽이 옳다.
+        val charactersWithTags = db.characterTagDao().getAllTagsList().mapTo(HashSet()) { it.characterId }
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -5399,7 +5492,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // Resolve novel: code-first, then title. F1-A: 작품/작품코드 열이 모두 없으면 기존 배정을 유지한다(아래 적용).
                 // 열이 있으면 셀 해석(빈칸=미배정, 사용자 의도 존중). resolveNovelId는 제목이 있을 때만 호출(빈 제목 유령 생성 방지).
                 val novelColumnsPresent = r.novelColumnsPresent
-                val novelId: Long? = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
+                val novelId: Long? = novelByCode(novelCode)?.id
                     ?: if (novelTitle.isNotBlank()) {
                         resolveNovelId(novelTitle, universe?.id, result, "캐릭터 행 $i")
                     } else null
@@ -5433,15 +5526,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         ConflictResolution.SKIP -> null // 이미 위에서 처리됨
                     }
                 } else if (code.isNotBlank()) {
-                    val byCode = db.characterDao().getCharacterByCode(code)
+                    val byCode = characterByCode(code)
                     if (byCode != null) {
                         existingChar = byCode
                     } else {
                         // F1-C: 코드가 있으나 DB에 없음 → 조용히 신규 생성하지 않고 자연키(이름) 폴백 + 경고
                         val byName = if (novelId != null) {
-                            db.characterDao().getCharacterByNameAndNovel(name, novelId)
+                            characterByNameAndNovel(name, novelId)
                         } else {
-                            db.characterDao().getCharacterByName(name)
+                            characterByName(name)
                         }
                         if (byName != null) {
                             existingChar = byName
@@ -5455,9 +5548,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     // No code => fallback with warning
                     existingChar = if (novelId != null) {
-                        db.characterDao().getCharacterByNameAndNovel(name, novelId)
+                        characterByNameAndNovel(name, novelId)
                     } else {
-                        db.characterDao().getCharacterByName(name)
+                        characterByName(name)
                     }
                     if (existingChar != null) {
                         result.nameBasedMappings++
@@ -5481,6 +5574,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 세는 김에 다시 부르면 그 고지가 두 번 붙는다.
                     val mergedChar = mergeCharacter(existingChar, r, novelId, i, nowMillis, result)
                     db.characterDao().update(mergedChar)
+                    // 정체성 색인도 함께 옮긴다 — 이름·코드가 바뀌었으면 **옛 키로는 더 이상
+                    // 잡히지 않아야** SQL과 같은 답이 된다(B-210).
+                    rememberCharacter(mergedChar)
                     if (mergedChar != existingChar) result.updatedCharacters++ else result.unchangedRows++
 
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
@@ -5494,7 +5590,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    charId = db.characterDao().insert(applyRepresentativeCell(
+                    val newCharacter = applyRepresentativeCell(
                         Character(
                             name = name, firstName = r.firstName ?: "", lastName = r.lastName ?: "",
                             anotherName = r.anotherName ?: "", novelId = if (novelColumnsPresent) novelId else null,
@@ -5502,15 +5598,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             isPinned = r.isPinned ?: false, createdAt = r.createdAt ?: nowMillis
                         ),
                         r.representativeCell, name, i, result
-                    ))
+                    )
+                    charId = db.characterDao().insert(newCharacter)
+                    // 방금 만든 캐릭터를 **곧바로 읽히게** 한다 — 같은 파일의 뒷 행·뒷 시트가
+                    // 코드·이름으로 이 캐릭터를 찾는다(연표 참가자·상태변화·이름 은행).
+                    // 빠뜨리면 *있는 것을 없다고* 보고 같은 캐릭터가 둘로 갈린다(B-210).
+                    rememberCharacter(newCharacter.copy(id = charId))
                     result.newCharacters++
                 }
 
                 // F3-A: 엑셀에서 작품이 바뀌어 세계관이 이동했는지 감지 (existingChar.novelId=이동 전, novelId=이동 후).
                 // 이동이면 아래 필드 기록 후 편집화면과 동일한 P0 로직으로 재매핑·정리한다.
                 val movedToUniverseId: Long? = if (existingChar != null && novelColumnsPresent && novelId != existingChar.novelId) {
-                    val oldU = existingChar.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
-                    val newU = novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                    // 같은 작품이 시트 안에서 되풀이되므로 메모된 helper로 답한다(B-210).
+                    val oldU = existingChar.novelId?.let { universeIdOfNovel(it) }
+                    val newU = novelId?.let { universeIdOfNovel(it) }
                     if (oldU != null && newU != null && oldU != newU) newU else null
                 } else null
 
@@ -5533,11 +5635,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
                         }
+                        if (tags.isEmpty()) charactersWithTags.remove(charId) else charactersWithTags.add(charId)
                     } else if (existingChar != null) {
                         // 빈 셀 = 태그 비움. 기존 태그가 있었을 때만 삭제·요약 집계
-                        val hadTags = db.characterTagDao().getTagsByCharacterList(charId).isNotEmpty()
-                        if (hadTags) {
+                        if (charactersWithTags.contains(charId)) {
                             db.characterTagDao().deleteAllByCharacter(charId)
+                            charactersWithTags.remove(charId)
                             result.clearedFields++
                         }
                     }
@@ -5699,6 +5802,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val participantColumnPresent = cols.containsKey("관련 캐릭터") || charCodeColIndex >= 0
 
         val allNovels = db.novelDao().getAllNovelsList()
+        // 사건 정체성 색인은 **가져오기 수명**이다(위 [eventCodes] 문단) — 이 시트가 만든 사건을
+        // '사건 필드값'·'관계 변화' 시트가 곧이어 코드로 찾는다.
+        //
+        // "이 사건에 연결이 있는가"만 묻던 두 자리 — 교차표를 한 번 읽어 **가진 사건의 id 집합**으로
+        // 답한다. 아래 교체·삭제가 이 집합을 함께 옮긴다(안 옮기면 *비움 의도*를 두 번 세거나
+        // 아예 못 센다).
+        val eventsWithNovelLinks = db.timelineDao().getAllEventNovelCrossRefs().mapTo(HashSet()) { it.eventId }
+        val eventsWithParticipants = db.timelineDao().getAllCrossRefs().mapTo(HashSet()) { it.eventId }
         val eventCodesSeen = mutableSetOf<String>()
         // 정의 없는 "필드:" 열의 값 유실 고지용 — (헤더명) 단위로 1회만 경고
         val droppedEntityFieldHeaders = mutableSetOf<String>()
@@ -5761,8 +5872,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("연표 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 사건을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(설명·연도 편집을 같은 사건으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existingEvent = (if (fileCode.isNotBlank()) db.timelineDao().getEventByCode(fileCode) else null)
-                    ?: db.timelineDao().getEventByNaturalKey(year, description)
+                val existingEvent = eventByCode(fileCode) ?: eventByNaturalKey(year, description)
 
                 val eventId: Long
                 if (existingEvent != null) {
@@ -5770,21 +5880,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedEvent = mergeTimelineEvent(existingEvent, r, links, generateEntityCode())
                     db.timelineDao().update(mergedEvent)
+                    // 연도·설명·코드가 바뀌었을 수 있다 — 색인이 옛 키를 계속 가리키면 뒤 행이
+                    // **이미 옮겨 간 사건을 옛 이름으로** 다시 잡는다(B-210).
+                    rememberEvent(mergedEvent)
                     // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
                     if (novelIds.isNotEmpty()) {
                         db.timelineDao().replaceEventNovels(eventId, novelIds)
+                        eventsWithNovelLinks.add(eventId)
                     } else if (novelTitle.isNotBlank() || novelCode.isNotBlank()) {
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다")
                     } else if (tc.novelLinkColumnPresent) {
                         // F1-A 규칙 가: 작품 열이 있으나 비어 있음 → 기존 작품 연결 삭제 (요약 집계, 세계관 소속은 universeId로 유지)
-                        if (db.timelineDao().getNovelIdsForEvent(eventId).isNotEmpty()) {
+                        if (eventsWithNovelLinks.contains(eventId)) {
                             db.timelineDao().deleteEventNovelCrossRefsByEvent(eventId)
+                            eventsWithNovelLinks.remove(eventId)
                             result.clearedFields++
                         }
                     }
                     if (mergedEvent != existingEvent) result.updatedEvents++ else result.unchangedRows++
                 } else {
-                    eventId = db.timelineDao().insert(TimelineEvent(
+                    val newEvent = TimelineEvent(
                         year = year, month = r.month, day = r.day,
                         calendarType = r.calendarType, description = description,
                         eventType = r.eventType,
@@ -5793,8 +5908,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = r.createdAt ?: nowMillis,
                         // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
-                    ))
+                    )
+                    eventId = db.timelineDao().insert(newEvent)
+                    // 방금 만든 사건을 곧바로 읽히게 한다 — 같은 코드를 든 뒷 행이 이것을
+                    // 못 보면 한 파일에서 같은 사건이 둘로 갈린다.
+                    rememberEvent(newEvent.copy(id = eventId))
                     db.timelineDao().replaceEventNovels(eventId, novelIds)
+                    if (novelIds.isEmpty()) eventsWithNovelLinks.remove(eventId) else eventsWithNovelLinks.add(eventId)
                     result.newEvents++
                     if (novelIds.isEmpty() && novelTitle.isNotBlank()) {
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 작품 미지정 상태로 생성됨")
@@ -5868,7 +5988,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val resolved = LinkedHashMap<Long, com.novelcharacter.app.data.model.Character>()
                     if (charCodeStr.isNotBlank()) {
                         for (code in splitCsv(charCodeStr)) {
-                            db.characterDao().getCharacterByCode(code)?.let { resolved[it.id] = it }
+                            characterByCode(code)?.let { resolved[it.id] = it }
                         }
                     }
                     if (characterNames.isNotBlank()) {
@@ -5891,6 +6011,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 TimelineCharacterCrossRef(eventId = eventId, characterId = character.id)
                             )
                         }
+                        eventsWithParticipants.add(eventId)
                         // birth/death 사건이면 관련 캐릭터의 상태변화 동기화 대상에 추가
                         if (r.eventType == TimelineEvent.TYPE_BIRTH || r.eventType == TimelineEvent.TYPE_DEATH) {
                             val stateKey = if (r.eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
@@ -5903,7 +6024,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                         fieldKey = stateKey, newValue = year.toString()
                                     ))
                                 }
-                                val uId = eventUniverseId ?: character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                                // 작품→세계관은 이미 메모된 helper가 있다 — 참가자마다 작품을
+                                // 다시 읽던 자리다(B-210. 같은 작품을 든 참가자가 되풀이된다).
+                                val uId = eventUniverseId ?: universeIdOfCharacter(character)
                                 if (uId != null) {
                                     pendingSyncCharacters[character.id] = uId
                                 }
@@ -5912,8 +6035,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 } else if (participantColumnPresent && existingEvent != null) {
                     // F1-A 규칙 가: 참가자 열이 있으나 셀이 비어 있음 → 기존 참가자 연결 삭제 (요약 집계)
-                    if (db.timelineDao().getCharacterIdsForEvent(eventId).isNotEmpty()) {
+                    if (eventsWithParticipants.contains(eventId)) {
                         db.timelineDao().deleteCrossRefsByEvent(eventId)
+                        eventsWithParticipants.remove(eventId)
                         result.clearedFields++
                     }
                 }
@@ -5943,6 +6067,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val nowMillis = System.currentTimeMillis()
 
         val allNovels = db.novelDao().getAllNovelsList()
+        // 상태변화 정체성 색인 (B-210) — 행마다 코드·자연키로 표를 묻던 자리. id 오름차순이
+        // `LIMIT 1`의 순서다(`getAllChangesList()`는 캐릭터·연월일 순으로 나오므로 다시 정렬한다).
+        // **연표가 만든 birth/death 행도 여기 실린다** — 그 시트가 먼저 돌고 이 색인은 지금 읽는다.
+        val changesById = db.characterStateChangeDao().getAllChangesList().sortedBy { it.id }
+        val changeCodes = ImportLookupIndex<String, CharacterStateChange>(
+            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+        )
+        val changeNaturalKeys = ImportLookupIndex<StateChangeNaturalKey, CharacterStateChange>(
+            idOf = { it.id },
+            keyOf = { StateChangeNaturalKey(it.characterId, it.year, it.fieldKey, it.newValue) }
+        )
+        changeCodes.load(changesById)
+        changeNaturalKeys.load(changesById)
         val changeCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -5973,7 +6110,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // Resolve character: code-first, then strict name lookup (동명이인 모호성 감지)
                 val character: Character = when {
                     charCode.isNotBlank() -> {
-                        val found = db.characterDao().getCharacterByCode(charCode)
+                        val found = characterByCode(charCode)
                         if (found == null) {
                             result.skippedRows++
                             result.errors.add("상태변화 행 $i: 코드 '${charCode}'에 해당하는 캐릭터를 찾을 수 없음")
@@ -6006,30 +6143,37 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("상태변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existing = (if (fileCode.isNotBlank()) db.characterStateChangeDao().getChangeByCode(fileCode) else null)
-                    ?: db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
+                val existing = (if (fileCode.isNotBlank()) changeCodes.first(fileCode) else null)
+                    ?: changeNaturalKeys.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
 
                 if (existing != null) {
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedStateChange = mergeStateChange(existing, r, character.id, generateEntityCode())
                     db.characterStateChangeDao().update(mergedStateChange)
+                    // 자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면
+                    // 뒤 행이 **이미 다른 이력이 된 행**을 옛 키로 다시 잡는다(B-210).
+                    changeCodes.put(mergedStateChange)
+                    changeNaturalKeys.put(mergedStateChange)
                     matchedStateChangeIds.add(existing.id)
                     if (mergedStateChange != existing) result.updatedStateChanges++ else result.unchangedRows++
                 } else {
-                    val newId = db.characterStateChangeDao().insert(CharacterStateChange(
+                    val newChange = CharacterStateChange(
                         characterId = character.id, year = year, month = r.month, day = r.day,
                         fieldKey = fieldKey, newValue = newValue, description = r.description,
                         createdAt = r.createdAt ?: nowMillis,
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
-                    ))
+                    )
+                    val newId = db.characterStateChangeDao().insert(newChange)
+                    changeCodes.put(newChange.copy(id = newId))
+                    changeNaturalKeys.put(newChange.copy(id = newId))
                     matchedStateChangeIds.add(newId)
                     result.newStateChanges++
                 }
 
                 // __death/__birth 상태변화 임포트 시 필드 동기화 대상에 추가
                 if (fieldKey == CharacterStateChange.KEY_DEATH || fieldKey == CharacterStateChange.KEY_BIRTH) {
-                    val novel = character.novelId?.let { db.novelDao().getNovelById(it) }
-                    val uId = novel?.universeId
+                    // 같은 캐릭터·같은 작품이 여러 행에 되풀이되므로 메모된 helper로 답한다(B-210).
+                    val uId = universeIdOfCharacter(character)
                     if (uId != null) {
                         pendingSyncCharacters[character.id] = uId
                     }
@@ -6057,6 +6201,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val typeColIndex = requiredCol(cols, "관계 유형", sheet.sheetName, result) ?: return
         val rc = RelationshipCols(cols, char2NameColIndex, typeColIndex)
         val nowMillis = System.currentTimeMillis()
+
+        // 관계 정체성 색인 (B-210) — 종전에는 **행마다** 캐릭터1의 관계 전부를 다시 읽고
+        // (`getRelationshipsForCharacterList`) 코드로 한 번 더 물었다. 목표 규모에서 관계 4,050건이라
+        // 그 둘만으로 8,000회가 넘는다. 표를 한 번 읽어 **쌍**과 **코드**로 답한다.
+        //
+        // **싣는 순서가 SQL의 `ORDER BY displayOrder ASC, createdAt DESC`와 같아야 한다** —
+        // 호출부가 그 목록에서 `find { 유형이 같다 }`로 하나를 고르므로, 같은 쌍에 같은 유형이
+        // 둘인 파일에서 **고르는 상대가 바뀐다.**
+        val relsOrdered = db.characterRelationshipDao().getAllRelationships()
+            .sortedWith(compareBy<CharacterRelationship> { it.displayOrder }.thenByDescending { it.createdAt })
+        val relsByPair = ImportLookupIndex<CharacterPairKey, CharacterRelationship>(
+            idOf = { it.id }, keyOf = { CharacterPairKey.of(it.characterId1, it.characterId2) }
+        )
+        val relCodes = ImportLookupIndex<String, CharacterRelationship>(
+            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+        )
+        relsByPair.load(relsOrdered)
+        relCodes.load(relsOrdered)
+        fun rememberRelationship(rel: CharacterRelationship) {
+            relsByPair.put(rel)
+            relCodes.put(rel)
+        }
 
         // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
         val factionRefUsed = rc.faction >= 0 || rc.factionCode >= 0
@@ -6155,15 +6321,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 val factionId = resolvedFaction?.id
 
-                val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
-                val pairRels = existingRels.filter { rel ->
-                    (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
-                    (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
-                }
+                // 쌍으로 바로 받는다 — 종전에는 캐릭터1의 관계 **전부**를 읽어 여기서 걸렀다.
+                val pairRels = relsByPair.all(CharacterPairKey.of(char1.id, char2.id))
                 // 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.
                 // 코드로 잡히면 '관계 유형' 편집이 rename으로 인식되어 관계가 분열하지 않는다.
                 val relCode = rv.relCode
-                val byCode = if (relCode.isNotBlank()) db.characterRelationshipDao().getByCode(relCode) else null
+                val byCode = if (relCode.isNotBlank()) relCodes.first(relCode) else null
                 if (relCode.isNotBlank() && byCode == null) {
                     result.warnings.add("관계 행 $i: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
                 }
@@ -6188,13 +6351,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val mergedRelationship =
                         mergeRelationship(existing, rv, effectiveFactionId, generateEntityCode())
                     db.characterRelationshipDao().update(mergedRelationship)
+                    rememberRelationship(mergedRelationship)
                     matchedRelationshipIds.add(existing.id)
                     if (mergedRelationship != existing) result.updatedRelationships++ else result.unchangedRows++
                 } else {
                     // 잔여 관계 고지는 행마다 하지 않는다 — 같은 쌍의 다른 행이 아직 처리되지 않았을 뿐인데
                     // "정리하세요"라고 안내하면 사용자가 멀쩡한 데이터를 지운다. 루프 종료 후 1회 집계한다.
                     if (rc.relCode < 0) touchedPairs.putIfAbsent(setOf(char1.id, char2.id), i to "${char1Name}–${char2Name}")
-                    val newId = db.characterRelationshipDao().insert(CharacterRelationship(
+                    val newRelationship = CharacterRelationship(
                         characterId1 = char1.id, characterId2 = char2.id,
                         relationshipType = relationshipType, description = description,
                         intensity = rv.intensity, isBidirectional = rv.isBidirectional,
@@ -6202,7 +6366,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = rv.createdAt ?: nowMillis,
                         // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
                         code = relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
-                    ))
+                    )
+                    val newId = db.characterRelationshipDao().insert(newRelationship)
+                    // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
+                    // 한 파일에서 둘로 갈린다(위 '다시 덮어씀' 고지가 그때 안 뜬다).
+                    rememberRelationship(newRelationship.copy(id = newId))
                     matchedRelationshipIds.add(newId)
                     entitySeen[newId] = i
                     result.newRelationships++
@@ -6255,6 +6423,31 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val nowMillis = System.currentTimeMillis()
         val changeCodesSeen = mutableSetOf<String>()
 
+        // 이 시트가 행마다 물던 표는 둘이다 (B-210):
+        // ① **관계** — 부모 관계를 쌍으로 찾고 코드로도 찾는다(이 시트는 관계를 쓰지 않으므로 읽기만)
+        // ② **관계 변화** — 코드·자연키로 자기 자신을 찾는다(갱신은 아래 update·insert가 맡는다)
+        // 싣는 순서는 각 질의의 `ORDER BY`를 그대로 따른다 — 호출부가 목록에서 하나를 고르므로
+        // 순서가 곧 **어느 관계에 이력이 붙는가**다.
+        val parentRelsByPair = ImportLookupIndex<CharacterPairKey, CharacterRelationship>(
+            idOf = { it.id }, keyOf = { CharacterPairKey.of(it.characterId1, it.characterId2) }
+        )
+        val parentRelCodes = ImportLookupIndex<String, CharacterRelationship>(
+            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+        )
+        db.characterRelationshipDao().getAllRelationships()
+            .sortedWith(compareBy<CharacterRelationship> { it.displayOrder }.thenByDescending { it.createdAt })
+            .forEach { parentRelsByPair.put(it); parentRelCodes.put(it) }
+        val relChangesById = db.characterRelationshipChangeDao().getAllChanges().sortedBy { it.id }
+        val relChangeCodes = ImportLookupIndex<String, CharacterRelationshipChange>(
+            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+        )
+        val relChangeNaturalKeys = ImportLookupIndex<RelChangeNaturalKey, CharacterRelationshipChange>(
+            idOf = { it.id },
+            keyOf = { RelChangeNaturalKey(it.relationshipId, it.year, it.month, it.day) }
+        )
+        relChangeCodes.load(relChangesById)
+        relChangeNaturalKeys.load(relChangesById)
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -6305,12 +6498,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 부모 관계 해석: 부모관계유형 열 우선 → 쌍 후보가 유일할 때만 폴백.
                 // 같은 쌍에 유형이 다른 관계가 여러 개일 수 있으므로(유니크 키가 쌍+유형),
                 // 근거 없이 first-match로 고르면 이력이 엉뚱한 관계에 붙는다.
-                val pairRelationships = db.characterRelationshipDao()
-                    .getRelationshipsForCharacterList(char1.id)
-                    .filter { rel ->
-                        (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
-                        (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
-                    }
+                val pairRelationships = parentRelsByPair.all(CharacterPairKey.of(char1.id, char2.id))
                 if (pairRelationships.isEmpty()) {
                     result.skippedRows++
                     result.errors.add("관계변화 행 $i: '${char1Name}'과(와) '${char2Name}' 간의 관계를 찾을 수 없음")
@@ -6331,8 +6519,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("관계변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연월일 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existing = (if (fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(fileCode) else null)
-                    ?: db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, rv.month, rv.day)
+                val existing = (if (fileCode.isNotBlank()) relChangeCodes.first(fileCode) else null)
+                    ?: relChangeNaturalKeys.first(RelChangeNaturalKey(relationship.id, year, rv.month, rv.day))
                 if (existing != null) {
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수
                     if (rv.hasDescCol && description == "" && existing.description.isNotBlank()) result.clearedFields++
@@ -6340,17 +6528,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val mergedRelChange =
                         mergeRelationshipChange(existing, rv, relationship.id, eventId, generateEntityCode())
                     db.characterRelationshipChangeDao().update(mergedRelChange)
+                    // 자연키의 칸(부모 관계·연월일)이 바뀌었을 수 있다 — 옛 키를 끊어야
+                    // 뒤 행이 **이미 옮겨 간 이력**을 옛 키로 다시 잡지 않는다(B-210).
+                    relChangeCodes.put(mergedRelChange)
+                    relChangeNaturalKeys.put(mergedRelChange)
                     matchedRelationshipChangeIds.add(existing.id)
                     if (mergedRelChange != existing) result.updatedRelationshipChanges++ else result.unchangedRows++
                 } else {
-                    val newId = db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
+                    val newRelChange = CharacterRelationshipChange(
                         relationshipId = relationship.id,
                         year = year, month = rv.month, day = rv.day,
                         relationshipType = rv.relationshipType, description = description,
                         intensity = rv.intensity, isBidirectional = rv.isBidirectional,
                         eventId = eventId, createdAt = rv.createdAt ?: nowMillis,
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
-                    ))
+                    )
+                    val newId = db.characterRelationshipChangeDao().insert(newRelChange)
+                    relChangeCodes.put(newRelChange.copy(id = newId))
+                    relChangeNaturalKeys.put(newRelChange.copy(id = newId))
                     matchedRelationshipChangeIds.add(newId)
                     result.newRelationshipChanges++
                 }
@@ -6374,9 +6569,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val nbc = NameBankCols(resolveHeaderColumns(headerRow))
         val nowMillis = System.currentTimeMillis()
 
-        val existingNamesMap = db.nameBankDao().getAllNamesList()
-            .associateBy { it.mapKeyForNameBank() }
-            .toMutableMap()
+        // 자연키 맵은 이미 있었다 — **코드 축만 빠져 있어 행마다 표를 다시 물었다**(B-210).
+        // 같은 목록에서 함께 짓는다. id 오름차순이 `LIMIT 1`의 순서다.
+        val allNames = db.nameBankDao().getAllNamesList()
+        val existingNamesMap = allNames.associateBy { it.mapKeyForNameBank() }.toMutableMap()
+        val nameBankCodes = ImportLookupIndex<String, NameBankEntry>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        nameBankCodes.load(allNames.sortedBy { it.id })
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6387,7 +6587,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (name.isBlank()) continue
 
                 // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
-                val existing = (if (r.code.isNotBlank()) db.nameBankDao().getByCode(r.code) else null)
+                val existing = (if (r.code.isNotBlank()) nameBankCodes.first(r.code) else null)
                     ?: existingNamesMap[r.mapKey]
 
                 val usedByCharacterId = resolveNameBankUsedBy(r, existing, "이름 은행 행 $i", result)
@@ -6406,6 +6606,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val merged = mergeNameBankEntry(existing, r, usedByCharacterId)
                     db.nameBankDao().update(merged)
                     existingNamesMap[merged.mapKeyForNameBank()] = merged
+                    nameBankCodes.put(merged)
                     matchedNameBankIds.add(existing.id)
                     if (merged != existing) result.updatedNameBank++ else result.unchangedRows++
                 } else {
@@ -6419,6 +6620,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newId = db.nameBankDao().insert(newEntry)
                     matchedNameBankIds.add(newId)
                     existingNamesMap[r.mapKey] = newEntry.copy(id = newId)
+                    // 같은 코드를 든 뒷 행이 이것을 봐야 한다 — 자연키 맵은 이미 그렇게 하고 있었다.
+                    nameBankCodes.put(newEntry.copy(id = newId))
                     result.newNameBank++
                 }
             } catch (e: Exception) {
@@ -8100,7 +8303,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return elsewhere.id
         }
         // 3. 어디에도 없으면 새로 생성 + 경고 (말없는 유령 작품 생성 금지)
-        val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId, code = generateEntityCode()))
+        val ghostNovel = Novel(title = novelTitle, universeId = universeId, code = generateEntityCode())
+        val newId = db.novelDao().insert(ghostNovel)
+        rememberNovel(ghostNovel.copy(id = newId))
         result?.warnings?.add("${rowLabel ?: "작품"}: 작품 '$novelTitle'을(를) 찾지 못해 새로 생성했습니다 — 오타·세계관 지정을 확인하세요")
         novelIdCache[cacheKey] = newId
         return newId
@@ -8108,10 +8313,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun findCharacterByName(name: String, preferredNovelId: Long?): Character? {
         if (preferredNovelId != null) {
-            val match = db.characterDao().getCharacterByNameAndNovel(name, preferredNovelId)
+            val match = characterByNameAndNovel(name, preferredNovelId)
             if (match != null) return match
         }
-        return db.characterDao().getCharacterByName(name)
+        return characterByName(name)
     }
 
     /** 코드/이름 기반 캐릭터 조회 — 동명이인 모호성 감지 포함 */
@@ -8123,11 +8328,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun findCharacterStrict(name: String, code: String): CharLookupResult {
         if (code.isNotBlank()) {
-            val byCode = db.characterDao().getCharacterByCode(code)
+            val byCode = characterByCode(code)
             if (byCode != null) return CharLookupResult.Found(byCode)
         }
         if (name.isBlank()) return CharLookupResult.NotFound
-        val matches = db.characterDao().getAllCharactersByName(name)
+        val matches = charactersByName(name)
         return when {
             matches.isEmpty() -> CharLookupResult.NotFound
             matches.size == 1 -> CharLookupResult.Found(matches[0])
@@ -8140,9 +8345,180 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 그래도 모호하면 Ambiguous 반환(호출부가 경고 후 스킵). findCharacterByName(LIMIT 1)의
      * "조용히 아무나 선택" 문제를 대체한다 — 연표 참가자·이름은행 사용캐릭터처럼 코드 폴백이 없는 경로용.
      */
+    // ── 자연키 (B-210) ──────────────────────────────────────────────────────────
+    // 코드가 없는 구버전 파일의 폴백 경로가 쓰는 키다. **타입이 있는 `data class`로 짓는다** —
+    // 손쉬워 보이는 `listOf(charId, year, …)`는 코틀린이 원소 타입을 첫 원소에서 추론해
+    // 숫자 리터럴을 올려 버려, `Int` 칸에서 실은 키와 **영영 같지 않다.** 컴파일도 되고 예외도
+    // 없어 **모든 조회가 빗나가는데도 조용하고**, 그러면 가져오기가 *"기존 행이 없다"*고 보고
+    // 전부 새로 만든다(`ImportLookupIndexTest` ⑤가 그 실패를 붙잡아 둔다).
+
+    private data class EventNaturalKey(val year: Int, val description: String)
+    private data class StateChangeNaturalKey(
+        val characterId: Long, val year: Int, val fieldKey: String, val newValue: String
+    )
+    private data class RelChangeNaturalKey(
+        val relationshipId: Long, val year: Int, val month: Int?, val day: Int?
+    )
+
+    /**
+     * 관계의 **쌍** 키 — 관계는 두 캐릭터에 함께 매달려 방향이 없다.
+     * 작은 id를 앞에 두어 `(가, 나)`와 `(나, 가)`가 한 키가 된다(호출부가 그렇게 걸러 왔다).
+     */
+    private data class CharacterPairKey(val low: Long, val high: Long) {
+        companion object {
+            fun of(a: Long, b: Long) = CharacterPairKey(minOf(a, b), maxOf(a, b))
+        }
+    }
+
+    // ── 캐릭터 정체성 색인 (B-210) ──────────────────────────────────────────────
+    // 아래 넷이 대체하는 질의는 전부 `characters`를 **한 행씩** 물었다. 캐릭터를 코드·이름으로
+    // 되찾는 시트가 다섯이라(캐릭터 · 캐릭터 필드값 · 연표 참가자 · 상태변화 · 이름 은행),
+    // 목표 규모(×30)에서 그 합이 캐릭터 시트만으로도 6,420행 × 최대 2회다.
+    // **표를 한 번 읽어 색인으로 답한다** — 갱신은 캐릭터를 쓰는 유일한 자리가 맡는다.
+
+    /**
+     * 색인을 아직 안 실었으면 한 번 싣는다.
+     * **id 오름차순으로 싣는 것이 요점이다** — 대체하는 질의들이 `ORDER BY` 없는 `LIMIT 1`이라
+     * 사실상 rowid가 작은 행을 주는데, `getAllCharactersList()`는 고정 · 표시순 · 이름순으로
+     * 정렬돼 나온다. 그대로 실으면 **동명이인에서 합쳐지는 상대가 바뀐다.**
+     */
+    /** 색인을 비운다 — **가져오기·미리보기 한 번마다** 부른다(형제 상태들과 같은 규약). */
+    private fun resetCharacterIndex() {
+        characterCodes.reset()
+        characterNames.reset()
+        characterIndexLoaded = false
+    }
+
+    private suspend fun ensureCharacterIndex() {
+        if (characterIndexLoaded) return
+        characterIndexLoaded = true
+        for (ch in db.characterDao().getAllCharactersList().sortedBy { it.id }) {
+            characterCodes.put(ch)
+            characterNames.put(ch)
+        }
+    }
+
+    /**
+     * 캐릭터를 썼다고 기록한다(insert·update 양쪽 — DB에 쓴 **그 행**을 넘길 것).
+     * 이름·코드가 바뀌었으면 옛 키는 색인이 끊는다([ImportLookupIndex] 성질 3).
+     */
+    private fun rememberCharacter(character: Character) {
+        characterCodes.put(character)
+        characterNames.put(character)
+    }
+
+    /** `getCharacterByCode`의 자리. 빈 코드는 조회하지 않는다(호출부의 기존 규약과 같다). */
+    private suspend fun characterByCode(code: String): Character? {
+        if (code.isBlank()) return null
+        ensureCharacterIndex()
+        return characterCodes.first(code)
+    }
+
+    /** `getCharacterByName`(LIMIT 1)의 자리. */
+    private suspend fun characterByName(name: String): Character? {
+        ensureCharacterIndex()
+        return characterNames.first(name)
+    }
+
+    /**
+     * `getCharacterByNameAndNovel`(LIMIT 1)의 자리 —
+     * SQL이 `(novelId = :novelId OR (:novelId IS NULL AND novelId IS NULL))`로 **null도 값으로**
+     * 대조하므로 여기서도 그렇게 거른다.
+     */
+    private suspend fun characterByNameAndNovel(name: String, novelId: Long?): Character? {
+        ensureCharacterIndex()
+        return characterNames.all(name).firstOrNull { it.novelId == novelId }
+    }
+
+    /** `getAllCharactersByName`(LIMIT 없음)의 자리. */
+    private suspend fun charactersByName(name: String): List<Character> {
+        ensureCharacterIndex()
+        return characterNames.all(name)
+    }
+
+    // ── 사건 정체성 색인 (B-210) ────────────────────────────────────────────────
+
+    /** 색인을 비운다 — 가져오기·미리보기 한 번마다 부른다(캐릭터 축과 같은 규약). */
+    private fun resetEventIndex() {
+        eventCodes.reset()
+        eventNaturalKeys.reset()
+        eventsByEventId.reset()
+        eventIndexLoaded = false
+    }
+
+    /** id 오름차순으로 싣는다 — 자연키가 겹치는 사건이 둘일 때 `LIMIT 1`과 같은 답을 내려면 그렇다. */
+    private suspend fun ensureEventIndex() {
+        if (eventIndexLoaded) return
+        eventIndexLoaded = true
+        for (event in db.timelineDao().getAllEventsList().sortedBy { it.id }) rememberEvent(event)
+    }
+
+    /** 사건을 썼다고 기록한다(insert·update 양쪽). 연도·설명·코드가 바뀌면 옛 키는 색인이 끊는다. */
+    private fun rememberEvent(event: TimelineEvent) {
+        eventCodes.put(event)
+        eventNaturalKeys.put(event)
+        eventsByEventId.put(event)
+    }
+
+    /** `getEventByCode`의 자리. */
+    private suspend fun eventByCode(code: String): TimelineEvent? {
+        if (code.isBlank()) return null
+        ensureEventIndex()
+        return eventCodes.first(code)
+    }
+
+    /** `getEventByNaturalKey`(LIMIT 1)의 자리. */
+    private suspend fun eventByNaturalKey(year: Int, description: String): TimelineEvent? {
+        ensureEventIndex()
+        return eventNaturalKeys.first(EventNaturalKey(year, description))
+    }
+
+    /** `getEventById`의 자리. */
+    private suspend fun eventById(id: Long): TimelineEvent? {
+        ensureEventIndex()
+        return eventsByEventId.first(id)
+    }
+
+    // ── 작품 코드 색인 (B-210) ──────────────────────────────────────────────────
+
+    private fun resetNovelIndex() {
+        novelCodes.reset()
+        novelIndexLoaded = false
+    }
+
+    private suspend fun ensureNovelIndex() {
+        if (novelIndexLoaded) return
+        novelIndexLoaded = true
+        for (novel in db.novelDao().getAllNovelsList().sortedBy { it.id }) novelCodes.put(novel)
+    }
+
+    /** 작품을 썼다고 기록한다 — 코드가 바뀌었으면 옛 코드는 색인이 끊는다. */
+    private fun rememberNovel(novel: Novel) {
+        novelCodes.put(novel)
+    }
+
+    /** `getNovelByCode`의 자리. */
+    private suspend fun novelByCode(code: String): Novel? {
+        if (code.isBlank()) return null
+        ensureNovelIndex()
+        return novelCodes.first(code)
+    }
+
+    /**
+     * 작품 → 세계관. [universeIdOfCharacter]가 쓰던 메모를 **작품 단위로 갈라** 캐릭터를 거치지
+     * 않는 자리도 쓰게 한 것이다 (B-210) — 캐릭터 시트의 세계관 이동 판정이 행마다 작품을
+     * 두 번 읽고 있었는데, 같은 작품이 시트 안에서 되풀이된다(작품 510개에 캐릭터 6,420명).
+     */
+    private suspend fun universeIdOfNovel(novelId: Long): Long? {
+        if (novelUniverseCache.containsKey(novelId)) return novelUniverseCache[novelId]
+        val uid = db.novelDao().getNovelById(novelId)?.universeId
+        novelUniverseCache[novelId] = uid
+        return uid
+    }
+
     private suspend fun resolveCharByNameNovel(name: String, preferredNovelId: Long?): CharLookupResult {
         if (name.isBlank()) return CharLookupResult.NotFound
-        val matches = db.characterDao().getAllCharactersByName(name)
+        val matches = charactersByName(name)
         return when {
             matches.isEmpty() -> CharLookupResult.NotFound
             matches.size == 1 -> CharLookupResult.Found(matches[0])
@@ -8160,10 +8536,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private suspend fun universeIdOfCharacter(character: Character): Long? {
         val novelId = character.novelId ?: return null
-        if (novelUniverseCache.containsKey(novelId)) return novelUniverseCache[novelId]
-        val uid = db.novelDao().getNovelById(novelId)?.universeId
-        novelUniverseCache[novelId] = uid
-        return uid
+        return universeIdOfNovel(novelId)
     }
 
     /** 세력코드가 적혀 있는데 못 찾아 이름으로 폴백한 경우 고지 (importFactions 와 같은 규약) */
@@ -8417,7 +8790,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun applyDeferredUniverseNovelRefs(result: ImportResult) {
         for ((universeId, novelCode) in deferredUniverseImageNovelCodes) {
             val universe = db.universeDao().getUniverseById(universeId) ?: continue
-            val novelId = db.novelDao().getNovelByCode(novelCode)?.id
+            val novelId = novelByCode(novelCode)?.id
             if (novelId == null) {
                 result.warnings.add("세계관 '${universe.name}': 이미지 작품코드 '$novelCode'에 해당하는 작품이 없어 대표 이미지 연동이 해제되었습니다")
                 continue
@@ -8430,7 +8803,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun applyDeferredCharacterRefs(result: ImportResult) {
         for ((novelId, charCode) in deferredNovelImageCharCodes) {
             val novel = db.novelDao().getNovelById(novelId) ?: continue
-            val charId = db.characterDao().getCharacterByCode(charCode)?.id
+            val charId = characterByCode(charCode)?.id
             if (charId == null) {
                 result.warnings.add("작품 '${novel.title}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
                 continue
@@ -8441,7 +8814,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for ((universeId, charCode) in deferredUniverseImageCharCodes) {
             val universe = db.universeDao().getUniverseById(universeId) ?: continue
-            val charId = db.characterDao().getCharacterByCode(charCode)?.id
+            val charId = characterByCode(charCode)?.id
             if (charId == null) {
                 result.warnings.add("세계관 '${universe.name}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
                 continue
