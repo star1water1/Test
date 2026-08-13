@@ -930,7 +930,7 @@ class DynamicFieldFormBuilder(
                     }
                     val existingValues = valuesByField[fieldId].orEmpty().map { it.value }
                     val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ||
-                        defsById[fieldId]?.type == FieldType.MULTI_TEXT.name
+                        defsById[fieldId]?.fieldType == FieldType.MULTI_TEXT
                     ) {
                         // 자동완성 후보도 같은 규칙으로 쪼갠다(B-178) — 갈리면 라이브러리가 한 값으로
                         // 든 것을 폼이 두 조각으로 권한다.

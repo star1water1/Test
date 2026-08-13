@@ -48,6 +48,7 @@ import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.novelcharacter.app.data.model.FieldType
 
 class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.EventEditDialogFragment.Host {
 
@@ -594,7 +595,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 없다 — 부분 집합으로 평가하면 사실이 아닌 숫자를 보여주므로 아예 제외한다.
                 val orphanFields = viewModel
                     .getFieldsByIds(values.map { it.fieldDefinitionId }.distinct())
-                    .filter { it.type != "CALCULATED" }
+                    .filter { it.fieldType != FieldType.CALCULATED }
                 if (_binding == null) return@launch
                 // cachedFields는 상태변화 추가 다이얼로그의 '필드' 선택지 소스이기도 하다.
                 // 여기에 타 세계관 정의를 넣으면 소속되지도 않은 세계관의 필드가 선택 가능해진다.
@@ -627,7 +628,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
         valueMap: Map<Long, com.novelcharacter.app.data.model.CharacterFieldValue>
     ): Map<Long, String> {
-        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        val calculatedFields = fields.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
         val fieldKeyValues = mutableMapOf<String, String>()
         for (field in fields) {
@@ -666,10 +667,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     ): Map<Long, DynamicFieldRenderer.PercentileInfo> {
         val result = mutableMapOf<Long, DynamicFieldRenderer.PercentileInfo>()
         val valueMap = values.associateBy { it.fieldDefinitionId }
-        val numericTypes = setOf("NUMBER", "CALCULATED", "BODY_SIZE", "GRADE")
 
         for (field in fields) {
-            if (field.type !in numericTypes) continue
+            // "이 타입이 수를 내는가"는 앱에 한 벌뿐이다 (B-55) — 종전에는 여기 · 목록 정렬 ·
+            // 통계 순위가 같은 집합을 따로 적고 있었고, 갈리면 같은 필드가 화면마다 다른 축으로 읽힌다.
+            if (!com.novelcharacter.app.util.FieldValueSorter.isNumericSortType(field.fieldType)) continue
 
             // Parse percentile config
             val percentileConfig = try {
@@ -684,7 +686,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             if (scopes.isEmpty()) continue
 
             // GRADE 필드: 등급 문자 → 수치 매핑 추출
-            val gradeMap: Map<String, Double>? = if (field.type == "GRADE") {
+            val gradeMap: Map<String, Double>? = if (field.fieldType == FieldType.GRADE) {
                 try {
                     val cfg = org.json.JSONObject(field.config)
                     val gradesObj = cfg.optJSONObject("grades")
@@ -696,13 +698,17 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
             // Get current character's numeric value
             // CALCULATED: 사전 계산된 결과 사용 (display와 동일한 값 보장)
-            val myValue: Double? = when (field.type) {
-                "CALCULATED" -> calculatedResults[field.id]?.toDoubleOrNull()
-                "GRADE" -> {
+            val myValue: Double? = when (field.fieldType) {
+                FieldType.CALCULATED -> calculatedResults[field.id]?.toDoubleOrNull()
+                FieldType.GRADE -> {
                     val rawVal = valueMap[field.id]?.value ?: ""
                     gradeMap?.get(rawVal)
                 }
-                else -> valueMap[field.id]?.value?.toDoubleOrNull()
+                // NUMBER·BODY_SIZE는 저장 원문이 곧 수다. 나머지 타입은 위 `isNumericSortType`이
+                // 이미 걸러 여기 못 온다 — 그래도 적는 것은 `when`을 전부 덮게 하기 위해서다.
+                FieldType.NUMBER, FieldType.BODY_SIZE,
+                FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT, null ->
+                    valueMap[field.id]?.value?.toDoubleOrNull()
             }
 
             if (myValue == null || myValue.isNaN() || myValue.isInfinite()) continue
@@ -710,8 +716,8 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             var novelPercentile: Float? = null
             var universePercentile: Float? = null
 
-            val isCalculated = field.type == "CALCULATED"
-            val isGrade = field.type == "GRADE"
+            val isCalculated = field.fieldType == FieldType.CALCULATED
+            val isGrade = field.fieldType == FieldType.GRADE
 
             // 문자열 값을 수치로 변환하는 함수 (GRADE는 등급 매핑 사용)
             val toNumeric: (String) -> Double? = if (isGrade && gradeMap != null) {
@@ -976,7 +982,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val bodySizeField = fields.find {
             com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
                 com.novelcharacter.app.data.model.SemanticRole.BODY_SIZE
-        } ?: fields.find { it.type == "BODY_SIZE" } ?: return null
+        } ?: fields.find { it.fieldType == FieldType.BODY_SIZE } ?: return null
 
         val config = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
         val heightField = fields.find {

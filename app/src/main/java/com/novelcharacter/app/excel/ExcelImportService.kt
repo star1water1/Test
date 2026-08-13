@@ -4537,7 +4537,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         existingConfig: String?,
         result: ImportResult?
     ): String {
-        if (fieldType != FieldType.GRADE.name) return config
+        // 들어온 글자를 타입으로 좁혀 견준다 (B-55) — 모르는 글자는 등급이 아니므로 그대로 나간다.
+        if (FieldType.fromName(fieldType) != FieldType.GRADE) return config
         val ref = com.novelcharacter.app.data.model.GradeSystemRef
 
         suspend fun resolve(code: String?, name: String?): com.novelcharacter.app.data.model.GradeSystem? {

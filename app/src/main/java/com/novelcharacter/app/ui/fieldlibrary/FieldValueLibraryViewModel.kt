@@ -19,6 +19,7 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -59,7 +60,7 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
                 field = fd,
                 universeName = universes[fd.universeId]?.name ?: "",
                 supported = FieldValueTokenizer.supportsLibrary(fd),
-                unsupportedReasonRes = unsupportedReason(fd),
+                unsupportedReasonRes = unsupportedReasonRes(fd),
                 entryCount = c?.entryCount ?: 0,
                 uncategorizedCount = c?.uncategorizedCount ?: 0,
                 unusedCount = c?.unusedCount ?: 0
@@ -67,11 +68,25 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    private fun unsupportedReason(fd: FieldDefinition): Int = when {
-        FieldValueTokenizer.supportsLibrary(fd) -> 0
-        fd.type == "CALCULATED" -> R.string.field_library_unsupported_calculated
-        fd.type == "NUMBER" -> R.string.field_library_unsupported_number
-        else -> R.string.field_library_unsupported_structured
+    companion object {
+        /**
+         * 이 필드가 값 라이브러리를 못 쓰는 **사유 문자열** — 0이면 쓸 수 있다는 뜻이다.
+         *
+         * **두 화면이 같은 표를 본다** (B-55, 2026.08.13): 라이브러리 목록의 회색 사유와
+         * 필드 관리에서 눌렀을 때 뜨는 토스트. 종전에는 같은 판정이 생문자열로 두 벌 적혀
+         * 있었고, 갈리면 **한 화면은 "계산 필드라 안 됩니다"라 하고 다른 화면은 "구조화
+         * 입력이라 안 됩니다"라고 하는** 모양이 된다 — 어느 쪽이 참인지 사용자가 알 길이 없다.
+         *
+         * 판정 순서가 표의 일부다: 쓸 수 있는가를 [FieldValueTokenizer.supportsLibrary]에게
+         * 먼저 묻고, 못 쓸 때만 사유를 가른다. 그래서 구조화 입력을 켠 글자 필드는
+         * '구조화' 사유로 떨어진다(타입이 아니라 설정 때문에 막힌 것이라 그쪽이 맞다).
+         */
+        fun unsupportedReasonRes(fd: FieldDefinition): Int = when {
+            FieldValueTokenizer.supportsLibrary(fd) -> 0
+            fd.fieldType == FieldType.CALCULATED -> R.string.field_library_unsupported_calculated
+            fd.fieldType == FieldType.NUMBER -> R.string.field_library_unsupported_number
+            else -> R.string.field_library_unsupported_structured
+        }
     }
 
     // ===== 값 목록 =====

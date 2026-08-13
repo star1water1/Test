@@ -42,7 +42,7 @@ class GradeSystemRepository(private val db: AppDatabase) {
     /** 이 체계를 참조하는 GRADE 필드 전부 (전 entityType — R-29). */
     suspend fun referencingFields(system: GradeSystem): List<FieldDefinition> =
         db.fieldDefinitionDao().getFieldsByUniverseAllTypes(system.universeId)
-            .filter { it.type == FieldType.GRADE.name && GradeSystemRef.codeFromConfig(it.config) == system.code }
+            .filter { it.fieldType == FieldType.GRADE && GradeSystemRef.codeFromConfig(it.config) == system.code }
 
     /**
      * 체계 저장(신규/수정) + 참조 필드 전파.

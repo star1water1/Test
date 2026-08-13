@@ -54,7 +54,7 @@ enum class NarrativeMode(val key: String, val label: String) {
          * NUMBER·BODY_SIZE·CALCULATED는 값의 형태가 정해져 있으며, MULTI_TEXT는 산문이 아니라
          * 토큰 목록이다. 기능 간소화가 아니라 **타입 계약**이라 여기서 가른다.
          */
-        fun isEligibleType(type: String?): Boolean = type == FieldType.TEXT.name
+        fun isEligibleType(type: FieldType?): Boolean = type == FieldType.TEXT
 
         /**
          * 이 필드가 실제로 서술형인가 — 폼의 ✨ 경로 분기 기준(단일 소스).
@@ -64,7 +64,7 @@ enum class NarrativeMode(val key: String, val label: String) {
          * **애초에 성립하지 않는 조합**이고, 그 사실은 편집 화면에서 설정이 보이지 않는 것으로 드러난다.
          */
         fun isNarrative(field: FieldDefinition): Boolean {
-            if (!isEligibleType(field.type)) return false
+            if (!isEligibleType(field.fieldType)) return false
             if (SemanticRole.fromConfig(field.config) != null) return false
             if (StructuredInputConfig.fromConfig(field.config).enabled) return false
             return when (fromConfig(field.config)) {

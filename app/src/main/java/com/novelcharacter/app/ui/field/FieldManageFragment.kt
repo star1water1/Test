@@ -384,11 +384,12 @@ class FieldManageFragment : Fragment() {
                                 androidx.core.os.bundleOf("fieldDefinitionId" to field.id)
                             )
                         } else {
-                            val reason = when (field.type) {
-                                "CALCULATED" -> getString(R.string.field_library_unsupported_calculated)
-                                "NUMBER" -> getString(R.string.field_library_unsupported_number)
-                                else -> getString(R.string.field_library_unsupported_structured)
-                            }
+                            // 사유는 [FieldValueLibraryViewModel.unsupportedReasonRes]와 **같은 표를 본다** —
+                            // 갈리면 목록의 회색 사유와 눌렀을 때의 토스트가 다른 말을 한다(B-55).
+                            val reason = getString(
+                                com.novelcharacter.app.ui.fieldlibrary.FieldValueLibraryViewModel
+                                    .unsupportedReasonRes(field)
+                            )
                             android.widget.Toast.makeText(requireContext(), reason, android.widget.Toast.LENGTH_LONG).show()
                         }
                     }

@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
+import com.novelcharacter.app.data.model.FieldType
 
 class NovelCharacterApp : Application() {
 
@@ -198,7 +199,7 @@ class NovelCharacterApp : Application() {
                     val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
                     // alive 필드 찾기: key="alive" + type="SELECT" + semanticRole 없음
                     val aliveField = fields.find { f ->
-                        f.key == "alive" && f.type == "SELECT" &&
+                        f.key == "alive" && f.fieldType == FieldType.SELECT &&
                             com.novelcharacter.app.data.model.SemanticRole.fromConfig(f.config) == null
                     }
                     if (aliveField != null) {

@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetBatchStateChangeBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 /**
  * 선택 캐릭터들에 동일한 상태변화(시점 + 필드 + 값)를 한 번에 기록하는 시트.
@@ -85,7 +86,7 @@ class BatchStateChangeBottomSheet : BottomSheetDialogFragment() {
     private fun loadFields(universe: Universe) {
         fieldLoadJob?.cancel()  // 세계관 빠른 전환 시 경합 방지
         fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
-            val fields = batchViewModel.getFieldsByUniverseList(universe.id).filter { it.type != "CALCULATED" }
+            val fields = batchViewModel.getFieldsByUniverseList(universe.id).filter { it.fieldType != FieldType.CALCULATED }
             if (_binding == null) return@launch
             buildFieldOptions(universe.id, fields)
         }

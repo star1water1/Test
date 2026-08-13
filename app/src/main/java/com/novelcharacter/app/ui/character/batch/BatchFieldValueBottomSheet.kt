@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetBatchFieldValueBinding
 import com.novelcharacter.app.util.GsonTypes
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
 
@@ -135,7 +136,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
         fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             val allFields = batchViewModel.getFieldsByUniverseList(universeId)
             // CALCULATED 필드는 제외 (자동 계산 → 수동 설정 불가)
-            fields = allFields.filter { it.type != "CALCULATED" }
+            fields = allFields.filter { it.fieldType != FieldType.CALCULATED }
             if (_binding == null) return@launch
 
             val fieldNames = fields.map { it.name }
@@ -165,8 +166,8 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
             return
         }
 
-        when (field.type) {
-            "SELECT" -> {
+        when (field.fieldType) {
+            FieldType.SELECT -> {
                 binding.valueInputLayout.visibility = View.GONE
                 binding.valueSpinner.visibility = View.VISIBLE
                 val options = parseSelectOptions(field.config)
@@ -175,7 +176,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
                 binding.valueSpinner.adapter = adapter
                 binding.btnConfirm.isEnabled = options.isNotEmpty()
             }
-            "GRADE" -> {
+            FieldType.GRADE -> {
                 binding.valueInputLayout.visibility = View.GONE
                 binding.valueSpinner.visibility = View.VISIBLE
                 val grades = parseGradeOptions(field.config)
@@ -184,15 +185,18 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
                 binding.valueSpinner.adapter = adapter
                 binding.btnConfirm.isEnabled = grades.isNotEmpty()
             }
-            "NUMBER" -> {
+            FieldType.NUMBER -> {
                 binding.valueInputLayout.visibility = View.VISIBLE
                 binding.valueSpinner.visibility = View.GONE
                 binding.valueInput.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
                 binding.valueInputLayout.hint = field.name
                 binding.btnConfirm.isEnabled = true
             }
-            else -> {
-                // TEXT, MULTI_TEXT, BODY_SIZE
+            // 자유 입력 + 라이브러리 제안. **CALCULATED는 여기 못 온다** — 목록을 채우는
+            // 쪽이 이미 걸렀다(위 `allFields.filter { it.fieldType != FieldType.CALCULATED }`).
+            // 모르는 타입도 이 경로가 맞다: 글자로 받아 그대로 저장하는 것이 가장 덜 잃는다(B-55).
+            FieldType.TEXT, FieldType.MULTI_TEXT, FieldType.BODY_SIZE,
+            FieldType.CALCULATED, null -> {
                 binding.valueInputLayout.visibility = View.VISIBLE
                 binding.valueSpinner.visibility = View.GONE
                 binding.valueInput.inputType = InputType.TYPE_CLASS_TEXT
@@ -223,9 +227,12 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
 
     private fun getInputValue(): String {
         val field = selectedField ?: return ""
-        return when (field.type) {
-            "SELECT", "GRADE" -> binding.valueSpinner.selectedItem?.toString() ?: ""
-            else -> binding.valueInput.text?.toString()?.trim() ?: ""
+        // **위 `bindValueInput`과 짝이다** — 스피너를 세운 타입에서만 스피너를 읽는다.
+        // 갈리면 사용자가 고른 값 대신 빈 문자열이 일괄 저장된다(B-55).
+        return when (field.fieldType) {
+            FieldType.SELECT, FieldType.GRADE -> binding.valueSpinner.selectedItem?.toString() ?: ""
+            FieldType.TEXT, FieldType.NUMBER, FieldType.MULTI_TEXT, FieldType.BODY_SIZE,
+            FieldType.CALCULATED, null -> binding.valueInput.text?.toString()?.trim() ?: ""
         }
     }
 

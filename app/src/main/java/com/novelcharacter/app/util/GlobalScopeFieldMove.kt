@@ -100,7 +100,7 @@ object GlobalScopeFieldMove {
                 // 자기 자신이 짝으로 나오는 경우는 이동이 아니다 — 옮길 것이 없으니 세지도 않는다.
                 target.id == def.id -> Unit
                 target.id in claimed -> kept[def.id] = KeptReason.TARGET_OCCUPIED
-                !FieldTypeCompatibility.isValueCompatible(value, target.type) ->
+                !FieldTypeCompatibility.isValueCompatible(value, target.fieldType) ->
                     kept[def.id] = KeptReason.TYPE_MISMATCH
                 else -> {
                     transfers[def.id] = target.id

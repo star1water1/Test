@@ -29,6 +29,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentCharacterGrowthBinding
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.model.FieldType
 
 class CharacterGrowthViewModel(application: android.app.Application) : AndroidViewModel(application) {
     private val app = application as NovelCharacterApp
@@ -139,7 +140,7 @@ class CharacterGrowthFragment : Fragment() {
             if (_binding == null) return@launch
 
             // NUMBER, GRADE 타입 필드만 필터
-            val numericFields = fields.filter { it.type == "NUMBER" || it.type == "GRADE" }
+            val numericFields = fields.filter { it.fieldType == FieldType.NUMBER || it.fieldType == FieldType.GRADE }
             fieldsByKey = numericFields.associateBy { it.key }
 
             if (numericFields.isEmpty()) {

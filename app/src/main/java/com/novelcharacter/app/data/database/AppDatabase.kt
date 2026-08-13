@@ -152,6 +152,24 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // ──────────────────────────────────────────────────────────────────
+        // 마이그레이션 — 여기서만 필드 타입을 **생문자열로 적는다** (B-55, 2026.08.13)
+        //
+        // 앱의 나머지 자리는 전부 `FieldDefinition.fieldType`(= `FieldType` enum)으로 분기하고,
+        // 생문자열이 되돌아오면 `tools/check_field_type_branch.sh`가 막는다. **이 블록만 예외이고,
+        // 그 예외에는 이유가 있다.**
+        //
+        // 마이그레이션은 **이미 일어난 일을 재생하는 코드**다. `MIGRATION_23_24`는 2026년의 그
+        // 시점에 `"BODY_SIZE"`라는 글자를 심었고, 그 글자를 그때 심은 기기의 DB에 지금도 그대로
+        // 들어 있다. 여기를 `FieldType.BODY_SIZE.name`으로 바꾸면 **enum 상수 이름을 고치는 순간
+        // 과거가 함께 바뀐다** — 옛 버전에서 올라오는 기기가 그때와 다른 글자를 받고, 그 행은
+        // 어떤 화면에서도 자기 타입으로 안 읽힌다(모르는 타입 = `fieldType`이 null).
+        //
+        // 즉 enum을 참조하는 것이 여기서는 **안전이 아니라 위험**이다. enum은 "지금 앱이 아는
+        // 타입"이고 마이그레이션이 필요로 하는 것은 "그때 적힌 글자"이며, 둘은 같아 보일 뿐
+        // 같은 것이 아니다. 새 마이그레이션도 같은 규칙을 따른다 — 글자를 그대로 적을 것.
+        // ──────────────────────────────────────────────────────────────────
+
         /**
          * Migration from version 1 to 2:
          * Added universes, field_definitions, character_field_values,

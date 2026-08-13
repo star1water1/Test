@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.DefaultFieldPlanKeys
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.DefaultFieldRef
 import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.model.FieldConfigTransfer
@@ -327,7 +328,7 @@ object DefaultFieldPlan {
                 // 타입이 그대로면 값은 전부 살아남는다 — 세지 않는다.
                 // 조건은 [typeChanges] 하나다(= 저장소가 값을 채운 조건. B-135).
                 incompatibleValues = if (typeChanges(row.field, template)) {
-                    FieldTypeCompatibility.incompatibleCount(row.values, template.type)
+                    FieldTypeCompatibility.incompatibleCount(row.values, FieldType.fromName(template.type))
                 } else 0
             )
         }
