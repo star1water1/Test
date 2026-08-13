@@ -5636,6 +5636,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 필드 기록 이후 호출해 방금 쓴 값도 새 세계관 필드로 key 기준 재매핑되게 한다(유실은 휴지통 스냅샷).
                 if (movedToUniverseId != null) {
                     universeMovedCharacterIds.add(charId)
+                    // 재매핑은 이 캐릭터의 값을 **장부를 거치지 않고** 통째로 다시 쓴다(옛 필드 →
+                    // 새 세계관의 같은 key 필드). 사본을 그대로 두면 장부가 옛 필드 id를 들고 있어,
+                    // 같은 캐릭터가 시트에 다시 나올 때 **이미 있는 (캐릭터, 새 필드)에 insert를 쳐
+                    // 유니크 색인을 깬다.** `deleteValuesNotInUniverse` 자리와 같은 처방이다 —
+                    // **`character_field_values`를 장부 밖에서 건드리는 자리는 반드시 여기서 내린다**
+                    // (`tools/check_value_ledger_sync.sh`가 그 짝을 기계로 본다).
+                    valueLedger.forget(charId)
                     db.characterDao().getCharacterById(charId)?.let { moved ->
                         // 이 임포트가 만드는 모든 스냅샷은 같은 저장소 인스턴스가 남긴다 —
                         // 커밋 후 정리가 "이 작업이 만든 백업"을 알아보고 보호해야 하기 때문이다.
