@@ -413,6 +413,10 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   # 딸린 것을 함께 넣지 않으면 가짜 오류 1건이 되살아나고, 그러면 아래 "오류 0인데 클래스도 0"
   # 가드가 다시 죽는다(실제로 이 판에서 그 1건이 떴다).
   echo "$M/util/CsvTokens.kt"
+  # `RelationshipGraphView`가 배치 계산을 이것에 위임한다(관계도 노드 상한 판). 바로 위
+  # 세 줄과 **같은 부류의 등재**다 — 딸린 것을 함께 넣지 않으면 가짜 오류가 되살아나고,
+  # 그러면 아래 "오류 0인데 클래스도 0" 가드가 다시 죽는다(실제로 이 판에서 2건이 떴다).
+  echo "$M/util/GraphForceLayout.kt"
   ls "$M"/data/model/*.kt
   echo "$WORK/ContextStub.kt"
   echo "$WORK/ResourcesStub.kt"

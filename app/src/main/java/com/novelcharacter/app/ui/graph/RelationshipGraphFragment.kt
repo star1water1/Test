@@ -23,6 +23,7 @@ import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentRelationshipGraphBinding
+import com.novelcharacter.app.util.DisplayCap
 import com.novelcharacter.app.util.navigateSafe
 import android.graphics.Color
 import kotlinx.coroutines.launch
@@ -222,10 +223,6 @@ data class ResolvedRelationship(
 
 class RelationshipGraphFragment : Fragment() {
 
-    companion object {
-        private const val SUMMARY_MODE_THRESHOLD = 200
-    }
-
     private var _binding: FragmentRelationshipGraphBinding? = null
     private val binding get() = _binding!!
     private val viewModel: RelationshipGraphViewModel by viewModels()
@@ -236,6 +233,18 @@ class RelationshipGraphFragment : Fragment() {
     private var selectedFactions = mutableSetOf<Long>()   // 빈 셋 = 전체 세력
     private var isTimeViewEnabled = false
     private var currentYear: Int? = null
+
+    /**
+     * 지금 그려져 있는 노드([DisplayCap.rankedCap]이 남긴 인물). `null`이면 상한에 걸리지 않아
+     * 거를 것이 없다는 뜻이다.
+     *
+     * **두 자리가 갈리는 것을 막으려고 둔다** — 시점 슬라이더는 노드를 다시 세우지 않고
+     * 엣지만 갈아 끼우는데(`refreshGraphEdgesOnly`), 그 자리가 상한을 모르면 **접힌 인물로
+     * 뻗는 선을 다시 만든다.** 그리기에서는 끝이 없는 엣지를 건너뛰므로 화면이 깨지지는 않지만,
+     * 슬라이더는 *빠른 반응*이 목적인 경로라 만들자마자 버릴 엣지를 관계 수만큼 짓는 것이
+     * 정확히 그 목적에 어긋난다(같은 파일의 `isEdgeSecondary`가 같은 이유로 공용 정의다).
+     */
+    private var shownNodeIds: Set<Long>? = null
 
     private var currentUniverseId: Long? = null
     private var currentNovelId: Long? = null
@@ -778,11 +787,16 @@ class RelationshipGraphFragment : Fragment() {
 
         val (universeFiltered, _) = applyUniverseNovelFilter(chars, rels)
 
-        val filteredRelationships = if (selectedRelTypes.isNotEmpty()) {
+        val typeFiltered = if (selectedRelTypes.isNotEmpty()) {
             universeFiltered.filter { it.relationshipType in selectedRelTypes }
         } else {
             universeFiltered
         }
+        // 노드 상한을 여기서도 지킨다 — 이 경로는 노드를 다시 세우지 않으므로,
+        // 거르지 않으면 **접힌 인물로 뻗는 엣지**를 관계 수만큼 만들었다가 그리기에서 버린다.
+        val filteredRelationships = shownNodeIds?.let { ids ->
+            typeFiltered.filter { it.characterId1 in ids && it.characterId2 in ids }
+        } ?: typeFiltered
 
         val hideFactionEdges = !binding.graphView.showFactionEdges
 
@@ -834,6 +848,8 @@ class RelationshipGraphFragment : Fragment() {
             binding.nodeCountText.text = getString(R.string.graph_node_count, 0)
             binding.edgeCountText.text = getString(R.string.graph_edge_count, 0)
             binding.summaryModeText.visibility = View.GONE
+            // 그린 노드가 없으므로 남겨 두면 다음 슬라이더 조작이 **지난 필터의 인물 집합**으로 거른다.
+            shownNodeIds = null
             return
         }
 
@@ -846,31 +862,43 @@ class RelationshipGraphFragment : Fragment() {
         val characterMap = allCharacters.associateBy { it.id }
         val involvedCharacters = involvedIds.mapNotNull { characterMap[it] }
 
-        val isSummaryMode = involvedCharacters.size > SUMMARY_MODE_THRESHOLD
-        if (isSummaryMode) {
+        // 연결 수 — 상한에 걸릴 때 **무엇을 남길지**를 정하는 잣대다(관계가 많은 쪽이 남는다).
+        val connectionCount = mutableMapOf<Long, Int>()
+        filteredRelationships.forEach {
+            connectionCount[it.characterId1] = (connectionCount[it.characterId1] ?: 0) + 1
+            connectionCount[it.characterId2] = (connectionCount[it.characterId2] ?: 0) + 1
+        }
+
+        // 배치 비용이 노드 수의 제곱이라 여기가 이 화면의 유일한 규모 방어선이다(R-19 · [DisplayCap]).
+        // 종전에는 *연결 3개 이상*이라는 **술어**였고, 그것은 남는 수를 가두지 못했다 —
+        // 관계가 늘면 함께 늘어(×30에서 841명) 상한을 넘어서 켜진 장치가 상한을 못 지켰다.
+        val capped = DisplayCap.rankedCap(
+            items = involvedCharacters,
+            limit = DisplayCap.GRAPH_NODE_LIMIT,
+            scoreOf = { connectionCount[it.id] ?: 0 },
+            tieBreakOf = { it.id }
+        )
+        if (capped.hasHidden) {
+            // R-14 — 접었으면 **몇 명을 접었는지** 말한다. 숫자는 상수가 단일 소스라 문구에 박지 않는다.
             binding.summaryModeText.visibility = View.VISIBLE
-            binding.summaryModeText.text = getString(R.string.graph_summary_mode, SUMMARY_MODE_THRESHOLD)
+            binding.summaryModeText.text =
+                getString(R.string.graph_summary_mode, capped.shown.size, capped.hiddenCount)
             Toast.makeText(requireContext(), getString(R.string.graph_too_many_nodes), Toast.LENGTH_LONG).show()
-
-            val connectionCount = mutableMapOf<Long, Int>()
-            filteredRelationships.forEach {
-                connectionCount[it.characterId1] = (connectionCount[it.characterId1] ?: 0) + 1
-                connectionCount[it.characterId2] = (connectionCount[it.characterId2] ?: 0) + 1
-            }
-            val importantIds = connectionCount.filter { it.value >= 3 }.keys
-            val summaryChars = involvedCharacters.filter { it.id in importantIds }
-            val summaryRels = filteredRelationships.filter { it.characterId1 in importantIds && it.characterId2 in importantIds }
-
-            showGraph(summaryChars, summaryRels, allChanges, pIds)
         } else {
             binding.summaryModeText.visibility = View.GONE
-            showGraph(involvedCharacters, filteredRelationships, allChanges, pIds)
         }
+        // 양 끝이 모두 남은 관계만 그린다 — 한쪽이 접힌 관계를 그리면 없는 노드로 선이 뻗는다.
+        shownNodeIds = if (capped.hasHidden) capped.shown.mapTo(HashSet()) { it.id } else null
+        val shownRels = shownNodeIds?.let { ids ->
+            filteredRelationships.filter { it.characterId1 in ids && it.characterId2 in ids }
+        } ?: filteredRelationships
+        showGraph(capped.shown, shownRels, allChanges, pIds)
 
         binding.emptyState.visibility = View.GONE
         binding.graphView.visibility = View.VISIBLE
-        binding.nodeCountText.text = getString(R.string.graph_node_count, involvedCharacters.size)
-        binding.edgeCountText.text = getString(R.string.graph_edge_count, filteredRelationships.size)
+        // 세는 것은 **그린 것**이다 — 접힌 몫은 바로 위 고지가 따로 말한다.
+        binding.nodeCountText.text = getString(R.string.graph_node_count, capped.shown.size)
+        binding.edgeCountText.text = getString(R.string.graph_edge_count, shownRels.size)
     }
 
     private fun showGraph(
