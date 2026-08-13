@@ -69,10 +69,16 @@ while IFS=: read -r line _; do
   FAIL=1
 done < <(grep -nE 'characterFieldValueDao\(\)\.(insert|update|deleteValue|deleteValuesNotInUniverse)' "$SRC")
 
-# 가져오기마다 비우는가 — 안 비우면 둘째 가져오기가 DB가 아니라 지난번 사본을 본다
-if ! grep -q 'valueLedger\.reset()' "$SRC"; then
-  echo "  ✗ valueLedger.reset() 호출이 없다 — 연속 가져오기에서 지난번 사본이 남는다"
+# 앞뒤로 비우는가 — 둘의 몫이 다르다.
+#   앞: 실패·취소로 끝을 못 본 가져오기가 남긴 찌꺼기를 다음 실행이 보지 않게 한다.
+#   뒤: 서비스가 화면과 수명이 같아, 안 놓으면 가져오기가 끝난 뒤에도 행 전체를 들고 있다
+#       (봉우리가 아니라 **바닥**이 올라가고, 곧이어 도는 내보내기·백업이 그 위에서 시작한다).
+RESETS=$(grep -c 'valueLedger\.reset()' "$SRC")
+if [ "$RESETS" -lt 2 ]; then
+  echo "  ✗ valueLedger.reset() 호출이 ${RESETS}건이다 — 앞(찌꺼기 방지)과 뒤(놓아주기) 둘 다 필요하다"
   FAIL=1
+else
+  echo "  · reset ${RESETS}건 — 앞뒤 둘 다 있다"
 fi
 
 if [ "$FAIL" -eq 0 ]; then
