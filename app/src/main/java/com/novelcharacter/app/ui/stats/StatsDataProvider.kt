@@ -3248,6 +3248,56 @@ class StatsDataProvider {
         getCharactersByFieldValue(s, fieldDefIds, FieldValueMatchSpec.Values(targetValue))
 
     /**
+     * 대상 필드 정의를 **저장형 / 계산형으로 한 번** 가른 결과 (B-209).
+     *
+     * @property storedIds 저장 행을 훑을 때 쓰는 id 집합. 값마다 이것 **하나만** 친다.
+     * @property calcDefIds 계산(CALCULATED) def의 id — 곧이어 계산값 경로가 그대로 쓴다.
+     * @property hasStored 저장 행 경로에 들어갈 것인가. `defById` 기준이며 [storedIds]와 다르다(아래 주).
+     */
+    private class TargetDefSplit(
+        val storedIds: Set<Long>,
+        val calcDefIds: List<Long>,
+        val hasStored: Boolean
+    )
+
+    /**
+     * 드릴다운·하위 그룹이 값을 훑기 **전에** 대상 def를 한 번 가른다 (B-209).
+     *
+     * 종전에는 값마다 `idSet`을 치고 곧바로 같은 id로 `defById`를 다시 쳐서
+     * **같은 id로 Map을 두 번**(둘 다 `Long` 박싱) 물었다. 그런데 묻는 것
+     * (`fieldType == CALCULATED`)은 **def의 성질**이라 값마다 달라지지 않는다.
+     * 게다가 여섯 자리가 곧이어 `defById.values.filter{…}.map{it.id}`로 계산 def id를
+     * **다시 지어** 같은 파생을 두 번씩 했다 — 여기서 한 번에 낸다.
+     *
+     * > **재 보면 이 치환의 값은 1.2배다**(`scalability_performance` 3-10). 비용은 훑는 **건수**에
+     * > 있지 조회 횟수에 있지 않다 — 그래서 이 함수는 성능 대책이 아니라 **같은 파생을 한 번만
+     * > 하자는 정리**이고, 그 값은 규모와 무관하게 늘 참이다.
+     *
+     * **[storedIds]가 `defById.keys`가 아니라 [idSet]에서 나오는 것이 이 함수의 핵심이다.**
+     * 값은 자기 정의보다 오래 산다 — 캐릭터가 작품을 옮기면 [filterByNovel]이 def를 세계관으로
+     * 걸러 내지만 그 캐릭터의 **보관 값은 스냅샷에 남는다**(순위 경로가 *"작품 이동 뒤의 보관 값"*이라
+     * 부르는 그것이다). 종전 코드의 `defById[id]?.fieldType == CALCULATED`는 정의가 없을 때
+     * **null이라 false**여서 그 값들을 **세고 있었다.** 여기서 `defById.keys`로 좁히면 그 값들이
+     * **오류도 고지도 없이 빠진다** — 개발 의도 2번이 금지하는 바로 그 모양이라, 세던 것을 그대로 센다.
+     *
+     * [hasStored]도 같은 이유로 `defById` 기준이다: 대상이 전부 계산 def이면 종전 코드는 저장 행
+     * 경로에 **아예 들어가지 않았고**, 그때 정의 없는 id가 [idSet]에 섞여 있어도 세지 않았다.
+     */
+    private fun splitTargetDefs(
+        idSet: Set<Long>,
+        defById: Map<Long, FieldDefinition>
+    ): TargetDefSplit {
+        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        return TargetDefSplit(
+            storedIds = if (calcDefIds.isEmpty()) idSet else idSet - calcDefIds.toSet(),
+            calcDefIds = calcDefIds,
+            // `defById.values.any { it.fieldType != CALCULATED }`와 같은 값 — calcDefIds가
+            // defById의 CALCULATED를 정확히 세므로 개수 비교로 같은 것을 묻는다.
+            hasStored = calcDefIds.size < defById.size
+        )
+    }
+
+    /**
      * 매치 스펙판 (S-16·S-17). 라벨이 곧 값인 조각은 [FieldValueMatchSpec.Values],
      * 구간 라벨은 [FieldValueMatchSpec.NumericPartRange], 접힌 '기타' 묶음은 값 여러 개를
      * 담은 [FieldValueMatchSpec.Values]다 — 화면이 보여준 그 조각의 규칙을 그대로 받는다.
@@ -3286,10 +3336,10 @@ class StatsDataProvider {
         }
 
         // 저장 값을 가진 def (CALCULATED는 저장 행이 없다)
-        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
+        val targets = splitTargetDefs(idSet, defById)
+        if (targets.hasStored) {
             for (fv in s.fieldValues) {
-                if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
+                if (fv.fieldDefinitionId !in targets.storedIds) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.characterId, fv.value)
                 }
@@ -3297,7 +3347,7 @@ class StatsDataProvider {
         }
 
         // CALCULATED def: FormulaEvaluator 계산값으로 매칭
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllCalculatedValues(s)
             for ((charId, fieldMap) in calculatedValues) {
@@ -3356,17 +3406,17 @@ class StatsDataProvider {
             )
         }
 
-        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
+        val targets = splitTargetDefs(idSet, defById)
+        if (targets.hasStored) {
             for (fv in s.eventFieldValues) {
-                if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
+                if (fv.fieldDefinitionId !in targets.storedIds) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.eventId, fv.value)
                 }
             }
         }
 
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllEventCalculatedValues(s)
             for ((eventId, fieldMap) in calculatedValues) {
@@ -3414,17 +3464,17 @@ class StatsDataProvider {
             )
         }
 
-        if (defById.values.any { it.fieldType != FieldType.CALCULATED }) {
+        val targets = splitTargetDefs(idSet, defById)
+        if (targets.hasStored) {
             for (fv in s.novelFieldValues) {
-                if (fv.fieldDefinitionId !in idSet) continue
-                if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
+                if (fv.fieldDefinitionId !in targets.storedIds) continue
                 if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
                     record(fv.novelId, fv.value)
                 }
             }
         }
 
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculatedValues = computeAllNovelCalculatedValues(s)
             for ((novelId, fieldMap) in calculatedValues) {
@@ -3555,15 +3605,15 @@ class StatsDataProvider {
         }
 
         // 저장된 값
+        val targets = splitTargetDefs(idSet, defById)
         for (fv in s.fieldValues) {
-            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.fieldDefinitionId !in targets.storedIds) continue
             if (fv.characterId !in characterIds) continue
-            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.characterId, fv.value)
         }
 
         // CALCULATED 계산값 — 부분집합(characterIds)만 집계한다
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllCalculatedValues(s)
             for (charId in characterIds) {
@@ -3614,14 +3664,14 @@ class StatsDataProvider {
             }
         }
 
+        val targets = splitTargetDefs(idSet, defById)
         for (fv in s.eventFieldValues) {
-            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.fieldDefinitionId !in targets.storedIds) continue
             if (fv.eventId !in eventIds) continue
-            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.eventId, fv.value)
         }
 
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllEventCalculatedValues(s)
             for (eventId in eventIds) {
@@ -3668,14 +3718,14 @@ class StatsDataProvider {
             }
         }
 
+        val targets = splitTargetDefs(idSet, defById)
         for (fv in s.novelFieldValues) {
-            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.fieldDefinitionId !in targets.storedIds) continue
             if (fv.novelId !in novelIds) continue
-            if (defById[fv.fieldDefinitionId]?.fieldType == FieldType.CALCULATED) continue
             record(fv.novelId, fv.value)
         }
 
-        val calcDefIds = defById.values.filter { it.fieldType == FieldType.CALCULATED }.map { it.id }
+        val calcDefIds = targets.calcDefIds
         if (calcDefIds.isNotEmpty()) {
             val calculated = computeAllNovelCalculatedValues(s)
             for (novelId in novelIds) {
