@@ -1209,10 +1209,14 @@ class StatsDataProvider {
      * 보존 값(다른 세계관·사건 정의를 가리키는 값)이 분자에 섞여 완성도를 부풀렸다.
      */
     private fun filledCharacterDefIds(s: StatsSnapshot): Map<Long, Set<Long>> =
-        s.fieldValues.asSequence()
-            .filter { it.value.isNotBlank() }
-            .groupBy({ it.characterId }, { it.fieldDefinitionId })
-            .mapValues { (_, ids) -> ids.toSet() }
+        // 복잡도·요약·캐릭터 상세·데이터 건강 등 다섯 자리가 같은 스냅샷으로 부른다 —
+        // 필드값 전량 훑기이므로 스냅샷 단위로 한 번만 짓는다(perSnapshot 규약).
+        perSnapshot(filledDefIdsCache, s) { snap ->
+            snap.fieldValues.asSequence()
+                .filter { it.value.isNotBlank() }
+                .groupBy({ it.characterId }, { it.fieldDefinitionId })
+                .mapValues { (_, ids) -> ids.toSet() }
+        }
 
     /**
      * 그룹별 완성도 평균 (B-100) — **세 화면이 같은 함수를 쓴다**(통계 캐릭터 상세·데이터 건강·
@@ -1245,7 +1249,12 @@ class StatsDataProvider {
     }
 
     /** 캐릭터 복잡도 경량 계산 (Summary에서 특화 분포용) */
-    private fun computeCharacterComplexities(s: StatsSnapshot): List<CharacterComplexity> {
+    private fun computeCharacterComplexities(s: StatsSnapshot): List<CharacterComplexity> =
+        // 요약(특화 분포)과 교차분석이 같은 스냅샷으로 부른다. 순서는 s.characters 순서 그대로다 —
+        // 교차분석이 index로 캐릭터 id를 잇는 계약이므로 캐시가 그 순서를 보존한다.
+        perSnapshot(complexitiesCache, s) { buildCharacterComplexities(it) }
+
+    private fun buildCharacterComplexities(s: StatsSnapshot): List<CharacterComplexity> {
         val relCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
             relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
@@ -4149,24 +4158,27 @@ class StatsDataProvider {
      *
      * 합성 행의 `id`는 0이다 — 이 버킷은 집계·계수용이며 DB 행으로 다시 쓰지 않는다.
      */
-    private fun augmentedCharacterValues(s: StatsSnapshot): Map<Long, List<CharacterFieldValue>> {
-        val byFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
-            .groupByTo(HashMap()) { it.fieldDefinitionId }
+    private fun augmentedCharacterValues(s: StatsSnapshot): Map<Long, List<CharacterFieldValue>> =
+        // 요약 TOP5·인사이트·레거시 분석·교차분석·패턴의 다섯 호출부가 같은 스냅샷으로 부른다 —
+        // 앱에서 가장 큰 컬렉션(필드값)의 재그룹이므로 스냅샷 단위로 한 번만 짓는다(perSnapshot 규약).
+        perSnapshot(augmentedCache, s) { snap ->
+            val byFieldDef = snap.fieldValues.filter { it.value.isNotBlank() }
+                .groupByTo(HashMap()) { it.fieldDefinitionId }
 
-        for ((charId, fieldMap) in computeAllCalculatedValues(s)) {
-            for ((fieldDefId, value) in fieldMap) {
-                if (value.isBlank()) continue
-                byFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(
-                    CharacterFieldValue(
-                        characterId = charId,
-                        fieldDefinitionId = fieldDefId,
-                        value = value
+            for ((charId, fieldMap) in computeAllCalculatedValues(snap)) {
+                for ((fieldDefId, value) in fieldMap) {
+                    if (value.isBlank()) continue
+                    byFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(
+                        CharacterFieldValue(
+                            characterId = charId,
+                            fieldDefinitionId = fieldDefId,
+                            value = value
+                        )
                     )
-                )
+                }
             }
+            byFieldDef
         }
-        return byFieldDef
-    }
 
     /**
      * 통계가 수치를 문자열로 보일 때의 서식 **단일 소스**.
@@ -4205,23 +4217,36 @@ class StatsDataProvider {
      * 순위는 정렬에 원시 수치가 필요하다. 서식 문자열을 다시 파싱하면 `%.2f` 반올림이
      * 순위 경계를 바꾸므로 수치와 표시를 갈라 두되, **계산 자체는 이 함수 하나**다.
      */
-    private fun computeAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
-        // 한 칸짜리 캐시로는 부족하다 — 통계 로딩은 계산 4개를 동시에 띄우고, 그 사이 다른 화면이
-        // **다른 스냅샷**(작품별 비교는 원본)으로 들어온다. 스냅샷 동일성을 키로 하는 작은 맵을 쓰고,
-        // `computeIfAbsent`가 같은 스냅샷의 동시 요청을 하나로 묶는다(나머지는 결과를 기다린다).
-        if (calcCache.size > MAX_CACHED_SNAPSHOTS) calcCache.clear()
-        return calcCache.computeIfAbsent(IdentityKey(s)) { evaluateAllCalculatedNumbers(s) }
-    }
+    private fun computeAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> =
+        perSnapshot(calcCache, s) { evaluateAllCalculatedNumbers(it) }
 
     /**
-     * 스냅샷 1개짜리 계산 결과 캐시.
+     * 스냅샷 순수 함수의 **스냅샷 단위 메모이즈** — 이 파일의 캐시 규약 단일 자리.
      *
-     * 수식 평가는 캐릭터 수 × 수식 수에 비례하는데, 이제 인사이트·패턴·레거시 분석·요약·
-     * 교차분석·드릴다운이 모두 계산값을 합치므로 같은 스냅샷에 대해 여러 번 불린다.
-     * 통계 로딩은 여러 계산을 `async`로 동시에 돌리고, 화면에 따라 **서로 다른 스냅샷**이
-     * 동시에 계산된다(작품별 비교는 원본, 나머지는 필터본). 그래서 한 칸짜리 캐시는 서로를 밀어내고
-     * 키/값을 따로 게시하면 짝이 어긋난다 — 스냅샷 동일성을 키로 하는 작은 동시 맵을 쓴다.
+     * 통계 로딩은 계산 10개를 `async`로 동시에 돌리고(StatsViewModel), 그 사이 다른 화면이
+     * **다른 스냅샷**(작품별 비교는 원본)으로 들어온다. 한 칸짜리 캐시는 서로를 밀어내고
+     * 키/값을 따로 게시하면 짝이 어긋난다 — 스냅샷 동일성을 키로 하는 작은 동시 맵을 쓰고,
+     * `computeIfAbsent`가 같은 스냅샷의 동시 첫 호출을 하나로 묶는다(하나가 짓고 나머지는
+     * 결과를 기다린다 — 중복 CPU와 동시 힙 피크가 함께 준다).
+     *
+     * 종전에는 이 규약이 수식 평가([calcCache])와 라벨 해석([resolversOf])에만 있었고,
+     * 같은 성질(불변 스냅샷의 순수 함수)인 [augmentedCharacterValues]·[filledCharacterDefIds]·
+     * [computeCharacterComplexities]·사건/작품 계산값은 호출부마다 전부 다시 지었다 —
+     * 화면 한 번 적재의 시간 18%·할당 28%가 그 겹이었다(합성 하네스 실측, scalability 3-13).
+     *
+     * **돌려주는 값은 공유 사본이다 — 받은 쪽은 읽기만 한다.** 변조하면 같은 스냅샷의 다른
+     * 계산이 오염된 결과를 본다. 이 계약은 StatsMemoParityTest가 "모든 계산을 돌린 뒤 캐시
+     * 내용 = 새로 지은 것" 대조로 잠근다.
      */
+    private fun <T : Any> perSnapshot(
+        cache: java.util.concurrent.ConcurrentHashMap<IdentityKey, T>,
+        s: StatsSnapshot,
+        build: (StatsSnapshot) -> T
+    ): T {
+        if (cache.size > MAX_CACHED_SNAPSHOTS) cache.clear()
+        return cache.computeIfAbsent(IdentityKey(s)) { build(s) }
+    }
+
     /** 동일성(===)으로만 같은 키. 스냅샷은 불변이므로 같은 객체면 결과도 같다. */
     private class IdentityKey(val target: Any) {
         override fun hashCode(): Int = System.identityHashCode(target)
@@ -4230,6 +4255,16 @@ class StatsDataProvider {
 
     private val calcCache =
         java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, Double>>>()
+    private val augmentedCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, List<CharacterFieldValue>>>()
+    private val filledDefIdsCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Set<Long>>>()
+    private val complexitiesCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, List<CharacterComplexity>>()
+    private val eventCalcCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, String>>>()
+    private val novelCalcCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, String>>>()
 
     private fun evaluateAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
         val calculatedFields = s.fieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
@@ -4291,7 +4326,12 @@ class StatsDataProvider {
      * 사건 CALCULATED 필드 일괄 계산 — computeAllCalculatedValues의 사건판.
      * @return Map<eventId, Map<fieldDefinitionId, 계산값 문자열>>
      */
-    private fun computeAllEventCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
+    private fun computeAllEventCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> =
+        // 인사이트·패턴·교차 분석·드릴다운이 같은 스냅샷으로 부른다. 캐릭터 축(calcCache)과 달리
+        // 이 축은 캐시가 아예 없어 부를 때마다 수식 전량을 재평가했다 — 같은 규약으로 맞춘다.
+        perSnapshot(eventCalcCache, s) { buildAllEventCalculatedValues(it) }
+
+    private fun buildAllEventCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
         val calculatedFields = s.eventFieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
@@ -4351,7 +4391,11 @@ class StatsDataProvider {
      * 분포가 영원히 비고, 그것이 원칙 02가 말하는 '껍데기 구현'이다.
      * @return Map<novelId, Map<fieldDefinitionId, 계산값 문자열>>
      */
-    private fun computeAllNovelCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
+    private fun computeAllNovelCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> =
+        // 사건 축과 같은 이유 · 같은 규약([computeAllEventCalculatedValues] 참조).
+        perSnapshot(novelCalcCache, s) { buildAllNovelCalculatedValues(it) }
+
+    private fun buildAllNovelCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
         val calculatedFields = s.novelFieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isEmpty()) return emptyMap()
 
