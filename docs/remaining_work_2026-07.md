@@ -265,8 +265,12 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > |---|---|---|---|
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **로드맵 9판도 올렸다가 같은 세션에서 지웠다** (PR **#270**, run `31525468923`(build) · `31525469030`(migration), head `edbbcca`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **이 판에서 그 실행의 값이 특히 컸다** — 화면 파일이 **여섯**이라 로컬 프로브가 원리적으로 못 보는 몫이 그만큼이었고, `Run unit tests`가 두 Fragment의 재작성과 `presetSavedEvent` 배선을 **처음 컴파일했다.** 개명한 문자열 `preset_name_required`의 리소스 링크도 `Build Debug APK`가 처음 확인했다(로컬에 증명 수단이 아예 없는 부류다). 배지가 아니라 단계를 봤다: `Static checks` ✓ 33초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 2분57초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `edbbcca` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **마이그레이션 워크플로도 돌았고 초록이다** — 트리거가 `data/dao/**`를 담고 있고 이 판이 DAO에 조회 하나를 더했기 때문이다(스키마는 그대로다). `Room 스키마가 커밋돼 있는가` ✓ · 에뮬레이터에서 **`Run migration instrumentation tests` ✓ 5분20초.** **로드맵 6판도 올렸다가 같은 세션에서 지웠다** (PR **#267**, run `31501431238`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **로드맵이 예고한 *화면 파일 0*이 깨진 판이라 이 실행의 값이 특히 컸다** — `DynamicFieldRenderer`·`DynamicFieldFormBuilder`·`ai/CharacterFieldAiSuggester` 셋은 로컬 프로브 범위 밖이라 **`Run unit tests`가 그것들을 처음 컴파일했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ **3분02초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `96d5eff` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
-> **✅ 2026.08.13 — 로드맵 20판(PR #289, run `31660679492`, head `095d301`)이 마지막으로 덮었다.
-> 목록은 비어 있다 — 21판은 자기 몫만 지면 된다.**
+> **✅ 2026.08.13 — 로드맵 21판(PR #290, run `31666045428`, head `9738a7a`)이 마지막으로 덮었다.
+> 목록은 비어 있다 — 22판은 자기 몫만 지면 된다.**
+>
+> **이 판에서 CI는 형식이 아니었다** — `compileDebugKotlin`이 로컬 도구가 원리적으로 못 보는
+> 결함을 하나 잡았다(일괄 치환이 *같은 이름의 다른 타입*을 건드린 자리 — 위 인수인계 판 ⑤의 ㄴ).
+> **그 부류는 grep으로도 못 잡는다**: 무엇을 세야 하는지가 결함을 알기 전에는 정해지지 않는다.
 >
 > **이 판은 초록을 두 번 받았다.** 첫 실행(run `31652551452`, head `05dbf7d`)은 콜드 검토 전이고,
 > 그 검토가 코드를 고쳐(`splitOf`를 자기 몫만 훑는 벌로 가름) **head가 `095d301`로 옮겨졌다.**
@@ -7251,7 +7255,7 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    >
    > | 순서 | 건 | 무엇 | 상태 |
    > |---|---|---|---|
-   > | ~~①~~ | ~~21판~~ | ~~B-55~~ | **✅** (실기기 **3장 신설 없음 — 재실행표는 바로 위 「📋」** · CI 대기) |
+   > | ~~①~~ | ~~21판~~ | ~~B-55~~ | **✅** (실기기 **3장 신설 없음 — 재실행표는 바로 위 「📋」** · **CI 초록**) |
    > | **②** | 5판 잔여 | **B-18** | ⬜ **3-102 ㄴ의 측정 대기**(기기가 있어야 한다 — 확정 22번·P-9) |
    > | **③** | 8판 ⓑ 잔여 | **B-72** | 🟡 **반만 닫혔다** — ①(스트리밍)은 섰고 **②(임포트 2패스·per-row 조회 재확인)와 실기기 측정 셋이 남았다**(scalability S7) |
    > | **④** | 22판 | **B-10** | **다음 차례로 자연스럽다.** 선행(1·2판)이 풀려 있다. **이 판만 DB 마이그레이션이 있다**(v56→v57) |
@@ -7297,12 +7301,32 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 백로그 표식 검사 통과 · 텍스트 스타일 기준선 유지.
    > **마이그레이션 없음 — 엔티티·DB 버전·저장 형식 무변경**(게터라 Room도 Gson도 못 본다).
    >
-   > **⑤ CI가 이 판의 유일한 컴파일 증명이다 — 결과는 아래 CI 칸에 적힌다.**
-   > 로드맵이 *"ui가 절반을 넘어 로컬 프로브가 원리적으로 못 본다"*고 적어 둔 그대로였고,
-   > **실제로 그 사각에서 하나가 났다** — `CharacterViewModel`이 바뀐 시그니처에 여전히 문자열을
-   > 넘기고 있었다. 로컬 도구 **어느 것도** 그것을 못 봤고, 바뀐 시그니처의 호출부를 손으로 전수
-   > 훑어서 찾았다. **다음 사람에게 남기는 요령은 그것이다:** ui를 건드리는 판에서 시그니처를
-   > 바꿨으면 `grep`으로 호출부를 전수 훑을 것 — CI를 기다리는 것보다 한 바퀴 싸다.
+   > **⑤ CI를 돌렸고 초록이다 — 그리고 이 판에서 CI는 형식이 아니라 실제로 결함을 잡았다.**
+   > **PR #290 · run `31666045428`(head `9738a7a`) — 배지가 아니라 단계를 봤다:**
+   > `Static checks` ✓ 36초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 3분10초** ·
+   > **`Build Debug APK` ✓ 49초** · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓
+   > (Release 둘의 skipped는 조건부라 정상). **마이그레이션 워크플로도 초록이다**
+   > (run `31666045438` — 에뮬레이터). **`Commit Room schemas`가 아무것도 얹지 않았다** —
+   > 그것이 *마이그레이션 없음*을 기계가 확인해 준 자리다.
+   >
+   > **로드맵이 *"ui가 절반을 넘어 로컬 프로브가 원리적으로 못 본다"*고 적어 둔 그대로였고,
+   > 그 사각에서 결함이 둘 났다. 둘의 성격이 다르고, 그 다름이 이 판이 남기는 요령이다.**
+   >
+   > | | 무엇 | 무엇이 잡았나 | 왜 |
+   > |---|---|---|---|
+   > | ㄱ | `CharacterViewModel`이 바뀐 시그니처에 여전히 **문자열**을 넘겼다 | **손으로 훑어 찾았다** | 바꾼 시그니처가 내 손에 있으니 호출부를 `grep`으로 셀 수 있다 |
+   > | ㄴ | 정렬 바텀시트의 `field`가 `FieldDefinition`이 **아니었다**(`SortableField` — 자기 `type: String`을 가진 별도 UI 모델) | **CI `compileDebugKotlin`** | **셀 목록 자체가 없다** — 일괄 치환이 *같은 이름의 다른 타입*을 건드린 것이라, 무엇을 grep해야 하는지가 결함을 알기 전에는 정해지지 않는다 |
+   >
+   > **ㄱ 부류는 CI를 기다릴 것 없이 한 바퀴 싸게 잡을 수 있다** — ui를 건드리는 판에서
+   > 시그니처를 바꿨으면 호출부를 전수 훑을 것. **ㄴ 부류는 원리적으로 그렇게 못 잡는다:**
+   > 일괄 치환은 *수신자의 타입*을 안 보고 이름만 보므로, `.type`을 가진 다른 클래스가 하나라도
+   > 있으면 조용히 딸려 온다. **이 저장소에서 그것을 보는 눈은 CI뿐이다.**
+   >
+   > **ㄴ는 되돌리지 않고 그 모델도 좁혔다** — `SortableField`는 저장되지도 직렬화되지도 않는
+   > 순수 UI 모델이고 정렬 UI가 묻는 것은 타입 분기뿐이라 글자를 담을 이유가 없다. 되돌려
+   > 생문자열로 두면 **새 검사가 바로 그것을 위반으로 잡고, 잡는 것이 맞다.**
+   > 단 **병합 키(`"${'$'}{fd.key}|${'$'}{fd.type}"`)는 글자 그대로 뒀다** — 서로 다른 미지의 타입 둘이
+   > 똑같이 `null`이 되어 한 줄로 접히면 안 된다(R-52 예외 ②와 같은 이유).
    >
    > **⑥ 곁다리로 등재한 것 하나 — B-209(통계 드릴다운이 필드값 전부를 매번 훑는다).**
    > 21판이 그 자리의 타입 분기를 갈아 끼우며 눈에 들어왔다: `for (fv in s.fieldValues)`가
