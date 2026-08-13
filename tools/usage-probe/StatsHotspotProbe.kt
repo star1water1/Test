@@ -428,6 +428,37 @@ fun main() {
     println("  10계산 wall-clock 중앙값: ${wall}ms")
     pool.shutdown()
 
+    // ── [5] perSnapshot 캐시의 보관 힙 — 7장 3단계("스냅샷을 키우는가")의 실측 ──
+    // 캐시가 없던 때는 겹 비용이 **일시 할당**(적재마다 만들고 버림)이었고, 캐시는 그중 한 벌을
+    // 스냅샷 수명만큼 **보관**으로 바꾼다. 걷는 CPU·할당의 대가로 무는 것이 이 수다.
+    //
+    // ⚠️ 측정법 주의 — 활성성 함정: 지역 참조는 스코프 안이어도 **마지막 사용 뒤에는 수거될 수
+    // 있다**(이 측정의 1차 시도에서 스냅샷이 측정 전에 사라져 힙이 역전됐다). 그래서 절대값
+    // 빼기(h1−h2)가 아니라 **생존을 마지막 출력으로 보장한 차이 측정**(h0: 스냅샷 생존 →
+    // 웜업 → h1: 스냅샷+캐시 생존)으로 잰다. 계산 결과는 버리므로 델타에 들지 않는다.
+    println()
+    println("[5] perSnapshot 캐시 보관 힙 (채움 ×30 · 스냅샷 1개)")
+    fun quietHeap(): Long {
+        val rt = Runtime.getRuntime()
+        repeat(5) { System.gc(); Thread.sleep(80) }
+        return rt.totalMemory() - rt.freeMemory()
+    }
+    val freshSnap = snapshotOf(30, filledValues)
+    val freshProvider = StatsDataProvider()
+    val h0 = quietHeap()
+    val allFresh = listOf(
+        { freshProvider.computeSummary(freshSnap) }, { freshProvider.computeFieldInsights(freshSnap) },
+        { freshProvider.computeCharacterStats(freshSnap) }, { freshProvider.computeEventStats(freshSnap) },
+        { freshProvider.computeRelationshipStats(freshSnap) }, { freshProvider.computeNameBankStats(freshSnap) },
+        { freshProvider.computeDataHealth(freshSnap) }, { freshProvider.computeFieldAnalysis(freshSnap) },
+        { freshProvider.detectPatterns(freshSnap) }, { freshProvider.computeFactionStats(freshSnap) }
+    )
+    allFresh.forEach { it() }
+    val h1 = quietHeap()
+    println("  스냅샷 생존: ${mb(h0)} → 스냅샷+캐시 찬 프로바이더: ${mb(h1)}")
+    println("  → 보관분(스냅샷 1개): ${mb((h1 - h0).coerceAtLeast(0))} · 캐시 상한 4스냅샷이면 그 ×4가 최악")
+    println("  keep: 값 ${freshSnap.fieldValues.size} · 캐시 주인 ${freshProvider.javaClass.simpleName}")
+
     println()
     println("### STATS HOTSPOT PROBE 끝")
 }
