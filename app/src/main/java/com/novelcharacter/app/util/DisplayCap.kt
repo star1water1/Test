@@ -60,34 +60,6 @@ object DisplayCap {
     const val CROSS_AXIS_LIMIT = 12
 
     /**
-     * 상한을 적용한 결과.
-     *
-     * @param shown 그릴 항목
-     * @param hiddenCount 접힌 수 — 화면이 이 수를 그대로 말해야 R-14를 지킨다
-     * @param totalCount 자르기 **전** 전체 수. 비율의 분모는 언제나 이것이다(R-19).
-     */
-    data class Capped<T>(
-        val shown: List<T>,
-        val hiddenCount: Int,
-        val totalCount: Int
-    ) {
-        val hasHidden: Boolean get() = hiddenCount > 0
-    }
-
-    /**
-     * 앞에서부터 [limit]개만 남긴다.
-     *
-     * [limit]이 0 이하이면 상한이 없는 것으로 본다 — 상한을 끄는 설정이 조용히
-     * "아무것도 안 보임"이 되지 않게 하기 위해서다([ValueDistributions.view]와 같은 규칙).
-     */
-    fun <T> cap(items: List<T>, limit: Int): Capped<T> =
-        if (limit <= 0 || items.size <= limit) {
-            Capped(items, 0, items.size)
-        } else {
-            Capped(items.take(limit), items.size - limit, items.size)
-        }
-
-    /**
      * 축별 상한 결과. [hiddenByGroup]은 **첫 등장 순서**를 지킨다(입력 순서가 곧 표시 순서다).
      */
     data class GroupCapped<T, K>(
@@ -109,7 +81,10 @@ object DisplayCap {
     fun <T, K> capPerGroup(items: List<T>, limit: Int, groupOf: (T) -> K): GroupCapped<T, K> {
         if (limit <= 0) return GroupCapped(items, emptyMap(), items.size)
         val seen = HashMap<K, Int>()
-        val shown = ArrayList<T>(minOf(items.size, limit * 4))
+        // 용량은 **입력 크기**로 잡는다. `limit × 축 수`로 어림하고 싶어지는 자리인데,
+        // 상한을 크게 잡으면 그 곱이 `Int`를 넘어 음수가 되고 `ArrayList(음수)`는 **던진다** —
+        // 지금 상수(8)로는 안 나지만 상한을 옮기는 순간 화면이 통째로 죽는 부류다.
+        val shown = ArrayList<T>(items.size)
         val hidden = LinkedHashMap<K, Int>()
         for (item in items) {
             val key = groupOf(item)

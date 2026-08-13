@@ -920,7 +920,6 @@ class StatsFieldInsightFragment : Fragment() {
         }
 
         val textSizeSp = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
-        val pad = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
 
         val table = TableLayout(requireContext()).apply {
             isStretchAllColumns = false

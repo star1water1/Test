@@ -2,72 +2,30 @@ package com.novelcharacter.app.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * [DisplayCap] — 통계 탭의 표시 상한 (B-199 · B-194).
  *
- * 이 하네스가 지키는 것은 넷이고, **앞의 둘은 서로 반대 방향의 사고를 막는다.**
+ * 이 하네스가 지키는 것은 셋이고, **앞의 둘은 서로 반대 방향의 사고를 막는다.**
  *
- * 1. **접은 수를 정확히 말한다** — R-14는 *잘라냈으면 개수로 존재를 알린다*이므로,
- *    `hiddenCount`가 틀리면 상한이 "접기"가 아니라 **조용한 감추기**가 된다.
- * 2. **축별 상한이 원래 순서를 건드리지 않는다**(*반대편이다* — 1만 있으면 `groupBy` 뒤에
+ * 1. **축마다 정원이 따로 있고 접은 수를 축별로 정확히 말한다** — R-14는 *잘라냈으면 개수로
+ *    존재를 알린다*이고, 축을 뭉뚱그리면 *"내 사건 카드가 아예 없는 것"*과 *"사건 카드가 더
+ *    있는 것"*을 화면에서 가릴 수 없다.
+ * 2. **그 상한이 원래 순서를 건드리지 않는다**(**반대편이다** — 1만 있으면 `groupBy` 뒤에
  *    축마다 `take`하는 구현이 통과하는데, 그러면 결과가 **축 순서로 재정렬되어**
- *    심각도 내림차순이 깨진다. 높음 카드가 낮음 카드 아래로 내려가도 개수는 맞으므로
+ *    심각도 내림차순이 깨진다. 높음 카드가 낮음 카드 아래로 내려가도 **개수는 맞으므로**
  *    1번 시험은 아무것도 못 본다).
  * 3. **한 번의 '더 보기'가 늘리는 수는 정확히 한 묶음이다** — 이 상한의 존재 이유가 그것이다.
  *    *"나머지 전부"*로 구현하면 한 번의 탭이 6,420개를 만들어 상한이 무의미해진다.
- * 4. **상한을 끄면 전량이다** — 0 이하를 "아무것도 안 보임"으로 읽으면 설정 하나로 화면이 빈다.
+ *
+ * **넷째는 성격이 다르다 — 상한을 끄거나 아주 크게 잡아도 죽지 않는다.** 0 이하를 "아무것도
+ * 안 보임"으로 읽으면 설정 하나로 화면이 비고, 용량을 곱으로 어림하면 `Int`를 넘겨 던진다.
+ * 둘 다 지금 상수로는 안 나지만 **상한을 옮기는 순간** 나는 부류다.
  */
 class DisplayCapTest {
 
-    // ── 1. 앞에서부터 자르고, 접은 수를 그대로 말한다 ────────────────────────
-
-    @Test
-    fun `상한 이하면 그대로 두고 접은 것이 없다고 말한다`() {
-        val items = listOf("가", "나", "다")
-        val capped = DisplayCap.cap(items, 5)
-
-        assertEquals(items, capped.shown)
-        assertEquals(0, capped.hiddenCount)
-        assertEquals(3, capped.totalCount)
-        assertFalse(capped.hasHidden)
-    }
-
-    @Test
-    fun `상한을 넘으면 앞에서부터 남기고 나머지 수를 말한다`() {
-        val items = (1..120).map { "캐릭터$it" }
-        val capped = DisplayCap.cap(items, DisplayCap.NAME_LIST_CHUNK)
-
-        assertEquals(DisplayCap.NAME_LIST_CHUNK, capped.shown.size)
-        assertEquals("캐릭터1", capped.shown.first())
-        assertEquals("캐릭터50", capped.shown.last())
-        // 접은 수 = 전체 - 보인 수. 이 값이 그대로 "N개 더" 문구가 된다(R-14).
-        assertEquals(70, capped.hiddenCount)
-        assertEquals(120, capped.totalCount)
-        assertTrue(capped.hasHidden)
-    }
-
-    @Test
-    fun `상한이 0 이하이면 상한이 없는 것으로 본다`() {
-        val items = (1..300).map { "값$it" }
-
-        assertEquals(300, DisplayCap.cap(items, 0).shown.size)
-        assertEquals(0, DisplayCap.cap(items, 0).hiddenCount)
-        assertEquals(300, DisplayCap.cap(items, -1).shown.size)
-    }
-
-    @Test
-    fun `빈 목록은 접을 것도 셀 것도 없다`() {
-        val capped = DisplayCap.cap(emptyList<String>(), 10)
-
-        assertTrue(capped.shown.isEmpty())
-        assertEquals(0, capped.hiddenCount)
-        assertEquals(0, capped.totalCount)
-    }
-
-    // ── 2. 축별 상한 — 정원은 축마다, 순서는 원래대로 ────────────────────────
+    // ── 1. 축별 상한 — 정원은 축마다, 순서는 원래대로 ────────────────────────
 
     private data class Card(val axis: String, val name: String)
 
@@ -129,6 +87,18 @@ class DisplayCapTest {
     }
 
     @Test
+    fun `축별 상한이 아주 커도 죽지 않는다`() {
+        // 용량을 `limit × 축 수`로 어림하면 그 곱이 Int를 넘어 음수가 되고
+        // `ArrayList(음수)`가 던진다 — 상한을 옮기는 순간 화면이 통째로 죽는 부류다.
+        val cards = listOf(Card("캐릭터", "캐1"), Card("사건", "사1"))
+
+        val capped = DisplayCap.capPerGroup(cards, Int.MAX_VALUE) { it.axis }
+
+        assertEquals(2, capped.shown.size)
+        assertFalse(capped.hasHidden)
+    }
+
+    @Test
     fun `축별 상한이 0 이하이면 전량이다`() {
         val cards = (1..30).map { Card("캐릭터", "캐$it") }
 
@@ -138,7 +108,7 @@ class DisplayCapTest {
         assertFalse(capped.hasHidden)
     }
 
-    // ── 3. 묶음 단위 펼치기 ─────────────────────────────────────────────────
+    // ── 2. 묶음 단위 펼치기 ─────────────────────────────────────────────────
 
     @Test
     fun `펼치기 한 번이 늘리는 수는 정확히 한 묶음이다`() {

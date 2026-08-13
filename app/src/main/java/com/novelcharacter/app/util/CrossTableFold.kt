@@ -52,16 +52,13 @@ object CrossTableFold {
         val hasHidden: Boolean get() = hasHiddenRows || hasHiddenCols
 
         fun count(row: String, col: String): Int = cells[row]?.get(col) ?: 0
-
-        /** 행 합계 — 표를 합계순으로 세우는 쪽과 같은 값을 쓴다. */
-        fun rowTotal(row: String): Int = cells[row]?.values?.sum() ?: 0
     }
 
     /**
      * [table]을 행 [rowLimit]개 · 열 [colLimit]개로 접는다.
      *
      * 상한이 0 이하이면 그 축은 접지 않는다(상한을 끄는 설정이 조용히 빈 표가 되지 않게 —
-     * [DisplayCap.cap]·[ValueDistributions.view]와 같은 규칙).
+     * [ValueDistributions.view]와 같은 규칙).
      *
      * '기타' 라벨은 **접힌 종수를 받아 화면 문구로 짓는다**([rowOtherLabel]·[colOtherLabel]) —
      * 종수는 접고 나야 알 수 있어서 문자열이 아니라 함수로 받는다. 그렇게 만든 라벨이
