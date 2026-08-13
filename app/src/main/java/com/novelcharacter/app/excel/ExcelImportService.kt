@@ -366,6 +366,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
     )
     private var novelIndexLoaded = false
+    /**
+     * 세계관 색인 — 코드·이름·id (B-210). **행마다 세계관을 되찾는 자리가 이 파일에서 가장 많다**
+     * (세계관 · 작품 · 필드 정의 · 등급 체계 · 세력 · 대결 축 · 연표 · 미리보기 여섯 자리).
+     * 쓰는 자리는 [importUniverses]와 [applyDeferredUniverseNovelRefs]·[applyDeferredCharacterRefs]뿐이고
+     * 셋 다 쓴 뒤에 갱신한다.
+     */
+    private val universeCodes = ImportLookupIndex<String, Universe>(
+        idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+    )
+    private val universeNames = ImportLookupIndex<String, Universe>(
+        idOf = { it.id }, keyOf = { it.name }
+    )
+    private val universesByUniverseId = ImportLookupIndex<Long, Universe>(
+        idOf = { it.id }, keyOf = { it.id }
+    )
+    private var universeIndexLoaded = false
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
     private val matchedRelationshipChangeIds = mutableSetOf<Long>()
@@ -659,6 +675,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             resetCharacterIndex()
             resetEventIndex()
             resetNovelIndex()
+            resetUniverseIndex()
             matchedEventIds.clear()
             matchedRelationshipIds.clear()
             matchedRelationshipChangeIds.clear()
@@ -769,6 +786,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     resetCharacterIndex()
                     resetEventIndex()
                     resetNovelIndex()
+                    resetUniverseIndex()
                 }
                 // U-12b: 꺼진 종류는 남겨 뒀다는 사실을 그 자리에서 고지한다(삭제 뒤 최종 상태 기준).
                 countKeptUnmatchedEntities(effectiveOptions, result)
@@ -1769,8 +1787,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val uCode = getCellCode(row, c.universeCode, ctx, result)
             val uName = if (c.universeName >= 0) getCellString(row, c.universeName) else ""
             if (uCode.isBlank() && uName.isBlank()) return@run null
-            val resolved = (if (uCode.isNotBlank()) db.universeDao().getUniverseByCode(uCode) else null)
-                ?: (if (uName.isNotBlank()) db.universeDao().getUniverseByName(uName) else null)
+            val resolved = universeByCodeOrName(uCode, uName)
             if (resolved == null) {
                 result?.warnings?.add("$ctx: 세계관 '${uName.ifBlank { uCode }}'을(를) 찾을 수 없어 관련 작품에서 유도합니다")
             }
@@ -2275,6 +2292,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetCharacterIndex()
         resetEventIndex()
         resetNovelIndex()
+        resetUniverseIndex()
         val totalRows = countTotalRows(workbook)
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
@@ -2330,8 +2348,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.name.isBlank()) continue
             inBackup++
 
-            val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
-                ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+            val universe = universeByCodeOrName(r.universeCode, r.universeName)
             if (universe == null) { skippedCount++; continue }   // 가져오기도 이 행을 거부한다
 
             val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
@@ -2535,8 +2552,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 **이름으로 폴백**한다.
             // 종전에는 그 행을 '신규'로 셌으나 가져오기는 기존 세계관을 덮어쓴다.
-            val existing = (if (r.code.isNotBlank()) db.universeDao().getUniverseByCode(r.code) else null)
-                ?: db.universeDao().getUniverseByName(r.name)
+            val existing = universeByCode(r.code) ?: universeByName(r.name)
             if (existing == null) { newCount++; continue }
             // 지연 해석 열은 **되붙은 뒤의 순효과**로 비교한다(설계 2-3).
             // 코드가 비었거나 해석되지 않으면 가져오기도 결국 null로 두므로 null이 맞다.
@@ -2571,8 +2587,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             inBackup++
 
             // 세계관 해석도 가져오기와 같다 — 코드 우선, 이름 폴백.
-            val universeId = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode)?.id else null)
-                ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName)?.id else null)
+            val universeId = universeByCodeOrName(r.universeCode, r.universeName)?.id
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 제목+세계관으로 폴백한다.
             // 괄호 필수 — 괄호 없이 쓰면 엘비스가 `else` 가지(null)에만 붙어
             // 코드 미해석 시 제목 폴백이 죽는다(가져오기 쪽 주석과 같은 함정).
@@ -2612,8 +2627,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             inBackup++
 
             val universe = if (globalScope) null else {
-                val found = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
-                    ?: db.universeDao().getUniverseByName(r.universeName)
+                val found = universeByCode(r.universeCode) ?: universeByName(r.universeName)
                 if (found == null) {
                     // B-102 ⓑ: '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가 맞고,
                     // 빼놓았으면 가져오기가 이 행을 경고와 함께 **건너뛴다**.
@@ -3024,8 +3038,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 자동관계유형이 비면 가져오기가 행을 거부한다 — '신규'가 아니다.
             if (r.autoRelationType.isBlank()) { skippedCount++; continue }
             // 세계관 해석도 가져오기와 같다 — 코드 우선, 이름 폴백(종전에는 이름만 봤다).
-            val resolvedUniverse = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
-                ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+            val resolvedUniverse = universeByCodeOrName(r.universeCode, r.universeName)
             // 세계관 참조가 있는데 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
             if (resolvedUniverse == null && (r.universeName.isNotBlank() || r.universeCode.isNotBlank())) {
                 if (options.universes) newCount++ else skippedCount++
@@ -3593,13 +3606,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing: Universe?
                 val matchedByName: Boolean
                 if (code.isNotBlank()) {
-                    val byCode = db.universeDao().getUniverseByCode(code)
+                    val byCode = universeByCode(code)
                     if (byCode != null) {
                         existing = byCode
                         matchedByName = false
                     } else {
                         // F1-C: 코드가 있으나 DB에 없음 → 조용히 신규 생성하지 않고 이름 폴백 + 경고
-                        val byName = db.universeDao().getUniverseByName(name)
+                        val byName = universeByName(name)
                         if (byName != null) {
                             existing = byName
                             matchedByName = true
@@ -3614,7 +3627,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
                 } else {
-                    existing = db.universeDao().getUniverseByName(name)
+                    existing = universeByName(name)
                     matchedByName = existing != null
                     if (matchedByName) {
                         result.nameBasedMappings++
@@ -3640,13 +3653,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 아직 없을 수 있기 때문이다. 미리보기는 되붙은 뒤의 값을 넣어 같은 함수를 부른다.
                     val mergedUniverse = mergeUniverse(existing, r, imageCharacterId = null, imageNovelId = null)
                     db.universeDao().update(mergedUniverse)
+                    // 이름·코드가 바뀌었을 수 있다 — 옛 키를 끊어야 뒷 시트가 SQL과 같은 답을 본다(B-210).
+                    rememberUniverse(mergedUniverse)
                     if (imageCharCode != null) deferredUniverseImageCharCodes[existing.id] = imageCharCode
                     if (imageNovelCode != null) deferredUniverseImageNovelCodes[existing.id] = imageNovelCode
                     if (mergedUniverse != existing) result.updatedUniverses++ else result.unchangedRows++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    val newId = db.universeDao().insert(Universe(
+                    val newUniverse = Universe(
                         name = name, description = r.description ?: "", code = newCode,
                         displayOrder = r.displayOrder ?: i.toLong(), borderColor = r.borderColor ?: "", borderWidthDp = r.borderWidthDp ?: 1.5f,
                         imagePaths = r.imagePaths ?: "[]", imageMode = r.imageMode ?: "none",
@@ -3655,7 +3670,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imageCharacterId = null, // deferred
                         imageNovelId = null,     // deferred
                         createdAt = r.createdAt ?: nowMillis
-                    ))
+                    )
+                    val newId = db.universeDao().insert(newUniverse)
+                    // 방금 만든 세계관을 곧바로 읽히게 한다 — 작품·필드 정의·세력 시트가
+                    // 이 코드·이름으로 소속을 찾는다.
+                    rememberUniverse(newUniverse.copy(id = newId))
                     if (imageCharCode != null) deferredUniverseImageCharCodes[newId] = imageCharCode
                     if (imageNovelCode != null) deferredUniverseImageNovelCodes[newId] = imageNovelCode
                     entitySeen[newId] = i
@@ -3747,8 +3766,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 괄호 필수 — 괄호 없이 쓰면 엘비스가 else 가지(null)에만 붙어 코드 미해석 시 이름 폴백이 죽는다.
                 val universeColumnPresent = r.universeColumnPresent
                 val universeRefProvided = r.universeRefProvided
-                val universeId = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode)?.id else null)
-                    ?: (if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null)
+                val universeId = universeByCodeOrName(universeCode, universeName)?.id
                 if (universeRefProvided && universeId == null) {
                     result.warnings.add("작품 행 $i: 세계관 '${universeName.ifBlank { universeCode }}'을(를) 찾을 수 없음 — 기존 작품은 소속 유지, 새 작품은 세계관 미지정으로 생성")
                 }
@@ -4247,8 +4265,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
             val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
-            val universe = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
-                ?: db.universeDao().getUniverseByName(universeName)
+            val universe = universeByCode(universeCode) ?: universeByName(universeName)
             if (universe == null) {
                 result?.let {
                     it.skippedRows++
@@ -4437,9 +4454,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val universe = if (globalScope) null else {
                     val found = (if (r.universeCode.isNotBlank()) {
-                        db.universeDao().getUniverseByCode(r.universeCode)
+                        universeByCode(r.universeCode)
                     } else null)
-                        ?: db.universeDao().getUniverseByName(universeName)
+                        ?: universeByName(universeName)
                     if (found == null) {
                         result.skippedRows++
                         result.errors.add("필드 정의 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없음")
@@ -6914,6 +6931,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fc = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
+        // 세력 정체성 색인 (B-210) — 행마다 코드·(이름,세계관)으로 표를 묻던 자리.
+        // 목표 규모에서 세력은 150개뿐이라 **여기서 아끼는 시간은 작다.** 그래도 함께 고치는 것은
+        // 남겨 두면 *"같은 모양이 어디까지 고쳐졌는가"*를 다음 사람이 다시 세야 하기 때문이다 —
+        // 이 저장소가 B-76에서 겪은 그 모양이다. id 오름차순이 `LIMIT 1`의 순서다.
+        val allFactions = db.factionDao().getAllFactionsList().sortedBy { it.id }
+        val factionCodes = ImportLookupIndex<String, Faction>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        val factionNameKeys = ImportLookupIndex<FactionNameKey, Faction>(
+            idOf = { it.id }, keyOf = { FactionNameKey(it.name, it.universeId) }
+        )
+        factionCodes.load(allFactions)
+        factionNameKeys.load(allFactions)
+        fun rememberFaction(faction: Faction) {
+            factionCodes.put(faction)
+            factionNameKeys.put(faction)
+        }
+
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
 
@@ -6937,8 +6972,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // Resolve universe (코드 우선 매칭 — 작품 가져오기와 동일 패턴)
                 val universeId: Long
-                val resolvedUniverse = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
-                    ?: (if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName) else null)
+                val resolvedUniverse = universeByCodeOrName(universeCode, universeName)
                 if (resolvedUniverse != null) {
                     universeId = resolvedUniverse.id
                 } else if (universeName.isNotBlank() || universeCode.isNotBlank()) {
@@ -6964,12 +6998,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing: Faction?
                 val matchedByName: Boolean
                 if (code.isNotBlank()) {
-                    val byCode = db.factionDao().getByCode(code)
+                    val byCode = factionCodes.first(code)
                     if (byCode != null) {
                         existing = byCode
                         matchedByName = false
                     } else {
-                        val byName = db.factionDao().getByNameAndUniverse(name, universeId)
+                        val byName = factionNameKeys.first(FactionNameKey(name, universeId))
                         if (byName != null) {
                             existing = byName
                             matchedByName = true
@@ -6982,7 +7016,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
                 } else {
-                    existing = db.factionDao().getByNameAndUniverse(name, universeId)
+                    existing = factionNameKeys.first(FactionNameKey(name, universeId))
                     matchedByName = existing != null
                     if (matchedByName) {
                         result.nameBasedMappings++
@@ -7000,12 +7034,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedFaction = mergeFaction(existing, r, universeId)
                     db.factionDao().update(mergedFaction)
+                    // 이름·세계관·코드가 바뀌었을 수 있다 — 옛 키를 끊는다(B-210).
+                    rememberFaction(mergedFaction)
                     matchedFactionIds.add(existing.id)
                     if (mergedFaction != existing) result.updatedFactions++ else result.unchangedRows++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    val newId = db.factionDao().insert(Faction(
+                    val newFaction = Faction(
                         name = name,
                         universeId = universeId,
                         description = r.description ?: "",
@@ -7015,7 +7051,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         code = newCode,
                         displayOrder = r.displayOrder ?: i,
                         createdAt = r.createdAt ?: nowMillis
-                    ))
+                    )
+                    val newId = db.factionDao().insert(newFaction)
+                    rememberFaction(newFaction.copy(id = newId))
                     matchedFactionIds.add(newId)
                     entitySeen[newId] = i
                     result.newFactions++
@@ -7774,22 +7812,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val now = System.currentTimeMillis()
 
+        // 대결 축 정체성 색인 (B-210) — 행마다 코드·(세계관,대상,이름)으로 표를 묻던 자리.
+        // id 오름차순이 `LIMIT 1`의 순서다.
+        val allAxes = db.duelAxisDao().getAllList().sortedBy { it.id }
+        val axisCodes = ImportLookupIndex<String, DuelAxis>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        val axisNameKeys = ImportLookupIndex<DuelAxisNameKey, DuelAxis>(
+            idOf = { it.id }, keyOf = { DuelAxisNameKey(it.universeId, it.targetType, it.name) }
+        )
+        axisCodes.load(allAxes)
+        axisNameKeys.load(allAxes)
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
                 val r = readDuelAxisRow(row, cols, now)
                 if (r.name.isBlank()) continue
 
-                val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
-                    ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+                val universe = universeByCodeOrName(r.universeCode, r.universeName)
                 if (universe == null) {
                     result.skippedRows++
                     result.errors.add("대결 축 행 $i: 세계관 '${r.universeName}'을(를) 찾을 수 없음")
                     continue
                 }
 
-                val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
-                    ?: db.duelAxisDao().getByUniverseAndName(universe.id, r.targetType, r.name)
+                val existing = (if (r.code.isNotBlank()) axisCodes.first(r.code) else null)
+                    ?: axisNameKeys.first(DuelAxisNameKey(universe.id, r.targetType, r.name))
                 if (r.candidateFiltersMalformed) {
                     // 기존 값을 지키고 그 사실을 말한다 — 괄호 하나 틀린 손편집이 멀쩡한
                     // 필터를 조용히 지우면 안 된다(개발 의도 2번·4번).
@@ -7803,22 +7852,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing == null) {
                     // 같은 (세계관, 대상, 이름)이 이미 있으면 유니크 인덱스가 던진다 — 위에서
                     // 이미 찾아봤으므로 여기 오는 것은 진짜 새 축이다.
-                    val newId = db.duelAxisDao().insert(
-                        DuelAxis(
-                            universeId = universe.id,
-                            name = r.name,
-                            targetType = r.targetType,
-                            displayOrder = r.displayOrder,
-                            createdAt = r.createdAt,
-                            influenceFieldKeys = newAxisLinks(r.influenceFieldKeys),
-                            outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
-                            profileFieldKeys = newAxisLinks(r.profileFieldKeys),
-                            candidateFiltersJson = r.candidateFiltersJson?.json,
-                            // 새 축이라 지킬 기존 값이 없다 — 열이 없으면 엔티티 기본값(꺼짐)이다.
-                            isBasisAxis = r.isBasisAxis ?: false,
-                            code = r.code.ifBlank { generateEntityCode() }
-                        )
+                    val newAxis = DuelAxis(
+                        universeId = universe.id,
+                        name = r.name,
+                        targetType = r.targetType,
+                        displayOrder = r.displayOrder,
+                        createdAt = r.createdAt,
+                        influenceFieldKeys = newAxisLinks(r.influenceFieldKeys),
+                        outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
+                        profileFieldKeys = newAxisLinks(r.profileFieldKeys),
+                        candidateFiltersJson = r.candidateFiltersJson?.json,
+                        // 새 축이라 지킬 기존 값이 없다 — 열이 없으면 엔티티 기본값(꺼짐)이다.
+                        isBasisAxis = r.isBasisAxis ?: false,
+                        code = r.code.ifBlank { generateEntityCode() }
                     )
+                    val newId = db.duelAxisDao().insert(newAxis)
+                    // 같은 코드·같은 (세계관,대상,이름)을 든 뒷 행이 이것을 봐야 한다 —
+                    // 못 보면 유니크 인덱스가 던져 가져오기가 통째로 실패한다.
+                    val insertedAxis = newAxis.copy(id = newId)
+                    axisCodes.put(insertedAxis)
+                    axisNameKeys.put(insertedAxis)
                     enforceSingleBasisAxis(universe.id, r.targetType, newId, r.isBasisAxis ?: false)
                     result.newDuelAxes++
                     if (r.code.isNotBlank()) {
@@ -7830,6 +7883,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelAxisDao().update(merged)
                         result.updatedDuelAxes++
                     } else result.unchangedRows++
+                    axisCodes.put(merged)
+                    axisNameKeys.put(merged)
                     // **대상은 기존 축의 것이다** — `mergeDuelAxis`가 targetType을 바꾸지 않으므로
                     // 행에 적힌 대상이 아니라 실제 축의 대상으로 판정해야 한다.
                     enforceSingleBasisAxis(
@@ -7916,6 +7971,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
+        // 판 자신도 같은 대접을 한다 (B-210) — 바로 위 문단이 축·캐릭터에 세운 근거가
+        // **판에는 적용되지 않아** 행마다 `getByCode`가 남아 있었다(코드 열에 인덱스가 없어
+        // 그 하나하나가 풀스캔이다). id 오름차순이 `LIMIT 1`의 순서다.
+        val matchCodes = ImportLookupIndex<String, DuelMatch>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        matchCodes.load(db.duelMatchDao().getAllList().sortedBy { it.id })
 
         val seenCodes = HashSet<String>()
         for (i in 1..sheet.lastRowNum) {
@@ -7967,19 +8029,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("대결 기록: 코드 '${r.code}'가 두 행에 중복됨 (마지막 행 우선)")
                 }
 
-                val existing = if (r.code.isNotBlank()) db.duelMatchDao().getByCode(r.code) else null
+                val existing = if (r.code.isNotBlank()) matchCodes.first(r.code) else null
                 if (existing == null) {
-                    db.duelMatchDao().insert(
-                        DuelMatch(
-                            axisId = axis.id,
-                            aCode = aCode,
-                            bCode = bCode,
-                            winnerCode = winnerCode,
-                            groupId = groupId,
-                            decidedAt = r.decidedAt,
-                            code = r.code.ifBlank { generateEntityCode() }
-                        )
+                    val newMatch = DuelMatch(
+                        axisId = axis.id,
+                        aCode = aCode,
+                        bCode = bCode,
+                        winnerCode = winnerCode,
+                        groupId = groupId,
+                        decidedAt = r.decidedAt,
+                        code = r.code.ifBlank { generateEntityCode() }
                     )
+                    val newId = db.duelMatchDao().insert(newMatch)
+                    // 같은 코드를 든 뒷 행이 이것을 봐야 한다(위 '두 행에 중복' 고지의 상대다).
+                    matchCodes.put(newMatch.copy(id = newId))
                     result.newDuelMatches++
                 } else {
                     val merged = mergeDuelMatch(existing, winnerCode, groupId)
@@ -7987,6 +8050,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelMatchDao().update(merged)
                         result.updatedDuelMatches++
                     } else result.unchangedRows++
+                    matchCodes.put(merged)
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -8011,6 +8075,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
+        // 상성도 행마다 코드·구성원키로 표를 물었다 (B-210). 둘 다 한 번 읽어 답한다.
+        val allVerdicts = db.duelCounterVerdictDao().getAllList().sortedBy { it.id }
+        val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        val verdictMemberKeys = ImportLookupIndex<DuelVerdictMemberKey, DuelCounterVerdict>(
+            idOf = { it.id }, keyOf = { DuelVerdictMemberKey(it.axisId, it.memberKey) }
+        )
+        verdictCodes.load(allVerdicts)
+        verdictMemberKeys.load(allVerdicts)
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -8051,22 +8125,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val memberKey = DuelRecords.memberKey(members)
                 // 같은 관계는 축 안에서 하나뿐이다(유니크). 코드로 못 찾으면 그 키로 찾아
                 // **덮어쓴다** — 그러지 않으면 유니크 인덱스가 예외로 죽는다.
-                val existing = (if (code.isNotBlank()) db.duelCounterVerdictDao().getByCode(code) else null)
-                    ?: db.duelCounterVerdictDao().getByMemberKey(axis.id, memberKey)
+                val existing = (if (code.isNotBlank()) verdictCodes.first(code) else null)
+                    ?: verdictMemberKeys.first(DuelVerdictMemberKey(axis.id, memberKey))
 
                 val decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
                 if (existing == null) {
-                    db.duelCounterVerdictDao().upsert(
-                        DuelCounterVerdict(
-                            axisId = axis.id,
-                            kind = kind,
-                            shape = shape,
-                            memberCodes = DuelRecords.encodeMembers(members),
-                            memberKey = memberKey,
-                            decidedAt = decidedAt,
-                            code = code.ifBlank { generateEntityCode() }
-                        )
+                    val newVerdict = DuelCounterVerdict(
+                        axisId = axis.id,
+                        kind = kind,
+                        shape = shape,
+                        memberCodes = DuelRecords.encodeMembers(members),
+                        memberKey = memberKey,
+                        decidedAt = decidedAt,
+                        code = code.ifBlank { generateEntityCode() }
                     )
+                    val newId = db.duelCounterVerdictDao().upsert(newVerdict)
+                    // 같은 축의 같은 구성원 조합을 든 뒷 행이 이것을 봐야 한다 — 못 보면
+                    // 유니크 인덱스가 예외로 죽는다(바로 위 주석이 말하는 그 자리다).
+                    val insertedVerdict = newVerdict.copy(id = newId)
+                    verdictCodes.put(insertedVerdict)
+                    verdictMemberKeys.put(insertedVerdict)
                     result.newDuelVerdicts++
                 } else {
                     val merged = existing.copy(
@@ -8080,6 +8158,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelCounterVerdictDao().update(merged)
                         result.updatedDuelVerdicts++
                     } else result.unchangedRows++
+                    verdictCodes.put(merged)
+                    verdictMemberKeys.put(merged)
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -8356,6 +8436,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private data class StateChangeNaturalKey(
         val characterId: Long, val year: Int, val fieldKey: String, val newValue: String
     )
+    private data class FactionNameKey(val name: String, val universeId: Long)
+    private data class DuelAxisNameKey(val universeId: Long, val targetType: String, val name: String)
+    private data class DuelVerdictMemberKey(val axisId: Long, val memberKey: String)
+
     private data class RelChangeNaturalKey(
         val relationshipId: Long, val year: Int, val month: Int?, val day: Int?
     )
@@ -8503,6 +8587,54 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         ensureNovelIndex()
         return novelCodes.first(code)
     }
+
+    // ── 세계관 색인 (B-210) ────────────────────────────────────────────────────
+
+    private fun resetUniverseIndex() {
+        universeCodes.reset()
+        universeNames.reset()
+        universesByUniverseId.reset()
+        universeIndexLoaded = false
+    }
+
+    private suspend fun ensureUniverseIndex() {
+        if (universeIndexLoaded) return
+        universeIndexLoaded = true
+        for (universe in db.universeDao().getAllUniversesList().sortedBy { it.id }) rememberUniverse(universe)
+    }
+
+    /** 세계관을 썼다고 기록한다 — 이름·코드가 바뀌면 옛 키는 색인이 끊는다. */
+    private fun rememberUniverse(universe: Universe) {
+        universeCodes.put(universe)
+        universeNames.put(universe)
+        universesByUniverseId.put(universe)
+    }
+
+    /** `getUniverseByCode`의 자리. */
+    private suspend fun universeByCode(code: String): Universe? {
+        if (code.isBlank()) return null
+        ensureUniverseIndex()
+        return universeCodes.first(code)
+    }
+
+    /** `getUniverseByName`(LIMIT 1)의 자리. */
+    private suspend fun universeByName(name: String): Universe? {
+        ensureUniverseIndex()
+        return universeNames.first(name)
+    }
+
+    /** `getUniverseById`의 자리. */
+    private suspend fun universeById(id: Long): Universe? {
+        ensureUniverseIndex()
+        return universesByUniverseId.first(id)
+    }
+
+    /**
+     * 코드 우선 → 이름 폴백. 이 파일에서 **가장 자주 되풀이되던 두 줄**을 한 자리에 모은다
+     * (열 몇 자리가 같은 꼴이었다). 빈 칸은 조회하지 않는 기존 규약을 그대로 지킨다.
+     */
+    private suspend fun universeByCodeOrName(code: String, name: String): Universe? =
+        universeByCode(code) ?: (if (name.isNotBlank()) universeByName(name) else null)
 
     /**
      * 작품 → 세계관. [universeIdOfCharacter]가 쓰던 메모를 **작품 단위로 갈라** 캐릭터를 거치지
@@ -8789,13 +8921,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 여기서 무음 continue하면 기존 대표 이미지 설정이 경고 없이 사라진다(변수 제어).
     private suspend fun applyDeferredUniverseNovelRefs(result: ImportResult) {
         for ((universeId, novelCode) in deferredUniverseImageNovelCodes) {
-            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            val universe = universeById(universeId) ?: continue
             val novelId = novelByCode(novelCode)?.id
             if (novelId == null) {
                 result.warnings.add("세계관 '${universe.name}': 이미지 작품코드 '$novelCode'에 해당하는 작품이 없어 대표 이미지 연동이 해제되었습니다")
                 continue
             }
-            db.universeDao().update(universe.copy(imageNovelId = novelId))
+            val relinked = universe.copy(imageNovelId = novelId)
+            db.universeDao().update(relinked)
+            rememberUniverse(relinked)
         }
         deferredUniverseImageNovelCodes.clear()
     }
@@ -8813,13 +8947,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         deferredNovelImageCharCodes.clear()
 
         for ((universeId, charCode) in deferredUniverseImageCharCodes) {
-            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            val universe = universeById(universeId) ?: continue
             val charId = characterByCode(charCode)?.id
             if (charId == null) {
                 result.warnings.add("세계관 '${universe.name}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
                 continue
             }
-            db.universeDao().update(universe.copy(imageCharacterId = charId))
+            val relinked = universe.copy(imageCharacterId = charId)
+            db.universeDao().update(relinked)
+            rememberUniverse(relinked)
         }
         deferredUniverseImageCharCodes.clear()
     }

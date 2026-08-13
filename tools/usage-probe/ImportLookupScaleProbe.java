@@ -132,12 +132,12 @@ public class ImportLookupScaleProbe {
             try (ResultSet rs = c.createStatement().executeQuery("SELECT id, year, description, code FROM timeline_events ORDER BY id")) {
                 while (rs.next()) {
                     codes.putIfAbsent(rs.getString(4), rs.getLong(1));
-                    nat.putIfAbsent(rs.getInt(2) + " " + rs.getString(3), rs.getLong(1));
+                    nat.putIfAbsent(rs.getInt(2) + "\u0000" + rs.getString(3), rs.getLong(1));
                 }
             }
             for (int i = 1; i <= nEvents; i++) {
                 Long hit = codes.get("E-" + i);
-                if (hit == null) hit = nat.get(1000 + " 사건 설명 " + i);
+                if (hit == null) hit = nat.get(1000 + "\u0000사건 설명 " + i);
                 if (hit != null) n++;
             }
             if (r >= 0) { b2[r] = System.nanoTime() - t; f2 = n; }

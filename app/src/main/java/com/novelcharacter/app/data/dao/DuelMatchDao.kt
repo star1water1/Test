@@ -40,6 +40,14 @@ interface DuelMatchDao {
     @Query("SELECT * FROM duel_matches WHERE code = :code LIMIT 1")
     suspend fun getByCode(code: String): DuelMatch?
 
+    /**
+     * 표 전체 — 가져오기가 **행마다** [getByCode]를 치던 자리를 한 번 읽기로 바꾸려고 둔다 (B-210).
+     * `code`에 인덱스가 없어 그 조회 하나하나가 풀스캔이고, 이 시트는 수만 행이 될 수 있다.
+     * 화면에서 쓰지 말 것 — 축 단위로 받는 [getByAxis]가 그쪽의 자리다.
+     */
+    @Query("SELECT * FROM duel_matches")
+    suspend fun getAllList(): List<DuelMatch>
+
     @Query("SELECT code FROM duel_matches WHERE code IN (:codes)")
     suspend fun getExistingCodes(codes: List<String>): List<String>
 
