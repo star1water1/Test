@@ -453,4 +453,69 @@ class StatsDrilldownTest {
             .filter { g -> g.mergedFieldDefIds.none { it in current } }
         assertTrue(remaining.isEmpty())
     }
+
+    // ===== B-209: 대상 def를 값마다가 아니라 한 번 가른다 =====
+    //
+    // 아래 셋이 고정하는 것은 **정의가 스냅샷에 없는 값**의 처분이다. 이 자리가 위험한 이유는
+    // 겉보기에 없어 보이기 때문이다 — 값은 자기 정의보다 오래 산다. 캐릭터가 작품을 옮기면
+    // `filterByNovel`이 def를 세계관으로 걸러 내지만 그 캐릭터의 **보관 값은 스냅샷에 남고**,
+    // 그러면 `fieldValues`에는 있는데 `fieldDefinitions`에는 없는 id가 생긴다.
+    //
+    // 종전 코드는 값마다 `defById[id]?.fieldType == CALCULATED`를 물었고 **정의가 없으면 null이라
+    // false**여서 그 값을 **셌다.** 대상 def를 미리 가르는 지금 코드가 `defById.keys`로 좁히면
+    // 그 값들이 **오류도 고지도 없이 빠진다** — 개발 의도 2번이 금지하는 조용한 유실이고,
+    // 화면에는 "그런 캐릭터가 없다"로 보여 구별되지 않는다. 그래서 세던 것을 그대로 센다.
+
+    /** 정의가 사라진 보관 값 + 살아 있는 def 하나. 보관 값도 함께 세어져야 한다. */
+    private fun archivedValueSnapshot() = twoUniverseSnapshot().let { base ->
+        base.copy(
+            fieldDefinitions = listOf(charField(10, "job", "직업")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "검사"),
+                // def 99는 스냅샷에 없다 — 작품을 옮긴 뒤 남은 보관 값이 이 모양이다.
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 99, value = "검사")
+            )
+        )
+    }
+
+    @Test
+    fun `정의가 사라진 보관 값도 드릴다운이 센다`() {
+        val s = archivedValueSnapshot()
+        val listed = provider.getCharactersByFieldValue(s, listOf(10L, 99L), "검사")!!
+        assertEquals("보관 값이 조용히 빠지면 안 된다", 2, listed.size)
+        assertEquals(listOf("가", "나"), listed.map { it.characterName })
+    }
+
+    @Test
+    fun `하위 그룹 분석도 정의가 사라진 보관 값을 센다`() {
+        val s = archivedValueSnapshot()
+        val analysis = provider.computeSubgroupAnalysis(s, setOf(1L, 2L), listOf(10L, 99L))!!
+        assertEquals(2, analysis.distribution["검사"])
+    }
+
+    /**
+     * 대상이 **전부** 계산 def이면 저장 행 경로에 아예 들어가지 않는다 — 그때는 정의 없는 id가
+     * 섞여 있어도 세지 않는 것이 종전 동작이다. 가르는 기준(`hasStored`)이 `idSet`이 아니라
+     * `defById`여야 하는 이유가 이것이고, 뒤집으면 계산 필드 드릴다운에 엉뚱한 값이 섞인다.
+     */
+    @Test
+    fun `대상이 전부 계산 필드면 정의 없는 저장 값은 섞이지 않는다`() {
+        val base = twoUniverseSnapshot()
+        val s = base.copy(
+            fieldDefinitions = listOf(
+                charField(11, "power", "힘", type = "NUMBER"),
+                charField(12, "double_power", "힘x2", type = "CALCULATED",
+                    config = """{"formula":"field('power') * 2"}""")
+            ),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 11, value = "5"),
+                // 계산 결과와 **똑같은 글자**를 일부러 심는다 — 값이 달라 못 찾은 것과
+                // 경로에 안 들어가서 못 찾은 것을 구별하기 위해서다.
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 99, value = "10")
+            )
+        )
+        // 계산 def 12만 대상(힘 5 × 2 = 10) — 정의 없는 99의 저장 값이 계산 결과인 척 끼어들면 안 된다.
+        val listed = provider.getCharactersByFieldValue(s, listOf(12L, 99L), "10")!!
+        assertEquals(listOf("가"), listed.map { it.characterName })
+    }
 }
