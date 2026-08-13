@@ -1525,6 +1525,14 @@
     <string name="stats_show_more">더 보기 (%d개 더)</string>
     <string name="stats_show_less">접기</string>
 
+    <!-- Stats: 표시 상한 고지 (R-14 — 잘라냈으면 개수로 존재를 알린다).
+         상한 숫자는 문구에 박지 않고 DisplayCap의 상수로 채운다. -->
+    <string name="stats_pattern_folded_note">유형 카드는 축마다 %1$d장까지 폅니다 — 접힌 것은 %2$s입니다.</string>
+    <string name="stats_pattern_folded_axis">%1$s %2$d장</string>
+    <string name="stats_cross_folded_note">행·열은 각각 상위 %1$d종까지 폅니다 — 나머지(%2$s)는 \'기타\'로 합쳤고 건수는 그대로입니다.</string>
+    <string name="stats_cross_folded_rows">행 %d종</string>
+    <string name="stats_cross_folded_cols">열 %d종</string>
+
     <!-- Stats: 관계 네트워크 -->
     <string name="stats_relation_network_title">관계 네트워크</string>
 

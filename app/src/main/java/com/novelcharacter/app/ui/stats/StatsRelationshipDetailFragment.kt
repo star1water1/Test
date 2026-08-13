@@ -123,14 +123,34 @@ class StatsRelationshipDetailFragment : Fragment() {
         }
     }
 
+    /**
+     * 고립 캐릭터 명단 — **캐릭터 축**이라 상한이 필요하다(B-199).
+     *
+     * 위 [populateRankedList]는 계산 쪽이 상위 10명으로 이미 줄여 주지만(`topConnected`),
+     * 이 목록은 *관계가 하나도 없는 캐릭터 전부*라 상한이 어디에도 없었다 —
+     * 관계를 아직 안 그린 세계관에서는 **캐릭터 전원**이 여기 뜬다.
+     */
     private fun populateSimpleList(container: LinearLayout, items: List<String>) {
-        container.removeAllViews()
-        if (items.isEmpty()) {
-            container.addView(makeEmptyTextView())
-            return
-        }
-        items.forEach { name ->
-            container.addView(makeTextView(name))
+        StatsCappedList.populate(
+            container = container,
+            items = items,
+            emptyView = { makeEmptyTextView() },
+            toggleView = { makeToggleTextView(it) },
+            moreText = { getString(R.string.stats_show_more, it) },
+            lessText = { getString(R.string.stats_show_less) },
+            makeRow = { name -> makeTextView(name) }
+        )
+    }
+
+    /** 접기/펼치기 줄 — 값 줄과 구별되게 강조색으로 둔다(누를 수 있다는 것이 보여야 한다). */
+    private fun makeToggleTextView(label: CharSequence): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        return TextView(requireContext()).apply {
+            text = label
+            textSize = textSizeSp
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.accent))
+            setPadding(0, marginSm, 0, marginSm)
         }
     }
 
