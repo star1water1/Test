@@ -11,6 +11,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.GraphForceLayout
 import kotlinx.coroutines.*
 import kotlin.math.*
 
@@ -353,101 +354,18 @@ class RelationshipGraphView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 배치 계산은 [GraphForceLayout]이 한다 — 이 파일은 `View` 하위라 **로컬 검증이 값을 못 본다**
+     * (커스텀 뷰 프로브는 컴파일만 보고, 순수 시험·실클래스패스 프로브는 `ui/` 계층을 통째로 뺀다).
+     * 노드 수의 상한은 이 계산이 아니라 화면이 정한다(R-19) — `RelationshipGraphFragment`.
+     */
     private fun computeLayout(
         nodesCopy: List<GraphNode>,
         edgesCopy: List<GraphEdge>
-    ): List<Pair<Float, Float>> {
-        val count = nodesCopy.size
-        val xs = FloatArray(count)
-        val ys = FloatArray(count)
-
-        val radius = max(150f, count * 30f)
-        for (i in 0 until count) {
-            val angle = 2.0 * PI * i / count
-            xs[i] = (radius * cos(angle)).toFloat()
-            ys[i] = (radius * sin(angle)).toFloat()
-        }
-
-        // 반복 횟수 증가 (더 안정적인 레이아웃)
-        val iterations = min(300, max(100, count * 8))
-        // 반발력 강화 — 노드 간 최소 거리를 넓혀 밀집 방지
-        val k = sqrt((radius * radius * 5) / count.toFloat())
-        val temp = radius * 0.7f
-        val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
-
-        val processedPairs = mutableSetOf<Long>()
-        for (iter in 0 until iterations) {
-            if (Thread.currentThread().isInterrupted) break
-            val cooling = temp * (1f - iter.toFloat() / iterations)
-
-            val dispX = FloatArray(count)
-            val dispY = FloatArray(count)
-
-            // 반발력 (모든 노드 쌍)
-            for (i in 0 until count) {
-                for (j in i + 1 until count) {
-                    val dx = xs[i] - xs[j]
-                    val dy = ys[i] - ys[j]
-                    val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
-                    val force = k * k / dist
-                    val fx = dx / dist * force
-                    val fy = dy / dist * force
-                    dispX[i] += fx; dispY[i] += fy
-                    dispX[j] -= fx; dispY[j] -= fy
-                }
-            }
-
-            // 인력 (연결된 노드만) — 중복 엣지의 인력 합산 방지
-            processedPairs.clear()
-            for (edge in edgesCopy) {
-                val iIdx = nodeIndexMap[edge.fromId] ?: continue
-                val jIdx = nodeIndexMap[edge.toId] ?: continue
-                val pairKey = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
-                if (!processedPairs.add(pairKey)) continue  // 같은 쌍은 한 번만
-                val dx = xs[iIdx] - xs[jIdx]
-                val dy = ys[iIdx] - ys[jIdx]
-                val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
-                val force = dist * dist / k
-                val fx = dx / dist * force
-                val fy = dy / dist * force
-                dispX[iIdx] -= fx; dispY[iIdx] -= fy
-                dispX[jIdx] += fx; dispY[jIdx] += fy
-            }
-
-            // 세력 클러스터링: 같은 세력 소속 노드 간 약한 인력 (가중치 0.3)
-            val factionWeight = 0.3f
-            processedPairs.clear()
-            for (i in 0 until count) {
-                val iFactions = nodesCopy[i].factionIds
-                if (iFactions.isEmpty()) continue
-                for (j in i + 1 until count) {
-                    val jFactions = nodesCopy[j].factionIds
-                    if (jFactions.isEmpty()) continue
-                    // 공통 세력이 있는지 체크
-                    val shared = iFactions.any { it in jFactions }
-                    if (!shared) continue
-                    val pairKey = i.toLong().shl(32) or j.toLong()
-                    if (!processedPairs.add(pairKey)) continue
-                    val dx = xs[i] - xs[j]
-                    val dy = ys[i] - ys[j]
-                    val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
-                    val force = dist * dist / k * factionWeight
-                    val fx = dx / dist * force
-                    val fy = dy / dist * force
-                    dispX[i] -= fx; dispY[i] -= fy
-                    dispX[j] += fx; dispY[j] += fy
-                }
-            }
-
-            for (i in 0 until count) {
-                val dist = max(sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]), 0.1f)
-                xs[i] += dispX[i] / dist * min(dist, cooling)
-                ys[i] += dispY[i] / dist * min(dist, cooling)
-            }
-        }
-
-        return (0 until count).map { xs[it] to ys[it] }
-    }
+    ): List<Pair<Float, Float>> = GraphForceLayout.compute(
+        nodes = nodesCopy.map { GraphForceLayout.Node(it.id, it.factionIds) },
+        edges = edgesCopy.map { GraphForceLayout.Edge(it.fromId, it.toId) }
+    )
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {

@@ -92,6 +92,7 @@ $MAIN/util/CompletionRate.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
 $MAIN/util/DisplayCap.kt
+$MAIN/util/GraphForceLayout.kt
 $MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/CsvTokens.kt
@@ -310,6 +311,7 @@ $TEST/util/CompletionRateTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/DisplayCapTest.kt
+$TEST/util/GraphForceLayoutTest.kt
 $TEST/util/CrossTableFoldTest.kt
 $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt

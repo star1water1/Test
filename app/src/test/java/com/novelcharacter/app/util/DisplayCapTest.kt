@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -144,5 +145,69 @@ class DisplayCapTest {
     @Test
     fun `음수 걸음은 첫 표시분으로 본다`() {
         assertEquals(50, DisplayCap.shownCount(6_420, chunk = 50, steps = -3))
+    }
+
+    // ── 3. 순위 상한 (관계도 노드) ───────────────────────────────────────────
+    //
+    // **앞의 둘이 서로 반대 방향의 사고를 막는다** — ① 남길 것은 중요도로 고르고
+    // ② 그린 순서는 입력 순서다. ①만 있으면 `sortedByDescending{}.take()`가 통과하는데,
+    // 그러면 관계도의 **초기 배치가 노드 순서로 원을 그리므로 남은 노드의 좌표까지 바뀐다**
+    // (상한에 걸린 화면과 안 걸린 화면의 배치 규칙이 달라진다).
+
+    private data class Person(val id: Long, val links: Int)
+
+    private fun cap(people: List<Person>, limit: Int) =
+        DisplayCap.rankedCap(people, limit, scoreOf = { it.links }, tieBreakOf = { it.id })
+
+    @Test
+    fun `상한 아래에서는 입력 목록 그대로다`() {
+        // 상한 아래의 크기 — 이 판이 상한 아래의 화면을 바꾸면 그것이 결함이다.
+        // (표본의 관여 인물 수는 실측된 적이 없다. 158은 3-12 모델의 값이고 참값은 214 이하
+        //  어디든 될 수 있어 **상한에 닿을 수도 있다** — 그 답은 실기기 확인 3-120 ㄱ이 낸다.)
+        val people = (1..158).map { Person(it.toLong(), it % 4) }
+        val capped = cap(people, DisplayCap.GRAPH_NODE_LIMIT)
+        assertEquals(people, capped.shown)
+        assertEquals(0, capped.hiddenCount)
+        assertFalse(capped.hasHidden)
+    }
+
+    @Test
+    fun `넘치면 연결이 많은 쪽이 남고 접은 수를 정확히 말한다`() {
+        // 연결 수를 일부러 뒤섞어 둔다 — 앞에서 자르는 구현이면 큰 연결이 통째로 접힌다.
+        val people = (1..10).map { Person(it.toLong(), it) }
+        val capped = cap(people, limit = 3)
+        assertEquals(listOf(8L, 9L, 10L), capped.shown.map { it.id })
+        assertEquals(7, capped.hiddenCount)
+        assertEquals(10, capped.totalCount)
+    }
+
+    @Test
+    fun `남은 것의 순서는 고른 순서가 아니라 입력 순서다`() {
+        // 연결 수 내림차순이면 30 → 20 → 10 순으로 나올 자리다. 입력 순서를 지켜야 한다.
+        val people = listOf(Person(1L, 10), Person(2L, 30), Person(3L, 1), Person(4L, 20))
+        assertEquals(listOf(1L, 2L, 4L), cap(people, limit = 3).shown.map { it.id })
+    }
+
+    @Test
+    fun `연결 수가 같으면 id 순으로 갈라 같은 그림을 낸다`() {
+        // 동점은 관계도에서 흔하다(연결 1개인 인물이 대부분이다). 갈라 두지 않으면
+        // 같은 데이터가 화면을 열 때마다 다른 인물을 그린다.
+        val people = listOf(Person(5L, 1), Person(2L, 1), Person(9L, 1), Person(7L, 1))
+        assertEquals(listOf(5L, 2L), cap(people, limit = 2).shown.map { it.id })
+    }
+
+    @Test
+    fun `상한이 0 이하이면 아무것도 그리지 않고 전량을 접은 것으로 센다`() {
+        val people = (1..5).map { Person(it.toLong(), 1) }
+        val capped = cap(people, limit = 0)
+        assertTrue(capped.shown.isEmpty())
+        assertEquals(5, capped.hiddenCount)
+        assertEquals(5, capped.totalCount)
+    }
+
+    @Test
+    fun `관계도 상한은 종전 전환 문턱과 같은 값이다`() {
+        // 값이 달라지면 실사용 표본에서 화면이 바뀐다 — 이 판이 일부러 맞춰 둔 자리다.
+        assertEquals(200, DisplayCap.GRAPH_NODE_LIMIT)
     }
 }
