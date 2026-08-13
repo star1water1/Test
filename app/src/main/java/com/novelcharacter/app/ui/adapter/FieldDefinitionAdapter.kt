@@ -11,7 +11,6 @@ import android.view.View
 import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldDescription
-import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.ItemFieldDefinitionBinding
@@ -64,8 +63,10 @@ class FieldDefinitionAdapter(
             binding.fieldName.text = field.name
             binding.fieldKey.text = field.key
 
-            val fieldType = try { FieldType.valueOf(field.type) } catch (e: Exception) { null }
-            binding.fieldTypeBadge.text = fieldType?.label ?: field.type
+            // 모르는 타입은 저장된 글자를 그대로 보인다 — 사용자가 무엇이 잘못됐는지 볼 수 있어야 한다.
+            // **`valueOf` + try/catch를 쓰지 않는다** (B-55): 그쪽은 모르는 타입마다 예외를 지어
+            // 스택 트레이스를 채우는데, 여기는 목록이 스크롤될 때마다 도는 자리다.
+            binding.fieldTypeBadge.text = field.fieldType?.label ?: field.type
 
             binding.fieldGroup.text = field.groupName
 

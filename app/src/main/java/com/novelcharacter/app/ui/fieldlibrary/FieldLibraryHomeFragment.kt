@@ -15,7 +15,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
-import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentFieldLibraryHomeBinding
 import com.novelcharacter.app.databinding.ItemLibraryFieldBinding
@@ -245,7 +244,7 @@ class FieldLibraryHomeFragment : Fragment() {
                     } else {
                         row.field.name
                     }
-                    b.fieldTypeText.text = FieldType.fromName(row.field.type)?.label ?: row.field.type
+                    b.fieldTypeText.text = row.field.fieldType?.label ?: row.field.type
                     b.fieldSummaryText.text = when {
                         !row.supported -> getString(row.unsupportedReasonRes)
                         row.entryCount == 0 -> getString(R.string.field_library_field_summary_empty)
