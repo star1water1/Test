@@ -1,7 +1,8 @@
 package com.novelcharacter.app.util
 
-import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldConfigTransfer
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 
 /**
  * 프리셋·다른 세계관의 필드를 **이미 있는 세계관에 합치는** 계획 (B-89).
@@ -131,8 +132,19 @@ object PresetMerge {
      *
      * **현행에서 한 칸 넓히는 값이지 좁히는 값이 아니다** — 지금은 옵션 자체가 없고
      * 같은 종류만 들어오므로, 이 기본값으로 처음 열리는 길이 셋 생긴다.
+     *
+     * ## 왜 여기만 `Set<String>`으로 남는가 (B-55, 2026.08.13)
+     *
+     * 이 집합은 **사용자가 고쳐 저장한다** — `FieldImportSettingsStore`가 prefs에 타입 이름을
+     * 글자로 담고, 그 저장본은 이 코드보다 오래 산다. `Set<FieldType>`으로 바꾸면 저장 경계에서
+     * 어차피 글자로 되돌려야 하고, 모르는 글자가 담긴 옛 설정은 **읽는 순간 조용히 사라진다**.
+     *
+     * **새 타입이 여기 안 드는 것은 누락이 아니라 결정이다** — 사용자 확정이 "안전 우선"이라
+     * 기본은 닫힌 채로 시작하고 사용자가 연다. 그래서 exhaustive `when`으로 답을 강요할 자리가
+     * 아니고, 대신 **글자를 [FieldType]에서 뽑아** 상수 이름이 바뀌면 컴파일이 깨지게 둔다.
      */
-    val DEFAULT_CONVERTIBLE_TYPES: Set<String> = setOf("TEXT", "SELECT", "NUMBER")
+    val DEFAULT_CONVERTIBLE_TYPES: Set<String> =
+        setOf(FieldType.TEXT.name, FieldType.SELECT.name, FieldType.NUMBER.name)
 
     /**
      * 종류를 바꾼 결과. **미리보기가 보여 준 것과 심기는 것이 갈리지 않게** [fields]를

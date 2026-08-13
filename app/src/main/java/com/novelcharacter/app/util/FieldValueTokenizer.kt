@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import org.json.JSONObject
 
@@ -37,13 +38,13 @@ object FieldValueTokenizer {
      *  제외: CALCULATED(파생값), NUMBER(연속값 — 통계 binning 담당),
      *  BODY_SIZE·구조화 입력(파트별 측정치는 카탈로그 값이 아님). */
     fun supportsLibrary(fd: FieldDefinition): Boolean {
-        if (fd.type !in LIBRARY_TYPES) return false
+        if (!isLibraryType(fd.fieldType)) return false
         return !StructuredInputConfig.fromConfig(fd.config).enabled
     }
 
     /** 한 캐릭터/사건이 이 필드에 여러 토큰(콤마 구분)을 가질 수 있는가 */
     fun isMultiToken(fd: FieldDefinition): Boolean {
-        if (fd.type == "MULTI_TEXT") return true
+        if (fd.fieldType == FieldType.MULTI_TEXT) return true
         val format = DisplayFormat.fromConfig(fd.config)
         return format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST
     }
@@ -81,7 +82,7 @@ object FieldValueTokenizer {
      */
     fun splitForStats(fd: FieldDefinition, rawValue: String): List<String> {
         return when {
-            fd.type == "BODY_SIZE" || StructuredInputConfig.fromConfig(fd.config).enabled -> {
+            fd.fieldType == FieldType.BODY_SIZE || StructuredInputConfig.fromConfig(fd.config).enabled -> {
                 // 구조화 입력: config의 파트 라벨로 개별 분석
                 val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
                 if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
@@ -108,5 +109,18 @@ object FieldValueTokenizer {
      */
     fun join(tokens: List<String>): String = CsvTokens.join(tokens)
 
-    private val LIBRARY_TYPES = setOf("TEXT", "SELECT", "MULTI_TEXT", "GRADE")
+    /**
+     * 라이브러리가 값 카탈로그를 관리하는 타입인가 (B-55 — 종전 `LIBRARY_TYPES` 집합).
+     *
+     * **집합이 아니라 `when`인 것이 요점이다.** 집합으로 두면 새 타입이 그냥 빠지는데, 그 처분은
+     * *결정*이 아니라 *누락*이라 화면에 **"이 타입은 라이브러리를 쓰지 않습니다"**로 나타난다 —
+     * 사용자는 그것이 의도인지 빠뜨린 것인지 알 길이 없다(원칙 02).
+     */
+    private fun isLibraryType(type: FieldType?): Boolean = when (type) {
+        FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT, FieldType.GRADE -> true
+        // CALCULATED = 파생값 · NUMBER = 연속값(통계 binning 담당) ·
+        // BODY_SIZE = 파트별 측정치라 카탈로그 값이 아니다.
+        FieldType.CALCULATED, FieldType.NUMBER, FieldType.BODY_SIZE -> false
+        null -> false
+    }
 }

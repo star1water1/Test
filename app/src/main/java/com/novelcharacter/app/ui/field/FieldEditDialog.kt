@@ -145,10 +145,13 @@ class FieldEditDialog : DialogFragment() {
 
     private var fieldTypeSpinner: Spinner? = null
 
-    private fun currentFieldType(): String {
+    /**
+     * 지금 스피너가 가리키는 타입. 스피너는 [FieldType.entries] 순서로 채워지므로 위치가 곧
+     * 타입이다 — 위치가 범위를 벗어나면(스피너가 아직 안 붙었을 때) [FieldType.TEXT]다.
+     */
+    private fun currentFieldType(): FieldType {
         val pos = fieldTypeSpinner?.selectedItemPosition ?: 0
-        val types = FieldType.entries.toTypedArray()
-        return if (pos in types.indices) types[pos].name else "TEXT"
+        return FieldType.entries.getOrNull(pos) ?: FieldType.TEXT
     }
 
     /** [listener]가 false를 반환하면(예: 키 중복 거부) 다이얼로그가 닫히지 않고 입력이 유지된다. */
@@ -1213,7 +1216,7 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: String = currentFieldType()) {
+    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: FieldType? = currentFieldType()) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2232,9 +2235,9 @@ class FieldEditDialog : DialogFragment() {
         val density = resources.displayMetrics.density
         binding.analysisListContainer.removeAllViews()
         analysisRows.clear()
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.type)
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.fieldType)
         for (entry in statsConfig.analyses) {
-            addAnalysisRow(binding.analysisListContainer, density, field.type)
+            addAnalysisRow(binding.analysisListContainer, density, field.fieldType)
             val row = analysisRows.last()
             val typeIdx = allowedTypes.indexOf(entry.type)
             if (typeIdx >= 0) row.spinnerType.setSelection(typeIdx)
@@ -3034,7 +3037,7 @@ class FieldEditDialog : DialogFragment() {
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
         val enabled = binding.switchStatsEnabled.isChecked
 
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type.name)
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type)
         val analyses = analysisRows.map { row ->
             val chartTypes = FieldStatsConfig.ChartType.entries
             val typePos = row.spinnerType.selectedItemPosition.coerceIn(0, allowedTypes.size - 1)

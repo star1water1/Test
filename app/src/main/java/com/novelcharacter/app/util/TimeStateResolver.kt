@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import android.util.Log
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 
 class TimeStateResolver {
 
@@ -81,7 +82,7 @@ class TimeStateResolver {
         }
 
         // Evaluate calculated fields
-        val calculatedFields = fieldDefinitions.filter { it.type == "CALCULATED" }
+        val calculatedFields = fieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }
         if (calculatedFields.isNotEmpty()) {
             val evaluator = FormulaEvaluator(result, fieldDefinitions)
             for (field in calculatedFields) {
