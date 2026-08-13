@@ -6588,12 +6588,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 자연키 맵은 이미 있었다 — **코드 축만 빠져 있어 행마다 표를 다시 물었다**(B-210).
         // 같은 목록에서 함께 짓는다. id 오름차순이 `LIMIT 1`의 순서다.
-        val allNames = db.nameBankDao().getAllNamesList()
-        val existingNamesMap = allNames.associateBy { it.mapKeyForNameBank() }.toMutableMap()
+        //
+        // **자연키 쪽도 같은 색인으로 옮겼다 — 손코딩 맵이 성질 ③을 어기고 있었다.**
+        // `mergeNameBankEntry`는 **이름·성별을 고친다**(코드로 매칭된 행의 편집을 반영한다).
+        // 종전 맵은 새 키만 더하고 **옛 키를 그대로 두었다.** 그래서 한 파일 안에서
+        // *코드로 '가/남' → '나/남'으로 개명한 뒤 코드 없는 '가/남' 행이 또 나오면*, 그 행이
+        // 새 항목이 되는 대신 **방금 개명한 항목을 '가'로 되돌렸다** — 표를 다시 물었다면
+        // '가'인 항목은 없다. 색인이 그 되돌림을 없앤다(`put`이 옛 키를 끊는다).
+        // **같은 자연키가 둘일 때 고르는 쪽도 바뀐다**(`associateBy`의 마지막 → 먼저 실린 것) —
+        // 이 자리는 SQL 질의가 아니라 순수 메모리 맵이라 흉내 낼 원본이 없고, 파일의 나머지가
+        // 전부 *먼저 실린 것*으로 서 있으므로 그쪽에 맞춘다.
+        val allNames = db.nameBankDao().getAllNamesList().sortedBy { it.id }
+        val nameBankNaturalKeys = ImportLookupIndex<String, NameBankEntry>(
+            idOf = { it.id }, keyOf = { it.mapKeyForNameBank() }
+        )
         val nameBankCodes = ImportLookupIndex<String, NameBankEntry>(
             idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
         )
-        nameBankCodes.load(allNames.sortedBy { it.id })
+        nameBankNaturalKeys.load(allNames)
+        nameBankCodes.load(allNames)
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6605,7 +6618,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
                 val existing = (if (r.code.isNotBlank()) nameBankCodes.first(r.code) else null)
-                    ?: existingNamesMap[r.mapKey]
+                    ?: nameBankNaturalKeys.first(r.mapKey)
 
                 val usedByCharacterId = resolveNameBankUsedBy(r, existing, "이름 은행 행 $i", result)
                 val effectiveUsed = r.usedFlag ?: existing?.isUsed ?: false
@@ -6622,7 +6635,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val merged = mergeNameBankEntry(existing, r, usedByCharacterId)
                     db.nameBankDao().update(merged)
-                    existingNamesMap[merged.mapKeyForNameBank()] = merged
+                    nameBankNaturalKeys.put(merged)
                     nameBankCodes.put(merged)
                     matchedNameBankIds.add(existing.id)
                     if (merged != existing) result.updatedNameBank++ else result.unchangedRows++
@@ -6636,8 +6649,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     )
                     val newId = db.nameBankDao().insert(newEntry)
                     matchedNameBankIds.add(newId)
-                    existingNamesMap[r.mapKey] = newEntry.copy(id = newId)
-                    // 같은 코드를 든 뒷 행이 이것을 봐야 한다 — 자연키 맵은 이미 그렇게 하고 있었다.
+                    // 같은 코드·같은 자연키를 든 뒷 행이 이것을 봐야 한다.
+                    nameBankNaturalKeys.put(newEntry.copy(id = newId))
                     nameBankCodes.put(newEntry.copy(id = newId))
                     result.newNameBank++
                 }
@@ -7821,8 +7834,34 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val axisNameKeys = ImportLookupIndex<DuelAxisNameKey, DuelAxis>(
             idOf = { it.id }, keyOf = { DuelAxisNameKey(it.universeId, it.targetType, it.name) }
         )
-        axisCodes.load(allAxes)
-        axisNameKeys.load(allAxes)
+        // 이 시트에는 **행 하나가 여러 행을 고치는 자리**가 있다 — `기준축`을 세우면
+        // `clearBasisExcept`가 같은 (세계관, 대상)의 **다른 축을 SQL로 통째로 내린다.**
+        // 색인은 그 일괄 갱신을 못 보므로 여기서 같은 조건으로 **함께 내린다**(아래 `applyBasisAxis`).
+        // **지금 이 순간에는 그 낡음이 결과를 바꾸지 않는다** — `mergeDuelAxis`가 `existing.isBasisAxis`를
+        // 읽는 것은 `r.isBasisAxis == null`일 때뿐이고, 그것은 **`기준축` 열이 아예 없다**는 뜻이라
+        // (`sheetBooleanOrKeep`) 그 파일에서는 `clearBasisExcept`가 애초에 돌지 않는다. **둘이 서로
+        // 배타적이라 살아 있는 결함이 아니다.** 그래도 맞춰 두는 이유는 그 배타가 **다른 파일의 한 줄**에
+        // 걸려 있기 때문이다 — 빈 셀을 null로 읽도록 바꾸는 순간 조용히 살아난다(고지도 오류도 없이
+        // 기준 축이 앞뒤로 튄다). 값이 아니라 **결합을 없앤다.**
+        val axesById = LinkedHashMap<Long, DuelAxis>()
+        fun putAxis(axis: DuelAxis) {
+            axesById[axis.id] = axis
+            axisCodes.put(axis)
+            axisNameKeys.put(axis)
+        }
+        for (axis in allAxes) putAxis(axis)
+        suspend fun applyBasisAxis(universeId: Long, targetType: String, axisId: Long, isBasis: Boolean) {
+            enforceSingleBasisAxis(universeId, targetType, axisId, isBasis)
+            // 위 함수가 실제로 SQL을 친 조건과 **같은 조건**으로만 미러링한다.
+            if (!isBasis || axisId <= 0 || targetType != DuelAxis.TARGET_IMAGE) return
+            for (other in axesById.values.toList()) {
+                if (other.id != axisId && other.universeId == universeId &&
+                    other.targetType == targetType && other.isBasisAxis
+                ) {
+                    putAxis(other.copy(isBasisAxis = false))
+                }
+            }
+        }
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -7869,10 +7908,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newId = db.duelAxisDao().insert(newAxis)
                     // 같은 코드·같은 (세계관,대상,이름)을 든 뒷 행이 이것을 봐야 한다 —
                     // 못 보면 유니크 인덱스가 던져 가져오기가 통째로 실패한다.
-                    val insertedAxis = newAxis.copy(id = newId)
-                    axisCodes.put(insertedAxis)
-                    axisNameKeys.put(insertedAxis)
-                    enforceSingleBasisAxis(universe.id, r.targetType, newId, r.isBasisAxis ?: false)
+                    putAxis(newAxis.copy(id = newId))
+                    applyBasisAxis(universe.id, r.targetType, newId, r.isBasisAxis ?: false)
                     result.newDuelAxes++
                     if (r.code.isNotBlank()) {
                         warnCreatedNewByCode("duelAxes", "대결 축 행 $i: 코드 '${r.code}'가 기존 축에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
@@ -7883,11 +7920,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelAxisDao().update(merged)
                         result.updatedDuelAxes++
                     } else result.unchangedRows++
-                    axisCodes.put(merged)
-                    axisNameKeys.put(merged)
+                    putAxis(merged)
                     // **대상은 기존 축의 것이다** — `mergeDuelAxis`가 targetType을 바꾸지 않으므로
                     // 행에 적힌 대상이 아니라 실제 축의 대상으로 판정해야 한다.
-                    enforceSingleBasisAxis(
+                    applyBasisAxis(
                         universe.id, merged.targetType, merged.id, merged.isBasisAxis
                     )
                 }
@@ -8962,7 +8998,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.warnings.add("작품 '${novel.title}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
                 continue
             }
-            db.novelDao().update(novel.copy(imageCharacterId = charId))
+            val relinkedNovel = novel.copy(imageCharacterId = charId)
+            db.novelDao().update(relinkedNovel)
+            rememberNovel(relinkedNovel)
         }
         deferredNovelImageCharCodes.clear()
 
