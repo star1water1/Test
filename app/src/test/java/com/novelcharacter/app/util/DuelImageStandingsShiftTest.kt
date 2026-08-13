@@ -75,7 +75,13 @@ class DuelImageStandingsShiftTest {
         matches: List<DuelMatch>,
         verdicts: List<DuelCounterVerdict>
     ): Read {
-        val split = DuelImageRoster.splitOf(characterId, characters, matches, verdicts)!!
+        val split = DuelImageRoster.splitOf(
+            characterId,
+            characters.single { it.id == characterId }.imagePathList(),
+            matches,
+            verdicts,
+            DuelImageRoster.owners(characters)
+        )
         val records = DuelRecords.resolve(
             split.paths, split.matches, split.verdicts, DuelRecords.CodeMatch.IMAGE_PATH
         )
@@ -242,7 +248,13 @@ class DuelImageStandingsShiftTest {
         )
 
         // 순위표가 타는 길과 점수표가 타는 길은 **같은 split·같은 resolve**다.
-        val split = DuelImageRoster.splitOf(1L, characters, matches, emptyList())!!
+        val split = DuelImageRoster.splitOf(
+            1L,
+            characters.single { it.id == 1L }.imagePathList(),
+            matches,
+            emptyList(),
+            DuelImageRoster.owners(characters)
+        )
         val records = DuelRecords.resolve(
             split.paths, split.matches, split.verdicts, DuelRecords.CodeMatch.IMAGE_PATH
         )

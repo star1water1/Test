@@ -641,12 +641,13 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * @property owners 세계관에서 **어느 그림이 누구 것인가.** 판을 몫으로 가르는 데 필요하고,
      *   화면이 **들고 있어야 한다** — 한 판 누를 때마다 다시 도는 경로에서 이것을 새로 만들면
      *   그림 수만큼의 파일 시스템 호출이 판마다 붙는다.
-     * @property characters 세계관의 캐릭터. [owners]와 함께 몫 가르기가 받는다.
+     *
+     * **캐릭터 표는 담지 않는다.** 몫 가르기가 필요한 것은 *내 경로*([entry])와 *소유 표*뿐이라,
+     * 표를 담으면 화면이 세계관 인원 전부를 대결이 끝날 때까지 붙들고 있게 된다.
      */
     data class ImageTarget(
         val entry: DuelImageRoster.Entry,
-        val owners: DuelImageRoster.Owners,
-        val characters: List<Character>
+        val owners: DuelImageRoster.Owners
     )
 
     /**
@@ -666,7 +667,7 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         if (target.entry.paths.size < 2) return null
         return withContext(Dispatchers.Default) {
             val image = duelRepository.imageStateOf(
-                axis, target.characters, target.entry.characterId, target.owners
+                axis, target.entry.characterId, target.entry.paths, target.owners
             ) ?: return@withContext null
             // 이미지 축의 참가자는 캐릭터가 아니다 — 카드가 이름·필드를 붙일 곳이 없으므로
             // 표를 비워 넘긴다(화면이 코드=경로에서 파일 이름을 낸다).
@@ -685,7 +686,7 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val matches = app.database.duelMatchDao().getByAxis(axis.id)
         val roster = withContext(Dispatchers.Default) { DuelImageRoster.build(characters, matches) }
         val entry = roster.entryOf(characterId) ?: return null
-        return ImageTarget(entry, roster.owners, characters)
+        return ImageTarget(entry, roster.owners)
     }
 
     // ──────────────────────────────────────────────────────────────────────

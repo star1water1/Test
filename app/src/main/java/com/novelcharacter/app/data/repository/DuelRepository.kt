@@ -449,26 +449,32 @@ class DuelRepository(private val db: AppDatabase) {
      * 몫을 가르는 잣대는 [DuelImageRoster.split]이고 **점수표([imageScoresByCharacter])와
      * 같은 것**이다 — 두 벌로 적으면 순위표와 대표 추첨이 다른 판 수를 말한다(계약 1).
      *
-     * @param characters 세계관의 캐릭터 전부. **화면이 이미 들고 있으면 그것을 넘길 것** —
-     *   한 판 누를 때마다 다시 도는 경로라, 여기서 다시 읽으면 그 조회가 판마다 붙는다.
-     * @return 그 캐릭터가 목록에 없으면(그림이 둘 미만) null — 붙일 짝이 없다는 뜻이다.
+     * **받는 것이 캐릭터 표가 아니라 *내 경로 + 소유 표*인 것이 요점이다.** 이 함수가 도는 자리가
+     * **한 판 누를 때마다**여서, 캐릭터 표를 받으면 화면이 그것을 들고 있어야 하고 몫 가르기가
+     * 인원마다 버킷을 지어 하나만 쓴다(`DuelImageRoster.splitOf`의 KDoc).
+     *
+     * @param paths 이 캐릭터의 참가자 경로 — 목록에 적힌 **원본 표기 그대로**(R-42).
+     * @param owners 세계관에서 어느 그림이 누구 것인가. **화면이 들고 있다가 넘긴다** —
+     *   여기서 다시 만들면 그림 수만큼의 파일 시스템 호출이 판마다 붙는다.
+     * @return 참가자가 둘 미만이면 null — 붙일 짝이 없다는 뜻이고, 화면이 그 사실을 말한다.
      */
     suspend fun imageStateOf(
         axis: DuelAxis,
-        characters: List<Character>,
         characterId: Long,
-        owners: DuelImageRoster.Owners = DuelImageRoster.owners(characters),
+        paths: List<String>,
+        owners: DuelImageRoster.Owners,
         pairingOptions: DuelPairing.Options = DuelPairing.Options(),
         counterOptions: DuelCounterRelations.Options = DuelCounterRelations.Options(),
         ratingOptions: DuelRating.Options = DuelRating.Options()
     ): ImageAxisState? {
+        if (paths.size < 2) return null
         val split = DuelImageRoster.splitOf(
             characterId,
-            characters,
+            paths,
             db.duelMatchDao().getByAxis(axis.id),
             db.duelCounterVerdictDao().getByAxis(axis.id),
             owners
-        ) ?: return null
+        )
 
         val records = DuelRecords.resolve(
             split.paths,

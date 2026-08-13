@@ -375,18 +375,60 @@ object DuelImageRoster {
     }
 
     /**
-     * 한 캐릭터 몫만 — **순위표·상성 상세가 이것을 쓴다.**
+     * 한 캐릭터 몫만 — **순위표·상성 상세·대결 화면이 이것을 쓴다.**
      *
-     * [split]을 그대로 타고 하나를 집는다. 자기 몫만 훑는 벌을 따로 적지 않는 것은 일부러다 —
-     * [split]은 판을 **한 번만** 훑으므로 비용이 같고, 두 벌로 적으면 *"순위표가 세는 판"*과
-     * *"점수표가 세는 판"*이 갈릴 길이 생긴다. 그 갈림이 정확히 B-175가 등재된 이유다.
+     * ## 왜 [split]을 부르고 하나를 집지 않는가
+     * **이 함수가 도는 자리가 한 판 누를 때마다다.** [split]은 판을 한 번만 훑으므로 그 축의
+     * 비용은 같지만, **세계관 인원(N)에 붙는 비용이 따로 있다** — 인원마다 경로 목록과 버킷과
+     * [Split]을 만들고 그중 하나만 쓴다. 인원이 수백이면 그 쓰레기가 **판마다** 난다.
+     * 무엇보다 [split]은 캐릭터 표 전부를 받아야 해서 **화면이 그것을 들고 있어야 하는데**,
+     * 이 함수가 필요한 것은 *내 경로*와 *소유 표*뿐이다.
+     *
+     * ## 그래서 두 벌이 됐고, 그 위험은 시험이 든다
+     * 훑는 벌이 둘이면 *"순위표가 세는 판"*과 *"점수표가 세는 판"*이 갈릴 길이 생긴다 —
+     * 그 갈림이 정확히 B-175가 등재된 이유다. **잣대는 [claimOf] 하나로 공유하고**(판정이
+     * 두 벌이 되지는 않는다), **둘이 같은 답을 낸다는 사실 자체를 시험이 잰다**
+     * (`splitOf는 split과 글자 그대로 같은 몫을 낸다`). 버킷 짜기는 판정이 아니라 기계적인
+     * 자리라 이 처분이 성립한다.
+     *
+     * @param paths 이 캐릭터의 참가자 경로 — 목록에 적힌 **원본 표기 그대로**(R-42).
      */
     fun splitOf(
         characterId: Long,
-        characters: List<Character>,
+        paths: List<String>,
         matches: List<DuelMatch>,
         verdicts: List<DuelCounterVerdict>,
-        owners: Owners = owners(characters)
-    ): Split? = split(characters, matches, verdicts, owners)
-        .firstOrNull { it.characterId == characterId }
+        owners: Owners
+    ): Split {
+        val mine = ArrayList<DuelMatch>()
+        var crossMatches = 0
+        for (match in matches) {
+            when (val claim = claimOf(match.aCode, match.bCode, owners)) {
+                is Claim.Owned -> if (claim.characterId == characterId) mine.add(match)
+                is Claim.Cross -> if (characterId in claim.characterIds) crossMatches++
+                Claim.None -> {}
+            }
+        }
+
+        val myVerdicts = ArrayList<DuelCounterVerdict>()
+        var crossVerdicts = 0
+        for (verdict in verdicts) {
+            val members = DuelRecords.decodeMembers(verdict.memberCodes)
+            if (members.isEmpty()) continue
+            when (val claim = claimOf(members, owners)) {
+                is Claim.Owned -> if (claim.characterId == characterId) myVerdicts.add(verdict)
+                is Claim.Cross -> if (characterId in claim.characterIds) crossVerdicts++
+                Claim.None -> {}
+            }
+        }
+
+        return Split(
+            characterId = characterId,
+            paths = paths,
+            matches = mine,
+            verdicts = myVerdicts,
+            crossCharacterMatches = crossMatches,
+            crossCharacterVerdicts = crossVerdicts
+        )
+    }
 }
