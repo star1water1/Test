@@ -161,7 +161,9 @@ class DisplayCapTest {
 
     @Test
     fun `상한 아래에서는 입력 목록 그대로다`() {
-        // 실사용 표본(관여 158명)이 여기다 — 이 판이 지금 쓰는 사람의 화면을 바꾸면 그것이 결함이다.
+        // 상한 아래의 크기 — 이 판이 상한 아래의 화면을 바꾸면 그것이 결함이다.
+        // (표본의 관여 인물 수는 실측된 적이 없다. 158은 3-12 모델의 값이고 참값은 214 이하
+        //  어디든 될 수 있어 **상한에 닿을 수도 있다** — 그 답은 실기기 확인 3-120 ㄱ이 낸다.)
         val people = (1..158).map { Person(it.toLong(), it % 4) }
         val capped = cap(people, DisplayCap.GRAPH_NODE_LIMIT)
         assertEquals(people, capped.shown)
