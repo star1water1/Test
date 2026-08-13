@@ -153,7 +153,7 @@ class PdfExporter(private val context: Context) {
                     // CALCULATED 필드는 DB에 저장되지 않으므로 FormulaEvaluator로 실시간 계산
                     val charValueMap = (fieldValuesByChar[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
                     val calculatedResults = run {
-                        val calcFields = fieldDefs.filter { it.type == "CALCULATED" }
+                        val calcFields = fieldDefs.filter { it.fieldType == FieldType.CALCULATED }
                         if (calcFields.isEmpty()) emptyMap()
                         else {
                             val keyValues = mutableMapOf<String, String>()
@@ -175,7 +175,7 @@ class PdfExporter(private val context: Context) {
                         }
                     }
                     val orderedFieldValues = fieldDefs.mapNotNull { fd ->
-                        if (fd.type == "CALCULATED") {
+                        if (fd.fieldType == FieldType.CALCULATED) {
                             calculatedResults[fd.id]?.let { v -> fd to CharacterFieldValue(characterId = char.id, fieldDefinitionId = fd.id, value = v) }
                         } else {
                             charValueMap[fd.id]?.let { fv -> fd to fv }

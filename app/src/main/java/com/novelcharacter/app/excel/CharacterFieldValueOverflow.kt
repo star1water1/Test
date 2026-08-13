@@ -3,6 +3,7 @@ package com.novelcharacter.app.excel
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.NovelFieldValue
 
 /**
@@ -17,9 +18,6 @@ import com.novelcharacter.app.data.model.NovelFieldValue
  * 실제 판정은 [FieldValueOverflow] 하나가 하고 아래 셋은 이름만 다른 입구다.
  */
 object FieldValueOverflow {
-
-    /** 계산 필드는 수식으로 산출되므로 저장 대상이 아니다 — 가져오기와 대칭. */
-    const val TYPE_CALCULATED = "CALCULATED"
 
     /**
      * [values] 중 그 시트가 열로 담지 못한 것만 골라낸다.
@@ -39,7 +37,8 @@ object FieldValueOverflow {
             val fieldId = fieldIdOf(v)
             if (fieldId in coveredFieldIds) return@mapNotNull null
             val fd = fieldsById[fieldId] ?: return@mapNotNull null
-            if (fd.type == TYPE_CALCULATED) return@mapNotNull null
+            // 계산 필드는 수식으로 산출되므로 저장 대상이 아니다 — 가져오기와 대칭.
+            if (fd.fieldType == FieldType.CALCULATED) return@mapNotNull null
             if (valueOf(v).isBlank()) return@mapNotNull null
             v to fd
         }
@@ -52,9 +51,6 @@ object FieldValueOverflow {
  * 표현할 수 없으므로 내보내기에서 그대로 사라진다.
  */
 object CharacterFieldValueOverflow {
-
-    /** 계산 필드는 수식으로 산출되므로 저장 대상이 아니다 — 가져오기(importCharacterRows)와 대칭. */
-    const val TYPE_CALCULATED = FieldValueOverflow.TYPE_CALCULATED
 
     /**
      * [values] 중 캐릭터 시트가 열로 담지 못한 것만 골라낸다.

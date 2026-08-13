@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
@@ -385,7 +386,9 @@ fun fieldDefinitionSpec(
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", required = true, width = 5000),
-        ColumnSpec("타입", required = true, dropdownOptions = listOf("TEXT", "NUMBER", "SELECT", "MULTI_TEXT", "GRADE", "CALCULATED", "BODY_SIZE"), width = 4000),
+        // 목록을 손으로 적지 않는다 (B-55) — 적으면 새 타입이 **엑셀에서만 못 고르는** 타입이 된다.
+        // 앱에서는 만들 수 있는데 파일로는 표현이 안 되는 상태이고, 그것이 왕복 무결성이 깨지는 모양이다.
+        ColumnSpec("타입", required = true, dropdownOptions = FieldType.entries.map { it.name }, width = 4000),
         ColumnSpec("설정(JSON)", width = 10000),
         ColumnSpec("그룹", width = 5000),
         ColumnSpec("순서", width = 3000),
@@ -436,7 +439,9 @@ fun defaultFieldSpec() = SheetSpec(
     columns = listOf(
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", required = true, width = 5000),
-        ColumnSpec("타입", required = true, dropdownOptions = listOf("TEXT", "NUMBER", "SELECT", "MULTI_TEXT", "GRADE", "CALCULATED", "BODY_SIZE"), width = 4000),
+        // 목록을 손으로 적지 않는다 (B-55) — 적으면 새 타입이 **엑셀에서만 못 고르는** 타입이 된다.
+        // 앱에서는 만들 수 있는데 파일로는 표현이 안 되는 상태이고, 그것이 왕복 무결성이 깨지는 모양이다.
+        ColumnSpec("타입", required = true, dropdownOptions = FieldType.entries.map { it.name }, width = 4000),
         ColumnSpec("설정(JSON)", width = 10000),
         ColumnSpec("그룹", width = 5000),
         ColumnSpec("순서", width = 3000),
@@ -706,7 +711,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         // 열 정체를 확정한다(병기하지 않으면 가져오기가 first-wins로 값을 뒤바꾼다).
         val fieldNameCounts = fields.groupingBy { it.name }.eachCount()
         for (field in fields) {
-            val options = if (field.type == "SELECT") {
+            val options = if (field.fieldType == FieldType.SELECT) {
                 try {
                     val json = org.json.JSONObject(field.config)
                     val arr = json.optJSONArray("options")
