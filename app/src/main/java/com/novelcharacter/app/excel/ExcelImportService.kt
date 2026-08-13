@@ -31,6 +31,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.util.CharacterValueLedger
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelFieldLinks
@@ -309,6 +310,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 이번 가져오기에서 세계관이 바뀐 캐릭터 — 필드값이 새 세계관 필드로 재매핑되었으므로
     // 옛 세계관 키를 담은 오버플로 행을 적용하면 방금 정리한 값이 되살아난다.
     private val universeMovedCharacterIds = mutableSetOf<Long>()
+    // (캐릭터, 필드) 값의 현재 상태 장부 — 캐릭터 시트와 '캐릭터 필드값' 시트가 **함께** 쓴다(B-72 ②).
+    // 둘이 같은 항목을 다룰 수 있으므로 장부도 하나여야 한다. 위 형제들과 같이 가져오기마다 비운다.
+    private val valueLedger = CharacterValueLedger()
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
     private val matchedRelationshipChangeIds = mutableSetOf<Long>()
@@ -598,6 +602,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             importedNovelFieldPairs.clear()
             importedEventFieldPairs.clear()
             universeMovedCharacterIds.clear()
+            valueLedger.reset()
             matchedEventIds.clear()
             matchedRelationshipIds.clear()
             matchedRelationshipChangeIds.clear()
@@ -4946,6 +4951,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // null 키 = 전역 구역(무소속 — B-119 확장). '필드 정의' 시트와 같은 어휘다.
         val fieldCache = HashMap<Triple<Long?, String, String>, FieldDefinition?>()
         val seen = HashMap<Pair<Long, Long>, Int>()
+        // **캐릭터와 그 기존 값도 세계관·필드와 같은 대접을 한다** (B-72 ②). 이 시트는 값 한 건이
+        // 한 행이라 **같은 캐릭터가 자기 필드 수만큼 되풀이해 나온다**(실사용 ×30 = 36,510행에
+        // 캐릭터는 6,420명 — 한 명당 평균 5.7행). 종전에는 그 행마다 캐릭터를 다시 조회하고
+        // 값도 한 건씩 조회했다. 바로 위 두 줄이 이미 세우고 있던 것과 **같은 꼴로** 캐시한다.
+        // **못 찾은 코드도 담는다**(값이 `null`) — 못 찾는 캐릭터일수록 같은 코드가 여러 행에
+        // 되풀이되므로, 실패를 캐시하지 않으면 가장 나쁜 입력에서 캐시가 아무 일도 하지 않는다.
+        //
+        // **메모리 축을 새로 열지 않는다**(B-72가 지키는 그 축이다). 이 둘이 드는 최대량은
+        // *이 시트가 가리키는 캐릭터*인데, `StreamingImportWorkbook`은 이미 **시트 하나를
+        // 통째로** 들고 있고(행×열의 정규화 전 셀) 그 양이 여기 담기는 것보다 항상 크다 —
+        // 캐릭터 한 명이 최소 한 행이기 때문이다. 함수가 끝나면 함께 풀린다.
+        val charByCode = HashMap<String, Character?>()
+        val charsByName = HashMap<String, List<Character>>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4959,9 +4977,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (charCode.isBlank() && charName.isBlank() && fieldKey.isBlank()) continue
 
                 // 매칭 규약: 코드(안정 식별자) 우선 → 자연키 폴백 + 고지
-                var character = charCode.takeIf { it.isNotBlank() }?.let { db.characterDao().getCharacterByCode(it) }
+                var character = charCode.takeIf { it.isNotBlank() }?.let { code ->
+                    if (charByCode.containsKey(code)) charByCode[code]
+                    else db.characterDao().getCharacterByCode(code).also { charByCode[code] = it }
+                }
                 if (character == null && charName.isNotBlank()) {
-                    val byName = db.characterDao().getAllCharactersByName(charName)
+                    val byName = charsByName.getOrPut(charName) { db.characterDao().getAllCharactersByName(charName) }
                     when {
                         byName.size == 1 -> {
                             character = byName.first()
@@ -5031,15 +5052,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 val value = if (valueCol >= 0) getCellString(row, valueCol) else ""
-                val existing = db.characterFieldValueDao().getValue(ch.id, fd.id)
+                if (!valueLedger.isLoaded(ch.id)) {
+                    valueLedger.load(ch.id, db.characterFieldValueDao().getValuesByCharacterList(ch.id))
+                }
+                val existing = valueLedger.get(ch.id, fd.id)
                 if (value.isNotBlank()) {
-                    if (existing != null) db.characterFieldValueDao().update(existing.copy(value = value))
-                    else db.characterFieldValueDao().insert(CharacterFieldValue(
-                        characterId = ch.id, fieldDefinitionId = fd.id, value = value
-                    ))
+                    if (existing != null) {
+                        val updated = existing.copy(value = value)
+                        db.characterFieldValueDao().update(updated)
+                        valueLedger.put(updated)
+                    } else {
+                        val fresh = CharacterFieldValue(
+                            characterId = ch.id, fieldDefinitionId = fd.id, value = value
+                        )
+                        valueLedger.put(fresh.copy(id = db.characterFieldValueDao().insert(fresh)))
+                    }
                 } else if (valueCol >= 0 && existing != null) {
                     // F1-A: 열이 있고 셀이 빈칸 = 비움 의도
                     db.characterFieldValueDao().deleteValue(ch.id, fd.id)
+                    valueLedger.remove(ch.id, fd.id)
                     result.clearedFields++
                 }
             } catch (e: Exception) {
@@ -5445,6 +5476,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
                     if (universe != null && conflict?.cleanupOldFields == true) {
                         db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
+                        // 장부가 이 캐릭터를 이미 실었다면 그 사본은 방금 지운 값을 아직 들고 있다.
+                        // 내려 두면 아래에서 다시 읽는다 — 같은 캐릭터가 시트에 두 번 나오는
+                        // 파일(중복 행 고지 대상)에서만 실제로 갈리는 자리다.
+                        valueLedger.forget(charId)
                     }
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -5500,6 +5535,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // 동적 필드 값 가져오기 (빈 셀 = 기존 값 삭제)
                 var hasSemanticField = false
+                // **이 캐릭터의 기존 값을 한 번에 든다** (B-72 ② · [CharacterValueLedger]).
+                // 종전에는 열마다 `getValue`를 한 건씩 쳤다 — 셀 단위 조회라 **행 수가 아니라
+                // (행 × 필드 열) 수만큼** 늘었다(실사용 ×30 = 6,420행 × 90열 ≈ 57만 회).
+                // **싣는 자리가 규약이다** — 세계관 이동 정리(`deleteValuesNotInUniverse`)보다
+                // **뒤**여야 방금 지운 값을 되살리지 않는다. 새로 만든 캐릭터는 값이 있을 수
+                // 없으므로 빈 목록으로 실어 조회 자체를 건너뛴다.
+                if (!valueLedger.isLoaded(charId)) {
+                    valueLedger.load(charId,
+                        if (existingChar == null) emptyList()
+                        else db.characterFieldValueDao().getValuesByCharacterList(charId))
+                }
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
@@ -5558,14 +5604,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.warnings.add("캐릭터 행 $i: '${field.name}' 값 ${aliasTokens.joinToString(", ") { "'$it'" }}은(는) 라이브러리 별칭 표기입니다 — 원문대로 저장됨, 라이브러리에서 표기를 정리할 수 있습니다")
                         }
                     }
-                    val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
+                    val existingValue = valueLedger.get(charId, field.id)
                     if (value.isNotBlank()) {
                         if (existingValue != null) {
-                            db.characterFieldValueDao().update(existingValue.copy(value = value))
+                            val updated = existingValue.copy(value = value)
+                            db.characterFieldValueDao().update(updated)
+                            valueLedger.put(updated)
                         } else {
-                            db.characterFieldValueDao().insert(CharacterFieldValue(
+                            val fresh = CharacterFieldValue(
                                 characterId = charId, fieldDefinitionId = field.id, value = value
-                            ))
+                            )
+                            valueLedger.put(fresh.copy(id = db.characterFieldValueDao().insert(fresh)))
                         }
                         if (!hasSemanticField && SemanticRole.fromConfig(field.config) != null) {
                             hasSemanticField = true
@@ -5573,6 +5622,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     } else if (existingValue != null) {
                         // 빈 셀 = 값 삭제 (F1-A 규칙 가: 요약 집계)
                         db.characterFieldValueDao().deleteValue(charId, field.id)
+                        valueLedger.remove(charId, field.id)
                         result.clearedFields++
                     }
                 }

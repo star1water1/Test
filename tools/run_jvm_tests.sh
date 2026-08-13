@@ -89,6 +89,7 @@ $MAIN/util/ProgressScale.kt
 $MAIN/util/DialogScrollCap.kt
 $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
+$MAIN/util/CharacterValueLedger.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/CsvTokens.kt
 $MAIN/util/FieldValueTokenizer.kt
@@ -303,6 +304,7 @@ $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
+$TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt
 $TEST/util/DuelCandidateFilterTest.kt
