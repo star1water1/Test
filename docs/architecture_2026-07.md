@@ -247,21 +247,35 @@ app/src/main/java/com/novelcharacter/app/
 |-----------|---------------------|
 | `FieldType`을 참조 | `grep -rl 'FieldType' app/src/main/java --include=*.kt \| wc -l` |
 | `FieldType.<상수>`로 분기 | `grep -rlE 'FieldType\.(TEXT\|NUMBER\|SELECT\|MULTI_TEXT\|GRADE\|CALCULATED\|BODY_SIZE)' app/src/main/java --include=*.kt \| wc -l` |
-| **`"CALCULATED"` 같은 생문자열로 분기** | `grep -rlE '"(TEXT\|NUMBER\|SELECT\|MULTI_TEXT\|GRADE\|CALCULATED\|BODY_SIZE)"' app/src/main/java --include=*.kt \| wc -l` — **착수 시 직접 셀 것.** 등재 후 계속 늘었다(23 → 28, 2026-07-29 실측) |
+| **`"CALCULATED"` 같은 생문자열로 분기** | **이제 0이다** (B-55 해소, 2026.08.13 — 아래 참조). 되돌아왔는지는 `tools/check_field_type_branch.sh`가 본다 |
 
-타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 수십 개 파일에 흩어져 있다**
-(위 셋째 명령이 현행 수를 든다). `FieldType`에 상수를 하나 더해도 그 자리들은 아무것도
-모른다 — 새 타입은 그 화면들에서 조용히 빠지고, 그것이 원칙 02 위반(껍데기 구현)의 가장
-흔한 발생 경로다.
+**2026.08.13에 전부 enum으로 좁혔다 (B-55 · 규약 R-52).** 종전에는 타입 판정이
+`fd.type == "CALCULATED"` 같은 **문자열 비교로 스물아홉 파일에 흩어져** 있었고, `FieldType`에
+상수를 하나 더해도 그 자리들은 아무것도 몰라 **새 타입이 조용히 빠졌다**(원칙 02 위반의 가장
+흔한 발생 경로 — S-15가 실제 사례다).
 
-착수 시 반드시 훑을 것: 입력 렌더(`DynamicFieldRenderer`) · 통계 적격성(`StatsFieldPolicy`) ·
-분포 계산(`ValueDistributions`) · 드릴다운 매칭(`FieldValueMatchSpec`) · 엑셀 열 직렬화
-(`FieldConfigColumns`·`CharacterFieldValueOverflow`) · 랜덤 생성(`FieldRandomGenerator`) ·
-AI 정책(`FieldAiPolicy`).
+**지금의 구조는 이렇다:**
+- **저장은 여전히 문자열이다**(`FieldDefinition.type`). 엑셀·월드패키지·프리셋 JSON이 이 값을
+  글자로 싣고 그 파일들은 앱보다 오래 살기 때문이며, enum 컬럼으로 바꾸면 모르는 글자가
+  들어온 순간 행이 통째로 죽는다.
+- **좁히는 자리는 하나다** — `FieldDefinition.fieldType`(`FieldType?` 게터). 모르는 글자는
+  `null`이고, 각 분기가 그 상태를 명시적으로 답한다.
+- **분기는 `when`이다.** 집합(`in setOf(...)`)은 새 타입이 늘어도 조용하지만 `when`은 컴파일을 깬다.
 
-> **구조 부채 B-55로 이미 등재돼 있다**(`remaining_work` 4장 — 그 항목이 이 5-1장을
-> 되가리키므로 상호 참조가 양방향이다). 문자열 분기를 `FieldType`으로 좁히면 새 타입 추가가
-> 컴파일러의 도움을 받는다(`when`의 exhaustive 검사). 지금은 전수 grep이 유일한 방어다.
+**그래서 새 타입을 더할 때 할 일이 바뀌었다** — 훑을 목록을 사람이 들고 다니는 것이 아니라,
+`FieldType`에 상수를 한 줄 더하고 **컴파일러가 깨뜨리는 자리를 하나씩 답하면 된다.**
+착수 시 특히 눈여겨볼 곳(컴파일러가 잡아 주지만 판단이 필요한 자리): 입력 렌더
+(`DynamicFieldRenderer`·`DynamicFieldFormBuilder`) · 통계 분석 방법 표
+(`FieldStatsConfig.StatsType.forFieldType`) · 수치 정렬 판정(`FieldValueSorter.isNumericSortType`) ·
+값 카탈로그 적격성(`FieldValueTokenizer`) · 엑셀 가져오기의 값 검증 표(`ExcelImportService`) ·
+타입 변경 호환성(`FieldTypeCompatibility`).
+
+> **컴파일러가 못 잡는 자리 둘**(그래서 검사가 따로 있다):
+> ① 엑셀 '타입' 열의 드롭다운 — 이제 `FieldType.entries`에서 뽑으므로 자동으로 따라온다.
+> ② 새로 적히는 생문자열 — `tools/check_field_type_branch.sh`가 막는다(생문자열 · `.name` 비교 두 축).
+>
+> **일부러 남긴 문자열 둘**: 마이그레이션(이미 일어난 일의 재생이라 그때 글자를 적어야 한다) ·
+> `a.type != b.type` 류(타입 분기가 아니라 *글자가 달라졌는가*). 사유 원문은 규약 **R-52**다.
 
 ### 5-2. 새 대상(entityType) — 지금은 `character` · `event` · `novel`
 
