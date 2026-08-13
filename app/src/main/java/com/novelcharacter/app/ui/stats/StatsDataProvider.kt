@@ -4232,7 +4232,8 @@ class StatsDataProvider {
      * 종전에는 이 규약이 수식 평가([calcCache])와 라벨 해석([resolversOf])에만 있었고,
      * 같은 성질(불변 스냅샷의 순수 함수)인 [augmentedCharacterValues]·[filledCharacterDefIds]·
      * [computeCharacterComplexities]·사건/작품 계산값은 호출부마다 전부 다시 지었다 —
-     * 화면 한 번 적재의 시간 18%·할당 28%가 그 겹이었다(합성 하네스 실측, scalability 3-13).
+     * 그 겹이 화면 한 번 적재에서 차지하던 몫은 `scalability_performance_2026-07.md` 3-13이
+     * 든다(수치를 여기 병기하지 않는 것은 일부러다 — 두 자리에 살면 한쪽이 낡는다).
      *
      * **돌려주는 값은 공유 사본이다 — 받은 쪽은 읽기만 한다.** 변조하면 같은 스냅샷의 다른
      * 계산이 오염된 결과를 본다. 이 계약은 StatsMemoParityTest가 "모든 계산을 돌린 뒤 캐시
