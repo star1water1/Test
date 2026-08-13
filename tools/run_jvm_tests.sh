@@ -91,6 +91,8 @@ $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
+$MAIN/util/DisplayCap.kt
+$MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/CsvTokens.kt
 $MAIN/util/FieldValueTokenizer.kt
@@ -307,6 +309,8 @@ $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
+$TEST/util/DisplayCapTest.kt
+$TEST/util/CrossTableFoldTest.kt
 $TEST/util/DuelRatingTest.kt
 $TEST/util/DuelPairingTest.kt
 $TEST/util/DuelCandidateFilterTest.kt

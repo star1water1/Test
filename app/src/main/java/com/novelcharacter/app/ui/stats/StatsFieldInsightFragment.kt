@@ -42,6 +42,8 @@ import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.databinding.FragmentStatsFieldInsightBinding
+import com.novelcharacter.app.util.CrossTableFold
+import com.novelcharacter.app.util.DisplayCap
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.ValueDistributions
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -862,6 +864,26 @@ class StatsFieldInsightFragment : Fragment() {
                 if (isEventAxis) R.string.stats_cross_multi_value_note_events else R.string.stats_cross_multi_value_note
             captions.add(getString(multiRes))
         }
+        // 표시 상한은 **한 번만** 적용하고 고지·표·차트가 그 하나를 나눠 쓴다 — 자리마다 따로
+        // 접으면 셋이 갈릴 수 있고(R-19), 접는 일 자체도 원본 셀 수만큼 도는 계산이라 세 번 돌 일이 아니다.
+        val folded = foldCross(result.crossTable)
+
+        // 접었으면 개수로 알린다(R-14). 표에서 '기타' 줄을 보고 *"이게 뭐지"* 하지 않도록
+        // **여기서 먼저** 말한다 — 접힌 것은 사라진 것이 아니라 합쳐진 것이다.
+        if (folded.hasHidden) {
+            // 한 축만 접혔을 때 *"열 0종"*이라 적지 않는다 — 0은 접힌 것이 아니다.
+            val foldedAxes = buildList {
+                if (folded.hasHiddenRows) {
+                    add(getString(R.string.stats_cross_folded_rows, folded.hiddenRowKinds))
+                }
+                if (folded.hasHiddenCols) {
+                    add(getString(R.string.stats_cross_folded_cols, folded.hiddenColKinds))
+                }
+            }.joinToString(" · ")
+            captions.add(
+                getString(R.string.stats_cross_folded_note, DisplayCap.CROSS_AXIS_LIMIT, foldedAxes)
+            )
+        }
         if (captions.isNotEmpty()) {
             binding.crossAnalysisFilter.visibility = View.VISIBLE
             binding.crossAnalysisFilter.text = captions.joinToString("\n")
@@ -870,18 +892,17 @@ class StatsFieldInsightFragment : Fragment() {
         }
 
         // 교차표 렌더링
-        renderCrossTable(result)
+        renderCrossTable(result, folded)
 
         // 스택 바 차트
-        renderCrossBarChart(result)
+        renderCrossBarChart(result, folded)
     }
 
-    private fun renderCrossTable(result: CrossAnalysisResult) {
+    private fun renderCrossTable(result: CrossAnalysisResult, folded: CrossTableFold.Folded) {
         val container = binding.crossTableContainer
         container.removeAllViews()
 
-        val crossTable = result.crossTable
-        if (crossTable.isEmpty()) {
+        if (result.crossTable.isEmpty()) {
             // 빈 표를 조용히 두면 "실행했는데 아무 일도 안 일어난" 화면이 된다 — 사유를 밝힌다
             // (변수 제어: 검증→알림). 계산 필드 누락이라는 원인 자체는 provider에서 고쳤고(S-8),
             // 이것은 진짜로 데이터가 없는 경우까지 덮는 방어선이다.
@@ -898,9 +919,6 @@ class StatsFieldInsightFragment : Fragment() {
             return
         }
 
-        // 모든 field2 값 수집
-        val field2Values = crossTable.values.flatMap { it.keys }.distinct().sorted()
-
         val textSizeSp = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
         val pad = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
 
@@ -911,18 +929,20 @@ class StatsFieldInsightFragment : Fragment() {
         // 헤더 행
         val headerRow = TableRow(requireContext())
         headerRow.addView(makeTableCell("", textSizeSp, true))
-        field2Values.forEach { v2 ->
+        folded.cols.forEach { v2 ->
             headerRow.addView(makeTableCell(v2, textSizeSp, true).apply { gravity = Gravity.CENTER })
         }
         table.addView(headerRow)
 
-        // 데이터 행
-        crossTable.entries.sortedByDescending { it.value.values.sum() }.forEach { (v1, v2Map) ->
+        // 데이터 행 — 행도 열도 합계 내림차순이다(넘친 것은 '기타'로 **합쳐져** 남는다).
+        folded.rows.forEach { v1 ->
             val row = TableRow(requireContext())
             row.addView(makeTableCell(v1, textSizeSp, true))
-            field2Values.forEach { v2 ->
-                val count = v2Map[v2] ?: 0
-                row.addView(makeTableCell(count.toString(), textSizeSp, false).apply { gravity = Gravity.CENTER })
+            folded.cols.forEach { v2 ->
+                row.addView(
+                    makeTableCell(folded.count(v1, v2).toString(), textSizeSp, false)
+                        .apply { gravity = Gravity.CENTER }
+                )
             }
             table.addView(row)
         }
@@ -930,28 +950,50 @@ class StatsFieldInsightFragment : Fragment() {
         container.addView(table)
     }
 
-    private fun renderCrossBarChart(result: CrossAnalysisResult) {
+    /**
+     * 교차표를 표시 상한으로 접는다 — **이 화면에서 유일하게 비용이 곱셈인 자리다**(B-212).
+     *
+     * 셀 수가 `(필드1 값 종수 × 필드2 값 종수)`이고 두 축 모두 캐릭터가 늘면 함께 늘어난다.
+     * 자유 입력 필드 둘을 고르면 값 종수가 사실상 캐릭터 수를 따라가므로, 상한이 없으면
+     * 규모가 아니라 **차수**의 문제가 된다(200종 × 200종 = 40,000칸, 전부 `TextView`다).
+     *
+     * 넘친 것은 버리지 않고 '기타'로 합친다 — [CrossTableFold]가 총합을 보존하므로
+     * 표·차트·요약이 서로 다른 말을 하지 않는다(R-19).
+     */
+    private fun foldCross(crossTable: Map<String, Map<String, Int>>): CrossTableFold.Folded =
+        CrossTableFold.fold(
+            table = crossTable,
+            rowLimit = DisplayCap.CROSS_AXIS_LIMIT,
+            colLimit = DisplayCap.CROSS_AXIS_LIMIT,
+            rowOtherLabel = { getString(R.string.stats_distribution_others, it) },
+            colOtherLabel = { getString(R.string.stats_distribution_others, it) }
+        )
+
+    /**
+     * 표와 **같은 [folded]**를 받는다 — 따로 접으면 그림과 숫자가 다른 말을 할 수 있다(R-19).
+     * 차트 쪽 비용도 같은 곱이다: 데이터셋이 열 종수, 막대가 행 종수다.
+     */
+    private fun renderCrossBarChart(result: CrossAnalysisResult, folded: CrossTableFold.Folded) {
         val chart = binding.crossBarChart
-        val crossTable = result.crossTable
-        if (crossTable.isEmpty()) {
+        if (result.crossTable.isEmpty()) {
             chart.visibility = View.GONE
             return
         }
         chart.visibility = View.VISIBLE
 
-        val field2Values = crossTable.values.flatMap { it.keys }.distinct().sorted()
+        val field2Values = folded.cols
         if (field2Values.isEmpty()) {
             chart.visibility = View.GONE
             return
         }
-        val field1Values = crossTable.keys.sortedByDescending { crossTable[it]?.values?.sum() ?: 0 }
+        val field1Values = folded.rows
 
         val dataSets = mutableListOf<BarDataSet>()
         val colors = chartColors()
 
         field2Values.forEachIndexed { idx, v2 ->
             val barEntries = field1Values.mapIndexed { i, v1 ->
-                BarEntry(i.toFloat(), (crossTable[v1]?.get(v2) ?: 0).toFloat())
+                BarEntry(i.toFloat(), folded.count(v1, v2).toFloat())
             }
             dataSets.add(BarDataSet(barEntries, v2).apply {
                 color = colors[idx % colors.size]

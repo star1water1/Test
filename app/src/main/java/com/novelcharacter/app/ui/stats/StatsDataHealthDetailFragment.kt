@@ -268,46 +268,73 @@ class StatsDataHealthDetailFragment : Fragment() {
         }
     }
 
+    /**
+     * 이 화면의 명단은 **전부 캐릭터 축**이다(이미지·메모·별명 미작성 · 고립 · 사건 미연계 ·
+     * 작품 미배정 · 완성도 미달). 상한 없이 그리면 ×30에서 한 목록이 6,420개의 뷰가 되므로
+     * 묶음 단위로 접는다 — 세는 법과 접는 법은 [StatsCappedList] 하나가 든다(B-199).
+     */
     private fun populateSimpleList(container: LinearLayout, items: List<String>) {
-        container.removeAllViews()
-        if (items.isEmpty()) {
-            container.addView(makeEmptyTextView())
-            return
-        }
-        items.forEach { name ->
-            container.addView(makeTextView(name))
-        }
+        StatsCappedList.populate(
+            container = container,
+            items = items,
+            emptyView = { makeEmptyTextView() },
+            toggleView = { makeToggleTextView(it) },
+            moreText = { getString(R.string.stats_show_more, it) },
+            lessText = { getString(R.string.stats_show_less) },
+            makeRow = { name -> makeTextView(name) }
+        )
     }
 
     private fun populateIncompleteList(container: LinearLayout, items: List<Pair<String, Float>>) {
-        container.removeAllViews()
-        if (items.isEmpty()) {
-            container.addView(makeEmptyTextView())
-            return
-        }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
         val progressHeight = resources.getDimensionPixelSize(R.dimen.stats_progress_bar_height_sm)
-        items.sortedBy { it.second }.forEach { (name, rate) ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                lp.bottomMargin = marginSm
-                layoutParams = lp
+        // 정렬은 접기 **전에** 한 번 한다 — 접힌 뒤에 정렬하면 남는 것이 '가장 덜 채운 쪽'이
+        // 아니게 되고, 그러면 이 목록이 말하는 것 자체가 달라진다.
+        StatsCappedList.populate(
+            container = container,
+            items = items.sortedBy { it.second },
+            emptyView = { makeEmptyTextView() },
+            toggleView = { makeToggleTextView(it) },
+            moreText = { getString(R.string.stats_show_more, it) },
+            lessText = { getString(R.string.stats_show_less) },
+            makeRow = { (name, rate) ->
+                LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    lp.bottomMargin = marginSm
+                    layoutParams = lp
+                    addView(makeTextView("$name  ${String.format("%.0f", rate)}%"))
+                    addView(
+                        ProgressBar(
+                            requireContext(),
+                            null,
+                            android.R.attr.progressBarStyleHorizontal
+                        ).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                progressHeight
+                            )
+                            max = 100
+                            this.progress = rate.toInt().coerceIn(0, 100)
+                        }
+                    )
+                }
             }
-            row.addView(makeTextView("$name  ${String.format("%.0f", rate)}%"))
-            val progress = ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    progressHeight
-                )
-                max = 100
-                this.progress = rate.toInt().coerceIn(0, 100)
-            }
-            row.addView(progress)
-            container.addView(row)
+        )
+    }
+
+    /** 접기/펼치기 줄 — 값 줄과 구별되게 강조색으로 둔다(누를 수 있다는 것이 보여야 한다). */
+    private fun makeToggleTextView(label: CharSequence): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        return TextView(requireContext()).apply {
+            text = label
+            textSize = textSizeSp
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.accent))
+            setPadding(0, marginSm, 0, marginSm)
         }
     }
 

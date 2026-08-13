@@ -29,6 +29,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
 import com.novelcharacter.app.ui.adapter.RankingAdapter
+import com.novelcharacter.app.util.DisplayCap
 import com.novelcharacter.app.util.ValueDistributions
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.navigateSafe
@@ -794,7 +795,14 @@ class StatsMainFragment : Fragment() {
         }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
 
-        patterns.forEach { pattern ->
+        // 축별 상한 (B-194) — 카드는 필드 수 × 축 수만큼 쏟아질 수 있고 상한이 하나도 없었다
+        // (어시스턴트 쪽에는 `biasMaxCards`·`biasMinPopulation` 둘이 이미 있다).
+        // **통째로 하나가 아니라 축별인 이유:** 카드는 심각도 순으로 서는데 캐릭터 축이 압도적으로
+        // 많아서, 전체에 상한 하나를 걸면 사건·작품 카드가 한 장도 못 뜨는 일이 보통이 된다 —
+        // 그러면 상한이 "접었다"가 아니라 "그 축을 없앴다"가 된다.
+        val capped = DisplayCap.capPerGroup(patterns, DisplayCap.PATTERN_CARDS_PER_AXIS) { it.axis }
+
+        capped.shown.forEach { pattern ->
             val card = com.google.android.material.card.MaterialCardView(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -873,6 +881,23 @@ class StatsMainFragment : Fragment() {
 
             card.addView(content)
             container.addView(card)
+        }
+
+        // 잘라냈으면 개수로 존재를 알린다(R-14). 축마다 몇 장이 접혔는지까지 말하는 것은,
+        // *"내 사건 카드가 아예 없는 것"*과 *"사건 카드가 더 있는 것"*이 다른 사실이기 때문이다.
+        if (capped.hasHidden) {
+            val folded = capped.hiddenByGroup.entries.joinToString(", ") { (axis, count) ->
+                getString(R.string.stats_pattern_folded_axis, axis.entityWord, count)
+            }
+            container.addView(TextView(ctx).apply {
+                text = getString(
+                    R.string.stats_pattern_folded_note,
+                    DisplayCap.PATTERN_CARDS_PER_AXIS,
+                    folded
+                )
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            })
         }
     }
 
