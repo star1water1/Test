@@ -311,12 +311,16 @@ app/src/main/java/com/novelcharacter/app/
 ### 5-3. 새 통계 분석
 
 **적응적 통계 원칙**(CLAUDE.md)상 분석 항목은 필드 구성에서 **동적으로 생성**된다.
-새 분석을 붙일 자리는 `StatsDataProvider`이며, 넷을 반드시 지킬 것:
+새 분석을 붙일 자리는 `StatsDataProvider`이며, 아래를 반드시 지킬 것(수는 적지 않는다 — "넷"이라 적어 둔 동안 다섯이 됐다):
 계산 필드 병합(R-16) · 자동 선택에만 설정 적용(R-18) · 라벨이 아닌 타입드 스펙으로 매칭(R-20) ·
 **스냅샷 순수 헬퍼는 `perSnapshot` 메모이즈를 지난다**(S6 2차 — 통계 적재는 계산 10개를
 async로 동시에 돌리므로, 스냅샷만 받는 헬퍼를 캐시 밖에 두면 호출부 수만큼 다시 짓는다.
 돌려받은 값은 **공유 사본이라 읽기만 한다** — 변조는 `StatsMemoParityTest`가 잡는다.
-실측·경위는 `scalability_performance_2026-07.md` 3-13).
+실측·경위는 `scalability_performance_2026-07.md` 3-13) ·
+**값 분포·계수는 건별이 아니라 접힌 표 위에서 센다**(S6 4차 — `valueCountsOf`(def별
+원문→건수) + `foldStatsKeyCounts`. 파싱 def·config는 호출부가 정하므로 R-15 그룹 파싱과
+그대로 겹쳐 쓴다. 값 행마다 `getFieldValues`를 다시 부르는 계수 루프를 새로 적으면
+그 소비처만 건별 비용으로 돌아간다 — 대조는 `StatsFoldParityTest`, 실측·경위는 3-15).
 
 ### 5-4. 새 왕복 포맷
 

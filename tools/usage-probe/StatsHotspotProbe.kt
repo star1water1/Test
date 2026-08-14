@@ -556,7 +556,9 @@ fun main() {
     }.onFailure { println("  ⓒ 메모 보관: 없음(기준선 — statsParseCaches 미존재)") }
 
     // ── [7] S6 4차 — '진짜 집계'의 부위별 분해 (computeFieldAnalysis · computeSummary) ──
-    // [1]의 상위 둘을 부위로 가른다. 재현 형태는 본문 코드와 같은 모양이되, 토큰은 미리 뽑아 두어
+    // [1]의 상위 둘을 부위로 가른다. 재현 형태는 **접기 도입 전 본문**의 모양이다(S6 4차 뒤의
+    // 본문은 접힘이므로, 이 재현은 걷어낸 모양을 하네스가 드는 쪽이다 — 동작 대조는
+    // StatsFoldParityTest가 한다). 토큰은 미리 뽑아 두어
     // (tokensByDef — 메모 적중 상태) 리플렉션이 측정 루프 밖에 있게 했다 — 여기서 재는 것은
     // 파싱이 아니라 **집계 그 자체**(건별 재료화 · 해싱 · 정렬 · def×캐릭터 필터)다.
     // 말미의 '접힘/' 셋은 처방 후보의 산술이다: 같은 답을 (고유 원문 × 건수)로 세면 얼마인가.
@@ -589,7 +591,7 @@ fun main() {
         val discreteTypes = setOf("TEXT", "SELECT", "MULTI_TEXT", "GRADE")
         val binnableTypes = setOf("NUMBER", "CALCULATED")
 
-        // computeSummary — TOP5 파이프라인 (본문 1359~1376행의 모양)
+        // computeSummary — 접기 도입 전 TOP5 파이프라인의 모양
         measure("summary/TOP5 (건별 flatMap+계수+정렬)") {
             aug.entries.flatMap { (defId, values) ->
                 val fd = defById[defId] ?: return@flatMap emptyList<Pair<String, String>>()
@@ -617,7 +619,7 @@ fun main() {
             }.average()
         }
 
-        // computeFieldAnalysis — 부위 다섯 (본문 2595~2745행의 모양)
+        // computeFieldAnalysis — 접기 도입 전 부위 다섯의 모양
         measure("fa/이산 분포 (건별 재료화+계수+정렬)") {
             for (fd in snap.fieldDefinitions) {
                 if (fd.type !in discreteTypes) continue
