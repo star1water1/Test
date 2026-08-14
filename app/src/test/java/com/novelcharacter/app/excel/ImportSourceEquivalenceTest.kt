@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.STCellType
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -114,9 +115,14 @@ class ImportSourceEquivalenceTest {
 
                 // 열은 DOM 기준 폭 + 여유까지 훑어, 한쪽에만 있는 셀도 잡는다.
                 for (c in 0 until (dr.lastCellNum.toInt().coerceAtLeast(0) + 2)) {
-                    val dv = dr.getCell(c)?.let { ExcelCellValue.normalize(it.primitives(), dateHint) } ?: ""
-                    val sv = sr.getCell(c)?.let { ExcelCellValue.normalize(it.primitives(), dateHint) } ?: ""
+                    val dc = dr.getCell(c)
+                    val sc = sr.getCell(c)
+                    val dv = dc?.let { ExcelCellValue.normalize(it.primitives(), dateHint) } ?: ""
+                    val sv = sc?.let { ExcelCellValue.normalize(it.primitives(), dateHint) } ?: ""
                     assertEquals("[$name] ($r,$c) dateHint=$dateHint 값 불일치", dv, sv)
+                    // cellType은 '값의 타입' 계약(B-218) — 수식 셀에서 DOM이 FORMULA를 그대로
+                    // 내면 코드 열 숫자 경고(F4) 같은 타입 판정이 경로마다 갈린다.
+                    assertEquals("[$name] ($r,$c) cellType 불일치", dc?.cellType, sc?.cellType)
                 }
             }
         }
@@ -256,6 +262,187 @@ class ImportSourceEquivalenceTest {
                 }
             }
         }
+    }
+
+    /**
+     * **B-218 ① — 헤더가 0행에 없는 파일.** 위에 행을 끼워 넣어 헤더가 2행으로 밀리면 DOM은
+     * `getRow(0) == null`이라 시트를 인식하지 않는다(→ 미인식 경고). 종전 스트리밍은
+     * `readHeaderRow`가 **첫 물리 행을 0행인 척** 돌려줘 시트가 인식되고, 데이터 루프가
+     * 그 헤더 행을 한 번 더 데이터로 처리했다 — 같은 파일이 경로에 따라 다른 결과가 된다.
+     */
+    @Test fun 헤더가_0행에_없으면_두_경로_모두_0행이_null이다() {
+        val wb = XSSFWorkbook()
+        val s = wb.createSheet("밀린헤더")
+        s.createRow(2).apply { createCell(0).setCellValue("이름"); createCell(1).setCellValue("나이") }
+        s.createRow(3).apply { createCell(0).setCellValue("홍길동"); createCell(1).setCellValue(20.0) }
+
+        val (dom, streaming) = writeAndOpen(wb)
+        wb.close()
+        streaming.use { st ->
+            // 적재 전 헤더 전용 경로부터 — 종전 결함은 정확히 이 첫 호출에서 첫 물리 행(2행)을 내줬다.
+            assertNull("DOM: 0행이 물리적으로 없다", dom.getSheet("밀린헤더")!!.getRow(0))
+            assertNull("스트리밍: 첫 물리 행을 0행인 척 주면 안 된다", st.getSheet("밀린헤더")!!.getRow(0))
+            // 실제 헤더 행(2행)은 두 경로 모두 그대로 읽힌다.
+            val dv = dom.getSheet("밀린헤더")!!.getRow(2)!!.getCell(0)!!
+                .let { ExcelCellValue.normalize(it.primitives(), false) }
+            val sv = st.getSheet("밀린헤더")!!.getRow(2)!!.getCell(0)!!
+                .let { ExcelCellValue.normalize(it.primitives(), false) }
+            assertEquals("이름", dv)
+            assertEquals("이름", sv)
+            assertEquivalent(dom, st, dateHint = false)
+        }
+    }
+
+    /**
+     * **B-218 ④ — 수식 셀의 캐시 결과.** 종전 DOM 경로는 불리언·오류·빈 캐시를 전부 숫자
+     * 폴백으로 보내 **"0"을 날조**했다(#DIV/0!가 숫자 0으로). 스트리밍은 Y/N·""를 내므로
+     * 흔한 경로(DOM) 쪽이 왜곡이었다. **절대값까지 단언한다** — 두 경로가 같이 틀리면
+     * 동치 대조만으로는 초록이 된다.
+     */
+    @Test fun 수식_캐시_값이_두_경로에서_같고_0으로_날조되지_않는다() {
+        val wb = XSSFWorkbook()
+        val s = wb.createSheet("수식")
+        s.createRow(0).apply { createCell(0).setCellValue("머리") }
+        // 캐시(<c t>·<v>)를 직접 싣는다 — 엑셀·외부 생성기가 저장하는 파일의 형태 그대로이고,
+        // POI 수식 평가기는 하네스에 없는 commons-math3를 끌어 여기서 못 쓴다.
+        val row = s.createRow(1)
+        fun formulaCell(col: Int, formula: String, t: STCellType.Enum?, v: String?) {
+            val c = row.createCell(col) as org.apache.poi.xssf.usermodel.XSSFCell
+            c.cellFormula = formula
+            if (t != null) c.ctCell.t = t
+            if (v != null) c.ctCell.v = v
+        }
+        formulaCell(0, "TRUE()", STCellType.B, "1")
+        formulaCell(1, "FALSE()", STCellType.B, "0")
+        formulaCell(2, "1/0", STCellType.E, "#DIV/0!")                 // 오류 캐시
+        formulaCell(3, "1+1", null, "2")                               // 숫자 캐시(t 기본값 n)
+        formulaCell(4, "CONCATENATE(\" 합\",\"침 \")", STCellType.STR, " 합침 ") // 문자열 캐시(트림까지)
+        // 캐시(<v>)가 안 실린 수식 — 외부 생성기가 평가 없이 쓴 파일의 꼴.
+        // XSSF는 이것도 cachedFormulaResultType=NUMERIC이라 타입만 믿으면 "0"이 재현된다.
+        formulaCell(5, "7*6", null, null)
+
+        val (dom, streaming) = writeAndOpen(wb)
+        wb.close()
+        streaming.use { st ->
+            val dr = dom.getSheet("수식")!!.getRow(1)!!
+            val sr = st.getSheet("수식")!!.getRow(1)!!
+            val expected = listOf("Y", "N", "", "2", "합침", "")
+            for (c in expected.indices) {
+                val dv = dr.getCell(c)?.let { ExcelCellValue.normalize(it.primitives(), false) } ?: ""
+                val sv = sr.getCell(c)?.let { ExcelCellValue.normalize(it.primitives(), false) } ?: ""
+                assertEquals("DOM ($c)", expected[c], dv)
+                assertEquals("스트리밍 ($c)", expected[c], sv)
+            }
+            // 값 타입 계약 — FORMULA가 아니라 캐시 결과의 타입이 나와야 F4류 타입 판정이 안 갈린다.
+            val types = listOf(
+                org.apache.poi.ss.usermodel.CellType.BOOLEAN,
+                org.apache.poi.ss.usermodel.CellType.BOOLEAN,
+                org.apache.poi.ss.usermodel.CellType.ERROR,
+                org.apache.poi.ss.usermodel.CellType.NUMERIC,
+                org.apache.poi.ss.usermodel.CellType.STRING,
+                org.apache.poi.ss.usermodel.CellType.BLANK
+            )
+            for (c in types.indices) {
+                assertEquals("DOM cellType ($c)", types[c], dr.getCell(c)!!.cellType)
+                assertEquals("스트리밍 cellType ($c)", types[c], sr.getCell(c)!!.cellType)
+            }
+            assertEquivalent(dom, st, dateHint = false)
+        }
+    }
+
+    /**
+     * **B-218 ② — 공유 문자열의 후리가나(phonetic run).** DOM(XSSFRichTextString.getString)은
+     * `<rPh>`를 본문에 붙이지 않는데, 스트리밍의 종전 `ReadOnlySharedStringsTable(pkg)`는
+     * 기본값이 포함이라 일본어 엑셀에서 편집된 파일의 값 뒤에 읽음이 이어붙었다.
+     */
+    @Test fun 공유_문자열의_후리가나가_두_경로_모두_값에_붙지_않는다() {
+        val wb = XSSFWorkbook()
+        val s = wb.createSheet("후리가나")
+        s.createRow(0).apply { createCell(0).setCellValue("漢字") }
+        FileOutputStream(file).use { wb.write(it) }
+        wb.close()
+        // POI는 phonetic run을 만들지 못하므로 일본어 엑셀이 저장한 형태를 수술로 재현한다.
+        rewriteZipEntry("xl/sharedStrings.xml") {
+            it.replace(
+                "<t>漢字</t>",
+                "<t>漢字</t><rPh sb=\"0\" eb=\"2\"><t>かんじ</t></rPh><phoneticPr fontId=\"0\"/>"
+            )
+        }
+        val dom = DomImportWorkbook(XSSFWorkbook(file))
+        val streaming = StreamingImportWorkbook(file)
+        streaming.use { st ->
+            val dv = dom.getSheet("후리가나")!!.getRow(0)!!.getCell(0)!!
+                .let { ExcelCellValue.normalize(it.primitives(), false) }
+            val sv = st.getSheet("후리가나")!!.getRow(0)!!.getCell(0)!!
+                .let { ExcelCellValue.normalize(it.primitives(), false) }
+            assertEquals("DOM은 본문만 읽는다", "漢字", dv)
+            assertEquals("스트리밍도 본문만 읽어야 한다", "漢字", sv)
+            assertEquivalent(dom, st, dateHint = false)
+        }
+    }
+
+    /**
+     * **B-218 ③ — `r` 속성 없는 `<c>` 셀.** 셀 참조는 선택 속성이라 생략하는 생성기가 있다.
+     * DOM(XSSFCell)은 "지금까지의 최대 열 + 1"에 배정하는데(POI 5.3.0 실측 — 명시 열 뒤에
+     * 오면 그 다음 열), 종전 스트리밍 SAX는 그 셀을 통째로 버려 행 내용이 경로마다 갈렸다.
+     */
+    @Test fun r_속성_없는_셀이_두_경로에서_같은_열에_배정된다() {
+        val wb = XSSFWorkbook()
+        val s = wb.createSheet("R없음")
+        s.createRow(0).apply {
+            createCell(0).setCellValue("하나"); createCell(1).setCellValue("둘"); createCell(2).setCellValue("셋")
+        }
+        s.createRow(1).apply {
+            createCell(0).setCellValue("넷"); createCell(1).setCellValue("다섯"); createCell(2).setCellValue("여섯")
+        }
+        s.createRow(2).apply {
+            createCell(2).setCellValue("바깥"); createCell(3).setCellValue("추가")
+        }
+        FileOutputStream(file).use { wb.write(it) }
+        wb.close()
+        // 0행은 B1·C1만, 1행은 전부, 2행은 명시 열(C3) 뒤의 D3만 r을 벗긴다.
+        rewriteZipEntry("xl/worksheets/sheet1.xml") {
+            it.replace(" r=\"B1\"", "").replace(" r=\"C1\"", "")
+                .replace(" r=\"A2\"", "").replace(" r=\"B2\"", "").replace(" r=\"C2\"", "")
+                .replace(" r=\"D3\"", "")
+        }
+        val dom = DomImportWorkbook(XSSFWorkbook(file))
+        val streaming = StreamingImportWorkbook(file)
+        streaming.use { st ->
+            val ss = st.getSheet("R없음")!!
+            // 절대값 — 버려지면 값이 ""로 접혀 동치 대조가 "둘 다 없음"으로 초록이 될 수 있다.
+            assertEquals("둘", ss.getRow(0)!!.getCell(1)!!.let { ExcelCellValue.normalize(it.primitives(), false) })
+            assertEquals("여섯", ss.getRow(1)!!.getCell(2)!!.let { ExcelCellValue.normalize(it.primitives(), false) })
+            assertEquals("명시 열 다음에 배정", "추가", ss.getRow(2)!!.getCell(3)!!.let { ExcelCellValue.normalize(it.primitives(), false) })
+            assertEquivalent(dom, st, dateHint = false)
+        }
+    }
+
+    /** [file]의 zip 항목 하나를 문자열 변환으로 고쳐 쓴다 — 외부 생성기·편집기가 만든 형태의 재현용. */
+    private fun rewriteZipEntry(entryName: String, transform: (String) -> String) {
+        val out = java.io.ByteArrayOutputStream()
+        var rewritten = false
+        java.util.zip.ZipInputStream(file.inputStream()).use { zin ->
+            java.util.zip.ZipOutputStream(out).use { zout ->
+                var e = zin.nextEntry
+                while (e != null) {
+                    zout.putNextEntry(java.util.zip.ZipEntry(e.name))
+                    val content = zin.readBytes()
+                    if (e.name == entryName) {
+                        val changed = transform(String(content, Charsets.UTF_8))
+                        assertTrue("수술이 대상을 실제로 바꿔야 한다: $entryName", changed != String(content, Charsets.UTF_8))
+                        zout.write(changed.toByteArray(Charsets.UTF_8))
+                        rewritten = true
+                    } else {
+                        zout.write(content)
+                    }
+                    zout.closeEntry()
+                    e = zin.nextEntry
+                }
+            }
+        }
+        assertTrue("zip 항목이 존재해야 한다: $entryName", rewritten)
+        file.writeBytes(out.toByteArray())
     }
 
     /**
