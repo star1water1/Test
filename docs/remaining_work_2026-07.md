@@ -7587,9 +7587,16 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 화면 파일(Fragment·Dialog·ViewModel) 0 — 손댄 프로덕션 파일은 `StatsDataProvider.kt`·
    > `StatsFieldPolicy.kt` 둘이고, 둘 다 순수 JVM 시험이 컴파일·실행까지 전부 덮는다.
    >
-   > **⑥ CI: 이 변경은 PR에서 자동으로 돈다**(트리거가 `pull_request`이고 md 제외 경로에
-   > .kt·.sh가 있어 건너뛰기가 성립하지 않는 판이다). **결과는 병합 전에 이 자리에 기록한다** —
-   > S6 2차와 같은 순서다(코드·문서 푸시 → PR → CI 초록 확인 → 이 줄 갱신 → 병합).
+   > **⑥ CI: PR에서 자동으로 돌았고 초록이다**(트리거가 `pull_request`이고 md 제외 경로에
+   > .kt·.sh가 있어 건너뛰기가 성립하지 않는 판이었다). **PR #299 · run `31760574465`(head
+   > `ceb4dc2`) — 배지가 아니라 단계를 봤다:** `Static checks` ✓ 36초 · `Schema harnesses` ✓ ·
+   > **`Run unit tests` ✓ 3분06초** · **`Build Debug APK` ✓ 50초** · `Upload/Commit Room
+   > schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
+   > **`Commit Room schemas`가 아무것도 얹지 않았다** — 원격 머리가 `ceb4dc2` 그대로인 것을
+   > `git rev-parse`로 실측했고, 그것이 *마이그레이션 없음*의 기계 확인이다.
+   > **CI가 로컬에 더한 것:** `StatsDataProvider`·`StatsFieldPolicy`의 실클래스패스 컴파일
+   > (로컬 프로브는 `ui/**`를 빼고, 순수 시험은 스텁 위라 스텁 그림자만 못 본다). **새로 잡은
+   > 것은 없다.**
    >
    > **다음 세션이 가져갈 한 줄: 성능 캐시의 키는 "무엇이 같으면 결과가 같은가"를 전수로 센
    > 뒤에야 정할 수 있다 — B-215의 행이 적어 둔 후보 키(defId)는 셈을 하고 나니 두 자리에서
