@@ -41,7 +41,10 @@ class StreamingXlsxReader(file: File) : Closeable {
         try {
             reader = XSSFReader(pkg)
             styles = reader.stylesTable
-            sharedStrings = ReadOnlySharedStringsTable(pkg)
+            // includePhoneticRuns=false — 기본 생성자는 후리가나(<rPh>)를 본문에 이어붙이는데,
+            // DOM(XSSFRichTextString.getString)은 붙이지 않는다. 일본어 엑셀에서 편집된 파일의
+            // 공유 문자열이 스트리밍에서만 다른 값이 되는 갈림이다(B-218 ②).
+            sharedStrings = ReadOnlySharedStringsTable(pkg, false)
             date1904 = readDate1904(reader)
         } catch (e: Exception) {
             try { pkg.revert() } catch (_: Exception) { /* best-effort */ }
@@ -118,11 +121,16 @@ class StreamingXlsxReader(file: File) : Closeable {
     private class StopParsing : org.xml.sax.SAXException()
 
     /**
-     * [sheetName]의 **첫 행만** 읽고 파싱을 중단한다. 시트가 없거나 행이 없으면 null.
+     * [sheetName]의 **0행만** 읽고 파싱을 중단한다. 시트가 없거나 **0행이 없으면** null.
      *
      * **왜 따로 있는가:** 가져오기는 시트의 정체를 헤더로 판정하므로(규약 R-7) 워크북의 모든
      * 시트를 훑으며 0행만 읽는 경로가 여럿이다. 그때마다 시트를 통째로 적재하면 스트리밍이
      * DOM보다 느리고 무거워진다 — 헤더 한 줄 보려고 전 시트를 다 읽는 꼴이다.
+     *
+     * **첫 물리 행이 아니라 0행이다(B-218 ①):** 위에 행을 끼워 넣어 헤더가 3행으로 밀린
+     * 파일에서 첫 물리 행을 그대로 돌려주면, DOM(`getRow(0)` = null → 시트 미인식 경고)과
+     * 달리 스트리밍만 시트를 인식하고 그 헤더 행을 데이터 루프에서 한 번 더 처리한다.
+     * 시트 XML의 행은 오름차순이므로(ECMA-376) 첫 행 요소만 보면 0행 존재가 판정된다.
      */
     fun readHeaderRow(sheetName: String): Map<Int, ExcelCellValue.Primitives>? {
         var header: Map<Int, ExcelCellValue.Primitives>? = null
@@ -130,8 +138,8 @@ class StreamingXlsxReader(file: File) : Closeable {
         while (it.hasNext()) {
             val stream = it.next()
             if (it.sheetName == sheetName) {
-                val handler = SheetHandler { _, cells ->
-                    header = HashMap(cells)
+                val handler = SheetHandler { rowIndex, cells ->
+                    if (rowIndex == 0) header = HashMap(cells)
                     throw StopParsing()
                 }
                 try {
@@ -238,6 +246,8 @@ class StreamingXlsxReader(file: File) : Closeable {
 
         private var rowIndex = -1
         private var cells = HashMap<Int, ExcelCellValue.Primitives>()
+        // 행 안에서 지금까지 본 최대 열 — `r` 없는 `<c>`의 열 배정 기준(아래).
+        private var maxColInRow = -1
 
         // 현재 셀 상태
         private var colIndex = -1
@@ -253,10 +263,16 @@ class StreamingXlsxReader(file: File) : Closeable {
                 "row" -> {
                     rowIndex = (a?.getValue("r")?.toIntOrNull() ?: (rowIndex + 2)) - 1 // r은 1-기반
                     cells = HashMap()
+                    maxColInRow = -1
                 }
                 "mergeCell" -> parseMergeRef(a?.getValue("ref"))?.let { mergedRegions.add(it) }
                 "c" -> {
-                    colIndex = colOf(a?.getValue("r"))
+                    // `r` 없는 `<c>`는 버리지 않는다(B-218 ③) — 제3자 생성기가 참조를 생략한
+                    // 파일에서 DOM(XSSFCell)은 "지금까지의 최대 열 + 1"에 배정한다. 여기서 버리면
+                    // 그 파일의 행 내용이 경로마다 갈린다. 같은 규칙으로 배정한다.
+                    val parsed = colOf(a?.getValue("r"))
+                    colIndex = if (parsed >= 0) parsed else maxColInRow + 1
+                    if (colIndex > maxColInRow) maxColInRow = colIndex
                     cellType = a?.getValue("t") ?: ""
                     styleIndex = a?.getValue("s")?.toIntOrNull() ?: -1
                     buf.setLength(0)

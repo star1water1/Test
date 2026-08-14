@@ -77,6 +77,14 @@ interface ImportRow {
 
 /** 셀 하나. 값 해석은 [primitives]를 통해서만 — 정규화 규칙은 [ExcelCellValue]가 단일 소스다. */
 interface ImportCell {
+    /**
+     * **값의 타입**(수식 셀은 캐시 결과의 타입 — FORMULA는 나오지 않는다).
+     *
+     * 스트리밍 SAX는 `<f>`를 읽지 않아 수식 여부를 원리적으로 모르므로, DOM이 POI의
+     * FORMULA를 그대로 내보내면 같은 셀의 판정이 경로마다 갈린다 — 실제로 코드 열의
+     * 숫자 형식 경고(F4)가 숫자 캐시 수식 셀에서 스트리밍에만 떴다(B-218). 소비처가
+     * 물을 수 있는 것은 "값이 무슨 타입인가"뿐이고, 두 구현이 같은 답을 내는 것이 계약이다.
+     */
     val cellType: CellType
 
     /** 정규화 이전의 원시 값. 호출부가 자기 `dateHint`로 [ExcelCellValue.normalize]를 부른다. */
@@ -122,7 +130,14 @@ private class DomImportRow(private val row: Row, private val owner: ImportSheet)
 }
 
 private class DomImportCell(private val cell: org.apache.poi.ss.usermodel.Cell) : ImportCell {
-    override val cellType: CellType get() = cell.cellType
+    // 값의 타입 계약([ImportCell.cellType]) — 수식 셀은 캐시 결과의 값 타입으로 편다.
+    // 판정은 [ExcelCellValue.cachedValueType] 한 벌이다(fromCell과 갈리면 타입과 값이 어긋난다).
+    override val cellType: CellType
+        get() {
+            val t = cell.cellType
+            return if (t == CellType.FORMULA) ExcelCellValue.cachedValueType(cell) else t
+        }
+
     override fun primitives(): ExcelCellValue.Primitives = ExcelCellValue.fromCell(cell)
 }
 
@@ -180,7 +195,10 @@ class StreamingImportWorkbook(file: java.io.File) : ImportWorkbook, java.io.Clos
 
     internal fun headerRowOf(sheet: String): Map<Int, ExcelCellValue.Primitives>? {
         if (loadedName == sheet) return loadedRows[0]
-        return headerCache.getOrPut(sheet) { reader.readHeaderRow(sheet) }
+        // getOrPut은 null을 저장하지 못한다 — 0행이 없는 시트(B-218 ①)가 조회마다 재파싱되지
+        // 않도록 containsKey로 "계산했음"을 따로 판정한다.
+        if (!headerCache.containsKey(sheet)) headerCache[sheet] = reader.readHeaderRow(sheet)
+        return headerCache[sheet]
     }
 
     /** [sheet]를 적재한다(이미 적재돼 있으면 무동작). 직전 시트는 버려진다. */

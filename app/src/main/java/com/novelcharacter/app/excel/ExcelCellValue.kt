@@ -21,14 +21,20 @@ object ExcelCellValue {
 
     /**
      * 정규화에 필요한, `Cell`과 무관한 원시 입력.
-     * @param numericValue NUMERIC/FORMULA(숫자결과) 셀의 값
+     *
+     * **[type]은 셀의 껍데기가 아니라 값의 타입이다** — 수식 셀은 캐시 결과의 타입
+     * (STRING/NUMERIC/BOOLEAN/ERROR/BLANK)으로 실린다. 스트리밍 SAX는 `<c t>`가 캐시 값의
+     * 타입이라 원리적으로 그렇게밖에 못 내는데, DOM([fromCell])이 FORMULA를 그대로 실으면
+     * 같은 셀의 원시값 모양이 경로마다 갈린다(B-218 ④가 그 갈림에서 "0" 날조까지 갔다).
+     *
+     * @param numericValue NUMERIC(수식의 숫자 캐시 포함) 셀의 값
      * @param javaDate 날짜로 해석할 때 쓸 값 (DateUtil.getJavaDate 결과). null이면 formatDate가 numericValue로 폴백.
      * @param isDateFormatted POI가 날짜 서식으로 판정했는지(DateUtil.isCellDateFormatted 상당)
      * @param dataFormatString 셀 스타일의 표시 서식 문자열(없으면 null)
      */
     data class Primitives(
         val type: CellType,
-        // FORMULA에서 null = 숫자결과(stringCellValue 접근이 예외), 비-null(빈문자 포함) = 문자열결과.
+        // STRING(수식의 문자열 캐시 포함)에서만 비-null. 숫자·불리언·오류·빈 셀은 null.
         val stringValue: String? = null,
         val numericValue: Double = 0.0,
         val javaDate: Date? = null,
@@ -46,12 +52,8 @@ object ExcelCellValue {
             CellType.STRING -> p.stringValue?.trim() ?: ""
             CellType.NUMERIC -> normalizeNumeric(p, dateHint)
             CellType.BOOLEAN -> if (p.booleanValue) "Y" else "N"
-            CellType.FORMULA -> {
-                // 수식: 문자열 결과(빈문자 포함)면 그 값을 trim해 반환, 숫자 결과(stringValue==null)면 숫자/날짜.
-                // getCellString FORMULA 분기와 동일 — stringCellValue 접근이 예외를 던질 때만 숫자로 폴백.
-                val s = p.stringValue
-                if (s != null) s.trim() else normalizeNumeric(p, dateHint)
-            }
+            // FORMULA는 여기 오지 않는다 — [fromCell]도 스트리밍도 캐시 값의 타입으로 싣는다
+            // (Primitives KDoc). ERROR·BLANK와 함께 값 없는 자리로 접힌다.
             else -> ""
         }
     }
@@ -140,7 +142,7 @@ object ExcelCellValue {
 
     /**
      * 실제 [Cell]에서 정규화 원시값을 추출한다(DOM 경로 어댑터).
-     * FORMULA는 문자열 결과 접근이 예외를 던질 수 있어 안전하게 감싼다.
+     * FORMULA는 캐시 결과 타입으로 갈라 **값의 타입**으로 싣는다(Primitives KDoc — 스트리밍과 동형).
      */
     fun fromCell(cell: Cell): Primitives {
         val type = cell.cellType
@@ -149,18 +151,42 @@ object ExcelCellValue {
             CellType.BOOLEAN -> Primitives(type, booleanValue = cell.booleanCellValue)
             CellType.NUMERIC -> numericPrimitives(cell, type)
             CellType.FORMULA -> {
-                // stringCellValue 접근이 예외 없이 반환되면(빈문자·null 포함) 문자열 결과로 취급,
-                // 예외를 던지면 숫자 결과로 폴백 — getCellString FORMULA 분기와 동일한 분기 기준.
-                var threw = false
-                val s: String? = try { cell.stringCellValue } catch (_: Exception) { threw = true; null }
-                if (!threw) {
-                    Primitives(type, stringValue = s ?: "")
-                } else {
-                    try { numericPrimitives(cell, type) } catch (_: Exception) { Primitives(type) }
+                // 캐시 결과의 값 타입으로 가른다 (B-218 ④). 종전의 "stringCellValue가 예외를
+                // 던지는가" 분기는 불리언·오류·빈 캐시를 전부 숫자 폴백으로 보냈고, 접히면
+                // numericValue 0.0이 되어 normalize가 "0"을 **날조**했다 — 스트리밍은 같은 셀을
+                // Y/N·""로 내므로 두 경로가 갈렸다. 문자열·숫자 캐시의 산출 값은 종전과 동일하다.
+                when (cachedValueType(cell)) {
+                    CellType.STRING ->
+                        Primitives(CellType.STRING, stringValue = (try { cell.stringCellValue } catch (_: Exception) { null }) ?: "")
+                    CellType.BOOLEAN ->
+                        Primitives(CellType.BOOLEAN, booleanValue = try { cell.booleanCellValue } catch (_: Exception) { false })
+                    CellType.ERROR -> Primitives(CellType.ERROR)
+                    CellType.NUMERIC ->
+                        try { numericPrimitives(cell, CellType.NUMERIC) } catch (_: Exception) { Primitives(CellType.BLANK) }
+                    // BLANK(캐시 안 실린 수식) · 판정 실패: 값이 없는 자리이므로 BLANK(→"")다.
+                    // 숫자 0으로 지어내지 않는다.
+                    else -> Primitives(CellType.BLANK)
                 }
             }
             else -> Primitives(type)
         }
+    }
+
+    /**
+     * 수식 셀 캐시 결과의 **값 타입** — [fromCell]과 [ImportCell.cellType](DOM 구현)이 같은
+     * 판정을 쓴다(두 벌이면 갈린다).
+     *
+     * **`cachedFormulaResultType`만으로는 부족하다:** XSSF는 `t`의 XML 기본값이 n이라
+     * **캐시가 아예 안 실린 수식(`<v>` 부재 — 외부 생성기가 평가 없이 쓴 파일)도 NUMERIC**으로
+     * 돌려주고, 그대로 숫자를 읽으면 0.0이 나와 "0" 날조가 재현된다. 그 값은 0이 아니라
+     * 미지이므로 BLANK다 — 스트리밍(`<v>` 없음 → BLANK_CELL)과 같은 답.
+     */
+    fun cachedValueType(cell: Cell): CellType {
+        val cached = try { cell.cachedFormulaResultType } catch (_: Exception) { return CellType.BLANK }
+        if (cached == CellType.NUMERIC &&
+            (cell as? org.apache.poi.xssf.usermodel.XSSFCell)?.ctCell?.isSetV() == false
+        ) return CellType.BLANK
+        return cached
     }
 
     private fun numericPrimitives(cell: Cell, type: CellType): Primitives {
