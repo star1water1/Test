@@ -1233,10 +1233,17 @@ class StatsDataProvider {
         weights: CompletionWeights
     ): Map<String, Float> {
         val groupRates = mutableMapOf<String, MutableList<Float>>()
+        // 같은 정의 목록의 그룹 분해는 캐릭터마다 같다 — 목록 **동일성**으로 한 번만 짓는다
+        // (S6 5차). 호출부 셋 모두 세계관별 공유 목록(또는 스냅샷 목록 그 자체)을 돌려주므로
+        // 분해는 세계관 수만큼만 돌고, 새 호출부가 캐릭터마다 새 목록을 지어 와도 종전
+        // (캐릭터마다 분해)과 같아질 뿐 틀리지 않는다.
+        val groupedByFields =
+            java.util.IdentityHashMap<List<FieldDefinition>, Map<String, List<FieldDefinition>>>()
         characters.forEach { char ->
             val fields = fieldsForChar(char) ?: return@forEach
             val filled = filledDefIdsByChar[char.id].orEmpty()
-            fields.groupBy { it.groupName }.forEach { (group, groupFields) ->
+            val byGroup = groupedByFields.getOrPut(fields) { fields.groupBy { it.groupName } }
+            byGroup.forEach { (group, groupFields) ->
                 // 셀 칸이 없는 그룹(계산 필드뿐)은 평균에 넣지 않는다 — 0%로 넣으면
                 // "사람이 채울 칸이 없는 그룹"이 "아무도 안 채운 그룹"으로 보인다.
                 val rate = CompletionRate.percentOf(groupFields, filled, weights) ?: return@forEach
@@ -1848,15 +1855,45 @@ class StatsDataProvider {
             ownerIdOf: (T) -> Long,
             fieldDefIdOf: (T) -> Long,
             valueOf: (T) -> String,
-            ownerNames: Map<Long, String>
+            ownerNames: Map<Long, String>,
+            // 이 축의 def별 고유 원문 — 있는 축(캐릭터: 접힌 값 표 메모)은 그것을 그대로 쓰고,
+            // 없는 축(사건·작품)은 null을 받아 행에서 모은다.
+            foldedRaws: Map<Long, Collection<String>>? = null
         ) {
             if (defs.isEmpty() || values.isEmpty()) return
             val defById = defs.associateBy { it.id }
+            // ① 판정 — (정의, 원문)의 순수 함수라 **고유 원문 위에서** 먼저 낸다(S6 5차).
+            //    행마다 내면 등급 라벨 하나에 config 파싱이 그 라벨의 행 수만큼 돈다
+            //    ([GradeValueResolver.resolveFromConfig]가 부를 때마다 JSON을 파싱한다).
+            //    저장 블랭크 행은 접힌 표에 없지만 어느 타입으로도 불일치가 아니라 애초에
+            //    판정 대상이 아니다([FieldValueTypeMismatch.reasonFor] 규약).
+            val uniqueRaws: Map<Long, Collection<String>> = foldedRaws ?: run {
+                val m = HashMap<Long, LinkedHashSet<String>>()
+                for (row in values) {
+                    val raw = valueOf(row)
+                    if (raw.isBlank()) continue
+                    m.getOrPut(fieldDefIdOf(row)) { LinkedHashSet() }.add(raw)
+                }
+                m
+            }
+            val mismatchByDef = HashMap<Long, HashMap<String, FieldValueTypeMismatch.Reason>>()
+            for ((defId, raws) in uniqueRaws) {
+                val def = defById[defId] ?: continue
+                var byRaw: HashMap<String, FieldValueTypeMismatch.Reason>? = null
+                for (raw in raws) {
+                    val reason = FieldValueTypeMismatch.reasonFor(def, raw) ?: continue
+                    (byRaw ?: HashMap<String, FieldValueTypeMismatch.Reason>()
+                        .also { byRaw = it; mismatchByDef[defId] = it })[raw] = reason
+                }
+            }
+            if (mismatchByDef.isEmpty()) return // 걸린 (정의, 원문)이 없으면 행을 지나지 않는다
+
+            // ② 수집 — 걸린 (정의, 원문)의 행만 임자를 단다. 행 루프의 일은 맵 조회뿐이다.
             val found = mutableListOf<TypeMismatchedValue>()
             values.forEach { row ->
-                val def = defById[fieldDefIdOf(row)] ?: return@forEach
+                val byRaw = mismatchByDef[fieldDefIdOf(row)] ?: return@forEach
                 val raw = valueOf(row)
-                val reason = FieldValueTypeMismatch.reasonFor(def, raw) ?: return@forEach
+                val reason = byRaw[raw] ?: return@forEach
                 val ownerId = ownerIdOf(row)
                 found.add(
                     TypeMismatchedValue(
@@ -1865,8 +1902,9 @@ class StatsDataProvider {
                         // 이름을 못 찾는 행은 대상이 지워졌다는 뜻이라 건너뛰지 않고 id로 말한다 —
                         // 조용히 빼면 개수와 목록이 갈린다.
                         ownerName = ownerNames[ownerId] ?: "#$ownerId",
-                        fieldName = def.name,
-                        fieldType = def.type,
+                        // ①에서 defById에 있던 def만 mismatchByDef에 실린다.
+                        fieldName = defById.getValue(fieldDefIdOf(row)).name,
+                        fieldType = defById.getValue(fieldDefIdOf(row)).type,
                         value = raw,
                         reason = reason
                     )
@@ -1878,7 +1916,10 @@ class StatsDataProvider {
         collect(
             s.fieldDefinitions, s.fieldValues, FieldDefinition.ENTITY_CHARACTER,
             { it.characterId }, { it.fieldDefinitionId }, { it.value },
-            s.characters.associate { it.id to it.name }
+            s.characters.associate { it.id to it.name },
+            // 저장 비블랭크 (def, 원문) 쌍은 전부 augmented에 실리므로 접힌 표의 키가 곧
+            // 이 축의 판정 대상이다(계산값 쌍이 더 실리지만 CALCULATED는 판정이 늘 null이다).
+            foldedRaws = valueCountsOf(s).mapValues { it.value.keys }
         )
         collect(
             s.eventFieldDefinitions, s.eventFieldValues, FieldDefinition.ENTITY_EVENT,
@@ -1898,45 +1939,55 @@ class StatsDataProvider {
     fun computeFieldInsights(s: StatsSnapshot): List<FieldInsightResult> {
         val universeMap = s.universes.associateBy { it.id }
 
-        // 저장 값 + CALCULATED 계산값 (계산 필드는 저장 행이 없다 — R-16). 이 합성 규칙은
-        // 패턴 감지·레거시 분석·요약 TOP5도 같은 헬퍼로 공유한다.
-        val augmentedValuesByFieldDef = augmentedCharacterValues(s)
+        // 저장 값 + CALCULATED 계산값의 **접힌 값 표** (원문 → 건수 — R-16 합성 규칙은
+        // [valueCountsOf]가 [augmentedCharacterValues] 위에서 그대로 물려받는다). 분포·수치·
+        // 건수가 전부 건수 가중으로 같은 답을 내므로([buildFieldInsight]) 값 행 문자열 목록을
+        // 그룹마다 다시 재료화하지 않는다 (S6 5차).
+        val countsByFieldDef = valueCountsOf(s)
 
         // 동일 필드를 (key, type) 기준으로 세계관 통합 (Pre-Analysis Merge)
         val fieldGroups = analyzableDefs(s, s.fieldDefinitions)
             .groupBy { it.key to it.type }
 
+        // 모수는 세계관별로 한 번만 센다 — 그룹마다 캐릭터 전수를 세던 것(그룹×캐릭터)을
+        // 걷었다(S6 5차 — computeFieldAnalysis 완성도 모수와 같은 선계수). 조건 무변경:
+        // 캐릭터의 작품이 실재하고 그 작품이 해당 세계관 소속일 것.
+        val charCountByUniverse = characterCountsByUniverse(s)
+
         val characterInsights = fieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
             val statsConfig = statsConfigOf(s, primaryFd)
 
-            // 그룹 내 모든 필드의 값을 합산 (CALCULATED 포함)
-            val rawValues = fds.flatMap { fd -> augmentedValuesByFieldDef[fd.id] ?: emptyList() }
-                .map { it.value }
+            // 그룹 내 모든 필드의 접힌 표 병합 (CALCULATED 포함)
+            val rawCounts = mergedRawCounts(countsByFieldDef, fds)
 
             // 관련 세계관 전체의 캐릭터 수. 미배정 스코프는 novels가 비어 있으므로
             // 스코프 캐릭터 전체가 모수 (novelId 경유 시 모수 0 → "채움 N / 전체 0" 모순 방지)
-            val universeIds = fds.map { it.universeId }.toSet()
-            val relevantNovelIds = s.novels.filter { it.universeId in universeIds }.map { it.id }.toSet()
             val totalCount = if (s.unassignedScope) s.characters.size
-                else s.characters.count { it.novelId in relevantNovelIds }
+                else fds.mapTo(HashSet()) { it.universeId }.sumOf { charCountByUniverse[it] ?: 0 }
 
             val universeName = if (fds.size == 1) {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            buildFieldInsight(s, primaryFd, statsConfig, rawValues, totalCount, universeName,
+            buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
                 mergedFieldDefIds = fds.map { it.id })
         }
 
         // ── 사건 필드 인사이트 (B-10 후속): 캐릭터 필드와 동일 규칙으로 편입 (원칙 02) ──
-        val eventValueStringsByFieldDef = mutableMapOf<Long, MutableList<String>>()
-        s.eventFieldValues.filter { it.value.isNotBlank() }.forEach { fv ->
-            eventValueStringsByFieldDef.getOrPut(fv.fieldDefinitionId) { mutableListOf() }.add(fv.value)
+        // 이 축은 스냅샷 메모가 없어 여기서 접는다 — 저장 행 먼저, 계산값 나중(종전 연결 순서
+        // 그대로라 첫 등장 순서도 같다). 블랭크를 거르는 것도 종전 그대로다.
+        val eventValueCountsByFieldDef = HashMap<Long, LinkedHashMap<String, Int>>()
+        for (fv in s.eventFieldValues) {
+            if (fv.value.isBlank()) continue
+            eventValueCountsByFieldDef.getOrPut(fv.fieldDefinitionId) { LinkedHashMap() }
+                .merge(fv.value, 1) { a, b -> a + b }
         }
         for ((_, fieldMap) in computeAllEventCalculatedValues(s)) {
             for ((fieldDefId, value) in fieldMap) {
-                eventValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
+                if (value.isBlank()) continue
+                eventValueCountsByFieldDef.getOrPut(fieldDefId) { LinkedHashMap() }
+                    .merge(value, 1) { a, b -> a + b }
             }
         }
         val eventFieldGroups = analyzableDefs(s, s.eventFieldDefinitions)
@@ -1944,7 +1995,7 @@ class StatsDataProvider {
         val eventInsights = eventFieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
             val statsConfig = statsConfigOf(s, primaryFd)
-            val rawValues = fds.flatMap { fd -> eventValueStringsByFieldDef[fd.id] ?: emptyList() }
+            val rawCounts = mergedRawCounts(eventValueCountsByFieldDef, fds)
 
             // 모수 = 해당 세계관들의 사건 수 (사건 필드는 세계관 소속 사건에만 부여 가능)
             val universeIds = fds.map { it.universeId }.toSet()
@@ -1954,18 +2005,22 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            buildFieldInsight(s, primaryFd, statsConfig, rawValues, totalCount, universeName,
+            buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
                 mergedFieldDefIds = fds.map { it.id })
         }
 
         // ── 작품 필드 인사이트 (확-3): 같은 규칙으로 편입 (원칙 02) ──
-        val novelValueStringsByFieldDef = mutableMapOf<Long, MutableList<String>>()
-        s.novelFieldValues.filter { it.value.isNotBlank() }.forEach { fv ->
-            novelValueStringsByFieldDef.getOrPut(fv.fieldDefinitionId) { mutableListOf() }.add(fv.value)
+        val novelValueCountsByFieldDef = HashMap<Long, LinkedHashMap<String, Int>>()
+        for (fv in s.novelFieldValues) {
+            if (fv.value.isBlank()) continue
+            novelValueCountsByFieldDef.getOrPut(fv.fieldDefinitionId) { LinkedHashMap() }
+                .merge(fv.value, 1) { a, b -> a + b }
         }
         for ((_, fieldMap) in computeAllNovelCalculatedValues(s)) {
             for ((fieldDefId, value) in fieldMap) {
-                novelValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
+                if (value.isBlank()) continue
+                novelValueCountsByFieldDef.getOrPut(fieldDefId) { LinkedHashMap() }
+                    .merge(value, 1) { a, b -> a + b }
             }
         }
         val novelFieldGroups = analyzableDefs(s, s.novelFieldDefinitions)
@@ -1973,7 +2028,7 @@ class StatsDataProvider {
         val novelInsights = novelFieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
             val statsConfig = statsConfigOf(s, primaryFd)
-            val rawValues = fds.flatMap { fd -> novelValueStringsByFieldDef[fd.id] ?: emptyList() }
+            val rawCounts = mergedRawCounts(novelValueCountsByFieldDef, fds)
 
             // 모수 = 해당 세계관들의 작품 수 (작품 필드는 세계관 소속 작품에만 부여 가능)
             val universeIds = fds.map { it.universeId }.toSet()
@@ -1983,19 +2038,25 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            buildFieldInsight(s, primaryFd, statsConfig, rawValues, totalCount, universeName,
+            buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
                 mergedFieldDefIds = fds.map { it.id })
         }
 
         return characterInsights + eventInsights + novelInsights
     }
 
-    /** 필드 1개(세계관 통합 그룹)의 분석 결과 조립 — 캐릭터/사건 필드 공용 */
+    /**
+     * 필드 1개(세계관 통합 그룹)의 분석 결과 조립 — 캐릭터/사건/작품 필드 공용.
+     *
+     * [rawCounts]는 그룹의 **접힌 값 표**(원문 → 건수, 첫 등장 순서 — [mergedRawCounts])다.
+     * 분포는 건수 가중 접기로, 수치는 고유 원문만 파싱해 건수만큼 싣는 것으로, 채움 건수는
+     * 건수 합으로 — 셋 다 건별 목록과 같은 답을 낸다(S6 5차, StatsScanParityTest가 잠근다).
+     */
     private fun buildFieldInsight(
         s: StatsSnapshot,
         primaryFd: FieldDefinition,
         statsConfig: FieldStatsConfig,
-        rawValues: List<String>,
+        rawCounts: Map<String, Int>,
         totalCount: Int,
         universeName: String,
         mergedFieldDefIds: List<Long>
@@ -2003,31 +2064,34 @@ class StatsDataProvider {
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
                 FieldStatsConfig.StatsType.DISTRIBUTION -> {
-                    val dist = computeFieldDistribution(s, primaryFd, rawValues, statsConfig)
+                    val dist = computeFieldDistribution(s, primaryFd, rawCounts, statsConfig)
                     listOf(AnalysisResult(entry, dist, null))
                 }
                 FieldStatsConfig.StatsType.NUMERIC -> {
-                    computeNumericAnalysis(primaryFd, rawValues, statsConfig, entry)
+                    computeNumericAnalysis(primaryFd, rawCounts, statsConfig, entry)
                 }
                 FieldStatsConfig.StatsType.RANKING -> {
                     // 분포와 같은 전량을 싣는다 — 상위 N만 남기는 일은 표시 계층이 하고,
                     // 잘린 나머지는 '기타 N종 M건'으로 존재를 알린다(R-14).
-                    val dist = computeFieldDistribution(s, primaryFd, rawValues, statsConfig)
+                    val dist = computeFieldDistribution(s, primaryFd, rawCounts, statsConfig)
                     listOf(AnalysisResult(entry, dist, null))
                 }
             }
         }
-        return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount, rawValues.size,
+        return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount,
+            rawCounts.values.sum(),
             universeName = universeName, mergedFieldDefIds = mergedFieldDefIds)
     }
 
     /**
      * NUMERIC 분석 생성. BODY_SIZE는 파트별 개별 수치 통계를 반환한다.
-     * 값 문자열 목록 기반 — 캐릭터/사건 등 어떤 엔티티의 필드값이든 동일하게 처리한다 (원칙 01).
+     * 접힌 값 표 기반 — 캐릭터/사건 등 어떤 엔티티의 필드값이든 동일하게 처리한다 (원칙 01).
+     * 첫 키가 곧 건별 목록의 첫 원문이다(표가 첫 등장 순서라) — BODY_SIZE 파트 수 추정이
+     * 종전(첫 행)과 같은 값을 본다.
      */
     private fun computeNumericAnalysis(
         fd: FieldDefinition,
-        rawValues: List<String>,
+        rawCounts: Map<String, Int>,
         statsConfig: FieldStatsConfig,
         entry: FieldStatsConfig.AnalysisEntry
     ): List<AnalysisResult> {
@@ -2037,7 +2101,7 @@ class StatsDataProvider {
             val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                 structuredConfig.parts.size
             } else {
-                rawValues.firstOrNull()?.split(separator)?.size ?: 1
+                rawCounts.keys.firstOrNull()?.split(separator)?.size ?: 1
             }
 
             return (0 until partCount).mapNotNull { partIdx ->
@@ -2047,7 +2111,7 @@ class StatsDataProvider {
 
                 // 값 추출은 [NumericBinning]이 단일 소스다 — 드릴다운도 같은 함수로 읽으므로
                 // 여기서만 다른 규칙을 쓰면 조각의 수와 목록의 인원이 갈린다(B-39).
-                val numericValues = NumericBinning.numericValuesOf(rawValues, separator, partIdx)
+                val numericValues = NumericBinning.numericValuesOf(rawCounts, separator, partIdx)
                 if (numericValues.isNotEmpty()) {
                     AnalysisResult(
                         entry.copy(label = partLabel),
@@ -2059,7 +2123,7 @@ class StatsDataProvider {
         }
 
         // 기본 NUMERIC 분석 — 파트가 없으므로 원문 전체가 0번 파트다.
-        val numericValues = NumericBinning.numericValuesOf(rawValues, "", 0)
+        val numericValues = NumericBinning.numericValuesOf(rawCounts, "", 0)
         val summary = if (numericValues.isNotEmpty()) {
             computeNumericSummary(numericValues, statsConfig.binning)
         } else null
@@ -2077,16 +2141,13 @@ class StatsDataProvider {
     private fun computeFieldDistribution(
         s: StatsSnapshot,
         fd: FieldDefinition,
-        rawValues: List<String>,
+        rawCounts: Map<String, Int>,
         statsConfig: FieldStatsConfig
-    ): Map<String, Int> {
-        // 원문을 먼저 건수로 접고(원문이 크게 겹친다 — [valueCountsOf]) 고유 원문만 파싱을
-        // 지난다 — S6 4차. [ValueDistributions.of]와 같은 계수·정렬이므로 답은 같다.
-        // 호출부의 rawValues는 형제 def가 합쳐진 목록이라(그룹 파싱, R-15) 여기서 접는다.
-        val countsByRaw = LinkedHashMap<String, Int>()
-        for (value in rawValues) countsByRaw.merge(value, 1) { a, b -> a + b }
-        return ValueDistributions.sorted(foldStatsKeyCounts(s, fd, statsConfig, countsByRaw))
-    }
+    ): Map<String, Int> =
+        // 호출부가 접힌 값 표(원문 → 건수)를 그대로 넘긴다 — 형제 def 병합은 [mergedRawCounts]가
+        // 하고(그룹 파싱은 기준 [fd]의 규칙 그대로 — R-15), 고유 원문만 파싱을 지난다(S6 4차→5차).
+        // [ValueDistributions.of]와 같은 계수·정렬이므로 답은 같다.
+        ValueDistributions.sorted(foldStatsKeyCounts(s, fd, statsConfig, rawCounts))
 
     /**
      * 통계 파싱의 단일 소스 — 원문 하나를 통계 키 목록으로 (토큰화 → 라벨/카테고리 → 구간).
@@ -2745,14 +2806,8 @@ class StatsDataProvider {
         // 볼 근거가 없다(예외에는 이유를 적는다 — R-16).
         // 모수는 세계관별로 한 번만 센다 — def마다 캐릭터 전수를 필터하던 것(def×캐릭터)을
         // 걷었다(S6 4차). 세는 조건은 종전 그대로다: 캐릭터의 작품이 그 세계관 소속일 것.
-        val universeByNovelId = HashMap<Long, Long?>()
-        for (n in s.novels) universeByNovelId[n.id] = n.universeId
-        val charCountByUniverse = HashMap<Long?, Int>()
-        for (ch in s.characters) {
-            val novelId = ch.novelId ?: continue
-            if (novelId !in universeByNovelId) continue
-            charCountByUniverse.merge(universeByNovelId[novelId], 1) { a, b -> a + b }
-        }
+        // (인사이트 모수도 같은 셈을 쓴다 — S6 5차에 헬퍼로 모았다.)
+        val charCountByUniverse = characterCountsByUniverse(s)
         val fieldCompletionDetails = s.fieldDefinitions
             .filter { it.fieldType != FieldType.CALCULATED }
             .map { fd ->
@@ -2955,10 +3010,10 @@ class StatsDataProvider {
      * 저장 값 + 계산 값을 fieldDefId 버킷으로 모은다 — [augmentedCharacterValues]의 축 일반형.
      * 계산 필드를 함께 싣는 것이 R-16이고, 빈 값을 거르는 것은 분포에 빈 칸이 값으로 서지 않게 하기 위함이다.
      *
-     * **캐릭터 축은 이 함수를 쓰지 않는다** — 그쪽은 이미 버킷이 만들어져 있고(가장 큰 목록이다),
-     * 여기 통과시키면 값 하나마다 그릇을 새로 지어 *계산 중 할당*이 그만큼 늘어난다.
-     * 이 문서가 남은 성능 표적으로 짚은 축이 바로 그것이라(S6) [detectFieldPatterns]가
-     * 대신 접근자를 받는다.
+     * **캐릭터 축은 이 함수를 쓰지 않는다** — 그쪽은 이미 버킷([augmentedCharacterValues])과
+     * 접힌 표([valueCountsOf])가 스냅샷 메모로 서 있고, 여기 통과시키면 값 하나마다 그릇을
+     * 새로 지어 *계산 중 할당*이 그만큼 늘어난다. 그래서 [detectFieldPatterns]는 버킷과
+     * 접힌 표를 인자로 받고, 이 함수의 결과는 [rawCountsByDef]로 접어 같은 인자 자리에 선다.
      */
     private fun axisValues(
         stored: List<Triple<Long, Long, String>>,          // (fieldDefId, ownerId, value)
@@ -2985,31 +3040,30 @@ class StatsDataProvider {
      * 문구의 단위("명"/"건"/"개")도 여기서 나온다. 축을 인자로 받는 대신 함수를 세 벌 베끼면
      * 그중 하나만 고쳐지는 날이 오고, 그것이 이 항목이 열린 이유다.
      *
-     * 값의 **행 타입을 열어 둔 것**([ownerOf]·[valueOf])은 취향이 아니다 — 축마다 이미 갖고 있는
-     * 목록을 그대로 받아야 캐릭터 축(가장 큰 목록)을 한 벌 더 베끼지 않는다.
+     * 집계는 [countsByDefId]의 **접힌 값 표** 위에서 돈다(S6 5차) — 종전에는 그룹마다 값 행을
+     * flatMap으로 재료화하고 행마다 원문을 다시 접었는데, 캐릭터 축은 그 표가 이미 스냅샷
+     * 메모([valueCountsOf])로 서 있다. 값의 **행 타입을 열어 둔 것**([ownerOf])은 취향이
+     * 아니다 — 모집단(값을 가진 대상 수)은 접힌 표가 말할 수 없어 축마다 이미 갖고 있는
+     * 버킷을 그대로 세야 하고, 그 셈은 카드가 실제로 서는 그룹에서만 한다(아래 [ownerCount]).
      */
     private fun <T> detectFieldPatterns(
         s: StatsSnapshot,
         axis: PatternAxis,
         fieldGroups: Collection<List<FieldDefinition>>,
         ownerValuesByDefId: Map<Long, List<T>>,
+        countsByDefId: Map<Long, Map<String, Int>>,
         ownerOf: (T) -> Long,
-        valueOf: (T) -> String,
         enabledTypes: Set<PatternType>,
         thresholds: PatternThresholds,
         out: MutableList<PatternInsight>
     ) {
         for (fieldDefs in fieldGroups) {
-            // 동일 키의 모든 세계관 필드 값 합산 (사전 그룹 버킷 재사용)
-            val rawValues = fieldDefs.flatMap { ownerValuesByDefId[it.id].orEmpty() }
-            if (rawValues.isEmpty()) continue
+            // 동일 키의 모든 세계관 필드 접힌 표 병합 (단일 def 그룹은 공유 표 그대로 — 읽기만)
+            val countsByRaw = mergedRawCounts(countsByDefId, fieldDefs)
+            if (countsByRaw.isEmpty()) continue
 
             val fd = fieldDefs.first()
             val statsConfig = statsConfigOf(s, fd)
-            // 원문을 건수로 접어 고유 원문만 파싱을 지난다(S6 4차) — 축 셋이 같은 조립을
-            // 쓰도록 접기도 이 자리 하나다(T 제네릭이라 [valueCountsOf]가 아니라 지역 접기).
-            val countsByRaw = LinkedHashMap<String, Int>()
-            for (v in rawValues) countsByRaw.merge(valueOf(v), 1) { a, b -> a + b }
             val keyCounts = foldStatsKeyCounts(s, fd, statsConfig, countsByRaw)
             if (keyCounts.isEmpty()) continue
 
@@ -3018,8 +3072,21 @@ class StatsDataProvider {
             val dist = ValueDistributions.sorted(keyCounts)
             val total = keyCounts.values.sum()
             val fieldName = "${axis.titlePrefix}${fd.name}"
-            // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 대상 수(다값 필드 보정).
-            val ownerCount = rawValues.mapTo(HashSet()) { ownerOf(it) }.size
+            // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 대상 수(다값
+            // 필드 보정). 값은 종전과 같고(같은 행·같은 집합 — 형제 def에 겹쳐 실린 대상은
+            // 합집합으로 한 번만 센다), **패턴이 하나도 안 서는 그룹은 세지 않는다**(S6 5차 —
+            // 이 수는 게이트 판정이 아니라 선 카드에 실리는 값이라, 셈을 카드가 정한다).
+            var ownerCountMemo = -1
+            fun ownerCount(): Int {
+                var counted = ownerCountMemo
+                if (counted < 0) {
+                    val seen = HashSet<Long>()
+                    for (d in fieldDefs) for (v in ownerValuesByDefId[d.id].orEmpty()) seen.add(ownerOf(v))
+                    counted = seen.size
+                    ownerCountMemo = counted
+                }
+                return counted
+            }
 
             // 패턴 1: 편중 (한 값이 기준 % 이상)
             // 이미 (건수 내림차순, 값 이름 오름차순)으로 정렬돼 있다 — maxByOrNull은 동수에서
@@ -3043,7 +3110,7 @@ class StatsDataProvider {
                         // 편중된 그 값(최빈)을 가진 대상을 그대로 펼친다 — "누가 이 편중을 이루나"가 직관적.
                         drilldownValues = listOf(topEntry.key),
                         drilldownExclude = false,
-                        population = ownerCount,
+                        population = ownerCount(),
                         axis = axis
                     ))
                 }
@@ -3065,7 +3132,7 @@ class StatsDataProvider {
                         fieldKey = fd.key,
                         fieldType = fd.type,
                         mergedFieldDefIds = fieldDefs.map { it.id },
-                        population = ownerCount,
+                        population = ownerCount(),
                         axis = axis
                     ))
                 }
@@ -3090,7 +3157,7 @@ class StatsDataProvider {
                         // 희소 값(각 1건)을 가진 대상 전부를 펼친다.
                         drilldownValues = singletons.map { it.key },
                         drilldownExclude = false,
-                        population = ownerCount,
+                        population = ownerCount(),
                         axis = axis
                     ))
                 }
@@ -3106,10 +3173,12 @@ class StatsDataProvider {
         val insights = mutableListOf<PatternInsight>()
 
         // 필드값을 fieldDefinitionId로 **한 번만** 그룹화 — 필드 그룹마다 전체 테이블을 재필터하던
-        // O(C·F²)를 O(C·F)로(받쳐주는 확장성). 아래 모든 그룹·작품별 비교가 이 버킷을 재사용한다.
+        // O(C·F²)를 O(C·F)로(받쳐주는 확장성). 아래 그룹 모집단 셈·작품별 비교가 이 버킷을 재사용한다.
         // 저장 행이 없는 CALCULATED 계산값도 함께 싣는다 — 인사이트 카드에는 분포가 그려지는
         // 수식 필드가 패턴 감지에서만 통째로 빠지면 같은 데이터에 두 화면이 다른 답을 준다(R-16).
         val valuesByDefId: Map<Long, List<CharacterFieldValue>> = augmentedCharacterValues(s)
+        // 집계는 그 버킷의 접힌 모양(원문 → 건수) 위에서 돈다 — 캐릭터 축은 스냅샷 메모 그대로(S6 5차).
+        val countsByDefId = valueCountsOf(s)
         // '통계에 포함'을 끈 필드는 스스로 나타나지 않는다 — 패턴 감지는 사용자가 필드를 고르는
         // 경로가 아니라 앱이 스스로 고르는 경로이므로 설정을 따른다(S-14, [StatsFieldPolicy]).
         // 작품별 비교에서 필드가 속한 세계관의 대표 작품 조회 — fd마다 novels/universes를 중첩 탐색하던 것 제거.
@@ -3127,29 +3196,34 @@ class StatsDataProvider {
         // 단위·문구·모집단은 [PatternAxis]가 들고 다니므로 섞일 자리가 없다.
         detectFieldPatterns(
             s, PatternAxis.CHARACTER, fieldsByKey.values,
-            // 이미 만들어져 있는 버킷을 그대로 준다 — 이 축이 세 축 중 압도적으로 크다.
+            // 이미 만들어져 있는 버킷·접힌 표를 그대로 준다 — 이 축이 세 축 중 압도적으로 크다.
             ownerValuesByDefId = valuesByDefId,
-            ownerOf = { it.characterId }, valueOf = { it.value },
+            countsByDefId = countsByDefId,
+            ownerOf = { it.characterId },
             enabledTypes, thresholds, insights
+        )
+        val eventAxisValues = axisValues(
+            stored = s.eventFieldValues.map { Triple(it.fieldDefinitionId, it.eventId, it.value) },
+            calculated = computeAllEventCalculatedValues(s)
         )
         detectFieldPatterns(
             s, PatternAxis.EVENT,
             analyzableDefs(s, s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
-            ownerValuesByDefId = axisValues(
-                stored = s.eventFieldValues.map { Triple(it.fieldDefinitionId, it.eventId, it.value) },
-                calculated = computeAllEventCalculatedValues(s)
-            ),
-            ownerOf = { it.ownerId }, valueOf = { it.value },
+            ownerValuesByDefId = eventAxisValues,
+            countsByDefId = rawCountsByDef(eventAxisValues) { it.value },
+            ownerOf = { it.ownerId },
             enabledTypes, thresholds, insights
+        )
+        val novelAxisValues = axisValues(
+            stored = s.novelFieldValues.map { Triple(it.fieldDefinitionId, it.novelId, it.value) },
+            calculated = computeAllNovelCalculatedValues(s)
         )
         detectFieldPatterns(
             s, PatternAxis.NOVEL,
             analyzableDefs(s, s.novelFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
-            ownerValuesByDefId = axisValues(
-                stored = s.novelFieldValues.map { Triple(it.fieldDefinitionId, it.novelId, it.value) },
-                calculated = computeAllNovelCalculatedValues(s)
-            ),
-            ownerOf = { it.ownerId }, valueOf = { it.value },
+            ownerValuesByDefId = novelAxisValues,
+            countsByDefId = rawCountsByDef(novelAxisValues) { it.value },
+            ownerOf = { it.ownerId },
             enabledTypes, thresholds, insights
         )
 
@@ -3216,7 +3290,6 @@ class StatsDataProvider {
             }
 
             // 작품 간 필드 편중 비교 — 이 축은 캐릭터 값 표라 접힌 표를 그대로 쓴다(S6 4차).
-            val valueCounts = valueCountsOf(s)
             for ((keyType, fieldDefs) in fieldsByKey) {
                 if (fieldDefs.size < 2) continue
                 val novelPatterns = mutableListOf<Pair<String, String>>() // (작품명, 주요값)
@@ -3225,7 +3298,7 @@ class StatsDataProvider {
                         ?.let { firstNovelByUniverse[it] } ?: continue
                     val statsConfig = statsConfigOf(s, fd)
                     val keyCounts = foldStatsKeyCounts(
-                        s, fd, statsConfig, valueCounts[fd.id].orEmpty()
+                        s, fd, statsConfig, countsByDefId[fd.id].orEmpty()
                     )
                     val total = keyCounts.values.sum()
                     val topVal = ValueDistributions.sorted(keyCounts).entries.firstOrNull()
@@ -4287,6 +4360,60 @@ class StatsDataProvider {
             for (key in getFieldValues(s, parseFd, raw, statsConfig)) {
                 out.merge(key, n) { a, b -> a + b }
             }
+        }
+        return out
+    }
+
+    /**
+     * (key, type) 그룹의 접힌 값 표 — 단일 def면 공유 표 **그대로**(사본 없음 — 받은 쪽은
+     * 읽기만 한다, [perSnapshot] 계약), 여럿이면 def 순서로 병합한 새 표다 (S6 5차).
+     *
+     * 병합 키 순서는 건별 flatMap 연결의 첫 등장 순서와 같다 — def 안 순서는 각 표가
+     * 보존하고([valueCountsOf]), 원문의 첫 등장은 그 원문을 가진 첫 def에서 일어나며,
+     * 병합도 def 순서로 지나므로 두 순서가 정확히 겹친다(StatsScanParityTest가 잠근다).
+     */
+    private fun mergedRawCounts(
+        countsByDef: Map<Long, Map<String, Int>>,
+        fds: List<FieldDefinition>
+    ): Map<String, Int> {
+        if (fds.size == 1) return countsByDef[fds[0].id].orEmpty()
+        val out = LinkedHashMap<String, Int>()
+        for (fd in fds) {
+            for ((raw, n) in countsByDef[fd.id].orEmpty()) out.merge(raw, n) { a, b -> a + b }
+        }
+        return out
+    }
+
+    /**
+     * 축 값 버킷의 접힌 모양(def별 원문 → 건수) — [valueCountsOf]의 축 일반형.
+     * 사건·작품 축은 스냅샷 메모가 없어 호출부가 이것으로 접는다(블랭크는 [axisValues]가
+     * 이미 걸렀다). 키 순서는 각 버킷의 첫 등장 순서다.
+     */
+    private fun <T> rawCountsByDef(
+        valuesByDef: Map<Long, List<T>>,
+        valueOf: (T) -> String
+    ): Map<Long, Map<String, Int>> {
+        val out = HashMap<Long, LinkedHashMap<String, Int>>()
+        for ((defId, values) in valuesByDef) {
+            val m = out.getOrPut(defId) { LinkedHashMap() }
+            for (v in values) m.merge(valueOf(v), 1) { a, b -> a + b }
+        }
+        return out
+    }
+
+    /**
+     * 세계관별 캐릭터 수(작품 경유) — 모수를 def·그룹마다 캐릭터 전수로 세지 않기 위한
+     * 선계수 (S6 4차 완성도 → S6 5차 인사이트 모수가 같은 셈을 쓴다 — R-7).
+     * 조건은 종전 그대로다: 캐릭터의 작품이 실재하고, 세는 칸은 그 작품의 세계관이다.
+     */
+    private fun characterCountsByUniverse(s: StatsSnapshot): HashMap<Long?, Int> {
+        val universeByNovelId = HashMap<Long, Long?>()
+        for (n in s.novels) universeByNovelId[n.id] = n.universeId
+        val out = HashMap<Long?, Int>()
+        for (ch in s.characters) {
+            val novelId = ch.novelId ?: continue
+            if (novelId !in universeByNovelId) continue
+            out.merge(universeByNovelId[novelId], 1) { a, b -> a + b }
         }
         return out
     }

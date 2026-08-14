@@ -435,7 +435,9 @@ class StatsFoldParityTest {
     fun `모든 소비처를 돌린 뒤에도 접힌 값 표가 새로 지은 것과 순서까지 같다`() {
         val s = richSnapshot()
         val p = StatsDataProvider()
-        p.computeSummary(s); p.computeFieldInsights(s); p.computeFieldAnalysis(s); p.detectPatterns(s)
+        // S6 5차부터 computeDataHealth(타입 판정)도 이 표의 소비처다 — 함께 돌린다.
+        p.computeSummary(s); p.computeFieldInsights(s); p.computeFieldAnalysis(s)
+        p.detectPatterns(s); p.computeDataHealth(s)
 
         val f = StatsDataProvider::class.java.getDeclaredField("valueCountsCache")
         f.isAccessible = true
