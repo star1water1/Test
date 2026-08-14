@@ -1812,33 +1812,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelIds: List<Long>,
         val universeId: Long?,
         /** 해석에 실패한 작품 코드/제목 토큰 — 비어 있지 않으면 파일의 연결 목록을 전부 읽지 못한 것이다. */
-        val unresolvedNovelTokens: List<String> = emptyList()
+        val unresolvedNovelTokens: List<String> = emptyList(),
+        /**
+         * 동명 작품이 여럿이라 하나로 좁혀지지 않은 제목 토큰 — 미해석과 **다른 사실**이고
+         * 섞어 말하면 거짓 경고다(4-3 규약: 모호를 '찾을 수 없음'으로 보고하지 말 것).
+         * 비어 있지 않으면 호출부는 미해석과 같은 정책(기존 유지)을 쓰되 문구를 가른다.
+         */
+        val ambiguousNovels: List<AmbiguousNovelRef> = emptyList()
     )
 
     private suspend fun resolveTimelineLinks(
-        row: Row, c: TimelineCols, r: TimelineRowValues, allNovels: List<Novel>, ctx: String, result: ImportResult?
+        row: Row, c: TimelineCols, r: TimelineRowValues, novelTitles: NovelTitleIndex, ctx: String, result: ImportResult?
     ): TimelineLinks {
-        // 작품 해석: 콤마 구분 복수 작품 지원.
-        // 미해석 토큰을 조용히 버리지 않는다 — 부분 해석된 목록으로 기존 연결을 교체하면
-        // 미해석 몫의 연결이 무음 삭제된다(선택 가져오기·기기 이전·오타에서 실제로 걸리는 경로).
-        // 수집해 두고 호출부가 정책(기존 유지+경고)을 정한다.
-        val unresolvedNovelTokens = mutableListOf<String>()
-        val novelCodeCells = splitCsv(r.novelCode)
-        var resolvedNovels = if (novelCodeCells.isNotEmpty()) {
-            novelCodeCells.mapNotNull { code -> novelByCode(code).also { if (it == null) unresolvedNovelTokens.add(code) } }
-        } else emptyList()
-        if (resolvedNovels.isEmpty()) {
-            // 코드 전량 미해석(또는 코드 열 빈칸) → 제목 폴백(구버전·손수 파일 — 종전 동작 그대로)
-            unresolvedNovelTokens.clear()
-            resolvedNovels = splitCsv(r.novelTitle).mapNotNull { title ->
-                allNovels.find { it.title == title }.also { if (it == null) unresolvedNovelTokens.add(title) }
-            }
-            // 제목 폴백까지 비었고 코드 토큰이 있었다면 그 코드가 미해석 사실이다(제목 열이 빈 파일).
-            if (resolvedNovels.isEmpty() && unresolvedNovelTokens.isEmpty() && novelCodeCells.isNotEmpty()) {
-                unresolvedNovelTokens.addAll(novelCodeCells)
-            }
-        }
         // 세계관 소속: 명시 열(코드 우선 → 이름) 우선, 없으면 관련 작품에서 유도(구버전 호환).
+        // **제목 해석보다 먼저 푼다** — 동명 작품을 이 열로 좁히기 때문이다(4-3 규약).
         val explicitUniverse = run {
             val uCode = getCellCode(row, c.universeCode, ctx, result)
             val uName = if (c.universeName >= 0) getCellString(row, c.universeName) else ""
@@ -1849,16 +1836,51 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
             resolved
         }
+        // 작품 해석: 콤마 구분 복수 작품 지원.
+        // 미해석 토큰을 조용히 버리지 않는다 — 부분 해석된 목록으로 기존 연결을 교체하면
+        // 미해석 몫의 연결이 무음 삭제된다(선택 가져오기·기기 이전·오타에서 실제로 걸리는 경로).
+        // 수집해 두고 호출부가 정책(기존 유지+경고)을 정한다.
+        val unresolvedNovelTokens = mutableListOf<String>()
+        val ambiguousNovels = mutableListOf<AmbiguousNovelRef>()
+        val novelCodeCells = splitCsv(r.novelCode)
+        var resolvedNovels = if (novelCodeCells.isNotEmpty()) {
+            novelCodeCells.mapNotNull { code -> novelByCode(code).also { if (it == null) unresolvedNovelTokens.add(code) } }
+        } else emptyList()
+        if (resolvedNovels.isEmpty()) {
+            // 코드 전량 미해석(또는 코드 열 빈칸) → 제목 폴백(구버전·손수 파일).
+            // 동명 제목은 first-match 하지 않는다 — 세계관 열로 좁히고, 안 되면 모호로 선언한다
+            // (종전에는 아무 작품에나 연결되고 그 세계관이 사건 소속으로까지 번졌다 — I2-2).
+            unresolvedNovelTokens.clear()
+            resolvedNovels = splitCsv(r.novelTitle).mapNotNull { title ->
+                when (val lookup = novelTitles.resolve(title, explicitUniverse?.id)) {
+                    is NovelTitleLookup.Found -> lookup.novel
+                    is NovelTitleLookup.Ambiguous -> {
+                        ambiguousNovels.add(AmbiguousNovelRef(title, lookup.candidates)); null
+                    }
+                    NovelTitleLookup.NotFound -> {
+                        unresolvedNovelTokens.add(title); null
+                    }
+                }
+            }
+            // 제목 폴백까지 비었고 코드 토큰이 있었다면 그 코드가 미해석 사실이다(제목 열이 빈 파일).
+            if (resolvedNovels.isEmpty() && unresolvedNovelTokens.isEmpty() &&
+                ambiguousNovels.isEmpty() && novelCodeCells.isNotEmpty()
+            ) {
+                unresolvedNovelTokens.addAll(novelCodeCells)
+            }
+        }
         val derivedUniverseId = resolvedNovels.firstOrNull()?.universeId
         if (explicitUniverse != null && derivedUniverseId != null && explicitUniverse.id != derivedUniverseId) {
             result?.warnings?.add("$ctx: 세계관 열('${explicitUniverse.name}')과 관련 작품의 세계관이 달라 세계관 열을 우선합니다")
         }
         val novelIds = resolvedNovels.map { it.id }
         // 세계관 열이 명시됐으면 그 값, 아니면 작품 해석 성공 시 유도값, 둘 다 없으면 호출부가 기존 세계관을 보존한다.
+        // 모호 토큰은 해석에 들지 않으므로 소속 유도의 근거도 되지 않는다(무근거 배정 금지).
         return TimelineLinks(
             novelIds = novelIds,
             universeId = if (explicitUniverse != null || novelIds.isNotEmpty()) (explicitUniverse?.id ?: derivedUniverseId) else null,
-            unresolvedNovelTokens = unresolvedNovelTokens
+            unresolvedNovelTokens = unresolvedNovelTokens,
+            ambiguousNovels = ambiguousNovels
         )
     }
 
@@ -2887,7 +2909,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
         val c = TimelineCols(cols, descColIndex)
         val now = System.currentTimeMillis()
-        val allNovels = db.novelDao().getAllNovelsList()
+        // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
@@ -2903,7 +2926,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (existing == null) { newCount++; continue }
             // 종전에는 **자연키로 매칭된 행을 무조건 '동일'**로 셌다 — 월·일·역법·유형·세계관·
             // 정렬순서·임시배치를 고쳐도 미리보기가 '변경 없음'이라 말했다.
-            val links = resolveTimelineLinks(row, c, r, allNovels, "연표 행 $i", result = null)
+            val links = resolveTimelineLinks(row, c, r, novelTitles, "연표 행 $i", result = null)
             val merged = mergeTimelineEvent(existing, r, links, CODE_BACKFILL_PREVIEW)
             if (merged != existing) updateCount++ else unchangedCount++
         }
@@ -2926,7 +2949,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = StateChangeCols(cols, yearColIndex, fieldKeyColIndex, newValueColIndex)
         val now = System.currentTimeMillis()
 
-        val allNovels = db.novelDao().getAllNovelsList()
+        // 가져오기와 **같은 판정**의 제목 색인이다(규약 R-33) — 동명 작품이면 힌트를 포기한다.
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -2940,7 +2964,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val character = characterByCode(r.charCode)
                 ?: run {
-                    val novelId = if (r.novelTitle.isNotBlank()) allNovels.find { it.title == r.novelTitle }?.id else null
+                    val novelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
                     findCharacterByName(r.charName, novelId)
                 }
             // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
@@ -6009,7 +6033,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // F1-A: 참가자 열이 실제로 헤더에 존재하는지 (위치 폴백만으로는 "빈칸=삭제" 규칙을 적용하지 않음 — 구버전 파일 오삭제 방지)
         val participantColumnPresent = cols.containsKey("관련 캐릭터") || charCodeColIndex >= 0
 
-        val allNovels = db.novelDao().getAllNovelsList()
+        // 미리보기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
         // 사건 정체성 색인은 **가져오기 수명**이다(위 [eventCodes] 문단) — 이 시트가 만든 사건을
         // '사건 필드값'·'관계 변화' 시트가 곧이어 코드로 찾는다.
         //
@@ -6072,15 +6097,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelTitle = r.novelTitle
                 val novelCode = r.novelCode
                 // 작품 연결·세계관 소속 해석도 미리보기와 **같은 함수**다.
-                val links = resolveTimelineLinks(row, tc, r, allNovels, "연표 행 $i", result)
+                val links = resolveTimelineLinks(row, tc, r, novelTitles, "연표 행 $i", result)
                 val novelIds = links.novelIds
+                // 동명 작품 모호 상세 — 어느 제목이 어디에서 겹치는지까지 들어야 교정 경로를 고를 수 있다.
+                val ambiguousNovelDetail = if (links.ambiguousNovels.isEmpty()) "" else
+                    novelAmbiguityDetail(links.ambiguousNovels) { id -> if (id == null) "무소속" else universeNamesById[id] }
 
                 val fileCode = r.fileCode
                 if (fileCode.isNotBlank() && !eventCodesSeen.add(fileCode)) {
                     result.warnings.add("연표 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 사건을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(설명·연도 편집을 같은 사건으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existingEvent = eventByCode(fileCode) ?: eventByNaturalKey(year, description)
+                val eventByCodeMatch = eventByCode(fileCode)
+                val existingEvent = eventByCodeMatch ?: eventByNaturalKey(year, description)
+                // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로
+                // 고지한다(I2-5). 이 시트가 이미 쓴 사건을 자연키로 다시 잡으면 그 행이 앞 행을
+                // 무고지로 덮는다(형제 시트 전부가 코드 중복을 고지하는데 이 갈래만 침묵이었다).
+                if (eventByCodeMatch == null && existingEvent != null && existingEvent.id in matchedEventIds) {
+                    result.warnings.add("연표 행 $i: 같은 연도·설명의 행이 파일 내에서 중복되어 같은 사건을 덮어씁니다 — 다른 사건이라면 설명을 구분해 주세요")
+                }
 
                 val eventId: Long
                 if (existingEvent != null) {
@@ -6091,16 +6126,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 연도·설명·코드가 바뀌었을 수 있다 — 색인이 옛 키를 계속 가리키면 뒤 행이
                     // **이미 옮겨 간 사건을 옛 이름으로** 다시 잡는다(B-210).
                     rememberEvent(mergedEvent)
-                    // 작품이 **전부** 해석된 경우에만 M2M 교체; 하나라도 실패하면 기존 관계 유지 + 경고.
-                    // 부분 해석된 부분집합으로 교체하면 미해석 몫의 기존 연결이 무음 삭제된다 —
+                    // 작품이 **전부** 해석된 경우에만 M2M 교체; 하나라도 실패·모호면 기존 관계 유지 + 경고.
+                    // 부분 해석된 부분집합으로 교체하면 미해석·모호 몫의 기존 연결이 무음 삭제된다 —
                     // 전량 실패(종전부터 유지+경고)보다 부분 실패가 더 조용하면 안 된다.
-                    if (novelIds.isNotEmpty() && links.unresolvedNovelTokens.isEmpty()) {
+                    if (novelIds.isNotEmpty() && links.unresolvedNovelTokens.isEmpty() && links.ambiguousNovels.isEmpty()) {
                         db.timelineDao().replaceEventNovels(eventId, novelIds)
                         eventsWithNovelLinks.add(eventId)
-                    } else if (links.unresolvedNovelTokens.isNotEmpty()) {
-                        result.warnings.add(
-                            "사건 행 $i: 관련 작품 '${links.unresolvedNovelTokens.joinToString(", ")}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다 — 코드·제목을 바로잡은 뒤 다시 가져오세요"
-                        )
+                    } else if (links.unresolvedNovelTokens.isNotEmpty() || links.ambiguousNovels.isNotEmpty()) {
+                        // 모호와 미해석은 다른 사실이다 — 섞어 말하면 거짓 경고다(4-3 규약).
+                        // 둘 다 있으면 각자 제 문구로 말한다(교정 경로가 서로 다르다).
+                        if (links.ambiguousNovels.isNotEmpty()) {
+                            result.warnings.add(
+                                "사건 행 $i: 동명 작품 ${ambiguousNovelDetail}이(가) 있어 하나로 확정할 수 없습니다 — 기존 작품 연결을 유지합니다. '관련작품코드' 열에 '작품' 시트의 코드를 적거나 '세계관' 열로 좁혀 주세요"
+                            )
+                        }
+                        if (links.unresolvedNovelTokens.isNotEmpty()) {
+                            result.warnings.add(
+                                "사건 행 $i: 관련 작품 '${links.unresolvedNovelTokens.joinToString(", ")}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다 — 코드·제목을 바로잡은 뒤 다시 가져오세요"
+                            )
+                        }
                     } else if (novelTitle.isNotBlank() || novelCode.isNotBlank()) {
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다")
                     } else if (tc.novelLinkColumnPresent) {
@@ -6130,9 +6174,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().replaceEventNovels(eventId, novelIds)
                     if (novelIds.isEmpty()) eventsWithNovelLinks.remove(eventId) else eventsWithNovelLinks.add(eventId)
                     result.newEvents++
-                    // 신규 사건은 지킬 기존 연결이 없다 — 해석된 몫은 걸고, 미해석 토큰은 사실대로
-                    // 알린다(종전에는 제목만 검사해 코드만 실린 미해석 행이 무고지로 연결 없는
-                    // 사건이 됐다 — 기존 사건 갈래와 비대칭이었다).
+                    // 신규 사건은 지킬 기존 연결이 없다 — 해석된 몫은 걸고, 미해석·모호 토큰은
+                    // 사실대로 알린다(종전에는 제목만 검사해 코드만 실린 미해석 행이 무고지로
+                    // 연결 없는 사건이 됐다 — 기존 사건 갈래와 비대칭이었다).
+                    if (links.ambiguousNovels.isNotEmpty()) {
+                        result.warnings.add(
+                            if (novelIds.isEmpty()) {
+                                "사건 행 $i: 동명 작품 ${ambiguousNovelDetail}이(가) 있어 하나로 확정할 수 없습니다 — 작품 미지정 상태로 생성됨. '관련작품코드' 열에 '작품' 시트의 코드를 적거나 '세계관' 열로 좁혀 주세요"
+                            } else {
+                                "사건 행 $i: 동명 작품 ${ambiguousNovelDetail}이(가) 있어 하나로 확정할 수 없습니다 — 연결에서 빠졌습니다. '관련작품코드' 열에 '작품' 시트의 코드를 적거나 '세계관' 열로 좁혀 주세요"
+                            }
+                        )
+                    }
                     if (links.unresolvedNovelTokens.isNotEmpty()) {
                         result.warnings.add(
                             if (novelIds.isEmpty()) {
@@ -6313,7 +6366,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val scc = StateChangeCols(cols, yearColIndex, fieldKeyColIndex, newValueColIndex)
         val nowMillis = System.currentTimeMillis()
 
-        val allNovels = db.novelDao().getAllNovelsList()
+        // 미리보기와 **같은 판정**의 제목 색인이다(규약 R-33). 동명 작품을 first-match로 골라
+        // 힌트로 쓰면 동명이인 좁히기가 엉뚱한 작품 기준이 된다 — 동명이면 힌트를 포기하고
+        // 캐릭터 쪽 모호 감지(resolveCharByNameNovel)가 코드 안내를 내게 둔다(4-3 규약).
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
         // 상태변화 정체성 색인 (B-210) — 행마다 코드·자연키로 표를 묻던 자리. id 오름차순이
         // `LIMIT 1`의 순서다(`getAllChangesList()`는 캐릭터·연월일 순으로 나오므로 다시 정렬한다).
         // **연표가 만든 birth/death 행도 여기 실린다** — 그 시트가 먼저 돌고 이 색인은 지금 읽는다.
@@ -6368,7 +6424,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 시트의 '작품' 열을 동명이인 해소 힌트로 쓴다 — 내보내면서 실어놓고 쓰지 않으면
                     // 코드 열이 없는 구버전 파일에서 해소 가능한 행이 불필요하게 거부된다.
                     else -> {
-                        val hintNovelId = if (r.novelTitle.isBlank()) null else allNovels.find { it.title == r.novelTitle }?.id
+                        val hintNovelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
                         when (val resolved = resolveCharByNameNovel(charName, hintNovelId)) {
                             is CharLookupResult.Found -> resolved.character
                             is CharLookupResult.Ambiguous -> {
@@ -6390,8 +6446,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("상태변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existing = (if (fileCode.isNotBlank()) changeCodes.first(fileCode) else null)
+                val changeByCodeMatch = if (fileCode.isNotBlank()) changeCodes.first(fileCode) else null
+                val existing = changeByCodeMatch
                     ?: changeNaturalKeys.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
+                // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
+                // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
+                if (changeByCodeMatch == null && existing != null && existing.id in matchedStateChangeIds) {
+                    result.warnings.add("상태변화 행 $i: 같은 캐릭터·연도·필드·값의 행이 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
 
                 if (existing != null) {
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
@@ -6766,8 +6828,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("관계변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연월일 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val existing = (if (fileCode.isNotBlank()) relChangeCodes.first(fileCode) else null)
+                val relChangeByCodeMatch = if (fileCode.isNotBlank()) relChangeCodes.first(fileCode) else null
+                val existing = relChangeByCodeMatch
                     ?: relChangeNaturalKeys.first(RelChangeNaturalKey(relationship.id, year, rv.month, rv.day))
+                // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
+                // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
+                if (relChangeByCodeMatch == null && existing != null && existing.id in matchedRelationshipChangeIds) {
+                    result.warnings.add("관계변화 행 $i: 같은 관계·연월일의 행이 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
                 if (existing != null) {
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수
                     if (rv.hasDescCol && description == "" && existing.description.isNotBlank()) result.clearedFields++
@@ -6843,6 +6911,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         nameBankNaturalKeys.load(allNames)
         nameBankCodes.load(allNames)
         nameBankByName.load(allNames)
+        val nameBankCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6852,11 +6921,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val name = r.name
                 if (name.isBlank()) continue
 
+                // 파일 내 중복은 형제 시트(연표·상태변화·관계변화·대결 기록) 전부가 고지하는데
+                // 이 시트만 침묵이었다(IMP3-7) — 같은 규약(마지막 행 우선 + 고지)으로 말한다.
+                if (r.code.isNotBlank() && !nameBankCodesSeen.add(r.code)) {
+                    result.warnings.add("이름 은행 행 $i: 코드 '${r.code}'가 파일 내에서 중복되어 같은 항목을 덮어씁니다")
+                }
                 // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
                 // → 성별 열이 없는 파일은 이름 단독 유일 폴백
-                val existing = (if (r.code.isNotBlank()) nameBankCodes.first(r.code) else null)
+                val nameBankByCodeMatch = if (r.code.isNotBlank()) nameBankCodes.first(r.code) else null
+                val existing = nameBankByCodeMatch
                     ?: r.mapKey?.let { nameBankNaturalKeys.first(it) }
                     ?: (if (r.gender == null) nameBankByName.all(name).singleOrNull() else null)
+                // 자연키(이름+성별)·이름 단독 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양).
+                if (nameBankByCodeMatch == null && existing != null && existing.id in matchedNameBankIds) {
+                    result.warnings.add("이름 은행 행 $i: 같은 이름의 행이 파일 내에서 중복되어 같은 항목을 덮어씁니다 — 다른 항목이라면 코드로 구분해 주세요")
+                }
 
                 val usedByCharacterId = resolveNameBankUsedBy(r, existing, "이름 은행 행 $i", result)
                 val effectiveUsed = r.usedFlag ?: existing?.isUsed ?: false
@@ -8122,6 +8201,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
+        // 파일 내 중복은 형제 시트 전부가 고지하는데 이 시트만 침묵이었다(B-224 착수 검토 —
+        // IMP3-7의 이름 은행·대결 상성과 같은 모양이 여기 하나 더 있었다).
+        val axisCodesSeen = mutableSetOf<String>()
+        val writtenAxisIds = mutableSetOf<Long>()
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -8135,8 +8218,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val existing = (if (r.code.isNotBlank()) axisCodes.first(r.code) else null)
+                if (r.code.isNotBlank() && !axisCodesSeen.add(r.code)) {
+                    result.warnings.add("대결 축 행 $i: 코드 '${r.code}'가 파일 내에서 중복되어 같은 축을 덮어씁니다")
+                }
+                val axisByCodeMatch = if (r.code.isNotBlank()) axisCodes.first(r.code) else null
+                val existing = axisByCodeMatch
                     ?: axisNameKeys.first(DuelAxisNameKey(universe.id, r.targetType, r.name))
+                // (세계관, 대상, 이름) 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양).
+                if (axisByCodeMatch == null && existing != null && existing.id in writtenAxisIds) {
+                    result.warnings.add("대결 축 행 $i: 같은 세계관·대상·이름의 행이 파일 내에서 중복되어 같은 축을 덮어씁니다")
+                }
                 if (r.candidateFiltersMalformed) {
                     // 기존 값을 지키고 그 사실을 말한다 — 괄호 하나 틀린 손편집이 멀쩡한
                     // 필터를 조용히 지우면 안 된다(개발 의도 2번·4번).
@@ -8168,6 +8259,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 같은 코드·같은 (세계관,대상,이름)을 든 뒷 행이 이것을 봐야 한다 —
                     // 못 보면 유니크 인덱스가 던져 가져오기가 통째로 실패한다.
                     putAxis(newAxis.copy(id = newId))
+                    writtenAxisIds.add(newId)
                     applyBasisAxis(universe.id, r.targetType, newId, r.isBasisAxis ?: false)
                     result.newDuelAxes++
                     if (r.code.isNotBlank()) {
@@ -8180,6 +8272,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.updatedDuelAxes++
                     } else result.unchangedRows++
                     putAxis(merged)
+                    writtenAxisIds.add(existing.id)
                     // **대상은 기존 축의 것이다** — `mergeDuelAxis`가 targetType을 바꾸지 않으므로
                     // 행에 적힌 대상이 아니라 실제 축의 대상으로 판정해야 한다.
                     applyBasisAxis(
@@ -8423,6 +8516,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
         verdictCodes.load(allVerdicts)
         verdictMemberKeys.load(allVerdicts)
+        // 파일 내 중복은 형제 시트 전부가 고지하는데 이 시트만 침묵이었다(IMP3-7).
+        val verdictCodesSeen = mutableSetOf<String>()
+        val writtenVerdictIds = mutableSetOf<Long>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -8478,10 +8574,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val code = cell("코드")
                 val memberKey = DuelRecords.memberKey(members)
+                if (code.isNotBlank() && !verdictCodesSeen.add(code)) {
+                    result.warnings.add("대결 상성 행 $i: 코드 '${code}'가 파일 내에서 중복되어 같은 판정을 덮어씁니다")
+                }
                 // 같은 관계는 축 안에서 하나뿐이다(유니크). 코드로 못 찾으면 그 키로 찾아
                 // **덮어쓴다** — 그러지 않으면 유니크 인덱스가 예외로 죽는다.
-                val existing = (if (code.isNotBlank()) verdictCodes.first(code) else null)
+                val verdictByCodeMatch = if (code.isNotBlank()) verdictCodes.first(code) else null
+                val existing = verdictByCodeMatch
                     ?: verdictMemberKeys.first(DuelVerdictMemberKey(axis.id, memberKey))
+                // 구성원 조합 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양 — 이 시트가
+                // 이미 쓴 판정을 같은 조합으로 다시 잡으면 그 행이 앞 행을 무고지로 덮었다).
+                if (verdictByCodeMatch == null && existing != null && existing.id in writtenVerdictIds) {
+                    result.warnings.add("대결 상성 행 $i: 같은 축의 같은 참가자 조합이 파일 내에서 중복되어 같은 판정을 덮어씁니다")
+                }
 
                 // '종류'는 드롭다운 열이다 — 유효값 목록과 파서 수용값이 갈리면 안 되므로
                 // 해석은 matchDropdownValue(표기 차이만 흡수)로 한다. R-36: 열 없음 = 기존 유지.
@@ -8522,6 +8627,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val insertedVerdict = newVerdict.copy(id = newId)
                     verdictCodes.put(insertedVerdict)
                     verdictMemberKeys.put(insertedVerdict)
+                    writtenVerdictIds.add(newId)
                     result.newDuelVerdicts++
                 } else {
                     val merged = existing.copy(
@@ -8537,6 +8643,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     } else result.unchangedRows++
                     verdictCodes.put(merged)
                     verdictMemberKeys.put(merged)
+                    writtenVerdictIds.add(existing.id)
                 }
             } catch (e: Exception) {
                 result.skippedRows++
