@@ -214,6 +214,117 @@ class ExportWorkbookParityTest {
         return dir
     }
 
+    /**
+     * 시각 개편(2026.08.14)이 더한 서식 축의 패리티 — [ExcelExporter]의 새 쓰기 방식을 재현한다:
+     * 커스텀 RGB 채움, 행 홀짝 밴딩과 wrap 행 높이를 **행을 쓰는 자리에서**, 숫자 셀과 표시 서식,
+     * 그리고 탭 색은 SXSSF에 setTabColor가 없어 **XSSF 레이어로 내려가** 건다(applyTabColors와
+     * 같은 자리). 이 중 하나라도 두 구현에서 다른 파일이 되면 스트리밍↔DOM 되돌리기가 깨진다.
+     */
+    @Test
+    fun `시각 개편 서식도 두 구현이 같다 - 탭 색·밴딩·행 높이·숫자 셀·표시 서식`() {
+        data class Presentation(
+            val tabColor: String?,
+            val headerFill: String?,
+            val bandFill: String?,
+            val plainFill: String?,
+            val wrapRowHeightPt: Float,
+            val headerRowHeightPt: Float,
+            val numericValue: Double,
+            val numericCellType: org.apache.poi.ss.usermodel.CellType,
+            val millisFormat: String?
+        )
+
+        fun writeAndRead(streaming: Boolean): Presentation {
+            val workbook = ExportWorkbooks.create(streaming)
+            val file: File
+            try {
+                val sheet = workbook.createSheet("서식")
+                fun rgb(r: Int, g: Int, b: Int) = org.apache.poi.xssf.usermodel.XSSFColor(
+                    byteArrayOf(r.toByte(), g.toByte(), b.toByte()), null
+                )
+                val headerStyle = workbook.createCellStyle().apply {
+                    (this as org.apache.poi.xssf.usermodel.XSSFCellStyle)
+                        .setFillForegroundColor(rgb(0x39, 0x49, 0xAB))
+                    fillPattern = FillPatternType.SOLID_FOREGROUND
+                }
+                val bandStyle = workbook.createCellStyle().apply {
+                    (this as org.apache.poi.xssf.usermodel.XSSFCellStyle)
+                        .setFillForegroundColor(rgb(0xF6, 0xF8, 0xFB))
+                    fillPattern = FillPatternType.SOLID_FOREGROUND
+                    wrapText = true
+                }
+                val millisStyle = workbook.createCellStyle().apply {
+                    dataFormat = workbook.createDataFormat().getFormat("0")
+                }
+                val plainStyle = workbook.createCellStyle()
+
+                val header = sheet.createRow(0)
+                header.heightInPoints = 24f
+                header.createCell(0).apply { setCellValue("값"); cellStyle = headerStyle }
+                for (i in 1..250) {
+                    val row = sheet.createRow(i)
+                    val cell = row.createCell(0)
+                    if (i == 3) {
+                        cell.setCellValue(1721834567890.0)
+                        cell.cellStyle = millisStyle
+                    } else {
+                        cell.setCellValue("첫 줄\n둘째 줄")
+                        cell.cellStyle = if (i % 2 == 0) bandStyle else plainStyle
+                        if (i % 2 == 0) row.heightInPoints = 2 * sheet.defaultRowHeightInPoints
+                    }
+                }
+                // 탭 색 — ExcelExporter.applyTabColors와 같은 XSSF 레이어 접근
+                val xssf = when (workbook) {
+                    is org.apache.poi.xssf.streaming.SXSSFWorkbook -> workbook.xssfWorkbook
+                    is XSSFWorkbook -> workbook
+                    else -> error("unexpected workbook")
+                }
+                xssf.getSheet("서식").setTabColor(rgb(0x26, 0xA6, 0x9A))
+
+                file = File.createTempFile("parity-style", ".xlsx")
+                FileOutputStream(file).use { workbook.write(it) }
+            } finally {
+                ExportWorkbooks.release(workbook)
+            }
+            return try {
+                XSSFWorkbook(file).use { back ->
+                    val sheet = back.getSheetAt(0)
+                    fun fillOf(rowIdx: Int): String? {
+                        val style = sheet.getRow(rowIdx).getCell(0).cellStyle
+                            as org.apache.poi.xssf.usermodel.XSSFCellStyle
+                        return style.fillForegroundColorColor?.argbHex
+                    }
+                    val numericCell = sheet.getRow(3).getCell(0)
+                    Presentation(
+                        tabColor = sheet.tabColor?.argbHex,
+                        headerFill = fillOf(0),
+                        bandFill = fillOf(2),
+                        plainFill = fillOf(1),
+                        wrapRowHeightPt = sheet.getRow(2).heightInPoints,
+                        headerRowHeightPt = sheet.getRow(0).heightInPoints,
+                        numericValue = numericCell.numericCellValue,
+                        numericCellType = numericCell.cellType,
+                        millisFormat = numericCell.cellStyle.dataFormatString
+                    )
+                }
+            } finally {
+                file.delete()
+            }
+        }
+
+        val dom = writeAndRead(streaming = false)
+        val streamed = writeAndRead(streaming = true)
+        assertEquals(dom, streamed)
+        // 동치만으로는 "둘 다 안 붙었다"를 못 가른다 — 실제로 붙었는지도 잰다.
+        assertEquals("FF26A69A", streamed.tabColor)
+        assertEquals("FF3949AB", streamed.headerFill)
+        assertEquals("FFF6F8FB", streamed.bandFill)
+        assertEquals(24f, streamed.headerRowHeightPt)
+        assertEquals(org.apache.poi.ss.usermodel.CellType.NUMERIC, streamed.numericCellType)
+        assertEquals("0", streamed.millisFormat)
+        assertTrue("wrap 행 높이가 기본의 2배", streamed.wrapRowHeightPt > 20f)
+    }
+
     @Test
     fun `대형 시트도 두 구현이 같다`() {
         // 창을 여러 번 넘기는 규모 — 스트리밍이 실제로 흘려보내는 상태에서 계약을 잰다.

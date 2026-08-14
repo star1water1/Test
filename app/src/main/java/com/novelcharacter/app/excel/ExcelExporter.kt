@@ -153,7 +153,30 @@ class ExcelExporter(context: Context) {
             }
             progress?.onSheets?.invoke(index + 1, plan.size)
         }
+        applyTabColors(workbook)
         return truncatedCellCount
+    }
+
+    /**
+     * 탭 색(P-8) — 5그룹(안내/구조/캐릭터/기록/도구·파생) 판정은 [SheetTabColors]가 든다.
+     * 시트 수준 속성이라 값·왕복과 무관하고 가져오기는 탭 색을 읽지 않는다.
+     *
+     * `SXSSFSheet`에는 setTabColor가 없어 **XSSF 레이어로 내려가 건다** — 열 너비·고정 창처럼
+     * 흘려보낸 행과 무관한 시트 속성이라 스트리밍에 안전하며(R-49의 "시트 수준 서식" 부류),
+     * 두 구현이 같은 파일을 낸다는 것은 `ExportWorkbookParityTest`의 탭 색 비교가 잠근다.
+     */
+    private fun applyTabColors(workbook: Workbook) {
+        val xssf = when (workbook) {
+            is org.apache.poi.xssf.streaming.SXSSFWorkbook -> workbook.xssfWorkbook
+            is org.apache.poi.xssf.usermodel.XSSFWorkbook -> workbook
+            else -> return
+        }
+        for (i in 0 until xssf.numberOfSheets) {
+            val sheet = xssf.getSheetAt(i)
+            sheet.setTabColor(
+                org.apache.poi.xssf.usermodel.XSSFColor(SheetTabColors.forSheet(sheet.sheetName), null)
+            )
+        }
     }
 
     /**
@@ -345,69 +368,112 @@ class ExcelExporter(context: Context) {
         supervisorJob.cancel()
     }
 
-    // ── 스타일 관리 ──
+    // ── 스타일 관리 (시각 개편 2026.08.14 — 사용자 확정 Q-1~Q-3, 정본: excel_visual_design_review_2026-08.md 5장) ──
 
-    private class ExcelStyles(workbook: Workbook) {
-        val header: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.bold = true
-            font.color = IndexedColors.WHITE.index
-            font.fontHeightInPoints = 11
-            setFont(font)
-            fillForegroundColor = IndexedColors.DARK_BLUE.index
-            fillPattern = FillPatternType.SOLID_FOREGROUND
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            setBorderBottom(BorderStyle.THIN)
+    private class ExcelStyles(private val workbook: Workbook) {
+        // 팔레트(P-1) — 앱 테두리 프리셋 1번(#5C6BC0)의 인디고 계열로 정렬. IndexedColors(엑셀 97
+        // 고정 팔레트)를 커스텀 RGB로 바꿨다. 스타일은 워크북 수준 객체라 스트리밍(R-49)과 무관하다.
+        private fun rgb(r: Int, g: Int, b: Int) =
+            org.apache.poi.xssf.usermodel.XSSFColor(byteArrayOf(r.toByte(), g.toByte(), b.toByte()), null)
+
+        private val headerFill = rgb(0x39, 0x49, 0xAB)    // 인디고 600 — 일반 헤더 (흰 글자 대비 7.7:1)
+        private val requiredFill = rgb(0xB2, 0x3B, 0x36)  // 벽돌 빨강 — 필수(Q-2 ⓐ: "빨간 헤더" 학습·안내 문구 유지, 채도만 정제)
+        private val roHeaderFill = rgb(0x75, 0x7F, 0x8C)  // 슬레이트 — 읽기전용 헤더
+        private val roFill = rgb(0xEF, 0xF1, 0xF4)        // 읽기전용 셀 바탕
+        private val roFillBand = rgb(0xE9, 0xEC, 0xF1)    // 읽기전용 셀 바탕(밴딩 행) — 밴딩색에 묻히지 않게 반 단계 진하다
+        private val bandFill = rgb(0xF6, 0xF8, 0xFB)      // 짝수 행 밴딩(Q-3 ⓑ)
+        // 읽기전용 글자 — 종전 회색-위-회색 1.6:1을 6.6:1로(V-3). "손대지 말라"는 신호는 바탕·헤더·
+        // 안내가 이미 주므로 글자까지 흐릴 이유가 없다 — 코드는 읽고 붙여넣으라고 있는 값이다.
+        private val roText = rgb(0x4B, 0x55, 0x63)
+        private val guideInk = rgb(0x28, 0x35, 0x93)      // 안내 시트 제목·섹션 글자(인디고 800)
+        private val guideBandFill = rgb(0xE8, 0xEA, 0xF6) // 안내 시트 섹션 밴드
+
+        private fun solidFill(style: CellStyle, fill: org.apache.poi.xssf.usermodel.XSSFColor) {
+            (style as org.apache.poi.xssf.usermodel.XSSFCellStyle).setFillForegroundColor(fill)
+            style.fillPattern = FillPatternType.SOLID_FOREGROUND
         }
 
-        val requiredHeader: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.bold = true
-            font.color = IndexedColors.WHITE.index
-            font.fontHeightInPoints = 11
-            setFont(font)
-            fillForegroundColor = IndexedColors.RED.index
-            fillPattern = FillPatternType.SOLID_FOREGROUND
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            setBorderBottom(BorderStyle.THIN)
+        private fun font(bold: Boolean, points: Int, color: org.apache.poi.xssf.usermodel.XSSFColor? = null) =
+            workbook.createFont().apply {
+                this.bold = bold
+                fontHeightInPoints = points.toShort()
+                if (color != null) (this as org.apache.poi.xssf.usermodel.XSSFFont).setColor(color)
+            }
+
+        private fun headerStyle(fill: org.apache.poi.xssf.usermodel.XSSFColor): CellStyle =
+            workbook.createCellStyle().apply {
+                val f = font(bold = true, points = 11)
+                f.color = IndexedColors.WHITE.index
+                setFont(f)
+                solidFill(this, fill)
+                alignment = HorizontalAlignment.CENTER
+                verticalAlignment = VerticalAlignment.CENTER
+                setBorderBottom(BorderStyle.THIN)
+            }
+
+        val header: CellStyle = headerStyle(headerFill)
+        val requiredHeader: CellStyle = headerStyle(requiredFill)
+        val readOnlyHeader: CellStyle = headerStyle(roHeaderFill)
+
+        // 숫자 서식은 위 팔레트와 독립인 표시 규칙이다:
+        //  "0"    — 13자리 epoch millis의 과학표기 차단(B-222 ① / P-4). 값 불변.
+        //  "0.00" — CALCULATED 소수를 앱 표시([FormulaDisplay.format]의 %.2f)와 글자까지 같게.
+        //           가져오기가 읽지 않는 열(F4)이라 왕복에 관여하지 않는다.
+        private val fmtPlainInt = workbook.createDataFormat().getFormat("0")
+        private val fmtTwoDecimals = workbook.createDataFormat().getFormat("0.00")
+
+        // 데이터 셀 매트릭스 — 세로 상단 정렬(wrap 행에서 위부터 읽힌다). banded는 짝수 행.
+        private fun dataStyle(
+            banded: Boolean,
+            wrap: Boolean = false,
+            readOnly: Boolean = false,
+            format: Short? = null
+        ): CellStyle = workbook.createCellStyle().apply {
+            verticalAlignment = VerticalAlignment.TOP
+            if (wrap) wrapText = true
+            if (readOnly) {
+                setFont(font(bold = false, points = 11, color = roText))
+                solidFill(this, if (banded) roFillBand else roFill)
+            } else if (banded) {
+                solidFill(this, bandFill)
+            }
+            if (format != null) dataFormat = format
         }
 
-        val readOnly: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.color = IndexedColors.GREY_50_PERCENT.index
-            setFont(font)
-            fillForegroundColor = IndexedColors.GREY_25_PERCENT.index
-            fillPattern = FillPatternType.SOLID_FOREGROUND
-        }
+        private val data = dataStyle(banded = false)
+        private val dataBand = dataStyle(banded = true)
+        private val dataWrap = dataStyle(banded = false, wrap = true)
+        private val dataWrapBand = dataStyle(banded = true, wrap = true)
+        private val dataMillis = dataStyle(banded = false, format = fmtPlainInt)
+        private val dataMillisBand = dataStyle(banded = true, format = fmtPlainInt)
+        private val calcDecimal = dataStyle(banded = false, format = fmtTwoDecimals)
+        private val calcDecimalBand = dataStyle(banded = true, format = fmtTwoDecimals)
+        private val readOnly = dataStyle(banded = false, readOnly = true)
+        private val readOnlyBand = dataStyle(banded = true, readOnly = true)
+        private val readOnlyMillis = dataStyle(banded = false, readOnly = true, format = fmtPlainInt)
+        private val readOnlyMillisBand = dataStyle(banded = true, readOnly = true, format = fmtPlainInt)
 
-        val readOnlyHeader: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.bold = true
-            font.color = IndexedColors.WHITE.index
-            font.fontHeightInPoints = 11
-            setFont(font)
-            fillForegroundColor = IndexedColors.GREY_50_PERCENT.index
-            fillPattern = FillPatternType.SOLID_FOREGROUND
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            setBorderBottom(BorderStyle.THIN)
+        /**
+         * 열 명세와 행 홀짝으로 셀 스타일 하나를 고른다 — [finishDataRow]만 부른다.
+         * [fractionalCalc]는 CALCULATED 숫자 셀의 소수 여부(정수는 서식 없이도 같은 글자라 General).
+         */
+        fun cellStyleFor(col: ColumnSpec, banded: Boolean, fractionalCalc: Boolean): CellStyle = when {
+            col.readOnly && col.millis -> if (banded) readOnlyMillisBand else readOnlyMillis
+            col.readOnly -> if (banded) readOnlyBand else readOnly
+            fractionalCalc -> if (banded) calcDecimalBand else calcDecimal
+            col.millis -> if (banded) dataMillisBand else dataMillis
+            col.wrap -> if (banded) dataWrapBand else dataWrap
+            else -> if (banded) dataBand else data
         }
 
         val guideTitle: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.bold = true
-            font.fontHeightInPoints = 14
-            setFont(font)
+            setFont(font(bold = true, points = 16, color = guideInk))
         }
 
         val guideSection: CellStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont()
-            font.bold = true
-            font.fontHeightInPoints = 11
-            font.color = IndexedColors.DARK_BLUE.index
-            setFont(font)
+            setFont(font(bold = true, points = 12, color = guideInk))
+            solidFill(this, guideBandFill)
+            verticalAlignment = VerticalAlignment.CENTER
         }
 
         val guideBody: CellStyle = workbook.createCellStyle().apply {
@@ -420,6 +486,8 @@ class ExcelExporter(context: Context) {
 
     private fun writeHeaderRow(sheet: Sheet, spec: SheetSpec) {
         val headerRow = sheet.createRow(0)
+        // 자동 필터 화살표가 가운데 정렬 헤더 글자를 덮지 않게 한 뼘 높인다(P-9).
+        headerRow.heightInPoints = 24f
         spec.columns.forEachIndexed { index, col ->
             val cell = headerRow.createCell(index)
             cell.setCellValue(col.header)
@@ -443,12 +511,51 @@ class ExcelExporter(context: Context) {
      * 행마다 도는 비용이 붙지만 순회 자체는 종전과 같다 — 전에도 열마다 행 전체를 다시 돌았다
      * (오히려 읽기 전용 열이 여럿이면 그만큼 반복했다).
      */
-    private fun finishDataRow(row: Row, spec: SheetSpec) {
+    private fun finishDataRow(row: Row, spec: SheetSpec, banded: Boolean) {
+        // 짝수 행 밴딩(Q-3 ⓑ) — [banded]는 시트 단위 결정(행 수 < BANDING_ROW_LIMIT)이고,
+        // 홀짝은 rowNum이라 엑셀에서 재정렬하면 무늬가 섞인다(값 무해 — 리뷰 문서 Q-3 캐비앳).
+        val bandRow = banded && row.rowNum % 2 == 0
+        var lines = 1
         spec.columns.forEachIndexed { colIndex, col ->
-            if (!col.readOnly) return@forEachIndexed
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
-            cell.cellStyle = styles.readOnly
+            val fractionalCalc = col.calc &&
+                cell.cellType == org.apache.poi.ss.usermodel.CellType.NUMERIC &&
+                cell.numericCellValue != kotlin.math.floor(cell.numericCellValue)
+            cell.cellStyle = styles.cellStyleFor(col, bandRow, fractionalCalc)
+            if (col.wrap && cell.cellType == org.apache.poi.ss.usermodel.CellType.STRING) {
+                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, col.width))
+            }
         }
+        // 엑셀은 파일을 열 때 행 높이를 재계산하지 않는다 — wrap이 보이려면 여기서(행을 쓰는
+        // 자리, R-49) 줄수만큼 높이를 함께 기록해야 한다. [estimateWrapLines]가 상한(4줄)을 든다.
+        if (lines > 1) row.heightInPoints = lines * row.sheet.defaultRowHeightInPoints
+    }
+
+    /**
+     * 커스텀 필드 표시값 셀 쓰기 — 숫자 성격 값은 숫자 셀로(Q-1 ⓐ), 나머지는 문자열로.
+     *
+     * - CALCULATED: 파싱되면 항상 숫자다. 가져오기가 읽지 않는 열(F4)이라 왕복 멱등성이 걸리지
+     *   않고, 소수의 표시는 [ExcelStyles]의 `0.00` 서식이 앱 표시와 글자까지 맞춘다. "오류" 표식은
+     *   파싱이 안 돼 자연히 문자열로 남는다(U-9의 진단 가치 유지).
+     * - NUMBER: [numericExportValueOrNull]의 왕복 멱등 판정을 통과할 때만 숫자다("24.50"·"007"은
+     *   문자열 유지). [SemanticRole.BIRTH_DATE] 필드는 가져오기가 `dateHint=true`로 읽어 정수
+     *   숫자 셀을 날짜로 해석하므로 제외한다 — 판정 소스는 가져오기와 같은 [SemanticRole.fromConfig].
+     * - 그 외 타입: 종전대로 문자열([setTextSafe]).
+     */
+    private fun org.apache.poi.ss.usermodel.Cell.setFieldValue(field: FieldDefinition, value: String) {
+        if (value.isNotEmpty()) {
+            if (field.fieldType == FieldType.CALCULATED) {
+                val d = value.toDoubleOrNull()
+                if (d != null && d.isFinite()) { setCellValue(d); return }
+            } else if (field.fieldType == FieldType.NUMBER &&
+                com.novelcharacter.app.data.model.SemanticRole.fromConfig(field.config) !=
+                com.novelcharacter.app.data.model.SemanticRole.BIRTH_DATE
+            ) {
+                val d = numericExportValueOrNull(value)
+                if (d != null) { setCellValue(d); return }
+            }
+        }
+        setTextSafe(value)
     }
 
     /**
@@ -466,13 +573,14 @@ class ExcelExporter(context: Context) {
         spec.columns.forEachIndexed { index, col ->
             sheet.setColumnWidth(index, col.width)
         }
-        sheet.freezeAndFilter(spec.columns.size, dataRowCount)
+        sheet.freezeAndFilter(spec.columns.size, dataRowCount, spec.freezeCols)
     }
 
     // ── 기존 유틸리티 ──
 
-    private fun Sheet.freezeAndFilter(lastCol: Int, dataRowCount: Int) {
-        createFreezePane(0, 1)
+    private fun Sheet.freezeAndFilter(lastCol: Int, dataRowCount: Int, freezeCols: Int) {
+        // 헤더 행 + 정체 열(spec.freezeCols — V-6). 넓은 시트를 오른쪽으로 넘겨도 행의 주인이 보인다.
+        createFreezePane(freezeCols, 1)
         if (dataRowCount > 0) {
             setAutoFilter(org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, lastCol - 1))
         }
@@ -544,11 +652,23 @@ class ExcelExporter(context: Context) {
         val lines = listOf(
             GuideLine("", styles.guideTitle, "NovelCharacter 엑셀 파일 편집 안내"),
             GuideLine("", styles.guideBody, ""),
+            // 색상 범례 — 견본 칸(A열)에 실제 헤더 스타일을 입힌다(V-7: 색을 설명하는 자리에
+            // 색이 없었다). 문구는 감사(WD-1)가 다듬은 그대로다 — 검정 ■만 실색 견본으로 바뀐다.
             GuideLine("색상 안내", styles.guideSection, ""),
-            GuideLine("", styles.guideBody, "■ 파란 헤더 = 편집 가능한 일반 컬럼"),
-            GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 대개 해당 행을 읽지 않습니다)"),
+            GuideLine("일반 컬럼", styles.header, "파란 헤더 = 편집 가능한 일반 컬럼"),
+            GuideLine("필수 컬럼", styles.requiredHeader, "빨간 헤더 = 필수 입력 컬럼 (비워두면 대개 해당 행을 읽지 않습니다)"),
             GuideLine("", styles.guideBody, "  예외: '필드 정의'·'필드 데이터'·'캐릭터 필드값' 시트의 세계관 칸은 비우면 전역(모든 세계관 공통) 필드를 뜻합니다."),
-            GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 앱이 채우는 열 (그대로 두세요 — 예외는 아래 '코드 컬럼 안내')"),
+            GuideLine("앱이 채움", styles.readOnlyHeader, "회색 헤더/셀 = 앱이 채우는 열 (그대로 두세요 — 예외는 아래 '코드 컬럼 안내')"),
+            GuideLine("", styles.guideBody, ""),
+            // 주의사항을 앞으로 — 시트명·헤더 행처럼 어기면 되돌리기 어려운 경고가 종전에는
+            // 맨 끝(약 200행 아래)에 있어 읽히기 전에 스크롤이 끝났다(P-7).
+            GuideLine("주의사항", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
+            GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
+            GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
+            GuideLine("", styles.guideBody, "• 이미지경로 컬럼은 앱 내부 경로이므로 수정하지 마세요"),
+            GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
+            GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
@@ -729,40 +849,42 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
-            GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다."),
-            GuideLine("", styles.guideBody, ""),
-            GuideLine("주의사항", styles.guideSection, ""),
-            GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
-            GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
-            GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
-            GuideLine("", styles.guideBody, "• 이미지경로 컬럼은 앱 내부 경로이므로 수정하지 마세요"),
-            GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
-            GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다")
+            GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다.")
         )
 
+        // 구조(P-7): A열은 좁은 견본·섹션 열, B열 하나가 본문이다 — 종전에는 본문이 A열에 들어가고
+        // B열(25000)이 항상 비어, 읽는 폭 따로 노는 폭 따로였다. 섹션 행은 두 칸을 같은 밴드로
+        // 채워 200행 텍스트 벽을 끊는다. 이 시트는 가져오기가 읽지 않아(GUIDE_SHEET_NAME 무시)
+        // 어떤 배치 변경도 왕복에 무해하다.
         lines.forEachIndexed { rowIndex, line ->
             val row = sheet.createRow(rowIndex)
-            if (line.section.isNotBlank()) {
-                row.createCell(0).apply {
-                    setCellValue(line.section)
-                    cellStyle = line.style
+            when {
+                line.section.isNotBlank() && line.style === styles.guideSection -> {
+                    row.heightInPoints = 20f
+                    row.createCell(0).apply { setCellValue(line.section); cellStyle = line.style }
+                    row.createCell(1).apply { setCellValue(line.text); cellStyle = styles.guideSection }
                 }
-                if (line.text.isNotBlank()) {
-                    row.createCell(1).apply {
-                        setCellValue(line.text)
-                        cellStyle = styles.guideBody
-                    }
+                line.section.isNotBlank() -> {
+                    // 색상 견본 행 — A칸이 실제 헤더 스타일 그대로의 견본, B칸이 설명(V-7)
+                    row.heightInPoints = 18f
+                    row.createCell(0).apply { setCellValue(line.section); cellStyle = line.style }
+                    row.createCell(1).apply { setCellValue(line.text); cellStyle = styles.guideBody }
                 }
-            } else {
-                row.createCell(0).apply {
-                    setCellValue(line.text)
-                    cellStyle = line.style
+                line.style === styles.guideTitle -> {
+                    row.heightInPoints = 26f
+                    row.createCell(1).apply { setCellValue(line.text); cellStyle = line.style }
+                }
+                else -> {
+                    row.createCell(1).apply { setCellValue(line.text); cellStyle = line.style }
+                    // 본문 wrap 높이 — 엑셀은 열 때 행 높이를 재계산하지 않는다(finishDataRow와 같은 근거)
+                    val wrapLines = estimateWrapLines(line.text, GUIDE_BODY_WIDTH)
+                    if (wrapLines > 1) row.heightInPoints = wrapLines * sheet.defaultRowHeightInPoints
                 }
             }
         }
 
-        sheet.setColumnWidth(0, 15000)
-        sheet.setColumnWidth(1, 25000)
+        sheet.setColumnWidth(0, 4600)
+        sheet.setColumnWidth(1, GUIDE_BODY_WIDTH)
     }
 
     // ── 세계관 ──
@@ -794,7 +916,7 @@ class ExcelExporter(context: Context) {
             universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
             universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setTextSafe(it) } }
             row.createCell(12).setCellValue(universe.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = universes.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -847,9 +969,9 @@ class ExcelExporter(context: Context) {
             // 작품 커스텀 필드 값 (확-3) — 열이 없으면 내보내기에서 값이 유실된다(개발 의도 4)
             val fieldValues = novelFieldValuesByNovel[novel.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
             novelFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
-                fieldValues[fieldDef.id]?.let { row.createCell(15 + fi).setTextSafe(it.value) }
+                fieldValues[fieldDef.id]?.let { row.createCell(15 + fi).setFieldValue(fieldDef, it.value) }
             }
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = novels.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -901,8 +1023,8 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setTextSafe(universe?.code ?: "")
             row.createCell(4).setTextSafe(fd.key)
             row.createCell(5).setTextSafe(fd.name)
-            row.createCell(6).setTextSafe(value)
-            finishDataRow(row, spec)
+            row.createCell(6).setFieldValue(fd, value)
+            finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
@@ -980,7 +1102,7 @@ class ExcelExporter(context: Context) {
             val linkedTemplate = com.novelcharacter.app.data.model.DefaultFieldRef
                 .codeFromConfig(field.config)?.let { templatesByCode[it] }
             row.createCell(14).setTextSafe(linkedTemplate?.code ?: "")
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allFields.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
@@ -1023,7 +1145,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setTextSafe(FieldValueSheetMapper.entityLabel(template.entityType))
             row.createCell(10).setTextSafe(template.code)
             row.createCell(11).setCellValue(template.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = templates.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, templates.size)
@@ -1055,7 +1177,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(3).setCellValue(value)
                 row.createCell(4).setTextSafe(universe?.code ?: "")
                 row.createCell(5).setTextSafe(system.code)
-                finishDataRow(row, spec)
+                finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
             }
         }
 
@@ -1093,7 +1215,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setTextSafe(entry.source)
             row.createCell(11).setCellValue(entry.usageCount.toDouble())
             row.createCell(12).setTextSafe(entry.code)
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -1129,7 +1251,7 @@ class ExcelExporter(context: Context) {
         val sharedFields = AllCharactersSheet.sharedFields(
             db.fieldDefinitionDao().getAllFieldsList(), universeIdsWithChars
         )
-        val allSpec = allCharactersSpec(sharedFields.map { it.header })
+        val allSpec = allCharactersSpec(sharedFields.map { it.header }, sharedFields.map { it.type })
         val allSheet = if (allCharacters.isNotEmpty()) {
             val name = assignSheetName(
                 ALL_CHARACTERS_SHEET_NAME, usedSheetNames, ownerOf = ALL_CHARACTERS_SHEET_NAME
@@ -1169,7 +1291,8 @@ class ExcelExporter(context: Context) {
             if (allSheet != null) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allSpec, allRowCount, sharedFields, universe.name,
-                    universeChars, fields, novelMap, resolved, tags
+                    universeChars, fields, novelMap, resolved, tags,
+                    banded = allCharacters.size < BANDING_ROW_LIMIT
                 )
             }
         }
@@ -1218,7 +1341,8 @@ class ExcelExporter(context: Context) {
             if (allSheet != null) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allSpec, allRowCount, sharedFields, "",
-                    unassignedChars, emptyList(), novelMap, emptyMap(), tags
+                    unassignedChars, emptyList(), novelMap, emptyMap(), tags,
+                    banded = allCharacters.size < BANDING_ROW_LIMIT
                 )
             }
         }
@@ -1285,11 +1409,14 @@ class ExcelExporter(context: Context) {
         fields: List<FieldDefinition>,
         novelMap: Map<Long, Novel>,
         resolvedValues: Map<Long, Map<Long, String>>,
-        allTags: Map<Long, List<CharacterTag>>
+        allTags: Map<Long, List<CharacterTag>>,
+        /** 시트 단위 밴딩 결정 — 시트 서식은 호출부([exportCharacters])가 걸므로 결정도 그쪽 몫이다. */
+        banded: Boolean
     ): Int {
         // (필드키, 타입) → 이 세계관의 필드 id. 같은 조합이 한 세계관에 둘 있을 수 없다
         // (필드키는 세계관·entityType 안에서 유일하다).
         val fieldIdByKeyType = fields.associate { (it.key to it.type) to it.id }
+        val fieldsById = fields.associateBy { it.id }
         characters.forEachIndexed { index, character ->
             val row = sheet.createRow(startRow + index + 1)
             val novel = character.novelId?.let { novelMap[it] }
@@ -1311,9 +1438,14 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setTextSafe(novel?.code ?: "")
             for (shared in sharedFields) {
                 val fieldId = fieldIdByKeyType[shared.key to shared.type]
-                row.createCell(col++).setTextSafe(fieldId?.let { values[it] } ?: "")
+                val fieldDef = fieldId?.let { fieldsById[it] }
+                val cellValue = fieldId?.let { values[it] } ?: ""
+                val cell = row.createCell(col++)
+                // 숫자 성격 값은 캐릭터 시트와 같은 규칙으로 숫자 셀이다(Q-1) — 이 시트의 존재
+                // 이유가 전체 정렬·피벗(U-12a)인데 텍스트 셀은 "10"을 "9" 앞에 세운다(N-1).
+                if (fieldDef != null) cell.setFieldValue(fieldDef, cellValue) else cell.setTextSafe(cellValue)
             }
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded)
         }
         return characters.size
     }
@@ -1357,8 +1489,8 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(fd.key)
             row.createCell(5).setTextSafe(fd.name)
             row.createCell(6).setTextSafe(FieldValueSheetMapper.entityLabel(fd.entityType))
-            row.createCell(7).setTextSafe(value)
-            finishDataRow(row, spec)
+            row.createCell(7).setFieldValue(fd, value)
+            finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
@@ -1404,8 +1536,9 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setTextSafe(character.anotherName)
 
             // 동적 필드 — CALCULATED 실시간 평가를 포함한 표시값은 resolveFieldDisplayValues가 냈다.
+            // 숫자 성격 값은 숫자 셀로 나간다(Q-1 ⓐ — setFieldValue가 왕복 멱등 단서를 든다).
             for (field in fields) {
-                row.createCell(col++).setTextSafe(values[field.id] ?: "")
+                row.createCell(col++).setFieldValue(field, values[field.id] ?: "")
             }
 
             // 이미지경로 (readOnly)
@@ -1444,7 +1577,7 @@ class ExcelExporter(context: Context) {
 
             // 생성일
             row.createCell(col).setCellValue(character.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = characters.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, characters.size)
@@ -1525,9 +1658,9 @@ class ExcelExporter(context: Context) {
             // 사건 커스텀 필드 값 (B-10)
             val fieldValues = eventFieldValuesByEvent[event.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
             eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
-                fieldValues[fieldDef.id]?.let { row.createCell(16 + fi).setTextSafe(it.value) }
+                fieldValues[fieldDef.id]?.let { row.createCell(16 + fi).setFieldValue(fieldDef, it.value) }
             }
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = events.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, events.size)
@@ -1579,8 +1712,8 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setTextSafe(universe?.code ?: "")
             row.createCell(4).setTextSafe(fd.key)
             row.createCell(5).setTextSafe(fd.name)
-            row.createCell(6).setTextSafe(value)
-            finishDataRow(row, spec)
+            row.createCell(6).setFieldValue(fd, value)
+            finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
         applySpecFormatting(sheet, spec, rows.size)
     }
@@ -1625,7 +1758,7 @@ class ExcelExporter(context: Context) {
             // 코드 (readOnly) — 왕복 안정 식별자: 값·연도를 외부에서 편집해도 같은 이력으로 인식
             row.createCell(9).setTextSafe(change.code ?: "")
             row.createCell(10).setCellValue(change.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allChanges.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -1668,7 +1801,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setTextSafe(rel.factionId?.let { factionMap[it]?.code } ?: "")
             row.createCell(11).setCellValue(rel.createdAt.toDouble())
             row.createCell(12).setTextSafe(rel.code ?: "")
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allRelationships.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1714,7 +1847,7 @@ class ExcelExporter(context: Context) {
             // 부모 관계 식별 — 코드가 있으면 유형을 고쳐도 정확히 따라간다(유형은 코드 없는 구파일용 폴백)
             row.createCell(14).setTextSafe(rel.relationshipType)
             row.createCell(15).setTextSafe(rel.code ?: "")
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allChanges.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -1745,7 +1878,7 @@ class ExcelExporter(context: Context) {
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
             meta.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
             row.createCell(4).setTextSafe(meta.detachedFromCode ?: "")
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = metas.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, metas.size)
@@ -1778,7 +1911,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(entry.createdAt.toDouble())
             // 코드 (readOnly) — 이름 은행 항목 자체의 왕복 안정 식별자 (F3-D)
             row.createCell(8).setTextSafe(entry.code)
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allNames.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
@@ -1810,7 +1943,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction.code)
             row.createCell(8).setCellValue(faction.displayOrder.toDouble())
             row.createCell(9).setCellValue(faction.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allFactions.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allFactions.size)
@@ -1851,7 +1984,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction?.code ?: "")
             row.createCell(8).setTextSafe(character?.code ?: "")
             row.createCell(9).setCellValue(membership.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allMemberships.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allMemberships.size)
@@ -1886,7 +2019,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction1?.code ?: "")
             row.createCell(8).setTextSafe(faction2?.code ?: "")
             row.createCell(9).setCellValue(rel.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = allRelationships.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1936,7 +2069,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setCellValue(axis.displayOrder.toDouble())
             row.createCell(10).setTextSafe(axis.code)
             row.createCell(11).setCellValue(axis.createdAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = axes.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, axes.size)
@@ -1984,7 +2117,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())
                 row.createCell(9).setTextSafe(match.code)
-                finishDataRow(row, spec)
+                finishDataRow(row, spec, banded = rowIndex < BANDING_ROW_LIMIT)
             }
         }
 
@@ -2027,7 +2160,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(5).setTextSafe(joinCsv(members))
                 row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
                 row.createCell(7).setTextSafe(verdict.code)
-                finishDataRow(row, spec)
+                finishDataRow(row, spec, banded = rowIndex < BANDING_ROW_LIMIT)
             }
         }
 
@@ -2113,7 +2246,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setTextSafe(if (t.isBuiltIn) "Y" else "N")
             row.createCell(4).setCellValue(t.createdAt.toDouble())
             row.createCell(5).setCellValue(t.updatedAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = templates.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, templates.size)
@@ -2139,7 +2272,7 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setTextSafe(if (p.isDefault) "Y" else "N")
             row.createCell(5).setCellValue(p.createdAt.toDouble())
             row.createCell(6).setCellValue(p.updatedAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = presets.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, presets.size)
@@ -2204,7 +2337,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setTextSafe(if (preset.isDefault) "Y" else "N")
             row.createCell(10).setCellValue(preset.createdAt.toDouble())
             row.createCell(11).setCellValue(preset.updatedAt.toDouble())
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = presets.size < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, presets.size)
@@ -2250,7 +2383,7 @@ class ExcelExporter(context: Context) {
             } else {
                 row.createCell(1).setTextSafe(value)
             }
-            finishDataRow(row, spec)
+            finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -2265,6 +2398,16 @@ class ExcelExporter(context: Context) {
     companion object {
         private const val DROPDOWN_EXTRA_ROWS = 100
         private const val MAX_DROPDOWN_ROWS = 10000
+
+        /**
+         * 짝수 행 밴딩(Q-3 ⓑ)을 켜는 시트 크기 상한 — 이 행 수 이상이면 그 시트만 밴딩을 끈다.
+         * 밴딩은 지금 무스타일인 편집 셀 전부에 스타일 참조를 붙이므로, '대결 기록'처럼 수만 행이
+         * 될 수 있는 시트(scalability 4장)에서는 파일 크기 비용이 도움보다 커진다.
+         */
+        private const val BANDING_ROW_LIMIT = 10_000
+
+        /** 사용 안내 시트 본문(B열) 너비 — 행 높이 추정([estimateWrapLines])과 같은 값을 봐야 한다. */
+        private const val GUIDE_BODY_WIDTH = 26000
         private const val XLSX_CELL_LIMIT = EXCEL_CELL_TEXT_LIMIT // 단일 소스: SheetSpec.EXCEL_CELL_TEXT_LIMIT
     }
 }

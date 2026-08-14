@@ -18,12 +18,25 @@ data class ColumnSpec(
     val required: Boolean = false,
     val readOnly: Boolean = false,
     val dropdownOptions: List<String>? = null,
-    val width: Int = 5000
+    val width: Int = 5000,
+    // ── 표현 속성(시각 개편 2026.08.14 — Q-1~Q-3 사용자 확정) — 스타일만 정하고 값·헤더는 건드리지 않는다 ──
+    /** 장문 열: 줄바꿈을 보이게 그린다(wrapText + 세로 상단). 행 높이는 [estimateWrapLines]로 함께 기록한다. */
+    val wrap: Boolean = false,
+    /** 13자리 epoch millis 열: 숫자 서식 `0` — 값은 그대로 두고 과학표기만 차단한다(B-222 ①). */
+    val millis: Boolean = false,
+    /** CALCULATED 열: 소수 값에 서식 `0.00` — 앱 표시([FormulaDisplay.format] `%.2f`)와 글자까지 같게 그린다. */
+    val calc: Boolean = false
 )
 
 data class SheetSpec(
     val sheetName: String,
-    val columns: List<ColumnSpec>
+    val columns: List<ColumnSpec>,
+    /**
+     * 틀 고정 열 수(시각 개편 V-6) — `createFreezePane(freezeCols, 1)`.
+     * 행의 정체를 이루는 왼쪽 열들만 고정한다(캐릭터=이름, 전체 캐릭터=세계관·작품·이름).
+     * 0이면 종전과 같이 헤더 행만 고정된다.
+     */
+    val freezeCols: Int = 0
 ) {
     val firstColumnHeader: String get() = columns.firstOrNull()?.header ?: ""
 
@@ -340,13 +353,139 @@ fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String {
     return if (cut.isNotEmpty() && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
 }
 
+// ── 시각 개편(2026.08.14 사용자 확정 Q-1~Q-3) — 표현 계층의 순수 판정들 ──
+
+/**
+ * NUMBER 필드값을 숫자 셀로 실어도 되는가 — 되면 그 수를, 아니면 null (Q-1 ⓐ).
+ *
+ * 조건은 **왕복 멱등성**이다: 가져오기의 숫자 정규화([ExcelCellValue.normalizeNumeric])가 이 수를
+ * 도로 문자열로 만들었을 때 **저장 원문과 글자까지 같아야** 한다. 다르면 무편집 왕복에서 저장
+ * 값이 조용히 바뀐다 — `"24.50"`→24.5→`"24.5"`, `"007"`→7, `"1e5"`→100000이 그 부류라 전부
+ * 문자열 셀로 남긴다. 견주는 두 표현(정수는 `Long.toString`, 소수는
+ * `BigDecimal.valueOf(d).stripTrailingZeros().toPlainString()`)은 normalizeNumeric이 쓰는 바로
+ * 그것이라, 그쪽 규칙이 바뀌면 이 판정도 같은 자리에서 함께 틀어지는 대신 시험이 잡는다.
+ *
+ * ⚠️ 호출측 단서 하나: [SemanticRole.BIRTH_DATE] 필드에는 쓰지 말 것 — 가져오기가 그 열만
+ * `dateHint=true`로 읽어, 서식 없는 정수 숫자 셀(1~2958465)을 날짜로 해석한다
+ * (`ExcelImportService`의 `isDateField`). 판정은 내보내기 쪽 호출부가 같은
+ * `SemanticRole.fromConfig` 하나로 한다.
+ */
+fun numericExportValueOrNull(raw: String): Double? {
+    if (raw.isEmpty() || raw != raw.trim()) return null
+    val d = raw.toDoubleOrNull() ?: return null
+    if (!d.isFinite()) return null
+    val roundTrip = if (d == d.toLong().toDouble()) {
+        d.toLong().toString()
+    } else {
+        java.math.BigDecimal.valueOf(d).stripTrailingZeros().toPlainString()
+    }
+    return if (roundTrip == raw) d else null
+}
+
+/**
+ * wrap 행 높이의 상한(줄) — 접힌 데이터를 보이게 하되(원칙 04) 초장문 메모가 화면을
+ * 통째로 차지하지는 않게 한다. 넘친 줄은 셀을 열면 그대로 있다(값 불변).
+ */
+const val WRAP_MAX_LINES = 4
+
+/**
+ * wrap 열의 표시 줄수 추정(V-4 구현 노트) — **엑셀은 파일을 열 때 행 높이를 재계산하지 않는다.**
+ * 명시 높이가 없으면 기본 15pt 한 줄로 그려 wrap이 있어도 첫 줄만 보인다(LibreOffice·구글시트는
+ * 재계산하므로 렌더 검증에서는 드러나지 않는 함정). 그래서 내보내기가 줄수를 추정해 행 높이를
+ * 함께 기록한다 — 셀 서식과 같은 자리(행을 쓰는 자리, R-49)에서.
+ *
+ * 근사 규칙: 한글·CJK·전각(U+1100 이상)은 표준 폭 2칸, 그 외 1칸. 열 폭은 1/256 문자 단위.
+ * 정밀 측정이 아니라 "여러 줄임이 보이는가"의 추정이라 이 정도로 충분하다.
+ */
+fun estimateWrapLines(text: String, columnWidthUnits: Int): Int {
+    if (text.isEmpty()) return 1
+    val charsPerLine = (columnWidthUnits / 256.0).coerceAtLeast(4.0)
+    var lines = 0
+    for (seg in text.splitToSequence('\n')) {
+        var units = 0.0
+        for (ch in seg) units += if (ch.code >= 0x1100) 2.0 else 1.0
+        lines += maxOf(1, kotlin.math.ceil(units / charsPerLine).toInt())
+        if (lines >= WRAP_MAX_LINES) return WRAP_MAX_LINES
+    }
+    return lines
+}
+
+/**
+ * 커스텀 필드 열의 타입별 기본 너비(V-8) — 시스템 열은 손튜닝인데 사용자가 만든 필드만
+ * 일률 5000이라 쉼표 목록·접미사 붙은 헤더가 잘렸다. 쉼표 목록은 넓게, 등급·숫자처럼
+ * 짧은 값은 좁게. 모르는 타입(null 포함)은 자유 입력으로 보고 넉넉히 둔다.
+ */
+fun customFieldColumnWidth(type: FieldType?, multiToken: Boolean): Int = when {
+    multiToken -> 8000
+    type == FieldType.NUMBER || type == FieldType.GRADE -> 4000
+    type == FieldType.SELECT || type == FieldType.CALCULATED || type == FieldType.BODY_SIZE -> 4500
+    else -> 6000
+}
+
+/**
+ * 탭 색 그룹(P-8) — 20여 개 탭을 다섯 구획으로 가른다. 시트 수준 속성이라 값·왕복과 무관하고,
+ * 가져오기는 탭 색을 읽지 않는다.
+ *
+ * **모든 예약 시트는 어느 한 그룹에 명시로 속해야 한다** — 새 예약 시트를 만들면
+ * `SheetTabColorsTest`가 그룹 배정을 요구하며 깨진다(등재 누락이 침묵이 되지 않게).
+ * 예약명 밖(세계관 캐릭터 시트, `(2)` 접미사 변형)은 전부 캐릭터색이다.
+ */
+object SheetTabColors {
+    val GUIDE = byteArrayOf(0x28, 0x35, 0x93.toByte())
+    val STRUCTURE = byteArrayOf(0x39, 0x49, 0xAB.toByte())
+    val CHARACTERS = byteArrayOf(0x26, 0xA6.toByte(), 0x9A.toByte())
+    val RECORDS = byteArrayOf(0xEF.toByte(), 0x6C, 0x00)
+    val TOOLS = byteArrayOf(0x75, 0x7F, 0x8C.toByte())
+    val DERIVED = byteArrayOf(0x54, 0x6E, 0x7A)
+
+    /** 구조 — 참조되는 정의들(세계관·작품·필드 계열). 가져오기 순서도 이쪽이 앞이다. */
+    val STRUCTURE_SHEETS = setOf(
+        universeSpec().sheetName, novelSpec(emptyList()).sheetName, gradeSystemSpec().sheetName,
+        defaultFieldSpec().sheetName, fieldDefinitionSpec(emptyList()).sheetName,
+        fieldValueLibrarySpec().sheetName
+    )
+
+    /** 기록 — 사건·관계·대결처럼 시간·관계를 적는 시트. */
+    val RECORD_SHEETS = setOf(
+        timelineSpec(emptyList()).sheetName, stateChangeSpec().sheetName, relationshipSpec().sheetName,
+        relationshipChangeSpec().sheetName, factionSpec().sheetName, factionMembershipSpec().sheetName,
+        factionRelationshipSpec().sheetName, duelAxisSpec().sheetName, duelMatchSpec().sheetName,
+        duelVerdictSpec().sheetName
+    )
+
+    /** 도구·설정 — 프리셋·이름 은행·앱 설정·이미지 메타. */
+    val TOOL_SHEETS = setOf(
+        nameBankSpec().sheetName, userPresetTemplateSpec().sheetName, searchPresetSpec().sheetName,
+        characterListPresetSpec().sheetName, appSettingsSpec().sheetName, imageMetaSpec().sheetName
+    )
+
+    /** 파생·오버플로 — 읽기 전용 집계와 잔여값 보관처. */
+    val DERIVED_SHEETS = setOf(
+        ALL_CHARACTERS_SHEET_NAME, characterFieldValueSpec().sheetName,
+        novelFieldValueSpec().sheetName, eventFieldValueSpec().sheetName
+    )
+
+    /** 예약명 중 캐릭터 그룹 — 나머지 캐릭터 시트는 예약명 밖이라 자동으로 이 색이다. */
+    val CHARACTER_SHEETS = setOf(UNCLASSIFIED_SHEET_NAME)
+
+    fun forSheet(sheetName: String): ByteArray = when (sheetName) {
+        GUIDE_SHEET_NAME -> GUIDE
+        in STRUCTURE_SHEETS -> STRUCTURE
+        in RECORD_SHEETS -> RECORDS
+        in TOOL_SHEETS -> TOOLS
+        in DERIVED_SHEETS -> DERIVED
+        else -> CHARACTERS  // 세계관 캐릭터 시트 · 미분류 · 접미사 변형
+    }
+}
+
 // ── Sheet Spec factories ──
 
 fun universeSpec() = SheetSpec(
     sheetName = "세계관",
+    freezeCols = 1,
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
-        ColumnSpec("설명", width = 15000),
+        ColumnSpec("설명", width = 15000, wrap = true),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("테두리색", width = 4000),
@@ -357,7 +496,7 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("커스텀관계색상", width = 10000),
         ColumnSpec("이미지캐릭터코드", width = 5000),
         ColumnSpec("이미지작품코드", width = 5000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -370,9 +509,10 @@ fun novelSpec(
     novelFieldHeaders: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "작품",
+    freezeCols = 1,
     columns = listOf(
         ColumnSpec("제목", required = true, width = 8000),
-        ColumnSpec("설명", width = 15000),
+        ColumnSpec("설명", width = 15000, wrap = true),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
@@ -385,7 +525,7 @@ fun novelSpec(
         ColumnSpec("테두리상속", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표준연도", width = 3000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     ) + novelFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 작품 커스텀 필드 (확-3)
 )
 
@@ -394,6 +534,7 @@ fun fieldDefinitionSpec(
     gradeSystemNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "필드 정의",
+    freezeCols = 3,
     columns = listOf(
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
         ColumnSpec("필드키", required = true, width = 5000),
@@ -408,7 +549,7 @@ fun fieldDefinitionSpec(
         // config 파생 전용 열(A-1·A-2) — 사람이 고치는 값이라 JSON 셀에 뭉치지 않고 열을 판다.
         // 내보내기는 설정(JSON) 셀에서 두 키를 제거하고 여기에만 싣는다(FieldConfigColumns).
         ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = FieldConfigColumns.AI_CELL_OPTIONS, width = 3500),
-        ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000),
+        ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000, wrap = true),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
         // 캐릭터/사건/작품 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
         // 모든 종류의 정의가 왕복되어야 신규 기기 복원 시 그 종류의 필드값이 유실되지 않는다.
@@ -448,6 +589,7 @@ fun fieldDefinitionSpec(
  */
 fun defaultFieldSpec() = SheetSpec(
     sheetName = "기본 필드",
+    freezeCols = 2,
     columns = listOf(
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", required = true, width = 5000),
@@ -459,10 +601,10 @@ fun defaultFieldSpec() = SheetSpec(
         ColumnSpec("순서", width = 3000),
         ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = FieldConfigColumns.AI_CELL_OPTIONS, width = 3500),
-        ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000),
+        ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000, wrap = true),
         ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -479,6 +621,7 @@ fun defaultFieldSpec() = SheetSpec(
  */
 fun gradeSystemSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "등급 체계",
+    freezeCols = 2,
     columns = listOf(
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
         ColumnSpec("체계명", required = true, width = 6000),
@@ -492,6 +635,7 @@ fun gradeSystemSpec(universeNames: List<String> = emptyList()) = SheetSpec(
 /** 필드 데이터 라이브러리 — 값 카탈로그 왕복 (별칭·표시라벨·카테고리·설명이 외부 편집 가능) */
 fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "필드 데이터",
+    freezeCols = 2,
     columns = listOf(
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
         ColumnSpec("필드키", required = true, width = 5000),
@@ -501,7 +645,7 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("표시라벨", width = 5000),
         ColumnSpec("별칭(콤마구분)", width = 8000),
         ColumnSpec("카테고리", width = 5000),
-        ColumnSpec("설명", width = 8000),
+        ColumnSpec("설명", width = 8000, wrap = true),
         ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),
         // 출처: AUTO(수확)·MANUAL(직접/큐레이션)·IMPORT(엑셀)·AI(AI 정리).
         // 복원이 이 값을 재현하지 못하면 '미사용 자동수집 정리'(source='AUTO' 필터)가 영구히 0건이 된다.
@@ -525,6 +669,7 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
  */
 fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "캐릭터 필드값",
+    freezeCols = 2,
     columns = listOf(
         ColumnSpec("캐릭터코드", required = true, readOnly = true, width = 4000),
         ColumnSpec("캐릭터이름", readOnly = true, width = 6000),
@@ -533,7 +678,7 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
         ColumnSpec("대상", readOnly = true, dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
-        ColumnSpec("값", width = 8000)
+        ColumnSpec("값", width = 8000, wrap = true)
     )
 )
 
@@ -558,7 +703,7 @@ fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
-        ColumnSpec("값", width = 8000)
+        ColumnSpec("값", width = 8000, wrap = true)
     )
 )
 
@@ -578,7 +723,7 @@ fun eventFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
-        ColumnSpec("값", width = 8000)
+        ColumnSpec("값", width = 8000, wrap = true)
     )
 )
 
@@ -660,7 +805,7 @@ fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("기준축", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -675,6 +820,7 @@ fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
  */
 fun duelMatchSpec(axisNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 기록",
+    freezeCols = 1,
     columns = listOf(
         ColumnSpec("축", required = true, dropdownOptions = axisNames.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("축코드", readOnly = true, width = 4000),
@@ -684,7 +830,7 @@ fun duelMatchSpec(axisNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("참가자2코드", readOnly = true, width = 4000),
         ColumnSpec("승자", width = 6000),
         ColumnSpec("묶음", width = 4000),
-        ColumnSpec("판정일", readOnly = true, width = 5000),
+        ColumnSpec("판정일", readOnly = true, width = 5000, millis = true),
         ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
@@ -707,13 +853,14 @@ fun duelVerdictSpec(axisNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("모양", readOnly = true, width = 3500),
         ColumnSpec("참가자들", required = true, width = 10000),
         ColumnSpec("참가자코드들", readOnly = true, width = 8000),
-        ColumnSpec("판정일", readOnly = true, width = 5000),
+        ColumnSpec("판정일", readOnly = true, width = 5000, millis = true),
         ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 
 fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = SheetSpec(
     sheetName = "",  // Sheet name is set dynamically (universe name or "미분류 캐릭터")
+    freezeCols = 1,  // 이름 열 — 오른쪽으로 스크롤해도 행의 주인이 보인다 (V-6)
     columns = buildList {
         add(ColumnSpec("이름", required = true, width = 6000))
         add(ColumnSpec("성", width = 4000))
@@ -739,21 +886,29 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
             // 접미사 글자는 [EntityFieldHeaders.MULTI_SUFFIX] 하나가 든다 — 연표·작품 시트도 같은 말을
             // 쓰고(B-177), 시트마다 다른 말로 안내하면 외부 편집자가 시트마다 다시 배운다.
             // 리터럴을 두 벌로 두면 한쪽만 고쳐질 때 **가져오기가 그 열을 못 알아본다.**
-            val headerName = if (FieldValueTokenizer.isMultiToken(field)) core + EntityFieldHeaders.MULTI_SUFFIX else core
-            add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
+            val multiToken = FieldValueTokenizer.isMultiToken(field)
+            val headerName = if (multiToken) core + EntityFieldHeaders.MULTI_SUFFIX else core
+            add(ColumnSpec(
+                headerName,
+                required = field.isRequired,
+                dropdownOptions = options,
+                // 타입별 기본 너비(V-8) — 시스템 열은 손튜닝인데 커스텀 필드만 일률 5000이었다.
+                width = customFieldColumnWidth(field.fieldType, multiToken),
+                calc = field.fieldType == FieldType.CALCULATED
+            ))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
         // 대표 이미지(B-103 D8). `이미지경로`와 달리 **읽기 전용이 아니다** — 사람이 읽고
         // 고칠 수 있어야 값어치가 있고, 그래서 내부 경로 원문이 아니라 파일명을 싣는다.
         add(ColumnSpec("대표이미지", width = 5000))
         add(ColumnSpec("작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000))
-        add(ColumnSpec("메모", width = 10000))
+        add(ColumnSpec("메모", width = 10000, wrap = true))
         add(ColumnSpec("태그", width = 8000))
         add(ColumnSpec("코드", readOnly = true, width = 4000))
         add(ColumnSpec("작품코드", readOnly = true, width = 4000))
         add(ColumnSpec("정렬순서", width = 3000))
         add(ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000))
-        add(ColumnSpec("생성일", readOnly = true, width = 5000))
+        add(ColumnSpec("생성일", readOnly = true, width = 5000, millis = true))
     }
 )
 
@@ -772,8 +927,13 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
  * 실으면 열이 전 세계관의 합집합이 되어 피벗이라는 이 시트의 쓸모가 사라진다. 판정은
  * **(필드키, 타입)** — 통계의 세계관 병합과 같은 규칙이라 새 개념을 만들지 않는다.
  */
-fun allCharactersSpec(sharedFieldHeaders: List<String> = emptyList()) = SheetSpec(
+fun allCharactersSpec(
+    sharedFieldHeaders: List<String> = emptyList(),
+    /** [sharedFieldHeaders]와 같은 차례의 [FieldType.name] — 열 너비·CALCULATED 소수 서식 판정용(시각 개편). 비우면 기본 치수. */
+    sharedFieldTypes: List<String> = emptyList()
+) = SheetSpec(
     sheetName = ALL_CHARACTERS_SHEET_NAME,
+    freezeCols = 3,  // 세계관·작품·이름 — 피벗용 넓은 시트의 정체 열 (V-6)
     columns = buildList {
         add(ColumnSpec("세계관", readOnly = true, width = 5000))
         add(ColumnSpec("작품", readOnly = true, width = 6000))
@@ -784,10 +944,17 @@ fun allCharactersSpec(sharedFieldHeaders: List<String> = emptyList()) = SheetSpe
         add(ColumnSpec("태그", readOnly = true, width = 8000))
         add(ColumnSpec("고정", readOnly = true, width = 3000))
         add(ColumnSpec("정렬순서", readOnly = true, width = 3000))
-        add(ColumnSpec("생성일", readOnly = true, width = 5000))
+        add(ColumnSpec("생성일", readOnly = true, width = 5000, millis = true))
         add(ColumnSpec("코드", readOnly = true, width = 4000))
         add(ColumnSpec("작품코드", readOnly = true, width = 4000))
-        for (header in sharedFieldHeaders) add(ColumnSpec(header, readOnly = true, width = 5000))
+        sharedFieldHeaders.forEachIndexed { i, header ->
+            val type = sharedFieldTypes.getOrNull(i)?.let { FieldType.fromName(it) }
+            add(ColumnSpec(
+                header, readOnly = true,
+                width = customFieldColumnWidth(type, multiToken = type == FieldType.MULTI_TEXT),
+                calc = type == FieldType.CALCULATED
+            ))
+        }
     }
 )
 
@@ -797,13 +964,14 @@ fun timelineSpec(
     universeNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "사건 연표",
+    freezeCols = 1,
     columns = listOf(
         ColumnSpec("연도", required = true, width = 3000),
         ColumnSpec("월", width = 2000),
         ColumnSpec("일", width = 2000),
         ColumnSpec("역법", width = 3000),
         ColumnSpec("사건 유형", dropdownOptions = listOf("일반", "탄생", "사망"), width = 3000),
-        ColumnSpec("사건 설명", required = true, width = 15000),
+        ColumnSpec("사건 설명", required = true, width = 15000, wrap = true),
         ColumnSpec("관련 작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("관련 캐릭터", width = 10000),
         ColumnSpec("관련작품코드", readOnly = true, width = 4000),
@@ -812,7 +980,7 @@ fun timelineSpec(
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000),
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true),
         // 사건의 세계관 소속 — 작품 미연결 사건도 신규 기기 복원 시 세계관을 잃지 않게 한다.
         // 이 열이 없던 구버전 파일은 기존처럼 관련 작품의 세계관에서 유도한다(하위 호환).
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
@@ -822,6 +990,7 @@ fun timelineSpec(
 
 fun stateChangeSpec() = SheetSpec(
     sheetName = "캐릭터 상태변화",
+    freezeCols = 1,
     columns = listOf(
         ColumnSpec("캐릭터", required = true, width = 5000),
         ColumnSpec("작품", width = 5000),
@@ -830,10 +999,10 @@ fun stateChangeSpec() = SheetSpec(
         ColumnSpec("일", width = 2000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("새 값", width = 5000),
-        ColumnSpec("설명", width = 10000),
+        ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -842,11 +1011,12 @@ fun relationshipSpec(
     factionNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "캐릭터 관계",
+    freezeCols = 2,
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
         ColumnSpec("캐릭터2", required = true, width = 6000),
         ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
-        ColumnSpec("설명", width = 10000),
+        ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표시순서", width = 3000),
@@ -857,7 +1027,7 @@ fun relationshipSpec(
         ColumnSpec("세력", dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 5000),
         // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
         ColumnSpec("세력코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000),
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true),
         // 관계 자체의 안정 식별자 — 이 열이 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다
         // (자연키가 캐릭터1+캐릭터2+유형이라 코드 없이는 rename과 신규를 구별할 수 없다)
         ColumnSpec("코드", readOnly = true, width = 4000)
@@ -873,7 +1043,7 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("월", width = 2000),
         ColumnSpec("일", width = 2000),
         ColumnSpec("관계 유형", width = 5000),
-        ColumnSpec("설명", width = 10000),
+        ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         // 사건 참조는 코드 기반 — DB id는 복원/기기 이전 시 변해 참조로 부적합.
@@ -882,7 +1052,7 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000),
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true),
         // 이 이력이 붙은 **부모 관계**의 유형. 위 '관계 유형'(변화 시점의 유형)과 다른 값이다.
         // 같은 두 캐릭터 사이에 유형이 다른 관계가 여러 개일 수 있어(유니크 키가 쌍+유형),
         // 이 열이 없으면 이력이 어느 관계의 것인지 파일만으로 알 수 없다.
@@ -898,11 +1068,11 @@ fun nameBankSpec() = SheetSpec(
         ColumnSpec("이름", required = true, width = 5000),
         ColumnSpec("성별", width = 3000),
         ColumnSpec("출처", width = 5000),
-        ColumnSpec("메모", width = 8000),
+        ColumnSpec("메모", width = 8000, wrap = true),
         ColumnSpec("사용여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("사용 캐릭터", width = 5000),
         ColumnSpec("사용캐릭터코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000),
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true),
         // 이름 은행 항목 자체의 안정 식별자 (F3-D) — 왕복 매칭 기준, 수정 금지
         ColumnSpec("코드", readOnly = true, width = 4000)
     )
@@ -912,11 +1082,11 @@ fun userPresetTemplateSpec() = SheetSpec(
     sheetName = "필드 템플릿",
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
-        ColumnSpec("설명", width = 15000),
+        ColumnSpec("설명", width = 15000, wrap = true),
         ColumnSpec("설정(JSON)", width = 15000),
         ColumnSpec("기본제공", dropdownOptions = listOf("Y", "N"), width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 6000),
-        ColumnSpec("수정일", readOnly = true, width = 6000)
+        ColumnSpec("생성일", readOnly = true, width = 6000, millis = true),
+        ColumnSpec("수정일", readOnly = true, width = 6000, millis = true)
     )
 )
 
@@ -941,8 +1111,8 @@ fun characterListPresetSpec() = SheetSpec(
         ColumnSpec("신체파트번호", width = 4000),
         ColumnSpec("작품코드목록", width = 10000),
         ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 6000),
-        ColumnSpec("수정일", readOnly = true, width = 6000)
+        ColumnSpec("생성일", readOnly = true, width = 6000, millis = true),
+        ColumnSpec("수정일", readOnly = true, width = 6000, millis = true)
     )
 )
 
@@ -955,8 +1125,8 @@ fun searchPresetSpec() = SheetSpec(
         // 드롭다운 목록과 가져오기 유효값 검증이 같은 상수를 본다 — 규칙을 양쪽에 두면 드리프트한다
         ColumnSpec("정렬모드", dropdownOptions = SearchPreset.SORT_MODES, width = 5000),
         ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 6000),
-        ColumnSpec("수정일", readOnly = true, width = 6000)
+        ColumnSpec("생성일", readOnly = true, width = 6000, millis = true),
+        ColumnSpec("수정일", readOnly = true, width = 6000, millis = true)
     )
 )
 
@@ -966,13 +1136,13 @@ fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
-        ColumnSpec("설명", width = 15000),
+        ColumnSpec("설명", width = 15000, wrap = true),
         ColumnSpec("색상", width = 4000),
         ColumnSpec("자동관계유형", required = true, width = 6000),
         ColumnSpec("자동관계강도", width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("정렬순서", width = 3000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -988,7 +1158,7 @@ fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("탈퇴후강도", width = 3000),
         ColumnSpec("세력코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -1001,13 +1171,13 @@ fun factionRelationshipSpec(
         ColumnSpec("세력1", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("세력2", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
-        ColumnSpec("설명", width = 10000),
+        ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("세력1코드", readOnly = true, width = 4000),
         ColumnSpec("세력2코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     )
 )
 
@@ -1037,7 +1207,7 @@ fun imageMetaSpec() = SheetSpec(
         // 뗀 이미지 서랍(B-107 D1) — **빈칸 = 뗀 적 없음**이라 열 하나가 값과 상태를 겸한다.
         // 편집 가능한 이유는 서랍을 엑셀에서도 비울 수 있어야 하기 때문이다(개발 의도 4번).
         // 규약은 태그·링크그룹과 같다: 열이 없으면 기존 유지, 열이 있고 빈칸이면 해제.
-        ColumnSpec("뗀날짜", width = 5000),
+        ColumnSpec("뗀날짜", width = 5000, millis = true),
         // 출처는 **읽기 전용**이다 — 사용자가 여기 캐릭터 코드를 손으로 적을 이유가 없고,
         // 없는 코드를 적으면 화면이 "지워진 캐릭터"라고 말하게 된다(고칠 길 없는 거짓).
         ColumnSpec("뗀곳", readOnly = true, width = 6000)
