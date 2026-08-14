@@ -1,4 +1,6 @@
 // tools/usage-probe/StatsHotspotProbe.kt — S6 2차: 통계 계산 안의 다음 표적을 재서 정한다.
+//   (S6 4차가 [7]을 더했다 — B-215 뒤에 남은 상위 둘(computeFieldAnalysis·computeSummary)을
+//    부위로 갈라 '진짜 집계'의 몫을 재고, 접힌 집계(고유 원문 × 건수)의 상한을 함께 잰다.)
 //
 // ── 왜 이 프로브가 따로 있는가 ─────────────────────────────────────────────
 // `ScaleProbe.kt`(S1·S6 1차)는 실사용 엑셀 파일을 args[0]로 받는다. 이 세션 환경에는 그
@@ -552,6 +554,163 @@ fun main() {
         println("  ⓒ 메모 보관: ${mb((h2 - h1).coerceAtLeast(0))} (엔트리 ${entryCount} · " +
             "스냅샷 생존 확인 ${freshS.fieldValues.size}행 · 캐시 상한 4스냅샷이면 그 ×4가 최악)")
     }.onFailure { println("  ⓒ 메모 보관: 없음(기준선 — statsParseCaches 미존재)") }
+
+    // ── [7] S6 4차 — '진짜 집계'의 부위별 분해 (computeFieldAnalysis · computeSummary) ──
+    // [1]의 상위 둘을 부위로 가른다. 재현 형태는 **접기 도입 전 본문**의 모양이다(S6 4차 뒤의
+    // 본문은 접힘이므로, 이 재현은 걷어낸 모양을 하네스가 드는 쪽이다 — 동작 대조는
+    // StatsFoldParityTest가 한다). 토큰은 미리 뽑아 두어
+    // (tokensByDef — 메모 적중 상태) 리플렉션이 측정 루프 밖에 있게 했다 — 여기서 재는 것은
+    // 파싱이 아니라 **집계 그 자체**(건별 재료화 · 해싱 · 정렬 · def×캐릭터 필터)다.
+    // 말미의 '접힘/' 셋은 처방 후보의 산술이다: 같은 답을 (고유 원문 × 건수)로 세면 얼마인가.
+    println()
+    println("[7] S6 4차 — 집계 부위별 분해 (채움 ×30 · 파싱 메모 적중 상태)")
+    run {
+        val snap = fill30
+        val cfgs = configsFor(snap, p)
+        val defById = snap.fieldDefinitions.associateBy { it.id }
+        @Suppress("UNCHECKED_CAST")
+        val aug = augM.invoke(p, snap) as Map<Long, List<CharacterFieldValue>>
+        // 토큰 표 선조립 — 리플렉션은 여기까지. 측정 루프는 맵 조회만 한다.
+        val tokensByDef = HashMap<Long, HashMap<String, List<String>>>()
+        for ((defId, values) in aug) {
+            val fd = defById[defId] ?: continue
+            val cfg = cfgs[defId] ?: continue
+            if (!cfg.enabled) continue
+            val m = tokensByDef.getOrPut(defId) { HashMap() }
+            for (fv in values) {
+                if (fv.value.isBlank() || fv.value in m) continue
+                @Suppress("UNCHECKED_CAST")
+                m[fv.value] = gfv.invoke(p, snap, fd, fv.value, cfg) as List<String>
+            }
+        }
+        fun measure(label: String, body: () -> Any?) {
+            val t = timeMs(1, 5) { body() }
+            val a = allocatedBytes { body() }
+            println("  %-44s %5dms %10s".format(label, t, mb(a)))
+        }
+        val discreteTypes = setOf("TEXT", "SELECT", "MULTI_TEXT", "GRADE")
+        val binnableTypes = setOf("NUMBER", "CALCULATED")
+
+        // computeSummary — 접기 도입 전 TOP5 파이프라인의 모양
+        measure("summary/TOP5 (건별 flatMap+계수+정렬)") {
+            aug.entries.flatMap { (defId, values) ->
+                val fd = defById[defId] ?: return@flatMap emptyList<Pair<String, String>>()
+                val cfg = cfgs[defId] ?: return@flatMap emptyList<Pair<String, String>>()
+                if (!cfg.enabled) return@flatMap emptyList<Pair<String, String>>()
+                values.filter { it.value.isNotBlank() }
+                    .flatMap { fv -> tokensByDef[defId]!![fv.value]!!.map { Pair(fd.name, it) } }
+            }.groupingBy { it }.eachCount()
+                .entries
+                .sortedWith(compareByDescending<Map.Entry<Pair<String, String>, Int>> { it.value }
+                    .thenBy { it.key.first }.thenBy { it.key.second })
+                .take(5)
+        }
+        // computeSummary — 완성도 평균 (percentOf × 캐릭터. filled는 메모 적중)
+        val filledM = helper("filledCharacterDefIds")
+        @Suppress("UNCHECKED_CAST")
+        val filled = filledM.invoke(p, snap) as Map<Long, Set<Long>>
+        val novelMap = snap.novels.associateBy { it.id }
+        val defsByUni = snap.fieldDefinitions.groupBy { it.universeId }
+        measure("summary/완성도 평균 (percentOf×캐릭터)") {
+            snap.characters.mapNotNull { ch ->
+                val novel = ch.novelId?.let { novelMap[it] } ?: return@mapNotNull null
+                com.novelcharacter.app.util.CompletionRate.percentOf(
+                    defsByUni[novel.universeId].orEmpty(), filled[ch.id].orEmpty(), snap.completionWeights)
+            }.average()
+        }
+
+        // computeFieldAnalysis — 접기 도입 전 부위 다섯의 모양
+        measure("fa/이산 분포 (건별 재료화+계수+정렬)") {
+            for (fd in snap.fieldDefinitions) {
+                if (fd.type !in discreteTypes) continue
+                val cfg = cfgs[fd.id] ?: continue
+                if (!cfg.enabled) continue
+                val values = aug[fd.id] ?: continue
+                val toks = tokensByDef[fd.id] ?: continue
+                com.novelcharacter.app.util.ValueDistributions.of(
+                    values.filter { it.value.isNotBlank() }.flatMap { toks[it.value]!! })
+            }
+        }
+        measure("fa/수치 자동구간 (재료화+파싱+구간)") {
+            for (fd in snap.fieldDefinitions) {
+                if (fd.type !in binnableTypes) continue
+                val cfg = cfgs[fd.id] ?: continue
+                if (!cfg.enabled) continue
+                val values = aug[fd.id] ?: continue
+                val raw = values.filter { it.value.isNotBlank() }.map { it.value }
+                val nums = com.novelcharacter.app.util.NumericBinning.numericValuesOf(raw, "", 0)
+                com.novelcharacter.app.util.NumericBinning.autoDistribution(nums)
+            }
+        }
+        measure("fa/BODY 파트 분포 (파싱+bin별 count)") {
+            for (fd in snap.fieldDefinitions) {
+                if (fd.type != "BODY_SIZE") continue
+                val values = aug[fd.id] ?: continue
+                for (part in 0 until 3) {
+                    val nums = values.mapNotNull {
+                        com.novelcharacter.app.util.NumericBinning.partValue(it.value, "-", part) }
+                    val bins = com.novelcharacter.app.util.NumericBinning.autoBins(nums)
+                    for (b in bins) nums.count { b.contains(it) }
+                }
+            }
+        }
+        measure("fa/수치 요약 재파싱 (numericValuesOf 두 벌째)") {
+            for (fd in snap.fieldDefinitions) {
+                if (fd.type !in binnableTypes) continue
+                val cfg = cfgs[fd.id] ?: continue
+                if (!cfg.enabled) continue
+                val values = aug[fd.id] ?: continue
+                com.novelcharacter.app.util.NumericBinning.numericValuesOf(values.map { it.value }, "", 0)
+            }
+        }
+        measure("fa/필드별 완성도 (def×캐릭터 필터)") {
+            snap.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
+                val uniNovels = snap.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
+                val rel = snap.characters.filter { it.novelId in uniNovels }
+                val f = aug[fd.id]?.count { it.value.isNotBlank() } ?: 0
+                Triple(fd.name, f, rel.size)
+            }.sortedBy { it.third }
+        }
+
+        // ── 접힌 집계 프로토타입 — 값 표가 148.5배로 접히므로([6ⓐ]) 집계도 고유 쌍 위에서 돌 수 있다 ──
+        val countsByDef = HashMap<Long, HashMap<String, Int>>()
+        measure("접힘/건수 표 조립 (원문→건수, 전체 def)") {
+            countsByDef.clear()
+            for ((defId, values) in aug) {
+                val m = countsByDef.getOrPut(defId) { HashMap() }
+                for (fv in values) {
+                    if (fv.value.isBlank()) continue
+                    m.merge(fv.value, 1, Int::plus)
+                }
+            }
+        }
+        measure("접힘/TOP5 (고유쌍×건수)") {
+            val counts = HashMap<Pair<String, String>, Int>()
+            for ((defId, byRaw) in countsByDef) {
+                val fd = defById[defId] ?: continue
+                val cfg = cfgs[defId] ?: continue
+                if (!cfg.enabled) continue
+                val toks = tokensByDef[defId] ?: continue
+                for ((raw, n) in byRaw) for (t in toks[raw]!!) counts.merge(Pair(fd.name, t), n, Int::plus)
+            }
+            counts.entries
+                .sortedWith(compareByDescending<Map.Entry<Pair<String, String>, Int>> { it.value }
+                    .thenBy { it.key.first }.thenBy { it.key.second })
+                .take(5)
+        }
+        measure("접힘/이산 분포 (고유쌍×건수)") {
+            for (fd in snap.fieldDefinitions) {
+                if (fd.type !in discreteTypes) continue
+                val cfg = cfgs[fd.id] ?: continue
+                if (!cfg.enabled) continue
+                val byRaw = countsByDef[fd.id] ?: continue
+                val toks = tokensByDef[fd.id] ?: continue
+                val counts = HashMap<String, Int>()
+                for ((raw, n) in byRaw) for (t in toks[raw]!!) counts.merge(t, n, Int::plus)
+                com.novelcharacter.app.util.ValueDistributions.sorted(counts)
+            }
+        }
+    }
 
     println()
     println("### STATS HOTSPOT PROBE 끝")
