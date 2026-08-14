@@ -1351,7 +1351,7 @@ B-141이 `ImagePathMatch.isInside`를 세웠지만 **옛 벌들은 남았고**, 
 내보내기 워크북은 두 구현이다(`ExportWorkbooks` — DOM · 스트리밍). 스트리밍 시트는 창(window)을
 넘긴 행을 디스크로 흘려보내고 **메모리에서 버린다.**
 
-- **데이터 행의 셀 서식은 그 행을 쓴 직후, 같은 반복 안에서 입힌다**(`finishDataRow(row, spec)`).
+- **데이터 행의 셀 서식은 그 행을 쓴 직후, 같은 반복 안에서 입힌다**(`finishDataRow(row, spec, banded)`).
 - **다 쓴 뒤 `sheet.getRow(옛 행)`으로 되돌아가지 않는다.** 시트 수준 서식(열 너비·고정 창·
   자동 필터·유효성 검사)은 마지막에 걸어도 된다 — 셀을 만지지 않기 때문이다.
 - `tools/check_export_row_finish.sh`가 둘 다 본다(마무리를 부르는가 · 되돌아 읽는 자리가 있는가).
