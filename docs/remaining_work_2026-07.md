@@ -7603,8 +7603,17 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > 버전·저장 형식 무변경.** 화면 파일(Fragment·Dialog·ViewModel) 0 — 손댄 프로덕션 파일은
    > `StatsDataProvider.kt` 하나이고, 순수 JVM 시험이 컴파일·실행까지 전부 덮는다.
    >
-   > **⑥ CI: PR에서 자동으로 돈다**(트리거가 `pull_request`이고 md 제외 경로에 .kt·.sh가
-   > 있어 건너뛰기가 성립하지 않는 판이다). **결과는 병합 전 이 자리에 기록한다.**
+   > **⑥ CI: PR에서 자동으로 돌았고 초록이다**(트리거가 `pull_request`이고 md 제외 경로에
+   > .kt가 있어 건너뛰기가 성립하지 않는 판이었다 — 프로덕션 .kt와 시험 .kt에 더해 콜드 검토
+   > 커밋도 프로브 .kt를 만졌다). **PR #300 · run `31763891846`(head `8a30a8f`) — 배지가
+   > 아니라 단계를 봤다:** `Static checks` ✓ 36초 · `Schema harnesses` ✓ ·
+   > **`Run unit tests` ✓ 3분04초** · **`Build Debug APK` ✓ 49초** · `Upload/Commit Room
+   > schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상).
+   > **`Commit Room schemas`가 아무것도 얹지 않았다** — 원격 머리가 `8a30a8f` 그대로인 것을
+   > `git rev-parse`로 실측했고, 그것이 *마이그레이션 없음*의 기계 확인이다.
+   > **CI가 로컬에 더한 것:** `StatsDataProvider`의 실클래스패스 컴파일(로컬 프로브는
+   > `ui/**`를 빼고, 순수 시험은 스텁 위라 스텁 그림자만 못 본다). **새로 잡은 것은 없다.**
+   > 이 기록 커밋은 md만 바꿔 CI를 다시 돌리지 않는다(paths-ignore `**.md`).
    >
    > **다음 세션이 가져갈 한 줄: 이름이 처방을 가리면 갈라 재라 — "진짜 집계"라는 이름 아래
    > 정렬·그룹핑을 의심했지만, 부위로 가르니 몸통은 건별 재료화였고 처방은 정렬 최적화가
