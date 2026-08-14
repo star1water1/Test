@@ -2408,9 +2408,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // B-102 ⓑ: '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가 맞고,
             // 빼놓았으면 가져오기가 이 행을 거부한다. 종전에는 무조건 skipped라 신규 기기
             // 복원 미리보기가 축 전부를 '실행 안 함'으로 예고했다(B-217).
+            // **참조가 통째로 빈 행은 다르다** — 세계관 시트가 만들어 줄 수도 없으므로
+            // 가져오기가 영원히 거부한다. '미해석'과 '참조 부재'를 가른다.
             val universe = universeByCodeOrName(r.universeCode, r.universeName)
             if (universe == null) {
-                if (options.universes) newCount++ else skippedCount++
+                val universeRefPresent = r.universeName.isNotBlank() || r.universeCode.isNotBlank()
+                if (universeRefPresent && options.universes) newCount++ else skippedCount++
                 continue
             }
 
@@ -2465,7 +2468,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (aCode.isBlank() || bCode.isBlank()) {
                 val nameAmbiguous = (r.aCode.isBlank() && (codeByName[r.aName]?.size ?: 0) > 1) ||
                     (r.bCode.isBlank() && (codeByName[r.bName]?.size ?: 0) > 1)
-                if (!nameAmbiguous && options.characters) newCount++ else skippedCount++
+                // 참가자 참조(코드든 이름이든)가 통째로 빈 쪽이 있으면 캐릭터 시트가 만들어
+                // 줄 수도 없다 — 가져오기가 영원히 거부하므로 '신규'가 아니라 skipped다.
+                val bothRefsPresent = (r.aCode.isNotBlank() || r.aName.isNotBlank()) &&
+                    (r.bCode.isNotBlank() || r.bName.isNotBlank())
+                if (!nameAmbiguous && bothRefsPresent && options.characters) newCount++ else skippedCount++
                 continue
             }
             if (aCode == bCode) { skippedCount++; continue }
