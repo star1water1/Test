@@ -99,6 +99,23 @@ object NumericBinning {
         rawValues.mapNotNull { partValue(it, separator, partIndex) }
 
     /**
+     * [numericValuesOf]의 접힌 값 표(원문 → 건수) 쌍둥이 — 판정은 [partValue] 그대로 고유
+     * 원문마다 한 번만 지나고, 건수만큼 싣는다(단일 소스 유지 — B-39의 그 이유).
+     *
+     * 값 원문은 소수 종으로 크게 겹치므로 목록판은 같은 원문을 건수만큼 다시 파싱한다 —
+     * 통계 인사이트가 이 판을 쓴다(S6 5차). 순서는 (원문 첫 등장 → 그 원문의 반복)이라
+     * 목록판과 다를 수 있으나, 소비처(수치 요약·구간 계수)는 전부 다중집합 함수라 답이 같다.
+     */
+    fun numericValuesOf(rawCounts: Map<String, Int>, separator: String, partIndex: Int): List<Float> {
+        val out = ArrayList<Float>()
+        for ((raw, n) in rawCounts) {
+            val v = partValue(raw, separator, partIndex) ?: continue
+            repeat(n) { out.add(v) }
+        }
+        return out
+    }
+
+    /**
      * [values]를 자동 구간에 담아 (구간, 건수)로 돌려준다. 구간을 나눌 수 없으면 빈 목록.
      *
      * 세는 일을 여기 모으는 이유는 **경계 규칙이 한 벌이어야 하기 때문**이다 —

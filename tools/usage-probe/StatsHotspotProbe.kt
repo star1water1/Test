@@ -1,6 +1,9 @@
 // tools/usage-probe/StatsHotspotProbe.kt — S6 2차: 통계 계산 안의 다음 표적을 재서 정한다.
 //   (S6 4차가 [7]을 더했다 — B-215 뒤에 남은 상위 둘(computeFieldAnalysis·computeSummary)을
 //    부위로 갈라 '진짜 집계'의 몫을 재고, 접힌 집계(고유 원문 × 건수)의 상한을 함께 잰다.)
+//   (S6 5차가 [8]을 더했다 — 3-15 뒤에 남은 상위 셋(detectPatterns·computeDataHealth·
+//    computeFieldInsights)을 부위로 가른다. 특히 detectPatterns는 편중 두 자리를 접었는데도
+//    거의 안 움직인 자리라, 그 이름 아래 무엇이 실제로 도는지부터 가른다.)
 //
 // ── 왜 이 프로브가 따로 있는가 ─────────────────────────────────────────────
 // `ScaleProbe.kt`(S1·S6 1차)는 실사용 엑셀 파일을 args[0]로 받는다. 이 세션 환경에는 그
@@ -708,6 +711,287 @@ fun main() {
                 val counts = HashMap<String, Int>()
                 for ((raw, n) in byRaw) for (t in toks[raw]!!) counts.merge(t, n, Int::plus)
                 com.novelcharacter.app.util.ValueDistributions.sorted(counts)
+            }
+        }
+    }
+
+    // ── [8] S6 5차 — 남은 상위 셋의 부위별 분해 (detectPatterns · computeDataHealth · computeFieldInsights) ──
+    // 3-15 말미가 "다음 표적은 다시 재서 정한다"고 남긴 자리다. [7]과 같은 규약 — 재현 형태는
+    // **현행 본문의 모양**이고(무엇이 남았는지 가른다 — [7]이 걷어낸 옛 모양을 든 것과 반대다),
+    // 토큰 표·접힌 표는 선조립해 리플렉션·파싱이 측정 루프 밖에 있게 했다.
+    // '접힘/'·'선계수/' 행은 처방 후보의 산술이다: 같은 답을 이미 있는 표 위에서 내면 얼마인가.
+    // ⚠️ 합성 모델에는 형제 병합 그룹이 없다(키가 세계관마다 고유) — 그룹 접기의 병합 이득은
+    //    여기서 0으로 재지고, 작품 간 필드 편중 비교(fieldDefs.size >= 2)는 본문이 돌지 않는다.
+    println()
+    println("[8] S6 5차 — 남은 상위 셋 부위별 분해 (채움 ×30 · 파싱 메모 적중 상태)")
+    run {
+        val snap = fill30
+        val cfgs = configsFor(snap, p)
+        val defById = snap.fieldDefinitions.associateBy { it.id }
+        @Suppress("UNCHECKED_CAST")
+        val aug = augM.invoke(p, snap) as Map<Long, List<CharacterFieldValue>>
+        @Suppress("UNCHECKED_CAST")
+        val folded = cls.getDeclaredMethod("valueCountsOf", StatsSnapshot::class.java)
+            .apply { isAccessible = true }.invoke(p, snap) as Map<Long, Map<String, Int>>
+        val filledM = helper("filledCharacterDefIds")
+        @Suppress("UNCHECKED_CAST")
+        val filled = filledM.invoke(p, snap) as Map<Long, Set<Long>>
+        // 토큰 표 선조립 — [7]과 같다. 측정 루프는 맵 조회만 한다.
+        val tokensByDef = HashMap<Long, HashMap<String, List<String>>>()
+        for ((defId, values) in aug) {
+            val fd = defById[defId] ?: continue
+            val cfg = cfgs[defId] ?: continue
+            if (!cfg.enabled) continue
+            val m = tokensByDef.getOrPut(defId) { HashMap() }
+            for (fv in values) {
+                if (fv.value.isBlank() || fv.value in m) continue
+                @Suppress("UNCHECKED_CAST")
+                m[fv.value] = gfv.invoke(p, snap, fd, fv.value, cfg) as List<String>
+            }
+        }
+        fun measure(label: String, body: () -> Any?) {
+            val t = timeMs(1, 5) { body() }
+            val a = allocatedBytes { body() }
+            println("  %-46s %5dms %10s".format(label, t, mb(a)))
+        }
+        // 캐릭터 축 필드 그룹 — detectFieldPatterns·computeFieldInsights가 같은 (key,type) 그룹을 쓴다
+        val groups = snap.fieldDefinitions.filter { cfgs[it.id]?.enabled == true }
+            .groupBy { Pair(it.key, it.type) }.values.toList()
+
+        // ── detectPatterns 부위 (캐릭터 축이 압도 — 사건·작품 축 정의 0은 [0]이 말한다) ──
+        //
+        // ⚠️ 부위 행의 **시간은 더해서 읽지 말 것** — 고립 측정은 캐시 지역성이 실호출과 달라
+        // 합이 실호출을 넘게 부풀 수 있다(이 판 실측: 부위 합 133ms vs 실호출 31ms).
+        // **할당은 결정적이라 부위 배분이 그대로 선다.** 시간 판단은 아래 '모양 짝'
+        // (현행 모양 전체 재현 vs 처방 모양 전체 재현 — 같은 고립 조건)으로 한다.
+        measure("dp/그룹 재료화 (flatMap 값 행 사본)") {
+            for (fieldDefs in groups) fieldDefs.flatMap { aug[it.id].orEmpty() }
+        }
+        val rowsByGroup = groups.map { fieldDefs -> fieldDefs.flatMap { aug[it.id].orEmpty() } }
+        measure("dp/지역 접기 (행별 원문 해싱→countsByRaw)") {
+            for (rows in rowsByGroup) {
+                val countsByRaw = LinkedHashMap<String, Int>()
+                for (v in rows) countsByRaw.merge(v.value, 1) { a, b -> a + b }
+            }
+        }
+        val countsByGroup = rowsByGroup.map { rows ->
+            val m = LinkedHashMap<String, Int>()
+            for (v in rows) m.merge(v.value, 1) { a, b -> a + b }
+            m
+        }
+        measure("dp/키 접기+정렬+합 (접힌 표 위)") {
+            for (i in groups.indices) {
+                val toks = tokensByDef[groups[i].first().id] ?: continue
+                val out = LinkedHashMap<String, Int>()
+                for ((raw, n) in countsByGroup[i]) for (k in toks[raw]!!) out.merge(k, n) { a, b -> a + b }
+                com.novelcharacter.app.util.ValueDistributions.sorted(out)
+                out.values.sum()
+            }
+        }
+        measure("dp/모집단 (행별 ownerId HashSet)") {
+            for (rows in rowsByGroup) rows.mapTo(HashSet()) { it.characterId }.size
+        }
+        measure("dp/나머지 (사건 연대·공백+작품 비교+세력)") {
+            if (snap.events.size >= 5) {
+                snap.events.groupBy { (it.year / 10) * 10 }.maxByOrNull { it.value.size }
+                snap.events.map { it.year }.sorted().zipWithNext().filter { it.second - it.first > 100 }
+            }
+            val charByNovel = snap.characters.groupBy { it.novelId }
+            charByNovel.mapNotNull { (nid, chars) ->
+                val novel = snap.novels.find { it.id == nid } ?: return@mapNotNull null
+                Triple(novel.title, chars.size, nid)
+            }.sortedByDescending { it.second }
+            val active = com.novelcharacter.app.util.FactionStanding.current(snap.factionMemberships)
+            val memberCounts = active.groupBy { it.factionId }.mapValues { it.value.size }
+            snap.factions.filter { (memberCounts[it.id] ?: 0) == 0 }
+            active.map { it.characterId }.toSet()
+        }
+        // ── 모양 짝: 캐릭터 축 한 그룹 루프의 현행 모양 vs 처방 모양 (같은 고립 조건) ──
+        measure("dp쌍A/캐릭터 축 현행 모양 (재료화+지역 접기+키+모집단)") {
+            for (fieldDefs in groups) {
+                val rows = fieldDefs.flatMap { aug[it.id].orEmpty() }
+                if (rows.isEmpty()) continue
+                val toks = tokensByDef[fieldDefs.first().id] ?: continue
+                val countsByRaw = LinkedHashMap<String, Int>()
+                for (v in rows) countsByRaw.merge(v.value, 1) { a, b -> a + b }
+                val out = LinkedHashMap<String, Int>()
+                for ((raw, n) in countsByRaw) for (k in toks[raw]!!) out.merge(k, n) { a, b -> a + b }
+                if (out.isEmpty()) continue
+                com.novelcharacter.app.util.ValueDistributions.sorted(out)
+                out.values.sum()
+                rows.mapTo(HashSet()) { it.characterId }.size
+            }
+        }
+        measure("dp쌍B/처방 모양 (valueCounts 병합+def별 모집단 합)") {
+            // 모집단 선계수 — def별 고유 owner 수(값 표 순회 1회, 스냅샷당 한 번이면 접힌다)
+            val ownersByDef = HashMap<Long, Int>()
+            val seen = HashSet<Long>()
+            for ((defId, values) in aug) {
+                seen.clear()
+                for (fv in values) seen.add(fv.characterId)
+                ownersByDef[defId] = seen.size
+            }
+            for (fieldDefs in groups) {
+                val countsByRaw: Map<String, Int> = if (fieldDefs.size == 1)
+                    folded[fieldDefs[0].id].orEmpty()
+                else {
+                    val m = LinkedHashMap<String, Int>()
+                    for (d in fieldDefs) for ((raw, n) in folded[d.id].orEmpty()) m.merge(raw, n) { a, b -> a + b }
+                    m
+                }
+                if (countsByRaw.isEmpty()) continue
+                val toks = tokensByDef[fieldDefs.first().id] ?: continue
+                val out = LinkedHashMap<String, Int>()
+                for ((raw, n) in countsByRaw) for (k in toks[raw]!!) out.merge(k, n) { a, b -> a + b }
+                if (out.isEmpty()) continue
+                com.novelcharacter.app.util.ValueDistributions.sorted(out)
+                out.values.sum()
+                // 단일 def 그룹은 def 계수가 곧 그룹 모집단 — 다중이면 owner 집합 합집합이 필요해
+                // 행 순회로 돌아간다(합성 모델에는 그 그룹이 없다 — 위 ⚠️)
+                if (fieldDefs.size == 1) ownersByDef[fieldDefs[0].id]
+                else fieldDefs.flatMap { aug[it.id].orEmpty() }.mapTo(HashSet()) { it.characterId }.size
+            }
+        }
+        measure("dp/합계 대조 (detectPatterns 실호출)") { p.detectPatterns(snap) }
+
+        // ── computeDataHealth 부위 ──
+        measure("dh/타입 전수 (행별 defById+reasonFor)") {
+            val ownerNames = snap.characters.associate { it.id to it.name }
+            val found = mutableListOf<Triple<String, String, Any>>()
+            for (row in snap.fieldValues) {
+                val def = defById[row.fieldDefinitionId] ?: continue
+                val reason = com.novelcharacter.app.util.FieldValueTypeMismatch.reasonFor(def, row.value)
+                    ?: continue
+                found.add(Triple(ownerNames[row.characterId] ?: "#${row.characterId}", def.name, reason))
+            }
+            found.sortedWith(compareBy({ it.first }, { it.second }))
+        }
+        // 처방 산술 — 판정은 (def, 원문)의 순수 함수라 고유쌍 위에서 먼저 내고, 행은 걸린 def만 지난다
+        measure("접힘/dh 타입 판정+수집 (고유쌍 판정→행 조회)") {
+            val mism = HashMap<Long, HashMap<String, Any>>()
+            for ((defId, byRaw) in folded) {
+                val def = defById[defId] ?: continue
+                var m: HashMap<String, Any>? = null
+                for (raw in byRaw.keys) {
+                    val r = com.novelcharacter.app.util.FieldValueTypeMismatch.reasonFor(def, raw) ?: continue
+                    (m ?: HashMap<String, Any>().also { m = it; mism[defId] = it })[raw] = r
+                }
+            }
+            val ownerNames = snap.characters.associate { it.id to it.name }
+            val found = mutableListOf<Triple<String, String, Any>>()
+            for (row in snap.fieldValues) {
+                val byRaw = mism[row.fieldDefinitionId] ?: continue
+                val r = byRaw[row.value] ?: continue
+                found.add(Triple(ownerNames[row.characterId] ?: "#${row.characterId}",
+                    defById[row.fieldDefinitionId]!!.name, r))
+            }
+            found.sortedWith(compareBy({ it.first }, { it.second }))
+        }
+        measure("dh/이름 목록 6종+관계·사건 집합") {
+            snap.characters.filter { it.imagePaths.isBlank() || it.imagePaths == "[]" }.map { it.name }
+            val relCharIds = snap.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
+            snap.characters.filter { it.id !in relCharIds }.map { it.name }
+            val eventCharIds = snap.crossRefs.map { it.characterId }.toSet()
+            snap.characters.filter { it.id !in eventCharIds }.map { it.name }
+            snap.characters.filter { it.memo.isBlank() }.map { it.name }
+            snap.characters.filter { it.anotherName.isBlank() }.map { it.name }
+            snap.characters.filter { it.novelId == null }.map { it.name }
+            snap.tags.groupBy { it.tag.lowercase().trim() }.filter { it.value.size > 1 }
+                .flatMap { it.value.map { t -> t.tag }.distinct() }
+            snap.relationships.count { it.description.isBlank() }
+            snap.events.count { it.month == null }
+        }
+        val novelMap8 = snap.novels.associateBy { it.id }
+        val defsByUni8 = snap.fieldDefinitions.groupBy { it.universeId }
+        measure("dh/미완성 (percentOf×캐릭터)") {
+            snap.characters.mapNotNull { char ->
+                val fields = char.novelId?.let { novelMap8[it] }?.let { defsByUni8[it.universeId] }
+                    ?: return@mapNotNull null
+                val rate = com.novelcharacter.app.util.CompletionRate.percentOf(
+                    fields, filled[char.id].orEmpty(), snap.completionWeights) ?: return@mapNotNull null
+                if (rate < 50f) char.name to rate else null
+            }
+        }
+        measure("dh/그룹 완성도 (char×그룹 groupBy+percentOf)") {
+            val groupRates = mutableMapOf<String, MutableList<Float>>()
+            snap.characters.forEach { char ->
+                val fields = char.novelId?.let { novelMap8[it] }?.let { defsByUni8[it.universeId] }
+                    ?: return@forEach
+                val f = filled[char.id].orEmpty()
+                fields.groupBy { it.groupName }.forEach { (group, groupFields) ->
+                    val rate = com.novelcharacter.app.util.CompletionRate.percentOf(
+                        groupFields, f, snap.completionWeights) ?: return@forEach
+                    groupRates.getOrPut(group) { mutableListOf() }.add(rate)
+                }
+            }
+            groupRates.mapValues { (_, rates) -> if (rates.isEmpty()) 0f else rates.average().toFloat() }
+        }
+        // 처방 산술 — 그룹 분해는 (세계관, 그룹)의 순수 함수라 캐릭터마다 다시 짓지 않는다
+        measure("선계수/dh 그룹 완성도 (세계관별 선분해)") {
+            val grouped = defsByUni8.mapValues { (_, fds) -> fds.groupBy { it.groupName } }
+            val groupRates = mutableMapOf<String, MutableList<Float>>()
+            snap.characters.forEach { char ->
+                val byGroup = char.novelId?.let { novelMap8[it] }?.let { grouped[it.universeId] }
+                    ?: return@forEach
+                val f = filled[char.id].orEmpty()
+                byGroup.forEach { (group, groupFields) ->
+                    val rate = com.novelcharacter.app.util.CompletionRate.percentOf(
+                        groupFields, f, snap.completionWeights) ?: return@forEach
+                    groupRates.getOrPut(group) { mutableListOf() }.add(rate)
+                }
+            }
+            groupRates.mapValues { (_, rates) -> if (rates.isEmpty()) 0f else rates.average().toFloat() }
+        }
+        measure("dh/합계 대조 (computeDataHealth 실호출)") { p.computeDataHealth(snap) }
+
+        // ── computeFieldInsights 부위 ──
+        measure("fi/재료화 (그룹 flatMap+map 문자열 목록)") {
+            for (fieldDefs in groups) fieldDefs.flatMap { aug[it.id].orEmpty() }.map { it.value }
+        }
+        val stringsByGroup = groups.map { fieldDefs ->
+            fieldDefs.flatMap { aug[it.id].orEmpty() }.map { it.value }
+        }
+        measure("fi/분포 조립 (행별 접기+키 접기+정렬)") {
+            for (i in groups.indices) {
+                val toks = tokensByDef[groups[i].first().id] ?: continue
+                val countsByRaw = LinkedHashMap<String, Int>()
+                for (v in stringsByGroup[i]) countsByRaw.merge(v, 1) { a, b -> a + b }
+                val out = LinkedHashMap<String, Int>()
+                for ((raw, n) in countsByRaw) for (k in toks[raw]!!) out.merge(k, n) { a, b -> a + b }
+                com.novelcharacter.app.util.ValueDistributions.sorted(out)
+            }
+        }
+        measure("fi/모수 (그룹별 novels.filter+chars.count)") {
+            for (fieldDefs in groups) {
+                val universeIds = fieldDefs.map { it.universeId }.toSet()
+                val relevantNovelIds = snap.novels.filter { it.universeId in universeIds }
+                    .map { it.id }.toSet()
+                snap.characters.count { it.novelId in relevantNovelIds }
+            }
+        }
+        measure("fi/합계 대조 (computeFieldInsights 실호출)") { p.computeFieldInsights(snap) }
+        // 처방 산술 — 분포는 접힌 표 병합 위에서, 모수는 세계관별 선계수로
+        measure("접힘+선계수/fi (접힌 분포+선계수 모수)") {
+            val charCountByNovel = HashMap<Long, Int>()
+            for (c in snap.characters) c.novelId?.let { charCountByNovel.merge(it, 1, Int::plus) }
+            val charCountByUniverse = HashMap<Long, Int>()
+            for (n in snap.novels) n.universeId?.let {
+                charCountByUniverse.merge(it, charCountByNovel[n.id] ?: 0, Int::plus)
+            }
+            for (fieldDefs in groups) {
+                val fd = fieldDefs.first()
+                val toks = tokensByDef[fd.id] ?: continue
+                val countsByRaw: Map<String, Int> = if (fieldDefs.size == 1) folded[fd.id].orEmpty()
+                else {
+                    val m = LinkedHashMap<String, Int>()
+                    for (d in fieldDefs) for ((raw, n) in folded[d.id].orEmpty()) m.merge(raw, n) { a, b -> a + b }
+                    m
+                }
+                val out = LinkedHashMap<String, Int>()
+                for ((raw, n) in countsByRaw) for (k in toks[raw]!!) out.merge(k, n) { a, b -> a + b }
+                com.novelcharacter.app.util.ValueDistributions.sorted(out)
+                var total = 0
+                for (u in fieldDefs.mapTo(HashSet()) { it.universeId }) total += charCountByUniverse[u] ?: 0
             }
         }
     }

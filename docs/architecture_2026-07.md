@@ -320,7 +320,10 @@ async로 동시에 돌리므로, 스냅샷만 받는 헬퍼를 캐시 밖에 두
 **값 분포·계수는 건별이 아니라 접힌 표 위에서 센다**(S6 4차 — `valueCountsOf`(def별
 원문→건수) + `foldStatsKeyCounts`. 파싱 def·config는 호출부가 정하므로 R-15 그룹 파싱과
 그대로 겹쳐 쓴다. 값 행마다 `getFieldValues`를 다시 부르는 계수 루프를 새로 적으면
-그 소비처만 건별 비용으로 돌아간다 — 대조는 `StatsFoldParityTest`, 실측·경위는 3-15).
+그 소비처만 건별 비용으로 돌아간다 — S6 5차가 패턴·인사이트·타입 판정까지 같은 표로
+옮겼고, (key,type) 그룹은 `mergedRawCounts`로 병합한다(단일 def 그룹은 공유 표 **그
+객체**를 받으므로 역시 읽기만 한다). 대조는 `StatsFoldParityTest`·`StatsScanParityTest`,
+실측·경위는 3-15·3-16).
 
 ### 5-4. 새 왕복 포맷
 
