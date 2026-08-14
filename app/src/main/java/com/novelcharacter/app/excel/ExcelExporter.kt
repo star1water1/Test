@@ -70,7 +70,8 @@ class ExcelExporter(context: Context) {
     /** 셀 한도 초과 텍스트를 잘라 기록한다 — 값 하나 때문에 전체 내보내기가 실패(POI 예외)하지 않도록. */
     private fun org.apache.poi.ss.usermodel.Cell.setTextSafe(value: String) {
         if (value.length > XLSX_CELL_LIMIT) {
-            setCellValue(value.take(XLSX_CELL_LIMIT))
+            // 경계 처리는 truncateForCell(단일 소스)이 든다 — 서러게이트 쌍을 반쪽 내지 않는다.
+            setCellValue(truncateForCell(value, XLSX_CELL_LIMIT))
             truncatedCellCount++
         } else {
             setCellValue(value)
@@ -194,7 +195,7 @@ class ExcelExporter(context: Context) {
                 var exportedRows = 0
                 for (i in 0 until workbook.numberOfSheets) {
                     val s = workbook.getSheetAt(i)
-                    if (s.sheetName == "사용 안내") continue
+                    if (s.sheetName == GUIDE_SHEET_NAME) continue
                     exportedSheets++
                     exportedRows += maxOf(0, s.physicalNumberOfRows - 1)
                 }
@@ -545,7 +546,8 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("색상 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "■ 파란 헤더 = 편집 가능한 일반 컬럼"),
-            GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
+            GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 대개 해당 행을 읽지 않습니다)"),
+            GuideLine("", styles.guideBody, "  예외: '필드 정의'·'필드 데이터'·'캐릭터 필드값' 시트의 세계관 칸은 비우면 전역(모든 세계관 공통) 필드를 뜻합니다."),
             GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 앱이 채우는 열 (그대로 두세요 — 예외는 아래 '코드 컬럼 안내')"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
@@ -598,11 +600,16 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
             GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
             GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
-            GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
+            GuideLine("", styles.guideBody, "• 이름 은행: 코드로 매칭합니다(이름·성별을 고쳐도 같은 항목으로 인식). 코드가 없으면 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, "• 이미지: '태그'와 '링크그룹' 열을 직접 편집할 수 있습니다 (파일명은 앱이 채우는 열입니다)"),
             GuideLine("", styles.guideBody, "  링크그룹은 같은 문자열을 적은 행끼리 한 묶음이 됩니다 — 아무 이름이나 써도 되고, 두 장 이상일 때만 묶입니다"),
             GuideLine("", styles.guideBody, "  칸을 비우면 그 이미지의 링크가 풀립니다. 'char:'로 시작하는 값은 캐릭터 자동 링크라"),
             GuideLine("", styles.guideBody, "  가져온 뒤 현재 배정 기준으로 다시 계산됩니다 (직접 적을 필요가 없습니다)"),
+            GuideLine("", styles.guideBody, "  '뗀날짜' 칸을 비우면 뗀 이미지 서랍에서 꺼냅니다(뗀 적 없음이 됩니다). '뗀곳'은 앱이 채우는 열입니다"),
+            GuideLine("", styles.guideBody, "• 대결 기록: 승자 칸은 참가자 이름(또는 코드)입니다. 비우거나 '${DuelSheetLabels.WINNER_DRAW}'이라 적으면 무승부입니다"),
+            GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
+            GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
+            GuideLine("", styles.guideBody, "  종류는 '${DuelSheetLabels.KIND_COUNTER}'/'${DuelSheetLabels.KIND_UNDECIDED}' 중 하나입니다"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("필드 정의 — 타입별 설정 가이드", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "설정(JSON) 컬럼에 아래 형식으로 입력하세요. 비워두면 기본값이 적용됩니다."),
@@ -1965,8 +1972,14 @@ class ExcelExporter(context: Context) {
                 row.createCell(5).setTextSafe(match.bCode)
                 // 승자 이름을 못 찾으면 **코드를 그대로 적는다** — 비우면 무승부로 되읽혀
                 // 사용자가 고른 승패가 왕복 한 번에 사라진다(개발 의도 4번).
+                // 두 참가자의 표시 이름이 같은 판(동명이인 대결)은 승자를 **코드로** 적는다 —
+                // 이름을 적으면 가져오기가 어느 쪽인지 정할 수 없고(모호 거부), first-match로
+                // 고르면 무편집 왕복만으로 승패가 뒤집힌다(가져오기는 코드를 먼저 받는다).
+                val sameName = nameByCode[match.aCode] != null &&
+                    nameByCode[match.aCode] == nameByCode[match.bCode]
                 row.createCell(6).setTextSafe(
-                    match.winnerCode?.let { nameByCode[it] ?: it } ?: DuelSheetLabels.WINNER_DRAW
+                    match.winnerCode?.let { w -> if (sameName) w else nameByCode[w] ?: w }
+                        ?: DuelSheetLabels.WINNER_DRAW
                 )
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())

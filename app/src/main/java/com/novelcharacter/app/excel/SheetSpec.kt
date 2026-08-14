@@ -328,6 +328,18 @@ fun sheetBooleanOrKeep(columnPresent: Boolean, cellText: String): Boolean? =
  */
 const val EXCEL_CELL_TEXT_LIMIT = 32767
 
+/**
+ * [limit] 한도로 자른다 — **서러게이트 쌍 경계를 지킨다** (순수 함수 — 단위 테스트 대상).
+ * `String.take`는 UTF-16 유닛 단위라 한도 경계에 보충 평면 문자(이모지 등)가 걸리면 짝 잃은
+ * 반쪽 서러게이트가 마지막 글자로 남는다. 한도 안이면 원문 그대로다 — 내보내기 절단과
+ * 가져오기 저장 한도가 같은 함수를 써야 경계 처리도 함께 움직인다.
+ */
+fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String {
+    if (value.length <= limit) return value
+    val cut = value.take(limit)
+    return if (cut.isNotEmpty() && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
+}
+
 // ── Sheet Spec factories ──
 
 fun universeSpec() = SheetSpec(

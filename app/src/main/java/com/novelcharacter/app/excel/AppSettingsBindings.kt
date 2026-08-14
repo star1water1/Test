@@ -76,8 +76,11 @@ object AppSettingsBindings {
         Binding(AppSettingsKeys.THEME_MODE,
             read = { num(ThemeHelper.getSavedTheme(it)) },
             write = { ctx, v ->
-                ThemeHelper.saveTheme(ctx, (intOf(v) ?: 0).coerceIn(0, 2))
-                Applied.Yes
+                // 해석 불가한 값(빈칸·글자)을 0(시스템 기본)으로 조용히 적용하면, 사용자가 적은
+                // 것과 다른 값이 들어갔는데 '적용됨'으로 계수된다 — 형제 숫자 바인딩과 같은
+                // 거절-유지 꼴로 통일한다(이 파일 KDoc의 계약: 뜻을 알 수 없는 값은 기존 유지 + 사유).
+                intOf(v)?.let { ThemeHelper.saveTheme(ctx, it.coerceIn(0, 2)); Applied.Yes }
+                    ?: Applied.No("숫자가 아닙니다 (0=시스템, 1=라이트, 2=다크)")
             }),
         // 읽기 화면의 필드 설명 ⓘ (B-44) — 불리언 셀은 Y/예/1/TRUE를 관대하게 받는다.
         Binding(AppSettingsKeys.READ_FIELD_NOTE_ENABLED,

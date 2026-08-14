@@ -82,12 +82,16 @@ class AutoBackupWorker(
             ExportWorkbooks.useTempDirectory(appContext.cacheDir)
             val workbook = ExportWorkbooks.create(streaming = true)
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
+            val truncatedCells: Int
             try {
                 // 공유·저장 내보내기와 동일한 단일 소스(ExcelExporter)를 재사용한다.
                 // 별도 export 로직을 두면 포맷이 드리프트(세력관계 시트·사건 코드·커스텀 필드·
                 // 관련캐릭터코드 누락, 32,767자 미가드)하여 복원 시 데이터가 유실되므로,
                 // 자동 백업도 반드시 이 경로로 워크북을 생성한다. (엑셀 왕복 무결성)
-                ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions(), progress)
+                // 반환값(잘린 셀 수)을 버리지 않는다 — 수동 내보내기는 토스트·이력으로 알리는데
+                // 마지막 방어선인 자동 백업만 무기록이면, 그 백업만 믿고 복원했을 때 잘린
+                // 데이터가 무음으로 확정된다.
+                truncatedCells = ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions(), progress)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
                 imageReport = saveEncryptedBackup(workbook, settings.includeImages, progress)
@@ -112,13 +116,19 @@ class AutoBackupWorker(
                     imageReport.referencedCount, imageReport.includedCount, imageReport.excludedCount
                 )
             } else null
-            statusStore.recordSuccess(imageWarning)
+            // 잘림도 같은 경로로 남긴다 — 수동 내보내기의 export_cells_truncated와 같은 문구.
+            val truncationWarning = if (truncatedCells > 0) {
+                appContext.getString(com.novelcharacter.app.R.string.export_cells_truncated, truncatedCells)
+            } else null
+            val backupWarning = listOfNotNull(imageWarning, truncationWarning)
+                .joinToString("\n").ifBlank { null }
+            statusStore.recordSuccess(backupWarning)
             Log.i(TAG, "Auto backup completed successfully")
             logResult(com.novelcharacter.app.util.OpResult.success(
                 com.novelcharacter.app.util.OpResult.CAT_BACKUP,
                 appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_success)
                     + (imageWarning?.let { " — $it" } ?: ""),
-                imageWarning
+                backupWarning
             ))
             Result.success()
         } catch (e: Exception) {
