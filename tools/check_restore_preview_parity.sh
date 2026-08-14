@@ -118,7 +118,10 @@ import re, sys
 lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
 INC = re.compile(r'result\.updated[A-Za-z0-9_]*\+\+')
 # 게이트로 인정하는 모양: 같은 줄이나 위쪽 가까이에 `X != Y` 비교가 있는 것.
-GATE = re.compile(r'!=\s*(existing[A-Za-z0-9_]*|current)\b|\b(merged|kept|saved|updated|candidate|target)\s*!=')
+# `*CountedUnchanged.remove(`도 게이트다(B-217) — 이미지 연동처럼 지연 해석되는 축은 병합
+# 시점에 변경 여부를 알 수 없어, 병합이 '동일'로 센 행을 집합에 두고 **순효과가 실제로
+# 바뀌었을 때만** remove 성공 갈래에서 '갱신'으로 승격한다. remove가 곧 그 변경 판정이다.
+GATE = re.compile(r'!=\s*(existing[A-Za-z0-9_]*|current)\b|\b(merged|kept|saved|updated|candidate|target)\s*!=|\b\w*CountedUnchanged\.remove\(')
 bad = []
 for i, line in enumerate(lines):
     code = line.split('//')[0]
@@ -135,6 +138,41 @@ PY3
 )
 tcount=$(printf '%s\n' "$TALLY" | sed -n 's/^__TCOUNT__//p')
 tbody=$(printf '%s\n' "$TALLY" | grep -v '^__TCOUNT__' || true)
+
+# ── ④ 미리보기의 시트 조회가 가져오기와 같은 판정을 지나는가 (B-217) ──
+# analyze*가 `workbook.getSheet(정확명)`으로 시트를 직접 찾으면 findSheet의 판정(캐릭터 시트
+# 지문 배제 · 접미사 복구 · 헤더 불일치 폴백 — SheetResolver)을 통째로 우회한다. 예약명을
+# 빼앗긴 레거시 백업에서 가져오기는 밀린 시트를 되찾아 읽는데 미리보기는 "시트 없음"이라
+# 말하고, 이름을 차지한 캐릭터 시트를 데이터 시트로 읽어 엉뚱한 건수를 예고하는 것이 그
+# 모양이다. 실제로 열아홉 자리가 이렇게 서 있었고 이 그물의 ①~③은 전부 놓쳤다(감사 실측).
+# 미리보기의 시트 조회는 sheetForAnalysis(= SheetResolver.sheetForRead)를 지나야 한다.
+SHEETS=$(python3 - "$TARGET" <<'PY4'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*)\s*\(')
+BAD = re.compile(r'\bworkbook\.getSheet\(')
+found = []
+i = 0
+while i < len(lines):
+    m = DECL.match(lines[i])
+    if not m:
+        i += 1
+        continue
+    fn = m.group(1)
+    j = i + 1
+    while j < len(lines) and lines[j] != '    }':
+        code = lines[j].split('//')[0]
+        if BAD.search(code):
+            found.append((j + 1, fn, lines[j].strip()))
+        j += 1
+    i = j + 1
+for ln, fn, text in found:
+    print(f"{ln}\t{fn}\t{text}")
+print(f"__SCOUNT__{len(found)}")
+PY4
+)
+scount=$(printf '%s\n' "$SHEETS" | sed -n 's/^__SCOUNT__//p')
+sbody=$(printf '%s\n' "$SHEETS" | grep -v '^__SCOUNT__' || true)
 
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
@@ -185,8 +223,23 @@ if [ "${tcount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${scount:-0}" -gt 0 ]; then
+  echo "  ✗ analyze*가 workbook.getSheet(정확명)로 시트 판정을 우회합니다 (${scount}건)"
+  echo
+  printf '%s\n' "$sbody" | while IFS=$'\t' read -r ln fn text; do
+    [ -z "${ln:-}" ] && continue
+    echo "    ExcelImportService.kt:$ln  ($fn)"
+    echo "      $text"
+  done
+  echo
+  echo "  미리보기의 시트 조회는 sheetForAnalysis(= SheetResolver.sheetForRead)를 지나야"
+  echo "  가져오기(findSheet)와 같은 시트를 봅니다 — 캐릭터 시트 지문 배제·접미사 복구 포함."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
+echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
 echo
 echo "복원 미리보기 정합 검사 통과"
