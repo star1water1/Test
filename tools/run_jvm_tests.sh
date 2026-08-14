@@ -83,6 +83,7 @@ $MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
+$MAIN/excel/SheetResolver.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
 $MAIN/util/ProgressScale.kt
@@ -435,6 +436,7 @@ $TEST/util/NameBankMatchTest.kt
 $TEST/util/NameBankPickOrderTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
+$TEST/excel/SheetResolverTest.kt
 $TEST/util/ResetPlanTest.kt
 $TEST/util/MembershipTimelineTest.kt
 $TEST/util/TimelineDisplayOrderTest.kt
