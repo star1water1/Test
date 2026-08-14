@@ -107,4 +107,40 @@ class SheetValueConventionsTest {
         assertEquals(SearchPreset.SORT_MODES, sortModeColumn.dropdownOptions)
         assertTrue(SearchPreset.SORT_RELEVANCE in SearchPreset.SORT_MODES)
     }
+
+    // ── 셀 절단: 한도 경계에서 서러게이트 쌍을 반쪽 내지 않는다 ──
+
+    @Test
+    fun truncateForCell_underLimitIsUntouched() {
+        assertEquals("짧은 값", truncateForCell("짧은 값"))
+        val exactly = "a".repeat(EXCEL_CELL_TEXT_LIMIT)
+        assertEquals(exactly, truncateForCell(exactly))
+    }
+
+    @Test
+    fun truncateForCell_cutsAtLimit() {
+        val over = "a".repeat(EXCEL_CELL_TEXT_LIMIT + 10)
+        assertEquals(EXCEL_CELL_TEXT_LIMIT, truncateForCell(over).length)
+    }
+
+    @Test
+    fun truncateForCell_doesNotSplitSurrogatePair() {
+        // 한도 경계 바로 앞에 보충 평면 문자(😀 = 서러게이트 쌍 2유닛)를 놓는다 —
+        // String.take라면 상위 서러게이트만 남아 짝 잃은 반쪽이 마지막 글자가 된다.
+        val limit = 10
+        val value = "a".repeat(limit - 1) + "😀" + "뒤"   // 잘림 지점이 쌍의 한가운데
+        val cut = truncateForCell(value, limit)
+        assertEquals("반쪽 서러게이트를 떨궈 한 글자 짧아야 한다", limit - 1, cut.length)
+        assertFalse("마지막 글자가 짝 잃은 상위 서러게이트면 안 된다", cut.isNotEmpty() && cut.last().isHighSurrogate())
+    }
+
+    @Test
+    fun truncateForCell_pairInsideLimitSurvives() {
+        // 쌍이 한도 안에 온전히 들어가면 그대로 산다.
+        val limit = 10
+        val value = "😀" + "a".repeat(limit)              // 쌍(2) + a×10 = 12유닛
+        val cut = truncateForCell(value, limit)
+        assertEquals(limit, cut.length)
+        assertTrue(cut.startsWith("😀"))
+    }
 }

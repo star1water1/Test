@@ -1161,6 +1161,11 @@ class ExcelImporter(context: Context) {
             // 어느 갈래로 빠져나가든 진행 창은 닫힌다 — 위 catch들이 이미 닫았어도 무해하다.
             withContext(kotlinx.coroutines.NonCancellable) { dismissTaskProgress(stageProgress) }
             try { opened?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
+            // 실패·OOM으로 빠져나가면 ZIP 회차가 세어 둔 이미지 복원 실패 수가 남아, 다음
+            // 가져오기(이미지와 무관한 xlsx 포함)의 성공 결과에 지난 회차의 "N개 이미지 복원
+            // 실패" **거짓 경고**가 붙는다 — 계수를 가져오기 한 번의 수명으로 좁힌다.
+            // (성공 갈래는 소비 직후 이미 0이라 이 대입은 무해하다.)
+            pendingImageFailures = 0
         }
     }
 

@@ -57,18 +57,24 @@ object FieldConfigColumns {
 
     /**
      * 내보내기용: JSON 셀에 싣기 전에 전용 열로 나가는 키들을 **문자열 사본에서** 제거한다
-     * (AI추천 · 필드설명 · 등급체계 참조 — 재정의 `gradeOverrides`와 실효 표 `grades`는
-     * 전용 열이 없으므로 JSON에 남는다).
+     * (AI추천 · 필드설명 · 등급체계 참조 · 기본 필드 연결 — 재정의 `gradeOverrides`와 실효 표
+     * `grades`는 전용 열이 없으므로 JSON에 남는다).
      *
      * DB의 config 원본은 절대 건드리지 않는다 — 월드패키지(`.ncworld`)는 FieldDefinition 객체를
      * 통째 직렬화하므로 원본을 고치면 그쪽 왕복이 함께 빈다(설계 4-5의 조건).
      * 손상 JSON은 원문 그대로 내보낸다(여기서 고치려 들면 다른 키까지 파괴한다).
+     *
+     * 기본 필드 연결(`DefaultFieldRef`)을 여기 더한 근거: 전용 열('기본필드코드')이 생긴 뒤에도
+     * JSON에 키가 남아 **같은 사실이 파일에 두 벌** 실렸고, 가져오기는 열을 우선하므로 JSON 쪽을
+     * 고친 편집이 소리 없이 무시됐다. 열을 지운 구버전·손수 파일은 가져오기의 KEEP 갈래
+     * (JSON 표식 → 기존 DB 값 폴백)가 그대로 받으므로 하위 호환은 깨지지 않는다.
      */
     fun stripPortableKeys(configJson: String): String = try {
         val json = JSONObject(configJson)
         json.remove(FieldAiPolicy.CONFIG_KEY)
         json.remove(FieldDescription.CONFIG_KEY)
         json.remove(com.novelcharacter.app.data.model.GradeSystemRef.CONFIG_KEY)
+        json.remove(com.novelcharacter.app.data.model.DefaultFieldRef.CONFIG_KEY)
         json.toString()
     } catch (_: Exception) {
         configJson

@@ -171,6 +171,16 @@ class FieldConfigColumnsTest {
         assertEquals("broken{", FieldConfigColumns.stripPortableKeys("broken{"))
     }
 
+    @Test
+    fun strip_removesDefaultFieldRef_columnIsTheOnlyCarrier() {
+        // 기본 필드 연결은 '기본필드코드' 전용 열로만 나간다 — JSON에 남으면 같은 사실이
+        // 파일에 두 벌 실리고, 가져오기는 열을 우선하므로 JSON 쪽 편집이 무음으로 무시된다.
+        val config = """{"defaultField":"DF-123","options":["A"]}"""
+        val json = JSONObject(FieldConfigColumns.stripPortableKeys(config))
+        assertFalse(json.has(com.novelcharacter.app.data.model.DefaultFieldRef.CONFIG_KEY))
+        assertEquals(1, json.getJSONArray("options").length())
+    }
+
     // ===== B-80: AI추천 열의 3단 =====
 
     /** 내보내기 값 — **Y/N은 2단 시절과 같다**(옛 파일과 새 파일이 같은 말을 쓴다). */
