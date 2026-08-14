@@ -369,6 +369,17 @@ fun main() {
     println("%-28s %9s %11s".format("합계(CPU 총량)", "${totalT}ms", mb(totalA)))
     println("가장 느린 하나 = ${rows.maxByOrNull { it.second }?.let { "${it.first} ${it.second}ms" }} (동시 실행 대기의 하한)")
 
+    // [1-b] computeDataOverview — async 10 밖(StatsViewModel.loadDataOverview — 값이 서
+    // 있으면 재계산하지 않는 개요 1회 적재)이라
+    // 위 표·합계에 넣지 않는다(넣으면 판마다 이어 온 10계산 짝 비교의 모집단이 바뀐다).
+    // B-216 행의 "[1]에 그 함수를 더해 먼저 잴 것"은 이 행이 이행한다 — 같은 저울, 같은 규모.
+    run {
+        repeat(2) { p.computeDataOverview(fill30) }
+        val t = timeMs(0, 5) { p.computeDataOverview(fill30) }
+        val a = allocatedBytes { p.computeDataOverview(fill30) }
+        println("%-28s %9s %11s   ← async 10 밖 — 합계 미포함 (B-216)".format("computeDataOverview", "${t}ms", mb(a)))
+    }
+
     // 현재 채움(21.7%) ×30 — 대조용 한 줄
     val sparseTotal = run {
         all.forEach { it.body(sparse30) }
@@ -994,6 +1005,148 @@ fun main() {
                 for (u in fieldDefs.mapTo(HashSet()) { it.universeId }) total += charCountByUniverse[u] ?: 0
             }
         }
+    }
+
+    // ── [9] S6 6차 — computeFieldAnalysis 잔여 부위 + computeDataOverview (B-216) ──
+    // 3-16 말미가 남긴 자리다: fa의 남은 몸통(수치 자동구간·BODY 파트·상태변화 — 59~68ms·32.2MB)과,
+    // async 10 밖이라 재진 적 없는 computeDataOverview(실호출은 [1-b]). [7][8]과 같은 규약 —
+    // 재현 형태는 **현행 본문의 모양**, 접힌 표·파싱은 선조립. '접힘/'·'선계수/' 행은 처방 산술이다.
+    // ⚠️ [8]의 측정법 그대로: 부위 행의 시간은 더해 읽지 말 것 — 배분은 할당으로, 시간 판단은 모양 짝으로.
+    println()
+    println("[9] S6 6차 — fa 잔여 + computeDataOverview 부위별 분해 (채움 ×30)")
+    run {
+        val snap = fill30
+        val cfgs = configsFor(snap, p)
+        @Suppress("UNCHECKED_CAST")
+        val aug = augM.invoke(p, snap) as Map<Long, List<CharacterFieldValue>>
+        @Suppress("UNCHECKED_CAST")
+        val folded = cls.getDeclaredMethod("valueCountsOf", StatsSnapshot::class.java)
+            .apply { isAccessible = true }.invoke(p, snap) as Map<Long, Map<String, Int>>
+        val filledM9 = helper("filledCharacterDefIds")
+        @Suppress("UNCHECKED_CAST")
+        val filled = filledM9.invoke(p, snap) as Map<Long, Set<Long>>
+        fun measure(label: String, body: () -> Any?) {
+            val t = timeMs(1, 5) { body() }
+            val a = allocatedBytes { body() }
+            println("  %-46s %5dms %10s".format(label, t, mb(a)))
+        }
+        val binnable = snap.fieldDefinitions.filter {
+            (it.type == "NUMBER" || it.type == "CALCULATED") && cfgs[it.id]?.enabled == true
+        }
+
+        // ── fa/수치: 행별 목록판(현행) vs 접힌 표 쌍둥이(처방 — fi가 이미 쓰는 그 판) ──
+        measure("fa/수치 목록판 (행 목록 재료화+행별 파싱)") {
+            for (fd in binnable) {
+                val raw = aug[fd.id] ?: continue
+                com.novelcharacter.app.util.NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
+            }
+        }
+        measure("접힘/fa 수치 (counts 쌍둥이 — 고유 원문만 파싱)") {
+            for (fd in binnable) {
+                val counts = folded[fd.id] ?: continue
+                com.novelcharacter.app.util.NumericBinning.numericValuesOf(counts, "", 0)
+            }
+        }
+
+        // ── fa/BODY: 분포와 요약이 파트마다 각자 파싱(현행 두 벌) vs counts 한 벌 공유(처방) ──
+        val bodyDefs = snap.fieldDefinitions.filter { it.type == "BODY_SIZE" }
+        measure("fa/BODY 두 벌 (분포 파싱+bin count, 요약 재파싱)") {
+            for (fd in bodyDefs) {
+                val rawValues = aug[fd.id] ?: continue
+                for (part in 0 until 3) {
+                    val nums = rawValues.mapNotNull {
+                        com.novelcharacter.app.util.NumericBinning.partValue(it.value, "-", part) }
+                    val bins = com.novelcharacter.app.util.NumericBinning.autoBins(nums)
+                    for (b in bins) nums.count { b.contains(it) }
+                }
+                for (part in 0 until 3) {
+                    com.novelcharacter.app.util.NumericBinning.numericValuesOf(
+                        rawValues.map { it.value }, "-", part)
+                }
+            }
+        }
+        measure("접힘/fa BODY 한 벌 (counts 파싱 공유+bin count)") {
+            for (fd in bodyDefs) {
+                val counts = folded[fd.id] ?: continue
+                for (part in 0 until 3) {
+                    val nums = com.novelcharacter.app.util.NumericBinning.numericValuesOf(counts, "-", part)
+                    val bins = com.novelcharacter.app.util.NumericBinning.autoBins(nums)
+                    for (b in bins) nums.count { b.contains(it) }
+                    // 요약은 같은 nums를 재사용한다 — 두 번째 파싱이 없다
+                }
+            }
+        }
+
+        // ── fa/상태변화: groupBy 재료화(현행) vs 접기(처방) ──
+        measure("fa/상태변화 (groupBy 목록 재료화)") {
+            snap.stateChanges.filter { !it.fieldKey.startsWith("__") }
+                .groupBy { it.fieldKey }.mapValues { it.value.size }
+        }
+        measure("접힘/fa 상태변화 (merge 계수)") {
+            val out = LinkedHashMap<String, Int>()
+            for (st in snap.stateChanges) {
+                if (st.fieldKey.startsWith("__")) continue
+                out.merge(st.fieldKey, 1) { a, b -> a + b }
+            }
+            out
+        }
+        measure("fa/합계 대조 (computeFieldAnalysis 실호출)") { p.computeFieldAnalysis(snap) }
+
+        // ── computeDataOverview 부위 (B-216 — def×캐릭터 곱과 호출마다 재그룹) ──
+        measure("ov/값 재그룹 (fieldValues filter+groupBy 호출마다)") {
+            snap.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
+        }
+        val regrouped = snap.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
+        measure("ov/필드별 완성도 (def×novels·chars 필터)") {
+            snap.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
+                val universeNovels = snap.novels.filter { it.universeId == fd.universeId }
+                    .map { it.id }.toSet()
+                val relevantChars = snap.characters.filter { it.novelId in universeNovels }
+                val f = regrouped[fd.id]?.count { it.value.isNotBlank() } ?: 0
+                Triple(fd.name, f, relevantChars.size)
+            }.sortedBy { if (it.third > 0) it.second.toFloat() / it.third else 0f }
+        }
+        measure("접힘+선계수/ov 완성도 (counts 합+세계관 선계수)") {
+            val universeByNovelId = HashMap<Long, Long?>()
+            for (n in snap.novels) universeByNovelId[n.id] = n.universeId
+            val charCount = HashMap<Long?, Int>()
+            for (ch in snap.characters) {
+                val nid = ch.novelId ?: continue
+                if (nid !in universeByNovelId) continue
+                charCount.merge(universeByNovelId[nid], 1) { a, b -> a + b }
+            }
+            snap.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
+                val f = folded[fd.id]?.values?.sum() ?: 0
+                val total = charCount[fd.universeId] ?: 0
+                Triple(fd.name, f, total)
+            }.sortedBy { if (it.third > 0) it.second.toFloat() / it.third else 0f }
+        }
+        val novelMap9 = snap.novels.associateBy { it.id }
+        val defsByUni9 = snap.fieldDefinitions.groupBy { it.universeId }
+        measure("ov/미완성 판정 (percentOf×캐릭터)") {
+            snap.characters.count { char ->
+                if (char.novelId == null) return@count true
+                if (novelMap9[char.novelId] == null) return@count true
+                val fields = novelMap9[char.novelId]?.let { defsByUni9[it.universeId] }
+                    ?: return@count false
+                val rate = com.novelcharacter.app.util.CompletionRate.percentOf(
+                    fields, filled[char.id].orEmpty(), snap.completionWeights
+                ) ?: return@count false
+                rate < 50f
+            }
+        }
+        measure("ov/나머지 (연도 밀도·이름은행·집합 셋)") {
+            snap.events.groupBy { it.year }.mapValues { it.value.size }
+            snap.nameBank.count { it.isUsed }
+            snap.nameBank.groupBy { it.gender.ifBlank { "미지정" } }.mapValues { it.value.size }
+            snap.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
+            val relCharIds = snap.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
+            snap.characters.count { it.id !in relCharIds }
+            val eventCharIds = snap.crossRefs.map { it.characterId }.toSet()
+            snap.characters.count { it.id !in eventCharIds }
+            snap.fieldDefinitions.count { com.novelcharacter.app.util.RequiredFieldGaps.countsAsSlot(it) }
+        }
+        measure("ov/합계 대조 (computeDataOverview 실호출)") { p.computeDataOverview(snap) }
     }
 
     println()
