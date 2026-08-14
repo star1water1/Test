@@ -120,6 +120,48 @@ class ExportPresentationSpecTest {
         assertEquals(6000, customFieldColumnWidth(null, multiToken = false))
     }
 
+    // ── cellStyleKindFor (셀 스타일 종류의 우선순위) ──
+
+    @Test
+    fun `읽기전용은 서식을 가리지 않는다 - 밀리초와 CALCULATED 소수`() {
+        assertEquals(
+            CellStyleKind.READ_ONLY_MILLIS,
+            cellStyleKindFor(ColumnSpec("생성일", readOnly = true, millis = true), fractionalCalc = false)
+        )
+        // 전 열이 읽기전용인 '전체 캐릭터'의 CALCULATED 소수가 "78.5"로 보이던 자리 —
+        // 시행 형태의 "앱 표시와 글자까지 동일"(확정 16장 Q-1)은 읽기전용 열에서도 성립해야 한다.
+        assertEquals(
+            CellStyleKind.READ_ONLY_CALC_DECIMAL,
+            cellStyleKindFor(ColumnSpec("전투력", readOnly = true, calc = true), fractionalCalc = true)
+        )
+        assertEquals(
+            CellStyleKind.READ_ONLY,
+            cellStyleKindFor(ColumnSpec("코드", readOnly = true), fractionalCalc = false)
+        )
+    }
+
+    @Test
+    fun `편집 열의 종류 판정 - 소수 CALCULATED·밀리초·wrap·기본`() {
+        assertEquals(
+            CellStyleKind.CALC_DECIMAL,
+            cellStyleKindFor(ColumnSpec("전투력", calc = true), fractionalCalc = true)
+        )
+        // 정수 CALCULATED는 서식 없이도 앱과 같은 글자다(FormulaDisplay.format의 정수 갈래) — PLAIN.
+        assertEquals(
+            CellStyleKind.PLAIN,
+            cellStyleKindFor(ColumnSpec("전투력", calc = true), fractionalCalc = false)
+        )
+        assertEquals(
+            CellStyleKind.MILLIS,
+            cellStyleKindFor(ColumnSpec("뗀날짜", millis = true), fractionalCalc = false)
+        )
+        assertEquals(
+            CellStyleKind.WRAP,
+            cellStyleKindFor(ColumnSpec("설명", wrap = true), fractionalCalc = false)
+        )
+        assertEquals(CellStyleKind.PLAIN, cellStyleKindFor(ColumnSpec("이름"), fractionalCalc = false))
+    }
+
     // ── SheetTabColors (P-8 — 그룹 배정의 완전성) ──
 
     @Test

@@ -452,19 +452,26 @@ class ExcelExporter(context: Context) {
         private val readOnlyBand = dataStyle(banded = true, readOnly = true)
         private val readOnlyMillis = dataStyle(banded = false, readOnly = true, format = fmtPlainInt)
         private val readOnlyMillisBand = dataStyle(banded = true, readOnly = true, format = fmtPlainInt)
+        private val readOnlyCalcDecimal = dataStyle(banded = false, readOnly = true, format = fmtTwoDecimals)
+        private val readOnlyCalcDecimalBand = dataStyle(banded = true, readOnly = true, format = fmtTwoDecimals)
 
         /**
          * 열 명세와 행 홀짝으로 셀 스타일 하나를 고른다 — [finishDataRow]만 부른다.
+         * 종류는 [cellStyleKindFor](순수 판정 — 읽기전용이 서식을 가리지 않는 우선순위를 시험이
+         * 잠근다)가 정하고, 여기는 종류×홀짝을 워크북의 실제 스타일 객체로 바꾸기만 한다.
          * [fractionalCalc]는 CALCULATED 숫자 셀의 소수 여부(정수는 서식 없이도 같은 글자라 General).
          */
-        fun cellStyleFor(col: ColumnSpec, banded: Boolean, fractionalCalc: Boolean): CellStyle = when {
-            col.readOnly && col.millis -> if (banded) readOnlyMillisBand else readOnlyMillis
-            col.readOnly -> if (banded) readOnlyBand else readOnly
-            fractionalCalc -> if (banded) calcDecimalBand else calcDecimal
-            col.millis -> if (banded) dataMillisBand else dataMillis
-            col.wrap -> if (banded) dataWrapBand else dataWrap
-            else -> if (banded) dataBand else data
-        }
+        fun cellStyleFor(col: ColumnSpec, banded: Boolean, fractionalCalc: Boolean): CellStyle =
+            when (cellStyleKindFor(col, fractionalCalc)) {
+                CellStyleKind.READ_ONLY_MILLIS -> if (banded) readOnlyMillisBand else readOnlyMillis
+                CellStyleKind.READ_ONLY_CALC_DECIMAL ->
+                    if (banded) readOnlyCalcDecimalBand else readOnlyCalcDecimal
+                CellStyleKind.READ_ONLY -> if (banded) readOnlyBand else readOnly
+                CellStyleKind.CALC_DECIMAL -> if (banded) calcDecimalBand else calcDecimal
+                CellStyleKind.MILLIS -> if (banded) dataMillisBand else dataMillis
+                CellStyleKind.WRAP -> if (banded) dataWrapBand else dataWrap
+                CellStyleKind.PLAIN -> if (banded) dataBand else data
+            }
 
         val guideTitle: CellStyle = workbook.createCellStyle().apply {
             setFont(font(bold = true, points = 16, color = guideInk))
@@ -547,16 +554,26 @@ class ExcelExporter(context: Context) {
             if (field.fieldType == FieldType.CALCULATED) {
                 val d = value.toDoubleOrNull()
                 if (d != null && d.isFinite()) { setCellValue(d); return }
-            } else if (field.fieldType == FieldType.NUMBER &&
-                com.novelcharacter.app.data.model.SemanticRole.fromConfig(field.config) !=
-                com.novelcharacter.app.data.model.SemanticRole.BIRTH_DATE
-            ) {
+            } else if (field.fieldType == FieldType.NUMBER && !isBirthDateField(field)) {
                 val d = numericExportValueOrNull(value)
                 if (d != null) { setCellValue(d); return }
             }
         }
         setTextSafe(value)
     }
+
+    /**
+     * BIRTH_DATE 판정 캐시 — 판정([SemanticRole.fromConfig])은 config의 순수 함수인데 셀마다
+     * JSON 파싱을 새로 내면 행×필드만큼 든다(통계가 S6 5차에 걷어낸 그 행별 config 파싱 모양).
+     * 키가 config 원문이라 어떤 시점의 어떤 필드가 와도 값이 낡을 수 없다.
+     */
+    private val birthDateByConfig = HashMap<String, Boolean>()
+
+    private fun isBirthDateField(field: FieldDefinition): Boolean =
+        birthDateByConfig.getOrPut(field.config) {
+            com.novelcharacter.app.data.model.SemanticRole.fromConfig(field.config) ==
+                com.novelcharacter.app.data.model.SemanticRole.BIRTH_DATE
+        }
 
     /**
      * 시트 수준 서식 — 목록·너비·고정·필터. **셀을 만지지 않는다**(위 [finishDataRow] 참조).
@@ -1163,12 +1180,16 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        var rowIndex = 1
-        for (system in systems) {
-            val universe = universeMap[system.universeId]
+        // 밴딩은 시트 단위 결정(Q-3 ⓑ — 행 1만 미만 시트만)이라 총 행 수를 먼저 재야 한다.
+        val gradeRows = systems.map { system ->
             // 행 순서는 숫자 오름차순 — 앱의 등급 순서 파생 규칙과 같은 모양으로 내보낸다.
-            val grades = com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(system.gradesJson)
+            system to com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(system.gradesJson)
                 .entries.sortedBy { it.value }
+        }
+        val banded = gradeRows.sumOf { it.second.size } < BANDING_ROW_LIMIT
+        var rowIndex = 1
+        for ((system, grades) in gradeRows) {
+            val universe = universeMap[system.universeId]
             for ((label, value) in grades) {
                 val row = sheet.createRow(rowIndex++)
                 row.createCell(0).setTextSafe(universe?.name ?: "")
@@ -1177,7 +1198,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(3).setCellValue(value)
                 row.createCell(4).setTextSafe(universe?.code ?: "")
                 row.createCell(5).setTextSafe(system.code)
-                finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
+                finishDataRow(row, spec, banded)
             }
         }
 
@@ -1197,6 +1218,8 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
+        // 밴딩은 시트 단위 결정(Q-3 ⓑ) — 실제로 실릴 행(정의가 살아 있는 엔트리)만 센다.
+        val banded = entries.count { fieldsById.containsKey(it.fieldDefinitionId) } < BANDING_ROW_LIMIT
         var rowIndex = 1
         for (entry in entries) {
             val fd = fieldsById[entry.fieldDefinitionId] ?: continue
@@ -1215,7 +1238,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setTextSafe(entry.source)
             row.createCell(11).setCellValue(entry.usageCount.toDouble())
             row.createCell(12).setTextSafe(entry.code)
-            finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
+            finishDataRow(row, spec, banded)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -2093,9 +2116,13 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
+        // 밴딩은 시트 단위 결정(Q-3 ⓑ)이라 총 행 수가 먼저 필요하다 — 축별 목록을 미리 모은다
+        // (질의도 축별 그대로라 행 순서 무변경. '대결 기록'은 1만 행을 실제로 넘는 시트다).
+        val matchesByAxis = axes.map { it to db.duelMatchDao().getByAxis(it.id) }
+        val banded = matchesByAxis.sumOf { it.second.size } < BANDING_ROW_LIMIT
         var rowIndex = 0
-        for (axis in axes) {
-            for (match in db.duelMatchDao().getByAxis(axis.id)) {
+        for ((axis, matches) in matchesByAxis) {
+            for (match in matches) {
                 val row = sheet.createRow(++rowIndex)
                 row.createCell(0).setTextSafe(axis.name)
                 row.createCell(1).setTextSafe(axis.code)
@@ -2117,7 +2144,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())
                 row.createCell(9).setTextSafe(match.code)
-                finishDataRow(row, spec, banded = rowIndex < BANDING_ROW_LIMIT)
+                finishDataRow(row, spec, banded)
             }
         }
 
@@ -2134,9 +2161,12 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
+        // 밴딩은 시트 단위 결정(Q-3 ⓑ) — 축별 목록을 미리 모아 총 행 수를 잰다(행 순서 무변경).
+        val verdictsByAxis = axes.map { it to db.duelCounterVerdictDao().getByAxis(it.id) }
+        val banded = verdictsByAxis.sumOf { it.second.size } < BANDING_ROW_LIMIT
         var rowIndex = 0
-        for (axis in axes) {
-            for (verdict in db.duelCounterVerdictDao().getByAxis(axis.id)) {
+        for ((axis, verdicts) in verdictsByAxis) {
+            for (verdict in verdicts) {
                 val members = DuelRecords.decodeMembers(verdict.memberCodes)
                 val row = sheet.createRow(++rowIndex)
                 row.createCell(0).setTextSafe(axis.name)
@@ -2160,7 +2190,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(5).setTextSafe(joinCsv(members))
                 row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
                 row.createCell(7).setTextSafe(verdict.code)
-                finishDataRow(row, spec, banded = rowIndex < BANDING_ROW_LIMIT)
+                finishDataRow(row, spec, banded)
             }
         }
 
@@ -2360,8 +2390,11 @@ class ExcelExporter(context: Context) {
         // 그래서 늘지 않았다.** 이제 목록도 읽기도 [AppSettingsBindings] 하나가 든다.
         //
         // 비밀(API 키)은 **별도 동의가 있을 때만** 나간다 — 사용자 확정 3번 ㄴ1.
+        // 밴딩은 시트 단위 결정(Q-3 ⓑ) — 등재 수가 상한이다(읽기 실패로 빠지는 행은 더 줄일 뿐이다).
+        val bindings = AppSettingsBindings.exported(options.aiKeys)
+        val banded = bindings.size < BANDING_ROW_LIMIT
         var rowIndex = 1
-        for (binding in AppSettingsBindings.exported(options.aiKeys)) {
+        for (binding in bindings) {
             // **한 설정이 실패해도 백업 전체를 잃지 않는다.** 종전에는 저장소 셋에서 열한 번
             // 읽었고 지금은 열 곳에서 서른일곱 번 읽는다 — 그중 하나가 던지면(손상된 prefs,
             // 복호화 실패한 키) 잡지 않는 한 **내보내기가 통째로 죽는다.** 늘어난 것이
@@ -2383,7 +2416,7 @@ class ExcelExporter(context: Context) {
             } else {
                 row.createCell(1).setTextSafe(value)
             }
-            finishDataRow(row, spec, banded = rowIndex - 1 < BANDING_ROW_LIMIT)
+            finishDataRow(row, spec, banded)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -2400,9 +2433,12 @@ class ExcelExporter(context: Context) {
         private const val MAX_DROPDOWN_ROWS = 10000
 
         /**
-         * 짝수 행 밴딩(Q-3 ⓑ)을 켜는 시트 크기 상한 — 이 행 수 이상이면 그 시트만 밴딩을 끈다.
-         * 밴딩은 지금 무스타일인 편집 셀 전부에 스타일 참조를 붙이므로, '대결 기록'처럼 수만 행이
-         * 될 수 있는 시트(scalability 4장)에서는 파일 크기 비용이 도움보다 커진다.
+         * 짝수 행 밴딩(Q-3 ⓑ — 사용자 확정 *"행 1만 미만 시트만"*)을 켜는 시트 크기 상한.
+         * **시트 단위 결정이다** — 이 수 이상이면 그 시트는 무늬 없이 나간다(행 단위로 자르면
+         * 1만 행에서 무늬가 끊겨 "여기부터 뭔가 잘못됐다"로 읽힌다). 파일 크기는 이 상한의 몫이
+         * 아니다: 세로 상단 정렬(P-3)로 모든 데이터 셀이 이미 스타일 참조를 가지므로 밴딩은
+         * 어느 스타일을 가리키는가만 바꾼다 — 리뷰 문서 5-2의 비용 산정은 무스타일 셀 전제였고,
+         * 그 전제가 P-3 시행으로 낡았다(같은 문서 8-1 ③).
          */
         private const val BANDING_ROW_LIMIT = 10_000
 

@@ -423,11 +423,35 @@ fun customFieldColumnWidth(type: FieldType?, multiToken: Boolean): Int = when {
 }
 
 /**
+ * 데이터 셀 스타일의 종류 — 열 명세와 값 성질(소수 CALCULATED)로 정해지는 순수 판정.
+ * 행 홀짝(밴딩)은 여기 없다 — 그것은 시트 단위 결정과 rowNum으로 [ExcelExporter]가 얹는다.
+ *
+ * 우선순위가 곧 규칙이다: **읽기전용은 바탕·글자를 정할 뿐 서식을 가리지 않는다** — 밀리초 `0`과
+ * CALCULATED 소수 `0.00`은 읽기전용 열에서도 붙는다. 처음 시행은 이 분기가 사적 클래스 안에 있어
+ * 시험이 못 닿았고, 전 열이 읽기전용인 '전체 캐릭터'의 CALCULATED 소수만 캐릭터 시트("78.50")·앱과
+ * 다른 글자("78.5")로 보였다 — 우선순위는 `ExportPresentationSpecTest`가 잠근다.
+ */
+enum class CellStyleKind {
+    READ_ONLY_MILLIS, READ_ONLY_CALC_DECIMAL, READ_ONLY, CALC_DECIMAL, MILLIS, WRAP, PLAIN
+}
+
+fun cellStyleKindFor(col: ColumnSpec, fractionalCalc: Boolean): CellStyleKind = when {
+    col.readOnly && col.millis -> CellStyleKind.READ_ONLY_MILLIS
+    col.readOnly && fractionalCalc -> CellStyleKind.READ_ONLY_CALC_DECIMAL
+    col.readOnly -> CellStyleKind.READ_ONLY
+    fractionalCalc -> CellStyleKind.CALC_DECIMAL
+    col.millis -> CellStyleKind.MILLIS
+    col.wrap -> CellStyleKind.WRAP
+    else -> CellStyleKind.PLAIN
+}
+
+/**
  * 탭 색 그룹(P-8) — 20여 개 탭을 다섯 구획으로 가른다. 시트 수준 속성이라 값·왕복과 무관하고,
  * 가져오기는 탭 색을 읽지 않는다.
  *
  * **모든 예약 시트는 어느 한 그룹에 명시로 속해야 한다** — 새 예약 시트를 만들면
- * `SheetTabColorsTest`가 그룹 배정을 요구하며 깨진다(등재 누락이 침묵이 되지 않게).
+ * `ExportPresentationSpecTest`의 전수 분할 시험이 그룹 배정을 요구하며 깨진다(등재 누락이
+ * 침묵이 되지 않게).
  * 예약명 밖(세계관 캐릭터 시트, `(2)` 접미사 변형)은 전부 캐릭터색이다.
  */
 object SheetTabColors {
