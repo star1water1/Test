@@ -369,7 +369,8 @@ fun main() {
     println("%-28s %9s %11s".format("합계(CPU 총량)", "${totalT}ms", mb(totalA)))
     println("가장 느린 하나 = ${rows.maxByOrNull { it.second }?.let { "${it.first} ${it.second}ms" }} (동시 실행 대기의 하한)")
 
-    // [1-b] computeDataOverview — async 10 밖(개요 탭 진입 시 1회, StatsViewModel:381)이라
+    // [1-b] computeDataOverview — async 10 밖(StatsViewModel.loadDataOverview — 값이 서
+    // 있으면 재계산하지 않는 개요 1회 적재)이라
     // 위 표·합계에 넣지 않는다(넣으면 판마다 이어 온 10계산 짝 비교의 모집단이 바뀐다).
     // B-216 행의 "[1]에 그 함수를 더해 먼저 잴 것"은 이 행이 이행한다 — 같은 저울, 같은 규모.
     run {
