@@ -402,6 +402,7 @@ $TEST/stats/StatsDrilldownTest.kt
 $TEST/stats/DuelRankingTest.kt
 $TEST/stats/StatsConsistencyTest.kt
 $TEST/stats/StatsMemoParityTest.kt
+$TEST/stats/StatsKeysParityTest.kt
 $TEST/stats/NumericBinDrilldownTest.kt
 $TEST/stats/DataHealthReorgTest.kt
 $TEST/util/FieldValueTypeMismatchTest.kt

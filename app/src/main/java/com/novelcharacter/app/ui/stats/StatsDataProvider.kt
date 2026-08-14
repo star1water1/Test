@@ -1355,12 +1355,12 @@ class StatsDataProvider {
         // 같은 파싱(getFieldValues: 콤마/구조화/라벨/카테고리), 같은 '통계에 포함' 필터.
         // 종전에는 계산 필드만 빠져 이 주석이 약속한 일치가 수식 필드에서 깨져 있었다(B-33).
         val fieldDefById = s.fieldDefinitions.associateBy { it.id }
-        val statsCache = StatsFieldPolicy.ConfigCache()
+        val statsConfigs = statsConfigsOf(s)
         val topFieldValues = augmentedCharacterValues(s)
             .flatMap { (fieldDefId, values) ->
                 val fd = fieldDefById[fieldDefId] ?: return@flatMap emptyList<Pair<String, String>>()
-                if (!statsCache.isAnalyzable(fd)) return@flatMap emptyList<Pair<String, String>>()
-                val cfg = statsCache.of(fd)
+                val cfg = statsConfigs[fieldDefId] ?: return@flatMap emptyList<Pair<String, String>>()
+                if (!cfg.enabled) return@flatMap emptyList<Pair<String, String>>()
                 values.filter { it.value.isNotBlank() }
                     .flatMap { fv -> getFieldValues(s, fd, fv.value, cfg).map { Pair(fd.name, it) } }
             }
@@ -1893,19 +1893,18 @@ class StatsDataProvider {
     // ===== 필드 인사이트 (신규) =====
     fun computeFieldInsights(s: StatsSnapshot): List<FieldInsightResult> {
         val universeMap = s.universes.associateBy { it.id }
-        val statsCache = StatsFieldPolicy.ConfigCache()
 
         // 저장 값 + CALCULATED 계산값 (계산 필드는 저장 행이 없다 — R-16). 이 합성 규칙은
         // 패턴 감지·레거시 분석·요약 TOP5도 같은 헬퍼로 공유한다.
         val augmentedValuesByFieldDef = augmentedCharacterValues(s)
 
         // 동일 필드를 (key, type) 기준으로 세계관 통합 (Pre-Analysis Merge)
-        val fieldGroups = statsCache.analyzable(s.fieldDefinitions)
+        val fieldGroups = analyzableDefs(s, s.fieldDefinitions)
             .groupBy { it.key to it.type }
 
         val characterInsights = fieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
-            val statsConfig = statsCache.of(primaryFd)
+            val statsConfig = statsConfigOf(s, primaryFd)
 
             // 그룹 내 모든 필드의 값을 합산 (CALCULATED 포함)
             val rawValues = fds.flatMap { fd -> augmentedValuesByFieldDef[fd.id] ?: emptyList() }
@@ -1936,11 +1935,11 @@ class StatsDataProvider {
                 eventValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
             }
         }
-        val eventFieldGroups = statsCache.analyzable(s.eventFieldDefinitions)
+        val eventFieldGroups = analyzableDefs(s, s.eventFieldDefinitions)
             .groupBy { it.key to it.type }
         val eventInsights = eventFieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
-            val statsConfig = statsCache.of(primaryFd)
+            val statsConfig = statsConfigOf(s, primaryFd)
             val rawValues = fds.flatMap { fd -> eventValueStringsByFieldDef[fd.id] ?: emptyList() }
 
             // 모수 = 해당 세계관들의 사건 수 (사건 필드는 세계관 소속 사건에만 부여 가능)
@@ -1965,11 +1964,11 @@ class StatsDataProvider {
                 novelValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
             }
         }
-        val novelFieldGroups = statsCache.analyzable(s.novelFieldDefinitions)
+        val novelFieldGroups = analyzableDefs(s, s.novelFieldDefinitions)
             .groupBy { it.key to it.type }
         val novelInsights = novelFieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
-            val statsConfig = statsCache.of(primaryFd)
+            val statsConfig = statsConfigOf(s, primaryFd)
             val rawValues = fds.flatMap { fd -> novelValueStringsByFieldDef[fd.id] ?: emptyList() }
 
             // 모수 = 해당 세계관들의 작품 수 (작품 필드는 세계관 소속 작품에만 부여 가능)
@@ -2086,7 +2085,41 @@ class StatsDataProvider {
         return ValueDistributions.of(allValues)
     }
 
+    /**
+     * 통계 파싱의 단일 소스 — 원문 하나를 통계 키 목록으로 (토큰화 → 라벨/카테고리 → 구간).
+     *
+     * **스냅샷 단위 메모가 앞에 선다** (B-215). 요약 TOP5·인사이트·레거시 분석·교차분석·패턴이
+     * 전부 같은 값 표를 이 함수로 지나는데, 결과는 (스냅샷, 파싱 def, 원문)의 순수 함수라
+     * 소비처마다 다시 계산할 이유가 없다 — 값 원문은 소수 종으로 크게 겹치므로(값 라이브러리
+     * 축) 한 소비처 안에서도 접힌다. 키가 defId 하나가 아니라 **(파싱 def, 원문)**인 이유:
+     * 그룹 경로(인사이트·패턴·교차·하위군·드릴다운)는 형제 def의 값도 **그룹 기준 def의
+     * 규칙**으로 파싱하므로(R-15, [groupValues]의 계약), 값의 소유 def로 키를 접으면 그
+     * 경로의 값 공간이 조용히 바뀐다.
+     *
+     * **메모는 스냅샷 정본 config([statsParseCacheOf])로 부른 호출에만 적용된다.** 순위 빈도
+     * 모드는 statsGroupBy를 "value"로 덮은 사본을 일부러 쓰므로(R-13 — 순위의 축은 값이다)
+     * 정본이 아니고, 메모를 지나지 않고 그대로 계산한다 — 사본의 결과가 메모에 섞이면
+     * 분포와 순위가 같은 필드에 다른 수를 세는 R-16 위반이 된다. 반환 목록은 공유 사본이다 —
+     * 받은 쪽은 읽기만 한다([perSnapshot]과 같은 계약, StatsKeysParityTest가 잠근다).
+     */
     private fun getFieldValues(
+        s: StatsSnapshot,
+        fd: FieldDefinition,
+        rawValue: String,
+        statsConfig: FieldStatsConfig
+    ): List<String> {
+        val parse = statsParseCacheOf(s)
+        if (statsConfig !== parse.configs[fd.id]) {
+            return computeStatsKeys(s, fd, rawValue, statsConfig)
+        }
+        val perDef = parse.keysByDef[fd.id]
+            ?: parse.keysByDef.computeIfAbsent(fd.id) { java.util.concurrent.ConcurrentHashMap() }
+        perDef[rawValue]?.let { return it }
+        return perDef.computeIfAbsent(rawValue) { computeStatsKeys(s, fd, rawValue, statsConfig) }
+    }
+
+    /** [getFieldValues]의 본문 — 메모 없이 항상 그대로 계산한다(정본 밖 config 경로 포함). */
+    private fun computeStatsKeys(
         s: StatsSnapshot,
         fd: FieldDefinition,
         rawValue: String,
@@ -2244,10 +2277,10 @@ class StatsDataProvider {
         filterFieldId: Long?,
         filterValue: String?
     ): CrossAnalysisResult? {
-        val group1 = crossFieldGroup(s.fieldDefinitions, field1Id) ?: return null
-        val group2 = crossFieldGroup(s.fieldDefinitions, field2Id) ?: return null
+        val group1 = crossFieldGroup(s, s.fieldDefinitions, field1Id) ?: return null
+        val group2 = crossFieldGroup(s, s.fieldDefinitions, field2Id) ?: return null
         val filterGroup = if (filterFieldId != null) {
-            crossFieldGroup(s.fieldDefinitions, filterFieldId) ?: return null
+            crossFieldGroup(s, s.fieldDefinitions, filterFieldId) ?: return null
         } else null
 
         val universeIds = mergedUniverseCountOf(group1, group2)
@@ -2285,10 +2318,10 @@ class StatsDataProvider {
         filterFieldId: Long?,
         filterValue: String?
     ): CrossAnalysisResult? {
-        val group1 = crossFieldGroup(s.eventFieldDefinitions, field1Id) ?: return null
-        val group2 = crossFieldGroup(s.eventFieldDefinitions, field2Id) ?: return null
+        val group1 = crossFieldGroup(s, s.eventFieldDefinitions, field1Id) ?: return null
+        val group2 = crossFieldGroup(s, s.eventFieldDefinitions, field2Id) ?: return null
         val filterGroup = if (filterFieldId != null) {
-            crossFieldGroup(s.eventFieldDefinitions, filterFieldId) ?: return null
+            crossFieldGroup(s, s.eventFieldDefinitions, filterFieldId) ?: return null
         } else null
 
         val universeIds = mergedUniverseCountOf(group1, group2)
@@ -2323,19 +2356,24 @@ class StatsDataProvider {
      * 합산했다"고 **사실과 다른 고지**까지 한다. 사용자가 직접 고른 def는 설정과 무관하게
      * 남긴다 — 고를 수 있는데 빈 표가 나오는 조용한 실패를 만들지 않기 위해서다([StatsFieldPolicy]).
      */
-    private fun crossFieldGroup(defs: List<FieldDefinition>, fieldId: Long): CrossFieldGroup? {
+    private fun crossFieldGroup(s: StatsSnapshot, defs: List<FieldDefinition>, fieldId: Long): CrossFieldGroup? {
         val group = StatsFieldPolicy.expandGroup(defs, fieldId)
         if (group.isEmpty()) return null
-        return CrossFieldGroup(group.associateBy { it.id })
+        return CrossFieldGroup(
+            defs = group.associateBy { it.id },
+            configs = group.associate { it.id to statsConfigOf(s, it) }
+        )
     }
 
     /**
-     * 교차분석 한 축이 집계하는 필드 묶음. 통계 설정(JSON)을 **묶음당 한 번만** 파싱해 둔다 —
-     * 엔티티 루프 안에서 파싱하면 캐릭터/사건 수에 비례해 JSON 파싱이 반복된다.
+     * 교차분석 한 축이 집계하는 필드 묶음. 통계 설정은 스냅샷 정본([statsConfigsOf])의 그
+     * 인스턴스다 — 엔티티 루프 안에서 파싱하지 않을 뿐 아니라, [getFieldValues]의 스냅샷
+     * 메모를 다른 소비처와 같은 키로 지난다(사본이면 정본 판정에서 갈려 메모를 못 쓴다).
      */
-    private class CrossFieldGroup(val defs: Map<Long, FieldDefinition>) {
-        val configs: Map<Long, FieldStatsConfig> =
-            defs.mapValues { (_, fd) -> FieldStatsConfig.fromConfig(fd.config) }
+    private class CrossFieldGroup(
+        val defs: Map<Long, FieldDefinition>,
+        val configs: Map<Long, FieldStatsConfig>
+    ) {
         val primary: FieldDefinition get() = defs.values.first()
     }
 
@@ -2543,22 +2581,20 @@ class StatsDataProvider {
 
     // ===== 커스텀 필드 분석 (레거시) =====
     fun computeFieldAnalysis(s: StatsSnapshot): FieldAnalysisStats {
-        val statsCache = StatsFieldPolicy.ConfigCache()
-
         // 저장 값 + CALCULATED 계산값. 수식 필드는 저장 행이 없어 이 화면에서만 통째로
         // 빠져 있었다 — 인사이트·순위에는 나오는 필드가 여기서만 사라지는 상태였다(S-15, R-16).
         val valuesByFieldDef = augmentedCharacterValues(s)
 
         // 분포·요약의 대상은 '통계에 포함'된 필드다. 이 화면은 사용자가 필드를 고르는 곳이
         // 아니라 앱이 전부 나열하는 곳이므로 설정을 따른다(S-15, [StatsFieldPolicy]).
-        val analyzableFields = statsCache.analyzable(s.fieldDefinitions)
+        val analyzableFields = analyzableDefs(s, s.fieldDefinitions)
 
         val fieldValueDists = mutableListOf<FieldValueDistribution>()
 
         // ── 이산 값 분포: 값 자체가 분포 키이므로 드릴다운도 값 일치 ──
         for (fd in analyzableFields.filter { isDiscreteDistribution(it.fieldType) }) {
             val values = valuesByFieldDef[fd.id] ?: continue
-            val statsConfig = statsCache.of(fd)
+            val statsConfig = statsConfigOf(s, fd)
             val dist = ValueDistributions.of(
                 values.filter { it.value.isNotBlank() }
                     .flatMap { fv -> getFieldValues(s, fd, fv.value, statsConfig) }
@@ -2577,7 +2613,7 @@ class StatsDataProvider {
         // 자동 구간은 라벨이 **계산 결과**라 값 일치가 성립하지 않으므로 구간 규칙 자체를
         // 스펙으로 싣는다 — BODY_SIZE 파트 분포가 아래에서 쓰는 그 길이다(B-39).
         for (fd in analyzableFields.filter { isBinnable(it.fieldType) }) {
-            val statsConfig = statsCache.of(fd)
+            val statsConfig = statsConfigOf(s, fd)
             val values = valuesByFieldDef[fd.id] ?: continue
             if (statsConfig.binning?.mode != "custom") {
                 // 파트가 없는 값이므로 원문 전체가 0번 파트다(B-39 행이 지시한 그 형태).
@@ -2667,7 +2703,7 @@ class StatsDataProvider {
             val raw = valuesByFieldDef[fd.id] ?: continue
             val values = NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
             if (values.isEmpty()) continue
-            numberSummary(fd.name, fd.id, values, statsCache.of(fd).binning)
+            numberSummary(fd.name, fd.id, values, statsConfigOf(s, fd).binning)
                 ?.let { numberSummaries.add(it) }
         }
 
@@ -2677,7 +2713,7 @@ class StatsDataProvider {
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
             val partCount = bodySizePartCount(structuredConfig, rawValues.firstOrNull()?.value, separator)
-            val binning = statsCache.of(fd).binning
+            val binning = statsConfigOf(s, fd).binning
 
             for (partIdx in 0 until partCount) {
                 val partLabel = bodySizePartLabel(structuredConfig, partIdx)
@@ -2778,14 +2814,14 @@ class StatsDataProvider {
     fun computeCrossNovelComparison(s: StatsSnapshot): CrossNovelComparison {
         val charsByNovel = s.characters.groupBy { it.novelId }
         val fieldDefMap = s.fieldDefinitions.associateBy { it.id }
-        val statsCache = StatsFieldPolicy.ConfigCache()
+        val statsConfigs = statsConfigsOf(s)
         // 캐릭터 → "필드명:값" 목록. 저장 값 + 계산값(R-16)을 통계 파싱 규칙으로 **한 번만** 풀어 두고,
         // 작품별 집계는 이 버킷을 나눠 쓴다.
         val parsedValuesByCharacter = HashMap<Long, MutableList<String>>()
         for ((fieldDefId, values) in augmentedCharacterValues(s)) {
             val fd = fieldDefMap[fieldDefId] ?: continue
-            if (!statsCache.isAnalyzable(fd)) continue
-            val cfg = statsCache.of(fd)
+            val cfg = statsConfigs[fieldDefId] ?: continue
+            if (!cfg.enabled) continue
             for (fv in values) {
                 if (fv.value.isBlank()) continue
                 val keys = getFieldValues(s, fd, fv.value, cfg)
@@ -2939,7 +2975,6 @@ class StatsDataProvider {
         ownerValuesByDefId: Map<Long, List<T>>,
         ownerOf: (T) -> Long,
         valueOf: (T) -> String,
-        statsCache: StatsFieldPolicy.ConfigCache,
         enabledTypes: Set<PatternType>,
         thresholds: PatternThresholds,
         out: MutableList<PatternInsight>
@@ -2950,7 +2985,7 @@ class StatsDataProvider {
             if (rawValues.isEmpty()) continue
 
             val fd = fieldDefs.first()
-            val statsConfig = statsCache.of(fd)
+            val statsConfig = statsConfigOf(s, fd)
             val allValues = rawValues.flatMap { getFieldValues(s, fd, valueOf(it), statsConfig) }
             if (allValues.isEmpty()) continue
 
@@ -3053,14 +3088,13 @@ class StatsDataProvider {
         val valuesByDefId: Map<Long, List<CharacterFieldValue>> = augmentedCharacterValues(s)
         // '통계에 포함'을 끈 필드는 스스로 나타나지 않는다 — 패턴 감지는 사용자가 필드를 고르는
         // 경로가 아니라 앱이 스스로 고르는 경로이므로 설정을 따른다(S-14, [StatsFieldPolicy]).
-        val statsCache = StatsFieldPolicy.ConfigCache()
         // 작품별 비교에서 필드가 속한 세계관의 대표 작품 조회 — fd마다 novels/universes를 중첩 탐색하던 것 제거.
         val validUniverseIds = s.universes.mapTo(HashSet()) { it.id }
         val firstNovelByUniverse: Map<Long, com.novelcharacter.app.data.model.Novel> =
             s.novels.filter { it.universeId != null }.groupBy { it.universeId!! }.mapValues { it.value.first() }
 
         // 필드별 분포 패턴 감지
-        val fieldsByKey = statsCache.analyzable(s.fieldDefinitions).groupBy { Pair(it.key, it.type) }
+        val fieldsByKey = analyzableDefs(s, s.fieldDefinitions).groupBy { Pair(it.key, it.type) }
 
         // ── 세 축의 필드 편중·균형·희소 (B-36) ──
         // **축마다 함수를 다시 적지 않는다.** R-13이 나누라는 것은 *셀 단위가 섞이는 것*이지
@@ -3072,27 +3106,27 @@ class StatsDataProvider {
             // 이미 만들어져 있는 버킷을 그대로 준다 — 이 축이 세 축 중 압도적으로 크다.
             ownerValuesByDefId = valuesByDefId,
             ownerOf = { it.characterId }, valueOf = { it.value },
-            statsCache, enabledTypes, thresholds, insights
+            enabledTypes, thresholds, insights
         )
         detectFieldPatterns(
             s, PatternAxis.EVENT,
-            statsCache.analyzable(s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
+            analyzableDefs(s, s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
             ownerValuesByDefId = axisValues(
                 stored = s.eventFieldValues.map { Triple(it.fieldDefinitionId, it.eventId, it.value) },
                 calculated = computeAllEventCalculatedValues(s)
             ),
             ownerOf = { it.ownerId }, valueOf = { it.value },
-            statsCache, enabledTypes, thresholds, insights
+            enabledTypes, thresholds, insights
         )
         detectFieldPatterns(
             s, PatternAxis.NOVEL,
-            statsCache.analyzable(s.novelFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
+            analyzableDefs(s, s.novelFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
             ownerValuesByDefId = axisValues(
                 stored = s.novelFieldValues.map { Triple(it.fieldDefinitionId, it.novelId, it.value) },
                 calculated = computeAllNovelCalculatedValues(s)
             ),
             ownerOf = { it.ownerId }, valueOf = { it.value },
-            statsCache, enabledTypes, thresholds, insights
+            enabledTypes, thresholds, insights
         )
 
         // 패턴 4: 사건 연도 집중 (특정 10년에 50%+ 집중)
@@ -3165,7 +3199,7 @@ class StatsDataProvider {
                     val novel = fd.universeId.takeIf { it in validUniverseIds }
                         ?.let { firstNovelByUniverse[it] } ?: continue
                     val fvs = valuesByDefId[fd.id].orEmpty()
-                    val statsConfig = statsCache.of(fd)
+                    val statsConfig = statsConfigOf(s, fd)
                     val values = fvs.flatMap { getFieldValues(s, fd, it.value, statsConfig) }
                     val topVal = ValueDistributions.of(values).entries.firstOrNull()
                     if (topVal != null && values.isNotEmpty()) {
@@ -3323,7 +3357,7 @@ class StatsDataProvider {
 
         // 기준 def = 차트가 파싱에 쓴 그 def(그룹의 primary). 값 공간을 차트와 일치시킨다.
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
         val charMap = s.characters.associateBy { it.id }
 
         // 캐릭터 한 명이 형제 def·다중값으로 여러 번 매칭돼도 목록에는 한 번만 — 차트 조각은
@@ -3399,7 +3433,7 @@ class StatsDataProvider {
         if (defById.isEmpty()) return null
 
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
         val eventMap = s.events.associateBy { it.id }
 
         val result = LinkedHashMap<Long, FieldValueEvent>()
@@ -3458,7 +3492,7 @@ class StatsDataProvider {
         if (defById.isEmpty()) return null
 
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
         val novelMap = s.novels.associateBy { it.id }
 
         val result = LinkedHashMap<Long, FieldValueNovel>()
@@ -3529,7 +3563,7 @@ class StatsDataProvider {
         // (같은 필드라도 세계관별 config(값 카테고리 등)가 다를 때의 과소/과대집계 방지).
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
         if (refDef.fieldType != FieldType.CALCULATED) {
-            val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+            val refCfg = statsConfigOf(s, refDef)
             // 관련 def 값만 순회 — 편향 카드마다 전체 fieldValues를 스캔하던 것 방지(P1-D).
             // 사전 그룹([valuesByDefId])이 있으면 재사용해 카드 수 × 전체스캔의 제곱 폭발을 없앤다.
             val relevant = if (valuesByDefId != null) idSet.flatMap { valuesByDefId[it].orEmpty() }
@@ -3545,7 +3579,7 @@ class StatsDataProvider {
             for ((charId, fieldMap) in calc) {
                 for (fd in calcDefs) {
                     val v = fieldMap[fd.id] ?: continue
-                    val cfg = FieldStatsConfig.fromConfig(fd.config)
+                    val cfg = statsConfigOf(s, fd)
                     perChar.getOrPut(charId) { mutableSetOf() }.addAll(getFieldValues(s, fd, v, cfg))
                 }
             }
@@ -3601,7 +3635,7 @@ class StatsDataProvider {
         if (defById.isEmpty()) return null
 
         val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
 
         // **대상 수**로 센다(값 건수가 아니다). 이 화면의 행 라벨은 '명'이고 제목은 'N명 기준'이라,
         // 다중값 필드에서 값 건수를 세면 10명 전원이 가진 값이 33%로 표시되고 행의 합이 모집단을
@@ -3663,7 +3697,7 @@ class StatsDataProvider {
         if (defById.isEmpty()) return null
 
         val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
 
         // 캐릭터 축과 **같은 처리**여야 한다(R-16의 짝 규칙) — 여기서도 값 건수가 아니라 대상 수다.
         val holders = HashMap<String, MutableSet<Long>>()
@@ -3718,7 +3752,7 @@ class StatsDataProvider {
         if (defById.isEmpty()) return null
 
         val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
-        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val refCfg = statsConfigOf(s, refDef)
 
         val holders = HashMap<String, MutableSet<Long>>()
         fun record(entityId: Long, value: String) {
@@ -4026,7 +4060,11 @@ class StatsDataProvider {
             // 거의 항상 카테고리가 되어 **캐릭터 순위가 카테고리 크기 순위로** 변한다
             // (같은 카테고리의 캐릭터가 전부 같은 값·같은 등수로 붙는다).
             // 카테고리 순위는 별개의 질문이므로 여기서 섞지 않는다 — 대신 값 축으로 통일한다.
-            val refCfg = FieldStatsConfig.fromConfig(fd.config).copy(statsGroupBy = "value")
+            // 정본이 아니라 **일부러 사본**이다(statsGroupBy만 "value"로 덮는다). 그래서
+            // [getFieldValues]의 스냅샷 메모를 지나지 않고 그대로 계산된다 — 카테고리 축
+            // 정본의 결과와 이 사본의 결과가 한 메모에 섞이면 분포와 순위가 같은 필드에
+            // 다른 수를 세는 R-16 위반이 된다(StatsKeysParityTest가 이 갈림을 잠근다).
+            val refCfg = statsConfigOf(s, fd).copy(statsGroupBy = "value")
             val tokensByValue: Map<Pair<Long, Long>, List<String>> = if (!isNumeric) {
                 // 빈 값은 인사이트 분포도 세지 않는다 — 키 공간을 정확히 맞춘다.
                 rawValues.filter { it.value.isNotBlank() }.associate {
@@ -4266,6 +4304,56 @@ class StatsDataProvider {
         java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, String>>>()
     private val novelCalcCache =
         java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, String>>>()
+
+    /**
+     * 스냅샷 하나의 통계 파싱 캐시 (B-215) — 두 겹이 한 묶음이다.
+     *
+     * - [configs]: 통계 설정의 **정본** (defId → 파싱 결과, 세 축 전부). 종전에는 소비처마다
+     *   `StatsFieldPolicy.ConfigCache`를 새로 만들어 같은 config JSON을 화면 적재당 소비처
+     *   수만큼 다시 파싱했고, **인스턴스가 갈려 있어 그 아래의 어떤 공유도 설 수 없었다.**
+     *   정의 테이블은 하나라 세 축의 id가 겹치지 않는다(entityType은 열이다).
+     * - [keysByDef]: (파싱 defId, 원문) → 통계 키 목록 메모. [getFieldValues]가 정본 config로
+     *   불린 호출만 여기 접는다.
+     *
+     * 묶음인 이유: 정본 판정과 메모 조회가 값마다 한 번씩 일어나므로, 스냅샷 키 조회를
+     * 한 번으로 줄인다([statsParseCacheOf]의 슬롯과 함께 값 루프의 고정비를 없앤다).
+     */
+    private class StatsParseCache(val configs: Map<Long, FieldStatsConfig>) {
+        val keysByDef =
+            java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.ConcurrentHashMap<String, List<String>>>()
+    }
+
+    /** 마지막 스냅샷의 파싱 캐시 fast path — 값마다 [IdentityKey]를 만들지 않기 위한 한 칸.
+     *  (키와 값을 한 객체로 게시한다 — [ResolverCache]와 같은 이유다.) */
+    private class ParseSlot(val snapshot: StatsSnapshot, val cache: StatsParseCache)
+
+    @Volatile private var lastParseSlot: ParseSlot? = null
+    private val statsParseCaches =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, StatsParseCache>()
+
+    private fun statsParseCacheOf(s: StatsSnapshot): StatsParseCache {
+        lastParseSlot?.let { if (it.snapshot === s) return it.cache }
+        val built = perSnapshot(statsParseCaches, s) { snap ->
+            val configs = HashMap<Long, FieldStatsConfig>()
+            for (fd in snap.fieldDefinitions) configs[fd.id] = FieldStatsConfig.fromConfig(fd.config)
+            for (fd in snap.eventFieldDefinitions) configs[fd.id] = FieldStatsConfig.fromConfig(fd.config)
+            for (fd in snap.novelFieldDefinitions) configs[fd.id] = FieldStatsConfig.fromConfig(fd.config)
+            StatsParseCache(configs)
+        }
+        lastParseSlot = ParseSlot(s, built)
+        return built
+    }
+
+    /** 통계 설정 정본 — 소비처는 이 맵(또는 [statsConfigOf])으로 config를 얻어야 메모를 지난다. */
+    private fun statsConfigsOf(s: StatsSnapshot): Map<Long, FieldStatsConfig> = statsParseCacheOf(s).configs
+
+    /** 정본 config 하나 — 스냅샷 밖 def(방어적 폴백)는 그 자리에서 파싱하되 메모 대상이 아니다. */
+    private fun statsConfigOf(s: StatsSnapshot, fd: FieldDefinition): FieldStatsConfig =
+        statsConfigsOf(s)[fd.id] ?: FieldStatsConfig.fromConfig(fd.config)
+
+    /** '통계에 포함' 필터 — [StatsFieldPolicy.analyzable]과 같은 판정을 정본 config로 낸다. */
+    private fun analyzableDefs(s: StatsSnapshot, defs: List<FieldDefinition>): List<FieldDefinition> =
+        defs.filter { statsConfigOf(s, it).enabled }
 
     private fun evaluateAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
         val calculatedFields = s.fieldDefinitions.filter { it.fieldType == FieldType.CALCULATED }

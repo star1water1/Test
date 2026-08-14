@@ -459,6 +459,100 @@ fun main() {
     println("  → 보관분(스냅샷 1개): ${mb((h1 - h0).coerceAtLeast(0))} · 캐시 상한 4스냅샷이면 그 ×4가 최악")
     println("  keep: 값 ${freshSnap.fieldValues.size} · 캐시 주인 ${freshProvider.javaClass.simpleName}")
 
+    // ── [6] B-215 — getFieldValues 통과(토큰화+라벨/카테고리+구간)의 공유 가능 몫 ──
+    // 다섯 소비처(요약 TOP5·인사이트·레거시·교차·패턴)가 같은 값 표를 각자 이 함수로 지난다.
+    // 여기서 재는 것 셋: ⓐ 값 표의 모양(고유 (def, 원문) 쌍 수 — 메모 엔트리 상한과 중복 접힘)
+    // ⓑ 통과 1회의 단독 비용(1회차 vs 2회차 — 기준선에서는 같고, 메모가 서면 2회차가 조회만 남는다)
+    // ⓒ 메모 보관 힙(변경 후에만 — [5]의 생존 프로토콜, 비정본 config 우회로 다른 캐시를 먼저 채워 가른다)
+    println()
+    println("[6] B-215 — getFieldValues 통과의 공유 가능 몫 (채움 ×30)")
+    val gfv = cls.getDeclaredMethod(
+        "getFieldValues", StatsSnapshot::class.java,
+        FieldDefinition::class.java, String::class.java,
+        com.novelcharacter.app.data.model.FieldStatsConfig::class.java
+    ).apply { isAccessible = true }
+    val augM = helper("augmentedCharacterValues")
+
+    // 소비처가 쓰는 그 config — 변경 후에는 스냅샷 정본(statsConfigsOf), 기준선에서는 fromConfig 조립
+    @Suppress("UNCHECKED_CAST")
+    fun configsFor(snap: StatsSnapshot, provider: StatsDataProvider): Map<Long, com.novelcharacter.app.data.model.FieldStatsConfig> =
+        runCatching {
+            val m = cls.getDeclaredMethod("statsConfigsOf", StatsSnapshot::class.java).apply { isAccessible = true }
+            m.invoke(provider, snap) as Map<Long, com.novelcharacter.app.data.model.FieldStatsConfig>
+        }.getOrElse {
+            snap.fieldDefinitions.associate { fd ->
+                fd.id to com.novelcharacter.app.data.model.FieldStatsConfig.fromConfig(fd.config)
+            }
+        }
+
+    @Suppress("UNCHECKED_CAST")
+    fun passOnce(snap: StatsSnapshot, provider: StatsDataProvider,
+                 cfgs: Map<Long, com.novelcharacter.app.data.model.FieldStatsConfig>): Long {
+        val defById = snap.fieldDefinitions.associateBy { it.id }
+        var tokens = 0L
+        val aug = augM.invoke(provider, snap) as Map<Long, List<CharacterFieldValue>>
+        for ((defId, values) in aug) {
+            val fd = defById[defId] ?: continue
+            val cfg = cfgs[defId] ?: continue
+            if (!cfg.enabled) continue
+            for (fv in values) {
+                if (fv.value.isBlank()) continue
+                tokens += (gfv.invoke(provider, snap, fd, fv.value, cfg) as List<String>).size
+            }
+        }
+        return tokens
+    }
+
+    // ⓐ 값 표의 모양
+    run {
+        @Suppress("UNCHECKED_CAST")
+        val aug = augM.invoke(p, fill30) as Map<Long, List<CharacterFieldValue>>
+        var rows = 0L
+        val distinct = HashSet<Pair<Long, String>>()
+        for ((defId, values) in aug) for (fv in values) {
+            if (fv.value.isBlank()) continue
+            rows++; distinct.add(defId to fv.value)
+        }
+        println("  ⓐ 값 표: 행 ${rows} · 고유 (def, 원문) 쌍 ${distinct.size} " +
+            "(중복 접힘 ${"%.1f".format(rows.toDouble() / distinct.size)}배 — 메모 엔트리 상한)")
+    }
+
+    // ⓑ 통과 단독 비용 — 새 프로바이더(콜드)에서 1~4회차를 각각 잰다
+    run {
+        val freshS = snapshotOf(30, filledValues)
+        val freshP = StatsDataProvider()
+        val cfgs = configsFor(freshS, freshP)
+        for (i in 1..4) {
+            var tokens = 0L
+            val t0 = System.nanoTime()
+            val alloc = allocatedBytes { tokens = passOnce(freshS, freshP, cfgs) }
+            val t = (System.nanoTime() - t0) / 1_000_000
+            println("  ⓑ 통과 ${i}회차: ${t}ms · ${mb(alloc)} (토큰 $tokens)")
+        }
+    }
+
+    // ⓒ 메모 보관 힙 — 변경 후에만. 비정본 config 사본(메모 우회)으로 다른 캐시를 먼저 채워
+    //    h1을 뜨고, 정본 통과(메모 적재) 뒤 h2 — 델타가 메모의 몫이다. [5]의 생존 프로토콜.
+    runCatching {
+        val f = cls.getDeclaredField("statsParseCaches").apply { isAccessible = true }
+        val freshS = snapshotOf(30, filledValues)
+        val freshP = StatsDataProvider()
+        val cfgs = configsFor(freshS, freshP)
+        val bypass = cfgs.mapValues { (_, c) -> c.copy() }   // 값 동일·정체 다름 → 메모 우회
+        passOnce(freshS, freshP, bypass)
+        val h1 = quietHeap()
+        passOnce(freshS, freshP, cfgs)
+        val h2 = quietHeap()
+        val store = f.get(freshP) as java.util.concurrent.ConcurrentHashMap<*, *>
+        val entryCount = store.values.sumOf { bundle ->
+            val keysByDef = bundle.javaClass.getDeclaredField("keysByDef")
+                .apply { isAccessible = true }.get(bundle) as java.util.concurrent.ConcurrentHashMap<*, *>
+            keysByDef.values.sumOf { (it as java.util.concurrent.ConcurrentHashMap<*, *>).size }
+        }
+        println("  ⓒ 메모 보관: ${mb((h2 - h1).coerceAtLeast(0))} (엔트리 ${entryCount} · " +
+            "스냅샷 생존 확인 ${freshS.fieldValues.size}행 · 캐시 상한 4스냅샷이면 그 ×4가 최악)")
+    }.onFailure { println("  ⓒ 메모 보관: 없음(기준선 — statsParseCaches 미존재)") }
+
     println()
     println("### STATS HOTSPOT PROBE 끝")
 }
