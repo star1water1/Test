@@ -2570,7 +2570,11 @@ class StatsDataProvider {
         val novelMap = s.novels.associateBy { it.id }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
         val filledDefIdsByChar = filledCharacterDefIds(s)
-        val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
+        // 채움 계수는 접힌 값 표로 — 호출마다 fieldValues 전량(앱에서 가장 큰 컬렉션)을
+        // 재그룹하던 것을 걷었다(S6 6차, B-216). 비CALCULATED def의 augmented 버킷은 저장
+        // 행 그대로이므로(합성은 CALCULATED def에만 행을 더한다 — [augmentedCharacterValues])
+        // 건수 합이 종전의 '저장 비블랭크 계수'와 같다. 대조는 StatsOverviewParityTest.
+        val countsByFieldDef = valueCountsOf(s)
 
         // 미배정 스코프는 novelId 경유가 불가 — 스냅샷에 보존된 정의 전체를 그 캐릭터의
         // 필드셋으로 쓴다. 계산 필드 거르기는 [CompletionRate]가 한다.
@@ -2587,13 +2591,14 @@ class StatsDataProvider {
             weights = s.completionWeights
         )
 
-        // 개별 필드별 완성도 (CALCULATED 필드 제외). 미배정 스코프 모수 = 스코프 캐릭터 전체
+        // 개별 필드별 완성도 (CALCULATED 필드 제외). 미배정 스코프 모수 = 스코프 캐릭터 전체.
+        // 모수는 세계관별로 한 번만 센다 — def마다 작품·캐릭터 전수를 필터하던 것(def×캐릭터
+        // 곱)을 걷었다(S6 6차 — fa 완성도가 S6 4차에 간 그 길, 세는 조건 무변경).
+        val charCountByUniverse = characterCountsByUniverse(s)
         val fieldCompletionDetails = s.fieldDefinitions.filter { it.fieldType != FieldType.CALCULATED }.map { fd ->
-            val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
-            val relevantChars = if (s.unassignedScope) s.characters
-                else s.characters.filter { it.novelId in universeNovels }
-            val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
-            val total = relevantChars.size
+            val filled = countsByFieldDef[fd.id]?.values?.sum() ?: 0
+            val total = if (s.unassignedScope) s.characters.size
+                else charCountByUniverse[fd.universeId] ?: 0
             val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
             FieldCompletionDetail(fd.name, fd.groupName, filled, total, rate)
         }.sortedBy { it.completionRate }
@@ -2645,23 +2650,21 @@ class StatsDataProvider {
 
     // ===== 커스텀 필드 분석 (레거시) =====
     fun computeFieldAnalysis(s: StatsSnapshot): FieldAnalysisStats {
-        // 저장 값 + CALCULATED 계산값. 수식 필드는 저장 행이 없어 이 화면에서만 통째로
-        // 빠져 있었다 — 인사이트·순위에는 나오는 필드가 여기서만 사라지는 상태였다(S-15, R-16).
-        val valuesByFieldDef = augmentedCharacterValues(s)
-
         // 분포·요약의 대상은 '통계에 포함'된 필드다. 이 화면은 사용자가 필드를 고르는 곳이
         // 아니라 앱이 전부 나열하는 곳이므로 설정을 따른다(S-15, [StatsFieldPolicy]).
         val analyzableFields = analyzableDefs(s, s.fieldDefinitions)
 
         val fieldValueDists = mutableListOf<FieldValueDistribution>()
 
-        // 계수는 전부 접힌 값 표(원문 × 건수) 위에서 돈다 — S6 4차. 건별 토큰 재료화만
-        // 없어지고 세는 답은 같다([valueCountsOf] — aug가 이미 블랭크를 걸러 싣는다).
+        // 계수·파싱은 전부 접힌 값 표(원문 × 건수) 위에서 돈다 — S6 4차·6차. 저장 값 +
+        // CALCULATED 계산값(R-16)은 [valueCountsOf]가 augmented 표에서 그대로 물려받고,
+        // 건별 토큰·수치 재료화만 없어지고 세는 답은 같다(aug가 블랭크를 걸러 싣는다 —
+        // 그 전제와 아래 대조는 StatsFoldParityTest가 잠근다).
         val countsByFieldDef = valueCountsOf(s)
 
         // ── 이산 값 분포: 값 자체가 분포 키이므로 드릴다운도 값 일치 ──
         for (fd in analyzableFields.filter { isDiscreteDistribution(it.fieldType) }) {
-            if (fd.id !in valuesByFieldDef) continue
+            if (fd.id !in countsByFieldDef) continue
             val statsConfig = statsConfigOf(s, fd)
             val dist = ValueDistributions.sorted(
                 foldStatsKeyCounts(s, fd, statsConfig, countsByFieldDef[fd.id].orEmpty())
@@ -2678,11 +2681,14 @@ class StatsDataProvider {
         // 수치 파싱은 한 벌이다 — 자동 구간 분포와 아래 수치 요약이 **같은 원문을 각자
         // 파싱**하던 것을 걷었다(S6 4차). 블랭크·비수치는 파싱이 떨구므로
         // ([NumericBinning.partValue] → null) 블랭크 필터와 결과가 같다.
+        // 파싱은 접힌 표의 쌍둥이로 — 고유 원문마다 한 번만 지난다(S6 6차, 인사이트가 쓰는
+        // 그 판). 목록 순서는 (첫 등장 × 건수)로 행 순서와 다르나, 소비처(자동 구간·요약)는
+        // 전부 다중집합 함수라 답이 같다 — 쌍둥이의 주석과 StatsFoldParityTest가 그 근거다.
         val numericByFieldDef = HashMap<Long, List<Float>>()
         for (fd in analyzableFields) {
             if (!isBinnable(fd.fieldType)) continue
-            val raw = valuesByFieldDef[fd.id] ?: continue
-            numericByFieldDef[fd.id] = NumericBinning.numericValuesOf(raw.map { it.value }, "", 0)
+            val counts = countsByFieldDef[fd.id] ?: continue
+            numericByFieldDef[fd.id] = NumericBinning.numericValuesOf(counts, "", 0)
         }
 
         // ── 수치형(NUMBER·CALCULATED) 구간 분포 ──
@@ -2734,37 +2740,47 @@ class StatsDataProvider {
             )
         }
 
-        // ── BODY_SIZE: 파트별 자동 구간 분포 ──
+        // ── BODY_SIZE: 파트별 자동 구간 분포 + 수치 요약 ──
         // 라벨("160~170")은 **계산 결과**라 저장값과 절대 같지 않다. 종전에는 그 라벨을
         // 드릴다운 매칭 키로 그대로 넘겨 어떤 입력에서도 0명이 나왔다(S-16). 이제 구간을
         // 만든 규칙 자체를 스펙으로 실어 보내고, 구간 생성은 [NumericBinning]이 단일 소스다.
+        // 파싱은 파트마다 한 벌이다 — 분포와 요약이 **행 전체를 각자 파싱하던 두 벌**을 접힌
+        // 표 위의 한 벌로 걷었다(S6 6차). 파트 수의 표본은 접힌 표의 첫 키 — augmented가
+        // 블랭크를 걸러 실으므로 첫 행의 값과 같다(전제·대조는 StatsFoldParityTest가 잠근다).
+        // 요약은 목록 순서가 화면 순서다(수치 요약 먼저, BODY 나중) — 여기서 모아 두었다가
+        // 아래 수치 요약 뒤에 싣는다.
+        val bodySummaries = mutableListOf<NumberFieldSummary>()
         for (fd in analyzableFields.filter { it.fieldType == FieldType.BODY_SIZE }) {
-            val rawValues = valuesByFieldDef[fd.id] ?: continue
+            val counts = countsByFieldDef[fd.id] ?: continue
             val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
             val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
-            val partCount = bodySizePartCount(structuredConfig, rawValues.firstOrNull()?.value, separator)
+            val partCount = bodySizePartCount(structuredConfig, counts.keys.firstOrNull(), separator)
+            val binning = statsConfigOf(s, fd).binning
 
             for (partIdx in 0 until partCount) {
                 val partLabel = bodySizePartLabel(structuredConfig, partIdx)
-                val numericValues = rawValues.mapNotNull {
-                    NumericBinning.partValue(it.value, separator, partIdx)
-                }
+                val numericValues = NumericBinning.numericValuesOf(counts, separator, partIdx)
                 val bins = NumericBinning.autoBins(numericValues)
-                if (bins.isEmpty()) continue
-
-                val dist = linkedMapOf<String, Int>()
-                val specs = linkedMapOf<String, FieldValueMatchSpec>()
-                for (bin in bins) {
-                    dist[bin.label] = numericValues.count { bin.contains(it) }
-                    specs[bin.label] = FieldValueMatchSpec.of(bin, partIdx, separator)
-                }
-                fieldValueDists.add(
-                    FieldValueDistribution(
-                        fd.id, "${fd.name} — $partLabel", fd.type, fd.groupName, dist,
-                        matchSpecs = specs,
-                        orderedByValue = true
+                if (bins.isNotEmpty()) {
+                    val dist = linkedMapOf<String, Int>()
+                    val specs = linkedMapOf<String, FieldValueMatchSpec>()
+                    for (bin in bins) {
+                        dist[bin.label] = numericValues.count { bin.contains(it) }
+                        specs[bin.label] = FieldValueMatchSpec.of(bin, partIdx, separator)
+                    }
+                    fieldValueDists.add(
+                        FieldValueDistribution(
+                            fd.id, "${fd.name} — $partLabel", fd.type, fd.groupName, dist,
+                            matchSpecs = specs,
+                            orderedByValue = true
+                        )
                     )
-                )
+                }
+                if (numericValues.isNotEmpty()) {
+                    numberSummary(
+                        "${fd.name} — $partLabel", fd.id, numericValues, binning, partIdx, separator
+                    )?.let { bodySummaries.add(it) }
+                }
             }
         }
 
@@ -2780,25 +2796,9 @@ class StatsDataProvider {
                 ?.let { numberSummaries.add(it) }
         }
 
-        // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median)
-        for (fd in analyzableFields.filter { it.fieldType == FieldType.BODY_SIZE }) {
-            val rawValues = valuesByFieldDef[fd.id] ?: continue
-            val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
-            val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
-            val partCount = bodySizePartCount(structuredConfig, rawValues.firstOrNull()?.value, separator)
-            val binning = statsConfigOf(s, fd).binning
-
-            for (partIdx in 0 until partCount) {
-                val partLabel = bodySizePartLabel(structuredConfig, partIdx)
-                val numericValues = NumericBinning.numericValuesOf(
-                    rawValues.map { it.value }, separator, partIdx
-                )
-                if (numericValues.isEmpty()) continue
-                numberSummary(
-                    "${fd.name} — $partLabel", fd.id, numericValues, binning, partIdx, separator
-                )?.let { numberSummaries.add(it) }
-            }
-        }
+        // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median) — 파싱·조립은 위 BODY 분포
+        // 루프가 한 벌로 끝냈고(S6 6차), 여기는 목록 순서 계약(수치 요약 먼저)대로 싣기만 한다.
+        numberSummaries.addAll(bodySummaries)
 
         // 개별 필드별 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 항상 100%이므로 의미 없음)
         // '통계에 포함'은 여기에 적용하지 않는다: 완성도는 '분석'이 아니라 '입력 현황'이다.

@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.PatternThresholds
@@ -27,7 +28,8 @@ import org.junit.Test
  *
  * 잠그는 것 다섯:
  * 1. **옛 건별 파이프라인과 같은 답** — 요약 TOP5 · 이산 분포 · 사용자 구간 계수 · 수치
- *    자동구간/요약 · 필드별 완성도 · 패턴 편중 · 작품별 편중. 접기 가중(같은 원문 여러 건)과
+ *    자동구간/요약 · **BODY 파트 분포/요약**(파트 파싱 두 벌 → 한 벌 — S6 6차) ·
+ *    필드별 완성도 · 패턴 편중 · 작품별 편중. 접기 가중(같은 원문 여러 건)과
  *    복수 토큰·동수(tie)·그룹 파싱(R-15)이 전부 실린 스냅샷으로 대조한다.
  * 2. **순서까지 같다** — 분포는 LinkedHashMap이라 entries 순서가 화면 순서다. 값 대조만 하면
  *    "합은 같은데 다른 것부터 그리는" 퇴화를 못 잡는다.
@@ -326,6 +328,117 @@ class StatsFoldParityTest {
         assertTrue("수치 대조가 헛돌았다", compared >= 3)
     }
 
+    // ===== 4-b. BODY 파트 — 분포·요약이 파트마다 두 벌 파싱하던 파이프라인과 같다 (S6 6차) =====
+
+    /**
+     * BODY 파트 갈래 전용 스냅샷 — 구조화 설정 유/무(separator·파트 수 표본 갈래), 파싱
+     * 탈락 파트(비수치·짧은 값), 접기 가중(같은 원문 2건), 요약 목록 순서 대조용 NUMBER 하나.
+     */
+    private fun bodySnapshot(): StatsSnapshot {
+        val defs = listOf(
+            def(40, "body", "신체", type = "BODY_SIZE"),   // 설정 없음 → separator "-" · 파트 수는 첫 값 표본
+            def(41, "magic", "마법", type = "BODY_SIZE",
+                config = """{"structuredInput":{"enabled":true,"separator":"/",""" +
+                    """"parts":[{"label":"위력"},{"label":"사거리"}]}}"""),
+            def(42, "power", "힘", type = "NUMBER")
+        )
+        val chars = (1L..5L).map {
+            Character(id = it, name = "c$it", novelId = 1L, updatedAt = 1_700_000_000_000L)
+        }
+        val values = listOf(
+            CharacterFieldValue(id = 1, characterId = 1, fieldDefinitionId = 40, value = "170-60-80"),
+            CharacterFieldValue(id = 2, characterId = 2, fieldDefinitionId = 40, value = "170-60-80"),
+            CharacterFieldValue(id = 3, characterId = 3, fieldDefinitionId = 40, value = "165-55-75"),
+            CharacterFieldValue(id = 4, characterId = 4, fieldDefinitionId = 40, value = "abc-50-70"),
+            CharacterFieldValue(id = 5, characterId = 5, fieldDefinitionId = 40, value = "155"),
+            CharacterFieldValue(id = 6, characterId = 1, fieldDefinitionId = 41, value = "12/300"),
+            CharacterFieldValue(id = 7, characterId = 2, fieldDefinitionId = 41, value = "8/150"),
+            CharacterFieldValue(id = 8, characterId = 3, fieldDefinitionId = 41, value = "xx/90"),
+            CharacterFieldValue(id = 9, characterId = 4, fieldDefinitionId = 42, value = "3"),
+            CharacterFieldValue(id = 10, characterId = 5, fieldDefinitionId = 42, value = "9")
+        )
+        return StatsSnapshot(
+            characters = chars,
+            novels = listOf(Novel(id = 1, title = "A작품", universeId = uniA)),
+            universes = listOf(Universe(id = uniA, name = "A")),
+            events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
+            tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
+            fieldDefinitions = defs, fieldValues = values, crossRefs = emptyList(),
+            valueEntries = emptyList()
+        )
+    }
+
+    @Test
+    fun `BODY 파트 분포와 요약이 파트마다 두 벌 파싱하던 파이프라인과 순서까지 같다`() {
+        val s = bodySnapshot()
+        val legacyP = StatsDataProvider()
+        val aug = augOf(legacyP, s)
+        val fa = StatsDataProvider().computeFieldAnalysis(s)
+
+        var comparedDists = 0
+        var comparedSummaries = 0
+        for (fd in analyzable(legacyP, s)) {
+            if (fd.fieldType != FieldType.BODY_SIZE) continue
+            val rawValues = aug.getValue(fd.id)
+            val structured = StructuredInputConfig.fromConfig(fd.config)
+            val separator = if (structured.enabled) structured.separator else "-"
+            val partCount = if (structured.enabled && structured.parts.isNotEmpty()) {
+                structured.parts.size
+            } else rawValues.first().value.split(separator).size
+            for (partIdx in 0 until partCount) {
+                val partLabel = if (structured.enabled && partIdx < structured.parts.size) {
+                    structured.parts[partIdx].label
+                } else "칸${partIdx + 1}"
+                val name = "${fd.name} — $partLabel"
+
+                // 접기 도입 전 분포: 행마다 partValue → autoBins → bin별 count
+                val legacyNums = rawValues.mapNotNull {
+                    NumericBinning.partValue(it.value, separator, partIdx)
+                }
+                val bins = NumericBinning.autoBins(legacyNums)
+                val actualDist = fa.fieldValueDistributions.firstOrNull { it.fieldName == name }
+                if (bins.isEmpty()) {
+                    assertEquals("$name — 구간 없는 파트에 분포가 생겼다", null, actualDist)
+                } else {
+                    assertEquals(name,
+                        bins.map { b -> b.label to legacyNums.count { b.contains(it) } },
+                        actualDist!!.distribution.toList())
+                    comparedDists++
+                }
+
+                // 접기 도입 전 요약: 같은 행 전체를 **다시** 파싱하던 두 벌째와 같은 답
+                val legacySummaryNums = NumericBinning.numericValuesOf(
+                    rawValues.map { it.value }, separator, partIdx
+                )
+                assertEquals("$name — 분포와 요약의 파싱이 갈렸다", legacyNums, legacySummaryNums)
+                val actual = fa.numberFieldSummaries.firstOrNull { it.fieldName == name }
+                if (legacySummaryNums.isEmpty()) {
+                    assertEquals(null, actual)
+                } else {
+                    assertEquals(name, legacySummaryNums.size, actual!!.count)
+                    assertEquals(legacySummaryNums.min(), actual.min)
+                    assertEquals(legacySummaryNums.max(), actual.max)
+                    val sorted = legacySummaryNums.sorted()
+                    val median = if (sorted.size % 2 == 0) {
+                        (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
+                    } else sorted[sorted.size / 2]
+                    assertEquals(median, actual.median)
+                    comparedSummaries++
+                }
+            }
+        }
+        // 신체 3파트(파트0은 "abc" 탈락 포함) + 마법 2파트(파트0 "xx" 탈락 포함)
+        assertTrue("BODY 분포 대조가 헛돌았다: $comparedDists", comparedDists >= 4)
+        assertTrue("BODY 요약 대조가 헛돌았다: $comparedSummaries", comparedSummaries >= 5)
+
+        // 요약 목록 순서 계약 — 수치(NUMBER·CALCULATED) 요약이 먼저, BODY 파트 요약이 뒤다.
+        // 파싱 한 벌 합류가 이 순서를 뒤집으면 화면의 요약 나열이 바뀐다.
+        val names = fa.numberFieldSummaries.map { it.fieldName }
+        val powerIdx = names.indexOf("힘")
+        val firstBody = names.indexOfFirst { it.startsWith("신체") || it.startsWith("마법") }
+        assertTrue("요약 순서가 갈렸다: $names", powerIdx in 0 until firstBody)
+    }
+
     // ===== 5. 필드별 완성도 — def×캐릭터 필터와 같은 답 =====
 
     /** 접기 도입 전 — def마다 작품·캐릭터 전수를 필터하던 그 모양. */
@@ -435,9 +548,10 @@ class StatsFoldParityTest {
     fun `모든 소비처를 돌린 뒤에도 접힌 값 표가 새로 지은 것과 순서까지 같다`() {
         val s = richSnapshot()
         val p = StatsDataProvider()
-        // S6 5차부터 computeDataHealth(타입 판정)도 이 표의 소비처다 — 함께 돌린다.
+        // S6 5차부터 computeDataHealth(타입 판정), S6 6차부터 computeDataOverview(완성도
+        // 계수)도 이 표의 소비처다 — 함께 돌린다.
         p.computeSummary(s); p.computeFieldInsights(s); p.computeFieldAnalysis(s)
-        p.detectPatterns(s); p.computeDataHealth(s)
+        p.detectPatterns(s); p.computeDataHealth(s); p.computeDataOverview(s)
 
         val f = StatsDataProvider::class.java.getDeclaredField("valueCountsCache")
         f.isAccessible = true
