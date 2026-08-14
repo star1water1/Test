@@ -68,15 +68,4 @@ class StatsFieldPolicyTest {
         assertTrue(StatsFieldPolicy.expandGroup(defs, 999).isEmpty())
     }
 
-    @Test
-    fun `캐시는 같은 판정을 준다`() {
-        val defs = listOf(field(1, "job", 1, true), field(2, "memo", 1, false))
-        val cache = StatsFieldPolicy.ConfigCache()
-        assertEquals(
-            StatsFieldPolicy.analyzable(defs).map { it.id },
-            cache.analyzable(defs).map { it.id }
-        )
-        assertTrue(cache.of(defs[0]).enabled)
-        assertFalse(cache.of(defs[1]).enabled)
-    }
 }

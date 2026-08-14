@@ -26,6 +26,12 @@ import com.novelcharacter.app.data.model.FieldStatsConfig
  * - **필드 완성도·데이터 건강**은 '입력 현황'이지 '분석'이 아니다. 메모성 필드를 통계에서
  *   뺀 사용자가 그 필드의 입력 누락까지 안 보이길 원한다고 볼 근거가 없으므로 거르지 않는다.
  *   (예외를 둘 때는 이유를 코드에 적는다 — R-16의 규약.)
+ *
+ * ## 파싱 캐시는 여기 없다
+ *
+ * 종전의 `ConfigCache`(호출부마다 새로 만드는 def당 1회 캐시)는 B-215가 걷었다 — 통계
+ * 경로의 config 정본은 이제 StatsDataProvider의 스냅샷 단위 캐시(`statsConfigsOf`)이고,
+ * 호출부별 인스턴스는 그 아래의 (파싱 def, 원문) 메모가 서지 못하게 막는 바로 그 갈림이었다.
  */
 object StatsFieldPolicy {
 
@@ -53,20 +59,4 @@ object StatsFieldPolicy {
         return listOf(picked) + siblings
     }
 
-    /**
-     * config 파싱 결과를 def당 1회만 만들어 재사용하는 캐시.
-     * 한 함수 안에서 같은 def의 설정을 여러 번 읽는 경로(패턴 감지·레거시 분석)가 쓴다 —
-     * JSON 파싱을 필드 수 × 값 수만큼 반복하지 않기 위해서다.
-     */
-    class ConfigCache {
-        private val parsed = HashMap<Long, FieldStatsConfig>()
-
-        fun of(fd: FieldDefinition): FieldStatsConfig =
-            parsed.getOrPut(fd.id) { FieldStatsConfig.fromConfig(fd.config) }
-
-        fun isAnalyzable(fd: FieldDefinition): Boolean = of(fd).enabled
-
-        fun analyzable(defs: List<FieldDefinition>): List<FieldDefinition> =
-            defs.filter { isAnalyzable(it) }
-    }
 }
