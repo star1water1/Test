@@ -4125,7 +4125,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = r.displayOrder ?: ((dao.getMaxOrder(r.entityType) ?: -1) + 1),
                         isRequired = r.isRequired ?: false,
                         entityType = r.entityType,
-                        code = safeCode
+                        code = safeCode,
+                        createdAt = r.createdAt ?: System.currentTimeMillis()
                     )
                 )
                 result.newDefaultFields++
@@ -4147,6 +4148,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val description = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
         val entityType = cols["대상"] ?: -1
         val code = cols["코드"] ?: -1
+        // 내보내기가 싣는 생성일을 되읽는다 — 안 읽으면 신규 기기 복원마다 생성일이 현재
+        // 시각으로 갈려 왕복이 멱등이 아니게 된다(다른 전 시트는 되읽어 보존한다).
+        val createdAt = cols["생성일"] ?: -1
     }
 
     /**
@@ -4163,6 +4167,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val isRequired: Boolean?,
         val entityType: String,
         val code: String,
+        val createdAt: Long?,
         val aiColumnPresent: Boolean,
         val aiCellText: String,
         val descriptionColumnPresent: Boolean,
@@ -4190,6 +4195,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (c.entityType >= 0) getCellString(row, c.entityType) else null
         ),
         code = if (c.code >= 0) getCellCode(row, c.code, ctx, result) else "",
+        createdAt = if (c.createdAt >= 0) parseNumber(getCellString(row, c.createdAt))?.toLong() else null,
         aiColumnPresent = c.aiSuggest >= 0,
         aiCellText = getCellString(row, c.aiSuggest),
         descriptionColumnPresent = c.description >= 0,
@@ -4246,7 +4252,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         groupName = r.groupName ?: existing.groupName,
         displayOrder = r.displayOrder ?: existing.displayOrder,
         isRequired = r.isRequired ?: existing.isRequired,
-        entityType = r.entityType
+        entityType = r.entityType,
+        createdAt = r.createdAt ?: existing.createdAt
     )
 
     // ── 등급 체계 가져오기 (U-1 — 필드 정의 직전: '등급체계' 열이 여기서 만든 체계를 찾는다) ──
@@ -7832,7 +7839,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          * 다시 들이는 것만으로 **대표 그림의 기준이 조용히 풀린다.**
          */
         val isBasisAxis: Boolean?,
-        val displayOrder: Int,
+        /** null = 열 없음·빈칸·해석 불가 — 병합은 기존 순서를 지킨다(다른 전 시트와 같은 규약). */
+        val displayOrder: Int?,
         val code: String,
         val createdAt: Long
     )
@@ -7873,7 +7881,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             candidateFiltersJson = filterCell as? DuelCandidateFilter.SheetCell.Value,
             candidateFiltersMalformed = filterCell is DuelCandidateFilter.SheetCell.Malformed,
             isBasisAxis = sheetBooleanOrKeep(cols.containsKey("기준축"), cell("기준축")),
-            displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt() ?: 0,
+            // ?: 0으로 접지 않는다 — 열을 지우거나 칸을 비운 파일이 모든 축의 순서를 0으로
+            // 리셋하던 자리다. null이면 병합이 기존 순서를 지킨다(R-36).
+            displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt(),
             code = cell("코드"),
             createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
         )
@@ -7960,7 +7970,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             },
             // 열이 없으면 기존 값을 지킨다(F1-A) — 그러지 않으면 v56 전 파일이 기준을 푼다.
             isBasisAxis = r.isBasisAxis ?: existing.isBasisAxis,
-            displayOrder = r.displayOrder
+            displayOrder = r.displayOrder ?: existing.displayOrder
         )
 
     private suspend fun importDuelAxes(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -8043,7 +8053,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         universeId = universe.id,
                         name = r.name,
                         targetType = r.targetType,
-                        displayOrder = r.displayOrder,
+                        displayOrder = r.displayOrder ?: 0,
                         createdAt = r.createdAt,
                         influenceFieldKeys = newAxisLinks(r.influenceFieldKeys),
                         outcomeFieldKeys = newAxisLinks(r.outcomeFieldKeys),
@@ -9147,9 +9157,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     /**
-     * @param dateHint true이면 숫자 셀을 적극적으로 날짜 변환 시도 (생일 등 날짜 필드용)
-     */
-    /**
      * 시트에 **내용이 있는** 데이터 행이 1개 이상인가 — 덮어쓰기 가드([OverwriteGuard])의 입력.
      * null = 시트 없음. lazy Sequence라 첫 발견 즉시 멈춘다 — 정상 파일에서는 첫 행에서 끝난다.
      *
@@ -9169,6 +9176,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return OverwriteGuard.hasDataRow(rows)
     }
 
+    /**
+     * @param dateHint true이면 숫자 셀을 적극적으로 날짜 변환 시도 (생일 등 날짜 필드용)
+     */
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex)
