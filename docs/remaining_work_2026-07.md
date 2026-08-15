@@ -7878,6 +7878,11 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > ⓒ **코드 결함은 찾지 못했다** — 사다리·계수·순서를 가져오기 짝과 다시 대조했고 그대로였다.
    > **시험은 늘지 않았다(2930 그대로)**: 찾은 셋이 각각 *문서 등재·검사 강화·주석*이라 순수
    > 시험이 닿는 부류가 아니다.
+   > **콜드 검토분 CI도 초록 확인 후 병합** — PR **#313**, run `31896105102`, head `d4a6758`.
+   > 단계를 봤다(`Static checks` ✓ 29초 — **신설한 `check_single_source_map.sh`가 여기서 처음
+   > 기계에 걸렸다** · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분19초 · `Build Debug APK` ✓ 37초 ·
+   > `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓. Release 둘의 skipped는 조건부라 정상).
+   > **`Commit Room schemas`가 아무것도 얹지 않았다** — 병합 직전 브랜치 머리가 `d4a6758` 그대로다.
    >
    > **⑤ 범위 밖 둘을 등재만 했다(착수 규칙 2번).** **B-236**(🟡 미리보기가 행마다 DB를 묻는다 —
    > `analyze*` 여덟 자리. 가져오기는 B-210으로 내렸는데 미리보기만 남았고, 잣대는 `scalability`
