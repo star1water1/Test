@@ -116,18 +116,27 @@ class AutoBackupWorker(
                     imageReport.referencedCount, imageReport.includedCount, imageReport.excludedCount
                 )
             } else null
+            // 참조 목록을 못 읽은 항목은 **손실 문구와 갈라** 남긴다(B-225) — 그 항목의 이미지는
+            // 담기지도, 누락으로 세지지도 못했다. 위 문구에 합치면 "N장 중 N장 담김"이라는
+            // 참말이 '완전하다'는 거짓 결론을 만든다. 배경 경로라 이 한 줄이 유일한 흔적이다.
+            val unreadableWarning = if (imageReport.referencesIncomplete) {
+                appContext.getString(
+                    com.novelcharacter.app.R.string.export_images_refs_unreadable,
+                    imageReport.unreadableRefCount
+                )
+            } else null
             // 잘림도 같은 경로로 남긴다 — 수동 내보내기의 export_cells_truncated와 같은 문구.
             val truncationWarning = if (truncatedCells > 0) {
                 appContext.getString(com.novelcharacter.app.R.string.export_cells_truncated, truncatedCells)
             } else null
-            val backupWarning = listOfNotNull(imageWarning, truncationWarning)
+            val backupWarning = listOfNotNull(imageWarning, unreadableWarning, truncationWarning)
                 .joinToString("\n").ifBlank { null }
             statusStore.recordSuccess(backupWarning)
             Log.i(TAG, "Auto backup completed successfully")
             logResult(com.novelcharacter.app.util.OpResult.success(
                 com.novelcharacter.app.util.OpResult.CAT_BACKUP,
                 appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_success)
-                    + (imageWarning?.let { " — $it" } ?: ""),
+                    + (listOfNotNull(imageWarning, unreadableWarning).firstOrNull()?.let { " — $it" } ?: ""),
                 backupWarning
             ))
             Result.success()

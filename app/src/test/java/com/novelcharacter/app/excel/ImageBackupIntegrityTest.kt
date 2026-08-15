@@ -96,6 +96,98 @@ class ImageBackupIntegrityTest {
         assertEquals("img1.jpg", names.first())   // 내부 절대경로 전체는 사용자에게 의미가 없다
     }
 
+    // ── [B-225] 참조 목록을 못 읽은 항목: 세지 못한 것을 '없는 것'으로 만들지 않는다 ──
+
+    private fun complete(unreadable: Int = 0) = ImageZipReport(
+        requested = true, created = true, referencedCount = 4, includedCount = 4,
+        unreadableRefCount = unreadable
+    )
+
+    @Test
+    fun completeBackupClaim_isBlockedWhenSomeReferencesCouldNotBeRead() {
+        // 핵심 회귀: 손상된 imagePaths·조회 실패는 참조 집합에서 조용히 빠지므로 제외 계수가
+        // 0이 된다. 그 상태로 '완전한 백업입니다'가 나가면 사용자는 그 백업만 믿고 원본을
+        // 지울 수 있다 — 읽지 못한 항목의 이미지는 담기지 않았는데도.
+        assertEquals(listOf(ImageNoticeKind.COMPLETE_BACKUP), complete().noticeKinds(isCompleteBackup = true))
+        assertEquals(
+            listOf(ImageNoticeKind.REFS_UNREADABLE),
+            complete(unreadable = 2).noticeKinds(isCompleteBackup = true)
+        )
+    }
+
+    @Test
+    fun unreadableReferences_neverEnterTheLossCounts() {
+        // 몇 장인지 모르는 것을 아는 척 세면 "0장 누락"이라는 참말이 거짓 결론을 만든다.
+        val r = complete(unreadable = 3)
+        assertEquals(0, r.excludedCount)
+        assertFalse(r.hasLoss)
+        assertTrue(r.referencesIncomplete)
+        // 불변식은 그대로 성립한다 — 못 읽은 항목은 referencedCount에도 들지 않았기 때문이다
+        assertEquals(r.referencedCount, r.includedCount + r.excludedCount)
+    }
+
+    @Test
+    fun lossAndUnreadable_areBothSaidNotOneInsteadOfTheOther() {
+        // 손실 문구가 이미 떴어도 그 숫자가 하한이라는 사실은 따로 말해야 한다.
+        val r = ImageZipReport(
+            requested = true, created = true, referencedCount = 10, includedCount = 7,
+            missingCount = 3, unreadableRefCount = 1
+        )
+        assertEquals(
+            listOf(ImageNoticeKind.INCOMPLETE, ImageNoticeKind.REFS_UNREADABLE),
+            r.noticeKinds(isCompleteBackup = true)
+        )
+    }
+
+    @Test
+    fun noImagesClaim_alsoRequiresHavingReadEveryReference() {
+        // "앱에 저장된 이미지가 없어…"는 참조를 전부 읽었을 때만 할 수 있는 말이다.
+        val empty = ImageZipReport(requested = true, created = false, referencedCount = 0)
+        assertEquals(listOf(ImageNoticeKind.NO_IMAGES), empty.noticeKinds(isCompleteBackup = false))
+        assertEquals(
+            listOf(ImageNoticeKind.REFS_UNREADABLE),
+            empty.copy(unreadableRefCount = 1).noticeKinds(isCompleteBackup = false)
+        )
+    }
+
+    @Test
+    fun notRequested_saysNothingEvenWithUnreadableReferences() {
+        // 사실과 다른 경고 금지 — 이미지를 요청하지 않은 내보내기는 이미지 얘기를 하지 않는다
+        val r = ImageZipReport(requested = false, unreadableRefCount = 5, missingCount = 5)
+        assertFalse(r.referencesIncomplete)
+        assertTrue(r.noticeKinds(isCompleteBackup = true).isEmpty())
+    }
+
+    @Test
+    fun noneIncluded_winsOverIncomplete() {
+        val r = ImageZipReport(
+            requested = true, created = false, referencedCount = 3, includedCount = 0, missingCount = 3
+        )
+        assertEquals(listOf(ImageNoticeKind.NONE_INCLUDED), r.noticeKinds(isCompleteBackup = true))
+    }
+
+    @Test
+    fun lossReasons_dropZerosAndKeepAFixedOrder() {
+        // 0을 함께 늘어놓으면 어디를 봐야 하는지가 묻힌다. 반대로 뭉뚱그리면 처방이 갈린다(R-39).
+        val r = ImageZipReport(
+            requested = true, created = true, referencedCount = 6, includedCount = 0,
+            missingCount = 1, outsideAppDirCount = 2, failedCount = 3
+        )
+        assertEquals(
+            listOf(
+                ImageLossReason.MISSING to 1,
+                ImageLossReason.OUTSIDE_APP_DIR to 2,
+                ImageLossReason.FAILED to 3
+            ),
+            r.lossReasons()
+        )
+        assertEquals(
+            listOf(ImageLossReason.FAILED to 3),
+            r.copy(missingCount = 0, outsideAppDirCount = 0).lossReasons()
+        )
+        assertTrue(ImageZipReport(requested = true, created = true).lossReasons().isEmpty())
+    }
+
     // ── [40] '이미지' 시트 중복 접기 ──
 
     private fun plan(rows: List<Pair<Int, String>>, local: Set<String> = emptySet()) =

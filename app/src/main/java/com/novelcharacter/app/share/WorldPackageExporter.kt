@@ -8,6 +8,8 @@ import com.novelcharacter.app.data.model.*
 // 취소 예외는 엑셀 내보내기(D5)가 정의한 것을 그대로 쓴다 — "취소했다"가 두 가지 뜻을
 // 갖지 않게 하려는 것이다. 두 작업의 취소 의미가 같다(산출물을 만들지 않고 멈춘다).
 import com.novelcharacter.app.excel.ExportCancelledException
+// 이미지 수록 집계는 엑셀 백업과 같은 벌을 쓴다(B-225) — 두 경로가 하는 일이 같다.
+import com.novelcharacter.app.excel.ImageZipReport
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.Deflater
@@ -34,12 +36,17 @@ class WorldPackageExporter(private val context: Context) {
      * @property droppedDuelMatches 참가자가 이번 패키지 밖이라 싣지 못한 대결 판 수
      *   (B-118 — 작품 일부만 고른 내보내기, 또는 참가자가 지워진 고아 판).
      * @property droppedDuelVerdicts 같은 이유로 싣지 못한 상성 판정 수.
+     * @property images 이미지 수록 집계(B-225) — 싣지 못한 장을 **사유별로** 든다.
+     *   0이 아니면 호출부가 반드시 고지할 것. 종전에는 이 축만 계수가 없어, 한 장의 I/O
+     *   오류가 그 엔티티의 남은 장까지 무음으로 떨어뜨렸다(엑셀 백업은 같은 일을 3종으로
+     *   고지하고 있었다 — 그 비대칭이 이 행의 본체다).
      */
     data class ExportResult(
         val file: File,
         val droppedFactionRelationships: Int,
         val droppedDuelMatches: Int,
-        val droppedDuelVerdicts: Int
+        val droppedDuelVerdicts: Int,
+        val images: ImageZipReport = ImageZipReport.NOT_REQUESTED
     )
 
     /**
@@ -184,6 +191,8 @@ class WorldPackageExporter(private val context: Context) {
         val exportsDir = File(context.cacheDir, "exports")
         exportsDir.mkdirs()
         val outputFile = File(exportsDir, fileName)
+        // 집계는 try 밖에 둔다 — 반환 시점에 읽어야 한다(ImageZipHelper의 failedPaths와 같은 이유).
+        val imageTally = ImageTally()
 
         try {
             val manifest = WorldPackageManifest(
@@ -249,7 +258,7 @@ class WorldPackageExporter(private val context: Context) {
                     progress.onImages(0, imageTotal)
                     for ((json, prefix) in imageGroups) {
                         if (progress.isCancelled()) throw ExportCancelledException()
-                        writeImageEntries(zip, json, prefix) {
+                        writeImageEntries(zip, json, prefix, imageTally) {
                             written++
                             progress.onImages(written, imageTotal)
                         }
@@ -266,7 +275,8 @@ class WorldPackageExporter(private val context: Context) {
             file = outputFile,
             droppedFactionRelationships = factionRelResult.droppedCount,
             droppedDuelMatches = duelResult.droppedMatches,
-            droppedDuelVerdicts = duelResult.droppedVerdicts
+            droppedDuelVerdicts = duelResult.droppedVerdicts,
+            images = imageTally.toReport(requested = config.includeImages)
         )
     }
 
@@ -277,37 +287,99 @@ class WorldPackageExporter(private val context: Context) {
     }
 
     /**
+     * 이미지 수록 집계 누적기 — **사유를 아는 자리에서 센다**(R-39: 호출측이
+     * `요청 수 - 실린 수`로 빼면 사유가 다시 한 숫자로 합쳐진다).
+     *
+     * 집계 벌은 엑셀 백업과 같은 [ImageZipReport]다 — 두 경로가 하는 일이 같으므로
+     * 고지 어휘도 같아야 한다(B-225. 종전 비대칭: 엑셀은 손실 3종을 말하고 이쪽은 침묵했다).
+     */
+    private class ImageTally {
+        var included = 0
+        var missing = 0
+        var outsideAppDir = 0
+        var failed = 0
+        var unreadableLists = 0
+        private val samples = ArrayList<String>(ImageZipReport.SAMPLE_LIMIT)
+
+        fun sample(path: String) {
+            if (samples.size < ImageZipReport.SAMPLE_LIMIT) samples.add(File(path).name)
+        }
+
+        fun toReport(requested: Boolean) = ImageZipReport(
+            requested = requested,
+            created = true,                       // 패키지 파일 자체는 언제나 만들어진다
+            referencedCount = included + missing + outsideAppDir + failed,
+            includedCount = included,
+            missingCount = missing,
+            outsideAppDirCount = outsideAppDir,
+            failedCount = failed,
+            unreadableRefCount = unreadableLists,
+            sampleNames = samples
+        )
+    }
+
+    /**
      * imagePaths JSON 배열의 i번째 파일을 `{entryPrefix}{i}.jpg` 엔트리로 싣는다.
      * 원본 파일이 없으면 그 인덱스만 건너뛴다(엔트리 결번) — 임포터는 결번을
      * "유실된 이미지"로 세어 고지한다. 확장자 표기는 v1 형식과의 호환을 위해
      * `.jpg`로 고정한다(내용 바이트는 원본 그대로 — 소비자는 내용으로 판별한다).
+     *
+     * **실패는 장 단위로 가둔다(B-225).** 종전에는 `try`가 순회 **바깥**을 감싸고 있어서
+     * 한 장의 I/O 오류가 **그 엔티티의 남은 장을 통째로** 결번으로 만들었다 — 그리고
+     * 그 사실은 Logcat에만 남아 사용자에게도, 받는 기기에도 나타나지 않았다.
+     * 이제 장마다 가두고 사유별로 세어 [tally]에 싣는다(감사 5장: *부분 실패가 전량 실패보다
+     * 조용하면 안 된다*).
      */
     private fun writeImageEntries(
         zip: ZipOutputStream,
         imagePathsJson: String,
         entryPrefix: String,
+        tally: ImageTally,
         onEach: () -> Unit = {}
     ) {
         if (imagePathsJson.isBlank() || imagePathsJson == "[]") return
         val appDir = context.filesDir
-        try {
-            val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
-            paths?.forEachIndexed { index, path ->
-                // 훑은 장을 센다 — 실제로 담긴 장이 아니라. 원본이 없는 인덱스는 결번으로
-                // 건너뛰므로(아래) 담긴 수로 세면 막대가 총량에 못 미친 채 끝난다.
-                onEach()
-                val imageFile = File(path)
-                // 기기 밖으로 나가는 자리다 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
-                // 종전 한 줄이 던지면 바깥 catch가 **그 엔티티의 남은 장을 통째로 버렸다.**
-                if (imageFile.exists() &&
-                    com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir)) {
-                    zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
-                    imageFile.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
+        val paths = try {
+            gson.fromJson(imagePathsJson, Array<String>::class.java)
+        } catch (e: Exception) {
+            // 목록을 못 읽으면 이 항목의 이미지는 **몇 장인지도 알 수 없다** — 그래서
+            // 누락 '장'이 아니라 못 읽은 '항목'으로 센다(ImageZipReport.unreadableRefCount).
+            Log.w("WorldPackageExporter", "Unreadable imagePaths for $entryPrefix", e)
+            tally.unreadableLists++
+            return
+        }
+        if (paths == null) { tally.unreadableLists++; return }
+        paths.forEachIndexed { index, path ->
+            // 훑은 장을 센다 — 실제로 담긴 장이 아니라. 원본이 없는 인덱스는 결번으로
+            // 건너뛰므로(아래) 담긴 수로 세면 막대가 총량에 못 미친 채 끝난다.
+            onEach()
+            // 빈 자리는 참조가 아니다 — 임포터도 같은 자리를 건너뛴다(restoreImagePaths).
+            if (path.isNullOrBlank()) return@forEachIndexed
+            val imageFile = File(path)
+            // 기기 밖으로 나가는 자리다 — 판정은 [ImagePathMatch.isInside] (B-106 ⓐ · R-39).
+            // 막힌 것과 못 읽은 것은 **처방이 달라** 갈라 센다(R-39: 파일 확인 / 앱에 들이기).
+            when {
+                !imageFile.exists() -> { tally.missing++; tally.sample(path) }
+                !com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir) -> {
+                    tally.outsideAppDir++; tally.sample(path)
+                }
+                else -> try {
+                    // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패가 이 부류의 대부분인데,
+                    // 순서가 반대면 그 흔한 실패마다 0바이트 엔트리가 남고 받는 기기는 그것을
+                    // 멀쩡한 이미지로 복원한다(결번이라야 "유실"로 세어 고지된다).
+                    imageFile.inputStream().use { input ->
+                        zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
+                        input.copyTo(zip)
+                        zip.closeEntry()
+                    }
+                    tally.included++
+                } catch (e: Exception) {
+                    Log.w("WorldPackageExporter", "Failed to add image $entryPrefix$index", e)
+                    tally.failed++
+                    tally.sample(path)
+                    try { zip.closeEntry() } catch (_: Exception) { }
                 }
             }
-        } catch (e: Exception) {
-            Log.w("WorldPackageExporter", "Failed to add images for $entryPrefix", e)
         }
     }
 }

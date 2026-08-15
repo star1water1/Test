@@ -253,9 +253,12 @@ class ExcelExporter(context: Context) {
 
                 val imageNotice = buildImageNotice(imageReport, options.isCompleteBackup)
                 val imageDetail = buildImageDetail(imageReport)
-                // 이력 한 줄만 봐도 백업이 불완전함을 알 수 있게 요약에 누락 건수를 붙인다
+                // 이력 한 줄만 봐도 백업이 불완전함을 알 수 있게 요약에 누락 건수를 붙인다.
+                // **못 읽은 참조는 누락 건수에 합치지 않는다(B-225)** — 몇 장인지 모르는 것을
+                // 아는 척 세면 "0장 누락"이라는 참말로 거짓 결론을 만든다.
                 val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows) +
-                    if (imageReport.hasLoss) appContext.getString(R.string.export_images_summary_suffix, imageReport.excludedCount) else ""
+                    (if (imageReport.hasLoss) appContext.getString(R.string.export_images_summary_suffix, imageReport.excludedCount) else "") +
+                    (if (imageReport.referencesIncomplete) appContext.getString(R.string.export_images_summary_unreadable_suffix, imageReport.unreadableRefCount) else "")
                 withContext(Dispatchers.Main) {
                     if (truncatedCellCount > 0) {
                         Toast.makeText(
@@ -2229,30 +2232,46 @@ class ExcelExporter(context: Context) {
         if (options.images) ImageZipHelper.estimateImageBytes(db, appContext) else 0L
 
     /**
-     * 이미지 포함 결과 고지 한 줄. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.
+     * 이미지 포함 결과 고지. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.
      * (사실과 다른 경고는 무음보다 나쁘다)
+     *
+     * **갈래 판정은 [ImageZipReport.noticeKinds]가 한다(B-225).** 여기 남은 일은 자원 매핑뿐이다 —
+     * 우선순위가 이 사적 함수 안에 있던 동안 *참조를 못 읽은 상태에서도 '완전한 백업입니다'*가
+     * 나갔고, 어느 시험도 그 자리에 닿지 못했다.
      */
-    private fun buildImageNotice(r: ImageZipReport, isCompleteBackup: Boolean): String? = when {
-        !r.requested -> null
-        r.hasLoss && r.includedCount == 0 ->
+    private fun buildImageNotice(r: ImageZipReport, isCompleteBackup: Boolean): String? =
+        r.noticeKinds(isCompleteBackup)
+            .map { imageNoticeText(r, it) }
+            .joinToString("\n")
+            .ifBlank { null }
+
+    private fun imageNoticeText(r: ImageZipReport, kind: ImageNoticeKind): String = when (kind) {
+        ImageNoticeKind.NONE_INCLUDED ->
             appContext.getString(R.string.export_images_none_included, r.referencedCount)
-        r.hasLoss ->
+        ImageNoticeKind.INCOMPLETE ->
             appContext.getString(R.string.export_images_incomplete, r.referencedCount, r.includedCount, r.excludedCount)
+        ImageNoticeKind.REFS_UNREADABLE ->
+            appContext.getString(R.string.export_images_refs_unreadable, r.unreadableRefCount)
         // 요청했으나 앱에 이미지 자체가 없는 경우 — 손실이 아니라 확장자(.xlsx)에 대한 설명
-        r.referencedCount == 0 -> appContext.getString(R.string.export_images_none)
+        ImageNoticeKind.NO_IMAGES -> appContext.getString(R.string.export_images_none)
         // 전부 담겼다. 종전에는 이 갈래가 무고지였다(설계 1장) — 손실은 알려 주면서 완전함은
         // 말하지 않으면, 백업의 생명인 완전성을 사용자가 매번 열어서 확인해야 한다(원칙 04).
-        isCompleteBackup -> appContext.getString(R.string.export_backup_complete, r.includedCount)
-        else -> null
+        ImageNoticeKind.COMPLETE_BACKUP -> appContext.getString(R.string.export_backup_complete, r.includedCount)
     }
 
-    /** 작업 이력 '상세'에 실을 제외 내역 + 교정 경로 안내. 손실이 없으면 null. */
+    /**
+     * 작업 이력 '상세'에 실을 제외 내역 + 교정 경로 안내. 알릴 것이 없으면 null.
+     *
+     * **참조를 못 읽은 항목도 여기 싣는다(B-225)** — 제외 건수가 0이어도 그 항목의 이미지는
+     * 담기지 않았고, 교정 경로 안내('이미지 경로 점검')가 필요한 것도 같다.
+     */
     private fun buildImageDetail(r: ImageZipReport): String? {
-        if (!r.hasLoss) return null
+        if (!r.hasLoss && !r.referencesIncomplete) return null
         val lines = mutableListOf<String>()
-        if (r.missingCount > 0) lines.add(appContext.getString(R.string.export_images_detail_missing, r.missingCount))
-        if (r.outsideAppDirCount > 0) lines.add(appContext.getString(R.string.export_images_detail_outside, r.outsideAppDirCount))
-        if (r.failedCount > 0) lines.add(appContext.getString(R.string.export_images_detail_failed, r.failedCount))
+        for ((reason, count) in r.lossReasons()) {
+            lines.add(appContext.getString(ImageNoticeRes.lossReason(reason), count))
+        }
+        if (r.unreadableRefCount > 0) lines.add(appContext.getString(R.string.export_images_detail_unreadable, r.unreadableRefCount))
         if (r.sampleNames.isNotEmpty()) lines.add(appContext.getString(R.string.export_images_detail_samples, r.sampleNames.joinToString(", ")))
         lines.add(appContext.getString(R.string.export_images_detail_guide))
         return lines.joinToString("\n")
