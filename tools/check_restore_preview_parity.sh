@@ -258,6 +258,26 @@ lbody=$(printf '%s\n' "$LADDER" | grep -v '^__LCOUNT__' || true)
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
+# ── 자기 출력 증명 (B-240) — 다섯 스캐너 전부 ──
+# 스캐너가 죽어 표식을 못 내면 아래 판정의 `${x:-0}`이 **0 = 위반 없음**으로 떨어져
+# **"✓ 위반 없음" + exit 0으로 조용히 통과한다** — CI가 초록인데 아무것도 안 본 상태다.
+# **자기 시험이 이 구멍을 막지 못한다:** 자기 시험은 `-ne N`이라 빈 값이 0이 되면 *실패로*
+# 가지만 본 판정은 `-gt 0`이라 빈 값이 0이 되면 *통과로* 간다 — **같은 기본값이 반대로
+# 작용한다.** 프로브의 "오류 0인데 클래스 파일도 0" 가드와 같은 부류이고, 짝인
+# `check_import_row_queries.sh`·`check_preview_row_queries.sh`가 그 본보기다.
+require_count() {  # $1=뽑은 값  $2=표식 이름  $3=스캐너 산출(꼬리를 증거로 보인다)
+  if [ -z "$1" ]; then
+    echo "  ✗ 검사가 자기 출력을 내지 못했습니다 ($2 없음) — 스캐너 실패입니다" >&2
+    printf '%s\n' "$3" | tail -5 >&2
+    exit 2
+  fi
+}
+require_count "$count"  "__COUNT__"  "$violations"
+require_count "$pcount" "__PCOUNT__" "$PAIRING"
+require_count "$tcount" "__TCOUNT__" "$TALLY"
+require_count "$scount" "__SCOUNT__" "$SHEETS"
+require_count "$lcount" "__LCOUNT__" "$LADDER"
+
 if [ "${count:-0}" -gt 0 ]; then
   echo "  ✗ analyze*가 손으로 짠 필드 비교로 '변경/동일'을 판정합니다 (${count}건)"
   echo
