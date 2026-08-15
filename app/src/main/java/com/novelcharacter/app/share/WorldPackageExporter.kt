@@ -314,7 +314,9 @@ class WorldPackageExporter(private val context: Context) {
             outsideAppDirCount = outsideAppDir,
             failedCount = failed,
             unreadableRefCount = unreadableLists,
-            sampleNames = samples
+            // 복사해 넘긴다 — 벌이 data class라 넘긴 목록을 계속 들고 있고, 누적기를 그대로
+            // 주면 결과가 나중에 바뀔 수 있는 모양이 된다(엑셀 쪽은 새 목록을 만들어 넘긴다).
+            sampleNames = samples.toList()
         )
     }
 
