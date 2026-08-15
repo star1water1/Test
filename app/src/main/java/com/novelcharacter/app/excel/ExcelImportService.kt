@@ -37,6 +37,20 @@ import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.FormulaValidator
 import com.novelcharacter.app.util.ImportLookupIndex
+import com.novelcharacter.app.util.DuelAxisIndexes
+import com.novelcharacter.app.util.DuelAxisNameKey
+import com.novelcharacter.app.util.DuelMatchIndexes
+import com.novelcharacter.app.util.DuelVerdictMemberKey
+import com.novelcharacter.app.util.EventNaturalKey
+import com.novelcharacter.app.util.FactionIdentityIndexes
+import com.novelcharacter.app.util.FactionNameKey
+import com.novelcharacter.app.util.FieldDefinitionIndexes
+import com.novelcharacter.app.util.NovelTitleKey
+import com.novelcharacter.app.util.RelChangeNaturalKey
+import com.novelcharacter.app.util.RelationshipChangeIndexes
+import com.novelcharacter.app.util.RelationshipIndexes
+import com.novelcharacter.app.util.StateChangeIndexes
+import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelRecords
@@ -376,6 +390,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private val novelCodes = ImportLookupIndex<String, Novel>(
         idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+    )
+    /**
+     * 같은 색인의 **제목** 축 (B-236) — `getNovelByTitleAndUniverse`·`getNovelByTitleNoUniverse`를
+     * 행마다 물던 자리다. **코드 축과 함께 두는 것이 요점이다:** 작품 시트는 제목을 고칠 수 있고,
+     * 고친 뒤에도 옛 제목으로 잡히면 한 파일이 같은 작품을 둘로 가른다
+     * ([ImportLookupIndex] 성질 3이 [rememberNovel] 한 자리에서 그것을 끊는다).
+     */
+    private val novelTitleKeys = ImportLookupIndex<NovelTitleKey, Novel>(
+        idOf = { it.id }, keyOf = { NovelTitleKey(it.title, it.universeId) }
+    )
+    /**
+     * 세계관을 가리지 않는 **제목만**의 축 (B-236) — `getNovelsByTitleList(title).firstOrNull()`의
+     * 자리다. 유령 작품을 새로 만들기 전에 *"다른 세계관에 같은 제목이 있는가"*를 묻는 갈래가 쓴다.
+     */
+    private val novelTitlesAnyUniverse = ImportLookupIndex<String, Novel>(
+        idOf = { it.id }, keyOf = { it.title }
     )
     private var novelIndexLoaded = false
     /**
@@ -2416,7 +2446,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeDuelAxes(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = duelAxisSpec()
         val label = "대결 축"
-        val existingTotal = db.duelAxisDao().getAllList().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allAxes = db.duelAxisDao().getAllList()
+        val existingTotal = allAxes.size
         val sheet = sheetForAnalysis(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
@@ -2424,6 +2456,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val cols = resolveHeaderColumns(headerRow)
         val now = System.currentTimeMillis()
+        // 정체성 색인도 가져오기와 **같은 클래스**다(B-236).
+        val axes = DuelAxisIndexes(allAxes)
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2443,8 +2477,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
 
-            val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
-                ?: db.duelAxisDao().getByUniverseAndName(universe.id, r.targetType, r.name)
+            val existing = (if (r.code.isNotBlank()) axes.byCode.first(r.code) else null)
+                ?: axes.byNameKey.first(DuelAxisNameKey(universe.id, r.targetType, r.name))
             if (existing == null) { newCount++; continue }
             val merged = mergeDuelAxis(existing, r, universe.id)
             if (merged != existing) updateCount++ else unchangedCount++
@@ -2470,6 +2504,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
+        // **판 자신에는 그 근거가 적용되지 않아 행마다 `getByCode`가 남아 있었다**(B-236 — 가져오기
+        // 쪽이 B-210에서 겪은 것과 같은 자리다). 코드 열에 인덱스가 없어 그 하나하나가 풀스캔이다.
+        val matches = DuelMatchIndexes(db.duelMatchDao().getAllList())
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -2508,7 +2545,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 DuelWinner.Ambiguous, DuelWinner.Unknown -> { skippedCount++; continue }
             }
 
-            val existing = if (r.code.isNotBlank()) db.duelMatchDao().getByCode(r.code) else null
+            val existing = if (r.code.isNotBlank()) matches.byCode.first(r.code) else null
             if (existing == null) { newCount++; continue }
             // 가져오기와 같은 참가자 검증(R-33) — 코드로 찾은 판과 행의 참가자가 다르면 병합하지 않는다.
             if (setOf(aCode, bCode) != setOf(existing.aCode, existing.bCode)) { skippedCount++; continue }
@@ -2604,7 +2641,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeImageMeta(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = imageMetaSpec()
         val label = "이미지 태그·링크"
-        val existingTotal = db.imageMetaDao().getAllList().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236) — 종전에는 총계로 표를 통째로
+        // 읽고도 **행마다 다시** `getByPath`를 물었다.
+        val allImageMeta = db.imageMetaDao().getAllList()
+        val existingTotal = allImageMeta.size
         val sheet = sheetForAnalysis(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
@@ -2620,6 +2660,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             remapByBasename[java.io.File(origPath).name] = newPath
         }
         val filesDir = appContext?.filesDir
+        // `getByPath`(LIMIT 1)의 자리 — id 오름차순이 그 답의 순서다.
+        val metaByPath = ImportLookupIndex<String, com.novelcharacter.app.data.model.ImageMeta>(
+            idOf = { it.id }, keyOf = { it.path }
+        )
+        metaByPath.load(allImageMeta.sortedBy { it.id })
+        // 태그는 **열이 있을 때만** 읽는다 — 없으면 비교 대상이 아니라 조회도 낭비다
+        // (행마다 `getTagsByImageList`를 묻던 자리를 표 한 번 읽기로 내린다).
+        val tagsByImage: Map<Long, Set<String>> =
+            if (c.tag >= 0) db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+                .mapValues { (_, v) -> v.toSet() }
+            else emptyMap()
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -2630,11 +2681,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val path = remapByBasename[r.fileName]
                 ?: filesDir?.let { dir -> java.io.File(dir, r.fileName).takeIf { it.exists() }?.absolutePath }
                 ?: continue  // 파일 미해석 행은 new/update에 계상하지 않음 (가져오기에서 스킵 경고)
-            val existing = db.imageMetaDao().getByPath(path)
+            val existing = metaByPath.first(path)
             if (existing == null) { newCount++; continue }
-            // 태그는 열이 있을 때만 읽는다 — 열이 없으면 비교 대상이 아니라 조회도 낭비다.
             val current = ImageMetaState(
-                tags = if (r.hasTagCol) db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet() else emptySet(),
+                tags = if (r.hasTagCol) tagsByImage[existing.id].orEmpty() else emptySet(),
                 linkGroupId = existing.linkGroupId,
                 detachedAt = existing.detachedAt
             )
@@ -2704,11 +2754,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 세계관 해석도 가져오기와 같다 — 코드 우선, 이름 폴백.
             val universeId = universeByCodeOrName(r.universeCode, r.universeName)?.id
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 제목+세계관으로 폴백한다.
-            // 괄호 필수 — 괄호 없이 쓰면 엘비스가 `else` 가지(null)에만 붙어
-            // 코드 미해석 시 제목 폴백이 죽는다(가져오기 쪽 주석과 같은 함정).
-            val existing = novelByCode(r.code)
-                ?: (if (universeId != null) db.novelDao().getNovelByTitleAndUniverse(r.title, universeId)
-                    else db.novelDao().getNovelByTitleNoUniverse(r.title))
+            // **폴백 갈래가 한 함수가 되며 함정 하나가 사라졌다**(B-236) — 종전에는 세계관 유무로
+            // 갈린 `if/else`를 엘비스 오른쪽에 두느라 **괄호가 필수**였고, 괄호를 빠뜨리면 엘비스가
+            // `else` 가지에만 붙어 코드 미해석 시 제목 폴백이 조용히 죽었다.
+            val existing = novelByCode(r.code) ?: novelByTitle(r.title, universeId)
             if (existing == null) { newCount++; continue }
             val merged = mergeNovel(
                 existing, r,
@@ -2725,11 +2774,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = sheetForAnalysis(workbook, spec)
         // 캐릭터+사건 필드 모두 시트에 실리므로 기존 총계도 전 타입 기준 (프리뷰 정확성)
-        val existingTotal = db.fieldDefinitionDao().getAllFieldsAllTypes().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allFieldDefs = db.fieldDefinitionDao().getAllFieldsAllTypes()
+        val existingTotal = allFieldDefs.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
         val c = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        // 행마다 `getFieldByKey`·`getGlobalFieldByKey`를 묻던 자리 (B-236).
+        val fieldDefs = FieldDefinitionIndexes(allFieldDefs)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -2752,11 +2805,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 found
             }
 
-            val existing = if (universe != null) {
-                db.fieldDefinitionDao().getFieldByKey(universe.id, r.key, r.entityType)
-            } else {
-                db.fieldDefinitionDao().getGlobalFieldByKey(r.key, r.entityType)
-            }
+            val existing = fieldDefs.find(universe?.id, r.key, r.entityType)
             if (existing == null) { newCount++; continue }
             val merged = mergeFieldDefinition(
                 existing, r,
@@ -2830,13 +2879,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 미리보기는 쓰지 않으므로 실존하지 않는 표지값이 그 자리다.
         suspend fun analysisNovelIdByTitle(novelTitle: String): Long? {
             if (novelTitle.isBlank()) return null
-            val inScope = if (universeId != null) {
-                db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
-            } else {
-                db.novelDao().getNovelByTitleNoUniverse(novelTitle)
-            }
-            return inScope?.id
-                ?: db.novelDao().getNovelsByTitleList(novelTitle).firstOrNull()?.id
+            return novelByTitle(novelTitle, universeId)?.id
+                ?: novelByTitleAnyUniverse(novelTitle)?.id
                 ?: ANALYSIS_CREATED_NOVEL_ID
         }
 
@@ -2941,7 +2985,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeStateChanges(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = stateChangeSpec()
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.characterStateChangeDao().getAllChangesList().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236) — 종전에는 총계로 표를 통째로
+        // 읽고도 **행마다 다시** 물었다.
+        val allChanges = db.characterStateChangeDao().getAllChangesList()
+        val existingTotal = allChanges.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
@@ -2955,6 +3002,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 가져오기와 **같은 판정**의 제목 색인이다(규약 R-33) — 동명 작품이면 힌트를 포기한다.
         val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 키 모양과 싣는 순서가 갈리면
+        // 같은 `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
+        val changes = StateChangeIndexes(allChanges)
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -2989,8 +3039,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = (if (r.fileCode.isNotBlank()) db.characterStateChangeDao().getChangeByCode(r.fileCode) else null)
-                ?: db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, r.fieldKey, r.newValue)
+            val existing = (if (r.fileCode.isNotBlank()) changes.byCode.first(r.fileCode) else null)
+                ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, r.fieldKey, r.newValue))
             if (existing == null) { newCount++; continue }
             // 종전에는 자연키로 매칭된 행을 무조건 '동일'로 셌다 — 월·일·설명을 고쳐도 그랬다.
             val merged = mergeStateChange(existing, r, character.id, CODE_BACKFILL_PREVIEW)
@@ -3003,7 +3053,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeRelationships(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = relationshipSpec()
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.characterRelationshipDao().getAllRelationships().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        val existingTotal = allRelationships.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
@@ -3016,6 +3068,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
         val factionRefUsed = c.faction >= 0 || c.factionCode >= 0
         val factionIndex = FactionIndex(if (factionRefUsed) db.factionDao().getAllFactionsList() else emptyList())
+        // 정체성 색인도 가져오기와 **같은 클래스**다(B-236). 종전에는 **행마다** 캐릭터1의 관계
+        // 전부를 다시 읽어(`getRelationshipsForCharacterList`) 여기서 쌍을 걸렀다.
+        val rels = RelationshipIndexes(allRelationships)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -3048,12 +3103,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (char1.id == char2.id) { skippedCount++; continue }
 
             // 실제 임포트와 동일한 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백
-            val byCode = if (r.relCode.isNotBlank()) db.characterRelationshipDao().getByCode(r.relCode) else null
-            val existing = byCode ?: db.characterRelationshipDao()
-                .getRelationshipsForCharacterList(char1.id).find { rel ->
-                    ((rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
-                        (rel.characterId1 == char2.id && rel.characterId2 == char1.id)) && rel.relationshipType == r.relationshipType
-                }
+            val byCode = if (r.relCode.isNotBlank()) rels.byCode.first(r.relCode) else null
+            // 쌍으로 바로 받는다 — 가져오기와 **글자 그대로 같은 두 줄**이다(R-33).
+            val existing = byCode
+                ?: rels.pair(char1.id, char2.id).find { it.relationshipType == r.relationshipType }
             if (existing == null) { newCount++; continue }
             // 종전에는 설명 하나만 봤다 — 강도·양방향·표시순서·세력을 고쳐도 '동일'이라 말했다.
             // 세력 미해석(NotFound·Ambiguous)은 가져오기와 **같은 갈래**로 KEEP으로 강등한다 —
@@ -3083,7 +3136,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeRelationshipChanges(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         // 시트 조회도 가져오기와 **같은 spec·같은 판정**이다 — 종전에는 여기만 리터럴이었다(B-217).
         val sheet = sheetForAnalysis(workbook, relationshipChangeSpec())
-        val existingTotal = db.characterRelationshipChangeDao().getAllChanges().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allRelChanges = db.characterRelationshipChangeDao().getAllChanges()
+        val existingTotal = allRelChanges.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
@@ -3093,6 +3148,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val yearColIndex = cols["연도"] ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
         val c = RelChangeCols(cols, char2NameColIndex, yearColIndex)
         val now = System.currentTimeMillis()
+        // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 이 시트가 행마다 물던 표는 둘이다:
+        // 부모 **관계**(쌍)와 **관계 변화**(코드·자연키).
+        val parentRels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
+        val relChanges = RelationshipChangeIndexes(allRelChanges)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -3122,12 +3181,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 부모 관계 해석도 가져오기와 **같은 함수**다 — 종전에는 쌍의 첫 관계를 골라
             // 유형이 다른 이력을 엉뚱한 관계에 붙여 세었다.
-            val pairRelationships = db.characterRelationshipDao()
-                .getRelationshipsForCharacterList(char1.id)
-                .filter { rel ->
-                    (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
-                    (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
-                }
+            val pairRelationships = parentRels.pair(char1.id, char2.id)
             // 관계가 없거나 확정되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
             if (pairRelationships.isEmpty()) {
                 if (options.relationships) newCount++ else skippedCount++
@@ -3137,8 +3191,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (relationship == null) { skippedCount++; continue }
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = (if (r.fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(r.fileCode) else null)
-                ?: db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, r.month, r.day)
+            val existing = (if (r.fileCode.isNotBlank()) relChanges.byCode.first(r.fileCode) else null)
+                ?: relChanges.byNaturalKey.first(RelChangeNaturalKey(relationship.id, year, r.month, r.day))
             if (existing == null) { newCount++; continue }
             // 종전에는 자연키로 매칭된 행을 **무조건 '동일'**로 셌다 —
             // 관계 유형·설명·강도·양방향·연결 사건을 고쳐도 '변경 없음'이라 말했다.
@@ -3228,12 +3282,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeFactions(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = factionSpec()
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.factionDao().getAllFactionsList().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allFactions = db.factionDao().getAllFactionsList()
+        val existingTotal = allFactions.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
         val c = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
+        // 정체성 색인도 가져오기와 **같은 클래스**다(B-236).
+        val factions = FactionIdentityIndexes(allFactions)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -3252,8 +3310,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (options.universes) newCount++ else skippedCount++
                 continue
             }
-            val existing = (if (r.code.isNotBlank()) db.factionDao().getByCode(r.code) else null)
-                ?: resolvedUniverse?.let { db.factionDao().getByNameAndUniverse(r.name, it.id) }
+            val existing = (if (r.code.isNotBlank()) factions.byCode.first(r.code) else null)
+                ?: resolvedUniverse?.let { factions.byNameKey.first(FactionNameKey(r.name, it.id)) }
             if (existing == null) {
                 if (r.autoRelationType == null) skippedCount++ else newCount++
                 continue
@@ -3973,11 +4031,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (byCode != null) {
                         existing = byCode
                     } else {
-                        val byTitle = if (universeId != null) {
-                            db.novelDao().getNovelByTitleAndUniverse(title, universeId)
-                        } else {
-                            db.novelDao().getNovelByTitleNoUniverse(title)
-                        }
+                        val byTitle = novelByTitle(title, universeId)
                         if (byTitle != null) {
                             existing = byTitle
                             result.nameBasedMappings++
@@ -3989,11 +4043,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 } else {
                     // No code => fallback to title+universe
-                    existing = if (universeId != null) {
-                        db.novelDao().getNovelByTitleAndUniverse(title, universeId)
-                    } else {
-                        db.novelDao().getNovelByTitleNoUniverse(title)
-                    }
+                    existing = novelByTitle(title, universeId)
                     if (existing != null) {
                         result.nameBasedMappings++
                         result.warnings.add("작품 행 $i: 이름 기반 매칭 ('$title') — 코드 사용 권장")
@@ -6402,19 +6452,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 힌트로 쓰면 동명이인 좁히기가 엉뚱한 작품 기준이 된다 — 동명이면 힌트를 포기하고
         // 캐릭터 쪽 모호 감지(resolveCharByNameNovel)가 코드 안내를 내게 둔다(4-3 규약).
         val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
-        // 상태변화 정체성 색인 (B-210) — 행마다 코드·자연키로 표를 묻던 자리. id 오름차순이
-        // `LIMIT 1`의 순서다(`getAllChangesList()`는 캐릭터·연월일 순으로 나오므로 다시 정렬한다).
+        // 상태변화 정체성 색인 (B-210) — 행마다 코드·자연키로 표를 묻던 자리.
         // **연표가 만든 birth/death 행도 여기 실린다** — 그 시트가 먼저 돌고 이 색인은 지금 읽는다.
-        val changesById = db.characterStateChangeDao().getAllChangesList().sortedBy { it.id }
-        val changeCodes = ImportLookupIndex<String, CharacterStateChange>(
-            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
-        )
-        val changeNaturalKeys = ImportLookupIndex<StateChangeNaturalKey, CharacterStateChange>(
-            idOf = { it.id },
-            keyOf = { StateChangeNaturalKey(it.characterId, it.year, it.fieldKey, it.newValue) }
-        )
-        changeCodes.load(changesById)
-        changeNaturalKeys.load(changesById)
+        // **키 모양과 싣는 순서는 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val changes = StateChangeIndexes(db.characterStateChangeDao().getAllChangesList())
         val changeCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -6478,9 +6519,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("상태변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val changeByCodeMatch = if (fileCode.isNotBlank()) changeCodes.first(fileCode) else null
+                val changeByCodeMatch = if (fileCode.isNotBlank()) changes.byCode.first(fileCode) else null
                 val existing = changeByCodeMatch
-                    ?: changeNaturalKeys.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
+                    ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
                 // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
                 if (changeByCodeMatch == null && existing != null && existing.id in matchedStateChangeIds) {
@@ -6493,8 +6534,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterStateChangeDao().update(mergedStateChange)
                     // 자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면
                     // 뒤 행이 **이미 다른 이력이 된 행**을 옛 키로 다시 잡는다(B-210).
-                    changeCodes.put(mergedStateChange)
-                    changeNaturalKeys.put(mergedStateChange)
+                    changes.remember(mergedStateChange)
                     matchedStateChangeIds.add(existing.id)
                     if (mergedStateChange != existing) result.updatedStateChanges++ else result.unchangedRows++
                 } else {
@@ -6505,8 +6545,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     )
                     val newId = db.characterStateChangeDao().insert(newChange)
-                    changeCodes.put(newChange.copy(id = newId))
-                    changeNaturalKeys.put(newChange.copy(id = newId))
+                    changes.remember(newChange.copy(id = newId))
                     matchedStateChangeIds.add(newId)
                     result.newStateChanges++
                 }
@@ -6546,24 +6585,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 관계 정체성 색인 (B-210) — 종전에는 **행마다** 캐릭터1의 관계 전부를 다시 읽고
         // (`getRelationshipsForCharacterList`) 코드로 한 번 더 물었다. 목표 규모에서 관계 4,050건이라
         // 그 둘만으로 8,000회가 넘는다. 표를 한 번 읽어 **쌍**과 **코드**로 답한다.
-        //
-        // **싣는 순서가 SQL의 `ORDER BY displayOrder ASC, createdAt DESC`와 같아야 한다** —
-        // 호출부가 그 목록에서 `find { 유형이 같다 }`로 하나를 고르므로, 같은 쌍에 같은 유형이
-        // 둘인 파일에서 **고르는 상대가 바뀐다.**
-        val relsOrdered = db.characterRelationshipDao().getAllRelationships()
-            .sortedWith(compareBy<CharacterRelationship> { it.displayOrder }.thenByDescending { it.createdAt })
-        val relsByPair = ImportLookupIndex<CharacterPairKey, CharacterRelationship>(
-            idOf = { it.id }, keyOf = { CharacterPairKey.of(it.characterId1, it.characterId2) }
-        )
-        val relCodes = ImportLookupIndex<String, CharacterRelationship>(
-            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
-        )
-        relsByPair.load(relsOrdered)
-        relCodes.load(relsOrdered)
-        fun rememberRelationship(rel: CharacterRelationship) {
-            relsByPair.put(rel)
-            relCodes.put(rel)
-        }
+        // **키 모양과 싣는 순서(SQL의 `ORDER BY displayOrder ASC, createdAt DESC`)는 미리보기와
+        // 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val rels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
 
         // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
         val factionRefUsed = rc.faction >= 0 || rc.factionCode >= 0
@@ -6663,11 +6687,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val factionId = resolvedFaction?.id
 
                 // 쌍으로 바로 받는다 — 종전에는 캐릭터1의 관계 **전부**를 읽어 여기서 걸렀다.
-                val pairRels = relsByPair.all(CharacterPairKey.of(char1.id, char2.id))
+                val pairRels = rels.pair(char1.id, char2.id)
                 // 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.
                 // 코드로 잡히면 '관계 유형' 편집이 rename으로 인식되어 관계가 분열하지 않는다.
                 val relCode = rv.relCode
-                val byCode = if (relCode.isNotBlank()) relCodes.first(relCode) else null
+                val byCode = if (relCode.isNotBlank()) rels.byCode.first(relCode) else null
                 if (relCode.isNotBlank() && byCode == null) {
                     result.warnings.add("관계 행 $i: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
                 }
@@ -6692,7 +6716,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val mergedRelationship =
                         mergeRelationship(existing, rv, effectiveFactionId, generateEntityCode())
                     db.characterRelationshipDao().update(mergedRelationship)
-                    rememberRelationship(mergedRelationship)
+                    rels.remember(mergedRelationship)
                     matchedRelationshipIds.add(existing.id)
                     if (mergedRelationship != existing) result.updatedRelationships++ else result.unchangedRows++
                 } else {
@@ -6711,7 +6735,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newId = db.characterRelationshipDao().insert(newRelationship)
                     // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
                     // 한 파일에서 둘로 갈린다(위 '다시 덮어씀' 고지가 그때 안 뜬다).
-                    rememberRelationship(newRelationship.copy(id = newId))
+                    rels.remember(newRelationship.copy(id = newId))
                     matchedRelationshipIds.add(newId)
                     entitySeen[newId] = i
                     result.newRelationships++
@@ -6769,25 +6793,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // ② **관계 변화** — 코드·자연키로 자기 자신을 찾는다(갱신은 아래 update·insert가 맡는다)
         // 싣는 순서는 각 질의의 `ORDER BY`를 그대로 따른다 — 호출부가 목록에서 하나를 고르므로
         // 순서가 곧 **어느 관계에 이력이 붙는가**다.
-        val parentRelsByPair = ImportLookupIndex<CharacterPairKey, CharacterRelationship>(
-            idOf = { it.id }, keyOf = { CharacterPairKey.of(it.characterId1, it.characterId2) }
-        )
-        val parentRelCodes = ImportLookupIndex<String, CharacterRelationship>(
-            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
-        )
-        db.characterRelationshipDao().getAllRelationships()
-            .sortedWith(compareBy<CharacterRelationship> { it.displayOrder }.thenByDescending { it.createdAt })
-            .forEach { parentRelsByPair.put(it); parentRelCodes.put(it) }
-        val relChangesById = db.characterRelationshipChangeDao().getAllChanges().sortedBy { it.id }
-        val relChangeCodes = ImportLookupIndex<String, CharacterRelationshipChange>(
-            idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
-        )
-        val relChangeNaturalKeys = ImportLookupIndex<RelChangeNaturalKey, CharacterRelationshipChange>(
-            idOf = { it.id },
-            keyOf = { RelChangeNaturalKey(it.relationshipId, it.year, it.month, it.day) }
-        )
-        relChangeCodes.load(relChangesById)
-        relChangeNaturalKeys.load(relChangesById)
+        // **그 순서를 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val parentRels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
+        val relChanges = RelationshipChangeIndexes(db.characterRelationshipChangeDao().getAllChanges())
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -6839,7 +6847,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 부모 관계 해석: 부모관계유형 열 우선 → 쌍 후보가 유일할 때만 폴백.
                 // 같은 쌍에 유형이 다른 관계가 여러 개일 수 있으므로(유니크 키가 쌍+유형),
                 // 근거 없이 first-match로 고르면 이력이 엉뚱한 관계에 붙는다.
-                val pairRelationships = parentRelsByPair.all(CharacterPairKey.of(char1.id, char2.id))
+                val pairRelationships = parentRels.pair(char1.id, char2.id)
                 if (pairRelationships.isEmpty()) {
                     result.skippedRows++
                     result.errors.add("관계변화 행 $i: '${char1Name}'과(와) '${char2Name}' 간의 관계를 찾을 수 없음")
@@ -6860,9 +6868,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("관계변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
                 // 매칭: 코드 우선(연월일 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val relChangeByCodeMatch = if (fileCode.isNotBlank()) relChangeCodes.first(fileCode) else null
+                val relChangeByCodeMatch = if (fileCode.isNotBlank()) relChanges.byCode.first(fileCode) else null
                 val existing = relChangeByCodeMatch
-                    ?: relChangeNaturalKeys.first(RelChangeNaturalKey(relationship.id, year, rv.month, rv.day))
+                    ?: relChanges.byNaturalKey.first(RelChangeNaturalKey(relationship.id, year, rv.month, rv.day))
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
                 // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
                 if (relChangeByCodeMatch == null && existing != null && existing.id in matchedRelationshipChangeIds) {
@@ -6877,8 +6885,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterRelationshipChangeDao().update(mergedRelChange)
                     // 자연키의 칸(부모 관계·연월일)이 바뀌었을 수 있다 — 옛 키를 끊어야
                     // 뒤 행이 **이미 옮겨 간 이력**을 옛 키로 다시 잡지 않는다(B-210).
-                    relChangeCodes.put(mergedRelChange)
-                    relChangeNaturalKeys.put(mergedRelChange)
+                    relChanges.remember(mergedRelChange)
                     matchedRelationshipChangeIds.add(existing.id)
                     if (mergedRelChange != existing) result.updatedRelationshipChanges++ else result.unchangedRows++
                 } else {
@@ -6891,8 +6898,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     )
                     val newId = db.characterRelationshipChangeDao().insert(newRelChange)
-                    relChangeCodes.put(newRelChange.copy(id = newId))
-                    relChangeNaturalKeys.put(newRelChange.copy(id = newId))
+                    relChanges.remember(newRelChange.copy(id = newId))
                     matchedRelationshipChangeIds.add(newId)
                     result.newRelationshipChanges++
                 }
@@ -7305,20 +7311,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 세력 정체성 색인 (B-210) — 행마다 코드·(이름,세계관)으로 표를 묻던 자리.
         // 목표 규모에서 세력은 150개뿐이라 **여기서 아끼는 시간은 작다.** 그래도 함께 고치는 것은
         // 남겨 두면 *"같은 모양이 어디까지 고쳐졌는가"*를 다음 사람이 다시 세야 하기 때문이다 —
-        // 이 저장소가 B-76에서 겪은 그 모양이다. id 오름차순이 `LIMIT 1`의 순서다.
-        val allFactions = db.factionDao().getAllFactionsList().sortedBy { it.id }
-        val factionCodes = ImportLookupIndex<String, Faction>(
-            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
-        )
-        val factionNameKeys = ImportLookupIndex<FactionNameKey, Faction>(
-            idOf = { it.id }, keyOf = { FactionNameKey(it.name, it.universeId) }
-        )
-        factionCodes.load(allFactions)
-        factionNameKeys.load(allFactions)
-        fun rememberFaction(faction: Faction) {
-            factionCodes.put(faction)
-            factionNameKeys.put(faction)
-        }
+        // 이 저장소가 B-76에서 겪은 그 모양이다.
+        // **키 모양과 싣는 순서는 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val factions = FactionIdentityIndexes(db.factionDao().getAllFactionsList())
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
@@ -7371,12 +7366,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing: Faction?
                 val matchedByName: Boolean
                 if (code.isNotBlank()) {
-                    val byCode = factionCodes.first(code)
+                    val byCode = factions.byCode.first(code)
                     if (byCode != null) {
                         existing = byCode
                         matchedByName = false
                     } else {
-                        val byName = factionNameKeys.first(FactionNameKey(name, universeId))
+                        val byName = factions.byNameKey.first(FactionNameKey(name, universeId))
                         if (byName != null) {
                             existing = byName
                             matchedByName = true
@@ -7389,7 +7384,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
                 } else {
-                    existing = factionNameKeys.first(FactionNameKey(name, universeId))
+                    existing = factions.byNameKey.first(FactionNameKey(name, universeId))
                     matchedByName = existing != null
                     if (matchedByName) {
                         result.nameBasedMappings++
@@ -7408,7 +7403,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val mergedFaction = mergeFaction(existing, r, universeId)
                     db.factionDao().update(mergedFaction)
                     // 이름·세계관·코드가 바뀌었을 수 있다 — 옛 키를 끊는다(B-210).
-                    rememberFaction(mergedFaction)
+                    factions.remember(mergedFaction)
                     matchedFactionIds.add(existing.id)
                     if (mergedFaction != existing) result.updatedFactions++ else result.unchangedRows++
                 } else {
@@ -7433,7 +7428,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = r.createdAt ?: nowMillis
                     )
                     val newId = db.factionDao().insert(newFaction)
-                    rememberFaction(newFaction.copy(id = newId))
+                    factions.remember(newFaction.copy(id = newId))
                     matchedFactionIds.add(newId)
                     entitySeen[newId] = i
                     result.newFactions++
@@ -8196,14 +8191,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         // 대결 축 정체성 색인 (B-210) — 행마다 코드·(세계관,대상,이름)으로 표를 묻던 자리.
-        // id 오름차순이 `LIMIT 1`의 순서다.
-        val allAxes = db.duelAxisDao().getAllList().sortedBy { it.id }
-        val axisCodes = ImportLookupIndex<String, DuelAxis>(
-            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
-        )
-        val axisNameKeys = ImportLookupIndex<DuelAxisNameKey, DuelAxis>(
-            idOf = { it.id }, keyOf = { DuelAxisNameKey(it.universeId, it.targetType, it.name) }
-        )
+        // **키 모양과 싣는 순서는 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val allAxes = db.duelAxisDao().getAllList()
+        val axes = DuelAxisIndexes(allAxes)
         // 이 시트에는 **행 하나가 여러 행을 고치는 자리**가 있다 — `기준축`을 세우면
         // `clearBasisExcept`가 같은 (세계관, 대상)의 **다른 축을 SQL로 통째로 내린다.**
         // 색인은 그 일괄 갱신을 못 보므로 여기서 같은 조건으로 **함께 내린다**(아래 `applyBasisAxis`).
@@ -8216,10 +8206,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val axesById = LinkedHashMap<Long, DuelAxis>()
         fun putAxis(axis: DuelAxis) {
             axesById[axis.id] = axis
-            axisCodes.put(axis)
-            axisNameKeys.put(axis)
+            axes.remember(axis)
         }
-        for (axis in allAxes) putAxis(axis)
+        for (axis in allAxes.sortedBy { it.id }) axesById[axis.id] = axis
         suspend fun applyBasisAxis(universeId: Long, targetType: String, axisId: Long, isBasis: Boolean) {
             enforceSingleBasisAxis(universeId, targetType, axisId, isBasis)
             // 위 함수가 실제로 SQL을 친 조건과 **같은 조건**으로만 미러링한다.
@@ -8253,9 +8242,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (r.code.isNotBlank() && !axisCodesSeen.add(r.code)) {
                     result.warnings.add("대결 축 행 $i: 코드 '${r.code}'가 파일 내에서 중복되어 같은 축을 덮어씁니다")
                 }
-                val axisByCodeMatch = if (r.code.isNotBlank()) axisCodes.first(r.code) else null
+                val axisByCodeMatch = if (r.code.isNotBlank()) axes.byCode.first(r.code) else null
                 val existing = axisByCodeMatch
-                    ?: axisNameKeys.first(DuelAxisNameKey(universe.id, r.targetType, r.name))
+                    ?: axes.byNameKey.first(DuelAxisNameKey(universe.id, r.targetType, r.name))
                 // (세계관, 대상, 이름) 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양).
                 if (axisByCodeMatch == null && existing != null && existing.id in writtenAxisIds) {
                     result.warnings.add("대결 축 행 $i: 같은 세계관·대상·이름의 행이 파일 내에서 중복되어 같은 축을 덮어씁니다")
@@ -8422,11 +8411,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             .groupBy({ it.displayName }, { it.code })
         // 판 자신도 같은 대접을 한다 (B-210) — 바로 위 문단이 축·캐릭터에 세운 근거가
         // **판에는 적용되지 않아** 행마다 `getByCode`가 남아 있었다(코드 열에 인덱스가 없어
-        // 그 하나하나가 풀스캔이다). id 오름차순이 `LIMIT 1`의 순서다.
-        val matchCodes = ImportLookupIndex<String, DuelMatch>(
-            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
-        )
-        matchCodes.load(db.duelMatchDao().getAllList().sortedBy { it.id })
+        // 그 하나하나가 풀스캔이다).
+        // **키 모양과 싣는 순서는 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
+        val matches = DuelMatchIndexes(db.duelMatchDao().getAllList())
 
         val seenCodes = HashSet<String>()
         for (i in 1..sheet.lastRowNum) {
@@ -8484,7 +8471,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("대결 기록: 코드 '${r.code}'가 두 행에 중복됨 (마지막 행 우선)")
                 }
 
-                val existing = if (r.code.isNotBlank()) matchCodes.first(r.code) else null
+                val existing = if (r.code.isNotBlank()) matches.byCode.first(r.code) else null
                 // 코드로 찾은 기존 판과 행의 참가자가 다르면 병합하지 않는다 — 행 복사 후 이름만
                 // 바꾼 파일(회색 코드 열 잔존)에서 남의 판에 사실과 다른 승자가 무음 기록되거나,
                 // 승자가 참가자가 아닌 모순 판이 생긴다. 참가자를 바꾸는 것은 '다른 판'이다(위 merge 규약).
@@ -8505,7 +8492,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     )
                     val newId = db.duelMatchDao().insert(newMatch)
                     // 같은 코드를 든 뒷 행이 이것을 봐야 한다(위 '두 행에 중복' 고지의 상대다).
-                    matchCodes.put(newMatch.copy(id = newId))
+                    matches.remember(newMatch.copy(id = newId))
                     result.newDuelMatches++
                 } else {
                     val merged = mergeDuelMatch(existing, r, winnerCode, groupId)
@@ -8513,7 +8500,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         db.duelMatchDao().update(merged)
                         result.updatedDuelMatches++
                     } else result.unchangedRows++
-                    matchCodes.put(merged)
+                    matches.remember(merged)
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -8889,17 +8876,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cacheKey = novelTitle to universeId
         novelIdCache[cacheKey]?.let { return it }
         // 1. 지정 세계관(또는 무소속)에서 조회
-        val inScope = if (universeId != null) {
-            db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
-        } else {
-            db.novelDao().getNovelByTitleNoUniverse(novelTitle)
-        }
+        val inScope = novelByTitle(novelTitle, universeId)
         if (inScope != null) {
             novelIdCache[cacheKey] = inScope.id
             return inScope.id
         }
         // 2. F3-C: 생성 전 타 세계관에서 동일 제목 조회 — 있으면 유령 중복 생성 대신 재사용 + 경고
-        val elsewhere = db.novelDao().getNovelsByTitleList(novelTitle).firstOrNull()
+        val elsewhere = novelByTitleAnyUniverse(novelTitle)
         if (elsewhere != null) {
             result?.warnings?.add("${rowLabel ?: "작품"}: '$novelTitle'이(가) 지정 세계관에 없어 다른 세계관의 동일 제목 작품에 연결했습니다 — 세계관 지정을 확인하세요")
             novelIdCache[cacheKey] = elsewhere.id
@@ -8925,34 +8908,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CharacterRefLadder.codeFirst(byCode, name, matches)
     }
 
-    // ── 자연키 (B-210) ──────────────────────────────────────────────────────────
+    // ── 자연키 (B-210) → `util/ImportIdentityIndexes.kt`로 옮겼다 (B-236) ────────
     // 코드가 없는 구버전 파일의 폴백 경로가 쓰는 키다. **타입이 있는 `data class`로 짓는다** —
     // 손쉬워 보이는 `listOf(charId, year, …)`는 코틀린이 원소 타입을 첫 원소에서 추론해
     // 숫자 리터럴을 올려 버려, `Int` 칸에서 실은 키와 **영영 같지 않다.** 컴파일도 되고 예외도
     // 없어 **모든 조회가 빗나가는데도 조용하고**, 그러면 가져오기가 *"기존 행이 없다"*고 보고
     // 전부 새로 만든다(`ImportLookupIndexTest` ⑤가 그 실패를 붙잡아 둔다).
-
-    private data class EventNaturalKey(val year: Int, val description: String)
-    private data class StateChangeNaturalKey(
-        val characterId: Long, val year: Int, val fieldKey: String, val newValue: String
-    )
-    private data class FactionNameKey(val name: String, val universeId: Long)
-    private data class DuelAxisNameKey(val universeId: Long, val targetType: String, val name: String)
-    private data class DuelVerdictMemberKey(val axisId: Long, val memberKey: String)
-
-    private data class RelChangeNaturalKey(
-        val relationshipId: Long, val year: Int, val month: Int?, val day: Int?
-    )
-
-    /**
-     * 관계의 **쌍** 키 — 관계는 두 캐릭터에 함께 매달려 방향이 없다.
-     * 작은 id를 앞에 두어 `(가, 나)`와 `(나, 가)`가 한 키가 된다(호출부가 그렇게 걸러 왔다).
-     */
-    private data class CharacterPairKey(val low: Long, val high: Long) {
-        companion object {
-            fun of(a: Long, b: Long) = CharacterPairKey(minOf(a, b), maxOf(a, b))
-        }
-    }
+    //
+    // **옮긴 이유는 미리보기가 같은 키를 쓰게 됐기 때문이다(B-236).** 이 파일 안에 private으로
+    // 두면 미리보기 쪽은 볼 수 있어도(같은 클래스다) **순수 시험이 닿지 못한다** — 키 모양과
+    // 싣는 순서는 순수인데 여기 있으면 잴 수 없다.
 
     // ── 캐릭터 정체성 색인 (B-210) ──────────────────────────────────────────────
     // 아래 넷이 대체하는 질의는 전부 `characters`를 **한 행씩** 물었다. 캐릭터를 코드·이름으로
@@ -9078,23 +9043,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private fun resetNovelIndex() {
         novelCodes.reset()
+        novelTitleKeys.reset()
+        novelTitlesAnyUniverse.reset()
         novelIndexLoaded = false
     }
 
     private suspend fun ensureNovelIndex() {
         if (novelIndexLoaded) return
         novelIndexLoaded = true
-        for (novel in db.novelDao().getAllNovelsList().sortedBy { it.id }) novelCodes.put(novel)
+        for (novel in db.novelDao().getAllNovelsList().sortedBy { it.id }) rememberNovel(novel)
     }
 
     /**
-     * 작품을 썼다고 기록한다 — 코드가 바뀌었으면 옛 코드는 색인이 끊는다.
+     * 작품을 썼다고 기록한다 — 코드·제목이 바뀌었으면 옛 키는 색인이 끊는다.
      * [rememberCharacter]와 같은 이유로 **먼저 싣는다**(코드 칸이 빈 첫 행은 코드로 물어보지
      * 않고 제목 폴백으로 가므로, 적재보다 쓰기가 앞서는 경로가 실재한다).
      */
     private suspend fun rememberNovel(novel: Novel) {
         ensureNovelIndex()
         novelCodes.put(novel)
+        novelTitleKeys.put(novel)
+        novelTitlesAnyUniverse.put(novel)
     }
 
     /** `getNovelByCode`의 자리. */
@@ -9102,6 +9071,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (code.isBlank()) return null
         ensureNovelIndex()
         return novelCodes.first(code)
+    }
+
+    /**
+     * `getNovelByTitleAndUniverse`(LIMIT 1) / `getNovelByTitleNoUniverse`(LIMIT 1)의 자리 (B-236).
+     * **세계관 미지정(null)은 별개의 키다** — SQL도 `universeId IS NULL`을 따로 묻는다.
+     */
+    private suspend fun novelByTitle(title: String, universeId: Long?): Novel? {
+        ensureNovelIndex()
+        return novelTitleKeys.first(NovelTitleKey(title, universeId))
+    }
+
+    /** `getNovelsByTitleList(title).firstOrNull()`의 자리 (B-236). */
+    private suspend fun novelByTitleAnyUniverse(title: String): Novel? {
+        ensureNovelIndex()
+        return novelTitlesAnyUniverse.first(title)
     }
 
     // ── 세계관 색인 (B-210) ────────────────────────────────────────────────────

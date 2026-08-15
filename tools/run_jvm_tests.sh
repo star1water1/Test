@@ -94,6 +94,7 @@ $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
+$MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
 $MAIN/util/GraphForceLayout.kt
 $MAIN/util/CrossTableFold.kt
@@ -315,6 +316,7 @@ $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
+$TEST/util/ImportIdentityIndexesTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
 $TEST/util/CrossTableFoldTest.kt
