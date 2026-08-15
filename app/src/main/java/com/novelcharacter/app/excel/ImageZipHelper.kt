@@ -48,10 +48,20 @@ object ImageZipHelper {
         // 모든 이미지 경로 수집 — 엔티티 참조 + 라이브러리(meta) 미배정 이미지.
         // meta 합류는 이 함수 내부에서만 한다: collectAllImagePaths 자체의 의미(엔티티 참조 집합)는
         // StorageAnalyzer·고아 정리 소비처가 의존하므로 바꾸지 않는다.
+        //
+        // **읽기 실패를 세어서 들고 나온다(B-225).** 종전에는 이 자리가 손상된 imagePaths를
+        // 조용히 건너뛰고(parseImagePaths → null) 라이브러리 조회 실패를 빈 목록으로 삼켰다.
+        // 그러면 referencedCount가 그만큼 작아지고, 작아진 만큼 **제외 계수에도 안 들어**
+        // hasLoss가 false가 된다 — 그 상태로 '완전한 백업입니다'가 나갔다.
+        // 못 읽은 것은 담기지도 않으므로, 이것을 세지 않으면 유실이 무음이 된다.
+        val collected = collectAllImagePathsWithStatus(db, gson)
+        val metaPaths = runCatching { db.imageMetaDao().getAllPaths() }
         val imagePathSet = buildSet {
-            addAll(collectAllImagePaths(db, gson))
-            addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
+            addAll(collected.paths)
+            addAll(metaPaths.getOrDefault(emptyList()))
         }
+        // 라이브러리 조회는 통째로 성공하거나 통째로 실패한다 — 실패는 '항목 하나'로 센다.
+        val unreadableRefCount = collected.unreadableCount + if (metaPaths.isFailure) 1 else 0
 
         // 담을 수 있는 것 / 파일 없음 / 앱 저장소 밖 — 판정은 ImagePathClassifier 단일 소스
         val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
@@ -68,6 +78,7 @@ object ImageZipHelper {
                 missingCount = classified.missing.size,
                 outsideAppDirCount = classified.outsideAppDir.size,
                 failedCount = 0,
+                unreadableRefCount = unreadableRefCount,
                 sampleNames = ImagePathClassifier.sampleNames(classified.broken)
             )
         }
@@ -108,9 +119,14 @@ object ImageZipHelper {
                 usedNames.add(name)
                 val zipPath = "images/$name"
                 try {
-                    zip.putNextEntry(ZipEntry(zipPath))
-                    imageFile.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
+                    // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패(파일이 방금 지워졌다,
+                    // 권한이 없다)가 이 부류의 대부분인데, 순서가 반대면 그 흔한 실패마다
+                    // 0바이트 엔트리가 ZIP에 남는다. 이쪽은 그 자리에서 통째로 건너뛴다.
+                    imageFile.inputStream().use { input ->
+                        zip.putNextEntry(ZipEntry(zipPath))
+                        input.copyTo(zip)
+                        zip.closeEntry()
+                    }
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
                     failedPaths.add(path)
@@ -141,6 +157,7 @@ object ImageZipHelper {
             missingCount = classified.missing.size,
             outsideAppDirCount = classified.outsideAppDir.size,
             failedCount = failedPaths.size,
+            unreadableRefCount = unreadableRefCount,
             // 표본은 "끊어진 참조 + 압축 실패"를 함께 — 사용자가 어느 파일인지 짚을 수 있게 한다
             sampleNames = ImagePathClassifier.sampleNames(classified.broken + failedPaths)
         )
@@ -173,47 +190,50 @@ object ImageZipHelper {
 
     /**
      * DB의 Character/Universe/Novel에서 모든 이미지 절대 경로를 수집한다.
+     *
+     * **[collectAllImagePathsWithStatus]에 위임한다 — 순회가 두 벌이면 반드시 갈린다(B-225).**
+     * 종전에는 같은 세 순회가 이 함수와 그 함수에 따로 적혀 있었고, 실패 처분만 다른 복붙이었다.
+     * B-225가 `wrapWithImages`를 상태 있는 쪽으로 옮기자 **견적(`estimateImageBytes`)과
+     * 래핑이 서로 다른 벌을 읽는 상태**가 됐다 — 그 둘이 같은 모집단을 봐야 한다는 것은
+     * 바로 위 KDoc이 요구하는 계약이므로, 벌을 하나로 합쳐 그 갈림을 원천에서 없앤다.
      */
-    suspend fun collectAllImagePaths(db: AppDatabase, gson: Gson = Gson()): Set<String> {
-        val paths = mutableSetOf<String>()
+    suspend fun collectAllImagePaths(db: AppDatabase, gson: Gson = Gson()): Set<String> =
+        collectAllImagePathsWithStatus(db, gson).paths
 
-        for (c in db.characterDao().getAllCharactersList()) {
-            parseImagePaths(c.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-        for (u in db.universeDao().getAllUniversesList()) {
-            parseImagePaths(u.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-        for (n in db.novelDao().getAllNovelsList()) {
-            parseImagePaths(n.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-
-        return paths
+    /**
+     * 이미지 경로 수집 결과 — 읽지 못한 항목이 있으면 참조 집합이 불완전함을 알린다.
+     *
+     * **건수로 든다(B-225).** 종전에는 `anyParseFailed: Boolean`이었고 소비처가 고아 정리
+     * 하나뿐이라 그것으로 족했다("하나라도 실패했으면 중단"). 내보내기·백업은 중단하지 않고
+     * **사용자에게 규모를 말해야** 하므로 몇 항목이 그랬는지가 필요하다.
+     * 옛 이름은 파생값으로 남겨 둔다 — 뜻이 같고, 그쪽 소비처가 묻는 것은 여전히 유무다.
+     */
+    data class CollectResult(val paths: Set<String>, val unreadableCount: Int) {
+        val anyParseFailed: Boolean get() = unreadableCount > 0
     }
-
-    /** 이미지 경로 수집 결과 — 파싱 실패가 하나라도 있으면 참조 집합이 불완전함을 알린다. */
-    data class CollectResult(val paths: Set<String>, val anyParseFailed: Boolean)
 
     /**
      * collectAllImagePaths의 fail-safe 변형.
      *
-     * imagePaths JSON이 손상되어 파싱에 실패하면 그 항목의 이미지가 참조 집합에서 누락된다.
+     * imagePaths JSON이 손상되어 읽지 못하면 그 항목의 이미지가 참조 집합에서 누락된다.
      * 이 상태로 고아 정리를 강행하면 손상 1건이 실사용 이미지 전부의 삭제로 번질 수 있으므로,
-     * 파싱 실패 여부를 별도로 보고해 호출부(고아 정리)가 안전하게 중단할 수 있게 한다.
+     * 실패 항목 수를 별도로 보고해 호출부가 안전하게 중단하거나(고아 정리)
+     * 사용자에게 알릴 수 있게 한다(내보내기·백업 — B-225).
      * (빈 값 "[]"·blank는 실패가 아니라 "이미지 없음"으로 구분한다.)
      */
     suspend fun collectAllImagePathsWithStatus(db: AppDatabase, gson: Gson = Gson()): CollectResult {
         val paths = mutableSetOf<String>()
-        var anyFailed = false
+        var unreadable = 0
 
         fun consume(json: String) {
             if (json.isBlank() || json == "[]") return
             val parsed = try {
                 gson.fromJson(json, Array<String>::class.java)
             } catch (_: Exception) {
-                anyFailed = true
+                unreadable++
                 return
             }
-            if (parsed == null) { anyFailed = true; return }
+            if (parsed == null) { unreadable++; return }
             paths.addAll(parsed)
         }
 
@@ -221,15 +241,6 @@ object ImageZipHelper {
         for (u in db.universeDao().getAllUniversesList()) consume(u.imagePaths)
         for (n in db.novelDao().getAllNovelsList()) consume(n.imagePaths)
 
-        return CollectResult(paths, anyFailed)
-    }
-
-    private fun parseImagePaths(json: String, gson: Gson): Array<String>? {
-        if (json.isBlank() || json == "[]") return null
-        return try {
-            gson.fromJson(json, Array<String>::class.java)
-        } catch (_: Exception) {
-            null
-        }
+        return CollectResult(paths, unreadable)
     }
 }

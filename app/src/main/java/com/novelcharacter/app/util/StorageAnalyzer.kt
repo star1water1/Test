@@ -141,27 +141,33 @@ object StorageAnalyzer {
     suspend fun collectTrashHeldPaths(db: AppDatabase, gson: Gson = Gson()): Set<String> =
         collectTrashHeldPathsWithStatus(db, gson).paths
 
-    /** 위와 동일하되 파싱 실패 여부를 함께 보고한다(고아 정리 fail-safe용). */
+    /** 위와 동일하되 읽지 못한 항목 수를 함께 보고한다(고아 정리 fail-safe용). */
     suspend fun collectTrashHeldPathsWithStatus(
         db: AppDatabase,
         gson: Gson = Gson()
     ): ImageZipHelper.CollectResult {
         val result = mutableSetOf<String>()
-        var anyFailed = false
+        var unreadable = 0
         // payload는 읽지 않는다 — 휴지통 한도가 '작업 30건'이라 행 수는 수만이 될 수 있다.
-        val snapshots = runCatching { db.trashSnapshotDao().getAllImages() }.getOrDefault(emptyList())
-        for (snap in snapshots) {
+        //
+        // **조회 실패도 '못 읽음'이다(B-225).** 종전에는 빈 목록으로 갈음하고 실패 표시를
+        // 세우지 않아, DB가 답하지 못한 것이 *"보류 중인 이미지가 없다"*와 구분되지 않았다 —
+        // 그 상태로 고아 정리를 통과시키면 **복원이 기다리는 이미지를 지운다.** 이 함수가
+        // fail-safe라 불리는 이유가 바로 그 갈래이므로, 그 갈래만 침묵인 채로 둘 수 없다.
+        val snapshots = runCatching { db.trashSnapshotDao().getAllImages() }
+        if (snapshots.isFailure) unreadable++
+        for (snap in snapshots.getOrDefault(emptyList())) {
             val json = snap.imagePaths
             if (json.isBlank() || json == "[]") continue
             val paths: List<String?>? = runCatching {
                 gson.fromJson<List<String?>>(json, GsonTypes.STRING_LIST)
             }.getOrNull()
-            if (paths == null) { anyFailed = true; continue }
+            if (paths == null) { unreadable++; continue }
             paths.filterNotNull().forEach { p ->
                 ImagePathMatch.canonical(p).takeIf { it.isNotEmpty() }?.let { result.add(it) }
             }
         }
-        return ImageZipHelper.CollectResult(result, anyFailed)
+        return ImageZipHelper.CollectResult(result, unreadable)
     }
 
     /** 디렉토리 재귀 크기 (심링크 순환 방지 위해 실제 파일만 합산) */

@@ -3,11 +3,16 @@ package com.novelcharacter.app.excel
 import java.io.File
 
 /**
- * 이미지 ZIP 래핑 결과 — "무엇이 왜 담기지 않았는지"를 사실 그대로 집계한다.
+ * 이미지 수록 결과 — "무엇이 왜 담기지 않았는지"를 사실 그대로 집계한다.
  *
  * 이미지가 빠진 백업을 완전한 백업으로 오인해 원본 기기를 초기화하면 이미지가 영구 소멸한다.
  * 따라서 무음 제외는 그 자체로 결함이다(검증 → 경고 → 교정 경로 안내).
  * 불변식: referencedCount == includedCount + excludedCount
+ *
+ * **엑셀 ZIP 래핑과 월드패키지가 같은 벌을 쓴다**(B-225). 종전에는 엑셀 쪽만 이 집계를 들고
+ * 월드패키지는 계수도 고지도 없었는데, 두 경로가 하는 일이 같다 —
+ * *기기 밖으로 나가는 산물에 이미지를 싣고, 싣지 못한 것을 사유별로 말한다.*
+ * 벌을 갈라 두면 한쪽에만 손실 고지가 자라고 다른 쪽은 침묵으로 남는다(감사 5장의 비대칭).
  */
 data class ImageZipReport(
     /** 이미지 포함이 요청되었는가. false면 호출부는 아무것도 알리지 않는다(사실과 다른 경고 금지). */
@@ -24,6 +29,18 @@ data class ImageZipReport(
     val outsideAppDirCount: Int = 0,
     /** 읽기·압축 중 오류로 담지 못한 수 */
     val failedCount: Int = 0,
+    /**
+     * **참조 목록 자체를 읽지 못한 항목 수**(B-225 — 캐릭터·세계관·작품 행의 `imagePaths`가
+     * 깨졌거나 라이브러리 조회가 실패한 것).
+     *
+     * 이 항목들의 이미지는 **[referencedCount]에도 [excludedCount]에도 들지 못한다** —
+     * 몇 장인지 알 방법이 없기 때문이다. 그래서 이 값이 0이 아니면 [referencedCount]는
+     * 총량이 아니라 **하한**이고, 그 상태로 '완전한 백업'이라 말할 수 없다([referencesIncomplete]).
+     *
+     * 세는 단위가 '장'이 아니라 '항목'인 것은 일부러다 — 사유를 아는 자리가 아는 것이
+     * 거기까지다(R-39: 세는 곳은 사유를 아는 곳이고, 모르는 것을 아는 척 세지 않는다).
+     */
+    val unreadableRefCount: Int = 0,
     /** 제외 항목의 표본 파일명 (최대 [SAMPLE_LIMIT]개) — 내부 절대경로 전체는 사용자에게 의미가 없다 */
     val sampleNames: List<String> = emptyList()
 ) {
@@ -32,12 +49,103 @@ data class ImageZipReport(
     /** 경고해야 하는 상태. 제외 0건이면 경고하지 않는다. */
     val hasLoss: Boolean get() = requested && excludedCount > 0
 
+    /**
+     * 집계 자체를 믿을 수 없는 상태 — 참조 목록을 못 읽은 항목이 있다.
+     *
+     * [hasLoss]와 **따로 두는 이유**: 제외 건수는 0인데 참조를 못 읽은 항목이 있는 경우가
+     * 실재하고, 그때 "N장 중 N장 담김 · 0장 누락"은 전부 사실이면서 **결론만 거짓**이다.
+     * 손실 문구에 이 상태를 합치면 없는 누락 건수를 말하게 되므로 갈라 둔다.
+     */
+    val referencesIncomplete: Boolean get() = requested && unreadableRefCount > 0
+
+    /**
+     * 이 결과가 낳는 고지 갈래 — **판정은 순수하게 여기서 하고, 문자열 자원 매핑만 호출부가 한다.**
+     *
+     * 종전에는 이 우선순위가 `ExcelExporter`의 사적 함수 안에 있어 어느 시험도 닿지 못했고,
+     * 그 안에서 **'완전한 백업입니다'가 참조를 못 읽은 상태에서도 나갈 수 있었다**(B-225).
+     * 같은 부류를 이 저장소가 이미 한 번 겪었다 — 셀 서식 우선순위(`cellStyleKindFor`)가
+     * 사적 클래스 안에 있어 전 열이 잘못 보이는 채로 신규 12건이 초록이었다.
+     *
+     * 순서가 곧 규칙이다:
+     * 1. 요청하지 않았으면 아무 말도 하지 않는다(사실과 다른 경고 금지).
+     * 2. 제외가 있으면 손실을 먼저 말한다 — 담긴 것이 0장이냐 아니냐로 문구가 갈린다.
+     * 3. **참조를 못 읽은 항목이 있으면 그 사실을 언제나 덧붙인다.** 손실 문구가 이미
+     *    떴어도 그 문구의 숫자가 하한이라는 것은 따로 말해야 한다.
+     * 4. '이미지 없음'과 '완전한 백업'은 **참조를 전부 읽었을 때만** 할 수 있는 말이다.
+     */
+    fun noticeKinds(isCompleteBackup: Boolean): List<ImageNoticeKind> {
+        if (!requested) return emptyList()
+        val kinds = ArrayList<ImageNoticeKind>(2)
+        when {
+            hasLoss && includedCount == 0 -> kinds.add(ImageNoticeKind.NONE_INCLUDED)
+            hasLoss -> kinds.add(ImageNoticeKind.INCOMPLETE)
+            referencesIncomplete -> Unit                       // 아래 줄이 이 상태를 말한다
+            referencedCount == 0 -> kinds.add(ImageNoticeKind.NO_IMAGES)
+            isCompleteBackup -> kinds.add(ImageNoticeKind.COMPLETE_BACKUP)
+        }
+        if (referencesIncomplete) kinds.add(ImageNoticeKind.REFS_UNREADABLE)
+        return kinds
+    }
+
+    /**
+     * 제외 사유별 내역 — **0인 사유는 빼고, 순서는 고정한다.**
+     *
+     * 뭉뚱그리지 않는 것이 R-39의 요구다(막힌 것과 못 읽은 것은 **처방이 다르다** —
+     * 파일 확인 / 앱에 들이기). 반대로 0을 함께 늘어놓으면 *어디를 봐야 하는지*가 묻히므로
+     * 실제로 걸린 사유만 든다. 순서를 고정하는 것은 같은 상황에서 문구가 흔들리지 않게 하기 위함이다.
+     */
+    fun lossReasons(): List<Pair<ImageLossReason, Int>> = buildList {
+        if (missingCount > 0) add(ImageLossReason.MISSING to missingCount)
+        if (outsideAppDirCount > 0) add(ImageLossReason.OUTSIDE_APP_DIR to outsideAppDirCount)
+        if (failedCount > 0) add(ImageLossReason.FAILED to failedCount)
+    }
+
     companion object {
         const val SAMPLE_LIMIT = 5
 
         /** 이미지 포함을 요청하지 않은 내보내기/백업 */
         val NOT_REQUESTED = ImageZipReport()
     }
+}
+
+/**
+ * 이미지 수록 고지의 갈래([ImageZipReport.noticeKinds]가 정한다).
+ *
+ * 화면 문구를 여기 담지 않는 것은 이 계층이 순수(Android 무의존)여서다 —
+ * 자원 id 매핑은 문구를 아는 계층이 한다.
+ */
+enum class ImageNoticeKind {
+    /** 참조가 있는데 한 장도 담기지 않았다 */
+    NONE_INCLUDED,
+
+    /** 일부만 담겼다 */
+    INCOMPLETE,
+
+    /** 참조 목록을 못 읽은 항목이 있다 — 담긴 수도 빠진 수도 그 항목을 세지 못했다 */
+    REFS_UNREADABLE,
+
+    /** 담을 이미지가 애초에 없었다 (손실이 아니다) */
+    NO_IMAGES,
+
+    /** 참조를 전부 읽었고 전부 담겼다 — '완전한 백업' */
+    COMPLETE_BACKUP
+}
+
+/**
+ * 이미지를 담지 못한 사유([ImageZipReport.lossReasons]가 든다).
+ *
+ * **처방이 사유마다 다르므로 갈라 둔다**(R-39) — 없는 파일은 참조를 고치는 일이고,
+ * 저장소 밖 파일은 앱에 들이는 일이며, 읽기 실패는 다시 시도해 볼 일이다.
+ */
+enum class ImageLossReason {
+    /** 참조하는데 파일이 없다 */
+    MISSING,
+
+    /** 앱 내부 저장소 밖을 가리켜 봉쇄 가드가 막았다 */
+    OUTSIDE_APP_DIR,
+
+    /** 읽기·압축 중 오류 */
+    FAILED
 }
 
 /**

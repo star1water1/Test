@@ -21,6 +21,7 @@ import com.novelcharacter.app.backup.BackupSettingsStore
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import com.novelcharacter.app.excel.ExportCancelledException
+import com.novelcharacter.app.excel.ImageNoticeRes
 import com.novelcharacter.app.share.WorldPackageExporter
 import com.novelcharacter.app.ui.common.TaskProgressDialog
 import com.novelcharacter.app.util.ProgressScale
@@ -522,6 +523,29 @@ class SettingsFragment : Fragment() {
                     }
                     if (result.droppedDuelVerdicts > 0) {
                         add(getString(R.string.world_package_dropped_duel_verdicts, result.droppedDuelVerdicts))
+                    }
+                    // 이미지도 같은 자리에서 고지한다(B-225). 종전에는 이 축만 계수가 없어,
+                    // 한 장의 읽기 오류가 그 엔티티의 남은 장까지 무음으로 떨어뜨렸다 —
+                    // 받는 기기에서 비어 보이는데 보낸 사람은 끝까지 모른다.
+                    // 사유별 내역은 엑셀 백업과 같은 문구를 쓴다(ImageNoticeRes).
+                    val images = result.images
+                    if (images.hasLoss) {
+                        add(
+                            if (images.includedCount == 0) {
+                                getString(R.string.world_package_images_none_included, images.referencedCount)
+                            } else {
+                                getString(
+                                    R.string.world_package_images_incomplete,
+                                    images.referencedCount, images.includedCount, images.excludedCount
+                                )
+                            }
+                        )
+                        for ((reason, count) in images.lossReasons()) {
+                            add(getString(ImageNoticeRes.lossReason(reason), count))
+                        }
+                    }
+                    if (images.referencesIncomplete) {
+                        add(getString(R.string.export_images_refs_unreadable, images.unreadableRefCount))
                     }
                 }
                 if (dropNotices.isNotEmpty()) {
