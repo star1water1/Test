@@ -498,5 +498,20 @@ echo "컴파일 OK (클래스 $COMPILED개)"
 echo "── 실행 ──"
 CLASSES=$(cd "$OUT" && find . -name '*Test.class' ! -name '*$*' | sed 's|^\./||; s|\.class$||; s|/|.|g' | sort)
 echo "$CLASSES" | sed 's/^/  /'
+# 종료 코드는 **JUnitCore의 것**이어야 한다 (B-185).
+# 종전에는 이 줄이 파이프라인의 마지막인 `tail`의 코드를 그대로 스크립트의 코드로 넘겨
+# **시험이 빨간불이어도 `exit 0`**이었다 — `if tools/run_jvm_tests.sh; then` 꼴로 판정하면
+# 실패를 초록으로 읽는다. 이 저장소는 방어선을 세울 때 *되돌려 빨간불을 본다*를 관행으로
+# 삼는데, 그 확인을 종료 코드로 자동화하면 **되돌려도 초록**이라 *방어선이 없다*는
+# 정반대 결론에 닿는다(사람이 출력을 눈으로 읽는 동안에는 드러나지 않는 부류다).
+#
+# **`set -o pipefail`로 고치지 않는다.** 위 컴파일 줄이 `| grep -E "error:"`로 끝나는데
+# grep은 **찾은 것이 없으면 1**이다 — 즉 pipefail을 켜면 *오류 0인 정상 컴파일*이 실패로
+# 뒤집힌다. 그래서 이 줄에만 PIPESTATUS를 쓴다.
 # shellcheck disable=SC2086
 java -cp "$OUT:$CP" org.junit.runner.JUnitCore $CLASSES 2>&1 | grep -vE "^Picked up JAVA_TOOL_OPTIONS" | tail -25
+STATUS=${PIPESTATUS[0]}   # 바로 다음 명령이 배열을 덮으므로 이 자리에서 받아 둔다
+if [ "$STATUS" -ne 0 ]; then
+  echo "시험 실패 — JUnitCore 종료 코드 $STATUS (위 출력은 tail -25로 잘렸을 수 있다)" >&2
+fi
+exit "$STATUS"

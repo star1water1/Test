@@ -7890,6 +7890,31 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         plan.warnings.forEach { result.warnings.add(it) }
 
+        // 행마다 묻던 정체성·태그 조회를 **시트 크기만큼의 일괄 조회**로 내린다 (B-238).
+        // 위 `plan`이 같은 경로를 하나로 접으므로(LinkedHashMap 키가 path — 마지막 행 우선)
+        // 루프 안에서 한 경로는 한 번만 돌고, 그래서 **이 색인이 루프 도중 낡을 창이 없다**:
+        // 뒤 행이 앞 행이 만든 행을 다시 만나는 경우가 원리적으로 없다.
+        //
+        // **미리보기(`analyzeImageMeta`)와 달리 표를 통째로 읽지 않는다.** 그쪽은 총계
+        // (`existingTotal`)로 어차피 전량을 읽어야 해서 그 읽기 하나가 색인까지 먹이지만,
+        // 가져오기는 총계가 필요 없다 — 여기서 `getAllList()`를 쓰면 **시트가 10행이어도
+        // 이미지 표 전량을 싣는** 새 비용이 생긴다(비용이 시트가 아니라 DB 크기에 붙는다).
+        // 그래서 짝의 모양을 그대로 옮기지 않고 **필요한 경로만** 키로 물었다.
+        val wantedPaths = plan.rows.map { it.path }
+        val existingByPath: Map<String, com.novelcharacter.app.data.model.ImageMeta> =
+            wantedPaths.chunked(IN_CLAUSE_CHUNK)
+                .flatMap { db.imageMetaDao().getByPaths(it) }
+                .associateBy { it.path }
+        // 태그는 **열이 있을 때만** 읽는다 — 없으면 비교 대상이 아니라 조회도 낭비다
+        // (루프 안의 판정이 `r.hasTagCol`로 갈리는 것과 같은 조건이다).
+        val tagsByImage: Map<Long, Set<String>> =
+            if (imc.tag >= 0) {
+                existingByPath.values.map { it.id }.chunked(IN_CLAUSE_CHUNK)
+                    .flatMap { db.imageTagDao().getTagsByImages(it) }
+                    .groupBy({ it.imageId }, { it.tag })
+                    .mapValues { (_, v) -> v.toSet() }
+            } else emptyMap()
+
         val now = System.currentTimeMillis()
         val skippedMissing = plan.unresolved.size
         val groupMembers = mutableMapOf<String, MutableList<Long>>()
@@ -7906,14 +7931,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기도 미리보기와 **같은 함수**다(규약 R-33).
                 val r = readImageMetaRow(row, imc, result)
 
-                val existing = db.imageMetaDao().getByPath(path)
+                // 위에서 한 번에 읽어 둔 색인이다 (B-238).
+                val existing = existingByPath[path]
                 val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
                 if (existing == null) result.newImageMeta++
 
                 // 무엇이 바뀌는가의 판정도 같은 함수다. 태그는 열이 있을 때만 읽는다 —
                 // 없으면 비교 대상이 아니라 조회도 낭비다.
+                // 갓 `adopt`한 행은 색인에 없고 태그도 없다 — `orEmpty()`가 곧 그 사실이다.
                 val current = ImageMetaState(
-                    tags = if (r.hasTagCol) db.imageTagDao().getTagsByImageList(imageId).map { it.tag }.toSet() else emptySet(),
+                    tags = if (r.hasTagCol) tagsByImage[imageId].orEmpty() else emptySet(),
                     linkGroupId = existing?.linkGroupId,
                     detachedAt = existing?.detachedAt
                 )
