@@ -81,7 +81,10 @@ selftest_count=$(printf '%s\n' "$selftest_out" | sed -n 's/^__COUNT__//p')
 selftest_fn=$(printf '%s\n' "$selftest_out" | grep -c 'importFake' || true)
 if [ "${selftest_count:-0}" -ne 2 ]; then
   echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 위반 2건 중 ${selftest_count:-0}건만 잡았습니다" >&2
-  echo "      (루프 안 하나 + 지역 함수 하나. 일괄판 `getByPaths`와 주석은 세지 않아야 합니다)" >&2
+  # 작은따옴표다 — 큰따옴표 안의 백틱은 **명령 치환**이라 메서드 이름이 사라지고
+  # "command not found"가 대신 뜬다(콜드 검토가 실측으로 잡았다). 이 줄은 탐지기가
+  # 깨졌을 때만 뜨는 줄이라 **가장 필요할 때 틀리는** 부류였다.
+  echo '      (루프 안 하나 + 지역 함수 하나. 일괄판 `getByPaths`와 주석은 세지 않아야 합니다)' >&2
   exit 1
 fi
 if [ "${selftest_fn:-0}" -ne 2 ]; then
@@ -93,7 +96,17 @@ echo "  ✓ 탐지기 자기 시험 통과 (루프 안·지역 함수 둘을 잡
 RESULT=$(scan "$TARGET")
 count=$(printf '%s\n' "$RESULT" | sed -n 's/^__COUNT__//p')
 
-if [ "${count:-0}" -gt 0 ]; then
+# **자기 출력을 증명한다** — `__COUNT__`가 없다는 것은 스캐너가 답을 못 냈다는 뜻이지
+# *위반이 없다*는 뜻이 아니다. 이 줄이 없으면 python이 죽어도 `${count:-0}` = 0이 되어
+# **"✓ 위반 없음"으로 조용히 통과한다**(콜드 검토가 잡았다 — 이 저장소가 프로브의
+# "오류 0인데 클래스 파일도 0" 가드에서 이미 한 번 내린 결론과 같은 부류다).
+if [ -z "$count" ]; then
+  echo "  ✗ 검사가 자기 출력을 내지 못했습니다 (__COUNT__ 없음) — 스캐너 실패입니다" >&2
+  printf '%s\n' "$RESULT" | tail -5 >&2
+  exit 2
+fi
+
+if [ "$count" -gt 0 ]; then
   echo "  ✗ 가져오기가 일괄판이 있는 단수 조회를 씁니다 (${count}건)"
   printf '%s\n' "$RESULT" | grep -v '^__COUNT__' | while IFS=$'\t' read -r ln fn meth fix text; do
     echo "      $TARGET:$ln  [$fn]  $meth → $fix"
