@@ -8012,7 +8012,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (clearedGroupIds.isNotEmpty()) {
             db.imageMetaDao().setGroup(clearedGroupIds, null)
             // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
-            clearedGroupTokens.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
+            // 토큰마다 돌던 쓰기를 일괄판으로 내렸다 (B-239) — 갈라 불러도 답이 같은 근거는
+            // `clearSingletonGroups`의 주석(묶음이 행을 나눠 가지므로 서로의 인원을 못 바꾼다).
+            clearedGroupTokens.toList().chunked(IN_CLAUSE_CHUNK)
+                .forEach { db.imageMetaDao().clearSingletonGroups(it) }
             result.warnings.add("이미지 ${clearedGroupIds.size}건: '링크그룹' 칸이 비어 있어 링크를 해제했습니다")
             if (clearedAutoLinks > 0) {
                 result.warnings.add(
@@ -8022,9 +8025,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
-        for ((token, ids) in groupMembers) {
-            val existingIds = db.imageMetaDao().getByGroup(token).map { it.id }
-            if ((ids + existingIds).toSet().size >= 2) {
+        // 토큰마다 묻던 `getByGroup`을 **시트가 든 토큰만큼의 일괄 조회 한 번**으로 내린다 (B-239).
+        // 읽는 시점이 규약이다 — 해제(위 블록)를 반영한 **뒤**여야 종전 조회가 보던 상태와 같다.
+        //
+        // **앞의 두 조회(B-238)와 달리 색인 하나로는 끝나지 않는다:** 이 루프는 제 안에서 쓰고
+        // (`setGroup(ids, token)`) 그 쓰기가 뒤 토큰의 답을 바꾼다(이미지가 X에서 Y로 옮겨 가면
+        // Y를 처리한 뒤의 X 조회는 그것을 식구로 세지 않는다). 그래서 판정을 순수로 내려
+        // **쓰기를 흉내 내는 메모리 겹** 위에서 돌린다 — 겹이 없으면 `>= 2` 가드의 답이 조용히
+        // 달라진다. 가드·순서·겹 갱신의 정본은 [ImageLinkGroupPlanner]이고 시험이 그것을 든다.
+        if (groupMembers.isNotEmpty()) {
+            val currentByToken: Map<String, Set<Long>> =
+                groupMembers.keys.toList().chunked(IN_CLAUSE_CHUNK)
+                    .flatMap { db.imageMetaDao().getByGroups(it) }
+                    .mapNotNull { meta -> meta.linkGroupId?.let { it to meta.id } }
+                    .groupBy({ it.first }, { it.second })
+                    .mapValues { (_, ids) -> ids.toSet() }
+            for ((token, ids) in com.novelcharacter.app.util.ImageLinkGroupPlanner.plan(groupMembers, currentByToken)) {
                 db.imageMetaDao().setGroup(ids, token)
             }
         }

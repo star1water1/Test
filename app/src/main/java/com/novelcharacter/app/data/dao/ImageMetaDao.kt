@@ -24,6 +24,16 @@ interface ImageMetaDao {
     @Query("SELECT * FROM image_meta WHERE linkGroupId = :groupId")
     suspend fun getByGroup(groupId: String): List<ImageMeta>
 
+    /**
+     * [getByGroup]의 일괄판 — **어느 묶음의 식구인지가 행에 남는다** (B-239).
+     *
+     * 토큰마다 묻던 자리를 한 번으로 내린다. `linkGroupId`에는 인덱스가 있으므로
+     * (`index_image_meta_linkGroupId` — 스키마 56 실측. **B-238의 교훈대로 잣대를 빌리지 않고
+     * 먼저 확인했다**) 조회 하나하나가 풀스캔은 아니었고, 없앨 값은 **왕복 × 토큰 수**다.
+     */
+    @Query("SELECT * FROM image_meta WHERE linkGroupId IN (:groupIds)")
+    suspend fun getByGroups(groupIds: List<String>): List<ImageMeta>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(meta: ImageMeta): Long
 
@@ -40,6 +50,23 @@ interface ImageMetaDao {
            AND (SELECT COUNT(*) FROM image_meta WHERE linkGroupId = :groupId) <= 1"""
     )
     suspend fun clearGroupIfSingleton(groupId: String)
+
+    /**
+     * [clearGroupIfSingleton]의 일괄판 (B-239) — 토큰마다 돌던 쓰기를 한 번으로 내린다.
+     *
+     * **한 문장으로 접어도 답이 같은 근거:** 하위 질의가 *상관 없는*(non-correlated) 꼴이라
+     * 먼저 통째로 계산된다 — 준 토큰 중 **인원 1 이하인 것들의 집합**이다. 그 집합을 정한 뒤에야
+     * 지우므로 지우는 행위가 제 판정을 되먹이지 않는다. 묶음은 행을 나눠 가지므로(행 하나의
+     * `linkGroupId`는 하나) 토큰별 반복과 결과가 같고, **호출부가 청크로 갈라 불러도 같다.**
+     * 인원 0인 토큰은 집합에 들지 않지만 지울 행도 없어 단수판과 다르지 않다.
+     */
+    @Query(
+        """UPDATE image_meta SET linkGroupId = NULL WHERE linkGroupId IN (
+               SELECT linkGroupId FROM image_meta WHERE linkGroupId IN (:groupIds)
+               GROUP BY linkGroupId HAVING COUNT(*) <= 1
+           )"""
+    )
+    suspend fun clearSingletonGroups(groupIds: List<String>)
 
     /**
      * 자동 입양 행 승격 — 사용자가 명시적으로 남긴(배정 해제 등) 경로의 행을 사용자 소유로
