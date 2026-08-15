@@ -183,6 +183,12 @@ sbody=$(printf '%s\n' "$SHEETS" | grep -v '^__SCOUNT__' || true)
 # 판정: 짝(analyze ↔ import)을 등재하고, **미리보기가 부르는 해석 함수 집합이 가져오기의
 # 것에 포함되는가**를 본다. 새 시트가 등재 없이 캐릭터를 해석하면 그것도 위반이다
 # (짝을 적으라는 뜻 — 조용히 빠지는 것이 이 부류의 실패 모양이다).
+#
+# **못 보는 자리를 적어 둔다**(R-49가 같은 자리에서 세운 관행 — 검사의 사각은 검사 옆에 적는다):
+#  · **간접 호출** — `analyze*`가 새 사설 헬퍼를 거쳐 해석하면 이 그물은 그 헬퍼를 못 본다.
+#    (그때 지키는 것은 짝 등재의 **뜻**이고, 그 뜻을 아는 것은 사람이다.)
+#  · **`suspend`가 아닌 `analyze*`** — 함수 범위를 `suspend fun`으로 잡으므로 목록에서 빠진다.
+#    이 파일의 미리보기는 전부 suspend라 지금은 사각이 비어 있다(①~④도 같은 전제 위에 있다).
 LADDER=$(python3 - "$TARGET" <<'PY5'
 import re, sys
 lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
@@ -231,6 +237,12 @@ for fn, calls in sorted(spans.items()):
         bad.append(f"{fn}\t캐릭터를 해석하는데 짝(import*)이 등재되지 않았습니다: {', '.join(sorted(calls))}")
         continue
     imp, allowed = pair
+    # 등재된 짝이 파일에 없으면(개명·삭제) **검사가 조용히 약해진다** — 그 자리의 analyze*는
+    # 빈 집합과 비교돼 무엇을 부르든 위반으로 뜨거나, 반대로 이름만 맞는 남의 함수와 비교된다.
+    # 그래서 등재 자체의 유효성을 먼저 본다.
+    if imp not in spans:
+        bad.append(f"{fn}\t짝으로 등재된 '{imp}'을(를) 파일에서 찾지 못했습니다 — 개명됐다면 PAIRS를 함께 고치세요")
+        continue
     extra = calls - spans.get(imp, set()) - allowed
     if extra:
         bad.append(f"{fn}\t{imp}는 부르지 않는 해석 함수를 씁니다: {', '.join(sorted(extra))}")
