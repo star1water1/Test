@@ -174,6 +174,75 @@ PY4
 scount=$(printf '%s\n' "$SHEETS" | sed -n 's/^__SCOUNT__//p')
 sbody=$(printf '%s\n' "$SHEETS" | grep -v '^__SCOUNT__' || true)
 
+# ── ⑤ 미리보기의 캐릭터 해석이 가져오기와 같은 사다리인가 (B-232) ──
+# `analyze*`가 first-match 조회(이름으로 아무나 한 명)를 쓰면, 동명이인 행을 미리보기는
+# '실행된다'고 예고하고 가져오기는 거부한다 — 열·읽기·적용·시트를 다 맞춰도 **행이 누구에게
+# 붙는가**가 갈리면 예고가 거짓이 된다. ①~④는 이 부류를 원리적으로 못 본다(비교식도, 리더도,
+# 시트도 같기 때문이다). 실제로 다섯 자리가 그렇게 서 있었다(상태변화 1 · 관계 2 · 관계변화 2).
+#
+# 판정: 짝(analyze ↔ import)을 등재하고, **미리보기가 부르는 해석 함수 집합이 가져오기의
+# 것에 포함되는가**를 본다. 새 시트가 등재 없이 캐릭터를 해석하면 그것도 위반이다
+# (짝을 적으라는 뜻 — 조용히 빠지는 것이 이 부류의 실패 모양이다).
+LADDER=$(python3 - "$TARGET" <<'PY5'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+
+# 캐릭터를 이름/코드로 되찾는 함수들. `characterByCode`는 뺀다 — 코드 조회는 모호가 없다.
+HELPERS = ('findCharacterStrict', 'resolveCharByNameNovel', 'findCharacterByName',
+           'characterByNameAndNovel', 'characterByName', 'charactersByName')
+CALL = re.compile(r'\b(' + '|'.join(HELPERS) + r')\(')
+DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*|import[A-Za-z0-9_]*)\s*\(')
+
+# 짝 등재: analyze → (import, 허용 차집합과 그 사유)
+PAIRS = {
+    'analyzeStateChanges':       ('importStateChanges', set()),
+    'analyzeRelationships':      ('importRelationships', set()),
+    'analyzeRelationshipChanges':('importRelationshipChanges', set()),
+    'analyzeFactionMemberships': ('importFactionMemberships', set()),
+    # 캐릭터 시트만 미리보기가 더 부른다: 동명이인을 CharacterConflict로 **모으는** 것이
+    # 미리보기의 일이고(사용자가 고른다), 가져오기는 그 결정을 받아 쓴다.
+    'analyzeCharacterSheet':     ('importCharacterRows', {'charactersByName'}),
+}
+
+spans, i = {}, 0
+while i < len(lines):
+    m = DECL.match(lines[i])
+    if not m:
+        i += 1
+        continue
+    j = i + 1
+    while j < len(lines) and lines[j] != '    }':
+        j += 1
+    calls = set()
+    for l in lines[i:j]:
+        calls.update(CALL.findall(l.split('//')[0]))
+    spans[m.group(1)] = calls
+    i = j + 1
+
+bad = []
+# 전역 first-match 헬퍼는 되살아나면 안 된다 — 이름 하나로 아무나 고르는 자리가 B-232였다.
+if any(re.search(r'\bfun findCharacterByName\s*\(', l) for l in lines):
+    bad.append("findCharacterByName\t이름 first-match 헬퍼가 되살아났습니다 (B-232에서 없앤 자리)")
+for fn, calls in sorted(spans.items()):
+    if not fn.startswith('analyze') or not calls:
+        continue
+    pair = PAIRS.get(fn)
+    if pair is None:
+        bad.append(f"{fn}\t캐릭터를 해석하는데 짝(import*)이 등재되지 않았습니다: {', '.join(sorted(calls))}")
+        continue
+    imp, allowed = pair
+    extra = calls - spans.get(imp, set()) - allowed
+    if extra:
+        bad.append(f"{fn}\t{imp}는 부르지 않는 해석 함수를 씁니다: {', '.join(sorted(extra))}")
+
+for b in bad:
+    print(b)
+print(f"__LCOUNT__{len(bad)}")
+PY5
+)
+lcount=$(printf '%s\n' "$LADDER" | sed -n 's/^__LCOUNT__//p')
+lbody=$(printf '%s\n' "$LADDER" | grep -v '^__LCOUNT__' || true)
+
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
@@ -237,9 +306,25 @@ if [ "${scount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${lcount:-0}" -gt 0 ]; then
+  echo "  ✗ 미리보기의 캐릭터 해석이 가져오기와 다른 사다리를 씁니다 (${lcount}건)"
+  echo
+  printf '%s\n' "$lbody" | while IFS=$'\t' read -r fn why; do
+    [ -z "${fn:-}" ] && continue
+    echo "    $fn — $why"
+  done
+  echo
+  echo "  이름 first-match는 동명이인 행을 미리보기만 '실행된다'고 예고하고 가져오기는 거부합니다."
+  echo "  짝 가져오기와 **같은 사다리**(findCharacterStrict / resolveCharByNameNovel)를 부르고,"
+  echo "  모호(Ambiguous)는 skippedCount로 세세요(B-102 ⓑ · B-232)."
+  echo "  새 시트라면 이 스크립트의 PAIRS에 짝을 등재하세요."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
+echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
 echo
 echo "복원 미리보기 정합 검사 통과"

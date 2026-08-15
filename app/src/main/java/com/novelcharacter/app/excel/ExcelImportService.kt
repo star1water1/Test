@@ -102,6 +102,10 @@ data class CategoryAnalysis(
      *
      * 선행 범주가 함께 선택돼 있으면 가져오기가 그것을 먼저 만들므로 '신규'가 맞다 —
      * **정상 복원에서는 이 값이 0이다.**
+     *
+     * **모호(동명이인·동명 세력·동명 작품)도 여기 센다** — 그 행은 선행 범주를 함께 가져와도
+     * 해소되지 않아 **영원히** 거부되므로, '신규'로 세면 실행되지 않을 숫자를 예고하게 된다
+     * (B-232 — 미리보기 다섯 자리가 그 상태였다).
      */
     val skippedCount: Int = 0
 ) {
@@ -2962,12 +2966,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.newValue.isBlank()) continue
             inBackup++
 
-            val character = characterByCode(r.charCode)
-                ?: run {
-                    val novelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
-                    findCharacterByName(r.charName, novelId)
+            // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232).
+            // 코드가 적혀 있으면 코드가 전부다: 가져오기는 코드 미해석을 이름으로 폴백하지 않고
+            // 그 행을 거부한다. 종전에는 미리보기만 이름으로 내려가, 코드가 낡은 행을
+            // '갱신'으로 예고하고 실제로는 아무것도 들어가지 않았다.
+            val character: Character? = if (r.charCode.isNotBlank()) {
+                characterByCode(r.charCode)
+            } else {
+                val novelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
+                when (val resolved = resolveCharByNameNovel(r.charName, novelId)) {
+                    is CharLookupResult.Found -> resolved.character
+                    // 동명이인은 캐릭터 시트를 함께 가져와도 해소되지 않는다 — 가져오기가
+                    // 영원히 거부하므로 '신규'가 아니라 '건너뜀'이다(B-102 ⓑ).
+                    is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                    CharLookupResult.NotFound -> null
                 }
-            // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            }
+            // 캐릭터가 아직 없을 뿐이면, 같은 파일의 캐릭터 시트가 함께 오면 먼저 생긴다(B-102 ⓑ).
             if (character == null) {
                 if (options.characters) newCount++ else skippedCount++
                 continue
@@ -3010,29 +3025,36 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.relationshipType.isBlank()) continue
             inBackup++
 
-            val char1 = characterByCode(r.char1Code)
-                ?: findCharacterByName(r.char1Name, null)
-            val char2 = characterByCode(r.char2Code)
-                ?: findCharacterByName(r.char2Name, null)
+            // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232). 순서까지 같다:
+            // 가져오기는 관계 코드를 보기 **전에** 두 캐릭터를 확정하고, 확정되지 않으면
+            // 코드가 기존 관계를 가리켜도 그 행을 거부한다.
+            val char1 = when (val res = findCharacterStrict(r.char1Name, r.char1Code)) {
+                is CharLookupResult.Found -> res.character
+                // 동명이인은 캐릭터 시트를 함께 가져와도 해소되지 않는다 — 영원히 거부되므로 '건너뜀'.
+                is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                CharLookupResult.NotFound -> null
+            }
+            val char2 = when (val res = findCharacterStrict(r.char2Name, r.char2Code)) {
+                is CharLookupResult.Found -> res.character
+                is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                CharLookupResult.NotFound -> null
+            }
+            // 아직 없을 뿐이면 같은 파일의 캐릭터 시트가 먼저 만들어 준다(B-102 ⓑ).
+            if (char1 == null || char2 == null) {
+                if (options.characters) newCount++ else skippedCount++
+                continue
+            }
+            // 자기 자신과의 관계는 가져오기가 언제나 거부한다 — 캐릭터 시트와 무관하다.
+            if (char1.id == char2.id) { skippedCount++; continue }
 
             // 실제 임포트와 동일한 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백
             val byCode = if (r.relCode.isNotBlank()) db.characterRelationshipDao().getByCode(r.relCode) else null
-            val existing = byCode ?: run {
-                if (char1 == null || char2 == null || char1.id == char2.id) return@run null
-                db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id).find { rel ->
+            val existing = byCode ?: db.characterRelationshipDao()
+                .getRelationshipsForCharacterList(char1.id).find { rel ->
                     ((rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
                         (rel.characterId1 == char2.id && rel.characterId2 == char1.id)) && rel.relationshipType == r.relationshipType
                 }
-            }
-            if (existing == null) {
-                // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
-                if (char1 == null || char2 == null || char1.id == char2.id) {
-                    if (options.characters) newCount++ else skippedCount++
-                    continue
-                }
-                newCount++
-                continue
-            }
+            if (existing == null) { newCount++; continue }
             // 종전에는 설명 하나만 봤다 — 강도·양방향·표시순서·세력을 고쳐도 '동일'이라 말했다.
             // 세력 미해석(NotFound·Ambiguous)은 가져오기와 **같은 갈래**로 KEEP으로 강등한다 —
             // LOOKUP인 채 null을 넘기면 '해제'가 되어, 기존 세력이 붙은 관계를 파일이 손대지
@@ -3040,7 +3062,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             var factionIntent = r.factionIntent
             var factionId: Long? = null
             if (factionIntent == RefIntent.LOOKUP) {
-                when (val fr = factionIndex.resolve(r.factionName, r.factionCode, char1?.let { universeIdOfCharacter(it) })) {
+                // 세계관 힌트도 가져오기와 같다 — 캐릭터1이 미분류면 캐릭터2로 넘어간다.
+                val hintUniverseId = universeIdOfCharacter(char1) ?: universeIdOfCharacter(char2)
+                when (val fr = factionIndex.resolve(r.factionName, r.factionCode, hintUniverseId)) {
                     is FactionLookupResult.Found -> factionId = fr.faction.id
                     else -> factionIntent = RefIntent.KEEP
                 }
@@ -3078,11 +3102,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val year = r.year ?: continue
             inBackup++
 
-            val char1 = characterByCode(r.char1Code)
-                ?: findCharacterByName(r.char1Name, null)
-            val char2 = characterByCode(r.char2Code)
-                ?: findCharacterByName(r.char2Name, null)
-            // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232).
+            val char1 = when (val res = findCharacterStrict(r.char1Name, r.char1Code)) {
+                is CharLookupResult.Found -> res.character
+                // 동명이인은 캐릭터 시트를 함께 가져와도 해소되지 않는다 — 영원히 거부되므로 '건너뜀'.
+                is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                CharLookupResult.NotFound -> null
+            }
+            val char2 = when (val res = findCharacterStrict(r.char2Name, r.char2Code)) {
+                is CharLookupResult.Found -> res.character
+                is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                CharLookupResult.NotFound -> null
+            }
+            // 아직 없을 뿐이면 같은 파일의 캐릭터 시트가 먼저 만들어 준다(B-102 ⓑ).
             if (char1 == null || char2 == null) {
                 if (options.characters) newCount++ else skippedCount++
                 continue
@@ -8882,40 +8914,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return newId
     }
 
-    private suspend fun findCharacterByName(name: String, preferredNovelId: Long?): Character? {
-        if (preferredNovelId != null) {
-            val match = characterByNameAndNovel(name, preferredNovelId)
-            if (match != null) return match
-        }
-        return characterByName(name)
-    }
-
-    /** 코드/이름 기반 캐릭터 조회 — 동명이인 모호성 감지 포함 */
-    private sealed class CharLookupResult {
-        data class Found(val character: Character) : CharLookupResult()
-        data class Ambiguous(val count: Int) : CharLookupResult()
-        data object NotFound : CharLookupResult()
-    }
-
-    private suspend fun findCharacterStrict(name: String, code: String): CharLookupResult {
-        if (code.isNotBlank()) {
-            val byCode = characterByCode(code)
-            if (byCode != null) return CharLookupResult.Found(byCode)
-        }
-        if (name.isBlank()) return CharLookupResult.NotFound
-        val matches = charactersByName(name)
-        return when {
-            matches.isEmpty() -> CharLookupResult.NotFound
-            matches.size == 1 -> CharLookupResult.Found(matches[0])
-            else -> CharLookupResult.Ambiguous(matches.size)
-        }
-    }
-
     /**
-     * F3-B: 이름 기반 캐릭터 조회(동명이인 안전). 여러 명이면 preferredNovelId로 좁히고,
-     * 그래도 모호하면 Ambiguous 반환(호출부가 경고 후 스킵). findCharacterByName(LIMIT 1)의
-     * "조용히 아무나 선택" 문제를 대체한다 — 연표 참가자·이름은행 사용캐릭터처럼 코드 폴백이 없는 경로용.
+     * 코드/이름 기반 캐릭터 조회 — 동명이인 모호성 감지 포함.
+     * 판정은 [CharacterRefLadder.codeFirst](순수)가 하고 여기는 **재료만** 뜬다.
+     * 코드가 답했으면 이름 색인은 묻지 않는다 — 코드가 권위라는 사다리의 뜻 그대로다.
      */
+    private suspend fun findCharacterStrict(name: String, code: String): CharLookupResult {
+        val byCode = characterByCode(code)
+        val matches = if (byCode != null) emptyList() else charactersByName(name)
+        return CharacterRefLadder.codeFirst(byCode, name, matches)
+    }
+
     // ── 자연키 (B-210) ──────────────────────────────────────────────────────────
     // 코드가 없는 구버전 파일의 폴백 경로가 쓰는 키다. **타입이 있는 `data class`로 짓는다** —
     // 손쉬워 보이는 `listOf(charId, year, …)`는 코틀린이 원소 타입을 첫 원소에서 추론해
@@ -9159,18 +9168,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return uid
     }
 
+    /**
+     * F3-B: 이름 기반 캐릭터 조회(동명이인 안전) — '작품' 열을 해소 힌트로 쓰는 시트용
+     * (상태 변화 · 연표 참가자 · 이름은행 사용캐릭터처럼 캐릭터코드 열이 없거나 비는 경로).
+     * 판정은 [CharacterRefLadder.nameWithNovelHint](순수)가 하고 여기는 **재료만** 뜬다.
+     */
     private suspend fun resolveCharByNameNovel(name: String, preferredNovelId: Long?): CharLookupResult {
         if (name.isBlank()) return CharLookupResult.NotFound
-        val matches = charactersByName(name)
-        return when {
-            matches.isEmpty() -> CharLookupResult.NotFound
-            matches.size == 1 -> CharLookupResult.Found(matches[0])
-            else -> {
-                val narrowed = preferredNovelId?.let { nid -> matches.filter { it.novelId == nid } } ?: emptyList()
-                if (narrowed.size == 1) CharLookupResult.Found(narrowed[0])
-                else CharLookupResult.Ambiguous(matches.size)
-            }
-        }
+        return CharacterRefLadder.nameWithNovelHint(name, charactersByName(name), preferredNovelId)
     }
 
     /**
