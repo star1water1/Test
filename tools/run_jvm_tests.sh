@@ -73,6 +73,7 @@ $MAIN/excel/PortableFieldFilters.kt
 $MAIN/excel/PresetTemplateMatcher.kt
 $MAIN/excel/FactionRefResolver.kt
 $MAIN/excel/NovelRefResolver.kt
+$MAIN/excel/CharacterRefResolver.kt
 $MAIN/excel/ExcelRefColumns.kt
 $MAIN/excel/ImageZipReport.kt
 $MAIN/excel/ExportOptions.kt
@@ -303,6 +304,7 @@ $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/SheetSpecCsvTest.kt
 $TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/NovelRefResolverTest.kt
+$TEST/excel/CharacterRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
