@@ -37,6 +37,8 @@ public class ImportLookupScaleProbe {
     // 실사용 표본 ×1 (`scalability` 2장). 사건·상태변화는 그 표의 ⬜(미측정) 행이라
     // **행 수 자체가 추정이다** — 이 프로브가 재는 것은 그 수에서의 *비율*이다.
     static final int CHARS_1 = 214, EVENTS_1 = 137, STATE_1 = 113;
+    // 작품은 2장 표의 측정된 축이다(17 → 510). ④가 쓴다.
+    static final int NOVELS_1 = 17;
     static final int REPS = 5, WARMUP = 2;
 
     static long seed = 20260813L;
@@ -174,6 +176,60 @@ public class ImportLookupScaleProbe {
             if (r >= 0) { b3[r] = System.nanoTime() - t; g2 = n; }
         }
         report("상태변화 시트 — 캐릭터 + 자기 코드", nState, 2, median(a3), median(b3), g1, g2);
+
+        // ── ④ 복원 미리보기의 캐릭터 시트: 행마다 작품을 **제목으로** 찾는다 (B-236) ──
+        // 위 셋은 가져오기 쪽 축이고 이것은 **미리보기에만 남아 있던 축**이다.
+        // 가져오기는 같은 조회를 `resolveNovelId`의 메모(제목,세계관 단위)로 이미 눌러 두었는데,
+        // 미리보기의 `analysisNovelIdByTitle`에는 그 메모가 없어 **행마다** 쳤다.
+        // 갈래가 둘인 것이 요점이다 — 세계관 안에서 못 찾으면 세계관을 가리지 않고 **한 번 더** 친다.
+        int nNovels = NOVELS_1 * SCALE;
+        st.executeUpdate("CREATE TABLE novels (id INTEGER PRIMARY KEY, title TEXT NOT NULL, universeId INTEGER)");
+        PreparedStatement pn = c.prepareStatement("INSERT INTO novels VALUES (?,?,?)");
+        for (int i = 1; i <= nNovels; i++) {
+            pn.setLong(1, i); pn.setString(2, "작품" + i); pn.setLong(3, 1 + (i % 9));
+            pn.addBatch(); if (i % 2000 == 0) pn.executeBatch();
+        }
+        pn.executeBatch(); pn.close();
+        c.commit(); st.execute("ANALYZE"); c.commit();
+
+        PreparedStatement nvInScope = c.prepareStatement(
+            "SELECT * FROM novels WHERE title = ? AND universeId = ? LIMIT 1");
+        PreparedStatement nvAnywhere = c.prepareStatement("SELECT * FROM novels WHERE title = ?");
+        long[] a4 = new long[REPS]; int h1 = 0;
+        for (int r = -WARMUP; r < REPS; r++) {
+            long t = System.nanoTime(); int n = 0;
+            for (int i = 1; i <= nChars; i++) {
+                String title = "작품" + (1 + (i % nNovels));
+                boolean hit = false;
+                nvInScope.setString(1, title); nvInScope.setLong(2, 1 + (i % 9));
+                try (ResultSet rs = nvInScope.executeQuery()) { if (rs.next()) hit = true; }
+                if (!hit) {                       // 세계관을 가리지 않는 둘째 갈래
+                    nvAnywhere.setString(1, title);
+                    try (ResultSet rs = nvAnywhere.executeQuery()) { if (rs.next()) hit = true; }
+                }
+                if (hit) n++;
+            }
+            if (r >= 0) { a4[r] = System.nanoTime() - t; h1 = n; }
+        }
+        long[] b4 = new long[REPS]; int h2 = 0;
+        for (int r = -WARMUP; r < REPS; r++) {
+            long t = System.nanoTime(); int n = 0;
+            HashMap<String, Long> scoped = new HashMap<>(), anywhere = new HashMap<>();
+            try (ResultSet rs = c.createStatement().executeQuery("SELECT id, title, universeId FROM novels ORDER BY id")) {
+                while (rs.next()) {
+                    scoped.putIfAbsent(rs.getString(2) + "\u0000" + rs.getLong(3), rs.getLong(1));
+                    anywhere.putIfAbsent(rs.getString(2), rs.getLong(1));
+                }
+            }
+            for (int i = 1; i <= nChars; i++) {
+                String title = "작품" + (1 + (i % nNovels));
+                Long hit = scoped.get(title + "\u0000" + (1 + (i % 9)));
+                if (hit == null) hit = anywhere.get(title);
+                if (hit != null) n++;
+            }
+            if (r >= 0) { b4[r] = System.nanoTime() - t; h2 = n; }
+        }
+        report("미리보기 캐릭터 시트 — 제목으로 작품 찾기 (B-236)", nChars, 2, median(a4), median(b4), h1, h2);
 
         c.close();
     }
