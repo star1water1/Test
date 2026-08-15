@@ -190,22 +190,15 @@ object ImageZipHelper {
 
     /**
      * DB의 Character/Universe/Novel에서 모든 이미지 절대 경로를 수집한다.
+     *
+     * **[collectAllImagePathsWithStatus]에 위임한다 — 순회가 두 벌이면 반드시 갈린다(B-225).**
+     * 종전에는 같은 세 순회가 이 함수와 그 함수에 따로 적혀 있었고, 실패 처분만 다른 복붙이었다.
+     * B-225가 `wrapWithImages`를 상태 있는 쪽으로 옮기자 **견적(`estimateImageBytes`)과
+     * 래핑이 서로 다른 벌을 읽는 상태**가 됐다 — 그 둘이 같은 모집단을 봐야 한다는 것은
+     * 바로 위 KDoc이 요구하는 계약이므로, 벌을 하나로 합쳐 그 갈림을 원천에서 없앤다.
      */
-    suspend fun collectAllImagePaths(db: AppDatabase, gson: Gson = Gson()): Set<String> {
-        val paths = mutableSetOf<String>()
-
-        for (c in db.characterDao().getAllCharactersList()) {
-            parseImagePaths(c.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-        for (u in db.universeDao().getAllUniversesList()) {
-            parseImagePaths(u.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-        for (n in db.novelDao().getAllNovelsList()) {
-            parseImagePaths(n.imagePaths, gson)?.let { paths.addAll(it) }
-        }
-
-        return paths
-    }
+    suspend fun collectAllImagePaths(db: AppDatabase, gson: Gson = Gson()): Set<String> =
+        collectAllImagePathsWithStatus(db, gson).paths
 
     /**
      * 이미지 경로 수집 결과 — 읽지 못한 항목이 있으면 참조 집합이 불완전함을 알린다.
@@ -249,14 +242,5 @@ object ImageZipHelper {
         for (n in db.novelDao().getAllNovelsList()) consume(n.imagePaths)
 
         return CollectResult(paths, unreadable)
-    }
-
-    private fun parseImagePaths(json: String, gson: Gson): Array<String>? {
-        if (json.isBlank() || json == "[]") return null
-        return try {
-            gson.fromJson(json, Array<String>::class.java)
-        } catch (_: Exception) {
-            null
-        }
     }
 }
