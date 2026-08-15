@@ -136,7 +136,19 @@ echo "  ✓ 탐지기 자기 시험 통과 (루프 뒤·지역 함수 둘을 잡
 RESULT=$(scan "$TARGET")
 count=$(printf '%s\n' "$RESULT" | sed -n 's/^__COUNT__//p')
 
-if [ "${count:-0}" -gt 0 ]; then
+# **자기 출력을 증명한다** (B-238 콜드 검토가 짝에서 잡아 이쪽에도 시행). `__COUNT__`가
+# 없다는 것은 스캐너가 답을 못 냈다는 뜻이지 *위반이 없다*는 뜻이 아니다. 이 줄이 없으면
+# python이 죽어도 `${count:-0}` = 0이 되어 **"✓ 위반 없음"으로 조용히 통과한다** —
+# 대상 파일이 utf-8로 안 읽히게 만들어 실측했다(고치기 전: 초록 + `exit 0`).
+# 자기 시험은 이 구멍을 못 막는다: 그쪽은 `-ne 2`라 빈 값이 0이 되어 **실패로** 떨어지지만,
+# 이쪽은 `-gt 0`이라 빈 값이 0이 되면 **통과로** 떨어진다. 같은 기본값이 반대로 작용한다.
+if [ -z "$count" ]; then
+  echo "  ✗ 검사가 자기 출력을 내지 못했습니다 (__COUNT__ 없음) — 스캐너 실패입니다" >&2
+  printf '%s\n' "$RESULT" | tail -5 >&2
+  exit 2
+fi
+
+if [ "$count" -gt 0 ]; then
   echo "  ✗ 미리보기가 행마다 DB를 묻습니다 (${count}건)"
   echo
   printf '%s\n' "$RESULT" | grep -v '^__COUNT__' | while IFS=$'\t' read -r ln fn where text; do
