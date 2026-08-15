@@ -543,6 +543,12 @@ class SettingsFragment : Fragment() {
                         for ((reason, count) in images.lossReasons()) {
                             add(getString(ImageNoticeRes.lossReason(reason), count))
                         }
+                        // 표본 파일명까지 싣는다 — 모으기만 하고 안 쓰면 다음 사람이 쓰이고
+                        // 있다고 믿는다(콜드 검토). 엑셀은 이력 상세에 같은 줄을 싣는데
+                        // 월드패키지는 그 상세 화면이 없어 이 토스트가 유일한 자리다.
+                        if (images.sampleNames.isNotEmpty()) {
+                            add(getString(R.string.export_images_detail_samples, images.sampleNames.joinToString(", ")))
+                        }
                     }
                     if (images.referencesIncomplete) {
                         add(getString(R.string.export_images_refs_unreadable, images.unreadableRefCount))
