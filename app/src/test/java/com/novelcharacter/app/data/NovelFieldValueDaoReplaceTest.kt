@@ -136,7 +136,10 @@ class NovelFieldValueDaoReplaceTest {
 
         dao.replaceForFields(7L, cover, emptyList())
 
-        // 통로의 성능 계약 — 상한 이하면 질의는 한 번이고 목록을 새로 만들지도 않는다(R-54).
+        // **여기서 재는 것은 이 DAO의 몫뿐이다** — 상한 이하면 질의가 한 번이고, 이 함수가
+        // 통로 위에 제 나름의 쪼개기를 더하지 않는다는 것. *새 리스트를 만들지 않는다*는
+        // 통로 자신의 성질이라 `SqlInChunksTest`가 `assertSame`으로 잠근다 — 여기서 또 재면
+        // 같은 성질이 두 자리에 살고, 그것이 이 판이 코드에서 걷어낸 바로 그 모양이다.
         assertEquals(1, dao.deleteByFieldsCalls.size)
         assertEquals(cover, dao.deleteByFieldsCalls.single())
     }
