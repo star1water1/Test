@@ -19,6 +19,7 @@ import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.ImageLinkResolver
 import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.ImageSettingsStore
+import com.novelcharacter.app.util.ImageTagApplyPlanner
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.SqlInChunks
@@ -1308,9 +1309,12 @@ class ImageManagerViewModel(
                         db.withTransaction {
                             val now = System.currentTimeMillis()
                             val ids = paths.map { db.imageMetaDao().adopt(it, now) }.toMutableSet()
-                            for (g in plan.groupsInvolved) {
-                                db.imageMetaDao().getByGroup(g).forEach { ids.add(it.id) }
-                            }
+                            // 토큰마다 묻던 `getByGroup`을 일괄 조회 한 번으로 내린다 (B-241).
+                            // **겹이 필요 없는 자리다** — 이 블록의 읽기는 전부 아래 `setGroup`
+                            // 앞에서 끝나므로, 제가 읽는 것을 쓰는 가져오기 쪽 루프와 다르다
+                            // (그쪽 처방이 `ImageLinkGroupPlanner`다 — B-239).
+                            SqlInChunks.flat(plan.groupsInvolved) { db.imageMetaDao().getByGroups(it) }
+                                .forEach { ids.add(it.id) }
                             val groupId = plan.groupsInvolved.firstOrNull() ?: UUID.randomUUID().toString()
                             SqlInChunks.each(ids.toList()) { db.imageMetaDao().setGroup(it, groupId) }
                         }
@@ -1349,7 +1353,12 @@ class ImageManagerViewModel(
                             SqlInChunks.each(targets.map { it.second }) {
                                 db.imageMetaDao().setGroup(it, null)
                             }
-                            targets.mapTo(HashSet()) { it.third }.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
+                            // 토큰마다 돌던 정리를 일괄판 하나로 접는다 (B-241) — 묶음이 행을
+                            // 나눠 가지므로 서로의 인원을 못 바꾸고, 그래서 갈라 불러도 답이
+                            // 같다(`clearSingletonGroups`의 주석이 그 근거의 단일 소스다).
+                            SqlInChunks.each(targets.mapNotNullTo(LinkedHashSet()) { it.third }) {
+                                db.imageMetaDao().clearSingletonGroups(it)
+                            }
                         }
                         UnlinkResult(targets.size, countAutoRelinkable(targets))
                     }
@@ -1863,6 +1872,47 @@ class ImageManagerViewModel(
     }
 
     /**
+     * 태그 적용의 **공통 손** — 이미지판([applyImageTags])과 폴더판([applyFolderTags])이 이것을 쓴다.
+     * 둘이 같은 규약을 지녀야 하는 이유는 아래 [applyImageTags] 주석에 있다(B-143 · B-163).
+     *
+     * **경로마다 묻던 `getTagsByImageList`를 일괄 조회 한 번으로 내렸다 (B-241).** 폴더판은 고른
+     * 폴더 아래 **전량**을 도므로 조회 수가 이미지 수에 비례했고, `image_tags.imageId`에 인덱스가
+     * 있어(모델 [com.novelcharacter.app.data.model.ImageTag]의 `Index("imageId")`) 하나하나가
+     * 풀스캔은 아니었다 — 없앤 값은 **왕복 × 이미지 수**다. 쓰기도 한 번으로 접었다
+     * (`insertAll`이 이미 목록을 받는다 — `@Insert`라 `IN` 절이 아니고 바인드 상한과 무관하다).
+     *
+     * **읽기를 앞으로 모아도 답이 같은 근거와 겹 갱신의 정본은 [ImageTagApplyPlanner]다** —
+     * 같은 이미지가 두 번 돌면 앞 차례의 쓰기가 뒤 차례의 '이미 가진 태그'를 바꾸기 때문이다.
+     *
+     * **`adopt`는 그대로 경로마다 돈다** — 삽입-또는-조회라 일괄판이 없고, 그 자리가 이 함수에
+     * 남은 왕복의 대부분이다(경로마다 최대 셋). 별도 축이라 등재만 했다: **B-244**.
+     */
+    private suspend fun applyTagWork(work: List<Pair<String, List<String>>>): TagApplyOutcome.Done {
+        val now = System.currentTimeMillis()
+        val imageIdByPath = LinkedHashMap<String, Long>()
+        for ((path, tags) in work) {
+            if (tags.isEmpty()) continue
+            if (path !in imageIdByPath) imageIdByPath[path] = db.imageMetaDao().adopt(path, now)
+        }
+        val existingByImageId: Map<Long, Set<String>> =
+            SqlInChunks.flat(imageIdByPath.values.toList()) { db.imageTagDao().getTagsByImages(it) }
+                .groupBy({ it.imageId }, { it.tag })
+                .mapValues { (_, tags) -> tags.toSet() }
+
+        val plan = ImageTagApplyPlanner.plan(work, imageIdByPath, existingByImageId)
+        if (plan.inserts.isNotEmpty()) {
+            db.imageTagDao().insertAll(
+                plan.inserts.flatMap { ins ->
+                    ins.freshTags.map {
+                        com.novelcharacter.app.data.model.ImageTag(imageId = ins.imageId, tag = it)
+                    }
+                }
+            )
+        }
+        return TagApplyOutcome.Done(plan.tagCount, plan.touchedPaths)
+    }
+
+    /**
      * 검토 시트에서 고른 태그를 **이미지별로** 적용한다 — 폴더판([applyFolderTags])과 같은 규칙:
      * 기존 태그와 **합친다**(덮지 않는다).
      *
@@ -1886,27 +1936,7 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
                 try {
-                    db.withTransaction {
-                        var tagCount = 0
-                        val touched = LinkedHashSet<String>()
-                        val now = System.currentTimeMillis()
-                        for ((path, tags) in picked) {
-                            if (tags.isEmpty()) continue
-                            val imageId = db.imageMetaDao().adopt(path, now)
-                            val existing = db.imageTagDao().getTagsByImageList(imageId)
-                                .mapTo(HashSet()) { it.tag }
-                            val fresh = tags.filterNot { it in existing }
-                            if (fresh.isEmpty()) continue
-                            db.imageTagDao().insertAll(
-                                fresh.map {
-                                    com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
-                                }
-                            )
-                            tagCount += fresh.size
-                            touched.add(path)
-                        }
-                        TagApplyOutcome.Done(tagCount, touched.size)
-                    }
+                    db.withTransaction { applyTagWork(picked.map { it.key to it.value }) }
                 } catch (e: Exception) {
                     TagApplyOutcome.Failed
                 }
@@ -1938,27 +1968,13 @@ class ImageManagerViewModel(
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
                 try {
                     db.withTransaction {
-                        var tagCount = 0
-                        val touched = LinkedHashSet<String>()
-                        val now = System.currentTimeMillis()
-                        for ((folder, tags) in picked) {
-                            if (tags.isEmpty()) continue
-                            for (path in pathsByFolder[folder].orEmpty()) {
-                                val imageId = db.imageMetaDao().adopt(path, now)
-                                val existing = db.imageTagDao().getTagsByImageList(imageId)
-                                    .mapTo(HashSet()) { it.tag }
-                                val fresh = tags.filterNot { it in existing }
-                                if (fresh.isEmpty()) continue
-                                db.imageTagDao().insertAll(
-                                    fresh.map {
-                                        com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
-                                    }
-                                )
-                                tagCount += fresh.size
-                                touched.add(path)
+                        // 폴더의 태그를 그 폴더의 경로마다 편다 — 종전 이중 루프와 같은 순서다.
+                        applyTagWork(
+                            picked.flatMap { (folder, tags) ->
+                                if (tags.isEmpty()) emptyList()
+                                else pathsByFolder[folder].orEmpty().map { it to tags }
                             }
-                        }
-                        TagApplyOutcome.Done(tagCount, touched.size)
+                        )
                     }
                 } catch (e: Exception) {
                     TagApplyOutcome.Failed
