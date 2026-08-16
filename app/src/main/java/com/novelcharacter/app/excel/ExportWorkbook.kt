@@ -85,6 +85,11 @@ object ExportWorkbooks {
      * 성립시키는 자산이다.** 사용자에게 알리지 않는 것도 같은 이유다(머리 주석).
      *
      * 결과는 프로세스마다 한 번만 잰다. 재는 값은 **런타임의 성질**이라 실행 중에 바뀌지 않는다.
+     *
+     * 검사가 만드는 임시 파일은 **빈 시트 하나**이고 [release]가 그 자리에서 치운다 — 그래서
+     * [useTempDirectory]보다 먼저 불려도 해가 없다(그 함수가 막으려는 것은 *백업 크기*의
+     * 임시 파일이 앱이 모르는 자리에 남는 것이다). **다만 지금 두 호출부는 둘 다 그것을 먼저
+     * 부른다** — 콜드 검토가 실측으로 확인했다.
      */
     fun isStreamingSupported(): Boolean {
         cachedStreamingSupport?.let { return it }

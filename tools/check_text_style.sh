@@ -128,7 +128,10 @@ DUEL_TERM_RE='매칭'
 # 한글 음절 U+AC00~U+D7A3.
 HANGUL_SYLLABLE=$'(\xEA[\xB0-\xBF]|[\xEB\xEC][\x80-\xBF]|\xED[\x80-\x9F])[\x80-\xBF]'
 # 사용자에게 그대로 읽히는 속성만 본다. `tools:text`(미리보기 전용)는 대상이 아니다.
-LAYOUT_TEXT_ATTRS='android:(text|hint|contentDescription)'
+# **`android:title`을 함께 보는 것은 콜드 검토가 더한 것이다**(2026.08.16) — 첫 원고는
+# 레이아웃의 `text|hint|contentDescription`만 봤는데, **메뉴 항목의 제목도 사용자가 그대로 읽는다.**
+# 실측 0건이라 지금 넣는 것이 공짜이고, 위반이 생긴 뒤에는 기준선이 0이 아니게 된다.
+LAYOUT_TEXT_ATTRS='android:(text|hint|contentDescription|title|summary)'
 
 # 보조용언 붙여쓰기 판정 — 한 단어로 굳은 합성동사를 먼저 지운 뒤 구조 규칙을 적용한다.
 # 순서가 중요하다: 지우지 않고 검사하면 '알아보세요'가, 구조 규칙 없이 지우면 '메모해주세요'가 샌다.
@@ -183,7 +186,9 @@ violations() {
 
   # ── R5 LAYOUT-LIT — 레이아웃의 한국어가 strings.xml을 안 거쳤다 ──
   # `@string/...`로 시작하는 값은 제외한다(`[^@"]*`) — 그쪽은 R1~R4가 이미 본다.
-  find app/src/main/res -name '*.xml' -path '*layout*' | sort |
+  # 레이아웃뿐 아니라 `menu/`·`xml/`도 본다 — 셋 다 사용자에게 문구를 그대로 내보내는 자리다.
+  find app/src/main/res -name '*.xml' \
+       \( -path '*layout*' -o -path '*/menu/*' -o -path '*/xml/*' \) | sort |
   while read -r f; do
     grep -oE "${LAYOUT_TEXT_ATTRS}=\"[^@\"]*${HANGUL_SYLLABLE}[^\"]*\"" "$f" | sort -u |
     while read -r hit; do
