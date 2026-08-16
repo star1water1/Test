@@ -85,7 +85,7 @@ object ImageDeletionService {
      *        오해를 부르므로 자동 해제한다(인앱 규약과 같다).
      *
      *        **호출부가 이 값을 루프 앞에서 일괄로 떠 와도 된다 — 낡아도 답이 같다 (B-243).**
-     *        이 값이 가는 곳은 [ImageMetaDao.clearGroupIfSingleton] 하나뿐이고, 그 문장은
+     *        이 값이 가는 곳은 `ImageMetaDao.clearGroupIfSingleton` 하나뿐이고, 그 문장은
      *        `WHERE linkGroupId = :groupId AND (SELECT COUNT(*) … ) <= 1`이라 **토큰으로 행을
      *        고른다.** 삭제 루프에서 토큰이 낡는 길은 하나뿐이다 — 앞 항목의 삭제가 그 묶음을
      *        1장으로 줄여 남은 한 장(=이 항목)의 토큰이 풀린 경우이고, 그러면 그 묶음의 식구는
