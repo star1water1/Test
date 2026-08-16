@@ -48,6 +48,9 @@
 #    한 행을 쓰고 그 id를 돌려주는 것이 일이라 옳다). `data/dao/`를 통째로 뺀다.
 #  · **일괄판이 아예 없는 단수 호출은 이 검사의 부류가 아니다** — `adopt`를 경로마다 부르는
 #    루프가 그것이고, 그 축은 B-244로 따로 등재돼 있다.
+#  · **별칭으로 받아 부르면 못 본다** — `val dao = db.imageMetaDao()` 뒤의 `dao.getByGroup(x)`.
+#    지금 그 조합은 하나도 없다(2026.08.16 실측). **없다는 것이 규칙이 아니라 현재 상태**라
+#    적어 둔다 — 따라가려면 지역 변수 추적이 필요하고 그것은 거짓 양성을 부른다.
 #  · 조회 **횟수**는 세지 않는다. 이 검사는 *무엇을 부르는가*만 본다.
 
 set -uo pipefail
@@ -64,7 +67,7 @@ echo "── 행·토큰마다 도는 DB 조회 검사 (B-238 · 범위 확장 B
 
 scan() {
   python3 - "$@" <<'PY'
-import os, re, sys
+import bisect, os, re, sys
 
 # 단수 조회 → 써야 할 일괄판. 새 짝이 생기면 여기 한 줄 더한다.
 BANNED = {
@@ -74,12 +77,21 @@ BANNED = {
     'clearGroupIfSingleton': 'clearSingletonGroups(groupIds) — 토큰 목록을 한 번에 (B-239)',
 }
 
-# 예외 표식 — **호출 줄이나 바로 윗줄**에 있어야 하고, 괄호 안 사유가 비면 안 된다.
+# 예외 표식 — **호출 범위 안이나 그 바로 윗줄**에 있어야 하고, 괄호 안 사유가 비면 안 된다.
 ALLOW_MARK = re.compile(r'//.*단발 허용\(\s*[^)\s][^)]*\)')
 
 # 최상위 멤버 함수(들여쓰기 4) 또는 파일 최상위 함수(들여쓰기 0)를 감싼 이름으로 삼는다.
 FUN = re.compile(r'^ {0,4}(?:private |internal |public )?(?:suspend )?fun ([A-Za-z0-9_]+)\s*[(<]')
-CALL = re.compile(r'\bdb\.\w+Dao\(\)\.(' + '|'.join(BANNED) + r')\s*\(')
+
+# **수신자를 `db.`로 못박지 않는다(2026.08.16 콜드 검토).** 이 저장소는 `app.database.…Dao()`도
+# 쓰고(`FieldEditDialog`·`FieldViewModel`), DAO를 들고 있는 클래스는 수신자 없이 부를 수도 있다.
+# `db\.`로 좁혀 두면 그 형태가 **조용히 빠진다** — 지금은 그 조합이 하나도 없지만, 없다는 것이
+# 규칙이 아니라 현재 상태다(B-242가 두 번 잡은 그 부류라 좁힘의 근거가 없으면 좁히지 않는다).
+#
+# **줄바꿈도 넘는다.** 이 저장소는 `db.fieldDefinitionDao()` 다음 줄에 `.getAllFieldsList(…)`를
+# 적는 형태를 **실제로 쓴다**(`NovelViewModel`·`TimelineViewModel`·`BirthdayWorker`·`TrashRepository`).
+# 한 줄만 보면 그 형태가 전부 거짓 음성이라, 주석을 지운 뒤 파일을 통째로 훑는다.
+CALL = re.compile(r'\b\w+Dao\(\)\s*\.\s*(' + '|'.join(BANNED) + r')\s*\(')
 
 def rel(path):
     # 저장소 안이면 `com/novelcharacter/app` 뒤를, 아니면 파일명을 쓴다(자기 시험용).
@@ -90,28 +102,56 @@ def rel(path):
 found, allowed, stale = [], [], []
 for path in sys.argv[1:]:
     key_file = rel(path)
-    current = '(파일 최상위)'
     with open(path, encoding='utf-8') as fh:
-        lines = fh.read().split('\n')
-    marked = set()          # 위반을 실제로 덮은 표식의 줄 번호
-    for n, line in enumerate(lines, 1):
+        raw = fh.read()
+    lines = raw.split('\n')
+
+    # **주석을 길이를 보존하며 지운다** — 호출이 줄바꿈을 넘으므로 파일을 통째로 훑어야 하고,
+    # 그러려면 오프셋이 원문의 줄 번호와 그대로 맞아야 한다(잘라 내면 어긋난다).
+    #
+    # **블록 주석도 지운다(2026.08.16 콜드 검토).** 종전에는 `//`만 지웠는데, 수신자를 `db.`로
+    # 못박아 둔 동안은 그 구멍이 **가려져 있었다** — KDoc이 `imageMetaDao().getByGroup(token)`처럼
+    # 적어도 `db.`가 없어 안 걸렸기 때문이다. 수신자를 넓히자마자 **설계 문서 주석 둘이 위반으로
+    # 잡혔다.** 좁은 규칙이 다른 구멍을 덮고 있던 자리이고, 넓히면 함께 드러난다.
+    def _blank(m):
+        return re.sub(r'[^\n]', ' ', m.group(0))
+    text = re.sub(r'/\*.*?\*/', _blank, raw, flags=re.S)
+    text = re.sub(r'//[^\n]*', _blank, text)
+
+    line_start = []
+    pos = 0
+    for ln in lines:
+        line_start.append(pos)
+        pos += len(ln) + 1
+
+    def line_of(offset):
+        return bisect.bisect_right(line_start, offset)   # 1-based
+
+    # 줄 → 감싼 함수 이름.
+    fn_at = []
+    current = '(파일 최상위)'
+    for line in lines:
         fm = FUN.match(line)
         if fm:
             current = fm.group(1)
-        code = line.split('//')[0]
-        m = CALL.search(code)
-        if not m:
+        fn_at.append(current)
+
+    marked = set()          # 위반을 실제로 덮은 표식의 줄 번호
+    for m in CALL.finditer(text):
+        start_line = line_of(m.start())        # `…Dao()`가 시작한 줄
+        call_line = line_of(m.start(1))        # 메서드 이름이 있는 줄
+        # 표식이 설 수 있는 범위: **그 호출이 걸친 줄들 + 바로 윗줄 하나.**
+        # 한 줄짜리 호출이면 종전과 같고(그 줄 · 윗줄), 여러 줄이면 그 범위만큼이다 —
+        # 덮는 힘이 여전히 *그 호출*에 묶여 있고 함수로 번지지 않는다.
+        span = range(max(1, start_line - 1), call_line + 1)
+        hit = next((n for n in span if ALLOW_MARK.search(lines[n - 1])), None)
+        if hit is not None:
+            marked.add(hit)
+            allowed.append((key_file, call_line, fn_at[call_line - 1], m.group(1)))
             continue
-        prev = lines[n - 2] if n >= 2 else ''
-        if ALLOW_MARK.search(line):
-            marked.add(n)
-            allowed.append((key_file, n, current, m.group(1)))
-            continue
-        if ALLOW_MARK.search(prev):
-            marked.add(n - 1)
-            allowed.append((key_file, n, current, m.group(1)))
-            continue
-        found.append((key_file, n, current, m.group(1), BANNED[m.group(1)], line.strip()))
+        found.append((key_file, call_line, fn_at[call_line - 1], m.group(1),
+                      BANNED[m.group(1)], lines[call_line - 1].strip()))
+
     # 낡은 표식 — 위반 호출에 붙지 못한 표식은 지워야 한다.
     for n, line in enumerate(lines, 1):
         if ALLOW_MARK.search(line) and n not in marked:
@@ -148,7 +188,20 @@ cat > "$SELFTEST_DIR/ImageDeletionService.kt" <<'EOF'
         // **같은 파일 다른 자리**는 표식이 없으므로 걸려야 한다 — 표식은 자리를 덮지 함수를
         // 덮지 않는다(이 줄이 그 성질을 잡는다).
         db.imageMetaDao().clearGroupIfSingleton(token)
+        // **줄바꿈을 넘는 호출**도 잡아야 한다 — 이 저장소가 실제로 쓰는 형태다.
+        val a = db.imageMetaDao()
+            .getByPath(p)
+        // **수신자가 `db.`가 아니어도** 잡아야 한다.
+        val b = app.database.imageTagDao().getTagsByImageList(id)
+        // 줄바꿈 호출에 붙은 표식은 통해야 한다. 단발 허용(여러 줄 형태의 표식)
+        val c = db.imageMetaDao()
+            .getByGroup(g)
     }
+    /**
+     * 블록 주석 안의 `imageMetaDao().getByGroup(token)`은 **코드가 아니다** — 세지 않아야 한다.
+     * 설계 문서가 옛 코드를 인용하는 자리라 실재한다.
+     */
+    suspend fun documented(db: AppDatabase) = db.imageMetaDao().getByPaths(paths)
 EOF
 cat > "$SELFTEST_DIR/Fake.kt" <<'EOF'
     private suspend fun importFake(workbook: Workbook) {
@@ -168,19 +221,21 @@ selftest_count=$(printf '%s\n' "$selftest_out" | sed -n 's/^__COUNT__//p')
 selftest_allow=$(printf '%s\n' "$selftest_out" | sed -n 's/^__ALLOWCOUNT__//p')
 selftest_stale=$(printf '%s\n' "$selftest_out" | sed -n 's/^__STALECOUNT__//p')
 selftest_fn=$(printf '%s\n' "$selftest_out" | grep -c 'importFake' || true)
-# 지어낸 위반 넷: 루프 안 하나 · 지역 함수 하나 · **사유가 빈 표식** 하나 · 표식 없는 다른 자리 하나.
-if [ "${selftest_count:-0}" -ne 4 ]; then
-  echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 위반 4건 중 ${selftest_count:-0}건만 잡았습니다" >&2
+# 지어낸 위반 여섯: 루프 안 · 지역 함수 · 사유가 빈 표식 · 표식 없는 다른 자리 ·
+# **줄바꿈을 넘는 호출** · **수신자가 `db.`가 아닌 호출**.
+if [ "${selftest_count:-0}" -ne 6 ]; then
+  echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 위반 6건 중 ${selftest_count:-0}건만 잡았습니다" >&2
   # 작은따옴표다 — 큰따옴표 안의 백틱은 **명령 치환**이라 메서드 이름이 사라지고
   # "command not found"가 대신 뜬다(콜드 검토가 실측으로 잡았다). 이 줄은 탐지기가
   # 깨졌을 때만 뜨는 줄이라 **가장 필요할 때 틀리는** 부류였다.
-  echo '      (루프 안 · 지역 함수 · 사유가 빈 표식 · 표식 없는 다른 자리.' >&2
-  echo '       일괄판 `getByPaths`와 주석과 표식이 붙은 자리는 세지 않아야 합니다)' >&2
+  echo '      (루프 안 · 지역 함수 · 사유가 빈 표식 · 표식 없는 다른 자리 · 줄바꿈 호출 · 다른 수신자.' >&2
+  echo '       일괄판 · 줄 주석 · **블록 주석** · 표식이 붙은 자리는 세지 않아야 합니다)' >&2
   exit 1
 fi
-# 통과 둘: 윗줄 표식 하나 · 같은 줄 표식 하나. **덮는 힘이 자리에 묶여 있는지**를 이 수가 든다.
-if [ "${selftest_allow:-0}" -ne 2 ]; then
-  echo "  ✗ 탐지기 자기 시험 실패 — 표식이 붙은 자리를 ${selftest_allow:-0}건 통과시켰습니다 (2여야 합니다)" >&2
+# 통과 셋: 윗줄 표식 · 같은 줄 표식 · **줄바꿈 호출에 붙은 표식**.
+# **덮는 힘이 자리에 묶여 있는지**를 이 수가 든다.
+if [ "${selftest_allow:-0}" -ne 3 ]; then
+  echo "  ✗ 탐지기 자기 시험 실패 — 표식이 붙은 자리를 ${selftest_allow:-0}건 통과시켰습니다 (3이어야 합니다)" >&2
   echo '      (표식이 아무것도 안 덮어도, 함수를 통째로 덮어도 이 검사는 제 일을 못 합니다)' >&2
   exit 1
 fi
@@ -192,7 +247,7 @@ if [ "${selftest_fn:-0}" -ne 2 ]; then
   echo "  ✗ 탐지기 자기 시험 실패 — 감싼 함수 이름을 짚지 못했습니다" >&2
   exit 1
 fi
-echo "  ✓ 탐지기 자기 시험 통과 (위반 4·표식 통과 2·낡은 표식 1을 각각 제대로 가른다)"
+echo "  ✓ 탐지기 자기 시험 통과 (위반 6·표식 통과 3·낡은 표식 1 — 줄바꿈 호출·다른 수신자를 잡고 블록 주석은 통과)"
 
 # `data/dao/` 아래는 대상이 아니다(위 머리 주석 — 일괄판이 단수형을 쓰는 것이 옳다).
 mapfile -t FILES < <(find "$SRC" -name '*.kt' -not -path '*/data/dao/*' | sort)
