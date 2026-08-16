@@ -5,9 +5,14 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FilterInputStream
 import java.io.InputStream
+import java.nio.ByteBuffer
 import javax.crypto.AEADBadTagException
+import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,17 +73,62 @@ class BackupChunkFormatTest {
             super.read(b, off, minOf(len, limit))
     }
 
+    /** 시험용 헤더 — 청크가 묶이는 바이트. 실제 헤더처럼 매직 + 청크 크기 모양이다. */
+    private fun header(chunkSize: Int, magic: ByteArray = BackupChunkFormat.deviceMagicV3()): ByteArray =
+        ByteBuffer.allocate(8).put(magic).putInt(chunkSize).array()
+
+    private fun writeBound(plain: ByteArray, key: SecretKey, chunkSize: Int, head: ByteArray): ByteArray =
+        ByteArrayOutputStream().also {
+            BackupChunkFormat.writeChunks(ByteArrayInputStream(plain), it, key, head, chunkSize)
+        }.toByteArray()
+
+    private fun readBound(
+        cipherText: ByteArray,
+        key: SecretKey,
+        chunkSize: Int,
+        head: ByteArray?
+    ): ByteArray = ByteArrayOutputStream().also {
+        BackupChunkFormat.readChunks(ByteArrayInputStream(cipherText), it, chunkSize, key, head)
+    }.toByteArray()
+
+    /**
+     * **옛(묶이지 않은) 청크를 손으로 짠다** — 새 [BackupChunkFormat.writeChunks]는 언제나
+     * 묶으므로, 이 방법으로만 *실제로 디스크에 있는 옛 백업*의 바이트를 만들 수 있다.
+     * 종전 구현의 루프를 그대로 옮겼다: 빈 입력은 청크를 하나도 쓰지 않았다.
+     */
+    private fun legacyChunks(plain: ByteArray, key: SecretKey, chunkSize: Int): ByteArray {
+        val out = ByteArrayOutputStream()
+        var off = 0
+        while (off < plain.size) {
+            val n = minOf(chunkSize, plain.size - off)
+            val cipher = Cipher.getInstance(BackupChunkFormat.TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            out.write(cipher.iv)
+            out.write(cipher.doFinal(plain, off, n))
+            off += n
+        }
+        return out.toByteArray()
+    }
+
+    /** NCP1의 키 유도 — 그 형식이 실제로 쓰던 계산을 시험 쪽에서 되짚는다. */
+    private fun pbkdf2(passphrase: CharArray, salt: ByteArray, iterations: Int): SecretKey {
+        val spec = PBEKeySpec(passphrase, salt, iterations, 256)
+        val factory = SecretKeyFactory.getInstance(BackupChunkFormat.PBKDF2_ALGORITHM)
+        return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
+    }
+
     private fun roundTripChunks(
         plain: ByteArray,
         chunkSize: Int,
         wrap: (InputStream) -> InputStream = { it }
     ): ByteArray {
         val key = aesKey()
+        val head = header(chunkSize)
         val cipherText = ByteArrayOutputStream()
-        BackupChunkFormat.writeChunks(wrap(ByteArrayInputStream(plain)), cipherText, key, chunkSize)
-        val out = ByteArrayOutputStream()
-        BackupChunkFormat.readChunks(ByteArrayInputStream(cipherText.toByteArray()), out, chunkSize, key)
-        return out.toByteArray()
+        BackupChunkFormat.writeChunks(
+            wrap(ByteArrayInputStream(plain)), cipherText, key, head, chunkSize
+        )
+        return readBound(cipherText.toByteArray(), key, chunkSize, head)
     }
 
     // ── ① 청크 왕복 — 경계 크기 전부 ──
@@ -93,11 +143,22 @@ class BackupChunkFormatTest {
         }
     }
 
+    /**
+     * **빈 입력도 마지막 청크 하나를 남긴다**(B-248). 종전에는 0바이트를 썼는데, 그러면
+     * *뒤가 통째로 날아가 헤더만 남은 파일*과 *빈 백업*이 바이트로 구별되지 않는다.
+     */
     @Test
-    fun chunks_emptyInputWritesNoChunks() {
+    fun chunks_emptyInputStillWritesOneFinalChunk() {
+        val key = aesKey()
+        val head = header(64)
         val out = ByteArrayOutputStream()
-        BackupChunkFormat.writeChunks(ByteArrayInputStream(ByteArray(0)), out, aesKey(), 64)
-        assertEquals("빈 입력은 청크를 하나도 쓰지 않는다", 0, out.size())
+        BackupChunkFormat.writeChunks(ByteArrayInputStream(ByteArray(0)), out, key, head, 64)
+        assertEquals(
+            "빈 입력도 마지막 표시를 남긴다 — IV(12) + 태그(16)",
+            BackupChunkFormat.GCM_IV_LENGTH + BackupChunkFormat.GCM_TAG_BYTES,
+            out.size()
+        )
+        assertEquals(0, readBound(out.toByteArray(), key, 64, head).size)
     }
 
     /**
@@ -108,9 +169,8 @@ class BackupChunkFormatTest {
     fun chunks_ivIsFreshPerRun() {
         val key = aesKey()
         val plain = bytes(200)
-        fun once(): ByteArray = ByteArrayOutputStream().also {
-            BackupChunkFormat.writeChunks(ByteArrayInputStream(plain), it, key, 64)
-        }.toByteArray()
+        val head = header(64)
+        fun once(): ByteArray = writeBound(plain, key, 64, head)
         assertFalse("같은 평문·키인데 암호문이 같다 = IV 재사용", once().contentEquals(once()))
     }
 
@@ -137,9 +197,10 @@ class BackupChunkFormatTest {
     fun chunks_shortReadsProduceIdenticalFraming() {
         val key = aesKey()
         val plain = bytes(500)
+        val head = header(64)
         fun frameSizes(wrap: (InputStream) -> InputStream): Int {
             val out = ByteArrayOutputStream()
-            BackupChunkFormat.writeChunks(wrap(ByteArrayInputStream(plain)), out, key, 64)
+            BackupChunkFormat.writeChunks(wrap(ByteArrayInputStream(plain)), out, key, head, 64)
             return out.size()
         }
         // 틀이 같으면 바이트 수도 같다 — 청크 수가 달라지면 IV 수가 달라져 길이가 갈린다.
@@ -155,13 +216,10 @@ class BackupChunkFormatTest {
     @Test
     fun chunks_tamperedCiphertextIsRejected() {
         val key = aesKey()
-        val cipherText = ByteArrayOutputStream()
-        BackupChunkFormat.writeChunks(ByteArrayInputStream(bytes(200)), cipherText, key, 64)
-        val corrupted = cipherText.toByteArray().also { it[40] = (it[40] + 1).toByte() }
+        val head = header(64)
+        val corrupted = writeBound(bytes(200), key, 64, head).also { it[40] = (it[40] + 1).toByte() }
         try {
-            BackupChunkFormat.readChunks(
-                ByteArrayInputStream(corrupted), ByteArrayOutputStream(), 64, key
-            )
+            readBound(corrupted, key, 64, head)
             fail("한 바이트를 고쳤는데 통과했다 — GCM 태그 검증이 죽어 있다")
         } catch (e: AEADBadTagException) {
             // 기대한 자리
@@ -171,12 +229,11 @@ class BackupChunkFormatTest {
     @Test
     fun chunks_truncatedIvIsRejected() {
         val key = aesKey()
-        val cipherText = ByteArrayOutputStream()
-        BackupChunkFormat.writeChunks(ByteArrayInputStream(bytes(200)), cipherText, key, 64)
+        val head = header(64)
         // IV 한가운데에서 자른다 — EOF(0)와 구별돼야 한다.
-        val cut = cipherText.toByteArray().copyOfRange(0, 64 + 16 + 12 + 5)
+        val cut = writeBound(bytes(200), key, 64, head).copyOfRange(0, 64 + 16 + 12 + 5)
         try {
-            BackupChunkFormat.readChunks(ByteArrayInputStream(cut), ByteArrayOutputStream(), 64, key)
+            readBound(cut, key, 64, head)
             fail("잘린 IV가 통과했다")
         } catch (e: IllegalArgumentException) {
             assertTrue(e.message!!.contains("Incomplete chunk IV"))
@@ -185,12 +242,10 @@ class BackupChunkFormatTest {
 
     @Test
     fun chunks_wrongKeyIsRejected() {
-        val cipherText = ByteArrayOutputStream()
-        BackupChunkFormat.writeChunks(ByteArrayInputStream(bytes(100)), cipherText, aesKey(), 64)
+        val head = header(64)
+        val cipherText = writeBound(bytes(100), aesKey(), 64, head)
         try {
-            BackupChunkFormat.readChunks(
-                ByteArrayInputStream(cipherText.toByteArray()), ByteArrayOutputStream(), 64, aesKey()
-            )
+            readBound(cipherText, aesKey(), 64, head)
             fail("다른 키로 복호화가 됐다")
         } catch (e: AEADBadTagException) {
             // 기대한 자리
@@ -292,6 +347,76 @@ class BackupChunkFormatTest {
         assertFalse("없는 파일", BackupChunkFormat.isPortableFormat(File("/nope/missing.bin")))
     }
 
+    /** NCP1로 만든 옛 백업의 바이트를 손으로 짠다 — 실제 디스크에 있는 모양이다. */
+    private fun legacyPortableFile(plain: ByteArray, chunkSize: Int): File {
+        val salt = bytes(BackupChunkFormat.SALT_LENGTH, seed = 3)
+        val key = pbkdf2(PASSPHRASE.toCharArray(), salt, FASTER_ITERATIONS)
+        val raw = ByteArrayOutputStream().apply {
+            write(BackupChunkFormat.portableMagicV1())
+            write(ByteBuffer.allocate(4).putInt(FASTER_ITERATIONS).array())
+            write(salt)
+            write(ByteBuffer.allocate(4).putInt(chunkSize).array())
+            write(legacyChunks(plain, key, chunkSize))
+        }.toByteArray()
+        return tempFile("ncp1").apply { writeBytes(raw) }
+    }
+
+    /**
+     * **옛 이식 백업(NCP1)이 계속 열리는가** — B-248 판올림의 조건이다. 이 길이 끊기면
+     * 사용자가 기기를 옮기려고 따로 만들어 둔 백업이 전부 죽는다.
+     */
+    @Test
+    fun portable_v1LegacyStillReads() {
+        val plain = bytes(700)
+        val enc = legacyPortableFile(plain, chunkSize = 64)
+        val dec = tempFile("dec")
+
+        assertTrue("옛 매직도 '이식 가능'으로 알아봐야 암호를 묻는다", BackupChunkFormat.isPortableFormat(enc))
+        BackupChunkFormat.decryptFilePortable(enc, dec, PASSPHRASE.toCharArray())
+        assertArrayEquals("NCP1을 못 읽으면 그 백업들은 영영 못 연다", plain, dec.readBytes())
+    }
+
+    @Test
+    fun portable_v2WritesTheNewMagic() {
+        val plain = tempFile("plain").apply { writeBytes(bytes(100)) }
+        val enc = tempFile("enc")
+        BackupChunkFormat.encryptFilePortable(
+            plain, enc, PASSPHRASE.toCharArray(), FASTER_ITERATIONS
+        )
+        assertArrayEquals(
+            "새로 쓰는 것은 NCP2다",
+            BackupChunkFormat.portableMagicV2(),
+            enc.readBytes().copyOfRange(0, 4)
+        )
+    }
+
+    /**
+     * **뒤가 잘린 이식 백업은 '암호가 틀렸다'가 아니다** — 이 갈래가 이 판의 요점 하나다.
+     * `SettingsFragment.restoreFromPortableFile`은 `AEADBadTagException`을 잡아 **암호를
+     * 다시 묻는다.** 잘린 파일에 그렇게 답하면 사용자는 맞는 암호를 넣고도 영영 되묻힌다.
+     */
+    @Test
+    fun portable_truncatedTailIsNotReportedAsWrongPassphrase() {
+        val plain = tempFile("plain").apply { writeBytes(bytes(4000)) }
+        val enc = tempFile("enc")
+        BackupChunkFormat.encryptFilePortable(
+            plain, enc, PASSPHRASE.toCharArray(), FASTER_ITERATIONS
+        )
+        // 청크 크기가 1MB라 4000바이트는 한 청크다 — 헤더만 남기고 잘라 '뒤가 없음'을 만든다.
+        enc.writeBytes(enc.readBytes().copyOfRange(0, BackupChunkFormat.PORTABLE_HEADER_SIZE))
+
+        val dec = tempFile("dec").also { it.delete() }
+        try {
+            BackupChunkFormat.decryptFilePortable(enc, dec, PASSPHRASE.toCharArray())
+            fail("뒤가 통째로 잘린 파일이 통과했다")
+        } catch (e: AEADBadTagException) {
+            fail("잘림을 '암호가 틀렸다'로 답했다 — 화면이 암호를 영영 되묻는다")
+        } catch (e: BackupChunkFormat.TruncatedBackupException) {
+            // 기대한 자리
+        }
+        assertFalse("실패했는데 결과 파일이 생겼다", dec.exists())
+    }
+
     // ── ⑤ NCB2(v2) · v1 레거시 — 키를 손으로 대어 하네스가 든다 ──
 
     @Test
@@ -321,6 +446,39 @@ class BackupChunkFormatTest {
     }
 
     /**
+     * **NCB2(묶이지 않은 청크)를 계속 읽는가** — B-248 판올림의 조건이다. 손으로 짠 옛 바이트로
+     * 잰다(새 쓰는 쪽은 언제나 묶으므로 그 길로는 이 모양을 만들 수 없다).
+     */
+    @Test
+    fun deviceFormat_v2LegacyChunksStillRead() {
+        val key = aesKey()
+        val plain = bytes(700)
+        val chunkSize = 64
+        val old = ByteArrayOutputStream().apply {
+            write(BackupChunkFormat.deviceMagicV2())
+            write(ByteBuffer.allocate(4).putInt(chunkSize).array())
+            write(legacyChunks(plain, key, chunkSize))
+        }.toByteArray()
+        val enc = tempFile("ncb2").apply { writeBytes(old) }
+        val dec = tempFile("dec")
+
+        BackupChunkFormat.decryptFileWithKey(enc, dec, { key })
+        assertArrayEquals("NCB2를 못 읽으면 그 백업들은 영영 못 연다", plain, dec.readBytes())
+    }
+
+    @Test
+    fun deviceFormat_v3WritesTheNewMagic() {
+        val plain = tempFile("plain").apply { writeBytes(bytes(100)) }
+        val enc = tempFile("enc")
+        BackupChunkFormat.encryptFileWithKey(plain, enc, aesKey())
+        assertArrayEquals(
+            "새로 쓰는 것은 NCB3다 — 옛 매직으로 쓰면 묶임이 조용히 없는 파일이 된다",
+            BackupChunkFormat.deviceMagicV3(),
+            enc.readBytes().copyOfRange(0, 4)
+        )
+    }
+
+    /**
      * 헤더가 깨져 갈래에 닿지 못하면 **키를 만들지 않는다** — `getOrCreateKey`는 이름 그대로
      * 없으면 만드는 함수라, 실패한 복원이 KeyStore에 새 키를 심어 두면 그 뒤의 진짜 백업이
      * 열리지 않는다.
@@ -336,6 +494,25 @@ class BackupChunkFormatTest {
             assertTrue(e.message!!.contains("too short"))
         }
         assertFalse("헤더가 깨졌는데 키를 요구했다", asked)
+    }
+
+    /** 기기 백업도 같은 갈래를 탄다 — 잘림은 태그 불일치가 아니라 잘림으로 답한다. */
+    @Test
+    fun deviceFormat_v3TruncatedTailIsRejected() {
+        val key = aesKey()
+        val plain = tempFile("plain").apply { writeBytes(bytes(3000)) }
+        val enc = tempFile("enc")
+        BackupChunkFormat.encryptFileWithKey(plain, enc, key)
+        enc.writeBytes(enc.readBytes().copyOfRange(0, BackupChunkFormat.FORMAT_HEADER_SIZE))
+
+        val dec = tempFile("dec").also { it.delete() }
+        try {
+            BackupChunkFormat.decryptFileWithKey(enc, dec, { key })
+            fail("뒤가 잘린 기기 백업이 통과했다")
+        } catch (e: BackupChunkFormat.TruncatedBackupException) {
+            // 기대한 자리
+        }
+        assertFalse("실패했는데 결과 파일이 생겼다", dec.exists())
     }
 
     @Test
@@ -369,11 +546,120 @@ class BackupChunkFormatTest {
         }
     }
 
-    // ── ⑥ 형식 상수 — 바뀌면 옛 백업이 안 열린다 ──
+    // ── ⑥ 청크 묶기 — 이 판이 고친 결함 (B-248) ──
+    //
+    // GCM은 *각 청크가 진짜인가*만 답한다. 아래 다섯은 전부 **청크 하나하나는 진짜인 채로**
+    // 파일 전체가 거짓인 모양이라, 묶기 전에는 하나도 걸리지 않았다.
+
+    /**
+     * **회귀 시험 — 이 판의 본체.** 뒤쪽 청크가 통째로 잘린 파일(전송 중단·저장 공간 소진·
+     * 동기화 중 복사)을 종전 `readChunks`는 EOF로 읽고 **정상 종료해 짧은 평문을 냈다.**
+     *
+     * 되돌려 빨간불을 봤다: `writeChunks`/`readChunks`에서 `updateAAD`를 빼면 이 시험이
+     * *예외 없이 통과해* `fail`에 닿는다.
+     */
+    @Test
+    fun chunks_truncatedTailIsProvenAndRejected() {
+        val key = aesKey()
+        val head = header(64)
+        val plain = bytes(200)                          // 청크 넷(64·64·64·8)
+        val full = writeBound(plain, key, 64, head)
+        // 마지막 두 청크를 통째로 뗀다 — 남은 것은 꽉 찬 청크 둘이라 EOF가 곧 끝처럼 보인다.
+        val cut = full.copyOfRange(0, 2 * (12 + 64 + 16))
+
+        try {
+            readBound(cut, key, 64, head)
+            fail("뒤가 잘린 파일이 '복호화 성공'으로 짧은 평문을 냈다")
+        } catch (e: BackupChunkFormat.TruncatedBackupException) {
+            // 태그 불일치가 아니라 **잘림으로 특정**돼야 한다 — 화면이 그 둘에 다르게 답한다.
+            assertTrue(e.message!!.contains("Truncated backup"))
+        }
+    }
+
+    /** 헤더만 남고 뒤가 통째로 날아간 파일 — 종전에는 "빈 백업"으로 조용히 통과했다. */
+    @Test
+    fun chunks_noChunksAtAllIsRejected() {
+        try {
+            readBound(ByteArray(0), aesKey(), 64, header(64))
+            fail("청크가 하나도 없는데 통과했다")
+        } catch (e: BackupChunkFormat.TruncatedBackupException) {
+            assertTrue(e.message!!.contains("no final chunk"))
+        }
+    }
+
+    /** 순서를 바꾼 청크 — 하나하나는 진짜지만 파일은 거짓이다. */
+    @Test
+    fun chunks_reorderedChunksAreRejected() {
+        val key = aesKey()
+        val head = header(64)
+        val full = writeBound(bytes(192), key, 64, head)   // 꽉 찬 청크 셋
+        val size = 12 + 64 + 16
+        val swapped = full.copyOf().also {
+            System.arraycopy(full, size, it, 0, size)      // 1번을 0번 자리로
+            System.arraycopy(full, 0, it, size, size)      // 0번을 1번 자리로
+        }
+        try {
+            readBound(swapped, key, 64, head)
+            fail("청크 순서를 바꿨는데 통과했다")
+        } catch (e: AEADBadTagException) {
+            // 색인이 묶여 있어야 여기 온다
+        }
+    }
+
+    /** 같은 청크를 한 번 더 끼운 파일 — 색인이 묶이지 않으면 평문이 늘어난다. */
+    @Test
+    fun chunks_duplicatedChunkIsRejected() {
+        val key = aesKey()
+        val head = header(64)
+        val full = writeBound(bytes(192), key, 64, head)
+        val size = 12 + 64 + 16
+        val spliced = ByteArrayOutputStream().apply {
+            write(full, 0, size)
+            write(full, 0, size)                          // 0번을 두 번
+            write(full, size, full.size - size)
+        }.toByteArray()
+        try {
+            readBound(spliced, key, 64, head)
+            fail("같은 청크가 두 번 들어갔는데 통과했다")
+        } catch (e: AEADBadTagException) {
+            // 기대한 자리
+        }
+    }
+
+    /**
+     * 헤더 한 바이트만 고친 파일. 헤더는 청크 밖이라 **종전에는 태그가 아무 말도 하지 않았다** —
+     * `chunkSize` 같은 값은 범위 검사만 통과하면 그대로 믿겼다.
+     */
+    @Test
+    fun chunks_headerTamperingBreaksEveryTag() {
+        val key = aesKey()
+        val head = header(64)
+        val full = writeBound(bytes(100), key, 64, head)
+        val tampered = head.copyOf().also { it[7] = (it[7] + 1).toByte() }
+        try {
+            readBound(full, key, 64, tampered)
+            fail("헤더가 바뀌었는데 청크가 열렸다")
+        } catch (e: AEADBadTagException) {
+            // 기대한 자리
+        }
+    }
+
+    /** 옛 형식은 묶이지 않는다 — 그 경로가 살아 있어야 옛 백업이 열린다. */
+    @Test
+    fun chunks_legacyUnboundStreamStillReads() {
+        val key = aesKey()
+        val plain = bytes(300)
+        assertArrayEquals(plain, readBound(legacyChunks(plain, key, 64), key, 64, null))
+    }
+
+    // ── ⑦ 형식 상수 — 바뀌면 옛 백업이 안 열린다 ──
 
     /**
      * 이 값들은 **디스크에 이미 쓰인 파일이 기대는 값**이다. 고치면 그 전에 뜬 백업이 전부
      * 안 열리므로, 바꾸려면 형식 판올림(새 매직)을 함께 해야 한다 — 그 사실을 여기서 못박는다.
+     *
+     * **매직 넷을 전부 든다**(B-248) — 옛 둘은 *읽는 길이 살아 있다*는 계약이라 새 둘과
+     * 똑같이 얼어 있어야 한다.
      */
     @Test
     fun formatConstants_areFrozen() {
@@ -383,10 +669,13 @@ class BackupChunkFormatTest {
         assertEquals(16, BackupChunkFormat.SALT_LENGTH)
         assertEquals(1024 * 1024, BackupChunkFormat.CHUNK_SIZE)
         assertEquals(8, BackupChunkFormat.FORMAT_HEADER_SIZE)
+        assertEquals(28, BackupChunkFormat.PORTABLE_HEADER_SIZE)
         assertEquals("AES/GCM/NoPadding", BackupChunkFormat.TRANSFORMATION)
         assertEquals("PBKDF2WithHmacSHA256", BackupChunkFormat.PBKDF2_ALGORITHM)
-        assertArrayEquals("NCB2".toByteArray(), BackupChunkFormat.formatMagic())
-        assertArrayEquals("NCP1".toByteArray(), BackupChunkFormat.portableMagic())
+        assertArrayEquals("NCB3".toByteArray(), BackupChunkFormat.deviceMagicV3())
+        assertArrayEquals("NCP2".toByteArray(), BackupChunkFormat.portableMagicV2())
+        assertArrayEquals("NCB2".toByteArray(), BackupChunkFormat.deviceMagicV2())
+        assertArrayEquals("NCP1".toByteArray(), BackupChunkFormat.portableMagicV1())
         // 시험이 빠르라고 낮춘 것은 인자이지 기본값이 아니다(클래스 주석).
         assertEquals(200_000, BackupChunkFormat.PBKDF2_ITERATIONS)
         assertEquals(6, BackupChunkFormat.MIN_PASSPHRASE_LENGTH)
@@ -395,7 +684,13 @@ class BackupChunkFormatTest {
     /** 매직은 부를 때마다 새 배열 — 고쳐도 다음 부름이 오염되지 않는다. */
     @Test
     fun formatMagic_isNotSharedMutableState() {
-        BackupChunkFormat.formatMagic()[0] = 0
-        assertNotEquals(0.toByte(), BackupChunkFormat.formatMagic()[0])
+        BackupChunkFormat.deviceMagicV3()[0] = 0
+        assertNotEquals(0.toByte(), BackupChunkFormat.deviceMagicV3()[0])
+        BackupChunkFormat.portableMagicV2()[0] = 0
+        assertNotEquals(0.toByte(), BackupChunkFormat.portableMagicV2()[0])
+        BackupChunkFormat.deviceMagicV2()[0] = 0
+        assertNotEquals(0.toByte(), BackupChunkFormat.deviceMagicV2()[0])
+        BackupChunkFormat.portableMagicV1()[0] = 0
+        assertNotEquals(0.toByte(), BackupChunkFormat.portableMagicV1()[0])
     }
 }
