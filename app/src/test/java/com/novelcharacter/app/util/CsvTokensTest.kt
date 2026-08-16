@@ -144,4 +144,25 @@ class CsvTokensTest {
             assertEquals("감싸기 판정이 갈렸다: '$v'", CsvTokens.needsQuoting(v), wrapped)
         }
     }
+
+    /**
+     * **빈 칸은 토큰 0개다** — 빈 토큰 하나가 아니다.
+     *
+     * 이 계약을 여기서 못박는 것은 **'앱 설정' 시트의 목록 키 둘이 그 위에 서 있기 때문**이다
+     * (B-226 — `stats_pattern_types`·`assistant_categories`). 그 바인딩은 *"적었는데 하나도
+     * 해석되지 않았다"*(`names.isNotEmpty() && known.isEmpty()`)를 거절-유지의 조건으로 쓰는데,
+     * 만약 빈 칸이 `[""]`로 쪼개지면 **빈 칸까지 거절**이 되어 *'전부 끔'을 저장할 길이
+     * 사라진다** — 사용자가 전부 꺼 둔 설정을 왕복으로 되살릴 수 없게 만드는 것과 정반대
+     * 방향의 결함이고, 조건 한 줄이 조용히 뒤집히는 자리다.
+     *
+     * 공백만 든 칸도 같다(엑셀에서 지우다 만 셀이 그 모양이다).
+     */
+    @Test
+    fun `빈 칸은 토큰이 없다`() {
+        assertEquals(emptyList<String>(), CsvTokens.split(""))
+        assertEquals(emptyList<String>(), CsvTokens.split("   "))
+        assertEquals(emptyList<String>(), CsvTokens.split(","))
+        // 빈 토큰이 섞여도 그것만 빠진다 — 나머지는 그대로 산다.
+        assertEquals(listOf("a", "b"), CsvTokens.split("a, ,b"))
+    }
 }

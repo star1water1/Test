@@ -345,4 +345,57 @@ class DuelFieldLinksTest {
             DuelFieldLinks.parseText("faction, -age")
         )
     }
+
+    // ── 앞머리와 같은 글자로 시작하는 키 (B-188) ──
+
+    /**
+     * **표식으로 시작하는 키가 방향을 잃지 않는다** — 이 판이 닫은 구멍이다.
+     *
+     * 종전에는 `Link("▼age", higherWins = true)`가 `▼age`로 나가 `Link("age", false)`로
+     * 되읽혔다 — **방향이 뒤집히고 키가 깎였다.** 옛 `-`에서 이미 있던 구멍이고 B-173이
+     * 그것을 `▼`로도 넓혔다. 저장 형식 둘(JSON·엑셀 칸) 다 같은 자리를 지나므로 함께 든다.
+     */
+    @Test
+    fun `keys that start with a marker survive both storage formats`() {
+        val links = listOf(
+            Link("▼age", higherWins = true),
+            Link("-power", higherWins = true),
+            Link("'-speed", higherWins = true),
+            Link("▲rank", higherWins = true),
+            // 작을수록 유리한 쪽도 같이 든다 — 감싸는 쪽만 고치고 이쪽이 깨지면 반쪽이다.
+            Link("▼mana", higherWins = false),
+            Link("▲luck", higherWins = false)
+        )
+        assertEquals(links, DuelFieldLinks.decode(DuelFieldLinks.encode(links)))
+        assertEquals(links, DuelFieldLinks.parseText(DuelFieldLinks.toText(links)))
+    }
+
+    /**
+     * **평범한 키는 글자 하나 달라지지 않는다** — 이미 나간 파일·저장된 축과 그대로 견줘진다.
+     *
+     * 감싸기가 조건 없이 붙으면 무편집 왕복이 모든 축의 저장값을 바꾸고, 그러면 복원
+     * 미리보기가 아무것도 고치지 않은 파일을 '변경'이라 말한다.
+     */
+    @Test
+    fun `ordinary keys are written without any wrapper`() {
+        assertEquals("mana, ▼age", DuelFieldLinks.toText(
+            listOf(Link("mana"), Link("age", higherWins = false))
+        ))
+        assertEquals("""["mana","▼age"]""", DuelFieldLinks.encode(
+            listOf(Link("mana"), Link("age", higherWins = false))
+        ))
+    }
+
+    /**
+     * **옛 파일의 `▲`로 시작하는 토큰은 그대로 키다.**
+     *
+     * 감싸기는 *`▲` 다음에 또 표식이 오는 모양*에서만 앞머리로 읽는다. 옛 쓰기는 `키`와
+     * `▼키`만 냈으므로 그 모양은 옛 파일에 나올 수 없고, 그래서 이 수리는 **이미 저장된
+     * 값을 하나도 건드리지 않는다**(R-2 — 옛 것을 계속 읽는 경로).
+     */
+    @Test
+    fun `legacy tokens starting with the new marker are still plain keys`() {
+        assertEquals(listOf(Link("▲rank")), DuelFieldLinks.parseText("▲rank"))
+        assertEquals(listOf(Link("▲rank")), DuelFieldLinks.decode("""["▲rank"]"""))
+    }
 }
