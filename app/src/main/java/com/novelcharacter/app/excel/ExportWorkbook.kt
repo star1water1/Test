@@ -63,10 +63,71 @@ object ExportWorkbooks {
     }
 
     /**
+     * 이 런타임에서 스트리밍 시트를 만들 수 있는가 — **묻지 말고 한 번 해 본다** (B-250).
+     *
+     * ## 왜 검사인가
+     *
+     * POI의 `SXSSFSheet` 생성자는 `AutoSizeColumnTracker`를 **무조건** 만들고, 그것이
+     * `java.awt.geom.Rectangle2D`·`java.awt.font.FontRenderContext`를 문다. **안드로이드에는
+     * `java.awt`가 없다** — 그래서 기기에서는 `createSheet` 첫 부름이 `NoClassDefFoundError`로
+     * 죽었고, **사용자 내보내기와 자동 백업이 함께** 죽었다(실기기 크래시 로그, 2026.08.17).
+     *
+     * **버전으로 풀리지 않는다.** POI 5.3.0은 그 자리에 가드를 넣었지만 `FontRenderContext`만
+     * 덮고, 실제로 먼저 무는 것은 `Rectangle2D`다 — `ExportStreamingAvailabilityTest`가
+     * `java.awt`를 가린 클래스로더로 **기기와 줄 번호까지 같은 스택**을 재현해 확인했다.
+     * 그래서 판정을 버전이 아니라 **런타임에** 묻는다. 나중에 POI가 그 자리를 고치면
+     * 이 검사가 스스로 `true`로 돌아서고 **코드를 다시 고칠 일이 없다.**
+     *
+     * ## 왜 이 갈래가 안전한가
+     *
+     * 두 구현이 **같은 파일을 낸다**는 것을 `ExportWorkbookParityTest`가 이미 잠갔다(이 파일
+     * 머리의 전제). 그래서 경로가 갈려도 산출물이 갈리지 않는다 — **그 시험이 이 검사를
+     * 성립시키는 자산이다.** 사용자에게 알리지 않는 것도 같은 이유다(머리 주석).
+     *
+     * 결과는 프로세스마다 한 번만 잰다. 재는 값은 **런타임의 성질**이라 실행 중에 바뀌지 않는다.
+     */
+    fun isStreamingSupported(): Boolean {
+        cachedStreamingSupport?.let { return it }
+        synchronized(this) {
+            cachedStreamingSupport?.let { return it }
+            var probe: Workbook? = null
+            val supported = try {
+                probe = SXSSFWorkbook(null, ROW_WINDOW, false, false)
+                probe.createSheet("probe")     // 죽는 자리가 여기다 — 행은 필요 없다
+                true
+            } catch (e: LinkageError) {
+                // NoClassDefFoundError·ExceptionInInitializerError가 이 갈래다.
+                // `Throwable`로 넓히지 않는 것은 일부러다 — OutOfMemoryError까지 삼키면
+                // *메모리가 모자란 기기*를 *스트리밍을 못 하는 기기*로 오진하고,
+                // 그 오진의 결과가 하필 **메모리를 더 쓰는 DOM 경로**다.
+                false
+            } catch (e: Exception) {
+                false
+            } finally {
+                try { release(probe) } catch (e: Exception) { /* 검사 뒷정리 실패는 판정이 아니다 */ }
+            }
+            cachedStreamingSupport = supported
+            return supported
+        }
+    }
+
+    @Volatile
+    private var cachedStreamingSupport: Boolean? = null
+
+    /** 시험이 같은 프로세스에서 두 갈래를 다 재려면 캐시를 비울 수 있어야 한다. */
+    internal fun resetStreamingSupportCache() {
+        synchronized(this) { cachedStreamingSupport = null }
+    }
+
+    /**
      * @param streaming true면 스트리밍(메모리가 데이터 양에 비례하지 않는다), false면 DOM.
      *   **DOM 구현을 남겨 두는 것은 의도다** — 실기기 측정이 스트리밍의 대가(임시 파일 I/O·
      *   디스크)를 문제로 지목하면 이 인자 하나로 되돌릴 수 있어야 하고, 두 구현이 같은 파일을
      *   낸다는 것을 시험이 계속 잠그고 있어야 그 되돌리기가 안전하다.
+     *
+     *   **부르는 쪽은 이 값을 손으로 적지 않는다** — [isStreamingSupported]가 정한다(B-250).
+     *   인자를 남겨 두는 것은 시험이 **두 갈래를 다 재기 위해서**이고, 그것이 위 전제를
+     *   잠그는 유일한 길이다.
      */
     fun create(streaming: Boolean): Workbook =
         if (streaming) {

@@ -219,7 +219,7 @@ class ExcelExporter(context: Context) {
                 // 임시 파일 자리를 먼저 못박는다(그러지 않으면 앱이 모르는 자리에 백업 크기의
                 // 임시 파일이 생긴다). 두 구현이 같은 파일을 낸다는 것은 시험이 잠근다.
                 ExportWorkbooks.useTempDirectory(appContext.cacheDir)
-                workbook = ExportWorkbooks.create(streaming = true)
+                workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
                 populateWorkbook(workbook, options, progress)
 
                 // 내보내기 요약(시트/행 건수) — 사용 안내 시트와 드롭다운 목록 보관 시트(B-221)는

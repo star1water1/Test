@@ -483,6 +483,7 @@ $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/share/WorldPackageDuelsTest.kt
 $TEST/excel/ExportWorkbookParityTest.kt
+$TEST/excel/ExportStreamingAvailabilityTest.kt
 $TEST/excel/ExportPresentationSpecTest.kt
 $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt

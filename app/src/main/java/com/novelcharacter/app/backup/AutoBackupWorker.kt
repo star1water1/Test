@@ -80,7 +80,7 @@ class AutoBackupWorker(
             // 백업이 워크북 전량을 메모리에 세우면 저사양 기기에서 죽고, 그 실패는 사용자가
             // 보지 못한 자리에서 일어난다. 임시 파일 자리를 먼저 못박는다.
             ExportWorkbooks.useTempDirectory(appContext.cacheDir)
-            val workbook = ExportWorkbooks.create(streaming = true)
+            val workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
             val truncatedCells: Int
             try {
