@@ -29,10 +29,12 @@ import com.novelcharacter.app.data.model.FactionMembership
  * 착수 이전부터 *"현재 활성 중인 멤버"*로 세어 온 뜻 그대로이며, 이 파일은 그 뜻을 옮겨
  * 적을 뿐 바꾸지 않는다(같은 커밋에서 통계·세력 관리의 수가 한 건도 달라지지 않는다).
  *
- * ⚠️ **`leaveYear`가 있는데 `leaveType`이 없는 행은 여기서 *지금 소속*이다.** 앱 안에서는
- * 그 조합이 만들어지지 않지만(`departMember`가 둘을 함께 적고 `removeMember`는 행을 지운다)
- * **엑셀은 두 칸이 따로라 사람이 한쪽만 적을 수 있다.** 그 모순을 어느 쪽으로 읽을지는
- * 통계·AI 문맥까지 함께 움직이는 판정이라 이 슬라이스에서 정하지 않고 백로그에 올렸다(B-206).
+ * ⚠️ **`leaveYear`가 있는데 `leaveType`이 없는 행은 여기서 *지금 소속*이다** — 그 판정은
+ * 그대로 두었다(B-206, 확정 15장 7번 = ⓒ). 앱 안에서는 그 조합이 만들어지지 않지만
+ * (`departMember`가 둘을 함께 적고 `removeMember`는 행을 지운다) **엑셀은 두 칸이 따로라
+ * 사람이 한쪽만 적을 수 있다.** 판정 기준을 바꾸면 **이미 DB에 있는 행들의 통계·AI 문맥
+ * 수가 조용히 달라지므로**, 고치는 자리를 *읽는 쪽*이 아니라 **들어오는 자리**로 옮겼다 —
+ * [leaveTypeForImportedRow]가 가져오기 시점에 그 파일의 행만 바로잡고 경고로 말한다.
  *
  * ## SQL 쌍둥이
  * Room 질의는 코틀린 함수를 부를 수 없어 같은 술어가 `FactionMembershipDao`에 글자로 한 벌 더
@@ -62,6 +64,36 @@ object FactionStanding {
 
     /** 이 소속이 *지금*인가. */
     fun isCurrent(membership: FactionMembership): Boolean = isCurrent(membership.leaveType)
+
+    /**
+     * 엑셀이 만든 **반쪽 표식**을 들어오는 자리에서 바로잡는다 (B-206 · 확정 15장 7번 ⓒ).
+     *
+     * '세력 소속' 시트는 `탈퇴연도`와 `탈퇴유형`이 **따로 있는 칸**이라, 사람이 연도만 적고
+     * 유형을 비워 둘 수 있다. 그 행은 [isCurrent]에게는 *지금 소속*이고
+     * [FactionMembership.isActiveAtYear]에게는 *그 해 이후로는 아니다*라 — 둘은 다른 물음이라
+     * 모순은 아니지만, **사용자가 적어 둔 `1200년 탈퇴`가 대결·통계·세력 관리에서 아무 뜻이
+     * 없다.** 적은 것이 없던 일이 되는 자리다.
+     *
+     * 그래서 **연도만 온 행은 '설정상 탈퇴'로 읽는다.** 부르는 쪽은 이 교정을 경고로 말해야
+     * 한다(개발 의도 2번 — 검증 → 알림 → 바로잡을 경로). 값을 지우는 방향이 아니라
+     * 채우는 방향이라 유실은 없다.
+     *
+     * **소급하지 않는다** — 이 함수는 *파일에서 읽은 행*에만 쓴다. 이미 DB에 든 모순 행은
+     * 손대지 않는다(손대려면 그때 따로 묻는다 — 확정의 착수 조건 ⓐ).
+     *
+     * @param leaveTypeColumnPresent '탈퇴유형' **열 자체가 있는가.** 없으면 사용자가 칸을
+     *   비운 것이 아니라 *말하지 않은 것*이라 채우지 않는다(F1-A — 열 없음은 기존 유지).
+     */
+    fun leaveTypeForImportedRow(
+        leaveYear: Int?,
+        leaveType: String?,
+        leaveTypeColumnPresent: Boolean
+    ): String? =
+        if (leaveTypeColumnPresent && leaveType == null && leaveYear != null) {
+            FactionMembership.LEAVE_DEPARTED
+        } else {
+            leaveType
+        }
 
     /** *지금*인 소속만 — **차례는 넘긴 그대로다**(부르는 쪽의 정렬을 뒤집지 않는다). */
     fun current(memberships: List<FactionMembership>): List<FactionMembership> =

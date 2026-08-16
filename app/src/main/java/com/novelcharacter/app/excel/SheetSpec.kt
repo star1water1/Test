@@ -111,6 +111,15 @@ const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
 /** 전 세계관 캐릭터를 한 장에 모으는 읽기 전용 시트명 (U-12a) — 내보내기·가져오기 공용 상수 */
 const val ALL_CHARACTERS_SHEET_NAME = "전체 캐릭터"
 
+/**
+ * 긴 드롭다운 목록을 담는 **숨김 시트**명 (B-221) — 내보내기·가져오기 공용 상수.
+ *
+ * 명시 목록 수식의 엑셀 한도(255자)를 넘는 목록은 이 시트의 한 열에 적고 범위 참조로 건다
+ * ([DropdownListLimits]). **가져오기는 읽지 않는다** — 예약명이라 '인식되지 않은 시트' 경고에서도
+ * 빠지고, 사용자가 편집할 것도 아니라 숨긴다. 필요한 export에만 생긴다.
+ */
+const val DROPDOWN_LIST_SHEET_NAME = "목록 데이터"
+
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
     GUIDE_SHEET_NAME,
@@ -140,7 +149,8 @@ val RESERVED_SHEET_NAMES = setOf(
     duelAxisSpec().sheetName,
     duelMatchSpec().sheetName,
     duelVerdictSpec().sheetName,
-    ALL_CHARACTERS_SHEET_NAME
+    ALL_CHARACTERS_SHEET_NAME,
+    DROPDOWN_LIST_SHEET_NAME
 )
 
 /**
@@ -483,10 +493,18 @@ object SheetTabColors {
         characterListPresetSpec().sheetName, appSettingsSpec().sheetName, imageMetaSpec().sheetName
     )
 
-    /** 파생·오버플로 — 읽기 전용 집계와 잔여값 보관처. */
+    /**
+     * 파생·오버플로 — 읽기 전용 집계와 잔여값 보관처.
+     *
+     * 드롭다운 목록 시트(B-221)도 여기다 — 데이터에서 파생된 읽기 전용 보관처이고
+     * 가져오기가 읽지 않는다. **탭 색은 실제로 보이지 않지만**(숨김 시트) 이 표는
+     * *예약명 전수가 한 그룹에 속하는가*를 잠그는 자리라 배정이 있어야 한다
+     * (`ExportPresentationSpecTest` — 새 예약 시트가 등재 없이 빠지는 것을 막는 그물).
+     */
     val DERIVED_SHEETS = setOf(
         ALL_CHARACTERS_SHEET_NAME, characterFieldValueSpec().sheetName,
-        novelFieldValueSpec().sheetName, eventFieldValueSpec().sheetName
+        novelFieldValueSpec().sheetName, eventFieldValueSpec().sheetName,
+        DROPDOWN_LIST_SHEET_NAME
     )
 
     /** 예약명 중 캐릭터 그룹 — 나머지 캐릭터 시트는 예약명 밖이라 자동으로 이 색이다. */

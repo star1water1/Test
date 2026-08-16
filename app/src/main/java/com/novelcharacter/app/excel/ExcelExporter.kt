@@ -64,6 +64,10 @@ class ExcelExporter(context: Context) {
 
     private lateinit var styles: ExcelStyles
 
+    // 한도를 넘은 드롭다운 목록의 보관처 (B-221) — populateWorkbook 1회 수명.
+    // 워크북마다 새로 세운다: 시트·행 번호를 들고 있어 다음 내보내기로 넘어가면 어긋난다.
+    private var dropdownLists: DropdownListSheet? = null
+
     // XLSX 셀 규격(32,767자) 초과로 잘린 셀 수 — 내보내기 1회 단위 집계
     private var truncatedCellCount = 0
 
@@ -102,6 +106,11 @@ class ExcelExporter(context: Context) {
         truncatedCellCount = 0
         styles = ExcelStyles(workbook)
         val usedSheetNames = mutableSetOf<String>()
+        // 이름은 여기서 못박는다(시트는 실제로 필요할 때 생긴다) — 예약명이라 세계관 시트가
+        // 가져갈 수 없고, 미리 잡아 두면 만들어지는 시점과 무관하게 이름이 같다.
+        dropdownLists = DropdownListSheet(
+            assignSheetName(DROPDOWN_LIST_SHEET_NAME, usedSheetNames, ownerOf = DROPDOWN_LIST_SHEET_NAME)
+        )
 
         // 시트 목록·순서는 [ExportSheetStep.of]가 단일 소스다 — 진행도의 총량도 같은 것을
         // 쓴다(R-26: 총량 확정 후에 띄운다). 종전 if 연쇄와 조건·순서는 그대로다.
@@ -213,12 +222,16 @@ class ExcelExporter(context: Context) {
                 workbook = ExportWorkbooks.create(streaming = true)
                 populateWorkbook(workbook, options, progress)
 
-                // 내보내기 요약(시트/행 건수) — 사용 안내 시트는 데이터가 아니므로 제외
+                // 내보내기 요약(시트/행 건수) — 사용 안내 시트와 드롭다운 목록 보관 시트(B-221)는
+                // 데이터가 아니므로 제외한다. 세면 "시트 N개"가 사용자가 볼 시트 수와 어긋난다.
                 var exportedSheets = 0
                 var exportedRows = 0
                 for (i in 0 until workbook.numberOfSheets) {
                     val s = workbook.getSheetAt(i)
                     if (s.sheetName == GUIDE_SHEET_NAME) continue
+                    // 숨긴 시트는 사용자가 볼 것이 아니다 — 지금은 드롭다운 목록 보관처뿐이고,
+                    // 이름이 아니라 '숨김'으로 거르므로 나중에 같은 부류가 늘어도 함께 빠진다.
+                    if (workbook.isSheetHidden(i)) continue
                     exportedSheets++
                     exportedRows += maxOf(0, s.physicalNumberOfRows - 1)
                 }
@@ -619,17 +632,35 @@ class ExcelExporter(context: Context) {
         val maxRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
         val addressList = CellRangeAddressList(1, maxRow, colIndex, colIndex)
         val dvHelper = sheet.dataValidationHelper
-        val dvConstraint = dvHelper.createExplicitListConstraint(options.toTypedArray())
+        // 명시 목록이 엑셀 한도(255자)를 넘거나 값에 쉼표·따옴표가 있으면 수식이 깨져
+        // **유효성 검사가 통째로 벗겨진다** — 그때는 숨김 시트 + 범위 참조로 간다 (B-221).
+        val lists = dropdownLists
+        val dvConstraint = if (lists != null && !DropdownListLimits.fitsExplicitList(options)) {
+            dvHelper.createFormulaListConstraint(lists.referenceFor(sheet.workbook, options))
+        } else {
+            dvHelper.createExplicitListConstraint(options.toTypedArray())
+        }
         val validation = dvHelper.createValidation(dvConstraint, addressList)
-        val joinedOptions = options.joinToString(", ")
         validation.showErrorBox = true
         validation.errorStyle = DataValidation.ErrorStyle.WARNING
+        // 두 상자에도 각자의 한도가 있다 — 목록을 그대로 넣으면 목록이 길어질수록 **안내가
+        // 먼저 깨진다.** 몇 개를 뺐는지 말하며 줄인다(말없이 자르지 않는다).
+        val errorTemplate = appContext.getString(R.string.export_validation_error_message, "")
         validation.createErrorBox(
             appContext.getString(R.string.export_validation_error_title),
-            appContext.getString(R.string.export_validation_error_message, joinedOptions)
+            appContext.getString(
+                R.string.export_validation_error_message,
+                DropdownListLimits.summarize(
+                    options,
+                    (DropdownListLimits.MAX_ERROR_CHARS - errorTemplate.length).coerceAtLeast(16)
+                )
+            )
         )
         validation.showPromptBox = true
-        validation.createPromptBox(appContext.getString(R.string.export_validation_prompt_title), joinedOptions)
+        validation.createPromptBox(
+            appContext.getString(R.string.export_validation_prompt_title),
+            DropdownListLimits.summarize(options, DropdownListLimits.MAX_PROMPT_CHARS)
+        )
         sheet.addValidationData(validation)
     }
 
@@ -689,7 +720,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
             GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
             GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
-            GuideLine("", styles.guideBody, "• 이미지경로 컬럼은 앱 내부 경로이므로 수정하지 마세요"),
+            // 종전 문구는 "이미지경로 컬럼은 … 수정하지 마세요"라는 **일괄 금지**였는데,
+            // 캐릭터·세계관·작품 시트의 그 열은 파란 헤더(편집 가능)이고 가져오기가 실제로
+            // 읽어 반영한다 — 안내가 실동작과 어긋나 있었다 (B-222 ③).
+            GuideLine("", styles.guideBody, "• 이미지경로는 앱 내부 경로입니다. 캐릭터·세계관·작품 시트에서는 편집이 반영되지만,"),
+            GuideLine("", styles.guideBody, "  적을 값은 이 파일에 이미 있는 경로여야 합니다(새 경로를 지어내면 그림이 없는 자리가 됩니다)."),
+            GuideLine("", styles.guideBody, "  '이미지' 시트의 이미지경로는 회색 — 그 행의 정체이므로 고치지 마세요."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
             GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
             GuideLine("", styles.guideBody, ""),
@@ -704,6 +740,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 그래서 실수로 행을 모두 지운 파일을 들여와도 그 종류가 통째로 사라지지 않습니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
+            // 13자리 밀리초 값은 외부 편집자에게 아무 뜻이 없다 — "지우지 마세요"만 있고
+            // **무엇인지**가 없어서, 날짜로 보이는 칸을 날짜로 고쳐 매칭을 깨뜨릴 수 있었다 (B-222 ①).
+            GuideLine("", styles.guideBody, "• '생성일'·'수정일'·'판정일'·'뗀날짜'의 13자리 숫자는 1970-01-01 UTC부터의 밀리초입니다."),
+            GuideLine("", styles.guideBody, "  사람이 읽을 날짜가 아니라 행을 알아보는 값이라, 날짜 서식으로 바꾸거나 비우면 매칭이 갈립니다."),
             GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
             GuideLine("", styles.guideBody, "• 코드가 데이터 매칭의 1순위입니다. 이름/제목은 자유롭게 변경 가능합니다."),
             GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워 두세요. 자동으로 생성됩니다."),
@@ -1341,7 +1381,15 @@ class ExcelExporter(context: Context) {
             val novel = novelMap[char.novelId]
             novel?.universeId == null
         }
-        if (unassignedChars.isNotEmpty()) {
+        // **0명이어도 시트를 만든다** (B-220) — 종전에는 `isNotEmpty()` 안에서만 만들어
+        // 이 시트가 B-88("아직 데이터가 없는 종류도 빈 시트로 나갑니다")의 **미문서화 예외**였다.
+        // 그래서 미분류가 0명인 사용자는 *엑셀에서 무소속 캐릭터를 새로 적어 넣을 경로가 없었고*,
+        // 안내 시트의 그 문장이 이 시트에 대해서만 거짓이었다. 우회로(세계관 시트에서 작품 칸
+        // 비우기)는 문서에 없었을뿐더러 **전역 필드 열이 없어** 값을 함께 적을 수도 없다.
+        //
+        // 삭제 판정은 그대로다 — `canRestore`는 시트 유무가 아니라 **내용 있는 행**을 보므로
+        // (OverwriteGuard) 빈 시트가 '전부 지워라'가 되지 않는다. B-88이 세운 그 짝이다.
+        run {
             val tags = unassignedChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
@@ -1367,7 +1415,7 @@ class ExcelExporter(context: Context) {
             // 이 시트는 *두 세계관 이상이 공유하는 필드*를 모으는 집계 시트이고([sharedFields]가
             // `universeIdsWithCharacters`로 거른다), 전역 필드를 넣으면 시트의 정의가 *공유 필드*에서
             // *모든 필드*로 달라진다 — 고치는 것이 아니라 **다른 시트를 만드는 것**이다.
-            if (allSheet != null) {
+            if (allSheet != null && unassignedChars.isNotEmpty()) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allSpec, allRowCount, sharedFields, "",
                     unassignedChars, emptyList(), novelMap, emptyMap(), tags,

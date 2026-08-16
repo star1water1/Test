@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FactionMembership
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,9 +89,43 @@ class FactionStandingTest {
     @Test
     fun `탈퇴 연도만 적히고 표식이 없는 행은 지금 소속이다`() {
         // 앱 안에서는 만들어지지 않고 엑셀 손편집으로만 생기는 조합이다(B-206).
-        // **여기서 처분을 바꾸면 통계·세력 관리·AI 문맥이 함께 움직인다** — 그래서 이 시험은
-        // *오늘의 동작*이 아니라 **이 슬라이스가 그 판정을 건드리지 않았다는 사실**을 잠근다.
+        // **여기서 처분을 바꾸면 통계·세력 관리·AI 문맥이 함께 움직인다** — B-206은 그래서
+        // 읽는 쪽을 그대로 두고 **들어오는 쪽**에서 고치기로 확정됐다(확정 15장 7번 ⓒ).
+        // 이 시험은 여전히 *읽는 쪽이 안 움직였다*를 잠근다 — 이미 DB에 든 행의 수가
+        // 조용히 달라지면 여기서 먼저 막힌다.
         assertTrue(FactionStanding.isCurrent(membership(1, 10, leaveYear = 1200)))
+    }
+
+    // ── 2-a. 들어오는 자리의 교정 (B-206 · 확정 15장 7번 ⓒ) ──
+
+    @Test
+    fun `탈퇴연도만 온 행은 설정상탈퇴로 채운다`() {
+        assertEquals(
+            FactionMembership.LEAVE_DEPARTED,
+            FactionStanding.leaveTypeForImportedRow(1200, null, leaveTypeColumnPresent = true)
+        )
+    }
+
+    @Test
+    fun `적혀 있는 표식은 덮지 않는다`() {
+        // 순수제거로 적은 행을 설정상탈퇴로 바꾸면 사용자가 적은 것을 앱이 뒤집는 것이다.
+        assertEquals(
+            FactionMembership.LEAVE_REMOVED,
+            FactionStanding.leaveTypeForImportedRow(1200, FactionMembership.LEAVE_REMOVED, leaveTypeColumnPresent = true)
+        )
+    }
+
+    @Test
+    fun `탈퇴연도가 없으면 채우지 않는다`() {
+        // 가입 연도만 적힌 평범한 활성 행이 여기 걸리면 **살아 있는 소속이 통째로 탈퇴가 된다**.
+        assertNull(FactionStanding.leaveTypeForImportedRow(null, null, leaveTypeColumnPresent = true))
+    }
+
+    @Test
+    fun `탈퇴유형 열 자체가 없으면 채우지 않는다`() {
+        // 열 없음은 "비웠다"가 아니라 "말하지 않았다"다(F1-A) — 채우면 그 열이 없던 시절에
+        // 내보낸 파일을 다시 들이는 것만으로 활성 소속이 탈퇴로 바뀐다.
+        assertNull(FactionStanding.leaveTypeForImportedRow(1200, null, leaveTypeColumnPresent = false))
     }
 
     // ── 3. 겸직·재가입 ──

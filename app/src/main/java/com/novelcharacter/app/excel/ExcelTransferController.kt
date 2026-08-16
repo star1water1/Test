@@ -195,14 +195,17 @@ class ExcelTransferController(private val fragment: Fragment) {
         exporter?.cancel()
         exporter = ExcelExporter(fragment.requireContext().applicationContext)
 
-        var cancelled = false
+        // **플래그는 스레드를 건넌다** (B-219 ③): 취소 버튼은 메인에서 쓰고 내보내기 루프는
+        // IO에서 읽는다. 캡처된 지역 `var`에는 가시성 보장이 없어 눌린 취소가 안 보인 채
+        // 대형 백업이 끝까지 만들어질 수 있다.
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
         // 총량은 띄우기 전에 안다(R-26: 총량 확정 후에 show한다) — 실행부와 같은 목록을 쓴다.
         val progressDialog = TaskProgressDialog.show(
             fragment.requireContext(),
             titleRes = R.string.export_progress_title,
             total = ExportSheetStep.of(options).size,
             stageRes = R.string.export_progress_stage_sheets,
-            onCancel = { cancelled = true }
+            onCancel = { cancelled.set(true) }
         )
         val sheetsStage = fragment.getString(R.string.export_progress_stage_sheets)
         val imagesStage = fragment.getString(R.string.export_progress_stage_images)
@@ -225,7 +228,7 @@ class ExcelTransferController(private val fragment: Fragment) {
                 }
             },
             onImages = { done, total -> post { progressDialog.update(done, total, imagesStage) } },
-            isCancelled = { cancelled }
+            isCancelled = { cancelled.get() }
         )
 
         val onFinished: () -> Unit = { progressDialog.dismiss() }
