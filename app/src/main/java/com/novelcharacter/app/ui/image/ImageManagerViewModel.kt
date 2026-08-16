@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import com.novelcharacter.app.util.FolderRoundtripPrefs
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.ImageAdoption
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.ImageLinkResolver
@@ -961,6 +962,7 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 runCatching {
+                    // 단발 허용(이미지 **한 장**의 태그를 교체하는 것이 이 함수의 일이다)
                     val id = db.imageMetaDao().adopt(path, System.currentTimeMillis())
                     db.imageTagDao().replaceAllForImage(
                         id, tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) }
@@ -1222,6 +1224,33 @@ class ImageManagerViewModel(
                     // 가는 이유는 일괄 해제가 **여러 캐릭터에 걸쳐** 일어나기 때문이다.
                     val detachCandidates = ArrayList<com.novelcharacter.app.util.DetachedImageRule.Candidate>()
                     db.withTransaction {
+                        // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
+                        //
+                        // **앞으로 모아도 답이 같은 근거:** 입양 여부를 정하는 셋이 전부 루프
+                        // 밖에서 이미 정해져 있다 — 스냅샷(`byPath`)의 소유·meta와 파일 존재다.
+                        // 루프가 쓰는 것(소유 엔티티의 `imagePaths`)은 그 판정에 들어가지 않으므로
+                        // 제가 읽는 것을 바꾸지 않는다(B-239의 잣대).
+                        //
+                        // 순서가 뒤바뀌는 자리 하나를 확인해 두었다: 뒤 항목의 입양이 앞 항목의
+                        // `promoteToUserByPaths`보다 **먼저** 일어날 수 있다. 그래도 결과가 같다 —
+                        // 새로 넣는 행은 이미 사용자 소유(`adoptSource = null`)라 승격이 무의미하고,
+                        // 승격은 null을 null로 덮을 뿐이다.
+                        //
+                        // **판정은 여기 한 번뿐이고 루프는 그 답을 볼 뿐이다.** 아래에서 같은
+                        // 조건을 다시 적으면 `File(path).exists()`가 **두 번** 평가되어, 그 사이에
+                        // 파일이 생기면 위에서 안 뽑은 경로를 아래가 요구한다(= 전체 실패).
+                        // 같은 판정이 두 자리에 살면 한쪽이 낡는다 — 이 저장소가 반복해 겪은 모양이다.
+                        val adoptTargets = paths.filter { path ->
+                            val item = byPath[path] ?: return@filter false
+                            val targets = ownerFilter?.filter { it in item.owners } ?: item.owners
+                            targets.isNotEmpty() &&
+                                (item.owners - targets.toSet()).isEmpty() &&
+                                item.meta == null &&
+                                File(path).exists()
+                        }
+                        val adoptTargetSet = adoptTargets.toHashSet()
+                        // 빈 목록이면 [ImageAdoption]이 질의 없이 곧장 돌아온다.
+                        ImageAdoption.adoptAll(db, adoptTargets, System.currentTimeMillis())
                         for (path in paths) {
                             onProgress(++processed, paths.size)
                             val item = byPath[path] ?: continue
@@ -1246,9 +1275,9 @@ class ImageManagerViewModel(
                                 }
                             }
                             cleared++
-                            val remaining = item.owners - targets.toSet()
-                            if (remaining.isEmpty() && item.meta == null && File(path).exists()) {
-                                db.imageMetaDao().adopt(path, System.currentTimeMillis())
+                            // 종전의 `remaining.isEmpty() && item.meta == null && File(path).exists()`가
+                            // 그대로 위 `adoptTargets`의 술어다 — 여기서는 그 답만 본다.
+                            if (path in adoptTargetSet) {
                                 adopted++
                             } else if (item.meta != null) {
                                 // 명시적 "파일은 남긴다" 행위 — 자동 입양 행이었더라도 사용자
@@ -1308,7 +1337,9 @@ class ImageManagerViewModel(
                     } else {
                         db.withTransaction {
                             val now = System.currentTimeMillis()
-                            val ids = paths.map { db.imageMetaDao().adopt(it, now) }.toMutableSet()
+                            // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
+                            val idByPath = ImageAdoption.adoptAll(db, paths, now)
+                            val ids = paths.map { idByPath.getValue(it) }.toMutableSet()
                             // 토큰마다 묻던 `getByGroup`을 일괄 조회 한 번으로 내린다 (B-241).
                             // **겹이 필요 없는 자리다** — 이 블록의 읽기는 전부 아래 `setGroup`
                             // 앞에서 끝나므로, 제가 읽는 것을 쓰는 가져오기 쪽 루프와 다르다
@@ -1400,9 +1431,12 @@ class ImageManagerViewModel(
                     var processed = 0
                     db.withTransaction {
                         val now = System.currentTimeMillis()
+                        // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
+                        // 진행도는 그대로 경로마다 오른다 — 남은 일(태그 쓰기)이 여전히 경로마다다.
+                        val idByPath = ImageAdoption.adoptAll(db, paths, now)
                         for (p in paths) {
                             onProgress(++processed, paths.size)
-                            val id = db.imageMetaDao().adopt(p, now)
+                            val id = idByPath.getValue(p)
                             db.imageTagDao().insertAll(tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) })
                         }
                     }
@@ -1884,16 +1918,20 @@ class ImageManagerViewModel(
      * **읽기를 앞으로 모아도 답이 같은 근거와 겹 갱신의 정본은 [ImageTagApplyPlanner]다** —
      * 같은 이미지가 두 번 돌면 앞 차례의 쓰기가 뒤 차례의 '이미 가진 태그'를 바꾸기 때문이다.
      *
-     * **`adopt`는 그대로 경로마다 돈다** — 삽입-또는-조회라 일괄판이 없고, 그 자리가 이 함수에
-     * 남은 왕복의 대부분이다(경로마다 최대 셋). 별도 축이라 등재만 했다: **B-244**.
+     * **남아 있던 `adopt`도 걷었다 (B-244).** 삽입-또는-조회라 일괄판이 없던 자리이고, B-241이
+     * *"이 함수에 남은 왕복의 대부분"*이라 적어 둔 그 자리다(경로마다 최대 셋). 통로는
+     * [com.novelcharacter.app.util.ImageAdoption]이고 판정은 그 짝의 순수 계층에 있다.
+     * **이제 이 함수의 왕복은 목록 길이와 무관하다.**
      */
     private suspend fun applyTagWork(work: List<Pair<String, List<String>>>): TagApplyOutcome.Done {
         val now = System.currentTimeMillis()
-        val imageIdByPath = LinkedHashMap<String, Long>()
-        for ((path, tags) in work) {
-            if (tags.isEmpty()) continue
-            if (path !in imageIdByPath) imageIdByPath[path] = db.imageMetaDao().adopt(path, now)
-        }
+        // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244) — **이 함수에 남아
+        // 있던 왕복의 대부분이 그 자리였다.** 폴더판은 고른 폴더 아래 이미지 전량을 돌아
+        // `N`에 상한이 없다. 중복을 접고 순서를 보존하는 것은 [ImageAdoption]의 계약이라,
+        // 종전의 `if (path !in imageIdByPath)`와 답이 글자 그대로 같다.
+        val imageIdByPath = ImageAdoption.adoptAll(
+            db, work.filter { it.second.isNotEmpty() }.map { it.first }, now
+        )
         val existingByImageId: Map<Long, Set<String>> =
             SqlInChunks.flat(imageIdByPath.values.toList()) { db.imageTagDao().getTagsByImages(it) }
                 .groupBy({ it.imageId }, { it.tag })

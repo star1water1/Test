@@ -143,6 +143,7 @@ $MAIN/data/repository/RestoreLossCounts.kt
 $MAIN/data/repository/RestoreTally.kt
 $MAIN/ai/AiModelSuggestions.kt
 $MAIN/data/model/FieldFilter.kt
+$MAIN/data/model/ImageMeta.kt
 $MAIN/data/repository/QueryUtils.kt
 $MAIN/data/dao/CharacterFieldValueDao.kt
 $MAIN/data/dao/FieldDefinitionDao.kt
@@ -240,6 +241,7 @@ $MAIN/util/LibraryPickerRow.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
 $MAIN/util/AutoLinkPlanner.kt
+$MAIN/util/ImageAdoptionPlanner.kt
 $MAIN/util/ImageLinkGroupPlanner.kt
 $MAIN/util/ImageTagApplyPlanner.kt
 $MAIN/util/SqlInChunks.kt
@@ -432,6 +434,7 @@ $TEST/util/LibraryPickerRowsTest.kt
 $TEST/util/ImageRecommendationHelperTest.kt
 $TEST/util/ImageLinkResolverTest.kt
 $TEST/util/AutoLinkPlannerTest.kt
+$TEST/util/ImageAdoptionPlannerTest.kt
 $TEST/util/ImageLinkGroupPlannerTest.kt
 $TEST/util/ImageTagApplyPlannerTest.kt
 $TEST/util/SqlInChunksTest.kt

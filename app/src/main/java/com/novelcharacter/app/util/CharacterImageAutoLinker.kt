@@ -91,10 +91,22 @@ object CharacterImageAutoLinker {
                 SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, null) }
                 released += ids.size
             }
+            // 경로마다 왕복 둘을 치르던 `adoptAuto`를 **묶음 전체에 대해 한 번**으로 내린다 (B-244).
+            // `N`은 자동 링크가 새로 만들 행 수라 캐릭터가 든 이미지 수만큼 커진다.
+            //
+            // **읽기를 앞으로 모아도 답이 같은 근거는 B-239의 잣대다** — 이 루프가 쓰는 것은
+            // `setGroup`(linkGroupId)뿐이고, 입양이 보는 것은 *행이 있는가*다. 즉 루프가 제가
+            // 읽는 것을 바꾸지 않으므로 겹이 필요 없다.
+            val autoAdoptPaths = plan.claims.values.asSequence()
+                .flatten()
+                .filterNot { it in metaByCanon }
+                .map { storedByCanon[it] ?: it }
+                .toCollection(LinkedHashSet())
+            val autoAdoptedIdByPath = ImageAdoption.adoptAllAuto(db, autoAdoptPaths, now)
             for ((token, canonPaths) in plan.claims) {
                 val ids = canonPaths.map { canon ->
                     metaByCanon[canon]?.id
-                        ?: db.imageMetaDao().adoptAuto(storedByCanon[canon] ?: canon, now)
+                        ?: autoAdoptedIdByPath.getValue(storedByCanon[canon] ?: canon)
                 }
                 SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, token) }
                 linked += ids.size

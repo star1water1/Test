@@ -125,14 +125,20 @@ object ImageOwnershipGuard {
     suspend fun adoptOrphans(db: AppDatabase, context: Context?, candidates: Collection<String>): Int {
         if (candidates.isEmpty()) return 0
         val protectedSet = collectProtectedPaths(db, context)
-        var adopted = 0
         val now = System.currentTimeMillis()
-        for (p in candidates) {
-            val canon = ImagePathMatch.canonical(p)
-            if (canon in protectedSet) continue          // 아직 참조·보류·meta 보호 중 — 입양 불필요
-            if (!File(p).exists()) continue
-            runCatching { db.imageMetaDao().adopt(p, now) }.onSuccess { adopted++ }
+        val targets = candidates.filter { p ->
+            // 아직 참조·보류·meta 보호 중이면 입양이 불필요하고, 파일이 없으면 입양할 것이 없다.
+            ImagePathMatch.canonical(p) !in protectedSet && File(p).exists()
         }
-        return adopted
+        if (targets.isEmpty()) return 0
+        // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
+        //
+        // **`runCatching`이 감싸는 범위가 넓어졌다** — 종전에는 경로 하나의 실패가 그 경로만
+        // 세지 않는 것이었고, 지금은 한 번의 실패가 전부를 되돌린다. 그래도 **고지가 갈리지
+        // 않는 이유**는 옛 코드도 실패를 사용자에게 말하지 않았고(세지 않을 뿐이었다) 계수는
+        // 여전히 *실제로 입양된 수*이기 때문이다. 게다가 일괄판에는 경로별 실패 모양이 없다 —
+        // 못 얻은 경로가 있으면 [ImageAdoption]이 통째로 던진다(그쪽 계약).
+        return runCatching { ImageAdoption.adoptAll(db, targets, now); targets.size }
+            .getOrDefault(0)
     }
 }

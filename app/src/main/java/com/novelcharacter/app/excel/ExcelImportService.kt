@@ -34,6 +34,7 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.CharacterValueLedger
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.FormulaValidator
 import com.novelcharacter.app.util.ImportLookupIndex
@@ -7916,6 +7917,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             } else emptyMap()
 
         val now = System.currentTimeMillis()
+        // 행마다 왕복 셋을 치르던 `adopt`를 **새로 만들 행만 골라 한 번**으로 내린다 (B-244).
+        // 색인과 같은 이유로 시트가 쓴 경로만 본다 — 비용을 DB 크기가 아니라 시트에 묶는다.
+        //
+        // **실패의 자리가 갈리지 않는 것이 이 모양의 요점이다.** 이 루프에는 감싸는 트랜잭션이
+        // 없고 실패는 **행마다** `skippedRows` + "이미지 행 N"으로 보고된다. 그래서 일괄 입양이
+        // 죽어도 통째로 던지지 않고 **빈 지도**로 받는다 — 그러면 아래에서 그 행의 `try`가
+        // 종전과 같은 자리에서 같은 메시지로 잡는다(B-241 ⑪이 남긴 물음: *실패가 어디서
+        // 보고되던 것인가*).
+        //
+        // **미리 입양하는 것이 "건너뛸 행까지 입양"이 되지 않는 근거:** 루프의
+        // `sheet.getRow(i) ?: continue`는 방어일 뿐 실제로 걸리지 않는다 — `plan.rows`의 `i`는
+        // 위에서 `sheet.getRow(i)`가 **null이 아닌 행만** 골라 만든 것이다.
+        // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지면 종전에는 그 행이 입양되지
+        // 않았고 지금은 이미 입양돼 있다. 결과는 *라이브러리 행 하나가 더 생기는 것*이고
+        // 유실이 아니다(고지도 그대로 — `newImageMeta`는 그 줄에 닿아야 오른다).
+        val adoptAttempt = runCatching {
+            com.novelcharacter.app.util.ImageAdoption.adoptAll(
+                db, wantedPaths.filterNot { it in existingByPath }, now
+            )
+        }
+        val adoptedByPath: Map<String, Long> = adoptAttempt.getOrDefault(emptyMap())
         val skippedMissing = plan.unresolved.size
         val groupMembers = mutableMapOf<String, MutableList<Long>>()
         // 빈 칸 = 링크 해제(F1-A 규약 — 태그 열과 같다). 종전에는 빈 칸이 아무 일도 하지 않아
@@ -7933,7 +7955,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // 위에서 한 번에 읽어 둔 색인이다 (B-238).
                 val existing = existingByPath[path]
-                val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
+                val imageId = existing?.id ?: adoptedByPath[path] ?: throw (
+                    adoptAttempt.exceptionOrNull()
+                        ?: IllegalStateException("이미지 라이브러리 행을 만들지 못했습니다")
+                    )
                 if (existing == null) result.newImageMeta++
 
                 // 무엇이 바뀌는가의 판정도 같은 함수다. 태그는 열이 있을 때만 읽는다 —
@@ -9852,8 +9877,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
         // 시트명 상수는 SheetSpec.kt가 단일 소스다 (내보내기도 같은 상수를 본다).
 
-        /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
-        private const val IN_CLAUSE_CHUNK = 900
+        /**
+         * IN 절 변수 한도 회피용 청크 크기 — **값은 [SqlInChunks.LIMIT] 하나다**(R-54).
+         *
+         * 종전에는 여기 `900`이라 적혀 있었다. R-54는 이 이름을 콕 집어 *"옛 상수들은 이름만
+         * 남고 값은 전부 그 하나를 가리킨다"*고 적어 두었는데 **이 자리가 그렇지 않았다** —
+         * B-242가 값을 모을 때 빠진 둘 중 하나다(2026.08.16 B-244가 실측). 같은 사실이 두
+         * 자리에 살면 한쪽이 반드시 낡는다.
+         */
+        private const val IN_CLAUSE_CHUNK = SqlInChunks.LIMIT
     }
 }
 
