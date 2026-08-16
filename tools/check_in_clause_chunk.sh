@@ -23,7 +23,9 @@
 # **못 보는 자리(적어 둔다 — R-49의 관행):**
 #  · **인자가 실제로 짧은지는 못 본다.** 상한이 없는 모양이면 든다 — 짧은 것이 확실하면
 #    리터럴로 적거나 통로를 지날 것(지나도 한 덩이면 나누지 않으므로 비용이 늘지 않는다).
-#  · 콜백은 **한 겹**만 따라간다. 콜백을 다시 콜백으로 넘기면 못 본다.
+#  · 콜백은 **한 겹**만 따라가고, 받는 함수는 **같은 파일에서 이름으로** 찾는다.
+#    이름이 같은 오버로드가 여럿이면 **먼저 선언된 것**을 본다(`DetachedImageMarker.sync`가 그 모양이다 —
+#    지금은 콜백 수신자가 아니라 무해하나, 그런 자리가 생기면 이 갈래를 먼저 볼 것).
 #  · 수신자가 DAO인 호출만 본다(`…Dao().m(…)` · `…Dao.m(…)`). 저장소 래퍼는 그 안의
 #    DAO 호출에서 잡히므로 두 번 세지 않는다.
 
@@ -121,8 +123,9 @@ for fn in sorted(os.listdir(DAO_DIR)):
 # ── 2. 청크 판정 ──
 LITERAL = re.compile(r'^(listOf|listOfNotNull|setOf|setOfNotNull)\s*\(')
 DAO_RECV = re.compile(r'(\w*[Dd]ao\s*\(\s*\)|\b\w*[Dd]ao)\s*$')
-# 인정하는 통로. `SqlInChunks.`는 each/flat/sum 전부를 덮는다.
-GATE = re.compile(r'\.chunked\s*\(|SqlInChunks\s*\.')
+# 인정하는 통로. **메서드 이름까지 본다** — `SqlInChunks.`만 보면
+# `foo(SqlInChunks.LIMIT) { dao.getByIds(it) }`처럼 *상수만 빌린* 사슬이 통로로 오인된다.
+GATE = re.compile(r'\.chunked\s*\(|SqlInChunks\s*\.\s*(each|flat|sum)\b')
 
 
 def enclosing_lambda(src, pos):
@@ -353,6 +356,8 @@ class Caller {
     }
     suspend fun badCallback(ids: List<Long>) = leaky(ids, fetch = { db.fakeDao().getByIds(it) })
     suspend fun leaky(ids: List<Long>, fetch: suspend (List<Long>) -> List<Long>) { fetch(ids) }
+    // 상수만 빌린 사슬은 통로가 아니다 — 이름까지 보지 않으면 여기가 조용히 통과한다
+    suspend fun badBorrowed(ids: List<Long>) = other(SqlInChunks.LIMIT) { db.fakeDao().getByIds(ids) }
 }
 EOF
 selftest_out=$(scan "$SELFTEST/dao" "$SELFTEST/src")
@@ -363,14 +368,14 @@ if [ "${st_m:-0}" -ne 2 ]; then
   echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 DAO 메서드 2종 중 ${st_m:-0}종만 모았습니다" >&2
   exit 1
 fi
-if [ "${st_c:-0}" -ne 4 ]; then
-  echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 위반 4건 중 ${st_c:-0}건만 잡았습니다" >&2
-  echo '      (맨목록 둘 + 이중 IN의 tags 하나 + 콜백을 안 나누고 부르는 helper 하나.' >&2
+if [ "${st_c:-0}" -ne 5 ]; then
+  echo "  ✗ 탐지기 자기 시험 실패 — 지어낸 위반 5건 중 ${st_c:-0}건만 잡았습니다" >&2
+  echo '      (맨목록 둘 + 이중 IN의 tags 하나 + 콜백을 안 나누고 부르는 helper 하나 + 상수만 빌린 사슬 하나.' >&2
   echo '       통로·chunked·for·리터럴·나누는 콜백 다섯은 세지 않아야 합니다)' >&2
   printf '%s\n' "$selftest_out" >&2
   exit 1
 fi
-echo "  ✓ 탐지기 자기 시험 통과 (위반 4건을 잡고, 인정 통로 다섯은 세지 않는다)"
+echo "  ✓ 탐지기 자기 시험 통과 (위반 5건을 잡고, 인정 통로 다섯은 세지 않는다)"
 
 RESULT=$(scan "$APP/data/dao" "$APP")
 count=$(printf '%s\n' "$RESULT" | sed -n 's/^__COUNT__//p')
