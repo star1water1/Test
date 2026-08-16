@@ -177,9 +177,19 @@ class UniverseRepository(
     suspend fun getGroupNames(universeId: Long): List<String> =
         fieldDefinitionDao.getGroupNames(universeId)
 
+    /**
+     * ⚠️ **전역 구역(`universeId = null`)을 넘길 때는 부르는 쪽이 key 유일성을 책임진다** —
+     * 유니크 색인 `(universeId, entityType, key)`는 NULL끼리를 서로 다른 값으로 보므로
+     * 그 구역에서는 아무것도 막지 않는다(B-230 ⓑ). 세계관 필드라면 색인이 잡아
+     * `SQLiteConstraintException`이 뜨지만, 전역 구역에서는 **조용히 중복이 들어간다.**
+     */
+    // 전역키 보증(호출부 책임 — 위 KDoc. 전역 구역에 실제로 심는 자리는
+    // DefaultFieldTemplateRepository이고 그쪽이 planPlant로 기존 key를 거른다)
     suspend fun insertField(field: FieldDefinition): Long =
         fieldDefinitionDao.insert(field)
 
+    /** 전역 구역을 담을 수 있다 — 유일성 책임은 [insertField]의 KDoc과 같다. */
+    // 전역키 보증(호출부 책임 — 위 KDoc)
     suspend fun insertAllFields(fields: List<FieldDefinition>) =
         fieldDefinitionDao.insertAll(fields)
 

@@ -210,4 +210,77 @@ class ImportLookupIndexTest {
         assertNull(index.first("C-1"))
         assertEquals(1L, index.first("C-2")?.id)
     }
+
+    // ── ⑧ 충돌한 키에서 순서가 흔들리지 않는가 (B-230 ⓕ) ──────────────────────
+    // 위 ①이 *"먼저 실은 것이 이긴다"*를 잡지만, 잰 것은 **줄곧 두 행짜리 한 벌**이었다.
+    // 실제로 갈리는 자리는 그 뒤다 — 같은 키에 셋 이상이 매달린 채 **가운데가 지워지거나 ·
+    // 갱신되거나 · 키를 바꿔 나갔다 되돌아올 때** `LIMIT 1`의 답이 유지되는가.
+    // 이 셋은 전부 한 파일 안에서 실제로 일어나고(코드 중복·동명이인·개명), 틀려도
+    // **오류도 고지도 없이 합쳐지는 상대만 바뀐다.**
+
+    @Test
+    fun `셋 이상이 같은 키일 때 가운데를 지워도 첫째가 그대로다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(2L, "DUP"), Row(3L, "DUP")))
+        assertEquals(listOf(1L, 2L, 3L), index.all("DUP").map { it.id })
+
+        index.remove(Row(2L, "DUP"))
+        assertEquals("가운데를 뺐는데 첫째가 바뀌었다", 1L, index.first("DUP")?.id)
+        assertEquals(listOf(1L, 3L), index.all("DUP").map { it.id })
+    }
+
+    @Test
+    fun `첫째를 지우면 그 다음이 LIMIT 1의 답이 된다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(2L, "DUP"), Row(3L, "DUP")))
+        index.removeById(1L)
+        // rowid 순서가 그대로 남아야 한다 — 지운 자리를 뒤엣것이 메우면 안 된다.
+        assertEquals(2L, index.first("DUP")?.id)
+        assertEquals(listOf(2L, 3L), index.all("DUP").map { it.id })
+    }
+
+    @Test
+    fun `가운데 행을 갱신해도 자리를 지킨다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(2L, "DUP", "옛 이름"), Row(3L, "DUP")))
+        index.put(Row(2L, "DUP", "새 이름"))
+
+        assertEquals("갱신이 순서를 흔들었다", listOf(1L, 2L, 3L), index.all("DUP").map { it.id })
+        assertEquals("새 이름", index.all("DUP")[1].name)
+        assertEquals(1L, index.first("DUP")?.id)
+    }
+
+    @Test
+    fun `키를 바꿔 나갔다 되돌아오면 맨 뒤에 붙는다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(2L, "DUP"), Row(3L, "DUP")))
+        index.put(Row(1L, "OTHER"))          // 개명 — 옛 키를 끊는다
+        assertEquals(listOf(2L, 3L), index.all("DUP").map { it.id })
+        assertEquals(1L, index.first("OTHER")?.id)
+
+        index.put(Row(1L, "DUP"))            // 되돌아왔다
+        // **되돌아온 행은 맨 뒤다** — DB에서도 그 행은 이미 옛 키를 잃었으므로, 앞자리를
+        // 되찾으면 색인이 SQL보다 앞선 답을 내게 된다.
+        assertEquals(listOf(2L, 3L, 1L), index.all("DUP").map { it.id })
+        assertEquals(2L, index.first("DUP")?.id)
+        assertNull("옛 키가 남았다", index.first("OTHER"))
+    }
+
+    @Test
+    fun `같은 행을 두 번 실어도 두 벌이 되지 않는다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(1L, "DUP")))
+        assertEquals("같은 id가 두 자리를 차지했다", listOf(1L), index.all("DUP").map { it.id })
+    }
+
+    @Test
+    fun `마지막 행이 나가면 그 키는 비어 있다고 답한다`() {
+        val index = byCode()
+        index.load(listOf(Row(1L, "DUP"), Row(2L, "DUP")))
+        index.removeById(1L)
+        index.removeById(2L)
+        assertFalse(index.contains("DUP"))
+        assertNull(index.first("DUP"))
+        assertTrue(index.all("DUP").isEmpty())
+    }
 }

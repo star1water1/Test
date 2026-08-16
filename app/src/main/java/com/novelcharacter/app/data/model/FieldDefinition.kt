@@ -32,12 +32,24 @@ data class FieldDefinition(
      *
      * 전역 구역의 행은 템플릿에서 심긴 그림자이고, **세계관과 똑같이 명시적 전파의 대상**이다
      * (전파 미리보기의 "무소속" 행 — 자동 동기화로 두면 타입이 바뀌는 템플릿 편집이 이 구역의
-     * 값을 영향 분석 없이 깨뜨린다). 정의를 편집하는 화면은 없다 — 심기·전파·삭제 전부
-     * [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository]를 지난다.
+     * 값을 영향 분석 없이 깨뜨린다). **정의를 편집하는 화면은 없다.**
      *
      * ⚠️ 유니크 색인 `(universeId, entityType, key)`는 **전역 구역에서는 강제되지 않는다** —
-     * SQLite는 NULL끼리를 서로 다른 값으로 본다. 전역 구역의 key 유일성은 심기 로직이
-     * 지키고(`DefaultFieldPlan`이 기존 key를 걸러 심는다), 그 로직이 유일한 쓰기 경로다.
+     * SQLite는 NULL끼리를 서로 다른 값으로 본다. 즉 이 구역에서 key 유일성을 지키는 것은
+     * **앱 코드뿐이고, 색인은 아무것도 막지 않는다.**
+     *
+     * **쓰는 경로는 하나가 아니라 둘이다** (2026.08.16 전수 확인 — B-230 ⓑ).
+     * 종전 이 자리는 *"심기 로직이 유일한 쓰기 경로다"*라고 적혀 있었는데 **사실이 아니었다.**
+     *
+     * 1. [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository] — 심기·전파.
+     *    `DefaultFieldPlan.planPlant`가 그 구역의 **현재 필드 목록에 없는 key만** 낸다.
+     * 2. `ExcelImportService`의 '필드 정의' 시트 — 무소속(세계관 열이 빈) 행을 이 구역에 넣는다.
+     *    `FieldDefinitionDao.getGlobalFieldByKey` 선조회가 막는다.
+     *
+     * **둘 다 실제로 막고 있다**(그래서 이 행은 결함이 아니라 *기록해 둘 위험*이다). 위험한
+     * 것은 셋째가 조용히 들어오는 것이다 — 세계관 필드였다면 색인이 즉시 잡아 줄 실수가
+     * 전역 구역에서만 **예외도 고지도 없이 통과한다.** 그래서 새 쓰기 자리는 무엇이 유일성을
+     * 지키는지 그 줄에 적어야 하고, `tools/check_global_field_key_guard.sh`가 그것을 기계로 본다.
      */
     val universeId: Long?,
     val key: String,               // 고유 키: "mana_affinity"

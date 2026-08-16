@@ -469,6 +469,8 @@ class WorldPackageImporter(context: Context) {
                             DuelGradeRef.remove(gradeResolved)
                         }
                     }
+                    // 전역키 보증(universeId = newUniverseId 비-null — 갓 만든 세계관이라
+                    // 그 안에서만 충돌할 수 있고 그것은 유니크 색인이 잡는다)
                     defIdMap[fd.id] =
                         db.fieldDefinitionDao().insert(fd.copy(id = 0, universeId = newUniverseId, config = config))
                 }

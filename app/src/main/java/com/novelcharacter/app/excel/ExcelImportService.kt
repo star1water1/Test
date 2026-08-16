@@ -4863,6 +4863,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     matchedFieldDefinitionIds.add(existing.id)
                     if (mergedFieldDef != existing) result.updatedFields++ else result.unchangedRows++
                 } else {
+                    // 전역키 보증(위 `existing` 선조회 — universe가 null이면 getGlobalFieldByKey,
+                    // 아니면 getFieldByKey다. **가져오기는 전역 구역에 쓰는 둘째 경로이고**,
+                    // 그 구역에서는 유니크 색인이 NULL을 통과시키므로 이 선조회가 유일한 방어다.
+                    // 같은 파일 안 같은 key의 둘째 행도 이 조회가 잡는다 — 직전 insert가
+                    // 같은 트랜잭션에서 이미 보이기 때문이다)
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
                         universeId = universe?.id, key = key, name = name, type = type,
                         config = mergedConfig, groupName = groupName, displayOrder = displayOrder ?: i,
@@ -7727,6 +7732,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (pendingAutoRelationMemberships.isEmpty()) return
         val byFaction = pendingAutoRelationMemberships.groupBy({ it.first }, { it.second })
         var created = 0
+        var skippedByConflict = 0
         for ((factionId, characterIds) in byFaction) {
             val faction = db.factionDao().getById(factionId) ?: continue
             val activeMemberIds = db.factionMembershipDao().getActiveMembershipsByFaction(factionId)
@@ -7754,13 +7760,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
             if (newRelationships.isNotEmpty()) {
-                db.characterRelationshipDao().insertAll(newRelationships)
-                created += newRelationships.size
+                // **센 것과 들어간 것을 갈라 센다** — DAO가 `OnConflictStrategy.IGNORE`라
+                // 유니크 색인 `(characterId1, characterId2, relationshipType)`에 걸린 행은
+                // 예외 없이 -1을 돌려주고 조용히 빠진다. 위 걸러내기는 *이 세력의* 자동 관계와
+                // 이번 파일이 기술한 쌍만 보므로, **다른 세력이 같은 유형으로 이미 이어 둔 쌍**은
+                // 여기까지 와서 색인에 걸린다. 종전에는 반환값을 버리고 `newRelationships.size`를
+                // 그대로 더해 **넣지도 않은 건수를 "생성했습니다"라고 보고했다**(B-230 ⓔ —
+                // 인앱 `FactionRepository.insertAutoRelations`는 처음부터 -1을 세고 있었고,
+                // 그 둘이 갈려 있던 자리다. 개발 의도 2번 — 거짓 고지 금지).
+                val insertedIds = db.characterRelationshipDao().insertAll(newRelationships)
+                val ignored = insertedIds.count { it == -1L }
+                created += insertedIds.size - ignored
+                skippedByConflict += ignored
             }
         }
         pendingAutoRelationMemberships.clear()
         if (created > 0) {
             result.warnings.add("세력 소속에 따라 자동 관계 ${created}건을 생성했습니다 (백업의 관계 시트가 기술한 쌍은 그대로 유지)")
+        }
+        if (skippedByConflict > 0) {
+            // 인앱 경로가 이미 세어 보고하던 축이다 — 가져오기만 침묵하면 같은 상황이
+            // 어디서 왔느냐에 따라 보이거나 안 보인다.
+            result.warnings.add("세력 자동 관계 ${skippedByConflict}건은 같은 두 캐릭터 사이에 같은 유형의 관계가 이미 있어 건너뛰었습니다")
         }
     }
 
@@ -8982,6 +9003,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     groupName = "자동 생성",
                     displayOrder = maxOrder + 1 + autoCreateCount++
                 )
+                // 전역키 보증(이 갈래는 `universe != null`이라 비-null이고, 위 while이
+                // getFieldByKey로 빈 autoKey를 찾을 때까지 접미사를 올린다)
                 val newId = db.fieldDefinitionDao().insert(newField)
                 val created = newField.copy(id = newId)
                 map[col] = created
