@@ -50,6 +50,18 @@ FORBIDDEN="stateChangeDao"
 # `"${'$'}{...}"` 같은 것이 깊이를 흔들어 함수 경계가 밀린다(그러면 검사가 조용히 빗나간다).
 harvest_bodies() {
   awk '
+    # 선언의 **매개변수 목록이 닫힌 뒤**의 나머지를 돌려준다 (없으면 빈 문자열).
+    # 이것이 없으면 기본값의 `=`(`fun harvestX(id: Long = 3)`)를 식 본문의 `=`로 오인해
+    # **그 함수를 통째로 건너뛴다** — 검사가 조용히 빗나가는 바로 그 모양이다(콜드 검토가 잡았다).
+    function afterParams(t,   i, d, opened, c) {
+      d = 0; opened = 0
+      for (i = 1; i <= length(t); i++) {
+        c = substr(t, i, 1)
+        if (c == "(") { d++; opened = 1 }
+        else if (c == ")") { d--; if (opened && d == 0) return substr(t, i + 1) }
+      }
+      return ""
+    }
     {
       line = $0
       # 깊이 계산용 사본에서만 문자열·줄 주석을 지운다(출력은 원문 그대로 쓴다).
@@ -87,11 +99,14 @@ harvest_bodies() {
         # 실재하는 자리다 — `FieldValueLibraryRepository`의 `harvestAll`·`harvestAllOrThrow`
         # 둘이 그 꼴이고, 그래서 종전 검사는 바로 뒤 `insertNewTokens`를 수확으로 읽고 있었다.
         # (위반은 *더 많이* 잡는 쪽이라 조용히 통과하지는 않았지만, 세는 수도 잡는 대상도 틀렸다.)
-        # 판정: 괄호가 그 줄에서 닫히고 · 여는 중괄호가 없고 · `=`가 있으면 식 본문이다.
-        # 여러 줄 시그니처의 첫 줄은 괄호가 안 닫혀 여기 걸리지 않는다.
+        # 판정: **매개변수 목록이 닫힌 뒤**에 `{`가 없고 `=`가 있으면 식 본문이다.
+        # *괄호 뒤*를 보는 것이 요점이다 — 줄 전체에서 `=`를 찾으면 기본값
+        # (`fun harvestX(id: Long = 3)`)이 걸려 그 함수를 통째로 건너뛴다.
+        # 여러 줄 시그니처의 첫 줄은 괄호가 안 닫혀 나머지가 빈 문자열이라 걸리지 않고,
+        # `)`로 끝나 블록이 다음 줄에 오는 꼴도 나머지가 비어 걸리지 않는다.
         if (inFn && !started) {
-          po = gsub(/\(/, "(", probe); pc = gsub(/\)/, ")", probe)
-          if (po == pc && po > 0 && probe !~ /\{/ && probe ~ /=/) { inFn = 0; nPend = 0 }
+          rest = afterParams(probe)
+          if (rest != "" && rest !~ /\{/ && rest ~ /=/) { inFn = 0; nPend = 0 }
         }
         # 그래도 안 닫히는 꼴이 남으면 **조용히 틀리게 두지 않는다** — 시그니처가 이만큼
         # 길 수는 없으므로 소리 내어 죽는다(검사가 낡은 것을 통과로 읽는 것이 최악이다).
@@ -133,13 +148,34 @@ class Fake {
         for (v in novelValueDao.getAllValuesList()) tokens.add(v.value)
     }
 
+    /**
+     * **블록 없는 식 본문** — 여기서 닫지 않으면 `inFn`이 선 채로 남아
+     * *다음 함수의 몸통*이 수확 몸통으로 검사된다(실제로 그랬다).
+     */
+    suspend fun harvestAllSelf() = harvestForCharacter(1L)
+
+    /**
+     * **기본값의 `=`는 식 본문이 아니다** — 콜드 검토가 잡은 자리다.
+     * 줄 전체에서 `=`를 찾으면 이 함수가 통째로 건너뛰어지고, 그러면 아래 위반이
+     * **조용히 통과한다**(자기 시험의 `self_bad`가 2가 아니라 1이 되어 잡힌다).
+     */
+    suspend fun harvestWithDefault(id: Long = 3)
+    {
+        for (c in stateChangeDao.getAllChangesList()) tokens.add(c.newValue)
+    }
+
     /** 전파는 이력을 반드시 읽는다 — 여기 걸리면 안 된다. */
     suspend fun propagate(id: Long) {
         for (c in stateChangeDao.getChangesByFieldKeyForUniverse(1L, "k")) stateChangeDao.update(c)
     }
 }
 EOF
-SELF=$(harvest_bodies "$SELFDIR/Self.kt")
+SELF=$(harvest_bodies "$SELFDIR/Self.kt"); self_rc=$?
+if [ "$self_rc" -ne 0 ]; then
+  rm -rf "$SELFDIR"
+  echo "  ✗ 추출기가 자기 시험에서 막혔다(종료 $self_rc) — 위 EXTRACTOR-STUCK 자리를 볼 것." >&2
+  exit 1
+fi
 self_good=$(printf '%s\n' "$SELF" | grep -c "harvestForCharacter" || true)
 self_bad=$(printf '%s\n' "$SELF" | grep -c "$FORBIDDEN" || true)
 self_prop=$(printf '%s\n' "$SELF" | grep -c "getChangesByFieldKeyForUniverse" || true)
@@ -147,8 +183,9 @@ self_prop=$(printf '%s\n' "$SELF" | grep -c "getChangesByFieldKeyForUniverse" ||
 # 본 검사의 `FNS`가 같은 정규식으로 세므로, 여기가 0이면 그쪽도 조용히 적게 센다.
 self_multi=$(printf '%s\n' "$SELF" | grep -cE 'fun[ \t]+harvestForNovelMultiline' || true)
 rm -rf "$SELFDIR"
-if [ "$self_good" -lt 1 ] || [ "$self_bad" -ne 1 ] || [ "$self_prop" -ne 0 ] || [ "$self_multi" -ne 1 ]; then
-  echo "  ✗ 추출기 자기 시험 실패 — 수확 인식 ${self_good}(≥1) · 위반 ${self_bad}(1) · 전파 오검출 ${self_prop}(0) · 여러 줄 시그니처 ${self_multi}(1)" >&2
+if [ "$self_good" -lt 1 ] || [ "$self_bad" -ne 2 ] || [ "$self_prop" -ne 0 ] || [ "$self_multi" -ne 1 ]; then
+  echo "  ✗ 추출기 자기 시험 실패 — 수확 인식 ${self_good}(≥1) · 위반 ${self_bad}(2) · 전파 오검출 ${self_prop}(0) · 여러 줄 시그니처 ${self_multi}(1)" >&2
+  echo "      (위반 2 = harvestBad + harvestWithDefault. 뒤엣것이 1로 줄면 **기본값의 = 를 식 본문으로 오인해** 그 함수를 통째로 건너뛴 것이다)" >&2
   echo "      (진짜를 못 뽑으면 이 검사는 장식이고, 전파를 잡으면 오검출로 다음 사람이 끈다)" >&2
   exit 1
 fi
@@ -159,7 +196,11 @@ if [ ! -f "$SRC" ]; then
   exit 1
 fi
 
-BODIES=$(harvest_bodies "$SRC")
+BODIES=$(harvest_bodies "$SRC"); bodies_rc=$?
+if [ "$bodies_rc" -ne 0 ]; then
+  echo "  ✗ 추출기가 $SRC 에서 막혔다(종료 $bodies_rc) — 위 EXTRACTOR-STUCK 자리를 볼 것." >&2
+  exit 1
+fi
 FNS=$(printf '%s\n' "$BODIES" | grep -cE 'fun[ \t]+harvest[A-Za-z]*[ \t]*\(' || true)
 
 # 하나도 못 찾았으면 **통과가 아니라 실패**다. 수확 경로가 전부 사라지는 일보다
