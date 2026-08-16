@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.util.BirthdayHelper
+import com.novelcharacter.app.util.SqlInChunks
 
 class BirthdayWorker(
     context: Context,
@@ -24,11 +25,9 @@ class BirthdayWorker(
             // BirthdayHelper로 오늘 생일 캐릭터 필터링 (윤년 처리 포함)
             val birthdayCharIds = BirthdayHelper.getTodayBirthdayCharacterIds(allBirthChanges)
 
-            val birthdayNames = if (birthdayCharIds.isNotEmpty()) {
-                db.characterDao().getCharactersByIds(birthdayCharIds).map { it.name }
-            } else {
-                emptyList()
-            }
+            val birthdayNames = SqlInChunks
+                .flat(birthdayCharIds) { db.characterDao().getCharactersByIds(it) }
+                .map { it.name }
 
             if (birthdayNames.isNotEmpty()) {
                 NotificationHelper.showBirthdayNotification(applicationContext, birthdayNames)

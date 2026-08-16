@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.util.GlobalScopeFieldMove
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.SqlInChunks
 import java.io.File
 
 /**
@@ -64,7 +65,8 @@ class CharacterRepository(
     suspend fun getCharactersByUniverseList(universeId: Long): List<Character> =
         characterDao.getCharactersByUniverseList(universeId)
     suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
-    suspend fun getCharactersByIds(ids: List<Long>): List<Character> = characterDao.getCharactersByIds(ids)
+    suspend fun getCharactersByIds(ids: List<Long>): List<Character> =
+        SqlInChunks.flat(ids) { characterDao.getCharactersByIds(it) }
     suspend fun getAllCharactersByName(name: String): List<Character> = characterDao.getAllCharactersByName(name)
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =
@@ -444,8 +446,8 @@ class CharacterRepository(
 
     // ===== 일괄 편집용 배치 메서드 =====
 
-    /** IN 절 999 제한을 회피하기 위한 청크 분할 유틸리티 */
-    private val CHUNK_SIZE = 900
+    /** IN 절 변수 한도 회피용 청크 크기 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242). */
+    private val CHUNK_SIZE = SqlInChunks.LIMIT
 
     suspend fun batchSetPinned(ids: List<Long>, isPinned: Boolean) {
         db.withTransaction {
@@ -754,9 +756,9 @@ class CharacterRepository(
 
     suspend fun batchRemoveTags(ids: List<Long>, tags: List<String>) {
         if (tags.isEmpty()) return
-        // deleteTagsFromCharacters는 이중 IN 절(characterIds + tags) 사용
-        // SQLite 변수 제한(API 31 미만: 999)을 초과하지 않도록 chunk 크기 조정
-        val adjustedChunk = (CHUNK_SIZE - tags.size).coerceAtLeast(1)
+        // deleteTagsFromCharacters는 이중 IN 절(characterIds + tags) 사용 —
+        // 태그 몫을 밝혀 넘긴다(그 계산의 단일 소스가 SqlInChunks.sizeFor다).
+        val adjustedChunk = SqlInChunks.sizeFor(tags.size)
         db.withTransaction {
             for (chunk in ids.chunked(adjustedChunk)) {
                 characterTagDao.deleteTagsFromCharacters(chunk, tags)
@@ -864,8 +866,8 @@ class CharacterRepository(
     }
 
     companion object {
-        /** IN 절 999 변수 한도 회피용 청크 크기 (계단식 삭제 공용) */
-        private const val CASCADE_CHUNK_SIZE = 900
+        /** IN 절 변수 한도 회피용 청크 크기 (계단식 삭제 공용) — 값은 [SqlInChunks.LIMIT]가 정한다. */
+        private const val CASCADE_CHUNK_SIZE = SqlInChunks.LIMIT
 
         /**
          * 캐릭터 일괄 삭제 공통 본체 — 삭제 전 캐릭터별 휴지통 스냅샷을 남기고

@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.SqlInChunks
 
 class UniverseRepository(
     private val db: AppDatabase,
@@ -145,13 +146,10 @@ class UniverseRepository(
 
     /**
      * 세계관·entityType을 가리지 않는 id 조회 — 보관 중인(세계관 밖) 필드값 표시용 (N2).
-     * IN 절 변수 한도(API 31 미만 999)를 넘지 않도록 청크로 나눈다 — 저장소 공통 관례.
+     * IN 절 변수 한도를 넘지 않도록 [SqlInChunks]가 나눈다 — 저장소 공통 통로.
      */
-    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> {
-        if (ids.isEmpty()) return emptyList()
-        if (ids.size <= IN_CLAUSE_CHUNK) return fieldDefinitionDao.getFieldsByIds(ids)
-        return ids.chunked(IN_CLAUSE_CHUNK).flatMap { fieldDefinitionDao.getFieldsByIds(it) }
-    }
+    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
+        SqlInChunks.flat(ids) { fieldDefinitionDao.getFieldsByIds(it) }
 
     // 사건 필드 (B-10) — entityType = "event"
     fun getEventFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
@@ -216,18 +214,16 @@ class UniverseRepository(
         fieldDefinitionDao.deleteAllByUniverse(universeId)
 
     // ===== Batch count queries =====
-    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> {
-        if (universeIds.isEmpty()) return emptyMap()
-        return novelDao.getNovelCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
-    }
+    //
+    // **집계인데 조각별 답을 그냥 이어도 되는 이유:** 두 질의 모두 `GROUP BY`의 키가 `IN` 열
+    // 자신이라 한 세계관의 행은 **한 조각 안에 통째로** 들어간다. 묶음이 조각을 가로지르지
+    // 않으므로 합칠 것이 없다. (`GROUP BY`가 다른 열이거나 `COUNT(*)` 하나를 돌려주는
+    // 질의였다면 잇는 것이 아니라 [SqlInChunks.sum]으로 **더해야** 한다.)
+    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
+        SqlInChunks.flat(universeIds) { novelDao.getNovelCountsByUniverses(it) }
+            .associate { it.universeId to it.cnt }
 
-    suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> {
-        if (universeIds.isEmpty()) return emptyMap()
-        return fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
-    }
-
-    private companion object {
-        /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
-        const val IN_CLAUSE_CHUNK = 900
-    }
+    suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
+        SqlInChunks.flat(universeIds) { fieldDefinitionDao.getFieldCountsByUniverses(it) }
+            .associate { it.universeId to it.cnt }
 }

@@ -88,17 +88,15 @@ object CharacterImageAutoLinker {
             val now = System.currentTimeMillis()
             if (plan.releases.isNotEmpty()) {
                 val ids = plan.releases.mapNotNull { metaByCanon[it]?.id }
-                if (ids.isNotEmpty()) {
-                    db.imageMetaDao().setGroup(ids, null)
-                    released += ids.size
-                }
+                SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, null) }
+                released += ids.size
             }
             for ((token, canonPaths) in plan.claims) {
                 val ids = canonPaths.map { canon ->
                     metaByCanon[canon]?.id
                         ?: db.imageMetaDao().adoptAuto(storedByCanon[canon] ?: canon, now)
                 }
-                db.imageMetaDao().setGroup(ids, token)
+                SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, token) }
                 linked += ids.size
             }
             for (token in plan.dirtyAutoTokens) {

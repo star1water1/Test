@@ -241,6 +241,7 @@ $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
 $MAIN/util/AutoLinkPlanner.kt
 $MAIN/util/ImageLinkGroupPlanner.kt
+$MAIN/util/SqlInChunks.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
@@ -431,6 +432,7 @@ $TEST/util/ImageRecommendationHelperTest.kt
 $TEST/util/ImageLinkResolverTest.kt
 $TEST/util/AutoLinkPlannerTest.kt
 $TEST/util/ImageLinkGroupPlannerTest.kt
+$TEST/util/SqlInChunksTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt

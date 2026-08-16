@@ -21,6 +21,7 @@ import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.logResult
 import com.novelcharacter.app.util.toastResult
 import com.novelcharacter.app.util.withImagePaths
@@ -477,8 +478,10 @@ class ImageManagerViewModel(
                 detachedFromName = m.detachedFromCode?.let { nameByCode[it] }
             )
         }
-        if (staleMetaPaths.isNotEmpty()) {
-            runCatching { db.imageMetaDao().deleteByPaths(staleMetaPaths) }
+        // 나누지 않으면 `runCatching`이 상한 초과를 삼켜 **지운 줄 알았는데 그대로**가 된다 —
+        // B-51이 실제로 그렇게 조용히 유실됐다 (B-242).
+        runCatching {
+            SqlInChunks.each(staleMetaPaths) { db.imageMetaDao().deleteByPaths(it) }
         }
 
         val files = filesDir.listFiles { f ->
@@ -983,8 +986,14 @@ class ImageManagerViewModel(
     /** 선택 경로들의 distinct 태그(일괄 태그 제거 시트용) — 현재 목록의 meta id 기준. */
     suspend fun getDistinctTagsForPaths(paths: Collection<String>): List<String> = withContext(Dispatchers.IO) {
         val ids = metaIdsForPaths(paths)
-        if (ids.isEmpty()) emptyList()
-        else runCatching { db.imageTagDao().getDistinctTagsForImages(ids) }.getOrDefault(emptyList())
+        // 질의의 `DISTINCT`·`ORDER BY`는 **조각 안에서만** 성립한다 — 나눠 물으면 같은 태그가
+        // 조각마다 한 번씩 나오고 순서도 조각 경계에서 되감긴다. 그래서 접고 정렬하는 일을
+        // 여기로 올린다(칩 목록은 정렬된 것이 계약이다. B-242).
+        runCatching {
+            SqlInChunks.flat(ids) { db.imageTagDao().getDistinctTagsForImages(it) }
+                .distinct()
+                .sorted()
+        }.getOrDefault(emptyList())
     }
 
     // ===== 배정 / 해제 / 링크 (G2) =====
@@ -1303,7 +1312,7 @@ class ImageManagerViewModel(
                                 db.imageMetaDao().getByGroup(g).forEach { ids.add(it.id) }
                             }
                             val groupId = plan.groupsInvolved.firstOrNull() ?: UUID.randomUUID().toString()
-                            db.imageMetaDao().setGroup(ids.toList(), groupId)
+                            SqlInChunks.each(ids.toList()) { db.imageMetaDao().setGroup(it, groupId) }
                         }
                         // 다시 묶였으면 '흩어진 나머지'가 아니다 — 장부 ③에서 뺀다.
                         // 안 빼면 사용자가 고친 뒤에도 어시스턴트 카드가 계속 뜬다.
@@ -1337,7 +1346,9 @@ class ImageManagerViewModel(
                     if (targets.isEmpty()) UnlinkResult(0, 0)
                     else {
                         db.withTransaction {
-                            db.imageMetaDao().setGroup(targets.map { it.second }, null)
+                            SqlInChunks.each(targets.map { it.second }) {
+                                db.imageMetaDao().setGroup(it, null)
+                            }
                             targets.mapTo(HashSet()) { it.third }.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
                         }
                         UnlinkResult(targets.size, countAutoRelinkable(targets))
@@ -2047,9 +2058,9 @@ class ImageManagerViewModel(
 
     companion object {
         /**
-         * `IN (…)` 목록을 끊어 보내는 단위 — SQLite의 바인딩 변수 상한(999)보다 낮게 잡는다.
-         * 이 저장소의 다른 대량 질의가 쓰는 값과 같다(`chunked(900)`).
+         * `IN (…)` 목록을 끊어 보내는 단위 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242).
+         * 종전에는 이 자리에 900이 따로 적혀 있었고, 같은 값이 저장소 일곱 자리에 흩어져 있었다.
          */
-        private const val SQL_BIND_CHUNK = 900
+        private const val SQL_BIND_CHUNK = SqlInChunks.LIMIT
     }
 }

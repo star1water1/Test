@@ -633,7 +633,7 @@ object OrganizeFolderService {
                         .distinct()
                     for (g in existingGroups) db.imageMetaDao().getByGroup(g).forEach { ids.add(it.id) }
                     val token = existingGroups.firstOrNull() ?: UUID.randomUUID().toString()
-                    db.imageMetaDao().setGroup(ids.toList(), token)
+                    SqlInChunks.each(ids.toList()) { db.imageMetaDao().setGroup(it, token) }
                 }
             }.isSuccess
             if (ok) linkedSets++

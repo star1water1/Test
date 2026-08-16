@@ -11,6 +11,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.util.BirthdayHelper
+import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +35,9 @@ class TodayCharacterWidget : AppWidgetProvider() {
                 val birthdayCharIds = BirthdayHelper.getTodayBirthdayCharacterIds(allBirthChanges)
 
                 val widgetText: String = if (birthdayCharIds.isNotEmpty()) {
-                    val names = db.characterDao().getCharactersByIds(birthdayCharIds).map { it.name }
+                    val names = SqlInChunks
+                        .flat(birthdayCharIds) { db.characterDao().getCharactersByIds(it) }
+                        .map { it.name }
                     context.getString(R.string.widget_birthday_today, names.joinToString(", "))
                 } else {
                     val allChars = db.characterDao().getAllCharactersList()
