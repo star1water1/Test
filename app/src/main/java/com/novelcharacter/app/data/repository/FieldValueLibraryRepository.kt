@@ -99,9 +99,18 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         // 상태변화 이력은 수확하지 않는다 — 모집단 규약은 [harvestUniversesOrThrow]가 든다 (B-60).
-        val universeId = universeOfCharacter(characterId)
+        // 구역 판정은 사건·작품 축과 **같은 모양**이다 (B-203) — 캐릭터를 못 찾은 것과 구역이
+        // 전역인 것을 가른다. 종전 `universeOfCharacter`는 셋(캐릭터 없음 · 작품 미배정 ·
+        // 작품에 세계관 없음)을 한 값 `null`로 접어 **호출부가 그 구별을 할 수 없었다.**
+        val character = db.characterDao().getCharacterById(characterId)
+        val targets = if (character != null) {
+            val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+            recountTargetsForCharacter(universeId, defsById.values, tokensByField.keys)
+        } else {
+            tokensByField.keys
+        }
         insertNewTokens(tokensByField)
-        scheduleRecount(recountTargetsForCharacter(universeId, defsById.values, tokensByField.keys))
+        scheduleRecount(targets)
     }
 
     /** 사건 저장 후 */
@@ -115,12 +124,16 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         insertNewTokens(tokensByField)
-        // 캐릭터 쪽과 같은 이유로 사건 축도 세계관 전체 사건 필드를 대상으로 한다.
-        val targets = LinkedHashSet(tokensByField.keys)
-        db.timelineDao().getEventById(eventId)?.universeId?.let { uid ->
-            defsById.values
-                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_EVENT }
-                .forEach { targets.add(it.id) }
+        // 캐릭터 쪽과 **같은 함수**로 구역 전체를 대상에 넣는다 (B-203 · R-29).
+        // 사건을 못 찾은 것과 사건의 구역이 전역인 것을 가른다 — 종전 `?.let`은 둘을 같게 다뤄
+        // 전역 구역의 사건 필드가 통째로 빠졌다.
+        val event = db.timelineDao().getEventById(eventId)
+        val targets = if (event != null) {
+            FieldValueRules.recountTargets(
+                event.universeId, FieldDefinition.ENTITY_EVENT, defsById.values, tokensByField.keys
+            )
+        } else {
+            tokensByField.keys
         }
         scheduleRecount(targets)
     }
@@ -136,13 +149,15 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         insertNewTokens(tokensByField)
-        // 캐릭터·사건 축과 같은 이유로 세계관 전체의 작품 필드를 재집계 대상에 넣는다 —
-        // 이 저장이 다른 작품에서 쓰이던 값을 지웠을 수도 있다.
-        val targets = LinkedHashSet(tokensByField.keys)
-        db.novelDao().getNovelById(novelId)?.universeId?.let { uid ->
-            defsById.values
-                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_NOVEL }
-                .forEach { targets.add(it.id) }
+        // 캐릭터·사건 축과 **같은 함수**로 구역 전체의 작품 필드를 넣는다 (B-203 · R-29) —
+        // 이 저장이 다른 작품에서 쓰이던 값을 지웠을 수도 있다. 무소속 작품의 구역은 전역이다.
+        val novel = db.novelDao().getNovelById(novelId)
+        val targets = if (novel != null) {
+            FieldValueRules.recountTargets(
+                novel.universeId, FieldDefinition.ENTITY_NOVEL, defsById.values, tokensByField.keys
+            )
+        } else {
+            tokensByField.keys
         }
         scheduleRecount(targets)
     }
@@ -946,11 +961,10 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             .filter { FieldValueTokenizer.supportsLibrary(it) }
             .associateBy { it.id }
 
-    private suspend fun universeOfCharacter(characterId: Long): Long? {
-        val character = db.characterDao().getCharacterById(characterId) ?: return null
-        val novelId = character.novelId ?: return null
-        return db.novelDao().getNovelById(novelId)?.universeId
-    }
+    // `universeOfCharacter`는 2026.08.16(B-203)에 없앴다 — **셋을 한 값으로 접는 것이 문제였다.**
+    // 캐릭터 없음 · 작품 미배정 · 작품에 세계관 없음이 전부 `null`이라, 뒤의 둘이 *전역 구역*이고
+    // 앞의 하나가 *모름*이라는 것을 호출부가 가릴 수 없었다. 지금은 `harvestForCharacter`가
+    // 사건·작품 축과 같은 모양으로 직접 가른다.
 
     private fun parseImagePathList(imagePathsJson: String): List<String> {
         return try {

@@ -889,7 +889,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("'필드 데이터' 시트 (값 정리)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "필드마다 실제로 쓰인 값이 모이는 시트입니다. 여기서 정리한 표기가 앱의 자동완성·통계·검색에 함께 반영됩니다."),
-            GuideLine("", styles.guideBody, "• '표시라벨'·'별칭(콤마구분)'·'카테고리'·'설명'·'숨김' 열을 채워 다시 가져오면 그대로 반영됩니다."),
+            GuideLine("", styles.guideBody, "• '표시라벨'·'${FieldValueSheetMapper.ALIAS_HEADER}'·'카테고리'·'설명'·'숨김' 열을 채워 다시 가져오면 그대로 반영됩니다."),
             GuideLine("", styles.guideBody, "• 값이 많으면 앱에서 하나씩 여는 것보다 이 시트에서 한 번에 채우는 편이 빠릅니다."),
             GuideLine("", styles.guideBody, "• 별칭은 '데이터에 있는 다른 표기 → 이 값'입니다."),
             GuideLine("", styles.guideBody, "  예) 값 '서울'의 별칭에 '서울시, 서울특별시'를 적으면 통계와 검색이 셋을 하나로 묶습니다."),

@@ -2589,7 +2589,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val entityCol = cols["대상"] ?: -1
         val valueCol = cols["값"] ?: 4
         val labelCol = cols["표시라벨"] ?: -1
-        val aliasCol = cols["별칭(콤마구분)"] ?: cols["별칭"] ?: -1
+        // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
+        // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
+        // 맨 '별칭'은 별칭 표가 이미 '이명'으로 가져가서 이 이름으로는 결코 들어오지 않는다
+        // (그 열은 '인식하지 못해 무시했습니다'로 보고된다 — 조용히 엉뚱한 열에 붙는 것보다 낫다).
+        val aliasCol = cols[FieldValueSheetMapper.ALIAS_HEADER] ?: -1
         val categoryCol = cols["카테고리"] ?: -1
         val descCol = cols["설명"] ?: -1
         val hiddenCol = cols["숨김"] ?: -1
@@ -5112,7 +5116,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val entityCol = cols["대상"] ?: -1
         val valueCol = cols["값"] ?: 4
         val labelCol = cols["표시라벨"] ?: -1
-        val aliasCol = cols["별칭(콤마구분)"] ?: cols["별칭"] ?: -1
+        // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
+        // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
+        // 맨 '별칭'은 별칭 표가 이미 '이명'으로 가져가서 이 이름으로는 결코 들어오지 않는다
+        // (그 열은 '인식하지 못해 무시했습니다'로 보고된다 — 조용히 엉뚱한 열에 붙는 것보다 낫다).
+        val aliasCol = cols[FieldValueSheetMapper.ALIAS_HEADER] ?: -1
         val categoryCol = cols["카테고리"] ?: -1
         val descCol = cols["설명"] ?: -1
         val hiddenCol = cols["숨김"] ?: -1

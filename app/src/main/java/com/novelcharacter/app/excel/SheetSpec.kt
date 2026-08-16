@@ -685,7 +685,7 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
         ColumnSpec("값", required = true, width = 6000),
         ColumnSpec("표시라벨", width = 5000),
-        ColumnSpec("별칭(콤마구분)", width = 8000),
+        ColumnSpec(FieldValueSheetMapper.ALIAS_HEADER, width = 8000),
         ColumnSpec("카테고리", width = 5000),
         ColumnSpec("설명", width = 8000, wrap = true),
         ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),

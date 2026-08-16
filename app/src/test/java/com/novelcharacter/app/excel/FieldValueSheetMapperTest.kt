@@ -85,10 +85,47 @@ class FieldValueSheetMapperTest {
         // '출처'를 끼워 넣으며 사용횟수·코드를 재번호했는데, 이 계약이 깨지면
         // 사용횟수 자리에 코드 문자열이 들어가는 조용한 오염이 난다(차분 컴파일로는 안 잡힌다).
         assertEquals(
-            listOf("세계관", "필드키", "필드명", "대상", "값", "표시라벨", "별칭(콤마구분)",
+            listOf("세계관", "필드키", "필드명", "대상", "값", "표시라벨", "별칭 (쉼표 구분)",
                    "카테고리", "설명", "숨김", "출처", "사용횟수", "코드"),
             fieldValueLibrarySpec().columns.map { it.header }
         )
+    }
+
+    /**
+     * 별칭 열 머리의 개명(B-222 ②) — **표준 접미사와 같은 글자인가**를 잠근다.
+     *
+     * 글자를 여기 다시 적지 않고 [EntityFieldHeaders.MULTI_SUFFIX]로 조립해 견주는 것이 요점이다.
+     * 값을 베껴 적으면 접미사가 바뀌는 날 이 시험이 *옛 글자를 지키는* 시험으로 뒤집힌다 —
+     * 이 항목이 고치려던 것이 정확히 그 두 벌짜리 어휘다.
+     */
+    @Test
+    fun aliasHeader_표준_접미사를_쓴다() {
+        assertEquals("별칭" + EntityFieldHeaders.MULTI_SUFFIX, FieldValueSheetMapper.ALIAS_HEADER)
+        assertEquals(FieldValueSheetMapper.ALIAS_HEADER, fieldValueLibrarySpec().columns[6].header)
+    }
+
+    /**
+     * 옛 파일의 별칭 열이 계속 읽히는가 — 개명의 폴백(R-2 취지).
+     *
+     * **가져오기의 `cols[ALIAS_HEADER]` 조회가 이 표 하나에 걸려 있다.** 이 등재가 빠지면
+     * 옛 파일의 별칭이 통째로 '알 수 없는 열'이 되어 조용히 버려지고, 덤으로 '인식하지 못해
+     * 무시했습니다' 경고가 **맞는 말이 되어** 사용자가 알아챌 길도 사라진다.
+     */
+    @Test
+    fun 옛_별칭_머리가_새_머리로_접힌다() {
+        assertEquals(
+            FieldValueSheetMapper.ALIAS_HEADER,
+            ExcelHeaderAliases.canonical(FieldValueSheetMapper.LEGACY_ALIAS_HEADER)
+        )
+        // 새 머리 자신도 같은 자리로 접힌다(별칭 표는 canonical도 함께 싣는다).
+        assertEquals(
+            FieldValueSheetMapper.ALIAS_HEADER,
+            ExcelHeaderAliases.canonical(FieldValueSheetMapper.ALIAS_HEADER)
+        )
+        // 맨 '별칭'은 여전히 캐릭터 시트의 '이명'이다 — 두 시트가 같은 말을 다른 뜻으로 쓴다.
+        // 이 시험이 그 사실을 **의도로** 잠근다: 나중에 '별칭'을 이 열로 돌리면 캐릭터 시트의
+        // 이명 열이 조용히 갈린다(전역 표라 시트별로 가릴 수 없다).
+        assertEquals("이명", ExcelHeaderAliases.canonical("별칭"))
     }
 
     @Test

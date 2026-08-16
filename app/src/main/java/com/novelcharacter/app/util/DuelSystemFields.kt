@@ -63,8 +63,9 @@ object DuelSystemFields {
      *   id가 아니라 키로 둔 것과 같은 근거).
      * @property multiToken 쉼표로 나뉘는 다중값인가 (설계 물음 ⓓ). 이명·태그·세력이 그렇고,
      *   나누는 규약은 [FieldValueTokenizer.splitMulti](=R-47의 감싸기)로 통일돼 있다
-     *   ([tokensOf]의 ⚠️가 그 근거다). **[Character.aliases]는 아직 맨 `split(",")`이라
-     *   같지 않다** — 그쪽 소비처는 AI 문맥·통계라 이 슬라이스 밖이고 백로그에 올렸다(B-207).
+     *   ([tokensOf]의 ⚠️가 그 근거다). **[Character.aliases]도 2026.08.16부터 같은 함수를
+     *   지난다**(B-207) — 그때까지는 그 자리만 맨 `split(",")`이라 같은 이명이 대결 카드와
+     *   통계·AI 문맥에서 다른 조각 수로 갈렸다.
      */
     enum class Column(val suffix: String, val multiToken: Boolean) {
         NAME("name", false),

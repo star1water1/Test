@@ -447,10 +447,15 @@ java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar
   | grep -E "error:" \
   | sed "s|$REPO/||" \
   | sed -E 's/^([^:]+):[0-9]+:[0-9]+: (error: .*)$/\1| \2/' \
-  | sort -u > "$OUT"
+  | sort > "$OUT"
 
 ERRS=$(wc -l < "$OUT")
-echo "고유 오류 ${ERRS}건 → $OUT"
+# **`sort`이지 `sort -u`가 아니다 (B-211, 2026.08.16).** 줄 번호를 지우는 것과 겹을 접는 것은
+# 다른 일인데 한 옵션에 묶여 있었다 — 접으면 키가 (파일, 문구)의 집합이라 **이미 그 문구를 든
+# 파일의 새 오류가 `comm -13`에 원리적으로 안 나온다.** 이 프로브는 기준선이 0이라 **오늘은
+# 접히는 것이 없지만**, 0이 깨지는 순간 그 구멍이 살아난다. 셋(이것·`probe_compile`·
+# `differential_compile`)을 같은 규칙으로 두는 편이 *어느 것이 어느 규칙인가*를 안 외우게 한다.
+echo "오류 ${ERRS}건(겹 포함) → $OUT"
 # 오류 0을 그냥 믿지 않는다 — 컴파일이 시작조차 못 하면 출력이 비어 "0"으로 보인다
 # (probe_compile.sh의 같은 주석 참조. 2026-08-01에 실제로 겪은 함정이다).
 if [ "$ERRS" -eq 0 ] && [ "$(find "$WORK/out" -name '*.class' 2>/dev/null | wc -l)" -eq 0 ]; then

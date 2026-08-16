@@ -18,6 +18,27 @@ object FieldValueSheetMapper {
     /** 시트의 '대상' 열이 쓰는 라벨 — 드롭다운 목록도 이 값을 단일 소스로 삼는다(SheetSpec). */
     val ENTITY_LABELS = listOf(ENTITY_LABEL_CHARACTER, ENTITY_LABEL_EVENT, ENTITY_LABEL_NOVEL)
 
+    /**
+     * 별칭 열의 머리 — **쓰는 쪽(SheetSpec)·읽는 쪽(ExcelImportService 둘)·안내(ExcelExporter)가
+     * 이 한 글자를 든다**(B-222 ②). 종전에는 넷이 `"별칭(콤마구분)"`을 각자 적고 있었고, 그래서
+     * 이 개명이 *네 자리를 동시에 고치는 일*이 됐다 — 다음 개명은 이 상수 하나다.
+     *
+     * 접미사가 [EntityFieldHeaders.MULTI_SUFFIX]인 것이 이 항목의 요점이다. B-177이 쉼표를
+     * 쪼개는 열의 표준 접미사를 ` (쉼표 구분)`으로 세웠는데 이 열만 `(콤마구분)`이라, **같은
+     * 규칙을 두 말로 안내하고 있었다** — 외부 편집자는 시트마다 그 뜻을 다시 배워야 한다.
+     */
+    const val ALIAS_HEADER = "별칭" + EntityFieldHeaders.MULTI_SUFFIX
+
+    /**
+     * 2026.08.16 이전에 내보낸 파일의 별칭 열 머리 — **읽기 전용 폴백**(R-2의 취지).
+     *
+     * 실제로 이 글자를 다시 만나는 자리는 [ExcelHeaderAliases]다(거기서 [ALIAS_HEADER]의
+     * 별칭으로 등재된다) — 그래야 ⓐ 옛 파일의 그 열이 새 이름으로 잡히고 ⓑ '인식하지 못해
+     * 무시했습니다' 경고가 **거짓으로** 뜨지 않는다. 폴백이 없으면 이 개명 자체가
+     * 이미 내보낸 파일의 별칭을 통째로 버리는 변경이 된다(개발 의도 4번).
+     */
+    const val LEGACY_ALIAS_HEADER = "별칭(콤마구분)"
+
     fun entityLabel(entityType: String): String = when (entityType) {
         FieldDefinition.ENTITY_EVENT -> ENTITY_LABEL_EVENT
         FieldDefinition.ENTITY_NOVEL -> ENTITY_LABEL_NOVEL

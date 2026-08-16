@@ -75,26 +75,42 @@ object FieldValueRules {
     }
 
     /**
-     * 캐릭터 저장 뒤 재집계할 필드 — **그 캐릭터가 건드릴 수 있는 필드 전체**다.
+     * 저장 뒤 재집계할 필드 — **그 소유자가 건드릴 수 있는 필드 전체**다. 세 축(캐릭터·사건·작품)이
+     * 이 함수 하나를 쓴다 (B-203 · R-29).
      *
      * '새 토큰이 생긴 필드'로 좁히면 안 된다: 이미 라이브러리에 있는 값으로 바꾸거나 값을
      * 지우면 새 토큰이 하나도 생기지 않지만 집계는 달라진다('남'→'여'는 양쪽 수가 모두
      * 틀어진다). 좁히는 순간 그 편집이 조용히 반영되지 않아 **U-0과 같은 실패 형태**가 남는다.
      *
-     * 세계관을 모르는 캐릭터(작품 미배정)라도 건드린 필드는 대상에 남긴다 — 세계관을 못 찾았다고
-     * 통째로 건너뛰면 그 값이 영원히 0으로 남는다.
+     * **전역(무소속) 구역도 구역이다.** 종전에는 세 축이 각자 `if (universeId != null)` ·
+     * `?.let { }`로 적혀 있어 **소유자의 세계관이 null이면 뒷항이 통째로 빠졌다** — 그런데
+     * 구역 전체를 더하는 이유(*"이 저장이 다른 소유자에서 쓰이던 값을 지웠을 수도 있다"*)는
+     * 전역 구역에서 **더 세게** 성립한다: 그 구역의 필드는 무소속 소유자 **전부**가 공유한다.
+     * 값을 비운 필드는 `touchedFieldIds`에 들어오지 않으므로, 빠지면 `usageCount`가 높은 채로
+     * 남는다(유실은 아니고 수가 높게 남을 뿐이라 '미사용 정리'가 잘못 권하지는 않는다).
+     *
+     * `null == null`이 곧 전역 구역의 짝짓기다 — 그래서 갈래가 아니라 **같은 비교 하나**로 끝난다.
+     * 소유자를 못 찾았을 때는 [touchedFieldIds]만 넘기면 된다(구역을 모르는 것과 구역이 전역인
+     * 것은 다르다 — 호출부가 그 둘을 가른다).
      */
-    fun recountTargetsForCharacter(
-        universeId: Long?,
+    fun recountTargets(
+        scopeUniverseId: Long?,
+        entityType: String,
         supportedDefs: Collection<FieldDefinition>,
         touchedFieldIds: Set<Long>
     ): Set<Long> {
         val targets = LinkedHashSet(touchedFieldIds)
-        if (universeId != null) {
-            supportedDefs
-                .filter { it.universeId == universeId && it.entityType == FieldDefinition.ENTITY_CHARACTER }
-                .forEach { targets.add(it.id) }
-        }
+        supportedDefs
+            .filter { it.universeId == scopeUniverseId && it.entityType == entityType }
+            .forEach { targets.add(it.id) }
         return targets
     }
+
+    /** 캐릭터 축 — [recountTargets]의 이름 붙은 호출. */
+    fun recountTargetsForCharacter(
+        universeId: Long?,
+        supportedDefs: Collection<FieldDefinition>,
+        touchedFieldIds: Set<Long>
+    ): Set<Long> =
+        recountTargets(universeId, FieldDefinition.ENTITY_CHARACTER, supportedDefs, touchedFieldIds)
 }

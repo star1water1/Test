@@ -36,6 +36,33 @@ class ImageTagApplyPlannerTest {
         assertEquals(1, p.touchedPaths)
     }
 
+    /**
+     * **한 항목 안의 겹**(B-246) — 행은 `(imageId, tag)` 유니크라 실제로 늘어나는 행은 하나인데
+     * 종전에는 `tagCount`가 2 올라 화면이 큰 수를 말했다. B-241이 *항목 사이*에서 없앤 거짓 고지가
+     * *항목 안*에 남아 있던 자리다.
+     *
+     * `freshTags`도 함께 잠근다 — 겹이 남아 있으면 쓰기가 같은 행을 두 번 밀어 넣고, 그것을
+     * DB가 접어 주는 데 기대게 된다(이 계층의 보장이 아니라 운이다).
+     */
+    @Test
+    fun `한 항목 안에 같은 태그가 두 번 있어도 한 번만 센다`() {
+        val p = plan(listOf("a.png" to listOf("노을", "노을", "바다")), mapOf("a.png" to 1L))
+        assertEquals(listOf("노을", "바다"), p.inserts.single().freshTags)
+        assertEquals(2, p.tagCount)
+        assertEquals(1, p.touchedPaths)
+    }
+
+    @Test
+    fun `이미 가진 태그와 항목 안 겹이 함께 있어도 수가 맞는다`() {
+        val p = plan(
+            listOf("a.png" to listOf("바다", "바다", "노을", "노을")),
+            mapOf("a.png" to 1L),
+            mapOf(1L to setOf("바다"))
+        )
+        assertEquals(listOf("노을"), p.inserts.single().freshTags)
+        assertEquals(1, p.tagCount)
+    }
+
     @Test
     fun `전부 이미 있으면 쓸 것이 없다`() {
         val p = plan(listOf("a.png" to listOf("바다")), mapOf("a.png" to 1L), mapOf(1L to setOf("바다")))
@@ -84,17 +111,11 @@ class ImageTagApplyPlannerTest {
         assertEquals(1, p.tagCount)
     }
 
-    // ── ③ 항목 안의 중복은 그대로 둔다 ────────────────────────────────────────
-    // 종전 `tags.filterNot { it in existing }`와 글자 그대로 같게 둔다. 계수 성질을 바꾸는
-    // 것은 성능 판의 몫이 아니다(B-244로 등재). **일부러 이렇게 두었다는 것을 시험이 든다** —
-    // 적어 두지 않으면 다음 사람이 결함으로 보고 조용히 고친다.
-
-    @Test
-    fun `한 항목 안의 중복 태그는 종전처럼 둘 다 센다`() {
-        val p = plan(listOf("a.png" to listOf("바다", "바다")), mapOf("a.png" to 1L))
-        assertEquals(listOf("바다", "바다"), p.inserts.single().freshTags)
-        assertEquals(2, p.tagCount)
-    }
+    // ── ③ 항목 안의 중복도 한 번만 센다 (B-246) ───────────────────────────────
+    // **2026.08.16에 뒤집힌 계약이다.** 종전 이 자리는 *"둘 다 센다"*를 일부러 잠그고 있었고
+    // 그 판단은 그 판(B-241, 성능)에서는 옳았다 — 읽기를 앞으로 모으는 변경이 계수 성질까지
+    // 바꾸면 무엇이 무엇을 바꿨는지 갈리지 않는다. 그 몫을 여기서 닫는다.
+    // 잠그는 자리는 위 ①의 두 시험(`한 항목 안에 같은 태그가…`)이고, 여기는 그 경위만 적는다.
 
     // ── ④ 순서와 계수 ─────────────────────────────────────────────────────────
 
@@ -145,7 +166,10 @@ class ImageTagApplyPlannerTest {
             if (tags.isEmpty()) continue
             val id = idByPath[path] ?: continue
             val cur = db.getOrPut(id) { mutableSetOf() }
-            val fresh = tags.filterNot { it in cur }
+            // 항목 안의 겹도 한 번만 센다 (B-246) — 흉내 내는 DB가 집합이라 **오라클 쪽에서도
+            // 겹은 행을 늘리지 않는다.** 이 `distinct()`가 빠지면 오라클이 *DB가 접어 줄 쓰기*를
+            // 두 번으로 세어, 실제 행 수와 어긋난 답을 정답이라 우기게 된다.
+            val fresh = tags.filterNot { it in cur }.distinct()
             if (fresh.isEmpty()) continue
             writes.add(id to fresh)
             cur.addAll(fresh)
