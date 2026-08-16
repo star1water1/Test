@@ -92,6 +92,16 @@ class DropdownListLimitsTest {
     }
 
     @Test
+    fun `값이 하나뿐이면 뺀 수를 말하지 않는다`() {
+        // "외 0개"는 뺀 것이 없는데 뺐다고 말하는 문장이다 — 잘렸다는 표시만 남긴다.
+        val one = listOf("가".repeat(400))
+        val text = DropdownListLimits.summarize(one, 30)
+        assertTrue(text.length <= 30)
+        assertTrue(text, text.contains("…"))
+        assertFalse(text, text.contains("외 "))
+    }
+
+    @Test
     fun `한 항목조차 안 들어가면 그 항목을 잘라 넣는다`() {
         // 잘렸다는 것을 말없이 넘기지 않는다 — 상자가 빈 채로 뜨면 사용자는 목록이 없는 줄 안다.
         val huge = listOf("가".repeat(400), "나")

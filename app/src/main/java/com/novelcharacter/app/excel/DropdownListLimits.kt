@@ -90,7 +90,9 @@ object DropdownListLimits {
             if (text.length <= limit) return text
             shown--
         }
-        val tail = " 외 ${options.size - 1}개"
+        // 항목 하나조차 안 들어가는 자리. **값이 하나뿐이면 "외 0개"라 적지 않는다** —
+        // 뺀 것이 없는데 뺐다고 말하는 문장이라, 있는 그대로 잘렸다는 표시만 남긴다.
+        val tail = if (options.size > 1) " 외 ${options.size - 1}개" else ""
         val head = options[0].take((limit - tail.length - 1).coerceAtLeast(1))
         return "$head…$tail"
     }
