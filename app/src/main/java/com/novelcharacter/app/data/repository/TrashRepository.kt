@@ -320,7 +320,7 @@ class TrashRepository(
         val charValues = ArrayList<CharacterFieldValue>()
         val eventValues = ArrayList<EventFieldValue>()
         val novelValues = ArrayList<NovelFieldValue>()
-        for (chunk in fieldDefIds.chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(fieldDefIds) { chunk ->
             // **큐레이션된 엔트리만 담는다.** 자동 수확(AUTO, 손대지 않은) 엔트리는 실제
             // 필드값에서 다시 만들어지므로(harvestUniverses) 담아 봐야 같은 것을 두 벌 갖는
             // 것이고, 수만 건이면 payload 한 행이 CursorWindow 한도(2MB)를 넘겨 **그 백업을
@@ -538,7 +538,7 @@ class TrashRepository(
         // 관계마다 단건 조회하지 않는다 — 세력 하나에 100명이 소속되면 자동 관계가 약 5천 개라
         // 삭제 트랜잭션이 그대로 멈춘다('받쳐주는 확장성').
         val autoChanges = if (deleteRelationships && autoRels.isNotEmpty()) {
-            autoRels.map { it.id }.chunked(IN_CLAUSE_CHUNK).flatMap {
+            SqlInChunks.flat(autoRels.map { it.id }) {
                 db.characterRelationshipChangeDao().getChangesForRelationships(it)
             }
         } else {
@@ -599,8 +599,8 @@ class TrashRepository(
         val survivingChangeCodes = ArrayList<String>()
         if (changes.isNotEmpty()) {
             val relById = HashMap<Long, CharacterRelationship>()
-            for (chunk in changes.map { it.relationshipId }.distinct().chunked(IN_CLAUSE_CHUNK)) {
-                db.characterRelationshipDao().getByIds(chunk).forEach { relById[it.id] = it }
+            SqlInChunks.each(changes.map { it.relationshipId }.distinct()) {
+                db.characterRelationshipDao().getByIds(it).forEach { rel -> relById[rel.id] = rel }
             }
             for (change in changes) {
                 val rel = relById[change.relationshipId] ?: continue
@@ -875,7 +875,7 @@ class TrashRepository(
     private suspend fun collectCharacterCodes(ids: Collection<Long>, into: MutableMap<String, String>) {
         val distinct = ids.distinct()
         val uncached = distinct.filter { it !in characterCodeCache }
-        for (chunk in uncached.chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(uncached) { chunk ->
             val fetched = db.characterDao().getCharactersByIds(chunk).associateBy { it.id }
             for (id in chunk) characterCodeCache[id] = fetched[id]?.code
         }
@@ -1390,7 +1390,7 @@ class TrashRepository(
     private suspend fun harvestRestoredCharacters(characterIds: List<Long>, extraUniverseIds: Set<Long>) {
         val library = FieldValueLibraryRepository(db)
         val universeIds = HashSet<Long>(extraUniverseIds)
-        for (chunk in characterIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(characterIds.distinct()) { chunk ->
             for (character in db.characterDao().getCharactersByIds(chunk)) {
                 val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
                 if (universeId != null) universeIds.add(universeId)
@@ -2366,9 +2366,8 @@ class TrashRepository(
 
         var skippedEntries = 0
         val takenCodes = HashSet<String>()
-        for (chunk in plan.entries.map { it.second.code }.filter { it.isNotBlank() }.distinct()
-            .chunked(IN_CLAUSE_CHUNK)) {
-            db.fieldValueEntryDao().getByCodes(chunk).forEach { takenCodes.add(it.code) }
+        SqlInChunks.each(plan.entries.map { it.second.code }.filter { it.isNotBlank() }.distinct()) {
+            db.fieldValueEntryDao().getByCodes(it).forEach { row -> takenCodes.add(row.code) }
         }
         val rows = plan.entries.map { (defId, entry) ->
             val safeCode = entry.code.takeIf { it.isNotBlank() && takenCodes.add(it) } ?: generateEntityCode()
@@ -2380,7 +2379,7 @@ class TrashRepository(
 
         var orphanLost = plan.losses.orphanFieldValues
         val existingByChar = HashMap<Long, MutableSet<Long>>()
-        for (chunk in plan.characterValues.map { it.first }.distinct().chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(plan.characterValues.map { it.first }.distinct()) { chunk ->
             for (v in db.characterFieldValueDao().getValuesForCharacters(chunk)) {
                 existingByChar.getOrPut(v.characterId) { HashSet() }.add(v.fieldDefinitionId)
             }
@@ -3357,9 +3356,7 @@ class TrashRepository(
         // 재발급하고 되살리기는 계속한다(같은 판이 둘이 되는 것보다 낫지만, 그렇다고
         // 되살리지 않으면 사용자가 누른 기록이 사라진다).
         val taken = HashSet<String>()
-        for (chunk in seen.toList().chunked(IN_CLAUSE_CHUNK)) {
-            taken.addAll(db.duelMatchDao().getExistingCodes(chunk))
-        }
+        SqlInChunks.each(seen.toList()) { taken.addAll(db.duelMatchDao().getExistingCodes(it)) }
         val ready = planned.map { row ->
             val safeCode = row.code
                 ?.takeIf { it.isNotBlank() && it !in taken }
@@ -3820,7 +3817,7 @@ class TrashRepository(
         val localUniverseCodes = HashMap<Long, String?>()
         // id 조회는 일괄로 — 캐릭터마다 필드 수만큼 단건 질의하면 세계관 복원이 수만 번을 돈다.
         val defsById = HashMap<Long, com.novelcharacter.app.data.model.FieldDefinition>()
-        for (chunk in oldIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(oldIds.distinct()) { chunk ->
             for (fd in db.fieldDefinitionDao().getFieldsByIds(chunk)) defsById[fd.id] = fd
         }
         for ((id, fd) in defsById) {
@@ -3923,7 +3920,7 @@ class TrashRepository(
             trashDao.deleteAll()
         } else {
             db.withTransaction {
-                snapshots.map { it.id }.chunked(IN_CLAUSE_CHUNK).forEach { trashDao.deleteByIds(it) }
+                SqlInChunks.each(snapshots.map { it.id }) { trashDao.deleteByIds(it) }
             }
         }
     }
@@ -3983,9 +3980,6 @@ class TrashRepository(
             aliases().isNotEmpty()
 
     private companion object {
-        /** IN 절 변수 한도 회피용 청크 크기 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242). */
-        const val IN_CLAUSE_CHUNK = SqlInChunks.LIMIT
-
         /**
          * 묶음 복원 계측 로그의 태그 (B-18 ①) — `adb logcat -s TrashRestore`로 본다.
          *

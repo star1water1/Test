@@ -453,7 +453,8 @@ POI 5.3.0(앱과 같은 판)으로 스트리밍 워크북에 같은 쓰기를 �
 B-236이 미리보기를 내리면서 **이미지 메타만 짝의 한 쪽이 남았다**: `importImageMeta`가 행마다
 `imageMetaDao().getByPath(path)`를 치고, 태그 열이 있으면 `imageTagDao().getTagsByImageList(imageId)`를
 한 번 더 쳤다. 그 두 자리를 시트 크기만큼의 일괄 조회로 내렸다(`getByPaths` + 신설 `getTagsByImages`,
-`chunked(IN_CLAUSE_CHUNK)`).
+당시에는 `chunked(IN_CLAUSE_CHUNK)` — **2026.08.16 B-247이 그 둘을 `SqlInChunks.flat`으로 옮겼고
+상수 자체도 없앴다**).
 
 > ⚠️ **B-238 행이 빌려 온 잣대가 이 절의 것이 아니었다.** 그 행은 *"`path`·`imageId` 어느 쪽에도
 > 인덱스가 없어 **둘 다 풀스캔**이다 — 잣대는 `scalability` 3-11의 같은 모양이다"*라고 적었는데,
