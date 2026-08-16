@@ -258,6 +258,8 @@ $MAIN/util/NameBankMatch.kt
 $MAIN/util/NameBankPickOrder.kt
 $MAIN/excel/StreamingXlsxReader.kt
 $MAIN/excel/MergedCellMap.kt
+$MAIN/excel/DropdownListLimits.kt
+$MAIN/excel/DropdownListSheet.kt
 $MAIN/excel/ImportSource.kt
 $MAIN/util/ResetPlan.kt
 $MAIN/util/MembershipTimeline.kt
@@ -474,6 +476,8 @@ $TEST/ai/NarrativeFieldTest.kt
 $TEST/ai/CharacterNameAiSuggesterTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt
 $TEST/excel/MergedCellMapTest.kt
+$TEST/excel/DropdownListLimitsTest.kt
+$TEST/excel/DropdownListSheetTest.kt
 $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/share/WorldPackageDuelsTest.kt

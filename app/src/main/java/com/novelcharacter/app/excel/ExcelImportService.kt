@@ -869,7 +869,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
             if (pendingSyncCharacters.isNotEmpty()) {
-                runPostImportSemanticSync()
+                runPostImportSemanticSync(result)
             }
         }
 
@@ -3424,10 +3424,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭 규칙은 실제 가져오기와 **같은 함수**를 쓴다(FactionMembershipMatcher).
             // 활성만 보던 종전 규칙은 탈퇴 이력 행을 매번 '신규'로, 나아가 '백업에 없음'으로
             // 세어 아무것도 안 고친 파일에 삭제를 예고했다 — 실제로는 매칭돼 그대로 남는데도.
+            val analyzedLeaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
             val rowValues = FactionMembershipMatcher.RowValues(
                 joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null,
-                leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null,
-                leaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""),
+                leaveYear = analyzedLeaveYear,
+                // 가져오기가 바로잡는 반쪽 표식을 미리보기도 **같은 함수로** 바로잡는다 (B-206 · R-33) —
+                // 안 그러면 '변경'으로 셀 행을 '동일'이라 말한다.
+                leaveType = FactionStanding.leaveTypeForImportedRow(
+                    analyzedLeaveYear,
+                    parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""),
+                    leaveTypeColIndex >= 0
+                ),
                 departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null,
                 departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt() else null,
                 createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
@@ -7625,7 +7632,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
                 val leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
-                val leaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else "")
+                val rawLeaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else "")
+                // 탈퇴연도만 적히고 탈퇴유형이 빈 행을 바로잡는다 (B-206) — 판정은 순수
+                // (FactionStanding), 미리보기 분석도 **같은 함수**를 쓴다(R-33).
+                val leaveType = FactionStanding.leaveTypeForImportedRow(leaveYear, rawLeaveType, leaveTypeColIndex >= 0)
+                if (leaveType != rawLeaveType) {
+                    result.warnings.add(
+                        "세력 소속 행 $i: '탈퇴연도'만 적혀 있고 '탈퇴유형'이 비어 있어 '설정상탈퇴'로 채웠습니다 — " +
+                            "'순수제거'였거나 아직 탈퇴가 아니라면 그 칸을 고쳐 다시 가져오세요"
+                    )
+                }
                 val departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null
                 val departedIntensity = parseIntensityWithWarn(row, departedIntensityColIndex, null, "세력 소속 행 $i", result)
                 // 열이 없거나 해석 불가면 null — 기존 이력의 생성일을 **유지**한다.
@@ -7987,7 +8003,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 빈 칸 = 링크 해제(F1-A 규약 — 태그 열과 같다). 종전에는 빈 칸이 아무 일도 하지 않아
         // "엑셀에서 링크를 지웠는데 그대로"였고 고지도 없었다(설계 9장 C-3).
         val clearedGroupIds = mutableListOf<Long>()
+        // 이 가져오기가 **식구를 잃은** 묶음 토큰 — 칸을 비워 해제한 것과 다른 묶음으로
+        // 옮겨 간 것을 함께 담는다. 둘은 같은 뒤처리(1장만 남은 묶음의 표식 걷기)를 받는다.
         val clearedGroupTokens = mutableSetOf<String>()
+        val vacatedGroupTokens = mutableSetOf<String>()
         var clearedAutoLinks = 0
 
         for ((i, _, path) in plan.rows) {
@@ -8057,6 +8076,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val groupToken = target.linkGroupId
                     if (groupToken != null) {
                         groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
+                        // **떠난 자리도 정리 대상이다** (B-227 ①). 종전에는 '비웠다'만 세고
+                        // '옮겼다'는 세지 않아, X에서 Y로 옮긴 뒤 X에 1장만 남으면 그 1장이
+                        // 계속 '링크됨'으로 보였다 — 인앱 해제·엑셀 해제 어느 쪽에서도
+                        // 남지 않는 표식이라, 같은 파일을 다시 들여도 사라지지 않는다.
+                        val leftBehind = existing?.linkGroupId
+                        if (leftBehind != null && leftBehind != groupToken) {
+                            vacatedGroupTokens.add(leftBehind)
+                        }
                     } else {
                         val currentGroup = existing?.linkGroupId
                         if (currentGroup != null) {
@@ -8084,10 +8111,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 가져오기 트랜잭션 안이라 **한 줄 때문에 가져오기 전체가 되돌아간다.**
             // 같은 부류를 B-51이 이미 한 번 겪었다(그때는 `catch`가 삼켜 조용한 유실이었다).
             SqlInChunks.each(clearedGroupIds) { db.imageMetaDao().setGroup(it, null) }
-            // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
-            // 토큰마다 돌던 쓰기를 일괄판으로 내렸다 (B-239) — 갈라 불러도 답이 같은 근거는
-            // `clearSingletonGroups`의 주석(묶음이 행을 나눠 가지므로 서로의 인원을 못 바꾼다).
-            SqlInChunks.each(clearedGroupTokens) { db.imageMetaDao().clearSingletonGroups(it) }
             result.warnings.add("이미지 ${clearedGroupIds.size}건: '링크그룹' 칸이 비어 있어 링크를 해제했습니다")
             if (clearedAutoLinks > 0) {
                 result.warnings.add(
@@ -8116,6 +8139,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 갈라 불러도 답이 같다: 같은 값을 적는 쓰기라 읽고-고쳐-쓰기가 아니다.
                 SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, token) }
             }
+        }
+
+        // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
+        // 토큰마다 돌던 쓰기를 일괄판으로 내렸다 (B-239) — 갈라 불러도 답이 같은 근거는
+        // `clearSingletonGroups`의 주석(묶음이 행을 나눠 가지므로 서로의 인원을 못 바꾼다).
+        //
+        // **자리를 옮겼다** (B-227 ①): 종전에는 해제 블록 안에서 돌아 *이동*으로 빈 묶음을
+        // 못 봤고, 게다가 **아직 이동 쓰기가 반영되기 전의 인원**을 셌다. 인원을 세는 질의라
+        // 모든 쓰기가 끝난 뒤가 유일하게 옳은 자리다 — 이제 해제와 이동이 한 규칙을 받는다.
+        val emptiedTokens = clearedGroupTokens + vacatedGroupTokens
+        if (emptiedTokens.isNotEmpty()) {
+            SqlInChunks.each(emptiedTokens) { db.imageMetaDao().clearSingletonGroups(it) }
         }
 
         if (skippedMissing > 0) {
@@ -9546,10 +9581,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 날짜 감지·포맷·숫자 정규화는 ExcelCellValue(단일 소스)로 이관됨(로직 비분기).
     // 기존 isCellLikelyDate/formatDateCell는 getCellString이 위임하면서 제거되었다.
 
-    /**
-     * 임포트 후 시맨틱 필드 동기화.
-     * 필드값 → 상태변화, 상태변화 → 필드값 양방향 동기화 수행.
-     */
     // ── Deferred FK 해석 (코드 기반) ──
 
     // 미해석 코드는 조용히 버리지 않는다 — Phase 1에서 참조를 이미 null로 지운 뒤라
@@ -9881,7 +9912,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
     }
 
-    private suspend fun runPostImportSemanticSync() {
+    /**
+     * 가져오기 뒤 시맨틱 필드 동기화 — **한 방향이다**: 필드값 → 상태변화 (B-227 ②).
+     *
+     * 종전 KDoc은 *"필드값 → 상태변화, 상태변화 → 필드값 **양방향**"*이라 적혀 있었는데
+     * 부르는 것은 [SemanticFieldSyncHelper.syncFieldToStateChange] 하나다. 반대 방향은 인앱
+     * 편집 경로가 하고, 여기서 걸면 파일이 말한 필드값을 **DB에 있던 상태변화가 도로 덮는다** —
+     * 가져오기에서는 파일이 권위이므로 그 방향을 걸지 않는 것이 맞다.
+     *
+     * **실패는 삼키지 않는다.** 이 단계는 커밋 뒤 부가 작업이라 실패해도 가져오기를 되돌리지
+     * 않지만(되돌리면 들어온 데이터를 통째로 버린다), 종전에는 Logcat에만 남아
+     * **사용자에게는 성공으로 보였다** — 생존여부·사망연도 같은 파생 값이 조용히 옛것으로
+     * 남는 자리라 결과에 적어 고친다(개발 의도 2번 — 검증 → 알림 → 바로잡을 경로).
+     */
+    private suspend fun runPostImportSemanticSync(result: ImportResult) {
         val characterRepository = CharacterRepository(
             db, db.characterDao(), db.characterFieldValueDao(),
             db.characterStateChangeDao(), db.characterTagDao(),
@@ -9893,13 +9937,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelRepository = NovelRepository(db, db.novelDao())
         val syncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
 
+        val failedIds = mutableListOf<Long>()
         for ((characterId, universeId) in pendingSyncCharacters) {
             try {
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
                 syncHelper.syncFieldToStateChange(characterId, universeId, fieldValues)
             } catch (e: Exception) {
                 android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
+                failedIds.add(characterId)
             }
+        }
+        if (failedIds.isNotEmpty()) {
+            // 이름으로 말한다 — id는 사용자가 화면에서 찾을 수 있는 값이 아니다.
+            // 이름 조회 자체가 실패해도 고지는 남아야 하므로 실패분은 id로 적는다.
+            val names = failedIds.take(5).map { id ->
+                runCatching { db.characterDao().getCharacterById(id)?.name }.getOrNull() ?: "#$id"
+            }
+            val detail = names.joinToString(", ") + if (failedIds.size > names.size) " 외 ${failedIds.size - names.size}명" else ""
+            result.warnings.add(
+                "캐릭터 ${failedIds.size}명: 출생·사망연도와 상태변화를 맞추지 못했습니다 ($detail) — " +
+                    "데이터는 그대로 들어왔고, 해당 캐릭터를 열어 저장하면 다시 맞춰집니다"
+            )
         }
     }
 

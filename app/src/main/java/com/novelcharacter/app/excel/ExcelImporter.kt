@@ -253,7 +253,11 @@ class ExcelImporter(context: Context) {
         ensureActiveScope().launch {
             // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
             // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
-            var cancelled = false
+            //
+            // **플래그는 스레드를 건넌다** (B-219 ③): 취소 버튼은 메인에서 쓰고 `copyWithLimit`은
+            // IO에서 읽는다. 캡처된 지역 `var`에는 가시성 보장이 없어 눌린 취소가 안 보인 채
+            // 수백 MB 복사가 끝까지 갈 수 있다.
+            val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
             var progress: TaskProgressDialog.Handle? = null
             try {
                 // 파일 크기 체크 (외부 파일 전체 상한 — 이미지 포함 ZIP 왕복을 보장하는 수준으로 넉넉히)
@@ -276,7 +280,7 @@ class ExcelImporter(context: Context) {
                         total = scale.totalSteps,
                         stageRes = com.novelcharacter.app.R.string.import_progress_stage_copy,
                         format = TaskProgressDialog.CountFormat.MEGABYTES
-                    ) { cancelled = true }
+                    ) { cancelled.set(true) }
 
                     val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(tempFile).use { output ->
@@ -288,7 +292,7 @@ class ExcelImporter(context: Context) {
                                         format = TaskProgressDialog.CountFormat.MEGABYTES
                                     )
                                 },
-                                isCancelled = { cancelled }
+                                isCancelled = { cancelled.get() }
                             )
                         }
                     } ?: throw Exception("Cannot open file input stream")
@@ -687,7 +691,15 @@ class ExcelImporter(context: Context) {
         val extractDir = File(appContext.cacheDir, "import_extract_${System.currentTimeMillis()}")
         // 해제 구간의 취소는 안전하다 — 산출물이 전부 [extractDir] 안에 있고 아래 finally가
         // 통째로 지운다. 아직 DB에도 filesDir에도 쓴 것이 없다.
-        var extractCancelled = false
+        //
+        // **플래그는 스레드를 건넌다** (B-219 ③): 쓰는 쪽은 취소 버튼(메인), 읽는 쪽은 해제
+        // 루프(IO)다. 캡처된 지역 `var`는 가시성 보장이 없어 **눌린 취소가 영영 안 보일 수
+        // 있다** — 그러면 '취소 중'인 채로 압축이 끝까지 풀린다.
+        val extractCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        // 이 함수가 **직접 연** 진행 창. 이어받은 것(progress)은 연 쪽이 닫는다.
+        // 아래 본문에는 조기 반환이 여럿이라(파일 없음·상한 초과·취소) 여기에 두지 않으면
+        // 멈춘 가져오기의 창이 '진행 중'인 채로 영영 남는다 (B-219 ①).
+        var ownedProgress: TaskProgressDialog.Handle? = null
         try {
             extractDir.mkdirs()
 
@@ -704,7 +716,7 @@ class ExcelImporter(context: Context) {
             val extractProgress = progress ?: showTaskProgress(
                 total = entryTotal,
                 stageRes = com.novelcharacter.app.R.string.import_progress_stage_extract
-            ) { extractCancelled = true }
+            ) { extractCancelled.set(true) }.also { ownedProgress = it }
             postProgress(extractProgress, 0, entryTotal, extractStage)
 
             // ZIP bomb 방어는 전체 파일 크기가 아니라 해제 지점에서 엔트리별로 수행한다
@@ -716,7 +728,7 @@ class ExcelImporter(context: Context) {
                 for (entry in zip.entries()) {
                     // 이어받은 창은 취소 버튼이 복사 구간에서 붙은 것이라, 눌린 사실은 창이 들고
                     // 있다([Handle.isCancelled]). 새로 연 창은 위 람다가 플래그를 세운다.
-                    if (extractCancelled || extractProgress?.isCancelled == true) {
+                    if (extractCancelled.get() || extractProgress?.isCancelled == true) {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(appContext, com.novelcharacter.app.R.string.import_cancelled, Toast.LENGTH_SHORT).show()
                         }
@@ -855,7 +867,12 @@ class ExcelImporter(context: Context) {
             }
 
         } finally {
+            // **지우기가 먼저다.** 아래 닫기는 메인으로 건너가는 suspend 호출이라 스코프가
+            // 취소된 상태면 그 자리에서 던진다 — 순서가 반대면 해제 폴더가 캐시에 남는다.
             extractDir.deleteRecursively()
+            // 조기 반환·예외·취소 어느 쪽으로 나가도 내가 연 창은 닫는다 (B-219 ①).
+            // 정상 경로는 옵션 창을 띄우기 전에 이미 닫았고, `dismiss`가 멱등이라 무해하다.
+            dismissTaskProgress(ownedProgress)
         }
     }
 
