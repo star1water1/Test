@@ -782,6 +782,9 @@ class CharacterSaveCoordinator(
                 val freed = com.novelcharacter.app.util.ImageDeletionService.delete(
                     db = db, path = path,
                     owners = com.novelcharacter.app.util.ImageDeletionService.Owners.NONE,
+                    // `OrganizeFolderService`의 삭제 루프와 같은 모양이다 — 같은 `delete`에
+                    // 먹이고, 그 함수가 다른 행의 linkGroupId를 바꾼다.
+                    // 단발 허용(B-243 — 읽는 값을 소비처가 되쓴다. 겹이 필요하다)
                     linkGroupId = db.imageMetaDao().getByPath(path)?.linkGroupId,
                     gson = gson
                 )

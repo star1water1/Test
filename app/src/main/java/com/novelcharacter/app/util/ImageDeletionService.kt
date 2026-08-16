@@ -113,6 +113,7 @@ object ImageDeletionService {
                 }
             }
             db.imageMetaDao().deleteByPaths(listOf(path, canon))
+            // 단발 허용(이미지 한 장을 지우는 경로다 — 토큰 루프가 아니다. B-239·B-241 확인)
             if (linkGroupId != null) db.imageMetaDao().clearGroupIfSingleton(linkGroupId)
             // 마지막에 시도한다 — 실패하면 위의 참조 정리가 통째로 되돌아간다.
             if (existed && !file.delete()) throw java.io.IOException("파일 삭제 실패: $path")

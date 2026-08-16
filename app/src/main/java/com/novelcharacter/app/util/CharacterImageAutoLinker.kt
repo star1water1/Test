@@ -99,9 +99,10 @@ object CharacterImageAutoLinker {
                 SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, token) }
                 linked += ids.size
             }
-            for (token in plan.dirtyAutoTokens) {
-                db.imageMetaDao().clearGroupIfSingleton(token)
-            }
+            // 토큰마다 돌던 정리를 일괄판 하나로 접는다 (B-241). 읽기가 없는 순수 쓰기 루프라
+            // 겹이 필요 없고, 묶음이 행을 나눠 가지므로 갈라 불러도 답이 같다
+            // (근거의 단일 소스는 `clearSingletonGroups`의 주석 — B-239).
+            SqlInChunks.each(plan.dirtyAutoTokens) { db.imageMetaDao().clearSingletonGroups(it) }
             // 링크만을 위해 자동 입양됐던 행은 링크가 풀리면(해제·singleton 정리 모두) 반납한다.
             // 태그가 붙었거나 사용자 행으로 승격된 것은 남는다.
             db.imageMetaDao().sweepBareAutoAdopted()

@@ -491,6 +491,29 @@ object OrganizeFolderService {
         // 푼다"로 판정하면 `_미배정/<세트명>/`의 해제까지 풀어 버려서, 뒤이은 ④가 기존 그룹을
         // 흡수하지 못한다 — 규약상 **병합**이어야 할 것이 조용히 **이동**이 되고, 사전 확인이
         // 이미 약속한 "폴더에 없던 이미지 M장이 함께 묶입니다"와 어긋난다.
+        //
+        // **경로마다 묻던 `getByPath`를 이 루프 앞의 일괄 조회 한 번으로 내렸다 (B-241).**
+        // 답이 같은 근거: 이 루프의 쓰기는 **제 행만** 건드리고(`setGroup(listOf(imageId), null)`),
+        // 뗀 표식·캐릭터 갱신은 `linkGroupId`를 보지 않는다 — 한 항목의 쓰기가 다른 항목의 답을
+        // 바꾸지 않는다. 예외는 **같은 경로가 두 번 실리는 경우**뿐이라 겹으로 받아 반영한다
+        // (겹은 트랜잭션이 성공했을 때만 갱신한다 — 롤백된 쓰기를 반영하면 겹이 DB보다 앞선다).
+        // `adopt`가 새로 만드는 행은 `linkGroupId`가 null이라 "행이 없다"와 답이 같다.
+        //
+        // **실패를 null로 떨어뜨리지 않는다 — `null`이 여기서 두 뜻이기 때문이다.** 종전에는 이
+        // 읽기가 항목 트랜잭션 *안*이라 실패가 곧 그 항목의 실패였고 `failures`에 실렸다. 앞으로
+        // 모으면서 삼키면 *묶음을 풀지 않고 성공이라 말하는* 상태가 된다(개발 의도 2번 — 조용히
+        // 틀린 고지도 유실이다). 그래서 실패는 `null` 지도로 남기고, **그것을 쓰는 항목만**
+        // 트랜잭션 안에서 던져 종전과 같은 자리에서 같은 실패를 낸다(묶음을 안 푸는 항목은
+        // 그 읽기를 애초에 하지 않았으므로 그대로 성공한다).
+        val detachGroups: MutableMap<String, String?>? =
+            if (cancelled || plan.detaches.isEmpty()) HashMap()
+            else runCatching {
+                val m = HashMap<String, String?>()
+                val storedPaths = plan.detaches.map { bundle.stored(it.path) }.distinct()
+                SqlInChunks.flat(storedPaths) { db.imageMetaDao().getByPaths(it) }
+                    .forEach { m[it.path] = it.linkGroupId }
+                m
+            }.getOrNull()
         if (!cancelled) for (action in plan.detaches) {
             if (isCancelled()) { cancelled = true; break }
             val file = fileById[action.item.id] ?: continue
@@ -523,7 +546,9 @@ object OrganizeFolderService {
                         DetachedImageMarker.clearMark(db, listOf(storedPath))
                     }
                     if (action.unlinks) {
-                        val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
+                        val groups = detachGroups
+                            ?: throw IllegalStateException("이미지 묶음 조회 실패")
+                        val oldGroup = groups[storedPath]
                         if (oldGroup != null) {
                             db.imageMetaDao().setGroup(listOf(imageId), null)
                             // 정리(singleton 해제)는 **모든 해제가 끝난 뒤** 한 번에 한다 —
@@ -541,6 +566,8 @@ object OrganizeFolderService {
                 // 한 칸에 담으면 결과가 사용자에게 거짓말을 한다.
                 if (action.fromCharacterIds.isNotEmpty()) detached++
                 if (didUnlink) unlinked++
+                // 겹 갱신 — 커밋된 쓰기만 반영한다(같은 경로가 두 번 실릴 때의 답을 지킨다).
+                if (didUnlink) detachGroups?.put(bundle.stored(action.path), null)
                 processedFiles.add(file)
             } else failures.add(file.name)
             step()
@@ -565,6 +592,10 @@ object OrganizeFolderService {
                     db = db,
                     path = storedPath,
                     owners = ownerIndex[canon] ?: ImageDeletionService.Owners.NONE,
+                    // 이 값을 먹는 `delete`가 제 안에서 `clearGroupIfSingleton`으로 **다른 행의**
+                    // linkGroupId를 바꾼다 — 앞으로 모으면 낡으므로 겹이 필요하고, 그것은 별도
+                    // 설계 판정이라 등재만 했다.
+                    // 단발 허용(B-243 — 읽는 값을 소비처가 되쓴다. 겹이 필요하다)
                     linkGroupId = db.imageMetaDao().getByPath(storedPath)?.linkGroupId,
                     gson = gson
                 )
@@ -587,6 +618,21 @@ object OrganizeFolderService {
         // 인앱 해제와 같은 빠져나갈 길(자동 링크를 끄거나 캐릭터에서 이미지를 빼기)을 안내한다.
         // 설정이 꺼져 있으면 재동기화가 돌지 않으므로 그때는 정상적으로 푼다.
         val autoLinkOn = ImageSettingsStore(context).getAutoLinkByCharacter()
+        // 위 ③과 같은 일괄 조회 — 근거도 같다(제 행만 쓴다 · 같은 경로 재등장은 겹으로 받는다).
+        // **③의 것을 물려 쓰지 않고 여기서 다시 뜨는 이유:** 사이에 ③-a(삭제)가 돌았고 그쪽은
+        // `ImageDeletionService.delete` 안에서 `clearGroupIfSingleton`을 불러 **다른 행의**
+        // `linkGroupId`까지 바꾼다. 한 번만 떴다면 그 변화를 못 본 값으로 판정하게 된다.
+        // **실패 처분도 ③과 같다** — 여기서는 항목마다 그 읽기를 하므로 실패하면 전부 실패하고,
+        // 그것이 종전과 정확히 같은 결과다.
+        val unlinkGroups: MutableMap<String, String?>? =
+            if (cancelled || plan.unlinkOnly.isEmpty()) HashMap()
+            else runCatching {
+                val m = HashMap<String, String?>()
+                val storedPaths = plan.unlinkOnly.map { bundle.stored(it.path) }.distinct()
+                SqlInChunks.flat(storedPaths) { db.imageMetaDao().getByPaths(it) }
+                    .forEach { m[it.path] = it.linkGroupId }
+                m
+            }.getOrNull()
         if (!cancelled) for (action in plan.unlinkOnly) {
             if (isCancelled()) { cancelled = true; break }
             val file = fileById[action.item.id] ?: continue
@@ -595,7 +641,7 @@ object OrganizeFolderService {
             val ok = runCatching {
                 db.withTransaction {
                     val storedPath = bundle.stored(action.path)
-                    val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
+                    val oldGroup = (unlinkGroups ?: throw IllegalStateException("이미지 묶음 조회 실패"))[storedPath]
                     if (oldGroup != null) {
                         if (autoLinkOn && AutoLinkPlanner.isAutoToken(oldGroup)) {
                             keptAuto = true
@@ -611,6 +657,8 @@ object OrganizeFolderService {
             if (ok) {
                 if (didUnlink) unlinked++
                 if (keptAuto) autoLinkedKept++
+                // 겹 갱신 — 커밋된 쓰기만 반영한다(③과 같은 이유).
+                if (didUnlink) unlinkGroups?.put(bundle.stored(action.path), null)
                 processedFiles.add(file)
             } else failures.add(file.name)
             step()
@@ -627,11 +675,21 @@ object OrganizeFolderService {
                 db.withTransaction {
                     val now = System.currentTimeMillis()
                     val ids = paths.mapTo(LinkedHashSet()) { db.imageMetaDao().adopt(it, now) }
+                    // 경로마다·토큰마다 묻던 조회 둘을 **일괄 조회 둘**로 내린다 (B-241).
+                    // **겹이 필요 없는 자리다** — 이 블록의 읽기는 전부 아래 `setGroup` 앞에서
+                    // 끝나므로 제가 읽는 것을 쓰지 않는다(가져오기 쪽 루프와 갈리는 지점 — 그쪽
+                    // 처방이 `ImageLinkGroupPlanner`다. B-239). 세트마다 트랜잭션이 따로라
+                    // 앞 세트의 쓰기는 이 조회가 이미 보고 있다.
+                    val metaByPath = SqlInChunks.flat(paths.distinct()) { db.imageMetaDao().getByPaths(it) }
+                        .associateBy { it.path }
+                    // 순서를 `paths`로 훑는 것이 규약이다 — 아래 `token`이 **첫 경로의 묶음**이라
+                    // 조회가 돌려준 순서를 그대로 쓰면 흡수 대상이 달라진다.
                     val existingGroups = paths
-                        .mapNotNull { db.imageMetaDao().getByPath(it)?.linkGroupId }
+                        .mapNotNull { metaByPath[it]?.linkGroupId }
                         .filterNot { AutoLinkPlanner.isAutoToken(it) }
                         .distinct()
-                    for (g in existingGroups) db.imageMetaDao().getByGroup(g).forEach { ids.add(it.id) }
+                    SqlInChunks.flat(existingGroups) { db.imageMetaDao().getByGroups(it) }
+                        .forEach { ids.add(it.id) }
                     val token = existingGroups.firstOrNull() ?: UUID.randomUUID().toString()
                     SqlInChunks.each(ids.toList()) { db.imageMetaDao().setGroup(it, token) }
                 }
@@ -647,12 +705,25 @@ object OrganizeFolderService {
         //
         // 그룹이 통째로 풀려 0장이 되면 아무도 남지 않으므로 기록되지 않는다. 이것이 곧
         // "의도한 잡동사니는 적지 않는다"의 구현이다 — 별도 분기가 필요 없다.
+        //
+        // **토큰마다 왕복 둘(조회 + 정리)을 각각 한 번으로 내렸다 (B-241).** 답이 같은 근거는
+        // 묶음이 행을 나눠 가진다는 것이다 — 행 하나의 `linkGroupId`는 하나이므로 토큰 X를 푸는
+        // 것이 토큰 Y의 인원을 못 바꾸고, 그래서 판정도 정리도 순서에 걸리지 않는다
+        // (정본은 `clearSingletonGroups`의 주석 — B-239). `scattered`의 순서는 `touchedGroups`
+        // 순서를 그대로 훑어 지킨다.
+        //
+        // **여기서는 실패를 삼켜도 된다 — 종전에도 그랬고, 위 ③과 달리 사용자에게 할 말이 없다.**
+        // 이 블록이 내는 것은 어시스턴트 카드가 읽는 *장부*뿐이고 반영 자체는 이미 끝났다.
+        // 다만 삼키는 **범위**가 토큰 하나에서 전체로 넓어진 것은 사실이라 적어 둔다.
+        val remainingByGroup = runCatching {
+            SqlInChunks.flat(touchedGroups) { db.imageMetaDao().getByGroups(it) }
+        }.getOrDefault(emptyList()).groupBy { it.linkGroupId }
         val scattered = ArrayList<String>()
         for (group in touchedGroups) {
-            val remaining = runCatching { db.imageMetaDao().getByGroup(group) }.getOrDefault(emptyList())
+            val remaining = remainingByGroup[group].orEmpty()
             if (remaining.size == 1) scattered.add(remaining[0].path)
-            runCatching { db.imageMetaDao().clearGroupIfSingleton(group) }
         }
+        runCatching { SqlInChunks.each(touchedGroups) { db.imageMetaDao().clearSingletonGroups(it) } }
         if (scattered.isNotEmpty()) {
             runCatching { FolderRoundtripPrefs.addScatteredPaths(context, scattered) }
         }
