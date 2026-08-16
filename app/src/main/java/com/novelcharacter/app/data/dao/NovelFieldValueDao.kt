@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.novelcharacter.app.data.model.NovelFieldValue
+import com.novelcharacter.app.util.SqlInChunks
 
 /**
  * 작품 커스텀 필드 값 DAO (확-3). [EventFieldValueDao]와 같은 규약을 따른다 —
@@ -23,7 +24,7 @@ interface NovelFieldValueDao {
     suspend fun getAllValuesList(): List<NovelFieldValue>
 
     /**
-     * 여러 작품의 필드값 일괄 조회. 호출부에서 900개 단위로 청크할 것(SQLite 999-변수 상한) —
+     * 여러 작품의 필드값 일괄 조회. 호출부는 [SqlInChunks]를 지날 것(R-54 — SQLite 변수 상한) —
      * 전량 조회를 쓰면 화면에 보이는 작품 수와 무관하게 테이블 전체를 읽는다.
      */
     @Query("SELECT * FROM novel_field_values WHERE novelId IN (:novelIds)")
@@ -88,13 +89,12 @@ interface NovelFieldValueDao {
      * 렌더하지 못한 필드의 값은 손대지 않는다 — 폼을 '전체 진실'로 다루면 화면에 못 그린 값이
      * 저장 한 번에 전멸한다(사건판이 S-6에서 겪은 결함).
      *
-     * SQLite 999-변수 상한 때문에 삭제를 900개씩 청크한다.
+     * 삭제 목록은 [SqlInChunks]를 지난다(R-54) — SQLite 변수 상한 방어이고, 커버 집합이
+     * 한 덩이에 들어가는 흔한 경우에는 쪼개지 않으므로 리스트를 새로 만들지도 않는다.
      */
     @Transaction
     suspend fun replaceForFields(novelId: Long, fieldIds: List<Long>, values: List<NovelFieldValue>) {
-        if (fieldIds.isNotEmpty()) {
-            fieldIds.chunked(900).forEach { deleteByNovelAndFields(novelId, it) }
-        }
+        SqlInChunks.each(fieldIds) { deleteByNovelAndFields(novelId, it) }
         if (values.isNotEmpty()) insertAll(values)
     }
 }

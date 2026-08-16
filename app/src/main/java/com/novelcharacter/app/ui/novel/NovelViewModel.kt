@@ -139,7 +139,8 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
      * 작품 카드에 얹을 필드값 요약 (B-67 — 사건 카드가 B-5에서 세운 규약 그대로다).
      *
      * 목록에 실제로 그려지는 작품만 조회한다 — 전량 조회는 화면에 보이는 작품 수와 무관하게
-     * 값 표 전체를 읽는다. SQLite 999-변수 상한 때문에 900개씩 청크한다.
+     * 값 표 전체를 읽는다. `IN (:목록)`은 [com.novelcharacter.app.util.SqlInChunks]를 지난다 —
+     * SQLite 변수 상한 방어이고, 한 덩이에 들어가면 쪼개지 않으므로 흔한 경우가 되레 싸다(R-54).
      *
      * 정의는 **구역을 가리지 않고** 읽는다: 목록이 전 세계관을 걸칠 수 있고(세계관 필터 없음),
      * 무소속 작품은 전역 구역의 정의를 든다(B-129). 어느 정의를 쓸지는 값 행이 고르므로
@@ -161,7 +162,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
             if (defs.isEmpty()) return emptyMap()
 
             val distinctIds = novelIds.distinct()
-            val values = distinctIds.chunked(900).flatMap { chunk ->
+            val values = com.novelcharacter.app.util.SqlInChunks.flat(distinctIds) { chunk ->
                 db.novelFieldValueDao().getValuesByNovels(chunk)
             }
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {

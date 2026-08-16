@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.excel.ExportCancelledException
 // 이미지 수록 집계는 엑셀 백업과 같은 벌을 쓴다(B-225) — 두 경로가 하는 일이 같다.
 import com.novelcharacter.app.excel.ImageZipReport
+import com.novelcharacter.app.util.SqlInChunks
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.Deflater
@@ -149,9 +150,11 @@ class WorldPackageExporter(private val context: Context) {
         // v4: 작품 필드값 — 내보내는 작품의 값만(확-3). 정의는 위 전 entityType 조회가 이미 담았다.
         val novelFieldValues = db.novelFieldValueDao().getAllValuesList()
             .filter { it.novelId in novelIds }
-        // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함). IN 청크는 저장소 공통 관례.
-        val fieldValueEntries = fieldDefinitionIds.chunked(900)
-            .flatMap { db.fieldValueEntryDao().getForFields(it) }
+        // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함).
+        // IN 목록은 저장소 공통 통로([SqlInChunks] · R-54)를 지난다.
+        val fieldValueEntries = SqlInChunks.flat(fieldDefinitionIds) {
+            db.fieldValueEntryDao().getForFields(it)
+        }
         // v5: 등급 체계(U-1) — 필드 config가 code로 참조하므로 함께 싣지 않으면 수신 기기에서
         // 참조가 전부 허공을 가리킨다(정의는 실효 표로 동작하지만 체계 편집·공유가 사라진다).
         val gradeSystems = db.gradeSystemDao().getByUniverseList(config.universeId)

@@ -20,6 +20,7 @@ import com.novelcharacter.app.util.RepresentativeWeighting
 import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.SortComparators
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterListPreset
@@ -249,8 +250,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // 태그 필터 → 매칭 캐릭터 id 집합(OR). 타깃 쿼리 사용(전체 스캔 제거). (태그 집합, character_tags 에폭) 키.
     private val tagFilterMemo = EpochMemo<Set<String>, Set<Long>> { tags ->
         val result = HashSet<Long>()
-        // 900개씩 청크 — SQLite IN(...) 변수 상한(999) 방어(batchRemoveTags와 동일 정책).
-        for (chunk in tags.toList().chunked(900)) {
+        // 통로를 지난다 — SQLite IN(...) 변수 상한 방어(R-54 · 저장소 공통).
+        SqlInChunks.each(tags) { chunk ->
             result.addAll(app.database.characterTagDao().getCharacterIdsByTags(chunk))
         }
         result
@@ -1083,12 +1084,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 if (paths.isEmpty()) return@withContext emptyList()
-                val metaIds = paths.chunked(900)
-                    .flatMap { db.imageMetaDao().getByPaths(it) }
+                val metaIds = SqlInChunks.flat(paths) { db.imageMetaDao().getByPaths(it) }
                     .map { it.id }
                 if (metaIds.isEmpty()) return@withContext emptyList()
-                metaIds.chunked(900)
-                    .flatMap { db.imageTagDao().getDistinctTagsForImages(it) }
+                // `DISTINCT`는 조각 안에서만 성립하므로 접는 일은 여기서 한다(R-54).
+                SqlInChunks.flat(metaIds) { db.imageTagDao().getDistinctTagsForImages(it) }
                     .distinct()
             } catch (e: Exception) {
                 Log.e("CharacterViewModel", "Failed to load image tags for AI context", e)
@@ -1104,8 +1104,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     db.factionMembershipDao().getMembershipsByCharacterList(characterId)
                 )
                 if (activeFactionIds.isEmpty()) return@withContext emptyList()
-                val nameById = activeFactionIds.chunked(900)
-                    .flatMap { db.factionDao().getByIds(it) }
+                val nameById = SqlInChunks.flat(activeFactionIds) { db.factionDao().getByIds(it) }
                     .associate { it.id to it.name }
                 activeFactionIds.mapNotNull { nameById[it] }
             } catch (e: Exception) {
@@ -1123,8 +1122,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val otherIds = relationships
                     .map { if (it.characterId1 == characterId) it.characterId2 else it.characterId1 }
                     .distinct()
-                val nameById = otherIds.chunked(900)
-                    .flatMap { db.characterDao().getCharactersByIds(it) }
+                val nameById = SqlInChunks.flat(otherIds) { db.characterDao().getCharactersByIds(it) }
                     .associate { it.id to it.displayName }
                 relationships.mapNotNull { rel ->
                     val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1

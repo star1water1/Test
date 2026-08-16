@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.UniverseMoveCounts
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.launch
 
 sealed class BatchOperationResult {
@@ -345,14 +346,14 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         if (ids.isEmpty()) return emptyMap()
         val charToNovel = HashMap<Long, Long?>(ids.size)
         val novelIds = HashSet<Long>()
-        for (chunk in ids.chunked(900)) {
+        SqlInChunks.each(ids) { chunk ->
             for (char in app.database.characterDao().getCharactersByIds(chunk)) {
                 charToNovel[char.id] = char.novelId
                 char.novelId?.let { novelIds.add(it) }
             }
         }
         val novelUniverse = HashMap<Long, Long?>(novelIds.size)
-        for (chunk in novelIds.toList().chunked(900)) {
+        SqlInChunks.each(novelIds) { chunk ->
             for (novel in novelRepository.getNovelsByIds(chunk)) novelUniverse[novel.id] = novel.universeId
         }
         val result = HashMap<Long, Long?>(charToNovel.size)

@@ -396,6 +396,7 @@ $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/data/EventFieldValueMergeTest.kt
 $TEST/data/NovelFieldValueMergeTest.kt
 $TEST/data/EventFieldValueDaoReplaceTest.kt
+$TEST/data/NovelFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt

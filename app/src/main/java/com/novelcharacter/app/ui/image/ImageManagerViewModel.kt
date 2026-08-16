@@ -1453,10 +1453,11 @@ class ImageManagerViewModel(
      *
      * @param onProgress (처리한 장, 전체 장). 총량은 대상 이미지 수다(규약 R-26 · B-51).
      *
-     * **삭제 질의를 900개씩 끊어 보낸다.** 종전에는 선택분 전량을 `IN (:imageIds)` 하나에
+     * **삭제 질의를 [SqlInChunks]로 끊어 보낸다.** 종전에는 선택분 전량을 `IN (:imageIds)` 하나에
      * 실었는데, SQLite의 바인딩 변수 상한(999)을 넘으면 질의 자체가 예외로 죽는다 —
      * 그런데 이 함수의 `catch`가 그것을 0으로 삼켜 **"태그를 지웠다고 생각했는데 그대로"**가
-     * 된다(조용한 유실). 이 저장소의 다른 대량 질의가 쓰는 `chunked(900)` 관례를 따른다.
+     * 된다(조용한 유실). **이 자리가 R-54의 `reservedBinds`가 있는 이유다** — 질의가
+     * `imageId IN (…) AND tag IN (…)`이라 두 목록이 한 예산을 나눠 쓴다.
      * 끊어 보내면 진행도의 단위도 생긴다.
      */
     fun removeTagsFromImages(
@@ -1471,9 +1472,9 @@ class ImageManagerViewModel(
                     val ids = metaIdsForPaths(paths)
                     var processed = 0
                     // 질의는 `imageId IN (…) AND tag IN (…)`이라 **두 목록이 함께** 변수를 쓴다 —
-                    // 태그 몫을 빼지 않으면 태그가 많을 때 다시 상한에 닿는다.
-                    val chunkSize = (SQL_BIND_CHUNK - tags.size).coerceAtLeast(1)
-                    for (chunk in ids.chunked(chunkSize)) {
+                    // 태그 몫을 빼지 않으면 태그가 많을 때 다시 상한에 닿는다. 그 빼기는
+                    // [SqlInChunks.sizeFor]가 단일 소스이고, 여기서 손으로 되풀이하지 않는다.
+                    SqlInChunks.each(ids, reservedBinds = tags.size) { chunk ->
                         db.imageTagDao().deleteTagsFromImages(chunk, tags)
                         processed += chunk.size
                         onProgress(processed, ids.size)
@@ -2108,13 +2109,5 @@ class ImageManagerViewModel(
             if (it == oldPath || c == oldCanon) newPath else it
         }
         return gson.toJson(updated)
-    }
-
-    companion object {
-        /**
-         * `IN (…)` 목록을 끊어 보내는 단위 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242).
-         * 종전에는 이 자리에 900이 따로 적혀 있었고, 같은 값이 저장소 일곱 자리에 흩어져 있었다.
-         */
-        private const val SQL_BIND_CHUNK = SqlInChunks.LIMIT
     }
 }
