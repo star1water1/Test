@@ -270,15 +270,25 @@ tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 un
 > |---|---|---|---|
 > | *(이력 — 지난 판들이 왜 이 목록에 없는가)* | | | **로드맵 9판도 올렸다가 같은 세션에서 지웠다** (PR **#270**, run `31525468923`(build) · `31525469030`(migration), head `edbbcca`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **이 판에서 그 실행의 값이 특히 컸다** — 화면 파일이 **여섯**이라 로컬 프로브가 원리적으로 못 보는 몫이 그만큼이었고, `Run unit tests`가 두 Fragment의 재작성과 `presetSavedEvent` 배선을 **처음 컴파일했다.** 개명한 문자열 `preset_name_required`의 리소스 링크도 `Build Debug APK`가 처음 확인했다(로컬에 증명 수단이 아예 없는 부류다). 배지가 아니라 단계를 봤다: `Static checks` ✓ 33초 · `Schema harnesses` ✓ · **`Run unit tests` ✓ 2분57초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `edbbcca` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **마이그레이션 워크플로도 돌았고 초록이다** — 트리거가 `data/dao/**`를 담고 있고 이 판이 DAO에 조회 하나를 더했기 때문이다(스키마는 그대로다). `Room 스키마가 커밋돼 있는가` ✓ · 에뮬레이터에서 **`Run migration instrumentation tests` ✓ 5분20초.** **로드맵 6판도 올렸다가 같은 세션에서 지웠다** (PR **#267**, run `31501431238`. 사용자가 *"콜드검토 하고 pr하고 병합까지"*를 지시했다). **로드맵이 예고한 *화면 파일 0*이 깨진 판이라 이 실행의 값이 특히 컸다** — `DynamicFieldRenderer`·`DynamicFieldFormBuilder`·`ai/CharacterFieldAiSuggester` 셋은 로컬 프로브 범위 밖이라 **`Run unit tests`가 그것들을 처음 컴파일했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ **3분02초** · `Build Debug APK` ✓ 48초 · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ (Release 둘의 skipped는 조건부라 정상). **`Commit Room schemas`가 아무것도 얹지 않았다** — 브랜치 머리가 `96d5eff` 그대로인 것이 이 판의 *마이그레이션 없음*을 기계가 확인해 준 자리다. **B-95+B-105는 올렸다가 같은 세션에서 지웠다** (PR **#255**, run `31342855605`). **사용자가 *"콜드검토하고 pr열고 병합까지"*를 지시했다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 25초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 3분02초 · `Build Debug APK` ✓ 1분56초 · `Upload Debug APK` ✓ (Release 둘의 `skipped`는 조건부라 정상). **이 실행에서 `Run unit tests`의 값이 특히 크다** — `AppSettingsBindings.kt`는 `ai/`·`backup/`·`ui/`를 import 해 실클래스패스 프로브에서 뺐고 차분 컴파일은 `-classpath`가 없어 stdlib째 미해석이라, **이 판의 본체를 컴파일해 본 것이 그 단계가 처음**이었다(그 태스크가 main+test 소스셋을 함께 짓는다). **B-141도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #241, run `31255070553`). 화면 파일이 **셋**(`CharacterViewModel`·`ImageManagerViewModel`·`ImageManagerFragment`)이라 `CLAUDE.md` 4번의 *2~3개*에 처음으로 닿은 자리였고, **사용자가 *"필요하면 CI하고 병합까지"*를 지시해 그 자리에서 PR을 열었다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 17초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분09초 · `Build Debug APK` ✓ 1분23초. `Build Release APK`·`Upload Release APK`는 `workflow_dispatch` + `build_type == 'release'` 조건이라 PR 이벤트에서 **건너뛰는 것이 정상**이다. **이 실행이 증명한 것을 적어 둘 값이 있다** — 로컬 프로브는 `ui/**`를 통째로 빼므로 `ImageManagerFragment`의 새 분기와 두 ViewModel의 시그니처 변경은 **`Run unit tests`가 처음으로 컴파일한 것**이다(그 태스크가 main+test 소스셋을 함께 짓는다). **곁다리 사실 하나:** 마지막 push는 **문서만** 바뀐 것이었는데도 PR에 체크가 붙었다 — `paths-ignore: '**.md'`는 *문서만 바뀐 PR에는 체크가 하나도 안 달린다*는 뜻이지 *문서만 바뀐 push가 기존 PR의 체크를 건너뛴다*는 뜻이 아니다. **B-137도 건너뛰지 않았다 — 올렸다가 같은 세션에서 지웠다**(PR #239, run `31249996171`). 화면 파일이 **하나**(`DefaultFieldManageFragment`)이고 그것도 문구·주석만 바뀌어 `CLAUDE.md` 4번의 *2~3개*에 미치지 않았으므로 **몰아 돌릴 자리였는데, PR을 여니 CI가 그대로 돌아 초록이 떴다.** 배지가 아니라 단계를 봤다: `Static checks` ✓ 23초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분41초 · `Build Debug APK` ✓ 1분46초. `Build Release APK`·`Upload Release APK`는 PR 이벤트에서 **건너뛰는 것이 정상**이다. **여기서 배울 것 하나:** 이 저장소는 병합 경로가 PR뿐이라(master 직접 push 금지) **"CI를 건너뛴다"는 것은 실제로는 "PR을 열기 전까지 안 돌린다"에 가깝다** — 목록에 올릴지는 *돌았는가*가 아니라 *초록을 확인했는가*로 가른다. **B-150+B-132+B-151도 건너뛰지 않았다** — 올렸다가 **같은 세션에서 지웠다**(PR #233, run `31210563139`. 배지가 아니라 단계를 봤다: `Static checks` ✓ 24초 · `Schema harnesses` ✓ · `Run unit tests` ✓ 2분43초 · `Build Debug APK` ✓ 1분48초. `Build Release APK`는 `if: build_type == 'release'`라 PR 이벤트에서 **건너뛰는 것이 정상**이다 — skipped를 실패로 읽지 말 것). 앞선 B-119·B-120·B-121도 마찬가지다.** B-121은 화면 파일 다섯(`ImageManagerFragment`·`ImageManagerViewModel`·`ImageTagFilterBottomSheet`·`ImageBatchOperationBottomSheet`·신규 `ImageAiTagReviewSheet`)에 새 레이아웃 둘·새 id 여럿이라 같은 자리에서 PR을 열었다. 아래는 앞선 둘의 사유다 — B-119는 화면 파일 여섯(`FieldEditDialog`·`FieldManageFragment`·`FieldViewModel`·`SettingsFragment`·`UniverseViewModel`·신규 `DefaultFieldManageFragment`+`DefaultFieldViewModel`), **B-120은 일곱**(`AiFieldSuggestSheet`·`NarrativeWriteSheet`·`CharacterViewModel`·`CharacterEditFragment`·`RandomSupplementFragment`·`AiSettingsFragment`·신규 `AiImageAttachRow`) — 각각 한 슬라이스가 혼자 `CLAUDE.md` 4번의 *2~3개* 기준을 넘겼다. **B-120의 신규 파일은 `ui/**`라 로컬 프로브가 원리적으로 못 보고**, 레이아웃에 새 id 셋(`attachImagesSlider`·`attachImagesValue`·`attachRepresentativeSwitch`)이 생겨 **ViewBinding 대조도 CI뿐**이라 그 자리에서 PR을 열었다 |
 >
-> **⏳ 2026.08.16 — B-244 자리: 미검증 1건.** 화면 파일이 **하나**(`ui/image/ImageManagerViewModel.kt`
-> — 입양 호출 다섯 자리를 일괄 통로로 옮겼다)이고, `CLAUDE.md` 4번의 *2~3개*에 미치지 않아
-> **몰아 돌릴 자리로 판정했다.** **이 저장소의 CI는 작업 브랜치 push만으로 돌지 않는다**
-> (`build-apk.yml`이 `branches: [main, master]`로 한정 — PR을 열어야 돈다), 그래서 *"돌리지 않았다"*가
-> 곧 *"PR 전까지 못 본다"*이다(이 목록이 위 이력에서 이미 같은 결론에 닿았다).
-> **나머지는 로컬이 덮었다** — `util/ImageAdoption.kt`·`ImageAdoptionPlanner.kt`·`ImageOwnershipGuard.kt`·
-> `OrganizeFolderService.kt`·`CharacterImageAutoLinker.kt`·`excel/ExcelImportService.kt`·
-> `data/dao/ImageMetaDao.kt`·`data/repository/FieldValueLibraryRepository.kt`는 **전부 실클래스패스
-> 프로브 범위 안**이고 신규 오류가 스텁 그림자 둘뿐이다. **미검증분은 그 ViewModel의 컴파일 하나**다.
+> **✅ 2026.08.16 — B-244 자리(PR #320, run `31929039133`, head `affb6d6`)가 마지막으로 덮었다.
+> 목록은 비어 있다.** **배지가 아니라 단계를 봤다**(`Static checks` ✓ 36초 — **금지 목록에
+> `adopt`·`adoptAuto`를 더한 `check_import_row_queries.sh`가 여기서 기계에 걸렸다** ·
+> `Schema harnesses` ✓ · **`Run unit tests` ✓ 3분 12초** · **`Build Debug APK` ✓ 51초** ·
+> `Upload Room schemas` ✓ · `Commit Room schemas` ✓ · `Upload Debug APK` ✓ · `Build Summary` ✓.
+> Release 둘의 skipped는 조건부라 정상. 전체 5분 0초). **이 실행에서 화면 파일 하나의 몫이
+> 명확하다** — `ui/image/ImageManagerViewModel.kt`(입양 호출 다섯 자리)는 로컬 프로브가 `ui/**`를
+> 통째로 빼 **원리적으로 못 보는 자리**이고, 차분 컴파일이 낸 신규 오류를 *무클래스패스 부류*로
+> 판정한 것도 **여기서 사실이 됐다.** **`Commit Room schemas`가 아무것도 얹지 않았다** —
+> `git fetch` 뒤 원격 머리가 `affb6d6` 그대로인 것을 실측했고, **DAO에 `@Insert`를 더했는데도
+> 스키마 56이 그대로라는 것을 기계가 확인해 준 자리다.**
+>
+> **적어 둘 것 하나 — 이 판은 실행을 *둘* 냈고 둘 다 초록이다.** 앞 실행(run `31928731469`,
+> head `418c29b`)도 5분 29초에 초록으로 끝났다(`Run unit tests` ✓ 3분 35초). **그것을 기다리다
+> "한 시간째 멈췄다"고 잘못 읽고 새 실행을 띄운 것이 이 판의 실수다** — 백그라운드 대기를
+> 겹쳐 띄워 놓고 그 시간을 합산했는데 실제로는 동시에 흘렀다. **경과 시간은 합산이 아니라
+> 시계로 잴 것**이고, 이 저장소의 API 응답은 실제보다 뒤처져 오기도 한다(앞 실행이 05:24:53에
+> 끝났는데 한참 `in_progress`로 보였다). **세는 것은 코드가 실린 마지막 head의 실행 하나다**
+> (`affb6d6`) — 이 사실을 적는 커밋은 문서뿐이라 `paths-ignore: '**.md'`로 새 실행을 내지 않는다.
 >
 > *(그전 — B-241 자리(PR #319, run `31926466503`, head `d1a43d6`)가 마지막으로 덮었다.
 > 목록은 그때 비어 있었다.* **배지가 아니라 단계를 봤다**(`Static checks` ✓ 30초 — **범위를 넓힌
@@ -7957,7 +7967,7 @@ CSV/JSON 왕복·통계 리포트 내보내기(확-6), ~~NUMBER auto binning의 
    > | **①** | 5판 잔여 | **B-18** | ⬜ 그대로(3-102 ㄴ 측정 대기 — 기기 필요) |
    > | **②** | 8판 ⓑ 잔여 | **B-72 ⓑ** | ⬜ 그대로(3-106 ㄷ — 실기기 측정 셋) |
    > | **③** | — | **다음 차례** | **정해져 있지 않다.** 위 머리말의 🟠 둘(**둘 다 실기기 몫**) + 판정 대기 B-223 + B-233·B-234·B-235·B-237 + B-243 + **이 판이 등재한 B-245·B-246** + `check_backlog_markers.sh` 출력에서 고른다 |
-   > | **④** | — | ⏳ CI | ⬜ **돌리지 않았다 — 미검증 1건을 2장 목록에 적었다.** CLAUDE.md v2.0의 완화 조건대로다(화면 파일이 **하나**뿐이고 2~3개가 쌓이면 돌린다). 미검증분은 **`ui/image/ImageManagerViewModel.kt`의 컴파일 하나**이고, 나머지(`util/*`·`excel/*`·`data/dao/*`·`data/repository/*`)는 실클래스패스 프로브가 덮었다. **이 저장소의 CI는 작업 브랜치 push만으로는 돌지 않는다**(`build-apk.yml`이 `branches: [main, master]`로 한정 — PR을 열어야 돈다) |
+   > | **④** | — | ⏳ CI | ✅ **초록 확인 후 병합** — PR **#320**, run `31929039133`, head `affb6d6`(**코드가 실린 마지막 머리다**). **배지가 아니라 단계를 봤다**(`Static checks` ✓ 36초 — **금지 목록을 넓힌 `check_import_row_queries.sh`가 여기서 기계에 걸렸다** · `Schema harnesses` ✓ · **`Run unit tests` ✓ 3분 12초** · **`Build Debug APK` ✓ 51초** · `Upload/Commit Room schemas` ✓ · `Upload Debug APK` ✓ · `Build Summary` ✓. Release 둘의 skipped는 조건부라 정상. 전체 5분 0초). **화면 파일 하나(`ImageManagerViewModel`)의 컴파일 증명이 여기뿐이었다.** **`Commit Room schemas`가 아무것도 얹지 않았다** — 원격 머리가 `affb6d6` 그대로인 것을 실측했고, 그것이 *DAO에 `@Insert`를 더해도 스키마 56이 그대로*임을 기계가 확인해 준 자리다. ⏳ 미검증 목록은 이 실행이 덮어 **비어 있다**. **실행이 둘이었고 둘 다 초록이다** — 경위는 2장 ⏳ 목록(내 시간 계산 착오) |
    > | **⑤** | — | **실기기 확인** | ⬜ **신설 없음** — 문구·레이아웃 무변경(바뀌는 것은 *질의를 몇 번 나눠 보내는가*이고 답은 그대로다). 3-120·3-121·3-122는 그대로 |
    >
    > **① 등재의 수가 처음으로 전부 맞았다 — 그것 자체가 적어 둘 값이다.** 앞 세 판은 등재의 수가
