@@ -8010,7 +8010,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 해제를 먼저 반영한다 — 같은 가져오기에서 A가 빠지고 B가 들어오는 경우, 해제를 뒤에
         // 하면 방금 만든 묶음을 도로 지운다.
         if (clearedGroupIds.isNotEmpty()) {
-            db.imageMetaDao().setGroup(clearedGroupIds, null)
+            // **청크가 필요하다 (B-242):** `setGroup`은 `WHERE id IN (:ids)`이고 여기 실리는 것은
+            // *시트가 링크를 지운 행 전부*라 상한이 없다. 999를 넘으면 질의가 죽고, 이 자리는
+            // 가져오기 트랜잭션 안이라 **한 줄 때문에 가져오기 전체가 되돌아간다.**
+            // 같은 부류를 B-51이 이미 한 번 겪었다(그때는 `catch`가 삼켜 조용한 유실이었다).
+            clearedGroupIds.chunked(IN_CLAUSE_CHUNK)
+                .forEach { db.imageMetaDao().setGroup(it, null) }
             // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
             // 토큰마다 돌던 쓰기를 일괄판으로 내렸다 (B-239) — 갈라 불러도 답이 같은 근거는
             // `clearSingletonGroups`의 주석(묶음이 행을 나눠 가지므로 서로의 인원을 못 바꾼다).
@@ -8041,7 +8046,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     .groupBy({ it.first }, { it.second })
                     .mapValues { (_, ids) -> ids.toSet() }
             for ((token, ids) in com.novelcharacter.app.util.ImageLinkGroupPlanner.plan(groupMembers, currentByToken)) {
-                db.imageMetaDao().setGroup(ids, token)
+                // 여기도 상한이 없다 — 한 묶음에 실리는 행 수는 시트가 정한다 (B-242).
+                // 갈라 불러도 답이 같다: 같은 값을 적는 쓰기라 읽고-고쳐-쓰기가 아니다.
+                ids.chunked(IN_CLAUSE_CHUNK).forEach { db.imageMetaDao().setGroup(it, token) }
             }
         }
 
