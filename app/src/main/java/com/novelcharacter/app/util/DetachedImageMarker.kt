@@ -49,11 +49,16 @@ object DetachedImageMarker {
         if (decision.isEmpty) return decision
         val dao = db.imageMetaDao()
         // 출처가 다른 것끼리 갈라 쓴다 — 보통 한 무리다.
+        //
+        // **나누기는 `bothForms` *뒤*에 건다.** 그 함수는 경로마다 canonical 꼴을 더해
+        // 목록을 최대 두 배로 부풀리므로, 앞에서 나누면 상한을 절반만 지킨 셈이 된다 (B-242).
         for ((code, group) in decision.toMark.groupBy { it.fromCode }) {
-            dao.markDetachedByPaths(DetachedImageRule.bothForms(group.map { it.path }), now, code)
+            SqlInChunks.each(DetachedImageRule.bothForms(group.map { it.path })) {
+                dao.markDetachedByPaths(it, now, code)
+            }
         }
-        if (decision.toClear.isNotEmpty()) {
-            dao.clearDetachedByPaths(DetachedImageRule.bothForms(decision.toClear))
+        SqlInChunks.each(DetachedImageRule.bothForms(decision.toClear)) {
+            dao.clearDetachedByPaths(it)
         }
         return decision
     }
@@ -77,8 +82,9 @@ object DetachedImageMarker {
      * 자유다(D2의 푸는 길 ②).
      */
     suspend fun clearMark(db: AppDatabase, paths: Collection<String>) {
-        if (paths.isEmpty()) return
-        db.imageMetaDao().clearDetachedByPaths(DetachedImageRule.bothForms(paths))
+        SqlInChunks.each(DetachedImageRule.bothForms(paths)) {
+            db.imageMetaDao().clearDetachedByPaths(it)
+        }
     }
 
     /** 표식을 **판정 없이** 붙인다 — `_분리됨/`에서 온 배정 해제(D5의 '판단 안 함' 갈래). */
@@ -88,8 +94,9 @@ object DetachedImageMarker {
         fromCode: String?,
         now: Long = System.currentTimeMillis()
     ) {
-        if (paths.isEmpty()) return
-        db.imageMetaDao().markDetachedByPaths(DetachedImageRule.bothForms(paths), now, fromCode)
+        SqlInChunks.each(DetachedImageRule.bothForms(paths)) {
+            db.imageMetaDao().markDetachedByPaths(it, now, fromCode)
+        }
     }
 
     /** 지금 뗀 표식이 붙어 있는 경로 전부 — 폴더 받아오기 계획이 이것을 받아 간다(D5). */

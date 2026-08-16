@@ -47,6 +47,7 @@ import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -2489,8 +2490,10 @@ class TrashRepository(
         // 복원 시점에만 세면 사용자가 동의한 예고와 실제가 갈린다.
         val savedFieldValues = data.fieldValues.orEmpty()
         val lostNovelFieldValues = if (savedFieldValues.isEmpty()) 0 else {
-            val liveDefIds = db.fieldDefinitionDao()
-                .getFieldsByIds(savedFieldValues.map { it.fieldDefinitionId }.distinct())
+            val liveDefIds = SqlInChunks
+                .flat(savedFieldValues.map { it.fieldDefinitionId }.distinct()) {
+                    db.fieldDefinitionDao().getFieldsByIds(it)
+                }
                 .mapTo(HashSet()) { it.id }
             savedFieldValues.count { it.fieldDefinitionId !in liveDefIds }
         }
@@ -2540,8 +2543,10 @@ class TrashRepository(
         // 버린 건수는 losses에 실려 사용자에게 고지된다(말없이 버리지 않는다).
         val savedValues = plan.data.fieldValues.orEmpty()
         if (savedValues.isNotEmpty()) {
-            val liveDefIds = db.fieldDefinitionDao()
-                .getFieldsByIds(savedValues.map { it.fieldDefinitionId }.distinct())
+            val liveDefIds = SqlInChunks
+                .flat(savedValues.map { it.fieldDefinitionId }.distinct()) {
+                    db.fieldDefinitionDao().getFieldsByIds(it)
+                }
                 .mapTo(HashSet()) { it.id }
             val restorable = savedValues.filter { it.fieldDefinitionId in liveDefIds }
             if (restorable.isNotEmpty()) {
@@ -3763,7 +3768,7 @@ class TrashRepository(
         val idByCode = HashMap<String, Long>()
         val liveIds = HashSet<Long>()
         val distinctIds = oldIds.distinct()
-        for (chunk in distinctIds.chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(distinctIds) { chunk ->
             for (row in fetchByIds(chunk)) {
                 val id = idOf(row)
                 liveIds.add(id)
@@ -3771,7 +3776,7 @@ class TrashRepository(
             }
         }
         val distinctCodes = codes.distinct().filter { it.isNotBlank() }
-        for (chunk in distinctCodes.chunked(IN_CLAUSE_CHUNK)) {
+        SqlInChunks.each(distinctCodes) { chunk ->
             for (row in fetchByCodes(chunk)) {
                 codeOf(row)?.takeIf { it.isNotBlank() }?.let { idByCode[it] = idOf(row) }
             }
@@ -3978,8 +3983,8 @@ class TrashRepository(
             aliases().isNotEmpty()
 
     private companion object {
-        /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
-        const val IN_CLAUSE_CHUNK = 900
+        /** IN 절 변수 한도 회피용 청크 크기 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242). */
+        const val IN_CLAUSE_CHUNK = SqlInChunks.LIMIT
 
         /**
          * 묶음 복원 계측 로그의 태그 (B-18 ①) — `adb logcat -s TrashRestore`로 본다.

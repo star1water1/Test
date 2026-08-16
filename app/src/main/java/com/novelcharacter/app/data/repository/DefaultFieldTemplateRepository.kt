@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.DefaultFieldPlan
+import com.novelcharacter.app.util.SqlInChunks
 
 /**
  * 전역 기본 필드(B-119)의 **쓰기 경로** — 심기·전파·강등이 전부 여기를 지난다.
@@ -330,7 +331,7 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         }
         val demoted = DefaultFieldPlan.demote(toDemote)
         for (row in demoted) fieldDao.update(row)
-        if (globalToDelete.isNotEmpty()) fieldDao.deleteGlobalByIds(globalToDelete)
+        SqlInChunks.each(globalToDelete) { fieldDao.deleteGlobalByIds(it) }
         templateDao.delete(template)
         demoted.size
     }

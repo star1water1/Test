@@ -16,6 +16,7 @@ import com.novelcharacter.app.util.PresetMerge
 import com.novelcharacter.app.util.UnassignedHistoryScope
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import android.util.Log
 import com.novelcharacter.app.util.DetailListSort
@@ -267,20 +268,23 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                 // 그것이 어느 세계관의 것인지 알 수 없다. 값이 가리키는 세계관으로 가린다.
                 val candidates = changeDao.getUnassignedCharactersWithFieldKey(old.key)
                 if (candidates.isNotEmpty()) {
-                    val attribution = app.database.characterFieldValueDao()
-                        .getValueUniversesForCharacters(candidates)
+                    val attribution = SqlInChunks
+                        .flat(candidates) {
+                            app.database.characterFieldValueDao().getValueUniversesForCharacters(it)
+                        }
                         .groupBy({ it.characterId }, { it.universeId })
                         .mapValues { (_, ids) -> ids.toSet() }
                     val plan = UnassignedHistoryScope.plan(candidates, attribution, renameUniverseId)
-                    if (plan.migrate.isNotEmpty()) {
-                        historyCount += changeDao
-                            .migrateFieldKeyForCharacters(plan.migrate, old.key, new.key)
+                    // 두 질의 다 **영향 건수를 돌려준다** — 나눠 물으면 조각별 답이 오므로
+                    // 이어 붙이는 것이 아니라 더해야 한다. 그냥 나누면 마지막 조각의 수가
+                    // 전체인 척하고, 화면이 사용자에게 **적은 수를 말한다** (B-242).
+                    historyCount += SqlInChunks.sum(plan.migrate) {
+                        changeDao.migrateFieldKeyForCharacters(it, old.key, new.key)
                     }
                     // 가리지 못한 것은 **건드리지 않고 센다** — 조용히 넘기면 사용자는 자기
                     // 연표 일부가 옛 키에 남은 것을 영영 모른다(개발 의도 2번).
-                    if (plan.reportable.isNotEmpty()) {
-                        unresolvedCount =
-                            changeDao.countByFieldKeyForCharacters(plan.reportable, old.key)
+                    unresolvedCount = SqlInChunks.sum(plan.reportable) {
+                        changeDao.countByFieldKeyForCharacters(it, old.key)
                     }
                 }
             }

@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
+import com.novelcharacter.app.util.SqlInChunks
 import java.io.File
 
 class NovelRepository(
@@ -18,8 +19,13 @@ class NovelRepository(
 
     suspend fun getAllNovelsList(): List<Novel> = novelDao.getAllNovelsList()
     suspend fun getNovelById(id: Long): Novel? = novelDao.getNovelById(id)
-    /** 여러 작품 일괄 조회 (호출부에서 900개 단위 청크 권장 — SQLite 999-변수 상한). */
-    suspend fun getNovelsByIds(ids: List<Long>): List<Novel> = novelDao.getNovelsByIds(ids)
+    /**
+     * 여러 작품 일괄 조회 — 상한 회피는 **여기가 한다**.
+     * 종전 주석은 *"호출부에서 900개 단위 청크 권장"*이었는데, 권장은 지켜지지 않는다
+     * (B-242가 세어 보니 실제로 아무 호출부도 나누지 않고 있었다).
+     */
+    suspend fun getNovelsByIds(ids: List<Long>): List<Novel> =
+        SqlInChunks.flat(ids) { novelDao.getNovelsByIds(it) }
     suspend fun insertNovel(novel: Novel): Long {
         return db.withTransaction {
             val next = if (novel.universeId != null) {

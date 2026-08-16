@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
+import com.novelcharacter.app.util.SqlInChunks
 
 /**
  * 세력 가입 결과. 자동관계 정책은 "수동 관계 우선" — 동일 (캐릭터쌍, 유형)의 수동 관계가 이미 있으면
@@ -253,7 +254,10 @@ class FactionRepository(private val db: AppDatabase) {
                 .getFactionRelationshipsForCharacter(old.factionId, old.characterId)
                 .map { it.id }
             if (relIds.isNotEmpty()) {
-                for (change in relationshipChangeDao.getChangesForRelationships(relIds)) {
+                val changes = SqlInChunks.flat(relIds) {
+                    relationshipChangeDao.getChangesForRelationships(it)
+                }
+                for (change in changes) {
                     if (change.year == oldLeave &&
                         change.relationshipType == oldType &&
                         change.intensity == oldIntensity
