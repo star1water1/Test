@@ -690,11 +690,19 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val values = com.novelcharacter.app.util.SqlInChunks.flat(distinctIds) { chunk ->
                 db.eventFieldValueDao().getValuesByEvents(chunk)
             }
-            com.novelcharacter.app.util.CardFieldSummary.build(
-                defs = defs,
-                rowsByEntity = values.groupBy({ it.eventId }, { it.fieldDefinitionId to it.value }),
-                entityIds = distinctIds
-            )
+            // 접기와 config JSON 파싱은 부른 쪽 스레드에서 돈다 — 호출부가 `lifecycleScope`라
+            // 그대로 두면 사건이 방출될 때마다 정의마다의 파싱이 **주 스레드**에 얹힌다.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.novelcharacter.app.util.CardFieldSummary.build(
+                    defs = defs,
+                    rowsByEntity = values.groupBy({ it.eventId }, { it.fieldDefinitionId to it.value }),
+                    entityIds = distinctIds
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // **취소는 실패가 아니다.** 목록이 다시 방출되면 앞선 조회는 취소되는데, 그것까지
+            // 아래 갈래가 삼키면 낡은 호출이 살아나 빈 결과를 최신 요약 위에 덮어쓴다.
+            throw e
         } catch (e: Exception) {
             // 카드 부가 정보다 — 실패해도 연표 자체는 그려야 한다. 다만 조용히 삼키지는 않는다.
             Log.e("TimelineViewModel", "Failed to load event field summaries", e)
