@@ -72,15 +72,17 @@ object ImageAdoptionPlanner {
         paths.toCollection(LinkedHashSet()).toList()
 
     fun split(paths: Collection<String>, existing: List<ImageMeta>, promote: Boolean): Split {
-        val wanted = wanted(paths)
-        if (wanted.isEmpty()) return Split(emptyList(), emptyMap(), emptyList(), promote)
+        // 지역 변수 이름을 함수와 달리 둔다 — 같은 이름이면 *초기화 전 자기 참조*처럼 읽힌다
+        // (코틀린은 호출 꼴을 함수로 풀어 실제로는 옳지만, 읽는 사람이 한 번 멈춘다).
+        val folded = wanted(paths)
+        if (folded.isEmpty()) return Split(emptyList(), emptyMap(), emptyList(), promote)
 
-        val wantedSet = wanted.toHashSet()
+        val wantedSet = folded.toHashSet()
         val existingIdByPath = LinkedHashMap<String, Long>(existing.size)
         for (m in existing) if (m.path in wantedSet) existingIdByPath[m.path] = m.id
 
-        val fresh = wanted.filterNot { it in existingIdByPath }
-        return Split(wanted, existingIdByPath, fresh, promote)
+        val fresh = folded.filterNot { it in existingIdByPath }
+        return Split(folded, existingIdByPath, fresh, promote)
     }
 
     /**
