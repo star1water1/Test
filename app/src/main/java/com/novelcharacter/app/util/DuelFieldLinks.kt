@@ -198,6 +198,49 @@ object DuelFieldLinks {
     private val LEGACY_LOWER_WINS_PREFIXES = listOf("'-", "-")
 
     /**
+     * **클수록 유리함을 밝히는 앞머리** — 키가 표식으로 시작할 때만 쓴다 (B-188).
+     *
+     * ## 무엇이 깨져 있었나
+     *
+     * 토큰은 *앞머리 + 키*인데 **구분 장치가 없었다.** `higherWins = true`인 링크의 키가
+     * 표식으로 시작하면(`Link("▼age", higherWins = true)`) 나갈 때 `▼age`가 되고, 되읽으면
+     * `Link("age", higherWins = false)`가 된다 — **방향이 뒤집히고 키가 깎인다.**
+     * 옛 `-`에서 이미 있던 구멍이고 B-173이 그것을 `▼`로도 넓혔다.
+     *
+     * ## 왜 *키 입력을 막는 쪽*이 아니라 이스케이프인가
+     *
+     * 다른 갈래는 필드 키를 만들 때 앞머리를 금지하는 것이었는데, **그것으로는 구멍이 닫히지
+     * 않는다** — 필드 키는 '필드 정의' 시트로도 들어오고 그 경로는 **어떤 입력 창도 지나지
+     * 않는다.** 게다가 이미 저장된 키의 처분이 따로 필요하고, 사용자가 지을 수 있는 이름을
+     * 앱이 좁히는 것은 원칙 01에 어긋난다. **한 경로로 우회되는 방어는 방어가 아니다.**
+     *
+     * ## 옛 파일이 하나도 안 깨지는 이유
+     *
+     * 이 표식은 **뒤에 다시 표식이 올 때만** 앞머리로 읽는다([parseToken]).
+     * 옛 쓰기는 `키` 아니면 `▼키`만 냈으므로, `▲` **다음에 또 표식이 오는 모양**은
+     * 옛 파일에 나올 수 없다 — 그래서 `▲age`처럼 생긴 옛 토큰은 지금도 키 `▲age`로 읽힌다.
+     *
+     * > **남는 자리를 적어 둔다**(개발 의도 2번 — 말없이 넘어가지 않는다):
+     * > `▲` **다음에 표식이 오는 키**(`▲▼x`·`▲-x`·`▲▲x`)는 옛 파일에서 한 겹 깎인다.
+     * > 고치기 전 구멍은 *"표식으로 시작하는 모든 키"*였고 방향까지 뒤집혔는데, 남은 것은
+     * > *"`▲`로 시작하고 그다음도 표식인 키"*이고 방향은 지켜진다. **좁아졌지 사라지지 않았다.**
+     *
+     * 모양이 뜻을 함께 말하는 것도 `▼`를 고른 근거 그대로다 — `▲`는 *클수록 유리*이고,
+     * 엑셀·구글시트가 수식으로 읽지 않는다.
+     */
+    private const val HIGHER_WINS_MARKER = "▲"
+
+    /**
+     * **읽기가 앞머리로 떼는 표식 전부** — 쓰는 하나(`▼`)·읽기만 하는 옛것 둘·감싸는 하나(`▲`).
+     *
+     * 이 목록이 곧 *"키가 이 글자로 시작하면 그냥은 적을 수 없다"*의 정의다. 그래서
+     * **감싸는 쪽([token])과 푸는 쪽([parseToken])이 같은 목록을 봐야 한다** — 갈리면
+     * 감싸 놓고 못 푸는 토큰이나 감싸지 않아 깎이는 토큰이 생긴다.
+     */
+    private val STRIPPED_PREFIXES: List<String> =
+        listOf(HIGHER_WINS_MARKER, LOWER_WINS_PREFIX) + LEGACY_LOWER_WINS_PREFIXES
+
+    /**
      * 저장 형식으로. **JSON 배열인 것은 [DuelRecords.encodeMembers]와 같은 근거다** —
      * 구분자를 정해 이어 붙이면 그 구분자를 담은 값에서 깨진다.
      */
@@ -220,6 +263,7 @@ object DuelFieldLinks {
     /**
      * 엑셀 한 칸에서. 쉼표로 나누고 앞머리 `▼`는 *작을수록 유리*로 읽는다 —
      * **옛 표식 `-`·`'-`도 그대로 받는다**([LEGACY_LOWER_WINS_PREFIXES]).
+     * 표식으로 시작하는 키는 `▲`로 감싸 적는다([HIGHER_WINS_MARKER] — B-188).
      * **순서가 그대로 영향력 순위**라 사람이 적은 차례를 지킨다.
      */
     fun parseText(text: String?): List<Link> {
@@ -231,8 +275,18 @@ object DuelFieldLinks {
     fun toText(links: List<Link>): String =
         normalize(links).joinToString(", ") { token(it) }
 
-    private fun token(link: Link): String =
-        if (link.higherWins) link.key else LOWER_WINS_PREFIX + link.key
+    /**
+     * 토큰 하나로. **감싸는 것은 감싸야 할 때뿐이다** (B-188).
+     *
+     * 표식으로 시작하지 않는 키(사실상 전부 — 프리셋은 ASCII snake_case다)는 **글자 하나
+     * 달라지지 않는다.** 이미 나간 파일·이미 저장된 축과 그대로 견줘지므로, 이 수리는
+     * 왕복 형식을 넓히되 **기존 값을 건드리지 않는다**(R-2 — 옛 것을 계속 읽는 경로).
+     */
+    private fun token(link: Link): String = when {
+        !link.higherWins -> LOWER_WINS_PREFIX + link.key
+        STRIPPED_PREFIXES.any { link.key.startsWith(it) } -> HIGHER_WINS_MARKER + link.key
+        else -> link.key
+    }
 
     /**
      * 한 토큰에서. **읽기는 새 표식과 옛 표식을 모두 받는다**(B-173 — 읽기 둘, 쓰기 하나).
@@ -243,6 +297,15 @@ object DuelFieldLinks {
     private fun parseToken(raw: String): Link? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
+        // `▲`는 **뒤에 다시 표식이 올 때만** 앞머리다 (B-188). 옛 쓰기는 `키`·`▼키`만 냈으므로
+        // 이 모양은 옛 파일에 존재할 수 없고, 그래서 `▲age` 같은 옛 토큰은 지금도 키 그대로다.
+        if (trimmed.startsWith(HIGHER_WINS_MARKER)) {
+            val rest = trimmed.substring(HIGHER_WINS_MARKER.length)
+            if (STRIPPED_PREFIXES.any { rest.startsWith(it) }) {
+                val key = rest.trim()
+                return if (key.isEmpty()) null else Link(key, higherWins = true)
+            }
+        }
         val prefix = (listOf(LOWER_WINS_PREFIX) + LEGACY_LOWER_WINS_PREFIXES)
             .firstOrNull { trimmed.startsWith(it) }
         val key = (if (prefix != null) trimmed.substring(prefix.length) else trimmed).trim()

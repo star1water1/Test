@@ -121,6 +121,22 @@ data class CategoryAnalysis(
      * **모호(동명이인·동명 세력·동명 작품)도 여기 센다** — 그 행은 선행 범주를 함께 가져와도
      * 해소되지 않아 **영원히** 거부되므로, '신규'로 세면 실행되지 않을 숫자를 예고하게 된다
      * (B-232 — 미리보기 다섯 자리가 그 상태였다).
+     *
+     * **필수 칸이 비었거나 해석되지 않는 행도 여기 센다**(B-237). 종전에는 그런 행이
+     * [inBackup] **앞에서** 버려져 *건너뜀*도 *백업에 있음*도 아닌 **무존재**였다 —
+     * 짝 가져오기는 같은 행을 `skippedRows`로 세고 소리 내어 거부하는데, 미리보기의
+     * '백업에 N건'만 파일의 실제 행보다 작았고 그 차이가 어디로 갔는지 화면 어디에도 없었다.
+     * **[inBackup]의 뜻을 여기서 못박는다: *파일이 이 시트에 적어 둔 행*이다**(가져오기가
+     * 받아들일 행이 아니다). 그래야 `inBackup = new + update + unchanged + skipped`가 성립하고,
+     * 사용자가 파일의 행 수와 곧장 견줄 수 있다.
+     *
+     * > **"정상 복원에서는 이 값이 0이다"는 그대로 성립한다** — 필수 칸이 빈 파일은
+     * > 정상 복원이 아니기 때문이다. 앱이 내보낸 파일은 필수 칸을 언제나 채워 내보내므로,
+     * > 이 값이 0이 아니라는 것은 **외부 편집이 행을 상하게 했다**는 뜻이고 그것이야말로
+     * > 미리보기가 말해야 할 사실이다(개발 의도 2번).
+     *
+     * **완전히 빈 행은 여기 세지 않는다** — 가져오기도 세지 않는다(고지 없이 `continue`).
+     * 표 아래 여백은 파일이 적어 둔 행이 아니다.
      */
     val skippedCount: Int = 0
 ) {
@@ -2961,12 +2977,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
         val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readTimelineRow(row, c, "연표 행 $i", now, result = null)
-            val year = r.year ?: continue
+            // 연도가 해석되지 않는 행을 가져오기는 **세고 소리 내어 거부한다** — 미리보기도
+            // 같은 조건으로 센다(B-237). 조건까지 같아야 하는 이유는 가져오기가 **완전히 빈 행**
+            // (연도 원문도 설명도 빈 것)은 세지 않기 때문이다: 표 아래 여백까지 '건너뜀'으로
+            // 세면 정상 파일에서도 숫자가 붙는다.
+            val year = r.year
+            if (year == null) {
+                if (r.yearRaw.isNotBlank() || r.description.isNotBlank()) { inBackup++; skippedCount++ }
+                continue
+            }
             if (r.description.isBlank()) continue
             inBackup++
 
@@ -2980,7 +3004,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeStateChanges(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -3012,9 +3036,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             val r = readStateChangeRow(row, c, "상태변화 행 $i", now, result = null)
             if (r.charName.isBlank()) continue
-            val year = r.year ?: continue
+            // 아래 둘은 가져오기가 **세고 고지하며** 거부하는 행이다 — 미리보기도 센다(B-237).
+            // 이름만 빈 행과 갈리는 자리다: 그쪽은 가져오기도 조용히 지나간다(빈 행).
+            val year = r.year
+            if (year == null) { inBackup++; skippedCount++; continue }
             if (r.fieldKey.isBlank()) continue
-            if (r.newValue.isBlank()) continue
+            if (r.newValue.isBlank()) { inBackup++; skippedCount++; continue }
             inBackup++
 
             // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232).
@@ -3078,7 +3105,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             val r = readRelationshipRow(row, c, "관계 행 $i", now, result = null)
             if (r.char1Name.isBlank() || r.char2Name.isBlank()) continue
-            if (r.relationshipType.isBlank()) continue
+            // 두 캐릭터가 채워졌는데 유형만 빈 행을 가져오기는 세고 고지한다 — 미리보기도 센다(B-237).
+            if (r.relationshipType.isBlank()) { inBackup++; skippedCount++; continue }
             inBackup++
 
             // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232). 순서까지 같다:
@@ -3159,7 +3187,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             val r = readRelChangeRow(row, c, "관계변화 행 $i", now, result = null)
             if (r.char1Name.isBlank() || r.char2Name.isBlank()) continue
-            val year = r.year ?: continue
+            // 연도 미해석은 가져오기가 세고 고지한다 — 미리보기도 센다(B-237).
+            val year = r.year
+            if (year == null) { inBackup++; skippedCount++; continue }
             inBackup++
 
             // 캐릭터 해석은 가져오기와 **같은 사다리**다(규약 R-33 — B-232).
@@ -3442,7 +3472,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val f1Name = getCellString(row, faction1ColIndex)
@@ -3450,7 +3480,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val f2Name = getCellString(row, faction2ColIndex)
             if (f2Name.isBlank()) continue
             val relType = getCellString(row, typeColIndex).trim()
-            if (relType.isBlank()) continue
+            // 두 세력이 채워졌는데 유형만 빈 행을 가져오기는 세고 고지한다 — 미리보기도 센다(B-237).
+            if (relType.isBlank()) { inBackup++; skippedCount++; continue }
             inBackup++
 
             val f1Code = if (faction1CodeColIndex >= 0) getCellString(row, faction1CodeColIndex) else ""
@@ -3476,7 +3507,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (FactionRelationshipMatcher.changes(existing, rowValues, presence)) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "세력 관계 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("factionRelationships", "세력 관계", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("factionRelationships", "세력 관계", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzePresetTemplates(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -3722,14 +3753,45 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     /**
      * 헤더 첫 컬럼 검증 + 실패 시 시트를 건너뛰는 이유를 오류로 보고 (무통보 스킵 방지).
+     *
+     * **문구가 헤더의 *자리*를 함께 말한다**(B-231) — 표 위에 제목·메모 행을 끼워 넣으면
+     * 앱은 그 행을 헤더로 읽고 여기서 걸린다. 종전 문구는 *"첫 번째 컬럼은 X이어야 합니다"*만
+     * 말해, 사용자가 **열 이름**을 고치러 가서 아무리 고쳐도 낫지 않았다 — 틀린 것은 열이
+     * 아니라 **행**이었다.
      */
     private fun checkHeaderOrReport(sheet: Sheet, headerRow: Row, expectedFirstHeader: String, result: ImportResult): Boolean {
         if (isValidHeader(headerRow, expectedFirstHeader)) return true
         val actual = getCellString(headerRow, 0)
         result.errors.add(
-            "시트 '${sheet.sheetName}': 첫 번째 컬럼은 '$expectedFirstHeader'이어야 합니다 (현재: '$actual') — 시트를 건너뛰었습니다. 다른 컬럼 순서는 바꿔도 되지만 첫 컬럼은 고정입니다."
+            "시트 '${sheet.sheetName}': 첫 번째 컬럼은 '$expectedFirstHeader'이어야 합니다 (현재: '$actual') — 시트를 건너뛰었습니다. 열 이름은 **첫 행**에 있어야 합니다(표 위에 제목·메모 행이 있으면 지우세요). 다른 컬럼 순서는 바꿔도 되지만 첫 컬럼은 고정입니다."
         )
         return false
+    }
+
+    /**
+     * **헤더 행을 집는 단 하나의 자리** — 없으면 말하고, 틀리면 말한다 (B-231).
+     *
+     * 종전에는 시트마다 `sheet.getRow(0) ?: return`이 **스물여섯 자리**에 흩어져 있었고,
+     * 그 `?: return`은 **아무 말도 하지 않았다.** 첫 행이 통째로 빈 시트(표 위에 빈 줄을
+     * 넣었거나, 편집기가 행을 지운 파일)는 그래서 **경고 한 줄 없이 사라졌다** — 짝인
+     * '인식되지 않아 무시되었습니다' 경고도 뜨지 않는다. [findSheet]가 그 시트를 이미
+     * `consumedSheetNames`에 넣어 그 경고를 **억제하기 때문**이다.
+     *
+     * 헤더가 *틀린* 파일은 소리 내어 거부하면서 헤더가 *없는* 파일은 조용히 버린 셈이라,
+     * 사용자가 알아챌 길이 어디에도 없었다(개발 의도 2번 — 말없이 버리지 않는다).
+     *
+     * **한 자리로 모으는 것이 수리의 요점이다** — 스물여섯 자리에 같은 두 줄을 적어 두면
+     * 새 시트가 하나만 빠뜨려도 그 시트에서만 침묵이 되살아난다.
+     */
+    private fun headerRowOrReport(sheet: Sheet, expectedFirstHeader: String, result: ImportResult): Row? {
+        val headerRow = sheet.getRow(0)
+        if (headerRow == null) {
+            result.errors.add(
+                "시트 '${sheet.sheetName}': 첫 행이 비어 있어 열 이름을 읽지 못했습니다 — 시트를 건너뛰었습니다. 열 이름('$expectedFirstHeader' …)이 **첫 행**에 오게 하세요(표 위의 제목·메모·빈 줄을 지우세요)."
+            )
+            return null
+        }
+        return if (checkHeaderOrReport(sheet, headerRow, expectedFirstHeader, result)) headerRow else null
     }
 
     /** 필수 컬럼 조회. 없으면 오류를 보고하고 null 반환 — 하드코딩 위치 폴백으로 이웃 컬럼을 오독하지 않도록 한다. */
@@ -3812,8 +3874,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importUniverses(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = universeSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -3947,8 +4008,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importNovels(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = novelSpec(emptyList())
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         // 작품 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
@@ -4260,8 +4320,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = defaultFieldSpec()
         val sheet = resolveSpecSheet(workbook, spec) ?: return
         consumedSheetNames.add(sheet.sheetName)
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
         reportUnknownColumns(headerRow, spec, result)
 
         val c = DefaultFieldCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
@@ -4573,8 +4632,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 시트와 같은 관례(없으면 기존 체계 유지). 접미사 변형까지 같은 해석으로 되찾는다.
         val sheet = resolveSpecSheet(workbook, spec) ?: return
         consumedSheetNames.add(sheet.sheetName)
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
         reportUnknownColumns(headerRow, spec, result)
 
         val repository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
@@ -4693,8 +4751,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
@@ -5034,8 +5091,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importFieldValueLibrary(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldValueLibrarySpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -5198,8 +5254,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
-            val headerRow = sheet.getRow(0) ?: continue
-            if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) continue
+            // 첫 행이 없는 세계관 시트도 소리 내어 건너뛴다 (B-231) — 종전에는 이 `?: continue`가
+            // 캐릭터 시트 하나를 통째로, 경고 한 줄 없이 버렸다.
+            val headerRow = headerRowOrReport(sheet, "이름", result) ?: continue
 
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             // U-3: 겹치는 세계관이 **접미사 시트**를 잡았으면 신규 형식이 확정된 배치다
@@ -5222,8 +5279,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = findUnclassifiedSheet(workbook, consumedCharacterSheetNames) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) return
+        val headerRow = headerRowOrReport(sheet, "이름", result) ?: return
         consumedCharacterSheetNames.add(sheet.sheetName)
         // 세계관 이름이 '미분류 캐릭터'인 백업은 두 캐릭터 시트가 같은 이름을 다투는데, 둘 다
         // 캐릭터 시트라 헤더로 구분할 수 없다. 신규 형식(예약명은 미분류 시트가 갖는다)으로
@@ -5316,8 +5372,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // '복원 가능'이라 판정한 시트를 정작 판독기가 못 읽어 캐릭터가 통째로 사라진다.
         val sheet = resolveSpecSheet(workbook, spec) ?: return
         consumedSheetNames.add(sheet.sheetName)
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -5488,8 +5543,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // F1-A: 시트가 없으면 기존 값 유지 (구버전 백업 호환) — 없는 것이 정상이라 경고하지 않는다.
         val sheet = resolveSpecSheet(workbook, spec) ?: return
         consumedSheetNames.add(sheet.sheetName)
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -5621,8 +5675,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = eventFieldValueSpec()
         val sheet = resolveSpecSheet(workbook, spec) ?: return
         consumedSheetNames.add(sheet.sheetName)
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -6100,8 +6153,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importTimeline(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = timelineSpec(emptyList())
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         // 사건 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
@@ -6437,8 +6489,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importStateChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = stateChangeSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -6572,8 +6623,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = relationshipSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -6777,8 +6827,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = findSheet(workbook, relationshipChangeSpec(), result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, "캐릭터1", result)) return
+        val headerRow = headerRowOrReport(sheet, "캐릭터1", result) ?: return
 
         reportUnknownColumns(headerRow, relationshipChangeSpec(), result)
         val cols = resolveHeaderColumns(headerRow)
@@ -6916,8 +6965,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importNameBank(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = nameBankSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val nbc = NameBankCols(resolveHeaderColumns(headerRow))
@@ -7025,8 +7073,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importUserPresetTemplates(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = userPresetTemplateSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val ptc = PresetTemplateCols(resolveHeaderColumns(headerRow))
@@ -7113,8 +7160,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = searchPresetSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val spc = SearchPresetCols(resolveHeaderColumns(headerRow))
@@ -7177,8 +7223,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importCharacterListPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = characterListPresetSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val lpc = ListPresetCols(resolveHeaderColumns(headerRow))
@@ -7239,8 +7284,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
         val spec = appSettingsSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -7302,8 +7346,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importFactions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val fc = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
@@ -7507,8 +7550,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionMembershipSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -7711,8 +7753,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importFactionRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionRelationshipSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
@@ -7860,7 +7901,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = imageMetaSpec()
         // 시트 부재는 타 카테고리와 같은 관례로 경고를 남긴다(G3 이전 백업 — 조용한 스킵 금지)
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
+        // 첫 행이 없으면 소리 내어 건너뛴다 (B-231) — 아래 헤더 불일치는 경고를 내면서
+        // 헤더 **행 자체**가 없는 파일만 조용히 사라지던 자리다.
+        val headerRow = sheet.getRow(0) ?: run {
+            result.warnings.add("'${spec.sheetName}' 시트의 첫 행이 비어 있어 이미지 태그·링크 가져오기를 건너뛰었습니다 — 열 이름('${spec.firstColumnHeader}' …)이 첫 행에 오게 하세요")
+            return
+        }
         // 3중 방어 ③: 예약명이라도 실제 이미지 형식인지 헤더로 검증 — 레거시 백업의
         // 세계관 "이미지" 캐릭터 시트(첫 헤더 "이름")를 이미지 메타로 오파싱하지 않는다.
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) {
@@ -8253,8 +8299,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importDuelAxes(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelAxisSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
@@ -8465,8 +8510,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importDuelMatches(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelMatchSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
@@ -8583,8 +8627,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importDuelVerdicts(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelVerdictSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
-        val headerRow = sheet.getRow(0) ?: return
-        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)

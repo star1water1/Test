@@ -304,8 +304,11 @@ class ExcelExporter(context: Context) {
                 // 공간이 없는 사용자에게 아무것도 알려 주지 않는 안내다.
                 val outOfSpace = ExportSpace.isOutOfSpace(e)
                 val message = if (outOfSpace) {
-                    val needMb = ExportSpace.requiredMegabytes(estimateExportBytes(options))
-                    appContext.getString(R.string.export_failed_no_space, needMb)
+                    // 잰 몫이 없으면 숫자를 말하지 않는다 (B-189) — 이미지를 끈 내보내기는
+                    // 견적이 아무것도 재지 못하는데, 종전에는 그때도 "약 1MB"라고 말했다.
+                    val needMb = ExportSpace.requiredMegabytesOrNull(estimateExportBytes(options))
+                    if (needMb != null) appContext.getString(R.string.export_failed_no_space, needMb)
+                    else appContext.getString(R.string.export_failed_no_space_unknown)
                 } else {
                     appContext.getString(R.string.export_failed_retry)
                 }
@@ -2227,9 +2230,15 @@ class ExcelExporter(context: Context) {
      * 워크북 몫은 이미 만들어 둔 임시 파일에서 재지 않고 생략한다 — 실패 시점에 그 파일이
      * 남아 있다는 보장이 없고, 이미지가 압도적이라(실측 744MB 대 수 MB) 안내의 자릿수가
      * 바뀌지 않는다. **모자라게 말하지 않는 것이 중요하므로** 이미지 몫만으로도 안내는 성립한다.
+     *
+     * **다만 그 논거는 이미지를 담을 때만 선다** — 그래서 담지 않으면 `null`이다(B-189).
+     * 종전에는 `0L`을 돌려줬고 [ExportSpace.requiredMegabytes]가 그 0을 1로 올려
+     * *"약 1MB가 필요합니다"*가 나갔다. **잰 것이 아무것도 없는데 숫자를 말한 것**이고,
+     * B-72가 시트를 임시 파일로 흘려보내는 디스크 축을 새로 붙인 뒤로 그 거짓은 더 커졌다.
+     * `null`은 *"모른다"*이고, 호출부가 숫자 없는 문구로 갈라 말한다.
      */
-    private suspend fun estimateExportBytes(options: ExportOptions): Long =
-        if (options.images) ImageZipHelper.estimateImageBytes(db, appContext) else 0L
+    private suspend fun estimateExportBytes(options: ExportOptions): Long? =
+        if (options.images) ImageZipHelper.estimateImageBytes(db, appContext) else null
 
     /**
      * 이미지 포함 결과 고지. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.

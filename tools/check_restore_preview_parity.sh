@@ -255,6 +255,137 @@ PY5
 lcount=$(printf '%s\n' "$LADDER" | sed -n 's/^__LCOUNT__//p')
 lbody=$(printf '%s\n' "$LADDER" | grep -v '^__LCOUNT__' || true)
 
+# ── ⑥ 가져오기가 **세며 거부하는** 행을 미리보기도 세는가 (B-237) ──
+# ①~⑤가 전부 **센 행끼리** 답이 같은가를 묻는 데 반해, 이것은 **세기 전**을 묻는다 —
+# 그래서 위 다섯이 원리적으로 못 보는 축이다. `analyze*`가 필수 칸이 빈 행을 `inBackup++`
+# **앞에서** `continue`로 버리면, 짝 가져오기가 같은 행을 `skippedRows`로 세고 소리 내어
+# 거부하는 동안 미리보기의 '백업에 N건'만 파일의 실제 행보다 작아진다. 건너뜀도, 백업에
+# 있음도 아닌 **무존재**이고, 그 차이가 어디로 갔는지 화면 어디에도 없다.
+#
+# 판정: 미리보기 행 루프에서 **`inBackup++` 없이 `continue`하는 가드**의 식별자와,
+# 짝 가져오기에서 **`skippedRows++`와 함께 거부하는 가드**의 식별자가 겹치면 위반이다.
+# 겹치지 않으면 그 가드는 양쪽 모두 조용히 지나가는 빈 행이라 정상이다.
+#
+# **엘비스-continue(`val year = r.year ?: continue`)를 따로 보는 것이 이 그물의 핵심이다** —
+# `if` 꼴만 보면 B-237의 여섯 자리 중 **셋**(연표·상태변화·관계변화의 연도)이 통째로 빠진다.
+# 실측으로 확인했다: 그 갈래 없이 수리 전 코드에 돌리면 3건, 넣으면 5함수 6자리 전부다.
+#
+# **못 보는 자리를 적어 둔다**(R-49 관행):
+#  · 짝 가져오기가 `when` 갈래(`is CharLookupResult.Ambiguous ->`)로 거부하는 것 — `if (…) {`
+#    꼴이 아니라 이 그물 밖이다. 그 부류는 ⑤가 사다리 축으로 이미 본다.
+#  · 미리보기가 사설 헬퍼 안에서 버리는 것 — ⑤와 같은 사각이다.
+NOTIFIED=$(python3 - "$TARGET" <<'PY6'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*|import[A-Za-z0-9_]*)\s*\(')
+spans, i = {}, 0
+while i < len(lines):
+    m = DECL.match(lines[i])
+    if not m:
+        i += 1; continue
+    j = i + 1
+    while j < len(lines) and lines[j] != '    }': j += 1
+    spans[m.group(1)] = (i, j)
+    i = j + 1
+
+IDENT = re.compile(r'\b(?:r|rv)\.([A-Za-z][A-Za-z0-9_]*)|\b([A-Za-z][A-Za-z0-9_]*)\s*(?:\.isBlank\(\)|\.isEmpty\(\)|==\s*null)')
+def idents(text):
+    out = set()
+    for a, b in IDENT.findall(text):
+        if a: out.add(a)
+        if b: out.add(b)
+    return out
+
+def rowloop(name):
+    """행 루프의 시작 ~ **세는 자리**(마지막 inBackup++)까지. 그 뒤의 가드는 이미 센 행을
+    가르는 것이라 이 검사의 대상이 아니다(그쪽은 skippedCount로 세는 것이 옳다)."""
+    s, e = spans[name]
+    start = None
+    for k in range(s, e):
+        if start is None and re.search(r'for \(i in 1\.\.', lines[k]): start = k
+    if start is None: return None
+    last = None
+    for k in range(start, e):
+        if 'inBackup++' in lines[k].split('//')[0]: last = k
+    if last is None: return None
+    return start, last + 1
+
+def preview_skips(name):
+    r = rowloop(name)
+    if not r: return set(), False
+    s, e = r
+    out, k = set(), s
+    while k < e:
+        code = lines[k].split('//')[0]
+        m = re.match(r'\s*if \((.*)\)\s*(\{)?\s*(continue)?\s*$', code)
+        if m:
+            cond, brace, cont = m.group(1), m.group(2), m.group(3)
+            if cont and not brace:
+                out |= idents(cond); k += 1; continue
+            if brace:
+                depth, blk, t = 1, [], k + 1
+                while t < e and depth > 0:
+                    depth += lines[t].count('{') - lines[t].count('}')
+                    if depth > 0: blk.append(lines[t])
+                    t += 1
+                body = '\n'.join(blk)
+                if 'continue' in body and 'inBackup++' not in body: out |= idents(cond)
+                k = t; continue
+        # 엘비스-continue: `val year = r.year ?: continue` — if 꼴이 아니라 위 갈래가 못 본다.
+        # **이 꼴이 B-237의 셋을 숨기고 있던 자리다**(연표·상태변화·관계변화의 연도).
+        m3 = re.match(r'\s*val\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*(?:r|rv)\.([A-Za-z][A-Za-z0-9_]*)\s*\?:\s*continue\s*$', code)
+        if m3:
+            out.add(m3.group(1)); out.add(m3.group(2)); k += 1; continue
+        # 한 줄 블록: if (x) { a; b; continue }
+        m2 = re.match(r'\s*if \((.*)\)\s*\{(.*)\}\s*$', code)
+        if m2 and 'continue' in m2.group(2) and 'inBackup++' not in m2.group(2):
+            out |= idents(m2.group(1))
+        k += 1
+    return out, True
+
+def import_notified(name):
+    s, e = spans[name]
+    out, k = set(), s
+    while k < e:
+        code = lines[k].split('//')[0]
+        m = re.match(r'\s*if \((.*)\)\s*\{\s*$', code)
+        if m:
+            depth, blk, t = 1, [], k + 1
+            while t < e and depth > 0:
+                depth += lines[t].count('{') - lines[t].count('}')
+                if depth > 0: blk.append(lines[t])
+                t += 1
+            body = '\n'.join(blk)
+            if 'result.skippedRows++' in body and 'continue' in body: out |= idents(m.group(1))
+            k = t; continue
+        k += 1
+    return out, True
+
+# 짝은 이름으로 짓는다(analyzeX ↔ importX). 이름이 갈리는 둘만 손으로 적고, **짝을 못 찾으면
+# 위반이다** — 조용히 빠지는 것이 이 부류의 실패 모양이라 ⑤와 같은 규약을 쓴다.
+OVERRIDE = {'analyzePresetTemplates': 'importUserPresetTemplates',
+            'analyzeCharacterSheet': 'importCharacterRows'}
+bad = []
+for fn in sorted(spans):
+    if not fn.startswith('analyze'): continue
+    p, ok = preview_skips(fn)
+    if not ok: continue
+    imp = OVERRIDE.get(fn, 'import' + fn[len('analyze'):])
+    if imp not in spans:
+        bad.append(f"{fn}\t짝 '{imp}'을(를) 파일에서 찾지 못했습니다 — 개명됐다면 OVERRIDE에 적으세요")
+        continue
+    s, _ = import_notified(imp)
+    hit = p & s
+    if hit:
+        bad.append(f"{fn}\t{imp}가 세며 거부하는 행을 미리보기는 세지 않고 버립니다: {', '.join(sorted(hit))}")
+for b in bad:
+    print(b)
+print(f"__NCOUNT__{len(bad)}")
+PY6
+)
+ncount=$(printf '%s\n' "$NOTIFIED" | sed -n 's/^__NCOUNT__//p')
+nbody=$(printf '%s\n' "$NOTIFIED" | grep -v '^__NCOUNT__' || true)
+
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
@@ -277,6 +408,7 @@ require_count "$pcount" "__PCOUNT__" "$PAIRING"
 require_count "$tcount" "__TCOUNT__" "$TALLY"
 require_count "$scount" "__SCOUNT__" "$SHEETS"
 require_count "$lcount" "__LCOUNT__" "$LADDER"
+require_count "$ncount" "__NCOUNT__" "$NOTIFIED"
 
 if [ "${count:-0}" -gt 0 ]; then
   echo "  ✗ analyze*가 손으로 짠 필드 비교로 '변경/동일'을 판정합니다 (${count}건)"
@@ -353,10 +485,26 @@ if [ "${lcount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${ncount:-0}" -gt 0 ]; then
+  echo "  ✗ 가져오기가 세며 거부하는 행을 미리보기가 세지 않고 버립니다 (${ncount}건)"
+  echo
+  printf '%s\n' "$nbody" | while IFS=$'\t' read -r fn why; do
+    [ -z "${fn:-}" ] && continue
+    echo "    $fn — $why"
+  done
+  echo
+  echo "  그 행은 '건너뜀'도 '백업에 있음'도 아닌 **무존재**가 되어, 미리보기의 '백업에 N건'만"
+  echo "  파일의 실제 행보다 작아지고 그 차이가 화면 어디에도 없습니다(B-237)."
+  echo "  가드를 세는 자리로 옮기세요:  if (…) { inBackup++; skippedCount++; continue }"
+  echo "  inBackup은 **파일이 이 시트에 적어 둔 행**입니다 — 가져오기가 받아들일 행이 아닙니다."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
 echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
+echo "  ✓ 가져오기가 세며 거부하는 행을 미리보기도 전부 셉니다 (B-237)"
 echo
 echo "복원 미리보기 정합 검사 통과"

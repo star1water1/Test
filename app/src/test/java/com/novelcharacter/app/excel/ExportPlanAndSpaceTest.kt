@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -157,5 +158,26 @@ class ExportPlanAndSpaceTest {
         assertEquals(1, ExportSpace.requiredMegabytes(1_048_576L))
         assertEquals(2, ExportSpace.requiredMegabytes(1_048_577L))
         assertEquals(1000, ExportSpace.requiredMegabytes(1_048_576_000L))
+    }
+
+    /**
+     * **잰 것이 없으면 숫자를 말하지 않는다** (B-189).
+     *
+     * 견적은 이미지 몫만 잰다. 이미지를 끄고 내보내다 공간이 마르면 잰 것이 아무것도 없는데,
+     * 종전에는 그때도 [ExportSpace.requiredMegabytes]가 0을 1로 올려 *"약 1MB가 필요합니다"*가
+     * 나갔다 — 사용자가 1MB를 비우고 다시 눌러 또 실패하는 모양이다(개발 의도 2번 — 거짓 고지).
+     *
+     * **0을 1로 올리는 것 자체는 그대로 옳다** — *잰 결과가 1MB 미만*과 *아무것도 재지 못함*은
+     * 다른 사실이고, 이 함수가 가르는 것이 그 둘이다. 위 시험이 앞엣것을 그대로 지킨다.
+     */
+    @Test
+    fun `잰 몫이 없으면 필요 용량을 말하지 않는다`() {
+        assertNull(ExportSpace.requiredMegabytesOrNull(null))
+        // 이미지를 켰는데 앱에 이미지가 하나도 없으면 견적이 0이다 — 이것도 '재지 못함'이다.
+        assertNull(ExportSpace.requiredMegabytesOrNull(0L))
+        assertNull(ExportSpace.requiredMegabytesOrNull(-5L))
+        // 잰 몫이 있으면 그대로 말한다 — 올림 규칙은 위 시험과 같은 함수를 지난다.
+        assertEquals(1, ExportSpace.requiredMegabytesOrNull(1L))
+        assertEquals(2, ExportSpace.requiredMegabytesOrNull(1_048_577L))
     }
 }
