@@ -194,6 +194,9 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
             )
             val writes = DefaultFieldPlan.resolvePlant(template, plan)
             for (row in writes.inserts) {
+                // 전역키 보증(planPlant가 `fields`에 없는 key만 낸다 — 아래 add로 그 목록을
+                // 최신으로 유지하는 것이 보증의 절반이다. 여기 universeId는 비-null이지만
+                // 같은 함수 모양이 아래 전역 구역에서 그대로 쓰인다)
                 val id = fieldDao.insert(row)
                 fields.add(row.copy(id = id))
                 planted++
@@ -211,6 +214,8 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
     private suspend fun plantNow(template: DefaultFieldTemplate): PlantResult {
         val plan = planPlant(template)
         val writes = DefaultFieldPlan.resolvePlant(template, plan)
+        // 전역키 보증(planPlant가 대상마다 그 구역의 현재 필드를 보고 기존 key를 걸러 낸다 —
+        // planPlant의 Target에 전역 구역(universeId null)이 들어 있어 이 자리가 그 구역에도 쓴다)
         if (writes.inserts.isNotEmpty()) fieldDao.insertAll(writes.inserts)
         for (row in writes.updates) fieldDao.update(row)
         return PlantResult(template, writes.inserts.size, writes.updates.size)
@@ -378,6 +383,10 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
                     template, listOf(DefaultFieldPlan.Target(null, GLOBAL_SCOPE_NAME, fields))
                 )
                 val writes = DefaultFieldPlan.resolvePlant(template, plan)
+                // 전역키 보증(**여기가 전역 구역이다** — universeId가 null이라 유니크 색인이
+                // 아무것도 막지 않는다. 막는 것은 planPlant가 `fields`(=getGlobalFieldsAllTypes)에
+                // 없는 key만 낸다는 것뿐이고, 그래서 심은 행을 곧바로 `fields`에 되먹인다.
+                // 이 되먹임을 빠뜨리면 템플릿 둘이 같은 key일 때 중복이 조용히 들어간다)
                 for (row in writes.inserts) fields.add(row.copy(id = fieldDao.insert(row)))
                 for (row in writes.updates) {
                     fieldDao.update(row)

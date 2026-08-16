@@ -2167,6 +2167,8 @@ class TrashRepository(
                 skippedDefs++
                 continue
             }
+            // 전역키 보증(universeId = newUniverseId 비-null + 바로 위 getFieldByKey 선조회.
+            // 되살리는 세계관이 늘 새 행이라 payload 안 중복만 가능하고 그것을 위에서 건너뛴다)
             val newId = db.fieldDefinitionDao().insert(
                 def.copy(
                     id = 0, universeId = newUniverseId,
