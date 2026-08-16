@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.util.SqlInChunks
 
 @Dao
 interface EventFieldValueDao {
@@ -92,14 +93,12 @@ interface EventFieldValueDao {
      */
     @Transaction
     suspend fun replaceForFields(eventId: Long, fieldIds: List<Long>, values: List<EventFieldValue>) {
-        // SQLite 999-변수 상한 — 커버 필드 수가 커도 삭제가 깨지지 않게 나눠 지운다(받쳐주는 확장성)
-        fieldIds.chunked(SQLITE_VAR_CHUNK).forEach { deleteByEventAndFields(eventId, it) }
+        // SQLite 변수 상한 — 커버 필드 수가 커도 삭제가 깨지지 않게 통로로 나눠 지운다
+        // ([SqlInChunks] · R-54. '받쳐주는 확장성'). 짝인 `NovelFieldValueDao.replaceForFields`와
+        // **같은 통로를 지나야 한다** — 값을 각자 적어 두었더니 그중 하나가 R-54의 단일 소스에서
+        // 빠진 채 남아 있었다(B-245).
+        SqlInChunks.each(fieldIds) { deleteByEventAndFields(eventId, it) }
         if (values.isNotEmpty()) insertAll(values)
-    }
-
-    companion object {
-        /** IN(...) 절 변수 개수 상한(999) 아래의 안전 청크 크기 */
-        const val SQLITE_VAR_CHUNK = 900
     }
 
     @Query("DELETE FROM event_field_values")

@@ -3,6 +3,7 @@ package com.novelcharacter.app.data
 import com.novelcharacter.app.data.dao.EventFieldValueDao
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
+import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -102,7 +103,9 @@ class EventFieldValueDaoReplaceTest {
 
         assertTrue(dao.rows.isEmpty())
         assertEquals(listOf(900, 900, 200), dao.deleteByFieldsCalls.map { it.size })
-        assertTrue(dao.deleteByFieldsCalls.all { it.size <= EventFieldValueDao.SQLITE_VAR_CHUNK })
+        // 값의 단일 소스는 [SqlInChunks.LIMIT]다 — 종전에는 이 DAO가 900을 따로 들고 있었고,
+        // 이 단언이 그 사본을 자기 자신과 견주느라 **빠짐을 잡을 수 없었다**(B-245).
+        assertTrue(dao.deleteByFieldsCalls.all { it.size <= SqlInChunks.LIMIT })
         assertEquals(cover, dao.deleteByFieldsCalls.flatten())  // 누락·중복 없이 전부 지운다
     }
 

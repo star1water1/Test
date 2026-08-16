@@ -22,6 +22,7 @@ import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -292,12 +293,14 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             val fieldsById = fields.filter { it.key in wanted }.associateBy({ it.id }, { it.key })
             if (fieldsById.isNotEmpty()) {
                 val codeById = characters.associate { it.id to it.code }
-                // **`IN`을 청크로 나눈다** — SQLite의 변수 상한은 999이고 목표 규모는 캐릭터 수백
-                // 명이라 한 번에 넣으면 언젠가 넘는다. 넘으면 예외가 나고, 그것을 삼키면 값이
-                // 조용히 사라진다(이 저장소가 이미 한 번 겪은 부류 — `removeTagsFromImages`).
-                val values = characters.map { it.id }
-                    .chunked(900)
-                    .flatMap { app.database.characterFieldValueDao().getValuesForCharacters(it) }
+                // **`IN`을 통로로 나눈다**([SqlInChunks] · R-54) — SQLite의 변수 상한은 999이고
+                // 목표 규모는 캐릭터 수백 명이라 한 번에 넣으면 언젠가 넘는다. 넘으면 예외가 나고,
+                // 그것을 삼키면 값이 조용히 사라진다(이 저장소가 이미 한 번 겪은 부류 —
+                // `removeTagsFromImages`). 한 덩이에 들어가면 통로가 쪼개지 않으므로 흔한 경우는
+                // 손으로 적던 `chunked(…).flatMap`보다 리스트 둘을 덜 만든다.
+                val values = SqlInChunks.flat(characters.map { it.id }) {
+                    app.database.characterFieldValueDao().getValuesForCharacters(it)
+                }
                 for (row in values) {
                     val key = fieldsById[row.fieldDefinitionId] ?: continue
                     val code = codeById[row.characterId] ?: continue
@@ -348,23 +351,21 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val titleByNovelId: Map<Long, String> = if (!wantsNovel) {
             emptyMap()
         } else {
-            // 중복을 걷어내므로 작품 수는 캐릭터 수보다 훨씬 적지만 **청크는 그대로 나눈다** —
+            // 중복을 걷어내므로 작품 수는 캐릭터 수보다 훨씬 적지만 **통로는 그대로 지난다** —
             // 상한은 *실제로 넘는가*가 아니라 *넘을 수 있는가*로 봐야 하고(캐릭터마다 다른 작품이면
-            // 둘이 같은 수다), 넘으면 예외가 나서 값이 통째로 사라진다.
-            characters.mapNotNull { it.novelId }
-                .distinct()
-                .chunked(900)
-                .flatMap { app.database.novelDao().getNovelsByIds(it) }
-                .associate { it.id to it.title }
+            // 둘이 같은 수다), 넘으면 예외가 나서 값이 통째로 사라진다. 짧으면 통로가 쪼개지
+            // 않으므로 이 흔한 경우에 드는 비용도 없다.
+            SqlInChunks.flat(characters.mapNotNull { it.novelId }.distinct()) {
+                app.database.novelDao().getNovelsByIds(it)
+            }.associate { it.id to it.title }
         }
         val tagsById: Map<Long, List<String>> = if (!wantsTags) {
             emptyMap()
         } else {
-            // 위 ①과 같은 청크 규약 — 이쪽도 캐릭터 수만큼의 `IN` 인자가 든다.
-            characters.map { it.id }
-                .chunked(900)
-                .flatMap { app.database.characterTagDao().getTagsForCharacters(it) }
-                .groupBy({ it.characterId }, { it.tag })
+            // 위 ①과 같은 통로 — 이쪽도 캐릭터 수만큼의 `IN` 인자가 든다.
+            SqlInChunks.flat(characters.map { it.id }) {
+                app.database.characterTagDao().getTagsForCharacters(it)
+            }.groupBy({ it.characterId }, { it.tag })
         }
 
         // 세력 이름 (B-171). **판정은 [FactionStanding]이 한다** — *지금 소속*은 파생 사실이라
@@ -372,20 +373,16 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val factionsById: Map<Long, List<String>> = if (!wantsFaction) {
             emptyMap()
         } else {
-            // 소속은 캐릭터 수만큼의 `IN` 인자가 드므로 위와 같은 청크 규약이다.
-            val memberships = characters.map { it.id }
-                .chunked(900)
-                .flatMap {
-                    app.database.factionMembershipDao().getCurrentMembershipsForCharacters(it)
-                }
-                .groupBy { it.characterId }
+            // 소속은 캐릭터 수만큼의 `IN` 인자가 드므로 위와 같은 통로다.
+            val memberships = SqlInChunks.flat(characters.map { it.id }) {
+                app.database.factionMembershipDao().getCurrentMembershipsForCharacters(it)
+            }.groupBy { it.characterId }
             // 세력 표는 **세계관 단위라 작다** — id 집합이 아니라 이름 사전 하나로 끝난다.
-            val nameById = FactionStanding.current(memberships.values.flatten())
-                .map { it.factionId }
-                .distinct()
-                .chunked(900)
-                .flatMap { app.database.factionDao().getByIds(it) }
-                .associate { it.id to it.name }
+            val nameById = SqlInChunks.flat(
+                FactionStanding.current(memberships.values.flatten()).map { it.factionId }.distinct()
+            ) {
+                app.database.factionDao().getByIds(it)
+            }.associate { it.id to it.name }
             characters.associate { character ->
                 character.id to FactionStanding
                     .currentFactionIds(memberships[character.id].orEmpty())

@@ -3,6 +3,7 @@ package com.novelcharacter.app.data.repository
 import androidx.lifecycle.LiveData
 import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.model.NameBankEntry
+import com.novelcharacter.app.util.SqlInChunks
 
 /**
  * 저장 한 번이 이름은행에 실제로 한 일 (B-124 ⓑ — Q7의 "고지" 재료).
@@ -58,11 +59,10 @@ class NameBankRepository(
     suspend fun getEntriesUsedByCharacter(characterId: Long): List<NameBankEntry> =
         nameBankDao.getEntriesUsedByCharacter(characterId)
 
-    /** 선택 엔트리 일괄 조회 (IN 절 청크 분할, 입력 순서 보존) */
+    /** 선택 엔트리 일괄 조회 (IN 절은 [SqlInChunks]를 지난다 — R-54, 입력 순서 보존) */
     suspend fun getByIds(ids: List<Long>): List<NameBankEntry> {
         if (ids.isEmpty()) return emptyList()
-        val byId = ids.chunked(900)
-            .flatMap { nameBankDao.getByIds(it) }
+        val byId = SqlInChunks.flat(ids) { nameBankDao.getByIds(it) }
             .associateBy { it.id }
         return ids.mapNotNull { byId[it] }
     }

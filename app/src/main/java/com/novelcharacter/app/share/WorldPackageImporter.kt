@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.ImagePathMatch
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.copyWithLimit
 import com.novelcharacter.app.util.withImagePaths
 import java.io.ByteArrayOutputStream
@@ -231,18 +232,18 @@ class WorldPackageImporter(context: Context) {
         // 비례해 늘고, 알아야 하는 것은 *이 패키지가 원하는 코드가 겹치는가* 하나다.
         // 세 벌로 적은 것은 일부러다 — `share/`는 로컬 컴파일 증명이 없는 계층이라
         // (검증은 CI뿐) 여기서는 짧은 것보다 **읽으면 아는 것**을 고른다.
-        // IN 청크는 저장소 공통 관례(900)를 따른다.
+        // IN 목록은 저장소 공통 통로([SqlInChunks] · R-54)를 지난다.
         val wantedAxisCodes = codesToCheck(contents.duelAxes.map { it.code })
         val duelAxisReg = WorldPackageCodes.Registry(
-            wantedAxisCodes.chunked(900).flatMap { db.duelAxisDao().getExistingCodes(it) }
+            SqlInChunks.flat(wantedAxisCodes) { db.duelAxisDao().getExistingCodes(it) }
         )
         val wantedMatchCodes = codesToCheck(contents.duelMatches.map { it.code })
         val duelMatchReg = WorldPackageCodes.Registry(
-            wantedMatchCodes.chunked(900).flatMap { db.duelMatchDao().getExistingCodes(it) }
+            SqlInChunks.flat(wantedMatchCodes) { db.duelMatchDao().getExistingCodes(it) }
         )
         val wantedVerdictCodes = codesToCheck(contents.duelVerdicts.map { it.code })
         val duelVerdictReg = WorldPackageCodes.Registry(
-            wantedVerdictCodes.chunked(900).flatMap { db.duelCounterVerdictDao().getExistingCodes(it) }
+            SqlInChunks.flat(wantedVerdictCodes) { db.duelCounterVerdictDao().getExistingCodes(it) }
         )
         val registries = listOf(
             uniReg, novelReg, charReg, eventReg, scReg, relReg, relChangeReg, factionReg, nameBankReg, entryReg,

@@ -674,7 +674,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
      * 연표 카드에 얹을 사건 필드값 요약 (B-5).
      *
      * 목록에 실제로 그려지는 사건만 조회한다 — 사건 전량 조회는 세계관이 커질수록
-     * 화면과 무관하게 비용이 늘어난다. SQLite 999-변수 상한 때문에 900개씩 청크한다.
+     * 화면과 무관하게 비용이 늘어난다. `IN (:목록)`은 [com.novelcharacter.app.util.SqlInChunks]를
+     * 지난다 — SQLite 변수 상한 방어이고, 한 덩이에 들어가면 쪼개지 않으므로 흔한 경우가 되레 싸다(R-54).
      */
     suspend fun getEventFieldSummaries(
         eventIds: List<Long>
@@ -686,7 +687,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             if (defs.isEmpty()) return emptyMap()
 
             val distinctIds = eventIds.distinct()
-            val values = distinctIds.chunked(900).flatMap { chunk ->
+            val values = com.novelcharacter.app.util.SqlInChunks.flat(distinctIds) { chunk ->
                 db.eventFieldValueDao().getValuesByEvents(chunk)
             }
             com.novelcharacter.app.util.CardFieldSummary.build(

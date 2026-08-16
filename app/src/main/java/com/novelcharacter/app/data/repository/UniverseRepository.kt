@@ -95,7 +95,7 @@ class UniverseRepository(
 
             // 2. 하위 작품 삭제 (다른 세계관의 imageNovelId 참조는 FK SET_NULL이 정리)
             if (novels.isNotEmpty()) {
-                novels.map { it.id }.chunked(900).forEach { chunk ->
+                SqlInChunks.each(novels.map { it.id }) { chunk ->
                     db.recentActivityDao().deleteByEntityIds(RecentActivity.TYPE_NOVEL, chunk)
                 }
                 novels.forEach { novelDao.delete(it) }

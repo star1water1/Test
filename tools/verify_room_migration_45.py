@@ -146,7 +146,11 @@ def main():
 
     print("\n[6] 커버 집합 규약 (R-5) — 폼이 렌더한 것만 갈아끼운다")
     check("replaceForFields" in dao_src, "DAO에 커버 집합 교체 경로가 있다")
-    check("chunked(900)" in dao_src, "삭제를 900개씩 청크한다 (SQLite 999-변수 상한)")
+    # 값이 아니라 **통로**를 본다 (B-245 · R-54). 종전에는 `chunked(900)` 리터럴을 찾았는데,
+    # 그러면 이 하네스가 *값이 여기 적혀 있는가*를 요구하는 셈이라 **단일 소스로 모으는 수리를
+    # 스스로 막는다** — 실제로 B-245가 그 리터럴을 걷자 이 줄이 빨간불이 됐다.
+    # 지켜야 할 것은 900이라는 글자가 아니라 *상한 아래로 나뉘는가*이고, 그 답은 통로가 든다.
+    check("SqlInChunks.each" in dao_src, "삭제가 SqlInChunks 통로를 지난다 (SQLite 변수 상한)")
     check("deleteByNovelAndFields" in dao_src, "필드 한정 삭제가 있다 (전량 삭제가 아니다)")
 
     con.close()
