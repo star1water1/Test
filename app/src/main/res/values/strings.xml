@@ -1661,7 +1661,11 @@
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
     <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>
-    <string name="restore_preview_skipped">건너뜀 %1$d개 — 이 행이 가리키는 항목이 앱에 없고, 그것을 만드는 항목이 이번 선택에서 빠져 있습니다</string>
+    <!-- 사유를 하나로 단정하지 않는다 (B-237) — 이 계수는 원인이 둘이다: ⓐ 선행 항목이 없는데
+         그것을 만드는 범주가 선택에서 빠진 행(B-102 ⓑ) ⓑ 필수 칸이 비었거나 해석되지 않는 행.
+         둘은 사용자가 할 일이 정반대다(범주를 함께 고른다 / 셀을 고친다). 종전 문구는 ⓐ만
+         말했고, ⓑ가 이 계수에 들어온 뒤로는 그 절반에 대해 **사실이 아니었다**. -->
+    <string name="restore_preview_skipped">건너뜀 %1$d개 — 필수 칸이 비었거나, 이 행이 가리키는 항목이 앱에 없고 그것을 만드는 항목이 이번 선택에서 빠져 있습니다</string>
     <string name="restore_preview_no_data">백업에 데이터 없음 (현재 DB: %d개)</string>
     <string name="restore_overwrite_delete_item">%1$s %2$d개</string>
     <string name="restore_action">복원</string>
