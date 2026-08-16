@@ -182,6 +182,12 @@ tools/check_value_ledger_sync.sh                          # 가져오기가 char
 tools/check_group_dissolve_contract.sh                    # 묶음 해제 문장(`clearGroupIfSingleton`·`clearSingletonGroups`)이 **토큰으로 행을 고르고 식구 수로 가르는가** (R-55 · B-243) — 삭제 루프 둘이 `linkGroupId`를 루프 앞에서 일괄로 뜨는 근거가 이 모양 하나에 걸려 있다. *행 id로 고르게* 바뀌거나 가드를 잃으면 낡은 토큰이 지우면 안 될 표식을 푸는데 **오류도 고지도 없다.** Room `@Query`라 타입 검사도 순수 시험도 원리적으로 닿지 않는 자리다(R-50과 같은 계열)
 tools/check_header_row_report.sh                          # `import*`가 헤더 행(0행) 부재를 **아무 말 없이** 지나가는가 (R-56 · B-231) — 헤더가 *틀린* 파일은 소리 내어 거부되는데 헤더 **행 자체가 없는** 파일만 조용히 사라지던 자리다. 짝인 '인식되지 않아 무시되었습니다' 경고도 `findSheet`의 소비 처리에 억제돼 **말할 자리가 둘 다 닫혀 있었다.** 수리 전 **27자리**. 기준선 **0**
 tools/triage_unresolved.sh /tmp/cur.txt                 # 차분 컴파일의 unresolved 중 **진짜**를 골라낸다 (아래 요령 참조)
+# ⚠️ 2026.08.16(B-211)부터 두 프로브와 차분 컴파일이 **겹을 남긴다**(`sort -u` → `sort`).
+#    이미 그 문구를 든 파일의 새 오류가 보이게 된 대신, **노이즈의 증가분도 함께 보인다** —
+#    suspend 호출을 한 줄 더 쓰면 `suspension functions can only be…`가 하나 는다(기준선 587).
+#    가르는 순서: ① unresolved면 `triage_unresolved.sh` ② 그 밖이면 **실클래스패스 프로브가
+#    그 파일을 보는가**(보고 신규 0이면 노이즈) ③ 그래도 애매하면 같은 꼴이 master에 있는지 찾는다.
+#    실측 사례는 `differential_compile.sh` 머리에 적어 두었다.
 ```
 
 > ### ⚠️ 기준선을 뜨기 전에 **`git fetch origin master`를 먼저 한다** (2026.08.12 등재 — 19판이 물렸다)

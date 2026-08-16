@@ -15,6 +15,21 @@
 # (*"1차(2026.08.03): `sort -u`가 같은 문구의 진짜 신규를 함께 감췄다"*). 겹을 남기면
 # `comm -13`이 **늘어난 만큼**을 낸다(정렬이 같은 두 다중집합의 차).
 #
+# ⚠️ **겹을 남기면 *노이즈의 증가분*도 함께 보인다 — 그것을 결함으로 읽지 말 것.**
+# 이 스크립트는 `-cp` 없이 컴파일하므로 기준선에 이미 수만 건이 있고, 그중에는
+# `suspension functions can only be called within coroutine body.` 같은 **일반 문구**가
+# 수백 건이다(실측 587). 그래서 **suspend 호출을 한 줄 더 쓰기만 해도 그 문구가 하나 는다.**
+# 종전 `sort -u`는 그것을 접었지만 **진짜 신규도 함께 접었다** — 지금은 둘 다 보인다.
+#
+# 가르는 법(순서대로):
+#   1. `unresolved reference` 부류는 `tools/triage_unresolved.sh`가 기계로 가른다.
+#   2. 그 밖의 문구는 **실클래스패스 프로브가 그 파일을 보는가**를 먼저 볼 것 —
+#      `excel`·`data/model`·`data/dao`·`util`·`data/repository`면 그쪽이 정답이고
+#      (거기 신규 0이면 이 줄은 노이즈다), 범위 밖이면 CI가 정답이다.
+#   3. 그래도 애매하면 **같은 꼴이 이미 master에 있는지** 찾아볼 것. 있으면 노이즈다.
+#      (2026.08.16 실측 사례: `?.let { suspendCall() }` 한 줄이 이 문구를 587 → 588로 올렸고,
+#       `CharacterRepository`에 같은 꼴이 이미 둘 있어 노이즈로 판정했다. 프로브도 신규 0이었다.)
+#
 # 사용법:
 #   git stash push -m base && JARS_DIR=... tools/differential_compile.sh /tmp/base.txt && git stash pop
 #   JARS_DIR=... tools/differential_compile.sh /tmp/cur.txt
