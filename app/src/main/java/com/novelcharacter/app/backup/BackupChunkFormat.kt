@@ -72,8 +72,13 @@ object BackupChunkFormat {
     const val MIN_PASSPHRASE_LENGTH = 6
 
     /**
-     * 매직은 **부를 때마다 새 배열로 준다** — `val`로 든 `ByteArray`는 object의 공유 가변
-     * 상태라 부르는 쪽이 한 바이트만 고쳐도 그 프로세스의 모든 백업이 조용히 다른 형식이 된다.
+     * 매직은 **부를 때마다 새 배열로 준다.**
+     *
+     * 종전 `BackupEncryptor`에서는 `private val`이라 밖에서 건드릴 수 없었다. 여기서 공개로
+     * 올린 것은 **시험이 "이 네 바이트는 이미 디스크에 쓰여 있다"를 못박아야 하기 때문**이고
+     * (`formatConstants_areFrozen`), 공개된 `val ByteArray`는 그 순간부터 **object의 공유 가변
+     * 상태**가 된다 — 누가 한 바이트만 고쳐도 그 프로세스의 모든 백업이 조용히 다른 형식이 된다.
+     * 즉 함수인 이유는 공개했기 때문이지, 종전 구현에 그 결함이 있었기 때문이 아니다.
      */
     fun formatMagic(): ByteArray = byteArrayOf(0x4E, 0x43, 0x42, 0x32)      // "NCB2"
 
@@ -161,12 +166,19 @@ object BackupChunkFormat {
     // NCB2 (기기 키) — 키 조달만 밖에서 받는다
     // ──────────────────────────────────────────────────────────────────────
 
-    /** v2(NCB2) 형식으로 파일을 암호화한다. 키는 부르는 쪽이 댄다. */
+    /**
+     * v2(NCB2) 형식으로 파일을 암호화한다. 키는 부르는 쪽이 댄다.
+     *
+     * **헤더에 적는 크기와 실제로 자르는 크기는 반드시 같은 값이어야 한다** — 갈리면 읽는 쪽이
+     * 남의 청크 경계로 집어 이 판이 고친 것과 **똑같은 모양의 복원 불가**가 된다. 그래서 둘 다
+     * `chunkSize` 지역 변수 하나에서 나온다(기본값에 두 번 기대지 않는다).
+     */
     fun encryptFileWithKey(inputFile: File, outputFile: File, key: SecretKey) {
+        val chunkSize = CHUNK_SIZE
         FileOutputStream(outputFile).use { fos ->
             fos.write(formatMagic())
-            fos.write(ByteBuffer.allocate(4).putInt(CHUNK_SIZE).array())
-            FileInputStream(inputFile).use { fis -> writeChunks(fis, fos, key) }
+            fos.write(ByteBuffer.allocate(4).putInt(chunkSize).array())
+            FileInputStream(inputFile).use { fis -> writeChunks(fis, fos, key, chunkSize) }
         }
     }
 
@@ -228,7 +240,7 @@ object BackupChunkFormat {
      *   (`BackupChunkFormatTest`의 `deviceFormat_badHeaderDoesNotAskForKey`가 그 자리를 잠근다 —
      *   B-230 ⓐ의 갈라내기에서 실제로 한 번 어긋났고 그 시험이 잡았다).
      */
-    fun decryptLegacy(inputFile: File, outputFile: File, keyProvider: () -> SecretKey) {
+    private fun decryptLegacy(inputFile: File, outputFile: File, keyProvider: () -> SecretKey) {
         val fileSize = inputFile.length()
         require(fileSize > GCM_IV_LENGTH) {
             "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
@@ -282,7 +294,7 @@ object BackupChunkFormat {
     }
 
     /** 패스프레이즈에서 AES-256 키를 유도한다. */
-    fun deriveKey(passphrase: CharArray, salt: ByteArray, iterations: Int): SecretKey {
+    private fun deriveKey(passphrase: CharArray, salt: ByteArray, iterations: Int): SecretKey {
         val spec = PBEKeySpec(passphrase, salt, iterations, 256)
         try {
             val factory = SecretKeyFactory.getInstance(PBKDF2_ALGORITHM)
@@ -311,12 +323,15 @@ object BackupChunkFormat {
         require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "Invalid iteration count: $iterations" }
         val salt = ByteArray(SALT_LENGTH).also { SecureRandom().nextBytes(it) }
         val key = deriveKey(passphrase, salt, iterations)
+        // 헤더에 적는 크기와 실제로 자르는 크기는 한 값에서 나온다 — 갈리면 복원이 남의
+        // 청크 경계로 집는다([encryptFileWithKey]의 같은 주석).
+        val chunkSize = CHUNK_SIZE
         FileOutputStream(outputFile).use { fos ->
             fos.write(portableMagic())
             fos.write(ByteBuffer.allocate(4).putInt(iterations).array())
             fos.write(salt)
-            fos.write(ByteBuffer.allocate(4).putInt(CHUNK_SIZE).array())
-            FileInputStream(inputFile).use { fis -> writeChunks(fis, fos, key, CHUNK_SIZE, onProgress) }
+            fos.write(ByteBuffer.allocate(4).putInt(chunkSize).array())
+            FileInputStream(inputFile).use { fis -> writeChunks(fis, fos, key, chunkSize, onProgress) }
         }
     }
 
@@ -415,7 +430,7 @@ object BackupChunkFormat {
      *
      * @return 실제 읽은 바이트 수 (0이면 EOF)
      */
-    fun readFully(input: InputStream, buffer: ByteArray): Int {
+    private fun readFully(input: InputStream, buffer: ByteArray): Int {
         var totalRead = 0
         while (totalRead < buffer.size) {
             val read = input.read(buffer, totalRead, buffer.size - totalRead)
