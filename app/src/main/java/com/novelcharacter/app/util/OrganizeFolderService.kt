@@ -531,6 +531,8 @@ object OrganizeFolderService {
                     val now = System.currentTimeMillis()
                     // 저장형으로 입양한다 — canonical로 넣으면 같은 파일의 meta 행이 하나 더 생긴다.
                     val storedPath = bundle.stored(action.path)
+                    // 항목마다 트랜잭션이 따로다 — 일괄로 올리면 한 장의 실패가 나머지를 되돌린다.
+                    // 단발 허용(항목마다 트랜잭션이 따로이고 그 항목의 경로도 하나뿐이다)
                     val imageId = db.imageMetaDao().adopt(storedPath, now)
                     // 뗀 표식의 처분은 **계획이 정한다**(B-107 D5) — 여기서 폴더 이름을 다시
                     // 보고 판정하면 규칙이 둘로 갈라진다. `_분리됨/`은 "아직 판단 안 함"이라
@@ -646,6 +648,7 @@ object OrganizeFolderService {
                         if (autoLinkOn && AutoLinkPlanner.isAutoToken(oldGroup)) {
                             keptAuto = true
                         } else {
+                            // 단발 허용(위와 같다 — 항목마다 트랜잭션이 따로이고 경로도 하나뿐이다)
                             val imageId = db.imageMetaDao().adopt(storedPath, System.currentTimeMillis())
                             db.imageMetaDao().setGroup(listOf(imageId), null)
                             touchedGroups.add(oldGroup)   // 정리·판정은 아래에서 한 번에
@@ -674,7 +677,9 @@ object OrganizeFolderService {
             val ok = runCatching {
                 db.withTransaction {
                     val now = System.currentTimeMillis()
-                    val ids = paths.mapTo(LinkedHashSet()) { db.imageMetaDao().adopt(it, now) }
+                    // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
+                    val idByPath = ImageAdoption.adoptAll(db, paths, now)
+                    val ids = paths.mapTo(LinkedHashSet()) { idByPath.getValue(it) }
                     // 경로마다·토큰마다 묻던 조회 둘을 **일괄 조회 둘**로 내린다 (B-241).
                     // **겹이 필요 없는 자리다** — 이 블록의 읽기는 전부 아래 `setGroup` 앞에서
                     // 끝나므로 제가 읽는 것을 쓰지 않는다(가져오기 쪽 루프와 갈리는 지점 — 그쪽

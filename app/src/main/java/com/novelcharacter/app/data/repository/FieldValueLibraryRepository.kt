@@ -15,6 +15,7 @@ import com.novelcharacter.app.util.InitialFieldValues
 import com.novelcharacter.app.util.FieldValueResolver
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -746,7 +747,13 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     // ===== 검증 =====
 
     companion object {
-        const val CHUNK_SIZE = 900
+        /**
+         * `IN` 절 청크 크기 — **값은 [SqlInChunks.LIMIT] 하나다**(R-54).
+         *
+         * 종전에는 여기 `900`이라 적혀 있었다. R-54가 이름으로 든 옛 상수 넷 중 이것과
+         * `ExcelImportService.IN_CLAUSE_CHUNK` **둘이 아직 리터럴이었다**(2026.08.16 B-244가 실측).
+         */
+        const val CHUNK_SIZE = SqlInChunks.LIMIT
 
         // ── 재집계 대기열 (프로세스 전역) ──
         // 이 리포지토리는 앱 싱글턴 말고도 여러 곳에서 직접 생성된다(휴지통 복원·월드팩 임포트).

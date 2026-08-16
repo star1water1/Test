@@ -37,6 +37,19 @@ interface ImageMetaDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(meta: ImageMeta): Long
 
+    /**
+     * [insert]의 일괄판 (B-244) — 입양이 경로 목록을 도는 자리가 쓴다.
+     *
+     * **`IN` 절이 아니므로 청크 통로(R-54)를 지나지 않는다** — 목록 길이만큼 바인드 변수를
+     * 쓰는 것이 아니라 같은 문장을 목록 길이만큼 **다시 바인드**하는 것이라 상한과 무관하다.
+     *
+     * 돌려주는 것은 자리를 맞춘 rowId이고, **이미 있던 경로는 `-1`**이다(`IGNORE`). 그 `-1`을
+     * *경합*으로 읽는 것이 [com.novelcharacter.app.util.ImageAdoptionPlanner]의 일이다 —
+     * 부르는 쪽이 없는 것만 골라 넘기므로, 그래도 `-1`이 나왔다면 그 사이 다른 연결이 넣은 것이다.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(metas: List<ImageMeta>): List<Long>
+
     /** 재압축 등 파일 개명 시 경로 갱신. 저장형(absolutePath) 기준 정확 일치. */
     @Query("UPDATE image_meta SET path = :newPath WHERE path = :oldPath")
     suspend fun updatePath(oldPath: String, newPath: String)
