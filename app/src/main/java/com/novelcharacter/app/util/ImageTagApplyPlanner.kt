@@ -17,11 +17,13 @@ package com.novelcharacter.app.util
  *
  * 계약:
  * - **처리 순서가 곧 [work]의 순서다.** 호출부가 `picked`의 순회 순서를 그대로 넘긴다.
- * - **한 항목 안에서는 겹을 갱신하지 않는다** — `tags`가 같은 값을 두 번 들면 `fresh`도 두 번
- *   든다. 종전 `tags.filterNot { it in existing }`와 글자 그대로 같게 두려는 것이고,
- *   그 계수 성질을 바꾸는 것은 이 판(성능)의 몫이 아니다 — **B-246으로 등재**(2026.08.16에
- *   자리를 바로잡았다: 종전 이 줄은 *B-244*를 가리켰는데 **그 행은 `adopt` 왕복만 다루고 이
- *   계수 성질을 한 글자도 말하지 않는다** — 발견이 등재되지 않은 채 포인터만 남아 있었다).
+ * - **한 항목 안의 겹도 한 번만 센다** (B-246, 2026.08.16). 종전에는 `tags`가 같은 값을 두 번
+ *   들면 `fresh`도 두 번 들어 `tagCount`가 2 올랐는데, 행은 `(imageId, tag)` 유니크라
+ *   **실제로 늘어나는 행은 하나다** — 즉 B-241이 *항목 사이*에서 없앤 바로 그 거짓 고지가
+ *   *항목 안*에 남아 있었다. 그때 항목 안을 손대지 않은 것은 종전 코드와 글자 그대로 같게
+ *   두려던 것이고(성능 판이 계수 성질까지 바꾸지 않는다), 그 판단은 옳았다 — 그래서 이 자리에
+ *   남겨 두었던 몫을 여기서 닫는다. **`Insert.freshTags`도 함께 겹이 없어진다**:
+ *   같은 태그를 두 번 실어 보내도 DB가 하나로 접으므로, 겹은 쓰기에도 값이 없다.
  * - **id를 못 찾은 경로는 건너뛴다.** 호출부가 `adopt`로 전원의 id를 확보하지만, 못 얻은
  *   경로를 조용히 태그 없이 통과시키지 않으려면 계획에서도 자리가 있어야 한다.
  */
@@ -64,9 +66,10 @@ object ImageTagApplyPlanner {
             val existing = overlay.getOrPut(imageId) {
                 existingByImageId[imageId].orEmpty().toMutableSet()
             }
-            // **항목 안에서는 겹을 갱신하지 않는다**(위 계약) — 걸러 낸 *뒤에* 더하므로
-            // `tags`가 같은 값을 두 번 들면 `fresh`도 두 번 든다(종전 코드와 같다).
-            val fresh = tags.filterNot { it in existing }
+            // **항목 안의 겹도 한 번만 센다**(위 계약 · B-246) — `distinct()`가 그 자리다.
+            // 겹을 지우는 것이 걸러 내기 *뒤*인 것은 일부러다: 앞에 두어도 답은 같지만,
+            // 이 줄이 *"이미 가진 것"*과 *"이번에 두 번 적힌 것"*을 갈라 읽히게 한다.
+            val fresh = tags.filterNot { it in existing }.distinct()
             if (fresh.isEmpty()) continue
 
             inserts.add(Insert(path, imageId, fresh))

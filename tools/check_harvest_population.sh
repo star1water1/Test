@@ -69,10 +69,37 @@ harvest_bodies() {
       if (inFn) {
         opens = gsub(/\{/, "{", probe)
         closes = gsub(/\}/, "}", probe)
+        was = started
         started = (started || opens > 0)
         depth += opens - closes
+        # **시그니처가 여러 줄이면 여는 중괄호가 뒷줄에 온다** (B-183) — 그때까지의 줄을
+        # 미뤄 두었다가 함께 낸다. 종전에는 `started`가 서기 전 줄을 그냥 버려서
+        # **`fun` 줄이 출력에서 빠졌고**, 뒤 단계가 함수를 이름으로 세지 못했다.
+        # (몸통 자체는 그때도 잡혔다 — 그래서 위반 검출은 멀쩡했고 **세는 수만 틀렸다.**
+        #  등재는 *"그 함수가 검사에서 통째로 빠진다"*고 적었는데 실측은 그렇지 않았다.)
+        if (started && !was) { for (i = 1; i <= nPend; i++) print pend[i]; nPend = 0 }
         if (started) print FILENAME ":" FNR ":" line
-        if (started && depth <= 0) { inFn = 0; started = 0; depth = 0 }
+        else pend[++nPend] = FILENAME ":" FNR ":" line
+
+        # **블록 없는 식 본문**(`suspend fun harvestAll() = harvestUniverses(null)`)은 여기서 닫는다.
+        # 안 닫으면 `inFn`이 선 채로 남아, 다음에 나오는 **아무 함수의 여는 중괄호**가
+        # `started`를 세워 **그 함수의 몸통을 수확 몸통으로 검사한다.**
+        # 실재하는 자리다 — `FieldValueLibraryRepository`의 `harvestAll`·`harvestAllOrThrow`
+        # 둘이 그 꼴이고, 그래서 종전 검사는 바로 뒤 `insertNewTokens`를 수확으로 읽고 있었다.
+        # (위반은 *더 많이* 잡는 쪽이라 조용히 통과하지는 않았지만, 세는 수도 잡는 대상도 틀렸다.)
+        # 판정: 괄호가 그 줄에서 닫히고 · 여는 중괄호가 없고 · `=`가 있으면 식 본문이다.
+        # 여러 줄 시그니처의 첫 줄은 괄호가 안 닫혀 여기 걸리지 않는다.
+        if (inFn && !started) {
+          po = gsub(/\(/, "(", probe); pc = gsub(/\)/, ")", probe)
+          if (po == pc && po > 0 && probe !~ /\{/ && probe ~ /=/) { inFn = 0; nPend = 0 }
+        }
+        # 그래도 안 닫히는 꼴이 남으면 **조용히 틀리게 두지 않는다** — 시그니처가 이만큼
+        # 길 수는 없으므로 소리 내어 죽는다(검사가 낡은 것을 통과로 읽는 것이 최악이다).
+        if (nPend > 40) {
+          print "EXTRACTOR-STUCK:" FILENAME ":" FNR > "/dev/stderr"
+          exit 3
+        }
+        if (started && depth <= 0) { inFn = 0; started = 0; depth = 0; nPend = 0 }
       }
     }
   ' "$1"
@@ -95,6 +122,17 @@ class Fake {
         for (c in stateChangeDao.getAllChangesList()) tokens.add(c.newValue)
     }
 
+    /**
+     * **여러 줄 시그니처** — B-183이 연 자리다. 여는 중괄호가 `fun` 줄에 없어서
+     * 종전 추출기는 이 함수를 이름으로 세지 못했다(몸통은 잡았다).
+     */
+    suspend fun harvestForNovelMultiline(
+        id: Long,
+        opts: Int
+    ) {
+        for (v in novelValueDao.getAllValuesList()) tokens.add(v.value)
+    }
+
     /** 전파는 이력을 반드시 읽는다 — 여기 걸리면 안 된다. */
     suspend fun propagate(id: Long) {
         for (c in stateChangeDao.getChangesByFieldKeyForUniverse(1L, "k")) stateChangeDao.update(c)
@@ -105,9 +143,12 @@ SELF=$(harvest_bodies "$SELFDIR/Self.kt")
 self_good=$(printf '%s\n' "$SELF" | grep -c "harvestForCharacter" || true)
 self_bad=$(printf '%s\n' "$SELF" | grep -c "$FORBIDDEN" || true)
 self_prop=$(printf '%s\n' "$SELF" | grep -c "getChangesByFieldKeyForUniverse" || true)
+# 여러 줄 시그니처의 `fun` 줄이 출력에 들어오는가 (B-183). **세는 자리가 이것 하나다** —
+# 본 검사의 `FNS`가 같은 정규식으로 세므로, 여기가 0이면 그쪽도 조용히 적게 센다.
+self_multi=$(printf '%s\n' "$SELF" | grep -cE 'fun[ \t]+harvestForNovelMultiline' || true)
 rm -rf "$SELFDIR"
-if [ "$self_good" -lt 1 ] || [ "$self_bad" -ne 1 ] || [ "$self_prop" -ne 0 ]; then
-  echo "  ✗ 추출기 자기 시험 실패 — 수확 인식 ${self_good}(≥1) · 위반 ${self_bad}(1) · 전파 오검출 ${self_prop}(0)" >&2
+if [ "$self_good" -lt 1 ] || [ "$self_bad" -ne 1 ] || [ "$self_prop" -ne 0 ] || [ "$self_multi" -ne 1 ]; then
+  echo "  ✗ 추출기 자기 시험 실패 — 수확 인식 ${self_good}(≥1) · 위반 ${self_bad}(1) · 전파 오검출 ${self_prop}(0) · 여러 줄 시그니처 ${self_multi}(1)" >&2
   echo "      (진짜를 못 뽑으면 이 검사는 장식이고, 전파를 잡으면 오검출로 다음 사람이 끈다)" >&2
   exit 1
 fi

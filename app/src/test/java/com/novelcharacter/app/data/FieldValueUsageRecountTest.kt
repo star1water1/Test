@@ -22,7 +22,7 @@ class FieldValueUsageRecountTest {
 
     private fun field(
         id: Long,
-        universeId: Long = 1L,
+        universeId: Long? = 1L,
         entityType: String = FieldDefinition.ENTITY_CHARACTER,
         config: String = "{}"
     ) = FieldDefinition(
@@ -185,15 +185,59 @@ class FieldValueUsageRecountTest {
     }
 
     /**
-     * 세계관을 모르는 캐릭터(작품 미배정)라도 **건드린 필드는 반드시 재집계**한다 —
+     * 세계관이 없는 캐릭터(작품 미배정)라도 **건드린 필드는 반드시 재집계**한다 —
      * 세계관을 못 찾았다고 집계를 통째로 건너뛰면 그 값이 영원히 0으로 남는다.
+     *
+     * 여기 defs는 전부 세계관 1 소속이라 **끌어올 전역 필드가 없다** — 그래서 답이 건드린 것뿐이다.
+     * 전역 필드가 있을 때 어떻게 되는지는 아래 시험이 든다(B-203이 연 자리다).
      */
     @Test
-    fun `세계관을 모르면 건드린 필드만이라도 대상에 남는다`() {
+    fun `세계관이 없으면 건드린 필드는 그대로 대상이다`() {
         val defs = listOf(field(1L), field(2L))
 
         val targets = FieldValueRules.recountTargetsForCharacter(null, defs, setOf(7L))
 
         assertEquals(setOf(7L), targets)
+    }
+
+    /**
+     * **전역(무소속) 구역도 구역이다** (B-203).
+     *
+     * 구역 전체를 대상에 넣는 이유가 *"이 저장이 다른 소유자에서 쓰이던 값을 지웠을 수도 있다"*인데,
+     * 그 사정은 전역 구역에서 **더 세게** 성립한다 — 그 구역의 필드는 무소속 소유자 전부가 공유한다.
+     * 종전에는 `if (universeId != null)` 때문에 이 갈래가 통째로 빠져, **값을 비운 전역 필드의
+     * `usageCount`가 높은 채로 남았다**(비운 필드는 새 토큰이 없어 `touched`에도 안 든다).
+     */
+    @Test
+    fun `무소속 소유자는 전역 구역의 필드를 대상으로 삼는다`() {
+        val defs = listOf(
+            field(1L, universeId = null),
+            field(2L, universeId = null),
+            field(3L, universeId = 1L),                                        // 남의 구역
+            field(4L, universeId = null, entityType = FieldDefinition.ENTITY_EVENT)  // 남의 축
+        )
+
+        val targets = FieldValueRules.recountTargetsForCharacter(null, defs, setOf(7L))
+
+        assertEquals(setOf(7L, 1L, 2L), targets)
+    }
+
+    /** 사건·작품 축도 같은 함수를 지난다 — 세 축이 갈리면 R-29의 짝 규칙이 깨진다. */
+    @Test
+    fun `사건과 작품 축도 전역 구역을 함께 본다`() {
+        val defs = listOf(
+            field(1L, universeId = null, entityType = FieldDefinition.ENTITY_EVENT),
+            field(2L, universeId = null, entityType = FieldDefinition.ENTITY_NOVEL),
+            field(3L, universeId = null)   // 캐릭터 축 — 두 호출 어느 쪽에도 안 든다
+        )
+
+        assertEquals(
+            setOf(1L),
+            FieldValueRules.recountTargets(null, FieldDefinition.ENTITY_EVENT, defs, emptySet())
+        )
+        assertEquals(
+            setOf(2L),
+            FieldValueRules.recountTargets(null, FieldDefinition.ENTITY_NOVEL, defs, emptySet())
+        )
     }
 }

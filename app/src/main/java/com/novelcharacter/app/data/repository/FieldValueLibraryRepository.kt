@@ -115,12 +115,16 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         insertNewTokens(tokensByField)
-        // 캐릭터 쪽과 같은 이유로 사건 축도 세계관 전체 사건 필드를 대상으로 한다.
-        val targets = LinkedHashSet(tokensByField.keys)
-        db.timelineDao().getEventById(eventId)?.universeId?.let { uid ->
-            defsById.values
-                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_EVENT }
-                .forEach { targets.add(it.id) }
+        // 캐릭터 쪽과 **같은 함수**로 구역 전체를 대상에 넣는다 (B-203 · R-29).
+        // 사건을 못 찾은 것과 사건의 구역이 전역인 것을 가른다 — 종전 `?.let`은 둘을 같게 다뤄
+        // 전역 구역의 사건 필드가 통째로 빠졌다.
+        val event = db.timelineDao().getEventById(eventId)
+        val targets = if (event != null) {
+            FieldValueRules.recountTargets(
+                event.universeId, FieldDefinition.ENTITY_EVENT, defsById.values, tokensByField.keys
+            )
+        } else {
+            tokensByField.keys
         }
         scheduleRecount(targets)
     }
@@ -136,13 +140,15 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         insertNewTokens(tokensByField)
-        // 캐릭터·사건 축과 같은 이유로 세계관 전체의 작품 필드를 재집계 대상에 넣는다 —
-        // 이 저장이 다른 작품에서 쓰이던 값을 지웠을 수도 있다.
-        val targets = LinkedHashSet(tokensByField.keys)
-        db.novelDao().getNovelById(novelId)?.universeId?.let { uid ->
-            defsById.values
-                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_NOVEL }
-                .forEach { targets.add(it.id) }
+        // 캐릭터·사건 축과 **같은 함수**로 구역 전체의 작품 필드를 넣는다 (B-203 · R-29) —
+        // 이 저장이 다른 작품에서 쓰이던 값을 지웠을 수도 있다. 무소속 작품의 구역은 전역이다.
+        val novel = db.novelDao().getNovelById(novelId)
+        val targets = if (novel != null) {
+            FieldValueRules.recountTargets(
+                novel.universeId, FieldDefinition.ENTITY_NOVEL, defsById.values, tokensByField.keys
+            )
+        } else {
+            tokensByField.keys
         }
         scheduleRecount(targets)
     }

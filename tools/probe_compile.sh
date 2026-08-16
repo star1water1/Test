@@ -126,6 +126,19 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
 } | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
 
 # ── 3. 컴파일 ──
+#
+# **출력은 `sort`이지 `sort -u`가 아니다 (B-211, 2026.08.16).** 줄 번호는 지우고(한 줄만
+# 넣어도 그 아래가 전부 '신규'가 된다) **겹은 남긴다** — 둘은 다른 일이다.
+# `-u`를 쓰면 키가 (파일, 문구)의 *집합*이 되어, **이미 그 문구를 들고 있는 파일에 같은 문구의
+# 새 오류가 나면 `comm -13`에 아무것도 안 나온다.** 기준선에 오류를 열 줄쯤 이고 있는 파일이
+# 실제로 셋이고(`ExcelExporter.kt`·`ExcelTransferController.kt`·`ExcelImportService.kt` — B-190·B-211),
+# 그중 넷은 `cannot infer type for this parameter.`처럼 **자리를 말하지 않는 일반 문구**라
+# 그 파일 어디서 새로 나든 묻혔다. 겹을 남기면 `comm`이 *많아진 만큼*을 그대로 낸다
+# (실측: base 1건·cur 2건이면 `comm -13`이 한 줄을 낸다 — 정렬만 같으면 다중집합 차가 나온다).
+#
+# **이 저장소는 같은 함정에 이미 한 번 물렸다** — `tools/triage_unresolved.sh` 머리의
+# *"1차(2026.08.03): `sort -u`가 같은 문구의 진짜 신규를 함께 감췄다"*가 그 기록이고,
+# 그때는 차분 컴파일 쪽만 고쳤다. 프로브 둘에는 그대로 남아 있었다.
 # 주의: 컴파일러 자신의 클래스패스에도 coroutines가 있어야 한다(없으면 CoroutineScope
 # NoClassDefFoundError로 **컴파일이 시작조차 못 하고**, 오류 0으로 보여 헛된 안심을 준다).
 CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room"
@@ -138,10 +151,10 @@ java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar
   | grep -E "error:" \
   | sed "s|$REPO/||" \
   | sed -E 's/^([^:]+):[0-9]+:[0-9]+: (error: .*)$/\1| \2/' \
-  | sort -u > "$OUT"
+  | sort > "$OUT"
 
 ERRS=$(wc -l < "$OUT")
-echo "고유 오류 ${ERRS}건 → $OUT"
+echo "오류 ${ERRS}건(겹 포함) → $OUT"
 # **오류 0을 그냥 믿지 않는다.** 컴파일러가 시작조차 못 하면(예: 컴파일러 클래스패스에
 # coroutines 누락) 출력이 비어 "오류 0"으로 보인다 — 2026-08-01에 실제로 겪었고, 헛된
 # 안심을 준다. 오류가 0인데 클래스 파일도 0이면 그 경우다.

@@ -124,6 +124,12 @@ object ExcelHeaderAliases {
         alias("탈퇴후관계유형", "departed_relation_type", "departedrelationtype")
         alias("탈퇴후강도", "departed_intensity", "departedintensity")
         alias("세력코드", "faction_code", "factioncode")
+        // 필드 데이터 시트의 별칭 열 — 옛 머리를 새 머리로 접는다 (B-222 ②).
+        // **이 한 줄이 개명의 폴백 전부다:** 가져오기가 옛 파일의 그 열을 새 이름으로 찾고,
+        // `reportUnknownColumns`도 같은 표를 보므로 '인식하지 못해 무시했습니다'가 거짓으로
+        // 뜨지 않는다. 맨 '별칭'은 위에서 이미 '이명'이 가져갔다 — 두 시트가 같은 말을
+        // 다른 뜻으로 쓰는 자리라 전역 표로는 가릴 수 없고, 그래서 접미사가 붙은 쪽만 든다.
+        alias(FieldValueSheetMapper.ALIAS_HEADER, FieldValueSheetMapper.LEGACY_ALIAS_HEADER)
         // 이미지 시트 (G3)
         alias("파일명", "filename", "file_name", "파일 명")
         alias("링크그룹", "link_group", "linkgroup", "링크 그룹")

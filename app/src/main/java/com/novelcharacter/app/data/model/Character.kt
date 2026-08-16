@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.novelcharacter.app.util.FieldValueTokenizer
 
 @Entity(
     tableName = "characters",
@@ -58,10 +59,19 @@ data class Character(
             name
         }
 
-    /** 이명/별칭 목록 (콤마 구분 파싱) */
+    /**
+     * 이명/별칭 목록 — 쉼표 규칙은 [FieldValueTokenizer.splitMulti] 하나가 든다 (B-207 · B-178).
+     *
+     * 종전에는 이 자리만 맨 `split(",")`이라 **앱 안에서 같은 개념이 두 규칙이었다.**
+     * `"Smith, John", Alice`라 적은 이명이 통계·AI 문맥에서는 세 조각, 대결 카드에서는
+     * 두 조각으로 갈렸다 — 갈라짐이 언제나 *값이 조용히 쪼개지는* 모양으로만 드러나는 그 부류다.
+     *
+     * **좁힌 판정(`quotedOnlyIfNeeded`)이라 따옴표를 글자로 쓰던 옛 값은 그대로 나뉜다** —
+     * `"인용" 시리즈`처럼 양끝만 감싼 값이 뜻을 잃지 않는다.
+     */
     val aliases: List<String>
         @Ignore get() = if (anotherName.isNotBlank()) {
-            anotherName.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            FieldValueTokenizer.splitMulti(anotherName)
         } else {
             emptyList()
         }

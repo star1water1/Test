@@ -460,6 +460,37 @@ class DuelSystemFieldsTest {
         )
     }
 
+    /**
+     * **두 경로가 같은 조각을 낸다** (B-207) — 대결 카드의 `tokensOf`와 통계·AI가 읽는
+     * [Character.aliases]다.
+     *
+     * 이 시험이 없으면 갈라짐이 *어느 화면에서도 오류로 보이지 않는* 모양으로만 남는다:
+     * 한쪽이 이명을 세 조각으로, 다른 쪽이 두 조각으로 세는데 **둘 다 그럴듯해서**
+     * 어느 쪽이 틀렸는지 사용자가 알아낼 방법이 없다. 그래서 값이 아니라 **두 답이 같은가**를 잠근다.
+     */
+    @Test
+    fun `이명은 대결과 통계가 같은 규칙으로 나눈다`() {
+        for (raw in listOf(
+            "\"Smith, John\", Alice",   // 감싸기를 아는 새 값 — 둘이어야 한다
+            "\"별칭\", 본명",              // 따옴표를 글자로 쓰던 옛 값 — 옛 규칙 그대로
+            "붉은 검, 방랑자",             // 감싸기가 없던 평범한 값
+            "외톨이"                      // 하나뿐인 값
+        )) {
+            assertEquals(
+                "이명 '$raw'",
+                DuelSystemFields.tokensOf(DuelSystemFields.Column.ANOTHER_NAME, raw),
+                Character(name = "누구", anotherName = raw).aliases
+            )
+        }
+        // 종전 규칙이 실제로 달랐다는 것도 함께 박는다 — 같아진 것이 우연이 아님을 보인다.
+        assertEquals(
+            listOf("Smith, John", "Alice"),
+            Character(name = "누구", anotherName = "\"Smith, John\", Alice").aliases
+        )
+        // 빈 이명은 빈 목록이다(종전 동작 그대로 — `splitMulti`에 맡기지 않는 유일한 갈래).
+        assertEquals(emptyList<String>(), Character(name = "누구", anotherName = "  ").aliases)
+    }
+
     @Test
     fun `메모는 여전히 통째로 한 토큰이다`() {
         // 다중값이 아닌 열까지 규약을 바꾸면 문장 하나가 범주 여럿으로 흩어진다.
