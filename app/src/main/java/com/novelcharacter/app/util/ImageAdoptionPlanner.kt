@@ -61,8 +61,18 @@ object ImageAdoptionPlanner {
      * @param existing 그 경로들로 물은 `getByPaths`의 결과. [paths] 밖의 행이 섞여 있어도
      *   무시한다 — 호출부가 청크로 갈라 물어도 답이 같아야 한다.
      */
+    /**
+     * 중복을 접고 입력 순서를 보존한 목록 — **접는 규칙이 적히는 자리는 여기 하나다.**
+     *
+     * [split]이 이것을 쓰고, 호출부([ImageAdoption])도 *무엇을 물을까*를 정할 때 같은 것을 쓴다.
+     * 두 자리에 따로 적으면 한쪽이 낡고, 그러면 **묻지 않은 경로를 넣거나 넣지 않은 경로를
+     * 답에 세운다.** 이미 접힌 목록을 다시 넣어도 같은 답이다(멱등).
+     */
+    fun wanted(paths: Collection<String>): List<String> =
+        paths.toCollection(LinkedHashSet()).toList()
+
     fun split(paths: Collection<String>, existing: List<ImageMeta>, promote: Boolean): Split {
-        val wanted = paths.toCollection(LinkedHashSet()).toList()
+        val wanted = wanted(paths)
         if (wanted.isEmpty()) return Split(emptyList(), emptyMap(), emptyList(), promote)
 
         val wantedSet = wanted.toHashSet()

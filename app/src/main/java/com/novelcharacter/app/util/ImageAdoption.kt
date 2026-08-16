@@ -23,7 +23,11 @@ import com.novelcharacter.app.data.model.ImageMeta
  *
  * 계약:
  * - **호출부가 이미 트랜잭션 안이어도 된다.** Room의 `withTransaction`은 겹쳐 열면 바깥 것에
- *   합류하므로, 단수판의 `@Transaction`이 주던 원자성이 그대로다.
+ *   합류하므로(이 저장소가 이미 기대는 성질이다 —
+ *   [com.novelcharacter.app.data.repository.GradeSystemRepository.propagate]의 주석이 같은 말을
+ *   한다), 단수판의 `@Transaction`이 주던 원자성이 그대로다. **안쪽이 던지면 바깥까지 롤백되는
+ *   것도 그 성질이고, 그것이 이 통로가 바라는 바다** — 입양이 실패했는데 뒤따르는 태그·링크만
+ *   들어가면 안 된다.
  * - **하나라도 id를 못 얻으면 던진다.** 옛 단수판이 `requireNotNull(getByPath(path))`로 던지던
  *   바로 그 자리다. 규칙을 호출부마다 따로 두지 않는 것이 요점이다 — 답에서 **조용히 빠지게**
  *   두면 뒤따르는 태그·링크가 그 경로만 건너뛴 채 *성공*이라 보고하고, 그것이 개발 의도 2번이
@@ -62,10 +66,11 @@ object ImageAdoption {
         if (paths.isEmpty()) return emptyMap()
         return db.withTransaction {
             // ① 이미 있는 행 — 경로마다 묻던 `getByPath`가 여기 하나로 접힌다.
-            val existing = SqlInChunks.flat(paths.toCollection(LinkedHashSet()).toList()) {
-                db.imageMetaDao().getByPaths(it)
-            }
-            val split = ImageAdoptionPlanner.split(paths, existing, promote)
+            // **접는 규칙은 [ImageAdoptionPlanner.wanted] 하나다** — 여기서 따로 접으면
+            // *무엇을 물었는가*와 *무엇을 답에 세우는가*가 갈릴 수 있다.
+            val wanted = ImageAdoptionPlanner.wanted(paths)
+            val existing = SqlInChunks.flat(wanted) { db.imageMetaDao().getByPaths(it) }
+            val split = ImageAdoptionPlanner.split(wanted, existing, promote)
 
             // ② 없는 것만 넣는다. `IN` 절이 아니라 바인드 상한과 무관하므로 통로를 지나지 않는다.
             val rowIds =
