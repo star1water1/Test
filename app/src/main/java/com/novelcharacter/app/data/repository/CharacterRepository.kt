@@ -272,14 +272,9 @@ class CharacterRepository(
     suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> =
         characterFieldValueDao.getFieldValuesForUniverse(universeId, fieldDefId)
 
-    /** 여러 캐릭터의 전체 필드값 일괄 조회 (IN 절 999 제한 회피를 위한 청크 분할) */
-    suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> {
-        val result = mutableListOf<CharacterFieldValue>()
-        for (chunk in characterIds.chunked(CHUNK_SIZE)) {
-            result.addAll(characterFieldValueDao.getValuesForCharacters(chunk))
-        }
-        return result
-    }
+    /** 여러 캐릭터의 전체 필드값 일괄 조회 (IN 절 변수 상한은 [SqlInChunks]가 지킨다) */
+    suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> =
+        SqlInChunks.flat(characterIds) { characterFieldValueDao.getValuesForCharacters(it) }
 
     /** 세계관 전체 필드값 일괄 조회 (편집 화면 자동완성 배치 로드용) */
     suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
@@ -446,14 +441,9 @@ class CharacterRepository(
 
     // ===== 일괄 편집용 배치 메서드 =====
 
-    /** IN 절 변수 한도 회피용 청크 크기 — 값의 단일 소스는 [SqlInChunks.LIMIT]다 (B-242). */
-    private val CHUNK_SIZE = SqlInChunks.LIMIT
-
     suspend fun batchSetPinned(ids: List<Long>, isPinned: Boolean) {
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
-                characterDao.setPinnedForIds(chunk, isPinned)
-            }
+            SqlInChunks.each(ids) { characterDao.setPinnedForIds(it, isPinned) }
         }
     }
 
@@ -477,7 +467,7 @@ class CharacterRepository(
                 val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
                 val newFields = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId)
                 val newDefByKey = newFields.associateBy { it.key }
-                for (chunk in ids.chunked(CHUNK_SIZE)) {
+                SqlInChunks.each(ids) { chunk ->
                     for (character in characterDao.getCharactersByIds(chunk)) {
                         val curUniverse = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
                         if (curUniverse == newUniverseId) continue // 같은 세계관 내 이동은 정리 불필요
@@ -486,9 +476,7 @@ class CharacterRepository(
                 }
             }
             // novelId 갱신은 이관/스냅샷 '후' — 스냅샷이 옛 소속을 담도록
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
-                characterDao.updateNovelIdForIds(chunk, newNovelId, now)
-            }
+            SqlInChunks.each(ids) { characterDao.updateNovelIdForIds(it, newNovelId, now) }
         }
         trash.pruneIfNeeded()
         // 세계관이 바뀐 이동이면 대상 세계관 라이브러리에 재매핑 값 수확 (검토 A6)
@@ -745,7 +733,7 @@ class CharacterRepository(
     suspend fun batchAddTags(ids: List<Long>, tags: List<String>) {
         if (tags.isEmpty()) return
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
+            SqlInChunks.each(ids) { chunk ->
                 val tagEntities = chunk.flatMap { charId ->
                     tags.map { tag -> CharacterTag(characterId = charId, tag = tag) }
                 }
@@ -757,11 +745,10 @@ class CharacterRepository(
     suspend fun batchRemoveTags(ids: List<Long>, tags: List<String>) {
         if (tags.isEmpty()) return
         // deleteTagsFromCharacters는 이중 IN 절(characterIds + tags) 사용 —
-        // 태그 몫을 밝혀 넘긴다(그 계산의 단일 소스가 SqlInChunks.sizeFor다).
-        val adjustedChunk = SqlInChunks.sizeFor(tags.size)
+        // 태그 몫을 밝혀 넘긴다(그 예산 계산은 통로가 [SqlInChunks.sizeFor]로 안에서 한다).
         db.withTransaction {
-            for (chunk in ids.chunked(adjustedChunk)) {
-                characterTagDao.deleteTagsFromCharacters(chunk, tags)
+            SqlInChunks.each(ids, reservedBinds = tags.size) {
+                characterTagDao.deleteTagsFromCharacters(it, tags)
             }
         }
     }
@@ -779,15 +766,13 @@ class CharacterRepository(
 
     suspend fun batchClearFieldValue(ids: List<Long>, fieldDefId: Long) {
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
-                db.characterFieldValueDao().deleteFieldValueForCharacters(chunk, fieldDefId)
-            }
+            SqlInChunks.each(ids) { db.characterFieldValueDao().deleteFieldValueForCharacters(it, fieldDefId) }
         }
     }
 
     suspend fun batchAppendMemo(ids: List<Long>, text: String, prepend: Boolean) {
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
+            SqlInChunks.each(ids) { chunk ->
                 val characters = characterDao.getCharactersByIds(chunk)
                 val updated = characters.map {
                     val newMemo = when {
@@ -840,14 +825,20 @@ class CharacterRepository(
             get() = relationships > 0 || stateChanges > 0 || factionMemberships > 0 || eventLinks > 0
     }
 
-    /** 일괄 삭제 전 연쇄 영향 규모를 집계한다. IN 절 변수 한도를 피하려 CHUNK_SIZE로 나눠 합산한다(받쳐주는 확장성). */
+    /**
+     * 일괄 삭제 전 연쇄 영향 규모를 집계한다. IN 절 변수 한도는 [SqlInChunks]가 지킨다(받쳐주는 확장성).
+     *
+     * **계수 넷을 한 번에 도는 자리라 [SqlInChunks.sum]이 아니라 [SqlInChunks.each]다** — 질의마다
+     * `sum`을 걸면 같은 목록을 네 번 나눠 돈다. 조각마다 넷을 함께 묻고 `+=`로 더하는 것이 R-54가
+     * 말하는 그 합산이며, 나누기가 계수를 바꾸지 않는다는 성질은 여기서도 같다.
+     */
     suspend fun getBatchDeleteImpact(ids: List<Long>): DeleteImpact {
         if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0)
         val relIds = mutableSetOf<Long>()  // 관계는 두 끝이 서로 다른 청크에 나뉠 수 있어 id Set으로 교차청크 중복 제거
         var stateChanges = 0
         var memberships = 0
         var eventLinks = 0
-        for (chunk in ids.chunked(CHUNK_SIZE)) {
+        SqlInChunks.each(ids) { chunk ->
             relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)
@@ -856,19 +847,19 @@ class CharacterRepository(
         return DeleteImpact(ids.size, relIds.size, stateChanges, memberships, eventLinks)
     }
 
-    /** 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용) */
+    /**
+     * 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용).
+     *
+     * `DISTINCT`는 조각 안에서만 성립하므로(R-54) **접고 정렬하는 일이 호출부에 있다** — Set으로
+     * 받아 `sorted()`로 낸다. 통로를 지나도 그 책임은 그대로 여기다.
+     */
     suspend fun getDistinctTagsForCharacters(ids: List<Long>): List<String> {
         val allTags = mutableSetOf<String>()
-        for (chunk in ids.chunked(CHUNK_SIZE)) {
-            allTags.addAll(characterTagDao.getDistinctTagsForCharacters(chunk))
-        }
+        SqlInChunks.each(ids) { allTags.addAll(characterTagDao.getDistinctTagsForCharacters(it)) }
         return allTags.sorted()
     }
 
     companion object {
-        /** IN 절 변수 한도 회피용 청크 크기 (계단식 삭제 공용) — 값은 [SqlInChunks.LIMIT]가 정한다. */
-        private const val CASCADE_CHUNK_SIZE = SqlInChunks.LIMIT
-
         /**
          * 캐릭터 일괄 삭제 공통 본체 — 삭제 전 캐릭터별 휴지통 스냅샷을 남기고
          * nameBank 사용·최근활동·작품/세계관 이미지 참조를 정리한 뒤 삭제한다(FK CASCADE가 나머지 정리).
@@ -884,12 +875,12 @@ class CharacterRepository(
             // 뒤 청크의 payload에서 사라진다 — 관계는 양쪽 스냅샷이 모두 담는다는 전제가
             // 깨지고, 복원은 "상대가 같은 작업 안에 있으니 그쪽이 담았겠지"라며 조용히
             // 건너뛴다(무통보 유실). 900명을 넘는 세계관에서만 나타나던 경로다.
-            for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
+            SqlInChunks.each(ids) { chunk ->
                 for (character in db.characterDao().getCharactersByIds(chunk)) {
                     trash.snapshotCharacter(character, parseImagePathStrings(character.imagePaths))
                 }
             }
-            for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
+            SqlInChunks.each(ids) { chunk ->
                 db.nameBankDao().resetUsageByCharacterIds(chunk)
                 db.recentActivityDao().deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
                 db.novelDao().clearImageCharacterRefs(chunk)

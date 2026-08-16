@@ -7903,15 +7903,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 그래서 짝의 모양을 그대로 옮기지 않고 **필요한 경로만** 키로 물었다.
         val wantedPaths = plan.rows.map { it.path }
         val existingByPath: Map<String, com.novelcharacter.app.data.model.ImageMeta> =
-            wantedPaths.chunked(IN_CLAUSE_CHUNK)
-                .flatMap { db.imageMetaDao().getByPaths(it) }
+            SqlInChunks.flat(wantedPaths) { db.imageMetaDao().getByPaths(it) }
                 .associateBy { it.path }
         // 태그는 **열이 있을 때만** 읽는다 — 없으면 비교 대상이 아니라 조회도 낭비다
         // (루프 안의 판정이 `r.hasTagCol`로 갈리는 것과 같은 조건이다).
         val tagsByImage: Map<Long, Set<String>> =
             if (imc.tag >= 0) {
-                existingByPath.values.map { it.id }.chunked(IN_CLAUSE_CHUNK)
-                    .flatMap { db.imageTagDao().getTagsByImages(it) }
+                SqlInChunks.flat(existingByPath.values.map { it.id }) { db.imageTagDao().getTagsByImages(it) }
                     .groupBy({ it.imageId }, { it.tag })
                     .mapValues { (_, v) -> v.toSet() }
             } else emptyMap()
@@ -8039,13 +8037,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // *시트가 링크를 지운 행 전부*라 상한이 없다. 999를 넘으면 질의가 죽고, 이 자리는
             // 가져오기 트랜잭션 안이라 **한 줄 때문에 가져오기 전체가 되돌아간다.**
             // 같은 부류를 B-51이 이미 한 번 겪었다(그때는 `catch`가 삼켜 조용한 유실이었다).
-            clearedGroupIds.chunked(IN_CLAUSE_CHUNK)
-                .forEach { db.imageMetaDao().setGroup(it, null) }
+            SqlInChunks.each(clearedGroupIds) { db.imageMetaDao().setGroup(it, null) }
             // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
             // 토큰마다 돌던 쓰기를 일괄판으로 내렸다 (B-239) — 갈라 불러도 답이 같은 근거는
             // `clearSingletonGroups`의 주석(묶음이 행을 나눠 가지므로 서로의 인원을 못 바꾼다).
-            clearedGroupTokens.toList().chunked(IN_CLAUSE_CHUNK)
-                .forEach { db.imageMetaDao().clearSingletonGroups(it) }
+            SqlInChunks.each(clearedGroupTokens) { db.imageMetaDao().clearSingletonGroups(it) }
             result.warnings.add("이미지 ${clearedGroupIds.size}건: '링크그룹' 칸이 비어 있어 링크를 해제했습니다")
             if (clearedAutoLinks > 0) {
                 result.warnings.add(
@@ -8065,15 +8061,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 달라진다. 가드·순서·겹 갱신의 정본은 [ImageLinkGroupPlanner]이고 시험이 그것을 든다.
         if (groupMembers.isNotEmpty()) {
             val currentByToken: Map<String, Set<Long>> =
-                groupMembers.keys.toList().chunked(IN_CLAUSE_CHUNK)
-                    .flatMap { db.imageMetaDao().getByGroups(it) }
+                SqlInChunks.flat(groupMembers.keys) { db.imageMetaDao().getByGroups(it) }
                     .mapNotNull { meta -> meta.linkGroupId?.let { it to meta.id } }
                     .groupBy({ it.first }, { it.second })
                     .mapValues { (_, ids) -> ids.toSet() }
             for ((token, ids) in com.novelcharacter.app.util.ImageLinkGroupPlanner.plan(groupMembers, currentByToken)) {
                 // 여기도 상한이 없다 — 한 묶음에 실리는 행 수는 시트가 정한다 (B-242).
                 // 갈라 불러도 답이 같다: 같은 값을 적는 쓰기라 읽고-고쳐-쓰기가 아니다.
-                ids.chunked(IN_CLAUSE_CHUNK).forEach { db.imageMetaDao().setGroup(it, token) }
+                SqlInChunks.each(ids) { db.imageMetaDao().setGroup(it, token) }
             }
         }
 
@@ -9612,7 +9607,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val trash = trashForImport()
             val allIds = db.timelineDao().getAllEventIds()
             val doomed = allIds.filter { it !in matchedEventIds }
-            for (chunk in doomed.chunked(IN_CLAUSE_CHUNK)) {
+            SqlInChunks.each(doomed) { chunk ->
                 for (event in db.timelineDao().getEventsByIds(chunk)) {
                     try {
                         trash.snapshotEvent(event)
@@ -9693,7 +9688,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // **전부 스냅샷한 뒤 전부 삭제한다.** 하나씩 스냅샷→삭제하면, 먼저 지운 세력의
             // FK CASCADE가 세력 간 관계 행을 이미 없애 버려 두 번째 세력의 payload에는
             // 그 관계가 담기지 않는다(faction_relationships에는 code가 없어 그 행이 유일본이다).
-            val doomedFactions = doomed.chunked(IN_CLAUSE_CHUNK).flatMap { db.factionDao().getByIds(it) }
+            val doomedFactions = SqlInChunks.flat(doomed) { db.factionDao().getByIds(it) }
             for (faction in doomedFactions) {
                 try {
                     // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
@@ -9876,16 +9871,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
         // 시트명 상수는 SheetSpec.kt가 단일 소스다 (내보내기도 같은 상수를 본다).
-
-        /**
-         * IN 절 변수 한도 회피용 청크 크기 — **값은 [SqlInChunks.LIMIT] 하나다**(R-54).
-         *
-         * 종전에는 여기 `900`이라 적혀 있었다. R-54는 이 이름을 콕 집어 *"옛 상수들은 이름만
-         * 남고 값은 전부 그 하나를 가리킨다"*고 적어 두었는데 **이 자리가 그렇지 않았다** —
-         * B-242가 값을 모을 때 빠진 둘 중 하나다(2026.08.16 B-244가 실측). 같은 사실이 두
-         * 자리에 살면 한쪽이 반드시 낡는다.
-         */
-        private const val IN_CLAUSE_CHUNK = SqlInChunks.LIMIT
     }
 }
 

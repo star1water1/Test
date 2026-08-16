@@ -77,8 +77,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
      * 용도별 필터링(예: AI 용례는 숨김 제외, restricted 검증은 숨김 포함)은 호출측이 판단한다.
      */
     suspend fun entriesForFields(fieldDefIds: Collection<Long>): Map<Long, List<FieldValueEntry>> =
-        fieldDefIds.distinct().chunked(CHUNK_SIZE)
-            .flatMap { entryDao.getForFields(it) }
+        SqlInChunks.flat(fieldDefIds.distinct()) { entryDao.getForFields(it) }
             .groupBy { it.fieldDefinitionId }
 
     /** 필드 집합의 해석기 일괄 생성 (IN 청크) — 통계 스냅샷·엑셀 임포트용 */
@@ -223,8 +222,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     private suspend fun insertNewTokens(tokensByField: Map<Long, Set<String>>) {
         val fieldIds = tokensByField.filterValues { it.isNotEmpty() }.keys
         if (fieldIds.isEmpty()) return
-        val existingByField = fieldIds.chunked(CHUNK_SIZE)
-            .flatMap { entryDao.getForFields(it) }
+        val existingByField = SqlInChunks.flat(fieldIds) { entryDao.getForFields(it) }
             .groupBy { it.fieldDefinitionId }
         val toInsert = mutableListOf<FieldValueEntry>()
         for ((fieldId, tokens) in tokensByField) {
@@ -260,26 +258,21 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     suspend fun recountUsageForFieldsOrThrow(fieldDefIds: Collection<Long>) {
         val ids = fieldDefIds.distinct()
         if (ids.isEmpty()) return
-        val entriesByField = ids.chunked(CHUNK_SIZE)
-            .flatMap { entryDao.getForFields(it) }
+        val entriesByField = SqlInChunks.flat(ids) { entryDao.getForFields(it) }
             .groupBy { it.fieldDefinitionId }
         // 엔트리가 없는 필드는 셀 대상이 없다 — 값 조회에서도 빼 불필요한 스캔을 없앤다.
         val targetIds = entriesByField.keys.toList()
         if (targetIds.isEmpty()) return
 
-        val defsById = targetIds.chunked(CHUNK_SIZE)
-            .flatMap { fieldDao.getFieldsByIds(it) }
+        val defsById = SqlInChunks.flat(targetIds) { fieldDao.getFieldsByIds(it) }
             .associateBy { it.id }
-        val charValuesByField = targetIds.chunked(CHUNK_SIZE)
-            .flatMap { charValueDao.getValuesByFieldDefs(it) }
+        val charValuesByField = SqlInChunks.flat(targetIds) { charValueDao.getValuesByFieldDefs(it) }
             .groupBy { it.fieldDefinitionId }
-        val eventValuesByField = targetIds.chunked(CHUNK_SIZE)
-            .flatMap { eventValueDao.getValuesByFieldDefs(it) }
+        val eventValuesByField = SqlInChunks.flat(targetIds) { eventValueDao.getValuesByFieldDefs(it) }
             .groupBy { it.fieldDefinitionId }
         // 종류가 셋이므로 세 표를 모두 센다 — 한 표를 빠뜨리면 그 종류의 usageCount가 영원히
         // 0이고 '미사용 정리'가 살아 있는 값을 지우자고 권한다(R-29 · B-60과 같은 부류).
-        val novelValuesByField = targetIds.chunked(CHUNK_SIZE)
-            .flatMap { novelValueDao.getValuesByFieldDefs(it) }
+        val novelValuesByField = SqlInChunks.flat(targetIds) { novelValueDao.getValuesByFieldDefs(it) }
             .groupBy { it.fieldDefinitionId }
 
         val changed = mutableListOf<FieldValueEntry>()
@@ -291,7 +284,11 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 novelValuesByField[fieldId].orEmpty().map { it.value }
             changed.addAll(recountedEntries(fd, entries, raw))
         }
-        if (changed.isNotEmpty()) changed.chunked(CHUNK_SIZE).forEach { entryDao.updateAll(it) }
+        // 이 자리만 성격이 다르다 — `updateAll`은 `@Update`라 **IN 절이 아니라 문장 묶음**이고,
+        // 나누는 이유도 바인드 변수가 아니라 한 번에 실리는 문장 수다. 그럼에도 같은 통로를
+        // 지나는 것은 나누는 규칙이 같고(상한 아래로), 한 덩이면 원본을 그대로 넘겨 사본이
+        // 아예 없기 때문이다. 이 구별을 적어 두는 것은 다음 사람이 다시 캐지 않게 하기 위함이다.
+        if (changed.isNotEmpty()) SqlInChunks.each(changed) { entryDao.updateAll(it) }
     }
 
     // ===== 재집계 예약 (수확과 같은 축으로 묶는다) =====
@@ -585,10 +582,10 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         // **편집 직전 백업**이다 — 캐릭터는 지워지지 않고 필드값만 고쳐 쓰인다(B-2).
         val trash = TrashRepository(db, com.novelcharacter.app.data.model.TrashSnapshot.KIND_EDIT_BACKUP)
         val report = db.withTransaction {
-            // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례 (IN 절 999 제한 청크)
+            // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례 (IN 절 상한은 통로가 지킨다)
             val affected = collectAffectedCharacterIds(fd, matchTokens)
             var snapshotted = 0
-            for (chunk in affected.chunked(CHUNK_SIZE)) {
+            SqlInChunks.each(affected) { chunk ->
                 for (character in db.characterDao().getCharactersByIds(chunk)) {
                     // 이 경로가 파괴하는 것은 필드값과 상태변화뿐이다(rewriteTokens) —
                     // 캐릭터 행·태그·세력 소속은 손대지 않으므로 되돌리기 범위에 넣지 않는다.
@@ -666,9 +663,9 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val novelIds = novelValueDao.getValuesByFieldDef(fd.id)
             .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
             .map { it.novelId }.distinct()
-        val characters = charIds.chunked(CHUNK_SIZE).flatMap { db.characterDao().getCharactersByIds(it) }
+        val characters = SqlInChunks.flat(charIds) { db.characterDao().getCharactersByIds(it) }
         val events = eventIds.mapNotNull { db.timelineDao().getEventById(it) }
-        val novels = novelIds.chunked(CHUNK_SIZE).flatMap { db.novelDao().getNovelsByIds(it) }
+        val novels = SqlInChunks.flat(novelIds) { db.novelDao().getNovelsByIds(it) }
         return UsageDrilldown(characters, events, stateCount, novels)
     }
 
@@ -747,14 +744,6 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     // ===== 검증 =====
 
     companion object {
-        /**
-         * `IN` 절 청크 크기 — **값은 [SqlInChunks.LIMIT] 하나다**(R-54).
-         *
-         * 종전에는 여기 `900`이라 적혀 있었다. R-54가 이름으로 든 옛 상수 넷 중 이것과
-         * `ExcelImportService.IN_CLAUSE_CHUNK` **둘이 아직 리터럴이었다**(2026.08.16 B-244가 실측).
-         */
-        const val CHUNK_SIZE = SqlInChunks.LIMIT
-
         // ── 재집계 대기열 (프로세스 전역) ──
         // 이 리포지토리는 앱 싱글턴 말고도 여러 곳에서 직접 생성된다(휴지통 복원·월드팩 임포트).
         // 큐를 인스턴스 필드에 두면 생성자마다 큐가 쪼개져 합치는 의미가 사라지고, 어떤 인스턴스의
