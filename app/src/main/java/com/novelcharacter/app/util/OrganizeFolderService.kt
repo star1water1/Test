@@ -583,8 +583,23 @@ object OrganizeFolderService {
         //
         // 소유 색인을 여기서 한 번 만드는 이유: 계획은 **캐릭터 축만** 안다(`characterIdsByPath`).
         // 작품·세계관이 쓰는 이미지를 그대로 지우면 그쪽 참조가 끊긴 채 남는다.
+        //
+        // **경로마다 묻던 `getByPath`를 이 루프 앞의 일괄 조회 한 번으로 내렸다 (B-243).**
+        // 이 루프의 쓰기는 ③과 달리 **다른 행도** 건드린다(`delete` 안의 `clearGroupIfSingleton`).
+        // 그런데도 겹이 필요 없는 것이 이 자리의 요점이고, 근거는 [ImageDeletionService.delete]의
+        // `linkGroupId` 문단이 든다 — 낡은 토큰은 **식구 0인 토큰**뿐이고 그 UPDATE는 0행을 친다.
+        // 읽기 시점을 이 블록 안에 두는 것은 규약이다(③의 해제가 끝난 뒤라야 종전과 같은 상태다).
         if (!cancelled && plan.deletes.isNotEmpty()) {
             val ownerIndex = ImageDeletionService.buildOwnerIndex(db, gson)
+            // **실패를 삼키지 않는다.** 종전에는 이 읽기가 인자 자리라 던지면 `applyPlan`이
+            // 통째로 던졌고(`delete`의 catch는 인자 평가를 감싸지 않는다), 지금도 그대로 던진다.
+            // 다른 것은 **던지는 시점이 첫 삭제보다 앞이라는 것뿐**이고, 되돌릴 수 없는 처분에서
+            // 그쪽이 안전하다(종전에는 앞 항목이 이미 지워진 뒤에 던졌다).
+            val deleteGroups = HashMap<String, String?>().apply {
+                val storedPaths = plan.deletes.map { bundle.stored(it.path) }.distinct()
+                SqlInChunks.flat(storedPaths) { db.imageMetaDao().getByPaths(it) }
+                    .forEach { put(it.path, it.linkGroupId) }
+            }
             for (action in plan.deletes) {
                 if (isCancelled()) { cancelled = true; break }
                 val file = fileById[action.item.id] ?: continue
@@ -594,11 +609,7 @@ object OrganizeFolderService {
                     db = db,
                     path = storedPath,
                     owners = ownerIndex[canon] ?: ImageDeletionService.Owners.NONE,
-                    // 이 값을 먹는 `delete`가 제 안에서 `clearGroupIfSingleton`으로 **다른 행의**
-                    // linkGroupId를 바꾼다 — 앞으로 모으면 낡으므로 겹이 필요하고, 그것은 별도
-                    // 설계 판정이라 등재만 했다.
-                    // 단발 허용(B-243 — 읽는 값을 소비처가 되쓴다. 겹이 필요하다)
-                    linkGroupId = db.imageMetaDao().getByPath(storedPath)?.linkGroupId,
+                    linkGroupId = deleteGroups[storedPath],
                     gson = gson
                 )
                 if (freed != null) {

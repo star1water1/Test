@@ -775,6 +775,15 @@ class CharacterSaveCoordinator(
         runCatching {
             val ownerIndex = com.novelcharacter.app.util.ImageDeletionService.buildOwnerIndex(db, gson)
             val trashHeld = com.novelcharacter.app.util.StorageAnalyzer.collectTrashHeldPaths(db, gson)
+            // **경로마다 묻던 `getByPath`를 이 루프 앞의 일괄 조회 한 번으로 내렸다 (B-243).**
+            // 겹이 필요 없는 근거는 `ImageDeletionService.delete`의 `linkGroupId` 문단이 든다 —
+            // 이 루프가 낡히는 토큰은 **식구 0인 토큰**뿐이고 그 UPDATE는 0행을 친다.
+            // 읽기 실패는 종전처럼 이 `runCatching`이 받아 세어 알린다(조용한 실패 금지).
+            val groupByPath = HashMap<String, String?>().apply {
+                com.novelcharacter.app.util.SqlInChunks
+                    .flat(pending.distinct()) { db.imageMetaDao().getByPaths(it) }
+                    .forEach { put(it.path, it.linkGroupId) }
+            }
             for (path in pending) {
                 val canon = com.novelcharacter.app.util.ImagePathMatch.canonical(path)
                 val stillUsed = ownerIndex[canon]?.isEmpty == false || canon in trashHeld
@@ -782,10 +791,7 @@ class CharacterSaveCoordinator(
                 val freed = com.novelcharacter.app.util.ImageDeletionService.delete(
                     db = db, path = path,
                     owners = com.novelcharacter.app.util.ImageDeletionService.Owners.NONE,
-                    // `OrganizeFolderService`의 삭제 루프와 같은 모양이다 — 같은 `delete`에
-                    // 먹이고, 그 함수가 다른 행의 linkGroupId를 바꾼다.
-                    // 단발 허용(B-243 — 읽는 값을 소비처가 되쓴다. 겹이 필요하다)
-                    linkGroupId = db.imageMetaDao().getByPath(path)?.linkGroupId,
+                    linkGroupId = groupByPath[path],
                     gson = gson
                 )
                 if (freed != null) deleted++ else protectedCount++
