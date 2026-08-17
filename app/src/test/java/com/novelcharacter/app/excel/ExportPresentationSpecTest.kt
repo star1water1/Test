@@ -3,6 +3,7 @@ package com.novelcharacter.app.excel
 import com.novelcharacter.app.data.model.FieldType
 import org.apache.poi.ss.usermodel.CellType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -190,6 +191,80 @@ class ExportPresentationSpecTest {
         assertTrue(SheetTabColors.forSheet(UNCLASSIFIED_SHEET_NAME).contentEquals(SheetTabColors.CHARACTERS))
         assertTrue(SheetTabColors.forSheet(GUIDE_SHEET_NAME).contentEquals(SheetTabColors.GUIDE))
         assertTrue(SheetTabColors.forSheet("전체 캐릭터").contentEquals(SheetTabColors.DERIVED))
+    }
+
+    // ── 글꼴 (P-10 — 2026.08.17 사용자 지시 "엑셀파일의 폰트를 고딕으로") ──
+
+    /**
+     * 글꼴은 **두 자리**에 걸리고 한쪽만으로는 워크북이 덮이지 않는다
+     * ([applyExportBaseFont] + [createExportFont]). 이 시험이 그 둘을 **재현하지 않고 부른다** —
+     * `ExcelStyles`가 private이라 시험이 닿지 않는데, 규칙을 베껴 적으면 그 사본이 곧 두 벌이 된다.
+     *
+     * 세 모양을 함께 재는 것이 요점이다. ⓐ 스타일이 아예 없는 셀 ⓑ 폰트를 걸지 않은 스타일의
+     * 셀(지금의 `dataStyle` 비-읽기전용 갈래·`guideBody`가 그 모양이다) ⓒ 명시 폰트를 건 셀.
+     * ⓐ·ⓑ는 기본 폰트가, ⓒ는 [createExportFont]가 덮는다 — **한 자리를 지우면 그 몫이 빨간불이다.**
+     *
+     * 파일에 써서 되읽는 것도 요점이다. 메모리 위에서만 보면 통과하고 파일에서 갈리는 축이
+     * 스트리밍에 실재한다([ExportWorkbooks] 머리 — 창을 넘긴 행은 디스크로 흘러간다).
+     */
+    @Test
+    fun `내보낸 파일의 모든 셀이 고딕이다 - DOM과 스트리밍 양쪽`() {
+        for (streaming in listOf(false, true)) {
+            val label = if (streaming) "스트리밍" else "DOM"
+            val workbook = ExportWorkbooks.create(streaming)
+            val file: java.io.File
+            try {
+                applyExportBaseFont(workbook)
+
+                val styledFont = createExportFont(workbook).apply { bold = true }
+                val withFont = workbook.createCellStyle().apply { setFont(styledFont) }
+                // 폰트를 걸지 않은 스타일 — 지금의 데이터 셀이 정확히 이 모양이다
+                val withoutFont = workbook.createCellStyle().apply {
+                    verticalAlignment = org.apache.poi.ss.usermodel.VerticalAlignment.TOP
+                }
+
+                val row = workbook.createSheet("글꼴").createRow(0)
+                row.createCell(0).setCellValue("스타일 없음")
+                row.createCell(1).apply { setCellValue("명시 폰트"); cellStyle = withFont }
+                row.createCell(2).apply { setCellValue("폰트 없는 스타일"); cellStyle = withoutFont }
+
+                file = java.io.File.createTempFile("font", ".xlsx")
+                java.io.FileOutputStream(file).use { workbook.write(it) }
+            } finally {
+                ExportWorkbooks.release(workbook)
+            }
+
+            try {
+                org.apache.poi.xssf.usermodel.XSSFWorkbook(file).use { back ->
+                    val row = back.getSheetAt(0).getRow(0)
+                    for (col in 0..2) {
+                        val cell = row.getCell(col)
+                        val font = back.getFontAt(cell.cellStyle.fontIndex)
+                        assertEquals(
+                            "$label: '${cell.stringCellValue}' 칸이 고딕이 아니다",
+                            EXPORT_FONT_NAME, font.fontName
+                        )
+                    }
+                }
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    /** 기본 폰트를 고치지 않으면 POI 기본값이 남는다 — 위 시험의 두 자리가 왜 둘인지의 근거. */
+    @Test
+    fun `기본 폰트를 고치지 않으면 셀이 POI 기본값을 쓴다`() {
+        val workbook = ExportWorkbooks.create(streaming = false)
+        try {
+            // 일부러 applyExportBaseFont를 부르지 않는다
+            assertNotEquals(EXPORT_FONT_NAME, workbook.getFontAt(0).fontName)
+            // createFont()가 기본값을 물려주지 않는다는 것도 함께 — createExportFont가 필요한 이유다
+            assertNotEquals(EXPORT_FONT_NAME, workbook.createFont().fontName)
+            assertEquals(EXPORT_FONT_NAME, createExportFont(workbook).fontName)
+        } finally {
+            ExportWorkbooks.release(workbook)
+        }
     }
 
     private fun assertEquals(expected: Double, actual: Double?) =
