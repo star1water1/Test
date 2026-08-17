@@ -64,15 +64,98 @@ WORK="$SP/probe-work"
 mkdir -p "$WORK"
 
 # ── 1. 프로브 전용 스텁 (저장소 밖에 만든다 — 실제 빌드와 섞이지 않게) ──
+#
+# **2026.08.17(B-190)에 여섯이 늘었다 — `ExcelExporter.kt`가 목록에 있으면서도 실제로는
+# 타입 검사되지 않던 것을 고치기 위해서다.** 그 파일은 머리 두 줄이
+# `appContext = context.applicationContext` · `db = AppDatabase.getDatabase(appContext)`인데
+# **둘 다 미해석이었다**(`Context`에 `applicationContext`가 없었고, 아래 `AppDatabase` 스텁에
+# `getDatabase`가 없었다). 수신 타입이 풀리지 않으면 그 아래 식의 진짜 타입 오류는
+# **접혀서 안 보이는 것이 아니라 애초에 발행되지 않는다** — 즉 목록에 넣어 두고도 안 보는 자리였다.
+# 실측: 그 파일 **732 → 28**, 프로브 전체 **1969 → 1190**. 스텁 여섯 중 위 둘이 거의 전부를 정한다
+# (나머지 넷 `Intent`·`Uri`·`Toast`·`FileProvider`만 넣으면 732 → 656으로 거의 안 준다).
+#
+# ⚠️ **스텁은 진짜의 모양을 *비추기만* 한다 — 여기서 표면을 늘리면 프로브가 거짓 초록을 낸다.**
+# 진짜에 없는 멤버·헐거운 시그니처를 적으면 **로컬은 초록이고 CI가 빨간불**이다
+# (`tools/jvm-stubs/AiServiceStub.kt` 말미가 그 실증이고, `check_stub_shadow_use.sh`가
+# 시험 쪽에 대해 세운 그물과 같은 취지다). 좁은 것은 안전하고(진짜가 받는 것을 못 받을 뿐이라
+# 가짜 오류로 드러난다) **넓은 것이 위험하다.**
 cat > "$WORK/AndroidProbeStubs.kt" <<'EOF'
 // 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
 package android.content
-class Context {
+// `open`인 것은 `android.app.Application`이 상속해야 하기 때문이다 — 그 관계가 있어야
+// `appContext as? NovelCharacterApp`이 컴파일된다(관계 없는 타입 간 캐스트는 오류다).
+open class Context {
     val filesDir: java.io.File get() = java.io.File(".")
     val cacheDir: java.io.File get() = java.io.File(".")
     fun getString(id: Int): String = ""
     fun getString(id: Int, vararg args: Any?): String = ""
     val contentResolver: Any? get() = null
+    val applicationContext: Context get() = this
+    val packageName: String get() = ""
+    fun startActivity(intent: Intent) {}
+}
+
+// `type`은 진짜에서 `getType()`/`setType()` 쌍이라 코틀린이 합성 속성으로 본다 — 대입 꼴을
+// 그대로 재려면 스텁도 `var`여야 한다.
+class Intent(action: String? = null) {
+    var type: String? = null
+    fun putExtra(name: String, value: android.os.Parcelable): Intent = this
+    fun addFlags(flags: Int): Intent = this
+    companion object {
+        const val ACTION_SEND: String = "android.intent.action.SEND"
+        const val EXTRA_STREAM: String = "android.intent.extra.STREAM"
+        const val FLAG_GRANT_READ_URI_PERMISSION: Int = 1
+        const val FLAG_ACTIVITY_NEW_TASK: Int = 2
+        @JvmStatic fun createChooser(target: Intent, title: CharSequence?): Intent = target
+    }
+}
+EOF
+
+# `android.os.Parcelable`은 `Intent.putExtra(String, Parcelable)`의 인자 타입을 진짜와 같게
+# 두기 위한 것이다 — `Uri`로 좁혀 적으면 그 한 호출은 통과하지만 **진짜보다 좁은 계약**이 된다.
+cat > "$WORK/AndroidOsStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package android.os
+interface Parcelable
+EOF
+
+# `Uri`는 이 프로브의 범위에서 **멤버 호출이 하나도 없다**(전부 인자·필드 타입으로만 쓰인다 —
+# `ExcelExporter.writeToUri`·`ImageImportHelper`·`OrganizeFolderService`). 그래서 빈 선언이
+# 진짜를 정직하게 비춘다. 멤버를 쓰는 코드가 새로 들어오면 **미해석으로 드러난다**(그것이 옳다).
+cat > "$WORK/AndroidNetStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package android.net
+class Uri : android.os.Parcelable
+EOF
+
+cat > "$WORK/AndroidWidgetStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package android.widget
+class Toast {
+    fun show() {}
+    companion object {
+        const val LENGTH_SHORT: Int = 0
+        const val LENGTH_LONG: Int = 1
+        @JvmStatic fun makeText(context: android.content.Context?, text: CharSequence, duration: Int): Toast = Toast()
+        @JvmStatic fun makeText(context: android.content.Context?, resId: Int, duration: Int): Toast = Toast()
+    }
+}
+EOF
+
+cat > "$WORK/AndroidAppStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+// 진짜 계보는 Application : ContextWrapper : Context다 — 중간 고리는 이 프로브가 쓰지 않으므로
+// **관계만** 비춘다(NovelCharacterApp이 Context로 캐스트되는 성질이 그 관계에 걸려 있다).
+package android.app
+open class Application : android.content.Context()
+EOF
+
+cat > "$WORK/AndroidxCoreStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.core.content
+object FileProvider {
+    @JvmStatic fun getUriForFile(context: android.content.Context, authority: String, file: java.io.File): android.net.Uri =
+        android.net.Uri()
 }
 EOF
 
@@ -97,17 +180,94 @@ open class LruCache<K : Any, V : Any>(maxSize: Int) {
 EOF
 
 # AppDatabase는 **실제 파일에서 DAO 접근자만 뽑아** 세운다 — 손으로 적으면 접근자가 늘 때 낡는다.
+# `getDatabase`도 **실제 선언에서 뽑는다**(2026.08.17 · B-190) — 이 한 줄이 없어서
+# `ExcelExporter.db`가 미해석이었고, 그 파일의 절반이 거기서 연쇄로 죽었다.
+# 이름이 바뀌면 `grep`이 빈손이 되고 **그 순간 프로브가 빨간불로 말한다**(손으로 적으면 조용히 낡는다).
 {
   echo "// 프로브 전용 — 실제 AppDatabase의 DAO 접근자만 뽑아 세운다(생성 시각의 실제 목록)."
   echo "package com.novelcharacter.app.data.database"
   echo
   echo "import com.novelcharacter.app.data.dao.*"
   echo
-  echo "abstract class AppDatabase {"
+  # `: RoomDatabase()`는 진짜 선언 그대로다 — `androidx.room.withTransaction`이 그 수신 타입의
+  # 확장이라, 이 관계가 없으면 저장소·가져오기의 트랜잭션 블록이 통째로 미해석이 된다(B-190).
+  echo "abstract class AppDatabase : androidx.room.RoomDatabase() {"
   grep -o 'abstract fun [a-zA-Z]*(): [A-Za-z]*' \
     "$REPO/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt"
+  echo "    companion object {"
+  grep -o 'fun getDatabase(context: Context): AppDatabase' \
+    "$REPO/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt" \
+    | head -1 \
+    | sed 's|Context|android.content.Context|; s|$|: AppDatabase = throw UnsupportedOperationException("프로브 전용")|' \
+    | sed 's|): AppDatabase: AppDatabase|): AppDatabase|'
+  echo "    }"
   echo "}"
 } > "$WORK/AppDatabaseProbe.kt"
+
+# ── 1-b. 앱 소유 심볼은 **실제 자원·소스에서 뽑는다** (2026.08.17 · B-190) ──
+#
+# `R`을 손으로 적으면 **없는 문자열 이름이 통과해 검사가 거짓이 된다** — `R.string.오타`가
+# 조용히 초록이면 프로브가 잡으라고 있는 그 부류를 스스로 놓친다. 그래서 aapt가 하는 것과
+# 같은 자리에서 뜬다: `res/values*/`의 선언 + 파일 기반 자원의 파일명 + 레이아웃의 `@+id/`.
+# (`check_resources.sh`는 *코드가 없는 문자열을 부르는가*를 보고, 이쪽은 **타입 검사 중에**
+# 같은 것을 본다 — 둘은 축이 다르고 겹치는 만큼이 이득이다.)
+#
+# 값을 전부 0으로 두지 않고 하나씩 올리는 것은 `when(id)` 분기가 같은 상수로 겹치는 것을
+# 피하기 위해서다(진짜 R도 서로 다른 값이다).
+{
+  echo "// 프로브 전용 — 실제 res/에서 뽑은 자원 이름(생성 시각의 실제 목록)."
+  echo "package com.novelcharacter.app"
+  echo
+  {
+    # 파일 기반 자원: res/<타입>[-수식어]/<이름>.<확장자>
+    find "$REPO/app/src/main/res" -mindepth 2 -maxdepth 2 -type f -print \
+      | sed -E 's|.*/res/([^/-]+)[^/]*/([^/.]+)\..*$|\1 \2|'
+    # values 계열 선언
+    grep -hoE '<(string|color|dimen|bool|integer|fraction|style|attr|plurals|string-array|integer-array|array)[[:space:]]+name="[^"]+"' \
+      "$REPO"/app/src/main/res/values*/*.xml 2>/dev/null \
+      | sed -E 's|<([a-z-]+)[[:space:]]+name="([^"]+)"|\1 \2|' \
+      | sed -E 's|^(string-array\|integer-array) |array |'
+    # <item name="X" type="Y"/> — ids.xml이 이 꼴이다
+    grep -hoE '<item[[:space:]]+name="[^"]+"[[:space:]]+type="[^"]+"' \
+      "$REPO"/app/src/main/res/values*/*.xml 2>/dev/null \
+      | sed -E 's|<item[[:space:]]+name="([^"]+)"[[:space:]]+type="([^"]+)"|\2 \1|'
+    # 레이아웃·메뉴·내비게이션이 선언하는 id
+    grep -rhoE '@\+id/[A-Za-z0-9_]+' "$REPO/app/src/main/res" 2>/dev/null \
+      | sed -E 's|@\+id/|id |'
+  } | grep -vE '^values ' | sort -u | awk '
+      # aapt와 같은 규칙으로 이름을 다듬는다 — `.`을 품은 style 이름(`Base.Theme.…`)이 실제로
+      # 마흔 있고, 다듬지 않으면 코틀린이 `name contains illegal characters`로 죽는다.
+      # 진짜 R도 `R.style.Base_Theme_NovelCharacter`다.
+      { name = $2; gsub(/[^A-Za-z0-9_]/, "_", name)
+        if (seen[$1 "/" name]++) next                   # 다듬은 뒤 겹치는 것은 한 번만
+        if ($1 != prev) { if (prev != "") print "    }"; print "    object " $1 " {"; prev = $1 }
+        printf "        const val `%s`: Int = %d\n", name, ++n }
+      END { if (prev != "") print "    }" }' \
+    | sed '1s|^|object R {\n|'
+  echo "}"
+} > "$WORK/RProbe.kt"
+
+# `NovelCharacterApp`도 **실제 파일에서 저장소 접근자만 뽑아** 세운다.
+# 이 프로브 범위가 무는 것은 `operationLogRepository` 하나지만(`ExcelExporter`·`ResultNotify`),
+# 목록으로 뜨면 접근자가 늘거나 이름이 바뀔 때 함께 따라간다. **`data/repository`에 실재하는
+# 타입만 남긴다** — `BackupStatusStore`처럼 범위 밖 타입을 실으면 그 자체가 미해석이 되어
+# 이 스텁이 노이즈의 근원이 된다.
+{
+  echo "// 프로브 전용 — 실제 NovelCharacterApp의 저장소 접근자만 뽑아 세운다."
+  echo "package com.novelcharacter.app"
+  echo
+  echo "import com.novelcharacter.app.data.repository.*"
+  echo
+  echo "class NovelCharacterApp : android.app.Application() {"
+  tr '\n' ' ' < "$REPO/app/src/main/java/com/novelcharacter/app/NovelCharacterApp.kt" \
+    | grep -oE 'val [a-zA-Z]+ by lazy \{ *[A-Za-z]+\(' \
+    | sed -E 's|val ([a-zA-Z]+) by lazy \{ *([A-Za-z]+)\(|\1 \2|' \
+    | while read -r prop type; do
+        [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/repository/$type.kt" ] || continue
+        echo "    val $prop: $type get() = throw UnsupportedOperationException(\"프로브 전용\")"
+      done
+  echo "}"
+} > "$WORK/NovelCharacterAppProbe.kt"
 
 # ── 2. 대상 파일 목록 ──
 M="$REPO/app/src/main/java/com/novelcharacter/app"
@@ -121,7 +281,14 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AndroidUtilStubs.kt"
+  echo "$WORK/AndroidOsStubs.kt"
+  echo "$WORK/AndroidNetStubs.kt"
+  echo "$WORK/AndroidWidgetStubs.kt"
+  echo "$WORK/AndroidAppStubs.kt"
+  echo "$WORK/AndroidxCoreStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
+  echo "$WORK/RProbe.kt"
+  echo "$WORK/NovelCharacterAppProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
 } | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
 
@@ -155,6 +322,18 @@ java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar
 
 ERRS=$(wc -l < "$OUT")
 echo "오류 ${ERRS}건(겹 포함) → $OUT"
+
+# **스텁 자신이 오류를 내면 곧바로 죽는다** (2026.08.17 · B-190).
+# 스텁은 대부분 실제 소스·자원에서 뜨므로 저쪽이 바뀌면 여기가 깨질 수 있는데, 그때 나오는
+# 오류는 **기준선과 현재 양쪽에 똑같이 얹혀 `comm -13`이 아무것도 내지 않는다** — 즉
+# *프로브가 망가진 것*과 *새 오류가 없는 것*이 겉이 같아진다. 이 저장소가 검사마다 자기 시험을
+# 붙이는 것과 같은 이유이며, 실제로 R 생성기의 첫 판이 style 이름의 `.` 때문에 40건을 냈다.
+STUB_ERRS=$(grep -cF -e "$WORK/" -e "$TOOLS/jvm-stubs/" "$OUT" || true)
+if [ "${STUB_ERRS:-0}" -ne 0 ]; then
+  echo "⚠️  스텁 자신이 ${STUB_ERRS}건 오류다 — 이 산출은 base 대 cur 비교에 쓸 수 없다." >&2
+  grep -F -e "$WORK/" -e "$TOOLS/jvm-stubs/" "$OUT" >&2
+  exit 1
+fi
 # **오류 0을 그냥 믿지 않는다.** 컴파일러가 시작조차 못 하면(예: 컴파일러 클래스패스에
 # coroutines 누락) 출력이 비어 "오류 0"으로 보인다 — 2026-08-01에 실제로 겪었고, 헛된
 # 안심을 준다. 오류가 0인데 클래스 파일도 0이면 그 경우다.
