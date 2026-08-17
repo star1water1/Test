@@ -433,6 +433,84 @@ fun customFieldColumnWidth(type: FieldType?, multiToken: Boolean): Int = when {
 }
 
 /**
+ * 내보내는 워크북 전체의 글꼴 (P-10 · 2026.08.17 사용자 지시 *"엑셀파일의 폰트를 고딕으로"*).
+ *
+ * ## 왜 이 자리에 상수 하나인가
+ *
+ * 시각 개편(`excel_visual_design_review_2026-08.md`)은 **폰트 축을 손대지 않았다** — 그 문서가
+ * 스스로 *"색·폰트·열 너비·틀 고정·정렬·셀 서식은 어느 문서에도 결정이 없다"*고 적어 두고
+ * P-1~P-9로 나머지만 정했다. 그래서 지금까지 글꼴은 **POI 기본값(Calibri)**이었고, Calibri에는
+ * 한글 글자체가 없어 **한글은 뷰어가 고른 대체 글꼴로, 숫자·영문만 Calibri로** 그려졌다 —
+ * 한 셀 안에서 두 글꼴이 섞이는 모양이다. 이름을 못박으면 그 섞임이 없어진다.
+ *
+ * `맑은 고딕`은 한글 고딕(산세리프)의 사실상 표준이다. **다른 고딕으로 바꾸려면 이 줄 하나만
+ * 고치면 된다** — 워크북의 모든 셀이 [applyExportBaseFont]와 [createExportFont] 둘 중 하나를
+ * 지나기 때문이다. 앱 전체에서 폰트·스타일을 만드는 자리가 `ExcelExporter.ExcelStyles`
+ * 하나뿐인 것은 실측으로 확인했고(`createFont`·`createCellStyle` 전수 검색 — 다른 파일 0건),
+ * 그 뒤로는 `tools/check_export_font.sh`가 기계로 지킨다(사본이 생기면 빨간불이다).
+ *
+ * ## 왕복에 관여하지 않는다
+ *
+ * 가져오기는 **셀의 값만** 읽고 글꼴은 보지 않는다 — 스타일에서 들여다보는 것은
+ * [ExcelCellValue.Primitives]의 `dataFormatString`(표시 서식) 하나뿐이고, 글꼴 이름은 그 접근면에
+ * 아예 없다. 그래서 이 값을 바꿔도 교환 형식·왕복 멱등성이 갈리지 않는다(시각 개편 5-0의
+ * "스타일 레이어만 만진다"와 같은 갈래).
+ *
+ * ## ⚠️ 그러나 **레이아웃은 이 값에 묶여 있다** (콜드 검토 2026.08.17)
+ *
+ * *"스타일 레이어만 만진다"*를 **레이아웃도 안 움직인다**로 읽으면 틀린다. OOXML에서
+ * **열 너비의 단위가 '기본 글꼴의 최대 숫자 폭'**이고 행 높이는 그리는 글꼴에 견주는 값이라,
+ * 이 상수를 바꾸면 **저장된 숫자는 그대로인 채 그 숫자의 뜻이 바뀐다.**
+ *
+ * 실측(POI 5.3.0): `setColumnWidth(5000)`은 글꼴과 무관하게 **5000 그대로 저장되고**,
+ * `defaultRowHeightInPoints`도 **15.0 그대로**다. 즉 POI는 환산해 주지 않는다 —
+ * 환산은 여는 쪽이 하고, 그 기준이 방금 바뀐 것이다.
+ *
+ * 걸리는 자리 둘: [ColumnSpec.width](손튜닝된 값들 — 이름 6000·메모 10000·설명 15000)와
+ * `finishDataRow`의 `lines * defaultRowHeightInPoints`([estimateWrapLines]가 준 줄 수).
+ *
+ * **다만 한글 몫은 대체로 그대로다** — 한글 글자는 이 변경 전에도 Calibri에 없어
+ * *뷰어가 고른 한글 글꼴*이 그렸다. 새로 움직이는 것은 숫자·영문 쪽 기준이고,
+ * 열 너비 단위가 하필 **최대 *숫자* 폭**이라 그 축이 직접 걸린다.
+ *
+ * **크기는 로컬에서 잴 수 없다**(글꼴 파일이 있어야 한다). 실기기 확인 항목은
+ * `remaining_work_2026-07.md` **3-121 ㅇ**이고, 거기서 *헤더가 잘리는가 · wrap 여러 줄이
+ * 여전히 보이는가*를 본다 — 후자는 시각 개편 V-4가 고친 그 결함의 자리다.
+ *
+ * 없는 글꼴은 뷰어가 대체한다(맥·안드로이드·구글시트). 그것은 **지금도 일어나는 일**이라
+ * 이 변경이 새로 들여오는 위험이 아니다 — 오히려 대체의 출발점이 한글 글꼴이 된다.
+ */
+const val EXPORT_FONT_NAME = "맑은 고딕"
+
+/**
+ * 워크북의 **기본 글꼴**(폰트 0번)을 제자리에서 [EXPORT_FONT_NAME]으로 못박는다.
+ *
+ * 글꼴을 거는 자리는 둘이고 **한쪽만으로는 워크북이 덮이지 않는다** — 이 함수가 그중 하나다.
+ * 아래 [createExportFont]만 쓰면 헤더·읽기전용·안내 제목까지만 덮이고 **평범한 데이터 셀이
+ * 남는다**(`ExcelStyles.dataStyle`의 비-읽기전용 갈래와 `guideBody`는 `setFont`를 부르지 않는다).
+ *
+ * 실측(POI 5.3.0, DOM·스트리밍 양쪽 — `ExportPresentationSpecTest`가 잠근다): ⓐ 스타일이 아예
+ * 없는 셀과 ⓑ 폰트를 걸지 않은 스타일의 셀이 **둘 다 폰트 0번으로 떨어지고**, ⓒ 이 제자리
+ * 수정이 파일에 써서 되읽는 왕복에서 살아남는다.
+ *
+ * 갓 만든 워크북에는 폰트 0번이 반드시 있다(POI가 기본 스타일과 함께 세운다).
+ * 빌린 워크북을 받는 자리가 생기면 그 전제가 깨진다.
+ */
+fun applyExportBaseFont(workbook: org.apache.poi.ss.usermodel.Workbook) {
+    workbook.getFontAt(0).fontName = EXPORT_FONT_NAME
+}
+
+/**
+ * 글꼴을 건 **새 폰트** — 글꼴을 거는 나머지 한 자리다([applyExportBaseFont]가 다른 하나).
+ *
+ * `workbook.createFont()`를 직접 부르면 안 된다: POI는 **매번 새 폰트를 Calibri로 세워
+ * 돌려주므로**(실측) 기본 폰트를 고쳐 두어도 그 폰트에는 미치지 않는다. 굵기·크기·색은
+ * 부르는 쪽이 얹는다.
+ */
+fun createExportFont(workbook: org.apache.poi.ss.usermodel.Workbook): org.apache.poi.ss.usermodel.Font =
+    workbook.createFont().apply { fontName = EXPORT_FONT_NAME }
+
+/**
  * 데이터 셀 스타일의 종류 — 열 명세와 값 성질(소수 CALCULATED)로 정해지는 순수 판정.
  * 행 홀짝(밴딩)은 여기 없다 — 그것은 시트 단위 결정과 rowNum으로 [ExcelExporter]가 얹는다.
  *

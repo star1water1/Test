@@ -390,6 +390,13 @@ class ExcelExporter(context: Context) {
     // ── 스타일 관리 (시각 개편 2026.08.14 — 사용자 확정 Q-1~Q-3, 정본: excel_visual_design_review_2026-08.md 5장) ──
 
     private class ExcelStyles(private val workbook: Workbook) {
+        init {
+            // 글꼴(P-10) — 기본 폰트를 못박는다. 아래 [font]만으로는 **평범한 데이터 셀이 남는다**
+            // (`dataStyle`의 비-읽기전용 갈래와 `guideBody`는 `setFont`를 부르지 않는다).
+            // 두 자리가 함께 걸려야 워크북이 덮인다 — 근거·실측은 [applyExportBaseFont]에 있다.
+            applyExportBaseFont(workbook)
+        }
+
         // 팔레트(P-1) — 앱 테두리 프리셋 1번(#5C6BC0)의 인디고 계열로 정렬. IndexedColors(엑셀 97
         // 고정 팔레트)를 커스텀 RGB로 바꿨다. 스타일은 워크북 수준 객체라 스트리밍(R-49)과 무관하다.
         private fun rgb(r: Int, g: Int, b: Int) =
@@ -413,7 +420,9 @@ class ExcelExporter(context: Context) {
         }
 
         private fun font(bold: Boolean, points: Int, color: org.apache.poi.xssf.usermodel.XSSFColor? = null) =
-            workbook.createFont().apply {
+            // `workbook.createFont()`가 아니다 — 그것은 매번 Calibri로 세워 돌려주므로 위 init의
+            // 기본 폰트 수정이 이 자리에 미치지 않는다(실측). 글꼴은 [createExportFont]가 든다.
+            createExportFont(workbook).apply {
                 this.bold = bold
                 fontHeightInPoints = points.toShort()
                 if (color != null) (this as org.apache.poi.xssf.usermodel.XSSFFont).setColor(color)
