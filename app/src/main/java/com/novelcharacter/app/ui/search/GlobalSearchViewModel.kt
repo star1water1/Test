@@ -338,10 +338,9 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
      * **`viewModelScope`인 것이 중요하다.** 화면 스코프에서 돌리면 저장을 누른 직후 회전·이동으로
      * 뷰가 사라질 때 **코루틴이 함께 취소돼 프리셋이 저장되지 않는다** — 사용자는 누르고 아무
      * 오류도 못 봤으므로 저장된 줄 안다(조용한 유실). 고지만 뷰 수명을 타면 된다.
-     */
-    /**
-     * [query]를 밖에서 받는 것은 **누른 순간의 값**을 저장하기 위해서다(R-27) — 겹침 판정이
-     * 비동기라, 판정을 기다린 뒤 화면을 다시 읽으면 그사이 바뀐 검색어를 읽는다.
+     *
+     * **[query]를 밖에서 받는 것은 *누른 순간의 값*을 저장하기 위해서다**(R-27, B-191) —
+     * 겹침 판정이 비동기라, 판정을 기다린 뒤 화면을 다시 읽으면 그사이 바뀐 검색어를 읽는다.
      */
     fun saveCurrentAsPreset(name: String, query: String = _searchQuery.value ?: "") {
         viewModelScope.launch {
@@ -380,21 +379,29 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
      */
     fun overwritePresetById(id: Long, name: String, query: String) {
         viewModelScope.launch {
-            val existing = searchPresetRepository.getPresetById(id)
-            if (existing == null) {
-                // 그새 사라졌다면 덮어쓸 것이 없다 — 새로 저장하는 것이 사용자의 뜻에 가깝다.
-                saveCurrentAsPreset(name, query)
-                return@launch
-            }
-            searchPresetRepository.updatePreset(
-                existing.copy(
-                    name = name,
-                    query = query,
-                    filtersJson = getFiltersJson(),
-                    sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
+            try {
+                val existing = searchPresetRepository.getPresetById(id)
+                if (existing == null) {
+                    // 그새 사라졌다면 덮어쓸 것이 없다 — 새로 저장하는 것이 사용자의 뜻에 가깝다.
+                    saveCurrentAsPreset(name, query)
+                    return@launch
+                }
+                searchPresetRepository.updatePreset(
+                    existing.copy(
+                        name = name,
+                        query = query,
+                        filtersJson = getFiltersJson(),
+                        sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
+                    )
                 )
-            )
-            _presetSavedEvent.value = Event(searchPresetRepository.exceedsRecommended())
+                _presetSavedEvent.value = Event(searchPresetRepository.exceedsRecommended())
+            } catch (e: Exception) {
+                // 아래 [updatePreset]과 **같은 이유로 같은 모양이다** — 이 자리만 맨몸이면
+                // 이 판이 없앤 그 결함(예외가 코루틴 밖으로 나가 앱이 죽는 것)이 덮어쓰기
+                // 경로에만 그대로 남는다. 짝인 목록 프리셋 쪽은 처음부터 감싸여 있었다.
+                android.util.Log.e("GlobalSearchViewModel", "Failed to overwrite preset", e)
+                _presetSaveFailedEvent.value = Event(name)
+            }
         }
     }
 
