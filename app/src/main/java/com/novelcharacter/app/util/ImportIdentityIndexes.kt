@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.Faction
@@ -262,4 +263,92 @@ class FieldDefinitionIndexes(rows: List<FieldDefinition>) {
         byKey.first(FieldDefKey(universeId, key, entityType))
 
     fun remember(row: FieldDefinition) = byKey.put(row)
+}
+
+/** `getBySlot(entityType, key)`의 키 — 표의 유니크 `(entityType, key)`와 같은 짝이다. */
+data class DefaultFieldSlot(val entityType: String, val key: String)
+
+/**
+ * 전역 기본 필드 템플릿의 정체성 색인 (B-252).
+ *
+ * **왜 색인인가 — 두 가지가 한꺼번에 걸린다.**
+ *
+ * 1. **정합(R-33).** 미리보기에 [importDefaultFieldTemplates][com.novelcharacter.app.excel.ExcelImportService]의
+ *    *자리 충돌 게이트*가 빠져 있었다 — 가져오기는 자리를 옮기려는 편집이 남의 자리와 부딪치면
+ *    키·대상을 **되돌리는데**, 미리보기는 그 행을 '변경'이라 예고하고 실제로는 키가 그대로였다.
+ *    게이트를 세우려면 *"그 자리를 누가 쓰는가"*를 물어야 하고, 그 물음의 자리가 여기다.
+ * 2. **행마다 묻지 않는다(R-53).** 그 게이트를 DAO로 세우면 미리보기가 행마다 조회를 **하나 더**
+ *    하게 된다. 미리보기는 이미 `getByCode`·`getBySlot`를 행마다 물고 있었는데, 그 자리는
+ *    `check_preview_row_queries.sh`가 스스로 적어 둔 **사각**이다(클래스 수준 private 함수 속의
+ *    DAO 호출은 그 검사가 보지 못한다). 표 한 번 읽기로 내리면 셋이 함께 0이 된다.
+ *
+ * **싣는 순서는 형제들과 같다** — id 오름차순. 대체하는 질의가 `LIMIT 1`(= rowid 순)이라
+ * [ImportLookupIndex.first]가 같은 행을 골라야 한다.
+ */
+class DefaultFieldTemplateIndexes(rows: List<DefaultFieldTemplate>) {
+    /** 빈 코드는 싣지 않는다 — 통을 하나 만들어 **코드 없는 행 전부를 서로의 답으로** 만든다. */
+    val byCode = ImportLookupIndex<String, DefaultFieldTemplate>(
+        idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+    )
+    val bySlot = ImportLookupIndex<DefaultFieldSlot, DefaultFieldTemplate>(
+        idOf = { it.id }, keyOf = { DefaultFieldSlot(it.entityType, it.key) }
+    )
+
+    /** `getMaxOrder`가 쓰는 전량 — 색인은 키로만 답해 훑을 수 없다. */
+    private val allById = LinkedHashMap<Long, DefaultFieldTemplate>()
+
+    init {
+        val ordered = rows.sortedBy { it.id }
+        byCode.load(ordered)
+        bySlot.load(ordered)
+        ordered.forEach { allById[it.id] = it }
+    }
+
+    /** 정체는 **코드 우선, 없으면 (대상, 필드키)** — 다른 시트와 같은 규약이다(R-1). */
+    fun resolve(code: String, entityType: String, key: String): DefaultFieldTemplate? =
+        code.takeIf { it.isNotBlank() }?.let { byCode.first(it) }
+            ?: bySlot.first(DefaultFieldSlot(entityType, key))
+
+    /** 이 자리를 지금 누가 쓰는가 — `getBySlot`의 자리. */
+    fun slotOwner(entityType: String, key: String): DefaultFieldTemplate? =
+        bySlot.first(DefaultFieldSlot(entityType, key))
+
+    /** 이 코드를 지금 누가 쓰는가 — `getByCode`의 자리. */
+    fun codeOwner(code: String): DefaultFieldTemplate? =
+        code.takeIf { it.isNotBlank() }?.let { byCode.first(it) }
+
+    /** 이 종류의 최대 순서 — `getMaxOrder`의 자리(없으면 null). */
+    fun maxOrder(entityType: String): Int? =
+        allById.values.filter { it.entityType == entityType }.maxOfOrNull { it.displayOrder }
+
+    fun remember(row: DefaultFieldTemplate) {
+        byCode.put(row)
+        bySlot.put(row)
+        allById[row.id] = row
+    }
+}
+
+/**
+ * 자리를 옮기는 편집이 **남의 자리와 부딪치면 키·대상을 되돌린다** — 유니크 `(대상, 필드키)`
+ * (B-252). 미리보기와 가져오기가 **이 함수 하나**를 지난다(R-33).
+ *
+ * 종전에는 이 규칙이 `importDefaultFieldTemplates` 안에만 있었고, 미리보기는
+ * `merge*(existing, r) != existing` 하나로 판정했다 — **되돌려질 행을 '변경'이라 예고**했다.
+ * 설계 1-2가 등급 체계의 `rename` 게이트에서 고친 것과 **글자 그대로 같은 부류**다.
+ *
+ * **되돌리는 것은 키·대상뿐이다** — 이름·타입·설정 같은 나머지 편집은 그대로 반영된다.
+ * 그래서 돌려준 값이 `existing`과 같을 수도, 다를 수도 있고, 부르는 쪽은 그것을 견주어
+ * '변경/동일'을 가른다. **부딪쳤는가는 돌려준 값이 [merged]와 다른가로 알 수 있다.**
+ *
+ * @param slotOwner 그 자리를 지금 쓰고 있는 행(자기 자신이면 부딪친 것이 아니다).
+ */
+fun guardDefaultFieldSlot(
+    existing: DefaultFieldTemplate,
+    merged: DefaultFieldTemplate,
+    slotOwner: (String, String) -> DefaultFieldTemplate?
+): DefaultFieldTemplate {
+    // 자리를 옮기지 않는 편집은 물을 것이 없다 — 자기 자리는 언제나 자기 것이다.
+    if (merged.entityType == existing.entityType && merged.key == existing.key) return merged
+    slotOwner(merged.entityType, merged.key)?.takeIf { it.id != existing.id } ?: return merged
+    return merged.copy(key = existing.key, entityType = existing.entityType)
 }

@@ -395,6 +395,61 @@ PY6
 ncount=$(printf '%s\n' "$NOTIFIED" | sed -n 's/^__NCOUNT__//p')
 nbody=$(printf '%s\n' "$NOTIFIED" | grep -v '^__NCOUNT__' || true)
 
+# ── ⑦ 미리보기가 보는 세계관 목록이 가져오기의 것과 같은가 (B-254) ──
+# 짝인 `import*`는 `db.universeDao().getAllUniversesList()` 하나로 답이 맞는다 — `importUniverses`가
+# **먼저** 심어 그 목록이 차 있기 때문이다. 미리보기는 쓰지 않으므로 같은 질의가
+# **빈 DB 복원에서 통째로 빈다.** 그러면 두 가지가 함께 무너진다:
+#  · *어느 시트를 여는가* — 세계관별 캐릭터 시트 루프가 **한 번도 돌지 않는다**(파일에 캐릭터가
+#    200명 있어도 미분류 시트 하나만 세어진다). 유실은 없고 **예고가 통째로 빈다.**
+#  · *행의 세계관 칸을 무엇으로 읽는가* — 필드값 세 시트·값 라이브러리·작품/연표의 필드 열이
+#    세계관을 못 찾아 그 행들을 '건너뜀'으로 세는데 가져오기는 전부 적용한다.
+# 그래서 미리보기의 세계관 원천은 `analysisUniverses()`(DB + 이 파일이 만들 것) 하나여야 한다.
+#
+# **①~⑥이 이 부류를 원리적으로 못 본다:** 비교식도 리더도 시트 판정도 사다리도 전부 같다.
+# 갈리는 것은 **세기 전에 무엇을 훑는가**이고, 그것은 없는 코드라 어떤 비교 스캐너에도 안 걸린다
+# (B-187이 *"없는 코드는 어떤 스캐너도 못 본다"*며 축을 쓰기 쪽으로 옮긴 것과 같은 사유다).
+#
+# **예외는 명단이 아니라 자리에 적는다**(`check_import_row_queries.sh`가 세운 관행) —
+# 같은 줄이나 바로 윗줄의 `// DB 전용 허용(사유)`. 명단으로 두면 함수 하나가 그 안의 새 위반을
+# 통째로 덮는다. **위반에 붙지 못한 표식은 *낡은 표식*으로 빨간불이다.**
+UNIVSRC=$(python3 - "$TARGET" <<'PY7'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*)\s*\(')
+BAD = re.compile(r'\bdb\.universeDao\(\)')
+MARK = re.compile(r'//.*DB 전용 허용\(')
+
+found, marks_used, i = [], set(), 0
+while i < len(lines):
+    m = DECL.match(lines[i])
+    if not m:
+        i += 1
+        continue
+    fn = m.group(1)
+    j = i + 1
+    while j < len(lines) and lines[j] != '    }':
+        code = lines[j].split('//')[0]
+        if BAD.search(code):
+            if MARK.search(lines[j]) or (j > 0 and MARK.search(lines[j - 1])):
+                marks_used.add(j if MARK.search(lines[j]) else j - 1)
+            else:
+                found.append((j + 1, fn, lines[j].strip()))
+        j += 1
+    i = j + 1
+
+# 낡은 표식 — 위반이 사라졌는데 표식만 남으면 다음 사람이 *허용된 자리가 있다*고 읽는다.
+for n, l in enumerate(lines):
+    if MARK.search(l) and n not in marks_used:
+        found.append((n + 1, '(표식)', '낡은 표식입니다 — 가리키는 db.universeDao() 호출이 없습니다'))
+
+for ln, fn, text in found:
+    print(f"{ln}\t{fn}\t{text}")
+print(f"__UCOUNT__{len(found)}")
+PY7
+)
+ucount=$(printf '%s\n' "$UNIVSRC" | sed -n 's/^__UCOUNT__//p')
+ubody=$(printf '%s\n' "$UNIVSRC" | grep -v '^__UCOUNT__' || true)
+
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
@@ -418,6 +473,7 @@ require_count "$tcount" "__TCOUNT__" "$TALLY"
 require_count "$scount" "__SCOUNT__" "$SHEETS"
 require_count "$lcount" "__LCOUNT__" "$LADDER"
 require_count "$ncount" "__NCOUNT__" "$NOTIFIED"
+require_count "$ucount" "__UCOUNT__" "$UNIVSRC"
 
 if [ "${count:-0}" -gt 0 ]; then
   echo "  ✗ analyze*가 손으로 짠 필드 비교로 '변경/동일'을 판정합니다 (${count}건)"
@@ -513,11 +569,28 @@ if [ "${ncount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${ucount:-0}" -gt 0 ]; then
+  echo "  ✗ 미리보기가 세계관을 DB에서 직접 뜹니다 (${ucount}건) — 빈 DB 복원에서 그 목록은 빕니다"
+  echo
+  printf '%s\n' "$ubody" | while IFS=$'\t' read -r ln fn text; do
+    [ -z "${ln:-}" ] && continue
+    echo "    ExcelImportService.kt:$ln  ($fn)"
+    echo "      $text"
+  done
+  echo
+  echo "  짝 import*는 importUniverses가 **먼저** 심어 같은 질의로 답이 맞습니다. 미리보기는"
+  echo "  쓰지 않으므로 analysisUniverses()(DB + 이 파일이 만들 것)를 지나야 같은 답이 됩니다."
+  echo "  신규 기기 복원이 가장 흔한 경로이고, 거기서 캐릭터 예고가 통째로 빕니다(B-254)."
+  echo "  현재 DB 총계처럼 DB만 보아야 하는 자리라면 그 줄에 // DB 전용 허용(사유) 를 적으세요."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row + new*From ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다 (B-233)"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
 echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
 echo "  ✓ 가져오기가 세며 거부하는 행을 미리보기도 전부 셉니다 (B-237)"
+echo "  ✓ analyze*의 세계관 원천이 전부 analysisUniverses()입니다 (B-254)"
 echo
 echo "복원 미리보기 정합 검사 통과"

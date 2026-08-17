@@ -47,7 +47,9 @@ import com.novelcharacter.app.util.DuelVerdictMemberKey
 import com.novelcharacter.app.util.EventNaturalKey
 import com.novelcharacter.app.util.FactionIdentityIndexes
 import com.novelcharacter.app.util.FactionNameKey
+import com.novelcharacter.app.util.DefaultFieldTemplateIndexes
 import com.novelcharacter.app.util.FieldDefinitionIndexes
+import com.novelcharacter.app.util.guardDefaultFieldSlot
 import com.novelcharacter.app.util.CharacterFieldColumns
 import com.novelcharacter.app.util.ColumnFieldOutcome
 import com.novelcharacter.app.util.FieldValueCellEffect
@@ -493,6 +495,35 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 먼저 실린 것이 답이다). 임시 id가 음수라 앞에 실으면 DB의 같은 키를 가린다.
      */
     private val analysisCreatedFields = mutableListOf<FieldDefinition>()
+
+    /**
+     * **이 파일이 만들 세계관** — 캐릭터 시트를 훑는 자리가 이것까지 봐야 한다 (B-254).
+     *
+     * **왜 색인이 아니라 목록인가:** `analyzeCharacters`가 필요한 것은 *찾기*가 아니라
+     * **열거**다(세계관마다 시트가 하나씩 있어 그 목록으로 훑는다). [ImportLookupIndex]에는
+     * 열거 API가 없고, 있어야 할 이유도 여기 하나뿐이라 형제 색인 전부를 넓히지 않는다 —
+     * 바로 위 [analysisCreatedFields]가 같은 사유로 선 목록이다.
+     *
+     * **왜 필요한가:** 짝인 [importCharacterSheets]도 세계관을 `getAllUniversesList()`로 훑지만,
+     * 그때는 [importUniverses]가 **먼저** 심어 목록이 차 있다. 미리보기는 쓰지 않으므로
+     * **빈 DB 복원에서 그 목록이 비어 루프가 한 번도 돌지 않았다** — 파일에 캐릭터가 200명
+     * 있어도 미분류 시트 하나만 세어졌다(유실은 없고 *예고가 통째로 비는* 자리다).
+     */
+    private val analysisCreatedUniverses = mutableListOf<Universe>()
+
+    /**
+     * **이 파일이 세계관을 옮길 캐릭터** — 그 캐릭터의 필드값 칸은 예고하지 않는다 (B-253).
+     *
+     * 이동은 필드값에 두 가지를 한다: ⓐ 그 캐릭터의 값을 **새 세계관의 같은 key 필드로 전량
+     * 재매핑**하고(짝이 없는 key는 유실 — 휴지통 스냅샷으로 간다) ⓑ '캐릭터 필드값' 시트의
+     * **옛 키 행을 적용하지 않는다**(방금 정리한 값이 되살아나므로).
+     *
+     * 그래서 이 캐릭터의 칸은 **칸 단위 처분을 약속할 수 없다** — 미리보기의 처분은
+     * `(소유자, 필드)` 짝 위에서 나는데 이동이 그 짝을 통째로 갈아치운다. '동일'이라 세어 둔
+     * 칸조차 실제로는 다른 필드로 옮겨 앉는다. **약속하지 않는 것을 '건너뜀'으로 세는 이유**가
+     * 그것이고, 그 갈래는 [FieldValueScan.skip]의 KDoc이 든다.
+     */
+    private val analysisUniverseMovedCharacterIds = mutableSetOf<Long>()
 
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
@@ -2620,6 +2651,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이 파일이 만들 필드 정의도 같은 자리에서 비운다 — 남으면 지난 분석이 만든 필드로
         // 이번 파일의 필드값이 해석된다(형제 색인들과 같은 근거).
         analysisCreatedFields.clear()
+        // 이 파일이 만들 세계관도 같은 자리에서 비운다 (B-254) — 남으면 지난 분석이 만든
+        // 세계관 이름으로 이번 파일의 캐릭터 시트를 찾는다(형제 목록·색인들과 같은 근거).
+        analysisCreatedUniverses.clear()
+        analysisUniverseMovedCharacterIds.clear()
+        // 작품→세계관 메모도 여기서 비운다 — **직전 가져오기가 작품의 세계관을 옮겼을 수 있다**
+        // (`migrateCharacterToUniverse` 경로). 위 색인들을 비우는 사유가 그대로 걸리는데
+        // 이 메모만 빠져 있었고, 세계관 이동 판정(B-253)이 이 값 위에 선다.
+        novelUniverseCache.clear()
         val totalRows = countTotalRows(workbook)
 
         // 필드값 범주 셋 (B-187). **겹은 미리보기 시작에 한 번만 싣는다** — 표를 행마다 묻지
@@ -2861,9 +2900,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 실제 가져오기와 같은 경로로 필드를 찾는다: 세계관명 → 필드(키, 대상). 행마다 쿼리하지
         // 않으려고 한 번에 읽어 (세계관, 키, 대상)으로 색인할 뿐, getFieldByKey와 같은 결과다.
-        val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
-        val fieldsByKey = db.fieldDefinitionDao().getAllFieldsAllTypes()
-            .associateBy { Triple(it.universeId, it.key, it.entityType) }
+        val universesByName = analysisUniverses().associateBy { it.name }
+        // 필드도 **DB의 것 + 이 파일이 만들 것**이다(B-254와 같은 근거) — 짝인
+        // `importFieldValueLibrary`는 `importFieldDefinitions`가 **먼저** 심어 DAO 조회로 답이
+        // 맞는다. 종전에는 여기만 DB 스냅샷이라, 빈 DB 복원에서 이 시트의 행이 **전부**
+        // `fd == null`로 떨어져 '신규'로 세어졌다 — 같은 (필드, 값)을 두 번 적은 파일에서
+        // 가져오기는 *신규 1 + 갱신 1*을 하는데 미리보기는 *신규 2*라 말한다(B-233의 그 모양).
+        // 겹 처리도 함께 옳아진다: `associateBy`는 나중 것을 남기는데 짝 조회는 `LIMIT 1`이라
+        // **먼저 실린 것**이 답이고, 이 색인이 그 순서를 지킨다.
+        val fieldDefs = analysisFieldIndex()
         // 가져오기가 굴리는 것과 **같은 형제 목록**이다(B-233) — 가져오기는 넣은 엔트리를 즉시
         // `siblings`에 더하고 갱신한 엔트리를 갈아 끼운다. 미리보기가 읽기 전용 스냅샷을 쓰면
         // 같은 (필드, 값)을 두 번 적은 파일이 '신규 2'가 되는데 가져오기는 둘째를 첫째와 잇는다.
@@ -2901,9 +2946,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val globalScope = FieldScopeCell.isGlobal(universeName)
             val universe = if (globalScope) null else universesByName[universeName]
             val fd = if (globalScope) {
-                fieldsByKey[Triple(null, fieldKey, imported.entityType)]
+                fieldDefs.find(null, fieldKey, imported.entityType)
             } else {
-                universe?.let { fieldsByKey[Triple(it.id, fieldKey, imported.entityType)] }
+                universe?.let { fieldDefs.find(it.id, fieldKey, imported.entityType) }
             }
             if (fd == null) { newCount++; continue }
 
@@ -3022,6 +3067,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeUniverses(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = universeSpec()
         val sheet = sheetForAnalysis(workbook, spec)
+        // DB 전용 허용(현재 DB 총계 — *지금 몇 개 있는가*라, 이 파일이 만들 것을 더하면 뜻이 깨진다)
         val existingTotal = db.universeDao().getAllUniversesList().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("universes", "세계관", 0, 0, 0, 0, existingTotal)
 
@@ -3054,10 +3100,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 빼도록 지어져 있어(`takeIf { isNotBlank() }`) 빈 값은 아무 통도 만들지 않는데,
                 // 자리표시자는 **모든 신규 행이 한 통에 쌓이는 키**가 된다.
                 // 코드 없이 같은 이름을 두 번 적은 파일은 그대로 **이름**으로 잡힌다.
-                rememberUniverse(
-                    newUniverseFrom(r, r.code, i, now)
-                        .copy(id = previewIds.mint())
-                )
+                val created = newUniverseFrom(r, r.code, i, now)
+                    .copy(id = previewIds.mint())
+                rememberUniverse(created)
+                // **캐릭터 시트를 훑는 자리도 이것을 봐야 한다**(B-254) — 그쪽은 이 함수 밖에서
+                // 돌므로 색인이 아니라 목록으로 넘긴다(위 [analysisCreatedUniverses]).
+                analysisCreatedUniverses.add(created)
                 continue
             }
             // 지연 해석 열은 **되붙은 뒤의 순효과**로 비교한다(설계 2-3).
@@ -3094,7 +3142,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 필드 열 수집도 가져오기와 **같은 재료·같은 해석기**다(`EntityFieldHeaders` → `EntityFieldColumnResolver`).
         val novelFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_NOVEL)
         val universeIdsByName = if (fieldValues == null) emptyMap() else
-            db.universeDao().getAllUniversesList().associate { it.name to it.id }
+            analysisUniverses().associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
         else analysisEntityFieldColumns(headerRow, novelFields)
 
@@ -3222,8 +3270,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         val allConflicts = mutableListOf<CharacterConflict>()
 
-        // 세계관별 캐릭터 시트 분석
-        val universes = db.universeDao().getAllUniversesList()
+        // 세계관별 캐릭터 시트 분석 — **DB의 것 + 이 파일이 만들 것**(B-254).
+        //
+        // 짝인 [importCharacterSheets]는 같은 질의 하나만 쓰는데, 그때는 [importUniverses]가
+        // 먼저 심어 목록이 차 있다. 미리보기는 쓰지 않으므로 **빈 DB 복원에서 이 목록이 비어
+        // 루프가 한 번도 돌지 않았다.** 정렬 키를 DAO와 같게 두는 것도 그 짝 맞추기다
+        // (`ORDER BY displayOrder ASC, createdAt DESC`) — 계수 자체는 순서에 무관하지만,
+        // 같은 캐릭터가 두 시트에 있을 때 *어느 시트 행이 신규인가*가 순서로 갈린다.
+        val universes = analysisUniverses()
+            .sortedWith(compareBy<Universe> { it.displayOrder }.thenByDescending { it.createdAt })
         val reservedNames = RESERVED_SHEET_NAMES
         // 미리보기도 본 임포트와 같은 배정을 봐야 한다 — 같은 시트를 두 번 세면 건수가 부풀고
         // 충돌 항목이 중복된다(conflictKey가 "$sheetLabel:$i"라 양쪽이 같은 키를 만든다).
@@ -3297,6 +3352,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          */
         fun countFieldColumns(row: Row, charId: Long?) {
             val scan = fieldValues ?: return
+            // **세계관을 옮기는 캐릭터도 미정이다**(B-253) — 가져오기가 이 칸들을 쓰기는 하지만
+            // 그 직후 값을 새 세계관 필드로 전량 재매핑하므로, `(소유자, 필드)` 짝 위에서 내린
+            // 칸 단위 처분이 그대로 서지 못한다. 확정되지 않은 행과 **같은 처리**로 모은다.
+            val decided: Long? =
+                if (charId != null && charId !in analysisUniverseMovedCharacterIds) charId else null
             for ((col, outcome) in columnPlan) {
                 val cellValue = getCellString(row, col)
                 when (outcome) {
@@ -3304,17 +3364,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 계산 필드는 저장하지 않는다(F4) — 가져오기가 `continue`하는 그 자리다.
                         if (outcome.field.fieldType == FieldType.CALCULATED) {
                             if (cellValue.isNotBlank()) scan.skip()
-                        } else if (charId == null) {
+                        } else if (decided == null) {
                             if (cellValue.isNotBlank()) scan.skip()
                         } else {
-                            scan.count(charId, outcome.field.id, cellValue)
+                            scan.count(decided, outcome.field.id, cellValue)
                         }
                     }
                     // 가져오기가 필드를 새로 만들어 붙이므로 기존 값이 있을 수 없다 — 값이 든 칸은 신규다.
                     // 아직 없는 필드라 id가 없고, 미리보기 id 공간에서 하나 꺼내 그 열에 고정한다.
                     is ColumnFieldOutcome.AutoCreate -> {
-                        if (charId == null) { if (cellValue.isNotBlank()) scan.skip() }
-                        else scan.count(charId, autoFieldIds.getValue(col), cellValue)
+                        if (decided == null) { if (cellValue.isNotBlank()) scan.skip() }
+                        else scan.count(decided, autoFieldIds.getValue(col), cellValue)
                     }
                     // 열이 통째로 버려지는 자리 — 값이 적혀 있으면 그것이 반영되지 않는다는 사실이 중요하다.
                     is ColumnFieldOutcome.Ambiguous, is ColumnFieldOutcome.Unresolved,
@@ -3349,6 +3409,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val novelId = if (resolvedNovelId == null && r.novelCode.isNotBlank() && r.novelTitle.isBlank()) {
                 existing.novelId
             } else resolvedNovelId
+            // 이 행이 캐릭터의 세계관을 옮기면 그 캐릭터의 필드값 칸은 **약속하지 않는다**
+            // (B-253) — 판정은 가져오기와 같은 함수다(R-33). 기록만 하고 처분은
+            // `countFieldColumns`와 '캐릭터 필드값' 시트가 읽는다.
+            if (universeMoveOf(existing, r.novelColumnsPresent, novelId) != null) {
+                analysisUniverseMovedCharacterIds.add(existing.id)
+            }
             val merged = mergeCharacter(existing, r, novelId, rowIndex, now, result = null)
             if (merged != existing) updateCount++
             // 갱신된 값도 되돌려 놓는다 — 같은 캐릭터를 가리키는 뒤 행은 이 결과 위에서 판정되고,
@@ -3456,8 +3522,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 순서가 규약인 이유는 [analysisCreatedFields]가 든다.
      */
     private suspend fun analysisCharacterFields(universeId: Long?): List<FieldDefinition> {
-        val existing = if (universeId == null) db.fieldDefinitionDao().getGlobalFieldsList()
-        else db.fieldDefinitionDao().getFieldsByUniverseList(universeId)
+        val existing = when {
+            universeId == null -> db.fieldDefinitionDao().getGlobalFieldsList()
+            // **이 파일이 만들 세계관**은 DB에 행이 없다(음수 임시 id — B-254). 물어도 빈 목록이
+            // 돌아오므로 답은 같고, 묻지 않는 편이 시트마다 왕복 하나를 던다.
+            universeId < 0 -> emptyList()
+            else -> db.fieldDefinitionDao().getFieldsByUniverseList(universeId)
+        }
         if (analysisCreatedFields.isEmpty()) return existing
         return existing + analysisCreatedFields.filter {
             it.universeId == universeId && it.entityType == FieldDefinition.ENTITY_CHARACTER
@@ -3494,7 +3565,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val valueCol = cols["값"] ?: -1
 
         val fieldDefs = analysisFieldIndex()
-        val allUniverses = db.universeDao().getAllUniversesList()
+        val allUniverses = analysisUniverses()
         val universesByName = allUniverses.associateBy { it.name }
         val universesByCode = allUniverses.associateBy { it.code }
 
@@ -3517,10 +3588,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (nameMatches.size == 1) character = nameMatches.first()
             }
             if (character == null) { if (cell.isNotBlank()) scan.skip(); continue }
-            // ⚠️ 가져오기에는 갈래가 하나 더 있다 — **이번 파일이 세계관을 옮긴 캐릭터**의 옛 키
-            // 행은 적용하지 않는다(`universeMovedCharacterIds`). 미리보기는 그 이동을 아직
-            // 판정하지 않으므로 여기 옮겨 오지 않았다 — 판정하려면 이동이 일으키는 *값 전량
-            // 재매핑*까지 모형화해야 하고 그것은 이 축과 크기가 다르다. 백로그 B-253.
+            // **이번 파일이 세계관을 옮긴 캐릭터**의 옛 키 행은 가져오기가 적용하지 않는다 —
+            // 방금 재매핑한 값이 되살아나기 때문이다(`universeMovedCharacterIds`의 `continue`).
+            // 미리보기도 같은 자리에서 같은 판정을 읽는다 (B-253) — 캐릭터 시트가 먼저 돌아
+            // 그때 채워진 집합이다(범주 순서 규약: 본 시트 → 오버플로 시트).
+            if (character.id in analysisUniverseMovedCharacterIds) {
+                if (cell.isNotBlank()) scan.skip()
+                continue
+            }
 
             val uName = if (uNameCol >= 0) getCellString(row, uNameCol) else ""
             val uCode = if (uCodeCol >= 0) getCellCode(row, uCodeCol, "", result = null) else ""
@@ -3560,7 +3635,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val valueCol = cols["값"] ?: -1
 
         val fieldDefs = analysisFieldIndex()
-        val allUniverses = db.universeDao().getAllUniversesList()
+        val allUniverses = analysisUniverses()
         val universesByName = allUniverses.associateBy { it.name }
         val universesByCode = allUniverses.associateBy { it.code }
 
@@ -3616,7 +3691,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val valueCol = cols["값"] ?: -1
 
         val fieldDefs = analysisFieldIndex()
-        val allUniverses = db.universeDao().getAllUniversesList()
+        val allUniverses = analysisUniverses()
         val universesByName = allUniverses.associateBy { it.name }
         val universesByCode = allUniverses.associateBy { it.code }
 
@@ -3767,7 +3842,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 사건 필드 열도 작품 시트와 같은 재료로 같은 해석기를 부른다(B-65 · B-187).
         val eventFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_EVENT)
         val universeIdsByName = if (fieldValues == null) emptyMap() else
-            db.universeDao().getAllUniversesList().associate { it.name to it.id }
+            analysisUniverses().associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
         else analysisEntityFieldColumns(headerRow, eventFields)
 
@@ -5135,7 +5210,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = defaultFieldSpec()
         val label = "기본 필드"
         val dao = db.defaultFieldTemplateDao()
-        val existingTotal = dao.getAllList().size
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236과 같은 처방 · B-252).
+        val allTemplates = dao.getAllList()
+        val existingTotal = allTemplates.size
         val sheet = resolveSpecSheet(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) {
             return CategoryAnalysis("defaultFields", label, 0, 0, 0, 0, existingTotal)
@@ -5145,9 +5222,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val c = DefaultFieldCols(resolveHeaderColumns(headerRow))
 
-        // 이 시트가 앞서 만든 템플릿 — 해석이 DAO 직접 조회라 색인이 없어 여기에 겹쳐 둔다(B-233).
-        // 가져오기 쪽은 같은 트랜잭션의 직전 insert가 그대로 보이므로 이 겹이 그것에 해당한다.
-        val previewCreated = mutableListOf<DefaultFieldTemplate>()
+        // 해석·자리 판정 둘 다 **색인 하나**를 지난다 (B-252) — 짝인 가져오기와 같은 함수다(R-33).
+        // 이 시트가 앞서 만든 템플릿도 여기 `remember`로 실린다(B-233): 가져오기 쪽은 같은
+        // 트랜잭션의 직전 insert가 그대로 보이므로 그것에 해당한다.
+        val templates = DefaultFieldTemplateIndexes(allTemplates)
         val now = System.currentTimeMillis()
         var total = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skipped = 0
         for (i in 1..sheet.lastRowNum) {
@@ -5157,20 +5235,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.key.isBlank() && r.name.isBlank()) continue
             total++
             if (r.key.isBlank() || r.name.isBlank()) { skipped++; continue }
-            // 해석 사다리도 가져오기와 같다(코드 → 자리). 앞 행이 만든 것을 **먼저** 본다.
-            val existing = previewCreated.firstOrNull { t ->
-                (r.code.isNotBlank() && t.code == r.code) || (t.entityType == r.entityType && t.key == r.key)
-            } ?: resolveDefaultFieldTemplate(r)
+            // 해석 사다리는 가져오기와 **같은 함수**다(코드 → 자리). 앞 행이 만든 것은 색인에
+            // 실려 있어 자연히 먼저 잡힌다.
+            val existing = templates.resolve(r.code, r.entityType, r.key)
             if (existing == null) {
                 newCount++
                 // 순서 기본값은 표의 현재 최댓값 다음이다 — 미리보기는 쓰지 않으므로 그 값이
                 // 무엇이든 뒤 행의 매칭(코드·자리)에 쓰이지 않는다. 0으로 둔다.
-                previewCreated.add(
+                templates.remember(
                     newDefaultFieldTemplateFrom(r, r.code, displayOrder = r.displayOrder ?: 0, now = now)
                         .copy(id = previewIds.mint())
                 )
-            } else if (mergeDefaultFieldTemplate(existing, r) != existing) updateCount++
-            else unchangedCount++
+            } else {
+                // **자리 충돌 게이트도 가져오기와 같은 함수다**(B-252) — 자리를 옮기려다
+                // 되돌려지는 행을 '변경'이라 예고하던 자리다.
+                val kept = guardDefaultFieldSlot(
+                    existing, mergeDefaultFieldTemplate(existing, r), templates::slotOwner
+                )
+                if (kept != existing) {
+                    updateCount++
+                    // 갱신된 값도 색인에 되돌려 둔다 — 같은 템플릿을 가리키는 뒤 행은 이 결과
+                    // 위에서 판정된다(파일 안에서 키를 바꾼 뒤 옛 키 행이 또 나오는 경우).
+                    templates.remember(kept)
+                } else unchangedCount++
+            }
         }
         reportProgress(onProgress, "기본 필드 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("defaultFields", label, total, newCount, updateCount, unchangedCount, existingTotal, skipped)
@@ -5204,6 +5292,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val c = DefaultFieldCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val dao = db.defaultFieldTemplateDao()
+        // 정체 해석·자리 판정·코드 유일성·순서 기본값이 **표 한 번 읽기** 위에 선다 (B-252) —
+        // 짝인 미리보기와 같은 색인·같은 게이트다(R-33). 종전에는 행마다 조회가 둘·셋이었다.
+        // 이 루프가 이 표의 **유일한 쓰기 경로**라, `remember`만 빠뜨리지 않으면 색인이 낡지 않는다.
+        val templates = DefaultFieldTemplateIndexes(dao.getAllList())
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readDefaultFieldRow(row, c, "기본 필드 행 $i", result)
@@ -5215,42 +5307,43 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("기본 필드 행 $i: 필드키·필드명은 필수입니다")
                 continue
             }
-            val existing = resolveDefaultFieldTemplate(r)
+            val existing = templates.resolve(r.code, r.entityType, r.key)
 
             if (existing != null) {
                 val merged = mergeDefaultFieldTemplate(existing, r)
                 if (merged != existing) {
                     // 자리를 옮기는 편집이 남의 자리와 부딪치면 되돌린다 — 유니크 (대상, 필드키).
-                    val clash = dao.getBySlot(merged.entityType, merged.key)
-                        ?.takeIf { it.id != existing.id }
-                    if (clash != null) {
+                    // **판정은 미리보기와 같은 함수다**(R-33 · B-252).
+                    val kept = guardDefaultFieldSlot(existing, merged, templates::slotOwner)
+                    if (kept != merged) {
                         result.warnings.add(
                             "기본 필드 행 $i: '${merged.key}'(${merged.entityType}) 자리를 이미 다른 " +
                                 "기본 필드가 쓰고 있어 키·대상은 바꾸지 않았습니다"
                         )
-                        val kept = merged.copy(key = existing.key, entityType = existing.entityType)
-                        if (kept != existing) { dao.update(kept); result.updatedDefaultFields++ }
-                        else result.unchangedRows++
-                    } else {
-                        dao.update(merged)
-                        if (merged != existing) result.updatedDefaultFields++ else result.unchangedRows++
                     }
+                    if (kept != existing) {
+                        dao.update(kept)
+                        // 방금 쓴 값을 색인에 되돌려 둔다 — 뒤 행이 이 결과 위에서 판정된다.
+                        templates.remember(kept)
+                        result.updatedDefaultFields++
+                    } else result.unchangedRows++
                 }
             } else {
                 // 코드가 이미 남의 템플릿과 겹치면 재발급한다(전역 유니크 — 정체를 빼앗지 않는다).
                 val wanted = r.code.takeIf { it.isNotBlank() }
-                val safeCode = wanted?.takeIf { dao.getByCode(it) == null }
+                val safeCode = wanted?.takeIf { templates.codeOwner(it) == null }
                     ?: com.novelcharacter.app.data.model.generateEntityCode().also {
                         if (wanted != null) result.newCodesGenerated++
                     }
                 // 새 행에서는 **null이 곧 기본값**이다 — 지킬 기존 값이 없다(R-36 후반부).
-                dao.insert(
-                    newDefaultFieldTemplateFrom(
-                        r, safeCode,
-                        displayOrder = r.displayOrder ?: ((dao.getMaxOrder(r.entityType) ?: -1) + 1),
-                        now = System.currentTimeMillis()
-                    )
+                val created = newDefaultFieldTemplateFrom(
+                    r, safeCode,
+                    displayOrder = r.displayOrder ?: ((templates.maxOrder(r.entityType) ?: -1) + 1),
+                    now = System.currentTimeMillis()
                 )
+                // 방금 만든 것을 **곧바로 읽히게** 한다 — 같은 파일의 뒷 행이 코드·자리로 이것을
+                // 찾는다(빠뜨리면 *있는 것을 없다고* 보고 유니크 색인에 부딪친다).
+                templates.remember(created.copy(id = dao.insert(created)))
                 result.newDefaultFields++
             }
         }
@@ -5323,13 +5416,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         descriptionColumnPresent = c.description >= 0,
         descriptionCellText = getCellString(row, c.description)
     )
-
-    /** 정체는 **코드 우선, 없으면 (대상, 필드키)** — 다른 시트와 같은 규약이다(R-1). */
-    private suspend fun resolveDefaultFieldTemplate(r: DefaultFieldRowValues): DefaultFieldTemplate? {
-        val dao = db.defaultFieldTemplateDao()
-        return r.code.takeIf { it.isNotBlank() }?.let { dao.getByCode(it) }
-            ?: dao.getBySlot(r.entityType, r.key)
-    }
 
     /**
      * 이 행이 만들 `config`.
@@ -6909,12 +6995,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // F3-A: 엑셀에서 작품이 바뀌어 세계관이 이동했는지 감지 (existingChar.novelId=이동 전, novelId=이동 후).
                 // 이동이면 아래 필드 기록 후 편집화면과 동일한 P0 로직으로 재매핑·정리한다.
-                val movedToUniverseId: Long? = if (existingChar != null && novelColumnsPresent && novelId != existingChar.novelId) {
-                    // 같은 작품이 시트 안에서 되풀이되므로 메모된 helper로 답한다(B-210).
-                    val oldU = existingChar.novelId?.let { universeIdOfNovel(it) }
-                    val newU = novelId?.let { universeIdOfNovel(it) }
-                    if (oldU != null && newU != null && oldU != newU) newU else null
-                } else null
+                // **판정은 미리보기와 같은 함수다**(R-33 · B-253).
+                val movedToUniverseId: Long? =
+                    universeMoveOf(existingChar, novelColumnsPresent, novelId)
 
                 // matched ID 추적 (deleteNotInExcel용) — 시트 세계관과 무관하게 전역 등록.
                 // 엑셀 편집으로 캐릭터가 다른 세계관 작품으로 이동해도 삭제 대상이 되지 않게 한다.
@@ -10230,6 +10313,45 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun resolveCharByNameNovel(name: String, preferredNovelId: Long?): CharLookupResult {
         if (name.isBlank()) return CharLookupResult.NotFound
         return CharacterRefLadder.nameWithNovelHint(name, charactersByName(name), preferredNovelId)
+    }
+
+    /**
+     * 미리보기가 세계관을 찾을 때 보는 목록 — **DB의 것 + 이 파일이 만들 것** (B-254).
+     *
+     * 짝인 `import*`는 [importUniverses]가 **먼저** 심으므로 `getAllUniversesList()` 하나로 같은
+     * 답을 얻는다. 미리보기는 쓰지 않아 그 목록이 **빈 DB 복원에서 통째로 비고**, 그러면
+     * *어느 시트를 여는가*(캐릭터 시트 훑기)와 *행의 세계관 칸을 무엇으로 읽는가*(필드값 세
+     * 시트 · 값 라이브러리 · 작품·연표의 필드 열)가 **함께** 무너진다. 자리마다 손으로 이어
+     * 붙이면 다음에 생기는 자리가 빠지므로 원천을 하나로 둔다.
+     *
+     * **싣는 순서는 DB가 먼저다** — [analysisCreatedFields]와 같은 근거(먼저 실린 것이 답이다).
+     */
+    private suspend fun analysisUniverses(): List<Universe> =
+        db.universeDao().getAllUniversesList() + analysisCreatedUniverses
+
+    /**
+     * 이 행이 캐릭터의 **세계관을 옮기는가** — 옮기면 새 세계관 id, 아니면 null (R-33 · B-253).
+     *
+     * 짝인 [importCharacterRows]와 `analyzeCharacterSheet`가 **같은 함수**를 쓴다. 갈라 두면
+     * 미리보기가 이동을 못 알아보고, 이동이 일으키는 것(필드값 전량 재매핑 · 오버플로 행 무적용)이
+     * 통째로 예고에서 빠진다 — 종전이 그 상태였다.
+     *
+     * **음수 작품 id는 이동이 아니다.** 미리보기에서 그 값은 *"가져오기가 새로 만들어 배정할
+     * 작품"*을 뜻하는데([ANALYSIS_CREATED_NOVEL_ID]·[PreviewIdMinter]), 그 작품은 **시트의
+     * 세계관에** 생기므로(`resolveNovelId`의 생성 갈래) 세계관을 넘지 않는다. 가져오기 쪽
+     * 인자는 언제나 실존 id라 이 가드가 그쪽 답을 바꾸지 않는다.
+     */
+    private suspend fun universeMoveOf(
+        existing: Character?,
+        novelColumnsPresent: Boolean,
+        novelId: Long?
+    ): Long? {
+        if (existing == null || !novelColumnsPresent || novelId == existing.novelId) return null
+        if (novelId != null && novelId < 0) return null
+        // 같은 작품이 시트 안에서 되풀이되므로 메모된 helper로 답한다(B-210).
+        val oldU = existing.novelId?.let { universeIdOfNovel(it) }
+        val newU = novelId?.let { universeIdOfNovel(it) }
+        return if (oldU != null && newU != null && oldU != newU) newU else null
     }
 
     /**

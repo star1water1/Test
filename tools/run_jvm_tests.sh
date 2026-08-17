@@ -350,6 +350,7 @@ $TEST/util/ImportIdentityIndexesTest.kt
 $TEST/util/PreviewCreationsTest.kt
 $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
+$TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
