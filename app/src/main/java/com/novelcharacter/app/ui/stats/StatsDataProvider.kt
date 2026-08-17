@@ -2256,8 +2256,22 @@ class StatsDataProvider {
         val numericKeySet = numericKeys.mapTo(HashSet()) { it.first }
         for ((k, v) in dist) {
             if (k !in numericKeySet) {
-                counts[k] = v
-                specs[k] = FieldValueMatchSpec.Values(k)
+                // **비수치 키가 구간 라벨과 같을 수 있다 — 덮어쓰지 않고 합친다.**
+                // 구간 라벨은 `150~160` 꼴이고 사용자가 수치 칸에 대략적인 범위를 그대로 적는 것은
+                // 이 앱이 받아들이려는 입력의 전형이다(그 원문은 수로 안 읽히므로 여기로 온다).
+                // 종전 한 줄(`counts[k] = v`)은 **그 구간의 인원을 개수 고지도 없이 지웠다** —
+                // `autoBins`가 자기 라벨끼리의 겹침을 순번으로 막아 둔 것과 같은 부류의 유실이다.
+                // 합치면 그 조각은 *구간에 든 값들 + 그 라벨과 같은 원문*을 함께 가리키고,
+                // 스펙도 합집합이라 조각 수치와 목록 인원이 그대로 맞는다.
+                val existing = counts[k]
+                if (existing == null) {
+                    counts[k] = v
+                    specs[k] = FieldValueMatchSpec.Values(k)
+                } else {
+                    counts[k] = existing + v
+                    val merged = (specs[k] as? FieldValueMatchSpec.Values)?.values.orEmpty() + k
+                    specs[k] = FieldValueMatchSpec.Values(merged)
+                }
             }
         }
         return FoldedDistribution(counts, specs, autoBinned = true, preFoldKinds = dist.size)
@@ -2403,9 +2417,16 @@ class StatsDataProvider {
             // 모든 값이 여기로 온다 — 종전에는 히스토그램이 통째로 비어 아무 말도 없었다.
             val outsideCount = values.count { v -> ranges.none { inRange(it, v) } }
             if (outsideCount > 0) {
-                histogram[OUT_OF_RANGE_LABEL] = outsideCount
+                // **사용자가 구간 하나를 하필 이 라벨로 지었을 수 있다** — 그때 같은 키로 쓰면
+                // 그 구간의 인원과 스펙이 조용히 덮인다(여집합은 그 구간을 *제외한* 것이라
+                // 합칠 수도 없다: 뜻이 서로 다르다). 그래서 겹치면 순번을 붙여 갈라 둔다 —
+                // `autoBins`가 자기 라벨끼리의 겹침에 대해 이미 쓰는 방식이다.
+                var label = OUT_OF_RANGE_LABEL
+                var n = 2
+                while (label in histogram) label = "$OUT_OF_RANGE_LABEL ($n)".also { n++ }
+                histogram[label] = outsideCount
                 // 여집합 스펙은 **방금 분포를 그린 그 스펙 목록**을 받는다 — 구간을 다시 짓지 않는다.
-                specs[OUT_OF_RANGE_LABEL] = FieldValueMatchSpec.outside(
+                specs[label] = FieldValueMatchSpec.outside(
                     ranges.mapNotNull { specs[it.label] as? FieldValueMatchSpec.NumericPartRange },
                     partIndex,
                     separator

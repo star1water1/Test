@@ -251,4 +251,35 @@ class NumericDistributionFoldTest {
         assertEquals(2, listed.size)
         assertTrue(listed.all { it.fieldValue == "미상" })
     }
+
+    @Test
+    fun `비수치 값이 구간 라벨과 같아도 그 구간의 인원이 사라지지 않는다`() {
+        // **콜드 검토가 잡은 자리.** 구간 라벨은 `150~160` 꼴이고, 사용자가 수치 칸에 대략적인
+        // 범위를 그대로 적는 것은 이 앱이 받아들이려는 입력의 전형이다(그 원문은 수로 안 읽혀
+        // 비수치 갈래로 온다). 종전 한 줄(`counts[k] = v`)은 **그 구간의 인원을 개수 고지도 없이
+        // 지웠다** — 합쳐야 조각 수치와 목록 인원이 맞는다.
+        val fd = distField(limit = 10)
+        val plain = distinctHeights(20)
+        // 20종 150~169를 5등분하면 첫 구간 라벨이 `150~154`다 — 그 글자를 값으로 가진 캐릭터를 둘 넣는다.
+        val s0 = snapshot(fd, plain)
+        val firstLabel = provider.computeFieldInsights(s0)
+            .first { it.fieldDefinition.name == "키" }
+            .analysisResults.first { it.entry.type == FieldStatsConfig.StatsType.DISTRIBUTION }
+            .distributionData!!.keys.first()
+
+        val s = snapshot(fd, plain + listOf(firstLabel, firstLabel))
+        val r = provider.computeFieldInsights(s)
+            .first { it.fieldDefinition.name == "키" }
+            .analysisResults.first { it.entry.type == FieldStatsConfig.StatsType.DISTRIBUTION }
+
+        assertEquals("합은 여전히 모집단이다", 22, r.distributionData!!.values.sum())
+        val listed = provider.getCharactersByFieldValue(
+            s, listOf(10L), r.distributionSpecs!!.getValue(firstLabel)
+        )!!
+        assertEquals(
+            "겹친 조각의 인원이 조각 수치와 같아야 한다",
+            r.distributionData!!.getValue(firstLabel), listed.size
+        )
+        assertTrue("그 라벨을 값으로 가진 캐릭터도 들어 있어야 한다", listed.any { it.fieldValue == firstLabel })
+    }
 }

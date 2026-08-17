@@ -370,6 +370,23 @@ class NumericBinDrilldownTest {
         assertEquals("파트 수치 170만 구간 밖이다", listOf("c2"), listed.map { it.characterName })
     }
 
+    @Test
+    fun `사용자가 구간을 '구간 밖'이라 이름 지어도 여집합과 섞이지 않는다`() {
+        // **콜드 검토가 잡은 자리.** 같은 키로 쓰면 그 구간의 인원과 스펙이 조용히 덮인다 —
+        // 여집합은 그 구간을 *제외한* 것이라 합칠 수도 없다(뜻이 서로 다르다).
+        val config = """{"stats":{"analyses":[{"type":"numeric"}],"binning":{"mode":"custom","ranges":["~160:구간 밖","180~:큰"]}}}"""
+        val s = snapshot(listOf(numberField(config)), listOf("150", "170", "200"))
+        val summary = provider.computeFieldAnalysis(s).numberFieldSummaries.first { it.fieldName == "키" }
+
+        assertEquals("사용자가 지은 구간은 자기 인원을 지킨다", 1, summary.histogram["구간 밖"])
+        assertEquals("여집합은 갈라진 라벨을 받는다", 1, summary.histogram["구간 밖 (2)"])
+        assertEquals("막대 합은 모집단이다", 3, summary.histogram.values.sum())
+        for ((label, count) in summary.histogram) {
+            val listed = provider.getCharactersByFieldValue(s, listOf(10L), summary.matchSpecs.getValue(label))!!
+            assertEquals("[$label]", count, listed.size)
+        }
+    }
+
     // ===== 나눌 구간이 없는 경우 =====
 
     @Test
