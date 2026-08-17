@@ -79,7 +79,14 @@ fun Fragment.showPresetNameDialog(
         button.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val existing = lookup(name)
+                // 조회가 실패하면 **저장하지 않고 말한다** — 여기서 예외가 밖으로 나가면
+                // 이 판이 고치러 온 그 모양(고지 없이 앱이 죽는 것)을 새로 만든다.
+                val existing = try {
+                    lookup(name)
+                } catch (e: Exception) {
+                    if (isAdded) input.showInlineError(getString(R.string.result_preset_save_failed))
+                    return@launch
+                }
                 if (!isAdded) return@launch
                 when (PresetNameConflict.verdict(existing?.id, existing?.isDefault == true, selfId)) {
                     PresetNameConflict.Verdict.FREE,
@@ -101,8 +108,9 @@ fun Fragment.showPresetNameDialog(
                                 },
                                 onRename = {
                                     viewLifecycleOwner.lifecycleScope.launch {
-                                        val alt = suggest(name)
-                                        if (!isAdded) return@launch
+                                        // 제안은 편의라 실패해도 창을 막지 않는다 — 사용자가 직접 적으면 된다.
+                                        val alt = try { suggest(name) } catch (e: Exception) { null }
+                                        if (!isAdded || alt == null) return@launch
                                         input.setText(alt)
                                         input.setSelection(alt.length)
                                         input.requestFocus()
