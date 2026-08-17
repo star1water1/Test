@@ -1422,7 +1422,9 @@ class ExcelImporter(context: Context) {
                 scrollView.addView(container)
 
                 // 카테고리별 분석 결과
-                val hasAnyChange = analysis.categories.any { it.newCount > 0 || it.updateCount > 0 }
+                // (`hasAnyChange`가 여기 있었다 — **아무도 읽지 않는 지역 변수**였다. B-187이
+                //  '비움'을 더하며 그 식을 함께 고치려다 발견했고, 고칠 것이 아니라 없앨 것이었다.
+                //  범주별 '변경 없음' 판정은 아래 블록이 각자 하고 있다.)
                 val totalOnlyInDb = analysis.categories.sumOf { it.onlyInDb.coerceAtLeast(0) }
 
                 for (cat in analysis.categories) {
@@ -1450,7 +1452,19 @@ class ExcelImporter(context: Context) {
                         })
                     }
 
-                    if (cat.newCount == 0 && cat.updateCount == 0 && cat.inBackup > 0) {
+                    // B-187: 비움은 신규도 변경도 아니면서 **값을 지운다** — 따로 말한다.
+                    // '건너뜀'과 같은 방식(0이면 줄 자체가 없다)이라 다른 범주의 화면은 그대로다.
+                    fun addClearedLine() {
+                        if (cat.clearedCount <= 0) return
+                        catLayout.addView(TextView(act).apply {
+                            text = appContext.getString(
+                                com.novelcharacter.app.R.string.restore_preview_cleared, cat.clearedCount)
+                            textSize = 11f
+                            setPadding(dp8, 0, 0, 0)
+                        })
+                    }
+
+                    if (cat.newCount == 0 && cat.updateCount == 0 && cat.clearedCount == 0 && cat.inBackup > 0) {
                         val detailText = TextView(act).apply {
                             text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_no_change) +
                                     "  (${appContext.getString(com.novelcharacter.app.R.string.restore_preview_db_info, cat.existingTotal, cat.onlyInDb.coerceAtLeast(0))})"
@@ -1482,6 +1496,7 @@ class ExcelImporter(context: Context) {
                         }
                         catLayout.addView(dbInfoText)
                     }
+                    addClearedLine()
                     addSkippedLine()
 
                     container.addView(catLayout)

@@ -215,6 +215,8 @@ PAIRS = {
     # 캐릭터 시트만 미리보기가 더 부른다: 동명이인을 CharacterConflict로 **모으는** 것이
     # 미리보기의 일이고(사용자가 고른다), 가져오기는 그 결정을 받아 쓴다.
     'analyzeCharacterSheet':     ('importCharacterRows', {'charactersByName'}),
+    # 필드값 오버플로 시트 (B-187) — 짝과 **같은 사다리**다(코드 우선 → 이름이 유일할 때만).
+    'analyzeCharacterFieldValueSheet': ('importCharacterFieldValues', set()),
 }
 
 spans, i = {}, 0
