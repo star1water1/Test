@@ -4926,7 +4926,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
             // 적용도 가져오기와 **같은 함수**다(규약 R-33) — 이름 충돌 판정까지 같이 본다.
+            // **충돌 판정도 이 파일이 만든 것을 본다**(B-233 콜드 검토): 가져오기 쪽 `getByUniverseAndName`은
+            // 같은 트랜잭션의 직전 insert를 보므로, 이 파일이 방금 만든 이름으로 개명하려 들면
+            // **가져오기는 이름을 지키는데** 미리보기만 DB를 못 봐 '변경'이라 예고한다.
             val rename = group.name != existing.name &&
+                previewCreated.none { it.universeId == group.universeId && it.name == group.name } &&
                 db.gradeSystemDao().getByUniverseAndName(group.universeId, group.name) == null
             val merged = mergeGradeSystem(existing, group.name, group.gradesJson(), rename)
             if (merged != existing) updateCount++ else unchangedCount++
