@@ -252,9 +252,14 @@ class ExportPresentationSpecTest {
         }
     }
 
-    /** 기본 폰트를 고치지 않으면 POI 기본값이 남는다 — 위 시험의 두 자리가 왜 둘인지의 근거. */
+    /**
+     * 위 시험의 자리가 **왜 둘인지**의 근거 — POI 기본값이 정말 `Calibri`이고,
+     * `createFont()`가 기본 폰트의 이름을 **물려주지 않는다**는 것.
+     *
+     * 셀을 만들지 않는다(폰트 객체만 잰다) — 셀까지의 해석은 위 시험이 파일 왕복으로 든다.
+     */
     @Test
-    fun `기본 폰트를 고치지 않으면 셀이 POI 기본값을 쓴다`() {
+    fun `기본 폰트를 고치지 않으면 POI 기본값이 남는다 - 자리가 둘인 근거`() {
         val workbook = ExportWorkbooks.create(streaming = false)
         try {
             // 일부러 applyExportBaseFont를 부르지 않는다

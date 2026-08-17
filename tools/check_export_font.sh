@@ -54,7 +54,15 @@ if [ -z "${name:-}" ]; then
   echo "  ✗ $SPEC 에 EXPORT_FONT_NAME 선언이 없습니다."
   fail=1
 else
-  stray=$(grep -rn "\"$name\"" app/src/main/java/com/novelcharacter/app/ \
+  # **시험 소스도 함께 본다** — 시험이 글꼴 이름을 베껴 적으면, 이름을 바꾸는 날 그 시험이
+  # **옛 글자를 지키는 시험으로 뒤집힌다**(이 저장소가 헤더 접미사에서 겪은 그 모양 —
+  # "시험이 값을 베껴 적지 않고 조립해서 견준다"). 그래서 사본 금지는 main만의 규칙이 아니다.
+  #
+  # `grep -F`인 것은 일부러다 — 글꼴 이름은 사람이 고치는 값이라 언젠가 정규식 특수문자
+  # (`.`·`+` 등)를 품을 수 있고, 그때 이 검사가 **엉뚱한 줄을 잡거나 놓친다.**
+  stray=$(grep -rnF "\"$name\"" \
+            app/src/main/java/com/novelcharacter/app/ \
+            app/src/test/java/com/novelcharacter/app/ \
             | grep -v 'const val EXPORT_FONT_NAME' || true)
   if [ -n "$stray" ]; then
     echo "  ✗ 글꼴 이름을 생문자열로 적은 자리가 있습니다 — 두 벌이 되면 갈립니다."
