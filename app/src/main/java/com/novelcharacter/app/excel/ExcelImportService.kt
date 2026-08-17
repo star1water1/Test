@@ -2877,10 +2877,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 말하는데 가져오기는 태그를 손대지 않았다.
         val c = ImageMetaCols(resolveHeaderColumns(headerRow))
 
-        val remapByBasename = HashMap<String, String>()
-        for ((origPath, newPath) in imagePathRemap) {
-            remapByBasename[java.io.File(origPath).name] = newPath
-        }
+        // 리맵을 접는 것도 가져오기와 **같은 함수**다(R-33 · B-233 콜드 검토). 손으로 지으면
+        // 그 규칙이 갈린다 — 실제로 갈려 있었다: 이쪽은 `HashMap` + last-wins라 **basename이
+        // 겹칠 때 가져오기와 다른 원본을 골랐고, 그나마 순서가 결정적이지도 않았다.**
+        // 단일 소스는 **원경로 사전순 first-wins**로 고른다(복원마다 결과가 흔들리지 않게).
+        // 경고는 버린다 — 분석에는 경고를 낼 자리가 없다(`result = null` 규약과 같다).
+        val remapByBasename = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap).byBasename
         val filesDir = appContext?.filesDir
         // `getByPath`(LIMIT 1)의 자리 — id 오름차순이 그 답의 순서다.
         val metaByPath = ImportLookupIndex<String, com.novelcharacter.app.data.model.ImageMeta>(
