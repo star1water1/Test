@@ -58,14 +58,25 @@ echo "  대상 엔티티:$NAMED_ENTITIES"
 for entity in $NAMED_ENTITIES; do
   for f in "$DAO"/*.kt; do
     [ -f "$f" ] || continue
-    # `@Insert(...)` 다음 줄들 중 첫 fun 선언까지를 한 덩이로 보고 그 안에서 엔티티 이름을 찾는다.
+    # `@Insert(...)`부터 **선언이 닫힐 때까지**를 한 덩이로 모아 그 안에서 엔티티 이름을 찾는다.
+    #
+    # **한 줄만 보면 안 된다** — 여러 줄로 쓴 시그니처가 사각지대가 된다(2026.08.17 콜드 검토가
+    # 실증했다: `suspend fun insert(\n    preset: CharacterListPreset\n): Long`을 심으니 **검사가
+    # 조용히 통과했다**). 이 저장소의 DAO는 지금 전부 한 줄이지만, 그 사실에 기대는 검사는
+    # *지금 위반이 없는 것*과 *아무것도 안 보는 것*이 겉이 같아진다(R-34).
     hits=$(awk -v ent="$entity" '
-      /@Insert/ { ann = $0; pending = 1; next }
-      pending && /fun / {
-        if (index($0, ": " ent) || index($0, "<" ent ">") || index($0, " " ent ")")) {
-          if (ann ~ /REPLACE/) printf "%s:%d: %s | %s\n", FILENAME, NR, ann, $0
+      /@Insert/ { ann = $0; blk = $0; line = NR; pending = 1; next }
+      pending {
+        blk = blk " " $0
+        # 선언이 닫혔는가 — fun 을 만난 뒤 닫는 괄호까지 봤으면 한 덩이가 끝난 것이다.
+        if (blk ~ /fun / && $0 ~ /\)/) {
+          if (index(blk, ": " ent) || index(blk, "<" ent ">") || index(blk, " " ent ")")) {
+            if (ann ~ /REPLACE/) printf "%s:%d: %s\n", FILENAME, line, ann
+          }
+          pending = 0
         }
-        pending = 0
+        # 덩이가 끝나지 않았는데 빈 줄·다음 어노테이션·블록 끝을 만나면 포기한다(무한 누적 방지).
+        else if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*@/ || $0 ~ /^\}/) pending = 0
       }
     ' "$f")
     if [ -n "$hits" ]; then

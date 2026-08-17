@@ -179,6 +179,52 @@ class PresetNameGuardTest {
         assertEquals(3, repo.getPresetCount())
     }
 
+    /**
+     * **ABORT로 바꾸면서 생긴 크래시 경로를 막은 자리다**(2026.08.17 콜드 검토).
+     *
+     * `ensureDefaultPresets`는 ViewModel `init`의 `viewModelScope.launch` 안에서 `try` 없이
+     * 불린다. REPLACE 시절에는 같은 이름의 **사용자 프리셋을 조용히 지우고** 기본 프리셋을
+     * 얹었고, ABORT로 걷자 그 자리가 **예외**가 되어 *전역 검색 탭을 열 때마다 앱이 죽는*
+     * 모양이 됐다(기본 프리셋이 안 서니 가드가 영영 일찍 돌아오지 않아 **매번** 죽는다).
+     * 닿는 길이 있다 — 설정 초기화가 프리셋을 통째로 지우고, 엑셀 가져오기가 `기본` 열이 빈
+     * 파일에서 `isDefault = false`로 행을 들인다.
+     */
+    @Test
+    fun `기본 프리셋 이름을 사용자가 쓰고 있으면 그것만 건너뛴다`() = runBlocking {
+        val dao = FakeSearchDao()
+        val repo = SearchPresetRepository(dao)
+        // 사용자가 기본 프리셋과 같은 이름을 쓰고 있고, 기본 프리셋은 하나도 없는 상태
+        // (설정 초기화 + 엑셀 가져오기가 실제로 만드는 조합이다).
+        val mineId = repo.insertPreset(
+            SearchPreset(name = SearchPresetRepository.DEFAULT_RECENT, query = "내가 짠 것")
+        )
+
+        repo.ensureDefaultPresets()   // 던지면 앱이 죽는 자리다
+
+        // 사용자 것이 그대로다 — 내용도 id도.
+        val mine = repo.getPresetByName(SearchPresetRepository.DEFAULT_RECENT)!!
+        assertEquals(mineId, mine.id)
+        assertEquals("내가 짠 것", mine.query)
+        assertEquals(false, mine.isDefault)
+        // 겹치지 않은 둘은 섰다.
+        assertNotNull(repo.getPresetByName(SearchPresetRepository.DEFAULT_NAME))
+        assertNotNull(repo.getPresetByName(SearchPresetRepository.DEFAULT_TAG))
+        assertEquals(3, repo.getPresetCount())
+    }
+
+    /** 겹치는 것이 없으면 종전 그대로 셋이 선다 — 위 수리가 정상 경로를 좁히지 않았는가. */
+    @Test
+    fun `겹치는 이름이 없으면 기본 프리셋 셋이 그대로 선다`() = runBlocking {
+        val dao = FakeSearchDao()
+        val repo = SearchPresetRepository(dao)
+        repo.insertPreset(SearchPreset(name = "북부 전투", query = "전투"))
+
+        repo.ensureDefaultPresets()
+
+        assertEquals(4, repo.getPresetCount())
+        assertEquals(3, repo.getAllPresetsList().count { it.isDefault })
+    }
+
     @Test
     fun `검색 프리셋의 덮어쓰기는 id와 기본 여부를 지킨다`() = runBlocking {
         val dao = FakeSearchDao()
