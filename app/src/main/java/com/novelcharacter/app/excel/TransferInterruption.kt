@@ -7,8 +7,8 @@ package com.novelcharacter.app.excel
  *
  * B-56은 *"작업은 화면이 사라져도 계속 돈다"*를 전제로 결과 고지를 화면 밖으로 보냈다.
  * **그 전제가 코드에서 성립하지 않았다** — `ExcelTransferController`의 `onDestroy`가
- * `ExcelExporter.cancel()`·`ExcelImporter.cleanup()`으로 **진행 중인 작업을 통째로 취소**한다.
- * 프래그먼트 파괴는 화면 전환·회전으로 늘 일어나므로, 그때마다 전송이 끊긴다.
+ * `ExcelExporter.cancel()`·`ExcelImporter.cleanup()`(당시 이름)으로 **진행 중인 작업을 통째로
+ * 취소했다.** 프래그먼트 파괴는 화면 전환·회전으로 늘 일어나므로, 그때마다 전송이 끊겼다.
  *
  * 더 나쁜 것은 **그 끊김이 무고지**였다는 점이다. 취소된 코루틴 안에서는
  * `withContext(Dispatchers.Main)`이 그 자리에서 던지므로, 고지를 하려던 catch 블록이

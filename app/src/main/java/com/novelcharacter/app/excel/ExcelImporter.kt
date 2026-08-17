@@ -328,8 +328,10 @@ class ExcelImporter(context: Context) {
      * 호출자가 파일 수명을 관리해야 함 (가져오기 완료 후 삭제 가능).
      */
     fun importFromLocalFile(file: File) {
+        // **구간은 `launch` 밖에서 세운다** (B-228) — 안에서 세우면 코루틴이 실제로 돌기 전의
+        // 짧은 틈에 화면이 사라졌을 때 [TransferInterruption]이 *"돌던 것이 없다"*로 읽어 침묵한다.
+        beginPhase(TransferPhase.IMPORT_INTAKE)
         ensureActiveScope().launch {
-            beginPhase(TransferPhase.IMPORT_INTAKE)
             try {
                 routeImport(file)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -352,6 +354,8 @@ class ExcelImporter(context: Context) {
     }
 
     private fun importFromUri(uri: Uri) {
+        // 구간은 `launch` 밖에서 세운다 — 근거는 [importFromLocalFile]의 같은 줄에 있다(B-228).
+        beginPhase(TransferPhase.IMPORT_INTAKE)
         ensureActiveScope().launch {
             // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
             // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
@@ -361,7 +365,6 @@ class ExcelImporter(context: Context) {
             // 수백 MB 복사가 끝까지 갈 수 있다.
             val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
             var progress: TaskProgressDialog.Handle? = null
-            beginPhase(TransferPhase.IMPORT_INTAKE)
             try {
                 // 파일 크기 체크 (외부 파일 전체 상한 — 이미지 포함 ZIP 왕복을 보장하는 수준으로 넉넉히)
                 val fileSize = appContext.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
