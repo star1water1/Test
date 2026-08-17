@@ -65,14 +65,16 @@ mkdir -p "$WORK"
 
 # ── 1. 프로브 전용 스텁 (저장소 밖에 만든다 — 실제 빌드와 섞이지 않게) ──
 #
-# **2026.08.17(B-190)에 여섯이 늘었다 — `ExcelExporter.kt`가 목록에 있으면서도 실제로는
+# **2026.08.17(B-190)에 크게 늘었다 — `ExcelExporter.kt`가 목록에 있으면서도 실제로는
 # 타입 검사되지 않던 것을 고치기 위해서다.** 그 파일은 머리 두 줄이
 # `appContext = context.applicationContext` · `db = AppDatabase.getDatabase(appContext)`인데
 # **둘 다 미해석이었다**(`Context`에 `applicationContext`가 없었고, 아래 `AppDatabase` 스텁에
 # `getDatabase`가 없었다). 수신 타입이 풀리지 않으면 그 아래 식의 진짜 타입 오류는
 # **접혀서 안 보이는 것이 아니라 애초에 발행되지 않는다** — 즉 목록에 넣어 두고도 안 보는 자리였다.
-# 실측: 그 파일 **732 → 28**, 프로브 전체 **1969 → 1190**. 스텁 여섯 중 위 둘이 거의 전부를 정한다
-# (나머지 넷 `Intent`·`Uri`·`Toast`·`FileProvider`만 넣으면 732 → 656으로 거의 안 준다).
+# **가장 큰 몫은 `androidx.room.withTransaction`이었다**(`setup_jvm_env.sh`) — 없으면 그 블록 안이
+# suspend 문맥이 아니게 되어 `ExcelImportService.kt` 하나에서 소음이 55건 발행된다.
+# **스텁 수도 감소량도 여기 적지 않는다** — 이 저장소가 반복해 물린 자리다(값을 적으면 낡는다).
+# 이 판의 실측과 남은 갈래는 `docs/remaining_work_2026-07.md` 4장 `B-190`·`B-251`이 든다.
 #
 # ⚠️ **스텁은 진짜의 모양을 *비추기만* 한다 — 여기서 표면을 늘리면 프로브가 거짓 초록을 낸다.**
 # 진짜에 없는 멤버·헐거운 시그니처를 적으면 **로컬은 초록이고 CI가 빨간불**이다
@@ -198,8 +200,8 @@ EOF
   grep -o 'fun getDatabase(context: Context): AppDatabase' \
     "$REPO/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt" \
     | head -1 \
-    | sed 's|Context|android.content.Context|; s|$|: AppDatabase = throw UnsupportedOperationException("프로브 전용")|' \
-    | sed 's|): AppDatabase: AppDatabase|): AppDatabase|'
+    | sed 's|: Context)|: android.content.Context)|' \
+    | sed 's|$| = throw UnsupportedOperationException("프로브 전용")|'
   echo "    }"
   echo "}"
 } > "$WORK/AppDatabaseProbe.kt"
@@ -226,7 +228,7 @@ EOF
     grep -hoE '<(string|color|dimen|bool|integer|fraction|style|attr|plurals|string-array|integer-array|array)[[:space:]]+name="[^"]+"' \
       "$REPO"/app/src/main/res/values*/*.xml 2>/dev/null \
       | sed -E 's|<([a-z-]+)[[:space:]]+name="([^"]+)"|\1 \2|' \
-      | sed -E 's|^(string-array\|integer-array) |array |'
+      | sed -E 's#^(string-array|integer-array) #array #'
     # <item name="X" type="Y"/> — ids.xml이 이 꼴이다
     grep -hoE '<item[[:space:]]+name="[^"]+"[[:space:]]+type="[^"]+"' \
       "$REPO"/app/src/main/res/values*/*.xml 2>/dev/null \
@@ -291,6 +293,27 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/NovelCharacterAppProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
 } | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
+
+# ── 2-b. R 생성기가 *도중에* 실패했는가 (2026.08.17 · B-190 콜드 검토) ──
+#
+# **이 부류는 아래 스텁 가드에 안 걸린다.** 생성이 중간에 끊기면 나오는 것은 *깨진 스텁*이 아니라
+# **일부만 든 멀쩡한 스텁**이고, 그러면 오류가 스텁이 아니라 **앱 파일의 미해석**으로 나타난다.
+# 게다가 base와 cur이 같은 스크립트를 쓰므로 **양쪽이 똑같이 줄어 `comm -13`도 침묵한다** —
+# 즉 *프로브가 눈을 잃은 것*이 아무 데서도 안 보인다.
+# 실제로 그렇게 물렸다: `sed -E 's|…(a\|b)…|'`에서 `|`가 구분자와 겹쳐 그 단계가 죽었고,
+# **values 계열 자원이 통째로 빠진 채** 오류만 780 → 859로 늘었다(스텁 가드는 조용했다).
+#
+# 그래서 **대상 코드가 실제로 부르는 자원 종류가 전부 생성됐는지**를 본다. 종류를 손으로 적지
+# 않는 것이 요점이다 — 적으면 새 종류가 들어올 때 낡는다.
+MISSING=""
+for kind in $(grep -ohE '\bR\.[a-z]+\.' $(grep -v "^$WORK/\|^$TOOLS/" "$WORK/files.txt") \
+                | sed -E 's|R\.([a-z]+)\.|\1|' | sort -u); do
+  grep -q "object $kind {" "$WORK/RProbe.kt" || MISSING="$MISSING $kind"
+done
+if [ -n "$MISSING" ]; then
+  echo "⚠️  R 스텁에 없는 자원 종류:$MISSING — 생성이 도중에 실패했다. 이 산출을 믿지 말 것." >&2
+  exit 1
+fi
 
 # ── 3. 컴파일 ──
 #
