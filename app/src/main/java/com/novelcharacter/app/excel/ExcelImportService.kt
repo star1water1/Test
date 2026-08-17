@@ -3604,9 +3604,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         nameBankNaturalKeys.load(sortedNames)
         nameBankCodes.load(sortedNames)
         nameBankByName.load(sortedNames)
-        // 미리보기 신규 항목의 임시 id — DB에 쓰지 않으므로 음수 연번이면 실존 id와도,
-        // 서로와도 겹치지 않는다(전부 0이면 put이 앞 신규의 키를 끊는다 — 성질 ③의 역효과).
-        var previewNewId = -1L
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -3629,7 +3626,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     usedByCharacterId = resolveNameBankUsedBy(r, null, "이름 은행 행 $i", result = null),
                     createdAt = r.createdAt ?: now,
                     code = r.code.ifBlank { "" }
-                ).copy(id = previewNewId--)
+                ).copy(id = previewIds.mint())
                 nameBankNaturalKeys.put(created)
                 nameBankCodes.put(created)
                 nameBankByName.put(created)

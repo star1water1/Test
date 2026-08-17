@@ -320,6 +320,12 @@ basename이 겹치는 파일이 있으면 **미리보기가 다른 원본을 골
 (`Universe(...)` · `Character(...)` · `CharacterRelationship(...)`). 규약이 세운 것은
 `read*Row` + `merge*` **쌍**이고, **짓기에 해당하는 짝이 없었다.**
 
+- **세는 법을 적는다(수는 적지 않는다):** `new*From` 종수는
+  `grep -c 'private fun new[A-Z][A-Za-z]*From'`, 등재 자리는 `analyze*` 안의 `previewIds.mint()`다.
+  둘이 하나 차이인 것은 **값 라이브러리만 `FieldValueSheetMapper.mergeRow`가 그 짝을 겸하기** 때문이고,
+  이미지는 *등재*가 아니라 **접기**를 옮긴 자리라 어느 쪽에도 세지 않는다.
+- **id 공간은 분석 하나에 하나다** — 이름 은행이 자기 규칙(`previewNewId`)을 따로 들고 있어 함께 접었다.
+  *규약을 적어 놓고 코드에 둘을 두면 그 규약은 지켜지지 않는다.*
 - `new*From(r, …)` — 가져오기가 insert 하는 값을 짓는다. `import*`는 insert 자리에서,
   `analyze*`는 `newCount++` 뒤에서 **같은 함수**를 부른다.
 - 미리보기는 그 결과에 임시 id를 매겨(`PreviewIdMinter`) 그 행이 매칭에 쓰는 색인·맵에 등재한다.
