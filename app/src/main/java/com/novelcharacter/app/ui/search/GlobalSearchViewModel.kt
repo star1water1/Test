@@ -13,6 +13,7 @@ import androidx.room.InvalidationTracker
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.Event
 import com.novelcharacter.app.util.FieldFilterHelper
+import com.novelcharacter.app.util.PresetNameConflict
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -55,6 +56,10 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     /** 프리셋 저장 완료 — 담긴 값은 *권고 개수를 넘었는가*다(B-75). 저장 자체는 언제나 성공한다. */
     private val _presetSavedEvent = MutableLiveData<Event<Boolean>?>()
     val presetSavedEvent: LiveData<Event<Boolean>?> = _presetSavedEvent
+
+    /** 저장·편집이 실패했다 — 화면이 그 사실을 말한다(B-191: 종전에는 예외가 앱을 죽였다). */
+    private val _presetSaveFailedEvent = MutableLiveData<Event<String>?>()
+    val presetSaveFailedEvent: LiveData<Event<String>?> = _presetSaveFailedEvent
 
     private val db = app.database
 
@@ -334,12 +339,57 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
      * 뷰가 사라질 때 **코루틴이 함께 취소돼 프리셋이 저장되지 않는다** — 사용자는 누르고 아무
      * 오류도 못 봤으므로 저장된 줄 안다(조용한 유실). 고지만 뷰 수명을 타면 된다.
      */
-    fun saveCurrentAsPreset(name: String) {
+    /**
+     * [query]를 밖에서 받는 것은 **누른 순간의 값**을 저장하기 위해서다(R-27) — 겹침 판정이
+     * 비동기라, 판정을 기다린 뒤 화면을 다시 읽으면 그사이 바뀐 검색어를 읽는다.
+     */
+    fun saveCurrentAsPreset(name: String, query: String = _searchQuery.value ?: "") {
         viewModelScope.launch {
-            searchPresetRepository.insertPreset(
-                SearchPreset(
+            try {
+                searchPresetRepository.insertPreset(
+                    SearchPreset(
+                        name = name,
+                        query = query,
+                        filtersJson = getFiltersJson(),
+                        sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
+                    )
+                )
+                _presetSavedEvent.value = Event(searchPresetRepository.exceedsRecommended())
+            } catch (e: Exception) {
+                // 이름이 겹치면 유니크 색인이 막는다(REPLACE가 아니다 — R-60). 말하고 끝낸다.
+                android.util.Log.e("GlobalSearchViewModel", "Failed to save preset", e)
+                _presetSaveFailedEvent.value = Event(name)
+            }
+        }
+    }
+
+    /**
+     * 이 이름을 이미 쓰고 있는 프리셋 — 저장·편집 창이 겹침을 묻는 근거다(B-191).
+     * `name`이 유니크 색인이라 색인 한 번의 조회이고, 전량 적재를 하지 않는다.
+     */
+    suspend fun presetNamed(name: String): SearchPreset? =
+        searchPresetRepository.getPresetByName(name)
+
+    /** '다른 이름으로 저장'이 채워 줄 이름 — 이름 목록만 뜬다(필터 JSON 본문을 싣지 않는다). */
+    suspend fun suggestPresetName(name: String): String =
+        PresetNameConflict.suggestAlternative(name, searchPresetRepository.getAllNames())
+
+    /**
+     * 이름이 겹쳐 '덮어쓰기'를 고른 자리 — **id를 지킨 채** 내용만 바꾼다(확정 15장 1번 ⓐ).
+     * 지우고-다시-넣으면 그 프리셋을 가리키던 참조가 끊긴다.
+     */
+    fun overwritePresetById(id: Long, name: String, query: String) {
+        viewModelScope.launch {
+            val existing = searchPresetRepository.getPresetById(id)
+            if (existing == null) {
+                // 그새 사라졌다면 덮어쓸 것이 없다 — 새로 저장하는 것이 사용자의 뜻에 가깝다.
+                saveCurrentAsPreset(name, query)
+                return@launch
+            }
+            searchPresetRepository.updatePreset(
+                existing.copy(
                     name = name,
-                    query = _searchQuery.value ?: "",
+                    query = query,
                     filtersJson = getFiltersJson(),
                     sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
                 )
@@ -354,9 +404,20 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    /**
+     * **실패를 삼키지 않는다**(B-191). 종전에는 `try`가 없어, 이름이 겹치면 유니크 색인이
+     * 던지는 예외가 코루틴 밖으로 나가 **앱이 죽었다** — 창은 이미 *"저장했습니다"*를
+     * 띄운 뒤였다. 겹침은 이제 창이 먼저 가르지만, 뚫고 온 실패도 말은 하고 끝나야 한다.
+     */
     fun updatePreset(preset: SearchPreset) {
         viewModelScope.launch {
-            searchPresetRepository.updatePreset(preset)
+            try {
+                searchPresetRepository.updatePreset(preset)
+                _presetSavedEvent.value = Event(searchPresetRepository.exceedsRecommended())
+            } catch (e: Exception) {
+                android.util.Log.e("GlobalSearchViewModel", "Failed to update preset", e)
+                _presetSaveFailedEvent.value = Event(preset.name)
+            }
         }
     }
 

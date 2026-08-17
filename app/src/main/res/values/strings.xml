@@ -1070,6 +1070,13 @@
     <string name="preset_limit_advisory">저장했습니다 — 프리셋이 권장 개수(%d개)를 넘었습니다. 안 쓰는 프리셋은 길게 눌러 지울 수 있습니다</string>
     <!-- 검색·캐릭터 목록 두 화면의 프리셋 이름 창이 함께 쓴다(B-76 이행 — R-27 인라인 오류). -->
     <string name="preset_name_required">프리셋 이름을 입력하세요</string>
+    <!-- 이름이 겹쳤을 때 — 네 자리(두 화면 × 저장·개명)가 함께 쓴다(B-191, 확정 15장 1번). -->
+    <string name="preset_name_conflict_title">같은 이름의 프리셋이 있습니다</string>
+    <string name="preset_name_conflict_message">\"%s\" 프리셋이 이미 있습니다. 덮어쓰면 그 프리셋에 저장해 둔 조합이 지금 상태로 바뀝니다.</string>
+    <string name="preset_name_conflict_overwrite">덮어쓰기</string>
+    <string name="preset_name_conflict_rename">다른 이름으로 저장</string>
+    <string name="preset_name_taken">같은 이름의 프리셋이 이미 있습니다</string>
+    <string name="preset_name_taken_by_default">기본 프리셋이 쓰는 이름입니다. 다른 이름을 입력하세요</string>
     <string name="universe_name_required">세계관 이름을 입력하세요</string>
     <string name="event_description_required">사건 설명을 입력하세요</string>
     <string name="search_preset_default_cannot_delete">기본 프리셋은 삭제할 수 없습니다</string>

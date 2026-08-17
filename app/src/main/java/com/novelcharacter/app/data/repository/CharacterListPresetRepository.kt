@@ -19,6 +19,12 @@ class CharacterListPresetRepository(private val dao: CharacterListPresetDao) {
 
     suspend fun getPresetCount(): Int = dao.getPresetCount()
 
+    /** 이 이름을 이미 쓰고 있는 프리셋 — 저장 전 겹침 판정(B-191). 없으면 null. */
+    suspend fun getPresetByName(name: String): CharacterListPreset? = dao.getPresetByName(name)
+
+    /** '다른 이름으로 저장'이 제안 이름을 지을 때 쓰는 이름 전수. */
+    suspend fun getAllNames(): List<String> = dao.getAllNames()
+
     /**
      * 저장한다 — **개수로 막지 않는다**(B-75, 확정 19번 ㄱ1: 권고로 통일).
      * 권고 초과는 [exceedsRecommended]로 물어 호출부가 고지한다.

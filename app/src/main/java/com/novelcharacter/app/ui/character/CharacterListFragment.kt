@@ -35,8 +35,8 @@ import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.OpResult
-import com.novelcharacter.app.util.setValidatedPositiveButton
-import com.novelcharacter.app.util.showInlineError
+import com.novelcharacter.app.ui.common.PresetRef
+import com.novelcharacter.app.ui.common.showPresetNameDialog
 
 class CharacterListFragment : Fragment() {
 
@@ -847,28 +847,22 @@ class CharacterListFragment : Fragment() {
         })
     }
 
+    /**
+     * 저장 — 이름이 겹치면 묻는다(B-191, 확정 15장 1번). 창·판정·덮어쓰기 갈래는
+     * [showPresetNameDialog] 한 벌이 든다(검색 프리셋과 같은 자리).
+     */
     private fun showSavePresetDialog() {
-        val ctx = requireContext()
-        val input = android.widget.EditText(ctx).apply { hint = getString(R.string.character_preset_name_hint) }
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        // R-27: 종전에는 이름을 비운 채 누르면 **아무 말도 없이** 창이 닫혔다(B-76).
-        val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.character_preset_save)
-            .setView(container)
-            .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create()
-        dialog.setValidatedPositiveButton {
-            val name = input.text.toString().trim()
-            if (name.isEmpty()) {
-                input.showInlineError(getString(R.string.preset_name_required))
-                return@setValidatedPositiveButton false
+        showPresetNameDialog(
+            titleRes = R.string.character_preset_save,
+            hintRes = R.string.character_preset_name_hint,
+            allowOverwrite = true,
+            lookup = { name -> viewModel.presetNamed(name)?.let { PresetRef(it.id, it.isDefault) } },
+            suggest = { name -> viewModel.suggestPresetName(name) },
+            onConfirm = { name, overwriteId ->
+                if (overwriteId == null) viewModel.saveAsPreset(name)
+                else viewModel.overwritePresetById(overwriteId, name)
             }
-            viewModel.saveAsPreset(name)
-            true
-        }
-        dialog.show()
+        )
     }
 
     private fun showPresetOptionsDialog(preset: CharacterListPreset) {
@@ -897,31 +891,21 @@ class CharacterListFragment : Fragment() {
             .show()
     }
 
+    /**
+     * 개명 — 겹침은 **덮어쓰기를 제안하지 않는다.** 이름만 바꾸려던 조작의 결과로 다른
+     * 프리셋이 없어지는 것은 과하고, 그 자리에서 이름을 고치는 것이 더 짧다(B-191).
+     */
     private fun showRenamePresetDialog(preset: CharacterListPreset) {
-        val ctx = requireContext()
-        val input = android.widget.EditText(ctx).apply {
-            hint = getString(R.string.character_preset_name_hint)
-            setText(preset.name)
-        }
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        // R-27: 같은 부류다 — 비운 채 누르면 이름이 사라진 것처럼 보이고 창은 닫혔다(B-76).
-        val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.preset_edit_name)
-            .setView(container)
-            .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create()
-        dialog.setValidatedPositiveButton {
-            val name = input.text.toString().trim()
-            if (name.isEmpty()) {
-                input.showInlineError(getString(R.string.preset_name_required))
-                return@setValidatedPositiveButton false
-            }
-            viewModel.renamePreset(preset, name)
-            true
-        }
-        dialog.show()
+        showPresetNameDialog(
+            titleRes = R.string.preset_edit_name,
+            hintRes = R.string.character_preset_name_hint,
+            initialName = preset.name,
+            selfId = preset.id,
+            allowOverwrite = false,
+            lookup = { name -> viewModel.presetNamed(name)?.let { PresetRef(it.id, it.isDefault) } },
+            suggest = { name -> viewModel.suggestPresetName(name) },
+            onConfirm = { name, _ -> viewModel.renamePreset(preset, name) }
+        )
     }
 
     /** 필터/정렬 바는 일반 탐색 모드에서만 노출(배치/비교/재정렬 중 숨김). */
