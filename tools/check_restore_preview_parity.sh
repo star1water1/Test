@@ -83,9 +83,16 @@ while i < len(lines):
     spans.append((m.group(1), i, j))
     i = j + 1
 
-# 규약이 세운 이름꼴: 한 행을 읽는 자리는 `read*Row`다.
-# **양쪽이 같은 리더를 부르지 않으면** 비교식을 아무리 맞춰도 한 겹 아래에서 갈린다(설계 1-1).
+# 규약이 세운 이름꼴 **둘**: 한 행을 읽는 자리는 `read*Row`, 한 행이 **만들** 항목을 짓는
+# 자리는 `new*From`이다(B-233 — R-33의 셋째 짝).
+#
+# **왜 같은 그물인가:** 갈리는 방식이 같다. 읽기가 한쪽만 있으면 *같은 행을 다르게 읽고*,
+# 짓기가 한쪽만 있으면 *같은 행이 만들 것을 다르게 짓는다* — 후자의 결과가 B-233이었다.
+# 미리보기는 매칭이 빈손일 때 가져오기가 넣을 그 항목을 지어 색인에 등재해야 같은 파일의
+# 뒷 행이 첫 행의 쓰기를 본다. 미리보기가 **제 손으로** 지으면 그것이 바로 R-33이 없애려던
+# *손으로 짠 두 벌*이다.
 readers = sorted(set(re.findall(r'\bfun (read[A-Z][A-Za-z0-9_]*Row)\s*\(', '\n'.join(lines))))
+readers += sorted(set(re.findall(r'\bfun (new[A-Z][A-Za-z0-9_]*From)\s*\(', '\n'.join(lines))))
 bad = []
 for r in readers:
     called = {'analyze': False, 'import': False}
@@ -426,7 +433,7 @@ if [ "${count:-0}" -gt 0 ]; then
 fi
 
 if [ "${pcount:-0}" -gt 0 ]; then
-  echo "  ✗ 읽기(read*Row)를 한쪽에서만 부릅니다 (${pcount}건)"
+  echo "  ✗ 읽기(read*Row)·짓기(new*From)를 한쪽에서만 부릅니다 (${pcount}건)"
   echo
   printf '%s\n' "$pbody" | while IFS=$'\t' read -r fn only; do
     [ -z "${fn:-}" ] && continue
@@ -436,6 +443,10 @@ if [ "${pcount:-0}" -gt 0 ]; then
   echo "  비교식만 맞추고 리더를 각자 두면 같은 결함이 한 겹 아래에서 되살아납니다."
   echo "  가져오기와 미리보기가 **같은 read*Row**를 부르게 하세요."
   echo "             설계: docs/restore_preview_parity_2026-08.md 1-1"
+  echo
+  echo "  new*From이라면: 미리보기도 매칭이 빈손일 때 그 함수로 항목을 지어 색인에 등재해야"
+  echo "  같은 파일의 뒷 행이 첫 행의 쓰기를 봅니다(B-233 — 안 하면 '신규 2'라 예고하고"
+  echo "  가져오기는 '신규 1 + 갱신 1'을 합니다)."
   exit 1
 fi
 
@@ -501,7 +512,7 @@ if [ "${ncount:-0}" -gt 0 ]; then
 fi
 
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
-echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
+echo "  ✓ read*Row + new*From ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다 (B-233)"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
 echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
