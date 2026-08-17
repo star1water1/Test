@@ -73,6 +73,45 @@ class PreviewCreationsTest {
         assertNull("이 갈래가 살아 있으면 B-233의 증상이 다른 원인으로 되살아난다", byName.first("아르카디아"))
     }
 
+    /**
+     * **한 색인에 발급기가 둘 붙으면 안 된다** — B-233 콜드 검토가 잡은 실제 사고다.
+     *
+     * 캐릭터 시트 분석은 *세계관 시트마다 한 번 + 미분류 시트에 한 번* 불리는데 색인은 그
+     * 바깥에 하나뿐이다. 발급기를 그 함수의 지역 변수로 두면 **둘째 시트의 첫 신규가 첫째
+     * 시트의 첫 신규와 같은 id를 받아**, 첫째 시트가 만든 캐릭터가 색인에서 사라진다 —
+     * 이 기능이 고치려던 증상이 **수리 자체 때문에** 되살아나는 모양이다.
+     *
+     * 아래 두 시험이 그 갈림을 나란히 잡는다: 발급기가 둘이면 죽고, 하나면 산다.
+     */
+    @Test
+    fun `발급기가 둘이면 서로의 신규를 색인에서 끊는다 — 수명이 색인과 같아야 하는 이유`() {
+        val byName = ImportLookupIndex<String, Universe>(idOf = { it.id }, keyOf = { it.name })
+
+        // 시트마다 발급기를 새로 만드는 모양(첫 구현이 그랬다).
+        val sheet1Ids = PreviewIdMinter()
+        val sheet2Ids = PreviewIdMinter()
+        byName.put(universe(sheet1Ids.mint(), "아르카디아"))
+        byName.put(universe(sheet2Ids.mint(), "베르단트"))
+
+        assertNull(
+            "둘째 시트의 첫 신규가 첫째 시트의 첫 신규와 같은 id를 받아 그 키를 끊는다",
+            byName.first("아르카디아")
+        )
+    }
+
+    @Test
+    fun `발급기가 하나면 시트를 넘어도 서로를 끊지 않는다`() {
+        val byName = ImportLookupIndex<String, Universe>(idOf = { it.id }, keyOf = { it.name })
+
+        // 분석 하나에 id 공간 하나 — 색인을 비우는 자리에서 함께 새로 만든다.
+        val ids = PreviewIdMinter()
+        byName.put(universe(ids.mint(), "아르카디아"))
+        byName.put(universe(ids.mint(), "베르단트"))
+
+        assertNotNull(byName.first("아르카디아"))
+        assertNotNull(byName.first("베르단트"))
+    }
+
     @Test
     fun `코드 칸이 빈 신규는 코드 색인에 통을 만들지 않는다`() {
         // 가져오기는 그 자리에 임의 코드를 발급하고 미리보기는 그 값을 알 수 없다. 자리표시자를

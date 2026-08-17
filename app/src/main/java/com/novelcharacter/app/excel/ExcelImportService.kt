@@ -439,6 +439,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         idOf = { it.id }, keyOf = { it.id }
     )
     private var universeIndexLoaded = false
+
+    /**
+     * 복원 미리보기가 *이 파일이 앞서 만든 항목*에 매기는 임시 id 발급기 (B-233).
+     *
+     * **수명이 색인과 같아야 한다 — 그래서 여기 있다.** 위 색인들은 서비스에 살고 `analyzeAll`이
+     * 시작할 때 비운다. 발급기를 시트 함수의 지역 변수로 두면 **한 색인에 발급기가 여럿 붙을 수
+     * 있고**, 그 순간 서로 다른 함수가 같은 음수를 내준다 — `ImportLookupIndex.put`은 같은 id를
+     * *같은 행이 옮겨 온 것*으로 보아 **먼저 등재된 쪽의 키를 끊는다.**
+     *
+     * **가상의 위험이 아니다.** 이 판의 첫 구현이 정확히 그랬다: `analyzeCharacterSheet`는
+     * **세계관 시트마다 한 번 + 미분류 시트에 한 번** 불리는데 발급기가 그 안에 있어,
+     * 둘째 시트의 첫 신규가 첫째 시트의 첫 신규와 같은 id(-2)를 받았다. 그러면 **첫째 시트가 만든
+     * 캐릭터가 색인에서 사라져**, 뒤 시트(상태 변화·관계·이름 은행)가 그 캐릭터를 못 찾는다 —
+     * 이 판이 없애려던 바로 그 증상이 **이 판의 수리 자체 때문에** 되살아나는 모양이다.
+     *
+     * 처방은 규칙을 더 적는 것이 아니라 **자리를 옮기는 것**이다: 분석 하나에 id 공간 하나이면
+     * 겹칠 방법이 없다. `Long` 하나라 [ImportLookupIndex]의 '메모리' 절이 걱정하는 부류도 아니다.
+     */
+    private var previewIds = PreviewIdMinter()
+
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
     private val matchedRelationshipChangeIds = mutableSetOf<Long>()
@@ -2559,6 +2579,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetEventIndex()
         resetNovelIndex()
         resetUniverseIndex()
+        // 임시 id 공간도 **색인과 같은 자리에서** 비운다 — 수명이 갈리면 한 색인에 두 id 공간이
+        // 붙는다(위 [previewIds] KDoc의 실제 사고). 여기 있으면 그 갈림이 생길 수 없다.
+        previewIds = PreviewIdMinter()
         val totalRows = countTotalRows(workbook)
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
@@ -2611,7 +2634,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236).
         val axes = DuelAxisIndexes(allAxes)
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2671,7 +2693,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 쪽이 B-210에서 겪은 것과 같은 자리다). 코드 열에 인덱스가 없어 그 하나하나가 풀스캔이다.
         val matches = DuelMatchIndexes(db.duelMatchDao().getAllList())
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2771,7 +2792,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val entriesByField = HashMap<Long, MutableList<com.novelcharacter.app.data.model.FieldValueEntry>>()
         for (e in existingEntries) entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2813,7 +2833,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 세력 소속 분석이 해석 불가 행을 세지 않는 것과 같은 처분이다.
             val siblings = entriesByField.getOrPut(fd.id) { mutableListOf() }
             val existing = FieldValueSheetMapper.match(siblings, imported)
-            val effect = FieldValueSheetMapper.effectOf(existing, fd.id, imported, siblings)
+            // **한 번만 병합한다** — 판정과 등재가 같은 결과를 쓴다(두 번 부르면 형제 전부의
+            // 별칭으로 집합을 짓는 O(형제) 작업이 그대로 두 배가 된다).
+            val outcome = FieldValueSheetMapper.mergeRow(existing, fd.id, imported, siblings)
+            val effect = FieldValueSheetMapper.effectOf(existing, outcome)
             when (effect) {
                 FieldValueSheetMapper.RowEffect.NEW -> newCount++
                 FieldValueSheetMapper.RowEffect.UPDATED -> updateCount++
@@ -2824,7 +2847,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 쓰지 않으므로 목록도 그대로다. 값을 만드는 것도 [FieldValueSheetMapper.mergeRow]
             // 하나라 미리보기가 제 손으로 짓지 않는다 — 그것이 R-33 셋째 짝의 자리다.
             if (effect != FieldValueSheetMapper.RowEffect.SKIPPED) {
-                FieldValueSheetMapper.mergeRow(existing, fd.id, imported, siblings).entry?.let { merged ->
+                outcome.entry?.let { merged ->
                     if (existing == null) siblings.add(merged.copy(id = previewIds.mint()))
                     else {
                         siblings.removeAll { it.id == merged.id }
@@ -2871,16 +2894,38 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 .mapValues { (_, v) -> v.toSet() }
             else emptyMap()
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
-        for (i in 1..sheet.lastRowNum) {
-            val row = sheet.getRow(i) ?: continue
+        // **행을 경로로 접는 것도 가져오기와 같은 함수다**(R-33 · B-233 콜드 검토).
+        // `plan`은 같은 경로를 든 행을 **하나로 접고**(마지막 행 우선 + 고지) 해석되지 않은
+        // 파일명을 따로 모은다. 종전에는 미리보기만 행마다 세어, 같은 그림을 두 번 적은 파일에서
+        // **가져오기가 한 번 하는 일을 '신규 2'로 예고했다** — 이 범주는 등재의 census 밖이었다
+        // (그 census는 `existing == null → newCount++` 모양을 셌는데 이 자리의 갈림은
+        // *등재하지 않는 것*이 아니라 **접지 않는 것**이라 모양이 다르다).
+        val sheetRows = (1..sheet.lastRowNum).mapNotNull { i ->
+            val row = sheet.getRow(i) ?: return@mapNotNull null
+            val fileName = getCellString(row, c.file)
+            if (fileName.isBlank()) null else i to fileName
+        }
+        val plan = ImageMetaRowResolver.plan(sheetRows, remapByBasename) { fileName ->
+            filesDir?.let { dir -> java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath }
+        }
+
+        // **`inBackup`은 접기 전이다** — 그 값의 뜻이 *파일이 이 시트에 적어 둔 행*이라
+        // 사용자가 파일의 행 수와 곧장 견줄 수 있어야 한다(B-237이 못박은 정의).
+        // **실행되지 않는 행은 '건너뜀'으로 센다** — 접혀 밀린 앞 행(마지막 행 우선)과
+        // 파일을 찾지 못한 행 둘 다다. 그래야 `inBackup = new + update + unchanged + skipped`가
+        // 성립한다. 종전에는 미해석 행이 `inBackup`에만 들고 **어디에도 안 세어져** 그 항등식이
+        // 깨져 있었고, 검사 ⑥이 `inBackup++` **앞의** 가드만 보므로 그 사각에 있던 자리다.
+        val inBackup = sheetRows.size
+        val skippedCount = sheetRows.size - plan.rows.size
+        var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (planned in plan.rows) {
+            // `plan.rows`의 `rowIndex`는 **마지막 행**이다(접기가 마지막 행 우선이므로) —
+            // 그래서 여기서 읽는 셀이 가져오기가 실제로 적용할 값과 같다.
+            // 아래 `?: continue`는 방어일 뿐 걸리지 않는다: `sheetRows`가 이미
+            // `sheet.getRow(i)`가 null이 아닌 행만 골라 만든 것이다(가져오기 쪽과 같은 모양).
+            val row = sheet.getRow(planned.rowIndex) ?: continue
             val r = readImageMetaRow(row, c, result = null)
-            if (r.fileName.isBlank()) continue
-            inBackup++
-            val path = remapByBasename[r.fileName]
-                ?: filesDir?.let { dir -> java.io.File(dir, r.fileName).takeIf { it.exists() }?.absolutePath }
-                ?: continue  // 파일 미해석 행은 new/update에 계상하지 않음 (가져오기에서 스킵 경고)
-            val existing = metaByPath.first(path)
+            val existing = metaByPath.first(planned.path)
             if (existing == null) { newCount++; continue }
             val current = ImageMetaState(
                 tags = if (r.hasTagCol) tagsByImage[existing.id].orEmpty() else emptySet(),
@@ -2890,7 +2935,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (mergeImageMetaState(current, r) != current) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeUniverses(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -2905,7 +2950,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = UniverseCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2960,7 +3004,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = NovelCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3009,7 +3052,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 행마다 `getFieldByKey`·`getGlobalFieldByKey`를 묻던 자리 (B-236).
         val fieldDefs = FieldDefinitionIndexes(allFieldDefs)
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3105,7 +3147,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = CharacterCols(resolveHeaderColumns(headerRow, reservedHeaders = CHARACTER_FIXED_HEADERS))
         val now = System.currentTimeMillis()
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var conflictCount = 0
         val conflicts = mutableListOf<CharacterConflict>()
 
@@ -3228,7 +3269,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
         val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -3295,7 +3335,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 키 모양과 싣는 순서가 갈리면
         // 같은 `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
         val changes = StateChangeIndexes(allChanges)
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -3374,7 +3413,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 전부를 다시 읽어(`getRelationshipsForCharacterList`) 여기서 쌍을 걸렀다.
         val rels = RelationshipIndexes(allRelationships)
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3471,7 +3509,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val parentRels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
         val relChanges = RelationshipChangeIndexes(allRelChanges)
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3622,7 +3659,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236).
         val factions = FactionIdentityIndexes(allFactions)
 
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3792,7 +3828,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
         val now = System.currentTimeMillis()
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -3855,7 +3890,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             existingTemplates.map { PresetTemplateMatcher.Candidate(it.id, it.name, it.createdAt) }
         )
         val byId = existingTemplates.associateByTo(mutableMapOf()) { it.id }
-        val previewIds = PreviewIdMinter()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -4602,7 +4636,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이 시트가 앞서 만든 템플릿 — 해석이 DAO 직접 조회라 색인이 없어 여기에 겹쳐 둔다(B-233).
         // 가져오기 쪽은 같은 트랜잭션의 직전 insert가 그대로 보이므로 이 겹이 그것에 해당한다.
         val previewCreated = mutableListOf<DefaultFieldTemplate>()
-        val previewIds = PreviewIdMinter()
         val now = System.currentTimeMillis()
         var total = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skipped = 0
         for (i in 1..sheet.lastRowNum) {
@@ -4866,7 +4899,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         // 이 시트가 앞서 만든 체계 — 해석이 DAO 직접 조회라 색인이 없어 여기에 겹쳐 둔다(B-233).
         val previewCreated = mutableListOf<com.novelcharacter.app.data.model.GradeSystem>()
-        val previewIds = PreviewIdMinter()
         val scan = collectGradeSystemRows(sheet, headerRow, result = null)
         val groups = scan.groups
         // B-102 ⓑ: 세계관 미해석 무리 — '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가
