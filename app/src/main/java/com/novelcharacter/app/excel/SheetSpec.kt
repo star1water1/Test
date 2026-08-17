@@ -444,10 +444,10 @@ fun customFieldColumnWidth(type: FieldType?, multiToken: Boolean): Int = when {
  * 한 셀 안에서 두 글꼴이 섞이는 모양이다. 이름을 못박으면 그 섞임이 없어진다.
  *
  * `맑은 고딕`은 한글 고딕(산세리프)의 사실상 표준이다. **다른 고딕으로 바꾸려면 이 줄 하나만
- * 고치면 된다** — 워크북의 모든 셀이 [ExcelExporter]의 `ExcelStyles` 두 자리를 지나기 때문이다
- * (기본 폰트 하나 + `font()` 헬퍼 하나). 앱 전체에서 폰트·스타일을 만드는 자리가 그 클래스뿐인
- * 것은 `ExportPresentationSpecTest`가 아니라 실측으로 확인했다(`createFont`·`createCellStyle`
- * 전수 검색 — 다른 파일 0건).
+ * 고치면 된다** — 워크북의 모든 셀이 [applyExportBaseFont]와 [createExportFont] 둘 중 하나를
+ * 지나기 때문이다. 앱 전체에서 폰트·스타일을 만드는 자리가 `ExcelExporter.ExcelStyles`
+ * 하나뿐인 것은 실측으로 확인했고(`createFont`·`createCellStyle` 전수 검색 — 다른 파일 0건),
+ * 그 뒤로는 `tools/check_export_font.sh`가 기계로 지킨다(사본이 생기면 빨간불이다).
  *
  * ## 왕복에 관여하지 않는다
  *
