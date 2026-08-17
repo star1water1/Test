@@ -37,6 +37,18 @@ CP="$CP:$SP/gson-$GSON_VER.jar:$SP/junit-4.13.2.jar:$SP/hamcrest-core-1.3.jar"
 CP="$CP:$(excel_cp "$SP"):$SP/kotlinx-coroutines-core-jvm.jar"
 CP="$CP:$SP/kotlinx-coroutines-test-jvm-1.9.0.jar"
 
+# 파일 이름 인코딩 — **한글 시험 이름이 조용히 겹치던 자리다**(2026.08.17, B-191 판이 실측).
+# 컨테이너 기본 로케일은 `POSIX`라 `sun.jnu.encoding`이 ASCII가 되고, 그러면 코틀린이
+# 클래스 파일을 쓸 때 이름의 한글이 **글자마다 `?`로 치환된다.** 같은 클래스 안에 글자 수가
+# 같은 한글 시험 이름이 둘 있으면 **파일 이름이 똑같아져 뒤엣것이 앞엣것을 덮고**, 남은 하나는
+# `NoClassDefFoundError: … (wrong name: …)`로 죽는다. **조용하지는 않다** — 빨간불은 뜬다.
+# 다만 그 빨간불이 가리키는 자리가 **원인과 무관한 시험**이라(겹친 두 이름 중 하나가 임의로
+# 걸린다) 원인을 캐는 데 걸리고, 이름을 한 글자 고치면 사라져 *고쳤다*고 오인하기 쉽다.
+# `C.utf8`은 이 이미지에 있는 유일한 UTF-8 로케일이다(`locale -a`).
+if locale -a 2>/dev/null | grep -qx "C.utf8"; then
+  export LC_ALL=C.utf8
+fi
+
 KOTLINC="java -cp $SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib"
 
 # androidx.room 어노테이션 스텁 (없으면 생성)
@@ -154,6 +166,7 @@ $MAIN/data/dao/CharacterListPresetDao.kt
 $MAIN/data/repository/SearchPresetRepository.kt
 $MAIN/data/repository/CharacterListPresetRepository.kt
 $MAIN/util/PresetLimit.kt
+$MAIN/util/PresetNameConflict.kt
 $MAIN/util/FieldFilterHelper.kt
 $MAIN/data/model/FieldStatsConfig.kt
 $MAIN/data/model/FieldType.kt
@@ -307,6 +320,8 @@ $TEST/data/DuelGradeRefTest.kt
 $TEST/data/SemanticRoleEntityScopeTest.kt
 $TEST/data/RequiredEnforcementTest.kt
 $TEST/data/PresetLimitTest.kt
+$TEST/data/PresetNameGuardTest.kt
+$TEST/util/PresetNameConflictTest.kt
 $TEST/data/FieldConfigEntityTypeTransferTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt

@@ -40,6 +40,8 @@ class PresetLimitTest {
         override fun getAllPresets(): LiveData<List<SearchPreset>> = MutableLiveData()
         override suspend fun getAllPresetsList(): List<SearchPreset> = rows
         override suspend fun getPresetById(id: Long): SearchPreset? = unused()
+        override suspend fun getPresetByName(name: String): SearchPreset? = unused()
+        override suspend fun getAllNames(): List<String> = unused()
         override suspend fun update(preset: SearchPreset) = unused()
         override suspend fun deleteById(id: Long) = unused()
         override suspend fun deleteAllUserPresets() = unused()
@@ -59,6 +61,8 @@ class PresetLimitTest {
         override fun getAllPresets(): LiveData<List<CharacterListPreset>> = MutableLiveData()
         override suspend fun getAllPresetsList(): List<CharacterListPreset> = rows
         override suspend fun getPresetById(id: Long): CharacterListPreset? = unused()
+        override suspend fun getPresetByName(name: String): CharacterListPreset? = unused()
+        override suspend fun getAllNames(): List<String> = unused()
         override suspend fun update(preset: CharacterListPreset) = unused()
         override suspend fun deleteById(id: Long) = unused()
         override suspend fun deleteAll() = unused()

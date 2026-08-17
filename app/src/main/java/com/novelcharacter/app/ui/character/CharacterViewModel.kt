@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.repository.NameBankLinkOutcome
 import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.PresetLimit
+import com.novelcharacter.app.util.PresetNameConflict
 import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.DuelImageBasisPrefs
 import com.novelcharacter.app.util.DuelScoreIndex
@@ -833,6 +834,17 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * 이 이름을 이미 쓰고 있는 프리셋 — 저장·개명 창이 겹침을 묻는 근거다(B-191).
+     * `name`이 유니크 색인이라 색인 한 번의 조회이고, 전량 적재를 하지 않는다.
+     */
+    suspend fun presetNamed(name: String): CharacterListPreset? =
+        app.characterListPresetRepository.getPresetByName(name)
+
+    /** '다른 이름으로 저장'이 채워 줄 이름 — 이름 목록만 뜬다(필터 JSON 본문을 싣지 않는다). */
+    suspend fun suggestPresetName(name: String): String =
+        PresetNameConflict.suggestAlternative(name, app.characterListPresetRepository.getAllNames())
+
     fun applyPreset(preset: CharacterListPreset) {
         val tags = try {
             (gson.fromJson(preset.tagsJson, Array<String>::class.java) ?: arrayOf()).toSet()
@@ -867,6 +879,30 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             )
             reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
                 app.getString(R.string.result_preset_updated, preset.name)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to overwrite preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_update_failed), e.message))
+        }
+    }
+
+    /**
+     * 이름이 겹쳐 '덮어쓰기'를 고른 자리 — **id를 지킨 채** 내용만 바꾼다(확정 15장 1번 ⓐ).
+     * 지우고-다시-넣으면 그 프리셋을 가리키던 참조가 끊긴다.
+     */
+    fun overwritePresetById(id: Long, name: String) = viewModelScope.launch {
+        try {
+            val existing = app.characterListPresetRepository.getPresetById(id)
+            if (existing == null) {
+                // 그새 사라졌다면 덮어쓸 것이 없다 — 새로 저장하는 것이 사용자의 뜻에 가깝다.
+                saveAsPreset(name)
+                return@launch
+            }
+            app.characterListPresetRepository.updatePreset(
+                currentPreset(name).copy(id = existing.id, isDefault = existing.isDefault)
+            )
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_updated, name)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to overwrite preset", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,

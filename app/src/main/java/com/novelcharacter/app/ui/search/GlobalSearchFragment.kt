@@ -7,7 +7,6 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -23,10 +22,10 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.databinding.FragmentGlobalSearchBinding
 import com.novelcharacter.app.ui.adapter.GlobalSearchAdapter
+import com.novelcharacter.app.ui.common.PresetRef
+import com.novelcharacter.app.ui.common.showPresetNameDialog
 import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.navigateSafe
-import com.novelcharacter.app.util.setValidatedPositiveButton
-import com.novelcharacter.app.util.showInlineError
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,6 +110,13 @@ class GlobalSearchFragment : Fragment() {
                 Toast.makeText(ctx, getString(R.string.search_preset_applied, name), Toast.LENGTH_SHORT).show()
             }
         }
+        // 저장·편집이 실패하면 말한다 — 종전에는 예외가 코루틴 밖으로 나가 앱이 죽었다(B-191).
+        viewModel.presetSaveFailedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let {
+                val ctx = context ?: return@observe
+                Toast.makeText(ctx, R.string.result_preset_save_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
         // 저장은 언제나 되고, 권고 개수를 넘었을 때만 그 사실과 정리 경로를 덧붙인다(B-75).
         viewModel.presetSavedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let { overRecommended ->
@@ -160,34 +166,25 @@ class GlobalSearchFragment : Fragment() {
         }
     }
 
+    /**
+     * 저장 — 이름이 겹치면 묻는다(B-191, 확정 15장 1번). 창·판정·덮어쓰기 갈래는
+     * [showPresetNameDialog] 한 벌이 든다(목록 프리셋과 같은 자리).
+     * **검색어는 누른 순간의 값을 넘긴다** — 판정이 비동기라 기다린 뒤 칸을 다시 읽으면
+     * 그사이 바뀐 값을 읽는다(R-27).
+     */
     private fun showSavePresetDialog() {
-        val ctx = context ?: return
-        val editText = EditText(ctx).apply {
-            hint = getString(R.string.search_preset_name_hint)
-            setPadding(48, 32, 48, 16)
-        }
-
-        // R-27: 리스너 없이 만들고 setValidatedPositiveButton으로 검증한다 —
-        // 종전에는 이름을 비운 채 누르면 창이 닫히며 적어 둔 것이 사라졌다(B-76).
-        // 개수 확인은 여기서 하지 않는다 — 한도는 권고이고(B-75), 넘었다는 말은 저장 뒤에 붙는다.
-        val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.search_preset_save_title)
-            .setView(editText)
-            .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create()
-        dialog.setValidatedPositiveButton {
-            val name = editText.text.toString().trim()
-            if (name.isBlank()) {
-                editText.showInlineError(getString(R.string.preset_name_required))
-                false
-            } else {
-                // 저장은 ViewModel 스코프에서 돈다 — 뷰가 사라져도 끝난다. 고지는 이벤트로 온다.
-                viewModel.saveCurrentAsPreset(name)
-                true
+        showPresetNameDialog(
+            titleRes = R.string.search_preset_save_title,
+            hintRes = R.string.search_preset_name_hint,
+            allowOverwrite = true,
+            lookup = { name -> viewModel.presetNamed(name)?.let { PresetRef(it.id, it.isDefault) } },
+            suggest = { name -> viewModel.suggestPresetName(name) },
+            onConfirm = { name, overwriteId ->
+                val query = binding.searchEdit.text.toString()
+                if (overwriteId == null) viewModel.saveCurrentAsPreset(name, query)
+                else viewModel.overwritePresetById(overwriteId, name, query)
             }
-        }
-        dialog.show()
+        )
     }
 
     private fun showPresetOptionsDialog(preset: SearchPreset) {
@@ -215,38 +212,29 @@ class GlobalSearchFragment : Fragment() {
             .show()
     }
 
+    /**
+     * 편집 — 이름을 남의 것으로 바꾸는 것은 **덮어쓰기를 제안하지 않는다**(개명과 같은 이유).
+     * 성공 고지도 저장이 끝난 뒤에 온다 — 종전에는 창을 닫으며 *"저장했습니다"*를 먼저 띄우고,
+     * 겹친 이름이면 그 뒤에 예외가 앱을 죽였다(B-191).
+     */
     private fun showEditPresetDialog(preset: SearchPreset) {
-        val ctx = context ?: return
-        val editText = EditText(ctx).apply {
-            setText(preset.name)
-            hint = getString(R.string.search_preset_name_hint)
-            setPadding(48, 32, 48, 16)
-        }
-
-        // R-27: 종전에는 이름을 비우면 **아무 말도 없이** 창이 닫혔다 — 토스트조차 없어
-        // 사용자가 보기에는 저장된 것과 구별되지 않았다(B-76).
-        val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.search_preset_edit_title)
-            .setView(editText)
-            .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create()
-        dialog.setValidatedPositiveButton {
-            val newName = editText.text.toString().trim()
-            if (newName.isBlank()) {
-                editText.showInlineError(getString(R.string.preset_name_required))
-                return@setValidatedPositiveButton false
+        showPresetNameDialog(
+            titleRes = R.string.search_preset_edit_title,
+            hintRes = R.string.search_preset_name_hint,
+            initialName = preset.name,
+            selfId = preset.id,
+            allowOverwrite = false,
+            lookup = { name -> viewModel.presetNamed(name)?.let { PresetRef(it.id, it.isDefault) } },
+            suggest = { name -> viewModel.suggestPresetName(name) },
+            onConfirm = { name, _ ->
+                viewModel.updatePreset(preset.copy(
+                    name = name,
+                    query = binding.searchEdit.text.toString(),
+                    sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE,
+                    filtersJson = viewModel.getFiltersJson()
+                ))
             }
-            viewModel.updatePreset(preset.copy(
-                name = newName,
-                query = binding.searchEdit.text.toString(),
-                sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE,
-                filtersJson = viewModel.getFiltersJson()
-            ))
-            Toast.makeText(ctx, R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
-            true
-        }
-        dialog.show()
+        )
     }
 
     private fun showDeletePresetConfirm(preset: SearchPreset) {
