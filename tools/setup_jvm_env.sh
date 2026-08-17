@@ -172,6 +172,16 @@ object OnConflictStrategy {
     const val ROLLBACK = 2
     const val FAIL = 4
 }
+
+// `RoomDatabase`와 `withTransaction`은 2026.08.17(B-190)에 들어왔다.
+// **없는 동안 `db.withTransaction { … }`이 미해석이었고, 그러면 그 블록 안이 suspend 문맥이
+// 아니게 된다** — `ExcelImportService.kt` 하나에서 `suspension functions can only be called
+// within coroutine body.`가 55건 발행됐고(그 파일 오류의 8할), 그 소음 아래에서 진짜 오류를
+// 가릴 수 없었다. `withTransaction`의 시그니처는 진짜와 같게 둔다 — **suspend 블록을 받는
+// suspend 확장**이라는 성질이 바로 저 55건을 없애는 그 성질이다.
+abstract class RoomDatabase
+
+suspend fun <R> RoomDatabase.withTransaction(block: suspend () -> R): R = block()
 EOF
 
 cat > "$SP/stub-src/LifecycleStubs.kt" <<'EOF'
