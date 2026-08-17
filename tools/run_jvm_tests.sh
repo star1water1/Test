@@ -108,6 +108,10 @@ $MAIN/util/CompletionRate.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
 $MAIN/util/PreviewCreations.kt
+$MAIN/util/FieldValueCellPlan.kt
+$MAIN/util/FieldValueOverlay.kt
+$MAIN/util/FieldValueScan.kt
+$MAIN/util/CharacterFieldColumns.kt
 $MAIN/backup/BackupChunkFormat.kt
 $MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
@@ -344,6 +348,9 @@ $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt
 $TEST/util/PreviewCreationsTest.kt
+$TEST/util/FieldValueCellPlanTest.kt
+$TEST/util/FieldValueScanTest.kt
+$TEST/util/CharacterFieldColumnsTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
 $TEST/util/CrossTableFoldTest.kt
