@@ -2238,10 +2238,19 @@ class StatsDataProvider {
         val numericKeys = dist.keys.mapNotNull { k ->
             NumericBinning.partValue(k, "", 0)?.let { k to it }
         }
-        val bins = NumericBinning.autoBins(
-            numericKeys.map { it.second },
-            binCount = minOf(NumericBinning.DEFAULT_BIN_COUNT, limit)
-        )
+        // **비수치 키의 자리를 먼저 뺀다** — 구간이 상한을 다 차지하면 그 키들이 표시 밖으로
+        // 밀려 '기타'로 접힌다. 종전 한 줄(`minOf(DEFAULT_BIN_COUNT, limit)`)은 상한이 작을 때
+        // **지배적인 비수치 값을 낮은 건수의 구간들이 밀어냈다** — 실측: 상한 3 · 수치 20종 ·
+        // `미상` 300건이면 구간 셋(7·6·7명)만 보이고 300건이 *"기타 1종"*으로 접혔다.
+        // 접기 전에는 건수순 상위 셋에 `미상`이 들어 **보였으므로 이것은 접기가 만든 퇴행**이고,
+        // 원칙 04(일일이 확인하지 않으면 존재를 알 수 없는 데이터를 만들지 않는다)가 걸린다.
+        val nonNumericKinds = dist.size - numericKeys.size
+        val binCount = minOf(NumericBinning.DEFAULT_BIN_COUNT, limit - nonNumericKinds)
+        // **구간이 둘도 안 되면 접지 않는다.** 한 칸으로 뭉친 '분포'는 아무것도 말하지 않으므로,
+        // 그 상태로 접는 것보다 종전 동작(건수순 상위 N + 기타)이 낫다 — 비수치 키가 상한을
+        // 거의 다 쓰는 필드는 애초에 구간이 답이 아니다.
+        if (binCount < 2) return untouched
+        val bins = NumericBinning.autoBins(numericKeys.map { it.second }, binCount = binCount)
         // 나눌 폭이 없다(고유 수치가 둘 미만이거나 전부 같다) — 접어도 조각이 안 줄어든다.
         if (bins.isEmpty()) return untouched
 

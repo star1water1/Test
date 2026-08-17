@@ -10,6 +10,7 @@ import com.novelcharacter.app.ui.stats.StatsDataProvider
 import com.novelcharacter.app.ui.stats.StatsSnapshot
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.NumericBinning
+import com.novelcharacter.app.util.ValueDistributions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -281,5 +282,32 @@ class NumericDistributionFoldTest {
             r.distributionData!!.getValue(firstLabel), listed.size
         )
         assertTrue("그 라벨을 값으로 가진 캐릭터도 들어 있어야 한다", listed.any { it.fieldValue == firstLabel })
+    }
+
+    @Test
+    fun `지배적인 비수치 값이 구간에 밀려 기타로 접히지 않는다`() {
+        // **콜드 검토 둘째 바퀴가 잡은 자리 — 접기가 만든 퇴행이다.**
+        // 실측(종전): 상한 3 · 수치 20종 · `미상` 300건이면 구간 셋(7·6·7명)만 보이고
+        // **300건이 "기타 1종"으로 접혔다.** 접기 전에는 건수순 상위 셋에 `미상`이 들어 보였다.
+        val values = distinctHeights(20) + List(300) { "미상" }
+        val r = result(distField(limit = 3), values)
+        assertTrue("접기는 여전히 일어난다", r.autoBinned)
+
+        val view = ValueDistributions.view(r.distributionData!!, 3, preserveOrder = r.autoBinned)
+        assertTrue(
+            "지배적인 비수치 값이 표시 안에 있어야 한다",
+            view.shown.any { it.label == "미상" && it.count == 300 }
+        )
+        assertFalse("그것이 '기타'로 접히면 안 된다", view.hiddenLabels.contains("미상"))
+        assertEquals("비수치 자리를 뺐으므로 구간은 둘이다", 2, r.distributionData!!.size - 1)
+    }
+
+    @Test
+    fun `비수치 키가 상한을 거의 다 쓰면 접지 않는다`() {
+        // 구간이 둘도 안 되면 한 칸으로 뭉친 '분포'가 아무것도 말하지 않는다 —
+        // 그 상태로 접는 것보다 종전 동작(건수순 상위 N + 기타)이 낫다.
+        val values = distinctHeights(20) + (0 until 9).map { "값$it" }
+        val r = result(distField(limit = 10), values)
+        assertFalse("구간 하나로는 접지 않는다", r.autoBinned)
     }
 }
