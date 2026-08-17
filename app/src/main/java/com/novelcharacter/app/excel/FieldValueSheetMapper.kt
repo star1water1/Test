@@ -246,8 +246,20 @@ object FieldValueSheetMapper {
         fieldDefId: Long,
         row: ImportedRow,
         siblings: List<FieldValueEntry>
-    ): RowEffect {
-        val outcome = mergeRow(existing, fieldDefId, row, siblings)
+    ): RowEffect = effectOf(existing, mergeRow(existing, fieldDefId, row, siblings))
+
+    /**
+     * 이미 계산한 [mergeRow] 결과에서 같은 판정을 읽는다.
+     *
+     * **판정과 결과를 둘 다 쓰는 호출부를 위한 자리다**(복원 미리보기 — 세고 나서 그 결과를
+     * 형제 목록에 되돌려 놓는다). 위 갈래를 그대로 부르면 **행마다 [mergeRow]가 두 번** 돌고,
+     * 그 안의 [conflictingAliases]는 형제 전부의 별칭으로 집합을 짓는 O(형제) 작업이라
+     * 값이 많은 필드에서 그대로 두 배가 된다.
+     *
+     * **판정 자체는 여기 한 벌뿐이고 위 갈래가 이것을 부른다** — 갈래를 손으로 두 벌 적으면
+     * 그것이 바로 R-33이 없애려던 모양이다.
+     */
+    fun effectOf(existing: FieldValueEntry?, outcome: MergeOutcome): RowEffect {
         val merged = outcome.entry ?: return RowEffect.SKIPPED
         if (outcome.valueTaken) return RowEffect.SKIPPED
         if (existing == null) return RowEffect.NEW
