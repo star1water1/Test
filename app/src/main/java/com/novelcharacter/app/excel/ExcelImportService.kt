@@ -3096,7 +3096,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeIdsByName = if (fieldValues == null) emptyMap() else
             db.universeDao().getAllUniversesList().associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, FieldDefinition.ENTITY_NOVEL)
+        else analysisEntityFieldColumns(headerRow, novelFields)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -3694,13 +3694,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return existing + analysisCreatedFields.filter { it.entityType == entityType }
     }
 
-    /** 미리보기가 `필드:` 열을 모을 때 쓰는 짧은 꼴 — 세계관 이름표도 여기서 뜬다. */
-    private suspend fun analysisEntityFieldColumns(headerRow: Row, entityType: String): List<EventFieldColumn> =
-        collectEntityFieldColumns(
-            headerRow, analysisEntityFields(entityType),
-            db.universeDao().getAllUniversesList().associate { it.id to it.name },
-            result = null, sheetLabel = ""
-        )
+    /**
+     * 미리보기가 `필드:` 열을 모을 때 쓰는 짧은 꼴.
+     * **필드 목록은 받는다** — 부르는 쪽이 같은 목록을 `EntityFieldColumnResolver`에도 넘기므로,
+     * 여기서 다시 뜨면 같은 표를 한 번 더 읽는다.
+     */
+    private suspend fun analysisEntityFieldColumns(
+        headerRow: Row,
+        fields: List<FieldDefinition>
+    ): List<EventFieldColumn> = collectEntityFieldColumns(
+        headerRow, fields,
+        db.universeDao().getAllUniversesList().associate { it.id to it.name },
+        result = null, sheetLabel = ""
+    )
 
     /**
      * 작품·연표 시트 한 행의 `필드:` 열을 센다 — 구역 해석은 가져오기와 **같은 함수**다
@@ -3763,7 +3769,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeIdsByName = if (fieldValues == null) emptyMap() else
             db.universeDao().getAllUniversesList().associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, FieldDefinition.ENTITY_EVENT)
+        else analysisEntityFieldColumns(headerRow, eventFields)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
