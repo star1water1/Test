@@ -20,20 +20,24 @@ object NotificationHelper {
     private const val IMPORT_RESULT_NOTIFICATION_ID = 1003
 
     /**
-     * **가져오기 결과를 앱 밖으로 알린다** (B-56).
+     * **전송(가져오기·내보내기) 결과를 앱 밖으로 알린다** (B-56 · B-228).
      *
-     * 가져오기는 화면이 사라져도 계속 도는데, 끝났을 때 결과 창을 띄울 자리가 없으면
-     * 종전에는 토스트로 물러섰다 — **앱이 앞에 없으면 안드로이드가 그 토스트를 막고**
+     * 끝났을 때 결과 창을 띄울 자리가 없으면 종전에는 토스트로 물러섰다 —
+     * **앱이 앞에 없으면 안드로이드가 그 토스트를 막고**
      * (API 30+), 떠도 사라져 오류·경고 상세가 통째로 없어진다.
      *
      * **이것 하나에 고지를 걸지는 않는다** — 알림 권한은 사용자가 거절할 수 있고(API 33+)
-     * 거절은 정당한 선택이다. 그래서 [com.novelcharacter.app.util.ImportNoticeRelay]가
+     * 거절은 정당한 선택이다. 그래서 [com.novelcharacter.app.util.TransferNoticeRelay]가
      * 같은 고지를 보관해 다음 진입에서 한 번 더 낸다. 둘은 대체재가 아니라 **서로의
      * 사각을 메우는 짝**이다.
      *
+     * **가져오기 전용이 아니다**(B-228) — 화면이 사라져 끊긴 내보내기의 중단 고지도 이 길로
+     * 나간다. 알림 id를 그대로 두는 것은 일부러다: 전송의 종결 고지는 한 번에 하나여야
+     * 하고, 새 것이 옛 것을 덮는 것이 맞다.
+     *
      * @param body 요약 한 줄. 알림은 상세를 담을 자리가 아니므로 상세는 앱 안에서 본다.
      */
-    fun showImportResultNotification(context: Context, title: String, body: String) {
+    fun showTransferResultNotification(context: Context, title: String, body: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {

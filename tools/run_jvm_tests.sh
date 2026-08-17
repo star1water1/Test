@@ -97,6 +97,7 @@ $MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
+$MAIN/excel/TransferInterruption.kt
 $MAIN/excel/SheetResolver.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
@@ -333,6 +334,7 @@ $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
 $TEST/excel/ExcelCellValueTest.kt
+$TEST/excel/TransferInterruptionTest.kt
 $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
