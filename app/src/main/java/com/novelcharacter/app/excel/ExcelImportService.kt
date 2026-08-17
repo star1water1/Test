@@ -3441,8 +3441,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 필드값 미리보기 (B-187) — 캐릭터·작품·사건이 각각 **독립 범주**다 ──
     //
-    // 범주 하나가 **두 경로**에서 값을 받는다: 본 시트의 필드 열(위 `countFieldColumns`·
-    // `countNovelFieldColumns`·`countEventFieldColumns`)과 오버플로 시트(아래 셋). 계수를 한
+    // 범주 하나가 **두 경로**에서 값을 받는다: 본 시트의 필드 열(`analyzeCharacterSheet`의
+    // 지역 `countFieldColumns`와 아래 `countEntityFieldColumns`)과 오버플로 시트(아래 셋). 계수를 한
     // [FieldValueScan]에 모으는 이유는 그 파일의 KDoc이 든다 — 갈라 두면 두 경로가 서로의
     // 쓰기를 못 보고, 같은 파일이 *신규 2*로 세어진다.
     //
