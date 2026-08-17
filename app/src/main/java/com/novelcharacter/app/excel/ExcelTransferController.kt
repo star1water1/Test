@@ -11,7 +11,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.databinding.DialogExportFullBackupBinding
 import com.novelcharacter.app.ui.common.TaskProgressDialog
-import com.novelcharacter.app.util.ImportNoticeRelay
+import com.novelcharacter.app.util.TransferNoticeRelay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,11 +60,15 @@ class ExcelTransferController(private val fragment: Fragment) {
         importer.registerLauncher(fragment)
         fragment.lifecycle.addObserver(object : DefaultLifecycleObserver {
             /**
-             * **화면 없이 끝난 가져오기의 결과를 여기서 갚는다** (B-56).
+             * **화면 없이 끝나거나 끊긴 전송의 결과를 여기서 갚는다** (B-56 · B-228).
              *
-             * 가져오기는 화면이 사라져도 계속 도는데, 끝났을 때 결과 창을 띄울 자리가 없으면
-             * 종전에는 토스트로 물러섰다 — 앱이 앞에 없으면 안드로이드가 그 토스트를 막으므로
+             * 끝났을 때 결과 창을 띄울 자리가 없으면 종전에는 토스트로 물러섰다 —
+             * 앱이 앞에 없으면 안드로이드가 그 토스트를 막으므로
              * (API 30+) **정작 필요한 순간에 아무 일도 안 하는 고지**였다.
+             *
+             * **가져오기만이 아니다**(B-228) — 화면이 사라져 끊긴 내보내기의 중단 고지도
+             * 같은 보관함을 지난다. 같은 일을 하는 두 산출물이 고지 벌을 함께 쓰지 않으면
+             * 한쪽에만 사유가 자라고 다른 쪽은 조용히 낡는다(B-225의 교훈).
              *
              * 알림과 짝이다: 알림은 앱 밖에서 지금 닿고 이쪽은 **알림을 못 봤거나 권한을
              * 거절한 사용자**에게 닿는다. 알림 권한 거절은 정당한 선택이라 그것 하나에 걸면
@@ -74,28 +78,40 @@ class ExcelTransferController(private val fragment: Fragment) {
              * 다시 오는 자리이고, 이 컨트롤러가 곧 그 진입이다.
              */
             override fun onStart(owner: LifecycleOwner) {
-                showPendingImportNotice()
+                showPendingTransferNotice()
             }
 
+            /**
+             * **화면이 사라진다 — 그것은 사용자의 취소가 아니다** (B-228).
+             *
+             * 이 콜백은 회전·화면 전환마다 돈다. 여기서 끊긴 전송이 종전에는 **한 마디도 남기지
+             * 않았다** — 취소된 스코프에서는 고지를 하려던 catch가 `withContext(Main)`에 걸려
+             * 고지에 닿지 못하기 때문이다. 그래서 고지를 **끊는 쪽**으로 옮겼다.
+             *
+             * `isChangingConfigurations`를 함께 넘기는 것은 **같은 화면이 곧 다시 서는지**를
+             * 그 두 함수가 알아야 하기 때문이다 — 회전이면 다음 진입에서 창으로 뜨므로
+             * 알림까지 쌓을 이유가 없다(그것은 고지가 아니라 소음이다).
+             */
             override fun onDestroy(owner: LifecycleOwner) {
-                exporter?.cancel()
+                val screenReturns = fragment.activity?.isChangingConfigurations == true
+                exporter?.cancelForScreenGone(screenReturns)
                 exporter = null
-                importer.cleanup()
+                importer.onScreenGone(screenReturns)
             }
         })
     }
 
     /**
-     * 보관된 고지를 한 번만 낸다 — 읽으면서 지운다([ImportNoticeRelay.consume]).
+     * 보관된 고지를 한 번만 낸다 — 읽으면서 지운다([TransferNoticeRelay.consume]).
      * 남겨 두면 앱을 열 때마다 지난 결과가 다시 떠 **새 결과로 오인**된다.
      *
      * `isAdded`를 먼저 보는 것은 지우기만 하고 못 보여 주는 경우를 막기 위해서다.
      */
-    private fun showPendingImportNotice() {
+    private fun showPendingTransferNotice() {
         if (!fragment.isAdded) return
-        val notice = ImportNoticeRelay.consume(fragment.requireContext().applicationContext) ?: return
+        val notice = TransferNoticeRelay.consume(fragment.requireContext().applicationContext) ?: return
         MaterialAlertDialogBuilder(fragment.requireContext())
-            .setTitle(fragment.getString(R.string.import_notice_pending_title))
+            .setTitle(fragment.getString(R.string.transfer_notice_pending_title))
             .setMessage("${notice.title}\n\n${notice.body}")
             .setPositiveButton(R.string.confirm, null)
             .show()

@@ -3,12 +3,12 @@ package com.novelcharacter.app.util
 import android.content.Context
 
 /**
- * **가져오기 결과가 화면보다 오래 살게 한다** (B-56).
+ * **전송(가져오기·내보내기) 결과가 화면보다 오래 살게 한다** (B-56 · B-228).
  *
  * ## 무엇이 문제였는가
  *
- * `ExcelImporter`는 `WeakReference<Activity>`로 누수를 막지만 **작업은 화면이 사라져도 계속
- * 돈다.** 그러면 결과 창을 띄울 자리가 없어 토스트로 물러섰는데, 토스트는
+ * `ExcelImporter`는 `WeakReference<Activity>`로 누수를 막지만 결과 창을 띄울 자리가
+ * 없을 수 있다. 그러면 토스트로 물러섰는데, 토스트는
  * ⓐ **앱이 앞에 없으면 안드로이드가 아예 막고**(API 30+)
  * ⓑ 떠도 사라지며 **오류·경고 상세가 통째로 없어진다.**
  * 데이터가 조용히 망가지지는 않지만 **고지가 사라진다** — 변수 제어(검증 → 알림 → 교정)에서
@@ -27,7 +27,17 @@ import android.content.Context
  * **새 결과로 오인**한다. 반대로 지우기만 하고 못 보여 주는 경우가 없도록, 지우는 시점은
  * *보여 줄 화면이 확실히 있을 때*다(부르는 쪽이 `isAdded`를 확인한 뒤 부른다).
  */
-object ImportNoticeRelay {
+/**
+ * ## 이름이 `Import`가 아닌 이유 (B-228)
+ *
+ * 2026.08.17까지 이 보관함은 `ImportNoticeRelay`였다. **끊긴 내보내기의 중단 고지도 같은 길로
+ * 보내면서** 이름을 바꿨다 — 같은 일을 하는 두 산출물이 고지 벌을 함께 쓰지 않으면 한쪽에만
+ * 사유가 자라고 다른 쪽은 조용히 낡는다(B-225가 이미 겪은 자리다).
+ *
+ * **저장 키(`import_notice`)는 그대로 둔다** — 앱을 새로 올리기 직전에 보관된 고지가 있으면
+ * 키를 바꾸는 순간 그것이 영영 안 뜬다. 키는 저장 형식이지 이름표가 아니다.
+ */
+object TransferNoticeRelay {
 
     private const val PREFS = "import_notice"
     private const val KEY_TITLE = "title"

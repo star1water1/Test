@@ -45,6 +45,38 @@ class ExcelImporter(context: Context) {
     private var pendingImageFailures = 0
 
     /**
+     * 지금 돌고 있는 구간 (B-228). 도는 것이 없으면 null이다.
+     *
+     * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
+     * 쓰는 쪽은 IO 코루틴이고 읽는 쪽은 메인(`onScreenGone`)이라 `@Volatile`이 필요하다.
+     */
+    @Volatile private var phase: TransferPhase? = null
+
+    /**
+     * 이 회차에서 **사용자가** 취소를 눌렀는가 (B-228).
+     *
+     * 눌렀으면 그 사람은 화면 앞에 있고 토스트가 이미 말한다 — 뒤이어 화면이 사라져도
+     * *"중단되었습니다"*를 또 띄우지 않는다. 회차마다 [beginPhase]가 되돌려 놓는다.
+     */
+    @Volatile private var userCancelled = false
+
+    /** 회차의 시작 — 구간을 세우고 지난 회차의 취소 표식을 지운다. */
+    private fun beginPhase(next: TransferPhase) {
+        phase = next
+        userCancelled = false
+    }
+
+    /** 회차 안의 구간 이동. 취소 표식은 회차 수명이라 건드리지 않는다. */
+    private fun enterPhase(next: TransferPhase) {
+        phase = next
+    }
+
+    /** 사용자가 취소를 눌렀다 — 창의 취소 콜백이 부른다. */
+    private fun markUserCancelled() {
+        userCancelled = true
+    }
+
+    /**
      * **이번 가져오기가 filesDir에 새로 만든** 이미지 파일들 (B-77).
      *
      * `importAll`은 전체가 한 트랜잭션이라 실패하면 DB는 통째로 롤백되는데, 이미지 복사는
@@ -79,11 +111,43 @@ class ExcelImporter(context: Context) {
         return importScope
     }
 
+    /**
+     * **화면이 사라졌다** — 진행 중인 가져오기를 끊고, 끊었다는 사실을 말한다 (B-228).
+     *
+     * 종전 이름은 `cleanup()`이었다. 하는 일이 정리가 아니라 **중단**이라 이름을 바꿨다 —
+     * 정리로 읽히는 동안 *"끊는다"*는 사실이 부르는 쪽에서 보이지 않았고, B-56은 그 반대
+     * (*"작업은 화면이 사라져도 계속 돈다"*)를 전제로 고지 설계를 세웠다.
+     *
+     * **끊기 전에 말하는 것이 이 함수의 요점이다.** 취소된 스코프 안에서는
+     * `withContext(Dispatchers.Main)`이 그 자리에서 던지므로, 고지를 하려던 catch 블록이
+     * **고지에 닿기도 전에 다시 튕겨 나간다**. 그래서 고지는 *끊기는 쪽*이 아니라
+     * **끊는 쪽**이 한다 — 여기는 메인 스레드(프래그먼트 `onDestroy`)이고
+     * [deliverOffscreen]은 suspend가 아니라 취소와 무관하게 끝난다.
+     *
+     * 말할 것이 있는지는 [TransferInterruption]이 정한다(돌던 것이 없거나 · 끊기지 않는
+     * 구간이거나 · 사용자가 방금 취소를 눌렀으면 침묵이 옳다).
+     *
+     * @param screenReturns 같은 화면이 곧 다시 선다(회전 등 구성 변경). 이때는 알림을 띄우지
+     *   않고 보관함에만 남긴다 — 사용자가 바로 앞에 있고 다음 진입에서 창으로 뜨므로,
+     *   알림까지 쌓으면 그것은 고지가 아니라 소음이다.
+     */
     @Synchronized
-    fun cleanup() {
+    fun onScreenGone(screenReturns: Boolean = false) {
+        reportAbort(screenReturns)
         supervisorJob.cancel()
         importLauncher = null
         currentActivityRef = null
+    }
+
+    private fun reportAbort(screenReturns: Boolean) {
+        val kind = TransferInterruption.abortedKind(phase, userCancelled) ?: return
+        phase = null
+        if (kind != TransferKind.IMPORT) return
+        deliverOffscreen(
+            appContext.getString(com.novelcharacter.app.R.string.transfer_import_aborted_title),
+            appContext.getString(com.novelcharacter.app.R.string.transfer_import_aborted_body),
+            notify = !screenReturns
+        )
     }
 
     // ── 작업형 진행도 (규약 R-26 · B-51 완결) ─────────────────────────────────────
@@ -182,12 +246,38 @@ class ExcelImporter(context: Context) {
      * 말하는 알림이 그 소음에 묻힌다.
      */
     private fun deliverTerminal(title: String, body: String) {
-        val act = currentActivityRef?.get()
-        if (act != null && !act.isFinishing && !act.isDestroyed) {
+        if (hasScreen()) {
             Toast.makeText(appContext, body, Toast.LENGTH_LONG).show()
             return
         }
         deliverOffscreen(title, body)
+    }
+
+    /** 지금 무언가를 띄우거나 물을 화면이 있는가. */
+    private fun hasScreen(): Boolean {
+        val act = currentActivityRef?.get()
+        return act != null && !act.isFinishing && !act.isDestroyed
+    }
+
+    /**
+     * 묻는 창이 **답 없이** 닫혔다 — 그 뜻을 여기서 가른다 (B-228).
+     *
+     * 두 가지가 같은 `null`로 돌아온다: *사용자가 취소를 골랐다*와 *물을 화면이 없었다*.
+     * 앞엣것은 사용자가 방금 고른 것이므로 조용히 끝내는 것이 맞고, 뒤엣것은
+     * **파일을 열었는데 아무 일도 일어나지 않은 것**으로 보이므로 반드시 말해야 한다 —
+     * B-56이 월드패키지 충돌에서 `ConflictChoice.NoScreen`으로 이미 정해 둔 처분이고,
+     * 이 판이 그것을 형제 창 셋(옵션 · 미리보기 · 동명이인)에 마저 시행한다.
+     *
+     * **종전에는 셋 다 기본값으로 그냥 진행했다.** 미리보기가 특히 나빴다 — 물을 화면이 없으면
+     * `MERGE`를 골라 **미리보기 없이 통째로 반영**했다. 묻기로 한 것을 못 물었으면 진행하지
+     * 않는 것이 이 저장소의 규약이다(개발 의도 2번).
+     */
+    private fun reportAskUnanswered() {
+        if (hasScreen()) return
+        deliverOffscreen(
+            appContext.getString(com.novelcharacter.app.R.string.transfer_import_aborted_title),
+            appContext.getString(com.novelcharacter.app.R.string.import_no_screen_ask)
+        )
     }
 
     private fun offscreenSummary(summary: String, errorCount: Int, warningCount: Int): String {
@@ -198,13 +288,18 @@ class ExcelImporter(context: Context) {
         return "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱에서 상세를 확인하세요"
     }
 
-    private fun deliverOffscreen(title: String, body: String) {
-        com.novelcharacter.app.util.ImportNoticeRelay.store(appContext, title, body)
+    /**
+     * @param notify 시스템 알림까지 띄우는가. 같은 화면이 곧 다시 서는 경우(회전)에는 false다 —
+     *   보관함이 다음 진입에서 창으로 띄우므로, 알림은 같은 말을 한 번 더 하는 소음이 된다.
+     */
+    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true) {
+        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, body)
+        if (!notify) return
         runCatching {
             com.novelcharacter.app.notification.NotificationHelper
-                .showImportResultNotification(appContext, title, body)
+                .showTransferResultNotification(appContext, title, body)
         }.onFailure {
-            android.util.Log.w("ExcelImporter", "Failed to post import result notification", it)
+            android.util.Log.w("ExcelImporter", "Failed to post transfer result notification", it)
         }
     }
 
@@ -234,8 +329,13 @@ class ExcelImporter(context: Context) {
      */
     fun importFromLocalFile(file: File) {
         ensureActiveScope().launch {
+            beginPhase(TransferPhase.IMPORT_INTAKE)
             try {
                 routeImport(file)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 화면이 사라져 끊겼다 — 고지는 [onScreenGone]이 이미 했다(B-228).
+                // 여기서 '실패'로 적으면 실패가 아닌 것을 실패라 말하게 된다.
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
@@ -245,6 +345,8 @@ class ExcelImporter(context: Context) {
                         appContext.getString(com.novelcharacter.app.R.string.import_failed_retry)
                     )
                 }
+            } finally {
+                phase = null
             }
         }
     }
@@ -259,6 +361,7 @@ class ExcelImporter(context: Context) {
             // 수백 MB 복사가 끝까지 갈 수 있다.
             val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
             var progress: TaskProgressDialog.Handle? = null
+            beginPhase(TransferPhase.IMPORT_INTAKE)
             try {
                 // 파일 크기 체크 (외부 파일 전체 상한 — 이미지 포함 ZIP 왕복을 보장하는 수준으로 넉넉히)
                 val fileSize = appContext.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
@@ -280,7 +383,7 @@ class ExcelImporter(context: Context) {
                         total = scale.totalSteps,
                         stageRes = com.novelcharacter.app.R.string.import_progress_stage_copy,
                         format = TaskProgressDialog.CountFormat.MEGABYTES
-                    ) { cancelled.set(true) }
+                    ) { cancelled.set(true); markUserCancelled() }
 
                     val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(tempFile).use { output ->
@@ -311,6 +414,9 @@ class ExcelImporter(context: Context) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_cancelled, Toast.LENGTH_SHORT).show()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 화면이 사라져 끊겼다 — 고지는 [onScreenGone]이 이미 했다(B-228).
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
@@ -320,6 +426,7 @@ class ExcelImporter(context: Context) {
                     )
                 }
             } finally {
+                phase = null
                 dismissTaskProgress(progress)
             }
         }
@@ -386,6 +493,7 @@ class ExcelImporter(context: Context) {
             }
 
             // 충돌 3분기: 덮어쓰기 / 새로 생성 / 건너뛰기 (검증 → 알림 → 바로잡을 경로)
+            enterPhase(TransferPhase.IMPORT_ASK)
             val conflict = worldPackageImporter.findConflict(contents.universe)
             var overwriteTarget: com.novelcharacter.app.data.model.Universe? = null
             val mode: com.novelcharacter.app.share.WorldPackageImporter.Mode
@@ -425,11 +533,20 @@ class ExcelImporter(context: Context) {
                 }
             }
 
+            // **화면이 사라져도 이 반영은 끝까지 간다** (B-228 · [TransferPhase.IMPORT_APPLY]).
+            // 덮어쓰기 갈래가 특히 그렇다 — 기존 세계관을 먼저 휴지통으로 보내고 새로 세우므로,
+            // 그 사이에서 끊기면 **세계관이 사라진 채로 아무 말도 없는** 상태가 남는다.
+            enterPhase(TransferPhase.IMPORT_APPLY)
             val outcome = try {
-                worldPackageImporter.import(contents, mode, overwriteTarget, extractDir)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    worldPackageImporter.import(contents, mode, overwriteTarget, extractDir)
+                }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "World package import failed", e)
-                withContext(Dispatchers.Main) {
+                // **고지는 취소와 무관하게 나간다** (B-228) — 종전에는 이 `withContext`가
+                // 취소된 스코프에서 그 자리에 던져, 바로 아래에서 *"가장 값진 전환"*이라 적어 둔
+                // 그 고지가 **정작 화면이 사라진 경우에만 통째로 사라졌다.**
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
                     dismissDialogSafely(progressDialog)
                     // 덮어쓰기 경로의 실패는 기존 세계관이 이미 휴지통으로 간 뒤다 —
                     // 그 행방을 알리지 않으면 "실패했는데 세계관이 사라진" 것으로 보인다(R-4)
@@ -449,13 +566,17 @@ class ExcelImporter(context: Context) {
                 return
             }
 
-            withContext(Dispatchers.Main) {
+            // 반영이 끝난 뒤의 결과 고지 — 반영을 끊지 않기로 했으므로 그 결과도 끊기지 않는다(B-228).
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
                 showWorldResultDialog(outcome)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면이 사라져 끊겼다 — 고지는 [onScreenGone]이 이미 했다(B-228).
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("ExcelImporter", "World package import failed", e)
-            withContext(Dispatchers.Main) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
                 deliverTerminal(
                     appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
@@ -716,7 +837,7 @@ class ExcelImporter(context: Context) {
             val extractProgress = progress ?: showTaskProgress(
                 total = entryTotal,
                 stageRes = com.novelcharacter.app.R.string.import_progress_stage_extract
-            ) { extractCancelled.set(true) }.also { ownedProgress = it }
+            ) { extractCancelled.set(true); markUserCancelled() }.also { ownedProgress = it }
             postProgress(extractProgress, 0, entryTotal, extractStage)
 
             // ZIP bomb 방어는 전체 파일 크기가 아니라 해제 지점에서 엔트리별로 수행한다
@@ -812,7 +933,8 @@ class ExcelImporter(context: Context) {
             dismissTaskProgress(extractProgress)
 
             // 가져오기 옵션 다이얼로그 표시
-            val options = showImportOptionsDialog(hasImages) ?: return
+            enterPhase(TransferPhase.IMPORT_ASK)
+            val options = showImportOptionsDialog(hasImages) ?: return reportAskUnanswered()
 
             // 선택 뒤의 두 구간(이미지 되살리기 · 분석)이 공유하는 창.
             //
@@ -834,26 +956,34 @@ class ExcelImporter(context: Context) {
                         total = imagePathRemap.size,
                         stageRes = com.novelcharacter.app.R.string.import_progress_stage_images
                     )
-                    val restored = restoreImages(imageMapJson, extractDir, imagePathRemap) { done, total ->
-                        postProgress(stageProgress, done, total, imagesStage)
-                    }
-                    pendingImageFailures = restored.failedCount
-                    // 가져오기가 실패하면 이 목록만 지운다(B-77) — DB는 한 트랜잭션이라 스스로 롤백된다.
-                    restoredImagePaths = restored.createdPaths
-                    // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
-                    // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
-                    runCatching {
-                        com.novelcharacter.app.util.FolderRoundtripPrefs.recordRenames(
-                            appContext,
-                            imagePathRemap.filter { (old, new) -> old != new }
-                        )
-                    }
-                    // 같은 재매핑을 대결의 이미지 축도 따라간다(R-42). **이 기기에서도 일어난다** —
-                    // 원 파일이 사라진 자리를 복원이 새 UUID로 채우면, 그 경로를 참가자로 담고
-                    // 있던 판이 여기서 옮겨지지 않는 한 통째로 고아가 된다.
-                    runCatching {
-                        com.novelcharacter.app.data.repository.DuelRepository(db)
-                            .followImageRenames(imagePathRemap.filter { (old, new) -> old != new })
+                    // **화면이 사라져도 이 블록은 끝까지 간다** (B-228 · [TransferPhase.IMPORT_RESTORE_IMAGES]).
+                    // 바로 위 주석이 *"이 구간부터는 취소를 제공하지 않는다"*고 선언해 두었는데,
+                    // 프래그먼트 파괴는 그 선언을 무시하고 끊고 있었다 — 사용자에게는 못 끊게 해 놓고
+                    // 화면 파괴로는 끊으면 계약이 한쪽에서만 지켜진다. 여기서 끊기면 filesDir에
+                    // 반쯤 복사된 장과 절반만 옮겨진 이름 별칭·대결 참가자 경로가 남는다.
+                    enterPhase(TransferPhase.IMPORT_RESTORE_IMAGES)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        val restored = restoreImages(imageMapJson, extractDir, imagePathRemap) { done, total ->
+                            postProgress(stageProgress, done, total, imagesStage)
+                        }
+                        pendingImageFailures = restored.failedCount
+                        // 가져오기가 실패하면 이 목록만 지운다(B-77) — DB는 한 트랜잭션이라 스스로 롤백된다.
+                        restoredImagePaths = restored.createdPaths
+                        // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
+                        // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
+                        runCatching {
+                            com.novelcharacter.app.util.FolderRoundtripPrefs.recordRenames(
+                                appContext,
+                                imagePathRemap.filter { (old, new) -> old != new }
+                            )
+                        }
+                        // 같은 재매핑을 대결의 이미지 축도 따라간다(R-42). **이 기기에서도 일어난다** —
+                        // 원 파일이 사라진 자리를 복원이 새 UUID로 채우면, 그 경로를 참가자로 담고
+                        // 있던 판이 여기서 옮겨지지 않는 한 통째로 고아가 된다.
+                        runCatching {
+                            com.novelcharacter.app.data.repository.DuelRepository(db)
+                                .followImageRenames(imagePathRemap.filter { (old, new) -> old != new })
+                        }
                     }
                 }
 
@@ -863,6 +993,12 @@ class ExcelImporter(context: Context) {
                 importFromXlsx(verifiedXlsx, options, stageProgress)
                 importService.imagePathRemap = emptyMap()
             } finally {
+                // **되살려 놓고 반영에 닿지 못한 장은 여기서 지운다** (B-228).
+                // 미리보기·충돌 창에서 사용자가 취소하면 `importFromXlsx`가 **예외 없이** 돌아오므로
+                // B-77의 되돌리기(그쪽은 catch에 있다)가 돌지 않는다 — 그러면 가리킬 행이 없는
+                // 파일이 filesDir에 영영 남았다. 반영까지 간 회차는 그 자리에서 목록을 비우므로
+                // 이 호출이 지울 것이 없다(멱등).
+                rollbackRestoredImages()
                 dismissTaskProgress(stageProgress)
             }
 
@@ -1070,6 +1206,10 @@ class ExcelImporter(context: Context) {
         var lastDonePhase = ""
         var lastDoneRows = 0
 
+        // **여는 것부터 분석 구간이다** (B-228). `openImportSource`는 대형 파일에서 오래 걸리는데
+        // 구간을 그 뒤에 세우면, 그동안 화면이 사라져도 [TransferInterruption]이 *"돌던 것이
+        // 없다"*로 읽어 침묵한다 — 이 판이 없애려는 그 침묵이 바로 여기 남는다.
+        enterPhase(TransferPhase.IMPORT_ANALYZE)
         try {
             org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01)
             // 압축비(setMinInflateRatio)로 zip-bomb를 막고, 엔트리 크기 상한은 POI 허용 최댓값까지 열어
@@ -1095,7 +1235,8 @@ class ExcelImporter(context: Context) {
             }
             val analyzeWindow = stageProgress
 
-            // Phase 2: 백업 내용 분석
+            // Phase 2: 백업 내용 분석. 읽기만 하므로 화면이 사라지면 끊는다(끊어도 바뀐 것이 없다 —
+            // 구간은 이 함수 머리에서 이미 세웠다).
             val analysis = importService.analyzeAll(workbook, options) { p ->
                 postProgress(
                     analyzeWindow, p.processedRows, p.totalRows,
@@ -1111,7 +1252,9 @@ class ExcelImporter(context: Context) {
             stageProgress = null
 
             // Phase 3: 미리보기 + 전략 선택 다이얼로그
-            val (strategy, deleteOpts) = showRestorePreviewDialog(analysis) ?: return
+            enterPhase(TransferPhase.IMPORT_ASK)
+            val (strategy, deleteOpts) = showRestorePreviewDialog(analysis)
+                ?: return reportAskUnanswered()
             val effectiveOptions = if (deleteOpts.hasAny) options.copy(deleteOptions = deleteOpts) else options
 
             // Phase 3.5: 동명이인 충돌 해결 다이얼로그
@@ -1119,7 +1262,8 @@ class ExcelImporter(context: Context) {
             val resolvedConflicts: Map<String, CharacterConflict> = if (
                 strategy != ImportStrategy.OVERWRITE && analysis.characterConflicts.isNotEmpty()
             ) {
-                showConflictResolutionDialog(analysis.characterConflicts) ?: return
+                showConflictResolutionDialog(analysis.characterConflicts)
+                    ?: return reportAskUnanswered()
             } else {
                 emptyMap()
             }
@@ -1129,38 +1273,53 @@ class ExcelImporter(context: Context) {
             // **이 구간은 취소를 제공하지 않는다.** 전략(덮어쓰기·병합)이 여러 표에 걸쳐 반영되므로
             // 중간에 끊으면 반쯤 덮인 DB가 남는다 — 항목 단위로 완결되지 않는 작업이라
             // R-26이 취소를 요구하지 않는 자리다(반쪽 상태 금지가 우선한다).
-            val applyStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_apply)
-            stageProgress = showTaskProgress(
-                total = 0,
-                stageRes = com.novelcharacter.app.R.string.import_progress_stage_apply
-            )
-            val applyWindow = stageProgress
-
-            // 진행 콜백이 이미 시트 이름과 행 수를 나르므로 따로 세지 않는다 — 따로 세면 갈린다.
-            val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { p ->
-                lastDonePhase = p.currentPhase
-                lastDoneRows = p.processedRows
-                postProgress(
-                    applyWindow, p.processedRows, p.totalRows,
-                    appContext.getString(
-                        com.novelcharacter.app.R.string.import_progress_stage_detail,
-                        applyStage, p.currentPhase
-                    )
+            //
+            // **화면 파괴도 이 구간을 끊지 못한다** (B-228 · [TransferPhase.IMPORT_APPLY]).
+            // 종전에는 바로 위 문장이 사용자에게만 걸려 있었다 — 취소 버튼은 없는데
+            // 프래그먼트 파괴(회전 포함)는 `cleanup()`으로 통째로 끊었다. 트랜잭션이 롤백해 주어
+            // DB가 반쯤 덮이지는 않았지만, **사용자는 몇 분을 기다린 반영을 회전 한 번에 잃고
+            // 그 사실조차 듣지 못했다.** 지금은 끝까지 가고, 화면이 없으면 결과를
+            // [showResultDialog]가 알림·보관함으로 보낸다(B-56).
+            enterPhase(TransferPhase.IMPORT_APPLY)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val applyStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_apply)
+                stageProgress = showTaskProgress(
+                    total = 0,
+                    stageRes = com.novelcharacter.app.R.string.import_progress_stage_apply
                 )
-            }
+                val applyWindow = stageProgress
 
-            if (pendingImageFailures > 0) {
-                result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
-                pendingImageFailures = 0
-            }
-            // 여기까지 왔으면 트랜잭션이 커밋됐다 — 되살린 이미지는 이제 가리킬 행이 있다.
-            restoredImagePaths = emptyList()
+                // 진행 콜백이 이미 시트 이름과 행 수를 나르므로 따로 세지 않는다 — 따로 세면 갈린다.
+                val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { p ->
+                    lastDonePhase = p.currentPhase
+                    lastDoneRows = p.processedRows
+                    postProgress(
+                        applyWindow, p.processedRows, p.totalRows,
+                        appContext.getString(
+                            com.novelcharacter.app.R.string.import_progress_stage_detail,
+                            applyStage, p.currentPhase
+                        )
+                    )
+                }
 
-            val message = buildResultMessage(result)
-            withContext(Dispatchers.Main) {
-                stageProgress?.dismiss()
-                showResultDialog(result, message)
+                if (pendingImageFailures > 0) {
+                    result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
+                    pendingImageFailures = 0
+                }
+                // 여기까지 왔으면 트랜잭션이 커밋됐다 — 되살린 이미지는 이제 가리킬 행이 있다.
+                restoredImagePaths = emptyList()
+
+                val message = buildResultMessage(result)
+                withContext(Dispatchers.Main) {
+                    stageProgress?.dismiss()
+                    showResultDialog(result, message)
+                }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면이 사라져 끊겼다 — **실패가 아니다.** 고지는 [onScreenGone]이 이미 했다(B-228).
+            // 되살린 이미지만 걷고 그대로 던져 스코프를 정직하게 닫는다(삼키면 취소가 완료로 보인다).
+            rollbackRestoredImages()
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("ExcelImporter", "Import failed", e)
             rollbackRestoredImages()
@@ -1200,18 +1359,25 @@ class ExcelImporter(context: Context) {
 
     // ── 복원 미리보기 + 전략 선택 다이얼로그 ──
 
-    /** @return Pair(strategy, deleteOptions) or null if cancelled */
+    /**
+     * @return Pair(strategy, deleteOptions). null이면 **묻지 못했다**(사용자 취소이거나 화면이 없다) —
+     *   부르는 쪽이 [reportAskUnanswered]로 그 뜻을 가른다(B-228).
+     *
+     * **종전에는 화면이 없으면 `MERGE`를 골라 그대로 반영했다.** 미리보기를 건너뛴 채
+     * 백업 전체가 병합되는 자리라, 이 판이 셋 중 가장 급하게 고친 곳이다.
+     */
     private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): Pair<ImportStrategy, DeleteOptions>? {
         val activity = currentActivityRef?.get()
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-            return Pair(ImportStrategy.MERGE, DeleteOptions())
+            return null
         }
 
         return withContext(Dispatchers.Main) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val act = currentActivityRef?.get()
                 if (act == null || act.isFinishing || act.isDestroyed) {
-                    cont.resume(Pair(ImportStrategy.MERGE, DeleteOptions()), null)
+                    // 위에서 살아 있었는데 메인으로 건너오는 사이 사라졌다 — 같은 처분이다.
+                    cont.resume(null, null)
                     return@suspendCancellableCoroutine
                 }
 
@@ -1439,12 +1605,14 @@ class ExcelImporter(context: Context) {
 
     // ── 동명이인 충돌 해결 다이얼로그 ──
 
+    /** @return null이면 **묻지 못했다** — 부르는 쪽이 [reportAskUnanswered]로 그 뜻을 가른다(B-228). */
     private suspend fun showConflictResolutionDialog(
         conflicts: List<CharacterConflict>
     ): Map<String, CharacterConflict>? {
         val activity = currentActivityRef?.get()
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-            return conflicts.associateBy { "${it.sheetName}:${it.excelRowIndex}" }
+            // 물을 화면이 없다 — 동명이인의 처분을 대신 정해 주지 않는다(B-228).
+            return null
         }
 
         // 사전에 소설 제목 및 세계관 이름 로드 (IO 스레드)
@@ -1467,7 +1635,8 @@ class ExcelImporter(context: Context) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val act = currentActivityRef?.get()
                 if (act == null || act.isFinishing || act.isDestroyed) {
-                    cont.resume(conflicts.associateBy { "${it.sheetName}:${it.excelRowIndex}" }, null)
+                    // 위에서 살아 있었는데 메인으로 건너오는 사이 사라졌다 — 같은 처분이다.
+                    cont.resume(null, null)
                     return@suspendCancellableCoroutine
                 }
 
@@ -1641,10 +1810,12 @@ class ExcelImporter(context: Context) {
 
     // ── 가져오기 옵션 다이얼로그 ──
 
+    /** @return null이면 **묻지 못했다** — 부르는 쪽이 [reportAskUnanswered]로 그 뜻을 가른다(B-228). */
     private suspend fun showImportOptionsDialog(hasImages: Boolean): ExportOptions? {
         val activity = currentActivityRef?.get()
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-            return ExportOptions()
+            // 물을 화면이 없다 — 기본값으로 대신 정해 주지 않는다(B-228).
+            return null
         }
 
         return withContext(Dispatchers.Main) {

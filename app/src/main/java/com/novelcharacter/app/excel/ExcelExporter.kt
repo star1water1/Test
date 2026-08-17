@@ -53,6 +53,23 @@ class ExcelExporter(context: Context) {
     @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
     private val isExporting = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /**
+     * 지금 돌고 있는 구간 (B-228). 도는 것이 없으면 null이다.
+     *
+     * 내보내기는 구간이 하나다([TransferPhase.EXPORT_BUILD]) — 산출물을 다 만들어도
+     * 건네려면(공유 시트·SAF) 화면이 있어야 하므로, 화면이 없으면 끝까지 만들 이유가 없다.
+     */
+    @Volatile private var phase: TransferPhase? = null
+
+    /**
+     * 이 회차의 진행·취소 창구 (B-228).
+     *
+     * **사용자가 취소를 눌렀는지**를 여기서 읽는다 — 취소 버튼이 세우는 그 플래그를
+     * 싱크가 이미 들고 있으므로 따로 배선하지 않는다. 눌렀으면 토스트가 이미 말했고,
+     * 뒤이어 화면이 사라져도 *"중단되었습니다"*를 또 띄우지 않는다.
+     */
+    @Volatile private var activeProgress: ExportProgressSink? = null
+
     @Synchronized
     private fun ensureActiveScope(): CoroutineScope {
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
@@ -204,6 +221,8 @@ class ExcelExporter(context: Context) {
         onFileReady: ((File, String) -> Unit)? = null
     ) {
         if (!isExporting.compareAndSet(false, true)) return
+        phase = TransferPhase.EXPORT_BUILD
+        activeProgress = progress
         ensureActiveScope().launch {
             if (onFinished == null) {
                 withContext(Dispatchers.Main) {
@@ -305,11 +324,19 @@ class ExcelExporter(context: Context) {
                 // 취소는 실패가 아니다 — 반쪽 파일만 지우고 사실대로 한 줄 알린다.
                 // (반쪽을 건네면 그 파일로 복원할 때 조용히 유실된다 — R-26 후단)
                 orphanFile?.delete()
+                // **이력이 토스트보다 먼저다** (B-228). 종전에는 순서가 반대라, 스코프가 취소된
+                // 상태에서는 `withContext`가 그 자리에 던져 **아래 이력 기록에 닿지 못했다** —
+                // 화면이 사라진 회차만 이력에서 통째로 빠졌고, 그러면 나중에 되짚을 자리가 없다.
+                logExportResult(OpResult.success(OpResult.CAT_EXCEL,
+                    appContext.getString(R.string.result_excel_export_cancelled)))
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_cancelled), Toast.LENGTH_SHORT).show()
                 }
-                logExportResult(OpResult.success(OpResult.CAT_EXCEL,
-                    appContext.getString(R.string.result_excel_export_cancelled)))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 화면이 사라져 끊겼다 — **실패가 아니다.** 고지·이력은 [cancelForScreenGone]이
+                // 이미 남겼다(B-228). 여기서 아래 갈래로 흘려보내면 *"내보내기 실패"*가 이력에 남는다.
+                orphanFile?.delete()
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 orphanFile?.delete()
@@ -325,15 +352,18 @@ class ExcelExporter(context: Context) {
                 } else {
                     appContext.getString(R.string.export_failed_retry)
                 }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
-                }
+                // 이력이 먼저다 — 위 취소 갈래와 같은 이유다(B-228).
                 logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
                     appContext.getString(R.string.result_excel_export_failed),
                     listOfNotNull(if (outOfSpace) message else null, e.message).joinToString("\n").ifBlank { null }))
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+                }
             } finally {
                 // 임시 파일까지 함께 놓는다 — 남으면 그 크기가 백업 한 판 분량이다([ExportWorkbooks.release]).
                 try { ExportWorkbooks.release(workbook) } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
+                phase = null
+                activeProgress = null
                 isExporting.set(false)
                 if (onFinished != null) {
                     // 스코프 취소(화면 이탈) 중에도 다이얼로그 해제는 보장한다
@@ -343,36 +373,51 @@ class ExcelExporter(context: Context) {
         }
     }
 
+    /**
+     * 사용자가 고른 자리(SAF)에 산출물을 옮겨 쓴다.
+     *
+     * **이 쓰기는 화면이 사라져도 끊기지 않는다** (B-228 · [TransferPhase.EXPORT_SAVE]).
+     * 목적지는 **사용자가 고른 실제 파일**이라, 중간에 끊기면 그 자리에 **반쪽 파일이
+     * 멀쩡한 이름으로 남는다** — 나중에 그것으로 복원하면 조용히 유실된다(R-26 후단이
+     * 금지하는 바로 그 모양이고, 만들다 만 임시 파일과 달리 **앱이 지울 수도 없는 자리**다).
+     * 옮겨 쓰기는 유한한 작업이므로 끝까지 가는 편이 언제나 낫다.
+     */
     fun writeToUri(uri: Uri, sourceFile: File) {
+        phase = TransferPhase.EXPORT_SAVE
         ensureActiveScope().launch {
             try {
-                val outputStream = appContext.contentResolver.openOutputStream(uri)
-                if (outputStream == null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    val outputStream = appContext.contentResolver.openOutputStream(uri)
+                    if (outputStream == null) {
+                        logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
+                            appContext.getString(R.string.result_excel_save_failed)))
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
+                        }
+                        return@withContext
+                    }
+                    outputStream.use { out ->
+                        sourceFile.inputStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                    sourceFile.delete()
+                    // 이력이 토스트보다 먼저다 (B-228) — 화면이 사라진 회차만 이력에서 빠지면 안 된다.
+                    logExportResult(OpResult.success(OpResult.CAT_EXCEL,
+                        appContext.getString(R.string.result_excel_saved)))
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
-                    }
-                    logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
-                        appContext.getString(R.string.result_excel_save_failed)))
-                    return@launch
-                }
-                outputStream.use { out ->
-                    sourceFile.inputStream().use { input ->
-                        input.copyTo(out)
+                        Toast.makeText(appContext, appContext.getString(R.string.export_save_success), Toast.LENGTH_SHORT).show()
                     }
                 }
-                sourceFile.delete()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_save_success), Toast.LENGTH_SHORT).show()
-                }
-                logExportResult(OpResult.success(OpResult.CAT_EXCEL,
-                    appContext.getString(R.string.result_excel_saved)))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Save to URI failed", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
-                }
                 logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
                     appContext.getString(R.string.result_excel_save_failed), e.message))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                phase = null
             }
         }
     }
@@ -382,8 +427,56 @@ class ExcelExporter(context: Context) {
         (appContext as? NovelCharacterApp)?.operationLogRepository?.logAsync(result)
     }
 
+    /**
+     * 조용히 끊는다 — 부르는 쪽이 **곧바로 같은 일을 다시 시작**하는 경우에만 쓴다
+     * (같은 화면에서 내보내기를 다시 누른 자리). 화면이 사라져 끊는 것은
+     * [cancelForScreenGone]이다 — 그쪽은 말을 남긴다.
+     */
     @Synchronized
     fun cancel() {
+        supervisorJob.cancel()
+    }
+
+    /**
+     * **화면이 사라졌다** — 진행 중인 내보내기를 끊고, 끊었다는 사실을 말한다 (B-228).
+     *
+     * 종전에는 이 자리가 [cancel] 하나였고 아무 말도 남지 않았다. 취소된 스코프 안에서는
+     * `withContext(Dispatchers.Main)`이 그 자리에서 던지므로 **catch가 고지에도 이력에도
+     * 닿지 못했다** — 몇 분짜리 백업이 회전 한 번에 사라지고 작업 이력에도 한 줄이 없었다.
+     * 그래서 고지는 *끊기는 쪽*이 아니라 **끊는 쪽**이 한다.
+     *
+     * 말할 것이 있는지는 [TransferInterruption]이 정한다. 특히 **사용자가 방금 취소를
+     * 눌렀으면 말하지 않는다** — 그 고지는 토스트가 이미 했고, 여기서 또 하면 취소 한 번에
+     * 고지가 두 번 뜬다. 눌렸는지는 진행 창구가 들고 있는 그 플래그를 그대로 읽는다.
+     *
+     * @param screenReturns 같은 화면이 곧 다시 선다(회전 등 구성 변경) — 알림은 띄우지 않고
+     *   보관함에만 남긴다.
+     */
+    @Synchronized
+    fun cancelForScreenGone(screenReturns: Boolean) {
+        val userCancelled = activeProgress?.isCancelled?.invoke() == true
+        val kind = TransferInterruption.abortedKind(phase, userCancelled)
+        phase = null
+        if (kind == TransferKind.EXPORT) {
+            com.novelcharacter.app.util.TransferNoticeRelay.store(
+                appContext,
+                appContext.getString(R.string.transfer_export_aborted_title),
+                appContext.getString(R.string.transfer_export_aborted_body)
+            )
+            if (!screenReturns) {
+                runCatching {
+                    com.novelcharacter.app.notification.NotificationHelper.showTransferResultNotification(
+                        appContext,
+                        appContext.getString(R.string.transfer_export_aborted_title),
+                        appContext.getString(R.string.transfer_export_aborted_body)
+                    )
+                }.onFailure {
+                    android.util.Log.w("ExcelExporter", "Failed to post transfer abort notification", it)
+                }
+            }
+            logExportResult(OpResult.success(OpResult.CAT_EXCEL,
+                appContext.getString(R.string.result_excel_export_aborted)))
+        }
         supervisorJob.cancel()
     }
 
