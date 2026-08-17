@@ -440,6 +440,7 @@ $TEST/stats/StatsFoldParityTest.kt
 $TEST/stats/StatsScanParityTest.kt
 $TEST/stats/StatsOverviewParityTest.kt
 $TEST/stats/NumericBinDrilldownTest.kt
+$TEST/stats/NumericDistributionFoldTest.kt
 $TEST/stats/DataHealthReorgTest.kt
 $TEST/util/FieldValueTypeMismatchTest.kt
 $TEST/util/ValueDistributionsTest.kt

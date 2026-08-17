@@ -40,6 +40,7 @@ app/src/main/java/com/novelcharacter/app/util/BodyTargetRatio.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt
 app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt
 app/src/main/java/com/novelcharacter/app/excel/PresetTemplateMatcher.kt
+app/src/main/java/com/novelcharacter/app/backup/BackupChunkFormat.kt
 app/src/main/java/com/novelcharacter/app/data/repository/TrashRepository.kt
 app/src/main/java/com/novelcharacter/app/data/repository/EventFieldValueMerge.kt
 app/src/main/java/com/novelcharacter/app/data/model/EntitySnapshots.kt

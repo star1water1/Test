@@ -393,4 +393,136 @@ class PatternDetectionAxisTest {
         // 사건 축 조회는 같은 id로 실제 사건을 돌려준다 — 길이 없는 것이 아니라 축이 다른 것이다.
         assertEquals(8, provider.getEventsByFieldValue(s, card.mergedFieldDefIds, "전투")?.size)
     }
+
+    // ── ④ 작품별 편중 비교도 축을 넘는다 (B-195) ─────────────────────────
+
+    /**
+     * 세계관 둘 · 작품 둘 · 같은 키의 필드가 양쪽에 하나씩. 세계관 1은 '전투'가, 세계관 2는
+     * '회담'이 과반이라 *작품별 편중 경향* 카드가 설 조건이다.
+     */
+    private fun twoUniverseSnapshot(
+        eventDefs: List<FieldDefinition> = emptyList(),
+        eventValues: List<EventFieldValue> = emptyList(),
+        charDefs: List<FieldDefinition> = emptyList(),
+        charValues: List<CharacterFieldValue> = emptyList(),
+        characters: List<Character> = emptyList()
+    ) = StatsSnapshot(
+        characters = characters,
+        novels = listOf(
+            Novel(id = 10L, title = "1권", universeId = 1L),
+            Novel(id = 20L, title = "2권", universeId = 2L)
+        ),
+        universes = listOf(Universe(id = 1L, name = "세계관1"), Universe(id = 2L, name = "세계관2")),
+        events = (1..8).map { TimelineEvent(id = it.toLong(), year = it, description = "e$it", universeId = 1L) },
+        relationships = emptyList(), relationshipChanges = emptyList(), tags = emptyList(),
+        nameBank = emptyList(), stateChanges = emptyList(),
+        fieldDefinitions = charDefs, fieldValues = charValues, crossRefs = emptyList(),
+        eventFieldDefinitions = eventDefs, eventFieldValues = eventValues
+    )
+
+    private fun eventFieldIn(id: Long, universeId: Long) =
+        FieldDefinition(id = id, universeId = universeId, key = "kind", name = "종류", type = "TEXT",
+            entityType = FieldDefinition.ENTITY_EVENT)
+
+    /** 세계관마다 4건 중 3건이 [major] = 75% → 과반 정의(50%)를 넘는다. */
+    private fun majorityValues(defId: Long, startEventId: Long, major: String) =
+        (0 until 4).map { i ->
+            EventFieldValue(
+                id = defId * 100 + i, eventId = startEventId + i, fieldDefinitionId = defId,
+                value = if (i < 3) major else "기타$i"
+            )
+        }
+
+    @Test
+    fun `사건 필드도 작품별 편중 경향으로 비교된다`() {
+        // 종전: 이 루프가 캐릭터 `fieldsByKey`만 돌아 사건 필드는 통째로 빠졌다 (B-195).
+        val s = twoUniverseSnapshot(
+            eventDefs = listOf(eventFieldIn(5L, 1L), eventFieldIn(6L, 2L)),
+            eventValues = majorityValues(5L, 1L, "전투") + majorityValues(6L, 5L, "회담")
+        )
+        val cards = provider.detectPatterns(s).filter { it.type == PatternType.CROSS_NOVEL }
+        val bias = cards.single { it.title.contains("작품별 편중 경향") }
+
+        assertEquals(PatternAxis.EVENT, bias.axis)
+        assertTrue("양쪽 작품의 주요값이 나란히 나와야 한다", bias.description.contains("1권"))
+        assertTrue(bias.description.contains("2권"))
+        assertTrue(bias.description.contains("전투"))
+        assertTrue(bias.description.contains("회담"))
+    }
+
+    @Test
+    fun `사건 축 카드는 제목에 축을 밝힌다`() {
+        // 같은 이름의 필드가 축마다 있으면 두 카드가 똑같이 보인다 — 접두는 축이 든다.
+        val s = twoUniverseSnapshot(
+            eventDefs = listOf(eventFieldIn(5L, 1L), eventFieldIn(6L, 2L)),
+            eventValues = majorityValues(5L, 1L, "전투") + majorityValues(6L, 5L, "회담")
+        )
+        val bias = provider.detectPatterns(s)
+            .single { it.type == PatternType.CROSS_NOVEL && it.title.contains("작품별 편중 경향") }
+        assertTrue("사건 축 접두가 붙어야 한다", bias.title.startsWith(PatternAxis.EVENT.titlePrefix))
+    }
+
+    @Test
+    fun `같은 키의 캐릭터 필드와 사건 필드는 작품별 비교도 따로 센다`() {
+        // 축이 섞이면 한 카드의 백분율 분모가 캐릭터 수와 사건 수로 섞여 어느 숫자도 읽을 수 없다(R-13).
+        val chars = (1..8).map { Character(id = it.toLong(), name = "c$it", novelId = 10L) }
+        val charValues = (0 until 4).map { i ->
+            CharacterFieldValue(id = i + 1L, characterId = i + 1L, fieldDefinitionId = 1L,
+                value = if (i < 3) "검사" else "기타$i")
+        } + (0 until 4).map { i ->
+            CharacterFieldValue(id = i + 10L, characterId = i + 5L, fieldDefinitionId = 2L,
+                value = if (i < 3) "마법사" else "기타$i")
+        }
+        val s = twoUniverseSnapshot(
+            eventDefs = listOf(eventFieldIn(5L, 1L), eventFieldIn(6L, 2L)),
+            eventValues = majorityValues(5L, 1L, "전투") + majorityValues(6L, 5L, "회담"),
+            charDefs = listOf(
+                FieldDefinition(id = 1L, universeId = 1L, key = "kind", name = "종류", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_CHARACTER),
+                FieldDefinition(id = 2L, universeId = 2L, key = "kind", name = "종류", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_CHARACTER)
+            ),
+            charValues = charValues, characters = chars
+        )
+        val bias = provider.detectPatterns(s)
+            .filter { it.type == PatternType.CROSS_NOVEL && it.title.contains("작품별 편중 경향") }
+
+        assertEquals("축마다 카드 하나 — 같은 키라도 뭉치지 않는다", 2, bias.size)
+        assertEquals(setOf(PatternAxis.CHARACTER, PatternAxis.EVENT), bias.map { it.axis }.toSet())
+        val eventCard = bias.single { it.axis == PatternAxis.EVENT }
+        assertTrue("사건 카드는 사건 값만 말한다", eventCard.description.contains("전투"))
+        assertFalse(eventCard.description.contains("검사"))
+    }
+
+    @Test
+    fun `작품 필드는 작품별 편중 비교를 하지 않는다`() {
+        // 작품 필드값은 작품당 하나라 '작품별 분포'가 자기 자신이다 — 모든 작품이 100% 자기
+        // 값이라 카드가 언제나 뜨고 아무것도 말하지 않는다. 빠뜨린 것이 아니라 뜻이 없어서다.
+        val s = StatsSnapshot(
+            characters = emptyList(),
+            novels = listOf(
+                Novel(id = 10L, title = "1권", universeId = 1L),
+                Novel(id = 20L, title = "2권", universeId = 2L)
+            ),
+            universes = listOf(Universe(id = 1L, name = "세계관1"), Universe(id = 2L, name = "세계관2")),
+            events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
+            tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
+            fieldDefinitions = emptyList(), fieldValues = emptyList(), crossRefs = emptyList(),
+            novelFieldDefinitions = listOf(
+                FieldDefinition(id = 7L, universeId = 1L, key = "genre", name = "장르", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_NOVEL),
+                FieldDefinition(id = 8L, universeId = 2L, key = "genre", name = "장르", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_NOVEL)
+            ),
+            novelFieldValues = listOf(
+                NovelFieldValue(id = 1L, novelId = 10L, fieldDefinitionId = 7L, value = "판타지"),
+                NovelFieldValue(id = 2L, novelId = 20L, fieldDefinitionId = 8L, value = "무협")
+            )
+        )
+        assertTrue(
+            provider.detectPatterns(s).none {
+                it.type == PatternType.CROSS_NOVEL && it.title.contains("작품별 편중 경향")
+            }
+        )
+    }
 }

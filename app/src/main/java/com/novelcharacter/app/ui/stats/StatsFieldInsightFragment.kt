@@ -249,15 +249,22 @@ class StatsFieldInsightFragment : Fragment() {
             FieldStatsConfig.StatsType.DISTRIBUTION -> {
                 val data = result.distributionData ?: return wrapper
                 // 상한 적용은 여기 한 곳 — 잘린 나머지는 '기타' 조각으로 접어 존재를 알린다(R-14).
-                val view = ValueDistributions.view(data, result.entry.limit)
+                // **자동 구간으로 접힌 분포는 순서를 지킨다**(B-196) — 건수순으로 재정렬하면
+                // 인접 구간이 흩어져 '어디에 몰렸는가'를 읽을 수 없다. 순서 자체가 정보다.
+                val view = ValueDistributions.view(data, result.entry.limit, preserveOrder = result.autoBinned)
                 // '기타' 합계 조각은 **전체가 100%여야 하는 그림**(파이·도넛)에서만 정당하다.
                 // 막대에 끼우면 잘린 값들의 합이 최댓값을 차지해 값이 아닌 것이 1위로 보인다.
                 val isProportional = result.entry.chart == FieldStatsConfig.ChartType.PIE ||
                     result.entry.chart == FieldStatsConfig.ChartType.DONUT
-                val slices = toSlices(view, includeOthers = isProportional)
+                val slices = toSlices(view, includeOthers = isProportional, specs = result.distributionSpecs)
                 val chart = createChartForDistribution(slices, result.entry.chart)
                 attachChartTapListener(chart, slices, insight)
                 wrapper.addView(chart)
+                // **접었으면 접었다고 말한다**(R-14 — 상한은 감추는 장치가 아니라 접는 장치다).
+                // 구간을 직접 정하는 경로가 이미 있으므로 그쪽도 함께 가리킨다(자율성 우선).
+                if (result.autoBinned) {
+                    wrapper.addView(createAutoBinNote(result.preFoldKinds, result.entry.limit))
+                }
                 wrapper.addView(createDistributionTable(view, result.entry.limit))
             }
             FieldStatsConfig.StatsType.RANKING -> {
@@ -417,21 +424,45 @@ class StatsFieldInsightFragment : Fragment() {
      * 조각이 정당하지만, 순위 막대는 "어떤 값 하나가 가장 많은가"를 말하는 그림이라 잘린 값들의
      * **합계 막대**가 끼면 그것이 1위처럼 보인다(값이 아닌 것이 순위 1위가 된다).
      * 순위에서는 잘림을 막대가 아니라 아래 고지 문구가 알린다.
+     *
+     * [specs]는 **라벨이 값이 아닌 분포**가 실어 보낸 규칙이다(B-196의 자동 구간). `null`이면
+     * 라벨이 곧 값이라 종전처럼 라벨로 스펙을 만든다 — 그것이 지금까지의 전부였다.
+     * 스펙이 있는데 무시하고 라벨로 조회하면 구간 조각이 **어떤 입력에서도 0명**이 된다(S-16).
      */
     private fun toSlices(
         view: ValueDistributions.View,
-        includeOthers: Boolean = true
+        includeOthers: Boolean = true,
+        specs: Map<String, FieldValueMatchSpec>? = null
     ): List<ChartSlice> {
-        val slices = view.shown.map {
-            ChartSlice(it.label, it.count, FieldValueMatchSpec.Values(it.label))
+        val specOf = { label: String ->
+            specs?.get(label) ?: FieldValueMatchSpec.Values(label)
         }
+        val slices = view.shown.map { ChartSlice(it.label, it.count, specOf(it.label)) }
         if (!includeOthers || !view.hasHidden) return slices
+        // 접힌 '기타'의 스펙은 **잘린 라벨들의 스펙을 합친 것**이다. 라벨을 그대로 값으로 쓰면
+        // 구간으로 접힌 분포에서 '기타'가 0명이 된다 — 라벨이 값이 아니기 때문이다.
+        val hiddenValues = view.hiddenLabels.flatMapTo(mutableSetOf()) { label ->
+            (specOf(label) as? FieldValueMatchSpec.Values)?.values ?: setOf(label)
+        }
         return slices + ChartSlice(
             getString(R.string.stats_distribution_others, view.hiddenKinds),
             view.hiddenCount,
-            FieldValueMatchSpec.Values(view.hiddenLabels.toSet())
+            FieldValueMatchSpec.Values(hiddenValues)
         )
     }
+
+    /**
+     * 자동 구간으로 접었다는 고지 (B-196 · R-14).
+     *
+     * 상한은 감추는 장치가 아니라 접는 장치다 — 접은 사실과 **직접 구간을 정하는 경로**를
+     * 함께 말한다(자율성 우선: 원하는 구간이 있으면 사용자가 정할 수 있다).
+     */
+    private fun createAutoBinNote(preFoldKinds: Int, limit: Int): TextView =
+        TextView(requireContext()).apply {
+            text = getString(R.string.stats_distribution_auto_binned_note, preFoldKinds, limit)
+            textSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+        }
 
     /** 잘림 고지 문구 — 상한 숫자는 상수가 아니라 그 필드의 설정값이 단일 소스다(R-14). */
     private fun createTruncationNote(view: ValueDistributions.View, limit: Int): TextView =

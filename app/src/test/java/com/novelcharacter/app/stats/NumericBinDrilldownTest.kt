@@ -247,6 +247,129 @@ class NumericBinDrilldownTest {
         assertEquals(2, summary.histogram["큰"])
     }
 
+    // ===== 어느 구간에도 안 드는 값 (B-197) =====
+
+    /** `~160`·`180~` — 160 이상 180 미만이 **정의에서 빠진** 구성. 150·160·170·180·200 중 둘이 여기 든다. */
+    private val gappedConfig =
+        """{"stats":{"analyses":[{"type":"numeric"}],"binning":{"mode":"custom","ranges":["~160:작은","180~:큰"]}}}"""
+
+    private fun gappedSummary(s: StatsSnapshot) =
+        provider.computeFieldAnalysis(s).numberFieldSummaries.first { it.fieldName == "키" }
+
+    @Test
+    fun `사이가 빈 구간에서도 막대 합이 모집단과 같다`() {
+        // 종전: 구간마다 따로 세므로 160·170이 **어느 막대에도 없었고**, 그 사실을 말하는 자리도
+        // 없었다. 막대 합 3 < 모집단 5인데 화면에는 아무 설명이 없다.
+        val summary = gappedSummary(snapshot(listOf(numberField(gappedConfig)),
+            listOf("150", "160", "170", "180", "200")))
+
+        assertEquals(1, summary.histogram["작은"])
+        assertEquals(2, summary.histogram["큰"])
+        assertEquals("어디에도 안 드는 둘이 보여야 한다", 2, summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        assertEquals("막대 합은 모집단과 같아야 한다", 5, summary.histogram.values.sum())
+    }
+
+    @Test
+    fun `구간 밖 막대도 눌리고 정확히 그 사람들만 나온다`() {
+        val s = snapshot(listOf(numberField(gappedConfig)), listOf("150", "160", "170", "180", "200"))
+        val summary = gappedSummary(s)
+
+        for ((label, count) in summary.histogram) {
+            val listed = provider.getCharactersByFieldValue(s, listOf(10L), summary.matchSpecs.getValue(label))!!
+            assertEquals("[$label] 막대 높이와 드릴다운 인원이 같아야 한다", count, listed.size)
+        }
+        val outside = provider.getCharactersByFieldValue(
+            s, listOf(10L), summary.matchSpecs.getValue(StatsDataProvider.OUT_OF_RANGE_LABEL)
+        )!!
+        assertEquals(setOf("c2", "c3"), outside.map { it.characterName }.toSet())
+    }
+
+    @Test
+    fun `구간 밖은 값 일치가 아니라 여집합 규칙으로 싣는다`() {
+        // 라벨('구간 밖')로 실으면 NUMBER·CALCULATED에서는 통계 파싱이 같은 라벨을 돌려줘
+        // **우연히** 맞지만, 같은 분기가 도는 BODY_SIZE 파트에서는 그 우연이 없다.
+        val summary = gappedSummary(snapshot(listOf(numberField(gappedConfig)), listOf("150", "170")))
+        assertTrue(
+            "여집합은 규칙으로 실려야 한다",
+            summary.matchSpecs.getValue(StatsDataProvider.OUT_OF_RANGE_LABEL)
+                is FieldValueMatchSpec.NumericPartOutsideRanges
+        )
+    }
+
+    @Test
+    fun `구간이 값을 다 덮으면 구간 밖 막대는 없다`() {
+        // 정의된 구간은 0이어도 남긴다(거기가 비었다는 정보다). 여집합의 0은 반대로
+        // *구간 정의가 값을 다 덮었다*는 뜻이라 막대로 말할 것이 없다 — 레거시 분포가
+        // `counted[OUT_OF_RANGE_LABEL]?.let`으로 세우는 그 규칙과 같다.
+        val config = """{"stats":{"analyses":[{"type":"numeric"}],"binning":{"mode":"custom","ranges":["~160:작은","160~180:보통","180~:큰"]}}}"""
+        val summary = gappedSummary(heightSnapshot(config))
+        assertNull(summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+    }
+
+    @Test
+    fun `마지막 구간의 상한 포함이 여집합과 어긋나지 않는다`() {
+        // 상한 포함 규칙이 막대 쪽과 여집합 쪽에 따로 적히면, 경계값(200)이 **양쪽에 다 들거나
+        // 양쪽에서 다 빠진다.** 그래서 판정식을 하나로 묶어 두었다.
+        val config = """{"stats":{"analyses":[{"type":"numeric"}],"binning":{"mode":"custom","ranges":["~160:작은","180~200:큰"]}}}"""
+        val s = snapshot(listOf(numberField(config)), listOf("150", "200"))
+        val summary = gappedSummary(s)
+
+        assertEquals("경계값은 마지막 구간에 든다", 1, summary.histogram["큰"])
+        assertNull("그러므로 여집합에는 없다", summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        assertEquals(2, summary.histogram.values.sum())
+    }
+
+    @Test
+    fun `구간 정의가 하나도 파싱되지 않으면 전부 구간 밖이다`() {
+        // mode는 custom인데 ranges가 전부 형식 이탈인 구성. 종전에는 히스토그램이 통째로 비어
+        // **아무 말도 없었다** — 값이 있는데 안 보이는 그 자리다(R-17).
+        val config = """{"stats":{"analyses":[{"type":"numeric"}],"binning":{"mode":"custom","ranges":["말이 안 되는 구간"]}}}"""
+        val s = snapshot(listOf(numberField(config)), listOf("150", "170"))
+        val summary = gappedSummary(s)
+
+        assertEquals(2, summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        val listed = provider.getCharactersByFieldValue(
+            s, listOf(10L), summary.matchSpecs.getValue(StatsDataProvider.OUT_OF_RANGE_LABEL)
+        )!!
+        assertEquals(2, listed.size)
+    }
+
+    @Test
+    fun `수치로 읽히지 않는 값은 구간 밖 막대에 들지 않는다`() {
+        // 히스토그램의 모집단은 `numericValuesOf`가 뽑은 수치뿐이다. 여집합이 비수치까지 집으면
+        // **막대 높이보다 드릴다운 목록이 길어진다**(레거시 분포는 비수치도 같은 라벨에 담지만
+        // 그쪽 모집단은 파싱 키 전량이라 자기 막대와는 맞는다).
+        val s = snapshot(listOf(numberField(gappedConfig)), listOf("150", "170", "모름"))
+        val summary = gappedSummary(s)
+
+        assertEquals("수치 둘만 모집단이다", 2, summary.histogram.values.sum())
+        assertEquals(1, summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        val listed = provider.getCharactersByFieldValue(
+            s, listOf(10L), summary.matchSpecs.getValue(StatsDataProvider.OUT_OF_RANGE_LABEL)
+        )!!
+        assertEquals(listOf("c2"), listed.map { it.characterName })
+    }
+
+    @Test
+    fun `체형 파트에서도 구간 밖이 보이고 눌린다`() {
+        // **이 시험이 여집합 스펙의 값을 증명한다.** BODY_SIZE는 `isBinnable`이 아니라 통계 파싱이
+        // '구간 밖' 라벨을 만들지 않는데, 히스토그램의 사용자 구간 분기는 이 타입에서도 돈다.
+        // 라벨로 실었다면 여기서만 0명이 나왔을 자리다(S-16이 자동 구간에서 겪은 그 결함).
+        val bodyField = FieldDefinition(
+            id = 10, universeId = uniA, key = "body", name = "키", type = "BODY_SIZE",
+            config = gappedConfig, entityType = FieldDefinition.ENTITY_CHARACTER
+        )
+        val s = snapshot(listOf(bodyField), listOf("150-80-90", "170-80-90", "200-80-90"))
+        val summary = provider.computeFieldAnalysis(s).numberFieldSummaries
+            .first { it.matchSpecs.containsKey(StatsDataProvider.OUT_OF_RANGE_LABEL) }
+
+        assertEquals(1, summary.histogram[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        val listed = provider.getCharactersByFieldValue(
+            s, listOf(10L), summary.matchSpecs.getValue(StatsDataProvider.OUT_OF_RANGE_LABEL)
+        )!!
+        assertEquals("파트 수치 170만 구간 밖이다", listOf("c2"), listed.map { it.characterName })
+    }
+
     // ===== 나눌 구간이 없는 경우 =====
 
     @Test

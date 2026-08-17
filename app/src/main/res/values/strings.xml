@@ -1282,6 +1282,7 @@
     <!-- Stats: 분포 잘림 고지 (S-17 · R-14 — 잘라낸 것은 개수로 존재를 알린다) -->
     <string name="stats_distribution_others">기타 %d종</string>
     <string name="stats_distribution_others_note">상위 %1$d종만 표시했습니다 — 나머지 %2$d종 %3$d건은 \'기타\'로 묶여 있습니다(눌러서 목록 보기).</string>
+    <string name="stats_distribution_auto_binned_note">값이 %1$d종이라 표시 상한 %2$d종을 넘겨 수치 구간으로 묶었습니다 — 구간을 직접 정하려면 이 필드의 통계 설정에서 \'사용자 구간\'을 쓰세요.</string>
 
     <!-- Stats: 오류 고지 (B-32 — message가 없는 예외도 반드시 알린다) -->
     <string name="stats_error_detail">통계를 처리하지 못했습니다 (%s)</string>
