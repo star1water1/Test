@@ -77,6 +77,23 @@ class ExcelImporter(context: Context) {
     }
 
     /**
+     * **이 회차는 여기서 끝난다** — 더 할 일이 없으므로 구간을 내린다 (B-228 콜드 검토).
+     *
+     * 구간을 내리지 않으면 **끝난 회차를 두고 *"중단되었습니다"*라고 말하게 된다.**
+     * 바깥 `finally`가 어차피 내리지만 **그 사이가 짧지 않다** — 특히 옵션 창을 취소하면
+     * `importFromZip`의 `finally`가 **해제 폴더를 통째로 지우고**(대형 백업에서는 수 초다)
+     * 그다음에야 바깥 `finally`에 닿는다. 그 몇 초 동안 화면을 떠나면 — 방금 취소한 사람이
+     * 화면을 떠나는 것은 **가장 자연스러운 다음 동작이다** — 취소한 가져오기에 대해
+     * 중단 알림이 뜬다.
+     *
+     * 그래서 *"그만두기로 정한 자리"*마다 여기를 부른다. 바깥 `finally`의 `phase = null`은
+     * 그대로 두었다 — 이 함수를 부르지 못하고 빠져나가는 길(예외)이 있기 때문이다.
+     */
+    private fun endRound() {
+        phase = null
+    }
+
+    /**
      * **이번 가져오기가 filesDir에 새로 만든** 이미지 파일들 (B-77).
      *
      * `importAll`은 전체가 한 트랜잭션이라 실패하면 DB는 통째로 롤백되는데, 이미지 복사는
@@ -142,6 +159,8 @@ class ExcelImporter(context: Context) {
     private fun reportAbort(screenReturns: Boolean) {
         val kind = TransferInterruption.abortedKind(phase, userCancelled) ?: return
         phase = null
+        // 이 클래스가 세우는 구간은 전부 가져오기라 지금은 걸리지 않는다 — 나중에 다른 종류가
+        // 들어오면 **엉뚱한 문구를 조용히 쓰는 대신** 여기서 멈추라고 남겨 둔 가드다.
         if (kind != TransferKind.IMPORT) return
         deliverOffscreen(
             appContext.getString(com.novelcharacter.app.R.string.transfer_import_aborted_title),
@@ -273,6 +292,8 @@ class ExcelImporter(context: Context) {
      * 않는 것이 이 저장소의 규약이다(개발 의도 2번).
      */
     private fun reportAskUnanswered() {
+        // 답이 없었든 사용자가 그만뒀든 **이 회차는 여기서 끝난다** — 구간을 먼저 내린다(B-228 콜드 검토).
+        endRound()
         if (hasScreen()) return
         deliverOffscreen(
             appContext.getString(com.novelcharacter.app.R.string.transfer_import_aborted_title),
@@ -506,13 +527,17 @@ class ExcelImporter(context: Context) {
                 mode = when (val choice = showWorldConflictDialog(contents.universe.name, conflict)) {
                     is ConflictChoice.Chosen -> choice.mode
                     // 사용자가 건너뛰기를 골랐다 — 그 뜻대로 조용히 끝낸다.
-                    ConflictChoice.Skipped -> return
+                    // [endRound]가 없으면 그 '조용히'가 깨진다 — 끝난 회차를 두고 중단 알림이 뜬다(B-228 콜드 검토).
+                    ConflictChoice.Skipped -> return endRound()
                     // **물을 화면이 없었다.** 종전에는 이것이 건너뛰기와 같은 `null`이라
                     // 가져오기가 통째로 조용히 사라졌다 — 사용자는 파일을 열었는데 아무 일도
                     // 안 일어난 것으로 본다(B-56). **고를 수 없으면 고르지 않는 것이 맞다**:
                     // 덮어쓰기는 파괴적이고 새로 만들기는 중복을 남기므로 어느 쪽도 대신
                     // 정해 줄 수 없다. 대신 **아무것도 바꾸지 않았다는 사실을 말한다.**
                     ConflictChoice.NoScreen -> {
+                        // 여기서 이미 말했으므로 구간을 내려야 한다 — 안 내리면 같은 일에
+                        // 중단 알림이 **한 번 더** 붙는다(B-228 콜드 검토).
+                        endRound()
                         deliverOffscreen(
                             appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
                             appContext.getString(com.novelcharacter.app.R.string.import_notice_no_screen_conflict)
@@ -521,9 +546,9 @@ class ExcelImporter(context: Context) {
                     }
                 }
                 if (mode == com.novelcharacter.app.share.WorldPackageImporter.Mode.OVERWRITE) {
-                    val target = conflict.target ?: return
+                    val target = conflict.target ?: return endRound()
                     // 파괴적 동작은 실행 전에 결과를 알리고 취소 경로를 남긴다 (R-4)
-                    if (!confirmWorldOverwrite(target)) return
+                    if (!confirmWorldOverwrite(target)) return endRound()
                     overwriteTarget = target
                 }
             }
@@ -1050,14 +1075,13 @@ class ExcelImporter(context: Context) {
     }
 
     /**
-     * @return 복원 실패한 이미지 수
-     */
-    /**
      * 해제된 이미지를 filesDir로 되살린다.
      *
      * [onProgress]는 (처리한 장, 전체 장)을 받는다 — 전체는 [imagePathRemap]의 크기다.
      * 이 루프가 도는 대상이 정확히 그 집합이라(재매핑에 없는 원본은 건너뛴다) 총량과 실행이
      * 갈리지 않는다(R-26: 따로 세면 막대가 100%를 넘거나 못 미친 채 끝난다).
+     *
+     * @return 복원 실패 수와 이번에 새로 만든 경로 ([RestoreImagesOutcome]).
      */
     private fun restoreImages(
         imageMapJson: String?, extractDir: File, imagePathRemap: Map<String, String>,
