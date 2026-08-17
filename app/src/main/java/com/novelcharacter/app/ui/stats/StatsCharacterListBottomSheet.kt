@@ -366,6 +366,12 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_MATCH_MIN = "matchMin"
         private const val ARG_MATCH_MAX = "matchMax"
         private const val ARG_MATCH_INCLUSIVE_MAX = "matchInclusiveMax"
+
+        // 여집합 스펙(B-197) — 구간이 **여러 개**라 위 단수 키로는 실을 수 없다.
+        // 나란한 세 배열이 구간 목록 하나를 이룬다(길이가 같아야 한다 — 읽는 쪽이 검사한다).
+        private const val ARG_MATCH_OUTSIDE_MINS = "matchOutsideMins"
+        private const val ARG_MATCH_OUTSIDE_MAXES = "matchOutsideMaxes"
+        private const val ARG_MATCH_OUTSIDE_INCLUSIVE = "matchOutsideInclusive"
         private const val ARG_SLICE_COUNT = "sliceCount"
 
         /**
@@ -416,6 +422,16 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     bundle.putFloat(ARG_MATCH_MAX, spec.max)
                     bundle.putBoolean(ARG_MATCH_INCLUSIVE_MAX, spec.inclusiveMax)
                 }
+                is FieldValueMatchSpec.NumericPartOutsideRanges -> {
+                    bundle.putInt(ARG_MATCH_PART_INDEX, spec.partIndex)
+                    bundle.putString(ARG_MATCH_SEPARATOR, spec.separator)
+                    bundle.putFloatArray(ARG_MATCH_OUTSIDE_MINS, spec.ranges.map { it.min }.toFloatArray())
+                    bundle.putFloatArray(ARG_MATCH_OUTSIDE_MAXES, spec.ranges.map { it.max }.toFloatArray())
+                    bundle.putBooleanArray(
+                        ARG_MATCH_OUTSIDE_INCLUSIVE,
+                        spec.ranges.map { it.inclusiveMax }.toBooleanArray()
+                    )
+                }
             }
         }
 
@@ -423,6 +439,34 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private fun readMatchSpec(bundle: Bundle?, fallbackValue: String): FieldValueMatchSpec {
             if (bundle == null) return FieldValueMatchSpec.Values(fallbackValue)
             val partIndex = bundle.getInt(ARG_MATCH_PART_INDEX, -1)
+            // **여집합을 단수 구간보다 먼저 읽는다** — 둘 다 partIndex를 싣기 때문이다.
+            // 순서가 뒤집히면 '구간 밖' 조각이 min/max가 0인 구간으로 읽혀 아무도 못 찾는다.
+            val outsideMins = bundle.getFloatArray(ARG_MATCH_OUTSIDE_MINS)
+            if (partIndex >= 0 && outsideMins != null) {
+                val maxes = bundle.getFloatArray(ARG_MATCH_OUTSIDE_MAXES)
+                val inclusive = bundle.getBooleanArray(ARG_MATCH_OUTSIDE_INCLUSIVE)
+                // 셋의 길이가 어긋나면 구간을 짝지을 수 없다 — 조용히 일부만 쓰지 않고
+                // 값 일치로 되돌린다(그쪽은 라벨로라도 NUMBER·CALCULATED에서는 맞는다).
+                if (maxes != null && inclusive != null &&
+                    maxes.size == outsideMins.size && inclusive.size == outsideMins.size
+                ) {
+                    val separator = bundle.getString(ARG_MATCH_SEPARATOR, "-")
+                    return FieldValueMatchSpec.outside(
+                        outsideMins.indices.map { i ->
+                            FieldValueMatchSpec.NumericPartRange(
+                                partIndex = partIndex,
+                                separator = separator,
+                                min = outsideMins[i],
+                                max = maxes[i],
+                                inclusiveMax = inclusive[i]
+                            )
+                        },
+                        partIndex,
+                        separator
+                    )
+                }
+                return FieldValueMatchSpec.Values(fallbackValue)
+            }
             if (partIndex >= 0) {
                 return FieldValueMatchSpec.NumericPartRange(
                     partIndex = partIndex,

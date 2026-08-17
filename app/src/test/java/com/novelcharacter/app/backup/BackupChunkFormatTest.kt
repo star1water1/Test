@@ -236,7 +236,7 @@ class BackupChunkFormatTest {
             readBound(cut, key, 64, head)
             fail("잘린 IV가 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("Incomplete chunk IV"))
+            assertTrue(e.message!!.contains("청크 IV가 잘렸습니다"))
         }
     }
 
@@ -299,7 +299,7 @@ class BackupChunkFormatTest {
             )
             fail("최소 길이보다 짧은 암호가 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("at least"))
+            assertTrue(e.message!!.contains("최소 ${BackupChunkFormat.MIN_PASSPHRASE_LENGTH}자"))
         }
     }
 
@@ -318,7 +318,7 @@ class BackupChunkFormatTest {
             BackupChunkFormat.decryptFilePortable(enc, tempFile("dec"), PASSPHRASE.toCharArray())
             fail("조작된 반복 수가 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("Invalid iteration count"))
+            assertTrue(e.message!!.contains("반복 횟수가 올바르지 않습니다"))
         }
     }
 
@@ -491,7 +491,7 @@ class BackupChunkFormatTest {
             BackupChunkFormat.decryptFileWithKey(tooShort, tempFile("dec"), { asked = true; aesKey() })
             fail("8바이트도 안 되는 파일이 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("too short"))
+            assertTrue(e.message!!.contains("너무 짧습니다"))
         }
         assertFalse("헤더가 깨졌는데 키를 요구했다", asked)
     }
@@ -529,7 +529,7 @@ class BackupChunkFormatTest {
             BackupChunkFormat.decryptFileWithKey(enc, tempFile("dec"), { key })
             fail("조작된 청크 크기가 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("Invalid chunk size"))
+            assertTrue(e.message!!.contains("청크 크기가 올바르지 않습니다"))
         }
     }
 
@@ -542,7 +542,7 @@ class BackupChunkFormatTest {
             BackupChunkFormat.decrypt(ByteArray(BackupChunkFormat.GCM_IV_LENGTH), key)
             fail("IV 길이뿐인 입력이 통과했다")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("too short"))
+            assertTrue(e.message!!.contains("너무 짧습니다"))
         }
     }
 
@@ -572,7 +572,7 @@ class BackupChunkFormatTest {
             fail("뒤가 잘린 파일이 '복호화 성공'으로 짧은 평문을 냈다")
         } catch (e: BackupChunkFormat.TruncatedBackupException) {
             // 태그 불일치가 아니라 **잘림으로 특정**돼야 한다 — 화면이 그 둘에 다르게 답한다.
-            assertTrue(e.message!!.contains("Truncated backup"))
+            assertTrue(e.message!!.contains("백업 파일이 잘렸습니다"))
         }
     }
 
@@ -583,7 +583,7 @@ class BackupChunkFormatTest {
             readBound(ByteArray(0), aesKey(), 64, header(64))
             fail("청크가 하나도 없는데 통과했다")
         } catch (e: BackupChunkFormat.TruncatedBackupException) {
-            assertTrue(e.message!!.contains("no final chunk"))
+            assertTrue(e.message!!.contains("마지막 청크가 없습니다"))
         }
     }
 

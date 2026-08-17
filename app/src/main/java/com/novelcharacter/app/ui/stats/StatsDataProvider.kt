@@ -469,7 +469,38 @@ data class FieldInsightResult(
 data class AnalysisResult(
     val entry: FieldStatsConfig.AnalysisEntry,
     val distributionData: Map<String, Int>?,
-    val numericSummary: NumericSummaryData?
+    val numericSummary: NumericSummaryData?,
+    /**
+     * 분포 라벨 → 드릴다운 매치 스펙. **`null`이면 라벨이 곧 값이다** — 표시 계층이
+     * [FieldValueMatchSpec.Values]로 만들어도 맞는 경우이고, 그것이 지금까지의 전부였다.
+     *
+     * 자동 구간으로 접은 분포(B-196)에서는 라벨이 **구간**이라 값이 아니다. 스펙을 여기까지
+     * 실어 나르지 않으면 그 조각을 눌렀을 때 `Values("160~170")`으로 조회해 **어떤 입력에서도
+     * 0명**이 나온다(S-16이 BODY_SIZE 파이에서 겪은 그 결함이고, B-196 등재가 *"안 고치면 그
+     * 조각이 다시 0명이 된다"*고 미리 적어 둔 함정이다).
+     *
+     * 구간 스펙이 [FieldValueMatchSpec.NumericPartRange]가 아니라 **접힌 값들의
+     * [FieldValueMatchSpec.Values]**인 것이 요점이다 — 여기서 접는 대상은 원문이 아니라
+     * **이미 파싱된 통계 키**라(라벨·카테고리가 적용된 뒤다) 어느 키가 어느 구간에 들었는지를
+     * 접는 쪽이 정확히 안다. 그 집합을 그대로 실으면 라벨·카테고리 설정이 살아 있는 필드에서도
+     * 조각 수치와 목록 인원이 어긋나지 않는다.
+     */
+    val distributionSpecs: Map<String, FieldValueMatchSpec>? = null,
+    /**
+     * 값 종류가 표시 상한을 넘쳐 **자동 구간으로 접었는가** (B-196 · 확정 15장 3번).
+     *
+     * 표시 계층이 둘을 위해 본다: ⓐ 구간 순서를 건수순으로 재정렬하지 않기 위해(인접 구간이
+     * 흩어지면 '어디에 몰렸는가'를 읽을 수 없다 — 순서 자체가 정보다) ⓑ **접었다고 말하기**
+     * 위해(R-14 — 상한은 감추는 장치가 아니라 접는 장치다).
+     */
+    val autoBinned: Boolean = false,
+    /**
+     * 접기 **전**의 값 종류 수 — [autoBinned]가 참일 때만 뜻이 있다(그 밖에는 0).
+     *
+     * 고지가 *"값이 몇 종이라 묶었다"*를 말하려면 이 수가 필요한데, [distributionData]는 접힌
+     * 뒤라 구간 수만 들고 있다. 접는 쪽만 아는 값이므로 함께 실어 보낸다.
+     */
+    val preFoldKinds: Int = 0
 )
 
 data class NumericSummaryData(
@@ -2064,8 +2095,18 @@ class StatsDataProvider {
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
                 FieldStatsConfig.StatsType.DISTRIBUTION -> {
-                    val dist = computeFieldDistribution(s, primaryFd, rawCounts, statsConfig)
-                    listOf(AnalysisResult(entry, dist, null))
+                    // 값 종류가 표시 상한을 넘치면 자동 구간으로 접는다 (B-196 · 확정 15장 3번).
+                    // **순위는 접지 않는다** — 그쪽은 "어떤 값 하나가 가장 많은가"를 묻는 그림이고,
+                    // 구간으로 접으면 그 물음 자체가 사라진다.
+                    val folded = foldNumericDistribution(
+                        primaryFd, statsConfig,
+                        computeFieldDistribution(s, primaryFd, rawCounts, statsConfig),
+                        entry.limit
+                    )
+                    listOf(AnalysisResult(
+                        entry, folded.counts, null,
+                        folded.specs, folded.autoBinned, folded.preFoldKinds
+                    ))
                 }
                 FieldStatsConfig.StatsType.NUMERIC -> {
                     computeNumericAnalysis(primaryFd, rawCounts, statsConfig, entry)
@@ -2148,6 +2189,102 @@ class StatsDataProvider {
         // 하고(그룹 파싱은 기준 [fd]의 규칙 그대로 — R-15), 고유 원문만 파싱을 지난다(S6 4차→5차).
         // [ValueDistributions.of]와 같은 계수·정렬이므로 답은 같다.
         ValueDistributions.sorted(foldStatsKeyCounts(s, fd, statsConfig, rawCounts))
+
+    /** [foldNumericDistribution]의 산출 — 접었는지와, 접었다면 조각마다의 드릴다운 규칙. */
+    private data class FoldedDistribution(
+        val counts: Map<String, Int>,
+        val specs: Map<String, FieldValueMatchSpec>?,
+        val autoBinned: Boolean,
+        /** 접기 전 값 종류 수 — 고지가 *"값이 몇 종이라 묶었다"*를 말하는 데 쓴다. */
+        val preFoldKinds: Int = 0
+    )
+
+    /**
+     * **값 분포를 고른 수치 필드가 값 하나마다 조각이 되던 자리** (B-196 · 확정 15장 3번).
+     *
+     * `getFieldValues`는 `binning.mode == "custom"`일 때만 구간 라벨을 돌려주므로, 자동 구간
+     * 필드에 *값 분포*를 걸면 값이 그대로 조각이 된다 — 키 600명이면 조각이 60종이 되고 표시
+     * 상한 10에 잘려 *"기타 50종"*으로 접힌다. **분포를 보려던 사람이 분포를 못 본다**(원칙 02).
+     *
+     * 확정이 고른 수위는 **상한을 넘칠 때만**이다: 값 종류가 상한 안이면 지금처럼 값 그대로
+     * ('값 분포'라는 선택의 뜻을 보존한다 — 자녀 수 0~3 같은 필드가 그 부류다), 넘치면 자동
+     * 구간으로 접고 접었다고 말한다(R-14). 항상-구간은 소수 값 필드의 선택 뜻을 깨고,
+     * 설정 스위치는 이미 있는 명시 경로(수치 요약·사용자 구간)와 겹친다(원칙 04).
+     *
+     * **접는 대상이 원문이 아니라 [dist]의 통계 키인 것이 요점이다.** 여기는 모집단을 가진
+     * 자리이고(확정 조건 ⓐ — `getFieldValues`는 값 하나씩 부르는 함수라 원리적으로 구간을
+     * 못 만든다), 키는 이미 라벨·카테고리가 적용된 뒤다. 어느 키가 어느 구간에 들었는지를
+     * 접는 쪽이 정확히 아므로 스펙을 **그 키 집합**으로 실을 수 있다.
+     *
+     * **구간 수를 상한으로 묶는다**(확정 조건 ⓒ) — 두 문턱이 갈리면 *잘리는데 안 접는* 구간이
+     * 생긴다. 상한이 3이면 구간도 셋까지다.
+     *
+     * **수로 읽히지 않는 키는 접지 않고 그대로 남긴다** — 접으면 그 값이 어디에도 없다
+     * (개발 의도 2번). 그래서 접은 뒤에도 합은 언제나 모집단이다.
+     */
+    private fun foldNumericDistribution(
+        fd: FieldDefinition,
+        statsConfig: FieldStatsConfig,
+        dist: Map<String, Int>,
+        limit: Int
+    ): FoldedDistribution {
+        val untouched = FoldedDistribution(dist, null, false)
+        // 사용자 구간은 이미 구간 라벨이다(접을 것이 없다). 상한이 없으면(0 이하) 넘칠 일이 없다.
+        if (!isBinnable(fd.fieldType) || statsConfig.binning?.mode == "custom") return untouched
+        if (limit <= 0 || dist.size <= limit) return untouched
+
+        // 파싱 규칙은 [NumericBinning]이 단일 소스다 — `toFloatOrNull()`을 직접 쓰면 줄바꿈 없는
+        // 공백(U+00A0)이 낀 값에서 갈린다.
+        val numericKeys = dist.keys.mapNotNull { k ->
+            NumericBinning.partValue(k, "", 0)?.let { k to it }
+        }
+        // **비수치 키의 자리를 먼저 뺀다** — 구간이 상한을 다 차지하면 그 키들이 표시 밖으로
+        // 밀려 '기타'로 접힌다. 종전 한 줄(`minOf(DEFAULT_BIN_COUNT, limit)`)은 상한이 작을 때
+        // **지배적인 비수치 값을 낮은 건수의 구간들이 밀어냈다** — 실측: 상한 3 · 수치 20종 ·
+        // `미상` 300건이면 구간 셋(7·6·7명)만 보이고 300건이 *"기타 1종"*으로 접혔다.
+        // 접기 전에는 건수순 상위 셋에 `미상`이 들어 **보였으므로 이것은 접기가 만든 퇴행**이고,
+        // 원칙 04(일일이 확인하지 않으면 존재를 알 수 없는 데이터를 만들지 않는다)가 걸린다.
+        val nonNumericKinds = dist.size - numericKeys.size
+        val binCount = minOf(NumericBinning.DEFAULT_BIN_COUNT, limit - nonNumericKinds)
+        // **구간이 둘도 안 되면 접지 않는다.** 한 칸으로 뭉친 '분포'는 아무것도 말하지 않으므로,
+        // 그 상태로 접는 것보다 종전 동작(건수순 상위 N + 기타)이 낫다 — 비수치 키가 상한을
+        // 거의 다 쓰는 필드는 애초에 구간이 답이 아니다.
+        if (binCount < 2) return untouched
+        val bins = NumericBinning.autoBins(numericKeys.map { it.second }, binCount = binCount)
+        // 나눌 폭이 없다(고유 수치가 둘 미만이거나 전부 같다) — 접어도 조각이 안 줄어든다.
+        if (bins.isEmpty()) return untouched
+
+        val counts = linkedMapOf<String, Int>()
+        val specs = linkedMapOf<String, FieldValueMatchSpec>()
+        for (bin in bins) {
+            val keys = numericKeys.filter { bin.contains(it.second) }.map { it.first }
+            counts[bin.label] = keys.sumOf { dist.getValue(it) }
+            // 라벨이 아니라 **그 구간에 든 통계 키 전부**를 싣는다 — 값 일치로 정확히 되찾는다.
+            specs[bin.label] = FieldValueMatchSpec.Values(keys.toSet())
+        }
+        val numericKeySet = numericKeys.mapTo(HashSet()) { it.first }
+        for ((k, v) in dist) {
+            if (k !in numericKeySet) {
+                // **비수치 키가 구간 라벨과 같을 수 있다 — 덮어쓰지 않고 합친다.**
+                // 구간 라벨은 `150~160` 꼴이고 사용자가 수치 칸에 대략적인 범위를 그대로 적는 것은
+                // 이 앱이 받아들이려는 입력의 전형이다(그 원문은 수로 안 읽히므로 여기로 온다).
+                // 종전 한 줄(`counts[k] = v`)은 **그 구간의 인원을 개수 고지도 없이 지웠다** —
+                // `autoBins`가 자기 라벨끼리의 겹침을 순번으로 막아 둔 것과 같은 부류의 유실이다.
+                // 합치면 그 조각은 *구간에 든 값들 + 그 라벨과 같은 원문*을 함께 가리키고,
+                // 스펙도 합집합이라 조각 수치와 목록 인원이 그대로 맞는다.
+                val existing = counts[k]
+                if (existing == null) {
+                    counts[k] = v
+                    specs[k] = FieldValueMatchSpec.Values(k)
+                } else {
+                    counts[k] = existing + v
+                    val merged = (specs[k] as? FieldValueMatchSpec.Values)?.values.orEmpty() + k
+                    specs[k] = FieldValueMatchSpec.Values(merged)
+                }
+            }
+        }
+        return FoldedDistribution(counts, specs, autoBinned = true, preFoldKinds = dist.size)
+    }
 
     /**
      * 통계 파싱의 단일 소스 — 원문 하나를 통계 키 목록으로 (토큰화 → 라벨/카테고리 → 구간).
@@ -2255,10 +2392,14 @@ class StatsDataProvider {
         if (binning != null && binning.mode == "custom") {
             val ranges = binning.parseRanges()
             val lastRange = ranges.lastOrNull()
+            // 구간 하나의 판정 — **막대를 세는 쪽과 여집합을 세는 쪽이 같은 식을 쓰게** 묶어 둔다.
+            // 되풀어 적으면 마지막 구간의 상한 포함 규칙이 한쪽에만 남아, 최댓값이 막대에도 들고
+            // 여집합에도 드는(또는 양쪽에서 다 빠지는) 상태가 된다.
+            val inRange = { range: FieldStatsConfig.BinRange, v: Float ->
+                if (range === lastRange) range.containsInclusive(v) else range.contains(v)
+            }
             for (range in ranges) {
-                histogram[range.label] = values.count {
-                    if (range === lastRange) range.containsInclusive(it) else range.contains(it)
-                }
+                histogram[range.label] = values.count { inRange(range, it) }
                 // 열린 구간(`~100`·`200~`)은 ±무한으로 싣는다 — 스펙의 경계는 non-null이고,
                 // 무한 비교는 유한값에 대해 '경계 없음'과 정확히 같은 뜻이다.
                 specs[range.label] = FieldValueMatchSpec.NumericPartRange(
@@ -2267,6 +2408,37 @@ class StatsDataProvider {
                     min = range.min ?: Float.NEGATIVE_INFINITY,
                     max = range.max ?: Float.POSITIVE_INFINITY,
                     inclusiveMax = range === lastRange
+                )
+            }
+            // **어느 구간에도 안 드는 값을 어디에도 세지 않던 자리** (B-197). 구간마다 따로
+            // 세므로 `~160`·`180~`처럼 사이가 빈 정의에서는 막대 합이 모집단보다 작아지는데,
+            // 그 사실을 말하는 자리가 없었다 — 세계관마다 구간이 다른 필드를 합산하면 형제
+            // 세계관의 값이 통째로 사라지기도 한다. 레거시 분포는 이미 반대로 한다
+            // ([OUT_OF_RANGE_LABEL] 키로 보이고 드릴다운도 된다 — B-40). 히스토그램만 그 규약
+            // 밖이었고, R-17(값이 있는데 안 보이는 것보다 어디에도 안 든다는 사실을 보이는 편이 낫다)의
+            // 정반대다.
+            //
+            // **0이면 막대를 만들지 않는다** — 레거시 분포가 `counted[OUT_OF_RANGE_LABEL]?.let`으로
+            // 세우는 그 규칙과 같다. 정의된 구간은 0이어도 남기지만(거기가 비었다는 정보다)
+            // 여집합의 0은 *구간 정의가 값을 다 덮었다*는 뜻이라 막대로 말할 것이 없다.
+            //
+            // **구간 정의가 하나도 파싱되지 않는 구성**(mode는 custom인데 ranges가 빈 경우)에서는
+            // 모든 값이 여기로 온다 — 종전에는 히스토그램이 통째로 비어 아무 말도 없었다.
+            val outsideCount = values.count { v -> ranges.none { inRange(it, v) } }
+            if (outsideCount > 0) {
+                // **사용자가 구간 하나를 하필 이 라벨로 지었을 수 있다** — 그때 같은 키로 쓰면
+                // 그 구간의 인원과 스펙이 조용히 덮인다(여집합은 그 구간을 *제외한* 것이라
+                // 합칠 수도 없다: 뜻이 서로 다르다). 그래서 겹치면 순번을 붙여 갈라 둔다 —
+                // `autoBins`가 자기 라벨끼리의 겹침에 대해 이미 쓰는 방식이다.
+                var label = OUT_OF_RANGE_LABEL
+                var n = 2
+                while (label in histogram) label = "$OUT_OF_RANGE_LABEL ($n)".also { n++ }
+                histogram[label] = outsideCount
+                // 여집합 스펙은 **방금 분포를 그린 그 스펙 목록**을 받는다 — 구간을 다시 짓지 않는다.
+                specs[label] = FieldValueMatchSpec.outside(
+                    ranges.mapNotNull { specs[it.label] as? FieldValueMatchSpec.NumericPartRange },
+                    partIndex,
+                    separator
                 )
             }
         } else {
@@ -3046,6 +3218,68 @@ class StatsDataProvider {
      * 아니다 — 모집단(값을 가진 대상 수)은 접힌 표가 말할 수 없어 축마다 이미 갖고 있는
      * 버킷을 그대로 세야 하고, 그 셈은 카드가 실제로 서는 그룹에서만 한다(아래 [ownerCount]).
      */
+    /**
+     * **작품 간 필드 편중 비교** — 같은 키의 필드가 여러 세계관에 있을 때, 작품마다 주요값이
+     * 무엇인지 나란히 놓는다 (*이 작품의 주인공들은 대부분 '검사', 저 작품은 '마법사'*).
+     *
+     * **축을 인자로 받는 이유는 바로 위 [detectFieldPatterns]와 같다** — 종전에는 이 루프가
+     * 캐릭터 `fieldsByKey`만 돌았고(B-195), 12판이 편중·균형·희소를 세 축으로 열면서도 이
+     * 자리는 그대로였다. 함수를 축마다 베끼면 그중 하나만 고쳐지는 날이 오고, 사건 축이
+     * 통째로 없던 것(B-36)이 애초에 그렇게 생겼다.
+     *
+     * **작품 축은 부르지 않는다** — 작품 필드값은 작품당 하나라 '작품별 분포'가 자기 자신이다.
+     *
+     * 세계관 → 대표 작품 대응([firstNovelByUniverse])은 **축과 무관하게 성립한다**: 묶는 기준이
+     * 값을 가진 대상이 아니라 **필드 정의가 속한 세계관**이고, 사건 필드 정의도 그것을 갖는다.
+     */
+    private fun detectCrossNovelFieldBias(
+        s: StatsSnapshot,
+        axis: PatternAxis,
+        fieldGroups: Collection<List<FieldDefinition>>,
+        countsByDefId: Map<Long, Map<String, Int>>,
+        validUniverseIds: Set<Long>,
+        firstNovelByUniverse: Map<Long, com.novelcharacter.app.data.model.Novel>,
+        out: MutableList<PatternInsight>
+    ) {
+        for (fieldDefs in fieldGroups) {
+            if (fieldDefs.size < 2) continue
+            val novelPatterns = mutableListOf<Pair<String, String>>() // (작품명, 주요값)
+            for (fd in fieldDefs) {
+                val novel = fd.universeId.takeIf { it in validUniverseIds }
+                    ?.let { firstNovelByUniverse[it] } ?: continue
+                val statsConfig = statsConfigOf(s, fd)
+                val keyCounts = foldStatsKeyCounts(
+                    s, fd, statsConfig, countsByDefId[fd.id].orEmpty()
+                )
+                val total = keyCounts.values.sum()
+                val topVal = ValueDistributions.sorted(keyCounts).entries.firstOrNull()
+                if (topVal != null && total > 0) {
+                    val pct = topVal.value * 100f / total
+                    // **이 50%는 민감도가 아니라 정의다** — 작품마다의 '주요값'을 과반으로 잡는
+                    // 것이고, 과반이라는 말이 곧 50%다. 편중 기준(사용자 조정)과 섞으면
+                    // "주요값"이 작품별로 과반이 아닐 수도 있게 되어 카드 문구가 거짓이 된다.
+                    if (pct >= CROSS_NOVEL_MAJORITY_PERCENT) {
+                        novelPatterns.add(Pair(novel.title, "${topVal.key}(${String.format("%.0f", pct)}%)"))
+                    }
+                }
+            }
+            if (novelPatterns.size >= 2) {
+                val fieldName = fieldDefs.first().name
+                val desc = novelPatterns.joinToString(", ") { "${it.first}: ${it.second}" }
+                out.add(PatternInsight(
+                    type = PatternType.CROSS_NOVEL,
+                    severity = PatternSeverity.LOW,
+                    // 접두는 [axis]가 든다 — 같은 이름의 필드가 축마다 있으면 두 카드가
+                    // 똑같이 보인다(원칙 04 — 일일이 열어봐야 아는 데이터를 만들지 않는다).
+                    title = "${axis.titlePrefix}$fieldName: 작품별 편중 경향",
+                    description = "$desc — 전체적으로 $fieldName 편중 경향이 보입니다.",
+                    suggestion = "작품별 다양성 확보를 고려하세요.",
+                    axis = axis
+                ))
+            }
+        }
+    }
+
     private fun <T> detectFieldPatterns(
         s: StatsSnapshot,
         axis: PatternAxis,
@@ -3206,11 +3440,16 @@ class StatsDataProvider {
             stored = s.eventFieldValues.map { Triple(it.fieldDefinitionId, it.eventId, it.value) },
             calculated = computeAllEventCalculatedValues(s)
         )
+        // 접힌 표와 키 묶음을 **한 번만** 짓는다 — 아래 작품별 편중 비교(B-195)가 같은 것을 쓴다.
+        // 인라인으로 두면 그쪽에서 또 접어 같은 값 표를 두 번 만든다.
+        val eventCountsByDefId = rawCountsByDef(eventAxisValues) { it.value }
+        val eventFieldsByKey =
+            analyzableDefs(s, s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }
         detectFieldPatterns(
             s, PatternAxis.EVENT,
-            analyzableDefs(s, s.eventFieldDefinitions).groupBy { Pair(it.key, it.type) }.values,
+            eventFieldsByKey.values,
             ownerValuesByDefId = eventAxisValues,
-            countsByDefId = rawCountsByDef(eventAxisValues) { it.value },
+            countsByDefId = eventCountsByDefId,
             ownerOf = { it.ownerId },
             enabledTypes, thresholds, insights
         )
@@ -3289,40 +3528,23 @@ class StatsDataProvider {
                 }
             }
 
-            // 작품 간 필드 편중 비교 — 이 축은 캐릭터 값 표라 접힌 표를 그대로 쓴다(S6 4차).
-            for ((keyType, fieldDefs) in fieldsByKey) {
-                if (fieldDefs.size < 2) continue
-                val novelPatterns = mutableListOf<Pair<String, String>>() // (작품명, 주요값)
-                for (fd in fieldDefs) {
-                    val novel = fd.universeId.takeIf { it in validUniverseIds }
-                        ?.let { firstNovelByUniverse[it] } ?: continue
-                    val statsConfig = statsConfigOf(s, fd)
-                    val keyCounts = foldStatsKeyCounts(
-                        s, fd, statsConfig, countsByDefId[fd.id].orEmpty()
-                    )
-                    val total = keyCounts.values.sum()
-                    val topVal = ValueDistributions.sorted(keyCounts).entries.firstOrNull()
-                    if (topVal != null && total > 0) {
-                        val pct = topVal.value * 100f / total
-                        // **이 50%는 민감도가 아니라 정의다** — 작품마다의 '주요값'을 과반으로 잡는
-                        // 것이고, 과반이라는 말이 곧 50%다. 편중 기준(사용자 조정)과 섞으면
-                        // "주요값"이 작품별로 과반이 아닐 수도 있게 되어 카드 문구가 거짓이 된다.
-                        if (pct >= CROSS_NOVEL_MAJORITY_PERCENT) {
-                            novelPatterns.add(Pair(novel.title, "${topVal.key}(${String.format("%.0f", pct)}%)"))
-                        }
-                    }
-                }
-                if (novelPatterns.size >= 2) {
-                    val desc = novelPatterns.joinToString(", ") { "${it.first}: ${it.second}" }
-                    insights.add(PatternInsight(
-                        type = PatternType.CROSS_NOVEL,
-                        severity = PatternSeverity.LOW,
-                        title = "${fieldDefs.first().name}: 작품별 편중 경향",
-                        description = "$desc — 전체적으로 ${fieldDefs.first().name} 편중 경향이 보입니다.",
-                        suggestion = "작품별 다양성 확보를 고려하세요."
-                    ))
-                }
-            }
+            // 작품 간 필드 편중 비교 — **축마다 함수를 다시 적지 않는다**(바로 위 편중·균형·희소가
+            // 세운 그 규율이고, 사건 축이 통째로 없던 것(B-36)이 애초에 베껴 쓴 탓이다).
+            detectCrossNovelFieldBias(
+                s, PatternAxis.CHARACTER, fieldsByKey.values, countsByDefId,
+                validUniverseIds, firstNovelByUniverse, insights
+            )
+            // **사건 필드도 작품별로 비교된다** (B-195) — *이 작품의 사건은 대부분 '전투', 저
+            // 작품은 '회담'*은 원칙 02가 말하는 실질적 인사이트의 전형이다. 12판이 편중·균형·희소를
+            // 세 축으로 열었는데 이 자리까지는 오지 않았다(그 판의 산출물이 그 셋으로 못박혀
+            // 있었기 때문이고, 넓히면 실기기 확인 항목이 함께 늘어서다).
+            detectCrossNovelFieldBias(
+                s, PatternAxis.EVENT, eventFieldsByKey.values, eventCountsByDefId,
+                validUniverseIds, firstNovelByUniverse, insights
+            )
+            // **작품 필드 축은 부르지 않는다** — 작품 필드값은 작품당 하나라 '작품별 분포'가
+            // 자기 자신이다(모든 작품이 100% 자기 값이라 카드가 언제나 뜨고 아무것도 말하지 않는다).
+            // 빠뜨린 것이 아니라 뜻이 없어서라는 것을 여기 적어 둔다.
         }
 
         // 패턴: 세력 관련

@@ -187,7 +187,7 @@ object BackupChunkFormat {
         chunkSize: Int = CHUNK_SIZE,
         onProgress: ((Long) -> Unit)? = null
     ) {
-        require(chunkSize > 0) { "Chunk size must be positive: $chunkSize" }
+        require(chunkSize > 0) { "청크 크기가 0 이하입니다: $chunkSize" }
         val src = PushbackInputStream(input, 1)
         var consumed = 0L
         var index = 0L
@@ -243,11 +243,11 @@ object BackupChunkFormat {
             val iv = ByteArray(GCM_IV_LENGTH)
             val ivRead = readFully(src, iv)
             if (ivRead == 0) break                      // EOF
-            require(ivRead == GCM_IV_LENGTH) { "Incomplete chunk IV: read $ivRead bytes" }
+            require(ivRead == GCM_IV_LENGTH) { "청크 IV가 잘렸습니다: ${ivRead}바이트만 읽혔습니다" }
 
             // 마지막 청크는 chunkSize보다 짧을 수 있다.
             val encryptedChunk = readChunkData(src, maxEncryptedChunkSize)
-            require(encryptedChunk.isNotEmpty()) { "Empty encrypted chunk" }
+            require(encryptedChunk.isNotEmpty()) { "암호화된 청크가 비어 있습니다" }
 
             // 옛 형식에는 마지막 표시가 없다 — 그쪽은 종전대로 EOF가 끝을 말한다.
             // 한 바이트 엿보기도 그때는 하지 않는다(옛 경로에 새 비용을 얹지 않는다).
@@ -265,7 +265,7 @@ object BackupChunkFormat {
         // 마지막 청크 하나를 남기므로, 여기 닿는 길은 잘림뿐이다.
         if (boundHeader != null && !sawFinal) {
             throw TruncatedBackupException(
-                "Truncated backup: the stream ended after $index chunk(s) with no final chunk."
+                "백업 파일이 잘렸습니다: 청크 ${index}개까지만 있고 마지막 청크가 없습니다."
             )
         }
     }
@@ -302,8 +302,8 @@ object BackupChunkFormat {
             }
             if (!authenticAsNonFinal) throw e           // 진짜로 깨졌거나 키가 틀렸다
             throw TruncatedBackupException(
-                "Truncated backup: chunk $index is authentic but is not the final chunk — " +
-                    "everything after it is missing."
+                "백업 파일이 잘렸습니다: ${index}번 청크는 온전하지만 마지막 청크가 아닙니다 — " +
+                    "그 뒤가 모두 없습니다."
             )
         }
     }
@@ -370,7 +370,7 @@ object BackupChunkFormat {
                 if (isV3 || isV2) {
                     val chunkSize = ByteBuffer.wrap(header, 4, 4).int
                     require(chunkSize in 1..CHUNK_SIZE * 2) {
-                        "Invalid chunk size in backup header: $chunkSize"
+                        "백업 헤더의 청크 크기가 올바르지 않습니다: $chunkSize"
                     }
                     FileOutputStream(tempFile).use { fos ->
                         readChunks(
@@ -409,11 +409,11 @@ object BackupChunkFormat {
     private fun decryptLegacy(inputFile: File, outputFile: File, keyProvider: () -> SecretKey) {
         val fileSize = inputFile.length()
         require(fileSize > GCM_IV_LENGTH) {
-            "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
+            "암호화된 파일이 너무 짧습니다: 최소 ${GCM_IV_LENGTH + 1}바이트가 필요합니다"
         }
         require(fileSize <= MAX_LEGACY_FILE_SIZE) {
-            "Encrypted file too large: ${fileSize / (1024 * 1024)}MB exceeds ${MAX_LEGACY_FILE_SIZE / (1024 * 1024)}MB limit. " +
-                "Re-export backup with the latest app version to use the efficient chunked format."
+            "암호화된 파일이 너무 큽니다: ${fileSize / (1024 * 1024)}MB로 상한 ${MAX_LEGACY_FILE_SIZE / (1024 * 1024)}MB를 넘습니다. " +
+                "최신 버전 앱에서 백업을 다시 내보내면 청크 형식으로 저장되어 이 상한을 받지 않습니다."
         }
 
         FileInputStream(inputFile).use { fis ->
@@ -421,7 +421,7 @@ object BackupChunkFormat {
             val ivRead = readFully(fis, iv)
             if (ivRead != GCM_IV_LENGTH) {
                 throw java.io.IOException(
-                    "Incomplete IV: expected $GCM_IV_LENGTH bytes but read $ivRead. The backup file may be corrupted."
+                    "IV가 잘렸습니다: ${GCM_IV_LENGTH}바이트가 필요한데 ${ivRead}바이트만 읽혔습니다. 백업 파일이 손상되었을 수 있습니다."
                 )
             }
 
@@ -430,7 +430,7 @@ object BackupChunkFormat {
             val totalRead = readFully(fis, ciphertext)
             if (totalRead != ciphertextSize) {
                 throw java.io.IOException(
-                    "Incomplete ciphertext: expected $ciphertextSize bytes but read $totalRead. The backup file may be corrupted or truncated."
+                    "암호문이 잘렸습니다: ${ciphertextSize}바이트가 필요한데 ${totalRead}바이트만 읽혔습니다. 백업 파일이 손상되었거나 잘렸을 수 있습니다."
                 )
             }
 
@@ -490,9 +490,9 @@ object BackupChunkFormat {
         onProgress: ((Long) -> Unit)? = null
     ) {
         require(passphrase.size >= MIN_PASSPHRASE_LENGTH) {
-            "Passphrase must be at least $MIN_PASSPHRASE_LENGTH characters"
+            "암호는 최소 ${MIN_PASSPHRASE_LENGTH}자 이상이어야 합니다"
         }
-        require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "Invalid iteration count: $iterations" }
+        require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "반복 횟수가 올바르지 않습니다: $iterations" }
         val salt = ByteArray(SALT_LENGTH).also { SecureRandom().nextBytes(it) }
         val key = deriveKey(passphrase, salt, iterations)
         // 헤더에 적는 크기와 실제로 자르는 크기는 한 값에서 나온다 — 갈리면 복원이 남의
@@ -534,15 +534,15 @@ object BackupChunkFormat {
                 val headerRead = readFully(fis, header)
                 val isV2 = headerRead >= 4 && startsWith(header, portableMagicV2())
                 require(isV2 || (headerRead >= 4 && startsWith(header, portableMagicV1()))) {
-                    "Not a portable backup file"
+                    "이식 가능 백업 파일이 아닙니다"
                 }
-                require(headerRead == PORTABLE_HEADER_SIZE) { "Corrupted portable backup header" }
+                require(headerRead == PORTABLE_HEADER_SIZE) { "이식 가능 백업 헤더가 손상되었습니다" }
 
                 val iterations = ByteBuffer.wrap(header, 4, 4).int
-                require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "Invalid iteration count: $iterations" }
+                require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "반복 횟수가 올바르지 않습니다: $iterations" }
                 val salt = header.copyOfRange(8, 8 + SALT_LENGTH)
                 val chunkSize = ByteBuffer.wrap(header, 8 + SALT_LENGTH, 4).int
-                require(chunkSize in 1..CHUNK_SIZE * 2) { "Invalid chunk size in backup header: $chunkSize" }
+                require(chunkSize in 1..CHUNK_SIZE * 2) { "백업 헤더의 청크 크기가 올바르지 않습니다: $chunkSize" }
 
                 val key = deriveKey(passphrase, salt, iterations)
                 FileOutputStream(tempFile).use { fos ->
@@ -579,7 +579,7 @@ object BackupChunkFormat {
 
     fun decrypt(data: ByteArray, key: SecretKey): ByteArray {
         require(data.size > GCM_IV_LENGTH) {
-            "Encrypted data too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
+            "암호화된 데이터가 너무 짧습니다: 최소 ${GCM_IV_LENGTH + 1}바이트가 필요합니다"
         }
         val buffer = ByteBuffer.wrap(data)
         val iv = ByteArray(GCM_IV_LENGTH)

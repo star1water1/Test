@@ -260,8 +260,13 @@ class WorldPackageExporter(private val context: Context) {
                     var written = 0
                     progress.onImages(0, imageTotal)
                     for ((json, prefix) in imageGroups) {
+                        // 바깥 확인도 남긴다 — 목록이 비었거나 못 읽는 항목은 아래에서 곧바로
+                        // 돌아오므로 장 단위 확인을 한 번도 지나지 않는다.
                         if (progress.isCancelled()) throw ExportCancelledException()
-                        writeImageEntries(zip, json, prefix, imageTally) {
+                        writeImageEntries(
+                            zip, json, prefix, imageTally,
+                            isCancelled = { progress.isCancelled() }
+                        ) {
                             written++
                             progress.onImages(written, imageTotal)
                         }
@@ -335,11 +340,20 @@ class WorldPackageExporter(private val context: Context) {
      * 이제 장마다 가두고 사유별로 세어 [tally]에 싣는다(감사 5장: *부분 실패가 전량 실패보다
      * 조용하면 안 된다*).
      */
+    /**
+     * [isCancelled]는 **장마다** 물어야 한다 (B-235). 종전에는 호출부의 바깥 루프(엔티티 단위)에만
+     * 있어, 그림 수십 장을 가진 캐릭터 하나를 다 쓸 때까지 취소가 반영되지 않았다 — 취소 버튼이
+     * 고장과 구분되지 않는다(R-17의 취지). 엑셀 쪽 `ImageZipHelper`는 처음부터 장마다 물었고,
+     * **같은 일을 하는 두 경로가 갈려 있던 자리**다.
+     *
+     * 기본값을 주지 않는 것은 일부러다 — 새 호출부가 잊으면 취소가 *조용히* 성립하지 않는다.
+     */
     private fun writeImageEntries(
         zip: ZipOutputStream,
         imagePathsJson: String,
         entryPrefix: String,
         tally: ImageTally,
+        isCancelled: () -> Boolean,
         onEach: () -> Unit = {}
     ) {
         if (imagePathsJson.isBlank() || imagePathsJson == "[]") return
@@ -355,6 +369,10 @@ class WorldPackageExporter(private val context: Context) {
         }
         if (paths == null) { tally.unreadableLists++; return }
         paths.forEachIndexed { index, path ->
+            // **확인은 각 장의 머리, try 밖이다.** 아래 `catch (e: Exception)`은 *읽기 실패 한 장*을
+            // 삼켜 다음 장으로 넘어가는 것이 일이므로, 취소 확인을 그 안에 넣으면
+            // [ExportCancelledException]이 실패 한 장으로 세어지고 내보내기가 그대로 계속된다.
+            if (isCancelled()) throw ExportCancelledException()
             // 훑은 장을 센다 — 실제로 담긴 장이 아니라. 원본이 없는 인덱스는 결번으로
             // 건너뛰므로(아래) 담긴 수로 세면 막대가 총량에 못 미친 채 끝난다.
             onEach()
