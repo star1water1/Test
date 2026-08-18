@@ -178,7 +178,15 @@ class StreamingImportWorkbook(file: java.io.File) : ImportWorkbook, java.io.Clos
     private var loadedRegions: List<MergedCellMap.Region> = emptyList()
 
     private val lastRowCache = HashMap<String, Int>()
-    private val headerCache = HashMap<String, Map<Int, ExcelCellValue.Primitives>?>()
+
+    /**
+     * 시트별 **앞머리 행들** — 헤더 탐색 창만큼만 담는다 (B-231 ⓑ).
+     *
+     * 종전에는 0행 하나였다. 헤더가 0행이 아닐 수 있게 되면서 [SheetResolver.locateHeader]가
+     * 앞쪽 몇 행을 묻는데, 그 조회는 **시트 정체 판정에서 워크북의 모든 시트에 걸린다** —
+     * 창 안의 행을 여기서 값싸게 주지 않으면 `getRow(1)` 하나가 시트를 **통째로 적재**한다.
+     */
+    private val leadingCache = HashMap<String, Map<Int, Map<Int, ExcelCellValue.Primitives>>>()
 
     override val numberOfSheets: Int get() = names.size
     override fun getSheetName(index: Int): String = names[index]
@@ -193,12 +201,16 @@ class StreamingImportWorkbook(file: java.io.File) : ImportWorkbook, java.io.Clos
         if (loadedName == sheet) loadedRows.keys.maxOrNull() ?: 0 else reader.lastRowNumOf(sheet)
     }
 
-    internal fun headerRowOf(sheet: String): Map<Int, ExcelCellValue.Primitives>? {
-        if (loadedName == sheet) return loadedRows[0]
-        // getOrPut은 null을 저장하지 못한다 — 0행이 없는 시트(B-218 ①)가 조회마다 재파싱되지
-        // 않도록 containsKey로 "계산했음"을 따로 판정한다.
-        if (!headerCache.containsKey(sheet)) headerCache[sheet] = reader.readHeaderRow(sheet)
-        return headerCache[sheet]
+    internal fun headerRowOf(sheet: String): Map<Int, ExcelCellValue.Primitives>? =
+        leadingRowOf(sheet, 0)
+
+    /** 창 안의 행 하나 — 없으면 null. 창 전체를 한 번만 읽어 담는다. */
+    internal fun leadingRowOf(sheet: String, index: Int): Map<Int, ExcelCellValue.Primitives>? {
+        if (loadedName == sheet) return loadedRows[index]
+        val head = leadingCache.getOrPut(sheet) {
+            reader.readLeadingRows(sheet, SheetResolver.HEADER_SEARCH_ROWS)
+        }
+        return head[index]
     }
 
     /** [sheet]를 적재한다(이미 적재돼 있으면 무동작). 직전 시트는 버려진다. */
@@ -223,10 +235,11 @@ class StreamingImportWorkbook(file: java.io.File) : ImportWorkbook, java.io.Clos
     }
 
     internal fun rowOf(sheet: String, index: Int, owner: ImportSheet): ImportRow? {
-        // 0행만 필요한 경로(시트 정체 판정 R-7)는 시트를 통째로 적재하지 않는다.
-        if (index == 0 && loadedName != sheet) {
-            val header = headerRowOf(sheet) ?: return null
-            return StreamingImportRow(0, header, owner)
+        // 앞머리 몇 행만 필요한 경로(시트 정체 판정 R-7 · 헤더 탐색 B-231 ⓑ)는 시트를
+        // 통째로 적재하지 않는다. 창을 넘어서면 그때 적재한다.
+        if (index < SheetResolver.HEADER_SEARCH_ROWS && loadedName != sheet) {
+            val row = leadingRowOf(sheet, index) ?: return null
+            return StreamingImportRow(index, row, owner)
         }
         ensureLoaded(sheet)
         val cells = loadedRows[index] ?: return null

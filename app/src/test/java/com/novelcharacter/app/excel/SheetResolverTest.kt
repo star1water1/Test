@@ -163,6 +163,111 @@ class SheetResolverTest {
         }
     }
 
+    // ── ⑦ 헤더 행 탐색: 표 위에 제목·메모가 있어도 받아들인다 (B-231 ⓑ) ──────
+    //
+    // **이 절의 요점은 답이 아니라 *두 경로가 같다*는 것이다.** 등재가 이 갈래에 단 조건이
+    // *"두 경로·모든 분석기에 같게 걸어야 한다"*였고, `onBothPaths`가 그것을 기계로 잰다 —
+    // 스트리밍은 0행만 값싸게 읽는 최적화를 갖고 있어(B-218 ①) 창을 넓히는 순간 갈리기 쉬운
+    // 자리다.
+
+    /** 표 위에 제목 한 줄 + 빈 줄이 있는 파일 — 사용자가 가장 흔히 만드는 모양이다. */
+    private fun XSSFWorkbook.addNameBankSheetWithBanner(name: String, headerAt: Int) {
+        val sheet = createSheet(name)
+        sheet.createRow(0).createCell(0).setCellValue("내 이름 후보 모음")
+        sheet.createRow(headerAt).apply {
+            createCell(0).setCellValue("이름")
+            createCell(1).setCellValue("성별")
+            createCell(2).setCellValue("출처")
+        }
+        sheet.createRow(headerAt + 1).apply {
+            createCell(0).setCellValue("가온")
+            createCell(1).setCellValue("여")
+        }
+    }
+
+    @Test
+    fun headerBelowTitleRow_isFound_onBothPaths() {
+        val wb = XSSFWorkbook()
+        wb.addNameBankSheetWithBanner("이름 은행", headerAt = 2)
+        onBothPaths(wb) { workbook ->
+            val sheet = workbook.getSheet("이름 은행")!!
+            val found = SheetResolver.locateHeader(sheet, "이름")
+            assertEquals(2, found?.index)
+            // **데이터는 헤더 다음 행부터다** — 이 값이 1로 남으면 제목·빈 줄이 데이터로 읽힌다.
+            assertEquals(3, found?.dataStart)
+            // 시트 해석도 함께 열린다(종전에는 0행이 '내 이름 후보 모음'이라 통째로 거부됐다).
+            assertEquals("이름 은행", SheetResolver.resolveSpecSheet(workbook, nameBankSpec())?.sheetName)
+        }
+    }
+
+    @Test
+    fun headerAtRowZero_isUnchanged_onBothPaths() {
+        val wb = XSSFWorkbook()
+        wb.addNameBankSheet("이름 은행")
+        onBothPaths(wb) { workbook ->
+            val found = SheetResolver.locateHeader(workbook.getSheet("이름 은행")!!, "이름")
+            // 0행이 헤더면 그 자리에서 멈춘다 — 종전과 답이 같아야 한다(창은 *거부되던 파일*만 연다).
+            assertEquals(0, found?.index)
+            assertEquals(1, found?.dataStart)
+        }
+    }
+
+    @Test
+    fun headerBeyondWindow_isNotFound_onBothPaths() {
+        val wb = XSSFWorkbook()
+        // 창(HEADER_SEARCH_ROWS) 밖으로 밀린 헤더는 찾지 않는다 — 창이 없으면 헤더 없는 시트에서
+        // 끝까지 훑고, 그 비용이 시트 정체 판정(모든 시트)에 곱해진다.
+        wb.addNameBankSheetWithBanner("이름 은행", headerAt = SheetResolver.HEADER_SEARCH_ROWS)
+        onBothPaths(wb) { workbook ->
+            assertNull(SheetResolver.locateHeader(workbook.getSheet("이름 은행")!!, "이름"))
+        }
+    }
+
+    @Test
+    fun headerAtWindowEdge_isFound_onBothPaths() {
+        val wb = XSSFWorkbook()
+        wb.addNameBankSheetWithBanner("이름 은행", headerAt = SheetResolver.HEADER_SEARCH_ROWS - 1)
+        onBothPaths(wb) { workbook ->
+            val found = SheetResolver.locateHeader(workbook.getSheet("이름 은행")!!, "이름")
+            // 경계가 반 칸 어긋나면(`until` ↔ `..`) 이 시험만 죽는다.
+            assertEquals(SheetResolver.HEADER_SEARCH_ROWS - 1, found?.index)
+        }
+    }
+
+    @Test
+    fun characterSheetFingerprint_survivesTitleRow_onBothPaths() {
+        val wb = XSSFWorkbook()
+        // 캐릭터 시트에도 제목 줄이 얹힐 수 있다. 지문 판정이 0행에 묶여 있으면 이 시트가
+        // *캐릭터 시트가 아니다*로 읽혀, 예약명을 다투는 자리에서 데이터 시트로 넘어간다.
+        val sheet = wb.createSheet("이름 은행")
+        sheet.createRow(0).createCell(0).setCellValue("우리 작품 캐릭터")
+        sheet.createRow(1).apply {
+            createCell(0).setCellValue("이름")
+            createCell(1).setCellValue("이명")
+            createCell(2).setCellValue("작품")
+        }
+        onBothPaths(wb) { workbook ->
+            assertTrue(SheetResolver.looksLikeCharacterSheet(workbook.getSheet("이름 은행")!!))
+            // 지문에 걸렸으므로 데이터 시트로 넘겨주지 않는다.
+            assertNull(SheetResolver.resolveSpecSheet(workbook, nameBankSpec()))
+        }
+    }
+
+    @Test
+    fun emptyLeadingRows_areSkipped_onBothPaths() {
+        val wb = XSSFWorkbook()
+        // 편집기가 행을 지워 0행이 아예 없는 파일(B-231 ⓐ가 *말하게* 만든 그 모양).
+        val sheet = wb.createSheet("이름 은행")
+        sheet.createRow(3).apply {
+            createCell(0).setCellValue("이름")
+            createCell(1).setCellValue("성별")
+        }
+        onBothPaths(wb) { workbook ->
+            val found = SheetResolver.locateHeader(workbook.getSheet("이름 은행")!!, "이름")
+            assertEquals(3, found?.index)
+        }
+    }
+
     // ── ⑥ 첫 열 별칭: 영문 헤더 파일도 spec 시트로 인정 ──────────────────────
 
     @Test
