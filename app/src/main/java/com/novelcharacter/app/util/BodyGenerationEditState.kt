@@ -48,7 +48,17 @@ data class BodyGenerationEditState(
     /** 힙 축 — 이름 + [보너스, 끝]. */
     val hipRows: List<RowText>,
     /** 프리셋 — 이름 + 축 셋의 **고른 자리**(스피너는 자리로 저장한다). */
-    val presetRows: List<PresetText>
+    val presetRows: List<PresetText>,
+    /**
+     * 프리셋 스피너의 **항목 글자**.
+     *
+     * **자리가 아니라 글자도 상태인 것이 여기 있는 이유다.** [기본값으로]는 창을 닫지 않고
+     * 칸을 되돌리는데 그때 **스피너 항목 글자도 함께** 되돌린다(이름 칸만 바꾸면 축 이름은
+     * 기본값인데 프리셋의 항목은 사용자가 지은 옛 이름으로 남아 **한 창이 두 말을 한다**).
+     * 담지 않으면 *되돌린 뒤 회전*에서 정확히 그 두 말이 돌아온다 — 항목은 옛 이름,
+     * 이름 칸은 기본 이름.
+     */
+    val presetOptionLabels: OptionLabels
 ) {
 
     /** 축 한 줄이 든 글자 — 이름과 수치 칸을 보이는 그대로. */
@@ -56,6 +66,21 @@ data class BodyGenerationEditState(
 
     /** 프리셋 한 줄 — 이름과 고른 축의 자리. */
     data class PresetText(val name: String, val torso: Int, val bust: Int, val hip: Int)
+
+    /** 프리셋이 고르는 축 셋의 항목 글자. */
+    data class OptionLabels(
+        val torso: List<String>,
+        val bust: List<String>,
+        val hip: List<String>
+    ) {
+        companion object {
+            fun of(gen: GenerationPreset) = OptionLabels(
+                torso = gen.torsoOptions.map { it.label },
+                bust = gen.bustOptions.map { it.label },
+                hip = gen.hipOptions.map { it.label }
+            )
+        }
+    }
 
     fun encode(): String = JSONObject().apply {
         put(KEY_CURRENT, BodyAnalysisConfig.generationToJsonString(current))
@@ -68,6 +93,11 @@ data class BodyGenerationEditState(
                 put(KEY_NAME, p.name)
                 put(KEY_TORSO, p.torso); put(KEY_BUST, p.bust); put(KEY_HIP, p.hip)
             })
+        })
+        put(KEY_LABELS, JSONObject().apply {
+            put(KEY_TORSO, JSONArray().apply { presetOptionLabels.torso.forEach { put(it) } })
+            put(KEY_BUST, JSONArray().apply { presetOptionLabels.bust.forEach { put(it) } })
+            put(KEY_HIP, JSONArray().apply { presetOptionLabels.hip.forEach { put(it) } })
         })
     }.toString()
 
@@ -99,12 +129,18 @@ data class BodyGenerationEditState(
         } else {
             base.presetRows
         }
+        // 항목 글자도 축 수와 맞아야 한다 — 어긋나면 스피너가 없는 자리를 가리킨다.
+        val labels = if (presetOptionLabels.torso.size == current.torsoOptions.size &&
+            presetOptionLabels.bust.size == current.bustOptions.size &&
+            presetOptionLabels.hip.size == current.hipOptions.size
+        ) presetOptionLabels else base.presetOptionLabels
         return copy(
             heightRows = fit(heightRows, base.heightRows),
             torsoRows = fit(torsoRows, base.torsoRows),
             bustRows = fit(bustRows, base.bustRows),
             hipRows = fit(hipRows, base.hipRows),
-            presetRows = presets
+            presetRows = presets,
+            presetOptionLabels = labels
         )
     }
 
@@ -120,6 +156,7 @@ data class BodyGenerationEditState(
         private const val KEY_TORSO = "torso"
         private const val KEY_BUST = "bust"
         private const val KEY_HIP = "hip"
+        private const val KEY_LABELS = "labels"
 
         /**
          * 담긴 것을 되돌린다 — **못 읽으면 `null`이고, 부르는 쪽은 안전 종료로 돌아간다**(R-41-a).
@@ -149,12 +186,22 @@ data class BodyGenerationEditState(
                                 )
                             }
                         }
+                    },
+                    presetOptionLabels = (obj.optJSONObject(KEY_LABELS)).let { lab ->
+                        if (lab == null) OptionLabels.of(current) else OptionLabels(
+                            torso = strings(lab.optJSONArray(KEY_TORSO)),
+                            bust = strings(lab.optJSONArray(KEY_BUST)),
+                            hip = strings(lab.optJSONArray(KEY_HIP))
+                        )
                     }
                 )
             } catch (_: Exception) {
                 null
             }
         }
+
+        private fun strings(arr: JSONArray?): List<String> =
+            if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }
 
         /**
          * 아직 아무것도 안 고친 상태 — 창을 **처음 열 때**의 한 벌이다.
@@ -174,7 +221,8 @@ data class BodyGenerationEditState(
             hipRows = current.hipOptions.map {
                 RowText(it.label, listOf(format(it.hipBonus), format(it.maxDiff)))
             },
-            presetRows = current.bodyPresets.map { PresetText(it.label, it.torso, it.bust, it.hip) }
+            presetRows = current.bodyPresets.map { PresetText(it.label, it.torso, it.bust, it.hip) },
+            presetOptionLabels = OptionLabels.of(current)
         )
 
         /**

@@ -32,7 +32,12 @@ class BodyGenerationEditStateTest {
             hipRows = rows(base.hipRows),
             presetRows = base.presetRows.mapIndexed { i, _ ->
                 BodyGenerationEditState.PresetText(next(), i % 2, 0, i % 2)
-            }
+            },
+            presetOptionLabels = BodyGenerationEditState.OptionLabels(
+                torso = gen.torsoOptions.map { next() },
+                bust = gen.bustOptions.map { next() },
+                hip = gen.hipOptions.map { next() }
+            )
         )
     }
 
@@ -127,6 +132,40 @@ class BodyGenerationEditStateTest {
         val step = GenerationPreset.Limits.TORSO_END_STEP
         assertEquals(step, BodyGenerationEditState.format(step).toDouble(), 0.0)
         assertEquals(0.4995, BodyGenerationEditState.format(0.4995).toDouble(), 0.0)
+    }
+
+    @Test
+    fun `되돌린 뒤 회전해도 항목 글자와 이름 칸이 같은 말을 한다`() {
+        // [기본값으로]는 창을 닫지 않고 칸을 되돌리며 **스피너 항목 글자도** 되돌린다.
+        // 그 글자를 담지 않으면 회전에서 항목만 옛 이름으로 되살아나 **한 창이 두 말을 한다**.
+        val custom = gen.copy(torsoOptions = gen.torsoOptions.mapIndexed { i, o -> o.copy(label = "옛이름$i") })
+        val afterReset = BodyGenerationEditState.initial(custom).copy(
+            presetOptionLabels = BodyGenerationEditState.OptionLabels.of(gen)
+        )
+        val back = BodyGenerationEditState.decode(afterReset.encode())
+        assertEquals(gen.torsoOptions.map { it.label }, back?.presetOptionLabels?.torso)
+        // 한 벌은 여전히 *열 때의 것*이다 — 되돌리기는 저장이 아니다.
+        assertEquals(custom.torsoOptions.map { it.label }, back?.current?.torsoOptions?.map { it.label })
+    }
+
+    @Test
+    fun `항목 글자가 축 수와 어긋나면 되돌린다`() {
+        val state = BodyGenerationEditState.initial(gen)
+        val broken = state.copy(
+            presetOptionLabels = state.presetOptionLabels.copy(torso = listOf("하나만"))
+        )
+        assertEquals(
+            BodyGenerationEditState.OptionLabels.of(gen),
+            broken.aligned().presetOptionLabels
+        )
+    }
+
+    @Test
+    fun `옛 판이 담은 것에 항목 글자가 없으면 한 벌에서 채운다`() {
+        // 판올림 왕복 — 담긴 것이 통째로 없다고 창을 닫을 이유는 없다(그 칸은 한 벌이 답한다).
+        val json = BodyGenerationEditState.initial(gen).encode().replace("\"labels\"", "\"labels_old\"")
+        val back = BodyGenerationEditState.decode(json)
+        assertEquals(BodyGenerationEditState.OptionLabels.of(gen), back?.presetOptionLabels)
     }
 
     @Test

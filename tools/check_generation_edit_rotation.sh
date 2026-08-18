@@ -22,9 +22,13 @@
 # ② 담는가 — `onSaveInstanceState`가 있고 순수 계층의 `encode()`를 지나는가.
 # ③ 푸는가 — `onCreateDialog`가 `decode()`를 지나고, **못 읽으면 안전 종료**인가(R-41-a).
 #    껍데기를 띄우면 [저장]이 사용자가 손대지도 않은 기본값을 진짜 설정 위에 덮어쓴다.
-# ④ **칸 전수가 담기는가** — 창이 든 행 필드가 전부 `snapshot()`에서 읽히는가.
+# ④ **칸 전수가 담기는가** — 창이 든 **편집 상태 필드 전수**가 `snapshot()`에서 읽히는가.
 #    R-41이 *"새 상태 필드는 그 벌에 함께 등재한다"*로 답한 그 자리이고, **명단이 아니라
 #    선언에서 뜬다**(적어 두면 새 칸이 조용히 빠진다 — `check_view_probe_targets.sh`의 논리).
+#    **`*Rows`로 좁히지 않는다** — 첫 판이 그렇게 좁혔더니 *스피너 항목 글자*(`presetOptionLabels`,
+#    [기본값으로]가 되돌리는 상태)가 그물 밖이었다. 창의 `private var`는 **전부** 편집 상태로
+#    보고, 아닌 것은 선언 자리에 `// 담지 않음(사유)`를 적는다(명단이 아니라 자리에 —
+#    `check_import_row_queries.sh`가 세운 관행). **낡은 표식도 위반이다.**
 # ⑤ **폼이 담긴 것에서 서는가** — 행을 `current.*Options`에서 그리면 회전 뒤에 *저장된 값*이
 #    서고 적던 것은 사라진다. 담기·풀기가 다 맞아도 **그리는 자리가 딴 데를 보면** 헛일이다.
 # ⑥ 받는 쪽이 듣는가 — 호스트가 `RESULT_KEY`를 듣고, 그 등록이 **`onCreate`** 안인가.
@@ -96,7 +100,22 @@ else
 fi
 
 # ── ④ 칸 전수가 담기는가 (명단이 아니라 선언에서 뜬다) ──
-ROW_FIELDS=$(grep -oE '^    private var ([A-Za-z]+Rows):' "$DIALOG" | sed -E 's/^    private var ([A-Za-z]+Rows):/\1/')
+# 창의 `private var` 전수 — 좁히지 않는다(위 머리말 ④의 사고).
+ROW_FIELDS=$(grep -nE '^    private var [A-Za-z]' "$DIALOG" | while IFS=: read -r ln rest; do
+  name=$(printf '%s' "$rest" | sed -E 's/^    private var ([A-Za-z0-9_]+).*/\1/')
+  # 예외는 자리에 적는다 — 선언 줄이나 바로 윗줄의 `// 담지 않음(사유)`.
+  here=$(sed -n "${ln}p" "$DIALOG"); above=$(sed -n "$((ln - 1))p" "$DIALOG")
+  case "$here$above" in *"담지 않음("*) continue ;; esac
+  printf '%s\n' "$name"
+done)
+# 낡은 표식(위반이 없는데 남은 면제)도 빨간불이다.
+STALE=$(grep -nE '담지 않음\(' "$DIALOG" | while IFS=: read -r ln _; do
+  nxt=$(sed -n "${ln}p;$((ln + 1))p" "$DIALOG")
+  case "$nxt" in *"private var "*) ;; *) printf '%s\n' "$ln" ;; esac
+done)
+if [ -n "$STALE" ]; then
+  fail "위반에 붙지 못한 '담지 않음' 표식이 있다(줄 $(printf '%s' "$STALE" | tr '\n' ' ')) — 표식은 면제가 아니라 사유다"
+fi
 SNAP_BODY=$(awk '
   /private fun snapshot\(\)/ { ins = 1 }
   ins { print }
@@ -105,7 +124,7 @@ SNAP_BODY=$(awk '
 if [ -z "$ROW_FIELDS" ]; then
   # **0건을 '위반이 없다'로 읽지 않는다** — 선언 꼴이 바뀌면 이 축이 눈먼 채 초록이 된다
   # (`check_restore_preview_parity.sh` 축 ⑥이 실제로 그렇게 열흘을 눈먼 채 지났다).
-  fail "창에서 행 필드 선언을 하나도 뜨지 못했다 — 선언 꼴이 바뀌었는지 보라(이 축이 눈먼 채 초록이 된다)"
+  fail "창에서 편집 상태 필드 선언을 하나도 뜨지 못했다 — 선언 꼴이 바뀌었는지 보라(이 축이 눈먼 채 초록이 된다)"
 elif [ -z "$SNAP_BODY" ]; then
   fail "창에 snapshot()이 없다 — 위젯을 읽어 담는 자리가 없다"
 else
@@ -116,7 +135,7 @@ else
   if [ -n "$MISSING" ]; then
     fail "snapshot()이 읽지 않는 칸이 있다 —$MISSING (그 칸은 회전 한 번에 사라진다)"
   else
-    echo "  ✓ 창이 든 행 필드 $(printf '%s\n' "$ROW_FIELDS" | grep -c .)칸이 전부 snapshot()에서 읽힌다"
+    echo "  ✓ 창이 든 편집 상태 $(printf '%s\n' "$ROW_FIELDS" | grep -c .)칸이 전부 snapshot()에서 읽힌다"
   fi
 fi
 

@@ -64,6 +64,14 @@ class BodyGenerationEditDialog : DialogFragment() {
     private var hipRows: List<AxisRow> = emptyList()
     private var presetRows: List<PresetRow> = emptyList()
 
+    /**
+     * 프리셋 스피너에 지금 실려 있는 항목 글자 — **[기본값으로]가 이것도 되돌린다.**
+     * 위젯에서 되읽지 않고 필드로 드는 것은 `Spinner.adapter`를 훑어 글자를 되뽑는 것보다
+     * *무엇을 실었는가*가 정확하기 때문이다(같은 근거로 [BodyGenerationEditState]가 이것을 담는다).
+     */
+    private var presetOptionLabels: BodyGenerationEditState.OptionLabels =
+        BodyGenerationEditState.OptionLabels(emptyList(), emptyList(), emptyList())
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         // **회전 뒤가 먼저다** — 담긴 것이 있으면 그것이 사용자가 적던 값이고,
         // 없으면 연 쪽이 넘긴 처음 상태다. 둘의 타입이 같아 길을 가르지 않는다.
@@ -108,7 +116,8 @@ class BodyGenerationEditDialog : DialogFragment() {
                     it.name.text.toString(), it.torso.selectedItemPosition,
                     it.bust.selectedItemPosition, it.hip.selectedItemPosition
                 )
-            }
+            },
+            presetOptionLabels = presetOptionLabels
         )
     }
 
@@ -148,6 +157,7 @@ class BodyGenerationEditDialog : DialogFragment() {
         // 담긴 칸을 한 벌의 모양에 맞춘다 — 어긋난 축만 되돌린다(순수 계층이 든다).
         val state = saved.aligned()
         current = state.current
+        presetOptionLabels = state.presetOptionLabels
         val density = context.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
 
@@ -245,9 +255,11 @@ class BodyGenerationEditDialog : DialogFragment() {
                 }
             // 스피너 항목은 **지금 창에 적힌 이름**이 아니라 저장된 이름이다 — 이름을 고치는
             // 중에 항목이 흔들리면 고르던 자리를 잃는다. 저장은 자리로 하므로 뜻은 같다.
-            val t = spinner(current.torsoOptions.map { it.label }, preset.torso)
-            val b = spinner(current.bustOptions.map { it.label }, preset.bust)
-            val h = spinner(current.hipOptions.map { it.label }, preset.hip)
+            // **담긴 것에서 오는 이유는 [기본값으로]가 이 글자도 되돌리기 때문이다**(B-260) —
+            // `current`에서 다시 뽑으면 *되돌린 뒤 회전*에서 항목만 옛 이름으로 되살아난다.
+            val t = spinner(state.presetOptionLabels.torso, preset.torso)
+            val b = spinner(state.presetOptionLabels.bust, preset.bust)
+            val h = spinner(state.presetOptionLabels.hip, preset.hip)
             row.addView(t); row.addView(b); row.addView(h)
             root.addView(row)
             PresetRow(name.second, t, b, h)
@@ -315,6 +327,10 @@ class BodyGenerationEditDialog : DialogFragment() {
                         it.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                             resetTo(context, BodyAnalysisConfig.DEFAULT_GENERATION, heightRows,
                                 torsoRows, bustRows, hipRows, presetRows)
+                            // 스피너에 실은 글자가 바뀌었으므로 담을 것도 함께 바꾼다 —
+                            // 안 바꾸면 되돌린 뒤 회전에서 항목만 옛 이름으로 되살아난다.
+                            presetOptionLabels = BodyGenerationEditState.OptionLabels
+                                .of(BodyAnalysisConfig.DEFAULT_GENERATION)
                             refreshBandWarnings()
                         }
                     }
