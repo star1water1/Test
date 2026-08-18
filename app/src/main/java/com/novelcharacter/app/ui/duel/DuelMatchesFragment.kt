@@ -79,10 +79,14 @@ class DuelMatchesFragment : Fragment() {
             findNavController().popBackStack()
             return
         }
-        // 회전 뒤에는 사용자가 만든 상태가 이긴다 — 인자를 다시 읽으면 껐던 거르개가 되살아난다.
+        // 요청을 상태로 옮기고 **인자에서 지운다** (R-61). 남겨 두면 화면이 다시 설 때마다
+        // 같은 요청이 다시 걸려 **그사이 사용자가 끈 거르개를 재생성이 도로 켠다.**
+        // 옮긴 상태는 아래 onSaveInstanceState가 지므로 지워도 잃는 것이 없다.
         if (savedInstanceState == null) {
             onlyCross = arguments?.getBoolean(ARG_ONLY_CROSS, false) ?: false
             focusCharacterId = arguments?.getLong(ARG_FOCUS_CHARACTER_ID, -1L) ?: -1L
+            arguments?.remove(ARG_ONLY_CROSS)
+            arguments?.remove(ARG_FOCUS_CHARACTER_ID)
         } else {
             onlyCross = savedInstanceState.getBoolean(ARG_ONLY_CROSS, false)
             focusCharacterId = savedInstanceState.getLong(ARG_FOCUS_CHARACTER_ID, -1L)
@@ -155,10 +159,17 @@ class DuelMatchesFragment : Fragment() {
             // 순위표가 *"N개 있습니다"*라고 말한 판이 오래된 것일 때 **0개가 보인다** —
             // 확정 15-8이 막으려던 그 증상이 술어가 아니라 **범위**에서 되살아나는 자리다.
             // 고르는 일도 소유 표를 만드는 일도 무거워 ViewModel이 스레드를 옮겨 한다.
+            //
+            // **가리킨 캐릭터가 없으면 범위를 풀고 그 사실을 말한다** (R-61 마지막 항).
+            // 그사이 지워졌을 수 있는데, 그때 그 id로 좁히면 **언제나 0건**이라 사용자는
+            // 자기가 잘못 눌렀다고 여긴다. 지워진 캐릭터의 그림은 이미 주인이 없어 그 판들이
+            // *넘는 판*도 아니게 되므로, 축 전체가 그 물음의 정직한 답이다.
+            val focusGone = focusCharacterId > 0 && characters.none { it.id == focusCharacterId }
+            val focusScope = if (focusGone) -1L else focusCharacterId
             val matches: List<DuelMatch>
             val total: Int
             if (onlyCross) {
-                val cross = viewModel.crossCharacterMatches(axisId, characters, focusCharacterId)
+                val cross = viewModel.crossCharacterMatches(axisId, characters, focusScope)
                 total = cross.size
                 matches = cross.take(limit)
             } else {
@@ -180,7 +191,7 @@ class DuelMatchesFragment : Fragment() {
                 labels = labels,
                 valuesByCode = values
             )
-            renderCrossFilter(loaded.isImageAxis)
+            renderCrossFilter(loaded.isImageAxis, focusGone)
             val summary = DuelMatchLog.summarize(rows, total)
             binding.summaryText.text = getString(
                 R.string.duel_matches_summary,
@@ -222,7 +233,7 @@ class DuelMatchesFragment : Fragment() {
      * 범위를 갖고 왔으면 **그 사실을 말한다** — 순위표에서 넘어온 사람은 축 전체가 아니라
      * *그 캐릭터의 판*을 보고 있는데, 아무 말도 없으면 축에 그것뿐인 줄 안다.
      */
-    private fun renderCrossFilter(isImageAxis: Boolean) {
+    private fun renderCrossFilter(isImageAxis: Boolean, focusGone: Boolean) {
         val b = _binding ?: return
         if (!isImageAxis) {
             b.switchOnlyCross.visibility = View.GONE
@@ -235,10 +246,11 @@ class DuelMatchesFragment : Fragment() {
         // 되돌아 나가므로(위 가드) 다시 부르는 비용은 없다.
         b.switchOnlyCross.isChecked = onlyCross
         val name = characters.firstOrNull { it.id == focusCharacterId }?.displayName
-        b.onlyCrossPurpose.text = if (onlyCross && name != null) {
-            getString(R.string.duel_matches_only_cross_of, name)
-        } else {
-            getString(R.string.duel_matches_only_cross_purpose)
+        b.onlyCrossPurpose.text = when {
+            !onlyCross -> getString(R.string.duel_matches_only_cross_purpose)
+            focusGone -> getString(R.string.duel_matches_only_cross_gone)
+            name != null -> getString(R.string.duel_matches_only_cross_of, name)
+            else -> getString(R.string.duel_matches_only_cross_purpose)
         }
     }
 

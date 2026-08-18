@@ -146,5 +146,51 @@ for fn in crossCharacterMatchesOf 'crossCharacterMatches ='; do
 done
 echo "  ✓ 캐릭터를 넘는 판은 DuelImageRoster 하나가 판정한다 (B-208)"
 
+# ── ③ 거르개 요청의 인자 이름이 한 자리에만 산다 (B-208 · R-61) ──
+#
+# 화면에서 화면으로 넘기는 `Bundle` 키는 **타입이 없는 문자열**이고 짝이 다른 파일에 있다.
+# 이름이 갈리면 예외가 아니라 **침묵**이다 — 목록은 그냥 뜨고, 누른 사람은 자기가 부탁한
+# 거르개가 없던 일이 된 줄도 모른다. `nav_graph.xml`은 상수를 쓸 수 없어 예외이고,
+# **대신 그 선언이 있는지를 본다**(그래프에 없으면 기본값이 없어 갈래가 코드에서 달라진다).
+MATCHES=$SRC/ui/duel/DuelMatchesFragment.kt
+GRAPH=app/src/main/res/navigation/nav_graph.xml
+for f in "$MATCHES" "$GRAPH"; do
+  [ -f "$f" ] || { echo "  ✗ 등재된 파일이 없습니다: $f"; echo ""; echo "대결 코드 대조 방식 검사 실패"; exit 1; }
+done
+for key in onlyCross focusCharacterId; do
+  # 선언 자신(상수 정의)과 자원은 뺀다. 주석도 뺀다 — *왜 이 이름인가*를 적어 두는 관행이 있다.
+  raw=$(grep -rn "\"$key\"" "$SRC" --include=*.kt \
+    | grep -vE "^$MATCHES:[0-9]+:[[:space:]]*const val" \
+    | grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' || true)
+  if [ -n "$raw" ]; then
+    echo "  ✗ 거르개 인자 이름을 생문자열로 적은 자리가 있습니다 ($key):"
+    printf '%s\n' "$raw" | sed 's/^/      /'
+    echo "  고치는 법: DuelMatchesFragment.ARG_ONLY_CROSS / ARG_FOCUS_CHARACTER_ID 를 쓸 것."
+    echo ""
+    echo "대결 코드 대조 방식 검사 실패"
+    exit 1
+  fi
+  if ! grep -q "android:name=\"$key\"" "$GRAPH"; then
+    echo "  ✗ nav_graph.xml에 인자 선언이 없습니다 ($key)"
+    echo "      → 선언이 없으면 기본값이 없어 *인자 없이 들어온 화면*과 *값을 싣고 들어온"
+    echo "        화면*이 코드에서 다르게 갈린다(R-61)."
+    echo ""
+    echo "대결 코드 대조 방식 검사 실패"
+    exit 1
+  fi
+done
+# **읽은 자리가 지우는가** (R-61) — 남겨 두면 화면이 다시 설 때마다 같은 요청이 다시 걸려
+# 사용자가 끈 거르개를 재생성이 도로 켠다.
+for key in ARG_ONLY_CROSS ARG_FOCUS_CHARACTER_ID; do
+  grep -q "arguments?.remove($key)" "$MATCHES" || {
+    echo "  ✗ 읽은 요청을 인자에서 지우지 않습니다: $MATCHES ($key)"
+    echo "      → arguments?.remove($key). 남기면 회전마다 같은 요청이 다시 걸린다(R-61)."
+    echo ""
+    echo "대결 코드 대조 방식 검사 실패"
+    exit 1
+  }
+done
+echo "  ✓ 거르개 요청의 이름이 한 자리에 살고, 읽은 자리가 지운다 (B-208 · R-61)"
+
 echo ""
 echo "대결 코드 대조 방식 검사 통과"

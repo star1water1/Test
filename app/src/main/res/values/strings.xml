@@ -3597,6 +3597,7 @@
     <string name="duel_matches_only_cross">캐릭터를 넘는 판만</string>
     <string name="duel_matches_only_cross_purpose">다른 캐릭터의 이미지가 함께 적힌 판만 남깁니다 — 어느 순위에도 들지 않는 판입니다.</string>
     <string name="duel_matches_only_cross_of">‘%1$s’이(가) 낀 판만 봅니다 — 순위표가 말한 그 판입니다.</string>
+    <string name="duel_matches_only_cross_gone">고른 캐릭터를 찾지 못해 축 전체의 판을 봅니다 — 그사이 지워졌을 수 있습니다.</string>
     <string name="duel_matches_no_cross">캐릭터를 넘는 판이 없습니다</string>
     <string name="duel_matches_no_disagreements">어긋난 판이 없습니다. 연결한 필드와 대결 결과가 지금은 서로 맞습니다.</string>
     <string name="duel_matches_load_more">더 보기 (남은 %1$d판)</string>
