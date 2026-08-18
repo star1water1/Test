@@ -527,6 +527,7 @@ $TEST/util/BodyTargetRatioTest.kt
 $TEST/util/BodyTargetRatioSourceTest.kt
 $TEST/util/BodyGeneratorTest.kt
 $TEST/data/BodyGenerationConfigTest.kt
+$TEST/data/BodyBandGapTest.kt
 $TEST/backup/BackupChunkFormatTest.kt
 $TEST/excel/CellTextLimitRoundtripTest.kt
 "

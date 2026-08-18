@@ -369,6 +369,7 @@
     <string name="month_valid_range">월은 1~12 사이로 입력하세요</string>
     <string name="day_valid_range">일은 1~31 사이로 입력하세요</string>
     <string name="importer_restart">가져오기를 사용하려면 앱을 다시 시작하세요</string>
+    <string name="import_no_file_picker">파일을 고를 수 있는 앱이 없습니다. 파일 관리자를 설치하거나 사용 중지를 풀어 주세요.</string>
 
     <!-- Birthday notifications -->
     <string name="birthday_notification_title">오늘은 캐릭터 생일!</string>
@@ -806,6 +807,8 @@
     <string name="export_progress_stage_writing">파일로 쓰는 중</string>
     <string name="export_save_success">파일이 저장되었습니다</string>
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
+    <string name="export_save_cancelled">저장을 취소했습니다 — 만든 파일은 지웠습니다</string>
+    <string name="export_save_cancelled_kept">저장을 취소했습니다</string>
 
     <!--
         가져오기 진행도(작업형 · B-51) — 구간이 넷이고 단위가 둘이다.
@@ -1843,6 +1846,7 @@
     <string name="body_gen_edit_error_name">이름을 적어 주세요</string>
     <string name="body_gen_edit_error_range">%1$s ~ %2$s 사이로 적어 주세요</string>
     <string name="body_gen_edit_error_order">앞 축의 구간 끝보다 커야 합니다</string>
+    <string name="body_gen_edit_warn_empty_band">%1$s 구간에는 들어갈 정수 cm가 없어, 그 축을 골라도 요약은 이웃 축 이름으로 답합니다. 저장은 됩니다 — 구간 끝을 조금 벌리거나 키 축을 넓히면 사라집니다.</string>
     <string name="body_gen_edit_saved">축·프리셋을 저장했습니다</string>
     <string name="body_gen_edit_no_field">이 체형 필드에는 저장할 수 없습니다</string>
 

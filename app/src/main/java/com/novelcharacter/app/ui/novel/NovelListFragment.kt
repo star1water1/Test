@@ -1058,14 +1058,10 @@ class NovelListFragment : Fragment() {
     }
 
     private fun importFromExcel() {
-        if (!isAdded) return
-        try {
-            excel.showImportDialog()
-        } catch (e: Exception) {
-            if (isAdded) {
-                Toast.makeText(requireContext(), R.string.import_file_too_large, Toast.LENGTH_SHORT).show()
-            }
-        }
+        // 실패 고지는 컨트롤러 뒤의 `ExcelImporter.showImportDialog`가 든다 (B-229 ①) —
+        // 종전에는 이 자리가 모든 예외를 '파일이 너무 큽니다'로 옮겼는데, 그것은 **파일을
+        // 고르기도 전에** 하는 말이었고 형제 진입 셋과도 달랐다.
+        excel.showImportDialog()
     }
 
     override fun onDestroyView() {

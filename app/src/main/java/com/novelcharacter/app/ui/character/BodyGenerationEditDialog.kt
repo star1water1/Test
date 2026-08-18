@@ -1,13 +1,17 @@
 package com.novelcharacter.app.ui.character
 
 import android.content.Context
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -34,6 +38,16 @@ import java.util.Locale
  * 열린 채 남는다. 저장을 눌러 닫혔다면 적은 것이 전부 담긴 것이다.
  */
 object BodyGenerationEditDialog {
+
+    /**
+     * 수치 칸의 자리 — **세 곳이 같은 수를 각자 들고 있던 자리다**(감시자 배선 · 경고 계산 ·
+     * 오름차순 검증). 칸이 하나 늘면 셋을 함께 옮겨야 하는데 **하나를 놓쳐도 조용하다** —
+     * 경고가 엉뚱한 칸을 읽고 아무 말도 하지 않을 뿐이라 컴파일도 시험도 못 본다.
+     */
+    private const val HEIGHT_CENTER_COL = 0
+    private const val HEIGHT_VARIANCE_COL = 1
+    private const val TORSO_END_COL = 2
+    private const val HIP_END_COL = 1
 
     /**
      * @param current 지금 쓰이는 한 벌(빈 축이 없는 것으로 정규화된 값을 받는다)
@@ -104,6 +118,8 @@ object BodyGenerationEditDialog {
                 NumField(it.maxRatio, R.string.body_gen_edit_max)
             ))
         }
+        val torsoWarning = warningLine(context, dp(2))
+        root.addView(torsoWarning)
         // ── 가슴 ──
         caption(R.string.body_gen_edit_bust)
         val bustRows = current.bustOptions.map {
@@ -117,6 +133,8 @@ object BodyGenerationEditDialog {
                 NumField(it.maxDiff, R.string.body_gen_edit_max)
             ))
         }
+        val hipWarning = warningLine(context, dp(2))
+        root.addView(hipWarning)
         // ── 프리셋 ── 축을 스피너로 고른다: 이름을 적게 하면 축 이름을 바꿀 때마다
         // 프리셋이 조용히 끊긴다(저장은 자리로 한다 — 그 사실을 화면도 그대로 따른다).
         caption(R.string.body_gen_edit_preset)
@@ -146,6 +164,48 @@ object BodyGenerationEditDialog {
             PresetRow(name.second, t, b, h)
         }
 
+        /**
+         * **구간에 들어갈 정수 cm가 없는 축을 그 자리에서 말한다**(B-202 · 확정 15장 6번).
+         *
+         * 저장을 막지 않으므로 **저장을 누른 뒤에 붙이면 창이 닫혀 아무도 못 본다** —
+         * 그래서 적는 동안 계속 다시 잰다. 값 하나라도 아직 수가 아니면 잴 수 없으므로
+         * 그때는 **아무 말도 하지 않는다**(틀린 경고보다 침묵이 낫다. 저장 때의 범위 검증이
+         * 그 칸을 따로 잡는다).
+         */
+        fun refreshBandWarnings() {
+            val gen = probeOf(current, heightRows, torsoRows, hipRows)
+            val empty = gen?.emptyBands()
+            // 이름 칸이 비어 있으면 **저장된 이름**으로 부른다 — 비었다고 이름을 빼면
+            // 부를 이름이 없어져 경고가 통째로 사라진다(그때가 침묵이면 안 되는 자리다).
+            fun show(view: TextView, rows: List<AxisRow>, saved: List<String>, bad: List<Int>?) {
+                val names = bad.orEmpty().map { at ->
+                    rows.getOrNull(at)?.name?.text?.toString()?.trim()?.ifEmpty { null }
+                        ?: saved.getOrNull(at).orEmpty()
+                }
+                view.visibility = if (bad.isNullOrEmpty()) View.GONE else View.VISIBLE
+                if (!bad.isNullOrEmpty()) {
+                    view.text = context.getString(
+                        R.string.body_gen_edit_warn_empty_band, names.joinToString(", ")
+                    )
+                }
+            }
+            show(torsoWarning, torsoRows, current.torsoOptions.map { it.label }, empty?.torso)
+            show(hipWarning, hipRows, current.hipOptions.map { it.label }, empty?.hip)
+        }
+        // 경고를 낳는 칸 전부에 단다 — 키(중심·흔들림)가 몸통 구간의 cm 폭을 정하고,
+        // 이름은 경고 문구 안에 그대로 들어간다.
+        val watched = heightRows.flatMap { it.numbers } +
+            torsoRows.map { it.numbers[TORSO_END_COL] } + hipRows.map { it.numbers[HIP_END_COL] } +
+            (torsoRows + hipRows).map { it.name }
+        for (edit in watched) {
+            edit.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = refreshBandWarnings()
+                override fun afterTextChanged(s: Editable?) {}
+            })
+        }
+        refreshBandWarnings()
+
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.body_gen_edit_title)
             // 바깥을 눌러 닫히지 않는다 — 칸 스물이 넘는 창이라 손이 미끄러지면
@@ -165,6 +225,7 @@ object BodyGenerationEditDialog {
                         it.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                             resetTo(context, BodyAnalysisConfig.DEFAULT_GENERATION, heightRows,
                                 torsoRows, bustRows, hipRows, presetRows)
+                            refreshBandWarnings()
                         }
                     }
                 ) {
@@ -179,6 +240,51 @@ object BodyGenerationEditDialog {
     // ── 화면 조각 ──────────────────────────────────────────────────────────
 
     private class NumField(val value: Double, val hintRes: Int)
+
+    /**
+     * 경고 한 줄 — 평소에는 자리도 차지하지 않는다(`GONE`).
+     * 붉은 글씨를 쓰되 **저장을 막지 않는다**는 것이 이 줄과 [showInlineError]의 차이다.
+     */
+    private fun warningLine(context: Context, pad: Int): TextView = TextView(context).apply {
+        setTextAppearance(R.style.TextAppearance_App_Caption)
+        setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorError))
+        setPadding(0, pad, 0, pad)
+        visibility = View.GONE
+    }
+
+    /**
+     * 지금 창에 적힌 값으로 세운 한 벌 — **잴 수 없으면 null이다.**
+     *
+     * 수가 아니거나 범위 밖인 칸이 하나라도 있으면 돌려주지 않는다. 그런 값은 저장이
+     * 어차피 거부하므로(범위 검증), 그 위에서 센 경고는 **일어나지 않을 일에 대한 경고**다.
+     * 오름차순이 깨진 것도 같은 이유로 뺀다 — 그 자리는 저장 때 제 문구가 따로 붙고,
+     * 두 말을 겹쳐 하면 고칠 곳이 흐려진다.
+     */
+    private fun probeOf(
+        current: GenerationPreset,
+        heightRows: List<AxisRow>, torsoRows: List<AxisRow>, hipRows: List<AxisRow>
+    ): GenerationPreset? {
+        val limits = GenerationPreset.Limits
+        fun col(rows: List<AxisRow>, at: Int, range: ClosedFloatingPointRange<Double>): List<Double>? {
+            val values = rows.mapNotNull {
+                it.numbers.getOrNull(at)?.text?.toString()?.trim()?.toDoubleOrNull()?.takeIf { v -> v in range }
+            }
+            return if (values.size == rows.size) values else null
+        }
+        val centers = col(heightRows, HEIGHT_CENTER_COL, limits.HEIGHT_CENTER) ?: return null
+        val variances = col(heightRows, HEIGHT_VARIANCE_COL, limits.HEIGHT_VARIANCE) ?: return null
+        val torsoEnds = col(torsoRows, TORSO_END_COL, limits.TORSO_END) ?: return null
+        val hipEnds = col(hipRows, HIP_END_COL, limits.HIP_END) ?: return null
+        if (limits.ascendingViolations(torsoEnds).isNotEmpty()) return null
+        if (limits.ascendingViolations(hipEnds).isNotEmpty()) return null
+        return current.copy(
+            heightOptions = current.heightOptions.mapIndexed { i, o ->
+                o.copy(center = centers[i], variance = variances[i])
+            },
+            torsoOptions = current.torsoOptions.mapIndexed { i, o -> o.copy(maxRatio = torsoEnds[i]) },
+            hipOptions = current.hipOptions.mapIndexed { i, o -> o.copy(maxDiff = hipEnds[i]) }
+        )
+    }
 
     private class AxisRow(val name: EditText, val numbers: List<EditText>)
 
@@ -313,8 +419,8 @@ object BodyGenerationEditDialog {
 
         // 축의 끝은 오름차순이어야 한다 — 거꾸로면 그 축이 겨눌 폭이 없어지고,
         // 요약도 그 이름을 영영 돌려주지 못한다(고른 축과 돌아오는 말이 갈린다).
-        ok = ascendingOrError(context, torsoRows, torsos.map { it.maxRatio }, 2) && ok
-        ok = ascendingOrError(context, hipRows, hips.map { it.maxDiff }, 1) && ok
+        ok = ascendingOrError(context, torsoRows, torsos.map { it.maxRatio }, TORSO_END_COL) && ok
+        ok = ascendingOrError(context, hipRows, hips.map { it.maxDiff }, HIP_END_COL) && ok
 
         return if (ok) GenerationPreset(heights, torsos, busts, hips, presets) else null
     }

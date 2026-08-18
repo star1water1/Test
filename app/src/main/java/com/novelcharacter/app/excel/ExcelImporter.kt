@@ -324,17 +324,39 @@ class ExcelImporter(context: Context) {
         }
     }
 
+    /**
+     * 파일 고르는 창을 연다 — **여기가 그 실패를 말하는 단일 소스다** (B-229 ①).
+     *
+     * 종전에는 진입 넷 중 하나(작품 목록)만 자기 자리에서 감쌌고, 그 감싼 문구가
+     * *"파일이 너무 큽니다"*였다 — **아직 파일을 고르지도 않았는데** 크기를 말했다.
+     * 실패는 사실상 둘이고 둘 다 크기와 무관하다: **고를 앱이 없거나**(SAF 없는 기기·
+     * 파일 관리자를 끈 기기), 런처가 아직 안 섰거나. 어느 쪽인지 말하지 않으면 사용자는
+     * 있지도 않은 큰 파일을 찾아 헤맨다(개발 의도 2번 — 알림은 사실이어야 한다).
+     *
+     * 진입마다 감싸면 넷이 서로 다른 말을 하게 되므로 자리를 여기 하나로 둔다.
+     */
     fun showImportDialog(fragment: Fragment) {
         val launcher = importLauncher
-        if (launcher != null) {
+        if (launcher == null) {
+            Toast.makeText(appContext, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
             launcher.launch(arrayOf(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-excel",
                 "application/zip",
                 "application/octet-stream"
             ))
-        } else {
-            Toast.makeText(appContext, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_SHORT).show()
+        } catch (e: android.content.ActivityNotFoundException) {
+            Log.w("ExcelImporter", "No document picker available", e)
+            Toast.makeText(appContext, com.novelcharacter.app.R.string.import_no_file_picker, Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            // 남은 갈래는 런처가 등록 전·해제 뒤인 경우다(IllegalStateException) — 앱을 다시
+            // 세우면 풀리므로 위의 미등록과 같은 말을 한다. **삼키지 않는 것이 요점이다:**
+            // 감싸지 않으면 목록 화면이 그대로 죽고, 감싸고 거짓말을 하면 고칠 길이 사라진다.
+            Log.w("ExcelImporter", "Failed to open document picker", e)
+            Toast.makeText(appContext, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_LONG).show()
         }
     }
 
