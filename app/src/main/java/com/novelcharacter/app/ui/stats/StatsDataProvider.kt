@@ -803,6 +803,7 @@ data class PatternThresholds(
             var t = base
             val unknown = mutableListOf<String>()
             val invalid = mutableListOf<String>()
+            // 쉼표 예외(다중값 칸이 아니라 `키=값` 설정 문자열이다 — 키는 ASCII 이름, 값은 실수라 쉼표가 없다)
             for (piece in raw.split(',')) {
                 val token = piece.trim()
                 if (token.isEmpty()) continue

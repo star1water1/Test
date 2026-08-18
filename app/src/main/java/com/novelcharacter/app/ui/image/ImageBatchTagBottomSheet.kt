@@ -9,6 +9,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetImageTagEditBinding
+import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
 
 /**
@@ -74,7 +75,7 @@ class ImageBatchTagBottomSheet : BottomSheetDialogFragment() {
                             val existing = parseTags(binding.tagInput.text?.toString()).toMutableList()
                             if (tag !in existing) {
                                 existing.add(tag)
-                                binding.tagInput.setText(existing.joinToString(", "))
+                                binding.tagInput.setText(MultiValueInput.format(existing))
                             }
                         }
                     }
@@ -93,7 +94,7 @@ class ImageBatchTagBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun parseTags(raw: String?): List<String> =
-        (raw ?: "").split(",").map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        MultiValueInput.parse(raw).distinct()
 
     override fun onDestroyView() {
         super.onDestroyView()

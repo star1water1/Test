@@ -10,6 +10,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetBatchTagsBinding
+import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
 
 class BatchTagBottomSheet : BottomSheetDialogFragment() {
@@ -50,7 +51,7 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
             binding.tagInput.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count2: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count2: Int) {
-                    val tags = s.toString().split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    val tags = MultiValueInput.parse(s.toString())
                     binding.btnConfirm.text = getString(R.string.batch_tag_add_confirm, tags.size, count)
                     binding.btnConfirm.isEnabled = tags.isNotEmpty()
                 }
@@ -66,7 +67,7 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
                 }
             } else {
                 val inputText = binding.tagInput.text?.toString()?.trim() ?: ""
-                val tags = inputText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val tags = MultiValueInput.parse(inputText)
                 if (tags.isNotEmpty()) {
                     batchViewModel.addTags(tags)
                     dismiss()
@@ -94,10 +95,10 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
                         isCheckable = false
                         setOnClickListener {
                             val current = binding.tagInput.text?.toString() ?: ""
-                            val existing = current.split(",").map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
+                            val existing = MultiValueInput.parse(current).toMutableList()
                             if (tag !in existing) {
                                 existing.add(tag)
-                                binding.tagInput.setText(existing.joinToString(", "))
+                                binding.tagInput.setText(MultiValueInput.format(existing))
                             }
                         }
                     }

@@ -29,6 +29,7 @@ import com.novelcharacter.app.ui.adapter.DuelFieldLinkAdapter
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelSystemFields
+import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -843,9 +844,8 @@ class DuelAxisListFragment : Fragment() {
                         ?.takeIf { it.isChecked }
                         ?.let { values.add(it.text.toString()) }
                 }
-                valueInput.text.toString().split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() && it !in values }
+                MultiValueInput.parse(valueInput.text.toString())
+                    .filter { it !in values }
                     .forEach { values.add(it) }
                 if (values.isEmpty()) {
                     valueInput.showInlineError(getString(R.string.duel_filter_add_needs_value))

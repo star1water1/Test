@@ -33,6 +33,7 @@ import com.novelcharacter.app.ui.character.CharacterViewModel
 import com.novelcharacter.app.ui.character.DynamicFieldFormBuilder
 import com.novelcharacter.app.ui.character.DynamicFieldRenderer
 import com.novelcharacter.app.util.CharacterDraftPrefs
+import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1072,7 +1073,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         viewLifecycleOwner.lifecycleScope.launch {
             val tags = characterViewModel.getTagsByCharacterList(character.id)
             if (_binding == null || displayedCharacter?.id != character.id) return@launch
-            binding.editTags.setText(tags.joinToString(", ") { it.tag })
+            binding.editTags.setText(MultiValueInput.format(tags) { it.tag })
             editTagsLoaded = true
             maybeFinishEditHydration()
         }

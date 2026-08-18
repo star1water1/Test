@@ -119,6 +119,7 @@ $MAIN/util/GraphForceLayout.kt
 $MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/CsvTokens.kt
+$MAIN/util/MultiValueInput.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueSorter.kt
 $MAIN/util/StatsFieldPolicy.kt
@@ -398,6 +399,7 @@ $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/CsvTokensTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
+$TEST/util/MultiValueInputTest.kt
 $TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt
 $TEST/util/FormulaEvaluatorTest.kt
