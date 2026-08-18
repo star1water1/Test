@@ -314,6 +314,61 @@ class DynamicFieldFormBuilder(
         openGenerator: Boolean
     ) {
         val fm = fragmentManagerGetter() ?: return
+        val sheet = BodySilhouetteEditorSheet()
+        val config = bindSilhouetteEditor(sheet, bodySizeField, snapshot = true, openGenerator = openGenerator)
+        sheet.show(fm, BodySilhouetteEditorSheet.TAG)
+        loadBodyPeers(bodySizeField, config, sheet)
+    }
+
+    /**
+     * 재생성된 실루엣 편집기에 다시 꽂는다 — 회전 보존의 호스트 몫 (B-201 · R-38).
+     *
+     * `buildForm()`이 끝날 때마다 부른다. 시트가 없으면 아무 일도 없고, 있으면 셋 중 하나다:
+     * - **되살릴 것을 들고 기다리는 시트**(`isAwaitingRestore`) → 설정·콜백을 꽂아 세운다.
+     *   수치·축 같은 편집 상태와 열 때 뜬 스냅샷은 **시트가 스스로 들고 있다**
+     *   ([BodyEditorState]) — 여기서 위젯을 다시 읽지 않는 이유는 그 머리 주석이 든다.
+     * - **이미 서 있는 시트** → 람다만 다시 건다. 람다는 회전을 못 넘으므로 다시 걸지 않으면
+     *   [적용]이 눌리는데 아무 일도 안 나는 단추가 된다.
+     * - **필드가 사라진 시트** → 되쓸 자리가 없으므로 닫는다. **목록이 실제로 선 뒤에만
+     *   닫는다** — 아직 조회 중이라 비어 있는 것과 정말 없어진 것은 다르고, 앞엣것에서
+     *   닫으면 이 판이 막으려던 그 유실을 우리 손으로 낸다.
+     */
+    fun rebindSilhouetteEditor() {
+        val fm = fragmentManagerGetter() ?: return
+        val sheet = fm.findFragmentByTag(BodySilhouetteEditorSheet.TAG)
+            as? BodySilhouetteEditorSheet ?: return
+        val fieldId = sheet.restoredFieldId ?: sheet.bodySizeFieldId
+        val field = fieldDefinitions.firstOrNull { it.id == fieldId }
+        if (field == null || fieldInputMap[fieldId] == null) {
+            if (sheet.isAwaitingRestore && fieldDefinitions.isNotEmpty()) {
+                sheet.dismissAllowingStateLoss()
+            }
+            return
+        }
+        // **되살리는 길에서는 스냅샷을 절대 다시 읽지 않는다**(`snapshot = false`).
+        // 시트는 열 때 뜬 것을 스스로 들고 있고([BodyEditorState]), 여기서 위젯을 다시 읽으면
+        // 폼이 아직 값을 못 채운 사이의 **빈 칸**이 되쓰기의 바탕이 된다 —
+        // 잃은 것을 되찾자고 만든 길이 새 유실을 내는 자리다.
+        val config = bindSilhouetteEditor(sheet, field, snapshot = false)
+        loadBodyPeers(field, config, sheet)
+    }
+
+    /**
+     * 시트의 주입을 **한 자리에 모은다** — 처음 열 때도 회전 뒤에도 여기를 지난다(R-41).
+     *
+     * [snapshot]이 거짓이면 *열 때 뜬 것*(원문·해석 수치·되쓸 자리·고지 깃발)은 건드리지 않는다.
+     * 이미 서 있는 시트에 그것을 다시 꽂으면 **폼이 값을 채우기 전의 빈 위젯**이 되쓰기의
+     * 바탕이 되어, 사용자가 쓰던 칸이 [적용] 한 번에 지워진다.
+     *
+     * ⚠️ 시트에 주입 `var`를 더하면 **이 함수에도 함께 등재한다.**
+     * `tools/check_silhouette_rebind.sh`가 그 짝을 기계로 본다.
+     */
+    private fun bindSilhouetteEditor(
+        sheet: BodySilhouetteEditorSheet,
+        bodySizeField: FieldDefinition,
+        snapshot: Boolean,
+        openGenerator: Boolean = false
+    ): com.novelcharacter.app.data.model.BodyAnalysisConfig {
         val config = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
         val structured = StructuredInputConfig.fromConfig(bodySizeField.config)
         val widget = fieldInputMap[bodySizeField.id]
@@ -339,20 +394,22 @@ class DynamicFieldFormBuilder(
             explicit = explicitSlots
         )
 
-        val sheet = BodySilhouetteEditorSheet()
+        sheet.bodySizeFieldId = bodySizeField.id
         sheet.analysisConfig = config
-        sheet.initial = measurements
-        sheet.writableSlots = slots
-        sheet.partValues = partValues
-        sheet.hasHeightField = heightField != null && fieldInputMap[heightField.id] != null
-        sheet.hasWeightField = weightField != null && fieldInputMap[weightField.id] != null
-        // 위치 폴백 고지는 **실제로 폴백이 걸렸을 때만** 단다 — 사용자가 설정에서 전부
-        // '사용 안 함'으로 정한 경우에도 켜지면, 앞 세 칸을 가슴·허리·엉덩이로 본다고
-        // 거짓을 말하게 된다(그 경우 되쓸 자리는 하나도 없다).
-        sheet.positionalFallback = !explicitSlots &&
-            measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
-        sheet.noWritableSlot = slots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
-        sheet.openWithGenerator = openGenerator
+        if (snapshot) {
+            sheet.initial = measurements
+            sheet.writableSlots = slots
+            sheet.partValues = partValues
+            sheet.hasHeightField = heightField != null && fieldInputMap[heightField.id] != null
+            sheet.hasWeightField = weightField != null && fieldInputMap[weightField.id] != null
+            // 위치 폴백 고지는 **실제로 폴백이 걸렸을 때만** 단다 — 사용자가 설정에서 전부
+            // '사용 안 함'으로 정한 경우에도 켜지면, 앞 세 칸을 가슴·허리·엉덩이로 본다고
+            // 거짓을 말하게 된다(그 경우 되쓸 자리는 하나도 없다).
+            sheet.positionalFallback = !explicitSlots &&
+                measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
+            sheet.noWritableSlot = slots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
+            sheet.openWithGenerator = openGenerator
+        }
         // 🎲 축·프리셋은 **이 필드의 config**에 담긴다(B-93 — 필드가 세계관 소속이므로
         // 그것이 곧 '세계관 단위'다). 화면은 저장 성공을 받은 뒤에야 새 축을 세운다.
         sheet.onSaveGeneration = { generation, done ->
@@ -383,8 +440,10 @@ class DynamicFieldFormBuilder(
                 android.widget.Toast.makeText(it, R.string.silhouette_editor_applied, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
-        sheet.show(fm, BodySilhouetteEditorSheet.TAG)
-        loadBodyPeers(bodySizeField, config, sheet)
+        // 마지막이어야 한다 — 이 부름이 편집기를 세우므로, 앞의 주입이 하나라도 뒤에 오면
+        // 그 칸 없이 그려진다(회전 뒤에만 비는 칸이 되어 실기기에서만 보인다).
+        sheet.onInputsBound()
+        return config
     }
 
     /**
@@ -952,6 +1011,10 @@ class DynamicFieldFormBuilder(
 
         // 동적 필드에 변경 추적 리스너 추가
         attachDynamicFieldChangeTracking()
+
+        // 회전으로 다시 세워진 실루엣 편집기가 있으면 여기서 되살아난다 (B-201).
+        // **폼이 선 뒤여야 한다** — 시트가 어느 필드의 것인지 이 목록으로 가린다.
+        rebindSilhouetteEditor()
     }
 
     private fun attachDynamicFieldChangeTracking() {

@@ -25,6 +25,7 @@ import com.novelcharacter.app.data.model.BodySlot
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.databinding.BottomSheetBodySilhouetteEditorBinding
 import com.novelcharacter.app.util.BodyEditorModel
+import com.novelcharacter.app.util.BodyEditorState
 import com.novelcharacter.app.util.BodyGenerator
 import com.novelcharacter.app.util.BodyGenerator.BodyCategory
 import com.novelcharacter.app.util.BodyMeasurements
@@ -50,6 +51,14 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     // ── 호스트가 채우는 입력 ────────────────────────────────────────────────
+    //
+    // ⚠️ 여기 `var`를 더하면 **호스트의 한 자리에도 함께 등재한다** —
+    // `DynamicFieldFormBuilder.bindSilhouetteEditor`. 그 함수가 처음 열 때와 회전 뒤 다시 꽂을
+    // 때 **둘 다**를 든다(R-38·R-41). 한쪽만 채우면 회전 뒤에만 비는 칸이 생기고, 그것은
+    // 실기기에서만 보인다. `tools/check_silhouette_rebind.sh`가 이 등재를 기계로 본다.
+
+    /** 어느 BODY_SIZE 필드의 편집기인가 — 회전 뒤 호스트가 다시 꽂을 자리를 이것으로 찾는다. */
+    var bodySizeFieldId: Long = 0L
 
     /** 편집을 시작할 수치(폼 위젯에서 해석한 것). */
     var initial: BodyMeasurements = BodyMeasurements(
@@ -93,10 +102,23 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     fun setPeers(characters: List<Character>, measurements: Map<Long, BodyMeasurements>) {
         novelCharacters = characters
         peerMeasurements = measurements
-        if (_binding == null) return
+        // 아직 안 그렸으면 재료만 받아 둔다 — [buildEditor]가 그때 함께 세운다.
+        if (_binding == null || !built) return
         setupRelative(resources.displayMetrics.density)
         showDistribution()
         setupOverlayToggle()
+        // 상대 생성 줄은 **재료가 와야 비로소 선다** — 복원 시점에는 없던 라디오라
+        // 그때 고른 자리를 여기서 다시 얹는다(안 얹으면 기준 배수가 기본값으로 돌아간다).
+        //
+        // **한 번만 얹는다.** 재료는 폼이 다시 설 때마다 다시 조회되므로 이 함수는 여러 번
+        // 불릴 수 있는데, 그때마다 얹으면 **복원 뒤에 사용자가 새로 고른 배수를 옛 값이
+        // 덮는다** — 되살리려고 만든 코드가 방금 고른 것을 지우는 자리다.
+        pendingRelativeSelection?.let { (heightIndex, volumeIndex) ->
+            check(binding.rgRelativeHeight, heightIndex)
+            check(binding.rgRelativeVolume, volumeIndex)
+            pendingRelativeSelection = null
+        }
+        applyPendingBaseCharacter()
     }
 
     /**
@@ -158,9 +180,64 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private var cupSizeDiffs: List<Pair<String, Double>> = emptyList()
     private var overlayOn = false
 
+    // ── 회전 보존 (B-201 · 확정 15장 5번 · R-41) ─────────────────────────────
+
+    /**
+     * 회전 직전의 편집 상태 — 되살릴 것이 없으면 null.
+     *
+     * **왜 즉시 그리지 않고 들고 있는가:** 이 시트가 다시 세워지는 시점에 호스트는 아직 폼을
+     * 못 세웠다(필드 정의가 DB 조회다). 그래서 `analysisConfig`와 콜백 둘이 비어 있는데,
+     * 그 상태로 그리면 **설정을 모르는 축·컵으로 한 번 그렸다가 다시 그리게 되고**, 그 사이에
+     * [적용]을 누르면 아무 데도 닿지 않는다. 호스트가 [onInputsBound]로 알릴 때 비로소 그린다.
+     */
+    private var restored: BodyEditorState? = null
+
+    /**
+     * 호스트가 입력을 다 꽂았는가 — 처음 열 때는 `show()` 전에 채워져 참이고,
+     * 회전 뒤에는 호스트가 폼을 다시 세운 뒤에야 참이 된다.
+     */
+    private var inputsReady: Boolean = false
+
+    /** 되살릴 것을 들고 호스트를 기다리는 중인가 — 호스트가 이것으로 *고아 시트*를 가른다. */
+    val isAwaitingRestore: Boolean get() = restored != null && !built
+
+    /** 되살릴 편집기가 어느 필드의 것인가 — 호스트가 그 필드를 못 찾으면 이 시트를 닫는다. */
+    val restoredFieldId: Long? get() = restored?.fieldId
+
+    private var built = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val state = BodyEditorState.decode(savedInstanceState?.getString(STATE_KEY)) ?: return
+        restored = state
+        // 열 때 뜬 스냅샷은 **여기서 곧바로 되꽂는다** — 폼 위젯의 값에서 나온 것이라
+        // 호스트가 다시 읽으려면 값이 채워지기를 기다려야 하고(정지 함수), 그 사이에 읽으면
+        // 빈 값이 되쓰기의 바탕이 된다(`BodyEditorState` 머리 주석).
+        bodySizeFieldId = state.fieldId
+        initial = state.initial
+        partValues = state.partValues
+        writableSlots = state.writableSlots
+        hasHeightField = state.hasHeightField
+        hasWeightField = state.hasWeightField
+        positionalFallback = state.positionalFallback
+        noWritableSlot = state.noWritableSlot
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = BottomSheetBodySilhouetteEditorBinding.inflate(inflater, container, false)
         return binding.root
+    }
+
+    /**
+     * 호스트가 입력을 다 꽂은 뒤 부른다 — 그때 비로소 편집기를 세운다.
+     *
+     * 처음 열 때도 회전 뒤에도 같은 함수를 지난다(호스트에 갈래가 없다). 여러 번 불려도
+     * 한 번만 세운다 — 폼이 여러 경로로 다시 서므로 **멱등이 아니면 세우는 도중에 다시
+     * 세우게 되고, 그러면 사용자가 방금 만진 값이 스냅샷으로 되돌아간다.**
+     */
+    fun onInputsBound() {
+        inputsReady = true
+        if (_binding != null && !built) buildEditor()
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -188,12 +265,43 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 다시 세워졌는데 담긴 것을 못 읽었으면 **되쓸 바탕이 없다** — 원문도 되쓸 자리도
+        // 그 번들에 함께 실려 있었기 때문이다. 그 상태의 편집기는 기준 몸 초안을 그린 채
+        // [적용]이 아무 데도 닿지 않는 껍데기이므로, 이 저장소가 일곱 자리에서 쓰는
+        // **안전 종료**가 옳은 부류다(다시 열면 그만이고, 잃은 것은 이미 없다).
+        if (savedInstanceState != null && restored == null) {
+            dismissAllowingStateLoss()
+            return
+        }
+        // 회전 뒤에는 호스트가 아직 폼을 못 세웠다 — [onInputsBound]가 부를 때 세운다.
+        if (inputsReady) buildEditor()
+    }
 
+    /**
+     * 편집기를 세운다 — 처음 열 때와 회전 복원이 **같은 한 벌을 지난다**(R-41).
+     *
+     * 복원이면 [restored]가 수치·축·컵·본 자리를 덮어쓴다. 시작값([start])은 덮지 않는다 —
+     * 그것은 *폼에 원래 있던 것*이라 스냅샷에서 그대로 나오고, [hasChanges]가 그것과 견주어
+     * [적용]을 켠다. 복원 뒤에도 "고친 것이 있는가"가 회전 전과 같은 답이어야 한다.
+     */
+    private fun buildEditor() {
+        built = true
         start = BodyEditorModel.draftMeasures(initial, analysisConfig.ribOffset)
         current = start
         startHeight = initial.heightCm
         startWeight = initial.weightKg
         weightKg = initial.weightKg
+
+        val state = restored
+        if (state != null) {
+            current = state.current
+            weightKg = state.weightKg
+            previousRoll = state.previous
+            touched.clear()
+            touched.addAll(state.touched)
+            cupMode = state.cupMode
+            overlayOn = state.overlayOn
+        }
 
         setupSilhouette()
         buildRows()
@@ -204,7 +312,115 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         binding.btnCancel.setOnClickListener { closeWithConfirm() }
         binding.btnApply.setOnClickListener { applyAndDismiss() }
 
+        if (state != null) applyRestoredSelections(state)
+
+        // 굴린 뒤 회전했으면 [직전으로]가 살아 있어야 한다 — 그러지 않으면 되돌릴 한 단계가
+        // 남아 있는데 단추만 꺼져 있다(있는 것을 없다고 말하는 화면).
+        binding.btnUndoRoll.isEnabled = previousRoll != null
         syncAll(from = null)
+    }
+
+    /**
+     * 라디오·스피너·펼침 상태를 되돌린다 — **자동 복원이 원리적으로 닿지 못하는 자리다.**
+     *
+     * 축 라디오는 `View.generateViewId()`로 세우므로 id가 회전마다 달라지고, 안드로이드의
+     * 뷰 상태 복원은 id로 짝을 찾는다. 그래서 담아 둔 자리로 우리가 다시 고른다.
+     */
+    private fun applyRestoredSelections(state: BodyEditorState) {
+        check(binding.rgHeight, state.axisHeight)
+        check(binding.rgTorso, state.axisTorso)
+        check(binding.rgBust, state.axisBust)
+        check(binding.rgHip, state.axisHip)
+        check(binding.rgCupSize, state.cupSizeIndex)
+
+        // 상대 생성 줄은 **재료(작품 캐릭터)가 있어야 선다.** 이미 서 있으면 지금 얹고,
+        // 아니면 [setPeers]가 세울 때 얹도록 들고 있는다 — 둘 중 하나만 걸리게 갈라 둔다.
+        // (양쪽에 다 걸면 들고 있던 값이 남아 *복원 뒤에 사용자가 고른 것*을 덮는다.)
+        if (binding.rgRelativeHeight.childCount > 0) {
+            check(binding.rgRelativeHeight, state.relativeHeightIndex)
+            check(binding.rgRelativeVolume, state.relativeVolumeIndex)
+        } else {
+            pendingRelativeSelection = state.relativeHeightIndex to state.relativeVolumeIndex
+        }
+
+        // 컵 지정은 스위치가 가슴 축을 잠그는 부수 효과를 함께 든다 — 리스너를 태워 그 잠금까지
+        // 같이 되살린다(값만 넣으면 흐려 보이는데 눌리는 줄이 생긴다).
+        if (state.cupMode) binding.switchCupMode.isChecked = true
+
+        if (state.generatorOpen) toggleGeneratorPanel()
+        if (state.sideFacing) setFacing(side = true)
+        if (state.overlayOn && binding.btnToggleOverlay.visibility == View.VISIBLE) {
+            // 재료(작품 캐릭터)가 아직 없으면 토글 자체가 없다 — 그때는 [setupRelative]가
+            // 다시 불릴 때 [overlayOn]을 보고 세운다.
+            binding.silhouette.overlayMeasures =
+                BodyEditorModel.peerAverage(peerMeasurements.values.toList(), analysisConfig.ribOffset)
+            binding.btnToggleOverlay.alpha = 1f
+        }
+        pendingBaseCharacterId = state.baseCharacterId
+        applyPendingBaseCharacter()
+    }
+
+    /** 재료가 와야 서는 라디오의 복원 몫 — 한 번 얹으면 비운다(위 [setPeers] 주석). */
+    private var pendingRelativeSelection: Pair<Int, Int>? = null
+
+    /** 기준 캐릭터는 목록이 늦게 도착한다 — 도착할 때까지 id로 들고 있다가 그때 고른다. */
+    private var pendingBaseCharacterId: Long? = null
+
+    private fun applyPendingBaseCharacter() {
+        val id = pendingBaseCharacterId ?: return
+        val index = novelCharacters.indexOfFirst { it.id == id }
+        if (index < 0) return
+        binding.spinnerBaseCharacter.setSelection(index + 1)
+        pendingBaseCharacterId = null
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        currentState()?.let { outState.putString(STATE_KEY, it.encode()) }
+    }
+
+    /**
+     * 지금 담을 것 — **세우기 전에 회전이 또 나면 들고 있던 것을 그대로 다시 담는다.**
+     *
+     * 호스트가 폼을 세우는 동안 사용자가 한 번 더 돌리는 갈래다. 그때 화면을 읽으면
+     * 아직 안 그린 위젯에서 기본값을 읽어 **되살리려던 것을 우리 손으로 지운다** —
+     * 게다가 [current]는 `lateinit`이라 읽는 순간 죽는다. 그래서 세우기 전에는
+     * 들고 있던 것을 그대로 돌려주고, 그것마저 없으면 담지 않는다(담을 것이 없다).
+     */
+    private fun currentState(): BodyEditorState? {
+        if (!built || _binding == null) return restored
+        return BodyEditorState(
+            fieldId = bodySizeFieldId,
+            initial = initial,
+            partValues = partValues,
+            writableSlots = writableSlots,
+            hasHeightField = hasHeightField,
+            hasWeightField = hasWeightField,
+            positionalFallback = positionalFallback,
+            noWritableSlot = noWritableSlot,
+            current = current,
+            weightKg = weightKg,
+            previous = previousRoll,
+            touched = touched.toSet(),
+            cupMode = cupMode,
+            overlayOn = overlayOn,
+            generatorOpen = binding.generatorPanel.visibility == View.VISIBLE,
+            sideFacing = binding.silhouette.facing == SilhouetteView.Facing.SIDE,
+            axisHeight = selectedIndex(binding.rgHeight),
+            axisTorso = selectedIndex(binding.rgTorso),
+            axisBust = selectedIndex(binding.rgBust),
+            axisHip = selectedIndex(binding.rgHip),
+            cupSizeIndex = selectedIndex(binding.rgCupSize),
+            // 아직 안 선 라디오(재료 미도착)는 화면을 읽으면 0이 나온다 — 들고 있던 값이 있으면
+            // 그것을 담는다. 그러지 않으면 재료가 늦은 기기에서 회전할 때마다 배수가 초기화된다.
+            relativeHeightIndex = pendingRelativeSelection?.first
+                ?: selectedIndex(binding.rgRelativeHeight),
+            relativeVolumeIndex = pendingRelativeSelection?.second
+                ?: selectedIndex(binding.rgRelativeVolume),
+            baseCharacterId = novelCharacters.getOrNull(
+                binding.spinnerBaseCharacter.selectedItemPosition - 1
+            )?.id ?: pendingBaseCharacterId
+        )
     }
 
     // ── 실루엣 ──────────────────────────────────────────────────────────────
@@ -225,13 +441,26 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         setupOverlayToggle()
 
         binding.btnToggleSide.setOnClickListener {
-            val toSide = binding.silhouette.facing == SilhouetteView.Facing.FRONT
-            binding.silhouette.facing =
-                if (toSide) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
-            // 측면은 표시 전용이다(P10) — 핸들이 없으므로 라벨만 남는다.
-            binding.silhouette.interactive = !toSide
-            binding.btnToggleSide.setText(if (toSide) R.string.silhouette_view_front else R.string.silhouette_view_side)
+            setFacing(side = binding.silhouette.facing == SilhouetteView.Facing.FRONT)
         }
+    }
+
+    /**
+     * 앞/옆을 정한다 — **단추와 복원이 같은 통로를 지난다.**
+     *
+     * 복원이 `performClick()`으로 단추를 흉내 내지 않는 이유가 둘이다: ⓐ 그것은 *누른 척*이라
+     * 클릭음·햅틱이 회전할 때마다 울린다 ⓑ **현재 상태를 뒤집는** 동작이라, 나중에 시작
+     * 방향이 바뀌면 복원이 조용히 반대로 선다(되살리려던 것을 되살리지 않는데 아무도 말하지 않는다).
+     * 여기는 *뒤집기*가 아니라 *정하기*라 몇 번을 불러도 같은 곳에 선다.
+     */
+    private fun setFacing(side: Boolean) {
+        binding.silhouette.facing =
+            if (side) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
+        // 측면은 표시 전용이다(P10) — 핸들이 없으므로 라벨만 남는다.
+        binding.silhouette.interactive = !side
+        binding.btnToggleSide.setText(
+            if (side) R.string.silhouette_view_front else R.string.silhouette_view_side
+        )
     }
 
     /** 작품 평균 오버레이 토글 — 재료(작품 캐릭터 수치)가 있을 때만 존재한다(P3 · 기본 끔). */
@@ -765,11 +994,18 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     )
 
     override fun onDestroyView() {
+        // 뷰만 다시 서는 갈래(인스턴스는 살아 있고 번들을 지나지 않는다)에서도 되살아나게
+        // 지금 것을 들고 내려간다 — 그러지 않으면 그 길에서만 편집이 사라진다.
+        currentState()?.let { restored = it }
+        built = false
         super.onDestroyView()
         _binding = null
     }
 
     companion object {
         const val TAG = "body_silhouette_editor"
+
+        /** 회전 보존 번들의 칸 이름 — 담는 것의 전수는 [BodyEditorState]가 든다. */
+        private const val STATE_KEY = "body_editor_state"
     }
 }
