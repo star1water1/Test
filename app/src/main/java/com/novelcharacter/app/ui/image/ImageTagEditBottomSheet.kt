@@ -8,6 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.databinding.BottomSheetImageTagEditBinding
+import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
 
 /**
@@ -37,7 +38,7 @@ class ImageTagEditBottomSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         if (onSave == null) { dismissAllowingStateLoss(); return }  // 재생성으로 주입 유실 — 안전 종료
 
-        binding.tagInput.setText(currentTags.joinToString(", "))
+        binding.tagInput.setText(MultiValueInput.format(currentTags))
 
         viewLifecycleOwner.lifecycleScope.launch {
             val suggestions = loadSuggestions?.invoke() ?: emptyList()
@@ -55,7 +56,7 @@ class ImageTagEditBottomSheet : BottomSheetDialogFragment() {
                         val existing = parseTags(binding.tagInput.text?.toString()).toMutableList()
                         if (tag !in existing) {
                             existing.add(tag)
-                            binding.tagInput.setText(existing.joinToString(", "))
+                            binding.tagInput.setText(MultiValueInput.format(existing))
                         }
                     }
                 }
@@ -70,7 +71,7 @@ class ImageTagEditBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun parseTags(raw: String?): List<String> =
-        (raw ?: "").split(",").map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        MultiValueInput.parse(raw).distinct()
 
     override fun onDestroyView() {
         super.onDestroyView()

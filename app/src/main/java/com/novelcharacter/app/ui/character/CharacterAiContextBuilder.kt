@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
+import com.novelcharacter.app.util.MultiValueInput
 
 /**
  * AI 추천 컨텍스트 조립의 **단일 소스** (P-A A-3).
@@ -47,8 +48,8 @@ object CharacterAiContextBuilder {
         } else {
             host.rawName().trim()
         }
-        val aliases = host.aliasesRaw().split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val tags = host.tagsRaw().split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val aliases = MultiValueInput.parse(host.aliasesRaw())
+        val tags = MultiValueInput.parse(host.tagsRaw())
         val characterId = host.characterId()
         val imageTags = viewModel.getImageTagsForPaths(host.imagePaths())
         val factions =

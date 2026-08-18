@@ -26,6 +26,7 @@ import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
 import com.novelcharacter.app.databinding.FragmentFieldValueListBinding
 import com.novelcharacter.app.databinding.ItemFieldValueEntryBinding
 import com.novelcharacter.app.databinding.SheetFieldValueDetailBinding
+import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.Job
@@ -382,7 +383,7 @@ class FieldValueListFragment : Fragment() {
         ).joinToString(" · ")
         sb.editDisplayLabel.setText(entry.displayLabel)
         sb.editCategory.setText(entry.category)
-        sb.editAliases.setText(entry.aliases().joinToString(", "))
+        sb.editAliases.setText(MultiValueInput.format(entry.aliases()))
         sb.editDescription.setText(entry.description)
         sb.switchHidden.isChecked = entry.isHidden
 
@@ -394,8 +395,7 @@ class FieldValueListFragment : Fragment() {
         }
 
         sb.btnSave.setOnClickListener {
-            val aliases = sb.editAliases.text.toString().split(",")
-                .map { it.trim() }.filter { it.isNotEmpty() }
+            val aliases = MultiValueInput.parse(sb.editAliases.text.toString())
             val updated = entry.copy(
                 displayLabel = sb.editDisplayLabel.text.toString().trim(),
                 category = sb.editCategory.text.toString().trim(),

@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.generateEntityCode
+import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
 
 /**
@@ -388,7 +389,7 @@ class CharacterSaveCoordinator(
             applyPendingImageDeletes()
         }
 
-        val tagList = snapshot.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val tagList = MultiValueInput.parse(snapshot.tags)
         viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
         syncNameBankLink(savedCharId, character.name)

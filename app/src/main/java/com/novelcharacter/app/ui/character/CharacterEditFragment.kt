@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
+import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.google.gson.reflect.TypeToken
@@ -718,7 +719,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 태그 로드
         val tags = viewModel.getTagsByCharacterList(characterId)
         if (_binding == null) return
-        binding.editTags.setText(tags.joinToString(", ") { it.tag })
+        binding.editTags.setText(MultiValueInput.format(tags) { it.tag })
 
         // fillForm과 태그 로드로 인해 TextWatcher가 트리거되어 false positive가 발생하므로 초기화
         hasUnsavedChanges = false
@@ -869,8 +870,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     private fun refreshRecommendations() {
         if (!recFetched || _binding == null) return
-        val tags = binding.editTags.text.toString()
-            .split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val tags = MultiValueInput.parse(binding.editTags.text.toString())
         val excluded = HashSet<String>()
         for (p in imageStrip.paths) {
             excluded.add(p)
@@ -1032,9 +1032,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 binding.editLastName.setText(name)
             com.novelcharacter.app.ai.CharacterNameAiSuggester.Mode.ALIAS -> {
                 val current = binding.editAnotherName.text.toString()
-                val parts = current.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val parts = MultiValueInput.parse(current)
                 if (parts.none { it.equals(name, ignoreCase = true) }) {
-                    binding.editAnotherName.setText((parts + name).joinToString(", "))
+                    binding.editAnotherName.setText(MultiValueInput.format(parts + name))
                 }
             }
         }

@@ -35,6 +35,7 @@ import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
 import com.novelcharacter.app.util.FormulaLexer
 import com.novelcharacter.app.util.FormulaValidator
+import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
@@ -2139,7 +2140,8 @@ class FieldEditDialog : DialogFragment() {
         } catch (e: Exception) { emptyMap<String, Any>() }
 
         // SELECT options
-        val options = (config["options"] as? List<*>)?.joinToString(",")
+        val options = (config["options"] as? List<*>)
+            ?.let { list -> MultiValueInput.format(list) { it?.toString().orEmpty() } }
         if (options != null) binding.editSelectOptions.setText(options)
 
         // GRADE 표 (B-69) — config의 등급 전부를 행으로. 종전 C·B·A·S 4칸은 그 밖의 등급
@@ -2775,7 +2777,7 @@ class FieldEditDialog : DialogFragment() {
             FieldType.SELECT -> {
                 val optionsText = binding.editSelectOptions.text.toString().trim()
                 if (optionsText.isNotEmpty()) {
-                    config["options"] = optionsText.split(",").map { it.trim() }
+                    config["options"] = MultiValueInput.parse(optionsText)
                 }
             }
             FieldType.GRADE -> {

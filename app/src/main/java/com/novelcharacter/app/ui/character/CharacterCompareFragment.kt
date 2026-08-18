@@ -44,6 +44,7 @@ class CharacterCompareFragment : Fragment() {
             findNavController().popBackStack()
             return
         }
+        // 쉼표 예외(사람이 적는 칸이 아니라 앱이 만든 화면 인자다 — 값이 숫자 id라 쉼표를 품을 수 없다)
         val characterIds = idsStr.split(",").mapNotNull { it.trim().toLongOrNull() }
 
         if (characterIds.size < 2) {
