@@ -185,6 +185,84 @@ data class BodyAnalysisConfig(
         }
 
         /**
+         * **들어갈 정수 cm가 없는 축** — 막지 않고 알리기만 한다(확정 15장 6번, B-202).
+         *
+         * 산출 허리·엉덩이는 정수 cm로 반올림되므로, 축의 구간이 아주 좁으면 **그 구간 안에
+         * 들어갈 정수가 아예 없을 수 있다.** 그러면 `bandFold`가 한가운데로 접어도 반올림이
+         * 옆 구간으로 넘기고, 요약([BodySilhouetteSpec.axisSummary])은 **이웃 축의 이름을
+         * 돌려준다** — 고른 말과 돌아오는 말이 갈린다.
+         *
+         * **잣대는 요약이 가르는 자리 그대로다:** 요약은 `값 <= 축의 끝`을 앞에서부터 찾으므로
+         * 축 `i`가 갖는 것은 `(앞 축의 끝, 자기 끝]`이다 — **아래 끝은 열려 있다.**
+         * ([bandOf]는 접을 구간이라 닫힌 채로 두는 것이 맞다 — 여기서 다시 세는 이유가 그것이다.)
+         *
+         * **키는 이 한 벌이 실제로 내는 것만 본다**([heightSpans]) — 종전 판정 초안은 140~200을
+         * 통째로 쓰라고 적었으나 **그 잣대로는 몸통 경고가 원리적으로 뜰 수 없다**(실측:
+         * 무작위 좁은 구간 20만 개에서 0건. 끝값 `끝×키`가 140~200을 지나며 12cm 넘게 쓸려
+         * 언제나 정수를 지난다). 겨냥은 *이 세계관이 실제로 내는 키*이고, 그것은 키 축이 정한다.
+         *
+         * 몸통은 [Limits.WAIST_REACH] 밖도 함께 잡는다 — 그 구간은 생성기가 잘라 내므로
+         * **정수가 있어도 돌아올 수 없다**(증상이 같다). 힙은 그 잘림이 허리에 딸려 있어
+         * 구간만으로는 답할 수 없으므로 여기서 재지 않는다.
+         */
+        fun emptyBands(): EmptyBands = EmptyBands(
+            torso = torsoOptions.indices.filterNot { torsoBandHasInteger(it) },
+            hip = hipOptions.indices.filterNot { hipBandHasInteger(it) }
+        )
+
+        /** [emptyBands]의 답 — 자리(인덱스)만 든다. 이름은 부르는 쪽이 그때의 것을 쓴다. */
+        data class EmptyBands(val torso: List<Int>, val hip: List<Int>) {
+            val isEmpty: Boolean get() = torso.isEmpty() && hip.isEmpty()
+        }
+
+        /**
+         * 이 한 벌이 실제로 낼 수 있는 키의 구간들 — 축마다 하나.
+         * 생성기가 `중심 ± 흔들림`을 [Limits.HEIGHT_REACH]로 자르는 그대로다.
+         */
+        fun heightSpans(): List<ClosedFloatingPointRange<Double>> = heightOptions.map {
+            (it.center - it.variance).coerceIn(Limits.HEIGHT_REACH)..
+                (it.center + it.variance).coerceIn(Limits.HEIGHT_REACH)
+        }
+
+        /**
+         * 몸통 축 [index]가 **어느 키에서든** 돌려받을 수 있는 허리 정수 cm를 갖는가.
+         *
+         * 조건은 `앞끝×키 < w <= 자기끝×키`이고 `w`는 [Limits.WAIST_REACH] 안의 정수다.
+         * 키로 풀면 `w/자기끝 <= 키 < w/앞끝`이라, 정수마다 그 구간이 키 구간과 겹치는지만 보면 된다.
+         */
+        private fun torsoBandHasInteger(index: Int): Boolean {
+            val ends = torsoOptions.map { it.maxRatio }
+            val high = ends.getOrNull(index) ?: return true
+            if (high <= 0.0) return false
+            val low = if (index == 0) 0.0 else ends[index - 1]
+            val spans = heightSpans()
+            if (spans.isEmpty()) return true          // 키 축이 비면 잴 것이 없다([usable]이 막는다)
+            val first = kotlin.math.ceil(Limits.WAIST_REACH.start).toInt()
+            val last = kotlin.math.floor(Limits.WAIST_REACH.endInclusive).toInt()
+            for (w in first..last) {
+                val need = w / high                    // 이 정수가 구간 안에 들려면 키가 이만큼은 돼야 한다
+                for (span in spans) {
+                    val from = maxOf(need, span.start)
+                    if (from > span.endInclusive) continue
+                    if (low <= 0.0 || from < w / low) return true
+                }
+            }
+            return false
+        }
+
+        /**
+         * 힙 축 [index]가 정수 cm를 갖는가 — **키와 무관하다.**
+         * 허리가 이미 정수로 반올림된 뒤 `허리 + 구간`을 접으므로, 물음은 곧
+         * *구간 `(앞끝, 자기끝]`에 정수가 있는가*다.
+         */
+        private fun hipBandHasInteger(index: Int): Boolean {
+            val ends = hipOptions.map { it.maxDiff }
+            val high = ends.getOrNull(index) ?: return true
+            if (index == 0) return true               // 요약이 (−∞, 끝]을 갖는 자리 — 언제나 있다
+            return kotlin.math.floor(high) > ends[index - 1]
+        }
+
+        /**
          * 사람이 손으로 고친 값도 도는 형태로 — **거부가 아니라 교정이다**(개발 의도 4번).
          *
          * 엑셀 '설정(JSON)' 칸은 외부에서 편집되므로 무엇이든 들어올 수 있다. 여기서 하는 일:
@@ -280,6 +358,17 @@ data class BodyAnalysisConfig(
             val CUP_DIFF = 0.0..60.0
             val HIP_BONUS = 0.0..60.0
             val HIP_END = 0.0..99.0
+
+            /**
+             * 생성기가 산출값을 자르는 자리 — **[com.novelcharacter.app.util.BodyGenerator]와
+             * 같은 수여야 한다.** 종전에는 그쪽 `coerceIn`에 날 숫자로만 있었고, 그래서
+             * *구간이 이 창 밖으로 나가 있다*를 창이 잴 방법이 없었다([emptyBands]가 쓴다).
+             */
+            val HEIGHT_REACH = 140.0..200.0
+            val WAIST_REACH = 45.0..110.0
+            val BUST_REACH = 60.0..150.0
+            val HIP_REACH = 60.0..150.0
+            val WEIGHT_REACH = 30.0..150.0
 
             /**
              * 축의 끝이 같아도 안 되는 이유 — 폭이 0인 구간은 **그 이름이 영영 안 돌아온다.**

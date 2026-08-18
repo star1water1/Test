@@ -227,7 +227,7 @@ object BodyGenerator {
         // 흔들림 폭 0은 "정확히 이 값"이라는 뜻이다 — 사용자가 정할 수 있는 값이므로
         // 난수 호출에 그대로 넘기지 않는다(`nextDouble(-0.0, 0.0)`은 예외를 던진다).
         val height = (heightOption.center + random.jitter(heightOption.variance))
-            .coerceIn(140.0, 200.0)
+            .coerceIn(GenerationPreset.Limits.HEIGHT_REACH)
 
         // 흔들림은 구간 안에서만 준다 — 넘으면 요약이 다른 축 이름을 돌려준다.
         // 반올림(정수 cm)이 경계를 다시 넘을 수 있어 [BAND_INSET_CM]만큼 안으로 물린다.
@@ -237,27 +237,27 @@ object BodyGenerator {
             bandFold(
                 height * torsoOption.waistRatio + random.nextDouble(-1.5, 1.5),
                 torsoBand.start * height, torsoBand.endInclusive * height
-            ).coerceIn(45.0, 110.0)
+            ).coerceIn(GenerationPreset.Limits.WAIST_REACH)
         ).toDouble()
 
         // 가슴은 축이든 역산이든 같은 식 하나다: 가슴 = 밑가슴(허리+보정) + 컵차.
         val bust = if (targetCupDiff != null) {
-            (waist + ribOffset + targetCupDiff + random.nextDouble(-1.5, 1.5)).coerceIn(60.0, 150.0)
+            (waist + ribOffset + targetCupDiff + random.nextDouble(-1.5, 1.5)).coerceIn(GenerationPreset.Limits.BUST_REACH)
         } else {
-            (waist + ribOffset + bustOption.cupDiff + random.nextDouble(-2.0, 2.0)).coerceIn(60.0, 150.0)
+            (waist + ribOffset + bustOption.cupDiff + random.nextDouble(-2.0, 2.0)).coerceIn(GenerationPreset.Limits.BUST_REACH)
         }
 
         val hip = bandFold(
             waist + hipOption.hipBonus + random.nextDouble(-2.5, 2.5),
             waist + hipBand.start, waist + hipBand.endInclusive
-        ).coerceIn(60.0, 150.0)
+        ).coerceIn(GenerationPreset.Limits.HIP_REACH)
 
         // 체중 보정: 가슴/엉덩이 축이 기준점에서 벗어난 만큼 체적 변화를 반영
         val bustDelta = (bust - waist) - BUST_BONUS_REF
         val hipDelta = hipOption.hipBonus - HIP_BONUS_REF
         val weightAdj = bustDelta * 0.04 + hipDelta * 0.03
         val weight = (torsoOption.bmiTarget * (height / 100.0) * (height / 100.0) + weightAdj + random.nextDouble(-2.0, 2.0))
-            .coerceIn(30.0, 150.0)
+            .coerceIn(GenerationPreset.Limits.WEIGHT_REACH)
 
         return GeneratedBody(
             height = Math.round(height * 10.0) / 10.0,
@@ -279,20 +279,20 @@ object BodyGenerator {
         random: Random = Random.Default
     ): GeneratedBody {
         val height = (baseHeight * heightMultiplier + random.nextDouble(-1.5, 1.5))
-            .coerceIn(140.0, 200.0)
+            .coerceIn(GenerationPreset.Limits.HEIGHT_REACH)
 
         val waist = (baseWaist * volumeMultiplier + random.nextDouble(-2.0, 2.0))
-            .coerceIn(45.0, 110.0)
+            .coerceIn(GenerationPreset.Limits.WAIST_REACH)
         val bustDiff = baseBust - baseWaist
         val hipDiff = baseHip - baseWaist
         val bust = (waist + bustDiff * volumeMultiplier + random.nextDouble(-2.0, 2.0))
-            .coerceIn(60.0, 150.0)
+            .coerceIn(GenerationPreset.Limits.BUST_REACH)
         val hip = (waist + hipDiff * volumeMultiplier + random.nextDouble(-2.0, 2.0))
-            .coerceIn(60.0, 150.0)
+            .coerceIn(GenerationPreset.Limits.HIP_REACH)
 
         val baseBmi = baseWeight / ((baseHeight / 100.0) * (baseHeight / 100.0))
         val weight = (baseBmi * volumeMultiplier * (height / 100.0) * (height / 100.0) + random.nextDouble(-1.5, 1.5))
-            .coerceIn(30.0, 150.0)
+            .coerceIn(GenerationPreset.Limits.WEIGHT_REACH)
 
         return GeneratedBody(
             height = Math.round(height * 10.0) / 10.0,

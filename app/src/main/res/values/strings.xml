@@ -1843,6 +1843,7 @@
     <string name="body_gen_edit_error_name">이름을 적어 주세요</string>
     <string name="body_gen_edit_error_range">%1$s ~ %2$s 사이로 적어 주세요</string>
     <string name="body_gen_edit_error_order">앞 축의 구간 끝보다 커야 합니다</string>
+    <string name="body_gen_edit_warn_empty_band">%1$s 구간에는 들어갈 정수 cm가 없어, 그 축을 골라도 요약은 이웃 축 이름으로 답합니다. 저장은 됩니다 — 구간 끝을 조금 벌리거나 키 축을 넓히면 사라집니다.</string>
     <string name="body_gen_edit_saved">축·프리셋을 저장했습니다</string>
     <string name="body_gen_edit_no_field">이 체형 필드에는 저장할 수 없습니다</string>
 
