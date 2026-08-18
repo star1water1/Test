@@ -912,6 +912,28 @@ data class BodyAnalysisConfig(
          * 여기서 칸마다 기본값을 다시 적지 않는다(두 벌로 적으면 갈린다).
          * 프리셋의 축 인덱스만 −1을 표식으로 쓴다 — 0은 실제로 첫 축을 뜻하기 때문이다.
          */
+        /**
+         * 🎲 한 벌을 문자열로 — **회전을 넘겨 창이 들고 가는 짐이 이것이다**(B-260).
+         *
+         * 창이 제 코덱을 따로 적지 않게 하려고 연다. 두 벌로 적으면 키 이름이 갈리는 순간
+         * 왕복이 조용히 기본값으로 돌아가고, 그것은 *손대지 않은 설정이 저절로 바뀌는* 모양이다.
+         */
+        fun generationToJsonString(gen: GenerationPreset): String = generationToJson(gen).toString()
+
+        /**
+         * [generationToJsonString]의 짝. 못 읽으면 `null`이다 — **기본값으로 눙치지 않는다.**
+         * 부르는 쪽(창)은 그때 안전 종료로 돌아간다(R-41-a): 껍데기를 띄우면 [저장]이
+         * 사용자가 손대지도 않은 기본값을 진짜 설정 위에 덮어쓴다.
+         */
+        fun generationFromJsonString(json: String?): GenerationPreset? {
+            if (json.isNullOrBlank()) return null
+            return try {
+                parseGeneration(JSONObject(json))
+            } catch (_: Exception) {
+                null
+            }
+        }
+
         private fun parseGeneration(obj: JSONObject?): GenerationPreset {
             if (obj == null) return DEFAULT_GENERATION
             fun <T> read(name: String, item: (JSONObject) -> T): List<T> {
