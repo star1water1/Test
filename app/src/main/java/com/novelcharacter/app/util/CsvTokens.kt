@@ -7,6 +7,9 @@ package com.novelcharacter.app.util
  * - **엑셀 목록 셀**(참여 캐릭터·태그·별칭처럼 앱이 이름을 이어 붙였다 되쪼개는 칸) — 규약 R-47.
  *   `excel/SheetSpec.kt`의 `joinCsv`/`splitCsv`가 이 객체를 부른다.
  * - **인앱 필드값 토큰**(통계·폼 자동완성·값 라이브러리·검색) — [FieldValueTokenizer].
+ * - **인앱 다중값 입력칸**(태그·이명·별칭·선택지) — [MultiValueInput], 규약 R-63.
+ * - **식별자를 담은 셀**(`대결 축` 시트의 필드 연결) — [DuelFieldLinks], B-261.
+ *   감싸기는 셀 규약 그대로이고 **전각 정규화만 끈다**([split]의 `normalizeFullWidth`).
  *
  * 종전에는 앞쪽만 따옴표를 알고 뒤쪽은 `split(",")`이라 **같은 앱 안에서 같은 개념이 두 규칙**이었다
  * (B-178). `태그` 칸에 `"주인공, 남자"`라 적으면 한 값으로 들어오는데 복수 텍스트 필드 칸에 똑같이
@@ -40,14 +43,36 @@ object CsvTokens {
      *   착수 세션에는 그 데이터가 없다. 좁히면 뜻이 바뀌는 값이 **따옴표 안에 쉼표가 든 값뿐**이고,
      *   그것들은 지금도 `"a` · `b"`로 갈려 있어 **잃을 뜻이 애초에 없다** — 세지 않고도 위험이 0이다.
      *
-     *   **좁힌 모드는 전각 정규화도 하지 않는다.** 엑셀 셀은 CJK 입력기가 넣은 전각 쉼표(，)를
-     *   구분자로 받아 주지만(F4 — 사람이 손으로 고치는 자리라 관대함이 값어치다), 인앱 값에
-     *   그 관대함을 들여오면 **오늘 한 토큰인 `가，나`가 두 토큰으로 갈린다.** 그것은 바로 이
-     *   판정이 막으려던 *조용한 뜻 바뀜*이라, 좁힌 모드는 원문 그대로만 본다
-     *   (실제로 이 시험을 세우다 잡았다 — 규칙을 옮겨 오면서 정규화가 딸려 왔었다).
+     * @param normalizeFullWidth **전각 ASCII를 반각으로 고쳐 읽는가**([toHalfWidth] — F4).
+     *   기본값이 `!quotedOnlyIfNeeded`인 것은 **오늘까지의 두 부름을 글자 하나 안 바꾸기 위해서다**
+     *   (셀은 정규화하고 인앱 값은 안 한다).
+     *
+     *   **이 인자를 가른 것이 B-261이다.** 종전에는 두 축이 [quotedOnlyIfNeeded] 하나에 묶여
+     *   있었다 — *따옴표를 어디까지 인정하는가*와 *전각을 고쳐 읽는가*. 그런데 **사용자 확정
+     *   7-6이 정한 것은 앞의 축뿐이고**(『따옴표로 감싼다 — 엑셀·CSV와 같은 방식』),
+     *   전각 정규화는 그보다 앞선 F4의 관대함이 딸려 온 것이다. 묶여 있는 동안 셋째 부류가
+     *   고를 것이 없었다: **토큰이 식별자인 셀** — 값을 *찾는* 이름이 아니라 **글자 그대로가
+     *   곧 정체인 칸**(`대결 축` 시트의 필드 연결. `DuelFieldLinks`).
+     *
+     *   그 칸에서 정규화는 관대함이 아니라 **손실**이다. 필드 키는 `FieldEditDialog`와 '필드 정의'
+     *   시트가 **원문 그대로** 싣는데(어느 쪽도 정규화하지 않는다), 연결 칸만 고쳐 읽으면
+     *   `ｐｏｗｅｒ`라는 키가 왕복 한 번에 `power`가 되어 **어느 필드도 가리키지 않는 죽은 연결**이
+     *   된다 — 두 시트가 같은 키를 다르게 읽는 셈이다. 반대로 이름·코드를 담은 칸은 값을 *찾는*
+     *   자리라 그 관대함이 값어치를 하고, 못 찾으면 가져오기 결과가 말한다. **그래서 축을 갈랐지
+     *   규약을 뒤집지 않았다** — 감싸기는 셋 다 CSV 관용 그대로다.
+     *
+     *   **좁힌 모드(인앱 값)가 정규화를 안 하는 근거는 종전과 같다:** 엑셀 셀은 CJK 입력기가 넣은
+     *   전각 쉼표(，)를 구분자로 받아 주지만(F4 — 사람이 손으로 고치는 자리라 관대함이 값어치다),
+     *   인앱 값에 그 관대함을 들여오면 **오늘 한 토큰인 `가，나`가 두 토큰으로 갈린다.** 그것은 바로
+     *   이 판정이 막으려던 *조용한 뜻 바뀜*이다
+     *   (실제로 그 시험을 세우다 잡았다 — 규칙을 옮겨 오면서 정규화가 딸려 왔었다).
      */
-    fun split(value: String, quotedOnlyIfNeeded: Boolean = false): List<String> {
-        val source = if (quotedOnlyIfNeeded) value else toHalfWidth(value)
+    fun split(
+        value: String,
+        quotedOnlyIfNeeded: Boolean = false,
+        normalizeFullWidth: Boolean = !quotedOnlyIfNeeded
+    ): List<String> {
+        val source = if (normalizeFullWidth) toHalfWidth(value) else value
         if (!source.contains('"')) return splitLegacy(source)
         return parseQuoted(source, quotedOnlyIfNeeded) ?: splitLegacy(source)
     }

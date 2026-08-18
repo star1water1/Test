@@ -1005,6 +1005,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("'대결 축' 시트의 필드 연결", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• '영향필드'·'산출필드'·'프로필필드'는 필드키를 쉼표로 이어 적는 칸입니다."),
+            GuideLine("", styles.guideBody, "  필드키 자체에 쉼표가 있으면 그 키를 따옴표로 감싸세요: \"내, 키\", 힘"),
             GuideLine("", styles.guideBody, "• '영향필드'는 적은 차례가 곧 영향력 순위입니다(맨 앞이 1순위)."),
             GuideLine("", styles.guideBody, "• 키 앞에 ▼를 붙이면 '값이 작을수록 유리'라는 뜻입니다. 예) ▼나이"),
             GuideLine("", styles.guideBody, "  앞에 -를 붙인 옛 파일도 그대로 읽습니다. 앱은 이제 ▼로 내보냅니다."),

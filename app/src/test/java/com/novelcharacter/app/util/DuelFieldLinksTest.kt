@@ -398,4 +398,91 @@ class DuelFieldLinksTest {
         assertEquals(listOf(Link("▲rank")), DuelFieldLinks.parseText("▲rank"))
         assertEquals(listOf(Link("▲rank")), DuelFieldLinks.decode("""["▲rank"]"""))
     }
+
+    // ── 쉼표가 든 필드 키 (B-261) ──
+
+    /**
+     * **쉼표를 담은 키가 왕복 한 번에 둘로 갈리던 자리** — 이 슬라이스를 부른 결함이다.
+     *
+     * 필드 키는 사용자가 적고(`FieldEditDialog`의 검증은 *비어 있지 않은가* 하나뿐이다)
+     * 저장은 JSON 배열이라 안전했는데, **엑셀 칸만** 감싸기를 몰랐다. 연결 하나가 뜻 없는
+     * 둘로 갈리면 **축의 영향력 순위까지 어긋난다** — 순서가 곧 순위라서.
+     */
+    @Test
+    fun `keys containing a comma survive the excel round trip`() {
+        val links = listOf(Link("내, 키"), Link("mana"))
+        val text = DuelFieldLinks.toText(links)
+        assertEquals("감싸지 않으면 되읽는 쪽이 두 조각으로 본다", "\"내, 키\", mana", text)
+        assertEquals(links, DuelFieldLinks.parseText(text))
+    }
+
+    /**
+     * **앞머리까지 함께 감싼다** — 감싸기를 푼 뒤 앞머리를 떼는 차례가 양쪽에서 같아야 한다.
+     * 방향(작을수록 유리)이 쉼표 하나 때문에 뒤집히면 예측이 통째로 거꾸로 돈다.
+     */
+    @Test
+    fun `lower wins marker survives wrapping when the key holds a comma`() {
+        val links = listOf(Link("내, 키", higherWins = false))
+        val text = DuelFieldLinks.toText(links)
+        assertEquals("\"▼내, 키\"", text)
+        assertEquals(links, DuelFieldLinks.parseText(text))
+    }
+
+    /**
+     * **따옴표를 글자로 쓴 키도 왕복한다** — 감싼 뒤 안쪽 따옴표를 겹쳐 쓰는 CSV 규칙 그대로다.
+     */
+    @Test
+    fun `keys containing a quote survive the excel round trip`() {
+        val links = listOf(Link("힘\"세기"))
+        val text = DuelFieldLinks.toText(links)
+        assertEquals("\"힘\"\"세기\"", text)
+        assertEquals(links, DuelFieldLinks.parseText(text))
+    }
+
+    /**
+     * **감싸지 않은 옛 파일이 그대로 살아난다** (R-2).
+     *
+     * 따옴표를 글자로 쓰던 키(`힘"세기`)는 감싼 것으로 읽히지 않고 옛 규칙으로 되돌아간다 —
+     * 이 갈래가 없으면 **형식을 넓히는 변경 자체가 왕복을 깨는 변경**이 된다.
+     */
+    @Test
+    fun `unwrapped legacy cells keep their meaning`() {
+        assertEquals(listOf(Link("힘\"세기")), DuelFieldLinks.parseText("힘\"세기"))
+        assertEquals(listOf(Link("mana"), Link("age", higherWins = false)),
+            DuelFieldLinks.parseText("mana, ▼age"))
+    }
+
+    /**
+     * **전각은 고쳐 읽지 않는다** — 이 칸의 토큰은 값을 *찾는* 이름이 아니라 **글자 그대로가
+     * 곧 정체인 식별자**다.
+     *
+     * 셀 규약의 전각 관대함(F4)을 그대로 들여오면 `ｐｏｗｅｒ` 키가 왕복 한 번에 `power`가
+     * 되어 **어느 필드도 가리키지 않는 죽은 연결**이 된다 — 필드 키를 싣는 다른 두 자리
+     * (`FieldEditDialog`·'필드 정의' 시트)는 원문 그대로 싣기 때문에, 이 칸만 고쳐 읽으면
+     * 같은 키를 두 시트가 다르게 읽는다.
+     */
+    @Test
+    fun `full width keys are not normalized away`() {
+        for (key in listOf("ｐｏｗｅｒ", "가，나", "힘１")) {
+            val links = listOf(Link(key))
+            assertEquals("전각이 반각으로 바뀌면 연결이 죽는다: $key",
+                links, DuelFieldLinks.parseText(DuelFieldLinks.toText(links)))
+        }
+    }
+
+    /**
+     * **줄바꿈은 여전히 구분자다** — 사람이 Alt+Enter로 적은 칸이 한 덩어리로 읽히면 안 된다.
+     * [CsvTokens]는 줄바꿈을 구분자로 보지 않으므로 줄로 먼저 가르고 그 안에서 CSV 규칙을 쓴다.
+     */
+    @Test
+    fun `newlines still separate tokens and wrapping works per line`() {
+        assertEquals(
+            listOf(Link("mana"), Link("age", higherWins = false)),
+            DuelFieldLinks.parseText("mana\n▼age")
+        )
+        assertEquals(
+            listOf(Link("내, 키"), Link("mana")),
+            DuelFieldLinks.parseText("\"내, 키\"\nmana")
+        )
+    }
 }
