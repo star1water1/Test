@@ -657,6 +657,15 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
+
+    /**
+     * 사건 하나를 id로 — **화면 목록이 아니라 표에서 뜬다**(B-198).
+     *
+     * 값을 고치러 오는 길은 연표의 거르개(작품·캐릭터)를 지나지 않는다. 목록에서 찾으면
+     * 거르개가 걸린 사건은 못 찾고 **아무 일도 안 일어난 것처럼 보인다** — 누른 사람은
+     * 자기가 왜 못 갔는지 알 길이 없다.
+     */
+    suspend fun getEventById(eventId: Long) = timelineRepository.getEventById(eventId)
     suspend fun getEventFieldsForUniverse(universeId: Long) =
         db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
 

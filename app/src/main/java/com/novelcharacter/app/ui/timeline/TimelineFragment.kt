@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.FragmentTimelineBinding
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
+import com.novelcharacter.app.util.FieldValueFixRoute
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -99,6 +100,59 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             viewModel.quickAddEvent(year, desc, currentNovel?.id, currentNovel?.universeId)
             Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
         }
+
+        consumeFixRequest()
+    }
+
+    /**
+     * 타입이 안 맞는 값을 고치러 온 요청을 소비한다 (B-198).
+     *
+     * **인자는 시트를 실제로 연 그 자리에서 지운다 — 읽는 자리가 아니다.** 사건 조회는
+     * 중단점이라, 먼저 지우면 그사이 화면이 내려갈 때 **요청만 사라진다**(누른 사람은
+     * 아무 일도 안 일어난 것을 보고 다시 누를 방법이 없다). 남겨 두면 다시 선 화면이
+     * 이어 연다. 열고 나서 지우므로 회전에 두 번 열리지도 않는다.
+     *
+     * **상태 저장 뒤에는 물러난다** — `DialogFragment.show()`는 그 시점에 예외로 죽는다
+     * (`navigateSafe`가 이동에 대해 막는 것과 같은 부류다). 인자를 그대로 두므로
+     * 다시 설 때 열린다.
+     *
+     * **사건을 못 찾으면 말하고 지운다.** 통계 스냅샷은 뜬 시점의 사진이라, 그사이 지워진
+     * 사건의 줄이 아직 목록에 서 있을 수 있다. 그때 아무 일도 안 일어나면 누른 사람은 앱이
+     * 먹통인 줄 안다(개발 의도 2번 — 조용히 버리지 않는다). 다시 시도해도 없을 것이므로
+     * 그 갈래는 그 자리에서 끝낸다.
+     */
+    private fun consumeFixRequest() {
+        val args = arguments ?: return
+        val eventId = args.getLong(FieldValueFixRoute.ARG_FOCUS_EVENT_ID, 0L)
+        if (eventId <= 0L) return
+        val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
+        val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val event = viewModel.getEventById(eventId)
+            if (!isAdded || _binding == null) return@launch
+            if (event == null) {
+                clearFixRequest()
+                Toast.makeText(requireContext(), R.string.fix_target_event_missing, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (childFragmentManager.isStateSaved) return@launch
+            clearFixRequest()
+            // 시트를 닫은 뒤 그 사건이 있는 자리에 서 있게 한다 — 전역 검색·인사이트가
+            // 연표로 보낼 때 쓰는 규약과 같다(그쪽은 연도만 알아 연도로 보낸다).
+            viewModel.setSelectedYear(event.year)
+            EventEditDialogFragment.show(
+                childFragmentManager, event = event,
+                focusFieldId = fieldId, focusFieldName = fieldName
+            )
+        }
+    }
+
+    private fun clearFixRequest() {
+        val args = arguments ?: return
+        args.remove(FieldValueFixRoute.ARG_FOCUS_EVENT_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME)
     }
 
     private fun setupRecyclerView() {

@@ -290,6 +290,7 @@ $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
 $MAIN/util/FieldTypeCompatibility.kt
 $MAIN/util/FieldValueTypeMismatch.kt
+$MAIN/util/FieldValueFixRoute.kt
 $MAIN/util/GlobalScopeFieldMove.kt
 $MAIN/util/UnassignedHistoryScope.kt
 $MAIN/util/DefaultFieldPlan.kt
@@ -454,6 +455,7 @@ $TEST/stats/NumericBinDrilldownTest.kt
 $TEST/stats/NumericDistributionFoldTest.kt
 $TEST/stats/DataHealthReorgTest.kt
 $TEST/util/FieldValueTypeMismatchTest.kt
+$TEST/util/FieldValueFixRouteTest.kt
 $TEST/util/ValueDistributionsTest.kt
 $TEST/util/NumericBinningTest.kt
 $TEST/util/StatsFieldPolicyTest.kt

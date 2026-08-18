@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +29,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
+import com.novelcharacter.app.util.FieldValueFixRoute
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
@@ -97,6 +99,14 @@ class NovelListFragment : Fragment() {
     private var novelFieldSection: NovelFieldSection? = null
 
     /**
+     * 폼이 서면 잡을 칸 (B-198) — `필드 정의 id`와 **못 찾았을 때 말할 이름**.
+     *
+     * 창이 아니라 프래그먼트가 든다: 창은 [showNovelEditDialog]가 매번 새로 짓고,
+     * 칸은 그 안의 비동기 조회가 끝나야 선다.
+     */
+    private var pendingFieldFocus: Pair<Long, String>? = null
+
+    /**
      * @param universeId 이 폼이 필드를 조회·생성하는 세계관. **폼을 여는 시점에 확정**되고
      *   도중에 바뀌지 않는다(작품 편집에는 세계관 선택기가 없다). **null이면 전역 구역**이고
      *   (B-129 — 무소속 작품도 전역 기본 필드를 든다) 읽고 쓰는 것은 그대로 되지만
@@ -141,9 +151,78 @@ class NovelListFragment : Fragment() {
         setupAddNovelFieldPath()
         observeData()
 
-        if (universeId != -1L) {
+        // **인자를 지우기 전에** 판정한다 — 아래 소비가 인자를 걷어 간다.
+        val arrivedForFix = (arguments?.getLong(FieldValueFixRoute.ARG_FOCUS_NOVEL_ID, 0L) ?: 0L) > 0L
+        // 값을 고치러 온 길은 세계관 필터가 없어도 **밀려 들어온 화면**이다 — 돌아갈 단추가
+        // 없으면 통계에서 온 사람이 나갈 길을 못 찾는다(원칙 04).
+        if (universeId != -1L || arrivedForFix) {
             binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
             binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        }
+        consumeFixRequest()
+    }
+
+    /**
+     * 타입이 안 맞는 값을 고치러 온 요청을 소비한다 (B-198).
+     *
+     * **인자는 창을 여는 그 자리에서 지운다 — 읽는 자리가 아니다.** 작품 조회는 중단점이라,
+     * 먼저 지우면 그사이 화면이 내려갈 때 **요청만 사라진다.** 남겨 두면 다시 선 화면이
+     * 이어 연다. 열고 나서 지우므로 회전에 두 번 열리지도 않는다.
+     *
+     * **작품을 못 찾으면 말한다.** 통계 스냅샷은 뜬 시점의 사진이라 그사이 지워진 작품의
+     * 줄이 아직 목록에 서 있을 수 있다(개발 의도 2번 — 조용히 버리지 않는다).
+     */
+    private fun consumeFixRequest() {
+        val args = arguments ?: return
+        val novelId = args.getLong(FieldValueFixRoute.ARG_FOCUS_NOVEL_ID, 0L)
+        if (novelId <= 0L) return
+        val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
+        val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val novel = viewModel.getNovelById(novelId)
+            // 창을 여는 그 자리에서 지운다 — 먼저 지우면 조회 중에 화면이 내려갈 때
+            // **요청만 사라진다**(연표 쪽 [consumeFixRequest]와 같은 이유).
+            if (!isAdded || _binding == null) return@launch
+            clearFixRequest()
+            if (novel == null) {
+                Toast.makeText(requireContext(), R.string.fix_target_novel_missing, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (fieldId > 0L) pendingFieldFocus = fieldId to fieldName
+            showNovelEditDialog(novel)
+        }
+    }
+
+    private fun clearFixRequest() {
+        val args = arguments ?: return
+        args.remove(FieldValueFixRoute.ARG_FOCUS_NOVEL_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME)
+    }
+
+    /**
+     * 고치러 온 요청이 가리킨 칸을 잡는다 (B-198).
+     *
+     * **칸이 없으면 무엇이 없는지 말한다** — 이 창은 그 작품의 구역(세계관, 없으면 전역)
+     * 필드만 그리므로 다른 구역 정의에 매달린 값은 그릴 자리가 없다(B-258).
+     */
+    private fun consumeFieldFocus(section: NovelFieldSection) {
+        val (fieldId, fieldName) = pendingFieldFocus ?: return
+        pendingFieldFocus = null
+        val widget = section.inputs[fieldId] as? View
+        if (widget == null) {
+            Toast.makeText(
+                requireContext(), getString(R.string.fix_field_not_in_form, fieldName),
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        // 부착 뒤에 잡는다 — 스크롤 컨테이너는 자식이 초점을 얻을 때 그 자리로 스크롤한다.
+        widget.post {
+            if (_binding == null) return@post
+            widget.requestFocus()
+            (widget as? EditText)?.let { it.setSelection(it.text?.length ?: 0) }
         }
     }
 
@@ -480,7 +559,12 @@ class NovelListFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .create()
 
-        dialog.setOnDismissListener { novelFieldSection = null }
+        dialog.setOnDismissListener {
+            novelFieldSection = null
+            // 폼이 서기 전에 닫혔으면 요청도 여기서 끝난다 — 남기면 **다음에 여는 창**이
+            // 그 요청을 집어 엉뚱한 칸을 잡는다(B-198).
+            pendingFieldFocus = null
+        }
 
         // 저장 실행 — **누른 순간에 지은 값**([snapshot])만 쓴다(R-27). 허용 목록 확인을 거쳐
         // 한 걸음 늦게 저장될 수도 있으므로, 그때 위젯을 다시 읽으면 그사이 값을 읽게 된다.
@@ -755,6 +839,7 @@ class NovelListFragment : Fragment() {
             binding.novelFieldEmptyHint.text = getString(
                 if (globalScope) R.string.novel_field_global_scope else R.string.novel_field_empty_hint
             )
+            consumeFieldFocus(section)   // 그릴 칸이 없다는 것도 답이다 — 말없이 끝내지 않는다
             return
         }
         binding.novelFieldContainer.visibility = View.VISIBLE
@@ -824,6 +909,7 @@ class NovelListFragment : Fragment() {
             }
         }
         attachNovelFieldSuggestions(section)
+        consumeFieldFocus(section)
     }
 
     /**

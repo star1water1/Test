@@ -125,6 +125,14 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
      * 같은 앱 안에서 **작품만 그 구역을 못 보는** 상태였다(원칙 01·05).
      * 전역 구역의 필드는 기본 필드 템플릿의 그림자이고, 그 심기는 저장소가 멱등으로 한다.
      */
+    /**
+     * 작품 하나를 id로 — **화면 목록이 아니라 표에서 뜬다**(B-198).
+     *
+     * 값을 고치러 오는 길은 세계관 필터를 지나지 않는다. 목록에서 찾으면 필터 밖 작품은
+     * 못 찾고 **아무 일도 안 일어난 것처럼 보인다.**
+     */
+    suspend fun getNovelById(novelId: Long) = novelRepository.getNovelById(novelId)
+
     suspend fun getNovelFields(universeId: Long?) =
         if (universeId == null) {
             // 앱의 저장소를 쓴다 — `globalFields`는 **심을 수도 있는**(쓰기) 함수라, 옆에서

@@ -450,6 +450,7 @@ class StatsScanParityTest {
                 found.add(TypeMismatchedValue(
                     ownerType = ownerType, ownerId = ownerId,
                     ownerName = ownerNames[ownerId] ?: "#$ownerId",
+                    fieldDefId = fieldDefIdOf(row),
                     fieldName = def.name, fieldType = def.type, value = raw, reason = reason
                 ))
             }

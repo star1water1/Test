@@ -35,6 +35,7 @@ import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.ui.field.FieldEditDialog
 import com.novelcharacter.app.util.FieldOptionParser
+import com.novelcharacter.app.util.FieldValueFixRoute
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.isValidDay
 import com.novelcharacter.app.util.reportAndNotify
@@ -773,6 +774,7 @@ class EventEditDialogFragment : DialogFragment() {
             binding.btnAddEventField.visibility = View.GONE
             binding.btnPickEventField.visibility = View.GONE
             binding.btnEventFieldHelp.visibility = View.GONE
+            consumeFieldFocus()   // 그릴 칸이 없다는 것도 답이다 — 말없이 끝내지 않는다
             return
         }
 
@@ -819,6 +821,7 @@ class EventEditDialogFragment : DialogFragment() {
             val known = resolvedFieldUniverseId != null
             binding.eventFieldSectionLabel.visibility = if (known) View.VISIBLE else View.GONE
             binding.eventFieldEmptyHint.visibility = if (known) View.VISIBLE else View.GONE
+            consumeFieldFocus()
             return
         }
         binding.eventFieldContainer.visibility = View.VISIBLE
@@ -880,6 +883,45 @@ class EventEditDialogFragment : DialogFragment() {
             }
         }
         attachEventFieldSuggestions()
+        consumeFieldFocus()
+    }
+
+    /**
+     * 고치러 온 요청이 가리킨 칸을 잡는다 (B-198).
+     *
+     * **폼이 다 선 뒤에만 부른다** — 위젯은 [buildEventFieldInputs]가 만들고, 그 함수는
+     * 세계관 조회가 끝난 뒤에야 돈다. 세우기 전에 부르면 언제나 *칸이 없다*가 된다.
+     *
+     * **인자는 한 번 쓰고 지운다.** 이 시트는 작품 선택을 바꿀 때마다 폼을 다시 세우는데
+     * (`rebuildEventFieldSection`), 남겨 두면 그때마다 초점이 튀어 사용자가 보던 자리를 뺏는다.
+     *
+     * **칸이 없으면 무엇이 없는지 말한다.** 값은 있는데 칸이 없는 조합이 실제로 있다 —
+     * 이 시트는 *그 사건의 세계관* 필드만 그리므로, 전역 구역(무소속) 정의나 다른 세계관
+     * 정의에 매달린 값은 그릴 자리가 없다(B-258). 조용히 끝내면 누른 사람은 자기가 잘못
+     * 눌렀다고 여긴다.
+     */
+    private fun consumeFieldFocus() {
+        val args = arguments ?: return
+        val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
+        if (fieldId <= 0L) return
+        val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME)
+
+        val widget = eventFieldInputMap[fieldId] as? View
+        if (widget == null) {
+            val ctx = context ?: return
+            Toast.makeText(
+                ctx, getString(R.string.fix_field_not_in_form, fieldName), Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        // 부착 뒤에 잡는다 — 스크롤 컨테이너는 자식이 초점을 얻을 때 그 자리로 스크롤한다.
+        widget.post {
+            if (_binding == null) return@post
+            widget.requestFocus()
+            (widget as? android.widget.EditText)?.let { it.setSelection(it.text?.length ?: 0) }
+        }
     }
 
     /**
@@ -1268,13 +1310,19 @@ class EventEditDialogFragment : DialogFragment() {
             fragmentManager: FragmentManager,
             event: TimelineEvent? = null,
             preSelectedCharacterIds: Set<Long> = emptySet(),
-            preSelectedNovelIds: List<Long> = emptyList()
+            preSelectedNovelIds: List<Long> = emptyList(),
+            focusFieldId: Long = 0L,
+            focusFieldName: String = ""
         ) {
             val fragment = EventEditDialogFragment()
             fragment.arguments = bundleOf(
                 ARG_EVENT_JSON to event?.let { Gson().toJson(it) },
                 ARG_PRE_CHAR_IDS to preSelectedCharacterIds.toLongArray(),
-                ARG_PRE_NOVEL_IDS to preSelectedNovelIds.toLongArray()
+                ARG_PRE_NOVEL_IDS to preSelectedNovelIds.toLongArray(),
+                // 인자 이름은 연표가 받은 것을 그대로 물려준다 — 이름을 여기서 새로 정하면
+                // 두 벌이 되고, 갈리면 아무 일도 일어나지 않는다(FieldValueFixRoute KDoc).
+                FieldValueFixRoute.ARG_FOCUS_FIELD_ID to focusFieldId,
+                FieldValueFixRoute.ARG_FOCUS_FIELD_NAME to focusFieldName
             )
             fragment.show(fragmentManager, TAG)
         }
