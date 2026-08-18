@@ -808,6 +808,7 @@
     <string name="export_save_success">파일이 저장되었습니다</string>
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
     <string name="export_save_cancelled">저장을 취소했습니다 — 만든 파일은 지웠습니다</string>
+    <string name="export_save_cancelled_kept">저장을 취소했습니다</string>
 
     <!--
         가져오기 진행도(작업형 · B-51) — 구간이 넷이고 단위가 둘이다.

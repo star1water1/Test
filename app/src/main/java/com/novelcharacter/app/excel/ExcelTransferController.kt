@@ -74,9 +74,13 @@ class ExcelTransferController(private val fragment: Fragment) {
                 }
             uri == null -> {
                 // 저장 위치를 고르지 않았다 — 캐시에 남기지 않고, 지웠다는 사실을 말한다.
-                file.delete()
+                // **지웠다고 말하는 것은 실제로 지워졌을 때뿐이다** — 지우기는 실패할 수 있고,
+                // 확인하지 않은 단정은 거짓 고지가 된다(개발 의도 2번 · B-225가 세운 그 잣대).
+                val removed = file.delete() || !file.exists()
                 if (onScreen) {
-                    Toast.makeText(appContext, R.string.export_save_cancelled, Toast.LENGTH_SHORT).show()
+                    val message =
+                        if (removed) R.string.export_save_cancelled else R.string.export_save_cancelled_kept
+                    Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
                 }
             }
             else -> {
