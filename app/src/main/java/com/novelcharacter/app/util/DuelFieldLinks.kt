@@ -268,6 +268,11 @@ object DuelFieldLinks {
      */
     fun parseText(text: String?): List<Link> {
         if (text.isNullOrBlank()) return emptyList()
+        // ⚠️ 이 짝은 감싸기를 **아직 모른다** — 쉼표가 든 필드 키에서 왕복이 깨진다.
+        // 실측: `내, 키` 하나가 되읽으면 `내`·`키` **둘**이 된다. 처분에 판정이 걸려 있어
+        // (넓은 모드로 올리면 `힘"세기`·`ｐｏｗｅｒ`처럼 오늘 멀쩡히 왕복하는 키의 뜻이 바뀐다 — 실측)
+        // 여기서 고치지 않고 등재했다. **그 행이 닫히면 아래 표식도 함께 지운다.**
+        // 쉼표 예외(엑셀 셀이라 인앱 칸의 좁은 모드를 그대로 쓸 수 없다 — 셀은 확정 7-6의 CSV 관용이 규칙이다. 왕복 결함은 B-261)
         return normalize(text.split(',', '\n').mapNotNull { parseToken(it) })
     }
 
