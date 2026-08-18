@@ -78,11 +78,30 @@ if ! grep -q 'truncatedImages' "$IMPORTER"; then
   echo "⚠️ $IMPORTER 가 contents.truncatedImages를 읽지 않는다 — 판정이 빈 집합으로만 돈다."
   FAIL=1
 fi
+# **부르기만 하고 안 쓰면 부르지 않은 것과 같다** (콜드 검토에서 찾은 자리).
+# 판정의 결과를 담은 변수가 실제로 갈래를 가르는지 본다 — 이름은 **손으로 적지 않고 대입에서 뜬다**
+# (적어 두면 변수를 개명하는 순간 검사가 조용히 통과한다).
+RESVAR=$(grep -oE 'val [A-Za-z_][A-Za-z0-9_]* = *$' -A0 "$IMPORTER" >/dev/null 2>&1;          grep -B1 'WorldPackageImages\.isRestorable' "$IMPORTER"          | grep -oE 'val [A-Za-z_][A-Za-z0-9_]*' | tail -1 | awk '{print $2}')
+if [ -z "${RESVAR:-}" ]; then
+  echo "⚠️ isRestorable의 결과를 담는 변수를 뜨지 못했다(뜨는 법이 깨졌다) — 대입 꼴이 바뀌었는지 볼 것."
+  FAIL=1
+elif ! grep -qE "^[[:space:]]*${RESVAR} ->|if \(${RESVAR}\b" "$IMPORTER"; then
+  echo "⚠️ $IMPORTER 가 판정 결과(\`$RESVAR\`)로 갈래를 가르지 않는다 —"
+  echo "   부르기만 하고 옛 갈래(엔트리가 있으면 복원)를 그대로 쓰면 결함이 되돌아온다."
+  FAIL=1
+fi
 
 # ── 축 ③ 내보내기가 목록을 싣는가 ──
 EXPORTER="$SHARE/WorldPackageExporter.kt"
 if ! grep -q 'WorldPackageEntries\.IMAGE_FAILURES' "$EXPORTER"; then
   echo "⚠️ $EXPORTER 가 image_failures.json을 싣지 않는다 — 잘린 장을 세고도 알리지 않는다."
+  FAIL=1
+fi
+# 실패를 **적는 자리**가 살아 있는가 (콜드 검토). `fail(...)` 호출이 사라지고 로그만 남으면
+# 계수도 목록도 0이라 **내보내는 쪽 고지까지 함께 조용해진다** — private 필드가 막는 것은
+# *다른 길로 올리는 것*이지 *아무 길도 안 쓰는 것*이 아니다.
+if ! grep -qE '\.fail\(' "$EXPORTER"; then
+  echo "⚠️ $EXPORTER 가 ImageTally.fail(...)을 부르지 않는다 — 쓰다 실패한 장을 아무 데도 적지 않는다."
   FAIL=1
 fi
 # 파서가 그 엔트리를 읽는지도 함께 본다 — 싣기만 하고 읽지 않으면 왕복이 반쪽이다.
@@ -104,4 +123,4 @@ if [ "$FAIL" -ne 0 ]; then
   echo "월드패키지 이미지 엔트리 검사 실패"
   exit 1
 fi
-echo "월드패키지 이미지 엔트리 검사 통과 (축 3)"
+echo "월드패키지 이미지 엔트리 검사 통과 (축 3 · 콜드 검토 보강 2)"

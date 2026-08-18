@@ -604,13 +604,22 @@ decl = re.compile(r'^    (?:private )?suspend fun (import[A-Za-z0-9_]*)\s*\(')
 adecl = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*)\s*\(')
 analyzers = {m.group(1) for l in lines if (m := adecl.match(l))}
 # importAll 본문에서 실제로 불리는 것만 본다 — 죽은 함수까지 요구하지 않는다.
-start = next((i for i,l in enumerate(lines) if 'fun importAll' in l), None)
+# 이름을 부분 문자열로 찾지 않는다 — `importAllSomething`도 함께 걸려 **개명을 못 알아본다**
+# (콜드 검토에서 실제로 그랬다: 개명 자기 재공격이 통과해 버렸다).
+start = next((i for i,l in enumerate(lines) if re.search(r'\bfun importAll\s*\(', l)), None)
 called = set()
 if start is not None:
     j = start + 1
     while j < len(lines) and lines[j] != '    }':
         called.update(re.findall(r'\b(import[A-Z][A-Za-z0-9_]*)\s*\(', lines[j].split('//')[0]))
         j += 1
+# **0건을 '위반이 없다'로 읽지 않는다.** `importAll`의 본문을 못 뜨면 `called`가 비고, 그러면
+# 아래 루프가 전부 건너뛰어 **뜨는 법이 깨진 것과 위반이 없는 것이 겉으로 같아진다**
+# (자기 재공격에서 실제로 그랬다 — `importAll`을 개명하니 이 축이 조용히 초록이었다).
+if not called:
+    print("__뜨는 법이 깨졌다__\timportAll의 본문에서 import* 호출을 하나도 뜨지 못했습니다 — 선언이 개명·재서식됐는지 보세요")
+    raise SystemExit(0)
+
 bad = []
 for i, l in enumerate(lines):
     m = decl.match(l)
@@ -643,7 +652,12 @@ PY8
 mcount=$(printf '%s' "$missing" | grep -c . || true)
 
 if [ "${mcount:-0}" -gt 0 ]; then
-  echo "  ✗ 미리보기 함수가 아예 없는 범주가 있습니다 (${mcount}건)"
+  # 뜨는 법이 깨진 것과 위반이 있는 것은 **처방이 다르다** — 머리글도 갈라 적는다.
+  if printf '%s' "$missing" | grep -q '__뜨는 법이 깨졌다__'; then
+    echo "  ✗ 축 ⑧이 대상을 뜨지 못했습니다 — 이 축은 지금 아무것도 보고 있지 않습니다"
+  else
+    echo "  ✗ 미리보기 함수가 아예 없는 범주가 있습니다 (${mcount}건)"
+  fi
   echo
   printf '%s\n' "$missing" | while IFS=$'\t' read -r fn why; do
     [ -z "${fn:-}" ] && continue
