@@ -19,6 +19,7 @@ import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
 import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.DuelMatchLog
 import com.novelcharacter.app.util.notifyResult
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -55,6 +56,9 @@ class DuelMatchesFragment : Fragment() {
 
     /** '캐릭터를 넘는 판만' 거르개 (B-208) — 순위표 고지가 켠 채로 열 수 있다. */
     private var onlyCross = false
+
+    /** 돌고 있는 목록 받아오기 — 새 회차가 앞의 것을 끊는다(아래 [reload]의 사유). */
+    private var reloadJob: Job? = null
 
     /**
      * 그 거르개의 **범위** — 0 이하면 축 전체, 크면 그 캐릭터가 낀 것만.
@@ -122,8 +126,22 @@ class DuelMatchesFragment : Fragment() {
         reload()
     }
 
+    /**
+     * 목록을 다시 받는다 — **앞의 것을 반드시 끊고 시작한다** (B-208 콜드 검토).
+     *
+     * 거르개가 생기기 전에는 이 함수가 *더 보기*와 판 편집 뒤에만 돌았고 두 회차의 비용이
+     * 비슷했다. **거르개는 그 전제를 깬다:** 켠 회차는 축의 판을 전수로 훑고(+소유 표 만들기)
+     * 끈 회차는 200행만 받으므로 **두 회차의 지연이 자릿수로 다르다.** 그래서 빠르게 껐다 켜면
+     * **늦게 끝난 앞 회차가 뒤 회차를 덮어**, 스위치는 꺼져 있는데 목록과 요약 줄은 걸러진
+     * 것을 말하는 상태가 생긴다.
+     *
+     * 유실도 크래시도 아니지만 **화면이 자기 상태와 다른 말을 하는 자리**라 그대로 둘 수 없다
+     * (개발 의도 2번). 끊는 것으로 족하다 — 이 함수는 읽기만 하고 쓰기는 부르는 쪽이
+     * 이미 끝낸 뒤다.
+     */
     private fun reload() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        reloadJob?.cancel()
+        reloadJob = viewLifecycleOwner.lifecycleScope.launch {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded
             // 캐릭터를 넘는 판은 **이미지 축에만 있다**(참가자가 경로라야 주인이 갈린다).
@@ -238,6 +256,9 @@ class DuelMatchesFragment : Fragment() {
         if (!isImageAxis) {
             b.switchOnlyCross.visibility = View.GONE
             b.onlyCrossPurpose.visibility = View.GONE
+            // 감추기만 하고 값을 두면 **숨은 스위치가 켜진 채로 남는다** — 지금은 아무도
+            // 읽지 않지만, 이 화면이 축을 갈아 끼우게 되는 날 그 값이 되살아난다.
+            b.switchOnlyCross.isChecked = false
             return
         }
         b.switchOnlyCross.visibility = View.VISIBLE

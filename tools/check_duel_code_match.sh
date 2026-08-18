@@ -157,7 +157,19 @@ GRAPH=app/src/main/res/navigation/nav_graph.xml
 for f in "$MATCHES" "$GRAPH"; do
   [ -f "$f" ] || { echo "  ✗ 등재된 파일이 없습니다: $f"; echo ""; echo "대결 코드 대조 방식 검사 실패"; exit 1; }
 done
-for key in onlyCross focusCharacterId; do
+# **이름 목록을 여기 적지 않는다 — 선언에서 뜬다.** R-61의 재발 방지 문단이 스스로
+# *"목록을 두 벌로 적으면 그 순간 낡는다"*고 못박아 두었는데, 첫 벌은 그 자리에서 두 벌을
+# 적고 있었다(콜드 검토 셋째 바퀴가 잡았다). 인자를 하나 더 세우면 검사도 함께 는다.
+KEYS=$(grep -oE 'const val ARG_[A-Z_]+ *= *"[^"]+"' "$MATCHES" | sed 's/.*"\(.*\)"/\1/')
+if [ -z "$KEYS" ]; then
+  echo "  ✗ 거르개 인자 선언을 하나도 찾지 못했습니다: $MATCHES (const val ARG_… = \"…\")"
+  echo "      → 이름이 바뀌었으면 이 검사를 함께 고칠 것. 못 찾은 채 통과하면"
+  echo "        *위반 없음*과 구별되지 않는다."
+  echo ""
+  echo "대결 코드 대조 방식 검사 실패"
+  exit 1
+fi
+for key in $KEYS; do
   # 선언 자신(상수 정의)과 자원은 뺀다. 주석도 뺀다 — *왜 이 이름인가*를 적어 두는 관행이 있다.
   raw=$(grep -rn "\"$key\"" "$SRC" --include=*.kt \
     | grep -vE "^$MATCHES:[0-9]+:[[:space:]]*const val" \
@@ -180,8 +192,9 @@ for key in onlyCross focusCharacterId; do
   fi
 done
 # **읽은 자리가 지우는가** (R-61) — 남겨 두면 화면이 다시 설 때마다 같은 요청이 다시 걸려
-# 사용자가 끈 거르개를 재생성이 도로 켠다.
-for key in ARG_ONLY_CROSS ARG_FOCUS_CHARACTER_ID; do
+# 사용자가 끈 거르개를 재생성이 도로 켠다. **상수 이름도 선언에서 뜬다**(위와 같은 이유).
+NAMES=$(grep -oE 'const val ARG_[A-Z_]+' "$MATCHES" | awk '{print $3}')
+for key in $NAMES; do
   grep -q "arguments?.remove($key)" "$MATCHES" || {
     echo "  ✗ 읽은 요청을 인자에서 지우지 않습니다: $MATCHES ($key)"
     echo "      → arguments?.remove($key). 남기면 회전마다 같은 요청이 다시 걸린다(R-61)."

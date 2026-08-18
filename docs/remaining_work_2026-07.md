@@ -174,7 +174,7 @@ tools/check_no_nul_bytes.sh                            # 소스에 날 NUL이 �
 tools/check_body_reach_bounds.sh                       # 🎲 생성기가 산출값을 자르는 수와, 그 수를 읽어 경고하는 자리가 한 벌인가 (B-202) — 축 셋: 날 숫자 clamp 금지 · `Limits.*_REACH` 실재 · **판정을 부르는 화면이 있는가**. 셋째가 이 검사의 값이다 — 판정을 순수로 내리면 *아무도 안 부르는 죽은 코드*가 되기 쉽고 그것은 시험이 원리적으로 못 본다
 tools/check_backlog_markers.sh                         # 4장 백로그: 닫힌 행이 살아 있는 심각도를 들었는가 + **표식이 아예 없는 행이 있는가**(B-182) — 살아 있는 행 수도 함께 낸다(그것이 "남은 일"의 세는 법이다. 4장 머리 규약)
 tools/check_propagate_value_parity.sh                   # 전파 미리보기의 값을 *채우는* 조건과 *세는* 조건이 한 벌인가 (B-135)
-tools/check_ai_review_retention.sh                      # AI 검토 시트가 유료 응답을 버리지 않는가 — 되받기의 carryOver · 넘기기 전 닫기 · 회전 보존 · **적용 실패에 되살리는가** · **빈 결과로 끝난 실행도 말하는가** (R-38 · B-163 · B-144)
+tools/check_ai_review_retention.sh                      # AI 검토 시트가 유료 응답을 버리지 않는가 — 되받기의 carryOver · 넘기기 전 닫기 · 회전 보존 · **적용 실패에 되살리는가** · **빈 결과로 끝난 실행도 말하는가** (R-38 · B-163 · B-144) · **뷰가 유료 엔진을 직접 세우지 못한다**(⑨ — 자리를 세지 않고 부류를 막는다, B-45) · **서술형 일괄 진입을 잇는 화면이 결과·실행중·진행 셋을 다 드는가**(⑩ — ⑨와 짝이고 **그 둘 사이에 통과하면서 돈만 나가는 길**이 있었다: 엔진을 직접 안 부르고 ViewModel로 보내지만 결과를 안 받는 길. B-184)
 tools/check_config_column_fallback.sh                   # '설정(JSON)' 열이 위치 폴백을 쓰지 않는가 — 열을 지우면 이웃 열이 config로 읽힌다 (R-36 · B-142 · B-162)
 tools/check_view_probe_targets.sh                       # `View`를 직접 상속한 클래스가 전부 커스텀 뷰 프로브 대상 목록에 있는가 (R-31 · B-147)
 tools/check_jvm_test_targets.sh                         # `*Test.kt`가 전부 run_jvm_tests.sh의 TESTS 목록에 있는가 — **빠지면 실패가 아니라 침묵이다** (R-43)
@@ -186,7 +186,7 @@ tools/check_pending_key.sh                               # 복원 미리보기�
 tools/check_ai_tag_consumers.sh                          # AI 이미지 태그 기조·어휘를 싣는 자리가 등재와 같은가 (B-165)
 tools/check_stub_shadow_use.sh                           # 하네스 스텁이 가린 클래스를 시험이 세우는가 — 로컬 초록·CI 실패의 유일한 로컬 탐지기
 tools/check_faction_standing.sh                           # '지금 소속' 판정이 FactionStanding 하나를 지나는가 + **DAO의 SQL 쌍둥이가 그것과 같은 글자인가** (B-171 · R-50)
-tools/check_duel_code_match.sh                            # DuelRecords.resolve를 부르는 자리가 대조 방식(matching)을 밝히는가 — 기본값에 기대면 이미지 축의 판이 조용히 고아가 된다 (B-175 · R-51)
+tools/check_duel_code_match.sh                            # 축 셋이다. ① DuelRecords.resolve를 부르는 자리가 대조 방식(matching)을 밝히는가 — 기본값에 기대면 이미지 축의 판이 조용히 고아가 된다 (B-175 · R-51) ② **캐릭터를 넘는 판의 판정(`Claim.Cross`)이 `DuelImageRoster` 밖에 없는가** — ①이 *적합과 나누기*를 보는 것과 축이 같고 이쪽은 **세는 쪽과 고르는 쪽**이다(B-208) ③ **거르개 요청의 인자 이름이 한 자리에 살고 · nav_graph에 선언돼 있고 · 읽은 자리가 지우는가**(R-61. **이름 목록은 `DuelMatchesFragment`의 `const val ARG_*` 선언에서 뜬다** — 적어 두면 인자가 늘 때 조용히 빠진다)
 tools/check_field_type_branch.sh                          # 필드 타입 분기가 전부 FieldType enum을 지나는가 — 생문자열과 `.name` 비교 두 축 (R-52 · B-55)
 tools/check_global_field_key_guard.sh                   # `field_definitions`에 쓰는 자리가 **무엇이 전역키 유일성을 지키는지** 밝히는가 (R-57 · B-230 ⓑ) — 유니크 색인 `(universeId, entityType, key)`의 `universeId`가 nullable이라 **전역 구역(무소속)에서는 색인이 아무것도 막지 않는다**(SQLite는 NULL끼리를 다르게 본다). 세계관 필드였다면 즉시 예외가 날 실수가 그 구역에서만 조용히 통과한다. **DAO 별칭을 따라간다** — 이름으로만 찾으면 `private val fieldDao get() = db.fieldDefinitionDao()` 한 줄이 파일을 통째로 숨기고, 하필 전역 구역에 실제로 심는 넷이 그 모양이다(첫 판이 그래서 아홉 중 여섯만 잡았다). 기준선 **0**(표식 통과 9)
 tools/check_in_clause_chunk.sh                          # `IN (:목록)` 질의에 청크가 붙어 있는가 (R-54 · B-242) — 상한(999)을 넘으면 질의가 통째로 죽는다. DAO의 `IN (:list)` 메서드를 **손 목록이 아니라 정규식으로** 모아 호출부를 훑고, **콜백을 한 겹 따라간다**(그러지 않으면 `buildIndex` 계열 열두 곳이 거짓 양성이다). 기준선 **0**
