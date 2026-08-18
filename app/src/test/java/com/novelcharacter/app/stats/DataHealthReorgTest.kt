@@ -229,7 +229,7 @@ class DataHealthReorgTest {
     private fun rows(ownerType: String, n: Int) = (1..n).map {
         com.novelcharacter.app.ui.stats.TypeMismatchedValue(
             ownerType = ownerType, ownerId = it.toLong(), ownerName = "o$it",
-            fieldName = "f", fieldType = "NUMBER", value = "v",
+            fieldDefId = 1L, fieldName = "f", fieldType = "NUMBER", value = "v",
             reason = FieldValueTypeMismatch.Reason.NOT_A_NUMBER
         )
     }

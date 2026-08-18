@@ -20,6 +20,7 @@ import com.github.mikephil.charting.formatter.PercentFormatter
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentStatsDataHealthDetailBinding
+import com.novelcharacter.app.util.FieldValueFixRoute
 import com.novelcharacter.app.util.FieldValueTypeMismatch
 import com.novelcharacter.app.util.navigateSafe
 
@@ -157,12 +158,12 @@ class StatsDataHealthDetailFragment : Fragment() {
      *
      * 개발 의도 2번은 *검증 → 알림 → 바로잡을 경로*를 요구하는데, 이 부류는 종전에 둘째에서
      * 끊겨 있었다(전파 미리보기의 고지는 창을 닫으면 사라진다). 그래서 여기서는 이름만
-     * 늘어놓지 않고 **누르면 그 칸이 있는 캐릭터를 연다.**
+     * 늘어놓지 않고 **누르면 그 칸을 고칠 자리가 열린다.**
      *
-     * **사건·작품 축은 누를 수 없다** — 그 두 축에는 값을 고치러 갈 목적지가 nav 그래프에
-     * 없고, 만드는 것은 다른 화면을 여는 일이라 이 판의 범위가 아니다(백로그 등재). 대신
-     * *어느 사건·어느 작품의 어느 칸인지*까지 말해 손으로 찾아갈 수 있게 한다 — 지금은
-     * 그것조차 없다.
+     * **세 축이 전부 눌린다**(B-198 — 종전에는 캐릭터뿐이었다). 어디로 가고 무엇을 싣는지는
+     * [FieldValueFixRoute]가 정한다 — 이 화면은 목적지 enum을 자원 id로 옮기기만 한다.
+     * 사건·작품은 목적지가 곧 편집 창이라 **그 칸까지 잡아 준다**(캐릭터는 상세 화면이라
+     * 잡을 칸이 없다. 그 갈래도 같은 객체가 든다).
      */
     private fun populateTypeMismatchList(items: List<TypeMismatchedValue>) {
         val container = binding.listTypeMismatch
@@ -204,9 +205,12 @@ class StatsDataHealthDetailFragment : Fragment() {
                 )
             )
             row.addView(makeCaptionTextView(reasonText(item.reason)))
-            if (item.ownerType == FieldDefinition.ENTITY_CHARACTER) {
-                // 누를 수 있는 줄과 없는 줄이 한 목록에 섞이므로 **보여서 알 수 있어야 한다** —
-                // 목적문이 말은 하지만 어느 줄인지까지는 말하지 못한다(원칙 04).
+            // 갈 곳이 없는 줄(모르는 종류·임자를 잃은 값)은 그대로 둔다 — 누를 수 있는 줄과
+            // 없는 줄이 한 목록에 섞이므로 **보여서 알 수 있어야 한다**(원칙 04).
+            val route = FieldValueFixRoute.of(
+                item.ownerType, item.ownerId, item.fieldDefId, item.fieldName
+            )
+            if (route != null) {
                 row.isClickable = true
                 row.isFocusable = true
                 val ta = requireContext().obtainStyledAttributes(
@@ -214,17 +218,33 @@ class StatsDataHealthDetailFragment : Fragment() {
                 )
                 row.foreground = ta.getDrawable(0)
                 ta.recycle()
-                row.setOnClickListener {
-                    val bundle = Bundle().apply { putLong("characterId", item.ownerId) }
-                    findNavController().navigateSafe(
-                        R.id.statsDataHealthDetailFragment, R.id.characterDetailFragment, bundle
-                    )
-                }
+                row.setOnClickListener { navigateToFix(route) }
             }
             container.addView(row)
         }
         // 마지막 축의 잔여 — 루프 안에서는 '다음 축'이 없어 붙일 자리가 없다.
         addOverflowLine(lastOwnerType)
+    }
+
+    /**
+     * 목적지 enum → 자원 id. **이 함수가 이 화면이 아는 전부다** — 어느 종류가 어디로 가고
+     * 무엇을 싣는지는 [FieldValueFixRoute]가 정한다(순수 시험이 그 갈래를 잠근다).
+     */
+    private fun navigateToFix(route: FieldValueFixRoute.Route) {
+        val destId = when (route.destination) {
+            FieldValueFixRoute.Destination.CHARACTER_DETAIL -> R.id.characterDetailFragment
+            FieldValueFixRoute.Destination.TIMELINE -> R.id.timelineFragment
+            FieldValueFixRoute.Destination.NOVEL_LIST -> R.id.novelListFragment
+        }
+        val bundle = Bundle().apply {
+            putLong(route.ownerArg, route.ownerId)
+            // 잡을 칸이 없는 축에는 싣지 않는다 — 받는 쪽이 없는 인자는 조용히 버려진다.
+            if (route.fieldId > 0L) {
+                putLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, route.fieldId)
+                putString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME, route.fieldName)
+            }
+        }
+        findNavController().navigateSafe(R.id.statsDataHealthDetailFragment, destId, bundle)
     }
 
     private fun reasonText(reason: FieldValueTypeMismatch.Reason): String = getString(

@@ -1465,7 +1465,7 @@
 
     <!-- Stats: 타입이 안 맞는 값 (B-156) · 입력 현황 (B-59) -->
     <string name="stats_type_mismatch">타입이 안 맞는 값</string>
-    <string name="stats_type_mismatch_purpose">필드의 종류로 읽히지 않는 값입니다. 지우지는 않았지만 수식에서 0으로 읽히고 수치 분포에서 빠집니다. 캐릭터 줄은 눌러 그 캐릭터로 갑니다.</string>
+    <string name="stats_type_mismatch_purpose">필드의 종류로 읽히지 않는 값입니다. 지우지는 않았지만 수식에서 0으로 읽히고 수치 분포에서 빠집니다. 줄을 누르면 그 값을 고칠 자리가 열립니다.</string>
     <string name="stats_health_type_mismatch_preview"> | 타입 불일치 %d개</string>
     <string name="stats_type_mismatch_row">%1$s · %2$s = %3$s</string>
     <string name="stats_type_mismatch_more">외 %d개</string>
@@ -1474,6 +1474,11 @@
     <string name="stats_type_mismatch_reason_body">체형 수치로 읽히지 않습니다</string>
     <string name="stats_type_mismatch_owner_event">사건</string>
     <string name="stats_type_mismatch_owner_novel">작품</string>
+
+    <!-- 값을 고치러 가는 길 (B-198) -->
+    <string name="fix_target_event_missing">그 사건을 찾을 수 없습니다. 통계를 다시 열면 목록에서도 사라집니다.</string>
+    <string name="fix_target_novel_missing">그 작품을 찾을 수 없습니다. 통계를 다시 열면 목록에서도 사라집니다.</string>
+    <string name="fix_field_not_in_form">\'%1$s\' 칸이 이 창에 없습니다. 필드 관리에서 그 필드가 어느 세계관에 있는지 확인하세요.</string>
     <string name="stats_input_progress">입력 현황</string>
     <string name="stats_input_progress_purpose">아직 안 쓴 칸입니다. 잘못된 데이터가 아니므로 위 발견 사항에는 세지 않습니다.</string>
 

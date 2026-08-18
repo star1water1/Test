@@ -43,6 +43,23 @@
             app:argType="long"
             android:defaultValue="-1L" />
 
+        <!-- 타입 불일치 목록에서 값을 고치러 오는 길 (B-198) — 이름의 단일 소스는
+             util/FieldValueFixRoute.kt이고 check_field_fix_route.sh가 짝을 지킨다. -->
+        <argument
+            android:name="focusNovelId"
+            app:argType="long"
+            android:defaultValue="0L" />
+
+        <argument
+            android:name="focusFieldId"
+            app:argType="long"
+            android:defaultValue="0L" />
+
+        <argument
+            android:name="focusFieldName"
+            app:argType="string"
+            android:defaultValue="" />
+
         <action
             android:id="@+id/action_novel_to_characters"
             app:destination="@id/characterListFragment" />
@@ -203,7 +220,25 @@
         android:id="@+id/timelineFragment"
         android:name="com.novelcharacter.app.ui.timeline.TimelineFragment"
         android:label="연표"
-        tools:layout="@layout/fragment_timeline" />
+        tools:layout="@layout/fragment_timeline">
+
+        <!-- 타입 불일치 목록에서 값을 고치러 오는 길 (B-198) — 이름의 단일 소스는
+             util/FieldValueFixRoute.kt이고 check_field_fix_route.sh가 짝을 지킨다. -->
+        <argument
+            android:name="focusEventId"
+            app:argType="long"
+            android:defaultValue="0L" />
+
+        <argument
+            android:name="focusFieldId"
+            app:argType="long"
+            android:defaultValue="0L" />
+
+        <argument
+            android:name="focusFieldName"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
 
     <fragment
         android:id="@+id/nameBankFragment"

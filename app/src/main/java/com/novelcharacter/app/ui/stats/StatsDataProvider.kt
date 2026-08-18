@@ -263,6 +263,13 @@ data class TypeMismatchedValue(
     /** 대상 id. 캐릭터라면 화면이 이 id로 상세를 연다. */
     val ownerId: Long,
     val ownerName: String,
+    /**
+     * 값이 매달린 필드 정의 id — **편집 창이 열린 뒤 그 칸을 잡는 열쇠다**(B-198).
+     *
+     * 이름으로는 못 잡는다: 같은 이름의 필드가 구역마다 따로 설 수 있고, 창이 든 칸의
+     * 열쇠는 언제나 정의 id다(`eventFieldInputMap`·`NovelFieldSection.inputs`).
+     */
+    val fieldDefId: Long,
     val fieldName: String,
     /** [FieldType] 이름. 화면이 *"숫자 필드인데"*를 말하는 근거다. */
     val fieldType: String,
@@ -1934,6 +1941,7 @@ class StatsDataProvider {
                         // 조용히 빼면 개수와 목록이 갈린다.
                         ownerName = ownerNames[ownerId] ?: "#$ownerId",
                         // ①에서 defById에 있던 def만 mismatchByDef에 실린다.
+                        fieldDefId = fieldDefIdOf(row),
                         fieldName = defById.getValue(fieldDefIdOf(row)).name,
                         fieldType = defById.getValue(fieldDefIdOf(row)).type,
                         value = raw,
