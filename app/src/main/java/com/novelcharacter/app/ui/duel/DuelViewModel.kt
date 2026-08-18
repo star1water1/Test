@@ -776,22 +776,41 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         duelRepository.recentMatches(axisId, limit)
 
     /**
-     * 축의 판 **전수** — 최근순 (B-208).
+     * **캐릭터를 넘는 판** — 최근순, 순위표의 고지가 센 그 판들 (B-208).
      *
-     * 기록 화면이 '캐릭터를 넘는 판만'을 켰을 때 쓴다. 그 판정은 **경로의 주인이 누구인가**라
-     * SQL이 낼 수 없고(정규화가 파일 시스템을 탄다), 최근 N판만 걸러 내면 순위표가 센 판이
-     * 오래된 것일 때 **0개가 보인다.**
+     * ## 왜 화면이 아니라 여기가 하는가
+     * 두 가지가 **가벼운 척하는데 무겁다.** ⓐ 소유 표를 만드는 일은 경로마다
+     * `File.canonicalPath`, 즉 **파일 시스템 호출**이다(`ImagePathMatch.Canonicalizer`의
+     * 주석이 그 비용을 적어 두었다) ⓑ 고르는 일은 축의 판 **전수**를 훑는다. 둘 다 화면에서
+     * 그대로 하면 **주 스레드에서** 도는데, 이 표는 이 앱에서 가장 커질 수 있는 자리다
+     * (`scalability_performance` 4장). 같은 계산을 하는 [imageTarget]·[loadImages]가
+     * 이미 `Dispatchers.Default`로 내려보내고 있어 그 결을 그대로 따른다.
      *
-     * 새 상한이 아니다 — [imageTarget]이 이미 같은 질의로 소유 표를 만든다(순위표로 오는
-     * 길목이 그 자리다). 비용은 축 하나의 판 수에 붙고, **거르개를 켠 회차에만** 든다.
+     * ## 왜 최근 N판이 아니라 전수인가
+     * 판정이 *경로의 주인이 누구인가*라 SQL이 낼 수 없고, 최근 N판만 걸러 내면 순위표가 센
+     * 판이 오래된 것일 때 **0개가 보인다** — 확정 15-8이 막으려던 증상이 술어가 아니라
+     * 범위에서 되살아나는 자리다. 새 상한은 아니다: [imageTarget]이 같은 질의를 이미 한다.
      *
-     * **차례를 뒤집어 내보내는 것이 요점이다.** DAO의 축 단위 조회는 적합이 쓰는 자리라
-     * `decidedAt ASC, id ASC`인데, 기록 화면은 최근순으로 넘긴다([recentMatches]는
-     * `DESC, DESC`다). 그대로 주면 거르개를 켠 순간 목록이 **가장 오래된 판부터** 뜨고
-     * *더 보기*도 거꾸로 넘어간다 — 두 정렬이 정확히 서로의 역이라 뒤집기로 맞춘다.
+     * **차례를 뒤집는다.** 축 단위 DAO 조회는 적합이 쓰는 자리라 `decidedAt ASC, id ASC`인데
+     * 기록 화면은 최근순이다([recentMatches]는 `DESC, DESC`). 그대로 주면 거르개를 켠 순간
+     * 목록이 **가장 오래된 판부터** 뜨고 *더 보기*도 거꾸로 넘어간다 — 두 정렬이 정확히
+     * 서로의 역이라 뒤집기로 맞는다.
+     *
+     * @param characters 소유 표의 바탕 — 화면이 이미 들고 있는 참가자 전부를 넘긴다.
+     * @param characterId 0 이하면 축 전체, 크면 그 캐릭터가 낀 것만(순위표 고지와 같은 범위).
      */
-    suspend fun allMatches(axisId: Long): List<DuelMatch> =
-        app.database.duelMatchDao().getByAxis(axisId).asReversed()
+    suspend fun crossCharacterMatches(
+        axisId: Long,
+        characters: List<Character>,
+        characterId: Long
+    ): List<DuelMatch> {
+        val matches = app.database.duelMatchDao().getByAxis(axisId)
+        return withContext(Dispatchers.Default) {
+            DuelImageRoster.crossCharacterMatchesOf(
+                matches.asReversed(), DuelImageRoster.owners(characters), characterId
+            )
+        }
+    }
 
     /**
      * 판 하나의 승자를 고친다.

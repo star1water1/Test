@@ -14,10 +14,9 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelMatchesBinding
-import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
 import com.novelcharacter.app.data.model.DuelMatch
+import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
 import com.novelcharacter.app.util.CharacterRepresentativeImage
-import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelMatchLog
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
@@ -64,7 +63,6 @@ class DuelMatchesFragment : Fragment() {
      * **N개라던 것이 M개로 보인다**(확정 15-8 착수 조건).
      */
     private var focusCharacterId = -1L
-    private var focusCharacterName: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -156,17 +154,11 @@ class DuelMatchesFragment : Fragment() {
             // **거르개를 켜면 최근 N판이 아니라 축 전수에서 고른다.** 최근 판만 걸러 내면
             // 순위표가 *"N개 있습니다"*라고 말한 판이 오래된 것일 때 **0개가 보인다** —
             // 확정 15-8이 막으려던 그 증상이 술어가 아니라 **범위**에서 되살아나는 자리다.
-            //
-            // 새 상한이 아니다: 순위표로 오는 길목(`imageTarget`)이 이미 같은 축의 판을
-            // 전수로 읽어 소유 표를 만든다(`scalability_performance` 7장 2단계 — 축 하나의
-            // 판 수에 붙는 비용이고, 켠 회차에만 든다).
-            val crossOwners = if (onlyCross) DuelImageRoster.owners(characters) else null
+            // 고르는 일도 소유 표를 만드는 일도 무거워 ViewModel이 스레드를 옮겨 한다.
             val matches: List<DuelMatch>
             val total: Int
-            if (crossOwners != null) {
-                val cross = DuelImageRoster.crossCharacterMatchesOf(
-                    viewModel.allMatches(axisId), crossOwners, focusCharacterId
-                )
+            if (onlyCross) {
+                val cross = viewModel.crossCharacterMatches(axisId, characters, focusCharacterId)
                 total = cross.size
                 matches = cross.take(limit)
             } else {
@@ -242,8 +234,7 @@ class DuelMatchesFragment : Fragment() {
         // 인자로 켜진 채 들어온 회차에는 스위치가 아직 꺼져 있다 — 같은 값이면 리스너가
         // 되돌아 나가므로(위 가드) 다시 부르는 비용은 없다.
         b.switchOnlyCross.isChecked = onlyCross
-        focusCharacterName = characters.firstOrNull { it.id == focusCharacterId }?.displayName
-        val name = focusCharacterName
+        val name = characters.firstOrNull { it.id == focusCharacterId }?.displayName
         b.onlyCrossPurpose.text = if (onlyCross && name != null) {
             getString(R.string.duel_matches_only_cross_of, name)
         } else {
