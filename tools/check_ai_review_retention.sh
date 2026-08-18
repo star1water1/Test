@@ -37,6 +37,11 @@
 #         실행 엔진이 뷰 밖 · 재생성된 시트에 호스트가 콜백을 다시 붙이는가.
 #         **③④의 패턴은 이때 함께 조였다** — `onSaveInstanceState`는 접두만 맞아도,
 #         `val pool`은 지역 변수여도 통과하고 있었다(새 항목 자기 시험에서 실제로 새 나갔다).
+# ⑧ 필수: **값 라이브러리 AI 정리도 같은 셋을 지킨다**(B-155).
+# ⑨ 금지: **뷰가 유료 AI 엔진을 직접 세운다**(B-45) — 자리를 세지 않고 부류를 막는다.
+# ⑩ 필수: **서술형 일괄 진입을 잇는 화면은 받을 준비를 갖췄는가**(B-184) — ⑨와 짝이다.
+#         ⑨는 *뷰가 직접 부르는 것*을 막고, 이쪽은 *ViewModel로 보내 놓고 결과를 안 받는 것*을 막는다.
+#         둘 다 통과하면서 돈만 나가는 길이 그 사이에 있었다.
 #
 # 사용법: tools/check_ai_review_retention.sh   # 위반 시 exit 1
 set -u
@@ -439,7 +444,7 @@ if [ -f "$ORG_SHEET" ] && [ -f "$ORG_VM" ] && [ -f "$ORG_HOST" ]; then
   fi
 fi
 
-# ⑧ **유료 엔진은 뷰가 세우지 못한다** (B-45에서 부류째 잠갔다).
+# ⑨ **유료 엔진은 뷰가 세우지 못한다** (B-45에서 부류째 잠갔다).
 #
 # ④는 자리마다 *"이 시트가 그 엔진을 부르지 않는가"*를 하나씩 물어 왔다. 그 방식은 **새 시트가
 # 생길 때마다 규칙을 손으로 늘려야 하고**, 늘리는 것을 잊으면 조용히 빠진다(뷰 프로브 대상
@@ -463,8 +468,83 @@ if [ -n "$engine_ctor" ]; then
   fail=1
 fi
 
+# ⑩ **서술형 일괄 진입을 잇는 화면은 받을 준비를 갖췄는가** (B-184).
+#
+# ⑨와 짝이고, **둘 사이에 통과하면서 돈만 나가는 길이 있었다:** 화면이 엔진을 직접 세우지
+# 않고(⑨ 통과) ViewModel의 `runAiNarrativeBulk`로 보내지만 **결과를 관측하지 않으면**,
+# 필드마다 요청 하나씩 다 결제된 뒤 검토 창이 뜨지 않는다. 눌렀는데 아무 일도 일어나지
+# 않고 돈만 나가는 그 모양이다(B-144가 다른 화면에서 잡은 부류).
+#
+# 셋을 함께 요구하는 이유가 각각 다르다:
+#   ⓐ `aiNarrativeBulkResult` — 없으면 **유료 응답이 통째로 어디에도 닿지 않는다.**
+#   ⓑ `aiNarrativeBulkRunning` — *실행 중*ⓐ 판정에 들어가야 그동안 대상 캐릭터가 안 바뀐다.
+#      이 화면들은 뽑기·이동이 열려 있어, 빠지면 A를 근거로 결제한 초안이 B의 폼에 들어간다.
+#   ⓒ `aiNarrativeBulkProgress` — 필드마다 요청 하나라 몇 번째인지 안 보이면 멈춘 것으로 읽힌다.
+#
+# **자리를 세지 않고 부류를 막는다**(⑨와 같은 근거) — 새 화면이 이 진입을 이으면 그 파일이
+# 자동으로 대상이 된다. 등재 목록을 손으로 늘리는 방식은 늘리는 것을 잊으면 조용히 빠진다.
+bulk_entry_ok() {   # $1: 파일 — 갖췄으면 0, 빠진 것이 있으면 1(빠진 이름을 낸다)
+  local f="$1" missing=""
+  local body
+  body=$(grep -vE '^[[:space:]]*(//|\*|/\*)' "$f")
+  for need in aiNarrativeBulkResult aiNarrativeBulkRunning aiNarrativeBulkProgress; do
+    printf '%s\n' "$body" | grep -q "$need" || missing="$missing $need"
+  done
+  [ -z "$missing" ] && return 0
+  printf '%s' "$missing"
+  return 1
+}
+
+# ── 탐지기 자기 시험 4 — 빠진 것을 잡고, 갖춘 코드는 잡지 않는가 ──
+# 한쪽만 재면 **아무것도 안 잡는 검사**가 통과로 보인다(자기 시험 3과 같은 근거).
+SELFTEST4=$(mktemp)
+cat > "$SELFTEST4" <<'EOF'
+                onNarrativeBulk = { NarrativeBulkSheet.show(this) }
+EOF
+bulk_entry_ok "$SELFTEST4" >/dev/null; st4_missing=$?
+st4_compare=$(grep -cE '^[^/*]*onNarrativeBulk[[:space:]]*=[^=]' <<'EOF'
+        val narrativeCount = if (onNarrativeBulk == null) 0 else 1
+EOF
+)
+cat > "$SELFTEST4" <<'EOF'
+                onNarrativeBulk = { NarrativeBulkSheet.show(this) }
+        vm.aiNarrativeBulkRunning.observe(o) {}
+        vm.aiNarrativeBulkProgress.observe(o) {}
+        vm.aiNarrativeBulkResult.observe(o) {}
+EOF
+bulk_entry_ok "$SELFTEST4" >/dev/null; st4_ready=$?
+rm -f "$SELFTEST4"
+if [ "$st4_missing" -ne 1 ] || [ "$st4_ready" -ne 0 ] || [ "$st4_compare" -ne 0 ]; then
+  echo "  ✗ 탐지기 자기 시험 4 실패 — 빠짐=$st4_missing(1) · 갖춤=$st4_ready(0) · 비교줄=$st4_compare(0)" >&2
+  exit 1
+fi
+echo "  ✓ 탐지기 자기 시험 4 통과 (진입만 있는 화면을 잡고, 갖춘 화면과 비교 줄은 통과시킨다)"
+
+# 주석은 빼고 찾는다 — 이 저장소는 *왜 안 넘기는가*를 KDoc에 적어 두는 관행이 있어
+# (지금 `AiFieldSuggestSheet`의 그 인자가 그 모양이다) 주석을 세면 선언 자리가 걸린다.
+# `==`는 뺀다 — 선언한 파일 자신이 `onNarrativeBulk == null`로 버튼 유무를 가르는데,
+# 그 줄까지 진입으로 세면 **넘기지도 않는 파일이 관측을 갖추라는 말을 듣는다**(실측으로 걸렸다).
+bulk_callers=$(grep -rlE '^[^/*]*onNarrativeBulk[[:space:]]*=[^=]' "$SRC/ui" --include=*.kt 2>/dev/null || true)
+if [ -z "$bulk_callers" ]; then
+  echo "  ✗ 서술형 일괄 진입을 잇는 화면을 하나도 찾지 못했습니다 (onNarrativeBulk =)"
+  echo "      → 이름이 바뀌었으면 이 검사를 함께 고칠 것. 못 찾은 채 통과하면 *위반 없음*과"
+  echo "        구별되지 않는다."
+  fail=1
+else
+  for caller in $bulk_callers; do
+    if missing=$(bulk_entry_ok "$caller"); then :; else
+      echo "  ✗ 서술형 일괄 진입만 잇고 받을 준비가 없습니다: $caller"
+      echo "      → 빠진 것:$missing"
+      echo "        결과 관측이 없으면 필드 수만큼 결제된 뒤 검토 창이 안 뜨고, 실행 중"
+      echo "        판정이 없으면 그사이 대상이 바뀌어 남의 폼에 들어간다(B-184)."
+      fail=1
+    fi
+  done
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 유료 엔진은 뷰가 세우지 못한다 — 입구가 ViewModel뿐이다 (B-45)"
+  echo "  ✓ 서술형 일괄 진입을 잇는 화면이 결과·실행중·진행을 모두 든다 (B-184)"
   echo "  ✓ 되받기가 앞의 성공분을 들고 간다 (B-140)"
   echo "  ✓ 유료 응답과 검토 상태가 회전을 넘는다 (B-136)"
   echo "  ✓ 적용이 실패하면 유료 응답을 되살린다 (B-163)"
