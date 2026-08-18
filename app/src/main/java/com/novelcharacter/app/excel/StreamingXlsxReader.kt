@@ -117,44 +117,49 @@ class StreamingXlsxReader(file: File) : Closeable {
         return emptyList()
     }
 
-    /** [readHeaderRow]가 첫 행을 얻은 뒤 SAX 파싱을 중단시키는 제어 신호(오류가 아니다). */
+    /** [readLeadingRows]가 창만큼 얻은 뒤 SAX 파싱을 중단시키는 제어 신호(오류가 아니다). */
     private class StopParsing : org.xml.sax.SAXException()
 
     /**
-     * [sheetName]의 **0행만** 읽고 파싱을 중단한다. 시트가 없거나 **0행이 없으면** null.
+     * [sheetName]의 **앞 [limit]행**만 읽고 파싱을 중단한다.
      *
-     * **왜 따로 있는가:** 가져오기는 시트의 정체를 헤더로 판정하므로(규약 R-7) 워크북의 모든
-     * 시트를 훑으며 0행만 읽는 경로가 여럿이다. 그때마다 시트를 통째로 적재하면 스트리밍이
-     * DOM보다 느리고 무거워진다 — 헤더 한 줄 보려고 전 시트를 다 읽는 꼴이다.
+     * **왜 0행 하나가 아닌가 (B-231 ⓑ):** 헤더 행이 0행이 아닐 수 있게 되면서
+     * [SheetResolver.locateHeader]가 앞쪽 몇 행을 훑는데, 그 조회가 시트 정체 판정(R-7 —
+     * 워크북의 **모든 시트**)에 곱해진다. 여기서 앞 몇 행을 값싸게 주지 않으면 호출부가
+     * `getRow(1)`에서 시트를 **통째로 적재**하게 되고, 그러면 스트리밍이 DOM보다 무거워진다
+     * — 스트리밍을 도입한 이유 자체가 무너지는 자리다.
      *
-     * **첫 물리 행이 아니라 0행이다(B-218 ①):** 위에 행을 끼워 넣어 헤더가 3행으로 밀린
-     * 파일에서 첫 물리 행을 그대로 돌려주면, DOM(`getRow(0)` = null → 시트 미인식 경고)과
-     * 달리 스트리밍만 시트를 인식하고 그 헤더 행을 데이터 루프에서 한 번 더 처리한다.
-     * 시트 XML의 행은 오름차순이므로(ECMA-376) 첫 행 요소만 보면 0행 존재가 판정된다.
+     * 시트 XML의 행은 오름차순이므로(ECMA-376) [limit]에 닿는 순간 멈추면 된다.
+     *
+     * **행 번호는 파일이 적은 그대로다(B-218 ①)** — 첫 *물리* 행을 0행인 척 돌려주면
+     * **DOM과 스트리밍이 같은 파일에서 다른 행을 0행이라 부른다.** 위에 행을 끼워 넣어
+     * 헤더가 밀린 파일은 이제 [SheetResolver.locateHeader]가 **찾아서** 받아들이지만,
+     * 그 판정도 *행 번호가 두 경로에서 같다*는 위에 선다.
      */
-    fun readHeaderRow(sheetName: String): Map<Int, ExcelCellValue.Primitives>? {
-        var header: Map<Int, ExcelCellValue.Primitives>? = null
+    fun readLeadingRows(sheetName: String, limit: Int): Map<Int, Map<Int, ExcelCellValue.Primitives>> {
+        val head = HashMap<Int, Map<Int, ExcelCellValue.Primitives>>()
         val it = reader.sheetsData as XSSFReader.SheetIterator
         while (it.hasNext()) {
             val stream = it.next()
             if (it.sheetName == sheetName) {
                 val handler = SheetHandler { rowIndex, cells ->
-                    if (rowIndex == 0) header = HashMap(cells)
-                    throw StopParsing()
+                    if (rowIndex < limit) head[rowIndex] = HashMap(cells)
+                    // 오름차순이라 창을 벗어난 첫 행이 곧 끝이다.
+                    if (rowIndex >= limit - 1) throw StopParsing()
                 }
                 try {
                     stream.use { s -> newSafeSaxFactory().newSAXParser().parse(InputSource(s), handler) }
                 } catch (_: StopParsing) {
-                    // 정상 종료 — 첫 행을 얻었다
+                    // 정상 종료 — 창만큼 얻었다
                 } finally {
                     try { stream.close() } catch (_: Exception) { /* use{}가 이미 닫았을 수 있다 */ }
                 }
-                return header
+                return head
             } else {
                 stream.close()
             }
         }
-        return null
+        return emptyMap()
     }
 
     /**
@@ -162,7 +167,7 @@ class StreamingXlsxReader(file: File) : Closeable {
      * 행이 없으면 0.
      *
      * 셀 값을 전혀 만들지 않고 `<row r>`만 훑는 **값싼 색인 패스**다. 가져오기의 모든 데이터
-     * 루프가 `1..lastRowNum`이라 이 값은 **정확해야 한다** — `<dimension>` 요소는 외부 편집기가
+     * 루프가 `헤더 다음 행..lastRowNum`이라 이 값은 **정확해야 한다** — `<dimension>` 요소는 외부 편집기가
      * 갱신하지 않을 수 있어 근거로 쓰지 않는다(틀리면 뒤쪽 행이 조용히 통째로 누락된다).
      */
     fun lastRowNumOf(sheetName: String): Int {
