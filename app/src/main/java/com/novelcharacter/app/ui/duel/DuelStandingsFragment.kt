@@ -1,6 +1,12 @@
 package com.novelcharacter.app.ui.duel
 
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.method.LinkMovementMethod
+import android.text.style.ForegroundColorSpan
+import android.text.style.UnderlineSpan
+import android.text.style.ClickableSpan
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -252,7 +258,7 @@ class DuelStandingsFragment : Fragment() {
          */
         roster: DuelViewModel.Roster?
     ) {
-        val lines = ArrayList<String>(8)
+        val lines = ArrayList<CharSequence>(8)
         // 후보 필터 상태가 맨 앞이다(B-168) — 이 표가 무엇의 순위인가를 정하는 사실이라
         // "믿어도 되나"류 고지보다 먼저 읽혀야 한다. 해석 실패는 그보다도 앞이다(후보가 0이 된다).
         if (roster != null && roster.unresolvedNames.isNotEmpty()) {
@@ -284,10 +290,10 @@ class DuelStandingsFragment : Fragment() {
         }
         // 남의 그림이 낀 판은 **지워진 참가자와 갈라 말한다**(B-175) — 지워진 것이 아니라
         // 애초에 누구의 대결도 아니고, 되살릴 것도 없어 위 문장의 처방이 통하지 않는다.
+        var crossLinked = false
         if (caveats.crossCharacterMatches > 0) {
-            lines.add(
-                getString(R.string.duel_caveat_cross_character, caveats.crossCharacterMatches)
-            )
+            lines.add(crossCharacterLine(caveats.crossCharacterMatches))
+            crossLinked = true
         }
         if (caveats.excludedMatches > 0) {
             lines.add(getString(R.string.duel_caveat_excluded, caveats.excludedMatches))
@@ -305,7 +311,62 @@ class DuelStandingsFragment : Fragment() {
         lines.addAll(outcomeLines)
 
         binding.caveatText.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
-        binding.caveatText.text = lines.joinToString("\n")
+        // **줄을 CharSequence로 잇는다** — `joinToString`은 문자열로 만들어 버려 누를 수 있는
+        // 부분이 통째로 사라진다(그러고도 글자는 그대로라 화면만 보고는 모른다).
+        val text = SpannableStringBuilder()
+        for ((index, line) in lines.withIndex()) {
+            if (index > 0) text.append("\n")
+            text.append(line)
+        }
+        // 누를 것이 있을 때만 건다 — 늘 걸어 두면 누를 것이 없는 화면에서도 글자 선택이 막힌다.
+        binding.caveatText.movementMethod =
+            if (crossLinked) LinkMovementMethod.getInstance() else null
+        binding.caveatText.text = text
+    }
+
+    /**
+     * **캐릭터를 넘는 판 고지 — 그 자리에서 고치러 갈 수 있게 한다** (B-208).
+     *
+     * 개발 의도 2번은 셋을 요구한다: 검증 → 알림 → **바로잡을 경로.** 앞의 둘은 B-175가
+     * 세웠고 셋째가 없어, 사용자는 *그런 판이 N개다*까지만 알고 **어디 있는지는 기록 화면에서
+     * 축 전체를 눈으로 훑어야** 했다.
+     *
+     * **별도 버튼을 세우지 않은 것은 판단이다** — 사용자가 그 사실을 아는 자리가 이 줄이고,
+     * 아는 자리와 고치는 자리가 떨어져 있으면 그 거리가 곧 조작 마찰이다(원칙 04. 편집 화면의
+     * 서술형 일괄 진입이 같은 근거로 제외 고지에 붙어 있다).
+     *
+     * **캐릭터를 함께 넘긴다.** 이 고지의 수는 *이 캐릭터가 낀* 판이고(설계 13-5의 몫 가르기),
+     * 기록 화면은 축 전체를 늘어놓는 자리다 — 범위를 안 맞추면 **N개라더니 M개가 보인다**
+     * (확정 15-8의 착수 조건이 지목한 그 자리).
+     */
+    private fun crossCharacterLine(count: Int): CharSequence {
+        val fact = getString(R.string.duel_caveat_cross_character, count)
+        val action = getString(R.string.duel_caveat_cross_character_action)
+        val line = SpannableStringBuilder(fact)
+        val start = line.length
+        line.append(action)
+        line.setSpan(object : ClickableSpan() {
+            override fun onClick(widget: View) = openCrossCharacterMatches()
+        }, start, line.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        // 누를 수 있다는 것을 **글자 자신이 말해야 한다** — 색과 밑줄이 없으면 문장 끝에
+        // 붙은 안내문과 구별되지 않아 아무도 누르지 않는다(있으나 마나 한 경로가 된다).
+        line.setSpan(
+            ForegroundColorSpan(requireContext().getColor(R.color.primary)),
+            start, line.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        line.setSpan(UnderlineSpan(), start, line.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return line
+    }
+
+    private fun openCrossCharacterMatches() {
+        val bundle = Bundle().apply {
+            putLong("axisId", axisId)
+            putBoolean(DuelMatchesFragment.ARG_ONLY_CROSS, true)
+            putLong(DuelMatchesFragment.ARG_FOCUS_CHARACTER_ID, characterId)
+        }
+        findNavController().navigateSafe(
+            R.id.duelStandingsFragment, R.id.duelMatchesFragment, bundle
+        )
     }
 
     /**

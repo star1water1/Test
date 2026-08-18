@@ -51,6 +51,25 @@
             android:layout_marginTop="4dp"
             android:text="@string/duel_matches_only_disagreements" />
 
+        <!-- B-208: 캐릭터를 넘는 판만 남기는 거르개. 이미지 축에서만 선다 — 다른 축에는
+             그런 판이 원리적으로 없어, 세워 두면 눌러 봐야 빈 목록이다(R-17). -->
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchOnlyCross"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone"
+            android:text="@string/duel_matches_only_cross" />
+
+        <TextView
+            android:id="@+id/onlyCrossPurpose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:text="@string/duel_matches_only_cross_purpose"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary" />
+
     </LinearLayout>
 
     <TextView

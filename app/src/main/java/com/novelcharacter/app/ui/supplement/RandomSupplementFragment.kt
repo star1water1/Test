@@ -94,8 +94,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
 
     // AI 추천 (A-3) — 진행 다이얼로그 + 편집 하이드레이션 완료 후 결과 표시 예약
     private var aiProgressDialog: AlertDialog? = null
+    // 서술형 일괄만 창을 따로 든다 (B-184) — 필드마다 요청 하나라 *몇 번째를 쓰는 중인가*를
+    // 계속 고쳐 써야 하고, 짧은 값·단일 서술형과 문구가 다르다(편집 화면과 같은 구조).
+    private var aiBulkProgressDialog: AlertDialog? = null
     private var pendingAiResultShow = false
     private var pendingAiNarrativeShow = false
+    private var pendingAiNarrativeBulkShow = false
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -168,6 +172,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         if (::imageStrip.isInitialized) imageStrip.detach()
         aiProgressDialog?.dismiss()
         aiProgressDialog = null
+        aiBulkProgressDialog?.dismiss()
+        aiBulkProgressDialog = null
         binding.imageViewPager.adapter = null
         super.onDestroyView()
         _binding = null
@@ -354,7 +360,17 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 // 기대치 조정 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1, 변수 제어)
                 extraNote = getString(R.string.ai_supplement_scope_note),
                 imagePaths = imageStrip.paths.toList(),
-                representativePath = imageStrip.representativePath
+                representativePath = imageStrip.representativePath,
+                // 서술형 일괄 초안 (B-184) — 편집 화면과 **같은 자리에서** 준다: 서술형이
+                // 일괄에서 빠진다는 사실을 사용자가 처음 아는 곳이 그 창의 제외 고지다.
+                // **관측 셋(아래 observeAi)이 먼저 서야 넘길 수 있는 인자다** — 없이 넘기면
+                // 유료 실행이 끝나고도 검토 창이 안 뜬다(B-144가 잡은 그 모양).
+                onNarrativeBulk = {
+                    com.novelcharacter.app.ui.character.NarrativeBulkSheet.show(
+                        this, formBuilder, characterViewModel, targetId,
+                        imageStrip.paths.toList(), imageStrip.representativePath
+                    ) { buildAiContext() }
+                }
             ) { buildAiContext() }
         }
 
@@ -459,6 +475,35 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 )
             }
         }
+
+        // 서술형 일괄 초안 (B-184) — 진행 표시가 다른 경로와 다르다: 필드마다 요청 하나라
+        // 몇 번째를 쓰는 중인지 보이지 않으면 멈춘 것으로 읽힌다(편집 화면과 같은 문구).
+        characterViewModel.aiNarrativeBulkRunning.observe(viewLifecycleOwner) { running ->
+            updateAiBulkProgress(running == true)
+        }
+        characterViewModel.aiNarrativeBulkProgress.observe(viewLifecycleOwner) { (done, total) ->
+            if (total > 0) {
+                aiBulkProgressDialog?.setMessage(
+                    getString(R.string.ai_narrative_bulk_running, done, total)
+                )
+            }
+        }
+        characterViewModel.aiNarrativeBulkResult.observe(viewLifecycleOwner) { run ->
+            if (run == null) return@observe
+            // 여기 걸린 돈이 가장 크다 — 필드 하나에 요청 하나라 대상 다섯이면 응답 다섯이
+            // 이 한 값에 들어 있다(R-38). 그래서 단일 서술형과 **같은 가드**를 쓴다:
+            // 편집 모드가 아니면 숨은 폼에 기입하지 않고 돌아갈 길을 준다.
+            if (editorState == EditorState.EDIT) {
+                com.novelcharacter.app.ui.character.NarrativeBulkSheet.showResult(
+                    this, formBuilder, characterViewModel, run
+                ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
+            } else {
+                offerReturnToEdit(
+                    onReturn = { pendingAiNarrativeBulkShow = true },
+                    onDiscard = { characterViewModel.clearAiNarrativeBulkResult() }
+                )
+            }
+        }
     }
 
     /**
@@ -493,6 +538,25 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         } else {
             aiProgressDialog?.dismiss()
             aiProgressDialog = null
+        }
+    }
+
+    /**
+     * 서술형 일괄 초안의 진행 창 (B-184) — 창을 따로 드는 이유는 **문구가 계속 바뀌기
+     * 때문**이다(`n/총`). 공용 창에 실으면 짧은 값·단일 서술형이 함께 도는 동안 서로의
+     * 문구를 덮는다.
+     */
+    private fun updateAiBulkProgress(show: Boolean) {
+        if (show) {
+            if (aiBulkProgressDialog == null && isAdded) {
+                aiBulkProgressDialog = MaterialAlertDialogBuilder(requireContext())
+                    .setMessage(R.string.ai_field_running)
+                    .setCancelable(false)
+                    .show()
+            }
+        } else {
+            aiBulkProgressDialog?.dismiss()
+            aiBulkProgressDialog = null
         }
     }
 
@@ -838,6 +902,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             }
         }
+        if (pendingAiNarrativeBulkShow) {
+            pendingAiNarrativeBulkShow = false
+            characterViewModel.aiNarrativeBulkResult.value?.let { run ->
+                com.novelcharacter.app.ui.character.NarrativeBulkSheet.showResult(
+                    this, formBuilder, characterViewModel, run
+                ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
+            }
+        }
     }
 
     override fun isBlocking(): Boolean = editorState == EditorState.EDIT && hasUnsavedChanges
@@ -880,10 +952,17 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             .show()
     }
 
-    /** AI 요청이 진행 중인가 — 뽑기 이동·모드 변경을 막는 예방 축 (A-3 §5-4 ①) */
+    /**
+     * AI 요청이 진행 중인가 — 뽑기 이동·모드 변경을 막는 예방 축 (A-3 §5-4 ①).
+     *
+     * **일괄 초안이 여기 빠지면 이 화면에서 가장 비싼 오염이 열린다** (B-184): 대상마다
+     * 요청 하나를 순차로 보내는 동안 리롤이 열려 있으면, A를 근거로 결제한 초안 여럿이
+     * B의 폼으로 간다. 진입만 잇고 이 줄을 빠뜨리면 **기능이 결함이 되는 자리**다.
+     */
     private fun isAiBusy(): Boolean =
         characterViewModel.aiSuggestRunning.value == true ||
-            characterViewModel.aiNarrativeRunning.value == true
+            characterViewModel.aiNarrativeRunning.value == true ||
+            characterViewModel.aiNarrativeBulkRunning.value == true
 
     private fun guardedPickAction(action: () -> Unit) {
         // A가 근거인 유료 추천이 B의 폼에 기입되는 오염을 원천 차단 — 조용히 삼키지 않고 사유를 띄운다

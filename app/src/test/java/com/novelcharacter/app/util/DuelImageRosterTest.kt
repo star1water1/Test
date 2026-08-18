@@ -476,4 +476,94 @@ class DuelImageRosterTest {
         DuelImageRoster.split(characters, odd, emptyList(), owners)
         assertEquals(4, owners.measured)
     }
+
+    // ── 캐릭터를 넘는 판을 **고르는** 자리 (B-208) ──
+    //
+    // 순위표는 이 판들의 **수**를 말하고 기록 화면은 그 판들을 **줄로** 보인다. 세는 쪽과
+    // 고르는 쪽이 갈리면 *"N개라더니 M개가 보인다"*가 되는데, 그 둘은 한 번의 누름으로
+    // 이어진 자리라 어긋남이 곧바로 눈에 띈다(확정 15-8의 착수 조건이 지목한 그것).
+    // **아래 시험이 그 둘을 나란히 놓고 재는 것이 이 판의 방어선이다.**
+
+    private val cast = listOf(
+        character(1L, "가", "/d/a1.jpg", "/d/a2.jpg"),
+        character(2L, "나", "/d/b1.jpg", "/d/b2.jpg"),
+        character(3L, "다", "/d/c1.jpg", "/d/c2.jpg")
+    )
+
+    @Test
+    fun `고른 판의 수가 순위표가 센 수와 같다`() {
+        val matches = listOf(
+            match("/d/a1.jpg", "/d/a2.jpg"),   // 가의 몫
+            match("/d/a1.jpg", "/d/b1.jpg"),   // 가↔나
+            match("/d/b2.jpg", "/d/c1.jpg"),   // 나↔다
+            match("/d/a2.jpg", "/d/c2.jpg"),   // 가↔다
+            match("/d/c1.jpg", "/d/c2.jpg")    // 다의 몫
+        )
+        val owners = DuelImageRoster.owners(cast)
+        for (c in cast) {
+            val counted = DuelImageRoster.splitOf(
+                c.id, CharacterRepresentativeImage.paths(c.imagePaths), matches, emptyList(), owners
+            ).crossCharacterMatches
+            val picked = DuelImageRoster.crossCharacterMatchesOf(matches, owners, c.id)
+            assertEquals("${'$'}{c.name}: 센 수와 고른 수가 같아야 한다", counted, picked.size)
+        }
+        // 같은 사실을 한 번에 나누는 쪽([split])과도 맞아야 한다 — 세는 벌이 둘이라(설계 13-5)
+        // 한쪽만 맞추면 화면마다 다른 수를 본다.
+        for (part in DuelImageRoster.split(cast, matches, emptyList(), owners)) {
+            assertEquals(
+                part.crossCharacterMatches,
+                DuelImageRoster.crossCharacterMatchesOf(matches, owners, part.characterId).size
+            )
+        }
+    }
+
+    @Test
+    fun `범위를 안 주면 축 전체의 넘는 판이고 주면 그 캐릭터가 낀 것만이다`() {
+        val matches = listOf(
+            match("/d/a1.jpg", "/d/b1.jpg"),   // 가↔나
+            match("/d/b2.jpg", "/d/c1.jpg"),   // 나↔다
+            match("/d/a1.jpg", "/d/a2.jpg")    // 가의 몫 — 넘지 않는다
+        )
+        val owners = DuelImageRoster.owners(cast)
+        assertEquals(2, DuelImageRoster.crossCharacterMatchesOf(matches, owners).size)
+        // **범위가 이 함수의 존재 이유다.** 축 전체를 걸면 순위표가 말한 수보다 많이 보인다.
+        assertEquals(1, DuelImageRoster.crossCharacterMatchesOf(matches, owners, 1L).size)
+        assertEquals(2, DuelImageRoster.crossCharacterMatchesOf(matches, owners, 2L).size)
+        assertEquals(1, DuelImageRoster.crossCharacterMatchesOf(matches, owners, 3L).size)
+    }
+
+    @Test
+    fun `지워진 그림이 낀 판은 넘는 판이 아니다`() {
+        // 한쪽이 지워진 판은 **그 캐릭터의 대결이었다** — 고아로 세어 화면이 따로 말하는
+        // 부류라(설계 13-5), 여기 섞으면 사용자가 지울 수 없는 판을 지우러 온다.
+        val matches = listOf(
+            match("/d/a1.jpg", "/d/gone.jpg"),
+            match("/d/gone.jpg", "/d/gone2.jpg"),
+            match("/d/a1.jpg", "/d/b1.jpg")
+        )
+        val owners = DuelImageRoster.owners(cast)
+        val picked = DuelImageRoster.crossCharacterMatchesOf(matches, owners)
+        assertEquals(1, picked.size)
+        assertEquals("/d/b1.jpg", picked.first().bCode)
+    }
+
+    @Test
+    fun `고른 차례는 받은 차례 그대로다`() {
+        // 기록 화면이 최근순으로 넘긴 목록을 그대로 줄로 세운다 — 여기서 차례가 흔들리면
+        // 목록이 오래된 판부터 뜨고 *더 보기*가 거꾸로 넘어간다.
+        //
+        // **판을 일부러 코드 오름차순이 아닌 차례로 둔다.** 처음 쓴 벌은 오름차순이라
+        // `sortedBy { it.code }`를 끼워 넣어도 **초록이었다** — 재는 성질이 자료의 우연과
+        // 겹치면 그 시험은 아무것도 잠그지 않는다(되돌려 빨간불 보기에서 실측으로 걸렸다).
+        val matches = listOf(
+            match("/d/b2.jpg", "/d/c1.jpg", "/d/b2.jpg"),
+            match("/d/a2.jpg", "/d/c2.jpg", "/d/c2.jpg"),
+            match("/d/a1.jpg", "/d/b1.jpg", "/d/a1.jpg")
+        )
+        val owners = DuelImageRoster.owners(cast)
+        assertEquals(
+            matches.map { it.code },
+            DuelImageRoster.crossCharacterMatchesOf(matches, owners).map { it.code }
+        )
+    }
 }
