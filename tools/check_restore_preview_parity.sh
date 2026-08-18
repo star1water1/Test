@@ -646,10 +646,16 @@ for i, l in enumerate(lines):
         continue
     if re.search(r'//\s*미리보기 없음\(', head): continue
     bad.append(f"{fn}\t미리보기 함수도 표식도 없습니다 — 이 범주는 복원 미리보기에 통째로 빠집니다")
+# **자기 출력을 증명한다(B-240).** 이 블록이 죽으면 `$missing`이 비고, 빈 값은 아래에서
+# `0 = 위반 없음`으로 떨어져 **조용히 통과한다** — 위 다섯 스캐너가 같은 이유로 표식을 낸다.
 print('\n'.join(bad))
+print(f"__MCOUNT__{len(bad)}")
 PY8
 )
-mcount=$(printf '%s' "$missing" | grep -c . || true)
+mraw=$(printf '%s\n' "$missing" | sed -n 's/^__MCOUNT__//p')
+require_count "$mraw" "__MCOUNT__" "$missing"
+missing=$(printf '%s\n' "$missing" | grep -v '^__MCOUNT__' || true)
+mcount=$mraw
 
 if [ "${mcount:-0}" -gt 0 ]; then
   # 뜨는 법이 깨진 것과 위반이 있는 것은 **처방이 다르다** — 머리글도 갈라 적는다.
