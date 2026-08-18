@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -38,22 +39,51 @@ import java.io.File
  */
 class ExcelTransferController(private val fragment: Fragment) {
 
-    private val importer = ExcelImporter(fragment.requireContext().applicationContext)
+    private val appContext = fragment.requireContext().applicationContext
+    private val importer = ExcelImporter(appContext)
     private var exporter: ExcelExporter? = null
     private var pendingExportFile: File? = null
 
+    /**
+     * 저장 위치를 고르고 돌아오는 자리.
+     *
+     * **고르지 않고 돌아온 회차가 산출물을 캐시에 남기고 있었다** (B-229 ②) — 이미지를 담은
+     * 내보내기는 수백 MB~GB이고, 그것을 지우는 것은 *다음 내보내기*의 3개 회전뿐이라
+     * 다음 내보내기 전까지 그대로 앉아 있었다. 사용자에게는 보이지도 지울 수도 없는 자리다.
+     * **취소는 실패가 아니지만 흔적은 남기지 않는다** — 만들다 만 파일을 지우는
+     * `ExcelExporter`의 처분과 같은 결이고, 저장에 성공한 회차는 이미 원본을 지우고 있었다.
+     *
+     * `isAdded`로 물러나지 않는 것도 이 판이 고친 것이다 — 종전에는 화면이 없으면 **쓰지도
+     * 지우지도 않고** 돌아섰다. 목적지는 사용자가 이미 고른 실제 파일이므로 쓰는 편이 옳고
+     * (B-228이 이 쓰기를 끊기지 않게 만든 이유와 같다), 쓸 것이 없으면 지우는 편이 옳다.
+     */
     private val saveFileLauncher = fragment.registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
-        if (!fragment.isAdded) return@registerForActivityResult
         val file = pendingExportFile
-        if (uri != null && file != null) {
-            if (exporter == null) {
-                exporter = ExcelExporter(fragment.requireContext().applicationContext)
-            }
-            exporter?.writeToUri(uri, file)
-        }
         pendingExportFile = null
+        // 화면 유무는 한 번만 읽는다 — 두 갈래가 서로 다른 답을 보고 갈리지 않게.
+        val onScreen = fragment.isAdded
+        when {
+            file == null ->
+                // 쓸 것이 없다 — 프로세스가 되살아나며 경로를 잃은 회차다.
+                // **자리를 고르고 왔는데 아무 일도 안 일어나면 저장된 줄 안다**(개발 의도 2번) —
+                // 그때만 말한다. 고르지 않고 돌아온 것이면 지울 것도 알릴 것도 없다.
+                if (uri != null && onScreen) {
+                    Toast.makeText(appContext, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+                }
+            uri == null -> {
+                // 저장 위치를 고르지 않았다 — 캐시에 남기지 않고, 지웠다는 사실을 말한다.
+                file.delete()
+                if (onScreen) {
+                    Toast.makeText(appContext, R.string.export_save_cancelled, Toast.LENGTH_SHORT).show()
+                }
+            }
+            else -> {
+                val target = exporter ?: ExcelExporter(appContext).also { exporter = it }
+                target.writeToUri(uri, file)
+            }
+        }
     }
 
     init {
@@ -109,7 +139,7 @@ class ExcelTransferController(private val fragment: Fragment) {
      */
     private fun showPendingTransferNotice() {
         if (!fragment.isAdded) return
-        val notice = TransferNoticeRelay.consume(fragment.requireContext().applicationContext) ?: return
+        val notice = TransferNoticeRelay.consume(appContext) ?: return
         MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(fragment.getString(R.string.transfer_notice_pending_title))
             .setMessage("${notice.title}\n\n${notice.body}")
@@ -163,7 +193,6 @@ class ExcelTransferController(private val fragment: Fragment) {
         dialog.show()
 
         // 견적은 편의이지 게이트가 아니다 — 늦거나 실패하면 그 줄만 뜨지 않고 흐름은 그대로다.
-        val appContext = fragment.requireContext().applicationContext
         fragment.lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) {
                 ImageZipHelper.estimateImageBytes(AppDatabase.getDatabase(appContext), appContext)
@@ -209,7 +238,7 @@ class ExcelTransferController(private val fragment: Fragment) {
     private fun runExport(options: ExportOptions, saveToFile: Boolean) {
         if (!fragment.isAdded) return
         exporter?.cancel()
-        exporter = ExcelExporter(fragment.requireContext().applicationContext)
+        exporter = ExcelExporter(appContext)
 
         // **플래그는 스레드를 건넌다** (B-219 ③): 취소 버튼은 메인에서 쓰고 내보내기 루프는
         // IO에서 읽는다. 캡처된 지역 `var`에는 가시성 보장이 없어 눌린 취소가 안 보인 채
