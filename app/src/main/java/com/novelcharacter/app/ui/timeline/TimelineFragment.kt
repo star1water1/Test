@@ -42,6 +42,15 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     private var isReorderMode = false
     private var pendingScrollToYear = false
 
+    /**
+     * 고치러 온 요청을 처리하는 중인가 (B-198).
+     *
+     * [consumeFixRequest]는 **두 자리에서 불린다**(`onViewCreated` · `onResume`). 사건 조회가
+     * 끝나기 전에 둘째 호출이 오면 같은 요청으로 시트가 **둘** 뜬다 — `show()`는 태그가 같아도
+     * 겹쳐 넣는다. 표식 하나로 막고, 끝나면(취소돼도) 되돌린다.
+     */
+    private var fixRequestInFlight = false
+
     // Cached data for spinner filters
     private var cachedNovels: List<Novel> = emptyList()
     private var cachedCharacters: List<Character> = emptyList()
@@ -112,9 +121,11 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
      * 아무 일도 안 일어난 것을 보고 다시 누를 방법이 없다). 남겨 두면 다시 선 화면이
      * 이어 연다. 열고 나서 지우므로 회전에 두 번 열리지도 않는다.
      *
-     * **상태 저장 뒤에는 물러난다** — `DialogFragment.show()`는 그 시점에 예외로 죽는다
-     * (`navigateSafe`가 이동에 대해 막는 것과 같은 부류다). 인자를 그대로 두므로
-     * 다시 설 때 열린다.
+     * **상태 저장 뒤에는 물러나고, 다시 설 때 잇는다.** `DialogFragment.show()`는 그 시점에
+     * 예외로 죽는다(`navigateSafe`가 이동에 대해 막는 것과 같은 부류다). 그래서 인자를 남기고
+     * 물러나는데, **그것만으로는 요청이 영영 붙들린다** — 화면이 잠깐 내려갔다 돌아오는 길
+     * (홈 키 → 복귀)에는 `onViewCreated`가 다시 돌지 않기 때문이다. 그 갈래를 잇는 것이
+     * `onResume`의 둘째 호출이고, 겹쳐 열리는 것은 [fixRequestInFlight]가 막는다.
      *
      * **사건을 못 찾으면 말하고 지운다.** 통계 스냅샷은 뜬 시점의 사진이라, 그사이 지워진
      * 사건의 줄이 아직 목록에 서 있을 수 있다. 그때 아무 일도 안 일어나면 누른 사람은 앱이
@@ -122,29 +133,36 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
      * 그 갈래는 그 자리에서 끝낸다.
      */
     private fun consumeFixRequest() {
+        if (fixRequestInFlight) return
         val args = arguments ?: return
         val eventId = args.getLong(FieldValueFixRoute.ARG_FOCUS_EVENT_ID, 0L)
         if (eventId <= 0L) return
         val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
         val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
 
+        fixRequestInFlight = true
         viewLifecycleOwner.lifecycleScope.launch {
-            val event = viewModel.getEventById(eventId)
-            if (!isAdded || _binding == null) return@launch
-            if (event == null) {
+            // 취소(뷰 소멸)로 끝나도 되돌린다 — 안 되돌리면 다시 선 화면이 영영 못 잇는다.
+            try {
+                val event = viewModel.getEventById(eventId)
+                if (!isAdded || _binding == null) return@launch
+                if (event == null) {
+                    clearFixRequest()
+                    Toast.makeText(requireContext(), R.string.fix_target_event_missing, Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                if (childFragmentManager.isStateSaved) return@launch   // onResume이 잇는다
                 clearFixRequest()
-                Toast.makeText(requireContext(), R.string.fix_target_event_missing, Toast.LENGTH_LONG).show()
-                return@launch
+                // 시트를 닫은 뒤 그 사건이 있는 자리에 서 있게 한다 — 전역 검색·인사이트가
+                // 연표로 보낼 때 쓰는 규약과 같다(그쪽은 연도만 알아 연도로 보낸다).
+                viewModel.setSelectedYear(event.year)
+                EventEditDialogFragment.show(
+                    childFragmentManager, event = event,
+                    focusFieldId = fieldId, focusFieldName = fieldName
+                )
+            } finally {
+                fixRequestInFlight = false
             }
-            if (childFragmentManager.isStateSaved) return@launch
-            clearFixRequest()
-            // 시트를 닫은 뒤 그 사건이 있는 자리에 서 있게 한다 — 전역 검색·인사이트가
-            // 연표로 보낼 때 쓰는 규약과 같다(그쪽은 연도만 알아 연도로 보낸다).
-            viewModel.setSelectedYear(event.year)
-            EventEditDialogFragment.show(
-                childFragmentManager, event = event,
-                focusFieldId = fieldId, focusFieldName = fieldName
-            )
         }
     }
 
@@ -724,6 +742,9 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
 
     override fun onResume() {
         super.onResume()
+        // 상태 저장에 막혀 물러난 요청을 여기서 잇는다 (B-198) — 홈 키로 내려갔다 돌아오는
+        // 길에는 `onViewCreated`가 다시 돌지 않아, 이 호출이 없으면 요청이 영영 붙들린다.
+        consumeFixRequest()
         // 글로벌 검색에서 사건 클릭 시 전달된 연도로 이동
         val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean("pending_navigate", false)) {
