@@ -261,6 +261,7 @@ class WorldPackageImporter(context: Context) {
         val copiedFiles = mutableListOf<File>()
         var restoredImages = 0
         var missingImages = 0
+        var truncatedImagesDropped = 0
         var strippedImagePaths = 0
 
         // 새 경로 목록과 함께 **옛 경로 → 새 경로**를 돌려준다. 대표 이미지(B-103)가 그것을
@@ -275,9 +276,22 @@ class WorldPackageImporter(context: Context) {
             val renames = mutableMapOf<String, String>()
             paths.forEachIndexed { index, original ->
                 if (original == null) return@forEachIndexed
-                val entryFile = File(extractDir, "${WorldPackageEntries.IMAGES_PREFIX}$entryPrefix$index.jpg")
+                // 이름을 짜는 자리는 단일 소스다 — 내보내기와 규약이 갈리면 장이 통째로
+                // 안 잡힌다(B-234).
+                val entryName = WorldPackageImages.entryName(entryPrefix, index)
+                val entryFile = File(extractDir, entryName)
+                // `exists()`는 syscall이라 한 번만 묻는다 — 장마다 도는 자리다.
+                // **잘린 장은 엔트리가 있어도 없는 것으로 본다**(B-234 · 확정 19장 5번).
+                // 그래야 아래 갈래가 그대로 산다: 같은 기기 재가져오기면 원본을 재사용하고,
+                // 그것도 없으면 사유와 함께 세어 고지된다. 바이트를 열어 보지 않는 것은
+                // 성능이다 — 그 비용은 **정상 경로의 장마다** 붙는다(사용자 제1원칙).
+                val entryExists = entryFile.exists()
+                val restorable = WorldPackageImages.isRestorable(
+                    entryName, entryExists, contents.truncatedImages
+                )
+                val truncated = entryExists && !restorable
                 when {
-                    entryFile.exists() -> {
+                    restorable -> {
                         // 원 파일명의 접두사·확장자 보존 — 앱관리 이미지 분류(universe_/novel_/img_)가
                         // 복원 후에도 유지된다 (엑셀 경로의 G3 교훈: "char_ 고정 하드코딩" 금지)
                         val origName = File(original).name
@@ -292,13 +306,19 @@ class WorldPackageImporter(context: Context) {
                             renames[original] = dest.absolutePath
                             restoredImages++
                         } catch (e: Exception) {
-                            Log.w(TAG, "Image restore failed for $entryPrefix$index", e)
+                            Log.w(TAG, "Image restore failed for $entryName", e)
                             missingImages++
                         }
                     }
                     // 같은 기기 재가져오기: 원 경로 파일이 그대로 있으면 재사용한다
-                    // (공유 경로의 무음 파괴는 ImageOwnershipGuard가 막는다 — 엑셀 경로와 동일)
+                    // (공유 경로의 무음 파괴는 ImageOwnershipGuard가 막는다 — 엑셀 경로와 동일).
+                    // **잘린 장도 이 갈래를 지난다** — 보내는 기기에서만 실패한 것이라
+                    // 이 기기에 원본이 있으면 그것이 온전한 장이다.
                     runCatching { File(original).exists() }.getOrDefault(false) -> result.add(original)
+                    // 사유를 갈라 센다(R-39) — *패키지에 없던 장*과 *잘려서 못 쓰는 장*은
+                    // 사용자가 할 일이 다르다(전자는 보낸 사람이 이미지를 빼고 내보낸 것,
+                    // 후자는 보낸 기기에서 다시 내보내면 살아난다).
+                    truncated -> truncatedImagesDropped++
                     includesImages -> missingImages++
                     else -> strippedImagePaths++
                 }
@@ -802,6 +822,9 @@ class WorldPackageImporter(context: Context) {
         }
 
         if (missingImages > 0) warnings.add("이미지 ${missingImages}개를 패키지에서 찾지 못해 제외했습니다")
+        if (truncatedImagesDropped > 0) {
+            warnings.add("내보내는 중 잘린 이미지 ${truncatedImagesDropped}개를 제외했습니다 (보낸 기기에서 다시 내보내 주세요)")
+        }
         if (strippedImagePaths > 0) warnings.add("이미지 미포함 패키지 — 이미지 연결 ${strippedImagePaths}개 제외")
         if (danglingRefs > 0) warnings.add("패키지 내부 참조 불일치로 제외된 항목 ${danglingRefs}건")
         if (crossUniverseRelsDropped > 0) warnings.add("패키지 밖 캐릭터와 얽힌 관계·관계변화 ${crossUniverseRelsDropped}건 제외")

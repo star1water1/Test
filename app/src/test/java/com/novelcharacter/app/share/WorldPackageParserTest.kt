@@ -343,6 +343,48 @@ class WorldPackageParserTest {
         assertEquals(mapOf(WorldPackageEntries.CHARACTERS to 2), contents.droppedRows)
     }
 
+    // ── 잘린 이미지 목록 (B-234) ──
+
+    @Test
+    fun `잘린 이미지 목록 - 내보내기 형식 그대로 읽힌다`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.IMAGE_FAILURES] =
+            gson.toJson(listOf("images/11_1.jpg", "images/universe_0.jpg"))
+        val contents = success(entries)
+        assertEquals(setOf("images/11_1.jpg", "images/universe_0.jpg"), contents.truncatedImages)
+    }
+
+    @Test
+    fun `잘린 이미지 목록 - 엔트리가 없으면 빈 집합이다(v6 이전 패키지)`() {
+        val contents = success(baseEntries())
+        assertEquals(emptySet<String>(), contents.truncatedImages)
+    }
+
+    @Test
+    fun `잘린 이미지 목록 - 빈 목록과 부재는 뜻이 다르지만 둘 다 읽힌다`() {
+        // 빈 목록 = "잘린 장이 없다는 것을 안다" · 부재 = "모른다".
+        // 복원 판정은 같지만(둘 다 전부 복원) 형식으로는 구별된다.
+        val entries = baseEntries()
+        entries[WorldPackageEntries.IMAGE_FAILURES] = "[]"
+        assertEquals(emptySet<String>(), success(entries).truncatedImages)
+    }
+
+    @Test
+    fun `잘린 이미지 목록 - JSON이 깨지면 Malformed다(어느 장이 잘렸는지 모른 채 진행하지 않는다)`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.IMAGE_FAILURES] = "[ broken"
+        val result = WorldPackageParser.parse(entries)
+        assertEquals(WorldPackageParseResult.Malformed(WorldPackageEntries.IMAGE_FAILURES), result)
+    }
+
+    @Test
+    fun `잘린 이미지 목록 - null과 공란은 버린다(손편집 파일)`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.IMAGE_FAILURES] = """["images/11_0.jpg", null, "", "  "]"""
+        val contents = success(entries)
+        assertEquals(setOf("images/11_0.jpg"), contents.truncatedImages)
+    }
+
     @Test
     fun `code가 null인 행은 버리지 않는다 - 재발급은 임포터의 몫`() {
         val entries = baseEntries()

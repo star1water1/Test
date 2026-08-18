@@ -3244,6 +3244,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 found
             }
 
+            // **타입 게이트도 미리보기에 있어야 한다 (B-256).** 짝 가져오기는 타입이 비었거나
+            // 아는 이름이 아니면 그 행을 **쓰지 않고** 오류와 함께 건너뛴다. 여기 없으면
+            // 미리보기가 그 행을 '신규'로 세어 **예고한 수가 실제와 갈리고**, 더 나쁘게는
+            // 아래에서 `fieldDefs.remember`로 *생기지도 않을 정의*를 색인에 심어
+            // **그 필드를 가리키는 값 시트 행들까지 연쇄로 잘못 센다**(B-187이 겪은 모양).
+            // 판정 문구는 짝과 글자 그대로 같아야 한다 — 갈리면 이 자리가 다시 벌어진다.
+            if (r.type.isBlank() || FieldType.fromName(r.type) == null) {
+                skippedCount++
+                continue
+            }
+
             val existing = fieldDefs.find(universe?.id, r.key, r.entityType)
             if (existing == null) {
                 newCount++
@@ -6325,6 +6336,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 세계관별 캐릭터 시트 가져오기 ──
 
+    // 미리보기 짝: analyzeCharacterSheet (세계관별 시트를 같은 함수가 훑는다)
     private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val universes = db.universeDao().getAllUniversesList()
         val reservedNames = RESERVED_SHEET_NAMES
@@ -6357,6 +6369,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 미분류 캐릭터 가져오기 ──
 
+    // 미리보기 짝: analyzeCharacters (그 함수가 미분류 시트도 함께 훑는다)
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = findUnclassifiedSheet(workbook, consumedCharacterSheetNames) ?: return
         val headerRow = headerRowOrReport(sheet, "이름", result) ?: return
@@ -6445,6 +6458,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 정체성은 (캐릭터, 세계관+필드키+대상)이며 캐릭터 시트가 이미 처리한 항목은 캐릭터 시트가 권위다.
      * 캐릭터·필드 정의 임포트가 모두 끝난 뒤 호출해야 (세계관, 키) 해석이 성립한다.
      */
+    // 미리보기 짝: analyzeCharacterFieldValueSheet
     private suspend fun importCharacterFieldValues(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = characterFieldValueSpec()
         // F1-A: 시트가 없으면 기존 값 유지 (구버전 백업 호환) — 없는 것이 정상이라 경고하지 않는다.
@@ -6622,6 +6636,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * **대상(entityType) 열이 없는 것은 의도다** — 이 시트는 작품 필드만 담으므로 대상이 시트로
      * 이미 정해져 있다. 캐릭터판은 한 시트가 여러 대상의 값을 담을 수 있어 그 열이 필요했다.
      */
+    // 미리보기 짝: analyzeNovelFieldValueSheet
     private suspend fun importNovelFieldValues(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = novelFieldValueSpec()
         // F1-A: 시트가 없으면 기존 값 유지 (구버전 백업 호환) — 없는 것이 정상이라 경고하지 않는다.
@@ -6758,6 +6773,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 규약은 [importNovelFieldValues]와 같고, **정체는 사건 코드 하나뿐**이다 —
      * 연도·설명으로 되짚으면 같은 해의 비슷한 문장에 값이 붙는다(R-1: 오배정은 생략보다 나쁘다).
      */
+    // 미리보기 짝: analyzeEventFieldValueSheet
     private suspend fun importEventFieldValues(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = eventFieldValueSpec()
         val sheet = resolveSpecSheet(workbook, spec) ?: return
@@ -8149,6 +8165,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 필드 템플릿 가져오기 ──
 
+    // 미리보기 짝: analyzePresetTemplates
     private suspend fun importUserPresetTemplates(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = userPresetTemplateSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -8353,6 +8370,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 앱 설정 가져오기 ──
 
+    // 미리보기 없음(키-값이라 '신규/갱신/동일' 셈이 성립하지 않는다 — 다만 *무엇이 바뀌는지*를
+    //   미리보기가 말하지 않는 것은 그대로다. B-263 ⓑ)
     private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
         val spec = appSettingsSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -9743,6 +9762,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum, totalRows)
     }
 
+    // 미리보기 없음(**축 자체가 미리보기에 없다** — 판정이 아니라 미구현이다. B-256의 census가
+    //   찾았고 B-263 ⓐ가 그 자리다. 이 표식은 면제가 아니라 *알고 있다*는 표시다)
     private suspend fun importDuelVerdicts(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelVerdictSpec()
         val sheet = findSheet(workbook, spec, result) ?: return

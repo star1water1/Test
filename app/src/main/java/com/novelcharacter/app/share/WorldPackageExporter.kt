@@ -234,12 +234,15 @@ class WorldPackageExporter(private val context: Context) {
             )
 
             // 이미지 구간도 같은 원칙 — 도는 목록과 총량이 한 값에서 나온다.
-            // v3: 세계관·작품 직접 등록 이미지의 엔트리 접두사는 WorldPackageImageEntries
-            // 규약(임포터와 공유)을 따른다.
+            // v3: 세계관·작품 직접 등록 이미지도 같은 규약으로 싣는다(임포터와 공유).
+            // 접두사는 **엔티티 몫만** 든다 — `images/`를 붙이는 자리는
+            // [WorldPackageImages.entryName] 하나다(B-234. 종전에는 내보내기만 접두사에
+            // 미리 붙여 들고 다녀 가져오기와 규약이 갈려 있었고, 이 주석은 그 시절
+            // `WorldPackageImageEntries`라는 **없는 이름**을 가리키고 있었다).
             val imageGroups: List<Pair<String, String>> = buildList {
-                for (char in characters) add(char.imagePaths to "images/${char.id}_")
-                add(universe.imagePaths to "images/universe_")
-                for (novel in novels) add(novel.imagePaths to "images/novel_${novel.id}_")
+                for (char in characters) add(char.imagePaths to "${char.id}_")
+                add(universe.imagePaths to "universe_")
+                for (novel in novels) add(novel.imagePaths to "novel_${novel.id}_")
             }
             val imageTotal = if (config.includeImages) imageGroups.sumOf { countImagePaths(it.first) } else 0
 
@@ -272,6 +275,10 @@ class WorldPackageExporter(private val context: Context) {
                         }
                     }
                     zip.setLevel(Deflater.DEFAULT_COMPRESSION)
+                    // **이미지 구간 뒤라야 한다** — 어느 장이 잘렸는지는 다 써 봐야 안다.
+                    // 실패가 없어도 싣는다: 있으면 "잘린 장은 이것뿐"이고 없으면 "모른다"라,
+                    // 빈 목록이 *아는 것*과 *모르는 것*을 가른다. JSON이라 압축을 되돌린 뒤다.
+                    writeJsonEntry(zip, WorldPackageEntries.IMAGE_FAILURES, imageTally.truncated)
                 }
             }
         } catch (e: Exception) {
@@ -305,9 +312,29 @@ class WorldPackageExporter(private val context: Context) {
         var included = 0
         var missing = 0
         var outsideAppDir = 0
-        var failed = 0
         var unreadableLists = 0
         private val samples = ArrayList<String>(ImageZipReport.SAMPLE_LIMIT)
+
+        /**
+         * 내용이 잘린 채 zip에 남은 엔트리들(B-234). **`failed`를 이 목록과 같은 자리에서만
+         * 올리는 것이 이 벌의 요점이다** — 세는 것과 적는 것이 갈리면, 새 실패 갈래가
+         * *세어지기만 하고 적히지 않아* 받는 기기가 다시 잘린 그림을 복원한다.
+         * 그래서 [failed]는 private이고 올리는 길은 [fail] 하나다(검사가 아니라 구조로 막는다).
+         */
+        private val truncatedEntries = ArrayList<String>()
+        private var failed = 0
+
+        val truncated: List<String> get() = truncatedEntries
+
+        /**
+         * 한 장이 **쓰다가** 실패했다 — 엔트리는 이미 열려 지금까지 쓴 바이트로 닫힌다.
+         * 그 이름을 함께 받는 것은 선택이 아니다(위 주석).
+         */
+        fun fail(entryName: String, path: String) {
+            failed++
+            truncatedEntries.add(entryName)
+            sample(path)
+        }
 
         fun sample(path: String) {
             if (samples.size < ImageZipReport.SAMPLE_LIMIT) samples.add(File(path).name)
@@ -386,21 +413,28 @@ class WorldPackageExporter(private val context: Context) {
                 !com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir) -> {
                     tally.outsideAppDir++; tally.sample(path)
                 }
-                else -> try {
-                    // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패가 이 부류의 대부분인데,
-                    // 순서가 반대면 그 흔한 실패마다 0바이트 엔트리가 남고 받는 기기는 그것을
-                    // 멀쩡한 이미지로 복원한다(결번이라야 "유실"로 세어 고지된다).
-                    imageFile.inputStream().use { input ->
-                        zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
-                        input.copyTo(zip)
-                        zip.closeEntry()
+                else -> {
+                    val entryName = WorldPackageImages.entryName(entryPrefix, index)
+                    try {
+                        // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패가 이 부류의 대부분인데,
+                        // 순서가 반대면 그 흔한 실패마다 0바이트 엔트리가 남고 받는 기기는 그것을
+                        // 멀쩡한 이미지로 복원한다(결번이라야 "유실"로 세어 고지된다).
+                        imageFile.inputStream().use { input ->
+                            zip.putNextEntry(ZipEntry(entryName))
+                            input.copyTo(zip)
+                            zip.closeEntry()
+                        }
+                        tally.included++
+                    } catch (e: Exception) {
+                        // **여기까지 왔으면 엔트리가 이미 열려 있을 수 있다**(`copyTo`가 중간에
+                        // 던진 갈래). 아래 `closeEntry()`는 지금까지 쓴 바이트로 그 엔트리를
+                        // **정상 종료**하므로 zip은 온전하고 **내용만 잘린 장**이 남는다 —
+                        // 결번이 아니라서 받는 기기가 유실로 세지 못한다. 그래서 이름을 함께
+                        // 적어 `image_failures.json`으로 보낸다(B-234 · 확정 19장 5번).
+                        Log.w("WorldPackageExporter", "Failed to add image $entryName", e)
+                        tally.fail(entryName, path)
+                        try { zip.closeEntry() } catch (_: Exception) { }
                     }
-                    tally.included++
-                } catch (e: Exception) {
-                    Log.w("WorldPackageExporter", "Failed to add image $entryPrefix$index", e)
-                    tally.failed++
-                    tally.sample(path)
-                    try { zip.closeEntry() } catch (_: Exception) { }
                 }
             }
         }

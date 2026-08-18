@@ -49,6 +49,12 @@ import com.novelcharacter.app.data.model.Universe
  *   사라진 채 도착했다. 판·상성은 참가자를 코드로 가리키므로 재발급 표를 따라가야 하며,
  *   그 매핑은 [WorldPackageDuels]가 단일 소스다. **v1~v5 패키지는 그대로 읽히고**
  *   임포터가 "대결이 없는 형식"임을 고지한다(그 고지가 B-118 ⓐ의 재사용이다).
+ *
+ * **v6 유지 (B-234): `image_failures.json`은 판올림이 아니다.** 잘린 이미지 엔트리의 이름을
+ * 덧붙이는 엔트리라, 없으면 "잘린 장을 모른다"(= 오늘까지의 동작)이고 있으면 그 장을 결번으로
+ * 다룬다 — **어느 쪽도 다른 엔트리의 뜻을 바꾸지 않는다.** 판올림했다면 이 앱보다 낮은 버전이
+ * 패키지를 통째로 거부했을 것이다. 판올림의 기준은 *새 엔트리가 생겼는가*가 아니라
+ * **옛 규칙으로 읽으면 틀리는가**다(R-64).
  */
 data class WorldPackageManifest(
     val schemaVersion: Int = WorldPackageEntries.CURRENT_SCHEMA_VERSION,
@@ -91,6 +97,18 @@ object WorldPackageEntries {
     const val DUEL_MATCHES = "duel_matches.json"
     const val DUEL_VERDICTS = "duel_counter_verdicts.json"
 
+    /**
+     * 잘린 이미지 엔트리의 이름 목록(B-234) — 내보내는 중 `copyTo`가 중간에 실패해
+     * **내용만 잘린 채 정상 종료된** 엔트리다. 이미지 구간 뒤에 실린다(그전에는 알 수 없다).
+     *
+     * **schemaVersion을 올리지 않는다.** 덧붙임이라 옛 앱은 이 엔트리를 그냥 안 읽고,
+     * 판올림하면 그 앱들이 [WorldPackageParseResult.UnsupportedVersion]으로 **패키지 전체를
+     * 거부한다** — 잃는 것이 "잘린 장 하나의 고지"인데 대가가 "전부 못 읽음"이다.
+     * R-58이 *"옛 앱이 새 파일을 읽지 못하는 것은 판올림의 불가피한 대가"*라 적은 그 대가는
+     * 뜻이 **바뀌는** 형식의 것이고, 이 엔트리는 뜻을 바꾸지 않는다(R-64).
+     */
+    const val IMAGE_FAILURES = "image_failures.json"
+
     /** 이미지 엔트리 접두사 — `images/{캐릭터id}_{i}.jpg` · `images/universe_{i}.jpg` · `images/novel_{작품id}_{i}.jpg` */
     const val IMAGES_PREFIX = "images/"
     const val IMAGE_UNIVERSE_PREFIX = "images/universe_"
@@ -129,7 +147,13 @@ data class WorldPackageContents(
     val duelAxes: List<DuelAxis>,
     val duelMatches: List<DuelMatch>,
     val duelVerdicts: List<DuelCounterVerdict>,
-    val droppedRows: Map<String, Int>
+    val droppedRows: Map<String, Int>,
+    /**
+     * 내용이 잘린 이미지 엔트리의 이름(B-234) — 내보내는 기기가 실패를 아는 자리에서 적었다.
+     * 임포터는 이 이름들을 **결번처럼** 다룬다([WorldPackageImages.isRestorable]).
+     * 없는 엔트리(v6 이전 · 이 판 이전의 v6)는 빈 집합이고, 그때 동작은 종전과 같다.
+     */
+    val truncatedImages: Set<String> = emptySet()
 )
 
 /** 파싱 실패의 원인별 분류 — UI는 이것으로 일반 오류 대신 원인별 메시지를 만든다(S-5). */
@@ -255,6 +279,11 @@ object WorldPackageParser {
             ?: return malformed(e.DUEL_MATCHES)
         val duelVerdicts = read(e.DUEL_VERDICTS, object : TypeToken<List<DuelCounterVerdict?>>() {})
             ?: return malformed(e.DUEL_VERDICTS)
+        // B-234 — **깨졌으면 Malformed다.** 이 엔트리를 못 읽으면 *어느 장이 잘렸는지*를 모르는
+        // 것이고, 그 상태로 진행하면 잘린 그림이 다시 조용히 복원된다(이 행이 고친 그 모양).
+        // 다른 엔트리와 같은 규칙이기도 하다 — 부재는 빈 목록, 파손은 사유와 함께 거부.
+        val truncatedImages = read(e.IMAGE_FAILURES, object : TypeToken<List<String?>>() {})
+            ?: return malformed(e.IMAGE_FAILURES)
 
         return WorldPackageParseResult.Success(
             WorldPackageContents(
@@ -332,7 +361,10 @@ object WorldPackageParser {
                 duelVerdicts = scrub(e.DUEL_VERDICTS, duelVerdicts) {
                     allPresent(it.kind, it.shape, it.memberCodes, it.memberKey, it.code)
                 },
-                droppedRows = dropped
+                droppedRows = dropped,
+                // 이름 목록이라 `scrub`의 대상이 아니다 — 버릴 '행'이 없고, 공란은
+                // 어떤 엔트리도 가리키지 않으므로 단일 소스가 걸러 낸다.
+                truncatedImages = WorldPackageImages.truncatedSet(truncatedImages)
             )
         )
     }

@@ -585,6 +585,98 @@ if [ "${ucount:-0}" -gt 0 ]; then
   exit 1
 fi
 
+# ── ⑧ 짝이 **아예 없는** 범주 (B-256) ─────────────────────────────────────────────
+# 앞의 일곱은 전부 *analyze가 있다*를 전제하고 그 안을 본다. 이 축은 그 전제를 잰다 —
+# `importAll`이 부르는 범주에 **미리보기 함수 자체가 없으면** 위 그물이 하나도 울리지 않는다
+# (볼 `analyze*`가 없으니 비교식도 없고 가드도 없다). 실제로 그렇게 **대결 상성**이 통째로
+# 빠져 있었고, 그 사실을 아무 검사도 말하지 않았다.
+#
+# **짝의 이름이 언제나 `analyze<X>`인 것은 아니라서**(시트 하나가 함수 둘로 갈린 자리가 있다)
+# 이름 규칙만으로는 거짓 양성이 난다. 그렇다고 스크립트에 별칭 명단을 두면 **새 범주가
+# 조용히 빠진다** — 그래서 **선언을 그 자리에 요구한다**: `import<X>` 선언 바로 위에
+#   // 미리보기 짝: analyze<Y>        (이름이 다른 짝)
+#   // 미리보기 없음(사유)             (짝이 없는 것을 아는 채로 두는 자리)
+# 둘 중 하나를 적는다. 아무것도 없고 `analyze<X>`도 없으면 **새 범주가 예고 없이 들어온 것**이다.
+missing=$(python3 - "$TARGET" <<'PY8'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+decl = re.compile(r'^    (?:private )?suspend fun (import[A-Za-z0-9_]*)\s*\(')
+adecl = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*)\s*\(')
+analyzers = {m.group(1) for l in lines if (m := adecl.match(l))}
+# importAll 본문에서 실제로 불리는 것만 본다 — 죽은 함수까지 요구하지 않는다.
+# 이름을 부분 문자열로 찾지 않는다 — `importAllSomething`도 함께 걸려 **개명을 못 알아본다**
+# (콜드 검토에서 실제로 그랬다: 개명 자기 재공격이 통과해 버렸다).
+start = next((i for i,l in enumerate(lines) if re.search(r'\bfun importAll\s*\(', l)), None)
+called = set()
+if start is not None:
+    j = start + 1
+    while j < len(lines) and lines[j] != '    }':
+        called.update(re.findall(r'\b(import[A-Z][A-Za-z0-9_]*)\s*\(', lines[j].split('//')[0]))
+        j += 1
+# **0건을 '위반이 없다'로 읽지 않는다.** `importAll`의 본문을 못 뜨면 `called`가 비고, 그러면
+# 아래 루프가 전부 건너뛰어 **뜨는 법이 깨진 것과 위반이 없는 것이 겉으로 같아진다**
+# (자기 재공격에서 실제로 그랬다 — `importAll`을 개명하니 이 축이 조용히 초록이었다).
+if not called:
+    print("__뜨는 법이 깨졌다__\timportAll의 본문에서 import* 호출을 하나도 뜨지 못했습니다 — 선언이 개명·재서식됐는지 보세요")
+    raise SystemExit(0)
+
+bad = []
+for i, l in enumerate(lines):
+    m = decl.match(l)
+    if not m: continue
+    fn = m.group(1)
+    if fn == 'importAll' or fn not in called: continue
+    if 'analyze' + fn[len('import'):] in analyzers: continue
+    # 표식은 **선언 바로 위의 주석 블록 안**에 있어야 한다 — 위로 올라가다 주석·빈 줄이 아닌
+    # 것을 만나면 멈춘다. 고정 줄 수로 잡으면 **사이에 다른 선언이 끼어들 때 그 표식이
+    # 남의 것이 된다**(자기 재공격에서 실제로 그렇게 통과했다: 새 함수를 표식 아래에 심으니
+    # 그 함수가 앞 함수의 면제를 물려받았다).
+    k = i - 1
+    block = []
+    while k >= 0:
+        t = lines[k].strip()
+        if t == '' or t.startswith('//'):
+            block.append(lines[k]); k -= 1; continue
+        break
+    head = '\n'.join(reversed(block))
+    mm = re.search(r'//\s*미리보기 짝:\s*(analyze[A-Za-z0-9_]*)', head)
+    if mm:
+        if mm.group(1) in analyzers: continue
+        bad.append(f"{fn}\t표식이 가리킨 '{mm.group(1)}'이(가) 파일에 없습니다 — 개명됐다면 표식도 함께 고치세요")
+        continue
+    if re.search(r'//\s*미리보기 없음\(', head): continue
+    bad.append(f"{fn}\t미리보기 함수도 표식도 없습니다 — 이 범주는 복원 미리보기에 통째로 빠집니다")
+# **자기 출력을 증명한다(B-240).** 이 블록이 죽으면 `$missing`이 비고, 빈 값은 아래에서
+# `0 = 위반 없음`으로 떨어져 **조용히 통과한다** — 위 다섯 스캐너가 같은 이유로 표식을 낸다.
+print('\n'.join(bad))
+print(f"__MCOUNT__{len(bad)}")
+PY8
+)
+mraw=$(printf '%s\n' "$missing" | sed -n 's/^__MCOUNT__//p')
+require_count "$mraw" "__MCOUNT__" "$missing"
+missing=$(printf '%s\n' "$missing" | grep -v '^__MCOUNT__' || true)
+mcount=$mraw
+
+if [ "${mcount:-0}" -gt 0 ]; then
+  # 뜨는 법이 깨진 것과 위반이 있는 것은 **처방이 다르다** — 머리글도 갈라 적는다.
+  if printf '%s' "$missing" | grep -q '__뜨는 법이 깨졌다__'; then
+    echo "  ✗ 축 ⑧이 대상을 뜨지 못했습니다 — 이 축은 지금 아무것도 보고 있지 않습니다"
+  else
+    echo "  ✗ 미리보기 함수가 아예 없는 범주가 있습니다 (${mcount}건)"
+  fi
+  echo
+  printf '%s\n' "$missing" | while IFS=$'\t' read -r fn why; do
+    [ -z "${fn:-}" ] && continue
+    echo "    $fn — $why"
+  done
+  echo
+  echo "  이 축은 앞의 일곱이 **원리적으로 못 보는 자리**입니다 — 볼 analyze*가 없으면"
+  echo "  비교식도 가드도 없어 그물이 하나도 울리지 않습니다(B-256)."
+  echo "  짝을 만들거나, 이름이 다르면 선언 위에 // 미리보기 짝: analyze<Y> 를,"
+  echo "  아는 채로 두는 자리라면 // 미리보기 없음(사유) 를 적으세요."
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
 echo "  ✓ read*Row + new*From ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다 (B-233)"
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
@@ -592,5 +684,6 @@ echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(Sh
 echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
 echo "  ✓ 가져오기가 세며 거부하는 행을 미리보기도 전부 셉니다 (B-237)"
 echo "  ✓ analyze*의 세계관 원천이 전부 analysisUniverses()입니다 (B-254)"
+echo "  ✓ importAll이 부르는 범주에 미리보기 짝이 전부 있습니다 (B-256)"
 echo
 echo "복원 미리보기 정합 검사 통과"
