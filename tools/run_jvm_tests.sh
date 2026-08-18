@@ -185,6 +185,7 @@ $MAIN/util/BodyTargetRatio.kt
 $MAIN/util/BodyMeasurements.kt
 $MAIN/util/BodySilhouetteSpec.kt
 $MAIN/util/BodyEditorModel.kt
+$MAIN/util/BodyEditorState.kt
 $MAIN/util/BodyGenerator.kt
 $MAIN/data/model/CardDisplayConfig.kt
 $MAIN/util/CardFieldSummary.kt
@@ -518,6 +519,7 @@ $TEST/util/BodyMeasurementsTest.kt
 $TEST/data/BodyAnalysisConfigKeysTest.kt
 $TEST/util/BodySilhouetteSpecTest.kt
 $TEST/util/BodyEditorModelTest.kt
+$TEST/util/BodyEditorStateTest.kt
 $TEST/util/BodyCupContractTest.kt
 $TEST/util/BodyTargetRatioTest.kt
 $TEST/util/BodyTargetRatioSourceTest.kt
