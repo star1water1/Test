@@ -776,6 +776,24 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         duelRepository.recentMatches(axisId, limit)
 
     /**
+     * 축의 판 **전수** — 최근순 (B-208).
+     *
+     * 기록 화면이 '캐릭터를 넘는 판만'을 켰을 때 쓴다. 그 판정은 **경로의 주인이 누구인가**라
+     * SQL이 낼 수 없고(정규화가 파일 시스템을 탄다), 최근 N판만 걸러 내면 순위표가 센 판이
+     * 오래된 것일 때 **0개가 보인다.**
+     *
+     * 새 상한이 아니다 — [imageTarget]이 이미 같은 질의로 소유 표를 만든다(순위표로 오는
+     * 길목이 그 자리다). 비용은 축 하나의 판 수에 붙고, **거르개를 켠 회차에만** 든다.
+     *
+     * **차례를 뒤집어 내보내는 것이 요점이다.** DAO의 축 단위 조회는 적합이 쓰는 자리라
+     * `decidedAt ASC, id ASC`인데, 기록 화면은 최근순으로 넘긴다([recentMatches]는
+     * `DESC, DESC`다). 그대로 주면 거르개를 켠 순간 목록이 **가장 오래된 판부터** 뜨고
+     * *더 보기*도 거꾸로 넘어간다 — 두 정렬이 정확히 서로의 역이라 뒤집기로 맞춘다.
+     */
+    suspend fun allMatches(axisId: Long): List<DuelMatch> =
+        app.database.duelMatchDao().getByAxis(axisId).asReversed()
+
+    /**
      * 판 하나의 승자를 고친다.
      *
      * **이력에 남긴다.** 대결의 누름 하나하나는 이력에 오지 않지만([OpResult.CAT_DUEL]),

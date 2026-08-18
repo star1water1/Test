@@ -15,7 +15,9 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelMatchesBinding
 import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
+import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.util.CharacterRepresentativeImage
+import com.novelcharacter.app.util.DuelImageRoster
 import com.novelcharacter.app.util.DuelMatchLog
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
@@ -52,6 +54,18 @@ class DuelMatchesFragment : Fragment() {
     private var rows: List<DuelMatchLog.Row> = emptyList()
     private var onlyDisagreements = false
 
+    /** '캐릭터를 넘는 판만' 거르개 (B-208) — 순위표 고지가 켠 채로 열 수 있다. */
+    private var onlyCross = false
+
+    /**
+     * 그 거르개의 **범위** — 0 이하면 축 전체, 크면 그 캐릭터가 낀 것만.
+     *
+     * 순위표의 고지는 *그 캐릭터 몫*을 세므로(설계 13-5), 범위 없이 걸면 축 전체가 걸려
+     * **N개라던 것이 M개로 보인다**(확정 15-8 착수 조건).
+     */
+    private var focusCharacterId = -1L
+    private var focusCharacterName: String? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -67,6 +81,14 @@ class DuelMatchesFragment : Fragment() {
             findNavController().popBackStack()
             return
         }
+        // 회전 뒤에는 사용자가 만든 상태가 이긴다 — 인자를 다시 읽으면 껐던 거르개가 되살아난다.
+        if (savedInstanceState == null) {
+            onlyCross = arguments?.getBoolean(ARG_ONLY_CROSS, false) ?: false
+            focusCharacterId = arguments?.getLong(ARG_FOCUS_CHARACTER_ID, -1L) ?: -1L
+        } else {
+            onlyCross = savedInstanceState.getBoolean(ARG_ONLY_CROSS, false)
+            focusCharacterId = savedInstanceState.getLong(ARG_FOCUS_CHARACTER_ID, -1L)
+        }
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         adapter = DuelMatchAdapter { row -> showEditDialog(row) }
@@ -76,6 +98,15 @@ class DuelMatchesFragment : Fragment() {
         binding.switchOnlyDisagreements.setOnCheckedChangeListener { _, checked ->
             onlyDisagreements = checked
             renderRows()
+        }
+        // 거르개를 켜고 끄면 **받아 오는 범위가 달라진다** — 켜면 축 전수를 훑어 그중에서
+        // 넘기므로(아래 reload) 목록만 다시 그려서는 안 된다.
+        binding.switchOnlyCross.isChecked = onlyCross
+        binding.switchOnlyCross.setOnCheckedChangeListener { _, checked ->
+            if (onlyCross == checked) return@setOnCheckedChangeListener
+            onlyCross = checked
+            limit = PAGE
+            reload()
         }
         binding.btnLoadMore.setOnClickListener {
             limit += PAGE
@@ -93,6 +124,10 @@ class DuelMatchesFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val loaded = viewModel.axis(axisId) ?: run { findNavController().popBackStack(); return@launch }
             axis = loaded
+            // 캐릭터를 넘는 판은 **이미지 축에만 있다**(참가자가 경로라야 주인이 갈린다).
+            // 다른 축에서 켜진 채로 들어오면 스위치는 감춰지는데 목록만 비어 **끌 길이 없다** —
+            // 그 자리에서 끄고 평소 목록을 보인다.
+            if (!loaded.isImageAxis) onlyCross = false
             binding.toolbar.title = getString(R.string.duel_matches_title_of, loaded.name)
             // 기록 화면은 **참가자 전부**를 본다(후보 필터와 무관하다 — 이미 기록된 판의
             // 참가자 이름이 필터 때문에 '알 수 없음'이 되면 안 된다).
@@ -116,8 +151,28 @@ class DuelMatchesFragment : Fragment() {
             } else {
                 viewModel.fieldValuesOf(loaded.universeId, characters, links.influences.map { it.key })
             }
-            val matches = viewModel.recentMatches(axisId, limit)
-            val total = viewModel.matchCount(axisId)
+            // ── 캐릭터를 넘는 판만 (B-208) ──
+            //
+            // **거르개를 켜면 최근 N판이 아니라 축 전수에서 고른다.** 최근 판만 걸러 내면
+            // 순위표가 *"N개 있습니다"*라고 말한 판이 오래된 것일 때 **0개가 보인다** —
+            // 확정 15-8이 막으려던 그 증상이 술어가 아니라 **범위**에서 되살아나는 자리다.
+            //
+            // 새 상한이 아니다: 순위표로 오는 길목(`imageTarget`)이 이미 같은 축의 판을
+            // 전수로 읽어 소유 표를 만든다(`scalability_performance` 7장 2단계 — 축 하나의
+            // 판 수에 붙는 비용이고, 켠 회차에만 든다).
+            val crossOwners = if (onlyCross) DuelImageRoster.owners(characters) else null
+            val matches: List<DuelMatch>
+            val total: Int
+            if (crossOwners != null) {
+                val cross = DuelImageRoster.crossCharacterMatchesOf(
+                    viewModel.allMatches(axisId), crossOwners, focusCharacterId
+                )
+                total = cross.size
+                matches = cross.take(limit)
+            } else {
+                matches = viewModel.recentMatches(axisId, limit)
+                total = viewModel.matchCount(axisId)
+            }
             if (!isAdded) return@launch
 
             rows = DuelMatchLog.rows(
@@ -133,6 +188,7 @@ class DuelMatchesFragment : Fragment() {
                 labels = labels,
                 valuesByCode = values
             )
+            renderCrossFilter(loaded.isImageAxis)
             val summary = DuelMatchLog.summarize(rows, total)
             binding.summaryText.text = getString(
                 R.string.duel_matches_summary,
@@ -165,17 +221,49 @@ class DuelMatchesFragment : Fragment() {
         return out
     }
 
+    /**
+     * 거르개를 세울지 정한다 (B-208) — **이미지 축에만 선다.**
+     *
+     * 다른 축에는 캐릭터를 넘는 판이 원리적으로 없다(참가자가 캐릭터 자신이다). 세워 두면
+     * 눌러 봐야 언제나 빈 목록이고, 그것은 *기능이 고장 났다*와 구별되지 않는다(R-17).
+     *
+     * 범위를 갖고 왔으면 **그 사실을 말한다** — 순위표에서 넘어온 사람은 축 전체가 아니라
+     * *그 캐릭터의 판*을 보고 있는데, 아무 말도 없으면 축에 그것뿐인 줄 안다.
+     */
+    private fun renderCrossFilter(isImageAxis: Boolean) {
+        val b = _binding ?: return
+        if (!isImageAxis) {
+            b.switchOnlyCross.visibility = View.GONE
+            b.onlyCrossPurpose.visibility = View.GONE
+            return
+        }
+        b.switchOnlyCross.visibility = View.VISIBLE
+        b.onlyCrossPurpose.visibility = View.VISIBLE
+        // 인자로 켜진 채 들어온 회차에는 스위치가 아직 꺼져 있다 — 같은 값이면 리스너가
+        // 되돌아 나가므로(위 가드) 다시 부르는 비용은 없다.
+        b.switchOnlyCross.isChecked = onlyCross
+        focusCharacterName = characters.firstOrNull { it.id == focusCharacterId }?.displayName
+        val name = focusCharacterName
+        b.onlyCrossPurpose.text = if (onlyCross && name != null) {
+            getString(R.string.duel_matches_only_cross_of, name)
+        } else {
+            getString(R.string.duel_matches_only_cross_purpose)
+        }
+    }
+
     private fun renderRows() {
         val shown = if (onlyDisagreements) DuelMatchLog.onlyDisagreements(rows) else rows
         adapter.submitList(shown)
         val empty = shown.isEmpty()
         binding.matchRecyclerView.visibility = if (empty) View.GONE else View.VISIBLE
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
+        // **왜 비었는지를 갈라 말한다** — 거르개가 켜져 있으면 *판이 없는 것*이 아니라
+        // *그 조건의 판이 없는 것*이고, 처방이 다르다(거르개를 끄면 된다).
         binding.emptyText.setText(
-            if (onlyDisagreements && rows.isNotEmpty()) {
-                R.string.duel_matches_no_disagreements
-            } else {
-                R.string.duel_matches_empty
+            when {
+                onlyDisagreements && rows.isNotEmpty() -> R.string.duel_matches_no_disagreements
+                onlyCross -> R.string.duel_matches_no_cross
+                else -> R.string.duel_matches_empty
             }
         )
     }
@@ -261,6 +349,13 @@ class DuelMatchesFragment : Fragment() {
         row.bName ?: getString(R.string.duel_unknown_participant)
     )
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 거르개는 **사용자가 정한 상태**다 — 회전에 잃으면 인자가 다시 읽혀 껐던 것이 켜진다.
+        outState.putBoolean(ARG_ONLY_CROSS, onlyCross)
+        outState.putLong(ARG_FOCUS_CHARACTER_ID, focusCharacterId)
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
@@ -269,5 +364,17 @@ class DuelMatchesFragment : Fragment() {
     companion object {
         /** 한 번에 받는 판 수. 넘치면 *더 보기*가 뜬다(자르되 말한다). */
         private const val PAGE = 200
+
+        /**
+         * 거르개를 켠 채로 연다 (B-208) — 순위표의 '캐릭터를 넘는 판' 고지가 넘긴다.
+         *
+         * 이름을 여기 한 벌만 두는 것은 **보내는 쪽과 받는 쪽이 다르게 적으면 오류도 고지도
+         * 없이 아무 일이 안 일어나기 때문**이다(R-61이 같은 이유로 세워졌다 —
+         * `FieldValueFixRoute`).
+         */
+        const val ARG_ONLY_CROSS = "onlyCross"
+
+        /** 거르개의 범위 — 순위표 고지가 센 **그 캐릭터**. */
+        const val ARG_FOCUS_CHARACTER_ID = "focusCharacterId"
     }
 }

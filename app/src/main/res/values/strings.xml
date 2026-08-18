@@ -3593,6 +3593,11 @@
     <string name="duel_matches_summary">%1$d / %2$d판 · 필드와 어긋남 %3$d · 깨진 판 %4$d</string>
     <string name="duel_matches_only_disagreements">필드와 어긋난 것만 보기</string>
     <string name="duel_matches_empty">아직 쌓인 판이 없습니다</string>
+    <!-- B-208: 순위표가 세어 말한 그 판만 남기는 거르개. 목적문은 스위치 아래 줄이다. -->
+    <string name="duel_matches_only_cross">캐릭터를 넘는 판만</string>
+    <string name="duel_matches_only_cross_purpose">다른 캐릭터의 이미지가 함께 적힌 판만 남깁니다 — 어느 순위에도 들지 않는 판입니다.</string>
+    <string name="duel_matches_only_cross_of">‘%1$s’이(가) 낀 판만 봅니다 — 순위표가 말한 그 판입니다.</string>
+    <string name="duel_matches_no_cross">캐릭터를 넘는 판이 없습니다</string>
     <string name="duel_matches_no_disagreements">어긋난 판이 없습니다. 연결한 필드와 대결 결과가 지금은 서로 맞습니다.</string>
     <string name="duel_matches_load_more">더 보기 (남은 %1$d판)</string>
     <string name="duel_match_a_won">%1$s 승 · %2$s 패</string>
@@ -3717,7 +3722,10 @@
     <string name="duel_caveat_orphan">지워진 참가자 %2$d명의 판 %1$d개가 점수에서 빠져 있습니다. 휴지통에서 되살리면 그 판도 함께 돌아옵니다.</string>
     <string name="duel_caveat_excluded">상성으로 판정한 판 %1$d개가 점수에서 빠져 있습니다.</string>
     <string name="duel_caveat_malformed">승자가 두 참가자 중 어느 쪽도 아닌 판이 %1$d개 있습니다. 외부에서 편집한 파일을 들였다면 그 행을 확인해 주세요.</string>
-    <string name="duel_caveat_cross_character">다른 캐릭터의 이미지가 함께 적힌 판이 %1$d개 있습니다. 이미지 대결은 캐릭터마다 따로 하므로 어느 순위에도 들지 않습니다. 기록에서 그 판을 확인해 주세요.</string>
+    <string name="duel_caveat_cross_character">다른 캐릭터의 이미지가 함께 적힌 판이 %1$d개 있습니다. 이미지 대결은 캐릭터마다 따로 하므로 어느 순위에도 들지 않습니다. </string>
+    <!-- B-208: 위 고지 줄 끝에 붙는 누를 수 있는 부분. 고지와 붙여 두는 것은 사용자가 그
+         사실을 아는 자리와 고치러 가는 자리를 떼어 놓지 않기 위해서다(원칙 04). -->
+    <string name="duel_caveat_cross_character_action">기록에서 그 판 보기</string>
     <string name="duel_caveat_not_converged">점수 계산이 반복 한도에서 멈췄습니다. 결과가 조금 덜 정확할 수 있습니다.</string>
     <string name="duel_caveat_pair_capped">짝이 너무 많아 일부만 훑었습니다. 진행률은 훑은 범위의 값입니다.</string>
     <string name="duel_caveat_triangle_capped">순환 찾기가 한도에 걸려 일부만 훑었습니다. 목록이 전부가 아닐 수 있습니다.</string>

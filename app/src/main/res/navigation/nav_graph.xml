@@ -460,6 +460,19 @@
             android:name="axisId"
             app:argType="long"
             android:defaultValue="-1L" />
+
+        <!-- B-208: 순위표의 '캐릭터를 넘는 판' 고지가 여기로 보낼 때 거르개를 켠 채로 연다. -->
+        <argument
+            android:name="onlyCross"
+            app:argType="boolean"
+            android:defaultValue="false" />
+
+        <!-- 그 고지의 수는 **그 캐릭터가 낀** 판이라(설계 13-5) 범위를 함께 넘긴다.
+             안 넘기면 축 전체가 걸러져 N개라던 것이 M개로 보인다. -->
+        <argument
+            android:name="focusCharacterId"
+            app:argType="long"
+            android:defaultValue="-1L" />
     </fragment>
 
     <fragment

@@ -14,9 +14,14 @@
 # 하는 구조라면 언젠가 반드시 빠진다(R-45·R-46이 배운 그 모양).
 #
 # ## 무엇을 보는가
-# `app/src/main/java`에서 `DuelRecords.resolve(`를 부르는 **모든 자리**가 인자에 `matching`을
-# 이름으로 적는가. 값이 무엇인지는 보지 않는다 — 축을 아는 것은 부르는 쪽이고, 이 검사가
-# 할 일은 **그 판단을 건너뛰지 못하게 하는 것**이다(기본값에 기대면 그 판단이 없다).
+# ① `app/src/main/java`에서 `DuelRecords.resolve(`를 부르는 **모든 자리**가 인자에 `matching`을
+#    이름으로 적는가. 값이 무엇인지는 보지 않는다 — 축을 아는 것은 부르는 쪽이고, 이 검사가
+#    할 일은 **그 판단을 건너뛰지 못하게 하는 것**이다(기본값에 기대면 그 판단이 없다).
+# ② **캐릭터를 넘는 판의 판정이 `DuelImageRoster` 밖에 없는가** (B-208).
+#    ①이 *적합과 나누기가 같은 잣대를 쓰는가*를 보는 것과 축이 같다 — 이쪽은 **세는 쪽과
+#    고르는 쪽**이다. 순위표는 그 판을 *수*로 말하고 기록 화면은 *줄*로 보이는데, 한쪽이
+#    직접 `Claim.Cross`를 대조하면 **N개라더니 M개가 보인다**(확정 15-8 착수 조건).
+#    이 갈래도 ①과 같은 이유로 시험이 아니라 검사다: 손으로 짜도 컴파일되고 시험도 돈다.
 #
 # 사용법: tools/check_duel_code_match.sh   # 위반 시 exit 1
 set -u
@@ -104,6 +109,42 @@ if [ "$rc" -ne 0 ]; then
   echo "대결 코드 대조 방식 검사 실패"
   exit 1
 fi
+
+# ── ② 캐릭터를 넘는 판의 판정은 한 자리뿐이다 (B-208) ──
+#
+# `Claim`은 `DuelImageRoster`가 든 몫 가르기의 잣대다. 그 밖에서 `Claim.Cross`를 직접
+# 대조하면 **세는 쪽과 고르는 쪽이 갈릴 길**이 생긴다 — 화면이 자기 자리에서 조건을 하나
+# 빠뜨려도(범위·지워진 그림) 아무 오류가 없고, 갈린 수만 사용자가 본다.
+ROSTER=$SRC/util/DuelImageRoster.kt
+[ -f "$ROSTER" ] || { echo "  ✗ 선언이 없습니다: $ROSTER"; exit 1; }
+
+# 주석은 뺀다 — 이 저장소는 *왜 그렇게 갈랐는가*를 KDoc에 적어 두는 관행이 있다.
+stray=$(grep -rn 'Claim\.Cross' "$SRC" --include=*.kt \
+  | grep -v "^$ROSTER:" \
+  | grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' || true)
+if [ -n "$stray" ]; then
+  echo "  ✗ 캐릭터를 넘는 판을 DuelImageRoster 밖에서 직접 판정합니다:"
+  printf '%s\n' "$stray" | sed 's/^/      /'
+  echo "  고치는 법: DuelImageRoster.crossCharacterMatchesOf(matches, owners, characterId) 를 쓸 것."
+  echo "             범위(characterId)를 함께 넘겨야 순위표가 센 수와 같아집니다."
+  echo ""
+  echo "대결 코드 대조 방식 검사 실패"
+  exit 1
+fi
+
+# 세는 쪽과 고르는 쪽이 **둘 다 살아 있는가.** 한쪽이 사라지면 이 규칙은 지킬 것이 없어지고,
+# 그때 검사는 *위반 없음*으로 조용히 통과한다(이 저장소가 반복해 겪은 그 모양).
+for fn in crossCharacterMatchesOf 'crossCharacterMatches ='; do
+  grep -q "$fn" "$ROSTER" || {
+    echo "  ✗ 등재된 자리가 없습니다: $ROSTER ($fn)"
+    echo "      → 이름이 바뀌었으면 이 검사를 함께 고칠 것. 못 찾은 채 통과하면"
+    echo "        *위반 없음*과 구별되지 않는다."
+    echo ""
+    echo "대결 코드 대조 방식 검사 실패"
+    exit 1
+  }
+done
+echo "  ✓ 캐릭터를 넘는 판은 DuelImageRoster 하나가 판정한다 (B-208)"
 
 echo ""
 echo "대결 코드 대조 방식 검사 통과"

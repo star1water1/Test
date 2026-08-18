@@ -431,4 +431,29 @@ object DuelImageRoster {
             crossCharacterVerdicts = crossVerdicts
         )
     }
+
+    /**
+     * **캐릭터를 넘는 판을 골라낸다** — 순위표가 *"N개 있습니다"*라고 말한 바로 그 판들 (B-208).
+     *
+     * ## 왜 세는 자리 옆에 두는가
+     * 순위표는 [Split.crossCharacterMatches]로 **수만** 말하고, 기록 화면은 그 판을 **줄로**
+     * 보여야 한다. 세는 쪽과 고르는 쪽이 각자 판정하면 *"N개라더니 M개가 보인다"*가 되는데,
+     * 그 둘은 **같은 화면을 오가는 한 동작**이라 어긋남이 곧바로 눈에 띈다(확정 15-8의 착수
+     * 조건이 지목한 자리다). 그래서 잣대를 [claimOf] 하나로 두고, 세기와 고르기가 그것만 부른다.
+     * **둘이 같은 답을 낸다는 사실 자체를 시험이 잰다**(`splitOf`의 수와 이 목록의 크기).
+     *
+     * @param characterId 0 이하면 **축 전체의** 캐릭터-넘는 판. 0보다 크면 **그 캐릭터가 낀
+     *   것만** — 순위표의 고지는 *그 캐릭터 몫*이라(`splitOf`) 범위를 맞추지 않으면 수가 갈린다.
+     * @return [matches]가 준 차례 그대로. 기록 화면이 최근순으로 넘기므로 그 차례가 곧 표시 차례다.
+     */
+    fun crossCharacterMatchesOf(
+        matches: List<DuelMatch>,
+        owners: Owners,
+        characterId: Long = 0L
+    ): List<DuelMatch> = matches.filter { match ->
+        when (val claim = claimOf(match.aCode, match.bCode, owners)) {
+            is Claim.Cross -> characterId <= 0L || characterId in claim.characterIds
+            else -> false
+        }
+    }
 }
