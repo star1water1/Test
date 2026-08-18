@@ -298,6 +298,7 @@ $MAIN/util/DefaultFieldPlan.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
+$MAIN/share/WorldPackageImages.kt
 $MAIN/share/WorldPackageCodes.kt
 $MAIN/share/WorldPackageDuels.kt
 $MAIN/excel/ExportWorkbook.kt
@@ -513,6 +514,7 @@ $TEST/excel/MergedCellMapTest.kt
 $TEST/excel/DropdownListLimitsTest.kt
 $TEST/excel/DropdownListSheetTest.kt
 $TEST/share/WorldPackageParserTest.kt
+$TEST/share/WorldPackageImagesTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/share/WorldPackageDuelsTest.kt
 $TEST/excel/ExportWorkbookParityTest.kt
