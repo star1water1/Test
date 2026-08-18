@@ -2666,6 +2666,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetEventIndex()
         resetNovelIndex()
         resetUniverseIndex()
+        // 시트별 캐시도 여기서 비운다 — 위 색인들과 같은 사유다(미리보기는 직전 가져오기 뒤에
+        // 돌 수 있고, 이 맵들은 `Sheet` 객체를 키로 들고 있어 비우지 않으면 그 참조가 남는다).
+        // 종전에는 `importAll`에서만 비웠다. `headerRowIndexBySheet`는 B-231 ⓑ가 세운 것이고,
+        // `mergedCellMaps`는 그때부터 같은 모양이었다.
+        mergedCellMaps.clear()
+        headerRowIndexBySheet.clear()
         // 임시 id 공간도 **색인과 같은 자리에서** 비운다 — 수명이 갈리면 한 색인에 두 id 공간이
         // 붙는다(위 [previewIds] KDoc의 실제 사고). 여기 있으면 그 갈림이 생길 수 없다.
         previewIds = PreviewIdMinter()
@@ -4518,8 +4524,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = existingPresets.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
         // 목록 프리셋 분석과 동형 — 헤더가 어긋난 시트를 억지로 읽어 사실과 다른 미리보기를 내지 않는다
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
         val c = SearchPresetCols(resolveHeaderColumns(headerRow))
         val now = System.currentTimeMillis()
 
@@ -8984,10 +8990,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = imageMetaSpec()
         // 시트 부재는 타 카테고리와 같은 관례로 경고를 남긴다(G3 이전 백업 — 조용한 스킵 금지)
         val sheet = findSheet(workbook, spec, result) ?: return
-        // 첫 행이 없으면 소리 내어 건너뛴다 (B-231) — 아래 헤더 불일치는 경고를 내면서
+        // 헤더 행을 못 찾으면 소리 내어 건너뛴다 (B-231) — 아래 헤더 불일치는 경고를 내면서
         // 헤더 **행 자체**가 없는 파일만 조용히 사라지던 자리다.
+        // **문구가 창을 말한다**(B-231 ⓑ) — 이제 맨 앞 몇 행을 훑으므로 *첫 행*이라 말하면
+        // 사용자가 줄 하나만 지우고 다시 시도한다(`headerRowOrReport`가 같은 이유로 고쳐졌다).
         val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: run {
-            result.warnings.add("'${spec.sheetName}' 시트의 첫 행이 비어 있어 이미지 태그·링크 가져오기를 건너뛰었습니다 — 열 이름('${spec.firstColumnHeader}' …)이 첫 행에 오게 하세요")
+            result.warnings.add("'${spec.sheetName}' 시트에서 열 이름 행을 찾지 못해 이미지 태그·링크 가져오기를 건너뛰었습니다 — 맨 앞 ${SheetResolver.HEADER_SEARCH_ROWS}행 안에 첫 열이 '${spec.firstColumnHeader}'인 행이 있어야 합니다")
             return
         }
         // 3중 방어 ③: 예약명이라도 실제 이미지 형식인지 헤더로 검증 — 레거시 백업의

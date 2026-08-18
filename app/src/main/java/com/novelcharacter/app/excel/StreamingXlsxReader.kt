@@ -121,20 +121,6 @@ class StreamingXlsxReader(file: File) : Closeable {
     private class StopParsing : org.xml.sax.SAXException()
 
     /**
-     * [sheetName]의 **0행만** 읽는다. 시트가 없거나 **0행이 없으면** null.
-     *
-     * **첫 물리 행이 아니라 0행이다(B-218 ①):** 위에 행을 끼워 넣어 헤더가 3행으로 밀린
-     * 파일에서 첫 물리 행을 그대로 돌려주면 **DOM과 스트리밍의 행 번호가 어긋난다** —
-     * 두 경로가 같은 파일에서 다른 행을 0행이라 부르게 된다.
-     *
-     * **헤더 행을 찾는 것은 이제 이 함수가 아니다**(B-231 ⓑ) — 헤더는 0행이 아닐 수 있고,
-     * 그 판정은 [SheetResolver.locateHeader]가 [readLeadingRows] 위에서 한다. 이 함수는
-     * *0행이 무엇인가*만 답한다.
-     */
-    fun readHeaderRow(sheetName: String): Map<Int, ExcelCellValue.Primitives>? =
-        readLeadingRows(sheetName, 1)[0]
-
-    /**
      * [sheetName]의 **앞 [limit]행**만 읽고 파싱을 중단한다.
      *
      * **왜 0행 하나가 아닌가 (B-231 ⓑ):** 헤더 행이 0행이 아닐 수 있게 되면서
@@ -144,6 +130,11 @@ class StreamingXlsxReader(file: File) : Closeable {
      * — 스트리밍을 도입한 이유 자체가 무너지는 자리다.
      *
      * 시트 XML의 행은 오름차순이므로(ECMA-376) [limit]에 닿는 순간 멈추면 된다.
+     *
+     * **행 번호는 파일이 적은 그대로다(B-218 ①)** — 첫 *물리* 행을 0행인 척 돌려주면
+     * **DOM과 스트리밍이 같은 파일에서 다른 행을 0행이라 부른다.** 위에 행을 끼워 넣어
+     * 헤더가 밀린 파일은 이제 [SheetResolver.locateHeader]가 **찾아서** 받아들이지만,
+     * 그 판정도 *행 번호가 두 경로에서 같다*는 위에 선다.
      */
     fun readLeadingRows(sheetName: String, limit: Int): Map<Int, Map<Int, ExcelCellValue.Primitives>> {
         val head = HashMap<Int, Map<Int, ExcelCellValue.Primitives>>()
