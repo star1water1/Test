@@ -18,6 +18,17 @@
 # ② **붙이는 쪽**: 셀에 쓰는 자리(`createCell`·`setTextSafe`)의 `joinToString`.
 #    사람이 읽는 안내 문구의 `joinToString(", ")`은 셀이 아니므로 세지 않는다 —
 #    그래서 '셀에 쓰는가'를 기준으로 좁힌다(문구까지 걸면 검사가 거짓말을 하기 시작한다).
+# ③ **`excel/` 밖에 사는 셀 도우미**: `setTextSafe(X.y(...))`로 셀에 실리는 `X`가 이 폴더 밖
+#    파일이면 그 파일도 ①②로 훑는다 (B-261에서 신설).
+#    **이 축이 없어서 결함 하나가 살아 있었다:** `util/DuelFieldLinks`가 `toText`/`parseText`로
+#    `대결 축` 시트의 세 칸을 잇고 되쪼개는데, 폴더가 `excel/`이 아니라 이 검사가 못 봤고
+#    짝인 `check_multi_value_input.sh`는 **되쪼개는 쪽만** 본다(붙이는 쪽 창이 `setText(`라
+#    함수로 감싼 결합이 안 걸린다). 그래서 **양쪽 검사가 다 초록인 채로** 그 칸이 감싸기를
+#    모르고 있었다 — `내, 키` 키 하나가 왕복 한 번에 둘로 갈렸다.
+#    **명단을 손으로 적지 않는다** — `setTextSafe(X.` 호출에서 기계로 뜬다. 손 명단이면
+#    새 도우미가 조용히 빠지고, 그 사각이 정확히 이 축을 부른 사고의 모양이다.
+#    그 파일의 결합 창은 `setTextSafe` 근처가 아니라 **쉼표를 구분자로 쓰는 `joinToString`
+#    전부**다 — 셀에 실리는 글을 만드는 것이 그 파일의 일이라 이웃 조건이 성립하지 않는다.
 #
 # ── 이 검사가 못 보는 자리 (적어 두지 않으면 다음 사람이 검사가 있다고 믿는다) ──
 # **변수를 거쳐 가는 결합**: `val s = list.joinToString(", ")`을 먼저 만들고 한참 뒤에
@@ -64,6 +75,37 @@ join_hits() {
     }' || true
 }
 
+# ③ `excel/` 밖 셀 도우미의 결합 창 — 쉼표를 구분자로 쓰는 joinToString 전부.
+#    그 파일은 셀에 실릴 글을 만드는 것이 일이라 `setTextSafe` 이웃 조건이 성립하지 않는다.
+#    **창이 넓으므로 끌 손잡이를 함께 둔다** — 도우미 파일에도 사람이 읽는 문구가 있을 수 있고,
+#    끌 수 없는 거짓 양성은 곧 검사를 꺼지게 한다(2026.08.18 콜드 검토가 짝 검사에서 겪은 자리).
+#    표식은 `// 셀 결합 예외(사유)`이고 **그 줄이나 바로 윗줄**에 있어야 한다.
+#    짝 검사(`check_multi_value_input.sh`)의 `// 쉼표 예외(`와 **글자를 다르게 둔 것은 일부러다** —
+#    같은 글자면 한쪽에서 켠 면제가 다른 쪽에서 *낡은 표식* 빨간불이 된다.
+HELPER_MARK='// 셀 결합 예외('
+
+helper_marked() {  # $1 = 파일, $2 = 줄번호
+  local n="$2" prev
+  prev=$(( n - 1 ))
+  if [ "$prev" -ge 1 ]; then
+    sed -n "${prev}p;${n}p" "$1" 2>/dev/null | grep -qF "$HELPER_MARK"
+  else
+    sed -n "${n}p" "$1" 2>/dev/null | grep -qF "$HELPER_MARK"
+  fi
+}
+
+# 주석 줄은 빼되 **줄을 지우지는 않는다** — 표식 판정이 원본 줄번호에 걸려 있다.
+helper_join_hits() {  # $1 = 파일 → "줄번호:본문"
+  grep -nE 'joinToString\([^)]*"[^"]*,[^"]*"' "$1" 2>/dev/null \
+    | awk -F: '{ body=$0; sub(/^[0-9]+:/, "", body);
+                 if (body ~ /^[[:space:]]*(\/\/|\*)/) next; print }' \
+    | while IFS= read -r hit; do
+        n="${hit%%:*}"
+        helper_marked "$1" "$n" && continue
+        printf '%s\n' "$hit"
+      done
+}
+
 # ── 탐지기 자기 시험 — 안 맞는 정규식은 "위반 없음"과 구별되지 않는다 ──
 SELFTEST=$(mktemp)
 cat > "$SELFTEST" <<'EOF'
@@ -77,9 +119,13 @@ row.createCell(col++).setTextSafe(
 )
 row.createCell(5).setTextSafe(joinCsv(members))
 result.warnings.add("행 $i: 열 ${unknown.joinToString(", ")}을 무시했습니다")
+fun toText(links: List<Link>): String = normalize(links).joinToString(", ") { token(it) }
+fun labelOf(x: List<String>): String = x.joinToString(" / ")
+val notice = keys.joinToString(", ")  // 셀 결합 예외(사람이 읽는 문구다)
 EOF
 s=$(split_hits "$SELFTEST" | grep -c . || true)
 j=$(join_hits "$SELFTEST" | grep -c . || true)
+h=$(helper_join_hits "$SELFTEST" | grep -c . || true)
 rm -f "$SELFTEST"
 # 쪼개기 2건(`:` 분리와 splitCsv 호출은 세지 않는다) · 붙이기 2건(joinCsv와 문구는 세지 않는다)
 if [ "$s" -ne 2 ]; then
@@ -87,6 +133,12 @@ if [ "$s" -ne 2 ]; then
 fi
 if [ "$j" -ne 2 ]; then
   echo "  ✗ 탐지기 자기 시험 실패 — 붙이기 복붙 2건 중 ${j}건만 잡았습니다" >&2; exit 1
+fi
+# ③의 창은 넓다(파일 전체) — 그래서 **쉼표가 구분자인 것만** 세고 **표식은 끄는지**를 함께 확인한다.
+# 자기 시험 글의 쉼표 구분자는 넷(문구 하나 · 셀 쓰기 둘 · 도우미 하나)이고,
+# `" / "`는 구분자가 아니라 세지 않으며 표식이 붙은 다섯째 줄도 세지 않는다.
+if [ "$h" -ne 4 ]; then
+  echo "  ✗ 탐지기 자기 시험 실패 — 도우미 결합 4건을 기대했는데 ${h}건입니다(쉼표 아닌 구분자를 셌거나 표식이 안 듣는다)" >&2; exit 1
 fi
 echo "  ✓ 탐지기 자기 시험 통과 (한 줄·끊어 적은 것 둘을 잡고, 쌍 호출·':' 분리·안내 문구는 세지 않는다)"
 
@@ -128,9 +180,56 @@ if [ "$checked" -eq 0 ]; then
   echo "  ✗ 검사 대상 파일을 하나도 찾지 못했습니다 — 경로가 바뀌었으면 EXCEL을 함께 고칠 것"; fail=1
 fi
 
+# ── ③ `excel/` 밖에 사는 셀 도우미 (B-261) ──
+# 명단을 적지 않는다 — `setTextSafe(X.` 호출에서 기계로 뜬다.
+APP="app/src/main/java/com/novelcharacter/app"
+helpers=$(grep -rhoE 'setTextSafe\([A-Z][A-Za-z0-9_]*\.' "$EXCEL" \
+  | sed -E 's/setTextSafe\(([A-Za-z0-9_]+)\./\1/' | sort -u)
+outside=0
+for name in $helpers; do
+  [ -f "$EXCEL/$name.kt" ] && continue          # `excel/` 안이면 위 훑기가 이미 봤다
+  f=$(find "$APP" -name "$name.kt" | head -1)
+  [ -n "$f" ] || continue                        # 파일이 아니라 같은 파일 안의 object일 수 있다
+  outside=$((outside + 1))
+  hs=$(split_hits "$f" | grep -c . || true)
+  hh=$(helper_join_hits "$f" | grep -c . || true)
+  if [ "$hs" -ne 0 ]; then
+    echo "  ✗ $f — 셀 도우미인데 쉼표 분리를 직접 적었습니다 (${hs}건)"
+    echo "      → CsvTokens.split(...)을 쓸 것. 이 파일은 excel/ 밖이라 위 훑기가 보지 못한다."
+    fail=1
+  fi
+  if [ "$hh" -ne 0 ]; then
+    echo "  ✗ $f — 셀 도우미인데 쉼표로 직접 이어 붙였습니다 (${hh}건)"
+    helper_join_hits "$f" | sed 's/^/        /'
+    echo "      → CsvTokens.join(...)을 쓸 것. 감싸지 않고 이어 붙이면 그 칸의 값에 쉼표가"
+    echo "        든 순간 왕복이 깨지고, 짝인 check_multi_value_input.sh는 결합 쪽을 보지 못한다."
+    fail=1
+  fi
+done
+
+# ── ③-b 낡은 표식 — 표식은 면제가 아니라 사유다 ──
+# 고친 뒤 표식만 남으면 다음 사람이 **여기는 봐준 자리**로 읽고 그 아래에 진짜 위반을 얹는다.
+while IFS= read -r hit; do
+  [ -n "$hit" ] || continue
+  f="${hit%%:*}"; rest="${hit#*:}"; n="${rest%%:*}"
+  body=$(sed -n "${n}p;$(( n + 1 ))p" "$f" 2>/dev/null)
+  if ! printf '%s' "$body" | grep -qE 'joinToString\([^)]*"[^"]*,[^"]*"'; then
+    echo "  ✗ [낡은 표식] $f:$n — 표식은 있는데 그 자리에 쉼표 결합이 없다(고친 뒤 남은 것이면 지울 것)"
+    fail=1
+  fi
+done <<EOF
+$(grep -rn --include='*.kt' -F "$HELPER_MARK" "$APP" || true)
+EOF
+
+# 하나도 못 찾았으면 그것은 '밖에 없다'가 아니라 **뜨는 법이 깨진 것**이다.
+if [ "$outside" -eq 0 ]; then
+  echo "  ✗ excel/ 밖 셀 도우미를 하나도 뜨지 못했습니다 — setTextSafe 호출 모양이 바뀌었으면 이 검사를 함께 고칠 것"
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "── 목록 셀 결합·분해 단일 소스 검사 실패 ──" >&2
   exit 1
 fi
-echo "  ✓ ${checked}개 파일이 결합·분해를 모두 단일 소스에 맡긴다"
+echo "  ✓ ${checked}개 파일이 결합·분해를 모두 단일 소스에 맡긴다 (excel/ 밖 셀 도우미 ${outside}개 포함)"
 echo "── 목록 셀 결합·분해 단일 소스 검사 통과 ──"

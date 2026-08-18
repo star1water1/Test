@@ -265,20 +265,44 @@ object DuelFieldLinks {
      * **옛 표식 `-`·`'-`도 그대로 받는다**([LEGACY_LOWER_WINS_PREFIXES]).
      * 표식으로 시작하는 키는 `▲`로 감싸 적는다([HIGHER_WINS_MARKER] — B-188).
      * **순서가 그대로 영향력 순위**라 사람이 적은 차례를 지킨다.
+     *
+     * ## 쉼표가 든 필드 키 (B-261)
+     *
+     * 필드 키는 **사용자가 적는다**(`FieldEditDialog`의 검증은 *비어 있지 않은가* 하나뿐이라
+     * 쉼표를 막지 않는다). 그런데 이 짝은 감싸기를 몰라서, `내, 키` 키 **하나**가 셀에 `내, 키`로
+     * 나가고 되읽으면 **`내`·`키` 둘**이 됐다 — 연결 하나가 뜻 없는 둘로 갈리고 **축의 영향력
+     * 순위까지 어긋났다**(순서가 곧 순위라서). 이제 [CsvTokens]를 지나 감싼다.
+     *
+     * ## 감싸기는 셀 규약 그대로, 전각 정규화만 끈다
+     *
+     * 다른 목록 셀과 같은 CSV 관용을 쓰되([CsvTokens.split]의 `quotedOnlyIfNeeded`는 기본값 false —
+     * 확정 7-6이 *익숙함*을 이유로 고른 그 규약이다) **전각 정규화는 하지 않는다**
+     * (`normalizeFullWidth = false`). 이 칸의 토큰은 값을 *찾는* 이름이 아니라 **글자 그대로가
+     * 곧 정체인 식별자**이기 때문이다: 필드 키는 `FieldEditDialog`도 '필드 정의' 시트도 원문
+     * 그대로 싣는데 이 칸만 고쳐 읽으면 `ｐｏｗｅｒ`가 왕복 한 번에 `power`가 되어
+     * **어느 필드도 가리키지 않는 죽은 연결**이 된다. 근거 전문은 `CsvTokens.split`의 그 인자에 있다.
+     *
+     * ## 줄 단위로 먼저 가른다
+     *
+     * 이 칸은 종전부터 줄바꿈도 구분자로 받았고([toText]는 쉼표로만 쓰지만 사람이 Alt+Enter로
+     * 적을 수 있다), **[CsvTokens]는 줄바꿈을 구분자로 보지 않는다.** 그래서 줄로 먼저 가르고
+     * 그 안에서 CSV 규칙을 적용한다 — 순서는 그대로 보존된다.
      */
     fun parseText(text: String?): List<Link> {
         if (text.isNullOrBlank()) return emptyList()
-        // ⚠️ 이 짝은 감싸기를 **아직 모른다** — 쉼표가 든 필드 키에서 왕복이 깨진다.
-        // 실측: `내, 키` 하나가 되읽으면 `내`·`키` **둘**이 된다. 처분에 판정이 걸려 있어
-        // (넓은 모드로 올리면 `힘"세기`·`ｐｏｗｅｒ`처럼 오늘 멀쩡히 왕복하는 키의 뜻이 바뀐다 — 실측)
-        // 여기서 고치지 않고 등재했다. **그 행이 닫히면 아래 표식도 함께 지운다.**
-        // 쉼표 예외(엑셀 셀이라 인앱 칸의 좁은 모드를 그대로 쓸 수 없다 — 셀은 확정 7-6의 CSV 관용이 규칙이다. 왕복 결함은 B-261)
-        return normalize(text.split(',', '\n').mapNotNull { parseToken(it) })
+        val tokens = text.split('\n').flatMap { CsvTokens.split(it, normalizeFullWidth = false) }
+        return normalize(tokens.mapNotNull { parseToken(it) })
     }
 
-    /** 엑셀 한 칸으로. [parseText]가 그대로 되읽을 수 있는 모양이다(왕복 무결성). */
+    /**
+     * 엑셀 한 칸으로. [parseText]가 그대로 되읽을 수 있는 모양이다(왕복 무결성).
+     *
+     * **감싸는 것은 [token]이 낸 글자 전체다** — 앞머리(`▼`·`▲`)까지 함께 감싸야 되읽는 쪽이
+     * *감싸기를 푼 뒤 앞머리를 뗀다*는 같은 차례를 밟는다. 감쌀 필요가 없는 키(사실상 전부)는
+     * [CsvTokens.quote]가 손대지 않으므로 **이미 내보낸 파일과 글자가 같다**(R-2).
+     */
     fun toText(links: List<Link>): String =
-        normalize(links).joinToString(", ") { token(it) }
+        CsvTokens.join(normalize(links)) { token(it) }
 
     /**
      * 토큰 하나로. **감싸는 것은 감싸야 할 때뿐이다** (B-188).

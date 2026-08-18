@@ -125,6 +125,35 @@ class CsvTokensTest {
         assertEquals(listOf("가,나"), CsvTokens.split(joined))
     }
 
+    /**
+     * **세 모드가 두 축의 조합이다** (B-261) — 종전에는 두 축이 `quotedOnlyIfNeeded` 하나에
+     * 묶여 있어 *따옴표는 셀 관용, 전각은 원문 그대로*라는 조합을 고를 수 없었다.
+     *
+     * 그 조합이 필요한 자리는 **토큰이 식별자인 셀**이다(`대결 축` 시트의 필드 연결) —
+     * 값을 *찾는* 이름과 달리 **글자 그대로가 곧 정체**라, 전각을 고쳐 읽으면 왕복 한 번에
+     * 어느 필드도 가리키지 않는 죽은 연결이 된다.
+     */
+    @Test
+    fun identifierCellMode_keepsCsvQuotingButNotFullWidthNormalization() {
+        // 감싸기는 셀 관용 그대로다 — 감싼 칸이 감쌀 필요가 없었어도 감싼 것으로 읽는다
+        assertEquals(listOf("전체"), CsvTokens.split("\"전체\"", normalizeFullWidth = false))
+        assertEquals(listOf("가, 나"), CsvTokens.split("\"가, 나\"", normalizeFullWidth = false))
+        // 전각은 손대지 않는다 — 구분자로도 읽지 않고 내용도 고치지 않는다
+        assertEquals(listOf("가，나"), CsvTokens.split("가，나", normalizeFullWidth = false))
+        assertEquals(listOf("ｐｏｗｅｒ"), CsvTokens.split("ｐｏｗｅｒ", normalizeFullWidth = false))
+        assertEquals(listOf("가，나"), CsvTokens.split(CsvTokens.join(listOf("가，나")), normalizeFullWidth = false))
+    }
+
+    /** 기본값은 **오늘까지의 두 부름을 글자 하나 안 바꾼다** — 셀은 정규화하고 인앱 값은 안 한다. */
+    @Test
+    fun normalizeFullWidth_defaultsToTheOppositeOfQuotedOnlyIfNeeded() {
+        assertEquals(CsvTokens.split("가，나", normalizeFullWidth = true), CsvTokens.split("가，나"))
+        assertEquals(
+            CsvTokens.split("가，나", quotedOnlyIfNeeded = true, normalizeFullWidth = false),
+            CsvTokens.split("가，나", quotedOnlyIfNeeded = true)
+        )
+    }
+
     @Test
     fun quote_onlyWhenDelimiterPresent() {
         assertEquals("평범", CsvTokens.quote("평범"))
