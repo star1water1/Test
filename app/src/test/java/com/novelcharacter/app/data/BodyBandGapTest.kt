@@ -36,13 +36,18 @@ class BodyBandGapTest {
     private fun measures(b: BodyGenerator.GeneratedBody) =
         BodySilhouetteSpec.Measures(b.height, BodySilhouetteSpec.BASE.shoulder, b.bust, b.waist, b.hip)
 
+    /**
+     * **비어 있으면 실패한다 — 아래 시험들이 `for`로 단언하기 때문이다.**
+     * 굴린 것이 없으면 그 루프는 한 번도 안 돌고 시험은 **조용히 통과한다**(이 저장소가
+     * R-43에서 이름 붙인 그 침묵이다). 나중에 누가 키 축이 빈 한 벌을 넘겨도 여기서 걸린다.
+     */
     private fun rolls(
         gen: GenerationPreset, torso: Int = 1, hip: Int = 1
     ): List<BodyGenerator.GeneratedBody> = buildList {
         for (h in gen.heightOptions.indices) for (seed in 0 until 40) {
             add(BodyGenerator.generate(gen, h, torso, 1, hip, random = Random(seed * 31 + h)))
         }
-    }
+    }.also { assertTrue("굴린 것이 없으면 아래 단언이 통째로 비어 돈다", it.isNotEmpty()) }
 
     /** 키를 한 값으로 못 박은 한 벌 — 흔들림 0은 *"정확히 이 키로"*라는 정당한 설정이다. */
     private fun fixedHeight(cm: Double) =
