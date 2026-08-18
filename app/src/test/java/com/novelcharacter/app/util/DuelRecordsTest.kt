@@ -303,4 +303,87 @@ class DuelRecordsTest {
         )
         assertEquals(1, resolved.participants.size)
     }
+
+    // ── 상성 행의 참가자 해석 (B-263 ⓐ) ──
+    // 이 사다리는 종전에 `importDuelVerdicts` 본문에만 있었다 — 순수로 내린 것은 미리보기가
+    // **같은 행을 같게 읽는다**를 실행으로 증명하기 위해서다(R-33).
+
+    private val twoNamed = mapOf("가" to listOf("C-1"), "나" to listOf("C-2"))
+
+    @Test
+    fun `코드 열이 있으면 이름은 보지 않는다 — 적힌 차례 그대로다`() {
+        // 코드가 정체다. 이름 열이 엉뚱해도(또는 동명이인이어도) 코드가 있으면 그것이 답이다.
+        val r = DuelRecords.resolveMembers(
+            rawCodes = listOf("C-9", "C-3"),
+            names = listOf("아무개", "아무개"),
+            codeByName = emptyMap()
+        )
+        assertEquals(DuelRecords.MemberResolution.Resolved(listOf("C-9", "C-3")), r)
+    }
+
+    @Test
+    fun `코드가 비면 이름으로 되찾되 순서를 지킨다`() {
+        // 순서에 뜻이 있다(천적은 `[센 쪽, 잡는 쪽]`) — 되찾을 때 뒤집히면 판정이 뒤집힌다.
+        val r = DuelRecords.resolveMembers(emptyList(), listOf("나", "가"), twoNamed)
+        assertEquals(DuelRecords.MemberResolution.Resolved(listOf("C-2", "C-1")), r)
+    }
+
+    @Test
+    fun `동명이인은 확정하지 않는다 — 그리고 그것이 모호로 표시된다`() {
+        // 모호는 캐릭터 시트가 만들어 줄 수 있는 것이 아니다 — 가져오기가 영원히 거부하므로
+        // 미리보기도 '신규'가 아니라 '건너뜀'으로 예고해야 한다(B-102 ⓑ의 반대 갈래).
+        val r = DuelRecords.resolveMembers(
+            emptyList(), listOf("가", "겹침"),
+            twoNamed + mapOf("겹침" to listOf("C-7", "C-8"))
+        )
+        assertEquals(DuelRecords.MemberResolution.Unresolved(listOf("겹침"), ambiguous = true), r)
+    }
+
+    @Test
+    fun `아직 없는 이름은 모호가 아니다 — 같은 파일이 만들어 줄 수 있다`() {
+        val r = DuelRecords.resolveMembers(emptyList(), listOf("가", "새이름"), twoNamed)
+        assertEquals(DuelRecords.MemberResolution.Unresolved(listOf("새이름"), ambiguous = false), r)
+    }
+
+    @Test
+    fun `확정 못 한 이름은 적힌 차례로 전부 든다 — 고지 문구가 그 순서다`() {
+        val r = DuelRecords.resolveMembers(emptyList(), listOf("새둘", "가", "새하나"), twoNamed)
+        assertEquals(
+            DuelRecords.MemberResolution.Unresolved(listOf("새둘", "새하나"), ambiguous = false),
+            r
+        )
+    }
+
+    @Test
+    fun `모호와 미등록이 섞이면 모호다 — 거부가 더 무거운 처분이다`() {
+        // 하나라도 동명이인이면 그 행은 코드를 적기 전까지 영영 들어오지 못한다.
+        val r = DuelRecords.resolveMembers(
+            emptyList(), listOf("새이름", "겹침"),
+            twoNamed + mapOf("겹침" to listOf("C-7", "C-8"))
+        )
+        assertEquals(
+            DuelRecords.MemberResolution.Unresolved(listOf("새이름", "겹침"), ambiguous = true),
+            r
+        )
+    }
+
+    @Test
+    fun `양쪽 열이 다 비면 빈 목록이고 모양 판정이 그것을 거른다`() {
+        val r = DuelRecords.resolveMembers(emptyList(), emptyList(), twoNamed)
+        assertEquals(DuelRecords.MemberResolution.Resolved(emptyList()), r)
+        // 인원이 둘 미만이면 판정할 관계가 없다 — 부르는 쪽이 이 null로 거른다.
+        assertNull(DuelRecords.shapeOf((r as DuelRecords.MemberResolution.Resolved).members))
+    }
+
+    @Test
+    fun `해석된 이름은 그대로 모양 판정에 든다 — 사다리 끝까지 한 벌이다`() {
+        val r = DuelRecords.resolveMembers(emptyList(), listOf("가", "나"), twoNamed)
+        val members = (r as DuelRecords.MemberResolution.Resolved).members
+        assertEquals(DuelCounterVerdict.SHAPE_DIRECT, DuelRecords.shapeOf(members))
+        // 정규 키는 순서를 지운다 — 같은 관계가 반전으로 두 번 등재되지 않는다.
+        assertEquals(
+            DuelRecords.memberKey(members),
+            DuelRecords.memberKey(listOf("C-2", "C-1"))
+        )
+    }
 }

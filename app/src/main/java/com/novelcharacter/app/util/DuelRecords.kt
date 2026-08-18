@@ -241,4 +241,55 @@ object DuelRecords {
         0, 1 -> null
         else -> DuelCounterVerdict.SHAPE_CYCLE
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 상성 행의 참가자 해석 — 가져오기와 미리보기가 **같은 사다리**를 쓴다 (R-33 · B-263 ⓐ)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 한 상성 행이 가리키는 참가자들.
+     *
+     * **여기가 순수인 것이 요점이다.** 종전에는 이 사다리가 `importDuelVerdicts` 본문에만
+     * 있었고, 그래서 미리보기가 같은 행을 **다르게 읽을 길**밖에 없었다(R-33이 없애려는
+     * *손으로 짠 두 벌*). 사다리를 여기로 내리면 왕복이 실행으로 증명된다.
+     */
+    sealed class MemberResolution {
+        /** 코드 열이 있었거나, 이름이 전부 **하나로** 확정됐다. 순서는 적힌 차례 그대로다. */
+        data class Resolved(val members: List<String>) : MemberResolution()
+
+        /**
+         * 이름으로 확정할 수 없는 참가자가 있다 — 그 행은 **거부한다**.
+         * 인원이 줄어든 상성은 사용자가 적은 것과 *다른 판정*이라 조용히 뺄 수 없다.
+         *
+         * @param names 확정하지 못한 이름들(적힌 차례 — 고지 문구가 이 순서로 든다)
+         * @param ambiguous 그중 **동명이인**이 있는가. 없으면 전부 *아직 없는 이름*이라
+         *   같은 파일의 캐릭터 시트가 만들어 줄 수 있다(미리보기의 '신규' 판정이 이 갈래에 선다.
+         *   `analyzeDuelMatches`의 `nameAmbiguous`와 같은 규약 — B-102 ⓑ).
+         */
+        data class Unresolved(val names: List<String>, val ambiguous: Boolean) : MemberResolution()
+    }
+
+    /**
+     * 참가자 열 둘을 코드 목록으로 옮긴다.
+     *
+     * **코드 열이 먼저다** — 코드는 유일하지만 이름은 겹칠 수 있다(`resolveDuelWinner`와 같은
+     * 규약). 코드 열이 비었을 때만 이름을 보고, 그때도 **하나로 확정되는 이름만** 옮긴다.
+     *
+     * @param codeByName 이름 → 그 이름을 든 캐릭터 코드들(동명이인이면 둘 이상)
+     */
+    fun resolveMembers(
+        rawCodes: List<String>,
+        names: List<String>,
+        codeByName: Map<String, List<String>>
+    ): MemberResolution {
+        if (rawCodes.isNotEmpty()) return MemberResolution.Resolved(rawCodes)
+        val unresolved = names.filter { name -> codeByName[name].orEmpty().size != 1 }
+        if (unresolved.isNotEmpty()) {
+            return MemberResolution.Unresolved(
+                names = unresolved,
+                ambiguous = unresolved.any { name -> codeByName[name].orEmpty().size > 1 }
+            )
+        }
+        return MemberResolution.Resolved(names.map { name -> codeByName.getValue(name).single() })
+    }
 }
