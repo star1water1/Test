@@ -348,7 +348,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         if (state.cupMode) binding.switchCupMode.isChecked = true
 
         if (state.generatorOpen) toggleGeneratorPanel()
-        if (state.sideFacing) binding.btnToggleSide.performClick()
+        if (state.sideFacing) setFacing(side = true)
         if (state.overlayOn && binding.btnToggleOverlay.visibility == View.VISIBLE) {
             // 재료(작품 캐릭터)가 아직 없으면 토글 자체가 없다 — 그때는 [setupRelative]가
             // 다시 불릴 때 [overlayOn]을 보고 세운다.
@@ -441,13 +441,26 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         setupOverlayToggle()
 
         binding.btnToggleSide.setOnClickListener {
-            val toSide = binding.silhouette.facing == SilhouetteView.Facing.FRONT
-            binding.silhouette.facing =
-                if (toSide) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
-            // 측면은 표시 전용이다(P10) — 핸들이 없으므로 라벨만 남는다.
-            binding.silhouette.interactive = !toSide
-            binding.btnToggleSide.setText(if (toSide) R.string.silhouette_view_front else R.string.silhouette_view_side)
+            setFacing(side = binding.silhouette.facing == SilhouetteView.Facing.FRONT)
         }
+    }
+
+    /**
+     * 앞/옆을 정한다 — **단추와 복원이 같은 통로를 지난다.**
+     *
+     * 복원이 `performClick()`으로 단추를 흉내 내지 않는 이유가 둘이다: ⓐ 그것은 *누른 척*이라
+     * 클릭음·햅틱이 회전할 때마다 울린다 ⓑ **현재 상태를 뒤집는** 동작이라, 나중에 시작
+     * 방향이 바뀌면 복원이 조용히 반대로 선다(되살리려던 것을 되살리지 않는데 아무도 말하지 않는다).
+     * 여기는 *뒤집기*가 아니라 *정하기*라 몇 번을 불러도 같은 곳에 선다.
+     */
+    private fun setFacing(side: Boolean) {
+        binding.silhouette.facing =
+            if (side) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
+        // 측면은 표시 전용이다(P10) — 핸들이 없으므로 라벨만 남는다.
+        binding.silhouette.interactive = !side
+        binding.btnToggleSide.setText(
+            if (side) R.string.silhouette_view_front else R.string.silhouette_view_side
+        )
     }
 
     /** 작품 평균 오버레이 토글 — 재료(작품 캐릭터 수치)가 있을 때만 존재한다(P3 · 기본 끔). */
