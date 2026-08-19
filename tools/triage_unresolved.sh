@@ -76,23 +76,34 @@ DECLS=$(comm -23 <(echo "$ALL_DECLS") <(echo "$EXTERNAL"))
 # **교훈은 이 저장소가 최근 두 번 적은 것과 같다: 글자 꼴로 찾는 그물은 꼴이 바뀌는 날
 # 조용히 죽는다.** 그래서 여기서는 **꼴을 늘리고**, 늘린 것이 실제로 잡는지를
 # 아래 자기 시험이 확인한다.
-SYMS=$( { grep -oE "unresolved reference '[A-Za-z0-9_]+'" "$IN" 2>/dev/null \
-            | sed -E "s/unresolved reference '(.*)'/\1/"
-          grep -oE "Symbol not found for [A-Za-z0-9_]+" "$IN" 2>/dev/null \
-            | sed -E "s/Symbol not found for //"
-        } | sort -u)
+#
+# **꼴을 뜨는 자리는 이 함수 하나다 — 자기 시험도 *이 함수를* 부른다.**
+# 정규식을 시험 쪽에 베껴 두면 **진짜 쪽만 고쳤을 때 시험이 통과하면서 그물은 죽는다**
+# (검사가 자기 죽음을 초록으로 보고하는 그 모양이다. 첫 판이 실제로 그렇게 짜여 있었고
+# 같은 판의 콜드 검토가 되돌렸다).
+extract_syms() {
+  { grep -oE "unresolved reference '[A-Za-z0-9_]+'" "$1" 2>/dev/null \
+      | sed -E "s/unresolved reference '(.*)'/\1/"
+    grep -oE "Symbol not found for [A-Za-z0-9_]+" "$1" 2>/dev/null \
+      | sed -E "s/Symbol not found for //"
+  } | sort -u
+}
 
 # **자기 시험 — 그물이 두 꼴을 다 뜨는가.** 하나라도 못 뜨면 이 선별기는 *자기가 죽은 것*을
 # 초록으로 보고한다(B-263 ⓐ가 겪은 그 모양). 값을 세지 않고 **뜨는가만** 본다.
-_probe="dummy: error: unresolved reference 'ZzTriageProbeA'.
-dummy: error: fun f(): <ERROR TYPE REF: Symbol not found for ZzTriageProbeB>"
+_probe_file=$(mktemp) || { echo "임시 파일을 만들 수 없다" >&2; exit 1; }
+trap 'rm -f "$_probe_file"' EXIT
+cat > "$_probe_file" <<'PROBE'
+dummy: error: unresolved reference 'ZzTriageProbeA'.
+dummy: error: fun f(): <ERROR TYPE REF: Symbol not found for ZzTriageProbeB>
+PROBE
+_got=$(extract_syms "$_probe_file")
 for _want in ZzTriageProbeA ZzTriageProbeB; do
-  echo "$_probe" \
-    | { grep -oE "unresolved reference '[A-Za-z0-9_]+'" | sed -E "s/unresolved reference '(.*)'/\1/"
-        echo "$_probe" | grep -oE "Symbol not found for [A-Za-z0-9_]+" | sed -E "s/Symbol not found for //"; } \
-    | grep -qx "$_want" || {
-      echo "⚠️  선별기의 그물이 '$_want' 꼴을 못 뜬다 — 이 산출을 믿지 말 것." >&2; exit 1; }
+  echo "$_got" | grep -qx "$_want" || {
+    echo "⚠️  선별기의 그물이 '$_want' 꼴을 못 뜬다 — 이 산출을 믿지 말 것." >&2; exit 1; }
 done
+
+SYMS=$(extract_syms "$IN")
 
 echo "── 차분 컴파일 미해석 심벌 선별 ──"
 
