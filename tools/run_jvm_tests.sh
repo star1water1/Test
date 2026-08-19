@@ -288,6 +288,7 @@ $MAIN/ui/assistant/AssistantInsight.kt
 $MAIN/ui/assistant/AssistantSort.kt
 $MAIN/util/DetailListSort.kt
 $MAIN/ui/supplement/RandomPickEngine.kt
+$MAIN/ui/character/InitialHydrationGuard.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/util/NameBankMatch.kt
 $MAIN/util/NameBankPickOrder.kt
@@ -495,6 +496,7 @@ $TEST/util/CharacterFolderResolverTest.kt
 $TEST/util/FolderRoundtripLedgerTest.kt
 $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
+$TEST/ui/character/InitialHydrationGuardTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
 $TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
