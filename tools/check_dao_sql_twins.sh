@@ -45,6 +45,10 @@
 #      들어오는 것을 막는다.
 #   ③ **낡은 표식** — 붙을 자리가 없는 표식·면제. 표식은 면제가 아니라 **사유**이므로,
 #      가리키는 것이 사라지면 그 자체가 결함이다(R-53·R-63이 세운 규약과 같다).
+#   ④ **범위 밖의 살아 있는 SQL** — 앞의 셋은 전부 `data/dao/`·`data/maintenance/` 안만 본다.
+#      SQL이 다른 자리로 **옮겨 가거나 새로 생기면** 그 셋은 볼 것이 없어 **하나도 울리지 않는다.**
+#      그래서 앱 전체를 훑어 대상도 예외도 아닌 자리를 빨간불로 낸다 —
+#      **검사가 죽은 것과 위반이 없는 것이 겉이 같아지는 것**을 막는 축이다.
 #
 # ## 범위와 사각지대 — 산출이 스스로 말한다
 #
@@ -76,21 +80,37 @@ CONSTS = {}                                    # "Type.NAME" -> 값
 BY_VALUE = {}                                  # 값 -> ["Type.NAME", …]
 TOP = re.compile(r'^(?:abstract |open |sealed |data |enum |value |)(?:class|object|interface) (\w+)')
 CONST = re.compile(r'const val ([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"')
+# **enum 항목의 코드도 상수다** (2026.08.19 콜드 검토). `const val`만 보면 `NarrativeMode.AUTO("auto")`
+# 꼴로 사는 도메인 값이 통째로 안 보이고, 그러면 그 값만 든 SQL 리터럴이 **축 ②를 조용히 통과한다.**
+# 실측으로 넓혔다 — 현행 트리에서 enum 코드 **54종** 중 DAO 리터럴과 겹치는 것은 둘이고
+# (`''`는 빈 값이라 원래 뺀다, `'auto'`는 이미 표식이 붙어 있다) **위반은 0 그대로**다.
+ENUM = re.compile(r'^\s+([A-Z][A-Z0-9_]*)\("((?:[^"\\]|\\.)*)"')
 for root, _dirs, files in os.walk(SRC):
     for fn in sorted(files):
         if not fn.endswith('.kt'): continue
         owner = fn[:-3]
-        for line in io.open(os.path.join(root, fn), encoding='utf-8'):
+        text = io.open(os.path.join(root, fn), encoding='utf-8').read()
+        has_enum = 'enum class' in text
+        for line in text.split('\n'):
             t = TOP.match(line)
             if t: owner = t.group(1)
             c = CONST.search(line)
+            e = ENUM.match(line) if has_enum else None
             if c:
                 key = owner + '.' + c.group(1)
                 CONSTS.setdefault(key, c.group(2))
                 BY_VALUE.setdefault(c.group(2), []).append(key)
+            if e:
+                key = owner + '.' + e.group(1)
+                CONSTS.setdefault(key, e.group(2))
+                BY_VALUE.setdefault(e.group(2), []).append(key)
 
 # ── 살아 있는 SQL 구간: `@Query(` · `execSQL(` · `.query(` 의 균형 괄호 안.
-OPEN = re.compile(r'@Query\s*\(|execSQL\s*\(|\.query\s*\(')
+# **`.query(`는 *첫 인자가 문자열일 때만* SQL이다** (2026.08.19 콜드 검토가 실측으로 잡았다).
+# 그냥 `\.query\s*\(`로 두면 `contentResolver.query(uri, projection, …)`가 함께 걸린다 —
+# 그것은 SAF 질의이지 SQL이 아니고, 실제로 `util/OrganizeFolderService.kt` 두 자리가 그 꼴이라
+# 축 ④가 **거짓 양성**을 냈다. 앞을 내다보는 괄호로 좁혀 구간의 시작은 `(` 바로 뒤에 둔다.
+OPEN = re.compile(r'@Query\s*\(|execSQL\s*\(|\.query\s*\((?=\s*")')
 LITERAL = re.compile(r"'([^']*)'")
 MARK = re.compile(r'SQL 쌍둥이: *([A-Za-z0-9_]+\.[A-Za-z0-9_]+)')
 # 면제는 **값을 지목한다** — 덩어리 통째로 풀면 같은 덩어리에 진짜 쌍둥이가 하나 더 있을 때
@@ -185,6 +205,26 @@ for rel, ln, val in exempts:
     elif val == '' or val not in BY_VALUE:
         out.append(f"C|{rel}:{ln}|'{val}' 은 어떤 상수와도 겹치지 않는다 — 면제할 것이 없다")
 
+# ── ④ 범위 밖의 살아 있는 SQL ─────────────────────────────────────────────
+# **이 검사가 *자기 사각지대를 못 보게 되는 것*을 막는다** (2026.08.19 콜드 검토).
+# 위 셋은 전부 `data/dao/`·`data/maintenance/` 안만 본다. SQL이 **다른 자리로 옮겨 가거나
+# 새로 생기면** 축 ①②③은 볼 것이 없어 **하나도 울리지 않는다** — 검사가 죽은 것과
+# 위반이 없는 것이 겉이 같아지는 그 배치다(`check_restore_preview_parity.sh` 축 ⑧이 같은 이유로 섰다).
+# 그래서 **앱 전체에서 살아 있는 SQL을 든 파일을 세고**, 대상도 예외도 아닌 자리가 나오면 빨간불이다.
+# 예외는 하나뿐이다 — 마이그레이션(`data/database/AppDatabase.kt`). 얼어붙은 기록이라 일부러 뺀다.
+FROZEN = 'data/database/AppDatabase.kt'
+scanned = {p[len(SRC) + 1:] for p in targets}
+elsewhere = []
+for root, _dirs, files in os.walk(SRC):
+    for fn in sorted(files):
+        if not fn.endswith('.kt'): continue
+        rel = os.path.join(root, fn)[len(SRC) + 1:]
+        if rel in scanned or rel == FROZEN: continue
+        if OPEN.search(io.open(os.path.join(root, fn), encoding='utf-8').read()):
+            elsewhere.append(rel)
+for rel in elsewhere:
+    out.append(f'D|{rel}|이 검사가 안 보는 자리에 살아 있는 SQL이 있다 — 대상에 넣거나 사유와 함께 빼라')
+
 twins = sum(1 for _r, _l, v in rows if v and v in BY_VALUE)
 for b in broken:
     out.append(f'X|{b}|SQL 구간을 읽지 못했다 — 이 산출을 믿지 말 것')
@@ -208,7 +248,7 @@ report() {                                     # $1=스캔 산출  → 위반이
   fi
 
   local sec
-  for sec in A:"① 상수와 SQL이 갈렸다" B:"② 표식 없는 쌍둥이" C:"③ 낡은 표식" X:"⚠️ 스캐너 고장"; do
+  for sec in A:"① 상수와 SQL이 갈렸다" B:"② 표식 없는 쌍둥이" C:"③ 낡은 표식" D:"④ 범위 밖의 살아 있는 SQL" X:"⚠️ 스캐너 고장"; do
     local tag=${sec%%:*} title=${sec#*:}
     local hits; hits=$(echo "$out" | grep "^$tag|" || true)
     if [ -n "$hits" ]; then
@@ -227,13 +267,18 @@ report() {                                     # $1=스캔 산출  → 위반이
 # 그물은 죽는 배치였다). 여기서는 **이 스크립트 자신을** 가짜 트리에 대고 돌린다.
 if [ "${1:-}" != "--no-self-test" ]; then
   T=$(mktemp -d)
-  mk() {  # $1=트리, $2=상수값, $3=SQL 리터럴, $4=표식 줄(없으면 빈 문자열)
+  mk() {  # $1=트리, $2=상수값, $3=SQL 리터럴, $4=표식 줄(없으면 빈 문자열), $5=범위 밖 SQL 파일(선택)
     local d="$1/app/src/main/java/com/novelcharacter/app"
-    mkdir -p "$d/data/dao" "$d/data/model"
+    mkdir -p "$d/data/dao" "$d/data/model" "$d/util"
     printf 'object Flag {\n    const val KEY = "%s"\n}\n' "$2" > "$d/data/model/Flag.kt"
     { [ -n "$4" ] && echo "    $4"
       printf '    @Query("SELECT 1 WHERE k != %s")\n    suspend fun q(): Int\n' "'$3'"
     } > "$d/data/dao/T.kt"
+    # 범위 밖 자리에 **SAF 질의**를 늘 하나 둔다 — 축 ④가 `contentResolver.query(uri, …)`를
+    # SQL로 오인하면 *모든* 시험이 빨간불이 되어 곧바로 드러난다(콜드 검토가 실측한 거짓 양성).
+    printf 'fun saf(r: Any) { r.query(uri, projection, null, null, null) }\n' > "$d/util/Saf.kt"
+    [ -n "${5:-}" ] && printf 'fun raw(db: Any) { db.execSQL("DELETE FROM x WHERE k = %s") }\n' "'$2'" > "$d/util/Raw.kt"
+    return 0
   }
   st_fail=0
   probe() {  # $1=이름, $2=트리, $3=기대 종료코드
@@ -249,12 +294,13 @@ if [ "${1:-}" != "--no-self-test" ]; then
   mk "$T/stale"   flag zzz  "// SQL 쌍둥이 없음: 'flag' 사유" ; probe "낡은 면제 표식을 잡아야 한다"    "$T/stale"   1
   mk "$T/exempt"  flag flag "// SQL 쌍둥이 없음: 'flag' 우연히 겹칠 뿐이다"; probe "값을 지목한 면제는 통과해야 한다" "$T/exempt" 0
   mk "$T/vague"   flag flag "// SQL 쌍둥이 없음: 사유만 적었다"; probe "값을 안 지목한 면제는 면제가 아니다" "$T/vague"  1
+  mk "$T/outside" flag flag "// SQL 쌍둥이: Flag.KEY" raw    ; probe "범위 밖의 살아 있는 SQL을 잡아야 한다" "$T/outside" 1
   rm -rf "$T"
   if [ "$st_fail" -ne 0 ]; then
     echo "SQL 쌍둥이 검사: 탐지기가 자기 시험을 통과하지 못했다 — 이 산출을 믿지 말 것"; exit 1
   fi
   echo "── SQL 리터럴 ↔ 코틀린 상수 쌍둥이 검사 (B-266) ──"
-  echo "  ✓ 탐지기 자기 시험 통과 (짝 맞음·상수 표류·표식 없음·유령 상수·낡은 면제·정당한 면제·값 없는 면제 일곱)"
+  echo "  ✓ 탐지기 자기 시험 통과 (짝 맞음·상수 표류·표식 없음·유령 상수·낡은 면제·정당한 면제·값 없는 면제·범위 밖 SQL 여덟 — 모든 시험이 SAF 질의를 하나씩 이고 돈다)"
 fi
 
 OUT=$(scan "$REPO") || { echo "  ✗ 스캐너가 죽었다"; exit 1; }
