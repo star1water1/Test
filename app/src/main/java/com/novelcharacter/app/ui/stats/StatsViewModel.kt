@@ -9,6 +9,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.util.FieldValueMatchSpec
+import com.novelcharacter.app.util.StatsSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
