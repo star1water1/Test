@@ -159,4 +159,12 @@ interface CharacterStateChangeDao {
 
     @Query("DELETE FROM character_state_changes WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /**
+     * 여러 캐릭터의 상태변화 일괄 조회 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수).
+     * 정렬은 호출부가 [com.novelcharacter.app.share.WorldPackageScope]의 계약으로 세운다 —
+     * 청크를 이어 붙이면 질의의 `ORDER BY`가 조각 경계에서 어긋나기 때문이다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds)")
+    suspend fun getChangesByCharacterIds(characterIds: List<Long>): List<CharacterStateChange>
 }

@@ -103,4 +103,8 @@ interface FactionMembershipDao {
 
     @Query("DELETE FROM faction_memberships WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** 여러 세력의 소속 이력 일괄 조회 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수). */
+    @Query("SELECT * FROM faction_memberships WHERE factionId IN (:factionIds)")
+    suspend fun getMembershipsByFactionIds(factionIds: List<Long>): List<FactionMembership>
 }

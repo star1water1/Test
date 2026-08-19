@@ -244,6 +244,21 @@ interface TimelineDao {
 
     @Query("SELECT id FROM timeline_events")
     suspend fun getAllEventIds(): List<Long>
+
+    /**
+     * 여러 사건의 캐릭터 크로스레프 일괄 조회 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수).
+     * 종전에는 전량을 올린 뒤 `events.any { it.id == cr.eventId }`로 걸러 **곱**이었다.
+     */
+    @Query("SELECT * FROM timeline_character_cross_ref WHERE eventId IN (:eventIds)")
+    suspend fun getCrossRefsByEventIds(eventIds: List<Long>): List<TimelineCharacterCrossRef>
+
+    /** 여러 작품의 사건 크로스레프 — 내보내기가 '작품에 걸린 사건'을 찾는 통로(R-54 통로 필수). */
+    @Query("SELECT * FROM timeline_event_novel_cross_ref WHERE novelId IN (:novelIds)")
+    suspend fun getEventNovelCrossRefsByNovelIds(novelIds: List<Long>): List<TimelineEventNovelCrossRef>
+
+    /** 여러 사건의 작품 크로스레프 — 짝은 [getEventNovelCrossRefsByNovelIds](R-54 통로 필수). */
+    @Query("SELECT * FROM timeline_event_novel_cross_ref WHERE eventId IN (:eventIds)")
+    suspend fun getEventNovelCrossRefsByEventIds(eventIds: List<Long>): List<TimelineEventNovelCrossRef>
 }
 
 data class YearCount(

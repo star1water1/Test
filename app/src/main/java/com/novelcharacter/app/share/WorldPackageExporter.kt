@@ -112,44 +112,77 @@ class WorldPackageExporter(private val context: Context) {
             allNovels.filter { it.id in config.novelIds }
         } else allNovels
 
-        val novelIds = novels.map { it.id }.toSet()
-        val allCharacters = app.characterRepository.getAllCharactersList()
-        val characters = allCharacters.filter { it.novelId in novelIds }
-        val characterIds = characters.map { it.id }.toSet()
+        val novelIds = novels.map { it.id }
+
+        // ── 범위 질의 (R-54 통로) ────────────────────────────────────────────────
+        // 종전에는 아래 열넷이 전부 `getAll…List()`로 **테이블을 통째로 올린 뒤 메모리에서
+        // 걸렀다.** 세계관 하나를 내보내면서 나머지 세계관의 행을 전부 읽는 모양이라, 비용이
+        // *내보내는 것*이 아니라 **저장소 전체**에 붙어 있었다(목표 규모의 세계관은 270개다 —
+        // 필드값 36,510행을 읽어 그 일부만 쓴다). 같은 함수에서 `fieldValueEntries` 한 자리만
+        // 이미 [SqlInChunks]를 지나고 있었으니, **파일이 세운 규약을 나머지가 못 따라간 것**이다.
+        //
+        // 걸러 내던 외래키는 **전부 인덱스가 있어**(각 엔티티의 `indices`) 이 질의들은 색인
+        // 조회다. 셋(`relChanges`·`crossRefs`·`eventNovelCrossRefs`)은 종전에 `.any { … }`로
+        // 반대쪽 전체를 훑는 **곱**이었고, 관계·사건은 상한이 없는 축이라 그 곱에도 상한이 없었다.
+        //
+        // **순서는 [WorldPackageScope]의 정렬 계약이 세운다** — 질의에 맡기지 않는 이유는
+        // [SqlInChunks]가 나눈 조각을 이어 붙이면 `ORDER BY`가 조각 경계에서 어긋나기 때문이다.
+        // 계약은 마지막 키로 기본키를 두어 **전순서**이므로, 같은 세계관을 두 번 내보내면
+        // 같은 파일이 나온다(종전에는 `ORDER BY`가 없던 다섯 절이 그 보장을 못 했다).
+        val characters = SqlInChunks.flat(novelIds) { db.characterDao().getCharactersByNovelIds(it) }
+            .sortedWith(WorldPackageScope.CHARACTERS)
+        val characterIds = characters.map { it.id }
 
         // v3: 사건 필드 정의까지 전 entityType을 싣는다 — 캐릭터 필드만 실으면
         // 사건 필드·값·라이브러리가 통째로 유실된다(세계관 삭제 스냅샷과 같은 규칙)
         val fieldDefinitions = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(config.universeId)
         val fieldDefinitionIds = fieldDefinitions.map { it.id }
-        val fieldValues = db.characterFieldValueDao().getAllValuesList()
-            .filter { it.characterId in characterIds }
-        val stateChanges = db.characterStateChangeDao().getAllChangesList()
-            .filter { it.characterId in characterIds }
-        val tags = db.characterTagDao().getAllTagsList()
-            .filter { it.characterId in characterIds }
-        val relationships = app.characterRepository.getAllRelationships()
-            .filter { it.characterId1 in characterIds || it.characterId2 in characterIds }
-        val relChanges = app.characterRepository.getAllRelationshipChanges()
-            .filter { rc -> relationships.any { it.id == rc.relationshipId } }
-        // 사건: 크로스레프 기반 필터링 (다대다)
-        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
-        val eventIdsWithNovels = allEventNovelCrossRefs
-            .filter { it.novelId in novelIds }
-            .map { it.eventId }
-            .toSet()
-        val events = app.timelineRepository.getAllEventsList()
-            .filter { it.id in eventIdsWithNovels || it.universeId == config.universeId }
-        val crossRefs = db.timelineDao().getAllCrossRefs()
-            .filter { cr -> events.any { it.id == cr.eventId } }
-        val eventNovelCrossRefs = allEventNovelCrossRefs
-            .filter { cr -> events.any { it.id == cr.eventId } }
-        val eventIds = events.map { it.id }.toSet()
+        val fieldValues = SqlInChunks.flat(characterIds) {
+            db.characterFieldValueDao().getValuesForCharacters(it)
+        }.sortedWith(WorldPackageScope.CHARACTER_FIELD_VALUES)
+        val stateChanges = SqlInChunks.flat(characterIds) {
+            db.characterStateChangeDao().getChangesByCharacterIds(it)
+        }.sortedWith(WorldPackageScope.STATE_CHANGES)
+        val tags = SqlInChunks.flat(characterIds) {
+            db.characterTagDao().getTagsForCharacters(it)
+        }.sortedWith(WorldPackageScope.TAGS)
+        // 관계는 끝마다 따로 묻는다 — 한 질의에 두 목록을 실으면 바인드 변수가 갑절이 된다
+        // (사유는 [WorldPackageScope.relationshipsInScope]). 겹은 그 함수가 없앤다.
+        val relationships = WorldPackageScope.relationshipsInScope(
+            SqlInChunks.flat(characterIds) { db.characterRelationshipDao().getRelationshipsByEnd1(it) },
+            SqlInChunks.flat(characterIds) { db.characterRelationshipDao().getRelationshipsByEnd2(it) }
+        )
+        val relationshipIds = relationships.map { it.id }
+        val relChanges = SqlInChunks.flat(relationshipIds) {
+            db.characterRelationshipChangeDao().getChangesForRelationships(it)
+        }.sortedWith(WorldPackageScope.RELATIONSHIP_CHANGES)
+
+        // 사건: 크로스레프 기반 필터링 (다대다) — 작품에 걸린 것과 세계관에 속한 것의 합집합
+        val eventIdsWithNovels = SqlInChunks.flat(novelIds) {
+            db.timelineDao().getEventNovelCrossRefsByNovelIds(it)
+        }.map { it.eventId }.distinct()
+        val events = WorldPackageScope.eventsInScope(
+            SqlInChunks.flat(eventIdsWithNovels) { db.timelineDao().getEventsByIds(it) },
+            db.timelineDao().getEventsByUniverseList(config.universeId)
+        )
+        val eventIds = events.map { it.id }
+        val crossRefs = SqlInChunks.flat(eventIds) {
+            db.timelineDao().getCrossRefsByEventIds(it)
+        }.sortedWith(WorldPackageScope.CROSS_REFS)
+        // ⚠️ 작품 크로스레프는 **사건 축으로** 다시 묻는다 — 내보내는 사건이 *이번에 안 싣는
+        // 작품*에도 걸려 있으면 그 줄도 패키지의 것이다(종전 구현이 그랬다). 위 `eventIdsWithNovels`
+        // 질의(작품 축)로 갈음하면 그 줄들이 조용히 빠진다.
+        val eventNovelCrossRefs = SqlInChunks.flat(eventIds) {
+            db.timelineDao().getEventNovelCrossRefsByEventIds(it)
+        }.sortedWith(WorldPackageScope.EVENT_NOVEL_CROSS_REFS)
         // v3: 사건 필드값 — 내보내는 사건의 값만
-        val eventFieldValues = db.eventFieldValueDao().getAllValuesList()
-            .filter { it.eventId in eventIds }
+        val eventFieldValues = SqlInChunks.flat(eventIds) {
+            db.eventFieldValueDao().getValuesByEvents(it)
+        }.sortedWith(WorldPackageScope.EVENT_FIELD_VALUES)
         // v4: 작품 필드값 — 내보내는 작품의 값만(확-3). 정의는 위 전 entityType 조회가 이미 담았다.
-        val novelFieldValues = db.novelFieldValueDao().getAllValuesList()
-            .filter { it.novelId in novelIds }
+        val novelFieldValues = SqlInChunks.flat(novelIds) {
+            db.novelFieldValueDao().getValuesByNovels(it)
+        }.sortedWith(WorldPackageScope.NOVEL_FIELD_VALUES)
         // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함).
         // IN 목록은 저장소 공통 통로([SqlInChunks] · R-54)를 지난다.
         val fieldValueEntries = SqlInChunks.flat(fieldDefinitionIds) {
@@ -160,13 +193,14 @@ class WorldPackageExporter(private val context: Context) {
         val gradeSystems = db.gradeSystemDao().getByUniverseList(config.universeId)
         // v3: 이름 은행은 내보내는 캐릭터가 사용 중인 이름만 — 전체 은행을 실으면 패키지 공유 시
         // 무관한 전역 데이터가 수신자에게 넘어간다(범위 밖 데이터는 패키지의 것이 아니다)
-        val nameBank = db.nameBankDao().getAllNamesList()
-            .filter { it.usedByCharacterId?.let(characterIds::contains) == true }
-        val factions = db.factionDao().getAllFactionsList()
-            .filter { it.universeId == config.universeId }
-        val factionIds = factions.map { it.id }.toSet()
-        val factionMemberships = db.factionMembershipDao().getAllMembershipsList()
-            .filter { it.factionId in factionIds }
+        val nameBank = SqlInChunks.flat(characterIds) {
+            db.nameBankDao().getNamesByUsedCharacterIds(it)
+        }.sortedWith(WorldPackageScope.NAME_BANK)
+        val factions = db.factionDao().getFactionsByUniverseList(config.universeId)
+        val factionIds = factions.map { it.id }
+        val factionMemberships = SqlInChunks.flat(factionIds) {
+            db.factionMembershipDao().getMembershipsByFactionIds(it)
+        }.sortedWith(WorldPackageScope.FACTION_MEMBERSHIPS)
         // 세력 간 관계 (B-6) — 전량을 매퍼에 넘긴다: 양쪽 소속 판정(포함/한쪽 걸침/범위 밖)은
         // 매퍼가 하고, 한쪽 걸침은 개수로 돌려받아 고지한다
         val factionRelResult = WorldPackageFactionRelationships.toPortable(
