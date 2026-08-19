@@ -288,7 +288,7 @@ for f in tools/check_*.sh; do "$f" || echo "FAIL $f"; done
 for p in tools/verify_room_migration*.py tools/verify_reset_coverage.py; do python3 "$p"; done
 ```
 
-**현행 값(2026.08.19):** 시험 **3338** · 프로브 **564** · 커스텀 뷰 프로브 **0** · 검사 **51종**
+**현행 값(2026.08.19):** 시험 **3340** · 프로브 **564** · 커스텀 뷰 프로브 **0** · 검사 **51종**
 
 - ⚠️ **`run_jvm_tests.sh`의 종료 코드는 시험 실패를 말하지 않는다** — 언제나 0이다.
   산출에서 `OK (` / `FAILURES!!!`를 볼 것.
