@@ -94,6 +94,7 @@ interface ImageMetaDao {
      * 사용자 투자(태그·잔존 링크)가 있는 행은 남는다 — 자동 링크가 편집창 제거 정책의
      * "라이브러리 보존" 범위를 조용히 넓히지 않게 한다.
      */
+    // SQL 쌍둥이: ImageMeta.ADOPT_SOURCE_AUTO
     @Query(
         """DELETE FROM image_meta WHERE adoptSource = 'auto' AND linkGroupId IS NULL
            AND NOT EXISTS (SELECT 1 FROM image_tags WHERE image_tags.imageId = image_meta.id)"""
