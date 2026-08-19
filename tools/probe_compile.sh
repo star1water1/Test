@@ -95,6 +95,51 @@ open class Context {
     val applicationContext: Context get() = this
     val packageName: String get() = ""
     fun startActivity(intent: Intent) {}
+    fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+        throw UnsupportedOperationException("프로브 전용")
+    // `getDatabasePath`는 `StorageAnalyzer` 하나가 문다 — 없는 동안 그 파일의 오류 아홉이
+    // **전부 이 한 줄의 그림자**였다(수신 타입이 미해석이라 `.isFile`·`.length()`·`.name`이
+    // 줄줄이 미해석이 되고 그 위의 람다가 타입 추론에 실패했다). 착수 대조에서 걸렸고
+    // 「등재 문턱」(CLAUDE.md v2.2)대로 등재하지 않고 이 자리에서 처리했다.
+    fun getDatabasePath(name: String): java.io.File = java.io.File(name)
+    companion object {
+        // 진짜는 `Context`의 static 필드다 — 코틀린은 `Context.MODE_PRIVATE`로 본다.
+        const val MODE_PRIVATE: Int = 0
+    }
+}
+
+// `SharedPreferences`는 2026.08.19(B-251 ⓐ)에 들어왔다. 설정 저장 경로 일곱 파일이
+// **목록에 있으면서도 실제로는 타입 검사되지 않던 자리**다(B-190이 `ExcelExporter.kt`에서 겪은 것과 같은 부류 —
+// 수신 타입이 미해석이면 그 아래 진짜 오류는 *발행조차 되지 않는다*).
+//
+// **`getAll()`이 아니라 `val all`로 적는다** — 진짜는 자바 인터페이스라 코틀린이 합성 속성을
+// 만들지만(호출부는 `prefs.all`이다) **코틀린으로 선언한 함수에는 그 합성이 안 생긴다.**
+// 속성으로 적으면 `prefs.getAll()` 꼴을 못 받아 진짜보다 **좁지만**, 좁은 쪽은 가짜 오류로
+// 드러나고 넓은 쪽은 거짓 초록을 낸다 — 이 파일 머리의 경고 그대로 좁은 쪽을 고른다.
+// 리스너 등록/해제 둘도 같은 이유로 뺀다(쓰는 자리가 이 범위에 없다 — 생기면 미해석으로 드러난다).
+interface SharedPreferences {
+    val all: Map<String, Any?>
+    fun getString(key: String, defValue: String?): String?
+    fun getStringSet(key: String, defValues: Set<String>?): Set<String>?
+    fun getInt(key: String, defValue: Int): Int
+    fun getLong(key: String, defValue: Long): Long
+    fun getFloat(key: String, defValue: Float): Float
+    fun getBoolean(key: String, defValue: Boolean): Boolean
+    fun contains(key: String): Boolean
+    fun edit(): Editor
+
+    interface Editor {
+        fun putString(key: String, value: String?): Editor
+        fun putStringSet(key: String, values: Set<String>?): Editor
+        fun putInt(key: String, value: Int): Editor
+        fun putLong(key: String, value: Long): Editor
+        fun putFloat(key: String, value: Float): Editor
+        fun putBoolean(key: String, value: Boolean): Editor
+        fun remove(key: String): Editor
+        fun clear(): Editor
+        fun commit(): Boolean
+        fun apply()
+    }
 }
 
 // `type`은 진짜에서 `getType()`/`setType()` 쌍이라 코틀린이 합성 속성으로 본다 — 대입 꼴을
@@ -181,6 +226,106 @@ open class LruCache<K : Any, V : Any>(maxSize: Int) {
 }
 EOF
 
+# ── 1-a. DataStore·AppCompat 스텁 (2026.08.19 · B-251 ⓐ) ──
+#
+# `util/`의 설정 저장 경로 일곱 파일이 여기 걸려 있었다. `SharedPreferences` 다섯은 위 스텁이
+# 열고, `androidx.datastore`를 쓰는 둘(`ImageSettingsStore`·`ThemeHelper`)이 이 블록이다.
+#
+# **이 갈래가 위험한 부류라고 B-251 행이 미리 적어 두었다** — `Flow` + `Preferences.Key` +
+# suspend `edit {}`라 표면이 넓고, **진짜보다 헐거우면 로컬 초록·CI 빨간불**이다.
+# 그래서 두 가지를 지켰다:
+#   ⓐ **모양은 진짜 그대로** — `get`은 `<T>(Key<T>): T?`이고 `set`은 `<T>(Key<T>, T)`다.
+#      `Key<*>`·`Any?`로 뭉개면 `it[KEY_QUALITY] = "문자열"` 같은 진짜 오류가 통과한다.
+#   ⓑ **애매하면 좁게** — `preferencesDataStore`의 선택 인자 셋(corruptionHandler ·
+#      produceMigrations · scope)은 아예 안 적었다. 적으려면 `DataMigration`·
+#      `ReplaceFileCorruptionHandler`까지 세워야 하고, `Any?`로 뭉개면 **진짜가 거부하는 인자를
+#      받는다.** 빼 두면 그 인자를 쓰는 코드가 새로 들어올 때 **미해석으로 드러난다**(가짜 오류 —
+#      이 파일 머리가 말하는 안전한 방향이다).
+#
+# `Preferences.Key`와 `MutablePreferences`를 **abstract로** 둔 것도 같은 결이다. 진짜는
+# `internal constructor`라 앱이 세울 수 없는데, 프로브는 전부 한 모듈로 컴파일하므로
+# `internal`이 그대로 보인다 — 그러면 진짜보다 넓어진다. abstract면 앱 쪽에서 세울 수 없어
+# **같은 금지가 성립한다**(만드는 것은 이 파일 안의 private 구현체뿐이다).
+cat > "$WORK/AndroidxDataStoreCoreStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.datastore.core
+
+interface DataStore<T> {
+    val data: kotlinx.coroutines.flow.Flow<T>
+    suspend fun updateData(transform: suspend (t: T) -> T): T
+}
+EOF
+
+cat > "$WORK/AndroidxDataStorePrefsCoreStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.datastore.preferences.core
+
+import androidx.datastore.core.DataStore
+
+abstract class Preferences {
+    // 진짜는 `internal constructor`를 가진 final 클래스다 — 한 모듈로 컴파일하는 프로브에서는
+    // internal이 그대로 보이므로 abstract로 같은 금지를 만든다(앱은 만들 수 없고 읽기만 한다).
+    abstract class Key<T> internal constructor(val name: String)
+
+    abstract operator fun <T> contains(key: Key<T>): Boolean
+    abstract operator fun <T> get(key: Key<T>): T?
+    abstract fun asMap(): Map<Key<*>, Any>
+}
+
+abstract class MutablePreferences internal constructor() : Preferences() {
+    abstract operator fun <T> set(key: Key<T>, value: T)
+    abstract fun <T> remove(key: Key<T>): T
+    abstract fun clear()
+}
+
+private class ProbeKey<T>(name: String) : Preferences.Key<T>(name)
+
+fun booleanPreferencesKey(name: String): Preferences.Key<Boolean> = ProbeKey(name)
+fun intPreferencesKey(name: String): Preferences.Key<Int> = ProbeKey(name)
+fun longPreferencesKey(name: String): Preferences.Key<Long> = ProbeKey(name)
+fun floatPreferencesKey(name: String): Preferences.Key<Float> = ProbeKey(name)
+fun doublePreferencesKey(name: String): Preferences.Key<Double> = ProbeKey(name)
+fun stringPreferencesKey(name: String): Preferences.Key<String> = ProbeKey(name)
+fun stringSetPreferencesKey(name: String): Preferences.Key<Set<String>> = ProbeKey(name)
+
+// 진짜와 같은 시그니처다 — **suspend 블록을 받는 것**이 요점이고(`androidx.room.withTransaction`을
+// 들일 때와 같은 이유다), 몸통은 부르지 않는다. 블록 안은 그래도 그대로 타입 검사된다.
+suspend fun DataStore<Preferences>.edit(
+    transform: suspend (MutablePreferences) -> Unit
+): Preferences = throw UnsupportedOperationException("프로브 전용")
+EOF
+
+cat > "$WORK/AndroidxDataStorePrefsStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.datastore.preferences
+
+// 선택 인자 셋(corruptionHandler·produceMigrations·scope)은 일부러 뺐다 — 위 블록 머리의 ⓑ.
+fun preferencesDataStore(
+    name: String
+): kotlin.properties.ReadOnlyProperty<
+    android.content.Context,
+    androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>
+> = throw UnsupportedOperationException("프로브 전용")
+EOF
+
+# `AppCompatDelegate`는 `ThemeHelper` 하나가 문다. 진짜는 abstract class + static 멤버라
+# 코틀린에서 `AppCompatDelegate.setDefaultNightMode(…)` 꼴로 닿는데, object로 두면 같은 호출이
+# 그대로 서면서 **상속은 막힌다**(진짜보다 좁다 — 안전한 방향).
+cat > "$WORK/AndroidxAppCompatStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.appcompat.app
+
+object AppCompatDelegate {
+    const val MODE_NIGHT_NO: Int = 1
+    const val MODE_NIGHT_YES: Int = 2
+    const val MODE_NIGHT_FOLLOW_SYSTEM: Int = -1
+    const val MODE_NIGHT_AUTO_BATTERY: Int = 3
+    const val MODE_NIGHT_UNSPECIFIED: Int = -100
+    @JvmStatic fun setDefaultNightMode(mode: Int) {}
+    @JvmStatic fun getDefaultNightMode(): Int = MODE_NIGHT_UNSPECIFIED
+}
+EOF
+
 # AppDatabase는 **실제 파일에서 DAO 접근자만 뽑아** 세운다 — 손으로 적으면 접근자가 늘 때 낡는다.
 # `getDatabase`도 **실제 선언에서 뽑는다**(2026.08.17 · B-190) — 이 한 줄이 없어서
 # `ExcelExporter.db`가 미해석이었고, 그 파일의 절반이 거기서 연쇄로 죽었다.
@@ -249,23 +394,35 @@ EOF
   echo "}"
 } > "$WORK/RProbe.kt"
 
-# `NovelCharacterApp`도 **실제 파일에서 저장소 접근자만 뽑아** 세운다.
-# 이 프로브 범위가 무는 것은 `operationLogRepository` 하나지만(`ExcelExporter`·`ResultNotify`),
-# 목록으로 뜨면 접근자가 늘거나 이름이 바뀔 때 함께 따라간다. **`data/repository`에 실재하는
-# 타입만 남긴다** — `BackupStatusStore`처럼 범위 밖 타입을 실으면 그 자체가 미해석이 되어
-# 이 스텁이 노이즈의 근원이 된다.
+# `NovelCharacterApp`도 **실제 파일에서 접근자만 뽑아** 세운다.
+# 목록으로 뜨면 접근자가 늘거나 이름이 바뀔 때 함께 따라간다. **프로브가 아는 타입만 남긴다** —
+# `BackupStatusStore`처럼 범위 밖 타입을 실으면 그 자체가 미해석이 되어 이 스텁이 노이즈의 근원이 된다.
+#
+# **2026.08.19(B-251)에 두 자리를 넓혔다 — `share/`를 들이려면 `database`가 있어야 했다.**
+#   ⓐ 꼴: 종전 정규식은 `by lazy { Type( }`만 봤는데 `database`는 `by lazy { AppDatabase.getDatabase(this) }`라
+#      **점 하나 때문에 안 걸렸다.** 이제 `Type(` 와 `Type.factory(` 둘 다 뜬다(`[.(]`).
+#   ⓑ 자리: 종전에는 `data/repository/`에 있는 타입만 남겼는데 `AppDatabase`는 `data/database/`에 살고
+#      **이 프로브가 스스로 세우는 스텁**이다(바로 위 `AppDatabaseProbe.kt`). 남길 자격은 *어느 폴더냐*가
+#      아니라 *이 컴파일이 그 타입을 아는가*이므로 그 자리도 함께 본다.
+# **왜 한 줄이 아니라 결함인가:** 없는 동안 `app.database`가 미해석이라 `share/`의 두 파일에서
+# **그 아래 진짜 오류가 발행조차 되지 않았다**(B-190이 `ExcelExporter.kt`에서 겪은 그 부류 —
+# 목록에 넣어 두고도 안 보는 자리다). 실측: 넣기 전 신규 68건이 전부 이 한 줄의 그림자였고,
+# 고치니 **신규 0**이 됐다.
 {
-  echo "// 프로브 전용 — 실제 NovelCharacterApp의 저장소 접근자만 뽑아 세운다."
+  echo "// 프로브 전용 — 실제 NovelCharacterApp의 접근자만 뽑아 세운다."
   echo "package com.novelcharacter.app"
   echo
   echo "import com.novelcharacter.app.data.repository.*"
+  echo "import com.novelcharacter.app.data.database.*"
   echo
   echo "class NovelCharacterApp : android.app.Application() {"
   tr '\n' ' ' < "$REPO/app/src/main/java/com/novelcharacter/app/NovelCharacterApp.kt" \
-    | grep -oE 'val [a-zA-Z]+ by lazy \{ *[A-Za-z]+\(' \
-    | sed -E 's|val ([a-zA-Z]+) by lazy \{ *([A-Za-z]+)\(|\1 \2|' \
+    | grep -oE 'val [a-zA-Z]+ by lazy \{ *[A-Za-z]+[.(]' \
+    | sed -E 's|val ([a-zA-Z]+) by lazy \{ *([A-Za-z]+)[.(]|\1 \2|' \
     | while read -r prop type; do
-        [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/repository/$type.kt" ] || continue
+        [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/repository/$type.kt" ] \
+          || [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/database/$type.kt" ] \
+          || continue
         echo "    val $prop: $type get() = throw UnsupportedOperationException(\"프로브 전용\")"
       done
   echo "}"
@@ -281,6 +438,16 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
   ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
+  # `share/WorldPackage*.kt`는 2026.08.19(B-251)에 들어왔다 — **B-234 판이 재고 이 판에 넘긴 몫이다**
+  # (*"커밋하지 않았다 — 프로브 기준선을 옮기는 것은 판당 하나이고 그 몫은 B-251이다"*).
+  # 그 계층은 **월드패키지 교환 형식**을 다루는데 순수 하네스에도 프로브에도 없어
+  # **컴파일 증명이 CI뿐이었다**(B-89가 `data/repository`를, B-110이 `OrganizeFolderService`를
+  # 같은 사유로 들인 것과 같은 부류다 — 되돌리기 어려운 것을 다루는데 지역 증명이 없는 자리).
+  # **폴더가 아니라 파일로 고른다:** 같은 폴더의 `CharacterCardRenderer.kt`·`PdfExporter.kt`는
+  # `android.graphics`·`android.print`·`android.webkit`에 묶여 있어 갈래 ⓒ(그래픽 트리)이고,
+  # 넣으면 노이즈만 는다. `WorldPackage*.kt` 일곱은 `Context`·`Log`·`withTransaction`뿐이라
+  # **이미 있는 스텁으로 그대로 열린다**(실측으로 확인했다).
+  ls "$M"/share/WorldPackage*.kt
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AndroidUtilStubs.kt"
   echo "$WORK/AndroidOsStubs.kt"
@@ -288,6 +455,10 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/AndroidWidgetStubs.kt"
   echo "$WORK/AndroidAppStubs.kt"
   echo "$WORK/AndroidxCoreStubs.kt"
+  echo "$WORK/AndroidxDataStoreCoreStubs.kt"
+  echo "$WORK/AndroidxDataStorePrefsCoreStubs.kt"
+  echo "$WORK/AndroidxDataStorePrefsStubs.kt"
+  echo "$WORK/AndroidxAppCompatStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
   echo "$WORK/RProbe.kt"
   echo "$WORK/NovelCharacterAppProbe.kt"
