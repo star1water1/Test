@@ -86,14 +86,14 @@ if DROPPED:
         d = r.get('drop') or {}
         step = f"{r['round']}-{r['id']}"
         why = d.get('why')
-        if why == '시험':
+        if why in ('시험', '시험+코드'):
             ts = d.get('test') or []
             if not ts:
-                bad.append(f"{step}: '시험'인데 시험 이름이 없다"); continue
+                bad.append(f"{step}: '{why}'인데 시험 이름이 없다"); continue
             missing = [t for t in ts if t not in names]
             if missing:
                 bad.append(f"{step}: 저장소에 없는 시험 {missing}")
-        elif why == '코드':
+        if why in ('코드', '시험+코드'):
             # **어디를 읽으면 끝나는지까지 적게 한다.** *"코드 보면 안다"*는 말만으로는
             # 다음 사람이 그 자리를 다시 찾아야 하고, 그러느니 기기에서 밟는 편이 싸다.
             where = (d.get('where') or '').strip()
@@ -103,18 +103,19 @@ if DROPPED:
             if not os.path.exists(os.path.join(HERE, '..', '..', f)):
                 bad.append(f"{step}: 읽을 자리의 파일이 없다 ({f})")
             if not (d.get('note') or '').strip():
-                bad.append(f"{step}: '코드'인데 사유가 비었다")
-        else:
-            bad.append(f"{step}: 사유가 '시험'도 '코드'도 아니다 ({why!r})")
+                bad.append(f"{step}: '{why}'인데 사유가 비었다")
+        if why not in ('시험', '코드', '시험+코드'):
+            bad.append(f"{step}: 사유가 '시험'·'코드'·'시험+코드' 어느 것도 아니다 ({why!r})")
     if bad:
         print(f"  ✗ 걷어낸 단계의 사유 {len(bad)}건이 성립하지 않는다:")
         for b in bad[:12]:
             print(f"      · {b}")
         fail = 1
     else:
-        n시험 = sum(1 for r in DROPPED if r['drop']['why'] == '시험')
+        from collections import Counter as _C
+        tally = _C(r['drop']['why'] for r in DROPPED)
         print(f"  ✓ 걷어낸 {len(DROPPED)}단계가 전부 사유를 댄다 "
-              f"(시험 {n시험} — 이름이 소스에 실재함 · 코드 {len(DROPPED) - n시험})")
+              + " · ".join(f"{k} {v}" for k, v in sorted(tally.items())))
 
     # ⑥ 걷어낸 단계도 부록에 **한 줄씩** 살아 있는가 — 표에서 빠지면 조용한 구멍이다
     goneFromAppendix = sorted(

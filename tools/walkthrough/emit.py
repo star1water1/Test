@@ -211,9 +211,12 @@ else:
     w("| 사유 | 뜻 | 되살리는 법 |")
     w("|---|---|---|")
     w("| `시험` | 순수 JVM 시험이 그 판정을 **실행으로** 본다 | 그 시험을 지우면 이 단계가 돌아와야 한다 |")
+    w("| `시험+코드` | **계산은 시험이 실행으로 보고, 화면이 그 계산을 쓰는가는 한 줄이 답한다** | 둘 중 하나가 무너지면 돌아온다 |")
     w("| `코드` | 분기·상수·문구 한 자리라 **읽으면 끝난다**. 시험을 새로 만들지 않는다 | 그 자리가 복잡해지면 돌아온다 |")
     w("")
-    for why, title in (('시험', '시험이 보는 것'), ('코드', '코드를 읽으면 끝나는 것')):
+    for why, title in (('시험', '시험이 보는 것'),
+                       ('시험+코드', '계산은 시험이 · 배선은 한 줄이 답한다'),
+                       ('코드', '코드를 읽으면 끝나는 것')):
         rows = [r for r in DROPPED if r['drop']['why'] == why]
         if not rows:
             continue
@@ -223,10 +226,12 @@ else:
         w("|---|---|---|---|")
         for r in rows:
             ev = r['drop'].get('test') or r['drop'].get('note') or ''
-            if why == '시험':
-                ev = ' · '.join(f"`{t}`" for t in r['drop']['test'])
-            else:
-                ev = f"`{r['drop']['where']}` — {clean(r['drop'].get('note') or '')}"
+            parts = []
+            if r['drop'].get('test'):
+                parts.append(' · '.join(f"`{t}`" for t in r['drop']['test']))
+            if r['drop'].get('where'):
+                parts.append(f"`{r['drop']['where']}` — {clean(r['drop'].get('note') or '')}")
+            ev = ' <br> '.join(parts)
             ref = clean(r['ref']) if r['ref'] and r['ref'] != '—' else '—'
             # **`do`와 `expect`를 함께 낸다** — 기대값만 적으면 "안 보인다" 같은 줄이
             # 홀로 서서 무엇을 두고 한 말인지 알 수 없다.
