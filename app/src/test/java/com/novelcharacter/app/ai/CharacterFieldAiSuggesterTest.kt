@@ -389,13 +389,15 @@ class CharacterFieldAiSuggesterTest {
         value: String,
         usage: Int = 0,
         hidden: Boolean = false,
-        aliases: List<String> = emptyList()
+        aliases: List<String> = emptyList(),
+        description: String = ""
     ) = FieldValueEntry(
         fieldDefinitionId = 1L,
         value = value,
         usageCount = usage,
         isHidden = hidden,
-        aliasesJson = aliases.joinToString(",", "[", "]") { "\"$it\"" }
+        aliasesJson = aliases.joinToString(",", "[", "]") { "\"$it\"" },
+        description = description
     )
 
     private fun libSpec(
@@ -563,6 +565,143 @@ class CharacterFieldAiSuggesterTest {
         val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
         assertTrue(prompt.contains("기존 사용값"))
         assertTrue(prompt.contains("이 목록의 값만 허용"))
+    }
+
+    // ===== 값의 뜻 (값 라이브러리 엔트리 설명) — B-46 =====
+
+    @Test
+    fun withLibraryUsage_값_설명은_실제로_실린_값에만_붙는다() {
+        val entries = listOf(
+            entry("북부", 5, description = "왕도 이북의 한랭지"),
+            entry("남부", 3, description = "곡창지대")
+        )
+        val all = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries)
+        assertEquals(
+            listOf("북부" to "왕도 이북의 한랭지", "남부" to "곡창지대"),
+            all.usageDescriptions
+        )
+
+        // 예시에서 빠진 값의 뜻은 싣지 않는다 — 모델이 못 쓰는 선택지를 설명하는 토큰이다
+        val few = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries, exampleLimit = 1)
+        assertEquals(listOf("북부" to "왕도 이북의 한랭지"), few.usageDescriptions)
+        assertEquals(0, few.usageDescriptionsOmitted)
+    }
+
+    @Test
+    fun withLibraryUsage_숨김_값의_뜻은_실리지_않는다() {
+        // 숨김 값은 예시에도 없으므로 그 뜻을 실을 자리도 없다(집합이 같아야 한다)
+        val entries = listOf(
+            entry("북부", 5, description = "왕도 이북의 한랭지"),
+            entry("폐기값", 9, hidden = true, description = "쓰지 않기로 한 값")
+        )
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries)
+        assertEquals(listOf("북부" to "왕도 이북의 한랭지"), enriched.usageDescriptions)
+    }
+
+    @Test
+    fun withLibraryUsage_설명이_없으면_값_뜻_자체가_없다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), listOf(entry("북부", 5)))
+        assertTrue(enriched.usageDescriptions.isEmpty())
+        assertEquals(0, enriched.usageDescriptionsOmitted)
+        assertEquals(0, enriched.usageDescriptionsTruncated)
+        // 빈 절을 프롬프트에 붙이지 않는다
+        assertFalse(
+            CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(enriched)).text.contains("값 뜻")
+        )
+    }
+
+    @Test
+    fun selectUsageDescriptions_줄바꿈은_한_줄로_접는다() {
+        // 프롬프트 한 줄에 실리므로 원문 개행이 필드 경계를 흉내 내면 안 된다
+        val out = CharacterFieldAiSuggester.selectUsageDescriptions(
+            listOf("북부"), listOf(entry("북부", description = "왕도 이북\n한랭지"))
+        )
+        assertEquals(listOf("북부" to "왕도 이북 한랭지"), out.entries)
+    }
+
+    @Test
+    fun selectUsageDescriptions_긴_설명은_자르고_수를_보고한다() {
+        val long = "가".repeat(CharacterFieldAiSuggester.MAX_USAGE_DESCRIPTION_CHARS + 5)
+        val out = CharacterFieldAiSuggester.selectUsageDescriptions(
+            listOf("북부"), listOf(entry("북부", description = long))
+        )
+        assertEquals(1, out.truncated)
+        assertEquals(
+            "가".repeat(CharacterFieldAiSuggester.MAX_USAGE_DESCRIPTION_CHARS) + "…",
+            out.entries.single().second
+        )
+    }
+
+    @Test
+    fun selectUsageDescriptions_총_예산을_넘으면_뒤쪽부터_빠지고_수를_보고한다() {
+        val values = listOf("북부", "남부", "동부")
+        val entries = values.map { entry(it, description = "설명".repeat(5)) }
+        val out = CharacterFieldAiSuggester.selectUsageDescriptions(
+            values, entries, maxTotalChars = 20
+        )
+        // 앞쪽(더 대표적인 값)이 남고 뒤쪽이 빠진다 — selectUsageExamples와 같은 자르기 방향
+        assertEquals(listOf("북부"), out.entries.map { it.first })
+        assertEquals(2, out.omitted)
+    }
+
+    @Test
+    fun 값_설명_예산은_허용_목록을_짧게_만들지_않는다() {
+        // B-46 등재가 경고한 결함: 설명을 값 목록과 한 예산에서 자르면 restricted 필드의
+        // **허용 목록 자체가 반만 간다.** 예산을 갈라 둔 것이 그것을 막는다.
+        val gloss = "가".repeat(CharacterFieldAiSuggester.MAX_USAGE_DESCRIPTION_CHARS)
+        val values = (1..12).map { "값%02d".format(it) }
+        val described = values.mapIndexed { i, v -> entry(v, usage = 12 - i, description = gloss) }
+        val bare = values.mapIndexed { i, v -> entry(v, usage = 12 - i) }
+
+        val withGloss = CharacterFieldAiSuggester.withLibraryUsage(libSpec(restricted = true), described)
+        val without = CharacterFieldAiSuggester.withLibraryUsage(libSpec(restricted = true), bare)
+
+        assertEquals("허용 목록은 설명 유무와 무관하다", without.usageExamples, withGloss.usageExamples)
+        assertEquals(values, withGloss.usageExamples)
+        // 설명 쪽만 예산에 걸린다 — 그리고 걸린 사실을 센다
+        assertTrue(withGloss.usageDescriptions.isNotEmpty())
+        assertTrue(withGloss.usageDescriptions.size < values.size)
+        assertEquals(
+            values.size - withGloss.usageDescriptions.size,
+            withGloss.usageDescriptionsOmitted
+        )
+    }
+
+    @Test
+    fun userPrompt_값_뜻은_목록과_분리돼_실린다() {
+        val target = libSpec(key = "region", restricted = true).copy(
+            name = "거주지",
+            usageExamples = listOf("북부", "남부"),
+            usageTotal = 2,
+            usageDescriptions = listOf("북부" to "왕도 이북의 한랭지", "남부" to "곡창지대")
+        )
+        val text = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target)).text
+        // 목록은 모델이 그대로 베껴야 하는 계약이라 한 글자도 섞지 않는다
+        assertTrue(text.contains("기존 사용값: 북부, 남부 (이 목록의 값만 허용)"))
+        assertTrue(text.contains("값 뜻: 북부 = 왕도 이북의 한랭지 · 남부 = 곡창지대"))
+    }
+
+    @Test
+    fun userPrompt_값_설명의_절단과_누락을_고지한다() {
+        val target = libSpec(key = "region").copy(
+            name = "거주지",
+            usageExamples = listOf("북부"),
+            usageTotal = 1,
+            usageDescriptions = listOf("북부" to "왕도 이북"),
+            usageDescriptionsTruncated = 1,
+            usageDescriptionsOmitted = 3
+        )
+        val notes = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target)).truncationNotes
+        assertTrue(notes.any { it.contains("거주지") && it.contains("1건") && it.contains("절단") })
+        assertTrue(notes.any { it.contains("거주지") && it.contains("3건") && it.contains("싣지 못함") })
+    }
+
+    @Test
+    fun systemPrompt_값_뜻_규칙을_지시한다() {
+        val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
+        assertTrue(prompt.contains("'값 뜻'이 함께 오면"))
+        // 설명을 값에 붙여 답하면 restricted에서 '목록 밖'이 된다 — 그것을 프롬프트가 먼저 막는다
+        assertTrue(prompt.contains("설명을 값에 붙여 적지 마라"))
     }
 
     // ===== 응답 접기·허용 검증 =====

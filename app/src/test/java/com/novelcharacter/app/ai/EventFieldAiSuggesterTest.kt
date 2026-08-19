@@ -189,6 +189,15 @@ class EventFieldAiSuggesterTest {
         assertFalse(sys.contains("대결 우열"))
     }
 
+    @Test fun systemPrompt_valueGlossRuleMatchesCharacterAxis() {
+        // 규칙 9는 두 축에서 뜻이 같아야 한다(공통 규칙) — 값 뜻은 사건 축 필드에도 실린다.
+        // 번호를 새로 매기지 않고 9번을 넓힌 것은 16번(근거 강도)이 조건부 자리이기 때문이다.
+        val sys = EventFieldAiSuggester.buildSystemPrompt()
+        assertTrue(sys.contains("'값 뜻'이 함께 오면"))
+        assertTrue(sys.contains("설명을 값에 붙여 적지 마라"))
+        assertEquals(1, Regex("^10\\.", RegexOption.MULTILINE).findAll(sys).count())
+    }
+
     @Test fun systemPrompt_confidenceFloorRuleUsesFreeNumber() {
         // 사건판의 마지막 규칙이 15번이므로 하한 규칙은 16번이어야 한다 —
         // 번호가 겹치면 규칙 하나가 통째로 묻힌다
