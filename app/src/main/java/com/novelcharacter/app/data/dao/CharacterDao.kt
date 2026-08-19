@@ -106,4 +106,11 @@ interface CharacterDao {
      */
     @Query("SELECT * FROM characters WHERE code IN (:codes)")
     suspend fun getCharactersByCodes(codes: List<String>): List<Character>
+
+    /**
+     * 여러 작품에 속한 캐릭터 일괄 조회 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수).
+     * 종전에는 내보내기가 `getAllCharactersList()`로 전량을 올린 뒤 메모리에서 걸렀다.
+     */
+    @Query("SELECT * FROM characters WHERE novelId IN (:novelIds)")
+    suspend fun getCharactersByNovelIds(novelIds: List<Long>): List<Character>
 }

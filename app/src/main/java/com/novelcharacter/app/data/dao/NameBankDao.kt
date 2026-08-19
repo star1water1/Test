@@ -83,4 +83,11 @@ interface NameBankDao {
 
     @Query("DELETE FROM name_bank WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /**
+     * 내보내는 캐릭터가 쓰고 있는 이름만 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수).
+     * 전체 은행을 실으면 무관한 전역 데이터가 수신자에게 넘어간다(범위 밖 데이터는 패키지의 것이 아니다).
+     */
+    @Query("SELECT * FROM name_bank WHERE usedByCharacterId IN (:characterIds)")
+    suspend fun getNamesByUsedCharacterIds(characterIds: List<Long>): List<NameBankEntry>
 }

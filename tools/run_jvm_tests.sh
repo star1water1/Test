@@ -315,6 +315,7 @@ $MAIN/share/WorldPackageContents.kt
 $MAIN/share/WorldPackageImages.kt
 $MAIN/share/WorldPackageCodes.kt
 $MAIN/share/WorldPackageDuels.kt
+$MAIN/share/WorldPackageScope.kt
 $MAIN/excel/ExportWorkbook.kt
 $MAIN/excel/ImportFileFormat.kt
 $MAIN/excel/FieldDefinitionPrune.kt
@@ -532,6 +533,7 @@ $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageImagesTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/share/WorldPackageDuelsTest.kt
+$TEST/share/WorldPackageScopeTest.kt
 $TEST/excel/ExportWorkbookParityTest.kt
 $TEST/excel/ExportStreamingAvailabilityTest.kt
 $TEST/excel/ExportPresentationSpecTest.kt

@@ -84,4 +84,19 @@ interface CharacterRelationshipDao {
      */
     @Query("SELECT id FROM character_relationships WHERE characterId1 IN (:ids) OR characterId2 IN (:ids)")
     suspend fun getRelationshipIdsForCharacters(ids: List<Long>): List<Long>
+
+    /**
+     * 한쪽 끝(characterId1)이 목록 안인 관계 — 월드패키지 내보내기의 범위 질의(R-54 통로 필수).
+     *
+     * **끝마다 따로 묻는 이유는 바인드 상한이다.** `characterId1 IN (:ids) OR characterId2 IN (:ids)`는
+     * Room이 목록을 두 번 펼쳐 변수를 `2 × 길이`만큼 쓰므로, 조각 상한(900)을 그대로 넘기면
+     * 1,800이 되어 API 31 미만의 기본 상한(999)을 넘긴다([getRelationshipIdsForCharacters]가
+     * 그 모양이다). 겹은 [com.novelcharacter.app.share.WorldPackageScope.relationshipIdsInScope]가 없앤다.
+     */
+    @Query("SELECT * FROM character_relationships WHERE characterId1 IN (:characterIds)")
+    suspend fun getRelationshipsByEnd1(characterIds: List<Long>): List<CharacterRelationship>
+
+    /** 다른 쪽 끝(characterId2)이 목록 안인 관계 — 짝은 [getRelationshipsByEnd1]. */
+    @Query("SELECT * FROM character_relationships WHERE characterId2 IN (:characterIds)")
+    suspend fun getRelationshipsByEnd2(characterIds: List<Long>): List<CharacterRelationship>
 }
