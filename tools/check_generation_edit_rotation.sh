@@ -29,8 +29,13 @@
 #    [기본값으로]가 되돌리는 상태)가 그물 밖이었다. 창의 `private var`는 **전부** 편집 상태로
 #    보고, 아닌 것은 선언 자리에 `// 담지 않음(사유)`를 적는다(명단이 아니라 자리에 —
 #    `check_import_row_queries.sh`가 세운 관행). **낡은 표식도 위반이다.**
-# ⑤ **폼이 담긴 것에서 서는가** — 행을 `current.*Options`에서 그리면 회전 뒤에 *저장된 값*이
-#    서고 적던 것은 사라진다. 담기·풀기가 다 맞아도 **그리는 자리가 딴 데를 보면** 헛일이다.
+# ⑤ **폼이 담긴 것에서 서는가** — 편집 상태 필드가 전부 `state.`에서 대입되는가.
+#    `current.*Options`에서 그리면 회전 뒤에 *저장된 값*이 서고 적던 것은 사라진다.
+#    담기·풀기가 다 맞아도 **그리는 자리가 딴 데를 보면** 헛일이다.
+#    **부정형(그 글자를 쓰지 마라)으로 짜지 않는다** — 첫 판이 `current.XOptions.map { axisRow(`를
+#    금지하는 꼴이었는데, 실측하니 **한 축만 `mapIndexed`로 바꿔 되돌려도 초록**이었다
+#    (그 축은 회전에서 조용히 값을 잃는다). 금지할 글자는 무한하고 요구할 모양은 하나뿐이라,
+#    **④가 뜬 필드 전수가 `state.`에서 오는지**를 본다(같은 그물을 두 축이 함께 쓴다).
 # ⑥ 받는 쪽이 듣는가 — 호스트가 `RESULT_KEY`를 듣고, 그 등록이 **`onCreate`** 안인가.
 #    뷰 수명주기에 걸면 회전 중에 온 결과를 놓친다(그 유실은 조용하다).
 # ⑦ 보내는 쪽이 보내는가 — 창이 `setFragmentResult(RESULT_KEY`를 부르는가.
@@ -139,13 +144,21 @@ else
   fi
 fi
 
-# ── ⑤ 폼이 담긴 것에서 서는가 ──
-if grep -qE 'current\.[A-Za-z]+Options\.map \{ *axisRow\(|current\.bodyPresets\.map' "$DIALOG"; then
-  fail "행을 current에서 그린다 — 회전 뒤 *저장된 값*이 서고 적던 것은 사라진다(담기·풀기가 맞아도 헛일이다)"
-elif ! grep -qE 'state\.[A-Za-z]+Rows\.map' "$DIALOG"; then
-  fail "행을 담긴 상태(state.*Rows)에서 그리지 않는다 — 되살린 값이 화면에 서지 않는다"
+# ── ⑤ 폼이 담긴 것에서 서는가 (④가 뜬 필드 전수를 쓴다) ──
+if [ -z "$ROW_FIELDS" ]; then
+  : # ④가 이미 빨간불을 냈다 — 같은 사유로 두 번 말하지 않는다
 else
-  echo "  ✓ 행을 담긴 상태에서 그린다(처음 열 때와 회전 뒤가 같은 길이다)"
+  FROM_CURRENT=""
+  for f in $ROW_FIELDS; do
+    # 대입의 오른쪽이 `state.`로 시작해야 한다. 왼쪽 이름은 ④가 선언에서 뜬 것이라
+    # **금지할 글자를 세지 않고 요구할 모양 하나만** 본다.
+    grep -qE "^        $f = state\." "$DIALOG" || FROM_CURRENT="$FROM_CURRENT $f"
+  done
+  if [ -n "$FROM_CURRENT" ]; then
+    fail "담긴 상태에서 대입되지 않는 칸이 있다 —$FROM_CURRENT (그 칸은 회전 뒤 *저장된 값*이 서고 적던 것은 사라진다)"
+  else
+    echo "  ✓ 편집 상태 $(printf '%s\n' "$ROW_FIELDS" | grep -c .)칸이 전부 담긴 상태에서 대입된다"
+  fi
 fi
 
 # ── ⑥ 받는 쪽 — 호스트가 onCreate에서 듣는가 ──

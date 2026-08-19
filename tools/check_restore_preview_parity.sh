@@ -316,38 +316,110 @@ def idents(text):
         if b: out.add(b)
     return out
 
+def count_site(name):
+    """이 함수가 *이 행을 세었다*고 표시하는 자리의 이름.
+
+    **`inBackup`이라는 이름을 박지 않는다** — 박으면 같은 일을 `total++`로 하는 함수가
+    조용히 빠진다(실측: `analyzeDefaultFieldTemplates`가 그랬다). 세는 칸은
+    `CategoryAnalysis(키, 라벨, ←여기, …)`의 셋째 인자이므로 **거기서 뜬다.**
+
+    돌려주는 값 셋:
+      · `'X++'`  — 셋째 인자가 루프 안에서 오르는 계수기다(이 축이 볼 수 있다)
+      · `None`   — 이 함수는 `CategoryAnalysis`를 돌려주지 않는다(이 축의 대상이 아니다)
+      · `'SHAPE'`— 돌려주긴 하는데 계수기가 아니다(행을 먼저 모아 크기로 세거나, 행이 아니라
+                   무리를 센다). **그때는 선언 위 표식으로 사유를 적어야 한다** — 조용히
+                   빠지는 것이 이 축이 고치려던 바로 그 병이다.
+    """
+    s, e = spans[name]
+    last_call = None
+    for k in range(s, e):
+        code = lines[k].split('//')[0]
+        if 'CategoryAnalysis(' in code:
+            last_call = code
+    if last_call is None:
+        return None
+    inner = last_call[last_call.index('CategoryAnalysis(') + len('CategoryAnalysis('):]
+    args, depth, cur = [], 0, ''
+    for ch in inner:
+        if ch in '([': depth += 1
+        elif ch in ')]':
+            if depth == 0: break
+            depth -= 1
+        if ch == ',' and depth == 0:
+            args.append(cur.strip()); cur = ''
+        else:
+            cur += ch
+    args.append(cur.strip())
+    if len(args) < 3:
+        return 'SHAPE'
+    slot = args[2]
+    if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', slot):
+        for k in range(s, e):
+            if slot + '++' in lines[k].split('//')[0]:
+                return slot + '++'
+    return 'SHAPE'
+
+
+def shape_declared(name):
+    """선언 **바로 위 주석 블록**의 `// 세는 자리 없음(사유)` — 축 ⑧과 같은 규약이다."""
+    s, _ = spans[name]
+    k, block = s - 1, []
+    while k >= 0:
+        t = lines[k].strip()
+        if t == '' or t.startswith('//') or t.startswith('*') or t.startswith('/**'):
+            block.append(lines[k]); k -= 1; continue
+        break
+    return re.search(r'//\s*세는 자리 없음\(', '\n'.join(block)) is not None
+
+
 def rowloop(name):
-    """행 루프의 시작 ~ **세는 자리**(마지막 inBackup++)까지. 그 뒤의 가드는 이미 센 행을
+    """행 루프의 시작 ~ **세는 자리**(마지막 계수)까지. 그 뒤의 가드는 이미 센 행을
     가르는 것이라 이 검사의 대상이 아니다(그쪽은 skippedCount로 세는 것이 옳다).
 
-    **루프의 꼴은 묻지 않는다** — `1..sheet.lastRowNum`이든 `dataRows(...)`이든 `for (i in`이면
-    된다. 꼴로 찾다가 이 축이 통째로 눈이 멀었던 것이 위 상자의 사고다."""
+    **루프의 꼴도 계수기의 이름도 묻지 않는다** — `1..sheet.lastRowNum`이든 `dataRows(...)`이든
+    `for (i in`이면 되고, 세는 칸은 [count_site]가 `CategoryAnalysis`에서 떠 준다.
+    꼴로 찾다가 이 축이 통째로 눈이 멀었던 것이 위 상자의 사고다."""
+    site = count_site(name)
+    if site is None: return None
+    if site == 'SHAPE': return 'SHAPE'
     s, e = spans[name]
     start = None
     for k in range(s, e):
         if start is None and re.search(r'for \(i in ', lines[k]): start = k
     last = None
     for k in range(s, e):
-        if 'inBackup++' in lines[k].split('//')[0]: last = k
+        if site in lines[k].split('//')[0]: last = k
     # **세는 자리는 있는데 루프를 못 떴다** = 뜨는 법이 깨졌다. 조용히 빠지면 그 함수가
     # 영영 검사되지 않으므로 위반으로 낸다(fail-closed — 축 ⑧과 같은 규약).
     if last is not None and start is None: return 'BLIND'
     if start is None or last is None: return None
     return start, last + 1
 
+def norm(cond):
+    """조건을 견줄 수 있는 꼴로 — 공백만 지운다(양쪽 다 `r.`로 적으므로 그 이상은 필요 없다)."""
+    return re.sub(r'\s+', '', cond)
+
+
 def preview_skips(name):
+    """세기 전에 `continue`하는 가드를 **(조건, 식별자)** 쌍으로 모은다.
+
+    **식별자만 모으면 안 되는 이유**(실측 — B-263 ⓐ 콜드 검토): 이 저장소의 관용구는
+    *둘 다 비면 조용히 넘기고(여백) 하나만 비면 세고 건너뛴다*라, **같은 식별자가 두 가드에
+    함께 든다.** 집합만 견주면 짝이 똑같이 조용히 넘기는 여백 행까지 위반으로 잡힌다
+    (`analyzeDefaultFieldTemplates`가 정확히 그렇게 걸렸고 짝을 읽어 보니 글자까지 같았다)."""
     r = rowloop(name)
-    if r == 'BLIND': return set(), 'BLIND'
-    if not r: return set(), False
+    if r in ('BLIND', 'SHAPE'): return [], r
+    if not r: return [], False
     s, e = r
-    out, k = set(), s
+    site = count_site(name)
+    out, k = [], s
     while k < e:
         code = lines[k].split('//')[0]
         m = re.match(r'\s*if \((.*)\)\s*(\{)?\s*(continue)?\s*$', code)
         if m:
             cond, brace, cont = m.group(1), m.group(2), m.group(3)
             if cont and not brace:
-                out |= idents(cond); k += 1; continue
+                out.append((norm(cond), idents(cond))); k += 1; continue
             if brace:
                 depth, blk, t = 1, [], k + 1
                 while t < e and depth > 0:
@@ -355,19 +427,34 @@ def preview_skips(name):
                     if depth > 0: blk.append(lines[t])
                     t += 1
                 body = '\n'.join(blk)
-                if 'continue' in body and 'inBackup++' not in body: out |= idents(cond)
+                if 'continue' in body and site not in body: out.append((norm(cond), idents(cond)))
                 k = t; continue
         # 엘비스-continue: `val year = r.year ?: continue` — if 꼴이 아니라 위 갈래가 못 본다.
         # **이 꼴이 B-237의 셋을 숨기고 있던 자리다**(연표·상태변화·관계변화의 연도).
         m3 = re.match(r'\s*val\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*(?:r|rv)\.([A-Za-z][A-Za-z0-9_]*)\s*\?:\s*continue\s*$', code)
         if m3:
-            out.add(m3.group(1)); out.add(m3.group(2)); k += 1; continue
+            out.append((norm(code), {m3.group(1), m3.group(2)})); k += 1; continue
         # 한 줄 블록: if (x) { a; b; continue }
         m2 = re.match(r'\s*if \((.*)\)\s*\{(.*)\}\s*$', code)
-        if m2 and 'continue' in m2.group(2) and 'inBackup++' not in m2.group(2):
-            out |= idents(m2.group(1))
+        if m2 and 'continue' in m2.group(2) and site not in m2.group(2):
+            out.append((norm(m2.group(1)), idents(m2.group(1))))
         k += 1
     return out, True
+
+
+def import_silent(name):
+    """짝 가져오기가 **아무 말 없이** 넘기는 가드의 조건들.
+
+    미리보기가 같은 조건으로 넘기는 것은 갈림이 아니라 **짝을 그대로 따른 것**이다 —
+    표 아래 여백이 그 부류이고, 그것까지 위반으로 부르면 옳은 코드를 고치라고 말하게 된다."""
+    s, e = spans[name]
+    out, k = set(), s
+    while k < e:
+        code = lines[k].split('//')[0]
+        m = re.match(r'\s*if \((.*)\)\s*continue\s*$', code)
+        if m: out.add(norm(m.group(1)))
+        k += 1
+    return out
 
 def import_notified(name):
     s, e = spans[name]
@@ -392,28 +479,51 @@ def import_notified(name):
 OVERRIDE = {'analyzePresetTemplates': 'importUserPresetTemplates',
             'analyzeCharacterSheet': 'importCharacterRows'}
 bad = []
+seen = 0      # 이 축이 실제로 들여다본 함수
+shaped = 0    # 셈 모양이 달라 표식으로 선언한 함수
 for fn in sorted(spans):
     if not fn.startswith('analyze'): continue
     p, ok = preview_skips(fn)
     if ok == 'BLIND':
-        bad.append(f"{fn}\t세는 자리(inBackup++)는 있는데 행 루프를 뜨지 못했습니다 — 루프의 꼴이 바뀌었는지 보세요(이 축이 눈먼 채 초록이 됩니다)")
+        bad.append(f"{fn}\t세는 자리는 있는데 행 루프를 뜨지 못했습니다 — 루프의 꼴이 바뀌었는지 보세요(이 축이 눈먼 채 초록이 됩니다)")
         continue
+    if ok == 'SHAPE':
+        # **조용히 빠뜨리지 않는다** — 셈 모양이 다른 것은 있을 수 있지만(행을 먼저 모아 크기로
+        # 세거나 행이 아니라 무리를 센다), 그것은 *선언이 말해야* 한다. 말하지 않으면 위반이다.
+        if not shape_declared(fn):
+            bad.append(f"{fn}\tCategoryAnalysis를 돌려주는데 세는 계수기를 찾지 못했습니다 — 셈 모양이 다르면 선언 위에 `// 세는 자리 없음(사유)`를 적으세요(적지 않으면 이 축이 이 함수를 통째로 건너뜁니다)")
+        else:
+            shaped += 1
+        continue
+    seen += 1
     if not ok: continue
     imp = OVERRIDE.get(fn, 'import' + fn[len('analyze'):])
     if imp not in spans:
         bad.append(f"{fn}\t짝 '{imp}'을(를) 파일에서 찾지 못했습니다 — 개명됐다면 OVERRIDE에 적으세요")
         continue
     s, _ = import_notified(imp)
-    hit = p & s
+    silent = import_silent(imp)
+    # 짝이 같은 조건으로 조용히 넘기는 가드는 갈림이 아니다(위 [import_silent]).
+    hit = set()
+    for cond, ids in p:
+        if cond in silent: continue
+        hit |= ids & s
     if hit:
         bad.append(f"{fn}\t{imp}가 세며 거부하는 행을 미리보기는 세지 않고 버립니다: {', '.join(sorted(hit))}")
 for b in bad:
     print(b)
+# **자기 범위를 스스로 말한다.** 값이 없으면 이 축이 19개를 보다 3개로 줄어도 아무도 모른다 —
+# 이 판이 고친 눈멂이 정확히 그 모양이었다(초록인데 아무것도 안 보고 있었다).
+print(f"__NSEEN__{seen}\t__NSHAPED__{shaped}")
 print(f"__NCOUNT__{len(bad)}")
 PY6
 )
 ncount=$(printf '%s\n' "$NOTIFIED" | sed -n 's/^__NCOUNT__//p')
-nbody=$(printf '%s\n' "$NOTIFIED" | grep -v '^__NCOUNT__' || true)
+# **이 축이 몇 개를 들여다봤는가.** 값이 없으면 범위가 24에서 3으로 줄어도 아무도 모른다 —
+# 이 검사가 고친 눈멂이 정확히 그 모양이었다(초록인데 아무것도 안 보고 있었다).
+nseen=$(printf '%s\n' "$NOTIFIED" | sed -n 's/^__NSEEN__\([0-9]*\).*/\1/p')
+nshaped=$(printf '%s\n' "$NOTIFIED" | sed -n 's/.*__NSHAPED__\([0-9]*\)$/\1/p')
+nbody=$(printf '%s\n' "$NOTIFIED" | grep -v '^__NCOUNT__' | grep -v '^__NSEEN__' || true)
 
 # ── ⑦ 미리보기가 보는 세계관 목록이 가져오기의 것과 같은가 (B-254) ──
 # 짝인 `import*`는 `db.universeDao().getAllUniversesList()` 하나로 답이 맞는다 — `importUniverses`가
@@ -493,6 +603,7 @@ require_count "$tcount" "__TCOUNT__" "$TALLY"
 require_count "$scount" "__SCOUNT__" "$SHEETS"
 require_count "$lcount" "__LCOUNT__" "$LADDER"
 require_count "$ncount" "__NCOUNT__" "$NOTIFIED"
+require_count "$nseen"  "__NSEEN__"  "$NOTIFIED"
 require_count "$ucount" "__UCOUNT__" "$UNIVSRC"
 
 if [ "${count:-0}" -gt 0 ]; then
@@ -702,7 +813,7 @@ echo "  ✓ read*Row + new*From ${ptotal}종을 가져오기와 미리보기가 
 echo "  ✓ '갱신' 집계가 전부 변경 판정 뒤에 있습니다 (B-111)"
 echo "  ✓ analyze*의 시트 조회가 전부 가져오기와 같은 판정(SheetResolver)을 지납니다 (B-217)"
 echo "  ✓ analyze*의 캐릭터 해석이 전부 짝 가져오기와 같은 사다리를 씁니다 (B-232)"
-echo "  ✓ 가져오기가 세며 거부하는 행을 미리보기도 전부 셉니다 (B-237)"
+echo "  ✓ 가져오기가 세며 거부하는 행을 미리보기도 전부 셉니다 — 본 함수 ${nseen}개, 셈 모양이 달라 표식으로 선언한 것 ${nshaped}개 (B-237)"
 echo "  ✓ analyze*의 세계관 원천이 전부 analysisUniverses()입니다 (B-254)"
 echo "  ✓ importAll이 부르는 범주에 미리보기 짝이 전부 있습니다 (B-256)"
 echo
