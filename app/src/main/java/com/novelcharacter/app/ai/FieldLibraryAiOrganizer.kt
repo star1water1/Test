@@ -124,7 +124,10 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             var current = mutableListOf<FieldValueEntry>()
             var chars = 0
             for (e in entries) {
-                val len = e.value.length + e.aliasesJson.length + 16
+                // 설명 몫까지 센다 — 프롬프트에 실리는 것을 여기서 안 세면
+                // [CHUNK_MAX_CHARS]가 거짓이 되고, **비용 고지가 함께 거짓이 된다**
+                // (`AiOrganizeSheet`가 이 함수의 청크 수로 요청 수를 고지한다).
+                val len = e.value.length + e.aliasesJson.length + e.description.length + 16
                 if (current.isNotEmpty() && (current.size >= CHUNK_MAX_VALUES || chars + len > CHUNK_MAX_CHARS)) {
                     chunks.add(current)
                     current = mutableListOf()
@@ -149,6 +152,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             필드 '${fd.name}'(타입 ${fd.type})의 값 목록에서 다음을 찾아라:
             1. merges: 같은 대상을 가리키는 변형 표기(오탈자, 띄어쓰기, 표기 차이)를 하나의 canonical로 병합.
                canonical은 목록에 실제로 존재하는 값 중 가장 적절한 것을 고른다.
+               값에 '뜻'이 붙어 있으면 그것은 사용자가 그 값에 직접 써 둔 정의다 —
+               **뜻이 다른 두 값을 합치지 마라.** 표기가 비슷해도 뜻이 갈라 두었으면 다른 값이다.
             2. categories: 값들을 묶을 수 있는 상위 카테고리 제안 (확실한 것만).
             반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
             {"merges":[{"canonical":"값","variants":["변형1","변형2"],"reason":"근거"}],"categories":[{"value":"값","category":"카테고리"}]}
@@ -164,6 +169,13 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
                     val aliases = e.aliases()
                     if (aliases.isNotEmpty()) append(" · 별칭: ").append(aliases.joinToString(", "))
                     if (e.category.isNotBlank()) append(" · 분류: ").append(e.category)
+                    // 값의 뜻 (B-46) — **병합 판단의 직접 근거다.** 사용자가 '북부'와 '북부지방'을
+                    // 뜻으로 갈라 두었는데 그것을 안 보내면 모델이 둘을 합치라고 제안하고,
+                    // 사용자가 그 제안을 받으면 **구별이 사라진다.** 시스템 프롬프트가 이미
+                    // *"이 설명을 병합·분류 판단의 근거로 삼아라"*라고 말하고 있었다.
+                    // 줄바꿈은 접는다 — 엔트리를 줄 단위로 잇는 형식이라 원문 개행이 행을 쪼갠다.
+                    val meaning = e.description.replace('\n', ' ').replace('\r', ' ').trim()
+                    if (meaning.isNotEmpty()) append(" · 뜻: ").append(meaning)
                     append(")")
                 }
             }
