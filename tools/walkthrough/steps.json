@@ -119,7 +119,14 @@
   "expect": "목록·생일 배너·통계 순위에서 **그 장**이 쓰인다",
   "ref": "3-91",
   "axis": "자동",
-  "axiswhy": "CharacterRepresentativeImageTest"
+  "axiswhy": "CharacterRepresentativeImageTest",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "CharacterRepresentativeImageTest는 pick()이 PINNED를 내는 것까지만 본다(assertEquals(b, pick.path)). '목록·생일 배너·통계 순위'가 그 함수를 쓰는지를 단언하는 시험은 없고, 색인 전체에 '생일'을 단언하는 시험이 0건이다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "1",
@@ -132,7 +139,17 @@
   "expect": "대표 지정이 **살아남는다**",
   "ref": "3-91-8",
   "axis": "자동",
-  "axiswhy": "CharacterRepresentativeImageTest"
+  "axiswhy": "CharacterRepresentativeImageTest",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "CharacterRepresentativeImageTest.resolveAfterWrite_followsThenRetains",
+    "CharacterRepresentativeImageTest.retain_keepsPointerWhenStillPresent"
+   ],
+   "evidence": "// 목록 통째 교체(폼 저장)에서 살아남는다.\nassertEquals(b, CharacterRepresentativeImage.resolveAfterWrite(b, listOf(c, b)))\nassertEquals(b, CharacterRepresentativeImage.retain(b, listOf(a, b, c)))",
+   "kind": ""
+  }
  },
  {
   "round": "1",
@@ -184,7 +201,18 @@
   "expect": "거기 뜬다. **'미배정' 칩에는 안 뜬다**(두 칩에 동시에 잡히면 실패)",
   "ref": "3-52-1·2",
   "axis": "자동",
-  "axiswhy": "DetachedImageRuleTest — 두 칩 배타는 순수 규칙"
+  "axiswhy": "DetachedImageRuleTest — 두 칩 배타는 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ImageFilterHelperTest.kt(ImageFilterHelperTest).unassignedChip_excludesDetached",
+    "ImageFilterHelperTest.kt(ImageFilterHelperTest).detachedChip_matchesOnlyDetached",
+    "ImageFilterHelperTest.kt(ImageFilterHelperTest).twoChips_partitionTheUnassignedAxis"
+   ],
+   "evidence": "assertEquals(listOf(\"fresh.jpg\"), applyDrawer(BaseFilter.UNASSIGNED))  /  assertEquals(listOf(\"was_used.jpg\"), applyDrawer(BaseFilter.DETACHED))  /  assertEquals(emptyList<String>(), a.intersect(b.toSet()).toList())  — 두 칩의 배타를 그대로 단언한다",
+   "kind": ""
+  }
  },
  {
   "round": "1",
@@ -350,7 +378,18 @@
   "expect": "감싼 따옴표가 보이는 것이 정상. **태그는 둘**이다",
   "ref": "3-139-ㄱ",
   "axis": "자동",
-  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산"
+  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave",
+    "MultiValueInputTest.format_isTheSameRuleAsTheExcelCell",
+    "CsvTokensTest.quote_onlyWhenDelimiterPresent"
+   ],
+   "evidence": "val stored = listOf(\"주인공, 남자\"); assertEquals(stored, MultiValueInput.parse(MultiValueInput.format(stored)))\nval tokens = listOf(\"주인공, 남자\", \"기사\"); assertEquals(tokens, CsvTokens.split(MultiValueInput.format(tokens)))\nassertEquals(\"\\\"가, 나\\\"\", CsvTokens.quote(\"가, 나\"))",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -363,7 +402,18 @@
   "expect": "따옴표가 `\"\"\"…\"\"\"`로 자라지 않는다. 태그 수가 안 늘어난다",
   "ref": "3-139-ㄱ",
   "axis": "자동",
-  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산"
+  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "MultiValueInputTest.roundTrip_isStableOnSecondPass",
+    "MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave",
+    "CsvTokensTest.joinThenSplit_roundTripsInBothModes"
+   ],
+   "evidence": "val once = MultiValueInput.format(stored)  // stored = listOf(\"주인공, 남자\", \"\\\"별칭\\\"\")\nassertEquals(once, MultiValueInput.format(MultiValueInput.parse(once)))\nassertEquals(stored, MultiValueInput.parse(MultiValueInput.format(stored)))  // 태그 하나가 둘이 되지 않는다",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -376,7 +426,17 @@
   "expect": "감싸인 채로 붙고, 적용하면 태그가 **하나** 붙는다(둘이 아니다)",
   "ref": "3-139-ㄷ",
   "axis": "자동",
-  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산"
+  "axiswhy": "CsvTokensTest·MultiValueInput — 쉼표 파싱과 멱등은 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave",
+    "MultiValueInputTest.format_isTheSameRuleAsTheExcelCell"
+   ],
+   "evidence": "val stored = listOf(\"주인공, 남자\") / assertEquals(stored, MultiValueInput.parse(MultiValueInput.format(stored))) — 쉼표 든 값 하나가 채웠다(format) 저장하면(parse) 둘이 아니라 하나로 남는다. format 쪽 감싸기는 assertEquals(CsvTokens.join(tokens), MultiValueInput.format(tokens))가 든다. 칩 누르기 경로(BatchTagBottomSheet.kt:98-101)가 바로 이 parse→add→format이다.",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -428,7 +488,14 @@
   "expect": "그 필드가 보통 필드로 서 있다",
   "ref": "3-62-2",
   "axis": "자동",
-  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축"
+  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "전역 기본 필드가 다른 세계관에서 보통 필드로 서는지(전파 결과)를 단언하는 시험이 없다. GlobalScopeFieldMoveTest는 구역 사이 '값 이관' 계획만 본다 — assertEquals(mapOf(1L to 10L), plan.transfers).",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "2",
@@ -454,7 +521,14 @@
   "expect": "\"모든 세계관에서 연결이 풀립니다\"가 뜨고, **해제 뒤에도 필드와 값이 남는다**(여기가 어긋나면 데이터 유실)",
   "ref": "3-62-3",
   "axis": "자동",
-  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축"
+  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "해제 실행부(DefaultFieldTemplateRepository.deleteTemplate/unlinkAll)를 부르는 시험이 app/src/test 전체에 하나도 없다. 그 트랜잭션은 값 없는 전역 그림자를 실제로 삭제하는 갈래(fieldDao.deleteGlobalByIds)를 갖고 있어 '필드와 값이 남는다'가 무조건 참이 아니다. DefaultFieldPlanTest.강등은_표식만_걷어낸다는 순수 강등만 재고 DB 결과를 재지 않는다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "2",
@@ -467,7 +541,18 @@
   "expect": "**값이 있던 쪽**은 보관으로 넘어가거나 넘어간다고 말한다. **값이 없던 쪽**은 조용하다 — 둘을 갈라 보지 않으면 어느 쪽이 나와도 통과가 된다",
   "ref": "3-65-5",
   "axis": "자동",
-  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축"
+  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "GlobalScopeFieldMoveTest.kt(GlobalScopeFieldMoveTest).빈_값은_세지도_옮기지도_않는다",
+    "GlobalScopeFieldMoveTest.kt(GlobalScopeFieldMoveTest).도착지에_필드가_하나도_없으면_전부_사유와_함께_보관된다",
+    "GlobalScopeFieldMoveTest.kt(GlobalScopeFieldMoveTest).타입이_맞고_대상이_비었으면_옮긴다"
+   ],
+   "evidence": "값 없는 쪽: val plan = GlobalScopeFieldMove.plan(moving(from to \"   \"), listOf(to), emptySet()); assertTrue(plan.transfers.isEmpty()); assertTrue(plan.kept.isEmpty())  /  값 있는 쪽: assertEquals(mapOf(1L to KeptReason.NO_COUNTERPART, 2L to KeptReason.NO_COUNTERPART), plan.kept)  /  assertEquals(mapOf(1L to 10L), plan.transfers)",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -480,7 +565,18 @@
   "expect": "①은 조용히 이어진다. ②는 **덮지 않는다**(기존 값이 그대로다)",
   "ref": "3-98",
   "axis": "자동",
-  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축"
+  "axiswhy": "전역 필드 이관·CASCADE — DB 결과라 계측 시험의 축",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "GlobalScopeFieldMoveTest.타입이_맞고_대상이_비었으면_옮긴다",
+    "GlobalScopeFieldMoveTest.대상에_이미_값이_있으면_덮지_않고_보관한다",
+    "GlobalScopeFieldMoveTest.세계관에서_전역으로_나갈_때도_같은_규칙이_선다"
+   ],
+   "evidence": "assertEquals(mapOf(1L to 10L), plan.transfers); assertTrue(plan.kept.isEmpty())  // ① 빈 대상\nassertTrue(plan.transfers.isEmpty()); assertEquals(GlobalScopeFieldMove.KeptReason.TARGET_OCCUPIED, plan.kept[1L])  // ② 값 있는 대상\nassertEquals(KeptReason.TARGET_OCCUPIED, plan(moving(from to \"설원\"), listOf(toGlobal), setOf(1L)).kept[10L])  // 세계관→전역 방향",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -493,7 +589,14 @@
   "expect": "저장 전에 **\"값 N개가 초기화됩니다\"**가 뜬다. N이 실제와 맞는다(빈 값은 안 센다)",
   "ref": "3-70·3-72",
   "axis": "자동",
-  "axiswhy": "전파 미리보기 수 = 실제 — DefaultFieldPlanTest 계열"
+  "axiswhy": "전파 미리보기 수 = 실제 — DefaultFieldPlanTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'값 N개가 초기화됩니다'의 N을 세는 자리는 FieldEditDialog:2602 `nonEmptyValues.count { isValueCompatible(...) }`와 FieldTypeCompatibility.incompatibleCount(빈 값 제외)인데, 이 둘을 단언하는 시험이 색인에 없다(FieldTypeCompatibilityTest 자체가 없다). FieldTypeBranchTest는 `assertEquals(0, FieldTypeCompatibility.incompatibleCount(listOf(\"a\",\"b\"), null))`로 *모르는 타입*만 보고, FieldValueTypeMismatchTest는 건강도 판정과 전파 규칙의 일치만 본다. axiswhy가 댄 DefaultField",
+   "kind": "PURE"
+  }
  },
  {
   "round": "2",
@@ -506,7 +609,18 @@
   "expect": "세계관마다 줄이 서고, 타입이 바뀌는 줄에만 경고가 붙는다",
   "ref": "3-70-1·3",
   "axis": "자동",
-  "axiswhy": "전파 미리보기 수 = 실제 — DefaultFieldPlanTest 계열"
+  "axiswhy": "전파 미리보기 수 = 실제 — DefaultFieldPlanTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DefaultFieldPlanTest.못_받은_것과_손댄_것을_가른다",
+    "DefaultFieldPlanTest.타입이_바뀌면_못_버티는_값을_센다",
+    "DefaultFieldPlanTest.타입이_그대로면_값을_세지_않는다"
+   ],
+   "evidence": "세계관 줄: assertEquals(listOf(1L), plan.outdated.map { it.universeId }) / assertEquals(listOf(2L), plan.diverged.map { it.universeId }) — 연결된 세계관마다 항목이 선다. 경고 줄: assertTrue(plan.items[0].typeChanges) + assertEquals(\"빈 값은 세지 않는다\", 2, plan.items[0].incompatibleValues), 반대쪽은 assertFalse(plan.items[0].typeChanges)/assertEquals(0, …). 화면(DefaultFieldManageFragment.kt:235)이 정확히 `typeChanges && incompatible",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -545,7 +659,14 @@
   "expect": "값 라이브러리가 열리고 위에 목적문이 있다",
   "ref": "3-28-1·2",
   "axis": "자동",
-  "axiswhy": "목적문 존재는 check_text_style.sh"
+  "axiswhy": "목적문 존재는 check_text_style.sh",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "색인에서 '목적문'을 단언하는 시험이 0건이고, 책 아이콘을 눌러 값 라이브러리가 열리는 것을 보는 시험도 없다. axiswhy가 댄 check_text_style.sh는 셸 검사이지 JVM 시험이 아니다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "2",
@@ -571,7 +692,17 @@
   "expect": "통계에서 **표시라벨로** 보이고, 검색에서 **별칭으로도** 찾힌다",
   "ref": "3-28-4",
   "axis": "자동",
-  "axiswhy": "표시라벨·별칭 해석은 순수 계산"
+  "axiswhy": "표시라벨·별칭 해석은 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldValueResolverTest.statsKeys_aliasResolvesBeforeGrouping",
+    "FieldFilterHelperTest.exact_aliasExpansion_matchesAliasFormRows"
+   ],
+   "evidence": "assertEquals(listOf(\"서울특별시\"), r.statsKeys(\"서울시\", \"value\"))\nassertEquals(setOf(1L, 2L), apply(dao, listOf(byCanonical), fields, entries))\nassertEquals(setOf(1L, 2L), apply(dao, listOf(byAlias), fields, entries))",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -584,7 +715,16 @@
   "expect": "\"없는 함수입니다: sqrt (쓸 수 있는 함수: …)\"가 뜬다",
   "ref": "3-11-1",
   "axis": "자동",
-  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다"
+  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FormulaValidatorTest.kt(FormulaValidatorTest).없는 함수 이름을 알린다"
+   ],
+   "evidence": "val problems = validate(\"sqrt(4)\")  /  assertEquals(listOf(\"sqrt\"), problems.filterIsInstance<FormulaValidator.Problem.UnknownFunctions>().single().names)  — 입력이 문자 그대로 sqrt(4)다(문구 자체는 strings.xml formula_warn_unknown_function 포맷)",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -597,7 +737,16 @@
   "expect": "잡아낸다",
   "ref": "3-11-2",
   "axis": "자동",
-  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다"
+  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FormulaValidatorTest.아는 함수인데 표기가 어긋난 것은 따로 알린다"
+   ],
+   "evidence": "assertEquals(listOf(\"abs\"), validate(\"abs (field(dex))\").filterIsInstance<FormulaValidator.Problem.MalformedCalls>().single().names)\nassertTrue(hasProblem<FormulaValidator.Problem.MalformedCalls>(validate(\"field ('str')\")))",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -610,7 +759,16 @@
   "expect": "\"자기 자신(A)을…\"이 뜬다",
   "ref": "3-11-3",
   "axis": "자동",
-  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다"
+  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FormulaValidatorTest.자기 자신을 참조하면 알린다"
+   ],
+   "evidence": "val problems = validate(\"field(total) + 1\", currentKey = \"total\")\nval self = problems.filterIsInstance<FormulaValidator.Problem.SelfReference>().single()\nassertEquals(\"total\", self.key)   // 문구 `자기 자신(%1$s)을 참조합니다`는 이 Problem 하나에서만 나온다",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -623,7 +781,16 @@
   "expect": "조용히 저장된다",
   "ref": "3-11-7",
   "axis": "자동",
-  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다"
+  "axiswhy": "수식 검증·문구 — Formula 시험이 이미 전수로 본다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FormulaValidatorTest.정상 수식에는 경고가 없다"
+   ],
+   "evidence": "assertEquals(emptyList<FormulaValidator.Problem>(), validate(\"(field(str) + field(dex)) * 2\")) — 걷는 단계의 그 수식 모양 그대로이고, 문제 목록이 비어 있음이 곧 '조용히 저장된다'이다.",
+   "kind": ""
+  }
  },
  {
   "round": "2",
@@ -675,7 +842,14 @@
   "expect": "**미리보기가 예고한 수와 결과가 같다**",
   "ref": "3-94-1·2",
   "axis": "자동",
-  "axiswhy": "왕복 고정점·예고=결과 — POI가 JVM에서 돈다"
+  "axiswhy": "왕복 고정점·예고=결과 — POI가 JVM에서 돈다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "미리보기 예고 수와 가져오기 결과 수를 맞대는 시험이 없다 — app/src/test 전체에 unchangedRows·updatedCharacters를 읽는 줄이 0건이다. 그 짝은 tools/check_restore_preview_parity.sh(셸)가 본다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -688,7 +862,14 @@
   "expect": "그 줄만 '변경 1'이고 나머지는 '동일'이다",
   "ref": "3-42-2",
   "axis": "자동",
-  "axiswhy": "왕복 고정점·예고=결과 — POI가 JVM에서 돈다"
+  "axiswhy": "왕복 고정점·예고=결과 — POI가 JVM에서 돈다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "칸 단위 판정(FieldValueCellPlanTest)만 있고 줄 단위 '변경 1 / 동일' 계수는 없다. 그 시험 파일 머리가 스스로 적는다: \"미리보기의 계수 자체는 DB에 묶여 순수 하네스가 닿지 못한다.\" 계수 자리는 ExcelImportService.kt:2815 등 Android 계층이고 이를 부르는 JVM 시험이 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -727,7 +908,16 @@
   "expect": "들어온다. **'백업에 N건'이 원본보다 늘지 않는다**(늘면 제목이 데이터 행으로 세어진 것)",
   "ref": "3-132-ㄱ",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "SheetResolverTest.kt(SheetResolverTest).headerBelowTitleRow_isFound_onBothPaths"
+   ],
+   "evidence": "assertEquals(2, found?.index)  /  // **데이터는 헤더 다음 행부터다** — 이 값이 1로 남으면 제목·빈 줄이 데이터로 읽힌다.  /  assertEquals(3, found?.dataStart)",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -740,7 +930,14 @@
   "expect": "사유와 함께 거부하고, 문구가 \"맨 앞 10행\"을 말한다",
   "ref": "3-132-ㄴ·3-123-ㅁ",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "SheetResolverTest.headerBeyondWindow_isNotFound_onBothPaths가 '창 밖 헤더는 못 찾는다'(assertNull)까지만 잰다. 거부 문구가 '맨 앞 10행'을 말하는가를 단언하는 시험은 없다 — app/src/test 전체에 '열 이름 행'·'건너뛰었습니다' 문자열이 하나도 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -753,7 +950,14 @@
   "expect": "**말없이 넘어가지 않는다** — 사유와 함께 거부한다",
   "ref": "3-123-ㄹ",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "헤더 행 자체가 없을 때의 '사유와 함께 거부'는 ExcelImportService.headerRowOrReport의 private 분기(`result.errors.add(\"시트 '...': 열 이름 행을 찾지 못했습니다 — 시트를 건너뛰었습니다 ...\")`)이고, 이를 단언하는 JVM 시험이 없다. SheetResolverTest는 `missingSheet_isNull_onBothPaths`·`headerBeyondWindow_isNotFound_onBothPaths`처럼 *못 찾음*만 보고 보고 여부는 보지 않는다(R-56의 방어선은 시험이 아니라 tools/check_header_row_report.sh다).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -766,7 +970,17 @@
   "expect": "기존 데이터를 **안 지운다**. \"복원 재료가 없어 삭제하지 않았습니다\"가 뜬다",
   "ref": "3-121-ㄱ·3-132-ㄷ",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다",
+    "OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다"
+   ],
+   "evidence": "assertFalse(OverwriteGuard.hasDataRow(styledOnly)) / assertEquals(RestoreSource.EMPTY, OverwriteGuard.classify(OverwriteGuard.hasDataRow(styledOnly))) — 주석이 '엑셀에서 Delete로 내용만 지운 파일'이라 이 단계의 그 파일이다. 그리고 assertFalse(\"빈 시트가 전부 삭제를 허가하면 안 된다\", OverwriteGuard.canRestore(false)). (고지 문구 자체는 ExcelImportService.kt:726의 상수이고 시험이 글자를 재지는 않는다 — 판정은 이 시험이 든다)",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -805,7 +1019,14 @@
   "expect": "동명이인 오류가 뜨고, **안내한 대로 코드를 채우면 통과**한다",
   "ref": "3-20-1·2",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "판정 자체는 CharacterRefResolverTest가 덮는다 — assertTrue(r is CharLookupResult.Ambiguous && r.count == 2) / assertEquals(hanB, (r as CharLookupResult.Found).character). 그러나 ref 3-20의 본체인 '어느 열에 코드를 적으라'는 오류 문구를 단언하는 시험은 없다(ExcelImportService.kt:7764에만 있다).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -818,7 +1039,14 @@
   "expect": "실패 창이 뜨고 **기존 데이터가 멀쩡**하다",
   "ref": "3-43-2·3",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "ImportFileFormatTest는 파일 정체 판별(NOT_ZIP/OTHER_ZIP)까지만 잰다. '실패 창이 뜬다'와 '기존 데이터가 멀쩡하다'를 단언하는 시험이 없다 — NOT_ZIP은 ExcelImporter.kt:503에서 importFromXlsx로 넘어가 POI에서 터지는 경로이고, 그 뒤 DB 무변경을 재는 시험이 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -831,7 +1059,16 @@
   "expect": "\"지원하지 않는 ZIP\" 부류로 거부한다",
   "ref": "3-8-7",
   "axis": "자동",
-  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수"
+  "axiswhy": "깨진 입력 수용·거부 — 전부 파일 → 결과의 순수 함수",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ImportFileFormatTest.kt(ImportFileFormatTest).아무것도 아닌 ZIP은 OTHER_ZIP - 원인별 안내 대상"
+   ],
+   "evidence": "assertEquals(ImportFileKind.OTHER_ZIP, ImportFileFormat.detect(tempZip(\"readme.txt\")))  — detect는 data.xlsx/manifest.json/xl/workbook.xml 세 엔트리만 보므로 사진 ZIP도 같은 갈래다",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -844,7 +1081,14 @@
   "expect": "그 세계관 시트가 **머리글만 있는 빈 시트**로 나온다",
   "ref": "3-39-5",
   "axis": "자동",
-  "axiswhy": "AllCharactersSheetTest 계열"
+  "axiswhy": "AllCharactersSheetTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "AllCharactersSheetTest에 '캐릭터가 없는 세계관은 세지 않는다'가 있으나 그것은 전체 캐릭터 시트의 열 선정 계산이다. '캐릭터 0명 세계관도 머리글만 있는 시트로 나간다'를 단언하는 시험은 없다(ExportPlanAndSpaceTest는 시트 '단계' 목록만, ExportWorkbookParityTest는 POI 재현이라 ExcelExporter를 부르지 않는다).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -857,7 +1101,17 @@
   "expect": "**기존 데이터를 지우지 않는다**",
   "ref": "3-39-3",
   "axis": "자동",
-  "axiswhy": "AllCharactersSheetTest 계열"
+  "axiswhy": "AllCharactersSheetTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다",
+    "OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다"
+   ],
+   "evidence": "assertEquals(RestoreSource.EMPTY, OverwriteGuard.classify(false))\nassertFalse(\"빈 시트가 전부 삭제를 허가하면 안 된다\", OverwriteGuard.canRestore(false))\nassertFalse(OverwriteGuard.hasDataRow(styledOnly))  // 내용만 지운 시트도 EMPTY",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -870,7 +1124,14 @@
   "expect": "그대로 만들어진다",
   "ref": "3-39-2",
   "axis": "자동",
-  "axiswhy": "AllCharactersSheetTest 계열"
+  "axiswhy": "AllCharactersSheetTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "빈(머리글만 있는) 시트에 행을 적어 가져오면 실제로 엔티티가 만들어지는가를 단언하는 JVM 시험이 없다. AllCharactersSheetTest는 '전체 캐릭터' 시트의 공유 열 판정과 시트 정체성만 보고(오히려 '모든 열이 읽기 전용이다'), 만들기 경로는 ExcelImportService+Room이라 순수 계층에 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -909,7 +1170,14 @@
   "expect": "전역 필드 열이 있고 겹쳐 나가지 않는다",
   "ref": "3-97",
   "axis": "자동",
-  "axiswhy": "AllCharactersSheetTest 계열"
+  "axiswhy": "AllCharactersSheetTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "겹침 쪽만 덮인다 — assertTrue(CharacterFieldValueOverflow.select(values, setOf(5L, 6L), fields).isEmpty()). '미분류 캐릭터' 시트에 전역 필드가 열로 서는지는 ExcelExporter.kt:1501~1513의 배선이고 그것을 단언하는 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -922,7 +1190,19 @@
   "expect": "앱의 라이브러리에 반영되고, 통계·검색에 나타난다",
   "ref": "3-28-4",
   "axis": "자동",
-  "axiswhy": "필드 데이터 시트 왕복"
+  "axiswhy": "필드 데이터 시트 왕복",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldValueSheetMapperTest.roundTrip_unchanged",
+    "FieldValueSheetMapperTest.blankCells_clearExistingAttributes",
+    "FieldValueResolverTest.statsKeys_aliasResolvesBeforeGrouping",
+    "FieldFilterHelperTest.exact_aliasExpansion_matchesAliasFormRows"
+   ],
+   "evidence": "assertEquals(entry.displayLabel, reimported.displayLabel)\nassertEquals(\"\", reimported.displayLabel)   // 시트의 라벨 열이 기존 값을 실제로 덮는다\nassertEquals(listOf(\"서울특별시\"), r.statsKeys(\"서울시\", \"value\"))",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -935,7 +1215,17 @@
   "expect": "기존 값이 안 지워진다",
   "ref": "3-42-6",
   "axis": "자동",
-  "axiswhy": "필드 데이터 시트 왕복"
+  "axiswhy": "필드 데이터 시트 왕복",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldValueSheetMapperTest.kt(FieldValueSheetMapperTest).absentColumns_keepExistingAttributes",
+    "FieldValueSheetMapperTest.kt(FieldValueSheetMapperTest).축약 시트는 말하지 않은 열을 바꾸지 않는다"
+   ],
+   "evidence": "val reimported = FieldValueSheetMapper.applyRow(entry, 1, row(entry.value))!!  /  assertEquals(entry.aliases(), reimported.aliases())  /  assertEquals(entry.category, reimported.category)",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -948,7 +1238,14 @@
   "expect": "'필드 데이터 시트 (값 정리)' 절이 있다",
   "ref": "3-28-3",
   "axis": "자동",
-  "axiswhy": "필드 데이터 시트 왕복"
+  "axiswhy": "필드 데이터 시트 왕복",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'사용 안내' 시트의 절 목록을 단언하는 시험이 없다. 해당 문구는 ExcelExporter.kt:992의 GuideLine(\"'필드 데이터' 시트 (값 정리)\", …) 한 줄이고, 시험 소스에 'GuideLine'·'값 정리'가 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -961,7 +1258,14 @@
   "expect": "**전역 필드가 그대로 있다.** 무소속 캐릭터 값도 그대로다(종전에는 정의가 지워지며 값까지 CASCADE로 사라졌다 — B-130이 낸 사고 그 자체다)",
   "ref": "3-66-2",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "B-130 방어선 자체는 실재한다 — FieldDefinitionPruneTest.kt의 `전역_행이_없는_백업은_전역_필드를_지우지_않는다`(assertTrue(\"전역 필드가 삭제 대상에 들어갔다 — 값이 CASCADE로 함께 사라진다\", outcome.stale.isEmpty())). 그러나 **색인의 FieldDefinitionPruneTest·FieldScopeCellTest는 tests가 비어 있어 인용할 수 없다**(색인이 `@Test fun x()` 한 줄 선언을 못 읽는다). 더구나 '무소속 캐릭터 값도 그대로'인 실제 내보내기→덮어쓰기 왕복은 ExcelImportService/Exporter 경로라 어느 JVM 시험도 보지 않는다.",
+   "kind": "PURE"
+  }
  },
  {
   "round": "3",
@@ -974,7 +1278,17 @@
   "expect": "지우지 않고 **\"시트가 다루지 않은 구역…삭제하지 않고 유지했습니다\"**라고 말한다",
   "ref": "3-66-3",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldDefinitionPruneTest.전역_행이_없는_백업은_전역_필드를_지우지_않는다",
+    "FieldDefinitionPruneTest.시트가_다루지_않은_세계관도_지키다"
+   ],
+   "evidence": "assertTrue(\"전역 필드가 삭제 대상에 들어갔다 — 값이 CASCADE로 함께 사라진다\", outcome.stale.isEmpty()) / assertEquals(\"고지할 구역은 전역 하나다\", listOf<Long?>(null), outcome.protectedScopes) — 지우지 않는 것과 '그 구역을 말한다'의 재료가 둘 다 단언된다. ExcelImportService.kt:6269가 이 protectedScopes로 \"시트가 다루지 않은 구역…삭제하지 않고 유지했습니다\"를 짓는다. ⚠️ 색인이 이 클래스를 tests:[]로 싣지만 한 줄 `@Test fun` 8개가 파일에 실재한다.",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -1026,7 +1340,14 @@
   "expect": "세어서 말한다(조용히 안 버린다)",
   "ref": "3-90-8·9",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "\"앱 설정: 이 버전이 모르는 설정 N개를 건너뛰었습니다\"는 ExcelImportService.kt:8530에만 있고 그 셈·문구를 단언하는 시험이 0건이다. AppSettingsKeysTest는 키 조회('모르는 키는 없다고 답한다')까지만 본다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -1039,7 +1360,14 @@
   "expect": "거기에도 키가 없다",
   "ref": "3-90-11",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "AppSettingsKeysTest.동의가 없으면 비밀은 내보내지지 않는다는 exported(includeSecrets=false)만 잰다. '자동 백업 파일'이 그 false를 쓴다는 것을 단언하는 시험이 없다 — app/src/test에 aiKeys·AutoBackupWorker를 언급하는 줄이 0건이다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "3",
@@ -1052,7 +1380,17 @@
   "expect": "결과 창에 **필드 이름과 사유**가 뜬다. 값은 저장된다(거부가 아니라 고지)",
   "ref": "3-105",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ImportedFormulaAuditTest.kt(ImportedFormulaAuditTest).찾은 것은 키와 이름을 함께 든다",
+    "ImportedFormulaAuditTest.kt(ImportedFormulaAuditTest).정말로 없는 키는 잡는다"
+   ],
+   "evidence": "assertEquals(\"total_power\", finding.key); assertEquals(\"총합\", finding.name)  /  assertEquals(listOf(FormulaValidator.Problem.UnknownKeys(listOf(\"없는키\"))), findings[0].problems)  — audit은 findings만 돌려주는 고지 함수라 거부 경로가 없다",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -1065,7 +1403,14 @@
   "expect": "**행 번호와 함께** 경고가 뜨고, 연결이 안 지워진다",
   "ref": "3-105",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelSystemFieldsTest.모르는 sys 키를 영향과 프로필 자리에서 모은다가 unknownSystemKeys 수집까지만 잰다. 경고에 '행 번호'가 붙는가와 들이기 뒤 연결이 남는가를 단언하는 시험은 없다 — 설계 3-105 자신이 '순수 계층이 재는 것은 무엇을 경고할 것인가까지'라 적었다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -1078,7 +1423,17 @@
   "expect": "`▼나이` 꼴이다(옛 `-나이`가 아니다). 옛 파일도 같은 뜻으로 들어온다",
   "ref": "3-105",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelFieldLinksTest.writes only the new marker",
+    "DuelFieldLinksTest.legacy markers still read as lower wins"
+   ],
+   "evidence": "val text = DuelFieldLinks.toText(listOf(Link(\"age\", higherWins = false)))\nassertEquals(\"▼age\", text); assertTrue(\"옛 표식이 아직 나간다\", !text.startsWith(\"-\"))\nassertEquals(\"옛 `-` 표식이 죽었다\", expected, DuelFieldLinks.parseText(\"-age\"))",
+   "kind": ""
+  }
  },
  {
   "round": "3",
@@ -1091,7 +1446,14 @@
   "expect": "값이 되살아난다. 구버전 파일 덮어쓰기에 경고가 뜬다",
   "ref": "3-22",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "CharacterFieldValueOverflowTest는 미분류 캐릭터 값이 '캐릭터 필드값' 시트로 **나가는** 선별만 단언한다(unclassifiedCharacter_globalFieldValues_overflowWhenNotColumns 등). 왕복으로 값이 **되살아나는지**와 구버전 파일 덮어쓰기 경고(ExcelImportService.kt:791 — countUnrestorableFieldValues가 Room 질의)를 단언하는 시험은 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "3",
@@ -1130,7 +1492,18 @@
   "expect": "감싸여 나가고, 되읽어도 그대로다. 헤더에 `(쉼표 구분)` 안내가 붙는다",
   "ref": "3-99",
   "axis": "자동",
-  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다"
+  "axiswhy": "시트 내용 대조 — API 키 유출 여부까지 파일을 읽으면 끝난다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "CsvTokensTest.quote_onlyWhenDelimiterPresent",
+    "CsvTokensTest.joinThenSplit_roundTripsInBothModes",
+    "EntityFieldHeadersTest.multiTokenField_getsCommaSuffix"
+   ],
+   "evidence": "assertEquals(\"\\\"가, 나\\\"\", CsvTokens.quote(\"가, 나\")) / assertEquals(tokens, CsvTokens.split(joined)) / assertEquals(listOf(\"필드:참가자 (쉼표 구분)\"), headers.map { it.second })",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1143,7 +1516,19 @@
   "expect": "**삭제 작업 단위**로 묶이고, 머리글이 \"세계관 '…' 삭제 · 항목 N개 · 시각\"을 말한다",
   "ref": "3-103-1·2",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "TrashGroupingTest.삭제 묶음은 머리글을 내준다",
+    "TrashGroupingTest.뿌리 항목은 복원 순서가 가장 이른 것이다",
+    "TrashGroupingTest.묶음의 시각은 가장 최근 스냅샷 기준이다",
+    "TrashListPlanTest.걸러도 머리글의 전체 수는 묶음 전체다"
+   ],
+   "evidence": "assertFalse(group.isEditBackup); assertTrue(group.needsHeader)\nassertEquals(\"아스테리아\", TrashGrouping.group(items).single().root.entityName)\nassertEquals(500L, TrashGrouping.group(items).single().newestAt) / assertEquals(6, header.itemCount)",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1169,7 +1554,16 @@
   "expect": "걸린 머리글이 **`항목 3/214개`**처럼 둘 다 적는다",
   "ref": "3-103",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "TrashListPlanTest.kt(TrashListPlanTest).걸러도 머리글의 전체 수는 묶음 전체다"
+   ],
+   "evidence": "val rows = TrashListPlan.build(universeDeletion(\"op1\", 5), criteria = TrashFilter.Criteria(query = \"인물3\"))  /  assertEquals(1, header.matchedCount)  /  assertEquals(6, header.itemCount)",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1182,7 +1576,14 @@
   "expect": "\"조건에 맞는 항목이 없습니다\"가 뜨고, 지우면 기본 상태로 돌아온다",
   "ref": "3-103-6·7",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "TrashListPlanTest.조건에 맞는 것이 없으면 행이 하나도 없다는 rows.isEmpty()만 단언하고 주석이 문구 판정을 화면에 넘긴다. 어느 문구가 뜨는가는 TrashFragment.render()의 latestSnapshots.isEmpty() 분기(trash_empty_hint ↔ trash_filter_empty)이고 이를 단언하는 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "4",
@@ -1195,7 +1596,14 @@
   "expect": "예고와 결과가 **같다**",
   "ref": "3-102-2·3",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "설계 3-102가 못박았다 — \"순수 시험은 판정 함수 하나까지만 재고(RestoreTally), **그 판정이 실제 복원과 같은 답을 내는가**는 재지 못한다. TrashRepository는 Room에 매달려 있어 로컬 검증이 원리적으로 닿지 않는 계층이다.\" RestoreLossCountsTest는 예고↔실제의 *비교 규칙*만 본다(`assertFalse(predicted.exceeds(predicted))`).",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "4",
@@ -1208,7 +1616,14 @@
   "expect": "**필드값·태그·관계·상태변화가 함께** 돌아왔다",
   "ref": "3-102-4",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "복원 뒤 캐릭터에 필드값·태그·관계·상태변화가 **함께 들어갔는지**를 단언하는 시험이 없다. CharacterSnapshotPayloadTest는 payload 역직렬화 계약만 본다(assertNull(snap.tags) 같은 널 폴백), 실제 쓰기는 TrashRepository/Room이라 순수 계층 밖이다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "4",
@@ -1247,7 +1662,14 @@
   "expect": "휴지통에 **\"필드 정의(덮어쓰기 직전)\"**가 생긴다. 입력해 둔 값이 살아남는다",
   "ref": "3-49-2·3",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "PresetMergeTest는 계획 단계까지만 본다 — assertEquals(listOf(\"나이\"), resolution.backups.map { it.name }). 그 백업이 휴지통 '필드 정의(덮어쓰기 직전)' 항목으로 실제로 생기는지, 채워 둔 캐릭터 값이 살아남는지를 단언하는 시험은 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "4",
@@ -1260,7 +1682,17 @@
   "expect": "안내 문구가 고른 값과 **같은 수**를 말한다",
   "ref": "3-103",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "TrashRetentionPolicyTest.선택지는 전부 좁히기를 통과한다 — 고를 수 있는데 안 먹는 칸이 없어야 한다",
+    "TrashRetentionPolicyTest.실어 준 값이 현행이 된다"
+   ],
+   "evidence": "assertEquals(\"선택지 ${c}건이 좁혀지면 사용자가 고른 값과 실제가 갈린다\", c, TrashRetentionPolicy.sanitize(TrashRetentionPolicy.Settings(maxOperations = c)).maxOperations)\nassertEquals(100, now!!.maxOperations); assertEquals(90, now.retentionDays)",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1299,7 +1731,17 @@
   "expect": "\"이미지 N장 포함 — 완전한 백업입니다\"",
   "ref": "3-36-5",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ImageBackupIntegrityTest.kt(ImageBackupIntegrityTest).completeBackupClaim_isBlockedWhenSomeReferencesCouldNotBeRead",
+    "ExportPlanAndSpaceTest.kt(ExportPlanAndSpaceTest).ALL_WITH_IMAGES만 완전한 백업이다"
+   ],
+   "evidence": "assertEquals(listOf(ImageNoticeKind.COMPLETE_BACKUP), complete().noticeKinds(isCompleteBackup = true))  /  assertTrue(ExportOptions.ALL_WITH_IMAGES.isCompleteBackup)  — 문구의 N은 r.includedCount 그대로다",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1312,7 +1754,18 @@
   "expect": "**\"완전한 백업입니다\"가 안 뜬다** — 안 담긴 장을 말한다",
   "ref": "3-122-ㄴ",
   "axis": "자동",
-  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정"
+  "axiswhy": "묶음·검색·예고=결과·복원 내용 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ImageBackupIntegrityTest.completeBackupClaim_isBlockedWhenSomeReferencesCouldNotBeRead",
+    "ImageBackupIntegrityTest.lossAndUnreadable_areBothSaidNotOneInsteadOfTheOther",
+    "ImageBackupIntegrityTest.report_sampleNamesAreFileNamesAndCapped"
+   ],
+   "evidence": "assertEquals(listOf(ImageNoticeKind.COMPLETE_BACKUP), complete().noticeKinds(isCompleteBackup = true))\nassertEquals(listOf(ImageNoticeKind.REFS_UNREADABLE), complete(unreadable = 2).noticeKinds(isCompleteBackup = true))\nassertEquals(listOf(ImageNoticeKind.INCOMPLETE, ImageNoticeKind.REFS_UNREADABLE), r.noticeKinds(isCompleteBackup = true))",
+   "kind": ""
+  }
  },
  {
   "round": "4",
@@ -1325,7 +1778,14 @@
   "expect": "`data.xlsx` · `images/` · `image_map.json`이 있다",
   "ref": "3-36-6",
   "axis": "자동",
-  "axiswhy": "zip 구조·미리보기 줄·상성 시트"
+  "axiswhy": "zip 구조·미리보기 줄·상성 시트",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "zip 구조는 ImageZipHelper의 리터럴 세 자리다 — `zip.putNextEntry(ZipEntry(\"data.xlsx\"))`, `ZipEntry(zipPath)`(images/…), `zip.putNextEntry(ZipEntry(\"image_map.json\"))`. 이 파일을 부르는 JVM 시험이 하나도 없다(Context·AppDatabase가 필요하다). ImageBackupIntegrityTest는 유실 집계만 본다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "4",
@@ -1351,7 +1811,14 @@
   "expect": "**'캐릭터/작품/사건 필드값' 세 줄**이 있고, 값 칸을 지우면 **'비움'**이 별도 줄로 뜬다",
   "ref": "3-131-ㄱ·ㄴ",
   "axis": "자동",
-  "axiswhy": "zip 구조·미리보기 줄·상성 시트"
+  "axiswhy": "zip 구조·미리보기 줄·상성 시트",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'비움'이 신규·변경·동일과 따로 세어지는 계수는 FieldValueScanTest가 들지만(clearedCount), 미리보기에 '캐릭터/작품/사건 필드값' **세 줄이 서는지**와 '비움'이 **별도 줄로 뜨는지**를 단언하는 시험은 없다 — 범주 세 개는 ExcelImportService.kt:2736-2747에서 DB를 읽으며 붙고, 줄 그리기는 화면이다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "4",
@@ -1468,7 +1935,18 @@
   "expect": "표의 **비율 합이 100%**이고, 마지막에 **'기타 N종'** 행이 있다",
   "ref": "3-10-4",
   "axis": "자동",
-  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)"
+  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "ValueDistributionsTest.표시분과 기타의 비율 합은 100퍼센트다",
+    "ValueDistributionsTest.상한을 넘으면 나머지를 접고 종수와 건수를 알린다",
+    "ValueDistributionsTest.비율의 분모는 잘리기 전 전체 합이다"
+   ],
+   "evidence": "assertEquals(100.0, shownRatio + view.hiddenRatio(), 0.01) / assertEquals(3, view.hiddenKinds) / assertEquals(5, view.hiddenCount)",
+   "kind": ""
+  }
  },
  {
   "round": "5",
@@ -1520,7 +1998,18 @@
   "expect": "조각이 **구간(150~158 꼴)**으로 묶이고, **\"…수치 구간으로 접었습니다\"** 고지가 카드 안에 있다",
   "ref": "3-130-ㄱ",
   "axis": "자동",
-  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)"
+  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "NumericDistributionFoldTest.값 종류가 상한을 넘치면 자동 구간으로 접는다",
+    "NumericDistributionFoldTest.구간 수는 표시 상한을 넘지 않는다",
+    "NumericBinningTest.구간은 최소 최대를 등분하고 마지막만 상한을 포함한다"
+   ],
+   "evidence": "assertTrue(\"접어야 한다\", r.autoBinned)\nassertEquals(\"접기 전 종 수를 함께 실어 보낸다\", 40, r.preFoldKinds)   // 고지 문구의 %1$d 인자\nassertEquals(5, bins.size); assertTrue(bins.last().inclusiveMax)",
+   "kind": ""
+  }
  },
  {
   "round": "5",
@@ -1546,7 +2035,18 @@
   "expect": "접히고 **접었다고 말한다**. **[더 보기]**로 한 묶음씩 붙는다",
   "ref": "3-119-ㄴ·ㄷ",
   "axis": "자동",
-  "axiswhy": "50명 넘으면 접고 접었다고 말한다 — 임계값 계산"
+  "axiswhy": "50명 넘으면 접고 접었다고 말한다 — 임계값 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DisplayCapTest.kt(DisplayCapTest).펼치기 한 번이 늘리는 수는 정확히 한 묶음이다",
+    "DisplayCapTest.kt(DisplayCapTest).마지막 묶음은 전체에서 멈춘다",
+    "DataHealthReorgTest.kt(DataHealthReorgTest).잘라낸 것은 축마다 개수로 알린다"
+   ],
+   "evidence": "assertEquals(50, DisplayCap.shownCount(total, chunk = 50, steps = 0)); assertEquals(100, ... steps = 1)  /  assertEquals(120, DisplayCap.shownCount(120, chunk = 50, steps = 2))  /  assertEquals(mapOf(ENTITY_CHARACTER to 10), view.hiddenByOwnerType)  — NAME_LIST_CHUNK=50",
+   "kind": ""
+  }
  },
  {
   "round": "5",
@@ -1572,7 +2072,14 @@
   "expect": "표가 나오고 제목 앞에 **\"사건 ·\"**이 붙는다",
   "ref": "3-6-1",
   "axis": "자동",
-  "axiswhy": "사건 축 교차 분석 제목"
+  "axiswhy": "사건 축 교차 분석 제목",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "StatsCrossAnalysisTest.사건 축 교차표의 셀은 사건 수다가 '표가 나온다'는 덮지만, 제목 접두 '사건 · '을 단언하는 시험이 없다. 그 접두는 StatsFieldInsightFragment.showCrossAnalysisResult의 axisPrefix 조립이고(CrossAxis.EVENT 분기), PatternDetectionAxisTest가 재는 startsWith(\"사건 · \")는 패턴 카드 제목이지 교차분석 제목이 아니다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "5",
@@ -1598,7 +2105,19 @@
   "expect": "그 필드가 통계·패턴 카드·어시스턴트에서 **다 빠진다**. 단 **완성도 목록에는 남는다**",
   "ref": "3-10-1·2",
   "axis": "자동",
-  "axiswhy": "통계 제외 필드가 모든 소비처에서 빠지는가 — 목록 계산"
+  "axiswhy": "통계 제외 필드가 모든 소비처에서 빠지는가 — 목록 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "StatsConsistencyTest.레거시 필드 분석이 통계 제외 필드를 빼놓는다",
+    "StatsConsistencyTest.통계에 포함을 끈 필드는 패턴 인사이트에 나타나지 않는다",
+    "StatsConsistencyTest.요약 TOP5도 계산 필드를 센다",
+    "StatsFieldPolicyTest.끈 필드는 자동 목록에서 빠진다"
+   ],
+   "evidence": "assertTrue(\"끈 필드가 분포에 남으면 …\", stats.fieldValueDistributions.none { it.fieldName == \"메모\" })\nassertTrue(stats.fieldCompletionByField.any { it.fieldName == \"메모\" })  // 완성도에는 남는다(의도된 예외)\nassertTrue(\"끈 필드가 패턴 카드로 되살아나면 안 된다\", patterns.none { it.title.contains(\"성별\") })  // 어시스턴트도 같은 detectPatterns를 쓴다",
+   "kind": ""
+  }
  },
  {
   "round": "5",
@@ -1611,7 +2130,14 @@
   "expect": "유형 여섯 줄이 뜨고, 값이 `60·35·5·50·100·3`이다. **작은 기기에서 끝까지 스크롤된다**",
   "ref": "3-110",
   "axis": "자동",
-  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)"
+  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "값 여섯은 PatternDetectionAxisTest.기본 민감도는 종전 동작을 그대로 재현한다가 그대로 단언한다 — assertEquals(60f, t.dominancePercent, 0.001f) / assertEquals(35f, t.balanceMaxPercent…) / 5f·50f·100·3f. 그러나 '**작은 기기에서 끝까지 스크롤된다**'를 단언하는 시험이 없다(DialogScrollCapTest는 상한 계산만 잰다).",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "5",
@@ -1694,7 +2220,14 @@
   "expect": "접히고 더 보기가 있다",
   "ref": "3-119-ㄹ",
   "axis": "자동",
-  "axiswhy": "50명 넘으면 접고 접었다고 말한다 — 임계값 계산"
+  "axiswhy": "50명 넘으면 접고 접었다고 말한다 — 임계값 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DisplayCapTest는 묶음 셈만 본다 — assertEquals(50, DisplayCap.shownCount(total, chunk = 50, steps = 0)). 관계 상세의 고립 목록이 그 셈을 타는지는 StatsRelationshipDetailFragment.kt:134(populateSimpleList → StatsCappedList.populate)의 배선이고 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "5",
@@ -1707,7 +2240,14 @@
   "expect": "카드 위 안내줄이 **\"필수 칸을 3.0배로 세고 있습니다\"**처럼 바꾼 배수를 말한다",
   "ref": "3-54",
   "axis": "자동",
-  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)"
+  "axiswhy": "비율 합·구간 접기·기본값·검증 — 순수 계산 (CrossTableFoldTest 계열)",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "CompletionRateTest는 가중 셈(필수 칸은 배수만큼 셈해진다·범위 밖 배수는 접힌다)만 잰다. 안내줄이 '고른 배수'를 그대로 말하는지를 단언하는 시험이 없다 — 그 문구는 StatsDataOverviewFragment.kt:147의 getString(stats_completion_weight_note, stats.requiredWeight) 한 자리다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -1746,7 +2286,16 @@
   "expect": "대결 카드의 이름 아래에 그 값이 순서대로 뜬다",
   "ref": "3-57-3·4",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelCardInfoTest.kt(DuelCardInfoTest).영향 필드는 값이 없어도 줄이 남는다"
+   ],
+   "evidence": "links = DuelFieldLinks.Axis(influences = listOf(link(\"power\"), link(\"element\")))  /  assertEquals(listOf(\"power\", \"element\"), card.influences.map { it.key })  /  assertEquals(listOf(1, 2), card.influences.map { it.rank })",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1759,7 +2308,14 @@
   "expect": "산출 필드로 건 것은 **회색으로 잠기고 사유가 붙는다**",
   "ref": "3-61-1",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelSystemFieldsTest가 effectiveOutcomes·profileBlocked 집합까지는 단언한다(assertEquals(listOf(\"strength\"), axis.profileBlocked)). 그러나 프로필 고르기 창에서 그 키가 '회색으로 잠기고 사유가 붙는가'를 단언하는 시험은 없다 — DuelAxisListFragment:689가 blockedKeys.associateWith(blockedReason)로 어댑터에 넘기는 자리다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -1785,7 +2341,17 @@
   "expect": "진행률 네 숫자(붙임·접힘·남음/전체)가 바뀐다",
   "ref": "3-56-3",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelPairingTest.진행률은 붙인 것 접힌 것 남은 것으로 정확히 갈린다",
+    "DuelPairingTest.이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다"
+   ],
+   "evidence": "assertEquals(28L, p.total)\nassertEquals(p.total, p.played + p.folded + p.remaining)\nassertEquals(3L, p.played)   // 판을 붙인 만큼 붙임이 오르고 남음이 준다",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1798,7 +2364,17 @@
   "expect": "**직전에 본 그 판**이 되돌려진다",
   "ref": "3-56-2",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelSessionTest.되돌리면 그 짝을 다시 묻는다 — 지우기만 하면 고칠 자리가 사라진다",
+    "DuelRatingTest.한 판을 되돌리면 그 판이 없던 상태와 정확히 같다"
+   ],
+   "evidence": "val undone = DuelSession.undo(answered) / assertEquals(DuelRating.PairKey.of(1, 2), undone.current?.pair) — 직전에 답한 그 짝이 다시 올라온다. 점수 쪽은 for (id in …) assertEquals(never.of(id)!!.strength, undone.of(id)!!.strength, 1e-12).",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1837,7 +2413,17 @@
   "expect": "오름·내림 어느 쪽에서도 **맨 뒤**이고, 고지 줄이 그 사실을 말한다",
   "ref": "3-59-3·4",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelScoreIndexTest.값 없음은 오름차순에서도 내림차순에서도 맨 뒤다",
+    "DuelScoreIndexTest.한 판도 안 치른 참가자는 앵커 점수를 갖지만 표에는 없다"
+   ],
+   "evidence": "assertEquals(\"내림차순: 센 쪽 먼저, 값 없음은 뒤\", listOf(\"A\", \"B\", \"무기록\"), desc) / assertEquals(\"오름차순은 값에 대한 물음이지 값의 유무에 대한 물음이 아니다\", listOf(\"B\", \"A\", \"무기록\"), asc) / assertEquals(\"빠진 인원은 세어서 알린다\", 1, scores.unplayed)  — 고지 줄은 CharacterListFragment.kt:773이 이 s.unplayed를 그대로 쓴다",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1850,7 +2436,17 @@
   "expect": "**\"값끼리의 전적\"** 구역이 있고 수가 실제와 맞는다",
   "ref": "3-58-1·2",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelCategoryStatsTest.wins and losses land in one matchup",
+    "DuelCategoryStatsTest.value tallies and matchups count the same matches"
+   ],
+   "evidence": "assertEquals(3, cell.matches); assertEquals(3.0, cell.leftWins, 1e-9); assertEquals(0.0, cell.rightWins, 1e-9)\nassertEquals(cellMatches * 2, valueMatches); assertEquals(5, report.scannedMatches)",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1863,7 +2459,16 @@
   "expect": "**못 센 것을 말한다**",
   "ref": "3-58-6",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelCategoryStatsTest.kt(DuelCategoryStatsTest).matches with a missing value are counted not dropped"
+   ],
+   "evidence": "assertTrue(report.matchups.isEmpty())  /  assertEquals(1, report.skippedNoValue)  /  assertEquals(0, report.scannedMatches)",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1894,7 +2499,14 @@
   "expect": "순위표가 **그 캐릭터 안에서만** 줄을 세운다",
   "ref": "3-85-3·5",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelImageRosterTest는 '판을 누구 몫으로 세는가'(판은 그 캐릭터 몫으로만 세어진다 · 캐릭터를 넘는 판은 세지 않는다)까지만 단언한다. 순위표의 줄이 그 캐릭터의 그림만인가를 단언하는 시험은 없다 — DuelStandingsFragment:143 viewModel.imageTarget(axis, characterId)로 좁히는 화면 배선이고, 설계 3-85가 '여기서 볼 것은 화면이 그 판정에 닿는가'라 적었다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "6",
@@ -1907,7 +2519,14 @@
   "expect": "기록 화면이 **거르개가 켜진 채** 뜨고, **요약의 총 수가 고지의 N과 같다**",
   "ref": "3-138-ㄱ·ㄴ",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "설계 3-138이 못박았다 — \"**누를 수 있게 보이는가**와 **화면 둘이 같은 수를 말하는가**는 여기서만 안다\". DuelImageRosterTest.`고른 판의 수가 순위표가 센 수와 같다`는 데이터 층의 수 일치(counted == picked.size)만 보고, 고지 줄 뒷부분이 눌리는가·기록 화면이 **거르개가 켜진 채** 뜨는가는 어느 시험도 단언하지 않는다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "6",
@@ -1933,7 +2552,16 @@
   "expect": "**'지워진 참가자'로 안 뜬다**",
   "ref": "3-118-ㄱ",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelImageStandingsShiftTest.표기가 갈리지 않은 자료에서는 점수가 그대로이고 거짓 고지만 사라진다"
+   ],
+   "evidence": "assertEquals(\"아무것도 지워지지 않았으므로 0이 옳다\", 0, new.orphan) / assertEquals(0, new.missing) — new.missing이 순위표가 읽는 records.missingParticipants(= '지워진 참가자' 고지의 수)이고, 자료에는 남의 캐릭터 판 셋이 섞여 있다(종전 경로는 old.missing == 5).",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -1998,7 +2626,17 @@
   "expect": "스피너가 \"축을 고르세요\"를 보이고 사유가 뜬다(다른 축 이름이 보이면 실패)",
   "ref": "3-67-2",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelAxisChoiceTest.dangling code puts a placeholder first and selects nothing",
+    "DuelAxisChoiceTest.dangling keeps every real axis pickable behind the placeholder"
+   ],
+   "evidence": "assertTrue(\"찾지 못한 참조는 댕글링이다\", choice.dangling) / assertEquals(\"자리 표시용 항목이 맨 앞에 선다\", 3, choice.items.size) / assertNull(\"고른 축이 없다 — 0번 축이 아니다\", choice.axisAt(choice.selection))",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -2011,7 +2649,16 @@
   "expect": "**종전 최하 구간이 0%가 안 된다**",
   "ref": "3-67-3",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelGradeAssignTest.reconcile - 맨 아래에 등급이 붙으면 옛 마지막 등급이 100퍼센트를 받는다"
+   ],
+   "evidence": "val result = DuelGradeAssign.reconcile(before, labels4, labels4 + \"바닥\")\nassertEquals(cuts(\"S\" to 5.0, \"A\" to 20.0, \"B\" to 60.0, \"C\" to 100.0), result.cuts)\nassertTrue(\"옛 마지막 등급은 '새로 생긴 것'이 아니다\", result.added.isEmpty())",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -2024,7 +2671,14 @@
   "expect": "묶음이 셋으로 갈리고 기본 체크가 다르다. 반영 뒤 **휴지통에 되돌릴 백업**이 생긴다",
   "ref": "3-60-4",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "묶음 셋과 기본 체크 차이는 DuelGradeAssignTest.`preview - 빈 칸·지난 반영값·손값으로 갈린다`가 단언하지만, '반영 뒤 휴지통에 되돌릴 백업이 생긴다'를 단언하는 JVM 시험이 없다 — 백업은 DuelRepository.applyGrades의 Room 트랜잭션 안 trash.snapshotCharacter(...)다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2037,7 +2691,14 @@
   "expect": "대결 화면이 좁혀지고, 1명으로 좁히면 **막지 않고 말한다**",
   "ref": "3-81",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelCandidateFilterTest가 후보 조립 규칙(필터가 없으면 전원이 참가자다 · 커스텀 교집합이 시스템 조건과 AND로 묶인다)을 잰다. 그러나 '1명으로 좁히면 막지 않고 말한다'의 문구 갈림을 단언하는 시험이 없다 — DuelPlayFragment:490이 duel_filter_need_two를 고르는 분기다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2050,7 +2711,14 @@
   "expect": "다른 세계관의 축이 늘어서고, 고르면 맨 아래에 붙는다",
   "ref": "3-117-ㄴ·ㄹ",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelAxisTransferTest는 `transfer(source, targetUniverseId = 42L, displayOrder = 9, …)`처럼 **호출자가 준 순서를 그대로 확인**할 뿐이다(assertEquals(9, moved.displayOrder)). '맨 아래에 붙는다'는 DuelRepository:107 `var order = (existing.maxOfOrNull { it.displayOrder } ?: -1) + 1`(Room 경로)이고, 다른 세계관 축이 목록에 늘어서는가는 화면이다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "6",
@@ -2063,7 +2731,18 @@
   "expect": "겸직이면 두 이름이 쉼표로 뜬다",
   "ref": "3-117-ㅂ·ㅅ",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "DuelSystemFieldsTest.쉼표를 품은 세력 이름이 한 토큰으로 살아 돌아온다",
+    "FieldValueTokenizerTest.join_commaSpace",
+    "FactionStandingTest.겸직은 세력이 여럿이고 재가입은 하나다"
+   ],
+   "evidence": "val raw = DuelSystemFields.valueOf(Column.FACTION, character(), Extras(factions = listOf(\"기사, 단\", \"상단\"))) — 겸직 둘이 한 값으로 실린다. 잇는 규칙은 assertEquals(\"불, 얼음\", FieldValueTokenizer.join(listOf(\"불\", \"얼음\")))이고(DuelSystemFields.kt:162가 그 함수를 부른다), 겸직이 세력 둘이라는 것은 assertEquals(listOf(10L, 20L), FactionStanding.currentFactionIds(rows))가 든다.",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -2102,7 +2781,18 @@
   "expect": "**10번 중 6번 이상** 이긴 쪽이 나온다. 한 판도 안 한 캐릭터는 종전 그대로 균등하다",
   "ref": "3-86-3·5",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "RepresentativeWeightingTest.점수가 하나도 없으면 무게가 없다 — 대결을 안 한 캐릭터가 이 자리다",
+    "RepresentativeWeightingTest.세게는 한 눈금 차이를 열 배로 — 약하게는 그 제곱근이다",
+    "CharacterRepresentativeImageTest.weights_shiftTheDistribution"
+   ],
+   "evidence": "assertTrue(\"무게가 분포를 기울여야 한다 (실제 $first/$trials)\", first > (trials * 0.85).toInt()) / assertNull(RepresentativeWeighting.weights(listOf(a, b, c), emptyMap(), RepresentativeWeighting.Strength.WEAK)) — ⚠ CharacterRepresentativeImageTest는 `@Test fun x()` 한 줄 선언이라 색인 추출기가 시험 이름을 통째로 빠뜨렸다(색인상 0건). 파일에는 실재한다(app/src/test/java/com/novelcharacter/app/util/CharacterRepresentativeImageTest.kt).",
+   "kind": ""
+  }
  },
  {
   "round": "6",
@@ -2115,7 +2805,14 @@
   "expect": "뜨고 수를 센다. 후보가 없으면 **왜 없는지 말한다**",
   "ref": "3-86-6·7",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DuelImagePruneTest가 후보 선정과 수(scored·rank·played)는 잰다. 그러나 '후보가 없으면 왜 없는지 말한다'의 갈래를 단언하는 시험이 없다 — 사유 분기는 ImageManagerFragment.kt:549 `!prune.hasBasis -> ...no_basis` / 555 `...prune_none`이고, hasBasis(basisUniverses>0)를 재는 JVM 시험이 하나도 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2128,7 +2825,14 @@
   "expect": "**둘 다 SS 행이 생긴다.** 입력 폼·통계 선택지에도 SS가 보인다",
   "ref": "3-31-3",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "한 필드의 실효 표에 SS가 붙는 것은 GradeSystemRefTest.`effective - 라벨 집합은 체계가 정하고 숫자는 재정의가 이긴다`가 덮지만, '참조 필드 둘 다'를 단언하는 시험이 없다 — 전파는 GradeSystemRepository.propagate의 referencingFields 루프(DB)이고 순수 시험이 닿지 않는다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2141,7 +2845,14 @@
   "expect": "\"참조하는 필드 N개는 독자 표로…\"가 뜨고 **값이 안 없어진다**",
   "ref": "3-31-4",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "GradeSystemRefTest.demote - 참조·재정의만 지우고 실효 표는 남는다 - 강등 무손실이 '값이 안 없어진다'를 덮는다. 그러나 '참조하는 필드 N개는 독자 표로…' 확인 창과 N 계수를 단언하는 시험이 없다 — UniverseListFragment:1405의 grade_system_delete_confirm_refs + viewModel.countGradeSystemReferences 자리다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2154,7 +2865,14 @@
   "expect": "결과에 **\"등급 체계 N\"**이 뜬다",
   "ref": "3-31-7",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'등급 체계 N' 줄은 ExcelImporter.kt:791 `if (outcome.gradeSystems > 0) parts.add(\"등급 체계 ${outcome.gradeSystems}\")` 한 자리이고 이를 단언하는 시험이 없다. WorldPackageParserTest의 등급 체계 시험 셋은 엔트리 파싱·파손 판정만 본다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "6",
@@ -2167,7 +2885,14 @@
   "expect": "결과에 **'대결 축 N · 대결 기록 N · 대결 상성 N'**이 뜨고, 기준 축 표식이 하나만 켜져 있다",
   "ref": "3-106",
   "axis": "자동",
-  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다"
+  "axiswhy": "점수·오차·정렬·상성·등급·왕복 — Duel* 시험이 34파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'기준 축 표식이 하나만'은 WorldPackageDuelsTest.같은 종류의 기준 축이 둘이면 첫 하나만 남기고 센다가 단언한다(assertEquals(listOf(true, false, false), result.axes.map { it.isBasisAxis })). 그러나 결과 창의 '대결 축 N · 대결 기록 N · 대결 상성 N' **세 줄이 뜨는지**를 단언하는 시험은 없다 — 그 수는 WorldPackageImporter가 DB에 넣으며 세고(kt:807) 줄은 화면이 그린다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "7",
@@ -2427,7 +3152,14 @@
   "expect": "**화면 안에서는 고정**, 나갔다 들어오면 바뀐다",
   "ref": "3-93-1·2",
   "axis": "자동",
-  "axiswhy": "랜덤 고정·해제 규칙"
+  "axiswhy": "랜덤 고정·해제 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "시드 규칙(같은 시드 고정 · 시드가 바뀌면 갈린다)은 CharacterRepresentativeImageTest가 보지만, 작품·세계관 카드가 화면 소유의 시드를 진입마다 새로 뽑는지는 UniverseViewModel.kt:334의 배선이고 시험이 없다. 설계 3-93도 \"순수 시험은 뽑힌 번호가 목록 안인가까지만 본다\"고 적는다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "7",
@@ -2440,7 +3172,17 @@
   "expect": "**엉뚱한 그림이 안 뜬다**",
   "ref": "3-93-3",
   "axis": "자동",
-  "axiswhy": "랜덤 고정·해제 규칙"
+  "axiswhy": "랜덤 고정·해제 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "CharacterRepresentativeImageTest.shrinkingTheListNeverPointsSomewhereElse",
+    "CharacterRepresentativeImageTest.retain_clearsPointerWhenGone"
+   ],
+   "evidence": "// 카드에서 이미지를 하나 빼면 남은 그림이 아니라 **엉뚱한 그림**이 떴다\nassertTrue(\"id=$id size=$size idx=$idx 이 목록 밖\", idx in 0 until size)\nassertEquals(\"\", CharacterRepresentativeImage.retain(b, listOf(a, c)))",
+   "kind": ""
+  }
  },
  {
   "round": "7",
@@ -2531,7 +3273,14 @@
   "expect": "**아무것도 안 바뀐다**",
   "ref": "3-125-10",
   "axis": "자동",
-  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest"
+  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "axiswhy가 댄 BodyEditorStateTest는 회전 왕복(save/restore)만 단언하고 [취소]에 관한 단언이 한 줄도 없다. 저장소 전체에서 실루엣 편집기 취소를 단언하는 시험이 없다(BodySilhouetteEditorSheet은 ✕·취소·뒤로가기가 변경 확인 대화를 거치는 바텀시트다)",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2544,7 +3293,14 @@
   "expect": "BWH 칸에 값이 들어가고 \"실루엣 수치를 폼에 적었습니다\"가 뜬다",
   "ref": "3-125-11",
   "axis": "자동",
-  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest"
+  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "BodyEditorStateTest는 편집기 상태의 회전 왕복만 잰다. [적용]이 BWH 칸에 값을 적고 '실루엣 수치를 폼에 적었습니다'를 띄우는가를 단언하는 시험은 없다 — DynamicFieldFormBuilder의 sheet.onApply(writeBodyParts + Toast) 자리이고 폼 위젯이 있어야 확인된다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2557,7 +3313,14 @@
   "expect": "**회색(비활성)**이다",
   "ref": "3-125-12",
   "axis": "자동",
-  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest"
+  "axiswhy": "취소/적용/초기 비활성 — BodyEditorStateTest",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "BodySilhouetteEditorSheet.buildEditor()가 `current = start` 뒤 `binding.btnApply.isEnabled = hasChanges()`를 부르는 private 자리(hasChanges: `current != start || weightKg != startWeight || …`)이고, axiswhy가 댄 BodyEditorStateTest 26건은 전부 왕복·복원만 보고 [적용]의 초기 상태를 단언하는 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2609,7 +3372,14 @@
   "expect": "셋 다 고를 수 있다",
   "ref": "3-125-6",
   "axis": "자동",
-  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험"
+  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "생성 패널에서 몸통·가슴·힙 세 축이 모두 **고를 수 있는 상태로 서는지**를 단언하는 시험이 없다. BodyGeneratorTest는 축 조합의 산출만 본다(프리셋은 세 축을 한 번에 세운다 — axesOf의 반환 셋).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2648,7 +3418,14 @@
   "expect": "**바로 앞 결과**로 돌아간다",
   "ref": "3-125-9",
   "axis": "자동",
-  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험"
+  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "BodyEditorStateTest의 '직전으로 한 단계는 체중이 비어도 살아남는다'는 previous 칸의 회전 왕복만 본다 — assertEquals(95.0, back.previous!!.first.hip, 1e-9). 두 번 굴린 뒤 [직전으로]가 바로 앞 결과를 되세우는지는 BodySilhouetteEditorSheet.kt:150의 previousRoll이 들고 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2674,7 +3451,14 @@
   "expect": "가슴 축이 **잠긴다**(흐려진다)",
   "ref": "3-133-ㄷ",
   "axis": "자동",
-  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험"
+  "axiswhy": "축·프리셋·직전으로·컵 잠금 — BodyGenerator* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "컵 지정이 가슴 축을 잠그는 판정을 단언하는 시험이 없다. BodyGeneratorTest.컵 역산은 가슴 축보다 우선한다는 값 계산의 우선순위만 재고, 잠금은 BodySilhouetteEditorSheet.kt:693의 `binding.rgBust.getChildAt(i).isEnabled = false` 위젯 상태다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2687,7 +3471,14 @@
   "expect": "창이 뜬다",
   "ref": "3-113-ㄱ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'창이 뜬다'를 단언하는 JVM 시험이 없다 — BodyBandGapTest 계열은 구간 겹침·빈 구간 판정만 보고 창의 존재를 보지 않는다",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2700,7 +3491,14 @@
   "expect": "**창을 닫자마자** 그 이름으로 선다",
   "ref": "3-113-ㄴ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "축 이름 저장 뒤 '창을 닫자마자' 🎲 패널 라디오 글자가 서는가를 단언하는 시험이 없다. 설계 3-113-ㄴ 자신이 '여기가 이 판의 본론이다 — 저장은 됐는데 화면이 안 서면 다음에 열 때까지 모른다'로 화면 갱신을 지목한다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2713,7 +3511,17 @@
   "expect": "요약이 **바꾼 이름**으로 말한다",
   "ref": "3-113-ㄷ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyGenerationConfigTest.사용자가 정의한 몸통 축도 요약이 같은 이름으로 답한다",
+    "BodyGenerationConfigTest.사용자가 정의한 힙 축도 요약이 같은 이름으로 답한다"
+   ],
+   "evidence": "for ((i, option) in custom.torsoOptions.withIndex()) for (body in rolls(custom, torso = i))\n    assertEquals(\"키 ${body.height} 허리 ${body.waist}\", option.label, BodySilhouetteSpec.axisSummary(measures(body), config).torso)\n// custom = \"사용자가 다시 정의한 축 한 벌 — 이름도 경계도 기본과 다르다\"",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2726,7 +3534,17 @@
   "expect": "**같은 말**을 한다",
   "ref": "3-113-ㄹ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyGenerationConfigTest.사용자가 정의한 몸통 축도 요약이 같은 이름으로 답한다",
+    "BodyGenerationConfigTest.사용자가 정의한 힙 축도 요약이 같은 이름으로 답한다"
+   ],
+   "evidence": "for ((i, option) in custom.torsoOptions.withIndex()) … assertEquals(option.label, BodySilhouetteSpec.axisSummary(measures(body), config).torso) — 사용자가 고쳐 저장한 축으로 굴린 몸을 요약이 **같은 이름**으로 답한다. 카드(DynamicFieldRenderer.kt:739)와 편집 시트(BodySilhouetteEditorSheet.kt:628)가 같은 axisSummary(measures, config)를 부른다.",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2765,7 +3583,14 @@
   "expect": "**곧바로 사라진다**",
   "ref": "3-135-ㄴ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "판정 자체는 BodyBandGapTest가 덮는다 — assertEquals(emptyList<Int>(), gen.emptyBands().torso). 그러나 값을 다시 벌렸을 때 붉은 줄이 '곧바로'(저장 전에) 사라지는지는 BodyGenerationEditDialog.kt:278의 즉시 재계산이고 그것을 단언하는 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2778,7 +3603,17 @@
   "expect": "**막지 않는다** — 닫히고 저장된다. 다시 열면 값도 붉은 줄도 그대로다",
   "ref": "3-135-ㄷ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyBandGapTest.교정은 빈 구간을 손대지 않는다 — 경고일 뿐 강제가 아니다",
+    "BodyGenerationConfigTest.사용자가 정의한 축은 왕복에서 그대로 살아 돌아온다"
+   ],
+   "evidence": "val fixed = gen.sanitized()\nassertEquals(24.4, fixed.hipOptions[1].maxDiff, 1e-9)   // 값이 그대로 저장된다\nassertEquals(listOf(1), fixed.emptyBands().hip)        // 다시 열어도 붉은 줄이 그대로다",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2791,7 +3626,16 @@
   "expect": "요약의 힙 이름이 **고른 축과 다르게** 나온다(경고가 예언한 그 일이다)",
   "ref": "3-135-ㄹ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyBandGapTest.kt(BodyBandGapTest).잡힌 힙 축을 굴리면 요약이 이웃 축 이름으로 답한다"
+   ],
+   "evidence": "assertEquals(listOf(1), gen.emptyBands().hip)  /  for (body in rolls(gen, hip = 1)) assertNotEquals(\"허리 ${body.waist} 엉덩이 ${body.hip}\", \"표준\", BodySilhouetteSpec.axisSummary(measures(body), config).hip)",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2817,7 +3661,14 @@
   "expect": "같다",
   "ref": "3-140-ㄷ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "이 단계는 3-140-ㄷ의 '두세 번 연속 회전'이다(축 굴리기가 아니다). BodyGenerationEditStateTest.전 칸 왕복 — 담았다 풀면 같은 것이다가 상태 왕복을 잠그지만, 반복 회전에서 창이 두 번 뜨거나 [저장]이 껍데기가 되지 않는가는 어떤 JVM 시험도 보지 않는다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2830,7 +3681,14 @@
   "expect": "**창은 안 닫히고** 칸만 되돌아간다",
   "ref": "3-140-ㄹ·3-113-ㅅ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "BodyGenerationEditDialog가 `setNeutralButton(R.string.body_gen_edit_reset, null)`로 두고 onShow에서 `getButton(BUTTON_NEUTRAL).setOnClickListener { resetTo(...) }`로 dismiss를 빼는 한 자리이며(주석: \"'기본값으로'는 **닫지 않고 칸을 되돌린다**\"), 창이 닫히는가를 보는 JVM 시험이 없다. BodyBandGapTest는 구간 겹침 경고만 본다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2843,7 +3701,14 @@
   "expect": "사유를 말한다",
   "ref": "3-113-ㅂ",
   "axis": "자동",
-  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열"
+  "axiswhy": "축 편집·구간 겹침 경고·기본값 — BodyBandGapTest 계열",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "이름 빈 칸과 구간 끝 역순에 **사유가 뜨는지**를 단언하는 시험이 없다. 순수 쪽은 어긋난 자리 세기까지만 잠긴다 — BodyGenerationConfigTest.교정을 지난 한 벌은 순서 규칙을 어기지 않는다의 assertEquals(listOf(1, 2), GenerationPreset.Limits.ascendingViolations(listOf(.3, .3, .3))). 붙이는 쪽은 BodyGenerationEditDialog.build()의 showInlineError 두 갈래(kt:479·542)다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2882,7 +3747,14 @@
   "expect": "된다",
   "ref": "3-114-ㄷ",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "칩을 눌러 그 자리에서 점수와 네 행이 바뀌는지(자세히가 안 닫히고 스크롤이 안 튀는지, 전환이 저장되지 않는지)를 단언하는 시험이 없다. BodyTargetRatio* 시험은 기준별 점수 계산만 본다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2895,7 +3767,18 @@
   "expect": "재료가 있을 때만 선다",
   "ref": "3-114-ㄹ",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyTargetRatioSourceTest.작품 평균은 재료가 있어야 선다",
+    "BodyTargetRatioSourceTest.셋을 못 채우는 작품 평균은 기준이 되지 않는다",
+    "BodyTargetRatioSourceTest.재료가 없는 작품 평균은 떨어진 사실을 남긴다"
+   ],
+   "evidence": "assertEquals(TargetRatioSource.NOVEL_AVERAGE, basis.source); assertFalse(basis.fellBack)\nassertNull(BodyEditorModel.peerAverageBody(listOf(peer(90.0, null, null, 165.0))))\nassertTrue(\"고른 것과 쓴 것이 갈렸는데 그 사실이 안 남았다\", basis.fellBack)",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2908,7 +3791,17 @@
   "expect": "**조용히 넘기지 않는다** — 못 쓴다고 말하거나 자동으로 되돌린다",
   "ref": "3-114-ㅁ",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyTargetRatioSourceTest.kt(BodyTargetRatioSourceTest).재료가 없는 작품 평균은 떨어진 사실을 남긴다",
+    "BodyTargetRatioSourceTest.kt(BodyTargetRatioSourceTest).셋을 못 채우는 작품 평균은 기준이 되지 않는다"
+   ],
+   "evidence": "assertEquals(TargetRatioSource.GENRE, basis.source)  /  assertEquals(TargetRatioSource.NOVEL_AVERAGE, basis.requested)  /  assertTrue(\"고른 것과 쓴 것이 갈렸는데 그 사실이 안 남았다\", basis.fellBack)",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -2939,7 +3832,14 @@
   "expect": "있고, 저장된 값이 채워져 있다. 바꾸면 **카드에 나온다**",
   "ref": "3-89-1·2·3",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "defaultBodyType의 config 왕복은 BodyAnalysisConfigKeysTest·BodyMeasurementsTest가 잰다. 그러나 체형 설정 화면에 '기본 체형 이름' 칸이 있고 저장값이 채워지는가, 바꾼 이름이 체형 카드에 뜨는가(BodyAnalysisHelper.kt:147 ?: config.defaultBodyType)를 단언하는 시험은 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "8",
@@ -2952,7 +3852,14 @@
   "expect": "기본값으로 돌아간다. **[기본값 복원]**도 이 칸을 되돌린다",
   "ref": "3-89-5·6",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "빈 칸 → 기본값은 FieldEditDialog:2089 `binding.editDefaultBodyType.text.toString().trim().ifEmpty { BodyAnalysisConfig.DEFAULT.defaultBodyType }`, [기본값 복원]은 :1675·:1680 `setText(BodyAnalysisConfig.DEFAULT.defaultBodyType)` — 둘 다 Fragment 안이다. BodyAnalysisConfigKeysTest는 옛 JSON 파싱만 본다(assertEquals(\"보통체형\", BodyAnalysisConfig.fromConfig(old).defaultBodyType)).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "8",
@@ -2965,7 +3872,17 @@
   "expect": "그 사실을 말하고, 나머지 설정은 멀쩡히 들어온다. 한 번 저장하면 고지가 사라진다",
   "ref": "3-89-8·9·10",
   "axis": "자동",
-  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험"
+  "axiswhy": "목표 비율·기본 체형·합치기 — BodyTargetRatio* 시험",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyAnalysisConfigKeysTest.없앤 설정이 담긴 옛 파일은 그 사실이 세어진다",
+    "BodyAnalysisConfigKeysTest.없앤 설정은 다시 내보내지지 않는다"
+   ],
+   "evidence": "assertEquals(listOf(\"underbustEstimation\"), BodyAnalysisConfig.unusedKeysIn(old)) / assertEquals(\"보통체형\", BodyAnalysisConfig.fromConfig(old).defaultBodyType) — 그 사실을 세고 나머지는 멀쩡히 들어온다. 한 번 저장하면: assertTrue(\"없앤 키가 다시 실렸다\", \"underbustEstimation\" !in resaved) + assertEquals(emptyList<String>(), unusedKeysIn(resaved)).",
+   "kind": ""
+  }
  },
  {
   "round": "8",
@@ -3056,7 +3973,14 @@
   "expect": "**적어 둔 것이 그대로 남아 있다**",
   "ref": "3-26-1·3-32-3",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "사건 이름·연도·설명을 적던 중 [사건 필드 추가]를 눌러도 폼 입력이 남는지를 단언하는 시험이 없다 — 폼 상태 보존은 사건 편집 화면이 드는 자리이고 색인에 해당 단언이 0건이다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "9",
@@ -3087,7 +4011,14 @@
   "expect": "여섯(회차·장소·시점 인물…)이 뜬다. 아무것도 안 고르고 확인하면 **창이 안 닫히고** 말한다",
   "ref": "3-32-3·4",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "여섯 목록은 EventFieldRecommendationTest.사건 추천은 설계 8장의 여섯이다가 잰다. 그러나 '아무것도 안 고르고 확인하면 창이 안 닫히고 말한다'를 단언하는 시험이 없다 — 그 방어는 EventEditDialogFragment.kt:389의 setValidatedPositiveButton { if (picked.isEmpty()) { Toast(event_field_pick_none); false } } 한 분기다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "9",
@@ -3100,7 +4031,14 @@
   "expect": "심은 것에 **(이미 있음)**이 붙는다",
   "ref": "3-32-5",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'(이미 있음)' 표식을 단언하는 시험이 없다 — EventFieldRecommendationTest는 추천 여섯의 구성·타입·라이브러리 지원만 본다. 표식은 EventEditDialogFragment.kt:419의 `val dup = if (f.key in existingKeys) \" \" + getString(R.string.event_field_pick_duplicate_suffix) else \"\"` 한 줄이다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "9",
@@ -3113,7 +4051,14 @@
   "expect": "**필드값이 안 지워진다**",
   "ref": "3-7-2",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "EventFieldValueMergeTest는 커버 집합이 주어졌을 때의 병합 규칙만 잰다(커버 공집합이면 전량 보존 · 커버된 필드가 폼에 없으면 삭제). 작품 체크를 전부 해제했을 때 폼이 어떤 커버를 내는가(EventEditDialogFragment:819의 세계관 폴백)와 universeId 보존을 단언하는 시험은 없고, 커버 계산이 어긋나면 같은 규칙이 값을 지운다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "9",
@@ -3126,7 +4071,14 @@
   "expect": "보존 고지가 뜬다",
   "ref": "3-7-3",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "EventFieldValueMergeTest·EventFieldValueDaoReplaceTest는 보존 *개수*만 단언한다(`assertEquals(1, preserved)`, `assertEquals(1, EventFieldValueMerge.preservedCount(form, setOf(3L), existing))`). '다른 세계관 작품으로 옮김 → 커버 밖'이라는 연결과 고지 표시는 TimelineViewModel.notifyPreservedEventFieldValues(`if (count <= 0) return` + toast) 한 자리이고 시험이 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "9",
@@ -3139,7 +4091,17 @@
   "expect": "**그 값만** 삭제된다(비움 의도는 존중)",
   "ref": "3-7-5",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "EventFieldValueMergeTest.커버된 필드가 폼에 없으면 비움 의도로 삭제된다",
+    "EventFieldValueMergeTest.커버 밖 기존 값은 폼 제출과 무관하게 남는다"
+   ],
+   "evidence": "val result = EventFieldValueMerge.resultingValues(emptyList(), setOf(1L), existing) / assertEquals(listOf(v(2, \"본편\", id = 11)), result) — 비운 그 필드만 사라지고 나머지 값은 그대로다. 옆 시험이 반대쪽을 든다: assertEquals(setOf(v(1, \"커버밖\", id = 10), v(2, \"수정\")), result.toSet()).",
+   "kind": ""
+  }
  },
  {
   "round": "9",
@@ -3178,7 +4140,14 @@
   "expect": "적은 입력이 안 버려진다",
   "ref": "3-7-8",
   "axis": "자동",
-  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정"
+  "axiswhy": "입력 보존·추천 목록·값 삭제 의도 — 전부 데이터 판정",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "연도를 비우고 저장했을 때 다이얼로그가 안 닫히고 인라인 오류가 뜨며 유형·설명·강도·사건 연결이 남는지를 단언하는 시험이 없다(ref 3-7-8은 다이얼로그 동작 자체다).",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "10",
@@ -3191,7 +4160,17 @@
   "expect": "목록이 서고 **성별이 같은 이름이 먼저** 온다",
   "ref": "3-83-1·2",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "NameBankPickOrderTest.미사용 안에서 성별이 맞는 쪽이 앞선다",
+    "NameBankPickOrderTest.성별 축은 미사용 축을 이기지 못한다"
+   ],
+   "evidence": "val out = NameBankPickOrder.order(listOf(entry(1, \"가\", gender = \"남성\"), entry(2, \"나\", gender = \"여성\")), \"\", \"여성\")\nassertEquals(listOf(2L, 1L), out.map { it.id })",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3217,7 +4196,14 @@
   "expect": "저장 시점에 링크가 걸린다. **취소하면 무해**하다",
   "ref": "3-83-3",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "NameBankMatchTest는 NameBankMatch.planOnSave의 *결과*(어느 엔트리를 거는가)만 단언하고, '저장 시점에만 걸린다 / 취소하면 무해하다'는 *시점*을 단언하는 시험이 없다 — 호출부는 CharacterViewModel.kt:1623 저장 경로 한 곳뿐이다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "10",
@@ -3230,7 +4216,17 @@
   "expect": "**빼앗지 않는다**",
   "ref": "3-83-6",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "NameBankMatchTest.남이 쓰는 동명 엔트리는 자동으로 걸지 않는다",
+    "NameBankMatchTest.고른 엔트리가 남의 것이 됐으면 다른 동명으로 갈아치우지 않고 말한다"
+   ],
+   "evidence": "assertNull(plan.linkEntryId); assertTrue(plan.isNoop)   // 남이 쓰는 동명(usedBy = 99L)을 손으로 적어 저장한 경로\nassertNull(plan.linkEntryId); assertTrue(plan.requestedTaken); assertFalse(plan.requestedMissing)   // 시트에서 고른 엔트리가 남의 것인 경로",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3243,7 +4239,17 @@
   "expect": "옛 링크가 풀린다",
   "ref": "3-83-7",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "NameBankMatchTest.이름이 바뀌면 옛 링크를 푼다",
+    "NameBankMatchTest.이름이 그대로면 풀지 않는다"
+   ],
+   "evidence": "val old = entry(1, \"옛이름\", used = true, usedBy = 7L)\nval plan = NameBankMatch.planOnSave(\"새이름\", 7L, null, candidates = listOf(entry(2, \"새이름\")), currentlyLinked = listOf(old))\nassertEquals(listOf(1L), plan.releaseEntryIds)",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3256,7 +4262,14 @@
   "expect": "**누가 쓰는지**를 말한다",
   "ref": "3-83-9",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "은행 행이 '누가 쓰는지'를 말하는지 단언하는 시험이 없다. usedByCharacterId를 쓰는 순수 시험은 정렬(NameBankPickOrderTest)과 대조(NameBankMatchTest)뿐이고, 이름을 붙이는 자리는 NameBankAdapter.kt:89-105(usedByNames[usedById] → name_bank_used_by_label)와 NameBankViewModel.kt:178이다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "10",
@@ -3321,7 +4334,14 @@
   "expect": "접힌 인물이 되살아나지 않는다",
   "ref": "3-120-ㅁ",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "GraphForceLayoutTest '노드 집합에 없는 끝을 가진 관계는 버린다'는 배치 계산의 엣지 필터다 — assertEquals(1, GraphForceLayout.uniqueEdgePairs(ns, es).size). 시점 슬라이더 경로(refreshGraphEdgesOnly · shownNodeIds)는 RelationshipGraphFragment.kt:797이 따로 들고 그쪽을 보는 시험은 없다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "10",
@@ -3334,7 +4354,14 @@
   "expect": "접힌 인물이 나온다",
   "ref": "3-120-ㅂ",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "DisplayCapTest는 상한 산술(넘치면 연결이 많은 쪽이 남고 접은 수를 정확히 말한다 / 상한 아래에서는 입력 목록 그대로다)만 잰다. 작품·세력 필터가 노드 집합을 줄여 접힌 인물이 되살아나는 경로를 단언하는 시험이 없다 — 필터→rankedCap 배선은 RelationshipGraphFragment.kt:875에 있고 JVM 시험이 없다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "10",
@@ -3386,7 +4413,16 @@
   "expect": "**세계관 B의 캐릭터도 나온다**(크로스-세계관)",
   "ref": "3-107-3",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldFilterHelperTest.kt(FieldFilterHelperTest).key_matchesSameKeyAcrossUniverses_idOnlyMatchesOne"
+   ],
+   "evidence": "val byKey = FieldFilter(10L, \"성별\", listOf(\"여성\"), \"exact\", fieldKey = \"gender\")  /  assertEquals(setOf(1L, 2L, 3L), apply(dao, listOf(byKey), fields))  — 세계관 1의 필드로 건 필터가 세계관 2·3 캐릭터까지 낸다",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3399,7 +4435,17 @@
   "expect": "그것도 걸린다",
   "ref": "3-107-4",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldFilterHelperTest.key_resolvesAliasesPerField_notOnceForAll",
+    "FieldFilterHelperTest.key_matchesSameKeyAcrossUniverses_idOnlyMatchesOne"
+   ],
+   "evidence": "// B는 'F'가 canonical이고 '여성'이 별칭 — row(3, 20, \"F\")\nval filter = FieldFilter(10L, \"성별\", listOf(\"여성\"), \"exact\", fieldKey = \"gender\")\nassertEquals(setOf(1L, 2L, 3L, 4L), apply(dao, listOf(filter), fields, entries))",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3412,7 +4458,16 @@
   "expect": "필터가 **완전히** 사라진다(하나만 남으면 실패)",
   "ref": "3-107-6",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldFilterHelperTest.sameTarget_keyWinsWhenBothHaveIt_idOtherwise"
+   ],
+   "evidence": "// ── 같은 대상 판정 — 칩 교체·제거의 동일성 (B-11) ──\nassertTrue(FieldFilterHelper.sameTarget(a, b))   // a=(id 10, key gender), b=(id 20, key gender) — 세계관이 달라 id는 다르지만 같은 조건 자리\n// 제거는 `current.removeAll { FieldFilterHelper.sameTarget(it, filter) }`가 이 술어를 그대로 쓴다",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3425,7 +4480,14 @@
   "expect": "창이 안 닫히고 사유가 뜬다. 글자를 치면 오류가 스스로 사라진다",
   "ref": "3-107",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "이름을 비운 채 저장했을 때 창이 안 닫히고 사유가 뜨는지, 글자를 치면 오류가 사라지는지를 단언하는 시험이 없다. PresetNameGuardTest는 이름 유니크 색인 위의 저장 실패만 Fake DAO로 재고, 설계 문서 3-107 자신이 *\"창이 안 닫히는가는 로컬에 증명 수단이 아예 없다\"*고 적어 두었다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "10",
@@ -3464,7 +4526,17 @@
   "expect": "정렬 버튼에 '심각도순'. **정렬을 바꿔도 카드가 사라지거나 늘지 않는다**",
   "ref": "3-44-1·2",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "AssistantSortTest.severity_isTheDefaultMode",
+    "AssistantSortTest.sort_neverChangesMembership"
+   ],
+   "evidence": "assertEquals(AssistantSort.Mode.SEVERITY, AssistantSort.DEFAULT) / assertEquals(\"$mode 에서 카드 수가 변했다\", list.size, sorted.size) / assertEquals(\"$mode 에서 카드 구성이 변했다\", expected, sorted.map { it.id }.toSet())",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3477,7 +4549,18 @@
   "expect": "**필수 빈 칸 카드**가 뜨고 숫자가 맞다. 다 채우면 사라진다",
   "ref": "3-51",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "RequiredFieldGapsTest.칸 총합은 항목 수가 아니라 빈 칸 수다",
+    "RequiredFieldGapsTest.다 채운 항목은 결과에서 빠진다",
+    "RequiredFieldGapsTest.채운 칸은 빠지고 빈 칸만 남는다"
+   ],
+   "evidence": "assertEquals(2, gaps.size); assertEquals(4, RequiredFieldGaps.slotCount(gaps))\nassertTrue(\"할 일이 없으면 카드가 서지 않아야 한다\", gaps.isEmpty())\nassertEquals(listOf(\"거주지\"), gaps.single().missingFieldNames)",
+   "kind": ""
+  }
  },
  {
   "round": "10",
@@ -3508,7 +4591,14 @@
   "expect": "**막히지 않는다**(경고이지 차단이 아니다)",
   "ref": "3-51-8",
   "axis": "자동",
-  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙"
+  "axiswhy": "은행 링크·수 일치·필터·프리셋 검증 — 순수 규칙",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "RequiredEnforcementTest는 강도 *해석*만 단언한다(`새 필드의 기본값은 알림이다` → DEFAULT_FOR_NEW == NOTIFY). '빈 채로 저장이 막히지 않는다'를 단언하는 시험이 없다 — 차단 판정은 DynamicFieldFormBuilder.kt:1099의 `emptyRequiredFields().firstOrNull { enforcementOf(it) == BLOCK }`다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "11",
@@ -3599,7 +4689,14 @@
   "expect": "4행(내보내기·받아오기·폴더 설정·사용법)이 있다",
   "ref": "3-14-1",
   "axis": "자동",
-  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산"
+  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "설정 '이미지 정리 폴더' 섹션의 행 구성을 단언하는 시험이 없다. 네 행은 fragment_settings.xml의 정적 배치다(organizeFolderExportRow:393 · ImportRow:419 · SettingsRow:445 · HelpRow:471).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "11",
@@ -3612,7 +4709,14 @@
   "expect": "폴더 지정 안내가 먼저 뜬다",
   "ref": "3-14-5",
   "axis": "자동",
-  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산"
+  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "OrganizeFolderController.startOrganizeFolderImport의 `if (viewModel.getOrganizeFolderUri() == null) guideOrganizeFolderPick(...)` 한 자리이고(주석: \"폴더가 없거나 접근할 수 없을 때의 안내 — 받아오기·내보내기가 같은 문구·같은 복귀 경로를 쓴다\"), 이 컨트롤러를 보는 JVM 시험이 없다. FolderExportPlanner/FolderRoundtripPlanner 시험은 폴더 왕복 계획만 본다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "11",
@@ -3625,7 +4729,14 @@
   "expect": "라벨이 '전부 해제'로 돌아온다",
   "ref": "3-14-6·7·8",
   "axis": "자동",
-  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산"
+  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "중립 버튼 라벨이 상태 따라 '전부 선택'↔'전부 해제'로 뒤집히는 것을 단언하는 시험이 없다. 판정은 ExportOptionsDialog.kt:136-139의 한 줄뿐이다 — if (checked.any { it }) R.string.export_options_clear_all else R.string.export_options_select_all.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "11",
@@ -3716,7 +4827,17 @@
   "expect": "칸 이름에 맞는 기본값이 잡혀 있고, 바꾸면 저장된다",
   "ref": "3-35",
   "axis": "자동",
-  "axiswhy": "파트 연결 기본값 매칭"
+  "axiswhy": "파트 연결 기본값 매칭",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyMeasurementsTest.설정 화면의 기본 배정은 값 없이 파트 정의만으로 사다리를 돈다",
+    "BodyMeasurementsTest.파트 매핑은 config JSON을 왕복한다"
+   ],
+   "evidence": "assertEquals(listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP), BodyMeasurements.inferSlotsForParts(listOf(\"가슴\", \"허리\", \"엉덩이\"), listOf(true, true, true))) / assertEquals(slots, BodyAnalysisConfig.fromConfig(json).partSlots)",
+   "kind": ""
+  }
  },
  {
   "round": "11",
@@ -3729,7 +4850,17 @@
   "expect": "사유를 말한다",
   "ref": "3-35-7",
   "axis": "자동",
-  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산"
+  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "BodyMeasurementsTest.전부 사용 안 함으로 정한 것은 추론으로 되돌아가지 않는다",
+    "BodyEditorModelTest.사용자가 전부 사용 안 함으로 정했으면 위치 폴백이 덮지 않는다"
+   ],
+   "evidence": "assertEquals(BodyMeasurements.MappingMode.EXPLICIT, m.mode); assertNull(m.bust); assertFalse(m.hasCoreThree)\nassertEquals(allNone, BodyEditorModel.writableSlots(allNone, 3, explicit = true))   // → noWritableSlot=true 가 사유 고지의 방아쇠다",
+   "kind": ""
+  }
  },
  {
   "round": "11",
@@ -3742,7 +4873,14 @@
   "expect": "**같다**. 토글을 끄면 그 항목이 사라진다",
   "ref": "3-35-9·10",
   "axis": "자동",
-  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산"
+  "axiswhy": "섹션 구성·라벨 상태·선택 내보내기 — 순수 계산",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "토글 이름과 카드 항목 이름이 같은가, 끄면 그 항목이 사라지는가를 단언하는 시험이 없다 — 양쪽 이름은 각자 리소스 문자열이고, 사라짐은 DynamicFieldRenderer의 `if (config.isInsightEnabled(INSIGHT_*))` 가드 열두 자리다",
+   "kind": "CODE"
+  }
  },
  {
   "round": "12",
@@ -3872,7 +5010,14 @@
   "expect": "**[목록 밖]** 표식이 붙고 뜻을 알려 준다. 채택하면 \"추가하고 저장\"을 묻는다",
   "ref": "3-47",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "CharacterFieldAiSuggesterTest가 표식(Normalized.Ok(\"동부\", true))과 고지 줄(outsideLibraryLine이 '2개'·'라이브러리에 추가'를 든다)까지는 단언한다. 그러나 '채택하면 추가하고 저장을 묻는다' — 채택한 AI 값이 저장 가드(FieldValueRules.validateRestricted)까지 흘러가는가 — 를 단언하는 시험은 없고, 설계 3-47이 그 흐름을 사각 둘 중 하나로 지목한다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "12",
@@ -3885,7 +5030,18 @@
   "expect": "그 자리에 고지가 뜨고, **되돌리면 사라진다**",
   "ref": "3-46-1·2",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "AiCreativityTest.globalChangeNotice_namesTheNewDefault",
+    "AiCreativityTest.globalChangeNotice_disappearsWhenRevertedInPlace",
+    "AiCreativityTest.globalChangeNotice_silentWhenUnchanged"
+   ],
+   "evidence": "assertEquals(AiCreativity.BOLD, AiCreativity.globalChangeNotice(opened, AiCreativity.BOLD))\nassertNull(AiCreativity.globalChangeNotice(opened, AiCreativity.BALANCED))   // 균형→실험→균형: 되돌리면 고지가 사라진다\nassertNull(AiCreativity.globalChangeNotice(tier, tier))",
+   "kind": ""
+  }
  },
  {
   "round": "12",
@@ -3898,7 +5054,14 @@
   "expect": "거기서는 **안 뜬다**",
   "ref": "3-46-4",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "설정 화면에서는 전역 변경 고지가 **안 뜬다**를 단언하는 시험이 없다. AiCreativityTest는 globalChangeNotice 함수의 값만 잰다(silentWhenUnchanged·namesTheNewDefault·disappearsWhenRevertedInPlace). 안 뜨는 근거는 소비처가 CreativityChipRow.create 하나뿐이라는 사실이고(그 KDoc이 \"설정 화면의 창작도 카드는 이 줄이 아니라 자기 라디오를 쓴다\"고 적는다), 이것은 호출부를 세면 끝난다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "12",
@@ -4054,7 +5217,14 @@
   "expect": "\"이 모델이 이미지를 받지 않아 글만 보냈습니다\"가 뜨고, **근거 줄에 '이미지 1' 같은 말이 없다**",
   "ref": "3-73",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "AiImageRequestTest는 나가는 JSON만 본다('세 프로토콜 모두 이미지를 뺀 요청에 이미지 절을 싣지 않는다'). 모델이 낸 근거 줄에 '이미지 1' 같은 말이 없는지는 실호출 응답이라 시험이 원리적으로 못 본다 — ref 3-73이 그 사실을 그대로 적는다(과금 확인).",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "12",
@@ -4067,7 +5237,14 @@
   "expect": "**\"앱이 보관하는 파일이 아니어서 보내지 않았습니다\"**가 뜬다(\"읽지 못해\"가 아니다). 정상 그림만이면 그 줄이 안 뜬다",
   "ref": "3-74",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'막힌 장수(blocked)'와 '못 읽은 장수(skipped)'를 가르는 AiImagePreparer를 부르는 시험이 app/src/test에 하나도 없다(Bitmap 디코딩이 걸려 순수 JVM에 못 올린다). 고지는 CharacterViewModel.kt:1317의 getString(ai_image_blocked, prepared.blocked) 한 자리다. ImagePathMatchTest.isInside_*는 봉쇄 판정만 잰다.",
+   "kind": "DEVICE"
+  }
  },
  {
   "round": "12",
@@ -4106,7 +5283,17 @@
   "expect": "그 필드 줄에 **✨이 없다**",
   "ref": "3-109",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": true,
+   "tests": [
+    "FieldConfigPolicyTest.kt(FieldConfigPolicyTest).aiPolicy_predicatesFollowMode",
+    "FieldConfigPolicyTest.kt(FieldConfigPolicyTest).aiPolicy_modesAnswerBothPathsIndependently"
+   ],
+   "evidence": "val off = FieldAiPolicy.applyMode(\"{}\", OFF)  /  assertFalse(FieldAiPolicy.isInlineSparkleEnabled(off))  /  assertFalse(OFF.inBulk); assertFalse(OFF.inlineSparkle)  — 사건 창의 ✨은 EventEditDialogFragment.aiSpecOf가 이 판정 하나로 가린다",
+   "kind": ""
+  }
  },
  {
   "round": "12",
@@ -4119,7 +5306,14 @@
   "expect": "막히거나 사유를 말한다",
   "ref": "3-101-4",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "NarrativeBulkDraftTest.출력_상한이_낮으면_절단_위험을_미리_말한다가 판정식만 잰다(assertFalse(NarrativeFieldAiWriter.draftFitsBudget(AiTokenPolicy.FLOOR, long))). [길게] 누름이 그 판정을 물어 '한 번은 경고만 하고 멈춘다'는 것을 단언하는 시험은 없다 — NarrativeBulkSheet:174의 warned 집합 분기이고, 여기가 새면 곧바로 과금이다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "12",
@@ -4132,7 +5326,14 @@
   "expect": "끈 것은 안 들어간다. **원문이 안 덮인다**",
   "ref": "3-101-7·8",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "'끈 것은 안 들어간다'는 NarrativeBulkSheet:304 `if (checks[item.fieldId]?.isChecked != true) continue` 한 자리이고 이를 단언하는 시험이 없다. 뒷문장('원문이 안 덮인다')만 NarrativeBulkDraftTest.이미_쓴_필드는_대상에서_빠지고_사유가_남는다가 덮는다(assertEquals(listOf(\"이름_배경\"), bulk.targets.map { it.spec.name })).",
+   "kind": "CODE"
+  }
  },
  {
   "round": "12",
@@ -4145,7 +5346,14 @@
   "expect": "**소비된 결과가 되살아나지 않는다**",
   "ref": "3-101-9",
   "axis": "자동",
-  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다"
+  "axiswhy": "목록 밖 표식·창작도 고지·첨부 사유·소비된 결과 — Ai* 시험이 13파일 있다",
+  "audit": {
+   "date": "2026-08-19",
+   "covered": false,
+   "tests": [],
+   "evidence": "[취소]로 닫은 뒤 다시 열었을 때 소비된 결과가 안 돌아오는지를 단언하는 시험이 없다. NarrativeBulkDraftTest는 대상 규칙과 비용 계수만 본다. 비우는 자리는 NarrativeBulkSheet.showResult의 setNegativeButton/setOnCancelListener → viewModel.clearAiNarrativeBulkResult() 네 줄이고, 상태는 ViewModel LiveData라 순수 계층 밖이다.",
+   "kind": "CODE"
+  }
  },
  {
   "round": "13",
