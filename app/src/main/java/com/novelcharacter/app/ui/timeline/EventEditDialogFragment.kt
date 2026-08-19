@@ -5,6 +5,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.Toast
@@ -148,6 +149,12 @@ class EventEditDialogFragment : DialogFragment() {
      * 이 판정기이고, 규칙은 [InitialHydrationGuard]가 든다.
      */
     private var hydrationGuard = InitialHydrationGuard()
+
+    /**
+     * 사건 유형 스피너에 **손가락이 닿았는가** (B-268) — *골랐다*를 알릴지 가르는 절반이다.
+     * 나머지 절반은 뒤이어 오는 `onItemSelected`이고, **둘이 다 있어야** 사용자 선택이다.
+     */
+    private var eventTypeSpinnerTouched = false
     private var seedJob: kotlinx.coroutines.Job? = null
     private var fieldSectionJob: kotlinx.coroutines.Job? = null
 
@@ -193,6 +200,7 @@ class EventEditDialogFragment : DialogFragment() {
         // 적재 판정기는 창 수명 단위다 (B-268 ⓑ) — 워처를 달기 전에 세운다. 창이 다시 서면
         // 위젯도 워처도 새것이므로, 지난 창에서 만져진 칸 목록을 물려받으면 안 된다.
         hydrationGuard = InitialHydrationGuard()
+        eventTypeSpinnerTouched = false
 
         // 역법 필드를 사용자가 직접 건드렸는지 추적 — 자동 시드가 사용자 입력을 덮어쓰지 않게(무단 확정 금지).
         binding.editCalendarType.addTextChangedListener(object : android.text.TextWatcher {
@@ -227,12 +235,27 @@ class EventEditDialogFragment : DialogFragment() {
         trackEarly(binding.editMonth, InitialHydrationGuard.KEY_MONTH)
         trackEarly(binding.editDay, InitialHydrationGuard.KEY_DAY)
         trackEarly(binding.editDescription, InitialHydrationGuard.KEY_DESCRIPTION)
-        // 사건 유형 스피너는 `onItemSelected`가 프로그램적 선택에도 떠 가를 수 없다 —
-        // 손가락이 닿은 것만 보는 자리가 필요하다. (소비하지 않는다: 언제나 false.)
+        // 사건 유형 스피너는 워처가 없어 조작 자리에서 알린다. **재료가 둘이라야 한다**:
+        // `onItemSelected`만 보면 프로그램적 `setSelection`에도 떠서 못 가르고, 터치만
+        // 보면 **드롭다운을 열었다 그냥 닫아도 '골랐다'가 된다.** 뒤쪽이 특히 나쁘다 —
+        // 그러면 적재가 유형을 못 채워 '없음'에 머물고, 저장하면 **출생·사망 표식이
+        // 날아간다**(나이 계산이 그것에 걸려 있다. 콜드 검토 2026.08.19).
         binding.spinnerEventType.setOnTouchListener { _, _ ->
-            hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_EVENT_TYPE)
+            eventTypeSpinnerTouched = true
             false
         }
+        binding.spinnerEventType.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    // 표식은 여기서 내린다 — 남겨 두면 뒤따르는 프로그램적 선택까지
+                    // 사용자 선택 행세를 한다.
+                    if (eventTypeSpinnerTouched) {
+                        eventTypeSpinnerTouched = false
+                        hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_EVENT_TYPE)
+                    }
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
 
         // 체크 선택 복원 (뷰 ID가 없는 동적 체크박스는 자동 복원 대상이 아님)
         savedInstanceState?.getLongArray(STATE_CHAR_IDS)?.let {

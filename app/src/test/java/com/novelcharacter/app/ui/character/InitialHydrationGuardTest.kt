@@ -154,6 +154,19 @@ class InitialHydrationGuardTest {
             g.mayWrite(InitialHydrationGuard.KEY_CALENDAR))
     }
 
+    @Test
+    fun 잘못_알리면_유실의_방향이_뒤집힌다() {
+        // 판정기는 '만졌다'를 받으면 그 칸의 적재를 **막는다.** 그래서 과잉 알림은
+        // 덮어쓰기가 아니라 **DB 값이 아예 안 들어오는** 상태를 만들고, 그대로 저장하면
+        // 종전 값이 지워진다 — 막으려던 것보다 나쁜 결말이다.
+        // (실례: 작품 스피너를 터치만으로 '골랐다'로 세던 것. 콜드 검토 2026.08.19)
+        val g = InitialHydrationGuard()
+        g.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)   // ← 열었다 닫았을 뿐인데 알렸다
+        g.beginHydration()
+        assertFalse("적재가 작품 선택을 못 채운다", g.mayWrite(InitialHydrationGuard.KEY_NOVEL))
+        assertTrue("그런데 더티는 서 있어 저장이 열린다 — 이 조합이 유실을 만든다", g.hasEarlyEdits())
+    }
+
     // ── 국면은 되돌지 않는다 ────────────────────────────────────────────────
 
     @Test

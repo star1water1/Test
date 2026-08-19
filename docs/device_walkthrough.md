@@ -1093,39 +1093,42 @@
 | 사유 | 뜻 | 되살리는 법 |
 |---|---|---|
 | `시험` | 순수 JVM 시험이 그 판정을 **실행으로** 본다 | 그 시험을 지우면 이 단계가 돌아와야 한다 |
+
+> ⚠️ **`시험`만으로 걷힌 단계는 하나도 없다 — 그럴 수 있는 단계가 거의 없다.** 이 표의 단계는 정의상 *기기에서 눈으로 보는 것*이라, `expect`가 순수 계산의 값만 묻는 일이 사실상 없다. 시험이 계산을 덮어도 **화면이 그 계산을 쓰는가**는 늘 남는다. 그래서 근거는 거의 언제나 둘이다(2026.08.19 콜드 검토 — 처음에 `시험`으로 걷었던 13건을 전부 `시험+코드`로 옮겼다).
+
 | `시험+코드` | **계산은 시험이 실행으로 보고, 화면이 그 계산을 쓰는가는 한 줄이 답한다** | 둘 중 하나가 무너지면 돌아온다 |
 | `코드` | 분기·상수·문구 한 자리라 **읽으면 끝난다**. 시험을 새로 만들지 않는다 | 그 자리가 복잡해지면 돌아온다 |
 
-### 시험 — 13단계 (시험이 보는 것)
+### 시험+코드 — 13단계 (계산은 시험이 · 배선은 한 줄이 답한다)
 
 | 단계 | 원 절 | 무엇을 밟던 것인가 | 근거 |
 |---|---|---|---|
-| `2-ㄴ-2` | `3-139-ㄱ` | 아무것도 고치지 말고 **두세 번 열었다 저장**한다 → 따옴표가 `"""…"""`로 자라지 않는다. 태그 수가 안 늘어난다 | `MultiValueInputTest.roundTrip_isStableOnSecondPass` · `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `CsvTokensTest.joinThenSplit_roundTripsInBothModes` |
-| `2-ㄴ-3` | `3-139-ㄷ` | 캐릭터 여럿 고르기 → **일괄 태그** → 쉼표 든 칩을 누른다 → 감싸인 채로 붙고, 적용하면 태그가 **하나** 붙는다(둘이 아니다) | `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `MultiValueInputTest.format_isTheSameRuleAsTheExcelCell` |
-| `2-ㅂ-3` | `3-11-3` | 자기 자신을 참조하는 수식을 넣는다 → "자기 자신(A)을…"이 뜬다 | `FormulaValidatorTest.자기 자신을 참조하면 알린다` |
-| `2-ㅂ-4` | `3-11-7` | 정상 수식(`field(힘) + field(민첩) * 2`)을 저장 → 조용히 저장된다 | `FormulaValidatorTest.정상 수식에는 경고가 없다` |
-| `3-ㄷ-2` | `3-39-3` | 빈 시트가 든 파일로 덮어쓰기 → **기존 데이터를 지우지 않는다** | `OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다` · `OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다` |
-| `3-ㅁ-10` | `3-105` | 대결 축 시트의 영향필드 칸을 본다 → `▼나이` 꼴이다(옛 `-나이`가 아니다). 옛 파일도 같은 뜻으로 들어온다 | `DuelFieldLinksTest.writes only the new marker` · `DuelFieldLinksTest.legacy markers still read as lower wins` |
-| `6-ㅂ` | `3-56-3` | 판을 몇 번 돌린다 → 진행률 네 숫자(붙임·접힘·남음/전체)가 바뀐다 | `DuelPairingTest.진행률은 붙인 것 접힌 것 남은 것으로 정확히 갈린다` · `DuelPairingTest.이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다` |
-| `6-ㅈ2` | `3-67-3` | 맨 아래 등급을 하나 더한다 → **종전 최하 구간이 0%가 안 된다** | `DuelGradeAssignTest.reconcile - 맨 아래에 등급이 붙으면 옛 마지막 등급이 100퍼센트를 받는다` |
-| `8-ㄴ-2` | `3-125-7` | 몸통에서 **슬림**을 고르고 굴린다 → 그림 아래 요약이 **슬림**이라고 말한다(고른 말과 돌아오는 말이 같다) | `BodyGeneratorTest.몸통 축은 요약의 몸통 라벨과 일치한다` |
-| `8-ㄷ-3` | `3-113-ㄷ` | 그 축을 골라 굴린다 → 요약이 **바꾼 이름**으로 말한다 | `BodyGenerationConfigTest.사용자가 정의한 몸통 축도 요약이 같은 이름으로 답한다` · `BodyGenerationConfigTest.사용자가 정의한 힙 축도 요약이 같은 이름으로 답한다` |
-| `8-ㄷ-9` | `3-135-ㄹ` | 그 축을 고른 채 🎲를 여러 번 굴린다 → 요약의 힙 이름이 **고른 축과 다르게** 나온다(경고가 예언한 그 일이다) | `BodyBandGapTest.잡힌 힙 축을 굴리면 요약이 이웃 축 이름으로 답한다` |
-| `10-ㅁ` | `3-83-7` | 캐릭터 이름을 바꾼다 → 옛 링크가 풀린다 | `NameBankMatchTest.이름이 바뀌면 옛 링크를 푼다` · `NameBankMatchTest.이름이 그대로면 풀지 않는다` |
-| `12-ㅋ` | `3-46-1·2` | 창작도를 바꾼다 → 그 자리에 고지가 뜨고, **되돌리면 사라진다** | `AiCreativityTest.globalChangeNotice_namesTheNewDefault` · `AiCreativityTest.globalChangeNotice_disappearsWhenRevertedInPlace` · `AiCreativityTest.globalChangeNotice_silentWhenUnchanged` |
+| `2-ㄴ-2` | `3-139-ㄱ` | 아무것도 고치지 말고 **두세 번 열었다 저장**한다 → 따옴표가 `"""…"""`로 자라지 않는다. 태그 수가 안 늘어난다 | `MultiValueInputTest.roundTrip_isStableOnSecondPass` · `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `CsvTokensTest.joinThenSplit_roundTripsInBothModes` <br> `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt` 에서 `val tags = MultiValueInput.parse(binding.editTags.text.toString())` — 편집 창의 태그 칸이 저장 때 MultiValueInput.parse를, 적재 때 format을 그대로 지난다 |
+| `2-ㄴ-3` | `3-139-ㄷ` | 캐릭터 여럿 고르기 → **일괄 태그** → 쉼표 든 칩을 누른다 → 감싸인 채로 붙고, 적용하면 태그가 **하나** 붙는다(둘이 아니다) | `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `MultiValueInputTest.format_isTheSameRuleAsTheExcelCell` <br> `app/src/main/java/com/novelcharacter/app/ui/character/batch/BatchTagBottomSheet.kt` 에서 `binding.tagInput.setText(MultiValueInput.format(existing))` — 칩 누르기가 parse → 중복 거르기 → format 한 벌을 그대로 지난다 |
+| `2-ㅂ-3` | `3-11-3` | 자기 자신을 참조하는 수식을 넣는다 → "자기 자신(A)을…"이 뜬다 | `FormulaValidatorTest.자기 자신을 참조하면 알린다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `getString(R.string.formula_warn_self_ref, problem.key)` — SelfReference 문제 하나가 그 문구로 바뀌는 자리 — 문구는 여기서만 나온다 |
+| `2-ㅂ-4` | `3-11-7` | 정상 수식(`field(힘) + field(민첩) * 2`)을 저장 → 조용히 저장된다 | `FormulaValidatorTest.정상 수식에는 경고가 없다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)` — 문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 "조용히 저장된다"이다 |
+| `3-ㄷ-2` | `3-39-3` | 빈 시트가 든 파일로 덮어쓰기 → **기존 데이터를 지우지 않는다** | `OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다` · `OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다` <br> `app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt` 에서 `OverwriteGuard.canRestore(sheetHasDataRow(sheet, "이름"))` — 덮어쓰기 경로가 판정기에게 물어보고 나서 지운다 |
+| `3-ㅁ-10` | `3-105` | 대결 축 시트의 영향필드 칸을 본다 → `▼나이` 꼴이다(옛 `-나이`가 아니다). 옛 파일도 같은 뜻으로 들어온다 | `DuelFieldLinksTest.writes only the new marker` · `DuelFieldLinksTest.legacy markers still read as lower wins` <br> `app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt` 에서 `row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))` — 영향필드 칸이 toText가 낸 글을 그대로 적는다 |
+| `6-ㅂ` | `3-56-3` | 판을 몇 번 돌린다 → 진행률 네 숫자(붙임·접힘·남음/전체)가 바뀐다 | `DuelPairingTest.진행률은 붙인 것 접힌 것 남은 것으로 정확히 갈린다` · `DuelPairingTest.이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다` <br> `app/src/main/java/com/novelcharacter/app/ui/duel/DuelPlayFragment.kt` 에서 `value.played, value.folded, value.remaining, value.total` — 진행률 문구가 Progress의 네 수를 그대로 받는다 |
+| `6-ㅈ2` | `3-67-3` | 맨 아래 등급을 하나 더한다 → **종전 최하 구간이 0%가 안 된다** | `DuelGradeAssignTest.reconcile - 맨 아래에 등급이 붙으면 옛 마지막 등급이 100퍼센트를 받는다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(` — 등급을 고쳐 저장하는 자리가 reconcile이 낸 구간을 그대로 쓴다 |
+| `8-ㄴ-2` | `3-125-7` | 몸통에서 **슬림**을 고르고 굴린다 → 그림 아래 요약이 **슬림**이라고 말한다(고른 말과 돌아오는 말이 같다) | `BodyGeneratorTest.몸통 축은 요약의 몸통 라벨과 일치한다` <br> `app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt` 에서 `val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)` — 편집기의 요약 줄이 axisSummary가 낸 말을 그대로 건다 |
+| `8-ㄷ-3` | `3-113-ㄷ` | 그 축을 골라 굴린다 → 요약이 **바꾼 이름**으로 말한다 | `BodyGenerationConfigTest.사용자가 정의한 몸통 축도 요약이 같은 이름으로 답한다` · `BodyGenerationConfigTest.사용자가 정의한 힙 축도 요약이 같은 이름으로 답한다` <br> `app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt` 에서 `val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)` — 같은 자리 — 축 이름을 바꿔도 요약이 그 함수에서 온다 |
+| `8-ㄷ-9` | `3-135-ㄹ` | 그 축을 고른 채 🎲를 여러 번 굴린다 → 요약의 힙 이름이 **고른 축과 다르게** 나온다(경고가 예언한 그 일이다) | `BodyBandGapTest.잡힌 힙 축을 굴리면 요약이 이웃 축 이름으로 답한다` <br> `app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt` 에서 `val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)` — 같은 자리 — 잡힌 축의 이웃 이름도 그 함수가 낸다 |
+| `10-ㅁ` | `3-83-7` | 캐릭터 이름을 바꾼다 → 옛 링크가 풀린다 | `NameBankMatchTest.이름이 바뀌면 옛 링크를 푼다` · `NameBankMatchTest.이름이 그대로면 풀지 않는다` <br> `app/src/main/java/com/novelcharacter/app/ui/character/CharacterViewModel.kt` 에서 `val plan = com.novelcharacter.app.util.NameBankMatch.planOnSave(` — 저장 경로가 planOnSave의 계획을 그대로 실행한다 |
+| `12-ㅋ` | `3-46-1·2` | 창작도를 바꾼다 → 그 자리에 고지가 뜨고, **되돌리면 사라진다** | `AiCreativityTest.globalChangeNotice_namesTheNewDefault` · `AiCreativityTest.globalChangeNotice_disappearsWhenRevertedInPlace` · `AiCreativityTest.globalChangeNotice_silentWhenUnchanged` <br> `app/src/main/java/com/novelcharacter/app/ui/character/CreativityChipRow.kt` 에서 `globalNote.visibility = if (changed == null) View.GONE else View.VISIBLE` — 고지 줄의 보임 여부가 globalChangeNotice의 답 그대로다 — 되돌리면 null이라 사라진다 |
 
 ### 코드 — 8단계 (코드를 읽으면 끝나는 것)
 
 | 단계 | 원 절 | 무엇을 밟던 것인가 | 근거 |
 |---|---|---|---|
-| `0-ㅁ` | `—` | 캐릭터를 열어 칸 몇 개를 채우고 나온다 → 버튼을 여러 번 누르지 않아도 저장된다 | `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt:227` — onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다 |
-| `1-ㅊ` | `3-34-4` | 카드 오른쪽 위 **⚙**를 누른다 → 그 필드의 편집 창이 열린다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:653` — 카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다 |
-| `2-ㄱ-1` | `3-27-1` | 필드 관리에서 칩이 **셋**(캐릭터/사건/작품)인지 본다 → 셋 다 있다 | `app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt:344` — chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다 |
-| `5-ㅎ` | `3-10-3` | 그 창에서 **모든 유형의 체크를 해제**하고 저장 → 카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**) | `app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt:787` — enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다 |
-| `6-ㅍ` | `3-85-2` | **이미지 축**을 만든다 → 누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다 | `app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt:164` — axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄 |
-| `8-ㄹ-5` | `3-114-ㅂ·ㅅ` | 설정에서 **필드 설명 ⓘ**를 켠다 → 설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:113` — hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다 |
-| `9-ㅂ` | `3-26-2` | 작품을 고르기 **전에는** 그 버튼이 안 보이는지 본다 → 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:870` — btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다 |
-| `10-ㅊ2` | `3-51-4` | 그 카드를 누른다 → 그 자리로 데려간다 | `app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt:63` — 카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록) |
+| `0-ㅁ` | `—` | 캐릭터를 열어 칸 몇 개를 채우고 나온다 → 버튼을 여러 번 누르지 않아도 저장된다 | `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt` 에서 `CharacterDraftPrefs.save(ctx, characterId, collectDraft())` — onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다 |
+| `1-ㅊ` | `3-34-4` | 카드 오른쪽 위 **⚙**를 누른다 → 그 필드의 편집 창이 열린다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt` 에서 `/** 머리 행 — 제목 + ⚙(체형 분석 설정 바로가기, 터치 48dp). */` — 카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다 |
+| `2-ㄱ-1` | `3-27-1` | 필드 관리에서 칩이 **셋**(캐릭터/사건/작품)인지 본다 → 셋 다 있다 | `app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt` 에서 `checkedIds.contains(R.id.chipEventFields) -> FieldDefinition.ENTITY_EVENT` — chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다 |
+| `5-ㅎ` | `3-10-3` | 그 창에서 **모든 유형의 체크를 해제**하고 저장 → 카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**) | `app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt` 에서 `enabled.isEmpty() -> getString(R.string.stats_pattern_all_types_off)` — enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다 |
+| `6-ㅍ` | `3-85-2` | **이미지 축**을 만든다 → 누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다 | `app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt` 에서 `val target = if (axis.isImageAxis && destination != R.id.duelMatchesFragment) {` — axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄 |
+| `8-ㄹ-5` | `3-114-ㅂ·ㅅ` | 설정에서 **필드 설명 ⓘ**를 켠다 → 설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt` 에서 `val hasNote = showFieldNotes &&` — hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다 |
+| `9-ㅂ` | `3-26-2` | 작품을 고르기 **전에는** 그 버튼이 안 보이는지 본다 → 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt` 에서 `binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE` — btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다 |
+| `10-ㅊ2` | `3-51-4` | 그 카드를 누른다 → 그 자리로 데려간다 | `app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt` 에서 `findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)` — 카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록) |
 
 
 ---

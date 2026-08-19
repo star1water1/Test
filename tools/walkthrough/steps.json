@@ -65,8 +65,9 @@
   "axiswhy": "자동저장 배선 — 저장 호출 지점을 읽으면 끝",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt:227",
-   "note": "onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt",
+   "note": "onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다",
+   "anchor": "CharacterDraftPrefs.save(ctx, characterId, collectDraft())"
   }
  },
  {
@@ -258,8 +259,9 @@
   "axiswhy": "⚙ → 필드 편집 인텐트 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:653",
-   "note": "카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt",
+   "note": "카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다",
+   "anchor": "/** 머리 행 — 제목 + ⚙(체형 분석 설정 바로가기, 터치 48dp). */"
   }
  },
  {
@@ -315,8 +317,9 @@
   "axiswhy": "칩 셋·타입별 위젯 분기 — when 한 자리",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt:344",
-   "note": "chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt",
+   "note": "chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다",
+   "anchor": "checkedIds.contains(R.id.chipEventFields) -> FieldDefinition.ENTITY_EVENT"
   }
  },
  {
@@ -423,12 +426,15 @@
    "refutedWhy": "/home/user/Test/app/src/test/java/com/novelcharacter/app/util/MultiValueInputTest.kt의 roundTrip_isStableOnSecondPass(약 42행)가 따옴표를 품은 토큰(\"별칭\")으로 `assertEquals(once, MultiValueInput.format(MultiValueInput.parse(once)))`를 걸어 두 번째 이후의 모든 왕복이 고정점임을 못박고(따옴표 자람 = 이 등식의 파괴), roundTrip_tokenWithComma_survivesOpenAndSave가 `주인공, 남자` 토큰 하나가 둘이 되지 않음을 단언하며, CsvTokensTest.joinThenSplit_roundTripsInBothModes도 실재하고, 실제 편집·저장 경로(CharacterEditFragment·CharacterSaveCoordinator)가 MultiValueInput을 쓰므로 expect의 두 항목이 모두 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "MultiValueInputTest.roundTrip_isStableOnSecondPass",
     "MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave",
     "CsvTokensTest.joinThenSplit_roundTripsInBothModes"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt",
+   "anchor": "val tags = MultiValueInput.parse(binding.editTags.text.toString())",
+   "note": "편집 창의 태그 칸이 저장 때 MultiValueInput.parse를, 적재 때 format을 그대로 지난다"
   }
  },
  {
@@ -456,11 +462,14 @@
    "refutedWhy": "app/src/test/java/com/novelcharacter/app/util/MultiValueInputTest.kt에 두 시험이 실재하고(roundTrip_tokenWithComma_survivesOpenAndSave 33-36행, format_isTheSameRuleAsTheExcelCell 96-101행) 인용한 단언이 그대로다 — BatchTagBottomSheet.kt:97-101의 칩 경로가 parse(current)→add→format이고 확인 단추(69-73행)가 parse뿐이라 합성이 정확히 parse(format(list))이며, 감싸기 글자는 CsvTokensTest.kt:160의 assertEquals(\"\\\"가, 나\\\"\", CsvTokens.quote(...))가 들고 저장은 CharacterRepository.batchAddTags(733-743행)가 토큰마다 한 행이라 '하나가 둘이 되는' 자리가 순수 계층 밖에 없다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave",
     "MultiValueInputTest.format_isTheSameRuleAsTheExcelCell"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/batch/BatchTagBottomSheet.kt",
+   "anchor": "binding.tagInput.setText(MultiValueInput.format(existing))",
+   "note": "칩 누르기가 parse → 중복 거르기 → format 한 벌을 그대로 지난다"
   }
  },
  {
@@ -842,10 +851,13 @@
    "refutedWhy": "FormulaValidatorTest.kt:71-77의 `자기 자신을 참조하면 알린다`가 인용된 두 줄 그대로 Problem.SelfReference와 key=\"total\"을 단언하고, 그 Problem을 문구로 바꾸는 자리는 FieldEditDialog.kt:2554(`getString(R.string.formula_warn_self_ref, problem.key)`) 하나뿐이며 그 validateFormula가 저장 시 2455행에서 불려 경고 다이얼로그로 뜨므로(strings.xml:351 `자기 자신(%1$s)을 참조합니다`), 문구 노출이 이 Problem 산출과 일대일이다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "FormulaValidatorTest.자기 자신을 참조하면 알린다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt",
+   "anchor": "getString(R.string.formula_warn_self_ref, problem.key)",
+   "note": "SelfReference 문제 하나가 그 문구로 바뀌는 자리 — 문구는 여기서만 나온다"
   }
  },
  {
@@ -872,10 +884,13 @@
    "refutedWhy": "FormulaValidatorTest.kt:30-37의 `정상 수식에는 경고가 없다`가 실재하고 32행이 걷는 단계와 같은 모양(`(field(str) + field(dex)) * 2`)에 emptyList를 단언하는데, FieldEditDialog.kt:2454-2467이 `problems.isNotEmpty()`일 때만 경고창을 띄우고 비면 곧장 finishSave로 가므로 expect(\"조용히 저장된다\")를 가르는 판정이 이 순수 함수의 반환값 하나뿐이다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "FormulaValidatorTest.정상 수식에는 경고가 없다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt",
+   "anchor": "FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)",
+   "note": "문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 \"조용히 저장된다\"이다"
   }
  },
  {
@@ -1240,11 +1255,14 @@
    "refutedWhy": "/home/user/Test/app/src/test/java/com/novelcharacter/app/excel/OverwriteGuardTest.kt의 두 시험이 인용된 줄 그대로 `classify(false)==EMPTY`·`canRestore(false)==false`·스타일만 남은 행의 `hasDataRow==false`를 단언하고, ExcelImportService.kt:713-733의 shouldDelete가 모든 spec 삭제를 이 classify 결과에 걸어 EMPTY면 경고만 남기고 deleteAll을 건너뛰므로 '기존 데이터를 지우지 않는다'가 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다",
     "OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt",
+   "anchor": "OverwriteGuard.canRestore(sheetHasDataRow(sheet, \"이름\"))",
+   "note": "덮어쓰기 경로가 판정기에게 물어보고 나서 지운다"
   }
  },
  {
@@ -1613,11 +1631,14 @@
    "refutedWhy": "DuelFieldLinksTest.kt의 `writes only the new marker`가 `assertEquals(\"▼age\", toText(...))`와 `-`로 시작하지 않음을, `legacy markers still read as lower wins`가 `parseText(\"-age\")`·`'-age`·`decode(\"[\\\"-age\\\"]\")`를 전부 작을수록 유리로 단언하며, 내보내기가 ExcelExporter.kt:2238-2240에서 그 toText를 그대로 영향/산출/프로필 칸에 쓰고 가져오기는 ExcelImportService.kt:9409에서 parseText를 쓰므로 시트 칸 모양과 옛 파일 수용이 둘 다 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "DuelFieldLinksTest.writes only the new marker",
     "DuelFieldLinksTest.legacy markers still read as lower wins"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt",
+   "anchor": "row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))",
+   "note": "영향필드 칸이 toText가 낸 글을 그대로 적는다"
   }
  },
  {
@@ -2410,8 +2431,9 @@
   "axiswhy": "전부 해제해도 카드가 안 사라진다 — 가드 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt:787",
-   "note": "enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt",
+   "note": "enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다",
+   "anchor": "enabled.isEmpty() -> getString(R.string.stats_pattern_all_types_off)"
   }
  },
  {
@@ -2628,11 +2650,14 @@
    "refutedWhy": "DuelPairingTest.kt:119-129가 인용된 세 줄(total 28 · 합 불변식 · played 3)을 그대로 담고 94-106의 이행 추론 시험이 folded 1·played 2·remaining 0을 따로 단언해 네 숫자를 모두 고정하며, 화면은 DuelPlayFragment.kt:720-730에서 같은 `DuelPairing.Progress`를 strings.xml:3676 `붙임 %1$d · 접힘 %2$d · 남음 %3$d / 전체 %4$d판`에 그대로 꽂으므로 별도 계산 경로가 없다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "DuelPairingTest.진행률은 붙인 것 접힌 것 남은 것으로 정확히 갈린다",
     "DuelPairingTest.이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/duel/DuelPlayFragment.kt",
+   "anchor": "value.played, value.folded, value.remaining, value.total",
+   "note": "진행률 문구가 Progress의 네 수를 그대로 받는다"
   }
  },
  {
@@ -2798,8 +2823,9 @@
   "axiswhy": "이미지 축은 캐릭터 선택을 먼저 연다 — 분기 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt:164",
-   "note": "axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt",
+   "note": "axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄",
+   "anchor": "val target = if (axis.isImageAxis && destination != R.id.duelMatchesFragment) {"
   }
  },
  {
@@ -2999,10 +3025,13 @@
    "refutedWhy": "DuelGradeAssignTest.kt:319-326이 이 단계의 시나리오를 그대로 재현한다 — reconcile(before, labels4, labels4 + \"바닥\")의 결과 컷이 S 5/A 20/B 60/**C 100**이라 옛 마지막 등급 C가 60~100 구간을 그대로 쥐고(0%가 아니고) added가 비었음을 단언하므로, 순수 계산만 묻는 expect('종전 최하 구간이 0%가 안 된다')를 정확히 덮는다(생산 호출부 FieldEditDialog.kt:616도 옛 라벨을 그대로 넘긴다)."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "DuelGradeAssignTest.reconcile - 맨 아래에 등급이 붙으면 옛 마지막 등급이 100퍼센트를 받는다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt",
+   "anchor": "val reconciled = com.novelcharacter.app.util.DuelGradeAssign.reconcile(",
+   "note": "등급을 고쳐 저장하는 자리가 reconcile이 낸 구간을 그대로 쓴다"
   }
  },
  {
@@ -3797,10 +3826,13 @@
    "refutedWhy": "BodyGeneratorTest.kt:54 `몸통 축은 요약의 몸통 라벨과 일치한다`가 DEFAULT_GENERATION의 **슬림을 포함한 torsoOptions 전수**를 키·난수 40벌씩 굴려 option.label == axisSummary(...).torso를 단언하고, 화면 쪽도 같은 목록을 그대로 지나므로(BodySilhouetteEditorSheet.kt:687이 라디오 라벨을 `options.torsoOptions.map { it.label }`로 짓고, 굴린 값이 :916~925에서 클램프 없이 current에 들어가 :628의 axisSummary로 그대로 요약된다) expect가 괄호로 스스로 환원한 '고른 말 = 돌아오는 말'이 순수 계층에서 실제로 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "BodyGeneratorTest.몸통 축은 요약의 몸통 라벨과 일치한다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt",
+   "anchor": "val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)",
+   "note": "편집기의 요약 줄이 axisSummary가 낸 말을 그대로 건다"
   }
  },
  {
@@ -3941,11 +3973,14 @@
    "refutedWhy": "BodyGenerationConfigTest.kt:86-110의 두 시험이 이름도 경계도 기본과 다른 사용자 축 한 벌(38-68행의 `custom` — 가는허리/보통허리/두툼, 납작/보통힙/풍성)로 키 4종×시드 30회를 굴려 `axisSummary(measures(body), config).torso/.hip`가 고른 축의 label과 같음을 전수로 단언하고, 화면 요약도 DynamicFieldRenderer.kt:739·BodySilhouetteEditorSheet.kt:628에서 같은 config로 같은 함수를 부르므로 '바꾼 이름으로 말한다'가 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "BodyGenerationConfigTest.사용자가 정의한 몸통 축도 요약이 같은 이름으로 답한다",
     "BodyGenerationConfigTest.사용자가 정의한 힙 축도 요약이 같은 이름으로 답한다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt",
+   "anchor": "val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)",
+   "note": "같은 자리 — 축 이름을 바꿔도 요약이 그 함수에서 온다"
   }
  },
  {
@@ -4082,10 +4117,13 @@
    "refutedWhy": "app/src/test/java/com/novelcharacter/app/data/BodyBandGapTest.kt:198-214는 실재하고, 빈 구간을 만든 프리셋으로 **실제 생성기**(BodyGenerator.generate, 40시드×키 옵션 전수, 44-50행 rolls 헬퍼가 빈 목록도 막는다)를 굴린 뒤 **실제 요약 함수**(BodySilhouetteSpec.axisSummary)로 고른 축의 라벨('표준')이 나오지 않음을 단언하므로 expect('요약의 힙 이름이 고른 축과 다르게 나온다')와 같은 것을 재고, 🎲 패널의 기본 경로도 같은 BodyGenerator.generate와 같은 axisSummary를 쓴다(ui/character/BodySilhouetteEditorSheet.kt:628·984)."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "BodyBandGapTest.잡힌 힙 축을 굴리면 요약이 이웃 축 이름으로 답한다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/BodySilhouetteEditorSheet.kt",
+   "anchor": "val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)",
+   "note": "같은 자리 — 잡힌 축의 이웃 이름도 그 함수가 낸다"
   }
  },
  {
@@ -4286,8 +4324,9 @@
   "axiswhy": "ⓘ가 설명 있는 필드에만 붙는가 — 조건 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:113",
-   "note": "hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt",
+   "note": "hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다",
+   "anchor": "val hasNote = showFieldNotes &&"
   }
  },
  {
@@ -4487,8 +4526,9 @@
   "axiswhy": "작품 선택 전 버튼 숨김 — 조건 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:870",
-   "note": "btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt",
+   "note": "btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다",
+   "anchor": "binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE"
   }
  },
  {
@@ -4769,11 +4809,14 @@
    "refutedWhy": "NameBankMatchTest.kt:163-170의 `이름이 바뀌면 옛 링크를 푼다`가 인용된 줄 그대로 `plan.releaseEntryIds == listOf(1L)`(및 새 엔트리 링크 2L)를, 181-186의 `이름이 그대로면 풀지 않는다`가 빈 목록을 단언하고, 저장 경로가 CharacterViewModel.kt:1623에서 같은 planOnSave를 부르므로 expect('옛 링크가 풀린다')가 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "NameBankMatchTest.이름이 바뀌면 옛 링크를 푼다",
     "NameBankMatchTest.이름이 그대로면 풀지 않는다"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CharacterViewModel.kt",
+   "anchor": "val plan = com.novelcharacter.app.util.NameBankMatch.planOnSave(",
+   "note": "저장 경로가 planOnSave의 계획을 그대로 실행한다"
   }
  },
  {
@@ -5155,8 +5198,9 @@
   "axiswhy": "카드 → 그 자리로 데려가는 내비 한 줄",
   "drop": {
    "why": "코드",
-   "where": "app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt:63",
-   "note": "카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록)"
+   "where": "app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt",
+   "note": "카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록)",
+   "anchor": "findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)"
   }
  },
  {
@@ -5649,12 +5693,15 @@
    "refutedWhy": "AiCreativityTest.kt:195-224의 세 시험이 인용된 줄 그대로 `globalChangeNotice(opened, BOLD)==BOLD`·되돌린 뒤 null·같은 등급이면 null(전 등급 순회)을 단언하고, 화면의 그 줄이 CreativityChipRow.kt:64에서 같은 함수 결과로만 켜지므로 '고지가 뜨고 되돌리면 사라진다'가 상태 판정 그대로 덮인다."
   },
   "drop": {
-   "why": "시험",
+   "why": "시험+코드",
    "test": [
     "AiCreativityTest.globalChangeNotice_namesTheNewDefault",
     "AiCreativityTest.globalChangeNotice_disappearsWhenRevertedInPlace",
     "AiCreativityTest.globalChangeNotice_silentWhenUnchanged"
-   ]
+   ],
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CreativityChipRow.kt",
+   "anchor": "globalNote.visibility = if (changed == null) View.GONE else View.VISIBLE",
+   "note": "고지 줄의 보임 여부가 globalChangeNotice의 답 그대로다 — 되돌리면 null이라 사라진다"
   }
  },
  {
