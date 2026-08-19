@@ -18,7 +18,7 @@ import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.FormulaDisplay
 import com.novelcharacter.app.util.FormulaEvaluator
 import org.junit.Assert.assertEquals

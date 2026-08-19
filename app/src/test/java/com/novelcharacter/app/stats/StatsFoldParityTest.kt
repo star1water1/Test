@@ -12,7 +12,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.PatternThresholds
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.NumericBinning
 import com.novelcharacter.app.util.ValueDistributions
 import org.junit.Assert.assertEquals

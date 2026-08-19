@@ -485,6 +485,15 @@ done
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
   ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
+  # `data/settings/`는 2026.08.19(B-251 ⓓ)에 들어왔다 — **바로 앞 판(ⓐ)이 설정 저장 경로를
+  # 열어 놓고도 이 폴더만 빠져 있었다.** 이유는 결함이 아니라 *고르는 방식*이다: 이 자리는
+  # `data/` 하위를 **이름으로 하나씩** 적는데, 그러면 새 하위 폴더가 조용히 범위 밖에 남는다
+  # (같은 날 콜드 검토가 `share/`에서 되돌린 그 병이다). 넣은 값은 실측했다 — **신규 오류 0 ·
+  # 파일 +2**라 기준선을 움직이지 않는다.
+  #
+  # **`data/maintenance/`는 같은 판에 넣지 않았다** — 실측 **신규 115건**이라 스텁 작업이
+  # 따로 필요하고, 그것은 기준선을 옮기는 일이라 판을 가른다(4장 B-265).
+  ls "$M"/data/settings/*.kt
   # `share/`는 2026.08.19(B-251)에 들어왔다 — **B-234 판이 재고 이 판에 넘긴 몫이다**
   # (*"커밋하지 않았다 — 프로브 기준선을 옮기는 것은 판당 하나이고 그 몫은 B-251이다"*).
   # 그 계층은 **월드패키지 교환 형식**을 다루는데 순수 하네스에도 프로브에도 없어
@@ -567,6 +576,38 @@ java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar
 
 ERRS=$(wc -l < "$OUT")
 echo "오류 ${ERRS}건(겹 포함) → $OUT"
+
+# ── 4-b. 범위와 사각지대 (B-251 ⓑ·ⓒ · 2026.08.19) ──
+#
+# **왜 산출이 이것을 말해야 하는가.** 2026.08.19 콜드 검토가 세운 규약은
+# ***"검사는 무엇을 못 보는지와 얼마나 보는지를 둘 다 말해야 한다"***이고, 그 판은
+# 그것이 검사만의 것이 아니라 **자기 입력을 스스로 만드는 기계 전부**의 것이라고 못박았다.
+# 이 프로브가 정확히 그 부류인데 **자기 범위에 대해서는 여태 침묵했다** — 산출은 오류 수만
+# 말하고, *그 수가 어느 만큼을 보고 나온 것인지*는 문서를 뒤져야 알 수 있었다.
+#
+# **왜 손 목록이 아니라 세는가.** 사각지대를 문장으로만 적어 두면 낡는다(이 저장소가 반복해
+# 물린 모양이다 — `check_view_probe_targets.sh`가 생긴 이유). 여기서는 **`app/src/main`의
+# 코틀린 파일 전수에서 대상 목록을 빼서** 남는 것을 최상위 패키지로 접어 센다. 새 계층이
+# 생기면 **자동으로 이 목록에 뜬다.**
+#
+# **B-251 ⓑ·ⓒ를 이 방향으로 닫는다.** 그 두 갈래(안드로이드 뷰 스택 · 그래픽·문서 트리)는
+# 스텁을 세워 열지 **않기로** 한다 — 화면 계층의 컴파일 증명은 CI가 맡기로 이미 갈라 둔
+# 자리이고(CLAUDE.md v2.0), `Bitmap`·`DocumentsContract` 계열은 진짜와 대조할 수단이 없어
+# **넓은 스텁이 곧 거짓 초록**인 부류다. 대신 **못 보는 것을 못 본다고 말한다.**
+ALL_MAIN=$(find "$REPO/app/src/main/java/com/novelcharacter/app" -name '*.kt' | sort)
+SEEN=$(grep -E "^$REPO/app/" "$WORK/files.txt" | sort)
+UNSEEN=$(comm -23 <(echo "$ALL_MAIN") <(echo "$SEEN"))
+SEEN_N=$(echo "$SEEN" | grep -c . || true)
+UNSEEN_N=$(echo "$UNSEEN" | grep -c . || true)
+echo "범위: 본 파일 ${SEEN_N}개 · 못 본 파일 ${UNSEEN_N}개 — 못 본 쪽의 컴파일 증명은 CI뿐이다"
+echo "$UNSEEN" | grep . | sed "s|$REPO/app/src/main/java/com/novelcharacter/app/||" \
+  | awk -F/ '{ if (NF>1) print $1; else print "(최상위)" }' | sort | uniq -c | sort -rn \
+  | awk '{ printf "  · %s %s\n", $2, $1 }'
+# **본 것이 0이면 목록이 잘린 것이다** — 그 상태에서 "오류 0"은 초록이 아니라 침묵이다.
+if [ "${SEEN_N:-0}" -eq 0 ]; then
+  echo "⚠️  대상 목록에 앱 파일이 하나도 없다 — 목록이 잘렸다. 이 산출을 믿지 말 것." >&2
+  exit 1
+fi
 
 # **스텁 자신이 오류를 내면 곧바로 죽는다** (2026.08.17 · B-190).
 # 스텁은 대부분 실제 소스·자원에서 뜨므로 저쪽이 바뀌면 여기가 깨질 수 있는데, 그때 나오는

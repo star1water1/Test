@@ -57,6 +57,15 @@ if [ ! -d "$SP/out-room" ]; then
 fi
 
 # 순수 JVM으로 컴파일 가능한 소스 집합 (Android SDK/Room DB 런타임 비의존)
+#
+# ⚠️ **아래 목록 안에는 주석을 쓸 수 없다.** `SOURCES="` 부터 짝이 되는 `"` 까지가 통째로
+# **하나의 문자열**이라 `#`로 시작한 줄도 파일 이름으로 낱말 분해되고, 백틱은 명령 치환까지
+# 일으킨다. 설명할 것이 있으면 여기 머리말에 적을 것 (2026.08.19 B-251 ⓓ에서 실제로 물렸다).
+#
+# **2026.08.19(B-251 ⓓ) 추가 — `util/StatsSnapshot.kt` · `util/StandardYearLink.kt` ·
+# `util/ConsistencyChecker.kt`.** 정합성 검사기는 종전에 `ui.stats.StatsSnapshot`을 import 해
+# **프로브(`ui/**` 제외)도 이 하네스도 싣지 못했고, 그래서 시험이 0건이었다** — 스냅샷을
+# `util/`로 옮기고 표준연도 연동 계약을 순수 오브젝트로 가르니 둘 다 닿는다.
 SOURCES="
 $MAIN/data/model/EntityCode.kt
 $MAIN/data/model/Character.kt
@@ -205,7 +214,10 @@ $MAIN/util/FactionMembershipMatcher.kt
 $MAIN/util/FactionStanding.kt
 $MAIN/util/FactionRelationshipMatcher.kt
 $MAIN/util/InitialFieldValues.kt
+$MAIN/util/StatsSnapshot.kt
 $MAIN/ui/stats/StatsDataProvider.kt
+$MAIN/util/StandardYearLink.kt
+$MAIN/util/ConsistencyChecker.kt
 $MAIN/util/UnassignedFilter.kt
 $MAIN/data/model/RandomConfig.kt
 $MAIN/data/model/SemanticRole.kt
@@ -525,6 +537,7 @@ $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt
 $TEST/data/BodyAnalysisConfigKeysTest.kt
 $TEST/util/BodySilhouetteSpecTest.kt
+$TEST/util/ConsistencyCheckerTest.kt
 $TEST/util/BodyEditorModelTest.kt
 $TEST/util/BodyEditorStateTest.kt
 $TEST/util/BodyGenerationEditStateTest.kt

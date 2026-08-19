@@ -10,7 +10,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.CrossAxis
 import com.novelcharacter.app.ui.stats.CrossAxisResolution
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

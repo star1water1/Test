@@ -12,7 +12,7 @@ import com.novelcharacter.app.ui.stats.PatternAxis
 import com.novelcharacter.app.ui.stats.PatternThresholds
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

@@ -5,7 +5,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.ui.stats.DataHealthStats
 import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.ConsistencyChecker
 
