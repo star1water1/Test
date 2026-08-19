@@ -408,6 +408,25 @@ EOF
 # **그 아래 진짜 오류가 발행조차 되지 않았다**(B-190이 `ExcelExporter.kt`에서 겪은 그 부류 —
 # 목록에 넣어 두고도 안 보는 자리다). 실측: 넣기 전 신규 68건이 전부 이 한 줄의 그림자였고,
 # 고치니 **신규 0**이 됐다.
+#
+# **2026.08.19 콜드 검토가 위 넓히기에서 두 결함을 냈다.**
+#   ⓐ **`X.y(` 꼴이 잡는 것은 *수신자*이지 타입이 아니다.** 그것이 타입인 것은
+#      `AppDatabase.getDatabase`처럼 **자기 타입을 돌려주는 팩토리**일 때뿐이고,
+#      실제로 `val recentActivityDao by lazy { database.recentActivityDao() }`는 `database`를
+#      잡는다(속성 이름이다). 오늘은 `database.kt`가 없어 조용히 빠졌지만, **이름이 겹치는
+#      파일이 하나 생기는 순간 엉뚱한 타입을 단 스텁이 나온다** — 거짓 초록이다.
+#      코틀린 관례상 타입은 대문자로 시작하므로 소문자로 시작하는 것은 타입이 아니다.
+#   ⓑ **뺀 것을 말하지 않았다.** 열여섯 중 열넷을 내면서 산출은 침묵했다. 이 저장소가
+#      2026.08.19 앞 판에서 세운 규약이 정확히 그것이다 — ***검사는 무엇을 못 보는지와
+#      얼마나 보는지를 둘 다 말해야 한다.*** 스텁도 같다: 빠진 접근자는 나중에 미해석
+#      노이즈로 나타나는데, 그때 그것이 *스텁이 뺀 것*인지 *진짜 결함*인지 가릴 수 없다.
+#
+# 접근자 목록을 파일로 먼저 뜬다 — 파이프 안에서 세면 서브셸이라 수가 안 남는다.
+tr '\n' ' ' < "$REPO/app/src/main/java/com/novelcharacter/app/NovelCharacterApp.kt" \
+  | grep -oE 'val [a-zA-Z]+ by lazy \{ *[A-Za-z]+[.(]' \
+  | sed -E 's|val ([a-zA-Z]+) by lazy \{ *([A-Za-z]+)[.(]|\1 \2|' > "$WORK/app-accessors.txt"
+
+ACC_SKIP=""
 {
   echo "// 프로브 전용 — 실제 NovelCharacterApp의 접근자만 뽑아 세운다."
   echo "package com.novelcharacter.app"
@@ -416,20 +435,48 @@ EOF
   echo "import com.novelcharacter.app.data.database.*"
   echo
   echo "class NovelCharacterApp : android.app.Application() {"
-  tr '\n' ' ' < "$REPO/app/src/main/java/com/novelcharacter/app/NovelCharacterApp.kt" \
-    | grep -oE 'val [a-zA-Z]+ by lazy \{ *[A-Za-z]+[.(]' \
-    | sed -E 's|val ([a-zA-Z]+) by lazy \{ *([A-Za-z]+)[.(]|\1 \2|' \
-    | while read -r prop type; do
-        [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/repository/$type.kt" ] \
-          || [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/database/$type.kt" ] \
-          || continue
-        echo "    val $prop: $type get() = throw UnsupportedOperationException(\"프로브 전용\")"
-      done
+  while read -r prop type; do
+    case "$type" in
+      [A-Z]*) ;;
+      *) ACC_SKIP="$ACC_SKIP $prop(수신자 [$type]는 타입이 아니다)"; continue ;;
+    esac
+    if [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/repository/$type.kt" ] \
+       || [ -f "$REPO/app/src/main/java/com/novelcharacter/app/data/database/$type.kt" ]; then
+      echo "    val $prop: $type get() = throw UnsupportedOperationException(\"프로브 전용\")"
+    else
+      ACC_SKIP="$ACC_SKIP $prop($type — 프로브 범위 밖)"
+    fi
+  done < "$WORK/app-accessors.txt"
   echo "}"
 } > "$WORK/NovelCharacterAppProbe.kt"
 
+ACC_SEEN=$(wc -l < "$WORK/app-accessors.txt")
+ACC_EMIT=$(grep -c 'get() = throw' "$WORK/NovelCharacterAppProbe.kt" || true)
+echo "NovelCharacterApp 스텁: 접근자 ${ACC_SEEN}개 중 ${ACC_EMIT}개.${ACC_SKIP:+ 뺀 것 —$ACC_SKIP}"
+# **하나도 못 내면 죽는다** — 정규식이 깨지거나 파일이 개명되면 빈 스텁이 나오는데,
+# 그러면 `app.*`가 통째로 미해석이 되고 그 아래 진짜 오류는 발행조차 되지 않는다.
+# base·cur 양쪽이 똑같이 비므로 `comm -13`도 침묵한다(이 파일이 스텁 가드를 둔 것과 같은 이유).
+if [ "${ACC_EMIT:-0}" -eq 0 ]; then
+  echo "⚠️  NovelCharacterApp 스텁이 접근자를 하나도 못 냈다 — 생성기가 깨졌다. 이 산출을 믿지 말 것." >&2
+  exit 1
+fi
+
 # ── 2. 대상 파일 목록 ──
 M="$REPO/app/src/main/java/com/novelcharacter/app"
+
+# `share/`에서 뺄 것 — 갈래 ⓒ(android.graphics·print·webkit). 사유는 아래 목록 블록 주석에 있다.
+SHARE_EXCLUDE="CharacterCardRenderer PdfExporter"
+# **낡은 제외는 빨간불이다** — 개명·삭제되면 그 이름이 아무것도 안 빼는데, 그러면 명단이
+# *무엇을 빼고 있는지*를 말하지 않게 된다(이 저장소가 예외 표식에 대해 세운 규약과 같다).
+#
+# **이 가드가 목록 블록 *밖*에 있는 이유:** 그 블록은 `{ … } | grep … > files.txt`라
+# **파이프라인의 일부여서 서브셸**이고, 그 안의 `exit 1`은 스크립트가 아니라 서브셸만 죽인다.
+# 처음엔 안에 뒀다가 자기 시험에서 잡았다 — 경고만 찍히고 **잘린 목록으로 컴파일이 계속됐다**
+# (실측: 목록이 잘려 오류가 615 → 3843이 되고도 종료코드는 0이었다).
+for _x in $SHARE_EXCLUDE; do
+  [ -f "$M/share/$_x.kt" ] || {
+    echo "⚠️  share/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
+done
 {
   # `AppSettingsBindings.kt`도 뺀다(B-105) — 그 파일은 **설정 저장소를 잇는 것이 일**이라
   # `ai/`·`backup/`·`ui/`를 import 하는데 이 프로브의 범위는 excel·model·dao·util·repository다.
@@ -438,16 +485,20 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
   ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
   ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
-  # `share/WorldPackage*.kt`는 2026.08.19(B-251)에 들어왔다 — **B-234 판이 재고 이 판에 넘긴 몫이다**
+  # `share/`는 2026.08.19(B-251)에 들어왔다 — **B-234 판이 재고 이 판에 넘긴 몫이다**
   # (*"커밋하지 않았다 — 프로브 기준선을 옮기는 것은 판당 하나이고 그 몫은 B-251이다"*).
   # 그 계층은 **월드패키지 교환 형식**을 다루는데 순수 하네스에도 프로브에도 없어
   # **컴파일 증명이 CI뿐이었다**(B-89가 `data/repository`를, B-110이 `OrganizeFolderService`를
   # 같은 사유로 들인 것과 같은 부류다 — 되돌리기 어려운 것을 다루는데 지역 증명이 없는 자리).
-  # **폴더가 아니라 파일로 고른다:** 같은 폴더의 `CharacterCardRenderer.kt`·`PdfExporter.kt`는
-  # `android.graphics`·`android.print`·`android.webkit`에 묶여 있어 갈래 ⓒ(그래픽 트리)이고,
-  # 넣으면 노이즈만 는다. `WorldPackage*.kt` 일곱은 `Context`·`Log`·`withTransaction`뿐이라
-  # **이미 있는 스텁으로 그대로 열린다**(실측으로 확인했다).
-  ls "$M"/share/WorldPackage*.kt
+  #
+  # **폴더를 통째로 들이고 뺄 것만 이름으로 적는다** — 첫 판은 반대로 `WorldPackage*.kt`라는
+  # **이름 접두사**로 골랐는데, 같은 날 콜드 검토가 그것을 되돌렸다: 그 꼴이면 `share/`에
+  # **새 파일이 생겨도 조용히 범위 밖에 남는다.** 이 저장소가 반복해 무는 모양 그대로다
+  # (`check_view_probe_targets.sh`가 생긴 이유 · `check_list_cell_csv.sh`가 폴더로 좁혔던 것).
+  # **방향이 중요하다:** 명단에 없는 새 파일은 **자동으로 범위에 든다.** 그것이 그래픽류라면
+  # 다음 판의 기준선 재현에서 수가 어긋나 **눈에 띄고**(그 자리에서 빼면 된다), 반대로 자동으로
+  # 빠지게 두면 **아무 데서도 안 보인다.** 시끄러운 쪽이 조용한 쪽보다 안전하다.
+  ls "$M"/share/*.kt | grep -vE "/($(echo $SHARE_EXCLUDE | tr ' ' '|'))\.kt$"
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AndroidUtilStubs.kt"
   echo "$WORK/AndroidOsStubs.kt"
