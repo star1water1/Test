@@ -108,6 +108,16 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private lateinit var saveCoordinator: CharacterSaveCoordinator
     private var hasUnsavedChanges = false
     private var pendingFieldValues: Bundle? = null
+
+    /**
+     * [pendingFieldValues]가 **어느 작품의 폼에서 나왔는가** (B-267) — `-1L`은 무소속.
+     * [pendingFieldValues]가 null이 아닐 때만 뜻을 갖는다.
+     *
+     * 동적 필드 id는 작품(세계관)마다 다르므로 **묶음에는 주인이 있다.** 주인을 적지 않으면
+     * 아무 스피너 콜백이나 묶음을 열고, 그 폼에 그 id가 하나도 없으면 **한 줄도 복원하지
+     * 못한 채 묶음만 사라진다.**
+     */
+    private var pendingFieldValuesNovelId: Long = -1L
     // 저장 완료/명시적 폐기 후 onPause의 드래프트 재기록 차단 (B-6)
     private var suppressDraftSave = false
 
@@ -158,10 +168,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 폼이 실제로 적재된 상태였는지도 함께 남긴다 — 적재 전에 회전하면 빈 Bundle이 저장되는데,
         // 복원 쪽이 그것을 "값이 없다"로 읽으면 DB 적재를 건너뛰어 필드값이 전량 삭제된다.
         val fieldValues = Bundle()
-        val hydrated = ::formBuilder.isInitialized && formBuilder.fieldDefinitions.isNotEmpty()
+        // `lastHydratedNovelPos >= 0`도 함께 본다 (B-267) — 폼을 **짓기만 하고 값을 아직
+        // 안 채운** 창(buildForm과 loadFieldValues 사이는 suspend로 벌어져 있다)에서 회전하면
+        // 위젯이 비어 있는데, 그것을 "적재됐다"로 적으면 빈 묶음이 진실 행세를 한다.
+        val hydrated = ::formBuilder.isInitialized && formBuilder.fieldDefinitions.isNotEmpty() &&
+            lastHydratedNovelPos >= 0
         if (::formBuilder.isInitialized) formBuilder.saveStateTo(fieldValues)
         outState.putBundle("fieldValues", fieldValues)
         outState.putBoolean(STATE_FIELDS_HYDRATED, hydrated)
+        // 이 묶음의 주인 작품 (B-267) — 복원 쪽이 **같은 작품의 콜백만** 소비하게 하는 열쇠다.
+        //
+        // 스피너의 *현재 선택*이 아니라 [lastHydratedNovelPos]로 적는다: 위의 값들은 **폼
+        // 위젯에서 읽은 것**이고 그 폼은 그 위치 기준으로 지어졌다. 사용자가 작품을 막 바꿔
+        // 재구성이 진행 중이면 둘이 갈리고, 그때 스피너를 믿으면 **옛 폼의 값에 새 작품의
+        // 이름표**가 붙는다. 겸해서 이 경로는 스피너를 읽지 않으므로 **뷰가 이미 죽은
+        // 백스택 조각의 onSaveInstanceState에서도 안전하다**(그 자리는 `_binding`이 null이라
+        // 아래 드래프트 저장이 명시적으로 막혀 있는 바로 그 경로다).
+        outState.putLong(
+            STATE_FIELD_VALUES_NOVEL,
+            novels.getOrNull(lastHydratedNovelPos - 1)?.id ?: -1L
+        )
 
         // "지우기로 했다"와 "대표로 골랐다"도 폼 상태다 (B-170) — imagePaths만 싣고 이 둘을
         // 빠뜨리면, *뺐다는 사실*은 살아남고 *지우기로 했다는 사실*만 사라지는 비대칭이 된다
@@ -275,18 +301,30 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // **빈 값 묶음은 보관하지 않는다** — 폼 적재 전에 담긴 드래프트가 그 모양인데,
         // 빈 묶음을 소비하면 DB 적재를 건너뛰어 필드값이 전량 삭제된다(saveFormState의
         // STATE_FIELDS_HYDRATED가 막는 것과 같은 무음 유실의 드래프트판).
-        if (draft.novelId != -1L && draft.fieldValues.isNotEmpty()) {
-            val index = novels.indexOfFirst { it.id == draft.novelId }
-            if (index >= 0) {
+        if (draft.fieldValues.isNotEmpty()) {
+            // 무소속(`-1L`)에도 폼이 있다 — 전역 구역의 필드를 그린다(B-119 확장). 종전에는
+            // `novelId != -1L`을 요구해 **무소속 캐릭터만 드래프트 복원이 동적 필드를 통째로
+            // 건너뛰었다**(B-267의 형제 — 같은 배선의 다른 구멍).
+            val novelIndex = novels.indexOfFirst { it.id == draft.novelId }
+            val targetPos = when {
+                draft.novelId == -1L -> 0        // 무소속 — 스피너 0번이 그 폼이다
+                novelIndex >= 0 -> novelIndex + 1
+                else -> -1                       // 지워진 작품 — 되살릴 자리가 없다
+            }
+            if (targetPos >= 0) {
                 val bundle = Bundle()
                 draft.fieldValues.forEach { (k, v) -> bundle.putString(k, v) }
-                val targetPos = index + 1
-                if (binding.spinnerNovel.selectedItemPosition == targetPos && formBuilder.fieldDefinitions.isNotEmpty()) {
-                    // 해당 작품 기준으로 폼이 이미 빌드됨 — 즉시 적용
+                // **폼이 이 작품 기준으로 적재까지 끝났는가**는 [lastHydratedNovelPos]가 안다
+                // (B-267). 종전에는 스피너의 선택 위치로 봤는데, 스피너는 이미 옮겨 갔고 폼은
+                // 아직 앞 작품(또는 전역)의 것인 순간이 **실제로 있다** — 그때 즉시 적용하면
+                // 곧 이어지는 buildForm이 그 위젯들을 통째로 갈아 끼워 복원이 증발한다.
+                if (lastHydratedNovelPos == targetPos && formBuilder.fieldDefinitions.isNotEmpty()) {
+                    // 해당 작품 기준으로 폼이 이미 빌드·적재됨 — 즉시 적용
                     formBuilder.restoreFieldValues(bundle)
                 } else {
-                    // 스피너 콜백의 buildDynamicForm 이후 소비되도록 보관
+                    // 스피너 콜백의 buildForm 이후 소비되도록 보관 — 주인 작품을 함께 적는다
                     pendingFieldValues = bundle
+                    pendingFieldValuesNovelId = draft.novelId
                     binding.spinnerNovel.setSelection(targetPos)
                 }
             }
@@ -524,6 +562,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         } else {
             null
         }
+        // 묶음의 주인 작품도 함께 꺼낸다 (B-267) — 이것이 없으면 부트스트랩 콜백이 남의
+        // 묶음을 열고 비운다(아래 스피너 콜백의 주석이 그 경로를 적고 있다).
+        pendingFieldValuesNovelId = if (pendingFieldValues != null) {
+            restoreSource?.getLong(STATE_FIELD_VALUES_NOVEL, -1L) ?: -1L
+        } else {
+            -1L
+        }
 
         binding.toolbar.setNavigationOnClickListener { handleBackPress() }
 
@@ -672,14 +717,29 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     binding.btnAiSuggest.visibility =
                         if (formBuilder.fieldDefinitions.isEmpty()) View.GONE else View.VISIBLE
 
-                    // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드.
-                    // 스피너 초기(position 0) 콜백은 폼이 비어 있으므로 복원값을 소비하지 않고 보존한다
-                    // (여기서 소거하면 이후 실제 작품 선택 콜백이 DB 값으로 덮어써 회전 직전 입력이 유실됨)
+                    // 회전·복귀로 보존된 필드값이 있으면 우선 적용, 없으면 DB에서 로드.
+                    //
+                    // **주인 작품이 같은 콜백만 소비한다** (B-267). 종전 조건은 *"폼이 비어
+                    // 있지 않으면 소비"*였고, 그 밑에는 *스피너 초기(position 0) 콜백의 폼은
+                    // 비어 있다*는 전제가 깔려 있었다. 그 전제는 B-119 확장(2026.08.07)이
+                    // position 0에도 전역 필드를 그리게 하면서 깨졌다 — 전역 목록은 템플릿이
+                    // 있으면 저장소가 심으므로(`DefaultFieldTemplateRepository.globalFields`)
+                    // 사실상 늘 비어 있지 않고, 그 id 집합은 작품 폼의 것과 겹치지도 않는다
+                    // (`getFieldsByUniverseList`는 `universeId = :universeId`뿐이다).
+                    // 그래서 부트스트랩 콜백이 묶음을 열어 **한 줄도 복원하지 못한 채** 비웠고,
+                    // 뒤따르는 진짜 작품 콜백은 `saved == null`을 보고 DB 값으로 덮었다 —
+                    // 회전 한 번에 적던 동적 필드가 통째로 사라지던 경로다(실기기 보고).
+                    //
+                    // 주인이 아니면 **DB로 적재하고 묶음은 그대로 둔다** — 이 폼에게는 DB가
+                    // 진실이고(id가 겹치지 않으므로 복원할 것이 애초에 없다), 묶음은 곧 올
+                    // 제 주인의 콜백이 쓴다.
+                    val positionNovelId = if (position > 0) novels[position - 1].id else -1L
                     val saved = pendingFieldValues
-                    if (saved != null && formBuilder.fieldDefinitions.isNotEmpty()) {
+                    val belongsHere = pendingFieldValuesNovelId == positionNovelId
+                    if (saved != null && belongsHere && formBuilder.fieldDefinitions.isNotEmpty()) {
                         formBuilder.restoreFieldValues(saved)
                         pendingFieldValues = null
-                    } else if (saved == null) {
+                    } else if (saved == null || !belongsHere) {
                         val existing = existingCharacter
                         if (existing != null) {
                             // 초기 하이드레이션의 DB 값 적재는 사용자 변경이 아니다 — 워처의
@@ -1281,6 +1341,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private companion object {
         /** 회전 저장 시점에 동적 폼이 적재돼 있었는가 — 빈 Bundle의 의미를 가르는 표시 */
         const val STATE_FIELDS_HYDRATED = "fieldsHydrated"
+
+        /**
+         * `"fieldValues"` 묶음의 **주인 작품** (B-267) — `-1L`은 무소속.
+         *
+         * 동적 필드 id는 작품(세계관)마다 다르므로 묶음에는 주인이 있고, 주인이 아닌 폼이
+         * 소비하면 한 줄도 복원되지 않은 채 묶음만 없어진다. [STATE_FIELDS_HYDRATED]가
+         * *"빈 묶음의 뜻"*을 가르듯, 이 값은 *"누구의 묶음인가"*를 가른다.
+         */
+        const val STATE_FIELD_VALUES_NOVEL = "fieldValuesNovelId"
 
         /** "앱에서 삭제" 예약 (B-170) — imagePaths와 같은 수명이어야 하는 폼 상태다. */
         const val STATE_PENDING_DELETES = "pendingDeletePaths"
