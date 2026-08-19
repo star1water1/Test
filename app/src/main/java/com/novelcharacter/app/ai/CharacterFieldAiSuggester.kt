@@ -28,6 +28,10 @@ import com.novelcharacter.app.util.FieldValueTokenizer
  * 함께 싣는다 — 라이브러리는 이미 필드별로 중복 없이(UNIQUE) 정규화된 카탈로그이고
  * 사용 빈도까지 들고 있어, 캐릭터 전체를 훑지 않고 1쿼리로 "이 작품의 기조"를 얻는다.
  * 값 전량이 아니라 [selectUsageExamples]가 고른 소수만 실어 토큰을 통제한다.
+ * 사용자가 그 값에 **설명**을 써 두었으면 뜻도 함께 간다 — 값 문자열만으로는 '북부'가
+ * 무엇을 가리키는지 알 수 없어 *"같은 뜻이면 기존 값을 쓴다"*는 지시가 성립하지 않는다
+ * (B-46). 예산은 목록과 분리돼 있어 설명이 길어도 허용 목록이 짧아지지 않는다
+ * ([selectUsageDescriptions]).
  * 응답 쪽도 같은 카탈로그로 접는다: 별칭 표기는 canonical로 교정하고(값 분열 방지),
  * `inputMode=restricted` 필드의 목록 밖 값은 **버리지 않고 '목록 밖'으로 표시해 후보로 낸다**
  * (B-79 — 처분은 저장 경로가 이미 하는 그것이다: 추가하고 저장 / 입력 수정).
@@ -100,6 +104,18 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val usageExamples: List<String> = emptyList(),
         /** 라이브러리에 등재된(숨김 제외) 값 종수 — "N종 중 M개" 고지용 */
         val usageTotal: Int = 0,
+        /**
+         * 예시 값의 **뜻** — `(값, 설명)`. 사용자가 값 라이브러리에 써 둔
+         * [FieldValueEntry.description]이며 [withLibraryUsage]가 채운다 (B-46).
+         *
+         * [usageExamples]에 **실제로 실린 값만** 그 순서대로 담는다 — 프롬프트에 없는 값의
+         * 뜻을 실으면 모델에게 못 쓰는 선택지를 알려 주는 토큰이 된다.
+         */
+        val usageDescriptions: List<Pair<String, String>> = emptyList(),
+        /** 총 예산에 밀려 못 실은 값 설명 수 — 조용히 버리지 않는다 (R-14 고지용) */
+        val usageDescriptionsOmitted: Int = 0,
+        /** 길이 상한에 잘린 값 설명 수 (R-14 고지용) */
+        val usageDescriptionsTruncated: Int = 0,
         /** 변형 표기(값·별칭) → canonical 접기 표. 숨김 엔트리도 포함(저장 검증과 동일 집합) */
         val canonicalByVariant: Map<String, String> = emptyMap(),
         /**
@@ -479,6 +495,28 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 필드 하나의 예시 총 길이 상한 */
         const val MAX_USAGE_EXAMPLE_TOTAL_CHARS = 240
 
+        // ===== 값 하나의 설명 (값의 뜻 전달) 상한 — B-46 =====
+
+        /**
+         * 값 설명([FieldValueEntry.description]) 하나의 길이 상한.
+         *
+         * 값 설명은 *"이 값이 무슨 뜻인가"*의 주석이지 필드 설명 같은 계약문이 아니다 —
+         * 예시 값 자체의 상한([MAX_USAGE_EXAMPLE_VALUE_CHARS], 40)보다 조금 넉넉한 선에서
+         * 끊는다. 넘치면 잘라 싣고 자른 사실을 고지한다(R-14).
+         */
+        const val MAX_USAGE_DESCRIPTION_CHARS = 60
+
+        /**
+         * 한 필드가 값 설명에 쓸 수 있는 **총 예산**. 필드 설명의 프롬프트 상한과 **같은 수**다
+         * (B-46 등재가 요구한 *"A-2의 필드 설명과 같은 상한 규칙"*) — 참조로 묶어 두어야
+         * 한쪽만 바뀌어 예산이 갈리지 않는다.
+         *
+         * **예시 목록의 예산([MAX_USAGE_EXAMPLE_TOTAL_CHARS])과 분리한 것이 이 상수의 요점이다.**
+         * 한 예산을 나눠 쓰면 설명이 긴 필드에서 **허용 값 목록 자체가 짧아진다** — restricted
+         * 필드에서 그것은 '목록 밖' 표시를 늘리는 새 결함이지 절약이 아니다.
+         */
+        const val MAX_USAGE_DESCRIPTION_TOTAL_CHARS = MAX_DESCRIPTION_PROMPT_CHARS
+
         /**
          * 제안 1건(key + value + 근거 한 문장)의 출력 토큰 추정치.
          * 종전 상수 `MAX_TARGETS_PER_REQUEST = 15`는 "maxTokens 4096 대비"라는 주석만 있고
@@ -743,15 +781,81 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             val visible = entries.filterNot { it.isHidden }.filter { it.value.isNotBlank() }
             val limit =
                 if (spec.restrictedToLibrary) exampleLimit.coerceAtLeast(MAX_USAGE_EXAMPLES) else exampleLimit
+            val examples = selectUsageExamples(
+                visible,
+                limit = limit,
+                maxValueChars = if (spec.restrictedToLibrary) Int.MAX_VALUE else MAX_USAGE_EXAMPLE_VALUE_CHARS
+            )
+            val glosses = selectUsageDescriptions(examples, visible)
             return spec.copy(
-                usageExamples = selectUsageExamples(
-                    visible,
-                    limit = limit,
-                    maxValueChars = if (spec.restrictedToLibrary) Int.MAX_VALUE else MAX_USAGE_EXAMPLE_VALUE_CHARS
-                ),
+                usageExamples = examples,
                 usageTotal = visible.size,
+                usageDescriptions = glosses.entries,
+                usageDescriptionsOmitted = glosses.omitted,
+                usageDescriptionsTruncated = glosses.truncated,
                 canonicalByVariant = canonical
             )
+        }
+
+        /** [selectUsageDescriptions]의 산출 — 실린 것과, 싣지 못한/자른 수(R-14 고지용) */
+        data class ValueDescriptions(
+            val entries: List<Pair<String, String>> = emptyList(),
+            val omitted: Int = 0,
+            val truncated: Int = 0
+        )
+
+        /**
+         * 값 설명 선별 (B-46) — 사용자가 값 라이브러리에 써 둔 *"이 값이 무슨 뜻인지"*를
+         * 프롬프트에 싣는다.
+         *
+         * **왜 필요한가:** 값 문자열만 주면 모델은 '북부'가 이 작품에서 *한랭한 변경*인지
+         * *왕도의 북쪽 구역*인지 알 수 없다. 규칙 9가 요구하는 *"같은 뜻이면 기존 값을 쓴다"*와
+         * 규칙 10의 *"이 목록에서만 고른다"*는 **뜻을 알아야 지킬 수 있는 지시**다.
+         *
+         * **왜 예시를 먼저 고르고 설명을 나중에 붙이는가:** 값과 설명을 한 예산에서 함께 자르면
+         * 설명이 긴 필드일수록 **허용 값 목록이 짧아진다.** restricted 필드에서 그것은
+         * 절약이 아니라 '목록 밖' 표시를 늘리는 결함이다. 그래서 [selectUsageExamples]의
+         * 결과는 손대지 않고, 이미 실리기로 정해진 값에만 설명을 얹는다.
+         *
+         * 순서는 예시 순서를 그대로 따른다 — 앞쪽이 더 대표적인 값이므로 예산이 모자라면
+         * 뒤쪽(덜 대표적인 쪽)의 설명부터 빠진다([selectUsageExamples]와 같은 자르기 방향).
+         *
+         * 숨김 값의 뜻이 새지 않는 것은 **[examples]가 훑기의 축이기 때문**이다(숨김은 예시에서
+         * 이미 빠졌다). 호출측이 숨김 제외 집합을 넘기는 것은 그 위의 겹 방어다 — 되돌리기로
+         * 재 보면 **둘을 동시에 풀 때만** 빨간불이 뜬다.
+         */
+        fun selectUsageDescriptions(
+            examples: List<String>,
+            entries: List<FieldValueEntry>,
+            maxChars: Int = MAX_USAGE_DESCRIPTION_CHARS,
+            maxTotalChars: Int = MAX_USAGE_DESCRIPTION_TOTAL_CHARS
+        ): ValueDescriptions {
+            if (examples.isEmpty() || entries.isEmpty()) return ValueDescriptions()
+            // 설명은 큐레이션한 사람만 쓴다 — 실사용 표본이 0/482였다(B-46 등재 근거).
+            // 그 흔한 경우에 표를 짓지 않도록 먼저 훑어 나간다(맵 할당 0).
+            if (entries.none { it.description.isNotBlank() }) return ValueDescriptions()
+            val byValue = HashMap<String, String>(entries.size * 2)
+            for (e in entries) {
+                // 줄바꿈은 여기서 접는다 — 프롬프트 한 줄에 실리므로 원문 개행이 필드 경계를 흉내 낸다
+                val d = e.description.replace('\n', ' ').replace('\r', ' ').trim()
+                if (d.isNotEmpty()) byValue.putIfAbsent(e.value, d)
+            }
+            val describable = examples.filter { byValue.containsKey(it) }
+            val out = mutableListOf<Pair<String, String>>()
+            var chars = 0
+            var truncated = 0
+            for (value in describable) {
+                val raw = byValue.getValue(value)
+                val tooLong = raw.length > maxChars
+                val text = if (tooLong) raw.take(maxChars) + "…" else raw
+                // '값 = 설명 · ' 꼴로 나가므로 구분자 몫까지 세야 예산이 실제 길이와 맞는다
+                val cost = value.length + text.length + 6
+                if (out.isNotEmpty() && chars + cost > maxTotalChars) break
+                out.add(value to text)
+                chars += cost
+                if (tooLong) truncated++
+            }
+            return ValueDescriptions(out, describable.size - out.size, truncated)
         }
 
         /**
@@ -873,6 +977,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
                기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
                상세도·길이를 따른다 (예: 기존이 '흑발, 은발'이면 '짙은 밤하늘빛 흑청색'은 안 된다).
+               '값 뜻'이 함께 오면 그것은 사용자가 그 값에 붙여 둔 정의다 — 어느 값이 맞는지
+               그 뜻으로 가리고, 뜻과 어긋나는 값을 고르지 마라. **답에 쓰는 값은 '기존 사용값'에
+               적힌 문자열 그대로여야 한다** — 설명을 값에 붙여 적지 마라.
             10. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
             11. 항목마다 confidence를 정직하게 매긴다. 잘 보이려고 높여 적지 마라 — 사용자는 이 값으로
                 무엇을 검토 없이 받을지 정한다.
@@ -1047,6 +1154,27 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     }
                     sb.append(": ").append(t.usageExamples.joinToString(", "))
                     if (t.restrictedToLibrary) sb.append(" (이 목록의 값만 허용)")
+                }
+                // 값의 뜻 (B-46) — **목록과 분리해서** 싣는다. '북부(왕도 이북)'처럼 값에 섞어
+                // 넣으면 restricted 필드에서 모델이 그 통짜 문자열을 값으로 되돌려 주고,
+                // 그것은 목록에 없으니 '목록 밖'으로 표시된다 — 사용자가 돈을 내고 손질을 산다.
+                // 목록은 모델이 **그대로 베껴야 하는 계약**이라 한 글자도 섞지 않는다.
+                if (t.usageDescriptions.isNotEmpty()) {
+                    sb.append(" / 값 뜻: ").append(
+                        t.usageDescriptions.joinToString(" · ") { (value, desc) -> "$value = $desc" }
+                    )
+                }
+                if (t.usageDescriptionsTruncated > 0) {
+                    notes.add(
+                        "'${t.name}'의 값 설명 ${t.usageDescriptionsTruncated}건을 " +
+                            "${MAX_USAGE_DESCRIPTION_CHARS}자로 절단"
+                    )
+                }
+                if (t.usageDescriptionsOmitted > 0) {
+                    notes.add(
+                        "'${t.name}'의 값 설명 ${t.usageDescriptionsOmitted}건을 싣지 못함 " +
+                            "(필드당 상한 ${MAX_USAGE_DESCRIPTION_TOTAL_CHARS}자)"
+                    )
                 }
                 // 재요청 맥락 — 사용자가 무엇을 더 원하고 무엇을 물렸는지. 이 둘이 없으면
                 // 재요청은 첫 요청과 같은 프롬프트가 되어 같은 답을 되받는다(과금만 두 번).
