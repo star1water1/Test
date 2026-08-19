@@ -470,6 +470,13 @@ SHARE_EXCLUDE="CharacterCardRenderer PdfExporter"
 # (위 `AppDatabaseProbe.kt`) 진짜를 함께 넣으면 **중복 선언으로 컴파일이 통째로 죽는다.**
 # 다른 제외와 성질이 다르다: 저쪽은 *못 보는 것*이고 이쪽은 *스텁으로 대신 보는 것*이다.
 DATA_EXCLUDE="AppDatabase"
+# `excel/`에서 뺄 것 — 사유는 아래 목록 블록 주석에 있다.
+# **2026.08.19 콜드 검토가 이 자리를 명단 꼴로 세웠다.** 종전에는 `grep -vE "A.kt|B.kt"`로
+# **자리에 박혀 있었고 두 가지가 달랐다:** ⓐ 패턴이 **고정되지 않아**(`/(…)\.kt$`가 아니다)
+# `MyExcelImporter.kt` 같은 새 파일이 **조용히 함께 빠진다** ⓑ **낡음 가드가 없어** 개명·삭제돼도
+# 아무 말이 없다. 나머지 셋(`share/`·`data/`·아래 목록)은 이미 그 꼴인데 여기만 남아 있었다 —
+# B-265가 고친 병(`이름으로 고르면 조용히 빠진다`)의 쌍둥이라 같은 슬라이스에서 처리했다.
+EXCEL_EXCLUDE="ExcelImporter AppSettingsBindings"
 # **낡은 제외는 빨간불이다** — 개명·삭제되면 그 이름이 아무것도 안 빼는데, 그러면 명단이
 # *무엇을 빼고 있는지*를 말하지 않게 된다(이 저장소가 예외 표식에 대해 세운 규약과 같다).
 #
@@ -487,13 +494,17 @@ for _x in $DATA_EXCLUDE; do
   [ -n "$(find "$M/data" -name "$_x.kt" -print -quit)" ] || {
     echo "⚠️  data/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
 done
+for _x in $EXCEL_EXCLUDE; do
+  [ -f "$M/excel/$_x.kt" ] || {
+    echo "⚠️  excel/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
+done
 {
   # `AppSettingsBindings.kt`도 뺀다(B-105) — 그 파일은 **설정 저장소를 잇는 것이 일**이라
   # `ai/`·`backup/`·`ui/`를 import 하는데 이 프로브의 범위는 excel·model·dao·util·repository다.
   # 넣으면 그 import가 전부 미해석으로 떠 신규 오류만 수십 줄 늘고 **진짜 결함을 덮는다.**
   # 그 파일의 컴파일 증명은 CI뿐이다(`ExcelImporter.kt`와 같은 부류이며, 짝인 선언
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
-  ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
+  ls "$M"/excel/*.kt | grep -vE "/($(echo $EXCEL_EXCLUDE | tr ' ' '|'))\.kt$"
   ls "$M"/util/*.kt
   # **`data/`는 폴더째 들이고 뺄 것만 이름으로 적는다 (2026.08.19 · B-265).**
   # 종전 이 자리는 `data/model` · `data/dao` · `data/repository` · `data/settings`를
