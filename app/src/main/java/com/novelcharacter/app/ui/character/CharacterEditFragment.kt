@@ -607,6 +607,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         setupNameBankButton()
         setupNameSuggestButton()
         setupEventButton()
+        // 적재 판정기는 뷰 수명 단위다 (B-268) — 위젯도 워처도 새것이고 적재도 처음부터
+        // 다시 도는데, 지난 뷰에서 만져진 칸 목록을 물려받으면 이번 적재가 통째로 막힌다.
+        // **워처를 달기 전에** 세운다. 뒤에 두면 그 사이에 뜬 신호가 지난 뷰의 판정기
+        // (이미 `SETTLED`다)를 보고 사용자 편집 행세를 한다.
+        hydrationGuard = InitialHydrationGuard()
         setupChangeTracking()
 
         // Show restored images if any (from rotation)
@@ -622,9 +627,6 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         saveGateOpen = false
         initialLoadsDone = false
         lastHydratedNovelPos = -1
-        // 적재 판정기도 뷰 수명 단위다 (B-268) — 위젯도 워처도 새것이고 적재도 처음부터
-        // 다시 도는데, 지난 뷰에서 만져진 칸 목록을 물려받으면 이번 적재가 통째로 막힌다.
-        hydrationGuard = InitialHydrationGuard()
 
         // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
         if (characterId != -1L) {
