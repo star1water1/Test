@@ -82,6 +82,7 @@ interface FieldValueEntryDao {
     suspend fun delete(entry: FieldValueEntry)
 
     /** 유지보수 잡용 — 큐레이션 흔적이 전무한 미사용 AUTO 엔트리만 정리 (확인 후 실행) */
+    // SQL 쌍둥이: FieldValueEntry.SOURCE_AUTO
     @Query(
         """DELETE FROM field_value_entries
            WHERE fieldDefinitionId = :fieldDefId AND source = 'AUTO' AND usageCount = 0
@@ -90,6 +91,7 @@ interface FieldValueEntryDao {
     )
     suspend fun pruneUncuratedUnused(fieldDefId: Long): Int
 
+    // SQL 쌍둥이: FieldValueEntry.SOURCE_AUTO
     @Query(
         """SELECT COUNT(*) FROM field_value_entries
            WHERE fieldDefinitionId = :fieldDefId AND source = 'AUTO' AND usageCount = 0

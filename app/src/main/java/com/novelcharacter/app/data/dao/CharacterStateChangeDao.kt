@@ -28,6 +28,7 @@ interface CharacterStateChangeDao {
      * 일괄 삭제 영향 요약용 — 선택 캐릭터의 사용자 의미 상태변화 수.
      * 내부 플래그(__std_year_link)는 사용자에게 보이지 않으므로 집계에서 제외한다.
      */
+    // SQL 쌍둥이: StandardYearLink.KEY
     @Query("SELECT COUNT(*) FROM character_state_changes WHERE characterId IN (:ids) AND fieldKey != '__std_year_link'")
     suspend fun countByCharacterIds(ids: List<Long>): Int
 

@@ -46,6 +46,8 @@ interface TrashSnapshotDao {
      * ([getImagesByOperation]) 종류를 모르는 요약으로 정리하면 순수 편집 백업 작업이
      * "뽑히고도 0행 삭제"로 영원히 남는다 — 표시([TrashGrouping])와 같은 축이다.
      */
+    // SQL 쌍둥이: TrashSnapshot.LEGACY_KEY_PREFIX
+    // SQL 쌍둥이: TrashSnapshot.KIND_EDIT_BACKUP
     @Query(
         """SELECT COALESCE(operationId, 'row:' || id) AS opKey,
                   CASE WHEN operationKind = 'edit_backup' THEN 1 ELSE 0 END AS editBackup,
@@ -86,6 +88,7 @@ interface TrashSnapshotDao {
      * 거르지 않으면 삭제 묶음의 '영구 삭제'가 같은 임포트의 편집 백업까지 함께 태운다 —
      * 사용자가 지운 적 없는 항목의 되돌리기 경로가 조용히 사라진다.
      */
+    // SQL 쌍둥이: TrashSnapshot.KIND_EDIT_BACKUP
     @Query(
         """SELECT id, imagePaths FROM trash_snapshots
            WHERE ((:opId IS NOT NULL AND operationId = :opId)

@@ -396,6 +396,9 @@ class SystemMaintenanceService(
             }
 
             // 최근 활동: 존재하지 않는 엔티티를 참조하는 레코드 삭제
+            // SQL 쌍둥이: RecentActivity.TYPE_CHARACTER
+            // SQL 쌍둥이: RecentActivity.TYPE_NOVEL
+            // SQL 쌍둥이: RecentActivity.TYPE_UNIVERSE
             db.openHelper.writableDatabase.execSQL(
                 """DELETE FROM recent_activities WHERE
                     (entityType = 'character' AND entityId NOT IN (SELECT id FROM characters)) OR

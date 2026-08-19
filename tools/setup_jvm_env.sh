@@ -179,9 +179,61 @@ object OnConflictStrategy {
 // within coroutine body.`가 55건 발행됐고(그 파일 오류의 8할), 그 소음 아래에서 진짜 오류를
 // 가릴 수 없었다. `withTransaction`의 시그니처는 진짜와 같게 둔다 — **suspend 블록을 받는
 // suspend 확장**이라는 성질이 바로 저 55건을 없애는 그 성질이다.
-abstract class RoomDatabase
+//
+// `openHelper`는 2026.08.19(B-265)에 들어왔다. **`data/maintenance/`를 프로브 범위에 들이자
+// 신규 오류 115건이 떴는데 그 전부가 이 한 줄의 그림자였다** — `db.openHelper`가 미해석이면
+// 그 아래 `.writableDatabase.query(…)`도, 그 커서의 `getLong`·`isNull`도, 그것을 받는 람다의
+// 타입 추론도 줄줄이 죽는다(B-190이 `ExcelExporter.kt`에서, B-251 ⓐ가 `StorageAnalyzer`에서
+// 겪은 *수신 타입 하나가 아래를 통째로 죽이는* 그 모양). 수신 타입이 미해석인 동안에는
+// **그 아래 진짜 오류가 접히는 것이 아니라 발행조차 되지 않으므로**, 목록에 넣고도 안 보는 자리가 된다.
+abstract class RoomDatabase {
+    open val openHelper: androidx.sqlite.db.SupportSQLiteOpenHelper
+        get() = throw UnsupportedOperationException("스텁 전용")
+}
 
 suspend fun <R> RoomDatabase.withTransaction(block: suspend () -> R): R = block()
+EOF
+
+# `androidx.sqlite.db`·`android.database`는 위 `openHelper`가 가리키는 끝단이다 (B-265).
+#
+# ⚠️ **여기서 표면을 늘리면 로컬이 거짓 초록을 낸다** — 이 저장소가 `androidx.datastore`에서
+# 실측으로 확인한 그대로다(B-251 ⓐ: 넓은 스텁이었으면 타입 불일치 일곱이 조용히 통과했다).
+# 그래서 **지금 범위 안 코드가 실제로 부르는 것만** 적는다. 좁으면 나중에 *가짜 오류*로 드러나
+# 그 자리에서 한 줄 보태면 되고, 넓으면 **아무 데서도 안 드러난다.**
+#   - `query`/`execSQL`의 `bindArgs` 오버로드는 뺐다 — 범위 안에서 부르는 자리가 없다
+#     (`AppDatabase.kt`의 마이그레이션이 쓰지만 그 파일은 프로브가 스스로 스텁으로 세운다).
+#   - `Cursor`는 `moveToFirst`·`getColumnIndex`·`count` 따위를 두지 않는다 — 같은 이유다.
+#   - `Cursor : java.io.Closeable`은 **진짜 그대로**이며 뺄 수 없다. 이 계층의 관용구가
+#     `query(…).use { … }`이고, `use`는 `Closeable`의 확장이라 이 관계가 없으면 열일곱 자리가
+#     전부 미해석이 된다.
+cat > "$SP/stub-src/SqliteStubs.kt" <<'EOF'
+package androidx.sqlite.db
+
+interface SupportSQLiteOpenHelper {
+    val readableDatabase: SupportSQLiteDatabase
+    val writableDatabase: SupportSQLiteDatabase
+}
+
+interface SupportSQLiteDatabase {
+    fun query(query: String): android.database.Cursor
+    fun execSQL(sql: String)
+}
+EOF
+
+cat > "$SP/stub-src/CursorStubs.kt" <<'EOF'
+package android.database
+
+// 진짜는 자바 인터페이스라 반환 타입이 플랫폼 타입(`String!`)이다. 널 허용으로 적으면
+// 지금 코드가 치르지 않는 널 검사를 요구해 **가짜 오류**가 되고, 널 불가로 적으면
+// 플랫폼 타입을 널 불가로 쓰는 현행 호출부와 같은 모양이 된다 — 뒤쪽을 고른다.
+interface Cursor : java.io.Closeable {
+    fun moveToNext(): Boolean
+    fun isNull(columnIndex: Int): Boolean
+    fun getInt(columnIndex: Int): Int
+    fun getLong(columnIndex: Int): Long
+    fun getString(columnIndex: Int): String
+    override fun close()
+}
 EOF
 
 cat > "$SP/stub-src/LifecycleStubs.kt" <<'EOF'
@@ -208,7 +260,8 @@ CPC="$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/
 rm -rf "$SP/out-room"; mkdir -p "$SP/out-room"
 java -cp "$CPC" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib \
   -cp "$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar" \
-  -d "$SP/out-room" "$SP/stub-src/AndroidxStubs.kt" "$SP/stub-src/LifecycleStubs.kt" 2>&1 \
+  -d "$SP/out-room" "$SP/stub-src/AndroidxStubs.kt" "$SP/stub-src/LifecycleStubs.kt" \
+                    "$SP/stub-src/SqliteStubs.kt" "$SP/stub-src/CursorStubs.kt" 2>&1 \
   | grep -E "error:" | head -20
 
 STUBS=$(find "$SP/out-room" -name '*.class' | wc -l)

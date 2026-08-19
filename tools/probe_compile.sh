@@ -466,6 +466,10 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
 
 # `share/`에서 뺄 것 — 갈래 ⓒ(android.graphics·print·webkit). 사유는 아래 목록 블록 주석에 있다.
 SHARE_EXCLUDE="CharacterCardRenderer PdfExporter"
+# `data/`에서 뺄 것 — `AppDatabase.kt`는 **이 프로브가 스스로 스텁으로 세우는 타입**이라
+# (위 `AppDatabaseProbe.kt`) 진짜를 함께 넣으면 **중복 선언으로 컴파일이 통째로 죽는다.**
+# 다른 제외와 성질이 다르다: 저쪽은 *못 보는 것*이고 이쪽은 *스텁으로 대신 보는 것*이다.
+DATA_EXCLUDE="AppDatabase"
 # **낡은 제외는 빨간불이다** — 개명·삭제되면 그 이름이 아무것도 안 빼는데, 그러면 명단이
 # *무엇을 빼고 있는지*를 말하지 않게 된다(이 저장소가 예외 표식에 대해 세운 규약과 같다).
 #
@@ -477,6 +481,12 @@ for _x in $SHARE_EXCLUDE; do
   [ -f "$M/share/$_x.kt" ] || {
     echo "⚠️  share/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
 done
+# `data/`는 하위 폴더가 있으므로 자리를 고정하지 않고 트리에서 찾는다 — 파일이 다른 하위로
+# **옮겨져도** 명단은 살아 있어야 하고(옮김은 개명이 아니다), 사라지면 그때 빨간불이다.
+for _x in $DATA_EXCLUDE; do
+  [ -n "$(find "$M/data" -name "$_x.kt" -print -quit)" ] || {
+    echo "⚠️  data/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
+done
 {
   # `AppSettingsBindings.kt`도 뺀다(B-105) — 그 파일은 **설정 저장소를 잇는 것이 일**이라
   # `ai/`·`backup/`·`ui/`를 import 하는데 이 프로브의 범위는 excel·model·dao·util·repository다.
@@ -484,16 +494,28 @@ done
   # 그 파일의 컴파일 증명은 CI뿐이다(`ExcelImporter.kt`와 같은 부류이며, 짝인 선언
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
   ls "$M"/excel/*.kt | grep -vE "ExcelImporter.kt|AppSettingsBindings.kt"
-  ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
-  # `data/settings/`는 2026.08.19(B-251 ⓓ)에 들어왔다 — **바로 앞 판(ⓐ)이 설정 저장 경로를
-  # 열어 놓고도 이 폴더만 빠져 있었다.** 이유는 결함이 아니라 *고르는 방식*이다: 이 자리는
-  # `data/` 하위를 **이름으로 하나씩** 적는데, 그러면 새 하위 폴더가 조용히 범위 밖에 남는다
-  # (같은 날 콜드 검토가 `share/`에서 되돌린 그 병이다). 넣은 값은 실측했다 — **신규 오류 0 ·
-  # 파일 +2**라 기준선을 움직이지 않는다.
+  ls "$M"/util/*.kt
+  # **`data/`는 폴더째 들이고 뺄 것만 이름으로 적는다 (2026.08.19 · B-265).**
+  # 종전 이 자리는 `data/model` · `data/dao` · `data/repository` · `data/settings`를
+  # **이름으로 하나씩** 적었다. 그 꼴이면 **새 하위 폴더가 조용히 범위 밖에 남는다** —
+  # `data/settings/`가 실제로 그렇게 빠져 있었고(B-251 ⓐ가 설정 저장 경로를 열어 놓고도
+  # 이 폴더만 놓쳤다), `data/maintenance/`도 같은 이유로 창설 이래 한 번도 안 보였다.
+  # 같은 날 콜드 검토가 `share/`에서 **이름 접두사로 고르던 것을 되돌린** 그 병의 쌍둥이다.
   #
-  # **`data/maintenance/`는 같은 판에 넣지 않았다** — 실측 **신규 115건**이라 스텁 작업이
-  # 따로 필요하고, 그것은 기준선을 옮기는 일이라 판을 가른다(4장 B-265).
-  ls "$M"/data/settings/*.kt
+  # **방향이 중요하다:** 명단에 없는 새 파일은 **자동으로 범위에 든다.** 그것이 프레임워크에
+  # 깊게 묶인 것이라면 다음 판의 기준선 재현에서 수가 어긋나 **눈에 띄고**(그 자리에서
+  # `DATA_EXCLUDE`에 적으면 된다), 반대로 자동으로 빠지게 두면 **아무 데서도 안 보인다.**
+  # 시끄러운 쪽이 조용한 쪽보다 안전하다.
+  #
+  # **`data/maintenance/`가 이 뒤집기로 들어왔다** — `SystemMaintenanceService`는
+  # **되돌릴 수 없는 일**(고아 행 삭제·순번 재배치·이미지 정리)을 하는데 순수 하네스에도
+  # 프로브에도 없어 **컴파일 증명이 CI뿐이었다**(B-89가 `data/repository`를, B-110이
+  # `OrganizeFolderService`를, B-251 ⓐ가 `share/`를 들인 것과 **같은 사유**다).
+  # 등재 당시 실측은 **신규 115건**이었는데 **그 전부가 `RoomDatabase.openHelper`
+  # 한 줄의 그림자였다**(B-190·B-251 ⓐ가 겪은 *수신 타입 하나가 아래를 통째로 죽이는* 그 모양).
+  # 스텁에 그 줄을 세우니 **신규 0**이다.
+  find "$M/data" -name '*.kt' | sort \
+    | grep -vE "/($(echo $DATA_EXCLUDE | tr ' ' '|'))\.kt$"
   # `share/`는 2026.08.19(B-251)에 들어왔다 — **B-234 판이 재고 이 판에 넘긴 몫이다**
   # (*"커밋하지 않았다 — 프로브 기준선을 옮기는 것은 판당 하나이고 그 몫은 B-251이다"*).
   # 그 계층은 **월드패키지 교환 형식**을 다루는데 순수 하네스에도 프로브에도 없어

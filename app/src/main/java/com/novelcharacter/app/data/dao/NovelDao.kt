@@ -74,10 +74,12 @@ interface NovelDao {
     suspend fun setPinned(id: Long, isPinned: Boolean)
 
     /** 삭제된 캐릭터를 참조하는 imageCharacterId를 null로 정리 */
+    // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
     @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
     suspend fun clearImageCharacterRef(characterId: Long)
 
     /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) */
+    // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
     @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId IN (:characterIds)")
     suspend fun clearImageCharacterRefs(characterIds: List<Long>)
 
