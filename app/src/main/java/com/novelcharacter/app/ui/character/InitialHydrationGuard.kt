@@ -38,6 +38,18 @@ package com.novelcharacter.app.ui.character
  * | [Phase.HYDRATING] | `fillForm`·태그 적재가 도는 중 | 프로그램적 `setText`다 — **무시** | 만진 칸만 거절 |
  * | [Phase.SETTLED] | 적재가 끝났다 | 평범한 편집이다 | 전부 허용(부를 일 없음) |
  *
+ * ## 부르는 쪽의 계약 — **적재 전의 프로그램적 쓰기는 알리지 않는다**
+ *
+ * [onFieldChanged]는 *"사용자가 만졌다"*를 받는 자리이지 *"위젯이 바뀌었다"*를 받는 자리가
+ * 아니다. [Phase.AWAITING] 동안 화면이 **스스로** 칸을 쓰는 경로가 있으면 그 자리는
+ * 알리지 말아야 한다 — 알리면 그 칸이 *만져진 것*으로 적혀 **뒤따르는 진짜 적재가 스스로
+ * 막힌다.**
+ *
+ * 실례가 있다: 사건 편집 창의 역법 칸은 시드 경로(`updateCalendarSeed`)가 적재보다 **먼저**
+ * `setCalendarProgrammatically("")`를 부르는 가지를 갖는다. 그 창은 이미 그 구별을
+ * `suppressCalendarWatcher`로 들고 있었고, 그래서 알림도 같은 조건 안에 넣었다.
+ * **[Phase.HYDRATING]은 적재 자신의 쓰기만 막는다 — 적재 *앞*의 쓰기는 부르는 쪽 몫이다.**
+ *
  * **국면을 되돌리지 않는다** — [beginHydration]·[endHydration]은 각각 한 번만 뜻이 있고,
  * 두 번째 호출은 조용히 무시된다. 되돌리면 *"만진 칸"*의 뜻이 국면마다 갈려,
  * 이 판정기가 막으려던 바로 그 종류의 비대칭이 판정기 안으로 들어온다.

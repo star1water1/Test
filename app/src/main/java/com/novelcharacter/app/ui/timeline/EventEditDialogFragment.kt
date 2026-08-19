@@ -147,7 +147,7 @@ class EventEditDialogFragment : DialogFragment() {
      * *"자동 시드가 사용자 입력을 덮어쓰지 않게"*). 그 판정을 나머지 칸으로 넓힌 것이
      * 이 판정기이고, 규칙은 [InitialHydrationGuard]가 든다.
      */
-    private val hydrationGuard = InitialHydrationGuard()
+    private var hydrationGuard = InitialHydrationGuard()
     private var seedJob: kotlinx.coroutines.Job? = null
     private var fieldSectionJob: kotlinx.coroutines.Job? = null
 
@@ -190,12 +190,23 @@ class EventEditDialogFragment : DialogFragment() {
         // 다대다 작품 선택 — 구 단일 스피너는 사용 안 함
         binding.spinnerNovel.visibility = View.GONE
 
+        // 적재 판정기는 창 수명 단위다 (B-268 ⓑ) — 워처를 달기 전에 세운다. 창이 다시 서면
+        // 위젯도 워처도 새것이므로, 지난 창에서 만져진 칸 목록을 물려받으면 안 된다.
+        hydrationGuard = InitialHydrationGuard()
+
         // 역법 필드를 사용자가 직접 건드렸는지 추적 — 자동 시드가 사용자 입력을 덮어쓰지 않게(무단 확정 금지).
         binding.editCalendarType.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (!suppressCalendarWatcher) calendarUserEdited = true
-                hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_CALENDAR)
+                // **억제 중이면 판정기에도 알리지 않는다** (B-268 ⓑ). 역법 칸은 시드 경로가
+                // 적재보다 **먼저** 프로그램적으로 쓰는 자리가 있어(`updateCalendarSeed`의
+                // 스코프 없음 가지 — `setCalendarProgrammatically("")`), 그것을 사용자 편집으로
+                // 적으면 뒤따르는 진짜 적재가 **스스로 막힌다.** `suppressCalendarWatcher`가
+                // 이미 그 구별을 들고 있으므로 같은 조건을 쓴다.
+                if (!suppressCalendarWatcher) {
+                    calendarUserEdited = true
+                    hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_CALENDAR)
+                }
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })

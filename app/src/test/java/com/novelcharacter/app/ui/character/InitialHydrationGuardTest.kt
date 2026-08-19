@@ -141,6 +141,19 @@ class InitialHydrationGuardTest {
         )
     }
 
+    @Test
+    fun 적재_전의_프로그램적_쓰기를_알리면_적재가_스스로_막힌다() {
+        // **이 시험은 계약을 못박는 자리다** — 판정기는 *누가* 썼는지 모른다. 적재 전에
+        // 화면이 스스로 쓰는 경로(사건 편집의 역법 시드가 그 부류다)가 이 자리를 부르면
+        // 그 칸은 '만져진 것'이 되고, 뒤따르는 진짜 적재가 자기 칸을 못 채운다.
+        // 그러므로 부르는 쪽이 프로그램적 쓰기를 걸러야 한다.
+        val g = InitialHydrationGuard()
+        g.onFieldChanged(InitialHydrationGuard.KEY_CALENDAR)   // ← 화면이 스스로 쓴 것을 잘못 알렸다
+        g.beginHydration()
+        assertFalse("적재가 자기 칸을 못 채운다 — 이것이 잘못 알렸을 때의 결말이다",
+            g.mayWrite(InitialHydrationGuard.KEY_CALENDAR))
+    }
+
     // ── 국면은 되돌지 않는다 ────────────────────────────────────────────────
 
     @Test
