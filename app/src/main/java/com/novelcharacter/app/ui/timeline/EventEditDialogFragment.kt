@@ -10,6 +10,7 @@ import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.ViewModelProvider
+import com.novelcharacter.app.ui.character.InitialHydrationGuard
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.ui.field.FieldViewModel
 import androidx.core.os.bundleOf
@@ -133,6 +134,20 @@ class EventEditDialogFragment : DialogFragment() {
     private var initialValuesFilled = false
     private var calendarUserEdited = false
     private var suppressCalendarWatcher = false
+
+    /**
+     * 초기 적재가 **적재 전에 사용자가 적은 칸**을 덮지 못하게 막는다 (B-268 ⓑ).
+     *
+     * 이 창의 정적 칸들은 질의 넷을 지난 뒤에야 채워진다(`getAllNovelsList` ·
+     * `getAllCharactersList` · `getCharacterIdsForEvent` · `getNovelIdsForEvent`).
+     * 그 사이는 창이 이미 떠 있어 사용자가 적을 수 있고, 종전에는 [fillInitialValues]가
+     * 조건 없이 덮었다 — 캐릭터 편집에서 난 것과 **같은 부류의 같은 결함**이다.
+     *
+     * 이 창은 이미 같은 생각을 역법 칸 하나에만 쓰고 있었다([calendarUserEdited] —
+     * *"자동 시드가 사용자 입력을 덮어쓰지 않게"*). 그 판정을 나머지 칸으로 넓힌 것이
+     * 이 판정기이고, 규칙은 [InitialHydrationGuard]가 든다.
+     */
+    private val hydrationGuard = InitialHydrationGuard()
     private var seedJob: kotlinx.coroutines.Job? = null
     private var fieldSectionJob: kotlinx.coroutines.Job? = null
 
@@ -180,9 +195,33 @@ class EventEditDialogFragment : DialogFragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (!suppressCalendarWatcher) calendarUserEdited = true
+                hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_CALENDAR)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
+
+        // 나머지 정적 칸도 같은 것을 집는다 (B-268 ⓑ) — 초기 적재가 질의 넷 뒤에 오므로
+        // 그때까지 적은 것을 [fillInitialValues]가 덮으면 **말없이 사라진다.** 위의
+        // 역법 추적이 한 칸에만 있던 것을 나머지로 넓힌 자리다.
+        fun trackEarly(view: android.widget.EditText, key: String) {
+            view.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    hydrationGuard.onFieldChanged(key)
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+        }
+        trackEarly(binding.editYear, InitialHydrationGuard.KEY_YEAR)
+        trackEarly(binding.editMonth, InitialHydrationGuard.KEY_MONTH)
+        trackEarly(binding.editDay, InitialHydrationGuard.KEY_DAY)
+        trackEarly(binding.editDescription, InitialHydrationGuard.KEY_DESCRIPTION)
+        // 사건 유형 스피너는 `onItemSelected`가 프로그램적 선택에도 떠 가를 수 없다 —
+        // 손가락이 닿은 것만 보는 자리가 필요하다. (소비하지 않는다: 언제나 false.)
+        binding.spinnerEventType.setOnTouchListener { _, _ ->
+            hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_EVENT_TYPE)
+            false
+        }
 
         // 체크 선택 복원 (뷰 ID가 없는 동적 체크박스는 자동 복원 대상이 아님)
         savedInstanceState?.getLongArray(STATE_CHAR_IDS)?.let {
@@ -233,12 +272,23 @@ class EventEditDialogFragment : DialogFragment() {
                 selectionsInitialized = true
             }
             if (_binding == null) return@launch
-            editingEvent?.let { event ->
+            val filling = editingEvent
+            if (filling == null) {
+                // 새 사건은 덮을 값이 없다 — 국면만 닫는다 (B-268 ⓑ).
+                hydrationGuard.endHydration()
+            }
+            filling?.let { event ->
                 // 회전이 최초 채움보다 먼저 오면 뷰 상태 복원은 빈 화면을 되살릴 뿐이다 —
                 // 채운 적이 없으면 재생성 인스턴스라도 다시 채운다(재공격 F1).
                 if (!isRecreated || !initialValuesFilled) {
+                    // 적재 창 — 이 안의 워처 신호는 프로그램적 쓰기다 (B-268 ⓑ).
+                    // `fillInitialValues`에 suspend가 없어 창 안에서 사용자 입력이 유실될 틈이 없다.
+                    hydrationGuard.beginHydration()
                     fillInitialValues(event)
+                    hydrationGuard.endHydration()
                     initialValuesFilled = true
+                } else {
+                    hydrationGuard.endHydration()
                 }
                 // 기존 사건 필드값 → 폼 빌드 후 지연 적용. 로드 조건은 재생성 여부가 아니라
                 // **보유 여부**다 — 값 fetch 전에 회전하면 pending이 비어 있고, 그대로 렌더하면
@@ -529,15 +579,24 @@ class EventEditDialogFragment : DialogFragment() {
         aiProgressDialog = null
     }
 
+    /**
+     * 기존 사건의 값을 창에 얹는다 — **적재 전에 사용자가 만진 칸은 건드리지 않는다** (B-268 ⓑ).
+     *
+     * 판정은 칸 단위다. 연도만 적어 둔 사용자의 설명 칸은 DB 값으로 채우는 것이 맞고
+     * 연도 칸은 아니다 — 통째로 건너뛰면 나머지가 빈 채로 남는 새 결함이 된다.
+     */
     private fun fillInitialValues(event: TimelineEvent) {
-        binding.editYear.setText(event.year.toString())
-        binding.editMonth.setText(event.month?.toString() ?: "")
-        binding.editDay.setText(event.day?.toString() ?: "")
+        val g = hydrationGuard
+        if (g.mayWrite(InitialHydrationGuard.KEY_YEAR)) binding.editYear.setText(event.year.toString())
+        if (g.mayWrite(InitialHydrationGuard.KEY_MONTH)) binding.editMonth.setText(event.month?.toString() ?: "")
+        if (g.mayWrite(InitialHydrationGuard.KEY_DAY)) binding.editDay.setText(event.day?.toString() ?: "")
         // 편집: 기존 값 설정은 '사용자 편집'이 아니므로 watcher 억제.
-        setCalendarProgrammatically(event.calendarType)
-        binding.editDescription.setText(event.description)
-        val typeIndex = eventTypes.indexOfFirst { (key, _) -> key == event.eventType }
-        if (typeIndex >= 0) binding.spinnerEventType.setSelection(typeIndex)
+        if (g.mayWrite(InitialHydrationGuard.KEY_CALENDAR)) setCalendarProgrammatically(event.calendarType)
+        if (g.mayWrite(InitialHydrationGuard.KEY_DESCRIPTION)) binding.editDescription.setText(event.description)
+        if (g.mayWrite(InitialHydrationGuard.KEY_EVENT_TYPE)) {
+            val typeIndex = eventTypes.indexOfFirst { (key, _) -> key == event.eventType }
+            if (typeIndex >= 0) binding.spinnerEventType.setSelection(typeIndex)
+        }
     }
 
     /** 선택된 작품 소속 캐릭터가 위로 오도록 정렬 */

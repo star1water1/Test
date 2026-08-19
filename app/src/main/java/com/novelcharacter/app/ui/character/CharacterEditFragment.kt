@@ -132,6 +132,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     // (기존 캐릭터를 열기만 해도 미저장 상태가 되던 가짜 양성 차단)
     private var suppressFieldDirty = false
 
+    /**
+     * 초기 적재가 **적재 전에 사용자가 만진 칸**을 덮지 못하게 막는다 (B-268).
+     *
+     * `onViewCreated`는 동기로 끝나 위젯과 워처가 곧바로 살아나는데 기존 캐릭터의 값은
+     * 코루틴 안에서 온다(질의 셋을 차례로 지난다). 그 사이에 적은 것을 `fillForm`이
+     * 조건 없이 덮던 것이 이 판정기가 닫는 구멍이다 — 판정 규칙은 [InitialHydrationGuard].
+     *
+     * **뷰 수명마다 새로 만든다.** 뷰가 다시 서면 위젯도 워처도 새것이고 적재도 처음부터
+     * 다시 도므로, 지난 뷰에서 만져진 칸 목록을 물려받으면 이번 적재가 통째로 막힌다.
+     */
+    private var hydrationGuard = InitialHydrationGuard()
+
     // 보충 모드
     private var supplementMode = false
     private var supplementIndex = 0
@@ -348,7 +360,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             fragment = this,
             recyclerViewGetter = { _binding?.imageRecyclerView },
             navOriginDestId = R.id.characterEditFragment,
-            onChanged = { hasUnsavedChanges = true; updateSaveButtonState() },
+            // 이미지도 적재가 덮을 수 있는 폼 상태다 (B-268) — 적재 **전에** 붙인 것이면
+            // 그 사실을 적어 두고, 적재 **중의** 프로그램적 교체면 더티를 세우지 않는다.
+            onChanged = {
+                if (hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_IMAGES)) {
+                    hasUnsavedChanges = true
+                    updateSaveButtonState()
+                }
+            },
             onRemoved = { refreshRecommendations() }
         )
 
@@ -603,6 +622,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         saveGateOpen = false
         initialLoadsDone = false
         lastHydratedNovelPos = -1
+        // 적재 판정기도 뷰 수명 단위다 (B-268) — 위젯도 워처도 새것이고 적재도 처음부터
+        // 다시 도는데, 지난 뷰에서 만져진 칸 목록을 물려받으면 이번 적재가 통째로 막힌다.
+        hydrationGuard = InitialHydrationGuard()
 
         // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
         if (characterId != -1L) {
@@ -619,6 +641,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 if (_binding == null) return@launch
                 initialLoadsDone = true
                 maybeOpenSaveGate()
+            } else {
+                // 신규는 덮을 DB 값이 없다 — 국면만 닫는다 (B-268). 안 닫으면 판정기가
+                // 계속 *"적재 전"*이라 여겨 이후 편집을 초기 편집으로 적어 둔다.
+                hydrationGuard.endHydration()
             }
             if (restoreSource != null) {
                 // **무음 복원** (B-169) — 같은 세션의 상태가 눈앞에 있는데 *되찾겠냐고* 묻는
@@ -771,34 +797,60 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
+    /**
+     * 기존 캐릭터의 값을 폼에 얹는다 — **적재 전에 사용자가 만진 칸은 건드리지 않는다**(B-268).
+     *
+     * 질의를 **둘 다 먼저 끝낸 뒤** 적재 창을 연다. 창 안에 `suspend`가 하나라도 있으면
+     * 그 지점에 사용자가 적을 수 있는데, 창 안의 워처 신호는 *프로그램적 쓰기*로 취급되므로
+     * **그 입력이 기록되지도 않고 더티도 안 선다** — 막으려던 유실이 판정기 안으로 들어온다.
+     */
     private suspend fun loadExistingCharacter() {
         existingCharacter = viewModel.getCharacterByIdSuspend(characterId)
         if (_binding == null) return
-        existingCharacter?.let { fillForm(it) }
-
-        // 태그 로드
         val tags = viewModel.getTagsByCharacterList(characterId)
         if (_binding == null) return
-        binding.editTags.setText(MultiValueInput.format(tags) { it.tag })
 
-        // fillForm과 태그 로드로 인해 TextWatcher가 트리거되어 false positive가 발생하므로 초기화
-        hasUnsavedChanges = false
+        // ── 적재 창 (안에 suspend 없음) ──────────────────────────────────────
+        hydrationGuard.beginHydration()
+        existingCharacter?.let { fillForm(it) }
+        if (hydrationGuard.mayWrite(InitialHydrationGuard.KEY_TAGS)) {
+            binding.editTags.setText(MultiValueInput.format(tags) { it.tag })
+        }
+        hydrationGuard.endHydration()
+        // ────────────────────────────────────────────────────────────────────
+
+        // 적재의 프로그램적 setText가 세운 더티는 가짜 양성이라 끈다. **단, 적재 전에
+        // 사용자가 만진 칸이 있으면 끄지 않는다** (B-268) — 그것은 진짜 미저장 입력이고,
+        // 여기서 끄면 덮지 않고 지켜 낸 값이 *"저장할 것 없음"*이 되어 뒤로가기 확인창도
+        // `onPause`의 드래프트 기록도 사라진다. 유실을 조용하게 만들던 자리가 이 한 줄이었다.
+        if (!hydrationGuard.hasEarlyEdits()) hasUnsavedChanges = false
+        updateSaveButtonState()
     }
 
+    /**
+     * DB 값을 폼에 쓴다 — **칸마다 [InitialHydrationGuard.mayWrite]에게 묻는다**(B-268).
+     *
+     * 종전에는 조건 없이 썼고, 그래서 적재가 돌아오기 전에 적던 것이 DB 값으로 덮였다.
+     * 판정은 칸 단위다: 이름만 적은 사용자의 메모 칸은 DB 값으로 채우는 것이 맞고
+     * 이름 칸은 아니다 — 통째로 건너뛰면 나머지 칸이 빈 채로 남는 새 결함이 된다.
+     */
     private fun fillForm(character: Character) {
-        binding.editName.setText(character.name)
-        binding.editFirstName.setText(character.firstName)
-        binding.editLastName.setText(character.lastName)
-        binding.editAnotherName.setText(character.anotherName)
+        val g = hydrationGuard
+        if (g.mayWrite(InitialHydrationGuard.KEY_NAME)) binding.editName.setText(character.name)
+        if (g.mayWrite(InitialHydrationGuard.KEY_FIRST_NAME)) binding.editFirstName.setText(character.firstName)
+        if (g.mayWrite(InitialHydrationGuard.KEY_LAST_NAME)) binding.editLastName.setText(character.lastName)
+        if (g.mayWrite(InitialHydrationGuard.KEY_ANOTHER_NAME)) binding.editAnotherName.setText(character.anotherName)
 
-        // 작품 선택
-        character.novelId?.let { novelId ->
-            val index = novels.indexOfFirst { it.id == novelId }
-            if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
+        // 작품 선택 — 사용자가 이미 스피너를 만졌으면 그쪽이 진실이다
+        if (g.mayWrite(InitialHydrationGuard.KEY_NOVEL)) {
+            character.novelId?.let { novelId ->
+                val index = novels.indexOfFirst { it.id == novelId }
+                if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
+            }
         }
 
-        // 이미지 — 회전 복원된 경우 사용자가 추가한 이미지를 보존
-        if (!restoredFromSavedState) {
+        // 이미지 — 회전 복원된 경우, 그리고 적재 전에 사용자가 붙인 경우 보존한다
+        if (!restoredFromSavedState && g.mayWrite(InitialHydrationGuard.KEY_IMAGES)) {
             val paths: List<String> = try {
                 gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
             } catch (e: Exception) {
@@ -813,7 +865,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
 
         // 메모
-        binding.editMemo.setText(character.memo)
+        if (g.mayWrite(InitialHydrationGuard.KEY_MEMO)) binding.editMemo.setText(character.memo)
     }
 
     private fun setupImageButton() {
@@ -1232,21 +1284,41 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
+    /**
+     * 정적 여섯 칸의 변화 추적 — **어느 칸인지도 함께 적는다** (B-268).
+     *
+     * 종전에는 워처 하나를 여섯 칸이 공유해 *"무언가 바뀌었다"*만 알았다. 그 정보로는
+     * 초기 적재가 **덮어도 되는 칸과 덮으면 안 되는 칸**을 가를 수 없다 — 적재 전에
+     * 이름만 적은 사용자의 메모 칸은 DB 값으로 채워야 맞고, 이름 칸은 아니다.
+     * 그래서 칸마다 이름을 붙인 워처를 단다.
+     */
     private fun setupChangeTracking() {
-        val changeWatcher = object : android.text.TextWatcher {
+        fun watcherFor(key: String) = object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                // 적재 중의 프로그램적 setText는 사용자 편집이 아니다 — 더티도 세우지 않는다
+                // (기존 캐릭터를 열기만 해도 미저장이 되던 가짜 양성을 여기서도 막는다).
+                if (!hydrationGuard.onFieldChanged(key)) return
                 hasUnsavedChanges = true
                 updateSaveButtonState()
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         }
-        binding.editName.addTextChangedListener(changeWatcher)
-        binding.editFirstName.addTextChangedListener(changeWatcher)
-        binding.editLastName.addTextChangedListener(changeWatcher)
-        binding.editAnotherName.addTextChangedListener(changeWatcher)
-        binding.editMemo.addTextChangedListener(changeWatcher)
-        binding.editTags.addTextChangedListener(changeWatcher)
+        binding.editName.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_NAME))
+        binding.editFirstName.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_FIRST_NAME))
+        binding.editLastName.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_LAST_NAME))
+        binding.editAnotherName.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_ANOTHER_NAME))
+        binding.editMemo.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_MEMO))
+        binding.editTags.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_TAGS))
+
+        // 작품 스피너·이미지는 텍스트가 아니라 **조작**이라 워처가 없다. 덮이는 성질은
+        // 같으므로 사용자가 손댔다는 사실만 따로 집는다. 스피너의 `onItemSelected`는
+        // 프로그램적 `setSelection`에도 뜨므로 그것으로는 가를 수 없다 — 손가락이 닿은
+        // 것만 보는 자리가 필요하다. (소비하지 않는다: 언제나 false를 돌려준다.)
+        binding.spinnerNovel.setOnTouchListener { _, _ ->
+            hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)
+            false
+        }
     }
 
     private fun updateSaveButtonState() {
