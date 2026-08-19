@@ -54,6 +54,13 @@ import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
  * 세계관을 두 번 내보내면 다른 파일이 나올 수 있었다.** 여기서는 마지막 키로 반드시 기본키를
  * 두어 그 여지를 없앤다 — 두 번 내보낸 것을 견주는 일(백업 대조·공유 재현)이 그때 비로소 선다.
  *
+ * > **이 원칙은 이 폴더가 이미 세운 것이다 — 새로 만든 것이 아니다.**
+ * > [WorldPackageDuels.toPortable]과 [WorldPackageFactionRelationships.toPortable]이 둘 다
+ * > *"결정적 순서 — 같은 데이터는 항상 같은 파일을 만든다"*라 적고 자기 절을 정렬해 왔다.
+ * > **그 둘만 지키고 있었고 나머지 스물두 절이 그 밖에 있었다** — 이 파일이 한 일은 원칙을
+ * > 세운 것이 아니라 **범위를 절 전체로 넓힌 것**이다. (콜드 검토가 이 문장을 요구했다:
+ * > 처음 쓸 때 새 원칙인 것처럼 적어, 읽는 사람이 두 선례를 못 찾게 돼 있었다.)
+ *
  * **순수 계층인 이유:** 이 판정들은 DB에 붙어 있으면 순수 JVM 시험이 볼 수 없다. 실제로
  * [WorldPackageExporter]는 시험이 **하나도 없었다**(같은 폴더의 `WorldPackageDuels`·
  * `WorldPackageFactionRelationships`가 이미 같은 이유로 순수 계층으로 나와 있고, 이 파일은

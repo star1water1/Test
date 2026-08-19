@@ -6,6 +6,10 @@ import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FactionMembership
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -34,6 +38,16 @@ import kotlin.random.Random
  * 내보내기 자신은 Room을 물어 순수 JVM이 닿지 않으므로, 판정을 [WorldPackageScope]에 두고
  * 여기서 실행으로 잠근다(같은 폴더의 `WorldPackageDuels`·`WorldPackageFactionRelationships`와
  * 같은 손버릇).
+ *
+ * ## 못 보는 자리 — 적어 둔다 (R-49의 관행)
+ *
+ * **`scopedQuery`는 SQL의 *모형*이지 SQL이 아니다.** 이 시험이 증명하는 것과 못 하는 것을 가른다.
+ *
+ * | 증명한다 | 못 한다 |
+ * |---|---|
+ * | 술어 번역이 옳다 — `WHERE x IN (:ids)`가 종전 `filter { x in ids }`와 같은 행을 고른다 | **내보내기가 그 DAO 메서드를 실제로 부르는가.** 배선은 Room에 있어 기기·CI 몫이다 |
+ * | [WorldPackageScope]의 합집합·겹 제거·정렬이 옳다 (여기는 **실물 코드**를 민다) | Room이 낸 SQL이 정말 그 인덱스를 타는가 |
+ * | 조각내기와 임의 반환 순서에 순서가 안 흔들린다 | 실제 SQLite의 collation(태그 `ORDER BY tag ASC`)이 코틀린 문자열 비교와 같은가 — 한글·ASCII는 부호점 순서가 같아 어긋나지 않지만 **잰 것은 아니다** |
  */
 class WorldPackageScopeTest {
 
@@ -121,6 +135,30 @@ class WorldPackageScopeTest {
         nb(4, "이름ㄹ", usedBy = 5, createdAt = 400)       // 범위 밖 캐릭터
     )
 
+    private val factions = listOf(
+        fac(1, universeId = exportedUniverse, order = 2, createdAt = 100),
+        fac(2, universeId = exportedUniverse, order = 1, createdAt = 200),
+        fac(3, universeId = 2L, order = 0, createdAt = 300)          // 남의 세계관
+    )
+
+    private val factionMemberships = listOf(
+        FactionMembership(id = 1, factionId = 1, characterId = 1),
+        FactionMembership(id = 2, factionId = 2, characterId = 3),
+        FactionMembership(id = 3, factionId = 3, characterId = 4)     // 범위 밖 세력
+    )
+
+    private val eventFieldValues = listOf(
+        EventFieldValue(id = 1, eventId = 100, fieldDefinitionId = 1, value = "a"),
+        EventFieldValue(id = 2, eventId = 103, fieldDefinitionId = 1, value = "b"),
+        EventFieldValue(id = 3, eventId = 104, fieldDefinitionId = 1, value = "c")  // 범위 밖 사건
+    )
+
+    private val novelFieldValues = listOf(
+        NovelFieldValue(id = 1, novelId = 10, fieldDefinitionId = 1, value = "a"),
+        NovelFieldValue(id = 2, novelId = 11, fieldDefinitionId = 1, value = "b"),
+        NovelFieldValue(id = 3, novelId = 20, fieldDefinitionId = 1, value = "c")   // 범위 밖 작품
+    )
+
     // ─────────────── 종전 파이프라인 (하네스 — 전량 목록에 필터) ───────────────
 
     private val legacyNovelIds = exportedNovels.toSet()
@@ -142,6 +180,11 @@ class WorldPackageScopeTest {
     private val legacyCrossRefs get() = crossRefs.filter { c -> legacyEvents.any { it.id == c.eventId } }
     private val legacyEventNovelCrossRefs get() =
         eventNovelCrossRefs.filter { c -> legacyEvents.any { it.id == c.eventId } }
+    private val legacyFactions get() = factions.filter { it.universeId == exportedUniverse }
+    private val legacyFactionIds get() = legacyFactions.map { it.id }.toSet()
+    private val legacyFactionMemberships get() = factionMemberships.filter { it.factionId in legacyFactionIds }
+    private val legacyEventFieldValues get() = eventFieldValues.filter { it.eventId in legacyEvents.map { e -> e.id }.toSet() }
+    private val legacyNovelFieldValues get() = novelFieldValues.filter { it.novelId in legacyNovelIds }
     private val legacyNameBank get() =
         nameBank.filter { it.usedByCharacterId?.let(legacyCharacterIds::contains) == true }
 
@@ -209,6 +252,18 @@ class WorldPackageScopeTest {
                 scopedQuery(eventNovelCrossRefs, evtIds, { it.eventId }, seed)) { "${it.eventId}:${it.novelId}" }
             sameRows("이름은행", legacyNameBank,
                 scopedQuery(nameBank, charIds, { it.usedByCharacterId }, seed)) { it.id }
+
+            // 세력은 세계관 술어라 조각내기가 없다 — 질의가 곧 범위다
+            val facs = factions.filter { it.universeId == exportedUniverse }
+                .shuffled(kotlin.random.Random(seed))
+                .sortedWith(WorldPackageScope.FACTIONS)
+            sameRows("세력", legacyFactions, facs) { it.id }
+            sameRows("세력 소속", legacyFactionMemberships,
+                scopedQuery(factionMemberships, facs.map { it.id }, { it.factionId }, seed)) { it.id }
+            sameRows("사건 필드값", legacyEventFieldValues,
+                scopedQuery(eventFieldValues, evtIds, { it.eventId }, seed)) { it.id }
+            sameRows("작품 필드값", legacyNovelFieldValues,
+                scopedQuery(novelFieldValues, exportedNovels, { it.novelId }, seed)) { it.id }
         }
     }
 
@@ -306,6 +361,105 @@ class WorldPackageScopeTest {
     }
 
     // ───────────────────────── 조립 도우미 ─────────────────────────
+
+    /**
+     * **정렬 계약의 키를 하나씩 전부 민다.**
+     *
+     * 이 시험은 콜드 검토가 만들게 했다 — 처음에는 절마다 표본을 손으로 골라 순서를 단언했는데,
+     * **표본이 뒷키에 닿지 않아 헛돌았다.** 세력 둘의 `displayOrder`가 서로 달라 `createdAt`
+     * 타이브레이크까지 가지도 않았고, 그래서 `createdAt`의 **방향을 뒤집어도 시험이 초록이었다**
+     * (같은 병이 캐릭터의 `displayOrder`·관계의 `createdAt`에도 있었다).
+     *
+     * 그래서 표본을 고르는 대신 **키마다 그 키 하나만 다른 두 행**을 만들어 민다.
+     * 키를 빠뜨리면 그 줄이 없어서 보이고, 방향을 뒤집으면 그 줄이 빨개진다.
+     */
+    @Test
+    fun `정렬 계약의 키를 하나씩 민다 — 빠진 키도 뒤집힌 키도 여기서 걸린다`() {
+        val S = WorldPackageScope
+
+        // 캐릭터: isPinned DESC · displayOrder ASC · name ASC · id ASC
+        before("캐릭터/고정", S.CHARACTERS,
+            ch(9, "같음", 10, pinned = true, order = 1), ch(9, "같음", 10, pinned = false, order = 1))
+        before("캐릭터/표시순서", S.CHARACTERS,
+            ch(9, "같음", 10, pinned = false, order = 1), ch(9, "같음", 10, pinned = false, order = 2))
+        before("캐릭터/이름", S.CHARACTERS,
+            ch(9, "가", 10, pinned = false, order = 1), ch(9, "나", 10, pinned = false, order = 1))
+        before("캐릭터/id", S.CHARACTERS,
+            ch(8, "같음", 10, pinned = false, order = 1), ch(9, "같음", 10, pinned = false, order = 1))
+
+        // 상태변화: characterId ASC · year ASC · month/day ASC(NULL 먼저) · id ASC
+        before("상태변화/캐릭터", S.STATE_CHANGES, sc(9, 1, 1000, 1, 1), sc(9, 2, 1000, 1, 1))
+        before("상태변화/해", S.STATE_CHANGES, sc(9, 1, 999, 1, 1), sc(9, 1, 1000, 1, 1))
+        before("상태변화/달 NULL", S.STATE_CHANGES, sc(9, 1, 1000, null, 1), sc(9, 1, 1000, 1, 1))
+        before("상태변화/일 NULL", S.STATE_CHANGES, sc(9, 1, 1000, 1, null), sc(9, 1, 1000, 1, 1))
+        before("상태변화/id", S.STATE_CHANGES, sc(8, 1, 1000, 1, 1), sc(9, 1, 1000, 1, 1))
+
+        // 태그: tag ASC · id ASC
+        before("태그/값", S.TAGS, CharacterTag(9, 1, "가"), CharacterTag(9, 1, "나"))
+        before("태그/id", S.TAGS, CharacterTag(8, 1, "같음"), CharacterTag(9, 1, "같음"))
+
+        // 관계: createdAt **DESC** · id ASC
+        before("관계/만든시각 역순", S.RELATIONSHIPS, rel(9, 1, 2, 200), rel(9, 1, 2, 100))
+        before("관계/id", S.RELATIONSHIPS, rel(8, 1, 2, 100), rel(9, 1, 2, 100))
+
+        // 관계 변화: year ASC · month/day ASC(NULL 먼저) · id ASC
+        before("관계변화/해", S.RELATIONSHIP_CHANGES, rc(9, 1, 999, 1), rc(9, 1, 1000, 1))
+        before("관계변화/달 NULL", S.RELATIONSHIP_CHANGES, rc(9, 1, 1000, null), rc(9, 1, 1000, 1))
+        before("관계변화/id", S.RELATIONSHIP_CHANGES, rc(8, 1, 1000, 1), rc(9, 1, 1000, 1))
+
+        // 사건: year ASC · month/day ASC(NULL 먼저) · displayOrder ASC · id ASC
+        before("사건/해", S.EVENTS, ev(9, 999, 1, null), ev(9, 1000, 1, null))
+        before("사건/달 NULL", S.EVENTS, ev(9, 1000, null, null), ev(9, 1000, 1, null))
+        before("사건/표시순서", S.EVENTS, evOrder(9, 1000, 1, 0), evOrder(9, 1000, 1, 1))
+        before("사건/id", S.EVENTS, ev(8, 1000, 1, null), ev(9, 1000, 1, null))
+
+        // 크로스레프: 복합 기본키
+        before("사건-캐릭터/사건", S.CROSS_REFS,
+            TimelineCharacterCrossRef(1, 5), TimelineCharacterCrossRef(2, 5))
+        before("사건-캐릭터/캐릭터", S.CROSS_REFS,
+            TimelineCharacterCrossRef(1, 4), TimelineCharacterCrossRef(1, 5))
+        before("사건-작품/사건", S.EVENT_NOVEL_CROSS_REFS,
+            TimelineEventNovelCrossRef(1, 5), TimelineEventNovelCrossRef(2, 5))
+        before("사건-작품/작품", S.EVENT_NOVEL_CROSS_REFS,
+            TimelineEventNovelCrossRef(1, 4), TimelineEventNovelCrossRef(1, 5))
+
+        // 이름 은행: createdAt **DESC** · id ASC
+        before("이름은행/만든시각 역순", S.NAME_BANK, nb(9, "ㄱ", 1, 200), nb(9, "ㄱ", 1, 100))
+        before("이름은행/id", S.NAME_BANK, nb(8, "ㄱ", 1, 100), nb(9, "ㄱ", 1, 100))
+
+        // 세력: displayOrder ASC · createdAt **DESC** · id ASC
+        before("세력/표시순서", S.FACTIONS, fac(9, 1, 1, 100), fac(9, 1, 2, 100))
+        before("세력/만든시각 역순", S.FACTIONS, fac(9, 1, 1, 200), fac(9, 1, 1, 100))
+        before("세력/id", S.FACTIONS, fac(8, 1, 1, 100), fac(9, 1, 1, 100))
+
+        // 기본키만 드는 넷
+        before("필드값/id", S.CHARACTER_FIELD_VALUES,
+            CharacterFieldValue(id = 8, characterId = 1, fieldDefinitionId = 1),
+            CharacterFieldValue(id = 9, characterId = 1, fieldDefinitionId = 1))
+        before("사건필드값/id", S.EVENT_FIELD_VALUES,
+            EventFieldValue(id = 8, eventId = 1, fieldDefinitionId = 1, value = "v"),
+            EventFieldValue(id = 9, eventId = 1, fieldDefinitionId = 1, value = "v"))
+        before("작품필드값/id", S.NOVEL_FIELD_VALUES,
+            NovelFieldValue(id = 8, novelId = 1, fieldDefinitionId = 1),
+            NovelFieldValue(id = 9, novelId = 1, fieldDefinitionId = 1))
+        before("세력소속/id", S.FACTION_MEMBERSHIPS,
+            FactionMembership(id = 8, factionId = 1, characterId = 1),
+            FactionMembership(id = 9, factionId = 1, characterId = 1))
+    }
+
+    /** [first]가 [second]보다 앞서야 하고, **뒤집으면 답도 뒤집혀야** 한다(비교자가 그 키를 실제로 본다). */
+    private fun <T> before(what: String, cmp: Comparator<T>, first: T, second: T) {
+        assertTrue("$what — 앞서야 할 것이 앞서지 않는다", cmp.compare(first, second) < 0)
+        assertTrue("$what — 비교자가 이 키를 보지 않는다", cmp.compare(second, first) > 0)
+    }
+
+    private fun evOrder(id: Long, year: Int, month: Int?, order: Int) =
+        TimelineEvent(id = id, year = year, month = month, description = "d",
+            universeId = null, displayOrder = order)
+
+    private fun fac(id: Long, universeId: Long, order: Int, createdAt: Long) =
+        Faction(id = id, universeId = universeId, name = "f$id", autoRelationType = "t",
+            displayOrder = order, createdAt = createdAt)
 
     private fun ch(id: Long, name: String, novelId: Long?, pinned: Boolean, order: Long) =
         Character(id = id, name = name, novelId = novelId, isPinned = pinned, displayOrder = order)
