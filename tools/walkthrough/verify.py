@@ -70,17 +70,20 @@ else:
 # 대신 **왜 읽으면 끝나는지**를 한 줄로 적게 한다 — 빈 사유는 사유가 아니다.
 if DROPPED:
     TESTROOT = os.path.join(HERE, '..', '..', 'app', 'src', 'test')
+    # **`@Test`가 붙은 것만 센다** (콜드 검토 2026.08.19). 종전에는 아무 `fun`이나 걷었는데,
+    # 그러면 이 검산의 주장(*"시험 이름이 실재한다"*)과 실제로 보는 것(*"그 이름의 함수가
+    # 있다"*)이 어긋난다 — 헬퍼 함수 이름을 근거로 대도 통과했다.
     names = set()
+    TESTFUN = re.compile(
+        r'@Test[^\n]*\n(?:\s*@[^\n]*\n)*\s*(?:suspend\s+)?fun\s+(?:`([^`]+)`|([^`(\s]+))\s*\(')
     for dp, _, fns in os.walk(TESTROOT):
         for fn in fns:
             if not fn.endswith('.kt'):
                 continue
             src = io.open(os.path.join(dp, fn), encoding='utf-8').read()
             cls = fn[:-3]
-            for m in re.finditer(r'fun\s+`?([^`(\s]+)`?\s*\(', src):
-                names.add(f"{cls}.{m.group(1)}")
-            for m in re.finditer(r'fun\s+`([^`]+)`\s*\(', src):
-                names.add(f"{cls}.{m.group(1)}")
+            for m in TESTFUN.finditer(src):
+                names.add(f"{cls}.{m.group(1) or m.group(2)}")
     bad = []
     for r in DROPPED:
         d = r.get('drop') or {}
@@ -96,16 +99,42 @@ if DROPPED:
         if why in ('코드', '시험+코드'):
             # **어디를 읽으면 끝나는지까지 적게 한다.** *"코드 보면 안다"*는 말만으로는
             # 다음 사람이 그 자리를 다시 찾아야 하고, 그러느니 기기에서 밟는 편이 싸다.
+            #
+            # **줄 번호가 아니라 `anchor`(그 자리의 코드 한 토막)를 본다** (콜드 검토
+            # 2026.08.19). 종전에는 `파일:줄`을 적고 **파일 존재만** 봤는데, 줄 번호가
+            # *같은 판 안에서* 이미 낡았다 — `9-ㅂ`가 적어 둔 870줄은 그 판이 그 파일에
+            # 예순 줄을 더하면서 엉뚱한 자리(`buildEventFieldInputs()`)를 가리키게 됐고,
+            # 검산은 그것을 보지 못한 채 통과했다.
+            #
+            # 앵커는 낡지 않을 뿐 아니라 **더 세다**: 그 코드가 바뀌면 검산이 깨지고,
+            # 그때가 바로 이 단계가 순회표로 돌아와야 할 때다.
             where = (d.get('where') or '').strip()
+            anchor = (d.get('anchor') or '').strip()
             if not where:
-                bad.append(f"{step}: '코드'인데 읽을 자리(`where`)가 없다"); continue
-            f = where.split(':')[0]
-            if not os.path.exists(os.path.join(HERE, '..', '..', f)):
-                bad.append(f"{step}: 읽을 자리의 파일이 없다 ({f})")
+                bad.append(f"{step}: '{why}'인데 읽을 자리(`where`)가 없다"); continue
+            if ':' in where:
+                bad.append(f"{step}: `where`에 줄 번호를 적지 않는다 — 낡는다 ({where})"); continue
+            full = os.path.join(HERE, '..', '..', where)
+            if not os.path.exists(full):
+                bad.append(f"{step}: 읽을 자리의 파일이 없다 ({where})"); continue
+            if not anchor:
+                bad.append(f"{step}: '{why}'인데 앵커(`anchor`)가 없다"); continue
+            if anchor not in io.open(full, encoding='utf-8').read():
+                bad.append(f"{step}: 앵커가 그 파일에 없다 — 코드가 바뀌었으면 이 단계는 "
+                           f"순회표로 돌아와야 한다 ({where} · {anchor[:48]!r})")
             if not (d.get('note') or '').strip():
                 bad.append(f"{step}: '{why}'인데 사유가 비었다")
         if why not in ('시험', '코드', '시험+코드'):
             bad.append(f"{step}: 사유가 '시험'·'코드'·'시험+코드' 어느 것도 아니다 ({why!r})")
+
+        # **대조 기록과 어긋나면 잡는다** (콜드 검토 2026.08.19). 이 판이 배운 것이
+        # 정확히 이 자리다 — 적대 검증이 *"그 시험은 expect의 절반만 덮는다"*고 반증한
+        # 단계를 `시험`만으로 걷으면 나머지 절반이 조용한 구멍이 된다.
+        a = r.get('audit')
+        if a and a.get('refuted') and why == '시험':
+            bad.append(f"{step}: 적대 검증이 반증한 단계인데 '시험'만으로 걷었다 — '시험+코드'여야 한다")
+        if a and not a.get('covered') and why in ('시험', '시험+코드'):
+            bad.append(f"{step}: 대조가 '안 덮임'이라 적었는데 시험을 근거로 걷었다")
     if bad:
         print(f"  ✗ 걷어낸 단계의 사유 {len(bad)}건이 성립하지 않는다:")
         for b in bad[:12]:

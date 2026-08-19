@@ -144,6 +144,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      */
     private var hydrationGuard = InitialHydrationGuard()
 
+    /**
+     * 작품 스피너에 **손가락이 닿았는가** (B-268) — [InitialHydrationGuard]에 *골랐다*를
+     * 알릴지 가르는 절반이다. 나머지 절반은 뒤이어 오는 `onItemSelected`이고, **둘이 다
+     * 있어야** 사용자 선택이다. 소비되면 곧바로 내린다.
+     */
+    private var novelSpinnerTouched = false
+
     // 보충 모드
     private var supplementMode = false
     private var supplementIndex = 0
@@ -627,6 +634,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         saveGateOpen = false
         initialLoadsDone = false
         lastHydratedNovelPos = -1
+        novelSpinnerTouched = false
 
         // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
         if (characterId != -1L) {
@@ -719,6 +727,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 작품 선택 시 해당 universe의 동적 필드 로드
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                // 손가락이 닿은 뒤에 온 선택만 *사용자가 골랐다*로 센다 (B-268). 표식은
+                // 여기서 내린다 — 남겨 두면 뒤따르는 프로그램적 `setSelection`까지
+                // 사용자 선택 행세를 한다.
+                if (novelSpinnerTouched) {
+                    novelSpinnerTouched = false
+                    hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)
+                }
                 viewLifecycleOwner.lifecycleScope.launch {
                     if (position > 0) {
                         val novel = novels[position - 1]
@@ -1313,12 +1328,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.editMemo.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_MEMO))
         binding.editTags.addTextChangedListener(watcherFor(InitialHydrationGuard.KEY_TAGS))
 
-        // 작품 스피너·이미지는 텍스트가 아니라 **조작**이라 워처가 없다. 덮이는 성질은
-        // 같으므로 사용자가 손댔다는 사실만 따로 집는다. 스피너의 `onItemSelected`는
-        // 프로그램적 `setSelection`에도 뜨므로 그것으로는 가를 수 없다 — 손가락이 닿은
-        // 것만 보는 자리가 필요하다. (소비하지 않는다: 언제나 false를 돌려준다.)
+        // 작품 스피너는 텍스트가 아니라 **조작**이라 워처가 없다. 덮이는 성질은 같으므로
+        // 사용자가 고른 사실만 따로 집는데, **재료가 둘이라야 한다**:
+        //
+        // - `onItemSelected`만 보면 **프로그램적 `setSelection`에도 떠서** 가를 수 없다.
+        // - 터치만 보면 **드롭다운을 열었다 그냥 닫아도 '골랐다'가 된다.** 그러면 적재가
+        //   작품 선택을 못 채우고, 게이트가 열린 뒤 저장하면 **작품 배정이 날아간다** —
+        //   덮어쓰기를 막으려다 더 큰 유실을 만드는 자리다(콜드 검토 2026.08.19).
+        //
+        // 그래서 **터치가 있었고 그 뒤에 선택이 바뀐 것**만 사용자 선택으로 센다.
+        // (터치 리스너는 소비하지 않는다: 언제나 false를 돌려준다.)
         binding.spinnerNovel.setOnTouchListener { _, _ ->
-            hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)
+            novelSpinnerTouched = true
             false
         }
     }
