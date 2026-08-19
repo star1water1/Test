@@ -62,7 +62,12 @@
   "expect": "버튼을 여러 번 누르지 않아도 저장된다",
   "ref": "—",
   "axis": "코드",
-  "axiswhy": "자동저장 배선 — 저장 호출 지점을 읽으면 끝"
+  "axiswhy": "자동저장 배선 — 저장 호출 지점을 읽으면 끝",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt:227",
+   "note": "onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다"
+  }
  },
  {
   "round": "0",
@@ -218,7 +223,12 @@
   "expect": "그 필드의 편집 창이 열린다",
   "ref": "3-34-4",
   "axis": "코드",
-  "axiswhy": "⚙ → 필드 편집 인텐트 한 줄"
+  "axiswhy": "⚙ → 필드 편집 인텐트 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:653",
+   "note": "카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다"
+  }
  },
  {
   "round": "1",
@@ -270,7 +280,12 @@
   "expect": "셋 다 있다",
   "ref": "3-27-1",
   "axis": "코드",
-  "axiswhy": "칩 셋·타입별 위젯 분기 — when 한 자리"
+  "axiswhy": "칩 셋·타입별 위젯 분기 — when 한 자리",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt:344",
+   "note": "chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다"
+  }
  },
  {
   "round": "2",
@@ -1609,7 +1624,12 @@
   "expect": "카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**)",
   "ref": "3-10-3",
   "axis": "코드",
-  "axiswhy": "전부 해제해도 카드가 안 사라진다 — 가드 한 줄"
+  "axiswhy": "전부 해제해도 카드가 안 사라진다 — 가드 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt:787",
+   "note": "enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다"
+  }
  },
  {
   "round": "5",
@@ -1856,7 +1876,12 @@
   "expect": "누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다",
   "ref": "3-85-2",
   "axis": "코드",
-  "axiswhy": "이미지 축은 캐릭터 선택을 먼저 연다 — 분기 한 줄"
+  "axiswhy": "이미지 축은 캐릭터 선택을 먼저 연다 — 분기 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt:164",
+   "note": "axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄"
+  }
  },
  {
   "round": "6",
@@ -2896,7 +2921,12 @@
   "expect": "설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다",
   "ref": "3-114-ㅂ·ㅅ",
   "axis": "코드",
-  "axiswhy": "ⓘ가 설명 있는 필드에만 붙는가 — 조건 한 줄"
+  "axiswhy": "ⓘ가 설명 있는 필드에만 붙는가 — 조건 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:113",
+   "note": "hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다"
+  }
  },
  {
   "round": "8",
@@ -3039,7 +3069,12 @@
   "expect": "안 보인다",
   "ref": "3-26-2",
   "axis": "코드",
-  "axiswhy": "작품 선택 전 버튼 숨김 — 조건 한 줄"
+  "axiswhy": "작품 선택 전 버튼 숨김 — 조건 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:870",
+   "note": "btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다"
+  }
  },
  {
   "round": "9",
@@ -3455,7 +3490,12 @@
   "expect": "그 자리로 데려간다",
   "ref": "3-51-4",
   "axis": "코드",
-  "axiswhy": "카드 → 그 자리로 데려가는 내비 한 줄"
+  "axiswhy": "카드 → 그 자리로 데려가는 내비 한 줄",
+  "drop": {
+   "why": "코드",
+   "where": "app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt:63",
+   "note": "카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록)"
+  }
  },
  {
   "round": "10",

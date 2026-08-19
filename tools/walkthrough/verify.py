@@ -18,7 +18,11 @@ SESS = json.load(io.open(os.path.join(HERE, 'sessions.json'), encoding='utf-8'))
 sheet = io.open(SHEET, encoding='utf-8').read()
 
 fail = 0
-ids = {f"{r['round']}-{r['id']}" for r in STEPS}
+# **걷어낸 단계(`drop`)는 시트에서 빠지고 부록에 산다** — 아래 ①②④는 활성 단계만 보고,
+# ③(원 절 번호)은 걷어낸 것까지 전부 본다(부록이 그 번호를 들고 있어야 한다).
+ACTIVE = [r for r in STEPS if not r.get('drop')]
+DROPPED = [r for r in STEPS if r.get('drop')]
+ids = {f"{r['round']}-{r['id']}" for r in ACTIVE}
 
 # ① 묶음 정의가 319단계를 정확히 한 번씩 쓰는가
 used = [f"{a}-{b}" for s in SESS for a, b in s['items']]
@@ -56,7 +60,73 @@ if boxes < len(ids):
 else:
     print(f"  ✓ 체크박스 {boxes}개 (단계 {len(ids)} + 준비물)")
 
-# ⑤ 자기 출력 증명 — 아무것도 못 뜨면 위 넷이 전부 조용히 통과한다
+# ⑤ 걷어낸 단계가 **사유를 대는가** — 그냥 빠진 것과 걷어낸 것을 여기서 가른다
+#
+# 이 저장소는 *"덮으니 뺀다"*를 **흔한 낱말 grep**으로 검증해 19/19 통과를 받은 적이 있고,
+# 그 열아홉은 전부 무관한 파일이었다(`따옴표 멱등` → *"멱등"* 한 낱말이 걸렸다).
+# 그래서 여기서는 **시험 이름이 소스에 실재하는지**를 본다 — 파일을 열어 함수 선언을 찾는다.
+#
+# `코드` 사유는 시험을 만들지 않는 부류라(사용자 지시) 시험 이름을 요구하지 않는다.
+# 대신 **왜 읽으면 끝나는지**를 한 줄로 적게 한다 — 빈 사유는 사유가 아니다.
+if DROPPED:
+    TESTROOT = os.path.join(HERE, '..', '..', 'app', 'src', 'test')
+    names = set()
+    for dp, _, fns in os.walk(TESTROOT):
+        for fn in fns:
+            if not fn.endswith('.kt'):
+                continue
+            src = io.open(os.path.join(dp, fn), encoding='utf-8').read()
+            cls = fn[:-3]
+            for m in re.finditer(r'fun\s+`?([^`(\s]+)`?\s*\(', src):
+                names.add(f"{cls}.{m.group(1)}")
+            for m in re.finditer(r'fun\s+`([^`]+)`\s*\(', src):
+                names.add(f"{cls}.{m.group(1)}")
+    bad = []
+    for r in DROPPED:
+        d = r.get('drop') or {}
+        step = f"{r['round']}-{r['id']}"
+        why = d.get('why')
+        if why == '시험':
+            ts = d.get('test') or []
+            if not ts:
+                bad.append(f"{step}: '시험'인데 시험 이름이 없다"); continue
+            missing = [t for t in ts if t not in names]
+            if missing:
+                bad.append(f"{step}: 저장소에 없는 시험 {missing}")
+        elif why == '코드':
+            # **어디를 읽으면 끝나는지까지 적게 한다.** *"코드 보면 안다"*는 말만으로는
+            # 다음 사람이 그 자리를 다시 찾아야 하고, 그러느니 기기에서 밟는 편이 싸다.
+            where = (d.get('where') or '').strip()
+            if not where:
+                bad.append(f"{step}: '코드'인데 읽을 자리(`where`)가 없다"); continue
+            f = where.split(':')[0]
+            if not os.path.exists(os.path.join(HERE, '..', '..', f)):
+                bad.append(f"{step}: 읽을 자리의 파일이 없다 ({f})")
+            if not (d.get('note') or '').strip():
+                bad.append(f"{step}: '코드'인데 사유가 비었다")
+        else:
+            bad.append(f"{step}: 사유가 '시험'도 '코드'도 아니다 ({why!r})")
+    if bad:
+        print(f"  ✗ 걷어낸 단계의 사유 {len(bad)}건이 성립하지 않는다:")
+        for b in bad[:12]:
+            print(f"      · {b}")
+        fail = 1
+    else:
+        n시험 = sum(1 for r in DROPPED if r['drop']['why'] == '시험')
+        print(f"  ✓ 걷어낸 {len(DROPPED)}단계가 전부 사유를 댄다 "
+              f"(시험 {n시험} — 이름이 소스에 실재함 · 코드 {len(DROPPED) - n시험})")
+
+    # ⑥ 걷어낸 단계도 부록에 **한 줄씩** 살아 있는가 — 표에서 빠지면 조용한 구멍이다
+    goneFromAppendix = sorted(
+        f"{r['round']}-{r['id']}" for r in DROPPED
+        if f"`{r['round']}-{r['id']}`" not in sheet
+    )
+    if goneFromAppendix:
+        print(f"  ✗ 부록에서 사라진 단계 {len(goneFromAppendix)}개: {goneFromAppendix[:8]}"); fail = 1
+    else:
+        print(f"  ✓ 걷어낸 {len(DROPPED)}단계가 전부 부록에 산다")
+
+# ⑦ 자기 출력 증명 — 아무것도 못 뜨면 위가 전부 조용히 통과한다
 if not ids or not inSheet or not sec:
     print("  ✗ 뜬 것이 하나도 없다 — 이 검사가 아무것도 보고 있지 않다"); fail = 1
 
