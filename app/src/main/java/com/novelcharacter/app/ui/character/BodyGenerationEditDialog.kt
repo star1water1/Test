@@ -1,6 +1,8 @@
 package com.novelcharacter.app.ui.character
 
+import android.app.Dialog
 import android.content.Context
+import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -11,6 +13,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.core.os.bundleOf
+import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.setFragmentResult
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -18,10 +23,10 @@ import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.BodyAnalysisConfig.GenerationPreset
+import com.novelcharacter.app.util.BodyGenerationEditState
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
-import java.util.Locale
 
 /**
  * 🎲 생성 축·프리셋 편집 창 (B-93 · 확정 7번 ㄱ1·ㄴ1).
@@ -36,29 +41,123 @@ import java.util.Locale
  *
  * **검증은 막되 버리지 않는다**(R-27) — 잘못 적은 칸은 그 자리에 붉은 글씨로 말하고 창은
  * 열린 채 남는다. 저장을 눌러 닫혔다면 적은 것이 전부 담긴 것이다.
+ *
+ * ## 왜 [DialogFragment]인가 (B-260 · R-41-a)
+ *
+ * 종전에는 `object`가 맨 `AlertDialog`를 세워 띄웠다 — **액티비티가 다시 서면 창과 함께
+ * 적던 것이 전부 사라졌다.** 이 창은 스스로 *"칸 스물이 넘는 창이라 손이 미끄러지면 적던
+ * 것이 말없이 사라진다"*며 바깥 누름을 막아 두었는데, **회전은 그 방어를 지나갔다.**
+ * 확정 15장 5번이 *그 자리에서 만들어진 작업물*을 안전 종료의 예외로 세운 그 부류다.
+ *
+ * 담는 벌은 순수 계층이 든다([BodyGenerationEditState]) — 창 안에서 `Bundle`에 칸을 넣고
+ * 빼면 왕복이 맞는지 증명할 수단이 없다. **여는 쪽은 [newInstance]로 넘기고 받는 쪽은
+ * [RESULT_KEY]로 받는다** — 콜백을 인스턴스에 꽂지 않으므로 *"회전 뒤 호스트가 다시 꽂지
+ * 않아 [저장]이 아무 데도 닿지 않는" 갈래가 원리적으로 없다*(B-201이 겪은 그 모양).
  */
-object BodyGenerationEditDialog {
+class BodyGenerationEditDialog : DialogFragment() {
+
+    /** 창이 그리는 한 벌 — 행 수와 스피너 항목이 여기서 나온다. */
+    private lateinit var current: GenerationPreset
+    private var heightRows: List<AxisRow> = emptyList()
+    private var torsoRows: List<AxisRow> = emptyList()
+    private var bustRows: List<AxisRow> = emptyList()
+    private var hipRows: List<AxisRow> = emptyList()
+    private var presetRows: List<PresetRow> = emptyList()
 
     /**
-     * 수치 칸의 자리 — **세 곳이 같은 수를 각자 들고 있던 자리다**(감시자 배선 · 경고 계산 ·
-     * 오름차순 검증). 칸이 하나 늘면 셋을 함께 옮겨야 하는데 **하나를 놓쳐도 조용하다** —
-     * 경고가 엉뚱한 칸을 읽고 아무 말도 하지 않을 뿐이라 컴파일도 시험도 못 본다.
+     * 프리셋 스피너에 지금 실려 있는 항목 글자 — **[기본값으로]가 이것도 되돌린다.**
+     * 위젯에서 되읽지 않고 필드로 드는 것은 `Spinner.adapter`를 훑어 글자를 되뽑는 것보다
+     * *무엇을 실었는가*가 정확하기 때문이다(같은 근거로 [BodyGenerationEditState]가 이것을 담는다).
      */
-    private const val HEIGHT_CENTER_COL = 0
-    private const val HEIGHT_VARIANCE_COL = 1
-    private const val TORSO_END_COL = 2
-    private const val HIP_END_COL = 1
+    private var presetOptionLabels: BodyGenerationEditState.OptionLabels =
+        BodyGenerationEditState.OptionLabels(emptyList(), emptyList(), emptyList())
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+        // **회전 뒤가 먼저다** — 담긴 것이 있으면 그것이 사용자가 적던 값이고,
+        // 없으면 연 쪽이 넘긴 처음 상태다. 둘의 타입이 같아 길을 가르지 않는다.
+        val state = BodyGenerationEditState.decode(
+            savedInstanceState?.getString(STATE_KEY) ?: arguments?.getString(ARG_STATE)
+        )
+        if (state == null) {
+            // 못 읽으면 **안전 종료**다(R-41-a) — 껍데기를 띄우면 [저장]이 사용자가 손대지도
+            // 않은 기본값을 진짜 설정 위에 덮어쓴다. 담긴 것이 없으면 잃은 것도 없다.
+            dismissAllowingStateLoss()
+            return MaterialAlertDialogBuilder(requireContext()).create()
+        }
+        return buildDialog(requireContext(), state)
+    }
 
     /**
-     * @param current 지금 쓰이는 한 벌(빈 축이 없는 것으로 정규화된 값을 받는다)
-     * @param onSave 저장 시 새 한 벌. **부르는 쪽이 필드 config에 담는다** — 이 창은
-     *   화면과 검증만 든다(계산·저장을 창 안에 적으면 시험이 닿지 않는다).
+     * 적던 것을 담는다 — **칸을 더하면 [BodyGenerationEditState]에도 함께 등재할 것**(R-41).
+     * 위젯을 읽는 자리는 여기 하나이고, 읽는 법은 [snapshot]이 든다.
      */
-    fun show(
-        context: Context,
-        current: GenerationPreset,
-        onSave: (GenerationPreset) -> Unit
-    ) {
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        snapshot()?.let { outState.putString(STATE_KEY, it.encode()) }
+    }
+
+    /** 지금 칸에 적힌 것을 그대로 — **수로 바꾸지 않는다**(적던 중인 값이 눌리면 안 된다). */
+    private fun snapshot(): BodyGenerationEditState? {
+        if (!::current.isInitialized) return null
+        fun rows(list: List<AxisRow>) = list.map { row ->
+            BodyGenerationEditState.RowText(
+                row.name.text.toString(),
+                row.numbers.map { it.text.toString() }
+            )
+        }
+        return BodyGenerationEditState(
+            current = current,
+            heightRows = rows(heightRows),
+            torsoRows = rows(torsoRows),
+            bustRows = rows(bustRows),
+            hipRows = rows(hipRows),
+            presetRows = presetRows.map {
+                BodyGenerationEditState.PresetText(
+                    it.name.text.toString(), it.torso.selectedItemPosition,
+                    it.bust.selectedItemPosition, it.hip.selectedItemPosition
+                )
+            },
+            presetOptionLabels = presetOptionLabels
+        )
+    }
+
+    companion object {
+        /**
+         * 수치 칸의 자리 — **세 곳이 같은 수를 각자 들고 있던 자리다**(감시자 배선 · 경고 계산 ·
+         * 오름차순 검증). 칸이 하나 늘면 셋을 함께 옮겨야 하는데 **하나를 놓쳐도 조용하다** —
+         * 경고가 엉뚱한 칸을 읽고 아무 말도 하지 않을 뿐이라 컴파일도 시험도 못 본다.
+         */
+        private const val HEIGHT_CENTER_COL = 0
+        private const val HEIGHT_VARIANCE_COL = 1
+        private const val TORSO_END_COL = 2
+        private const val HIP_END_COL = 1
+
+        const val TAG = "body_generation_edit"
+
+        /** 저장된 한 벌이 이 열쇠로 돌아온다 — 값은 [RESULT_GENERATION_JSON]의 JSON 문자열이다. */
+        const val RESULT_KEY = "body_generation_edit_result"
+        const val RESULT_GENERATION_JSON = "generation_json"
+
+        private const val ARG_STATE = "arg_state"
+        private const val STATE_KEY = "state"
+
+        /**
+         * @param current 지금 쓰이는 한 벌(빈 축이 없는 것으로 정규화된 값을 받는다)
+         *
+         * **저장 결과는 [RESULT_KEY]로 간다** — 부르는 쪽이 그것을 필드 config에 담는다.
+         * 이 창은 화면과 검증만 든다(계산·저장을 창 안에 적으면 시험이 닿지 않는다).
+         */
+        fun newInstance(current: GenerationPreset): BodyGenerationEditDialog =
+            BodyGenerationEditDialog().apply {
+                arguments = bundleOf(ARG_STATE to BodyGenerationEditState.initial(current).encode())
+            }
+    }
+
+    private fun buildDialog(context: Context, saved: BodyGenerationEditState): Dialog {
+        // 담긴 칸을 한 벌의 모양에 맞춘다 — 어긋난 축만 되돌린다(순수 계층이 든다).
+        val state = saved.aligned()
+        current = state.current
+        presetOptionLabels = state.presetOptionLabels
         val density = context.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
 
@@ -82,18 +181,26 @@ object BodyGenerationEditDialog {
             setPadding(0, 0, 0, dp(4))
         })
 
-        /** 축 한 줄 — 이름 + 수치 칸 몇. 칸 수는 축마다 다르고 행 수는 [current]가 정한다. */
-        fun axisRow(label: String, fields: List<NumField>): AxisRow {
+        /**
+         * 축 한 줄 — 이름 + 수치 칸 몇. 칸 수는 축마다 다르고 행 수는 [current]가 정한다.
+         *
+         * **값은 담긴 글자에서 온다**(B-260) — 처음 열 때는 한 벌을 옮긴 것이고 회전 뒤에는
+         * 사용자가 적던 것이다. 둘을 가르지 않으므로 *회전 뒤에만 다르게 서는* 갈래가 없다.
+         */
+        fun axisRow(text: BodyGenerationEditState.RowText, hints: List<Int>): AxisRow {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(2) }
             }
-            val nameEdit = textBox(context, label, weight = 1.4f, hintRes = R.string.body_gen_edit_name)
+            val nameEdit = textBox(context, text.name, weight = 1.4f, hintRes = R.string.body_gen_edit_name)
             row.addView(nameEdit.first)
-            val numEdits = fields.map { f ->
-                val box = textBox(context, format(f.value), weight = 1f, hintRes = f.hintRes, numeric = true)
+            val numEdits = hints.mapIndexed { at, hintRes ->
+                val box = textBox(
+                    context, text.numbers.getOrElse(at) { "" },
+                    weight = 1f, hintRes = hintRes, numeric = true
+                )
                 row.addView(box.first)
                 box.second
             }
@@ -103,49 +210,41 @@ object BodyGenerationEditDialog {
 
         // ── 키 ──
         caption(R.string.body_gen_edit_height, top = 8)
-        val heightRows = current.heightOptions.map {
-            axisRow(it.label, listOf(
-                NumField(it.center, R.string.body_gen_edit_center),
-                NumField(it.variance, R.string.body_gen_edit_variance)
-            ))
+        heightRows = state.heightRows.map {
+            axisRow(it, listOf(R.string.body_gen_edit_center, R.string.body_gen_edit_variance))
         }
         // ── 몸통 ──
         caption(R.string.body_gen_edit_torso)
-        val torsoRows = current.torsoOptions.map {
-            axisRow(it.label, listOf(
-                NumField(it.waistRatio, R.string.body_gen_edit_waist_ratio),
-                NumField(it.bmiTarget, R.string.body_gen_edit_bmi),
-                NumField(it.maxRatio, R.string.body_gen_edit_max)
+        torsoRows = state.torsoRows.map {
+            axisRow(it, listOf(
+                R.string.body_gen_edit_waist_ratio,
+                R.string.body_gen_edit_bmi,
+                R.string.body_gen_edit_max
             ))
         }
         val torsoWarning = warningLine(context, dp(2))
         root.addView(torsoWarning)
         // ── 가슴 ──
         caption(R.string.body_gen_edit_bust)
-        val bustRows = current.bustOptions.map {
-            axisRow(it.label, listOf(NumField(it.cupDiff, R.string.body_gen_edit_cup_diff)))
-        }
+        bustRows = state.bustRows.map { axisRow(it, listOf(R.string.body_gen_edit_cup_diff)) }
         // ── 힙 ──
         caption(R.string.body_gen_edit_hip)
-        val hipRows = current.hipOptions.map {
-            axisRow(it.label, listOf(
-                NumField(it.hipBonus, R.string.body_gen_edit_hip_bonus),
-                NumField(it.maxDiff, R.string.body_gen_edit_max)
-            ))
+        hipRows = state.hipRows.map {
+            axisRow(it, listOf(R.string.body_gen_edit_hip_bonus, R.string.body_gen_edit_max))
         }
         val hipWarning = warningLine(context, dp(2))
         root.addView(hipWarning)
         // ── 프리셋 ── 축을 스피너로 고른다: 이름을 적게 하면 축 이름을 바꿀 때마다
         // 프리셋이 조용히 끊긴다(저장은 자리로 한다 — 그 사실을 화면도 그대로 따른다).
         caption(R.string.body_gen_edit_preset)
-        val presetRows = current.bodyPresets.map { preset ->
+        presetRows = state.presetRows.map { preset ->
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(2) }
             }
-            val name = textBox(context, preset.label, weight = 1.4f, hintRes = R.string.body_gen_edit_name)
+            val name = textBox(context, preset.name, weight = 1.4f, hintRes = R.string.body_gen_edit_name)
             row.addView(name.first)
             fun spinner(labels: List<String>, selected: Int): Spinner =
                 Spinner(context).apply {
@@ -156,9 +255,11 @@ object BodyGenerationEditDialog {
                 }
             // 스피너 항목은 **지금 창에 적힌 이름**이 아니라 저장된 이름이다 — 이름을 고치는
             // 중에 항목이 흔들리면 고르던 자리를 잃는다. 저장은 자리로 하므로 뜻은 같다.
-            val t = spinner(current.torsoOptions.map { it.label }, preset.torso)
-            val b = spinner(current.bustOptions.map { it.label }, preset.bust)
-            val h = spinner(current.hipOptions.map { it.label }, preset.hip)
+            // **담긴 것에서 오는 이유는 [기본값으로]가 이 글자도 되돌리기 때문이다**(B-260) —
+            // `current`에서 다시 뽑으면 *되돌린 뒤 회전*에서 항목만 옛 이름으로 되살아난다.
+            val t = spinner(state.presetOptionLabels.torso, preset.torso)
+            val b = spinner(state.presetOptionLabels.bust, preset.bust)
+            val h = spinner(state.presetOptionLabels.hip, preset.hip)
             row.addView(t); row.addView(b); row.addView(h)
             root.addView(row)
             PresetRow(name.second, t, b, h)
@@ -206,11 +307,12 @@ object BodyGenerationEditDialog {
         }
         refreshBandWarnings()
 
-        MaterialAlertDialogBuilder(context)
+        // 바깥을 눌러 닫히지 않는다 — 칸 스물이 넘는 창이라 손이 미끄러지면
+        // 적던 것이 말없이 사라진다. 닫는 길은 저장·취소 둘뿐이다(R-27 결).
+        // **회전은 종전에 이 방어를 지나갔다**(B-260) — 이제 적던 것이 함께 넘어간다.
+        isCancelable = false
+        return MaterialAlertDialogBuilder(context)
             .setTitle(R.string.body_gen_edit_title)
-            // 바깥을 눌러 닫히지 않는다 — 칸 스물이 넘는 창이라 손이 미끄러지면
-            // 적던 것이 말없이 사라진다. 닫는 길은 저장·취소 둘뿐이다(R-27 결).
-            .setCancelable(false)
             // 축 열넷 + 프리셋 넷이라 본문이 화면을 넘는다 — 높이 상한을 건다(R-31).
             .setView(cappedScrollView(context).apply { addView(root) })
             .setPositiveButton(R.string.save, null)
@@ -225,21 +327,29 @@ object BodyGenerationEditDialog {
                         it.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                             resetTo(context, BodyAnalysisConfig.DEFAULT_GENERATION, heightRows,
                                 torsoRows, bustRows, hipRows, presetRows)
+                            // 스피너에 실은 글자가 바뀌었으므로 담을 것도 함께 바꾼다 —
+                            // 안 바꾸면 되돌린 뒤 회전에서 항목만 옛 이름으로 되살아난다.
+                            presetOptionLabels = BodyGenerationEditState.OptionLabels
+                                .of(BodyAnalysisConfig.DEFAULT_GENERATION)
                             refreshBandWarnings()
                         }
                     }
                 ) {
                     val built = build(context, heightRows, torsoRows, bustRows, hipRows, presetRows)
-                    if (built != null) onSave(built)
+                    // **콜백이 아니라 결과로 건넨다**(B-260) — 인스턴스에 꽂힌 람다는 회전이
+                    // 지우지만 결과는 프래그먼트 매니저가 들고 있다가 되살아난 호스트에 준다.
+                    if (built != null) {
+                        setFragmentResult(
+                            RESULT_KEY,
+                            bundleOf(RESULT_GENERATION_JSON to BodyAnalysisConfig.generationToJsonString(built))
+                        )
+                    }
                     built != null
                 }
-                dialog.show()
             }
     }
 
     // ── 화면 조각 ──────────────────────────────────────────────────────────
-
-    private class NumField(val value: Double, val hintRes: Int)
 
     /**
      * 경고 한 줄 — 평소에는 자리도 차지하지 않는다(`GONE`).
@@ -308,14 +418,12 @@ object BodyGenerationEditDialog {
     }
 
     /**
-     * 소수점 뒤 0을 달지 않는다 — `18.5`는 그대로, `24.0`은 `24`로 보인다.
+     * 수를 칸의 글자로 — **순수 계층이 단일 소스다**([BodyGenerationEditState.format]).
      *
-     * 자릿수가 **교정이 미는 폭(`Limits.TORSO_END_STEP` = .001)보다 잘아야 한다** —
-     * 굵으면 창을 열었다 저장만 해도 값이 반올림되어, 손대지 않은 설정이 조용히 바뀐다.
+     * 창이 따로 적으면 회전 전후로 같은 값이 다른 글자로 보인다(담는 쪽은 그쪽 함수를
+     * 쓰기 때문이다). 자릿수가 왜 그 굵기여야 하는지는 그 함수의 주석이 든다.
      */
-    private fun format(value: Double): String =
-        if (value == Math.floor(value) && !value.isInfinite()) value.toLong().toString()
-        else String.format(Locale.US, "%.4f", value).trimEnd('0').trimEnd('.')
+    private fun format(value: Double): String = BodyGenerationEditState.format(value)
 
     private fun resetTo(
         context: Context,

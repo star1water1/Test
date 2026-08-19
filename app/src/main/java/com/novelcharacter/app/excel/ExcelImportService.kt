@@ -2754,9 +2754,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.searchPresets) categories.add(analyzeSearchPresets(workbook, onProgress, totalRows))
         if (options.characterListPresets) categories.add(analyzeCharacterListPresets(workbook, onProgress, totalRows))
         if (options.imageMeta) categories.add(analyzeImageMeta(workbook, onProgress, totalRows))
+        // **축 → 기록 → 상성** — 가져오기가 그 순서다(정의가 기록보다 앞이다).
         if (options.duels) {
             categories.add(analyzeDuelAxes(workbook, options, onProgress, totalRows))
             categories.add(analyzeDuelMatches(workbook, options, onProgress, totalRows))
+            categories.add(analyzeDuelVerdicts(workbook, options, onProgress, totalRows))
         }
 
         return RestoreAnalysis(categories, characterConflicts)
@@ -2894,6 +2896,100 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         reportProgress(onProgress, "대결 기록 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("duelMatches", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
+    }
+
+    /**
+     * 대결 상성의 복원 미리보기 (B-263 ⓐ).
+     *
+     * **이 범주는 미리보기에 통째로 없었다** — `analyzeAll`이 축·기록은 세면서 상성만 세지
+     * 않아, *덮어쓰는* 축이 **예고 없이** 들어왔다(B-256의 census가 찾았다). 유실은 아니지만
+     * 사용자가 **되돌릴 기회를 갖지 못하는** 것이 이 자리의 무게다(개발 의도 2번).
+     *
+     * 해석 사다리는 짝 [importDuelVerdicts]와 **같은 함수들**을 지난다(R-33) —
+     * [readDuelVerdictRow] · [DuelRecords.resolveMembers] · [resolveDuelVerdictKind] ·
+     * [newDuelVerdictFrom] · [mergeDuelVerdict].
+     */
+    private suspend fun analyzeDuelVerdicts(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = duelVerdictSpec()
+        val label = "대결 상성"
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236) — 형제 둘과 같은 규약이다.
+        val allVerdicts = db.duelCounterVerdictDao().getAllList().sortedBy { it.id }
+        val existingTotal = allVerdicts.size
+        val sheet = sheetForAnalysis(workbook, spec)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelVerdicts", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("duelVerdicts", label, 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val now = System.currentTimeMillis()
+        // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다(R-53).
+        val axes = db.duelAxisDao().getAllList()
+        val axisByCode = axes.associateBy { it.code }
+        val axesByName = axes.groupBy { it.name }
+        val codeByName = db.characterDao().getAllCharactersList()
+            .groupBy({ it.displayName }, { it.code })
+        val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
+            idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
+        )
+        val verdictMemberKeys = ImportLookupIndex<DuelVerdictMemberKey, DuelCounterVerdict>(
+            idOf = { it.id }, keyOf = { DuelVerdictMemberKey(it.axisId, it.memberKey) }
+        )
+        verdictCodes.load(allVerdicts)
+        verdictMemberKeys.load(allVerdicts)
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
+        for (i in dataRows(sheet, headerRow)) {
+            val row = sheet.getRow(i) ?: continue
+            val r = readDuelVerdictRow(row, cols, now)
+            if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
+            inBackup++
+
+            // B-102 ⓑ: 축이 지금 DB에 없어도 같은 파일의 '대결 축' 시트가 먼저 만든다
+            // (가져오기 순서가 축 → 기록 → 상성이다). 동명 모호(2+)는 가져오기도 거부하므로 skipped다.
+            val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
+            if (axis == null) {
+                val axisAmbiguous = (axesByName[r.axisName]?.size ?: 0) > 1
+                if (!axisAmbiguous && options.duels) newCount++ else skippedCount++
+                continue
+            }
+
+            // 참가자 해석도 같은 사다리다. **동명이인은 가져오기가 영원히 거부하므로 skipped**이고,
+            // *아직 없는 이름*은 캐릭터 시트가 만들어 줄 수 있어 '신규'다(`analyzeDuelMatches`와 같은 갈래).
+            val members = when (val m = DuelRecords.resolveMembers(r.rawCodes, r.names, codeByName)) {
+                is DuelRecords.MemberResolution.Resolved -> m.members
+                is DuelRecords.MemberResolution.Unresolved -> {
+                    if (!m.ambiguous && options.characters) newCount++ else skippedCount++
+                    continue
+                }
+            }
+            val shape = DuelRecords.shapeOf(members)
+            if (shape == null) { skippedCount++; continue }
+
+            val memberKey = DuelRecords.memberKey(members)
+            val existing = (if (r.code.isNotBlank()) verdictCodes.first(r.code) else null)
+                ?: verdictMemberKeys.first(DuelVerdictMemberKey(axis.id, memberKey))
+            val kind = resolveDuelVerdictKind(r.kindLabel) ?: existing?.kind ?: DuelCounterVerdict.KIND_COUNTER
+            if (existing == null) {
+                newCount++
+                // 이 시트가 방금 만들 상성 — 같은 코드·같은 (축, 구성원키)를 든 뒷 행이 이것과
+                // 매칭된다(B-233). 가져오기 쪽은 유니크 색인이 던져 막는 자리다.
+                val minted = newDuelVerdictFrom(r, axis.id, members, memberKey, shape, kind, r.code)
+                    .copy(id = previewIds.mint())
+                verdictCodes.put(minted)
+                verdictMemberKeys.put(minted)
+                continue
+            }
+            val merged = mergeDuelVerdict(existing, axis.id, members, memberKey, shape, kind)
+            if (merged != existing) updateCount++ else unchangedCount++
+            // **갱신도 색인에 되싣는다** — 짝 가져오기가 그렇게 한다(B-233의 규약은 *쓴 행을
+            // 그대로 넘긴다*이지 *새 행만*이 아니다). 이 범주는 **병합이 키를 바꾼다**
+            // (`memberKey`·`axisId`) — 형제인 '대결 기록'은 병합이 코드를 건드리지 않아 되싣지
+            // 않아도 답이 같지만, 여기서 빠뜨리면 **구성원을 바꾼 앞 행을 뒷 행이 못 찾아**
+            // 미리보기만 '신규'로 세고 가져오기는 유니크 색인에 걸린다.
+            verdictCodes.put(merged)
+            verdictMemberKeys.put(merged)
+        }
+        reportProgress(onProgress, "대결 상성 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("duelVerdicts", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeFieldValueLibrary(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -9762,8 +9858,74 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum, totalRows)
     }
 
-    // 미리보기 없음(**축 자체가 미리보기에 없다** — 판정이 아니라 미구현이다. B-256의 census가
-    //   찾았고 B-263 ⓐ가 그 자리다. 이 표식은 면제가 아니라 *알고 있다*는 표시다)
+    private data class DuelVerdictRowValues(
+        val axisName: String,
+        val axisCode: String,
+        /** '참가자코드들' 열 — **정체이므로 그대로 쓴다**(있으면 이름 열은 보지 않는다). */
+        val rawCodes: List<String>,
+        /** '참가자들' 열 — 사람이 읽는 몫이라 코드가 비었을 때만 되찾기에 쓴다. */
+        val names: List<String>,
+        val code: String,
+        // R-36: 열 없음("이 파일은 종류를 말하지 않는다")과 빈칸은 다른 사실이다.
+        val hasKindCol: Boolean,
+        val kindLabel: String,
+        val decidedAt: Long
+    )
+
+    private fun readDuelVerdictRow(row: Row, cols: Map<String, Int>, now: Long): DuelVerdictRowValues {
+        fun cell(header: String, dateHint: Boolean = false) =
+            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+        return DuelVerdictRowValues(
+            axisName = cell("축"),
+            axisCode = cell("축코드"),
+            rawCodes = splitCsv(cell("참가자코드들")),
+            names = splitCsv(cell("참가자들")),
+            code = cell("코드"),
+            hasKindCol = cols.containsKey("종류"),
+            kindLabel = cell("종류"),
+            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+        )
+    }
+
+    /**
+     * '종류' 열의 표기를 저장값으로 — **해석 실패는 `null`이고 그 처분은 부르는 쪽이 정한다**
+     * (가져오기는 경고와 함께 기존 값을 지키고, 미리보기는 같은 값에 조용히 이른다).
+     *
+     * 유효값 목록과 파서 수용값이 갈리면 안 되므로 해석은 [matchDropdownValue]로 한다.
+     */
+    private fun resolveDuelVerdictKind(label: String): String? = when {
+        matchDropdownValue(label, listOf(DuelSheetLabels.KIND_UNDECIDED, DuelCounterVerdict.KIND_UNDECIDED)) != null ->
+            DuelCounterVerdict.KIND_UNDECIDED
+        matchDropdownValue(label, listOf(DuelSheetLabels.KIND_COUNTER, DuelCounterVerdict.KIND_COUNTER)) != null ->
+            DuelCounterVerdict.KIND_COUNTER
+        else -> null
+    }
+
+    /** [newDuelMatchFrom]과 같은 규약 — 이 행이 **만들** 상성(R-33 셋째 · B-233). */
+    private fun newDuelVerdictFrom(
+        r: DuelVerdictRowValues, axisId: Long, members: List<String>,
+        memberKey: String, shape: String, kind: String, code: String
+    ): DuelCounterVerdict = DuelCounterVerdict(
+        axisId = axisId, kind = kind, shape = shape,
+        memberCodes = DuelRecords.encodeMembers(members),
+        memberKey = memberKey, decidedAt = r.decidedAt, code = code
+    )
+
+    /**
+     * 매칭된 상성에 이 행을 얹는다 — **미리보기의 '변경/동일'이 이 한 줄로 판정된다**(R-33).
+     *
+     * 판정일은 바꾸지 않는다: 같은 관계에 대한 판정은 하나뿐이고(유니크), 그것을 언제 내렸는지는
+     * 처음 적은 때가 사실이다([mergeDuelMatch]가 참가자·시각을 지키는 것과 같은 규약).
+     */
+    private fun mergeDuelVerdict(
+        existing: DuelCounterVerdict, axisId: Long, members: List<String>,
+        memberKey: String, shape: String, kind: String
+    ): DuelCounterVerdict = existing.copy(
+        axisId = axisId, kind = kind, shape = shape,
+        memberCodes = DuelRecords.encodeMembers(members), memberKey = memberKey
+    )
+
+    // 미리보기 짝: analyzeDuelVerdicts
     private suspend fun importDuelVerdicts(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelVerdictSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -9795,22 +9957,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                fun cell(header: String, dateHint: Boolean = false) =
-                    getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+                val r = readDuelVerdictRow(row, cols, now)
 
-                val axisName = cell("축")
-                val axisCode = cell("축코드")
-                if (axisName.isBlank() && axisCode.isBlank()) continue
-                val axis = axisByCode[axisCode] ?: axesByName[axisName]?.singleOrNull()
+                if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
+                val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
                 if (axis == null) {
                     result.skippedRows++
                     // 모호를 '찾을 수 없음'으로 보고하지 않는다(4-3 규약) — 축은 실재하는데
                     // 없다고 말하면 사실과 다른 경고다. '대결 기록' 시트와 같은 갈래다.
                     result.errors.add(
-                        if ((axesByName[axisName]?.size ?: 0) > 1) {
-                            "대결 상성 행 $i: 축 '$axisName'이(가) 여럿이라 어느 축인지 정할 수 없음 — 축코드를 함께 적어 주세요"
+                        if ((axesByName[r.axisName]?.size ?: 0) > 1) {
+                            "대결 상성 행 $i: 축 '${r.axisName}'이(가) 여럿이라 어느 축인지 정할 수 없음 — 축코드를 함께 적어 주세요"
                         } else {
-                            "대결 상성 행 $i: 축 '$axisName'을(를) 찾을 수 없음"
+                            "대결 상성 행 $i: 축 '${r.axisName}'을(를) 찾을 수 없음"
                         }
                     )
                     continue
@@ -9818,24 +9977,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // 코드 목록이 정체이고 이름은 사람이 읽는 몫이다 — 순서에 뜻이 있으므로 지키고,
                 // 이름으로 되찾을 때도 적힌 차례 그대로 옮긴다.
-                val rawCodes = splitCsv(cell("참가자코드들"))
-                val members: List<String>
-                if (rawCodes.isNotEmpty()) {
-                    members = rawCodes
-                } else {
-                    // 해석 실패 인원을 조용히 빼지 않는다 — 인원이 줄어든 상성은 사용자가 적은
-                    // 것과 **다른 판정**이고, 그것을 그대로 저장하면 무음 왜곡이다('대결 기록'의
-                    // resolveParticipant와 같은 규약: 동명이인·미등록은 거부하고 코드를 안내한다).
-                    val names = splitCsv(cell("참가자들"))
-                    val unresolved = names.filter { name -> codeByName[name].orEmpty().size != 1 }
-                    if (unresolved.isNotEmpty()) {
+                //
+                // **사다리는 순수 계층이 든다**(`DuelRecords.resolveMembers` — R-33 · B-263 ⓐ).
+                // 해석 실패 인원을 조용히 빼지 않는다 — 인원이 줄어든 상성은 사용자가 적은
+                // 것과 **다른 판정**이고, 그것을 그대로 저장하면 무음 왜곡이다('대결 기록'의
+                // resolveParticipant와 같은 규약: 동명이인·미등록은 거부하고 코드를 안내한다).
+                val members = when (val m = DuelRecords.resolveMembers(r.rawCodes, r.names, codeByName)) {
+                    is DuelRecords.MemberResolution.Resolved -> m.members
+                    is DuelRecords.MemberResolution.Unresolved -> {
                         result.skippedRows++
                         result.errors.add(
-                            "대결 상성 행 $i: 참가자 '${unresolved.joinToString("', '")}'을(를) 확정할 수 없음(동명이인 또는 미등록) — '참가자코드들' 열에 코드를 적어 주세요"
+                            "대결 상성 행 $i: 참가자 '${m.names.joinToString("', '")}'을(를) 확정할 수 없음(동명이인 또는 미등록) — '참가자코드들' 열에 코드를 적어 주세요"
                         )
                         continue
                     }
-                    members = names.map { name -> codeByName.getValue(name).single() }
                 }
                 val shape = DuelRecords.shapeOf(members)
                 if (shape == null) {
@@ -9844,7 +9999,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val code = cell("코드")
+                val code = r.code
                 val memberKey = DuelRecords.memberKey(members)
                 if (code.isNotBlank() && !verdictCodesSeen.add(code)) {
                     result.warnings.add("대결 상성 행 $i: 코드 '${code}'가 파일 내에서 중복되어 같은 판정을 덮어씁니다")
@@ -9860,38 +10015,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("대결 상성 행 $i: 같은 축의 같은 참가자 조합이 파일 내에서 중복되어 같은 판정을 덮어씁니다")
                 }
 
-                // '종류'는 드롭다운 열이다 — 유효값 목록과 파서 수용값이 갈리면 안 되므로
-                // 해석은 matchDropdownValue(표기 차이만 흡수)로 한다. R-36: 열 없음 = 기존 유지.
+                // '종류'는 드롭다운 열이다 — 해석은 [resolveDuelVerdictKind]가 단일 소스이고
+                // 미리보기도 같은 함수를 지난다(R-33). R-36: 열 없음 = 기존 유지.
                 // 종전에는 열 부재·빈칸·오타가 전부 무경고로 '상성'이 되어, '미정'으로 보류해 둔
                 // 사용자 처분이 왕복 한 번에 '상성' 확정으로 조용히 뒤집혔다.
-                val hasKindCol = cols.containsKey("종류")
-                val kindLabel = cell("종류")
-                val kindResolved: String? = when {
-                    matchDropdownValue(kindLabel, listOf(DuelSheetLabels.KIND_UNDECIDED, DuelCounterVerdict.KIND_UNDECIDED)) != null ->
-                        DuelCounterVerdict.KIND_UNDECIDED
-                    matchDropdownValue(kindLabel, listOf(DuelSheetLabels.KIND_COUNTER, DuelCounterVerdict.KIND_COUNTER)) != null ->
-                        DuelCounterVerdict.KIND_COUNTER
-                    else -> null
-                }
-                if (hasKindCol && kindLabel.isNotBlank() && kindResolved == null) {
+                val kindResolved = resolveDuelVerdictKind(r.kindLabel)
+                if (r.hasKindCol && r.kindLabel.isNotBlank() && kindResolved == null) {
                     result.warnings.add(
-                        "대결 상성 행 $i: 종류 '$kindLabel'을(를) 해석할 수 없어 " +
+                        "대결 상성 행 $i: 종류 '${r.kindLabel}'을(를) 해석할 수 없어 " +
                             (if (existing != null) "기존 값을 유지합니다" else "'${DuelSheetLabels.KIND_COUNTER}'(으)로 두었습니다") +
                             " — '${DuelSheetLabels.KIND_COUNTER}' 또는 '${DuelSheetLabels.KIND_UNDECIDED}' 중 하나를 적어 주세요"
                     )
                 }
                 val kind = kindResolved ?: existing?.kind ?: DuelCounterVerdict.KIND_COUNTER
 
-                val decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
                 if (existing == null) {
-                    val newVerdict = DuelCounterVerdict(
-                        axisId = axis.id,
-                        kind = kind,
-                        shape = shape,
-                        memberCodes = DuelRecords.encodeMembers(members),
-                        memberKey = memberKey,
-                        decidedAt = decidedAt,
-                        code = code.ifBlank { generateEntityCode() }
+                    val newVerdict = newDuelVerdictFrom(
+                        r, axis.id, members, memberKey, shape, kind,
+                        code.ifBlank { generateEntityCode() }
                     )
                     val newId = db.duelCounterVerdictDao().upsert(newVerdict)
                     // 같은 축의 같은 구성원 조합을 든 뒷 행이 이것을 봐야 한다 — 못 보면
@@ -9902,13 +10043,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     writtenVerdictIds.add(newId)
                     result.newDuelVerdicts++
                 } else {
-                    val merged = existing.copy(
-                        axisId = axis.id,
-                        kind = kind,
-                        shape = shape,
-                        memberCodes = DuelRecords.encodeMembers(members),
-                        memberKey = memberKey
-                    )
+                    val merged = mergeDuelVerdict(existing, axis.id, members, memberKey, shape, kind)
                     if (merged != existing) {
                         db.duelCounterVerdictDao().update(merged)
                         result.updatedDuelVerdicts++

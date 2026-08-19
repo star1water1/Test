@@ -206,8 +206,13 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     private var built = false
 
+    /** 주입이 끝나기 전에 도착한 축·프리셋 저장 결과 — [onInputsBound]가 마저 든다(B-260). */
+    private var pendingGenerationUpdate: BodyAnalysisConfig.GenerationPreset? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // **아래 이른 반환보다 앞이다** — 처음 열 때도 회전 뒤에도 듣고 있어야 한다.
+        listenGenerationEdit()
         val state = BodyEditorState.decode(savedInstanceState?.getString(STATE_KEY)) ?: return
         restored = state
         // 열 때 뜬 스냅샷은 **여기서 곧바로 되꽂는다** — 폼 위젯의 값에서 나온 것이라
@@ -238,6 +243,8 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     fun onInputsBound() {
         inputsReady = true
         if (_binding != null && !built) buildEditor()
+        // 주입을 기다리던 저장 결과가 있으면 이제 든다(위 [applyGenerationUpdate]).
+        pendingGenerationUpdate?.let { applyGenerationUpdate(it) }
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -695,15 +702,55 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
      * 않은 축을 보여 주게 되고, 다음에 열 때 조용히 되돌아간다(거짓 고지).
      */
     private fun editGeneration() {
-        val save = onSaveGeneration ?: return
-        BodyGenerationEditDialog.show(requireContext(), generatorOptions) { updated ->
-            save(updated) { ok ->
-                if (_binding == null) return@save
-                if (!ok) return@save
-                analysisConfig = analysisConfig.copy(generation = updated)
-                buildAxes(resources.displayMetrics.density)
-                syncAll(null)
-            }
+        if (onSaveGeneration == null) return
+        BodyGenerationEditDialog.newInstance(generatorOptions)
+            .show(childFragmentManager, BodyGenerationEditDialog.TAG)
+    }
+
+    /**
+     * 축·프리셋 편집 창의 결과를 받는다 — **콜백을 꽂지 않는 이유가 여기 있다**(B-260 · R-41-a).
+     *
+     * 창에 람다를 꽂으면 회전이 그것을 지우고, 되살아난 창의 [저장]은 아무 데도 닿지 않는다
+     * (B-201이 이 시트에서 겪은 그 모양). 결과는 프래그먼트 매니저가 들고 있다가 **다시 선
+     * 시트에** 주므로 되살리는 배선 자체가 없다 — 없는 배선은 빠뜨릴 수도 없다.
+     *
+     * 등록 자리가 `onCreate`인 것도 그 때문이다: 회전 뒤 창이 결과를 보낼 때 시트가 이미
+     * 듣고 있어야 한다(뷰가 서기를 기다리면 그 사이에 온 결과를 놓친다).
+     */
+    private fun listenGenerationEdit() {
+        childFragmentManager.setFragmentResultListener(
+            BodyGenerationEditDialog.RESULT_KEY, this
+        ) { _, bundle ->
+            val updated = BodyAnalysisConfig.generationFromJsonString(
+                bundle.getString(BodyGenerationEditDialog.RESULT_GENERATION_JSON)
+            ) ?: return@setFragmentResultListener
+            applyGenerationUpdate(updated)
+        }
+    }
+
+    /**
+     * 창이 저장한 한 벌을 필드 config에 담는다.
+     *
+     * **주입이 아직이면 들고 기다린다.** 결과는 호스트가 [onSaveGeneration]을 다시 꽂기
+     * *전에* 도착할 수 있다 — 회전 직후에는 시트가 먼저 서고 폼은 그 뒤에 다시 서기
+     * 때문이다. 그때 그냥 버리면 **사용자가 누른 [저장]이 말없이 사라진다**(개발 의도 2번).
+     * [onInputsBound]가 주입이 끝난 자리이므로 거기서 마저 든다.
+     */
+    private fun applyGenerationUpdate(updated: BodyAnalysisConfig.GenerationPreset) {
+        val save = onSaveGeneration
+        if (save == null) {
+            pendingGenerationUpdate = updated
+            return
+        }
+        pendingGenerationUpdate = null
+        // **저장 결과를 기다려 화면을 세운다** — 먼저 세우고 저장에 실패하면 화면이
+        // 저장되지 않은 축을 보여 주게 되고, 다음에 열 때 조용히 되돌아간다(거짓 고지).
+        save(updated) { ok ->
+            if (_binding == null) return@save
+            if (!ok) return@save
+            analysisConfig = analysisConfig.copy(generation = updated)
+            buildAxes(resources.displayMetrics.density)
+            syncAll(null)
         }
     }
 

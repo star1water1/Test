@@ -279,6 +279,17 @@ lbody=$(printf '%s\n' "$LADDER" | grep -v '^__LCOUNT__' || true)
 # `if` 꼴만 보면 B-237의 여섯 자리 중 **셋**(연표·상태변화·관계변화의 연도)이 통째로 빠진다.
 # 실측으로 확인했다: 그 갈래 없이 수리 전 코드에 돌리면 3건, 넣으면 5함수 6자리 전부다.
 #
+# **⚠️ 행 루프를 *특정 꼴*로 찾다가 이 축이 통째로 눈이 멀었다 (B-263 ⓐ가 발견).**
+# 세울 때는 루프가 전부 `for (i in 1..sheet.lastRowNum)`이라 그 글자로 찾았는데,
+# **B-231 ⓑ(2026.08.18)가 마흔일곱 자리를 `for (i in dataRows(sheet, headerRow))`로 바꾸면서**
+# 이 축이 어느 함수에서도 루프를 못 찾게 됐다 — `rowloop()`가 None을 돌려주면 그 함수는
+# 검사 대상에서 **조용히 빠지므로**, 그날 이후 이 축은 *"✓ 전부 셉니다"*를 내면서
+# **한 함수도 보지 않았다.** 실측으로 확인했다: `analyzeDuelMatches`에 진짜 위반
+# (`if (axis == null) continue`를 `inBackup++` 앞에)을 심어도 초록이었고, 앵커만 고치니
+# 정확히 그 한 건을 짚었다. **그래서 둘을 함께 고쳤다** — 루프는 꼴을 묻지 않고 `for (i in`으로
+# 찾고, **`inBackup++`을 든 함수에서 루프를 못 뜨면 그것 자체를 위반으로 낸다**(fail-closed).
+# 축 ⑧이 같은 사고를 겪고 세운 규약과 같다: **0건을 '위반이 없다'로 읽지 않는다.**
+#
 # **못 보는 자리를 적어 둔다**(R-49 관행):
 #  · 짝 가져오기가 `when` 갈래(`is CharLookupResult.Ambiguous ->`)로 거부하는 것 — `if (…) {`
 #    꼴이 아니라 이 그물 밖이다. 그 부류는 ⑤가 사다리 축으로 이미 본다.
@@ -307,20 +318,26 @@ def idents(text):
 
 def rowloop(name):
     """행 루프의 시작 ~ **세는 자리**(마지막 inBackup++)까지. 그 뒤의 가드는 이미 센 행을
-    가르는 것이라 이 검사의 대상이 아니다(그쪽은 skippedCount로 세는 것이 옳다)."""
+    가르는 것이라 이 검사의 대상이 아니다(그쪽은 skippedCount로 세는 것이 옳다).
+
+    **루프의 꼴은 묻지 않는다** — `1..sheet.lastRowNum`이든 `dataRows(...)`이든 `for (i in`이면
+    된다. 꼴로 찾다가 이 축이 통째로 눈이 멀었던 것이 위 상자의 사고다."""
     s, e = spans[name]
     start = None
     for k in range(s, e):
-        if start is None and re.search(r'for \(i in 1\.\.', lines[k]): start = k
-    if start is None: return None
+        if start is None and re.search(r'for \(i in ', lines[k]): start = k
     last = None
-    for k in range(start, e):
+    for k in range(s, e):
         if 'inBackup++' in lines[k].split('//')[0]: last = k
-    if last is None: return None
+    # **세는 자리는 있는데 루프를 못 떴다** = 뜨는 법이 깨졌다. 조용히 빠지면 그 함수가
+    # 영영 검사되지 않으므로 위반으로 낸다(fail-closed — 축 ⑧과 같은 규약).
+    if last is not None and start is None: return 'BLIND'
+    if start is None or last is None: return None
     return start, last + 1
 
 def preview_skips(name):
     r = rowloop(name)
+    if r == 'BLIND': return set(), 'BLIND'
     if not r: return set(), False
     s, e = r
     out, k = set(), s
@@ -378,6 +395,9 @@ bad = []
 for fn in sorted(spans):
     if not fn.startswith('analyze'): continue
     p, ok = preview_skips(fn)
+    if ok == 'BLIND':
+        bad.append(f"{fn}\t세는 자리(inBackup++)는 있는데 행 루프를 뜨지 못했습니다 — 루프의 꼴이 바뀌었는지 보세요(이 축이 눈먼 채 초록이 됩니다)")
+        continue
     if not ok: continue
     imp = OVERRIDE.get(fn, 'import' + fn[len('analyze'):])
     if imp not in spans:
