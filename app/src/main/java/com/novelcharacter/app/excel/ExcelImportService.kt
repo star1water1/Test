@@ -3104,6 +3104,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
+    // 세는 자리 없음(행을 먼저 모아 `sheetRows.size`로 세므로 *세기 전에 버리는* 자리가 없다 —
+    //   접혀 밀린 행과 파일을 못 찾은 행은 그 뒤에 skippedCount로 센다. B-233이 정한 모양)
     private suspend fun analyzeImageMeta(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = imageMetaSpec()
         val label = "이미지 태그·링크"
@@ -3380,6 +3382,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val conflicts: List<CharacterConflict>
     )
 
+    // 세는 자리 없음(행을 직접 세지 않는다 — 세계관별 `analyzeCharacterSheet`의 결과를 합칠
+    //   뿐이고 행 가드는 그쪽이 든다. 그 함수는 이 축이 본다)
     private suspend fun analyzeCharacters(
         workbook: Workbook,
         onProgress: (ImportProgress) -> Unit,
@@ -5654,6 +5658,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 등급 체계 가져오기 (U-1 — 필드 정의 직전: '등급체계' 열이 여기서 만든 체계를 찾는다) ──
 
+    // 세는 자리 없음(행이 아니라 **무리**를 센다 — `groups.size + 미해석 무리`가 곧 전량이고
+    //   무리마다 신규·변경·동일·건너뜀 중 하나로 반드시 세므로 *세기 전에 버리는* 자리가 없다)
     private suspend fun analyzeGradeSystems(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = gradeSystemSpec()
         val label = "등급 체계"
