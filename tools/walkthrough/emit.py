@@ -219,7 +219,7 @@ else:
             continue
         w(f"### {why} — {len(rows)}단계 ({title})")
         w("")
-        w("| 단계 | 원 절 | 무엇을 보던 것인가 | 근거 |")
+        w("| 단계 | 원 절 | 무엇을 밟던 것인가 | 근거 |")
         w("|---|---|---|---|")
         for r in rows:
             ev = r['drop'].get('test') or r['drop'].get('note') or ''
@@ -228,7 +228,9 @@ else:
             else:
                 ev = f"`{r['drop']['where']}` — {clean(r['drop'].get('note') or '')}"
             ref = clean(r['ref']) if r['ref'] and r['ref'] != '—' else '—'
-            w(f"| `{r['round']}-{r['id']}` | `{ref}` | {clean(r['expect'])} | {ev} |")
+            # **`do`와 `expect`를 함께 낸다** — 기대값만 적으면 "안 보인다" 같은 줄이
+            # 홀로 서서 무엇을 두고 한 말인지 알 수 없다.
+            w(f"| `{r['round']}-{r['id']}` | `{ref}` | {clean(r['do'])} → {clean(r['expect'])} | {ev} |")
         w("")
 w("")
 w("---")

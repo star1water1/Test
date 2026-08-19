@@ -1123,16 +1123,16 @@
 
 ### 코드 — 8단계 (코드를 읽으면 끝나는 것)
 
-| 단계 | 원 절 | 무엇을 보던 것인가 | 근거 |
+| 단계 | 원 절 | 무엇을 밟던 것인가 | 근거 |
 |---|---|---|---|
-| `0-ㅁ` | `—` | 버튼을 여러 번 누르지 않아도 저장된다 | `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt:227` — onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다 |
-| `1-ㅊ` | `3-34-4` | 그 필드의 편집 창이 열린다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:653` — 카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다 |
-| `2-ㄱ-1` | `3-27-1` | 셋 다 있다 | `app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt:344` — chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다 |
-| `5-ㅎ` | `3-10-3` | 카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**) | `app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt:787` — enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다 |
-| `6-ㅍ` | `3-85-2` | 누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다 | `app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt:164` — axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄 |
-| `8-ㄹ-5` | `3-114-ㅂ·ㅅ` | 설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:113` — hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다 |
-| `9-ㅂ` | `3-26-2` | 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:870` — btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다 |
-| `10-ㅊ2` | `3-51-4` | 그 자리로 데려간다 | `app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt:63` — 카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록) |
+| `0-ㅁ` | `—` | 캐릭터를 열어 칸 몇 개를 채우고 나온다 → 버튼을 여러 번 누르지 않아도 저장된다 | `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt:227` — onPause가 CharacterDraftPrefs.save(ctx, characterId, collectDraft())를 부른다 — 저장 버튼 없이 남는 경로가 그 한 줄이다 |
+| `1-ㅊ` | `3-34-4` | 카드 오른쪽 위 **⚙**를 누른다 → 그 필드의 편집 창이 열린다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:653` — 카드 머리 행의 ⚙이 그 필드의 편집 다이얼로그를 여는 인텐트 한 줄이다 |
+| `2-ㄱ-1` | `3-27-1` | 필드 관리에서 칩이 **셋**(캐릭터/사건/작품)인지 본다 → 셋 다 있다 | `app/src/main/java/com/novelcharacter/app/ui/field/FieldManageFragment.kt:344` — chipCharacterFields·chipEventFields·chipNovelFields 셋을 when이 그대로 가른다 |
+| `5-ㅎ` | `3-10-3` | 그 창에서 **모든 유형의 체크를 해제**하고 저장 → 카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**) | `app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt:787` — enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다 |
+| `6-ㅍ` | `3-85-2` | **이미지 축**을 만든다 → 누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다 | `app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt:164` — axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄 |
+| `8-ㄹ-5` | `3-114-ㅂ·ㅅ` | 설정에서 **필드 설명 ⓘ**를 켠다 → 설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:113` — hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다 |
+| `9-ㅂ` | `3-26-2` | 작품을 고르기 **전에는** 그 버튼이 안 보이는지 본다 → 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:870` — btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다 |
+| `10-ㅊ2` | `3-51-4` | 그 카드를 누른다 → 그 자리로 데려간다 | `app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt:63` — 카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록) |
 
 
 ---
