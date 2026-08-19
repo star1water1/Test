@@ -16,14 +16,9 @@ class StandardYearSyncHelper(
     private val characterRepository: CharacterRepository,
     private val universeRepository: UniverseRepository
 ) {
-    companion object {
-        const val KEY_STD_YEAR_LINK = "__std_year_link"
-        const val LINK_AUTO = "auto"
-        const val LINK_NONE = "none"
-
-        const val RULE_AGE_ANCHOR = "age_anchor"
-        const val RULE_BIRTH_ANCHOR = "birth_anchor"
-    }
+    // 키·값과 '연동 중인가'의 판정은 [StandardYearLink]가 단일 소스다 (B-251 ⓓ).
+    // 여기 companion으로 두면 Room을 아는 이 클래스를 함께 짊어져야 해서
+    // 순수한 소비처(ConsistencyChecker)가 순수 하네스에 실리지 못한다.
 
     /**
      * Novel의 standardYear가 변경되었을 때 호출.
@@ -42,9 +37,9 @@ class StandardYearSyncHelper(
         // 연동 규칙 확인 (세계관 레벨 설정, age 필드의 config에 저장)
         val linkageRule = ageField?.let {
             try {
-                JSONObject(it.config).optString("linkageRule", RULE_AGE_ANCHOR)
-            } catch (_: Exception) { RULE_AGE_ANCHOR }
-        } ?: RULE_AGE_ANCHOR
+                JSONObject(it.config).optString("linkageRule", StandardYearLink.RULE_AGE_ANCHOR)
+            } catch (_: Exception) { StandardYearLink.RULE_AGE_ANCHOR }
+        } ?: StandardYearLink.RULE_AGE_ANCHOR
 
         for (character in characters) {
             if (!isLinked(character.id)) continue
@@ -58,7 +53,7 @@ class StandardYearSyncHelper(
             }
 
             when (linkageRule) {
-                RULE_AGE_ANCHOR -> {
+                StandardYearLink.RULE_AGE_ANCHOR -> {
                     // age 유지, birthYear 재계산
                     if (ageVal != null && birthYearField != null) {
                         val newBirthYear = newStdYear - ageVal
@@ -66,7 +61,7 @@ class StandardYearSyncHelper(
                         upsertStateChange(character.id, CharacterStateChange.KEY_BIRTH, newBirthYear, null, null)
                     }
                 }
-                RULE_BIRTH_ANCHOR -> {
+                StandardYearLink.RULE_BIRTH_ANCHOR -> {
                     // birthYear 유지, age 재계산
                     if (birthYearVal != null && ageField != null) {
                         val newAge = newStdYear - birthYearVal
@@ -79,21 +74,22 @@ class StandardYearSyncHelper(
 
     /**
      * 캐릭터가 standardYear 연동이 활성인지 확인.
-     * __std_year_link CharacterStateChange가 "none"이면 비활성, 그 외(없거나 "auto") 활성.
+     *
+     * 판정은 [StandardYearLink.isUnlinkedIn]이 내린다 — 같은 규칙을 [ConsistencyChecker]도
+     * 쓰는데, 종전처럼 양쪽이 따로 적으면 **한쪽만 고쳤을 때 어긋난 사실을 아무도 모른다.**
      */
     suspend fun isLinked(characterId: Long): Boolean {
         val changes = characterRepository.getChangesByCharacterList(characterId)
-        val linkChange = changes.find { it.fieldKey == KEY_STD_YEAR_LINK }
-        return linkChange?.newValue != LINK_NONE
+        return !StandardYearLink.isUnlinkedIn(changes)
     }
 
     /**
      * 캐릭터의 standardYear 연동 토글 설정.
      */
     suspend fun setLinked(characterId: Long, linked: Boolean) {
-        val value = if (linked) LINK_AUTO else LINK_NONE
+        val value = StandardYearLink.valueFor(linked)
         val changes = characterRepository.getChangesByCharacterList(characterId)
-        val existing = changes.find { it.fieldKey == KEY_STD_YEAR_LINK }
+        val existing = changes.find { it.fieldKey == StandardYearLink.KEY }
         if (existing != null) {
             characterRepository.updateStateChange(existing.copy(newValue = value))
         } else {
@@ -101,7 +97,7 @@ class StandardYearSyncHelper(
                 CharacterStateChange(
                     characterId = characterId,
                     year = 0,
-                    fieldKey = KEY_STD_YEAR_LINK,
+                    fieldKey = StandardYearLink.KEY,
                     newValue = value
                 )
             )

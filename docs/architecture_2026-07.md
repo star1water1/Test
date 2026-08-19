@@ -68,6 +68,16 @@ app/src/main/java/com/novelcharacter/app/
 바라본다. `util`은 아무도 바라보지 않는다 — 그래서 이 저장소에서 실행 검증이 가능한
 거의 유일한 계층이다(4장).
 
+> **그 '아무도'가 2026.08.19까지는 참이 아니었다** (B-251 ⓓ). `util/ConsistencyChecker`가
+> `ui.stats.StatsSnapshot`을 import 해 **`util` → `ui`, 이 방향의 유일한 역방향**이었다.
+> **대가는 문장이 아니라 검증이었다:** 프로브가 `ui`를 통째로 빼므로 그 파일은 **목록에
+> 있으면서도 타입 검사되지 않았고**(오류 51 — 전부 그 한 줄의 그림자), 순수 하네스도 실을 수
+> 없어 **시험이 0건**이었다. 스냅샷을 `util/StatsSnapshot.kt`로 옮기니 둘 다 닿는다
+> (프로브 615 → 564 · 시험 +19).
+> **남은 역방향은 `util/AlertDialogExt` 하나이고**(`ui.common.CappedScrollView`) 그쪽은
+> Android 뷰에 묶인 파일이라 성격이 다르다 — B-251 ⓑ가 *열지 않기로* 닫은 갈래다.
+> **세는 법:** `grep -rn '^import com.novelcharacter.app.ui' app/src/main/java/com/novelcharacter/app/util/`
+
 > ⚠️ **`util/` = 순수 계층이 아니다. 디렉터리가 아니라 파일 단위로 갈린다.**
 > 일부는 Android·Material에 의존한다(`AlertDialogExt`·`ProgressDialogs`·
 > `CharacterImageLoader`·`*Prefs`·`ThemeHelper` …). 이들은 JVM 하네스가 컴파일하지 않으므로
@@ -115,6 +125,7 @@ app/src/main/java/com/novelcharacter/app/
 | `CsvTokens` | **쉼표로 갈리는 값의 규칙 — 앱 전체의 단일 소스**(엑셀 목록 셀 R-47 + 인앱 필드값 + **식별자 셀**). 감싸기·되쪼개기·전각 정규화가 여기 하나이고, **읽기는 축이 둘이다** — *따옴표를 어디까지 인정하는가*(`quotedOnlyIfNeeded`)와 *전각을 고쳐 읽는가*(`normalizeFullWidth`). **둘이 한 인자에 묶여 있던 것이 B-261이다** | 같은 개념이 두 규칙이었다(B-178). **정의가 `util`에 있는 것이 요점** — `excel/`에 두면 `util`이 `excel`을 바라보게 되어 의존 방향이 뒤집힌다. `joinCsv`/`splitCsv`는 위임으로 남아 호출부는 무변경. **인정 조건이 갈린다**: 셀은 CSV 관용 그대로, 인앱 값은 *우리가 감쌌을 값*일 때만. **2026.08.16(B-207)에 마지막 예외가 들어왔다** — `Character.aliases`만 맨 `split(",")`이라 같은 이명이 대결 카드에서는 두 조각, 통계·AI 문맥에서는 세 조각이었다. 소비처가 넷이어도 **고칠 자리는 속성 하나**였고(넷이 전부 그 속성을 읽는다), 잠그는 것은 값이 아니라 **두 경로의 답이 같은가**다(`DuelSystemFieldsTest`) |
 | `MultiValueInput` | **다중값 입력칸의 채우기·되쪼개기 짝**(태그·이명·별칭·SELECT 선택지·대결 후보 필터 값). `format`/`parse` 둘뿐이고 규칙의 정의는 [`CsvTokens`]가 그대로 든다(이 둘은 위임) | **규칙이 이미 있었는데도 결함이 살아 있던 자리다**(B-186). `CsvTokens`가 규칙을 들고 `FieldValueTokenizer.splitMulti`가 *되쪼개는 쪽*을 열어 두었는데 **채우는 쪽에는 이름이 없었다** — 자리마다 `joinToString(", ")`이라, 한 칸의 두 반쪽이 **다른 파일에 갈라져 있었다**(태그: 채우기 `CharacterEditFragment` ↔ 되쪼개기 `CharacterSaveCoordinator`). 그래서 *사용자가 아무것도 고치지 않아도* 엑셀에서 들여온 `"주인공, 남자"` 태그 하나가 **열었다 저장하는 것만으로** 둘이 됐다. **이 객체가 드는 것은 규칙이 아니라 *짝*이고, 그것이 이 행이 표에 있는 이유다** — 이름 없는 반쪽은 자리마다 다시 적힌다. 모드는 좁은 쪽(`quotedOnlyIfNeeded`)이라 옛 값의 뜻이 바뀌지 않고, **바뀌는 것은 칸에 보이는 글자이지 저장된 값이 아니다**(R-63)
 | `BodyGenerationEditState` | **🎲 축·프리셋 편집 창이 회전을 넘겨 지키는 것**(B-260 · R-65) — 한 벌([`GenerationPreset`])과 **칸의 날 글자**를 함께 들고, `encode`/`decode`가 그 왕복을 든다. `aligned()`가 담긴 칸을 한 벌의 모양에 맞춘다 | **담는 벌을 순수로 내린 이유가 [`BodyEditorState`]와 같다** — 창 안에서 `Bundle`에 칸을 넣고 빼면 왕복을 증명할 수단이 없다(회전은 실기기에서만 보인다). 내리니 `data class` 동등성 하나로 **새 칸의 누락까지** 잡힌다. **값이 아니라 날 글자인 것이 이 표에 있는 이유다**: 지키려는 것은 *저장 가능한 한 벌*이 아니라 **적던 중인 것**이라, `"12."`를 값 타입으로 담으려면 눌러 담는 자리가 생기고 그러면 회전 한 번이 사용자가 적던 값을 조용히 바꾼다 |
+| `StandardYearLink` | **표준연도 연동의 키·값과 *"이 캐릭터가 연동 중인가"*의 판정**(B-251 ⓓ). `__std_year_link` 상태변화의 값이 `none`이면 해제, **없으면 연동**(끈 적이 없으면 켜져 있다 — 그 기본값이 `isUnlinked(null)` 한 자리에만 적혀 있다). 순수 오브젝트라 `ConsistencyCheckerTest`가 잰다 | 종전에는 상수 다섯이 `StandardYearSyncHelper`의 companion에 살았다 — 그 클래스는 Repository 둘을 받아 **Room 없이는 컴파일되지 않으므로**, 순수한 소비처(`ConsistencyChecker`)까지 그 불순함을 짊어져 **순수 하네스에 실리지 못했다**(선언과 배선을 가르는 `AppSettingsKeys`↔`AppSettingsBindings`의 전례를 이쪽만 안 따르고 있었다). 그리고 *"해제란 무엇인가"*가 **두 자리에 따로** 적혀 있었다 — `isLinked`는 `!= none`으로, `ConsistencyChecker`는 `== none`으로. 지금은 같은 뜻이지만 **한쪽만 고치면 정합성 검사기가 조용히 연동 해제 캐릭터를 모순으로 신고한다** |
 | `WorldPackageImages` | **월드패키지 이미지 엔트리의 이름과 복원 판정**(B-234 · R-64) — `entryName(엔티티접두사, i)`가 `images/{접두사}{i}.jpg`를 짓고, `isRestorable`이 **잘린 장을 결번으로 접는다**(내보내기가 `image_failures.json`에 적어 보낸 이름). `truncatedSet`이 그 목록을 읽는 자리다 | **이름을 짓는 규약이 둘이었다** — 내보내기는 접두사에 `images/`를 미리 붙여 들고 다녔고 가져오기는 부를 때마다 붙였다(같은 결과를 내지만 한쪽만 바뀌면 장이 통째로 안 잡힌다). 더 큰 것은 **잘린 장**이다: `copyTo`가 중간에 던지면 `closeEntry()`가 쓴 만큼으로 엔트리를 정상 종료해 **zip은 온전하고 내용만 잘린 장**이 되는데, 임포터는 결번이라야 유실로 세므로 **받는 기기가 그것을 멀쩡한 그림으로 복원**했다. 받는 쪽 바이트 검증을 안 고른 것은 성능이다 — 그 비용은 *정상 경로의 장마다* 붙는다. 소비처 둘이 `Context`·Room·`ZipFile`에 묶여 순수 하네스도 프로브도 못 보므로 **부르는가는 `tools/check_world_package_images.sh`가 본다** |
 | `SheetResolver` | **예약 시트 해석의 단일 판정**(B-217 · R-33 / R-7) — 시트가 어느 spec의 것인가(정확명·접미사 밀림 복구·캐릭터 시트 지문 배제·정확명 폴백). 미리보기(`analyze*`)·가져오기(`findSheet`)·삭제 가드(`canRestore`)가 같은 함수를 본다. [ImportWorkbook] 추상 위의 순수 오브젝트라 `SheetResolverTest`가 DOM·스트리밍 양 경로에서 잰다 | 판정이 DB에 묶인 서비스 안 private일 때 미리보기 열아홉 자리가 정확명 `getSheet`로 우회했다 — 예약명을 빼앗긴 레거시 백업에서 가져오기는 밀린 시트를 되찾아 읽는데 미리보기는 "시트 없음"이라 말하고, 이름을 차지한 캐릭터 시트를 데이터 시트로 읽어 엉뚱한 건수를 예고했다. OVERWRITE 잔여 정리(prune 둘)도 정확명만 봐서 매칭까지 해 놓고 "시트 없음"으로 정리를 건너뛰었다. 우회 재발은 `check_restore_preview_parity.sh` ④가 막는다 |
 | `FactionIndex` | **세력 참조 해석의 단일 판정**(B-87 이래 · 4-3 규약) — 코드 우선 → 이름 폴백, 동명은 **세계관으로만** 좁히고 그래도 여럿이면 모호 선언(`FactionLookupResult`). 세력 열이 있는 시트 전부(관계·소속·관계 시트의 미리보기·가져오기)가 이 하나를 본다. **아래 둘(작품·캐릭터)이 이것과 동형이고, 이것이 먼저 선 원본이다**. 순수 오브젝트라 `FactionRefResolverTest`가 잰다 | 이름만으로 first-match 하면 **다른 세계관의 동명 세력**에 무경고로 연결되고, 그 소속으로 자동 관계까지 생성돼 오염이 번졌다 |

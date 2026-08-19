@@ -8,7 +8,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.ui.stats.SUBGROUP_DISTRIBUTION_LIMIT
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.NumericBinning

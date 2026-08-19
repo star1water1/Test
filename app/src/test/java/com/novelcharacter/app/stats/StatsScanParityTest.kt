@@ -15,7 +15,7 @@ import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternThresholds
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.ui.stats.TypeMismatchedValue
 import com.novelcharacter.app.util.CompletionRate
 import com.novelcharacter.app.util.CompletionWeights

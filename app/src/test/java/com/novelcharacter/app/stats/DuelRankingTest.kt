@@ -8,7 +8,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.RankingSource
 import com.novelcharacter.app.ui.stats.StatsDataProvider
-import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.DuelCounterRelations
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.DuelScoreIndex
