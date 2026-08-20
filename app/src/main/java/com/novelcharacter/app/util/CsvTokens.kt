@@ -115,22 +115,47 @@ object CsvTokens {
     }
 
     /**
+     * 불리언 셀이 켬으로 읽는 글자들 — **순서가 곧 안내 문구다**('입력 가능한 값' 칸과
+     * 거절 사유가 이 목록을 그대로 잇는다. R-14 — 손으로 다시 적으면 어휘가 늘 때 문구만 낡는다).
+     *
+     * `켬`·`켜짐`·`ON`이 있는 이유: 시트의 기본값 표기 자체가 "켬"/"끔"이다
+     * (`AppSettingsKeys.Domain.YesNo.defaultText`). **앱이 쓰는 낱말을 사용자가 셀에 적었는데
+     * 정반대(끔)로 읽히는 것**이 종전 동작이었다.
+     */
+    val BOOLEAN_TRUE_TOKENS: List<String> =
+        listOf("Y", "YES", "TRUE", "T", "1", "O", "예", "참", "켬", "켜짐", "ON")
+
+    /** 불리언 셀이 끔으로 읽는 글자들. 빈 칸도 끔이지만 목록이 아니라 판정이 든다(아래 KDoc). */
+    val BOOLEAN_FALSE_TOKENS: List<String> =
+        listOf("N", "NO", "FALSE", "F", "0", "X", "아니오", "아니요", "거짓", "끔", "꺼짐", "OFF")
+
+    /**
      * 엑셀 불리언 셀의 해석 — **단일 소스** (B-263 ⓑ에서 여기로 내렸다).
      *
-     * Y/N·TRUE/FALSE·1/0·yes/no·T/F·예/참을 수용하고 전각 입력(Ｙ／１ 등)을 정규화한다.
-     * **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+     * [BOOLEAN_TRUE_TOKENS]·[BOOLEAN_FALSE_TOKENS]를 수용하고 전각 입력(Ｙ／１ 등)을
+     * 정규화한다. **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+     * **그 밖의 글자는 null이다** — 오타를 조용히 '끔'으로 접으면 사용자가 적은 것과
+     * 정반대 값이 들어갔는데 아무 말이 없다. 켬·끔을 갈라 말할 수 없는 값의 처분은
+     * 부르는 쪽이 정한다(앱 설정 가져오기는 거절-유지, 그 밖의 관대한 자리는 [parseBoolean]).
      *
      * **왜 `excel/SheetSpec.kt`가 아니라 여기인가:** 그 파일은 POI를 import 해서 순수 JVM
      * 시험이 닿지 못한다. 복원 미리보기가 *파일 값과 현재 값이 같은가*를 판정하려면 이 해석이
      * 필요한데(`AppSettingsDiff`), 판정을 순수로 두는 것이 이 저장소가 R-33에서 세운 규칙이다.
-     * `SheetSpec.parseSheetBoolean`은 이 함수로 위임한다 — 바로 위 [toHalfWidth]와 같은 꼴이고,
-     * **두 벌로 적으면 가져오기와 미리보기가 다른 값을 참이라 부르는 날이 온다.**
+     * `SheetSpec.parseSheetBoolean`은 [parseBoolean]으로 위임한다 — 바로 위 [toHalfWidth]와
+     * 같은 꼴이고, **두 벌로 적으면 가져오기와 미리보기가 다른 값을 참이라 부르는 날이 온다.**
      */
-    fun parseBoolean(value: String): Boolean =
-        when (toHalfWidth(value.trim()).uppercase()) {
-            "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
-            else -> false
+    fun parseBooleanOrNull(value: String): Boolean? {
+        val normalized = toHalfWidth(value.trim()).uppercase()
+        return when {
+            normalized.isEmpty() -> false
+            BOOLEAN_TRUE_TOKENS.any { it == normalized } -> true
+            BOOLEAN_FALSE_TOKENS.any { it == normalized } -> false
+            else -> null
         }
+    }
+
+    /** [parseBooleanOrNull]의 관대판 — 켬으로 읽히는 글자만 켬, 나머지는 전부 끔. */
+    fun parseBoolean(value: String): Boolean = parseBooleanOrNull(value) == true
 
     /**
      * 표준 CSV 규칙으로 판다. 규칙에 어긋나면 **null** — 호출측이 옛 규칙으로 되돌린다.

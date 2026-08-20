@@ -164,9 +164,61 @@ if [ -n "$lenient" ]; then
   fail=1
 fi
 
+# ── ⑤ 불리언 설정은 켬·끔으로 안 읽히는 값을 **거절**하는가 (축 ④와 같은 부류) ──
+#
+# 미리보기가 `parseBooleanOrNull == null`인 행을 '건너뜀'으로 예고한다 — 가져오기(boolBinding)가
+# 거절하기 때문이다. 헬퍼를 안 지나는 새 불리언 바인딩 하나가 관대 해석으로 돌아가면
+# 오타가 무음으로 '끔'이 되고 예고도 틀린다(종전 결함의 재발). 판정 방식은 축 ④와 같다:
+# 거절은 boolBinding 본문 한 자리가 들고, supplementFlag는 boolBinding으로 위임한다.
+bool_specs=$(grep -oE 'val [A-Z_]+ = Spec\("[^"]+", Kind\.BOOLEAN' "$KEYS_FILE" | sed -E 's/val ([A-Z_]+).*/\1/' | sort -u)
+if [ -z "$bool_specs" ]; then
+  echo "  ✗ Kind.BOOLEAN 선언을 하나도 못 떴습니다 — 선언 꼴이 바뀌었는지 보세요(축 ⑤가 눈멉니다)"
+  fail=1
+fi
+bool_helper=$(awk '
+  on && /^    (private |val |fun |\/\*\*)/ { exit }
+  index($0, "private fun boolBinding(") { on=1 }
+  on { print }
+' "$BINDINGS_FILE")
+if [ -z "$bool_helper" ] || ! echo "$bool_helper" | grep -q 'Applied\.No'; then
+  echo "  ✗ boolBinding 헬퍼가 없거나 켬·끔으로 안 읽히는 값을 거절하지 않습니다"
+  fail=1
+fi
+# supplementFlag가 boolBinding으로 위임하는가 — 위임이 끊기면 아홉 행이 조용히 관대해진다.
+supplement_body=$(awk '
+  on && /^    (private |val |fun |\/\*\*)/ { exit }
+  index($0, "private fun supplementFlag(") { on=1 }
+  on { print }
+' "$BINDINGS_FILE")
+if [ -z "$supplement_body" ] || ! echo "$supplement_body" | grep -q 'boolBinding('; then
+  echo "  ✗ supplementFlag가 boolBinding을 지나지 않습니다 — 보충 기준 아홉 행이 관대 해석으로 돌아갑니다"
+  fail=1
+fi
+bool_lenient=""
+for spec in $bool_specs; do
+  block=$(awk -v pat="Binding(AppSettingsKeys.$spec," -v pat2="supplementFlag(AppSettingsKeys.$spec," '
+    on && (index($0, "Binding(AppSettingsKeys.") || index($0, "supplementFlag(AppSettingsKeys.")) { exit }
+    index($0, pat) || index($0, pat2) { on=1 }
+    on { print }
+  ' "$BINDINGS_FILE")
+  if [ -z "$block" ]; then
+    echo "  ✗ $spec: Binding 블록을 뜨지 못했습니다 — 축 ⑤가 이 설정을 못 봅니다"
+    fail=1
+    continue
+  fi
+  if echo "$block" | grep -qE "(boolBinding|supplementFlag)\(AppSettingsKeys\.$spec,"; then continue; fi
+  echo "$block" | grep -q 'Applied\.No' || bool_lenient="$bool_lenient $spec"
+done
+if [ -n "$bool_lenient" ]; then
+  echo "  ✗ 켬·끔으로 안 읽히는 값을 거절하지 않는 불리언 설정:$bool_lenient"
+  echo "      → boolBinding을 지나게 하거나, 미리보기의 판정을 함께 고치세요."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 선언 $(echo "$declared" | wc -l)개가 전부 바인딩을 갖고, 설정 저장소 $(echo "$stores" | wc -w)곳이 전부 등재돼 있음"
   echo "  ✓ 숫자 설정 $(echo "$num_specs" | wc -w)개가 전부 수 아닌 값을 거절함 (미리보기 '건너뜀' 예고의 근거)"
+  echo "  ✓ 불리언 설정 $(echo "$bool_specs" | wc -w)개가 전부 켬·끔 아닌 값을 거절함 (같은 근거)"
   echo "'앱 설정' 카탈로그 검사 통과"
 fi
 exit $fail

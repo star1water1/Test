@@ -34,14 +34,27 @@ class AppSettingsDiffTest {
      */
     @Test
     fun `불리언은 표기가 달라도 뜻으로 견준다`() {
-        for (same in listOf("Y", "y", "YES", "TRUE", "T", "1", "O", "예", "참", " Y ", "Ｙ")) {
+        for (same in listOf("Y", "y", "YES", "TRUE", "T", "1", "O", "예", "참", "켬", " Y ", "Ｙ")) {
             assertEquals("파일값 '$same'", AppSettingsDiff.Effect.UNCHANGED, effect(boolSpec, same, "Y"))
         }
-        for (same in listOf("N", "no", "FALSE", "0", "", "아무말")) {
+        for (same in listOf("N", "no", "FALSE", "0", "", "끔", "아니오")) {
             assertEquals("파일값 '$same'", AppSettingsDiff.Effect.UNCHANGED, effect(boolSpec, same, "N"))
         }
         assertEquals(AppSettingsDiff.Effect.UPDATE, effect(boolSpec, "Y", "N"))
         assertEquals(AppSettingsDiff.Effect.UPDATE, effect(boolSpec, "N", "Y"))
+    }
+
+    /**
+     * **켬·끔으로 안 읽히는 값은 '건너뜀'이다** — 가져오기(boolBinding)가 거절하고 지금
+     * 값을 지키기 때문이다(B-102 ⓑ와 같은 근거: 실행되지 않을 행을 실행된다고 예고하면
+     * 미리보기가 거짓말이 된다). 종전에는 전부 끔으로 접어 "아무말"이 '동일'로 예고되고
+     * 실제로도 끔이 저장됐다 — 오타가 무음으로 정반대 값이 되는 자리였다.
+     */
+    @Test
+    fun `켬끔으로 안 읽히는 불리언은 건너뜀으로 예고한다`() {
+        for (unknown in listOf("아무말", "YE", "켜", "on off")) {
+            assertEquals("파일값 '$unknown'", AppSettingsDiff.Effect.SKIPPED, effect(boolSpec, unknown, "N"))
+        }
     }
 
     /**

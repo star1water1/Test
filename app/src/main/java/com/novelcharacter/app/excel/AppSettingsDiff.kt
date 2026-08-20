@@ -68,6 +68,12 @@ object AppSettingsDiff {
         if (spec.kind == AppSettingsKeys.Kind.NUMBER && fileValue.trim().toDoubleOrNull() == null) {
             return Effect.SKIPPED
         }
+        // **켬·끔으로 안 읽히는 불리언도 같은 처분이다** — 가져오기(boolBinding)가 거절하고
+        // 지금 값을 지킨다(종전에는 전부 끔으로 접어 오타가 무음으로 정반대 값이 됐다).
+        // 판정은 가져오기와 같은 함수이므로 두 답이 갈릴 수 없다(R-33).
+        if (spec.kind == AppSettingsKeys.Kind.BOOLEAN && CsvTokens.parseBooleanOrNull(fileValue) == null) {
+            return Effect.SKIPPED
+        }
         // **거절될 양식 행은 '갱신'이 아니라 '건너뜀'이다** — 숫자 설정과 같은 근거다
         // (B-102 ⓑ: 실행되지 않을 행을 실행된다고 예고하면 미리보기가 거짓말이 된다).
         // 판정은 가져오기가 쓰는 그 검증기이므로 두 답이 갈릴 수 없다.

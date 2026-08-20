@@ -23,6 +23,7 @@ import com.novelcharacter.app.ui.supplement.RandomSupplementSettings
 import com.novelcharacter.app.ui.supplement.SupplementCriteria
 import com.novelcharacter.app.util.BirthdayCelebrationPrefs
 import com.novelcharacter.app.util.CompletionWeights
+import com.novelcharacter.app.util.CsvTokens
 import com.novelcharacter.app.util.FieldNoteDisplayPrefs
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.ThemeHelper
@@ -98,26 +99,20 @@ object AppSettingsBindings {
             read = { ThemeHelper.getSavedTheme(it) },
             write = { ctx, d -> ThemeHelper.saveTheme(ctx, d.toInt().coerceIn(0, 2)) },
             rejectHint = " (0=시스템, 1=라이트, 2=다크)"),
-        // 읽기 화면의 필드 설명 ⓘ (B-44) — 불리언 셀은 Y/예/1/TRUE를 관대하게 받는다.
-        Binding(AppSettingsKeys.READ_FIELD_NOTE_ENABLED,
-            read = { bool(FieldNoteDisplayPrefs.isReadScreenNoteEnabled(it)) },
-            write = { ctx, v ->
-                FieldNoteDisplayPrefs.setReadScreenNoteEnabled(ctx, parseSheetBoolean(v))
-                Applied.Yes
-            }),
+        // 읽기 화면의 필드 설명 ⓘ (B-44) — 불리언 셀의 허용 어휘는 boolBinding이 든다.
+        boolBinding(AppSettingsKeys.READ_FIELD_NOTE_ENABLED,
+            read = { FieldNoteDisplayPrefs.isReadScreenNoteEnabled(it) },
+            write = { ctx, b -> FieldNoteDisplayPrefs.setReadScreenNoteEnabled(ctx, b) }),
         // 생일 축하 창 (사용자 요청 2026.08.20) — 같은 저장소의 '마지막으로 띄운 날'은
         // 여기 없다. 기기에서 일어난 일이라 싣지 않는다(선언 쪽 EXCLUDED_STORES에 사유).
-        Binding(AppSettingsKeys.BIRTHDAY_CELEBRATION_ENABLED,
-            read = { bool(BirthdayCelebrationPrefs.isEnabled(it)) },
-            write = { ctx, v ->
-                BirthdayCelebrationPrefs.setEnabled(ctx, parseSheetBoolean(v))
-                Applied.Yes
-            }),
+        boolBinding(AppSettingsKeys.BIRTHDAY_CELEBRATION_ENABLED,
+            read = { BirthdayCelebrationPrefs.isEnabled(it) },
+            write = { ctx, b -> BirthdayCelebrationPrefs.setEnabled(ctx, b) }),
 
         // ── 백업 ──
-        Binding(AppSettingsKeys.BACKUP_INCLUDE_IMAGES,
-            read = { bool(BackupSettingsStore(it).getSettings().includeImages) },
-            write = { ctx, v -> BackupSettingsStore(ctx).setIncludeImages(parseSheetBoolean(v)); Applied.Yes }),
+        boolBinding(AppSettingsKeys.BACKUP_INCLUDE_IMAGES,
+            read = { BackupSettingsStore(it).getSettings().includeImages },
+            write = { ctx, b -> BackupSettingsStore(ctx).setIncludeImages(b) }),
         numberBinding(AppSettingsKeys.BACKUP_MAX_BACKUPS,
             read = { BackupSettingsStore(it).getSettings().maxBackups },
             write = { ctx, d -> BackupSettingsStore(ctx).setMaxBackups(d.toInt()) }),
@@ -147,21 +142,21 @@ object AppSettingsBindings {
             }),
 
         // ── 이미지 저장 ──
-        Binding(AppSettingsKeys.IMAGE_COMPRESS_ENABLED,
-            read = { bool(ImageSettingsStore(it).getSettings().enabled) },
-            write = { ctx, v -> ImageSettingsStore(ctx).setEnabled(parseSheetBoolean(v)); Applied.Yes }),
+        boolBinding(AppSettingsKeys.IMAGE_COMPRESS_ENABLED,
+            read = { ImageSettingsStore(it).getSettings().enabled },
+            write = { ctx, b -> ImageSettingsStore(ctx).setEnabled(b) }),
         numberBinding(AppSettingsKeys.IMAGE_QUALITY_PERCENT,
             read = { ImageSettingsStore(it).getSettings().qualityPercent },
             write = { ctx, d -> ImageSettingsStore(ctx).setQualityPercent(d.toInt()) }),
-        Binding(AppSettingsKeys.IMAGE_CAP_DIMENSION,
-            read = { bool(ImageSettingsStore(it).getSettings().capDimension) },
-            write = { ctx, v -> ImageSettingsStore(ctx).setCapDimension(parseSheetBoolean(v)); Applied.Yes }),
+        boolBinding(AppSettingsKeys.IMAGE_CAP_DIMENSION,
+            read = { ImageSettingsStore(it).getSettings().capDimension },
+            write = { ctx, b -> ImageSettingsStore(ctx).setCapDimension(b) }),
         numberBinding(AppSettingsKeys.IMAGE_MAX_LONG_EDGE_PX,
             read = { ImageSettingsStore(it).getSettings().maxLongEdgePx },
             write = { ctx, d -> ImageSettingsStore(ctx).setMaxLongEdgePx(d.toInt()) }),
-        Binding(AppSettingsKeys.IMAGE_SKIP_BELOW_ENABLED,
-            read = { bool(ImageSettingsStore(it).getSettings().skipBelowEnabled) },
-            write = { ctx, v -> ImageSettingsStore(ctx).setSkipBelowEnabled(parseSheetBoolean(v)); Applied.Yes }),
+        boolBinding(AppSettingsKeys.IMAGE_SKIP_BELOW_ENABLED,
+            read = { ImageSettingsStore(it).getSettings().skipBelowEnabled },
+            write = { ctx, b -> ImageSettingsStore(ctx).setSkipBelowEnabled(b) }),
         numberBinding(AppSettingsKeys.IMAGE_SKIP_BELOW_BYTES,
             read = { ImageSettingsStore(it).getSettings().skipBelowBytes },
             write = { ctx, d -> ImageSettingsStore(ctx).setSkipBelowBytes(d.toLong()) }),
@@ -176,9 +171,9 @@ object AppSettingsBindings {
                     Applied.No("허용: ${ImageSettingsStore.EditorRemovePolicy.entries.joinToString { it.name }}")
                 }
             }),
-        Binding(AppSettingsKeys.IMAGE_AUTO_LINK_BY_CHARACTER,
-            read = { bool(ImageSettingsStore(it).getAutoLinkByCharacter()) },
-            write = { ctx, v -> ImageSettingsStore(ctx).setAutoLinkByCharacter(parseSheetBoolean(v)); Applied.Yes }),
+        boolBinding(AppSettingsKeys.IMAGE_AUTO_LINK_BY_CHARACTER,
+            read = { ImageSettingsStore(it).getAutoLinkByCharacter() },
+            write = { ctx, b -> ImageSettingsStore(ctx).setAutoLinkByCharacter(b) }),
 
         // ── AI 연동 ──
         // 프로바이더 목록은 코덱이 낸 JSON 그대로 싣는다. 앱이 쓰는 형식을 그대로 두는 것이
@@ -243,9 +238,9 @@ object AppSettingsBindings {
         numberBinding(AppSettingsKeys.AI_ATTACH_IMAGE_COUNT,
             read = { AiPromptSettings(it).attachImageCount },
             write = { ctx, d -> AiPromptSettings(ctx).attachImageCount = d.toInt() }),
-        Binding(AppSettingsKeys.AI_ATTACH_REPRESENTATIVE_FIRST,
-            read = { bool(AiPromptSettings(it).attachRepresentativeFirst) },
-            write = { ctx, v -> AiPromptSettings(ctx).attachRepresentativeFirst = parseSheetBoolean(v); Applied.Yes }),
+        boolBinding(AppSettingsKeys.AI_ATTACH_REPRESENTATIVE_FIRST,
+            read = { AiPromptSettings(it).attachRepresentativeFirst },
+            write = { ctx, b -> AiPromptSettings(ctx).attachRepresentativeFirst = b }),
         Binding(AppSettingsKeys.AI_IMAGE_TAG_POLICY,
             read = { AiPromptSettings(it).imageTagPolicy },
             write = { ctx, v ->
@@ -265,9 +260,9 @@ object AppSettingsBindings {
         numberBinding(AppSettingsKeys.AI_IMAGE_TAG_BATCH_SIZE,
             read = { AiPromptSettings(it).imageTagBatchSize },
             write = { ctx, d -> AiPromptSettings(ctx).imageTagBatchSize = d.toInt() }),
-        Binding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_UNIT,
-            read = { bool(AiPromptSettings(it).imageTagGroupUnit) },
-            write = { ctx, v -> AiPromptSettings(ctx).imageTagGroupUnit = parseSheetBoolean(v); Applied.Yes }),
+        boolBinding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_UNIT,
+            read = { AiPromptSettings(it).imageTagGroupUnit },
+            write = { ctx, b -> AiPromptSettings(ctx).imageTagGroupUnit = b }),
         numberBinding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_SAMPLE_SIZE,
             read = { AiPromptSettings(it).imageTagGroupSampleSize },
             write = { ctx, d -> AiPromptSettings(ctx).imageTagGroupSampleSize = d.toInt() }),
@@ -393,12 +388,9 @@ object AppSettingsBindings {
                     SupplementCriteria.load(ctx).copy(fieldCompletionThreshold = d.toInt().coerceIn(0, 100))
                 )
             }),
-        Binding(AppSettingsKeys.SUPPLEMENT_AUTO_SAVE_ON_EXIT,
-            read = { bool(RandomSupplementSettings.load(it).autoSaveOnExit) },
-            write = { ctx, v ->
-                RandomSupplementSettings.save(ctx, RandomSupplementSettings(autoSaveOnExit = parseSheetBoolean(v)))
-                Applied.Yes
-            }),
+        boolBinding(AppSettingsKeys.SUPPLEMENT_AUTO_SAVE_ON_EXIT,
+            read = { RandomSupplementSettings.load(it).autoSaveOnExit },
+            write = { ctx, b -> RandomSupplementSettings.save(ctx, RandomSupplementSettings(autoSaveOnExit = b)) }),
 
         // ── 어시스턴트 ──
         // **전량 미지값은 적용하지 않는다**(B-226 — 위 `stats_pattern_types`와 같은 근거).
@@ -464,6 +456,39 @@ object AppSettingsBindings {
         })
 
     /**
+     * 불리언 설정 열아홉도 모양이 같다 — **한 벌로 짓는다**([numberBinding]과 같은 근거).
+     *
+     * 켬·끔으로 읽히지 않는 글자는 [Applied.No]로 거절한다. 종전에는 전부 끔으로 접어서
+     * **오타가 무음으로 '끔'이 되고 '복원'으로 계수됐다** — 시트가 기본값 표기로 쓰는 낱말
+     * "켬"을 적어도 끔이 됐고, 안내의 *"뜻을 알 수 없는 값은 그 행만 건너뛰고 사유를 알려
+     * 드립니다"*가 이 열아홉 행에서 거짓이었다. 빈 칸은 그대로 끔이다(기본 켬 설정을 끄는
+     * 정당한 편집 — '입력 가능한 값'이 그렇게 적는다). 해석은 복원 미리보기와 같은 함수다
+     * ([CsvTokens.parseBooleanOrNull] — R-33).
+     *
+     * 엔티티 시트의 불리언 열은 대상이 아니다 — 그쪽은 한 칸의 거절이 행 전체(같은 행의
+     * 다른 편집까지)를 떨어뜨리므로 관대한 해석([parseSheetBoolean])이 처분이다.
+     */
+    private fun boolBinding(
+        spec: AppSettingsKeys.Spec,
+        read: suspend (Context) -> Boolean,
+        write: suspend (Context, Boolean) -> Unit
+    ) = Binding(spec,
+        read = { bool(read(it)) },
+        write = { ctx, v ->
+            val parsed = CsvTokens.parseBooleanOrNull(v)
+            if (parsed == null) {
+                Applied.No(
+                    "켬·끔으로 읽을 수 없습니다 — 허용: " +
+                        CsvTokens.BOOLEAN_TRUE_TOKENS.joinToString("·") + "(켬) / " +
+                        CsvTokens.BOOLEAN_FALSE_TOKENS.joinToString("·") + "(끔) / 빈 칸(끔)"
+                )
+            } else {
+                write(ctx, parsed)
+                Applied.Yes
+            }
+        })
+
+    /**
      * 보충 기준의 불리언 아홉은 모양이 같다 — **한 벌로 짓는다.**
      * 손으로 아홉 번 적으면 그중 하나가 다른 칸을 읽거나 쓰는 오타가 **컴파일도 시험도
      * 통과한 채** 남는다(복사·붙여넣기의 고전적 실패이고, 증상은 *"그 항목만 안 켜진다"*다).
@@ -472,12 +497,9 @@ object AppSettingsBindings {
         spec: AppSettingsKeys.Spec,
         get: (SupplementCriteria) -> Boolean,
         set: (SupplementCriteria, Boolean) -> SupplementCriteria
-    ) = Binding(spec,
-        read = { bool(get(SupplementCriteria.load(it))) },
-        write = { ctx, v ->
-            SupplementCriteria.save(ctx, set(SupplementCriteria.load(ctx), parseSheetBoolean(v)))
-            Applied.Yes
-        })
+    ) = boolBinding(spec,
+        read = { get(SupplementCriteria.load(it)) },
+        write = { ctx, b -> SupplementCriteria.save(ctx, set(SupplementCriteria.load(ctx), b)) })
 
     /**
      * AI 메시지 양식 열넷 (사용자 요청 2026.08.20) — **한 벌로 짓는다.**

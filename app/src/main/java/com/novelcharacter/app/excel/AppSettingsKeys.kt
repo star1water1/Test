@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.ai.AiPromptPolicy
+import com.novelcharacter.app.util.CsvTokens
 
 /**
  * '앱 설정' 시트가 **무엇을 싣는가**의 단일 소스 — 키·형식·처분의 순수 선언 (B-105).
@@ -161,9 +162,13 @@ object AppSettingsKeys {
         /**
          * 켬·끔.
          *
-         * **빈 칸이 곧 끄기다** — 읽기가 관대해서 아는 글자만 켬으로 읽고 나머지는 전부 끔이다.
-         * 기본이 켬인 설정에서 이 사실을 말하지 않으면, 값을 지운 사람은 자기가 그 기능을 껐다는
-         * 것을 모른다.
+         * **빈 칸이 곧 끄기다** — 기본이 켬인 설정에서 이 사실을 말하지 않으면, 값을 지운
+         * 사람은 자기가 그 기능을 껐다는 것을 모른다. 켬·끔으로 읽히지 않는 글자는 그 행을
+         * 건너뛰고 사유를 알린다 — 종전에는 전부 끔으로 접어서, **앱이 기본값 표기로 쓰는
+         * 낱말 "켬"을 적어도 끔이 됐다**(오타·모르는 글자가 무음으로 정반대 값이 되는 자리).
+         *
+         * 어휘 목록은 해석기와 같은 상수다([CsvTokens] — R-14. 손으로 적으면 어휘가 늘 때
+         * 이 문구만 낡는다).
          */
         data class YesNo(
             val defaultOn: Boolean,
@@ -171,8 +176,10 @@ object AppSettingsKeys {
         ) : Domain {
             override val defaultText: String get() = if (defaultOn) "켬" else "끔"
             override fun shape(): String =
-                "Y 또는 N. Y·YES·TRUE·T·1·O·예·참을 켬으로 읽고(대소문자·전각 무관) " +
-                    "그 밖의 글자는 전부 끔입니다. 빈 칸도 끔입니다."
+                CsvTokens.BOOLEAN_TRUE_TOKENS.joinToString("·") + "을 켬으로, " +
+                    CsvTokens.BOOLEAN_FALSE_TOKENS.joinToString("·") + "을 끔으로 읽습니다" +
+                    "(대소문자·전각 무관). 빈 칸도 끔입니다. " +
+                    "그 밖의 글자는 그 행을 건너뛰고 사유를 알려 드립니다."
         }
 
         /** 자유로 쓰는 글. */
