@@ -483,6 +483,9 @@ object AppSettingsBindings {
             is PromptTemplateValidator.Problem.PaddedTokens ->
                 "자리 이름 앞뒤의 공백까지 이름으로 읽습니다: " + problem.samples.joinToString(", ") +
                     " (공백을 지워 주세요)"
+            is PromptTemplateValidator.Problem.MalformedTokens ->
+                "자리 이름으로 읽을 수 없습니다: " + problem.samples.joinToString(", ") +
+                    " (이름은 공백 없는 한글·영문·숫자입니다)"
             is PromptTemplateValidator.Problem.TooLong ->
                 "${problem.limit}자를 넘습니다 (지금 ${problem.chars}자) — 줄여서 다시 가져와 주세요"
         }

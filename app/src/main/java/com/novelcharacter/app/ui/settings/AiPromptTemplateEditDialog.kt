@@ -171,6 +171,11 @@ class AiPromptTemplateEditDialog : DialogFragment() {
                 R.string.ai_prompt_template_error_padded,
                 problem.samples.joinToString(", ")
             )
+        is PromptTemplateValidator.Problem.MalformedTokens ->
+            getString(
+                R.string.ai_prompt_template_error_malformed,
+                problem.samples.joinToString(", ")
+            )
         is PromptTemplateValidator.Problem.TooLong ->
             getString(R.string.ai_prompt_template_error_too_long, problem.limit, problem.chars)
     }

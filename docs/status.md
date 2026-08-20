@@ -272,7 +272,7 @@ for f in tools/check_*.sh; do "$f" || echo "FAIL $f"; done
 for p in tools/verify_room_migration*.py tools/verify_reset_coverage.py; do python3 "$p"; done
 ```
 
-**현행 값(2026.08.20):** 시험 **3505** · 프로브 **571** · 커스텀 뷰 프로브 **0** · 검사 **51종**
+**현행 값(2026.08.20):** 시험 **3509** · 프로브 **571** · 커스텀 뷰 프로브 **0** · 검사 **51종**
 
 - ℹ️ **프로브 571은 기존 상태이고, 범위가 늘어난 값이다.** 2026.08.20에 `ai/`를 프로브 범위에
   들였다(그 판이 `excel/` → `ai/` 간선을 만들어 `AppSettingsKeys` 하나에서만 그림자 61건이

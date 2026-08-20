@@ -5,7 +5,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.setFragmentResultListener
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -51,13 +50,21 @@ class AiPromptTemplateFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().navigateUp() }
 
         adapter = TemplateAdapter { id ->
-            AiPromptTemplateEditDialog.newInstance(id).show(parentFragmentManager, id.key)
+            AiPromptTemplateEditDialog.newInstance(id).show(childFragmentManager, id.key)
         }
         binding.templateList.layoutManager = LinearLayoutManager(requireContext())
         binding.templateList.adapter = adapter
 
         // 저장을 **결과로** 받는다 — 회전 뒤에는 창에 꽂아 둔 콜백이 null이다(R-65).
-        setFragmentResultListener(AiPromptTemplateEditDialog.RESULT_KEY) { _, _ -> refresh() }
+        //
+        // **`childFragmentManager` + `viewLifecycleOwner`다**(`FieldManageFragment`와 같은 꼴).
+        // Fragment 확장판 `setFragmentResultListener`는 *부모* 매니저에 프래그먼트 수명으로
+        // 다는데, 이 프래그먼트는 뷰가 죽어도 살아 있을 수 있어 그 사이 결과가 오면
+        // `refresh()`가 `binding get() = _binding!!`에서 터진다. 창을 여는 매니저도 함께
+        // 옮긴다 — 결과를 받는 매니저와 창이 결과를 넣는 매니저가 같아야 한다.
+        childFragmentManager.setFragmentResultListener(
+            AiPromptTemplateEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, _ -> refresh() }
         refresh()
     }
 

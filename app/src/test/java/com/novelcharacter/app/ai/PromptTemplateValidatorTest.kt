@@ -51,6 +51,40 @@ class PromptTemplateValidatorTest {
         assertTrue(problems.any { it is PromptTemplateValidator.Problem.PaddedTokens })
     }
 
+    @Test fun malformedToken_isReportedSeparately() {
+        // `{{캐릭터 명}}`은 이름으로 **읽히지조차 않아** UnknownTokens에도 안 걸린다 —
+        // 짚지 않으면 글자 그대로 실려 나가고 사용자는 그 자리가 왜 비었는지 알 수 없다.
+        val p = problemOf<PromptTemplateValidator.Problem.MalformedTokens>(
+            sysId, "{{응답형식}}\n{{캐릭터 명}}\n{{}}\n{{a-b}}"
+        )
+        assertEquals(listOf("{{캐릭터 명}}", "{{}}", "{{a-b}}"), p?.samples)
+    }
+
+    @Test fun paddedToken_isNotAlsoCalledMalformed() {
+        // 한 자리를 두 번 나무라지 않는다 — 앞뒤 공백은 PaddedTokens가 이미 짚는다.
+        val problems = PromptTemplateValidator.validate(sysId, "{{응답형식}}\n{{ 응답형식 }}")
+        assertTrue(problems.none { it is PromptTemplateValidator.Problem.MalformedTokens })
+    }
+
+    @Test fun jsonBraceExample_isNotMalformed() {
+        // 응답 형식 보기가 본문에 그대로 들어 있다 — 홑중괄호를 자리표로 읽지 않는 이유가 이것이다.
+        val problems = PromptTemplateValidator.validate(
+            sysId, "{{응답형식}}\n보기: {\"suggestions\":[{\"name\":\"키\"}]}"
+        )
+        assertEquals(emptyList<PromptTemplateValidator.Problem>(), problems)
+    }
+
+    @Test fun defaultTemplates_haveNoMalformedTokens() {
+        // 기본 양식 자신이 걸리면 사용자가 손도 안 댄 양식을 저장할 수 없게 된다.
+        PromptTemplates.Id.entries.forEach { id ->
+            assertEquals(
+                id.key,
+                emptyList<String>(),
+                PromptTokens.malformedIn(PromptTemplates.default(id))
+            )
+        }
+    }
+
     @Test fun tooLong_isRejectedNotTruncated() {
         val long = "{{응답형식}}\n" + "가".repeat(AiPromptPolicy.PROMPT_TEMPLATE_MAX_CHARS)
         val p = problemOf<PromptTemplateValidator.Problem.TooLong>(sysId, long)

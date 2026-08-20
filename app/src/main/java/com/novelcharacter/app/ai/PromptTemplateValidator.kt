@@ -32,6 +32,15 @@ object PromptTemplateValidator {
          */
         data class PaddedTokens(val samples: List<String>) : Problem()
 
+        /**
+         * `{{캐릭터 명}}` · `{{}}` · `{{a-b}}` — 자리표처럼 생겼는데 성립하지 않는다.
+         *
+         * [UnknownTokens]가 못 잡는 부류다 — 그쪽은 *"이름은 읽었는데 목록에 없다"*이고
+         * 이쪽은 **이름으로 읽히지조차 않는다.** 짚지 않으면 글자 그대로 실려 나가고,
+         * 사용자는 그 자리가 왜 비었는지 알 수 없다.
+         */
+        data class MalformedTokens(val samples: List<String>) : Problem()
+
         /** 글자 수 상한 초과 — 자르지 않고 거절한다(잘린 양식은 계약이 깨진 양식이다). */
         data class TooLong(val chars: Int, val limit: Int) : Problem()
     }
@@ -50,6 +59,9 @@ object PromptTemplateValidator {
 
         val padded = PromptTokens.PADDED_TOKEN.findAll(template).map { it.value }.distinct().toList()
         if (padded.isNotEmpty()) problems.add(Problem.PaddedTokens(padded))
+
+        val malformed = PromptTokens.malformedIn(template)
+        if (malformed.isNotEmpty()) problems.add(Problem.MalformedTokens(malformed))
 
         val allowed = PromptTemplates.tokensOf(id).map { it.name }.toSet()
         val used = PromptTokens.namesIn(template)

@@ -8865,10 +8865,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is AppSettingsBindings.Applied.No -> {
                         // **값을 통째로 싣지 않는다** — AI 메시지 양식은 한 칸이 수천 자라
                         // 경고 한 줄이 화면을 통째로 밀어낸다(그 줄을 읽을 수 없게 된다).
-                        val shown =
-                            if (value.length > SETTING_VALUE_IN_WARNING) {
-                                value.take(SETTING_VALUE_IN_WARNING) + "…"
-                            } else value
+                        // 자르는 것은 truncateForCell(단일 소스) — `take`는 UTF-16 유닛 단위라
+                        // 경계에 이모지가 걸리면 짝 잃은 반쪽이 마지막 글자로 남는다.
+                        val cut = truncateForCell(value, SETTING_VALUE_IN_WARNING)
+                        val shown = if (cut.length < value.length) cut + "…" else value
                         result.warnings.add("앱 설정 행 $i: $key 값 '$shown' — ${applied.reason}")
                     }
                 }
