@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  대결 카드의 **명대사 줄** (사용자 요청 2026.08.20 — "프로필 필드로 설정했을때 예쁘게").
+
+  형제 줄(item_duel_card_profile)과 **모양이 다른 것이 요점이다.** 그쪽은 이름 왼쪽·값
+  오른쪽에 한 줄로 자르는데, 그 틀에 대사를 넣으면 「나는 여기서…」로 끝나 무슨 말인지
+  알 수 없다. 대사는 견주는 재료가 아니라 **읽는 것**이라 자리를 다르게 준다:
+
+  - 이름표를 떼고 **대사만** 남긴다(「 」가 이미 그것이 대사임을 말한다)
+  - 두 줄까지 보이고, 기울임으로 다른 줄과 갈린다
+  - 왼쪽 옅은 선 하나 — 축하 창의 대사 상자와 같은 어휘라 두 자리가 한 벌로 읽힌다
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingTop="3dp"
+    android:paddingBottom="2dp">
+
+    <View
+        android:layout_width="2dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="6dp"
+        android:background="@color/primary" />
+
+    <TextView
+        android:id="@+id/quoteValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textStyle="italic"
+        tools:text="「나는 여기서 멈추지 않는다」" />
+
+</LinearLayout>

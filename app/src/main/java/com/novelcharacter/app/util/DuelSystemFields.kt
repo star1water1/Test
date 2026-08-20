@@ -95,11 +95,40 @@ object DuelSystemFields {
          * 그것이다). 이름에 쉼표가 들어가도 [FieldValueTokenizer]의 감싸기 규약(R-47)이
          * 지키므로 토큰이 갈라지지 않는다 — [tokensOf]가 같은 규약으로 되쪼갠다.
          */
-        FACTION("faction", true);
+        FACTION("faction", true),
+
+        /**
+         * **오늘의 명대사** (사용자 요청 2026.08.20).
+         *
+         * 원문: *"이 명대사의 경우 다른 곳에서도 잘 쓰일 수 있잖아. 대결탭에서 프로필
+         * 필드로 설정했을때 예쁘게 띄워줄 수도 있고."*
+         *
+         * ## 왜 여기가 그 자리인가
+         * 명대사는 `character_quotes`에 살아 [Character] 행에도 `FieldDefinition`에도 없다.
+         * 축에 거는 창은 필드 행만 내므로 **목록에 낼 행 자체가 없었다** — 이명이 이
+         * 파일을 부른 것과 정확히 같은 모양이고, 태그·세력이 이미 [Extras]로 그 길을 낸다.
+         *
+         * ## 다중값이 아니다
+         * 대사가 여럿이어도 카드에는 **하나만** 뜬다(그날의 것 — [QuotePicker]가 고른다).
+         * 쉼표로 나누면 대사 안의 쉼표에서 문장이 두 동강 난다 — 여기서 나눌 것은 없다.
+         *
+         * ## 견주지 않는다
+         * 영향 필드로 걸어도 [DuelFieldLinks]가 [Side.UNKNOWN]을 내 예측에서 빠진다
+         * (이름·메모와 같다). 막지 않는 것은 **표시로는 성립하기 때문**이다.
+         */
+        QUOTE("quote", false);
 
         /** 연결에 실리는 키. */
         val key: String get() = PREFIX + suffix
     }
+
+    /**
+     * 이 키가 **명대사 열**인가 — 카드가 그 줄만 다르게 그리려고 묻는다.
+     *
+     * 그리는 쪽이 `"sys:quote"`를 다시 적지 않게 여기 하나로 둔다. 글자를 저쪽에 또 적으면
+     * [Column.QUOTE]의 `suffix`를 고칠 때 그 자리만 조용히 낡는다(R-40이 이름 붙인 부류).
+     */
+    fun isQuoteKey(key: String?): Boolean = key == Column.QUOTE.key
 
     /** 키 → 열. 이 앱이 모르는 `sys:` 키는 null이다(엑셀로 들어온 오타가 그렇다). */
     fun columnOf(key: String?): Column? {
@@ -142,11 +171,15 @@ object DuelSystemFields {
      *
      * @property factions **지금** 속한 세력의 이름 (B-171). *지금*의 판정은 [FactionStanding]이
      *   하고 부르는 쪽이 그 결과만 담아 넘긴다 — 이 계층은 세력 표도 시간 규칙도 모른다.
+     * @property quote **오늘의 명대사 한 줄** (사용자 요청 2026.08.20). *어느 대사인가*의
+     *   판정은 [QuotePicker]가 하고 부르는 쪽이 그 결과만 담아 넘긴다 — 세력과 같은 규약이다.
+     *   그래야 같은 날 생일 축하 창과 이 카드가 **같은 대사**를 띄운다(원칙 05).
      */
     data class Extras(
         val novelTitle: String = "",
         val tags: List<String> = emptyList(),
-        val factions: List<String> = emptyList()
+        val factions: List<String> = emptyList(),
+        val quote: String = ""
     )
 
     /** 한 열의 값. 없으면 빈 문자열이다 — *"안 적었다"*의 표시는 화면의 몫이다. */
@@ -160,6 +193,9 @@ object DuelSystemFields {
             Column.NOVEL -> extras.novelTitle
             Column.TAGS -> FieldValueTokenizer.join(extras.tags)
             Column.FACTION -> FieldValueTokenizer.join(extras.factions)
+            // **잇지 않는다** — 대사는 토큰 목록이 아니라 문장 하나다. `join`을 태우면
+            // 쉼표를 품은 대사가 따옴표로 감싸여 카드에 `"…"`가 그대로 뜬다(R-47은 목록 셀의 규약이다).
+            Column.QUOTE -> extras.quote
         }.trim()
 
     /**

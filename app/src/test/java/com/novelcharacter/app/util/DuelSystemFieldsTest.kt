@@ -509,6 +509,65 @@ class DuelSystemFieldsTest {
         assertTrue(values.isEmpty())
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // 명대사 열 (사용자 요청 2026.08.20) — "대결탭에서 프로필 필드로 설정했을때"
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `명대사는 곁재료에서 온다`() {
+        val values = DuelSystemFields.valuesOf(
+            character(), listOf("sys:quote"),
+            DuelSystemFields.Extras(quote = "나는 여기서 멈추지 않는다")
+        )
+        assertEquals(mapOf("sys:quote" to "나는 여기서 멈추지 않는다"), values)
+    }
+
+    @Test
+    fun `명대사가 없으면 값 자체가 담기지 않는다`() {
+        // 카드가 빈 인용 줄을 그리지 않는 근거 — 형제 열과 같은 규약이다.
+        val values = DuelSystemFields.valuesOf(
+            character(), listOf("sys:quote"), DuelSystemFields.Extras(quote = "")
+        )
+        assertTrue(values.isEmpty())
+    }
+
+    @Test
+    fun `대사 안의 쉼표는 문장을 쪼개지 않는다`() {
+        // **이 시험이 이 열의 요점이다.** 다중값으로 두면 `join`이 따옴표로 감싸 카드에
+        // `"…"`가 그대로 뜨고, `splitMulti`가 대사를 두 동강 낸다.
+        val line = "나는 여기서, 지금, 멈추지 않는다"
+        val values = DuelSystemFields.valuesOf(
+            character(), listOf("sys:quote"), DuelSystemFields.Extras(quote = line)
+        )
+        assertEquals(line, values["sys:quote"])
+        assertEquals(listOf(line), DuelSystemFields.tokensOf(DuelSystemFields.Column.QUOTE, line))
+    }
+
+    @Test
+    fun `명대사 키는 하나뿐이고 그리는 쪽이 글자를 다시 적지 않는다`() {
+        assertTrue(DuelSystemFields.isQuoteKey(DuelSystemFields.Column.QUOTE.key))
+        assertEquals("sys:quote", DuelSystemFields.Column.QUOTE.key)
+        // 형제 열은 대사가 아니다 — 카드가 그 줄까지 인용 부호로 감싸면 안 된다.
+        for (column in DuelSystemFields.Column.entries) {
+            if (column == DuelSystemFields.Column.QUOTE) continue
+            assertFalse(column.key, DuelSystemFields.isQuoteKey(column.key))
+        }
+        assertFalse(DuelSystemFields.isQuoteKey(null))
+        assertFalse(DuelSystemFields.isQuoteKey("quote"))
+    }
+
+    @Test
+    fun `명대사 키는 산출 자리에서 막히고 프로필로는 성립한다`() {
+        // 대결 결과가 대사로 흘러갈 수는 없다 — 시스템 열의 규칙이 새 열에도 그대로 선다.
+        val axis = DuelFieldLinks.Axis(outcomes = DuelFieldLinks.parseText("sys:quote"))
+        assertEquals(listOf("sys:quote"), axis.outcomeBlocked)
+        assertTrue(axis.effectiveOutcomes.isEmpty())
+
+        val ok = DuelFieldLinks.Axis(profiles = DuelFieldLinks.parseText("sys:quote"))
+        assertTrue(ok.outcomeBlocked.isEmpty())
+        assertTrue(ok.unknownSystemKeys.isEmpty())
+    }
+
     @Test
     fun `세력 키는 산출 자리에서 막힌다`() {
         // 대결 결과를 소속에 써 넣을 수는 없다 — 시스템 열의 규칙이 새 열에도 그대로 선다.
