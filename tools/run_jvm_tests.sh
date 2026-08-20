@@ -109,6 +109,7 @@ $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/TransferInterruption.kt
 $MAIN/excel/SheetResolver.kt
+$MAIN/excel/UniverseSheetPlan.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
 $MAIN/util/ProgressScale.kt
@@ -330,6 +331,7 @@ $MAIN/excel/FieldDefinitionPrune.kt
 $MAIN/excel/FieldScopeCell.kt
 $MAIN/excel/AppSettingsKeys.kt
 $MAIN/excel/AppSettingsDiff.kt
+$MAIN/excel/TransferResultText.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -349,6 +351,7 @@ $TEST/excel/FieldDefinitionPruneTest.kt
 $TEST/excel/FieldScopeCellTest.kt
 $TEST/excel/AppSettingsDiffTest.kt
 $TEST/excel/AppSettingsKeysTest.kt
+$TEST/excel/TransferResultTextTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
 $TEST/data/DuelGradeRefTest.kt
@@ -462,6 +465,7 @@ $TEST/data/NovelFieldValueMergeTest.kt
 $TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/data/NovelFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
+$TEST/excel/UniverseSheetPlanTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt
 $TEST/data/TrashListPlanTest.kt

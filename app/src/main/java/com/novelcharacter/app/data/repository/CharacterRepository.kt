@@ -861,37 +861,49 @@ class CharacterRepository(
         val stateChanges: Int,
         val quotes: Int,
         val factionMemberships: Int,
-        val eventLinks: Int
+        val eventLinks: Int,
+        val images: Int
     ) {
         /** 캐릭터 외 함께 정리될 연관 데이터가 있는지 — 요약 문구 노출 여부 판단용. */
         val hasLinkedData: Boolean
             get() = relationships > 0 || stateChanges > 0 || quotes > 0 ||
-                factionMemberships > 0 || eventLinks > 0
+                factionMemberships > 0 || eventLinks > 0 || images > 0
     }
 
     /**
      * 일괄 삭제 전 연쇄 영향 규모를 집계한다. IN 절 변수 한도는 [SqlInChunks]가 지킨다(받쳐주는 확장성).
      *
-     * **계수 넷을 한 번에 도는 자리라 [SqlInChunks.sum]이 아니라 [SqlInChunks.each]다** — 질의마다
-     * `sum`을 걸면 같은 목록을 네 번 나눠 돈다. 조각마다 넷을 함께 묻고 `+=`로 더하는 것이 R-54가
+     * **계수 여럿을 한 번에 도는 자리라 [SqlInChunks.sum]이 아니라 [SqlInChunks.each]다** — 질의마다
+     * `sum`을 걸면 같은 목록을 계수 수만큼 나눠 돈다. 조각마다 함께 묻고 `+=`로 더하는 것이 R-54가
      * 말하는 그 합산이며, 나누기가 계수를 바꾸지 않는다는 성질은 여기서도 같다.
+     *
+     * **단건 삭제 고지도 이 함수를 쓴다**(id 하나짜리 목록) — 두 진입이 각자 세면 항목이
+     * 갈린다(실제로 단건은 사건 연계를, 일괄은 이미지를 서로 빼먹은 채 갈려 있었다).
      */
     suspend fun getBatchDeleteImpact(ids: List<Long>): DeleteImpact {
-        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0, 0)
+        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0, 0, 0)
         val relIds = mutableSetOf<Long>()  // 관계는 두 끝이 서로 다른 청크에 나뉠 수 있어 id Set으로 교차청크 중복 제거
         var stateChanges = 0
         var quotes = 0
         var memberships = 0
         var eventLinks = 0
+        var images = 0
         SqlInChunks.each(ids) { chunk ->
             relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
             quotes += characterQuoteDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)
             eventLinks += db.timelineDao().countEventLinksForCharacters(chunk)
+            // 이미지는 자식표가 아니라 캐릭터 행의 JSON 목록이다 — 단건 고지가 세던 것을
+            // 일괄 고지만 빼먹어 두 진입의 고지 범위가 갈렸던 자리(같은 조작은 같은 범위를 센다).
+            images += characterDao.getCharactersByIds(chunk).sumOf { imageCountOf(it.imagePaths) }
         }
-        return DeleteImpact(ids.size, relIds.size, stateChanges, quotes, memberships, eventLinks)
+        return DeleteImpact(ids.size, relIds.size, stateChanges, quotes, memberships, eventLinks, images)
     }
+
+    /** 캐릭터 행의 이미지 목록(JSON 배열) 장수 — 깨진 값은 0으로 읽는다(고지용 계수라 유실이 없다). */
+    private fun imageCountOf(imagePaths: String): Int =
+        try { org.json.JSONArray(imagePaths).length() } catch (_: Exception) { 0 }
 
     /**
      * 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용).

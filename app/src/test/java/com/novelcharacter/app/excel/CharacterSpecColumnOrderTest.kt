@@ -54,8 +54,16 @@ class CharacterSpecColumnOrderTest {
     }
 
     @Test fun representativeColumnIsNotReadOnly() {
-        // `이미지경로`와 달리 사람이 고쳐 넣는 열이다 — 잠그면 D8의 값어치가 사라진다.
+        // 사람이 고쳐 넣는 열이다 — 잠그면 D8의 값어치가 사라진다.
         val col = characterSpec(emptyList(), emptyList()).columns.first { it.header == "대표이미지" }
         assertTrue("사람이 고칠 수 있어야 한다", !col.readOnly)
+    }
+
+    @Test fun imagePathsColumnIsNotReadOnly() {
+        // 가져오기가 이 열을 읽어 반영하고(B-222 WD-6) 사용 안내도 그렇게 말한다 —
+        // 회색(readOnly)으로 잠그면 범례("그대로 두세요")가 그 편집 능력을 가린다.
+        // 세계관·작품 시트의 같은 열과 한 규약이다.
+        val col = characterSpec(emptyList(), emptyList()).columns.first { it.header == "이미지경로" }
+        assertTrue("편집이 반영되는 열은 회색으로 잠그지 않는다", !col.readOnly)
     }
 }

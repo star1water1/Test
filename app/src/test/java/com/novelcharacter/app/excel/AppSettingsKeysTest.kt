@@ -187,6 +187,37 @@ class AppSettingsKeysTest {
     }
 
     @Test
+    fun `NaN과 Infinity는 수가 아니다`() {
+        // toDoubleOrNull은 이 둘을 수로 읽는다 — 그대로 흘리면 NaN.toInt()==0이 저장되고
+        // "조정해 저장했습니다"라는 거짓 문구까지 붙는다. 쓰기와 미리보기 게이트가 이
+        // 한 벌(parseFiniteCell)로 거절한다.
+        assertNull(AppSettingsKeys.parseFiniteCell("NaN"))
+        assertNull(AppSettingsKeys.parseFiniteCell("Infinity"))
+        assertNull(AppSettingsKeys.parseFiniteCell("-Infinity"))
+        assertNull(AppSettingsKeys.parseFiniteCell("셋"))
+        assertNull(AppSettingsKeys.parseFiniteCell(""))
+        assertEquals(3.5, AppSettingsKeys.parseFiniteCell(" 3.5 ")!!, 0.0)
+        assertEquals(51200.0, AppSettingsKeys.parseFiniteCell("51200")!!, 0.0)
+    }
+
+    @Test
+    fun `같은 수는 표기가 달라도 같다고 판정한다`() {
+        // 이 술어 하나를 미리보기(AppSettingsDiff)와 가져오기의 read-back 대조(numberBinding)가
+        // 함께 쓴다 — 두 벌이면 '동일' 예고와 '조정됨' 경고가 갈리는 날이 온다(R-33).
+        assertTrue(AppSettingsKeys.sameNumericCell("3", "3.0"))
+        assertTrue(AppSettingsKeys.sameNumericCell(" 85 ", "85"))
+        // Float 값의 표기(formatNumber)와 사용자가 적은 글자가 같은 수로 읽혀야
+        // 무편집 왕복에서 '조정됨'이 뜨지 않는다.
+        assertTrue(AppSettingsKeys.sameNumericCell("0.1", AppSettingsKeys.formatNumber(0.1f)))
+        // 접힌 값은 달라야 한다 — 같다고 접으면 조정 경고가 영영 안 뜬다.
+        assertTrue(!AppSettingsKeys.sameNumericCell("500", "100"))
+        assertTrue(!AppSettingsKeys.sameNumericCell("50.7", "50"))
+        // 수로 안 읽히면 글자로 견준다 — 못 읽는 값을 '같다'로 접으면 다른 값이 숨는다.
+        assertTrue(AppSettingsKeys.sameNumericCell("셋", "셋"))
+        assertTrue(!AppSettingsKeys.sameNumericCell("셋", "넷"))
+    }
+
+    @Test
     fun `불리언 표기는 관대한 파서가 되읽는다`() {
         assertEquals("Y", AppSettingsKeys.formatBoolean(true))
         assertEquals("N", AppSettingsKeys.formatBoolean(false))

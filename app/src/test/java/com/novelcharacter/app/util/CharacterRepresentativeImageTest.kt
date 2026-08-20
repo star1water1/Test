@@ -360,4 +360,20 @@ class CharacterRepresentativeImageTest {
         assertTrue("셈이 돌아야 한다", seen.isNotEmpty())
         assertTrue("범위를 벗어나지 않는다", seen.all { it in paths.indices })
     }
+
+    @Test
+    fun `경로 목록 판정은 빈 목록과 읽기 실패를 가른다`() {
+        // 엑셀 가져오기가 이것으로 '비움 의도'와 '깨진 편집'을 가른다 — 깨진 값을 비움으로
+        // 읽으면 오타 하나가 이미지 배정 전체를 무고지로 푼다(콜드 검토 2026.08.20).
+        assertTrue(CharacterRepresentativeImage.isPathListJson("[]"))
+        assertTrue(CharacterRepresentativeImage.isPathListJson("[ ]"))
+        assertTrue(CharacterRepresentativeImage.isPathListJson("[\"a.jpg\"]"))
+        assertTrue(!CharacterRepresentativeImage.isPathListJson("abc"))
+        assertTrue(!CharacterRepresentativeImage.isPathListJson("{\"a\":1}"))
+        // 빈 칸의 뜻은 열 규약이 정하므로 여기서는 false다(호출부가 가른다).
+        assertTrue(!CharacterRepresentativeImage.isPathListJson(""))
+        assertTrue(!CharacterRepresentativeImage.isPathListJson(null))
+        // true인 값은 paths도 반드시 읽는다 — 두 판정이 한 파서다.
+        assertEquals(listOf("a.jpg"), CharacterRepresentativeImage.paths("[\"a.jpg\"]"))
+    }
 }

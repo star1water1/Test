@@ -194,4 +194,34 @@ class CsvTokensTest {
         // 빈 토큰이 섞여도 그것만 빠진다 — 나머지는 그대로 산다.
         assertEquals(listOf("a", "b"), CsvTokens.split("a, ,b"))
     }
+
+    /**
+     * 불리언 셀의 삼상 판정 — 켬·끔·모름을 가른다. '앱 설정' 가져오기(boolBinding)와
+     * 복원 미리보기(AppSettingsDiff)가 이 한 벌 위에 선다: 모름을 끔으로 접으면 오타가
+     * 무음으로 정반대 값이 되고, **시트가 기본값 표기로 쓰는 낱말 "켬"조차 끔이 됐다**
+     * (수리 전 실동작 — 2026.08.20).
+     */
+    @Test
+    fun `불리언 셀은 켬 끔 모름을 가른다`() {
+        for (t in CsvTokens.BOOLEAN_TRUE_TOKENS) {
+            assertEquals(t, true, CsvTokens.parseBooleanOrNull(t))
+            assertEquals("소문자 $t", true, CsvTokens.parseBooleanOrNull(t.lowercase()))
+        }
+        for (f in CsvTokens.BOOLEAN_FALSE_TOKENS) {
+            assertEquals(f, false, CsvTokens.parseBooleanOrNull(f))
+        }
+        // 빈 칸은 모름이 아니라 끔이다 — "열 있음 + 빈칸 = 비움 의도"(F1-A). 이 칸이
+        // 모름이 되면 기본 켬 설정을 빈 칸으로 끄는 정당한 편집이 거절된다.
+        assertEquals(false, CsvTokens.parseBooleanOrNull(""))
+        assertEquals(false, CsvTokens.parseBooleanOrNull("  "))
+        // 전각도 같은 값이다(엑셀 한글 입력기의 흔한 모양).
+        assertEquals(true, CsvTokens.parseBooleanOrNull("Ｙ"))
+        // 모름은 null — 켬도 끔도 아니라고 말해야 부르는 쪽이 거절-유지를 고를 수 있다.
+        for (unknown in listOf("아무말", "YE", "켜", "onoff", "２")) {
+            assertEquals(unknown, null, CsvTokens.parseBooleanOrNull(unknown))
+        }
+        // 관대판은 켬만 켬으로, 나머지(모름 포함)는 전부 끔으로 — 종전 호출처의 계약 그대로다.
+        assertEquals(true, CsvTokens.parseBoolean("켬"))
+        assertEquals(false, CsvTokens.parseBoolean("아무말"))
+    }
 }

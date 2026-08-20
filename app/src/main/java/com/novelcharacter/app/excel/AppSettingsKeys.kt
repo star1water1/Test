@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.ai.AiPromptPolicy
+import com.novelcharacter.app.util.CsvTokens
 
 /**
  * '앱 설정' 시트가 **무엇을 싣는가**의 단일 소스 — 키·형식·처분의 순수 선언 (B-105).
@@ -161,9 +162,13 @@ object AppSettingsKeys {
         /**
          * 켬·끔.
          *
-         * **빈 칸이 곧 끄기다** — 읽기가 관대해서 아는 글자만 켬으로 읽고 나머지는 전부 끔이다.
-         * 기본이 켬인 설정에서 이 사실을 말하지 않으면, 값을 지운 사람은 자기가 그 기능을 껐다는
-         * 것을 모른다.
+         * **빈 칸이 곧 끄기다** — 기본이 켬인 설정에서 이 사실을 말하지 않으면, 값을 지운
+         * 사람은 자기가 그 기능을 껐다는 것을 모른다. 켬·끔으로 읽히지 않는 글자는 그 행을
+         * 건너뛰고 사유를 알린다 — 종전에는 전부 끔으로 접어서, **앱이 기본값 표기로 쓰는
+         * 낱말 "켬"을 적어도 끔이 됐다**(오타·모르는 글자가 무음으로 정반대 값이 되는 자리).
+         *
+         * 어휘 목록은 해석기와 같은 상수다([CsvTokens] — R-14. 손으로 적으면 어휘가 늘 때
+         * 이 문구만 낡는다).
          */
         data class YesNo(
             val defaultOn: Boolean,
@@ -171,8 +176,10 @@ object AppSettingsKeys {
         ) : Domain {
             override val defaultText: String get() = if (defaultOn) "켬" else "끔"
             override fun shape(): String =
-                "Y 또는 N. Y·YES·TRUE·T·1·O·예·참을 켬으로 읽고(대소문자·전각 무관) " +
-                    "그 밖의 글자는 전부 끔입니다. 빈 칸도 끔입니다."
+                CsvTokens.BOOLEAN_TRUE_TOKENS.joinToString("·") + "을 켬으로, " +
+                    CsvTokens.BOOLEAN_FALSE_TOKENS.joinToString("·") + "을 끔으로 읽습니다" +
+                    "(대소문자·전각 무관). 빈 칸도 끔입니다. " +
+                    "그 밖의 글자는 그 행을 건너뛰고 사유를 알려 드립니다."
         }
 
         /** 자유로 쓰는 글. */
@@ -412,10 +419,11 @@ object AppSettingsKeys {
     val AI_IMAGE_TAG_POLICY = Spec("ai_image_tag_policy", Kind.TEXT,
         note = "AI 태그 제안에 함께 보낼 지침입니다.",
         domain = Domain.FreeText(AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS,
-            // **고지를 약속하지 않는다.** `DropTally.policyTruncated` 배선이 있기는 한데
+            // 제안 시점 고지는 약속하지 않는다 — `DropTally.policyTruncated` 배선이 있기는 한데
             // `AiPromptSettings.imageTagPolicy`가 **읽기·쓰기 양쪽에서 좁히는** 탓에 제안기가
-            // 받는 값이 이미 잘린 값이고, 그래서 그 수는 언제나 0이다(범위 밖 발견 —
-            // 이 판은 문구만 실동작에 맞춘다). 지금 사용자가 아는 길은 인앱 칸의 글자 수뿐이다.
+            // 받는 값이 이미 잘린 값이고, 그래서 그 수는 언제나 0이다. **엑셀 가져오기는
+            // 잘리면 그 행에서 알린다** — 바인딩이 read-back으로 대조해 `Applied.Adjusted`를
+            // 낸다(숫자 설정의 접힘 고지와 같은 벌).
             extra = "앞뒤 공백은 지우고, 넘는 글자는 잘라 저장합니다. 비우면 지침을 보내지 않습니다."))
     val AI_IMAGE_TAG_BATCH_SIZE = Spec("ai_image_tag_batch_size", Kind.NUMBER,
         note = "이미지 태그 요청 한 번에 보낼 장수입니다.",
@@ -666,6 +674,30 @@ object AppSettingsKeys {
      * 돌려주기도 하므로 `toIntOrNull()`로 바로 받으면 멀쩡한 값이 *"숫자가 아닙니다"*가 된다.
      */
     fun parseIntCell(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
+
+    /**
+     * 셀 글자 → **유한한 수**. `NaN`·`Infinity`는 `toDoubleOrNull`이 수로 읽지만
+     * 설정값으로는 뜻이 없다 — 그대로 흘리면 `NaN.toInt()==0`이 저장되고 *"조정해
+     * 저장했습니다"*라는 거짓 문구까지 붙는다(콜드 검토 2026.08.20). 숫자 설정의 쓰기
+     * ([AppSettingsBindings]의 `numberBinding`)와 미리보기의 건너뜀 게이트([AppSettingsDiff])가
+     * **이 한 벌**을 지나 거절이 갈리지 않는다(R-33).
+     */
+    fun parseFiniteCell(value: String): Double? =
+        value.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
+
+    /**
+     * 두 셀 글자가 **같은 수**인가 — `3`과 `3.0`은 같다. 한쪽이라도 수로 안 읽히면 글자로
+     * 견준다(못 읽는 값을 '같다'로 접으면 다른 값이 같은 값으로 보인다).
+     *
+     * 복원 미리보기([AppSettingsDiff])와 가져오기의 read-back 대조([AppSettingsBindings]의
+     * `numberBinding`)가 **이 한 벌**을 쓴다 — 술어가 두 벌이면 미리보기의 예고와 실제 처분이
+     * 갈리는 날이 온다(R-33).
+     */
+    fun sameNumericCell(a: String, b: String): Boolean {
+        val x = a.trim().toDoubleOrNull()
+        val y = b.trim().toDoubleOrNull()
+        return if (x != null && y != null) x == y else a.trim() == b.trim()
+    }
 
     /**
      * 싣지 않는 저장소와 **그 사유** — 확정 3번의 ⓒ('실을 값어치가 없는 것').

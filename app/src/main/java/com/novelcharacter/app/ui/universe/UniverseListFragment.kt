@@ -97,10 +97,97 @@ class UniverseListFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        presetFieldSessionPresetId = savedInstanceState?.getLong(STATE_PRESET_FIELD_PRESET_ID, -1L) ?: -1L
+        presetFieldSessionOriginalKey = savedInstanceState?.getString(STATE_PRESET_FIELD_ORIGINAL_KEY)
+        setupPresetFieldResultListener()
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
         observeData()
+    }
+
+    /**
+     * 프리셋 필드 편집 세션 (R-65).
+     *
+     * [com.novelcharacter.app.ui.field.FieldEditDialog]는 결과를 FragmentResult로 돌려주므로
+     * 회전 뒤에도 도착하는데, 그때 프리셋 필드 목록 창(일반 AlertDialog)은 이미 사라져 있다.
+     * 결과를 어느 프리셋의 어느 필드에 반영할지는 이 두 값이 말하고, 회전을 넘기기 위해
+     * 인스턴스 상태에 담는다.
+     */
+    private var presetFieldSessionPresetId: Long = -1L
+
+    /** 편집 중이던 필드의 **연 시점 키** — null이면 추가 모드다. */
+    private var presetFieldSessionOriginalKey: String? = null
+
+    /**
+     * 프리셋 필드 목록 창이 살아 있는 동안의 반영 경로 — 창이 든 작업본 목록에 얹는다.
+     * 창과 함께 죽는 값이라 인스턴스 상태에 담지 않는다(회전 뒤에는 저장본 직접 반영으로 간다).
+     */
+    private var presetFieldResultHandler: ((com.novelcharacter.app.data.model.FieldDefinition) -> Unit)? = null
+
+    /**
+     * [com.novelcharacter.app.ui.field.FieldEditDialog] 결과 수신 — 회전 뒤 재생성돼도 다시
+     * 서도록 onViewCreated에서 등록한다(R-65. 종전의 콜백 배선은 회전이 지워, 재생성된
+     * 다이얼로그에서 누른 [저장]이 허공으로 갔다).
+     */
+    private fun setupPresetFieldResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_FIELD_JSON)
+                ?: return@setFragmentResultListener
+            val edited = com.google.gson.Gson()
+                .fromJson(json, com.novelcharacter.app.data.model.FieldDefinition::class.java)
+                ?: return@setFragmentResultListener
+            val handler = presetFieldResultHandler
+            if (handler != null) {
+                handler(edited)
+            } else {
+                applyPresetFieldResultToStoredPreset(edited)
+            }
+        }
+    }
+
+    /**
+     * 회전 뒤 도착한 프리셋 필드 결과의 반영.
+     *
+     * 프리셋 필드 목록 창(일반 AlertDialog)은 회전을 넘지 못하므로, 창이 없으면 결과를 저장된
+     * 프리셋에 직접 반영한다 — 버리면 사용자가 [저장]까지 누른 입력이 말없이 사라진다(변수
+     * 제어). 목록 창에서 저장을 기다리던 다른 편집분(순서 등)은 창과 함께 사라진 뒤라 여기서
+     * 살릴 수 있는 것은 이 결과 하나다. 반영 통보는 [UniverseViewModel.updateUserPreset]의
+     * 결과 채널이 한다.
+     */
+    private fun applyPresetFieldResultToStoredPreset(edited: com.novelcharacter.app.data.model.FieldDefinition) {
+        val presetId = presetFieldSessionPresetId
+        val originalKey = presetFieldSessionOriginalKey
+        presetFieldSessionPresetId = -1L
+        presetFieldSessionOriginalKey = null
+        if (presetId == -1L) {
+            // 세션 기록 없이 온 결과 — 정상 경로에는 없다. 조용히 버리는 대신 실패를 알린다.
+            android.util.Log.w("UniverseListFragment", "Preset field result without session")
+            Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val preset = viewModel.getUserPresetById(presetId)
+            if (preset == null) {
+                if (isAdded) Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val fields = PresetTemplates.fieldsFromJson(preset.fieldsJson).toMutableList()
+            val editedIndex = if (originalKey != null) fields.indexOfFirst { it.key == originalKey } else -1
+            // 다이얼로그의 점유 키 거부는 창을 연 시점의 목록 기준이다 — 저장본과 다시 대조한다(마지막 빗장).
+            val duplicated = fields.withIndex().any { (i, f) -> i != editedIndex && f.key == edited.key }
+            if (duplicated) {
+                if (isAdded) Toast.makeText(requireContext(), R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            if (editedIndex >= 0) fields[editedIndex] = edited else fields.add(edited)
+            // displayOrder는 목록 창의 저장 단추와 같은 규칙으로 정규화한다.
+            viewModel.updateUserPreset(preset.copy(
+                fieldsJson = PresetTemplates.fieldsToJson(fields.mapIndexed { i, f -> f.copy(displayOrder = i) })
+            ))
+        }
     }
 
     private fun setupRecyclerView() {
@@ -481,18 +568,17 @@ class UniverseListFragment : Fragment() {
                     setBackgroundResource(android.R.color.transparent)
                     contentDescription = getString(R.string.edit)
                     setOnClickListener {
-                        val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, field)
-                        dialog.setOnSaveListener { editedField ->
-                            val dupIdx = fields.indexOfFirst { it.key == editedField.key && it !== field }
-                            if (dupIdx >= 0) {
-                                Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
-                                return@setOnSaveListener false // 거부: 다이얼로그 유지 (입력 보존)
-                            }
+                        presetFieldSessionPresetId = preset.id
+                        presetFieldSessionOriginalKey = field.key
+                        presetFieldResultHandler = { editedField ->
                             fields[index] = editedField
                             rebuildFieldList()
-                            true
                         }
-                        dialog.show(childFragmentManager, "edit_preset_field")
+                        // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 —
+                        // 결과(R-65)는 전달 즉시 창이 닫혀 사후 거부가 불가능하다. 점유 키에서 자신은 뺀다.
+                        com.novelcharacter.app.ui.field.FieldEditDialog
+                            .newInstance(0, field, reservedKeys = fields.filter { it !== field }.map { it.key })
+                            .show(childFragmentManager, "edit_preset_field")
                     }
                 }
                 row.addView(btnEdit)
@@ -531,17 +617,16 @@ class UniverseListFragment : Fragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp8 }
             setOnClickListener {
-                val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, null)
-                dialog.setOnSaveListener { newField ->
-                    if (fields.any { it.key == newField.key }) {
-                        Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
-                        return@setOnSaveListener false // 거부: 다이얼로그 유지 (입력 보존)
-                    }
+                presetFieldSessionPresetId = preset.id
+                presetFieldSessionOriginalKey = null
+                presetFieldResultHandler = { newField ->
                     fields.add(newField)
                     rebuildFieldList()
-                    true
                 }
-                dialog.show(childFragmentManager, "add_preset_field")
+                // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 — 편집 단추와 같은 규칙.
+                com.novelcharacter.app.ui.field.FieldEditDialog
+                    .newInstance(0, null, reservedKeys = fields.map { it.key })
+                    .show(childFragmentManager, "add_preset_field")
             }
         }
 
@@ -570,6 +655,17 @@ class UniverseListFragment : Fragment() {
                 viewModel.updateUserPreset(preset.copy(fieldsJson = newJson))
             }
             .setNegativeButton(R.string.cancel, null)
+            .create()
+            .apply {
+                // 목록 창이 **정상적으로** 닫히면 세션도 끝이다 — 남기면 뒷날의 결과가 옛 자리로
+                // 간다. 회전은 이 리스너를 거치지 않고 창을 없애므로 세션이 살아남고, 그 세션으로
+                // 저장본 직접 반영 경로가 선다([applyPresetFieldResultToStoredPreset]).
+                setOnDismissListener {
+                    presetFieldResultHandler = null
+                    presetFieldSessionPresetId = -1L
+                    presetFieldSessionOriginalKey = null
+                }
+            }
             .show()
     }
 
@@ -1305,6 +1401,8 @@ class UniverseListFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         excel.saveState(outState)
+        outState.putLong(STATE_PRESET_FIELD_PRESET_ID, presetFieldSessionPresetId)
+        presetFieldSessionOriginalKey?.let { outState.putString(STATE_PRESET_FIELD_ORIGINAL_KEY, it) }
     }
 
     private fun exportToExcel() {
@@ -1447,4 +1545,10 @@ class UniverseListFragment : Fragment() {
     }
 
     // exporter·importer의 수명은 ExcelTransferController가 생명주기 관찰자로 정리한다.
+
+    private companion object {
+        /** 프리셋 필드 편집 세션을 회전 너머로 나르는 인스턴스 상태 키 (R-65). */
+        const val STATE_PRESET_FIELD_PRESET_ID = "presetFieldSessionPresetId"
+        const val STATE_PRESET_FIELD_ORIGINAL_KEY = "presetFieldSessionOriginalKey"
+    }
 }

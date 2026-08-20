@@ -91,7 +91,10 @@ open class Context {
     val cacheDir: java.io.File get() = java.io.File(".")
     fun getString(id: Int): String = ""
     fun getString(id: Int, vararg args: Any?): String = ""
-    val contentResolver: Any? get() = null
+    // `Any?`가 아니라 진짜 타입이다(2026.08.20) — `Any?`인 동안 `openOutputStream` 등
+    // 수신 아래의 진짜 오류가 **발행조차 되지 않았다**(B-190이 이름 붙인 그 부류).
+    // ContentResolver 스텁은 아래에 있고, 범위 안 코드가 실제로 부르는 멤버만 연다.
+    val contentResolver: ContentResolver get() = ContentResolver()
     val applicationContext: Context get() = this
     val packageName: String get() = ""
     fun startActivity(intent: Intent) {}
@@ -140,6 +143,16 @@ interface SharedPreferences {
         fun commit(): Boolean
         fun apply()
     }
+}
+
+// `ContentResolver`는 2026.08.20에 들어왔다 — `ExcelExporter`의 저장 실패 처분이
+// `DocumentsContract.deleteDocument(ContentResolver, Uri)`를 부르게 되면서, `contentResolver`가
+// `Any?`인 채로는 그 호출이 가짜 인자 불일치를 낸다. 멤버는 범위 안 코드가 실제로 부르는
+// 둘만 연다(진짜 시그니처 그대로 — 반환은 nullable 스트림이다). 쿼리·커서 계열은 일부러
+// 안 연다: 그쪽 표면은 문서 트리 전체라, 넓은 스텁이 곧 거짓 초록이다(4-b의 판정 유지).
+class ContentResolver {
+    fun openInputStream(uri: android.net.Uri): java.io.InputStream? = null
+    fun openOutputStream(uri: android.net.Uri): java.io.OutputStream? = null
 }
 
 // `type`은 진짜에서 `getType()`/`setType()` 쌍이라 코틀린이 합성 속성으로 본다 — 대입 꼴을
@@ -195,6 +208,32 @@ cat > "$WORK/AndroidAppStubs.kt" <<'EOF'
 // **관계만** 비춘다(NovelCharacterApp이 Context로 캐스트되는 성질이 그 관계에 걸려 있다).
 package android.app
 open class Application : android.content.Context()
+
+// `Activity`는 2026.08.20에 들어왔다 — `ExcelExporter`가 종결 고지의 화면 판정
+// (`WeakReference<Activity>` + isFinishing/isDestroyed)을 형제 `ExcelImporter`와 같은 꼴로
+// 갖게 되면서 excel/ 범위가 이 타입을 처음 문다(LruCache가 들어온 것과 같은 부류 —
+// 없는 채로 두면 신규 오류가 기준선에 얹혀 진짜 결함을 덮는다). 진짜 계보의 중간 고리
+// (ContextThemeWrapper·ContextWrapper)는 범위가 안 쓰므로 관계만 비추고, 멤버도 범위가
+// 실제로 읽는 둘만 둔다(진짜는 자바 메서드라 코틀린이 합성 속성으로 본다 — val이 그 꼴이다).
+open class Activity : android.content.Context() {
+    val isFinishing: Boolean get() = false
+    val isDestroyed: Boolean get() = false
+}
+EOF
+
+# `android.provider.DocumentsContract`의 **deleteDocument 하나만** 세운다 (2026.08.20).
+# 4-b가 문서 트리 계열을 "넓은 스텁이 곧 거짓 초록"이라 열지 않기로 한 판정은 그대로다 —
+# 그 판정이 막는 것은 *쿼리·커서·트리 URI의 넓은 표면*이고, 여기서는 `ExcelExporter`의
+# 저장 실패 처분이 실제로 부르는 정적 메서드 하나를 **진짜 시그니처 그대로** 연다
+# (`deleteDocument(@NonNull ContentResolver, @NonNull Uri): Boolean`). 좁은 것은 안전하다 —
+# 다른 멤버를 쓰는 코드는 종전의 이름 미해석 대신 멤버 미해석으로 똑같이 드러난다.
+cat > "$WORK/AndroidProviderStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package android.provider
+object DocumentsContract {
+    @JvmStatic fun deleteDocument(content: android.content.ContentResolver, documentUri: android.net.Uri): Boolean =
+        throw UnsupportedOperationException("프로브 전용")
+}
 EOF
 
 cat > "$WORK/AndroidxCoreStubs.kt" <<'EOF'
@@ -562,6 +601,7 @@ done
   echo "$WORK/AndroidNetStubs.kt"
   echo "$WORK/AndroidWidgetStubs.kt"
   echo "$WORK/AndroidAppStubs.kt"
+  echo "$WORK/AndroidProviderStubs.kt"
   echo "$WORK/AndroidxCoreStubs.kt"
   echo "$WORK/AndroidxDataStoreCoreStubs.kt"
   echo "$WORK/AndroidxDataStorePrefsCoreStubs.kt"

@@ -67,11 +67,14 @@ object ImageMetaRowResolver {
         return Plan(byPath.values.toList(), unresolved.toList(), warnings)
     }
 
+    /** 0-기반 행 색인 → 엑셀 화면의 행 번호(1-기반). 색인을 그대로 적으면 사용자가 한 행 어긋난 자리를 고치게 된다. */
+    private fun excelRow(index: Int): Int = index + 1
+
     /** 같은 파일명이면 타 시트와 자구까지 동일한 문구, 다른 파일명이 같은 경로로 접힌 경우만 분기(사실과 다른 경고 금지). */
     private fun duplicateWarning(prev: ResolvedRow, rowIndex: Int, fileName: String): String =
         if (prev.fileName == fileName) {
-            "이미지: 파일명 '$fileName'이(가) 행 ${prev.rowIndex} 과 행 $rowIndex 에 중복됨 (마지막 행 우선)"
+            "이미지: 파일명 '$fileName'이(가) 행 ${excelRow(prev.rowIndex)} 과 행 ${excelRow(rowIndex)} 에 중복됨 (마지막 행 우선)"
         } else {
-            "이미지: 행 ${prev.rowIndex}의 '${prev.fileName}'과(와) 행 $rowIndex 의 '$fileName'이(가) 같은 이미지 파일로 해석되어 중복됨 (마지막 행 우선)"
+            "이미지: 행 ${excelRow(prev.rowIndex)}의 '${prev.fileName}'과(와) 행 ${excelRow(rowIndex)} 의 '$fileName'이(가) 같은 이미지 파일로 해석되어 중복됨 (마지막 행 우선)"
         }
 }

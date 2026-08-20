@@ -80,6 +80,18 @@ object CharacterRepresentativeImage {
     }
 
     /**
+     * 이 글자가 경로 **목록으로 읽히는가** — [paths]가 빈 목록을 내는 두 갈래(정말 빈 목록 /
+     * 파싱 실패)를 가른다. 엑셀 가져오기가 이것으로 *비움 의도*와 *깨진 편집*을 갈라,
+     * 깨진 값이 이미지 배정 전체를 조용히 푸는 것을 막는다(빈 칸은 여기서 false —
+     * 그 뜻은 열 규약이 정하므로 호출부가 가른다). 파서는 [paths]와 같은 것이라
+     * true인 값은 [paths]도 반드시 읽는다.
+     */
+    fun isPathListJson(imagePathsJson: String?): Boolean =
+        !imagePathsJson.isNullOrBlank() && runCatching {
+            Gson().fromJson<List<String?>>(imagePathsJson, GsonTypes.STRING_LIST) != null
+        }.getOrDefault(false)
+
+    /**
      * [paths] + [pickFrom]. 호출부 대부분이 이것을 쓴다.
      *
      * @param weights 추첨 무게(B-104 ⓑ). 기본값 null이 **종전 그대로의 균등 추첨**이므로,

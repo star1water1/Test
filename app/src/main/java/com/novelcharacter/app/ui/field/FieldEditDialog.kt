@@ -47,9 +47,6 @@ import kotlinx.coroutines.withContext
 
 class FieldEditDialog : DialogFragment() {
 
-    /** 저장 콜백. false를 반환하면 저장이 거부된 것으로 간주하고 다이얼로그를 닫지 않는다. */
-    private var onSave: ((FieldDefinition) -> Boolean)? = null
-
     /** 생성 모드에서 입력된 값 사전 등록분 (콤마 구분) — 결과 번들로 전달 */
     private var stagedInitialValues: String = ""
 
@@ -153,11 +150,6 @@ class FieldEditDialog : DialogFragment() {
     private fun currentFieldType(): FieldType {
         val pos = fieldTypeSpinner?.selectedItemPosition ?: 0
         return FieldType.entries.getOrNull(pos) ?: FieldType.TEXT
-    }
-
-    /** [listener]가 false를 반환하면(예: 키 중복 거부) 다이얼로그가 닫히지 않고 입력이 유지된다. */
-    fun setOnSaveListener(listener: (FieldDefinition) -> Boolean) {
-        onSave = listener
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -2367,6 +2359,18 @@ class FieldEditDialog : DialogFragment() {
             return false
         }
 
+        // 키 중복은 **전달 전에 여기서** 거부한다 — 결과(R-65)는 건네는 즉시 다이얼로그가 닫히므로
+        // 호출부가 사후에 거부해도 입력을 되살릴 길이 없다. 거부 시 창이 유지되어 입력이 보존된다.
+        // 자기 키 그대로의 편집(키를 안 바꾼 저장)은 중복이 아니다.
+        if (key != existingField?.key && isKeyTaken(key)) {
+            android.widget.Toast.makeText(
+                requireContext(),
+                getString(R.string.result_field_key_duplicate, key),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return false
+        }
+
         val types = FieldType.entries.toTypedArray()
         val selectedType = types[binding.spinnerFieldType.selectedItemPosition]
 
@@ -2535,7 +2539,8 @@ class FieldEditDialog : DialogFragment() {
             checkTypeChangeImpact(field, oldType, field.type)
             false
         } else {
-            deliverResult(field) // 콜백이 저장을 거부하면(false) 다이얼로그를 유지한다
+            deliverResult(field)
+            true
         }
     }
 
@@ -2710,35 +2715,40 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    /** @return 결과가 수락되었으면 true. onSave 콜백이 false를 반환하면(예: 키 중복 거부) 다이얼로그를 유지해야 한다. */
-    private fun deliverResult(field: FieldDefinition): Boolean {
-        // Support both callback (for non-rotation case) and FragmentResult (survives rotation)
-        val listener = onSave
-        return if (listener != null) {
-            listener(field)
-        } else {
-            if (isAdded) {
-                setFragmentResult(RESULT_KEY, bundleOf(
-                    RESULT_FIELD_JSON to Gson().toJson(field),
-                    RESULT_INITIAL_VALUES to stagedInitialValues,
-                    // 전역 기본 필드(B-119)는 config가 아니라 **별도 표**를 건드리는 조작이라
-                    // 필드 JSON에 담기지 않는다. 스위치 상태를 그대로 넘기고, 승격·해제는
-                    // 저장 뒤 호출부가 저장소를 통해 한다.
-                    // 스위치를 열지 않은 호출부는 늘 false라 아무 일도 일어나지 않는다.
-                    RESULT_DEFAULT_FIELD to stagedDefaultField
-                ))
-            }
-            true
-        }
+    /**
+     * 저장하려는 키가 이미 점유돼 있는가. 점유 키는 두 갈래로 안다 —
+     * DB에 사는 필드는 [universeFieldKeys](같은 세계관·같은 대상, 열 때 비동기 로드),
+     * DB 밖 목록(프리셋·기본 필드 템플릿)은 호출부가 [ARG_RESERVED_KEYS]로 준다.
+     * 로드가 안 끝났거나 실패했으면(null) 그 갈래는 건너뛴다 — 그 경우 DB 유니크 제약과
+     * 호출부의 실패 통보가 마지막 빗장이라 무통보 유실은 아니다.
+     */
+    private fun isKeyTaken(key: String): Boolean =
+        universeFieldKeys?.contains(key) == true ||
+            arguments?.getStringArrayList(ARG_RESERVED_KEYS)?.contains(key) == true
+
+    /**
+     * 결과를 FragmentResult로 건넨다 (R-65) — 호스트가 인스턴스에 꽂는 콜백 `var`는 회전이
+     * 지우지만, 이 길은 프래그먼트 매니저가 결과를 들고 있다가 **다시 선** 호스트에 준다.
+     * 거부(키 중복 등)는 전달 전 [saveField]에서 끝난다 — 전달 뒤에는 다이얼로그가 닫혀
+     * 입력을 되살릴 길이 없다.
+     */
+    private fun deliverResult(field: FieldDefinition) {
+        if (!isAdded) return
+        setFragmentResult(RESULT_KEY, bundleOf(
+            RESULT_FIELD_JSON to Gson().toJson(field),
+            RESULT_INITIAL_VALUES to stagedInitialValues,
+            // 전역 기본 필드(B-119)는 config가 아니라 **별도 표**를 건드리는 조작이라
+            // 필드 JSON에 담기지 않는다. 스위치 상태를 그대로 넘기고, 승격·해제는
+            // 저장 뒤 호출부가 저장소를 통해 한다.
+            // 스위치를 열지 않은 호출부는 늘 false라 아무 일도 일어나지 않는다.
+            RESULT_DEFAULT_FIELD to stagedDefaultField
+        ))
     }
 
-    /** 비동기 경로의 저장 완결 처리: 결과가 수락되면 다이얼로그를 닫고, 거부되면 저장 버튼을 되살린다. */
+    /** 비동기 경로의 저장 완결 처리: 결과를 건네고 다이얼로그를 닫는다. */
     private fun completeSave(field: FieldDefinition) {
-        if (deliverResult(field)) {
-            dismissAllowingStateLoss()
-        } else {
-            setSaveButtonEnabled(true)
-        }
+        deliverResult(field)
+        dismissAllowingStateLoss()
     }
 
     private fun setSaveButtonEnabled(enabled: Boolean) {
@@ -3089,6 +3099,7 @@ class FieldEditDialog : DialogFragment() {
         private const val ARG_ENTITY_TYPE = "entityType"
         private const val ARG_PREFILL_JSON = "prefillJson"
         private const val ARG_ALLOW_DEFAULT_FIELD = "allowDefaultField"
+        private const val ARG_RESERVED_KEYS = "reservedKeys"
 
         /**
          * AI 추천 경로가 **실제로 있는** 필드 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).
@@ -3113,19 +3124,29 @@ class FieldEditDialog : DialogFragment() {
          * *저장 뒤 저장소를 부르지 않는* 경로가 있다. 거기서 스위치를 보이면 **켜도 아무 일도
          * 일어나지 않는 조작**이 되고, 그것은 조용한 무동작이라 변수 제어(개발 의도 2번)에
          * 어긋난다. 그래서 켜는 쪽이 *"나는 이 결과를 처리한다"*고 밝히게 한다.
+         *
+         * @param reservedKeys DB 밖 목록(프리셋 필드·기본 필드 템플릿)을 편집하는 호출부의
+         *   **점유 키** — 그 목록은 다이얼로그가 스스로 조회할 수 없으므로 호출부가 준다.
+         *   편집 대상 자신의 키는 빼고 넘긴다. 인자 번들에 실리므로 회전 뒤 재생성된
+         *   다이얼로그에서도 같은 거부가 성립한다(R-65). DB에 사는 필드(universeId != 0)는
+         *   넘길 필요 없다 — 다이얼로그가 같은 세계관·같은 대상의 키를 직접 로드한다.
          */
         fun newInstance(
             universeId: Long,
             field: FieldDefinition?,
             entityType: String = FieldDefinition.ENTITY_CHARACTER,
             prefill: FieldDefinition? = null,
-            allowDefaultField: Boolean = false
+            allowDefaultField: Boolean = false,
+            reservedKeys: Collection<String>? = null
         ): FieldEditDialog {
             return FieldEditDialog().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_UNIVERSE_ID, universeId)
                     putBoolean(ARG_ALLOW_DEFAULT_FIELD, allowDefaultField)
                     putString(ARG_ENTITY_TYPE, field?.entityType ?: prefill?.entityType ?: entityType)
+                    if (reservedKeys != null) {
+                        putStringArrayList(ARG_RESERVED_KEYS, ArrayList(reservedKeys))
+                    }
                     if (field != null) {
                         putString(ARG_FIELD_JSON, Gson().toJson(field))
                     } else if (prefill != null) {

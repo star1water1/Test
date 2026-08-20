@@ -301,20 +301,50 @@ class ExcelImporter(context: Context) {
         )
     }
 
-    private fun offscreenSummary(summary: String, errorCount: Int, warningCount: Int): String {
+    /**
+     * 화면 밖 종결 고지의 **(알림 본문, 보관함 본문)** 짝.
+     *
+     * 알림에는 건수와 약속만 싣고 **상세는 보관함에 싣는다** — 다음 진입에서 보관함 창이
+     * 그대로 보여 주므로 "앱을 열면 상세를 보여 드립니다"가 참이 된다. 종전에는 둘 다
+     * 건수뿐인데 문구가 *"앱에서 상세를 확인하세요"*여서 **확인할 상세가 앱 어디에도
+     * 없었다**(거짓 고지 — 상세는 결과 창과 함께 사라졌다). 상세 본문은 화면의 '상세 보기'
+     * 창과 같은 함수가 짓는다([TransferResultText] — 두 벌이면 한쪽만 고쳐진다).
+     */
+    private fun offscreenBodies(
+        summary: String,
+        errors: List<String>,
+        warnings: List<String>
+    ): Pair<String, String> {
         val parts = mutableListOf<String>()
-        if (errorCount > 0) parts.add("오류 ${errorCount}건")
-        if (warningCount > 0) parts.add("경고 ${warningCount}건")
-        if (parts.isEmpty()) return summary
-        return "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱에서 상세를 확인하세요"
+        if (errors.isNotEmpty()) parts.add("오류 ${errors.size}건")
+        if (warnings.isNotEmpty()) parts.add("경고 ${warnings.size}건")
+        if (parts.isEmpty()) return summary to summary
+        val notice = "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱을 열면 상세를 보여 드립니다"
+        val stored = "$notice\n\n${TransferResultText.detailBody(errors, warnings)}"
+        return notice to stored
     }
 
     /**
      * @param notify 시스템 알림까지 띄우는가. 같은 화면이 곧 다시 서는 경우(회전)에는 false다 —
      *   보관함이 다음 진입에서 창으로 띄우므로, 알림은 같은 말을 한 번 더 하는 소음이 된다.
      */
-    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true) {
-        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, body)
+    /**
+     * 가져오기 결과를 **작업 이력**에 남긴다 — 내보내기·월드패키지·자동백업은 전부 남기는데
+     * 가져오기만 무이력이라, 결과 창을 닫으면 요약·경고·오류를 다시 볼 길이 없었다.
+     * 남기는 것은 *작업이 실제로 돈 뒤의 종결*뿐이다 — 취소·파일 거절은 사용자가 방금 한
+     * 일이라 이력에 쌓으면 소음이다([deliverTerminal]의 경계와 같은 근거).
+     */
+    private fun logImportResult(result: com.novelcharacter.app.util.OpResult) {
+        (appContext as? com.novelcharacter.app.NovelCharacterApp)
+            ?.operationLogRepository?.logAsync(result)
+    }
+
+    /**
+     * @param storedBody 보관함에 남길 본문 — 기본은 알림과 같다. 오류·경고 상세가 있는
+     *   종결 고지는 여기에 상세를 실어([offscreenBodies]) 다음 진입 창이 보여 준다.
+     */
+    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true, storedBody: String = body) {
+        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, storedBody)
         if (!notify) return
         runCatching {
             com.novelcharacter.app.notification.NotificationHelper
@@ -383,6 +413,13 @@ class ExcelImporter(context: Context) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        e.message
+                    )
+                )
                 withContext(Dispatchers.Main) {
                     // 작업이 돈 뒤의 종결 고지라 화면이 없으면 알림으로 보낸다 (B-56).
                     deliverTerminal(
@@ -465,6 +502,13 @@ class ExcelImporter(context: Context) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        e.message
+                    )
+                )
                 withContext(Dispatchers.Main) {
                     deliverTerminal(
                         appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
@@ -819,10 +863,12 @@ class ExcelImporter(context: Context) {
         )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
-            // 월드패키지도 같은 처분이다(B-56) — 안내 건수까지 실어야 '볼 것이 있다'가 남는다.
+            // 월드패키지도 같은 처분이다(B-56) — 알림에 건수를, 보관함에 안내 상세까지 싣는다.
+            val (notice, stored) = offscreenBodies(summary, emptyList(), outcome.warnings)
             deliverOffscreen(
                 appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
-                offscreenSummary(summary, errorCount = 0, warningCount = outcome.warnings.size)
+                notice,
+                storedBody = stored
             )
             return
         }
@@ -1266,7 +1312,47 @@ class ExcelImporter(context: Context) {
             // 대형 백업의 압축 해제된 시트 XML이 상한에 걸려 거부되지 않게 한다.
             org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(POI_MAX_ENTRY_SIZE)
 
-            opened = openImportSource(xlsxFile)
+            opened = try {
+                openImportSource(xlsxFile)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: org.apache.poi.EncryptedDocumentException) {
+                // 암호가 걸린 것은 통합문서가 **맞다** — "형식이 아니다"로 말하면 CSV 변환
+                // 안내가 오답이 된다(콜드 검토 2026.08.20). 처분은 아래와 같은 부류다
+                // (아무것도 돌기 전의 거절 → 토스트, 이력 없음).
+                android.util.Log.e("ExcelImporter", "Workbook is password-protected", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appContext,
+                        com.novelcharacter.app.R.string.import_workbook_encrypted,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return
+            } catch (e: Exception) {
+                // **형식 문제로 단정할 수 있는 부류만 형식 안내를 낸다** — 통합문서가 아닌
+                // 파일은 POI가 UnsupportedFileFormatException 계열로, 스트리밍 파서는 zip이
+                // 아니라는 ZipException으로 거절한다. 그 밖(캐시 읽기 실패 등)은 형식이 아니라
+                // 읽기의 실패이므로 종전 일반 실패 경로로 던진다 — 멀쩡한 형식에 "통합문서가
+                // 아니다"라고 단정하면 사용자를 CSV 변환으로 보낸다(확인 없는 단정 금지 — B-225).
+                val notWorkbook = e is org.apache.poi.UnsupportedFileFormatException ||
+                    e is org.apache.poi.EmptyFileException ||
+                    e is java.util.zip.ZipException
+                if (!notWorkbook) throw e
+                // 일반 실패 창은 "그 단계의 시트를 확인"하라고 안내하는데, 통합문서가 아닌
+                // 파일(csv를 확장자만 바꾼 것 등)에는 확인할 시트가 없다. 아직 아무것도 돌기
+                // 전의 거절이므로 토스트로 남긴다(OTHER_ZIP과 같은 처분 — deliverTerminal
+                // KDoc의 경계). 이력에도 남기지 않는다(같은 근거).
+                android.util.Log.e("ExcelImporter", "Cannot open file as a workbook", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appContext,
+                        com.novelcharacter.app.R.string.import_not_workbook,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return
+            }
             val workbook = opened.source
 
             // Phase 1: 분석 구간의 진행 창(작업형 · R-26).
@@ -1390,6 +1476,13 @@ class ExcelImporter(context: Context) {
                 stageProgress?.dismiss()
                 // 작업이 한참 돈 뒤의 종결 고지다 — OOM은 큰 파일에서 나고, 큰 파일일수록
                 // 사용자가 기다리다 앱을 벗어나 있다(B-56).
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        appContext.getString(com.novelcharacter.app.R.string.import_oom)
+                    )
+                )
                 deliverTerminal(
                     appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
                     appContext.getString(com.novelcharacter.app.R.string.import_oom)
@@ -2038,14 +2131,27 @@ class ExcelImporter(context: Context) {
     }
 
     private fun showResultDialog(result: ImportResult, summaryMessage: String) {
+        // 결과 창은 닫히면 사라진다 — 화면 유무와 무관하게 이력에 먼저 남긴다. 오류가 하나라도
+        // 있으면 실패 표시로 남겨 이력 화면에서 눈에 띈다(부분 반영이라는 사실이 요약에 있다).
+        logImportResult(
+            com.novelcharacter.app.util.OpResult(
+                category = com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                summary = summaryMessage,
+                success = result.errors.isEmpty(),
+                detail = TransferResultText.detailBody(result.errors, result.warnings)
+                    .takeIf { it.isNotBlank() }
+            )
+        )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
             // 화면이 사라진 뒤에 끝났다 — 알림 + 다음 진입 고지로 보낸다(B-56).
-            // **오류·경고 건수를 요약에 함께 싣는다**: 창을 못 띄우면 '상세 보기'로 갈 길이
-            // 없으므로, 적어도 *볼 것이 있다*는 사실은 이 한 줄이 말해야 한다.
+            // 알림에는 건수를, **보관함에는 상세까지** 싣는다 — 창을 못 띄웠어도 상세가
+            // 사라지지 않고 다음 진입에서 그대로 뜬다([offscreenBodies]).
+            val (notice, stored) = offscreenBodies(summaryMessage, result.errors, result.warnings)
             deliverOffscreen(
                 appContext.getString(com.novelcharacter.app.R.string.import_result_title),
-                offscreenSummary(summaryMessage, result.errors.size, result.warnings.size)
+                notice,
+                storedBody = stored
             )
             return
         }
@@ -2086,6 +2192,14 @@ class ExcelImporter(context: Context) {
             appContext.getString(com.novelcharacter.app.R.string.import_failed_where, lastDonePhase, lastDoneRows)
         }
         val body = appContext.getString(com.novelcharacter.app.R.string.import_failed_nothing_applied, where)
+        // 전부-아니면-전무와 멈춘 자리를 말하는 고지다 — 이력에도 남겨 나중에 다시 볼 수 있게 한다.
+        logImportResult(
+            com.novelcharacter.app.util.OpResult.failure(
+                com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                body
+            )
+        )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
             // **이 고지야말로 사라지면 안 된다** — 전부 아니면 전무라는 사실과 멈춘 자리를
@@ -2157,37 +2271,13 @@ class ExcelImporter(context: Context) {
     private fun showErrorDetailDialog(act: android.app.Activity, result: ImportResult) {
         if (act.isFinishing || act.isDestroyed) return
 
-        val sb = StringBuilder()
-        val maxDetailItems = 30
-        val maxShownItems = 20
-        if (result.errors.isNotEmpty()) {
-            sb.appendLine("── 오류 (${result.errors.size}건) ──")
-            if (result.errors.size <= maxDetailItems) {
-                result.errors.forEachIndexed { i, err ->
-                    sb.appendLine("${i + 1}. $err")
-                }
-            } else {
-                result.errors.take(maxShownItems).forEachIndexed { i, err ->
-                    sb.appendLine("${i + 1}. $err")
-                }
-                sb.appendLine("... 외 ${result.errors.size - maxShownItems}건")
-            }
-        }
-        if (result.warnings.isNotEmpty()) {
-            if (sb.isNotEmpty()) sb.appendLine()
-            sb.appendLine("── 경고 (${result.warnings.size}건) ──")
-            if (result.warnings.size <= maxDetailItems) {
-                result.warnings.forEach { sb.appendLine("• $it") }
-            } else {
-                result.warnings.take(maxShownItems).forEach { sb.appendLine("• $it") }
-                sb.appendLine("... 외 ${result.warnings.size - maxShownItems}건")
-            }
-        }
+        // 본문은 보관함(화면 밖 종결 고지)과 같은 함수가 짓는다 — 두 벌이면 한쪽만 고쳐진다.
+        val body = TransferResultText.detailBody(result.errors, result.warnings)
 
         // 오류·경고를 각각 최대 30건까지 적으므로 60줄 넘는 본문이 나온다(B-91).
         val scrollView = cappedScrollView(act)
         val textView = TextView(act).apply {
-            text = sb.toString()
+            text = body
             val dp16 = (16 * act.resources.displayMetrics.density).toInt()
             setPadding(dp16, dp16, dp16, dp16)
             setTextIsSelectable(true)

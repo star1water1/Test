@@ -1030,9 +1030,12 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
                 calc = field.fieldType == FieldType.CALCULATED
             ))
         }
-        add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
-        // 대표 이미지(B-103 D8). `이미지경로`와 달리 **읽기 전용이 아니다** — 사람이 읽고
-        // 고칠 수 있어야 값어치가 있고, 그래서 내부 경로 원문이 아니라 파일명을 싣는다.
+        // 편집이 반영되는 열이다 — 세계관·작품 시트의 같은 열, 사용 안내(B-222 WD-6)와 한 규약.
+        // 회색(readOnly)으로 잠그면 범례("앱이 채우는 열 — 그대로 두세요")를 믿는 사용자가
+        // 문서화된 편집 능력을 영영 못 쓴다.
+        add(ColumnSpec("이미지경로", width = 4000))
+        // 대표 이미지(B-103 D8). 사람이 읽고 고칠 수 있어야 값어치가 있고,
+        // 그래서 내부 경로 원문이 아니라 파일명을 싣는다.
         add(ColumnSpec("대표이미지", width = 5000))
         add(ColumnSpec("작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000))
         add(ColumnSpec("메모", width = 10000, wrap = true))

@@ -492,6 +492,7 @@
     <string name="event_unlink_from_character">이 캐릭터에서 연결 해제</string>
     <string name="event_delete_confirm">사건 \'%1$s\'을(를) 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="event_delete_shared_confirm">사건 \'%1$s\'을(를) 삭제하시겠습니까?\n이 사건에는 다른 캐릭터 %2$d명도 연결돼 있어 그쪽 연표에서도 사라집니다. 이 캐릭터에서만 떼어 내려면 \'이 캐릭터에서 연결 해제\'를 쓰세요.\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="event_delete_linked_confirm">사건 \'%1$s\'을(를) 삭제하시겠습니까?\n연결된 캐릭터 %2$d명의 연표에서도 사라집니다.\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="set_as_standard_year">표준연도로 설정</string>
     <string name="standard_year_no_novel">이 사건에 연결된 작품이 없습니다</string>
     <string name="standard_year_select_novel">표준연도를 설정할 작품 선택</string>
@@ -744,6 +745,7 @@
     <string name="delete_impact_quotes">· 명대사 %1$d건</string>
     <string name="delete_impact_memberships">· 세력 소속 %1$d건</string>
     <string name="delete_impact_images">· 이미지 %1$d장 (휴지통 정리 시 파일 삭제)</string>
+    <string name="delete_impact_events">· 사건 연계 %1$d건 (사건 자체는 연표에 남습니다)</string>
     <string name="delete_trash_notice">삭제 후 %1$d일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n보관 단위는 한 번의 삭제이며 최근 %2$d건까지 유지됩니다 — 한 삭제가 만든 백업은 통째로 남거나 통째로 사라지고, 한도를 넘기면 오래된 삭제부터 영구 삭제됩니다.</string>
     <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n세계관·작품·캐릭터·세력·사건이 하나의 묶음으로 휴지통에 보관됩니다(최근 %6$d건, %7$d일). 휴지통에서 \'전체 복원\'을 누르면 세계관부터 순서대로 되살아나 참조도 다시 이어집니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
@@ -796,7 +798,7 @@
     <!-- 내보내기 2단 진입 — '전부 안전하게 보관'과 '표로 뽑아 작업'은 원하는 기본값이 정반대다 -->
     <string name="export_pick_title">내보내기</string>
     <string name="export_full_backup">전체 백업 (이미지 포함)</string>
-    <string name="export_full_backup_purpose">모든 데이터와 이미지를 한 파일(zip)로 내보냅니다. 기기 이전·복구용입니다.</string>
+    <string name="export_full_backup_purpose">모든 작품 데이터와 이미지를 한 파일(zip)로 내보냅니다. 기기 이전·복구용입니다.\n휴지통·작업 이력·최근 활동은 기기 안의 기록이라 실리지 않습니다.</string>
     <string name="export_choose_items">골라서 내보내기 (고급)</string>
     <string name="export_choose_items_purpose">항목을 직접 골라 엑셀로 뽑습니다. 표 작업용이라 이미지는 기본으로 빠집니다.</string>
     <!-- 대용량 사전 고지(견적) — 경고이지 공간 검사가 아니다 -->
@@ -811,6 +813,23 @@
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
     <string name="export_save_cancelled">저장을 취소했습니다 — 만든 파일은 지웠습니다</string>
     <string name="export_save_cancelled_kept">저장을 취소했습니다</string>
+    <string name="export_save_cancelled_retained">저장을 취소했습니다 — 파일은 보관해 두었으니 다음에 다시 물어봅니다</string>
+    <!-- 저장(SAF) 종결 고지 — 이 구간은 화면이 사라져도 돌므로(EXPORT_SAVE) 끝나는 시점에
+         화면이 없을 수 있고, 그때는 토스트 대신 알림+보관함으로 나간다(제목이 알림 제목이 된다).
+         실패 문구 둘은 목적지 반쪽 파일의 처분으로 가른다 — 지웠다고 단정하는 것은 실제로
+         지워졌을 때뿐이다(B-225). -->
+    <string name="transfer_export_saved_title">내보내기 저장 완료</string>
+    <string name="transfer_export_save_failed_title">내보내기 저장 실패</string>
+    <string name="export_save_failed_destination_removed">파일 저장에 실패했습니다 — 쓰다 만 파일은 지웠습니다. 만든 내보내기는 앱에 보관해 두었으니 다시 저장할 수 있습니다.</string>
+    <string name="export_save_failed_destination_unknown">파일 저장에 실패했습니다 — 선택한 위치에 불완전한 파일이 남았을 수 있으니 확인해 주세요. 만든 내보내기는 앱에 보관해 두었으니 다시 저장할 수 있습니다.</string>
+    <!-- 저장 실패 재시도 — 몇 분짜리 내보내기를 처음부터 다시 돌리게 하지 않는다(원칙 04).
+         버리기의 두 문구도 실제 삭제 결과로 가른다(B-225). -->
+    <string name="export_retry_body">저장하지 못한 내보내기 파일(%1$s)이 앱에 보관되어 있습니다. 다시 저장을 누르면 처음부터 만들지 않고 이 파일을 그대로 저장합니다.</string>
+    <string name="export_retry_save">다시 저장</string>
+    <string name="export_retry_discard">버리기</string>
+    <string name="export_retry_later">나중에</string>
+    <string name="export_retry_discarded">보관된 내보내기 파일을 지웠습니다</string>
+    <string name="export_retry_discard_failed">파일을 지우지 못했습니다 — 앱의 임시 저장 공간에 남아 있습니다</string>
 
     <!--
         가져오기 진행도(작업형 · B-51) — 구간이 넷이고 단위가 둘이다.
@@ -1425,6 +1444,8 @@
     <string name="share_world_conflict_new">새로 생성</string>
     <!-- 월드패키지 가져오기 (S-5) -->
     <string name="import_unsupported_zip">지원하지 않는 ZIP 파일입니다 — 엑셀 백업도 월드패키지도 아닙니다. 앱에서 내보낸 파일인지 확인하세요.</string>
+    <string name="import_not_workbook">이 파일은 엑셀 통합문서가 아니어서 열 수 없습니다 — .xlsx 또는 앱에서 내보낸 백업 파일을 골라 주세요. CSV는 엑셀에서 .xlsx로 저장하면 가져올 수 있습니다. 데이터는 바뀌지 않았습니다.</string>
+    <string name="import_workbook_encrypted">이 파일은 암호로 보호되어 있어 열 수 없습니다 — 엑셀에서 암호를 해제해 저장한 뒤 다시 가져와 주세요. 데이터는 바뀌지 않았습니다.</string>
     <string name="world_package_import_title">월드패키지 가져오기</string>
     <string name="world_package_importing">월드패키지를 가져오는 중…</string>
     <string name="world_package_not_a_package">월드패키지 형식이 아닙니다 (manifest.json 없음)</string>
@@ -2164,6 +2185,7 @@
     <string name="batch_delete_impact_quotes">명대사 %d건</string>
     <string name="batch_delete_impact_memberships">세력 소속 %d건</string>
     <string name="batch_delete_impact_events">사건 연계 %d건</string>
+    <string name="batch_delete_impact_images">이미지 %d장</string>
     <string name="batch_tag_add_title">태그 일괄 추가</string>
     <string name="batch_tag_remove_title">태그 일괄 삭제</string>
     <string name="batch_tag_input_hint">태그 입력 (콤마로 구분)</string>

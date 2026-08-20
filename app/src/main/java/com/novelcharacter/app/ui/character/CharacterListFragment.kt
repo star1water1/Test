@@ -147,6 +147,7 @@ class CharacterListFragment : Fragment() {
                         if (impact.stateChanges > 0) add(getString(R.string.delete_impact_state_changes, impact.stateChanges))
                         if (impact.quotes > 0) add(getString(R.string.delete_impact_quotes, impact.quotes))
                         if (impact.factionMemberships > 0) add(getString(R.string.delete_impact_memberships, impact.factionMemberships))
+                        if (impact.eventLinks > 0) add(getString(R.string.delete_impact_events, impact.eventLinks))
                         if (impact.images > 0) add(getString(R.string.delete_impact_images, impact.images))
                     }
                     val message = if (details.isEmpty()) {
