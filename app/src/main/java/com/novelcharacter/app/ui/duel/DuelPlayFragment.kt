@@ -28,6 +28,7 @@ import com.novelcharacter.app.util.CharacterImageLoader
 import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.DuelCardGrid
 import com.novelcharacter.app.util.DuelCardInfo
+import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
 import com.novelcharacter.app.util.DuelPairing
@@ -625,10 +626,7 @@ class DuelPlayFragment : Fragment() {
         views.profileContainer.removeAllViews()
         val inflater = LayoutInflater.from(views.root.context)
         for (line in card.profiles) {
-            val row = inflater.inflate(R.layout.item_duel_card_profile, views.profileContainer, false)
-            row.findViewById<android.widget.TextView>(R.id.profileLabel).text = line.label
-            row.findViewById<android.widget.TextView>(R.id.profileValue).text = line.value
-            views.profileContainer.addView(row)
+            views.profileContainer.addView(profileRow(inflater, views.profileContainer, line))
         }
         views.profileMore.visibility = if (card.showProfileMore) View.VISIBLE else View.GONE
         if (card.showProfileMore) {
@@ -649,6 +647,37 @@ class DuelPlayFragment : Fragment() {
                 line.value.ifEmpty { getString(R.string.duel_field_value_empty) }
             views.influenceContainer.addView(row)
         }
+    }
+
+    /**
+     * 프로필 한 줄을 그린다 — **명대사만 모양이 다르다** (사용자 요청 2026.08.20).
+     *
+     * 카드와 펼침 시트가 같은 함수를 지나는 것이 요점이다. 두 자리에 따로 적으면 한쪽만
+     * 대사 모양을 갖고, 그 어긋남은 **펼쳐 봐야** 보인다.
+     *
+     * @param expanded 펼침 시트인가. 그때는 **값이 빈 줄도 남고** *"안 적음"*을 적는다 —
+     *   좁은 카드와 달리 여기서는 *"그 필드가 걸려 있는데 비었다"*가 알 값어치가 있다.
+     */
+    private fun profileRow(
+        inflater: LayoutInflater,
+        parent: ViewGroup,
+        line: DuelCardInfo.Line,
+        expanded: Boolean = false
+    ): View {
+        // 대사인데 값이 비어 있으면 **보통 줄로 그린다** — 인용 부호만 뜬 빈 상자를 만들지
+        // 않으려는 것이고, 펼침 시트에서 "안 적음"이 이름표와 함께 읽혀야 하기 때문이다.
+        if (DuelSystemFields.isQuoteKey(line.key) && line.value.isNotEmpty()) {
+            val row = inflater.inflate(R.layout.item_duel_card_quote, parent, false)
+            row.findViewById<android.widget.TextView>(R.id.quoteValue).text =
+                getString(R.string.quote_wrapped, line.value)
+            return row
+        }
+        val row = inflater.inflate(R.layout.item_duel_card_profile, parent, false)
+        row.findViewById<android.widget.TextView>(R.id.profileLabel).text = line.label
+        row.findViewById<android.widget.TextView>(R.id.profileValue).text =
+            if (expanded) line.value.ifEmpty { getString(R.string.duel_field_value_empty) }
+            else line.value
+        return row
     }
 
     /** `여 · 17세` — 조각이 하나뿐이면 그것만, 둘 다 없으면 빈 글이다(줄 자체가 사라진다). */
@@ -683,13 +712,9 @@ class DuelPlayFragment : Fragment() {
             trio.findViewById<android.widget.TextView>(R.id.profileValue).text = trioTextOf(card)
             body.addView(trio)
         }
+        val sheetInflater = LayoutInflater.from(context)
         for (line in card.allProfiles) {
-            val row = LayoutInflater.from(context)
-                .inflate(R.layout.item_duel_card_profile, body, false)
-            row.findViewById<android.widget.TextView>(R.id.profileLabel).text = line.label
-            row.findViewById<android.widget.TextView>(R.id.profileValue).text =
-                line.value.ifEmpty { getString(R.string.duel_field_value_empty) }
-            body.addView(row)
+            body.addView(profileRow(sheetInflater, body, line, expanded = true))
         }
         // **접힌 카드에서는 영향 줄도 여기서만 볼 수 있다**(B-115) — 카드가 이름+트리오로
         // 접혔으면 판단 재료가 통째로 이 시트에 있다. 접히지 않은 카드에서는 이미 카드에

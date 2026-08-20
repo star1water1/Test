@@ -146,6 +146,10 @@ class WorldPackageExporter(private val context: Context) {
         val tags = SqlInChunks.flat(characterIds) {
             db.characterTagDao().getTagsForCharacters(it)
         }.sortedWith(WorldPackageScope.TAGS)
+        // 명대사 (사용자 요청 2026.08.20) — 태그와 같은 통로다.
+        val quotes = SqlInChunks.flat(characterIds) {
+            db.characterQuoteDao().getQuotesForCharacters(it)
+        }.sortedWith(WorldPackageScope.QUOTES)
         // 관계는 끝마다 따로 묻는다 — 한 질의에 두 목록을 실으면 바인드 변수가 갑절이 된다
         // (사유는 [WorldPackageScope.relationshipsInScope]). 겹은 그 함수가 없앤다.
         val relationships = WorldPackageScope.relationshipsInScope(
@@ -248,6 +252,7 @@ class WorldPackageExporter(private val context: Context) {
                 WorldPackageEntries.CHARACTERS to characters,
                 WorldPackageEntries.FIELD_VALUES to fieldValues,
                 WorldPackageEntries.STATE_CHANGES to stateChanges,
+                WorldPackageEntries.QUOTES to quotes,
                 WorldPackageEntries.TAGS to tags,
                 WorldPackageEntries.RELATIONSHIPS to relationships,
                 WorldPackageEntries.RELATIONSHIP_CHANGES to relChanges,

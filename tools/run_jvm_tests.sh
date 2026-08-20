@@ -69,6 +69,7 @@ fi
 SOURCES="
 $MAIN/data/model/EntityCode.kt
 $MAIN/data/model/Character.kt
+$MAIN/data/model/CharacterQuote.kt
 $MAIN/data/model/Novel.kt
 $MAIN/data/model/Universe.kt
 $MAIN/data/model/FieldDefinition.kt
@@ -114,6 +115,7 @@ $MAIN/util/ProgressScale.kt
 $MAIN/util/DialogScrollCap.kt
 $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
+$MAIN/util/QuotePicker.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
 $MAIN/util/PreviewCreations.kt
@@ -270,6 +272,8 @@ $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/BirthdayHelper.kt
+$MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -366,6 +370,9 @@ $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
+$TEST/util/QuotePickerTest.kt
+$TEST/util/BirthdayCelebrationTest.kt
+$TEST/util/BirthdayHelperTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt
@@ -414,6 +421,7 @@ $TEST/util/DuelAiContextTest.kt
 $TEST/util/DuelGradeAssignTest.kt
 $TEST/util/DuelAxisChoiceTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
+$TEST/excel/QuoteSheetTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/CsvTokensTest.kt

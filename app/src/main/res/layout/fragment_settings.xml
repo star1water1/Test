@@ -96,6 +96,39 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
+            <!-- 생일 축하 창 (사용자 요청 2026.08.20) — 기본 켜짐. 생일을 적어 둔 사용자는
+                 축하받기를 기대하므로, 여기는 켜는 스위치가 아니라 **끄는 스위치**다. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchBirthdayCelebration"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/birthday_celebration_setting"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <!-- 목적문 (R-25) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/birthday_celebration_setting_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOnSurfaceVariant"
+                android:alpha="0.2" />
+
             <!-- Section: AI 연동 (BYOK 프로바이더 관리) -->
             <TextView
                 android:layout_width="wrap_content"

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  축하 창의 쪽 표시 점 (사용자 요청 2026.08.20 — 여럿이면 좌우로 넘겨 본다).
+  색은 화면이 `backgroundTintList`로 넣는다 — 지금 쪽과 나머지가 같은 모양에 색만 다르다.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFF" />
+</shape>

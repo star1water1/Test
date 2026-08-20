@@ -23,6 +23,8 @@ data class ExportOptions(
     val fieldDefinitions: Boolean = true,
     val timeline: Boolean = true,
     val stateChanges: Boolean = true,
+    /** 캐릭터 명대사 (사용자 요청 2026.08.20) — 캐릭터의 자식 표라 상태 변화 옆이다. */
+    val quotes: Boolean = true,
     val relationships: Boolean = true,
     val relationshipChanges: Boolean = true,
     val nameBank: Boolean = true,
@@ -73,7 +75,8 @@ data class ExportOptions(
         universes, novels, characters, fieldDefinitions,
         timeline, stateChanges, relationships, relationshipChanges,
         nameBank, factions, factionMemberships, factionRelationships,
-        presetTemplates, searchPresets, characterListPresets, appSettings, imageMeta, duels, images
+        presetTemplates, searchPresets, characterListPresets, appSettings, imageMeta, duels,
+        quotes, images
     )
 
     companion object {
@@ -88,10 +91,11 @@ data class ExportOptions(
             "필드 템플릿", "검색 프리셋", "목록 프리셋", "앱 설정",
             "이미지 태그·링크",
             "대결 (축·기록·상성)",
+            "명대사",
             "이미지 (파일 크기 증가)"
         )
 
-        private const val FIELD_COUNT = 19
+        private const val FIELD_COUNT = 20
 
         fun fromBooleanArray(arr: BooleanArray): ExportOptions {
             require(arr.size >= FIELD_COUNT) {
@@ -116,7 +120,8 @@ data class ExportOptions(
                 appSettings = arr[15],
                 imageMeta = arr[16],
                 duels = arr[17],
-                images = arr[18]
+                quotes = arr[18],
+                images = arr[19]
             )
         }
     }
@@ -130,6 +135,7 @@ data class DeleteOptions(
     val characters: Boolean = false,
     val timeline: Boolean = false,
     val stateChanges: Boolean = false,
+    val quotes: Boolean = false,
     val relationships: Boolean = false,
     val relationshipChanges: Boolean = false,
     val nameBank: Boolean = false,
@@ -137,6 +143,6 @@ data class DeleteOptions(
     val factionMemberships: Boolean = false,
     val factionRelationships: Boolean = false
 ) {
-    val hasAny: Boolean get() = characters || timeline || stateChanges || relationships ||
+    val hasAny: Boolean get() = characters || timeline || stateChanges || quotes || relationships ||
         relationshipChanges || nameBank || factions || factionMemberships || factionRelationships
 }

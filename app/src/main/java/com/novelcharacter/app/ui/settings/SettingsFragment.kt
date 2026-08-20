@@ -134,6 +134,14 @@ class SettingsFragment : Fragment() {
                 .setReadScreenNoteEnabled(requireContext(), checked)
         }
 
+        // 생일 축하 창 (사용자 요청 2026.08.20) — 위와 같은 규약(리스너 전에 상태를 세운다).
+        binding.switchBirthdayCelebration.isChecked =
+            com.novelcharacter.app.util.BirthdayCelebrationPrefs.isEnabled(requireContext())
+        binding.switchBirthdayCelebration.setOnCheckedChangeListener { _, checked ->
+            com.novelcharacter.app.util.BirthdayCelebrationPrefs
+                .setEnabled(requireContext(), checked)
+        }
+
         // Data management — 백업(전부 보관)과 데이터 추출(표로 뽑기)은 원하는 기본값이
         // 정반대라 행부터 갈라 둔다(설계 D1·D3)
         binding.fullBackupRow.setOnClickListener {

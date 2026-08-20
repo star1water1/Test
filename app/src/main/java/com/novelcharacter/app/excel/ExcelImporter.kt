@@ -795,6 +795,7 @@ class ExcelImporter(context: Context) {
         if (outcome.novelFieldValues > 0) parts.add("작품 필드값 ${outcome.novelFieldValues}")
         if (outcome.tags > 0) parts.add("태그 ${outcome.tags}")
         if (outcome.stateChanges > 0) parts.add("상태변화 ${outcome.stateChanges}")
+        if (outcome.quotes > 0) parts.add("명대사 ${outcome.quotes}")
         if (outcome.relationships > 0) parts.add("관계 ${outcome.relationships}")
         if (outcome.relationshipChanges > 0) parts.add("관계변화 ${outcome.relationshipChanges}")
         if (outcome.factions > 0) parts.add("세력 ${outcome.factions}")
@@ -1597,7 +1598,7 @@ class ExcelImporter(context: Context) {
                 container.addView(radioGroup)
 
                 // MERGE 모드 항목별 삭제 옵션 (삭제 지원 카테고리만 표시)
-                val deletableKeys = setOf("characters", "timeline", "stateChanges", "relationships",
+                val deletableKeys = setOf("characters", "timeline", "stateChanges", "quotes", "relationships",
                     "relationshipChanges", "nameBank", "factions", "factionMemberships", "factionRelationships")
                 val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
                 val deleteSectionLabel = TextView(act).apply {
@@ -1651,6 +1652,7 @@ class ExcelImporter(context: Context) {
                                 characters = "characters" in checked,
                                 timeline = "timeline" in checked,
                                 stateChanges = "stateChanges" in checked,
+                                quotes = "quotes" in checked,
                                 relationships = "relationships" in checked,
                                 relationshipChanges = "relationshipChanges" in checked,
                                 nameBank = "nameBank" in checked,
@@ -1951,6 +1953,15 @@ class ExcelImporter(context: Context) {
                 r.getString(com.novelcharacter.app.R.string.import_result_state_changes, scTotal)
             })
         }
+        // 명대사 (사용자 요청 2026.08.20) — 상태 변화와 같은 모양으로 갱신 수를 함께 적는다.
+        val quoteTotal = result.newQuotes + result.updatedQuotes
+        if (quoteTotal > 0) {
+            parts.add(if (result.updatedQuotes > 0) {
+                r.getString(com.novelcharacter.app.R.string.import_result_quotes_updated, quoteTotal, result.updatedQuotes)
+            } else {
+                r.getString(com.novelcharacter.app.R.string.import_result_quotes, quoteTotal)
+            })
+        }
         val relTotal = result.newRelationships + result.updatedRelationships
         if (relTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationships, relTotal))
         if (result.newRelationshipChanges > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, result.newRelationshipChanges))
@@ -1986,7 +1997,7 @@ class ExcelImporter(context: Context) {
 
         // 삭제 건수 요약
         val totalDeleted = result.deletedCharacters + result.deletedRelationships + result.deletedEvents +
-            result.deletedStateChanges + result.deletedRelationshipChanges + result.deletedNameBank +
+            result.deletedStateChanges + result.deletedQuotes + result.deletedRelationshipChanges + result.deletedNameBank +
             result.deletedFields + result.deletedFactions + result.deletedFactionMemberships +
             result.deletedFactionRelationships
         if (totalDeleted > 0) {
@@ -1995,6 +2006,7 @@ class ExcelImporter(context: Context) {
             if (result.deletedEvents > 0) delParts.add("사건 ${result.deletedEvents}")
             if (result.deletedRelationships > 0) delParts.add("관계 ${result.deletedRelationships}")
             if (result.deletedStateChanges > 0) delParts.add("상태변화 ${result.deletedStateChanges}")
+            if (result.deletedQuotes > 0) delParts.add("명대사 ${result.deletedQuotes}")
             if (result.deletedRelationshipChanges > 0) delParts.add("관계변화 ${result.deletedRelationshipChanges}")
             if (result.deletedNameBank > 0) delParts.add("이름 ${result.deletedNameBank}")
             if (result.deletedFactions > 0) delParts.add("세력 ${result.deletedFactions}")

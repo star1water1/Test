@@ -527,6 +527,86 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <!-- 명대사 card (사용자 요청 2026.08.20) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/quotesCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/quotes"
+                                android:textAppearance="@style/TextAppearance.App.Title"
+                                android:textColor="@color/primary" />
+
+                            <TextView
+                                android:id="@+id/quotesCount"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                                android:textColor="@color/text_secondary"
+                                android:visibility="gone"
+                                tools:text="4개 · 생일 1개"
+                                tools:visibility="visible" />
+
+                            <ImageView
+                                android:id="@+id/btnAddQuote"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_add"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:contentDescription="@string/add_quote_desc" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/textNoQuotes"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/empty_quote_hint"
+                            android:textAppearance="@style/TextAppearance.App.BodySmall"
+                            android:textColor="@color/text_secondary"
+                            android:gravity="center"
+                            android:paddingVertical="16dp"
+                            android:visibility="gone" />
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/quotesRecyclerView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:nestedScrollingEnabled="false" />
+
+                        <TextView
+                            android:id="@+id/quoteReorderHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/quote_reorder_hint"
+                            android:textSize="@dimen/text_badge"
+                            android:textColor="@color/text_secondary"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <!-- State changes card -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/stateChangesCard"

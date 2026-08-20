@@ -61,6 +61,14 @@ object AppSettingsKeys {
      */
     val READ_FIELD_NOTE_ENABLED = Spec("read_field_note_enabled", Kind.BOOLEAN)
 
+    /**
+     * 생일인 캐릭터가 있는 날 축하 창을 띄우는가 (사용자 요청 2026.08.20 · 기본 켬).
+     *
+     * **취향 설정이라 싣는다** — 끈 사람이 새 기기에서 다시 찾아 꺼야 하는 부류다.
+     * *오늘 이미 띄웠는가*는 같은 저장소에 있지만 **싣지 않는다**(EXCLUDED_STORES의 사유 참조).
+     */
+    val BIRTHDAY_CELEBRATION_ENABLED = Spec("birthday_celebration_enabled", Kind.BOOLEAN)
+
     // ── 백업 ──
     val BACKUP_INCLUDE_IMAGES = Spec("backup_include_images", Kind.BOOLEAN)
     val BACKUP_MAX_BACKUPS = Spec("backup_max_backups", Kind.NUMBER)
@@ -158,7 +166,7 @@ object AppSettingsKeys {
      * `ai_`·`image_`·`supplement_`가 서로를 끊는다.
      */
     val SPECS: List<Spec> = listOf(
-        THEME_MODE, READ_FIELD_NOTE_ENABLED,
+        THEME_MODE, READ_FIELD_NOTE_ENABLED, BIRTHDAY_CELEBRATION_ENABLED,
         BACKUP_INCLUDE_IMAGES, BACKUP_MAX_BACKUPS,
         TRASH_MAX_OPERATIONS, TRASH_RETENTION_DAYS,
         FIELD_IMPORT_CONVERTIBLE_TYPES,
@@ -239,6 +247,10 @@ object AppSettingsKeys {
             "앱 내부 이행 기록이다. 실어서 되돌리면 **아직 안 한 이행을 했다고 표시**하게 되어 " +
             "그 기기의 데이터가 조용히 옛 형식으로 남는다 — 소음이 아니라 위험이다.",
         "onboarding_prefs" to "첫 실행 안내를 봤는가. 기기마다 처음이 다르다.",
+        "birthday_celebration" to
+            "생일 축하 창 저장소. **켬·끔은 ${BIRTHDAY_CELEBRATION_ENABLED.key}로 실리고**, "  +
+            "같은 저장소의 *오늘 이미 띄웠는가*는 싣지 않는다 — 그 기기에서 일어난 일이라 " +
+            "옮기면 새 기기가 하지도 않은 축하를 했다고 말해 그날 창이 안 뜬다(`backup_status`와 같은 근거).",
         "character_edit_drafts" to "저장하지 않은 편집 초안. 그 기기의 화면 상태다.",
         "folder_roundtrip_prefs" to "폴더 왕복이 기억한 기기 경로·URI. 다른 기기에서는 가리킬 곳이 없다.",
         "theme_cache" to "테마 캐시 — 값 자체는 ${THEME_MODE.key}로 실린다(저장소가 아니라 키로 등재된 자리).",

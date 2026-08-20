@@ -362,6 +362,48 @@ class CharacterRepository(
     suspend fun replaceAllTagsForCharacter(characterId: Long, tags: List<CharacterTag>) =
         characterTagDao.replaceAllForCharacter(characterId, tags)
 
+    // ===== CharacterQuote (명대사 — 사용자 요청 2026.08.20) =====
+    //
+    // **DAO를 생성자가 아니라 db에서 집는다** — `recentActivityDao`와 같은 자리다. 이 표를
+    // 쓰는 곳이 상세 화면 하나여서 생성자를 늘리면 부르는 세 자리가 전부 인자 하나씩 는다.
+
+    private val characterQuoteDao get() = db.characterQuoteDao()
+
+    fun getQuotesByCharacter(characterId: Long): LiveData<List<CharacterQuote>> =
+        characterQuoteDao.getQuotesByCharacter(characterId)
+
+    suspend fun getQuotesByCharacterList(characterId: Long): List<CharacterQuote> =
+        characterQuoteDao.getQuotesByCharacterList(characterId)
+
+    /** 여러 캐릭터의 대사 — 생일 모달·대결 카드가 쓴다. 통로는 R-54(청크)를 지난다. */
+    suspend fun getQuotesForCharacters(characterIds: List<Long>): List<CharacterQuote> =
+        SqlInChunks.flat(characterIds) { characterQuoteDao.getQuotesForCharacters(it) }
+
+    /** 새 대사는 **맨 끝에** 붙는다 — 적은 차례가 곧 목록의 차례다(사용자가 뒤에 끌어 옮긴다). */
+    suspend fun insertQuote(quote: CharacterQuote): Long {
+        val ordered =
+            if (quote.sortOrder > 0) quote
+            else quote.copy(sortOrder = characterQuoteDao.nextSortOrder(quote.characterId))
+        return characterQuoteDao.insert(ordered)
+    }
+
+    suspend fun updateQuote(quote: CharacterQuote) = characterQuoteDao.update(quote)
+
+    /**
+     * 드래그로 바뀐 차례를 **한 트랜잭션에** 쓴다.
+     * 한 칸 옮길 때마다 쓰면 열 칸에 열 번이 돌고, 중간에 끊기면 차례가 반쯤 뒤섞인다.
+     */
+    suspend fun updateQuoteOrders(quotes: List<CharacterQuote>) = db.withTransaction {
+        characterQuoteDao.updateAll(quotes.mapIndexed { index, q -> q.copy(sortOrder = index) })
+    }
+
+    /**
+     * **휴지통에 담지 않는다** — 관계·관계 변화와 같은 처분이다(상태 변화만 담는다).
+     * 대신 지우기 전에 창이 묻고, 그 창이 *"휴지통에는 남지 않는다"*를 적는다(개발 의도 2번:
+     * 유실이 조용하지 않으면 된다).
+     */
+    suspend fun deleteQuote(quote: CharacterQuote) = characterQuoteDao.delete(quote)
+
     // ===== CharacterRelationship =====
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
         characterRelationshipDao.getRelationshipsForCharacter(characterId)
@@ -817,12 +859,14 @@ class CharacterRepository(
         val characters: Int,
         val relationships: Int,
         val stateChanges: Int,
+        val quotes: Int,
         val factionMemberships: Int,
         val eventLinks: Int
     ) {
         /** 캐릭터 외 함께 정리될 연관 데이터가 있는지 — 요약 문구 노출 여부 판단용. */
         val hasLinkedData: Boolean
-            get() = relationships > 0 || stateChanges > 0 || factionMemberships > 0 || eventLinks > 0
+            get() = relationships > 0 || stateChanges > 0 || quotes > 0 ||
+                factionMemberships > 0 || eventLinks > 0
     }
 
     /**
@@ -833,18 +877,20 @@ class CharacterRepository(
      * 말하는 그 합산이며, 나누기가 계수를 바꾸지 않는다는 성질은 여기서도 같다.
      */
     suspend fun getBatchDeleteImpact(ids: List<Long>): DeleteImpact {
-        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0)
+        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0, 0)
         val relIds = mutableSetOf<Long>()  // 관계는 두 끝이 서로 다른 청크에 나뉠 수 있어 id Set으로 교차청크 중복 제거
         var stateChanges = 0
+        var quotes = 0
         var memberships = 0
         var eventLinks = 0
         SqlInChunks.each(ids) { chunk ->
             relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
+            quotes += characterQuoteDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)
             eventLinks += db.timelineDao().countEventLinksForCharacters(chunk)
         }
-        return DeleteImpact(ids.size, relIds.size, stateChanges, memberships, eventLinks)
+        return DeleteImpact(ids.size, relIds.size, stateChanges, quotes, memberships, eventLinks)
     }
 
     /**

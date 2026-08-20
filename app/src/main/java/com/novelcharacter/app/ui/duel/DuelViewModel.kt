@@ -21,6 +21,7 @@ import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueTokenizer
+import com.novelcharacter.app.util.QuotePicker
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
@@ -236,6 +237,7 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             DuelSystemFields.Column.NOVEL -> R.string.duel_system_field_novel
             DuelSystemFields.Column.TAGS -> R.string.duel_system_field_tags
             DuelSystemFields.Column.FACTION -> R.string.duel_system_field_faction
+            DuelSystemFields.Column.QUOTE -> R.string.duel_system_field_quote
         }
     )
 
@@ -346,7 +348,8 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val wantsNovel = DuelSystemFields.Column.NOVEL in columns
         val wantsTags = DuelSystemFields.Column.TAGS in columns
         val wantsFaction = DuelSystemFields.Column.FACTION in columns
-        if (!wantsNovel && !wantsTags && !wantsFaction) return emptyMap()
+        val wantsQuote = DuelSystemFields.Column.QUOTE in columns
+        if (!wantsNovel && !wantsTags && !wantsFaction && !wantsQuote) return emptyMap()
 
         val titleByNovelId: Map<Long, String> = if (!wantsNovel) {
             emptyMap()
@@ -391,11 +394,33 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // 오늘의 명대사 (사용자 요청 2026.08.20). **판정은 [QuotePicker]가 한다** —
+        // 세력이 [FactionStanding]에 맡긴 것과 같은 자리다. 여기서 다시 고르면 같은 날
+        // 생일 축하 창과 이 카드가 **다른 대사**를 띄운다(원칙 05).
+        //
+        // 씨앗을 매번 새로 뜨는 것이 맞다 — `todayStamp()`는 그날 안에서 늘 같은 값이라
+        // 짝이 바뀌어도, 화면을 다시 열어도 같은 대사가 나온다.
+        val quoteById: Map<Long, String> = if (!wantsQuote) {
+            emptyMap()
+        } else {
+            val today = QuotePicker.todayStamp()
+            // 위 통로와 같다 — 캐릭터 수만큼의 `IN` 인자가 든다.
+            val quotes = SqlInChunks.flat(characters.map { it.id }) {
+                app.database.characterQuoteDao().getQuotesForCharacters(it)
+            }.groupBy { it.characterId }
+            characters.associate { character ->
+                character.id to
+                    (QuotePicker.forDisplay(quotes[character.id].orEmpty(), character.id, today)
+                        ?.text.orEmpty())
+            }
+        }
+
         return characters.associate { character ->
             character.id to DuelSystemFields.Extras(
                 novelTitle = character.novelId?.let { titleByNovelId[it] }.orEmpty(),
                 tags = tagsById[character.id].orEmpty(),
-                factions = factionsById[character.id].orEmpty()
+                factions = factionsById[character.id].orEmpty(),
+                quote = quoteById[character.id].orEmpty()
             )
         }
     }

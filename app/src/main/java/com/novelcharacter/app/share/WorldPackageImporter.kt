@@ -154,6 +154,7 @@ class WorldPackageImporter(context: Context) {
         val novelFieldValues: Int,
         val tags: Int,
         val stateChanges: Int,
+        val quotes: Int,
         val relationships: Int,
         val relationshipChanges: Int,
         val events: Int,
@@ -214,6 +215,8 @@ class WorldPackageImporter(context: Context) {
         val charReg = WorldPackageCodes.Registry(db.characterDao().getAllCharactersList().map { it.code })
         val eventReg = WorldPackageCodes.Registry(db.timelineDao().getAllEventsList().map { it.code })
         val scReg = WorldPackageCodes.Registry(db.characterStateChangeDao().getAllChangesList().map { it.code })
+        // 명대사 (사용자 요청 2026.08.20) — 코드가 유니크라 겹치면 새로 발급해야 한다.
+        val quoteReg = WorldPackageCodes.Registry(db.characterQuoteDao().getAllQuotesList().map { it.code })
         val relReg = WorldPackageCodes.Registry(db.characterRelationshipDao().getAllRelationships().map { it.code })
         val relChangeReg = WorldPackageCodes.Registry(db.characterRelationshipChangeDao().getAllChanges().map { it.code })
         val factionReg = WorldPackageCodes.Registry(db.factionDao().getAllFactionsList().map { it.code })
@@ -560,6 +563,13 @@ class WorldPackageImporter(context: Context) {
                 }
                 stateChangeRows.chunked(CHUNK).forEach { db.characterStateChangeDao().insertAll(it) }
 
+                // 7-b. 명대사 — 상태변화와 같은 규약(임자를 못 찾으면 버리고 세어 고지한다).
+                val quoteRows = contents.quotes.mapNotNull { q ->
+                    val cid = charIdMap[q.characterId] ?: run { danglingRefs++; return@mapNotNull null }
+                    q.copy(id = 0, characterId = cid, code = claimNullable(quoteReg, q.code))
+                }
+                quoteRows.chunked(CHUNK).forEach { db.characterQuoteDao().insertAll(it) }
+
                 // 8. 세력 — 관계 파일이 원 code를 갖고 있으므로 old code → new id 매핑을 함께 만든다
                 val factionIdMap = HashMap<Long, Long>()
                 val factionIdByOldCode = HashMap<String, Long>()
@@ -798,6 +808,7 @@ class WorldPackageImporter(context: Context) {
                     novelFieldValues = novelValueRows.size,
                     tags = tagRows.size,
                     stateChanges = stateChangeRows.size,
+                    quotes = quoteRows.size,
                     relationships = relIdMap.size,
                     relationshipChanges = relChangeRows.size,
                     events = eventIdMap.size,

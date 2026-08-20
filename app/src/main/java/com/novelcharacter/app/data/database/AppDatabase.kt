@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.novelcharacter.app.data.dao.CharacterDao
 import com.novelcharacter.app.data.dao.CharacterFieldValueDao
+import com.novelcharacter.app.data.dao.CharacterQuoteDao
 import com.novelcharacter.app.data.dao.CharacterStateChangeDao
 import com.novelcharacter.app.data.dao.CharacterTagDao
 import com.novelcharacter.app.data.dao.FieldDefinitionDao
@@ -65,6 +66,7 @@ import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -87,6 +89,7 @@ import com.novelcharacter.app.data.model.Universe
         FieldDefinition::class,
         CharacterFieldValue::class,
         CharacterStateChange::class,
+        CharacterQuote::class,
         CharacterTag::class,
         NameBankEntry::class,
         CharacterRelationship::class,
@@ -111,7 +114,7 @@ import com.novelcharacter.app.data.model.Universe
         DuelCounterVerdict::class,
         DefaultFieldTemplate::class
     ],
-    version = 56,
+    version = 57,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -122,6 +125,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fieldDefinitionDao(): FieldDefinitionDao
     abstract fun characterFieldValueDao(): CharacterFieldValueDao
     abstract fun characterStateChangeDao(): CharacterStateChangeDao
+    abstract fun characterQuoteDao(): CharacterQuoteDao
     abstract fun characterTagDao(): CharacterTagDao
     abstract fun nameBankDao(): NameBankDao
     abstract fun characterRelationshipDao(): CharacterRelationshipDao
@@ -2162,6 +2166,53 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_56_57 = object : Migration(56, 57) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 56 to 57 — 캐릭터 명대사")
+
+                // **표 하나를 새로 세우는 순수 추가**다. 옛 기기에는 명대사가 하나도 없고,
+                // 명대사를 읽는 자리는 전부 *"없으면 그 줄이 빠진다"*로 서 있어(생일 모달의
+                // 대사 줄 · 대결 카드의 `sys:quote`) 갱신 직후 화면이 어제와 같다.
+                //
+                // **`code`에 유니크를 거는 것은 엑셀 왕복 때문이다** — 사람이 대사 글자를
+                // 고쳐도 같은 행임을 잇는 기준이 이 칸이고(상태 변화·관계와 같은 규약),
+                // 유니크가 없으면 같은 파일을 두 번 들이는 것만으로 대사가 두 벌이 된다.
+                // nullable이라 SQLite가 NULL끼리는 서로 다르게 보는데, 그것이 맞다:
+                // 코드 없는 옛 스냅샷 행이 서로를 막으면 안 된다(R-57 — 유일성을 실제로
+                // 지키는 것은 코드가 있는 행뿐이고, 없는 행은 자연키로 잇는다).
+                //
+                // 전역키 보증(character_quotes.code): 코드가 있는 행의 유일성은 이 색인이
+                // 지키고, 코드가 빈 행은 `ImportIdentityIndexes`의 자연키가 잇는다.
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `character_quotes` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`characterId` INTEGER NOT NULL, " +
+                        "`text` TEXT NOT NULL, " +
+                        "`occasionKey` TEXT NOT NULL, " +
+                        "`note` TEXT NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`code` TEXT, " +
+                        "FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_character_quotes_characterId` " +
+                        "ON `character_quotes` (`characterId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_character_quotes_occasionKey` " +
+                        "ON `character_quotes` (`occasionKey`)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_character_quotes_code` " +
+                        "ON `character_quotes` (`code`)"
+                )
+
+                Log.i(TAG, "Migration from version 56 to 57 completed successfully")
+            }
+        }
+
         /**
          * 이 DB가 아는 마이그레이션 **전부** — 앱과 시험이 **같은 목록**을 본다 (B-9).
          *
@@ -2229,7 +2280,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_52_53,
             MIGRATION_53_54,
             MIGRATION_54_55,
-            MIGRATION_55_56
+            MIGRATION_55_56,
+            MIGRATION_56_57
         )
 
         fun getDatabase(context: Context): AppDatabase {

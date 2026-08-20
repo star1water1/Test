@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  축하 창의 한 쪽 — 캐릭터 하나 (사용자 요청 2026.08.20).
+
+  **한 쪽에 그 캐릭터의 전부가 있다**(사용자 확정: 좌우로 넘겨 보기) — 그림·이름·날짜·
+  작품·명대사. 목록으로 줄만 세우면 이미지와 대사를 띄울 자리가 없다는 것이 그 확정의 근거다.
+
+  대사 자리는 **없으면 통째로 사라진다**(visibility=gone). 대사를 안 적은 캐릭터의 축하
+  자리에 빈 인용 상자를 두면, 없는 것을 있는 척 그리는 셈이다(R-17의 역).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:paddingHorizontal="24dp"
+    android:paddingVertical="12dp">
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="104dp"
+        android:layout_height="104dp"
+        app:cardCornerRadius="52dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/primary"
+        app:strokeWidth="2dp">
+
+        <ImageView
+            android:id="@+id/celebrationImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_character_placeholder"
+            android:contentDescription="@string/character_image_desc" />
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <TextView
+        android:id="@+id/celebrationName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:textAppearance="@style/TextAppearance.App.Title"
+        tools:text="이서린" />
+
+    <TextView
+        android:id="@+id/celebrationSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="center"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary"
+        tools:text="8월 20일 · 열일곱 번째 밤" />
+
+    <LinearLayout
+        android:id="@+id/celebrationQuoteBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_birthday_quote"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="14dp"
+        android:paddingVertical="12dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <TextView
+            android:id="@+id/celebrationQuoteText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.App.Body"
+            android:textColor="@color/on_primary_container"
+            android:textStyle="italic"
+            android:ellipsize="end"
+            android:maxLines="5"
+            tools:text="「올해도 네 곁에 있을게.」" />
+
+        <TextView
+            android:id="@+id/celebrationQuoteNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="@dimen/text_badge"
+            android:textColor="@color/on_primary_container"
+            android:alpha="0.75"
+            android:visibility="gone"
+            tools:text="3화, 생일밤"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+</LinearLayout>

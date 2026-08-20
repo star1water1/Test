@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
@@ -80,6 +81,8 @@ object WorldPackageEntries {
     const val FIELD_VALUES = "field_values.json"
     const val STATE_CHANGES = "state_changes.json"
     const val TAGS = "tags.json"
+    /** 명대사 (사용자 요청 2026.08.20). */
+    const val QUOTES = "quotes.json"
     const val RELATIONSHIPS = "relationships.json"
     const val RELATIONSHIP_CHANGES = "relationship_changes.json"
     const val TIMELINE_EVENTS = "timeline_events.json"
@@ -131,6 +134,7 @@ data class WorldPackageContents(
     val fieldValues: List<CharacterFieldValue>,
     val stateChanges: List<CharacterStateChange>,
     val tags: List<CharacterTag>,
+    val quotes: List<CharacterQuote>,
     val relationships: List<CharacterRelationship>,
     val relationshipChanges: List<CharacterRelationshipChange>,
     val events: List<TimelineEvent>,
@@ -244,6 +248,9 @@ object WorldPackageParser {
             ?: return malformed(e.STATE_CHANGES)
         val tags = read(e.TAGS, object : TypeToken<List<CharacterTag?>>() {})
             ?: return malformed(e.TAGS)
+        // **옛 꾸러미에는 이 파일이 없다** — 그때는 명대사가 없던 것이지 깨진 것이 아니므로
+        // `malformed`가 아니라 빈 목록이다(파일 자체가 없는 것과 내용이 깨진 것은 다르다).
+        val quotes = read(e.QUOTES, object : TypeToken<List<CharacterQuote?>>() {}) ?: emptyList()
         val relationships = read(e.RELATIONSHIPS, object : TypeToken<List<CharacterRelationship?>>() {})
             ?: return malformed(e.RELATIONSHIPS)
         val relationshipChanges =
@@ -312,6 +319,7 @@ object WorldPackageParser {
                     allPresent(it.fieldKey, it.newValue, it.description)
                 },
                 tags = scrub(e.TAGS, tags) { allPresent(it.tag) },
+                quotes = scrub(e.QUOTES, quotes) { allPresent(it.text, it.occasionKey, it.note) },
                 relationships = scrub(e.RELATIONSHIPS, relationships) {
                     allPresent(it.relationshipType, it.description)
                 },

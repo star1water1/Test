@@ -25,6 +25,7 @@ import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterListPreset
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.StructuredInputConfig
@@ -994,6 +995,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     data class CharacterDeleteImpact(
         val relationships: Int,
         val stateChanges: Int,
+        val quotes: Int,
         val factionMemberships: Int,
         val images: Int
     )
@@ -1001,9 +1003,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getCharacterDeleteImpact(character: Character): CharacterDeleteImpact {
         val relationships = characterRepository.getRelationshipsForCharacterList(character.id).size
         val stateChanges = characterRepository.getChangesByCharacterList(character.id).size
+        // 명대사도 CASCADE로 함께 사라진다 — 형제 자식표를 다 세면서 이것만 빼면
+        // 사용자가 무엇을 잃는지 화면이 절반만 말한다(R-4).
+        val quotes = characterRepository.getQuotesByCharacterList(character.id).size
         val memberships = app.database.factionMembershipDao().getMembershipsByCharacterList(character.id).size
         val images = try { org.json.JSONArray(character.imagePaths).length() } catch (_: Exception) { 0 }
-        return CharacterDeleteImpact(relationships, stateChanges, memberships, images)
+        return CharacterDeleteImpact(relationships, stateChanges, quotes, memberships, images)
     }
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
@@ -1948,6 +1953,68 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             Log.e("CharacterViewModel", "Failed to delete state change", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
                 app.getString(R.string.result_state_change_delete_failed), e.message))
+        }
+    }
+
+    // ===== 명대사 (사용자 요청 2026.08.20) =====
+
+    fun getQuotesByCharacter(characterId: Long): LiveData<List<CharacterQuote>> =
+        characterRepository.getQuotesByCharacter(characterId)
+
+    /** 이 캐릭터의 명대사 수 — 상세 화면의 개별 통계가 쓴다(원칙 02: 모든 자료가 분석에 든다). */
+    suspend fun countQuotes(characterId: Long): Int =
+        characterRepository.getQuotesByCharacterList(characterId).size
+
+    fun insertQuote(quote: CharacterQuote) = viewModelScope.launch {
+        try {
+            characterRepository.insertQuote(quote)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_added)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert quote", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_add_failed), e.message))
+        }
+    }
+
+    fun updateQuote(quote: CharacterQuote) = viewModelScope.launch {
+        try {
+            characterRepository.updateQuote(quote)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_updated)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update quote", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_update_failed), e.message))
+        }
+    }
+
+    fun deleteQuote(quote: CharacterQuote) = viewModelScope.launch {
+        try {
+            characterRepository.deleteQuote(quote)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_deleted)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete quote", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_delete_failed), e.message))
+        }
+    }
+
+    /**
+     * 드래그로 바뀐 차례를 쓴다.
+     *
+     * **성공을 알리지 않는다** — 화면에서 이미 줄이 옮겨져 있어 알림이 사실을 더하지 않고,
+     * 한 번 끌 때마다 스낵바가 뜨면 그 자체가 마찰이다(원칙 04). 실패는 반드시 말한다:
+     * 그때는 **화면과 저장된 것이 갈려** 사용자가 모르면 다음에 열었을 때 차례가 되돌아 있다.
+     */
+    fun updateQuoteOrders(quotes: List<CharacterQuote>) = viewModelScope.launch {
+        try {
+            characterRepository.updateQuoteOrders(quotes)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to reorder quotes", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_quote_reorder_failed), e.message))
         }
     }
 

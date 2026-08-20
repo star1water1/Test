@@ -54,24 +54,42 @@ object BirthdayHelper {
      * 오늘 생일인 캐릭터 ID를 반환한다. 비윤년에서 2/29 생일 포함.
      * BirthdayWorker와 TodayCharacterWidget에서 사용.
      */
-    fun getTodayBirthdayCharacterIds(birthChanges: List<CharacterStateChange>): List<Long> {
+    fun getTodayBirthdayCharacterIds(birthChanges: List<CharacterStateChange>): List<Long> =
+        todayBirthdays(birthChanges).map { it.characterId }
+
+    /**
+     * 오늘 생일인 캐릭터의 **그 상태 변화 행** — 판정과 함께 *어느 행이 맞았는가*를 돌려준다.
+     *
+     * ## 왜 id만으로는 모자란가 (2026.08.20)
+     * `__birth`는 **DB가 강제하는 유일 행이 아니다** — 휴지통 복원만 [SINGLETON_STATE_KEYS]로
+     * 막고, 엑셀은 `(캐릭터·연도·필드키·값)`이 다르면 두 번째 행을 만든다. 그래서 한 캐릭터가
+     * 3/15와 8/20 두 생일 행을 들 수 있다.
+     *
+     * 부르는 쪽이 id만 받아 **자기가 다시 행을 고르면** 오늘 맞은 행이 아니라 아무 행이나
+     * 집을 수 있고, 그러면 8/20에 뜬 축하 창이 *"3월 15일"*이라고 적는다. 맞은 행을 아는 것은
+     * 여기뿐이라 여기서 돌려준다.
+     *
+     * 같은 캐릭터가 여러 행으로 맞으면 **처음 맞은 행**이다([getTodayBirthdayCharacterIds]의
+     * `distinct()`가 종전에 남기던 것과 같다).
+     */
+    fun todayBirthdays(birthChanges: List<CharacterStateChange>): List<CharacterStateChange> {
         val today = Calendar.getInstance()
         val todayMonth = today.get(Calendar.MONTH) + 1
         val todayDay = today.get(Calendar.DAY_OF_MONTH)
         val isLeapYear = GregorianCalendar().isLeapYear(today.get(Calendar.YEAR))
 
-        val ids = mutableListOf<Long>()
+        val matched = mutableListOf<CharacterStateChange>()
         for (change in birthChanges) {
             val m = change.month ?: continue
             val d = change.day ?: continue
             if (m == todayMonth && d == todayDay) {
-                ids.add(change.characterId)
+                matched.add(change)
             } else if (!isLeapYear && todayMonth == 2 && todayDay == 28 && m == 2 && d == 29) {
                 // 비윤년 2/28: 2/29 생일도 오늘로 간주
-                ids.add(change.characterId)
+                matched.add(change)
             }
         }
-        return ids.distinct()
+        return matched.distinctBy { it.characterId }
     }
 
     /**

@@ -49,6 +49,8 @@ enum class ExportSheetStep {
     CHARACTERS,
     TIMELINE,
     STATE_CHANGES,
+    // 명대사 (사용자 요청 2026.08.20) — 상태 변화와 같은 캐릭터 자식 표라 그 옆이다.
+    QUOTES,
     RELATIONSHIPS,
     RELATIONSHIP_CHANGES,
     NAME_BANK,
@@ -87,6 +89,7 @@ enum class ExportSheetStep {
             if (options.characters) add(CHARACTERS)
             if (options.timeline) add(TIMELINE)
             if (options.stateChanges) add(STATE_CHANGES)
+            if (options.quotes) add(QUOTES)
             if (options.relationships) add(RELATIONSHIPS)
             if (options.relationshipChanges) add(RELATIONSHIP_CHANGES)
             if (options.nameBank) add(NAME_BANK)

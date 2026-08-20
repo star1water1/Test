@@ -286,6 +286,7 @@ class TrashRepository(
             fieldValues = fieldValues,
             stateChanges = db.characterStateChangeDao().getChangesByCharacterList(character.id),
             tags = db.characterTagDao().getTagsByCharacterList(character.id),
+            quotes = db.characterQuoteDao().getQuotesByCharacterList(character.id),
             relationships = relationships,
             relationshipChanges = relationshipChanges,
             factionMemberships = factionMemberships,
@@ -1869,6 +1870,15 @@ class TrashRepository(
         )
         db.characterTagDao().insertAll(
             data.tags.orEmpty().map { it.copy(id = 0, characterId = targetId) }
+        )
+        // 명대사 — 상태변화와 같은 규약(캐릭터 외 참조 없음 · code 충돌 시 재발급).
+        db.characterQuoteDao().insertAll(
+            data.quotes.orEmpty().map { quote ->
+                val safeCode = quote.code
+                    ?.takeIf { c -> db.characterQuoteDao().getQuoteByCode(c) == null }
+                    ?: generateEntityCode()
+                quote.copy(id = 0, characterId = targetId, code = safeCode)
+            }
         )
 
         var duplicateRelationships = 0

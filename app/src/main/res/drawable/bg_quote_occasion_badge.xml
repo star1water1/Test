@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  명대사 줄의 상황 배지 — '생일' 같은 짧은 표식 (사용자 요청 2026.08.20).
+  형제 배지(bg_score_badge·bg_count_badge)와 같은 납작한 단색이고, 모서리만 더 둥글다.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/primary" />
+    <corners android:radius="8dp" />
+</shape>

@@ -24,6 +24,8 @@ class ResetPlanTest {
         "novels", "characters", "timeline_events", "timeline_character_cross_ref",
         "timeline_event_novel_cross_ref", "universes", "field_definitions",
         "character_field_values", "character_state_changes", "character_tags",
+        // 명대사 (사용자 요청 2026.08.20) — characters CASCADE.
+        "character_quotes",
         "name_bank", "character_relationships", "character_relationship_changes",
         "recent_activities", "search_presets", "user_preset_templates",
         "factions", "faction_memberships", "faction_relationships",

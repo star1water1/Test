@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -60,6 +61,16 @@ data class StateChangeNaturalKey(
     val characterId: Long, val year: Int, val fieldKey: String, val newValue: String
 )
 
+/**
+ * 명대사의 자연키 — `(캐릭터, 대사 글자)` (사용자 요청 2026.08.20).
+ *
+ * **대사 글자를 키에 넣는 것이 요점이다.** 차례(`sortOrder`)로 잡으면 사용자가 목록을
+ * 끌어 옮긴 파일에서 **엉뚱한 대사끼리 이어져** 두 대사의 내용이 서로 바뀐다. 반대로 대사
+ * 글자를 고친 편집은 자연키로는 새 행처럼 보이는데, 그쪽은 `코드` 칸이 잇는다 —
+ * 상태 변화가 `(캐릭터·연도·필드키·새 값)`을 키로 두고 편집을 코드에 맡긴 것과 같은 갈래다.
+ */
+data class QuoteNaturalKey(val characterId: Long, val text: String)
+
 /** `getChangeByNaturalKey(relationshipId, year, month, day)`의 키 — 월·일은 null도 값이다. */
 data class RelChangeNaturalKey(
     val relationshipId: Long, val year: Int, val month: Int?, val day: Int?
@@ -119,6 +130,38 @@ class StateChangeIndexes(rows: List<CharacterStateChange>) {
      * 두 축을 함께 갱신한다 — 한쪽만 갱신하면 뒤 행이 *이미 다른 이력이 된 행*을 옛 키로 잡는다.
      */
     fun remember(row: CharacterStateChange) {
+        byCode.put(row)
+        byNaturalKey.put(row)
+    }
+}
+
+/**
+ * 명대사 — `getQuoteByCode`(코드) + 자연키 (사용자 요청 2026.08.20).
+ *
+ * [StateChangeIndexes]와 같은 모양이다. 싣는 순서를 **id 오름차순**으로 맞추는 것도 같은
+ * 근거다 — 두 조회가 `LIMIT 1`이라 그 순서가 곧 답이고, `getAllQuotesList()`는 캐릭터·차례
+ * 순으로 나오므로 다시 정렬한다.
+ */
+class QuoteIndexes(rows: List<CharacterQuote>) {
+    val byCode = ImportLookupIndex<String, CharacterQuote>(
+        idOf = { it.id }, keyOf = { it.code?.takeIf { c -> c.isNotBlank() } }
+    )
+    val byNaturalKey = ImportLookupIndex<QuoteNaturalKey, CharacterQuote>(
+        idOf = { it.id },
+        keyOf = { QuoteNaturalKey(it.characterId, it.text) }
+    )
+
+    init {
+        val ordered = rows.sortedBy { it.id }
+        byCode.load(ordered)
+        byNaturalKey.load(ordered)
+    }
+
+    /**
+     * 이 행을 썼다고 기록한다. **자연키의 칸(대사 글자)이 바뀌었을 수 있으므로** 두 축을
+     * 함께 갱신한다 — 한쪽만 갱신하면 뒤 행이 *이미 다른 대사가 된 행*을 옛 글자로 잡는다.
+     */
+    fun remember(row: CharacterQuote) {
         byCode.put(row)
         byNaturalKey.put(row)
     }
