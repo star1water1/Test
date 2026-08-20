@@ -30,43 +30,28 @@ STRINGS="app/src/main/res/values/strings.xml"
 
 # 사용자 노출 한국어가 코드에 사는 파일들 — 순수 계층이라 strings.xml 로 옮길 수 없는 곳.
 # 새 파일이 사용자 노출 문구를 갖게 되면 여기에 등재할 것 (등재 누락 = 검사 사각).
-KT_USER_FACING="
-app/src/main/java/com/novelcharacter/app/ai/CharacterFieldAiSuggester.kt
-app/src/main/java/com/novelcharacter/app/ai/NarrativeFieldAiWriter.kt
-app/src/main/java/com/novelcharacter/app/ai/CharacterNameAiSuggester.kt
-app/src/main/java/com/novelcharacter/app/ai/FieldLibraryAiOrganizer.kt
-app/src/main/java/com/novelcharacter/app/util/DuelAiContext.kt
-app/src/main/java/com/novelcharacter/app/util/BodyTargetRatio.kt
-app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt
-app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt
-app/src/main/java/com/novelcharacter/app/excel/PresetTemplateMatcher.kt
-app/src/main/java/com/novelcharacter/app/share/WorldPackageImporter.kt
-app/src/main/java/com/novelcharacter/app/backup/BackupChunkFormat.kt
-app/src/main/java/com/novelcharacter/app/data/repository/TrashRepository.kt
-app/src/main/java/com/novelcharacter/app/data/repository/EventFieldValueMerge.kt
-app/src/main/java/com/novelcharacter/app/data/model/EntitySnapshots.kt
-app/src/main/java/com/novelcharacter/app/data/maintenance/SystemMaintenanceService.kt
-app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt
-app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt
-"
-
-# 등재 누락을 사람 기억에 맡기지 않는 법 — 전개 5단계에서 실제로 한 건 더 나왔다
-# (`FieldEditDialog`의 측정값 토글 라벨 13개가 코드 하드코딩이라 '정규화 비율'이 표1 위반인
-# 채로 검사·기준선 양쪽에 안 잡혔다. 파일럿 화면이었는데도 그랬다).
-# **2026.08.10에 세 번째가 나왔다 — `PresetTemplateMatcher.kt`**(위 목록에 방금 넣은 것).
-# 가져오기 경고문 다섯을 화면에 올리는데 미등재라, R1·R2·R3 **전부가 그 파일을 못 보고 있었다**
-# (`매칭` 판정의 착수 대조가 발견 — 등재된 26곳을 세는 동안 이 파일의 2곳이 어느 셈에도
-# 들어가지 않았다. 실제 사용자 노출은 28곳이다). **등재해도 새 위반은 0건이라 등재 자체는
-# 무료였고, 그런 채로 엿새를 빠져 있었다**(파일 생성 2026-08-04 → 발견 08-10. 실측이다).
-# **요지는 기간이 아니라 그것이다 — 무료인데도 아무도 안 했다.** 사람 기억에 맡기는 유일한
-# 항목이라 그렇고, 세 번 다 같은 병이다.
-# 아래를 돌리면 미등재 파일의 위반 후보가 나온다 — 새 문구를 넣은 세션은 한 번 돌려 볼 것:
-#   find app/src/main -name '*.kt' | while read f; do
-#     grep -qxF "$f" <<<"$KT_USER_FACING" && continue
-#     grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" | grep -oE '"[^"]*[가-힣][^"]*"' | ...규칙 적용...
-#   done
-# 근본 해결은 코드에서 한국어 리터럴을 없애는 것이다(strings.xml로 옮기면 자동으로 검사된다) —
-# 위 위반도 그렇게 고쳤다: 읽기 화면이 이미 쓰던 `body_normalized_ratio_label`을 함께 쓰게 했다.
+# ── 코틀린 리터럴의 범위 — **손 명단은 없다** (B-262, 2026.08.19) ──
+#
+# `app/src/main/java`의 `*.kt` **전수**를 본다. 종전에는 `KT_USER_FACING`이라는 손 명단
+# 열일곱 줄이었고, 이 파일 머리는 그것을 *"사람 기억에 맡기는 유일한 항목"*이라 부르며
+# 등재 누락 사고 셋을 적어 두었다 — `CharacterDetailFragment` · `StatsDataProvider` ·
+# `FieldEditDialog`의 측정값 토글 라벨 13개, 그리고 `PresetTemplateMatcher`의 가져오기
+# 경고문 다섯(생성 08-04 → 발견 08-10, **엿새**). **네 번째가 82파일이었다.**
+#
+# **요지는 언제나 같았다 — 등재는 무료인데 아무도 안 했다.** 세 번 다 새 위반 0건이었고,
+# 그런 채로 검사 사각이었다. 그래서 명단을 고치는 대신 **명단을 없앤다.**
+#
+# **넓히는 값이 0인 것은 실측이다**(2026.08.19 · 확정 20-1): 명단 밖 119파일 · 고유 리터럴
+# 1078개를 그때의 R1~R3로 훑어 **새 위반 0건**. 백로그 행과 `status.md`는 *"위반이 대량으로
+# 뜬다"*고 적고 있었는데 틀렸고, 그 틀린 근거로 물었으면 답이 달라졌을 자리다.
+# 세는 법은 확정 20-1에 명령째로 적어 두었다.
+#
+# **엑셀 파일로 나가는 어휘도 같은 규칙 아래 들어온다**(`SheetSpec`·`ExcelHeaderAliases` 따위).
+# 부류를 갈라 화면 문구만 넣는 안은 **가르는 판정을 손으로 하는 순간 다시 손 명단**이라
+# 이 검사가 잡으려던 병이 그대로 남는다 — 그래서 안 갈랐다(확정 20-4).
+#
+# 근본 해결은 여전히 코드에서 한국어 리터럴을 없애는 것이다(strings.xml로 옮기면
+# 레이아웃·자원 축이 함께 검사한다) — 전수 검사는 그 이전까지의 그물이다.
 
 # ── 규칙 (가이드 4·6장의 기계 검출 가능분) ──
 # R1 TONE-YO   해요체 종결 금지 (합니다체 통일). '~세요'(하세요/보세요/주세요)는 허용.
@@ -91,7 +76,8 @@ SPACING_RE='(아|어|여|와|워|려|해)(주세요|주십시오|주시고|보�
 LEXICALIZED_RE='(도와주|알아보|물어보|돌아보|살펴보|지켜보|여쭤보|들여다보|내려다보|찾아보)'
 # '인사이트'는 표3이 화면 금지로 판정한 뒤에도 통계 화면에 7건이 남아 있었다(전개 4단계에서 발견) —
 # 판정만으로는 소급되지 않는다는 것이 이 도구가 있는 이유다. 소거한 자리에서 바로 잠근다.
-# 문서(통계 철학) 어휘로는 유지이며, R3는 strings.xml 값과 KT_USER_FACING만 보므로 문서에 닿지 않는다.
+# 문서(통계 철학) 어휘로는 유지이며, R3는 strings.xml 값과 `app/src/main/java`의 코틀린
+# 리터럴만 보므로 `docs/`에 닿지 않는다.
 TERM_RE='(산출물|카탈로그|매핑|그룹핑|파싱|렌더링|시맨틱|직렬화|정규화|인사이트)'
 # R4 DUEL-TERM 대결 영역에서 `매칭` 금지 (규약 R-48) — 사용자 확정이 만든 규칙이다
 # (확정 문서 1장 23번 · 4장 순서 강제 23번↔2번).
@@ -111,7 +97,7 @@ DUEL_TERM_RE='매칭'
 
 # R5 LAYOUT-LIT 레이아웃 XML의 하드코딩 한국어 = **등재 누락** (B-193)
 #
-# R1~R4는 `strings.xml` 값과 `KT_USER_FACING` 코틀린 리터럴만 읽는다. 그래서 새 화면이
+# R1~R4는 `strings.xml` 값과 코틀린 리터럴만 읽는다. 그래서 새 화면이
 # `android:text`에 한국어를 박으면 **네 규칙이 한꺼번에 조용해진다.** B-181이 마지막
 # 하드코딩 하나를 옮겨 저장소가 0건이 됐지만, 그 온전함은 *검사가 지키는 것*이 아니라
 # *마침 위반이 없는 것*이었다(R-40이 이름 붙인 부류).
@@ -163,17 +149,23 @@ violations() {
   # 따옴표를 품은 주석("파싱은 되지만 소비처가 못 읽는")이 기준선에 위반으로 앉아 있었다 —
   # 화면에 나가지 않는 문구라 고칠 대상이 아닌데도 잔여 건수를 부풀렸다(전개 3단계에서 확인).
   # 한 줄 주석·KDoc 본문 줄만 떨어낸다(줄 끝 주석은 그 줄의 실제 리터럴을 살려야 하므로 건드리지 않는다).
-  for f in $KT_USER_FACING; do
-    [ -f "$f" ] || continue
+  # **후보를 먼저 한 번에 거른다.** 아래 세 판정은 전부 이 합집합의 부분집합이라
+  # (TONE-YO ⊂ YO_RE · SPACING ⊂ SPACING_TAIL_RE · TERM = TERM_RE) 거르기가 결과를
+  # 바꾸지 않는다. 바뀌는 것은 리터럴마다 도는 grep·sed 호출 수뿐이고, 전수로 넓히면서
+  # 그 수가 두 배가 됐다 — **느린 검사는 곧 안 도는 검사다.**
+  find app/src/main/java -name '*.kt' | sort |
+  while read -r f; do
     grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" | grep -oE '"[^"]*[가-힣][^"]*"' | sort -u |
+    grep -E "$YO_RE|$SPACING_TAIL_RE|$TERM_RE" |
     while read -r lit; do
       echo "$lit" | grep -qE "${YO_RE}([^가-힣]|$)" && echo "TONE-YO|$f|$lit"
       has_spacing "$lit" && echo "SPACING|$f|$lit"
       echo "$lit" | grep -qE "$TERM_RE" && echo "TERM|$f|$lit"
     done
   done
-  # R4 — 대결 코드의 한국어 리터럴. **KT_USER_FACING과 별개로 경로로 연다.**
-  # 위 목록에 기대지 않는 이유는 이 파일이 이미 세 번 겪은 그것이다 — 등재 누락 = 검사 사각.
+  # R4 — 대결 코드의 한국어 리터럴. **위 루프와 별개로 경로로 연다.**
+  # 규칙이 다르기 때문이다: 위는 저장소 전역에서 그 말을 없애고(R3), 여기는 **한 영역에만**
+  # 걸어 나머지에서는 그대로 쓰게 둔다(R4). 대상이 갈리므로 루프도 갈린다.
   # 여기서 찾는 것이 우리말 한 낱말('매칭')뿐이라 그렇게 열 수 있다: 키·태그·로그처럼
   # 사용자에게 안 나가는 리터럴과 겹칠 일이 없으므로, 대결 파일을 통째로 훑어도 거짓 경보가 없다
   # (거짓 경보를 내는 검사는 곧 꺼진다 — R-47이 창을 좁히며 배운 것과 같은 기준을

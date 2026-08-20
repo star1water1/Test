@@ -1053,7 +1053,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 템플릿은 있는데 그림자가 없으면 저장소가 심는다(마이그레이션 54 직후 한 번).
      */
     suspend fun getGlobalFieldsList(): List<FieldDefinition> =
-        com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository(db).globalFields()
+        app.defaultFieldTemplateRepository.globalFields()
 
     /** 세계관 밖 정의를 가리키는 보관 값을 화면에 드러내기 위한 조회 (N2) */
     suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
@@ -2404,8 +2404,19 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
-    suspend fun getEventFieldsForUniverse(universeId: Long) =
-        db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+    /**
+     * 사건 폼이 그릴 필드 — **무소속이면 전역 구역이다**(B-258).
+     *
+     * 캐릭터 화면이 여는 사건 편집 시트도 같은 목록을 봐야 한다 —
+     * 갈래의 정본 설명은 [com.novelcharacter.app.ui.timeline.TimelineViewModel.getEventFieldsForUniverse]에 있다.
+     */
+    suspend fun getEventFieldsForUniverse(universeId: Long?) =
+        if (universeId == null) {
+            app.defaultFieldTemplateRepository
+                .globalFields(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+        } else {
+            db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+        }
     suspend fun getEventFieldValuesForEvent(eventId: Long) =
         db.eventFieldValueDao().getValuesByEventList(eventId)
 

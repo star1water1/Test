@@ -607,6 +607,38 @@ class DynamicFieldFormBuilder(
         }
     }
 
+    /**
+     * 그 필드의 칸을 **잡는다** — 타입이 안 맞는 값을 고치러 온 요청의 착지점 (B-259).
+     *
+     * 사건·작품 편집 창이 이미 하던 것을 캐릭터 축에도 준다. **공용 렌더러
+     * ([DynamicFieldRenderer])를 넓히지 않는 것이 이 자리의 요점**이다 — 그 렌더러는
+     * 상세와 보충 탭이 함께 쓰므로 계약을 넓히면 두 화면의 확인이 함께 붙는데,
+     * 편집 폼은 [fieldInputMap]을 이미 들고 있어 여기서 끝난다.
+     *
+     * @return 그 칸이 폼에 **있었는가**. 거짓이면 호출부가 *무엇이 없는지* 말해야 한다 —
+     *   조용히 끝내면 누른 사람은 자기가 잘못 눌렀다고 여긴다(R-61이 세운 규약).
+     *   거짓이 되는 실사용 경로가 있다: 값은 이 캐릭터에 붙어 있는데 그 정의가
+     *   **다른 구역**(다른 세계관·전역)에 살면 이 폼이 그리지 않는다.
+     */
+    fun focusField(fieldId: Long): Boolean {
+        val widget = fieldInputMap[fieldId] ?: return false
+        // 여러 칸으로 쪼갠 필드는 첫 칸을 잡는다 — 사용자가 고치려는 것이 어느 조각인지
+        // 모르므로, 읽는 순서의 처음에 세우는 것이 가장 덜 틀린다.
+        val target: View? = when (widget) {
+            is LinearLayout -> (widget.getChildAt(0) as? TextInputLayout)?.editText ?: widget
+            is View -> widget
+            else -> null
+        }
+        if (target == null) return false
+        // **부착 뒤에 잡는다** — 스크롤 컨테이너는 자식이 초점을 얻을 때 그 자리로 스크롤하는데,
+        // 아직 붙지 않은 뷰는 스크롤할 자리가 없다(사건 편집 창과 같은 처방).
+        target.post {
+            target.requestFocus()
+            (target as? android.widget.EditText)?.let { it.setSelection(it.text?.length ?: 0) }
+        }
+        return true
+    }
+
     /** [fieldDefinitions] 기준으로 동적 입력 폼을 컨테이너에 구성한다 */
     fun buildForm() {
         if (!isAlive()) return

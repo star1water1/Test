@@ -157,9 +157,23 @@ data class CategoryAnalysis(
      * 다른 범주는 값을 지우는 처분이 없어 언제나 0이다(그쪽에서 지워지는 것은 *항목 전체*이고,
      * 그것은 '덮어쓰기' 전략이 [onlyInDb]로 이미 말한다).
      */
-    val clearedCount: Int = 0
+    val clearedCount: Int = 0,
+    /**
+     * **덮어쓰기가 이 범주의 [onlyInDb]를 실제로 지우는가** (B-263 ⓑ에서 신설).
+     *
+     * 거의 모든 범주는 참이고, 그래서 미리보기의 덮어쓰기 경고가 *"…을 삭제합니다"*라고
+     * 말할 때 [onlyInDb]를 그대로 든다. **앱 설정은 거짓이다** — 가져오기가 설정을 지우는
+     * 경로가 아예 없고([importAppSettings]는 쓰기만 한다), 파일이 안 실은 설정은 그냥
+     * 그대로 남는다. 깃발 없이 범주를 더하면 *"앱 설정 5개를 삭제합니다"*라는
+     * **거짓 고지**가 경고문에 실린다(개발 의도 2번이 금지하는 그것이다).
+     *
+     * 숫자 자체는 그대로 낸다 — *"백업에 없음: 5개"*는 참이고 **파일이 무엇을 안 실었는지**를
+     * 말해 준다(비밀 제외로 내보낸 파일이 그렇다). 거짓인 것은 그것을 *삭제 대상*이라 부르는
+     * 자리뿐이라, 숫자를 접지 않고 **그 자리만** 가른다.
+     */
+    val deletedByOverwrite: Boolean = true
 ) {
-    /** 백업에 없고 DB에만 있는 항목 수 (덮어쓰기 시 삭제 대상) */
+    /** 백업에 없고 DB에만 있는 항목 수 ([deletedByOverwrite]인 범주에서는 덮어쓰기 시 삭제 대상) */
     val onlyInDb: Int get() = existingTotal - (updateCount + unchangedCount)
 }
 
@@ -2760,6 +2774,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             categories.add(analyzeDuelMatches(workbook, options, onProgress, totalRows))
             categories.add(analyzeDuelVerdicts(workbook, options, onProgress, totalRows))
         }
+        // **맨 뒤다 — 가져오기가 그 순서이기 때문이다**(`importAll`은 앱 설정을 커밋 뒤에
+        // 적용한다. DataStore·SharedPreferences는 DB 트랜잭션이 되돌리지 못한다).
+        if (options.appSettings) categories.add(analyzeAppSettings(workbook, onProgress, totalRows))
 
         return RestoreAnalysis(categories, characterConflicts)
     }
@@ -8472,8 +8489,63 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 앱 설정 가져오기 ──
 
-    // 미리보기 없음(키-값이라 '신규/갱신/동일' 셈이 성립하지 않는다 — 다만 *무엇이 바뀌는지*를
-    //   미리보기가 말하지 않는 것은 그대로다. B-263 ⓑ)
+    /**
+     * '앱 설정'의 복원 미리보기 (B-263 ⓑ) — [importAppSettings]의 짝.
+     *
+     * **'신규'는 0으로 둔다.** 설정 키는 늘 존재하므로 그 셈이 이 범주에서 성립하지 않는다.
+     * 나머지 셋(갱신·동일·건너뜀)은 그대로 성립한다 — [AppSettingsBindings.Binding]이
+     * `write`와 함께 `read`를 들고 있어 **지금 값을 떠 견줄 수 있기 때문**이다.
+     * 처분 판정은 순수 [AppSettingsDiff]가 든다(R-33 — 짝이 같은 술어를 봐야 한다).
+     *
+     * **`existingTotal`은 이 버전이 아는 설정의 수**이고, 그래서 `onlyInDb`는
+     * *파일이 안 실은 설정의 수*가 된다(비밀 제외로 내보낸 파일이 그렇다). 그 숫자는 참이지만
+     * **덮어쓰기가 그것을 지우지는 않으므로** `deletedByOverwrite = false`를 함께 낸다.
+     */
+    private suspend fun analyzeAppSettings(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = appSettingsSpec()
+        val label = "앱 설정"
+        // 이 버전이 아는 설정의 수 — 비밀까지 포함해 센다(파일이 실었으면 그것도 대상이다).
+        val existingTotal = AppSettingsKeys.exported(includeSecrets = true).size
+        // 한 줄로 적는다 — `check_restore_preview_parity.sh` 축 ⑥이 세는 칸을
+        // `CategoryAnalysis(…)` **한 줄 안의 셋째 인자**에서 뜬다(형제 analyze들과 같은 꼴).
+        fun empty() = CategoryAnalysis("appSettings", label, 0, 0, 0, 0, existingTotal, skippedCount = 0, deletedByOverwrite = false)
+        val sheet = sheetForAnalysis(workbook, spec) ?: return empty()
+        if (sheet.lastRowNum < 1) return empty()
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return empty()
+
+        val cols = resolveHeaderColumns(headerRow)
+        val keyColIndex = cols["설정키"] ?: 0
+        val valueColIndex = cols["설정값"] ?: -1
+        val ctx = appContext
+
+        var inBackup = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
+        for (i in dataRows(sheet, headerRow)) {
+            val row = sheet.getRow(i) ?: continue
+            val key = getCellString(row, keyColIndex)
+            // 완전히 빈 행은 세지 않는다 — 가져오기도 고지 없이 넘긴다(표 아래 여백이다).
+            if (key.isBlank()) continue
+            inBackup++
+            // **'설정값' 열이 없으면 가져오기는 시트를 통째로 건너뛴다** — 그 행들은 실행되지
+            // 않으므로 전부 건너뜀이다(값 열이 없으면 시트가 값을 말할 수 없다).
+            // `ctx`가 없는 것도 같은 처분이다 — 지금 값을 뜰 수 없으면 견줄 근거가 없고,
+            // 모르는 것을 '동일'로 접으면 바뀔 설정이 미리보기에서 사라진다.
+            if (valueColIndex < 0 || ctx == null) { skippedCount++; continue }
+            val binding = AppSettingsBindings.bindingOf(key)
+            // 읽기가 터진 것도 `null`로 접는다 — *값이 없다*와 *못 읽었다*는 다르지만
+            // **처분은 같다**(둘 다 견줄 근거가 없으니 파일 값이 들어간다고 봐야 한다).
+            // 반대로 접으면 바뀔 설정을 '동일'이라 예고하게 되고, 그것이 유실 쪽 거짓이다.
+            val current = if (binding == null) null else runCatching { binding.read(ctx) }.getOrNull()
+            when (AppSettingsDiff.effectOf(binding?.spec, getCellString(row, valueColIndex), current)) {
+                AppSettingsDiff.Effect.UPDATE -> updateCount++
+                AppSettingsDiff.Effect.UNCHANGED -> unchangedCount++
+                AppSettingsDiff.Effect.SKIPPED -> skippedCount++
+            }
+        }
+        reportProgress(onProgress, "앱 설정 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("appSettings", label, inBackup, 0, updateCount, unchangedCount, existingTotal, skippedCount = skippedCount, deletedByOverwrite = false)
+    }
+
+    // 미리보기 짝: analyzeAppSettings
     private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
         val spec = appSettingsSpec()
         val sheet = findSheet(workbook, spec, result) ?: return

@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
+import com.novelcharacter.app.util.FieldValueFixRoute
 import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
@@ -711,6 +712,43 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         if (lastHydratedNovelPos != b.spinnerNovel.selectedItemPosition) return
         saveGateOpen = true
         if (supplementMode) b.btnSaveAndNext.isEnabled = true else b.btnSave.isEnabled = true
+        // **폼이 이 캐릭터의 값으로 다 선 시점**이 곧 칸을 잡을 수 있는 시점이고, 이 자리가
+        // 그것을 말하는 유일한 신호다(B-259). 더 일찍 잡으면 부트스트랩 콜백의 **전역 필드**
+        // 폼에서 찾다가 *없는 칸*이라고 잘못 말한다 — B-267이 그 콜백의 성질을 적어 두었다.
+        consumeFieldFocus()
+    }
+
+    /**
+     * 타입이 안 맞는 값을 고치러 온 요청의 착지 (B-259 · R-61).
+     *
+     * 통계 › 데이터 건강의 타입 불일치 목록에서 캐릭터 줄을 누르면 여기로 온다. 종전에는
+     * **상세**로 보내 칸을 못 잡았고, 같은 목록의 줄이 축마다 다르게 동작했다.
+     *
+     * **실행한 자리에서 지운다**(R-61). 읽은 자리에서 지우면 폼이 서기 전에 화면이 내려갈 때
+     * *요청만* 사라지고 사용자는 다시 부탁할 방법이 없다 — 여기가 곧 실행 자리다.
+     * 지우지 않으면 회전할 때마다 초점이 다시 튄다.
+     *
+     * **칸이 없으면 무엇이 없는지 말한다.** 값은 이 캐릭터에 붙어 있는데 그 정의가 다른
+     * 구역(다른 세계관·전역)에 살면 이 폼이 그리지 않는다. 조용히 끝내면 누른 사람은 자기가
+     * 잘못 눌렀다고 여긴다.
+     */
+    private fun consumeFieldFocus() {
+        val args = arguments ?: return
+        val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
+        if (fieldId <= 0L) return
+        // **못 잡는 상태에서는 요청을 남긴다 — 지우기 전에 본다.** 여기서 지우고 반환하면
+        // 잡지도 말하지도 못한 채 **요청만 사라지고**, 그것이 R-61이 막으려던 바로 그 모양이다.
+        // (실무상 이 자리에 닿을 때 폼은 이미 서 있다 — `onViewCreated`가 만든다. 그래도
+        //  *조용히 끝나는* 갈래를 코드가 허용하는 채로 두지 않는다.)
+        if (!::formBuilder.isInitialized) return
+        val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_ID)
+        args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME)
+        if (formBuilder.focusField(fieldId)) return
+        val ctx = context ?: return
+        Toast.makeText(
+            ctx, getString(R.string.fix_field_not_in_form, fieldName), Toast.LENGTH_LONG
+        ).show()
     }
 
     private suspend fun loadNovels() {
@@ -1255,7 +1293,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
-            override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
+            override suspend fun getEventFieldsForUniverse(universeId: Long?) = viewModel.getEventFieldsForUniverse(universeId)
             override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
             override suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition) =
                 viewModel.insertEventField(field)

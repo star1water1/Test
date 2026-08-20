@@ -115,6 +115,24 @@ object CsvTokens {
     }
 
     /**
+     * 엑셀 불리언 셀의 해석 — **단일 소스** (B-263 ⓑ에서 여기로 내렸다).
+     *
+     * Y/N·TRUE/FALSE·1/0·yes/no·T/F·예/참을 수용하고 전각 입력(Ｙ／１ 등)을 정규화한다.
+     * **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+     *
+     * **왜 `excel/SheetSpec.kt`가 아니라 여기인가:** 그 파일은 POI를 import 해서 순수 JVM
+     * 시험이 닿지 못한다. 복원 미리보기가 *파일 값과 현재 값이 같은가*를 판정하려면 이 해석이
+     * 필요한데(`AppSettingsDiff`), 판정을 순수로 두는 것이 이 저장소가 R-33에서 세운 규칙이다.
+     * `SheetSpec.parseSheetBoolean`은 이 함수로 위임한다 — 바로 위 [toHalfWidth]와 같은 꼴이고,
+     * **두 벌로 적으면 가져오기와 미리보기가 다른 값을 참이라 부르는 날이 온다.**
+     */
+    fun parseBoolean(value: String): Boolean =
+        when (toHalfWidth(value.trim()).uppercase()) {
+            "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
+            else -> false
+        }
+
+    /**
      * 표준 CSV 규칙으로 판다. 규칙에 어긋나면 **null** — 호출측이 옛 규칙으로 되돌린다.
      * 따옴표는 **칸의 첫 글자일 때만** 감싼 것이고, 그 안의 `""`는 따옴표 한 글자다.
      */

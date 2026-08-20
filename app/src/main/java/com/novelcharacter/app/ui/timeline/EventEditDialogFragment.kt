@@ -66,7 +66,8 @@ class EventEditDialogFragment : DialogFragment() {
         suspend fun getAllCharactersList(): List<Character>
         suspend fun getCharacterIdsForEvent(eventId: Long): List<Long>
         suspend fun getNovelIdsForEvent(eventId: Long): List<Long>
-        suspend fun getEventFieldsForUniverse(universeId: Long): List<FieldDefinition>
+        /** 사건 폼이 그릴 필드. `universeId`가 null이면 **전역 구역**이다(B-258). */
+        suspend fun getEventFieldsForUniverse(universeId: Long?): List<FieldDefinition>
         suspend fun getEventFieldValuesForEvent(eventId: Long): List<EventFieldValue>
         /**
          * 사건 편집 자리에서 만든 사건 필드를 심는다(P5). 실패는 예외로 올려 호출부가 알린다 —
@@ -117,17 +118,43 @@ class EventEditDialogFragment : DialogFragment() {
      * 폼의 커버 집합(S-6/R-5) — 필드 섹션 로딩이 **완료된 시점에 조회된 정의 전체**의 id.
      * 렌더에서 걸러지는 CALCULATED도 포함한다(계산 필드 정의를 가리키는 잔여 저장 행이
      * 저장 시 함께 정리되어 매번 반복되는 "보관했습니다" 거짓 고지를 막는다 — 캐릭터판과 동일).
-     * 세계관 미해결이면 공집합으로 되돌리고, 로딩 미완(초기·회전 직후·fetch 대기 중 재구성 전)에는
-     * 마지막으로 렌더된 상태가 곧 화면의 진실이므로 그대로 둔다.
+     * 로딩 미완(초기·회전 직후·fetch 대기 중 재구성 전)에는 마지막으로 렌더된 상태가 곧
+     * 화면의 진실이므로 그대로 둔다.
+     *
+     * **'세계관 미해결이면 공집합'이던 갈래는 없어졌다**(B-258 ⓐ). 무소속은 미해결이 아니라
+     * 전역 구역이고, 그 구역의 정의가 곧 커버다 — 다른 구역(임자와 어긋난 정의)에 매달린 값은
+     * 여전히 커버 밖이라 저장이 건드리지 않는다(전량 보존은 그대로다).
      */
     private var coveredEventFieldIds: Set<Long> = emptySet()
 
     /**
-     * 필드 섹션이 해석한 세계관 — 이 자리에서 사건 필드를 만들 때 어디에 만들지가 이 값이다(P5).
-     * 세계관을 해석하지 못하면 null이고, 그때는 만들 수도 없으므로 경로를 감춘다
-     * (어느 세계관에 심을지 모르는 채로 만들게 하면 사용자가 고른 적 없는 곳에 들어간다).
+     * 필드 섹션이 해석한 **구역** — 무엇을 그리는가와 어디에 만드는가가 둘 다 여기서 나온다(P5).
+     *
+     * **`Long?` 하나로는 못 적는다**(B-258). 종전에는 이 자리가 `resolvedFieldUniverseId: Long?`
+     * 였고 그 `null` 하나가 두 뜻을 겸했다 — *구역을 아직 못 정했다*와 *전역 구역이다*.
+     * 겸직인 채로 전역을 그리기 시작하면 같은 검사가 갈라야 할 둘을 못 가른다:
+     * 만드는 단추는 **전역이라서** 감추고([Global] — 근거는 아래), 조회는 **몰라서** 안 건다.
+     * 그래서 뜻을 타입으로 올린다.
      */
-    private var resolvedFieldUniverseId: Long? = null
+    private var resolvedFieldScope: FieldScope? = null
+
+    /**
+     * 사건 필드가 사는 구역.
+     *
+     * [Global]에 **만드는 경로를 두지 않는 것이 규약이다**(B-129가 작품 축에 세운 그것).
+     * 전역 구역의 필드는 기본 필드 템플릿의 그림자이고, 만들고 고치고 지우는 자리가
+     * 설정 → 기본 필드 관리 하나다. 여기서 단추를 열면 **관리 화면이 없는 필드**가 생겨
+     * 만든 사람도 다시 찾아가 고칠 수 없다(원칙 04).
+     */
+    private sealed interface FieldScope {
+        /** 무소속 — 전역 기본 필드를 쓴다. */
+        object Global : FieldScope
+        /** 그 세계관의 사건 필드를 쓴다. 만드는 경로도 여기에만 있다. */
+        data class Universe(val id: Long) : FieldScope
+    }
+
+    /** 만들기·추천·AI 근거가 묻는 것은 *세계관 id*다 — 전역 구역에는 그것이 없다. */
+    private fun scopeUniverseId(): Long? = (resolvedFieldScope as? FieldScope.Universe)?.id
 
     // 역법 시드(R3): 신규 사건이면 스코프 세계관 최빈 역법을 시드하되, 편집·회전 복원·사용자 직접 입력은 존중.
     private var isRecreated = false
@@ -371,7 +398,8 @@ class EventEditDialogFragment : DialogFragment() {
             createEventField(field, initialValues)
         }
         binding.btnAddEventField.setOnClickListener {
-            val universeId = resolvedFieldUniverseId ?: return@setOnClickListener
+            // 전역 구역에서는 이 단추가 아예 안 보인다(FieldScope KDoc) — 여기 검사는 그 뒤의 빗장이다.
+            val universeId = scopeUniverseId() ?: return@setOnClickListener
             FieldEditDialog.newInstance(universeId, null, FieldDefinition.ENTITY_EVENT)
                 .show(childFragmentManager, "EventFieldEditDialog")
         }
@@ -432,7 +460,7 @@ class EventEditDialogFragment : DialogFragment() {
      * 이미 있는 `key`는 **지우지 않고 비활성 + 사유**로 남긴다(조용히 빼면 "왜 없지"가 된다).
      */
     private fun showRecommendedEventFields() {
-        val universeId = resolvedFieldUniverseId ?: return
+        val universeId = scopeUniverseId() ?: return
         val ctx = context ?: return
         lifecycleScope.launch {
             val fieldViewModel = ViewModelProvider(this@EventEditDialogFragment)[FieldViewModel::class.java]
@@ -838,7 +866,10 @@ class EventEditDialogFragment : DialogFragment() {
 
     // ── 사건 커스텀 필드 (B-10) ──
 
-    /** 선택된 작품(없으면 편집 중인 사건)의 세계관 기준으로 사건 필드 입력 섹션 재구성. 입력 중이던 값은 보존. */
+    /**
+     * 사건 필드 입력 섹션 재구성 — 구역은 선택된 작품(없으면 편집 중인 사건)의 세계관이고,
+     * **어느 쪽도 없으면 전역 구역이다**(B-258 ⓐ). 입력 중이던 값은 보존한다.
+     */
     private fun rebuildEventFieldSection() {
         if (_binding == null) return
         // 현재 입력값 보존
@@ -853,73 +884,83 @@ class EventEditDialogFragment : DialogFragment() {
         // 작품 미선택/연결 소실이어도 편집 중인 사건의 세계관으로 폴백한다(S-6, 원칙 04) —
         // 작품이 끊긴 사건의 기존 필드값이 '일일이 확인하지 않으면 존재를 알 수 없는 데이터'가
         // 되지 않게 화면에 드러내 편집할 수 있어야 한다.
+        // **무소속이면 전역 구역이다** — 종전에는 여기서 섹션을 통째로 감췄고, 그래서
+        // 무소속 사건(작품 거르개 없이 간편 추가로 만든 사건)의 폼에는 필드 구역 자체가
+        // 없었다(B-258). 무소속 캐릭터는 B-119 확장이, 무소속 작품은 B-129가 이미 그 구역을
+        // 받고 있었고 사건만 못 받았다 — 원칙 01·05에 어긋나던 자리다.
         val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
             ?: editingEvent?.universeId
-        if (universeId == null) {
-            eventFields = emptyList()
-            eventFieldInputMap.clear()
-            coveredEventFieldIds = emptySet()  // 렌더한 것이 없다 = 폼의 권한도 없다(전량 보존)
-            resolvedFieldUniverseId = null
-            binding.eventFieldContainer.removeAllViews()
-            binding.eventFieldContainer.visibility = View.GONE
-            binding.eventFieldSectionLabel.visibility = View.GONE
-            binding.eventFieldEmptyHint.visibility = View.GONE
-            binding.btnAddEventField.visibility = View.GONE
-            binding.btnPickEventField.visibility = View.GONE
-            binding.btnEventFieldHelp.visibility = View.GONE
-            consumeFieldFocus()   // 그릴 칸이 없다는 것도 답이다 — 말없이 끝내지 않는다
-            return
-        }
 
         // 작품을 빠르게 토글해도 이전 세계관 fetch가 늦게 도착해 덮어쓰지 않게 이전 작업 취소 + await 후 재확인(P2-2).
-        val target = universeId
+        val target: FieldScope =
+            if (universeId == null) FieldScope.Global else FieldScope.Universe(universeId)
         // **fetch 전에 대입한다.** 조회가 끝난 뒤에 넣으면 작품을 A→B로 바꾼 직후 조회가 도는
         // 동안 이 값이 A로 남고, 버튼은 계속 보이므로 그 사이에 누르면 **사용자가 고른 적 없는
         // 세계관 A에 필드가 생긴다.** null 검사만으로는 이 자리를 막지 못한다 —
         // 막아야 하는 것은 '모르는 상태'가 아니라 '낡은 상태'다.
-        resolvedFieldUniverseId = target
+        resolvedFieldScope = target
         fieldSectionJob?.cancel()
         fieldSectionJob = lifecycleScope.launch {
-            val fields = requireProvider().getEventFieldsForUniverse(target)
+            val fields = requireProvider().getEventFieldsForUniverse(universeId)
             if (_binding == null) return@launch
             val current = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
                 ?: editingEvent?.universeId
-            if (current != target) return@launch
+            if (current != universeId) return@launch
             // 커버는 조회된 정의 전체(CALCULATED 포함), 렌더는 입력 가능한 것만 — 필드 주석 참조.
             coveredEventFieldIds = fields.mapTo(HashSet()) { it.id }
             eventFields = fields
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }
-            buildEventFieldInputs()
+            buildEventFieldInputs(target)
         }
     }
 
-    private fun buildEventFieldInputs() {
+    /**
+     * 입력 위젯을 세운다.
+     *
+     * **구역을 인자로 받는다** — 이 함수는 조회 콜백 한 곳에서만 불리고 그때 구역은 반드시
+     * 정해져 있다. 필드에서 다시 읽으면 *아직 못 정했을 수도 있다*는 갈래가 생기는데,
+     * 그 갈래는 **도달할 수 없으면서 화면을 감추는 코드**여서 다음 사람에게 없는 상태를
+     * 있다고 말한다(콜드 검토가 이 판에서 잡았다).
+     */
+    private fun buildEventFieldInputs(scope: FieldScope) {
         val ctx = context ?: return
         eventFieldInputMap.clear()
         binding.eventFieldContainer.removeAllViews()
 
-        // 세계관을 아는 한 만드는 경로는 항상 남긴다 — 필드가 있을 때도 하나 더 필요할 수 있다.
-        val fieldPathKnown = resolvedFieldUniverseId != null
-        binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
-        // 추천은 빈 캔버스보다 값싼 출발점이라 **함께** 남긴다. 필드가 이미 있어도 하나 더
-        // 필요할 수 있다는 현행 판단(바로 위 주석)을 그대로 따른다.
-        binding.btnPickEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
-        binding.btnEventFieldHelp.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
+        val globalScope = scope is FieldScope.Global
+        // **만드는 경로는 세계관 구역에만 있다**([FieldScope] KDoc — B-129가 작품 축에 세운 규약).
+        binding.btnAddEventField.visibility = if (globalScope) View.GONE else View.VISIBLE
+        // 추천은 빈 캔버스보다 값싼 출발점이라 **함께** 남긴다. 필드가 있을 때도 하나 더
+        // 필요할 수 있다는 현행 판단(바로 위 주석)을 그대로 따른다. 전역 구역에서는 이것도
+        // 함께 사라진다 — 심을 자리가 없는데 고르게 하면 고른 것이 갈 곳이 없다.
+        binding.btnPickEventField.visibility = if (globalScope) View.GONE else View.VISIBLE
+        // 도움말은 두 구역 모두에 남긴다 — 전역 구역에서는 **어디서 만드는가**를 말하는 자리가
+        // 안내문과 이 단추뿐이다.
+        binding.btnEventFieldHelp.visibility = View.VISIBLE
 
         if (eventFields.isEmpty()) {
             binding.eventFieldContainer.visibility = View.GONE
             // 빈 상태에서도 머리글과 사유를 남긴다 — 섹션을 통째로 감추면 사건을 쓰는 자리에서
             // '사건 필드'라는 것의 존재를 알 길이 없다(B-31이 세운 규약과 같은 취지).
-            val known = resolvedFieldUniverseId != null
-            binding.eventFieldSectionLabel.visibility = if (known) View.VISIBLE else View.GONE
-            binding.eventFieldEmptyHint.visibility = if (known) View.VISIBLE else View.GONE
+            binding.eventFieldSectionLabel.visibility = View.VISIBLE
+            binding.eventFieldEmptyHint.visibility = View.VISIBLE
+            binding.eventFieldEmptyHint.text = getString(
+                if (globalScope) R.string.event_field_global_scope else R.string.event_field_empty_hint
+            )
             consumeFieldFocus()
             return
         }
         binding.eventFieldContainer.visibility = View.VISIBLE
         binding.eventFieldSectionLabel.visibility = View.VISIBLE
-        binding.eventFieldEmptyHint.visibility = View.GONE
+        // 전역 구역에서는 필드가 있어도 안내를 남긴다 — 만드는 단추가 없으므로 **어디서
+        // 만드는지를 말하는 자리가 여기뿐**이다(B-129와 같은 근거: 발견성).
+        if (globalScope) {
+            binding.eventFieldEmptyHint.visibility = View.VISIBLE
+            binding.eventFieldEmptyHint.text = getString(R.string.event_field_global_scope)
+        } else {
+            binding.eventFieldEmptyHint.visibility = View.GONE
+        }
 
         val density = resources.displayMetrics.density
         for (field in eventFields) {
@@ -988,10 +1029,11 @@ class EventEditDialogFragment : DialogFragment() {
      * **인자는 한 번 쓰고 지운다.** 이 시트는 작품 선택을 바꿀 때마다 폼을 다시 세우는데
      * (`rebuildEventFieldSection`), 남겨 두면 그때마다 초점이 튀어 사용자가 보던 자리를 뺏는다.
      *
-     * **칸이 없으면 무엇이 없는지 말한다.** 값은 있는데 칸이 없는 조합이 실제로 있다 —
-     * 이 시트는 *그 사건의 세계관* 필드만 그리므로, 전역 구역(무소속) 정의나 다른 세계관
-     * 정의에 매달린 값은 그릴 자리가 없다(B-258). 조용히 끝내면 누른 사람은 자기가 잘못
-     * 눌렀다고 여긴다.
+     * **칸이 없으면 무엇이 없는지 말한다.** 값은 있는데 칸이 없는 조합이 아직 남아 있다.
+     * 전역 구역(무소속) 정의는 **이제 그린다**(B-258 ⓐ) — 남은 것은 *구역이 어긋난* 값,
+     * 즉 임자의 세계관과 다른 구역의 정의에 매달린 값이다. 그 조합은 엑셀로만 들어오고
+     * (가져오기가 행의 세계관 열로 정의를 찾을 뿐 임자와 같은지 묻지 않는다 — B-258 ⓒ),
+     * 어느 창에도 그릴 자리가 없다. 조용히 끝내면 누른 사람은 자기가 잘못 눌렀다고 여긴다.
      */
     private fun consumeFieldFocus() {
         val args = arguments ?: return
@@ -1169,7 +1211,12 @@ class EventEditDialogFragment : DialogFragment() {
      */
     private suspend fun buildEventAiContext(): EventFieldAiSuggester.EventAiContext? {
         if (_binding == null) return null
-        val universeId = resolvedFieldUniverseId ?: return null
+        // 구역을 아직 못 정했으면 근거를 모을 수 없다. **전역 구역은 그 상태가 아니다** —
+        // 세계관 이름이 없을 뿐 사건·작품·이웃은 그대로 근거가 된다(B-258). 종전에는 `Long?`의
+        // null 하나가 둘을 겸해, 전역 구역을 그리기 시작하면 그 줄의 ✨가 **눌리는데 아무 일도
+        // 안 나는 단추**가 됐을 자리다 — 이 저장소가 침묵이라 부르는 그 부류다.
+        val scope = resolvedFieldScope ?: return null
+        val universeId = (scope as? FieldScope.Universe)?.id
         val year = binding.editYear.text.toString().trim().toIntOrNull()
         val month = binding.editMonth.text.toString().trim().toIntOrNull()
         val day = binding.editDay.text.toString().trim().toIntOrNull()
@@ -1192,7 +1239,9 @@ class EventEditDialogFragment : DialogFragment() {
         val failures = mutableListOf<String>()
         val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp
         // Room의 suspend 질의라 스레드를 여기서 옮기지 않는다(이 파일의 다른 조회와 같다).
-        val universeName = try {
+        // 전역 구역에는 세계관이 없다 — **조회 실패가 아니므로 고지에도 넣지 않는다.**
+        // 실패로 세면 사용자는 있지도 않은 고장을 찾는다.
+        val universeName = if (universeId == null) "" else try {
             app?.universeRepository?.getUniverseById(universeId)?.name.orEmpty()
         } catch (e: Exception) {
             Log.w("EventEditDialog", "Failed to load universe name for AI context", e)

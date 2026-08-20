@@ -232,7 +232,7 @@ class StatsDataHealthDetailFragment : Fragment() {
      */
     private fun navigateToFix(route: FieldValueFixRoute.Route) {
         val destId = when (route.destination) {
-            FieldValueFixRoute.Destination.CHARACTER_DETAIL -> R.id.characterDetailFragment
+            FieldValueFixRoute.Destination.CHARACTER_EDIT -> R.id.characterEditFragment
             FieldValueFixRoute.Destination.TIMELINE -> R.id.timelineFragment
             FieldValueFixRoute.Destination.NOVEL_LIST -> R.id.novelListFragment
         }

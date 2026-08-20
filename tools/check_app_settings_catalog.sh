@@ -107,8 +107,48 @@ if [ -n "$empty_reason" ]; then
   fail=1
 fi
 
+# ── ④ 숫자 설정은 수가 아닌 값을 **거절**하는가 (B-263 ⓑ) ──
+#
+# 복원 미리보기가 이 불변식 위에 선다: `AppSettingsDiff`는 `Kind.NUMBER` 행의 값이 수로
+# 읽히지 않으면 **'건너뜀'**으로 예고한다 — 가져오기가 거절하고 지금 값을 지키기 때문이다.
+# 새 숫자 바인딩 하나가 그 대신 값을 조용히 적용하면 **미리보기가 거짓말을 한다**
+# (예고는 '건너뜀'인데 실제로는 값이 바뀐다). 실패의 모양이 침묵이라 여기서 기계로 잡는다.
+#
+# 판정: `Kind.NUMBER`로 선언된 스펙의 `Binding(` 블록이 `Applied.No`를 들고 있는가.
+# 지금 열넷이 전부 그렇다(실측). **못 뜨면 위반이다**(fail-closed) — 블록을 못 찾는 것은
+# 이 축이 눈먼 채 초록이 되는 자리다.
+num_specs=$(grep -oE 'val [A-Z_]+ = Spec\("[^"]+", Kind\.NUMBER' "$KEYS_FILE" | sed -E 's/val ([A-Z_]+).*/\1/' | sort -u)
+if [ -z "$num_specs" ]; then
+  echo "  ✗ Kind.NUMBER 선언을 하나도 못 떴습니다 — 선언 꼴이 바뀌었는지 보세요(축 ④가 눈멉니다)"
+  fail=1
+fi
+lenient=""
+for spec in $num_specs; do
+  # **블록의 끝은 다음 `Binding(`이다.** 고정 줄 수로 자르면 창이 다음 바인딩까지 삼켜
+  # **남의 `Applied.No`를 제 것으로 읽는다** — 자기 재공격에서 실제로 그랬다(THEME_MODE를
+  # 관대하게 바꿔 놓아도 초록이었다). 축 ⑧이 표식을 고정 줄 수로 찾다 겪은 것과 같은 병이다.
+  block=$(awk -v pat="Binding(AppSettingsKeys.$spec," '
+    on && index($0, "Binding(AppSettingsKeys.") { exit }
+    index($0, pat) { on=1 }
+    on { print }
+  ' "$BINDINGS_FILE")
+  if [ -z "$block" ]; then
+    echo "  ✗ $spec: Binding 블록을 뜨지 못했습니다 — 축 ④가 이 설정을 못 봅니다"
+    fail=1
+    continue
+  fi
+  echo "$block" | grep -q 'Applied\.No' || lenient="$lenient $spec"
+done
+if [ -n "$lenient" ]; then
+  echo "  ✗ 수가 아닌 값을 거절하지 않는 숫자 설정:$lenient"
+  echo "      → 복원 미리보기(AppSettingsDiff)가 그 행을 '건너뜀'으로 예고하는데 실제로는"
+  echo "        값이 바뀝니다. 거절(Applied.No)하도록 고치거나, 미리보기의 판정을 함께 고치세요."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 선언 $(echo "$declared" | wc -l)개가 전부 바인딩을 갖고, 설정 저장소 $(echo "$stores" | wc -w)곳이 전부 등재돼 있음"
+  echo "  ✓ 숫자 설정 $(echo "$num_specs" | wc -w)개가 전부 수 아닌 값을 거절함 (미리보기 '건너뜀' 예고의 근거)"
   echo "'앱 설정' 카탈로그 검사 통과"
 fi
 exit $fail

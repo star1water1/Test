@@ -323,15 +323,13 @@ fun matchDropdownValue(raw: String, allowed: Collection<String>): String? {
 }
 
 /**
- * 엑셀 불리언 열 파싱의 **단일 소스** (순수 함수 — 단위 테스트 대상).
- * Y/N·TRUE/FALSE·1/0·yes/no·T/F·예/참을 수용하고 전각 입력(Ｙ／１ 등)을 정규화한다.
- * **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+ * 엑셀 불리언 열 파싱 — 몸통은 [CsvTokens.parseBoolean]에 있다(위 [toHalfWidth]와 같은 꼴).
+ *
+ * **여기 다시 적지 않는 이유:** 이 파일은 POI를 import 해서 순수 JVM 시험이 닿지 못하는데,
+ * 복원 미리보기의 '같은 값인가' 판정([AppSettingsDiff])이 같은 해석을 써야 한다(R-33).
+ * 두 벌로 적으면 가져오기와 미리보기가 다른 값을 참이라 부르는 날이 온다.
  */
-fun parseSheetBoolean(value: String): Boolean =
-    when (toHalfWidth(value.trim()).uppercase()) {
-        "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
-        else -> false
-    }
+fun parseSheetBoolean(value: String): Boolean = CsvTokens.parseBoolean(value)
 
 /**
  * F1-A 불리언 열 규약의 단일 소스.
