@@ -167,6 +167,52 @@ class AiPromptSettings(context: Context) {
             sp.edit().putString(KEY_EVENT_CONTEXT_SCOPE, EventAiMaterial.serialize(value)).apply()
         }
 
+    /**
+     * **AI에 보내는 메시지 양식** (사용자 요청 2026.08.20). 비어 있으면 기본 양식이다.
+     *
+     * *"ai api에 보내지는 메세지 양식도 모두 사용자가 편집할 수 있게 하기(인앱, 엑셀 모두)."*
+     *
+     * **기본값과 같으면 아예 저장하지 않는다** — 이 저장소의 이웃(`FieldDescription`·
+     * `FieldAiPolicy`)이 지키는 관행이고, 여기서는 값이 더 크다: 기본 양식이 앞으로 나아지면
+     * 손대지 않은 사용자는 그 개선을 그대로 받는다. 옛 기본값을 통째로 얼려 두면 못 받는다.
+     */
+    fun templateOf(id: PromptTemplates.Id): String =
+        PromptTemplates.effective(id, sp.getString(id.key, null))
+
+    /** 사용자가 고친 글. 손댄 적이 없으면 `null`이다 — 화면의 '고침' 배지가 이것으로 갈린다. */
+    fun storedTemplate(id: PromptTemplates.Id): String? =
+        sp.getString(id.key, null)?.takeIf { it.isNotBlank() }
+
+    /**
+     * @return 저장했으면 빈 목록, 거절했으면 그 사유들. **자르지 않는다** —
+     *   잘린 양식은 필수 자리표가 잘려나간 계약이 깨진 양식이다([AiPromptPolicy]).
+     */
+    fun setTemplate(id: PromptTemplates.Id, raw: String?): List<PromptTemplateValidator.Problem> {
+        val text = raw.orEmpty().trim()
+        val problems = PromptTemplateValidator.validate(id, text)
+        if (problems.isNotEmpty()) return problems
+        // 빈 값·기본과 같은 값은 **키를 지운다**(위 KDoc).
+        if (text.isEmpty() || PromptTemplates.isDefault(id, text)) {
+            sp.edit().remove(id.key).apply()
+        } else {
+            sp.edit().putString(id.key, text).apply()
+        }
+        return emptyList()
+    }
+
+    /**
+     * 조립기에 건네줄 양식 공급자.
+     *
+     * 조립기가 이 객체를 직접 쥐면 `Context`가 딸려 가 순수 JVM 시험이 프롬프트를 못 본다 —
+     * 그래서 함수 하나만 넘긴다([PromptTemplates.Source]의 KDoc).
+     */
+    fun asTemplateSource(): PromptTemplates.Source =
+        PromptTemplates.Source { templateOf(it) }
+
+    /** 손댄 양식이 몇 개인가 — 설정 화면의 요약 줄이 쓴다. */
+    fun customizedTemplateCount(): Int =
+        PromptTemplates.Id.entries.count { storedTemplate(it) != null }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"

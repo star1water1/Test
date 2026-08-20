@@ -313,13 +313,20 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         minConfidence: Confidence? = null,
         creativity: AiCreativity = AiCreativity.DEFAULT,
         images: List<AiImage> = emptyList(),
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome = suggest(
         prompts = object : FieldPromptSource {
             override fun system(minConfidence: Confidence?, creativity: AiCreativity) =
-                buildSystemPrompt(minConfidence, creativity)
+                buildSystemPrompt(
+                    minConfidence, creativity,
+                    templates.templateOf(PromptTemplates.Id.CHAR_FIELD_SYSTEM)
+                )
 
-            override fun user(targets: List<FieldSpec>) = buildUserPrompt(context, targets)
+            override fun user(targets: List<FieldSpec>) = buildUserPrompt(
+                context, targets, templates.templateOf(PromptTemplates.Id.CHAR_FIELD_USER)
+            )
         },
         targets = targets,
         minConfidence = minConfidence,
@@ -942,7 +949,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         }
 
         /**
-         * 시스템 프롬프트.
+         * 시스템 프롬프트 — **글은 [PromptTemplates]에, 값은 여기에.**
+         *
+         * 사용자가 양식을 고치면 그 글이 그대로 나간다(사용자 요청 2026.08.20). 다만
+         * `{{응답형식}}`은 앱이 만들고 빠지면 저장이 거절되므로, 응답을 읽는 계약은 어떤
+         * 양식에서도 성립한다.
          *
          * **전량 응답 계약**: 종전 규칙 "근거가 부족해 추천할 수 없는 필드는 응답에서 생략한다"는
          * 모델에게 마음껏 빠뜨릴 재량을 준 지시였다. 캐릭터 한 명의 정보는 원래 성기므로 모델은
@@ -956,54 +967,22 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          */
         fun buildSystemPrompt(
             minConfidence: Confidence? = null,
-            creativity: AiCreativity = AiCreativity.DEFAULT
-        ): String = """
-            당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
-            규칙:
-            1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}
-            2. [추천할 필드]에 제시된 key **전부**에 대해 항목을 하나씩 낸다. 필드가 N개면 항목도 N개다.
-               임의로 빠뜨리지 마라 — 빠진 필드는 사용자에게 이유를 알 수 없는 결손으로 남는다.
-            3. key는 [추천할 필드]에 제시된 key만 사용한다. 목록에 없는 key를 만들지 마라.
-            4. 정보가 적다는 이유로 추천을 포기하지 마라. 캐릭터 정보와 모순되지 않고 아래 '기존 사용값'의
-               기조에 맞는다면 합리적으로 추정해 제시하고, reason에 무엇을 근거로 한 추정인지 밝힌다.
-               제안은 사용자가 검토해 취사선택하므로, 확신이 없다는 이유로 생략할 필요가 없다.
-            5. 그럼에도 정할 근거가 전혀 없는 필드는 **생략하지 말고** value를 빈 문자열("")로 두고
-               reason에 그 이유를 한국어 한 문장으로 적는다. 항목 자체는 반드시 포함한다.
-            6. '옵션'이 제시된 필드는 그 옵션 중 하나를 **그대로** 쓴다. 옵션에 없는 값을 만들지 마라.
-            7. '형식' 지시가 있는 필드는 형식을 정확히 지킨다 (예: 생일 MM-DD → 03-15).
-            8. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계·대결 우열)에서 추론했는지 한국어 한 문장으로 쓴다.
-            9. '기존 사용값'이 제시된 필드는 그 값들이 이 작품에서 실제로 쓰이는 표기 기조다.
-               같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
-               기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
-               상세도·길이를 따른다 (예: 기존이 '흑발, 은발'이면 '짙은 밤하늘빛 흑청색'은 안 된다).
-               '값 뜻'이 함께 오면 그것은 사용자가 그 값에 붙여 둔 정의다 — 어느 값이 맞는지
-               그 뜻으로 가리고, 뜻과 어긋나는 값을 고르지 마라. **답에 쓰는 값은 '기존 사용값'에
-               적힌 문자열 그대로여야 한다** — 설명을 값에 붙여 적지 마라.
-            10. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
-            11. 항목마다 confidence를 정직하게 매긴다. 잘 보이려고 높여 적지 마라 — 사용자는 이 값으로
-                무엇을 검토 없이 받을지 정한다.
-                high: 캐릭터 정보에 직접적인 근거가 있다 (태그·메모·다른 필드가 그 값을 가리킨다)
-                medium: 주어진 정보에서 무리 없이 추론된다
-                low: 정보가 부족해 작품의 기존 기조나 일반적 통념에 기댄 추측이다
-            12. '사용자 지시'가 붙은 필드는 그 지시를 **최우선**으로 따른다 — 다른 근거와 어긋나면
-                지시 쪽을 택하고, reason에 지시를 어떻게 반영했는지 적는다.
-            13. '이미 물린 값'이 제시된 필드는 사용자가 그 값을 보고 다시 요청한 것이다.
-                같은 값이나 사실상 같은 값을 되풀이하지 말고 **다른 방향**의 값을 내라.
-            14. '설명'이 붙은 필드는 그 설명이 이 작품에서 그 필드가 뜻하는 바의 정의이자 제약이다.
-                설명과 어긋나는 값을 내지 마라. 설명이 옵션·형식과 충돌하면 옵션·형식을 따르고,
-                무엇이 충돌했는지 reason에 적어라.
-            15. '대결 우열'은 사용자가 캐릭터를 둘씩 비교해 **직접 고른** 결과가 쌓인 순위다.
-                네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나는 값을 내지 마라 —
-                '강함' 축 상위인 캐릭터에게 그 축과 이어지는 필드의 낮은 값을 주지 않는다.
-                등수 차가 작고 오차(±)가 겹치면 근소한 차이이니 값도 그만큼만 벌려라.
-                그 순위를 근거로 삼았으면 reason에 축 이름과 등수를 적어라.
-        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            template: String = PromptTemplates.default(PromptTemplates.Id.CHAR_FIELD_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.CHAR_FIELD_SYSTEM),
+                PromptTemplates.T_CONFIDENCE_RULE to confidenceFloorRule(minConfidence),
+                PromptTemplates.T_CREATIVITY_RULE to creativity.promptBlock()
+            )
+        )
 
         /**
-         * 이미지 첨부 지시 (A-7). **번호를 매긴 블록으로 붙인다** — 규칙 16은 근거 강도가
-         * 조건부로 쓰는 자리라, 여기에 또 번호를 매기면 설정 조합에 따라 `16.`이 둘이 된다.
-         * 창작도 지시가 쓰는 것과 같은 형태([AiCreativity.promptRule])이므로 새 문법도 아니다.
+         * 이미지 첨부 지시 (A-7). **번호 없는 이름표 블록이다** — 규칙 번호는 이제 사용자가
+         * 고칠 수 있는 양식 안에 있어서, 앱이 번호를 박으면 반드시 어긋난다. 창작도·근거 강도
+         * 지시가 쓰는 것과 같은 형태([AiCreativity.promptBlock])이므로 새 문법도 아니다.
          *
          * 몇 번째 이미지인지 적게 하는 것이 이 지시의 본체다 — 검토 화면의 근거 줄이 그대로
          * 보여 주므로, 사용자는 "이 값이 그림의 어디서 왔는가"를 새 UI 없이 확인한다.
@@ -1022,18 +1001,38 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             """.trimIndent()
 
         /**
-         * 근거 강도 하한 지시 — 설정이 '전부 받기'면 아예 붙이지 않는다.
+         * 근거 강도 하한 지시 — 설정이 '전부 받기'면 빈 글이고, 그러면 그 줄이 통째로 사라진다.
          *
-         * 프롬프트와 파싱 **양쪽**에서 거른다: 프롬프트만으로는 모델이 지킨다는 보장이 없고,
-         * 파싱만으로는 쓸모없어질 값을 만드느라 출력 토큰을 낭비한다.
+         * 프롬프트와 응답 읽기 **양쪽**에서 거른다: 프롬프트만으로는 모델이 지킨다는 보장이 없고,
+         * 읽기만으로는 쓸모없어질 값을 만드느라 출력 토큰을 낭비한다.
+         *
+         * **번호를 매기지 않는다** — 종전에는 `16.`으로 시작하고 *"규칙 5대로"*를 가리켰는데,
+         * 사용자가 양식의 규칙을 열둘로 줄이면 1~12 다음에 16이 오고 스물로 늘리면 16이 두 번
+         * 나온다. 가리키는 번호도 함께 틀린다. **두 축이 한 벌을 쓰는 것도 그래서 가능해졌다** —
+         * 번호를 안 쓰니 사건 축이 자기 마지막 규칙 번호에 맞춰 사본을 둘 이유가 사라졌다.
          */
-        private fun confidenceFloorRule(minConfidence: Confidence?): String =
-            if (minConfidence == null) "" else "\n" + """
-            16. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
-                값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
-            """.trimIndent()
+        fun confidenceFloorRule(minConfidence: Confidence?): String =
+            if (minConfidence == null) "" else
+                "[근거 강도 하한] 사용자는 근거 강도 '" + minConfidence.wire + "' 이상만 받기로 " +
+                    "정했다. 그보다 낮은 추측은 값을 내지 말고 value를 빈 문자열로 두고 " +
+                    "reason에 근거가 얕은 이유를 적어라."
 
-        fun buildUserPrompt(context: CharacterAiContext, targets: List<FieldSpec>): PromptBuild {
+        /**
+         * 사용자 프롬프트 — **자르는 규칙은 여기, 이름표와 차례는 양식에.**
+         *
+         * 종전에는 `if (tags.isNotEmpty())` 가드를 절마다 손으로 걸었다. 그 일을
+         * [PromptTokens]가 대신한다 — *자리표가 든 줄은 그 자리표가 전부 비면 줄째로 사라지고,
+         * 그렇게 비워진 절은 머리까지 사라진다.* 그래서 `태그: ` 같은 빈 이름표가 나가는 일이
+         * 없고, **사용자가 절의 차례를 바꾸거나 이름표를 고쳐도 그 성질이 그대로 유지된다.**
+         *
+         * 상한·절단·생략 고지는 그대로 이 함수가 든다(R-14) — 무엇을 얼마나 실을지는 양식이
+         * 아니라 앱이 정하는 계약이고, 잘라 놓고 말하지 않으면 조용한 결손이 된다.
+         */
+        fun buildUserPrompt(
+            context: CharacterAiContext,
+            targets: List<FieldSpec>,
+            template: String = PromptTemplates.default(PromptTemplates.Id.CHAR_FIELD_USER)
+        ): PromptBuild {
             val notes = mutableListOf<String>()
             // 조회 실패로 빠진 섹션 — 절단과 같은 경로로 반드시 고지 (조용한 결손 금지, R-14)
             context.loadFailures.forEach { notes.add("$it 정보를 불러오지 못함") }
@@ -1050,58 +1049,82 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     text.take(max) + "…"
                 } else text
 
-            val sb = StringBuilder()
-            sb.append("[캐릭터]\n")
-            sb.append("이름: ").append(context.name.trim().ifEmpty { "(미정)" })
-            if (context.aliases.isNotEmpty()) {
-                sb.append(" (이명: ").append(context.aliases.joinToString(", ")).append(')')
-            }
-            sb.append('\n')
-            if (context.tags.isNotEmpty()) {
-                sb.append("태그: ").append(capList(context.tags, MAX_TAGS, "태그").joinToString(", ")).append('\n')
-            }
-            if (context.memo.isNotBlank()) {
-                sb.append("메모: ").append(capText(context.memo.trim(), MAX_MEMO_CHARS, "메모")).append('\n')
-            }
-            if (context.imageTags.isNotEmpty()) {
-                sb.append("이미지 태그: ")
-                    .append(capList(context.imageTags, MAX_TAGS, "이미지 태그").joinToString(", ")).append('\n')
-            }
-            if (context.factions.isNotEmpty()) {
-                sb.append("소속 세력: ").append(context.factions.joinToString(", ")).append('\n')
-            }
-            if (context.relationships.isNotEmpty()) {
-                sb.append("관계: ")
-                    .append(capList(context.relationships, MAX_RELATIONSHIPS, "관계").joinToString(" / ")).append('\n')
-            }
+            // **사용자가 양식에서 뺀 재료는 만들지 않는다** (R-14) — 만들면 그 재료의 상한
+            // 고지가 딸려 나오는데, 뺀 것은 잘린 것이 아니다. `{{태그목록}}`을 지운 사람에게
+            // *"태그 3건 생략"*이라고 말하면 보내지도 않은 것을 잘랐다고 하는 셈이다.
+            val used = PromptTokens.usedNames(template)
+            fun ifUsed(name: String, build: () -> String): String =
+                if (name in used) build() else ""
+
             // 대결 우열 — 어느 필드에도 적혀 있지 않은 정보다(위 duelStandings 주석).
             // 자르는 규칙과 고지 문구 모두 DuelAiContext가 단일 소스다: 서술형 조립기와
             // 각자 자르면 같은 캐릭터가 경로에 따라 다른 축을 받는다.
-            if (context.duelStandings.isNotEmpty()) {
+            val duelText = if ("대결우열" !in used || context.duelStandings.isEmpty()) "" else {
                 val duel = DuelAiContext.promptLines(context.duelStandings)
                 if (duel.omitted > 0) notes.add(DuelAiContext.omittedNote(duel.omitted))
-                sb.append(DuelAiContext.PROMPT_LABEL)
-                    .append(duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)).append('\n')
+                duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)
             }
 
             // 추천 대상 필드는 [입력된 필드]에서 제외 — 대상의 현재 값은 필드 스펙 쪽에 실린다
             val targetNames = targets.mapTo(HashSet()) { it.name }
             val filled = context.filledFields.filter { it.first !in targetNames && it.second.isNotBlank() }
-            if (filled.isNotEmpty()) {
-                sb.append("[입력된 필드]\n")
+            val filledText = if ("입력된필드표" !in used || filled.isEmpty()) "" else buildString {
                 var longValues = 0
                 for ((name, value) in capList(filled, MAX_FILLED_FIELDS, "입력된 필드")) {
                     val v = if (value.length > MAX_VALUE_CHARS) {
                         longValues++
                         value.take(MAX_VALUE_CHARS) + "…"
                     } else value
-                    sb.append(name).append(": ").append(v).append('\n')
+                    append(name).append(": ").append(v).append('\n')
                 }
                 if (longValues > 0) notes.add("긴 필드값 ${longValues}건을 ${MAX_VALUE_CHARS}자로 절단")
-            }
+            }.trimEnd('\n')
 
-            appendTargetSection(sb, targets, notes)
-            return PromptBuild(sb.toString(), notes)
+            val targetSection = StringBuilder().also { appendTargetSection(it, targets, notes) }
+                .toString()
+
+            // **자리가 없어 안 실린 재료를 말한다** — 사용자가 뺀 것을 *잘렸다*고 하지 않는 것과
+            // 짝이다(R-14의 뒷면). 이것이 없으면 `{{메모}}`를 지운 사람이 추천이 빈약해진
+            // 이유를 가릴 수 없다.
+            notes.addAll(
+                PromptTemplates.unusedMaterialNotes(
+                    used,
+                    mapOf(
+                        "이명목록" to context.aliases.isNotEmpty(),
+                        "태그목록" to context.tags.isNotEmpty(),
+                        "메모" to context.memo.isNotBlank(),
+                        "이미지태그" to context.imageTags.isNotEmpty(),
+                        "소속세력" to context.factions.isNotEmpty(),
+                        "관계요약" to context.relationships.isNotEmpty(),
+                        "대결우열" to context.duelStandings.isNotEmpty(),
+                        "입력된필드표" to filled.isNotEmpty()
+                    )
+                )
+            )
+
+            val text = PromptTokens.expand(
+                template,
+                mapOf(
+                    "캐릭터명" to context.name.trim().ifEmpty { "(미정)" },
+                    "이명목록" to context.aliases.joinToString(", "),
+                    "태그목록" to
+                        ifUsed("태그목록") { capList(context.tags, MAX_TAGS, "태그").joinToString(", ") },
+                    "메모" to ifUsed("메모") {
+                        if (context.memo.isBlank()) "" else capText(context.memo.trim(), MAX_MEMO_CHARS, "메모")
+                    },
+                    "이미지태그" to ifUsed("이미지태그") {
+                        capList(context.imageTags, MAX_TAGS, "이미지 태그").joinToString(", ")
+                    },
+                    "소속세력" to context.factions.joinToString(", "),
+                    "관계요약" to ifUsed("관계요약") {
+                        capList(context.relationships, MAX_RELATIONSHIPS, "관계").joinToString(" / ")
+                    },
+                    "대결우열" to duelText,
+                    "입력된필드표" to filledText,
+                    PromptTemplates.T_TARGET_FIELDS to targetSection
+                )
+            )
+            return PromptBuild(text, notes)
         }
 
         /**

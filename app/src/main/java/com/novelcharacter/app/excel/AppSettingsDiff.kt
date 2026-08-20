@@ -61,15 +61,51 @@ object AppSettingsDiff {
         // '갱신'이 아니라 '건너뜀'이다(B-102 ⓑ: 실행되지 않을 행을 실행된다고 예고하면
         // 미리보기가 거짓말이 된다). 빈칸도 여기 걸린다.
         //
-        // **이것은 [AppSettingsBindings]의 불변식에 기댄 판정이다** — 숫자 바인딩 열넷이
-        // 전부 `Applied.No`로 거절한다(실측). 기댄 채로 두면 새 숫자 바인딩 하나가 조용히
+        // **이것은 [AppSettingsBindings]의 불변식에 기댄 판정이다** — 숫자 바인딩 열다섯이
+        // 전부 `Applied.No`로 거절한다(실측 2026.08.20 — `theme_mode`가 뒤에 합류해 열넷이 아니다). 기댄 채로 두면 새 숫자 바인딩 하나가 조용히
         // 이 예고를 틀리게 만들 수 있어, `tools/check_app_settings_catalog.sh`가 그 불변식을
         // 기계로 지킨다(축 ④).
         if (spec.kind == AppSettingsKeys.Kind.NUMBER && fileValue.trim().toDoubleOrNull() == null) {
             return Effect.SKIPPED
         }
+        // **거절될 양식 행은 '갱신'이 아니라 '건너뜀'이다** — 숫자 설정과 같은 근거다
+        // (B-102 ⓑ: 실행되지 않을 행을 실행된다고 예고하면 미리보기가 거짓말이 된다).
+        // 판정은 가져오기가 쓰는 그 검증기이므로 두 답이 갈릴 수 없다.
+        val domain = spec.domain
+        if (domain is AppSettingsKeys.Domain.Template &&
+            !com.novelcharacter.app.ai.PromptTemplateValidator.isAcceptable(
+                domain.id, fileValue.replace("\r\n", "\n").replace('\r', '\n').trim()
+            )
+        ) {
+            return Effect.SKIPPED
+        }
         if (currentValue == null) return Effect.UPDATE
-        return if (sameValue(spec.kind, fileValue, currentValue)) Effect.UNCHANGED else Effect.UPDATE
+        return if (sameValue(spec.kind, normalize(spec, fileValue), normalize(spec, currentValue)))
+            Effect.UNCHANGED
+        else Effect.UPDATE
+    }
+
+    /**
+     * 견주기 **직전의 다듬기** — 가져오기가 쓰는 술어와 같아야 한다 (R-33).
+     *
+     * 둘이 갈리면 미리보기가 거짓말을 한다. AI 메시지 양식에 두 가지가 걸린다.
+     *
+     * ⓐ **빈 칸은 지우라는 뜻이 아니라 기본 양식으로 되돌리라는 뜻이다** — 빈 양식이라는 것은
+     *   없다. 그대로 견주면 *"빈 칸 ↔ 긴 기본 양식"*이 늘 다르게 보여, 아무것도 안 고친
+     *   파일이 매번 '갱신'으로 예고되고 실제로는 아무 일도 안 일어난다.
+     * ⓑ **셀 안의 줄바꿈은 프로그램마다 다른 글자로 온다** — 쓰기가 `\n`으로 접으므로
+     *   견주기도 같은 자리에서 접어야 한다. 안 그러면 무편집 왕복에서 매번 '갱신'이 뜬다.
+     */
+    private fun normalize(spec: AppSettingsKeys.Spec, raw: String): String {
+        val domain = spec.domain
+        // **양식 행에만 접는다** — 접는 자리가 가져오기에도 양식 바인딩 하나뿐이라,
+        // 다른 TEXT 설정까지 여기서 접으면 *줄바꿈만 다른 값*을 '동일'로 예고해 놓고
+        // 실제로는 덮어쓴다(R-33이 금지하는 방향 그대로).
+        if (domain !is AppSettingsKeys.Domain.Template) return raw.trim()
+        val folded = raw.replace("\r\n", "\n").replace('\r', '\n').trim()
+        return if (folded.isEmpty()) {
+            com.novelcharacter.app.ai.PromptTemplates.default(domain.id).trim()
+        } else folded
     }
 
     private fun sameValue(kind: AppSettingsKeys.Kind, fileValue: String, currentValue: String): Boolean =

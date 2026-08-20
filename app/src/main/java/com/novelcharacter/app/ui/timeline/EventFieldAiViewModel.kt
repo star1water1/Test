@@ -78,7 +78,9 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
                     targets = withFieldUsage(targets, settings),
                     scope = settings.eventContextScope,
                     minConfidence = settings.minConfidence,
-                    creativity = settings.creativity
+                    creativity = settings.creativity,
+                    // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+                    templates = settings.asTemplateSource()
                 ) { failure -> AiErrorMessages.of(getApplication(), failure) }
             } catch (e: Exception) {
                 // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).

@@ -66,16 +66,24 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         scope: Set<EventAiMaterial> = EventAiMaterial.DEFAULT,
         minConfidence: CharacterFieldAiSuggester.Confidence? = null,
         creativity: AiCreativity = AiCreativity.DEFAULT,
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
         errorMessageOf: (AiResult.Failure) -> String
     ): CharacterFieldAiSuggester.SuggestOutcome = engine.suggest(
         prompts = object : FieldPromptSource {
             override fun system(
                 minConfidence: CharacterFieldAiSuggester.Confidence?,
                 creativity: AiCreativity
-            ) = buildSystemPrompt(minConfidence, creativity)
+            ) = buildSystemPrompt(
+                minConfidence, creativity,
+                templates.templateOf(PromptTemplates.Id.EVENT_FIELD_SYSTEM)
+            )
 
             override fun user(targets: List<CharacterFieldAiSuggester.FieldSpec>) =
-                buildUserPrompt(context, targets, scope)
+                buildUserPrompt(
+                    context, targets, scope,
+                    templates.templateOf(PromptTemplates.Id.EVENT_FIELD_USER)
+                )
         },
         targets = targets,
         minConfidence = minConfidence,
@@ -97,66 +105,27 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         const val MAX_NEIGHBORS = 12
 
         /**
-         * 사건 축 시스템 프롬프트.
+         * 사건 축 시스템 프롬프트 — 글은 [PromptTemplates]에 있다.
          *
-         * 캐릭터판과 **번호 체계를 맞춘다** — 공통 규칙(1~7·9~14)은 뜻이 같아야 검토 화면의
-         * 고지 문구가 두 축에서 같은 것을 말한다. 갈리는 것은 8번(무엇을 근거로 삼는가)이고,
-         * 캐릭터판의 15번(대결 우열)은 사건에 그 개념이 없어 자리 자체가 없다.
+         * 기본 양식은 캐릭터판과 **번호 체계를 맞춰 둔다** — 공통 규칙(1~7·9~14)은 뜻이 같아야
+         * 검토 화면의 고지 문구가 두 축에서 같은 것을 말한다. 갈리는 것은 8번(무엇을 근거로
+         * 삼는가)이고, 캐릭터판의 15번(대결 우열)은 사건에 그 개념이 없어 자리 자체가 없다.
+         * **사용자가 한쪽만 고치면 그 맞춤은 깨진다 — 그것이 편집을 연다는 뜻이다.**
          */
         fun buildSystemPrompt(
             minConfidence: CharacterFieldAiSuggester.Confidence? = null,
-            creativity: AiCreativity = AiCreativity.DEFAULT
-        ): String = """
-            당신은 소설 세계관의 연표 사건 설정 도우미다. 주어진 사건 정보를 근거로 요청된 필드의 값을 추천하라.
-            규칙:
-            1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}
-            2. [추천할 필드]에 제시된 key **전부**에 대해 항목을 하나씩 낸다. 필드가 N개면 항목도 N개다.
-               임의로 빠뜨리지 마라 — 빠진 필드는 사용자에게 이유를 알 수 없는 결손으로 남는다.
-            3. key는 [추천할 필드]에 제시된 key만 사용한다. 목록에 없는 key를 만들지 마라.
-            4. 정보가 적다는 이유로 추천을 포기하지 마라. 사건 정보와 모순되지 않고 아래 '기존 사용값'의
-               기조에 맞는다면 합리적으로 추정해 제시하고, reason에 무엇을 근거로 한 추정인지 밝힌다.
-               제안은 사용자가 검토해 취사선택하므로, 확신이 없다는 이유로 생략할 필요가 없다.
-            5. 그럼에도 정할 근거가 전혀 없는 필드는 **생략하지 말고** value를 빈 문자열("")로 두고
-               reason에 그 이유를 한국어 한 문장으로 적는다. 항목 자체는 반드시 포함한다.
-            6. '옵션'이 제시된 필드는 그 옵션 중 하나를 **그대로** 쓴다. 옵션에 없는 값을 만들지 마라.
-            7. '형식' 지시가 있는 필드는 형식을 정확히 지킨다.
-            8. reason에는 사건의 어떤 정보(설명·때·유형·관련 작품·관련 캐릭터·가까운 사건·다른 필드)에서
-               추론했는지 한국어 한 문장으로 쓴다.
-            9. '기존 사용값'이 제시된 필드는 그 값들이 이 세계관에서 실제로 쓰이는 표기 기조다.
-               같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
-               기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
-               상세도·길이를 따른다.
-               '값 뜻'이 함께 오면 그것은 사용자가 그 값에 붙여 둔 정의다 — 어느 값이 맞는지
-               그 뜻으로 가리고, 뜻과 어긋나는 값을 고르지 마라. **답에 쓰는 값은 '기존 사용값'에
-               적힌 문자열 그대로여야 한다** — 설명을 값에 붙여 적지 마라.
-            10. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
-            11. 항목마다 confidence를 정직하게 매긴다. 잘 보이려고 높여 적지 마라 — 사용자는 이 값으로
-                무엇을 검토 없이 받을지 정한다.
-                high: 사건 정보에 직접적인 근거가 있다 (설명·때·관련 캐릭터가 그 값을 가리킨다)
-                medium: 주어진 정보에서 무리 없이 추론된다
-                low: 정보가 부족해 세계관의 기존 기조나 일반적 통념에 기댄 추측이다
-            12. '사용자 지시'가 붙은 필드는 그 지시를 **최우선**으로 따른다 — 다른 근거와 어긋나면
-                지시 쪽을 택하고, reason에 지시를 어떻게 반영했는지 적는다.
-            13. '이미 물린 값'이 제시된 필드는 사용자가 그 값을 보고 다시 요청한 것이다.
-                같은 값이나 사실상 같은 값을 되풀이하지 말고 **다른 방향**의 값을 내라.
-            14. '설명'이 붙은 필드는 그 설명이 이 세계관에서 그 필드가 뜻하는 바의 정의이자 제약이다.
-                설명과 어긋나는 값을 내지 마라. 설명이 옵션·형식과 충돌하면 옵션·형식을 따르고,
-                무엇이 충돌했는지 reason에 적어라.
-            15. '가까운 사건'은 같은 연표에 이미 적힌 다른 사건이다. 그 사건들과 앞뒤가 맞게,
-                이미 정해진 흐름과 모순되지 않는 값을 내라 — 연표는 사용자가 짜 둔 사실이지
-                네가 다시 지어낼 대상이 아니다.
-        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
-
-        /**
-         * 캐릭터판과 같은 규칙이지만 **번호가 하나 밀린다**(사건판의 마지막 규칙이 15번이라 16번).
-         * 두 벌로 적는 대신 캐릭터판을 부르면 번호가 어긋나 규칙 하나가 통째로 묻힌다.
-         */
-        private fun confidenceFloorRule(minConfidence: CharacterFieldAiSuggester.Confidence?): String =
-            if (minConfidence == null) "" else "\n" + """
-            16. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
-                값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
-            """.trimIndent()
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            template: String = PromptTemplates.default(PromptTemplates.Id.EVENT_FIELD_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.EVENT_FIELD_SYSTEM),
+                PromptTemplates.T_CONFIDENCE_RULE to
+                    CharacterFieldAiSuggester.confidenceFloorRule(minConfidence),
+                PromptTemplates.T_CREATIVITY_RULE to creativity.promptBlock()
+            )
+        )
 
         /**
          * 사건 컨텍스트 블록 + 공통 `[추천할 필드]` 절.
@@ -168,7 +137,8 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         fun buildUserPrompt(
             context: EventAiContext,
             targets: List<CharacterFieldAiSuggester.FieldSpec>,
-            scope: Set<EventAiMaterial> = EventAiMaterial.DEFAULT
+            scope: Set<EventAiMaterial> = EventAiMaterial.DEFAULT,
+            template: String = PromptTemplates.default(PromptTemplates.Id.EVENT_FIELD_USER)
         ): CharacterFieldAiSuggester.PromptBuild {
             val notes = mutableListOf<String>()
             // 조회 실패로 빠진 섹션 — 사용자가 끈 것과 **다른 사유**라 문구를 갈라 둔다.
@@ -180,6 +150,11 @@ class EventFieldAiSuggester(private val aiService: AiService) {
                     list.take(max)
                 } else list
 
+            // **사용자가 양식에서 뺀 재료는 만들지 않는다** (R-14 — 캐릭터 축과 같은 근거).
+            val used = PromptTokens.usedNames(template)
+            fun ifUsed(name: String, build: () -> String): String =
+                if (name in used) build() else ""
+
             /** 사용자가 끈 재료는 **비어 있어서 빠진 것과 갈라** 고지한다. */
             fun included(material: EventAiMaterial, values: List<String>): Boolean {
                 if (values.isEmpty()) return false
@@ -188,60 +163,88 @@ class EventFieldAiSuggester(private val aiService: AiService) {
                 return false
             }
 
-            val sb = StringBuilder()
-            sb.append("[사건]\n")
-            val desc = context.description.trim()
-            sb.append("설명: ")
-            if (desc.isEmpty()) {
-                sb.append("(미입력)")
-            } else if (desc.length > MAX_DESCRIPTION_CHARS) {
-                notes.add("사건 설명 ${MAX_DESCRIPTION_CHARS}자 초과분 생략")
-                sb.append(desc.take(MAX_DESCRIPTION_CHARS)).append('…')
-            } else {
-                sb.append(desc)
-            }
-            sb.append('\n')
-            if (context.dateLabel.isNotBlank()) sb.append("때: ").append(context.dateLabel.trim()).append('\n')
-            if (context.eventTypeLabel.isNotBlank()) {
-                sb.append("유형: ").append(context.eventTypeLabel.trim()).append('\n')
-            }
-            if (context.universeName.isNotBlank()) {
-                sb.append("세계관: ").append(context.universeName.trim()).append('\n')
-            }
-            if (included(EventAiMaterial.NOVELS, context.novels)) {
-                sb.append("관련 작품: ")
-                    .append(capList(context.novels, MAX_NOVELS, "관련 작품").joinToString(", ")).append('\n')
-            }
-            if (included(EventAiMaterial.CHARACTERS, context.characters)) {
-                sb.append("관련 캐릭터: ")
-                    .append(capList(context.characters, MAX_CHARACTERS, "관련 캐릭터").joinToString(", ")).append('\n')
-            }
-            if (included(EventAiMaterial.NEIGHBOR_EVENTS, context.neighborEvents)) {
-                sb.append("가까운 사건: ")
-                    .append(capList(context.neighborEvents, MAX_NEIGHBORS, "가까운 사건").joinToString(" / "))
-                    .append('\n')
+            val desc = if ("사건설명" in used) context.description.trim() else ""
+            val descText = when {
+                desc.isEmpty() -> "(미입력)"
+                desc.length > MAX_DESCRIPTION_CHARS -> {
+                    notes.add("사건 설명 ${MAX_DESCRIPTION_CHARS}자 초과분 생략")
+                    desc.take(MAX_DESCRIPTION_CHARS) + "…"
+                }
+                else -> desc
             }
 
             // 추천 대상 필드는 [입력된 필드]에서 제외 — 대상의 현재 값은 필드 스펙 쪽에 실린다
             val targetNames = targets.mapTo(HashSet()) { it.name }
             val filled = context.filledFields.filter { it.first !in targetNames && it.second.isNotBlank() }
-            if (included(EventAiMaterial.FILLED_FIELDS, filled.map { it.first })) {
-                sb.append("[입력된 필드]\n")
-                var longValues = 0
-                for ((name, value) in capList(filled, CharacterFieldAiSuggester.MAX_FILLED_FIELDS, "입력된 필드")) {
-                    val v = if (value.length > CharacterFieldAiSuggester.MAX_VALUE_CHARS) {
-                        longValues++
-                        value.take(CharacterFieldAiSuggester.MAX_VALUE_CHARS) + "…"
-                    } else value
-                    sb.append(name).append(": ").append(v).append('\n')
-                }
-                if (longValues > 0) {
-                    notes.add("긴 필드값 ${longValues}건을 ${CharacterFieldAiSuggester.MAX_VALUE_CHARS}자로 절단")
-                }
-            }
+            val filledText = if ("입력된필드표" !in used ||
+                !included(EventAiMaterial.FILLED_FIELDS, filled.map { it.first })) "" else
+                buildString {
+                    var longValues = 0
+                    val capped = capList(
+                        filled, CharacterFieldAiSuggester.MAX_FILLED_FIELDS, "입력된 필드"
+                    )
+                    for ((name, value) in capped) {
+                        val v = if (value.length > CharacterFieldAiSuggester.MAX_VALUE_CHARS) {
+                            longValues++
+                            value.take(CharacterFieldAiSuggester.MAX_VALUE_CHARS) + "…"
+                        } else value
+                        append(name).append(": ").append(v).append('\n')
+                    }
+                    if (longValues > 0) {
+                        notes.add(
+                            "긴 필드값 ${longValues}건을 ${CharacterFieldAiSuggester.MAX_VALUE_CHARS}자로 절단"
+                        )
+                    }
+                }.trimEnd('\n')
 
-            CharacterFieldAiSuggester.appendTargetSection(sb, targets, notes)
-            return CharacterFieldAiSuggester.PromptBuild(sb.toString(), notes)
+            val targetSection = StringBuilder()
+                .also { CharacterFieldAiSuggester.appendTargetSection(it, targets, notes) }
+                .toString()
+
+            // 자리가 없어 안 실린 재료 (R-14의 뒷면 — 캐릭터 축과 같은 근거).
+            // **사용자가 설정으로 끈 재료와 갈라 말한다** — 고칠 자리가 다르다(설정 ↔ 양식).
+            notes.addAll(
+                PromptTemplates.unusedMaterialNotes(
+                    used,
+                    mapOf(
+                        "때" to context.dateLabel.isNotBlank(),
+                        "유형" to context.eventTypeLabel.isNotBlank(),
+                        "세계관명" to context.universeName.isNotBlank(),
+                        "관련작품" to (EventAiMaterial.NOVELS in scope && context.novels.isNotEmpty()),
+                        "관련캐릭터" to
+                            (EventAiMaterial.CHARACTERS in scope && context.characters.isNotEmpty()),
+                        "가까운사건" to
+                            (EventAiMaterial.NEIGHBOR_EVENTS in scope && context.neighborEvents.isNotEmpty()),
+                        "입력된필드표" to
+                            (EventAiMaterial.FILLED_FIELDS in scope && filled.isNotEmpty())
+                    )
+                )
+            )
+
+            val text = PromptTokens.expand(
+                template,
+                mapOf(
+                    "사건설명" to descText,
+                    "때" to context.dateLabel.trim(),
+                    "유형" to context.eventTypeLabel.trim(),
+                    "세계관명" to context.universeName.trim(),
+                    "관련작품" to ifUsed("관련작품") {
+                        if (!included(EventAiMaterial.NOVELS, context.novels)) "" else
+                            capList(context.novels, MAX_NOVELS, "관련 작품").joinToString(", ")
+                    },
+                    "관련캐릭터" to ifUsed("관련캐릭터") {
+                        if (!included(EventAiMaterial.CHARACTERS, context.characters)) "" else
+                            capList(context.characters, MAX_CHARACTERS, "관련 캐릭터").joinToString(", ")
+                    },
+                    "가까운사건" to ifUsed("가까운사건") {
+                        if (!included(EventAiMaterial.NEIGHBOR_EVENTS, context.neighborEvents)) "" else
+                            capList(context.neighborEvents, MAX_NEIGHBORS, "가까운 사건").joinToString(" / ")
+                    },
+                    "입력된필드표" to filledText,
+                    PromptTemplates.T_TARGET_FIELDS to targetSection
+                )
+            )
+            return CharacterFieldAiSuggester.PromptBuild(text, notes)
         }
     }
 }

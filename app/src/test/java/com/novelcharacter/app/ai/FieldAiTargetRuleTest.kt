@@ -218,9 +218,12 @@ class FieldAiTargetRuleTest {
         // 기본 규칙은 15번(대결 우열)까지이고, 근거 강도 하한이 켜지면 16번으로 이어진다
         // (규칙 번호 충돌 없음 — 붙이는 규칙이 늘면 이 자리가 함께 움직여야 한다)
         assertTrue(prompt.contains("15."))
+        // 근거 강도 하한은 **번호를 잇지 않고 이름표 블록으로** 붙는다 — 규칙 본문이
+        // 사용자가 고치는 양식 안에 있어 앱이 박은 번호는 반드시 어긋난다(2026.08.20).
         val withFloor =
             CharacterFieldAiSuggester.buildSystemPrompt(CharacterFieldAiSuggester.Confidence.HIGH)
-        assertTrue(withFloor.contains("16."))
+        assertTrue(withFloor.contains("[근거 강도 하한]"))
+        assertFalse(withFloor.contains("16."))
     }
 
     @Test

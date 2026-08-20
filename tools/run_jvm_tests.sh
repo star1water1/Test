@@ -239,6 +239,9 @@ $MAIN/ai/AiErrorPolicy.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/CharacterNameAiSuggester.kt
 $MAIN/ai/AiPromptPolicy.kt
+$MAIN/ai/PromptTemplates.kt
+$MAIN/ai/PromptTokens.kt
+$MAIN/ai/PromptTemplateValidator.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/ai/ImageTagVocabulary.kt
 $MAIN/ai/ImageBatchTagSuggester.kt
@@ -534,6 +537,9 @@ $TEST/excel/FieldConfigColumnsTest.kt
 $TEST/ai/FieldLibraryAiOrganizerTest.kt
 $TEST/ai/AiProtocolCodecTest.kt
 $TEST/ai/AiCreativityTest.kt
+$TEST/ai/PromptTokensTest.kt
+$TEST/ai/PromptTemplatesTest.kt
+$TEST/ai/PromptTemplateValidatorTest.kt
 $TEST/ai/AiTokenPolicyTest.kt
 $TEST/ai/NarrativeFieldTest.kt
 $TEST/ai/CharacterNameAiSuggesterTest.kt

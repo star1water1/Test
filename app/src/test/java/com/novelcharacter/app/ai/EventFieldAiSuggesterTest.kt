@@ -198,12 +198,19 @@ class EventFieldAiSuggesterTest {
         assertEquals(1, Regex("^10\\.", RegexOption.MULTILINE).findAll(sys).count())
     }
 
-    @Test fun systemPrompt_confidenceFloorRuleUsesFreeNumber() {
-        // 사건판의 마지막 규칙이 15번이므로 하한 규칙은 16번이어야 한다 —
-        // 번호가 겹치면 규칙 하나가 통째로 묻힌다
+    @Test fun systemPrompt_confidenceFloorRuleCarriesNoNumber() {
+        // **번호를 매기지 않는다.** 규칙 본문이 이제 사용자가 고치는 양식 안에 있어서,
+        // 앱이 `16.`을 박으면 규칙을 열둘로 줄인 사람에게는 1~12 다음에 16이 오고
+        // 스물로 늘린 사람에게는 16이 두 번 나온다. 이름표 블록에는 그 문제가 없다.
         val sys = EventFieldAiSuggester.buildSystemPrompt(CharacterFieldAiSuggester.Confidence.MEDIUM)
-        assertTrue(sys.contains("16. 사용자는 근거 강도 'medium' 이상만"))
-        assertEquals(1, Regex("^16\\.", RegexOption.MULTILINE).findAll(sys).count())
+        assertTrue(sys.contains("[근거 강도 하한] 사용자는 근거 강도 'medium' 이상만"))
+        assertEquals(0, Regex("^16\\.", RegexOption.MULTILINE).findAll(sys).count())
+        // 두 축이 한 벌을 쓴다 — 사본을 두면 한쪽만 고쳐지는 날이 온다
+        assertEquals(
+            CharacterFieldAiSuggester.confidenceFloorRule(CharacterFieldAiSuggester.Confidence.MEDIUM),
+            EventFieldAiSuggester.buildSystemPrompt(CharacterFieldAiSuggester.Confidence.MEDIUM)
+                .lines().first { it.startsWith("[근거 강도 하한]") }
+        )
     }
 
     @Test fun systemPrompt_noFloorRuleWhenAcceptingAll() {

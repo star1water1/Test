@@ -92,17 +92,24 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
          * 짧은 값 경로와 달리 요청이 하나뿐이라 이미지도 한 번만 나간다.
          */
         images: List<AiImage> = emptyList(),
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
         errorMessageOf: (AiResult.Failure) -> String
     ): WriteOutcome {
         val wanted = variants.coerceIn(1, MAX_VARIANTS)
-        val prompt = buildUserPrompt(context, field, mode, length, wanted)
+        val prompt = buildUserPrompt(
+            context, field, mode, length, wanted,
+            templates.templateOf(PromptTemplates.Id.NARRATIVE_USER)
+        )
         // 학습된 미지원 모델 — 샘플링 없이 지시만 적용된다는 사실을 고지한다 (§6-5 ④)
         val temperatureNote =
             creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()
         // 이미지도 같다 (A-7) — 이미 거부를 배운 모델이면 붙였어도 나가지 않는다는 사실을 말한다
         val imagesNote = images.isNotEmpty() && aiService.isImagesUnsupported()
         val request = AiRequest(
-            system = buildSystemPrompt(creativity),
+            system = buildSystemPrompt(
+                creativity, templates.templateOf(PromptTemplates.Id.NARRATIVE_SYSTEM)
+            ),
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity),
@@ -422,28 +429,16 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         ): Boolean = maxTokens >= tokensPerDraft(length) * variants.coerceAtLeast(1)
 
         fun buildSystemPrompt(
-            creativity: AiCreativity = AiCreativity.DEFAULT
-        ): String = """
-            당신은 소설 캐릭터 설정을 함께 쓰는 작가 보조다. 주어진 캐릭터 정보와 지시에 따라
-            지정된 필드에 들어갈 **한국어 산문**을 쓴다.
-            규칙:
-            1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"drafts":["초안1","초안2"]}
-            2. drafts의 각 원소는 그 필드에 **그대로 들어갈 본문**이다. 제목·머리말·따옴표·
-               "초안1:" 같은 라벨을 넣지 마라.
-            3. 요청된 개수만큼 쓰되, 후보끼리는 **서로 뚜렷하게 다른 방향**이어야 한다.
-            4. 주어진 캐릭터 정보와 모순되는 내용을 지어내지 마라. 정보가 없는 부분은
-               단정하지 말고 여지를 남긴다.
-            5. 원문이 주어진 경우 그 인물·설정·문체를 유지한다.
-            6. [문체 참고]가 주어지면 그 글들의 **어투·시점·문장 길이·상세도**를 따른다.
-               내용·설정·표현을 가져오지 말고 문체만 따른다. 참고에 나온 인물을 등장시키지 마라.
-            7. 대상 필드에 '설명'이 붙어 있으면 그 설명이 이 작품에서 그 필드가 뜻하는 바의
-               정의이자 제약이다. 설명과 어긋나는 내용을 쓰지 마라.
-            8. '대결 우열'은 사용자가 캐릭터를 둘씩 비교해 **직접 고른** 결과가 쌓인 순위다.
-               네 추측이 아니라 사용자가 이미 정해 둔 사실이므로 그 서열과 어긋나게 쓰지 마라 —
-               그 축에서 하위인 인물을 압도적인 강자로 묘사하지 않는다. 다만 **등수를 글에
-               숫자로 적지 마라**: 그것은 작품 설정이 아니라 사용자의 작업 기록이다.
-        """.trimIndent() + creativity.promptRule()
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            template: String = PromptTemplates.default(PromptTemplates.Id.NARRATIVE_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.NARRATIVE_SYSTEM),
+                PromptTemplates.T_CREATIVITY_RULE to creativity.promptBlock()
+            )
+        )
 
         /**
          * 이미지 첨부 지시 (A-7). 짧은 값 경로와 **다른 점 하나**: 산문에는 "몇 번째
@@ -467,85 +462,106 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             field: FieldSpec,
             mode: Mode,
             length: Length,
-            variants: Int
+            variants: Int,
+            template: String = PromptTemplates.default(PromptTemplates.Id.NARRATIVE_USER)
         ): PromptBuild {
             val notes = mutableListOf<String>()
             context.loadFailures.forEach { notes.add("$it 정보를 불러오지 못함") }
 
-            val sb = StringBuilder()
-            sb.append("[캐릭터]\n")
-            sb.append("이름: ").append(context.name).append('\n')
-            if (context.aliases.isNotEmpty()) sb.append("이명: ").append(context.aliases.joinToString(", ")).append('\n')
-            if (context.tags.isNotEmpty()) sb.append("태그: ").append(context.tags.joinToString(", ")).append('\n')
-            if (context.factions.isNotEmpty()) sb.append("소속: ").append(context.factions.joinToString(", ")).append('\n')
-            if (context.relationships.isNotEmpty()) {
-                sb.append("관계: ").append(context.relationships.joinToString(" / ")).append('\n')
-            }
+            // **사용자가 양식에서 뺀 재료는 만들지 않는다** (R-14 — 짧은 값 경로와 같은 근거).
+            val used = PromptTokens.usedNames(template)
+
             // 대결 우열 — 짧은 값 경로와 **같은 규칙으로** 자르고 같은 문구로 고지한다
             // (com.novelcharacter.app.util.DuelAiContext가 단일 소스). 각자 자르면 같은 캐릭터가
             // 서술형과 짧은 값에서 서로 다른 축을 받는다.
-            if (context.duelStandings.isNotEmpty()) {
+            val duelText = if ("대결우열" !in used || context.duelStandings.isEmpty()) "" else {
                 val duel = DuelAiContext.promptLines(context.duelStandings)
                 if (duel.omitted > 0) notes.add(DuelAiContext.omittedNote(duel.omitted))
-                sb.append(DuelAiContext.PROMPT_LABEL)
-                    .append(duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)).append('\n')
-            }
-            if (context.imageTags.isNotEmpty()) {
-                sb.append("이미지 태그: ").append(context.imageTags.joinToString(", ")).append('\n')
-            }
-            if (context.memo.isNotBlank()) sb.append("메모: ").append(context.memo).append('\n')
-
-            // 대상 필드 자신은 컨텍스트에서 제외한다 — 원문은 아래 [원문] 절에 따로 싣는다.
-            val others = context.filledFields.filter { it.first != field.name }
-            if (others.isNotEmpty()) {
-                sb.append("\n[다른 필드]\n")
-                others.forEach { (name, value) ->
-                    val capped = if (value.length > MAX_CONTEXT_VALUE_CHARS) {
-                        notes.add("'$name' 값이 길어 ${MAX_CONTEXT_VALUE_CHARS}자까지만 참고했습니다")
-                        value.take(MAX_CONTEXT_VALUE_CHARS)
-                    } else value
-                    sb.append("- ").append(name).append(": ").append(capped).append('\n')
-                }
+                duel.lines.joinToString(DuelAiContext.PROMPT_SEPARATOR)
             }
 
-            sb.append("\n[대상 필드]\n")
-            sb.append("[").append(field.groupName).append("] ").append(field.name).append('\n')
+            // 대상 필드 자신은 컨텍스트에서 제외한다 — 원문은 [원문] 절에 따로 싣는다.
+            val others =
+                if ("다른필드표" !in used) emptyList()
+                else context.filledFields.filter { it.first != field.name }
+            val othersText = others.joinToString("\n") { (name, value) ->
+                val capped = if (value.length > MAX_CONTEXT_VALUE_CHARS) {
+                    notes.add("'$name' 값이 길어 ${MAX_CONTEXT_VALUE_CHARS}자까지만 참고했습니다")
+                    value.take(MAX_CONTEXT_VALUE_CHARS)
+                } else value
+                "- $name: $capped"
+            }
+
             // 필드 설명(A-2) — 값의 계약. 짧은 값 경로와 같은 프롬프트 상한을 쓴다.
-            if (field.description.isNotBlank()) {
-                val desc = field.description.trim()
-                val cap = CharacterFieldAiSuggester.MAX_DESCRIPTION_PROMPT_CHARS
-                if (desc.length > cap) {
-                    notes.add("'${field.name}' 필드 설명 ${cap}자 초과분 생략")
-                    sb.append("설명: ").append(desc.take(cap)).append("…\n")
-                } else {
-                    sb.append("설명: ").append(desc).append('\n')
+            val descCap = CharacterFieldAiSuggester.MAX_DESCRIPTION_PROMPT_CHARS
+            val descText = (if ("필드설명" in used) field.description.trim() else "").let { desc ->
+                when {
+                    desc.isEmpty() -> ""
+                    desc.length > descCap -> {
+                        notes.add("'${field.name}' 필드 설명 ${descCap}자 초과분 생략")
+                        desc.take(descCap) + "…"
+                    }
+                    else -> desc
                 }
             }
 
-            if (mode.requiresExisting) {
-                val existing = if (field.currentValue.length > MAX_EXISTING_CHARS) {
+            val existingText = if ("원문" !in used || !mode.requiresExisting) "" else {
+                if (field.currentValue.length > MAX_EXISTING_CHARS) {
                     notes.add("원문이 길어 ${MAX_EXISTING_CHARS}자까지만 참고했습니다")
                     field.currentValue.take(MAX_EXISTING_CHARS)
                 } else field.currentValue
-                sb.append("\n[원문]\n").append(existing).append('\n')
             }
 
             // 문체 참고 — 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판.
-            // [원문] 다음에 두어 "이 인물의 글 > 작품의 문체" 순으로 우선순위가 드러나게 한다.
-            if (field.styleSamples.isNotEmpty()) {
-                sb.append("\n[문체 참고] 같은 필드에 다른 인물이 쓴 글이다. ")
-                sb.append("어투·시점·문장 길이·상세도만 참고하고 내용은 가져오지 마라.\n")
-                field.styleSamples.forEachIndexed { i, sample ->
-                    sb.append(i + 1).append(") ").append(sample).append('\n')
-                }
-            }
+            // 기본 양식에서 [원문] 다음에 두어 "이 인물의 글 > 작품의 문체" 순으로
+            // 우선순위가 드러나게 한다(차례는 사용자가 바꿀 수 있다).
+            val styleText = field.styleSamples
+                .mapIndexed { i, sample -> "${i + 1}) $sample" }
+                .joinToString("\n")
 
-            sb.append("\n[지시]\n")
-            sb.append(instructionFor(mode)).append('\n')
-            sb.append("분량: ").append(length.hint).append('\n')
-            sb.append("서로 다른 방향의 초안 ").append(variants).append("개를 쓴다.\n")
+            // 자리가 없어 안 실린 재료 (R-14의 뒷면 — 짧은 값 경로와 같은 근거).
+            notes.addAll(
+                PromptTemplates.unusedMaterialNotes(
+                    used,
+                    mapOf(
+                        "이명목록" to context.aliases.isNotEmpty(),
+                        "태그목록" to context.tags.isNotEmpty(),
+                        "소속세력" to context.factions.isNotEmpty(),
+                        "관계요약" to context.relationships.isNotEmpty(),
+                        "대결우열" to context.duelStandings.isNotEmpty(),
+                        "이미지태그" to context.imageTags.isNotEmpty(),
+                        "메모" to context.memo.isNotBlank(),
+                        "다른필드표" to context.filledFields.any { it.first != field.name },
+                        "필드설명" to field.description.isNotBlank(),
+                        // 원문은 이어쓰기·다듬기의 **전제**다 — 자리가 없으면 그 모드가 성립하지 않는다.
+                        "원문" to (mode.requiresExisting && field.currentValue.isNotBlank()),
+                        "문체표본" to field.styleSamples.isNotEmpty()
+                    )
+                )
+            )
 
-            return PromptBuild(sb.toString(), notes)
+            val text = PromptTokens.expand(
+                template,
+                mapOf(
+                    "캐릭터명" to context.name,
+                    "이명목록" to context.aliases.joinToString(", "),
+                    "태그목록" to context.tags.joinToString(", "),
+                    "소속세력" to context.factions.joinToString(", "),
+                    "관계요약" to context.relationships.joinToString(" / "),
+                    "대결우열" to duelText,
+                    "이미지태그" to context.imageTags.joinToString(", "),
+                    "메모" to context.memo.trim(),
+                    "다른필드표" to othersText,
+                    "대상필드" to "[${field.groupName}] ${field.name}",
+                    "필드설명" to descText,
+                    "원문" to existingText,
+                    "문체표본" to styleText,
+                    "모드지시" to instructionFor(mode),
+                    "분량힌트" to length.hint,
+                    "초안개수" to variants.toString()
+                )
+            )
+            return PromptBuild(text, notes)
         }
 
         private fun instructionFor(mode: Mode): String = when (mode) {

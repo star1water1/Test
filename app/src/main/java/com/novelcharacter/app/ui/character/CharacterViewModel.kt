@@ -1280,7 +1280,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     imagePaths, getApplication<android.app.Application>().filesDir
                 )
                 val outcome = suggester.suggest(
-                    aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images
+                    aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images,
+                    // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+                    settings.asTemplateSource()
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
@@ -1394,12 +1396,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
                 val enriched = withStyleSamples(spec, fieldId, characterId)
-                val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
+                val promptSettings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
+                val creativity = promptSettings.creativity
                 val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
                     imagePaths, getApplication<android.app.Application>().filesDir
                 )
                 val outcome = writer.write(
-                    aiContext, enriched, mode, length, variants, creativity, prepared.images
+                    aiContext, enriched, mode, length, variants, creativity, prepared.images,
+                    promptSettings.asTemplateSource()
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
@@ -1491,7 +1495,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val writer = com.novelcharacter.app.ai.NarrativeFieldAiWriter(
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
-                val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
+                val promptSettings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
+                val creativity = promptSettings.creativity
                 // 이미지는 대상마다 다시 실린다 — 준비는 한 번만 한다(디코딩·리사이즈가 비싸다).
                 val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
                     imagePaths, getApplication<android.app.Application>().filesDir
@@ -1508,7 +1513,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                         com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.DRAFT,
                         length,
                         com.novelcharacter.app.ai.NarrativeFieldAiWriter.BULK_DRAFT_VARIANTS,
-                        creativity, prepared.images
+                        creativity, prepared.images, promptSettings.asTemplateSource()
                     ) { failure ->
                         com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                     }

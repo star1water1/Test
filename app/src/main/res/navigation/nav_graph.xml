@@ -321,7 +321,18 @@
         android:id="@+id/aiSettingsFragment"
         android:name="com.novelcharacter.app.ui.settings.AiSettingsFragment"
         android:label="@string/ai_settings_title"
-        tools:layout="@layout/fragment_ai_settings" />
+        tools:layout="@layout/fragment_ai_settings">
+        <action
+            android:id="@+id/action_aiSettings_to_promptTemplates"
+            app:destination="@id/aiPromptTemplateFragment" />
+    </fragment>
+
+    <!-- AI 메시지 양식 편집 (사용자 요청 2026.08.20) -->
+    <fragment
+        android:id="@+id/aiPromptTemplateFragment"
+        android:name="com.novelcharacter.app.ui.settings.AiPromptTemplateFragment"
+        android:label="@string/ai_prompt_templates_title"
+        tools:layout="@layout/fragment_ai_prompt_templates" />
 
     <!-- 분석 허브 (통계·관계도·어시스턴트 내부 탭) -->
     <fragment

@@ -57,14 +57,14 @@ class AiCreativityTest {
     // ===== 단계별 지시 문구 =====
 
     @Test
-    fun promptRules_existExceptBalanced() {
-        assertEquals("", AiCreativity.BALANCED.promptRule())
-        assertTrue(AiCreativity.PRECISE.promptRule().contains("직접 도출"))
-        assertTrue(AiCreativity.FREE.promptRule().contains("울타리가 아니다"))
-        assertTrue(AiCreativity.BOLD.promptRule().contains("뻔한 답"))
+    fun promptBlocks_existExceptBalanced() {
+        assertEquals("", AiCreativity.BALANCED.promptBlock())
+        assertTrue(AiCreativity.PRECISE.promptBlock().contains("직접 도출"))
+        assertTrue(AiCreativity.FREE.promptBlock().contains("울타리가 아니다"))
+        assertTrue(AiCreativity.BOLD.promptBlock().contains("뻔한 답"))
         // restricted 허용 목록은 어느 단계에서도 완화하지 않는다 (§6-6)
-        assertTrue(AiCreativity.FREE.promptRule().contains("이 목록의 값만 허용"))
-        assertTrue(AiCreativity.BOLD.promptRule().contains("이 목록의 값만 허용"))
+        assertTrue(AiCreativity.FREE.promptBlock().contains("이 목록의 값만 허용"))
+        assertTrue(AiCreativity.BOLD.promptBlock().contains("이 목록의 값만 허용"))
     }
 
     @Test

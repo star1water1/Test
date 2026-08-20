@@ -149,7 +149,11 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
                     instruction = instruction
                 )
                 val suggester = CharacterNameAiSuggester(AiService(getApplication()))
-                val outcome = suggester.suggest(context, request, settings.creativity) { failure ->
+                val outcome = suggester.suggest(
+                    context, request, settings.creativity,
+                    // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+                    settings.asTemplateSource()
+                ) { failure ->
                     AiErrorMessages.of(getApplication(), failure)
                 }
                 // **응답이 오는 사이 풀이 바뀌었을 수 있다.** 시작 시점의 pool에 그대로 얹으면

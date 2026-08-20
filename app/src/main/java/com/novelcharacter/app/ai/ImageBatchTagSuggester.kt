@@ -286,39 +286,22 @@ class ImageBatchTagSuggester(
         fun foldToVocabulary(tag: String, vocab: List<String>): String? =
             ImageTagVocabulary.fold(tag, vocab)
 
-        fun buildSystemPrompt(vocab: ImageTagVocabulary.Vocabulary, policy: String): String = buildString {
-            append("당신은 창작 자료 이미지의 분류를 돕는다. ")
-            append("입력으로 받은 **이미지들**을 보고, 각 이미지에 어울리는 태그를 제안하라.\n")
-            append("- 이미지는 보낸 순서대로 `이미지 1`, `이미지 2`…다. ")
-            append("**응답의 index는 그 번호를 그대로 쓴다**(1부터 시작).\n")
-            append("- 그림에서 실제로 보이는 것만 태그로 삼는다 — 인물의 외형·복장·배경·구도·분위기 같은 ")
-            append("분류축이다. 보이지 않는 설정(이름·나이·관계)은 지어내지 않는다.\n")
-            append("- 태그는 짧은 명사구로 한다(최대 ")
-            append(AiPromptPolicy.IMAGE_TAG_MAX_LENGTH)
-            append("자). 이미지당 최대 ")
-            append(AiPromptPolicy.IMAGE_TAG_MAX_PER_IMAGE)
-            append("개.\n")
-            append("- 아래 기존 어휘에 맞는 표기가 있으면 **그것을 그대로 쓴다**(표기 일관성). ")
-            append("맞는 것이 없으면 새 태그를 만들어도 된다.\n")
-            append("- 근거를 찾을 수 없는 이미지는 빈 배열로 둔다. 지어내지 않는다.\n")
-            if (vocab.tags.isNotEmpty()) {
-                append("\n[기존 이미지 태그]\n")
-                append(vocab.tags.joinToString(", "))
-                append("\n")
-            }
-            if (vocab.fieldValues.isNotEmpty()) {
-                append("\n[작품 데이터에서 쓰는 값]\n")
-                append(vocab.fieldValues.joinToString(", "))
-                append("\n")
-            }
-            if (policy.isNotBlank()) {
-                append("\n[사용자 지침 — 위 규칙과 충돌하면 이쪽을 따른다]\n")
-                append(policy)
-                append("\n")
-            }
-            append("\n출력은 JSON만. 형식: ")
-            append("""{"images":[{"index":1,"tags":["태그1","태그2"]}]}""")
-        }
+        fun buildSystemPrompt(
+            vocab: ImageTagVocabulary.Vocabulary,
+            policy: String,
+            template: String = PromptTemplates.default(PromptTemplates.Id.IMAGE_TAG_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.IMAGE_TAG_SYSTEM),
+                "태그최대길이" to AiPromptPolicy.IMAGE_TAG_MAX_LENGTH.toString(),
+                "최대개수" to AiPromptPolicy.IMAGE_TAG_MAX_PER_IMAGE.toString(),
+                "기존태그어휘" to vocab.tags.joinToString(", "),
+                "필드값어휘" to vocab.fieldValues.joinToString(", "),
+                "사용자지침" to policy
+            )
+        )
 
         /**
          * 사용자 메시지 — **번호만 말한다.**
@@ -326,15 +309,12 @@ class ImageBatchTagSuggester(
          * 파일 이름을 싣지 않는 것은 의도한 침묵이다. 이름을 주면 모델이 그림 대신 이름을 읽고
          * 답할 수 있는데(`전투씬_01.png`), 그러면 이 기능은 조용히 [ImageFolderTagSuggester]로
          * 퇴화한다 — 이미지를 보낸 값을 내지 못하면서 이미지 값만 낸다. 이름에서 뽑는 몫은
-         * 그쪽 기능이 이미 한다.
+         * 그쪽 기능이 이미 한다. **그래서 파일 이름은 자리표로도 열지 않았다.**
          */
-        fun buildUserText(count: Int): String = buildString {
-            append("이미지 ")
-            append(count)
-            append("장을 보낸다. 순서대로 이미지 1부터 이미지 ")
-            append(count)
-            append("까지다. 각각에 태그를 제안하라.")
-        }
+        fun buildUserText(
+            count: Int,
+            template: String = PromptTemplates.default(PromptTemplates.Id.IMAGE_TAG_USER)
+        ): String = PromptTokens.expand(template, mapOf("장수" to count.toString()))
 
         /**
          * 응답을 검증하며 읽는다. **번호 봉인이 여기 있다.**
@@ -437,12 +417,17 @@ class ImageBatchTagSuggester(
         policyRaw: String,
         loader: ImageLoader,
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneImages: Int, totalImages: Int) -> Unit = { _, _, _, _ -> },
-        isCancelled: () -> Boolean = { false }
+        isCancelled: () -> Boolean = { false },
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS
     ): Result {
         if (paths.isEmpty()) return Result()
         val policy = AiPromptPolicy.clampImageTagPolicy(policyRaw)
         val policyTruncated = (policyRaw.trim().length - policy.length).coerceAtLeast(0)
-        val system = buildSystemPrompt(vocab, policy)
+        val system = buildSystemPrompt(
+            vocab, policy, templates.templateOf(PromptTemplates.Id.IMAGE_TAG_SYSTEM)
+        )
+        val userTemplate = templates.templateOf(PromptTemplates.Id.IMAGE_TAG_USER)
 
         val batches = chunkImages(paths, perRequest)
         val totalRequests = batches.size
@@ -487,7 +472,7 @@ class ImageBatchTagSuggester(
                     // 원본 자리로 되돌리면 그것이 곧 오배정이다.
                     val request = AiRequest(
                         system = system,
-                        userText = buildUserText(loaded.size),
+                        userText = buildUserText(loaded.size, userTemplate),
                         // 사용자가 올려 둔 출력 상한을 그대로 쓴다 — 기본값(2048)을 박아 두면
                         // 장수를 최대로 올린 사용자가 **설정을 올려도 계속 잘린다**(A-4의 교집합
                         // 규칙상 요청값은 천장이지 바닥이 아니다).

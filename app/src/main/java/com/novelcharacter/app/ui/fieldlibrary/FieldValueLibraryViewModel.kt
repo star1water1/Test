@@ -264,7 +264,11 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         viewModelScope.launch {
             try {
                 val organizer = FieldLibraryAiOrganizer(AiService(app))
-                val outcome = organizer.organize(fd, entries) { failure ->
+                val outcome = organizer.organize(
+                    fd, entries,
+                    // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+                    com.novelcharacter.app.ai.AiPromptSettings(app).asTemplateSource()
+                ) { failure ->
                     AiErrorMessages.of(app, failure)
                 }
                 aiOrganizeResult.value = AiOrganizeOutcome(fd, entries, outcome)

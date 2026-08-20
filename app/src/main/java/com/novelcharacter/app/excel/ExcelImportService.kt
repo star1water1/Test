@@ -8862,8 +8862,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 when (val applied = binding.write(ctx, value)) {
                     is AppSettingsBindings.Applied.Yes -> result.restoredSettings++
-                    is AppSettingsBindings.Applied.No ->
-                        result.warnings.add("앱 설정 행 $i: $key 값 '$value' — ${applied.reason}")
+                    is AppSettingsBindings.Applied.No -> {
+                        // **값을 통째로 싣지 않는다** — AI 메시지 양식은 한 칸이 수천 자라
+                        // 경고 한 줄이 화면을 통째로 밀어낸다(그 줄을 읽을 수 없게 된다).
+                        // 자르는 것은 truncateForCell(단일 소스) — `take`는 UTF-16 유닛 단위라
+                        // 경계에 이모지가 걸리면 짝 잃은 반쪽이 마지막 글자로 남는다.
+                        val cut = truncateForCell(value, SETTING_VALUE_IN_WARNING)
+                        val shown = if (cut.length < value.length) cut + "…" else value
+                        result.warnings.add("앱 설정 행 $i: $key 값 '$shown' — ${applied.reason}")
+                    }
                 }
             } catch (e: Exception) {
                 result.errors.add("앱 설정 행 $i: ${e.message}")
@@ -11613,6 +11620,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
+
+        /**
+         * 앱 설정 경고 한 줄에 되비칠 값의 길이 상한.
+         *
+         * AI 메시지 양식 행은 한 칸이 수천 자라(2026.08.20), 값을 통째로 실으면
+         * **그 경고 자체를 읽을 수 없게 된다.** 어느 행이 왜 거절됐는지는 키와 사유가 말한다.
+         */
+        private const val SETTING_VALUE_IN_WARNING = 60
         // 시트명 상수는 SheetSpec.kt가 단일 소스다 (내보내기도 같은 상수를 본다).
     }
 }
