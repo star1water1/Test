@@ -109,6 +109,7 @@ $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/TransferInterruption.kt
 $MAIN/excel/SheetResolver.kt
+$MAIN/excel/UniverseSheetPlan.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
 $MAIN/util/ProgressScale.kt
@@ -464,6 +465,7 @@ $TEST/data/NovelFieldValueMergeTest.kt
 $TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/data/NovelFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
+$TEST/excel/UniverseSheetPlanTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt
 $TEST/data/TrashListPlanTest.kt

@@ -373,7 +373,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val importedCharacterSheetUniverseIds = mutableSetOf<Long>()
     private var unclassifiedSheetImported = false
 
-    // 캐릭터 시트로 이미 소비된 시트명 — 같은 시트를 세계관용·미분류용으로 두 번 돌지 않게 한다.
+    // 캐릭터 시트로 이미 소비된 시트명 — 같은 시트를 세계관용·미분류용으로 두 번 돌지 않게 하고,
+    // sanitize 결과가 같은 두 세계관이 같은 시트를 받지 않게 한다(2026.08.20 — [UniverseSheetFinder]).
     private val consumedCharacterSheetNames = mutableSetOf<String>()
 
     // 세계관 이름이 '미분류 캐릭터'와 겹치는가 — 두 캐릭터 시트가 같은 이름을 다투는 상태.
@@ -765,9 +766,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 덮어쓰기가 조용히 병합으로 바뀐다(바로 위 문단이 막는 그 모양).
                         SheetResolver.locateHeader(sheet, "이름") != null &&
                         OverwriteGuard.canRestore(sheetHasDataRow(sheet, "이름"))
-                val charactersRestorable = db.universeDao().getAllUniversesList().any { u ->
-                    charSheetRestorable(findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES))
-                } || charSheetRestorable(findUnclassifiedSheet(workbook))
+                // 배정은 실제 가져오기와 같은 판정([UniverseSheetFinder] — 계획 우선 + 소비 추적)을
+                // 지나야 한다. 이름만으로 찾으면 동명 세계관 둘이 같은 시트를 보고, 기본명 시트만
+                // 비어 있는 파일에서 `(2)` 시트가 있는데도 "복원 재료 없음"으로 오판한다.
+                // `any`가 참으로 끊기면 소비 집합이 미완이지만, 그때는 `||`도 끊겨 미분류 조회가
+                // 일어나지 않는다 — 거짓으로 끝났을 때만 전 세계관이 소비를 마친 상태다.
+                val guardUniverses = db.universeDao().getAllUniversesList()
+                val guardSheets = UniverseSheetFinder(workbook, guardUniverses)
+                val charactersRestorable = guardUniverses.any { u ->
+                    charSheetRestorable(guardSheets.find(u))
+                } || charSheetRestorable(findUnclassifiedSheet(workbook, guardSheets.consumed))
 
                 if (shouldDelete(effectiveOptions.relationshipChanges, relationshipChangeSpec())) db.characterRelationshipChangeDao().deleteAll()
                 if (shouldDelete(effectiveOptions.relationships, relationshipSpec())) db.characterRelationshipDao().deleteAll()
@@ -1050,8 +1058,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 인식되지 않은 시트 경고 — 개명된 캐릭터 시트 등이 무통보로 무시되지 않도록 한다
         val recognizedSheets = mutableSetOf(GUIDE_SHEET_NAME, UNCLASSIFIED_SHEET_NAME)
         recognizedSheets.addAll(RESERVED_SHEET_NAMES)
-        for (u in db.universeDao().getAllUniversesList()) {
-            findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES)?.let { recognizedSheets.add(it.sheetName) }
+        // 배정도 가져오기와 같은 판정(계획 우선 + 소비 추적)이다 — 이름만으로 찾으면 동명
+        // 세계관 둘이 같은 시트를 보고, 캐릭터를 끄고 가져올 때 `(2)` 시트가 '인식되지 않음'
+        // 경고에 잘못 오른다.
+        val warnUniverses = db.universeDao().getAllUniversesList()
+        val warnSheets = UniverseSheetFinder(workbook, warnUniverses)
+        for (u in warnUniverses) {
+            warnSheets.find(u)?.let { recognizedSheets.add(it.sheetName) }
         }
         // 실제로 읽은 시트만 억제한다. "예약명의 접미사 변형이면 무조건 억제"로 두면,
         // 세계관을 rename/삭제한 뒤 옛 백업을 가져올 때처럼 **아무도 읽지 않은** '세력(2)'까지
@@ -3515,14 +3528,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 같은 캐릭터가 두 시트에 있을 때 *어느 시트 행이 신규인가*가 순서로 갈린다.
         val universes = analysisUniverses()
             .sortedWith(compareBy<Universe> { it.displayOrder }.thenByDescending { it.createdAt })
-        val reservedNames = RESERVED_SHEET_NAMES
-        // 미리보기도 본 임포트와 같은 배정을 봐야 한다 — 같은 시트를 두 번 세면 건수가 부풀고
-        // 충돌 항목이 중복된다(conflictKey가 "$sheetLabel:$i"라 양쪽이 같은 키를 만든다).
+        // 미리보기도 본 임포트와 같은 배정을 봐야 한다(R-33) — [UniverseSheetFinder]가 계획
+        // 우선 + 소비 추적으로 판정한다. 같은 시트를 두 번 세면 건수가 부풀고 충돌 항목이
+        // 중복되며(conflictKey가 "$sheetLabel:$i"라 양쪽이 같은 키를 만든다), 소비가 없으면
+        // 동명 세계관의 `(2)` 시트가 예고에서 통째로 빠진다. 소비 집합의 수명은 이 분석
+        // 한 번이다(R-33 ⑦) — 아래 미분류 조회까지 같은 집합을 본다.
         val analyzedSheetNames = mutableSetOf<String>()
+        val sheetFinder = UniverseSheetFinder(workbook, universes, analyzedSheetNames)
         for (universe in universes) {
-            val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
+            val sheet = sheetFinder.find(universe) ?: continue
             val headerRow = locateHeaderRow(sheet, "이름") ?: continue
-            analyzedSheetNames.add(sheet.sheetName)
             val result = analyzeCharacterSheet(sheet, headerRow, universe.name, universe.id, fieldValues)
             inBackup += result.first; newCount += result.second; updateCount += result.third
             unchangedCount += (result.first - result.second - result.third - result.fifth)
@@ -6626,13 +6641,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 미리보기 짝: analyzeCharacterSheet (세계관별 시트를 같은 함수가 훑는다)
     private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val universes = db.universeDao().getAllUniversesList()
-        val reservedNames = RESERVED_SHEET_NAMES
+        // 배정은 [UniverseSheetFinder]가 든다 — 계획 우선 + 소비 추적. 소비 집합은
+        // [consumedCharacterSheetNames]를 그대로 먹인다: 미분류 조회([importUnclassifiedCharacters])와
+        // '인식되지 않음' 경고 억제가 같은 집합을 보므로, 찾은 시트는 그 자리에서 소비된다.
+        val sheetFinder = UniverseSheetFinder(workbook, universes, consumedCharacterSheetNames)
 
         if (universes.any { sanitizeSheetNameBase(it.name) == UNCLASSIFIED_SHEET_NAME }) {
             unclassifiedNameCollidesWithUniverse = true
         }
         for (universe in universes) {
-            val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
+            val sheet = sheetFinder.find(universe) ?: continue
             // 첫 행이 없는 세계관 시트도 소리 내어 건너뛴다 (B-231) — 종전에는 이 `?: continue`가
             // 캐릭터 시트 하나를 통째로, 경고 한 줄 없이 버렸다.
             val headerRow = headerRowOrReport(sheet, "이름", result) ?: continue
@@ -6640,7 +6658,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             // U-3: 겹치는 세계관이 **접미사 시트**를 잡았으면 신규 형식이 확정된 배치다
             // (내보내기는 예약명을 미분류 시트에 주고 세계관 시트를 '(2)'로 민다).
-            // 판정은 findSheetForUniverse가 이미 끝냈고, 여기서는 그 결과를 읽어 문구만 가른다.
+            // 판정은 [UniverseSheetFinder]가 이미 끝냈고, 여기서는 그 결과를 읽어 문구만 가른다.
             if (sanitizeSheetNameBase(universe.name) == UNCLASSIFIED_SHEET_NAME &&
                 isSuffixedVariantOf(sheet.sheetName, UNCLASSIFIED_SHEET_NAME)
             ) {
@@ -6648,8 +6666,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
             // 헤더 검증을 통과해 실제로 처리한 세계관만 삭제 범위에 넣는다 (시트 없는 세계관은 건드리지 않음)
             importedCharacterSheetUniverseIds.add(universe.id)
-            // 같은 시트를 미분류 경로가 또 돌지 않게 소비 목록에 넣는다 (상호배제)
-            consumedCharacterSheetNames.add(sheet.sheetName)
             importCharacterRows(sheet, headerRow, universe, fields, result, resolvedConflicts, universe.name, onProgress, totalRows)
         }
     }
@@ -10437,7 +10453,112 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 유틸리티 메서드 ──
 
-    private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
+    /** 정확(대소문자 구분) 일치 시트 — POI `getSheet`는 대소문자를 무시하므로 직접 찾는다. */
+    private fun exactSheetNamed(workbook: Workbook, name: String): Sheet? {
+        for (idx in 0 until workbook.numberOfSheets) {
+            if (workbook.getSheetName(idx) == name) return workbook.getSheetAt(idx)
+        }
+        return null
+    }
+
+    /**
+     * 파일의 '세계관' 시트에서 배정표를 재현한다 — 미리보기·가져오기·덮어쓰기 가드·인식 시트
+     * 집계가 **같은 함수**로 같은 배정표를 본다(R-33의 '시트 조회' 축). 시트가 없거나(캐릭터만
+     * 내보낸 파일) 헤더를 못 찾으면 null — 그때는 휴리스틱만 남는다.
+     */
+    private fun universeSheetPlanOf(workbook: Workbook): UniverseSheetPlan? {
+        val spec = universeSpec()
+        val sheet = resolveSpecSheet(workbook, spec) ?: return null
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return null
+        // 열 해석은 importUniverses와 같은 사다리다(UniverseCols) — 따로 적으면 드리프트한다.
+        val c = UniverseCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        val rows = ArrayList<UniverseSheetPlan.Row>()
+        for (i in dataRows(sheet, headerRow)) {
+            val row = sheet.getRow(i) ?: continue
+            rows.add(
+                UniverseSheetPlan.Row(
+                    name = getCellString(row, c.name),
+                    code = if (c.code >= 0) getCellString(row, c.code) else ""
+                )
+            )
+        }
+        return UniverseSheetPlan.build(rows)
+    }
+
+    /**
+     * 세계관 캐릭터 시트 배정 — **계획 우선, 휴리스틱 폴백** (2026.08.20).
+     *
+     * 내보내기는 sanitize 결과가 같은 두 세계관(완전 동명 · 31자 절단 · 금칙문자 제거 ·
+     * 대소문자만 다름)에 공유 usedNames로 `이름`/`이름(2)`를 갈라 주는데, 종전 조회는 이름만
+     * 받아 소비 추적 없이 첫 일치를 돌려줬다 — 두 세계관이 같은 시트를 받아 캐릭터가 중복
+     * 삽입되고, `(2)` 시트는 무독으로 남고, '엑셀에 없는 항목 삭제'가 둘째 세계관의 실제
+     * 캐릭터를 지웠다. 수리는 두 겹이다:
+     *
+     * 1. **배정표([UniverseSheetPlan])가 코드로 지목한 시트를 먼저 찾는다** — 세계관 순서가
+     *    내보내기 이후 바뀌어도(정렬 편집·병합 가져오기) 코드가 제 시트를 찾는다.
+     * 2. 배정표 밖(코드 없는 행·외부 편집·레거시 파일)은 종전 휴리스틱으로 폴백하되,
+     *    **소비된 시트와 남의 배정 시트는 모든 갈래에서 건너뛴다.** 폴백의 동명 배정 순서는
+     *    양쪽이 같은 정렬을 쓰는 데 기댄다 — 내보내기 배정 루프와 가져오기 루프 모두
+     *    `getAllUniversesList`(displayOrder ASC, createdAt DESC)이고 두 열은 '세계관' 시트로
+     *    왕복 보존된다(내보내기 이후 정렬이 바뀐 파일은 배정표가 흡수한다).
+     *
+     * 소비 집합의 수명은 **한 번의 분석/가져오기/판정 루프**다(R-33 ⑦ — 발급기의 수명은 자기가
+     * 먹이는 색인과 같다). 네 호출부(미리보기·가져오기·덮어쓰기 가드·인식 시트 집계)가 각자
+     * 한 벌씩 만들며, 넷이 같은 판정을 지나는 것이 R-33이다. 소비는 **찾은 시점**에 기록한다 —
+     * 헤더가 깨진 시트도 그 세계관의 것이므로, 소비하지 않으면 동명 둘째 세계관이 같은 깨진
+     * 시트에 다시 걸려 제 `(2)` 시트를 영영 못 받는다.
+     */
+    private inner class UniverseSheetFinder(
+        private val workbook: Workbook,
+        universes: List<Universe>,
+        /** 소비된 시트명 — 호출부가 미분류 조회([findUnclassifiedSheet])와 합칠 수 있게 밖에서도 든다. */
+        val consumed: MutableSet<String> = mutableSetOf()
+    ) {
+        private val plan: UniverseSheetPlan? = universeSheetPlanOf(workbook)
+
+        // 이 루프에 실재하는 세계관 코드 — 배정표가 **다른** 코드에 지목한 시트를 휴리스틱이
+        // 가로채지 못하게 하는 판정에 쓴다. 루프에 없는 코드의 배정 시트는 막지 않는다 —
+        // 코드가 전부 낯선 파일(다른 기기 백업의 병합)에서 이름 매칭까지 죽으면 안 된다.
+        private val presentCodes: Set<String> =
+            universes.asSequence().map { it.code }.filter { it.isNotBlank() }.toSet()
+
+        fun find(universe: Universe): Sheet? {
+            val skip = fun(name: String): Boolean {
+                if (name in consumed) return true
+                val owner = plan?.plannedOwnerOf(name) ?: return false
+                return owner != universe.code && owner in presentCodes
+            }
+            // ── 계획 우선 — 완전 동명 세계관도 코드로 제 시트를 찾는다 ──
+            val planned = plan?.sheetNameFor(universe.code)
+            if (planned != null && planned !in consumed) {
+                val candidate = exactSheetNamed(workbook, planned)
+                // 지문 확인: 레거시 배치에서는 `예약명(2)` 자리에 진짜 예약 데이터 시트가 있을 수
+                // 있다(규칙 도입 전 백업 — 세계관이 평명을 차지하고 예약 시트가 밀린 반대 배치).
+                // 캐릭터 시트가 아니면 아래 휴리스틱(레거시 구제 갈래 포함)에 맡긴다.
+                if (candidate != null && looksLikeCharacterSheet(candidate)) {
+                    consumed.add(candidate.sheetName)
+                    return candidate
+                }
+            }
+            // ── 휴리스틱 폴백 — 종전 판정 그대로, 소비·배정표 회피만 얹는다 ──
+            val found = findSheetForUniverse(workbook, universe.name, RESERVED_SHEET_NAMES, skip)
+            if (found != null) consumed.add(found.sheetName)
+            return found
+        }
+    }
+
+    /**
+     * 세계관 캐릭터 시트의 휴리스틱 조회 — [UniverseSheetFinder]를 통해서만 부른다.
+     * @param skip 이 이름의 시트를 후보에서 뺄 것인가(이미 소비됐거나 배정표가 남에게 지목).
+     *   **모든 갈래**(접미사·정확 일치·대소문자 폴백)가 지나야 한다 — 한 갈래만 빠뜨리면
+     *   동명 세계관이 그 갈래로 같은 시트를 다시 받는다.
+     */
+    private fun findSheetForUniverse(
+        workbook: Workbook,
+        universeName: String,
+        reservedNames: Set<String>,
+        skip: (String) -> Boolean
+    ): Sheet? {
         // 3중 방어 ②: 세계관 이름이 예약 시트명("이미지" 등)과 겹치면 정확-일치 결과가 데이터 시트일 수
         // 있다. 예약명 충돌 시에는 헤더 피크(looksLikeCharacterSheet — 예약 시트 조회와 **같은 판정**)로
         // 레거시 캐릭터 시트(예약 시트 도입 전 백업)만 구제한다.
@@ -10456,6 +10577,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (idx in 0 until workbook.numberOfSheets) {
                 val sheetName = workbook.getSheetName(idx)
                 if (sheetName in reservedNames) continue
+                if (skip(sheetName)) continue
                 if (!isSuffixedVariantOf(sheetName, sanitized)) continue
                 val candidate = workbook.getSheetAt(idx)
                 if (requireCharacterHeader && !looksLikeCharacterSheet(candidate)) continue
@@ -10474,12 +10596,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // POI의 getSheet는 **대소문자를 무시**한다. 대소문자만 다른 두 세계관('MyWorld'/'myworld')이
         // 있으면 둘 다 첫 시트로 해석돼 한쪽 캐릭터가 남의 세계관으로 들어간다.
         // 정확(대소문자 구분) 일치를 먼저 찾고, 없을 때만 POI의 관대한 조회로 폴백한다.
-        fun exactSheet(name: String): Sheet? {
-            for (idx in 0 until workbook.numberOfSheets) {
-                if (workbook.getSheetName(idx) == name) return workbook.getSheetAt(idx)
-            }
-            return null
-        }
+        fun exactSheet(name: String): Sheet? =
+            if (skip(name)) null else exactSheetNamed(workbook, name)
 
         exactSheet(universeName)?.let {
             // 레거시 백업(규칙 도입 전): 세계관이 예약명을 차지한 파일은 헤더 피크로만 구제한다.
@@ -10492,7 +10610,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         // 대소문자 차이만 있는 시트로의 폴백 — 대소문자 변형이 유일할 때만 안전하다.
         val caseInsensitive = (0 until workbook.numberOfSheets)
-            .filter { workbook.getSheetName(it).equals(sanitized, ignoreCase = true) }
+            .filter { workbook.getSheetName(it).equals(sanitized, ignoreCase = true) && !skip(workbook.getSheetName(it)) }
         if (caseInsensitive.size == 1) {
             val only = workbook.getSheetAt(caseInsensitive[0])
             if (!isReserved || looksLikeCharacterSheet(only)) return only
