@@ -1447,7 +1447,12 @@ class ExcelImporter(context: Context) {
                 // (`hasAnyChange`가 여기 있었다 — **아무도 읽지 않는 지역 변수**였다. B-187이
                 //  '비움'을 더하며 그 식을 함께 고치려다 발견했고, 고칠 것이 아니라 없앨 것이었다.
                 //  범주별 '변경 없음' 판정은 아래 블록이 각자 하고 있다.)
-                val totalOnlyInDb = analysis.categories.sumOf { it.onlyInDb.coerceAtLeast(0) }
+                // **덮어쓰기가 실제로 지우는 범주만 센다** (B-263 ⓑ). 앱 설정은 가져오기에
+                // 지우는 경로가 없어 여기 들어오면 *"앱 설정 N개를 삭제합니다"*라는 거짓 고지가
+                // 경고문에 실린다 — 범주별 *"백업에 없음: N개"* 줄은 참이라 그대로 남는다.
+                val totalOnlyInDb = analysis.categories
+                    .filter { it.deletedByOverwrite }
+                    .sumOf { it.onlyInDb.coerceAtLeast(0) }
 
                 for (cat in analysis.categories) {
                     val catLayout = LinearLayout(act).apply {
@@ -1580,7 +1585,7 @@ class ExcelImporter(context: Context) {
 
                 if (totalOnlyInDb > 0) {
                     val deleteParts = analysis.categories
-                        .filter { it.onlyInDb > 0 }
+                        .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
                         .map { appContext.getString(com.novelcharacter.app.R.string.restore_overwrite_delete_item, it.label, it.onlyInDb) }
                     overwriteWarning.text = appContext.getString(
                         com.novelcharacter.app.R.string.restore_overwrite_warning,
