@@ -69,6 +69,7 @@ import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.withImagePaths
 import com.novelcharacter.app.util.GradeValueResolver
 import com.novelcharacter.app.util.FactionMembershipMatcher
@@ -1183,7 +1184,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readUniverseRow(row: Row, c: UniverseCols, ctx: String, now: Long, result: ImportResult?): UniverseRowValues {
+    private fun readUniverseRow(row: Row, c: UniverseCols, ctx: String, result: ImportResult?): UniverseRowValues {
         val name = getCellString(row, c.name)
         return UniverseRowValues(
             name = name,
@@ -1202,7 +1203,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             imageNovelCode = getCellCode(row, c.imageNovelCode, ctx, result).ifBlank { null },
             hasImageCharCol = c.imageCharCode >= 0,
             hasImageNovelCol = c.imageNovelCode >= 0,
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -1303,7 +1304,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeRefProvided: Boolean get() = universeCode.isNotBlank() || universeName.isNotBlank()
     }
 
-    private fun readNovelRow(row: Row, c: NovelCols, ctx: String, now: Long, result: ImportResult?): NovelRowValues {
+    private fun readNovelRow(row: Row, c: NovelCols, ctx: String, result: ImportResult?): NovelRowValues {
         val borderColor = if (c.borderColor >= 0) getCellString(row, c.borderColor) else null
         return NovelRowValues(
             title = getCellString(row, c.title),
@@ -1326,7 +1327,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             isPinned = if (c.pinned >= 0) parseBoolean(getCellString(row, c.pinned)) else false,
             hasStandardYearCol = c.standardYear >= 0,
             standardYear = if (c.standardYear >= 0) parseNumber(getCellString(row, c.standardYear))?.toInt() else null,
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -1404,7 +1405,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readFactionRow(row: Row, c: FactionCols, ctx: String, now: Long, result: ImportResult?): FactionRowValues =
+    private fun readFactionRow(row: Row, c: FactionCols, ctx: String, result: ImportResult?): FactionRowValues =
         FactionRowValues(
             name = getCellString(row, c.name),
             code = getCellCode(row, c.code, ctx, result),
@@ -1416,7 +1417,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             autoRelationType = if (c.autoRelType >= 0) getCellString(row, c.autoRelType) else null,
             autoRelationIntensity = if (c.autoRelIntensity >= 0) (parseIntensityWithWarn(row, c.autoRelIntensity, 5, ctx, result) ?: 5) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
 
     /**
@@ -1482,7 +1483,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val mapKey: String? get() = gender?.let { nameBankKey(name, it) }
     }
 
-    private fun readNameBankRow(row: Row, c: NameBankCols, ctx: String, now: Long, result: ImportResult?): NameBankRowValues {
+    private fun readNameBankRow(row: Row, c: NameBankCols, ctx: String, result: ImportResult?): NameBankRowValues {
         val usedByCharName = if (c.usedBy >= 0) getCellString(row, c.usedBy) else ""
         val usedByCharCode = getCellCode(row, c.charCode, ctx, result)
         return NameBankRowValues(
@@ -1496,7 +1497,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 사용 캐릭터는 편집 가능한 '사용 캐릭터' + readOnly '사용캐릭터코드'의 참조 열 쌍이다
             // (관계 시트의 '세력'/'세력코드'와 동형): 유무는 이름 열이, 대상은 코드가 정한다.
             usedIntent = refColumnIntent(c.usedBy >= 0, c.charCode >= 0, usedByCharName, usedByCharCode),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null,
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
             code = getCellCode(row, c.code, ctx, result)  // F4: 숫자 코드 방어
         )
     }
@@ -1596,7 +1597,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             filtersJson = filtersJson,
             sortMode = sortMode,
             isDefault = if (c.isDefault >= 0) parseBoolean(getCellString(row, c.isDefault)) else null,
-            createdAt = if (c.createdAt >= 0) parseNumber(getCellString(row, c.createdAt))?.toLong() else null,
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
             updatedAt = if (c.updatedAt >= 0) parseNumber(getCellString(row, c.updatedAt))?.toLong() else null
         )
     }
@@ -1703,7 +1704,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             bodySizePartIndex = if (c.bodyPart >= 0) parseNumber(getCellString(row, c.bodyPart))?.toInt() else null,
             novelIdsJson = novelIdsJson,
             isDefault = sheetBooleanOrKeep(c.isDefault >= 0, getCellString(row, c.isDefault)),
-            createdAt = if (c.createdAt >= 0) parseNumber(getCellString(row, c.createdAt))?.toLong() else null,
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
             updatedAt = if (c.updatedAt >= 0) parseNumber(getCellString(row, c.updatedAt))?.toLong() else null
         )
     }
@@ -1745,11 +1746,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     )
 
     private fun readPresetTemplateRow(row: Row, c: PresetTemplateCols, ctx: String, result: ImportResult?): PresetTemplateRowValues {
-        val createdAtRaw = if (c.createdAt >= 0) getCellString(row, c.createdAt) else ""
-        val createdAt: Long? = parseNumber(createdAtRaw)?.toLong()
-        if (createdAtRaw.isNotBlank() && createdAt == null) {
-            result?.warnings?.add("$ctx: 생성일 '$createdAtRaw'을(를) 숫자로 읽을 수 없어 이름으로 매칭합니다 — '생성일' 열은 수정하지 마세요")
-        }
+        // 이 시트의 생성일은 값이 아니라 매칭 키다 — 해석 불가의 뜻이 달라 문구만 다르다.
+        val createdAt = readCreatedAtCell(row, c.createdAt, ctx, result, consequence = "이름으로 매칭합니다")
         return PresetTemplateRowValues(
             name = getCellString(row, c.name),
             // F1-A: 열이 없으면 null(기존 값 유지), 열이 있고 빈칸이면 비움 의도로 존중
@@ -2044,7 +2042,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readTimelineRow(row: Row, c: TimelineCols, ctx: String, now: Long, result: ImportResult?): TimelineRowValues {
+    private fun readTimelineRow(row: Row, c: TimelineCols, ctx: String, result: ImportResult?): TimelineRowValues {
         val yearRaw = getCellString(row, c.year)
         // F1-B: 범위 밖/해석 불가 월·일은 조용히 버리지 않고 연도처럼 경고
         val month = parseMonthWithWarn(row, c.month, ctx, result)
@@ -2071,7 +2069,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             displayOrder = if (c.displayOrder >= 0) getCellString(row, c.displayOrder).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
             hasTemporaryCol = c.isTemporary >= 0, isTemporary = if (c.isTemporary >= 0) parseBoolean(getCellString(row, c.isTemporary)) else false,
             fileCode = getCellCode(row, c.code, ctx, result),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -2223,7 +2221,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readStateChangeRow(row: Row, c: StateChangeCols, ctx: String, now: Long, result: ImportResult?): StateChangeRowValues {
+    private fun readStateChangeRow(row: Row, c: StateChangeCols, ctx: String, result: ImportResult?): StateChangeRowValues {
         val yearRaw = getCellString(row, c.year)
         val month = parseMonthWithWarn(row, c.month, ctx, result)
         return StateChangeRowValues(
@@ -2237,7 +2235,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             newValue = getCellString(row, c.newValue),
             hasDescCol = c.desc >= 0, description = getCellString(row, c.desc),
             fileCode = getCellCode(row, c.code, ctx, result),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -2293,7 +2291,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readQuoteRow(row: Row, c: QuoteCols, ctx: String, now: Long, result: ImportResult?): QuoteRowValues =
+    private fun readQuoteRow(row: Row, c: QuoteCols, ctx: String, result: ImportResult?): QuoteRowValues =
         QuoteRowValues(
             charName = getCellString(row, c.charName),
             charCode = getCellCode(row, c.charCode, ctx, result),
@@ -2307,7 +2305,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             hasSortOrderCol = c.sortOrder >= 0,
             sortOrder = if (c.sortOrder >= 0) parseNumber(getCellString(row, c.sortOrder))?.toInt() else null,
             fileCode = getCellCode(row, c.code, ctx, result),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
 
     /** [newStateChangeFrom]과 같은 규약 — 이 행이 **만들** 명대사(R-33 셋째). */
@@ -2369,7 +2367,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readRelationshipRow(row: Row, c: RelationshipCols, ctx: String, now: Long, result: ImportResult?): RelationshipRowValues {
+    private fun readRelationshipRow(row: Row, c: RelationshipCols, ctx: String, result: ImportResult?): RelationshipRowValues {
         val factionName = if (c.faction >= 0) getCellString(row, c.faction) else ""
         val factionCode = getCellCode(row, c.factionCode, ctx, result)
         return RelationshipRowValues(
@@ -2386,7 +2384,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             factionName = factionName, factionCode = factionCode,
             factionIntent = refColumnIntent(c.faction >= 0, c.factionCode >= 0, factionName, factionCode),
             relCode = getCellCode(row, c.relCode, ctx, result),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -2464,7 +2462,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readRelChangeRow(row: Row, c: RelChangeCols, ctx: String, now: Long, result: ImportResult?): RelChangeRowValues {
+    private fun readRelChangeRow(row: Row, c: RelChangeCols, ctx: String, result: ImportResult?): RelChangeRowValues {
         val yearRaw = getCellString(row, c.year)
         val month = parseMonthWithWarn(row, c.month, ctx, result)
         return RelChangeRowValues(
@@ -2488,7 +2486,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             parentType = if (c.parentType >= 0) getCellString(row, c.parentType) else "",
             parentCode = getCellCode(row, c.parentCode, ctx, result),
             fileCode = getCellCode(row, c.code, ctx, result),
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -2619,7 +2617,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long?
     )
 
-    private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, now: Long, result: ImportResult?): CharacterRowValues {
+    private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, result: ImportResult?): CharacterRowValues {
         // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
         val rawImagePaths: String? = if (c.image >= 0) getCellString(row, c.image).ifBlank { "[]" } else null
         return CharacterRowValues(
@@ -2639,7 +2637,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             memo = if (c.memo >= 0) getCellString(row, c.memo) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
             isPinned = if (c.pinned >= 0) parseBoolean(getCellString(row, c.pinned)) else null,
-            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+            createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
 
@@ -3319,7 +3317,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             // 읽기도 가져오기와 **같은 함수**다 — 비교식만 맞추고 리더를 각자 두면
             // 같은 결함이 한 겹 아래에서 되살아난다(설계 1-1).
-            val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", now, result = null)
+            val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", result = null)
             if (r.name.isBlank()) continue
             inBackup++
 
@@ -3385,7 +3383,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readNovelRow(row, c, "작품 행 ${excelRow(i)}", now, result = null)
+            val r = readNovelRow(row, c, "작품 행 ${excelRow(i)}", result = null)
             if (r.title.isBlank()) continue
             inBackup++
 
@@ -3691,7 +3689,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readCharacterRow(row, c, "캐릭터 행 ${excelRow(i)}", now, result = null)
+            val r = readCharacterRow(row, c, "캐릭터 행 ${excelRow(i)}", result = null)
             val name = r.name
             if (name.isBlank()) continue
             inBackup++
@@ -4099,7 +4097,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readTimelineRow(row, c, "연표 행 ${excelRow(i)}", now, result = null)
+            val r = readTimelineRow(row, c, "연표 행 ${excelRow(i)}", result = null)
             // 연도가 해석되지 않는 행을 가져오기는 **세고 소리 내어 거부한다** — 미리보기도
             // 같은 조건으로 센다(B-237). 조건까지 같아야 하는 이유는 가져오기가 **완전히 빈 행**
             // (연도 원문도 설명도 빈 것)은 세지 않기 때문이다: 표 아래 여백까지 '건너뜀'으로
@@ -4172,7 +4170,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readStateChangeRow(row, c, "상태변화 행 ${excelRow(i)}", now, result = null)
+            val r = readStateChangeRow(row, c, "상태변화 행 ${excelRow(i)}", result = null)
             if (r.charName.isBlank()) continue
             // 아래 둘은 가져오기가 **세고 고지하며** 거부하는 행이다 — 미리보기도 센다(B-237).
             // 이름만 빈 행과 갈리는 자리다: 그쪽은 가져오기도 조용히 지나간다(빈 행).
@@ -4255,7 +4253,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readQuoteRow(row, c, "명대사 행 ${excelRow(i)}", now, result = null)
+            val r = readQuoteRow(row, c, "명대사 행 ${excelRow(i)}", result = null)
             if (r.charName.isBlank()) continue
             // 가져오기가 **세고 고지하며** 거부하는 행은 미리보기도 센다(B-237).
             if (r.text.isBlank()) { inBackup++; skippedCount++; continue }
@@ -4321,7 +4319,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readRelationshipRow(row, c, "관계 행 ${excelRow(i)}", now, result = null)
+            val r = readRelationshipRow(row, c, "관계 행 ${excelRow(i)}", result = null)
             if (r.char1Name.isBlank() || r.char2Name.isBlank()) continue
             // 두 캐릭터가 채워졌는데 유형만 빈 행을 가져오기는 세고 고지한다 — 미리보기도 센다(B-237).
             if (r.relationshipType.isBlank()) { inBackup++; skippedCount++; continue }
@@ -4417,7 +4415,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readRelChangeRow(row, c, "관계변화 행 ${excelRow(i)}", now, result = null)
+            val r = readRelChangeRow(row, c, "관계변화 행 ${excelRow(i)}", result = null)
             if (r.char1Name.isBlank() || r.char2Name.isBlank()) continue
             // 연도 미해석은 가져오기가 세고 고지한다 — 미리보기도 센다(B-237).
             val year = r.year
@@ -4511,7 +4509,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readNameBankRow(row, c, "이름 은행 행 ${excelRow(i)}", now, result = null)
+            val r = readNameBankRow(row, c, "이름 은행 행 ${excelRow(i)}", result = null)
             if (r.name.isBlank()) continue
             inBackup++
 
@@ -4564,7 +4562,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readFactionRow(row, c, "세력 행 ${excelRow(i)}", now, result = null)
+            val r = readFactionRow(row, c, "세력 행 ${excelRow(i)}", result = null)
             if (r.name.isBlank()) continue
             inBackup++
 
@@ -4685,7 +4683,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 ),
                 departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null,
                 departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt() else null,
-                createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
+                // 가져오기와 **같은 함수**로 읽는다(R-33) — result가 null이라 값만 낸다.
+                createdAt = readCreatedAtCell(row, createdAtColIndex, "세력 소속 행 ${excelRow(i)}", result = null)
             )
             val candidates = (membershipsByPair[faction.id to character.id] ?: emptyList())
                 .filter { it.id !in takenIds }
@@ -5213,7 +5212,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33) — F1-A(열 없음 = 기존 유지)도 그 안에 있다.
-                val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", nowMillis, result)
+                val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", result)
                 val name = r.name
                 if (name.isBlank()) continue
 
@@ -5356,7 +5355,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33) — F1-A(열 없음 = 기존 유지)도 그 안에 있다.
-                val r = readNovelRow(row, nc, "작품 행 ${excelRow(i)}", nowMillis, result)
+                val r = readNovelRow(row, nc, "작품 행 ${excelRow(i)}", result)
                 val title = r.title
                 if (title.isBlank()) continue
 
@@ -5782,7 +5781,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (c.entityType >= 0) getCellString(row, c.entityType) else null
         ),
         code = if (c.code >= 0) getCellCode(row, c.code, ctx, result) else "",
-        createdAt = if (c.createdAt >= 0) parseNumber(getCellString(row, c.createdAt))?.toLong() else null,
+        createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
         aiColumnPresent = c.aiSuggest >= 0,
         aiCellText = getCellString(row, c.aiSuggest),
         descriptionColumnPresent = c.description >= 0,
@@ -7232,7 +7231,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readCharacterRow(row, cc, "캐릭터 행 ${excelRow(i)}", nowMillis, result)
+                val r = readCharacterRow(row, cc, "캐릭터 행 ${excelRow(i)}", result)
                 val name = r.name
                 if (name.isBlank()) continue
 
@@ -7334,6 +7333,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (r.lastName == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
                     if (r.anotherName == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
                     if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
+                    // '이미지경로' 열 있음+빈칸은 "[]"로 읽혀 병합이 이미지 배정을 통째로 푼다 —
+                    // 텍스트 열과 같은 규약으로 '지워진 값'에 집계해 무고지 삭제가 되지 않게 한다.
+                    if (imagePathsFromExcel == "[]" &&
+                        CharacterRepresentativeImage.paths(existingChar.imagePaths).isNotEmpty()
+                    ) result.clearedFields++
                     // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
                     // 따라가고, 다른 기기에서 온 목록에 그 파일이 없으면 풀린다(D5).
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
@@ -7611,7 +7615,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readTimelineRow(row, tc, "연표 행 ${excelRow(i)}", nowMillis, result)
+                val r = readTimelineRow(row, tc, "연표 행 ${excelRow(i)}", result)
                 val year = r.year
                 if (year == null) {
                     // 행이 조용히 사라지지 않도록 보고 (빈 행은 제외)
@@ -7922,7 +7926,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readStateChangeRow(row, scc, "상태변화 행 ${excelRow(i)}", nowMillis, result)
+                val r = readStateChangeRow(row, scc, "상태변화 행 ${excelRow(i)}", result)
                 val charName = r.charName
                 if (charName.isBlank()) continue
 
@@ -8058,7 +8062,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(R-33).
-                val r = readQuoteRow(row, qc, "명대사 행 ${excelRow(i)}", nowMillis, result)
+                val r = readQuoteRow(row, qc, "명대사 행 ${excelRow(i)}", result)
                 val charName = r.charName
                 if (charName.isBlank()) continue
 
@@ -8173,7 +8177,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val rv = readRelationshipRow(row, rc, "관계 행 ${excelRow(i)}", nowMillis, result)
+                val rv = readRelationshipRow(row, rc, "관계 행 ${excelRow(i)}", result)
                 val char1Name = rv.char1Name
                 val char2Name = rv.char2Name
                 if (char1Name.isBlank() || char2Name.isBlank()) continue
@@ -8366,7 +8370,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val rv = readRelChangeRow(row, rcc, "관계변화 행 ${excelRow(i)}", nowMillis, result)
+                val rv = readRelChangeRow(row, rcc, "관계변화 행 ${excelRow(i)}", result)
                 val char1Name = rv.char1Name
                 val char2Name = rv.char2Name
                 if (char1Name.isBlank() || char2Name.isBlank()) continue
@@ -8515,7 +8519,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readNameBankRow(row, nbc, "이름 은행 행 ${excelRow(i)}", nowMillis, result)
+                val r = readNameBankRow(row, nbc, "이름 은행 행 ${excelRow(i)}", result)
                 val name = r.name
                 if (name.isBlank()) continue
 
@@ -8944,7 +8948,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readFactionRow(row, fc, "세력 행 ${excelRow(i)}", nowMillis, result)
+                val r = readFactionRow(row, fc, "세력 행 ${excelRow(i)}", result)
                 val name = r.name
                 if (name.isBlank()) continue
 
@@ -9219,7 +9223,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 열이 없거나 해석 불가면 null — 기존 이력의 생성일을 **유지**한다.
                 // 종전에는 해석 불가일 때 현재 시각을 찍어, 매칭은 자연키로 되면서도 생성일만
                 // 조용히 바뀌었다(왕복할 때마다 안정 식별자가 흔들리는 자리였다).
-                val parsedCreatedAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
+                // 해석 불가는 공용 읽기가 경고를 싣는다(변수 제어).
+                val parsedCreatedAt = readCreatedAtCell(row, createdAtColIndex, "세력 소속 행 ${excelRow(i)}", result)
 
                 // 소속 매칭: 활성/탈퇴 구분 없는 단일 계층 규칙 (활성만 보던 기존 방식은 탈퇴 이력을
                 // 영원히 매칭하지 못해 재가져오기마다 중복 행을 만들었다 — 왕복 비멱등).
@@ -9447,7 +9452,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     row, descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex,
                     "세력 관계 행 ${excelRow(i)}", result
                 )
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                // 신규 행에만 쓰인다(병합은 생성일을 건드리지 않는다) — 빈칸·해석 불가는 지금 시각.
+                val createdAt = readCreatedAtCell(row, createdAtColIndex, "세력 관계 행 ${excelRow(i)}", result)
+                    ?: System.currentTimeMillis()
 
                 // 정방향/역방향 모두 매칭하여 중복 생성 방지 — 규칙은 미리보기 분석과 같은 함수다(B-87)
                 val existing = FactionRelationshipMatcher.match(existingByKey, faction1.id, faction2.id, relType)
@@ -11261,6 +11268,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result?.warnings?.add("$rowLabel: 강도 $parsed 이(가) 범위(1~10)를 벗어나 ${clamped}(으)로 조정됨")
         }
         return clamped
+    }
+
+    /**
+     * '생성일' 셀 공용 읽기 — 이웃 열들과 같은 규약(R-36)으로 접는다:
+     * **열 없음·빈칸 = null(기존 항목은 생성 시각 유지 — `merge*`가 그렇게 해석한다).**
+     * 신규 행의 '지금 시각' 폴백은 각 `new*From` 생성자의 `?: now`가 진다 — 읽기 자리에서
+     * 폴백하면 열 있음+빈칸이 기존 행의 생성 시각을 '지금'으로 조용히 덮는다(그 결함의 자리다).
+     *
+     * 비어 있지 않은데 수로 안 읽히는 셀은 조용히 null로 접지 않고 경고한다
+     * (변수 제어 — 프리셋 템플릿 자리의 선례). [consequence]는 그 시트에서 해석 불가가
+     * 갖는 뜻이고, [result]가 null이면 경고 없이 같은 값만 낸다(R-33 미리보기 경로).
+     */
+    private fun readCreatedAtCell(
+        row: Row,
+        colIndex: Int,
+        rowLabel: String,
+        result: ImportResult?,
+        consequence: String = "빈 칸과 같게 처리합니다(기존 항목은 생성 시각 유지, 새 항목은 지금 시각)"
+    ): Long? {
+        if (colIndex < 0) return null
+        val raw = getCellString(row, colIndex)
+        val parsed = parseNumber(raw)?.toLong()
+        if (raw.isNotBlank() && parsed == null) {
+            result?.warnings?.add("$rowLabel: 생성일 '$raw'을(를) 숫자로 읽을 수 없어 $consequence — '생성일' 열은 수정하지 마세요")
+        }
+        return parsed
     }
 
     /**
