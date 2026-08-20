@@ -190,7 +190,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     .setItems(items.toTypedArray()) { _, which ->
                         when (which) {
                             0 -> showEditEventDialog(event)
-                            1 -> viewModel.deleteEvent(event)
+                            1 -> confirmDeleteEvent(event)
                             2 -> showSetStandardYearDialog(event)
                         }
                     }
@@ -201,6 +201,34 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         )
         binding.timelineRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.timelineRecyclerView.adapter = adapter
+    }
+
+    /**
+     * 삭제는 묻고 지운다 — 형제 화면(캐릭터 상세)과 같은 처분이다(R-4: 파괴적 동작은 실행
+     * 전에 결과를 알리고 취소 경로를 남긴다). 종전에는 롱프레스 메뉴의 '삭제'가 확인 없이
+     * 즉시 지웠다. 연결된 캐릭터 수를 먼저 세는 것은 **파급을 모르는 동의는 동의가 아니기
+     * 때문**이고, 휴지통 보관(되돌릴 길)을 함께 말한다.
+     */
+    private fun confirmDeleteEvent(event: TimelineEvent) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val linked = try {
+                viewModel.getCharacterIdsForEvent(event.id).size
+            } catch (_: Exception) {
+                0
+            }
+            if (!isAdded) return@launch
+            val message = if (linked > 0) {
+                getString(R.string.event_delete_linked_confirm, event.description, linked)
+            } else {
+                getString(R.string.event_delete_confirm, event.description)
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.delete)
+                .setMessage(message)
+                .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteEvent(event) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun setupPinchZoom() {

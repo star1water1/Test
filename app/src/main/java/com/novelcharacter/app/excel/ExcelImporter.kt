@@ -329,6 +329,17 @@ class ExcelImporter(context: Context) {
      *   보관함이 다음 진입에서 창으로 띄우므로, 알림은 같은 말을 한 번 더 하는 소음이 된다.
      */
     /**
+     * 가져오기 결과를 **작업 이력**에 남긴다 — 내보내기·월드패키지·자동백업은 전부 남기는데
+     * 가져오기만 무이력이라, 결과 창을 닫으면 요약·경고·오류를 다시 볼 길이 없었다.
+     * 남기는 것은 *작업이 실제로 돈 뒤의 종결*뿐이다 — 취소·파일 거절은 사용자가 방금 한
+     * 일이라 이력에 쌓으면 소음이다([deliverTerminal]의 경계와 같은 근거).
+     */
+    private fun logImportResult(result: com.novelcharacter.app.util.OpResult) {
+        (appContext as? com.novelcharacter.app.NovelCharacterApp)
+            ?.operationLogRepository?.logAsync(result)
+    }
+
+    /**
      * @param storedBody 보관함에 남길 본문 — 기본은 알림과 같다. 오류·경고 상세가 있는
      *   종결 고지는 여기에 상세를 실어([offscreenBodies]) 다음 진입 창이 보여 준다.
      */
@@ -402,6 +413,13 @@ class ExcelImporter(context: Context) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        e.message
+                    )
+                )
                 withContext(Dispatchers.Main) {
                     // 작업이 돈 뒤의 종결 고지라 화면이 없으면 알림으로 보낸다 (B-56).
                     deliverTerminal(
@@ -484,6 +502,13 @@ class ExcelImporter(context: Context) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        e.message
+                    )
+                )
                 withContext(Dispatchers.Main) {
                     deliverTerminal(
                         appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
@@ -1411,6 +1436,13 @@ class ExcelImporter(context: Context) {
                 stageProgress?.dismiss()
                 // 작업이 한참 돈 뒤의 종결 고지다 — OOM은 큰 파일에서 나고, 큰 파일일수록
                 // 사용자가 기다리다 앱을 벗어나 있다(B-56).
+                logImportResult(
+                    com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                        appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                        appContext.getString(com.novelcharacter.app.R.string.import_oom)
+                    )
+                )
                 deliverTerminal(
                     appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
                     appContext.getString(com.novelcharacter.app.R.string.import_oom)
@@ -2059,6 +2091,17 @@ class ExcelImporter(context: Context) {
     }
 
     private fun showResultDialog(result: ImportResult, summaryMessage: String) {
+        // 결과 창은 닫히면 사라진다 — 화면 유무와 무관하게 이력에 먼저 남긴다. 오류가 하나라도
+        // 있으면 실패 표시로 남겨 이력 화면에서 눈에 띈다(부분 반영이라는 사실이 요약에 있다).
+        logImportResult(
+            com.novelcharacter.app.util.OpResult(
+                category = com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                summary = summaryMessage,
+                success = result.errors.isEmpty(),
+                detail = TransferResultText.detailBody(result.errors, result.warnings)
+                    .takeIf { it.isNotBlank() }
+            )
+        )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
             // 화면이 사라진 뒤에 끝났다 — 알림 + 다음 진입 고지로 보낸다(B-56).
@@ -2109,6 +2152,14 @@ class ExcelImporter(context: Context) {
             appContext.getString(com.novelcharacter.app.R.string.import_failed_where, lastDonePhase, lastDoneRows)
         }
         val body = appContext.getString(com.novelcharacter.app.R.string.import_failed_nothing_applied, where)
+        // 전부-아니면-전무와 멈춘 자리를 말하는 고지다 — 이력에도 남겨 나중에 다시 볼 수 있게 한다.
+        logImportResult(
+            com.novelcharacter.app.util.OpResult.failure(
+                com.novelcharacter.app.util.OpResult.CAT_EXCEL,
+                appContext.getString(com.novelcharacter.app.R.string.import_failed_title),
+                body
+            )
+        )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
             // **이 고지야말로 사라지면 안 된다** — 전부 아니면 전무라는 사실과 멈춘 자리를
