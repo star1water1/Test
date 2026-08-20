@@ -15,14 +15,43 @@ import org.junit.Test
 class FieldValueFixRouteTest {
 
     @Test
-    fun `캐릭터는 상세로 가고 잡을 칸이 없다`() {
+    fun `캐릭터는 편집으로 가고 그 칸까지 든다`() {
         val r = FieldValueFixRoute.of(FieldDefinition.ENTITY_CHARACTER, 7L, 33L, "힘")!!
-        assertEquals(FieldValueFixRoute.Destination.CHARACTER_DETAIL, r.destination)
+        // 종전에는 상세(읽기 화면)로 가서 칸을 못 잡았다 — 같은 목록의 줄이 축마다 다르게
+        // 동작하던 자리다(B-259).
+        assertEquals(FieldValueFixRoute.Destination.CHARACTER_EDIT, r.destination)
         assertEquals(FieldValueFixRoute.ARG_CHARACTER_ID, r.ownerArg)
         assertEquals(7L, r.ownerId)
-        // 상세는 입력 폼이 아니라 잡을 칸이 없다 — 실어 보내면 받는 쪽이 없어 조용히 버려진다.
-        assertEquals(0L, r.fieldId)
-        assertEquals("", r.fieldName)
+        assertEquals(33L, r.fieldId)
+        assertEquals("힘", r.fieldName)
+    }
+
+    /**
+     * **세 축이 같은 모양인가** — B-259가 없앤 것은 목적지 하나가 아니라 *축별 예외*다.
+     * 예외가 하나라도 남으면 목록의 줄이 어떤 것은 칸까지 가고 어떤 것은 화면만 뜬다.
+     */
+    @Test
+    fun `세 축 모두 칸 지정을 싣는다`() {
+        for (type in listOf(
+            FieldDefinition.ENTITY_CHARACTER,
+            FieldDefinition.ENTITY_EVENT,
+            FieldDefinition.ENTITY_NOVEL
+        )) {
+            val r = FieldValueFixRoute.of(type, 5L, 41L, "칸")!!
+            assertEquals("종류 $type", 41L, r.fieldId)
+            assertEquals("종류 $type", "칸", r.fieldName)
+        }
+    }
+
+    /** 목적지도 축마다 달라야 한다 — 같으면 한 화면이 남의 축 요청을 받는다. */
+    @Test
+    fun `목적지는 축마다 다르다`() {
+        val dests = listOf(
+            FieldDefinition.ENTITY_CHARACTER,
+            FieldDefinition.ENTITY_EVENT,
+            FieldDefinition.ENTITY_NOVEL
+        ).map { FieldValueFixRoute.of(it, 1L, 1L, "f")!!.destination }
+        assertEquals(dests.size, dests.toSet().size)
     }
 
     @Test
@@ -89,5 +118,10 @@ class FieldValueFixRouteTest {
         // 요청하지 않은 것을 실패로 알리는 꼴이라 이름도 함께 비운다.
         assertEquals("", r.fieldName)
         assertEquals("", FieldValueFixRoute.of(FieldDefinition.ENTITY_NOVEL, 3L, -2L, "연재처")!!.fieldName)
+        // 캐릭터 축도 같은 규칙을 받는다(B-259로 예외가 없어졌다).
+        val c = FieldValueFixRoute.of(FieldDefinition.ENTITY_CHARACTER, 7L, 0L, "힘")!!
+        assertEquals(FieldValueFixRoute.Destination.CHARACTER_EDIT, c.destination)
+        assertEquals(0L, c.fieldId)
+        assertEquals("", c.fieldName)
     }
 }

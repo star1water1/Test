@@ -20,15 +20,20 @@ import com.novelcharacter.app.data.model.FieldDefinition
  * (어느 종류가 어디로 가는가 · 무엇을 싣는가), 자원 id로의 번역만 화면에 남긴다 —
  * 시험이 지키는 몫과 못 지키는 몫을 자리로 가른다.
  *
- * ## 캐릭터 축에 칸 지정이 없는 이유
+ * ## 세 축이 모두 편집 자리로 간다 (B-259)
  *
- * 캐릭터는 **상세 화면**으로 가고 그곳은 입력 폼이 아니다(고치려면 거기서 편집으로 한 번 더
- * 들어간다). 사건·작품은 목적지가 곧 **편집 창**이라 그 자리에서 칸을 잡을 수 있다.
- * 없는 자리에 인자를 실으면 받는 쪽이 없어 조용히 버려지므로, 실을 수 있는 축에만 싣는다.
+ * **종전에는 캐릭터만 상세 화면으로 갔고 칸을 잡지 못했다** — 상세는 읽기 화면이라 잡을
+ * 위젯이 없었고, 고치려면 거기서 편집으로 한 번 더 들어가야 했다. 같은 목록의 줄이
+ * 축마다 다르게 동작하던 자리다(B-198이 사건·작품만 이었다).
+ *
+ * 캐릭터도 **편집 화면**으로 보낸다. 그곳의 `DynamicFieldFormBuilder`가 이미
+ * `필드 정의 id → 위젯` 색인을 들고 있어, 상세의 공용 렌더러(`DynamicFieldRenderer` —
+ * 보충 탭이 함께 쓴다)를 넓히지 않고도 잡을 수 있다. **셋이 같은 모양이 되었으므로
+ * 이 객체에 축별 예외가 없다.**
  */
 object FieldValueFixRoute {
 
-    /** 캐릭터 상세가 이미 쓰는 이름 — 새로 정하지 않고 현행을 그대로 든다. */
+    /** 캐릭터 상세·편집이 이미 쓰는 이름 — 새로 정하지 않고 현행을 그대로 든다. */
     const val ARG_CHARACTER_ID = "characterId"
 
     /** 연표가 열 사건. 0 이하면 요청이 없는 것이다. */
@@ -49,14 +54,14 @@ object FieldValueFixRoute {
      */
     const val ARG_FOCUS_FIELD_NAME = "focusFieldName"
 
-    /** 값이 붙은 대상의 종류가 정하는 목적지. */
-    enum class Destination { CHARACTER_DETAIL, TIMELINE, NOVEL_LIST }
+    /** 값이 붙은 대상의 종류가 정하는 목적지. **셋 다 그 값을 고칠 수 있는 자리다**(B-259). */
+    enum class Destination { CHARACTER_EDIT, TIMELINE, NOVEL_LIST }
 
     /**
      * 한 줄이 데려갈 자리.
      *
      * @param ownerArg 대상 id를 실을 인자 이름 — 목적지마다 다르다.
-     * @param fieldId 잡을 칸. **0이면 잡지 않는다**(캐릭터 축).
+     * @param fieldId 잡을 칸. **0이면 잡지 않는다**(요청에 칸 지정이 없었을 때).
      * @param fieldName 못 찾았을 때 말할 이름. [fieldId]가 0이면 빈 문자열이다.
      */
     data class Route(
@@ -82,7 +87,10 @@ object FieldValueFixRoute {
         val field = if (fieldId > 0L) fieldId else 0L
         return when (ownerType) {
             FieldDefinition.ENTITY_CHARACTER ->
-                Route(Destination.CHARACTER_DETAIL, ARG_CHARACTER_ID, ownerId, 0L, "")
+                Route(
+                    Destination.CHARACTER_EDIT, ARG_CHARACTER_ID, ownerId,
+                    field, if (field > 0L) fieldName else ""
+                )
             FieldDefinition.ENTITY_EVENT ->
                 Route(
                     Destination.TIMELINE, ARG_FOCUS_EVENT_ID, ownerId,

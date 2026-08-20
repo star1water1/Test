@@ -200,6 +200,19 @@
             app:argType="long"
             android:defaultValue="-1L" />
 
+        <!-- 타입 불일치 목록에서 값을 고치러 오는 길 (B-259 — 캐릭터 축도 편집으로 온다).
+             이름의 단일 소스는 util/FieldValueFixRoute.kt이고 check_field_fix_route.sh가 짝을 지킨다.
+             대상 인자는 위 characterId를 그대로 쓴다 — 이 화면이 이미 그 이름으로 받는다. -->
+        <argument
+            android:name="focusFieldId"
+            app:argType="long"
+            android:defaultValue="0L" />
+
+        <argument
+            android:name="focusFieldName"
+            app:argType="string"
+            android:defaultValue="" />
+
         <argument
             android:name="novelId"
             app:argType="long"
