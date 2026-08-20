@@ -82,6 +82,10 @@ class AppSettingsDiffTest {
         assertEquals(AppSettingsDiff.Effect.SKIPPED, effect(numSpec, "   ", "2"))
         // 지금 값을 못 떠도(null) 마찬가지다 — 거절이 먼저다.
         assertEquals(AppSettingsDiff.Effect.SKIPPED, effect(numSpec, "파랑", null))
+        // NaN·Infinity는 toDoubleOrNull이 수로 읽지만 설정값으로는 거절이다 — 가져오기의
+        // numberBinding과 같은 술어(parseFiniteCell)라 예고와 처분이 갈리지 않는다.
+        assertEquals(AppSettingsDiff.Effect.SKIPPED, effect(numSpec, "NaN", "2"))
+        assertEquals(AppSettingsDiff.Effect.SKIPPED, effect(numSpec, "Infinity", "2"))
     }
 
     @Test

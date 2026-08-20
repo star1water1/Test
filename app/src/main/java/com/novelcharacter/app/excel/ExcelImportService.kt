@@ -2619,7 +2619,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, result: ImportResult?): CharacterRowValues {
         // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
-        val rawImagePaths: String? = if (c.image >= 0) getCellString(row, c.image).ifBlank { "[]" } else null
+        val rawImagePaths: String? = if (c.image >= 0) {
+            val cell = getCellString(row, c.image).ifBlank { "[]" }
+            // **읽을 수 없는 값은 비움(배정 해제)이 아니라 기존 유지 + 경고다** (콜드 검토
+            // 2026.08.20 — 생성일과 같은 처분). 종전에는 깨진 편집이 그대로 저장돼 모든 읽는
+            // 자리가 빈 목록으로 해석했다 — 오타 하나가 이미지 배정 전체를 무고지로 풀었다.
+            // 빈 칸·유효한 빈 배열('[]'·'[ ]')만 비움 의도로 읽는다(F1-A). 미리보기도 이
+            // 함수를 지나므로 예고와 처분이 갈리지 않는다(R-33 — result=null이면 값만 든다).
+            if (CharacterRepresentativeImage.isPathListJson(cell)) cell
+            else {
+                result?.warnings?.add(
+                    "$ctx: 이미지경로 '${truncateForCell(cell, SETTING_VALUE_IN_WARNING)}'을(를) 목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다 — 배정을 지우려면 칸을 비우세요"
+                )
+                null
+            }
+        } else null
         return CharacterRowValues(
             name = getCellString(row, c.name),
             code = getCellCode(row, c.code, ctx, result),  // F4: 숫자 코드 방어
@@ -7335,7 +7349,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
                     // '이미지경로' 열 있음+빈칸은 "[]"로 읽혀 병합이 이미지 배정을 통째로 푼다 —
                     // 텍스트 열과 같은 규약으로 '지워진 값'에 집계해 무고지 삭제가 되지 않게 한다.
-                    if (imagePathsFromExcel == "[]" &&
+                    // 판정은 글자가 아니라 **파싱 결과**다(콜드 검토 2026.08.20) — '[ ]'처럼
+                    // 표기만 다른 유효한 빈 목록도 배정을 푸는 것은 같으므로, 리터럴 "[]"만
+                    // 세면 그 갈래가 계수에서 빠진다. 읽을 수 없는 값은 여기 오지 않는다 —
+                    // readCharacterRow가 기존-유지(null) + 경고로 걸렀다.
+                    if (imagePathsFromExcel != null &&
+                        CharacterRepresentativeImage.paths(imagePathsFromExcel).isEmpty() &&
                         CharacterRepresentativeImage.paths(existingChar.imagePaths).isNotEmpty()
                     ) result.clearedFields++
                     // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
@@ -10485,7 +10504,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             rows.add(
                 UniverseSheetPlan.Row(
                     name = getCellString(row, c.name),
-                    code = if (c.code >= 0) getCellString(row, c.code) else ""
+                    code = if (c.code >= 0) getCellString(row, c.code) else "",
+                    // 내보내기 정렬 키의 재구성 재료(UniverseSheetPlan KDoc) — 행 순서를 믿으면
+                    // 엑셀에서 정렬한 파일이 동명 세계관 둘의 배정을 맞바꾼다. 읽기는 가져오기와
+                    // 같은 사다리다(정렬순서 parseNumber · 생성일 readCreatedAtCell — 경고는
+                    // importUniverses가 같은 행에서 이미 싣므로 여기서는 result 없이 값만 뜬다).
+                    displayOrder = if (c.order >= 0) parseNumber(getCellString(row, c.order))?.toInt() else null,
+                    createdAt = readCreatedAtCell(row, c.createdAt, "세계관 행 ${excelRow(i)}", result = null)
                 )
             )
         }

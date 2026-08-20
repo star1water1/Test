@@ -118,4 +118,58 @@ class UniverseSheetPlanTest {
         assertNull(plan.sheetNameFor("U-없음"))
         assertNull(plan.plannedOwnerOf("남의 시트"))
     }
+
+    // ── 순서 재구성 (콜드 검토 2026.08.20 — 행 순서를 믿으면 정렬된 파일이 배정을 맞바꾼다) ──
+
+    @Test
+    fun `엑셀에서 행을 정렬해도 배정표는 내보내기 순서를 되짚는다`() {
+        // 내보내기 순서: X(U-1)→'X', X(U-2)→'X(2)'. 정렬 키가 행과 함께 움직인다.
+        val exportOrder = listOf(
+            UniverseSheetPlan.Row("X", "U-1", displayOrder = 0, createdAt = 200L),
+            UniverseSheetPlan.Row("X", "U-2", displayOrder = 1, createdAt = 100L)
+        )
+        // 사용자가 시트를 정렬해 행이 뒤집힌 파일 — 그대로 재현하면 배정이 맞바뀐다.
+        val resorted = exportOrder.reversed()
+        val plan = UniverseSheetPlan.build(resorted)
+        assertEquals("X", plan.sheetNameFor("U-1"))
+        assertEquals("X(2)", plan.sheetNameFor("U-2"))
+    }
+
+    @Test
+    fun `동률 정렬순서의 동명 둘은 생성일 내림차순이 가른다`() {
+        // getAllUniversesList = displayOrder ASC, createdAt DESC — 최신 생성이 먼저다.
+        val rows = listOf(
+            UniverseSheetPlan.Row("X", "U-old", displayOrder = 0, createdAt = 100L),
+            UniverseSheetPlan.Row("X", "U-new", displayOrder = 0, createdAt = 200L)
+        )
+        val plan = UniverseSheetPlan.build(rows)
+        assertEquals("X", plan.sheetNameFor("U-new"))
+        assertEquals("X(2)", plan.sheetNameFor("U-old"))
+    }
+
+    @Test
+    fun `정렬 키가 없는 레거시 행은 종전처럼 행 순서다`() {
+        val rows = listOf(
+            UniverseSheetPlan.Row("X", "U-1"),
+            UniverseSheetPlan.Row("X", "U-2")
+        )
+        val plan = UniverseSheetPlan.build(rows)
+        assertEquals("X", plan.sheetNameFor("U-1"))
+        assertEquals("X(2)", plan.sheetNameFor("U-2"))
+    }
+
+    @Test
+    fun `손으로 끼운 키 없는 행은 내보내진 행들의 접미사를 밀지 못한다`() {
+        // 키 없는 동명 행을 맨 앞에 끼워도, 내보내진 두 행의 배정('X'·'X(2)')은 그대로다.
+        val rows = listOf(
+            UniverseSheetPlan.Row("X", "U-손", displayOrder = null, createdAt = null),
+            UniverseSheetPlan.Row("X", "U-1", displayOrder = 0, createdAt = 200L),
+            UniverseSheetPlan.Row("X", "U-2", displayOrder = 1, createdAt = 100L)
+        )
+        val plan = UniverseSheetPlan.build(rows)
+        assertEquals("X", plan.sheetNameFor("U-1"))
+        assertEquals("X(2)", plan.sheetNameFor("U-2"))
+        // 끼운 행은 그 뒤 번호를 받는다 — 실재하지 않는 시트명이라 폴백으로 내려간다.
+        assertEquals("X(3)", plan.sheetNameFor("U-손"))
+    }
 }

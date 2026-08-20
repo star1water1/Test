@@ -442,7 +442,8 @@ object AppSettingsBindings {
     ) = Binding(spec,
         read = { num(read(it)) },
         write = { ctx, v ->
-            val parsed = v.trim().toDoubleOrNull()
+            // NaN·Infinity도 거절이다 — 유한수 판정은 미리보기 게이트와 한 벌(parseFiniteCell).
+            val parsed = AppSettingsKeys.parseFiniteCell(v)
             if (parsed == null) Applied.No("숫자가 아닙니다$rejectHint")
             else {
                 write(ctx, parsed)

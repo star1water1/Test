@@ -676,6 +676,16 @@ object AppSettingsKeys {
     fun parseIntCell(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
 
     /**
+     * 셀 글자 → **유한한 수**. `NaN`·`Infinity`는 `toDoubleOrNull`이 수로 읽지만
+     * 설정값으로는 뜻이 없다 — 그대로 흘리면 `NaN.toInt()==0`이 저장되고 *"조정해
+     * 저장했습니다"*라는 거짓 문구까지 붙는다(콜드 검토 2026.08.20). 숫자 설정의 쓰기
+     * ([AppSettingsBindings]의 `numberBinding`)와 미리보기의 건너뜀 게이트([AppSettingsDiff])가
+     * **이 한 벌**을 지나 거절이 갈리지 않는다(R-33).
+     */
+    fun parseFiniteCell(value: String): Double? =
+        value.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
+
+    /**
      * 두 셀 글자가 **같은 수**인가 — `3`과 `3.0`은 같다. 한쪽이라도 수로 안 읽히면 글자로
      * 견준다(못 읽는 값을 '같다'로 접으면 다른 값이 같은 값으로 보인다).
      *

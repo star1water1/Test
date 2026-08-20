@@ -21,17 +21,41 @@ package com.novelcharacter.app.excel
  * 세계관 시트**뿐이다. [assignSheetName]은 예약명을 usedNames와 무관하게 소유자 아닌 호출에
  * 내주지 않으므로, 빈 usedNames에서 세계관 이름만 같은 순서로 다시 돌리면 같은 답이 나온다.
  * '미분류 캐릭터' 시트는 세계관 루프 **뒤**에 배정되므로 영향이 없고, 내보내기 옵션으로 예약
- * 시트가 몇 개 빠져도 답이 같다. 그 순서는 '세계관' 시트의 행 순서다 — 내보내기가 같은 목록
- * (`getAllUniversesList`: displayOrder ASC, createdAt DESC)을 행 쓰기와 시트 배정에 함께 쓴다.
- * [UniverseSheetPlanTest]가 내보내기 배정 시뮬레이션과의 왕복 일치를 잠근다.
+ * 시트가 몇 개 빠져도 답이 같다. [UniverseSheetPlanTest]가 내보내기 배정 시뮬레이션과의
+ * 왕복 일치를 잠근다.
+ *
+ * ## 순서는 행 순서가 아니라 **내보내기의 정렬 키로 재구성**한다 (콜드 검토 2026.08.20)
+ *
+ * 내보내기의 배정 순서는 `getAllUniversesList`(displayOrder ASC, createdAt DESC)이고 두 열은
+ * '세계관' 시트에 왕복 보존된다. **행 순서를 그대로 믿으면 안 된다** — 사용자가 엑셀에서
+ * 시트를 정렬하는 평범한 편집만으로 동명 세계관 둘의 행이 뒤집히고, 그대로 재현하면 배정표가
+ * 두 세계관의 시트를 **맞바꿔** 캐릭터가 서로의 세계관으로 이주한다(유실보다 나쁜 오귀속 —
+ * 이 클래스가 없애려던 유실이 모양만 바꿔 되살아난다). 정렬은 행을 통째로 옮기므로 두 키
+ * 셀이 행과 함께 움직이고, 같은 키로 다시 정렬하면 내보내기 순서가 돌아온다.
+ *
+ * 키가 없는 행(열을 지운 레거시 파일·손으로 끼운 행)은 **키 있는 행들 뒤에 행 순서대로**
+ * 세운다 — 전부 키가 없으면 종전처럼 행 순서 그대로이고(레거시 호환), 손으로 끼운 행이
+ * 내보내진 행들의 접미사 번호를 밀지 못한다. **잔여 위험:** 동명 세계관 둘의 `정렬순서` 값
+ * 자체를 서로 뒤집게 고치면(그 열은 편집 가능이다) 재구성 순서도 뒤집힌다 — 파일 안에 내보내기
+ * 시점의 순서를 말해 주는 다른 근거가 없어 남는 한계다. 동률 `정렬순서`의 동명 둘은 `생성일`
+ * (회색·읽기 전용 표시)이 가르므로 이 위험은 정렬 값을 손수 뒤집는 편집 하나로 좁혀진다.
  */
 class UniverseSheetPlan private constructor(
     private val nameByCode: Map<String, String>,
     private val ownerByName: Map<String, String>
 ) {
 
-    /** '세계관' 시트의 한 행 — 배정 재현에 필요한 두 칸만 든다. */
-    data class Row(val name: String, val code: String)
+    /**
+     * '세계관' 시트의 한 행 — 배정 재현에 필요한 칸만 든다.
+     * [displayOrder]·[createdAt]은 내보내기 정렬 키의 재구성 재료다(클래스 KDoc) —
+     * 못 읽은 칸은 null로 두면 그 행이 키 없는 행으로 처리된다.
+     */
+    data class Row(
+        val name: String,
+        val code: String,
+        val displayOrder: Int? = null,
+        val createdAt: Long? = null
+    )
 
     /** 이 코드의 세계관에 내보내기가 준 시트명. 코드가 비었거나 배정표에 없으면 null. */
     fun sheetNameFor(universeCode: String): String? =
@@ -53,11 +77,23 @@ class UniverseSheetPlan private constructor(
          * (규약 4-3) 그 세계관은 휴리스틱 폴백으로 내려보낸다.
          */
         fun build(rows: List<Row>): UniverseSheetPlan {
+            // 내보내기 정렬(displayOrder ASC, createdAt DESC)로 순서를 재구성한다 — 행 순서를
+            // 믿으면 엑셀에서 정렬한 파일이 동명 세계관 둘의 배정을 맞바꾼다(클래스 KDoc).
+            // 두 키가 다 있는 행이 먼저(내보내기 정렬 · 동률은 행 순서), 나머지는 뒤에 행
+            // 순서 그대로 — 한 키만 있는 행을 그 키로 세우면 내보내진 적 없는 행이 내보내기
+            // 순서 사이에 끼어들므로 키 없는 부류로 접는다.
+            val (keyed, unkeyed) = rows.withIndex()
+                .partition { it.value.displayOrder != null && it.value.createdAt != null }
+            val ordered = keyed.sortedWith(
+                compareBy<IndexedValue<Row>> { it.value.displayOrder }
+                    .thenByDescending { it.value.createdAt }
+                    .thenBy { it.index }
+            ).map { it.value } + unkeyed.map { it.value }
             val used = mutableSetOf<String>()
             val nameByCode = LinkedHashMap<String, String>()
             val ownerByName = LinkedHashMap<String, String>()
             val duplicated = mutableSetOf<String>()
-            for (row in rows) {
+            for (row in ordered) {
                 if (row.name.isBlank()) continue
                 // 청구 여부와 무관하게 먼저 배정한다 — 뒤 행의 접미사 번호가 이 배정에 걸려 있다.
                 val assigned = assignSheetName(row.name, used, ownerOf = null)

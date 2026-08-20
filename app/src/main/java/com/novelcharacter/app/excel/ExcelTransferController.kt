@@ -70,37 +70,61 @@ class ExcelTransferController(private val fragment: Fragment) {
                 // **자리를 고르고 왔는데 아무 일도 안 일어나면 저장된 줄 안다**(개발 의도 2번) —
                 // 그때만 말한다. 고르지 않고 돌아온 것이면 지울 것도 알릴 것도 없다.
                 if (uri != null) {
-                    // 자리를 골랐으면 CreateDocument가 이미 빈 파일을 만들었다 — 그대로 두면
-                    // 멀쩡한 이름의 0바이트 파일이 남는다(writeToUri 실패의 반쪽 파일과 같은
-                    // 부류, R-26). 쓸 내용이 없으므로 목적지를 지우는 것으로 처분한다.
-                    runCatching {
-                        android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
-                    }
-                    if (onScreen) {
-                        Toast.makeText(appContext, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+                    // 재시도로 영속 보관된 파일이 있으면 그것이 잃어버린 경로다 — 인스턴스
+                    // 상태는 프로세스 사망을 못 넘지만 ExportRetryStore는 넘는다. 사용자가
+                    // 방금 고른 자리에 그 파일을 쓰는 것이 '다시 저장'의 약속 그대로다.
+                    val retained = ExportRetryStore.peek(appContext)
+                    if (retained != null) {
+                        writeExportTo(uri, retained)
+                    } else {
+                        // 자리를 골랐으면 CreateDocument가 이미 빈 파일을 만들었다 — 그대로 두면
+                        // 멀쩡한 이름의 0바이트 파일이 남는다(writeToUri 실패의 반쪽 파일과 같은
+                        // 부류, R-26). 쓸 내용이 없으므로 목적지를 지우는 것으로 처분한다.
+                        runCatching {
+                            android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
+                        }
+                        if (onScreen) {
+                            Toast.makeText(appContext, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             uri == null -> {
-                // 저장 위치를 고르지 않았다 — 캐시에 남기지 않고, 지웠다는 사실을 말한다.
-                // **지웠다고 말하는 것은 실제로 지워졌을 때뿐이다** — 지우기는 실패할 수 있고,
-                // 확인하지 않은 단정은 거짓 고지가 된다(개발 의도 2번 · B-225가 세운 그 잣대).
-                val removed = file.delete() || !file.exists()
-                if (onScreen) {
-                    val message =
-                        if (removed) R.string.export_save_cancelled else R.string.export_save_cancelled_kept
-                    Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+                // 저장 위치를 고르지 않았다. **재시도로 보관된 파일이면 지우지 않는다**
+                // (콜드 검토 2026.08.20) — 사용자가 고른 것은 '다시 저장'이지 '버리기'가
+                // 아니고, 재시도 창이 "이 파일을 그대로 저장한다"고 약속했다. 보관을 그대로
+                // 두면 다음 진입의 보관함 창이 같은 선택지를 다시 묻는다.
+                val retained = ExportRetryStore.peek(appContext)?.path == file.path
+                if (retained) {
+                    if (onScreen) {
+                        Toast.makeText(appContext, R.string.export_save_cancelled_retained, Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    // 새 내보내기의 취소 — 캐시에 남기지 않고, 지웠다는 사실을 말한다.
+                    // **지웠다고 말하는 것은 실제로 지워졌을 때뿐이다** — 지우기는 실패할 수 있고,
+                    // 확인하지 않은 단정은 거짓 고지가 된다(개발 의도 2번 · B-225가 세운 그 잣대).
+                    val removed = file.delete() || !file.exists()
+                    if (onScreen) {
+                        val message =
+                            if (removed) R.string.export_save_cancelled else R.string.export_save_cancelled_kept
+                        Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
-            else -> {
-                val target = exporter ?: ExcelExporter(appContext).also {
-                    exporter = it
-                    it.attachScreen(fragment.activity)
-                }
-                // 실패는 재시도 창으로 돌아온다 — 이 콜백이 죽어 있어도 경로는
-                // ExportRetryStore에 먼저 영속 보관되므로 다음 진입의 보관함 창이 줍는다(R-65).
-                target.writeToUri(uri, file) { showPendingTransferNotice() }
-            }
+            else -> writeExportTo(uri, file)
         }
+    }
+
+    /**
+     * 고른 자리에 산출물을 옮겨 쓴다 — 정상 저장과 재시도·프로세스 부활 복구가 **같은 한 벌**을
+     * 지난다. 실패는 재시도 창으로 돌아온다: 이 콜백이 죽어 있어도 경로는 [ExportRetryStore]에
+     * 먼저 영속 보관되므로 다음 진입의 보관함 창이 줍는다(R-65).
+     */
+    private fun writeExportTo(uri: android.net.Uri, file: File) {
+        val target = exporter ?: ExcelExporter(appContext).also {
+            exporter = it
+            it.attachScreen(fragment.activity)
+        }
+        target.writeToUri(uri, file) { showPendingTransferNotice() }
     }
 
     init {
@@ -178,7 +202,10 @@ class ExcelTransferController(private val fragment: Fragment) {
                 .setPositiveButton(R.string.export_retry_save) { _, _ ->
                     // 재시도 = 기존 '보관된 내보내기' 경로를 다시 세우는 것이다 —
                     // pendingExportFile을 복원하고 SAF를 다시 연다(onSaveInstanceState 왕복 포함).
-                    ExportRetryStore.clear(appContext)
+                    // **보관은 여기서 걷지 않는다** (콜드 검토 2026.08.20) — 걷고 나서 자리
+                    // 고르기를 취소하거나 그 사이 프로세스가 죽으면, '다시 저장'을 골랐는데
+                    // '버리기'의 결과가 된다. 걷는 자리는 처분이 실제로 난 곳뿐이다:
+                    // 저장 성공(writeToUri) · 버리기(아래) · 파일 소실(peek).
                     pendingExportFile = retryFile
                     saveFileLauncher.launch(retryFile.name)
                 }

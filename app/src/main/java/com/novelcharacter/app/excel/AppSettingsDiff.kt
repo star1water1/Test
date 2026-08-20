@@ -65,7 +65,7 @@ object AppSettingsDiff {
         // `numberBinding` 헬퍼 한 벌을 지나고, 그 본문이 수 아닌 값을 `Applied.No`로 거절한다.
         // 기댄 채로 두면 헬퍼를 안 지나는 새 숫자 바인딩 하나가 조용히 이 예고를 틀리게 만들 수
         // 있어, `tools/check_app_settings_catalog.sh`가 그 불변식을 기계로 지킨다(축 ④).
-        if (spec.kind == AppSettingsKeys.Kind.NUMBER && fileValue.trim().toDoubleOrNull() == null) {
+        if (spec.kind == AppSettingsKeys.Kind.NUMBER && AppSettingsKeys.parseFiniteCell(fileValue) == null) {
             return Effect.SKIPPED
         }
         // **켬·끔으로 안 읽히는 불리언도 같은 처분이다** — 가져오기(boolBinding)가 거절하고

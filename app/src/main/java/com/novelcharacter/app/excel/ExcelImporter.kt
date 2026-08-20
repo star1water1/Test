@@ -1316,11 +1316,33 @@ class ExcelImporter(context: Context) {
                 openImportSource(xlsxFile)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: org.apache.poi.EncryptedDocumentException) {
+                // 암호가 걸린 것은 통합문서가 **맞다** — "형식이 아니다"로 말하면 CSV 변환
+                // 안내가 오답이 된다(콜드 검토 2026.08.20). 처분은 아래와 같은 부류다
+                // (아무것도 돌기 전의 거절 → 토스트, 이력 없음).
+                android.util.Log.e("ExcelImporter", "Workbook is password-protected", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appContext,
+                        com.novelcharacter.app.R.string.import_workbook_encrypted,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return
             } catch (e: Exception) {
-                // **열지 못한 것은 형식 문제다** — 일반 실패 창은 "그 단계의 시트를 확인"하라고
-                // 안내하는데, 통합문서가 아닌 파일(csv를 확장자만 바꾼 것 등)에는 확인할 시트가
-                // 없다. 아직 아무것도 돌기 전의 거절이므로 토스트로 남긴다(OTHER_ZIP과 같은
-                // 처분 — deliverTerminal KDoc의 경계). 이력에도 남기지 않는다(같은 근거).
+                // **형식 문제로 단정할 수 있는 부류만 형식 안내를 낸다** — 통합문서가 아닌
+                // 파일은 POI가 UnsupportedFileFormatException 계열로, 스트리밍 파서는 zip이
+                // 아니라는 ZipException으로 거절한다. 그 밖(캐시 읽기 실패 등)은 형식이 아니라
+                // 읽기의 실패이므로 종전 일반 실패 경로로 던진다 — 멀쩡한 형식에 "통합문서가
+                // 아니다"라고 단정하면 사용자를 CSV 변환으로 보낸다(확인 없는 단정 금지 — B-225).
+                val notWorkbook = e is org.apache.poi.UnsupportedFileFormatException ||
+                    e is org.apache.poi.EmptyFileException ||
+                    e is java.util.zip.ZipException
+                if (!notWorkbook) throw e
+                // 일반 실패 창은 "그 단계의 시트를 확인"하라고 안내하는데, 통합문서가 아닌
+                // 파일(csv를 확장자만 바꾼 것 등)에는 확인할 시트가 없다. 아직 아무것도 돌기
+                // 전의 거절이므로 토스트로 남긴다(OTHER_ZIP과 같은 처분 — deliverTerminal
+                // KDoc의 경계). 이력에도 남기지 않는다(같은 근거).
                 android.util.Log.e("ExcelImporter", "Cannot open file as a workbook", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
