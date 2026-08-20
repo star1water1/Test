@@ -58,6 +58,12 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
     private var shown: List<LinkGroupFold.Stack<LibraryPickerRow>> = emptyList()
     private val adapter = RowAdapter()
 
+    // 라이브러리 **전체** 기준의 묶음 지도 — 배지·선택 수가 이것으로 센다. 화면(필터 통과분)
+    // 기준으로 세면 검색어·'미배정만' 칩이 가린 식구가 수에서 빠지는데, 첨부는 그 식구까지
+    // 확장되므로(호출부의 ImageLinkResolver.expand) 화면이 실제보다 적게 약속하게 된다.
+    private var fullMembersByGroup: Map<String, List<String>> = emptyMap()
+    private var groupByPath: Map<String, String> = emptyMap()
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -70,6 +76,13 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
         // 회전 등으로 콜백이 사라지면 조용한 무동작이 된다 — 그 상태로 남기지 않는다
         // (`SearchFilterBottomSheet`의 콜백 유실이 같은 부류로 색출된 적이 있다).
         if (onConfirm == null) { dismissAllowingStateLoss(); return }
+
+        fullMembersByGroup = images.filter { it.linkGroupId != null }
+            .groupBy({ it.linkGroupId!! }, { it.path })
+            .filterValues { it.size > 1 }
+        groupByPath = images.mapNotNull { row ->
+            row.linkGroupId?.takeIf { it in fullMembersByGroup }?.let { row.path to it }
+        }.toMap()
 
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
@@ -113,9 +126,24 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateSelectionUi() {
         if (_binding == null) return
+        val count = expandedSelectionCount()
         binding.selectionCountText.text =
-            if (selected.isEmpty()) "" else getString(R.string.image_library_picker_selected, selected.size)
+            if (count == 0) "" else getString(R.string.image_library_picker_selected, count)
         binding.confirmButton.isEnabled = selected.isNotEmpty()
+    }
+
+    /**
+     * 실제로 붙을 장수 — 고른 경로를 **라이브러리 전체 기준** 묶음으로 넓힌 뒤, 이미 붙어
+     * 있는 것(excludePaths)을 뺀다. 화면의 칸 수로 세면 필터가 가린 식구가 빠지는데,
+     * 첨부는 그 식구까지 간다 — 수가 다르면 이 창의 약속이 첨부 뒤에 깨진다.
+     */
+    private fun expandedSelectionCount(): Int {
+        if (selected.isEmpty()) return 0
+        val expanded = LinkedHashSet(selected)
+        for (path in selected) {
+            groupByPath[path]?.let { g -> expanded.addAll(fullMembersByGroup[g].orEmpty()) }
+        }
+        return expanded.count { it !in excludePaths }
     }
 
     override fun onDestroyView() {
@@ -169,9 +197,11 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
             b.tagText.text = if (item.tags.isEmpty()) "" else item.tags.joinToString(" · ") { "#$it" }
             b.linkBadge.visibility = if (item.linkGroupId != null) View.VISIBLE else View.GONE
             if (item.linkGroupId != null) {
-                // 접힌 칸이면 식구 수를 함께 적는다 — 이 칸을 고르면 그 수만큼 붙는다.
-                b.linkBadge.text = if (stack.size > 1) {
-                    ctx.getString(R.string.image_manager_stack_badge, stack.size)
+                // 장수는 **라이브러리 전체 기준**이다 — 필터가 식구를 가려도 첨부는 묶음
+                // 전원으로 확장되므로, 보이는 수를 적으면 이 칸의 약속이 첨부 뒤에 깨진다.
+                val fullSize = fullMembersByGroup[item.linkGroupId]?.size ?: 1
+                b.linkBadge.text = if (fullSize > 1) {
+                    ctx.getString(R.string.image_manager_stack_badge, fullSize)
                 } else {
                     ctx.getString(R.string.image_link_badge)
                 }
@@ -180,7 +210,10 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
             b.sizeText.visibility = View.GONE
             b.statusBadge.visibility = View.GONE
 
-            val isSel = memberPaths.all { it in selected }
+            // 식구 중 하나라도 선택이면 표시가 선다 — 필터 변경으로 식구가 늘어 '전원 선택'이
+            // 깨져도, 선택이 걸린 칸이 화면에서 무표시가 되면 확정이 어디에 닿는지 알 수 없다
+            // (이미지 탭 그리드의 displaySelectedPaths와 같은 정책).
+            val isSel = memberPaths.any { it in selected }
             b.selectionScrim.visibility = if (isSel) View.VISIBLE else View.GONE
             b.selectionCheck.visibility = if (isSel) View.VISIBLE else View.GONE
 

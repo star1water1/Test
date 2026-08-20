@@ -2809,6 +2809,7 @@
     <string name="task_progress_count_unknown">%1$d개째</string>
     <string name="task_progress_count_unknown_mb">%1$dMB째</string>
     <string name="image_manager_view_full">전체화면 보기</string>
+    <string name="image_manager_view_full_stack">전체화면 보기 (묶음 %1$d장)</string>
     <string name="image_manager_delete_title">이미지 삭제</string>
     <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속하시겠습니까?</string>
     <string name="image_manager_delete_orphan_confirm">이 이미지 파일을 삭제하시겠습니까?</string>
@@ -3328,6 +3329,8 @@
 
     <!-- 이미지 내용 일괄 AI 태깅 (B-121) — 폴더 이름을 읽는 위 기능과 달리 그림 자체를 보낸다 -->
     <string name="image_ai_tag_action">AI 태그 제안 (이미지 보기)</string>
+    <!-- 접힌 칸의 상세 — 묶음 범위인 동작만 장수를 적어 이 한 장짜리 동작과 가른다 -->
+    <string name="image_ai_tag_action_stack">AI 태그 제안 (묶음 %1$d장)</string>
     <string name="image_ai_tag_run">제안 받기</string>
     <string name="image_ai_tag_batch_size">한 번에 보낼 장수: %1$d장</string>
     <string name="image_ai_tag_cost">이미지 %1$d장을 %2$d장씩 %3$d번에 나눠 보냅니다. 적용 전에 검토합니다.</string>

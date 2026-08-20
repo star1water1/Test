@@ -153,11 +153,13 @@ class ImageManagerFragment : Fragment() {
         }
         binding.galleryPager.registerOnPageChangeCallback(galleryPageCallback!!)
         binding.viewModeButton.setOnClickListener { toggleViewMode() }
+        // 갤러리 소비 목록은 어댑터가 든 것(펼친 목록)이다 — currentList(접힌 표시 목록)로
+        // 집으면 묶어 보기에서 페이지와 다른 이미지의 상세·태그가 열린다.
         binding.galleryDetailButton.setOnClickListener {
-            currentList.getOrNull(binding.galleryPager.currentItem)?.let { showDetail(it) }
+            galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.let { showDetail(it) }
         }
         binding.galleryTagButton.setOnClickListener {
-            currentList.getOrNull(binding.galleryPager.currentItem)?.let { openTagEdit(it) }
+            galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.let { openTagEdit(it) }
         }
         // 갤러리 모드의 뒤로가기는 화면 이탈이 아니라 그리드 복귀
         galleryBackCallback = object : androidx.activity.OnBackPressedCallback(false) {
@@ -297,21 +299,28 @@ class ImageManagerFragment : Fragment() {
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GALLERY
         if (gridPos != null) {
             viewModel.galleryPosition = gridPos
+            // 접힌 칸에서 들어와도 대표의 경로는 펼친 목록에 있다 — path 우선 동기화가 잡는다.
             viewModel.galleryPath = currentList.getOrNull(gridPos)?.path
         }
         attachGalleryAdapter()
         applyViewMode()
-        galleryAdapter.submitList(currentList) { syncGalleryPager() }
+        galleryAdapter.submitList(expandedItems) { syncGalleryPager() }
     }
 
     private fun switchToGrid() {
-        val pos = binding.galleryPager.currentItem
+        val path = galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.path
         // 어댑터 분리로 페이지 홀더를 즉시 재활용 — 디코드 Job 취소·비트맵 해제
         // (onDestroyView와 동일 관용구. GONE 전환만으로는 layout이 없어 회수가 안 된다)
         binding.galleryPager.adapter = null
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GRID
         applyViewMode()
-        if (pos in currentList.indices) binding.recyclerView.scrollToPosition(pos)
+        // 갤러리는 펼친 목록, 그리드는 접힌 목록이라 좌표가 다르다 — 보던 장이 든 칸으로 간다.
+        if (path != null) {
+            val target = currentList.indexOfFirst { cell ->
+                cell.path == path || stackMembers[cell.path]?.any { it.path == path } == true
+            }
+            if (target >= 0) binding.recyclerView.scrollToPosition(target)
+        }
     }
 
     /**
@@ -342,7 +351,9 @@ class ImageManagerFragment : Fragment() {
     /** 하단 오버레이 갱신 — 현재 페이지의 인덱스·파일명·소유자·태그 (편집 진입 버튼 포함) */
     private fun updateGalleryOverlay() {
         if (_binding == null || viewModel.viewMode != ImageManagerViewModel.ViewMode.GALLERY) return
-        val item = currentList.getOrNull(binding.galleryPager.currentItem)
+        // 페이저와 같은 좌표계(어댑터 목록 = 펼친 목록)에서 집는다 — 분모도 실제 장수다.
+        val list = galleryAdapter.currentList
+        val item = list.getOrNull(binding.galleryPager.currentItem)
         if (item == null) {
             binding.galleryIndexText.text = ""
             binding.galleryOwnerText.text = ""
@@ -355,7 +366,7 @@ class ImageManagerFragment : Fragment() {
         binding.galleryTagButton.isEnabled = true
         binding.galleryIndexText.text = getString(
             R.string.image_manager_gallery_index,
-            binding.galleryPager.currentItem + 1, currentList.size, item.path.substringAfterLast('/')
+            binding.galleryPager.currentItem + 1, list.size, item.path.substringAfterLast('/')
         )
         binding.galleryOwnerText.text = ownerLabel(item)
         val tags = item.meta?.tags.orEmpty()
@@ -486,7 +497,10 @@ class ImageManagerFragment : Fragment() {
                 com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
             val wantPrune = criteria.prune ==
                 com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
-            viewModel.criteria = criteria
+            // 검색어는 시트가 손대지 않는 축이라 **지금 값**을 쓴다 — 시트가 열릴 때의
+            // 스냅샷을 그대로 실으면, 시트가 떠 있는 사이 디바운스로 확정된 검색어가
+            // 적용 한 번에 옛값으로 되돌아간다(검색칸 글자는 그대로인 채 목록만 넓어진다).
+            viewModel.criteria = criteria.copy(query = viewModel.criteria.query)
             viewModel.sort = sort
             viewModel.sortAscending = ascending
             viewModel.groupView = groupView
@@ -588,11 +602,15 @@ class ImageManagerFragment : Fragment() {
         // 묶어 보기 전환은 선택 집합이 그대로여도 칸의 표시 좌표(대표 경로)를 바꾼다 — 다시 그린다.
         if (selectionChanged || selectionMode) updateSelectionUi()
         adapter.submitList(display)
-        // 갤러리 페이저는 같은 목록을 소비하되 갤러리 모드에서만 공급 — 그리드 모드의
-        // 이중 diff 비용 제거 + 분리된 어댑터에 헛공급 방지. 커밋 후 위치는 path 우선 동기화.
+        // 갤러리 페이저는 **펼친 목록**을 소비한다(갤러리 모드에서만 공급 — 그리드 모드의
+        // 이중 diff 비용 제거 + 분리된 어댑터에 헛공급 방지. 커밋 후 위치는 path 우선 동기화).
+        // 접힌 목록을 먹이면 ⓐ 대표 밖 식구가 어느 페이지에도 없는데 화면 어디에도 그 사실이
+        // 없고(원칙 04) ⓑ 정렬이 바뀌어 대표가 갈리면 보던 장의 path가 목록에서 사라져
+        // 자리 추적이 엉뚱한 칸을 새 추적 대상으로 덮는다. 갤러리는 '한 장씩 보기'라
+        // 접지 않는 것이 그 이름값이다 — 접는 것은 그리드·피커의 몫이다.
         if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) {
             attachGalleryAdapter()
-            galleryAdapter.submitList(display) {
+            galleryAdapter.submitList(expandedItems) {
                 syncGalleryPager()
             }
         }
@@ -814,6 +832,17 @@ class ImageManagerFragment : Fragment() {
         sheetBinding.detailAiTagButton.setOnClickListener {
             dialog.dismiss()
             openAiTagFlow(pathsOf(item))
+        }
+
+        // 접힌 칸의 상세는 범위가 둘로 갈린다 — AI 태그·전체화면은 **묶음 전체**, 나머지
+        // (태그 편집·재압축·삭제·배정)는 **이 한 장**이다. 묶음 범위인 둘만 라벨에 장수를
+        // 적어 그 대비로 범위를 드러낸다(적지 않으면 사용자는 태그 편집도 묶음 전체라 믿는다).
+        val stackSize = pathsOf(item).size
+        if (stackSize > 1) {
+            sheetBinding.detailAiTagButton.text =
+                getString(R.string.image_ai_tag_action_stack, stackSize)
+            sheetBinding.detailFullScreenButton.text =
+                getString(R.string.image_manager_view_full_stack, stackSize)
         }
 
         // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
@@ -1449,11 +1478,14 @@ class ImageManagerFragment : Fragment() {
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
         // 묶음 단위 실행의 고지 — 체크한 태그가 **화면에 없는 장에도 붙는다**는 사실을
         // 적용 전에 말한다(변수 제어). 행마다의 장수는 시트가 파일명 옆에 함께 적는다.
+        // **제안이 있어야만 싣는다** — 제안 0건이면 붙일 것이 없어 이 고지도 뜻이 없고,
+        // 실었다가는 아래 '검토할 것 없음' 갈래(B-144)를 이 줄이 막아 빈 시트가 선다.
+        // **묶음 수는 표의 줄 수가 아니다** — 표본을 2장으로 두면 같은 묶음이 두 줄로 사는데,
+        // 그대로 세면 묶음도 장수도 배로 부풀어 고지가 거짓말을 한다(셈은 ViewModel이 접는다).
         val groupSizes = viewModel.aiTagGroupSizes()
-        if (groupSizes.isNotEmpty()) {
-            notices.add(getString(
-                R.string.image_ai_tag_group_notice, groupSizes.size, groupSizes.values.sum()
-            ))
+        if (groupSizes.isNotEmpty() && result.suggestions.isNotEmpty()) {
+            val (groups, total) = viewModel.aiTagGroupNoticeStats()
+            notices.add(getString(R.string.image_ai_tag_group_notice, groups, total))
         }
         // 프로바이더 자동 전환 고지 (B-108 확정 ⓑ) — 실패가 아니므로 실패 요약보다 앞에 둔다.
         notices.addAll(result.notes)

@@ -44,6 +44,10 @@ class ImageManagerControlsBottomSheet : BottomSheetDialogFragment() {
     private var _binding: BottomSheetImageControlsBinding? = null
     private val binding get() = _binding!!
 
+    // 태그 칩 비동기 로드 완료 여부 — 로드 전 '적용'이 childCount=0을 빈 선택으로 오인해
+    // 걸려 있던 태그 필터를 조용히 지우지 않도록(캐릭터 목록 시트의 novelsLoaded 관행).
+    private var tagsLoaded = false
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -125,6 +129,7 @@ class ImageManagerControlsBottomSheet : BottomSheetDialogFragment() {
             val tags = loadAllTags?.invoke() ?: emptyList()
             if (_binding == null) return@launch
             val ctx = context ?: return@launch
+            tagsLoaded = true  // 빈 목록 포함 — 이후 applyAll은 칩 상태를 신뢰할 수 있다
             if (tags.isEmpty()) {
                 binding.noTagsText.visibility = View.VISIBLE
                 return@launch
@@ -178,11 +183,15 @@ class ImageManagerControlsBottomSheet : BottomSheetDialogFragment() {
             else -> ImageFilterHelper.LinkFilter.ANY
         }
         val untagged = binding.untaggedCheck.isChecked
-        val selectedTags = mutableSetOf<String>()
-        for (i in 0 until binding.tagChipGroup.childCount) {
-            (binding.tagChipGroup.getChildAt(i) as? Chip)?.let {
-                if (it.isChecked) selectedTags.add(it.text.toString())
+        // 로드 전이면 기존 선택을 유지한다(소실 방지) — 빈 칩 그룹은 '아무것도 안 골랐다'가 아니다.
+        val selectedTags = if (!tagsLoaded) currentCriteria.tags else {
+            val picked = mutableSetOf<String>()
+            for (i in 0 until binding.tagChipGroup.childCount) {
+                (binding.tagChipGroup.getChildAt(i) as? Chip)?.let {
+                    if (it.isChecked) picked.add(it.text.toString())
+                }
             }
+            picked
         }
         val criteria = currentCriteria.copy(
             base = base,

@@ -1809,6 +1809,19 @@ class ImageManagerViewModel(
     fun aiTagGroupSizes(): Map<String, Int> =
         aiTagGroupExpand.mapValues { it.value.size }.filterValues { it > 1 }
 
+    /**
+     * 요약 고지용 (묶음 수, 전체 장수) — **표본 수가 아니라 묶음 수를 센다.**
+     *
+     * 전개 표는 보낸 경로마다 한 줄이라, 묶음당 표본이 2장이면 같은 묶음이 두 줄로 산다.
+     * 표의 줄 수로 고지하면 묶음 하나가 둘로, 3장이 6장으로 불어 **사용자가 배로 부풀린
+     * 수에 동의하게 된다**(R-14가 세운 것은 개수로 알린다이지 많아 보이게 한다가 아니다).
+     * 식구 목록의 내용 동등성으로 접는다 — 서로 다른 묶음의 식구 목록은 겹칠 수 없다.
+     */
+    fun aiTagGroupNoticeStats(): Pair<Int, Int> {
+        val distinctGroups = aiTagGroupExpand.values.distinct().filter { it.size > 1 }
+        return distinctGroups.size to distinctGroups.sumOf { it.size }
+    }
+
     /** 경로 → 링크 그룹 토큰. AI 묶음 단위 표본([com.novelcharacter.app.util.LinkGroupFold])이 쓴다. */
     fun linkGroupIds(paths: Collection<String>): Map<String, String?> {
         val byPath = currentItemsByPath()
