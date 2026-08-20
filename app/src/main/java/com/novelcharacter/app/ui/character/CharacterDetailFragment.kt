@@ -1060,6 +1060,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             val relationships = viewModel.getRelationshipsForCharacterList(characterId)
             val events = viewModel.getEventsForCharacterSuspend(characterId)
             val stateChanges = viewModel.getChangesByCharacterList(characterId)
+            val quoteCount = viewModel.countQuotes(characterId)
 
             // 필드 완성도 — 판정은 [CompletionRate] 하나다(B-100). 종전에는 이 화면만
             // 분모에서 CALCULATED를 빼지 않고 분자로 값을 통째로 세어, **같은 캐릭터가
@@ -1118,6 +1119,10 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 getString(R.string.char_stats_event_count, events.size),
                 getString(R.string.char_stats_field_completion, fieldCompletion),
                 getString(R.string.char_stats_state_changes, stateChanges.size),
+                // 명대사 (사용자 요청 2026.08.20) — 세는 것만 더한다. **복잡도 점수에는
+                // 넣지 않는다**: 그 가중치는 `StatsDataProvider`와 같은 벌이어야 하고
+                // (바로 위 주석의 계약), 한쪽만 고치면 상세와 통계가 다른 등급을 말한다.
+                getString(R.string.char_stats_quotes, quoteCount),
                 getString(R.string.char_stats_alias_count, character.aliases.size),
                 getString(R.string.char_stats_complexity, complexity)
             )

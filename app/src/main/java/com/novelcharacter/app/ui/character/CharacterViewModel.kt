@@ -1957,6 +1957,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun getQuotesByCharacter(characterId: Long): LiveData<List<CharacterQuote>> =
         characterRepository.getQuotesByCharacter(characterId)
 
+    /** 이 캐릭터의 명대사 수 — 상세 화면의 개별 통계가 쓴다(원칙 02: 모든 자료가 분석에 든다). */
+    suspend fun countQuotes(characterId: Long): Int =
+        characterRepository.getQuotesByCharacterList(characterId).size
+
     fun insertQuote(quote: CharacterQuote) = viewModelScope.launch {
         try {
             characterRepository.insertQuote(quote)

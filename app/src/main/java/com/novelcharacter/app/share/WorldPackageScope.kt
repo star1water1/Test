@@ -4,6 +4,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.EventFieldValue
@@ -151,6 +152,18 @@ object WorldPackageScope {
             .thenBy { it.year }
             .thenBy(nullsFirst()) { it.month }
             .thenBy(nullsFirst()) { it.day }
+            .thenBy { it.id }
+
+    /**
+     * 명대사 — `ORDER BY characterId ASC, sortOrder ASC` + id (사용자 요청 2026.08.20).
+     *
+     * **DAO가 내는 차례와 같아야 한다.** 꾸러미의 차례가 곧 되살린 뒤의 차례이고, 그 차례를
+     * [com.novelcharacter.app.util.QuotePicker]가 답에 쓴다 — 어긋나면 꾸러미를 주고받은
+     * 두 사람의 앱이 같은 날 다른 대사를 띄운다.
+     */
+    val QUOTES: Comparator<CharacterQuote> =
+        compareBy<CharacterQuote> { it.characterId }
+            .thenBy { it.sortOrder }
             .thenBy { it.id }
 
     /** `ORDER BY tag ASC` + id */
