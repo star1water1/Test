@@ -58,6 +58,18 @@ class ImageManagerViewModel(
 
     enum class ViewMode { GRID, GALLERY }
 
+    companion object {
+        /**
+         * 기준마다의 기본 방향 — 방향 축이 생기기 전의 **고정 방향과 같다**(크기·날짜는
+         * 큰/새 것부터, 이름은 가나다). 기준을 바꿀 때 컨트롤 시트가 이 값을 제안한다
+         * (캐릭터 목록 시트의 `defaultAscending`과 같은 관행).
+         */
+        fun defaultAscending(sort: Sort): Boolean = when (sort) {
+            Sort.NAME -> true
+            Sort.SIZE, Sort.DATE -> false
+        }
+    }
+
     init {
         // 콜드 스타트 시딩 — SavedStateHandle이 이미 살아있으면(회전/저메모리 복원) 그쪽이 우선
         if (!savedState.contains("filter_base")) {
@@ -78,8 +90,22 @@ class ImageManagerViewModel(
         if (!savedState.contains("sort")) {
             savedState["sort"] = prefs.getString("sort", null) ?: Sort.SIZE.name
         }
+        if (!savedState.contains("sort_asc")) {
+            // 방향 축 신설의 이행 — 저장된 방향이 없으면 **종전 고정 방향**을 그대로 제안한다
+            // (크기·날짜는 큰/새 것부터, 이름은 가나다). 그래야 갱신 직후 화면이 어제와 같다.
+            val seededSort = runCatching { Sort.valueOf(savedState["sort"] ?: Sort.SIZE.name) }
+                .getOrDefault(Sort.SIZE)
+            savedState["sort_asc"] = if (prefs.contains("sort_asc")) {
+                prefs.getBoolean("sort_asc", defaultAscending(seededSort))
+            } else {
+                defaultAscending(seededSort)
+            }
+        }
         if (!savedState.contains("view_mode")) {
             savedState["view_mode"] = prefs.getString("view_mode", null) ?: ViewMode.GRID.name
+        }
+        if (!savedState.contains("group_view")) {
+            savedState["group_view"] = prefs.getBoolean("group_view", false)
         }
     }
 
@@ -139,6 +165,25 @@ class ImageManagerViewModel(
         set(value) {
             savedState["sort"] = value.name
             prefs.edit().putString("sort", value.name).apply()
+        }
+
+    /** 정렬 방향 — 기준([sort])과 독립 축. 영속 관례는 [sort]와 같다. */
+    var sortAscending: Boolean
+        get() = savedState["sort_asc"] ?: defaultAscending(sort)
+        set(value) {
+            savedState["sort_asc"] = value
+            prefs.edit().putBoolean("sort_asc", value).apply()
+        }
+
+    /**
+     * 묶어 보기 — 링크 묶음을 목록에서 대표 한 장으로 접는다. 접기 규칙은
+     * [com.novelcharacter.app.util.LinkGroupFold]가 단일 소스다(라이브러리 피커와 공유).
+     */
+    var groupView: Boolean
+        get() = savedState["group_view"] ?: false
+        set(value) {
+            savedState["group_view"] = value
+            prefs.edit().putBoolean("group_view", value).apply()
         }
 
     /** 그리드 ↔ 갤러리(페이저) 보기 모드 — criteria/sort와 동일한 영속 관례 */
@@ -211,7 +256,15 @@ class ImageManagerViewModel(
          * 비어 있으면 [path]로 갈음한다 — 정규화가 실패한 경우이며, 실패 처분은
          * [com.novelcharacter.app.util.ImagePathMatch]의 규약과 같다(원본을 그대로 쓴다).
          */
-        val canonicalPath: String = path
+        val canonicalPath: String = path,
+        /**
+         * 묶어 보기에서 이 칸이 대표하는 **화면에 보이는** 묶음 장수. 1이면 접힌 것이 없다.
+         *
+         * 접기는 표시 계층의 일이라 [buildItems]는 언제나 1로 만든다 — 화면이
+         * [com.novelcharacter.app.util.LinkGroupFold]로 접은 결과를 `copy`로 담는 칸이다.
+         * 데이터 클래스 동등성에 들어가므로 필터가 식구 수를 바꾸면 DiffUtil이 다시 그린다.
+         */
+        val stackCount: Int = 1
     )
     data class Summary(
         val totalBytes: Long,
@@ -1742,7 +1795,30 @@ class ImageManagerViewModel(
      */
     val aiTagResult = MutableLiveData<com.novelcharacter.app.ai.ImageBatchTagSuggester.Result?>()
 
-    fun clearAiTagResult() { aiTagResult.value = null }
+    /**
+     * 묶음 단위 실행의 전개 표 — **보낸 경로 → 태그가 붙을 묶음 전원** (표본만 오른다).
+     *
+     * [aiTagResult]와 수명이 같다: 실행이 세우고, 검토를 접으면 함께 버린다. 회전은 넘기고
+     * 프로세스 재생성은 못 넘기는데, 그때는 결과도 함께 사라지므로 표만 남을 일이 없다.
+     * 되받기(carryOver)는 표를 **갈지 않는다** — 되받는 경로는 전부 앞 실행의 표본이라
+     * 같은 표가 계속 옳다.
+     */
+    private var aiTagGroupExpand: Map<String, List<String>> = emptyMap()
+
+    /** 검토 시트가 행마다 "묶음 N장에 함께 붙음"을 말할 재료 — 경로 → 묶음 장수(2장 이상만). */
+    fun aiTagGroupSizes(): Map<String, Int> =
+        aiTagGroupExpand.mapValues { it.value.size }.filterValues { it > 1 }
+
+    /** 경로 → 링크 그룹 토큰. AI 묶음 단위 표본([com.novelcharacter.app.util.LinkGroupFold])이 쓴다. */
+    fun linkGroupIds(paths: Collection<String>): Map<String, String?> {
+        val byPath = currentItemsByPath()
+        return paths.associateWith { byPath[it]?.meta?.linkGroupId }
+    }
+
+    fun clearAiTagResult() {
+        aiTagResult.value = null
+        aiTagGroupExpand = emptyMap()
+    }
 
     /**
      * 취소 요청 — 실행이 뷰 밖으로 나갔으므로 **취소 깃발도 뷰 밖에 있어야 한다.**
@@ -1762,10 +1838,16 @@ class ImageManagerViewModel(
      *   [com.novelcharacter.app.ai.ImageBatchTagSuggester.mergeRetry]가 든다).
      * @return 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알릴 것(무통보 무시 금지).
      */
+    /**
+     * @param groupExpand 묶음 단위 실행의 전개 표(보낸 경로 → 묶음 전원). 비우면 보낸 장에만
+     *   붙는 종전 동작이다. **되받기([carryOver] != null)에서는 무시된다** — 표는 첫 실행이
+     *   세운 것이 계속 옳다(되받는 경로는 전부 그 표본이다).
+     */
     fun runImageTagSuggest(
         paths: List<String>,
         perRequest: Int,
-        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null,
+        groupExpand: Map<String, List<String>> = emptyMap()
     ): Boolean {
         if (aiTagRunning.value == true) return false
         // **부를 것이 없으면 true다** — 여기서 false를 내면 호출측이 *"이미 실행 중입니다"*라는
@@ -1773,6 +1855,7 @@ class ImageManagerViewModel(
         // 틀린 곳을 고치라고 시키면 없느니만 못하다). 호출측 가드가 이미 막는 자리라
         // 실제로 뜨지는 않지만, 사유를 하나로 뭉뚱그려 두면 다음 사람이 그 위에 쌓는다.
         if (paths.isEmpty()) return true
+        if (carryOver == null) aiTagGroupExpand = groupExpand
         aiTagCancelled = false
         // **총량을 먼저 세운다** — 진행 창은 `aiTagRunning`을 보고 서면서 이 값으로 총량을
         // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다.
@@ -1971,11 +2054,17 @@ class ImageManagerViewModel(
     ) {
         // 누른 **그 시점**에 든다. 코루틴 안에서 읽으면 이미 시트가 닫히며 비운 뒤다.
         val pending = aiTagResult.value
+        // 묶음 단위 실행이면 표본이 받은 태그를 묶음 전원으로 되편다 — 전개 표도 같은 시점에
+        // 든다(표는 검토를 접을 때 함께 비워지므로, 코루틴 안에서 읽으면 이미 빈 뒤일 수 있다).
+        // 규칙은 [com.novelcharacter.app.util.LinkGroupFold.expandPicked]가 단일 소스다.
+        val work = com.novelcharacter.app.util.LinkGroupFold
+            .expandPicked(picked, aiTagGroupExpand)
+            .map { it.key to it.value }
         aiTagResult.value = null
         viewModelScope.launch {
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
                 try {
-                    db.withTransaction { applyTagWork(picked.map { it.key to it.value }) }
+                    db.withTransaction { applyTagWork(work) }
                 } catch (e: Exception) {
                     TagApplyOutcome.Failed
                 }

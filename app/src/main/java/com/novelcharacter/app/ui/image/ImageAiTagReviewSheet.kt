@@ -57,6 +57,13 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
     /** 접힌 배치의 이미지들. 비어 있지 않으면 '1장씩 다시 보내기'가 열린다. */
     var retryPaths: List<String> = emptyList()
 
+    /**
+     * 묶음 단위 실행에서 이 경로의 태그가 붙을 **묶음 장수** (2장 이상만 실린다).
+     * 행의 파일명 옆에 적는다 — 체크한 태그가 화면에 없는 장에도 붙는다는 사실을
+     * 그 행에서 보게 한다(변수 제어 — 요약 고지만으로는 어느 행이 그런지 모른다).
+     */
+    var groupSizeByPath: Map<String, Int> = emptyMap()
+
     /** 사용자가 고른 것 — 경로 → 태그 목록. */
     var onApply: (Map<String, List<String>>) -> Unit = {}
 
@@ -112,11 +119,13 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
     fun rebind(
         suggestions: List<ImageBatchTagSuggester.ImageSuggestion>,
         notices: List<String>,
-        retryPaths: List<String>
+        retryPaths: List<String>,
+        groupSizeByPath: Map<String, Int> = emptyMap()
     ) {
         this.suggestions = suggestions
         this.notices = notices
         this.retryPaths = retryPaths
+        this.groupSizeByPath = groupSizeByPath
         view?.let { render(it) }
     }
 
@@ -182,7 +191,10 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
         val inflater = LayoutInflater.from(requireContext())
         for (s in suggestions) {
             val row = inflater.inflate(R.layout.item_image_tag_review, list, false)
-            row.findViewById<TextView>(R.id.fileName).text = s.path.substringAfterLast('/')
+            val name = s.path.substringAfterLast('/')
+            // 묶음 단위 실행이면 이 행의 태그가 몇 장에 붙는지 파일명 옆에 적는다.
+            row.findViewById<TextView>(R.id.fileName).text = groupSizeByPath[s.path]
+                ?.let { getString(R.string.image_ai_tag_review_group, name, it) } ?: name
             row.findViewById<ImageView>(R.id.thumbnail).loadCharacterThumbnail(
                 s.path, viewLifecycleOwner.lifecycleScope, reqPx = THUMB_PX
             )

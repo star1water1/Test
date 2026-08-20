@@ -13,6 +13,7 @@ import com.novelcharacter.app.databinding.ItemManagedImageBinding
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.LibraryPickerRow
 import com.novelcharacter.app.util.LibraryPickerRows
+import com.novelcharacter.app.util.LinkGroupFold
 import com.novelcharacter.app.util.loadCharacterThumbnail
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
@@ -46,7 +47,15 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private val selected = LinkedHashSet<String>()
-    private var shown: List<LibraryPickerRow> = emptyList()
+
+    /**
+     * 링크 묶음은 대표 한 칸으로 접힌다([LinkGroupFold] — 이미지 탭 묶어 보기와 같은 규칙).
+     *
+     * 피커에서 접는 것이 **정직한 표시다**: 첨부는 어차피 묶음 전원으로 확장된다
+     * (호출부 계약 — `CharacterEditFragment.attachLibraryImages`가 `ImageLinkResolver.expand`를
+     * 지난다). 장마다 펼쳐 보이면 한 장만 고른 사용자가 여러 장이 붙는 것을 첨부 뒤에야 안다.
+     */
+    private var shown: List<LinkGroupFold.Stack<LibraryPickerRow>> = emptyList()
     private val adapter = RowAdapter()
 
     override fun onCreateView(
@@ -94,7 +103,9 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
             },
             query = binding.searchEdit.text?.toString().orEmpty()
         )
-        shown = LibraryPickerRows.visible(images, criteria, excludePaths)
+        shown = LinkGroupFold.fold(
+            LibraryPickerRows.visible(images, criteria, excludePaths)
+        ) { it.linkGroupId }
         adapter.notifyDataSetChanged()
         binding.emptyText.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
@@ -131,7 +142,9 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
         }
 
         override fun onBindViewHolder(holder: VH, position: Int) {
-            val item = shown[position]
+            val stack = shown[position]
+            val item = stack.representative
+            val memberPaths = stack.members.map { it.path }
             val b = holder.b
             val ctx = b.root.context
 
@@ -155,16 +168,29 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
             b.tagText.text = if (item.tags.isEmpty()) "" else item.tags.joinToString(" · ") { "#$it" }
             b.linkBadge.visibility = if (item.linkGroupId != null) View.VISIBLE else View.GONE
+            if (item.linkGroupId != null) {
+                // 접힌 칸이면 식구 수를 함께 적는다 — 이 칸을 고르면 그 수만큼 붙는다.
+                b.linkBadge.text = if (stack.size > 1) {
+                    ctx.getString(R.string.image_manager_stack_badge, stack.size)
+                } else {
+                    ctx.getString(R.string.image_link_badge)
+                }
+            }
             // 이 피커에는 크기·상태 배지를 싣지 않는다 — 고르는 판단에 쓰이지 않는다.
             b.sizeText.visibility = View.GONE
             b.statusBadge.visibility = View.GONE
 
-            val isSel = item.path in selected
+            val isSel = memberPaths.all { it in selected }
             b.selectionScrim.visibility = if (isSel) View.VISIBLE else View.GONE
             b.selectionCheck.visibility = if (isSel) View.VISIBLE else View.GONE
 
             b.root.setOnClickListener {
-                if (item.path in selected) selected.remove(item.path) else selected.add(item.path)
+                // 접힌 칸의 탭은 묶음 전체를 토글한다 — 선택 수 표시도 실제 붙을 장수를 센다.
+                if (memberPaths.all { it in selected }) {
+                    selected.removeAll(memberPaths)
+                } else {
+                    selected.addAll(memberPaths)
+                }
                 notifyItemChanged(holder.bindingAdapterPosition)
                 updateSelectionUi()
             }
