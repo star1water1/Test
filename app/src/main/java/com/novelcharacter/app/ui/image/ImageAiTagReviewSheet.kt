@@ -120,7 +120,8 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
         suggestions: List<ImageBatchTagSuggester.ImageSuggestion>,
         notices: List<String>,
         retryPaths: List<String>,
-        groupSizeByPath: Map<String, Int> = emptyMap()
+        // 기본값을 두지 않는다 — 빠뜨린 호출이 행마다의 '묶음 N장에 적용'을 조용히 지운다.
+        groupSizeByPath: Map<String, Int>
     ) {
         this.suggestions = suggestions
         this.notices = notices

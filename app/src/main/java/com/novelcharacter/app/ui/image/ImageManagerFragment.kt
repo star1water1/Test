@@ -649,9 +649,23 @@ class ImageManagerFragment : Fragment() {
 
     // ---------- 선택 모드 ----------
 
+    /**
+     * 이 항목이 접힌 칸이면 그 식구들, 아니면 null.
+     *
+     * **갤러리에서는 언제나 null이다** — 갤러리는 접지 않고 전 장을 넘기므로(`applyView`)
+     * 거기서 연 상세는 *지금 보는 그 장*의 것이다. 접기 지도는 **그리드의 좌표계**라
+     * 갤러리에서 그대로 읽으면 대표 페이지에서만 범위가 묶음으로 튀고, 똑같이 생긴 옆
+     * 페이지와 동작이 갈리는데 **그 사실이 화면 어디에도 없다**(콜드 검토가 잡은 자리).
+     */
+    private fun stackMembersOf(
+        item: ImageManagerViewModel.ManagedImage
+    ): List<ImageManagerViewModel.ManagedImage>? =
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) null
+        else stackMembers[item.path]
+
     /** 이 칸이 대표하는 경로들 — 접힌 칸이면 식구 전체, 아니면 그 한 장. */
     private fun pathsOf(item: ImageManagerViewModel.ManagedImage): List<String> =
-        stackMembers[item.path]?.map { it.path } ?: listOf(item.path)
+        stackMembersOf(item)?.map { it.path } ?: listOf(item.path)
 
     private fun enterSelection(initial: ImageManagerViewModel.ManagedImage?) {
         // 선택 모드는 그리드 전용 — 갤러리에서 진입하면 그리드로 복귀 후 시작
@@ -864,7 +878,7 @@ class ImageManagerFragment : Fragment() {
                     },
                     groupSize
                 ))
-                val visible = stackMembers[item.path]?.size
+                val visible = stackMembersOf(item)?.size
                 if (visible != null && visible < groupSize) {
                     append(getString(R.string.image_link_group_info_visible, visible))
                 }
@@ -1323,6 +1337,14 @@ class ImageManagerFragment : Fragment() {
             val requests = com.novelcharacter.app.ai.AiPromptPolicy
                 .imageTagBatchRequestCount(send, perRequest)
             countLabel.text = getString(R.string.image_ai_tag_batch_size, perRequest)
+            // **나눌 것이 없으면 장수 슬라이더도 없다** (R-24). 문지기는 고른 장수가 아니라
+            // **실제로 보낼 장수**다 — 묶음 단위를 켜면 표본이 1장으로 줄 수 있고, 그때
+            // 이 슬라이더는 요청 수·비용·동작 무엇도 바꾸지 못한다(요청은 언제나 하나다).
+            // 판정이 살아 움직여야 하는 것도 그래서다: 스위치 한 번에 send가 갈리므로
+            // 창을 만들 때 한 번 재면 아무 일도 안 하는 슬라이더가 그대로 남는다.
+            val batchVis = if (send > 1) android.view.View.VISIBLE else android.view.View.GONE
+            countLabel.visibility = batchVis
+            slider.visibility = batchVis
             // 비용 고지는 **실제로 보낼 장수**로 센다 — 묶음 단위가 켜지면 표본 수가 곧 비용이다.
             costLabel.text = if (send == 1) {
                 getString(R.string.image_ai_tag_cost_single)
@@ -1356,11 +1378,10 @@ class ImageManagerFragment : Fragment() {
         }
         refresh()
 
-        // 한 장이면 나눌 것이 없다 — 장수 슬라이더는 여럿일 때만 보인다.
-        if (paths.size > 1) {
-            container.addView(countLabel)
-            container.addView(slider)
-        }
+        // 장수 슬라이더는 늘 담고 **보임만 refresh가 정한다** — 묶음 스위치가 보낼 장수를
+        // 바꾸므로 담을지 말지를 여기서 정하면 그 전환을 따라가지 못한다.
+        container.addView(countLabel)
+        container.addView(slider)
         if (hasGroups) {
             container.addView(groupSwitch)
             container.addView(groupDesc)
