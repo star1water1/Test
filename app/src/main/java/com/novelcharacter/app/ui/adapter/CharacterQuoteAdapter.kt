@@ -64,13 +64,32 @@ class CharacterQuoteAdapter(
     }
 
     /**
-     * 끌기 끝 — 바뀐 차례를 돌려주고 임시 벌을 놓는다.
-     * 아무것도 안 옮겼으면 `null`이라 화면이 헛저장을 하지 않는다.
+     * 끌기 끝 — 바뀐 차례를 돌려준다. 아무것도 안 옮겼으면 `null`이라 헛저장을 하지 않는다.
+     *
+     * **임시 벌을 여기서 놓지 않는 것이 요점이다.** 저장은 비동기라, 손을 떼는 순간 벌을
+     * 버리면 그 사이 [rows]가 **옛 차례**를 내어 줄이 잠깐 제자리로 튄다. 놓는 자리는
+     * 새 목록이 실제로 도착하는 [applyList]다.
+     *
+     * 아무것도 안 옮겼을 때는 곧바로 놓는다 — 기다릴 저장이 없다.
      */
     fun endDrag(): List<CharacterQuote>? {
         val list = dragging ?: return null
+        if (list.map { it.id } == currentList.map { it.id }) {
+            dragging = null
+            return null
+        }
+        return list
+    }
+
+    /**
+     * 새 목록을 건다 — **[submitList] 대신 이것을 부른다.**
+     *
+     * 끌기 중에 만들어 둔 임시 벌을 여기서 놓는다. 저장이 끝나 새 차례가 도착했거나, 다른
+     * 자리에서 목록이 바뀌었거나, 어느 쪽이든 지금 화면에 걸 것은 이 목록이다.
+     */
+    fun applyList(rows: List<CharacterQuote>) {
         dragging = null
-        return if (list.map { it.id } == currentList.map { it.id }) null else list
+        submitList(rows)
     }
 
     inner class QuoteViewHolder(

@@ -76,7 +76,7 @@ class QuoteHelper(
 
     fun observe() {
         viewModel.getQuotesByCharacter(characterId).observe(viewLifecycleOwner) { quotes ->
-            adapter.submitList(quotes)
+            adapter.applyList(quotes)
 
             val birthdayCount = quotes.count { it.isBirthday }
             binding.quotesCount.text = when {
