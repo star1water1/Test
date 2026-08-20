@@ -1,63 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 루트를 NestedScrollView로 감싼다 — 제안 칩은 태그 전량(이미지∪캐릭터 distinct)이라
+     상한이 없고, 스크롤 없이는 칩이 늘어난 만큼 저장 버튼이 화면 밖으로 밀린다
+     (bottom_sheet_image_detail이 같은 이유로 세운 패턴). -->
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingHorizontal="20dp"
-    android:paddingBottom="16dp">
+    android:layout_height="wrap_content">
 
-    <View
-        android:layout_width="40dp"
-        android:layout_height="4dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="12dp"
-        android:background="@color/text_secondary" />
-
-    <TextView
-        android:id="@+id/titleText"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingBottom="12dp"
-        android:text="@string/image_tag_edit_title"
-        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="16dp">
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/tagInputLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/image_tag_edit_hint"
-        android:layout_marginBottom="8dp">
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp"
+            android:background="@color/text_secondary" />
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/tagInput"
+        <TextView
+            android:id="@+id/titleText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="text" />
+            android:paddingBottom="12dp"
+            android:text="@string/image_tag_edit_title"
+            android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
-    </com.google.android.material.textfield.TextInputLayout>
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tagInputLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/image_tag_edit_hint"
+            android:layout_marginBottom="8dp">
 
-    <TextView
-        android:id="@+id/suggestionsLabel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/image_tag_suggestions_label"
-        android:textAppearance="@style/TextAppearance.App.BodySmall"
-        android:textColor="@color/text_secondary"
-        android:paddingBottom="4dp"
-        android:visibility="gone" />
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/tagInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
 
-    <com.google.android.material.chip.ChipGroup
-        android:id="@+id/suggestionChipGroup"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:visibility="gone" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnConfirm"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/save" />
+        <TextView
+            android:id="@+id/suggestionsLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/image_tag_suggestions_label"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="@color/text_secondary"
+            android:paddingBottom="4dp"
+            android:visibility="gone" />
 
-</LinearLayout>
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/suggestionChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnConfirm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/save" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
