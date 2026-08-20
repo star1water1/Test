@@ -141,7 +141,9 @@ class AppSettingsKeysTest {
                 "trash_max_operations", "trash_retention_days",
                 "image_quality_percent", "image_max_long_edge_px",
                 "image_skip_below_bytes", "ai_usage_example_count", "ai_style_sample_count",
-                "ai_attach_image_count", "ai_image_tag_batch_size", "ai_name_suggest_batch_size",
+                "ai_attach_image_count", "ai_image_tag_batch_size",
+                // 묶음 단위 전송의 표본 장수 — 배치 장수와 같은 부류의 숫자 취향 설정.
+                "ai_image_tag_group_sample_size", "ai_name_suggest_batch_size",
                 "stats_completion_required_weight", "supplement_field_threshold"
             ),
             numbers

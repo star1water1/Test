@@ -187,6 +187,20 @@ object AiPromptPolicy {
         return (imageCount + per - 1) / per
     }
 
+    /**
+     * 묶음 단위 전송에서 **링크 묶음당 보낼 장수**의 범위·기본값. 사용자가 정한다.
+     *
+     * 묶음의 태그는 표본이 받은 것을 전원에 되펴므로, 표본을 늘리는 값은 근거를 넓히는
+     * 것뿐이다. 상한을 [IMAGE_TAG_BATCH_MAX]보다 낮게 두는 이유: 묶음의 절반 이상을
+     * 보낼 거면 묶음 단위를 끄는 것과 비용이 같아져 이 옵션의 뜻이 없다.
+     */
+    const val IMAGE_TAG_GROUP_SAMPLE_MIN = 1
+    const val IMAGE_TAG_GROUP_SAMPLE_MAX = 5
+    const val IMAGE_TAG_GROUP_SAMPLE_DEFAULT = 1
+
+    fun clampImageTagGroupSample(value: Int): Int =
+        value.coerceIn(IMAGE_TAG_GROUP_SAMPLE_MIN, IMAGE_TAG_GROUP_SAMPLE_MAX)
+
     // ── AI 이름 추천 (B-123 · 설계 feature_roadmap 7장) ──
 
     /**

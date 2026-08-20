@@ -116,6 +116,28 @@ class AiPromptSettings(context: Context) {
         }
 
     /**
+     * 일괄 AI 태깅에서 **링크 묶음을 단위로 보낼 것인가**. 켜면 묶음마다 표본
+     * [imageTagGroupSampleSize]장만 보내고 받은 태그를 묶음 전원에 붙인다.
+     *
+     * 기억해 두는 이유는 [imageTagBatchSize]와 같다 — 묶음을 쓰는 사용자에게는 매번 같은
+     * 선택이라, 매번 기본값으로 되돌리면 같은 스위치를 매번 다시 켠다(원칙 04).
+     */
+    var imageTagGroupUnit: Boolean
+        get() = sp.getBoolean(KEY_IMAGE_TAG_GROUP_UNIT, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_IMAGE_TAG_GROUP_UNIT, value).apply()
+        }
+
+    /** 묶음 단위 전송에서 링크 묶음당 보낼 표본 장수. 범위는 [AiPromptPolicy]가 단일 소스다. */
+    var imageTagGroupSampleSize: Int
+        get() = AiPromptPolicy.clampImageTagGroupSample(
+            sp.getInt(KEY_IMAGE_TAG_GROUP_SAMPLE, AiPromptPolicy.IMAGE_TAG_GROUP_SAMPLE_DEFAULT)
+        )
+        set(value) {
+            sp.edit().putInt(KEY_IMAGE_TAG_GROUP_SAMPLE, AiPromptPolicy.clampImageTagGroupSample(value)).apply()
+        }
+
+    /**
      * 이름 추천 한 라운드의 **다발 크기** (B-123). 사용자가 시트의 ⋮에서 정한다(설계 7-2).
      *
      * 기억해 두는 이유는 [imageTagBatchSize]와 같다 — 매번 기본값으로 되돌리면 같은 사람이
@@ -156,6 +178,8 @@ class AiPromptSettings(context: Context) {
         private const val KEY_ATTACH_IMAGES = "attachImageCount"
         private const val KEY_ATTACH_REPRESENTATIVE = "attachRepresentativeFirst"
         private const val KEY_IMAGE_TAG_BATCH = "imageTagBatchSize"
+        private const val KEY_IMAGE_TAG_GROUP_UNIT = "imageTagGroupUnit"
+        private const val KEY_IMAGE_TAG_GROUP_SAMPLE = "imageTagGroupSampleSize"
         private const val KEY_NAME_SUGGEST_BATCH = "nameSuggestBatchSize"
         private const val KEY_EVENT_CONTEXT_SCOPE = "eventContextScope"
     }
