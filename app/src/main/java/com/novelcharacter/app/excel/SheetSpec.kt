@@ -131,6 +131,7 @@ val RESERVED_SHEET_NAMES = setOf(
     UNCLASSIFIED_SHEET_NAME,
     timelineSpec(emptyList()).sheetName,
     stateChangeSpec().sheetName,
+    quoteSpec().sheetName,
     relationshipSpec().sheetName,
     relationshipChangeSpec().sheetName,
     nameBankSpec().sheetName,
@@ -557,7 +558,8 @@ object SheetTabColors {
 
     /** 기록 — 사건·관계·대결처럼 시간·관계를 적는 시트. */
     val RECORD_SHEETS = setOf(
-        timelineSpec(emptyList()).sheetName, stateChangeSpec().sheetName, relationshipSpec().sheetName,
+        timelineSpec(emptyList()).sheetName, stateChangeSpec().sheetName, quoteSpec().sheetName,
+        relationshipSpec().sheetName,
         relationshipChangeSpec().sheetName, factionSpec().sheetName, factionMembershipSpec().sheetName,
         factionRelationshipSpec().sheetName, duelAxisSpec().sheetName, duelMatchSpec().sheetName,
         duelVerdictSpec().sheetName
@@ -1118,6 +1120,32 @@ fun stateChangeSpec() = SheetSpec(
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("새 값", width = 5000),
         ColumnSpec("설명", width = 10000, wrap = true),
+        ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
+    )
+)
+
+/**
+ * 캐릭터 명대사 (사용자 요청 2026.08.20).
+ *
+ * 첫 열이 `이름`이 아니라 `캐릭터`인 것은 형제 기록 시트의 규약이다 — 캐릭터 시트와 앞
+ * 세 열이 겹치면 [headersMatchSpec]이 시트 정체를 가릴 수 없다(R-7).
+ *
+ * `상황` 칸은 **빈 값이 일반이고 `__birthday`가 생일 전용**이다. 사람이 손으로 고칠 수
+ * 있어야 하므로(개발 의도 4번) 예약 글자를 그대로 싣고, 드롭다운으로 둘을 제안하되
+ * **닫지는 않는다** — 사용자가 자기 상황을 적어 넣을 수 있다(원칙 01).
+ */
+fun quoteSpec() = SheetSpec(
+    sheetName = "캐릭터 명대사",
+    freezeCols = 1,
+    columns = listOf(
+        ColumnSpec("캐릭터", required = true, width = 5000),
+        ColumnSpec("작품", width = 5000),
+        ColumnSpec("대사", required = true, width = 14000, wrap = true),
+        ColumnSpec("상황", width = 4000),
+        ColumnSpec("출처", width = 8000, wrap = true),
+        ColumnSpec("표시순서", width = 2500),
         ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)

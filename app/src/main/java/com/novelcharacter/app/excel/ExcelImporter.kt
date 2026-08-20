@@ -1951,6 +1951,15 @@ class ExcelImporter(context: Context) {
                 r.getString(com.novelcharacter.app.R.string.import_result_state_changes, scTotal)
             })
         }
+        // 명대사 (사용자 요청 2026.08.20) — 상태 변화와 같은 모양으로 갱신 수를 함께 적는다.
+        val quoteTotal = result.newQuotes + result.updatedQuotes
+        if (quoteTotal > 0) {
+            parts.add(if (result.updatedQuotes > 0) {
+                r.getString(com.novelcharacter.app.R.string.import_result_quotes_updated, quoteTotal, result.updatedQuotes)
+            } else {
+                r.getString(com.novelcharacter.app.R.string.import_result_quotes, quoteTotal)
+            })
+        }
         val relTotal = result.newRelationships + result.updatedRelationships
         if (relTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationships, relTotal))
         if (result.newRelationshipChanges > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, result.newRelationshipChanges))
@@ -1986,7 +1995,7 @@ class ExcelImporter(context: Context) {
 
         // 삭제 건수 요약
         val totalDeleted = result.deletedCharacters + result.deletedRelationships + result.deletedEvents +
-            result.deletedStateChanges + result.deletedRelationshipChanges + result.deletedNameBank +
+            result.deletedStateChanges + result.deletedQuotes + result.deletedRelationshipChanges + result.deletedNameBank +
             result.deletedFields + result.deletedFactions + result.deletedFactionMemberships +
             result.deletedFactionRelationships
         if (totalDeleted > 0) {
@@ -1995,6 +2004,7 @@ class ExcelImporter(context: Context) {
             if (result.deletedEvents > 0) delParts.add("사건 ${result.deletedEvents}")
             if (result.deletedRelationships > 0) delParts.add("관계 ${result.deletedRelationships}")
             if (result.deletedStateChanges > 0) delParts.add("상태변화 ${result.deletedStateChanges}")
+            if (result.deletedQuotes > 0) delParts.add("명대사 ${result.deletedQuotes}")
             if (result.deletedRelationshipChanges > 0) delParts.add("관계변화 ${result.deletedRelationshipChanges}")
             if (result.deletedNameBank > 0) delParts.add("이름 ${result.deletedNameBank}")
             if (result.deletedFactions > 0) delParts.add("세력 ${result.deletedFactions}")

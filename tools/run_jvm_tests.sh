@@ -420,6 +420,7 @@ $TEST/util/DuelAiContextTest.kt
 $TEST/util/DuelGradeAssignTest.kt
 $TEST/util/DuelAxisChoiceTest.kt
 $TEST/excel/DuelSheetSpecTest.kt
+$TEST/excel/QuoteSheetTest.kt
 $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/CsvTokensTest.kt

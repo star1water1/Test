@@ -11,6 +11,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.DuelCounterVerdict
@@ -163,6 +164,7 @@ class ExcelExporter(context: Context) {
                 ExportSheetStep.CHARACTERS -> exportCharacters(workbook, usedSheetNames)
                 ExportSheetStep.TIMELINE -> exportTimeline(workbook, usedSheetNames)
                 ExportSheetStep.STATE_CHANGES -> exportStateChanges(workbook, usedSheetNames)
+                ExportSheetStep.QUOTES -> exportQuotes(workbook, usedSheetNames)
                 ExportSheetStep.RELATIONSHIPS -> exportRelationships(workbook, usedSheetNames)
                 ExportSheetStep.RELATIONSHIP_CHANGES -> exportRelationshipChanges(workbook, usedSheetNames)
                 ExportSheetStep.NAME_BANK -> exportNameBank(workbook, usedSheetNames)
@@ -1942,6 +1944,57 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
+    }
+
+    // ── 캐릭터 명대사 (사용자 요청 2026.08.20) ──
+
+    /**
+     * 명대사 시트 — 상태 변화와 **같은 모양**이다(캐릭터의 자식 표라 같은 부류다).
+     *
+     * `상황` 칸은 예약 글자(`__birthday`)를 **그대로** 싣는다. 사람이 읽기 좋게 '생일'로
+     * 바꿔 적으면 가져오기가 그 글자를 상황 이름으로 받아, 왕복 한 번에 생일 대사가
+     * *생일*이라는 이름의 보통 상황이 되어 축하 창에서 사라진다(개발 의도 4번).
+     */
+    private suspend fun exportQuotes(workbook: Workbook, usedSheetNames: MutableSet<String>) {
+        val allQuotesRaw = db.characterQuoteDao().getAllQuotesList()
+
+        val quotesByCharId = allQuotesRaw.groupBy { it.characterId }
+        val charIds = quotesByCharId.keys
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.filter { it.id in charIds }.associateBy { it.id }
+        val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
+
+        data class QuoteRow(val character: Character, val novelTitle: String, val quote: CharacterQuote)
+        val allRows = mutableListOf<QuoteRow>()
+        for ((charId, quotes) in quotesByCharId) {
+            val character = charMap[charId] ?: continue
+            val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
+            quotes.forEach { allRows.add(QuoteRow(character, novelTitle, it)) }
+        }
+
+        val spec = quoteSpec()
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        allRows.forEachIndexed { index, (character, novelTitle, quote) ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(character.name)
+            row.createCell(1).setTextSafe(novelTitle)
+            row.createCell(2).setTextSafe(quote.text)
+            row.createCell(3).setTextSafe(quote.occasionKey)
+            row.createCell(4).setTextSafe(quote.note)
+            row.createCell(5).setCellValue(quote.sortOrder.toDouble())
+            // 캐릭터코드 (readOnly)
+            row.createCell(6).setTextSafe(character.code)
+            // 코드 (readOnly) — 왕복 안정 식별자: 대사 글자를 외부에서 고쳐도 같은 행으로 인식
+            row.createCell(7).setTextSafe(quote.code ?: "")
+            row.createCell(8).setCellValue(quote.createdAt.toDouble())
+            finishDataRow(row, spec, banded = allRows.size < BANDING_ROW_LIMIT)
+        }
+
+        applySpecFormatting(sheet, spec, allRows.size)
     }
 
     // ── 캐릭터 관계 ──

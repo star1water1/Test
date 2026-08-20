@@ -1648,6 +1648,8 @@
     <string name="import_result_events">사건 %d개</string>
     <string name="import_result_events_updated">사건 %1$d개 (업데이트 %2$d개)</string>
     <string name="import_result_state_changes">상태변화 %d개</string>
+    <string name="import_result_quotes">명대사 %1$d건</string>
+    <string name="import_result_quotes_updated">명대사 %1$d건 (갱신 %2$d)</string>
     <string name="import_result_state_changes_updated">상태변화 %1$d개 (업데이트 %2$d개)</string>
     <string name="import_result_relationships">관계 %d개</string>
     <string name="import_result_relationship_changes">관계 변화 %d개</string>

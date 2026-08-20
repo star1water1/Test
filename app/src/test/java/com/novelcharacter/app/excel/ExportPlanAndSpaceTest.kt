@@ -74,9 +74,30 @@ class ExportPlanAndSpaceTest {
             timeline = false, stateChanges = false, relationships = false, relationshipChanges = false,
             nameBank = false, factions = false, factionMemberships = false, factionRelationships = false,
             presetTemplates = false, searchPresets = false, characterListPresets = false,
-            appSettings = false, imageMeta = false, duels = false, images = false
+            appSettings = false, imageMeta = false, duels = false, quotes = false, images = false
         )
         assertEquals(listOf(ExportSheetStep.INSTRUCTIONS), ExportSheetStep.of(nothing))
+    }
+
+    /**
+     * 명대사 시트(사용자 요청 2026.08.20) — **자기 스위치를 갖는다.**
+     *
+     * 상태 변화에 딸리게 두지 않은 것은 성질이 다르기 때문이다: 상태 변화는 연표와 엮인
+     * 이력이고 명대사는 그렇지 않아, 한쪽만 내보내고 싶은 일이 실제로 있다.
+     */
+    @Test
+    fun `명대사 스위치가 그 시트만 켜고 끈다`() {
+        assertTrue(ExportSheetStep.QUOTES in ExportSheetStep.of(ExportOptions()))
+        assertFalse(ExportSheetStep.QUOTES in ExportSheetStep.of(ExportOptions(quotes = false)))
+        // 상태 변화를 꺼도 명대사는 남는다 — 둘은 서로를 가리키지 않는다.
+        assertTrue(ExportSheetStep.QUOTES in ExportSheetStep.of(ExportOptions(stateChanges = false)))
+    }
+
+    /** 명대사는 캐릭터 시트 뒤다 — 파일을 여는 사람이 임자를 먼저 본다. */
+    @Test
+    fun `명대사 시트는 캐릭터 뒤에 온다`() {
+        val plan = ExportSheetStep.of(ExportOptions())
+        assertTrue(plan.indexOf(ExportSheetStep.CHARACTERS) < plan.indexOf(ExportSheetStep.QUOTES))
     }
 
     /** 대결(B-104) — 축이 기록·상성보다 먼저다. 판·처분은 축을 가리키므로 붙을 자리가 먼저 서야 한다. */

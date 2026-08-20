@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
+import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.DefaultFieldTemplate
@@ -60,6 +61,8 @@ import com.novelcharacter.app.util.NovelTitleKey
 import com.novelcharacter.app.util.RelChangeNaturalKey
 import com.novelcharacter.app.util.RelationshipChangeIndexes
 import com.novelcharacter.app.util.RelationshipIndexes
+import com.novelcharacter.app.util.QuoteIndexes
+import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
@@ -237,6 +240,9 @@ data class ImportResult(
     var updatedEvents: Int = 0,
     var newStateChanges: Int = 0,
     var updatedStateChanges: Int = 0,
+    /** 명대사 (사용자 요청 2026.08.20). */
+    var newQuotes: Int = 0,
+    var updatedQuotes: Int = 0,
     var newRelationships: Int = 0,
     var updatedRelationships: Int = 0,
     var newRelationshipChanges: Int = 0,
@@ -259,6 +265,7 @@ data class ImportResult(
     var deletedRelationships: Int = 0,
     var deletedEvents: Int = 0,
     var deletedStateChanges: Int = 0,
+    var deletedQuotes: Int = 0,
     var deletedRelationshipChanges: Int = 0,
     var deletedNameBank: Int = 0,
     var deletedFields: Int = 0,
@@ -549,6 +556,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val matchedRelationshipIds = mutableSetOf<Long>()
     private val matchedRelationshipChangeIds = mutableSetOf<Long>()
     private val matchedStateChangeIds = mutableSetOf<Long>()
+    private val matchedQuoteIds = mutableSetOf<Long>()
     private val matchedNameBankIds = mutableSetOf<Long>()
     private val matchedFactionIds = mutableSetOf<Long>()
     private val matchedFactionMembershipIds = mutableSetOf<Long>()
@@ -767,6 +775,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factions, factionSpec())) { db.factionDao().deleteAll(); wipedByOverwrite.add("factions") }
                 if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) db.characterStateChangeDao().deleteAll()
+                if (shouldDelete(effectiveOptions.quotes, quoteSpec())) db.characterQuoteDao().deleteAll()
                 // 대결(B-104) — **축을 지우면 그 아래 판이 CASCADE로 함께 죽는다.** 그래서
                 // 축 시트만 보고 지우면 *"기록 시트가 빈 파일"* 하나가 수만 판을 없앤다.
                 // 대원칙 그대로 — 백업이 복원할 수 없는 것은 지우지 않는다: 기록 시트도 함께
@@ -863,6 +872,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedRelationshipIds.clear()
             matchedRelationshipChangeIds.clear()
             matchedStateChangeIds.clear()
+            matchedQuoteIds.clear()
             matchedNameBankIds.clear()
             matchedFactionIds.clear()
             matchedFactionMembershipIds.clear()
@@ -928,6 +938,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 importEventFieldValues(workbook, result, onProgress, totalRows)
             }
             if (effectiveOptions.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
+            // 명대사도 캐릭터 뒤다 — 임자가 심겨 있어야 코드·이름으로 찾을 수 있다.
+            if (effectiveOptions.quotes) importQuotes(workbook, result, onProgress, totalRows)
             // 세력을 관계보다 먼저 가져온다 — 관계 시트의 세력(자동 관계) 연결이
             // 신규 기기 복원(빈 DB)에서도 해석되게 한다 (뒤에 두면 factionId가 전부 유실돼 수동 관계로 강등)
             if (effectiveOptions.factions) importFactions(workbook, result, onProgress, totalRows)
@@ -2242,6 +2254,80 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         code = existing.code ?: r.fileCode.takeIf { it.isNotBlank() } ?: backfillCode
     )
 
+    // ── 캐릭터 명대사 (사용자 요청 2026.08.20) ──
+
+    private class QuoteCols(cols: Map<String, Int>, val text: Int) {
+        val charName = cols["캐릭터"] ?: 0
+        // 위치 폴백 금지 (R-36) — 열을 지운 파일에서 엉뚱한 칸을 작품·상황으로 읽는다.
+        val novel = cols["작품"] ?: -1
+        val occasion = cols["상황"] ?: -1
+        val note = cols["출처"] ?: -1
+        val sortOrder = cols["표시순서"] ?: -1
+        val charCode = cols["캐릭터코드"] ?: -1
+        val code = cols["코드"] ?: -1
+        val createdAt = cols["생성일"] ?: -1
+    }
+
+    private data class QuoteRowValues(
+        val charName: String,
+        val charCode: String,
+        val novelTitle: String,
+        val text: String,
+        val hasOccasionCol: Boolean, val occasionKey: String,
+        val hasNoteCol: Boolean, val note: String,
+        val hasSortOrderCol: Boolean, val sortOrder: Int?,
+        val fileCode: String,
+        val createdAt: Long?
+    )
+
+    private fun readQuoteRow(row: Row, c: QuoteCols, ctx: String, now: Long, result: ImportResult?): QuoteRowValues =
+        QuoteRowValues(
+            charName = getCellString(row, c.charName),
+            charCode = getCellCode(row, c.charCode, ctx, result),
+            novelTitle = getCellString(row, c.novel),
+            text = getCellString(row, c.text),
+            // **상황은 글자 그대로다.** `__birthday`를 '생일'로 고쳐 적은 파일을 되읽으면
+            // 그것은 사용자가 만든 상황 이름이지 예약 자리가 아니다 — 고쳐 읽으면 사용자가
+            // 적은 구분이 앱의 짐작으로 덮인다(개발 의도 2번).
+            hasOccasionCol = c.occasion >= 0, occasionKey = getCellString(row, c.occasion),
+            hasNoteCol = c.note >= 0, note = getCellString(row, c.note),
+            hasSortOrderCol = c.sortOrder >= 0,
+            sortOrder = if (c.sortOrder >= 0) parseNumber(getCellString(row, c.sortOrder))?.toInt() else null,
+            fileCode = getCellCode(row, c.code, ctx, result),
+            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+        )
+
+    /** [newStateChangeFrom]과 같은 규약 — 이 행이 **만들** 명대사(R-33 셋째). */
+    private fun newQuoteFrom(
+        r: QuoteRowValues, characterId: Long, now: Long, code: String
+    ): CharacterQuote = CharacterQuote(
+        characterId = characterId,
+        text = r.text,
+        occasionKey = r.occasionKey,
+        note = r.note,
+        sortOrder = r.sortOrder ?: 0,
+        createdAt = r.createdAt ?: now,
+        code = code
+    )
+
+    /** [mergeStateChange]와 같은 규약 — 열 없음은 **기존값 유지**다(R-36). */
+    private fun mergeQuote(
+        existing: CharacterQuote,
+        r: QuoteRowValues,
+        characterId: Long,
+        backfillCode: String
+    ): CharacterQuote = existing.copy(
+        // 코드 매칭 시 자연키 구성 요소(대사 글자)도 편집 가능하다.
+        characterId = characterId,
+        text = r.text,
+        // 열 없음 = 기존값 유지 (열 삭제로 인한 무음 손실 방지)
+        occasionKey = if (r.hasOccasionCol) r.occasionKey else existing.occasionKey,
+        note = if (r.hasNoteCol) r.note else existing.note,
+        sortOrder = if (r.hasSortOrderCol) (r.sortOrder ?: existing.sortOrder) else existing.sortOrder,
+        createdAt = r.createdAt ?: existing.createdAt,
+        code = existing.code ?: r.fileCode.takeIf { it.isNotBlank() } ?: backfillCode
+    )
+
     private class RelationshipCols(cols: Map<String, Int>, val char2Name: Int, val type: Int) {
         val char1Name = cols["캐릭터1"] ?: 0
         val desc = cols["설명"] ?: -1
@@ -2758,6 +2844,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             categories.add(fieldValueCategory("eventFieldValues", "사건 필드값", eventValues))
         }
         if (options.stateChanges) categories.add(analyzeStateChanges(workbook, options, onProgress, totalRows))
+        if (options.quotes) categories.add(analyzeQuotes(workbook, options, onProgress, totalRows))
         if (options.relationships) categories.add(analyzeRelationships(workbook, options, onProgress, totalRows))
         if (options.relationshipChanges) categories.add(analyzeRelationshipChanges(workbook, options, onProgress, totalRows))
         if (options.nameBank) categories.add(analyzeNameBank(workbook, onProgress, totalRows))
@@ -4120,6 +4207,78 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
+    }
+
+    /**
+     * 명대사 미리보기 — [importQuotes]와 **같은 함수들**을 지난다(R-33).
+     *
+     * `readQuoteRow`·`newQuoteFrom`·`mergeQuote`와 `QuoteIndexes`가 양쪽의 단일 소스다.
+     * 하나라도 여기서 따로 적으면 같은 파일을 두고 예고와 결과가 갈린다 — 그리고 그 어긋남은
+     * **가져오고 나서야** 보인다.
+     */
+    private suspend fun analyzeQuotes(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = quoteSpec()
+        val sheet = sheetForAnalysis(workbook, spec)
+        // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
+        val allQuotes = db.characterQuoteDao().getAllQuotesList()
+        val existingTotal = allQuotes.size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        // 실제 임포트와 동일하게 필수 열이 없으면 시트를 통째로 건너뛴다(위치 폴백 금지).
+        val textColIndex = cols["대사"] ?: return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
+        val c = QuoteCols(cols, textColIndex)
+        val now = System.currentTimeMillis()
+
+        // 가져오기와 **같은 판정**의 제목 색인이다(R-33) — 동명 작품이면 힌트를 포기한다.
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        // 정체성 색인도 가져오기와 **같은 클래스**다 — 키 모양과 싣는 순서가 갈리면 같은
+        // `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
+        val quotes = QuoteIndexes(allQuotes)
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
+
+        for (i in dataRows(sheet, headerRow)) {
+            val row = sheet.getRow(i) ?: continue
+            val r = readQuoteRow(row, c, "명대사 행 $i", now, result = null)
+            if (r.charName.isBlank()) continue
+            // 가져오기가 **세고 고지하며** 거부하는 행은 미리보기도 센다(B-237).
+            if (r.text.isBlank()) { inBackup++; skippedCount++; continue }
+            inBackup++
+
+            // 캐릭터 해석은 가져오기와 **같은 사다리**다(R-33) — 코드가 적혀 있으면 코드가 전부다.
+            val character: Character? = if (r.charCode.isNotBlank()) {
+                characterByCode(r.charCode)
+            } else {
+                val novelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
+                when (val resolved = resolveCharByNameNovel(r.charName, novelId)) {
+                    is CharLookupResult.Found -> resolved.character
+                    // 동명이인은 캐릭터 시트를 함께 가져와도 해소되지 않는다(B-102 ⓑ).
+                    is CharLookupResult.Ambiguous -> { skippedCount++; continue }
+                    CharLookupResult.NotFound -> null
+                }
+            }
+            // 캐릭터가 아직 없을 뿐이면, 같은 파일의 캐릭터 시트가 함께 오면 먼저 생긴다.
+            if (character == null) {
+                if (options.characters) newCount++ else skippedCount++
+                continue
+            }
+
+            // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
+            val existing = (if (r.fileCode.isNotBlank()) quotes.byCode.first(r.fileCode) else null)
+                ?: quotes.byNaturalKey.first(QuoteNaturalKey(character.id, r.text))
+            if (existing == null) {
+                newCount++
+                quotes.remember(
+                    newQuoteFrom(r, character.id, now, r.fileCode).copy(id = previewIds.mint())
+                )
+                continue
+            }
+            val merged = mergeQuote(existing, r, character.id, CODE_BACKFILL_PREVIEW)
+            if (merged != existing) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "명대사 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("quotes", "명대사", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeRelationships(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -7840,6 +7999,119 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportProgress(onProgress, "상태변화", sheet.lastRowNum, totalRows)
     }
 
+    // ── 캐릭터 명대사 가져오기 (사용자 요청 2026.08.20) ──
+
+    /**
+     * 명대사 시트 — [importStateChanges]와 **같은 뼈대**다(캐릭터의 자식 표라 같은 부류다).
+     *
+     * 갈리는 자리는 둘뿐이다:
+     * - 자연키가 `(캐릭터, 대사 글자)`다. 차례로 잡으면 목록을 끌어 옮긴 파일에서 엉뚱한
+     *   대사끼리 이어져 **두 대사의 내용이 서로 바뀐다.**
+     * - `상황` 칸을 **고쳐 읽지 않는다.** `__birthday`를 '생일'로 적어 온 파일은 그것을
+     *   사용자가 만든 상황으로 받는다 — 앱이 짐작해 예약 자리로 되돌리면 사용자가 그은
+     *   구분이 덮인다(개발 의도 2번).
+     */
+    private suspend fun importQuotes(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = quoteSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
+        val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
+
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow)
+        // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록된다(R-36).
+        val textColIndex = requiredCol(cols, "대사", sheet.sheetName, result) ?: return
+        val qc = QuoteCols(cols, textColIndex)
+        val nowMillis = System.currentTimeMillis()
+
+        // 미리보기와 **같은 판정**의 제목 색인이다(R-33) — 상태변화와 같은 근거.
+        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        // 키 모양과 싣는 순서는 미리보기와 **같은 클래스**가 든다(`util/ImportIdentityIndexes.kt`).
+        val quotes = QuoteIndexes(db.characterQuoteDao().getAllQuotesList())
+        val quoteCodesSeen = mutableSetOf<String>()
+
+        for (i in dataRows(sheet, headerRow)) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                // 읽기는 미리보기와 **같은 함수**다(R-33).
+                val r = readQuoteRow(row, qc, "명대사 행 $i", nowMillis, result)
+                val charName = r.charName
+                if (charName.isBlank()) continue
+
+                if (r.text.isBlank()) {
+                    result.skippedRows++
+                    result.warnings.add("명대사 행 $i: 대사가 비어 있어 건너뛰었습니다")
+                    continue
+                }
+                val charCode = r.charCode
+
+                // 임자 찾기: 코드 우선 → 이름 엄격 조회(동명이인 모호성 감지). 상태변화와 같다.
+                val character: Character = when {
+                    charCode.isNotBlank() -> {
+                        val found = characterByCode(charCode)
+                        if (found == null) {
+                            result.skippedRows++
+                            result.errors.add("명대사 행 $i: 코드 '${charCode}'에 해당하는 캐릭터를 찾을 수 없음")
+                            continue
+                        }
+                        found
+                    }
+                    else -> {
+                        val hintNovelId = (novelTitles.resolve(r.novelTitle, null) as? NovelTitleLookup.Found)?.novel?.id
+                        when (val resolved = resolveCharByNameNovel(charName, hintNovelId)) {
+                            is CharLookupResult.Found -> resolved.character
+                            is CharLookupResult.Ambiguous -> {
+                                result.skippedRows++
+                                result.errors.add("명대사 행 $i: '${charName}' 이름의 캐릭터가 ${resolved.count}명 존재합니다. '작품' 열이나 캐릭터코드 열로 구분하세요.")
+                                continue
+                            }
+                            is CharLookupResult.NotFound -> {
+                                result.skippedRows++
+                                result.errors.add("명대사 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                                continue
+                            }
+                        }
+                    }
+                }
+
+                val fileCode = r.fileCode
+                if (fileCode.isNotBlank() && !quoteCodesSeen.add(fileCode)) {
+                    result.warnings.add("명대사 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 대사를 덮어씁니다")
+                }
+                // 매칭: 코드 우선(대사 글자 편집을 같은 행으로 인식) → 자연키 폴백(구버전 파일 호환)
+                val quoteByCodeMatch = if (fileCode.isNotBlank()) quotes.byCode.first(fileCode) else null
+                val existing = quoteByCodeMatch
+                    ?: quotes.byNaturalKey.first(QuoteNaturalKey(character.id, r.text))
+                if (quoteByCodeMatch == null && existing != null && existing.id in matchedQuoteIds) {
+                    result.warnings.add("명대사 행 $i: 같은 캐릭터·같은 대사가 파일 내에서 중복되어 같은 행을 덮어씁니다")
+                }
+
+                if (existing != null) {
+                    // 적용도 미리보기와 **같은 함수**다(R-33).
+                    val merged = mergeQuote(existing, r, character.id, generateEntityCode())
+                    db.characterQuoteDao().update(merged)
+                    // 자연키의 칸(대사 글자)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면 뒤 행이
+                    // **이미 다른 대사가 된 행**을 옛 글자로 다시 잡는다.
+                    quotes.remember(merged)
+                    matchedQuoteIds.add(existing.id)
+                    if (merged != existing) result.updatedQuotes++ else result.unchangedRows++
+                } else {
+                    val newQuote = newQuoteFrom(
+                        r, character.id, nowMillis,
+                        code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
+                    )
+                    val newId = db.characterQuoteDao().insert(newQuote)
+                    quotes.remember(newQuote.copy(id = newId))
+                    matchedQuoteIds.add(newId)
+                    result.newQuotes++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("명대사 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "명대사", sheet.lastRowNum, totalRows)
+    }
+
     // ── 캐릭터 관계 가져오기 ──
 
     private suspend fun importRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -11085,6 +11357,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
+        // 명대사 (사용자 요청 2026.08.20) — 상태 변화와 같은 규약이다.
+        if (del.quotes && matchedQuoteIds.isNotEmpty()) {
+            val allIds = db.characterQuoteDao().getAllQuotesList().map { it.id }
+            for (id in allIds) {
+                if (id !in matchedQuoteIds) {
+                    try { db.characterQuoteDao().deleteById(id); result.deletedQuotes++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
         // 이름 은행
         if (del.nameBank && matchedNameBankIds.isNotEmpty()) {
             val allIds = db.nameBankDao().getAllEntryIds()
@@ -11240,6 +11523,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (!del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
             val n = db.characterStateChangeDao().getAllChangeIds().count { it !in matchedStateChangeIds }
             note(n, "상태 변화 ${n}건")
+        }
+        if (!del.quotes && matchedQuoteIds.isNotEmpty()) {
+            val n = db.characterQuoteDao().getAllQuotesList().count { it.id !in matchedQuoteIds }
+            note(n, "명대사 ${n}건")
         }
         if (!del.nameBank && matchedNameBankIds.isNotEmpty()) {
             val n = db.nameBankDao().getAllEntryIds().count { it !in matchedNameBankIds }

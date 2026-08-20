@@ -209,6 +209,8 @@ DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*|import[A
 # 짝 등재: analyze → (import, 허용 차집합과 그 사유)
 PAIRS = {
     'analyzeStateChanges':       ('importStateChanges', set()),
+    # 명대사 (사용자 요청 2026.08.20) — 상태 변화와 **같은 사다리**다(코드 우선 → 이름 엄격).
+    'analyzeQuotes':             ('importQuotes', set()),
     'analyzeRelationships':      ('importRelationships', set()),
     'analyzeRelationshipChanges':('importRelationshipChanges', set()),
     'analyzeFactionMemberships': ('importFactionMemberships', set()),
