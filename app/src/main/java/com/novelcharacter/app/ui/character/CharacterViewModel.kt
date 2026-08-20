@@ -995,6 +995,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     data class CharacterDeleteImpact(
         val relationships: Int,
         val stateChanges: Int,
+        val quotes: Int,
         val factionMemberships: Int,
         val images: Int
     )
@@ -1002,9 +1003,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getCharacterDeleteImpact(character: Character): CharacterDeleteImpact {
         val relationships = characterRepository.getRelationshipsForCharacterList(character.id).size
         val stateChanges = characterRepository.getChangesByCharacterList(character.id).size
+        // 명대사도 CASCADE로 함께 사라진다 — 형제 자식표를 다 세면서 이것만 빼면
+        // 사용자가 무엇을 잃는지 화면이 절반만 말한다(R-4).
+        val quotes = characterRepository.getQuotesByCharacterList(character.id).size
         val memberships = app.database.factionMembershipDao().getMembershipsByCharacterList(character.id).size
         val images = try { org.json.JSONArray(character.imagePaths).length() } catch (_: Exception) { 0 }
-        return CharacterDeleteImpact(relationships, stateChanges, memberships, images)
+        return CharacterDeleteImpact(relationships, stateChanges, quotes, memberships, images)
     }
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =

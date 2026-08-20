@@ -1597,7 +1597,7 @@ class ExcelImporter(context: Context) {
                 container.addView(radioGroup)
 
                 // MERGE 모드 항목별 삭제 옵션 (삭제 지원 카테고리만 표시)
-                val deletableKeys = setOf("characters", "timeline", "stateChanges", "relationships",
+                val deletableKeys = setOf("characters", "timeline", "stateChanges", "quotes", "relationships",
                     "relationshipChanges", "nameBank", "factions", "factionMemberships", "factionRelationships")
                 val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
                 val deleteSectionLabel = TextView(act).apply {
@@ -1651,6 +1651,7 @@ class ExcelImporter(context: Context) {
                                 characters = "characters" in checked,
                                 timeline = "timeline" in checked,
                                 stateChanges = "stateChanges" in checked,
+                                quotes = "quotes" in checked,
                                 relationships = "relationships" in checked,
                                 relationshipChanges = "relationshipChanges" in checked,
                                 nameBank = "nameBank" in checked,

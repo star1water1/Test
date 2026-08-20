@@ -118,6 +118,7 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
         val parts = mutableListOf<String>()
         if (impact.relationships > 0) parts.add(getString(R.string.batch_delete_impact_relationships, impact.relationships))
         if (impact.stateChanges > 0) parts.add(getString(R.string.batch_delete_impact_state_changes, impact.stateChanges))
+        if (impact.quotes > 0) parts.add(getString(R.string.batch_delete_impact_quotes, impact.quotes))
         if (impact.factionMemberships > 0) parts.add(getString(R.string.batch_delete_impact_memberships, impact.factionMemberships))
         if (impact.eventLinks > 0) parts.add(getString(R.string.batch_delete_impact_events, impact.eventLinks))
         return "$base\n\n" + getString(R.string.batch_delete_impact_summary, parts.joinToString(", "))

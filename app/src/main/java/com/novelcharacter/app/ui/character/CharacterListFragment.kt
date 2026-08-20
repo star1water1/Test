@@ -145,6 +145,7 @@ class CharacterListFragment : Fragment() {
                     val details = buildList {
                         if (impact.relationships > 0) add(getString(R.string.delete_impact_relationships, impact.relationships))
                         if (impact.stateChanges > 0) add(getString(R.string.delete_impact_state_changes, impact.stateChanges))
+                        if (impact.quotes > 0) add(getString(R.string.delete_impact_quotes, impact.quotes))
                         if (impact.factionMemberships > 0) add(getString(R.string.delete_impact_memberships, impact.factionMemberships))
                         if (impact.images > 0) add(getString(R.string.delete_impact_images, impact.images))
                     }

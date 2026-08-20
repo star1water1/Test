@@ -41,33 +41,33 @@ object BirthdayCelebration {
     /**
      * 오늘 생일인 캐릭터의 쪽 — **없으면 빈 목록이고, 그때 창은 뜨지 않는다.**
      *
-     * @param todayIds [BirthdayHelper.getTodayBirthdayCharacterIds]가 낸 오늘치. 판정을 여기서
-     *   다시 하지 않는 것이 요점이다 — 윤년 2/29 규칙이 두 벌이 되면 위젯·알림과 갈린다.
-     * @param birthChanges `__birth` 상태 변화. 월·일을 여기서 집는다.
+     * @param todayBirthdays [BirthdayHelper.todayBirthdays]가 낸 **오늘 맞은 그 행들**.
+     *   id 목록이 아니라 행을 받는 것이 요점이다 — `__birth`는 DB가 강제하는 유일 행이
+     *   아니라(엑셀은 둘째 행을 만든다) 한 캐릭터가 3/15와 8/20 두 생일 행을 들 수 있고,
+     *   여기서 id로 행을 다시 고르면 **오늘 맞은 행이 아닌 것**을 집어 8/20에 뜬 창이
+     *   *"3월 15일"*이라 적는다. 판정도 날짜도 [BirthdayHelper] 하나가 든다(원칙 05).
      * @param quotesByCharacter 캐릭터별 대사. **차례는 부르는 쪽이 지킨다**(DAO 정렬) —
      *   [QuotePicker]의 답이 목록 차례에 달려 있어, 여기서 다시 정렬하면 대결 카드와 갈린다.
      * @param dayStamp 오늘의 씨앗. 같은 날 대결 카드와 **같은 대사**를 집게 하는 축이다.
      */
     fun pagesOf(
-        todayIds: List<Long>,
+        todayBirthdays: List<CharacterStateChange>,
         characters: List<Character>,
-        birthChanges: List<CharacterStateChange>,
         quotesByCharacter: Map<Long, List<CharacterQuote>>,
         novelTitles: Map<Long, String> = emptyMap(),
         dayStamp: Long,
         imageSeed: Long = 0L
     ): List<Page> {
-        if (todayIds.isEmpty()) return emptyList()
+        if (todayBirthdays.isEmpty()) return emptyList()
         val byId = characters.associateBy { it.id }
-        val dateById = birthChanges
-            .filter { it.month != null && it.day != null }
-            .associateBy({ it.characterId }, { it.month!! to it.day!! })
 
-        return todayIds.mapNotNull { id ->
+        return todayBirthdays.mapNotNull { birth ->
+            val id = birth.characterId
             val character = byId[id] ?: return@mapNotNull null
             // 월·일을 모르면 쪽을 만들지 않는다 — 축하 창은 *"오늘"*을 말하는 자리라
             // 날짜 없는 줄이 서면 무엇을 축하하는지 알 수 없다.
-            val (month, day) = dateById[id] ?: return@mapNotNull null
+            val month = birth.month ?: return@mapNotNull null
+            val day = birth.day ?: return@mapNotNull null
             val quote = QuotePicker.forBirthday(quotesByCharacter[id].orEmpty(), id, dayStamp)
             Page(
                 characterId = id,

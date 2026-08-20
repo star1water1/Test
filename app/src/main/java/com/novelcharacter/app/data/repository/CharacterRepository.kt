@@ -862,12 +862,14 @@ class CharacterRepository(
         val characters: Int,
         val relationships: Int,
         val stateChanges: Int,
+        val quotes: Int,
         val factionMemberships: Int,
         val eventLinks: Int
     ) {
         /** 캐릭터 외 함께 정리될 연관 데이터가 있는지 — 요약 문구 노출 여부 판단용. */
         val hasLinkedData: Boolean
-            get() = relationships > 0 || stateChanges > 0 || factionMemberships > 0 || eventLinks > 0
+            get() = relationships > 0 || stateChanges > 0 || quotes > 0 ||
+                factionMemberships > 0 || eventLinks > 0
     }
 
     /**
@@ -878,18 +880,20 @@ class CharacterRepository(
      * 말하는 그 합산이며, 나누기가 계수를 바꾸지 않는다는 성질은 여기서도 같다.
      */
     suspend fun getBatchDeleteImpact(ids: List<Long>): DeleteImpact {
-        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0)
+        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0, 0)
         val relIds = mutableSetOf<Long>()  // 관계는 두 끝이 서로 다른 청크에 나뉠 수 있어 id Set으로 교차청크 중복 제거
         var stateChanges = 0
+        var quotes = 0
         var memberships = 0
         var eventLinks = 0
         SqlInChunks.each(ids) { chunk ->
             relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
+            quotes += characterQuoteDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)
             eventLinks += db.timelineDao().countEventLinksForCharacters(chunk)
         }
-        return DeleteImpact(ids.size, relIds.size, stateChanges, memberships, eventLinks)
+        return DeleteImpact(ids.size, relIds.size, stateChanges, quotes, memberships, eventLinks)
     }
 
     /**

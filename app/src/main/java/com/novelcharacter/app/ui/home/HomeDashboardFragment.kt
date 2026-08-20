@@ -95,10 +95,12 @@ class HomeDashboardViewModel(application: Application) : AndroidViewModel(applic
         withContext(Dispatchers.IO) {
             val birthChanges = app.database.characterStateChangeDao()
                 .getChangesWithDate(CharacterStateChange.KEY_BIRTH)
-            val todayIds = BirthdayHelper.getTodayBirthdayCharacterIds(birthChanges)
-            if (todayIds.isEmpty()) return@withContext emptyList()
+            // **맞은 행을 통째로 받는다** — id만 받으면 생일 행이 둘인 캐릭터에서
+            // 오늘 맞은 행이 아닌 것의 날짜를 적게 된다(BirthdayHelper.todayBirthdays의 KDoc).
+            val todayBirthdays = BirthdayHelper.todayBirthdays(birthChanges)
+            if (todayBirthdays.isEmpty()) return@withContext emptyList()
 
-            val characters = app.characterRepository.getCharactersByIds(todayIds)
+            val characters = app.characterRepository.getCharactersByIds(todayBirthdays.map { it.characterId })
             if (characters.isEmpty()) return@withContext emptyList()
 
             val quotes = app.characterRepository.getQuotesForCharacters(characters.map { it.id })
@@ -108,9 +110,8 @@ class HomeDashboardViewModel(application: Application) : AndroidViewModel(applic
             }.associate { it.id to it.title }
 
             BirthdayCelebration.pagesOf(
-                todayIds = todayIds,
+                todayBirthdays = todayBirthdays,
                 characters = characters,
-                birthChanges = birthChanges,
                 quotesByCharacter = quotes,
                 novelTitles = novelTitles,
                 dayStamp = dayStamp,
@@ -461,6 +462,10 @@ class HomeDashboardFragment : Fragment() {
             val pages = viewModel.todayBirthdayPages(today)
             // 화면이 사라진 뒤 돌아온 결과로 창을 띄우지 않는다.
             if (!isAdded || _binding == null || pages.isEmpty()) return@launch
+            // 이미 떠 있으면 또 띄우지 않는다 — 표시는 질의 **뒤에** 찍으므로(생일 없는 날
+            // 찍지 않으려고), 그 사이 탭을 빠르게 오가면 두 번째 진입이 아직 안 찍힌 표시를
+            // 보고 통과한다. 창이 둘 겹치면 뒤엣것을 닫아도 앞엣것이 남는다.
+            if (childFragmentManager.findFragmentByTag(BirthdayCelebrationDialog.TAG) != null) return@launch
             BirthdayCelebrationPrefs.markShown(ctx, today)
             BirthdayCelebrationDialog.newInstance(pages)
                 .show(childFragmentManager, BirthdayCelebrationDialog.TAG)

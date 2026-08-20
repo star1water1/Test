@@ -36,9 +36,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `오늘 생일이 없으면 쪽이 없다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = emptyList(),
+            todayBirthdays = emptyList(),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
@@ -48,9 +47,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `생일인 캐릭터의 이름과 날짜가 담긴다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "이서린")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
@@ -64,9 +62,8 @@ class BirthdayCelebrationTest {
     fun `월일을 모르는 캐릭터는 쪽을 만들지 않는다`() {
         // 연도만 적힌 __birth — 축하 창은 '오늘'을 말하는 자리라 날짜 없는 줄은 세우지 않는다.
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L, 2L),
+            todayBirthdays = listOf(birth(1, 8, 20), birth(2, null, null)),
             characters = listOf(character(1, "날짜있음"), character(2, "연도만")),
-            birthChanges = listOf(birth(1, 8, 20), birth(2, null, null)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
@@ -78,9 +75,8 @@ class BirthdayCelebrationTest {
     fun `목록에 없는 캐릭터는 조용히 빠진다`() {
         // 지워진 캐릭터의 __birth가 남아 있어도 창이 죽지 않아야 한다.
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L, 99L),
+            todayBirthdays = listOf(birth(1, 8, 20), birth(99, 8, 20)),
             characters = listOf(character(1, "살아있음")),
-            birthChanges = listOf(birth(1, 8, 20), birth(99, 8, 20)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
@@ -92,9 +88,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `생일 전용 대사가 있으면 그것이 뜬다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = mapOf(
                 1L to listOf(
                     quote(1, 1, "평소 대사"),
@@ -109,9 +104,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `생일 대사가 없으면 일반 명대사가 대신 뜬다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = mapOf(1L to listOf(quote(1, 1, "나는 멈추지 않아"))),
             dayStamp = day
         )
@@ -121,9 +115,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `대사가 하나도 없으면 대사 자리가 비어 있다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
@@ -134,9 +127,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `대사의 출처가 비어 있으면 null로 담긴다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = mapOf(1L to listOf(quote(1, 1, "대사", note = "   "))),
             dayStamp = day
         )
@@ -146,9 +138,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `대사의 출처가 있으면 담긴다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "주인공")),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = mapOf(1L to listOf(quote(1, 1, "대사", note = "3화"))),
             dayStamp = day
         )
@@ -161,9 +152,8 @@ class BirthdayCelebrationTest {
         val quotes = (1L..5L).map { quote(it, 1, "대사$it") }
         for (d in 20260801L..20260831L) {
             val pages = BirthdayCelebration.pagesOf(
-                todayIds = listOf(1L),
+                todayBirthdays = listOf(birth(1, 8, 20)),
                 characters = listOf(character(1, "주인공")),
-                birthChanges = listOf(birth(1, 8, 20)),
                 quotesByCharacter = mapOf(1L to quotes),
                 dayStamp = d
             )
@@ -180,9 +170,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `작품 제목은 있을 때만 담긴다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L, 2L),
+            todayBirthdays = listOf(birth(1, 8, 20), birth(2, 8, 20)),
             characters = listOf(character(1, "소속", novelId = 7L), character(2, "무소속")),
-            birthChanges = listOf(birth(1, 8, 20), birth(2, 8, 20)),
             quotesByCharacter = emptyMap(),
             novelTitles = mapOf(7L to "밤의 도시"),
             dayStamp = day
@@ -194,9 +183,8 @@ class BirthdayCelebrationTest {
     @Test
     fun `작품이 지워졌으면 제목 자리가 빈다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L),
+            todayBirthdays = listOf(birth(1, 8, 20)),
             characters = listOf(character(1, "소속", novelId = 7L)),
-            birthChanges = listOf(birth(1, 8, 20)),
             quotesByCharacter = emptyMap(),
             novelTitles = emptyMap(),
             dayStamp = day
@@ -207,21 +195,41 @@ class BirthdayCelebrationTest {
     @Test
     fun `쪽의 차례는 오늘치 목록의 차례를 따른다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(3L, 1L, 2L),
+            todayBirthdays = listOf(birth(3, 8, 20), birth(1, 8, 20), birth(2, 8, 20)),
             characters = listOf(character(1, "가"), character(2, "나"), character(3, "다")),
-            birthChanges = listOf(birth(1, 8, 20), birth(2, 8, 20), birth(3, 8, 20)),
             quotesByCharacter = emptyMap(),
             dayStamp = day
         )
         assertEquals(listOf("다", "가", "나"), pages.map { it.name })
     }
 
+    /**
+     * **콜드 검토가 잡은 자리**(2026.08.20) — 생일 행이 둘인 캐릭터.
+     *
+     * `__birth`는 DB가 강제하는 유일 행이 아니다: 엑셀은 `(캐릭터·연도·필드키·값)`이 다르면
+     * 둘째 행을 만든다. 종전에는 이 계층이 **id로 행을 다시 골라** 아무 행이나 집었고,
+     * 그래서 8/20에 뜬 창이 *"3월 15일"*이라 적을 수 있었다.
+     */
+    @Test
+    fun `생일 행이 둘이어도 오늘 맞은 행의 날짜를 적는다`() {
+        val matchedToday = birth(1, 8, 20)
+        val pages = BirthdayCelebration.pagesOf(
+            // 판정이 고른 것은 8/20 행 하나다 — 3/15 행은 애초에 넘어오지 않는다.
+            todayBirthdays = listOf(matchedToday),
+            characters = listOf(character(1, "두 번 적힌 생일")),
+            quotesByCharacter = emptyMap(),
+            dayStamp = day
+        )
+        assertEquals(1, pages.size)
+        assertEquals(8, pages[0].month)
+        assertEquals(20, pages[0].day)
+    }
+
     @Test
     fun `여럿이면 쪽도 여럿이다`() {
         val pages = BirthdayCelebration.pagesOf(
-            todayIds = listOf(1L, 2L, 3L),
+            todayBirthdays = listOf(birth(1, 8, 20), birth(2, 8, 20), birth(3, 8, 20)),
             characters = listOf(character(1, "가"), character(2, "나"), character(3, "다")),
-            birthChanges = listOf(birth(1, 8, 20), birth(2, 8, 20), birth(3, 8, 20)),
             quotesByCharacter = mapOf(
                 2L to listOf(quote(1, 2, "나의 생일 대사", CharacterQuote.KEY_BIRTHDAY))
             ),

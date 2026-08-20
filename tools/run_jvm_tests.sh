@@ -372,6 +372,7 @@ $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
 $TEST/util/QuotePickerTest.kt
 $TEST/util/BirthdayCelebrationTest.kt
+$TEST/util/BirthdayHelperTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt
