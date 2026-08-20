@@ -52,7 +52,8 @@ class PresetTemplateMatcher(candidates: List<Candidate>) {
             val pick = exact.firstOrNull { it.claimedBy == null } ?: exact.firstOrNull()
             if (pick != null) {
                 pick.claimedBy?.let {
-                    warnings.add("행 $it 과(와) 같은 템플릿('$name')을 다시 덮어썼습니다 (마지막 행 우선)")
+                    // claimedBy는 0-기반 행 색인 — 화면 문구는 엑셀 행 머리글(1-기반)로 적는다.
+                    warnings.add("행 ${it + 1} 과(와) 같은 템플릿('$name')을 다시 덮어썼습니다 (마지막 행 우선)")
                 }
                 return claimed(pick, name, rowIndex, nameBased = false, warnings)
             }

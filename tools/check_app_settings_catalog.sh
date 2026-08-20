@@ -114,12 +114,26 @@ fi
 # 새 숫자 바인딩 하나가 그 대신 값을 조용히 적용하면 **미리보기가 거짓말을 한다**
 # (예고는 '건너뜀'인데 실제로는 값이 바뀐다). 실패의 모양이 침묵이라 여기서 기계로 잡는다.
 #
-# 판정: `Kind.NUMBER`로 선언된 스펙의 `Binding(` 블록이 `Applied.No`를 들고 있는가.
-# 지금 열넷이 전부 그렇다(실측). **못 뜨면 위반이다**(fail-closed) — 블록을 못 찾는 것은
-# 이 축이 눈먼 채 초록이 되는 자리다.
+# 판정: `Kind.NUMBER`로 선언된 스펙이 `numberBinding(` 헬퍼를 지나는가 — 거절은 그 헬퍼
+# 본문 한 자리가 들고, 본문이 `Applied.No`를 잃으면 열다섯 전부가 잃으므로 본문을
+# **fail-closed**로 먼저 본다. 헬퍼를 안 지나는 숫자 바인딩은 블록 자체가 `Applied.No`를
+# 들어야 한다(종전 판정 그대로). **못 뜨면 위반이다** — 블록을 못 찾는 것은 이 축이
+# 눈먼 채 초록이 되는 자리다.
 num_specs=$(grep -oE 'val [A-Z_]+ = Spec\("[^"]+", Kind\.NUMBER' "$KEYS_FILE" | sed -E 's/val ([A-Z_]+).*/\1/' | sort -u)
 if [ -z "$num_specs" ]; then
   echo "  ✗ Kind.NUMBER 선언을 하나도 못 떴습니다 — 선언 꼴이 바뀌었는지 보세요(축 ④가 눈멉니다)"
+  fail=1
+fi
+# 헬퍼 본문 — 시작은 선언 줄, 끝은 다음 멤버 선언(고정 줄 수로 자르지 않는다: 아래 블록
+# 추출과 같은 병을 피한다).
+helper_body=$(awk '
+  on && /^    (private |val |fun |\/\*\*)/ { exit }
+  index($0, "private fun numberBinding(") { on=1 }
+  on { print }
+' "$BINDINGS_FILE")
+if [ -z "$helper_body" ] || ! echo "$helper_body" | grep -q 'Applied\.No'; then
+  echo "  ✗ numberBinding 헬퍼가 없거나 수 아닌 값을 거절하지 않습니다 — 숫자 설정 전부의"
+  echo "    거절이 그 본문 한 자리에 있으므로, 이 축의 근거가 통째로 무너집니다"
   fail=1
 fi
 lenient=""
@@ -127,6 +141,8 @@ for spec in $num_specs; do
   # **블록의 끝은 다음 `Binding(`이다.** 고정 줄 수로 자르면 창이 다음 바인딩까지 삼켜
   # **남의 `Applied.No`를 제 것으로 읽는다** — 자기 재공격에서 실제로 그랬다(THEME_MODE를
   # 관대하게 바꿔 놓아도 초록이었다). 축 ⑧이 표식을 고정 줄 수로 찾다 겪은 것과 같은 병이다.
+  # `numberBinding(AppSettingsKeys.X,`에도 `Binding(AppSettingsKeys.X,`가 부분 문자열로
+  # 들어 있어 같은 그물이 헬퍼 호출을 함께 뜬다.
   block=$(awk -v pat="Binding(AppSettingsKeys.$spec," '
     on && index($0, "Binding(AppSettingsKeys.") { exit }
     index($0, pat) { on=1 }
@@ -137,6 +153,8 @@ for spec in $num_specs; do
     fail=1
     continue
   fi
+  # 헬퍼 경유면 거절은 본문이 든다(위에서 확인했다). 직접 바인딩이면 블록이 들어야 한다.
+  if echo "$block" | grep -q "numberBinding(AppSettingsKeys\.$spec,"; then continue; fi
   echo "$block" | grep -q 'Applied\.No' || lenient="$lenient $spec"
 done
 if [ -n "$lenient" ]; then

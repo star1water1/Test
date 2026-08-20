@@ -61,10 +61,10 @@ object AppSettingsDiff {
         // '갱신'이 아니라 '건너뜀'이다(B-102 ⓑ: 실행되지 않을 행을 실행된다고 예고하면
         // 미리보기가 거짓말이 된다). 빈칸도 여기 걸린다.
         //
-        // **이것은 [AppSettingsBindings]의 불변식에 기댄 판정이다** — 숫자 바인딩 열다섯이
-        // 전부 `Applied.No`로 거절한다(실측 2026.08.20 — `theme_mode`가 뒤에 합류해 열넷이 아니다). 기댄 채로 두면 새 숫자 바인딩 하나가 조용히
-        // 이 예고를 틀리게 만들 수 있어, `tools/check_app_settings_catalog.sh`가 그 불변식을
-        // 기계로 지킨다(축 ④).
+        // **이것은 [AppSettingsBindings]의 불변식에 기댄 판정이다** — 숫자 바인딩 전부가
+        // `numberBinding` 헬퍼 한 벌을 지나고, 그 본문이 수 아닌 값을 `Applied.No`로 거절한다.
+        // 기댄 채로 두면 헬퍼를 안 지나는 새 숫자 바인딩 하나가 조용히 이 예고를 틀리게 만들 수
+        // 있어, `tools/check_app_settings_catalog.sh`가 그 불변식을 기계로 지킨다(축 ④).
         if (spec.kind == AppSettingsKeys.Kind.NUMBER && fileValue.trim().toDoubleOrNull() == null) {
             return Effect.SKIPPED
         }
@@ -112,14 +112,9 @@ object AppSettingsDiff {
         when (kind) {
             AppSettingsKeys.Kind.BOOLEAN ->
                 CsvTokens.parseBoolean(fileValue) == CsvTokens.parseBoolean(currentValue)
-            AppSettingsKeys.Kind.NUMBER -> {
-                val a = fileValue.trim().toDoubleOrNull()
-                val b = currentValue.trim().toDoubleOrNull()
-                // 파일 값이 수로 읽히는 것은 위에서 이미 걸렀다 — 여기서 남는 갈래는
-                // *지금 값*이 안 읽히는 경우뿐이고, 그때는 **글자로 견준다**.
-                // 못 읽는 값을 '같다'로 접으면 고쳐야 할 행이 미리보기에서 사라진다.
-                if (a != null && b != null) a == b else fileValue.trim() == currentValue.trim()
-            }
+            // 술어는 한 벌이다 — 가져오기의 read-back 대조(`numberBinding`)와 같은 함수를
+            // 부른다. 못 읽는 값의 처분(글자로 견준다)까지 그 함수의 KDoc이 든다.
+            AppSettingsKeys.Kind.NUMBER -> AppSettingsKeys.sameNumericCell(fileValue, currentValue)
             AppSettingsKeys.Kind.TEXT -> fileValue.trim() == currentValue.trim()
         }
 }

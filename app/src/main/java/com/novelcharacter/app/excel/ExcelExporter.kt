@@ -917,6 +917,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  다만 쉼표로 여럿 적는 설정(패턴 유형·어시스턴트 항목)은 **아는 이름만 적용하고** 모르는 이름을 알려 드립니다."),
             GuideLine("", styles.guideBody, "  `키=값` 목록(패턴 민감도)도 같습니다 — 읽은 키만 반영하고 나머지는 종전 값으로 둡니다."),
             GuideLine("", styles.guideBody, "• 범위를 벗어난 숫자는 좁혀서 받는 설정도 있습니다 — 그런 설정은 '입력 가능한 값'이 범위를 적어 둡니다."),
+            GuideLine("", styles.guideBody, "  좁혀서 받으면 조용히 넘어가지 않습니다 — 무엇으로 저장했는지 가져오기 결과에서 그 행 단위로 알려 드립니다."),
             GuideLine("", styles.guideBody, "• '설정값' 열 자체를 지우면 이 시트를 통째로 건너뜁니다(설정이 지워지지는 않습니다)."),
             GuideLine("", styles.guideBody, "• 행을 지워도 그 설정이 지워지지는 않습니다. 값을 바꾸려면 행을 남기고 '설정값'을 고치세요."),
             GuideLine("", styles.guideBody, ""),

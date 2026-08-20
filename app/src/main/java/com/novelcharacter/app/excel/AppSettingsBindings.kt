@@ -44,15 +44,31 @@ import org.json.JSONObject
  * ## 쓰기는 관대하되 조용하지 않다
  *
  * 저장소 setter가 대개 자체 클램프를 갖고 있어 범위 밖 값도 안전하게 수용된다(관대 임포트).
- * 그러나 **뜻을 알 수 없는 값**(모르는 열거 이름 등)은 기존 설정을 유지하고 [Applied.No]로
- * 사유를 돌려준다 — 가져오기가 그것을 경고로 싣는다. 조용히 무시하면 사용자는 자기가 적은
- * 값이 왜 안 먹었는지 알 길이 없다(개발 의도 2번 '변수 제어').
+ * 그러나 **적힌 그대로 들어가지 않은 것은 반드시 말한다** — 결과가 셋으로 갈리는 이유다:
+ *
+ * - [Applied.Yes] — 적힌 값이 그대로 들어갔다.
+ * - [Applied.Adjusted] — **값은 들어갔지만 적힌 그대로가 아니다**(범위 밖이 접혔거나,
+ *   목록의 일부만 해석됐거나). 종전에는 접힘이 [Applied.Yes]로 계수되어 *"앱 설정 N건 복원"*
+ *   뒤에 숨었다 — `image_quality_percent`에 500을 적으면 100으로 접히는데 아무 말이 없었다.
+ *   숫자 바인딩은 [numberBinding]이 **쓰고 나서 다시 읽어** 이것을 잡는다(범위 지식을 여기
+ *   두 벌로 적지 않기 위해서다 — 범위의 단일 소스는 각 저장소다).
+ * - [Applied.No] — **아무것도 쓰지 않았다.** 뜻을 알 수 없는 값(모르는 열거 이름 등)은 기존
+ *   설정을 유지하고 사유를 돌려준다.
+ *
+ * 가져오기는 [Applied.Adjusted]·[Applied.No]의 사유를 경고로 싣는다. 조용히 무시하면
+ * 사용자는 자기가 적은 값이 왜 안 먹었는지 알 길이 없다(개발 의도 2번 '변수 제어').
  */
 object AppSettingsBindings {
 
-    /** 쓰기의 결과. [No]의 [No.reason]은 그대로 사용자에게 나가는 문장이다. */
+    /** 쓰기의 결과. [Adjusted.reason]·[No.reason]은 그대로 사용자에게 나가는 문장이다. */
     sealed class Applied {
+        /** 적힌 값이 그대로 들어갔다. */
         data object Yes : Applied()
+
+        /** 값이 들어가긴 했지만 **적힌 그대로가 아니다** — 접힘·부분 적용. */
+        data class Adjusted(val reason: String) : Applied()
+
+        /** 아무것도 쓰지 않았다 — 기존 설정 유지. */
         data class No(val reason: String) : Applied()
     }
 
@@ -73,18 +89,15 @@ object AppSettingsBindings {
     // 계약이라 시험이 닿아야 한다. 여기서 다시 적으면 두 벌이 되어 한쪽만 고쳐지는 날이 온다.
     private fun bool(value: Boolean) = AppSettingsKeys.formatBoolean(value)
     private fun num(value: Number) = AppSettingsKeys.formatNumber(value)
-    private fun intOf(value: String) = AppSettingsKeys.parseIntCell(value)
 
     private val BINDINGS: List<Binding> = listOf(
-        Binding(AppSettingsKeys.THEME_MODE,
-            read = { num(ThemeHelper.getSavedTheme(it)) },
-            write = { ctx, v ->
-                // 해석 불가한 값(빈칸·글자)을 0(시스템 기본)으로 조용히 적용하면, 사용자가 적은
-                // 것과 다른 값이 들어갔는데 '적용됨'으로 계수된다 — 형제 숫자 바인딩과 같은
-                // 거절-유지 꼴로 통일한다(이 파일 KDoc의 계약: 뜻을 알 수 없는 값은 기존 유지 + 사유).
-                intOf(v)?.let { ThemeHelper.saveTheme(ctx, it.coerceIn(0, 2)); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다 (0=시스템, 1=라이트, 2=다크)")
-            }),
+        // 해석 불가한 값(빈칸·글자)을 0(시스템 기본)으로 조용히 적용하면, 사용자가 적은
+        // 것과 다른 값이 들어갔는데 '적용됨'으로 계수된다 — 헬퍼가 거절-유지로 막는다.
+        // 0~2 클램프는 저장소에 없어 이 자리가 든다(이름 붙은 상수가 없다 — 선언 쪽 주석).
+        numberBinding(AppSettingsKeys.THEME_MODE,
+            read = { ThemeHelper.getSavedTheme(it) },
+            write = { ctx, d -> ThemeHelper.saveTheme(ctx, d.toInt().coerceIn(0, 2)) },
+            rejectHint = " (0=시스템, 1=라이트, 2=다크)"),
         // 읽기 화면의 필드 설명 ⓘ (B-44) — 불리언 셀은 Y/예/1/TRUE를 관대하게 받는다.
         Binding(AppSettingsKeys.READ_FIELD_NOTE_ENABLED,
             read = { bool(FieldNoteDisplayPrefs.isReadScreenNoteEnabled(it)) },
@@ -105,28 +118,19 @@ object AppSettingsBindings {
         Binding(AppSettingsKeys.BACKUP_INCLUDE_IMAGES,
             read = { bool(BackupSettingsStore(it).getSettings().includeImages) },
             write = { ctx, v -> BackupSettingsStore(ctx).setIncludeImages(parseSheetBoolean(v)); Applied.Yes }),
-        Binding(AppSettingsKeys.BACKUP_MAX_BACKUPS,
-            read = { num(BackupSettingsStore(it).getSettings().maxBackups) },
-            write = { ctx, v ->
-                intOf(v)?.let { BackupSettingsStore(ctx).setMaxBackups(it); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.BACKUP_MAX_BACKUPS,
+            read = { BackupSettingsStore(it).getSettings().maxBackups },
+            write = { ctx, d -> BackupSettingsStore(ctx).setMaxBackups(d.toInt()) }),
 
         // ── 휴지통 보관 정책 (B-74) ──
         // 범위를 벗어난 값은 거절하지 않고 **좁혀서 받는다**(개발 의도 4번 — 밖에서 편집된
         // 파일을 유연하게 수용). 좁히는 규칙은 TrashRetentionPolicy.sanitize 한 벌이다.
-        Binding(AppSettingsKeys.TRASH_MAX_OPERATIONS,
-            read = { num(TrashSettingsStore(it).getSettings().maxOperations) },
-            write = { ctx, v ->
-                intOf(v)?.let { TrashSettingsStore(ctx).setMaxOperations(it); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
-        Binding(AppSettingsKeys.TRASH_RETENTION_DAYS,
-            read = { num(TrashSettingsStore(it).getSettings().retentionDays) },
-            write = { ctx, v ->
-                intOf(v)?.let { TrashSettingsStore(ctx).setRetentionDays(it); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.TRASH_MAX_OPERATIONS,
+            read = { TrashSettingsStore(it).getSettings().maxOperations },
+            write = { ctx, d -> TrashSettingsStore(ctx).setMaxOperations(d.toInt()) }),
+        numberBinding(AppSettingsKeys.TRASH_RETENTION_DAYS,
+            read = { TrashSettingsStore(it).getSettings().retentionDays },
+            write = { ctx, d -> TrashSettingsStore(ctx).setRetentionDays(d.toInt()) }),
 
         // ── 필드 가져오기 종류 변환 (B-63) ──
         // 모르는 타입 이름을 **버리지 않는다** — 새 타입이 생긴 기기의 파일을 옛 기기가
@@ -146,30 +150,21 @@ object AppSettingsBindings {
         Binding(AppSettingsKeys.IMAGE_COMPRESS_ENABLED,
             read = { bool(ImageSettingsStore(it).getSettings().enabled) },
             write = { ctx, v -> ImageSettingsStore(ctx).setEnabled(parseSheetBoolean(v)); Applied.Yes }),
-        Binding(AppSettingsKeys.IMAGE_QUALITY_PERCENT,
-            read = { num(ImageSettingsStore(it).getSettings().qualityPercent) },
-            write = { ctx, v ->
-                intOf(v)?.let { ImageSettingsStore(ctx).setQualityPercent(it); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.IMAGE_QUALITY_PERCENT,
+            read = { ImageSettingsStore(it).getSettings().qualityPercent },
+            write = { ctx, d -> ImageSettingsStore(ctx).setQualityPercent(d.toInt()) }),
         Binding(AppSettingsKeys.IMAGE_CAP_DIMENSION,
             read = { bool(ImageSettingsStore(it).getSettings().capDimension) },
             write = { ctx, v -> ImageSettingsStore(ctx).setCapDimension(parseSheetBoolean(v)); Applied.Yes }),
-        Binding(AppSettingsKeys.IMAGE_MAX_LONG_EDGE_PX,
-            read = { num(ImageSettingsStore(it).getSettings().maxLongEdgePx) },
-            write = { ctx, v ->
-                intOf(v)?.let { ImageSettingsStore(ctx).setMaxLongEdgePx(it); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.IMAGE_MAX_LONG_EDGE_PX,
+            read = { ImageSettingsStore(it).getSettings().maxLongEdgePx },
+            write = { ctx, d -> ImageSettingsStore(ctx).setMaxLongEdgePx(d.toInt()) }),
         Binding(AppSettingsKeys.IMAGE_SKIP_BELOW_ENABLED,
             read = { bool(ImageSettingsStore(it).getSettings().skipBelowEnabled) },
             write = { ctx, v -> ImageSettingsStore(ctx).setSkipBelowEnabled(parseSheetBoolean(v)); Applied.Yes }),
-        Binding(AppSettingsKeys.IMAGE_SKIP_BELOW_BYTES,
-            read = { num(ImageSettingsStore(it).getSettings().skipBelowBytes) },
-            write = { ctx, v ->
-                v.trim().toDoubleOrNull()?.let { ImageSettingsStore(ctx).setSkipBelowBytes(it.toLong()); Applied.Yes }
-                    ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.IMAGE_SKIP_BELOW_BYTES,
+            read = { ImageSettingsStore(it).getSettings().skipBelowBytes },
+            write = { ctx, d -> ImageSettingsStore(ctx).setSkipBelowBytes(d.toLong()) }),
         Binding(AppSettingsKeys.IMAGE_EDITOR_REMOVE_POLICY,
             read = { ImageSettingsStore(it).getEditorRemovePolicy().name },
             write = { ctx, v ->
@@ -201,7 +196,8 @@ object AppSettingsBindings {
                     else -> {
                         val store = AiProviderStore(ctx)
                         for (config in decoded.configs) store.save(config)
-                        if (decoded.skipped > 0) Applied.No("프로바이더 ${decoded.skipped}개를 읽지 못해 건너뛰고 나머지를 넣었습니다")
+                        // 일부는 실제로 들어갔다 — '아무것도 안 썼다'(No)로 세면 계수가 거짓이 된다.
+                        if (decoded.skipped > 0) Applied.Adjusted("프로바이더 ${decoded.skipped}개를 읽지 못해 건너뛰고 나머지를 넣었습니다")
                         else Applied.Yes
                     }
                 }
@@ -215,12 +211,12 @@ object AppSettingsBindings {
                 else if (store.get(id) == null) Applied.No("그 id의 프로바이더가 없습니다 — ${AppSettingsKeys.AI_PROVIDERS.key} 행이 먼저 들어와야 합니다")
                 else { store.setActiveId(id); Applied.Yes }
             }),
-        Binding(AppSettingsKeys.AI_USAGE_EXAMPLE_COUNT,
-            read = { num(AiPromptSettings(it).usageExampleCount) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).usageExampleCount = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
-        Binding(AppSettingsKeys.AI_STYLE_SAMPLE_COUNT,
-            read = { num(AiPromptSettings(it).styleSampleCount) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).styleSampleCount = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
+        numberBinding(AppSettingsKeys.AI_USAGE_EXAMPLE_COUNT,
+            read = { AiPromptSettings(it).usageExampleCount },
+            write = { ctx, d -> AiPromptSettings(ctx).usageExampleCount = d.toInt() }),
+        numberBinding(AppSettingsKeys.AI_STYLE_SAMPLE_COUNT,
+            read = { AiPromptSettings(it).styleSampleCount },
+            write = { ctx, d -> AiPromptSettings(ctx).styleSampleCount = d.toInt() }),
         // 최소 확신은 **'제한 없음'이 null**이라 빈 칸이 뜻을 갖는다 — 그래서 여기만
         // 빈 칸을 유실이 아니라 값으로 읽는다(`confidenceToWire`가 그 규약의 단일 소스다).
         Binding(AppSettingsKeys.AI_MIN_CONFIDENCE,
@@ -244,27 +240,40 @@ object AppSettingsBindings {
                 if (parsed == null) Applied.No("허용: ${AiCreativity.entries.joinToString { it.wire }}")
                 else { AiPromptSettings(ctx).creativity = parsed; Applied.Yes }
             }),
-        Binding(AppSettingsKeys.AI_ATTACH_IMAGE_COUNT,
-            read = { num(AiPromptSettings(it).attachImageCount) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).attachImageCount = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
+        numberBinding(AppSettingsKeys.AI_ATTACH_IMAGE_COUNT,
+            read = { AiPromptSettings(it).attachImageCount },
+            write = { ctx, d -> AiPromptSettings(ctx).attachImageCount = d.toInt() }),
         Binding(AppSettingsKeys.AI_ATTACH_REPRESENTATIVE_FIRST,
             read = { bool(AiPromptSettings(it).attachRepresentativeFirst) },
             write = { ctx, v -> AiPromptSettings(ctx).attachRepresentativeFirst = parseSheetBoolean(v); Applied.Yes }),
         Binding(AppSettingsKeys.AI_IMAGE_TAG_POLICY,
             read = { AiPromptSettings(it).imageTagPolicy },
-            write = { ctx, v -> AiPromptSettings(ctx).imageTagPolicy = v; Applied.Yes }),
-        Binding(AppSettingsKeys.AI_IMAGE_TAG_BATCH_SIZE,
-            read = { num(AiPromptSettings(it).imageTagBatchSize) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).imageTagBatchSize = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
+            write = { ctx, v ->
+                val settings = AiPromptSettings(ctx)
+                settings.imageTagPolicy = v
+                // 저장소가 상한으로 **조용히 자른다**(AiPromptPolicy.clampImageTagPolicy) —
+                // 숫자 바인딩과 같은 read-back 대조로 잘림을 알린다. 거절로 바꾸지 않는 것은
+                // 미리보기가 TEXT를 글자로 견줘 '갱신'이라 예고하기 때문이다(R-33 — 거절하면
+                // 예고가 거짓이 된다). 공백만 다듬어진 것은 조정이 아니다.
+                val stored = settings.imageTagPolicy
+                if (stored == v.trim()) Applied.Yes
+                else Applied.Adjusted(
+                    "길이 상한 ${AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS}자를 넘어 " +
+                        "앞 ${stored.length}자까지만 저장했습니다"
+                )
+            }),
+        numberBinding(AppSettingsKeys.AI_IMAGE_TAG_BATCH_SIZE,
+            read = { AiPromptSettings(it).imageTagBatchSize },
+            write = { ctx, d -> AiPromptSettings(ctx).imageTagBatchSize = d.toInt() }),
         Binding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_UNIT,
             read = { bool(AiPromptSettings(it).imageTagGroupUnit) },
             write = { ctx, v -> AiPromptSettings(ctx).imageTagGroupUnit = parseSheetBoolean(v); Applied.Yes }),
-        Binding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_SAMPLE_SIZE,
-            read = { num(AiPromptSettings(it).imageTagGroupSampleSize) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).imageTagGroupSampleSize = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
-        Binding(AppSettingsKeys.AI_NAME_SUGGEST_BATCH_SIZE,
-            read = { num(AiPromptSettings(it).nameSuggestBatchSize) },
-            write = { ctx, v -> intOf(v)?.let { AiPromptSettings(ctx).nameSuggestBatchSize = it; Applied.Yes } ?: Applied.No("숫자가 아닙니다") }),
+        numberBinding(AppSettingsKeys.AI_IMAGE_TAG_GROUP_SAMPLE_SIZE,
+            read = { AiPromptSettings(it).imageTagGroupSampleSize },
+            write = { ctx, d -> AiPromptSettings(ctx).imageTagGroupSampleSize = d.toInt() }),
+        numberBinding(AppSettingsKeys.AI_NAME_SUGGEST_BATCH_SIZE,
+            read = { AiPromptSettings(it).nameSuggestBatchSize },
+            write = { ctx, d -> AiPromptSettings(ctx).nameSuggestBatchSize = d.toInt() }),
         // 재료 범위는 **빈 칸이 '전부 끔'**이라 최소 확신과 같은 부류다 — 빈 칸을 유실로
         // 보면 사용자가 전부 꺼 둔 설정이 왕복 한 번에 기본값으로 되살아난다.
         // 모르는 이름은 조용히 버리지 않고 거절한다: 오타를 무시하면 **적어 넣은 재료가
@@ -307,13 +316,9 @@ object AppSettingsBindings {
             }),
 
         // ── 통계 기준 ──
-        Binding(AppSettingsKeys.STATS_COMPLETION_REQUIRED_WEIGHT,
-            read = { num(CompletionWeightPrefs.weights(it).requiredWeight) },
-            write = { ctx, v ->
-                v.trim().toFloatOrNull()?.let {
-                    CompletionWeightPrefs.save(ctx, CompletionWeights.clamp(it)); Applied.Yes
-                } ?: Applied.No("숫자가 아닙니다")
-            }),
+        numberBinding(AppSettingsKeys.STATS_COMPLETION_REQUIRED_WEIGHT,
+            read = { CompletionWeightPrefs.weights(it).requiredWeight },
+            write = { ctx, d -> CompletionWeightPrefs.save(ctx, CompletionWeights.clamp(d.toFloat())) }),
         // 유형 목록은 쉼표로 적는다 — 사람이 엑셀에서 고치는 자리라 집합을 JSON으로 두면
         // 손으로 못 만진다(원칙 04). 모르는 이름은 그 저장소가 조용히 버리므로 여기서 먼저 세어 알린다.
         //
@@ -335,7 +340,8 @@ object AppSettingsBindings {
                     Applied.No("적힌 유형 ${names.size}개를 하나도 알 수 없어 그대로 두었습니다 — 허용: ${PatternType.entries.joinToString { it.name }} 또는 빈 칸(전부 끔)")
                 } else {
                     PatternTypePrefs.save(ctx, known.toSet())
-                    if (unknown > 0) Applied.No("알 수 없는 유형 ${unknown}개를 빼고 나머지를 적용했습니다")
+                    // 저장은 됐다 — 적힌 그대로가 아닐 뿐이다(No가 아니라 Adjusted).
+                    if (unknown > 0) Applied.Adjusted("알 수 없는 유형 ${unknown}개를 빼고 나머지를 적용했습니다")
                     else Applied.Yes
                 }
             }),
@@ -364,7 +370,8 @@ object AppSettingsBindings {
                     if (notes.isEmpty()) Applied.Yes
                     // 셋은 처분이 다르다 — 못 읽은 것은 종전 값으로 남고, 범위 밖은 접혀서 들어간다.
                     // 한 문장으로 뭉뚱그리면 사용자가 무엇이 어떻게 됐는지 알 수 없다.
-                    else Applied.No("${notes.joinToString(", ")} — 그 자리는 종전 값이나 허용 범위로 두고 나머지를 적용했습니다")
+                    // 나머지는 실제로 저장됐으므로 No(아무것도 안 씀)가 아니라 Adjusted다.
+                    else Applied.Adjusted("${notes.joinToString(", ")} — 그 자리는 종전 값이나 허용 범위로 두고 나머지를 적용했습니다")
                 }
             }),
 
@@ -378,13 +385,13 @@ object AppSettingsBindings {
         supplementFlag(AppSettingsKeys.SUPPLEMENT_CHECK_RELATIONSHIPS, { it.checkRelationships }, { c, b -> c.copy(checkRelationships = b) }),
         supplementFlag(AppSettingsKeys.SUPPLEMENT_CHECK_EVENTS, { it.checkEvents }, { c, b -> c.copy(checkEvents = b) }),
         supplementFlag(AppSettingsKeys.SUPPLEMENT_CHECK_FACTIONS, { it.checkFactions }, { c, b -> c.copy(checkFactions = b) }),
-        Binding(AppSettingsKeys.SUPPLEMENT_FIELD_THRESHOLD,
-            read = { num(SupplementCriteria.load(it).fieldCompletionThreshold) },
-            write = { ctx, v ->
-                intOf(v)?.let {
-                    SupplementCriteria.save(ctx, SupplementCriteria.load(ctx).copy(fieldCompletionThreshold = it.coerceIn(0, 100)))
-                    Applied.Yes
-                } ?: Applied.No("숫자가 아닙니다")
+        numberBinding(AppSettingsKeys.SUPPLEMENT_FIELD_THRESHOLD,
+            read = { SupplementCriteria.load(it).fieldCompletionThreshold },
+            write = { ctx, d ->
+                SupplementCriteria.save(
+                    ctx,
+                    SupplementCriteria.load(ctx).copy(fieldCompletionThreshold = d.toInt().coerceIn(0, 100))
+                )
             }),
         Binding(AppSettingsKeys.SUPPLEMENT_AUTO_SAVE_ON_EXIT,
             read = { bool(RandomSupplementSettings.load(it).autoSaveOnExit) },
@@ -409,11 +416,52 @@ object AppSettingsBindings {
                     // 적힌 것만 켜고 나머지는 끈다 — '전부 기본 켜짐'이라 빼기만으로는 끌 수 없다.
                     for (category in InsightCategory.entries) prefs.setCategoryEnabled(category, category in known)
                     val unknown = names.size - known.size
-                    if (unknown > 0) Applied.No("알 수 없는 항목 ${unknown}개를 빼고 나머지를 적용했습니다")
+                    // 저장은 됐다 — 적힌 그대로가 아닐 뿐이다(No가 아니라 Adjusted).
+                    if (unknown > 0) Applied.Adjusted("알 수 없는 항목 ${unknown}개를 빼고 나머지를 적용했습니다")
                     else Applied.Yes
                 }
             })
     )
+
+    /**
+     * 숫자 설정 열다섯도 모양이 같다 — **한 벌로 짓는다**([supplementFlag]와 같은 근거).
+     *
+     * ## 쓰고 나서 다시 읽어 견준다
+     *
+     * 범위 밖 값은 각 저장소가 접어서 받는다(관대 임포트 — B-74 확정). **범위의 단일 소스는
+     * 그 저장소들이고 여기 적으면 두 벌이 된다** — 그래서 접혔는지는 범위를 물어서가 아니라
+     * **저장된 값을 다시 읽어** 안다. 적힌 값과 수로 다르면 [Applied.Adjusted]로 무엇이
+     * 저장됐는지 알린다. 종전에는 접힘이 [Applied.Yes]로 계수되어 사용자가 적은 500이 100으로
+     * 들어가고도 *"복원 N건"*만 남았다(변수 제어 위반 — 무슨 일이 있었는지 말하지 않았다).
+     *
+     * 견주는 술어는 복원 미리보기와 **같은 함수**다([AppSettingsKeys.sameNumericCell] — R-33).
+     * 수 아닌 값은 [Applied.No]로 거절한다 — 미리보기의 '건너뜀' 예고([AppSettingsDiff])와
+     * `tools/check_app_settings_catalog.sh` 축 ④가 이 거절 위에 선다.
+     *
+     * @param write 해석된 수를 저장소에 넣는다. 정수 저장소는 `d.toInt()`로 받는다 —
+     *   소수점 아래가 버려지는 것도 read-back이 잡아 [Applied.Adjusted]로 알린다.
+     * @param rejectHint 수가 아닐 때 사유에 덧붙일 안내(허용 값 열거 등). 문장 앞에 공백 포함.
+     */
+    private fun numberBinding(
+        spec: AppSettingsKeys.Spec,
+        read: suspend (Context) -> Number,
+        write: suspend (Context, Double) -> Unit,
+        rejectHint: String = ""
+    ) = Binding(spec,
+        read = { num(read(it)) },
+        write = { ctx, v ->
+            val parsed = v.trim().toDoubleOrNull()
+            if (parsed == null) Applied.No("숫자가 아닙니다$rejectHint")
+            else {
+                write(ctx, parsed)
+                val stored = num(read(ctx))
+                if (AppSettingsKeys.sameNumericCell(v, stored)) Applied.Yes
+                else Applied.Adjusted(
+                    "적힌 값을 그대로 쓸 수 없어 ${stored}(으)로 조정해 저장했습니다 — " +
+                        "허용 값은 '입력 가능한 값' 칸에 있습니다"
+                )
+            }
+        })
 
     /**
      * 보충 기준의 불리언 아홉은 모양이 같다 — **한 벌로 짓는다.**

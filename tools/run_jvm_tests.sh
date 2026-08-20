@@ -330,6 +330,7 @@ $MAIN/excel/FieldDefinitionPrune.kt
 $MAIN/excel/FieldScopeCell.kt
 $MAIN/excel/AppSettingsKeys.kt
 $MAIN/excel/AppSettingsDiff.kt
+$MAIN/excel/TransferResultText.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -349,6 +350,7 @@ $TEST/excel/FieldDefinitionPruneTest.kt
 $TEST/excel/FieldScopeCellTest.kt
 $TEST/excel/AppSettingsDiffTest.kt
 $TEST/excel/AppSettingsKeysTest.kt
+$TEST/excel/TransferResultTextTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
 $TEST/data/DuelGradeRefTest.kt

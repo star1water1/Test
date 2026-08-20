@@ -412,10 +412,11 @@ object AppSettingsKeys {
     val AI_IMAGE_TAG_POLICY = Spec("ai_image_tag_policy", Kind.TEXT,
         note = "AI 태그 제안에 함께 보낼 지침입니다.",
         domain = Domain.FreeText(AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS,
-            // **고지를 약속하지 않는다.** `DropTally.policyTruncated` 배선이 있기는 한데
+            // 제안 시점 고지는 약속하지 않는다 — `DropTally.policyTruncated` 배선이 있기는 한데
             // `AiPromptSettings.imageTagPolicy`가 **읽기·쓰기 양쪽에서 좁히는** 탓에 제안기가
-            // 받는 값이 이미 잘린 값이고, 그래서 그 수는 언제나 0이다(범위 밖 발견 —
-            // 이 판은 문구만 실동작에 맞춘다). 지금 사용자가 아는 길은 인앱 칸의 글자 수뿐이다.
+            // 받는 값이 이미 잘린 값이고, 그래서 그 수는 언제나 0이다. **엑셀 가져오기는
+            // 잘리면 그 행에서 알린다** — 바인딩이 read-back으로 대조해 `Applied.Adjusted`를
+            // 낸다(숫자 설정의 접힘 고지와 같은 벌).
             extra = "앞뒤 공백은 지우고, 넘는 글자는 잘라 저장합니다. 비우면 지침을 보내지 않습니다."))
     val AI_IMAGE_TAG_BATCH_SIZE = Spec("ai_image_tag_batch_size", Kind.NUMBER,
         note = "이미지 태그 요청 한 번에 보낼 장수입니다.",
@@ -666,6 +667,20 @@ object AppSettingsKeys {
      * 돌려주기도 하므로 `toIntOrNull()`로 바로 받으면 멀쩡한 값이 *"숫자가 아닙니다"*가 된다.
      */
     fun parseIntCell(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
+
+    /**
+     * 두 셀 글자가 **같은 수**인가 — `3`과 `3.0`은 같다. 한쪽이라도 수로 안 읽히면 글자로
+     * 견준다(못 읽는 값을 '같다'로 접으면 다른 값이 같은 값으로 보인다).
+     *
+     * 복원 미리보기([AppSettingsDiff])와 가져오기의 read-back 대조([AppSettingsBindings]의
+     * `numberBinding`)가 **이 한 벌**을 쓴다 — 술어가 두 벌이면 미리보기의 예고와 실제 처분이
+     * 갈리는 날이 온다(R-33).
+     */
+    fun sameNumericCell(a: String, b: String): Boolean {
+        val x = a.trim().toDoubleOrNull()
+        val y = b.trim().toDoubleOrNull()
+        return if (x != null && y != null) x == y else a.trim() == b.trim()
+    }
 
     /**
      * 싣지 않는 저장소와 **그 사유** — 확정 3번의 ⓒ('실을 값어치가 없는 것').

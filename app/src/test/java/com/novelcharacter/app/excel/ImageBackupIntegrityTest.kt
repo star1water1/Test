@@ -202,7 +202,8 @@ class ImageBackupIntegrityTest {
         assertEquals(1, p.rows.size)
         assertEquals(2, p.rows.single().rowIndex)     // 마지막 행 우선
         assertEquals(1, p.warnings.size)
-        assertTrue(p.warnings.single().contains("행 1 과 행 2 에 중복됨"))
+        // 색인 1·2(0-기반)의 행은 엑셀 화면에서 2·3행이다 — 경고는 화면 번호로 적는다.
+        assertTrue(p.warnings.single().contains("행 2 과 행 3 에 중복됨"))
         assertTrue(p.warnings.single().contains("마지막 행 우선"))
     }
 

@@ -301,20 +301,39 @@ class ExcelImporter(context: Context) {
         )
     }
 
-    private fun offscreenSummary(summary: String, errorCount: Int, warningCount: Int): String {
+    /**
+     * 화면 밖 종결 고지의 **(알림 본문, 보관함 본문)** 짝.
+     *
+     * 알림에는 건수와 약속만 싣고 **상세는 보관함에 싣는다** — 다음 진입에서 보관함 창이
+     * 그대로 보여 주므로 "앱을 열면 상세를 보여 드립니다"가 참이 된다. 종전에는 둘 다
+     * 건수뿐인데 문구가 *"앱에서 상세를 확인하세요"*여서 **확인할 상세가 앱 어디에도
+     * 없었다**(거짓 고지 — 상세는 결과 창과 함께 사라졌다). 상세 본문은 화면의 '상세 보기'
+     * 창과 같은 함수가 짓는다([TransferResultText] — 두 벌이면 한쪽만 고쳐진다).
+     */
+    private fun offscreenBodies(
+        summary: String,
+        errors: List<String>,
+        warnings: List<String>
+    ): Pair<String, String> {
         val parts = mutableListOf<String>()
-        if (errorCount > 0) parts.add("오류 ${errorCount}건")
-        if (warningCount > 0) parts.add("경고 ${warningCount}건")
-        if (parts.isEmpty()) return summary
-        return "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱에서 상세를 확인하세요"
+        if (errors.isNotEmpty()) parts.add("오류 ${errors.size}건")
+        if (warnings.isNotEmpty()) parts.add("경고 ${warnings.size}건")
+        if (parts.isEmpty()) return summary to summary
+        val notice = "$summary\n\n⚠ ${parts.joinToString(", ")} — 앱을 열면 상세를 보여 드립니다"
+        val stored = "$notice\n\n${TransferResultText.detailBody(errors, warnings)}"
+        return notice to stored
     }
 
     /**
      * @param notify 시스템 알림까지 띄우는가. 같은 화면이 곧 다시 서는 경우(회전)에는 false다 —
      *   보관함이 다음 진입에서 창으로 띄우므로, 알림은 같은 말을 한 번 더 하는 소음이 된다.
      */
-    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true) {
-        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, body)
+    /**
+     * @param storedBody 보관함에 남길 본문 — 기본은 알림과 같다. 오류·경고 상세가 있는
+     *   종결 고지는 여기에 상세를 실어([offscreenBodies]) 다음 진입 창이 보여 준다.
+     */
+    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true, storedBody: String = body) {
+        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, storedBody)
         if (!notify) return
         runCatching {
             com.novelcharacter.app.notification.NotificationHelper
@@ -819,10 +838,12 @@ class ExcelImporter(context: Context) {
         )
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
-            // 월드패키지도 같은 처분이다(B-56) — 안내 건수까지 실어야 '볼 것이 있다'가 남는다.
+            // 월드패키지도 같은 처분이다(B-56) — 알림에 건수를, 보관함에 안내 상세까지 싣는다.
+            val (notice, stored) = offscreenBodies(summary, emptyList(), outcome.warnings)
             deliverOffscreen(
                 appContext.getString(com.novelcharacter.app.R.string.world_package_import_title),
-                offscreenSummary(summary, errorCount = 0, warningCount = outcome.warnings.size)
+                notice,
+                storedBody = stored
             )
             return
         }
@@ -2041,11 +2062,13 @@ class ExcelImporter(context: Context) {
         val act = currentActivityRef?.get()
         if (act == null || act.isFinishing || act.isDestroyed) {
             // 화면이 사라진 뒤에 끝났다 — 알림 + 다음 진입 고지로 보낸다(B-56).
-            // **오류·경고 건수를 요약에 함께 싣는다**: 창을 못 띄우면 '상세 보기'로 갈 길이
-            // 없으므로, 적어도 *볼 것이 있다*는 사실은 이 한 줄이 말해야 한다.
+            // 알림에는 건수를, **보관함에는 상세까지** 싣는다 — 창을 못 띄웠어도 상세가
+            // 사라지지 않고 다음 진입에서 그대로 뜬다([offscreenBodies]).
+            val (notice, stored) = offscreenBodies(summaryMessage, result.errors, result.warnings)
             deliverOffscreen(
                 appContext.getString(com.novelcharacter.app.R.string.import_result_title),
-                offscreenSummary(summaryMessage, result.errors.size, result.warnings.size)
+                notice,
+                storedBody = stored
             )
             return
         }
@@ -2157,37 +2180,13 @@ class ExcelImporter(context: Context) {
     private fun showErrorDetailDialog(act: android.app.Activity, result: ImportResult) {
         if (act.isFinishing || act.isDestroyed) return
 
-        val sb = StringBuilder()
-        val maxDetailItems = 30
-        val maxShownItems = 20
-        if (result.errors.isNotEmpty()) {
-            sb.appendLine("── 오류 (${result.errors.size}건) ──")
-            if (result.errors.size <= maxDetailItems) {
-                result.errors.forEachIndexed { i, err ->
-                    sb.appendLine("${i + 1}. $err")
-                }
-            } else {
-                result.errors.take(maxShownItems).forEachIndexed { i, err ->
-                    sb.appendLine("${i + 1}. $err")
-                }
-                sb.appendLine("... 외 ${result.errors.size - maxShownItems}건")
-            }
-        }
-        if (result.warnings.isNotEmpty()) {
-            if (sb.isNotEmpty()) sb.appendLine()
-            sb.appendLine("── 경고 (${result.warnings.size}건) ──")
-            if (result.warnings.size <= maxDetailItems) {
-                result.warnings.forEach { sb.appendLine("• $it") }
-            } else {
-                result.warnings.take(maxShownItems).forEach { sb.appendLine("• $it") }
-                sb.appendLine("... 외 ${result.warnings.size - maxShownItems}건")
-            }
-        }
+        // 본문은 보관함(화면 밖 종결 고지)과 같은 함수가 짓는다 — 두 벌이면 한쪽만 고쳐진다.
+        val body = TransferResultText.detailBody(result.errors, result.warnings)
 
         // 오류·경고를 각각 최대 30건까지 적으므로 60줄 넘는 본문이 나온다(B-91).
         val scrollView = cappedScrollView(act)
         val textView = TextView(act).apply {
-            text = sb.toString()
+            text = body
             val dp16 = (16 * act.resources.displayMetrics.density).toInt()
             setPadding(dp16, dp16, dp16, dp16)
             setTextIsSelectable(true)
