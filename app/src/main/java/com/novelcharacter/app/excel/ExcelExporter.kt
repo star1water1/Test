@@ -381,23 +381,32 @@ class ExcelExporter(context: Context) {
      * 사용자가 고른 자리(SAF)에 산출물을 옮겨 쓴다.
      *
      * **이 쓰기는 화면이 사라져도 끊기지 않는다** (B-228 · [TransferPhase.EXPORT_SAVE]).
-     * 목적지는 **사용자가 고른 실제 파일**이라, 중간에 끊기면 그 자리에 **반쪽 파일이
-     * 멀쩡한 이름으로 남는다** — 나중에 그것으로 복원하면 조용히 유실된다(R-26 후단이
-     * 금지하는 바로 그 모양이고, 만들다 만 임시 파일과 달리 **앱이 지울 수도 없는 자리**다).
-     * 옮겨 쓰기는 유한한 작업이므로 끝까지 가는 편이 언제나 낫다.
+     * 목적지는 **사용자가 고른 실제 파일**이라, 중간에 끊기면 그 자리에 반쪽 파일이
+     * 멀쩡한 이름으로 남는다 — 그래서 끊지 않고 끝까지 가고, 그래도 실패하면
+     * [reportSaveFailure]가 그 반쪽을 지우러 간다(R-26 후단: 조용한 반쪽 상태 금지).
+     *
+     * 화면이 사라져도 도는 구간이므로 **끝나는 시점에 화면이 없을 수 있다** — 종결 고지는
+     * 성공·실패 모두 [deliverTerminal]로 낸다(토스트는 앱이 앞에 없으면 API 30+가 막는다).
+     *
+     * 쓰기에 들어가기 전에 원본 경로를 [ExportRetryStore]에 적어 두는 것은 **프로세스가
+     * 도중에 죽는 회차**를 위해서다 — 그때는 어떤 콜백도 살아남지 못하지만, 다음 실행의
+     * 보관함 창이 이 기록을 읽어 다시 저장을 세운다. 성공이 지운다.
+     *
+     * @param onSaveFailed 실패를 컨트롤러에 돌리는 창구 — 살아 있으면 그 자리에서 재시도
+     *   창을 세운다. **회전-안전은 이 콜백이 아니라 [ExportRetryStore]가 든다**(R-65):
+     *   실패 처분이 콜백보다 먼저 경로를 영속 보관하므로, 콜백이 죽은 화면을 잡고 있어도
+     *   다음 진입이 줍는다.
      */
-    fun writeToUri(uri: Uri, sourceFile: File) {
+    fun writeToUri(uri: Uri, sourceFile: File, onSaveFailed: (() -> Unit)? = null) {
         phase = TransferPhase.EXPORT_SAVE
         ensureActiveScope().launch {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    ExportRetryStore.store(appContext, sourceFile)
                     val outputStream = appContext.contentResolver.openOutputStream(uri)
                     if (outputStream == null) {
-                        logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
-                            appContext.getString(R.string.result_excel_save_failed)))
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
-                        }
+                        // 열지 못했어도 CreateDocument가 만든 빈 파일이 목적지에 있다 — 같은 실패 처분으로 간다.
+                        reportSaveFailure(uri, sourceFile, null, onSaveFailed)
                         return@withContext
                     }
                     outputStream.use { out ->
@@ -406,19 +415,21 @@ class ExcelExporter(context: Context) {
                         }
                     }
                     sourceFile.delete()
+                    ExportRetryStore.clear(appContext)
                     // 이력이 토스트보다 먼저다 (B-228) — 화면이 사라진 회차만 이력에서 빠지면 안 된다.
                     logExportResult(OpResult.success(OpResult.CAT_EXCEL,
                         appContext.getString(R.string.result_excel_saved)))
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(appContext, appContext.getString(R.string.export_save_success), Toast.LENGTH_SHORT).show()
+                        deliverTerminal(
+                            appContext.getString(R.string.transfer_export_saved_title),
+                            appContext.getString(R.string.export_save_success)
+                        )
                     }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Save to URI failed", e)
-                logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
-                    appContext.getString(R.string.result_excel_save_failed), e.message))
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    reportSaveFailure(uri, sourceFile, e, onSaveFailed)
                 }
             } finally {
                 phase = null
@@ -426,9 +437,96 @@ class ExcelExporter(context: Context) {
         }
     }
 
+    /**
+     * 저장(SAF) 실패의 처분 — 셋을 순서대로 한다.
+     *
+     * ① **목적지의 반쪽 파일을 지운다.** CreateDocument 직후라 프로세스가 살아 있는 동안은
+     *    지울 권한이 있다. 지우기는 실패할 수 있으므로 확인 없는 단정을 하지 않는다(B-225) —
+     *    지웠으면 지웠다고, 못 지웠으면 남았을 수 있다고 문구를 가른다.
+     * ② **원본을 영속 보관한다** — 실패 시 sourceFile은 지우지 않으므로(성공만 지운다)
+     *    [ExportRetryStore]의 경로가 유효하고, 다시 저장은 처음부터 만들지 않는다(원칙 04).
+     * ③ **고지하고 재시도를 돌린다** — 이력 먼저(B-228), 그다음 [deliverTerminal](화면
+     *    있으면 토스트, 없으면 알림+보관함), 마지막으로 살아 있는 컨트롤러의 재시도 창.
+     */
+    private suspend fun reportSaveFailure(
+        uri: Uri,
+        sourceFile: File,
+        cause: Exception?,
+        onSaveFailed: (() -> Unit)?
+    ) {
+        val removed = runCatching {
+            android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
+        }.getOrDefault(false)
+        ExportRetryStore.store(appContext, sourceFile)
+        val body = appContext.getString(
+            if (removed) R.string.export_save_failed_destination_removed
+            else R.string.export_save_failed_destination_unknown
+        )
+        logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
+            appContext.getString(R.string.result_excel_save_failed),
+            listOfNotNull(body, cause?.message).joinToString("\n").ifBlank { null }))
+        withContext(Dispatchers.Main) {
+            deliverTerminal(appContext.getString(R.string.transfer_export_save_failed_title), body)
+            onSaveFailed?.invoke()
+        }
+    }
+
     /** 내보내기 결과를 작업 이력에 기록한다(즉시 알림은 Toast/공유시트가 담당). */
     private fun logExportResult(result: OpResult) {
         (appContext as? NovelCharacterApp)?.operationLogRepository?.logAsync(result)
+    }
+
+    /**
+     * 종결 고지를 띄울 화면 — 형제 [ExcelImporter]와 같은 WeakReference 꼴이다.
+     * 컨트롤러가 exporter를 세울 때 [attachScreen]으로 넣고, 화면이 사라지면
+     * [cancelForScreenGone]이 놓는다. 쓰는 쪽은 IO 코루틴이고 넣고 놓는 쪽은
+     * 메인이라 `@Volatile`이 필요하다.
+     */
+    @Volatile private var currentActivityRef: java.lang.ref.WeakReference<android.app.Activity>? = null
+
+    /** 종결 고지를 띄울 화면을 잇는다 — [ExcelImporter.registerLauncher]가 하는 것과 같은 일. */
+    fun attachScreen(activity: android.app.Activity?) {
+        currentActivityRef = activity?.let { java.lang.ref.WeakReference(it) }
+    }
+
+    /** 지금 무언가를 띄울 화면이 있는가 — [ExcelImporter]의 같은 이름 판정과 같은 꼴. */
+    private fun hasScreen(): Boolean {
+        val act = currentActivityRef?.get()
+        return act != null && !act.isFinishing && !act.isDestroyed
+    }
+
+    /**
+     * 종결 고지 — 화면이 있으면 토스트, 없으면 알림 + 다음 진입 보관함 (B-56 · B-228).
+     * 가져오기의 `deliverTerminal`과 같은 꼴이다. [TransferPhase.EXPORT_SAVE]는 화면이
+     * 사라져도 끝까지 돌므로, 끝나는 시점의 화면 유무를 여기서 가른다 — 토스트 하나에
+     * 걸면 앱이 앞에 없는 회차는 무고지가 된다(API 30+가 백그라운드 토스트를 막는다).
+     */
+    private fun deliverTerminal(title: String, body: String) {
+        if (hasScreen()) {
+            Toast.makeText(appContext, body, Toast.LENGTH_LONG).show()
+            return
+        }
+        deliverOffscreen(title, body)
+    }
+
+    /**
+     * 화면 없는 고지 — 알림은 앱 밖의 사용자에게 지금 닿고, 보관함은 알림을 못 봤거나
+     * 권한을 거절한 사용자에게 다음 진입에서 닿는다(둘은 서로의 사각을 메우는 짝이다).
+     *
+     * @param notify 시스템 알림까지 띄우는가. 같은 화면이 곧 다시 서는 경우(회전)에는
+     *   false다 — 보관함이 다음 진입에서 창으로 띄우므로 알림은 같은 말을 한 번 더 하는
+     *   소음이 된다.
+     */
+    private fun deliverOffscreen(title: String, body: String, notify: Boolean = true) {
+        com.novelcharacter.app.util.TransferNoticeRelay.store(appContext, title, body)
+        if (!notify) return
+        runCatching {
+            com.novelcharacter.app.notification.NotificationHelper.showTransferResultNotification(
+                appContext, title, body
+            )
+        }.onFailure {
+            android.util.Log.w("ExcelExporter", "Failed to post transfer result notification", it)
+        }
     }
 
     /**
@@ -462,26 +560,18 @@ class ExcelExporter(context: Context) {
         val kind = TransferInterruption.abortedKind(phase, userCancelled)
         phase = null
         if (kind == TransferKind.EXPORT) {
-            com.novelcharacter.app.util.TransferNoticeRelay.store(
-                appContext,
+            deliverOffscreen(
                 appContext.getString(R.string.transfer_export_aborted_title),
-                appContext.getString(R.string.transfer_export_aborted_body)
+                appContext.getString(R.string.transfer_export_aborted_body),
+                notify = !screenReturns
             )
-            if (!screenReturns) {
-                runCatching {
-                    com.novelcharacter.app.notification.NotificationHelper.showTransferResultNotification(
-                        appContext,
-                        appContext.getString(R.string.transfer_export_aborted_title),
-                        appContext.getString(R.string.transfer_export_aborted_body)
-                    )
-                }.onFailure {
-                    android.util.Log.w("ExcelExporter", "Failed to post transfer abort notification", it)
-                }
-            }
             logExportResult(OpResult.success(OpResult.CAT_EXCEL,
                 appContext.getString(R.string.result_excel_export_aborted)))
         }
         supervisorJob.cancel()
+        // 화면 참조도 함께 놓는다 — ExcelImporter.onScreenGone이 하는 것과 같은 처분이고,
+        // 이 뒤로도 도는 EXPORT_SAVE의 종결 고지가 죽은 화면에 토스트를 걸지 않게 한다.
+        currentActivityRef = null
     }
 
     // ── 스타일 관리 (시각 개편 2026.08.14 — 사용자 확정 Q-1~Q-3, 정본: excel_visual_design_review_2026-08.md 5장) ──
@@ -776,7 +866,11 @@ class ExcelExporter(context: Context) {
     private fun saveWorkbook(workbook: Workbook, fileName: String): File {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
-        exportsDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
+        // 저장(SAF) 실패로 보관 중인 파일은 회전 정리에서 뺀다 — 지우면 재시도 창의
+        // "보관되어 있습니다"가 거짓이 된다([ExportRetryStore]가 실존 확인으로 닫는 약속).
+        val retained = ExportRetryStore.rawPath(appContext)
+        exportsDir.listFiles()?.filter { it.absolutePath != retained }
+            ?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
 
         val file = File(exportsDir, fileName)
         FileOutputStream(file).use { workbook.write(it) }
@@ -1775,7 +1869,7 @@ class ExcelExporter(context: Context) {
                 row.createCell(col++).setFieldValue(field, values[field.id] ?: "")
             }
 
-            // 이미지경로 (readOnly)
+            // 이미지경로 — 편집이 반영된다(세계관·작품 시트와 같은 규약, B-222 WD-6)
             row.createCell(col++).setTextSafe(character.imagePaths)
 
             // 대표이미지 (B-103 D8) — 사람이 읽고 고칠 수 있도록 파일명으로 싣는다.

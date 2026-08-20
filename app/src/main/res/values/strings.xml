@@ -813,6 +813,22 @@
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
     <string name="export_save_cancelled">저장을 취소했습니다 — 만든 파일은 지웠습니다</string>
     <string name="export_save_cancelled_kept">저장을 취소했습니다</string>
+    <!-- 저장(SAF) 종결 고지 — 이 구간은 화면이 사라져도 돌므로(EXPORT_SAVE) 끝나는 시점에
+         화면이 없을 수 있고, 그때는 토스트 대신 알림+보관함으로 나간다(제목이 알림 제목이 된다).
+         실패 문구 둘은 목적지 반쪽 파일의 처분으로 가른다 — 지웠다고 단정하는 것은 실제로
+         지워졌을 때뿐이다(B-225). -->
+    <string name="transfer_export_saved_title">내보내기 저장 완료</string>
+    <string name="transfer_export_save_failed_title">내보내기 저장 실패</string>
+    <string name="export_save_failed_destination_removed">파일 저장에 실패했습니다 — 쓰다 만 파일은 지웠습니다. 만든 내보내기는 앱에 보관해 두었으니 다시 저장할 수 있습니다.</string>
+    <string name="export_save_failed_destination_unknown">파일 저장에 실패했습니다 — 선택한 위치에 불완전한 파일이 남았을 수 있으니 확인해 주세요. 만든 내보내기는 앱에 보관해 두었으니 다시 저장할 수 있습니다.</string>
+    <!-- 저장 실패 재시도 — 몇 분짜리 내보내기를 처음부터 다시 돌리게 하지 않는다(원칙 04).
+         버리기의 두 문구도 실제 삭제 결과로 가른다(B-225). -->
+    <string name="export_retry_body">저장하지 못한 내보내기 파일(%1$s)이 앱에 보관되어 있습니다. 다시 저장을 누르면 처음부터 만들지 않고 이 파일을 그대로 저장합니다.</string>
+    <string name="export_retry_save">다시 저장</string>
+    <string name="export_retry_discard">버리기</string>
+    <string name="export_retry_later">나중에</string>
+    <string name="export_retry_discarded">보관된 내보내기 파일을 지웠습니다</string>
+    <string name="export_retry_discard_failed">파일을 지우지 못했습니다 — 앱의 임시 저장 공간에 남아 있습니다</string>
 
     <!--
         가져오기 진행도(작업형 · B-51) — 구간이 넷이고 단위가 둘이다.

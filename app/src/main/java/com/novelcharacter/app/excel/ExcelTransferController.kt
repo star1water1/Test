@@ -69,8 +69,16 @@ class ExcelTransferController(private val fragment: Fragment) {
                 // 쓸 것이 없다 — 프로세스가 되살아나며 경로를 잃은 회차다.
                 // **자리를 고르고 왔는데 아무 일도 안 일어나면 저장된 줄 안다**(개발 의도 2번) —
                 // 그때만 말한다. 고르지 않고 돌아온 것이면 지울 것도 알릴 것도 없다.
-                if (uri != null && onScreen) {
-                    Toast.makeText(appContext, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+                if (uri != null) {
+                    // 자리를 골랐으면 CreateDocument가 이미 빈 파일을 만들었다 — 그대로 두면
+                    // 멀쩡한 이름의 0바이트 파일이 남는다(writeToUri 실패의 반쪽 파일과 같은
+                    // 부류, R-26). 쓸 내용이 없으므로 목적지를 지우는 것으로 처분한다.
+                    runCatching {
+                        android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
+                    }
+                    if (onScreen) {
+                        Toast.makeText(appContext, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+                    }
                 }
             uri == null -> {
                 // 저장 위치를 고르지 않았다 — 캐시에 남기지 않고, 지웠다는 사실을 말한다.
@@ -84,8 +92,13 @@ class ExcelTransferController(private val fragment: Fragment) {
                 }
             }
             else -> {
-                val target = exporter ?: ExcelExporter(appContext).also { exporter = it }
-                target.writeToUri(uri, file)
+                val target = exporter ?: ExcelExporter(appContext).also {
+                    exporter = it
+                    it.attachScreen(fragment.activity)
+                }
+                // 실패는 재시도 창으로 돌아온다 — 이 콜백이 죽어 있어도 경로는
+                // ExportRetryStore에 먼저 영속 보관되므로 다음 진입의 보관함 창이 줍는다(R-65).
+                target.writeToUri(uri, file) { showPendingTransferNotice() }
             }
         }
     }
@@ -140,15 +153,49 @@ class ExcelTransferController(private val fragment: Fragment) {
      * 남겨 두면 앱을 열 때마다 지난 결과가 다시 떠 **새 결과로 오인**된다.
      *
      * `isAdded`를 먼저 보는 것은 지우기만 하고 못 보여 주는 경우를 막기 위해서다.
+     *
+     * **저장 실패로 보관된 내보내기([ExportRetryStore])도 이 창이 잇는다** — 고지와
+     * 재시도를 두 창으로 가르면 같은 실패가 두 번 뜬다. 재시도 쪽은 읽어도 지워지지
+     * 않으므로(사용자가 처분하거나 파일이 사라질 때까지 유효), '나중에'와 뒤로 가기는
+     * 다음 진입에서 다시 묻는다 — 몇 분짜리 결과물을 조용히 잃게 두지 않는다(변수 제어).
+     * 화면이 살아 있는 실패도 같은 길이다: [ExcelExporter.writeToUri]의 실패 콜백이
+     * 이 함수를 그 자리에서 부른다.
      */
     private fun showPendingTransferNotice() {
         if (!fragment.isAdded) return
-        val notice = TransferNoticeRelay.consume(appContext) ?: return
-        MaterialAlertDialogBuilder(fragment.requireContext())
+        val notice = TransferNoticeRelay.consume(appContext)
+        val retryFile = ExportRetryStore.peek(appContext)
+        if (notice == null && retryFile == null) return
+        val message = listOfNotNull(
+            notice?.let { "${it.title}\n\n${it.body}" },
+            retryFile?.let { appContext.getString(R.string.export_retry_body, it.name) }
+        ).joinToString("\n\n")
+        val builder = MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(fragment.getString(R.string.transfer_notice_pending_title))
-            .setMessage("${notice.title}\n\n${notice.body}")
-            .setPositiveButton(R.string.confirm, null)
-            .show()
+            .setMessage(message)
+        if (retryFile != null) {
+            builder
+                .setPositiveButton(R.string.export_retry_save) { _, _ ->
+                    // 재시도 = 기존 '보관된 내보내기' 경로를 다시 세우는 것이다 —
+                    // pendingExportFile을 복원하고 SAF를 다시 연다(onSaveInstanceState 왕복 포함).
+                    ExportRetryStore.clear(appContext)
+                    pendingExportFile = retryFile
+                    saveFileLauncher.launch(retryFile.name)
+                }
+                .setNegativeButton(R.string.export_retry_discard) { _, _ ->
+                    ExportRetryStore.clear(appContext)
+                    // 지웠다고 말하는 것은 실제로 지워졌을 때뿐이다(B-225).
+                    val removed = retryFile.delete() || !retryFile.exists()
+                    val resId =
+                        if (removed) R.string.export_retry_discarded
+                        else R.string.export_retry_discard_failed
+                    Toast.makeText(appContext, resId, Toast.LENGTH_SHORT).show()
+                }
+                .setNeutralButton(R.string.export_retry_later, null)
+        } else {
+            builder.setPositiveButton(R.string.confirm, null)
+        }
+        builder.show()
     }
 
     /**
@@ -242,7 +289,7 @@ class ExcelTransferController(private val fragment: Fragment) {
     private fun runExport(options: ExportOptions, saveToFile: Boolean) {
         if (!fragment.isAdded) return
         exporter?.cancel()
-        exporter = ExcelExporter(appContext)
+        exporter = ExcelExporter(appContext).also { it.attachScreen(fragment.activity) }
 
         // **플래그는 스레드를 건넌다** (B-219 ③): 취소 버튼은 메인에서 쓰고 내보내기 루프는
         // IO에서 읽는다. 캡처된 지역 `var`에는 가시성 보장이 없어 눌린 취소가 안 보인 채
