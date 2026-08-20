@@ -229,8 +229,15 @@ val CHARACTER_SHEET_FINGERPRINT = listOf("이명", "작품", "작품코드", "�
  * 진짜 그 시트라면 반드시 일치하고, 남의 시트는 두 번째 열에서 갈린다.
  */
 fun headersMatchSpec(headers: List<String>, spec: SheetSpec): Boolean {
-    val probe = minOf(3, spec.columns.size)
-    if (headers.size < probe) return false
+    // 견주는 열은 셋이되, **파일의 머리글이 더 짧으면 있는 만큼 견준다** (2026.08.20).
+    // 열을 늘린 시트에서 옛 파일이 통째로 탈락하지 않게 하기 위해서다 — '앱 설정'이
+    // 2열 → 4열이 되면서 실제로 그 자리가 생겼다(그 시트가 밀려 `앱 설정(2)`가 된 옛 백업은
+    // 이 판정으로만 되찾는다).
+    //
+    // **다만 둘은 맞아야 한다.** 이 함수의 규약이 *"남의 시트는 두 번째 열에서 갈린다"*이고,
+    // 하나로 줄이면 그 보장이 통째로 사라진다.
+    val probe = minOf(3, spec.columns.size, headers.size)
+    if (probe < minOf(2, spec.columns.size)) return false
     for (col in 0 until probe) {
         if (headers[col].trim() != spec.columns[col].header) return false
     }
@@ -519,12 +526,18 @@ fun createExportFont(workbook: org.apache.poi.ss.usermodel.Workbook): org.apache
  * 다른 글자("78.5")로 보였다 — 우선순위는 `ExportPresentationSpecTest`가 잠근다.
  */
 enum class CellStyleKind {
-    READ_ONLY_MILLIS, READ_ONLY_CALC_DECIMAL, READ_ONLY, CALC_DECIMAL, MILLIS, WRAP, PLAIN
+    READ_ONLY_MILLIS, READ_ONLY_CALC_DECIMAL, READ_ONLY_WRAP, READ_ONLY,
+    CALC_DECIMAL, MILLIS, WRAP, PLAIN
 }
 
 fun cellStyleKindFor(col: ColumnSpec, fractionalCalc: Boolean): CellStyleKind = when {
     col.readOnly && col.millis -> CellStyleKind.READ_ONLY_MILLIS
     col.readOnly && fractionalCalc -> CellStyleKind.READ_ONLY_CALC_DECIMAL
+    // **읽기 전용이 wrap을 가리면 안 된다** (2026.08.20) — 종전에는 `col.readOnly`가 먼저
+    // 걸려 `wrap`이 통째로 죽었다. 그때는 겹치는 열이 하나도 없어 드러나지 않았는데,
+    // '앱 설정'의 `설명`·`입력 가능한 값`이 둘 다인 첫 열이다. 그 두 칸은 **여러 줄 안내가
+    // 본체**라, wrap이 죽으면 행 높이만 늘고 글은 첫 줄에서 잘려 기능이 통째로 무의미해진다.
+    col.readOnly && col.wrap -> CellStyleKind.READ_ONLY_WRAP
     col.readOnly -> CellStyleKind.READ_ONLY
     fractionalCalc -> CellStyleKind.CALC_DECIMAL
     col.millis -> CellStyleKind.MILLIS
@@ -1327,11 +1340,28 @@ fun factionRelationshipSpec(
     )
 )
 
+/**
+ * '앱 설정' 시트 — `설정값`만 고치는 자리이고, 나머지 셋은 **읽는 자리**다.
+ *
+ * `설명`·`입력 가능한 값` 두 칸은 2026.08.20 사용자 요청으로 생겼다:
+ * *"각각의 칸이 뭘 의미하고 어떤 입력을 받는지를 알 방법이 없거든?"* — 그전까지 허용 범위는
+ * 전부 코드 안에만 있었고, 사용자가 알 수 있는 길은 **틀린 값을 넣고 가져오기를 돌려 경고를
+ * 읽는 것**뿐이었다(범위 밖 숫자는 조용히 좁혀져 그 경고조차 안 떴다).
+ *
+ * 두 칸이 `readOnly`인 것이 안내의 절반이다 — 사용 안내의 색 범례가 이미 *"회색 헤더/셀 =
+ * 앱이 채우는 열"*이라 말하고 있어, 따로 설명하지 않아도 고칠 칸이 어디인지 보인다.
+ * 가져오기는 이 두 열을 읽지 않는다(`importAppSettings`가 `설정키`·`설정값`만 본다).
+ *
+ * **옛 파일(두 칸짜리)도 그대로 들어온다** — 열은 이름으로 찾고 `설정값`만 필수다.
+ */
 fun appSettingsSpec() = SheetSpec(
     sheetName = "앱 설정",
     columns = listOf(
         ColumnSpec("설정키", required = true, width = 8000),
-        ColumnSpec("설정값", width = 10000)
+        // AI 메시지 양식이 여러 줄이라 wrap을 켠다 — 안 켜면 셀을 열기 전에는 첫 줄만 보인다.
+        ColumnSpec("설정값", width = 12000, wrap = true),
+        ColumnSpec("설명", readOnly = true, width = 12000, wrap = true),
+        ColumnSpec("입력 가능한 값", readOnly = true, width = 16000, wrap = true)
     )
 )
 

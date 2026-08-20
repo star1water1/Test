@@ -4,6 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.novelcharacter.app.ai.AiCreativity
+import com.novelcharacter.app.ai.AiPromptPolicy
+import com.novelcharacter.app.ai.PromptTemplates
+import com.novelcharacter.app.ui.assistant.InsightCategory
+import com.novelcharacter.app.ui.stats.PatternType
 import org.junit.Test
 
 /**
@@ -197,5 +202,94 @@ class AppSettingsKeysTest {
             "종전 11개보다 늘지 않았다 — 이 판이 고치려던 것이 '개수가 아니라 구조'이긴 하나, 구조를 갈았으면 늘 수 있어야 한다",
             AppSettingsKeys.SPECS.size > 11
         )
+    }
+
+    // ── '설명'·'입력 가능한 값' 두 칸 (사용자 요청 2026.08.20) ──
+
+    @Test
+    fun `모든 설정이 설명을 갖는다`() {
+        // 빈 칸이 하나라도 있으면 사용자는 **그 행만** 뜻을 알 수 없고, 그 사실이
+        // 화면에도 검사에도 드러나지 않는다(실패의 모양이 침묵인 부류).
+        val blank = AppSettingsKeys.SPECS.filter { it.note.isBlank() }.map { it.key }
+        assertTrue("설명이 빈 설정: $blank", blank.isEmpty())
+    }
+
+    @Test
+    fun `모든 설정이 어떤 입력을 받는지 말한다`() {
+        val blank = AppSettingsKeys.SPECS.filter { it.accepts().isBlank() }.map { it.key }
+        assertTrue("허용값이 빈 설정: $blank", blank.isEmpty())
+    }
+
+    @Test
+    fun `허용값 글은 상수에서 나온다`() {
+        // R-14 — 손으로 적으면 상한을 옮기는 날 시트만 낡는다. 상수를 실제로 읽는지
+        // 값으로 확인한다(문구를 통째로 견주면 문장을 다듬을 때마다 시험이 깨진다).
+        val quality = AppSettingsKeys.IMAGE_QUALITY_PERCENT.accepts()
+        assertTrue(quality, quality.contains("10~100"))
+        val creativity = AppSettingsKeys.AI_CREATIVITY.accepts()
+        AiCreativity.entries.forEach { assertTrue(creativity, creativity.contains(it.wire)) }
+        val attach = AppSettingsKeys.AI_ATTACH_IMAGE_COUNT.accepts()
+        assertTrue(attach, attach.contains(AiPromptPolicy.ATTACH_IMAGES_MAX.toString()))
+    }
+
+    @Test
+    fun `기본이 켬인 불리언은 빈 칸이 끄기임을 말한다`() {
+        // **이것을 말하지 않으면 값을 지운 사람은 자기가 그 기능을 껐다는 것을 모른다.**
+        val on = AppSettingsKeys.SPECS.filter {
+            (it.domain as? AppSettingsKeys.Domain.YesNo)?.defaultOn == true
+        }
+        assertTrue("기본 켬인 불리언이 하나도 없다 — 시험이 눈멀었다", on.isNotEmpty())
+        on.forEach {
+            assertTrue(it.key, it.accepts().contains("빈 칸도 끔입니다"))
+            assertTrue(it.key, it.accepts().contains("기본 켬"))
+        }
+    }
+
+    // ── AI 메시지 양식 열넷 (사용자 요청 2026.08.20) ──
+
+    @Test
+    fun `메시지 양식 열넷이 전부 실린다`() {
+        // 선언을 손으로 적지 않고 `PromptTemplates.Id`에서 지으므로
+        // `tools/check_app_settings_catalog.sh` 축 ①이 이 열넷을 보지 못한다. 여기서 본다.
+        val keys = AppSettingsKeys.SPECS.map { it.key }.toSet()
+        PromptTemplates.Id.entries.forEach {
+            assertTrue("${it.key} 가 SPECS에 없다", it.key in keys)
+        }
+        assertEquals(PromptTemplates.Id.entries.size, AppSettingsKeys.AI_PROMPT_TEMPLATES.size)
+    }
+
+    @Test
+    fun `메시지 양식은 자리표 이름을 안내에 싣는다`() {
+        // 사용자가 엑셀에서 고칠 때 쓸 수 있는 이름을 **그 행에서** 알 수 있어야 한다.
+        PromptTemplates.Id.entries.forEach { id ->
+            val accepts = AppSettingsKeys.templateSpecOf(id).accepts()
+            PromptTemplates.tokensOf(id).forEach { token ->
+                assertTrue(
+                    "${id.key} 안내에 ${token.name} 이 없다",
+                    accepts.contains(PromptTemplates.wrap(token.name))
+                )
+            }
+            assertTrue(id.key, accepts.contains("기본 양식으로 돌아갑니다"))
+        }
+    }
+
+    @Test
+    fun `메시지 양식은 비밀이 아니다`() {
+        // 키가 아니라 지시문이라 평문으로 나가도 된다 — 동의를 묻는 대상이 아니다.
+        AppSettingsKeys.AI_PROMPT_TEMPLATES.forEach {
+            assertEquals(it.key, AppSettingsKeys.Disposition.PORTABLE, it.disposition)
+        }
+    }
+
+    @Test
+    fun `쉼표 목록 설정의 이름이 열거와 갈리지 않는다`() {
+        // `AppSettingsKeys`는 순수 선언이라 `ui/` 열거를 직접 가리키지 않는다(프로브가 그
+        // 폴더를 빼는 탓에 가리키는 순간 이 파일의 타입 검사가 눈먼다). 그래서 **갈리는 것을
+        // 여기서 막는다** — 이 하네스는 양쪽을 다 본다.
+        val patterns = AppSettingsKeys.STATS_PATTERN_TYPES.domain as AppSettingsKeys.Domain.ChoiceList
+        assertEquals(PatternType.entries.map { it.name }, patterns.values)
+
+        val categories = AppSettingsKeys.ASSISTANT_CATEGORIES.domain as AppSettingsKeys.Domain.ChoiceList
+        assertEquals(InsightCategory.entries.map { it.name }, categories.values)
     }
 }

@@ -6,6 +6,8 @@ import com.novelcharacter.app.ai.AiKeyStore
 import com.novelcharacter.app.ai.AiPromptPolicy
 import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiProviderStore
+import com.novelcharacter.app.ai.PromptTemplateValidator
+import com.novelcharacter.app.ai.PromptTemplates
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.ai.EventAiMaterial
 import com.novelcharacter.app.backup.BackupSettingsStore
@@ -429,7 +431,64 @@ object AppSettingsBindings {
             Applied.Yes
         })
 
-    private val BY_KEY: Map<String, Binding> = BINDINGS.associateBy { it.spec.key }
+    /**
+     * AI 메시지 양식 열넷 (사용자 요청 2026.08.20) — **한 벌로 짓는다.**
+     *
+     * 손으로 열넷을 적으면 그중 하나가 다른 양식을 읽거나 쓰는 오타가 **컴파일도 시험도
+     * 통과한 채** 남는다(보충 기준 불리언 아홉이 같은 근거로 한 벌이다). 증상은
+     * *"그 양식만 안 바뀐다"*이고, 사용자는 자기가 고친 글이 왜 안 나가는지 알 길이 없다.
+     *
+     * **읽기는 언제나 값을 돌려준다**(기본 양식이라도). 그래야 사용자가 엑셀에서 지금 나가는
+     * 글을 보고 고칠 수 있다 — 요청의 절반이 *"엑셀에서도 편집"*이었고, 행이 없으면
+     * 고칠 대상 자체가 안 보인다.
+     *
+     * **그 대가를 적어 둔다:** 앱의 기본 양식이 나중 판에서 나아졌을 때, 옛 판으로 뜬 파일을
+     * 들이면 **그 옛 기본값이 사용자 양식으로 굳는다**(파일이 그 글을 값으로 말하고 있으므로
+     * 쓰는 쪽은 그것을 지시로 읽는다). 되돌리는 길은 둘이고 둘 다 한 걸음이다 —
+     * **칸을 비워 다시 들이거나**(빈 칸 = 기본으로 되돌리기, 시트 안내가 그렇게 적는다)
+     * 인앱 편집 창의 '기본값으로'를 누르면 된다. 행을 안 싣는 대안은 *"엑셀에서 고친다"*를
+     * 통째로 없애므로 이쪽을 골랐다.
+     *
+     * **쓰기는 자르지 않고 거절한다.** 잘린 양식은 필수 자리표가 잘려나간, 계약이 깨진 글이다.
+     */
+    private val PROMPT_TEMPLATE_BINDINGS: List<Binding> =
+        PromptTemplates.Id.entries.map { id ->
+            Binding(AppSettingsKeys.templateSpecOf(id),
+                read = { AiPromptSettings(it).templateOf(id) },
+                write = { ctx, v ->
+                    // 셀 안의 줄바꿈은 프로그램마다 다른 글자로 온다. 그대로 두면 **아무것도
+                    // 고치지 않은 왕복에서 매번 '복원됨'이 뜬다** — 왕복 규약이 금지하는 부류다.
+                    val text = v.replace("\r\n", "\n").replace('\r', '\n')
+                    val problems = AiPromptSettings(ctx).setTemplate(id, text)
+                    if (problems.isEmpty()) Applied.Yes
+                    else Applied.No(problems.joinToString(" / ") { templateProblemText(it) })
+                })
+        }
+
+    /**
+     * 거절 사유의 **엑셀판 문구**. 화면은 자기 문구를 따로 입힌다 — 순수 계층은
+     * `Problem`만 내고 리소스를 모른다(`FormulaValidator`와 같은 관행).
+     */
+    private fun templateProblemText(problem: PromptTemplateValidator.Problem): String =
+        when (problem) {
+            is PromptTemplateValidator.Problem.UnknownTokens ->
+                "쓸 수 없는 자리 " + problem.names.joinToString(", ") { PromptTemplates.wrap(it) } +
+                    " — 쓸 수 있는 이름은 '입력 가능한 값' 칸에 있습니다"
+            is PromptTemplateValidator.Problem.MissingRequired ->
+                "반드시 들어가야 하는 자리가 빠졌습니다: " +
+                    problem.names.joinToString(", ") { PromptTemplates.wrap(it) }
+            is PromptTemplateValidator.Problem.Duplicated ->
+                "한 번만 써야 하는 자리가 두 번 나옵니다: " +
+                    problem.names.joinToString(", ") { PromptTemplates.wrap(it) }
+            is PromptTemplateValidator.Problem.PaddedTokens ->
+                "자리 이름 앞뒤의 공백까지 이름으로 읽습니다: " + problem.samples.joinToString(", ") +
+                    " (공백을 지워 주세요)"
+            is PromptTemplateValidator.Problem.TooLong ->
+                "${problem.limit}자를 넘습니다 (지금 ${problem.chars}자) — 줄여서 다시 가져와 주세요"
+        }
+
+    private val BY_KEY: Map<String, Binding> =
+        (BINDINGS + PROMPT_TEMPLATE_BINDINGS).associateBy { it.spec.key }
 
     /** 시트 행 순서 = [AppSettingsKeys.SPECS] 순서. 선언에 없는 바인딩은 여기서 빠진다. */
     fun exported(includeSecrets: Boolean): List<Binding> =
@@ -454,7 +513,7 @@ object AppSettingsBindings {
         // **IO로 옮기는 것이 이 함수의 조건이다** — 부르는 곳이 내보내기 창(주 스레드)이고,
         // 비밀을 읽는 일은 저장소 읽기 + 복호화다(`AiKeyStore`는 AES/GCM을 지난다).
         // 나머지 read·write는 이미 배경에서 도는 내보내기·가져오기가 부르므로 여기만 감싼다.
-        BINDINGS.any {
+        BY_KEY.values.any {
             it.spec.disposition == AppSettingsKeys.Disposition.SECRET &&
                 runCatching { it.read(context) }.getOrNull() != null
         }

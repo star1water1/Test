@@ -139,6 +139,38 @@ class ExportPresentationSpecTest {
             CellStyleKind.READ_ONLY,
             cellStyleKindFor(ColumnSpec("코드", readOnly = true), fractionalCalc = false)
         )
+        // **wrap도 가리지 않는다** (2026.08.20) — '앱 설정'의 `설명`·`입력 가능한 값`이
+        // 읽기전용이면서 여러 줄 안내가 본체인 첫 열이다. 종전 판정은 `readOnly`가 먼저 걸려
+        // wrap을 통째로 죽였고, 그러면 **행 높이만 늘고 글은 첫 줄에서 잘린다.**
+        assertEquals(
+            CellStyleKind.READ_ONLY_WRAP,
+            cellStyleKindFor(
+                ColumnSpec("입력 가능한 값", readOnly = true, wrap = true), fractionalCalc = false
+            )
+        )
+        // 밀리초·소수 서식은 wrap보다 앞선다 — 숫자 열은 애초에 접힐 글이 아니다.
+        assertEquals(
+            CellStyleKind.READ_ONLY_MILLIS,
+            cellStyleKindFor(
+                ColumnSpec("생성일", readOnly = true, millis = true, wrap = true), fractionalCalc = false
+            )
+        )
+    }
+
+    @Test
+    fun `앱 설정 시트의 안내 두 칸은 읽기전용이면서 접힌다`() {
+        // 이 시트의 값어치가 그 두 칸에 있다 — 사용자 요청 2026.08.20.
+        val spec = appSettingsSpec()
+        val guides = spec.columns.filter { it.header == "설명" || it.header == "입력 가능한 값" }
+        assertEquals(2, guides.size)
+        guides.forEach {
+            assertEquals(
+                it.header, CellStyleKind.READ_ONLY_WRAP, cellStyleKindFor(it, fractionalCalc = false)
+            )
+        }
+        // 고치는 칸은 `설정값` 하나다 — 여러 줄 양식이 실리므로 접혀야 한다.
+        val value = spec.columns.first { it.header == "설정값" }
+        assertEquals(CellStyleKind.WRAP, cellStyleKindFor(value, fractionalCalc = false))
     }
 
     @Test

@@ -100,7 +100,37 @@ class AiSettingsFragment : Fragment() {
 
         setupConsistencySliders()
         setupCreativityGroup()
+        setupPromptTemplates()
         refreshList()
+    }
+
+    /**
+     * AI 메시지 양식 (사용자 요청 2026.08.20) — 이 카드는 **입구일 뿐**이고 편집은
+     * `AiPromptTemplateFragment`가 든다. 요약 줄을 그리는 것은 [onResume]이다.
+     */
+    private fun setupPromptTemplates() {
+        binding.openPromptTemplatesButton.setOnClickListener {
+            findNavController().navigate(R.id.action_aiSettings_to_promptTemplates)
+        }
+    }
+
+    private fun renderPromptTemplateSummary() {
+        val customized = AiPromptSettings(requireContext()).customizedTemplateCount()
+        // **개수를 문구에 박지 않는다**(R-14) — 축이 늘면 안내만 낡는다.
+        val total = com.novelcharacter.app.ai.PromptTemplates.Id.entries.size
+        binding.promptTemplateSummary.text =
+            if (customized == 0) getString(R.string.ai_prompt_templates_summary_default, total)
+            else getString(R.string.ai_prompt_templates_summary_custom, total, customized)
+    }
+
+    /**
+     * 요약 줄은 **돌아올 때마다 다시 그린다** — 양식을 고치고 뒤로 나온 사용자에게 옛 수가
+     * 남아 있으면 방금 한 일이 반영되지 않은 것처럼 보인다(`onViewCreated` 한 번만으로는
+     * 그렇게 된다).
+     */
+    override fun onResume() {
+        super.onResume()
+        renderPromptTemplateSummary()
     }
 
     /**
@@ -252,6 +282,9 @@ class AiSettingsFragment : Fragment() {
 
         // AI 이미지 태그 기조 — 자유 서술이라 '저장' 버튼을 두지 않고 포커스가 떠날 때 확정한다
         // (원칙 04: 저장을 위해 버튼 단계를 거치지 않는다). 화면을 떠날 때도 한 번 더 쓴다.
+        // 상한을 **보이게** 한다 — 넘으면 말없이 잘려 저장되므로, 카운터가 없으면
+        // 사용자가 그 상한의 존재를 알 길이 없다(R-14의 최소선).
+        binding.imageTagPolicyLayout.counterMaxLength = AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS
         binding.imageTagPolicyEdit.setText(settings.imageTagPolicy)
         binding.imageTagPolicyEdit.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) settings.imageTagPolicy = binding.imageTagPolicyEdit.text?.toString().orEmpty()

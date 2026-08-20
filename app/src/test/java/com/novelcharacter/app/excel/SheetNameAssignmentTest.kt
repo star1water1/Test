@@ -204,6 +204,18 @@ class SheetNameAssignmentTest {
     }
 
     @Test
+    fun `열이 늘어난 시트도 옛 두 칸짜리 머리글을 알아본다`() {
+        // '앱 설정'이 2열 → 4열이 됐다(2026.08.20). 그 시트가 밀려 `앱 설정(2)`가 된 옛 백업은
+        // 이 판정으로만 되찾으므로, 짧은 머리글에서 통째로 탈락하면 **설정 복원이 조용히 빠진다.**
+        val spec = appSettingsSpec()
+        assertTrue(headersMatchSpec(listOf("설정키", "설정값"), spec))
+        assertTrue(headersMatchSpec(listOf("설정키", "설정값", "설명"), spec))
+        // 둘은 맞아야 한다 — 하나로 줄이면 '남의 시트는 두 번째 열에서 갈린다'가 사라진다.
+        assertFalse(headersMatchSpec(listOf("설정키"), spec))
+        assertFalse(headersMatchSpec(listOf("설정키", "이름"), spec))
+    }
+
+    @Test
     fun `접미사 이름은 원명보다 짧아지지 않는다 — 되찾기 판정이 깨지지 않게`() {
         // 아포스트로피를 한 번 더 다듬으면 이름이 1자 짧아져 isSuffixedVariantOf가
         // 원명의 변형으로 알아보지 못하고, 가져오기가 밀려난 시트를 영영 못 찾는다.

@@ -207,15 +207,22 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
         request: RoundRequest,
         /** 창작도 (A-4) — 이름은 창작 폭이 가장 크게 드러나는 자리라 기본값을 그대로 쓴다. */
         creativity: AiCreativity = AiCreativity.DEFAULT,
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
         errorMessageOf: (AiResult.Failure) -> String
     ): RoundOutcome {
         val wanted = AiPromptPolicy.clampNameSuggestBatch(request.batchSize)
-        val prompt = buildUserPrompt(context, request.copy(batchSize = wanted))
+        val prompt = buildUserPrompt(
+            context, request.copy(batchSize = wanted),
+            templates.templateOf(PromptTemplates.Id.NAME_USER)
+        )
         // 학습된 미지원 모델 — 샘플링 없이 지시만 적용된다는 사실을 고지한다 (A-4)
         val temperatureNote =
             creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()
         val aiRequest = AiRequest(
-            system = buildSystemPrompt(creativity),
+            system = buildSystemPrompt(
+                creativity, templates.templateOf(PromptTemplates.Id.NAME_SYSTEM)
+            ),
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity)
@@ -355,100 +362,112 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
             return (0 until limit).map { i -> pool[(i.toLong() * pool.size / limit).toInt()] }
         }
 
-        fun buildSystemPrompt(creativity: AiCreativity = AiCreativity.DEFAULT): String = """
-            당신은 소설 캐릭터의 이름을 짓는 작가 보조다. 주어진 세계관의 결과 지시에 맞는
-            이름 후보를 만든다.
-            규칙:
-            1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"names":[{"name":"이름","why":"짧은 근거"}]}
-            2. name은 캐릭터에게 그대로 붙일 이름이다. 설명·번호·따옴표·괄호 주석을 붙이지 마라.
-            3. why는 한 문장 이내로 **무엇을 따랐는지**만 적는다(어감·표기 관행·지시 반영).
-            4. 요청한 개수만큼 만들고, 후보끼리 서로 겹치거나 한 글자만 다르게 하지 마라.
-            5. [이름 견본]이 주어지면 그 표기 관행(음절 수·어감·성씨 유무·쓰는 문자)을 따르되
-               견본을 그대로 베끼거나 한 글자만 바꿔 내지 마라.
-            6. [유지]는 사용자가 마음에 들어 한 이름이다. 그 결을 따르되 같은 이름을 다시 내지 마라.
-            7. [회피]에 있는 이름과 그 사소한 변형은 내지 마라.
-            8. 주어진 캐릭터 정보와 어긋나는 이름을 만들지 마라. 정보가 없는 부분은 지어내지 않는다.
-        """.trimIndent() + creativity.promptRule()
+        fun buildSystemPrompt(
+            creativity: AiCreativity = AiCreativity.DEFAULT,
+            template: String = PromptTemplates.default(PromptTemplates.Id.NAME_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.NAME_SYSTEM),
+                PromptTemplates.T_CREATIVITY_RULE to creativity.promptBlock()
+            )
+        )
 
-        fun buildUserPrompt(context: NameContext, request: RoundRequest): PromptBuild {
+        fun buildUserPrompt(
+            context: NameContext,
+            request: RoundRequest,
+            template: String = PromptTemplates.default(PromptTemplates.Id.NAME_USER)
+        ): PromptBuild {
             val notes = mutableListOf<String>()
-            val sb = StringBuilder()
-
-            if (context.universeName.isNotBlank()) {
-                sb.append("[세계관] ").append(context.universeName).append('\n')
-            }
-
             val character = context.character
-            if (character != null) {
-                character.loadFailures.forEach { notes.add("$it 정보를 불러오지 못함") }
-                sb.append("\n[캐릭터]\n")
-                if (character.name.isNotBlank()) sb.append("현재 이름: ").append(character.name).append('\n')
-                if (context.gender.isNotBlank()) sb.append("성별: ").append(context.gender).append('\n')
-                if (character.aliases.isNotEmpty()) {
-                    sb.append("이명: ").append(character.aliases.joinToString(", ")).append('\n')
-                }
-                if (character.tags.isNotEmpty()) {
-                    sb.append("태그: ").append(character.tags.joinToString(", ")).append('\n')
-                }
-                if (character.factions.isNotEmpty()) {
-                    sb.append("소속: ").append(character.factions.joinToString(", ")).append('\n')
-                }
-                // 다른 필드 값은 **결의 재료로만** 짧게 싣는다 — 종족·출신·계급이 이름을 정한다.
-                // 대결 우열은 싣지 않는다(설계 7장 밖): 우열은 이름의 결과 무관하고 토큰만 쓴다.
+            character?.loadFailures?.forEach { notes.add("$it 정보를 불러오지 못함") }
+
+            // **사용자가 양식에서 뺀 재료는 만들지 않는다** (R-14 — 짧은 값 경로와 같은 근거).
+            val used = PromptTokens.usedNames(template)
+
+            // 다른 필드 값은 **결의 재료로만** 짧게 싣는다 — 종족·출신·계급이 이름을 정한다.
+            // 대결 우열은 싣지 않는다(설계 7장 밖): 우열은 이름의 결과 무관하고 토큰만 쓴다.
+            val fieldsText = if ("필드표" !in used || character == null) "" else {
                 val fields = character.filledFields.filter { it.second.isNotBlank() }
-                if (fields.isNotEmpty()) {
-                    val shown = fields.take(MAX_CONTEXT_FIELDS)
-                    if (fields.size > shown.size) {
-                        notes.add("캐릭터 필드 ${fields.size - shown.size}개는 싣지 않았습니다")
-                    }
-                    shown.forEach { (name, value) ->
-                        val capped = if (value.length > MAX_CONTEXT_VALUE_CHARS) {
-                            value.take(MAX_CONTEXT_VALUE_CHARS) + "…"
-                        } else value
-                        sb.append("- ").append(name).append(": ").append(capped).append('\n')
-                    }
+                val shown = fields.take(MAX_CONTEXT_FIELDS)
+                if (fields.size > shown.size) {
+                    notes.add("캐릭터 필드 ${fields.size - shown.size}개는 싣지 않았습니다")
+                }
+                shown.joinToString("\n") { (name, value) ->
+                    val capped = if (value.length > MAX_CONTEXT_VALUE_CHARS) {
+                        value.take(MAX_CONTEXT_VALUE_CHARS) + "…"
+                    } else value
+                    "- $name: $capped"
                 }
             }
 
-            val samples = selectNameSamples(context.existingNames)
+            val samples =
+                if ("이름견본" in used) selectNameSamples(context.existingNames) else emptyList()
             if (samples.isNotEmpty()) {
                 val total = context.existingNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct().size
                 if (total > samples.size) notes.add("이름 견본 ${total - samples.size}개 생략")
-                sb.append("\n[이름 견본] 같은 세계관의 기존 캐릭터 이름이다. 표기 관행만 따르고 그대로 쓰지 마라.\n")
-                sb.append(samples.joinToString(", ")).append('\n')
+            }
+            val bankSamples =
+                if ("모아둔이름" in used) selectNameSamples(context.bankNames, MAX_BANK_SAMPLES)
+                else emptyList()
+
+            val keep = capList(if ("유지목록" in used) request.keep else emptyList(), MAX_KEEP_IN_PROMPT)
+            if (keep.shown.isNotEmpty() && keep.omitted > 0) {
+                notes.add("유지 목록 ${keep.omitted}개는 싣지 않았습니다")
+            }
+            val avoid = capList(if ("회피목록" in used) request.avoid else emptyList(), MAX_AVOID_IN_PROMPT)
+            if (avoid.shown.isNotEmpty() && avoid.omitted > 0) {
+                notes.add("회피 목록 ${avoid.omitted}개는 싣지 않았습니다")
             }
 
-            val bankSamples = selectNameSamples(context.bankNames, MAX_BANK_SAMPLES)
-            if (bankSamples.isNotEmpty()) {
-                sb.append("\n[모아 둔 이름] 사용자가 이름은행에 쌓아 둔 취향이다. 결의 참고로만 쓴다.\n")
-                sb.append(bankSamples.joinToString(", ")).append('\n')
-            }
+            val free = if ("추가지시" in used) request.instruction.trim() else ""
+            val freeText = if (free.length > MAX_INSTRUCTION_CHARS) {
+                notes.add("추가 지시 ${MAX_INSTRUCTION_CHARS}자 초과분 생략")
+                free.take(MAX_INSTRUCTION_CHARS)
+            } else free
 
-            val keep = capList(request.keep, MAX_KEEP_IN_PROMPT)
-            if (keep.shown.isNotEmpty()) {
-                if (keep.omitted > 0) notes.add("유지 목록 ${keep.omitted}개는 싣지 않았습니다")
-                sb.append("\n[유지] ").append(keep.shown.joinToString(", ")).append('\n')
-            }
-            val avoid = capList(request.avoid, MAX_AVOID_IN_PROMPT)
-            if (avoid.shown.isNotEmpty()) {
-                if (avoid.omitted > 0) notes.add("회피 목록 ${avoid.omitted}개는 싣지 않았습니다")
-                sb.append("[회피] ").append(avoid.shown.joinToString(", ")).append('\n')
-            }
+            // 자리가 없어 안 실린 재료 (R-14의 뒷면 — 짧은 값 경로와 같은 근거).
+            notes.addAll(
+                PromptTemplates.unusedMaterialNotes(
+                    used,
+                    mapOf(
+                        "세계관명" to context.universeName.isNotBlank(),
+                        "현재이름" to !character?.name.isNullOrBlank(),
+                        "성별" to (character != null && context.gender.isNotBlank()),
+                        "이명목록" to !character?.aliases.isNullOrEmpty(),
+                        "태그목록" to !character?.tags.isNullOrEmpty(),
+                        "소속세력" to !character?.factions.isNullOrEmpty(),
+                        "필드표" to (character?.filledFields.orEmpty().any { it.second.isNotBlank() }),
+                        "이름견본" to context.existingNames.any { it.isNotBlank() },
+                        "모아둔이름" to context.bankNames.any { it.isNotBlank() },
+                        "유지목록" to request.keep.isNotEmpty(),
+                        "회피목록" to request.avoid.isNotEmpty(),
+                        "추가지시" to request.instruction.isNotBlank()
+                    )
+                )
+            )
 
-            sb.append("\n[지시]\n")
-            sb.append(modeInstruction(request.mode, context)).append('\n')
-            val free = request.instruction.trim()
-            if (free.isNotEmpty()) {
-                val capped = if (free.length > MAX_INSTRUCTION_CHARS) {
-                    notes.add("추가 지시 ${MAX_INSTRUCTION_CHARS}자 초과분 생략")
-                    free.take(MAX_INSTRUCTION_CHARS)
-                } else free
-                sb.append("추가 지시: ").append(capped).append('\n')
-            }
-            sb.append("서로 다른 후보 ").append(request.batchSize).append("개를 만든다.\n")
-
-            return PromptBuild(sb.toString(), notes)
+            val text = PromptTokens.expand(
+                template,
+                mapOf(
+                    "세계관명" to context.universeName.trim(),
+                    "현재이름" to character?.name.orEmpty().trim(),
+                    "성별" to if (character == null) "" else context.gender.trim(),
+                    "이명목록" to character?.aliases.orEmpty().joinToString(", "),
+                    "태그목록" to character?.tags.orEmpty().joinToString(", "),
+                    "소속세력" to character?.factions.orEmpty().joinToString(", "),
+                    "필드표" to fieldsText,
+                    "이름견본" to samples.joinToString(", "),
+                    "모아둔이름" to bankSamples.joinToString(", "),
+                    "유지목록" to keep.shown.joinToString(", "),
+                    "회피목록" to avoid.shown.joinToString(", "),
+                    "모드지시" to modeInstruction(request.mode, context),
+                    "추가지시" to freeText,
+                    "개수" to request.batchSize.toString()
+                )
+            )
+            return PromptBuild(text, notes)
         }
 
         private data class Capped(val shown: List<String>, val omitted: Int)

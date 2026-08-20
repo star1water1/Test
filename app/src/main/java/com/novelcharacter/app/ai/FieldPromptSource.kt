@@ -21,7 +21,12 @@ package com.novelcharacter.app.ai
  */
 interface FieldPromptSource {
 
-    /** 시스템 프롬프트 — 응답 스키마와 축별 근거 규칙. */
+    /**
+     * 시스템 프롬프트 — 응답 스키마와 축별 근거 규칙.
+     *
+     * 글 자체는 [PromptTemplates]의 양식이고 사용자가 고칠 수 있다. 다만 응답 형식 절은
+     * 필수 자리표(`{{응답형식}}`)라 어떤 양식에서도 빠질 수 없다.
+     */
     fun system(
         minConfidence: CharacterFieldAiSuggester.Confidence?,
         creativity: AiCreativity
@@ -30,8 +35,10 @@ interface FieldPromptSource {
     /**
      * 사용자 프롬프트 — 축의 컨텍스트 블록 + 공통 `[추천할 필드]` 절.
      *
-     * 뒤쪽 절은 반드시 [CharacterFieldAiSuggester.appendTargetSection]으로 붙인다.
-     * 그 절의 형태가 곧 [CharacterFieldAiSuggester.parseResponse]가 읽는 계약이다.
+     * 뒤쪽 절은 반드시 [CharacterFieldAiSuggester.appendTargetSection]이 만든다 —
+     * 양식에서는 필수 자리표 `{{추천할필드}}`이고, **자리는 사용자가 정하되 내용은 앱이 만든다.**
+     * 그 절의 형태가 곧 [CharacterFieldAiSuggester.parseResponse]가 읽는 계약이라, 사용자가
+     * 손으로 흉내 낸 글로는 대신할 수 없다.
      */
     fun user(targets: List<CharacterFieldAiSuggester.FieldSpec>): CharacterFieldAiSuggester.PromptBuild
 }

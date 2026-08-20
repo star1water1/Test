@@ -1739,7 +1739,9 @@ class ImageManagerViewModel(
             pathsByFolder.keys.toList(),
             pathsByFolder.mapValues { it.value.size },
             vocab,
-            policy
+            policy,
+            // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+            com.novelcharacter.app.ai.AiPromptSettings(getApplication()).asTemplateSource()
         )
         TagSuggestOutcome(result, pathsByFolder)
     }
@@ -1943,7 +1945,9 @@ class ImageManagerViewModel(
             onProgress = { done, total, doneImages, totalImages ->
                 withContext(Dispatchers.Main) { onProgress(done, total, doneImages, totalImages) }
             },
-            isCancelled = isCancelled
+            isCancelled = isCancelled,
+            // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+            templates = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).asTemplateSource()
         )
     }
 

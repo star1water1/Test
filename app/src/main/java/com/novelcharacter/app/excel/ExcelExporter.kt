@@ -8,6 +8,8 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
+import com.novelcharacter.app.ai.AiPromptPolicy
+import com.novelcharacter.app.ai.PromptTemplates
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
@@ -573,6 +575,8 @@ class ExcelExporter(context: Context) {
         private val calcDecimalBand = dataStyle(banded = true, format = fmtTwoDecimals)
         private val readOnly = dataStyle(banded = false, readOnly = true)
         private val readOnlyBand = dataStyle(banded = true, readOnly = true)
+        private val readOnlyWrap = dataStyle(banded = false, readOnly = true, wrap = true)
+        private val readOnlyWrapBand = dataStyle(banded = true, readOnly = true, wrap = true)
         private val readOnlyMillis = dataStyle(banded = false, readOnly = true, format = fmtPlainInt)
         private val readOnlyMillisBand = dataStyle(banded = true, readOnly = true, format = fmtPlainInt)
         private val readOnlyCalcDecimal = dataStyle(banded = false, readOnly = true, format = fmtTwoDecimals)
@@ -589,6 +593,7 @@ class ExcelExporter(context: Context) {
                 CellStyleKind.READ_ONLY_MILLIS -> if (banded) readOnlyMillisBand else readOnlyMillis
                 CellStyleKind.READ_ONLY_CALC_DECIMAL ->
                     if (banded) readOnlyCalcDecimalBand else readOnlyCalcDecimal
+                CellStyleKind.READ_ONLY_WRAP -> if (banded) readOnlyWrapBand else readOnlyWrap
                 CellStyleKind.READ_ONLY -> if (banded) readOnlyBand else readOnly
                 CellStyleKind.CALC_DECIMAL -> if (banded) calcDecimalBand else calcDecimal
                 CellStyleKind.MILLIS -> if (banded) dataMillisBand else dataMillis
@@ -836,6 +841,7 @@ class ExcelExporter(context: Context) {
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
             GuideLine("", styles.guideBody, "• 가져오기도 동일하게 32,767자까지 저장됩니다 — 내보낸 파일을 그대로 들여오면 잘리지 않습니다."),
+            GuideLine("", styles.guideBody, "• '앱 설정' 시트의 AI 메시지 양식 행은 앱 상한(${AiPromptPolicy.PROMPT_TEMPLATE_MAX_CHARS}자)이 먼저 걸립니다 — 넘으면 자르지 않고 그 행만 건너뜁니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("빈 시트 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "아직 데이터가 없는 종류도 머리글만 있는 빈 시트로 함께 나갑니다. 여기에 행을 적어 새 데이터를 만듭니다."),
@@ -897,6 +903,39 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
             GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
             GuideLine("", styles.guideBody, "  종류는 '${DuelSheetLabels.KIND_COUNTER}'/'${DuelSheetLabels.KIND_UNDECIDED}' 중 하나입니다"),
+            GuideLine("", styles.guideBody, ""),
+            // '앱 설정' 시트 안내 (사용자 요청 2026.08.20) — 시트별 안내가 열일곱 시트를 다루면서
+            // **이 시트만 한 줄도 없었다.** 값을 고칠 수는 있는데 무엇을 뜻하고 어떤 값을 받는지
+            // 알 길이 없던 자리다. 행별 뜻은 시트 안의 '설명'·'입력 가능한 값' 칸이 든다.
+            GuideLine("'앱 설정' 시트", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "한 행이 설정 하나입니다. 고치는 칸은 '설정값' 하나뿐입니다."),
+            GuideLine("", styles.guideBody, "• '설명'과 '입력 가능한 값'은 앱이 채우는 회색 칸입니다. 여기에 적은 것은 가져오기에 반영되지 않습니다."),
+            GuideLine("", styles.guideBody, "• 그 행이 어떤 값을 받는지는 같은 행의 '입력 가능한 값' 칸에 적혀 있습니다 — 범위·목록·빈 칸의 뜻까지."),
+            GuideLine("", styles.guideBody, "• '설정키'는 앱이 그 설정을 알아보는 이름입니다. 고치면 그 행을 못 알아보고 건너뜁니다."),
+            GuideLine("", styles.guideBody, "• 이 버전이 모르는 설정키는 건너뛰고 개수를 알려 드립니다(옛 파일·새 파일 모두 그대로 들여올 수 있습니다)."),
+            GuideLine("", styles.guideBody, "• 뜻을 알 수 없는 값은 그 행만 건너뛰고 사유를 알려 드립니다. 그 설정은 종전 값 그대로입니다."),
+            GuideLine("", styles.guideBody, "  다만 쉼표로 여럿 적는 설정(패턴 유형·어시스턴트 항목)은 **아는 이름만 적용하고** 모르는 이름을 알려 드립니다."),
+            GuideLine("", styles.guideBody, "  `키=값` 목록(패턴 민감도)도 같습니다 — 읽은 키만 반영하고 나머지는 종전 값으로 둡니다."),
+            GuideLine("", styles.guideBody, "• 범위를 벗어난 숫자는 좁혀서 받는 설정도 있습니다 — 그런 설정은 '입력 가능한 값'이 범위를 적어 둡니다."),
+            GuideLine("", styles.guideBody, "• '설정값' 열 자체를 지우면 이 시트를 통째로 건너뜁니다(설정이 지워지지는 않습니다)."),
+            GuideLine("", styles.guideBody, "• 행을 지워도 그 설정이 지워지지는 않습니다. 값을 바꾸려면 행을 남기고 '설정값'을 고치세요."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("AI 메시지 양식 (ai_tpl_ 로 시작하는 행)", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "AI에 실제로 보내는 글입니다. 여기서 고치면 다음 요청부터 그 글이 나갑니다."),
+            GuideLine("", styles.guideBody, "• 여러 줄 글이라 셀 안에서 Alt+Enter로 줄을 바꿔 편집하세요. 칸을 비우면 기본 양식으로 돌아갑니다."),
+            GuideLine("", styles.guideBody, "• 한 행은 '지시문'(AI의 역할과 규칙), 다른 행은 '재료'(이번 요청에 실을 캐릭터·사건 정보)입니다."),
+            GuideLine("", styles.guideBody, "• 글 안의 ${PromptTemplates.OPEN}이름${PromptTemplates.CLOSE} 은 앱이 값으로 바꿔 넣는 자리입니다."),
+            GuideLine("", styles.guideBody, "  쓸 수 있는 이름은 같은 행의 '입력 가능한 값' 칸에 뜻과 함께 적혀 있습니다."),
+            GuideLine("", styles.guideBody, "  이름 앞뒤에 공백을 넣지 마세요 — ${PromptTemplates.OPEN} 이름 ${PromptTemplates.CLOSE} 은 다른 글자로 읽습니다."),
+            GuideLine("", styles.guideBody, "• '반드시 들어가야 하는 자리'가 빠지거나, '(한 번만)'이 붙은 자리가 두 번 나오면 그 행은 적용하지 않고 사유를 알려 드립니다."),
+            GuideLine("", styles.guideBody, "  앱이 답을 읽는 형식 지시가 거기 들어가기 때문입니다 — 빠지면 답이 와도 읽지 못합니다."),
+            GuideLine("", styles.guideBody, "• 자리표가 든 줄은 그 자리가 빌 때 줄째로 빠집니다. `태그: ` 처럼 이름표만 남지 않게 하기 위해서입니다."),
+            GuideLine("", styles.guideBody, "  `[…]`로 시작하는 절 이름도 **그 절의 줄이 하나도 안 남으면** 함께 빠집니다."),
+            GuideLine("", styles.guideBody, "  보기 좋으라고 절 이름 아래에 빈 줄을 넣어도 됩니다 — 그것 때문에 절이 사라지지는 않습니다."),
+            GuideLine("", styles.guideBody, "• 값 안에 ${PromptTemplates.OPEN}…${PromptTemplates.CLOSE} 이 들어 있어도 자리표로 읽지 않습니다(한 번만 바꿔 넣습니다)."),
+            GuideLine("", styles.guideBody, "• 이 칸에는 지금 나가는 글이 그대로 실립니다 — 고치지 않았으면 기본 양식이 실립니다."),
+            GuideLine("", styles.guideBody, "  그래서 앱 판이 다른 파일을 들이면 **그때의 기본 양식이 고친 양식으로 굳습니다.**"),
+            GuideLine("", styles.guideBody, "  되돌리려면 그 칸을 비워 다시 가져오거나, 앱의 양식 편집 창에서 '기본값으로'를 누르세요."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("필드 정의 — 타입별 설정 가이드", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "설정(JSON) 컬럼에 아래 형식으로 입력하세요. 비워두면 기본값이 적용됩니다."),
@@ -2659,6 +2698,10 @@ class ExcelExporter(context: Context) {
             } else {
                 row.createCell(1).setTextSafe(value)
             }
+            // 안내 두 칸 (사용자 요청 2026.08.20) — **문구는 선언에서 나온다.**
+            // 여기서 손으로 적으면 상한을 옮기는 날 시트만 낡는다(R-14).
+            row.createCell(2).setTextSafe(binding.spec.note)
+            row.createCell(3).setTextSafe(binding.spec.accepts())
             finishDataRow(row, spec, banded)
         }
 

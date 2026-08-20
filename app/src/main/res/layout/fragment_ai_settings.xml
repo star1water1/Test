@@ -356,11 +356,16 @@
                         android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="@color/text_secondary" />
 
+                    <!-- 글자 수를 보인다 (2026.08.20) — 이 칸은 상한(600자)을 넘으면 **말없이
+                         잘라 저장**한다. 카운터가 없으면 사용자가 그 상한의 존재를 알 길이
+                         하나도 없었다(잘린 사실을 알리는 배선은 지금 죽어 있다 — 범위 밖). -->
                     <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/imageTagPolicyLayout"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
+                        app:counterEnabled="true"
                         android:hint="@string/ai_image_tag_policy_hint">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -493,6 +498,56 @@
                         android:text="@string/ai_attach_representative_desc"
                         android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section: AI 메시지 양식 (사용자 요청 2026.08.20) — 위 '일관성' 절이
+                 *무엇을 얼마나 실을지*를 정한다면 여기는 *어떤 말로 물을지*를 연다.
+                 본문 편집은 별도 화면이 든다(여기에 열넷을 펼치면 이 화면이 무너진다). -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/ai_prompt_templates_section"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingTop="24dp"
+                android:paddingBottom="4dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- 목적문 (R-25) — 무엇이 어디서 어떻게 되는가 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/purpose_ai_prompt_templates"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <TextView
+                        android:id="@+id/promptTemplateSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/openPromptTemplatesButton"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/ai_prompt_templates_open" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

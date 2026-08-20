@@ -117,4 +117,56 @@ class AppSettingsDiffTest {
             )
         }
     }
+
+    // ── AI 메시지 양식 행 (사용자 요청 2026.08.20) ──
+
+    private val tplId = com.novelcharacter.app.ai.PromptTemplates.Id.NAME_SYSTEM
+    private val tplSpec = AppSettingsKeys.templateSpecOf(tplId)
+    private val tplDefault = com.novelcharacter.app.ai.PromptTemplates.default(tplId)
+
+    @Test
+    fun `빈 칸은 기본 양식으로 되돌리라는 뜻이다`() {
+        // **빈 양식이라는 것은 없다.** 그대로 견주면 아무것도 안 고친 파일이 매번
+        // '갱신'으로 예고되고 실제로는 아무 일도 안 일어난다.
+        assertEquals(AppSettingsDiff.Effect.UNCHANGED, effect(tplSpec, "", tplDefault))
+        // 고쳐 둔 사람에게는 되돌리기가 실제로 일어난다 — 그때는 '갱신'이 맞다.
+        assertEquals(AppSettingsDiff.Effect.UPDATE, effect(tplSpec, "", "{{응답형식}} 내 글"))
+    }
+
+    @Test
+    fun `셀 줄바꿈이 달라도 같은 값이면 동일이다`() {
+        // 엑셀 프로그램마다 셀 안 줄바꿈을 다른 글자로 준다 — 접지 않으면
+        // **아무것도 안 고친 왕복에서 매번 '갱신'이 뜬다**(왕복 규약이 금지하는 부류).
+        val crlf = tplDefault.replace("\n", "\r\n")
+        assertEquals(AppSettingsDiff.Effect.UNCHANGED, effect(tplSpec, crlf, tplDefault))
+    }
+
+    @Test
+    fun `거절될 양식 행은 갱신이 아니라 건너뜀이다`() {
+        // 가져오기가 거절하고 지금 값을 지키므로 '갱신'은 거짓 예고다 —
+        // 숫자 설정이 수 아닌 값에서 '건너뜀'인 것과 같은 근거(B-102 ⓑ).
+        assertEquals(
+            AppSettingsDiff.Effect.SKIPPED,
+            effect(tplSpec, "필수 자리표가 없는 글", tplDefault)
+        )
+        assertEquals(
+            AppSettingsDiff.Effect.SKIPPED,
+            effect(tplSpec, "{{응답형식}} {{없는자리}}", tplDefault)
+        )
+    }
+
+    @Test
+    fun `받아들여질 양식 행은 갱신이다`() {
+        assertEquals(
+            AppSettingsDiff.Effect.UPDATE,
+            effect(tplSpec, "짧게 답하라.\n{{응답형식}}", tplDefault)
+        )
+    }
+
+    @Test
+    fun `줄바꿈 접기는 양식 행에만 걸린다`() {
+        // 가져오기가 접는 자리도 양식 바인딩 하나뿐이다 — 다른 TEXT까지 접으면
+        // *줄바꿈만 다른 값*을 '동일'로 예고해 놓고 실제로는 덮어쓴다.
+        assertEquals(AppSettingsDiff.Effect.UPDATE, effect(textSpec, "가\r\n나", "가\n나"))
+    }
 }

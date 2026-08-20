@@ -40,6 +40,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
     suspend fun organize(
         fd: FieldDefinition,
         entries: List<FieldValueEntry>,
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
         errorMessageOf: (AiResult.Failure) -> String
     ): OrganizeOutcome {
         val visible = entries.sortedByDescending { it.usageCount }
@@ -54,8 +56,12 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
         val maxTokens = aiService.effectiveMaxTokens()
         for (chunk in chunks) {
             val request = AiRequest(
-                system = buildSystemPrompt(fd),
-                userText = buildUserPrompt(chunk),
+                system = buildSystemPrompt(
+                    fd, templates.templateOf(PromptTemplates.Id.VALUE_LIBRARY_SYSTEM)
+                ),
+                userText = buildUserPrompt(
+                    chunk, templates.templateOf(PromptTemplates.Id.VALUE_LIBRARY_USER)
+                ),
                 maxTokens = maxTokens
             )
             when (val result = aiService.complete(request)) {
@@ -140,29 +146,30 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             return chunks
         }
 
-        fun buildSystemPrompt(fd: FieldDefinition): String {
+        fun buildSystemPrompt(
+            fd: FieldDefinition,
+            template: String = PromptTemplates.default(PromptTemplates.Id.VALUE_LIBRARY_SYSTEM)
+        ): String {
             // 필드 설명(A-2) — 세 AI 경로가 같은 설명을 본다. 정리 요청은 필드 하나 전용이라
             // 절단 없이 전문(저장 상한 1000자)을 싣는다 — 자르면 고지 채널 없이 조용한 결손이 된다.
             val description = com.novelcharacter.app.data.model.FieldDescription.fromConfig(fd.config)
-            val descriptionBlock = if (description.isBlank()) "" else
-                "\n필드 설명(사용자 작성): $description" +
-                    "\n이 설명이 이 필드가 뜻하는 바의 정의다 — 병합·분류 판단의 근거로 삼아라."
-            return """
-            당신은 소설 캐릭터 관리 앱의 데이터 정리 도우미다.
-            필드 '${fd.name}'(타입 ${fd.type})의 값 목록에서 다음을 찾아라:
-            1. merges: 같은 대상을 가리키는 변형 표기(오탈자, 띄어쓰기, 표기 차이)를 하나의 canonical로 병합.
-               canonical은 목록에 실제로 존재하는 값 중 가장 적절한 것을 고른다.
-               값에 '뜻'이 붙어 있으면 그것은 사용자가 그 값에 직접 써 둔 정의다 —
-               **뜻이 다른 두 값을 합치지 마라.** 표기가 비슷해도 뜻이 갈라 두었으면 다른 값이다.
-            2. categories: 값들을 묶을 수 있는 상위 카테고리 제안 (확실한 것만).
-            반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"merges":[{"canonical":"값","variants":["변형1","변형2"],"reason":"근거"}],"categories":[{"value":"값","category":"카테고리"}]}
-            병합·분류할 것이 없으면 빈 배열을 반환한다. 목록에 없는 값을 만들어내지 마라.
-            """.trimIndent() + descriptionBlock
+            return PromptTokens.expand(
+                template,
+                mapOf(
+                    PromptTemplates.T_RESPONSE to
+                        PromptTemplates.responseFormat(PromptTemplates.Id.VALUE_LIBRARY_SYSTEM),
+                    "필드명" to fd.name,
+                    "필드타입" to fd.type.toString(),
+                    "필드설명" to description
+                )
+            )
         }
 
-        fun buildUserPrompt(chunk: List<FieldValueEntry>): String =
-            chunk.joinToString("\n") { e ->
+        fun buildUserPrompt(
+            chunk: List<FieldValueEntry>,
+            template: String = PromptTemplates.default(PromptTemplates.Id.VALUE_LIBRARY_USER)
+        ): String {
+            val list = chunk.joinToString("\n") { e ->
                 buildString {
                     append(e.value)
                     append(" (사용 ").append(e.usageCount).append("회")
@@ -171,7 +178,7 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
                     if (e.category.isNotBlank()) append(" · 분류: ").append(e.category)
                     // 값의 뜻 (B-46) — **병합 판단의 직접 근거다.** 사용자가 '북부'와 '북부지방'을
                     // 뜻으로 갈라 두었는데 그것을 안 보내면 모델이 둘을 합치라고 제안하고,
-                    // 사용자가 그 제안을 받으면 **구별이 사라진다.** 시스템 프롬프트가 이미
+                    // 사용자가 그 제안을 받으면 **구별이 사라진다.** 지시문 양식이 이미
                     // *"이 설명을 병합·분류 판단의 근거로 삼아라"*라고 말하고 있었다.
                     // 줄바꿈은 접는다 — 엔트리를 줄 단위로 잇는 형식이라 원문 개행이 행을 쪼갠다.
                     val meaning = e.description.replace('\n', ' ').replace('\r', ' ').trim()
@@ -179,6 +186,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
                     append(")")
                 }
             }
+            return PromptTokens.expand(template, mapOf("값목록" to list))
+        }
 
         data class ParsedResponse(
             val merges: List<MergeSuggestion>,

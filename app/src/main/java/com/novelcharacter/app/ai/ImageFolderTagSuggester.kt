@@ -96,43 +96,34 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         fun chunkFolders(folders: List<String>): List<List<String>> =
             folders.chunked(AiPromptPolicy.IMAGE_TAG_FOLDERS_PER_REQUEST)
 
-        fun buildSystemPrompt(vocab: ImageTagVocabulary.Vocabulary, policy: String): String = buildString {
-            append("당신은 창작 자료 이미지의 분류를 돕는다. ")
-            append("입력으로 받은 **폴더 이름들**을 읽고, 각 폴더에 어울리는 태그를 제안하라.\n")
-            append("- 폴더 이름은 사용자가 이미지를 모아 둔 자리의 이름이다. 이름에서 드러나는 ")
-            append("장면·소재·분위기·복장 같은 분류축을 태그로 뽑는다.\n")
-            append("- 태그는 짧은 명사구로 한다(최대 ")
-            append(AiPromptPolicy.IMAGE_TAG_MAX_LENGTH)
-            append("자). 폴더당 최대 ")
-            append(AiPromptPolicy.IMAGE_TAG_MAX_PER_FOLDER)
-            append("개.\n")
-            append("- 아래 기존 어휘에 맞는 표기가 있으면 **그것을 그대로 쓴다**(표기 일관성). ")
-            append("맞는 것이 없으면 새 태그를 만들어도 된다.\n")
-            append("- 폴더 이름에서 근거를 찾을 수 없으면 그 폴더는 빈 배열로 둔다. 지어내지 않는다.\n")
-            if (vocab.tags.isNotEmpty()) {
-                append("\n[기존 이미지 태그]\n")
-                append(vocab.tags.joinToString(", "))
-                append("\n")
-            }
-            if (vocab.fieldValues.isNotEmpty()) {
-                append("\n[작품 데이터에서 쓰는 값]\n")
-                append(vocab.fieldValues.joinToString(", "))
-                append("\n")
-            }
-            if (policy.isNotBlank()) {
-                append("\n[사용자 지침 — 위 규칙과 충돌하면 이쪽을 따른다]\n")
-                append(policy)
-                append("\n")
-            }
-            append("\n출력은 JSON만. 형식: ")
-            append("""{"folders":[{"name":"폴더이름","tags":["태그1","태그2"]}]}""")
-        }
+        fun buildSystemPrompt(
+            vocab: ImageTagVocabulary.Vocabulary,
+            policy: String,
+            template: String = PromptTemplates.default(PromptTemplates.Id.FOLDER_TAG_SYSTEM)
+        ): String = PromptTokens.expand(
+            template,
+            mapOf(
+                PromptTemplates.T_RESPONSE to
+                    PromptTemplates.responseFormat(PromptTemplates.Id.FOLDER_TAG_SYSTEM),
+                "태그최대길이" to AiPromptPolicy.IMAGE_TAG_MAX_LENGTH.toString(),
+                "최대개수" to AiPromptPolicy.IMAGE_TAG_MAX_PER_FOLDER.toString(),
+                "기존태그어휘" to vocab.tags.joinToString(", "),
+                "필드값어휘" to vocab.fieldValues.joinToString(", "),
+                "사용자지침" to policy
+            )
+        )
 
-        fun buildUserText(folders: List<String>, imageCounts: Map<String, Int>): String =
-            folders.joinToString("\n") { name ->
+        fun buildUserText(
+            folders: List<String>,
+            imageCounts: Map<String, Int>,
+            template: String = PromptTemplates.default(PromptTemplates.Id.FOLDER_TAG_USER)
+        ): String {
+            val list = folders.joinToString("\n") { name ->
                 val n = imageCounts[name] ?: 0
                 if (n > 0) "- $name (이미지 ${n}장)" else "- $name"
             }
+            return PromptTokens.expand(template, mapOf("폴더목록" to list))
+        }
 
         /**
          * 응답을 검증하며 읽는다. **요청한 폴더만** 통과시키고 나머지는 사유별로 센다.
@@ -201,12 +192,17 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         folders: List<String>,
         imageCounts: Map<String, Int>,
         vocab: ImageTagVocabulary.Vocabulary,
-        policyRaw: String
+        policyRaw: String,
+        /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
+        templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS
     ): Result {
         if (folders.isEmpty()) return Result()
         val policy = AiPromptPolicy.clampImageTagPolicy(policyRaw)
         val policyTruncated = (policyRaw.trim().length - policy.length).coerceAtLeast(0)
-        val system = buildSystemPrompt(vocab, policy)
+        val system = buildSystemPrompt(
+            vocab, policy, templates.templateOf(PromptTemplates.Id.FOLDER_TAG_SYSTEM)
+        )
+        val userTemplate = templates.templateOf(PromptTemplates.Id.FOLDER_TAG_USER)
 
         val all = ArrayList<FolderSuggestion>()
         val failures = ArrayList<AiResult.Failure>()
@@ -214,7 +210,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         var drops = DropTally(vocabTruncated = vocab.truncated, policyTruncated = policyTruncated)
 
         for (chunk in chunkFolders(folders)) {
-            val request = AiRequest(system = system, userText = buildUserText(chunk, imageCounts))
+            val request = AiRequest(system = system, userText = buildUserText(chunk, imageCounts, userTemplate))
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
                     // 한도로 밀려 다른 프로바이더가 답한 청크 (B-108 확정 ⓑ).

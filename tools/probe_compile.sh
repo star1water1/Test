@@ -477,6 +477,11 @@ DATA_EXCLUDE="AppDatabase"
 # 아무 말이 없다. 나머지 셋(`share/`·`data/`·아래 목록)은 이미 그 꼴인데 여기만 남아 있었다 —
 # B-265가 고친 병(`이름으로 고르면 조용히 빠진다`)의 쌍둥이라 같은 슬라이스에서 처리했다.
 EXCEL_EXCLUDE="ExcelImporter AppSettingsBindings"
+# `ai/`에서 뺄 것 — 갈래는 excel·share와 같다(프레임워크·외부 라이브러리에 깊게 묶인 것).
+#   · AiService  — OkHttp 전송 계층. **진짜 대신 하네스 스텁을 문다**(아래 files.txt) —
+#                  둘을 함께 넣으면 중복 선언으로 컴파일이 통째로 죽는다.
+#   · AiKeyStore — `androidx.security` 암호화 저장소. 스텁이 없다.
+AI_EXCLUDE="AiService AiKeyStore"
 # **낡은 제외는 빨간불이다** — 개명·삭제되면 그 이름이 아무것도 안 빼는데, 그러면 명단이
 # *무엇을 빼고 있는지*를 말하지 않게 된다(이 저장소가 예외 표식에 대해 세운 규약과 같다).
 #
@@ -498,6 +503,10 @@ for _x in $EXCEL_EXCLUDE; do
   [ -f "$M/excel/$_x.kt" ] || {
     echo "⚠️  excel/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
 done
+for _x in $AI_EXCLUDE; do
+  [ -f "$M/ai/$_x.kt" ] || {
+    echo "⚠️  ai/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
+done
 {
   # `AppSettingsBindings.kt`도 뺀다(B-105) — 그 파일은 **설정 저장소를 잇는 것이 일**이라
   # `ai/`·`backup/`·`ui/`를 import 하는데 이 프로브의 범위는 excel·model·dao·util·repository다.
@@ -505,6 +514,12 @@ done
   # 그 파일의 컴파일 증명은 CI뿐이다(`ExcelImporter.kt`와 같은 부류이며, 짝인 선언
   # `AppSettingsKeys.kt`는 순수라 여기서도 순수 JVM 시험에서도 그대로 검사된다).
   ls "$M"/excel/*.kt | grep -vE "/($(echo $EXCEL_EXCLUDE | tr ' ' '|'))\.kt$"
+  # **`ai/`는 2026.08.20에 들어왔다** — 그날 '앱 설정' 시트가 AI 메시지 양식 열넷을 싣게 되면서
+  # `excel/`이 `ai/`를 가리키기 시작했고, 범위 밖이던 그 폴더 탓에 **`AppSettingsKeys` 하나에서만
+  # 신규 오류 61건이 떴다.** 전부 `unresolved reference 'ai'`의 그림자이지 결함이 아니었는데,
+  # 그런 수는 다음 판이 기준선을 견줄 때 **진짜 결함을 덮는다**(이 프로브가 존재하는 이유의 반대).
+  # 폴더를 통째로 들이고 뺄 것만 이름으로 적는 꼴은 `share/`·`data/`와 같다(B-251·B-265).
+  ls "$M"/ai/*.kt | grep -vE "/($(echo $AI_EXCLUDE | tr ' ' '|'))\.kt$"
   ls "$M"/util/*.kt
   # **`data/`는 폴더째 들이고 뺄 것만 이름으로 적는다 (2026.08.19 · B-265).**
   # 종전 이 자리는 `data/model` · `data/dao` · `data/repository` · `data/settings`를
@@ -556,6 +571,10 @@ done
   echo "$WORK/RProbe.kt"
   echo "$WORK/NovelCharacterAppProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"
+  # `AiService`의 자리를 메우는 스텁 — 순수 JVM 하네스가 쓰는 그것 한 벌이다.
+  # 이것이 없으면 `ai/`의 서제스터 여섯이 전부 `unresolved reference 'AiService'` 그림자를 내고,
+  # 그 그림자 안에 진짜 결함(`when` 미완결 따위)이 섞여 구별되지 않는다.
+  echo "$TOOLS/jvm-stubs/AiServiceStub.kt"
 } | grep -vE "util/(AiImagePreparer|AiImageAttach)\.kt" > "$WORK/files.txt"
 
 # ── 2-b. R 생성기가 *도중에* 실패했는가 (2026.08.17 · B-190 콜드 검토) ──

@@ -217,6 +217,21 @@ object AiPromptPolicy {
     fun clampNameSuggestBatch(value: Int): Int =
         value.coerceIn(NAME_SUGGEST_BATCH_MIN, NAME_SUGGEST_BATCH_MAX)
 
+    // ── AI 메시지 양식 (사용자 요청 2026.08.20 · PromptTemplates) ──
+
+    /**
+     * 양식 하나의 글자 수 상한.
+     *
+     * **자르지 않고 거절한다** — 기조 문구([IMAGE_TAG_POLICY_MAX_CHARS])는 잘려도 *"기조가 덜
+     * 전달됐다"*로 끝나지만, 잘린 **양식**은 필수 자리표가 잘려나간 **계약이 깨진 양식**이라
+     * 응답을 아예 읽지 못한다. `DuelGradeRef.MAX_CONFIG_CHARS`가 같은 판정을 내렸다 —
+     * *"흔적 하나 남기려다 필드를 통째로 부수는 것이라, 넘칠 것 같으면 흔적 쪽을 포기한다."*
+     *
+     * 8,000의 근거 둘: ⓐ 지금 가장 긴 기본 양식(캐릭터 필드 지시문)이 2,600자 언저리라 세 배
+     * 여유다. ⓑ 엑셀 셀 한도 32,767자의 1/4이라 '앱 설정' 시트를 왕복해도 잘릴 수 없다.
+     */
+    const val PROMPT_TEMPLATE_MAX_CHARS = 8000
+
     /** 슬라이더 눈금에 맞춘 값 — 저장값이 눈금 밖이면 슬라이더가 예외로 죽는다 */
     private fun snap(value: Int, step: Int): Int = (value / step) * step
 }
