@@ -845,20 +845,30 @@ class ImageManagerFragment : Fragment() {
                 getString(R.string.image_manager_view_full_stack, stackSize)
         }
 
-        // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
-        // 캐릭터 자동 링크 그룹은 수동 링크와 구별해 표기한다(자동 관리 상태의 가시화 — 원칙 04).
+        // 링크 묶음 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 묶음 수.
+        // 캐릭터 자동 링크 묶음은 수동 링크와 구별해 표기한다(자동 관리 상태의 가시화 — 원칙 04).
         val groupId = item.meta?.linkGroupId
         if (groupId != null) {
             val groupSize = (viewModel.images.value ?: emptyList()).count { it.meta?.linkGroupId == groupId }
             sheetBinding.detailLinkInfoText.visibility = View.VISIBLE
-            sheetBinding.detailLinkInfoText.text = getString(
-                if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
-                    R.string.image_link_group_info_auto
-                } else {
-                    R.string.image_link_group_info
-                },
-                groupSize
-            )
+            // **두 수가 갈리면 그 자리에서 말한다.** 이 줄은 필터를 무시한 묶음 전체를 세고,
+            // 바로 위 단추들의 장수는 화면에 보이는 식구를 센다(그 둘에만 작용하므로) —
+            // 필터가 식구를 가리면 한 창에 다른 두 수가 서고, 정박이 없으면 사용자는
+            // AI 태그가 어느 쪽에 붙는지 판단할 수 없다(문구 가이드 4-4).
+            sheetBinding.detailLinkInfoText.text = buildString {
+                append(getString(
+                    if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
+                        R.string.image_link_group_info_auto
+                    } else {
+                        R.string.image_link_group_info
+                    },
+                    groupSize
+                ))
+                val visible = stackMembers[item.path]?.size
+                if (visible != null && visible < groupSize) {
+                    append(getString(R.string.image_link_group_info_visible, visible))
+                }
+            }
             sheetBinding.detailUnlinkButton.visibility = View.VISIBLE
             sheetBinding.detailUnlinkButton.setOnClickListener { dialog.dismiss(); runUnlink(listOf(item.path)) }
         } else {

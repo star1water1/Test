@@ -2643,14 +2643,16 @@
     <string name="image_link_action">링크 (같은 캐릭터 묶음)</string>
     <string name="image_unlink_action">링크 해제</string>
     <string name="image_link_need_two">링크하려면 2장 이상 선택하세요</string>
-    <string name="image_link_merge_confirm">선택에 기존 링크 그룹 %1$d개가 걸쳐 있습니다. 하나의 그룹으로 병합하시겠습니까?</string>
+    <string name="image_link_merge_confirm">선택에 기존 링크 묶음 %1$d개가 걸쳐 있습니다. 하나의 묶음으로 합치시겠습니까?</string>
     <string name="image_link_done">%1$d장을 링크했습니다 — 하나를 배정하면 함께 배정됩니다</string>
     <string name="image_link_merged_done">%1$d장을 링크했습니다 (그룹 병합됨)</string>
     <string name="image_link_failed">링크에 실패했습니다</string>
     <string name="image_unlink_done">링크 해제 %1$d장</string>
     <string name="image_unlink_auto_notice">%1$d장은 캐릭터에 함께 등록되어 있어 다음 정리 때 자동으로 다시 링크됩니다. 계속 풀어 두려면 자동 링크 설정을 끄거나 캐릭터에서 이미지를 빼세요.</string>
-    <string name="image_link_group_info">링크 그룹 · %1$d장</string>
-    <string name="image_link_group_info_auto">링크 그룹 · %1$d장 · 캐릭터 자동</string>
+    <string name="image_link_group_info">링크 묶음 · %1$d장</string>
+    <string name="image_link_group_info_auto">링크 묶음 · %1$d장 · 캐릭터 자동</string>
+    <!-- 묶어 보기에서 필터가 식구를 가려 위 수와 단추의 장수가 갈릴 때만 붙는다(정박) -->
+    <string name="image_link_group_info_visible"> · 지금 화면에는 %1$d장</string>
     <string name="image_batch_tag_done">이미지 %1$d장에 태그를 반영했습니다</string>
     <string name="image_tag_filter_empty">등록된 이미지 태그가 없습니다</string>
     <string name="image_tag_filter_untagged">태그 없는 이미지만</string>
