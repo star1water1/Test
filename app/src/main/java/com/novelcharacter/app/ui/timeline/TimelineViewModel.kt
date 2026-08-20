@@ -666,8 +666,25 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
      * 자기가 왜 못 갔는지 알 길이 없다.
      */
     suspend fun getEventById(eventId: Long) = timelineRepository.getEventById(eventId)
-    suspend fun getEventFieldsForUniverse(universeId: Long) =
-        db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+    /**
+     * 사건 폼이 그릴 필드 — **무소속이면 전역 구역이다**(B-258).
+     *
+     * 종전에는 세계관 질의 하나뿐이라 `universeId`가 없는 사건은 필드 구역이 통째로
+     * 사라졌다. 무소속 캐릭터는 B-119 확장이, 무소속 작품은 B-129가 이미 전역 구역을
+     * 받고 있었고 **사건만 못 받았다** — 앱 전체에 `globalFields(ENTITY_EVENT)`를 부르는
+     * 자리가 하나도 없었다.
+     *
+     * 앱의 저장소를 쓴다 — `globalFields`는 **심을 수도 있는**(쓰기) 함수라, 옆에서
+     * 새 인스턴스를 지으면 *둘 중 무엇이 맞는가*를 다음 사람이 매번 다시 묻는다
+     * ([com.novelcharacter.app.ui.novel.NovelViewModel.getNovelFields]와 같은 근거).
+     */
+    suspend fun getEventFieldsForUniverse(universeId: Long?) =
+        if (universeId == null) {
+            app.defaultFieldTemplateRepository
+                .globalFields(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+        } else {
+            db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+        }
 
     /**
      * 사건 편집 자리에서 만든 사건 필드를 심는다(P5).

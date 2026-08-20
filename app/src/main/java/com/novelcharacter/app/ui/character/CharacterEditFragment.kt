@@ -1255,7 +1255,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
-            override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
+            override suspend fun getEventFieldsForUniverse(universeId: Long?) = viewModel.getEventFieldsForUniverse(universeId)
             override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
             override suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition) =
                 viewModel.insertEventField(field)
