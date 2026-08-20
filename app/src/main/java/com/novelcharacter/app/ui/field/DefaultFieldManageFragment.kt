@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DefaultFieldTemplate
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -47,6 +48,15 @@ class DefaultFieldManageFragment : Fragment() {
 
     private lateinit var adapter: TemplateAdapter
 
+    /**
+     * 지금 [FieldEditDialog]로 편집 중인 템플릿(JSON) — null이면 새로 만들기다.
+     *
+     * 결과는 FragmentResult로 돌아오므로(R-65) 회전 뒤에도 도착하는데, 다이얼로그에 넘긴
+     * `asField`는 `id = 0`이라 결과만으로는 어느 템플릿의 편집이었는지 알 수 없다.
+     * 그래서 여는 쪽이 여기 적어 두고, 회전을 넘기기 위해 인스턴스 상태에 담는다.
+     */
+    private var editingTemplateJson: String? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -56,6 +66,9 @@ class DefaultFieldManageFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        editingTemplateJson = savedInstanceState?.getString(STATE_EDITING_TEMPLATE)
+        setupTemplateEditResultListener()
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
 
@@ -90,32 +103,31 @@ class DefaultFieldManageFragment : Fragment() {
         _binding = null
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        editingTemplateJson?.let { outState.putString(STATE_EDITING_TEMPLATE, it) }
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 편집 — 필드 편집 다이얼로그를 그대로 쓴다
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * 템플릿을 [FieldEditDialog]로 편집한다 — **정의의 모양이 같기 때문에 폼도 같아야 한다**
-     * (설계 1-4: *"새로 만들기(FieldEditDialog 재사용, 등급 체계 참조 없음)"*).
-     *
-     * `universeId = 0`으로 여는 것이 그 *"등급 체계 참조 없음"*의 실행이다 — 그 값이면
-     * 다이얼로그가 세계관 DB 조회를 건너뛰므로 체계 목록이 뜨지 않고, 전역 템플릿이 가리킬 수
-     * 없는 참조를 애초에 고를 수 없다.
+     * [FieldEditDialog]의 결과를 받는 자리 — 회전 뒤 재생성돼도 다시 서도록 onViewCreated에서
+     * 등록한다(R-65. 콜백 배선은 회전이 지워 저장 결과가 허공으로 갔다).
      */
-    private fun showTemplateEditDialog(template: DefaultFieldTemplate?) {
-        val asField = template?.let {
-            FieldDefinition(
-                id = 0, universeId = 0, key = it.key, name = it.name, type = it.type,
-                config = it.config, groupName = it.groupName, displayOrder = it.displayOrder,
-                isRequired = it.isRequired, entityType = it.entityType
-            )
-        }
-        val dialog = FieldEditDialog.newInstance(
-            universeId = 0,
-            field = asField,
-            entityType = template?.entityType ?: FieldDefinition.ENTITY_CHARACTER
-        )
-        dialog.setOnSaveListener { edited ->
+    private fun setupTemplateEditResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON)
+                ?: return@setFragmentResultListener
+            val edited = Gson().fromJson(json, FieldDefinition::class.java)
+                ?: return@setFragmentResultListener
+            val template = editingTemplateJson?.let {
+                Gson().fromJson(it, DefaultFieldTemplate::class.java)
+            }
+            editingTemplateJson = null
             if (template == null) {
                 viewModel.createFromField(edited)
             } else {
@@ -131,8 +143,41 @@ class DefaultFieldManageFragment : Fragment() {
                 viewModel.saveTemplate(next)
                 showPropagateDialog(next, previous = template)
             }
-            true
         }
+    }
+
+    /**
+     * 템플릿을 [FieldEditDialog]로 편집한다 — **정의의 모양이 같기 때문에 폼도 같아야 한다**
+     * (설계 1-4: *"새로 만들기(FieldEditDialog 재사용, 등급 체계 참조 없음)"*).
+     *
+     * `universeId = 0`으로 여는 것이 그 *"등급 체계 참조 없음"*의 실행이다 — 그 값이면
+     * 다이얼로그가 세계관 DB 조회를 건너뛰므로 체계 목록이 뜨지 않고, 전역 템플릿이 가리킬 수
+     * 없는 참조를 애초에 고를 수 없다.
+     */
+    private fun showTemplateEditDialog(template: DefaultFieldTemplate?) {
+        editingTemplateJson = template?.let { Gson().toJson(it) }
+        val asField = template?.let {
+            FieldDefinition(
+                id = 0, universeId = 0, key = it.key, name = it.name, type = it.type,
+                config = it.config, groupName = it.groupName, displayOrder = it.displayOrder,
+                isRequired = it.isRequired, entityType = it.entityType
+            )
+        }
+        // 편집의 키 중복 거부는 다이얼로그가 한다 — 템플릿은 DB의 필드 정의 표 밖에 살아
+        // 다이얼로그가 스스로 볼 수 없으므로 점유 키(같은 대상, 자신 제외)를 인자로 준다.
+        // **새로 만들기에는 안 준다** — 같은 자리 템플릿이 이미 있으면 거절이 아니라
+        // 병합(다시 심기)이 확정된 처분이다([DefaultFieldViewModel.createFromField]).
+        val reservedKeys = template?.let { editing ->
+            viewModel.templates.value.orEmpty()
+                .filter { it.entityType == editing.entityType && it.id != editing.id }
+                .map { it.key }
+        }
+        val dialog = FieldEditDialog.newInstance(
+            universeId = 0,
+            field = asField,
+            entityType = template?.entityType ?: FieldDefinition.ENTITY_CHARACTER,
+            reservedKeys = reservedKeys
+        )
         dialog.show(childFragmentManager, "DefaultFieldEditDialog")
     }
 
@@ -323,5 +368,10 @@ class DefaultFieldManageFragment : Fragment() {
                 override fun areContentsTheSame(a: DefaultFieldTemplate, b: DefaultFieldTemplate) = a == b
             }
         }
+    }
+
+    private companion object {
+        /** [editingTemplateJson]을 회전 너머로 나르는 인스턴스 상태 키. */
+        const val STATE_EDITING_TEMPLATE = "editingTemplateJson"
     }
 }

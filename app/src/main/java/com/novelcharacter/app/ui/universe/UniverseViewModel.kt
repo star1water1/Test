@@ -241,6 +241,12 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 프리셋 한 벌을 저장본에서 다시 읽는다 — 프리셋 필드 편집 결과가 회전 뒤 도착했을 때(R-65)
+     * 쓰는 자리다. LiveData 캐시는 재생성 직후 결과보다 늦게 올 수 있어 기대지 않는다.
+     */
+    suspend fun getUserPresetById(id: Long): UserPresetTemplate? = userPresetDao.getTemplateById(id)
+
     /** 사용자 프리셋 업데이트 */
     fun updateUserPreset(preset: UserPresetTemplate) = viewModelScope.launch {
         try {
