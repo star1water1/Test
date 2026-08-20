@@ -745,6 +745,7 @@
     <string name="delete_impact_quotes">· 명대사 %1$d건</string>
     <string name="delete_impact_memberships">· 세력 소속 %1$d건</string>
     <string name="delete_impact_images">· 이미지 %1$d장 (휴지통 정리 시 파일 삭제)</string>
+    <string name="delete_impact_events">· 사건 연계 %1$d건 (사건 자체는 연표에 남습니다)</string>
     <string name="delete_trash_notice">삭제 후 %1$d일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n보관 단위는 한 번의 삭제이며 최근 %2$d건까지 유지됩니다 — 한 삭제가 만든 백업은 통째로 남거나 통째로 사라지고, 한도를 넘기면 오래된 삭제부터 영구 삭제됩니다.</string>
     <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n세계관·작품·캐릭터·세력·사건이 하나의 묶음으로 휴지통에 보관됩니다(최근 %6$d건, %7$d일). 휴지통에서 \'전체 복원\'을 누르면 세계관부터 순서대로 되살아나 참조도 다시 이어집니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
@@ -2166,6 +2167,7 @@
     <string name="batch_delete_impact_quotes">명대사 %d건</string>
     <string name="batch_delete_impact_memberships">세력 소속 %d건</string>
     <string name="batch_delete_impact_events">사건 연계 %d건</string>
+    <string name="batch_delete_impact_images">이미지 %d장</string>
     <string name="batch_tag_add_title">태그 일괄 추가</string>
     <string name="batch_tag_remove_title">태그 일괄 삭제</string>
     <string name="batch_tag_input_hint">태그 입력 (콤마로 구분)</string>

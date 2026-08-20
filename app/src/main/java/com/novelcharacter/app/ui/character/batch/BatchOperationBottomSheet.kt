@@ -121,6 +121,7 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
         if (impact.quotes > 0) parts.add(getString(R.string.batch_delete_impact_quotes, impact.quotes))
         if (impact.factionMemberships > 0) parts.add(getString(R.string.batch_delete_impact_memberships, impact.factionMemberships))
         if (impact.eventLinks > 0) parts.add(getString(R.string.batch_delete_impact_events, impact.eventLinks))
+        if (impact.images > 0) parts.add(getString(R.string.batch_delete_impact_images, impact.images))
         return "$base\n\n" + getString(R.string.batch_delete_impact_summary, parts.joinToString(", "))
     }
 

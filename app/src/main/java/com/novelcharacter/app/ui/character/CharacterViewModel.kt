@@ -8,6 +8,7 @@ import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.toastAndLogResult
+import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.data.repository.NameBankLinkOutcome
 import com.novelcharacter.app.util.EpochMemo
@@ -991,25 +992,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun getCharacterByIdSuspend(id: Long): Character? = characterRepository.getCharacterById(id)
 
-    /** 삭제 확인 다이얼로그용 — 함께 영구 삭제되는 데이터 범위 집계 */
-    data class CharacterDeleteImpact(
-        val relationships: Int,
-        val stateChanges: Int,
-        val quotes: Int,
-        val factionMemberships: Int,
-        val images: Int
-    )
-
-    suspend fun getCharacterDeleteImpact(character: Character): CharacterDeleteImpact {
-        val relationships = characterRepository.getRelationshipsForCharacterList(character.id).size
-        val stateChanges = characterRepository.getChangesByCharacterList(character.id).size
-        // 명대사도 CASCADE로 함께 사라진다 — 형제 자식표를 다 세면서 이것만 빼면
-        // 사용자가 무엇을 잃는지 화면이 절반만 말한다(R-4).
-        val quotes = characterRepository.getQuotesByCharacterList(character.id).size
-        val memberships = app.database.factionMembershipDao().getMembershipsByCharacterList(character.id).size
-        val images = try { org.json.JSONArray(character.imagePaths).length() } catch (_: Exception) { 0 }
-        return CharacterDeleteImpact(relationships, stateChanges, quotes, memberships, images)
-    }
+    /**
+     * 삭제 확인 다이얼로그용 — 함께 영구 삭제되는 데이터 범위 집계.
+     *
+     * **일괄 삭제와 같은 함수로 센다**(id 하나짜리 목록) — 종전에는 여기와
+     * [CharacterRepository.getBatchDeleteImpact]가 각자 세어 단건은 사건 연계를,
+     * 일괄은 이미지를 서로 빼먹은 채 갈려 있었다. 같은 조작의 두 진입이 다른 범위를
+     * 고지하면 어느 한쪽은 반드시 거짓말이다(R-4).
+     */
+    suspend fun getCharacterDeleteImpact(character: Character): CharacterRepository.DeleteImpact =
+        characterRepository.getBatchDeleteImpact(listOf(character.id))
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
