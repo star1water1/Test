@@ -1836,12 +1836,10 @@ class ImageManagerViewModel(
      * @param carryOver 되받기('1장씩 다시 보내기')일 때 **앞 실행의 결과**. 새 결과를 그 위에
      *   얹어 이미 결제한 제안을 살린다(B-140 — 합치는 규칙은
      *   [com.novelcharacter.app.ai.ImageBatchTagSuggester.mergeRetry]가 든다).
-     * @return 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알릴 것(무통보 무시 금지).
-     */
-    /**
      * @param groupExpand 묶음 단위 실행의 전개 표(보낸 경로 → 묶음 전원). 비우면 보낸 장에만
      *   붙는 종전 동작이다. **되받기([carryOver] != null)에서는 무시된다** — 표는 첫 실행이
      *   세운 것이 계속 옳다(되받는 경로는 전부 그 표본이다).
+     * @return 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알릴 것(무통보 무시 금지).
      */
     fun runImageTagSuggest(
         paths: List<String>,
