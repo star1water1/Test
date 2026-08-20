@@ -736,10 +736,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val args = arguments ?: return
         val fieldId = args.getLong(FieldValueFixRoute.ARG_FOCUS_FIELD_ID, 0L)
         if (fieldId <= 0L) return
+        // **못 잡는 상태에서는 요청을 남긴다 — 지우기 전에 본다.** 여기서 지우고 반환하면
+        // 잡지도 말하지도 못한 채 **요청만 사라지고**, 그것이 R-61이 막으려던 바로 그 모양이다.
+        // (실무상 이 자리에 닿을 때 폼은 이미 서 있다 — `onViewCreated`가 만든다. 그래도
+        //  *조용히 끝나는* 갈래를 코드가 허용하는 채로 두지 않는다.)
+        if (!::formBuilder.isInitialized) return
         val fieldName = args.getString(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME).orEmpty()
         args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_ID)
         args.remove(FieldValueFixRoute.ARG_FOCUS_FIELD_NAME)
-        if (!::formBuilder.isInitialized) return
         if (formBuilder.focusField(fieldId)) return
         val ctx = context ?: return
         Toast.makeText(

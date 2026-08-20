@@ -866,7 +866,10 @@ class EventEditDialogFragment : DialogFragment() {
 
     // ── 사건 커스텀 필드 (B-10) ──
 
-    /** 선택된 작품(없으면 편집 중인 사건)의 세계관 기준으로 사건 필드 입력 섹션 재구성. 입력 중이던 값은 보존. */
+    /**
+     * 사건 필드 입력 섹션 재구성 — 구역은 선택된 작품(없으면 편집 중인 사건)의 세계관이고,
+     * **어느 쪽도 없으면 전역 구역이다**(B-258 ⓐ). 입력 중이던 값은 보존한다.
+     */
     private fun rebuildEventFieldSection() {
         if (_binding == null) return
         // 현재 입력값 보존
@@ -908,36 +911,40 @@ class EventEditDialogFragment : DialogFragment() {
             eventFields = fields
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }
-            buildEventFieldInputs()
+            buildEventFieldInputs(target)
         }
     }
 
-    private fun buildEventFieldInputs() {
+    /**
+     * 입력 위젯을 세운다.
+     *
+     * **구역을 인자로 받는다** — 이 함수는 조회 콜백 한 곳에서만 불리고 그때 구역은 반드시
+     * 정해져 있다. 필드에서 다시 읽으면 *아직 못 정했을 수도 있다*는 갈래가 생기는데,
+     * 그 갈래는 **도달할 수 없으면서 화면을 감추는 코드**여서 다음 사람에게 없는 상태를
+     * 있다고 말한다(콜드 검토가 이 판에서 잡았다).
+     */
+    private fun buildEventFieldInputs(scope: FieldScope) {
         val ctx = context ?: return
         eventFieldInputMap.clear()
         binding.eventFieldContainer.removeAllViews()
 
-        // 구역을 아직 못 정한 상태(창이 막 서서 조회 전)에서는 섹션 자체가 없다 —
-        // 아래 셋이 그 상태와 **전역 구역**을 가른다(종전에는 `Long?`의 null 하나가 둘을 겸했다).
-        val scope = resolvedFieldScope
-        val universeScope = scope is FieldScope.Universe
         val globalScope = scope is FieldScope.Global
         // **만드는 경로는 세계관 구역에만 있다**([FieldScope] KDoc — B-129가 작품 축에 세운 규약).
-        binding.btnAddEventField.visibility = if (universeScope) View.VISIBLE else View.GONE
+        binding.btnAddEventField.visibility = if (globalScope) View.GONE else View.VISIBLE
         // 추천은 빈 캔버스보다 값싼 출발점이라 **함께** 남긴다. 필드가 있을 때도 하나 더
         // 필요할 수 있다는 현행 판단(바로 위 주석)을 그대로 따른다. 전역 구역에서는 이것도
         // 함께 사라진다 — 심을 자리가 없는데 고르게 하면 고른 것이 갈 곳이 없다.
-        binding.btnPickEventField.visibility = if (universeScope) View.VISIBLE else View.GONE
+        binding.btnPickEventField.visibility = if (globalScope) View.GONE else View.VISIBLE
         // 도움말은 두 구역 모두에 남긴다 — 전역 구역에서는 **어디서 만드는가**를 말하는 자리가
         // 안내문과 이 단추뿐이다.
-        binding.btnEventFieldHelp.visibility = if (scope != null) View.VISIBLE else View.GONE
+        binding.btnEventFieldHelp.visibility = View.VISIBLE
 
         if (eventFields.isEmpty()) {
             binding.eventFieldContainer.visibility = View.GONE
             // 빈 상태에서도 머리글과 사유를 남긴다 — 섹션을 통째로 감추면 사건을 쓰는 자리에서
             // '사건 필드'라는 것의 존재를 알 길이 없다(B-31이 세운 규약과 같은 취지).
-            binding.eventFieldSectionLabel.visibility = if (scope != null) View.VISIBLE else View.GONE
-            binding.eventFieldEmptyHint.visibility = if (scope != null) View.VISIBLE else View.GONE
+            binding.eventFieldSectionLabel.visibility = View.VISIBLE
+            binding.eventFieldEmptyHint.visibility = View.VISIBLE
             binding.eventFieldEmptyHint.text = getString(
                 if (globalScope) R.string.event_field_global_scope else R.string.event_field_empty_hint
             )

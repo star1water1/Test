@@ -64,7 +64,7 @@ object AppSettingsDiff {
         // **이것은 [AppSettingsBindings]의 불변식에 기댄 판정이다** — 숫자 바인딩 열넷이
         // 전부 `Applied.No`로 거절한다(실측). 기댄 채로 두면 새 숫자 바인딩 하나가 조용히
         // 이 예고를 틀리게 만들 수 있어, `tools/check_app_settings_catalog.sh`가 그 불변식을
-        // 기계로 지킨다(축 ③).
+        // 기계로 지킨다(축 ④).
         if (spec.kind == AppSettingsKeys.Kind.NUMBER && fileValue.trim().toDoubleOrNull() == null) {
             return Effect.SKIPPED
         }
