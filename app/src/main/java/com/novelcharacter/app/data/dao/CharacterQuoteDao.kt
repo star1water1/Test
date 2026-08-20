@@ -39,9 +39,6 @@ interface CharacterQuoteDao {
     @Query("SELECT * FROM character_quotes WHERE code = :code LIMIT 1")
     suspend fun getQuoteByCode(code: String): CharacterQuote?
 
-    @Query("SELECT COUNT(*) FROM character_quotes WHERE characterId = :characterId")
-    suspend fun countByCharacter(characterId: Long): Int
-
     /**
      * 여러 캐릭터의 대사 수 — 일괄 삭제 고지가 쓴다(R-4). 호출부가 `SqlInChunks.each`로
      * 나눠 넣고 `+=`로 더한다 — 나누기가 계수를 바꾸지 않는다(R-54).

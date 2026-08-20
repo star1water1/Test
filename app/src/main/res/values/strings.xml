@@ -3851,17 +3851,14 @@
 
     <!-- ══ 명대사 (사용자 요청 2026.08.20) ══ -->
     <string name="quotes">명대사</string>
-    <!-- 인용 부호 — 대사를 감싸는 글자. 화면마다 다시 적지 않게 여기 하나로 둔다. -->
+    <!-- 인용 부호 — 목록 줄이 대사 앞에 세우는 글자. 감싸는 꼴은 quote_wrapped가 든다. -->
     <string name="quote_mark_open">「</string>
-    <string name="quote_mark_close">」</string>
     <string name="quote_wrapped">「%1$s」</string>
-    <string name="add_quote">명대사 추가</string>
     <string name="add_quote_desc">명대사 추가</string>
     <string name="empty_quote_hint">이 캐릭터가 한 말을 적어 두면 생일 축하 창과 대결 카드에 함께 뜹니다</string>
     <string name="quote_dialog_add">명대사 추가</string>
     <string name="quote_dialog_edit">명대사 편집</string>
     <string name="quote_text_label">대사</string>
-    <string name="quote_text_hint">캐릭터가 한 말</string>
     <string name="quote_text_required">대사를 입력하십시오</string>
     <string name="quote_note_label">상황·출처</string>
     <string name="quote_note_hint">언제 어디서 한 말인지 (비워 둬도 됩니다)</string>
@@ -3877,7 +3874,6 @@
     <string name="quote_count_label">%1$d개</string>
     <string name="quote_count_with_birthday">%1$d개 · 생일 %2$d개</string>
     <string name="quote_reorder_hint">길게 눌러 순서를 바꿉니다</string>
-    <string name="quote_sheet_title">명대사</string>
     <string name="char_stats_quotes">명대사: %d건</string>
 
     <!-- 생일 축하 창 — 그날 처음 앱을 열 때 한 번 (사용자 요청 2026.08.20) -->

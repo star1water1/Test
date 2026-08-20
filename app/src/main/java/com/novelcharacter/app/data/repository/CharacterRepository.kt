@@ -404,9 +404,6 @@ class CharacterRepository(
      */
     suspend fun deleteQuote(quote: CharacterQuote) = characterQuoteDao.delete(quote)
 
-    suspend fun deleteAllQuotesByCharacter(characterId: Long) =
-        characterQuoteDao.deleteAllByCharacter(characterId)
-
     // ===== CharacterRelationship =====
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
         characterRelationshipDao.getRelationshipsForCharacter(characterId)
