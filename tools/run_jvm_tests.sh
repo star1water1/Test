@@ -275,6 +275,7 @@ $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
+$MAIN/util/LinkGroupFold.kt
 $MAIN/util/AutoLinkPlanner.kt
 $MAIN/util/ImageAdoptionPlanner.kt
 $MAIN/util/ImageLinkGroupPlanner.kt
@@ -488,6 +489,7 @@ $TEST/util/ImageFilterHelperTest.kt
 $TEST/util/LibraryPickerRowsTest.kt
 $TEST/util/ImageRecommendationHelperTest.kt
 $TEST/util/ImageLinkResolverTest.kt
+$TEST/util/LinkGroupFoldTest.kt
 $TEST/util/AutoLinkPlannerTest.kt
 $TEST/util/ImageAdoptionPlannerTest.kt
 $TEST/util/ImageLinkGroupPlannerTest.kt

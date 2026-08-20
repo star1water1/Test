@@ -3312,8 +3312,8 @@
   "id": "ㄴ",
   "warn": false,
   "money": false,
-  "do": "필터 줄의 **링크 칩**(전체/링크됨/링크 없음/캐릭터 자동)을 눌러 본다",
-  "expect": "각각 걸린다",
+  "do": "**정렬·필터** 시트를 열어 **링크 상태**(전체/링크됨/링크 없음/캐릭터 자동)를 하나씩 적용해 본다",
+  "expect": "각각 걸리고, 활성 필터 칩이 검색 줄 아래에 서며 ×로 그 자리에서 풀린다",
   "ref": "3-19-6",
   "axis": "자동",
   "axiswhy": "필터 칩 조합 — 순수 질의",
@@ -3339,8 +3339,8 @@
   "id": "ㄷ",
   "warn": false,
   "money": false,
-  "do": "**무태그 필터**를 켠다",
-  "expect": "태그 없는 것만 남고 **아래 태그 칩이 잠긴다**. 앱을 껐다 켜도 유지된다",
+  "do": "**정렬·필터** 시트에서 **태그 없는 이미지만**을 켠다",
+  "expect": "태그 없는 것만 남고 **시트의 태그 칩이 잠긴다**. 앱을 껐다 켜도 유지된다",
   "ref": "3-64-1",
   "axis": "자동",
   "axiswhy": "필터 칩 조합 — 순수 질의",
@@ -4527,8 +4527,8 @@
   "drop": {
    "why": "코드",
    "where": "app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt",
-   "note": "btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다",
-   "anchor": "binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE"
+   "note": "btnAddEventField.visibility = if (globalScope) GONE else VISIBLE — 작품이 없으면(전역 구역) 추가 버튼이 숨는다 (B-258 ⓐ 이후의 배선 — 판정 축이 fieldPathKnown에서 globalScope로 갈렸고 화면 동작은 같다)",
+   "anchor": "binding.btnAddEventField.visibility = if (globalScope) View.GONE else View.VISIBLE"
   }
  },
  {

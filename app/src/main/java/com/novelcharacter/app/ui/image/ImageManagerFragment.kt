@@ -1,7 +1,5 @@
 package com.novelcharacter.app.ui.image
 
-import android.content.res.ColorStateList
-import android.graphics.Color
 import android.os.Bundle
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -100,6 +98,12 @@ class ImageManagerFragment : Fragment() {
     private var selectionMode = false
     private val selectedPaths = LinkedHashSet<String>()
     private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
+
+    // 묶어 보기의 좌표계 — 접기 전(필터·정렬 적용) 목록과, 접힌 칸 경로 → 식구들.
+    // 선택·일괄 작업은 화면의 칸이 아니라 **이 펼친 목록**에 작용한다(칸 하나 = 식구 전체).
+    private var expandedItems: List<ImageManagerViewModel.ManagedImage> = emptyList()
+    private var stackMembers: Map<String, List<ImageManagerViewModel.ManagedImage>> = emptyMap()
+
     private var searchJob: kotlinx.coroutines.Job? = null
 
     private lateinit var adapter: ImageManagerAdapter
@@ -149,11 +153,13 @@ class ImageManagerFragment : Fragment() {
         }
         binding.galleryPager.registerOnPageChangeCallback(galleryPageCallback!!)
         binding.viewModeButton.setOnClickListener { toggleViewMode() }
+        // 갤러리 소비 목록은 어댑터가 든 것(펼친 목록)이다 — currentList(접힌 표시 목록)로
+        // 집으면 묶어 보기에서 페이지와 다른 이미지의 상세·태그가 열린다.
         binding.galleryDetailButton.setOnClickListener {
-            currentList.getOrNull(binding.galleryPager.currentItem)?.let { showDetail(it) }
+            galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.let { showDetail(it) }
         }
         binding.galleryTagButton.setOnClickListener {
-            currentList.getOrNull(binding.galleryPager.currentItem)?.let { openTagEdit(it) }
+            galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.let { openTagEdit(it) }
         }
         // 갤러리 모드의 뒤로가기는 화면 이탈이 아니라 그리드 복귀
         galleryBackCallback = object : androidx.activity.OnBackPressedCallback(false) {
@@ -175,41 +181,10 @@ class ImageManagerFragment : Fragment() {
         // 상태 복원(D10: SavedStateHandle 영속) — 리스너 등록 전에 UI를 현재 criteria로 맞춘다.
         restoreFilterUi()
 
-        binding.filterChips.setOnCheckedStateChangeListener { _, checkedIds ->
-            val base = when (checkedIds.firstOrNull()) {
-                R.id.chipCharacter -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.CHARACTER
-                R.id.chipNovel -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL
-                R.id.chipUniverse -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE
-                R.id.chipUnassigned -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED
-                R.id.chipDetached -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.DETACHED
-                R.id.chipOrphan -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN
-                R.id.chipTrash -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH
-                else -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL
-            }
-            viewModel.criteria = viewModel.criteria.copy(base = base)
-            applyView()
-        }
-
-        // 링크 상태는 소유·상태와 직교하는 별도 축이다 — 두 칩 그룹이 AND로 조합된다.
-        binding.linkFilterChips.setOnCheckedStateChangeListener { _, checkedIds ->
-            val link = when (checkedIds.firstOrNull()) {
-                R.id.chipLinked -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.LINKED
-                R.id.chipUnlinked -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.UNLINKED
-                R.id.chipLinkAuto -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.AUTO
-                else -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY
-            }
-            viewModel.criteria = viewModel.criteria.copy(link = link)
-            applyView()
-        }
-
-        // 걸러낼 후보 (B-104 ⓒ) — 켤 때만 계산이 돈다. 결과는 관측으로 되돌아와 목록을 다시 건다.
-        binding.chipPruneCandidate.setOnCheckedChangeListener { _, on ->
-            viewModel.setPruneFilter(on)
-            applyView()
-        }
         viewModel.pruneState.observe(viewLifecycleOwner) { state ->
             applyView()
-            updatePruneChipLabel(state)
+            // 후보 수는 활성 칩에 적힌다 — 눌러 보기 전에 규모가 보인다(원칙 04).
+            renderActiveFilterChips()
             // **제안까지가 끝이다**(백로그 원문) — 후보를 골랐다는 사실과 함께 그 말을 한 번 한다.
             // **한 번인지 세는 것은 ViewModel이다** — 관측은 뷰 재생성마다 되돌아오는데
             // 조각 필드로 세면 회전 한 번에 도로 0이 되어 **같은 말이 회전마다 반복된다.**
@@ -236,9 +211,14 @@ class ImageManagerFragment : Fragment() {
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
 
-        binding.tagFilterButton.setOnClickListener { openTagFilterSheet() }
+        binding.controlsButton.setOnClickListener { openControlsSheet() }
+        // 정렬 칩 탭 = 방향 반전 — 시트를 열지 않고 한 탭으로 뒤집는 지름길(캐릭터 목록의 관행)
+        binding.sortChip.setOnClickListener {
+            viewModel.sortAscending = !viewModel.sortAscending
+            updateSortChip()
+            applyView()
+        }
         binding.importButton.setOnClickListener { imagePickerLauncher.launch("image/*") }
-        binding.sortButton.setOnClickListener { showSortMenu() }
         binding.optionsButton.setOnClickListener { showOptionsMenu() }
         binding.selectButton.setOnClickListener { if (selectionMode) exitSelection() else enterSelection(null) }
         binding.selectAllButton.setOnClickListener { selectAll() }
@@ -270,38 +250,20 @@ class ImageManagerFragment : Fragment() {
         refreshOrganizeFolderBanner()
     }
 
-    /** 상태 복원 — 칩·검색어·태그필터 버튼 라벨을 VM criteria(SavedStateHandle)에 맞춘다. */
+    /** 상태 복원 — 정렬 칩·활성 필터 칩·검색어를 VM criteria(SavedStateHandle)에 맞춘다. */
     private fun restoreFilterUi() {
         val c = viewModel.criteria
-        val chipId = when (c.base) {
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.CHARACTER -> R.id.chipCharacter
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL -> R.id.chipNovel
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE -> R.id.chipUniverse
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED -> R.id.chipUnassigned
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.DETACHED -> R.id.chipDetached
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN -> R.id.chipOrphan
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH -> R.id.chipTrash
-            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL -> R.id.chipAll
-        }
-        binding.filterChips.check(chipId)
-        binding.linkFilterChips.check(when (c.link) {
-            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.LINKED -> R.id.chipLinked
-            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.UNLINKED -> R.id.chipUnlinked
-            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.AUTO -> R.id.chipLinkAuto
-            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY -> R.id.chipLinkAny
-        })
         // 걸러낼 후보는 SavedStateHandle에 남으므로 프로세스가 죽었다 살아나도 켠 채로 돌아온다.
-        // 그때 계산 결과는 함께 살아나지 않으므로 **체크를 다시 걸어 계산을 되살린다** —
+        // 그때 계산 결과는 함께 살아나지 않으므로 **계산을 되살린다** —
         // 켜져 있는데 후보가 0인 화면은 *"정말 없다"*와 구별되지 않는다.
-        binding.chipPruneCandidate.isChecked =
-            c.prune == com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
-        if (binding.chipPruneCandidate.isChecked &&
+        if (c.prune == com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE &&
             viewModel.pruneState.value is ImageManagerViewModel.PruneState.Off
         ) {
             viewModel.setPruneFilter(true)
         }
         if (c.query.isNotBlank()) binding.searchEdit.setText(c.query)
-        updateTagFilterLabel()
+        updateSortChip()
+        renderActiveFilterChips()
         applyViewMode()
     }
 
@@ -337,21 +299,28 @@ class ImageManagerFragment : Fragment() {
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GALLERY
         if (gridPos != null) {
             viewModel.galleryPosition = gridPos
+            // 접힌 칸에서 들어와도 대표의 경로는 펼친 목록에 있다 — path 우선 동기화가 잡는다.
             viewModel.galleryPath = currentList.getOrNull(gridPos)?.path
         }
         attachGalleryAdapter()
         applyViewMode()
-        galleryAdapter.submitList(currentList) { syncGalleryPager() }
+        galleryAdapter.submitList(expandedItems) { syncGalleryPager() }
     }
 
     private fun switchToGrid() {
-        val pos = binding.galleryPager.currentItem
+        val path = galleryAdapter.currentList.getOrNull(binding.galleryPager.currentItem)?.path
         // 어댑터 분리로 페이지 홀더를 즉시 재활용 — 디코드 Job 취소·비트맵 해제
         // (onDestroyView와 동일 관용구. GONE 전환만으로는 layout이 없어 회수가 안 된다)
         binding.galleryPager.adapter = null
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GRID
         applyViewMode()
-        if (pos in currentList.indices) binding.recyclerView.scrollToPosition(pos)
+        // 갤러리는 펼친 목록, 그리드는 접힌 목록이라 좌표가 다르다 — 보던 장이 든 칸으로 간다.
+        if (path != null) {
+            val target = currentList.indexOfFirst { cell ->
+                cell.path == path || stackMembers[cell.path]?.any { it.path == path } == true
+            }
+            if (target >= 0) binding.recyclerView.scrollToPosition(target)
+        }
     }
 
     /**
@@ -382,7 +351,9 @@ class ImageManagerFragment : Fragment() {
     /** 하단 오버레이 갱신 — 현재 페이지의 인덱스·파일명·소유자·태그 (편집 진입 버튼 포함) */
     private fun updateGalleryOverlay() {
         if (_binding == null || viewModel.viewMode != ImageManagerViewModel.ViewMode.GALLERY) return
-        val item = currentList.getOrNull(binding.galleryPager.currentItem)
+        // 페이저와 같은 좌표계(어댑터 목록 = 펼친 목록)에서 집는다 — 분모도 실제 장수다.
+        val list = galleryAdapter.currentList
+        val item = list.getOrNull(binding.galleryPager.currentItem)
         if (item == null) {
             binding.galleryIndexText.text = ""
             binding.galleryOwnerText.text = ""
@@ -395,7 +366,7 @@ class ImageManagerFragment : Fragment() {
         binding.galleryTagButton.isEnabled = true
         binding.galleryIndexText.text = getString(
             R.string.image_manager_gallery_index,
-            binding.galleryPager.currentItem + 1, currentList.size, item.path.substringAfterLast('/')
+            binding.galleryPager.currentItem + 1, list.size, item.path.substringAfterLast('/')
         )
         binding.galleryOwnerText.text = ownerLabel(item)
         val tags = item.meta?.tags.orEmpty()
@@ -408,66 +379,156 @@ class ImageManagerFragment : Fragment() {
         }
     }
 
+    /** 정렬 상태 칩 — "크기순 ↓". 탭하면 방향이 반전된다(리스너는 onViewCreated에서 1회). */
+    private fun updateSortChip() {
+        val label = getString(when (viewModel.sort) {
+            ImageManagerViewModel.Sort.SIZE -> R.string.image_manager_sort_size
+            ImageManagerViewModel.Sort.NAME -> R.string.image_manager_sort_name
+            ImageManagerViewModel.Sort.DATE -> R.string.image_manager_sort_date
+        })
+        val arrow = if (viewModel.sortAscending) "↑" else "↓"
+        binding.sortChip.text = "$label $arrow"
+    }
+
     /**
-     * 태그 필터 버튼 상태 갱신 — 라벨 개수뿐 아니라 체크 아이콘·강조색·배경까지 함께 바꿔
-     * 필터가 적용 중인지 버튼만 보고도 판단할 수 있게 한다(토글 시각화).
+     * 활성 필터 칩 — 걸려 있는 축마다 칩 하나, ×로 그 자리에서 푼다(캐릭터 목록의
+     * `renderFilterChips` 관행). 시트를 열어 봐야 아는 상태가 없게 한다(원칙 04) —
+     * 종전에는 칩 두 그룹이 항상 펼쳐져 있어 상태는 보였지만 **줄 하나가 통째로 컨트롤**이었다.
      */
-    private fun updateTagFilterLabel() {
+    private fun renderActiveFilterChips() {
+        if (_binding == null) return
+        val ctx = context ?: return
+        val group = binding.activeFilterChips
+        group.removeAllViews()
+        updateControlsButtonLabel()
         val c = viewModel.criteria
-        val n = c.tags.size
-        val untagged = c.tagPresence == com.novelcharacter.app.util.ImageFilterHelper.TagFilter.UNTAGGED
-        val active = n > 0 || untagged
-        val button = binding.tagFilterButton
-        // 무태그는 개수로 셀 수 없으므로 라벨을 따로 든다 — 켜 두고 버튼이 '태그'라고만
-        // 말하면, 목록이 왜 좁아졌는지 화면 어디에도 없다(원칙 04의 "존재를 알 수 없는 것").
-        button.text = when {
-            untagged -> getString(R.string.image_manager_tag_filter_untagged)
-            n > 0 -> getString(R.string.image_manager_tag_filter_count, n)
-            else -> getString(R.string.image_manager_tag_filter)
-        }
-        if (active) {
-            button.setIconResource(R.drawable.ic_check)
-            val primary = MaterialColors.getColor(button, com.google.android.material.R.attr.colorPrimary)
-            button.setTextColor(primary)
-            button.iconTint = ColorStateList.valueOf(primary)
-            button.strokeColor = ColorStateList.valueOf(primary)
-            button.backgroundTintList = ColorStateList.valueOf(
-                MaterialColors.getColor(button, com.google.android.material.R.attr.colorSecondaryContainer)
-            )
-        } else {
-            button.icon = null
-            val ctx = requireContext()
-            button.setTextColor(androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_text))
-            button.iconTint = androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_text)
-            button.strokeColor = androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_stroke)
-            button.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-        }
-    }
 
-    private fun openTagFilterSheet() {
-        val sheet = ImageTagFilterBottomSheet()
-        sheet.currentTags = viewModel.criteria.tags
-        sheet.currentPresence = viewModel.criteria.tagPresence
-        sheet.loadAllTags = { viewModel.getAllImageTags() }
-        sheet.onApply = { tags, presence ->
-            viewModel.criteria = viewModel.criteria.copy(tags = tags, tagPresence = presence)
-            if (_binding != null) { updateTagFilterLabel(); applyView() }
+        fun addChip(label: String, onClear: () -> Unit) {
+            group.addView(com.google.android.material.chip.Chip(ctx).apply {
+                text = label
+                isCloseIconVisible = true
+                setOnCloseIconClickListener {
+                    onClear()
+                    renderActiveFilterChips()
+                    applyView()
+                }
+            })
         }
-        sheet.show(childFragmentManager, ImageTagFilterBottomSheet.TAG)
-    }
 
-    /**
-     * 칩에 후보 수를 적는다 — **눌러 보기 전에 규모가 보인다**(원칙 04).
-     * 계산 전·꺼짐이면 이름만 남긴다(0을 적으면 *"후보 없음"*으로 읽혀 계산 중과 구별되지 않는다).
-     */
-    private fun updatePruneChipLabel(state: ImageManagerViewModel.PruneState) {
-        val base = getString(R.string.image_manager_prune_candidate)
-        binding.chipPruneCandidate.text =
-            if (state is ImageManagerViewModel.PruneState.Ready && state.hasBasis) {
+        if (c.base != com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL) {
+            addChip(getString(baseFilterLabelRes(c.base))) {
+                viewModel.criteria = viewModel.criteria
+                    .copy(base = com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL)
+            }
+        }
+        if (c.link != com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY) {
+            addChip(getString(when (c.link) {
+                com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.LINKED -> R.string.image_manager_link_linked
+                com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.UNLINKED -> R.string.image_manager_link_unlinked
+                else -> R.string.image_manager_link_auto
+            })) {
+                viewModel.criteria = viewModel.criteria
+                    .copy(link = com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY)
+            }
+        }
+        if (c.prune == com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE) {
+            // 후보 수를 칩에 적는다 — 눌러 보기 전에 규모가 보인다(원칙 04). 계산 전이면
+            // 이름만 남긴다(0을 적으면 "후보 없음"으로 읽혀 계산 중과 구별되지 않는다).
+            val state = viewModel.pruneState.value
+            val base = getString(R.string.image_manager_prune_candidate)
+            val label = if (state is ImageManagerViewModel.PruneState.Ready && state.hasBasis) {
                 "$base ${state.paths.size}"
             } else {
                 base
             }
+            addChip(label) { viewModel.setPruneFilter(false) }
+        }
+        if (c.tagPresence == com.novelcharacter.app.util.ImageFilterHelper.TagFilter.UNTAGGED) {
+            addChip(getString(R.string.image_manager_tag_filter_untagged)) {
+                viewModel.criteria = viewModel.criteria
+                    .copy(tagPresence = com.novelcharacter.app.util.ImageFilterHelper.TagFilter.ANY)
+            }
+        }
+        for (tag in c.tags) {
+            addChip("#$tag") {
+                viewModel.criteria = viewModel.criteria.copy(tags = viewModel.criteria.tags - tag)
+            }
+        }
+        if (viewModel.groupView) {
+            addChip(getString(R.string.image_manager_group_view_chip)) { viewModel.groupView = false }
+        }
+    }
+
+    private fun baseFilterLabelRes(base: com.novelcharacter.app.util.ImageFilterHelper.BaseFilter): Int = when (base) {
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.CHARACTER -> R.string.image_manager_filter_character
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL -> R.string.image_manager_filter_novel
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE -> R.string.image_manager_filter_universe
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED -> R.string.image_manager_filter_unassigned
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.DETACHED -> R.string.image_manager_filter_detached
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN -> R.string.image_manager_filter_orphan
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH -> R.string.image_manager_filter_trash
+        com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL -> R.string.image_manager_filter_all
+    }
+
+    /** 컨트롤 버튼 라벨 — 활성 필터·묶어 보기 수를 적는다("정렬·필터 · N"). 정렬은 늘 있어 세지 않는다. */
+    private fun updateControlsButtonLabel() {
+        if (_binding == null) return
+        val c = viewModel.criteria
+        var n = c.tags.size
+        if (c.base != com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL) n++
+        if (c.link != com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY) n++
+        if (c.prune == com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE) n++
+        if (c.tagPresence == com.novelcharacter.app.util.ImageFilterHelper.TagFilter.UNTAGGED) n++
+        if (viewModel.groupView) n++
+        binding.controlsButton.text =
+            if (n > 0) getString(R.string.controls_button_count, n) else getString(R.string.controls_button)
+    }
+
+    /** 통합 컨트롤 시트 — 정렬(기준+방향)·묶어 보기·필터를 한 표면에서 받는다. */
+    private fun openControlsSheet() {
+        val sheet = ImageManagerControlsBottomSheet()
+        sheet.currentCriteria = viewModel.criteria
+        sheet.currentSort = viewModel.sort
+        sheet.currentAscending = viewModel.sortAscending
+        sheet.currentGroupView = viewModel.groupView
+        sheet.loadAllTags = { viewModel.getAllImageTags() }
+        sheet.onApply = { criteria, sort, ascending, groupView ->
+            val wasPrune = viewModel.criteria.prune ==
+                com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
+            val wantPrune = criteria.prune ==
+                com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
+            // 검색어는 시트가 손대지 않는 축이라 **지금 값**을 쓴다 — 시트가 열릴 때의
+            // 스냅샷을 그대로 실으면, 시트가 떠 있는 사이 디바운스로 확정된 검색어가
+            // 적용 한 번에 옛값으로 되돌아간다(검색칸 글자는 그대로인 채 목록만 넓어진다).
+            viewModel.criteria = criteria.copy(query = viewModel.criteria.query)
+            viewModel.sort = sort
+            viewModel.sortAscending = ascending
+            viewModel.groupView = groupView
+            // 켬/끔이 갈릴 때만 계산을 걸거나 끊는다 — 이미 켜져 있던 후보 계산은 그대로 산다.
+            if (wasPrune != wantPrune) viewModel.setPruneFilter(wantPrune)
+            if (_binding != null) {
+                updateSortChip()
+                renderActiveFilterChips()
+                applyView()
+            }
+        }
+        sheet.onClearFilters = {
+            val wasPrune = viewModel.criteria.prune ==
+                com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.CANDIDATE
+            viewModel.criteria = viewModel.criteria.copy(
+                base = com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL,
+                link = com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY,
+                tags = emptySet(),
+                tagPresence = com.novelcharacter.app.util.ImageFilterHelper.TagFilter.ANY,
+                prune = com.novelcharacter.app.util.ImageFilterHelper.PruneFilter.ANY
+            )
+            if (wasPrune) viewModel.setPruneFilter(false)
+            if (_binding != null) {
+                renderActiveFilterChips()
+                applyView()
+            }
+        }
+        sheet.show(childFragmentManager, ImageManagerControlsBottomSheet.TAG)
     }
 
     /** 걸러낼 후보의 정규 경로 — 계산 전·꺼짐이면 빈 집합이다(아무도 후보가 아니다). */
@@ -507,26 +568,53 @@ class ImageManagerFragment : Fragment() {
                 pruneCandidate = pruneCandidates.contains(item.canonicalPath)
             )
         }
-        val sorted = when (viewModel.sort) {
-            ImageManagerViewModel.Sort.SIZE -> filtered.sortedByDescending { it.sizeBytes }
-            ImageManagerViewModel.Sort.NAME -> filtered.sortedBy { it.path.substringAfterLast('/') }
-            ImageManagerViewModel.Sort.DATE -> filtered.sortedByDescending { it.lastModified }
+        // 방향은 사용자가 정한다 — 기준마다의 기본 방향은 컨트롤 시트가 제안한다.
+        val comparator = when (viewModel.sort) {
+            ImageManagerViewModel.Sort.SIZE -> compareBy<ImageManagerViewModel.ManagedImage> { it.sizeBytes }
+            ImageManagerViewModel.Sort.NAME -> compareBy { it.path.substringAfterLast('/') }
+            ImageManagerViewModel.Sort.DATE -> compareBy { it.lastModified }
         }
-        currentList = sorted
+        val sorted = filtered.sortedWith(
+            if (viewModel.sortAscending) comparator else comparator.reversed()
+        )
+        expandedItems = sorted
+        // 묶어 보기 — 링크 묶음을 대표 한 칸으로 접는다. 접기 규칙은 LinkGroupFold가
+        // 단일 소스다(라이브러리 피커와 같은 규칙 — 화면마다 다르게 접으면 같은 묶음이
+        // 다른 대표로 보인다). 대표는 현재 정렬의 첫 장이고, 개수는 화면에 보이는 식구 수다.
+        val display: List<ImageManagerViewModel.ManagedImage>
+        if (viewModel.groupView) {
+            val stacks = com.novelcharacter.app.util.LinkGroupFold.fold(sorted) { it.meta?.linkGroupId }
+            stackMembers = stacks.filter { it.size > 1 }
+                .associate { st -> st.representative.path to st.members }
+            display = stacks.map { st ->
+                if (st.size > 1) st.representative.copy(stackCount = st.size) else st.representative
+            }
+        } else {
+            stackMembers = emptyMap()
+            display = sorted
+        }
+        currentList = display
         // 선택은 현재 뷰(필터·정렬 적용) 기준으로 유지 — 필터 전환 시 화면 밖(안 보이는) 선택은 자동 해제한다.
         // 일괄 삭제/재압축이 사용자가 보지 않는 항목에 작용하지 않도록(변수 제어). 삭제로 사라진 항목도 함께 정리됨.
-        val visiblePaths = sorted.mapTo(HashSet()) { it.path }
-        if (selectedPaths.retainAll(visiblePaths)) updateSelectionUi()
-        adapter.submitList(sorted)
-        // 갤러리 페이저는 같은 목록을 소비하되 갤러리 모드에서만 공급 — 그리드 모드의
-        // 이중 diff 비용 제거 + 분리된 어댑터에 헛공급 방지. 커밋 후 위치는 path 우선 동기화.
+        // 묶어 보기에서는 **펼친 식구 전체가 '보이는 것'이다** — 접힌 칸이 곧 그 식구들이다.
+        val visiblePaths = expandedItems.mapTo(HashSet()) { it.path }
+        val selectionChanged = selectedPaths.retainAll(visiblePaths)
+        // 묶어 보기 전환은 선택 집합이 그대로여도 칸의 표시 좌표(대표 경로)를 바꾼다 — 다시 그린다.
+        if (selectionChanged || selectionMode) updateSelectionUi()
+        adapter.submitList(display)
+        // 갤러리 페이저는 **펼친 목록**을 소비한다(갤러리 모드에서만 공급 — 그리드 모드의
+        // 이중 diff 비용 제거 + 분리된 어댑터에 헛공급 방지. 커밋 후 위치는 path 우선 동기화).
+        // 접힌 목록을 먹이면 ⓐ 대표 밖 식구가 어느 페이지에도 없는데 화면 어디에도 그 사실이
+        // 없고(원칙 04) ⓑ 정렬이 바뀌어 대표가 갈리면 보던 장의 path가 목록에서 사라져
+        // 자리 추적이 엉뚱한 칸을 새 추적 대상으로 덮는다. 갤러리는 '한 장씩 보기'라
+        // 접지 않는 것이 그 이름값이다 — 접는 것은 그리드·피커의 몫이다.
         if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) {
             attachGalleryAdapter()
-            galleryAdapter.submitList(sorted) {
+            galleryAdapter.submitList(expandedItems) {
                 syncGalleryPager()
             }
         }
-        val empty = sorted.isEmpty() && viewModel.loading.value != true
+        val empty = display.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
         if (empty) binding.emptyText.text = emptyMessage()
     }
@@ -561,11 +649,29 @@ class ImageManagerFragment : Fragment() {
 
     // ---------- 선택 모드 ----------
 
+    /**
+     * 이 항목이 접힌 칸이면 그 식구들, 아니면 null.
+     *
+     * **갤러리에서는 언제나 null이다** — 갤러리는 접지 않고 전 장을 넘기므로(`applyView`)
+     * 거기서 연 상세는 *지금 보는 그 장*의 것이다. 접기 지도는 **그리드의 좌표계**라
+     * 갤러리에서 그대로 읽으면 대표 페이지에서만 범위가 묶음으로 튀고, 똑같이 생긴 옆
+     * 페이지와 동작이 갈리는데 **그 사실이 화면 어디에도 없다**(콜드 검토가 잡은 자리).
+     */
+    private fun stackMembersOf(
+        item: ImageManagerViewModel.ManagedImage
+    ): List<ImageManagerViewModel.ManagedImage>? =
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) null
+        else stackMembers[item.path]
+
+    /** 이 칸이 대표하는 경로들 — 접힌 칸이면 식구 전체, 아니면 그 한 장. */
+    private fun pathsOf(item: ImageManagerViewModel.ManagedImage): List<String> =
+        stackMembersOf(item)?.map { it.path } ?: listOf(item.path)
+
     private fun enterSelection(initial: ImageManagerViewModel.ManagedImage?) {
         // 선택 모드는 그리드 전용 — 갤러리에서 진입하면 그리드로 복귀 후 시작
         if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) switchToGrid()
         selectionMode = true
-        if (initial != null) selectedPaths.add(initial.path)
+        if (initial != null) selectedPaths.addAll(pathsOf(initial))
         updateSelectionUi()
     }
 
@@ -576,16 +682,25 @@ class ImageManagerFragment : Fragment() {
     }
 
     private fun toggleSelect(item: ImageManagerViewModel.ManagedImage) {
-        if (!selectedPaths.add(item.path)) selectedPaths.remove(item.path)
+        // 접힌 칸의 탭은 묶음 전체를 토글한다 — 화면의 한 칸이 곧 그 식구들이다.
+        // 개수 표시는 경로 수를 세므로 사용자는 실제로 몇 장이 걸렸는지 그대로 본다.
+        val paths = pathsOf(item)
+        if (selectedPaths.containsAll(paths)) {
+            selectedPaths.removeAll(paths)
+        } else {
+            selectedPaths.addAll(paths)
+        }
         updateSelectionUi()
     }
 
     private fun selectAll() {
-        val allSelected = currentList.isNotEmpty() && selectedPaths.containsAll(currentList.map { it.path })
+        // 전체선택의 '전체'는 펼친 목록이다 — 접힌 칸만 세면 식구가 조용히 빠진다.
+        val allSelected = expandedItems.isNotEmpty() &&
+            selectedPaths.containsAll(expandedItems.map { it.path })
         if (allSelected) {
-            currentList.forEach { selectedPaths.remove(it.path) }
+            expandedItems.forEach { selectedPaths.remove(it.path) }
         } else {
-            currentList.forEach { selectedPaths.add(it.path) }
+            expandedItems.forEach { selectedPaths.add(it.path) }
         }
         updateSelectionUi()
     }
@@ -596,32 +711,34 @@ class ImageManagerFragment : Fragment() {
             if (selectionMode) R.string.image_manager_select_cancel else R.string.image_manager_select
         )
         binding.selectionCountText.text = getString(R.string.image_manager_selected_count, selectedPaths.size)
-        adapter.setSelectionState(selectionMode, selectedPaths.toSet())
+        adapter.setSelectionState(selectionMode, displaySelectedPaths())
     }
 
-    /** 선택된 경로에 해당하는 **현재 뷰(currentList)**의 이미지 항목들 — 일괄 작업은 화면에 보이는 대상에만 작용. */
-    private fun selectedItems(): List<ImageManagerViewModel.ManagedImage> {
-        return currentList.filter { selectedPaths.contains(it.path) }
-    }
-
-    // ---------- 정렬/옵션 ----------
-
-    private fun showSortMenu() {
-        val popup = PopupMenu(requireContext(), binding.sortButton)
-        popup.menu.add(0, 0, 0, R.string.image_manager_sort_size)
-        popup.menu.add(0, 1, 1, R.string.image_manager_sort_name)
-        popup.menu.add(0, 2, 2, R.string.image_manager_sort_date)
-        popup.setOnMenuItemClickListener { mi ->
-            viewModel.sort = when (mi.itemId) {
-                0 -> ImageManagerViewModel.Sort.SIZE
-                1 -> ImageManagerViewModel.Sort.NAME
-                else -> ImageManagerViewModel.Sort.DATE
-            }
-            applyView()
-            true
+    /**
+     * 셀 표시용 선택 집합 — 접힌 칸은 **식구 중 하나라도** 선택돼 있으면 표시가 선다.
+     *
+     * 일반 모드에서 일부 식구만 고른 채 묶어 보기를 켜는 경우가 있다(선택은 뷰 전환을
+     * 살아남는다). 그때 대표 경로만 보고 그리면 **표시 없는 칸의 식구가 일괄 작업에
+     * 걸리는데 화면 어디에도 그 사실이 없다** — 개수 줄만으로는 어느 칸인지 모른다.
+     */
+    private fun displaySelectedPaths(): Set<String> {
+        if (stackMembers.isEmpty()) return selectedPaths.toSet()
+        val out = HashSet(selectedPaths)
+        for ((rep, members) in stackMembers) {
+            if (members.any { it.path in selectedPaths }) out.add(rep)
         }
-        popup.show()
+        return out
     }
+
+    /**
+     * 선택된 경로에 해당하는 **현재 뷰**의 이미지 항목들 — 일괄 작업은 화면에 보이는 대상에만
+     * 작용. 묶어 보기에서는 펼친 목록이 그 좌표계다(접힌 칸 하나 = 식구 전체가 선택돼 있다).
+     */
+    private fun selectedItems(): List<ImageManagerViewModel.ManagedImage> {
+        return expandedItems.filter { selectedPaths.contains(it.path) }
+    }
+
+    // ---------- 옵션 ----------
 
     private fun showOptionsMenu() {
         val popup = PopupMenu(requireContext(), binding.optionsButton)
@@ -719,20 +836,53 @@ class ImageManagerFragment : Fragment() {
             openTagEdit(item)
         }
 
-        // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
-        // 캐릭터 자동 링크 그룹은 수동 링크와 구별해 표기한다(자동 관리 상태의 가시화 — 원칙 04).
+        // AI 태그 추천 — 긴 누름·선택 모드 없이 한 장에서 바로 연다. 쓸 수 있는 프로바이더가
+        // 있을 때만 보인다(R-24 — 일괄 작업 시트의 AI_TAG와 같은 판정). 접힌 칸이면 묶음
+        // 전체가 대상이라, 흐름 안에서 묶음 단위 전송 옵션이 함께 선다.
+        val aiUsable = runCatching {
+            com.novelcharacter.app.ai.AiService(ctx).hasUsableProvider()
+        }.getOrDefault(false)
+        sheetBinding.detailAiTagButton.visibility = if (aiUsable) View.VISIBLE else View.GONE
+        sheetBinding.detailAiTagButton.setOnClickListener {
+            dialog.dismiss()
+            openAiTagFlow(pathsOf(item))
+        }
+
+        // 접힌 칸의 상세는 범위가 둘로 갈린다 — AI 태그·전체화면은 **묶음 전체**, 나머지
+        // (태그 편집·재압축·삭제·배정)는 **이 한 장**이다. 묶음 범위인 둘만 라벨에 장수를
+        // 적어 그 대비로 범위를 드러낸다(적지 않으면 사용자는 태그 편집도 묶음 전체라 믿는다).
+        val stackSize = pathsOf(item).size
+        if (stackSize > 1) {
+            sheetBinding.detailAiTagButton.text =
+                getString(R.string.image_ai_tag_action_stack, stackSize)
+            sheetBinding.detailFullScreenButton.text =
+                getString(R.string.image_manager_view_full_stack, stackSize)
+        }
+
+        // 링크 묶음 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 묶음 수.
+        // 캐릭터 자동 링크 묶음은 수동 링크와 구별해 표기한다(자동 관리 상태의 가시화 — 원칙 04).
         val groupId = item.meta?.linkGroupId
         if (groupId != null) {
             val groupSize = (viewModel.images.value ?: emptyList()).count { it.meta?.linkGroupId == groupId }
             sheetBinding.detailLinkInfoText.visibility = View.VISIBLE
-            sheetBinding.detailLinkInfoText.text = getString(
-                if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
-                    R.string.image_link_group_info_auto
-                } else {
-                    R.string.image_link_group_info
-                },
-                groupSize
-            )
+            // **두 수가 갈리면 그 자리에서 말한다.** 이 줄은 필터를 무시한 묶음 전체를 세고,
+            // 바로 위 단추들의 장수는 화면에 보이는 식구를 센다(그 둘에만 작용하므로) —
+            // 필터가 식구를 가리면 한 창에 다른 두 수가 서고, 정박이 없으면 사용자는
+            // AI 태그가 어느 쪽에 붙는지 판단할 수 없다(문구 가이드 4-4).
+            sheetBinding.detailLinkInfoText.text = buildString {
+                append(getString(
+                    if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
+                        R.string.image_link_group_info_auto
+                    } else {
+                        R.string.image_link_group_info
+                    },
+                    groupSize
+                ))
+                val visible = stackMembersOf(item)?.size
+                if (visible != null && visible < groupSize) {
+                    append(getString(R.string.image_link_group_info_visible, visible))
+                }
+            }
             sheetBinding.detailUnlinkButton.visibility = View.VISIBLE
             sheetBinding.detailUnlinkButton.setOnClickListener { dialog.dismiss(); runUnlink(listOf(item.path)) }
         } else {
@@ -790,7 +940,8 @@ class ImageManagerFragment : Fragment() {
     }
 
     private fun openFullScreen(item: ImageManagerViewModel.ManagedImage) {
-        val json = gson.toJson(listOf(item.path))
+        // 접힌 칸이면 묶음 전체를 한 뷰어로 — 스와이프로 식구들을 넘겨 본다(묶어 보기의 '보기' 경로).
+        val json = gson.toJson(pathsOf(item))
         findNavController().navigateSafe(
             R.id.imageViewerFragment,
             bundleOf("imagePaths" to json, "startPosition" to 0)
@@ -1139,6 +1290,18 @@ class ImageManagerFragment : Fragment() {
         val ctx = requireContext()
         val settings = com.novelcharacter.app.ai.AiPromptSettings(ctx)
         var perRequest = settings.imageTagBatchSize
+        var perGroup = settings.imageTagGroupSampleSize
+        var groupUnit = settings.imageTagGroupUnit
+
+        // 링크 묶음 단위 전송 — 대상에 2장 이상 보이는 묶음이 있을 때만 선다
+        // (R-24 — 성립하지 않는 조합의 설정은 보이지 않는다). 표본·전개 규칙은
+        // LinkGroupFold가 단일 소스이고, 여기서는 장수 계산과 고지에만 쓴다.
+        val groupIds = viewModel.linkGroupIds(paths)
+        fun samplePlan(per: Int) = com.novelcharacter.app.util.LinkGroupFold
+            .sampleForAi(paths, { groupIds[it] }, per)
+        val hasGroups = samplePlan(1).sampledGroups > 0
+        fun sendCount(): Int =
+            if (hasGroups && groupUnit) samplePlan(perGroup).sendPaths.size else paths.size
 
         val container = android.widget.LinearLayout(ctx).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -1151,22 +1314,81 @@ class ImageManagerFragment : Fragment() {
             stepSize = 1f
             value = perRequest.toFloat()
         }
+        val groupSwitch = com.google.android.material.materialswitch.MaterialSwitch(ctx).apply {
+            text = getString(R.string.image_ai_tag_group_unit)
+            isChecked = groupUnit
+        }
+        val groupDesc = android.widget.TextView(ctx).apply {
+            text = getString(R.string.image_ai_tag_group_unit_desc)
+            textSize = 12f
+        }
+        val groupSampleLabel = android.widget.TextView(ctx)
+        val groupSlider = com.google.android.material.slider.Slider(ctx).apply {
+            valueFrom = com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TAG_GROUP_SAMPLE_MIN.toFloat()
+            valueTo = com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TAG_GROUP_SAMPLE_MAX.toFloat()
+            stepSize = 1f
+            value = perGroup.toFloat()
+        }
+        val groupNote = android.widget.TextView(ctx).apply { textSize = 12f }
         val costLabel = android.widget.TextView(ctx).apply { textSize = 12f }
 
         fun refresh() {
+            val send = sendCount()
             val requests = com.novelcharacter.app.ai.AiPromptPolicy
-                .imageTagBatchRequestCount(paths.size, perRequest)
+                .imageTagBatchRequestCount(send, perRequest)
             countLabel.text = getString(R.string.image_ai_tag_batch_size, perRequest)
-            costLabel.text = getString(R.string.image_ai_tag_cost, paths.size, perRequest, requests)
+            // **나눌 것이 없으면 장수 슬라이더도 없다** (R-24). 문지기는 고른 장수가 아니라
+            // **실제로 보낼 장수**다 — 묶음 단위를 켜면 표본이 1장으로 줄 수 있고, 그때
+            // 이 슬라이더는 요청 수·비용·동작 무엇도 바꾸지 못한다(요청은 언제나 하나다).
+            // 판정이 살아 움직여야 하는 것도 그래서다: 스위치 한 번에 send가 갈리므로
+            // 창을 만들 때 한 번 재면 아무 일도 안 하는 슬라이더가 그대로 남는다.
+            val batchVis = if (send > 1) android.view.View.VISIBLE else android.view.View.GONE
+            countLabel.visibility = batchVis
+            slider.visibility = batchVis
+            // 비용 고지는 **실제로 보낼 장수**로 센다 — 묶음 단위가 켜지면 표본 수가 곧 비용이다.
+            costLabel.text = if (send == 1) {
+                getString(R.string.image_ai_tag_cost_single)
+            } else {
+                getString(R.string.image_ai_tag_cost, send, perRequest, requests)
+            }
+            if (hasGroups) {
+                val plan = samplePlan(perGroup)
+                groupSampleLabel.text = getString(R.string.image_ai_tag_group_sample, perGroup)
+                groupNote.text = getString(
+                    R.string.image_ai_tag_group_note,
+                    plan.sampledGroups, plan.expandedTotal
+                )
+                val vis = if (groupUnit) android.view.View.VISIBLE else android.view.View.GONE
+                groupSampleLabel.visibility = vis
+                groupSlider.visibility = vis
+                groupNote.visibility = vis
+            }
         }
         slider.addOnChangeListener { _, value, _ ->
             perRequest = value.toInt()
             refresh()
         }
+        groupSwitch.setOnCheckedChangeListener { _, checked ->
+            groupUnit = checked
+            refresh()
+        }
+        groupSlider.addOnChangeListener { _, value, _ ->
+            perGroup = value.toInt()
+            refresh()
+        }
         refresh()
 
+        // 장수 슬라이더는 늘 담고 **보임만 refresh가 정한다** — 묶음 스위치가 보낼 장수를
+        // 바꾸므로 담을지 말지를 여기서 정하면 그 전환을 따라가지 못한다.
         container.addView(countLabel)
         container.addView(slider)
+        if (hasGroups) {
+            container.addView(groupSwitch)
+            container.addView(groupDesc)
+            container.addView(groupSampleLabel)
+            container.addView(groupSlider)
+            container.addView(groupNote)
+        }
         container.addView(costLabel)
         container.addView(android.widget.TextView(ctx).apply {
             text = getString(R.string.image_ai_tag_privacy)
@@ -1188,7 +1410,18 @@ class ImageManagerFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.image_ai_tag_run) { _, _ ->
                 settings.imageTagBatchSize = perRequest
-                runAiTagSuggest(paths, perRequest)
+                if (hasGroups) {
+                    settings.imageTagGroupUnit = groupUnit
+                    settings.imageTagGroupSampleSize = perGroup
+                }
+                if (hasGroups && groupUnit) {
+                    // 묶음 단위 — 표본만 보내고, 전개 표(표본 → 묶음 전원)를 실행과 함께 든다.
+                    // 태그는 적용 시점에 그 표로 전원에 붙는다(ViewModel.applyImageTags).
+                    val plan = samplePlan(perGroup)
+                    runAiTagSuggest(plan.sendPaths, perRequest, groupExpand = plan.membersBySentPath)
+                } else {
+                    runAiTagSuggest(paths, perRequest)
+                }
             }
             .show()
     }
@@ -1206,9 +1439,10 @@ class ImageManagerFragment : Fragment() {
     private fun runAiTagSuggest(
         paths: List<String>,
         perRequest: Int,
-        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null,
+        groupExpand: Map<String, List<String>> = emptyMap()
     ) {
-        if (!viewModel.runImageTagSuggest(paths, perRequest, carryOver)) {
+        if (!viewModel.runImageTagSuggest(paths, perRequest, carryOver, groupExpand)) {
             // 무통보 무시 금지 — 눌렀는데 아무 일도 안 일어나면 고장과 구분되지 않는다.
             notifyError(getString(R.string.image_ai_tag_already_running))
         }
@@ -1273,6 +1507,17 @@ class ImageManagerFragment : Fragment() {
         if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
+        // 묶음 단위 실행의 고지 — 체크한 태그가 **화면에 없는 장에도 붙는다**는 사실을
+        // 적용 전에 말한다(변수 제어). 행마다의 장수는 시트가 파일명 옆에 함께 적는다.
+        // **제안이 있어야만 싣는다** — 제안 0건이면 붙일 것이 없어 이 고지도 뜻이 없고,
+        // 실었다가는 아래 '검토할 것 없음' 갈래(B-144)를 이 줄이 막아 빈 시트가 선다.
+        // **묶음 수는 표의 줄 수가 아니다** — 표본을 2장으로 두면 같은 묶음이 두 줄로 사는데,
+        // 그대로 세면 묶음도 장수도 배로 부풀어 고지가 거짓말을 한다(셈은 ViewModel이 접는다).
+        val groupSizes = viewModel.aiTagGroupSizes()
+        if (groupSizes.isNotEmpty() && result.suggestions.isNotEmpty()) {
+            val (groups, total) = viewModel.aiTagGroupNoticeStats()
+            notices.add(getString(R.string.image_ai_tag_group_notice, groups, total))
+        }
         // 프로바이더 자동 전환 고지 (B-108 확정 ⓑ) — 실패가 아니므로 실패 요약보다 앞에 둔다.
         notices.addAll(result.notes)
         notices.addAll(aiTagFailureNotices(result))
@@ -1315,11 +1560,12 @@ class ImageManagerFragment : Fragment() {
         val sheet = existing ?: ImageAiTagReviewSheet()
         bindAiTagReviewCallbacks(sheet, result)
         if (existing != null) {
-            sheet.rebind(result.suggestions, notices, retryPaths)
+            sheet.rebind(result.suggestions, notices, retryPaths, groupSizes)
         } else {
             sheet.suggestions = result.suggestions
             sheet.notices = notices
             sheet.retryPaths = retryPaths
+            sheet.groupSizeByPath = groupSizes
             sheet.show(childFragmentManager, ImageAiTagReviewSheet.TAG)
         }
     }

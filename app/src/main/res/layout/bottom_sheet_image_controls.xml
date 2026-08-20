@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 이미지 탭 통합 컨트롤 시트 — 정렬(기준+방향) / 묶어 보기 / 필터를 한 표면에.
+     캐릭터 목록의 bottom_sheet_character_controls 패턴을 따른다(같은 앱에서 같은 일은
+     같은 모양이어야 사용자가 배운 것이 이어진다). 칩 id는 종전 화면 상단 칩들을 승계한다. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_lg"
+        android:layout_marginTop="@dimen/spacing_lg"
+        android:text="@string/image_manager_controls_title"
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/spacing_lg"
+            android:paddingBottom="@dimen/spacing_sm">
+
+            <!-- ===== 정렬 (기준 + 방향) ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/sort_title"
+                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+            <RadioGroup
+                android:id="@+id/sortKindGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <RadioButton
+                    android:id="@+id/rbSize"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_sort_size" />
+
+                <RadioButton
+                    android:id="@+id/rbName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_sort_name" />
+
+                <RadioButton
+                    android:id="@+id/rbDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_sort_date" />
+            </RadioGroup>
+
+            <!-- 방향 — 기준 바로 옆에서 함께 선택 (캐릭터 목록 시트와 같은 자리) -->
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/dirToggleGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirAsc"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_dir_asc"
+                    app:icon="@drawable/ic_arrow_up" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirDesc"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_dir_desc"
+                    app:icon="@drawable/ic_arrow_down" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:background="?attr/colorOutlineVariant" />
+
+            <!-- ===== 묶어 보기 ===== -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/groupViewSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/image_manager_group_view" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_group_view_desc"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:background="?attr/colorOutlineVariant" />
+
+            <!-- ===== 필터 ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/filter_title"
+                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/image_manager_filter_axis_base"
+                android:textAppearance="@style/TextAppearance.App.Caption" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/filterChips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAll"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_all"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCharacter"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_character" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipNovel"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_novel" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipUniverse"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_universe" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipUnassigned"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_unassigned" />
+
+                <!-- 뗀 것 서랍(B-107) — '미배정' 바로 옆이다. 둘은 배타이고, 나란히 있어야
+                     "이쪽이 아니면 저쪽"이라는 관계가 보인다. -->
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipDetached"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_detached" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipOrphan"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_orphan" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTrash"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_filter_trash" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/image_manager_filter_axis_link"
+                android:textAppearance="@style/TextAppearance.App.Caption" />
+
+            <!-- 링크 상태는 소유·상태와 직교하는 별도 축 — 두 그룹이 AND로 조합된다. -->
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/linkFilterChips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipLinkAny"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_link_any"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipLinked"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_link_linked" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipUnlinked"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_link_unlinked" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipLinkAuto"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/image_manager_link_auto" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- 걸러낼 후보 (B-104 ⓒ) — 켜야만 계산이 돈다. 켬/끔 둘뿐이라 혼자 선 칩이다. -->
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipPruneCandidate"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_prune_candidate" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/image_manager_tag_filter"
+                android:textAppearance="@style/TextAppearance.App.Caption" />
+
+            <!-- '태그 없는 것만'은 칩으로 담을 수 없어 별도 스위치 — 켜면 태그 칩이 잠긴다
+                 (종전 태그 필터 시트의 배타 규칙 그대로). -->
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/untaggedCheck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_tag_filter_untagged" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_tag_filter_untagged_desc"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/tagChipGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs" />
+
+            <TextView
+                android:id="@+id/noTagsText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_tag_filter_empty"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClearFilters"
+                style="@style/Widget.App.Button.Outlined"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/filter_clear" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- 고정 적용 버튼 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnApply"
+        style="@style/Widget.App.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/spacing_lg"
+        android:text="@string/apply" />
+
+</LinearLayout>

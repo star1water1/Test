@@ -13,6 +13,7 @@ import com.novelcharacter.app.databinding.ItemManagedImageBinding
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.LibraryPickerRow
 import com.novelcharacter.app.util.LibraryPickerRows
+import com.novelcharacter.app.util.LinkGroupFold
 import com.novelcharacter.app.util.loadCharacterThumbnail
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
@@ -46,8 +47,22 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private val selected = LinkedHashSet<String>()
-    private var shown: List<LibraryPickerRow> = emptyList()
+
+    /**
+     * 링크 묶음은 대표 한 칸으로 접힌다([LinkGroupFold] — 이미지 탭 묶어 보기와 같은 규칙).
+     *
+     * 피커에서 접는 것이 **정직한 표시다**: 첨부는 어차피 묶음 전원으로 확장된다
+     * (호출부 계약 — `CharacterEditFragment.attachLibraryImages`가 `ImageLinkResolver.expand`를
+     * 지난다). 장마다 펼쳐 보이면 한 장만 고른 사용자가 여러 장이 붙는 것을 첨부 뒤에야 안다.
+     */
+    private var shown: List<LinkGroupFold.Stack<LibraryPickerRow>> = emptyList()
     private val adapter = RowAdapter()
+
+    // 라이브러리 **전체** 기준의 묶음 지도 — 배지·선택 수가 이것으로 센다. 화면(필터 통과분)
+    // 기준으로 세면 검색어·'미배정만' 칩이 가린 식구가 수에서 빠지는데, 첨부는 그 식구까지
+    // 확장되므로(호출부의 ImageLinkResolver.expand) 화면이 실제보다 적게 약속하게 된다.
+    private var fullMembersByGroup: Map<String, List<String>> = emptyMap()
+    private var groupByPath: Map<String, String> = emptyMap()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -61,6 +76,13 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
         // 회전 등으로 콜백이 사라지면 조용한 무동작이 된다 — 그 상태로 남기지 않는다
         // (`SearchFilterBottomSheet`의 콜백 유실이 같은 부류로 색출된 적이 있다).
         if (onConfirm == null) { dismissAllowingStateLoss(); return }
+
+        fullMembersByGroup = images.filter { it.linkGroupId != null }
+            .groupBy({ it.linkGroupId!! }, { it.path })
+            .filterValues { it.size > 1 }
+        groupByPath = images.mapNotNull { row ->
+            row.linkGroupId?.takeIf { it in fullMembersByGroup }?.let { row.path to it }
+        }.toMap()
 
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
@@ -94,7 +116,9 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
             },
             query = binding.searchEdit.text?.toString().orEmpty()
         )
-        shown = LibraryPickerRows.visible(images, criteria, excludePaths)
+        shown = LinkGroupFold.fold(
+            LibraryPickerRows.visible(images, criteria, excludePaths)
+        ) { it.linkGroupId }
         adapter.notifyDataSetChanged()
         binding.emptyText.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
@@ -102,9 +126,24 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateSelectionUi() {
         if (_binding == null) return
+        val count = expandedSelectionCount()
         binding.selectionCountText.text =
-            if (selected.isEmpty()) "" else getString(R.string.image_library_picker_selected, selected.size)
+            if (count == 0) "" else getString(R.string.image_library_picker_selected, count)
         binding.confirmButton.isEnabled = selected.isNotEmpty()
+    }
+
+    /**
+     * 실제로 붙을 장수 — 고른 경로를 **라이브러리 전체 기준** 묶음으로 넓힌 뒤, 이미 붙어
+     * 있는 것(excludePaths)을 뺀다. 화면의 칸 수로 세면 필터가 가린 식구가 빠지는데,
+     * 첨부는 그 식구까지 간다 — 수가 다르면 이 창의 약속이 첨부 뒤에 깨진다.
+     */
+    private fun expandedSelectionCount(): Int {
+        if (selected.isEmpty()) return 0
+        val expanded = LinkedHashSet(selected)
+        for (path in selected) {
+            groupByPath[path]?.let { g -> expanded.addAll(fullMembersByGroup[g].orEmpty()) }
+        }
+        return expanded.count { it !in excludePaths }
     }
 
     override fun onDestroyView() {
@@ -131,7 +170,9 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
         }
 
         override fun onBindViewHolder(holder: VH, position: Int) {
-            val item = shown[position]
+            val stack = shown[position]
+            val item = stack.representative
+            val memberPaths = stack.members.map { it.path }
             val b = holder.b
             val ctx = b.root.context
 
@@ -155,16 +196,34 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
             b.tagText.text = if (item.tags.isEmpty()) "" else item.tags.joinToString(" · ") { "#$it" }
             b.linkBadge.visibility = if (item.linkGroupId != null) View.VISIBLE else View.GONE
+            if (item.linkGroupId != null) {
+                // 장수는 **라이브러리 전체 기준**이다 — 필터가 식구를 가려도 첨부는 묶음
+                // 전원으로 확장되므로, 보이는 수를 적으면 이 칸의 약속이 첨부 뒤에 깨진다.
+                val fullSize = fullMembersByGroup[item.linkGroupId]?.size ?: 1
+                b.linkBadge.text = if (fullSize > 1) {
+                    ctx.getString(R.string.image_manager_stack_badge, fullSize)
+                } else {
+                    ctx.getString(R.string.image_link_badge)
+                }
+            }
             // 이 피커에는 크기·상태 배지를 싣지 않는다 — 고르는 판단에 쓰이지 않는다.
             b.sizeText.visibility = View.GONE
             b.statusBadge.visibility = View.GONE
 
-            val isSel = item.path in selected
+            // 식구 중 하나라도 선택이면 표시가 선다 — 필터 변경으로 식구가 늘어 '전원 선택'이
+            // 깨져도, 선택이 걸린 칸이 화면에서 무표시가 되면 확정이 어디에 닿는지 알 수 없다
+            // (이미지 탭 그리드의 displaySelectedPaths와 같은 정책).
+            val isSel = memberPaths.any { it in selected }
             b.selectionScrim.visibility = if (isSel) View.VISIBLE else View.GONE
             b.selectionCheck.visibility = if (isSel) View.VISIBLE else View.GONE
 
             b.root.setOnClickListener {
-                if (item.path in selected) selected.remove(item.path) else selected.add(item.path)
+                // 접힌 칸의 탭은 묶음 전체를 토글한다 — 선택 수 표시도 실제 붙을 장수를 센다.
+                if (memberPaths.all { it in selected }) {
+                    selected.removeAll(memberPaths)
+                } else {
+                    selected.addAll(memberPaths)
+                }
                 notifyItemChanged(holder.bindingAdapterPosition)
                 updateSelectionUi()
             }

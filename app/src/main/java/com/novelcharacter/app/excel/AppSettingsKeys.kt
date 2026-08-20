@@ -103,6 +103,8 @@ object AppSettingsKeys {
     val AI_ATTACH_REPRESENTATIVE_FIRST = Spec("ai_attach_representative_first", Kind.BOOLEAN)
     val AI_IMAGE_TAG_POLICY = Spec("ai_image_tag_policy", Kind.TEXT)
     val AI_IMAGE_TAG_BATCH_SIZE = Spec("ai_image_tag_batch_size", Kind.NUMBER)
+    val AI_IMAGE_TAG_GROUP_UNIT = Spec("ai_image_tag_group_unit", Kind.BOOLEAN)
+    val AI_IMAGE_TAG_GROUP_SAMPLE_SIZE = Spec("ai_image_tag_group_sample_size", Kind.NUMBER)
     val AI_NAME_SUGGEST_BATCH_SIZE = Spec("ai_name_suggest_batch_size", Kind.NUMBER)
 
     /**
@@ -166,7 +168,8 @@ object AppSettingsKeys {
         AI_PROVIDERS, AI_ACTIVE_PROVIDER,
         AI_USAGE_EXAMPLE_COUNT, AI_STYLE_SAMPLE_COUNT, AI_MIN_CONFIDENCE, AI_CREATIVITY,
         AI_ATTACH_IMAGE_COUNT, AI_ATTACH_REPRESENTATIVE_FIRST,
-        AI_IMAGE_TAG_POLICY, AI_IMAGE_TAG_BATCH_SIZE, AI_NAME_SUGGEST_BATCH_SIZE,
+        AI_IMAGE_TAG_POLICY, AI_IMAGE_TAG_BATCH_SIZE,
+        AI_IMAGE_TAG_GROUP_UNIT, AI_IMAGE_TAG_GROUP_SAMPLE_SIZE, AI_NAME_SUGGEST_BATCH_SIZE,
         AI_EVENT_CONTEXT_SCOPE,
         AI_API_KEYS,
         STATS_COMPLETION_REQUIRED_WEIGHT, STATS_PATTERN_TYPES, STATS_PATTERN_SENSITIVITY,
@@ -251,6 +254,7 @@ object AppSettingsKeys {
             "마지막 백업의 성공·실패 시각과 사유. **설정이 아니라 그 기기에서 일어난 일의 기록이다** — " +
             "옮기면 새 기기가 하지도 않은 백업을 했다고 말한다.",
         "character_list_ui" to "목록 화면의 마지막 보기 상태(스크롤·펼침).",
+        "image_manager_ui_state" to "이미지 탭의 마지막 필터·정렬·보기 상태.",
         "character_detail_ui_state" to "상세 화면의 마지막 정렬.",
         "search_ui_state" to "검색 화면의 마지막 입력·펼침.",
         "timeline_ui_state" to "연표 화면의 마지막 축척·위치.",

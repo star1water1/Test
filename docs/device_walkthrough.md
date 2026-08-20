@@ -542,10 +542,10 @@
       → 4행(내보내기·받아오기·폴더 설정·사용법)이 있다  `3-14-1`
 - [ ] **`11-ㅇ`** 폴더 미지정 상태에서 '받아오기'를 누른다
       → 폴더 지정 안내가 먼저 뜬다  `3-14-5`
-- [ ] **`7-ㄴ`** 필터 줄의 **링크 칩**(전체/링크됨/링크 없음/캐릭터 자동)을 눌러 본다
-      → 각각 걸린다  `3-19-6`
-- [ ] **`7-ㄷ`** **무태그 필터**를 켠다
-      → 태그 없는 것만 남고 **아래 태그 칩이 잠긴다**. 앱을 껐다 켜도 유지된다  `3-64-1`
+- [ ] **`7-ㄴ`** **정렬·필터** 시트를 열어 **링크 상태**(전체/링크됨/링크 없음/캐릭터 자동)를 하나씩 적용해 본다
+      → 각각 걸리고, 활성 필터 칩이 검색 줄 아래에 서며 ×로 그 자리에서 풀린다  `3-19-6`
+- [ ] **`7-ㄷ`** **정렬·필터** 시트에서 **태그 없는 이미지만**을 켠다
+      → 태그 없는 것만 남고 **시트의 태그 칩이 잠긴다**. 앱을 껐다 켜도 유지된다  `3-64-1`
 - [ ] **`7-ㄹ`** 이미지 → 정리 폴더로 **내보내기**
       → 캐릭터별 폴더가 생긴다. 동명이인은 `이름#코드` 꼴이다  `3-13-1·2`
 - [ ] **`7-ㅁ`** ⚠️ 내보낸 폴더를 **아무것도 안 건드리고** 그대로 받아오기(왕복 고정점)
@@ -1127,7 +1127,7 @@
 | `5-ㅎ` | `3-10-3` | 그 창에서 **모든 유형의 체크를 해제**하고 저장 → 카드가 통째로 사라지지 않는다(**되돌릴 길이 남는다**) | `app/src/main/java/com/novelcharacter/app/ui/stats/StatsMainFragment.kt` 에서 `enabled.isEmpty() -> getString(R.string.stats_pattern_all_types_off)` — enabled.isEmpty() 가지가 stats_pattern_all_types_off 문구를 세운다 — 카드가 사라지는 가지가 아예 없다 |
 | `6-ㅍ` | `3-85-2` | **이미지 축**을 만든다 → 누르면 대결이 아니라 **캐릭터 고르는 화면**이 먼저 뜬다 | `app/src/main/java/com/novelcharacter/app/ui/duel/DuelAxisListFragment.kt` 에서 `val target = if (axis.isImageAxis && destination != R.id.duelMatchesFragment) {` — axis.isImageAxis && destination != duelMatchesFragment 이면 duelImageCharacterFragment로 보낸다 — 분기 한 줄 |
 | `8-ㄹ-5` | `3-114-ㅂ·ㅅ` | 설정에서 **필드 설명 ⓘ**를 켠다 → 설명을 적은 필드에만 ⓘ가 붙는다. 시간 보기·보충 탭도 따른다 | `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt` 에서 `val hasNote = showFieldNotes &&` — hasNote = showFieldNotes && FieldDescription.fromConfig(field.config).isNotBlank() — 설정과 설명 유무를 한 줄이 함께 본다 |
-| `9-ㅂ` | `3-26-2` | 작품을 고르기 **전에는** 그 버튼이 안 보이는지 본다 → 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt` 에서 `binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE` — btnAddEventField.visibility = if (fieldPathKnown) VISIBLE else GONE — 작품을 골라야 fieldPathKnown이 선다 |
+| `9-ㅂ` | `3-26-2` | 작품을 고르기 **전에는** 그 버튼이 안 보이는지 본다 → 안 보인다 | `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt` 에서 `binding.btnAddEventField.visibility = if (globalScope) View.GONE else View.VISIBLE` — btnAddEventField.visibility = if (globalScope) GONE else VISIBLE — 작품이 없으면(전역 구역) 추가 버튼이 숨는다 (B-258 ⓐ 이후의 배선 — 판정 축이 fieldPathKnown에서 globalScope로 갈렸고 화면 동작은 같다) |
 | `10-ㅊ2` | `3-51-4` | 그 카드를 누른다 → 그 자리로 데려간다 | `app/src/main/java/com/novelcharacter/app/ui/search/GlobalSearchFragment.kt` 에서 `findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)` — 카드 종류마다 navigateSafe 한 줄이 그 자리로 보낸다(캐릭터·연표·목록) |
 
 

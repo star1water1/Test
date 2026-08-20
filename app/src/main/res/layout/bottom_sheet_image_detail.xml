@@ -72,6 +72,18 @@
             android:gravity="start|center_vertical"
             android:text="@string/image_tag_edit_action" />
 
+        <!-- AI 태그 추천 — 쓸 수 있는 프로바이더가 있을 때만 보인다(R-24).
+             종전에는 선택 모드의 일괄 작업 시트가 유일한 입구였다. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/detailAiTagButton"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="start|center_vertical"
+            android:visibility="gone"
+            android:text="@string/image_ai_tag_action"
+            tools:visibility="visible" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailAssignButton"
             style="@style/Widget.App.Button.Outlined"

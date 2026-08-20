@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- 헤더 -->
+    <!-- 헤더 — 정렬·필터는 검색 줄의 통합 버튼으로 내려갔다(캐릭터 목록과 같은 자리) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -49,13 +49,6 @@
             android:text="@string/image_manager_select" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/sortButton"
-            style="@style/Widget.App.Button.Outlined"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/image_manager_sort" />
-
-        <com.google.android.material.button.MaterialButton
             android:id="@+id/optionsButton"
             style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
@@ -88,156 +81,7 @@
         tools:visibility="visible"
         tools:text="정리 폴더에 새 이미지 3장" />
 
-    <!-- 필터 칩 -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
-
-        <!-- 두 축을 한 줄에 둔다: 소유·상태(왼쪽) | 링크 상태(오른쪽). 둘은 직교하므로
-             각각 단일 선택이며 AND로 조합된다. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/filterChips"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:singleLine="true"
-            app:singleSelection="true"
-            app:selectionRequired="true">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipAll"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_all"
-                android:checked="true" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipCharacter"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_character" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipNovel"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_novel" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipUniverse"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_universe" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipUnassigned"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_unassigned" />
-
-            <!-- 뗀 것 서랍(B-107) — '미배정' 바로 옆이다. 둘은 배타이고, 나란히 있어야
-                 "이쪽이 아니면 저쪽"이라는 관계가 보인다. -->
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipDetached"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_detached" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipOrphan"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_orphan" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipTrash"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_filter_trash" />
-        </com.google.android.material.chip.ChipGroup>
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:background="?attr/colorOutlineVariant" />
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/linkFilterChips"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:singleLine="true"
-            app:singleSelection="true"
-            app:selectionRequired="true">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipLinkAny"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_link_any"
-                android:checked="true" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipLinked"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_link_linked" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipUnlinked"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_link_unlinked" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipLinkAuto"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/image_manager_link_auto" />
-        </com.google.android.material.chip.ChipGroup>
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:background="?attr/colorOutlineVariant" />
-
-        <!-- 걸러낼 후보 (B-104 소비처 ⓒ · 설계 13-5)
-             기준 이미지 축의 하위권 + 최소 판 수를 채운 그림. 켤 때만 계산한다.
-             **혼자 선 칩 하나**인 것은 이 축이 켬/끔 둘뿐이라 그룹이 필요 없기 때문이고,
-             다른 두 그룹과 AND로 조합된다. -->
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipPruneCandidate"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/image_manager_prune_candidate" />
-        </LinearLayout>
-    </HorizontalScrollView>
-
-    <!-- 검색 + 태그 필터 줄 -->
+    <!-- 검색 + 통합 컨트롤 줄 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -264,13 +108,16 @@
                 android:textAppearance="@style/TextAppearance.App.Body" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 정렬(기준·방향)·묶어 보기·필터의 단일 진입점 — 종전의 정렬 팝업 + 칩 두 그룹 +
+             태그 시트 버튼을 하나로 접었다(캐릭터 목록의 btnListControls와 같은 관행) -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/tagFilterButton"
-            style="@style/Widget.App.Button.Outlined"
+            android:id="@+id/controlsButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"
-            android:text="@string/image_manager_tag_filter" />
+            android:text="@string/controls_button"
+            app:icon="@drawable/ic_tune" />
 
         <!-- 그리드 ↔ 갤러리 보기 전환 (라벨은 전환 '대상' 모드) -->
         <com.google.android.material.button.MaterialButton
@@ -281,6 +128,37 @@
             android:minWidth="0dp"
             android:text="@string/image_manager_view_gallery" />
     </LinearLayout>
+
+    <!-- 활성 상태 칩 행: 정렬 상태(탭=방향 반전) + 활성 필터(×=그 자리 해제) + 묶어 보기.
+         걸려 있는 것이 화면에 보여야 한다 — 일일이 열어 봐야 아는 상태 금지(원칙 04). -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/sortChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                tools:text="크기순 ↓" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/activeFilterChips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                app:singleLine="true"
+                app:chipSpacingHorizontal="4dp" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <FrameLayout
         android:layout_width="match_parent"

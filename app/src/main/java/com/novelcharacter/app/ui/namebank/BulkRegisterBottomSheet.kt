@@ -14,7 +14,7 @@ import com.novelcharacter.app.databinding.BottomSheetNameBankBulkRegisterBinding
 /**
  * 이름은행 일괄 캐릭터 등록 옵션 시트.
  * 충돌·사용됨 건수와 작품 미지정의 의미(세계관 필드 미기록)를 **실행 전** 전부 고지한다 (R-4).
- * 데이터·콜백은 프래그먼트가 프로퍼티로 주입한다 (ImageTagFilterBottomSheet 방식).
+ * 데이터·콜백은 프래그먼트가 프로퍼티로 주입한다 (주입형 시트 관행 — R-41-a).
  */
 class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
 

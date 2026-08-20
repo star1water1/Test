@@ -161,8 +161,17 @@ class ImageManagerAdapter(
                 ImageManagerViewModel.Status.REFERENCED -> binding.statusBadge.visibility = View.GONE
             }
 
-            binding.linkBadge.visibility =
-                if (item.meta?.linkGroupId != null) View.VISIBLE else View.GONE
+            val linked = item.meta?.linkGroupId != null
+            binding.linkBadge.visibility = if (linked) View.VISIBLE else View.GONE
+            if (linked) {
+                // 접힌 칸이면 보이는 식구 수를 함께 적는다 — 배지 하나가
+                // "링크됨"과 "몇 장이 접혔나"를 겸한다(칸을 늘리지 않아 행 높이 균일 유지).
+                binding.linkBadge.text = if (item.stackCount > 1) {
+                    ctx.getString(R.string.image_manager_stack_badge, item.stackCount)
+                } else {
+                    ctx.getString(R.string.image_link_badge)
+                }
+            }
 
             binding.ownerText.text = ownerLabel(ctx, item)
             // 태그 줄은 항상 1줄 유지(빈 값 포함) — 그리드 행 높이 균일화(레이아웃 주석 참조).

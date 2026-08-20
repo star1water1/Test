@@ -2578,8 +2578,16 @@
     <!-- 이미지 관리 탭 -->
     <string name="tab_images">이미지</string>
     <string name="image_manager_thumb_desc">이미지 미리보기</string>
-    <string name="image_manager_sort">정렬</string>
     <string name="image_manager_options">옵션</string>
+    <!-- 통합 컨트롤 시트 — 정렬(기준+방향)·묶어 보기·필터를 한 표면에 (버튼 라벨은 controls_button 공용) -->
+    <string name="image_manager_controls_title">이미지 정렬·필터</string>
+    <string name="image_manager_filter_axis_base">소유·상태</string>
+    <string name="image_manager_filter_axis_link">링크 상태</string>
+    <!-- 묶어 보기 — 목적문은 R-25(무엇이 어디서 어떻게) -->
+    <string name="image_manager_group_view">링크 묶음을 한 장으로</string>
+    <string name="image_manager_group_view_desc">켜면 링크로 묶인 이미지가 이미지 목록에서 한 장으로 접혀 보입니다. 접힌 칸을 고르면 묶음 전체가 함께 선택됩니다.</string>
+    <string name="image_manager_group_view_chip">링크 묶음 보기</string>
+    <string name="image_manager_stack_badge">링크 %1$d장</string>
     <string name="image_manager_summary">총 %1$d개 · %2$s (참조 %3$d · 미배정 %4$d · 뗀 것 %5$d · 고아 %6$d)</string>
     <string name="image_manager_filter_all">전체</string>
     <string name="image_manager_filter_character">캐릭터</string>
@@ -2613,7 +2621,6 @@
     <string name="image_manager_prune_reason">걸러낼 후보 — %1$d장 중 %2$d위 · %3$d판</string>
     <string name="image_manager_search_hint">파일명·소유자·태그 검색</string>
     <string name="image_manager_tag_filter">태그</string>
-    <string name="image_manager_tag_filter_count">태그 %1$d</string>
     <string name="image_manager_tag_filter_untagged">태그 없음</string>
     <string name="image_manager_actions">작업</string>
     <string name="image_batch_title">선택한 이미지 %1$d장</string>
@@ -2636,18 +2643,18 @@
     <string name="image_link_action">링크 (같은 캐릭터 묶음)</string>
     <string name="image_unlink_action">링크 해제</string>
     <string name="image_link_need_two">링크하려면 2장 이상 선택하세요</string>
-    <string name="image_link_merge_confirm">선택에 기존 링크 그룹 %1$d개가 걸쳐 있습니다. 하나의 그룹으로 병합하시겠습니까?</string>
+    <string name="image_link_merge_confirm">선택에 기존 링크 묶음 %1$d개가 걸쳐 있습니다. 하나의 묶음으로 합치시겠습니까?</string>
     <string name="image_link_done">%1$d장을 링크했습니다 — 하나를 배정하면 함께 배정됩니다</string>
     <string name="image_link_merged_done">%1$d장을 링크했습니다 (그룹 병합됨)</string>
     <string name="image_link_failed">링크에 실패했습니다</string>
     <string name="image_unlink_done">링크 해제 %1$d장</string>
     <string name="image_unlink_auto_notice">%1$d장은 캐릭터에 함께 등록되어 있어 다음 정리 때 자동으로 다시 링크됩니다. 계속 풀어 두려면 자동 링크 설정을 끄거나 캐릭터에서 이미지를 빼세요.</string>
-    <string name="image_link_group_info">링크 그룹 · %1$d장</string>
-    <string name="image_link_group_info_auto">링크 그룹 · %1$d장 · 캐릭터 자동</string>
+    <string name="image_link_group_info">링크 묶음 · %1$d장</string>
+    <string name="image_link_group_info_auto">링크 묶음 · %1$d장 · 캐릭터 자동</string>
+    <!-- 묶어 보기에서 필터가 식구를 가려 위 수와 단추의 장수가 갈릴 때만 붙는다(정박) -->
+    <string name="image_link_group_info_visible"> · 지금 화면에는 %1$d장</string>
     <string name="image_batch_tag_done">이미지 %1$d장에 태그를 반영했습니다</string>
-    <string name="image_tag_filter_title">이미지 태그 필터</string>
     <string name="image_tag_filter_empty">등록된 이미지 태그가 없습니다</string>
-    <string name="image_tag_filter_reset">초기화</string>
     <string name="image_tag_filter_untagged">태그 없는 이미지만</string>
     <string name="image_tag_filter_untagged_desc">아직 태그가 하나도 없는 이미지만 목록에 남깁니다. 켜면 아래 태그 선택은 잠깁니다.</string>
     <string name="image_manager_import">불러오기</string>
@@ -2804,6 +2811,7 @@
     <string name="task_progress_count_unknown">%1$d개째</string>
     <string name="task_progress_count_unknown_mb">%1$dMB째</string>
     <string name="image_manager_view_full">전체화면 보기</string>
+    <string name="image_manager_view_full_stack">전체화면 보기 (묶음 %1$d장)</string>
     <string name="image_manager_delete_title">이미지 삭제</string>
     <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속하시겠습니까?</string>
     <string name="image_manager_delete_orphan_confirm">이 이미지 파일을 삭제하시겠습니까?</string>
@@ -3323,9 +3331,19 @@
 
     <!-- 이미지 내용 일괄 AI 태깅 (B-121) — 폴더 이름을 읽는 위 기능과 달리 그림 자체를 보낸다 -->
     <string name="image_ai_tag_action">AI 태그 제안 (이미지 보기)</string>
+    <!-- 접힌 칸의 상세 — 묶음 범위인 동작만 장수를 적어 이 한 장짜리 동작과 가른다 -->
+    <string name="image_ai_tag_action_stack">AI 태그 제안 (묶음 %1$d장)</string>
     <string name="image_ai_tag_run">제안 받기</string>
     <string name="image_ai_tag_batch_size">한 번에 보낼 장수: %1$d장</string>
     <string name="image_ai_tag_cost">이미지 %1$d장을 %2$d장씩 %3$d번에 나눠 보냅니다. 적용 전에 검토합니다.</string>
+    <string name="image_ai_tag_cost_single">이미지 1장을 한 요청으로 보냅니다. 적용 전에 검토합니다.</string>
+    <!-- 링크 묶음 단위 전송 — 목적문은 R-25. 표본이 받은 태그가 묶음 전원에 붙는다. -->
+    <string name="image_ai_tag_group_unit">링크 묶음 단위로 보내기</string>
+    <string name="image_ai_tag_group_unit_desc">켜면 링크 묶음마다 앞의 몇 장만 AI에 보내고, 받은 태그를 그 묶음 전체에 붙입니다.</string>
+    <string name="image_ai_tag_group_sample">묶음당 보낼 장수: %1$d장</string>
+    <string name="image_ai_tag_group_note">링크 묶음 %1$d개의 태그가 묶음 전체 %2$d장에 붙습니다.</string>
+    <string name="image_ai_tag_group_notice">링크 묶음 %1$d개는 체크한 태그가 묶음 전체 %2$d장에 붙습니다.</string>
+    <string name="image_ai_tag_review_group">%1$s · 묶음 %2$d장에 적용</string>
     <string name="image_ai_tag_privacy">이미지는 AI 제공사 서버로 전송됩니다. 장당 대략 250~1,600토큰이 듭니다(제공사마다 다릅니다).</string>
     <!-- B-157: 이미 배운 거부는 누르기 전에 말한다. 실행기가 요청조차 만들지 않으므로,
          말하지 않으면 "눌렀는데 아무것도 안 나왔다"만 남는다. -->
