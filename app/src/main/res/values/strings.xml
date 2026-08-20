@@ -798,7 +798,7 @@
     <!-- 내보내기 2단 진입 — '전부 안전하게 보관'과 '표로 뽑아 작업'은 원하는 기본값이 정반대다 -->
     <string name="export_pick_title">내보내기</string>
     <string name="export_full_backup">전체 백업 (이미지 포함)</string>
-    <string name="export_full_backup_purpose">모든 데이터와 이미지를 한 파일(zip)로 내보냅니다. 기기 이전·복구용입니다.</string>
+    <string name="export_full_backup_purpose">모든 작품 데이터와 이미지를 한 파일(zip)로 내보냅니다. 기기 이전·복구용입니다.\n휴지통·작업 이력·최근 활동은 기기 안의 기록이라 실리지 않습니다.</string>
     <string name="export_choose_items">골라서 내보내기 (고급)</string>
     <string name="export_choose_items_purpose">항목을 직접 골라 엑셀로 뽑습니다. 표 작업용이라 이미지는 기본으로 빠집니다.</string>
     <!-- 대용량 사전 고지(견적) — 경고이지 공간 검사가 아니다 -->

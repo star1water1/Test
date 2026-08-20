@@ -837,6 +837,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  '이미지' 시트의 이미지경로는 회색 — 그 행의 정체이므로 고치지 마세요."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
             GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
+            // '완전한 백업입니다' 고지가 이 셋의 미수록을 말하지 않아, 기기 이전 뒤 휴지통
+            // 복구가 안 된다는 사실을 복원 시점에야 알게 됐다(검증 CONFIRMED — 말하는 수리).
+            GuideLine("", styles.guideBody, "• 휴지통·작업 이력·최근 활동은 기기 안의 기록이라 이 파일에 실리지 않습니다."),
+            GuideLine("", styles.guideBody, "  기기를 옮기기 전에 휴지통에서 되살릴 것을 먼저 되살려 주세요."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
