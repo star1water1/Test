@@ -8,7 +8,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.core.content.ContextCompat
+import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.setFragmentResult
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -48,8 +50,6 @@ class BirthdayCelebrationDialog : DialogFragment() {
     /** '캐릭터 열기'가 어디로 갈지 — 지금 보이는 쪽이 정한다. */
     private var currentPage: Int = 0
 
-    /** 창을 닫은 뒤 부르는 쪽이 캐릭터로 보낸다. 화면 이동은 이 창의 몫이 아니다. */
-    var onOpenCharacter: ((Long) -> Unit)? = null
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
@@ -78,9 +78,13 @@ class BirthdayCelebrationDialog : DialogFragment() {
 
         views.btnCelebrationClose.setOnClickListener { dismiss() }
         views.btnCelebrationOpen.setOnClickListener {
+            // **람다가 아니라 결과다**(R-65). 콜백 속성으로 두면 회전 뒤 되살아난 창에서
+            // 그 속성이 null이라 단추가 **아무 일도 하지 않는다** — 눌리는데 안 되는 자리다.
             val page = pages.getOrNull(currentPage)
             dismiss()
-            page?.let { onOpenCharacter?.invoke(it.characterId) }
+            page?.let {
+                setFragmentResult(REQUEST_KEY, bundleOf(RESULT_CHARACTER_ID to it.characterId))
+            }
         }
 
         return MaterialAlertDialogBuilder(context)
@@ -208,7 +212,9 @@ class BirthdayCelebrationDialog : DialogFragment() {
             views.celebrationImage.setImageResource(R.drawable.ic_character_placeholder)
             val path = page.imagePath ?: return
             val appDir = views.root.context.filesDir
-            loadJob = viewLifecycleOwnerOrThis().lifecycleScope.launch {
+            // `onCreateDialog`로 만든 창은 `viewLifecycleOwner`가 서지 않는다 — 이 자리의
+            // 주기는 프래그먼트 자신이고, 창이 사라지면 함께 멈춘다.
+            loadJob = lifecycleScope.launch {
                 val bitmap = withContext(Dispatchers.IO) {
                     // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지).
                     CharacterImageLoader.decodeThumbnail(path, appDir, 256)
@@ -220,14 +226,12 @@ class BirthdayCelebrationDialog : DialogFragment() {
         }
     }
 
-    /**
-     * `onCreateDialog`로 만든 창은 `viewLifecycleOwner`가 서지 않는다 — 그 자리에서는
-     * 프래그먼트 자신의 수명이 그림 읽기의 주기다(창이 사라지면 함께 멈춘다).
-     */
-    private fun viewLifecycleOwnerOrThis() = this
-
     companion object {
         const val TAG = "BirthdayCelebrationDialog"
+
+        /** '캐릭터 열기'가 돌려주는 것 — 열 캐릭터의 id 하나뿐이다(R-65). */
+        const val REQUEST_KEY = "birthday_celebration_open"
+        const val RESULT_CHARACTER_ID = "characterId"
         private const val STATE_PAGE = "current_page"
 
         private const val ARG_PAGES = "pages"

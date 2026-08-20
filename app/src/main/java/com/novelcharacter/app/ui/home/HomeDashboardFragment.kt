@@ -165,6 +165,20 @@ class HomeDashboardFragment : Fragment() {
         // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
         excel = ExcelTransferController(this)
         excel.restoreState(savedInstanceState)
+
+        // 축하 창의 '캐릭터 열기'를 듣는다 (R-65). **여기서 거는 것이 요점이다** —
+        // `viewLifecycleOwner`에 걸면 회전 도중 온 결과를 조용히 놓치고, 그 놓침은
+        // *단추가 눌리는데 아무 일도 안 일어나는* 모양이라 사용자에게는 고장으로 보인다.
+        childFragmentManager.setFragmentResultListener(
+            BirthdayCelebrationDialog.REQUEST_KEY, this
+        ) { _, bundle ->
+            val characterId = bundle.getLong(BirthdayCelebrationDialog.RESULT_CHARACTER_ID, 0L)
+            if (characterId <= 0L) return@setFragmentResultListener
+            findNavController().navigateSafe(
+                R.id.homeFragment, R.id.characterDetailFragment,
+                bundleOf("characterId" to characterId)
+            )
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -448,14 +462,8 @@ class HomeDashboardFragment : Fragment() {
             // 화면이 사라진 뒤 돌아온 결과로 창을 띄우지 않는다.
             if (!isAdded || _binding == null || pages.isEmpty()) return@launch
             BirthdayCelebrationPrefs.markShown(ctx, today)
-            BirthdayCelebrationDialog.newInstance(pages).apply {
-                onOpenCharacter = { characterId ->
-                    findNavController().navigateSafe(
-                        R.id.homeFragment, R.id.characterDetailFragment,
-                        bundleOf("characterId" to characterId)
-                    )
-                }
-            }.show(childFragmentManager, BirthdayCelebrationDialog.TAG)
+            BirthdayCelebrationDialog.newInstance(pages)
+                .show(childFragmentManager, BirthdayCelebrationDialog.TAG)
         }
     }
 
