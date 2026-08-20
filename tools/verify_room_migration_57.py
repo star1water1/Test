@@ -25,7 +25,10 @@ Room 마이그레이션 56→57 검증 하네스 (Android 없이 실제 SQLite�
  5. 인덱스 셋과 그 이름이 Room 기대와 같은가.
  6. FK CASCADE가 돈다 — 캐릭터를 지우면 대사도 사라진다.
  7. 두 번 돌려도 안전한가(IF NOT EXISTS) — 복구 경로가 같은 문장을 다시 밟을 수 있다.
+ 8. **커밋된 스키마 JSON과 맞는가** — Room이 시작할 때 실제로 대조하는 그 표와
+    이 마이그레이션이 만드는 표가 같은가. 어긋나면 갱신한 기기에서 앱이 안 뜬다.
 """
+import json
 import os
 import re
 import sqlite3
@@ -114,6 +117,90 @@ def columns_of(con, table):
 def indices_of(con, table):
     return {r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?", (table,))}
+
+
+
+SCHEMA_DIR = f"{REPO}/app/schemas/com.novelcharacter.app.data.database.AppDatabase"
+
+
+def normalize_sql(sql):
+    """공백만 접는다 — 글자·차례·따옴표는 그대로 견준다."""
+    return " ".join(sql.split())
+
+
+def schema_checks(src):
+    """**빌드가 산출한 스키마 JSON**과 이 마이그레이션이 만드는 표를 견준다.
+
+    ## 왜 이 검사가 여기 있는가 (2026.08.20)
+
+    Room은 시작할 때 **기대 스키마와 실제 DB를 통째로 대조**하고, 어긋나면
+    `IllegalStateException`으로 **앱을 거부한다** — 사용자 쪽에서는 갱신 직후 앱이 안 뜨는
+    모양이고 되돌릴 길이 없다. 그 기대 스키마가 바로 이 JSON이다.
+
+    종전에는 이 대조를 **에뮬레이터 CI만** 할 수 있었다. 그런데 그 잡은 PR head를 체크아웃한
+    뒤 도는데 스키마 JSON은 **다른 잡이 나중에 커밋**하므로, 버전을 올린 판은 첫 회차에서
+    반드시 빨간불이 난다(이 판이 실제로 그랬다). **여기서 견주면 푸시 전에 안다.**
+
+    손으로 적은 `CREATE TABLE`과 Room이 기대하는 것이 한 글자라도 갈리는 것 — 타입 affinity ·
+    `NOT NULL` · 색인 이름 · FK 동작 — 이 전부 여기서 잡힌다.
+    """
+    versions = sorted(
+        int(f[:-5]) for f in os.listdir(SCHEMA_DIR) if f.endswith(".json")
+    ) if os.path.isdir(SCHEMA_DIR) else []
+    check(bool(versions), f"스키마 JSON이 커밋돼 있다 ({SCHEMA_DIR})")
+    if not versions:
+        return
+
+    latest = versions[-1]
+    m = re.search(r"version\s*=\s*(\d+)", src)
+    code_version = int(m.group(1)) if m else -1
+    # **이 한 줄이 이 판의 CI를 빨갛게 만든 그 단언이다** — 버전을 올리고 스키마를 안 올리면
+    # 여기서 걸린다(에뮬레이터를 띄우기 전에).
+    check(latest == code_version,
+          f"커밋된 최신 스키마({latest})와 코드의 DB 버전({code_version})이 같다 "
+          f"— 올렸으면 스키마 JSON도 함께 커밋할 것")
+    if latest != code_version:
+        return
+
+    with open(f"{SCHEMA_DIR}/{latest}.json", encoding="utf-8") as f:
+        schema = json.load(f)["database"]
+
+    quotes = next(
+        (e for e in schema["entities"] if e["tableName"] == "character_quotes"), None
+    )
+    check(quotes is not None, "스키마 JSON에 character_quotes가 있다")
+    if quotes is None:
+        return
+
+    # ── 표 만들기 문장이 글자까지 같은가 ──
+    expected = normalize_sql(quotes["createSql"].replace("${TABLE_NAME}", "character_quotes"))
+    stmts = extract_migration_sql(src, "MIGRATION_56_57")
+    actual = next((normalize_sql(s) for s in stmts if "CREATE TABLE" in s.upper()), "")
+    check(actual == expected,
+          "마이그레이션의 CREATE TABLE이 Room이 기대하는 것과 **글자까지** 같다")
+    if actual != expected:
+        print(f"      기대: {expected}")
+        print(f"      실제: {actual}")
+
+    # ── 색인 이름·유니크가 같은가 ──
+    want_idx = {(i["name"], bool(i["unique"])) for i in quotes.get("indices", [])}
+    got_idx = set()
+    for s in stmts:
+        m2 = re.search(r"CREATE\s+(UNIQUE\s+)?INDEX\s+IF NOT EXISTS\s+`([^`]+)`", s, re.I)
+        if m2:
+            got_idx.add((m2.group(2), bool(m2.group(1))))
+    check(got_idx == want_idx,
+          f"색인 이름·유니크가 스키마와 같다 (기대 {sorted(want_idx)} / 실제 {sorted(got_idx)})")
+
+    # ── NULL 허용이 같은가 ──
+    want_null = {f["columnName"] for f in quotes["fields"] if not f.get("notNull", False)}
+    check(want_null == {"code"},
+          f"스키마에서 NULL을 허용하는 칸은 code 하나다 (실제 {sorted(want_null)})")
+
+    # ── FK가 같은가 ──
+    fks = quotes.get("foreignKeys", [])
+    check(len(fks) == 1 and fks[0]["table"] == "characters" and fks[0]["onDelete"] == "CASCADE",
+          "스키마의 FK가 characters CASCADE 하나다")
 
 
 def main():
@@ -260,6 +347,9 @@ def main():
         check(False, f"재실행이 죽는다: {e}")
     check(con.execute("SELECT COUNT(*) FROM character_quotes").fetchone()[0] == 2,
           "재실행이 기존 대사를 지우지 않는다")
+
+    print("\n[11] 커밋된 스키마 JSON과 맞는가 — Room이 시작할 때 대조하는 그 표다")
+    schema_checks(src)
 
     con.close()
 
