@@ -69,6 +69,7 @@ fi
 SOURCES="
 $MAIN/data/model/EntityCode.kt
 $MAIN/data/model/Character.kt
+$MAIN/data/model/CharacterQuote.kt
 $MAIN/data/model/Novel.kt
 $MAIN/data/model/Universe.kt
 $MAIN/data/model/FieldDefinition.kt
@@ -114,6 +115,7 @@ $MAIN/util/ProgressScale.kt
 $MAIN/util/DialogScrollCap.kt
 $MAIN/util/RequiredFieldGaps.kt
 $MAIN/util/CompletionRate.kt
+$MAIN/util/QuotePicker.kt
 $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
 $MAIN/util/PreviewCreations.kt
@@ -366,6 +368,7 @@ $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
+$TEST/util/QuotePickerTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt

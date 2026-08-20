@@ -2353,6 +2353,13 @@
     <string name="result_state_change_added">상태 변화 추가됨</string>
     <string name="result_state_change_updated">상태 변화 수정됨</string>
     <string name="result_state_change_deleted">상태 변화 삭제됨 · 휴지통에서 복원 가능</string>
+    <string name="result_quote_added">명대사 추가됨</string>
+    <string name="result_quote_add_failed">명대사를 추가하지 못했습니다</string>
+    <string name="result_quote_updated">명대사 수정됨</string>
+    <string name="result_quote_update_failed">명대사를 수정하지 못했습니다</string>
+    <string name="result_quote_deleted">명대사 삭제됨</string>
+    <string name="result_quote_delete_failed">명대사를 삭제하지 못했습니다</string>
+    <string name="result_quote_reorder_failed">순서를 저장하지 못했습니다 · 다시 열면 이전 순서입니다</string>
     <string name="result_state_change_add_failed">상태 변화 추가 실패</string>
     <string name="result_state_change_update_failed">상태 변화 수정 실패</string>
     <string name="result_state_change_delete_failed">상태 변화 삭제 실패</string>
@@ -3596,6 +3603,7 @@
     <string name="duel_system_field_tags">태그</string>
     <!-- 세력(B-171) — 지금 속한 세력의 이름이다. '지금'의 판정은 util/FactionStanding 하나가 한다. -->
     <string name="duel_system_field_faction">세력</string>
+    <string name="duel_system_field_quote">명대사</string>
     <string name="duel_links_outcome_system_warning">%1$s은(는) 시스템 열이라 산출 필드로는 쓰이지 않습니다. 대결 결과를 써 넣을 수 없는 자리라 순위표의 대조에서 빠집니다 — 연결은 그대로 두었으니 필요하면 영향 필드나 프로필 필드로 옮겨 주세요.</string>
     <!--
       화면에서 시맨틱 역할을 부르는 말은 '시스템 연동'이다(label_semantic_role) — 여기서만
@@ -3836,4 +3844,48 @@
     <string name="default_field_propagate_diverged">이 세계관에서 고침</string>
     <string name="default_field_propagate_type_warning">타입이 바뀝니다. 값 %1$d개가 새 타입과 맞지 않게 되지만 지우지는 않습니다</string>
     <string name="default_field_propagated">세계관 %1$d곳에 반영했습니다</string>
+
+    <!-- ══ 명대사 (사용자 요청 2026.08.20) ══ -->
+    <string name="quotes">명대사</string>
+    <!-- 인용 부호 — 대사를 감싸는 글자. 화면마다 다시 적지 않게 여기 하나로 둔다. -->
+    <string name="quote_mark_open">「</string>
+    <string name="quote_mark_close">」</string>
+    <string name="quote_wrapped">「%1$s」</string>
+    <string name="add_quote">명대사 추가</string>
+    <string name="add_quote_desc">명대사 추가</string>
+    <string name="empty_quote_hint">이 캐릭터가 한 말을 적어 두면 생일 축하 창과 대결 카드에 함께 뜹니다</string>
+    <string name="quote_dialog_add">명대사 추가</string>
+    <string name="quote_dialog_edit">명대사 편집</string>
+    <string name="quote_text_label">대사</string>
+    <string name="quote_text_hint">캐릭터가 한 말</string>
+    <string name="quote_text_required">대사를 입력하십시오</string>
+    <string name="quote_note_label">상황·출처</string>
+    <string name="quote_note_hint">언제 어디서 한 말인지 (비워 둬도 됩니다)</string>
+    <string name="quote_occasion_label">쓰이는 자리</string>
+    <string name="quote_occasion_purpose">생일 전용은 생일 축하 창에서만 뜹니다. 일반 명대사는 대결 카드처럼 평소 자리에 뜹니다.</string>
+    <string name="quote_occasion_general">일반</string>
+    <string name="quote_occasion_birthday">생일 전용</string>
+    <string name="quote_occasion_custom">직접 적기</string>
+    <string name="quote_occasion_custom_hint">상황 이름 (예: 첫 등장, 결전)</string>
+    <string name="quote_badge_birthday">생일</string>
+    <string name="quote_delete_title">명대사 삭제</string>
+    <string name="quote_delete_confirm">이 명대사를 삭제합니다. 휴지통에는 남지 않습니다.</string>
+    <string name="quote_count_label">%1$d개</string>
+    <string name="quote_count_with_birthday">%1$d개 · 생일 %2$d개</string>
+    <string name="quote_reorder_hint">길게 눌러 순서를 바꿉니다</string>
+    <string name="quote_sheet_title">명대사</string>
+    <string name="char_stats_quotes">명대사: %d건</string>
+
+    <!-- 생일 축하 창 — 그날 처음 앱을 열 때 한 번 (사용자 요청 2026.08.20) -->
+    <string name="birthday_celebration_title">생일 축하합니다</string>
+    <string name="birthday_celebration_single">오늘은 %1$s의 생일입니다</string>
+    <string name="birthday_celebration_multi">오늘 생일인 캐릭터가 %1$d명 있습니다</string>
+    <string name="birthday_celebration_date">%1$d월 %2$d일</string>
+    <string name="birthday_celebration_close">고맙습니다</string>
+    <string name="birthday_celebration_open">캐릭터 열기</string>
+    <string name="birthday_celebration_page">%1$d / %2$d</string>
+    <string name="birthday_celebration_age">%1$d번째 생일</string>
+    <string name="birthday_celebration_novel">%1$s</string>
+    <string name="birthday_celebration_setting">생일 축하 창 띄우기</string>
+    <string name="birthday_celebration_setting_purpose">생일인 캐릭터가 있는 날, 앱을 처음 열 때 축하 창을 한 번 띄웁니다. 꺼도 홈의 다가오는 생일 목록은 그대로 뜹니다.</string>
 </resources>

@@ -95,6 +95,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     private lateinit var timeSliderHelper: TimeSliderHelper
     private lateinit var stateChangeHelper: StateChangeHelper
     private lateinit var relationshipHelper: RelationshipHelper
+    private lateinit var quoteHelper: QuoteHelper
 
     private val factionRepository: FactionRepository by lazy {
         (requireActivity().application as NovelCharacterApp).factionRepository
@@ -141,10 +142,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         timeSliderHelper.setup()
         stateChangeHelper.setup()
         relationshipHelper.setup()
+        quoteHelper.setup()
         observeCharacter()
         observeEvents()
         stateChangeHelper.observe()
         relationshipHelper.observe()
+        quoteHelper.observe()
         observeFactions()
         loadCharacterStats()
     }
@@ -197,6 +200,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             getString = { id -> getString(id) },
             cachedFieldsGetter = { timeSliderHelper.cachedFields },
             onSliderUpdate = { timeSliderHelper.updateSliderRange() }
+        )
+
+        quoteHelper = QuoteHelper(
+            binding = binding,
+            viewModel = viewModel,
+            viewLifecycleOwner = viewLifecycleOwner,
+            characterId = characterId,
+            contextGetter = { requireContext() },
+            getString = { id -> getString(id) }
         )
 
         relationshipHelper = RelationshipHelper(
@@ -1264,6 +1276,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         timeSliderHelper.cancelJob()
         binding.imageViewPager.adapter = null
         binding.eventsRecyclerView.adapter = null
+        quoteHelper.teardown()
         super.onDestroyView()
         _binding = null
     }

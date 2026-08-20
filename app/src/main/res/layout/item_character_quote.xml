@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  명대사 한 줄 (사용자 요청 2026.08.20).
+
+  **대사가 주인공이라 인용 부호가 앞을 잡는다.** 상태 변화 줄이 연도를 앞에 세우는 것과
+  같은 자리인데, 여기서 견주는 것은 시점이 아니라 *무슨 말을 했는가*다. 상황·생일 배지는
+  대사 아래 작게 붙어, 대사만 훑어도 목록이 읽힌다.
+
+  줄을 안 자르는 것(maxLines 없음)은 대사가 길 수 있어서다 — 카드에서 잘라 두면 무슨 말인지
+  알아보려고 매번 눌러야 한다(원칙 04).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:background="?attr/selectableItemBackground"
+    android:paddingVertical="10dp">
+
+    <TextView
+        android:id="@+id/quoteMark"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/quote_mark_open"
+        android:textAppearance="@style/TextAppearance.App.Title"
+        android:textColor="@color/primary"
+        android:layout_marginEnd="6dp" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/quoteText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.App.Body"
+            android:textStyle="italic"
+            tools:text="나는 여기서 멈추지 않는다" />
+
+        <LinearLayout
+            android:id="@+id/quoteMetaRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="3dp">
+
+            <TextView
+                android:id="@+id/quoteOccasionBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_quote_occasion_badge"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="1dp"
+                android:textSize="@dimen/text_badge"
+                android:textColor="@color/on_primary"
+                android:visibility="gone"
+                tools:text="생일"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/quoteNote"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/text_secondary"
+                tools:text="1화, 옥상에서" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/quoteDragHandle"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="center_vertical"
+        android:padding="6dp"
+        android:src="@drawable/ic_drag_handle"
+        android:alpha="0.5"
+        android:contentDescription="@string/quote_reorder_hint" />
+
+</LinearLayout>

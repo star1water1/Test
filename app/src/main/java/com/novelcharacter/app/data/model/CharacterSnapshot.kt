@@ -7,7 +7,7 @@ package com.novelcharacter.app.data.model
 data class CharacterSnapshot(
     val character: Character,
     /**
-     * 아래 일곱 목록은 **전부 nullable이다** — 앱이 만드는 payload에는 늘 키가 있지만,
+     * 아래 여덟 목록은 **전부 nullable이다** — 앱이 만드는 payload에는 늘 키가 있지만,
      * Gson은 키가 통째로 없으면 non-null 선언에도 null을 주입한다(R-2). 그래서 손으로 편집한
      * payload가 하나 들어오면 non-null 선언은 **복원 순간 NPE로 터진다**(B-19).
      * 실제로 겪은 사고는 아니고 — 터져도 "복원 실패"로 떨어져 무통보 유실은 아니다 —
@@ -21,6 +21,8 @@ data class CharacterSnapshot(
     val fieldValues: List<CharacterFieldValue>? = null,
     val stateChanges: List<CharacterStateChange>? = null,
     val tags: List<CharacterTag>? = null,
+    /** 명대사 (사용자 요청 2026.08.20). 위 규약 그대로 nullable이다 — 옛 payload에는 이 키가 없다. */
+    val quotes: List<CharacterQuote>? = null,
     val relationships: List<CharacterRelationship>? = null,
     val relationshipChanges: List<CharacterRelationshipChange>? = null,
     val factionMemberships: List<FactionMembership>? = null,

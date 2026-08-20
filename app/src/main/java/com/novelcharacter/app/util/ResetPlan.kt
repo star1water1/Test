@@ -79,6 +79,8 @@ object ResetPlan {
         // ── 부모 CASCADE로 사라지는 것 ──
         cascade("character_field_values", via = "characters"),
         cascade("character_tags", via = "characters"),
+        // 명대사(사용자 요청 2026.08.20) — characters가 explicit로 지워지므로 함께 사라진다.
+        cascade("character_quotes", via = "characters"),
         cascade("event_field_values", via = "timeline_events"),
         // 작품 커스텀 필드값(확-3) — novels가 explicit로 지워지므로 함께 사라진다.
         cascade("novel_field_values", via = "novels"),
