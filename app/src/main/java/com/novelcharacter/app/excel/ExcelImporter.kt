@@ -1312,7 +1312,25 @@ class ExcelImporter(context: Context) {
             // 대형 백업의 압축 해제된 시트 XML이 상한에 걸려 거부되지 않게 한다.
             org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(POI_MAX_ENTRY_SIZE)
 
-            opened = openImportSource(xlsxFile)
+            opened = try {
+                openImportSource(xlsxFile)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // **열지 못한 것은 형식 문제다** — 일반 실패 창은 "그 단계의 시트를 확인"하라고
+                // 안내하는데, 통합문서가 아닌 파일(csv를 확장자만 바꾼 것 등)에는 확인할 시트가
+                // 없다. 아직 아무것도 돌기 전의 거절이므로 토스트로 남긴다(OTHER_ZIP과 같은
+                // 처분 — deliverTerminal KDoc의 경계). 이력에도 남기지 않는다(같은 근거).
+                android.util.Log.e("ExcelImporter", "Cannot open file as a workbook", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appContext,
+                        com.novelcharacter.app.R.string.import_not_workbook,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return
+            }
             val workbook = opened.source
 
             // Phase 1: 분석 구간의 진행 창(작업형 · R-26).

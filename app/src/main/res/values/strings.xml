@@ -1426,6 +1426,7 @@
     <string name="share_world_conflict_new">새로 생성</string>
     <!-- 월드패키지 가져오기 (S-5) -->
     <string name="import_unsupported_zip">지원하지 않는 ZIP 파일입니다 — 엑셀 백업도 월드패키지도 아닙니다. 앱에서 내보낸 파일인지 확인하세요.</string>
+    <string name="import_not_workbook">이 파일은 엑셀 통합문서가 아니어서 열 수 없습니다 — .xlsx 또는 앱에서 내보낸 백업 파일을 골라 주세요. CSV는 엑셀에서 .xlsx로 저장하면 가져올 수 있습니다. 데이터는 바뀌지 않았습니다.</string>
     <string name="world_package_import_title">월드패키지 가져오기</string>
     <string name="world_package_importing">월드패키지를 가져오는 중…</string>
     <string name="world_package_not_a_package">월드패키지 형식이 아닙니다 (manifest.json 없음)</string>
