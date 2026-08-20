@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  축하 창의 대사 자리 (사용자 요청 2026.08.20).
+  옅은 인디고 바탕에 왼쪽 굵은 선 — 인용문의 통상 모양이다. 선을 왼쪽만 두는 것은
+  대사가 왼쪽에서 시작하기 때문이고, `primary_container`는 본문 위에서 눈에 띄되
+  글자를 가리지 않는 밝기다(다크에서는 미러가 어두운 쪽으로 바뀐다).
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/primary_container" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item
+        android:left="0dp"
+        android:right="-10dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/primary" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item android:left="4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/primary_container" />
+            <corners
+                android:bottomRightRadius="10dp"
+                android:topRightRadius="10dp" />
+        </shape>
+    </item>
+</layer-list>

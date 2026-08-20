@@ -19,6 +19,7 @@ import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.PatternTypePrefs
 import com.novelcharacter.app.ui.supplement.RandomSupplementSettings
 import com.novelcharacter.app.ui.supplement.SupplementCriteria
+import com.novelcharacter.app.util.BirthdayCelebrationPrefs
 import com.novelcharacter.app.util.CompletionWeights
 import com.novelcharacter.app.util.FieldNoteDisplayPrefs
 import com.novelcharacter.app.util.ImageSettingsStore
@@ -87,6 +88,14 @@ object AppSettingsBindings {
             read = { bool(FieldNoteDisplayPrefs.isReadScreenNoteEnabled(it)) },
             write = { ctx, v ->
                 FieldNoteDisplayPrefs.setReadScreenNoteEnabled(ctx, parseSheetBoolean(v))
+                Applied.Yes
+            }),
+        // 생일 축하 창 (사용자 요청 2026.08.20) — 같은 저장소의 '마지막으로 띄운 날'은
+        // 여기 없다. 기기에서 일어난 일이라 싣지 않는다(선언 쪽 EXCLUDED_STORES에 사유).
+        Binding(AppSettingsKeys.BIRTHDAY_CELEBRATION_ENABLED,
+            read = { bool(BirthdayCelebrationPrefs.isEnabled(it)) },
+            write = { ctx, v ->
+                BirthdayCelebrationPrefs.setEnabled(ctx, parseSheetBoolean(v))
                 Applied.Yes
             }),
 

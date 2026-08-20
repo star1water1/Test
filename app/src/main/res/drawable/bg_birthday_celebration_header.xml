@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  생일 축하 창의 머리 (사용자 요청 2026.08.20 — "약간 크게 모달로 꾸며서").
+
+  **색을 새로 짓지 않고 팔레트의 둘을 잇는다** — `primary`(인디고)에서 `tertiary`(보라)로.
+  colors.xml은 values-night와 완전 미러라, 있는 토큰만 쓰면 **다크에서도 저절로 맞는다**
+  (새 색을 지으면 미러 두 벌을 손으로 맞춰야 하고, 한쪽이 낡으면 다크에서만 어긋난다).
+
+  위 모서리만 둥근 것은 창의 모서리를 따르기 때문이다 — 아래는 본문이 이어진다.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:endColor="@color/tertiary"
+        android:startColor="@color/primary"
+        android:type="linear" />
+    <corners
+        android:topLeftRadius="16dp"
+        android:topRightRadius="16dp" />
+</shape>

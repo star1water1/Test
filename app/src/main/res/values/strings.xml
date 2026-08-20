@@ -3878,14 +3878,18 @@
 
     <!-- 생일 축하 창 — 그날 처음 앱을 열 때 한 번 (사용자 요청 2026.08.20) -->
     <string name="birthday_celebration_title">생일 축하합니다</string>
+    <!-- 축하 창의 장식 글자 — 그림 파일 대신 이모지를 쓴다(의존을 늘리지 않는다). -->
+    <string name="birthday_celebration_cake">🎂</string>
+    <string name="birthday_celebration_confetti_left">🎉</string>
+    <string name="birthday_celebration_confetti_right">✨</string>
     <string name="birthday_celebration_single">오늘은 %1$s의 생일입니다</string>
     <string name="birthday_celebration_multi">오늘 생일인 캐릭터가 %1$d명 있습니다</string>
     <string name="birthday_celebration_date">%1$d월 %2$d일</string>
     <string name="birthday_celebration_close">고맙습니다</string>
     <string name="birthday_celebration_open">캐릭터 열기</string>
     <string name="birthday_celebration_page">%1$d / %2$d</string>
-    <string name="birthday_celebration_age">%1$d번째 생일</string>
-    <string name="birthday_celebration_novel">%1$s</string>
+    <!-- 날짜·작품을 잇는 글자. 대결의 것을 빌려 쓰지 않는다 — 한 낱말이 두 영역을 가리키면 한쪽을 고칠 때 다른 쪽이 조용히 바뀐다. -->
+    <string name="birthday_celebration_separator"> · </string>
     <string name="birthday_celebration_setting">생일 축하 창 띄우기</string>
     <string name="birthday_celebration_setting_purpose">생일인 캐릭터가 있는 날, 앱을 처음 열 때 축하 창을 한 번 띄웁니다. 꺼도 홈의 다가오는 생일 목록은 그대로 뜹니다.</string>
 </resources>

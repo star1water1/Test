@@ -272,6 +272,8 @@ $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/BirthdayHelper.kt
+$MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -369,6 +371,7 @@ $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
 $TEST/util/CompletionRateTest.kt
 $TEST/util/QuotePickerTest.kt
+$TEST/util/BirthdayCelebrationTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt

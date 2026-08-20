@@ -29,12 +29,17 @@ import com.novelcharacter.app.excel.ExcelTransferController
 import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
 import com.novelcharacter.app.ui.assistant.AssistantViewModel
 import com.novelcharacter.app.ui.duel.DuelEntryPrefs
+import com.novelcharacter.app.util.BirthdayCelebration
 import com.novelcharacter.app.util.BirthdayHelper
 import com.novelcharacter.app.util.DuelEntry
+import com.novelcharacter.app.util.BirthdayCelebrationPrefs
 import com.novelcharacter.app.util.OnboardingPrefs
+import com.novelcharacter.app.util.QuotePicker
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 홈 대시보드 — 시작 화면. 최근 활동·다가오는 생일·바로가기·도구 진입점을 모은다.
@@ -74,6 +79,46 @@ class HomeDashboardViewModel(application: Application) : AndroidViewModel(applic
                     })
                 }
             }
+
+    /**
+     * 오늘 축하 창에 띄울 쪽 (사용자 요청 2026.08.20).
+     *
+     * **판정은 [BirthdayCelebration]이 하고 여기서는 읽어다 넘긴다** — 그래야 *"어느 대사를
+     * 집는가"*·*"날짜 없는 줄은 어떻게 하는가"*를 순수 JVM 시험이 실제로 돌려 본다.
+     *
+     * 오늘치 판정을 [BirthdayHelper]에 맡기는 것도 같은 근거다: 윤년 2/29 규칙이 두 벌이
+     * 되면 축하 창과 위젯·알림이 **다른 날 다른 사람을 말한다**(원칙 05).
+     *
+     * 읽는 것은 **오늘 생일인 사람 몫뿐이다** — 대사도 작품 제목도 그 id 목록으로만 묻는다.
+     */
+    suspend fun todayBirthdayPages(dayStamp: Long): List<BirthdayCelebration.Page> =
+        withContext(Dispatchers.IO) {
+            val birthChanges = app.database.characterStateChangeDao()
+                .getChangesWithDate(CharacterStateChange.KEY_BIRTH)
+            val todayIds = BirthdayHelper.getTodayBirthdayCharacterIds(birthChanges)
+            if (todayIds.isEmpty()) return@withContext emptyList()
+
+            val characters = app.characterRepository.getCharactersByIds(todayIds)
+            if (characters.isEmpty()) return@withContext emptyList()
+
+            val quotes = app.characterRepository.getQuotesForCharacters(characters.map { it.id })
+                .groupBy { it.characterId }
+            val novelTitles = SqlInChunks.flat(characters.mapNotNull { it.novelId }.distinct()) {
+                app.database.novelDao().getNovelsByIds(it)
+            }.associate { it.id to it.title }
+
+            BirthdayCelebration.pagesOf(
+                todayIds = todayIds,
+                characters = characters,
+                birthChanges = birthChanges,
+                quotesByCharacter = quotes,
+                novelTitles = novelTitles,
+                dayStamp = dayStamp,
+                // 그림 추첨의 씨앗도 **날짜**다 — 창을 닫았다 다시 열어도 같은 장이 뜨고,
+                // 대사와 같은 주기로 하루마다 바뀐다.
+                imageSeed = dayStamp
+            )
+        }
 
     /**
      * 대결 타일이 열 곳과 그 부제 — 판단은 [DuelEntry]가 하고 여기서는 **살아 있는지**만 확인해
@@ -144,6 +189,7 @@ class HomeDashboardFragment : Fragment() {
         setupToolCards()
         setupAssistantAlert()
         showWelcomeIfFirstRun(savedInstanceState)
+        showBirthdayCelebrationIfDue(savedInstanceState)
     }
 
     override fun onResume() {
@@ -370,6 +416,46 @@ class HomeDashboardFragment : Fragment() {
                 .setMessage(R.string.onboarding_welcome_message)
                 .setPositiveButton(R.string.onboarding_welcome_start, null)
                 .show()
+        }
+    }
+
+    /**
+     * **그날 처음 앱을 열 때 한 번** 뜨는 생일 축하 창 (사용자 요청 2026.08.20).
+     *
+     * ## 세 관문을 순서대로 지난다 — 싼 것부터
+     * 1. `savedInstanceState == null` — 회전·복구로 다시 뜨지 않는다(환영 창과 같은 관문).
+     * 2. [BirthdayCelebrationPrefs.shouldShow] — 꺼 뒀거나 오늘 이미 띄웠으면 **여기서 끝난다.**
+     *    DB를 읽기 전에 걸러내는 것이 요점이다: 꺼 둔 사용자에게는 질의가 아예 안 돈다.
+     * 3. 오늘 생일인 캐릭터가 실제로 있는가 — 없으면 조용히 아무 일도 안 일어난다.
+     *
+     * ## 표시한 뒤에 표시를 남긴다
+     * 관문 3을 지나 **쪽이 실제로 만들어졌을 때만** 오늘을 찍는다. 생일이 없는 날 찍어 두면
+     * 아무 일도 없었는데 '오늘 봤음'이 되어, 그날 늦게 캐릭터의 생일을 적어도 창이 안 뜬다.
+     *
+     * ## 환영 창과 다투지 않는다
+     * 첫 실행에는 환영 창이 먼저 뜨는데(호출 순서), 둘 다 창이라 겹쳐 뜬다. 그래도 축하
+     * 창을 미루지 않는 것은 **오늘을 넘기면 그 축하가 사라지기** 때문이다 — 환영은 다음에
+     * 이어서 볼 수 있지만 생일은 내년이다.
+     */
+    private fun showBirthdayCelebrationIfDue(savedInstanceState: Bundle?) {
+        if (savedInstanceState != null) return
+        val ctx = requireContext()
+        val today = QuotePicker.todayStamp()
+        if (!BirthdayCelebrationPrefs.shouldShow(ctx, today)) return
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val pages = viewModel.todayBirthdayPages(today)
+            // 화면이 사라진 뒤 돌아온 결과로 창을 띄우지 않는다.
+            if (!isAdded || _binding == null || pages.isEmpty()) return@launch
+            BirthdayCelebrationPrefs.markShown(ctx, today)
+            BirthdayCelebrationDialog.newInstance(pages).apply {
+                onOpenCharacter = { characterId ->
+                    findNavController().navigateSafe(
+                        R.id.homeFragment, R.id.characterDetailFragment,
+                        bundleOf("characterId" to characterId)
+                    )
+                }
+            }.show(childFragmentManager, BirthdayCelebrationDialog.TAG)
         }
     }
 

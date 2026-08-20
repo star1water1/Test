@@ -74,4 +74,14 @@
     <dimen name="stats_text_number_lg">24sp</dimen>
     <dimen name="stats_text_number_xl">28sp</dimen>
     <dimen name="stats_text_number_xxl">36sp</dimen>
+
+    <!--
+      생일 축하 창의 쪽 높이 (사용자 요청 2026.08.20).
+
+      **wrap_content로 두지 않는 것이 요점이다.** ViewPager2는 RecyclerView라 wrap_content가
+      *지금 붙어 있는 쪽*에 맞춰지는데, 쪽마다 높이가 다르다(대사를 적은 캐릭터와 안 적은
+      캐릭터). 그러면 첫 쪽 높이로 창이 굳어 다음 쪽이 잘리거나 빈자리가 남는다.
+      높이를 못 박고 쪽 안을 가운데로 모으면 넘길 때 창이 안 흔들린다.
+    -->
+    <dimen name="birthday_celebration_page_height">300dp</dimen>
 </resources>

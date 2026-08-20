@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  생일 축하 창 (사용자 요청 2026.08.20 — "그날 처음 앱 켰을때 약간 크게 모달로 꾸며서").
+
+  **이 저장소의 첫 장식 창이다.** 나머지 창은 전부 Material 기본 틀이라 흉내 낼 것이
+  없었고, 그래서 꾸밈은 팔레트에 있는 토큰만으로 짰다(그러면 다크가 저절로 맞는다 —
+  colors.xml과 values-night가 완전 미러라는 규약이 그 근거다).
+
+  **쪽의 높이를 못 박은 것**(`birthday_celebration_page_height`)은 ViewPager2가
+  RecyclerView라 wrap_content가 지금 붙은 쪽에 맞춰지기 때문이다 — 대사를 적은 캐릭터와
+  안 적은 캐릭터의 쪽 높이가 달라, 그대로 두면 첫 쪽 높이로 창이 굳어 다음 쪽이 잘린다.
+  창 자체는 상한 스크롤이라 작은 화면·가로 방향에서도 단추에 닿는다(R-31).
+-->
+<com.novelcharacter.app.ui.common.CappedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/surface"
+    android:orientation="vertical">
+
+    <!-- ── 머리 — 꾸밈은 여기 모아 둔다 ── -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_birthday_celebration_header">
+
+        <!--
+          장식 이모지 — **그림 파일도 애니메이션도 쓰지 않는다.** 이 앱에는 애니메이션
+          코드가 한 줄도 없고 컨페티 라이브러리도 없다. 의존을 늘리는 대신 글자로 뿌린다:
+          어느 기기에서나 뜨고, 다크·라이트를 안 탄다.
+        -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_marginStart="18dp"
+            android:layout_marginTop="14dp"
+            android:alpha="0.55"
+            android:text="@string/birthday_celebration_confetti_left"
+            android:textSize="20sp"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="20dp"
+            android:layout_marginEnd="20dp"
+            android:alpha="0.55"
+            android:text="@string/birthday_celebration_confetti_right"
+            android:textSize="18sp"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingTop="22dp"
+            android:paddingBottom="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/birthday_celebration_cake"
+                android:textSize="40sp"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:text="@string/birthday_celebration_title"
+                android:textAppearance="@style/TextAppearance.App.Title"
+                android:textColor="@color/on_primary" />
+
+            <TextView
+                android:id="@+id/celebrationSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:alpha="0.9"
+                android:gravity="center"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/on_primary"
+                tools:text="오늘은 이서린의 생일입니다" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- ── 본문 — 캐릭터마다 한 쪽 ── -->
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/celebrationPager"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/birthday_celebration_page_height" />
+
+    <!-- 쪽 표시 — **하나뿐이면 통째로 사라진다**(넘길 곳이 없다 · R-24) -->
+    <LinearLayout
+        android:id="@+id/celebrationIndicatorRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingVertical="8dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:id="@+id/celebrationDots"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:id="@+id/celebrationPageLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:textSize="@dimen/text_badge"
+            android:textColor="@color/text_secondary"
+            tools:text="1 / 3" />
+
+    </LinearLayout>
+
+    <!-- ── 단추 — '캐릭터 열기'는 지금 보이는 쪽으로 간다 ── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="12dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCelebrationOpen"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/birthday_celebration_open" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCelebrationClose"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/birthday_celebration_close" />
+
+    </LinearLayout>
+
+</LinearLayout>
+
+</com.novelcharacter.app.ui.common.CappedScrollView>
