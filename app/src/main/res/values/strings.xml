@@ -1138,6 +1138,9 @@
     <string name="graph_no_characters">표시할 캐릭터가 없습니다</string>
     <string name="graph_no_relationships">등록된 관계가 없습니다</string>
     <string name="graph_no_filtered_relationships">선택한 유형의 관계가 없습니다</string>
+    <!-- 빈 화면의 원인을 갈라 말한다 — 잘못 지목하면 사용자가 엉뚱한 칩을 만진다 -->
+    <string name="graph_no_faction_relationships">고른 세력 안에 서로 이어진 인물이 없습니다 — \'좁히기\'를 끄면 전체를 보면서 강조할 수 있습니다</string>
+    <string name="graph_no_scope_relationships">이 작품·세계관 범위에 관계가 없습니다</string>
     <string name="graph_summary_mode">관계가 많은 %1$d명까지 그렸습니다 — 나머지 %2$d명은 접었습니다.</string>
     <string name="graph_summary_mode_title">요약 모드</string>
     <string name="graph_filter_hint">관계 유형 필터</string>
@@ -1145,7 +1148,8 @@
     <string name="graph_edge_count">관계: %d개</string>
     <string name="graph_zoom_reset">확대/축소 초기화</string>
     <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
-    <string name="graph_too_many_nodes">인물이 많아 일부를 접었습니다. 작품·관계 유형 필터로 좁히면 접힌 인물도 볼 수 있습니다. (세력 칩은 좁히지 않고 고른 세력을 강조합니다)</string>
+    <string name="graph_too_many_nodes">인물이 많아 일부를 접었습니다. 작품·관계 유형 필터로 좁히면 접힌 인물도 볼 수 있습니다. (세력 칩은 좁히지 않고 고른 세력을 강조합니다 — 세력으로 좁히려면 \'좁히기\'를 켜세요)</string>
+    <string name="graph_too_many_nodes_narrowing">인물이 많아 일부를 접었습니다. 작품·관계 유형·세력 필터로 좁히면 접힌 인물도 볼 수 있습니다.</string>
     <string name="graph_filter_all">전체</string>
     <string name="graph_filter_all_universes">전체 세계관</string>
     <string name="graph_filter_all_novels">전체 작품</string>
@@ -2022,10 +2026,14 @@
     <string name="faction_belonging_empty">소속 세력 없음</string>
     <string name="graph_faction_filter_all">전체 세력</string>
     <string name="graph_faction_filter_none">미소속</string>
-    <string name="faction_display_mode_label">세력 표기:</string>
+    <string name="faction_display_mode_label">세력 칩:</string>
     <string name="faction_display_mode_area">영역</string>
     <string name="faction_display_mode_border">선</string>
     <string name="faction_display_mode_edges">관계</string>
+    <!-- 세력 칩의 축 — 켜면 좁힘, 끄면 강조(기본) -->
+    <string name="faction_display_mode_narrow">좁히기</string>
+    <string name="graph_faction_narrow_on">고른 세력만 그립니다 — 나머지 인물은 그래프에서 뺍니다</string>
+    <string name="graph_faction_narrow_off">고른 세력을 강조합니다 — 인물은 모두 그립니다</string>
 
     <!-- 캐릭터 탭 내부 탭 (목록 / 보충) -->
     <string name="character_tab_list">목록</string>
