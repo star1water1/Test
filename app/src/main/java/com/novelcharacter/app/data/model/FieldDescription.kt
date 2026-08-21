@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * **필드 설명** — 사용자가 쓰는, 이 필드가 무엇인지에 대한 설명 (P-A A-2).
@@ -23,7 +24,7 @@ object FieldDescription {
 
     /** 키 없음·손상 JSON = 빈 문자열(설명 없음). */
     fun fromConfig(configJson: String): String = try {
-        JSONObject(configJson).optString(CONFIG_KEY, "")
+        JSONObject(configJson).stringOr(CONFIG_KEY, "")
     } catch (_: Exception) {
         ""
     }

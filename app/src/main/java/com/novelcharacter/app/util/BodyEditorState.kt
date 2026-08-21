@@ -289,7 +289,7 @@ data class BodyEditorState(
                 }
             }
             val mode = BodyMeasurements.MappingMode.entries
-                .firstOrNull { it.name == o.optString(I_MODE) } ?: BodyMeasurements.MappingMode.NONE
+                .firstOrNull { it.name == o.stringOr(I_MODE) } ?: BodyMeasurements.MappingMode.NONE
             return BodyMeasurements(
                 values = values,
                 mode = mode,
@@ -308,7 +308,7 @@ data class BodyEditorState(
 
         private fun stringsFromJson(arr: JSONArray?): List<String> {
             if (arr == null) return emptyList()
-            return (0 until arr.length()).map { arr.optString(it) ?: "" }
+            return (0 until arr.length()).map { arr.stringOr(it) ?: "" }
         }
 
         /**
@@ -319,7 +319,7 @@ data class BodyEditorState(
         private fun slotListFromJson(arr: JSONArray?): List<BodySlot> {
             if (arr == null) return emptyList()
             return (0 until arr.length()).map { i ->
-                val name = arr.optString(i)
+                val name = arr.stringOr(i)
                 BodySlot.entries.firstOrNull { it.name == name } ?: BodySlot.NONE
             }
         }
@@ -368,7 +368,7 @@ data class BodyEditorState(
             if (arr == null) return emptySet()
             val out = LinkedHashSet<BodySlot>()
             for (i in 0 until arr.length()) {
-                val name = arr.optString(i) ?: continue
+                val name = arr.stringOr(i) ?: continue
                 BodySlot.entries.firstOrNull { it.name == name }?.let { out.add(it) }
             }
             return out

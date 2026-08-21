@@ -47,13 +47,33 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.novelcharacter.app.util.stringOr
 
 class ExcelExporter(context: Context) {
 
     private val appContext = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
+    /**
+     * 이 스코프에서 **처리되지 않은 것이 프로세스를 죽이지 않게** 한다.
+     *
+     * 처리기가 없는 `launch`의 미처리 예외는 기본 미처리 예외 처리기까지 올라가 앱이 즉사한다.
+     * `catch`를 넓히는 것만으로는 부족하다 — 그것은 함수 하나를 덮을 뿐이고 이 스코프에는
+     * `launch`가 둘이다. 여기서 잡는 것은 **최후 방어선**이지 정상 경로가 아니다:
+     * 정상 실패 고지는 각 `launch` 안의 `catch`가 낸다.
+     */
+    private val exportErrorHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, t ->
+        android.util.Log.e("ExcelExporter", "Unhandled in export scope", t)
+        try {
+            com.novelcharacter.app.util.AppLogger.error(
+                "ExcelExporter", "내보내기 스코프에서 처리되지 않은 오류", t
+            )
+        } catch (_: Throwable) {
+            // 로그조차 못 남기는 상태(OOM 등)에서 여기서 또 던지면 프로세스가 죽는다.
+        }
+    }
+
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
-    @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob + exportErrorHandler)
     private val isExporting = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
@@ -81,7 +101,7 @@ class ExcelExporter(context: Context) {
     private fun ensureActiveScope(): CoroutineScope {
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
             supervisorJob = kotlinx.coroutines.SupervisorJob()
-            exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+            exportScope = CoroutineScope(Dispatchers.IO + supervisorJob + exportErrorHandler)
         }
         return exportScope
     }
@@ -347,13 +367,26 @@ class ExcelExporter(context: Context) {
                 // 이미 남겼다(B-228). 여기서 아래 갈래로 흘려보내면 *"내보내기 실패"*가 이력에 남는다.
                 orphanFile?.delete()
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // **`Exception`이 아니라 `Throwable`이다.** 기기에서만 나는 `Error`
+                // (B-250의 `NoClassDefFoundError` · 기기가 강제로 타는 DOM 전량 적재의
+                // `OutOfMemoryError`)는 `Exception`이 아니라 여기를 그냥 통과했고, 그러면
+                // 처리기 없는 `launch` 밖으로 새어 **앱이 즉사했다** — 설계가 준비해 둔
+                // 실패 고지도 작업 이력도 하나도 남지 않은 채로. B-250의 등재 근거가
+                // *실기기 크래시 로그*였다는 사실이 이 경로가 실제로 그렇게 터졌음을 말한다.
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 orphanFile?.delete()
                 // 공간 부족은 별도 갈래로 말한다(설계 D7 · R-17) — "다시 시도하세요"는
                 // 공간이 없는 사용자에게 아무것도 알려 주지 않는 안내다.
                 val outOfSpace = ExportSpace.isOutOfSpace(e)
-                val message = if (outOfSpace) {
+                // 메모리 부족은 **"다시 시도하세요"로 답할 수 없는 실패**다(R-17) — 같은 범위로
+                // 다시 하면 같은 자리에서 또 죽는다. 기기에는 스트리밍 워크북이 없어
+                // (`java.awt` 부재로 `isStreamingSupported()`가 항상 false) 물러설 갈래도 없으므로,
+                // 사용자가 **줄일 수 있는 축**을 말해 주는 것이 유일한 교정 경로다.
+                val outOfMemory = e is OutOfMemoryError
+                val message = if (outOfMemory) {
+                    appContext.getString(R.string.export_failed_out_of_memory)
+                } else if (outOfSpace) {
                     // 잰 몫이 없으면 숫자를 말하지 않는다 (B-189) — 이미지를 끈 내보내기는
                     // 견적이 아무것도 재지 못하는데, 종전에는 그때도 "약 1MB"라고 말했다.
                     val needMb = ExportSpace.requiredMegabytesOrNull(estimateExportBytes(options))
@@ -365,7 +398,12 @@ class ExcelExporter(context: Context) {
                 // 이력이 먼저다 — 위 취소 갈래와 같은 이유다(B-228).
                 logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
                     appContext.getString(R.string.result_excel_export_failed),
-                    listOfNotNull(if (outOfSpace) message else null, e.message).joinToString("\n").ifBlank { null }))
+                    listOfNotNull(
+                        if (outOfSpace || outOfMemory) message else null,
+                        // `Error`는 message가 비어 있는 일이 흔하다 — 그러면 이력에 사유가 통째로
+                        // 사라지므로 종류 이름이라도 남긴다.
+                        e.message ?: e::class.java.simpleName
+                    ).joinToString("\n").ifBlank { null }))
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
                 }
@@ -1710,7 +1748,7 @@ class ExcelExporter(context: Context) {
             val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
             calculatedFields.mapNotNull { f ->
                 val formula = try {
-                    org.json.JSONObject(f.config).optString("formula", "")
+                    org.json.JSONObject(f.config).stringOr("formula", "")
                 } catch (_: Exception) { "" }
                 if (formula.isBlank()) return@mapNotNull null
                 // 깨진 수식은 **셀에 오류 표식을 쓴다**(U-9). 엑셀에서 훑는 사람에게 그 자리가

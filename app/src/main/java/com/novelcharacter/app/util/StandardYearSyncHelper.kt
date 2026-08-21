@@ -37,7 +37,7 @@ class StandardYearSyncHelper(
         // 연동 규칙 확인 (세계관 레벨 설정, age 필드의 config에 저장)
         val linkageRule = ageField?.let {
             try {
-                JSONObject(it.config).optString("linkageRule", StandardYearLink.RULE_AGE_ANCHOR)
+                JSONObject(it.config).stringOr("linkageRule", StandardYearLink.RULE_AGE_ANCHOR)
             } catch (_: Exception) { StandardYearLink.RULE_AGE_ANCHOR }
         } ?: StandardYearLink.RULE_AGE_ANCHOR
 

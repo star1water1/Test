@@ -183,6 +183,10 @@ class BodyAnalysisHelper {
         // 7. 정규화 비율
         val bwhRatioDisplay = "${bust.roundToInt()} : ${waist.roundToInt()} : ${hip.roundToInt()}"
         val normalizedRatio = if (bust > 0) {
+            // 화면에 보이기만 하는 비율이다 — `DynamicFieldRenderer`의 addRow가 유일한 소비처이고
+            // 저장·엑셀·PDF 어디에도 안 나간다. R-22가 *"사람에게 보이기만 하는 문구는 그대로
+            // 기본 로케일을 쓴다"*고 가른 쪽이라, 독일어 기기에서 `0,85`로 보이는 것이 옳다.
+            // platform-parity-ok: 표시 전용 — 저장·되파싱·키 어디에도 쓰이지 않는다
             "%.2f : %.2f : %.2f".format(1.0, waist / bust, hip / bust)
         } else bwhRatioDisplay
 

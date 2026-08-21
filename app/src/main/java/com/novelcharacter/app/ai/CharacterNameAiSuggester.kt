@@ -2,6 +2,7 @@ package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.util.NameBankMatch
 import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 캐릭터 **이름 추천** (B-123 · 설계 정본 `docs/feature_roadmap_2026-08.md` 7장, 계약 `ai_integration` A-8).
@@ -509,14 +510,14 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
                 // 문자열만 준 응답도 받는다 — {"names":["아리네"]}는 흔한 이탈이고 뜻은 명백하다.
                 val rawName = when (item) {
                     is String -> item
-                    is org.json.JSONObject -> item.optString("name")
+                    is org.json.JSONObject -> item.stringOr("name")
                     else -> null
                 }
                 val name = cleanName(rawName)
                 if (name.isNullOrBlank()) { dropped++; continue }
                 if (!seen.add(NameBankMatch.normalize(name))) { dropped++; continue }
                 if (out.size >= wanted) { dropped++; continue }
-                val reason = (item as? org.json.JSONObject)?.optString("why").orEmpty().trim()
+                val reason = (item as? org.json.JSONObject)?.stringOr("why").orEmpty().trim()
                     .let { if (it.length > MAX_REASON_CHARS) it.take(MAX_REASON_CHARS) + "…" else it }
                 out.add(Candidate(name, reason))
             }

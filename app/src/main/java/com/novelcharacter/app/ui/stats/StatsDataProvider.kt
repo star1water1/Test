@@ -18,6 +18,7 @@ import com.novelcharacter.app.util.StatsFieldPolicy
 import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.ValueDistributions
 import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 
 // ===== 요약 통계 =====
@@ -4742,7 +4743,7 @@ class StatsDataProvider {
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
-                    org.json.JSONObject(fd.config).optString("formula", "")
+                    org.json.JSONObject(fd.config).stringOr("formula", "")
                 } catch (_: Exception) { "" }
                 if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
             }
@@ -4805,7 +4806,7 @@ class StatsDataProvider {
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
-                    org.json.JSONObject(fd.config).optString("formula", "")
+                    org.json.JSONObject(fd.config).stringOr("formula", "")
                 } catch (_: Exception) { "" }
                 if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
             }
@@ -4869,7 +4870,7 @@ class StatsDataProvider {
         for ((universeId, fields) in fieldDefByUniverse) {
             val calcInfos = fields.filter { it.fieldType == FieldType.CALCULATED }.mapNotNull { fd ->
                 val formula = try {
-                    org.json.JSONObject(fd.config).optString("formula", "")
+                    org.json.JSONObject(fd.config).stringOr("formula", "")
                 } catch (_: Exception) { "" }
                 if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
             }

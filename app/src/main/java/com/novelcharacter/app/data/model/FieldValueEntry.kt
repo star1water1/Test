@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드 데이터 라이브러리 엔트리 — 한 필드가 가질 수 있는 값 하나의 정규(canonical) 레코드.
@@ -71,7 +72,7 @@ data class FieldValueEntry(
             return try {
                 val arr = org.json.JSONArray(json)
                 (0 until arr.length()).mapNotNull { i ->
-                    arr.optString(i).trim().takeIf { it.isNotEmpty() }
+                    arr.stringOr(i).trim().takeIf { it.isNotEmpty() }
                 }
             } catch (_: Exception) {
                 emptyList()

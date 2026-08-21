@@ -135,6 +135,7 @@ $MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/CsvTokens.kt
 $MAIN/util/RegexCharClasses.kt
+$MAIN/util/JsonText.kt
 $MAIN/util/MultiValueInput.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueSorter.kt
@@ -552,6 +553,7 @@ $TEST/ai/AiProtocolCodecTest.kt
 $TEST/ai/AiCreativityTest.kt
 $TEST/ai/PromptTokensTest.kt
 $TEST/util/RegexCharClassesTest.kt
+$TEST/util/JsonTextTest.kt
 $TEST/ai/PromptTemplatesTest.kt
 $TEST/ai/PromptTemplateValidatorTest.kt
 $TEST/ai/AiTokenPolicyTest.kt

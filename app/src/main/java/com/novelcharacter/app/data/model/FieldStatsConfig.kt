@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.model
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드별 통계 분석 설정.
@@ -163,8 +164,8 @@ data class FieldStatsConfig(
                         val obj = analysesArr.getJSONObject(i)
                         analyses.add(
                             AnalysisEntry(
-                                type = StatsType.fromKey(obj.optString("type")),
-                                chart = ChartType.fromKey(obj.optString("chart")),
+                                type = StatsType.fromKey(obj.stringOr("type")),
+                                chart = ChartType.fromKey(obj.stringOr("chart")),
                                 limit = obj.optInt("limit", 10)
                             )
                         )
@@ -182,7 +183,7 @@ data class FieldStatsConfig(
                         }
                     }
                     BinningConfig(
-                        mode = binningObj.optString("mode", "auto"),
+                        mode = binningObj.stringOr("mode", "auto"),
                         ranges = ranges
                     )
                 } else null
@@ -207,7 +208,7 @@ data class FieldStatsConfig(
                     }
                 }
 
-                val statsGroupBy = stats.optString("statsGroupBy", "value")
+                val statsGroupBy = stats.stringOr("statsGroupBy", "value")
 
                 FieldStatsConfig(enabled, analyses, binning, valueLabels, valueCategories, statsGroupBy)
             } catch (_: Exception) {

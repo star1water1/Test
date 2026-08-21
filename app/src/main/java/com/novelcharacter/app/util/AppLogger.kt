@@ -18,7 +18,7 @@ object AppLogger {
     private const val DATE_PATTERN = "yyyy-MM-dd HH:mm:ss"
 
     /** SimpleDateFormat은 스레드 안전하지 않으므로 호출 시마다 생성 */
-    private fun newDateFormat() = SimpleDateFormat(DATE_PATTERN, Locale.getDefault())
+    private fun newDateFormat() = SimpleDateFormat(DATE_PATTERN, Locale.US)
 
     // 엔트리 구분자 (파싱용)
     private const val ENTRY_SEPARATOR = "──────────"

@@ -96,7 +96,7 @@ object ImportedFormulaAudit {
      * 여기서 또 말하면 한 사실이 두 줄로 뜬다.
      */
     private fun formulaOf(def: FieldDefinition): String? = try {
-        JSONObject(def.config).optString("formula", "").takeIf { it.isNotEmpty() }
+        JSONObject(def.config).stringOr("formula", "").takeIf { it.isNotEmpty() }
     } catch (_: Exception) {
         null
     }

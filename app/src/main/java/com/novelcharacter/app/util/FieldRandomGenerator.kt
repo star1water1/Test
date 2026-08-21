@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import java.util.Locale
 
 /**
  * 필드 타입별 랜덤 값 생성기.
@@ -35,7 +36,7 @@ object FieldRandomGenerator {
             (1..maxDay).map { day -> month to day }
         }
         val (m, d) = validDates.random()
-        return "%02d-%02d".format(m, d)
+        return String.format(Locale.US, "%02d-%02d", m, d)
     }
 
     /**
@@ -50,7 +51,7 @@ object FieldRandomGenerator {
         val value = if (safeMin == safeMax) safeMin
         else safeMin + Random.nextDouble() * (safeMax - safeMin)
         return if (decimalPlaces <= 0) value.roundToInt().toString()
-        else "%.${decimalPlaces}f".format(value)
+        else String.format(Locale.US, "%.${decimalPlaces}f", value)
     }
 
     /** SELECT 필드: options 중 하나. 빈 리스트면 null. */

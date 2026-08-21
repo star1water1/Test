@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드별 값 라이브러리 입력 모드 설정.
@@ -30,7 +31,7 @@ data class FieldValueLibraryConfig(
             return try {
                 val root = JSONObject(configJson)
                 val obj = root.optJSONObject(KEY) ?: return FieldValueLibraryConfig()
-                val mode = obj.optString("inputMode", MODE_SUGGEST)
+                val mode = obj.stringOr("inputMode", MODE_SUGGEST)
                 FieldValueLibraryConfig(if (mode in MODES) mode else MODE_SUGGEST)
             } catch (_: Exception) {
                 FieldValueLibraryConfig()

@@ -253,7 +253,7 @@ object DuelFieldLinks {
         return try {
             val array = JSONArray(json)
             normalize((0 until array.length()).mapNotNull { i ->
-                array.optString(i, "").takeIf { it.isNotEmpty() }?.let { parseToken(it) }
+                array.stringOr(i, "").takeIf { it.isNotEmpty() }?.let { parseToken(it) }
             })
         } catch (_: Exception) {
             emptyList()

@@ -90,7 +90,7 @@ object FieldValueTokenizer {
                 } else {
                     // 구조화 설정 없는 BODY_SIZE — separator로 분리 (파트별 값만 반환)
                     val separator = try {
-                        JSONObject(fd.config).optString("separator", "-")
+                        JSONObject(fd.config).stringOr("separator", "-")
                     } catch (_: Exception) { "-" }
                     val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
                     if (parts.size >= 2) parts else listOf(rawValue.trim())

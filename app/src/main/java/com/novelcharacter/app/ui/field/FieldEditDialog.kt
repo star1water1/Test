@@ -44,6 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.novelcharacter.app.util.stringOr
 
 class FieldEditDialog : DialogFragment() {
 
@@ -1997,7 +1998,7 @@ class FieldEditDialog : DialogFragment() {
                     }
                 }
                 rules.add(BodyAnalysisConfig.BodyTypeRule(
-                    label = obj.optString("label", ""),
+                    label = obj.stringOr("label", ""),
                     conditions = conditions,
                     priority = obj.optInt("priority", i)
                 ))
@@ -2193,7 +2194,7 @@ class FieldEditDialog : DialogFragment() {
             if (semanticRole == SemanticRole.AGE) {
                 linkageRuleContainer?.visibility = View.VISIBLE
                 try {
-                    val linkageRule = org.json.JSONObject(field.config).optString("linkageRule", "age_anchor")
+                    val linkageRule = org.json.JSONObject(field.config).stringOr("linkageRule", "age_anchor")
                     linkageRuleSpinner?.setSelection(if (linkageRule == "birth_anchor") 1 else 0)
                 } catch (_: Exception) {}
             }
@@ -2201,8 +2202,8 @@ class FieldEditDialog : DialogFragment() {
             if (semanticRole == SemanticRole.ALIVE) {
                 try {
                     val configJson = org.json.JSONObject(field.config)
-                    val existingAlive = configJson.optString("aliveValue", "")
-                    val existingDead = configJson.optString("deadValue", "")
+                    val existingAlive = configJson.stringOr("aliveValue", "")
+                    val existingDead = configJson.stringOr("deadValue", "")
                     if (existingAlive.isNotEmpty()) existingAliveValue = existingAlive
                     if (existingDead.isNotEmpty()) existingDeadValue = existingDead
                 } catch (_: Exception) {}

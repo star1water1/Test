@@ -43,7 +43,7 @@ object CalculatedCellEcho {
 
     /** 이 정의의 수식. 없거나 못 읽으면 `null`. */
     fun formulaOf(field: FieldDefinition): String? = try {
-        JSONObject(field.config).optString("formula", "").takeIf { it.isNotBlank() }
+        JSONObject(field.config).stringOr("formula", "").takeIf { it.isNotBlank() }
     } catch (_: Exception) {
         null
     }

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * GRADE 필드 config의 **등급 체계 참조** 표현 — 단일 소스 (U-1).
@@ -33,7 +34,7 @@ object GradeSystemRef {
 
     /** config가 참조하는 체계 code. 키 없음·빈 문자열·손상 JSON = null(독자 표). */
     fun codeFromConfig(configJson: String): String? = try {
-        JSONObject(configJson).optString(CONFIG_KEY, "").takeIf { it.isNotBlank() }
+        JSONObject(configJson).stringOr(CONFIG_KEY, "").takeIf { it.isNotBlank() }
     } catch (_: Exception) {
         null
     }

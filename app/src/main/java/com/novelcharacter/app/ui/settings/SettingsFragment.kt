@@ -826,7 +826,7 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.backup_export_continue) { _, _ ->
                 // 앱의 보관물이다 — 건네고 나서도 지우지 않는다.
                 pendingBackupExport = PendingExport(latestBackup, ownsFile = false)
-                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
                 val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
                 backupExportLauncher.launch(fileName)
             }
@@ -984,7 +984,7 @@ class SettingsFragment : Fragment() {
                 }
                 // 이 화면이 캐시에 만든 임시본이다 — 끝나면 지우고, 그 사이에는 지켜야 한다.
                 pendingBackupExport = PendingExport(portableFile, ownsFile = true)
-                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
                 val fileName =
                     "NovelCharacter_Backup_${dateFormat.format(Date(deviceEncFile.lastModified()))}_portable.enc"
                 backupExportLauncher.launch(fileName)

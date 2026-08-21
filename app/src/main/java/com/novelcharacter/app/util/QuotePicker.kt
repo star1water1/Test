@@ -93,7 +93,7 @@ object QuotePicker {
      * 열 때마다 대사가 바뀌고, 그러면 위의 *"같은 날 두 자리에 같은 대사"*가 깨진다.
      * 자정을 넘기면 값이 바뀌어 저절로 다음 대사로 넘어간다.
      */
-    fun todayStamp(calendar: java.util.Calendar = java.util.Calendar.getInstance()): Long {
+    fun todayStamp(calendar: java.util.Calendar = java.util.Calendar.getInstance(java.util.Locale.US)): Long {
         val y = calendar.get(java.util.Calendar.YEAR).toLong()
         val m = (calendar.get(java.util.Calendar.MONTH) + 1).toLong()
         val d = calendar.get(java.util.Calendar.DAY_OF_MONTH).toLong()

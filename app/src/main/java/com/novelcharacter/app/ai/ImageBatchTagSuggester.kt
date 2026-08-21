@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ai
 
+import com.novelcharacter.app.util.stringOr
+
 /**
  * 이미지 **내용**을 보고 태그를 제안한다 — 일괄 (B-121, 설계 `docs/feature_roadmap_2026-08.md` 2-3).
  *
@@ -343,7 +345,7 @@ class ImageBatchTagSuggester(
                 val picked = LinkedHashMap<String, Suggestion>()
                 if (tagsArr != null) {
                     for (t in 0 until tagsArr.length()) {
-                        val raw1 = tagsArr.optString(t).trim()
+                        val raw1 = tagsArr.stringOr(t).trim()
                         if (raw1.isEmpty() || raw1.length > AiPromptPolicy.IMAGE_TAG_MAX_LENGTH) { blank++; continue }
                         val folded = foldToVocabulary(raw1, folding)
                         val tag = folded ?: raw1

@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 캐릭터 필드 값 AI 추천 — 생일 포함 모든 편집 가능 필드의 값을 추천 이유와 함께 제안한다.
@@ -1268,9 +1269,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
             for (i in 0 until (arr?.length() ?: 0)) {
                 val obj = arr?.optJSONObject(i) ?: continue
-                val key = obj.optString("key").trim()
-                val rawValue = obj.optString("value").trim()
-                val reason = obj.optString("reason").trim()
+                val key = obj.stringOr("key").trim()
+                val rawValue = obj.stringOr("value").trim()
+                val reason = obj.stringOr("reason").trim()
                 if (key.isEmpty() && rawValue.isEmpty()) continue
                 val spec = byKey[key]
                 if (spec == null) {
@@ -1284,7 +1285,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     note(spec, MissingCause.DUPLICATE, rawValue)
                     continue
                 }
-                val confidence = Confidence.fromWire(obj.optString("confidence"))
+                val confidence = Confidence.fromWire(obj.stringOr("confidence"))
                 // 미표기(null)는 통과시킨다 — 강도를 모른다는 이유로 버리면 생략과 같은 결과다
                 if (confidence != null && !confidence.meets(minConfidence)) {
                     dropped++

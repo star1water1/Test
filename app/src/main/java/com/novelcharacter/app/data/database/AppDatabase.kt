@@ -77,6 +77,7 @@ import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.stringOr
 
 @Database(
     entities = [
@@ -1317,7 +1318,7 @@ abstract class AppDatabase : RoomDatabase() {
                         val options = json.optJSONArray("options")
                         if (options != null) {
                             for (i in 0 until options.length()) {
-                                val opt = options.optString(i)
+                                val opt = options.stringOr(i)
                                 if (opt == "생존" && !json.has("aliveValue")) json.put("aliveValue", "생존")
                                 if (opt == "사망" && !json.has("deadValue")) json.put("deadValue", "사망")
                             }

@@ -145,7 +145,15 @@ class AutoBackupWorker(
                 backupWarning
             ))
             Result.success()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // **`Exception`이 아니라 `Throwable`이다.** 이 경로에서 실제로 난 안드로이드 전용
+            // 실패는 전부 `Error`였다 — B-250의 `NoClassDefFoundError`(기기에 `java.awt`가 없다)와,
+            // 그 폴백이 기기를 몰아넣은 DOM 전량 적재의 `OutOfMemoryError`. 둘 다 `Exception`이
+            // 아니라 **아래 고지 기구를 통째로 건너뛰었다**: `recordFailure`도, 실패 알림도,
+            // 작업 이력도 돌지 않고 설정 화면은 **직전 성공 시각을 그대로 보여 준다.**
+            // 사용자는 없는 백업을 있다고 믿는다 — B-250이 이 항목을 🔴로 부른 이유가 그것이다.
+            // 형제 자리(`ExportWorkbook.kt`)는 이미 `LinkageError`를 명시로 잡고 있었는데,
+            // 정작 *실패를 알리는* 이 자리에만 그 구분이 없었다.
             // 취소(stop)는 실패가 아니다 — 산출물이 없으므로 기록할 실패도 없다(B-96).
             // `isStopped`도 함께 보는 이유: 취소 시점에 따라 접힌 예외가
             // ExportCancelledException이 아니라 그 뒤에 따라온 I/O 예외일 수 있다.

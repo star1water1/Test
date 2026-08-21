@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.model
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 구조화 입력 파트가 몸의 어느 부위를 재는가.
@@ -641,7 +642,7 @@ data class BodyAnalysisConfig(
                         cupMapping.add(
                             CupMappingEntry(
                                 maxDiff = entry.optDouble("maxDiff", 999.0),
-                                label = entry.optString("label", "?")
+                                label = entry.stringOr("label", "?")
                             )
                         )
                     }
@@ -668,7 +669,7 @@ data class BodyAnalysisConfig(
                         }
                         bodyTypeRules.add(
                             BodyTypeRule(
-                                label = ruleObj.optString("label", ""),
+                                label = ruleObj.stringOr("label", ""),
                                 conditions = conditions,
                                 priority = ruleObj.optInt("priority", i)
                             )
@@ -676,7 +677,7 @@ data class BodyAnalysisConfig(
                     }
                 }
 
-                val defaultBodyType = obj.optString("defaultBodyType", "보통체형")
+                val defaultBodyType = obj.stringOr("defaultBodyType", "보통체형")
 
                 // Rib offset — 키가 없으면 기본값. 종전 기본이 0이던 동안 0은 저장된 적이
                 // 없으므로(아래 toConfig의 기본값 생략 규칙), 이 갈아타기로 잃는 저장값은 없다.
@@ -702,8 +703,8 @@ data class BodyAnalysisConfig(
                             }
                         }
                         bodyTagRules.add(BodyTagRule(
-                            label = ruleObj.optString("label", ""),
-                            layer = ruleObj.optString("layer", "silhouette"),
+                            label = ruleObj.stringOr("label", ""),
+                            layer = ruleObj.stringOr("layer", "silhouette"),
                             conditions = conditions,
                             priority = ruleObj.optInt("priority", i)
                         ))
@@ -740,7 +741,7 @@ data class BodyAnalysisConfig(
                 val slotsArr = obj.optJSONArray("partSlots")
                 if (slotsArr != null) {
                     for (i in 0 until slotsArr.length()) {
-                        val name = slotsArr.optString(i, "")
+                        val name = slotsArr.stringOr(i, "")
                         partSlots.add(
                             runCatching { BodySlot.valueOf(name.trim().uppercase()) }
                                 .getOrDefault(BodySlot.NONE)
@@ -765,7 +766,7 @@ data class BodyAnalysisConfig(
 
                 // 목표 비율 기준 — 없거나 모르는 이름이면 AUTO(종전 동작 그대로).
                 val targetRatioSource = TargetRatioSource.fromKey(
-                    obj.optString("targetRatioSource").takeIf { it.isNotBlank() }
+                    obj.stringOr("targetRatioSource").takeIf { it.isNotBlank() }
                 )
 
                 BodyAnalysisConfig(
@@ -942,23 +943,23 @@ data class BodyAnalysisConfig(
             }
             return GenerationPreset(
                 heightOptions = read("heights") {
-                    HeightOption(it.optString("label"), it.optDouble("center"), it.optDouble("variance"))
+                    HeightOption(it.stringOr("label"), it.optDouble("center"), it.optDouble("variance"))
                 },
                 torsoOptions = read("torsos") {
                     TorsoOption(
-                        it.optString("label"), it.optDouble("waistRatio"),
+                        it.stringOr("label"), it.optDouble("waistRatio"),
                         it.optDouble("bmi"), it.optDouble("maxRatio")
                     )
                 },
                 bustOptions = read("busts") {
-                    BustOption(it.optString("label"), it.optDouble("cupDiff"))
+                    BustOption(it.stringOr("label"), it.optDouble("cupDiff"))
                 },
                 hipOptions = read("hips") {
-                    HipOption(it.optString("label"), it.optDouble("hipBonus"), it.optDouble("maxDiff"))
+                    HipOption(it.stringOr("label"), it.optDouble("hipBonus"), it.optDouble("maxDiff"))
                 },
                 bodyPresets = read("presets") {
                     BodyPreset(
-                        it.optString("label"), it.optInt("torso", -1),
+                        it.stringOr("label"), it.optInt("torso", -1),
                         it.optInt("bust", -1), it.optInt("hip", -1)
                     )
                 }

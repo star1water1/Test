@@ -30,6 +30,7 @@ import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * '앱 설정' 시트의 **읽기·쓰기** — [AppSettingsKeys]가 선언한 것을 실제 저장소에 잇는다 (B-105).
@@ -301,7 +302,7 @@ object AppSettingsBindings {
                     val keyStore = AiKeyStore(ctx)
                     var applied = 0
                     for (id in obj.keys()) {
-                        val raw = obj.optString(id, "")
+                        val raw = obj.stringOr(id, "")
                         if (raw.isNotBlank()) { keyStore.putKey(id, raw); applied++ }
                     }
                     if (applied > 0) Applied.Yes else Applied.No("담긴 키가 없습니다")

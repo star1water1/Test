@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.model
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * GRADE 필드 config의 **대결 등급 산정 속성** 표현 — 단일 소스 (B-113).
@@ -112,7 +113,7 @@ object DuelGradeRef {
      */
     fun fromConfig(configJson: String): Spec? = try {
         val node = JSONObject(configJson).optJSONObject(CONFIG_KEY)
-        val axisCode = node?.optString(AXIS_CODE_KEY, "")?.takeIf { it.isNotBlank() }
+        val axisCode = node?.stringOr(AXIS_CODE_KEY, "")?.takeIf { it.isNotBlank() }
         if (node == null || axisCode == null) null
         else Spec(axisCode, cutsFrom(node.optJSONArray(CUTS_KEY)), lastAppliedFrom(node.optJSONObject(LAST_APPLIED_KEY)))
     } catch (_: Exception) {
@@ -257,7 +258,7 @@ object DuelGradeRef {
         val cuts = ArrayList<Cut>(array.length())
         for (i in 0 until array.length()) {
             val obj = array.optJSONObject(i) ?: continue
-            val label = obj.optString(LABEL_KEY, "").takeIf { it.isNotBlank() } ?: continue
+            val label = obj.stringOr(LABEL_KEY, "").takeIf { it.isNotBlank() } ?: continue
             val raw = obj.opt(TOP_PERCENT_KEY)
             val percent = (raw as? Number)?.toDouble() ?: (raw as? String)?.toDoubleOrNull() ?: continue
             if (!percent.isFinite()) continue
@@ -275,7 +276,7 @@ object DuelGradeRef {
             val keys = node.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
-                val label = node.optString(key, "")
+                val label = node.stringOr(key, "")
                 if (label.isNotBlank()) assignments[key] = label
             }
         }

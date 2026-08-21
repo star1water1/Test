@@ -23,6 +23,7 @@ import com.novelcharacter.app.util.DetailListSort
 import kotlinx.coroutines.launch
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -257,7 +258,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             val refRegex = Regex("""field\([${RegexCharClasses.WHITESPACE}]*(['"]?)${Regex.escape(old.key)}\1[${RegexCharClasses.WHITESPACE}]*\)""")
             for (f in referencing) {
                 val cfg = org.json.JSONObject(f.config)
-                val formula = cfg.optString("formula", "")
+                val formula = cfg.stringOr("formula", "")
                 val updated = refRegex.replace(formula) { m ->
                     "field(${m.groupValues[1]}${new.key}${m.groupValues[1]})"
                 }
@@ -448,7 +449,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         return allFields.filter { field ->
             if (field.fieldType != FieldType.CALCULATED) return@filter false
             val formula = try {
-                org.json.JSONObject(field.config).optString("formula", "")
+                org.json.JSONObject(field.config).stringOr("formula", "")
             } catch (_: Exception) { "" }
             formula.contains("field('$fieldKey')") ||
                 formula.contains("field(\"$fieldKey\")") ||

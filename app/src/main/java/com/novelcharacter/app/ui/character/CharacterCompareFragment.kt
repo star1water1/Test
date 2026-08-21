@@ -20,6 +20,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.stringOr
 
 class CharacterCompareFragment : Fragment() {
 
@@ -93,7 +94,7 @@ class CharacterCompareFragment : Fragment() {
                             val evaluator = com.novelcharacter.app.util.FormulaEvaluator(valueMap, fields)
                             for (field in calculatedFields) {
                                 val formula = try {
-                                    org.json.JSONObject(field.config).optString("formula", "")
+                                    org.json.JSONObject(field.config).stringOr("formula", "")
                                 } catch (_: Exception) { "" }
                                 if (formula.isBlank()) continue
                                 // 비교표에서도 고장 난 수식은 오류로 보인다 — 빈 칸으로 두면

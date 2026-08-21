@@ -2,6 +2,7 @@ package com.novelcharacter.app.data.model
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 구조화 입력 설정.
@@ -70,7 +71,7 @@ data class StructuredInputConfig(
                 val obj = root.optJSONObject(KEY) ?: return StructuredInputConfig()
 
                 val enabled = obj.optBoolean("enabled", false)
-                val separator = obj.optString("separator", "-")
+                val separator = obj.stringOr("separator", "-")
 
                 val parts = mutableListOf<Part>()
                 val partsArr = obj.optJSONArray("parts")
@@ -78,9 +79,9 @@ data class StructuredInputConfig(
                     for (i in 0 until partsArr.length()) {
                         val p = partsArr.getJSONObject(i)
                         parts.add(Part(
-                            label = p.optString("label", ""),
-                            suffix = p.optString("suffix", ""),
-                            inputType = p.optString("inputType", "text")
+                            label = p.stringOr("label", ""),
+                            suffix = p.stringOr("suffix", ""),
+                            inputType = p.stringOr("inputType", "text")
                         ))
                     }
                 }

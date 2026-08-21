@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드 값의 표시 방식을 결정하는 포맷.
@@ -24,7 +25,7 @@ enum class DisplayFormat(val key: String, val label: String) {
         // ConfigParseCache의 KDoc. enum이라 공유해도 되고, 키가 config 문자열이라 낡지 않는다.
         private val cache = ConfigParseCache { config ->
             try {
-                fromKey(JSONObject(config).optString("displayFormat", "plain"))
+                fromKey(JSONObject(config).stringOr("displayFormat", "plain"))
             } catch (_: Exception) {
                 PLAIN
             }

@@ -123,12 +123,12 @@ object ExcelCellValue {
         val date = p.javaDate
         return if (date != null) {
             try {
-                val cal = Calendar.getInstance().apply { time = date }
+                val cal = Calendar.getInstance(Locale.US).apply { time = date }
                 val year = cal.get(Calendar.YEAR)
                 val month = cal.get(Calendar.MONTH) + 1
                 val day = cal.get(Calendar.DAY_OF_MONTH)
-                if (year == 1900 || year == 1904) "%02d-%02d".format(month, day)
-                else "%d-%02d-%02d".format(year, month, day)
+                if (year == 1900 || year == 1904) String.format(Locale.US, "%02d-%02d", month, day)
+                else String.format(Locale.US, "%d-%02d-%02d", year, month, day)
             } catch (_: Exception) {
                 numericFallback(p.numericValue)
             }
