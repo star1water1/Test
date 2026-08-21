@@ -133,14 +133,27 @@ class EventDensityBar @JvmOverloads constructor(
         }
 
         // 창 강조는 밀도 위에 옅게 덮는다 — 축을 바꾸지 않으므로 창 밖 사건도 그대로 보인다.
+        //
+        // **폭이 0이어도 그린다**(콜드 검토 2026.08.21). 줌을 가장 좁게(월 단위) 올리면
+        // 창이 `(center, center)`라 폭이 0이고, 축이 최대 1만 년이라 줌이 낮아도 폭이
+        // 1px 미만이 된다 — 종전 조건(`wt > wf`·`right > left`)에서는 **가장 좁게 볼 때
+        // 강조가 통째로 사라졌다.** 축을 단일화하면서 살리려던 *"지금 목록에 실린 구간"*이
+        // 정작 그것이 가장 필요한 자리에서 안 보인 셈이다. 최소 폭을 보장해 중심을 가리키는
+        // 얇은 띠로 남긴다.
         val wf = windowFrom
         val wt = windowTo
-        if (wf != null && wt != null && wt > wf) {
+        if (wf != null && wt != null && wt >= wf) {
             val left = ((wf - rangeFrom) / totalRange * w).coerceIn(0f, w)
             val right = ((wt - rangeFrom) / totalRange * w).coerceIn(0f, w)
-            if (right > left) canvas.drawRect(left, 0f, right, h, windowPaint)
+            val minWidth = minWindowWidthPx.coerceAtMost(w)
+            val drawRight = maxOf(right, left + minWidth).coerceAtMost(w)
+            val drawLeft = (drawRight - maxOf(right - left, minWidth)).coerceAtLeast(0f)
+            canvas.drawRect(drawLeft, 0f, drawRight, h, windowPaint)
         }
     }
+
+    /** 창 강조의 최소 폭 — 폭이 0·1px 미만이어도 중심을 가리키는 띠는 남는다. */
+    private val minWindowWidthPx = 2f * resources.displayMetrics.density
 
     private var longPressRunnable: Runnable? = null
     private var downX = 0f
