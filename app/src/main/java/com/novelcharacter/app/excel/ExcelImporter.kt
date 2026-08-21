@@ -49,6 +49,10 @@ class ExcelImporter(context: Context) {
      *
      * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
      * 쓰는 쪽은 IO 코루틴이고 읽는 쪽은 메인(`onScreenGone`)이라 `@Volatile`이 필요하다.
+     *
+     * ⚠️ **이 값은 '지금 전송이 도는가'가 아니다.** 아래 [reportAbort]가 *"이 회차는 이미
+     * 고지했다"*는 뜻으로 내리는데, 끊기지 않는 구간의 일은 그 뒤에도 돈다. 그 물음의
+     * 답은 [ActiveTransfers]가 회차의 진짜 경계에서 따로 든다.
      */
     @Volatile private var phase: TransferPhase? = null
 
@@ -272,11 +276,8 @@ class ExcelImporter(context: Context) {
         deliverOffscreen(title, body)
     }
 
-    /** 지금 무언가를 띄우거나 물을 화면이 있는가. */
-    private fun hasScreen(): Boolean {
-        val act = currentActivityRef?.get()
-        return act != null && !act.isFinishing && !act.isDestroyed
-    }
+    /** 지금 무언가를 띄우거나 물을 화면이 있는가 — 판정은 [TransferScreenPresence] 한 자리가 든다. */
+    private fun hasScreen(): Boolean = TransferScreenPresence.canShow(currentActivityRef?.get())
 
     /**
      * 묻는 창이 **답 없이** 닫혔다 — 그 뜻을 여기서 가른다 (B-228).
@@ -400,13 +401,33 @@ class ExcelImporter(context: Context) {
      * 복호화된 백업 파일 등 이미 로컬에 있는 파일에 사용.
      * 호출자가 파일 수명을 관리해야 함 (가져오기 완료 후 삭제 가능).
      */
-    fun importFromLocalFile(file: File) {
+    /**
+     * 앱 안에 이미 있는 파일을 가져온다.
+     *
+     * @param ownsFile 넘긴 쪽이 **소유권까지 넘겼는가.** 참이면 가져오기가 끝난 뒤
+     *   이 함수가 파일을 지운다 — 형제 [importFromUri]가 자기 임시 파일에 대해 이미 하는
+     *   그 자리(`try { routeImport(...) } finally { delete() }`)와 같은 규약이다.
+     *
+     *   **없으면 소유자가 아무도 없다**: 부르는 쪽은 *"비동기로 읽으므로 즉시 지우면 경쟁
+     *   조건"*이라며 삭제를 포기하고, 받는 쪽은 남의 파일로 보아 지우지 않았다. 그래서
+     *   복원할 때마다 백업 두 벌 크기(복호화 xlsx + 옮겨 온 .enc)가 캐시에 쌓였다.
+     *   이 자리는 가져오기가 끝난 뒤라 경쟁 조건이 원리적으로 없고, 취소·예외·화면 파괴
+     *   어느 갈래로 빠져나가도 지나간다.
+     */
+    fun importFromLocalFile(file: File, ownsFile: Boolean = false) {
         // **구간은 `launch` 밖에서 세운다** (B-228) — 안에서 세우면 코루틴이 실제로 돌기 전의
         // 짧은 틈에 화면이 사라졌을 때 [TransferInterruption]이 *"돌던 것이 없다"*로 읽어 침묵한다.
         beginPhase(TransferPhase.IMPORT_INTAKE)
+        // 캐시 비우기가 이 회차의 임시 파일을 앗아가지 않게 등재한다 — 내리는 것은
+        // 바깥 `finally`다(고지 부기를 내리는 자리가 아니다. [ActiveTransfers] KDoc).
+        ActiveTransfers.enter(this)
         ensureActiveScope().launch {
             try {
-                routeImport(file)
+                try {
+                    routeImport(file)
+                } finally {
+                    if (ownsFile) file.delete()
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 화면이 사라져 끊겼다 — 고지는 [onScreenGone]이 이미 했다(B-228).
                 // 여기서 '실패'로 적으면 실패가 아닌 것을 실패라 말하게 된다.
@@ -429,6 +450,7 @@ class ExcelImporter(context: Context) {
                 }
             } finally {
                 phase = null
+                ActiveTransfers.exit(this@ExcelImporter)
             }
         }
     }
@@ -436,6 +458,7 @@ class ExcelImporter(context: Context) {
     private fun importFromUri(uri: Uri) {
         // 구간은 `launch` 밖에서 세운다 — 근거는 [importFromLocalFile]의 같은 줄에 있다(B-228).
         beginPhase(TransferPhase.IMPORT_INTAKE)
+        ActiveTransfers.enter(this)
         ensureActiveScope().launch {
             // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
             // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
@@ -517,6 +540,7 @@ class ExcelImporter(context: Context) {
                 }
             } finally {
                 phase = null
+                ActiveTransfers.exit(this@ExcelImporter)
                 dismissTaskProgress(progress)
             }
         }
@@ -542,9 +566,23 @@ class ExcelImporter(context: Context) {
             ImportFileKind.OTHER_ZIP -> withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_unsupported_zip, Toast.LENGTH_LONG).show()
             }
+            // **암호 파일·통합문서 아님은 열기 전에 가린다.** 종전에는 둘 다 열어 본 뒤
+            // 예외 클래스로 판정해, 같은 파일이 크기에 따라(DOM ↔ 스트리밍) 다른 안내를 받았다.
+            // 아직 아무것도 돌기 전의 거절이라 토스트만 내고 이력에도 남기지 않는다
+            // (OTHER_ZIP과 같은 처분 — deliverTerminal KDoc의 경계).
+            ImportFileKind.ENCRYPTED_WORKBOOK -> withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    appContext, com.novelcharacter.app.R.string.import_workbook_encrypted, Toast.LENGTH_LONG
+                ).show()
+            }
+            ImportFileKind.NOT_WORKBOOK -> withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    appContext, com.novelcharacter.app.R.string.import_not_workbook, Toast.LENGTH_LONG
+                ).show()
+            }
             // B-8: 크기로 거부하지 않는다. 큰 파일은 스트리밍 경로가 받는다([openImportSource]) —
             // 종전에는 앱이 만든 백업이 128MB를 넘으면 앱 자신이 복원을 거부했다(자기모순).
-            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> importFromXlsx(file, progress = progress)
+            ImportFileKind.PLAIN_XLSX, ImportFileKind.LEGACY_OLE2 -> importFromXlsx(file, progress = progress)
         }
     }
 
@@ -1335,6 +1373,9 @@ class ExcelImporter(context: Context) {
                 // 아니라는 ZipException으로 거절한다. 그 밖(캐시 읽기 실패 등)은 형식이 아니라
                 // 읽기의 실패이므로 종전 일반 실패 경로로 던진다 — 멀쩡한 형식에 "통합문서가
                 // 아니다"라고 단정하면 사용자를 CSV 변환으로 보낸다(확인 없는 단정 금지 — B-225).
+                // **이 목록은 이제 방어선이다** — 정체 판정은 열기 전에 [ImportFileFormat]이
+                // 파일에 물어서 끝낸다(같은 문구를 가리키므로 둘이 갈리지 않는다). 여기 남는
+                // 것은 OLE2 머리를 달고도 POI가 열지 못한 부류(깨진 구형 .xls 등)다.
                 val notWorkbook = e is org.apache.poi.UnsupportedFileFormatException ||
                     e is org.apache.poi.EmptyFileException ||
                     e is java.util.zip.ZipException

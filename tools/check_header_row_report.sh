@@ -76,7 +76,11 @@ PY
 SCAN2=$(python3 - "$TARGET" <<'PY2'
 import re, sys
 lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
-BAD = re.compile(r'\bfor \(\s*\w+ in 1\.\.\s*\w+\.lastRowNum\s*\)')
+# **`for (…)` 꼴만 보면 그물이 샌다** — 같은 범위를 `(1..sheet.lastRowNum).mapNotNull { … }`
+# 같은 **표현식**으로 쓰는 자리가 실제로 둘 있었고(이미지 시트의 미리보기·가져오기), 그 둘은
+# 이 검사를 통과한 채 헤더 행을 데이터로 세었다. 그래서 판정을 루프 문법이 아니라
+# **범위 리터럴 자체**에 건다 — 어떤 표현식 안에 있든 잡힌다.
+BAD = re.compile(r'\b1\.\.\s*\w+\.lastRowNum\b')
 found = []
 for n, l in enumerate(lines):
     st = l.lstrip()

@@ -22,9 +22,9 @@
 # DAO 인터페이스를 포함해야 테스트의 Fake 구현체가 실제로 검증된다 —
 # DAO 에 메서드를 추가하고 Fake 를 갱신하지 않는 실수가 CI 전에 잡힌다.
 set -u
-SP="${JARS_DIR:-/tmp/claude-0/-home-user-Test/6a87d14f-0af6-505a-8734-77051e12d059/scratchpad}"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 . "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # jar 버전 단일 소스 (B-84)
+SP="${JARS_DIR:-$(jvm_env_default_jars_dir)}"
 jvm_env_require_jars "$SP"
 MAIN=$REPO/app/src/main/java/com/novelcharacter/app
 TEST=$REPO/app/src/test/java/com/novelcharacter/app
@@ -108,6 +108,9 @@ $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/TransferInterruption.kt
+$MAIN/excel/ActiveTransfers.kt
+$MAIN/util/CacheSweep.kt
+$MAIN/util/GraphFactionNarrow.kt
 $MAIN/excel/SheetResolver.kt
 $MAIN/excel/UniverseSheetPlan.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
@@ -211,6 +214,7 @@ $MAIN/util/FormulaEvaluator.kt
 $MAIN/util/FormulaValidator.kt
 $MAIN/util/ImportedFormulaAudit.kt
 $MAIN/util/FormulaDisplay.kt
+$MAIN/util/CalculatedCellEcho.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/util/GradeTable.kt
 $MAIN/util/FactionMembershipMatcher.kt
@@ -372,6 +376,8 @@ $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/excel/TransferInterruptionTest.kt
+$TEST/util/CacheSweepTest.kt
+$TEST/util/GraphFactionNarrowTest.kt
 $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
 $TEST/util/RequiredFieldGapsTest.kt
@@ -387,6 +393,7 @@ $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
+$TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
 $TEST/util/CrossTableFoldTest.kt
@@ -518,6 +525,7 @@ $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/ui/character/InitialHydrationGuardTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
+$TEST/stats/FactionMemberCountKeyTest.kt
 $TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/util/NameBankMatchTest.kt

@@ -45,13 +45,13 @@ class UniverseAdapter(
     private val reorderList = mutableListOf<Universe>()
 
     /** 세계관에 속한 캐릭터의 랜덤 이미지 경로를 반환하는 콜백 */
-    var resolveRandomCharacterImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    var resolveRandomCharacterImage: ((universeId: Long, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
     /** 특정 캐릭터의 이미지 경로를 반환하는 콜백 */
-    var resolveCharacterImageById: ((characterId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    var resolveCharacterImageById: ((characterId: Long, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
     /** 세계관에 속한 작품의 랜덤 이미지 경로를 반환하는 콜백 */
-    var resolveRandomNovelImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    var resolveRandomNovelImage: ((universeId: Long, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
     /** 특정 작품의 이미지 경로를 반환하는 콜백 */
-    var resolveNovelImageById: ((novelId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    var resolveNovelImageById: ((novelId: Long, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
 
     /**
      * 이 화면 진입의 랜덤 시드 (B-106 ⓑ · 확정 7-3) — **캐릭터·작품과 같은 주기다.**
@@ -234,8 +234,8 @@ class UniverseAdapter(
                     }
                 }
                 Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
-                    resolveRandomCharacterImage?.invoke(universe.id) { resolvedPath ->
-                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                    resolveRandomCharacterImage?.invoke(universe.id, imageSeed) { resolvedPath ->
+                        if (resolvedPath != null && isStillBound(universe.id)) {
                             loadImageFromPath(resolvedPath, universe.id)
                         }
                     }
@@ -243,16 +243,16 @@ class UniverseAdapter(
                 Universe.IMAGE_MODE_SELECT_CHARACTER -> {
                     val charId = universe.imageCharacterId
                     if (charId != null) {
-                        resolveCharacterImageById?.invoke(charId) { resolvedPath ->
-                            if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                        resolveCharacterImageById?.invoke(charId, imageSeed) { resolvedPath ->
+                            if (resolvedPath != null && isStillBound(universe.id)) {
                                 loadImageFromPath(resolvedPath, universe.id)
                             }
                         }
                     }
                 }
                 Universe.IMAGE_MODE_RANDOM_NOVEL -> {
-                    resolveRandomNovelImage?.invoke(universe.id) { resolvedPath ->
-                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                    resolveRandomNovelImage?.invoke(universe.id, imageSeed) { resolvedPath ->
+                        if (resolvedPath != null && isStillBound(universe.id)) {
                             loadImageFromPath(resolvedPath, universe.id)
                         }
                     }
@@ -260,8 +260,8 @@ class UniverseAdapter(
                 Universe.IMAGE_MODE_SELECT_NOVEL -> {
                     val novelId = universe.imageNovelId
                     if (novelId != null) {
-                        resolveNovelImageById?.invoke(novelId) { resolvedPath ->
-                            if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                        resolveNovelImageById?.invoke(novelId, imageSeed) { resolvedPath ->
+                            if (resolvedPath != null && isStillBound(universe.id)) {
                                 loadImageFromPath(resolvedPath, universe.id)
                             }
                         }
@@ -270,7 +270,29 @@ class UniverseAdapter(
             }
         }
 
+        /**
+         * 이 홀더가 **아직 그 항목을 그리고 있는가** — 비동기 갈래가 통과할 유일한 문이다.
+         *
+         * 종전 가드는 `bindingAdapterPosition != NO_POSITION` 하나였는데, 그것은 *자리가
+         * 살아 있는가*만 묻는다. 재활용된 홀더는 자리도 살아 있고 다만 **다른 항목**을
+         * 그리고 있어서, 늦게 온 콜백이 그대로 통과해 남의 그림을 박았다.
+         */
+        private fun isStillBound(id: Long): Boolean {
+            val pos = bindingAdapterPosition
+            if (pos == RecyclerView.NO_POSITION) return false
+            return try {
+                val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
+                current.id == id
+            } catch (_: IndexOutOfBoundsException) {
+                // 자리 확인과 getItem 사이에 목록이 갈렸다 — 모르면 그리지 않는다.
+                false
+            }
+        }
+
         private fun loadImageFromPath(path: String, universeId: Long) {
+            // **두 갈래가 같은 문을 지난다.** 종전에는 디코드 갈래에만 정체 검사가 있고
+            // 캐시 갈래에는 아예 없어서, 캐시가 맞은 순간 곧바로 옛 항목의 비트맵이 박혔다.
+            if (!isStillBound(universeId)) return
             val cached = thumbnailCache.get(path)
             if (cached != null) {
                 binding.universeImage.setImageBitmap(cached)
@@ -283,16 +305,9 @@ class UniverseAdapter(
                 }
                 if (bitmap != null) {
                     thumbnailCache.put(path, bitmap)
-                    val pos = bindingAdapterPosition
-                    if (pos != RecyclerView.NO_POSITION) {
-                        try {
-                            val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                            if (current.id == universeId) {
-                                binding.universeImage.setImageBitmap(bitmap)
-                            }
-                        } catch (_: IndexOutOfBoundsException) {
-                            // List may have been updated between position check and getItem
-                        }
+                    // 디코드가 끝나는 사이에도 홀더는 재활용될 수 있다 — 같은 문을 다시 지난다.
+                    if (isStillBound(universeId)) {
+                        binding.universeImage.setImageBitmap(bitmap)
                     }
                 }
             }

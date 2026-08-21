@@ -47,6 +47,23 @@ import org.json.JSONObject
  * [encode]·[decode] 양쪽에 함께 등재한다 — 한쪽만 넣으면 왕복이 조용히 절반만 돈다.
  * [BodyEditorStateTest]의 '전 칸 왕복' 시험이 그 누락을 잡는다.
  */
+/**
+ * 🎲 [직전으로] 한 단계가 되돌릴 **편집 상태 한 벌**.
+ *
+ * 종전에는 `Pair<Measures, Double?>`라 *보이는 수치*만 담았다. 그런데 굴리기는 수치만
+ * 만드는 것이 아니라 **되쓰기 범위([BodyEditorState.touched])도 넓힌다** — 되돌려도 그
+ * 범위가 남아 있으면, 화면에서는 되돌리기가 끝난 것처럼 보이는데 [적용]이 비어 있던
+ * 가슴·허리·엉덩이 칸을 굴리기의 값으로 채운다(사용자가 만든 적 없는 값이 저장된다).
+ * 되돌릴 것을 *수치*가 아니라 **그 순간의 편집 상태**로 못박는다.
+ */
+data class RollSnapshot(
+    val measures: BodySilhouetteSpec.Measures,
+    val weightKg: Double?,
+    val touched: Set<BodySlot>,
+    val touchedHeight: Boolean,
+    val touchedWeight: Boolean
+)
+
 data class BodyEditorState(
     /** 어느 BODY_SIZE 필드의 편집기인가 — 호스트가 다시 꽂을 자리를 이것으로 찾는다. */
     val fieldId: Long,
@@ -62,9 +79,18 @@ data class BodyEditorState(
     val noWritableSlot: Boolean,
     val current: Measures,
     val weightKg: Double?,
-    /** 🎲 [직전으로] 한 단계 — 수치와 체중이 짝이다. 굴린 적이 없으면 null. */
-    val previous: Pair<Measures, Double?>?,
+    /** 🎲 [직전으로] 한 단계 — 되돌릴 **편집 상태 한 벌**이다. 굴린 적이 없으면 null. */
+    val previous: RollSnapshot?,
     val touched: Set<BodySlot>,
+    /**
+     * 키·체중도 *이 자리에서 만든 값*인가 — [touched]가 부위에 대해 하는 일을 이 둘이 한다.
+     *
+     * **없으면 조용한 왜곡이 된다:** 되쓰기는 키·체중을 `touched`와 무관하게 언제나 적었고,
+     * 열 때 초안이 채운 기준 키(165)가 *사용자가 적은 값*으로 행세해 빈 키 칸에 저장됐다.
+     * 여는 것만으로 [적용]이 켜지는 것도 같은 뿌리다(초안 키 ≠ 빈 폼 원문).
+     */
+    val touchedHeight: Boolean,
+    val touchedWeight: Boolean,
     val cupMode: Boolean,
     val overlayOn: Boolean,
     val generatorOpen: Boolean,
@@ -95,11 +121,16 @@ data class BodyEditorState(
         put(K_NO_SLOT, noWritableSlot)
         put(K_CURRENT, measuresToJson(current))
         weightKg?.let { put(K_WEIGHT, it) }
-        previous?.let { (m, w) ->
-            put(K_PREV, measuresToJson(m))
-            w?.let { put(K_PREV_WEIGHT, it) }
+        previous?.let { p ->
+            put(K_PREV, measuresToJson(p.measures))
+            p.weightKg?.let { put(K_PREV_WEIGHT, it) }
+            put(K_PREV_TOUCHED, JSONArray().also { arr -> for (s in p.touched) arr.put(s.name) })
+            put(K_PREV_T_HEIGHT, p.touchedHeight)
+            put(K_PREV_T_WEIGHT, p.touchedWeight)
         }
         put(K_TOUCHED, JSONArray().also { arr -> for (s in touched) arr.put(s.name) })
+        put(K_TOUCHED_HEIGHT, touchedHeight)
+        put(K_TOUCHED_WEIGHT, touchedWeight)
         put(K_CUP_MODE, cupMode)
         put(K_OVERLAY, overlayOn)
         put(K_GEN_OPEN, generatorOpen)
@@ -141,8 +172,20 @@ data class BodyEditorState(
                     noWritableSlot = o.optBoolean(K_NO_SLOT, false),
                     current = current,
                     weightKg = o.optDoubleOrNull(K_WEIGHT),
-                    previous = prevMeasures?.let { it to o.optDoubleOrNull(K_PREV_WEIGHT) },
+                    // 옛 판이 담은 JSON에는 되돌림의 표식 셋이 없다 — 그때는 빈 집합·false로
+                    // 읽는다(종전 동작 그대로이고, 없는 사실을 지어내지 않는다).
+                    previous = prevMeasures?.let {
+                        RollSnapshot(
+                            measures = it,
+                            weightKg = o.optDoubleOrNull(K_PREV_WEIGHT),
+                            touched = slotsFromJson(o.optJSONArray(K_PREV_TOUCHED)),
+                            touchedHeight = o.optBoolean(K_PREV_T_HEIGHT, false),
+                            touchedWeight = o.optBoolean(K_PREV_T_WEIGHT, false)
+                        )
+                    },
                     touched = slotsFromJson(o.optJSONArray(K_TOUCHED)),
+                    touchedHeight = o.optBoolean(K_TOUCHED_HEIGHT, false),
+                    touchedWeight = o.optBoolean(K_TOUCHED_WEIGHT, false),
                     cupMode = o.optBoolean(K_CUP_MODE, false),
                     overlayOn = o.optBoolean(K_OVERLAY, false),
                     generatorOpen = o.optBoolean(K_GEN_OPEN, false),
@@ -182,7 +225,12 @@ data class BodyEditorState(
         private const val K_WEIGHT = "w"
         private const val K_PREV = "prev"
         private const val K_PREV_WEIGHT = "prevW"
+        private const val K_PREV_TOUCHED = "prevTouched"
+        private const val K_PREV_T_HEIGHT = "prevTH"
+        private const val K_PREV_T_WEIGHT = "prevTW"
         private const val K_TOUCHED = "touched"
+        private const val K_TOUCHED_HEIGHT = "touchedH"
+        private const val K_TOUCHED_WEIGHT = "touchedW"
         private const val K_CUP_MODE = "cupMode"
         private const val K_OVERLAY = "overlay"
         private const val K_GEN_OPEN = "genOpen"
@@ -276,7 +324,14 @@ data class BodyEditorState(
             }
         }
 
-        private fun measuresToJson(m: Measures): JSONObject = JSONObject().apply {
+        /**
+         * `Measures`의 JSON 코덱 — **화면 사이로 그림을 넘기는 모든 자리가 이것을 쓴다.**
+         *
+         * 회전·다크모드 전환은 프래그먼트를 무인자 생성자로 되살리므로, 인스턴스 프로퍼티에
+         * 꽂아 둔 그림 재료는 통째로 기본값이 된다(실루엣 크게 보기가 그래서 빈 화면이 됐다).
+         * 코덱을 두 벌로 만들면 축 하나가 늘 때 한쪽만 낡으므로 여기 하나만 둔다.
+         */
+        fun measuresToJson(m: Measures): JSONObject = JSONObject().apply {
             put(M_HEIGHT, m.height)
             put(M_SHOULDER, m.shoulder)
             put(M_BUST, m.bust)
@@ -288,7 +343,8 @@ data class BodyEditorState(
             put(M_RIB, m.ribOffset)
         }
 
-        private fun measuresFromJson(o: JSONObject?): Measures? {
+        /** [measuresToJson]의 짝 — 다섯 축이 없으면 `null`이다(부분 복원을 하지 않는다). */
+        fun measuresFromJson(o: JSONObject?): Measures? {
             if (o == null) return null
             // 다섯 축은 필수다 — 하나라도 없으면 그림이 설 수 없으므로 부분 복원을 하지 않는다.
             for (key in listOf(M_HEIGHT, M_SHOULDER, M_BUST, M_WAIST, M_HIP)) {

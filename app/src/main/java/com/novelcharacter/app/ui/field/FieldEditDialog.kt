@@ -2584,10 +2584,19 @@ class FieldEditDialog : DialogFragment() {
     } catch (_: Exception) { null }
 
     private fun checkTypeChangeImpact(field: FieldDefinition, oldType: String, newType: String) {
-        // **글자와 타입을 갈라 쓴다** (B-55): 확인창 문구는 사용자가 고른 그대로를 보여야 하므로
-        // 저장된 글자를 쓰고, 값이 살아남는가의 판정은 enum으로 한다. 한 번만 풀어 두 자리가
-        // 같은 답을 보게 한다 — 값마다 다시 풀면 목록이 길 때 그 비용이 값 수만큼 든다.
+        // **글자와 타입을 갈라 쓴다** (B-55): 값이 살아남는가의 판정은 enum으로 하고,
+        // 한 번만 풀어 두 자리가 같은 답을 보게 한다(값마다 다시 풀면 목록이 길 때 비용이
+        // 값 수만큼 든다).
+        //
+        // **문구가 부르는 이름은 `label`이다.** 종전에는 저장된 글자를 그대로 썼는데, 그것은
+        // enum 이름(`TEXT`·`NUMBER`)이지 사용자가 스피너에서 고른 '텍스트'·'숫자'가 아니다 —
+        // 앱 어디에도 없는 영문 식별자를 보여 주면서 그 아래 줄에서 "호환 불가: N개
+        // (빈 값으로 초기화됩니다)"를 승인받고 있었다(R-20 결).
         val newFieldType = FieldType.fromName(newType)
+        // 모르는 이름이면 저장된 글자를 그대로 쓴다 — 옛 데이터·손으로 편집한 엑셀이 들여온
+        // 미지 타입에서 문구가 비어 버리지 않게 한다(조용히 갈음하지도 않는다).
+        val oldTypeLabel = FieldType.fromName(oldType)?.label ?: oldType
+        val newTypeLabel = newFieldType?.label ?: newType
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         val fieldValueDao = app.database.characterFieldValueDao()
 
@@ -2616,7 +2625,7 @@ class FieldEditDialog : DialogFragment() {
                 MaterialAlertDialogBuilder(ctx)
                     .setTitle(getString(R.string.field_type_change_title))
                     .setMessage(getString(R.string.field_type_change_message,
-                        oldType, newType, nonEmptyValues.size, compatible, incompatible))
+                        oldTypeLabel, newTypeLabel, nonEmptyValues.size, compatible, incompatible))
                     .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
                         resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newFieldType)
                     }

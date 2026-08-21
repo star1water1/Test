@@ -95,12 +95,32 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    /** 해제 — 심긴 필드는 보통 필드로 **강등만** 된다. 값은 그대로다. */
+    /**
+     * 해제 결과 한 줄 — **정리된 그림자가 0이면 그 절을 붙이지 않는다**(R-14 결:
+     * 일어나지 않은 일을 0으로 말하지 않는다). 두 화면이 같은 함수를 쓴다.
+     */
+    private fun unlinkMessage(
+        name: String,
+        outcome: com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository.UnlinkOutcome
+    ): String = if (outcome.cleanedShadows > 0) {
+        app.getString(
+            R.string.default_field_demoted_with_cleanup, name, outcome.demoted, outcome.cleanedShadows
+        )
+    } else {
+        app.getString(R.string.default_field_demoted, name, outcome.demoted)
+    }
+
+    /**
+     * 해제 — 심긴 필드는 보통 필드로 **강등**되고, 값이 없는 무소속 구역의 그림자는
+     * **함께 정리된다**(2026.08.07 확정). 캐릭터 값은 어느 갈래에서도 지우지 않는다.
+     *
+     * 두 수를 갈라 말한다 — 합치면 사용자가 자기 필드가 지워진 줄 안다.
+     */
     fun unlink(template: DefaultFieldTemplate) = viewModelScope.launch {
         try {
-            val demoted = repository.deleteTemplate(template)
+            val outcome = repository.deleteTemplate(template)
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                app.getString(R.string.default_field_demoted, template.name, demoted)))
+                unlinkMessage(template.name, outcome)))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to unlink default field", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,

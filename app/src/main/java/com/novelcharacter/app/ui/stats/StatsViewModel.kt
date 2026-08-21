@@ -175,9 +175,50 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         return filtered
     }
 
+    /**
+     * 스냅샷과 **그 위에서 이미 센 결과**의 낡음을 함께 다룬다.
+     *
+     * 종전에는 캐시 둘만 버렸는데, 각 화면의 `load*()`는 *'결과가 있으면 다시 안 센다'*는
+     * 가드를 갖고 있어 **아무 화면도 다시 세지 않았다** — 설정을 바꿔도 숫자와 안내줄이
+     * 옛 값 그대로였고(R-24가 금지한 '고를 수 있는데 아무 일도 안 일어나는' 자리),
+     * 같은 배수를 직접 읽는 다른 화면과 수가 갈렸다.
+     *
+     * 판(version)을 하나 올리는 것으로 **모든 파생 결과를 한 번에 낡게** 만든다. 결과마다
+     * 표식을 따로 두지 않는 것이 요점이다 — 새 결과가 생길 때 표식을 빠뜨리면 그 화면만
+     * 조용히 안 갱신되고, 그것이 정확히 지금 고치는 결함의 모양이다.
+     */
+    private var dataVersion = 0
+    private val loadedVersion = mutableMapOf<String, Int>()
+
+    private companion object {
+        // 결과 이름표 — `load*()`와 [markLoaded]가 같은 글자를 쓰게 상수로 둔다.
+        const val K_ALL = "all"
+        const val K_FIELD_INSIGHTS = "fieldInsights"
+        const val K_RELATION_NETWORK = "relationNetwork"
+        const val K_DATA_OVERVIEW = "dataOverview"
+        const val K_CROSS_NOVEL = "crossNovel"
+        const val K_FACTION = "faction"
+        const val K_CHARACTER = "character"
+        const val K_EVENT = "event"
+        const val K_RELATIONSHIP = "relationship"
+        const val K_NAME_BANK = "nameBank"
+        const val K_DATA_HEALTH = "dataHealth"
+        const val K_FIELD_ANALYSIS = "fieldAnalysis"
+    }
+
+    /** 이 결과가 **지금 판**으로 세어져 있는가 — 각 `load*()`의 조기 반환은 이것 하나를 본다. */
+    private fun isFresh(key: String, current: Any?): Boolean =
+        current != null && !isRefreshing && loadedVersion[key] == dataVersion
+
+    /** 지금 판으로 세었다고 적는다. */
+    private fun markLoaded(vararg keys: String) {
+        for (k in keys) loadedVersion[k] = dataVersion
+    }
+
     private fun invalidateSnapshots() {
         cachedSnapshot = null
         filteredCache = null
+        dataVersion++
     }
 
     /**
@@ -188,6 +229,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 금지한 '고를 수 있는데 아무 일도 일어나지 않는' 자리다.
      */
     fun onCompletionWeightChanged() {
+        // 스냅샷과 **그 위에서 이미 센 결과**를 함께 낡게 만든다. 종전에는 캐시 둘만 버려서
+        // 각 화면의 `load*()` 가드가 그대로 통과했고 — 아무것도 다시 세지 않았다.
         invalidateSnapshots()
     }
 
@@ -209,7 +252,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadAllStats() {
-        if (!isRefreshing && _summary.value != null) return
+        if (isFresh(K_ALL, _summary.value)) return
         statsJob?.cancel()
         _loading.value = true
         _error.value = null
@@ -273,6 +316,11 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _patternInsights.value = patterns
                 _factionStats.value = factions
                 _summary.value = summary
+                // 이 한 번이 아래 결과를 전부 지금 판으로 세웠다.
+                markLoaded(
+                    K_ALL, K_FIELD_INSIGHTS, K_CHARACTER, K_EVENT, K_RELATIONSHIP,
+                    K_NAME_BANK, K_DATA_HEALTH, K_FIELD_ANALYSIS, K_FACTION
+                )
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -294,7 +342,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadFieldInsights() {
-        if (_fieldInsights.value != null && !isRefreshing) return
+        if (isFresh(K_FIELD_INSIGHTS, _fieldInsights.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -302,6 +350,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _fieldInsights.value = withContext(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
+                markLoaded(K_FIELD_INSIGHTS)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -355,7 +404,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadRelationNetwork() {
-        if (_relationNetwork.value != null && !isRefreshing) return
+        if (isFresh(K_RELATION_NETWORK, _relationNetwork.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -363,6 +412,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _relationNetwork.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
+                markLoaded(K_RELATION_NETWORK)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -372,7 +422,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadDataOverview() {
-        if (_dataOverview.value != null && !isRefreshing) return
+        if (isFresh(K_DATA_OVERVIEW, _dataOverview.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -380,6 +430,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _dataOverview.value = withContext(Dispatchers.IO) { provider.computeDataOverview(filtered) }
+                markLoaded(K_DATA_OVERVIEW)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -389,7 +440,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadCrossNovelComparison() {
-        if (_crossNovelComparison.value != null && !isRefreshing) return
+        if (isFresh(K_CROSS_NOVEL, _crossNovelComparison.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -399,6 +450,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _crossNovelComparison.value = withContext(Dispatchers.IO) {
                     provider.computeCrossNovelComparison(snapshot)
                 }
+                markLoaded(K_CROSS_NOVEL)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -408,7 +460,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadFactionStats() {
-        if (_factionStats.value != null && !isRefreshing) return
+        if (isFresh(K_FACTION, _factionStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -416,6 +468,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _factionStats.value = withContext(Dispatchers.IO) { provider.computeFactionStats(filtered) }
+                markLoaded(K_FACTION)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -823,7 +876,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     // ===== 레거시 load 메서드 (기존 Fragment 호환) =====
 
     fun loadCharacterStats() {
-        if (_characterStats.value != null && !isRefreshing) return
+        if (isFresh(K_CHARACTER, _characterStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -831,6 +884,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _characterStats.value = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
+                markLoaded(K_CHARACTER)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -840,7 +894,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadEventStats() {
-        if (_eventStats.value != null && !isRefreshing) return
+        if (isFresh(K_EVENT, _eventStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -848,6 +902,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _eventStats.value = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
+                markLoaded(K_EVENT)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -857,7 +912,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadRelationshipStats() {
-        if (_relationshipStats.value != null && !isRefreshing) return
+        if (isFresh(K_RELATIONSHIP, _relationshipStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -865,6 +920,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _relationshipStats.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
+                markLoaded(K_RELATIONSHIP)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -874,7 +930,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadNameBankStats() {
-        if (_nameBankStats.value != null && !isRefreshing) return
+        if (isFresh(K_NAME_BANK, _nameBankStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -882,6 +938,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _nameBankStats.value = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
+                markLoaded(K_NAME_BANK)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -891,7 +948,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadDataHealthStats() {
-        if (_dataHealthStats.value != null && !isRefreshing) return
+        if (isFresh(K_DATA_HEALTH, _dataHealthStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -899,6 +956,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _dataHealthStats.value = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
+                markLoaded(K_DATA_HEALTH)
             } catch (e: Exception) {
                 reportError(e)
             } finally {
@@ -908,7 +966,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadFieldAnalysisStats() {
-        if (_fieldAnalysisStats.value != null && !isRefreshing) return
+        if (isFresh(K_FIELD_ANALYSIS, _fieldAnalysisStats.value)) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -916,6 +974,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _fieldAnalysisStats.value = withContext(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
+                markLoaded(K_FIELD_ANALYSIS)
             } catch (e: Exception) {
                 reportError(e)
             } finally {

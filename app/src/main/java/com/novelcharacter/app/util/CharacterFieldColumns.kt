@@ -84,18 +84,30 @@ object CharacterFieldColumns {
             if (col in fixedColIndices) continue
             val headerName = headers[col].orEmpty()
             if (headerName.isBlank()) continue
-            val trimmed = headerName.trim().removeSuffix(multiSuffix)
-            if (trimmed in fixedHeaders) continue
+            // **원문 먼저, 접미사 제거는 그 다음이다** — [EntityFieldHeaders.parseBody]가 이미 든
+            // 두 단 사다리와 같은 순서다. 필드 이름이 실제로 `성격 (쉼표 구분)`일 수 있고, 그때
+            // 접미사를 먼저 벗기면 있지도 않은 `성격`을 찾다가 값이 엉뚱한 필드에 붙는다(R-1).
+            // 종전에는 이 시트만 무조건 벗겨서, **한 글자도 고치지 않은 왕복**만으로 그 필드의
+            // 값이 새로 만들어진 딴 필드로 옮겨 붙었다(같은 값이 두 필드에 갈려 통계가 두 번 센다).
+            val raw = headerName.trim()
+            val stripped = raw.removeSuffix(multiSuffix)
+            if (raw in fixedHeaders || stripped in fixedHeaders) continue
 
-            val matched = matchField(trimmed, fields)
+            val matched = matchField(raw, fields) ?: matchField(stripped, fields)
             out[col] = when {
                 matched != null -> ColumnFieldOutcome.Matched(matched)
                 else -> {
-                    val sameName = countByName(trimmed, fields)
+                    // 모호 고지의 이름표는 **후보를 센 그 글자**여야 한다 — 원문으로 후보가
+                    // 잡혔으면 원문을, 아니면 접미사를 뗀 글자를 센다.
+                    val rawCount = countByName(raw, fields)
+                    val label = if (rawCount > 0) raw else stripped
+                    val sameName = if (rawCount > 0) rawCount else countByName(stripped, fields)
                     when {
-                        sameName > 1 -> ColumnFieldOutcome.Ambiguous(trimmed, sameName)
-                        hasUniverse -> ColumnFieldOutcome.AutoCreate(trimmed)
-                        else -> ColumnFieldOutcome.Unresolved(trimmed)
+                        sameName > 1 -> ColumnFieldOutcome.Ambiguous(label, sameName)
+                        // 새로 만드는 이름은 접미사를 뗀 것이다 — `태그 (쉼표 구분)` 열이
+                        // 없는 필드를 가리키면 만들 것은 `태그`다(종전 동작 그대로).
+                        hasUniverse -> ColumnFieldOutcome.AutoCreate(stripped)
+                        else -> ColumnFieldOutcome.Unresolved(stripped)
                     }
                 }
             }

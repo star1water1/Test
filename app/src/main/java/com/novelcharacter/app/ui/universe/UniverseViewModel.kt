@@ -330,19 +330,30 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
      * 종전에는 `randomOrNull()`이라 **호출할 때마다** 바뀌었고, 대표를 지정해 두어도
      * 세계관·작품 카드만 딴 장을 보여 줬다. 이제 다른 화면과 같은 규칙을 쓴다.
      *
-     * 시드는 호출마다 새로 뽑는다 — 이 경로는 카드 한 장을 그릴 때 한 번 불리고,
-     * 목록처럼 여러 행이 동시에 걸리는 자리가 아니다.
+     * **시드는 부르는 쪽(어댑터)이 준다 — '시드 하나 = 화면 진입 한 번'(B-103 D3).**
+     * 종전 KDoc은 *"카드 한 장을 그릴 때 한 번 불리고 목록처럼 여러 행이 동시에 걸리는
+     * 자리가 아니다"*라며 호출마다 `newSeed()`를 뽑았는데, **그 전제가 사실이 아니었다** —
+     * 이 경로를 부르는 것은 목록 어댑터의 `bind`이고, 재바인드(개수·경계선 갱신·스크롤)마다
+     * 다시 불린다. 그래서 가만히 있어도 카드 그림이 스스로 바뀌었다.
+     * 이제 IMAGE_MODE_CUSTOM 갈래가 이미 쓰던 것과 **같은 규칙**을 다섯 경로가 함께 쓴다.
      */
-    private fun linkedCharacterImage(character: com.novelcharacter.app.data.model.Character): String? =
+    private fun linkedCharacterImage(
+        character: com.novelcharacter.app.data.model.Character,
+        seed: Long
+    ): String? =
         com.novelcharacter.app.util.CharacterRepresentativeImage.path(
             character.imagePaths,
             character.representativeImagePath,
-            com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed(),
+            seed,
             character.id
         )
 
+    /** 같은 시드 아래 **결정적으로** 하나를 고른다 — `.random()`을 대신한다(B-103 D3). */
+    private fun <T> pickStable(items: List<T>, seed: Long, rowKey: Long): T =
+        items[com.novelcharacter.app.util.CharacterRepresentativeImage.randomIndex(seed, rowKey, items.size)]
+
     /** 세계관에 속한 캐릭터 중 이미지가 있는 랜덤 캐릭터의 첫 이미지 경로 반환 */
-    fun resolveRandomCharacterImage(universeId: Long, callback: (String?) -> Unit) {
+    fun resolveRandomCharacterImage(universeId: Long, seed: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 // 단일 JOIN 쿼리로 세계관 내 모든 캐릭터를 한 번에 조회
@@ -354,7 +365,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                callback(linkedCharacterImage(withImages.random()))
+                callback(linkedCharacterImage(pickStable(withImages, seed, universeId), seed))
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image", e)
                 callback(null)
@@ -362,7 +373,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun resolveCharacterImageById(characterId: Long, callback: (String?) -> Unit) {
+    fun resolveCharacterImageById(characterId: Long, seed: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val character = characterRepository.getCharacterById(characterId)
@@ -370,7 +381,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                callback(linkedCharacterImage(character))
+                callback(linkedCharacterImage(character, seed))
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image by ID", e)
                 callback(null)
@@ -401,7 +412,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** 세계관에 속한 작품 중 이미지를 가진 랜덤 작품의 이미지 경로 반환 (계단식 해상도) */
-    fun resolveRandomNovelImage(universeId: Long, callback: (String?) -> Unit) {
+    fun resolveRandomNovelImage(universeId: Long, seed: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val novels = novelRepository.getNovelsByUniverseList(universeId)
@@ -417,7 +428,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                resolveNovelImageCascading(candidates.random(), callback)
+                resolveNovelImageCascading(pickStable(candidates, seed, universeId), seed, callback)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve novel image", e)
                 callback(null)
@@ -426,12 +437,12 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** 특정 작품의 이미지 경로를 반환 (계단식 해상도) */
-    fun resolveNovelImageById(novelId: Long, callback: (String?) -> Unit) {
+    fun resolveNovelImageById(novelId: Long, seed: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val novel = novelRepository.getNovelById(novelId)
                     ?: run { callback(null); return@launch }
-                resolveNovelImageCascading(novel, callback)
+                resolveNovelImageCascading(novel, seed, callback)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve novel image by ID", e)
                 callback(null)
@@ -443,12 +454,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
      * 작품 이미지를 계단식으로 해상도:
      * 1차: 직접 이미지(imagePaths) → 2차: 캐릭터 이미지 모드 → 해당 캐릭터 이미지
      */
-    private suspend fun resolveNovelImageCascading(novel: Novel, callback: (String?) -> Unit) {
-        // 1차: 직접 이미지 (JSON 배열에서 랜덤 선택)
+    private suspend fun resolveNovelImageCascading(novel: Novel, seed: Long, callback: (String?) -> Unit) {
+        // 1차: 직접 이미지 — 파싱도 단일 소스를 지난다(`CharacterRepresentativeImage.paths`).
         if (novel.imagePaths.isNotBlank() && novel.imagePaths != "[]") {
-            val path = try {
-                gson.fromJson(novel.imagePaths, Array<String>::class.java)?.randomOrNull()
-            } catch (_: Exception) { null }
+            val paths = com.novelcharacter.app.util.CharacterRepresentativeImage.paths(novel.imagePaths)
+            val path = if (paths.isEmpty()) null else pickStable(paths, seed, novel.id)
             if (path != null) {
                 callback(path)
                 return
@@ -468,11 +478,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 return
             }
             val target = if (novel.imageMode == Novel.IMAGE_MODE_SELECT_CHARACTER && novel.imageCharacterId != null) {
-                withImages.find { it.id == novel.imageCharacterId } ?: withImages.random()
+                withImages.find { it.id == novel.imageCharacterId } ?: pickStable(withImages, seed, novel.id)
             } else {
-                withImages.random()
+                pickStable(withImages, seed, novel.id)
             }
-            callback(linkedCharacterImage(target))
+            callback(linkedCharacterImage(target, seed))
             return
         }
         callback(null)

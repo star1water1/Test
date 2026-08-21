@@ -1237,7 +1237,77 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     val aiSuggestRunning = MutableLiveData(false)
     val aiSuggestResult = MutableLiveData<AiSuggestRun?>()
-    fun clearAiSuggestResult() { aiSuggestResult.value = null }
+
+    /**
+     * **검토 중 사용자가 만든 상태** — 유료 응답과 다른 채널이다.
+     *
+     * 응답([aiSuggestResult])만 회전을 넘고 검토 상태는 다이얼로그 지역 변수에만 살아서,
+     * 회전으로 관측자가 같은 회차를 다시 흘리면 시트가 **원본으로 통째로 재조립**됐다 —
+     * 꺼 둔 체크가 되켜지고 [보완]으로 손수 고친 값이 사라진다. 사용자가 방금 한 판단이
+     * 말없이 되돌아가는 자리다(개발 의도 2번). 이미지 축이 B-136에서 같은 갈래를 이미
+     * 세웠고(응답은 ViewModel이, 검토 상태는 회전을 넘는 자리가 든다), 그 KDoc이 적어 둔
+     * 위험 문장이 캐릭터 축에만 남아 있었다.
+     *
+     * **LiveData가 아니어야 한다** — 같은 채널에 되쓰면 관측자가 다시 울려 창이 두 번 뜬다.
+     */
+    class AiReviewState {
+        /**
+         * 이 회차의 기본 선택을 이미 심었는가.
+         *
+         * **종전에는 `touched`(사용자가 한 번이라도 만졌는가)였고 그것이 결함이었다**
+         * (콜드 검토 2026.08.21). 만진 뒤로는 전 행이 [checked] 하나만 보는데 그 집합에는
+         * *만진 행*만 들어 있어서, 체크 하나를 켜고 회전하면 **기본으로 켜져 있던 나머지가
+         * 통째로 꺼졌다** — 이 상태가 없애려던 것과 정확히 같은 부류가 반대 방향으로 남았다.
+         *
+         * 지금은 첫 조립에서 기본 규칙의 결과를 [checked]에 **그대로 심는다.**
+         * 그러면 [isChecked] 하나가 언제나 전 행의 답이다.
+         */
+        private var seeded = false
+
+        private val checked = mutableSetOf<String>()
+        private val edited = mutableMapOf<String, com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>()
+
+        /**
+         * 회차의 **첫 조립에서만** 기본 선택을 심는다. 두 번째부터는 아무 일도 하지 않는다 —
+         * 그래야 회전으로 다시 조립돼도 사용자의 판단이 기본 규칙에 덮이지 않는다.
+         */
+        fun seedDefaults(defaultOn: Collection<String>) {
+            if (seeded) return
+            seeded = true
+            checked.clear()
+            checked.addAll(defaultOn)
+        }
+
+        fun setChecked(fieldKey: String, on: Boolean) {
+            if (on) checked.add(fieldKey) else checked.remove(fieldKey)
+        }
+
+        fun isChecked(fieldKey: String): Boolean = fieldKey in checked
+
+        fun remember(suggestion: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion) {
+            edited[suggestion.fieldKey] = suggestion
+        }
+
+        /** 손수 고친 값이 있으면 그것, 없으면 원본. */
+        fun current(
+            original: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion
+        ): com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion =
+            edited[original.fieldKey] ?: original
+
+        fun clear() {
+            seeded = false
+            checked.clear()
+            edited.clear()
+        }
+    }
+
+    /** 회차 수명이다 — 결과를 비울 때 함께 비운다. */
+    val aiReviewState = AiReviewState()
+
+    fun clearAiSuggestResult() {
+        aiSuggestResult.value = null
+        aiReviewState.clear()
+    }
 
     /**
      * AI 필드 추천 실행. 이미 실행 중이면 false를 반환한다 — 호출측이 반드시 사용자에게

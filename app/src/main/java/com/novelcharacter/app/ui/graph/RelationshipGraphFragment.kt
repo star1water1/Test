@@ -231,12 +231,38 @@ class RelationshipGraphFragment : Fragment() {
     }
     private var selectedRelTypes = mutableSetOf<String>()  // 빈 셋 = 전체
     private var selectedFactions = mutableSetOf<Long>()   // 빈 셋 = 전체 세력
+
+    /**
+     * 세력 칩이 **좁힘 축인가**(`true`) **강조 축인가**(`false`).
+     *
+     * ## 왜 축을 두 개 두는가 (사용자 판정 2026.08.21 — *"설계 원칙과 최고 퍼포먼스를 기준으로"*)
+     *
+     * 종전에는 세력이 **강조 전용**이었다 — 칩을 눌러도 노드가 한 명도 줄지 않고 나머지가
+     * 흐려질 뿐이다. 그 자체는 쓸모가 있다(**누가 어느 세력인지 한 화면에서 견준다**).
+     * 그러나 그것 **하나뿐인 것**은 두 가지를 못 준다.
+     *
+     * ⓐ **접힘을 못 푼다.** 배치 비용이 노드 수의 제곱이라 이 화면의 유일한 규모 방어선은
+     *    [DisplayCap.GRAPH_NODE_LIMIT]인데, 강조는 상한에 걸리는 인물 수를 **한 명도**
+     *    줄이지 않는다. 그래서 *"한 세력만 보고 싶다"*는 사용자가 접힘 고지를 본 채
+     *    **정작 그 세력의 인물이 접혀 안 보이는** 자리가 났다. 접힘 고지가 *"작품·관계 유형
+     *    필터로 좁히면 접힌 인물도 볼 수 있습니다"*라고 안내하는데, 세력으로 좁히는 길은
+     *    없었다.
+     * ⓑ **성능을 못 준다.** 좁히면 O(n²) 배치가 실제로 싸진다 — 강조는 전량을 그대로 그린다.
+     *
+     * **그렇다고 강조를 좁힘으로 바꾸지는 않는다**(개발 의도 3 — 기능의 쓸모는 사용자가
+     * 가린다). 둘 다 열고 **기본은 종전 그대로**이며, 고른 것은 [prefs]에 남는다.
+     */
+    private var factionNarrows = false
     private var isTimeViewEnabled = false
     private var currentYear: Int? = null
 
     /**
      * 지금 그려져 있는 노드([DisplayCap.rankedCap]이 남긴 인물). `null`이면 상한에 걸리지 않아
-     * 거를 것이 없다는 뜻이다.
+     * **상한 때문에** 거를 것이 없다는 뜻이다.
+     *
+     * ⚠️ **`null`이 '아무도 안 줄었다'는 뜻은 아니다**(2026.08.21 좁힘 축 신설). 세력 좁힘은
+     * 상한과 무관하게 인물을 줄이므로, 빠른 경로도 [applyFactionNarrow]를 **따로** 지나야
+     * 좁혀서 없앤 인물로 뻗는 엣지가 되살아나지 않는다.
      *
      * **두 자리가 갈리는 것을 막으려고 둔다** — 시점 슬라이더는 노드를 다시 세우지 않고
      * 엣지만 갈아 끼우는데(`refreshGraphEdgesOnly`), 그 자리가 상한을 모르면 **접힌 인물로
@@ -295,6 +321,7 @@ class RelationshipGraphFragment : Fragment() {
         // 관계 유형·세력 필터 복원 — 세계관/작품 필터와 동일하게 재방문 시 유지
         selectedRelTypes = loadStringSet("rel_types_json").toMutableSet()
         selectedFactions = loadLongSet("faction_ids_json").toMutableSet()
+        factionNarrows = prefs.getBoolean(PREF_FACTION_NARROWS, false)
     }
 
     private val filterGson by lazy { com.google.gson.Gson() }
@@ -355,14 +382,31 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.factionDisplayModeChipGroup
         chipGroup.removeAllViews()
 
-        data class ToggleOption(val labelRes: Int, val prefsKey: String, val getter: () -> Boolean, val setter: (Boolean) -> Unit)
+        data class ToggleOption(
+            val labelRes: Int,
+            val prefsKey: String,
+            val getter: () -> Boolean,
+            val setter: (Boolean) -> Unit,
+            /** 켜고 끌 때 무엇이 달라지는지 말한다 — 없으면 조용히 바뀐다. */
+            val onRes: Int? = null,
+            val offRes: Int? = null,
+        )
         val options = listOf(
             ToggleOption(R.string.faction_display_mode_area, "show_faction_area",
                 { binding.graphView.showFactionArea }, { binding.graphView.showFactionArea = it }),
             ToggleOption(R.string.faction_display_mode_border, "show_faction_border",
                 { binding.graphView.showFactionBorder }, { binding.graphView.showFactionBorder = it }),
             ToggleOption(R.string.faction_display_mode_edges, "show_faction_edges",
-                { binding.graphView.showFactionEdges }, { binding.graphView.showFactionEdges = it })
+                { binding.graphView.showFactionEdges }, { binding.graphView.showFactionEdges = it }),
+            // **세력 칩의 축을 고르는 자리**(강조 ↔ 좁힘). 앞의 셋과 성질이 다르지만 —
+            // 저것들은 *그리는 법*이고 이것은 *고르는 법*이다 — 사용자가 세력 칩을 누르는
+            // 바로 그 줄에 있어야 손이 짧다(원칙 04). 무엇이 달라지는지는 토스트가 말한다.
+            ToggleOption(
+                R.string.faction_display_mode_narrow, PREF_FACTION_NARROWS,
+                { factionNarrows }, { factionNarrows = it },
+                onRes = R.string.graph_faction_narrow_on,
+                offRes = R.string.graph_faction_narrow_off,
+            )
         )
 
         for (option in options) {
@@ -375,6 +419,17 @@ class RelationshipGraphFragment : Fragment() {
                     option.setter(newValue)
                     isChecked = newValue
                     prefs.edit().putBoolean(option.prefsKey, newValue).apply()
+                    // 켠 뒤 실제로 좁혀지는지까지 말한다 — 고른 세력이 없으면 이 칩만으로는
+                    // 한 명도 줄지 않는데, 접힘을 풀려고 켠 사용자가 그것을 알 길이 없다.
+                    val noticeRes = when {
+                        !newValue -> option.offRes
+                        option.onRes == null -> null
+                        factionNarrows && selectedFactions.isEmpty() -> R.string.graph_faction_narrow_needs_pick
+                        else -> option.onRes
+                    }
+                    if (noticeRes != null) {
+                        Toast.makeText(requireContext(), getString(noticeRes), Toast.LENGTH_SHORT).show()
+                    }
                     refreshGraph()
                 }
             }
@@ -387,6 +442,18 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.factionChipGroup
         chipGroup.removeAllViews()
 
+        // 무효 선택 제거 (세계관 전환·세력 삭제 등으로 목록이 바뀐 경우) — 정리 결과도 영속.
+        // "미소속" sentinel은 실제 세력이 아니므로 정리 대상에서 보존한다.
+        //
+        // **세력이 0개여도 먼저 돈다**(콜드 검토 2026.08.21). 종전에는 아래 조기 반환 뒤에
+        // 있어서, 고른 세력을 지우면 실체 없는 선택이 그대로 남았다 — '좁히기'가 켜져 있으면
+        // 그 선택이 모든 관계를 걷어내 **그래프가 통째로 비고**, 빈 화면은 화면에 있지도 않은
+        // 칩을 끄라고 안내했다(세력 칩 줄이 함께 숨겨져 있다). 사라진 대상을 가리키는 선택은
+        // 보존할 것이 아니다(R-20의 결).
+        val validFactionIds = factions.mapTo(HashSet()) { it.id }
+            .plus(com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID)
+        if (selectedFactions.retainAll(validFactionIds)) persistFactions()
+
         if (factions.isEmpty()) {
             binding.factionFilterScrollView.visibility = View.GONE
             binding.factionDisplayModeScrollView.visibility = View.GONE
@@ -395,12 +462,6 @@ class RelationshipGraphFragment : Fragment() {
 
         binding.factionFilterScrollView.visibility = View.VISIBLE
         binding.factionDisplayModeScrollView.visibility = View.VISIBLE
-
-        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우) — 정리 결과도 영속.
-        // "미소속" sentinel은 실제 세력이 아니므로 정리 대상에서 보존한다.
-        val validFactionIds = factions.mapTo(HashSet()) { it.id }
-            .plus(com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID)
-        if (selectedFactions.retainAll(validFactionIds)) persistFactions()
 
         // "All factions" chip
         val allChip = Chip(requireContext()).apply {
@@ -765,12 +826,39 @@ class RelationshipGraphFragment : Fragment() {
     }
 
     /**
+     * 세력 좁힘이 살아 있을 때 **남는 인물의 id** — 아니면 `null`(거를 것이 없다).
+     *
+     * 판정 재료는 [RelationshipGraphViewModel.characterFactionMap]이고, 그것은 시간뷰에서
+     * 해당 시점 기준으로 재구성된다 — 그래서 좁힘도 강조와 **같은 시점**을 본다
+     * (두 축이 다른 시점을 보면 같은 화면에서 서로 다른 사실을 말한다).
+     */
+    private fun factionNarrowedIds(): Set<Long>? =
+        com.novelcharacter.app.util.GraphFactionNarrow.narrowedIds(
+            narrows = factionNarrows,
+            selected = selectedFactions,
+            membership = (viewModel.characterFactionMap.value ?: emptyMap())
+                .mapValues { (_, pairs) -> pairs.map { it.first } },
+            allCharacterIds = viewModel.characters.value.orEmpty().map { it.id },
+        )
+
+    /** 세력 좁힘을 관계 목록에 적용한다 — 판정은 순수 계층이 든다. */
+    private fun applyFactionNarrow(
+        relationships: List<CharacterRelationship>
+    ): List<CharacterRelationship> =
+        com.novelcharacter.app.util.GraphFactionNarrow.apply(relationships, factionNarrowedIds()) {
+            it.characterId1 to it.characterId2
+        }
+
+    /**
      * 세력 선택 필터의 엣지 2차(흐림) 판정 — showGraph·refreshGraphEdgesOnly가 공용하는
      * 단일 정의 (한쪽만 갱신되는 산탄 방지). "미소속" sentinel 선택 시에는
      * 세력 무관(수동) 관계선이 1차로 보인다.
+     *
+     * **좁힘 모드에서는 흐리지 않는다** — 남아 있는 것이 전부 고른 세력의 것이라 견줄 상대가
+     * 없다. 그 상태에서 흐리면 *"고른 것만 보겠다"*고 해 놓고 그 고른 것을 흐리는 셈이다.
      */
     private fun isEdgeSecondary(rel: CharacterRelationship): Boolean =
-        selectedFactions.isNotEmpty() && !(
+        !factionNarrows && selectedFactions.isNotEmpty() && !(
             (rel.factionId != null && rel.factionId in selectedFactions) ||
                 (com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID in selectedFactions &&
                     rel.factionId == null)
@@ -787,11 +875,13 @@ class RelationshipGraphFragment : Fragment() {
 
         val (universeFiltered, _) = applyUniverseNovelFilter(chars, rels)
 
-        val typeFiltered = if (selectedRelTypes.isNotEmpty()) {
-            universeFiltered.filter { it.relationshipType in selectedRelTypes }
-        } else {
-            universeFiltered
-        }
+        val typeFiltered = applyFactionNarrow(
+            if (selectedRelTypes.isNotEmpty()) {
+                universeFiltered.filter { it.relationshipType in selectedRelTypes }
+            } else {
+                universeFiltered
+            }
+        )
         // 노드 상한을 여기서도 지킨다 — 이 경로는 노드를 다시 세우지 않으므로,
         // 거르지 않으면 **접힌 인물로 뻗는 엣지**를 관계 수만큼 만들었다가 그리기에서 버린다.
         val filteredRelationships = shownNodeIds?.let { ids ->
@@ -831,20 +921,41 @@ class RelationshipGraphFragment : Fragment() {
         val (universeFiltered, pIds) = applyUniverseNovelFilter(allCharacters, allRelationships)
 
         // 관계 유형 필터 적용 (멀티셀렉트: 빈 셋 = 전체)
-        val filteredRelationships = if (selectedRelTypes.isNotEmpty()) {
+        val typeFiltered = if (selectedRelTypes.isNotEmpty()) {
             universeFiltered.filter { it.relationshipType in selectedRelTypes }
         } else {
             universeFiltered
         }
+        // **세력 좁힘은 상한보다 앞이다** — 뒤에 두면 상한이 고른 세력 밖 인물로 먼저 차서
+        // 정작 좁혀 보려던 인물이 접힌다(이 모드를 연 이유가 그것이다). 아래 연결 수 집계도
+        // 좁힌 뒤 관계로 세야 '무엇을 남길지'의 랭킹이 화면과 같은 모집단을 본다.
+        val narrowedIds = factionNarrowedIds()
+        val filteredRelationships = com.novelcharacter.app.util.GraphFactionNarrow
+            .apply(typeFiltered, narrowedIds) { it.characterId1 to it.characterId2 }
 
         if (filteredRelationships.isEmpty()) {
             binding.emptyState.visibility = View.VISIBLE
             binding.graphView.visibility = View.GONE
-            binding.emptyMessage.text = if (allRelationships.isEmpty()) {
-                getString(R.string.graph_no_relationships)
-            } else {
-                getString(R.string.graph_no_filtered_relationships)
-            }
+            // **원인을 잘못 지목하지 않는다** — 세력으로 좁혀서 비었는데 "선택한 유형의 관계가
+            // 없습니다"라고 말하면 사용자는 유형 칩을 만지러 가고 거기서는 아무 일도 없다.
+            val cause = com.novelcharacter.app.util.GraphFactionNarrow.emptyCause(
+                anyRelationships = allRelationships.isNotEmpty(),
+                afterTypeFilter = typeFiltered.size,
+                narrowing = narrowedIds != null,
+                typeFiltering = selectedRelTypes.isNotEmpty(),
+            )
+            binding.emptyMessage.text = getString(
+                when (cause) {
+                    com.novelcharacter.app.util.GraphFactionNarrow.EmptyCause.NO_DATA ->
+                        R.string.graph_no_relationships
+                    com.novelcharacter.app.util.GraphFactionNarrow.EmptyCause.FACTION ->
+                        R.string.graph_no_faction_relationships
+                    com.novelcharacter.app.util.GraphFactionNarrow.EmptyCause.REL_TYPE ->
+                        R.string.graph_no_filtered_relationships
+                    com.novelcharacter.app.util.GraphFactionNarrow.EmptyCause.OTHER ->
+                        R.string.graph_no_scope_relationships
+                }
+            )
             binding.nodeCountText.text = getString(R.string.graph_node_count, 0)
             binding.edgeCountText.text = getString(R.string.graph_edge_count, 0)
             binding.summaryModeText.visibility = View.GONE
@@ -883,7 +994,16 @@ class RelationshipGraphFragment : Fragment() {
             binding.summaryModeText.visibility = View.VISIBLE
             binding.summaryModeText.text =
                 getString(R.string.graph_summary_mode, capped.shown.size, capped.hiddenCount)
-            Toast.makeText(requireContext(), getString(R.string.graph_too_many_nodes), Toast.LENGTH_LONG).show()
+            // 고지가 말하는 '좁힐 수단'은 **지금 화면에 있고 켜져 있는 것**이어야 한다 —
+            // 없는 칩을 누르라고 하면 눌러도 아무 일이 없다(R-24가 금지한 자리).
+            // 세력이 0개면 세력 칩 줄이 통째로 숨겨져 있으므로 세력을 아예 언급하지 않는다.
+            val hasFactionChips = viewModel.getFactionsForUniverse(currentUniverseId).isNotEmpty()
+            val hint = when {
+                !hasFactionChips -> R.string.graph_too_many_nodes_no_factions
+                factionNarrows -> R.string.graph_too_many_nodes_narrowing
+                else -> R.string.graph_too_many_nodes
+            }
+            Toast.makeText(requireContext(), getString(hint), Toast.LENGTH_LONG).show()
         } else {
             binding.summaryModeText.visibility = View.GONE
         }
@@ -912,7 +1032,8 @@ class RelationshipGraphFragment : Fragment() {
         // Determine faction-based secondary highlighting (멀티셀렉트: OR 조건).
         // "미소속" sentinel은 charFactionMap 미등재(그래프가 표시하는 소속 없음)로 판정 —
         // 시간뷰에서는 맵이 해당 시점 기준으로 재구성되므로 미소속 판정도 시점을 따라간다.
-        val factionFilteredIds: Set<Long>? = if (selectedFactions.isNotEmpty()) {
+        // 좁힘 모드에서는 남은 것이 전부 고른 세력이라 2차가 없다(위 [isEdgeSecondary]와 같은 결).
+        val factionFilteredIds: Set<Long>? = if (!factionNarrows && selectedFactions.isNotEmpty()) {
             characters.filter { char ->
                 com.novelcharacter.app.util.UnassignedFilter.matchesFaction(
                     charFactionMap[char.id]?.map { it.first }, selectedFactions
@@ -1008,5 +1129,15 @@ class RelationshipGraphFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private companion object {
+        /**
+         * 세력 칩의 축(강조 ↔ 좁힘)을 담는 `graph_ui_state` 키.
+         *
+         * 저장하는 자리와 읽는 자리가 갈리면 **한쪽만 낡는다** — 이 화면은 이미 필터 키를
+         * 문자열로 여럿 들고 있어서, 새로 느는 것만이라도 상수 한 벌로 둔다.
+         */
+        const val PREF_FACTION_NARROWS = "faction_narrows"
     }
 }

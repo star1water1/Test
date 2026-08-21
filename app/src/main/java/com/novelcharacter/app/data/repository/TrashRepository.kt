@@ -75,6 +75,19 @@ import java.io.File
  * 정리도 복원도 **작업 단위**로 한다(B-14). 인스턴스 하나가 곧 작업 하나이므로
  * **한 삭제는 반드시 하나의 인스턴스를 공유해야 한다**(R-3).
  */
+/**
+ * **한 인스턴스 = 한 작업이다.**
+ *
+ * [operationId]가 생성 때 한 번 발급되고 이 인스턴스가 만드는 스냅샷 전부에 실린다 —
+ * 휴지통의 '작업' 묶음(`TrashGrouping.group`의 `operationKey`)과 보관 정리(R-9)의 단위가
+ * 그것이다. **그러므로 쓰기(`snapshot*`) 경로는 조작마다 새 인스턴스를 만들어야 한다.**
+ * 앱 수준 싱글턴으로 스냅샷을 남기면 **앱 수명 하나가 통째로 한 작업**이 되어, 서로 다른
+ * 조작 셋이 한 묶음으로 붙고 그중 하나만 되살릴 수 없게 된다.
+ *
+ * 저장소 여덟(캐릭터·세계관·작품·세력·연표·기본 필드·값 라이브러리·엑셀 가져오기)이 이미
+ * `val trash = TrashRepository(db)` 꼴로 그 규약을 지킨다. 목록·복원용으로 만든 앱 수준
+ * 싱글턴은 **읽기·복원·정리 전용**으로만 쓴다.
+ */
 class TrashRepository(
     private val db: AppDatabase,
     /**
@@ -3605,7 +3618,11 @@ class TrashRepository(
 
         // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다(R-4). 복원은 성공 시 스냅샷을
         // 소각하므로 남기지 않으면 어느 쪽으로도 갈 수 없다.
-        snapshotFieldDefinitions(
+        //
+        // **새 인스턴스로 남긴다**: 되돌리기는 그 자체가 하나의 조작이고, `this`로 남기면
+        // 화면이 들고 있는 인스턴스(휴지통은 앱 수준 싱글턴을 쓴다)의 작업에 붙어
+        // *'되돌리기의 되돌리기'*가 원래 삭제와 한 묶음이 된다(아래 [operationId] 계약).
+        TrashRepository(db, operationKind).snapshotFieldDefinitions(
             universeId,
             plan.targets.map { it.first },
             plan.data.sourceName.orEmpty()

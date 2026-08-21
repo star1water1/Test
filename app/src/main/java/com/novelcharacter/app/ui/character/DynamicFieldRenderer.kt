@@ -193,8 +193,18 @@ class DynamicFieldRenderer(
                 val isCalculated = field.fieldType == FieldType.CALCULATED
                 val format = DisplayFormat.fromConfig(field.config)
 
+                // **'다중값인가'의 판정은 단일 소스가 든다**(`FieldValueTokenizer.isMultiToken`
+                // = 타입 MULTI_TEXT ∪ COMMA_LIST ∪ BULLET_LIST). 종전에는 이 자리만 표시 형식
+                // 둘을 손으로 다시 적어 **타입을 잃었고**, '복수 텍스트' 필드가 읽기 화면에서만
+                // 한 덩어리 글자로 그려졌다(칩·글머리가 안 서고 토큰별 표시 라벨도 안 걸렸다).
+                // 조건을 다시 손으로 적지 않는 것이 요점이다 — 두 벌이면 같은 갈림이 다시 난다.
+                //
+                // **그린 모양은 그대로 DisplayFormat이 정한다**(자율성은 줄지 않는다):
+                // MULTILINE이면 아래 갈래로 내려가 여러 줄, BULLET_LIST면 글머리,
+                // 그 밖의 다중값은 칩.
                 if (!isCalculated && fieldValue.isNotEmpty() &&
-                    (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST)) {
+                    format != DisplayFormat.MULTILINE &&
+                    com.novelcharacter.app.util.FieldValueTokenizer.isMultiToken(field)) {
                     // 필드 이름 라벨
                     val labelView = TextView(context).apply {
                         text = field.name
@@ -212,7 +222,7 @@ class DynamicFieldRenderer(
                     // 쉼표 규칙은 앱 단일 소스가 든다(B-178) — 여기서 따로 쪼개면 읽기 화면만
                     // 따옴표를 모르게 되어, 한 값으로 저장·집계된 것이 두 조각으로 그려진다.
                     val items = com.novelcharacter.app.util.FieldValueTokenizer.splitMulti(fieldValue)
-                    if (format == DisplayFormat.COMMA_LIST) {
+                    if (format != DisplayFormat.BULLET_LIST) {
                         val chipGroup = ChipGroup(context).apply {
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,

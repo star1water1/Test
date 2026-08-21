@@ -42,7 +42,21 @@ class ExcelTransferController(private val fragment: Fragment) {
     private val appContext = fragment.requireContext().applicationContext
     private val importer = ExcelImporter(appContext)
     private var exporter: ExcelExporter? = null
+    /**
+     * 자리 고르기(SAF)를 기다리는 산출물.
+     *
+     * **세터가 [ActiveTransfers]에 등재까지 한다.** 이 사이에는 구간(`phase`)이 서 있지
+     * 않다 — `exportAll`의 `finally`가 이미 내렸고 `writeToUri`는 아직 시작하지 않았다.
+     * 그 창을 등재로 메우지 않으면 사용자가 자리를 고르는 동안 저장공간의 캐시 비우기가
+     * 이 파일을 앗아가고, 돌아온 자리에는 **쓸 것이 없어진다.**
+     * 대입이 여섯 자리라 자리마다 적지 않고 세터 하나로 흘린다.
+     */
     private var pendingExportFile: File? = null
+        set(value) {
+            field?.let { ActiveTransfers.release(it) }
+            value?.let { ActiveTransfers.hold(it) }
+            field = value
+        }
 
     /**
      * 저장 위치를 고르고 돌아오는 자리.
@@ -383,9 +397,15 @@ class ExcelTransferController(private val fragment: Fragment) {
         importer.showImportDialog(fragment)
     }
 
-    /** 복호화된 백업 등 이미 로컬에 있는 파일을 직접 가져오기 (백업 복원 경로용 패스스루) */
-    fun importFromLocalFile(file: File) {
-        importer.importFromLocalFile(file)
+    /**
+     * 복호화된 백업 등 이미 로컬에 있는 파일을 직접 가져오기 (백업 복원 경로용 패스스루).
+     *
+     * @param ownsFile 소유권까지 넘기는가 — 참이면 가져오기가 끝난 뒤 [ExcelImporter]가 지운다.
+     *   **패스스루는 인자도 함께 지나야 한다**: 여기서 기본값으로 삼키면 부르는 쪽이 넘긴
+     *   소유권이 조용히 사라지고, 임시 파일의 주인이 다시 아무도 없게 된다.
+     */
+    fun importFromLocalFile(file: File, ownsFile: Boolean = false) {
+        importer.importFromLocalFile(file, ownsFile)
     }
 
     /** SAF 저장 위치 선택 중 프로세스 재생성에 대비해 내보내기 산출물 경로를 보존한다. */

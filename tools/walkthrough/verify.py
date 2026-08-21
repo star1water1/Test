@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""체크 시트가 319단계를 하나도 안 잃었는지 검산한다. 위반 시 종료코드 1.
+"""체크 시트가 단계를 하나도 안 잃었는지 검산한다. 위반 시 종료코드 1.
+
+**수를 여기 적지 않는다** — 적으면 낡는다(2026.08.21에 실제로 낡았다: 319라 적힌 채 그 몇 배가 됐다).
+세는 것은 아래 ①②가 하고, 그 수를 출력으로 낸다.
 
 **`tools/check_*.sh` 무리에 넣지 않는다.** 2026.08.19 사용자 판정으로 검사는 동결에
 가깝게 다루고, 새 검사는 *같은 부류의 앱 결함이 두 번 난 자리*에만 세운다(CLAUDE.md).
@@ -24,7 +27,7 @@ ACTIVE = [r for r in STEPS if not r.get('drop')]
 DROPPED = [r for r in STEPS if r.get('drop')]
 ids = {f"{r['round']}-{r['id']}" for r in ACTIVE}
 
-# ① 묶음 정의가 319단계를 정확히 한 번씩 쓰는가
+# ① 묶음 정의가 활성 단계를 정확히 한 번씩 쓰는가
 used = [f"{a}-{b}" for s in SESS for a, b in s['items']]
 from collections import Counter
 c = Counter(used)
@@ -36,7 +39,7 @@ if dup or miss or unknown:
 else:
     print(f"  ✓ 묶음 정의가 {len(ids)}단계를 정확히 한 번씩 쓴다 (묶음 {len(SESS)}개)")
 
-# ② 생성된 시트에 그 319단계가 다 있는가
+# ② 생성된 시트에 그 단계가 다 있는가
 inSheet = set(re.findall(r'\*\*`(\d+-[ㄱ-ㅎ][0-9-]*)`\*\*', sheet))
 gone = sorted(ids - inSheet)
 if gone:

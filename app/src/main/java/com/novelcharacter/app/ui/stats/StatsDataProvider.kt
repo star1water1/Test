@@ -813,7 +813,12 @@ data class PatternInsight(
 // ===== 세력 통계 =====
 data class FactionStatsResult(
     val totalFactions: Int,
-    val factionMemberCounts: Map<String, Int>,
+    /**
+     * 세력 **id**별 현재 멤버 수 (R-20: 라벨은 매칭 키가 아니다).
+     * 이름으로 접으면 동명 세력의 묶음이 서로를 덮어 멤버가 통째로 사라진다 —
+     * 이름이 필요한 표시 자리는 [StatsSnapshot.factions]에서 그때 찾아 붙인다.
+     */
+    val factionMemberCounts: Map<Long, Int>,
     val multiMemberCharacters: Int,
     val autoRelationshipCount: Int,
     val departureCount: Int,
@@ -3080,12 +3085,12 @@ class StatsDataProvider {
         val activeMemberships = s.factionMemberships.filter { it.leaveType != FactionMembership.LEAVE_REMOVED }
         val factionMap = s.factions.associateBy { it.id }
 
-        // 세력별 활성 멤버 수
+        // 세력별 활성 멤버 수 — 키는 id다(R-20). 이름으로 접으면 동명 세력이 서로를 덮는다.
         val factionMemberCounts = FactionStanding.current(activeMemberships)
             .groupBy { it.factionId }
             .mapNotNull { (factionId, members) ->
-                val factionName = factionMap[factionId]?.name ?: return@mapNotNull null
-                factionName to members.size
+                if (factionId !in factionMap) return@mapNotNull null   // 지워진 세력의 잔여 기록
+                factionId to members.size
             }
             .toMap()
 

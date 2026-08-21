@@ -65,9 +65,86 @@ class TimelineDisplayOrderTest {
 
     @Test fun reorder_descendingNumbersFromBottom() {
         // 역순 화면에서 보이던 차례 [7, 8, 9]는 시간순으로는 [9, 8, 7]이다.
+        // **돌려주는 것은 시간순 차례**이므로 id도 뒤집혀 나온다.
         val visual = listOf(event(7, 1000), event(8, 1000), event(9, 1000))
         val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = true)
-        assertEquals(listOf(2, 1, 0), saved.map { it.displayOrder })
+        assertEquals(listOf(9L, 8L, 7L), saved.map { it.id })
+        assertEquals(listOf(0, 1, 2), saved.map { it.displayOrder })
+    }
+
+    /**
+     * **번호는 날짜 묶음마다 0부터다.** `displayOrder`는 DAO 술어의 *같은 날짜 안
+     * 타이브레이크*일 뿐이라, 목록 전체에 전역 인덱스를 매기면 다른 날짜의 번호끼리 섞인다.
+     */
+    @Test fun reorder_numbersRestartPerDate() {
+        val visual = listOf(
+            event(1, 1000), event(2, 1000),
+            event(3, 1010), event(4, 1010), event(5, 1010)
+        )
+        val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = false)
+        assertEquals(listOf(0, 1, 0, 1, 2), saved.map { it.displayOrder })
+    }
+
+    // ── mergeDateGroup — 화면 밖 형제 ──
+
+    /**
+     * 화면 목록은 창·필터로 잘린 **부분집합**이다. 그 부분집합에만 번호를 적으면 같은 날짜의
+     * 나머지가 옛 번호를 든 채 남아 번호가 겹치고 순서가 부정이 된다.
+     *
+     * **화면 밖 형제는 제자리(슬롯)에 남는다** — 뒤로 밀지 않는다(콜드 검토 2026.08.21).
+     * 종전에는 이어 붙였고, 그것은 *"보지 못한 것의 자리를 이 조작이 정하지 않는다"*는
+     * 이 함수의 약속을 스스로 깨는 것이었다(맨 앞 형제가 맨 뒤로 갔다).
+     */
+    @Test fun merge_hiddenSiblingsKeepTheirSlot() {
+        // 사용자가 만든 차례: 2 → 1. `visible`은 canonicalReorder가 새 번호를 얹어 온 사본이다.
+        val visible = listOf(event(2, 1000, order = 0), event(1, 1000, order = 1))
+        // DB의 저장값: 1=0, 9=1, 2=2 (9는 창·필터에 가려 화면에 없던 형제 — **가운데**다)
+        val all = listOf(
+            event(1, 1000, order = 0), event(9, 1000, order = 1), event(2, 1000, order = 2)
+        )
+        val updates = TimelineDisplayOrder.mergeDateGroup(visible, all).associate { it.id to it.displayOrder }
+        // 보이는 둘이 있던 슬롯(0·2)만 사용자가 만든 차례로 갈아 끼운다.
+        assertEquals(0, updates[2L])
+        assertEquals(2, updates[1L])
+        // 9는 자기 자리 그대로라 저장할 것이 없다.
+        assertEquals(null, updates[9L])
+    }
+
+    /**
+     * **끌지 않고 재정렬 모드만 껐다 켜도 저장이 돈다**(`TimelineFragment`의 모드 종료 갈래는
+     * 끌었는지를 묻지 않는다). 그때 한 칸도 움직이지 않아야 한다 — 종전에는 필터에 가린
+     * 형제가 뒤로 밀려, 사용자가 손대지도 않은 사건의 앞뒤가 조용히 바뀌었다.
+     */
+    @Test fun merge_noDragMovesNothing() {
+        // 필터가 1·2만 보여 준다. 사용자는 아무것도 끌지 않았다(보이던 차례 그대로).
+        val visible = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val all = listOf(
+            event(9, 1000, order = 0), event(1, 1000, order = 1),
+            event(8, 1000, order = 2), event(2, 1000, order = 3)
+        )
+        assertEquals(
+            "끌지 않았는데 저장할 것이 생기면 그것이 곧 조용한 왜곡이다",
+            emptyList<TimelineEvent>(),
+            TimelineDisplayOrder.mergeDateGroup(visible, all)
+        )
+    }
+
+    /**
+     * **'안 바뀌었다'의 기준은 저장값이다.** `visible`이 든 번호와 견주면 보이는 사건은
+     * 언제나 '그대로'가 되어 한 행도 저장되지 않는다(수리 중 실제로 그 함정에 한 번 빠졌다).
+     */
+    @Test fun merge_onlyChangedRowsAreReturned() {
+        val visible = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val all = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        assertEquals(emptyList<TimelineEvent>(), TimelineDisplayOrder.mergeDateGroup(visible, all))
+    }
+
+    /** 자리가 실제로 뒤집힌 경우는 둘 다 저장된다. */
+    @Test fun merge_swappedVisiblePairIsWritten() {
+        val visible = listOf(event(2, 1000, order = 0), event(1, 1000, order = 1))
+        val all = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val updates = TimelineDisplayOrder.mergeDateGroup(visible, all).associate { it.id to it.displayOrder }
+        assertEquals(mapOf(2L to 0, 1L to 1), updates)
     }
 
     /**
@@ -77,6 +154,7 @@ class TimelineDisplayOrderTest {
     @Test fun reorder_descendingArrangementSurvivesRoundTrip() {
         val visual = listOf(event(7, 1000), event(8, 1000), event(9, 1000))
         val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = true)
+        // (돌려받은 목록은 시간순이지만 아래는 displayOrder로 다시 세우므로 차례에 기대지 않는다)
         // 저장 뒤 DB는 displayOrder 오름차순으로 돌려준다
         val fromDb = saved.sortedBy { it.displayOrder }
         // 그것을 다시 역순으로 그리면 사용자가 만든 그 차례여야 한다

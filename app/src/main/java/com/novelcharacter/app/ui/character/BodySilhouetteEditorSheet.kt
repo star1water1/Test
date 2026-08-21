@@ -147,7 +147,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private var weightKg: Double? = null
 
     /** 🎲 [직전으로] 한 단계 — 굴리기 연타 비교용(5-4-4). */
-    private var previousRoll: Pair<Measures, Double?>? = null
+    private var previousRoll: com.novelcharacter.app.util.RollSnapshot? = null
 
     private val sliders = mutableMapOf<BodySlot, Slider>()
     private val valueFields = mutableMapOf<BodySlot, TextInputEditText>()
@@ -155,6 +155,16 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private var heightField: TextInputEditText? = null
     private var weightSlider: Slider? = null
     private var weightField: TextInputEditText? = null
+
+    /**
+     * 체중 슬라이더가 **처음 섰던 자리** — '체중 없음'을 그릴 때 여기로 되돌린다.
+     *
+     * 이 편집기에는 '값 없음'을 표현하는 위젯 상태가 따로 없다. 그래서 [syncAll]이
+     * 종전에는 값이 있을 때만 그렸고, **한 번 채워진 뒤 비워지는 전이**(굴리기 → [직전으로])를
+     * 표현하지 못했다 — 칸에는 굴린 값이 그대로 남고 저장은 한 글자도 안 되는,
+     * 화면과 저장이 갈리는 자리다(콜드 검토 2026.08.21).
+     */
+    private var weightSliderInitial: Float? = null
 
     /** 되먹임 억제 — 슬라이더가 칸을 고치고 칸이 다시 슬라이더를 고치는 고리를 끊는다. */
     private var syncing = false
@@ -167,6 +177,15 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
      * 담긴 값뿐**이다(개발 의도 2번 — 만들지 않은 데이터를 만들어 넣지 않는다).
      */
     private val touched = mutableSetOf<BodySlot>()
+    /**
+     * 키·체중도 *이 자리에서 만든 값*인가 — [touched]가 부위에 대해 하는 일을 이 둘이 한다.
+     *
+     * 부위값과 체중은 비교의 바탕이 서로 맞았는데(부위는 초안끼리, 체중은 폼 원문끼리) **키만
+     * 한쪽이 초안이고 다른 쪽이 폼 원문**이었다. 키 칸이 빈 캐릭터에서 초안이 기준 키(165)를
+     * 채우므로, 여는 것만으로 [적용]이 켜지고 누르면 사용자가 적은 적 없는 키가 저장됐다.
+     */
+    private var touchedHeight = false
+    private var touchedWeight = false
 
     /**
      * 🎲가 쓰는 축·프리셋 — **세계관 설정에서 그때그때 읽는다**(B-93).
@@ -306,6 +325,8 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             previousRoll = state.previous
             touched.clear()
             touched.addAll(state.touched)
+            touchedHeight = state.touchedHeight
+            touchedWeight = state.touchedWeight
             cupMode = state.cupMode
             overlayOn = state.overlayOn
         }
@@ -324,7 +345,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         // 굴린 뒤 회전했으면 [직전으로]가 살아 있어야 한다 — 그러지 않으면 되돌릴 한 단계가
         // 남아 있는데 단추만 꺼져 있다(있는 것을 없다고 말하는 화면).
         binding.btnUndoRoll.isEnabled = previousRoll != null
-        syncAll(from = null)
+        syncAll()
     }
 
     /**
@@ -409,6 +430,8 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             weightKg = weightKg,
             previous = previousRoll,
             touched = touched.toSet(),
+            touchedHeight = touchedHeight,
+            touchedWeight = touchedWeight,
             cupMode = cupMode,
             overlayOn = overlayOn,
             generatorOpen = binding.generatorPanel.visibility == View.VISIBLE,
@@ -440,9 +463,9 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             onHandleDrag = { slot, value ->
                 current = withSlot(current, slot, value)
                 touched.add(slot)
-                syncAll(from = SyncSource.HANDLE)
+                syncAll(fromHandle = true)
             }
-            onHandleDragEnd = { syncAll(from = null) }
+            onHandleDragEnd = { syncAll() }
         }
 
         setupOverlayToggle()
@@ -511,6 +534,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             container.addView(
                 buildRow(density, getString(R.string.silhouette_row_weight), BodyEditorModel.WEIGHT_RANGE) { s, f ->
                     weightSlider = s; weightField = f
+                    weightSliderInitial = s.value
                 }
             )
         }
@@ -554,7 +578,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
         slider.addOnChangeListener { _, value, fromUser ->
             if (!fromUser || syncing) return@addOnChangeListener
-            onValueEdited(slider, value.toDouble(), SyncSource.SLIDER)
+            onValueEdited(slider, value.toDouble(), editing = slider)
         }
         field.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -563,25 +587,35 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
                 if (syncing) return
                 // 수치 칸은 슬라이더 범위 밖도 받는다 — 극단값은 유효 입력이다(5-4-4).
                 val v = s?.toString()?.toDoubleOrNull() ?: return
-                onValueEdited(slider, v, SyncSource.FIELD)
+                onValueEdited(slider, v, editing = field)
             }
         })
         return row
     }
 
-    /** 어느 행이 바뀌었는지 위젯 신원으로 되찾는다 — 행마다 콜백을 복제하지 않기 위해서다. */
-    private fun onValueEdited(slider: Slider, value: Double, source: SyncSource) {
+    /**
+     * 어느 행이 바뀌었는지 위젯 신원으로 되찾는다 — 행마다 콜백을 복제하지 않기 위해서다.
+     *
+     * @param editing 지금 사용자가 **직접 만지고 있는 위젯**. 되받아 쓰지 않을 것은 이것 하나다.
+     */
+    private fun onValueEdited(slider: Slider, value: Double, editing: Any) {
         if (value <= 0) return
         when {
-            slider === heightSlider -> current = current.copy(height = value, heightKnown = true)
-            slider === weightSlider -> weightKg = value
+            slider === heightSlider -> {
+                current = current.copy(height = value, heightKnown = true)
+                touchedHeight = true
+            }
+            slider === weightSlider -> {
+                weightKg = value
+                touchedWeight = true
+            }
             else -> {
                 val slot = sliders.entries.firstOrNull { it.value === slider }?.key ?: return
                 current = withSlot(current, slot, value)
                 touched.add(slot)
             }
         }
-        syncAll(from = source)
+        syncAll(editing = editing)
     }
 
     private fun withSlot(m: Measures, slot: BodySlot, value: Double): Measures = when (slot) {
@@ -593,13 +627,21 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         BodySlot.NONE -> m
     }
 
-    private enum class SyncSource { HANDLE, SLIDER, FIELD }
-
     /**
-     * 세 경로를 같은 값으로 맞춘다. [from]이 가리키는 경로는 사용자가 지금 만지는 중이라
-     * 건드리지 않는다(수치 칸을 다시 쓰면 커서가 튀고, 슬라이더는 손가락과 싸운다).
+     * 세 경로를 같은 값으로 맞춘다.
+     *
+     * **건드리지 않는 것은 [editing] 하나다** — 사용자가 지금 만지고 있는 그 위젯(수치 칸을
+     * 다시 쓰면 커서가 튀고, 슬라이더는 손가락과 싸운다).
+     *
+     * 종전에는 억제 기준이 개별 위젯이 아니라 **위젯 종류**(SLIDER/FIELD)였다. 그래서 한 칸에
+     * 적으면 **모든 행의 칸**이, 한 슬라이더를 끌면 **모든 행의 슬라이더**가 함께 얼어붙었다 —
+     * 부위 값이 서로 독립이면 안 드러나지만, 밑가슴처럼 다른 부위에서 파생되는 행이 있으면
+     * 그 행의 슬라이더와 수치 칸이 **서로 다른 수를 말한다.** 억제가 사려던 것은 종류가 아니라
+     * *그 위젯*이었으므로 신원으로 되돌린다('3자 동기'의 원래 뜻).
+     *
+     * @param fromHandle 실루엣 핸들 드래그인가 — 뷰가 자기 `measures`를 이미 들고 있어 되쓰지 않는다.
      */
-    private fun syncAll(from: SyncSource?) {
+    private fun syncAll(editing: Any? = null, fromHandle: Boolean = false) {
         syncing = true
         val values = BodyEditorModel.valuesOf(current)
         for ((slot, slider) in sliders) {
@@ -608,21 +650,29 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             val v = values[slot]
                 ?: (if (slot == BodySlot.UNDERBUST) BodySilhouetteSpec.figureUnderbust(current) else null)
                 ?: continue
-            if (from != SyncSource.SLIDER) slider.value = v.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
-            if (from != SyncSource.FIELD) valueFields[slot]?.setText(BodyEditorModel.formatValue(v))
+            if (slider !== editing) slider.value = v.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
+            val field = valueFields[slot]
+            if (field != null && field !== editing) field.setText(BodyEditorModel.formatValue(v))
         }
         heightSlider?.let { s ->
-            if (from != SyncSource.SLIDER) s.value = current.height.toFloat().coerceIn(s.valueFrom, s.valueTo)
-            if (from != SyncSource.FIELD) heightField?.setText(BodyEditorModel.formatValue(current.height))
+            if (s !== editing) s.value = current.height.toFloat().coerceIn(s.valueFrom, s.valueTo)
+            val hf = heightField
+            if (hf != null && hf !== editing) hf.setText(BodyEditorModel.formatValue(current.height))
         }
         weightSlider?.let { s ->
             val w = weightKg
+            val wf = weightField
             if (w != null) {
-                if (from != SyncSource.SLIDER) s.value = w.toFloat().coerceIn(s.valueFrom, s.valueTo)
-                if (from != SyncSource.FIELD) weightField?.setText(BodyEditorModel.formatValue(w))
+                if (s !== editing) s.value = w.toFloat().coerceIn(s.valueFrom, s.valueTo)
+                if (wf != null && wf !== editing) wf.setText(BodyEditorModel.formatValue(w))
+            } else {
+                // **'체중 없음'도 그린다.** 안 그리면 [직전으로]가 값을 되돌린 뒤에도 칸이
+                // 굴린 값을 붙들고 있어, 사용자가 보는 것과 저장되는 것이 갈린다.
+                if (wf != null && wf !== editing) wf.setText("")
+                if (s !== editing) weightSliderInitial?.let { s.value = it }
             }
         }
-        if (from != SyncSource.HANDLE) binding.silhouette.measures = current
+        if (!fromHandle) binding.silhouette.measures = current
         else binding.silhouette.invalidate()
 
         val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig)
@@ -633,8 +683,17 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         syncing = false
     }
 
+    /**
+     * 고친 것이 있는가 — **비교의 바탕은 세 축 모두 '이 자리에서 만들었는가'다.**
+     *
+     * 키는 [touchedHeight]를 함께 본다. 초안([start])이 빈 키 칸에 기준 키를 채우므로
+     * 그것을 폼 원문([startHeight] — 빈 칸이면 null)과 곧장 견주면 **열자마자 다름**이 되고,
+     * 아무것도 안 만진 창에서 [적용]이 켜진다.
+     */
     private fun hasChanges(): Boolean =
-        current != start || weightKg != startWeight || (hasHeightField && current.height != startHeight)
+        current != start ||
+            weightKg != startWeight ||
+            (hasHeightField && touchedHeight && current.height != startHeight)
 
     // ── 고지 ────────────────────────────────────────────────────────────────
 
@@ -750,7 +809,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             if (!ok) return@save
             analysisConfig = analysisConfig.copy(generation = updated)
             buildAxes(resources.displayMetrics.density)
-            syncAll(null)
+            syncAll()
         }
     }
 
@@ -914,7 +973,15 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private fun roll() {
         // 생성이 실패하면(기준 캐릭터에 수치가 없는 상대 생성) 되돌릴 자리도 만들지 않는다.
         val body = generateBody() ?: return
-        previousRoll = current to weightKg
+        // 되돌릴 것은 수치가 아니라 **그 순간의 편집 상태 한 벌**이다 — 되쓰기 범위를 함께
+        // 담지 않으면 [직전으로] 뒤에도 굴리기가 넓힌 범위가 남아 빈 칸이 채워진다.
+        previousRoll = com.novelcharacter.app.util.RollSnapshot(
+            measures = current,
+            weightKg = weightKg,
+            touched = touched.toSet(),
+            touchedHeight = touchedHeight,
+            touchedWeight = touchedWeight
+        )
         current = current.copy(
             height = body.height,
             bust = body.bust,
@@ -926,19 +993,27 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         )
         weightKg = body.weight
         touched.addAll(listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP))
+        // 굴리기는 키·체중도 만든다 — 부위와 같은 자격으로 등재한다.
+        touchedHeight = true
+        touchedWeight = true
         rebuildSliderRanges()
         binding.btnUndoRoll.isEnabled = true
-        syncAll(from = null)
+        syncAll()
     }
 
     private fun undoRoll() {
-        val (m, w) = previousRoll ?: return
-        current = m
-        weightKg = w
+        val snapshot = previousRoll ?: return
+        current = snapshot.measures
+        weightKg = snapshot.weightKg
+        // 수치와 함께 **되쓰기 범위도** 되세운다(굴리기 전으로 통째로 돌아간다).
+        touched.clear()
+        touched.addAll(snapshot.touched)
+        touchedHeight = snapshot.touchedHeight
+        touchedWeight = snapshot.touchedWeight
         previousRoll = null
         rebuildSliderRanges()
         binding.btnUndoRoll.isEnabled = false
-        syncAll(from = null)
+        syncAll()
     }
 
     /**
@@ -1022,10 +1097,13 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         val values = BodyEditorModel.valuesOf(current)
             .filterKeys { it in touched || initial.values.containsKey(it) }
         val parts = BodyEditorModel.writeBack(writableSlots, partValues, values)
+        // 키·체중도 부위와 **같은 규칙**이다 — *이 자리에서 만들었거나 원래 있던* 것만 되쓴다.
+        // null은 '적지 말라'는 뜻이라(호스트의 `heightCm?.let { … }`), 안 만진 빈 칸이
+        // 초안 값으로 채워지지 않는다.
         onApply?.invoke(
             parts,
-            if (hasHeightField) current.height else null,
-            if (hasWeightField) weightKg else null
+            if (hasHeightField && (touchedHeight || startHeight != null)) current.height else null,
+            if (hasWeightField && (touchedWeight || startWeight != null)) weightKg else null
         )
         dismiss()
     }

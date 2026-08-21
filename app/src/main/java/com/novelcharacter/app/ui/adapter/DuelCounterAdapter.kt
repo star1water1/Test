@@ -295,6 +295,19 @@ class DuelCounterAdapter(
                         Row.LabeledNote(context.getString(R.string.duel_category_values, summary))
                     )
                 }
+                // **깨진 판도 말한다**(콜드 검토 2026.08.21). 앞선 커밋이 목록에 실을지의
+                // 게이트를 `hasSomethingToSay`로 넓히면서 이 갈래를 함께 열었는데, 여기
+                // 그리는 줄이 없어서 **깨진 판만 있는 필드는 머리말과 "아직 셋 이상 붙은 값
+                // 짝이 없습니다" 한 줄만** 떴다 — 사용자는 판이 모자란 줄 알고 더 붙이지만
+                // 깨진 판은 영원히 세어지지 않는다. 게이트만 넓히고 렌더러를 안 넓힌 자리다.
+                // 문구는 순위표가 이미 쓰는 것과 같다(`duel_caveat_malformed`).
+                if (report.malformedMatches > 0) {
+                    rows.add(
+                        Row.LabeledNote(
+                            context.getString(R.string.duel_caveat_malformed, report.malformedMatches)
+                        )
+                    )
+                }
                 // 못 센 판은 **표에 드러나지 않는다** — 값을 안 적은 캐릭터가 많으면 이 표가
                 // 전체를 대표하지 못하는데, 그 사실을 말하지 않으면 사용자는 모른다.
                 if (report.skippedNoValue > 0 || report.skippedSameValue > 0) {

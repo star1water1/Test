@@ -85,13 +85,21 @@ class CharacterSaveCoordinator(
         /**
          * 편집창에서 **"앱에서 삭제"를 고른** 이미지 경로들(B-107 D7).
          *
-         * 고른 즉시가 아니라 저장할 때 실행하는 것이 이 화면의 계약이다 — 취소하면 무해해야
-         * 한다. 기본 구현이 빈 목록이라, 이 조작이 없는 호스트는 아무것도 하지 않는다.
+         * 고른 즉시가 아니라 저장할 때 실행하는 것이 이 화면의 계약이다 — 취소하면 무해해야 한다.
+         *
+         * **기본 구현을 두지 않는다.** 종전에는 `= emptyList()`가 있었고, 그것이
+         * *이 조작이 없는 호스트*를 위한 편의라고 적혀 있었다. 그런데 [앱에서 삭제] 선택지를
+         * 띄우는 것은 화면이 아니라 **공용 `CharacterImageStripController`**라, 스트립을 붙인
+         * 화면은 자동으로 그 조작을 갖는다 — 즉 "이 조작이 없는 호스트"라는 전제가 성립하지
+         * 않는다. 실제로 보충 탭이 이 둘을 안 이은 채 기본 구현에 얹혀 있었고, 사용자가 고른
+         * 삭제가 저장 시점에 **고지 없이 버려졌다**(지운 줄 알고 나간다 — 개발 의도 2번 위반).
+         * 조용한 no-op을 없애 컴파일러가 그 침묵을 잡게 한다 — 조작이 정말 없는 호스트는
+         * `emptyList()`를 **적어서** 그렇다고 밝힌다.
          */
-        fun pendingImageDeletes(): List<String> = emptyList()
+        fun pendingImageDeletes(): List<String>
 
         /** 대기 삭제를 실제로 실행한 뒤 호출된다 — 호스트가 목록을 비운다(중복 실행 방지). */
-        fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int) {}
+        fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int)
 
         /**
          * 편집 폼의 **[은행] 시트에서 고른** 이름은행 엔트리 id (B-124 ⓐ). 없으면 null.

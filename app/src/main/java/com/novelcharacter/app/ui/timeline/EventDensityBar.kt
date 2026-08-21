@@ -20,9 +20,26 @@ class EventDensityBar @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private val densityData = mutableMapOf<Int, Int>() // year -> count
+
+    /**
+     * 이 바의 **연도 축** — 세우는 자리는 [setRange] **하나**다.
+     *
+     * 종전에는 축을 세우는 자리가 둘이었다: [setDensityData]가 데이터와 함께 *전체 연도*를,
+     * `visibleRange` 관측자가 [setRange]로 *목록 창(중심±폭)*을 각각 세웠고 나중에 불린 쪽이
+     * 이겼다. 둘은 뜻이 다른 값인데 같은 필드를 써서, 슬라이더를 한 번 움직이는 순간 바의
+     * 축만 창으로 좁혀지고 **같은 x가 바 위와 슬라이더 위에서 서로 다른 해**를 가리켰다.
+     * 줌을 올려 창 폭이 0이 되면 바가 배경만 남고 탭·롱프레스까지 죽었다.
+     *
+     * 축은 슬라이더를 세우는 그 계산에서만 온다 — 둘이 한 벌의 눈금으로 읽히도록
+     * 레이아웃이 같은 좌우 여백으로 얹어 둔 것이 그 근거다.
+     */
     private var rangeFrom: Int = 0
     private var rangeTo: Int = 100
     private var maxCount: Int = 1
+
+    /** '지금 목록에 실린 연도 창' — **축이 아니라 강조 구간**이다. null이면 안 그린다. */
+    private var windowFrom: Int? = null
+    private var windowTo: Int? = null
 
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -35,6 +52,13 @@ class EventDensityBar @JvmOverloads constructor(
 
     private val baseColor = ContextCompat.getColor(context, R.color.primary)
 
+    /** 창 강조 — 축을 바꾸지 않고 '지금 보는 구간'만 옅게 덮는다. */
+    private val windowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = baseColor
+        alpha = 40
+        style = Paint.Style.FILL
+    }
+
     private var onYearTapListener: ((Int) -> Unit)? = null
     private var onYearLongPressListener: ((Int) -> Unit)? = null
 
@@ -46,18 +70,30 @@ class EventDensityBar @JvmOverloads constructor(
         onYearLongPressListener = listener
     }
 
-    fun setDensityData(data: Map<Int, Int>, from: Int, to: Int) {
+    /** 데이터만 받는다 — **축은 [setRange]가 든다**(두 벌이 남는 한 한쪽이 다시 낡는다). */
+    fun setDensityData(data: Map<Int, Int>) {
         densityData.clear()
         densityData.putAll(data)
-        rangeFrom = from
-        rangeTo = to
         maxCount = (data.values.maxOrNull() ?: 1).coerceAtLeast(1)
         invalidate()
     }
 
+    /** 연도 축 — 슬라이더와 **같은 수**를 받는다. */
     fun setRange(from: Int, to: Int) {
         rangeFrom = from
         rangeTo = to
+        invalidate()
+    }
+
+    /**
+     * 지금 목록에 실린 연도 창을 **강조**한다(축은 그대로).
+     *
+     * 창을 축으로 쓰면 창 밖 연도의 사건 표시가 사라져 *"연도를 열어 보지 않아도 사건의
+     * 존재가 보인다"*(원칙 04)가 깨진다. 덮어 그리면 둘 다 산다.
+     */
+    fun setWindow(from: Int?, to: Int?) {
+        windowFrom = from
+        windowTo = to
         invalidate()
     }
 
@@ -95,7 +131,29 @@ class EventDensityBar @JvmOverloads constructor(
 
             canvas.drawRect(x, 0f, x + barWidth, h, barPaint)
         }
+
+        // 창 강조는 밀도 위에 옅게 덮는다 — 축을 바꾸지 않으므로 창 밖 사건도 그대로 보인다.
+        //
+        // **폭이 0이어도 그린다**(콜드 검토 2026.08.21). 줌을 가장 좁게(월 단위) 올리면
+        // 창이 `(center, center)`라 폭이 0이고, 축이 최대 1만 년이라 줌이 낮아도 폭이
+        // 1px 미만이 된다 — 종전 조건(`wt > wf`·`right > left`)에서는 **가장 좁게 볼 때
+        // 강조가 통째로 사라졌다.** 축을 단일화하면서 살리려던 *"지금 목록에 실린 구간"*이
+        // 정작 그것이 가장 필요한 자리에서 안 보인 셈이다. 최소 폭을 보장해 중심을 가리키는
+        // 얇은 띠로 남긴다.
+        val wf = windowFrom
+        val wt = windowTo
+        if (wf != null && wt != null && wt >= wf) {
+            val left = ((wf - rangeFrom) / totalRange * w).coerceIn(0f, w)
+            val right = ((wt - rangeFrom) / totalRange * w).coerceIn(0f, w)
+            val minWidth = minWindowWidthPx.coerceAtMost(w)
+            val drawRight = maxOf(right, left + minWidth).coerceAtMost(w)
+            val drawLeft = (drawRight - maxOf(right - left, minWidth)).coerceAtLeast(0f)
+            canvas.drawRect(drawLeft, 0f, drawRight, h, windowPaint)
+        }
     }
+
+    /** 창 강조의 최소 폭 — 폭이 0·1px 미만이어도 중심을 가리키는 띠는 남는다. */
+    private val minWindowWidthPx = 2f * resources.displayMetrics.density
 
     private var longPressRunnable: Runnable? = null
     private var downX = 0f

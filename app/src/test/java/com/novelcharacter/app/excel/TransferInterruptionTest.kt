@@ -64,14 +64,39 @@ class TransferInterruptionTest {
     }
 
     @Test
-    fun `끊기지 않는 구간에서는 중단을 고지하지 않는다`() {
-        // 이 구간들은 끝까지 가서 스스로 결과를 말한다 — 여기서 말하면 고지가 두 번이고 서로 어긋난다.
-        assertNull(
-            TransferInterruption.abortedKind(TransferPhase.IMPORT_RESTORE_IMAGES, userCancelled = false)
-        )
+    fun `끊기지 않으면서 스스로 말하는 구간에서는 중단을 고지하지 않는다`() {
+        // 이 구간은 끝까지 가서 스스로 결과를 말한다 — 여기서 말하면 고지가 두 번이고 서로 어긋난다.
         assertNull(
             TransferInterruption.abortedKind(TransferPhase.IMPORT_APPLY, userCancelled = false)
         )
+        assertNull(
+            TransferInterruption.abortedKind(TransferPhase.EXPORT_SAVE, userCancelled = false)
+        )
+    }
+
+    /**
+     * **끊기지 않는다고 해서 스스로 말하는 것은 아니다.**
+     *
+     * 이미지 되살리기는 복사 블록만 `NonCancellable`이고, 그 뒤의 가져오기는 이미 끊긴
+     * 스코프 위에서 첫 중단점에 죽는다 — 그 catch는 *"고지는 onScreenGone이 이미 했다"*고
+     * 믿어 다시 던지는데 실제로는 아무도 안 했다. 종전에는 이 구간이 `stopsOnScreenLoss`
+     * 하나로 침묵 갈래에 묶여, 화면을 돌리면 **중단 고지도 완료 결과도 없이** 조용히 죽었다.
+     */
+    @Test
+    fun `끊기지 않지만 스스로 말하지 않는 구간은 중단을 고지한다`() {
+        assertEquals(
+            TransferKind.IMPORT,
+            TransferInterruption.abortedKind(TransferPhase.IMPORT_RESTORE_IMAGES, userCancelled = false)
+        )
+    }
+
+    /** 축이 둘이라는 사실 자체를 잠근다 — 하나로 겸하면 같은 구멍이 다시 난다. */
+    @Test
+    fun `두 축은 서로 독립이다`() {
+        assertEquals(false, TransferPhase.IMPORT_RESTORE_IMAGES.stopsOnScreenLoss)
+        assertEquals(false, TransferPhase.IMPORT_RESTORE_IMAGES.announcesOwnOutcome)
+        assertEquals(false, TransferPhase.IMPORT_APPLY.stopsOnScreenLoss)
+        assertEquals(true, TransferPhase.IMPORT_APPLY.announcesOwnOutcome)
     }
 
     @Test
@@ -111,12 +136,15 @@ class TransferInterruptionTest {
     fun `모든 구간이 셋 중 하나로 갈린다 — 빠뜨린 구간이 없다`() {
         // 새 구간이 늘면 이 시험이 그것을 어느 갈래에 넣을지 정하게 만든다.
         // (판정을 안 하고 늘리면 그 구간의 중단은 조용해진다 — 이 판이 고치러 온 그 모양이다.)
+        //
+        // **침묵의 조건은 두 축이 함께 참일 때다** — 종전에는 `!stopsOnScreenLoss` 하나였고,
+        // 그래서 '끊기지는 않는데 스스로 말하지도 않는' 구간이 조용히 침묵 갈래에 묶였다.
         for (p in TransferPhase.entries) {
-            val silentBecauseSurvives = TransferInterruption.abortedKind(p, userCancelled = false) == null
+            val silent = TransferInterruption.abortedKind(p, userCancelled = false) == null
             assertEquals(
-                "구간 $p 의 '끊기는가'와 '고지하는가'가 어긋난다",
-                !p.stopsOnScreenLoss,
-                silentBecauseSurvives
+                "구간 $p 의 '끊기는가 · 스스로 말하는가'와 '고지하는가'가 어긋난다",
+                !p.stopsOnScreenLoss && p.announcesOwnOutcome,
+                silent
             )
             assertNull(
                 "구간 $p: 사용자 취소는 언제나 침묵이다",

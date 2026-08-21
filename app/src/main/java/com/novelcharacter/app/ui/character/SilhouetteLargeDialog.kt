@@ -13,6 +13,7 @@ import com.google.android.material.button.MaterialButton
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.util.BodyEditorModel
+import com.novelcharacter.app.util.BodyEditorState
 import com.novelcharacter.app.util.BodyMeasurements
 import com.novelcharacter.app.util.BodySilhouetteSpec
 
@@ -28,16 +29,29 @@ import com.novelcharacter.app.util.BodySilhouetteSpec
  */
 class SilhouetteLargeDialog : DialogFragment() {
 
-    /** 그릴 수치(호스트가 해석한 것). */
-    var measured: BodyMeasurements = BodyMeasurements(
-        values = emptyMap(), mode = BodyMeasurements.MappingMode.NONE,
-        partSlots = emptyList(), partValues = emptyList(), unmappedParts = emptyList()
-    )
+    /**
+     * 그릴 것은 **arguments가 든다** — 인스턴스 프로퍼티가 아니다.
+     *
+     * 종전에는 호스트가 `newInstance(...).apply { this.measured = …; this.config = …;
+     * this.peers = … }`로 인스턴스에 직접 꽂았는데, 회전·다크모드 전환은 FragmentManager가
+     * 이 창을 **무인자 생성자로 되살리므로** 셋이 전부 선언 기본값으로 돌아갔다.
+     * 그러면 `measuresFrom`이 축을 하나도 못 찾아 `null`을 내고 `SilhouetteView.onDraw`가
+     * 첫 줄에서 돌아가 **빈 화면**이 된다 — 창은 떠 있는데 아무것도 없다.
+     *
+     * 이 창이 실제로 쓰는 것은 그림 둘뿐이다(본인 수치 · 작품 평균 오버레이). 그래서
+     * 해석된 [BodySilhouetteSpec.Measures]를 그대로 담는다 — 캐릭터 id로 다시 조회하는
+     * 길보다 짧고, 해석 규칙이 두 벌이 되지 않는다(코덱은 [BodyEditorState]의 것 하나다).
+     */
+    private val figure: BodySilhouetteSpec.Measures? by lazy {
+        BodyEditorState.measuresFromJson(readJson(ARG_MEASURES))
+    }
 
-    var config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT
+    private val peerAverage: BodySilhouetteSpec.Measures? by lazy {
+        BodyEditorState.measuresFromJson(readJson(ARG_PEER_AVERAGE))
+    }
 
-    /** 같은 작품 캐릭터의 수치 — 작품 평균 오버레이의 재료다. 비어 있으면 토글이 없다. */
-    var peers: List<BodyMeasurements> = emptyList()
+    private fun readJson(key: String): org.json.JSONObject? =
+        arguments?.getString(key)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
 
     private var silhouette: SilhouetteView? = null
 
@@ -97,7 +111,7 @@ class SilhouetteLargeDialog : DialogFragment() {
 
         // ── 중앙 실루엣 (화면 최대) ──
         val view = SilhouetteView(ctx).apply {
-            measures = BodySilhouetteSpec.measuresFrom(measured, config.ribOffset)
+            this.measures = figure
             // 크게 보기에서는 라벨이 기본 켬이다(5-4-1) — 크기가 있으니 읽힌다.
             showLabels = true
             interactive = false
@@ -162,7 +176,7 @@ class SilhouetteLargeDialog : DialogFragment() {
         )
 
         // 작품 평균 — 기본 끔(P3). 재료가 없으면 토글 자체를 내놓지 않는다(구색 금지).
-        val average = BodyEditorModel.peerAverage(peers, config.ribOffset)
+        val average = peerAverage
         if (average != null) {
             bar.addView(
                 toggle(getString(R.string.silhouette_overlay_average), false) { on ->
@@ -182,9 +196,31 @@ class SilhouetteLargeDialog : DialogFragment() {
         const val TAG = "SilhouetteLargeDialog"
         private const val ARG_NAME = "characterName"
 
-        fun newInstance(characterName: String): SilhouetteLargeDialog =
-            SilhouetteLargeDialog().apply {
-                arguments = Bundle().apply { putString(ARG_NAME, characterName) }
+        /** 굳혀 담은 그림 — 회전·다크모드 전환을 이 둘이 넘긴다. */
+        private const val ARG_MEASURES = "measures"
+        private const val ARG_PEER_AVERAGE = "peerAverage"
+
+        /**
+         * @param measured 호스트가 해석한 수치 · @param peers 같은 작품 이웃(작품 평균의 재료)
+         *
+         * **그림을 여기서 굳혀 담는다** — 창이 회전·다크모드 전환을 넘어 스스로 다시 그릴 수
+         * 있어야 하기 때문이다. 해석은 호스트가 이미 한 번 했으므로 여기서 다시 하지 않는다.
+         */
+        fun newInstance(
+            characterName: String,
+            measured: BodyMeasurements,
+            config: BodyAnalysisConfig,
+            peers: List<BodyMeasurements>
+        ): SilhouetteLargeDialog = SilhouetteLargeDialog().apply {
+            arguments = Bundle().apply {
+                putString(ARG_NAME, characterName)
+                BodySilhouetteSpec.measuresFrom(measured, config.ribOffset)?.let {
+                    putString(ARG_MEASURES, BodyEditorState.measuresToJson(it).toString())
+                }
+                BodyEditorModel.peerAverage(peers, config.ribOffset)?.let {
+                    putString(ARG_PEER_AVERAGE, BodyEditorState.measuresToJson(it).toString())
+                }
             }
+        }
     }
 }

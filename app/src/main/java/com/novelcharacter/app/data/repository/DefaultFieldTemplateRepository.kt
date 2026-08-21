@@ -321,7 +321,20 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
      *
      * @return 강등된 필드 수.
      */
-    suspend fun deleteTemplate(template: DefaultFieldTemplate): Int = db.withTransaction {
+    /**
+     * 해제가 실제로 한 두 가지 일 — **합치지 않는다.**
+     *
+     * 합쳐서 한 수로 말하면 사용자가 *자기 필드가 지워진 줄* 안다(심기 결과가
+     * '새로 심음 N곳 · 기존 필드에 연결 M곳'으로 두 수를 가르는 것과 같은 규약).
+     */
+    data class UnlinkOutcome(
+        /** 보통 필드로 남은 것 — 세계관에 심긴 필드와 값이 있는 전역 그림자 */
+        val demoted: Int,
+        /** 값이 없어 함께 정리된 무소속(전역) 구역의 그림자 */
+        val cleanedShadows: Int
+    )
+
+    suspend fun deleteTemplate(template: DefaultFieldTemplate): UnlinkOutcome = db.withTransaction {
         val linked = linkedFields(template.code)
         // 전역 구역의 그림자는 **값이 있으면 강등, 없으면 삭제**로 가른다 (2026.08.07).
         // 세계관 필드는 일괄 강등이 맞다 — 그 세계관의 관리 화면이 있어 사용자가 처분할 수
@@ -338,11 +351,15 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         for (row in demoted) fieldDao.update(row)
         SqlInChunks.each(globalToDelete) { fieldDao.deleteGlobalByIds(it) }
         templateDao.delete(template)
-        demoted.size
+        // **정리한 수도 함께 돌려준다.** 종전에는 강등 수 하나만 냈고, 그래서 결과 문구가
+        // 그 수를 말할 재료조차 없었다 — 확인 문구는 *"필드와 캐릭터 값은 지워지지 않습니다"*라
+        // 단정하는데 값 없는 전역 그림자는 실제로 삭제됐다(처분이 넓어질 때 그것을 설명하던
+        // 문장이 함께 낡은 자리다).
+        UnlinkOutcome(demoted = demoted.size, cleanedShadows = globalToDelete.size)
     }
 
     /** 승격 해제 — [deleteTemplate]과 같은 일이며, 화면이 부르는 이름만 다르다. */
-    suspend fun unlinkAll(template: DefaultFieldTemplate): Int = deleteTemplate(template)
+    suspend fun unlinkAll(template: DefaultFieldTemplate): UnlinkOutcome = deleteTemplate(template)
 
     /**
      * 가져오기가 **연결을 찾지 못한 필드**를 일반 필드로 둔다(설계 1-5 — 거부가 아니라 수용·교정).

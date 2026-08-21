@@ -361,7 +361,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_stdyear_updated, newStdYear)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to set standard year", e)
-            showError(e.message)
+            failEvent(R.string.result_novel_standard_year_failed, e)
         }
     }
 
@@ -470,10 +470,20 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _centerYear.value?.let { prefs.edit().putInt("center_year", it).apply() }
     }
 
-    private fun showError(message: String?) {
-        // 예외 메시지가 null이어도 실패를 알린다 — 결과 채널로 통보 + 작업 이력 기록
-        reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
-            message ?: app.getString(R.string.operation_failed)))
+    /**
+     * 사건 축의 실패 고지 — **무엇이 실패했는가를 부르는 자리가 반드시 적는다.**
+     *
+     * 종전에는 `showError(e.message)` 하나를 여섯 자리가 공유했고, 예외 원문이 **요약**
+     * 자리에 그대로 나갔다("database or disk is full (code 13 SQLITE_FULL)" 같은 글자가
+     * 사용자 문구로 뜬다). 무엇을 하다 실패했는지는 한 글자도 없었고, detail이 비어
+     * [상세] 경로도 붙지 않았다. 캐릭터 축은 catch마다 문구를 직접 적어 이 문제가 없다 —
+     * 쓰는 문자열도 이미 있었는데 연표 축만 안 쓰고 있었다.
+     *
+     * **시그니처로 강제한다**: 요약 문자열을 인자로 받으므로 조작 이름을 빠뜨리면
+     * 컴파일되지 않는다. 예외 원문은 detail로 내려가 [상세]가 붙는다.
+     */
+    private fun failEvent(summaryRes: Int, e: Exception) {
+        reportResult(_result, OpResult.failure(OpResult.CAT_EVENT, app.getString(summaryRes), e.message))
     }
 
     /**
@@ -523,7 +533,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_save_failed, e)
         }
     }
 
@@ -564,7 +574,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_update_failed, e)
         }
     }
 
@@ -642,7 +652,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to shift events", e)
-            showError(e.message)
+            failEvent(R.string.result_event_update_failed, e)
         }
     }
 
@@ -785,16 +795,46 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     /**
      * 드래그 재정렬 저장 — 넘어오는 [visualOrder]는 **화면에 보이던 차례**다.
      * 저장 번호는 언제나 시간순 기준이므로 역순 화면이면 뒤에서부터 매긴다(B-47).
+     *
+     * **번호는 날짜 묶음마다 매기고, 묶음은 화면 밖 형제까지 읽어 다시 센다.**
+     * `displayOrder`는 DAO 술어의 *같은 날짜 안 타이브레이크*일 뿐인데 종전에는 화면에 실린
+     * 목록 전체에 전역 인덱스를 매겼다. 그 목록은 창(`visibleRange`)으로 잘려 있고 작품·
+     * 캐릭터·검색 필터까지 걸릴 수 있는 **부분집합**이라, 손대지도 않은 같은 날짜의 사건들이
+     * 옛 번호를 그대로 든 채 남아 번호가 겹치고 순서가 부정이 됐다.
+     *
+     * @return 저장에 성공했는가 — **고지는 이 답을 받은 뒤에 뜬다**(종전에는 결과를 안 기다렸다).
+     *
+     * **쓰기는 화면 수명이 아니라 [viewModelScope]에서 돈다**(콜드 검토 2026.08.21).
+     * 부르는 쪽이 화면 스코프라, 순서 편집을 끄자마자 회전하면 ⓐ 쓰기가 시작조차 못 하는
+     * 갈래가 있었고 ⓑ 이미 시작된 회차는 `withContext`가 던진 취소를 아래 `catch`가 삼켜
+     * **DB에는 저장이 끝났는데 화면에는 "사건 순서 변경 실패"가 뜨고 작업 이력에도 실패로
+     * 남았다.** 사용자는 저장된 순서를 다시 만든다. 같은 파일의 `insertEventField`가 이미
+     * 쓰는 관례다 — 쓰기는 뷰모델이 들고, 화면은 결과를 받아 고지만 한다.
      */
-    fun updateDisplayOrders(visualOrder: List<TimelineEvent>) = viewModelScope.launch {
-        try {
-            val events = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
-            db.timelineDao().updateAll(events)
-        } catch (e: Exception) {
-            Log.e("TimelineViewModel", "Failed to update display orders", e)
-            showError(e.message)
-        }
-    }
+    suspend fun updateDisplayOrders(visualOrder: List<TimelineEvent>): Boolean =
+        viewModelScope.async {
+            try {
+                val ascending = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
+                val dao = db.timelineDao()
+                val updates = mutableListOf<TimelineEvent>()
+                for ((key, visible) in ascending.groupBy { TimelineDisplayOrder.dateKeyOf(it) }) {
+                    updates.addAll(
+                        TimelineDisplayOrder.mergeDateGroup(
+                            visible, dao.getEventsByDate(key.year, key.month, key.day)
+                        )
+                    )
+                }
+                if (updates.isNotEmpty()) dao.updateAll(updates)
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다.** 삼키면 위 KDoc이 적은 그 거짓 고지가 난다.
+                throw e
+            } catch (e: Exception) {
+                Log.e("TimelineViewModel", "Failed to update display orders", e)
+                failEvent(R.string.result_event_order_failed, e)
+                false
+            }
+        }.await()
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
@@ -817,7 +857,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_deleted)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_delete_failed, e)
         }
     }
 

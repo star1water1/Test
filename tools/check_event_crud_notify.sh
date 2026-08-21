@@ -9,7 +9,7 @@
 #
 # ── 축이 둘이다 ──
 #
-# ① **ViewModel이 실패를 고지하는가.** catch 블록에 `reportResult`/`showError`가 있는가.
+# ① **ViewModel이 실패를 고지하는가.** catch 블록에 `reportResult`/`failEvent`가 있는가.
 # ② **호스트가 그 채널을 관측하는가.** ①만 지키면 고지가 **아무 데도 닿지 않는다** —
 #    실제로 `CharacterEditFragment`가 정확히 그 상태였다. ViewModel은 결과를 낼 수 있었지만
 #    그 화면에는 `viewModel.result.observe`가 없어 사건 편집 창이 **편집 화면에서 뜰 때만**
@@ -31,9 +31,12 @@ VMS="$SRC/ui/character/CharacterViewModel.kt $SRC/ui/timeline/TimelineViewModel.
 # 사건 편집 창의 provider를 구현한 화면 — 이 창을 띄우는 모든 호스트가 대상이다.
 HOSTS="$SRC/ui/character/CharacterDetailFragment.kt $SRC/ui/character/CharacterEditFragment.kt $SRC/ui/timeline/TimelineFragment.kt"
 
-# 고지 수단 — `reportResult`(결과 채널) · `showError`(그 채널의 실패 래퍼) · `toastAndLogResult`
+# 고지 수단 — `reportResult`(결과 채널) · `failEvent`(그 채널의 실패 래퍼 — 2026.08.21에
+# `showError`를 대체했다. 종전 래퍼는 예외 원문을 **요약** 자리에 넣어 '무엇이 실패했는가'를
+# 말하지 못했고, 새 래퍼는 요약 문자열을 인자로 받아 그것을 시그니처로 강제한다) ·
+# `toastAndLogResult`
 # (창이 이미 닫힌 뒤의 부가 고지). 셋 다 작업 이력에도 남는다.
-NOTIFY_RE='reportResult|showError|toastAndLogResult'
+NOTIFY_RE='reportResult|failEvent|toastAndLogResult'
 
 # 사건 CRUD 함수 이름 — `deleteEvent`도 넣는다. 지금은 지키고 있지만 **본보기가 무너지면
 # 나머지가 따라 무너진다**(이 결함이 처음 눈에 띈 것도 그것과 견줘서였다).

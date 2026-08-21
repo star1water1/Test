@@ -142,6 +142,39 @@ class CharacterFieldColumnsTest {
         assertTrue(out[2] is ColumnFieldOutcome.AutoCreate)
     }
 
+    // ── ⑤-2 접미사 사다리 — 원문 먼저, 벗기는 것은 그 다음 (R-1) ────────────────
+    // 이름이 실제로 `… (쉼표 구분)`인 필드가 있을 수 있다. 무조건 벗기면 **한 글자도 고치지
+    // 않은 왕복**만으로 그 열의 값이 새로 만들어진 딴 필드로 옮겨 붙는다.
+
+    @Test
+    fun `이름이 접미사로 끝나는 필드는 원문 그대로 걸린다`() {
+        val f = field(7L, "trait", "성격$MULTI")
+        val out = plan(mapOf(1 to "성격$MULTI"), listOf(f))
+        assertEquals(f, (out[1] as ColumnFieldOutcome.Matched).field)
+    }
+
+    /** 그 필드가 **다중값**이면 내보내기가 접미사를 한 번 더 붙인다 — 그때도 원문 필드에 붙는다. */
+    @Test
+    fun `접미사로 끝나는 이름에 접미사가 겹쳐 붙어도 그 필드에 걸린다`() {
+        val f = field(7L, "trait", "성격$MULTI")
+        val out = plan(mapOf(1 to "성격$MULTI$MULTI"), listOf(f))
+        assertEquals(f, (out[1] as ColumnFieldOutcome.Matched).field)
+    }
+
+    /** 종전 동작은 그대로다 — 없는 필드를 가리키는 다중값 열은 접미사를 뗀 이름으로 만든다. */
+    @Test
+    fun `없는 필드의 다중값 열은 접미사를 뗀 이름으로 만들어진다`() {
+        val out = plan(mapOf(1 to "태그$MULTI"), emptyList())
+        assertEquals("태그", (out[1] as ColumnFieldOutcome.AutoCreate).header)
+    }
+
+    /** 접미사가 붙은 고정 머리도 고정 열로 걸러진다(2차 방어는 두 글자 다 본다). */
+    @Test
+    fun `접미사가 붙은 고정 머리는 필드 열이 아니다`() {
+        val out = plan(mapOf(1 to "이름$MULTI"), emptyList())
+        assertTrue(out.isEmpty())
+    }
+
     // ── ⑥ 빈 머리는 열이 아니다 ──────────────────────────────────────────────────
 
     @Test

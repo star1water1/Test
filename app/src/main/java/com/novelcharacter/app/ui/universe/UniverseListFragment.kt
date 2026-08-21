@@ -243,17 +243,17 @@ class UniverseListFragment : Fragment() {
         adapter.onOrderChanged = { reorderedList ->
             viewModel.updateDisplayOrders(reorderedList)
         }
-        adapter.resolveRandomCharacterImage = { universeId, callback ->
-            viewModel.resolveRandomCharacterImage(universeId, callback)
+        adapter.resolveRandomCharacterImage = { universeId, seed, callback ->
+            viewModel.resolveRandomCharacterImage(universeId, seed, callback)
         }
-        adapter.resolveCharacterImageById = { characterId, callback ->
-            viewModel.resolveCharacterImageById(characterId, callback)
+        adapter.resolveCharacterImageById = { characterId, seed, callback ->
+            viewModel.resolveCharacterImageById(characterId, seed, callback)
         }
-        adapter.resolveRandomNovelImage = { universeId, callback ->
-            viewModel.resolveRandomNovelImage(universeId, callback)
+        adapter.resolveRandomNovelImage = { universeId, seed, callback ->
+            viewModel.resolveRandomNovelImage(universeId, seed, callback)
         }
-        adapter.resolveNovelImageById = { novelId, callback ->
-            viewModel.resolveNovelImageById(novelId, callback)
+        adapter.resolveNovelImageById = { novelId, seed, callback ->
+            viewModel.resolveNovelImageById(novelId, seed, callback)
         }
 
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
