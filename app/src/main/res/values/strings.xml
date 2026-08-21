@@ -2252,7 +2252,7 @@
     <string name="storage_cat_referenced">이미지 (사용 중)</string>
     <string name="storage_cat_library">라이브러리 이미지 (미배정)</string>
     <string name="storage_cat_backups">자동 백업</string>
-    <string name="storage_cat_export_cache">내보내기 캐시</string>
+    <string name="storage_cat_export_cache">앱 캐시 (전송 임시 파일)</string>
     <string name="storage_cat_orphan">고아 이미지 (미참조)</string>
     <string name="storage_cat_trash">휴지통 보류 이미지</string>
     <string name="storage_cat_database">데이터베이스</string>

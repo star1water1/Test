@@ -38,7 +38,16 @@ object StorageAnalyzer {
         val orphanImages: Category,       // 디스크에 있으나 DB·휴지통·라이브러리 어디서도 참조 안 함
         val trashHeldImages: Category,    // 휴지통 스냅샷이 복원용으로 보류 중인 이미지
         val autoBackups: Category,        // filesDir/backups/*.enc
-        val exportCache: Category,        // cacheDir/exports (재생성 가능)
+        /**
+         * `cacheDir` **전체** (재생성 가능한 전송 임시 파일).
+         *
+         * 종전에는 `cacheDir/exports`의 **최상위 파일만** 셌다. 같은 함수가 `filesDir`에
+         * 대해서는 하위 디렉터리까지 '기타'로 합산하는데 `cacheDir`에는 그 대칭이 없어서,
+         * `ExportWorkbook.useTempDirectory`가 *"앱이 지울 수도, 용량을 셀 수도 없는 자리에
+         * 백업 크기의 임시 파일이 생기지 않도록"* 일부러 cacheDir 밑으로 못박아 둔
+         * `poi-temp`조차 **한 바이트도 세지 않았다** — '전체 사용량'이 사실보다 작았다.
+         */
+        val exportCache: Category,
         val database: Category,           // DB 파일 + WAL/SHM
         val logs: Category,               // error_log.txt + crash_log.txt (상한 있음)
         val other: Category,              // 위에 안 잡힌 filesDir 기타
@@ -110,10 +119,13 @@ object StorageAnalyzer {
             if (dirBytes > 0) { otherBytes += dirBytes; otherCount++ }
         }
 
-        // 내보내기 캐시
-        val exportsDir = File(context.cacheDir, EXPORTS_DIR)
-        val exportFiles = exportsDir.listFiles { f -> f.isFile } ?: emptyArray()
-        val exportBytes = exportFiles.sumOf { it.length() }
+        // 앱 캐시 — **cacheDir 전체**를 재귀로 센다(`filesDir` 쪽과 같은 대칭).
+        // 전송 임시 파일은 `exports/` 말고도 여러 자리에 난다(`poi-temp`,
+        // `world_import_*`, 복호화 임시 파일…). 특정 이름을 나열하면 임시 파일이
+        // 늘 때마다 같은 자리가 또 낡으므로 **자리가 아니라 뿌리**를 센다.
+        val cacheRoot = context.cacheDir
+        val exportBytes = dirSize(cacheRoot)
+        val exportCount = fileCount(cacheRoot)
 
         // DB 파일 (WAL/SHM 포함)
         val dbFile = context.getDatabasePath(DB_NAME)
@@ -127,7 +139,7 @@ object StorageAnalyzer {
             orphanImages = Category("orphan", orphanBytes, orphanCount),
             trashHeldImages = Category("trash", trashBytes, trashCount),
             autoBackups = Category("backup", backupBytes, backupFiles.size),
-            exportCache = Category("export_cache", exportBytes, exportFiles.size),
+            exportCache = Category("export_cache", exportBytes, exportCount),
             database = Category("database", dbBytes, dbFiles.size),
             logs = Category("logs", logBytes, logCount),
             other = Category("other", otherBytes, otherCount),
@@ -170,6 +182,16 @@ object StorageAnalyzer {
         return ImageZipHelper.CollectResult(result, unreadable)
     }
 
+    /** 디렉토리 재귀 파일 수 — [dirSize]의 짝이다(둘이 같은 범위를 봐야 행이 어긋나지 않는다). */
+    private fun fileCount(dir: File): Int {
+        var total = 0
+        val children = dir.listFiles() ?: return 0
+        for (c in children) {
+            total += if (c.isDirectory) fileCount(c) else 1
+        }
+        return total
+    }
+
     /** 디렉토리 재귀 크기 (심링크 순환 방지 위해 실제 파일만 합산) */
     private fun dirSize(dir: File): Long {
         var total = 0L
@@ -180,7 +202,14 @@ object StorageAnalyzer {
         return total
     }
 
-    /** 내보내기 캐시 비우기 — 재생성 가능한 산출물만 삭제. @return 삭제 바이트 수 */
+    /**
+     * 내보내기 캐시 비우기 — **`exports/`의 산출물만** 지운다. @return 삭제 바이트 수
+     *
+     * 세는 범위(cacheDir 전체)보다 좁은 것이 의도다: 나머지 임시 파일은 **만든 자리가
+     * 지운다**는 것이 이 저장소의 규약이고(`importFromUri`·`importFromZip`의
+     * `deleteRecursively`), 여기서 통째로 지우면 **돌고 있는 전송의 임시 파일**을
+     * 앗아갈 수 있다. 확인·완료 문구도 '내보내기 임시 파일'이라고 정확히 말한다.
+     */
     suspend fun clearExportCache(context: Context): Long = withContext(Dispatchers.IO) {
         val exportsDir = File(context.cacheDir, EXPORTS_DIR)
         val files = exportsDir.listFiles { f -> f.isFile } ?: return@withContext 0L
