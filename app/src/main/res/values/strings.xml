@@ -2714,6 +2714,7 @@
     <!-- 묶어 보기에서 필터가 식구를 가려 위 수와 단추의 장수가 갈릴 때만 붙는다(정박) -->
     <string name="image_link_group_info_visible"> · 지금 화면에는 %1$d장</string>
     <string name="image_batch_tag_done">이미지 %1$d장에 태그를 반영했습니다</string>
+    <string name="image_batch_tag_link_notice">선택 %1$d장에 링크된 %2$d장이 함께 포함되어 총 %3$d장에 적용됩니다.</string>
     <string name="image_tag_filter_empty">등록된 이미지 태그가 없습니다</string>
     <string name="image_tag_filter_untagged">태그 없는 이미지만</string>
     <string name="image_tag_filter_untagged_desc">아직 태그가 하나도 없는 이미지만 목록에 남깁니다. 켜면 아래 태그 선택은 잠깁니다.</string>
@@ -2727,6 +2728,9 @@
     <string name="image_tag_edit_hint">태그 (콤마로 구분)</string>
     <string name="image_tag_suggestions_label">기존 태그 (탭하여 추가)</string>
     <string name="image_tag_edit_done">태그 %1$d개를 저장했습니다</string>
+    <string name="image_tag_edit_done_group">태그 %1$d개를 링크 묶음 %2$d장에 저장했습니다</string>
+    <string name="image_tag_edit_link_notice">링크 묶음 %1$d장의 태그를 한 번에 편집합니다. 아래는 묶음 전체의 태그이며, 저장하면 %1$d장이 모두 이대로 맞춰집니다.</string>
+    <string name="image_tag_edit_action_stack">태그 편집 (묶음 %1$d장)</string>
     <string name="image_link_badge">링크</string>
     <string name="image_recommend_title">추천 이미지 — 태그 일치 (탭하여 첨부)</string>
     <!-- 이미지 탭 — 배정 피커에서 캐릭터를 즉시 만드는 경로 -->
@@ -3399,10 +3403,11 @@
     <string name="image_ai_tag_cost_single">이미지 1장을 한 요청으로 보냅니다. 적용 전에 검토합니다.</string>
     <!-- 링크 묶음 단위 전송 — 목적문은 R-25. 표본이 받은 태그가 묶음 전원에 붙는다. -->
     <string name="image_ai_tag_group_unit">링크 묶음 단위로 보내기</string>
-    <string name="image_ai_tag_group_unit_desc">켜면 링크 묶음마다 앞의 몇 장만 AI에 보내고, 받은 태그를 그 묶음 전체에 붙입니다.</string>
+    <string name="image_ai_tag_group_unit_desc">켜면 링크 묶음마다 앞의 몇 장만 AI에 보내 비용을 줄입니다. 태그는 켜든 끄든 묶음 전체에 함께 붙습니다.</string>
     <string name="image_ai_tag_group_sample">묶음당 보낼 장수: %1$d장</string>
     <string name="image_ai_tag_group_note">링크 묶음 %1$d개의 태그가 묶음 전체 %2$d장에 붙습니다.</string>
     <string name="image_ai_tag_group_notice">링크 묶음 %1$d개는 체크한 태그가 묶음 전체 %2$d장에 붙습니다.</string>
+    <string name="image_folder_tag_link_notice">링크 묶음의 태그 공유로, 폴더 밖에 있는 링크된 %1$d장에도 태그가 함께 붙습니다.</string>
     <string name="image_ai_tag_review_group">%1$s · 묶음 %2$d장에 적용</string>
     <string name="image_ai_tag_privacy">이미지는 AI 제공사 서버로 전송됩니다. 장당 대략 250~1,600토큰이 듭니다(제공사마다 다릅니다).</string>
     <!-- B-157: 이미 배운 거부는 누르기 전에 말한다. 실행기가 요청조차 만들지 않으므로,

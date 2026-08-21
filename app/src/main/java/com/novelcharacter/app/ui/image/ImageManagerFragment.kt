@@ -849,13 +849,19 @@ class ImageManagerFragment : Fragment() {
             openAiTagFlow(pathsOf(item))
         }
 
-        // 접힌 칸의 상세는 범위가 둘로 갈린다 — AI 태그·전체화면은 **묶음 전체**, 나머지
-        // (태그 편집·재압축·삭제·배정)는 **이 한 장**이다. 묶음 범위인 둘만 라벨에 장수를
-        // 적어 그 대비로 범위를 드러낸다(적지 않으면 사용자는 태그 편집도 묶음 전체라 믿는다).
+        // 상세의 작용 범위를 라벨이 말한다 — **태그는 링크 묶음 전원이 함께 든다**(공유
+        // 불변식: 편집은 합집합 교체, AI 제안은 적용 시점 전개. 접혀 있든 아니든 같다),
+        // 전체화면은 **화면에 보이는 식구**를 넘기고, 재압축·삭제·배정은 이 한 장이다.
+        // 장수를 라벨에 적는 것은 그 대비를 드러내기 위해서다.
+        val familySize = viewModel.linkedFamily(item.path).size
+        if (familySize > 1) {
+            sheetBinding.detailTagEditButton.text =
+                getString(R.string.image_tag_edit_action_stack, familySize)
+            sheetBinding.detailAiTagButton.text =
+                getString(R.string.image_ai_tag_action_stack, familySize)
+        }
         val stackSize = pathsOf(item).size
         if (stackSize > 1) {
-            sheetBinding.detailAiTagButton.text =
-                getString(R.string.image_ai_tag_action_stack, stackSize)
             sheetBinding.detailFullScreenButton.text =
                 getString(R.string.image_manager_view_full_stack, stackSize)
         }
@@ -866,10 +872,10 @@ class ImageManagerFragment : Fragment() {
         if (groupId != null) {
             val groupSize = (viewModel.images.value ?: emptyList()).count { it.meta?.linkGroupId == groupId }
             sheetBinding.detailLinkInfoText.visibility = View.VISIBLE
-            // **두 수가 갈리면 그 자리에서 말한다.** 이 줄은 필터를 무시한 묶음 전체를 세고,
-            // 바로 위 단추들의 장수는 화면에 보이는 식구를 센다(그 둘에만 작용하므로) —
-            // 필터가 식구를 가리면 한 창에 다른 두 수가 서고, 정박이 없으면 사용자는
-            // AI 태그가 어느 쪽에 붙는지 판단할 수 없다(문구 가이드 4-4).
+            // **두 수가 갈리면 그 자리에서 말한다.** 이 줄과 태그 단추들은 필터를 무시한
+            // 묶음 전체를 세고(태그는 실제로 전원에 붙는다), 전체화면 단추만 화면에 보이는
+            // 식구를 센다(페이저가 그것만 넘기므로) — 필터가 식구를 가리면 한 창에 다른
+            // 두 수가 서고, 정박이 없으면 사용자는 어느 쪽이 옳은지 판단할 수 없다(문구 가이드 4-4).
             sheetBinding.detailLinkInfoText.text = buildString {
                 append(getString(
                     if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
@@ -1294,12 +1300,15 @@ class ImageManagerFragment : Fragment() {
         var perGroup = settings.imageTagGroupSampleSize
         var groupUnit = settings.imageTagGroupUnit
 
-        // 링크 묶음 단위 전송 — 대상에 2장 이상 보이는 묶음이 있을 때만 선다
-        // (R-24 — 성립하지 않는 조합의 설정은 보이지 않는다). 표본·전개 규칙은
-        // LinkGroupFold가 단일 소스이고, 여기서는 장수 계산과 고지에만 쓴다.
+        // 링크 묶음 단위 전송 — 대상에 링크 묶음이 걸릴 때만 선다(R-24 — 성립하지 않는
+        // 조합의 설정은 보이지 않는다). 묶음 판정은 **라이브러리 전체 식구 수**로 한다
+        // (1장만 골라도 그 장은 묶음의 표본이다 — LinkGroupFold.sampleForAi가 단일 소스).
+        // 스위치가 가르는 것은 보낼 장수뿐이고, 붙는 범위는 어느 쪽이든 묶음 전원이다
+        // (적용 시점 전개 — ViewModel.applyTagWork).
         val groupIds = viewModel.linkGroupIds(paths)
+        val fullSizes = viewModel.linkGroupFullSizes()
         fun samplePlan(per: Int) = com.novelcharacter.app.util.LinkGroupFold
-            .sampleForAi(paths, { groupIds[it] }, per)
+            .sampleForAi(paths, { groupIds[it] }, per) { fullSizes[it] ?: 0 }
         val hasGroups = samplePlan(1).sampledGroups > 0
         fun sendCount(): Int =
             if (hasGroups && groupUnit) samplePlan(perGroup).sendPaths.size else paths.size
@@ -1359,10 +1368,11 @@ class ImageManagerFragment : Fragment() {
                     R.string.image_ai_tag_group_note,
                     plan.sampledGroups, plan.expandedTotal
                 )
+                // 표본 슬라이더만 스위치를 따른다 — 붙는 범위 고지(groupNote)는 스위치와
+                // 무관한 불변식이라 늘 보인다(꺼도 태그는 묶음 전원에 붙는다).
                 val vis = if (groupUnit) android.view.View.VISIBLE else android.view.View.GONE
                 groupSampleLabel.visibility = vis
                 groupSlider.visibility = vis
-                groupNote.visibility = vis
             }
         }
         slider.addOnChangeListener { _, value, _ ->
@@ -1415,14 +1425,10 @@ class ImageManagerFragment : Fragment() {
                     settings.imageTagGroupUnit = groupUnit
                     settings.imageTagGroupSampleSize = perGroup
                 }
-                if (hasGroups && groupUnit) {
-                    // 묶음 단위 — 표본만 보내고, 전개 표(표본 → 묶음 전원)를 실행과 함께 든다.
-                    // 태그는 적용 시점에 그 표로 전원에 붙는다(ViewModel.applyImageTags).
-                    val plan = samplePlan(perGroup)
-                    runAiTagSuggest(plan.sendPaths, perRequest, groupExpand = plan.membersBySentPath)
-                } else {
-                    runAiTagSuggest(paths, perRequest)
-                }
+                // 갈리는 것은 보낼 장수뿐이다 — 붙는 범위는 어느 쪽이든 묶음 전원이고,
+                // 전개는 적용 시점의 살아 있는 명단으로 한다(ViewModel.applyTagWork).
+                val send = if (hasGroups && groupUnit) samplePlan(perGroup).sendPaths else paths
+                runAiTagSuggest(send, perRequest)
             }
             .show()
     }
@@ -1440,10 +1446,9 @@ class ImageManagerFragment : Fragment() {
     private fun runAiTagSuggest(
         paths: List<String>,
         perRequest: Int,
-        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null,
-        groupExpand: Map<String, List<String>> = emptyMap()
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
     ) {
-        if (!viewModel.runImageTagSuggest(paths, perRequest, carryOver, groupExpand)) {
+        if (!viewModel.runImageTagSuggest(paths, perRequest, carryOver)) {
             // 무통보 무시 금지 — 눌렀는데 아무 일도 안 일어나면 고장과 구분되지 않는다.
             notifyError(getString(R.string.image_ai_tag_already_running))
         }
@@ -1508,11 +1513,13 @@ class ImageManagerFragment : Fragment() {
         if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
-        // 묶음 단위 실행의 고지 — 체크한 태그가 **화면에 없는 장에도 붙는다**는 사실을
-        // 적용 전에 말한다(변수 제어). 행마다의 장수는 시트가 파일명 옆에 함께 적는다.
+        // 링크 묶음 고지 — 체크한 태그가 **화면에 없는 식구에도 붙는다**는 사실을 적용 전에
+        // 말한다(변수 제어). 표본 실행만이 아니라 **모든 실행**이 대상이다 — 전개는 적용
+        // 시점의 살아 있는 명단으로 하므로(공유 불변식) 되받기·전원 전송의 행도 똑같이
+        // 식구에게 붙는다. 행마다의 장수는 시트가 파일명 옆에 함께 적는다.
         // **제안이 있어야만 싣는다** — 제안 0건이면 붙일 것이 없어 이 고지도 뜻이 없고,
         // 실었다가는 아래 '검토할 것 없음' 갈래(B-144)를 이 줄이 막아 빈 시트가 선다.
-        // **묶음 수는 표의 줄 수가 아니다** — 표본을 2장으로 두면 같은 묶음이 두 줄로 사는데,
+        // **묶음 수는 행 수가 아니다** — 한 묶음의 두 장이 각자 제안을 받으면 두 행인데,
         // 그대로 세면 묶음도 장수도 배로 부풀어 고지가 거짓말을 한다(셈은 ViewModel이 접는다).
         val groupSizes = viewModel.aiTagGroupSizes()
         if (groupSizes.isNotEmpty() && result.suggestions.isNotEmpty()) {
@@ -1858,11 +1865,26 @@ class ImageManagerFragment : Fragment() {
         }
     }
 
+    /**
+     * 일괄 태그 추가/제거 — **링크 묶음으로 넓힌 목록이 실제 대상이다**(공유 불변식 —
+     * 배정과 같은 확장). 확장을 시트가 열리기 전에 떠서 ⓐ 범위 고지 한 줄(선택 N + 링크 M
+     * = 총 T)을 **입력 전에** 시트 안에 보여 주고(배정의 다이얼로그와 같은 정보 — 시트가
+     * 이미 떠 있으니 자리만 앞이다. 확인 버튼이 곧 동의) ⓑ 제거 칩도 넓힌 목록의 태그에서
+     * 뽑는다 — 형제만 가진 태그도 지울 수 있어야 합집합 편집(openTagEdit)과 대칭이 맞는다.
+     */
     private fun openBatchTagSheet(paths: List<String>, remove: Boolean) {
+        val expansion = viewModel.expandWithLinkedGroups(paths)
+        val targets = expansion.allPaths.toList()
         val sheet = ImageBatchTagBottomSheet()
         sheet.isRemoveMode = remove
+        if (expansion.addedByLink.isNotEmpty()) {
+            sheet.linkNotice = getString(
+                R.string.image_batch_tag_link_notice,
+                paths.size, expansion.addedByLink.size, targets.size
+            )
+        }
         sheet.loadChips = if (remove) {
-            { viewModel.getDistinctTagsForPaths(paths) }
+            { viewModel.getDistinctTagsForPaths(targets) }
         } else {
             { viewModel.getTagSuggestions() }
         }
@@ -1871,7 +1893,7 @@ class ImageManagerFragment : Fragment() {
             // 중간에 멈출 안전한 경계가 없다(뷰모델 주석 참조).
             val progress = showTaskProgress(
                 R.string.image_manager_tag_progress_title,
-                paths.size,
+                targets.size,
                 if (remove) R.string.image_manager_stage_tag_remove else R.string.image_manager_stage_tag_add
             )
             val onCount: (Int) -> Unit = { count ->
@@ -1883,13 +1905,13 @@ class ImageManagerFragment : Fragment() {
             }
             if (remove) {
                 viewModel.removeTagsFromImages(
-                    paths, tags,
+                    targets, tags,
                     onProgress = { done, total -> postProgress(progress, done, total) },
                     onDone = onCount
                 )
             } else {
                 viewModel.addTagsToImages(
-                    paths, tags,
+                    targets, tags,
                     onProgress = { done, total -> postProgress(progress, done, total) },
                     onDone = onCount
                 )
@@ -1942,17 +1964,33 @@ class ImageManagerFragment : Fragment() {
             item.owners.joinToString("\n") { "${typeLabel(it.type)} · ${it.name}" }
         }
 
-    /** 태그 편집 시트 — 상세 시트와 갤러리 오버레이('태그 편집' 1탭 단축)가 공용 */
+    /**
+     * 태그 편집 시트 — 상세 시트와 갤러리 오버레이('태그 편집' 1탭 단축)가 공용.
+     *
+     * **링크 묶음이면 합집합을 편집한다** (공유 불변식 — LinkGroupFold 헤더). 시트가 묶음
+     * 전원의 태그 합집합을 보여 주고 저장이 전원을 그대로 교체하므로, 형제만 가진 태그가
+     * 안 보인 채 지워질 자리가 없다(원칙 04 — 존재를 알 수 없는 데이터 금지). 범위 고지는
+     * **입력 전에 시트 안에서** 한다 — 배정의 확인 다이얼로그와 같은 정보(몇 장에 붙는가)를,
+     * 편집을 끝낸 뒤가 아니라 시작하기 전에 보여 주고 저장 버튼이 곧 동의가 된다
+     * (편집 후 다이얼로그는 같은 고지를 한 단계 늦게, 한 탭 비싸게 한다 — 원칙 04).
+     */
     private fun openTagEdit(item: ImageManagerViewModel.ManagedImage) {
+        val family = viewModel.linkedFamily(item.path)
         val sheet = ImageTagEditBottomSheet()
-        sheet.currentTags = item.meta?.tags.orEmpty()
+        if (family.size > 1) {
+            sheet.currentTags = family.flatMap { it.meta?.tags.orEmpty() }.distinct().sorted()
+            sheet.linkNotice = getString(R.string.image_tag_edit_link_notice, family.size)
+        } else {
+            sheet.currentTags = item.meta?.tags.orEmpty()
+        }
         sheet.loadSuggestions = { viewModel.getTagSuggestions() }
         sheet.onSave = { newTags ->
-            viewModel.replaceTags(item.path, newTags) {
+            viewModel.replaceTags(item.path, newTags) { applied ->
                 if (!isAdded || _binding == null) return@replaceTags
                 reportAndNotify(OpResult.success(
                     OpResult.CAT_MAINTENANCE,
-                    getString(R.string.image_tag_edit_done, newTags.size)
+                    if (applied > 1) getString(R.string.image_tag_edit_done_group, newTags.size, applied)
+                    else getString(R.string.image_tag_edit_done, newTags.size)
                 ))
             }
         }

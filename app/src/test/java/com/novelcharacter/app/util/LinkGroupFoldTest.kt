@@ -14,6 +14,9 @@ class LinkGroupFoldTest {
 
     private fun g(p: String): String? = groupOf[p]
 
+    /** 라이브러리 전체 식구 수 — 표본 계획의 묶음 판정은 선택이 아니라 이 수로 선다. */
+    private fun fullSize(g: String): Int = groupOf.values.count { it == g }
+
     // ===== fold =====
 
     @Test fun fold_collapsesGroupToFirstMemberPosition() {
@@ -46,36 +49,50 @@ class LinkGroupFoldTest {
 
     @Test fun sample_takesFirstNPerGroupAndKeepsUnlinked() {
         val plan = LinkGroupFold.sampleForAi(
-            listOf("a1", "a2", "a3", "solo", "b1", "b2"), ::g, perGroup = 1
+            listOf("a1", "a2", "a3", "solo", "b1", "b2"), ::g, perGroup = 1, ::fullSize
         )
         assertEquals(listOf("a1", "solo", "b1"), plan.sendPaths)
-        assertEquals(listOf("a1", "a2", "a3"), plan.membersBySentPath["a1"])
-        assertEquals(listOf("b1", "b2"), plan.membersBySentPath["b1"])
-        // 미링크는 전개 표에 오르지 않는다 — 그 장의 태그는 그 장에만 붙는다
-        assertTrue("solo" !in plan.membersBySentPath)
         assertEquals(2, plan.sampledGroups)
         assertEquals(5, plan.expandedTotal)
     }
 
     @Test fun sample_perGroupTwo_sendsTwoSamples() {
-        val plan = LinkGroupFold.sampleForAi(listOf("a1", "a2", "a3"), ::g, perGroup = 2)
+        val plan = LinkGroupFold.sampleForAi(listOf("a1", "a2", "a3"), ::g, perGroup = 2, ::fullSize)
         assertEquals(listOf("a1", "a2"), plan.sendPaths)
-        // 표본 둘 다 같은 전원을 가리킨다 — 어느 쪽의 태그든 전원에 붙을 수 있어야 한다
-        assertEquals(plan.membersBySentPath["a1"], plan.membersBySentPath["a2"])
+        assertEquals(1, plan.sampledGroups)
+        assertEquals(3, plan.expandedTotal)
     }
 
-    @Test fun sample_groupWithSingleVisibleMemberIsNotAGroup() {
-        // 보이는 식구가 1장이면 묶음이 아니다 — 표본도 전개도 없이 그대로 실린다
-        val plan = LinkGroupFold.sampleForAi(listOf("a1", "solo"), ::g, perGroup = 1)
+    @Test fun sample_singleSelectedMemberOfGroupIsStillAGroup() {
+        // 공유 불변식 — 선택에 1장만 보여도 전체 식구가 2장 이상이면 그 장은 묶음의 표본이고,
+        // 붙는 범위 고지도 전체 식구 수(3)로 센다. 종전에는 선택 안 명단이라 묶음 인식 자체가
+        // 안 됐다(그 장의 태그가 식구에게 못 갔다).
+        val plan = LinkGroupFold.sampleForAi(listOf("a1", "solo"), ::g, perGroup = 1, ::fullSize)
         assertEquals(listOf("a1", "solo"), plan.sendPaths)
-        assertTrue(plan.membersBySentPath.isEmpty())
+        assertEquals(1, plan.sampledGroups)
+        assertEquals(3, plan.expandedTotal)
+    }
+
+    @Test fun sample_unknownFullSizeFallsBackToSelection() {
+        // 목록이 낡아 전체 식구 수를 모르면(0) 선택 수로 받친다 — 혼자면 미링크처럼 통과.
+        val plan = LinkGroupFold.sampleForAi(listOf("a1"), ::g, perGroup = 1) { 0 }
+        assertEquals(listOf("a1"), plan.sendPaths)
         assertEquals(0, plan.sampledGroups)
     }
 
     @Test fun sample_perGroupLargerThanGroup_sendsWholeGroup() {
-        val plan = LinkGroupFold.sampleForAi(listOf("b1", "b2"), ::g, perGroup = 5)
+        val plan = LinkGroupFold.sampleForAi(listOf("b1", "b2"), ::g, perGroup = 5, ::fullSize)
         assertEquals(listOf("b1", "b2"), plan.sendPaths)
         assertEquals(1, plan.sampledGroups)
+    }
+
+    @Test fun sample_maxValueSendsEveryoneSelected() {
+        // 전원 전송(표본 없음) — 스위치 꺼짐이 이 값으로 온다. 보낼 것은 선택 전부,
+        // 붙는 범위 고지는 그대로 전체 식구 수다(붙는 범위는 계획과 무관한 불변식).
+        val plan = LinkGroupFold.sampleForAi(listOf("a1", "a2"), ::g, perGroup = Int.MAX_VALUE, ::fullSize)
+        assertEquals(listOf("a1", "a2"), plan.sendPaths)
+        assertEquals(1, plan.sampledGroups)
+        assertEquals(3, plan.expandedTotal)
     }
 
     // ===== expandPicked =====

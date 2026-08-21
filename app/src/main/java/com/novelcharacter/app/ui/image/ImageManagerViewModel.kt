@@ -1010,20 +1010,35 @@ class ImageManagerViewModel(
         }
     }
 
-    /** 단일 이미지 태그 교체 — 필요 시 라이브러리로 입양(adopt) 후 태그 전체 교체. */
-    fun replaceTags(path: String, tags: List<String>, onDone: () -> Unit) {
+    /**
+     * 단일 편집 시트의 태그 교체 — **링크 묶음 전원에** 적용한다(공유 불변식 —
+     * [com.novelcharacter.app.util.LinkGroupFold] 헤더). 시트가 묶음 합집합을 보여 주고
+     * 사전 고지를 달므로(호출측), 전원 교체가 곧 사용자가 화면에서 본 것 그대로다 —
+     * 형제만 가진 태그가 몰래 지워질 자리가 없다(합집합에 이미 보였다).
+     * 필요 시 라이브러리로 입양(adopt) 후 교체. @param onDone 반영된 장수.
+     */
+    fun replaceTags(path: String, tags: List<String>, onDone: (Int) -> Unit) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            val applied = withContext(Dispatchers.IO) {
                 runCatching {
-                    // 단발 허용(이미지 **한 장**의 태그를 교체하는 것이 이 함수의 일이다)
-                    val id = db.imageMetaDao().adopt(path, System.currentTimeMillis())
-                    db.imageTagDao().replaceAllForImage(
-                        id, tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) }
-                    )
-                }
+                    val targets = liveTagRoster(listOf(path))[path] ?: listOf(path)
+                    val now = System.currentTimeMillis()
+                    db.withTransaction {
+                        val idByPath = ImageAdoption.adoptAll(db, targets, now)
+                        var done = 0
+                        for (t in targets) {
+                            val id = idByPath[t] ?: continue
+                            db.imageTagDao().replaceAllForImage(
+                                id, tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) }
+                            )
+                            done++
+                        }
+                        done
+                    }
+                }.getOrDefault(0)
             }
             load()
-            onDone()
+            onDone(applied)
         }
     }
 
@@ -1102,6 +1117,47 @@ class ImageManagerViewModel(
             } ?: ""
             PickRow(newId, character.name, subtitle)
         }
+
+    /**
+     * 경로 → 그 경로가 속한 링크 묶음 전원(현재 목록 기준, 2장 이상만) — 태그 공유 불변식
+     * ([com.novelcharacter.app.util.LinkGroupFold] 헤더)의 전개 표 재료. **적용 직전에 떠서**
+     * `expandPicked`에 먹인다 — 실행 시점 표를 들고 다니면 검토 중 링크를 바꿨을 때 낡은
+     * 명단에 붙는다(그 함수 계약이 정본).
+     */
+    private fun liveTagRoster(paths: Collection<String>): Map<String, List<String>> {
+        val items = _images.value ?: return emptyMap()
+        val membersByGroup = HashMap<String, MutableList<String>>()
+        for (item in items) {
+            val g = item.meta?.linkGroupId ?: continue
+            membersByGroup.getOrPut(g) { mutableListOf() }.add(item.path)
+        }
+        val byPath = currentItemsByPath()
+        val out = HashMap<String, List<String>>()
+        for (p in paths) {
+            val g = byPath[p]?.meta?.linkGroupId ?: continue
+            val members = membersByGroup[g] ?: continue
+            if (members.size >= 2) out[p] = members
+        }
+        return out
+    }
+
+    /** 링크 묶음 토큰 → 현재 목록의 전체 식구 수 — AI 표본 계획의 묶음 판정 재료. */
+    fun linkGroupFullSizes(): Map<String, Int> =
+        (_images.value ?: emptyList()).mapNotNull { it.meta?.linkGroupId }
+            .groupingBy { it }.eachCount()
+
+    /**
+     * 이 경로가 속한 링크 묶음 전원(자신 포함, 현재 목록 기준). 미링크·외톨이면 자신뿐.
+     * 단일 태그 편집 시트가 합집합을 보여 줄 재료다 — **필터로 가려진 식구도 든다**
+     * (전개도 전 목록 기준이라, 화면 목록으로 세면 고지와 실제가 갈린다).
+     */
+    fun linkedFamily(path: String): List<ManagedImage> {
+        val items = _images.value ?: return emptyList()
+        val self = items.firstOrNull { it.path == path } ?: return emptyList()
+        val g = self.meta?.linkGroupId ?: return listOf(self)
+        val members = items.filter { it.meta?.linkGroupId == g }
+        return if (members.size >= 2) members else listOf(self)
+    }
 
     /** 현재 목록 기준 링크 meta(경로↔그룹) — 확장·계획 판정의 입력. */
     private fun currentMetas(): List<ImageLinkResolver.Meta> =
@@ -1466,9 +1522,12 @@ class ImageManagerViewModel(
     }
 
     /**
-     * 일괄 태그 추가 — 전원 입양 후 태그 삽입(중복 IGNORE). @return 반영 이미지 수
+     * 일괄 태그 추가 — **링크 묶음으로 넓힌 뒤**(공유 불변식 — 배정 [assignToTarget]과 같은
+     * 확장, 시트가 사전 고지한다) 전원 입양, 태그 삽입(중복 IGNORE). @return 반영 이미지 수
      *
-     * @param onProgress (처리한 장, 전체 장). 총량은 인자 리스트 크기다(규약 R-26 · B-51).
+     * @param onProgress (처리한 장, 전체 장). 총량은 **링크로 넓힌 뒤의 장수**다 —
+     *   선택한 수가 아니라 실제로 도는 수여야 막대가 갈리지 않는다(규약 R-26 · B-51).
+     *   호출측(일괄 시트)이 이미 넓힌 목록을 넘겨도 확장은 멱등이라 답이 같다.
      *
      * **취소를 제공하지 않는다** — 한 트랜잭션이라 중간 경계가 없다.
      */
@@ -1481,19 +1540,20 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) {
                 try {
+                    val targets = expandWithLinkedGroups(paths).allPaths.toList()
                     var processed = 0
                     db.withTransaction {
                         val now = System.currentTimeMillis()
                         // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244).
                         // 진행도는 그대로 경로마다 오른다 — 남은 일(태그 쓰기)이 여전히 경로마다다.
-                        val idByPath = ImageAdoption.adoptAll(db, paths, now)
-                        for (p in paths) {
-                            onProgress(++processed, paths.size)
+                        val idByPath = ImageAdoption.adoptAll(db, targets, now)
+                        for (p in targets) {
+                            onProgress(++processed, targets.size)
                             val id = idByPath.getValue(p)
                             db.imageTagDao().insertAll(tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) })
                         }
                     }
-                    paths.size
+                    targets.size
                 } catch (e: Exception) { 0 }
             }
             load()
@@ -1522,7 +1582,9 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) {
                 try {
-                    val ids = metaIdsForPaths(paths)
+                    // 링크 묶음으로 넓힌다 — 추가만 넓히고 제거를 안 넓히면 지운 태그가
+                    // 형제에 남아 묶음이 도로 갈라진다(공유 불변식의 대칭 축. 시트가 사전 고지).
+                    val ids = metaIdsForPaths(expandWithLinkedGroups(paths).allPaths)
                     var processed = 0
                     // 질의는 `imageId IN (…) AND tag IN (…)`이라 **두 목록이 함께** 변수를 쓴다 —
                     // 태그 몫을 빼지 않으면 태그가 많을 때 다시 상한에 닿는다. 그 빼기는
@@ -1798,29 +1860,28 @@ class ImageManagerViewModel(
     val aiTagResult = MutableLiveData<com.novelcharacter.app.ai.ImageBatchTagSuggester.Result?>()
 
     /**
-     * 묶음 단위 실행의 전개 표 — **보낸 경로 → 태그가 붙을 묶음 전원** (표본만 오른다).
+     * 검토 시트가 행마다 "묶음 N장에 함께 붙음"을 말할 재료 — 제안 경로 → 묶음 식구 수(2 이상만).
      *
-     * [aiTagResult]와 수명이 같다: 실행이 세우고, 검토를 접으면 함께 버린다. 회전은 넘기고
-     * 프로세스 재생성은 못 넘기는데, 그때는 결과도 함께 사라지므로 표만 남을 일이 없다.
-     * 되받기(carryOver)는 표를 **갈지 않는다** — 되받는 경로는 전부 앞 실행의 표본이라
-     * 같은 표가 계속 옳다.
+     * **살아 있는 명단으로 센다** — 적용도 같은 명단으로 펴므로([applyTagWork]) 고지와 실제가
+     * 같은 것을 본다. 실행 시점 표(aiTagGroupExpand)를 걷어낸 뒤로 되받기(1장씩)·전원 전송
+     * 실행의 행에도 장수가 선다 — 그 행의 태그도 이제 실제로 식구에게 붙기 때문이다.
      */
-    private var aiTagGroupExpand: Map<String, List<String>> = emptyMap()
-
-    /** 검토 시트가 행마다 "묶음 N장에 함께 붙음"을 말할 재료 — 경로 → 묶음 장수(2장 이상만). */
-    fun aiTagGroupSizes(): Map<String, Int> =
-        aiTagGroupExpand.mapValues { it.value.size }.filterValues { it > 1 }
+    fun aiTagGroupSizes(): Map<String, Int> {
+        val paths = aiTagResult.value?.suggestions?.map { it.path } ?: return emptyMap()
+        return liveTagRoster(paths).mapValues { it.value.size }
+    }
 
     /**
-     * 요약 고지용 (묶음 수, 전체 장수) — **표본 수가 아니라 묶음 수를 센다.**
+     * 요약 고지용 (묶음 수, 전체 장수) — **행 수가 아니라 묶음 수를 센다.**
      *
-     * 전개 표는 보낸 경로마다 한 줄이라, 묶음당 표본이 2장이면 같은 묶음이 두 줄로 산다.
-     * 표의 줄 수로 고지하면 묶음 하나가 둘로, 3장이 6장으로 불어 **사용자가 배로 부풀린
+     * 제안은 경로마다 한 행이라, 한 묶음의 두 장이 각각 제안을 받으면 같은 묶음이 두 행으로
+     * 산다. 행 수로 고지하면 묶음 하나가 둘로, 3장이 6장으로 불어 **사용자가 배로 부풀린
      * 수에 동의하게 된다**(R-14가 세운 것은 개수로 알린다이지 많아 보이게 한다가 아니다).
      * 식구 목록의 내용 동등성으로 접는다 — 서로 다른 묶음의 식구 목록은 겹칠 수 없다.
      */
     fun aiTagGroupNoticeStats(): Pair<Int, Int> {
-        val distinctGroups = aiTagGroupExpand.values.distinct().filter { it.size > 1 }
+        val paths = aiTagResult.value?.suggestions?.map { it.path } ?: return 0 to 0
+        val distinctGroups = liveTagRoster(paths).values.distinct()
         return distinctGroups.size to distinctGroups.sumOf { it.size }
     }
 
@@ -1832,7 +1893,6 @@ class ImageManagerViewModel(
 
     fun clearAiTagResult() {
         aiTagResult.value = null
-        aiTagGroupExpand = emptyMap()
     }
 
     /**
@@ -1851,16 +1911,14 @@ class ImageManagerViewModel(
      * @param carryOver 되받기('1장씩 다시 보내기')일 때 **앞 실행의 결과**. 새 결과를 그 위에
      *   얹어 이미 결제한 제안을 살린다(B-140 — 합치는 규칙은
      *   [com.novelcharacter.app.ai.ImageBatchTagSuggester.mergeRetry]가 든다).
-     * @param groupExpand 묶음 단위 실행의 전개 표(보낸 경로 → 묶음 전원). 비우면 보낸 장에만
-     *   붙는 종전 동작이다. **되받기([carryOver] != null)에서는 무시된다** — 표는 첫 실행이
-     *   세운 것이 계속 옳다(되받는 경로는 전부 그 표본이다).
+     *   전개 표는 받지 않는다 — 묶음 전개는 적용 시점에 살아 있는 명단으로 한다
+     *   ([applyTagWork]의 공유 불변식 초크포인트).
      * @return 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알릴 것(무통보 무시 금지).
      */
     fun runImageTagSuggest(
         paths: List<String>,
         perRequest: Int,
-        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null,
-        groupExpand: Map<String, List<String>> = emptyMap()
+        carryOver: com.novelcharacter.app.ai.ImageBatchTagSuggester.Result? = null
     ): Boolean {
         if (aiTagRunning.value == true) return false
         // **부를 것이 없으면 true다** — 여기서 false를 내면 호출측이 *"이미 실행 중입니다"*라는
@@ -1868,7 +1926,6 @@ class ImageManagerViewModel(
         // 틀린 곳을 고치라고 시키면 없느니만 못하다). 호출측 가드가 이미 막는 자리라
         // 실제로 뜨지는 않지만, 사유를 하나로 뭉뚱그려 두면 다음 사람이 그 위에 쌓는다.
         if (paths.isEmpty()) return true
-        if (carryOver == null) aiTagGroupExpand = groupExpand
         aiTagCancelled = false
         // **총량을 먼저 세운다** — 진행 창은 `aiTagRunning`을 보고 서면서 이 값으로 총량을
         // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다.
@@ -2023,20 +2080,34 @@ class ImageManagerViewModel(
      * **이제 이 함수의 왕복은 목록 길이와 무관하다.**
      */
     private suspend fun applyTagWork(work: List<Pair<String, List<String>>>): TagApplyOutcome.Done {
+        // **링크 묶음 전개 — 공유 불변식의 초크포인트.** 어느 경로(이미지판·폴더판·되받기)로
+        // 온 태그든 **적용 직전의 살아 있는 명단**으로 묶음 전원에 편다. 실행 시점의 전개
+        // 표를 들고 다니던 종전 모양(aiTagGroupExpand)은 ⓐ 검토 중 링크를 바꾸면 낡은
+        // 명단에 붙고 ⓑ 표에 없는 실행(되받기 1장씩·전원 전송)의 태그가 식구에게 못 가는
+        // 두 결함을 함께 들었다. 같은 경로가 두 번 실려도 먼저 합쳐 한 번에 편다
+        // (합집합·순서 규칙은 [com.novelcharacter.app.util.LinkGroupFold.expandPicked]가 정본).
+        val merged = LinkedHashMap<String, MutableList<String>>()
+        for ((path, tags) in work) {
+            val bucket = merged.getOrPut(path) { mutableListOf() }
+            for (t in tags) if (t !in bucket) bucket.add(t)
+        }
+        val expanded = com.novelcharacter.app.util.LinkGroupFold
+            .expandPicked(merged, liveTagRoster(merged.keys))
+            .map { it.key to it.value }
         val now = System.currentTimeMillis()
         // 경로마다 왕복 셋을 치르던 `adopt`를 목록 하나로 내린다 (B-244) — **이 함수에 남아
         // 있던 왕복의 대부분이 그 자리였다.** 폴더판은 고른 폴더 아래 이미지 전량을 돌아
         // `N`에 상한이 없다. 중복을 접고 순서를 보존하는 것은 [ImageAdoption]의 계약이라,
         // 종전의 `if (path !in imageIdByPath)`와 답이 글자 그대로 같다.
         val imageIdByPath = ImageAdoption.adoptAll(
-            db, work.filter { it.second.isNotEmpty() }.map { it.first }, now
+            db, expanded.filter { it.second.isNotEmpty() }.map { it.first }, now
         )
         val existingByImageId: Map<Long, Set<String>> =
             SqlInChunks.flat(imageIdByPath.values.toList()) { db.imageTagDao().getTagsByImages(it) }
                 .groupBy({ it.imageId }, { it.tag })
                 .mapValues { (_, tags) -> tags.toSet() }
 
-        val plan = ImageTagApplyPlanner.plan(work, imageIdByPath, existingByImageId)
+        val plan = ImageTagApplyPlanner.plan(expanded, imageIdByPath, existingByImageId)
         if (plan.inserts.isNotEmpty()) {
             db.imageTagDao().insertAll(
                 plan.inserts.flatMap { ins ->
@@ -2069,12 +2140,9 @@ class ImageManagerViewModel(
     ) {
         // 누른 **그 시점**에 든다. 코루틴 안에서 읽으면 이미 시트가 닫히며 비운 뒤다.
         val pending = aiTagResult.value
-        // 묶음 단위 실행이면 표본이 받은 태그를 묶음 전원으로 되편다 — 전개 표도 같은 시점에
-        // 든다(표는 검토를 접을 때 함께 비워지므로, 코루틴 안에서 읽으면 이미 빈 뒤일 수 있다).
-        // 규칙은 [com.novelcharacter.app.util.LinkGroupFold.expandPicked]가 단일 소스다.
-        val work = com.novelcharacter.app.util.LinkGroupFold
-            .expandPicked(picked, aiTagGroupExpand)
-            .map { it.key to it.value }
+        // 묶음 전개는 여기서 하지 않는다 — 적용 직전의 살아 있는 명단으로 [applyTagWork]가
+        // 편다(공유 불변식의 초크포인트. 폴더판·되받기와 같은 자리를 지난다).
+        val work = picked.map { it.key to it.value }
         aiTagResult.value = null
         viewModelScope.launch {
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {
