@@ -3,6 +3,7 @@ package com.novelcharacter.app.ai
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 프로토콜별 요청 조립·응답 해석을 전담하는 **순수 함수 계층**(Android 의존성 없음 → JVM 단위
@@ -166,7 +167,7 @@ object AiProtocolCodec {
     }
 
     /** Anthropic이 항목을 지목하는 모양 — `` `temperature` is deprecated … ``. */
-    private val BACKTICKED_NAME_RE = Regex("`[a-z_][a-z0-9_.]*`\\s+is\\s")
+    private val BACKTICKED_NAME_RE = Regex("`[a-z_][a-z0-9_.]*`[${RegexCharClasses.WHITESPACE}]+is[${RegexCharClasses.WHITESPACE}]")
 
     private fun buildAnthropic(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
         val body = JsonObject().apply {
@@ -487,7 +488,7 @@ object AiProtocolCodec {
         return candidates.maxOrNull()
     }
 
-    private val NUMBER_RE = Regex("""\d{3,7}""")
+    private val NUMBER_RE = Regex("""[0-9]{3,7}""")
 
     // ── 오류 해석 ──────────────────────────────────────────────────────────────
 

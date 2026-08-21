@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.util.NameBankMatch
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 캐릭터 **이름 추천** (B-123 · 설계 정본 `docs/feature_roadmap_2026-08.md` 7장, 계약 `ai_integration` A-8).
@@ -522,7 +523,7 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
             return ParsedNames(out, dropped)
         }
 
-        private val NUMBER_PREFIX_RE = Regex("""^\s*\d+\s*[.)：:]\s*""")
+        private val NUMBER_PREFIX_RE = Regex("""^[${RegexCharClasses.WHITESPACE}]*${RegexCharClasses.ANY_DIGIT}+[${RegexCharClasses.WHITESPACE}]*[.)：:][${RegexCharClasses.WHITESPACE}]*""")
 
         /** 감싼 따옴표·번호 접두를 걷는다. 이름 안의 공백·문장부호는 건드리지 않는다. */
         fun cleanName(raw: String?): String? {

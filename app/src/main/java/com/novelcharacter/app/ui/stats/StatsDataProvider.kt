@@ -17,6 +17,7 @@ import com.novelcharacter.app.util.RequiredFieldGaps
 import com.novelcharacter.app.util.StatsFieldPolicy
 import com.novelcharacter.app.util.StatsSnapshot
 import com.novelcharacter.app.util.ValueDistributions
+import com.novelcharacter.app.util.RegexCharClasses
 
 
 // ===== 요약 통계 =====
@@ -4379,7 +4380,7 @@ class StatsDataProvider {
                         val parts = if (sic.enabled) {
                             fv.value.split(sic.separator).map { it.trim() }
                         } else {
-                            fv.value.split(Regex("[-/\\s]+")).map { it.trim() }
+                            fv.value.split(RegexCharClasses.DASH_SLASH_WHITESPACE).map { it.trim() }
                         }
                         val partValue = parts.getOrNull(partIdx)?.toDoubleOrNull()
                         if (partValue != null && partValue.isFinite()) {

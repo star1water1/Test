@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.CsvTokens
 import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * Single source of truth for Excel sheet column definitions.
@@ -61,12 +62,12 @@ data class SheetSpec(
         val exact = findColumn(headerRow, headerName)
         if (exact >= 0) return exact
         // Try normalized comparison
-        val normalized = headerName.trim().lowercase().replace(Regex("[\\s_\\-()（）]"), "")
+        val normalized = headerName.trim().lowercase().replace(RegexCharClasses.HEADER_NOISE, "")
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 0 until lastCol) {
             val cell = headerRow.getCell(col) ?: continue
             val cellValue = try {
-                cell.stringCellValue?.trim()?.lowercase()?.replace(Regex("[\\s_\\-()（）]"), "")
+                cell.stringCellValue?.trim()?.lowercase()?.replace(RegexCharClasses.HEADER_NOISE, "")
             } catch (_: Exception) { null }
             if (cellValue == normalized) return col
         }
@@ -250,7 +251,7 @@ fun headersMatchSpec(headers: List<String>, spec: SheetSpec): Boolean {
  */
 fun isSuffixedVariantOf(sheetName: String, base: String): Boolean {
     if (sheetName == base) return false
-    val stripped = sheetName.replace(Regex("\\(\\d+\\)$"), "")
+    val stripped = sheetName.replace(Regex("\\([0-9]+\\)$"), "")
     if (stripped == sheetName) return false   // 접미사가 없다
     return stripped == base || (base.startsWith(stripped) && sheetName.length >= 31)
 }

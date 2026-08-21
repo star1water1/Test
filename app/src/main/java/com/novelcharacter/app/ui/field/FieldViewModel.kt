@@ -22,6 +22,7 @@ import android.util.Log
 import com.novelcharacter.app.util.DetailListSort
 import kotlinx.coroutines.launch
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.RegexCharClasses
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -253,7 +254,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             val referencing = getReferencingCalculatedFields(new.universeId, old.key, new.entityType)
                 .filter { it.id != new.id }
             // field('키') / field("키") / field(키) 3형태 완전 일치 치환 (부분 문자열 오탐 방지)
-            val refRegex = Regex("""field\(\s*(['"]?)${Regex.escape(old.key)}\1\s*\)""")
+            val refRegex = Regex("""field\([${RegexCharClasses.WHITESPACE}]*(['"]?)${Regex.escape(old.key)}\1[${RegexCharClasses.WHITESPACE}]*\)""")
             for (f in referencing) {
                 val cfg = org.json.JSONObject(f.config)
                 val formula = cfg.optString("formula", "")

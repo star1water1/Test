@@ -15,6 +15,7 @@ import com.novelcharacter.app.util.GapEntity
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.RequiredFieldGaps
 import com.novelcharacter.app.util.RequiredGap
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 어시스턴트 행에 보일 캐릭터 그림 — 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D4).
@@ -673,7 +674,7 @@ class LibraryQualityProvider : InsightProvider {
 
             // 근접 중복: 소문자화 + 내부 공백 제거가 같은데 표기가 다른 canonical 묶음
             val collisions = canonicals
-                .groupBy { it.lowercase().replace(Regex("\\s+"), "") }
+                .groupBy { it.lowercase().replace(RegexCharClasses.WHITESPACE_RUN, "") }
                 .values.filter { it.size > 1 }
             if (collisions.isEmpty()) continue
 

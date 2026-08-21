@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import com.novelcharacter.app.util.RegexCharClasses
 
 // WorldPackageManifest·엔트리 이름 상수·schemaVersion 이력은 WorldPackageContents.kt에 있다
 // (파서·임포터와 공유하는 순수 계층 — 순수 JVM 하네스가 실행 검증한다).
@@ -228,7 +229,7 @@ class WorldPackageExporter(private val context: Context) {
         )
 
         // Create ZIP
-        val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
+        val fileName = "${universe.name.replace(Regex("[^${RegexCharClasses.FILENAME_KEEP}]"), "_")}.ncworld"
         val exportsDir = File(context.cacheDir, "exports")
         exportsDir.mkdirs()
         val outputFile = File(exportsDir, fileName)

@@ -379,7 +379,7 @@ object DuelFieldLinks {
         return match.value.toDoubleOrNull()
     }
 
-    private val LEADING_NUMBER = Regex("^[+-]?\\d+(?:\\.\\d+)?")
+    private val LEADING_NUMBER = Regex("^[+-]?[0-9]+(?:\\.[0-9]+)?")
 
     /** 이 필드 하나가 가리키는 쪽. 둘 다 수로 읽혀야 갈린다. */
     fun compareOne(link: Link, aValue: String?, bValue: String?): Side {

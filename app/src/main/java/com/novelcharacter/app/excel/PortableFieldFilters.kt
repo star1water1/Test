@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 프리셋 필드 필터(FieldFilterHelper 직렬화 규약)의 엑셀 왕복 이식성 처리 (순수 JVM — 단위 테스트 대상).
@@ -66,7 +67,7 @@ object PortableFieldFilters {
 
     /** 필드명 자연키 정규화 — 전각/앞뒤·연속 공백/대소문자 차이만 흡수(괄호 등 의미 문자는 보존). */
     internal fun normalizeName(name: String): String =
-        toHalfWidth(name).trim().replace(Regex("\\s+"), " ").lowercase()
+        toHalfWidth(name).trim().replace(RegexCharClasses.WHITESPACE_RUN, " ").lowercase()
 
     /**
      * [json] 저장 가능한 인앱 규약 JSON,

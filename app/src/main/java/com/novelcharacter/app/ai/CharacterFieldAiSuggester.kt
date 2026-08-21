@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.FieldValueTokenizer
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 캐릭터 필드 값 AI 추천 — 생일 포함 모든 편집 가능 필드의 값을 추천 이유와 함께 제안한다.
@@ -1364,7 +1365,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         private fun normalizeForMatch(value: String): String =
             value.trim().replace(WHITESPACE, "").lowercase(java.util.Locale.ROOT)
 
-        private val WHITESPACE = Regex("\\s+")
+        private val WHITESPACE = RegexCharClasses.WHITESPACE_RUN
 
         /**
          * 구조화 입력 검증 — 파트 수만큼 구분자로 나뉘고 전 파트가 비어 있지 않아야 통과.
@@ -1381,7 +1382,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
         /** "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null */
         fun normalizeBirthDate(raw: String): String? {
-            val match = Regex("^(\\d{1,2})-(\\d{1,2})$").find(raw.trim()) ?: return null
+            val match = Regex("^([0-9]{1,2})-([0-9]{1,2})$").find(raw.trim()) ?: return null
             val month = match.groupValues[1].toInt()
             val day = match.groupValues[2].toInt()
             if (month !in 1..12) return null
@@ -1398,7 +1399,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         fun normalizeNumber(raw: String): String? {
             val trimmed = raw.trim()
             if (trimmed.toDoubleOrNull() != null) return trimmed
-            return Regex("^-?\\d+(?:\\.\\d+)?").find(trimmed)?.value
+            return Regex("^-?[0-9]+(?:\\.[0-9]+)?").find(trimmed)?.value
         }
 
         private fun typeLabel(type: FieldType): String = when (type) {
