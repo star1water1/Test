@@ -43,7 +43,7 @@ class NovelAdapter(
     private var universeBorderWidthDp: Float = 1.5f
 
     /** 작품에 속한 캐릭터의 랜덤/선택 이미지 경로를 반환하는 콜백 */
-    var resolveCharacterImage: ((novelId: Long, characterId: Long?, callback: (String?) -> Unit) -> Unit)? = null
+    var resolveCharacterImage: ((novelId: Long, characterId: Long?, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
 
     /**
      * 이 화면 진입의 랜덤 시드 (B-106 ⓑ · 확정 7-3) — **캐릭터와 같은 주기다.**
@@ -290,8 +290,10 @@ class NovelAdapter(
                 }
                 Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER -> {
                     val charId = if (novel.imageMode == Novel.IMAGE_MODE_SELECT_CHARACTER) novel.imageCharacterId else null
-                    resolveCharacterImage?.invoke(novel.id, charId) { resolvedPath ->
-                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                    resolveCharacterImage?.invoke(novel.id, charId, imageSeed) { resolvedPath ->
+                        // **칸을 켜는 것도 정체 검사 뒤다.** 종전에는 그림을 넣기 전에 칸부터
+                        // 켜서, 재활용된 홀더에 '없어야 할 빈 칸'까지 만들었다.
+                        if (resolvedPath != null && isStillBound(novel.id)) {
                             binding.novelImage.visibility = View.VISIBLE
                             loadImageFromPath(resolvedPath, novel.id)
                         }
@@ -300,7 +302,29 @@ class NovelAdapter(
             }
         }
 
+        /**
+         * 이 홀더가 **아직 그 항목을 그리고 있는가** — 비동기 갈래가 통과할 유일한 문이다.
+         *
+         * 종전 가드는 `bindingAdapterPosition != NO_POSITION` 하나였는데, 그것은 *자리가
+         * 살아 있는가*만 묻는다. 재활용된 홀더는 자리도 살아 있고 다만 **다른 항목**을
+         * 그리고 있어서, 늦게 온 콜백이 그대로 통과해 남의 그림을 박았다.
+         */
+        private fun isStillBound(id: Long): Boolean {
+            val pos = bindingAdapterPosition
+            if (pos == RecyclerView.NO_POSITION) return false
+            return try {
+                val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
+                current.id == id
+            } catch (_: IndexOutOfBoundsException) {
+                // 자리 확인과 getItem 사이에 목록이 갈렸다 — 모르면 그리지 않는다.
+                false
+            }
+        }
+
         private fun loadImageFromPath(path: String, novelId: Long) {
+            // **두 갈래가 같은 문을 지난다.** 종전에는 디코드 갈래에만 정체 검사가 있고
+            // 캐시 갈래에는 아예 없어서, 캐시가 맞은 순간 곧바로 옛 항목의 비트맵이 박혔다.
+            if (!isStillBound(novelId)) return
             val cached = thumbnailCache.get(path)
             if (cached != null) {
                 binding.novelImage.setImageBitmap(cached)
@@ -313,16 +337,9 @@ class NovelAdapter(
                 }
                 if (bitmap != null) {
                     thumbnailCache.put(path, bitmap)
-                    val pos = bindingAdapterPosition
-                    if (pos != RecyclerView.NO_POSITION) {
-                        try {
-                            val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                            if (current.id == novelId) {
-                                binding.novelImage.setImageBitmap(bitmap)
-                            }
-                        } catch (_: IndexOutOfBoundsException) {
-                            // List may have been updated between position check and getItem
-                        }
+                    // 디코드가 끝나는 사이에도 홀더는 재활용될 수 있다 — 같은 문을 다시 지난다.
+                    if (isStillBound(novelId)) {
+                        binding.novelImage.setImageBitmap(bitmap)
                     }
                 }
             }

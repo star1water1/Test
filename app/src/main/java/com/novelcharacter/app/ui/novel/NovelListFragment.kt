@@ -274,8 +274,8 @@ class NovelListFragment : Fragment() {
         adapter.onOrderChanged = { reorderedList ->
             viewModel.updateDisplayOrders(reorderedList)
         }
-        adapter.resolveCharacterImage = { novelId, characterId, callback ->
-            viewModel.resolveCharacterImage(novelId, characterId, callback)
+        adapter.resolveCharacterImage = { novelId, characterId, seed, callback ->
+            viewModel.resolveCharacterImage(novelId, characterId, seed, callback)
         }
 
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {

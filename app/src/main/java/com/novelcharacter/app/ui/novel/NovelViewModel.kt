@@ -15,7 +15,6 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
-import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.launch
 
@@ -28,7 +27,6 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     private val characterRepository = app.characterRepository
     private val recentActivityDao = app.recentActivityDao
     private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
-    private val gson = Gson()
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     // 데이터 처리 결과 알림 채널 (변수 제어: 모든 의미있는 조작 결과 통보)
@@ -274,7 +272,11 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 작품에 속한 캐릭터 중 이미지가 있는 랜덤/지정 캐릭터의 첫 이미지 경로 반환 */
-    fun resolveCharacterImage(novelId: Long, characterId: Long?, callback: (String?) -> Unit) {
+    /** 같은 시드 아래 **결정적으로** 하나를 고른다 — `.random()`을 대신한다(B-103 D3). */
+    private fun <T> pickStable(items: List<T>, seed: Long, rowKey: Long): T =
+        items[com.novelcharacter.app.util.CharacterRepresentativeImage.randomIndex(seed, rowKey, items.size)]
+
+    fun resolveCharacterImage(novelId: Long, characterId: Long?, seed: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val characters = characterRepository.getCharactersByNovelList(novelId)
@@ -288,19 +290,22 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val target = if (characterId != null) {
-                    withImages.find { it.id == characterId } ?: withImages.random()
+                    withImages.find { it.id == characterId } ?: pickStable(withImages, seed, novelId)
                 } else {
-                    withImages.random()
+                    pickStable(withImages, seed, novelId)
                 }
 
-                // imagePaths는 JSON 배열 형태 — 랜덤 경로 추출
-                val pathsStr = target.imagePaths
-                val firstPath = try {
-                    gson.fromJson(pathsStr, Array<String>::class.java)?.randomOrNull()
-                } catch (_: Exception) {
-                    null
-                }
-                callback(firstPath)
+                // **대표 판정 단일 소스를 지난다**(B-103 D7). 종전에는 이 함수만 그 정리에서
+                // 빠져 날 Gson + randomOrNull()이었고, 대표를 지정해 두어도 작품 카드에서만
+                // 효력이 없었다 — 지정은 저장돼 있는데 읽는 코드가 여기 한 줄도 없었다.
+                callback(
+                    com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                        target.imagePaths,
+                        target.representativeImagePath,
+                        seed,
+                        target.id
+                    )
+                )
             } catch (e: Exception) {
                 Log.e("NovelViewModel", "Failed to resolve character image", e)
                 callback(null)
