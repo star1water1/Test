@@ -171,13 +171,27 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     val usedByNames: LiveData<Map<Long, String>> =
         MediatorLiveData<Map<Long, String>>().apply {
             val characters = app.characterRepository.allCharacters
-            var latestEntries: List<NameBankEntry> = emptyList()
-            var latestCharacters: List<com.novelcharacter.app.data.model.Character> = emptyList()
+            // **null은 '아직 안 왔다'이고 빈 목록은 '와 봤더니 없다'다** — 두 소스의 도착
+            // 여부를 값으로 들고 간다. 어댑터의 계약이 그 둘을 가른다(그 파일 KDoc):
+            // `usedByNames`가 null이면 '이름표가 아직 안 실렸다'로 보고 '사용됨'만 찍고,
+            // non-null인데 id가 없으면 '캐릭터를 찾을 수 없음'으로 찍는다.
+            //
+            // 종전에는 둘 다 `emptyList()`로 시작해 **어느 하나만 도착해도** update()가 돌았고,
+            // 캐릭터 목록이 아직 비어 있으면 non-null 빈 맵이 방출됐다. 그래서 화면에 들어간
+            // 직후, 멀쩡히 쓰이고 있는 이름들이 '사용 · 캐릭터를 찾을 수 없음'이라는
+            // **없는 사실**을 말했다(잠시 뒤 제 이름으로 바뀐다).
+            var latestEntries: List<NameBankEntry>? = null
+            var latestCharacters: List<com.novelcharacter.app.data.model.Character>? = null
 
             fun update() {
-                val usedIds = latestEntries.mapNotNull { it.usedByCharacterId }.toSet()
+                val entries = latestEntries ?: return
+                // 캐릭터 목록이 아직이면 **값을 아예 설정하지 않는다** — 어댑터가 null을 보고
+                // 설계대로 '사용됨'만 찍는다. 어댑터에 '빈 맵이면 침묵' 같은 예외를 심으면
+                // 진짜로 캐릭터를 못 찾는 상태를 영영 말하지 못하게 된다.
+                val chars = latestCharacters ?: return
+                val usedIds = entries.mapNotNull { it.usedByCharacterId }.toSet()
                 value = if (usedIds.isEmpty()) emptyMap()
-                else latestCharacters.filter { it.id in usedIds }.associate { it.id to it.name }
+                else chars.filter { it.id in usedIds }.associate { it.id to it.name }
             }
             addSource(nameBankRepository.allNameBankEntries) { latestEntries = it; update() }
             addSource(characters) { latestCharacters = it; update() }
