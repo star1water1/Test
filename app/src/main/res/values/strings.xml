@@ -853,6 +853,7 @@
 
     <!-- Reorder mode -->
     <string name="reorder_mode">순서 편집</string>
+    <string name="reorder_mode_same_date">순서 편집 — 연표 순서는 같은 날짜 안에서만 바꿉니다.</string>
     <string name="reorder_saved">순서가 저장되었습니다</string>
     <!-- 연표 표시 순서 토글 (B-47). 라벨은 **누르면 무엇이 되는가**를 적는다. -->
     <string name="timeline_sort_descending">최근 사건부터 보기</string>

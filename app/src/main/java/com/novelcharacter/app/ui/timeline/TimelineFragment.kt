@@ -388,6 +388,23 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
+    /**
+     * 두 자리가 **같은 날짜 묶음**인가 — 끌어 옮기기의 유일한 문이다.
+     *
+     * `displayOrder`는 같은 `(year, month, day)` 안의 타이브레이크라 **날짜를 넘는 이동은
+     * 저장할 표현이 애초에 없다.** 종전에는 `EventItem`인지만 보아 저장할 수 없는 배치를
+     * 손으로 만들 수 있었고, 모드를 끄면 목록이 재방출되며 그 배치가 말없이 사라졌다 —
+     * 화면은 "순서가 저장되었습니다"라고 말한 뒤였다.
+     */
+    private fun sameDateGroup(currentPos: Int, targetPos: Int): Boolean {
+        val a = adapter.currentList.getOrNull(currentPos)
+            as? com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem ?: return false
+        val b = adapter.currentList.getOrNull(targetPos)
+            as? com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem ?: return false
+        return com.novelcharacter.app.util.TimelineDisplayOrder.dateKeyOf(a.event) ==
+            com.novelcharacter.app.util.TimelineDisplayOrder.dateKeyOf(b.event)
+    }
+
     private fun toggleReorderMode() {
         isReorderMode = !isReorderMode
         adapter.isReorderMode = isReorderMode
@@ -397,7 +414,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         binding.toolbar.menu.findItem(R.id.action_sort_order)?.isEnabled = !isReorderMode
 
         if (isReorderMode) {
-            Toast.makeText(requireContext(), R.string.reorder_mode, Toast.LENGTH_SHORT).show()
+            // 잠근 사실을 말한다 — 알려 주지 않으면 "왜 안 되지"가 남는다(원칙 04).
+            Toast.makeText(requireContext(), R.string.reorder_mode_same_date, Toast.LENGTH_LONG).show()
             val callback = object : ItemTouchHelper.SimpleCallback(
                 ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
             ) {
@@ -406,6 +424,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     viewHolder: RecyclerView.ViewHolder,
                     target: RecyclerView.ViewHolder
                 ): Boolean {
+                    // 같은 날짜 안에서만 움직인다 — [canDropOver]와 **같은 판정**을 지난다.
+                    if (!sameDateGroup(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)) {
+                        return false
+                    }
                     return adapter.onItemMove(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)
                 }
 
@@ -417,12 +439,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     recyclerView: RecyclerView,
                     current: RecyclerView.ViewHolder,
                     target: RecyclerView.ViewHolder
-                ): Boolean {
-                    val currentItem = adapter.currentList.getOrNull(current.bindingAdapterPosition)
-                    val targetItem = adapter.currentList.getOrNull(target.bindingAdapterPosition)
-                    return currentItem is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem &&
-                           targetItem is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem
-                }
+                ): Boolean = sameDateGroup(current.bindingAdapterPosition, target.bindingAdapterPosition)
             }
             itemTouchHelper = ItemTouchHelper(callback).also {
                 it.attachToRecyclerView(binding.timelineRecyclerView)
@@ -431,13 +448,19 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         } else {
             // 재정렬 모드 종료 — displayOrder 저장
             val reorderedEvents = adapter.getVisualOrderEvents()
-            if (reorderedEvents.isNotEmpty()) {
-                viewModel.updateDisplayOrders(reorderedEvents)
-            }
             itemTouchHelper?.attachToRecyclerView(null)
             itemTouchHelper = null
             adapter.onStartDrag = null
-            Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+            if (reorderedEvents.isNotEmpty()) {
+                // **고지는 결과를 받은 뒤다.** 종전에는 저장 코루틴을 기다리지 않고 무조건
+                // "순서가 저장되었습니다"를 띄워, 실패해도 성공이라 말했다.
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val saved = viewModel.updateDisplayOrders(reorderedEvents)
+                    if (_binding != null && saved) {
+                        Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
     }
 

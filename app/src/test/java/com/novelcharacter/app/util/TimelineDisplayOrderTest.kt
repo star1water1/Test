@@ -65,9 +65,62 @@ class TimelineDisplayOrderTest {
 
     @Test fun reorder_descendingNumbersFromBottom() {
         // 역순 화면에서 보이던 차례 [7, 8, 9]는 시간순으로는 [9, 8, 7]이다.
+        // **돌려주는 것은 시간순 차례**이므로 id도 뒤집혀 나온다.
         val visual = listOf(event(7, 1000), event(8, 1000), event(9, 1000))
         val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = true)
-        assertEquals(listOf(2, 1, 0), saved.map { it.displayOrder })
+        assertEquals(listOf(9L, 8L, 7L), saved.map { it.id })
+        assertEquals(listOf(0, 1, 2), saved.map { it.displayOrder })
+    }
+
+    /**
+     * **번호는 날짜 묶음마다 0부터다.** `displayOrder`는 DAO 술어의 *같은 날짜 안
+     * 타이브레이크*일 뿐이라, 목록 전체에 전역 인덱스를 매기면 다른 날짜의 번호끼리 섞인다.
+     */
+    @Test fun reorder_numbersRestartPerDate() {
+        val visual = listOf(
+            event(1, 1000), event(2, 1000),
+            event(3, 1010), event(4, 1010), event(5, 1010)
+        )
+        val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = false)
+        assertEquals(listOf(0, 1, 0, 1, 2), saved.map { it.displayOrder })
+    }
+
+    // ── mergeDateGroup — 화면 밖 형제 ──
+
+    /**
+     * 화면 목록은 창·필터로 잘린 **부분집합**이다. 그 부분집합에만 번호를 적으면 같은 날짜의
+     * 나머지가 옛 번호를 든 채 남아 번호가 겹치고 순서가 부정이 된다.
+     */
+    @Test fun merge_hiddenSiblingsFollowAfterVisible() {
+        // 사용자가 만든 차례: 2 → 1. `visible`은 canonicalReorder가 새 번호를 얹어 온 사본이다.
+        val visible = listOf(event(2, 1000, order = 0), event(1, 1000, order = 1))
+        // DB의 저장값: 1=0, 9=1, 2=2 (9는 창·필터에 가려 화면에 없던 형제)
+        val all = listOf(
+            event(1, 1000, order = 0), event(9, 1000, order = 1), event(2, 1000, order = 2)
+        )
+        val updates = TimelineDisplayOrder.mergeDateGroup(visible, all).associate { it.id to it.displayOrder }
+        // 보인 둘이 사용자가 만든 차례로 앞에 서고, 안 보이던 9는 뒤에 이어 붙는다
+        assertEquals(0, updates[2L])
+        assertEquals(1, updates[1L])
+        assertEquals(2, updates[9L])
+    }
+
+    /**
+     * **'안 바뀌었다'의 기준은 저장값이다.** `visible`이 든 번호와 견주면 보이는 사건은
+     * 언제나 '그대로'가 되어 한 행도 저장되지 않는다(수리 중 실제로 그 함정에 한 번 빠졌다).
+     */
+    @Test fun merge_onlyChangedRowsAreReturned() {
+        val visible = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val all = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        assertEquals(emptyList<TimelineEvent>(), TimelineDisplayOrder.mergeDateGroup(visible, all))
+    }
+
+    /** 자리가 실제로 뒤집힌 경우는 둘 다 저장된다. */
+    @Test fun merge_swappedVisiblePairIsWritten() {
+        val visible = listOf(event(2, 1000, order = 0), event(1, 1000, order = 1))
+        val all = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val updates = TimelineDisplayOrder.mergeDateGroup(visible, all).associate { it.id to it.displayOrder }
+        assertEquals(mapOf(2L to 0, 1L to 1), updates)
     }
 
     /**
@@ -77,6 +130,7 @@ class TimelineDisplayOrderTest {
     @Test fun reorder_descendingArrangementSurvivesRoundTrip() {
         val visual = listOf(event(7, 1000), event(8, 1000), event(9, 1000))
         val saved = TimelineDisplayOrder.canonicalReorder(visual, descending = true)
+        // (돌려받은 목록은 시간순이지만 아래는 displayOrder로 다시 세우므로 차례에 기대지 않는다)
         // 저장 뒤 DB는 displayOrder 오름차순으로 돌려준다
         val fromDb = saved.sortedBy { it.displayOrder }
         // 그것을 다시 역순으로 그리면 사용자가 만든 그 차례여야 한다

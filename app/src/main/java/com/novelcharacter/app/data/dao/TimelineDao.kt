@@ -174,6 +174,23 @@ interface TimelineDao {
     @Update
     suspend fun updateAll(events: List<TimelineEvent>)
 
+    /**
+     * **같은 날짜의 사건 전량** — 화면 밖(필터·창에 가린) 형제까지 포함한다.
+     *
+     * `displayOrder`는 같은 `(year, month, day)` 안의 타이브레이크일 뿐이라, 화면에 실린
+     * 부분집합에만 새 번호를 매기면 **화면 밖 형제가 옛 번호를 든 채 남아** 번호가 겹치고
+     * 순서가 부정(不定)이 된다. 재정렬 저장이 이 질의로 묶음 전량을 읽어 다시 번호를 매긴다.
+     *
+     * `IS`를 쓰는 것이 요점이다 — `month`·`day`는 nullable이고 `=`는 NULL에 대해 NULL을
+     * 내므로 '월·일이 없는 사건' 묶음이 통째로 안 잡힌다.
+     */
+    @Query("""
+        SELECT * FROM timeline_events
+        WHERE year = :year AND month IS :month AND day IS :day
+        ORDER BY displayOrder ASC
+    """)
+    suspend fun getEventsByDate(year: Int, month: Int?, day: Int?): List<TimelineEvent>
+
     @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM timeline_events")
     suspend fun getNextDisplayOrder(): Int
 

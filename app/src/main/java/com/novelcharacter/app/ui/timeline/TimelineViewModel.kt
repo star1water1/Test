@@ -795,15 +795,30 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     /**
      * 드래그 재정렬 저장 — 넘어오는 [visualOrder]는 **화면에 보이던 차례**다.
      * 저장 번호는 언제나 시간순 기준이므로 역순 화면이면 뒤에서부터 매긴다(B-47).
+     *
+     * **번호는 날짜 묶음마다 매기고, 묶음은 화면 밖 형제까지 읽어 다시 센다.**
+     * `displayOrder`는 DAO 술어의 *같은 날짜 안 타이브레이크*일 뿐인데 종전에는 화면에 실린
+     * 목록 전체에 전역 인덱스를 매겼다. 그 목록은 창(`visibleRange`)으로 잘려 있고 작품·
+     * 캐릭터·검색 필터까지 걸릴 수 있는 **부분집합**이라, 손대지도 않은 같은 날짜의 사건들이
+     * 옛 번호를 그대로 든 채 남아 번호가 겹치고 순서가 부정이 됐다.
+     *
+     * @return 저장에 성공했는가 — **고지는 이 답을 받은 뒤에 뜬다**(종전에는 결과를 안 기다렸다).
      */
-    fun updateDisplayOrders(visualOrder: List<TimelineEvent>) = viewModelScope.launch {
-        try {
-            val events = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
-            db.timelineDao().updateAll(events)
-        } catch (e: Exception) {
-            Log.e("TimelineViewModel", "Failed to update display orders", e)
-            failEvent(R.string.result_event_order_failed, e)
+    suspend fun updateDisplayOrders(visualOrder: List<TimelineEvent>): Boolean = try {
+        val ascending = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
+        val dao = db.timelineDao()
+        val updates = mutableListOf<TimelineEvent>()
+        for ((key, visible) in ascending.groupBy { TimelineDisplayOrder.dateKeyOf(it) }) {
+            updates += TimelineDisplayOrder.mergeDateGroup(
+                visible, dao.getEventsByDate(key.year, key.month, key.day)
+            )
         }
+        if (updates.isNotEmpty()) dao.updateAll(updates)
+        true
+    } catch (e: Exception) {
+        Log.e("TimelineViewModel", "Failed to update display orders", e)
+        failEvent(R.string.result_event_order_failed, e)
+        false
     }
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {

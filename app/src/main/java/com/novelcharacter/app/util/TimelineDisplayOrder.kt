@@ -62,17 +62,64 @@ object TimelineDisplayOrder {
     fun arrange(events: List<TimelineEvent>, descending: Boolean): List<TimelineEvent> =
         if (descending) events.reversed() else events
 
+    /** 한 사건이 속한 **날짜 묶음**의 키 — `displayOrder`가 뜻을 갖는 범위 그 자체다. */
+    data class DateKey(val year: Int, val month: Int?, val day: Int?)
+
+    fun dateKeyOf(event: TimelineEvent): DateKey = DateKey(event.year, event.month, event.day)
+
     /**
      * 드래그 재정렬 결과를 **저장 순서(시간순)** 기준의 `displayOrder`로 바꾼다.
      *
      * [visualOrder]는 사용자가 화면에서 만든 차례다. 역순 화면에서는 그 차례가 시간순의
      * 뒤집힌 모습이므로 번호도 뒤에서부터 매긴다 — 그래야 시간순으로 돌아왔을 때
      * 같은 배치의 거울상이 뜬다(뒤집힌 것이 아니라).
+     *
+     * **번호는 날짜 묶음마다 0부터다.** 종전에는 화면에 실린 목록 전체에 0..n-1의 **전역
+     * 인덱스**를 매겼는데, `displayOrder`는 DAO 술어에서
+     * `ORDER BY year, month, day, displayOrder`의 **같은 날짜 안 타이브레이크**일 뿐이다.
+     * 두 가정이 어긋나 ⓐ 날짜를 넘는 이동은 저장할 표현이 없고 ⓑ 다른 날짜의 번호끼리
+     * 뒤섞였다. 조작 쪽도 같은 날짜 안으로 잠가(화면의 `canDropOver`) 표현과 조작을 맞춘다.
      */
     fun canonicalReorder(visualOrder: List<TimelineEvent>, descending: Boolean): List<TimelineEvent> {
-        val last = visualOrder.lastIndex
-        return visualOrder.mapIndexed { index, event ->
-            event.copy(displayOrder = if (descending) last - index else index)
+        // 돌려주는 것은 **시간순 차례**다 — 저장 번호가 시간순 기준이므로 그 차례로 세워 두면
+        // 부르는 쪽이 날짜 묶음마다 [mergeDateGroup]으로 이어 붙이기만 하면 된다.
+        val ascending = if (descending) visualOrder.reversed() else visualOrder
+        val nextInGroup = mutableMapOf<DateKey, Int>()
+        return ascending.map { event ->
+            val key = dateKeyOf(event)
+            val index = nextInGroup[key] ?: 0
+            nextInGroup[key] = index + 1
+            event.copy(displayOrder = index)
+        }
+    }
+
+    /**
+     * 한 날짜 묶음의 최종 번호 — **화면 밖 형제까지 포함해** 다시 매긴다.
+     *
+     * 화면 목록은 언제나 창(`visibleRange`)으로 잘려 있고 작품·캐릭터·검색 필터까지 걸릴 수
+     * 있는 **부분집합**이다. 그 부분집합에만 새 번호를 적으면 같은 날짜의 나머지가 옛 번호를
+     * 그대로 든 채 남아, 사용자가 손대지도 않은 사건들의 앞뒤가 바뀌거나 번호가 겹쳐
+     * 순서가 부정이 된다.
+     *
+     * @param visibleAscending 이 묶음에서 **사용자가 만든 차례**(시간순 기준으로 되돌린 것)
+     * @param allOfDate 이 날짜의 사건 전량(저장된 `displayOrder` 순)
+     * @return 번호가 바뀐 사건만 — 안 바뀐 행까지 쓰면 쓸모없는 갱신이 는다
+     */
+    fun mergeDateGroup(
+        visibleAscending: List<TimelineEvent>,
+        allOfDate: List<TimelineEvent>
+    ): List<TimelineEvent> {
+        val visibleIds = visibleAscending.map { it.id }.toSet()
+        // 화면 밖 형제는 **저장된 상대 순서를 유지한 채 뒤에 이어 붙인다** — 사용자가 보지
+        // 못한 것의 자리를 이 조작이 정할 근거가 없다.
+        val hidden = allOfDate.filter { it.id !in visibleIds }.sortedBy { it.displayOrder }
+        val ordered = visibleAscending + hidden
+        // **'안 바뀌었다'의 기준은 [allOfDate]가 든 저장값이다.** [visibleAscending]은
+        // [canonicalReorder]가 이미 새 번호를 얹어 온 사본이라, 그것과 견주면 보이는 사건은
+        // 언제나 '그대로'가 되어 **한 행도 저장되지 않는다.**
+        val stored = allOfDate.associate { it.id to it.displayOrder }
+        return ordered.mapIndexedNotNull { index, event ->
+            if (stored[event.id] == index) null else event.copy(displayOrder = index)
         }
     }
 
