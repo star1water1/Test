@@ -489,11 +489,8 @@ class ExcelExporter(context: Context) {
         currentActivityRef = activity?.let { java.lang.ref.WeakReference(it) }
     }
 
-    /** 지금 무언가를 띄울 화면이 있는가 — [ExcelImporter]의 같은 이름 판정과 같은 꼴. */
-    private fun hasScreen(): Boolean {
-        val act = currentActivityRef?.get()
-        return act != null && !act.isFinishing && !act.isDestroyed
-    }
+    /** 지금 무언가를 띄울 화면이 있는가 — 판정은 [TransferScreenPresence] 한 자리가 든다. */
+    private fun hasScreen(): Boolean = TransferScreenPresence.canShow(currentActivityRef?.get())
 
     /**
      * 종결 고지 — 화면이 있으면 토스트, 없으면 알림 + 다음 진입 보관함 (B-56 · B-228).

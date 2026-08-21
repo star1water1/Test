@@ -272,11 +272,8 @@ class ExcelImporter(context: Context) {
         deliverOffscreen(title, body)
     }
 
-    /** 지금 무언가를 띄우거나 물을 화면이 있는가. */
-    private fun hasScreen(): Boolean {
-        val act = currentActivityRef?.get()
-        return act != null && !act.isFinishing && !act.isDestroyed
-    }
+    /** 지금 무언가를 띄우거나 물을 화면이 있는가 — 판정은 [TransferScreenPresence] 한 자리가 든다. */
+    private fun hasScreen(): Boolean = TransferScreenPresence.canShow(currentActivityRef?.get())
 
     /**
      * 묻는 창이 **답 없이** 닫혔다 — 그 뜻을 여기서 가른다 (B-228).

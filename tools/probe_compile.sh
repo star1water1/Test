@@ -221,6 +221,26 @@ open class Activity : android.content.Context() {
 }
 EOF
 
+# `androidx.lifecycle`의 **가시성 판정에 쓰는 셋만** 세운다 (2026.08.21).
+# `TransferScreenPresence`가 종결 고지의 잣대를 *생존*에서 *가시성*으로 옮기면서 excel/ 범위가
+# 이 타입을 처음 문다(Activity·LruCache가 들어온 것과 같은 부류). 넓은 스텁은 거짓 초록을
+# 만들므로 **범위가 실제로 읽는 것만** 둔다 — 상태 상수 전부가 아니라 `STARTED`와
+# `isAtLeast`, 그리고 소유자에서 `lifecycle`을 꺼내는 고리 하나다.
+cat > "$WORK/AndroidxLifecycleStubs.kt" <<'EOF'
+// 프로브 전용. 실제 소스가 아니며 Gradle 소스셋 밖에 있다.
+package androidx.lifecycle
+abstract class Lifecycle {
+    enum class State {
+        DESTROYED, INITIALIZED, CREATED, STARTED, RESUMED;
+        fun isAtLeast(state: State): Boolean = ordinal >= state.ordinal
+    }
+    abstract val currentState: State
+}
+interface LifecycleOwner {
+    val lifecycle: Lifecycle
+}
+EOF
+
 # `android.provider.DocumentsContract`의 **deleteDocument 하나만** 세운다 (2026.08.20).
 # 4-b가 문서 트리 계열을 "넓은 스텁이 곧 거짓 초록"이라 열지 않기로 한 판정은 그대로다 —
 # 그 판정이 막는 것은 *쿼리·커서·트리 URI의 넓은 표면*이고, 여기서는 `ExcelExporter`의
@@ -601,6 +621,7 @@ done
   echo "$WORK/AndroidNetStubs.kt"
   echo "$WORK/AndroidWidgetStubs.kt"
   echo "$WORK/AndroidAppStubs.kt"
+  echo "$WORK/AndroidxLifecycleStubs.kt"
   echo "$WORK/AndroidProviderStubs.kt"
   echo "$WORK/AndroidxCoreStubs.kt"
   echo "$WORK/AndroidxDataStoreCoreStubs.kt"
