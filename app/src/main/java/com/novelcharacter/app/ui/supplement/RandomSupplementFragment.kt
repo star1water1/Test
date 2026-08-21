@@ -1106,6 +1106,9 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         } catch (e: Exception) {
             emptyList()
         }
+        // 캐릭터가 갈리면 앞 캐릭터의 예약도 함께 닫는다 — 경로는 캐릭터를 가리지 않으므로
+        // 남겨 두면 이 캐릭터의 저장이 앞 캐릭터에서 고른 삭제를 실행한다.
+        imageStrip.clearPendingDeletes()
         imageStrip.setPaths(paths)
         // 대표 지정도 함께 되살린다(B-103 D7) — 편집창과 같은 이유다.
         imageStrip.setRepresentativePath(character.representativeImagePath)
@@ -1198,6 +1201,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private fun exitEditMode() {
         if (editorState != EditorState.EDIT) return
         editorState = EditorState.PREVIEW
+        // **예약 삭제는 한 편집 회차의 상태다.** 이 화면은 프래그먼트가 살아 있는 채로
+        // 회차를 여닫으므로(리롤·탭 전환·버리기), 여기서 비우지 않으면 **버린 회차의 예약이
+        // 다음 회차의 저장에 실린다** — 사용자가 [목록에서만 빼기]를 고른 파일이 지워지거나,
+        // 아예 다른 캐릭터를 저장할 때 남의 파일이 지워진다(콜드 검토 2026.08.21).
+        // 저장 갈래는 이미 `onPendingImageDeletesApplied`가 비우고 그것이 여기보다 먼저 돈다.
+        // 회전 복원은 `enterEditMode(restoreState)`가 다시 세우므로 이 자리를 지나지 않는다.
+        if (::imageStrip.isInitialized) imageStrip.clearPendingDeletes()
         hasUnsavedChanges = false
         suppressDirtyTracking = true
         pendingFieldValues = null
