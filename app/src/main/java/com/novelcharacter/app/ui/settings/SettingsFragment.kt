@@ -77,6 +77,21 @@ class SettingsFragment : Fragment() {
         File.createTempFile(prefix, suffix, ctx.cacheDir)
             .also { com.novelcharacter.app.excel.ActiveTransfers.hold(it) }
 
+    /**
+     * [createTransferTemp]이 만든 임시본을 **놓는다** — 만드는 문의 짝이다.
+     *
+     * @param handedOver 소유권을 받은 쪽이 있는가(가져오기·SAF 대기). 있으면 등재만 닫는다 —
+     *   지우는 것은 받은 쪽의 몫이고, 그동안은 그쪽이 세운 구간이 캐시 비우기를 막는다.
+     *   없으면 **지운다** — 화면이 사라져 인계가 못 일어난 갈래가 그것이고, 종전에는 그 파일이
+     *   백업 한 벌 크기로 캐시에 영영 앉은 채 비우기에서 *"저장을 기다리는 파일"*이라는
+     *   거짓 고지까지 받았다(콜드 검토 2026.08.21).
+     */
+    private suspend fun releaseTransferTemp(file: File?, handedOver: Boolean) {
+        file ?: return
+        com.novelcharacter.app.excel.ActiveTransfers.release(file)
+        if (!handedOver) withContext(Dispatchers.IO) { file.delete() }
+    }
+
     private fun finishPendingBackupExport() {
         val pending = pendingBackupExport ?: return
         pendingBackupExport = null
@@ -962,10 +977,13 @@ class SettingsFragment : Fragment() {
                     }
                 }
                 progressDialog?.dismiss()
-                if (!isAdded || _binding == null) return@launch
+                if (!isAdded || _binding == null) {
+                    // 건넬 화면이 없다 — 인계가 못 일어나므로 여기서 놓는다.
+                    releaseTransferTemp(portableFile, handedOver = false)
+                    return@launch
+                }
                 // 이 화면이 캐시에 만든 임시본이다 — 끝나면 지우고, 그 사이에는 지켜야 한다.
                 pendingBackupExport = PendingExport(portableFile, ownsFile = true)
-                com.novelcharacter.app.excel.ActiveTransfers.hold(portableFile)
                 val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
                 val fileName =
                     "NovelCharacter_Backup_${dateFormat.format(Date(deviceEncFile.lastModified()))}_portable.enc"
@@ -1126,6 +1144,7 @@ class SettingsFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             var tempXlsx: File? = null
+            var handedOver = false
             try {
                 // 복호화
                 tempXlsx = withContext(Dispatchers.IO) {
@@ -1144,11 +1163,10 @@ class SettingsFragment : Fragment() {
                 progressDialog?.dismiss()
                 // 복호화 xlsx의 소유권을 가져오기에 넘긴다 — 다 읽은 뒤 그쪽이 지운다.
                 excel.importFromLocalFile(tempXlsx!!, ownsFile = true)
+                handedOver = true
 
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패", e)
-                // 실패로 끝났으면 만들다 만 복호화 파일의 주인도 여기다.
-                tempXlsx?.let { f -> withContext(Dispatchers.IO) { f.delete() } }
                 progressDialog?.dismiss()
                 if (_binding != null) {
                     // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
@@ -1159,6 +1177,9 @@ class SettingsFragment : Fragment() {
                     ).show()
                 }
             } finally {
+                // **인계가 못 일어난 갈래에서 임시본의 주인은 여기다** — 실패도, 화면이
+                // 사라져 조기 반환한 갈래도 전부 이 자리를 지난다.
+                releaseTransferTemp(tempXlsx, handedOver)
                 // 복호화가 끝났으면(성공이든 실패든) 옮겨 온 .enc는 더 볼 일이 없다.
                 if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
             }
@@ -1186,8 +1207,10 @@ class SettingsFragment : Fragment() {
         )
 
         viewLifecycleOwner.lifecycleScope.launch {
+            var tempXlsx: File? = null
+            var handedOver = false
             try {
-                val tempXlsx = withContext(Dispatchers.IO) {
+                tempXlsx = withContext(Dispatchers.IO) {
                     val xlsx = createTransferTemp(ctx, "restore_", ".xlsx")
                     try {
                         BackupEncryptor.decryptFilePortable(encFile, xlsx, passphrase) { read ->
@@ -1206,7 +1229,8 @@ class SettingsFragment : Fragment() {
 
                 progressDialog?.dismiss()
                 // 복호화 xlsx의 소유권을 가져오기에 넘긴다 — 다 읽은 뒤 그쪽이 지운다.
-                excel.importFromLocalFile(tempXlsx, ownsFile = true)
+                excel.importFromLocalFile(tempXlsx!!, ownsFile = true)
+                handedOver = true
                 if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
             } catch (e: javax.crypto.AEADBadTagException) {
                 // 잘못된 암호 — 재입력 기회 제공. **여기서는 .enc를 지우지 않는다**:
@@ -1229,6 +1253,7 @@ class SettingsFragment : Fragment() {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
             } finally {
+                releaseTransferTemp(tempXlsx, handedOver)
                 passphrase.fill(' ')
             }
         }
