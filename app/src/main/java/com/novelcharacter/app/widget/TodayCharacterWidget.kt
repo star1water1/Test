@@ -56,9 +56,12 @@ class TodayCharacterWidget : AppWidgetProvider() {
                             context.getString(R.string.widget_no_birthday)
                         }
                     }
-                // 시간이 모자랐으면 **직전 내용을 그대로 둔다** — 빈 칸으로 덮으면 사용자는
-                // 데이터가 없어진 줄로 읽는다. 다음 주기(1시간)에 다시 시도한다.
-                } ?: return@launch
+                // 시간이 모자랐으면 사실대로 적는다. **`return@launch`로 통째로 건너뛰지 않는다** —
+                // 그러면 아래 `setOnClickPendingIntent`까지 함께 빠져서 **갓 놓은 위젯이 다음
+                // 주기(1시간)까지 눌리지 않는다**(콜드 검토에서 잡은 회귀다).
+                // 레이아웃 기본값을 그대로 두는 것도 안 된다 — 그 자리의 기본 문구가
+                // *"생일 없음"*이라, 실제로 생일이 있는데도 없다고 말하게 된다.
+                } ?: context.getString(R.string.widget_update_deferred)
 
                 for (appWidgetId in appWidgetIds) {
                     val views = RemoteViews(context.packageName, R.layout.widget_today_character)

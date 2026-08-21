@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * [BirthdayHelper.todayBirthdays] — **판정과 함께 맞은 행을 돌려주는가**.
@@ -17,7 +18,7 @@ import java.util.Calendar
  */
 class BirthdayHelperTest {
 
-    private val today = Calendar.getInstance()
+    private val today = Calendar.getInstance(Locale.US)
     private val todayMonth = today.get(Calendar.MONTH) + 1
     private val todayDay = today.get(Calendar.DAY_OF_MONTH)
 

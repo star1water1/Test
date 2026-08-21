@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * ExcelCellValue(가져오기 셀 값 정규화의 단일 소스) 계약 테스트.
@@ -72,7 +73,7 @@ class ExcelCellValueTest {
             val style = wb.createCellStyle()
             style.dataFormat = wb.createDataFormat().getFormat("yyyy-mm-dd")
             it.cellStyle = style
-            val cal = Calendar.getInstance().apply { clear(); set(2023, Calendar.JUNE, 15) }
+            val cal = Calendar.getInstance(Locale.US).apply { clear(); set(2023, Calendar.JUNE, 15) }
             it.setCellValue(cal.time)
         }
         assertEquals("2023-06-15", normalize(c))

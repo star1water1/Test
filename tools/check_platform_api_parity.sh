@@ -55,6 +55,13 @@ import io, os, re, sys
 
 REPO = sys.argv[1]
 SRC = os.path.join(REPO, 'app/src/main/java')
+# **시험 소스에는 ①②만 건다**(머리말의 "어디에 있든"과 같은 범위).
+# ① 프로덕션 로직을 복사한 패리티 시험이 다른 통로를 쓰면 *시험이 프로덕션과 다른 코드를
+#    검증한다* — 실제로 `StatsMemoParityTest`가 그랬다.
+# ② 시험의 `Calendar.getInstance()`도 틀린다 — 불교력에서 `set(2023, …)`은 **불기 2023년
+#    (서기 1480)**이라 픽스처 날짜 자체가 달라진다.
+# ③④(서식)는 안 건다 — 시험은 단언 문구를 만드는 자리라 거짓 양성이 된다.
+TEST_SRC = os.path.join(REPO, 'app/src/test/java')
 JSON_SINGLE_SOURCE = os.path.join('com', 'novelcharacter', 'app', 'util', 'JsonText.kt')
 UI_PREFIX = os.path.join('com', 'novelcharacter', 'app', 'ui') + os.sep
 
@@ -66,7 +73,9 @@ LOCALIZED_CONV = re.compile(r'%[-#+ 0,(]*\d*(?:\.\d+)?[dfeEgG]')
 FMT_CALL = re.compile(r'String\.format\(\s*"((?:[^"\\\n]|\\.)*)"|"((?:[^"\\\n]|\\.)*)"\s*\.format\(')
 SDF_DEFAULT = re.compile(r'SimpleDateFormat\([^)]*Locale\.getDefault')
 CAL_NOLOCALE = re.compile(r'\bCalendar\.getInstance\(\s*\)')
-OPTSTRING = re.compile(r'\.optString\(')
+# 수신자가 붙은 것(`o.optString(`)과 **안 붙은 것**(`with(o) { optString( }` ·
+# JSONObject 확장 함수 안)을 함께 잡는다 — 뒤엣것을 빼면 통로를 우회할 수 있다.
+OPTSTRING = re.compile(r'(?<!\w)optString\(')
 
 
 def blank_comments(src):
@@ -107,10 +116,10 @@ def marked(raw_lines, ln):
     return MARK.search('\n'.join(raw_lines[max(0, ln - 2):ln]))
 
 
-def scan_text(raw, rel):
+def scan_text(raw, rel, json_only=False):
     src = blank_comments(raw)
     raw_lines = raw.split('\n')
-    is_ui = rel.startswith(UI_PREFIX)
+    is_ui = rel.startswith(UI_PREFIX) or json_only
     is_json_src = (rel == JSON_SINGLE_SOURCE)
     viol = []
 
@@ -164,6 +173,8 @@ SELFTEST = [
     ('val n2 = SimpleDateFormat("y", Locale.getDefault())', 'com/novelcharacter/app/util/X.kt', 1),
     ('val o = SimpleDateFormat("y", Locale.getDefault())', 'com/novelcharacter/app/ui/X.kt', 0),
     ('// platform-parity-ok: 사유\nval p = String.format("%d", n)', 'com/novelcharacter/app/util/X.kt', 0),
+    ('val r = with(json) { optString("k") }', 'com/novelcharacter/app/data/X.kt', 1),   # 수신자 없는 호출
+    ('val s2 = myoptString("k")', 'com/novelcharacter/app/data/X.kt', 0),                # 이름의 일부는 아니다
     ('// 종전에는 String.format("%d", n) 였다\nval q = String.format(Locale.US, "%d", n)', 'com/novelcharacter/app/util/X.kt', 0),
 ]
 bad = []
@@ -181,14 +192,17 @@ if bad:
 print("  ✓ 탐지기 자기 시험 통과 (%d개 표본)" % len(SELFTEST))
 
 viol, nfile = [], 0
-for dp, _, fs in os.walk(SRC):
-    for f in sorted(fs):
-        if not f.endswith('.kt'):
-            continue
-        p = os.path.join(dp, f)
-        rel = os.path.relpath(p, SRC)
-        nfile += 1
-        viol += scan_text(io.open(p, encoding='utf-8').read(), rel)
+for root, json_only in ((SRC, False), (TEST_SRC, True)):
+    if not os.path.isdir(root):
+        continue
+    for dp, _, fs in os.walk(root):
+        for f in sorted(fs):
+            if not f.endswith('.kt'):
+                continue
+            p = os.path.join(dp, f)
+            rel = os.path.relpath(p, root)
+            nfile += 1
+            viol += scan_text(io.open(p, encoding='utf-8').read(), rel, json_only)
 
 if viol:
     print("  ✗ 위반 %d건" % len(viol))

@@ -12,6 +12,7 @@ import org.junit.Test
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * **DOM 경로 ↔ 스트리밍 경로 동치 테스트 (B-8 / 색출 로드맵 6).**
@@ -56,7 +57,7 @@ class ImportSourceEquivalenceTest {
             style.dataFormat = wb.createDataFormat().getFormat("yyyy-mm-dd")
             val dateCell = createCell(0)
             dateCell.cellStyle = style
-            dateCell.setCellValue(Calendar.getInstance().apply { clear(); set(2023, Calendar.JUNE, 15) }.time)
+            dateCell.setCellValue(Calendar.getInstance(Locale.US).apply { clear(); set(2023, Calendar.JUNE, 15) }.time)
             // 1·2열 미생성(열 공백)
             createCell(3).setCellValue("")            // 빈 문자열
             createCell(5).setCellValue("끝")

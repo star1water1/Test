@@ -1393,6 +1393,9 @@
     <string name="widget_recent_characters">최근 캐릭터</string>
     <string name="widget_today_character">오늘의 캐릭터</string>
     <string name="widget_quick_add">빠른 추가</string>
+    <!-- 위젯 갱신이 시간 상한에 걸렸을 때. 레이아웃 기본값(생일 없음)을 그대로 두면
+         **없는 사실을 말하게 되므로** 사실대로 적는다(R-17). -->
+    <string name="widget_update_deferred">잠시 후 갱신됩니다</string>
     <string name="widget_no_birthday">오늘 생일인 캐릭터가 없습니다</string>
     <string name="widget_random_character">오늘의 캐릭터: %s</string>
     <string name="widget_birthday_today">오늘 생일: %s</string>

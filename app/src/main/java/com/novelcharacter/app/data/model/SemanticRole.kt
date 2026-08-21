@@ -1,7 +1,6 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
-import com.novelcharacter.app.util.stringOr
 import com.novelcharacter.app.util.stringOrNull
 
 /**

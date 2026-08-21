@@ -103,8 +103,10 @@
 ⚠️ **이 마지막 묶음은 전부 `ui/`·`widget/`·최상위·`backup/`이라 로컬 프로브 범위 밖이다 —
 컴파일 증명은 CI(master 대상 PR)뿐이다.**
 
-**남은 증명:** `ui/assistant/AssistantProviders.kt`·`ui/field/FieldViewModel.kt` 둘은
-`ui/**`라 프로브 범위 밖이다(import 한 줄 + 토큰 하나 치환) — **그 둘의 컴파일 증명은 CI뿐이다.**
+**남은 증명 — 이 줄은 콜드 검토에서 정정됐다.** 처음에는 *"둘"*이라고 적었는데, 실측하니
+이 브랜치가 손댄 `.kt` 중 **순수 JVM 하네스와 프로브를 둘 다 못 지나는 것이 15개**다
+(`ui/**` 11 · `NovelCharacterApp` · `ai/AiService` · `backup/AutoBackupWorker` · `widget/TodayCharacterWidget`).
+**그 열다섯의 컴파일 증명은 CI(master 대상 PR)뿐이다** — 사각의 크기를 3분의 1로 줄여 적고 있었다.
 
 ### 앞 판이 낸 것 (2026.08.21) — **사용자 요청: 기기 없이 볼 수 있는 것을 전수 검토하고 수리**
 

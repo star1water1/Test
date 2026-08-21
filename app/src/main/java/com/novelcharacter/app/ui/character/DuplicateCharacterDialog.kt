@@ -208,7 +208,7 @@ class DuplicateCharacterDialog : DialogFragment() {
             // 공용 유틸: 바운즈 없는 고정 샘플(=4) 대신 요청 크기 다운샘플 + filesDir 경로가드.
             // 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D2·D4).
             // **디코드는 IO에서 한다** — `decodeThumbnail`의 KDoc이 *"IO 디스패처에서 호출할 것
-            // (디스크·디코드)"*을 계약으로 적어 두었는데, `decodeThumbnail`을 쓰는 파일 스물 하나
+            // (디스크·디코드)"*을 계약으로 적어 두었는데, `decodeThumbnail`을 쓰는 파일 **열여덟**
             // 중 **이 어댑터만** 그것을 바인딩(메인 스레드)에서 어기고 있었다. 형제 여섯
             // (`RecommendedImageAdapter`·`CharacterAdapter`·`NovelAdapter` …)이 이미 아래 모양이다.
             holder.cancelLoad()
