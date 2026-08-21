@@ -181,7 +181,10 @@ class AuditSupplementFragment : Fragment() {
         // 뛰면 그 수는 아무것도 뜻하지 않는다.
         val scopedTargets = viewModel.scopedTargetCount.value ?: targetCount
         val completedCount = (total - scopedTargets).coerceAtLeast(0)
-        val completionRate = if (total > 0) completedCount * 100 / total else 100
+        // **분모가 0인 것은 '완료'가 아니라 '잴 것이 없음'이다**(콜드 검토 2026.08.21).
+        // 종전에는 100%로 접혀, 캐릭터를 아직 안 붙인 작품을 고르면 "100% (0/0)"과
+        // "모든 캐릭터의 정보가 완성되었습니다!"가 함께 떴다 — 없는 사실을 다 끝났다고 말한다.
+        val completionRate = if (total > 0) completedCount * 100 / total else 0
 
         // **빈 화면 판정은 전수로 남긴다** — 필터가 아무것도 못 고른 것과 앱에 캐릭터가
         // 하나도 없는 것은 다른 사실이고, "캐릭터를 먼저 추가해 보세요"는 뒤엣것의 안내다.
@@ -200,7 +203,12 @@ class AuditSupplementFragment : Fragment() {
         binding.completionRateText.text = getString(R.string.supplement_completion_format, completionRate, completedCount, total)
         binding.completionProgressBar.progress = completionRate
 
-        if (targetCount == 0) {
+        if (total == 0) {
+            // 앱이 빈 것과 **필터가 빈 것**은 다른 사실이라 문구도 다르다.
+            binding.startDescText.text = getString(R.string.supplement_scope_empty)
+            binding.btnStartSupplement.isEnabled = false
+            binding.listHeaderText.text = getString(R.string.supplement_scope_empty)
+        } else if (targetCount == 0) {
             binding.startDescText.text = getString(R.string.supplement_all_complete)
             binding.btnStartSupplement.isEnabled = false
             binding.listHeaderText.text = getString(R.string.supplement_no_targets)

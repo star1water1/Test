@@ -2043,7 +2043,9 @@
     <string name="supplement_title">정보 보충</string>
     <string name="supplement_desc">정보 입력이 미흡한 캐릭터를 찾아 보충합니다.</string>
     <string name="supplement_target_count">보충 대상</string>
-    <string name="supplement_total_count">전체 캐릭터</string>
+    <!-- 이 카드의 수는 **필터가 정한 범위**의 수다 — 라벨이 '전체'라 하면 값과 어긋난다 -->
+    <string name="supplement_total_count">범위 내 캐릭터</string>
+    <string name="supplement_scope_empty">이 범위에 캐릭터가 없습니다 — 필터를 넓혀 보세요</string>
     <string name="supplement_completion_rate">보충 완료율</string>
     <string name="supplement_completion_format">%1$d%% (%2$d/%3$d)</string>
     <string name="supplement_settings_title">보충 기준 설정</string>
