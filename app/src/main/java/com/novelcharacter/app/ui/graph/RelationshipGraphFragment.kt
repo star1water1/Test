@@ -419,7 +419,14 @@ class RelationshipGraphFragment : Fragment() {
                     option.setter(newValue)
                     isChecked = newValue
                     prefs.edit().putBoolean(option.prefsKey, newValue).apply()
-                    val noticeRes = if (newValue) option.onRes else option.offRes
+                    // 켠 뒤 실제로 좁혀지는지까지 말한다 — 고른 세력이 없으면 이 칩만으로는
+                    // 한 명도 줄지 않는데, 접힘을 풀려고 켠 사용자가 그것을 알 길이 없다.
+                    val noticeRes = when {
+                        !newValue -> option.offRes
+                        option.onRes == null -> null
+                        factionNarrows && selectedFactions.isEmpty() -> R.string.graph_faction_narrow_needs_pick
+                        else -> option.onRes
+                    }
                     if (noticeRes != null) {
                         Toast.makeText(requireContext(), getString(noticeRes), Toast.LENGTH_SHORT).show()
                     }
@@ -435,6 +442,18 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.factionChipGroup
         chipGroup.removeAllViews()
 
+        // 무효 선택 제거 (세계관 전환·세력 삭제 등으로 목록이 바뀐 경우) — 정리 결과도 영속.
+        // "미소속" sentinel은 실제 세력이 아니므로 정리 대상에서 보존한다.
+        //
+        // **세력이 0개여도 먼저 돈다**(콜드 검토 2026.08.21). 종전에는 아래 조기 반환 뒤에
+        // 있어서, 고른 세력을 지우면 실체 없는 선택이 그대로 남았다 — '좁히기'가 켜져 있으면
+        // 그 선택이 모든 관계를 걷어내 **그래프가 통째로 비고**, 빈 화면은 화면에 있지도 않은
+        // 칩을 끄라고 안내했다(세력 칩 줄이 함께 숨겨져 있다). 사라진 대상을 가리키는 선택은
+        // 보존할 것이 아니다(R-20의 결).
+        val validFactionIds = factions.mapTo(HashSet()) { it.id }
+            .plus(com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID)
+        if (selectedFactions.retainAll(validFactionIds)) persistFactions()
+
         if (factions.isEmpty()) {
             binding.factionFilterScrollView.visibility = View.GONE
             binding.factionDisplayModeScrollView.visibility = View.GONE
@@ -443,12 +462,6 @@ class RelationshipGraphFragment : Fragment() {
 
         binding.factionFilterScrollView.visibility = View.VISIBLE
         binding.factionDisplayModeScrollView.visibility = View.VISIBLE
-
-        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우) — 정리 결과도 영속.
-        // "미소속" sentinel은 실제 세력이 아니므로 정리 대상에서 보존한다.
-        val validFactionIds = factions.mapTo(HashSet()) { it.id }
-            .plus(com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID)
-        if (selectedFactions.retainAll(validFactionIds)) persistFactions()
 
         // "All factions" chip
         val allChip = Chip(requireContext()).apply {
@@ -981,12 +994,14 @@ class RelationshipGraphFragment : Fragment() {
             binding.summaryModeText.visibility = View.VISIBLE
             binding.summaryModeText.text =
                 getString(R.string.graph_summary_mode, capped.shown.size, capped.hiddenCount)
-            // 고지가 말하는 '좁힐 수단'은 **지금 켜져 있는 것**이어야 한다 — 세력이 강조 축인
-            // 상태에서 "세력으로 좁히라"고 하면 눌러도 아무 일이 없다(R-24가 금지한 자리).
-            val hint = if (factionNarrows) {
-                R.string.graph_too_many_nodes_narrowing
-            } else {
-                R.string.graph_too_many_nodes
+            // 고지가 말하는 '좁힐 수단'은 **지금 화면에 있고 켜져 있는 것**이어야 한다 —
+            // 없는 칩을 누르라고 하면 눌러도 아무 일이 없다(R-24가 금지한 자리).
+            // 세력이 0개면 세력 칩 줄이 통째로 숨겨져 있으므로 세력을 아예 언급하지 않는다.
+            val hasFactionChips = viewModel.getFactionsForUniverse(currentUniverseId).isNotEmpty()
+            val hint = when {
+                !hasFactionChips -> R.string.graph_too_many_nodes_no_factions
+                factionNarrows -> R.string.graph_too_many_nodes_narrowing
+                else -> R.string.graph_too_many_nodes
             }
             Toast.makeText(requireContext(), getString(hint), Toast.LENGTH_LONG).show()
         } else {
