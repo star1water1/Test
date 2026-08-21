@@ -3883,8 +3883,9 @@
     <string name="default_field_planted">새로 심음 %1$d곳 · 기존 필드에 연결 %2$d곳</string>
     <string name="default_field_plant_none">심을 곳도 이을 곳도 없습니다 — 이미 모든 세계관에 있습니다</string>
     <string name="default_field_demoted">기본 필드 \'%1$s\'을(를) 해제했습니다 — 심긴 필드 %2$d개는 보통 필드로 남습니다</string>
+    <string name="default_field_demoted_with_cleanup">기본 필드 \'%1$s\'을(를) 해제했습니다 — 심긴 필드 %2$d개는 보통 필드로 남고, 값이 없는 무소속 구역의 필드 %3$d개는 함께 정리했습니다</string>
     <string name="default_field_unlink_confirm_title">전역 기본을 해제하시겠습니까?</string>
-    <string name="default_field_unlink_confirm">모든 세계관에서 연결이 풀려 보통 필드가 됩니다. 필드와 캐릭터 값은 지워지지 않습니다.</string>
+    <string name="default_field_unlink_confirm">모든 세계관에서 연결이 풀려 보통 필드가 됩니다. 세계관에 심긴 필드와 캐릭터 값은 지워지지 않습니다. 값이 없는 무소속 구역의 필드만 함께 정리됩니다.</string>
 
     <!-- 전파 미리보기 -->
     <string name="default_field_propagate_title">어느 세계관에 반영하시겠습니까?</string>

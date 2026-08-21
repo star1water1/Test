@@ -195,8 +195,17 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                 else app.getString(R.string.default_field_planted, r.planted, r.linked)
             }
             existing != null -> {
-                val demoted = repo.deleteTemplate(existing)
-                app.getString(R.string.default_field_demoted, existing.name, demoted)
+                val outcome = repo.deleteTemplate(existing)
+                // 두 수를 갈라 말한다 — 값 없는 무소속 그림자는 함께 정리되고(2026.08.07 확정),
+                // 그 사실을 확인 문구도 결과 문구도 말하지 않고 있었다.
+                if (outcome.cleanedShadows > 0) {
+                    app.getString(
+                        R.string.default_field_demoted_with_cleanup,
+                        existing.name, outcome.demoted, outcome.cleanedShadows
+                    )
+                } else {
+                    app.getString(R.string.default_field_demoted, existing.name, outcome.demoted)
+                }
             }
             // 껐는데 템플릿이 애초에 없다 — 아무 일도 하지 않고 아무 말도 하지 않는다.
             else -> null
