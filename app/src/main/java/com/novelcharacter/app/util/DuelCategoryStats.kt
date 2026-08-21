@@ -145,8 +145,20 @@ object DuelCategoryStats {
     ) {
         val truncated: Boolean get() = matchups.size < totalMatchups
 
-        /** 말할 것이 하나라도 있는가 — 없으면 화면이 이 구역을 통째로 감춘다. */
+        /** **표에 그릴 칸**이 하나라도 있는가. */
         val any: Boolean get() = matchups.isNotEmpty() || values.isNotEmpty()
+
+        /**
+         * **사용자에게 말할 것**이 하나라도 있는가 — 화면의 가시성 판정은 이것이다.
+         *
+         * [any]와 갈라 둔 것이 요점이다. 값이 빈 쪽이 낀 판은 칸에 들어가지 않으므로,
+         * 값 있는 참가자끼리 붙은 판이 하나도 없으면 칸이 통째로 비고 [any]가 거짓이 된다.
+         * 그 상태에서 필드를 목록에서 빼 버리면 **못 센 판 고지가 함께 사라지고**, 그 자리에
+         * "차례가 없는 영향 필드가 걸려 있지 않습니다"라는 거짓 문구가 대신 뜬다 —
+         * 사용자는 값을 비워 둔 캐릭터 때문이라는 사실에 닿을 길이 없다(개발 의도 2번).
+         */
+        val hasSomethingToSay: Boolean
+            get() = any || skippedNoValue > 0 || skippedSameValue > 0 || malformedMatches > 0
 
         /** 예상보다 기운 칸 — 화면이 머리에서 세는 수. */
         fun leaning(options: Options = Options()): List<Matchup> = matchups.filter { it.leans(options) }

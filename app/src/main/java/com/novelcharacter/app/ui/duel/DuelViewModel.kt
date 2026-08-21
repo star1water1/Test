@@ -476,7 +476,9 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
                     fit = state.fit,
                     tokensById = tokensById
                 )
-                if (report.any) (def?.name ?: systemFieldLabel(column!!)) to report else null
+                // 게이트는 *표에 실을 칸이 있는가*가 아니라 **말할 것이 있는가**다 —
+                // 못 센 판(값 빈 쪽·같은 값·깨진 판) 고지가 조용히 사라지지 않게.
+                if (report.hasSomethingToSay) (def?.name ?: systemFieldLabel(column!!)) to report else null
             }
         }
     }
