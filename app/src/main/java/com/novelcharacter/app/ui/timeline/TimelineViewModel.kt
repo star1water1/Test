@@ -361,7 +361,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_stdyear_updated, newStdYear)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to set standard year", e)
-            showError(e.message)
+            failEvent(R.string.result_novel_standard_year_failed, e)
         }
     }
 
@@ -470,10 +470,20 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _centerYear.value?.let { prefs.edit().putInt("center_year", it).apply() }
     }
 
-    private fun showError(message: String?) {
-        // 예외 메시지가 null이어도 실패를 알린다 — 결과 채널로 통보 + 작업 이력 기록
-        reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
-            message ?: app.getString(R.string.operation_failed)))
+    /**
+     * 사건 축의 실패 고지 — **무엇이 실패했는가를 부르는 자리가 반드시 적는다.**
+     *
+     * 종전에는 `showError(e.message)` 하나를 여섯 자리가 공유했고, 예외 원문이 **요약**
+     * 자리에 그대로 나갔다("database or disk is full (code 13 SQLITE_FULL)" 같은 글자가
+     * 사용자 문구로 뜬다). 무엇을 하다 실패했는지는 한 글자도 없었고, detail이 비어
+     * [상세] 경로도 붙지 않았다. 캐릭터 축은 catch마다 문구를 직접 적어 이 문제가 없다 —
+     * 쓰는 문자열도 이미 있었는데 연표 축만 안 쓰고 있었다.
+     *
+     * **시그니처로 강제한다**: 요약 문자열을 인자로 받으므로 조작 이름을 빠뜨리면
+     * 컴파일되지 않는다. 예외 원문은 detail로 내려가 [상세]가 붙는다.
+     */
+    private fun failEvent(summaryRes: Int, e: Exception) {
+        reportResult(_result, OpResult.failure(OpResult.CAT_EVENT, app.getString(summaryRes), e.message))
     }
 
     /**
@@ -523,7 +533,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_save_failed, e)
         }
     }
 
@@ -564,7 +574,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_update_failed, e)
         }
     }
 
@@ -642,7 +652,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to shift events", e)
-            showError(e.message)
+            failEvent(R.string.result_event_update_failed, e)
         }
     }
 
@@ -792,7 +802,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             db.timelineDao().updateAll(events)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update display orders", e)
-            showError(e.message)
+            failEvent(R.string.result_event_order_failed, e)
         }
     }
 
@@ -817,7 +827,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 app.getString(R.string.result_event_deleted)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
-            showError(e.message)
+            failEvent(R.string.result_event_delete_failed, e)
         }
     }
 

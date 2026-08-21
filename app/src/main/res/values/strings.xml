@@ -2399,6 +2399,8 @@
     <string name="result_event_save_failed">사건 저장 실패</string>
     <string name="result_event_update_failed">사건 수정 실패</string>
     <string name="result_event_delete_failed">사건 삭제 실패</string>
+    <string name="result_event_order_failed">사건 순서 변경 실패</string>
+    <string name="result_novel_standard_year_failed">작품 기준 연도 변경 실패</string>
     <string name="result_event_unlinked">이 캐릭터에서 사건 연결 해제됨</string>
     <string name="result_event_unlink_failed">사건 연결 해제 실패</string>
     <string name="result_event_stdyear_updated">표준연도가 %1$d(으)로 변경됨</string>
