@@ -53,7 +53,16 @@ enum class TransferPhase(
      * **두 사실은 같은 판정의 앞뒤다** — 사용자에게 못 끊게 해 놓고 화면 파괴로 끊으면
      * 계약이 한쪽에서만 지켜진다.
      */
-    val stopsOnScreenLoss: Boolean
+    val stopsOnScreenLoss: Boolean,
+    /**
+     * 이 구간은 **끝까지 가서 스스로 결과를 말하는가.**
+     *
+     * [stopsOnScreenLoss] 하나가 *끊기는가*와 *스스로 말하는가*를 겸하고 있었던 것이
+     * 침묵의 뿌리다 — 끊기지 않는다고 해서 반드시 자기 결과를 말하는 것은 아니다.
+     * 축을 갈라 두면 **끊기지도 않고 스스로 말하지도 않는 구간**이 드러나고,
+     * 그 구간에서만 중단 고지가 나간다.
+     */
+    val announcesOwnOutcome: Boolean = true
 ) {
     /** 파일 복사·압축 해제 — 캐시에만 쓴다. 끊어도 남는 것이 없다(뒤처리는 `finally`가 한다). */
     IMPORT_INTAKE(TransferKind.IMPORT, stopsOnScreenLoss = true),
@@ -68,7 +77,16 @@ enum class TransferPhase(
      * 이미지 되살리기 — **트랜잭션 밖에서 파일을 만든다.**
      * 끊으면 가리킬 행이 없는 파일이 남는다(B-77이 되돌리기를 세운 그 자리).
      */
-    IMPORT_RESTORE_IMAGES(TransferKind.IMPORT, stopsOnScreenLoss = false),
+    IMPORT_RESTORE_IMAGES(
+        TransferKind.IMPORT,
+        stopsOnScreenLoss = false,
+        // **끝까지 가는 것은 이미지 복사 블록뿐이다.** 그 블록을 빠져나온 뒤 부르는
+        // `importFromXlsx`는 이미 끊긴 스코프 위에서 첫 중단점에 죽고, 그 catch는
+        // *"고지는 onScreenGone이 이미 했다"*고 믿어 그대로 다시 던진다 — 실제로는
+        // 아무도 안 했다. 형제 IMPORT_APPLY는 결과 창까지 통째로 NonCancellable 안이라
+        // 같은 구멍이 없다. 그 차이를 이 칸이 말한다.
+        announcesOwnOutcome = false
+    ),
 
     /**
      * 반영 — 전략(덮어쓰기·병합)이 여러 표에 걸쳐 실린다.
@@ -95,8 +113,12 @@ enum class TransferPhase(
  *
  * 세 번 침묵한다. 침묵의 근거가 서로 다르므로 셋을 각각 시험이 잠근다:
  * 1. **돌던 것이 없다** — 그냥 화면을 떠난 것이다. 여기서 말하면 화면을 옮길 때마다 알림이 뜬다.
- * 2. **끊기지 않는 구간이다** — 그 작업은 끝까지 가서 **스스로** 결과를 말한다.
+ * 2. **끊기지 않으면서 스스로 결과를 말하는 구간이다.**
  *    여기서 미리 *"중단되었습니다"*라고 하면 곧 이어 오는 *"가져왔습니다"*와 정면으로 어긋난다.
+ *    **두 조건을 함께 봐야 한다** — 종전에는 *끊기지 않는다*만 보고 침묵했는데, 끊기지
+ *    않는다고 해서 반드시 자기 결과를 말하는 것은 아니다([TransferPhase.IMPORT_RESTORE_IMAGES]).
+ *    그 구간에서 화면을 돌리면 진행 창만 사라지고 중단 고지도 완료 결과도 없이 가져오기가
+ *    조용히 죽었다 — 알림·보관함·작업 이력 어디에도 한 줄이 안 남았다.
  * 3. **사용자가 방금 취소를 눌렀다** — 그 고지는 토스트가 이미 했다(B-56이 정한 경계:
  *    거절·취소는 토스트, 작업이 돈 뒤의 종결 고지만 화면 밖으로).
  */
@@ -109,8 +131,9 @@ object TransferInterruption {
      */
     fun abortedKind(phase: TransferPhase?, userCancelled: Boolean): TransferKind? {
         if (phase == null) return null
-        if (!phase.stopsOnScreenLoss) return null
         if (userCancelled) return null
+        // 끊기지 않으면서 **스스로 결과를 말하는** 구간만 침묵한다.
+        if (!phase.stopsOnScreenLoss && phase.announcesOwnOutcome) return null
         return phase.kind
     }
 }
