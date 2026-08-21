@@ -3326,13 +3326,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = UniverseCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             // 읽기도 가져오기와 **같은 함수**다 — 비교식만 맞추고 리더를 각자 두면
             // 같은 결함이 한 겹 아래에서 되살아난다(설계 1-1).
             val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", result = null)
-            if (r.name.isBlank()) continue
+            if (r.name.isBlank()) {
+                // 필수 칸만 빈 행은 '건너뜀'으로 센다 — 외부 편집이 상하게 한 행이다.
+                // **완전히 빈 행(표 아래 여백)은 침묵한다**([rowCarriesValue] · skippedCount 계약).
+                if (rowCarriesValue(row)) { inBackup++; skippedCount++ }
+                continue
+            }
             inBackup++
 
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 **이름으로 폴백**한다.
@@ -3367,7 +3372,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "세계관 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("universes", "세계관", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("universes", "세계관", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeNovels(
@@ -3394,11 +3399,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fieldColumns = if (fieldValues == null) emptyList()
         else analysisEntityFieldColumns(headerRow, novelFields)
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             val r = readNovelRow(row, c, "작품 행 ${excelRow(i)}", result = null)
-            if (r.title.isBlank()) continue
+            if (r.title.isBlank()) {
+                // 필수 칸만 빈 행은 '건너뜀'으로 센다 — 외부 편집이 상하게 한 행이다.
+                // **완전히 빈 행(표 아래 여백)은 침묵한다**([rowCarriesValue] · skippedCount 계약).
+                if (rowCarriesValue(row)) { inBackup++; skippedCount++ }
+                continue
+            }
             inBackup++
 
             // 세계관 해석도 가져오기와 같다 — 코드 우선, 이름 폴백.
@@ -3433,7 +3443,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
         }
         reportProgress(onProgress, "작품 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("novels", "작품", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("novels", "작품", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeFieldDefinitions(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -3528,7 +3538,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         fieldValues: FieldValueScan? = null
     ): CharacterAnalysisResult {
         val existingTotal = db.characterDao().getAllCharactersList().size
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         val allConflicts = mutableListOf<CharacterConflict>()
 
         // 세계관별 캐릭터 시트 분석 — **DB의 것 + 이 파일이 만들 것**(B-254).
@@ -3552,7 +3562,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val headerRow = locateHeaderRow(sheet, "이름") ?: continue
             val result = analyzeCharacterSheet(sheet, headerRow, universe.name, universe.id, fieldValues)
             inBackup += result.first; newCount += result.second; updateCount += result.third
-            unchangedCount += (result.first - result.second - result.third - result.fifth)
+            skippedCount += result.sixth
+            // 건너뛴 행은 '변경 없음'이 아니다 — 빼지 않으면 상한 행이 정상 행으로 세어진다.
+            unchangedCount += (result.first - result.second - result.third - result.fifth - result.sixth)
             allConflicts.addAll(result.fourth)
         }
 
@@ -3567,18 +3579,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     unclSheet, headerRow, UNCLASSIFIED_SHEET_NAME, universeId = null, fieldValues = fieldValues
                 )
                 inBackup += result.first; newCount += result.second; updateCount += result.third
-                unchangedCount += (result.first - result.second - result.third - result.fifth)
+                skippedCount += result.sixth
+                unchangedCount += (result.first - result.second - result.third - result.fifth - result.sixth)
                 allConflicts.addAll(result.fourth)
             }
         }
 
         reportProgress(onProgress, "캐릭터 분석", 0, totalRows)
-        val category = CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        val category = CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
         return CharacterAnalysisResult(category, allConflicts)
     }
 
-    /** first=inBackup, second=newCount, third=updateCount, fourth=conflicts, fifth=conflictCount */
-    private data class SheetAnalysis(val first: Int, val second: Int, val third: Int, val fourth: List<CharacterConflict>, val fifth: Int = 0)
+    /** first=inBackup, second=newCount, third=updateCount, fourth=conflicts, fifth=conflictCount, sixth=skipped */
+    private data class SheetAnalysis(
+        val first: Int, val second: Int, val third: Int,
+        val fourth: List<CharacterConflict>, val fifth: Int = 0,
+        /** 필수 칸('이름')만 빈 행 — [CategoryAnalysis.skippedCount]로 올라간다 */
+        val sixth: Int = 0
+    )
 
     private suspend fun analyzeCharacterSheet(
         sheet: Sheet,
@@ -3647,7 +3665,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var conflictCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var conflictCount = 0; var skippedCount = 0
         val conflicts = mutableListOf<CharacterConflict>()
 
         // 작품 제목 해석도 가져오기와 **같은 사다리**다([resolveNovelId]의 읽기 갈래 — 시트의
@@ -3705,7 +3723,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(i) ?: continue
             val r = readCharacterRow(row, c, "캐릭터 행 ${excelRow(i)}", result = null)
             val name = r.name
-            if (name.isBlank()) continue
+            if (name.isBlank()) {
+                // 필수 칸만 빈 행은 '건너뜀'으로 센다 — 외부 편집이 상하게 한 행이다.
+                // **완전히 빈 행(표 아래 여백)은 침묵한다**([rowCarriesValue] · skippedCount 계약).
+                if (rowCarriesValue(row)) { inBackup++; skippedCount++ }
+                continue
+            }
             inBackup++
 
             if (r.code.isNotBlank()) {
@@ -3766,7 +3789,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
         }
-        return SheetAnalysis(inBackup, newCount, updateCount, conflicts, conflictCount)
+        return SheetAnalysis(inBackup, newCount, updateCount, conflicts, conflictCount, skippedCount)
     }
 
     // ── 필드값 미리보기 (B-187) — 캐릭터·작품·사건이 각각 **독립 범주**다 ──
@@ -4121,7 +4144,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (r.yearRaw.isNotBlank() || r.description.isNotBlank()) { inBackup++; skippedCount++ }
                 continue
             }
-            if (r.description.isBlank()) continue
+            if (r.description.isBlank()) {
+                // 필수 칸만 빈 행은 '건너뜀'으로 센다 — 외부 편집이 상하게 한 행이다.
+                // **완전히 빈 행(표 아래 여백)은 침묵한다**([rowCarriesValue] · skippedCount 계약).
+                if (rowCarriesValue(row)) { inBackup++; skippedCount++ }
+                continue
+            }
             inBackup++
 
             // 작품 연결·세계관 소속 해석도 가져오기와 **같은 함수**다. 가져오기와 마찬가지로
@@ -5228,7 +5256,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33) — F1-A(열 없음 = 기존 유지)도 그 안에 있다.
                 val r = readUniverseRow(row, c, "세계관 행 ${excelRow(i)}", result)
                 val name = r.name
-                if (name.isBlank()) continue
+                if (name.isBlank()) {
+                    // 미리보기와 **같은 판정**이다(R-33) — 예고한 '건너뜀'이 여기서 실현된다.
+                    if (rowCarriesValue(row)) {
+                        result.skippedRows++
+                        result.errors.add(
+                            "세계관 행 ${excelRow(i)}: '세계관명' 칸이 비어 있어 행을 건너뛰었습니다 — 필수 항목입니다"
+                        )
+                    }
+                    continue
+                }
 
                 val descriptionFromExcel: String? = r.description
                 val code = r.code
@@ -5371,7 +5408,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33) — F1-A(열 없음 = 기존 유지)도 그 안에 있다.
                 val r = readNovelRow(row, nc, "작품 행 ${excelRow(i)}", result)
                 val title = r.title
-                if (title.isBlank()) continue
+                if (title.isBlank()) {
+                    // 미리보기와 **같은 판정**이다(R-33).
+                    if (rowCarriesValue(row)) {
+                        result.skippedRows++
+                        result.errors.add(
+                            "작품 행 ${excelRow(i)}: '제목' 칸이 비어 있어 행을 건너뛰었습니다 — 필수 항목입니다"
+                        )
+                    }
+                    continue
+                }
 
                 val descriptionFromExcel: String? = r.description
                 val universeName = r.universeName
@@ -7247,7 +7293,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
                 val r = readCharacterRow(row, cc, "캐릭터 행 ${excelRow(i)}", result)
                 val name = r.name
-                if (name.isBlank()) continue
+                if (name.isBlank()) {
+                    // 미리보기와 **같은 판정**이다(R-33).
+                    if (rowCarriesValue(row)) {
+                        result.skippedRows++
+                        result.errors.add(
+                            "캐릭터 행 ${excelRow(i)}: '이름' 칸이 비어 있어 행을 건너뛰었습니다 — 필수 항목입니다"
+                        )
+                    }
+                    continue
+                }
 
                 val code = r.code
                 val novelCode = r.novelCode
@@ -7645,7 +7700,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 val description = r.description
-                if (description.isBlank()) continue
+                if (description.isBlank()) {
+                    // 연도 갈래(바로 위)와 같은 처분이다 — 그쪽만 세고 이쪽은 침묵하던 비대칭을 없앤다.
+                    if (rowCarriesValue(row)) {
+                        result.skippedRows++
+                        result.errors.add(
+                            "연표 행 ${excelRow(i)}: '사건 설명' 칸이 비어 있어 행을 건너뛰었습니다 — 필수 항목입니다"
+                        )
+                    }
+                    continue
+                }
 
                 val novelTitle = r.novelTitle
                 val novelCode = r.novelCode
@@ -11349,6 +11413,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /**
      * @param dateHint true이면 숫자 셀을 적극적으로 날짜 변환 시도 (생일 등 날짜 필드용)
      */
+    /**
+     * 이 행에 **값이 든 칸이 하나라도 있는가** — '표 아래 여백'과 '외부 편집이 상하게 한 행'을 가른다.
+     *
+     * 필수 칸(캐릭터 '이름' · 세계관 '세계관명' · 작품 '제목' · 연표 '사건 설명')이 빈 행을
+     * 종전에는 미리보기·가져오기가 **둘 다** 계수 앞에서 무조건 `continue`했다. 그래서 그 행은
+     * *건너뜀*도 *백업에 있음*도 아닌 **무존재**였다 — 화면 어디에도 한 줄이 없어 사용자는
+     * 그 행이 들어간 줄 알거나 왜 안 들어왔는지 알 길이 없었다. [CategoryAnalysis.skippedCount]의
+     * 계약(*"필수 칸이 비었거나 해석되지 않는 행도 여기 센다"* · `inBackup = new + update +
+     * unchanged + cleared + skipped`)이 그 자리에서 깨져 있었다.
+     *
+     * **완전히 빈 행은 여전히 침묵한다** — 표 아래 여백은 파일이 적어 둔 행이 아니다.
+     * 그래서 판정을 '필수 칸'이 아니라 **행 전체**에 대고 묻는다: 필드값 열만 채워진 행도
+     * 사용자가 적은 행이므로 사라져서는 안 된다.
+     *
+     * 세는 부작용이 있는 [getCellString]을 쓰지 않는다 — 한 행을 통째로 훑으면 절단 경고가
+     * 열 수만큼 부풀고, 그 경고는 이 판정의 것이 아니다.
+     */
+    private fun rowCarriesValue(row: Row): Boolean {
+        // 셀이 하나도 없는 행의 `lastCellNum`은 **-1**이라 이 범위가 비고, 그것이 곧 '빈 행'이다.
+        for (ci in 0 until row.lastCellNum) {
+            val cell = row.getCell(ci) ?: continue
+            if (ExcelCellValue.normalize(cell.primitives(), dateHint = false).isNotBlank()) return true
+        }
+        return false
+    }
+
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex)
