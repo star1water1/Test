@@ -147,6 +147,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             outState.putInt("novelSpinnerPos", binding.spinnerNovel.selectedItemPosition)
             if (::imageStrip.isInitialized) {
                 outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
+                // "지우기로 했다"와 "대표로 골랐다"도 폼 상태다 (B-170 — 편집 화면과 같은 근거).
+                // imagePaths만 싣고 이 둘을 빠뜨리면 *뺐다는 사실*은 살아남고 *지우기로 했다는
+                // 사실*·*대표로 골랐다는 사실*만 사라지는 비대칭이 된다 — 뒤엣것은 회전 뒤 저장이
+                // DB의 대표 지정을 빈 값으로 덮는 **데이터 유실**이다(개발 의도 2번).
+                outState.putStringArrayList(
+                    STATE_PENDING_DELETES, ArrayList(imageStrip.pendingDeletes)
+                )
+                outState.putString(STATE_REPRESENTATIVE, imageStrip.representativePath)
             }
             // 폼이 실제로 적재된 상태였는지도 남긴다 — 적재 전에 회전하면 빈 Bundle이 저장되는데,
             // 복원 쪽이 그것을 "값이 없다"로 읽으면 DB 적재를 건너뛰어 필드값이 전량 삭제된다.
@@ -287,6 +295,32 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                     // 이탈 가드가 걸어둔 예약 동작 해제 — 남겨두면 사용자가 저장을 취소하고
                     // 계속 편집하다 나중에 저장했을 때 이전 이탈 동작(리롤·탭 전환 등)이 실행된다
                     pendingAfterSave = null
+                }
+
+                // 이 화면도 **같은 공용 컨트롤러**가 [앱에서 삭제] 선택지를 띄운다(B-107 D7).
+                // 종전에는 이 둘을 안 잇고 인터페이스의 기본 구현(빈 목록)에 기대 있어서,
+                // 사용자가 고른 삭제가 저장 시점에 조용히 버려졌다 — 못 지웠다는 고지도 없어
+                // 사용자는 지운 줄 알고 나갔다. 편집 화면과 같은 쌍으로 잇는다.
+                override fun pendingImageDeletes() = imageStrip.pendingDeletes
+
+                override fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int) {
+                    imageStrip.clearPendingDeletes()
+                    if (!isAdded) return
+                    // 못 지운 것을 조용히 넘기지 않는다 — 사용자는 지웠다고 알고 나간다.
+                    val ctx = context ?: return
+                    if (protectedCount > 0) {
+                        Toast.makeText(
+                            ctx,
+                            getString(R.string.image_remove_pending_delete_protected, protectedCount),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else if (deleted > 0) {
+                        Toast.makeText(
+                            ctx,
+                            getString(R.string.image_remove_pending_delete_done, deleted),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             }
         )
@@ -1032,6 +1066,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 val validated = CharacterImageStripController.validateInternalPaths(saved, context?.filesDir)
                 imageStrip.setPaths(validated)
             }
+            // 목록을 세운 **뒤에** 되살린다 — setRepresentativePath가 retain으로 현재 목록에
+            // 없는 경로를 거르므로 순서가 뒤집히면 지정이 조용히 사라진다.
+            restoreState.getStringArrayList(STATE_PENDING_DELETES)?.let { pending ->
+                imageStrip.restorePendingDeletes(
+                    CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+                )
+            }
+            restoreState.getString(STATE_REPRESENTATIVE)?.let { imageStrip.setRepresentativePath(it) }
             pendingFieldValues = if (restoreState.getBoolean(STATE_FIELDS_HYDRATED)) {
                 restoreState.getBundle("fieldValues")
             } else {
@@ -1201,7 +1243,10 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             novelId = novelId,
             imagePaths = imageStrip.paths.toList(),
             fieldValues = formBuilder.widgetStateStrings(),
-            savedAt = System.currentTimeMillis()
+            savedAt = System.currentTimeMillis(),
+            // B-170 — 편집 화면과 같은 한 벌이어야 두 화면의 드래프트가 갈리지 않는다.
+            pendingDeletePaths = imageStrip.pendingDeletes,
+            representativePath = imageStrip.representativePath
         )
     }
 
@@ -1245,6 +1290,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             )
             imageStrip.setPaths(validated)
         }
+        // null은 *기록되지 않았다*이지 *비우기로 했다*가 아니다 (Draft KDoc · R-2 · R-36).
+        draft.pendingDeletePaths?.let { pending ->
+            imageStrip.restorePendingDeletes(
+                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+            )
+        }
+        draft.representativePath?.let { imageStrip.setRepresentativePath(it) }
 
         // 동적 필드: 스피너 콜백의 buildForm 이후 소비되는 지연 메커니즘 재사용
         if (draft.novelId != -1L) {
@@ -1314,5 +1366,9 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private companion object {
         /** 회전 저장 시점에 동적 폼이 적재돼 있었는가 — 빈 Bundle의 의미를 가르는 표시 */
         const val STATE_FIELDS_HYDRATED = "fieldsHydrated"
+        /** "앱에서 삭제"로 예약한 경로들 (B-170) — 편집 화면과 같은 폼 상태다 */
+        const val STATE_PENDING_DELETES = "pendingDeletes"
+        /** 대표로 고른 경로 (B-170) — 빠뜨리면 회전 뒤 저장이 DB의 대표 지정을 덮는다 */
+        const val STATE_REPRESENTATIVE = "representativePath"
     }
 }
