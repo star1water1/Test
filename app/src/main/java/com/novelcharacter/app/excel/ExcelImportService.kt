@@ -739,34 +739,47 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     )
                 /** 이 spec의 시트를 근거로 기존 데이터를 지워도 되는가(= 데이터 행이 있는가). */
                 fun canRestore(spec: SheetSpec): Boolean = classify(spec) == RestoreSource.HAS_ROWS
+                /**
+                 * **왜 안 지웠는가**의 앞머리를 짓는 단일 함수 — `RestoreSource`가 세 값인 뜻이
+                 * 자리마다 버려지지 않게 한다. 시트가 *없는* 것과 *비어 있는* 것은 사용자가 할
+                 * 일이 다르다(전자는 그 시트에 행을 적기, 후자는 다시 내보내기).
+                 *
+                 * 종전에는 캐릭터·세계관·필드 정의 셋이 불리언 하나(`canRestore`)로 접혀
+                 * MISSING과 EMPTY가 같은 false가 됐고, 그 순간 어느 쪽인지가 사라진 채 문구는
+                 * 언제나 MISSING 쪽('시트가 없어')으로 고정됐다 — 내용만 지운 시트에 "시트가
+                 * 없다"고 말하면 사용자는 문구가 시키는 대로 다시 내보내기를 하고 진짜 할 일에는
+                 * 영영 닿지 못한다. 같은 사실을 네 자리가 각자 적으면 반드시 갈리므로 한 자리에 둔다.
+                 *
+                 * @param label 이미 완성된 시트 이름 어구(`"'세계관'"` · `"캐릭터"`)
+                 */
+                fun keepReason(source: RestoreSource, label: String): String = when (source) {
+                    RestoreSource.EMPTY -> "$label 시트에 데이터 행이 없어"
+                    RestoreSource.MISSING -> "백업에 $label 시트가 없어"
+                    // 지울 수 있는 상태라 사유가 필요 없다 — 부르는 쪽이 이 값을 넘기면 그것이 결함이다.
+                    RestoreSource.HAS_ROWS -> "$label 시트를 복원 재료로 쓸 수 없어"
+                }
                 /** 선택됐고 백업으로 복원 가능할 때만 true. 복원 불가면 삭제를 건너뛰고 사용자에게 알린다. */
                 fun shouldDelete(enabled: Boolean, spec: SheetSpec): Boolean {
                     if (!enabled) return false
-                    // 시트가 없는 것과 비어 있는 것을 갈라 말한다 — 사용자가 할 일이 다르다
-                    // (전자는 다시 내보내기, 후자는 그 시트에 행을 적기).
-                    return when (classify(spec)) {
-                        RestoreSource.HAS_ROWS -> true
-                        RestoreSource.EMPTY -> {
-                            result.warnings.add("'${spec.sheetName}' 시트에 데이터 행이 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
-                            false
-                        }
-                        RestoreSource.MISSING -> {
-                            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
-                            false
-                        }
-                    }
+                    val source = classify(spec)
+                    if (source == RestoreSource.HAS_ROWS) return true
+                    result.warnings.add(
+                        keepReason(source, "'${spec.sheetName}'") +
+                            " 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)"
+                    )
+                    return false
                 }
                 // 캐릭터는 세계관별 시트 + 미분류 시트로 나뉘므로 별도 판정
                 // 캐릭터 시트도 같은 규칙이다(B-88) — 헤더만 있는 시트는 복원 재료가 아니다.
                 // 내보내기가 캐릭터 0명인 세계관에도 시트를 만들게 됐으므로, 헤더 검사만 두면
                 // **캐릭터가 하나도 없는 세계관의 빈 시트 하나가 전 캐릭터 삭제를 허가한다.**
-                fun charSheetRestorable(sheet: Sheet?): Boolean =
-                    sheet != null &&
-                        // 헤더가 0행이 아닐 수 있다(B-231 ⓑ) — 가드가 0행에 묶여 있으면
-                        // 가져오기는 읽는 시트를 가드만 *복원 재료가 아니다*로 보고,
-                        // 덮어쓰기가 조용히 병합으로 바뀐다(바로 위 문단이 막는 그 모양).
-                        SheetResolver.locateHeader(sheet, "이름") != null &&
-                        OverwriteGuard.canRestore(sheetHasDataRow(sheet, "이름"))
+                // **불리언이 아니라 RestoreSource를 낸다** — 접으면 '없음'과 '비었음'이 같아진다.
+                fun charSheetSource(sheet: Sheet?): RestoreSource =
+                    // 헤더가 0행이 아닐 수 있다(B-231 ⓑ) — 가드가 0행에 묶여 있으면
+                    // 가져오기는 읽는 시트를 가드만 *복원 재료가 아니다*로 보고,
+                    // 덮어쓰기가 조용히 병합으로 바뀐다(바로 위 문단이 막는 그 모양).
+                    if (sheet == null || SheetResolver.locateHeader(sheet, "이름") == null) RestoreSource.MISSING
+                    else OverwriteGuard.classify(sheetHasDataRow(sheet, "이름"))
                 // 배정은 실제 가져오기와 같은 판정([UniverseSheetFinder] — 계획 우선 + 소비 추적)을
                 // 지나야 한다. 이름만으로 찾으면 동명 세계관 둘이 같은 시트를 보고, 기본명 시트만
                 // 비어 있는 파일에서 `(2)` 시트가 있는데도 "복원 재료 없음"으로 오판한다.
@@ -774,9 +787,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 일어나지 않는다 — 거짓으로 끝났을 때만 전 세계관이 소비를 마친 상태다.
                 val guardUniverses = db.universeDao().getAllUniversesList()
                 val guardSheets = UniverseSheetFinder(workbook, guardUniverses)
-                val charactersRestorable = guardUniverses.any { u ->
-                    charSheetRestorable(guardSheets.find(u))
-                } || charSheetRestorable(findUnclassifiedSheet(workbook, guardSheets.consumed))
+                // **끊지 않고 한 번에 전부 잰다.** 종전의 `any { } || …` 단락은 판정만 필요했을
+                // 때의 모양인데, 이제 *못 지운 사유*까지 말해야 하고 그 사유는 재질문으로 얻을 수
+                // 없다(소비 추적이 있어 `find`를 두 번 부르면 같은 답이 나오지 않는다).
+                // **판정은 한 글자도 바뀌지 않는다** — 하나라도 HAS_ROWS면 복원 가능이고,
+                // 그 경우 미분류 조회 결과는 사유에만 쓰여 결론에 닿지 않는다.
+                val charSheetSources = guardUniverses.map { u -> charSheetSource(guardSheets.find(u)) } +
+                    charSheetSource(findUnclassifiedSheet(workbook, guardSheets.consumed))
+                val charactersRestorable = charSheetSources.any { it == RestoreSource.HAS_ROWS }
 
                 if (shouldDelete(effectiveOptions.relationshipChanges, relationshipChangeSpec())) db.characterRelationshipChangeDao().deleteAll()
                 if (shouldDelete(effectiveOptions.relationships, relationshipSpec())) db.characterRelationshipDao().deleteAll()
@@ -790,13 +808,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 대원칙 그대로 — 백업이 복원할 수 없는 것은 지우지 않는다: 기록 시트도 함께
                 // 복원 가능하거나, 애초에 지울 판이 없을 때만 축을 비운다.
                 if (shouldDelete(effectiveOptions.duels, duelAxisSpec())) {
-                    val matchesRestorable = canRestore(duelMatchSpec())
+                    // 이 갈래는 반대 방향으로 같은 접힘을 갖고 있었다 — 시트가 **없어도**
+                    // "데이터 행이 없어"라고 말했다. 같은 함수를 지나게 한다.
+                    val matchSource = classify(duelMatchSpec())
                     val existingMatches = db.duelMatchDao().countAll()
-                    if (matchesRestorable || existingMatches == 0) {
+                    if (matchSource == RestoreSource.HAS_ROWS || existingMatches == 0) {
                         db.duelAxisDao().deleteAll()
                     } else {
                         result.warnings.add(
-                            "'${duelMatchSpec().sheetName}' 시트에 데이터 행이 없어 대결 축을 삭제하지 않고 유지했습니다 " +
+                            keepReason(matchSource, "'${duelMatchSpec().sheetName}'") +
+                                " 대결 축을 삭제하지 않고 유지했습니다 " +
                                 "(축을 지우면 쌓인 판 ${existingMatches}개가 함께 사라지는데 이 파일로는 되살릴 수 없습니다)"
                         )
                     }
@@ -817,7 +838,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         else null
                     when {
                         !charactersRestorable ->
-                            result.warnings.add("백업에 캐릭터 시트가 없어 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                            // 시트가 하나라도 *있는데 비어 있으면* '데이터 행이 없다'가 사실이다 —
+                            // 전부 없을 때만 '시트가 없다'로 말한다.
+                            result.warnings.add(
+                                keepReason(
+                                    if (charSheetSources.any { it == RestoreSource.EMPTY }) RestoreSource.EMPTY
+                                    else RestoreSource.MISSING,
+                                    "캐릭터"
+                                ) + " 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)"
+                            )
                         unrestorable != null && unrestorable.values > 0 ->
                             result.warnings.add(
                                 "백업에 '캐릭터 필드값' 시트가 없어 캐릭터 ${unrestorable.characters}명의 필드값 ${unrestorable.values}건을 " +
@@ -839,11 +868,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (effectiveOptions.universes) {
                     val uSpec = universeSpec()
                     val fdSpec = fieldDefinitionSpec(emptyList())
+                    val uSource = classify(uSpec)
+                    val fdSource = classify(fdSpec)
                     when {
-                        !canRestore(uSpec) ->
-                            result.warnings.add("백업에 '${uSpec.sheetName}' 시트가 없어 기존 세계관을 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
-                        !canRestore(fdSpec) ->
-                            result.warnings.add("백업에 '${fdSpec.sheetName}' 시트가 없어 세계관을 삭제하지 않았습니다 — 세계관을 지우면 모든 필드 정의와 캐릭터·사건 필드값이 함께 사라지는데 복원할 수 없습니다")
+                        uSource != RestoreSource.HAS_ROWS ->
+                            result.warnings.add(
+                                keepReason(uSource, "'${uSpec.sheetName}'") +
+                                    " 기존 세계관을 삭제하지 않고 유지했습니다 (덮어쓰기 제외)"
+                            )
+                        fdSource != RestoreSource.HAS_ROWS ->
+                            result.warnings.add(
+                                keepReason(fdSource, "'${fdSpec.sheetName}'") +
+                                    " 세계관을 삭제하지 않았습니다 — 세계관을 지우면 모든 필드 정의와 캐릭터·사건 필드값이 함께 사라지는데 복원할 수 없습니다"
+                            )
                         else -> {
                             db.universeDao().deleteAll()
                             wipedByOverwrite.add("universes")
@@ -5746,23 +5783,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             if (existing != null) {
                 val merged = mergeDefaultFieldTemplate(existing, r)
-                if (merged != existing) {
-                    // 자리를 옮기는 편집이 남의 자리와 부딪치면 되돌린다 — 유니크 (대상, 필드키).
-                    // **판정은 미리보기와 같은 함수다**(R-33 · B-252).
-                    val kept = guardDefaultFieldSlot(existing, merged, templates::slotOwner)
-                    if (kept != merged) {
-                        result.warnings.add(
-                            "기본 필드 행 ${excelRow(i)}: '${merged.key}'(${merged.entityType}) 자리를 이미 다른 " +
-                                "기본 필드가 쓰고 있어 키·대상은 바꾸지 않았습니다"
-                        )
-                    }
-                    if (kept != existing) {
-                        dao.update(kept)
-                        // 방금 쓴 값을 색인에 되돌려 둔다 — 뒤 행이 이 결과 위에서 판정된다.
-                        templates.remember(kept)
-                        result.updatedDefaultFields++
-                    } else result.unchangedRows++
+                // 자리를 옮기는 편집이 남의 자리와 부딪치면 되돌린다 — 유니크 (대상, 필드키).
+                // **판정은 미리보기와 같은 함수다**(R-33 · B-252).
+                //
+                // **`merged != existing` 조건 밖에서 센다.** 종전에는 이 블록 전체가 그 if
+                // 안에 있어, 파일이 DB와 애초에 같은 행(merged == existing)이 '갱신'에도
+                // '동일'에도 안 남았다 — 결과 창의 "바뀐 것 없음 (N행이 파일과 이미 같습니다)"
+                // 수가 그만큼 적었고, 이 시트만 든 파일은 그 분기(B-111)가 죽어 "데이터 없음"으로
+                // 보고됐다. 짝인 analyzeDefaultFieldTemplates는 조건 밖에서 갈라 세므로 미리보기와
+                // 결과가 갈렸다(R-33). 나머지 열여덟 시트가 이미 쓰는 관용구로 되돌린다.
+                val kept = guardDefaultFieldSlot(existing, merged, templates::slotOwner)
+                if (kept != merged) {
+                    result.warnings.add(
+                        "기본 필드 행 ${excelRow(i)}: '${merged.key}'(${merged.entityType}) 자리를 이미 다른 " +
+                            "기본 필드가 쓰고 있어 키·대상은 바꾸지 않았습니다"
+                    )
                 }
+                if (kept != existing) {
+                    dao.update(kept)
+                    // 방금 쓴 값을 색인에 되돌려 둔다 — 뒤 행이 이 결과 위에서 판정된다.
+                    templates.remember(kept)
+                    result.updatedDefaultFields++
+                } else result.unchangedRows++
             } else {
                 // 코드가 이미 남의 템플릿과 겹치면 재발급한다(전역 유니크 — 정체를 빼앗지 않는다).
                 val wanted = r.code.takeIf { it.isNotBlank() }
