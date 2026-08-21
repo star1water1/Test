@@ -16,16 +16,22 @@ import java.io.File
  * (개발 의도 2 — 사용자의 데이터가 말없이 유실되지 않는다). 그것을 알 방법이 없어서
  * 종전 판이 범위를 넓히지 않고 사용자 판정으로 넘겼다. 이 파일이 그 방법이다.
  *
- * ## 왜 새 상태가 아니라 이미 있는 사실인가
+ * ## 등재는 **일**을 따라간다 — 구간(`phase`) 대입을 따라가지 않는다
  *
- * [ExcelImporter]·[ExcelExporter]는 **이미** `phase: TransferPhase?`를 정확히 들고 있다 —
- * 회차가 시작될 때 세우고 `finally`에서 내린다(B-228이 세운 불변식이고,
- * [TransferInterruption]의 중단 고지가 그 불변식에 걸려 있다). 그 대입이 곧
- * *"지금 도는가"*이므로 **새 상태를 만들지 않고 그 대입을 여기로 흘린다.**
- * 두 벌이 되지 않으니 한쪽만 낡을 수 없다.
+ * 처음에는 `phase: TransferPhase?` 대입을 그대로 흘렸다. **틀렸고, 콜드 검토가 잡았다.**
+ * 그 필드는 *"지금 어느 구간인가"*가 아니라 **중단 고지의 부기**를 겸한다 —
+ * `onScreenGone`이 부르는 `reportAbort`·`cancelForScreenGone`이 *"이 회차는 이미 고지했다"*는
+ * 뜻으로 `phase = null`을 적는다. 그런데 **끊기지 않는 구간의 일은 그 뒤에도 계속 돈다**
+ * ([TransferPhase.stopsOnScreenLoss]가 `false`인 셋: 이미지 되살리기 · 반영 · SAF 옮겨 쓰기).
  *
- * 다만 워크북을 **직접** 세우는 자리는 구간을 두지 않는다(자동 백업 워커는
- * `ExcelExporter.populateWorkbook`만 부른다). 그런 자리는 [running]으로 감싼다.
+ * 그래서 화면을 돌리면 등재가 내려가 [isRunning]이 거짓이 되고, 그 사이에 사용자가
+ * 저장공간에서 [비우기]를 누르면 **아직 읽고 있는 추출 폴더와 옮겨 쓰는 원본이 지워진다.**
+ * 고지 부기와 일의 수명은 **같은 값일 수 없다.**
+ *
+ * 그래서 등재는 **회차의 진짜 경계**에서만 여닫는다 — 시작하는 자리에서 [enter],
+ * 바깥 `finally`에서 [exit]. 그 `finally`는 NonCancellable 구간이 끝난 **뒤에** 지나므로
+ * 등재가 일보다 먼저 내려가지 않는다. 자리는 넷이고(가져오기 둘 · 내보내기 둘) 워크북을
+ * 직접 세우는 자동 백업 워커가 다섯째다 — 그쪽은 [running]으로 감싼다.
  *
  * ## 약속된 경로 — 도는 것이 없어도 지켜야 하는 것
  *
@@ -65,18 +71,8 @@ object ActiveTransfers {
     val isRunning: Boolean get() = running.isNotEmpty()
 
     /**
-     * 구간 대입을 그대로 받는다 — [ExcelImporter]·[ExcelExporter]의 `phase` 세터가 부른다.
-     *
-     * `null`이 아니면 그 회차는 돌고 있는 것이고, `null`이면 끝난 것이다. **판정을 여기서
-     * 다시 적지 않는 것이 요점**이다(구간이 늘어도 이 함수는 그대로다).
-     */
-    fun trackPhase(owner: Any, next: TransferPhase?) {
-        if (next != null) running.add(owner) else running.remove(owner)
-    }
-
-    /**
-     * 구간을 두지 않는 전송을 감싼다(자동 백업 워커처럼 워크북만 직접 세우는 자리).
-     * `finally`로 반드시 내려놓는다 — 예외로 빠져나가도 등재가 남지 않는다.
+     * 한 회차를 통째로 감싼다 — 예외로 빠져나가도 `finally`가 반드시 내려놓는다.
+     * 회차가 코루틴 경계를 넘어 흩어져 있으면 [enter]/[exit]를 직접 쓴다.
      */
     inline fun <T> running(owner: Any, block: () -> T): T {
         enter(owner)
@@ -87,12 +83,15 @@ object ActiveTransfers {
         }
     }
 
-    /** [running]이 쓰는 진입. 직접 부르지 말고 [running]을 쓸 것. */
+    /**
+     * 회차가 시작됐다. **짝이 되는 [exit]는 그 회차의 바깥 `finally`에 둔다** —
+     * 중간에 고지 부기를 내리는 자리(`reportAbort`)에 두면 일보다 먼저 등재가 내려간다.
+     */
     fun enter(owner: Any) {
         running.add(owner)
     }
 
-    /** [running]이 쓰는 이탈. 직접 부르지 말고 [running]을 쓸 것. */
+    /** 회차가 끝났다 — **일이 실제로 끝난 자리**에서 부른다. */
     fun exit(owner: Any) {
         running.remove(owner)
     }

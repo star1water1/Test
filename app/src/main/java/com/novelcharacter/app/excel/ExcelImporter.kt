@@ -50,16 +50,11 @@ class ExcelImporter(context: Context) {
      * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
      * 쓰는 쪽은 IO 코루틴이고 읽는 쪽은 메인(`onScreenGone`)이라 `@Volatile`이 필요하다.
      *
-     * **이 대입이 프로세스 수준 '지금 전송이 도는가'의 단일 소스이기도 하다**
-     * ([ActiveTransfers]). 저장공간의 캐시 비우기가 그 값을 보고 도는 전송의 임시 파일을
-     * 앗아가지 않는다. 세터로 흘리므로 **여기 있는 모든 대입이 자동으로 지난다** —
-     * 자리를 따로 배선하면 새 대입이 늘 때 그것만 빠진다.
+     * ⚠️ **이 값은 '지금 전송이 도는가'가 아니다.** 아래 [reportAbort]가 *"이 회차는 이미
+     * 고지했다"*는 뜻으로 내리는데, 끊기지 않는 구간의 일은 그 뒤에도 돈다. 그 물음의
+     * 답은 [ActiveTransfers]가 회차의 진짜 경계에서 따로 든다.
      */
     @Volatile private var phase: TransferPhase? = null
-        set(value) {
-            ActiveTransfers.trackPhase(this, value)
-            field = value
-        }
 
     /**
      * 이 회차에서 **사용자가** 취소를 눌렀는가 (B-228).
@@ -423,6 +418,9 @@ class ExcelImporter(context: Context) {
         // **구간은 `launch` 밖에서 세운다** (B-228) — 안에서 세우면 코루틴이 실제로 돌기 전의
         // 짧은 틈에 화면이 사라졌을 때 [TransferInterruption]이 *"돌던 것이 없다"*로 읽어 침묵한다.
         beginPhase(TransferPhase.IMPORT_INTAKE)
+        // 캐시 비우기가 이 회차의 임시 파일을 앗아가지 않게 등재한다 — 내리는 것은
+        // 바깥 `finally`다(고지 부기를 내리는 자리가 아니다. [ActiveTransfers] KDoc).
+        ActiveTransfers.enter(this)
         ensureActiveScope().launch {
             try {
                 try {
@@ -452,6 +450,7 @@ class ExcelImporter(context: Context) {
                 }
             } finally {
                 phase = null
+                ActiveTransfers.exit(this@ExcelImporter)
             }
         }
     }
@@ -459,6 +458,7 @@ class ExcelImporter(context: Context) {
     private fun importFromUri(uri: Uri) {
         // 구간은 `launch` 밖에서 세운다 — 근거는 [importFromLocalFile]의 같은 줄에 있다(B-228).
         beginPhase(TransferPhase.IMPORT_INTAKE)
+        ActiveTransfers.enter(this)
         ensureActiveScope().launch {
             // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
             // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
@@ -540,6 +540,7 @@ class ExcelImporter(context: Context) {
                 }
             } finally {
                 phase = null
+                ActiveTransfers.exit(this@ExcelImporter)
                 dismissTaskProgress(progress)
             }
         }

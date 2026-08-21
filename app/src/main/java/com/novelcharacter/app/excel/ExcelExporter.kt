@@ -62,14 +62,11 @@ class ExcelExporter(context: Context) {
      * 내보내기는 구간이 하나다([TransferPhase.EXPORT_BUILD]) — 산출물을 다 만들어도
      * 건네려면(공유 시트·SAF) 화면이 있어야 하므로, 화면이 없으면 끝까지 만들 이유가 없다.
      *
-     * **이 대입이 프로세스 수준 '지금 전송이 도는가'의 단일 소스이기도 하다**
-     * ([ActiveTransfers] — 가져오기 쪽과 같은 결).
+     * ⚠️ **이 값은 '지금 전송이 도는가'가 아니다** — [cancelForScreenGone]이 고지 부기로
+     * 내리는데 `EXPORT_SAVE`의 옮겨 쓰기는 그 뒤에도 끝까지 간다. 그 물음의 답은
+     * [ActiveTransfers]가 회차의 진짜 경계에서 따로 든다.
      */
     @Volatile private var phase: TransferPhase? = null
-        set(value) {
-            ActiveTransfers.trackPhase(this, value)
-            field = value
-        }
 
     /**
      * 이 회차의 진행·취소 창구 (B-228).
@@ -233,6 +230,8 @@ class ExcelExporter(context: Context) {
     ) {
         if (!isExporting.compareAndSet(false, true)) return
         phase = TransferPhase.EXPORT_BUILD
+        // 등재는 바깥 `finally`에서 내린다 — 고지 부기가 아니라 **일**을 따라간다.
+        ActiveTransfers.enter(this)
         activeProgress = progress
         ensureActiveScope().launch {
             if (onFinished == null) {
@@ -374,6 +373,7 @@ class ExcelExporter(context: Context) {
                 // 임시 파일까지 함께 놓는다 — 남으면 그 크기가 백업 한 판 분량이다([ExportWorkbooks.release]).
                 try { ExportWorkbooks.release(workbook) } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 phase = null
+                ActiveTransfers.exit(this@ExcelExporter)
                 activeProgress = null
                 isExporting.set(false)
                 if (onFinished != null) {
@@ -406,6 +406,8 @@ class ExcelExporter(context: Context) {
      */
     fun writeToUri(uri: Uri, sourceFile: File, onSaveFailed: (() -> Unit)? = null) {
         phase = TransferPhase.EXPORT_SAVE
+        // 이 구간은 화면이 사라져도 끝까지 간다 — 그래서 등재도 그 끝까지 남아야 한다.
+        ActiveTransfers.enter(this)
         ensureActiveScope().launch {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
@@ -440,6 +442,7 @@ class ExcelExporter(context: Context) {
                 }
             } finally {
                 phase = null
+                ActiveTransfers.exit(this@ExcelExporter)
             }
         }
     }

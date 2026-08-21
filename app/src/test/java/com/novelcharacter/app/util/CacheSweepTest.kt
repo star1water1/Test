@@ -1,7 +1,6 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.excel.ActiveTransfers
-import com.novelcharacter.app.excel.TransferPhase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -139,15 +138,12 @@ class CacheSweepTest {
     // ── 3. 도는 전송 ──────────────────────────────────────────────────────
 
     @Test
-    fun `구간이 서면 돌고 있는 것이고 내려가면 끝난 것이다`() {
+    fun `회차가 서면 돌고 있는 것이고 내려가면 끝난 것이다`() {
         val owner = Any()
         assertFalse(ActiveTransfers.isRunning)
-        ActiveTransfers.trackPhase(owner, TransferPhase.IMPORT_INTAKE)
+        ActiveTransfers.enter(owner)
         assertTrue(ActiveTransfers.isRunning)
-        // 구간 이동은 여전히 도는 것이다
-        ActiveTransfers.trackPhase(owner, TransferPhase.IMPORT_APPLY)
-        assertTrue(ActiveTransfers.isRunning)
-        ActiveTransfers.trackPhase(owner, null)
+        ActiveTransfers.exit(owner)
         assertFalse(ActiveTransfers.isRunning)
     }
 
@@ -155,20 +151,29 @@ class CacheSweepTest {
     fun `한 전송이 끝나도 다른 전송이 돌고 있으면 돈다고 말한다`() {
         val a = Any()
         val b = Any()
-        ActiveTransfers.trackPhase(a, TransferPhase.EXPORT_BUILD)
-        ActiveTransfers.trackPhase(b, TransferPhase.IMPORT_ANALYZE)
-        ActiveTransfers.trackPhase(a, null)
+        ActiveTransfers.enter(a)
+        ActiveTransfers.enter(b)
+        ActiveTransfers.exit(a)
         assertTrue("둘 중 하나만 끝났다", ActiveTransfers.isRunning)
-        ActiveTransfers.trackPhase(b, null)
+        ActiveTransfers.exit(b)
         assertFalse(ActiveTransfers.isRunning)
     }
 
+    /**
+     * **등재는 구간(`phase`) 대입을 따라가지 않는다** — 콜드 검토가 잡은 자리다(2026.08.21).
+     *
+     * 종전에는 `phase` 세터가 등재를 여닫았는데, 그 필드는 *"이 회차는 이미 고지했다"*는
+     * 부기를 겸한다(`reportAbort`·`cancelForScreenGone`). 끊기지 않는 구간의 일은 그 뒤에도
+     * 도므로, 화면을 돌리면 **일이 도는 중에 등재가 내려가** 비우기가 그 임시 파일을 앗아갔다.
+     * 지금은 회차의 진짜 경계(바깥 `finally`)에서만 내린다 — 즉 **여러 번 들어와도 한 번**이고
+     * 중간에 무엇을 적든 등재는 짝이 맞을 때만 내려간다.
+     */
     @Test
-    fun `같은 구간을 두 번 세워도 한 번 내리면 끝난다 — 카운터가 어긋나지 않는다`() {
+    fun `같은 회차를 두 번 등재해도 한 번 내리면 끝난다 — 카운터가 어긋나지 않는다`() {
         val owner = Any()
-        ActiveTransfers.trackPhase(owner, TransferPhase.EXPORT_BUILD)
-        ActiveTransfers.trackPhase(owner, TransferPhase.EXPORT_BUILD)
-        ActiveTransfers.trackPhase(owner, null)
+        ActiveTransfers.enter(owner)
+        ActiveTransfers.enter(owner)
+        ActiveTransfers.exit(owner)
         assertFalse("증감 카운터였다면 여기서 1이 남아 영영 '도는 중'이 된다", ActiveTransfers.isRunning)
     }
 
