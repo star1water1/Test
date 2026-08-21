@@ -600,16 +600,26 @@ object AiFieldSuggestSheet {
 
         // 행마다 [체크박스][보완] — 보완은 값 직접 수정과 지시를 단 재요청을 함께 연다.
         // 제안을 '받거나 버리거나' 둘뿐이면, 방향은 맞고 표현만 아쉬운 제안이 버려진다.
+        val reviewState = viewModel.aiReviewState
         for (s in outcome.suggestions) {
             val spec = specByKey[s.fieldKey] ?: continue
-            val row = Row(cb = CheckBox(context), spec = spec, suggestion = s)
+            // 손수 고친 값이 있으면 그것으로 선다 — 회전으로 창이 다시 조립돼도 사용자가
+            // 만든 판단이 원본으로 되돌아가지 않는다.
+            val row = Row(cb = CheckBox(context), spec = spec, suggestion = reviewState.current(s))
             // 폭은 addReviewRow가 정한다 — 가로 배치에서 가중치를 받던 종전 구조가
             // 여러 줄 텍스트의 높이를 잘못 잡아 사유가 잘렸다(실기기 보고, 2026.08.01).
             row.cb.layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             // 빈 필드 채움은 비파괴 조작 — 기본 선택으로 마찰 최소화. 덮어쓰기와 '추측'은
             // 명시적 선택으로 남긴다(전체선택 한 번에 근거 얕은 값이 딸려 들어가지 않게).
-            row.cb.isChecked = spec.currentValue.isBlank() &&
-                s.confidence != CharacterFieldAiSuggester.Confidence.LOW
+            // 기본 규칙은 **처음 볼 때**의 규칙이다 — 사용자가 체크를 한 번이라도 만졌으면
+            // 그때부터는 그 판단이 이긴다(회전이 되켜지 않는다).
+            row.cb.isChecked = if (reviewState.touched) {
+                reviewState.isChecked(s.fieldKey)
+            } else {
+                spec.currentValue.isBlank() &&
+                    s.confidence != CharacterFieldAiSuggester.Confidence.LOW
+            }
+            row.cb.setOnCheckedChangeListener { _, on -> reviewState.setChecked(s.fieldKey, on) }
             renderRow(fragment, row)
 
             val refine = outlinedButton(context, density, fragment.getString(R.string.ai_field_refine)) {
@@ -621,6 +631,9 @@ object AiFieldSuggestSheet {
                     onEdited = { edited ->
                         // 손수 고른 값은 곧 채택 의사다 — 체크를 켜 두어 한 번 더 누르게 하지 않는다
                         edited.cb.isChecked = true
+                        // 회전을 넘도록 회차 상태에 되쓴다(지역 Row만 갈면 다시 조립될 때 사라진다).
+                        reviewState.remember(edited.suggestion)
+                        reviewState.setChecked(edited.suggestion.fieldKey, true)
                         renderRow(fragment, edited)
                     }
                 )
@@ -646,6 +659,7 @@ object AiFieldSuggestSheet {
             var allSelected = false
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 allSelected = !allSelected
+                // 체크박스 리스너가 회차 상태까지 함께 적는다.
                 rows.forEach { it.cb.isChecked = allSelected }
             }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
