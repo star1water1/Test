@@ -49,8 +49,17 @@ class ExcelImporter(context: Context) {
      *
      * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
      * 쓰는 쪽은 IO 코루틴이고 읽는 쪽은 메인(`onScreenGone`)이라 `@Volatile`이 필요하다.
+     *
+     * **이 대입이 프로세스 수준 '지금 전송이 도는가'의 단일 소스이기도 하다**
+     * ([ActiveTransfers]). 저장공간의 캐시 비우기가 그 값을 보고 도는 전송의 임시 파일을
+     * 앗아가지 않는다. 세터로 흘리므로 **여기 있는 모든 대입이 자동으로 지난다** —
+     * 자리를 따로 배선하면 새 대입이 늘 때 그것만 빠진다.
      */
     @Volatile private var phase: TransferPhase? = null
+        set(value) {
+            ActiveTransfers.trackPhase(this, value)
+            field = value
+        }
 
     /**
      * 이 회차에서 **사용자가** 취소를 눌렀는가 (B-228).

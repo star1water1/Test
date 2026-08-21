@@ -46,7 +46,43 @@ class SettingsFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
-    private var pendingBackupExportFile: File? = null
+    /**
+     * SAF 자리 고르기를 기다리는 내보내기 대상 — **그 파일의 처분까지 이 자리가 든다.**
+     *
+     * `ownsFile`은 [ExcelImporter.importFromLocalFile]이 세운 것과 같은 계약이다(B-238):
+     * 참이면 이 화면이 만든 캐시 임시본이라 끝난 자리에서 지우고, 거짓이면 앱의 보관물
+     * (`backups/`의 자동 백업)이라 **건드리지 않는다** — 남의 파일을 지우지 않는다.
+     *
+     * 종전에는 `File?` 하나였고, **자리 고르기를 취소하면 아무도 지우지 않았다** —
+     * `uri == null` 갈래가 그 자리에서 돌아섰기 때문이다. 이식 가능 백업은 백업 크기만 한
+     * 파일이라 취소할 때마다 캐시에 한 벌씩 쌓였다([ActiveTransfers]가 지키는 동안에도
+     * 지워지지 않으므로, 지우는 것은 소유자인 여기여야 한다).
+     */
+    private data class PendingExport(val file: File, val ownsFile: Boolean)
+
+    private var pendingBackupExport: PendingExport? = null
+
+    /**
+     * 자리 고르기가 끝났다(건넸든 취소했든 실패했든) — 약속을 닫고 임시본을 처분한다.
+     * **모든 종결 갈래가 여기를 지난다.** 갈래마다 적으면 이번에 고친 그 구멍이 다시 난다.
+     */
+    /**
+     * 전송 임시본을 만든다 — **만드는 즉시** [ActiveTransfers]에 등재한다.
+     *
+     * 이 화면이 `cacheDir`에 만드는 파일은 전부 여기를 지난다. 자리마다 등재를 적으면
+     * 다음에 느는 임시본이 또 빠지고, 빠진 그 경로만 비우기에 조용히 지워진다 —
+     * 복호화가 도는 중이면 복원이 통째로 죽는 자리다.
+     */
+    private fun createTransferTemp(ctx: android.content.Context, prefix: String, suffix: String): File =
+        File.createTempFile(prefix, suffix, ctx.cacheDir)
+            .also { com.novelcharacter.app.excel.ActiveTransfers.hold(it) }
+
+    private fun finishPendingBackupExport() {
+        val pending = pendingBackupExport ?: return
+        pendingBackupExport = null
+        com.novelcharacter.app.excel.ActiveTransfers.release(pending.file)
+        if (pending.ownsFile) pending.file.delete()
+    }
 
     /**
      * 정리 폴더 왕복 — **이미지 탭과 같은 컨트롤러를 쓴다**(흐름을 복제하지 않는다).
@@ -73,8 +109,17 @@ class SettingsFragment : Fragment() {
     private val backupExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        if (!isAdded || uri == null) return@registerForActivityResult
-        val file = pendingBackupExportFile ?: return@registerForActivityResult
+        if (uri == null) {
+            // 취소도 종결이다 — 캐시 임시본을 여기서 놓지 않으면 주인이 없어진다.
+            finishPendingBackupExport()
+            return@registerForActivityResult
+        }
+        val pending = pendingBackupExport
+        if (!isAdded || pending == null) {
+            finishPendingBackupExport()
+            return@registerForActivityResult
+        }
+        val file = pending.file
         val ctx = requireContext().applicationContext
         // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어)
         val progress = createProgressDialog(R.string.backup_export_saving)
@@ -96,7 +141,7 @@ class SettingsFragment : Fragment() {
                 }
             } finally {
                 progress.dismissSafely()
-                pendingBackupExportFile = null
+                finishPendingBackupExport()
             }
         }
     }
@@ -764,7 +809,8 @@ class SettingsFragment : Fragment() {
             .setTitle(R.string.backup_device_bound_title)
             .setMessage(R.string.backup_device_bound_message)
             .setPositiveButton(R.string.backup_export_continue) { _, _ ->
-                pendingBackupExportFile = latestBackup
+                // 앱의 보관물이다 — 건네고 나서도 지우지 않는다.
+                pendingBackupExport = PendingExport(latestBackup, ownsFile = false)
                 val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
                 val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
                 backupExportLauncher.launch(fileName)
@@ -891,7 +937,7 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val portableFile = withContext(Dispatchers.IO) {
-                    val plainTemp = File.createTempFile("export_plain_", ".xlsx", ctx.cacheDir)
+                    val plainTemp = createTransferTemp(ctx, "export_plain_", ".xlsx")
                     try {
                         BackupEncryptor.decryptFile(deviceEncFile, plainTemp) { read ->
                             postProgress(
@@ -902,7 +948,7 @@ class SettingsFragment : Fragment() {
                         // 두 번째 구간의 총량은 **평문 크기**다 — 복호화가 끝나야 알 수 있으므로
                         // 여기서 눈금을 새로 잡는다(총량 확정 후에 보고한다).
                         val encryptScale = ProgressScale.forBytes(plainTemp.length())
-                        val portable = File.createTempFile("export_portable_", ".enc", ctx.cacheDir)
+                        val portable = createTransferTemp(ctx, "export_portable_", ".enc")
                         BackupEncryptor.encryptFilePortable(plainTemp, portable, passphrase) { written ->
                             postProgress(
                                 progressDialog, encryptScale.stepsFor(written), encryptScale.totalSteps,
@@ -911,12 +957,15 @@ class SettingsFragment : Fragment() {
                         }
                         portable
                     } finally {
+                        com.novelcharacter.app.excel.ActiveTransfers.release(plainTemp)
                         plainTemp.delete()
                     }
                 }
                 progressDialog?.dismiss()
                 if (!isAdded || _binding == null) return@launch
-                pendingBackupExportFile = portableFile
+                // 이 화면이 캐시에 만든 임시본이다 — 끝나면 지우고, 그 사이에는 지켜야 한다.
+                pendingBackupExport = PendingExport(portableFile, ownsFile = true)
+                com.novelcharacter.app.excel.ActiveTransfers.hold(portableFile)
                 val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
                 val fileName =
                     "NovelCharacter_Backup_${dateFormat.format(Date(deviceEncFile.lastModified()))}_portable.enc"
@@ -983,7 +1032,7 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val tempEncFile = withContext(Dispatchers.IO) {
-                    val temp = File.createTempFile("restore_ext_", ".enc", ctx.cacheDir)
+                    val temp = createTransferTemp(ctx, "restore_ext_", ".enc")
                     ctx.contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw Exception(getString(R.string.backup_file_open_failed))
@@ -1080,7 +1129,7 @@ class SettingsFragment : Fragment() {
             try {
                 // 복호화
                 tempXlsx = withContext(Dispatchers.IO) {
-                    val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
+                    val xlsx = createTransferTemp(ctx, "restore_", ".xlsx")
                     BackupEncryptor.decryptFile(encFile, xlsx) { read ->
                         postProgress(
                             progressDialog, scale.stepsFor(read), scale.totalSteps,
@@ -1139,7 +1188,7 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val tempXlsx = withContext(Dispatchers.IO) {
-                    val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
+                    val xlsx = createTransferTemp(ctx, "restore_", ".xlsx")
                     try {
                         BackupEncryptor.decryptFilePortable(encFile, xlsx, passphrase) { read ->
                             postProgress(

@@ -74,6 +74,11 @@ class AutoBackupWorker(
         val statusStore = BackupStatusStore(appContext)
         val settings = BackupSettingsStore(appContext).getSettings()
         val progress = cancellationSink()
+        // **이 워커도 전송이다.** `ExcelExporter.populateWorkbook`만 부르므로 구간(`phase`)이
+        // 서지 않아 [ActiveTransfers]가 자동으로 알지 못한다 — 그래서 여기서 명시로 든다.
+        // 들지 않으면 배경 백업이 `cacheDir/poi-temp`에 스트리밍하는 동안 저장공간의
+        // 캐시 비우기가 그 파일을 앗아갈 수 있다(사용자는 백업이 도는 줄도 모른다).
+        com.novelcharacter.app.excel.ActiveTransfers.enter(this)
         return try {
             Log.i(TAG, "Starting auto backup...")
             // 스트리밍 워크북 — 이 경로가 B-72가 말한 **마지막 방어선**이다: 배경에서 도는
@@ -170,6 +175,8 @@ class AutoBackupWorker(
                 ))
             }
             if (outcome.retries) Result.retry() else Result.failure()
+        } finally {
+            com.novelcharacter.app.excel.ActiveTransfers.exit(this)
         }
     }
 

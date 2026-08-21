@@ -23,7 +23,6 @@ object StorageAnalyzer {
     private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".webp")
 
     private const val BACKUP_DIR = "backups"
-    private const val EXPORTS_DIR = "exports"
     private const val DB_NAME = "novel_character_database"
 
     data class Category(
@@ -203,22 +202,28 @@ object StorageAnalyzer {
     }
 
     /**
-     * 내보내기 캐시 비우기 — **`exports/`의 산출물만** 지운다. @return 삭제 바이트 수
+     * 앱 캐시 비우기 — **세는 범위와 같은 범위**(`cacheDir` 전체)를 비운다.
      *
-     * 세는 범위(cacheDir 전체)보다 좁은 것이 의도다: 나머지 임시 파일은 **만든 자리가
-     * 지운다**는 것이 이 저장소의 규약이고(`importFromUri`·`importFromZip`의
-     * `deleteRecursively`), 여기서 통째로 지우면 **돌고 있는 전송의 임시 파일**을
-     * 앗아갈 수 있다. 확인·완료 문구도 '내보내기 임시 파일'이라고 정확히 말한다.
+     * ## 왜 넓혔나 (2026.08.21 사용자 판정)
+     *
+     * 종전에는 `exports/`의 최상위 파일만 지웠다. 그 좁힘의 근거는 *"돌고 있는 전송의 임시
+     * 파일을 앗아갈 수 있다"*였고 그것은 옳았지만, 결과로 **화면이 1.2GB라 말하고 버튼은
+     * 120MB를 지우는** 자리가 났다 — 전송 임시 파일은 `exports/` 말고도 `poi-temp`·
+     * `world_import_*`·복호화 산출물 등 여러 자리에 나고, 프로세스가 죽어 주인을 잃은
+     * 것들은 **인앱에서 회수할 길이 아예 없었다**(원칙 02 — 기능의 '존재'가 아니라 '쓰임').
+     *
+     * 걸려 있던 것은 [ActiveTransfers]가 풀었다: 도는 전송이 하나라도 있으면 부르는 쪽이
+     * **아예 시작하지 않고**(StorageFragment), 도는 것이 없어도 약속된 파일은
+     * `protectedPaths`가 지킨다. **비우기는 미룰 수 있지만 깨진 전송은 못 되돌린다** —
+     * 그래서 판정은 보수적인 쪽으로 잡았다.
      */
-    suspend fun clearExportCache(context: Context): Long = withContext(Dispatchers.IO) {
-        val exportsDir = File(context.cacheDir, EXPORTS_DIR)
-        val files = exportsDir.listFiles { f -> f.isFile } ?: return@withContext 0L
-        var freed = 0L
-        for (f in files) {
-            val len = f.length()
-            if (f.delete()) freed += len
-        }
-        freed
+    suspend fun clearTransferCache(context: Context): CacheSweep.Result = withContext(Dispatchers.IO) {
+        CacheSweep.sweep(
+            context.cacheDir,
+            com.novelcharacter.app.excel.ActiveTransfers.protectedPaths(
+                com.novelcharacter.app.excel.ExportRetryStore.rawPath(context)
+            )
+        )
     }
 
     fun isImageFile(name: String): Boolean {

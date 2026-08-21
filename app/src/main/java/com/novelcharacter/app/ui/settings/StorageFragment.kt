@@ -194,11 +194,23 @@ class StorageFragment : Fragment() {
 
     private fun runClearCache() {
         val ctx = context ?: return
+        // **도는 전송이 있으면 시작하지 않는다.** 비우기는 미룰 수 있지만 반쯤 지워진
+        // 전송은 못 되돌린다(개발 의도 2). 조용히 아무 일도 안 하지 않고 사유를 말한다(R-17).
+        if (com.novelcharacter.app.excel.ActiveTransfers.isRunning) {
+            showResult(getString(R.string.storage_clear_cache_busy))
+            return
+        }
         showResult(getString(R.string.storage_working))
         viewLifecycleOwner.lifecycleScope.launch {
-            val freed = StorageAnalyzer.clearExportCache(ctx.applicationContext)
+            val result = StorageAnalyzer.clearTransferCache(ctx.applicationContext)
             if (_binding == null) return@launch
-            showResult(getString(R.string.storage_clear_cache_done, StorageAnalyzer.formatBytes(freed)))
+            // 남은 용량의 사유를 갈라 말한다 — 일어나지 않은 일은 0으로 말하지 않는다.
+            val lines = listOfNotNull(
+                getString(R.string.storage_clear_cache_done, StorageAnalyzer.formatBytes(result.freedBytes)),
+                if (result.keptFiles > 0) getString(R.string.storage_clear_cache_kept, result.keptFiles) else null,
+                if (result.failedFiles > 0) getString(R.string.storage_clear_cache_failed, result.failedFiles) else null,
+            )
+            showResult(lines.joinToString("\n"))
             loadReport()
         }
     }

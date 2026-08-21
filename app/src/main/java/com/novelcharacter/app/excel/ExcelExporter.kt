@@ -61,8 +61,15 @@ class ExcelExporter(context: Context) {
      *
      * 내보내기는 구간이 하나다([TransferPhase.EXPORT_BUILD]) — 산출물을 다 만들어도
      * 건네려면(공유 시트·SAF) 화면이 있어야 하므로, 화면이 없으면 끝까지 만들 이유가 없다.
+     *
+     * **이 대입이 프로세스 수준 '지금 전송이 도는가'의 단일 소스이기도 하다**
+     * ([ActiveTransfers] — 가져오기 쪽과 같은 결).
      */
     @Volatile private var phase: TransferPhase? = null
+        set(value) {
+            ActiveTransfers.trackPhase(this, value)
+            field = value
+        }
 
     /**
      * 이 회차의 진행·취소 창구 (B-228).

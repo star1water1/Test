@@ -108,6 +108,8 @@ $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/TransferInterruption.kt
+$MAIN/excel/ActiveTransfers.kt
+$MAIN/util/CacheSweep.kt
 $MAIN/util/GraphFactionNarrow.kt
 $MAIN/excel/SheetResolver.kt
 $MAIN/excel/UniverseSheetPlan.kt
@@ -374,6 +376,7 @@ $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/excel/TransferInterruptionTest.kt
+$TEST/util/CacheSweepTest.kt
 $TEST/util/GraphFactionNarrowTest.kt
 $TEST/util/ProgressScaleTest.kt
 $TEST/util/DialogScrollCapTest.kt
