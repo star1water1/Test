@@ -3276,7 +3276,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **가져오기가 한 번 하는 일을 '신규 2'로 예고했다** — 이 범주는 등재의 census 밖이었다
         // (그 census는 `existing == null → newCount++` 모양을 셌는데 이 자리의 갈림은
         // *등재하지 않는 것*이 아니라 **접지 않는 것**이라 모양이 다르다).
-        val sheetRows = (1..sheet.lastRowNum).mapNotNull { i ->
+        // **데이터 행의 시작은 헤더가 정한다**(B-231 ⓑ) — `dataRows` 한 통로를 지난다.
+        // 종전에는 이 자리와 짝인 가져오기만 1행 고정이라, 표 위에 제목 줄을 얹으면 헤더 행이
+        // 데이터 행으로 세어졌다('파일명'이라는 글자가 있어 빈칸 가드에 안 걸린다) → 있지도 않은
+        // '건너뜀 1'과 "파일을 찾을 수 없어…" 경고가 붙어 없는 유실을 쫓게 했다.
+        val sheetRows = dataRows(sheet, headerRow).mapNotNull { i ->
             val row = sheet.getRow(i) ?: return@mapNotNull null
             val fileName = getCellString(row, c.file)
             if (fileName.isBlank()) null else i to fileName
@@ -9614,7 +9618,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 같은 이미지를 가리키는 행이 둘 이상이면 뒤 행이 앞 행의 태그를 통째로 지운다 —
         // 다른 시트의 코드 중복과 같은 규약(마지막 행 우선 + 고지)으로 접는다.
-        val sheetRows = (1..sheet.lastRowNum).mapNotNull { i ->
+        // 미리보기와 **같은 통로**다(B-231 ⓑ · R-33) — 1행 고정이면 헤더 행이 데이터로 세어진다.
+        val sheetRows = dataRows(sheet, headerRow).mapNotNull { i ->
             val row = sheet.getRow(i) ?: return@mapNotNull null
             val fileName = getCellString(row, imc.file)
             if (fileName.isBlank()) null else i to fileName
