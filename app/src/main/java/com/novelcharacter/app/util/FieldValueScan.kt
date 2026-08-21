@@ -42,6 +42,14 @@ class FieldValueScan(private val values: FieldValueOverlay) {
     val existingTotal: Int get() = values.loadedRows
 
     /**
+     * `(소유자, 필드)`의 **저장된 값** — 계산 열이 *앱 자신의 출력인가*를 가리는 재료다
+     * ([com.novelcharacter.app.util.CalculatedCellEcho]). 없으면 `null`.
+     *
+     * 세는 일과 무관한 읽기라 계수에 영향을 주지 않는다.
+     */
+    fun stored(ownerId: Long, fieldId: Long): String? = values.get(ownerId, fieldId)
+
+    /**
      * 칸 하나를 센다 — **여섯 자리가 전부 이 함수를 지난다.**
      *
      * 겹을 함께 갱신하는 것이 요점이다: 같은 `(소유자, 필드)`를 파일이 두 번 적으면

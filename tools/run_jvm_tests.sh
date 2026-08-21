@@ -211,6 +211,7 @@ $MAIN/util/FormulaEvaluator.kt
 $MAIN/util/FormulaValidator.kt
 $MAIN/util/ImportedFormulaAudit.kt
 $MAIN/util/FormulaDisplay.kt
+$MAIN/util/CalculatedCellEcho.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/util/GradeTable.kt
 $MAIN/util/FactionMembershipMatcher.kt
@@ -387,6 +388,7 @@ $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
+$TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
 $TEST/util/CrossTableFoldTest.kt

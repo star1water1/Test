@@ -1706,6 +1706,10 @@ class ExcelExporter(context: Context) {
                 // 깨진 수식은 **셀에 오류 표식을 쓴다**(U-9). 엑셀에서 훑는 사람에게 그 자리가
                 // 곧 진단이고, 빈칸으로 두면 값이 없는 것과 구분되지 않는다.
                 // 왕복 오염은 없다 — 가져오기는 CALCULATED 열을 저장하지 않는다(F4).
+                //
+                // **다만 읽는 쪽은 이 값을 알아본다**([CalculatedCellEcho]). 저장은 안 해도
+                // *읽어서 세고 말하기*는 했기 때문에, 종전에는 무편집 왕복이 '건너뜀'과
+                // "값을 직접 넣으려면 타입을 바꾸세요" 경고를 냈다.
                 f.id to com.novelcharacter.app.util.FormulaDisplay
                     .evaluateForDisplay(formula, evaluator::evaluate)
             }.toMap()

@@ -32,6 +32,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.util.CalculatedCellEcho
 import com.novelcharacter.app.util.CharacterValueLedger
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
@@ -3675,9 +3676,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 필드 열 계획도 가져오기와 **같은 함수**다([CharacterFieldColumns] · B-187) — 고정 열
         // 인덱스를 짓는 식까지 `importCharacterRows`에서 그대로 옮겨 온다(손으로 나열하면 갈린다).
+        // 수식이 참조할 수 있는 정의들 — 계산 열 판정([CalculatedCellEcho])이 이 목록을 쓴다.
+        // 열 계획과 **같은 목록**이어야 한다(두 번 조회하면 그 사이에 갈릴 자리다).
+        val planFields = analysisCharacterFields(universeId)
         val columnPlan = if (fieldValues == null) emptyMap() else CharacterFieldColumns.plan(
             readHeaderCells(headerRow),
-            analysisCharacterFields(universeId),
+            planFields,
             (CHARACTER_FIXED_HEADERS.mapNotNull { cols[it] } + c.name).filter { it >= 0 }.toSet(),
             CHARACTER_FIXED_HEADERS,
             hasUniverse = universeId != null,
@@ -3702,13 +3706,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 칸 단위 처분이 그대로 서지 못한다. 확정되지 않은 행과 **같은 처리**로 모은다.
             val decided: Long? =
                 if (charId != null && charId !in analysisUniverseMovedCharacterIds) charId else null
+            // 계산 열 판정의 재료 — **이 행에 계산 열이 있을 때만** 만든다(행마다 짓지 않는다).
+            val storedByKey: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
+                val owner = decided ?: return@lazy emptyMap()
+                planFields.asSequence()
+                    .mapNotNull { f -> scan.stored(owner, f.id)?.let { f.key to it } }
+                    .toMap()
+            }
             for ((col, outcome) in columnPlan) {
                 val cellValue = getCellString(row, col)
                 when (outcome) {
                     is ColumnFieldOutcome.Matched -> {
                         // 계산 필드는 저장하지 않는다(F4) — 가져오기가 `continue`하는 그 자리다.
                         if (outcome.field.fieldType == FieldType.CALCULATED) {
-                            if (cellValue.isNotBlank()) scan.skip()
+                            // **앱 자신이 적어 낸 산출값은 세지 않는다** — 그것까지 세면
+                            // 한 글자도 안 고친 파일에서도 '건너뜀'에 숫자가 붙는다
+                            // (`FieldValueScan.skip`의 KDoc이 스스로 금지한 상태다).
+                            if (cellValue.isNotBlank() &&
+                                !CalculatedCellEcho.isAppOutput(
+                                    outcome.field, cellValue, planFields, storedByKey
+                                )
+                            ) scan.skip()
                         } else if (decided == null) {
                             if (cellValue.isNotBlank()) scan.skip()
                         } else {
@@ -7574,6 +7592,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         if (existingChar == null) emptyList()
                         else db.characterFieldValueDao().getValuesByCharacterList(charId))
                 }
+                // 계산 열 판정의 재료 — **계산 열이 실제로 있을 때만** 만든다.
+                // 내보내기가 그 셀에 쓴 값은 *저장된 값*으로 계산한 것이므로 재료도 그것이다.
+                val storedByKey: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
+                    fields.asSequence()
+                        .mapNotNull { f -> valueLedger.get(charId, f.id)?.value?.let { f.key to it } }
+                        .toMap()
+                }
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
@@ -7581,7 +7606,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // U-10: 종전에는 **무통보 폐기**였다 — 엑셀에서 계산 열에 값을 적어 넣고
                         // 가져와도 아무 말 없이 사라져, 사용자는 반영된 줄 안다.
                         // 형제 경고(사건 시트·'캐릭터 필드값' 시트)와 같은 문구로 맞춘다.
-                        if (getCellString(row, colIndex).isNotBlank() &&
+                        //
+                        // **앱 자신이 적어 낸 산출값에는 말하지 않는다** — 그 칸에 값을 적은 것은
+                        // 사용자가 아니라 내보내기다. 종전에는 '비었는가'만 보아, 한 글자도 안 고친
+                        // 왕복이 세계관·필드마다 이 경고를 한 줄씩 냈다(정상 파일이 상한 파일처럼
+                        // 보이면 사용자는 진짜 경고를 그 잡음 속에서 잃는다).
+                        val cell = getCellString(row, colIndex)
+                        if (cell.isNotBlank() &&
+                            !CalculatedCellEcho.isAppOutput(field, cell, fields, storedByKey) &&
                             droppedCalculatedHeaders.add(field.name)
                         ) {
                             result.warnings.add(
