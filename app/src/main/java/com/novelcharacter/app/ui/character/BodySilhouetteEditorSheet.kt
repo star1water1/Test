@@ -156,6 +156,16 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     private var weightSlider: Slider? = null
     private var weightField: TextInputEditText? = null
 
+    /**
+     * 체중 슬라이더가 **처음 섰던 자리** — '체중 없음'을 그릴 때 여기로 되돌린다.
+     *
+     * 이 편집기에는 '값 없음'을 표현하는 위젯 상태가 따로 없다. 그래서 [syncAll]이
+     * 종전에는 값이 있을 때만 그렸고, **한 번 채워진 뒤 비워지는 전이**(굴리기 → [직전으로])를
+     * 표현하지 못했다 — 칸에는 굴린 값이 그대로 남고 저장은 한 글자도 안 되는,
+     * 화면과 저장이 갈리는 자리다(콜드 검토 2026.08.21).
+     */
+    private var weightSliderInitial: Float? = null
+
     /** 되먹임 억제 — 슬라이더가 칸을 고치고 칸이 다시 슬라이더를 고치는 고리를 끊는다. */
     private var syncing = false
 
@@ -524,6 +534,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             container.addView(
                 buildRow(density, getString(R.string.silhouette_row_weight), BodyEditorModel.WEIGHT_RANGE) { s, f ->
                     weightSlider = s; weightField = f
+                    weightSliderInitial = s.value
                 }
             )
         }
@@ -650,10 +661,15 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         }
         weightSlider?.let { s ->
             val w = weightKg
+            val wf = weightField
             if (w != null) {
                 if (s !== editing) s.value = w.toFloat().coerceIn(s.valueFrom, s.valueTo)
-                val wf = weightField
                 if (wf != null && wf !== editing) wf.setText(BodyEditorModel.formatValue(w))
+            } else {
+                // **'체중 없음'도 그린다.** 안 그리면 [직전으로]가 값을 되돌린 뒤에도 칸이
+                // 굴린 값을 붙들고 있어, 사용자가 보는 것과 저장되는 것이 갈린다.
+                if (wf != null && wf !== editing) wf.setText("")
+                if (s !== editing) weightSliderInitial?.let { s.value = it }
             }
         }
         if (!fromHandle) binding.silhouette.measures = current
