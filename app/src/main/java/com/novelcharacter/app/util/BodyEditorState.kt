@@ -324,7 +324,14 @@ data class BodyEditorState(
             }
         }
 
-        private fun measuresToJson(m: Measures): JSONObject = JSONObject().apply {
+        /**
+         * `Measures`의 JSON 코덱 — **화면 사이로 그림을 넘기는 모든 자리가 이것을 쓴다.**
+         *
+         * 회전·다크모드 전환은 프래그먼트를 무인자 생성자로 되살리므로, 인스턴스 프로퍼티에
+         * 꽂아 둔 그림 재료는 통째로 기본값이 된다(실루엣 크게 보기가 그래서 빈 화면이 됐다).
+         * 코덱을 두 벌로 만들면 축 하나가 늘 때 한쪽만 낡으므로 여기 하나만 둔다.
+         */
+        fun measuresToJson(m: Measures): JSONObject = JSONObject().apply {
             put(M_HEIGHT, m.height)
             put(M_SHOULDER, m.shoulder)
             put(M_BUST, m.bust)
@@ -336,7 +343,8 @@ data class BodyEditorState(
             put(M_RIB, m.ribOffset)
         }
 
-        private fun measuresFromJson(o: JSONObject?): Measures? {
+        /** [measuresToJson]의 짝 — 다섯 축이 없으면 `null`이다(부분 복원을 하지 않는다). */
+        fun measuresFromJson(o: JSONObject?): Measures? {
             if (o == null) return null
             // 다섯 축은 필수다 — 하나라도 없으면 그림이 설 수 없으므로 부분 복원을 하지 않는다.
             for (key in listOf(M_HEIGHT, M_SHOULDER, M_BUST, M_WAIST, M_HIP)) {

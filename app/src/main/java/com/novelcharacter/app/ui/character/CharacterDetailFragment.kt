@@ -173,11 +173,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         }
         // 실루엣 탭 — 크게 보기. 작품 평균은 순위 계산이 이미 모아 둔 이웃 수치를 재사용한다.
         fieldRenderer.onOpenSilhouette = { _, measured, config ->
-            SilhouetteLargeDialog.newInstance(cachedCharacter?.name.orEmpty()).apply {
-                this.measured = measured
-                this.config = config
-                this.peers = bodyPeerMeasurements
-            }.show(childFragmentManager, SilhouetteLargeDialog.TAG)
+            // **그림은 arguments로 넘긴다** — 인스턴스에 꽂으면 회전·다크모드 전환에서
+            // 무인자 생성자로 되살아난 창이 빈 화면이 된다(B-201과 같은 축).
+            SilhouetteLargeDialog
+                .newInstance(cachedCharacter?.name.orEmpty(), measured, config, bodyPeerMeasurements)
+                .show(childFragmentManager, SilhouetteLargeDialog.TAG)
         }
         setupBodyFieldEditResultListener()
 
