@@ -1863,8 +1863,9 @@ class ImageManagerViewModel(
      * 검토 시트가 행마다 "묶음 N장에 함께 붙음"을 말할 재료 — 제안 경로 → 묶음 식구 수(2 이상만).
      *
      * **살아 있는 명단으로 센다** — 적용도 같은 명단으로 펴므로([applyTagWork]) 고지와 실제가
-     * 같은 것을 본다. 실행 시점 표(aiTagGroupExpand)를 걷어낸 뒤로 되받기(1장씩)·전원 전송
-     * 실행의 행에도 장수가 선다 — 그 행의 태그도 이제 실제로 식구에게 붙기 때문이다.
+     * 같은 것을 본다. 실행 시점 표(aiTagGroupExpand)를 걷어낸 뒤로는 종전 표가 비던 실행
+     * (묶음을 인식 못 한 실행·전원 전송)의 행에도 장수가 선다 — 그 행의 태그도 이제 실제로
+     * 식구에게 붙기 때문이다.
      */
     fun aiTagGroupSizes(): Map<String, Int> {
         val paths = aiTagResult.value?.suggestions?.map { it.path } ?: return emptyMap()
@@ -2083,8 +2084,10 @@ class ImageManagerViewModel(
         // **링크 묶음 전개 — 공유 불변식의 초크포인트.** 어느 경로(이미지판·폴더판·되받기)로
         // 온 태그든 **적용 직전의 살아 있는 명단**으로 묶음 전원에 편다. 실행 시점의 전개
         // 표를 들고 다니던 종전 모양(aiTagGroupExpand)은 ⓐ 검토 중 링크를 바꾸면 낡은
-        // 명단에 붙고 ⓑ 표에 없는 실행(되받기 1장씩·전원 전송)의 태그가 식구에게 못 가는
-        // 두 결함을 함께 들었다. 같은 경로가 두 번 실려도 먼저 합쳐 한 번에 편다
+        // 명단에 붙고 ⓑ 표 밖 실행 — 선택 안 명단이라 묶음을 인식 못 한 실행과 스위치
+        // 꺼짐(전원 전송) — 의 태그가 식구에게 못 가는 두 결함을 함께 들었다(되받기는 첫
+        // 실행의 표를 물려받으므로 그 구멍도 그대로 물려받았다). 같은 경로가 두 번 실려도
+        // 먼저 합쳐 한 번에 편다
         // (합집합·순서 규칙은 [com.novelcharacter.app.util.LinkGroupFold.expandPicked]가 정본).
         val merged = LinkedHashMap<String, MutableList<String>>()
         for ((path, tags) in work) {
