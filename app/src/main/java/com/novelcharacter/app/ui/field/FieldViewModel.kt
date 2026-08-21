@@ -567,9 +567,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         app.database.withTransaction {
             // 덮기 **전에** 백업한다 — 순서가 뒤집히면 백업이 덮인 값을 담는다.
             if (resolution.backups.isNotEmpty()) {
-                app.trashRepository.snapshotFieldDefinitions(
-                    targetUniverseId, resolution.backups, sourceName
-                )
+                // **한 인스턴스 = 한 작업**(위 대결 축과 같은 근거) — 앱 수준 싱글턴을 쓰면
+                // 이 덮어쓰기 백업이 앱 수명 안의 다른 조작들과 한 묶음으로 붙는다.
+                com.novelcharacter.app.data.repository.TrashRepository(app.database)
+                    .snapshotFieldDefinitions(targetUniverseId, resolution.backups, sourceName)
             }
             if (resolution.inserts.isNotEmpty()) {
                 universeRepository.insertAllFields(resolution.inserts)

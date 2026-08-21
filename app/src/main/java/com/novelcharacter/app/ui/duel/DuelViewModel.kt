@@ -27,6 +27,7 @@ import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.novelcharacter.app.data.repository.TrashRepository
 
 /**
  * 대결 화면 넷이 함께 쓰는 읽기·쓰기 통로 (B-104 화면 계층).
@@ -128,7 +129,12 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * @return 함께 들어간 판 수.
      */
     suspend fun deleteAxis(axis: DuelAxis): Int {
-        val matches = duelRepository.deleteAxis(axis, app.trashRepository)
+        // **한 인스턴스 = 한 작업**이다 — `TrashRepository`는 생성 때 발급한 operationId를
+        // 자기가 만든 스냅샷 전부에 싣고, 휴지통의 '작업' 묶음과 정리(R-9)의 단위가 그것이다.
+        // 앱 수준 싱글턴을 쓰면 **앱 수명 하나가 통째로 한 작업**이 되어, 축을 셋 지우면
+        // 셋이 한 묶음으로 붙고 하나만 되살릴 수 없다. 형제 여덟 저장소가 전부 조작마다
+        // 새로 만드는 그 꼴로 맞춘다.
+        val matches = duelRepository.deleteAxis(axis, TrashRepository(app.database))
         reportResult(
             _result,
             OpResult.success(
