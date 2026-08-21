@@ -980,6 +980,9 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
      *
      * 모아 둔 이웃 수치는 [bodyPeerMeasurements]에 남겨 실루엣 크게 보기의 작품 평균
      * 오버레이가 재사용한다(같은 조회를 두 번 하지 않는다).
+     * **그 목록은 자기를 뺀 것이다** — 평균은 *다른 캐릭터들*의 평균이고, 자기가 섞이면
+     * 이웃이 없는 캐릭터가 자기 대 자기를 재게 된다. 순위의 모집단은 그것과 달리
+     * 자기를 포함한다("N명 중 K위").
      */
     private suspend fun computeBodyRanking(
         fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
@@ -1026,12 +1029,24 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val allCharacters = viewModel.getCharactersByNovelList(novelId)
         if (allCharacters.size <= 1) return null
 
+        // 순위의 모집단([peers])과 '작품 평균'의 재료([others])는 **다른 집합**이다.
+        // 순위는 "N명 중 K위"라 자기를 포함해야 하고, 평균은 *다른 캐릭터들*의 평균이라
+        // 자기가 들어가면 안 된다. 종전에는 한 목록을 둘 다 썼고, 게다가 그것을
+        // `peers.size <= 1` 가드보다 **먼저** 내보내서 — 순위는 접히는데 평균 재료만
+        // 살아남아 — 체형을 적은 이웃이 하나도 없는 캐릭터가 **자기 대 자기**를 재고
+        // 편차 0.0%·점수 100을 조용히 받았다(기준 문장은 그것을 '작품 평균'이라 불렀다).
         val peers = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
+        val others = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
         for (char in allCharacters) {
             val charValues = viewModel.getValuesByCharacterList(char.id).associateBy { it.fieldDefinitionId }
-            resolve(charValues)?.let { peers.add(it) }
+            resolve(charValues)?.let {
+                peers.add(it)
+                if (char.id != character.id) others.add(it)
+            }
         }
-        bodyPeerMeasurements = peers
+        // 이웃이 없으면 빈 목록이다 — `peerAverageBody`가 null을 내고, 화면은 '작품 평균'
+        // 칩을 아예 내지 않으며 고른 적이 있으면 못 쓴 사실을 먼저 말한다(이미 서 있는 폴백).
+        bodyPeerMeasurements = others
         if (peers.size <= 1) return null
 
         // 부위별로 **값이 있는 캐릭터만** 센다 — 빈 칸을 0으로 세면 순위가 무너진다.
