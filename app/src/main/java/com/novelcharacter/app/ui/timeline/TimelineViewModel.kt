@@ -809,8 +809,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val dao = db.timelineDao()
         val updates = mutableListOf<TimelineEvent>()
         for ((key, visible) in ascending.groupBy { TimelineDisplayOrder.dateKeyOf(it) }) {
-            updates += TimelineDisplayOrder.mergeDateGroup(
-                visible, dao.getEventsByDate(key.year, key.month, key.day)
+            updates.addAll(
+                TimelineDisplayOrder.mergeDateGroup(
+                    visible, dao.getEventsByDate(key.year, key.month, key.day)
+                )
             )
         }
         if (updates.isNotEmpty()) dao.updateAll(updates)

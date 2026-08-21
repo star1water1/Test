@@ -568,9 +568,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             binding.zoomLevelLabel.text = label
         }
 
-        // Observe visible range to update density bar range
+        // 목록 창은 **축이 아니라 강조 구간**이다 — 축으로 쓰면 같은 x가 바와 슬라이더에서
+        // 서로 다른 해를 가리키고, 줌을 올려 창 폭이 0이 되면 바가 통째로 죽는다.
         viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
-            binding.eventDensityBar.setRange(start, end)
+            binding.eventDensityBar.setWindow(start, end)
         }
 
         // ===== Event navigation (이전/다음 사건) =====
@@ -604,9 +605,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         viewModel.eventDensity.observe(viewLifecycleOwner) { density ->
             val events = viewModel.allEvents.value ?: return@observe
             if (events.isEmpty()) return@observe
-            val minYear = events.minOf { it.year }
-            val maxYear = events.maxOf { it.year }
-            binding.eventDensityBar.setDensityData(density, minYear - 10, maxYear + 10)
+            binding.eventDensityBar.setDensityData(density)
         }
 
         // Density bar tap → jump to year
@@ -654,6 +653,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             binding.yearSlider.valueTo = 100f
             binding.yearSlider.value = 0f
             binding.yearSlider.stepSize = 1f
+            // 바의 축은 **슬라이더와 같은 수**다(단일 소스).
+            binding.eventDensityBar.setRange(-100, 100)
             binding.minYearLabel.text = ""
             binding.maxYearLabel.text = ""
             return
@@ -678,6 +679,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         // Ensure valueFrom < valueTo
         val finalFrom = if (alignedFrom >= alignedTo) alignedFrom - stepSize else alignedFrom
         val finalTo = if (alignedFrom >= alignedTo) alignedTo + stepSize else alignedTo
+
+        // 바의 축은 **슬라이더와 같은 수**다 — 둘이 한 벌의 눈금으로 읽히도록 레이아웃이
+        // 같은 좌우 여백으로 얹어 둔 것이 그 근거다(TimelineDisplayOrder KDoc).
+        binding.eventDensityBar.setRange(finalFrom.toInt(), finalTo.toInt())
 
         // Reset stepSize to 0 (continuous) first to avoid constraint violations during update
         binding.yearSlider.stepSize = 0f
