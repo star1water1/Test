@@ -989,18 +989,23 @@ class SettingsFragment : Fragment() {
                     } ?: throw Exception(getString(R.string.backup_file_open_failed))
                     temp
                 }
-                // tempEncFile 삭제를 여기서 하지 않음:
-                // restoreFromEncryptedFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
-                // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
+                // **소유권을 함께 넘긴다.** 종전에는 *"비동기로 읽으므로 즉시 지우면 경쟁
+                // 조건"*이라며 삭제를 포기하고 시스템에 맡겼는데, 받는 쪽도 남의 파일로 보아
+                // 지우지 않아 **소유자가 아무도 없었다** — 복원할 때마다 옮겨 온 백업이
+                // 캐시에 그대로 쌓였다. 만든 자리가 지운다(이 저장소의 규약).
                 val isPortable = withContext(Dispatchers.IO) { BackupEncryptor.isPortableFormat(tempEncFile) }
-                if (!isAdded) return@launch
+                if (!isAdded) {
+                    // 화면이 사라져 아무도 이어받지 않는다 — 여기서 지운다.
+                    withContext(Dispatchers.IO) { tempEncFile.delete() }
+                    return@launch
+                }
                 if (isPortable) {
                     // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원
                     showEnterPassphraseDialog { passphrase ->
-                        restoreFromPortableFile(tempEncFile, passphrase)
+                        restoreFromPortableFile(tempEncFile, passphrase, ownsEncFile = true)
                     }
                 } else {
-                    restoreFromEncryptedFile(tempEncFile)
+                    restoreFromEncryptedFile(tempEncFile, ownsEncFile = true)
                 }
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
@@ -1050,7 +1055,11 @@ class SettingsFragment : Fragment() {
         activity?.runOnUiThread { if (isAdded) handle.update(current, total, stage, format) }
     }
 
-    private fun restoreFromEncryptedFile(encFile: File) {
+    /**
+     * @param ownsEncFile 넘긴 쪽이 **소유권까지 넘겼는가**(외부에서 옮겨 온 임시 .enc).
+     *   자동 백업 목록에서 고른 파일은 앱의 보관물이라 **지우면 안 된다** — 그래서 기본은 false다.
+     */
+    private fun restoreFromEncryptedFile(encFile: File, ownsEncFile: Boolean = false) {
         if (!isAdded) return
 
         val ctx = requireContext()
@@ -1084,13 +1093,13 @@ class SettingsFragment : Fragment() {
 
                 // 복호화된 파일을 직접 전달 (불필요한 복사 없이)
                 progressDialog?.dismiss()
-                // tempXlsx 삭제를 여기서 하지 않음:
-                // importFromLocalFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
-                // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
-                excel.importFromLocalFile(tempXlsx!!)
+                // 복호화 xlsx의 소유권을 가져오기에 넘긴다 — 다 읽은 뒤 그쪽이 지운다.
+                excel.importFromLocalFile(tempXlsx!!, ownsFile = true)
 
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패", e)
+                // 실패로 끝났으면 만들다 만 복호화 파일의 주인도 여기다.
+                tempXlsx?.let { f -> withContext(Dispatchers.IO) { f.delete() } }
                 progressDialog?.dismiss()
                 if (_binding != null) {
                     // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
@@ -1100,6 +1109,9 @@ class SettingsFragment : Fragment() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
+            } finally {
+                // 복호화가 끝났으면(성공이든 실패든) 옮겨 온 .enc는 더 볼 일이 없다.
+                if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
             }
         }
     }
@@ -1108,7 +1120,11 @@ class SettingsFragment : Fragment() {
      * 이식 가능(암호) 백업 복원. 잘못된 암호(GCM 태그 검증 실패)는
      * 오류로 끝내지 않고 재입력 다이얼로그로 되돌린다 — 변수 제어 원칙.
      */
-    private fun restoreFromPortableFile(encFile: File, passphrase: CharArray) {
+    /**
+     * @param ownsEncFile [restoreFromEncryptedFile]과 같은 계약. **암호 재입력 갈래에서는
+     *   지우지 않고 소유권을 그대로 넘긴다** — 다음 시도가 같은 파일을 다시 읽는다.
+     */
+    private fun restoreFromPortableFile(encFile: File, passphrase: CharArray, ownsEncFile: Boolean = false) {
         if (!isAdded) return
 
         val ctx = requireContext()
@@ -1140,20 +1156,26 @@ class SettingsFragment : Fragment() {
                 if (_binding == null) return@launch
 
                 progressDialog?.dismiss()
-                // tempXlsx 삭제를 여기서 하지 않음 — importFromLocalFile()이 비동기로 읽음
-                excel.importFromLocalFile(tempXlsx)
+                // 복호화 xlsx의 소유권을 가져오기에 넘긴다 — 다 읽은 뒤 그쪽이 지운다.
+                excel.importFromLocalFile(tempXlsx, ownsFile = true)
+                if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
             } catch (e: javax.crypto.AEADBadTagException) {
-                // 잘못된 암호 — 재입력 기회 제공
+                // 잘못된 암호 — 재입력 기회 제공. **여기서는 .enc를 지우지 않는다**:
+                // 다음 시도가 같은 파일을 다시 읽으므로 소유권을 그대로 넘긴다.
                 progressDialog?.dismiss()
                 if (_binding != null && isAdded) {
                     Toast.makeText(ctx, R.string.backup_passphrase_wrong, Toast.LENGTH_SHORT).show()
                     showEnterPassphraseDialog { retry ->
-                        restoreFromPortableFile(encFile, retry)
+                        restoreFromPortableFile(encFile, retry, ownsEncFile = ownsEncFile)
                     }
+                } else if (ownsEncFile) {
+                    // 다시 물을 화면이 없다 — 이어받을 사람이 없으므로 여기서 지운다.
+                    withContext(Dispatchers.IO) { encFile.delete() }
                 }
             } catch (e: Exception) {
                 AppLogger.error("Settings", "이식 백업 복원 실패", e)
                 progressDialog?.dismiss()
+                if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }

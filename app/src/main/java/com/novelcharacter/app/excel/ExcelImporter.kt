@@ -400,13 +400,30 @@ class ExcelImporter(context: Context) {
      * 복호화된 백업 파일 등 이미 로컬에 있는 파일에 사용.
      * 호출자가 파일 수명을 관리해야 함 (가져오기 완료 후 삭제 가능).
      */
-    fun importFromLocalFile(file: File) {
+    /**
+     * 앱 안에 이미 있는 파일을 가져온다.
+     *
+     * @param ownsFile 넘긴 쪽이 **소유권까지 넘겼는가.** 참이면 가져오기가 끝난 뒤
+     *   이 함수가 파일을 지운다 — 형제 [importFromUri]가 자기 임시 파일에 대해 이미 하는
+     *   그 자리(`try { routeImport(...) } finally { delete() }`)와 같은 규약이다.
+     *
+     *   **없으면 소유자가 아무도 없다**: 부르는 쪽은 *"비동기로 읽으므로 즉시 지우면 경쟁
+     *   조건"*이라며 삭제를 포기하고, 받는 쪽은 남의 파일로 보아 지우지 않았다. 그래서
+     *   복원할 때마다 백업 두 벌 크기(복호화 xlsx + 옮겨 온 .enc)가 캐시에 쌓였다.
+     *   이 자리는 가져오기가 끝난 뒤라 경쟁 조건이 원리적으로 없고, 취소·예외·화면 파괴
+     *   어느 갈래로 빠져나가도 지나간다.
+     */
+    fun importFromLocalFile(file: File, ownsFile: Boolean = false) {
         // **구간은 `launch` 밖에서 세운다** (B-228) — 안에서 세우면 코루틴이 실제로 돌기 전의
         // 짧은 틈에 화면이 사라졌을 때 [TransferInterruption]이 *"돌던 것이 없다"*로 읽어 침묵한다.
         beginPhase(TransferPhase.IMPORT_INTAKE)
         ensureActiveScope().launch {
             try {
-                routeImport(file)
+                try {
+                    routeImport(file)
+                } finally {
+                    if (ownsFile) file.delete()
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 화면이 사라져 끊겼다 — 고지는 [onScreenGone]이 이미 했다(B-228).
                 // 여기서 '실패'로 적으면 실패가 아닌 것을 실패라 말하게 된다.

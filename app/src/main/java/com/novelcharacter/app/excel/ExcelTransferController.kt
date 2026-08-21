@@ -383,9 +383,15 @@ class ExcelTransferController(private val fragment: Fragment) {
         importer.showImportDialog(fragment)
     }
 
-    /** 복호화된 백업 등 이미 로컬에 있는 파일을 직접 가져오기 (백업 복원 경로용 패스스루) */
-    fun importFromLocalFile(file: File) {
-        importer.importFromLocalFile(file)
+    /**
+     * 복호화된 백업 등 이미 로컬에 있는 파일을 직접 가져오기 (백업 복원 경로용 패스스루).
+     *
+     * @param ownsFile 소유권까지 넘기는가 — 참이면 가져오기가 끝난 뒤 [ExcelImporter]가 지운다.
+     *   **패스스루는 인자도 함께 지나야 한다**: 여기서 기본값으로 삼키면 부르는 쪽이 넘긴
+     *   소유권이 조용히 사라지고, 임시 파일의 주인이 다시 아무도 없게 된다.
+     */
+    fun importFromLocalFile(file: File, ownsFile: Boolean = false) {
+        importer.importFromLocalFile(file, ownsFile)
     }
 
     /** SAF 저장 위치 선택 중 프로세스 재생성에 대비해 내보내기 산출물 경로를 보존한다. */
