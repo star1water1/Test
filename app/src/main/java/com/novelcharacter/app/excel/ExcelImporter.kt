@@ -542,9 +542,23 @@ class ExcelImporter(context: Context) {
             ImportFileKind.OTHER_ZIP -> withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_unsupported_zip, Toast.LENGTH_LONG).show()
             }
+            // **암호 파일·통합문서 아님은 열기 전에 가린다.** 종전에는 둘 다 열어 본 뒤
+            // 예외 클래스로 판정해, 같은 파일이 크기에 따라(DOM ↔ 스트리밍) 다른 안내를 받았다.
+            // 아직 아무것도 돌기 전의 거절이라 토스트만 내고 이력에도 남기지 않는다
+            // (OTHER_ZIP과 같은 처분 — deliverTerminal KDoc의 경계).
+            ImportFileKind.ENCRYPTED_WORKBOOK -> withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    appContext, com.novelcharacter.app.R.string.import_workbook_encrypted, Toast.LENGTH_LONG
+                ).show()
+            }
+            ImportFileKind.NOT_WORKBOOK -> withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    appContext, com.novelcharacter.app.R.string.import_not_workbook, Toast.LENGTH_LONG
+                ).show()
+            }
             // B-8: 크기로 거부하지 않는다. 큰 파일은 스트리밍 경로가 받는다([openImportSource]) —
             // 종전에는 앱이 만든 백업이 128MB를 넘으면 앱 자신이 복원을 거부했다(자기모순).
-            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> importFromXlsx(file, progress = progress)
+            ImportFileKind.PLAIN_XLSX, ImportFileKind.LEGACY_OLE2 -> importFromXlsx(file, progress = progress)
         }
     }
 
@@ -1335,6 +1349,9 @@ class ExcelImporter(context: Context) {
                 // 아니라는 ZipException으로 거절한다. 그 밖(캐시 읽기 실패 등)은 형식이 아니라
                 // 읽기의 실패이므로 종전 일반 실패 경로로 던진다 — 멀쩡한 형식에 "통합문서가
                 // 아니다"라고 단정하면 사용자를 CSV 변환으로 보낸다(확인 없는 단정 금지 — B-225).
+                // **이 목록은 이제 방어선이다** — 정체 판정은 열기 전에 [ImportFileFormat]이
+                // 파일에 물어서 끝낸다(같은 문구를 가리키므로 둘이 갈리지 않는다). 여기 남는
+                // 것은 OLE2 머리를 달고도 POI가 열지 못한 부류(깨진 구형 .xls 등)다.
                 val notWorkbook = e is org.apache.poi.UnsupportedFileFormatException ||
                     e is org.apache.poi.EmptyFileException ||
                     e is java.util.zip.ZipException
