@@ -90,19 +90,43 @@ class TimelineDisplayOrderTest {
     /**
      * 화면 목록은 창·필터로 잘린 **부분집합**이다. 그 부분집합에만 번호를 적으면 같은 날짜의
      * 나머지가 옛 번호를 든 채 남아 번호가 겹치고 순서가 부정이 된다.
+     *
+     * **화면 밖 형제는 제자리(슬롯)에 남는다** — 뒤로 밀지 않는다(콜드 검토 2026.08.21).
+     * 종전에는 이어 붙였고, 그것은 *"보지 못한 것의 자리를 이 조작이 정하지 않는다"*는
+     * 이 함수의 약속을 스스로 깨는 것이었다(맨 앞 형제가 맨 뒤로 갔다).
      */
-    @Test fun merge_hiddenSiblingsFollowAfterVisible() {
+    @Test fun merge_hiddenSiblingsKeepTheirSlot() {
         // 사용자가 만든 차례: 2 → 1. `visible`은 canonicalReorder가 새 번호를 얹어 온 사본이다.
         val visible = listOf(event(2, 1000, order = 0), event(1, 1000, order = 1))
-        // DB의 저장값: 1=0, 9=1, 2=2 (9는 창·필터에 가려 화면에 없던 형제)
+        // DB의 저장값: 1=0, 9=1, 2=2 (9는 창·필터에 가려 화면에 없던 형제 — **가운데**다)
         val all = listOf(
             event(1, 1000, order = 0), event(9, 1000, order = 1), event(2, 1000, order = 2)
         )
         val updates = TimelineDisplayOrder.mergeDateGroup(visible, all).associate { it.id to it.displayOrder }
-        // 보인 둘이 사용자가 만든 차례로 앞에 서고, 안 보이던 9는 뒤에 이어 붙는다
+        // 보이는 둘이 있던 슬롯(0·2)만 사용자가 만든 차례로 갈아 끼운다.
         assertEquals(0, updates[2L])
-        assertEquals(1, updates[1L])
-        assertEquals(2, updates[9L])
+        assertEquals(2, updates[1L])
+        // 9는 자기 자리 그대로라 저장할 것이 없다.
+        assertEquals(null, updates[9L])
+    }
+
+    /**
+     * **끌지 않고 재정렬 모드만 껐다 켜도 저장이 돈다**(`TimelineFragment`의 모드 종료 갈래는
+     * 끌었는지를 묻지 않는다). 그때 한 칸도 움직이지 않아야 한다 — 종전에는 필터에 가린
+     * 형제가 뒤로 밀려, 사용자가 손대지도 않은 사건의 앞뒤가 조용히 바뀌었다.
+     */
+    @Test fun merge_noDragMovesNothing() {
+        // 필터가 1·2만 보여 준다. 사용자는 아무것도 끌지 않았다(보이던 차례 그대로).
+        val visible = listOf(event(1, 1000, order = 0), event(2, 1000, order = 1))
+        val all = listOf(
+            event(9, 1000, order = 0), event(1, 1000, order = 1),
+            event(8, 1000, order = 2), event(2, 1000, order = 3)
+        )
+        assertEquals(
+            "끌지 않았는데 저장할 것이 생기면 그것이 곧 조용한 왜곡이다",
+            emptyList<TimelineEvent>(),
+            TimelineDisplayOrder.mergeDateGroup(visible, all)
+        )
     }
 
     /**

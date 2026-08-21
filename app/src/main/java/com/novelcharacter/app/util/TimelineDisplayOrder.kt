@@ -94,26 +94,49 @@ object TimelineDisplayOrder {
     }
 
     /**
-     * 한 날짜 묶음의 최종 번호 — **화면 밖 형제까지 포함해** 다시 매긴다.
+     * 한 날짜 묶음의 최종 번호 — **화면 밖 형제는 제자리에 둔다.**
      *
      * 화면 목록은 언제나 창(`visibleRange`)으로 잘려 있고 작품·캐릭터·검색 필터까지 걸릴 수
      * 있는 **부분집합**이다. 그 부분집합에만 새 번호를 적으면 같은 날짜의 나머지가 옛 번호를
-     * 그대로 든 채 남아, 사용자가 손대지도 않은 사건들의 앞뒤가 바뀌거나 번호가 겹쳐
-     * 순서가 부정이 된다.
+     * 그대로 든 채 남아, 번호가 겹쳐 순서가 부정이 된다.
+     *
+     * ## 왜 '뒤에 이어 붙이기'가 아닌가 (콜드 검토 2026.08.21)
+     *
+     * 처음에는 화면 밖 형제를 **저장된 상대 순서를 유지한 채 뒤에 이어 붙였다.**
+     * 주석은 *"사용자가 보지 못한 것의 자리를 이 조작이 정할 근거가 없다"*라고 적어 두었는데,
+     * **뒤에 붙이는 것이 곧 자리를 정하는 것이었다** — 맨 앞에 있던 형제가 맨 뒤로 간다.
+     *
+     * 그리고 재정렬 모드를 끄면 **끌었든 안 끌었든 언제나 저장이 돈다**
+     * (`TimelineFragment`의 모드 종료 갈래). 그래서 필터를 걸어 둔 채 모드를 켰다 끄기만 해도
+     * 사용자가 손대지도 않은 사건의 앞뒤가 바뀌었다 — 무엇을 잃었는지 알 수 없는 부류의 왜곡이다.
+     *
+     * **그래서 자리(슬롯)를 보존한다.** 저장된 차례대로 늘어놓고, *보이는 사건이 있던 슬롯*만
+     * 사용자가 만든 차례로 갈아 끼운다. 화면 밖 형제는 자기 슬롯에 그대로 남는다.
+     * 끌지 않았으면 슬롯의 주인이 하나도 안 바뀌므로 **순서가 한 칸도 움직이지 않는다.**
      *
      * @param visibleAscending 이 묶음에서 **사용자가 만든 차례**(시간순 기준으로 되돌린 것)
-     * @param allOfDate 이 날짜의 사건 전량(저장된 `displayOrder` 순)
+     * @param allOfDate 이 날짜의 사건 전량
      * @return 번호가 바뀐 사건만 — 안 바뀐 행까지 쓰면 쓸모없는 갱신이 는다
      */
     fun mergeDateGroup(
         visibleAscending: List<TimelineEvent>,
         allOfDate: List<TimelineEvent>
     ): List<TimelineEvent> {
-        val visibleIds = visibleAscending.map { it.id }.toSet()
-        // 화면 밖 형제는 **저장된 상대 순서를 유지한 채 뒤에 이어 붙인다** — 사용자가 보지
-        // 못한 것의 자리를 이 조작이 정할 근거가 없다.
-        val hidden = allOfDate.filter { it.id !in visibleIds }.sortedBy { it.displayOrder }
-        val ordered = visibleAscending + hidden
+        val visibleIds = visibleAscending.mapTo(HashSet()) { it.id }
+        val queue = ArrayDeque(visibleAscending)
+        val ordered = ArrayList<TimelineEvent>(allOfDate.size + visibleAscending.size)
+        for (event in allOfDate.sortedBy { it.displayOrder }) {
+            if (event.id in visibleIds) {
+                // 보이는 사건이 있던 슬롯 — 사용자가 만든 차례에서 다음 것을 끼운다.
+                if (queue.isNotEmpty()) ordered.add(queue.removeFirst())
+            } else {
+                ordered.add(event)
+            }
+        }
+        // [allOfDate]에 없는 보이는 사건(방금 만들어 아직 조회에 안 잡힌 것)은 뒤에 붙인다 —
+        // 자리를 알 수 없으므로 이때만은 이어 붙이기가 옳다.
+        ordered.addAll(queue)
+
         // **'안 바뀌었다'의 기준은 [allOfDate]가 든 저장값이다.** [visibleAscending]은
         // [canonicalReorder]가 이미 새 번호를 얹어 온 사본이라, 그것과 견주면 보이는 사건은
         // 언제나 '그대로'가 되어 **한 행도 저장되지 않는다.**
