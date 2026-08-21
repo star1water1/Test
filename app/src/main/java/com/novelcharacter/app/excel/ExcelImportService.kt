@@ -541,6 +541,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val analysisCreatedUniverses = mutableListOf<Universe>()
 
     /**
+     * **이 파일이 만들 대결 축** — 기록·상성 시트를 훑는 자리가 이것까지 봐야 한다.
+     *
+     * 형제 범주는 이 재료를 이미 갖고 있다(세계관은 [analysisCreatedUniverses], 필드는
+     * [analysisCreatedFields]). 대결 축만 `analyzeDuelAxes` 안의 지역 색인으로 끝나 함수와
+     * 함께 죽었고, 그래서 기록·상성 분석은 *파일이 만들 축*과 *오타*를 가릴 재료가 없었다 —
+     * 빈 DB 복원을 살리려던 낙관 가지가 **둘을 함께 '신규'로** 셌다. 없는 축을 가리킨 행은
+     * 가져오기가 영원히 거부하므로 그것은 '건너뜀'이어야 한다.
+     *
+     * **싣는 순서는 형제와 같다** — DB 행 뒤에 붙인다(먼저 실린 것이 답이다).
+     */
+    private val analysisCreatedDuelAxes = mutableListOf<com.novelcharacter.app.data.model.DuelAxis>()
+
+    /**
      * **이 파일이 세계관을 옮길 캐릭터** — 그 캐릭터의 필드값 칸은 예고하지 않는다 (B-253).
      *
      * 이동은 필드값에 두 가지를 한다: ⓐ 그 캐릭터의 값을 **새 세계관의 같은 key 필드로 전량
@@ -2843,6 +2856,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이 파일이 만들 세계관도 같은 자리에서 비운다 (B-254) — 남으면 지난 분석이 만든
         // 세계관 이름으로 이번 파일의 캐릭터 시트를 찾는다(형제 목록·색인들과 같은 근거).
         analysisCreatedUniverses.clear()
+        // 이 파일이 만들 대결 축도 같은 자리에서 비운다 — 수명이 갈리면 지난 분석의 축으로
+        // 이번 파일의 기록·상성을 해석한다(형제 목록·색인들과 같은 근거).
+        analysisCreatedDuelAxes.clear()
         analysisUniverseMovedCharacterIds.clear()
         // 작품→세계관 메모도 여기서 비운다 — **직전 가져오기가 작품의 세계관을 옮겼을 수 있다**
         // (`migrateCharacterToUniverse` 경로). 위 색인들을 비우는 사유가 그대로 걸리는데
@@ -2971,10 +2987,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 newCount++
                 // 이 시트가 방금 만든 축 — 같은 코드·같은 (세계관, 대상, 이름)을 든 뒷 행이
                 // 이것과 매칭된다. 가져오기 쪽은 유니크 색인이 던져 막는 자리다(B-233).
-                axes.remember(
-                    newDuelAxisFrom(r, universe.id, r.code)
-                        .copy(id = previewIds.mint())
-                )
+                val created = newDuelAxisFrom(r, universe.id, r.code).copy(id = previewIds.mint())
+                axes.remember(created)
+                // 기록·상성 분석이 이것을 봐야 '파일이 만들 축'과 '오타'를 가른다.
+                analysisCreatedDuelAxes.add(created)
                 continue
             }
             val merged = mergeDuelAxis(existing, r, universe.id)
@@ -2995,7 +3011,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val now = System.currentTimeMillis()
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다.
-        val axes = db.duelAxisDao().getAllList()
+        // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
+        // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
+        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
         val axisByCode = axes.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
@@ -3011,14 +3029,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
-            // B-102 ⓑ: 축·참가자가 지금 DB에 없어도 — 같은 파일의 '대결 축'·캐릭터 시트가
-            // 그 범주와 함께 가져와지면 먼저 생기므로 '신규'가 맞다. 동명 모호(2+)는 가져오기도
-            // 거부하므로 그대로 skipped다. 종전에는 전부 skipped라 신규 기기 복원 미리보기가
-            // 판 전부를 '실행 안 함'으로 예고했다(B-217).
+            // B-102 ⓑ: 축이 지금 DB에 없어도 같은 파일의 '대결 축' 시트가 먼저 만든다 —
+            // **그 축은 이제 색인에 실려 있으므로**(analysisCreatedDuelAxes) 여기서 null인 것은
+            // *파일에도 DB에도 없다*만 뜻한다. 가져오기가 영원히 거부하는 행이므로 '건너뜀'이다.
+            //
+            // 종전에는 색인이 DB만 봐서 *파일이 만들 축*과 *오타*를 가릴 재료가 없었고,
+            // 낙관 가지가 **둘을 함께 '신규'로** 셌다 — 없는 축을 가리킨 행이 '신규'로 예고된 뒤
+            // 실행에서 조용히 빠졌다. `options.duels` 조건도 죽어 있었다(세 분석이 전부
+            // `if (options.duels)` 안에서만 불리므로 언제나 참이다).
             val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
             if (axis == null) {
-                val axisAmbiguous = (axesByName[r.axisName]?.size ?: 0) > 1
-                if (!axisAmbiguous && options.duels) newCount++ else skippedCount++
+                skippedCount++
                 continue
             }
 
@@ -3088,7 +3109,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val now = System.currentTimeMillis()
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다(R-53).
-        val axes = db.duelAxisDao().getAllList()
+        // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
+        // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
+        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
         val axisByCode = axes.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
@@ -3109,12 +3132,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
-            // B-102 ⓑ: 축이 지금 DB에 없어도 같은 파일의 '대결 축' 시트가 먼저 만든다
-            // (가져오기 순서가 축 → 기록 → 상성이다). 동명 모호(2+)는 가져오기도 거부하므로 skipped다.
+            // 위 `analyzeDuelMatches`와 같은 판정이다 — 색인이 *파일이 만들 축*까지 들고 있으므로
+            // 여기서 null인 것은 *파일에도 DB에도 없다*만 뜻한다(가져오기가 영원히 거부한다).
             val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
             if (axis == null) {
-                val axisAmbiguous = (axesByName[r.axisName]?.size ?: 0) > 1
-                if (!axisAmbiguous && options.duels) newCount++ else skippedCount++
+                skippedCount++
                 continue
             }
 
