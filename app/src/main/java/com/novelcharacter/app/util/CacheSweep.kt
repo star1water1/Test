@@ -67,6 +67,19 @@ object CacheSweep {
                     continue
                 }
                 if (child.isDirectory) {
+                    // **뿌리 밖으로 나가지 않는다.** 캐시 안의 심링크가 바깥(예: `filesDir`)을
+                    // 가리키면 재귀가 그 안으로 걸어 들어가 **사용자의 이미지를 지운다** —
+                    // `delete()`는 링크만 지우지만 그 전에 내려간 재귀가 이미 목적지를 비운
+                    // 뒤다. 깊이 상한은 순환만 막지 탈출을 막지 못한다.
+                    //
+                    // 판정은 [ImagePathMatch.isInside]가 든다 — 이 저장소에서 **봉쇄만 실패
+                    // 처분이 반대인**(모르면 막는다) 유일한 함수이고, 정규화를 손으로 다시
+                    // 적으면 실패 처분이 자리마다 갈린다(B-106 ⓐ가 걷어낸 그 복붙이다).
+                    if (!ImagePathMatch.isInside(child.absolutePath, root)) {
+                        kept++
+                        allGone = false
+                        continue
+                    }
                     val emptied = walk(child, depth + 1)
                     if (emptied && !child.delete()) allGone = false
                     if (!emptied) allGone = false

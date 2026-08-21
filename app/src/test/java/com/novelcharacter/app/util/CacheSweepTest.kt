@@ -116,6 +116,26 @@ class CacheSweepTest {
         assertFalse("경계를 안 보면 형제까지 지켜져 회수가 줄어든다", sibling.exists())
     }
 
+    @Test
+    fun `뿌리 밖을 가리키는 심링크로는 걸어 들어가지 않는다`() {
+        val root = tempRoot()
+        val outside = tempRoot()
+        val treasure = write(File(outside, "user-image.png"), 999)
+        val link = File(root, "escape").toPath()
+        try {
+            java.nio.file.Files.createSymbolicLink(link, outside.toPath())
+        } catch (e: Exception) {
+            return // 심링크를 못 만드는 환경이면 이 확인은 건너뛴다
+        }
+        write(File(root, "junk.tmp"), 10)
+
+        val r = CacheSweep.sweep(root, emptySet())
+
+        assertTrue("캐시 비우기가 캐시 밖 사용자 파일을 지웠다", treasure.exists())
+        assertEquals(10L, r.freedBytes)
+        assertEquals(1, r.keptFiles)
+    }
+
     // ── 3. 도는 전송 ──────────────────────────────────────────────────────
 
     @Test
