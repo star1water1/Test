@@ -29,6 +29,16 @@
             android:text="@string/image_tag_edit_title"
             android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
+        <!-- 링크 묶음 범위 고지 — 입력 전에 "몇 장에 붙는가"를 말한다(공유 불변식.
+             배정의 확인 다이얼로그와 같은 정보를 시트 안에서, 편집 시작 전에). -->
+        <TextView
+            android:id="@+id/linkNoticeText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:visibility="gone" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/tagInputLayout"
             android:layout_width="match_parent"

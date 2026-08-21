@@ -9843,6 +9843,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // F1-A: '태그' 열이 없으면 기존 태그 유지. 열이 있고 빈칸이면 비움 의도로 존중.
                 // 바뀌지 않으면 쓰지 않는다 — replaceAllForImage는 전량 삭제+재삽입이다.
                 if (r.hasTagCol && target.tags != current.tags) {
+                    // 링크 확장은 하지 않는다 — 엑셀 왕복 무결성은 파일이 말한 그대로의 행 단위
+                    // 복원이 계약이다(태그 공유 불변식의 유일한 예외 — LinkGroupFold 헤더가 정본).
                     db.imageTagDao().replaceAllForImage(
                         imageId,
                         target.tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }

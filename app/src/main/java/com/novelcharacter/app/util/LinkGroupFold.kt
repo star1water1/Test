@@ -7,8 +7,20 @@ package com.novelcharacter.app.util
  * - [fold] — 목록을 그룹당 **대표 한 항목**으로 접는다(묶어 보기 — 이미지 탭 그리드와
  *   라이브러리 피커가 같은 규칙을 쓴다. 두 화면이 다르게 접으면 같은 묶음이
  *   화면마다 다른 대표로 보인다).
- * - [sampleForAi] — 그룹당 앞 N장만 뽑아 보낼 목록을 만든다(AI 태깅의 묶음 단위 전송).
- * - [expandPicked] — 표본에 붙은 태그를 묶음 전원으로 되편다(적용 시점의 전개).
+ * - [sampleForAi] — 그룹당 앞 N장만 뽑아 **보낼** 목록을 만든다(AI 태깅의 전송 계획).
+ * - [expandPicked] — 경로에 붙은 태그를 묶음 전원으로 되편다(적용 시점의 전개).
+ *
+ * ## 링크 묶음은 태그를 공유하는 단위다 (2026.08.21 사용자 판정)
+ *
+ * 배정이 그룹 단위로 확장되듯([ImageLinkResolver]의 계약) **태그도 어느 경로로 붙든 묶음
+ * 전원에 붙는다** — 수동 편집·일괄 추가/제거·AI 제안·폴더 제안 전부가 같은 불변식을 진다.
+ * 경계가 갈리는 축은 둘뿐이다:
+ * - **전송의 경계는 선택이다** — AI에 보내는 것은 비용이 들고 기기 밖으로 나가므로,
+ *   사용자가 고르지 않은 식구를 대신 보내지 않는다([sampleForAi]는 선택 안에서만 뽑는다).
+ * - **적용의 경계는 적용 시점의 살아 있는 명단이다** — 전개 표를 실행 시점에 떠서 들고
+ *   다니면 검토 중 링크를 바꿨을 때 낡은 명단에 붙는다. 그래서 [expandPicked]에 먹일
+ *   명단은 호출측(ViewModel)이 **적용 직전에** 현재 링크에서 뜬다.
+ * 엑셀 들이기만 예외다 — 왕복 무결성은 파일이 말한 그대로의 복원이 계약이라 행 단위로 쓴다.
  *
  * 대표는 **입력 순서의 첫 항목**이다 — 스키마에 대표 개념이 없으므로(그룹은 토큰 공유로만
  * 존재한다) 화면의 현재 정렬이 곧 대표를 정한다. 호출측이 정렬을 바꾸면 대표도 따라 바뀌는
@@ -51,64 +63,70 @@ object LinkGroupFold {
     }
 
     /**
-     * AI 묶음 단위 전송의 표본 계획.
+     * AI 묶음 단위 전송의 표본 계획 — **보낼 장수만 정한다.** 붙는 범위는 이 계획과 무관하게
+     * 언제나 묶음 전원이다(위 불변식 — 전개는 적용 시점에 [expandPicked]가 한다).
      *
      * @param sendPaths 실제로 보낼 경로(입력 순서 보존) — 그룹은 앞 [perGroup]장, 미링크는 전부.
-     * @param membersBySentPath 보낸 경로 → 태그가 붙을 그룹 전원. **표본이 아닌 경로는 없다** —
-     *   전개는 이 표에 있는 것만 넓히므로, 묶음 단위가 아닌 실행의 태그가 옆 장으로 새지 않는다.
-     * @param sampledGroups 표본으로 줄어든 그룹 수(2장 이상 그룹만 센다).
-     * @param expandedTotal 그 그룹들의 전체 장수 — 고지가 "몇 장에 붙는가"를 말할 재료.
+     * @param sampledGroups 대상에 걸린 링크 묶음 수 — 고지 "묶음 N개"의 재료.
+     * @param expandedTotal 그 묶음들의 **전체 식구 수**(선택 밖 포함) — 고지 "M장에 붙는다"의 재료.
      */
     data class SamplePlan(
         val sendPaths: List<String>,
-        val membersBySentPath: Map<String, List<String>>,
         val sampledGroups: Int,
         val expandedTotal: Int
     )
 
     /**
      * 그룹당 앞 [perGroup]장만 뽑는다. 표본의 자리 역시 입력 순서다(정렬이 대표를 정한다 —
-     * [fold]와 같은 근거).
+     * [fold]와 같은 근거). 전원 전송(표본 없이)은 [perGroup]에 [Int.MAX_VALUE]를 넣으면 된다.
      *
-     * 미링크 경로는 표본 대상이 아니라 그대로 실리고 전개 표에도 오르지 않는다 —
-     * 그 장의 태그는 그 장에만 붙는다(묶음이 아닌 것을 묶음처럼 다루면 오배정이다).
+     * **묶음 판정은 선택이 아니라 라이브러리 전체 식구 수([fullSizeOf])로 한다.** 종전에는
+     * 선택 안에서 명단을 만들어 5장 묶음에서 1장만 고르면 묶음으로 인식조차 안 됐다 —
+     * 그 장의 태그가 식구에게 못 갔다(공유 불변식 위반). 지금은 선택에 1장만 보여도 그 장이
+     * 묶음의 표본이고, 붙는 범위 고지도 전체 식구 수로 센다.
+     *
+     * 미링크 경로는 표본 대상이 아니라 그대로 실린다 — 붙는 범위도 그 한 장이다
+     * (묶음이 아닌 것을 묶음처럼 다루면 오배정이다).
      */
     fun sampleForAi(
         paths: List<String>,
         groupIdOf: (String) -> String?,
-        perGroup: Int
+        perGroup: Int,
+        fullSizeOf: (String) -> Int
     ): SamplePlan {
         val per = perGroup.coerceAtLeast(1)
-        val membersByGroup = LinkedHashMap<String, MutableList<String>>()
+        val selectedByGroup = LinkedHashMap<String, MutableList<String>>()
         for (p in paths) {
             val g = groupIdOf(p) ?: continue
-            membersByGroup.getOrPut(g) { mutableListOf() }.add(p)
+            selectedByGroup.getOrPut(g) { mutableListOf() }.add(p)
         }
         val takenByGroup = HashMap<String, Int>()
         val send = ArrayList<String>(paths.size)
-        val expand = LinkedHashMap<String, List<String>>()
         var sampledGroups = 0
         var expandedTotal = 0
         for (p in paths) {
             val g = groupIdOf(p)
             if (g == null) { send.add(p); continue }
-            val members = membersByGroup.getValue(g)
-            if (members.size < 2) { send.add(p); continue }
+            // 전체 식구 수가 정본이되, 목록이 낡아 선택 수보다 작게 답하면 선택 수로 받친다.
+            val size = maxOf(fullSizeOf(g), selectedByGroup.getValue(g).size)
+            if (size < 2) { send.add(p); continue }
             val taken = takenByGroup.getOrDefault(g, 0)
             if (taken >= per) continue
             takenByGroup[g] = taken + 1
             send.add(p)
-            expand[p] = members
-            if (taken == 0) { sampledGroups++; expandedTotal += members.size }
+            if (taken == 0) { sampledGroups++; expandedTotal += size }
         }
-        return SamplePlan(send, expand, sampledGroups, expandedTotal)
+        return SamplePlan(send, sampledGroups, expandedTotal)
     }
 
     /**
-     * 검토에서 고른 태그를 묶음 전원으로 되편다.
+     * 경로에 붙을 태그를 묶음 전원으로 되편다 — 공유 불변식의 전개 자리.
      *
-     * - 전개 표에 없는 경로(미링크·묶음 단위가 아닌 실행)는 그대로 통과한다.
-     * - 한 그룹에서 표본 여러 장이 각자 태그를 받았으면 **합집합**이 전원에 붙는다
+     * - [membersBySentPath]는 **적용 직전에 살아 있는 링크에서 뜬 명단**이어야 한다
+     *   (경로 → 그 경로가 속한 묶음 전원). 실행 시점 표를 들고 다니면 검토 중 링크를
+     *   바꿨을 때 낡은 명단에 붙는다.
+     * - 표에 없는 경로(미링크)는 그대로 통과한다.
+     * - 한 그룹에서 여러 장이 각자 태그를 받았으면 **합집합**이 전원에 붙는다
      *   (첫 등장 순서 보존) — 표본을 늘린 뜻이 곧 근거를 늘리는 것이라 어느 한 장을
      *   버릴 이유가 없다.
      */

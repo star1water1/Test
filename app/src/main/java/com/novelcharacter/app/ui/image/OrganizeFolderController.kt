@@ -422,6 +422,17 @@ class OrganizeFolderController(
         if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
         if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
         if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
+        // 링크 묶음 전개 고지 — 적용은 살아 있는 명단으로 묶음 전원에 붙으므로(공유 불변식 —
+        // ViewModel.applyTagWork), 폴더 안 경로가 물고 오는 **폴더 밖 식구 수**를 적용 전에
+        // 말한다(변수 제어 — 조용한 확대 금지. 이미지판 검토 시트의 묶음 고지와 같은 자리).
+        // 제안이 있어야만 싣는다 — 이미지판이 같은 조건을 다는 근거(B-144)와 같다.
+        if (outcome.result.suggestions.isNotEmpty()) {
+            val folderPaths = outcome.pathsByFolder.values.flatten()
+            val addedByLink = viewModel.expandWithLinkedGroups(folderPaths).addedByLink.size
+            if (addedByLink > 0) {
+                notices.add(fragment.getString(R.string.image_folder_tag_link_notice, addedByLink))
+            }
+        }
         // 프로바이더 자동 전환 고지 (B-108 확정 ⓑ) — 실패가 아니므로 실패 요약보다 앞에 둔다.
         notices.addAll(outcome.result.notes)
         if (outcome.result.failures.isNotEmpty()) {

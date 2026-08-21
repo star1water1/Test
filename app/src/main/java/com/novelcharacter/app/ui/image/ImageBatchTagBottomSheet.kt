@@ -20,7 +20,9 @@ import kotlinx.coroutines.launch
 class ImageBatchTagBottomSheet : BottomSheetDialogFragment() {
 
     var isRemoveMode: Boolean = false
-    var loadChips: (suspend () -> List<String>)? = null      // 추가: 제안 태그 / 제거: 선택 이미지들의 태그
+    /** 링크 묶음 범위 고지(선택 N + 링크 M = 총 T) — null이면 숨긴다. 입력 전에 보여야 하므로 시트 안이다. */
+    var linkNotice: String? = null
+    var loadChips: (suspend () -> List<String>)? = null      // 추가: 제안 태그 / 제거: 대상(링크 확장 후) 이미지들의 태그
     var onConfirm: ((List<String>) -> Unit)? = null
 
     private var _binding: BottomSheetImageTagEditBinding? = null
@@ -41,6 +43,10 @@ class ImageBatchTagBottomSheet : BottomSheetDialogFragment() {
         binding.titleText.text = getString(
             if (isRemoveMode) R.string.batch_tag_remove_title else R.string.batch_tag_add_title
         )
+        linkNotice?.let {
+            binding.linkNoticeText.text = it
+            binding.linkNoticeText.visibility = View.VISIBLE
+        }
         binding.tagInputLayout.visibility = if (isRemoveMode) View.GONE else View.VISIBLE
 
         viewLifecycleOwner.lifecycleScope.launch {
