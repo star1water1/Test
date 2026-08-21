@@ -102,7 +102,11 @@ class NovelCharacterApp : Application() {
                 .primeQuietly()
         }
         createNotificationChannel()
-        checkBackupKeyAvailability()
+        // **콜드 스타트의 메인 스레드에서 빼낸다.** 하는 일은 `listFiles()`(디스크)와
+        // `BackupEncryptor.isKeyAvailable()`(AndroidKeyStore — 키스토어 데몬과의 바인더 왕복)인데
+        // **산출은 `Log.w` 한 줄뿐**이라, 그 대가를 첫 프레임 앞에 둘 이유가 없다.
+        // 바로 위 `TrashSettingsStore.primeQuietly()`가 이미 같은 판단으로 이 스코프에 있다.
+        appScope.launch(Dispatchers.IO) { checkBackupKeyAvailability() }
         try {
             scheduleBirthdayCheck()
             scheduleAutoBackup()

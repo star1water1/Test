@@ -12,6 +12,7 @@ import com.novelcharacter.app.util.notifyError
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.notifySuccess
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 정리 폴더 왕복(받아오기·정리용 내보내기·폴더 설정)의 **화면 흐름 단일 소스**.
@@ -358,18 +359,18 @@ class OrganizeFolderController(
         aiTagFolders: List<String>
     ) {
         val total = bundle.plan.actionCount
-        var cancelled = false
+        val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
         val progress = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
             fragment.requireContext(),
             titleRes = R.string.organize_folder_import,
             total = total,
             stageRes = R.string.organize_folder_stage_apply,
-            onCancel = { cancelled = true }
+            onCancel = { cancelled.set(true) }
         )
         viewModel.applyOrganizePlan(
             bundle,
             onProgress = { done, t -> progress.update(done, t) },
-            isCancelled = { cancelled }
+            isCancelled = { cancelled.get() }
         ) { result ->
             progress.dismiss()
             if (!fragment.isAdded || fragment.view == null) return@applyOrganizePlan
@@ -644,18 +645,18 @@ class OrganizeFolderController(
     private fun runOrganizeExport(
         bundle: com.novelcharacter.app.util.OrganizeFolderService.ExportBundle
     ) {
-        var cancelled = false
+        val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
         val progress = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
             fragment.requireContext(),
             titleRes = R.string.organize_folder_export,
             total = bundle.workCount,
             stageRes = R.string.organize_folder_export_stage,
-            onCancel = { cancelled = true }
+            onCancel = { cancelled.set(true) }
         )
         viewModel.runOrganizeExport(
             bundle,
             onProgress = { done, t -> progress.update(done, t) },
-            isCancelled = { cancelled }
+            isCancelled = { cancelled.get() }
         ) { result ->
             progress.dismiss()
             if (!fragment.isAdded || fragment.view == null) return@runOrganizeExport

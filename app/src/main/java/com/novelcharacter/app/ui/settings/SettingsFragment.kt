@@ -39,6 +39,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class SettingsFragment : Fragment() {
 
@@ -551,12 +552,12 @@ class SettingsFragment : Fragment() {
         // 작업형 진행도(R-26 · B-51) — 종전에는 불확정 스피너라 대형 세계관에서 진행 중인지
         // 멈춘 것인지 알 수 없었다. 자료(절)와 이미지(장)는 단위가 달라 구간을 나눠 보고한다.
         // 취소는 산출물을 만들지 않고 멈추는 것이다(D5가 엑셀 내보내기에서 정한 것과 같다).
-        var cancelled = false
+        val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
         val progress = showTaskProgress(
             R.string.world_package_progress_title,
             total = 0,
             stageRes = R.string.world_package_stage_sections
-        ) { cancelled = true }
+        ) { cancelled.set(true) }
         val sectionsStage = getString(R.string.world_package_stage_sections)
         val imagesStage = getString(R.string.export_progress_stage_images)
         viewLifecycleOwner.lifecycleScope.launch {
@@ -569,7 +570,7 @@ class SettingsFragment : Fragment() {
                 val sink = WorldPackageExporter.ProgressSink(
                     onSections = { done, total -> postProgress(progress, done, total, sectionsStage) },
                     onImages = { done, total -> postProgress(progress, done, total, imagesStage) },
-                    isCancelled = { cancelled }
+                    isCancelled = { cancelled.get() }
                 )
                 val result = withContext(Dispatchers.IO) { exporter.export(config, sink) }
 

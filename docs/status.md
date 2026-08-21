@@ -85,6 +85,22 @@
 
 **확인:** 순수 JVM 시험 **3,595건 통과** · 검사 **53종 전부 통과** · 프로브 기준선 **동일**(538).
 
+**이어서 닫은 것 — 기기 런타임 규칙과 거짓 서술:**
+· **거짓 서술 정정** — 로드맵 S7이 *"스트리밍이 두 경로의 기본이다"*라고 적어 왔는데, 기기에는 `java.awt`가 없어 **언제나 DOM으로 돈다.** S7이 없앴다고 적힌 *파일 크기 비례 메모리*는 **기기에서 아직 서 있다.** 문서와 코드 주석을 실측에 맞췄다(폴백 자체는 건전하다 — 남은 것은 그 대가이고 실기기 몫이다).
+· **취소가 안 보이던 자리 다섯** — 진행도 다이얼로그의 취소를 **메인이 쓰고 IO가 읽는데 평범한 `var`**였다(happens-before 없음). 같은 저장소의 `TaskProgressDialog.Handle.isCancelled`는 이미 `@Volatile`인데 이 다섯이 그것을 비휘발성 지역변수로 복제했다. `AtomicBoolean`으로. **같은 꼴 셋은 같은 코루틴 안 지역 누적이라 결함이 아니어서 안 건드렸다.**
+· **AI 관문이 디스패처를 안 지키던 자리** — `AiService.complete`의 앞머리(SharedPreferences 해독 + AndroidKeyStore **바인더 왕복**)가 `withContext` 밖이라 호출자의 디스패처에서 돌았고, AI 진입점 다수가 그것을 `Dispatchers.Main.immediate`에서 부른다. KDoc의 *"어디서든 부르면 된다"*가 **네트워크에만** 참이었다.
+· **썸네일 디코드가 바인딩에서 돌던 자리** — `decodeThumbnail`은 KDoc이 *"IO에서 호출할 것"*을 계약으로 적어 뒀는데, 그것을 쓰는 파일 스물하나 중 **`DuplicateCharacterDialog` 하나만** 어겼다(코루틴 임포트조차 없었다). 형제 여섯의 패턴을 그대로 옮겼다(재활용 시 취소 포함).
+· **위젯 셋의 이름이 API 26~30에서 안 보이던 것** — 이름을 API 31 전용 `android:description`에만 싣고 `<receiver>`의 `android:label`이 없어 셋 다 앱 이름으로 보였다.
+· **위젯 갱신에 시간 상한이 없던 것** — `goAsync()` 안에서 캐릭터 표 전량을 올리는데 형제 위젯만 `withTimeoutOrNull`이 있었다.
+· **콜드 스타트가 메인에서 하던 디스크+키스토어** — 산출은 `Log.w` 한 줄뿐이라 바로 위 `appScope.launch(Dispatchers.IO)`로 옮겼다.
+
+**안 건드린 것 하나 — `AiSettingsFragment`의 저장 핸들러(cosmetic).** `setValidatedPositiveButton`이
+다이얼로그를 닫을지 **동기로 반환**해야 해서, 비동기로 바꾸려면 저장 플로우 자체를 재설계해야 한다.
+심각도에 비해 위험이 크고 **로컬 컴파일 검증이 안 되는 계층**이라 남긴다.
+
+⚠️ **이 마지막 묶음은 전부 `ui/`·`widget/`·최상위·`backup/`이라 로컬 프로브 범위 밖이다 —
+컴파일 증명은 CI(master 대상 PR)뿐이다.**
+
 **남은 증명:** `ui/assistant/AssistantProviders.kt`·`ui/field/FieldViewModel.kt` 둘은
 `ui/**`라 프로브 범위 밖이다(import 한 줄 + 토큰 하나 치환) — **그 둘의 컴파일 증명은 CI뿐이다.**
 

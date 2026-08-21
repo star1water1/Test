@@ -12,12 +12,18 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DuplicateCandidate(
     val character: Character,
@@ -94,7 +100,7 @@ class DuplicateCharacterDialog : DialogFragment() {
         val name = candidates.firstOrNull()?.character?.name ?: ""
         tvMessage.text = getString(R.string.duplicate_character_message, name, candidates.size)
 
-        val adapter = CandidateAdapter(candidates) { position ->
+        val adapter = CandidateAdapter(candidates, lifecycleScope) { position ->
             selectedPosition = position
             updateButtonState()
         }
@@ -156,6 +162,7 @@ class DuplicateCharacterDialog : DialogFragment() {
 
     private class CandidateAdapter(
         private val candidates: List<DuplicateCandidate>,
+        private val coroutineScope: CoroutineScope,
         private val onSelected: (Int) -> Unit
     ) : RecyclerView.Adapter<CandidateAdapter.VH>() {
 
@@ -200,17 +207,27 @@ class DuplicateCharacterDialog : DialogFragment() {
 
             // 공용 유틸: 바운즈 없는 고정 샘플(=4) 대신 요청 크기 다운샘플 + filesDir 경로가드.
             // 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D2·D4).
+            // **디코드는 IO에서 한다** — `decodeThumbnail`의 KDoc이 *"IO 디스패처에서 호출할 것
+            // (디스크·디코드)"*을 계약으로 적어 두었는데, `decodeThumbnail`을 쓰는 파일 스물 하나
+            // 중 **이 어댑터만** 그것을 바인딩(메인 스레드)에서 어기고 있었다. 형제 여섯
+            // (`RecommendedImageAdapter`·`CharacterAdapter`·`NovelAdapter` …)이 이미 아래 모양이다.
+            holder.cancelLoad()
+            holder.ivThumbnail.visibility = View.GONE
             val firstPath = com.novelcharacter.app.util.CharacterRepresentativeImage.path(
                 character.imagePaths, character.representativeImagePath, imageSeed, character.id
             )
-            val bitmap = firstPath?.let {
-                com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, holder.itemView.context.filesDir, 128)
-            }
-            if (bitmap != null) {
-                holder.ivThumbnail.setImageBitmap(bitmap)
-                holder.ivThumbnail.visibility = View.VISIBLE
-            } else {
-                holder.ivThumbnail.visibility = View.GONE
+            val appDir = holder.itemView.context.filesDir
+            if (firstPath != null) {
+                holder.loadJob = coroutineScope.launch {
+                    val bitmap = withContext(Dispatchers.IO) {
+                        com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(firstPath, appDir, 128)
+                    }
+                    // 재활용된 자리에 남의 그림을 넣지 않는다.
+                    if (bitmap != null && holder.bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                        holder.ivThumbnail.setImageBitmap(bitmap)
+                        holder.ivThumbnail.visibility = View.VISIBLE
+                    }
+                }
             }
 
             holder.radioSelect.isChecked = position == selectedPos
@@ -229,12 +246,27 @@ class DuplicateCharacterDialog : DialogFragment() {
 
         override fun getItemCount() = candidates.size
 
+        override fun onViewRecycled(holder: VH) {
+            super.onViewRecycled(holder)
+            holder.cancelLoad()
+            holder.ivThumbnail.setImageDrawable(null)
+            holder.ivThumbnail.visibility = View.GONE
+        }
+
         class VH(view: View) : RecyclerView.ViewHolder(view) {
             val radioSelect: RadioButton = view.findViewById(R.id.radioSelect)
             val ivThumbnail: ImageView = view.findViewById(R.id.ivThumbnail)
             val tvName: TextView = view.findViewById(R.id.tvName)
             val tvNovel: TextView = view.findViewById(R.id.tvNovel)
             val tvMemo: TextView = view.findViewById(R.id.tvMemo)
+
+            /** 재활용될 때 끊는다 — 안 끊으면 스크롤 중 남의 그림이 늦게 도착해 덮는다. */
+            var loadJob: Job? = null
+
+            fun cancelLoad() {
+                loadJob?.cancel()
+                loadJob = null
+            }
         }
     }
 }

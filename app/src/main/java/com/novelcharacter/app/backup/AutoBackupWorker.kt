@@ -81,9 +81,17 @@ class AutoBackupWorker(
         com.novelcharacter.app.excel.ActiveTransfers.enter(this)
         return try {
             Log.i(TAG, "Starting auto backup...")
-            // 스트리밍 워크북 — 이 경로가 B-72가 말한 **마지막 방어선**이다: 배경에서 도는
-            // 백업이 워크북 전량을 메모리에 세우면 저사양 기기에서 죽고, 그 실패는 사용자가
-            // 보지 못한 자리에서 일어난다. 임시 파일 자리를 먼저 못박는다.
+            // 워크북 구현은 **프로브가 정한다**(B-250) — 손으로 적지 않는다.
+            //
+            // ⚠️ **기기에서는 이 답이 언제나 DOM이다.** 안드로이드에 `java.awt`가 없어
+            // `SXSSFSheet` 생성이 `LinkageError`로 죽고, `isStreamingSupported()`가 그것을
+            // 재서 false를 답하기 때문이다. 즉 B-72가 말한 *"마지막 방어선"*은
+            // **데스크톱에서만 서 있다** — 배경 백업이 워크북 전량을 메모리에 세우는 것은
+            // 기기에서 아직 그대로다(로드맵 S7 행의 2026.08.21 정정).
+            // 폴백 자체는 건전하다: 두 구현이 같은 파일을 낸다는 것을 시험이 잠근다.
+            // **여기서 죽으면 아래 `catch (e: Throwable)`이 받는다** — Error도 실패로 기록한다.
+            //
+            // 임시 파일 자리를 먼저 못박는다(스트리밍이 실제로 도는 데스크톱·시험 경로용).
             ExportWorkbooks.useTempDirectory(appContext.cacheDir)
             val workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
