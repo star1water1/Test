@@ -52,8 +52,16 @@ class BodyEditorStateTest {
         noWritableSlot = false,
         current = measures(),
         weightKg = 52.5,
-        previous = measures(bust = 80.0) to 48.0,
+        previous = RollSnapshot(
+            measures = measures(bust = 80.0),
+            weightKg = 48.0,
+            touched = setOf(BodySlot.BUST),
+            touchedHeight = true,
+            touchedWeight = false
+        ),
         touched = setOf(BodySlot.BUST, BodySlot.HIP),
+        touchedHeight = true,
+        touchedWeight = true,
         cupMode = true,
         overlayOn = true,
         generatorOpen = true,
@@ -101,11 +109,66 @@ class BodyEditorStateTest {
     /** 굴린 뒤 되돌릴 자리는 있는데 체중만 없는 갈래(키·체중 필드가 없는 폼). */
     @Test
     fun `직전으로 한 단계는 체중이 비어도 살아남는다`() {
-        val state = full().copy(previous = measures(hip = 95.0) to null)
+        val state = full().copy(
+            previous = RollSnapshot(
+                measures = measures(hip = 95.0),
+                weightKg = null,
+                touched = emptySet(),
+                touchedHeight = false,
+                touchedWeight = false
+            )
+        )
         val back = BodyEditorState.decode(state.encode())
         assertNotNull(back!!.previous)
-        assertEquals(95.0, back.previous!!.first.hip, 1e-9)
-        assertNull(back.previous!!.second)
+        assertEquals(95.0, back.previous!!.measures.hip, 1e-9)
+        assertNull(back.previous!!.weightKg)
+    }
+
+    /**
+     * 🎲 [직전으로]가 되돌릴 것은 수치만이 아니다 — **되쓰기 범위도 그 벌에 든다.**
+     *
+     * 종전에는 `Pair<Measures, Double?>`라 담을 자리가 없었고, 되돌린 뒤에도 굴리기가 넓힌
+     * `touched`가 남아 **빈 부위 칸이 굴리기의 값으로 채워졌다**(화면은 되돌아간 것처럼 보인다).
+     */
+    @Test
+    fun `직전으로 한 단계가 되쓰기 범위까지 담아 왕복한다`() {
+        val state = full().copy(
+            previous = RollSnapshot(
+                measures = measures(bust = 77.0),
+                weightKg = 44.0,
+                touched = setOf(BodySlot.WAIST),
+                touchedHeight = false,
+                touchedWeight = true
+            )
+        )
+        val back = BodyEditorState.decode(state.encode())!!
+        assertEquals(setOf(BodySlot.WAIST), back.previous!!.touched)
+        assertEquals(false, back.previous!!.touchedHeight)
+        assertEquals(true, back.previous!!.touchedWeight)
+    }
+
+    /** 키·체중의 '이 자리에서 만들었다'도 회전을 넘는다 — 넘지 못하면 되쓰기 범위가 갈린다. */
+    @Test
+    fun `키와 체중의 만든 표식이 왕복을 넘는다`() {
+        val back = BodyEditorState.decode(full().copy(touchedHeight = true, touchedWeight = false).encode())!!
+        assertEquals(true, back.touchedHeight)
+        assertEquals(false, back.touchedWeight)
+    }
+
+    /**
+     * 옛 판이 담은 JSON(표식 셋이 없는 것)도 예외 없이 읽힌다 — 없는 사실을 지어내지 않고
+     * 빈 집합·false로 읽는다(종전 동작 그대로).
+     */
+    @Test
+    fun `옛 판의 담긴 것에는 만든 표식이 없고 그것이 거짓으로 읽힌다`() {
+        val legacy = org.json.JSONObject(full().encode()).apply {
+            remove("touchedH"); remove("touchedW")
+            remove("prevTouched"); remove("prevTH"); remove("prevTW")
+        }.toString()
+        val back = BodyEditorState.decode(legacy)!!
+        assertEquals(false, back.touchedHeight)
+        assertEquals(false, back.touchedWeight)
+        assertEquals(emptySet<BodySlot>(), back.previous!!.touched)
     }
 
     // ── 이 판이 존재하는 이유: 만든 값의 집합 ───────────────────────────────
