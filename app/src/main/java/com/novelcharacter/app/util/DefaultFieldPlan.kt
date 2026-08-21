@@ -226,7 +226,21 @@ object DefaultFieldPlan {
          * 템플릿과도 직전 템플릿과도 다르다 — **그 세계관에서 사용자가 고쳤다.**
          * 기본으로 끈다(설계 1-3). 값 유실이 0인 쪽이 기본이어야 한다.
          */
-        DIVERGED
+        DIVERGED,
+
+        /**
+         * 템플릿과 다르지만 **누가 벌렸는지 알 수 없다.**
+         *
+         * 관리 화면의 '전파' 단추는 직전 템플릿을 모르는 자리다(`previous == null`).
+         * 그때 [OUTDATED]는 원리적으로 나올 수 없고, 종전에는 나머지가 전부 [DIVERGED]로
+         * 떨어져 **손댄 적 없는 세계관까지 "이 세계관에서 고침"이라 단정**했다. 게다가 그 줄은
+         * 기본으로 꺼져 있어, 사용자는 자기가 고친 적 없는 세계관을 '고쳤다'고 믿고 밀지 않은
+         * 채 넘어간다 — 모르는 것을 안다고 말하는 자리라 사실이 아닌 근거로 판단하게 된다.
+         *
+         * **밀 수는 있고(선택지에 남는다) 기본으로 켜지지는 않는다** — 모르는 것을 기본으로
+         * 켜는 것도 같은 종류의 단정이다.
+         */
+        UNKNOWN
     }
 
     /**
@@ -266,6 +280,7 @@ object DefaultFieldPlan {
         val same: List<PropagateItem> get() = items.filter { it.divergence == Divergence.SAME }
         val outdated: List<PropagateItem> get() = items.filter { it.divergence == Divergence.OUTDATED }
         val diverged: List<PropagateItem> get() = items.filter { it.divergence == Divergence.DIVERGED }
+        val unknown: List<PropagateItem> get() = items.filter { it.divergence == Divergence.UNKNOWN }
 
         /** 밀 수 있는 것 — 같은 것은 밀어도 달라질 게 없어 선택지로 주지 않는다. */
         val actionable: List<PropagateItem> get() = items.filter { it.divergence != Divergence.SAME }
@@ -316,7 +331,10 @@ object DefaultFieldPlan {
             val changes = diff(row.field, template)
             val divergence = when {
                 changes.isEmpty() -> Divergence.SAME
-                previous != null && diff(row.field, previous).isEmpty() -> Divergence.OUTDATED
+                // 직전 템플릿을 모르면 **모른다고 말한다** — 나머지를 전부 '고쳤다'로 떨어뜨리면
+                // 손댄 적 없는 세계관까지 단정하게 된다.
+                previous == null -> Divergence.UNKNOWN
+                diff(row.field, previous).isEmpty() -> Divergence.OUTDATED
                 else -> Divergence.DIVERGED
             }
             PropagateItem(

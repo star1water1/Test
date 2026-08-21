@@ -260,10 +260,17 @@ class DefaultFieldManageFragment : Fragment() {
                     text = buildString {
                         append(item.universeName)
                         append("  ")
+                        // **모르는 것은 모른다고 말한다** — 관리 화면의 '전파'는 직전
+                        // 템플릿을 모르는 자리라, 종전에는 손댄 적 없는 세계관까지
+                        // "이 세계관에서 고침"으로 단정했다.
                         append(
-                            if (item.divergence == DefaultFieldPlan.Divergence.OUTDATED)
-                                getString(R.string.default_field_propagate_outdated)
-                            else getString(R.string.default_field_propagate_diverged)
+                            when (item.divergence) {
+                                DefaultFieldPlan.Divergence.OUTDATED ->
+                                    getString(R.string.default_field_propagate_outdated)
+                                DefaultFieldPlan.Divergence.UNKNOWN ->
+                                    getString(R.string.default_field_propagate_unknown)
+                                else -> getString(R.string.default_field_propagate_diverged)
+                            }
                         )
                     }
                     isChecked = item.universeId in selected

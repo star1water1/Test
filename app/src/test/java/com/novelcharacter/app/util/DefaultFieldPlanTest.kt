@@ -237,15 +237,22 @@ class DefaultFieldPlanTest {
     /**
      * 직전 템플릿을 알 수 없는 자리(관리 화면의 '전파' 단추)에서는 **아무것도 켜지 않는다** —
      * 모르는 것을 안다고 하지 않는 쪽이 안전한 기본이다.
+     *
+     * **그리고 그 줄은 '고침'이 아니라 '모름'이다.** 종전에는 나머지가 전부 `DIVERGED`로
+     * 떨어져 손댄 적 없는 세계관까지 "이 세계관에서 고침"이라 단정했고, 그 줄이 기본으로
+     * 꺼져 있어 사용자가 사실이 아닌 근거로 밀지 않은 채 넘어갔다.
      */
-    @Test fun 직전_템플릿을_모르면_기본_선택이_비어_있다() {
+    @Test fun 직전_템플릿을_모르면_모른다고_말하고_기본_선택이_비어_있다() {
         val old = template(name = "성별")
         val new = template(name = "성별/젠더")
         val plan = DefaultFieldPlan.planPropagate(
             new, previous = null,
             linked = listOf(DefaultFieldPlan.LinkedField(1, "아르카나", linkedField(1, old)))
         )
-        assertEquals(listOf(1L), plan.diverged.map { it.universeId })
+        assertEquals(listOf(1L), plan.unknown.map { it.universeId })
+        assertTrue(plan.diverged.isEmpty())
+        // 밀 수는 있다 — 선택지에서 빼면 그 세계관을 영영 못 민다
+        assertEquals(listOf(1L), plan.actionable.map { it.universeId })
         assertTrue(plan.defaultSelection().isEmpty())
     }
 
