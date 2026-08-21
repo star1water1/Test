@@ -40,6 +40,15 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var itemTouchHelper: ItemTouchHelper? = null
     private var isReorderMode = false
+
+    private companion object {
+        /**
+         * 사건을 **하나씩** 그리기 시작하는 줌 — 이보다 낮으면 연대 묶음이라 끌 대상이 없다
+         * ([TimelineAdapter.reprocessEvents]의 갈림과 같은 수다).
+         */
+        const val ZOOM_INDIVIDUAL_EVENTS = 4
+        const val DEFAULT_ZOOM = 4
+    }
     private var pendingScrollToYear = false
 
     /**
@@ -406,6 +415,14 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     private fun toggleReorderMode() {
+        // **묶음 보기에서는 끌 것이 없다**(콜드 검토 2026.08.21). 줌 1~3은 사건을 연대
+        // 묶음으로 접어 그리므로 드래그 핸들이 하나도 서지 않는다 — 종전에는 모드가 켜지고
+        // *"같은 날짜 안에서만 옮깁니다"*라는 안내까지 뜬 뒤 아무것도 할 수 없었다.
+        // 고를 수 있는데 아무 일도 일어나지 않는 자리다(R-24). 사유와 함께 막는다.
+        if (!isReorderMode && (viewModel.zoomLevel.value ?: DEFAULT_ZOOM) < ZOOM_INDIVIDUAL_EVENTS) {
+            Toast.makeText(requireContext(), R.string.reorder_needs_event_zoom, Toast.LENGTH_LONG).show()
+            return
+        }
         isReorderMode = !isReorderMode
         adapter.isReorderMode = isReorderMode
         // 순서 편집 중에는 표시 순서를 못 바꾸게 한다 (B-47) — 뒤집으면 목록이 통째로 다시
