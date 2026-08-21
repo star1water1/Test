@@ -3015,7 +3015,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
         val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
-        val axisByCode = axes.associateBy { it.code }
+        // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
+        // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
+        // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
+        // 전부 그 엉뚱한 축에 붙었다(이름은 보지도 않는다). 형제 색인이 이미 쓰는 규약이다
+        // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
+        val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
@@ -3038,7 +3043,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 낙관 가지가 **둘을 함께 '신규'로** 셌다 — 없는 축을 가리킨 행이 '신규'로 예고된 뒤
             // 실행에서 조용히 빠졌다. `options.duels` 조건도 죽어 있었다(세 분석이 전부
             // `if (options.duels)` 안에서만 불리므로 언제나 참이다).
-            val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
+            val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
+                ?: axesByName[r.axisName]?.singleOrNull()
             if (axis == null) {
                 skippedCount++
                 continue
@@ -3113,7 +3119,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
         val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
-        val axisByCode = axes.associateBy { it.code }
+        // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
+        // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
+        // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
+        // 전부 그 엉뚱한 축에 붙었다(이름은 보지도 않는다). 형제 색인이 이미 쓰는 규약이다
+        // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
+        val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
@@ -3135,7 +3146,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 위 `analyzeDuelMatches`와 같은 판정이다 — 색인이 *파일이 만들 축*까지 들고 있으므로
             // 여기서 null인 것은 *파일에도 DB에도 없다*만 뜻한다(가져오기가 영원히 거부한다).
-            val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
+            val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
+                ?: axesByName[r.axisName]?.singleOrNull()
             if (axis == null) {
                 skippedCount++
                 continue
@@ -10357,7 +10369,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 축과 캐릭터 이름은 **루프 밖에서 한 번** 색인한다 — 이 시트는 수만 행이 될 수 있어
         // 행마다 조회하면 그 비용이 행 수만큼 곱해진다.
         val axes = db.duelAxisDao().getAllList()
-        val axisByCode = axes.associateBy { it.code }
+        // 빈 코드는 키가 아니다 — 미리보기 색인과 같은 규약이라야 예고와 실행이 갈리지 않는다(R-33).
+        val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
@@ -10374,9 +10387,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val r = readDuelMatchRow(row, cols, now)
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
 
-                val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.let { candidates ->
-                    if (candidates.size == 1) candidates.first() else null
-                }
+                val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
+                    ?: axesByName[r.axisName]?.let { candidates ->
+                        if (candidates.size == 1) candidates.first() else null
+                    }
                 if (axis == null) {
                     result.skippedRows++
                     result.errors.add(
@@ -10535,7 +10549,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         val axes = db.duelAxisDao().getAllList()
-        val axisByCode = axes.associateBy { it.code }
+        // 빈 코드는 키가 아니다 — 미리보기 색인과 같은 규약이라야 예고와 실행이 갈리지 않는다(R-33).
+        val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
         val codeByName = db.characterDao().getAllCharactersList()
             .groupBy({ it.displayName }, { it.code })
@@ -10559,7 +10574,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val r = readDuelVerdictRow(row, cols, now)
 
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
-                val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
+                val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
+                ?: axesByName[r.axisName]?.singleOrNull()
                 if (axis == null) {
                     result.skippedRows++
                     // 모호를 '찾을 수 없음'으로 보고하지 않는다(4-3 규약) — 축은 실재하는데
