@@ -135,4 +135,63 @@ class PromptTokensTest {
         val body = """{"suggestions":[{"key":"필드키"}]}"""
         assertEquals(body, PromptTokens.expand(body, emptyMap()))
     }
+
+    /**
+     * **이 시험만 정규식을 *실행*하지 않고 *글자*를 본다** — 그럴 수밖에 없다.
+     *
+     * 데스크톱 JVM의 `java.util.regex`는 홀로 선 `}`를 글자로 읽어 주고, 안드로이드의 ICU
+     * 엔진은 **문법 오류로 거절한다**(`U_REGEX_RULE_SYNTAX`). 즉 **여기서 컴파일된다는 사실이
+     * 기기에서 컴파일된다는 뜻이 아니다** — 이 하네스도 CI도 전부 JVM 엔진이라 실행으로는
+     * 원리적으로 못 본다. 2026.08.21에 `\{\{([가-힣A-Za-z0-9]+)}}`가 **JVM 시험 전부를 초록으로
+     * 통과한 채** 이미지탭의 AI 태그 제안에서 앱을 튕겼다.
+     *
+     * 정규식을 **리플렉션으로 훑는다** — 손으로 적은 목록을 두면 새 정규식이 늘 때 그 목록이
+     * 낡고, 낡은 목록은 *덮고 있다*고 착각하게 만든다(같은 사실이 두 자리에 살지 않게 한다).
+     */
+    @Test fun everyPatternCompilesOnTheDeviceIcuEngineToo() {
+        val patterns = PromptTokens::class.java.declaredFields
+            .filter { Regex::class.java.isAssignableFrom(it.type) }
+            .onEach { it.isAccessible = true }
+            .map { it.name to (it.get(PromptTokens) as Regex).pattern }
+
+        // 리플렉션이 빈손으로 돌아오면 시험은 **조용히 초록**이 된다 — 방어선이 없는데 있다고
+        // 읽히는 부류라 개수부터 못박는다.
+        assertTrue("정규식을 하나도 못 읽었다 — 시험이 헛돌고 있다", patterns.size >= 4)
+
+        for ((name, pattern) in patterns) {
+            val bare = bareBraceIndexes(pattern)
+            assertTrue(
+                "$name: 이스케이프 안 된 중괄호가 ${bare}번째에 있다 — 기기에서 거절된다\n  $pattern",
+                bare.isEmpty()
+            )
+        }
+    }
+
+    /**
+     * 이스케이프도 수량자도 아닌 **날 중괄호**의 자리.
+     *
+     * 수량자(`{2,}` · `{1,3}`)는 ICU도 받으므로 걸러 내지 않는다. 잡을 것은 **글자로 쓰려던
+     * 중괄호**뿐이다. 여기서 정규식을 쓰지 않는 것은 일부러다 — 판정하는 도구가 판정 대상과
+     * 같은 함정을 밟으면 시험이 자기를 못 본다.
+     */
+    private fun bareBraceIndexes(pattern: String): List<Int> {
+        val bad = mutableListOf<Int>()
+        var i = 0
+        while (i < pattern.length) {
+            val c = pattern[i]
+            if (c == '\\') { i += 2; continue }
+            if (c == '{') {
+                val close = pattern.indexOf('}', i + 1)
+                val body = if (close > i) pattern.substring(i + 1, close) else ""
+                val isQuantifier = body.isNotEmpty() && body.first().isDigit() &&
+                    body.all { it.isDigit() || it == ',' }
+                if (isQuantifier) { i = close + 1; continue }
+                bad.add(i)
+            } else if (c == '}') {
+                bad.add(i)
+            }
+            i++
+        }
+        return bad
+    }
 }
