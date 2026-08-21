@@ -3687,6 +3687,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             hasUniverse = universeId != null,
             multiSuffix = EntityFieldHeaders.MULTI_SUFFIX
         )
+        // 계산 열이 이 계획에 하나라도 있는가 — **행 밖에서 한 번** 잰다(가져오기 쪽과 같은 결).
+        val planHasCalculatedColumn = columnPlan.values.any {
+            it is ColumnFieldOutcome.Matched && it.field.fieldType == FieldType.CALCULATED
+        }
         // 자동 생성될 필드의 자리 — **열마다 하나**이고 그 열의 모든 행이 같은 필드를 가리킨다.
         // 아직 없는 필드라 실존 id가 없고, 미리보기 id 공간에서 하나씩 꺼내 쓴다(음수라 기존
         // 값과 짝지어질 수 없다 = 이 열의 값은 전부 신규다. `util/PreviewCreations.kt`).
@@ -3706,13 +3710,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 칸 단위 처분이 그대로 서지 못한다. 확정되지 않은 행과 **같은 처리**로 모은다.
             val decided: Long? =
                 if (charId != null && charId !in analysisUniverseMovedCharacterIds) charId else null
-            // 계산 열 판정의 재료 — **이 행에 계산 열이 있을 때만** 만든다(행마다 짓지 않는다).
-            val storedByKey: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
-                val owner = decided ?: return@lazy emptyMap()
-                planFields.asSequence()
-                    .mapNotNull { f -> scan.stored(owner, f.id)?.let { f.key to it } }
+            // 계산 열 판정의 재료 — **열 루프에 들어가기 전에 굳힌다**(가져오기 쪽과 같은
+            // 이유·같은 순서. 종전 `by lazy`는 같은 루프의 `scan.count`가 이미 갱신한 겹을
+            // 읽어, 미리보기와 가져오기가 서로 다른 재료를 볼 수도 있었다 — R-33의 결).
+            val storedByKey: Map<String, String> =
+                if (!planHasCalculatedColumn || decided == null) emptyMap()
+                else planFields.asSequence()
+                    .mapNotNull { f -> scan.stored(decided, f.id)?.let { f.key to it } }
                     .toMap()
-            }
             for ((col, outcome) in columnPlan) {
                 val cellValue = getCellString(row, col)
                 when (outcome) {
@@ -7363,6 +7368,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 여기서 파생하면 세 자리(스펙·헤더 집합·이 인덱스)가 한 소스로 움직인다.
         val fixedColIndices = (CHARACTER_FIXED_HEADERS.mapNotNull { cols[it] } + cc.name).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices, universe, result, sheetLabel)
+        // 계산 열이 이 시트에 하나라도 있는가 — **행 밖에서 한 번** 잰다. 이 술어가 참일 때만
+        // 행마다 재료 스냅샷을 뜬다(종전의 `by lazy`가 노리던 절약을 루프 밖에서 그대로 얻는다).
+        val sheetHasCalculatedColumn = columnFieldMap.values.any { it.fieldType == FieldType.CALCULATED }
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
@@ -7592,13 +7600,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         if (existingChar == null) emptyList()
                         else db.characterFieldValueDao().getValuesByCharacterList(charId))
                 }
-                // 계산 열 판정의 재료 — **계산 열이 실제로 있을 때만** 만든다.
-                // 내보내기가 그 셀에 쓴 값은 *저장된 값*으로 계산한 것이므로 재료도 그것이다.
-                val storedByKey: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
-                    fields.asSequence()
+                // 계산 열 판정의 재료 — **열 루프에 들어가기 전에 굳힌다.**
+                //
+                // 내보내기가 그 셀에 쓴 값은 *저장된 값*으로 계산한 것이므로 재료도 그것이어야
+                // 한다([CalculatedCellEcho]의 계약). 종전에는 `by lazy`라 **그 행의 첫 계산
+                // 열에서야** 만들어졌는데, 열 순서는 열 번호 오름차순이고 계산 필드는 보통
+                // 참조 필드 오른쪽에 온다 — 그래서 앞 열의 `valueLedger.put(...)`이 **이미
+                // 파일 값으로 갈아엎은 장부**를 읽었다(콜드 검토 2026.08.21).
+                //
+                // 결과: 엑셀에서 **입력 열만 고친** 정상 왕복이 계산 열마다 거짓 경고와
+                // '건너뜀'을 냈다 — 이 판정이 없애려던 잡음을 자기가 만들었고, 하필
+                // *"내보내기 → 엑셀에서 수치 편집 → 들이기"*라는 가장 흔한 경로다.
+                val storedByKey: Map<String, String> =
+                    if (!sheetHasCalculatedColumn) emptyMap()
+                    else fields.asSequence()
                         .mapNotNull { f -> valueLedger.get(charId, f.id)?.value?.let { f.key to it } }
                         .toMap()
-                }
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
