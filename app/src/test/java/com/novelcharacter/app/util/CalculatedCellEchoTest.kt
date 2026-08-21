@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,17 +22,45 @@ class CalculatedCellEchoTest {
 
     private val power = field("power", FieldType.NUMBER)
     private val agility = field("agility", FieldType.NUMBER)
-    private val total = field("total", FieldType.CALCULATED, """{"formula":"power + agility"}""")
+    private val total = field("total", FieldType.CALCULATED, """{"formula":"field(power) + field(agility)"}""")
     private val scope = listOf(power, agility, total)
 
     @Test
     fun `내보내기가 쓴 값 그대로면 앱의 출력이다`() {
         val stored = mapOf("power" to "10", "agility" to "5")
         // 내보내기는 FormulaDisplay.format을 지나 쓴다 — 같은 글자여야 한다.
-        val written = FormulaDisplay.evaluateForDisplay("power + agility") {
+        val written = FormulaDisplay.evaluateForDisplay("field(power) + field(agility)") {
             FormulaEvaluator(stored, scope).evaluate(it)
         }
         assertTrue(CalculatedCellEcho.isAppOutput(total, written, scope, stored))
+    }
+
+    /**
+     * **셀 왕복이 표시 서식을 잃어도 앱의 출력이다** (콜드 검토 2026.08.21).
+     *
+     * 내보내기는 계산 값을 **숫자 셀**로 싣는다. `FormulaDisplay.format`이 소수를
+     * `%.2f`로 적으므로 `3.5`는 `"3.50"`으로 쓰이는데, 되읽기는 그 숫자를 최단 십진
+     * 표현으로 되돌려 `"3.5"`가 온다. 글자만 견주면 **소수 결과인 필드마다** 무편집
+     * 왕복이 '건너뜀'으로 세어지고 경고가 붙는다 — 이 판이 없애기로 한 그 잡음이다.
+     */
+    @Test
+    fun `소수 결과는 셀 왕복으로 뒤 0을 잃어도 앱의 출력이다`() {
+        val stored = mapOf("power" to "7.5", "agility" to "0")
+        val written = FormulaDisplay.evaluateForDisplay("field(power) + field(agility)") {
+            FormulaEvaluator(stored, scope).evaluate(it)
+        }
+        assertEquals("내보내기가 쓰는 글자는 서식이 붙은 쪽이다", "7.50", written)
+        // 숫자 셀을 되읽으면 최단 십진 표현으로 온다 — 뒤의 0이 사라진다.
+        assertTrue(CalculatedCellEcho.isAppOutput(total, "7.5", scope, stored))
+        // 서식이 붙은 원문도 그대로 통과한다
+        assertTrue(CalculatedCellEcho.isAppOutput(total, written, scope, stored))
+    }
+
+    /** 수가 **다르면** 여전히 사용자의 입력이다 — 수치 비교가 판정을 느슨하게 만들지 않는다. */
+    @Test
+    fun `수치가 다르면 소수라도 앱의 출력이 아니다`() {
+        val stored = mapOf("power" to "7.5", "agility" to "0")
+        assertFalse(CalculatedCellEcho.isAppOutput(total, "7.6", scope, stored))
     }
 
     /**
@@ -41,7 +70,7 @@ class CalculatedCellEchoTest {
     @Test
     fun `입력만 고친 파일에서도 계산 열은 앱의 출력 그대로다`() {
         val stored = mapOf("power" to "10", "agility" to "5")
-        val written = FormulaDisplay.evaluateForDisplay("power + agility") {
+        val written = FormulaDisplay.evaluateForDisplay("field(power) + field(agility)") {
             FormulaEvaluator(stored, scope).evaluate(it)
         }
         // 파일에서 power를 99로 고쳤어도, 계산 셀은 여전히 **저장값으로 계산한 값**이다.
@@ -59,7 +88,7 @@ class CalculatedCellEchoTest {
     @Test
     fun `앞뒤 공백은 판정을 뒤집지 않는다`() {
         val stored = mapOf("power" to "10", "agility" to "5")
-        val written = FormulaDisplay.evaluateForDisplay("power + agility") {
+        val written = FormulaDisplay.evaluateForDisplay("field(power) + field(agility)") {
             FormulaEvaluator(stored, scope).evaluate(it)
         }
         assertTrue(CalculatedCellEcho.isAppOutput(total, "  $written  ", scope, stored))

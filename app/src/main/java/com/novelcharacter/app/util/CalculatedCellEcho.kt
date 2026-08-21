@@ -66,7 +66,19 @@ object CalculatedCellEcho {
     ): Boolean {
         val formula = formulaOf(field) ?: return false
         val evaluator = FormulaEvaluator(storedByKey, fieldsInScope)
-        val expected = FormulaDisplay.evaluateForDisplay(formula, evaluator::evaluate)
-        return cell.trim() == expected.trim()
+        val expected = FormulaDisplay.evaluateForDisplay(formula, evaluator::evaluate).trim()
+        val actual = cell.trim()
+        if (actual == expected) return true
+        // **글자만 견주면 소수 값이 언제나 어긋난다**(콜드 검토 2026.08.21).
+        // 내보내기는 계산 값을 **숫자 셀**로 싣고([ExcelExporter.setFieldValue]), 되읽기는
+        // 그 숫자를 최단 십진 표현으로 되돌린다 — 그래서 `3.50`으로 쓴 값이 `3.5`로 돌아온다.
+        // 정수 결과에서만 글자가 맞아떨어져, 같은 파일 안에서 필드에 따라 침묵과 잡음이 갈렸다.
+        //
+        // 둘 다 수로 읽히면 **수로 견준다.** 같은 계산이 같은 자리를 왕복한 것이므로 근사
+        // 비교는 필요 없고, 쓰면 오히려 서로 다른 값을 같다고 말하게 된다.
+        // 수로 안 읽히는 쪽(예: `오류` 표식)은 글자 비교만 남는다 — 그 갈래는 위에서 끝났다.
+        val actualNumber = actual.toDoubleOrNull() ?: return false
+        val expectedNumber = expected.toDoubleOrNull() ?: return false
+        return actualNumber == expectedNumber
     }
 }
