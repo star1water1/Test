@@ -803,25 +803,38 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
      * 옛 번호를 그대로 든 채 남아 번호가 겹치고 순서가 부정이 됐다.
      *
      * @return 저장에 성공했는가 — **고지는 이 답을 받은 뒤에 뜬다**(종전에는 결과를 안 기다렸다).
+     *
+     * **쓰기는 화면 수명이 아니라 [viewModelScope]에서 돈다**(콜드 검토 2026.08.21).
+     * 부르는 쪽이 화면 스코프라, 순서 편집을 끄자마자 회전하면 ⓐ 쓰기가 시작조차 못 하는
+     * 갈래가 있었고 ⓑ 이미 시작된 회차는 `withContext`가 던진 취소를 아래 `catch`가 삼켜
+     * **DB에는 저장이 끝났는데 화면에는 "사건 순서 변경 실패"가 뜨고 작업 이력에도 실패로
+     * 남았다.** 사용자는 저장된 순서를 다시 만든다. 같은 파일의 `insertEventField`가 이미
+     * 쓰는 관례다 — 쓰기는 뷰모델이 들고, 화면은 결과를 받아 고지만 한다.
      */
-    suspend fun updateDisplayOrders(visualOrder: List<TimelineEvent>): Boolean = try {
-        val ascending = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
-        val dao = db.timelineDao()
-        val updates = mutableListOf<TimelineEvent>()
-        for ((key, visible) in ascending.groupBy { TimelineDisplayOrder.dateKeyOf(it) }) {
-            updates.addAll(
-                TimelineDisplayOrder.mergeDateGroup(
-                    visible, dao.getEventsByDate(key.year, key.month, key.day)
-                )
-            )
-        }
-        if (updates.isNotEmpty()) dao.updateAll(updates)
-        true
-    } catch (e: Exception) {
-        Log.e("TimelineViewModel", "Failed to update display orders", e)
-        failEvent(R.string.result_event_order_failed, e)
-        false
-    }
+    suspend fun updateDisplayOrders(visualOrder: List<TimelineEvent>): Boolean =
+        viewModelScope.async {
+            try {
+                val ascending = TimelineDisplayOrder.canonicalReorder(visualOrder, isDescending())
+                val dao = db.timelineDao()
+                val updates = mutableListOf<TimelineEvent>()
+                for ((key, visible) in ascending.groupBy { TimelineDisplayOrder.dateKeyOf(it) }) {
+                    updates.addAll(
+                        TimelineDisplayOrder.mergeDateGroup(
+                            visible, dao.getEventsByDate(key.year, key.month, key.day)
+                        )
+                    )
+                }
+                if (updates.isNotEmpty()) dao.updateAll(updates)
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다.** 삼키면 위 KDoc이 적은 그 거짓 고지가 난다.
+                throw e
+            } catch (e: Exception) {
+                Log.e("TimelineViewModel", "Failed to update display orders", e)
+                failEvent(R.string.result_event_order_failed, e)
+                false
+            }
+        }.await()
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
