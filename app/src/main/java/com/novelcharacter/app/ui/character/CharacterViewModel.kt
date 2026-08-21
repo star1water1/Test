@@ -1251,15 +1251,34 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * **LiveData가 아니어야 한다** — 같은 채널에 되쓰면 관측자가 다시 울려 창이 두 번 뜬다.
      */
     class AiReviewState {
-        /** 사용자가 체크를 한 번이라도 만졌는가 — 거짓이면 *처음 볼 때*의 기본 규칙을 쓴다. */
-        var touched = false
-            private set
+        /**
+         * 이 회차의 기본 선택을 이미 심었는가.
+         *
+         * **종전에는 `touched`(사용자가 한 번이라도 만졌는가)였고 그것이 결함이었다**
+         * (콜드 검토 2026.08.21). 만진 뒤로는 전 행이 [checked] 하나만 보는데 그 집합에는
+         * *만진 행*만 들어 있어서, 체크 하나를 켜고 회전하면 **기본으로 켜져 있던 나머지가
+         * 통째로 꺼졌다** — 이 상태가 없애려던 것과 정확히 같은 부류가 반대 방향으로 남았다.
+         *
+         * 지금은 첫 조립에서 기본 규칙의 결과를 [checked]에 **그대로 심는다.**
+         * 그러면 [isChecked] 하나가 언제나 전 행의 답이다.
+         */
+        private var seeded = false
 
         private val checked = mutableSetOf<String>()
         private val edited = mutableMapOf<String, com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>()
 
+        /**
+         * 회차의 **첫 조립에서만** 기본 선택을 심는다. 두 번째부터는 아무 일도 하지 않는다 —
+         * 그래야 회전으로 다시 조립돼도 사용자의 판단이 기본 규칙에 덮이지 않는다.
+         */
+        fun seedDefaults(defaultOn: Collection<String>) {
+            if (seeded) return
+            seeded = true
+            checked.clear()
+            checked.addAll(defaultOn)
+        }
+
         fun setChecked(fieldKey: String, on: Boolean) {
-            touched = true
             if (on) checked.add(fieldKey) else checked.remove(fieldKey)
         }
 
@@ -1276,7 +1295,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             edited[original.fieldKey] ?: original
 
         fun clear() {
-            touched = false
+            seeded = false
             checked.clear()
             edited.clear()
         }
