@@ -128,6 +128,20 @@ class EventEditDialogFragment : DialogFragment() {
     private var coveredEventFieldIds: Set<Long> = emptySet()
 
     /**
+     * 필드 섹션 조회가 **실제로 끝났는가** — 커버가 빈 두 상태를 가른다.
+     *
+     * `coveredEventFieldIds.isEmpty()`는 *'아직 구역을 못 세웠다'*(회전 직후·로딩 미완)와
+     * *'세웠는데 그 구역에 사건 필드가 0개다'*를 구분하지 못한다. 뒤엣것을 앞엣것으로 읽으면,
+     * 사건 필드가 없는 세계관의 작품으로 사건을 옮겼을 때 **A 세계관 값들이 커버까지 얹힌 채
+     * 폼의 진실로 재제출되어** 보존 계수가 0이 되고 고지가 통째로 삼켜졌다 — 폼에는 값이
+     * 더 이상 안 보이는데 지워졌는지 남아 있는지 알 길이 없었다(실제로는 남아 있다).
+     *
+     * 조건 추론에 특례를 한 겹 더 쌓지 않고 **상태로 가른다** — 그래야 다음 경계
+     * (전역 구역·조회 실패)에서 또 갈리지 않는다.
+     */
+    private var eventFieldSectionResolved = false
+
+    /**
      * 필드 섹션이 해석한 **구역** — 무엇을 그리는가와 어디에 만드는가가 둘 다 여기서 나온다(P5).
      *
      * **`Long?` 하나로는 못 적는다**(B-258). 종전에는 이 자리가 `resolvedFieldUniverseId: Long?`
@@ -899,6 +913,8 @@ class EventEditDialogFragment : DialogFragment() {
         // 세계관 A에 필드가 생긴다.** null 검사만으로는 이 자리를 막지 못한다 —
         // 막아야 하는 것은 '모르는 상태'가 아니라 '낡은 상태'다.
         resolvedFieldScope = target
+        // 구역이 바뀌어 다시 조회하는 동안은 '아직 못 세운' 상태다 — 조회가 끝나야 다시 선다.
+        eventFieldSectionResolved = false
         fieldSectionJob?.cancel()
         fieldSectionJob = lifecycleScope.launch {
             val fields = requireProvider().getEventFieldsForUniverse(universeId)
@@ -908,6 +924,8 @@ class EventEditDialogFragment : DialogFragment() {
             if (current != universeId) return@launch
             // 커버는 조회된 정의 전체(CALCULATED 포함), 렌더는 입력 가능한 것만 — 필드 주석 참조.
             coveredEventFieldIds = fields.mapTo(HashSet()) { it.id }
+            // **여기가 '세웠다'의 자리다** — 필드가 0개여도 세운 것은 세운 것이다.
+            eventFieldSectionResolved = true
             eventFields = fields
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }
@@ -1322,15 +1340,19 @@ class EventEditDialogFragment : DialogFragment() {
 
     /**
      * 폼 제출 한 벌(S-6). 기본은 지금 렌더된 위젯이 진실이고 커버는 [coveredEventFieldIds]다.
-     * 필드 섹션 상태가 아직 없는데(커버·위젯 모두 공집합 — 회전 직후·로딩 미완 창)
-     * 마지막으로 렌더됐던 화면의 스냅샷([pendingEventFieldValues])이 있으면 그것이 폼의
-     * 진실이다(재공격 F3) — 버리면 회전 전 사용자의 편집이 무통보로 사라지고, 빈 제출로
-     * 전량 보존하면 "보관했습니다" 고지가 사용자의 최신 편집 대신 낡은 DB 값을 가리킨다.
+     * 필드 섹션이 **아직 서지 않았는데**([eventFieldSectionResolved]) 마지막으로 렌더됐던
+     * 화면의 스냅샷([pendingEventFieldValues])이 있으면 그것이 폼의 진실이다(재공격 F3) —
+     * 버리면 회전 전 사용자의 편집이 무통보로 사라지고, 빈 제출로 전량 보존하면
+     * "보관했습니다" 고지가 사용자의 최신 편집 대신 낡은 DB 값을 가리킨다.
      * 그마저 없으면 빈 제출(커버 ∅ = 전량 보존)이다.
+     *
+     * **판정은 커버가 비었는가가 아니라 섹션이 섰는가다.** 커버가 빈 상태는 둘인데
+     * (못 세웠다 / 세웠는데 필드가 0개다) 종전 조건은 그 둘을 뭉개, 사건 필드가 없는
+     * 세계관으로 옮기면 옛 세계관 값이 커버까지 얹힌 채 재제출되어 보존 고지가 사라졌다.
      */
     private fun buildFieldSubmission(): EventFieldValueMerge.Submission {
         val pending = pendingEventFieldValues
-        if (coveredEventFieldIds.isEmpty() && eventFieldInputMap.isEmpty() && pending != null) {
+        if (!eventFieldSectionResolved && eventFieldInputMap.isEmpty() && pending != null) {
             val cover = mutableSetOf<Long>()
             val values = mutableListOf<EventFieldValue>()
             for ((key, raw) in pending) {
