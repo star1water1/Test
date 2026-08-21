@@ -32,6 +32,24 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
     private val _totalCount = MutableLiveData(0)
     val totalCount: LiveData<Int> = _totalCount
 
+    /**
+     * **지금 보고 있는 범위**의 캐릭터 수 — 완료율의 분모다(B-100 결: 같은 이름의 지표는
+     * 한 함수가 낸다).
+     *
+     * [totalCount]는 필터와 무관한 전수라 완료율의 분모로 쓸 수 없다. 종전에는 목록과
+     * '보충 대상' 수만 필터를 따르고 분모는 전수였고, 그래서 손댈 것이 산더미인 작품을
+     * 골라도 완료율이 90%대로 떠 **화면이 사실이 아닌 진척도**를 말했다.
+     *
+     * 이슈 필터는 여기 안 든다 — 그것은 *목록을 좁혀 보는* 필터이지 범위를 정하는 필터가
+     * 아니다(이슈로 좁힐 때마다 완료율이 뛰면 그 수는 아무것도 뜻하지 않는다).
+     */
+    private val _scopedTotal = MutableLiveData(0)
+    val scopedTotal: LiveData<Int> = _scopedTotal
+
+    /** 범위 안에서 **아직 손댈 것이 남은** 캐릭터 수 — 이슈 필터를 걸기 전 값이다. */
+    private val _scopedTargetCount = MutableLiveData(0)
+    val scopedTargetCount: LiveData<Int> = _scopedTargetCount
+
     private val _universeList = MutableLiveData<List<Universe>>(emptyList())
     val universeList: LiveData<List<Universe>> = _universeList
 
@@ -372,6 +390,9 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
             filtered = filtered.filter { it.character.novelId == nId }
         }
 
+        // **완료율의 분자는 여기까지다** — 이슈 필터는 목록을 좁혀 보는 것이지 범위가 아니다.
+        _scopedTargetCount.value = filtered.size
+
         // 이슈 필터
         val issue = issueFilter
         if (issue != null) {
@@ -401,6 +422,9 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
         if (nId != null) {
             pool = pool.filter { it.novelId == nId }
         }
+        // 완료율의 **분모** — 목록과 같은 범위(세계관·작품)로 좁힌 캐릭터 수다.
+        // 뽑기 풀과 같은 집합이라 여기서 함께 낸다(같은 필터를 두 번 적지 않는다).
+        _scopedTotal.value = pool.size
         _randomPool.value = pool
         syncPickEngine(pool)
     }
