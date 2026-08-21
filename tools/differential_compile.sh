@@ -43,9 +43,10 @@
 # **여기서도 `-u`를 쓰지 않는다** — 경로까지 지운 이 모드는 접기가 더 거칠어서, `-u`를 얹으면
 # 저장소 전체에 그 문구가 하나라도 있는 한 새 오류가 **영영** 안 보인다.
 set -u
-SP="${JARS_DIR:-/tmp/claude-0/-home-user-Test/6a87d14f-0af6-505a-8734-77051e12d059/scratchpad}"
 OUT="$1"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # 기본 jar 디렉터리 판정 한 벌
+SP="${JARS_DIR:-$(jvm_env_default_jars_dir)}"
 cd "$REPO"
 find app/src/main/java -name '*.kt' > $SP/files.txt
 java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar" \
