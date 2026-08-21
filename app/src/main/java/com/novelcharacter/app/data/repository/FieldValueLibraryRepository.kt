@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드 데이터 라이브러리 저장소 — 필드별 정규화 값 카탈로그의 수확·큐레이션·전파.
@@ -908,7 +909,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             val mapped = LinkedHashSet<String>()
             var optionChanged = false
             for (i in 0 until options.length()) {
-                val opt = options.optString(i)
+                val opt = options.stringOr(i)
                 val replaced = mapping[opt.trim()] ?: opt
                 if (replaced != opt) optionChanged = true
                 mapped.add(replaced)
@@ -937,7 +938,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
         // 시맨틱 ALIVE — SemanticFieldSyncHelper가 정확 일치 비교하는 값
         for (key in listOf("aliveValue", "deadValue")) {
-            val current = root.optString(key, "")
+            val current = root.stringOr(key, "")
             val replaced = mapping[current.trim()]
             if (current.isNotEmpty() && replaced != null && replaced != current) {
                 root.put(key, replaced)

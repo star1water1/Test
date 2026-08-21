@@ -39,6 +39,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class SettingsFragment : Fragment() {
 
@@ -394,6 +395,7 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val status = statusStore.getStatus()
             if (_binding == null) return@launch
+            // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             val sb = StringBuilder()
 
@@ -551,12 +553,12 @@ class SettingsFragment : Fragment() {
         // 작업형 진행도(R-26 · B-51) — 종전에는 불확정 스피너라 대형 세계관에서 진행 중인지
         // 멈춘 것인지 알 수 없었다. 자료(절)와 이미지(장)는 단위가 달라 구간을 나눠 보고한다.
         // 취소는 산출물을 만들지 않고 멈추는 것이다(D5가 엑셀 내보내기에서 정한 것과 같다).
-        var cancelled = false
+        val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
         val progress = showTaskProgress(
             R.string.world_package_progress_title,
             total = 0,
             stageRes = R.string.world_package_stage_sections
-        ) { cancelled = true }
+        ) { cancelled.set(true) }
         val sectionsStage = getString(R.string.world_package_stage_sections)
         val imagesStage = getString(R.string.export_progress_stage_images)
         viewLifecycleOwner.lifecycleScope.launch {
@@ -569,7 +571,7 @@ class SettingsFragment : Fragment() {
                 val sink = WorldPackageExporter.ProgressSink(
                     onSections = { done, total -> postProgress(progress, done, total, sectionsStage) },
                     onImages = { done, total -> postProgress(progress, done, total, imagesStage) },
-                    isCancelled = { cancelled }
+                    isCancelled = { cancelled.get() }
                 )
                 val result = withContext(Dispatchers.IO) { exporter.export(config, sink) }
 
@@ -826,7 +828,7 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.backup_export_continue) { _, _ ->
                 // 앱의 보관물이다 — 건네고 나서도 지우지 않는다.
                 pendingBackupExport = PendingExport(latestBackup, ownsFile = false)
-                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
                 val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
                 backupExportLauncher.launch(fileName)
             }
@@ -984,7 +986,7 @@ class SettingsFragment : Fragment() {
                 }
                 // 이 화면이 캐시에 만든 임시본이다 — 끝나면 지우고, 그 사이에는 지켜야 한다.
                 pendingBackupExport = PendingExport(portableFile, ownsFile = true)
-                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
                 val fileName =
                     "NovelCharacter_Backup_${dateFormat.format(Date(deviceEncFile.lastModified()))}_portable.enc"
                 backupExportLauncher.launch(fileName)
@@ -1013,6 +1015,7 @@ class SettingsFragment : Fragment() {
             return
         }
 
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         val labels = backupFiles.map { file ->
             val date = dateFormat.format(Date(file.lastModified()))
@@ -1031,6 +1034,7 @@ class SettingsFragment : Fragment() {
 
     private fun confirmAndRestore(encFile: File) {
         if (!isAdded) return
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         val label = dateFormat.format(Date(encFile.lastModified()))
 
@@ -1270,6 +1274,7 @@ class SettingsFragment : Fragment() {
             } else {
                 val lastTime = withContext(Dispatchers.IO) { AppLogger.getLastErrorTime() }
                 val timeStr = if (lastTime != null && lastTime > 0) {
+                    // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
                     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(lastTime))
                 } else "?"
                 binding.errorLogSummaryText.text = getString(R.string.error_log_summary, timeStr, count)
@@ -1293,6 +1298,7 @@ class SettingsFragment : Fragment() {
                 return@launch
             }
 
+            // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
             val displayEntries = entries.take(maxDisplay)
             val sb = StringBuilder()

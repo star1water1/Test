@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 심긴 필드가 **어느 전역 기본 필드에서 왔는가**의 표현 — 단일 소스 (B-119).
@@ -47,7 +48,7 @@ object DefaultFieldRef {
      * 들여온 파일이 `"defaultField": ""`를 만들 수 있는데, 그것은 연결이 아니라 해제다.
      */
     fun codeFromConfig(configJson: String): String? = try {
-        JSONObject(configJson).optString(CONFIG_KEY, "").takeIf { it.isNotBlank() }
+        JSONObject(configJson).stringOr(CONFIG_KEY, "").takeIf { it.isNotBlank() }
     } catch (_: Exception) {
         null
     }

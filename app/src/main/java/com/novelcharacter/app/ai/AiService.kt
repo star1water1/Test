@@ -46,7 +46,19 @@ class AiService(context: Context) {
      * 살고 덜 나온 것만 새 프로바이더로 이어진다 — 확정 ⓕ가 요구한 *"필드 단위로 가른다"*가
      * 호출부에 새 장치 없이 성립하는 이유다.
      */
-    suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult {
+    suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult =
+        // **관문이 디스패처도 책임진다.** 위 KDoc이 *"네트워크는 IO에서 실행되므로 어디서든
+        // suspend 호출만 하면 된다"*고 약속하는데, 종전에는 그 약속이 **네트워크에만** 참이었다:
+        // 아래 앞머리(프로바이더 SharedPreferences 해독 + AndroidKeyStore AES-GCM 복호화 —
+        // 키스토어 데몬과의 **바인더 왕복**이다)가 `withContext` **밖**이라 호출자의 디스패처에서
+        // 돌았고, 인앱 AI 진입점 다수가 그것을 `Dispatchers.Main.immediate`에서 부른다.
+        // 메인 스레드에서 도는 디스크·IPC라 프레임을 떨어뜨리며, 프로바이더가 여럿이면
+        // 폴백 후보마다 `hasKey`·`getKey`가 한 번씩 더 돈다.
+        //
+        // **`execute`가 이미 IO로 가는 것으로는 덮이지 않는다** — 그 안쪽은 네트워크뿐이다.
+        withContext(Dispatchers.IO) { completeOnIo(request, config) }
+
+    private suspend fun completeOnIo(request: AiRequest, config: AiProviderConfig?): AiResult {
         // 실패에는 **어느 프로바이더였는지**를 반드시 새겨 내보낸다 (B-150). 새기는 자리를
         // 관문 하나로 둔 이유: 호출부에 맡기면 8곳이 되고 빠뜨린 자리는 종전과 똑같이 조용하다.
         // 활성이 안 풀리는 이유는 둘이고, 사용자가 할 일이 다르다 (B-153 ⓑ) — 등록이 0건이면

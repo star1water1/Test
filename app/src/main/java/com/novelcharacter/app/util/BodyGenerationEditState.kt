@@ -169,7 +169,7 @@ data class BodyGenerationEditState(
             if (json.isNullOrBlank()) return null
             return try {
                 val obj = JSONObject(json)
-                val current = BodyAnalysisConfig.generationFromJsonString(obj.optString(KEY_CURRENT))
+                val current = BodyAnalysisConfig.generationFromJsonString(obj.stringOr(KEY_CURRENT))
                     ?: return null
                 BodyGenerationEditState(
                     current = current,
@@ -181,7 +181,7 @@ data class BodyGenerationEditState(
                         (0 until arr.length()).mapNotNull { i ->
                             arr.optJSONObject(i)?.let {
                                 PresetText(
-                                    it.optString(KEY_NAME), it.optInt(KEY_TORSO),
+                                    it.stringOr(KEY_NAME), it.optInt(KEY_TORSO),
                                     it.optInt(KEY_BUST), it.optInt(KEY_HIP)
                                 )
                             }
@@ -201,7 +201,7 @@ data class BodyGenerationEditState(
         }
 
         private fun strings(arr: JSONArray?): List<String> =
-            if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }
+            if (arr == null) emptyList() else (0 until arr.length()).map { arr.stringOr(it) }
 
         /**
          * 아직 아무것도 안 고친 상태 — 창을 **처음 열 때**의 한 벌이다.
@@ -250,8 +250,8 @@ data class BodyGenerationEditState(
                 arr.optJSONObject(i)?.let { obj ->
                     val nums = obj.optJSONArray(KEY_NUMBERS) ?: JSONArray()
                     RowText(
-                        obj.optString(KEY_NAME),
-                        (0 until nums.length()).map { nums.optString(it) }
+                        obj.stringOr(KEY_NAME),
+                        (0 until nums.length()).map { nums.stringOr(it) }
                     )
                 }
             }

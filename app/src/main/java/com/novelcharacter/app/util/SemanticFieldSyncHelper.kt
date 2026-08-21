@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -71,8 +72,8 @@ class SemanticFieldSyncHelper(
                     if (raw.isEmpty()) continue
                     val aliveField = fieldMap[value.fieldDefinitionId] ?: continue
                     val config = try { JSONObject(aliveField.config) } catch (_: Exception) { continue }
-                    val aliveVal = config.optString("aliveValue", "")
-                    val deadVal = config.optString("deadValue", "")
+                    val aliveVal = config.stringOr("aliveValue", "")
+                    val deadVal = config.stringOr("deadValue", "")
 
                     when (raw) {
                         deadVal -> {
@@ -138,7 +139,7 @@ class SemanticFieldSyncHelper(
                 // month/day → birth_date 필드
                 val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
                 if (birthDateField != null && change.month != null && change.day != null) {
-                    val dateStr = String.format("%02d-%02d", change.month, change.day)
+                    val dateStr = String.format(Locale.US, "%02d-%02d", change.month, change.day)
                     upsertFieldValue(characterId, birthDateField.id, dateStr)
                 }
             }
@@ -302,10 +303,10 @@ class SemanticFieldSyncHelper(
         val aliveField = findFieldByRole(fields, SemanticRole.ALIVE) ?: return
         val config = try { JSONObject(aliveField.config) } catch (_: Exception) { return }
         val targetValue = if (isDead) {
-            config.optString("deadValue", "")
+            config.stringOr("deadValue", "")
         } else {
             val hasBirth = findStateChange(characterId, CharacterStateChange.KEY_BIRTH) != null
-            if (hasBirth) config.optString("aliveValue", "") else ""
+            if (hasBirth) config.stringOr("aliveValue", "") else ""
         }
         if (targetValue.isNotBlank()) {
             upsertFieldValue(characterId, aliveField.id, targetValue)

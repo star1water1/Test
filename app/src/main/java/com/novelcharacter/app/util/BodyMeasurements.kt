@@ -227,7 +227,7 @@ data class BodyMeasurements(
         /** 구조화 설정이 없는 값의 분리 — 현행 인라인 파서와 같은 구분자(-, /, 공백)를 쓴다. */
         fun splitPlain(rawValue: String): List<String> =
             if (rawValue.isBlank()) emptyList()
-            else rawValue.split(Regex("[-/\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }
+            else rawValue.split(RegexCharClasses.DASH_SLASH_WHITESPACE).map { it.trim() }.filter { it.isNotEmpty() }
 
         private fun normalizeLabel(label: String): String =
             label.trim().lowercase().replace(" ", "")

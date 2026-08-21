@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.CharacterStateChange
 import java.util.Calendar
 import java.util.GregorianCalendar
+import java.util.Locale
 
 /**
  * 생일 관련 공용 유틸리티.
@@ -28,7 +29,7 @@ object BirthdayHelper {
         birthChanges: List<CharacterStateChange>,
         daysAhead: Int = 7
     ): List<UpcomingBirthday> {
-        val today = Calendar.getInstance()
+        val today = Calendar.getInstance(Locale.US)
         val todayMonth = today.get(Calendar.MONTH) + 1
         val todayDay = today.get(Calendar.DAY_OF_MONTH)
         val todayYear = today.get(Calendar.YEAR)
@@ -73,7 +74,7 @@ object BirthdayHelper {
      * `distinct()`가 종전에 남기던 것과 같다).
      */
     fun todayBirthdays(birthChanges: List<CharacterStateChange>): List<CharacterStateChange> {
-        val today = Calendar.getInstance()
+        val today = Calendar.getInstance(Locale.US)
         val todayMonth = today.get(Calendar.MONTH) + 1
         val todayDay = today.get(Calendar.DAY_OF_MONTH)
         val isLeapYear = GregorianCalendar().isLeapYear(today.get(Calendar.YEAR))
@@ -101,7 +102,7 @@ object BirthdayHelper {
     fun daysUntilBirthday(todayMonth: Int, todayDay: Int, todayYear: Int,
                           birthMonth: Int, birthDay: Int): Int {
         // DST 전환일 오차 방지를 위해 정오(12시) 기준 계산
-        val today = Calendar.getInstance().apply {
+        val today = Calendar.getInstance(Locale.US).apply {
             set(Calendar.YEAR, todayYear)
             set(Calendar.MONTH, todayMonth - 1)
             set(Calendar.DAY_OF_MONTH, todayDay)
@@ -113,7 +114,7 @@ object BirthdayHelper {
 
         val effectiveDay = adjustLeapDay(birthMonth, birthDay, todayYear)
 
-        val birthday = Calendar.getInstance().apply {
+        val birthday = Calendar.getInstance(Locale.US).apply {
             set(Calendar.YEAR, todayYear)
             set(Calendar.MONTH, birthMonth - 1)
             set(Calendar.DAY_OF_MONTH, effectiveDay)
@@ -141,7 +142,7 @@ object BirthdayHelper {
      * 유효하지 않은 날짜(예: 월이 31일까지 없는 달의 31일)도 해당 월 최대일로 보정.
      */
     fun adjustLeapDay(month: Int, day: Int, year: Int): Int {
-        val cal = Calendar.getInstance().apply {
+        val cal = Calendar.getInstance(Locale.US).apply {
             set(Calendar.YEAR, year)
             set(Calendar.MONTH, month - 1)
             set(Calendar.DAY_OF_MONTH, 1)

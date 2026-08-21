@@ -2,6 +2,7 @@ package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 필드 데이터 라이브러리 AI 정리 — 유사값 병합·오탈자 교정(병합으로 모델링)·카테고리 제안.
@@ -211,11 +212,11 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             if (mergesArr != null) {
                 for (i in 0 until mergesArr.length()) {
                     val obj = mergesArr.optJSONObject(i) ?: continue
-                    val canonical = obj.optString("canonical").trim()
-                    val reason = obj.optString("reason").trim()
+                    val canonical = obj.stringOr("canonical").trim()
+                    val reason = obj.stringOr("reason").trim()
                     val variantsArr = obj.optJSONArray("variants")
                     val rawVariants = (0 until (variantsArr?.length() ?: 0))
-                        .mapNotNull { variantsArr?.optString(it)?.trim() }
+                        .mapNotNull { variantsArr?.stringOr(it)?.trim() }
                         .filter { it.isNotEmpty() }
                     if (canonical.isEmpty() || canonical !in canonicalSet) {
                         if (canonical.isNotEmpty() || rawVariants.isNotEmpty()) dropped++
@@ -237,8 +238,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             if (categoriesArr != null) {
                 for (i in 0 until categoriesArr.length()) {
                     val obj = categoriesArr.optJSONObject(i) ?: continue
-                    val value = obj.optString("value").trim()
-                    val category = obj.optString("category").trim()
+                    val value = obj.stringOr("value").trim()
+                    val category = obj.stringOr("category").trim()
                     if (value.isEmpty() || category.isEmpty()) continue
                     if (value !in canonicalSet) {
                         dropped++

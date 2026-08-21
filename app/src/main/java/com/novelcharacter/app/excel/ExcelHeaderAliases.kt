@@ -1,5 +1,7 @@
 package com.novelcharacter.app.excel
 
+import com.novelcharacter.app.util.RegexCharClasses
+
 /**
  * 엑셀 헤더 정규화·별칭 해석의 단일 소스 (순수 JVM — 단위 테스트 대상).
  *
@@ -144,4 +146,4 @@ object ExcelHeaderAliases {
  * 별칭 매칭용 헤더 정규화: 소문자화 + 공백·밑줄·하이픈·괄호 제거.
  */
 internal fun String.normalizeHeader(): String =
-    this.trim().lowercase().replace(Regex("[\\s_\\-()（）]"), "")
+    this.trim().lowercase().replace(RegexCharClasses.HEADER_NOISE, "")

@@ -80,5 +80,5 @@ object PresetNameConflict {
         return if (stripped.isBlank()) name else stripped
     }
 
-    private val SUFFIX = Regex(" \\(\\d+\\)$")
+    private val SUFFIX = Regex(" \\([0-9]+\\)$")
 }

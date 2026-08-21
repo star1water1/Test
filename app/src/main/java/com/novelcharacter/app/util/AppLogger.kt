@@ -18,7 +18,7 @@ object AppLogger {
     private const val DATE_PATTERN = "yyyy-MM-dd HH:mm:ss"
 
     /** SimpleDateFormat은 스레드 안전하지 않으므로 호출 시마다 생성 */
-    private fun newDateFormat() = SimpleDateFormat(DATE_PATTERN, Locale.getDefault())
+    private fun newDateFormat() = SimpleDateFormat(DATE_PATTERN, Locale.US)
 
     // 엔트리 구분자 (파싱용)
     private const val ENTRY_SEPARATOR = "──────────"
@@ -134,13 +134,33 @@ object AppLogger {
     /**
      * 헤더 형식: [2026-03-25 14:30:00][ERROR][Tag] message
      */
+    /**
+     * 로그의 시각 문자열 → epoch. **못 읽으면 0이 아니라 옛 로케일로 한 번 더 시도한다.**
+     *
+     * 이 저장소는 2026.08.21에 쓰기·읽기 서식을 `Locale.US`로 못박았다(R-70) — 종전에는
+     * 기본 로케일이라 태국(불기)·일본(화력) 기기가 `2569-…`처럼 **다른 역법으로 적힌 파일**을
+     * 이미 남겨 두었다. 못박기만 하고 끝내면 그 기기의 **기존 항목이 전부 1970년으로 밀려**
+     * 목록 정렬과 "마지막 오류 시각"이 망가진다.
+     *
+     * 그래서 새 서식으로 먼저 읽고, 실패하면 **그 기기의 기본 로케일로** 한 번 더 읽는다.
+     * 옛 파일은 그 로케일로 쓰였으므로 그때 읽힌다. 둘 다 실패해야 0이다.
+     */
+    private fun parseTimestamp(timeStr: String): Long {
+        runCatching { newDateFormat().parse(timeStr)?.time }.getOrNull()?.let { return it }
+        runCatching {
+            // platform-parity-ok: **옛 파일을 읽으려면 옛 로케일이어야 한다** — 이 줄의 목적이
+            // 기본 로케일로 쓰인 기존 로그를 되살리는 것이다. 쓰기는 위 `newDateFormat()`이
+            // `Locale.US`로 하고, 이 폴백은 **읽기 전용**이라 새 값을 만들지 않는다.
+            SimpleDateFormat(DATE_PATTERN, Locale.getDefault()).parse(timeStr)?.time
+        }.getOrNull()?.let { return it }
+        return 0L
+    }
+
     private fun parseErrorHeader(header: String, stackTrace: String): LogEntry? {
         val regex = Regex("""\[(.+?)]\[(.+?)]\[(.+?)] (.+)""")
         val match = regex.find(header) ?: return null
         val (timeStr, level, tag, message) = match.destructured
-        val timestamp = try {
-            newDateFormat().parse(timeStr)?.time ?: 0L
-        } catch (_: Exception) { 0L }
+        val timestamp = parseTimestamp(timeStr)
         return LogEntry(
             timestamp = timestamp,
             level = level,

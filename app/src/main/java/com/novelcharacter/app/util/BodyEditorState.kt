@@ -289,7 +289,7 @@ data class BodyEditorState(
                 }
             }
             val mode = BodyMeasurements.MappingMode.entries
-                .firstOrNull { it.name == o.optString(I_MODE) } ?: BodyMeasurements.MappingMode.NONE
+                .firstOrNull { it.name == o.stringOr(I_MODE) } ?: BodyMeasurements.MappingMode.NONE
             return BodyMeasurements(
                 values = values,
                 mode = mode,
@@ -308,7 +308,7 @@ data class BodyEditorState(
 
         private fun stringsFromJson(arr: JSONArray?): List<String> {
             if (arr == null) return emptyList()
-            return (0 until arr.length()).map { arr.optString(it) ?: "" }
+            return (0 until arr.length()).map { arr.stringOr(it) }
         }
 
         /**
@@ -319,7 +319,7 @@ data class BodyEditorState(
         private fun slotListFromJson(arr: JSONArray?): List<BodySlot> {
             if (arr == null) return emptyList()
             return (0 until arr.length()).map { i ->
-                val name = arr.optString(i)
+                val name = arr.stringOr(i)
                 BodySlot.entries.firstOrNull { it.name == name } ?: BodySlot.NONE
             }
         }
@@ -368,7 +368,9 @@ data class BodyEditorState(
             if (arr == null) return emptySet()
             val out = LinkedHashSet<BodySlot>()
             for (i in 0 until arr.length()) {
-                val name = arr.optString(i) ?: continue
+                // JSON null·범위 밖은 `stringOr`가 ""로 준다 — 어느 열거 이름과도 안 맞아
+                // 아래 `firstOrNull`에서 그대로 버려진다(이 함수의 계약: 모르는 이름은 버린다).
+                val name = arr.stringOr(i)
                 BodySlot.entries.firstOrNull { it.name == name }?.let { out.add(it) }
             }
             return out

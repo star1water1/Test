@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * ExcelCellValue(가져오기 셀 값 정규화의 단일 소스) 계약 테스트.
@@ -72,7 +73,7 @@ class ExcelCellValueTest {
             val style = wb.createCellStyle()
             style.dataFormat = wb.createDataFormat().getFormat("yyyy-mm-dd")
             it.cellStyle = style
-            val cal = Calendar.getInstance().apply { clear(); set(2023, Calendar.JUNE, 15) }
+            val cal = Calendar.getInstance(Locale.US).apply { clear(); set(2023, Calendar.JUNE, 15) }
             it.setCellValue(cal.time)
         }
         assertEquals("2023-06-15", normalize(c))
@@ -89,7 +90,7 @@ class ExcelCellValueTest {
         val result = normalize(cell { it.setCellValue(44000.0) }, dateHint = true)
         // 시리얼 44000 → 날짜 문자열(YYYY-MM-DD, TZ 의존). 숫자 "44000"이 **아님**을 확인.
         assertEquals(true, result != "44000")
-        assertEquals(true, Regex("""\d{1,4}-\d{2}-\d{2}""").matches(result))
+        assertEquals(true, Regex("""[0-9]{1,4}-[0-9]{2}-[0-9]{2}""").matches(result))
     }
 
     @Test fun blankCell_normalizesToEmpty() {

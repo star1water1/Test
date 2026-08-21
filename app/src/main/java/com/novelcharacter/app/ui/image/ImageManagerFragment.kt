@@ -32,6 +32,7 @@ import com.novelcharacter.app.util.notifyWithAction
 import com.novelcharacter.app.util.notifySuccess
 import com.novelcharacter.app.util.notifyError
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 이미지 관리 탭 — 앱 내 모든 이미지(캐릭터·작품·세계관)를 그리드로 조회/필터/정렬하고,
@@ -1040,14 +1041,14 @@ class ImageManagerFragment : Fragment() {
             .setPositiveButton(R.string.delete) { _, _ ->
                 // 삭제는 한 건 한 건이 완결되므로 취소를 받는다 —
                 // 취소 = 중단 시점까지 반영 + 요약(R-26 원문).
-                var cancelled = false
+                val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
                 val progress = showTaskProgress(
                     R.string.image_manager_delete_title, items.size, R.string.image_manager_stage_delete
-                ) { cancelled = true }
+                ) { cancelled.set(true) }
                 viewModel.deleteImages(
                     items,
                     onProgress = { done, total -> postProgress(progress, done, total) },
-                    isCancelled = { cancelled }
+                    isCancelled = { cancelled.get() }
                 ) { result ->
                     progress?.dismiss()
                     // isAdded는 onDestroyView 후에도 true라 회전/백스택 중 콜백이 파괴된 뷰에 닿는다 →
@@ -1059,7 +1060,7 @@ class ImageManagerFragment : Fragment() {
                             OpResult.CAT_MAINTENANCE,
                             getString(R.string.image_manager_bulk_delete_failed, result.failed)
                         ))
-                    } else if (cancelled) {
+                    } else if (cancelled.get()) {
                         // 취소해도 여기까지는 실제로 지워졌다 — 조용히 넘기면 목록이 줄어든 이유를 알 수 없다.
                         reportAndNotify(OpResult.success(
                             OpResult.CAT_MAINTENANCE,
@@ -1092,16 +1093,16 @@ class ImageManagerFragment : Fragment() {
     private fun startRecompress(items: List<ImageManagerViewModel.ManagedImage>) {
         // 준비는 대상 전부를 디코드·재인코드하는 가장 느린 구간이다 — 재압축에서 취소가
         // 값을 하는 자리도 여기뿐이다. 취소 = 산출물 없음(임시 파일까지 지운다).
-        var cancelled = false
+        val cancelled = AtomicBoolean(false)   // 메인이 쓰고 IO가 읽는다 — 평범한 var는 happens-before가 없어 취소가 안 보일 수 있다
         val progress = showTaskProgress(
             R.string.image_manager_recompress_confirm_title,
             items.size,
             R.string.image_manager_stage_recompress_prepare
-        ) { cancelled = true }
+        ) { cancelled.set(true) }
         viewModel.prepareRecompress(
             items,
             onProgress = { done, total -> postProgress(progress, done, total) },
-            isCancelled = { cancelled }
+            isCancelled = { cancelled.get() }
         ) { preview ->
             progress?.dismiss()
             if (!isAdded) { viewModel.discardRecompress(); return@prepareRecompress }

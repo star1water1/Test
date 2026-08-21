@@ -533,6 +533,10 @@
     <!-- 필요량을 잴 수 없었을 때 (B-189) — 이미지를 담지 않는 내보내기는 잰 몫이 없어
          숫자를 말하지 않는다. 틀린 숫자는 숫자가 없는 것보다 나쁘다(R-14). -->
     <string name="export_failed_no_space_unknown">저장 공간이 부족합니다 — 공간을 확보하고 다시 시도하세요</string>
+    <!-- 메모리 부족 — "다시 시도하세요"로 답할 수 없는 실패다(R-17). 같은 범위로 다시 하면
+         같은 자리에서 또 죽고, 기기에는 물러설 스트리밍 워크북이 없다(java.awt 부재).
+         그래서 사용자가 **줄일 수 있는 축**을 말한다. -->
+    <string name="export_failed_out_of_memory">기기 메모리가 모자라 내보내기를 끝내지 못했습니다 — 작품 범위를 좁히거나 이미지를 빼고 다시 시도하세요</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
     <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>
@@ -1389,6 +1393,9 @@
     <string name="widget_recent_characters">최근 캐릭터</string>
     <string name="widget_today_character">오늘의 캐릭터</string>
     <string name="widget_quick_add">빠른 추가</string>
+    <!-- 위젯 갱신이 시간 상한에 걸렸을 때. 레이아웃 기본값(생일 없음)을 그대로 두면
+         **없는 사실을 말하게 되므로** 사실대로 적는다(R-17). -->
+    <string name="widget_update_deferred">잠시 후 갱신됩니다</string>
     <string name="widget_no_birthday">오늘 생일인 캐릭터가 없습니다</string>
     <string name="widget_random_character">오늘의 캐릭터: %s</string>
     <string name="widget_birthday_today">오늘 생일: %s</string>

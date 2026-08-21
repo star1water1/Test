@@ -81,9 +81,17 @@ class AutoBackupWorker(
         com.novelcharacter.app.excel.ActiveTransfers.enter(this)
         return try {
             Log.i(TAG, "Starting auto backup...")
-            // 스트리밍 워크북 — 이 경로가 B-72가 말한 **마지막 방어선**이다: 배경에서 도는
-            // 백업이 워크북 전량을 메모리에 세우면 저사양 기기에서 죽고, 그 실패는 사용자가
-            // 보지 못한 자리에서 일어난다. 임시 파일 자리를 먼저 못박는다.
+            // 워크북 구현은 **프로브가 정한다**(B-250) — 손으로 적지 않는다.
+            //
+            // ⚠️ **기기에서는 이 답이 언제나 DOM이다.** 안드로이드에 `java.awt`가 없어
+            // `SXSSFSheet` 생성이 `LinkageError`로 죽고, `isStreamingSupported()`가 그것을
+            // 재서 false를 답하기 때문이다. 즉 B-72가 말한 *"마지막 방어선"*은
+            // **데스크톱에서만 서 있다** — 배경 백업이 워크북 전량을 메모리에 세우는 것은
+            // 기기에서 아직 그대로다(로드맵 S7 행의 2026.08.21 정정).
+            // 폴백 자체는 건전하다: 두 구현이 같은 파일을 낸다는 것을 시험이 잠근다.
+            // **여기서 죽으면 아래 `catch (e: Throwable)`이 받는다** — Error도 실패로 기록한다.
+            //
+            // 임시 파일 자리를 먼저 못박는다(스트리밍이 실제로 도는 데스크톱·시험 경로용).
             ExportWorkbooks.useTempDirectory(appContext.cacheDir)
             val workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
@@ -145,11 +153,23 @@ class AutoBackupWorker(
                 backupWarning
             ))
             Result.success()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // **`Exception`이 아니라 `Throwable`이다.** 이 경로에서 실제로 난 안드로이드 전용
+            // 실패는 전부 `Error`였다 — B-250의 `NoClassDefFoundError`(기기에 `java.awt`가 없다)와,
+            // 그 폴백이 기기를 몰아넣은 DOM 전량 적재의 `OutOfMemoryError`. 둘 다 `Exception`이
+            // 아니라 **아래 고지 기구를 통째로 건너뛰었다**: `recordFailure`도, 실패 알림도,
+            // 작업 이력도 돌지 않고 설정 화면은 **직전 성공 시각을 그대로 보여 준다.**
+            // 사용자는 없는 백업을 있다고 믿는다 — B-250이 이 항목을 🔴로 부른 이유가 그것이다.
+            // 형제 자리(`ExportWorkbook.kt`)는 이미 `LinkageError`를 명시로 잡고 있었는데,
+            // 정작 *실패를 알리는* 이 자리에만 그 구분이 없었다.
             // 취소(stop)는 실패가 아니다 — 산출물이 없으므로 기록할 실패도 없다(B-96).
             // `isStopped`도 함께 보는 이유: 취소 시점에 따라 접힌 예외가
             // ExportCancelledException이 아니라 그 뒤에 따라온 I/O 예외일 수 있다.
             val cancelled = e is com.novelcharacter.app.excel.ExportCancelledException || isStopped
+            // **`Error`는 message가 비어 있는 일이 흔하다**(`OutOfMemoryError`가 그렇다).
+            // 그러면 아래 셋(상태 저장·실패 알림·작업 이력)이 전부 "Unknown error"가 되어
+            // *무엇이 죽였는지*가 사라진다 — 형제 자리(`ExcelExporter`)와 같게 종류 이름을 남긴다.
+            val reason = e.message ?: e::class.java.simpleName
             val outcome = com.novelcharacter.app.util.BackupWorkerPolicy.outcome(
                 cancelled = cancelled,
                 failed = true,
@@ -162,16 +182,16 @@ class AutoBackupWorker(
                 AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
             }
             if (outcome.recordsFailure) {
-                statusStore.recordFailure(e.message ?: "Unknown error")
+                statusStore.recordFailure(reason)
             }
             if (outcome.notifiesUser) {
                 // 재시도 소진 — 최종 실패. 시스템 알림으로 능동 통지 + 이력 기록.
                 com.novelcharacter.app.notification.NotificationHelper
-                    .showBackupFailedNotification(appContext, e.message ?: "Unknown error")
+                    .showBackupFailedNotification(appContext, reason)
                 logResult(com.novelcharacter.app.util.OpResult.failure(
                     com.novelcharacter.app.util.OpResult.CAT_BACKUP,
                     appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_failed),
-                    detail = e.message
+                    detail = reason
                 ))
             }
             if (outcome.retries) Result.retry() else Result.failure()

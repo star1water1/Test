@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 이 필드가 **서술형(긴 글)**인지에 대한 사용자 설정.
@@ -31,7 +32,7 @@ enum class NarrativeMode(val key: String, val label: String) {
         fun fromKey(key: String?): NarrativeMode = entries.find { it.key == key } ?: AUTO
 
         fun fromConfig(configJson: String): NarrativeMode = try {
-            fromKey(JSONObject(configJson).optString(CONFIG_KEY, AUTO.key))
+            fromKey(JSONObject(configJson).stringOr(CONFIG_KEY, AUTO.key))
         } catch (_: Exception) {
             AUTO
         }

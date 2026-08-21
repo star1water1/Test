@@ -49,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.stringOr
 
 class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.EventEditDialogFragment.Host {
 
@@ -651,7 +652,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val results = mutableMapOf<Long, String>()
         for (field in calculatedFields) {
             val formula = try {
-                org.json.JSONObject(field.config).optString("formula", "")
+                org.json.JSONObject(field.config).stringOr("formula", "")
             } catch (_: Exception) { "" }
             if (formula.isBlank()) continue
             // 평가 실패도 값으로 남긴다 — 종전에는 결과에서 빠져 칸이 비어 보였고,
@@ -789,7 +790,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         universeId: Long?
     ): List<Double> {
         val formula = try {
-            org.json.JSONObject(field.config).optString("formula", "")
+            org.json.JSONObject(field.config).stringOr("formula", "")
         } catch (_: Exception) { "" }
         if (formula.isBlank()) return emptyList()
 

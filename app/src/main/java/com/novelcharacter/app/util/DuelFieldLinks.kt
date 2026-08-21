@@ -253,7 +253,7 @@ object DuelFieldLinks {
         return try {
             val array = JSONArray(json)
             normalize((0 until array.length()).mapNotNull { i ->
-                array.optString(i, "").takeIf { it.isNotEmpty() }?.let { parseToken(it) }
+                array.stringOr(i, "").takeIf { it.isNotEmpty() }?.let { parseToken(it) }
             })
         } catch (_: Exception) {
             emptyList()
@@ -379,7 +379,7 @@ object DuelFieldLinks {
         return match.value.toDoubleOrNull()
     }
 
-    private val LEADING_NUMBER = Regex("^[+-]?\\d+(?:\\.\\d+)?")
+    private val LEADING_NUMBER = Regex("^[+-]?[0-9]+(?:\\.[0-9]+)?")
 
     /** 이 필드 하나가 가리키는 쪽. 둘 다 수로 읽혀야 갈린다. */
     fun compareOne(link: Link, aValue: String?, bValue: String?): Side {

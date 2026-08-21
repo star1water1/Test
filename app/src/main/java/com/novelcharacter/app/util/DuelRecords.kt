@@ -206,7 +206,7 @@ object DuelRecords {
         return try {
             val array = JSONArray(json)
             (0 until array.length()).mapNotNull { i ->
-                array.optString(i, "").takeIf { it.isNotEmpty() }
+                array.stringOr(i, "").takeIf { it.isNotEmpty() }
             }
         } catch (_: Exception) {
             emptyList()

@@ -33,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.stringOr
 
 class NovelCharacterApp : Application() {
 
@@ -101,7 +102,11 @@ class NovelCharacterApp : Application() {
                 .primeQuietly()
         }
         createNotificationChannel()
-        checkBackupKeyAvailability()
+        // **콜드 스타트의 메인 스레드에서 빼낸다.** 하는 일은 `listFiles()`(디스크)와
+        // `BackupEncryptor.isKeyAvailable()`(AndroidKeyStore — 키스토어 데몬과의 바인더 왕복)인데
+        // **산출은 `Log.w` 한 줄뿐**이라, 그 대가를 첫 프레임 앞에 둘 이유가 없다.
+        // 바로 위 `TrashSettingsStore.primeQuietly()`가 이미 같은 판단으로 이 스코프에 있다.
+        appScope.launch(Dispatchers.IO) { checkBackupKeyAvailability() }
         try {
             scheduleBirthdayCheck()
             scheduleAutoBackup()
@@ -220,8 +225,8 @@ class NovelCharacterApp : Application() {
                         com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) == com.novelcharacter.app.data.model.SemanticRole.ALIVE
                     } ?: continue
                     val aliveConfig = try { org.json.JSONObject(aliveFieldFinal.config) } catch (_: Exception) { continue }
-                    val aliveVal = aliveConfig.optString("aliveValue", "")
-                    val deadVal = aliveConfig.optString("deadValue", "")
+                    val aliveVal = aliveConfig.stringOr("aliveValue", "")
+                    val deadVal = aliveConfig.stringOr("deadValue", "")
                     if (aliveVal.isBlank() || deadVal.isBlank()) continue
 
                     // 해당 세계관 캐릭터 처리
@@ -304,7 +309,7 @@ class NovelCharacterApp : Application() {
                     logFile.delete()
                 }
                 logFile.appendText(buildString {
-                    appendLine("=== Crash at ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())} ===")
+                    appendLine("=== Crash at ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ===")
                     appendLine("Thread: ${thread.name}")
                     appendLine(throwable.stackTraceToString())
                 })

@@ -50,7 +50,7 @@ object FieldValueSorter {
                 val parts = if (sic.enabled) {
                     rawValue.split(sic.separator).map { it.trim() }
                 } else {
-                    rawValue.split(Regex("[-/\\s]+")).map { it.trim() }
+                    rawValue.split(RegexCharClasses.DASH_SLASH_WHITESPACE).map { it.trim() }
                 }
                 parts.getOrNull(partIdx)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             }

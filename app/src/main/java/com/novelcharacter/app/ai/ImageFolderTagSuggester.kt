@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ai
 
+import com.novelcharacter.app.util.stringOr
+
 
 /**
  * 이미지 폴더 이름으로 **태그를 제안**한다 (설계 `docs/image_folder_tag_ai_2026-07.md` 3장).
@@ -157,7 +159,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
             val seen = HashSet<String>()
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
-                val name = obj.optString("name").trim()
+                val name = obj.stringOr("name").trim()
                 if (name.isEmpty() || name !in wanted) { unknown++; continue }
                 // 같은 폴더를 두 번 되돌리면 뒤엣것은 버린다 — 어느 쪽이 옳은지 알 수 없다.
                 if (!seen.add(name)) { unknown++; continue }
@@ -166,7 +168,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                 val picked = LinkedHashMap<String, Suggestion>()
                 if (tagsArr != null) {
                     for (t in 0 until tagsArr.length()) {
-                        val answered = tagsArr.optString(t).trim()
+                        val answered = tagsArr.stringOr(t).trim()
                         if (answered.isEmpty() ||
                             answered.length > AiPromptPolicy.IMAGE_TAG_MAX_LENGTH) { blank++; continue }
                         val folded = ImageTagVocabulary.fold(answered, folding)

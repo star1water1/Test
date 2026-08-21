@@ -828,6 +828,7 @@ class TrashFragment : Fragment() {
         private val onToggleExpand: (TrashListPlan.Row.Header) -> Unit
     ) : ListAdapter<TrashListPlan.Row, RecyclerView.ViewHolder>(DIFF) {
 
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
         override fun getItemViewType(position: Int): Int =

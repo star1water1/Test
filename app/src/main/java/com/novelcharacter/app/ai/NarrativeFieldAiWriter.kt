@@ -4,6 +4,7 @@ import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.util.DuelAiContext
+import com.novelcharacter.app.util.RegexCharClasses
 
 /**
  * 서술형 필드(긴 글) 작성 보조 — 초안 · 이어쓰기 · 다듬기 · 늘리기 · 줄이기.
@@ -592,7 +593,10 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             return ParsedDrafts(out, dropped)
         }
 
-        private val LABEL_RE = Regex("""^\s*(초안|draft)\s*\d*\s*[:：.]\s*""", RegexOption.IGNORE_CASE)
+        private val LABEL_RE = Regex(
+            """^[${RegexCharClasses.WHITESPACE}]*(초안|draft)[${RegexCharClasses.WHITESPACE}]*${RegexCharClasses.ANY_DIGIT}*[${RegexCharClasses.WHITESPACE}]*[:：.][${RegexCharClasses.WHITESPACE}]*""",
+            RegexOption.IGNORE_CASE
+        )
 
         /** 라벨·감싼 따옴표 제거. 본문 안의 따옴표는 건드리지 않는다. */
         fun cleanDraft(raw: String): String {

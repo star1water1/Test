@@ -26,6 +26,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 스냅샷 단위 메모이즈(perSnapshot)의 동작 무변경 대조 (S6 2차).
@@ -177,7 +178,7 @@ class StatsMemoParityTest {
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
             for (fd in calcFds) {
                 val formula = try {
-                    org.json.JSONObject(fd.config).optString("formula", "")
+                    org.json.JSONObject(fd.config).stringOr("formula", "")
                 } catch (_: Exception) { "" }
                 if (formula.isBlank()) continue
                 try {

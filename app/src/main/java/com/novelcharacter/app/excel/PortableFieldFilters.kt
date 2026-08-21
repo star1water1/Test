@@ -2,6 +2,8 @@ package com.novelcharacter.app.excel
 
 import org.json.JSONArray
 import org.json.JSONObject
+import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 프리셋 필드 필터(FieldFilterHelper 직렬화 규약)의 엑셀 왕복 이식성 처리 (순수 JVM — 단위 테스트 대상).
@@ -66,7 +68,7 @@ object PortableFieldFilters {
 
     /** 필드명 자연키 정규화 — 전각/앞뒤·연속 공백/대소문자 차이만 흡수(괄호 등 의미 문자는 보존). */
     internal fun normalizeName(name: String): String =
-        toHalfWidth(name).trim().replace(Regex("\\s+"), " ").lowercase()
+        toHalfWidth(name).trim().replace(RegexCharClasses.WHITESPACE_RUN, " ").lowercase()
 
     /**
      * [json] 저장 가능한 인앱 규약 JSON,
@@ -114,9 +116,9 @@ object PortableFieldFilters {
             var nameBased = 0
             for (idx in 0 until arr.length()) {
                 val obj = arr.optJSONObject(idx) ?: continue
-                val name = obj.optString("fieldName")
-                val fieldKey = obj.optString("fieldKey")
-                val universeCode = obj.optString("universeCode")
+                val name = obj.stringOr("fieldName")
+                val fieldKey = obj.stringOr("fieldKey")
+                val universeCode = obj.stringOr("universeCode")
                 val fileFieldId = obj.optLong("fieldId", -1L)
                 val label = name.ifBlank { fieldKey.ifBlank { "?" } }
 
@@ -150,7 +152,7 @@ object PortableFieldFilters {
                     // 라벨은 이 기기의 현재 필드명으로 — 파일의 낡은 표시명이 라벨-대상 불일치를 만들지 않게
                     put("fieldName", deviceField?.name?.ifBlank { name } ?: name)
                     put("values", obj.optJSONArray("values") ?: JSONArray())
-                    put("matchMode", obj.optString("matchMode").ifBlank { "exact" })
+                    put("matchMode", obj.stringOr("matchMode").ifBlank { "exact" })
                     // **키를 다시 싣는다 (B-11).** 인앱 필터의 정본이 키로 올라갔으므로, 여기서
                     // 표준 속성만 남기며 키를 떨어뜨리면 **엑셀 왕복이 그 정본을 조용히 지운다** —
                     // 내보내기 전에는 세계관 A·B의 '성별'이 함께 걸리던 필터가, 한 번 다녀오면

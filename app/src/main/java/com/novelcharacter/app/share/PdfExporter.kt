@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import com.novelcharacter.app.util.stringOr
 
 data class PdfConfig(
     val universeId: Long,
@@ -164,7 +165,7 @@ class PdfExporter(private val context: Context) {
                             val evaluator = com.novelcharacter.app.util.FormulaEvaluator(keyValues, fieldDefs)
                             calcFields.mapNotNull { fd ->
                                 val formula = try {
-                                    org.json.JSONObject(fd.config).optString("formula", "")
+                                    org.json.JSONObject(fd.config).stringOr("formula", "")
                                 } catch (_: Exception) { "" }
                                 if (formula.isBlank()) return@mapNotNull null
                                 // 화면·엑셀과 같은 표식을 쓴다 — PDF만 조용히 비면 인쇄본을 보고

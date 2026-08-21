@@ -59,6 +59,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.stringOr
 
 /** 캐릭터 목록 정렬 사양. [kind]는 CharacterListPreset.SORT_* 상수. */
 data class CharacterSort(
@@ -695,7 +696,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             val uFields = universeFieldsCache.getOrPut(uid) { universeRepository.getFieldsByUniverseList(uid) }
             val calcFd = uFields.firstOrNull { it.key == fieldKey && it.fieldType == FieldType.CALCULATED }
             if (calcFd == null) { result[c.id] = null; continue }
-            val formula = try { org.json.JSONObject(calcFd.config).optString("formula", "") } catch (_: Exception) { "" }
+            val formula = try { org.json.JSONObject(calcFd.config).stringOr("formula", "") } catch (_: Exception) { "" }
             if (formula.isBlank()) { result[c.id] = null; continue }
             val idToKey = uFields.associate { it.id to it.key }
             val fieldMap = valuesByChar[c.id].orEmpty()

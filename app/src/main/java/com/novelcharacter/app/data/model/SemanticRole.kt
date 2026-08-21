@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOrNull
 
 /**
  * 잇는 시스템 필드가 없는 역할의 [SemanticRole.linkedKey].
@@ -77,7 +78,7 @@ enum class SemanticRole(
         fun fromConfig(configJson: String): SemanticRole? {
             return try {
                 val json = JSONObject(configJson)
-                fromKey(json.optString(CONFIG_KEY, null))
+                fromKey(json.stringOrNull(CONFIG_KEY))
             } catch (_: Exception) {
                 null
             }

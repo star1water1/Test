@@ -10,6 +10,7 @@ import org.junit.Test
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * StreamingXlsxReader ↔ DOM 동치 통합 테스트.
@@ -51,7 +52,7 @@ class StreamingXlsxReaderTest {
             style.dataFormat = wb.createDataFormat().getFormat("yyyy-mm-dd")
             val dateCell = createCell(0)
             dateCell.cellStyle = style
-            dateCell.setCellValue(Calendar.getInstance().apply { clear(); set(2023, Calendar.JUNE, 15) }.time)
+            dateCell.setCellValue(Calendar.getInstance(Locale.US).apply { clear(); set(2023, Calendar.JUNE, 15) }.time)
             // col 1,2 미생성(공백)
             createCell(3).setCellValue("")           // 빈 문자열 → 정규화 "" → 생략
             createCell(5).setCellValue("끝")         // 공백 뒤 값

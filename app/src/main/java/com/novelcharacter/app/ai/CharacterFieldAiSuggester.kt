@@ -12,6 +12,8 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.util.DuelAiContext
 import com.novelcharacter.app.util.FieldValueTokenizer
+import com.novelcharacter.app.util.RegexCharClasses
+import com.novelcharacter.app.util.stringOr
 
 /**
  * 캐릭터 필드 값 AI 추천 — 생일 포함 모든 편집 가능 필드의 값을 추천 이유와 함께 제안한다.
@@ -1267,9 +1269,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
             for (i in 0 until (arr?.length() ?: 0)) {
                 val obj = arr?.optJSONObject(i) ?: continue
-                val key = obj.optString("key").trim()
-                val rawValue = obj.optString("value").trim()
-                val reason = obj.optString("reason").trim()
+                val key = obj.stringOr("key").trim()
+                val rawValue = obj.stringOr("value").trim()
+                val reason = obj.stringOr("reason").trim()
                 if (key.isEmpty() && rawValue.isEmpty()) continue
                 val spec = byKey[key]
                 if (spec == null) {
@@ -1283,7 +1285,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     note(spec, MissingCause.DUPLICATE, rawValue)
                     continue
                 }
-                val confidence = Confidence.fromWire(obj.optString("confidence"))
+                val confidence = Confidence.fromWire(obj.stringOr("confidence"))
                 // 미표기(null)는 통과시킨다 — 강도를 모른다는 이유로 버리면 생략과 같은 결과다
                 if (confidence != null && !confidence.meets(minConfidence)) {
                     dropped++
@@ -1364,7 +1366,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         private fun normalizeForMatch(value: String): String =
             value.trim().replace(WHITESPACE, "").lowercase(java.util.Locale.ROOT)
 
-        private val WHITESPACE = Regex("\\s+")
+        private val WHITESPACE = RegexCharClasses.WHITESPACE_RUN
 
         /**
          * 구조화 입력 검증 — 파트 수만큼 구분자로 나뉘고 전 파트가 비어 있지 않아야 통과.
@@ -1379,9 +1381,18 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             return parts.joinToString(sep)
         }
 
-        /** "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null */
+        /**
+         * "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null
+         *
+         * **숫자를 [RegexCharClasses.ANY_DIGIT]로 받는 것은 일부러다.** 여기는 *파싱해서
+         * 계산할* 자리가 아니라 **정규화해서 다시 적는** 자리이고, 산출은 언제나
+         * `Locale.US`의 ASCII `MM-DD`다. `Integer.parseInt`는 유니코드 십진 숫자를 받으므로
+         * (`Double.parseDouble`과 **다르다**) 전각 `１-２`도 `01-02`로 바로잡힌다 —
+         * 개발 의도 2번이 말하는 *"잘못된 입력을 바로잡는"* 쪽이다.
+         * 콜드 검토 정정: 종전 `[0-9]`는 기기에서 잘 돌던 그 관용을 없앴다.
+         */
         fun normalizeBirthDate(raw: String): String? {
-            val match = Regex("^(\\d{1,2})-(\\d{1,2})$").find(raw.trim()) ?: return null
+            val match = Regex("^(${RegexCharClasses.ANY_DIGIT}{1,2})-(${RegexCharClasses.ANY_DIGIT}{1,2})$").find(raw.trim()) ?: return null
             val month = match.groupValues[1].toInt()
             val day = match.groupValues[2].toInt()
             if (month !in 1..12) return null
@@ -1398,7 +1409,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         fun normalizeNumber(raw: String): String? {
             val trimmed = raw.trim()
             if (trimmed.toDoubleOrNull() != null) return trimmed
-            return Regex("^-?\\d+(?:\\.\\d+)?").find(trimmed)?.value
+            return Regex("^-?[0-9]+(?:\\.[0-9]+)?").find(trimmed)?.value
         }
 
         private fun typeLabel(type: FieldType): String = when (type) {

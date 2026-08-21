@@ -25,6 +25,7 @@ import com.novelcharacter.app.util.BodyAnalysisResult
 import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.util.RankingInfo
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.stringOr
 
 class DynamicFieldRenderer(
     private val containerGetter: () -> LinearLayout,
@@ -525,7 +526,7 @@ class DynamicFieldRenderer(
         val evaluator = FormulaEvaluator(fieldKeyValues, fields)
         for (field in calculatedFields) {
             val formula = try {
-                org.json.JSONObject(field.config).optString("formula", "")
+                org.json.JSONObject(field.config).stringOr("formula", "")
             } catch (_: Exception) { "" }
             if (formula.isBlank()) continue
             // 평가 실패도 값으로 남긴다 — 빈 칸은 '값 없음'과 구분되지 않아 고장이 묻힌다(U-9).

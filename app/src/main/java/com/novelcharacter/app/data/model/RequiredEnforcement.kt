@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import org.json.JSONObject
+import com.novelcharacter.app.util.stringOr
 
 /**
  * '필수 입력'이 저장을 **막는가**, 표시하고 **알리기만 하는가** (B-90).
@@ -80,7 +81,7 @@ enum class RequiredEnforcement(val key: String) {
         /** 저장된 값만 읽는다(없으면 null) — '설정되지 않음'과 '알림'을 가르려면 이쪽을 쓴다. */
         fun fromConfigOrNull(configJson: String): RequiredEnforcement? {
             return try {
-                val key = JSONObject(configJson).optString(CONFIG_KEY, "")
+                val key = JSONObject(configJson).stringOr(CONFIG_KEY, "")
                 entries.find { it.key == key }
             } catch (_: Exception) {
                 null

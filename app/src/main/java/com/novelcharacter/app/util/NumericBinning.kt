@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import kotlin.math.abs
+import java.util.Locale
 
 /**
  * 수치 구간(bin) 생성의 **단일 소스** (S-16).
@@ -137,7 +138,7 @@ object NumericBinning {
     fun singleBin(value: Float): Bin {
         val decimals = if (value == value.toInt().toFloat()) 0
         else (1..MAX_DECIMALS).firstOrNull { d ->
-            String.format("%.${d}f", value).toFloatOrNull() == value
+            String.format(Locale.US, "%.${d}f", value).toFloatOrNull() == value
         } ?: MAX_DECIMALS
         return Bin(
             index = 0,
@@ -183,6 +184,6 @@ object NumericBinning {
             val truncated = value.toInt()
             if (truncated == 0 && abs(value) < 1f) "0" else truncated.toString()
         } else {
-            String.format("%.${decimals}f", value)
+            String.format(Locale.US, "%.${decimals}f", value)
         }
 }
