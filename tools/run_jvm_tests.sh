@@ -518,6 +518,7 @@ $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/ui/character/InitialHydrationGuardTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
+$TEST/stats/FactionMemberCountKeyTest.kt
 $TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/util/NameBankMatchTest.kt
