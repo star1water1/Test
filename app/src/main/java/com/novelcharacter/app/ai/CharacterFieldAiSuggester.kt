@@ -1381,9 +1381,18 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             return parts.joinToString(sep)
         }
 
-        /** "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null */
+        /**
+         * "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null
+         *
+         * **숫자를 [RegexCharClasses.ANY_DIGIT]로 받는 것은 일부러다.** 여기는 *파싱해서
+         * 계산할* 자리가 아니라 **정규화해서 다시 적는** 자리이고, 산출은 언제나
+         * `Locale.US`의 ASCII `MM-DD`다. `Integer.parseInt`는 유니코드 십진 숫자를 받으므로
+         * (`Double.parseDouble`과 **다르다**) 전각 `１-２`도 `01-02`로 바로잡힌다 —
+         * 개발 의도 2번이 말하는 *"잘못된 입력을 바로잡는"* 쪽이다.
+         * 콜드 검토 정정: 종전 `[0-9]`는 기기에서 잘 돌던 그 관용을 없앴다.
+         */
         fun normalizeBirthDate(raw: String): String? {
-            val match = Regex("^([0-9]{1,2})-([0-9]{1,2})$").find(raw.trim()) ?: return null
+            val match = Regex("^(${RegexCharClasses.ANY_DIGIT}{1,2})-(${RegexCharClasses.ANY_DIGIT}{1,2})$").find(raw.trim()) ?: return null
             val month = match.groupValues[1].toInt()
             val day = match.groupValues[2].toInt()
             if (month !in 1..12) return null

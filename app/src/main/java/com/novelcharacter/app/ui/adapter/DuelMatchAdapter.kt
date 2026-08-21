@@ -92,6 +92,7 @@ class DuelMatchAdapter(
     }
 
     companion object {
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         private val TIME_FORMAT = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault())
     }
 }

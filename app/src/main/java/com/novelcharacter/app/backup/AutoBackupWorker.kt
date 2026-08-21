@@ -166,6 +166,10 @@ class AutoBackupWorker(
             // `isStopped`도 함께 보는 이유: 취소 시점에 따라 접힌 예외가
             // ExportCancelledException이 아니라 그 뒤에 따라온 I/O 예외일 수 있다.
             val cancelled = e is com.novelcharacter.app.excel.ExportCancelledException || isStopped
+            // **`Error`는 message가 비어 있는 일이 흔하다**(`OutOfMemoryError`가 그렇다).
+            // 그러면 아래 셋(상태 저장·실패 알림·작업 이력)이 전부 "Unknown error"가 되어
+            // *무엇이 죽였는지*가 사라진다 — 형제 자리(`ExcelExporter`)와 같게 종류 이름을 남긴다.
+            val reason = e.message ?: e::class.java.simpleName
             val outcome = com.novelcharacter.app.util.BackupWorkerPolicy.outcome(
                 cancelled = cancelled,
                 failed = true,
@@ -178,16 +182,16 @@ class AutoBackupWorker(
                 AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
             }
             if (outcome.recordsFailure) {
-                statusStore.recordFailure(e.message ?: "Unknown error")
+                statusStore.recordFailure(reason)
             }
             if (outcome.notifiesUser) {
                 // 재시도 소진 — 최종 실패. 시스템 알림으로 능동 통지 + 이력 기록.
                 com.novelcharacter.app.notification.NotificationHelper
-                    .showBackupFailedNotification(appContext, e.message ?: "Unknown error")
+                    .showBackupFailedNotification(appContext, reason)
                 logResult(com.novelcharacter.app.util.OpResult.failure(
                     com.novelcharacter.app.util.OpResult.CAT_BACKUP,
                     appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_failed),
-                    detail = e.message
+                    detail = reason
                 ))
             }
             if (outcome.retries) Result.retry() else Result.failure()

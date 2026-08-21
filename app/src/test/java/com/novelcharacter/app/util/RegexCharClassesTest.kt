@@ -80,12 +80,19 @@ class RegexCharClassesTest {
         assertEquals("한글이름", clean("한글이름"))
         assertEquals("Latin_1", clean("Latin 1"))
         assertEquals("日本語", clean("日本語"))
-        // 사라진다 — 경로 구분자·제어문자·보이지 않는 결합자
+        // **수(數)로 쓰이는 글자도 남는다** — 콜드 검토가 잡은 자리다. 종전에는 `\p{Nl}` 65자
+        // (로마숫자·〇·항주 숫자)가 통째로 `_`가 됐고, 그것은 *"기기 동작을 보존한다"*던
+        // 이 판의 주장과 어긋났다.
+        assertEquals("\u2162\uAD8C", clean("\u2162\uAD8C"))   // Ⅲ권
+        assertEquals("\u3007", clean("\u3007"))                 // 〇
+        // 사라진다 — 경로 구분자·제어문자·보이지 않는 결합자·원문자
         assertEquals("a_b", clean("a/b"))
         assertEquals("a_b", clean("a\\b"))
         assertEquals("a_b", clean("a\u0000b"))
         assertEquals("a_b", clean("a\u202Eb"))    // RTL override
         assertEquals("a_b", clean("a\u200Db"))    // ZWJ
+        assertEquals("a_b", clean("a\u24B6b"))    // Ⓐ 원문자(So)
+        assertEquals("a_b", clean("a\u203Fb"))    // ‿ 이음 문장부호(Pc)
     }
 
     @Test fun constantsCarryNoEngineDivergentShorthand() {

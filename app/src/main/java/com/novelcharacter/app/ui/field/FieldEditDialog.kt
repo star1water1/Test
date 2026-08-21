@@ -45,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.util.stringOr
+import com.novelcharacter.app.util.StandardYearLink
 
 class FieldEditDialog : DialogFragment() {
 
@@ -2194,8 +2195,8 @@ class FieldEditDialog : DialogFragment() {
             if (semanticRole == SemanticRole.AGE) {
                 linkageRuleContainer?.visibility = View.VISIBLE
                 try {
-                    val linkageRule = org.json.JSONObject(field.config).stringOr("linkageRule", "age_anchor")
-                    linkageRuleSpinner?.setSelection(if (linkageRule == "birth_anchor") 1 else 0)
+                    val linkageRule = org.json.JSONObject(field.config).stringOr("linkageRule", StandardYearLink.RULE_AGE_ANCHOR)
+                    linkageRuleSpinner?.setSelection(if (linkageRule == StandardYearLink.RULE_BIRTH_ANCHOR) 1 else 0)
                 } catch (_: Exception) {}
             }
             // ALIVE면 기존 aliveValue/deadValue 보존 (편집 시 config에 반영)
@@ -2849,7 +2850,7 @@ class FieldEditDialog : DialogFragment() {
                 // AGE 역할이면 연동 규칙 저장
                 if (role == SemanticRole.AGE) {
                     val rulePos = linkageRuleSpinner?.selectedItemPosition ?: 0
-                    config["linkageRule"] = if (rulePos == 1) "birth_anchor" else "age_anchor"
+                    config["linkageRule"] = if (rulePos == 1) StandardYearLink.RULE_BIRTH_ANCHOR else StandardYearLink.RULE_AGE_ANCHOR
                 }
                 // ALIVE 역할이면 aliveValue/deadValue 자동 매핑
                 if (role == SemanticRole.ALIVE) {

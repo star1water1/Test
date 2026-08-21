@@ -395,6 +395,7 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val status = statusStore.getStatus()
             if (_binding == null) return@launch
+            // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             val sb = StringBuilder()
 
@@ -1014,6 +1015,7 @@ class SettingsFragment : Fragment() {
             return
         }
 
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         val labels = backupFiles.map { file ->
             val date = dateFormat.format(Date(file.lastModified()))
@@ -1032,6 +1034,7 @@ class SettingsFragment : Fragment() {
 
     private fun confirmAndRestore(encFile: File) {
         if (!isAdded) return
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         val label = dateFormat.format(Date(encFile.lastModified()))
 
@@ -1271,6 +1274,7 @@ class SettingsFragment : Fragment() {
             } else {
                 val lastTime = withContext(Dispatchers.IO) { AppLogger.getLastErrorTime() }
                 val timeStr = if (lastTime != null && lastTime > 0) {
+                    // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
                     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(lastTime))
                 } else "?"
                 binding.errorLogSummaryText.text = getString(R.string.error_log_summary, timeStr, count)
@@ -1294,6 +1298,7 @@ class SettingsFragment : Fragment() {
                 return@launch
             }
 
+            // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
             val displayEntries = entries.take(maxDisplay)
             val sb = StringBuilder()

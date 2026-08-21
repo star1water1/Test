@@ -264,7 +264,14 @@ class ExcelExporter(context: Context) {
             // 그때부터는 공유 시트·SAF가 쓰는 파일이라 우리가 지울 것이 아니다.
             var orphanFile: File? = null
             try {
-                // 스트리밍 워크북 — 메모리가 데이터 양에 비례하지 않는다(B-72 · S7).
+                // 워크북 구현은 **프로브가 정한다**(B-250) — 손으로 적지 않는다.
+                //
+                // ⚠️ **기기에서는 이 답이 언제나 DOM이다** — 안드로이드에 `java.awt`가 없어
+                // `SXSSFSheet` 생성이 `LinkageError`로 죽기 때문이다. 즉 *"메모리가 데이터 양에
+                // 비례하지 않는다(B-72 · S7)"*는 **데스크톱에서만 참이다**(로드맵 S7 행의
+                // 2026.08.21 정정 · 형제 자리 `AutoBackupWorker`에 같은 주석이 있다).
+                // 종전 이 자리의 주석은 그 반대를 사실로 적고 있었다 — 콜드 검토가 잡았다.
+                //
                 // 임시 파일 자리를 먼저 못박는다(그러지 않으면 앱이 모르는 자리에 백업 크기의
                 // 임시 파일이 생긴다). 두 구현이 같은 파일을 낸다는 것은 시험이 잠근다.
                 ExportWorkbooks.useTempDirectory(appContext.cacheDir)
@@ -409,7 +416,11 @@ class ExcelExporter(context: Context) {
                 }
             } finally {
                 // 임시 파일까지 함께 놓는다 — 남으면 그 크기가 백업 한 판 분량이다([ExportWorkbooks.release]).
-                try { ExportWorkbooks.release(workbook) } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
+                // **`Throwable`이다.** 이 판이 OOM을 *지원되는 갈래*로 올렸으므로(위 catch),
+                // 정리 중 두 번째 `OutOfMemoryError`가 실제로 날 수 있는 자리가 됐다.
+                // `Exception`만 잡으면 그때 아래 줄들이 통째로 건너뛰어져 **`isExporting`이
+                // 영구히 true로 남고** 그 프로세스에서 내보내기가 조용히 죽는다.
+                try { ExportWorkbooks.release(workbook) } catch (t: Throwable) { android.util.Log.w("ExcelExporter", "Failed to close workbook", t) }
                 phase = null
                 ActiveTransfers.exit(this@ExcelExporter)
                 activeProgress = null

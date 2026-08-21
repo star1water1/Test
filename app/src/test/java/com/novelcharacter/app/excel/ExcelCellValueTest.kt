@@ -90,7 +90,7 @@ class ExcelCellValueTest {
         val result = normalize(cell { it.setCellValue(44000.0) }, dateHint = true)
         // 시리얼 44000 → 날짜 문자열(YYYY-MM-DD, TZ 의존). 숫자 "44000"이 **아님**을 확인.
         assertEquals(true, result != "44000")
-        assertEquals(true, Regex("""\d{1,4}-\d{2}-\d{2}""").matches(result))
+        assertEquals(true, Regex("""[0-9]{1,4}-[0-9]{2}-[0-9]{2}""").matches(result))
     }
 
     @Test fun blankCell_normalizesToEmpty() {

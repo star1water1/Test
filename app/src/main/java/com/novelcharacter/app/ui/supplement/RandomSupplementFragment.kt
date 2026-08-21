@@ -1271,6 +1271,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private fun maybeOfferDraftRestore(characterId: Long) {
         val ctx = context ?: return
         val draft = CharacterDraftPrefs.load(ctx, characterId) ?: return
+        // platform-parity-ok: 화면에 보이는 시각이다 — 사용자 로케일을 따르는 것이 옳다(R-22)
         val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
             .format(java.util.Date(draft.savedAt))
         MaterialAlertDialogBuilder(ctx)

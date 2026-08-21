@@ -38,7 +38,8 @@
 #     `}` → `\}`
 #
 # ── 예외를 두는 법 ──
-# 정말 약칭이 맞는 자리면 **그 줄이나 바로 윗줄에** 사유와 함께 표식을 남긴다:
+# 정말 약칭이 맞는 자리면 **그 줄 또는 바로 위 세 줄에** 사유와 함께 표식을 남긴다
+# (아래 줄은 안 본다 — 무엇을 면제하는지 모호해진다):
 #     // regex-parity-ok: <왜 이 자리는 갈려도 되는가>
 # 표식 없이 통과시키지 않는다. 그리고 **검사를 넓혀 늘 빨간불로 만들지 않는다** —
 # 그러면 다음 사람이 검사를 끈다.
@@ -56,6 +57,9 @@ import io, os, re, sys
 
 REPO = sys.argv[1]
 SRC = os.path.join(REPO, 'app/src/main/java')
+# **시험 소스도 본다** — 형제 검사가 같은 근거로 넓혔다: 프로덕션 로직을 복사한 시험이
+# 다른 표기를 쓰면 *시험이 프로덕션과 다른 것을 검증한다*.
+TEST_SRC = os.path.join(REPO, 'app/src/test/java')
 SINGLE_SOURCE = os.path.join('app', 'src', 'main', 'java', 'com', 'novelcharacter',
                              'app', 'util', 'RegexCharClasses.kt')
 
@@ -71,7 +75,9 @@ DIVERGENT = {
 }
 
 OK_MARK = re.compile(r'//\s*regex-parity-ok\s*:')
-INTERP = re.compile(r'\$\{[^{}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
+# POSIX 이름 — 자바는 ASCII로, ICU는 유니코드로 읽는다(실측). `\\p{L}`류 유니코드 범주와 다르다.
+POSIX_NAMES = {'Alnum', 'Alpha', 'Digit', 'Space', 'Punct', 'Upper', 'Lower',
+               'XDigit', 'Print', 'Graph', 'Blank', 'Cntrl', 'ASCII'}
 
 
 def blank_comments(src):
@@ -135,10 +141,41 @@ def unesc(s):
     return ''.join(out)
 
 
+def strip_interp(s):
+    """코틀린 문자열 보간(`${...}`·`$ident`)을 자리표 `1`로 바꾼다 — **중괄호 짝을 센다.**
+
+    종전에는 `\$\{[^{}]*\}` 였는데 그것은 **중첩을 못 문다**: 람다를 품은 정상 템플릿
+    `${list.joinToString("|") { it }}` 에서 안쪽 `{`·`}`가 남아 **날 중괄호로 오인**됐다.
+    자리표를 `1`로 두는 것도 일부러다 — `{$N}` 이 수량자로 읽혀야
+    `^[0-9a-f]{$TOKEN_LENGTH}$` 같은 정상 코드가 거짓 양성이 되지 않는다.
+    """
+    out, i, n = [], 0, len(s)
+    while i < n:
+        if s[i] == '$' and i + 1 < n and s[i + 1] == '{':
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if s[j] == '{':
+                    depth += 1
+                elif s[j] == '}':
+                    depth -= 1
+                j += 1
+            out.append('1')
+            i = j
+            continue
+        if s[i] == '$' and i + 1 < n and (s[i + 1].isalpha() or s[i + 1] == '_'):
+            j = i + 1
+            while j < n and (s[j].isalnum() or s[j] == '_'):
+                j += 1
+            out.append('1')
+            i = j
+            continue
+        out.append(s[i])
+        i += 1
+    return ''.join(out)
+
+
 def despecialize(rx):
-    """보간을 자리표로 바꾼다. `1`을 쓰는 것은 일부러다 — `{$N}` 이 수량자로 읽혀야
-    `^[0-9a-f]{$TOKEN_LENGTH}$` 같은 정상 코드가 거짓 양성이 되지 않는다."""
-    return INTERP.sub('1', rx)
+    return strip_interp(rx)
 
 
 def bare_braces(rx):
@@ -189,40 +226,47 @@ def shorthands(rx):
         i += 1
     if re.search(r'\[:\w+:\]', rx):
         hits.append('[[:posix:]]')
+    # **`\p{Alnum}` 같은 POSIX 이름이 `\p{...}` 화이트리스트에 숨어 있었다** — 자바에서 실제로
+    # 쓰는 표기가 이쪽인데 검사가 통째로 통과시켰다(콜드 검토). ICU는 유니코드로 읽어 갈린다
+    # (실측: `\p{Alnum}` ICU 50,250 대 JVM 62).
+    for name in re.findall(r'\\[pP]\{(\w+)\}', rx):
+        if name in POSIX_NAMES:
+            hits.append('\\p{%s}' % name)
     return sorted(set(hits))
 
 
-TRIPLE = re.compile(r'"""(.*?)"""', re.S)
-RE_TRIPLE = re.compile(r'(?:Regex|Pattern\.compile)\(\s*"""(.*?)"""', re.S)
-RE_TORE_T = re.compile(r'"""(.*?)"""\s*\.toRegex\(\)', re.S)
-RE_SINGLE = re.compile(r'(?:Regex|Pattern\.compile)\(\s*"((?:[^"\\\n]|\\.)*)"')
-RE_TORE_S = re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*\.toRegex\(\)')
-ANY_STR = re.compile(r'"""(.*?)"""|"((?:[^"\\\n]|\\.)*)"', re.S)
+STR_TOKEN = re.compile(r'"""(.*?)"""|"((?:[^"\\\n]|\\.)*)"', re.S)
+# 리터럴 **앞**이 이 꼴이면 그 리터럴은 정규식이다 (이름 붙인 인자 `pattern =` 포함)
+BEFORE_RE = re.compile(r'(?:Regex|Pattern\.compile|Pattern\.matches)\s*\(\s*(?:pattern\s*=\s*)?$')
+# 리터럴 **뒤**가 이 꼴이면 그 리터럴은 정규식이다 (`toRegex(RegexOption.…)` 포함)
+AFTER_RE = re.compile(r'^\s*\.toRegex\s*\(')
 
 
 def literals(src, rel):
-    """정규식으로 쓰이는 문자열 조각 → (오프셋, 패턴). src는 주석이 덮인 것이어야 한다."""
+    """정규식으로 **쓰이는** 문자열 조각 → (오프셋, 패턴). src는 주석이 덮인 것이어야 한다.
+
+    종전에는 호출 꼴마다 정규식을 따로 두어 `toRegex(RegexOption.IGNORE_CASE)` ·
+    `Regex(pattern = "…")` · `Pattern.matches("…", s)` 를 통째로 놓쳤고, `RE_TORE_T`가
+    앵커 없이 `\"\"\"(.*?)\"\"\"\\s*\\.toRegex\\(\\)` 라 **앞선 다른 삼중따옴표까지 삼켰다**(콜드 검토).
+    이제 **리터럴을 먼저 찾고 그 앞뒤 문맥으로 쓰임을 판정한다.**
+
+    **알려진 한계(일부러 적는다):** 상수를 거쳐 만드는 것(`Regex(PATTERN_CONST)`)과
+    이어 붙여 만드는 것(`Regex("^" + X + "$")`)은 못 본다 — 리터럴이 호출부에 없다.
+    지금 이 저장소에는 그런 자리가 없다.
+    """
     out = []
-    if rel == SINGLE_SOURCE:
-        # 단일 소스 파일에서는 **모든 문자열**이 조립돼 정규식이 된다 — 전부 본다.
-        for m in ANY_STR.finditer(src):
-            raw, is_raw = (m.group(1), True) if m.group(1) is not None else (m.group(2), False)
-            out.append((m.start(), raw if is_raw else unesc(raw)))
-        return out
-    for m in RE_TRIPLE.finditer(src):
-        out.append((m.start(), m.group(1)))
-    for m in RE_TORE_T.finditer(src):
-        out.append((m.start(), m.group(1)))
-    masked = list(src)
-    for m in TRIPLE.finditer(src):
-        for i in range(m.start(), m.end()):
-            if masked[i] != '\n':
-                masked[i] = ' '
-    masked = ''.join(masked)
-    for m in RE_SINGLE.finditer(masked):
-        out.append((m.start(), unesc(m.group(1))))
-    for m in RE_TORE_S.finditer(masked):
-        out.append((m.start(), unesc(m.group(1))))
+    single_source = (rel == SINGLE_SOURCE)
+    for m in STR_TOKEN.finditer(src):
+        is_raw = m.group(1) is not None
+        raw = m.group(1) if is_raw else m.group(2)
+        if raw is None:
+            continue
+        pat = raw if is_raw else unesc(raw)
+        if single_source:
+            out.append((m.start(), pat))
+            continue
+        if BEFORE_RE.search(src[max(0, m.start() - 60):m.start()]) or AFTER_RE.match(src[m.end():m.end() + 40]):
+            out.append((m.start(), pat))
     return out
 
 
@@ -236,7 +280,9 @@ def scan_text(raw_src, rel):
         if not rx:
             continue
         ln = src[:off].count('\n') + 1
-        near = '\n'.join(lines[max(0, ln - 2):ln + 1])
+        # **그 줄 또는 바로 위 세 줄.** 종전에는 `ln + 1`이라 **아랫줄**도 통했는데,
+        # 그러면 표식이 무엇을 면제하는지 모호해지고 형제 검사와 규칙이 갈렸다(콜드 검토).
+        near = '\n'.join(lines[max(0, ln - 4):ln])
         if OK_MARK.search(near):
             continue
         for ch, idx in bare_braces(rx):
@@ -268,6 +314,13 @@ SELFTEST = [
     (r'val o = Regex("""\Qa}b\E""")', 0, None),             # \Q..\E 안은 글자
     (r'// 종전에는 Regex("[-/\s]+") 였다' + '\n' + r'val p = Regex("""[0-9]+""")', 0, None),  # 주석 인용
     (r'// regex-parity-ok: 사유' + '\n' + r'val q = Regex("\\d+")', 0, None),
+    # 콜드 검토가 뚫은 자리들 — 이제 잡아야 한다
+    (r'val r = "\\d+".toRegex(RegexOption.IGNORE_CASE)', 1, 'DIVERGE'),
+    (r'val s3 = Regex(pattern = "\\s+")', 1, 'DIVERGE'),
+    (r'val t = java.util.regex.Pattern.matches("\\w+", x)', 1, 'DIVERGE'),
+    (r'val u = Regex("""\p{Alnum}+""")', 1, 'DIVERGE'),
+    (r'val v = Regex("""\p{L}+""")', 0, None),
+    (r'val w = Regex("""^(${l.joinToString(\"|\") { e(it) }})$""")', 0, None),
 ]
 bad_self = []
 for text, want, kind in SELFTEST:
@@ -285,16 +338,19 @@ print("  ✓ 탐지기 자기 시험 통과 (%d개 표본 — 날 중괄호·약
 
 # ── 전수 훑기 ──
 viol, nfile, nlit = [], 0, 0
-for dp, _, fs in os.walk(SRC):
-    for f in sorted(fs):
-        if not f.endswith('.kt'):
-            continue
-        p = os.path.join(dp, f)
-        rel = os.path.relpath(p, REPO)
-        raw = io.open(p, encoding='utf-8').read()
-        nfile += 1
-        nlit += len(literals(blank_comments(raw), rel))
-        viol += scan_text(raw, rel)
+for root in (SRC, TEST_SRC):
+    if not os.path.isdir(root):
+        continue
+    for dp, _, fs in os.walk(root):
+        for f in sorted(fs):
+            if not f.endswith('.kt'):
+                continue
+            p = os.path.join(dp, f)
+            rel = os.path.relpath(p, REPO)
+            raw = io.open(p, encoding='utf-8').read()
+            nfile += 1
+            nlit += len(literals(blank_comments(raw), rel))
+            viol += scan_text(raw, rel)
 
 if viol:
     print("  ✗ 위반 %d건" % len(viol))
