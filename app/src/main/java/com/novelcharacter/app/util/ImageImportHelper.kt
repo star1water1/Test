@@ -43,6 +43,24 @@ object ImageImportHelper {
      */
     const val RECOMPRESS_TEMP_MARKER = "_recompress_"
 
+    /**
+     * 인앱 회전의 **픽셀 폴백** 임시 파일 이름에 넣는 표식(`ImageRotation`).
+     *
+     * EXIF 태그만 고쳐 쓸 수 없는 파일은 픽셀을 다시 써서 갈아 끼우는데, 그 사이(인코딩 후
+     * 개명 전)에 프로세스가 죽으면 임시 파일이 남는다. 종전에는 이름이 `rotate_<UUID>.tmp`라
+     * **어떤 목록에도, 어떤 쓸어내기에도, 앱 초기화에도 걸리지 않았다** — 이미지 확장자가
+     * 아니라 목록·통계에서 빠지고, 쓸어내기는 재압축 표식만 봤다. 영영 남는 자리였다.
+     */
+    const val ROTATE_TEMP_MARKER = "_rotate_"
+
+    /**
+     * 커밋 전 **임시 산출물**인가 — 목록·통계·쓸어내기·앱 초기화가 **이 한 판정**을 쓴다.
+     *
+     * 표식을 늘릴 때 이 함수만 고치면 네 자리가 함께 따라온다(명단을 네 벌 적으면 반드시 갈린다 — R-43).
+     */
+    fun isTempArtifact(name: String): Boolean =
+        name.contains(RECOMPRESS_TEMP_MARKER) || name.contains(ROTATE_TEMP_MARKER)
+
     /** 재압축 스킵 사유 — 사용자에게 "왜 안 했는지" 고지하기 위한 분류(변수 제어: 조용한 무시 금지). */
     enum class SkipReason { NOT_REFERENCED, TOO_SMALL, TOO_LARGE, CORRUPT, NO_BENEFIT, ERROR }
 

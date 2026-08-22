@@ -1476,8 +1476,13 @@ class SettingsFragment : Fragment() {
                 // 파일 삭제
                 withContext(Dispatchers.IO) {
                     // 이미지 파일
+                    // 커밋 전 임시 산출물도 함께 지운다 — 회전 임시본은 `.tmp`라
+                    // 확장자 목록에 걸리지 않아 초기화 뒤에도 홀로 남았다.
                     ctx.filesDir.listFiles()?.filter {
-                        it.isFile && (it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp"))
+                        it.isFile && (
+                            it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp") ||
+                                com.novelcharacter.app.util.ImageImportHelper.isTempArtifact(it.name)
+                            )
                     }?.forEach { it.delete() }
 
                     // 로그

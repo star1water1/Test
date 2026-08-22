@@ -555,7 +555,7 @@ class ImageManagerViewModel(
 
         val files = filesDir.listFiles { f ->
             f.isFile && StorageAnalyzer.isImageFile(f.name) &&
-                !f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER)
+                !ImageImportHelper.isTempArtifact(f.name)
         } ?: emptyArray()
         val items = ArrayList<ManagedImage>(files.size)
         var totalBytes = 0L
@@ -1624,11 +1624,14 @@ class ImageManagerViewModel(
         dir.listFiles()?.forEach { f -> if (f.isFile && f.lastModified() < cutoff) runCatching { f.delete() } }
     }
 
-    /** filesDir의 재압축 임시 파일(표식 포함)을 모두 삭제. */
+    /**
+     * filesDir의 **커밋 전 임시 산출물**을 모두 삭제 — 재압축 미리보기 잔여물과 회전 임시본.
+     * 판정은 [ImageImportHelper.isTempArtifact] 한 자리가 든다(표식이 늘면 여기가 함께 따라온다).
+     */
     private fun sweepRecompressTempFiles() {
         val filesDir = getApplication<Application>().filesDir
         filesDir.listFiles { f ->
-            f.isFile && f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER)
+            f.isFile && ImageImportHelper.isTempArtifact(f.name)
         }?.forEach { runCatching { it.delete() } }
     }
 
