@@ -853,6 +853,32 @@ class FolderRoundtripPlannerTest {
         assertEquals(listOf("f4"), d.settled.map { it.id })
     }
 
+    /**
+     * **정족수를 못 채운 세트에 남은 토큰 파일도 확정 무동작이다** (2026.08.22).
+     *
+     * 종전에는 이 갈래가 `actions`에도 `settled`에도 없어, 실행부가 `_처리됨/`으로 옮기지
+     * 못하고 지문도 안 찍혔다. 그래서 이미지 탭 배너가 **매번** *"정리 폴더에 새 이미지 1장"*
+     * 이라 말했다 — 몇 번을 받아와도 화면이 똑같은, 끊을 수 없는 자리였다.
+     * 내보낸 사본 한 장을 새 폴더로 옮기거나 내보낸 세트에서 한 장만 빼내면 이 상태가 된다.
+     */
+    @Test fun underQuorumSetMembersAreSettled() {
+        // '그 외 이름' 폴더에 토큰 파일이 한 장뿐 — 세트(2장)가 성립하지 않는다.
+        val p = plan(listOf(tokenFile("f1", tokenA, "풍경")))
+        assertTrue("세트가 서면 안 된다", p.linkSets.isEmpty())
+        assertEquals(0, p.actionCount)
+        assertEquals(listOf("f1"), p.settled.map { it.id })
+    }
+
+    /** 두 장이면 종전대로 세트가 서고, 그때는 확정 무동작이 아니다(할 일이 있다). */
+    @Test fun quorumSetStillFormsAndIsNotSettled() {
+        val p = plan(listOf(
+            tokenFile("f1", tokenA, "풍경"),
+            tokenFile("f2", tokenB, "풍경")
+        ))
+        assertEquals(1, p.linkSets.size)
+        assertTrue(p.settled.isEmpty())
+    }
+
     /** 할 일이 있으면 확정 무동작이 아니다 — 둘을 겸하면 같은 파일을 두 번 처분한다. */
     @Test fun filesWithWorkAreNotSettled() {
         val p = plan(listOf(tokenFile("f1", tokenA, "가온")),

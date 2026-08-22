@@ -421,8 +421,10 @@ object FolderRoundtripPlanner {
          * 못 들어가 `_처리됨/`으로도 안 가고 계수도 안 됐고, 진입 배너가 **영원히** "새 이미지
          * N장"이라 말했다 — 받아와도 아무 일이 없으니 끊을 방법이 없었다.
          *
-         * 다섯 자리가 여기 담긴다: 서랍의 이미 낱개인 파일 · 되돌리는 자리의 이미 되돌아온 파일 ·
-         * `_분리됨/`의 이미 뗀 파일 · 이미 그 캐릭터에만 배정된 파일 · `_삭제승인/`의 미지 토큰.
+         * 여섯 자리가 여기 담긴다: 서랍의 이미 낱개인 파일 · 되돌리는 자리의 이미 되돌아온 파일 ·
+         * `_분리됨/`의 이미 뗀 파일 · 이미 그 캐릭터에만 배정된 파일 · `_삭제승인/`의 미지 토큰 ·
+         * **정족수(2장)를 못 채운 세트에 남은 토큰 파일**(2026.08.22 — 바로 위 문단이 적은
+         * *"영원히 새 이미지 N장"*이 그 자리에서 실제로 재발하고 있었다).
          *
          * **[actionCount]에는 넣지 않는다** — 진행도 총량은 *파일을 만지는 항목 수*다(R-26).
          * **`alreadyHandled` 항목도 담지 않는다** — 맥락으로 들어온 것이지 이번에 확정된 것이 아니다.
@@ -830,10 +832,31 @@ object FolderRoundtripPlanner {
         // ── 3단계: 2장 이상인 폴더만 세트로 확정한다(1장짜리 링크 배지는 오해 — 인앱 규약과 동일).
         val linkSets = ArrayList<LinkSetAction>()
         val liveKeys = HashSet<String>()
+        val itemById = items.associateBy { it.id }
         for (key in (setNewItems.keys + setExistingPaths.keys)) {
             val news = setNewItems[key].orEmpty()
             val existing = setExistingPaths[key].orEmpty()
-            if (news.size + existing.size < 2) continue
+            if (news.size + existing.size < 2) {
+                // **정족수를 못 채운 세트의 토큰 파일은 확정 무동작이다** (2026.08.22).
+                //
+                // 종전에는 여기서 그냥 `continue`라 그 파일이 `actions`에도 [Plan.settled]에도
+                // 없었다. 실행부는 `settled`만 `_처리됨/`으로 옮기므로 파일은 폴더에 그대로
+                // 남고 지문도 안 찍혀, 이미지 탭 배너가 **매번 "정리 폴더에 새 이미지 1장"**이라
+                // 말했다 — 몇 번을 받아와도 화면이 똑같았다. 내보낸 사본 한 장을 새 폴더로
+                // 옮기거나, 내보낸 세트에서 한 장만 빼내면 남은 한 장이 이 상태가 된다.
+                //
+                // **[Plan.settled]의 KDoc이 이미 이 결함의 모양을 적어 두었다** — *"받아와도
+                // 아무 일이 없으니 끊을 방법이 없었다."* 그 자리가 다섯이라 적혀 있었고
+                // 이 여섯째가 빠져 있었다.
+                //
+                // 신규 항목은 손댈 것이 없다 — 바로 아래 `finalImports`가 `setKey = null`로
+                // 강등해 낱개로 편입한다. 남는 것은 **기존 멤버(토큰 파일)**뿐이다.
+                for (member in existing) {
+                    val item = itemById[member.itemId] ?: continue
+                    if (!item.alreadyHandled) settled.add(item)
+                }
+                continue
+            }
             liveKeys.add(key)
             linkSets.add(LinkSetAction(key, news, existing))
         }
