@@ -401,11 +401,10 @@ const val EXCEL_CELL_TEXT_LIMIT = 32767
  * 반쪽 서러게이트가 마지막 글자로 남는다. 한도 안이면 원문 그대로다 — 내보내기 절단과
  * 가져오기 저장 한도가 같은 함수를 써야 경계 처리도 함께 움직인다.
  */
-fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String {
-    if (value.length <= limit) return value
-    val cut = value.take(limit)
-    return if (cut.isNotEmpty() && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
-}
+fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String =
+    // 경계 규칙(서러게이트 쌍을 쪼개지 않는다)은 `util/SafeTruncate` 한 벌이 든다 —
+    // 두 벌로 두었더니 AI 기조 문구 절단만 맨 `take()`로 남아 있었다.
+    com.novelcharacter.app.util.SafeTruncate.atCharLimit(value, limit)
 
 // ── 시각 개편(2026.08.14 사용자 확정 Q-1~Q-3) — 표현 계층의 순수 판정들 ──
 

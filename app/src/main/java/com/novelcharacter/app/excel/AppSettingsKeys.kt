@@ -419,11 +419,13 @@ object AppSettingsKeys {
     val AI_IMAGE_TAG_POLICY = Spec("ai_image_tag_policy", Kind.TEXT,
         note = "AI 태그 제안에 함께 보낼 지침입니다.",
         domain = Domain.FreeText(AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS,
-            // 제안 시점 고지는 약속하지 않는다 — `DropTally.policyTruncated` 배선이 있기는 한데
+            // 잘림은 **자르는 자리에서** 알린다 (2026.08.22): 인앱은 설정 화면이 저장 직후
+            // 한 줄로 말하고, 엑셀 가져오기는 바인딩이 read-back으로 대조해 그 행에서
+            // `Applied.Adjusted`를 낸다(숫자 설정의 접힘 고지와 같은 벌).
+            // 종전에는 제안 시점 고지 배선(`DropTally.policyTruncated`)도 있었는데,
             // `AiPromptSettings.imageTagPolicy`가 **읽기·쓰기 양쪽에서 좁히는** 탓에 제안기가
-            // 받는 값이 이미 잘린 값이고, 그래서 그 수는 언제나 0이다. **엑셀 가져오기는
-            // 잘리면 그 행에서 알린다** — 바인딩이 read-back으로 대조해 `Applied.Adjusted`를
-            // 낸다(숫자 설정의 접힘 고지와 같은 벌).
+            // 받는 값이 이미 잘린 값이라 그 수는 **언제나 0**이었다 — 도달 불가한 고지였다.
+            // 살릴 수 없는 배선을 남기면 다음 사람이 있는 줄 믿으므로 걷었다(R-24).
             extra = "앞뒤 공백은 지우고, 넘는 글자는 잘라 저장합니다. 비우면 지침을 보내지 않습니다."))
     val AI_IMAGE_TAG_BATCH_SIZE = Spec("ai_image_tag_batch_size", Kind.NUMBER,
         note = "이미지 태그 요청 한 번에 보낼 장수입니다.",

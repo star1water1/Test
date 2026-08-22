@@ -84,7 +84,6 @@ class ImageBatchTagSuggester(
      *   이유는 처방이 다르기 때문이다 — 못 읽은 것은 파일을 확인할 일이고, 막힌 것은 그
      *   그림을 앱에 들여야 할 일이다(같은 판단이 [BatchFailKind.RESPONSE_TRUNCATED]를 갈랐다).
      * @param vocabTruncated 프롬프트에 싣지 못하고 자른 어휘 수.
-     * @param policyTruncated 기조 문구를 자른 글자 수(0이면 자르지 않았다).
      */
     data class DropTally(
         val blankOrTooLong: Int = 0,
@@ -92,11 +91,10 @@ class ImageBatchTagSuggester(
         val unreadable: Int = 0,
         val blocked: Int = 0,
         val vocabTruncated: Int = 0,
-        val policyTruncated: Int = 0
     ) {
         val isEmpty: Boolean
             get() = blankOrTooLong == 0 && overPerImageCap == 0 && unreadable == 0 &&
-                blocked == 0 && vocabTruncated == 0 && policyTruncated == 0
+                blocked == 0 && vocabTruncated == 0
 
         operator fun plus(other: DropTally) = DropTally(
             blankOrTooLong + other.blankOrTooLong,
@@ -104,7 +102,6 @@ class ImageBatchTagSuggester(
             unreadable + other.unreadable,
             blocked + other.blocked,
             vocabTruncated + other.vocabTruncated,
-            policyTruncated + other.policyTruncated
         )
 
         /**
@@ -118,7 +115,7 @@ class ImageBatchTagSuggester(
          * 그래서 축을 둘로 가른다:
          * - **응답이 만든 것**([blankOrTooLong]·[overPerImageCap])은 **더한다** — 두 실행의
          *   응답은 서로 다른 응답이고, 각각이 실제로 그만큼 버렸다.
-         * - **프롬프트와 파일이 만든 것**([vocabTruncated]·[policyTruncated]·[unreadable]·
+         * - **프롬프트와 파일이 만든 것**([vocabTruncated]·[unreadable]·
          *   [blocked])은 **큰 쪽을 든다** — 어휘·기조는 두 실행이 같은 것을 싣고 같은 자리에서
          *   잘리고, 못 읽는 파일은 다시 불러도 여전히 못 읽으며 **막히는 경로는 다시 불러도
          *   여전히 막힌다**(가드가 경로만 보므로 판정이 실행마다 같다). 더하면 어휘 120개를
@@ -130,7 +127,6 @@ class ImageBatchTagSuggester(
             unreadable = maxOf(unreadable, retry.unreadable),
             blocked = maxOf(blocked, retry.blocked),
             vocabTruncated = maxOf(vocabTruncated, retry.vocabTruncated),
-            policyTruncated = maxOf(policyTruncated, retry.policyTruncated)
         )
     }
 
@@ -425,7 +421,6 @@ class ImageBatchTagSuggester(
     ): Result {
         if (paths.isEmpty()) return Result()
         val policy = AiPromptPolicy.clampImageTagPolicy(policyRaw)
-        val policyTruncated = (policyRaw.trim().length - policy.length).coerceAtLeast(0)
         val system = buildSystemPrompt(
             vocab, policy, templates.templateOf(PromptTemplates.Id.IMAGE_TAG_SYSTEM)
         )
@@ -438,7 +433,7 @@ class ImageBatchTagSuggester(
         val all = ArrayList<ImageSuggestion>()
         val failures = ArrayList<BatchFailure>()
         val notes = ArrayList<String>()
-        var drops = DropTally(vocabTruncated = vocab.truncated, policyTruncated = policyTruncated)
+        var drops = DropTally(vocabTruncated = vocab.truncated)
         var doneRequests = 0
         var doneImages = 0
         var cancelled = false

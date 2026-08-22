@@ -1395,6 +1395,7 @@
     <string name="stats_avg_name_length">평균 이름 길이: %.1f자</string>
     <string name="stats_all_names_used">모든 이름이 사용됨</string>
     <string name="stats_and_more">…외 %d개</string>
+    <string name="ai_image_tag_policy_truncated">길이 상한 %1$d자를 넘어 앞 %1$d자까지만 저장했습니다.</string>
     <string name="stats_field_insight_distribution_wider">아래 분포에는 이 모수 밖의 보관 값도 함께 실립니다 — 채움 수보다 넓습니다.</string>
     <string name="stats_namebank_scope_note">이름뱅크는 작품에 매이지 않는 전역 목록이라, 위의 수는 작품 필터와 무관한 전체 값입니다.</string>
     <string name="stats_namebank_used_in_scope">이 범위가 쓴 이름 %1$d개</string>
@@ -3443,7 +3444,6 @@
     <string name="image_tag_review_apply_failed">태그를 저장하지 못했습니다. 하나도 적용되지 않았으니 저장 공간을 확인한 뒤 검토 창에서 다시 적용해 주세요</string>
     <string name="image_tag_review_notice_dropped">모델이 되돌린 것 중 %1$d건은 형식에 맞지 않아 제외했습니다</string>
     <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
-    <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>
     <string name="image_tag_review_notice_failed">일부 요청이 실패했습니다: %1$s</string>
 
     <!-- 이미지 내용 일괄 AI 태깅 (B-121) — 폴더 이름을 읽는 위 기능과 달리 그림 자체를 보낸다 -->

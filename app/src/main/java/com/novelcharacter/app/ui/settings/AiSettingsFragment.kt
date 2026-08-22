@@ -309,7 +309,35 @@ class AiSettingsFragment : Fragment() {
         binding.imageTagPolicyLayout.counterMaxLength = AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS
         binding.imageTagPolicyEdit.setText(settings.imageTagPolicy)
         binding.imageTagPolicyEdit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) settings.imageTagPolicy = binding.imageTagPolicyEdit.text?.toString().orEmpty()
+            if (!hasFocus) commitImageTagPolicy(settings)
+        }
+    }
+
+    /**
+     * 기조 문구 확정 — **잘렸으면 그 자리에서 말한다** (2026.08.22).
+     *
+     * 종전에는 `settings.imageTagPolicy = …` 한 줄이라 상한을 넘긴 글자가 **말없이** 잘렸다.
+     * 카운터가 붉게 뜨기는 하지만(R-62 — 적는 동안의 경고) 그것은 *넘었다*를 말할 뿐
+     * *잘라 저장했다*를 말하지 않는다. 다시 열면 600자로 줄어 있을 뿐이었다.
+     * 반대로 엑셀 '앱 설정' 가져오기는 같은 사실을 그 행에서 알린다 — **한 앱이 같은 일을
+     * 한쪽에서만 말하고 있었다**(개발 의도 2번).
+     *
+     * 저장소가 실제로 든 값을 **다시 읽어 대조한다**(엑셀 바인딩의 read-back과 같은 벌) —
+     * 자르는 규칙을 여기 두 벌로 적지 않기 위해서다. 잘렸으면 칸의 글자도 저장된 값으로
+     * 맞춰, 화면에 보이는 것과 저장된 것이 갈리지 않게 한다.
+     */
+    private fun commitImageTagPolicy(settings: AiPromptSettings) {
+        val binding = _binding ?: return
+        val typed = binding.imageTagPolicyEdit.text?.toString().orEmpty()
+        settings.imageTagPolicy = typed
+        val stored = settings.imageTagPolicy
+        if (stored != typed.trim()) {
+            binding.imageTagPolicyLayout.error =
+                getString(R.string.ai_image_tag_policy_truncated,
+                    AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS)
+            binding.imageTagPolicyEdit.setText(stored)
+        } else {
+            binding.imageTagPolicyLayout.error = null
         }
     }
 
@@ -935,10 +963,7 @@ class AiSettingsFragment : Fragment() {
     override fun onDestroyView() {
         // 포커스를 둔 채 뒤로 가면 focusChange가 오지 않는다 — 여기서 한 번 더 확정하지 않으면
         // 방금 쓴 기조가 조용히 사라진다(입력 유실 금지, R-27과 같은 취지).
-        _binding?.let { b ->
-            AiPromptSettings(requireContext()).imageTagPolicy =
-                b.imageTagPolicyEdit.text?.toString().orEmpty()
-        }
+        _binding?.let { commitImageTagPolicy(AiPromptSettings(requireContext())) }
         super.onDestroyView()
         _binding = null
     }

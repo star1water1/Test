@@ -148,6 +148,7 @@ $MAIN/util/FieldValueSorter.kt
 $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
 $MAIN/util/LogRotation.kt
+$MAIN/util/SafeTruncate.kt
 $MAIN/util/NovelAxisLabels.kt
 $MAIN/util/NumericBinning.kt
 $MAIN/util/FieldValueMatchSpec.kt
