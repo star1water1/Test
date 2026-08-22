@@ -92,11 +92,48 @@ class SliderRangeTest {
         assertValid(SliderRange.of(2000, 1990, current = null), "뒤집힘")
     }
 
+    /**
+     * **연도에는 상한이 없다**(판타지 역법 — 월·일에는 범위 검사가 있는데 연도에만 없고
+     * 엑셀 값에도 없다). 그 극단에서 두 가지가 깨졌다: `Int` 뺄셈이 넘쳐 폭이 음수가 되고,
+     * `Float`가 큰 정수를 못 담아 격자 위의 값이 반올림된다. 둘 다 **그리기 패스**에서
+     * 터지므로 여기서 잠근다.
+     */
     @Test
-    fun `눈금 잣대는 두 화면이 같은 함수를 쓴다`() {
-        assertEquals(1f, SliderRange.stepFor(1000))
-        assertEquals(10f, SliderRange.stepFor(1001))
-        assertEquals(10f, SliderRange.stepFor(10000))
-        assertEquals(100f, SliderRange.stepFor(10001))
+    fun `연도가 극단이어도 계약이 성립한다`() {
+        val cases = listOf(
+            Triple(Int.MIN_VALUE, Int.MAX_VALUE, null),
+            Triple(Int.MIN_VALUE, Int.MIN_VALUE + 3, null),
+            Triple(Int.MAX_VALUE - 3, Int.MAX_VALUE, null),
+            Triple(-2_000_000_000, 2_000_000_000, 0),
+            Triple(100_000_000, 100_000_500, 100_000_250),
+            Triple(16_777_210, 16_777_400, 16_777_300),
+            Triple(1_000_000_000, 1_000_000_001, 1_000_000_001)
+        )
+        for ((min, max, cur) in cases) {
+            val spec = SliderRange.of(min, max, cur)
+            assertValid(spec, "min=$min max=$max cur=$cur")
+            // **부동소수 격자와도 맞아야 한다** — Float로 담고 다시 꺼내도 값이 같아야
+            // Material이 도는 검증(그것도 Float다)이 통과한다.
+            assertEquals("왕복에서 값이 흔들린다: $spec", spec.from, spec.from.toDouble().toFloat(), 0f)
+            assertEquals("눈금 격자가 부동소수에서 깨진다: $spec",
+                0f, (spec.to - spec.from) % spec.step, 0f)
+            assertEquals("값이 부동소수 격자를 벗어난다: $spec",
+                0f, (spec.value - spec.from) % spec.step, 0f)
+        }
+    }
+
+    @Test
+    fun `실측 범위는 극단에서도 덮인다`() {
+        val spec = SliderRange.of(-2_000_000_000, 2_000_000_000, current = null)
+        assertTrue("왼쪽: $spec", spec.from <= -2_000_000_000f)
+        assertTrue("오른쪽: $spec", spec.to >= 2_000_000_000f)
+    }
+
+    @Test
+    fun `눈금 잣대는 세 화면이 같은 함수를 쓴다`() {
+        assertEquals(1f, SliderRange.stepFor(1000L))
+        assertEquals(10f, SliderRange.stepFor(1001L))
+        assertEquals(10f, SliderRange.stepFor(10000L))
+        assertEquals(100f, SliderRange.stepFor(10001L))
     }
 }

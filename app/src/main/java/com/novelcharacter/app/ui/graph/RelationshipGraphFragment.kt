@@ -23,7 +23,9 @@ import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentRelationshipGraphBinding
+import com.novelcharacter.app.ui.common.applyRange
 import com.novelcharacter.app.util.DisplayCap
+import com.novelcharacter.app.util.SliderRange
 import com.novelcharacter.app.util.navigateSafe
 import android.graphics.Color
 import kotlinx.coroutines.launch
@@ -737,20 +739,25 @@ class RelationshipGraphFragment : Fragment() {
 
         val minYear = years.min()
         val maxYear = years.max()
-        val padding = ((maxYear - minYear) * 0.1f).toInt().coerceAtLeast(10)
 
-        binding.graphYearSlider.stepSize = 0f
-        binding.graphYearSlider.valueFrom = (minYear - padding).toFloat()
-        binding.graphYearSlider.valueTo = (maxYear + padding).toFloat()
-        binding.graphYearSlider.stepSize = 1f
-        binding.graphYearSlider.value = (currentYear ?: maxYear).toFloat()
-            .coerceIn((minYear - padding).toFloat(), (maxYear + padding).toFloat())
+        // **범위·눈금·값은 한 벌로 나온다**([SliderRange] — 연표·캐릭터 상세와 같은 함수다).
+        // 종전에는 이 화면만 손으로 짰고 그래서 셋이 갈려 있었다:
+        // ⓐ 눈금이 언제나 1이라 폭이 넓으면 끝에서 끝까지 수천 번을 끌어야 했다(원칙 04).
+        // ⓑ 여백이 `(maxYear - minYear) * 0.1f`인데 그 뺄셈이 **Int로 넘칠 수 있고**,
+        //    이어지는 `minYear - padding`도 넘쳐 `valueFrom > valueTo`가 되면 슬라이더가
+        //    그리기 패스에서 죽는다(대입을 감싸도 못 잡는다 — [SliderRange] 머리).
+        // ⓒ 대입 순서가 없어 중간 상태가 제약을 어길 수 있었다([applyRange]가 그 순서를 든다).
+        val spec = SliderRange.of(minYear, maxYear, currentYear ?: maxYear)
+        binding.graphYearSlider.applyRange(spec)
 
         // 시간뷰 복원 시 currentYear 초기화 (슬라이더 범위 설정 후에야 가능)
         if (isTimeViewEnabled && currentYear == null) {
-            currentYear = maxYear
-            binding.yearLabel.text = getString(R.string.year_label_format, maxYear)
-            viewModel.updateFactionMembershipsForYear(maxYear)
+            // 슬라이더가 실제로 선 값을 쓴다 — 격자에 맞춰졌을 수 있고, 그때 라벨·필터가
+            // 슬라이더와 다른 해를 말하면 사용자가 보는 것과 걸린 것이 갈린다.
+            val year = spec.value.toInt()
+            currentYear = year
+            binding.yearLabel.text = getString(R.string.year_label_format, year)
+            viewModel.updateFactionMembershipsForYear(year)
         }
     }
 
