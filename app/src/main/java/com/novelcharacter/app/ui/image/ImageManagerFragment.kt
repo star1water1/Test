@@ -96,8 +96,12 @@ class ImageManagerFragment : Fragment() {
         }
     }
 
-    private var selectionMode = false
-    private val selectedPaths = LinkedHashSet<String>()
+    // 선택 상태는 **뷰모델이 든다** — 화면이 들면 회전 한 번에 고른 장이 전부 사라진다.
+    // 이름을 그대로 둔 것은 이 화면의 스무 자리가 이 두 이름을 부르기 때문이다(자리는 하나다).
+    private var selectionMode: Boolean
+        get() = viewModel.selectionMode
+        set(value) { viewModel.selectionMode = value }
+    private val selectedPaths: LinkedHashSet<String> get() = viewModel.selectedPaths
     private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
 
     // 묶어 보기의 좌표계 — 접기 전(필터·정렬 적용) 목록과, 접힌 칸 경로 → 식구들.

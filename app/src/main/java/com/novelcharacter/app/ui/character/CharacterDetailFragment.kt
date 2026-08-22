@@ -1267,15 +1267,38 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 )
                 val html = withContext(Dispatchers.IO) { pdfExporter.generateHtml(config) }
 
+                // **콜백이 프래그먼트를 붙들지 않게 미리 굳힌다.** 페이지 적재는 비동기라
+                // 사용자가 그 사이에 화면을 나가면 `requireContext()`·`getString()`이
+                // `IllegalStateException`을 던지는데, 그 예외는 **콜백 스레드에서** 나므로
+                // 이 코루틴의 `try/catch`가 원리적으로 못 잡는다(앱이 그대로 죽는다).
+                // 인쇄 관리자는 앱 컨텍스트로 충분하다.
+                val appCtx = requireContext().applicationContext
+                val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+
                 // Use WebView to print as PDF
                 val webView = WebView(requireContext())
+                // **뷰가 사라지면 함께 정리한다** — 종전에는 지역 변수뿐이라 적재 중 화면을
+                // 나가면 프래그먼트를 붙든 채 살아남았다(누수).
+                pdfWebView?.destroy()
+                pdfWebView = webView
                 webView.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
-                        val printManager = requireContext().getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
-                        val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+                        // **진행 표시는 여기서 내린다** — 종전에는 `finally`가 적재를 걸자마자
+                        // 내려, 아직 아무것도 안 된 상태에서 창이 사라졌다.
+                        progress.dismissSafely()
+                        val printManager = appCtx.getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
                         view.createPrintDocumentAdapter(jobName).let { adapter ->
                             printManager.print(jobName, adapter, PrintAttributes.Builder().build())
                         }
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView,
+                        request: android.webkit.WebResourceRequest,
+                        error: android.webkit.WebResourceError
+                    ) {
+                        // 못 그렸으면 그 자리에서 내린다 — 안 내리면 창이 영영 남는다.
+                        progress.dismissSafely()
                     }
                 }
                 webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
@@ -1283,16 +1306,24 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 logOperation(OpResult.success(OpResult.CAT_SHARE,
                     getString(R.string.result_pdf_shared, character.name)))
             } catch (e: Exception) {
+                progress.dismissSafely()
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
                 logOperation(OpResult.failure(OpResult.CAT_SHARE,
                     getString(R.string.result_pdf_share_failed), e.message))
-            } finally {
-                progress.dismissSafely()
             }
         }
     }
 
+    /**
+     * PDF 공유가 쓰는 WebView — **적재가 비동기라 화면보다 오래 산다.**
+     * 뷰가 사라질 때 함께 정리하지 않으면 프래그먼트를 붙든 채 남고, 그때 도착한
+     * 콜백이 이미 떨어져 나간 화면을 만진다.
+     */
+    private var pdfWebView: WebView? = null
+
     override fun onDestroyView() {
+        pdfWebView?.destroy()
+        pdfWebView = null
         relationshipHelper.cancelJob()
         timeSliderHelper.cancelJob()
         binding.imageViewPager.adapter = null

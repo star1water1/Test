@@ -195,6 +195,20 @@ class ImageManagerViewModel(
             prefs.edit().putString("view_mode", value.name).apply()
         }
 
+    /**
+     * 선택 모드와 고른 장 — **회전을 넘긴다**(뷰모델이 화면보다 오래 산다).
+     *
+     * 종전에는 화면이 들고 있어 회전 한 번에 **고른 장 전량이 말없이 사라졌다.**
+     * 수십 장을 골라 일괄 작업을 준비하던 사용자가 화면을 돌리면 처음부터 다시 고른다.
+     *
+     * `savedState`가 아니라 맨 필드인 것은 **크기** 때문이다 — 고른 장이 수천이면
+     * 번들 상한(TransactionTooLarge)에 걸려 *저장 자체가* 앱을 죽인다. 프로세스가 죽으면
+     * 선택은 사라지지만 그것은 그 자리에서 다시 고를 수 있는 것이라 유실 축이 아니다
+     * (캐릭터 목록이 선택을 뷰모델에 두는 것과 같은 결).
+     */
+    var selectionMode = false
+    val selectedPaths = LinkedHashSet<String>()
+
     /** 갤러리 페이지 위치 — 회전·프래그먼트 재생성 생존용(세션 한정, prefs 미기록) */
     var galleryPosition: Int
         get() = savedState["gallery_pos"] ?: 0
