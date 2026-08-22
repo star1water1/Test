@@ -78,6 +78,14 @@ class CharacterGrowthFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 고른 축과 비교 캐릭터는 **사용자가 정한 상태**다 — 회전이면 프래그먼트가 새로 서므로
+        // 여기서만 살아남는다. 되살리지 않으면 칩이 하나도 안 켜진 채 첫 필드 한 줄만 남는다
+        // (아래 적재가 `selectedFieldKeys`가 비었을 때 첫 필드를 자동으로 고르기 때문이다).
+        savedInstanceState?.let { state ->
+            state.getStringArray(STATE_SELECTED_FIELDS)?.let { selectedFieldKeys.addAll(it) }
+            state.getLongArray(STATE_COMPARE_IDS)?.let { compareCharacterIds.addAll(it.toList()) }
+        }
+
         characterId = arguments?.getLong("characterId", -1L) ?: -1L
         if (characterId == -1L) {
             findNavController().popBackStack()
@@ -142,6 +150,10 @@ class CharacterGrowthFragment : Fragment() {
             // NUMBER, GRADE 타입 필드만 필터
             val numericFields = fields.filter { it.fieldType == FieldType.NUMBER || it.fieldType == FieldType.GRADE }
             fieldsByKey = numericFields.associateBy { it.key }
+            // 되살린 고른 축 중 **지금 목록에 없는 것은 버린다**(그 사이 필드가 지워지거나
+            // 타입이 바뀐 경우). 남겨 두면 칩도 자료도 없는 유령이 되는데, 그것이
+            // "하나도 안 골랐다"는 판정을 영영 막아 아래 기본 선택이 서지 않는다.
+            selectedFieldKeys.retainAll(fieldsByKey.keys)
 
             if (numericFields.isEmpty()) {
                 binding.emptyState.visibility = View.VISIBLE
@@ -263,8 +275,20 @@ class CharacterGrowthFragment : Fragment() {
             .resolveForDisplay(fieldsByKey[fieldKey], value)?.toFloat() ?: 0f
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArray(STATE_SELECTED_FIELDS, selectedFieldKeys.toTypedArray())
+        outState.putLongArray(STATE_COMPARE_IDS, compareCharacterIds.toLongArray())
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private companion object {
+        /** 고른 축·비교 캐릭터를 회전 너머로 나르는 키(싣는 쪽과 꺼내는 쪽이 이 상수를 쓴다). */
+        const val STATE_SELECTED_FIELDS = "growth_selected_field_keys"
+        const val STATE_COMPARE_IDS = "growth_compare_character_ids"
     }
 }
