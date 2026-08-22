@@ -744,4 +744,78 @@ class StatsConsistencyTest {
         val counted = provider.computeDataOverview(s).healthWarnings.incompleteFieldCount
         assertEquals(named.size, counted)
     }
+
+    // ===== R-51/R-18: 축마다 자기 모수로 좁힌다 (스코프 밖이 순위·평균에 새지 않는다) =====
+    //
+    // 스코프 필터는 관계·교차참조를 `한쪽 끝이 스코프 안`으로 남긴다 — 그 OR은 '고립'·'사건
+    // 미연계' 판정에 필요하다. 그래서 **좁히는 일은 소비처가** 해야 한다.
+
+    private fun scopedSnapshot() = StatsSnapshot(
+        // 스코프 안 둘(A작품), 스코프 밖 하나는 아예 목록에 없다(필터가 이미 잘랐다).
+        characters = listOf(
+            Character(id = 1, name = "안쪽1", novelId = 1),
+            Character(id = 2, name = "안쪽2", novelId = 1)
+        ),
+        novels = listOf(Novel(id = 1, title = "A작품", universeId = uniA)),
+        universes = listOf(Universe(id = uniA, name = "A")),
+        // 사건 하나만 스코프 안이다.
+        events = listOf(
+            com.novelcharacter.app.data.model.TimelineEvent(id = 100, year = 1, description = "안쪽사건")
+        ),
+        // 스코프 밖 인물(id=9)이 안쪽 둘과 이어져 있다 — OR이 남긴 행이다.
+        relationships = listOf(
+            com.novelcharacter.app.data.model.CharacterRelationship(
+                id = 1, characterId1 = 9, characterId2 = 1, relationshipType = "친구"
+            ),
+            com.novelcharacter.app.data.model.CharacterRelationship(
+                id = 2, characterId1 = 9, characterId2 = 2, relationshipType = "친구"
+            )
+        ),
+        relationshipChanges = emptyList(), tags = emptyList(), nameBank = emptyList(),
+        stateChanges = emptyList(), fieldDefinitions = emptyList(), fieldValues = emptyList(),
+        // 안쪽 인물이 **스코프 밖 사건**(id=999)에 참여한 행 — OR이 남긴다.
+        crossRefs = listOf(
+            com.novelcharacter.app.data.model.TimelineCharacterCrossRef(eventId = 999, characterId = 1)
+        )
+    )
+
+    @Test
+    fun `관계 순위에 스코프 밖 인물이 끼어들지 않는다`() {
+        val stats = provider.computeCharacterStats(scopedSnapshot())
+        assertTrue("'?' 행이 떴다: ${stats.topRelationshipChars}",
+            stats.topRelationshipChars.none { it.first == "?" })
+        assertEquals(setOf("안쪽1", "안쪽2"), stats.topRelationshipChars.map { it.first }.toSet())
+    }
+
+    @Test
+    fun `사건 연계 순위도 스코프 안 인물만 센다`() {
+        val stats = provider.computeCharacterStats(scopedSnapshot())
+        assertTrue(stats.topEventLinkedChars.none { it.first == "?" })
+    }
+
+    @Test
+    fun `관계 상세의 순위도 같은 규칙을 쓴다`() {
+        val stats = provider.computeRelationshipStats(scopedSnapshot())
+        assertTrue("'?' 행이 떴다: ${stats.topConnectedChars}",
+            stats.topConnectedChars.none { it.first == "?" })
+    }
+
+    /** 최댓값이 스코프 밖 인물이면 종전에는 이름이 null이 되어 **안내줄이 통째로 사라졌다.** */
+    @Test
+    fun `가장 관계가 많은 캐릭터 안내줄이 사라지지 않는다`() {
+        val summary = provider.computeSummary(scopedSnapshot())
+        assertNotNull("안내줄이 사라졌다", summary.mostConnectedChar)
+        assertTrue(summary.mostConnectedChar in setOf("안쪽1", "안쪽2"))
+    }
+
+    /**
+     * 사건 축 평균의 분자는 **스코프 안 사건의 참여**뿐이다. 종전에는 참여자가 0명인 사건
+     * 하나뿐인데도 "사건당 평균 1.0"과 "미연계 1"을 한 카드가 동시에 말했다.
+     */
+    @Test
+    fun `사건당 평균 캐릭터가 스코프 밖 참여를 세지 않는다`() {
+        val stats = provider.computeEventStats(scopedSnapshot())
+        assertEquals(0f, stats.avgCharsPerEvent, 1e-6f)
+        assertEquals(1, stats.orphanEventCount)
+    }
 }

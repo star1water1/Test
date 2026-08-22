@@ -1299,14 +1299,16 @@ class StatsDataProvider {
                 entry.key?.let { novelMap[it]?.title }
             }
 
-        // 관계가 가장 많은 캐릭터
+        // 관계가 가장 많은 캐릭터 — **스코프 안 인물만 후보다.**
+        // 종전에는 최댓값이 스코프 밖 상대이면 이름 조회가 null이 되어 **안내줄이 통째로
+        // 사라졌다**(화면이 null이면 숨긴다). 값이 틀린 것보다 조용히 없어지는 것이 나쁘다.
         val connCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
-            connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
         }
         val mostConnectedChar = connCount.maxByOrNull { it.value }?.let {
-            charMap[it.key]?.name
+            charMap.getValue(it.key).name
         }
 
         // 데이터 건강 이슈
@@ -1411,22 +1413,30 @@ class StatsDataProvider {
         val relTypeDist = s.relationships.groupBy { it.relationshipType }
             .mapValues { it.value.size }
 
-        // 관계 수 TOP 10
+        // 관계 수 TOP 10 — **순위에 오르는 것은 스코프 안 인물뿐이다.**
+        // 스코프 필터는 관계를 `한쪽 끝이 스코프 안`으로 남기고(그 OR은 '고립' 판정에 필요하다)
+        // 교차참조도 같은 모양이라, 좁히지 않으면 **스코프 밖 상대가 `?` 행으로 목록에 뜬다.**
+        // 같은 파일의 복잡도 순위는 `s.characters`를 돌아 그 일이 원리적으로 불가능한데
+        // 바로 옆에 나란히 그려지는 이 목록만 가능했다 — 같은 성격의 목록 둘이 반대로
+        // 동작하는 것 자체가 결함이다(R-18).
         val relCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
-            relCount[it.characterId2] = (relCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) relCount[it.characterId2] = (relCount[it.characterId2] ?: 0) + 1
         }
+        // 폴백(`?: "?"`)을 지운 것도 처방의 일부다 — 남겨 두면 다음 회귀를 다시 감춘다.
         val topRelChars = relCount.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
-        // 사건 연계 TOP 10
+        // 사건 연계 TOP 10 — 같은 처방.
         val eventCountMap = mutableMapOf<Long, Int>()
         s.crossRefs.forEach { ref ->
-            eventCountMap[ref.characterId] = (eventCountMap[ref.characterId] ?: 0) + 1
+            if (ref.characterId in charMap) {
+                eventCountMap[ref.characterId] = (eventCountMap[ref.characterId] ?: 0) + 1
+            }
         }
         val topEventChars = eventCountMap.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
         // 필드 완성도 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
         val statsFieldDefs = s.fieldDefinitions.groupBy { it.universeId }
@@ -1551,12 +1561,19 @@ class StatsDataProvider {
             counts
         }
 
-        val eventCharCounts = s.crossRefs.groupBy { it.eventId }.mapValues { it.value.size }
+        // **사건 축 지표의 모수는 스코프 안 사건이다** (R-51 — 같은 술어·같은 범위·같은 표본).
+        // 스코프 필터는 교차참조를 `캐릭터가 스코프 안 || 사건이 스코프 안`으로 남긴다(그 OR은
+        // 캐릭터 축의 '사건 미연계' 판정에 필요하다). 그래서 여기 그대로 쓰면 분자에는
+        // *스코프 안 캐릭터가 스코프 밖 사건에 참여한 행*이 들어가고 분모는 스코프 안 사건만
+        // 센다 — 참여자가 0명인 사건 하나뿐인데도 카드가 "사건당 평균 1.0"과 "미연계 1"을
+        // **동시에** 말했다. 바로 위 `novelEventCounts`는 같은 `eventIdSet`으로 이미 좁힌다.
+        val scopedEventRefs = s.crossRefs.filter { it.eventId in eventIdSet }
+        val eventCharCounts = scopedEventRefs.groupBy { it.eventId }.mapValues { it.value.size }
         val avgCharsPerEvent = if (s.events.isNotEmpty()) {
             eventCharCounts.values.sum().toFloat() / s.events.size
         } else 0f
 
-        val linkedEventIds = s.crossRefs.map { it.eventId }.toSet()
+        val linkedEventIds = scopedEventRefs.mapTo(HashSet()) { it.eventId }
         val orphanCount = s.events.count { it.id !in linkedEventIds }
 
         val monthDist = s.events.filter { it.month != null }
@@ -1602,13 +1619,14 @@ class StatsDataProvider {
         val typeDist = s.relationships.groupBy { it.relationshipType }
             .mapValues { it.value.size }
 
+        // 순위에 오르는 것은 스코프 안 인물뿐이다 — 캐릭터 통계의 같은 목록과 한 규칙.
         val connCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
-            connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
         }
         val topConnected = connCount.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
         val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
         val isolated = s.characters.filter { it.id !in relCharIds }.map { it.name }
