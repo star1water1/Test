@@ -167,8 +167,32 @@ val RESERVED_SHEET_NAMES = setOf(
  * (7장 규약: 헤더 규칙·유효값을 양쪽에 따로 두지 않는다).
  */
 fun sanitizeSheetNameBase(name: String): String {
-    val cleaned = name.replace(Regex("[\\[\\]*/\\\\?:]"), "").take(31).trim('\'')
+    val cleaned = takeSheetChars(name.replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH).trim('\'')
     return if (cleaned.isBlank()) "Sheet" else cleaned
+}
+
+/** POI(엑셀)의 시트명 길이 상한. 값이 두 자리에 살면 갈리므로 이 상수 하나가 든다. */
+const val MAX_SHEET_NAME_LENGTH = 31
+
+/**
+ * 시트명을 [max]자로 자르되 **짝 글자(서러게이트 쌍)를 쪼개지 않는다.**
+ *
+ * 코틀린 `String`은 UTF-16 코드 단위의 열이라 이모지 한 글자가 **두 칸**을 쓴다.
+ * 그냥 `take(31)`하면 경계에 걸린 이모지가 반토막 나 **홀로 남은 앞짝**이 되는데,
+ * 그것은 XML에 실을 수 없는 글자다.
+ *
+ * **실측(POI 5.2.5)**: 쓰기는 죽지 않는다 — 대신 그 자리가 파일에서 `?`로 바뀐다.
+ * 그래서 **앱이 배정한 이름과 파일 속 이름이 갈린다**: 세계관 이름으로 시트를 되찾는 자리가
+ * 그 시트를 못 알아보고, 앞짝이 같은 두 이모지(😀·😁은 앞짝이 같다)로 갈린 두 세계관은
+ * 파일에서 **같은 이름 하나**가 된다. 왕복 무결성이 걸린 자리라 애초에 쪼개지 않는다.
+ *
+ * 그래서 경계가 앞짝이면 **한 칸 덜 가져온다**(그 이름은 30자가 된다 —
+ * [isSuffixedVariantOf]의 '잘렸는가' 판정이 그 한 칸을 함께 본다).
+ */
+fun takeSheetChars(name: String, max: Int): String {
+    if (name.length <= max) return name
+    val end = if (Character.isHighSurrogate(name[max - 1])) max - 1 else max
+    return name.substring(0, end)
 }
 
 /**
@@ -205,7 +229,7 @@ fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String
         // 접미사를 붙이므로 마지막 글자는 항상 ')'다 — 여기서 아포스트로피를 더 다듬으면
         // 이름이 한 글자 더 짧아져 `isSuffixedVariantOf`가 원명의 변형으로 알아보지 못하고,
         // 가져오기가 밀려난 시트를 영영 못 찾는다.
-        result = base.take(31 - suffix.length) + suffix
+        result = takeSheetChars(base, MAX_SHEET_NAME_LENGTH - suffix.length) + suffix
         counter++
     }
     usedNames.add(result)
@@ -253,7 +277,11 @@ fun isSuffixedVariantOf(sheetName: String, base: String): Boolean {
     if (sheetName == base) return false
     val stripped = sheetName.replace(Regex("\\([0-9]+\\)$"), "")
     if (stripped == sheetName) return false   // 접미사가 없다
-    return stripped == base || (base.startsWith(stripped) && sheetName.length >= 31)
+    // **한 칸을 덜 봐 준다** — 짝 글자(이모지)가 경계에 걸리면 절단이 30자에서 멈춘다
+    // ([takeSheetChars]). `>= 31`로만 보면 그렇게 잘린 이름을 *잘리지 않은 것*으로 읽어
+    // 밀려난 시트를 영영 못 찾는다.
+    return stripped == base ||
+        (base.startsWith(stripped) && sheetName.length >= MAX_SHEET_NAME_LENGTH - 1)
 }
 
 /**
