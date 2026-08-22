@@ -670,7 +670,17 @@ object AiFieldSuggestSheet {
             }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val selected = rows.filter { it.cb.isChecked }.map { it.suggestion }
-                if (selected.isEmpty()) return@setOnClickListener
+                if (selected.isEmpty()) {
+                    // **누르면 아무 일도 안 나는 자리를 만들지 않는다**(R-17). 창을 닫지 않는
+                    // 것은 옳지만(고른 것이 없으니 적용할 것도 없다), 그것을 말하지 않으면
+                    // 사용자는 앱이 고장 났다고 읽는다 — 유료 응답을 검토하던 자리라 더 그렇다.
+                    android.widget.Toast.makeText(
+                        fragment.requireContext(),
+                        fragment.getString(R.string.ai_review_pick_none),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnClickListener
+                }
                 dialog.dismiss()
                 viewModel.clearAiSuggestResult()
                 applySelected(fragment, formBuilder, selected)

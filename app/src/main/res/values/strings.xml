@@ -3171,6 +3171,7 @@
     <string name="field_library_ai_review_title">AI 정리 제안 검토</string>
     <string name="field_library_ai_apply">선택 적용</string>
     <string name="field_library_ai_select_all">전체 선택/해제</string>
+    <string name="ai_review_pick_none">적용할 항목을 하나 이상 고르세요.</string>
     <string name="field_library_ai_apply_merges">병합 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_apply_categories">카테고리 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_applied">AI 정리 적용 완료 — 병합 %1$d건 · 카테고리 %2$d건</string>

@@ -844,13 +844,16 @@ class FieldEditDialog : DialogFragment() {
                 // 체형 분석 설정: BODY_SIZE 전용
                 binding.bodyAnalysisSettingsLayout.visibility =
                     if (selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
-                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE
+                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE — **그리고 그 종류에 소비처가 있을 때만**
                 val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE || selectedType == FieldType.GRADE
-                binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
-                // 랜덤 생성: NUMBER, SELECT, GRADE
+                val entityType = currentEntityType()
+                binding.percentileLayout.visibility =
+                    if (isNumericType && entityType in PERCENTILE_CAPABLE_ENTITY_TYPES) View.VISIBLE else View.GONE
+                // 랜덤 생성: NUMBER, SELECT, GRADE — 같은 결(🎲을 그리는 폼이 있는 종류만)
                 val isRandomizable = selectedType == FieldType.NUMBER || selectedType == FieldType.SELECT || selectedType == FieldType.GRADE
-                binding.randomLayout.visibility = if (isRandomizable) View.VISIBLE else View.GONE
-                if (isRandomizable) updateRandomNumberOptionsVisibility(binding)
+                val randomVisible = isRandomizable && entityType in RANDOM_CAPABLE_ENTITY_TYPES
+                binding.randomLayout.visibility = if (randomVisible) View.VISIBLE else View.GONE
+                if (randomVisible) updateRandomNumberOptionsVisibility(binding)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -3205,6 +3208,26 @@ class FieldEditDialog : DialogFragment() {
             FieldDefinition.ENTITY_CHARACTER,
             FieldDefinition.ENTITY_EVENT
         )
+
+        /**
+         * 상위 % 표기를 **실제로 그리는** 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).
+         *
+         * 세는 법은 `"percentile"` 설정을 읽는 화면이 있는가다 —
+         * `CharacterDetailFragment`(캐릭터 상세) 하나뿐이다. 사건·작품 상세는 그 칸을 읽지
+         * 않으므로 거기서 스위치를 켜면 **켜지기만 하고 아무 데도 안 나온다.**
+         * 그 종류의 상세가 상위 %를 그리게 되면 여기 한 줄을 더한다.
+         */
+        private val PERCENTILE_CAPABLE_ENTITY_TYPES = setOf(FieldDefinition.ENTITY_CHARACTER)
+
+        /**
+         * 🎲 랜덤 생성을 **실제로 그리는** 종류 (R-24).
+         *
+         * 세는 법은 `RandomConfig.fromConfig(...).enabled`로 🎲 단추를 붙이는 폼이 있는가다 —
+         * `DynamicFieldFormBuilder`(캐릭터 편집·보충 탭)뿐이고, 사건·작품 폼은 제 위젯을
+         * 따로 그려 그 단추를 붙이지 않는다(AI 추천은 `CharacterFieldAiSuggester`가 같은 설정을
+         * 재료로 쓰지만 그것도 캐릭터 축이다).
+         */
+        private val RANDOM_CAPABLE_ENTITY_TYPES = setOf(FieldDefinition.ENTITY_CHARACTER)
 
         /** 대결 등급 컷 스테퍼 한 칸 — 목업이 정한 정밀 경로의 눈금이다(B-113). */
         private const val STEP_PERCENT = 0.5
