@@ -142,6 +142,16 @@
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 상한으로 잘린 종수 고지 (R-14) — 자를 때만 보인다. -->
+            <TextView
+                android:id="@+id/firstCharTruncNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:alpha="0.7"
+                android:textSize="@dimen/stats_text_caption"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 미사용 이름 목록 (신규) -->
             <TextView
                 android:layout_width="wrap_content"

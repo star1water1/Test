@@ -1395,6 +1395,7 @@
     <string name="stats_avg_name_length">평균 이름 길이: %.1f자</string>
     <string name="stats_all_names_used">모든 이름이 사용됨</string>
     <string name="stats_and_more">…외 %d개</string>
+    <string name="stats_chart_top_kinds_note">상위 %1$d종만 그렸습니다 — 나머지 %2$d종 %3$d건은 차트에 없습니다.</string>
 
     <!-- Stats: 데이터 건강도 확장 -->
     <string name="stats_no_memo">메모 미작성</string>

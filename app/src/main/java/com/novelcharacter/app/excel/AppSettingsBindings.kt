@@ -584,8 +584,16 @@ object AppSettingsBindings {
     /** 옛 이름도 [AppSettingsKeys.ALIASES]를 지나 같은 바인딩에 닿는다. */
     fun bindingOf(key: String): Binding? = AppSettingsKeys.specOf(key)?.let { BY_KEY[it.key] }
 
-    /** 선언은 있는데 바인딩이 없는 키 — 검사 스크립트가 없을 때의 마지막 그물이다. */
-    val UNBOUND_KEYS: List<String> = AppSettingsKeys.SPECS.map { it.key }.filterNot { it in BY_KEY }
+    // 「선언은 있는데 바인딩이 없는 키」를 보는 것은 **`tools/check_app_settings_catalog.sh`**다.
+    //
+    // 종전에는 같은 판정을 `UNBOUND_KEYS`라는 값으로도 들고 있었는데 **부르는 곳이 하나도
+    // 없었다** — 앱 코드에도, 시험에도, 검사 스크립트에도. 그런데 그 KDoc은 자신을
+    // *"검사 스크립트가 없을 때의 마지막 그물"*이라 불렀다. **그물이 아닌 것이 그물이라고
+    // 적혀 있으면 다음 사람이 그것을 믿고 안심한다** — 이 저장소가 죽은 선언을 결함으로
+    // 세어 온 근거가 바로 그것이다(*"없는 소비처를 가리키는 주석"*).
+    //
+    // 이 파일은 순수 JVM 하네스와 프로브의 범위 밖이라(`Context`에 묶여 있다) 시험으로
+    // 되살릴 수도 없다. 그래서 값을 걷고 **실제로 도는 검사 하나만 남긴다**(2026.08.22).
 
     /**
      * **동의를 물을 것이 실제로 있는가** — 내보내기 창이 이것으로 묻고 말고를 가른다.

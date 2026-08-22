@@ -614,8 +614,9 @@ class StatsMainFragment : Fragment() {
             binding.cardFactionStats.visibility = View.VISIBLE
             binding.factionPreview.text = buildString {
                 append("세력 ${factionStats.totalFactions}개")
-                val totalMembers = factionStats.factionMemberCounts.values.sum()
-                append(" | 소속 멤버 ${totalMembers}명")
+                // **캐릭터 수를 적는다** — 종전에는 `factionMemberCounts.values.sum()`이라
+                // 소속 *행* 수였고, 바로 뒤 '미소속 N명'과 단위가 갈려 둘을 더하면 총원을 넘었다.
+                append(" | 소속 멤버 ${factionStats.memberCharacterCount}명")
                 if (factionStats.multiMemberCharacters > 0) {
                     append(" | 다중 소속 ${factionStats.multiMemberCharacters}명")
                 }

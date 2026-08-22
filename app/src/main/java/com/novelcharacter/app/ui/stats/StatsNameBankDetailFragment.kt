@@ -100,6 +100,9 @@ class StatsNameBankDetailFragment : Fragment() {
         }
     }
 
+    /** 첫 글자 분포 막대의 표시 상한 — 문구는 이 상수에서 채운다(R-14). */
+    private val FIRST_CHAR_CHART_LIMIT = 15
+
     private fun setupFirstCharChart(data: Map<String, Int>) {
         val chart = binding.chartFirstChar
         if (data.isEmpty()) {
@@ -108,9 +111,27 @@ class StatsNameBankDetailFragment : Fragment() {
         }
         val ctx = requireContext()
         val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
-        val top15 = data.entries.take(15)
-        val labels = top15.map { it.key }
-        val entries = top15.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
+        // **자른 종수를 말한다** (R-14 — *"상한을 두는 것만으로는 절반이다"*).
+        // 종전에는 `data.entries.take(15)` 뒤에 아무 고지가 없어, 성씨가 40종이어도
+        // 15개 막대가 전부인 것처럼 보였다 — *없는 성씨*라 판단해 새 이름을 짓게 되는 자리다.
+        // 같은 화면의 미사용 이름 목록은 이미 `stats_and_more`로 잘린 수를 말한다(한 화면
+        // 안에서 같은 성격의 두 목록이 반대로 돌던 것을 맞춘다).
+        // 막대는 '기타'로 접지 않는다 — 첫 글자 분포에서 '기타' 막대는 글자가 아니라
+        // 묶음이라 x축의 뜻이 갈린다. 접는 대신 **밖에서 말한다.**
+        val view = com.novelcharacter.app.util.ValueDistributions.view(data, FIRST_CHAR_CHART_LIMIT)
+        binding.firstCharTruncNote.apply {
+            if (view.hasHidden) {
+                text = getString(
+                    R.string.stats_chart_top_kinds_note,
+                    view.shown.size, view.hiddenKinds, view.hiddenCount
+                )
+                visibility = View.VISIBLE
+            } else {
+                visibility = View.GONE
+            }
+        }
+        val labels = view.shown.map { it.label }
+        val entries = view.shown.mapIndexed { i, e -> BarEntry(i.toFloat(), e.count.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = chartValueSize

@@ -32,7 +32,12 @@ data class SummaryStats(
     // 인사이트 요약
     val mostActiveNovel: String?,
     val mostConnectedChar: String?,
-    val dataHealthIssueCount: Int,
+    // `dataHealthIssueCount`는 걷었다 (2026.08.22). 소비처가 선언과 대입 둘뿐인 죽은 값이면서,
+    // **B-59가 폐기한 옛 술어**를 그대로 보존하고 있었다 — 이미지 미등록을 '발견 사항'으로
+    // 세는 셈법이다(지금 화면이 쓰는 `DataHealthStats.issueCount`는 그것을 *'입력 현황'*이라
+    // 일부러 뺀다). 남겨 두면 다음 사람이 요약 카드에 '발견 사항' 줄을 붙이며 이 값을 집어
+    // **메인 카드와 다른 수가 나란히 뜬다.** 요약에 그 수가 필요해지면 `issueCount` 하나를
+    // 쓸 것 — 술어를 두 벌로 만들지 않는다(R-34).
     val avgFieldCompletion: Float,
     val recentActivityCount: Int, // 최근 7일 생성/수정 캐릭터
     // 분석적 인사이트 (원칙 02: 입력량보다 분석 우선)
@@ -825,6 +830,18 @@ data class FactionStatsResult(
      * 이름이 필요한 표시 자리는 [StatsSnapshot.factions]에서 그때 찾아 붙인다.
      */
     val factionMemberCounts: Map<Long, Int>,
+    /**
+     * 어느 세력에든 **지금 속한 캐릭터 수** — [factionMemberCounts]의 합이 아니다.
+     *
+     * 그 합은 **소속 행 수**라 겸직 캐릭터가 세력마다 한 번씩 들어간다. 요약 줄은 그 합을
+     * *"소속 멤버 N명"*으로 적으면서 바로 옆에 [factionlessCharacterCount]를
+     * *"미소속 M명"*으로 나란히 적었고, **단위가 다른 두 수가 같은 '명'으로 서서
+     * 둘을 더하면 캐릭터 총원을 넘었다**(10명 중 2명이 겸직·3명이 미소속이면 9 + 3 = 12).
+     * 어느 수가 틀린 것인지 화면에서 알 길이 없다 — 그래서 같은 단위를 여기서 낸다(R-34).
+     *
+     * 세력별 멤버 수가 필요한 자리(세력 상세)는 그대로 [factionMemberCounts]를 쓴다.
+     */
+    val memberCharacterCount: Int,
     val multiMemberCharacters: Int,
     val autoRelationshipCount: Int,
     val departureCount: Int,
@@ -1311,11 +1328,9 @@ class StatsDataProvider {
             charMap.getValue(it.key).name
         }
 
-        // 데이터 건강 이슈
-        val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
-        val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
-        val isolatedCount = s.characters.count { it.id !in relCharIds }
-        val healthIssues = noImageCount + isolatedCount
+        // 데이터 건강 이슈 셈은 걷었다 — 그 값을 읽는 곳이 없었고(위 `avgFieldCompletion`
+        // 옆 주석), 이 셈만으로 스냅샷마다 **캐릭터 전수 스캔 두 번과 관계 전수 flatMap
+        // 한 번**이 헛돌았다.
 
         // 평균 필드 완성도 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
         val summaryFieldDefs = s.fieldDefinitions.groupBy { it.universeId }
@@ -1387,7 +1402,6 @@ class StatsDataProvider {
             totalNames = s.nameBank.size,
             mostActiveNovel = mostActiveNovel,
             mostConnectedChar = mostConnectedChar,
-            dataHealthIssueCount = healthIssues,
             avgFieldCompletion = avgCompletion,
             recentActivityCount = recentCount,
             specializationDist = specDist,
@@ -3138,8 +3152,11 @@ class StatsDataProvider {
         val activeMemberships = s.factionMemberships.filter { it.leaveType != FactionMembership.LEAVE_REMOVED }
         val factionMap = s.factions.associateBy { it.id }
 
+        // *지금*인 소속 행은 한 번만 고른다 — 아래 셋이 같은 목록을 본다.
+        val currentMemberships = FactionStanding.current(activeMemberships)
+
         // 세력별 활성 멤버 수 — 키는 id다(R-20). 이름으로 접으면 동명 세력이 서로를 덮는다.
-        val factionMemberCounts = FactionStanding.current(activeMemberships)
+        val factionMemberCounts = currentMemberships
             .groupBy { it.factionId }
             .mapNotNull { (factionId, members) ->
                 if (factionId !in factionMap) return@mapNotNull null   // 지워진 세력의 잔여 기록
@@ -3147,10 +3164,13 @@ class StatsDataProvider {
             }
             .toMap()
 
-        // 2개 이상 세력에 속한 캐릭터 수
-        val membershipsByChar = FactionStanding.current(activeMemberships)
-            .groupBy { it.characterId }
-        val multiMemberCharacters = membershipsByChar.count { it.value.size >= 2 }
+        // 2개 이상 세력에 속한 캐릭터 수 — **세력을 세지 소속 행을 세지 않는다.**
+        // 종전에는 행 수(`it.value.size >= 2`)라 **같은 세력에 재가입한 이력이 두 줄이면
+        // 겸직으로 잘못 셌다.** `FactionStanding.currentFactionIds`의 KDoc이 그 자리에
+        // `distinct()`가 필요하다고 이미 적어 두었다(카드가 같은 세력 이름을 두 번 띄우던 자리).
+        val membershipsByChar = currentMemberships.groupBy { it.characterId }
+        val multiMemberCharacters = membershipsByChar
+            .count { (_, rows) -> rows.map { it.factionId }.distinct().size >= 2 }
 
         // 세력 자동 관계 수 (factionId != null)
         val autoRelationshipCount = s.relationships.count { it.factionId != null }
@@ -3159,13 +3179,13 @@ class StatsDataProvider {
         val departureCount = s.factionMemberships.count { it.leaveType == FactionMembership.LEAVE_DEPARTED }
 
         // 세력 미소속 캐릭터 수
-        val charsInFactions = FactionStanding.current(activeMemberships)
-            .map { it.characterId }.toSet()
+        val charsInFactions = currentMemberships.map { it.characterId }.toSet()
         val factionlessCharacterCount = s.characters.count { it.id !in charsInFactions }
 
         return FactionStatsResult(
             totalFactions = s.factions.size,
             factionMemberCounts = factionMemberCounts,
+            memberCharacterCount = charsInFactions.size,
             multiMemberCharacters = multiMemberCharacters,
             autoRelationshipCount = autoRelationshipCount,
             departureCount = departureCount,
