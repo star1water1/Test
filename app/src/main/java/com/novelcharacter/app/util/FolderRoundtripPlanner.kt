@@ -113,8 +113,19 @@ object FolderRoundtripPlanner {
     /** 나열이 내려가는 최대 깊이(정리 폴더 기준). `_미배정/<세트명>/`이 2단계라 2로 잡는다. */
     const val MAX_SCAN_DEPTH = 2
 
-    /** 스캔 항목 1건. [folders]는 정리 폴더 기준 폴더 경로(직속이면 빈 목록). */
-    data class ScanItem(val id: String, val folders: List<String>, val fileName: String)
+    /**
+     * 스캔 항목 1건. [folders]는 정리 폴더 기준 폴더 경로(직속이면 빈 목록).
+     *
+     * @param alreadyHandled 지문 장부가 아는 파일 — 이미 처리했다. **맥락으로만 쓴다**:
+     *        세트 정족수와 같은 토큰 판정에는 들어가고 **어떤 행동도 만들지 않는다**.
+     *        빼 버리면 폴더 단위 규칙이 부분 뷰로 판정된다([OrganizeFolderService.ScannedFile] 참조).
+     */
+    data class ScanItem(
+        val id: String,
+        val folders: List<String>,
+        val fileName: String,
+        val alreadyHandled: Boolean = false
+    )
 
     /**
      * 캐릭터 폴더명이 가리키는 대상을 정하는 **해소 사다리** — 위에서부터 먼저 맞는 것이 이긴다.
@@ -280,7 +291,16 @@ object FolderRoundtripPlanner {
         val path: String,
         val fromCharacterIds: List<Long>,
         val unlinks: Boolean = false,
-        val keepsDetachedMark: Boolean = false
+        val keepsDetachedMark: Boolean = false,
+        /**
+         * 지금 이 이미지에 **뗀 표식이 붙어 있는가**. [keepsDetachedMark]가 false면 이 항목의
+         * 처분은 '표식을 지운다'인데, 그것이 *실제로 무언가를 바꾸는지*는 이 값이 정한다.
+         *
+         * 세기 위해서만 있는 값이 아니다 — 이것이 없으면 `_분리됨/`에서 `_미배정/`으로 옮기는
+         * D5의 '살림' 갈래가 **사전 확인에도 결과에도 한 줄도 안 잡힌다**(배정도 묶음도 없어
+         * 다른 계수에 걸리지 않는다). 표식을 지워 놓고 "아무 일도 없었다"고 말하게 된다.
+         */
+        val hadDetachedMark: Boolean = false
     )
 
     /**
@@ -315,15 +335,28 @@ object FolderRoundtripPlanner {
     data class UnlinkOnlyAction(val item: ScanItem, val path: String)
 
     /**
+     * 세트에 참여하는 **기존** 이미지 1건 — 스캔 항목 id와 그 이미지의 경로를 **함께** 든다.
+     *
+     * 경로만 들고 있던 것이 결함이었다: 실행부가 세트를 반영하고도 *그 파일이 폴더의 어느
+     * 것이었는지* 되짚을 수 없어 `_처리됨/`으로 옮기지 못했고, 그래서 세트로만 반영되는 파일
+     * (`<그 외 이름>/`의 토큰 파일이 그것이다)이 폴더에 영원히 남아 진입 배너가 **매번 "새
+     * 이미지 N장"**이라 말했다. 둘을 한 자료형에 묶어 두 목록이 어긋날 자리를 없앤다.
+     */
+    data class ExistingMember(val itemId: String, val path: String)
+
+    /**
      * 링크 세트 — 폴더 하나가 만드는 수동 묶음(UUID 토큰). 편입 후 경로가 정해지는 신규
-     * 항목과, 토큰으로 이미 아는 기존 경로가 함께 실린다. 2장 이상일 때만 만들어진다.
+     * 항목과, 토큰으로 이미 아는 기존 이미지가 함께 실린다. 2장 이상일 때만 만들어진다.
      */
     data class LinkSetAction(
         val key: String,
         val newItemIds: List<String>,
-        val existingPaths: List<String>
+        val existing: List<ExistingMember>
     ) {
-        val size: Int get() = newItemIds.size + existingPaths.size
+        /** 기존 이미지의 경로만 — 묶는 일 자체는 경로만 있으면 된다. */
+        val existingPaths: List<String> get() = existing.map { it.path }
+
+        val size: Int get() = newItemIds.size + existing.size
     }
 
     /** 보류 사유 — 전부 사용자에게 고지한다(조용한 생략 금지). */
@@ -370,10 +403,39 @@ object FolderRoundtripPlanner {
         val linkSets: List<LinkSetAction> = emptyList(),
         val holds: List<Hold> = emptyList(),
         val unknownTokenFiles: Int = 0,
+        /**
+         * `_삭제승인/`에 들어 있으나 앱이 모르는 파일 수 — **지울 것이 없어 아무 일도 하지 않는다.**
+         *
+         * 처분이 '아무것도 안 함'인 것과 고지를 면제받는 것은 다르다. 사용자는 지워질 것이라
+         * 믿고 넣었고, 말하지 않으면 그 믿음이 그대로 남는다.
+         */
+        val deleteApprovalUnknown: Int = 0,
         val ambiguousFolders: List<String> = emptyList(),
         val unknownCodeFolders: List<String> = emptyList(),
         val deeperIgnored: Int = 0,
+        /**
+         * **확정 무동작** — 볼 필요는 있었으나 바꿀 것이 없던 파일들.
+         *
+         * 왕복의 처분은 셋인데 종전에는 자료형이 둘뿐이었다: *반영*과 *실패·보류*(폴더에
+         * 남아 있는 것 = 미처리의 표식). 그래서 **이미 제자리에 있는 파일**이 그 둘 중 어디에도
+         * 못 들어가 `_처리됨/`으로도 안 가고 계수도 안 됐고, 진입 배너가 **영원히** "새 이미지
+         * N장"이라 말했다 — 받아와도 아무 일이 없으니 끊을 방법이 없었다.
+         *
+         * 다섯 자리가 여기 담긴다: 서랍의 이미 낱개인 파일 · 되돌리는 자리의 이미 되돌아온 파일 ·
+         * `_분리됨/`의 이미 뗀 파일 · 이미 그 캐릭터에만 배정된 파일 · `_삭제승인/`의 미지 토큰.
+         *
+         * **[actionCount]에는 넣지 않는다** — 진행도 총량은 *파일을 만지는 항목 수*다(R-26).
+         * **`alreadyHandled` 항목도 담지 않는다** — 맥락으로 들어온 것이지 이번에 확정된 것이 아니다.
+         */
+        val settled: List<ScanItem> = emptyList(),
         val miscReadAsCharacter: List<String> = emptyList(),
+        /**
+         * `_`로 시작하는데 등재된 예약 이름도, 그 이름의 캐릭터도 아닌 1단계 폴더 이름들.
+         *
+         * 아무것도 하지 않고 **이름째 고지한다**(설계 3장 「예약 폴더명은 `_` 접두다」).
+         * 예약을 쓰려다 빗나간 이름을 '그 외 이름'으로 읽으면 지시가 조용히 묶음이 된다.
+         */
+        val unknownReservedFolders: List<String> = emptyList(),
         val aiTagFolders: Map<String, List<String>> = emptyMap(),
         val aiTagExistingPaths: Map<String, List<String>> = emptyMap(),
         /**
@@ -462,9 +524,12 @@ object FolderRoundtripPlanner {
         val ambiguous = LinkedHashSet<String>()
         val unknownCode = LinkedHashSet<String>()
         val miscAsCharacter = LinkedHashSet<String>()
+        val unknownReserved = LinkedHashSet<String>()
         val aiTagFolders = LinkedHashMap<String, MutableList<String>>()
         val aiTagExistingPaths = LinkedHashMap<String, MutableList<String>>()
-        var unknownTokens = 0
+        val unknownTokenItems = HashSet<String>()
+        var deleteApprovalUnknown = 0
+        val settled = ArrayList<ScanItem>()
         var deeper = 0
         var miscImported = 0
 
@@ -482,13 +547,39 @@ object FolderRoundtripPlanner {
                 miscImported++
             } else if (path in linkedPaths) {
                 unlinkOnly.add(UnlinkOnlyAction(item, path))
+            } else {
+                // 이미 낱개다 — 바꿀 것은 없지만 **처분은 확정됐다**([Plan.settled]).
+                settled.add(item)
             }
-            // 이미 낱개면 할 일 없음 — 계수도 하지 않는다(되돌리는 자리와 같은 규약).
+        }
+
+        /**
+         * 이 자리가 **세트를 만드는 자리**면 그 키, 아니면 null.
+         *
+         * 아래 2단계가 키를 조립하는 규칙과 **같은 것 하나**여야 한다 — 갈리면 맥락으로 들어온
+         * 파일이 다른 키에 쌓여 정족수를 못 채우고, 증상이 원래 결함과 똑같아진다.
+         */
+        fun setKeyOf(location: Location, r: CharacterFolderResolver): String? = when (location) {
+            is Location.UnassignedSet -> "$FOLDER_UNASSIGNED/${location.name}"
+            is Location.DetachedSet -> "$FOLDER_DETACHED/${location.name}"
+            is Location.Named -> {
+                // 2단계 `Named` 갈래의 세트 조건을 **그대로** 옮긴 것이다:
+                // 서랍도 · 예약 오타도 · 캐릭터 확정도 아닌 자리가 세트를 만든다
+                // (동명 보류·미지 코드는 배정만 못 할 뿐 세트에는 들어간다 — 결정 D3).
+                val res = r.resolve(location.name)
+                val key = r.keyOf(location.name)
+                val drawer = res is CharacterFolderResolver.Result.NotCharacter && key == MISC_PLAIN_NAME
+                val unknownReservedName = res is CharacterFolderResolver.Result.NotCharacter &&
+                    !drawer && key.startsWith(RESERVED_PREFIX)
+                val resolved = res is CharacterFolderResolver.Result.Found
+                if (!drawer && !unknownReservedName && !resolved) location.name else null
+            }
+            else -> null
         }
 
         // 세트 후보를 폴더별로 모았다가 마지막에 2장 이상인 것만 세트로 만든다.
         val setNewItems = LinkedHashMap<String, MutableList<String>>()
-        val setExistingPaths = LinkedHashMap<String, MutableList<String>>()
+        val setExistingPaths = LinkedHashMap<String, MutableList<ExistingMember>>()
         val setKeyOfItem = HashMap<String, String>()
 
         // ── 1단계: 자리 해석 + 토큰 해석. 같은 이미지를 두 번 가리키는 파일은 전부 보류한다.
@@ -503,7 +594,13 @@ object FolderRoundtripPlanner {
 
             val candidate = FolderNameToken.tokenCandidateOf(item.fileName)
             val path = candidate?.let { pathByToken[it] }
-            if (candidate != null && path == null) unknownTokens++
+            // **세지 않고 표시만 해 둔다 — 세는 것은 처분이 정해진 뒤다.**
+            // 여기서 세면 *관찰*("토큰꼴인데 사전에 없다")을 세면서 문구는 *처분*("새 이미지로
+            // 편입합니다")을 약속하게 되고, 둘이 갈리는 자리가 실제로 있다: `_삭제승인/`은
+            // 편입도 삭제도 하지 않고, 이미 처리한 파일도·보류된 파일도 편입되지 않는다.
+            // 그때 확인창은 일어나지 않을 편입을 예고한다(거짓 고지).
+            // 처분에서 파생시키면 갈래가 하나 늘어도 수가 저절로 맞는다.
+            if (candidate != null && path == null) unknownTokenItems.add(item.id)
             if (path != null) pathUseCount[path] = (pathUseCount[path] ?: 0) + 1
             resolved.add(Resolved(item, location, path))
         }
@@ -514,6 +611,18 @@ object FolderRoundtripPlanner {
                 holds.add(Hold(item, HoldReason.DUPLICATE_TOKEN))
                 continue
             }
+            // **이미 처리한 파일은 맥락으로만 쓴다.** 세트 정족수를 채우는 데에는 넣고(그러라고
+            // 나열이 실어 보낸다) 행동은 하나도 만들지 않는다 — 그 파일에 대한 처분은 지난
+            // 왕복에서 이미 끝났고, 다시 하면 두 번 편입하거나 사용자의 폴더를 비운다.
+            if (item.alreadyHandled) {
+                if (path != null) {
+                    setKeyOf(location, resolver)?.let { key ->
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
+                    }
+                }
+                continue
+            }
+
             val owners = path?.let { characterIdsByPath[it] }.orEmpty()
             val sharedOwners = owners.size >= 2
 
@@ -534,9 +643,16 @@ object FolderRoundtripPlanner {
                         // "다시 쓸 것으로 되돌림"이고, 그 처분이 표식 지우기다(D5).
                         // 배정·묶음이 없어도 이 자료형으로 싣는 이유는 실행부가 표식을 지우는
                         // 자리가 이것 하나여야 하기 때문이다(규칙을 둘로 두지 않는다).
-                        detaches.add(DetachAction(item, path, owners, unlinks = linked))
+                        detaches.add(
+                            DetachAction(
+                                item, path, owners, unlinks = linked,
+                                hadDetachedMark = path in detachedPaths
+                            )
+                        )
+                    } else {
+                        // 이미 되돌아온 상태 — 확정 무동작([Plan.settled]).
+                        settled.add(item)
                     }
-                    // 배정도 묶음도 표식도 없으면 이미 되돌아온 상태다 — 할 일 없음(계수도 않는다).
                 }
 
                 is Location.DetachedRoot -> {
@@ -554,15 +670,22 @@ object FolderRoundtripPlanner {
                         detaches.add(
                             DetachAction(item, path, owners, unlinks = linked, keepsDetachedMark = true)
                         )
+                    } else {
+                        // 이미 서랍에 있다 — 확정 무동작([Plan.settled]).
+                        settled.add(item)
                     }
-                    // 배정도 묶음도 없으면 이미 서랍에 있는 상태다 — 할 일 없음.
                 }
 
                 is Location.DeleteApproval -> {
                     // 앱이 모르는 파일은 지울 것이 없다 — 편입도 하지 않는다. 여기 넣은 뜻은
                     // "앱에서 지워라"인데 앱에 없으므로 요청이 이미 이뤄진 상태다.
                     // (편입해 두고 지우면 한 왕복에서 만들었다 없애는 꼴이 된다.)
+                    //
+                    // **다만 조용히 넘기지는 않는다.** 처분이 '아무것도 안 함'인 것과 고지가
+                    // 면제되는 것은 다르다 — 사용자는 지워질 것이라 믿고 넣었고, 파일은 그
+                    // 폴더에 그대로 남아 다음 받아오기에도 같은 자리에 선다(변수 제어).
                     if (path != null) deletes.add(DeleteAction(item, path, owners))
+                    else { deleteApprovalUnknown++; settled.add(item) }
                 }
 
                 is Location.Shared -> {
@@ -585,7 +708,24 @@ object FolderRoundtripPlanner {
                     // 그대로 태운다 — '기타'라는 이름이 동명이인 질문을 우회하게 두지 않는다.
                     val isDrawer = resolution is CharacterFolderResolver.Result.NotCharacter &&
                         resolver.keyOf(location.name) == MISC_PLAIN_NAME
-                    if (isDrawer) {
+                    // **`_`로 시작하는데 등재된 예약 이름이 아닌 폴더는 묶음 지시가 아니다.**
+                    // [RESERVED_PREFIX]는 *"이 접두를 쓰면 캐릭터 이름으로 해석하지 않는다"*는
+                    // 규칙으로 선언돼 있었지만 **코드 어디에서도 쓰이지 않았다.** 그래서
+                    // `_삭제 승인/`(오타·띄어쓰기)·`_분리/`처럼 예약을 쓰려다 빗나간 폴더가
+                    // 아래 '그 외 이름' 갈래로 떨어져, **지우라는 지시가 조용히 수동 링크 묶음으로**
+                    // 바뀌었다(수동 묶음은 자동 재동기화가 풀어 주지도 않는다). 파괴적 지시를
+                    // 겨눈 이름일수록 빗나갔을 때의 폴백이 관대해서는 안 된다.
+                    //
+                    // **캐릭터가 우선인 것은 여기서도 같다**(D-1) — `_뭔가`라는 *이름의 캐릭터*가
+                    // 실재하면 위 사다리가 이미 [target]을 채웠고, 내보내기도 그 이름을 그대로
+                    // 폴더로 쓴다(예약 목록에만 없으면 내보낼 수 있다). 그 왕복은 그대로 산다.
+                    val isUnknownReserved = resolution is CharacterFolderResolver.Result.NotCharacter &&
+                        !isDrawer && resolver.keyOf(location.name).startsWith(RESERVED_PREFIX)
+                    if (isUnknownReserved) {
+                        // 아무것도 하지 않고 **이름을 고지한다** — 파일은 폴더에 남아 있으므로
+                        // 사용자가 이름을 고쳐 다시 받아오면 그대로 살아난다(미처리의 표식).
+                        unknownReserved.add(resolver.keyOf(location.name))
+                    } else if (isDrawer) {
                         handleMisc(item, path)
                     } else if (target != null) {
                         if (resolver.keyOf(location.name) == MISC_PLAIN_NAME) {
@@ -598,8 +738,10 @@ object FolderRoundtripPlanner {
                             holds.add(Hold(item, HoldReason.SHARED_OWNERS))
                         } else if (owners != listOf(target)) {
                             moves.add(MoveAction(item, path, owners, target))
+                        } else {
+                            // 이미 그 캐릭터에만 배정돼 있다 — 확정 무동작([Plan.settled]).
+                            settled.add(item)
                         }
-                        // 이미 그 캐릭터에만 배정돼 있으면 할 일 없음.
                     } else {
                         // 기타 이름(동명 보류 포함) — 배정은 건드리지 않고 폴더끼리 묶는다.
                         val key = location.name
@@ -608,7 +750,7 @@ object FolderRoundtripPlanner {
                             setKeyOfItem[item.id] = key
                             imports.add(ImportAction(item, null, key))
                         } else {
-                            setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                            setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
                         }
                         // AI 태그 대상은 **진짜 '그 외' 폴더뿐**이다. 동명 보류·미지 코드는
                         // 캐릭터를 가리키려던 이름이라, 그 이름에서 태그를 뽑으면 캐릭터 이름이
@@ -635,12 +777,12 @@ object FolderRoundtripPlanner {
                         imports.add(ImportAction(item, null, key))
                     } else if (sharedOwners) {
                         holds.add(Hold(item, HoldReason.SHARED_OWNERS))
-                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
                     } else {
                         if (owners.isNotEmpty()) {
                             detaches.add(DetachAction(item, path, owners, keepsDetachedMark = true))
                         }
-                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
                     }
                 }
 
@@ -653,12 +795,23 @@ object FolderRoundtripPlanner {
                     } else if (sharedOwners) {
                         // 해제는 보류하되 묶음에는 넣는다 — 링크는 되돌릴 수 있고 파괴적이지 않다.
                         holds.add(Hold(item, HoldReason.SHARED_OWNERS))
-                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
                     } else {
                         // 묶는 자리다 — 배정만 뗀다(`unlinks = false`). 여기서 묶음을 먼저 풀면
                         // 아래 링크 세트가 기존 그룹을 흡수할 수 없어 병합이 이동이 된다.
-                        if (owners.isNotEmpty()) detaches.add(DetachAction(item, path, owners))
-                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                        //
+                        // **뗀 표식도 직속과 같이 지운다.** 여기는 `_미배정/` 아래이고 그 폴더의
+                        // 뜻은 D5의 세 갈래 중 '살림'이다 — 세트로 묶느냐 낱개냐는 *묶음*의 축이지
+                        // *표식*의 축이 아니다. 종전에는 `owners`만 보고 판정해서, **묶여 있던 뗀
+                        // 이미지는 폴더로 서랍에서 뺄 길이 아예 없었다**(배정도 없어 할 일 없음으로
+                        // 보였다). 내보내기가 `_분리됨/세트-n/`을 만드는 이상(D4) 그 묶음을 통째로
+                        // `_미배정/` 아래로 옮기는 것은 이 기능이 정상적으로 만드는 배치다.
+                        if (owners.isNotEmpty() || path in detachedPaths) {
+                            detaches.add(
+                                DetachAction(item, path, owners, hadDetachedMark = path in detachedPaths)
+                            )
+                        }
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(ExistingMember(item.id, path))
                     }
                 }
 
@@ -691,11 +844,15 @@ object FolderRoundtripPlanner {
             unlinkOnly = unlinkOnly,
             linkSets = linkSets,
             holds = holds,
-            unknownTokenFiles = unknownTokens,
+            // 실제로 **편입되는** 것만 센다(위 `unknownTokenItems` 주석 참조).
+            unknownTokenFiles = finalImports.count { it.item.id in unknownTokenItems },
+            deleteApprovalUnknown = deleteApprovalUnknown,
             ambiguousFolders = ambiguous.toList(),
             unknownCodeFolders = unknownCode.toList(),
             deeperIgnored = deeper,
+            settled = settled,
             miscReadAsCharacter = miscAsCharacter.toList(),
+            unknownReservedFolders = unknownReserved.toList(),
             aiTagFolders = aiTagFolders.mapValues { it.value.toList() },
             aiTagExistingPaths = aiTagExistingPaths.mapValues { it.value.toList() },
             miscImported = miscImported

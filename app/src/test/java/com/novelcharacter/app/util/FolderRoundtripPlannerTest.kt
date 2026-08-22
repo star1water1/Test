@@ -633,4 +633,216 @@ class FolderRoundtripPlannerTest {
         assertEquals(1, plan.actionCount)
         assertFalse(plan.isEmpty)
     }
+    // ── 뗀 표식 · 예약 접두 (2026.08.22 수리분의 계약) ──
+
+    /**
+     * `_미배정/<세트명>/`도 뗀 표식을 지운다 — 그 폴더의 뜻은 세트든 낱개든 '살림'이다(D5).
+     * 종전에는 `owners`만 보고 판정해서, **묶여 있던 뗀 이미지를 폴더로 살릴 길이 아예 없었다**
+     * (배정도 없어 '할 일 없음'으로 보였다).
+     */
+    @Test fun markOnlyFile_movedToUnassignedSet_clearsMark() {
+        val items = listOf(
+            tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1"),
+            tokenFile("f2", tokenB, FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1")
+        )
+        val seen = plan(items, detached = setOf(pathA, pathB))
+        assertEquals(2, seen.detaches.size)
+        assertTrue(seen.detaches.none { it.keepsDetachedMark })
+        // 묶는 자리이므로 묶음은 풀지 않는다(그래야 아래 세트가 기존 그룹을 흡수한다).
+        assertTrue(seen.detaches.none { it.unlinks })
+        assertEquals(1, seen.linkSets.size)
+    }
+
+    /** `_분리됨/<세트명>/`은 반대다 — 표식을 남긴다. 두 서랍이 대칭이면서 뜻이 반대인 자리. */
+    @Test fun detachedSet_keepsMark() {
+        val items = listOf(
+            tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1"),
+            tokenFile("f2", tokenB, FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1")
+        )
+        val seen = plan(items, owners = mapOf(pathA to listOf(7L), pathB to listOf(7L)))
+        assertEquals(2, seen.detaches.size)
+        assertTrue(seen.detaches.all { it.keepsDetachedMark })
+    }
+
+    /**
+     * 예약을 쓰려다 빗나간 폴더는 **'그 외 이름'이 아니다** — 묶지도 배정하지도 않고 이름을 고지한다.
+     * 종전에는 `_삭제 승인/`(오타) 같은 폴더가 조용히 수동 링크 묶음이 됐다.
+     */
+    @Test fun unknownReservedFolder_isReportedNotLinked() {
+        val items = listOf(
+            newFile("n1", "_삭제 승인"),
+            newFile("n2", "_삭제 승인")
+        )
+        val p = plan(items)
+        assertEquals(listOf("_삭제 승인"), p.unknownReservedFolders)
+        assertTrue(p.imports.isEmpty())
+        assertTrue(p.linkSets.isEmpty())
+        assertEquals(0, p.actionCount)
+    }
+
+    /** 그러나 **그 이름의 캐릭터가 실재하면** 캐릭터가 이긴다(D-1) — 내보내기가 그 이름을 쓴다. */
+    @Test fun underscoreNamedCharacterStillWins() {
+        val p = plan(listOf(newFile("n1", "_비밀")), names = mapOf("_비밀" to listOf(7L)))
+        assertTrue(p.unknownReservedFolders.isEmpty())
+        assertEquals(1, p.imports.size)
+        assertEquals(7L, p.imports[0].assignCharacterId)
+    }
+
+    /** 세트에 참여한 기존 파일은 **스캔 항목 id를 함께** 들고 나온다 — 실행부가 `_처리됨/`으로 옮긴다. */
+    @Test fun linkSetCarriesScanItemIdsOfExistingMembers() {
+        val items = listOf(
+            tokenFile("f1", tokenA, "풍경"),
+            tokenFile("f2", tokenB, "풍경")
+        )
+        val p = plan(items)
+        assertEquals(1, p.linkSets.size)
+        assertEquals(listOf("f1", "f2"), p.linkSets[0].existing.map { it.itemId })
+        assertEquals(listOf(pathA, pathB), p.linkSets[0].existingPaths)
+    }
+
+    // ── 이미 처리한 파일은 '맥락' (지문 스킵 축 × 세트 정족수 축) ──
+
+    private fun handledTokenFile(id: String, token: String, vararg folders: String) =
+        ScanItem(id, folders.toList(), "라벨-01.$token.jpg", alreadyHandled = true)
+
+    /**
+     * 내보낸 세트 폴더에 사진 한 장을 더 넣으면 **그 묶음에 들어간다.**
+     *
+     * 종전에는 내보낸 사본이 지문으로 걸러져 계획에 안 실렸고, 그래서 폴더에 새 파일 1장뿐인
+     * 것으로 보여 "2장 이상"에 걸려 **낱개로 편입**됐다(고지도 없었다).
+     */
+    @Test fun newFileJoinsAlreadyExportedSetFolder() {
+        val items = listOf(
+            handledTokenFile("h1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1"),
+            newFile("n1", FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1")
+        )
+        val p = plan(items)
+        assertEquals(1, p.linkSets.size)
+        assertEquals(listOf("n1"), p.linkSets[0].newItemIds)
+        assertEquals(listOf(pathA), p.linkSets[0].existingPaths)
+        // 신규는 세트로 편입되고, 이미 처리한 사본은 **행동을 만들지 않는다**.
+        assertEquals(1, p.imports.size)
+        assertEquals("${FolderRoundtripPlanner.FOLDER_UNASSIGNED}/세트-1", p.imports[0].setKey)
+        assertTrue(p.moves.isEmpty() && p.detaches.isEmpty() && p.unlinkOnly.isEmpty())
+    }
+
+    /** '그 외 이름' 폴더도 같다 — 맥락 파일이 정족수를 채운다. */
+    @Test fun newFileJoinsAlreadyExportedPlainFolder() {
+        val items = listOf(
+            handledTokenFile("h1", tokenA, "풍경"),
+            newFile("n1", "풍경")
+        )
+        val p = plan(items)
+        assertEquals(1, p.linkSets.size)
+        assertEquals(listOf(pathA), p.linkSets[0].existingPaths)
+    }
+
+    /** 맥락 파일만 있으면 세트도 행동도 없다 — 아무 일도 일어나지 않는다. */
+    @Test fun handledFilesAloneProduceNothing() {
+        val p = plan(listOf(handledTokenFile("h1", tokenA, "풍경")))
+        assertTrue(p.linkSets.isEmpty())
+        assertEquals(0, p.actionCount)
+    }
+
+    /** 맥락 파일은 **캐릭터 폴더에서도** 배정을 움직이지 않는다(지난 왕복에서 끝난 일이다). */
+    @Test fun handledFileInCharacterFolderDoesNotMove() {
+        val p = plan(
+            listOf(handledTokenFile("h1", tokenA, "가온")),
+            names = mapOf("가온" to listOf(7L)),
+            owners = mapOf(pathA to listOf(9L))
+        )
+        assertTrue(p.moves.isEmpty())
+        assertEquals(0, p.actionCount)
+    }
+
+    /** '살림'은 셀 수 있어야 한다 — 배정도 묶음도 없이 표식만 있던 것이 이 축에만 잡힌다. */
+    @Test fun reviveIsCountable() {
+        val p = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)),
+            detached = setOf(pathA)
+        )
+        assertEquals(1, p.detaches.count { it.hadDetachedMark && !it.keepsDetachedMark })
+        // 배정도 묶음도 없으므로 다른 두 축은 0이다 — 그래서 이 축이 없으면 아무 말도 못 한다.
+        assertEquals(0, p.detaches.count { it.fromCharacterIds.isNotEmpty() })
+        assertEquals(0, p.detaches.count { it.unlinks })
+    }
+
+    /** 표식이 없던 이미지를 되돌리는 것은 '살림'이 아니다 — 세면 없는 일을 했다고 말한다. */
+    @Test fun revivingUnmarkedImageIsNotCounted() {
+        val p = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)),
+            owners = mapOf(pathA to listOf(7L))
+        )
+        assertEquals(1, p.detaches.size)
+        assertFalse(p.detaches[0].hadDetachedMark)
+    }
+
+    /**
+     * '토큰꼴인데 사전에 없다'는 **편입되는 것만** 센다.
+     *
+     * 종전에는 자리 해석 전에 세어, `_삭제승인/`에 든 미지 토큰 파일까지 "새 이미지로
+     * 편입합니다"라고 예고했다 — 그 자리는 편입도 삭제도 하지 않는다(거짓 고지).
+     */
+    @Test fun unknownTokenCountFollowsDisposition() {
+        val ghost = "0123456789ab"
+        val inDelete = ScanItem("d1", listOf(FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL), "라벨-01.$ghost.jpg")
+        val p = plan(listOf(inDelete))
+        assertEquals(0, p.unknownTokenFiles)
+        assertEquals(1, p.deleteApprovalUnknown)
+        assertTrue(p.imports.isEmpty() && p.deletes.isEmpty())
+
+        // 편입되는 자리에서는 그대로 센다.
+        val atRoot = ScanItem("r1", emptyList(), "라벨-01.$ghost.jpg")
+        val q = plan(listOf(atRoot))
+        assertEquals(1, q.unknownTokenFiles)
+        assertEquals(1, q.imports.size)
+    }
+
+    // ── 확정 무동작(settled) — 셋째 처분 ──
+
+    /**
+     * 이미 제자리인 파일은 **확정 무동작**으로 잡힌다 — 그래야 `_처리됨/`으로 옮겨져
+     * 진입 배너가 같은 파일을 영원히 "새 이미지"라 말하지 않는다.
+     */
+    @Test fun alreadyInPlaceFilesAreSettled() {
+        // ⓐ 이미 그 캐릭터에만 배정된 캐릭터 폴더 파일
+        val a = plan(listOf(tokenFile("f1", tokenA, "가온")),
+            names = mapOf("가온" to listOf(7L)), owners = mapOf(pathA to listOf(7L)))
+        assertEquals(listOf("f1"), a.settled.map { it.id })
+        assertEquals(0, a.actionCount)
+
+        // ⓑ 되돌리는 자리의 이미 되돌아온 파일
+        val b = plan(listOf(tokenFile("f2", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)))
+        assertEquals(listOf("f2"), b.settled.map { it.id })
+
+        // ⓒ `_분리됨/`의 이미 뗀 파일
+        val c = plan(listOf(tokenFile("f3", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED)))
+        assertEquals(listOf("f3"), c.settled.map { it.id })
+
+        // ⓓ 서랍의 이미 낱개인 파일
+        val d = plan(listOf(tokenFile("f4", tokenA, FolderRoundtripPlanner.FOLDER_MISC)))
+        assertEquals(listOf("f4"), d.settled.map { it.id })
+    }
+
+    /** 할 일이 있으면 확정 무동작이 아니다 — 둘을 겸하면 같은 파일을 두 번 처분한다. */
+    @Test fun filesWithWorkAreNotSettled() {
+        val p = plan(listOf(tokenFile("f1", tokenA, "가온")),
+            names = mapOf("가온" to listOf(7L)), owners = mapOf(pathA to listOf(9L)))
+        assertEquals(1, p.moves.size)
+        assertTrue(p.settled.isEmpty())
+    }
+
+    /** 맥락으로 들어온 파일은 확정 무동작이 아니다 — 이번에 확정된 것이 아니다. */
+    @Test fun handledContextFilesAreNotSettled() {
+        val p = plan(listOf(handledTokenFile("h1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)))
+        assertTrue(p.settled.isEmpty())
+    }
+
+    /** 보류는 확정이 아니다 — 폴더에 남아 있는 것이 미처리의 표식이라는 규약이 거기 걸려 있다. */
+    @Test fun heldFilesAreNotSettled() {
+        val p = plan(listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_SHARED)))
+        assertEquals(1, p.holds.size)
+        assertTrue(p.settled.isEmpty())
+    }
+
 }
