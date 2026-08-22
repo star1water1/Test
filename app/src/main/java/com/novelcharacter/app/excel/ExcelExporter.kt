@@ -469,16 +469,20 @@ class ExcelExporter(context: Context) {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     ExportRetryStore.store(appContext, sourceFile)
-                    val outputStream = appContext.contentResolver.openOutputStream(uri)
-                    if (outputStream == null) {
-                        // 열지 못했어도 CreateDocument가 만든 빈 파일이 목적지에 있다 — 같은 실패 처분으로 간다.
-                        reportSaveFailure(uri, sourceFile, null, onSaveFailed)
-                        return@withContext
-                    }
-                    outputStream.use { out ->
-                        sourceFile.inputStream().use { input ->
-                            input.copyTo(out)
+                    // 열기 실패·복사 실패·반쪽 파일 걷기는 **한 커널이 든다**
+                    // ([com.novelcharacter.app.util.SafFileCopy]) — 백업 내보내기가 같은
+                    // 자리에서 널을 성공으로 흘리고 있었고, 넷째 자리를 막는 것이 R-43이다.
+                    val copied = com.novelcharacter.app.util.SafFileCopy.copyOrDiscard(
+                        openOutput = { appContext.contentResolver.openOutputStream(uri) },
+                        openInput = { sourceFile.inputStream() },
+                        deleteDestination = {
+                            android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
                         }
+                    )
+                    if (copied is com.novelcharacter.app.util.SafFileCopy.Result.Failed) {
+                        android.util.Log.e("ExcelExporter", "Save to URI failed", copied.cause)
+                        reportSaveFailure(uri, sourceFile, copied.cause, onSaveFailed, copied.destinationRemoved)
+                        return@withContext
                     }
                     sourceFile.delete()
                     ExportRetryStore.clear(appContext)
@@ -519,9 +523,15 @@ class ExcelExporter(context: Context) {
         uri: Uri,
         sourceFile: File,
         cause: Exception?,
-        onSaveFailed: (() -> Unit)?
+        onSaveFailed: (() -> Unit)?,
+        /**
+         * 복사 커널이 이미 걷었으면 그 답 — 여기서 다시 지우려 들면 **둘째 시도가 늘 실패해**
+         * 문구가 *"남았을 수 있습니다"*로 갈린다. 커널을 지나지 않은 갈래(쓰기 앞뒤에서 터진
+         * 예외)만 `null`로 와서 아래가 직접 걷는다.
+         */
+        destinationRemoved: Boolean? = null
     ) {
-        val removed = runCatching {
+        val removed = destinationRemoved ?: runCatching {
             android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
         }.getOrDefault(false)
         ExportRetryStore.store(appContext, sourceFile)

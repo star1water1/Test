@@ -1088,6 +1088,9 @@
     <string name="backup_export_to_external">백업 내보내기</string>
     <string name="backup_export_success">백업 파일이 저장되었습니다</string>
     <string name="backup_export_failed">백업 내보내기 실패: %s</string>
+    <!-- 저장 실패의 처분 고지 — 엑셀 내보내기와 문구가 다른 이유는 이쪽에는 "앱에 보관해 두었다"가 없기 때문이다(이식 가능 백업의 임시본은 종결과 함께 지운다). -->
+    <string name="backup_export_failed_destination_removed">백업 저장에 실패했습니다 — 쓰다 만 파일은 지웠습니다. 다시 내보내 주세요.</string>
+    <string name="backup_export_failed_destination_unknown">백업 저장에 실패했습니다 — 선택한 위치에 불완전한 파일이 남았을 수 있으니 확인한 뒤 다시 내보내 주세요.</string>
 
     <!-- Sprint 2: Search Presets -->
     <string name="search_presets">검색 프리셋</string>

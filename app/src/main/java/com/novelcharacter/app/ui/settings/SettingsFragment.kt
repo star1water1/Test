@@ -25,6 +25,7 @@ import com.novelcharacter.app.excel.ImageNoticeRes
 import com.novelcharacter.app.share.WorldPackageExporter
 import com.novelcharacter.app.ui.common.TaskProgressDialog
 import com.novelcharacter.app.util.ProgressScale
+import com.novelcharacter.app.util.SafFileCopy
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -36,7 +37,9 @@ import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.fragment.app.viewModels
 import androidx.room.withTransaction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,6 +65,12 @@ class SettingsFragment : Fragment() {
     private data class PendingExport(val file: File, val ownsFile: Boolean)
 
     private var pendingBackupExport: PendingExport? = null
+
+    /**
+     * 화면이 사라진 뒤에도 도는 갈래가 쓰는 컨텍스트 — `onCreate`에서 잡는다
+     * (액티비티 결과 콜백은 그 뒤에만 온다).
+     */
+    private lateinit var appContext: android.content.Context
 
     /**
      * 자리 고르기가 끝났다(건넸든 취소했든 실패했든) — 약속을 닫고 임시본을 처분한다.
@@ -122,51 +131,105 @@ class SettingsFragment : Fragment() {
         restoreFromEncryptedUri(uri)
     }
 
+    /**
+     * 자리를 고르고 돌아오는 자리 — **형제 경로([com.novelcharacter.app.excel.ExcelTransferController])와
+     * 같은 처분을 쓴다.**
+     *
+     * 종전에는 세 갈래가 조용히 끝났다: ⓐ 화면이 없거나 대기 상태를 잃으면 아무것도 안 하고
+     * 물러섰고(고른 자리에는 `CreateDocument`가 만든 **0바이트 파일**이 그대로 남았다),
+     * ⓑ `openOutputStream`이 널이어도 성공 토스트로 갔으며, ⓒ 복사가 뷰 수명 스코프에서
+     * 돌아 회전 한 번에 끊겼다. 목적지는 **사용자가 이미 고른 실제 파일**이므로 화면 유무는
+     * 물러설 이유가 아니다 — 쓸 것이 있으면 끝까지 쓰고, 없으면 지운다.
+     */
     private val backupExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
+        // 화면 유무는 한 번만 읽는다 — 두 갈래가 서로 다른 답을 보고 갈리지 않게.
+        val onScreen = isAdded && _binding != null
+        val ctx = appContext
+        val pending = pendingBackupExport
         if (uri == null) {
             // 취소도 종결이다 — 캐시 임시본을 여기서 놓지 않으면 주인이 없어진다.
             finishPendingBackupExport()
             return@registerForActivityResult
         }
-        val pending = pendingBackupExport
-        if (!isAdded || pending == null) {
-            finishPendingBackupExport()
+        if (pending == null) {
+            // **자리를 고르고 왔는데 아무 일도 안 일어나면 저장된 줄 안다**(개발 의도 2번).
+            // 인스턴스 상태 복원도 못 살린 회차(프로세스가 죽고 임시본까지 사라진 경우)가
+            // 여기로 온다 — 쓸 것이 없으므로 만들어진 빈 문서를 지우는 것으로 처분한다.
+            runCatching {
+                android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, uri)
+            }
+            if (onScreen) {
+                Toast.makeText(ctx, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+            }
             return@registerForActivityResult
         }
+        // 이 회차가 소유권을 가져간다 — 아래 코루틴의 종결이 등재를 닫고 임시본을 처분한다.
+        pendingBackupExport = null
         val file = pending.file
-        val ctx = requireContext().applicationContext
-        // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어)
-        val progress = createProgressDialog(R.string.backup_export_saving)
-        progress.show()
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    ctx.contentResolver.openOutputStream(uri)?.use { output ->
-                        file.inputStream().use { input -> input.copyTo(output) }
-                    }
+        val ownsFile = pending.ownsFile
+        // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어).
+        // 화면이 없으면 창도 없고, 작업은 그대로 진행된다.
+        val progress = if (onScreen) createProgressDialog(R.string.backup_export_saving).also { it.show() } else null
+        transferScope.launch {
+            val result = SafFileCopy.copyOrDiscard(
+                openOutput = { ctx.contentResolver.openOutputStream(uri) },
+                openInput = { file.inputStream() },
+                deleteDestination = {
+                    android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, uri)
                 }
-                if (_binding != null) {
-                    Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+            )
+            // 종결은 화면과 무관하게 여기서 한다 — 약속을 닫고 소유한 임시본을 지운다.
+            com.novelcharacter.app.excel.ActiveTransfers.release(file)
+            if (ownsFile) file.delete()
+            if (result is SafFileCopy.Result.Failed) {
+                AppLogger.error("Settings", "백업 내보내기 실패", result.cause)
+            }
+            withContext(Dispatchers.Main) {
+                progress?.dismissSafely()
+                // 창이 없으면 말할 자리가 없다 — 이 경로에는 알림 통로가 없으므로 이력만 남는다.
+                if (_binding == null) return@withContext
+                when (result) {
+                    is SafFileCopy.Result.Success ->
+                        Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+                    is SafFileCopy.Result.Failed ->
+                        Toast.makeText(
+                            ctx,
+                            getString(
+                                if (result.destinationRemoved) R.string.backup_export_failed_destination_removed
+                                else R.string.backup_export_failed_destination_unknown
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 내보내기 실패", e)
-                if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
-                }
-            } finally {
-                progress.dismissSafely()
-                finishPendingBackupExport()
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appContext = requireContext().applicationContext
         // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
         excel = com.novelcharacter.app.excel.ExcelTransferController(this)
         excel.restoreState(savedInstanceState)
+        restorePendingBackupExport(savedInstanceState)
+    }
+
+    /**
+     * SAF 대기 상태를 되살린다 — 형제 경로의 `restoreState`와 같은 자리·같은 이유.
+     *
+     * 되살리지 못하면(임시본이 이미 사라졌으면) 대기를 세우지 않는다 — 그 회차는 위
+     * 콜백의 `pending == null` 갈래가 **빈 문서를 지우고 말하는 것**으로 처분한다.
+     * 프로세스가 죽었으면 정적 등재도 비어 있으므로 약속을 다시 세운다.
+     */
+    private fun restorePendingBackupExport(savedInstanceState: Bundle?) {
+        val path = savedInstanceState?.getString(KEY_PENDING_BACKUP_FILE) ?: return
+        val file = File(path)
+        if (!file.exists()) return
+        val owns = savedInstanceState.getBoolean(KEY_PENDING_BACKUP_OWNS)
+        com.novelcharacter.app.excel.ActiveTransfers.hold(file)
+        pendingBackupExport = PendingExport(file, owns)
     }
 
     override fun onCreateView(
@@ -470,6 +533,10 @@ class SettingsFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         excel.saveState(outState)
+        pendingBackupExport?.let {
+            outState.putString(KEY_PENDING_BACKUP_FILE, it.file.absolutePath)
+            outState.putBoolean(KEY_PENDING_BACKUP_OWNS, it.ownsFile)
+        }
     }
 
     private fun updateThemeLabel() {
@@ -1518,4 +1585,17 @@ class SettingsFragment : Fragment() {
         _binding = null
     }
 
+    companion object {
+        private const val KEY_PENDING_BACKUP_FILE = "pendingBackupExportFilePath"
+        private const val KEY_PENDING_BACKUP_OWNS = "pendingBackupExportOwnsFile"
+
+        /**
+         * SAF 저장을 **화면 수명에서 떼어 놓는** 스코프.
+         *
+         * 목적지는 사용자가 이미 고른 실제 파일이라, 복사가 회전 한 번에 끊기면 그 자리에
+         * 반쪽 파일이 멀쩡한 이름으로 남는다. `ExcelExporter`가 같은 이유로 자기 스코프를
+         * 드는 그 자리와 같은 처분이다. 프로세스 수명이며 회차마다 코루틴 하나뿐이다.
+         */
+        private val transferScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
 }
