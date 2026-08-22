@@ -529,8 +529,12 @@ object AiFieldSuggestSheet {
             .setTitle(spec.name)
             .setMessage(message)
             .setPositiveButton(R.string.ai_field_single_apply) { _, _ ->
-                viewModel.clearAiSuggestResult()
-                applySelected(fragment, formBuilder, listOf(row.suggestion))
+                // **성공했을 때만 비운다** (B-163) — 실패하면 검토로 돌려보낸다.
+                if (applySelected(fragment, formBuilder, listOf(row.suggestion))) {
+                    viewModel.clearAiSuggestResult()
+                } else {
+                    viewModel.restoreAiSuggestResult()
+                }
             }
             .setNeutralButton(R.string.ai_field_refine) { d, _ ->
                 d.dismiss()
@@ -541,8 +545,11 @@ object AiFieldSuggestSheet {
                     dismissReview = {},
                     // 1건 모드에는 돌아갈 목록이 없다 — 수정 확정이 곧 적용이다(단계를 늘리지 않는다)
                     onEdited = { edited ->
-                        viewModel.clearAiSuggestResult()
-                        applySelected(fragment, formBuilder, listOf(edited.suggestion))
+                        if (applySelected(fragment, formBuilder, listOf(edited.suggestion))) {
+                            viewModel.clearAiSuggestResult()
+                        } else {
+                            viewModel.restoreAiSuggestResult()
+                        }
                     }
                 )
             }
@@ -682,8 +689,11 @@ object AiFieldSuggestSheet {
                     return@setOnClickListener
                 }
                 dialog.dismiss()
-                viewModel.clearAiSuggestResult()
-                applySelected(fragment, formBuilder, selected)
+                if (applySelected(fragment, formBuilder, selected)) {
+                    viewModel.clearAiSuggestResult()
+                } else {
+                    viewModel.restoreAiSuggestResult()
+                }
             }
         }
         dialog.show()
@@ -920,11 +930,17 @@ object AiFieldSuggestSheet {
         dialog.show()
     }
 
+    /**
+     * 고른 제안을 폼에 넣는다.
+     *
+     * @return 한 건이라도 들어갔는가 — **비우기를 이 값이 가른다**(B-163). 호출부가
+     *   적용 전에 응답을 비우면, 실패했을 때 결제한 응답을 되찾을 길이 없다.
+     */
     private fun applySelected(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
         selected: List<CharacterFieldAiSuggester.Suggestion>
-    ) {
+    ): Boolean {
         val fieldByKey = formBuilder.fieldDefinitions.associateBy { it.key }
         var applied = 0
         for (s in selected) {
@@ -938,5 +954,6 @@ object AiFieldSuggestSheet {
             // 회전 직후 폼 재구축 전 등 — 무통보 no-op 금지, 재시도 경로 안내 (변수 제어)
             fragment.notifyError(fragment.getString(R.string.ai_field_apply_none))
         }
+        return applied > 0
     }
 }
