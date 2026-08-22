@@ -1738,6 +1738,15 @@ class ExcelImporter(context: Context) {
                 }
                 radioGroup.addView(overwriteDesc)
 
+                // **읽지 못한 행의 몫이 `onlyInDb`에 섞여 있는가** — 덮어쓰기 경고와 병합
+                // 삭제 목록이 **함께 쓰는 판정**이다. 두 갈래가 같은 `onlyInDb`를 근거로
+                // 지우므로 사유의 거짓됨도 똑같이 성립한다: 종전에는 덮어쓰기 쪽만 그 사실을
+                // 밝히고 병합 쪽은 *"캐릭터 (3개)"*라고만 적어, 사용자가 **파일에 적혀 있는
+                // 항목**을 '파일에 없다'는 근거로 체크해 지웠다.
+                val unreadMixedIn = analysis.categories.any {
+                    it.onlyInDb > 0 && it.skippedCount > 0
+                }
+
                 // 덮어쓰기 경고
                 val overwriteWarning = TextView(act).apply {
                     visibility = android.view.View.GONE
@@ -1754,9 +1763,6 @@ class ExcelImporter(context: Context) {
                 // 적혀 있는데 앱이 못 읽은 항목**까지 *파일에 없다*는 근거로 지우게 했다.
                 // 사용자가 취소할지 정하는 근거가 그 사유이므로(개발 의도 2번 — 변수 제어),
                 // 문구를 *"이 파일이 갱신하지 않는"*으로 바꾸고 섞임을 한 줄로 밝힌다.
-                val unreadMixedIn = analysis.categories.any {
-                    it.deletedByOverwrite && it.onlyInDb > 0 && it.skippedCount > 0
-                }
                 if (totalOnlyInDb > 0) {
                     val deleteParts = analysis.categories
                         .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
@@ -1786,6 +1792,17 @@ class ExcelImporter(context: Context) {
                 }
                 container.addView(deleteSectionLabel)
 
+                // 덮어쓰기 경고와 **같은 문구**를 단다 — 두 갈래가 같은 수를 근거로 지운다.
+                val deleteUnreadNote = TextView(act).apply {
+                    text = appContext.getString(
+                        com.novelcharacter.app.R.string.restore_overwrite_unread_note)
+                    textSize = 12f
+                    setPadding(dp16, 0, 0, dp8 / 2)
+                    setTextColor(0xFFFF5722.toInt())
+                    visibility = android.view.View.GONE
+                }
+                container.addView(deleteUnreadNote)
+
                 // 카테고리별 체크박스 생성
                 data class DeleteCatCheckbox(val key: String, val checkbox: CheckBox)
                 val deleteCatCheckboxes = mutableListOf<DeleteCatCheckbox>()
@@ -1796,7 +1813,11 @@ class ExcelImporter(context: Context) {
                 }
                 for (cat in deletableCats) {
                     val cb = CheckBox(act).apply {
-                        text = "${cat.label} (${cat.onlyInDb}개)"
+                        // 40줄 위 덮어쓰기 경고가 쓰는 것과 **같은 서식 리소스**다 —
+                        // 손으로 짜면 두 자리의 표기가 갈린다.
+                        text = appContext.getString(
+                            com.novelcharacter.app.R.string.restore_overwrite_delete_item,
+                            cat.label, cat.onlyInDb)
                         textSize = 13f
                     }
                     deleteContainer.addView(cb)
@@ -1814,6 +1835,8 @@ class ExcelImporter(context: Context) {
                     val showDelete = checkedId == mergeRadio.id && deletableCats.isNotEmpty()
                     deleteSectionLabel.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                     deleteContainer.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
+                    deleteUnreadNote.visibility =
+                        if (showDelete && unreadMixedIn) android.view.View.VISIBLE else android.view.View.GONE
                 }
 
                 MaterialAlertDialogBuilder(act)

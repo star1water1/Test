@@ -73,6 +73,30 @@ class NovelCharacterApp : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /**
+     * **창보다 오래 사는 쓰기** — 화면이 죽어도 끝까지 가야 하는 작업만 여기서 돈다.
+     *
+     * `Fragment.lifecycleScope`는 회전 한 번에 통째로 취소된다. 그 스코프에서
+     * *"파괴적 쓰기 → 그 근거를 전달"*을 이어 하면, **파괴만 커밋되고 전달이 잘리는**
+     * 창이 열린다 — 필드 타입 변경의 '호환 불가 값 초기화'가 실제로 그 모양이었다
+     * (값 N개는 지워졌는데 타입은 그대로였고, 아무 고지도 없었다. 2026.08.22).
+     *
+     * 남용하지 말 것 — 여기서 도는 일은 **취소할 방법이 없다.** 사용자가 이미 동의한
+     * 되돌릴 수 없는 쓰기에만 쓴다.
+     *
+     * 예외는 삼켜 로그로 남긴다. `SupervisorJob`이라도 이 스코프의 비보호 코루틴에서
+     * 던지면 앱이 즉사한다(이 파일의 다른 자리들이 같은 이유로 `try`를 두르고 있다).
+     */
+    fun runDetached(tag: String, block: suspend () -> Unit) {
+        appScope.launch(Dispatchers.IO) {
+            try {
+                block()
+            } catch (e: Exception) {
+                AppLogger.error(tag, "detached work failed", e)
+            }
+        }
+    }
+
     override fun attachBaseContext(base: android.content.Context) {
         super.attachBaseContext(base)
         installCrashLogger()

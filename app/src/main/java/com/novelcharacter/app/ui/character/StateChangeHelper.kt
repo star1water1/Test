@@ -119,6 +119,32 @@ class StateChangeHelper(
             fieldOptions.add(field.key to field.name)
         }
 
+        // **목록에 없는 키를 들고 온 행은 자기 키를 옵션으로 얹는다** (2026.08.22).
+        //
+        // 종전에는 `indexOfFirst`가 못 찾으면 **아무 일도 하지 않았고**, 스피너는 0번
+        // (출생)에 머물렀다. 저장 검증은 `selectedIndex < 0`만 막는데 0은 유효 범위라
+        // 통과했고, 그래서 연도만 고쳐 저장하면 그 행의 `fieldKey`가 조용히 `__birth`로
+        // **뒤바뀌었다** — 원래 상태변화는 사라지고 없던 출생 기록이 생겼다(같은 id·같은
+        // code를 덮어쓰므로 새 행도 아니다). 경고도 확인창도 없었다.
+        //
+        // 닿는 길이 실재한다: 작품 미배정 캐릭터의 상세 화면은 `cachedFields`를 빈 목록으로
+        // 못박으므로, 커스텀 필드에 상태변화를 둔 캐릭터를 미배정으로 옮기기만 해도 걸린다.
+        // 필드 정의를 지운 경우도 같다.
+        //
+        // 얹어 두면 **키가 보존되고**(연도만 고치는 것이 뜻대로 된다) 사용자가 원하면
+        // 다른 필드로 옮기는 것도 여전히 된다.
+        val orphanKey = existingChange?.fieldKey
+            ?.takeIf { key -> fieldOptions.none { it.first == key } }
+        if (orphanKey != null) {
+            fieldOptions.add(
+                orphanKey to getString(
+                    R.string.state_change_missing_field,
+                    com.novelcharacter.app.ui.common.StateChangeFieldLabel
+                        .of(context, orphanKey, cachedFields)
+                )
+            )
+        }
+
         val displayNames = fieldOptions.map { it.second }
         val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, displayNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -131,6 +157,8 @@ class StateChangeHelper(
             dialogBinding.editNewValue.setText(existingChange.newValue)
             dialogBinding.editDescription.setText(existingChange.description)
 
+            // 위에서 고아 키를 얹었으므로 여기서 **반드시 찾힌다** — 못 찾는 갈래가 곧
+            // 조용한 키 뒤바뀜이었다.
             val index = fieldOptions.indexOfFirst { it.first == existingChange.fieldKey }
             if (index >= 0) {
                 dialogBinding.spinnerFieldKey.setSelection(index)
@@ -211,17 +239,40 @@ class StateChangeHelper(
 
     private fun showEditDeleteDialog(change: CharacterStateChange) {
         val context = try { contextGetter() } catch (_: Exception) { return }
+        // 필드 이름은 목록 행과 **같은 함수**가 짓는다 — 종전에는 이 자리만 내부 키를
+        // 날것으로 보여 줘, 같은 행이 목록에서는 '출생'이고 창에서는 `__birth`였다.
+        val label = com.novelcharacter.app.ui.common.StateChangeFieldLabel
+            .of(context, change.fieldKey, cachedFieldsGetter())
         MaterialAlertDialogBuilder(context)
             .setTitle(getString(R.string.edit_or_delete))
-            .setMessage("${change.fieldKey} → ${change.newValue}")
+            .setMessage("$label → ${change.newValue}")
             .setPositiveButton(R.string.edit) { _, _ ->
                 showStateChangeDialog(change)
             }
             .setNegativeButton(R.string.delete) { _, _ ->
+                confirmDelete(change, label)
+            }
+            .setNeutralButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 삭제 전 한 번 더 묻는다 — **형제 자리(명대사)가 이미 그렇게 한다.**
+     *
+     * 종전에는 이 자리만 [삭제]를 누르는 즉시 지웠다. 그 버튼은 수정·취소와 나란히 선
+     * 세 갈래 중 하나라 **오탭이 곧 유실**이었고, 상태변화는 되돌릴 경로가 화면에 없다
+     * (R-4 — 파괴적 동작은 실행 전에 결과를 알리고 취소 경로를 남긴다).
+     */
+    private fun confirmDelete(change: CharacterStateChange, label: String) {
+        val context = try { contextGetter() } catch (_: Exception) { return }
+        MaterialAlertDialogBuilder(context)
+            .setTitle(getString(R.string.delete))
+            .setMessage(getString(R.string.state_change_delete_confirm, label, change.newValue))
+            .setPositiveButton(R.string.delete) { _, _ ->
                 // 결과는 viewModel.result 채널이 실제 완료 후 통보
                 viewModel.deleteStateChange(change)
             }
-            .setNeutralButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 }

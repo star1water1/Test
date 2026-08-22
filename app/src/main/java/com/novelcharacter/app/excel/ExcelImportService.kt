@@ -4867,9 +4867,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭 규칙은 실제 가져오기와 **같은 함수**를 쓴다(FactionMembershipMatcher).
             // 활성만 보던 종전 규칙은 탈퇴 이력 행을 매번 '신규'로, 나아가 '백업에 없음'으로
             // 세어 아무것도 안 고친 파일에 삭제를 예고했다 — 실제로는 매칭돼 그대로 남는데도.
-            val analyzedLeaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
+            // 미리보기도 가져오기와 **같은 함수**로 읽는다 (R-33) — 갈리면 예고한 건수와
+            // 실제가 어긋난다. 경고는 결과 창의 것이라 여기서는 싣지 않는다(`result = null`).
+            val analyzedLeaveYear = readYearCell(row, leaveYearColIndex, "", "탈퇴연도", null)
             val rowValues = FactionMembershipMatcher.RowValues(
-                joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null,
+                joinYear = readYearCell(row, joinYearColIndex, "", "가입연도", null),
                 leaveYear = analyzedLeaveYear,
                 // 가져오기가 바로잡는 반쪽 표식을 미리보기도 **같은 함수로** 바로잡는다 (B-206 · R-33) —
                 // 안 그러면 '변경'으로 셀 행을 '동일'이라 말한다.
@@ -9576,8 +9578,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
-                val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
-                val leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
+                // 해석 불가는 **경고와 함께** 빈 값이 된다 — 조용히 접으면 DB의 연도가 지워진다.
+                val yearRowLabel = "세력 가입 행 ${excelRow(i)}"
+                val joinYear = readYearCell(row, joinYearColIndex, yearRowLabel, "가입연도", result)
+                val leaveYear = readYearCell(row, leaveYearColIndex, yearRowLabel, "탈퇴연도", result)
                 val rawLeaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else "")
                 // 탈퇴연도만 적히고 탈퇴유형이 빈 행을 바로잡는다 (B-206) — 판정은 순수
                 // (FactionStanding), 미리보기 분석도 **같은 함수**를 쓴다(R-33).
@@ -11717,6 +11721,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * [result]가 null이면 **고지 없이 같은 값만** 낸다 — 복원 미리보기 분석이 쓰는 경로다.
      * 분석이 따로 파싱하면 가져오기와 강도가 갈려 '동일' 판정이 어긋난다(B-87).
      */
+    /**
+     * 연도 칸 하나 — **해석 불가를 조용히 null로 접지 않는다** (2026.08.22).
+     *
+     * 종전에는 세력 소속의 가입·탈퇴연도가 맨 `parseNumber(getCellString(...))`이라
+     * `1990년`·`미상`·`1,990` 같은 꼴이 **경고 한 줄 없이 null**이 됐다. 그 null이
+     * 그대로 매처에 실리는데, **열이 시트에 있으면 `presence = true`**라
+     * `joinYear = if (presence.joinYear) row.joinYear else existing.joinYear`가
+     * **DB에 있던 연도를 null로 덮었다.** 매칭이 끊기지도 않는다 — '생성일' 열의 안정
+     * 식별자로 행은 그대로 붙고 **값만 지워진다.**
+     *
+     * 같은 행 안에 비대칭이 있었다: 바로 아래 '강도'는 [parseIntensityWithWarn]이,
+     * '생성일'은 [readCreatedAtCell]이 각각 경고를 실었고 **연도 두 칸만 맨손이었다.**
+     *
+     * 빈 칸은 경고하지 않는다 — *비움*은 사용자가 적어 넣은 뜻이라 해석 실패와 다르다.
+     */
+    private fun readYearCell(
+        row: Row,
+        colIndex: Int,
+        rowLabel: String,
+        columnName: String,
+        result: ImportResult?
+    ): Int? {
+        if (colIndex < 0) return null
+        val raw = getCellString(row, colIndex)
+        val parsed = parseNumber(raw)?.toInt()
+        if (raw.isNotBlank() && parsed == null) {
+            result?.warnings?.add(
+                "$rowLabel: $columnName '$raw'을(를) 숫자로 읽을 수 없어 빈 값으로 처리합니다 — 기존에 적혀 있던 연도가 지워집니다"
+            )
+        }
+        return parsed
+    }
+
     private fun parseIntensityWithWarn(row: Row, colIndex: Int, default: Int?, rowLabel: String, result: ImportResult?): Int? {
         if (colIndex < 0) return default
         val raw = getCellString(row, colIndex)

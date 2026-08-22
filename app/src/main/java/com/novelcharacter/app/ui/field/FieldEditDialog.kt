@@ -2856,31 +2856,43 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    /** 호환 불가 값을 트랜잭션으로 일괄 초기화한 뒤 저장을 완결한다. 실패 시 다이얼로그를 유지하고 저장 버튼을 되살린다. */
+    /**
+     * 호환 불가 값을 트랜잭션으로 일괄 초기화하고 저장을 완결한다.
+     *
+     * ## 순서가 뒤집힌 이유 — 파괴와 그 근거가 서로 다른 수명에 걸려 있었다 (2026.08.22)
+     *
+     * 종전에는 `lifecycleScope`에서 **① 값 초기화를 커밋한 뒤 ② `completeSave`로 타입
+     * 변경을 전달**했다. 그런데 `lifecycleScope`는 **이 창의 수명**이라 회전 한 번에
+     * 통째로 취소되고, `deliverResult`는 `if (!isAdded) return`으로 시작한다. 그래서
+     * ①과 ② 사이에 창이 죽으면 **값 N개는 이미 지워졌는데 타입 변경은 전달되지 않았다** —
+     * 사용자는 창이 닫힌 것을 보고 저장된 줄 알지만, 필드는 옛 타입 그대로이고
+     * **그 타입에서 멀쩡했던 값만 빈칸이 되어 있다.** 고지도 되돌릴 길도 없었다.
+     * 캐릭터가 수백 명이면 그 트랜잭션이 수백 ms라 실제로 닿는 창이다.
+     *
+     * 그래서 둘을 갈랐다:
+     *
+     * - **전달이 먼저다.** 창이 확실히 살아 있는 이 순간에 결과를 건넨다 — 이후 무슨 일이
+     *   있어도 타입 변경은 잃지 않는다.
+     * - **파괴는 창보다 오래 사는 스코프에서 돈다**([NovelCharacterApp.runDetached]).
+     *   회전이 취소하지 못하므로 *반쪽만 지워지는* 일도 없다(트랜잭션은 그대로다).
+     *
+     * **남는 실패 모양이 더 낫다.** 초기화가 정말 실패하면 *타입은 바뀌고 값은 남는다* —
+     * 화면에서 호환되지 않는 값으로 **보이고**, 다시 초기화할 수 있다. 종전의 실패 모양은
+     * *값이 사라지고 아무 흔적이 없는 것*이었다(개발 의도 2번이 금지하는 그것이다).
+     */
     private fun resetIncompatibleValuesAndSave(
         app: com.novelcharacter.app.NovelCharacterApp,
         field: FieldDefinition,
         access: FieldValueAccess,
         newType: FieldType?
     ) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다.
-                // **초기화가 보는 표는 고지가 센 표와 같다** — 접근자 하나가 둘을 함께 정한다.
-                app.database.withTransaction {
-                    access.resetIncompatible(field.id, newType)
-                }
-                withContext(Dispatchers.Main) {
-                    completeSave(field)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                android.util.Log.e("FieldEditDialog", "Incompatible value reset failed", e)
-                withContext(Dispatchers.Main) {
-                    context?.let { android.widget.Toast.makeText(it, R.string.save_failed, android.widget.Toast.LENGTH_SHORT).show() }
-                    setSaveButtonEnabled(true)
-                }
+        val fieldId = field.id
+        completeSave(field)
+        app.runDetached("FieldEditDialog") {
+            // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다.
+            // **초기화가 보는 표는 고지가 센 표와 같다** — 접근자 하나가 둘을 함께 정한다.
+            app.database.withTransaction {
+                access.resetIncompatible(fieldId, newType)
             }
         }
     }
