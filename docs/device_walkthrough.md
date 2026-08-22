@@ -1,6 +1,6 @@
 # 실기기 확인 — 체크 시트
 
-> **체크박스를 끄면서 따라가면 된다.** **408단계** 전수이고, **한 번에 할 수 있는 것은 한 묶음**에 모았다.
+> **체크박스를 끄면서 따라가면 된다.** **409단계** 전수이고, **한 번에 할 수 있는 것은 한 묶음**에 모았다.
 > 각 묶음 맨 앞의 **준비물**만 갖추면 그 안은 앉은자리에서 끝난다.
 >
 > | 표식 | 뜻 |
@@ -192,6 +192,8 @@
       → **'값 데이터 라이브러리' 섹션이 통째로 사라진다**(사전 등록 칸 · '입력 모드'까지). 종류를 다시 TEXT로 되돌리면 섹션이 돌아오고 **'입력 모드'는 '제안'이다** — 잠자던 '제한'이 되살아나지 않는다  `R-24`
 - [ ] **`5-ㅌ2`** 지원 종류(TEXT 등) 필드를 **'값 제한'으로 두고 허용 값은 하나도 없이** 저장한다
       → 저장은 되되 **"허용 값이 없는 상태로 '값 제한' 모드입니다"**를 말한다 — 값 라이브러리 화면의 같은 설정이 이미 하던 그 고지다(막지는 않는다)  `R-18`
+- [ ] **`5-ㅍ2`** 계산 필드의 수식에서 **텍스트·선택지·다중 텍스트·체형 필드**를 참조해 본다(예: `field(메모) + 1`). 이어서 숫자·등급·계산 필드만 참조하는 수식도 써 본다
+      → 앞쪽에는 **“값이 수로 읽힌다는 보장이 없습니다 — 글자가 들어 있으면 그 자리는 0으로 계산됩니다”**가 뜨고, 뒤쪽에는 **아무 경고도 없다**. 경고는 **막지 않는다**(그대로 저장된다) — 텍스트 칸에 숫자를 적어 두고 쓰는 수식은 오늘도 그대로 돈다  `R-27`
 
 ---
 
@@ -1288,7 +1290,7 @@
 
 ## 다 밟으면
 
-**138절 · 408단계가 전부 닫힌다.** 그 순간 이 저장소는 *"앱이 실제로 도는가"*의 답을 **2026.08.01 이후 처음으로** 갖게 된다.
+**138절 · 409단계가 전부 닫힌다.** 그 순간 이 저장소는 *"앱이 실제로 도는가"*의 답을 **2026.08.01 이후 처음으로** 갖게 된다.
 
 깨진 것이 나오면 그 자리가 **다음 판의 최우선**이다 — 화면 결함은 자동 검증이 원리적으로 못 보는 유일한 부류라, 어떤 백로그 항목보다 앞선다.
 
@@ -1297,7 +1299,7 @@
 
 ## 부록 — 뺀 것과 그 사유 (기록)
 
-원 문서(`docs/remaining_work_2026-07.md` 3장)의 **절이 전부 위에 산다**(그 뒤 워크스루가 낳은 절은 위 범례가 가리키는 자리에 있다). 줄인 것은 절이 아니라 **절 안의 항목**이다(원 1,348개 → 지금 408개). **뺀 부류와 그 사유를 여기 남긴다** — 적어 두지 않으면 다음 사람이 *유실*로 읽는다.
+원 문서(`docs/remaining_work_2026-07.md` 3장)의 **절이 전부 위에 산다**(그 뒤 워크스루가 낳은 절은 위 범례가 가리키는 자리에 있다). 줄인 것은 절이 아니라 **절 안의 항목**이다(원 1,348개 → 지금 409개). **뺀 부류와 그 사유를 여기 남긴다** — 적어 두지 않으면 다음 사람이 *유실*로 읽는다.
 
 | 뺀 부류 | 사유 |
 |---|---|
@@ -1338,7 +1340,7 @@
 | `2-ㄴ-2` | `3-139-ㄱ` | 아무것도 고치지 말고 **두세 번 열었다 저장**한다 → 따옴표가 `"""…"""`로 자라지 않는다. 태그 수가 안 늘어난다 | `MultiValueInputTest.roundTrip_isStableOnSecondPass` · `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `CsvTokensTest.joinThenSplit_roundTripsInBothModes` <br> `app/src/main/java/com/novelcharacter/app/ui/character/CharacterEditFragment.kt` 에서 `val tags = MultiValueInput.parse(binding.editTags.text.toString())` — 편집 창의 태그 칸이 저장 때 MultiValueInput.parse를, 적재 때 format을 그대로 지난다 |
 | `2-ㄴ-3` | `3-139-ㄷ` | 캐릭터 여럿 고르기 → **일괄 태그** → 쉼표 든 칩을 누른다 → 감싸인 채로 붙고, 적용하면 태그가 **하나** 붙는다(둘이 아니다) | `MultiValueInputTest.roundTrip_tokenWithComma_survivesOpenAndSave` · `MultiValueInputTest.format_isTheSameRuleAsTheExcelCell` <br> `app/src/main/java/com/novelcharacter/app/ui/character/batch/BatchTagBottomSheet.kt` 에서 `binding.tagInput.setText(MultiValueInput.format(existing))` — 칩 누르기가 parse → 중복 거르기 → format 한 벌을 그대로 지난다 |
 | `2-ㅂ-3` | `3-11-3` | 자기 자신을 참조하는 수식을 넣는다 → "자기 자신(A)을…"이 뜬다 | `FormulaValidatorTest.자기 자신을 참조하면 알린다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `getString(R.string.formula_warn_self_ref, problem.key)` — SelfReference 문제 하나가 그 문구로 바뀌는 자리 — 문구는 여기서만 나온다 |
-| `2-ㅂ-4` | `3-11-7` | 정상 수식(`field(힘) + field(민첩) * 2`)을 저장 → 조용히 저장된다 | `FormulaValidatorTest.정상 수식에는 경고가 없다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)` — 문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 "조용히 저장된다"이다 |
+| `2-ㅂ-4` | `3-11-7` | 정상 수식(`field(힘) + field(민첩) * 2`)을 저장 → 조용히 저장된다 | `FormulaValidatorTest.정상 수식에는 경고가 없다` <br> `app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt` 에서 `formula, currentKey, universeFieldKeys, calculatedFormulas, universeFieldTypes` — 문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 "조용히 저장된다"이다. 2026.08.22에 이 호출이 타입 표(`universeFieldTypes`)를 하나 더 받게 바뀌어 앵커가 걸렸고, 그 자리를 다시 읽어 판정이 그대로임을 확인했다 — 새 사유(NonNumericKeys)는 **수를 못 낼 수 있는 타입을 참조할 때만** 붙으므로 숫자 필드만 참조하는 정상 수식은 여전히 조용하다(그 사실은 시험이 잠근다). |
 | `3-ㄷ-2` | `3-39-3` | 빈 시트가 든 파일로 덮어쓰기 → **기존 데이터를 지우지 않는다** | `OverwriteGuardTest.내용 있는 행이 없으면 EMPTY이고 지우지 않는다` · `OverwriteGuardTest.스타일만 남은 행은 데이터 행이 아니다 — 내용을 지운 시트는 EMPTY로 판정된다` <br> `app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt` 에서 `if (source == RestoreSource.HAS_ROWS) return true` — 덮어쓰기 경로가 판정기에게 물어보고 나서 지운다 — 지울 수 있는 상태(HAS_ROWS)일 때만 삭제가 서고 나머지 둘은 경고만 남기고 건너뛴다. 2026.08.21에 이 자리의 **문구**가 keepReason으로 갈렸을 때 앵커가 깨져 이 단계가 돌아왔고, 다시 읽어 보니 **삭제 게이트는 한 글자도 안 바뀌었다** — 그래서 앵커를 문구가 아니라 게이트 자체로 옮겼다(문구 쪽은 3-ㅅ-11이 기기에서 본다) |
 | `3-ㅁ-10` | `3-105` | 대결 축 시트의 영향필드 칸을 본다 → `▼나이` 꼴이다(옛 `-나이`가 아니다). 옛 파일도 같은 뜻으로 들어온다 | `DuelFieldLinksTest.writes only the new marker` · `DuelFieldLinksTest.legacy markers still read as lower wins` <br> `app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt` 에서 `row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))` — 영향필드 칸이 toText가 낸 글을 그대로 적는다 |
 | `6-ㅂ` | `3-56-3` | 판을 몇 번 돌린다 → 진행률 네 숫자(붙임·접힘·남음/전체)가 바뀐다 | `DuelPairingTest.진행률은 붙인 것 접힌 것 남은 것으로 정확히 갈린다` · `DuelPairingTest.이행 추론으로 접힌다 — 안 붙인 짝이 대기열에서 빠지고 접힘으로 센다` <br> `app/src/main/java/com/novelcharacter/app/ui/duel/DuelPlayFragment.kt` 에서 `value.played, value.folded, value.remaining, value.total` — 진행률 문구가 Progress의 네 수를 그대로 받는다 |

@@ -889,8 +889,8 @@
     "FormulaValidatorTest.정상 수식에는 경고가 없다"
    ],
    "where": "app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt",
-   "anchor": "FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)",
-   "note": "문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 \"조용히 저장된다\"이다"
+   "anchor": "formula, currentKey, universeFieldKeys, calculatedFormulas, universeFieldTypes",
+   "note": "문제 목록이 비면 입힐 문구가 없다 — 그것이 곧 \"조용히 저장된다\"이다. 2026.08.22에 이 호출이 타입 표(`universeFieldTypes`)를 하나 더 받게 바뀌어 앵커가 걸렸고, 그 자리를 다시 읽어 판정이 그대로임을 확인했다 — 새 사유(NonNumericKeys)는 **수를 못 낼 수 있는 타입을 참조할 때만** 붙으므로 숫자 필드만 참조하는 정상 수식은 여전히 조용하다(그 사실은 시험이 잠근다)."
   }
  },
  {
@@ -7514,5 +7514,18 @@
   "ref": "R-18",
   "axis": "보임",
   "axiswhy": "드롭다운은 PC 엑셀에서만 확인된다"
+ },
+ {
+  "round": "5",
+  "roundname": "필드 편집 창",
+  "sub": null,
+  "id": "ㅍ2",
+  "warn": false,
+  "money": false,
+  "do": "계산 필드의 수식에서 **텍스트·선택지·다중 텍스트·체형 필드**를 참조해 본다(예: `field(메모) + 1`). 이어서 숫자·등급·계산 필드만 참조하는 수식도 써 본다",
+  "expect": "앞쪽에는 **“값이 수로 읽힌다는 보장이 없습니다 — 글자가 들어 있으면 그 자리는 0으로 계산됩니다”**가 뜨고, 뒤쪽에는 **아무 경고도 없다**. 경고는 **막지 않는다**(그대로 저장된다) — 텍스트 칸에 숫자를 적어 두고 쓰는 수식은 오늘도 그대로 돈다",
+  "ref": "R-27",
+  "axis": "보임",
+  "axiswhy": "경고 문구와 '막지 않음'은 화면에서만 확인된다"
  }
 ]

@@ -54,6 +54,18 @@ object FormulaValidator {
 
         /** 그 밖에 계산에서 빠지는 조각(연산자 오타, 설명 글자 등). */
         data class UnrecognizedText(val fragments: List<String>) : Problem()
+
+        /**
+         * 키는 **실재하는데 그 타입의 값이 수로 읽히는 것이 보장되지 않는** 참조.
+         *
+         * 그 자리는 값이 수로 안 읽히는 순간 조용히 0이 되고, 수식은 **그럴듯한 오답**을
+         * 낸다 — 형제 사유([UnknownKeys]·[PaddedKeys])와 결과가 같은데 고지만 없었다.
+         * 판정은 [com.novelcharacter.app.util.FormulaEvaluator.isReliablyNumeric]이 든다.
+         *
+         * **막지 않는다.** TEXT 칸에 `42`를 적어 두고 참조하는 수식은 오늘도 옳게 돌고,
+         * 이 고지는 *그 값이 글자가 되는 순간 0이 된다*는 사실을 미리 알릴 뿐이다.
+         */
+        data class NonNumericKeys(val keys: List<String>) : Problem()
     }
 
     /**
@@ -63,12 +75,16 @@ object FormulaValidator {
      *   건너뛴다** — 목록을 못 읽었을 때 있는 키를 없다고 알리는 편이 더 나쁘다.
      * @param calculatedFormulas 자기 자신을 뺀 CALCULATED 필드의 키 → 수식. 전이 순환 참조를
      *   보는 데 쓴다. 비어 있으면 직접 자기참조만 잡힌다.
+     * @param knownFieldTypes 같은 구역 필드의 키 → 타입. **null이거나 그 키가 없으면 타입
+     *   검사를 건너뛴다** — 목록을 못 읽었을 때 멀쩡한 참조를 경고하는 편이 더 나쁘다
+     *   (`knownKeys`가 같은 이유로 null을 허용하는 것과 같은 규약).
      */
     fun validate(
         formula: String,
         currentKey: String,
         knownKeys: Set<String>?,
-        calculatedFormulas: Map<String, String> = emptyMap()
+        calculatedFormulas: Map<String, String> = emptyMap(),
+        knownFieldTypes: Map<String, com.novelcharacter.app.data.model.FieldType?>? = null
     ): List<Problem> {
         if (formula.isBlank()) return emptyList()
 
@@ -93,6 +109,19 @@ object FormulaValidator {
         if (selfReferenced) problems.add(Problem.SelfReference(currentKey))
         if (unknown.isNotEmpty()) problems.add(Problem.UnknownKeys(unknown))
         if (padded.isNotEmpty()) problems.add(Problem.PaddedKeys(padded))
+
+        // **있는 키인데 타입이 수를 보장하지 않는** 참조 — 없는 키와 결과가 같은데(그 자리는
+        // 0이 된다) 고지만 없었다. 자기 자신과 못 찾은 키는 위에서 이미 다뤘으므로 뺀다.
+        if (knownFieldTypes != null) {
+            val nonNumeric = refs.distinct().filter { key ->
+                key != currentKey &&
+                    key !in unknown &&
+                    key !in padded &&
+                    knownFieldTypes.containsKey(key) &&
+                    !FormulaEvaluator.isReliablyNumeric(knownFieldTypes[key])
+            }
+            if (nonNumeric.isNotEmpty()) problems.add(Problem.NonNumericKeys(nonNumeric))
+        }
 
         // ── 전이 순환 참조 ── (자기참조는 위에서 이미 알렸으므로 두 마디 이상만)
         detectCycle(currentKey, formula, calculatedFormulas)

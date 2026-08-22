@@ -6551,6 +6551,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             "수식이 서로 돌아옵니다(${problem.path.joinToString(" → ")})"
         is FormulaValidator.Problem.UnknownKeys ->
             "이 세계관에 없는 필드 키 ${problem.keys.joinToString(", ")} (그 자리는 0으로 계산됩니다)"
+        is FormulaValidator.Problem.NonNumericKeys ->
+            "${problem.keys.joinToString(", ")} 필드는 값이 수로 읽힌다는 보장이 없습니다 " +
+                "(글자가 들어 있으면 그 자리는 0으로 계산됩니다)"
         is FormulaValidator.Problem.PaddedKeys ->
             "필드 키 앞뒤의 공백까지 이름으로 읽습니다: ${problem.keys.joinToString(", ")}"
         is FormulaValidator.Problem.UnknownFunctions ->

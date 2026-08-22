@@ -356,6 +356,7 @@
     <string name="formula_warn_message">수식에 문제가 있을 수 있습니다:\n%1$s\n\n그대로 저장하시겠습니까?</string>
     <string name="formula_warn_paren">괄호 짝이 맞지 않습니다</string>
     <string name="formula_warn_missing_keys">존재하지 않는 필드 키: %1$s (그 자리는 0으로 계산됩니다)</string>
+    <string name="formula_warn_non_numeric_keys">%1$s 필드는 값이 수로 읽힌다는 보장이 없습니다 — 글자가 들어 있으면 그 자리는 0으로 계산됩니다</string>
     <string name="formula_warn_self_ref">자기 자신(%1$s)을 참조합니다 — 값이 \'오류\'로 표시됩니다</string>
     <string name="formula_warn_circular">수식이 서로 돌아옵니다: %1$s — 값이 \'오류\'로 표시됩니다</string>
     <string name="formula_warn_padded_keys">필드 키 앞뒤의 공백까지 이름으로 읽습니다: %1$s (공백을 지워 주세요)</string>

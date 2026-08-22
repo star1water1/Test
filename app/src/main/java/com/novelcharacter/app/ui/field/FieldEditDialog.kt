@@ -88,6 +88,12 @@ class FieldEditDialog : DialogFragment() {
     // 수식 검증용 — 현재 세계관·같은 대상(캐릭터/사건)의 필드 키 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
     private var universeFieldKeys: Set<String>? = null
 
+    /**
+     * 같은 구역 필드의 키 → 타입 — 수식이 참조한 필드가 **수를 낼 수 있는가**를 검증기가
+     * 묻는 재료다. 로드 전·실패면 null이라 그 검사만 건너뛴다([universeFieldKeys]와 같은 규약).
+     */
+    private var universeFieldTypes: Map<String, com.novelcharacter.app.data.model.FieldType?>? = null
+
     // 수식 검증용 — 전이 순환 참조를 보기 위한 CALCULATED 필드의 키 → 수식 (편집 중인 필드는 제외)
     private var calculatedFormulas: Map<String, String> = emptyMap()
 
@@ -255,6 +261,7 @@ class FieldEditDialog : DialogFragment() {
                     val defs = app.database.fieldDefinitionDao()
                         .getGlobalFieldsList(currentEntityType())
                     universeFieldKeys = defs.map { it.key }.toSet()
+                    universeFieldTypes = defs.associate { it.key to it.fieldType }
                     calculatedFormulas = defs
                         .filter { it.fieldType == FieldType.CALCULATED && it.id != existingField?.id }
                         .mapNotNull { def -> formulaOf(def)?.let { def.key to it } }
@@ -270,6 +277,7 @@ class FieldEditDialog : DialogFragment() {
                     val defs = app.database.fieldDefinitionDao()
                         .getFieldsByUniverseList(universeId, currentEntityType())
                     universeFieldKeys = defs.map { it.key }.toSet()
+                    universeFieldTypes = defs.associate { it.key to it.fieldType }
                     // 편집 중인 필드는 뺀다 — 그 수식은 저장된 것이 아니라 지금 입력 중인 것이다.
                     calculatedFormulas = defs
                         .filter { it.fieldType == FieldType.CALCULATED && it.id != existingField?.id }
@@ -2748,7 +2756,9 @@ class FieldEditDialog : DialogFragment() {
      * 어휘 분석([FormulaLexer])을 보므로, 함수를 추가해도 검사가 뒤처지지 않는다.
      */
     private fun validateFormula(formula: String, currentKey: String): List<String> =
-        FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)
+        FormulaValidator.validate(
+            formula, currentKey, universeFieldKeys, calculatedFormulas, universeFieldTypes
+        )
             .map { problem ->
                 when (problem) {
                     is FormulaValidator.Problem.UnbalancedParen ->
@@ -2759,6 +2769,8 @@ class FieldEditDialog : DialogFragment() {
                         getString(R.string.formula_warn_circular, problem.path.joinToString(" → "))
                     is FormulaValidator.Problem.UnknownKeys ->
                         getString(R.string.formula_warn_missing_keys, problem.keys.joinToString(", "))
+                    is FormulaValidator.Problem.NonNumericKeys ->
+                        getString(R.string.formula_warn_non_numeric_keys, problem.keys.joinToString(", "))
                     is FormulaValidator.Problem.PaddedKeys ->
                         getString(R.string.formula_warn_padded_keys, problem.keys.joinToString(", ") { "\"$it\"" })
                     is FormulaValidator.Problem.UnknownFunctions ->

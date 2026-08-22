@@ -65,6 +65,9 @@ object ImportedFormulaAudit {
         if (touchedKeys.isEmpty()) return emptyList()
 
         val knownKeys = scopeFields.map { it.key }.toSet()
+        // 타입까지 든다 — **있는 키인데 수를 못 내는** 참조도 그 자리는 0이 된다(형제 사유와
+        // 결과가 같은데 종전에는 고지만 없었다).
+        val knownFieldTypes = scopeFields.associate { it.key to it.fieldType }
         // 순환 참조는 **구역 전체**를 따라가야 보인다 — 건드린 필드만 담으면 A→B→A에서
         // B가 옛 필드일 때 고리가 끊긴 것처럼 보인다.
         val calculatedFormulas = scopeFields
@@ -83,7 +86,8 @@ object ImportedFormulaAudit {
                 knownKeys = knownKeys,
                 // 자기 자신은 뺀다 — 편집 창과 같은 규약이다. 두면 모든 수식이
                 // 자기 자신을 통해 돌아오는 것으로 보인다.
-                calculatedFormulas = calculatedFormulas - def.key
+                calculatedFormulas = calculatedFormulas - def.key,
+                knownFieldTypes = knownFieldTypes
             )
             if (problems.isNotEmpty()) findings.add(Finding(def.key, def.name, problems))
         }
