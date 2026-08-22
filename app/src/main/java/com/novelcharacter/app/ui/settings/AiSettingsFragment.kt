@@ -679,7 +679,12 @@ class AiSettingsFragment : Fragment() {
             // 키를 **먼저** 저장한다 — save()의 자동 활성 판정이 "키가 등록됐는가"를 보는데,
             // 순서를 뒤집으면 방금 만든 항목은 언제나 키 없음으로 읽혀 판정이 영영 돌지 않는다 (B-150).
             val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim().orEmpty()
-            if (enteredKey.isNotEmpty()) keyStore.putKey(candidate.id, enteredKey)
+            if (enteredKey.isNotEmpty() && !keyStore.putKey(candidate.id, enteredKey)) {
+                // Keystore를 쓸 수 없는 기기 상태 — 종전에는 여기서 그대로 죽었다.
+                // 창을 닫지 않는다(R-27): 사용자가 적은 것을 잃지 않고 다시 시도할 수 있어야 한다.
+                Toast.makeText(ctx, R.string.ai_key_save_failed, Toast.LENGTH_LONG).show()
+                return@setValidatedPositiveButton false
+            }
             val activationMoved = providerStore.save(candidate)
             refreshList()
             if (learnedReset) {

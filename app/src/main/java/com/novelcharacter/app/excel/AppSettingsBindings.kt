@@ -301,11 +301,23 @@ object AppSettingsBindings {
                     val obj = JSONObject(v)
                     val keyStore = AiKeyStore(ctx)
                     var applied = 0
+                    var failed = 0
                     for (id in obj.keys()) {
                         val raw = obj.stringOr(id, "")
-                        if (raw.isNotBlank()) { keyStore.putKey(id, raw); applied++ }
+                        if (raw.isBlank()) continue
+                        // **저장에 실패한 것을 성공으로 세지 않는다** — 기기의 보안 저장소를
+                        // 쓸 수 없는 상태에서 종전에는 예외가 통째로 위 `catch`에 잡혀
+                        // *"형식이 올바르지 않습니다"*라는 **틀린 사유**로 보고됐다.
+                        if (keyStore.putKey(id, raw)) applied++ else failed++
                     }
-                    if (applied > 0) Applied.Yes else Applied.No("담긴 키가 없습니다")
+                    when {
+                        failed > 0 && applied == 0 ->
+                            Applied.No("기기의 보안 저장소를 쓸 수 없어 키를 저장하지 못했습니다")
+                        failed > 0 ->
+                            Applied.No("키 ${applied}개만 저장했습니다 — ${failed}개는 기기의 보안 저장소를 쓸 수 없어 실패했습니다")
+                        applied > 0 -> Applied.Yes
+                        else -> Applied.No("담긴 키가 없습니다")
+                    }
                 } catch (_: Exception) {
                     Applied.No("형식이 올바르지 않습니다(프로바이더id: 키 형태의 JSON)")
                 }

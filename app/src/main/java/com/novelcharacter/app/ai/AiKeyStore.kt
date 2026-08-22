@@ -28,17 +28,34 @@ class AiKeyStore(context: Context) {
 
     fun hasKey(configId: String): Boolean = sp.contains(dataKey(configId))
 
-    /** 저장. 붙여넣기 시 흔한 앞뒤 공백·개행은 여기서 정리한다(잘못된 입력 교정). */
-    fun putKey(configId: String, rawKey: String) {
+    /**
+     * 저장. 붙여넣기 시 흔한 앞뒤 공백·개행은 여기서 정리한다(잘못된 입력 교정).
+     *
+     * @return 저장했는가. `false`면 Keystore가 이 기기에서 쓸 수 없는 상태다 — 호출부가
+     *   그 사실을 말해야 한다.
+     *
+     * **읽기 쪽은 이미 이 처분을 갖고 있었다**([getKey]가 실패를 삼키지 않고 `null`을 돌려
+     * *"키 재등록 필요"*로 안내한다). 쓰기 쪽만 방어가 없어서, 별칭은 남았는데 그 키를
+     * 쓸 수 없는 상태(기기 이전 뒤 잔여 · Keystore 손상)에서 **[저장] 버튼이 그대로
+     * 크래시**가 됐다. 별칭이 아예 지워진 흔한 경우는 여기서 새로 만들어 회복되므로,
+     * 남는 것은 *있는데 못 쓰는* 갈래뿐이고 그때가 정확히 말해야 하는 때다.
+     */
+    fun putKey(configId: String, rawKey: String): Boolean {
         val key = rawKey.trim()
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, masterKey())
-        val encrypted = cipher.doFinal(key.toByteArray(Charsets.UTF_8))
-        val packed = cipher.iv + encrypted // IV(12B) || ciphertext
-        sp.edit()
-            .putString(dataKey(configId), Base64.encodeToString(packed, Base64.NO_WRAP))
-            .putString(hintKey(configId), makeHint(key))
-            .apply()
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, masterKey())
+            val encrypted = cipher.doFinal(key.toByteArray(Charsets.UTF_8))
+            val packed = cipher.iv + encrypted // IV(12B) || ciphertext
+            sp.edit()
+                .putString(dataKey(configId), Base64.encodeToString(packed, Base64.NO_WRAP))
+                .putString(hintKey(configId), makeHint(key))
+                .apply()
+            true
+        } catch (e: Exception) {
+            AppLogger.error(TAG, "API 키 저장 실패 (configId=$configId)", e)
+            false
+        }
     }
 
     /** 복호화된 키. 미등록이거나 복호화 불가면 null — 호출측은 [AiErrorKind.NO_KEY]로 안내한다. */

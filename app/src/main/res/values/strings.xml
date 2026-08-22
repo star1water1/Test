@@ -3045,6 +3045,7 @@
     <string name="ai_test_running">연결 테스트 중…</string>
     <string name="ai_test_success_title">연결 성공</string>
     <string name="ai_test_success">연결 성공 — API 키·서버 주소·모델이 모두 유효합니다.</string>
+    <string name="ai_key_save_failed">API 키를 저장하지 못했습니다. 기기의 보안 저장소를 쓸 수 없는 상태입니다 — 기기를 다시 시작한 뒤 다시 시도해 주세요. 적으신 내용은 그대로 있습니다.</string>
     <string name="ai_test_failed_title">연결 실패</string>
 
     <!-- 발급 가이드 (프리셋별) -->

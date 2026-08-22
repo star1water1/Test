@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.setFragmentResultListener
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -177,6 +178,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) imageStrip.importUris(uris)
+    }
+
+    /**
+     * 시트에서 오는 결과를 **`onCreate`에서** 듣는다 — 뷰 수명주기에 걸면 회전 중에 온
+     * 결과를 놓친다(R-65). 라이브러리 피커는 사용자가 그 자리에서 고른 다중 선택을 든다.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setFragmentResultListener(ImageLibraryPickerBottomSheet.REQUEST_KEY) { _, bundle ->
+            val picked = bundle.getStringArray(ImageLibraryPickerBottomSheet.RESULT_KEY)?.toList()
+                ?: return@setFragmentResultListener
+            if (picked.isEmpty()) return@setFragmentResultListener
+            // 묶음 지도는 **붙이는 시점의 것**을 다시 읽는다 — 시트가 떠 있는 동안 링크가
+            // 바뀌었을 수 있고, 낡은 지도로 넓히면 붙는 장수가 시트의 약속과 갈린다.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val data = viewModel.getLibraryImages()
+                if (!isAdded || _binding == null) return@launch
+                attachLibraryImages(picked, data.metas)
+            }
+        }
     }
 
     override fun onCreateView(
@@ -993,16 +1014,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 ).show()
                 return@launch
             }
-            val sheet = ImageLibraryPickerBottomSheet()
-            sheet.images = data.images
             // 이미 붙어 있는 것은 뺀다 — canonical로 맞춰야 같은 파일의 다른 표기를 걸러낸다
             // (추천 스트립의 excluded 계산과 같은 규칙이다).
             val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
-            sheet.excludePaths = data.images
+            val exclude = data.images
                 .filter { canonicalOrSelf(it.path) in currentCanon }
                 .mapTo(HashSet()) { it.path }
-            sheet.onConfirm = { picked -> attachLibraryImages(picked, data.metas) }
-            sheet.show(parentFragmentManager, "image_library_picker")
+            ImageLibraryPickerBottomSheet.newInstance(exclude)
+                .show(parentFragmentManager, "image_library_picker")
         }
     }
 
