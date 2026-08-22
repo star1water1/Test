@@ -1404,10 +1404,18 @@ class StatsDataProvider {
         val tagDist = s.tags.groupBy { it.tag }.mapValues { it.value.size }
             .entries.sortedByDescending { it.value }.associate { it.key to it.value }
 
-        // 소설별 캐릭터 수
-        val novelCharCounts = s.characters.groupBy { it.novelId }
-            .mapKeys { (novelId, _) -> novelId?.let { novelMap[it]?.title } ?: "미지정" }
-            .mapValues { it.value.size }
+        // 소설별 캐릭터 수 — **키는 novelId, 라벨은 표시용으로 유일하게 짓는다** (R-20).
+        // 종전에는 `mapKeys { 제목 }`이라 동명 작품의 뒤 그룹이 앞 그룹을 **덮어썼다**
+        // (`mapKeys`는 합치지 않는다) — 12명·7명짜리 '외전' 둘이 7 하나가 됐고,
+        // 사라진 12명은 막대도 고지도 없었다. 없는 작품을 가리키는 값은 `null`로 접어
+        // '미지정'과 한 몫이 되게 한다(종전 `?: "미지정"`과 같은 처분).
+        val novelLabels = com.novelcharacter.app.util.NovelAxisLabels.of(s.novels, s.universes, "미지정")
+        val novelCharCounts = com.novelcharacter.app.util.NovelAxisLabels.toLabeledCounts(
+            s.characters
+                .groupBy { c -> c.novelId?.takeIf { novelMap.containsKey(it) } }
+                .mapValues { it.value.size },
+            novelLabels
+        )
 
         // 관계 유형 분포
         val relTypeDist = s.relationships.groupBy { it.relationshipType }
@@ -1547,18 +1555,25 @@ class StatsDataProvider {
 
         // 크로스레프 기반: 하나의 사건이 여러 작품에 카운트될 수 있음
         val eventIdSet = s.events.map { it.id }.toSet()
+        // **키는 novelId** (R-20 — 라벨은 매칭 키가 아니다). 종전에는 제목을 키로 더해
+        // 동명 작품 둘의 사건이 **한 막대로 합쳐졌고**(5건+8건 = 13건), 합성 라벨 '미지정'이
+        // 실제 제목과 같은 키 공간에 있어 *'미지정'이라는 제목의 작품*은 미연결 사건 수까지
+        // 자기 몫으로 받았다. `null` 키는 실재하는 id와 부딪칠 수 없는 자리다.
         val novelEventCounts = run {
-            val counts = mutableMapOf<String, Int>()
+            val counts = mutableMapOf<Long?, Int>()
             val eventNovels = s.eventNovelCrossRefs.filter { it.eventId in eventIdSet }
             for (cr in eventNovels) {
-                val title = novelMap[cr.novelId]?.title ?: "미지정"
-                counts[title] = (counts[title] ?: 0) + 1
+                val key = cr.novelId.takeIf { novelMap.containsKey(it) }
+                counts[key] = (counts[key] ?: 0) + 1
             }
             // 작품 미연결 사건 수
             val linkedEventIds = eventNovels.map { it.eventId }.toSet()
             val unlinkedCount = s.events.count { it.id !in linkedEventIds }
-            if (unlinkedCount > 0) counts["미지정"] = (counts["미지정"] ?: 0) + unlinkedCount
-            counts
+            if (unlinkedCount > 0) counts[null] = (counts[null] ?: 0) + unlinkedCount
+            com.novelcharacter.app.util.NovelAxisLabels.toLabeledCounts(
+                counts,
+                com.novelcharacter.app.util.NovelAxisLabels.of(s.novels, s.universes, "미지정")
+            )
         }
 
         // **사건 축 지표의 모수는 스코프 안 사건이다** (R-51 — 같은 술어·같은 범위·같은 표본).

@@ -147,6 +147,7 @@ $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueSorter.kt
 $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
+$MAIN/util/NovelAxisLabels.kt
 $MAIN/util/NumericBinning.kt
 $MAIN/util/FieldValueMatchSpec.kt
 $MAIN/util/FieldValueResolver.kt
@@ -511,6 +512,7 @@ $TEST/stats/StatsConsistencyTest.kt
 $TEST/stats/StatsMemoParityTest.kt
 $TEST/stats/StatsKeysParityTest.kt
 $TEST/stats/StatsFoldParityTest.kt
+$TEST/stats/NovelAxisLabelsTest.kt
 $TEST/stats/StatsScanParityTest.kt
 $TEST/stats/StatsOverviewParityTest.kt
 $TEST/stats/NumericBinDrilldownTest.kt
