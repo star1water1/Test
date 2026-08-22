@@ -750,6 +750,29 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun undoGroup(groupId: String) = inViewModelScope { duelRepository.undoGroup(groupId) }
 
     /**
+     * 축 순서 재정렬 — **뷰모델 수명에서, 한 트랜잭션으로** (형제 셋과 같은 모양).
+     *
+     * 종전에는 화면이 `viewLifecycleOwner.lifecycleScope`에서 축마다 `saveAxis`를 따로
+     * 불렀다. 끌어 놓고 손을 떼자마자 회전하거나 뒤로 나가면 **앞쪽 몇 개만 새 번호로
+     * 저장되고** 나머지는 옛 번호로 남아, `displayOrder`가 겹치거나 건너뛰어 목록 차례가
+     * 화면에서 본 것과 다르게 굳었다. 실패 고지도 없었다.
+     *
+     * 재정렬은 초고빈도 조작이라 **성공은 무통보**다(시각 변화가 곧 피드백) — 실패만 알린다.
+     */
+    fun updateAxisDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
+        try {
+            duelRepository.updateAxisDisplayOrders(orderedIds)
+        } catch (e: Exception) {
+            android.util.Log.e("DuelViewModel", "Failed to update axis display orders", e)
+            reportResult(_result, OpResult.failure(
+                OpResult.CAT_DUEL,
+                getApplication<android.app.Application>()
+                    .getString(com.novelcharacter.app.R.string.result_duel_axis_reorder_failed),
+                e.message))
+        }
+    }
+
+    /**
      * **쓰기는 화면 수명이 아니라 뷰모델 수명에서 돈다** (2026.08.22 · `TimelineViewModel`의 규약).
      *
      * 대결 화면의 `answer()`는 화면 상태를 **먼저** 앞으로 민 뒤 기록을 뒤에서 돌린다.

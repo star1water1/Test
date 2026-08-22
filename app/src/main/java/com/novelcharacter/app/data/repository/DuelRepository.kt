@@ -75,6 +75,19 @@ class DuelRepository(private val db: AppDatabase) {
      * 드래그해 순서만 바꿔도**(이 함수가 축마다 불린다) 살아 있는 이미지 축의 기준이 풀린다 —
      * 사용자가 한 일과 결과 사이에 아무 연결도 없어 원인을 찾을 수 없는 부류다.
      */
+    /**
+     * 축 순서 일괄 갱신 — **한 트랜잭션**이다 (형제 셋과 같은 모양: 세계관·작품·캐릭터 목록).
+     *
+     * 종전에는 화면이 축마다 `saveAxis`를 따로 불렀다. 쓰기가 항목 수만큼 갈려 있어
+     * **중간에 끊기면 앞쪽 몇 개만 새 번호로 저장되고** 나머지는 옛 번호로 남았다 —
+     * `displayOrder`가 겹치거나 건너뛰어 목록 차례가 화면에서 본 것과 다르게 굳는다.
+     * 게다가 `saveAxis`는 축 행을 통째로 되쓰고 대표 축 정리까지 도는 무거운 경로라,
+     * 순서 하나를 옮기는 데 쓸 것이 아니었다.
+     */
+    suspend fun updateAxisDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> db.duelAxisDao().setDisplayOrder(id, index) }
+    }
+
     suspend fun saveAxis(axis: DuelAxis): DuelAxis = db.withTransaction {
         val saved = if (axis.id == 0L) axis.copy(id = db.duelAxisDao().insert(axis))
         else { db.duelAxisDao().update(axis); axis }

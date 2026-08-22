@@ -567,7 +567,9 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
             val universeId = novel?.universeId
             if (universeId != null) {
-                val fields = viewModel.getFieldsByUniverseList(universeId)
+                // 어느 목록인가는 `fieldsForNovel` 한 자리가 정한다 (R-33) — 세계관이 있으면
+                // 그 세계관의 필드이므로 종전과 같은 값이다.
+                val fields = viewModel.fieldsForNovel(novel)
                 if (_binding == null) return@launch
                 val values = viewModel.getValuesByCharacterList(character.id)
                 if (_binding == null) return@launch
@@ -619,8 +621,17 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     .filter { it.fieldType != FieldType.CALCULATED }
                 if (_binding == null) return@launch
                 // cachedFields는 상태변화 추가 다이얼로그의 '필드' 선택지 소스이기도 하다.
-                // 여기에 타 세계관 정의를 넣으면 소속되지도 않은 세계관의 필드가 선택 가능해진다.
-                timeSliderHelper.cachedFields = emptyList()
+                // **타 세계관 정의는 넣지 않는다** — 소속되지도 않은 세계관의 필드가 선택
+                // 가능해진다. 그래서 위 `orphanFields`(옛 세계관 정의를 가리킬 수 있다)가
+                // 아니라 **전역 구역의 필드**를 싣는다.
+                //
+                // 종전에는 여기가 `emptyList()`라, 편집 화면에서는 정상으로 뜨는 전역 구역
+                // 필드를 **상세 화면의 [상태 변화 추가]에서는 고를 수 없었다**(출생·사망·생존
+                // 여부 셋만 떴다). 전역 필드는 타 세계관이 아니라 2026.08.07 사용자 확정
+                // (*"전역필드라면 세계관 소속이 없더라도 가지게"*)이 이 캐릭터에게 주기로 한
+                // 바로 그 필드다. 판정은 편집·보충 탭과 **같은 함수**가 든다 (R-33) —
+                // 이 자리가 그 판정의 **세 번째 사본**이었고, 하필 null 갈래가 정반대였다.
+                timeSliderHelper.cachedFields = viewModel.fieldsForNovel(novel)
                 timeSliderHelper.cachedValues = emptyList()
                 timeSliderHelper.cachedPercentileData = emptyMap()
                 timeSliderHelper.cachedCalculatedResults = emptyMap()

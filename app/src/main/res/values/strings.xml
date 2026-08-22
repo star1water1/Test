@@ -2408,6 +2408,7 @@
     <string name="result_faction_update_failed">세력 수정 실패</string>
     <string name="result_faction_delete_failed">세력 삭제 실패</string>
     <string name="result_faction_reorder_failed">세력 순서 변경 실패</string>
+    <string name="result_duel_axis_reorder_failed">대결 축 순서 변경 실패</string>
     <string name="result_faction_member_added">세력 멤버 %1$d명 추가됨</string>
     <string name="result_faction_member_add_failed">세력 멤버 추가 실패</string>
     <string name="result_faction_member_removed">세력 멤버 제거됨</string>
