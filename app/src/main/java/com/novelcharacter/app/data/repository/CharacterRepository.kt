@@ -430,6 +430,19 @@ class CharacterRepository(
     suspend fun getAllRelationships(): List<CharacterRelationship> =
         characterRelationshipDao.getAllRelationships()
 
+    /**
+     * 이 인물들에 **어느 끝으로든 닿는** 관계 — 문서·화면이 '이 사람들의 관계'를 물을 때의 통로.
+     *
+     * 전량을 올려 메모리에서 거르지 않는다(R-54). 두 끝을 따로 묻고 합치는 것은 SQLite가
+     * `OR`가 걸린 두 인덱스를 한 질의에서 잘 못 쓰기 때문이다 — id로 중복을 걷는다.
+     */
+    suspend fun getRelationshipsTouching(characterIds: List<Long>): List<CharacterRelationship> {
+        if (characterIds.isEmpty()) return emptyList()
+        val byEnd1 = SqlInChunks.flat(characterIds) { characterRelationshipDao.getRelationshipsByEnd1(it) }
+        val byEnd2 = SqlInChunks.flat(characterIds) { characterRelationshipDao.getRelationshipsByEnd2(it) }
+        return (byEnd1 + byEnd2).distinctBy { it.id }
+    }
+
     suspend fun insertRelationship(relationship: CharacterRelationship): Long {
         require(relationship.characterId1 != relationship.characterId2) {
             "A character cannot have a relationship with itself"
