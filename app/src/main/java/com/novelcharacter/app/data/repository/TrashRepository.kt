@@ -4173,9 +4173,26 @@ class TrashRepository(
             if (db.fieldValueEntryDao().getByFieldAndValue(defId, e.value) != null) { skippedEntries++; continue }
             entryRows.add(e.copy(id = 0, fieldDefinitionId = defId))
         }
-        // `insertAllIgnore` — (필드, 값) 유니크 충돌은 위에서 이미 걸렀지만, code 유니크가
-        // 그 사이 재사용됐을 수 있다. 한 행 때문에 조각 전체가 엎어지지 않게 한다.
-        if (entryRows.isNotEmpty()) db.fieldValueEntryDao().insertAllIgnore(entryRows)
+        // **code가 겹치면 재발급한다** — code도 유니크라 하나만 겹쳐도 조각이 통째로 엎어진다.
+        // 버리지 않고 새 code를 주는 것이 이 저장소의 처분이다(`applyDuelMatches`와 같은 꼴):
+        // 되살아나는 내용은 같고, 못 살리는 것보다 코드를 새로 받는 편이 낫다.
+        if (entryRows.isNotEmpty()) {
+            val takenEntryCodes = HashSet<String>()
+            SqlInChunks.each(entryRows.mapNotNull { it.code?.takeIf { c -> c.isNotBlank() } }) { chunk ->
+                takenEntryCodes.addAll(db.fieldValueEntryDao().getByCodes(chunk).mapNotNull { it.code })
+            }
+            // 넣기는 `insertAllIgnore`다 — code를 새로 준 뒤에는 걸릴 것이 없지만, 통로가
+            // IGNORE라 혹시 남은 충돌이 **조각 전체를 엎지는 못한다**(마지막 안전망).
+            db.fieldValueEntryDao().insertAllIgnore(
+                entryRows.map { row ->
+                    // `code`는 선언이 non-null이지만 **payload에서 온 값이라 null일 수 있다**
+                    // (R-2 — Gson은 Unsafe로 할당한다). 안전 호출을 지우지 말 것.
+                    val safe = row.code?.takeIf { it.isNotBlank() && it !in takenEntryCodes }
+                        ?: generateEntityCode()
+                    row.copy(code = safe)
+                }
+            )
+        }
 
         // 같은 이력이 이미 살아 있으면 넣지 않는다 — **유실이 아니라 수렴이라** 세지 않는다.
         // (그 이력은 지금 DB에 있고, 한 벌 더 만들면 그것이 손해다.)
@@ -4186,7 +4203,20 @@ class TrashRepository(
             if (existing != null) continue
             changeRows.add(c.copy(id = 0, characterId = owner))
         }
-        if (changeRows.isNotEmpty()) db.characterStateChangeDao().insertAll(changeRows)
+        if (changeRows.isNotEmpty()) {
+            // **code가 겹치면 재발급한다**(위 엔트리와 같은 사유·같은 처분).
+            val takenChangeCodes = HashSet<String>()
+            SqlInChunks.each(changeRows.mapNotNull { it.code?.takeIf { c -> c.isNotBlank() } }) { chunk ->
+                takenChangeCodes.addAll(db.characterStateChangeDao().getExistingCodes(chunk))
+            }
+            db.characterStateChangeDao().insertAll(
+                changeRows.map { row ->
+                    val safe = row.code?.takeIf { it.isNotBlank() && it !in takenChangeCodes }
+                        ?: generateEntityCode()
+                    row.copy(code = safe)
+                }
+            )
+        }
 
         return RestoreResult(
             entityType = TrashSnapshot.TYPE_FIELD_DATA,

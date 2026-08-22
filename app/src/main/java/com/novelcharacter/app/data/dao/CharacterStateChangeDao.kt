@@ -65,6 +65,14 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE code = :code LIMIT 1")
     suspend fun getChangeByCode(code: String): CharacterStateChange?
 
+    /**
+     * 이미 쓰이고 있는 code — 여러 행을 한 번에 되살릴 때 **재발급 대상**을 가려낸다
+     * (`DuelMatchDao.getExistingCodes`와 같은 규약). code는 유니크라, 하나만 겹쳐도
+     * `insertAll`이 통째로 엎어져 그 조각이 전부 안 살아난다.
+     */
+    @Query("SELECT code FROM character_state_changes WHERE code IN (:codes)")
+    suspend fun getExistingCodes(codes: List<String>): List<String>
+
     /** 필드 키 변경 시 해당 세계관 캐릭터들의 상태변화 이력 fieldKey를 일괄 갱신 (무통보 이력 파손 방지) */
     @Query("""
         UPDATE character_state_changes SET fieldKey = :newKey

@@ -235,6 +235,10 @@ class UniverseRepository(
      * 담는 범위와 여기서 지우는 범위가 **같은 함수에서 나와야** 갈리지 않는다(R-33).
      *
      * @param trash 이 조작의 휴지통 인스턴스. 한 조작 = 한 인스턴스다(R-3/R-9/R-12).
+     *   **정리(`pruneIfNeeded`)는 여기서 하지 않는다** — 인스턴스를 넘겨받는 자리의 규약이
+     *   그렇다(`GradeSystemRepository.deleteSystem`과 같은 꼴). 엑셀 가져오기는 이 함수를
+     *   **자기 트랜잭션 안에서** 부르는데, 그 안에서 정리가 돌면 스냅샷과 정리가 한 단위로
+     *   묶여 롤백에 함께 사라진다 — 그래서 가져오기는 커밋 뒤에 한 번만 정리한다.
      */
     suspend fun deleteField(field: FieldDefinition, trash: TrashRepository) {
         db.withTransaction {
@@ -253,7 +257,6 @@ class UniverseRepository(
             }
             fieldDefinitionDao.delete(field)
         }
-        trash.pruneIfNeeded()
     }
 
     /**

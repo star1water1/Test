@@ -333,10 +333,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         try {
             // **한 조작 = 한 휴지통 인스턴스**(R-3/R-9/R-12) — 정의 한 행과 데이터 이어붙임
             // 행들이 같은 작업으로 묶여야 '작업 전체 복원'이 반쪽이 되지 않는다.
-            universeRepository.deleteField(
-                field,
-                com.novelcharacter.app.data.repository.TrashRepository(app.database)
-            )
+            // **정리는 삭제가 끝난 뒤 이 자리에서** 한다(인스턴스를 넘기는 자리의 규약 —
+            // `deleteGradeSystem`과 같은 꼴). 그래야 이 삭제가 방금 만든 백업이 보호된다.
+            val trash = com.novelcharacter.app.data.repository.TrashRepository(app.database)
+            universeRepository.deleteField(field, trash)
+            trash.pruneIfNeeded()
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_deleted, field.name)))
         } catch (e: Exception) {
