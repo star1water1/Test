@@ -43,9 +43,17 @@ object RequiredFieldGaps {
      * 빈 필수 칸이 하나라도 있는 항목만 골라 돌려준다.
      *
      * @param definitions 한 종류(entityType)의 필드 정의 전부. 필수·계산 여부는 여기서 거른다.
-     * @param entities 셀 대상. [GapEntity.universeId]가 null이면 **건너뛴다** — 어느 세계관의
-     *   필드가 적용되는지 알 수 없어 세면 틀린 답이 나온다(작품 미배정 캐릭터가 그렇고,
-     *   완성도 계산도 같은 이유로 같은 자리에서 건너뛴다).
+     * @param entities 셀 대상. [GapEntity.universeId]가 `null`이면 **전역 구역(무소속)**이고,
+     *   그 구역의 필드가 적용된다 — 건너뛰지 않는다.
+     *
+     *   종전에는 건너뛰었고, 그때는 그것이 맞았다: 무소속 항목에는 필드가 아예 0개였다.
+     *   **B-119 확장(2026.08.07 사용자 확정)이 전역 구역에 실제 필드를 준 순간 그 전제가
+     *   낡았다.** 기본 필드 템플릿이 그 구역에 필수 필드를 심고 엑셀도 거기에 필수 행을
+     *   만든다. 그래서 무소속 캐릭터의 **편집 폼은 필수 표식을 그리고 저장 때 말하는데**,
+     *   어시스턴트의 '필수 빈칸' 카드만 침묵했다 — *'칸'의 정의는 소비처끼리 같아야 한다*
+     *   (R-34)가 묶어 둔 그 짝이 어긋나 있었다. 사건 축에서 같은 부류를 이미 한 번 고쳤고
+     *   (B-258 ⓐ), 그 기록이 *"`null` 하나가 **구역을 모른다**와 **전역 구역이다**를 겸하고
+     *   있었다"*고 적었다 — 여기가 그 겸직이 남은 마지막 자리다.
      * @param filledDefIdsByEntity 항목 id → **값이 비어 있지 않은** 필드 정의 id 집합.
      *   호출부가 값 테이블에서 만든다(빈 문자열 행은 채운 것이 아니므로 미리 걸러 넘긴다).
      */
@@ -60,8 +68,9 @@ object RequiredFieldGaps {
         if (requiredByUniverse.isEmpty()) return emptyList()
 
         return entities.mapNotNull { entity ->
-            val universeId = entity.universeId ?: return@mapNotNull null
-            val required = requiredByUniverse[universeId] ?: return@mapNotNull null
+            // `null` 키 버킷이 곧 전역 구역이다 — 위에서 `groupBy { it.universeId }`가 그것을
+            // 이미 만들고 있었는데 읽는 자리가 없어 죽은 버킷이었다.
+            val required = requiredByUniverse[entity.universeId] ?: return@mapNotNull null
             val filled = filledDefIdsByEntity[entity.id].orEmpty()
             // 폼에 보이는 차례로 든다 — 카드에서 읽은 순서와 열어서 보는 순서가 같아야 한다.
             val missing = required
@@ -79,8 +88,9 @@ object RequiredFieldGaps {
 /**
  * 셀 대상 하나. 캐릭터·사건·작품을 **같은 모양으로** 받아 계산 계층이 종류를 모르게 한다.
  *
- * @property universeId 이 항목에 어떤 세계관의 필드가 적용되는가. 캐릭터는 작품을 거쳐,
- *   사건·작품은 자기 값으로 정해진다. null이면 셀 수 없다.
+ * @property universeId 이 항목에 어떤 구역의 필드가 적용되는가. 캐릭터는 작품을 거쳐,
+ *   사건·작품은 자기 값으로 정해진다. **`null`은 전역 구역(무소속)이다** — *모른다*가
+ *   아니라 하나의 구역이고, 그 구역에도 필드가 있다(B-119 확장).
  */
 data class GapEntity(
     val id: Long,

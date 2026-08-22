@@ -138,21 +138,35 @@ class AiSettingsFragment : Fragment() {
      * 자유·실험은 근거 강도 하한과의 충돌 가드([CreativityChipRow.applyWithConflictGuard])를
      * 거친다 — 칩 표면과 같은 규칙·같은 값이다. 프로토콜 상한 고지(§6-4)는 활성 프로바이더 기준.
      */
+    /**
+     * 라디오를 **되읽는 중**인가 — 그동안 리스너가 울려도 쓰지 않는다.
+     *
+     * 프래그먼트 필드인 것이 요점이다: 창작도 가드가 **근거 강도** 라디오까지 되세우므로
+     * 억제가 두 카드에 걸쳐야 한다(지역 변수로 두면 다른 카드의 리스너를 못 막는다).
+     */
+    private var suppressAiRadios = false
+
+    private fun idOf(c: AiCreativity): Int = when (c) {
+        AiCreativity.PRECISE -> R.id.creativityPrecise
+        AiCreativity.BALANCED -> R.id.creativityBalanced
+        AiCreativity.FREE -> R.id.creativityFree
+        AiCreativity.BOLD -> R.id.creativityBold
+    }
+
+    /** 저장값 ↔ 버튼 매핑은 이 함수 하나뿐이다 — 선택지가 늘어도 어긋날 자리가 없다. */
+    private fun confidenceIdOf(c: CharacterFieldAiSuggester.Confidence?): Int = when (c) {
+        CharacterFieldAiSuggester.Confidence.HIGH -> R.id.confidenceHigh
+        CharacterFieldAiSuggester.Confidence.MEDIUM -> R.id.confidenceMedium
+        else -> R.id.confidenceAll
+    }
+
     private fun setupCreativityGroup() {
         val settings = AiPromptSettings(requireContext())
-        val idOf = { c: AiCreativity ->
-            when (c) {
-                AiCreativity.PRECISE -> R.id.creativityPrecise
-                AiCreativity.BALANCED -> R.id.creativityBalanced
-                AiCreativity.FREE -> R.id.creativityFree
-                AiCreativity.BOLD -> R.id.creativityBold
-            }
-        }
-        var suppress = true
+        suppressAiRadios = true
         binding.creativityGroup.check(idOf(settings.creativity))
-        suppress = false
+        suppressAiRadios = false
         binding.creativityGroup.setOnCheckedChangeListener { _, checkedId ->
-            if (suppress) return@setOnCheckedChangeListener
+            if (suppressAiRadios) return@setOnCheckedChangeListener
             val chosen = when (checkedId) {
                 R.id.creativityPrecise -> AiCreativity.PRECISE
                 R.id.creativityFree -> AiCreativity.FREE
@@ -161,11 +175,19 @@ class AiSettingsFragment : Fragment() {
             }
             if (chosen == settings.creativity) return@setOnCheckedChangeListener
             com.novelcharacter.app.ui.character.CreativityChipRow.applyWithConflictGuard(this, chosen) {
-                // 취소·적용 어느 쪽이든 라디오를 실제 저장값으로 되돌린다(화면이 거짓이 되지 않게)
+                // 취소·적용 어느 쪽이든 라디오를 실제 저장값으로 되돌린다(화면이 거짓이 되지 않게).
+                //
+                // **근거 강도 라디오도 함께 되읽는다** — 그 가드의 [하한 낮추기]가 바로 그
+                // 값을 바꾼다. 종전에는 창작도 라디오만 되돌려서, 같은 화면 안의 근거 강도
+                // 카드가 **저장값과 다른 하한을 계속 보였다**(저장값은 옳고 화면만 거짓이다).
+                // 게다가 라디오는 이미 체크된 항목을 다시 눌러도 콜백이 안 돌아, 보이는 그
+                // 항목을 눌러 바로잡는 길도 막혀 있었다. 그 상태로 회전하면 복원된 옛 체크가
+                // 리스너를 울려 **낮춘 하한을 도로 써 버릴 수도 있다.**
                 if (_binding != null) {
-                    suppress = true
+                    suppressAiRadios = true
                     binding.creativityGroup.check(idOf(settings.creativity))
-                    suppress = false
+                    binding.confidenceGroup.check(confidenceIdOf(settings.minConfidence))
+                    suppressAiRadios = false
                 }
             }
         }
@@ -264,15 +286,15 @@ class AiSettingsFragment : Fragment() {
         }
 
         // 받아올 근거 강도 — 라디오를 고르는 순간이 곧 확정(저장 단계를 두지 않는다).
-        // 저장값 ↔ 버튼 매핑은 여기 한 곳뿐이라 선택지가 늘어도 어긋날 자리가 없다.
-        binding.confidenceGroup.check(
-            when (settings.minConfidence) {
-                CharacterFieldAiSuggester.Confidence.HIGH -> R.id.confidenceHigh
-                CharacterFieldAiSuggester.Confidence.MEDIUM -> R.id.confidenceMedium
-                else -> R.id.confidenceAll
-            }
-        )
+        // 저장값 ↔ 버튼 매핑은 [confidenceIdOf] 하나뿐이라 선택지가 늘어도 어긋날 자리가 없다.
+        suppressAiRadios = true
+        binding.confidenceGroup.check(confidenceIdOf(settings.minConfidence))
+        suppressAiRadios = false
         binding.confidenceGroup.setOnCheckedChangeListener { _, checkedId ->
+            // **되읽는 중이면 쓰지 않는다** — 창작도 가드가 하한을 바꾼 뒤 이 라디오를 다시
+            // 세울 때, 그리고 회전 복원이 옛 체크를 되살릴 때, 이 리스너가 울려 방금 정해진
+            // 값을 덮는다(창작도 쪽에는 같은 값이면 무시하는 가드가 있는데 여기만 없었다).
+            if (suppressAiRadios) return@setOnCheckedChangeListener
             settings.minConfidence = when (checkedId) {
                 R.id.confidenceHigh -> CharacterFieldAiSuggester.Confidence.HIGH
                 R.id.confidenceMedium -> CharacterFieldAiSuggester.Confidence.MEDIUM

@@ -336,7 +336,9 @@ class RequiredFieldsProvider : InsightProvider {
         val s = ctx.snapshot
         val out = mutableListOf<AssistantInsight>()
 
-        // ── 캐릭터 — 세계관이 작품을 거쳐 정해진다(작품이 없으면 셀 수 없다) ──
+        // ── 캐릭터 — 구역이 작품을 거쳐 정해진다. **작품이 없으면 전역 구역이다** ──
+        // (`null`은 *모른다*가 아니라 하나의 구역이고, 그 구역에도 필수 필드가 있을 수 있다 —
+        // 무소속 캐릭터의 편집 폼은 이미 그 필드를 그리고 저장 때 말한다.)
         val universeIdByNovel = s.novels.associate { it.id to it.universeId }
         val charGaps = RequiredFieldGaps.compute(
             definitions = s.fieldDefinitions,
