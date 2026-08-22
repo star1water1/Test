@@ -41,6 +41,10 @@ interface CharacterStateChangeDao {
     @Update
     suspend fun update(change: CharacterStateChange)
 
+    /** 일괄 갱신 — 사건 연쇄 이동이 캐릭터마다 한 번씩 치던 자리(R-54의 결). */
+    @Update
+    suspend fun updateAll(changes: List<CharacterStateChange>)
+
     @Delete
     suspend fun delete(change: CharacterStateChange)
 

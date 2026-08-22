@@ -127,8 +127,30 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         change: CharacterStateChange
     ) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        applyStateChangeToFields(characterId, universeRepository.getFieldsByUniverseList(universeId), change)
+    }
 
+    /**
+     * 같은 일을 하되 **세계관 필드 목록을 부르는 쪽이 든다.**
+     *
+     * 사건 연쇄 이동처럼 한 세계관의 캐릭터 수십·수백을 잇달아 동기화할 때, 위 함수는
+     * 캐릭터마다 필드 전량을 다시 읽는다(그 목록은 호출 사이에 바뀌지 않는다). 부르는 쪽이
+     * 세계관당 한 번만 읽어 넘기면 그 반복이 사라진다 —
+     * 단일 소스는 그대로다(아래 [applyStateChangeToFields] 하나가 판단을 든다).
+     */
+    suspend fun syncStateChangeToField(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        change: CharacterStateChange
+    ) = syncMutex.withLock {
+        applyStateChangeToFields(characterId, fields, change)
+    }
+
+    private suspend fun applyStateChangeToFields(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        change: CharacterStateChange
+    ) {
         when (change.fieldKey) {
             CharacterStateChange.KEY_BIRTH -> {
                 // year → birth_year 필드

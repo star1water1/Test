@@ -315,6 +315,13 @@ class CharacterRepository(
     suspend fun updateStateChange(change: CharacterStateChange) =
         characterStateChangeDao.update(change)
 
+    suspend fun updateAllStateChanges(changes: List<CharacterStateChange>) =
+        characterStateChangeDao.updateAll(changes)
+
+    /** 여러 캐릭터의 상태변화를 **한 번에** 읽는다 (R-54 — 900개씩 쪼갠다). */
+    suspend fun getChangesByCharacterIds(characterIds: List<Long>): List<CharacterStateChange> =
+        SqlInChunks.flat(characterIds) { characterStateChangeDao.getChangesByCharacterIds(it) }
+
     /**
      * 상태변화 이력 삭제 — 삭제 전 휴지통 스냅샷을 남긴다.
      *
