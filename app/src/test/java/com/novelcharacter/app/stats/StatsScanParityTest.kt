@@ -241,12 +241,12 @@ class StatsScanParityTest {
         return charGroups(p, s).map { fds ->
             val primaryFd = fds.first()
             val cfg = cfgs.getValue(primaryFd.id)
-            val rawValues = fds.flatMap { fd -> aug[fd.id].orEmpty() }.map { it.value }
             val universeIds = fds.map { it.universeId }.toSet()
             val relevantNovelIds = s.novels.filter { it.universeId in universeIds }
                 .map { it.id }.toSet()
             val totalCount = if (s.unassignedScope) s.characters.size
                 else s.characters.count { it.novelId in relevantNovelIds }
+            val rawValues = fds.flatMap { fd -> aug[fd.id].orEmpty() }.map { it.value }
             val dists = cfg.analyses
                 .filter { it.type != FieldStatsConfig.StatsType.NUMERIC }
                 .map { ValueDistributions.of(rawValues.flatMap { v -> keysOf(p, s, primaryFd, v, cfg) }).toList() }

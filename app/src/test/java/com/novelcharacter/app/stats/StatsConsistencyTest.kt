@@ -818,4 +818,53 @@ class StatsConsistencyTest {
         assertEquals(0f, stats.avgCharsPerEvent, 1e-6f)
         assertEquals(1, stats.orphanEventCount)
     }
+
+    // ===== R-34: 완성도의 분자는 분모 집합과의 교집합이다 =====
+
+    /**
+     * 작품을 '없음'으로 바꾼 캐릭터의 값은 **지워지지 않는다** — 값 병합 규약이 일부러
+     * 보존하고(*"폼이 비어도 기존 값을 전량 보존한다"*) 시험이 그것을 잠근다. 그 캐릭터는
+     * 모수(실재하는 작품을 경유해야 센다)에는 없으므로, 분자가 그 값을 세면 **완성도가
+     * 100%를 넘는다.**
+     */
+    private fun keptValueSnapshot() = snapshot(
+        characters = listOf(
+            Character(id = 1, name = "소속1", novelId = 1),
+            Character(id = 2, name = "소속2", novelId = 1),
+            Character(id = 3, name = "무소속", novelId = null)   // 값은 남아 있다
+        ),
+        fieldDefinitions = listOf(charField(10, "power", "힘")),
+        fieldValues = listOf(
+            CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+            CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "20"),
+            CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "30")
+        )
+    )
+
+    @Test
+    fun `데이터 개요 완성도가 100퍼센트를 넘지 않는다`() {
+        val detail = provider.computeDataOverview(keptValueSnapshot()).fieldCompletionByField.single()
+        assertEquals(2, detail.filledCount)
+        assertEquals(2, detail.totalCount)
+        assertEquals(100f, detail.completionRate, 1e-3f)
+    }
+
+    @Test
+    fun `필드 분석 완성도도 같은 모수를 쓴다`() {
+        val detail = provider.computeFieldAnalysis(keptValueSnapshot()).fieldCompletionByField.single()
+        assertEquals(2, detail.filledCount)
+        assertEquals(2, detail.totalCount)
+    }
+
+    /** 다른 세계관 정의를 가리키는 보관 값도 분자가 아니다 — 그 칸의 것이 아니다. */
+    @Test
+    fun `다른 구역 정의의 보관 값은 세지 않는다`() {
+        val s = snapshot(
+            characters = listOf(Character(id = 1, name = "A소속", novelId = 1)),
+            fieldDefinitions = listOf(charField(10, "power", "힘", universeId = uniB)),
+            fieldValues = listOf(CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"))
+        )
+        val detail = provider.computeDataOverview(s).fieldCompletionByField.single()
+        assertEquals(0, detail.filledCount)
+    }
 }

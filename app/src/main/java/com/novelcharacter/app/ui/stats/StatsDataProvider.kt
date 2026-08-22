@@ -1973,6 +1973,10 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
+            // **인사이트의 분자는 여기서 좁히지 않는다** — 그 카드는 채움 수와 **분포를 나란히**
+            // 보이므로 둘이 같은 모수에서 나와야 하고, 분포까지 좁히는 것은 *보관 값을 분포에서
+            // 뺄 것인가*라는 별개 판정이다(값 표는 순위·교차분석·패턴이 함께 쓰는 메모다).
+            // 완성도 두 자리(데이터 개요·필드 분석)는 비율만 보이므로 그 축부터 맞췄다.
             buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
                 mergedFieldDefIds = fds.map { it.id })
         }
@@ -2062,7 +2066,12 @@ class StatsDataProvider {
         rawCounts: Map<String, Int>,
         totalCount: Int,
         universeName: String,
-        mergedFieldDefIds: List<Long>
+        mergedFieldDefIds: List<Long>,
+        /**
+         * 채운 수 — **모수 집합과의 교집합**이어야 한다(R-34). 기본값은 값 표의 합이고,
+         * 그 축의 모수가 캐릭터 소속을 경유하지 않는 자리(사건·작품)에서만 쓴다.
+         */
+        filledCount: Int = rawCounts.values.sum()
     ): FieldInsightResult {
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
@@ -2092,7 +2101,7 @@ class StatsDataProvider {
             }
         }
         return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount,
-            rawCounts.values.sum(),
+            filledCount,
             universeName = universeName, mergedFieldDefIds = mergedFieldDefIds)
     }
 
@@ -2739,8 +2748,10 @@ class StatsDataProvider {
         // 모수는 세계관별로 한 번만 센다 — def마다 작품·캐릭터 전수를 필터하던 것(def×캐릭터
         // 곱)을 걷었다(S6 6차 — fa 완성도가 S6 4차에 간 그 길, 세는 조건 무변경).
         val charCountByUniverse = characterCountsByUniverse(s)
+        // **분자는 분모 집합과의 교집합이다**(R-34) — [filledCountsByFieldDef]가 그 셈을 든다.
+        val filledByDef = filledCountsByFieldDef(s)
         val fieldCompletionDetails = s.fieldDefinitions.filter { it.fieldType != FieldType.CALCULATED }.map { fd ->
-            val filled = countsByFieldDef[fd.id]?.values?.sum() ?: 0
+            val filled = filledByDef[fd.id] ?: 0
             val total = if (s.unassignedScope) s.characters.size
                 else charCountByUniverse[fd.universeId] ?: 0
             val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -2952,11 +2963,13 @@ class StatsDataProvider {
         // 걷었다(S6 4차). 세는 조건은 종전 그대로다: 캐릭터의 작품이 그 세계관 소속일 것.
         // (인사이트 모수도 같은 셈을 쓴다 — S6 5차에 헬퍼로 모았다.)
         val charCountByUniverse = characterCountsByUniverse(s)
+        // **분자는 분모 집합과의 교집합이다**(R-34) — 데이터 개요와 같은 헬퍼를 쓴다.
+        val filledByDef = filledCountsByFieldDef(s)
         val fieldCompletionDetails = s.fieldDefinitions
             .filter { it.fieldType != FieldType.CALCULATED }
             .map { fd ->
                 // 이 필드가 속한 유니버스의 캐릭터 수. 미배정 스코프 모수 = 스코프 캐릭터 전체
-                val filled = countsByFieldDef[fd.id]?.values?.sum() ?: 0
+                val filled = filledByDef[fd.id] ?: 0
                 val total = if (s.unassignedScope) s.characters.size
                     else charCountByUniverse[fd.universeId] ?: 0
                 val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -4600,6 +4613,50 @@ class StatsDataProvider {
      * 선계수 (S6 4차 완성도 → S6 5차 인사이트 모수가 같은 셈을 쓴다 — R-7).
      * 조건은 종전 그대로다: 캐릭터의 작품이 실재하고, 세는 칸은 그 작품의 세계관이다.
      */
+    /**
+     * 필드 정의 → **모수 집합 안에서** 그 필드를 채운 캐릭터 수 (R-34).
+     *
+     * R-34는 *"분자는 언제나 분모 집합과의 교집합이다 — 값 테이블은 그 칸의 것이 아닌 행을
+     * 정상적으로 담고 있다(N2 보존)"*이다. 완성도의 분자가 그 교집합을 안 쓰면 **작품을
+     * '없음'으로 바꾼 캐릭터의 보관 값**이 그대로 세어진다. 그 캐릭터는 분모
+     * ([characterCountsByUniverse]는 실재하는 작품을 경유해야 센다)에는 없으므로
+     * **완성도가 100%를 넘고**, 넘지 않을 때는 조용히 부풀기만 한다.
+     *
+     * 그 상태는 사고가 아니라 규약이 지키는 정상 상태다 — 값 병합 규약이 *"작품을 '없음'으로
+     * 바꾸면 폼이 비어도 기존 값을 전량 보존한다"*를 명시하고 시험이 그것을 잠근다.
+     *
+     * 세는 규칙을 [characterCountsByUniverse]와 **글자 그대로 맞춘 것이 요점이다** —
+     * 두 벌로 적으면 다시 갈린다.
+     */
+    private fun filledCountsByFieldDef(s: StatsSnapshot): HashMap<Long, Int> {
+        val filledDefIdsByChar = filledCharacterDefIds(s)
+        val out = HashMap<Long, Int>()
+        if (s.unassignedScope) {
+            // 미배정 스코프의 모수는 스코프 캐릭터 전체이고 정의도 스냅샷 전체를 쓴다
+            // (분모 쪽 `s.characters.size`와 같은 잣대).
+            val knownDefIds = s.fieldDefinitions.mapTo(HashSet()) { it.id }
+            for (ch in s.characters) {
+                val ids = filledDefIdsByChar[ch.id] ?: continue
+                for (defId in ids) if (defId in knownDefIds) out.merge(defId, 1, Int::plus)
+            }
+            return out
+        }
+        val defUniverse = s.fieldDefinitions.associate { it.id to it.universeId }
+        val universeByNovelId = HashMap<Long, Long?>()
+        for (n in s.novels) universeByNovelId[n.id] = n.universeId
+        for (ch in s.characters) {
+            val novelId = ch.novelId ?: continue
+            if (novelId !in universeByNovelId) continue
+            val universeId = universeByNovelId[novelId]
+            val ids = filledDefIdsByChar[ch.id] ?: continue
+            for (defId in ids) {
+                // **그 칸의 것만 센다** — 다른 구역의 정의를 가리키는 보관 값은 분자가 아니다.
+                if (defUniverse[defId] == universeId) out.merge(defId, 1, Int::plus)
+            }
+        }
+        return out
+    }
+
     private fun characterCountsByUniverse(s: StatsSnapshot): HashMap<Long?, Int> {
         val universeByNovelId = HashMap<Long, Long?>()
         for (n in s.novels) universeByNovelId[n.id] = n.universeId
