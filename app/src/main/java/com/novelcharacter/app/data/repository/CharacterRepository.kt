@@ -889,7 +889,9 @@ class CharacterRepository(
         var eventLinks = 0
         var images = 0
         SqlInChunks.each(ids) { chunk ->
-            relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
+            // 끝마다 따로 묻는다 — 한 질의에 목록을 두 번 실으면 변수가 2배가 되어 상한을 넘는다(R-54).
+            relIds.addAll(characterRelationshipDao.getRelationshipIdsByEnd1(chunk))
+            relIds.addAll(characterRelationshipDao.getRelationshipIdsByEnd2(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
             quotes += characterQuoteDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)
