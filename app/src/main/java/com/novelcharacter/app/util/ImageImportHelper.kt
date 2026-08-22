@@ -81,18 +81,34 @@ object ImageImportHelper {
                 !(settings.skipBelowEnabled && bytes.size < settings.skipBelowBytes)
 
             if (!shouldCompress) {
-                file.writeBytes(bytes)  // 원본 그대로(무손실)
+                // 원본 그대로(무손실) — **방향도 원본이 든 EXIF가 그대로 든다.**
+                // 여기서 픽셀을 세우면 그 순간 재인코딩이라 설정이 약속한 무손실이 깨진다.
+                // 대신 **그리는 자리**가 EXIF를 읽어 세운다([ImageOrientationIo] 머리말의 두 갈래).
+                file.writeBytes(bytes)
             } else {
                 val targetLongEdge = if (settings.capDimension) settings.maxLongEdgePx else HARD_MAX_LONG_EDGE
-                val bmp = decodeScaled(bytes, targetLongEdge)
-                if (bmp == null) {
+                val decoded = decodeScaled(bytes, targetLongEdge)
+                if (decoded == null) {
                     // 디코드 실패(손상·미지원 포맷) → 원본 폴백(변수 제어: 무단 유실 금지)
                     file.writeBytes(bytes)
                 } else {
+                    // **픽셀을 세워서 저장한다.** 이 갈래는 어차피 재인코딩이라 세우는 데
+                    // 추가 손실이 없고, 세우지 않으면 EXIF가 사라진 채 픽셀만 누운 파일이 남아
+                    // **원래 방향을 알 방법이 영영 없어진다**(되돌릴 수 없는 유실).
+                    val bmp = ImageOrientationIo.applyTo(decoded, ImageOrientationIo.readOrientation(bytes))
                     val ok = encodeBitmap(bmp, file, settings.qualityPercent)
                     bmp.recycle()
-                    if (!ok) {
-                        // 인코드 실패 → 원본 폴백(무단 유실 금지)
+                    // **이득이 없으면 원본을 쓴다** — `recompressToTemp`가 이미 세운 정책([SkipReason.NO_BENEFIT])을
+                    // 편입에도 그대로 적용한다. 투명도가 있으면 PNG 100으로 인코딩하므로 사진은
+                    // 원본보다 커질 수 있는데, 그때 압축을 켠 사용자가 얻는 것이 손실뿐이다.
+                    // **단, 세울 것이 있었으면 결과가 커도 쓴다** — 그쪽은 용량이 아니라 방향을
+                    // 바로잡는 일이고, 원본으로 되돌리면 그 교정이 통째로 사라진다.
+                    val straightened = !ExifOrientation.transformOf(
+                        ImageOrientationIo.readOrientation(bytes)
+                    ).isIdentity
+                    val encodedSize = if (ok) file.length() else 0L
+                    if (!ok || (!straightened && (encodedSize <= 0L || encodedSize >= bytes.size))) {
+                        // 인코드 실패 또는 이득 없음 → 원본 폴백(무단 유실 금지)
                         file.writeBytes(bytes)
                     }
                 }
@@ -133,8 +149,12 @@ object ImageImportHelper {
         val bytes = runCatching { sourceFile.readBytes() }.getOrNull()
             ?: return@withContext RecompressOutcome.skip(SkipReason.ERROR)
         val targetLongEdge = if (settings.capDimension) settings.maxLongEdgePx else HARD_MAX_LONG_EDGE
-        val bmp = decodeScaled(bytes, targetLongEdge)
+        val decoded = decodeScaled(bytes, targetLongEdge)
             ?: return@withContext RecompressOutcome.skip(SkipReason.CORRUPT)
+        // 여기도 재인코딩이므로 **세워서 쓴다.** 무손실로 들어온 원본을 나중에 재압축할 때
+        // 세우지 않으면, 그 순간 EXIF만 사라지고 픽셀은 누운 채 남아 방향을 영영 잃는다.
+        val sourceOrientation = ImageOrientationIo.readOrientation(bytes)
+        val bmp = ImageOrientationIo.applyTo(decoded, sourceOrientation)
 
         val tempName = "${prefix}${RECOMPRESS_TEMP_MARKER}${UUID.randomUUID()}.jpg"
         val temp = File(context.filesDir, tempName)
@@ -151,7 +171,10 @@ object ImageImportHelper {
         }
 
         val newSize = temp.length()
-        if (newSize <= 0L || newSize >= originalSize) {
+        // **세울 것이 있었으면 크기가 안 줄어도 이득이다** — 방향을 바로잡는 것이 그 자체로
+        // 결과물이고, 원본을 유지하면 그 교정이 사라진다(편입 쪽과 같은 판단).
+        val straightened = !ExifOrientation.transformOf(sourceOrientation).isIdentity
+        if (newSize <= 0L || (!straightened && newSize >= originalSize)) {
             temp.delete()
             return@withContext RecompressOutcome.skip(SkipReason.NO_BENEFIT)  // 이득 없음 → 원본 유지
         }
@@ -162,6 +185,12 @@ object ImageImportHelper {
      * 디코드된 비트맵을 [file]에 인코드한다(공용 코어). 성공 여부 반환.
      * 투명도가 있으면 PNG(무손실)로 보존 — JPEG는 알파를 버려 배경이 검게 됨.
      */
+    /**
+     * 인코딩 코어를 **회전에도 빌려준다** — 알파 보존·품질 규칙이 두 벌이 되지 않게(중복 금지).
+     * 회전은 사용자가 원본을 손보는 조작이라 품질을 낮추지 않는다(100).
+     */
+    internal fun encodeBitmapTo(bmp: Bitmap, file: File): Boolean = encodeBitmap(bmp, file, 100)
+
     private fun encodeBitmap(bmp: Bitmap, file: File, qualityPercent: Int): Boolean = try {
         FileOutputStream(file).use { out ->
             if (bmp.hasAlpha()) {

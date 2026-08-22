@@ -159,7 +159,11 @@ object AiImagePreparer {
             if (scaled != decoded) decoded.recycle()
             scaled
         }
-    }.getOrNull()
+    }.getOrNull()?.let {
+        // **AI에 보내는 것도 세워서 보낸다.** 누운 사진을 보내면 모델이 그대로 읽어
+        // 엉뚱한 태그를 붙이고, 그 결과가 화면과 어긋난다(화면은 세워 보여 준다).
+        ImageOrientationIo.applyFileOrientation(file.absolutePath, it)
+    }
 
     private const val MAX_SAMPLE = 1024
 }

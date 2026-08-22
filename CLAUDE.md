@@ -15,6 +15,7 @@
 | 지형 파악 — 계층·데이터 모델·단일 소스·확장점 | `docs/architecture_2026-07.md` |
 | 확장 한계·성능 — 목표 규모, 무엇이 먼저 무너지는가 | `docs/scalability_performance_2026-07.md` |
 | 사용자가 확정한 것 — **다시 묻지 않는다** | `docs/judgment_confirmations_2026-08.md` |
+| 이미지 방향(EXIF)·인앱 회전 | `docs/image_orientation_2026-08.md` |
 | 백로그 본문 · 실기기 절차 원문 (닫힌 문서) | `docs/remaining_work_2026-07.md` |
 | 2026.08.19 이전의 경위 (닫힌 문서들) | `docs/remaining_work_2026-07.md` 「문서 이력」 · `docs/session_log_2026-07.md` · `docs/session_roadmap_2026-08.md` |
 

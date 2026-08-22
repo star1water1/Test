@@ -30,6 +30,9 @@ class ImageViewerFragment : Fragment() {
     private var indexText: TextView? = null
     private var appDir: java.io.File? = null
     private var pageChangeCallback: ViewPager2.OnPageChangeCallback? = null
+    private var rotateButton: ImageView? = null
+    /** 회전 중에는 다시 누르지 못하게 한다 — 같은 파일에 두 번 겹쳐 쓰면 결과가 정해지지 않는다. */
+    private var rotating = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -71,6 +74,29 @@ class ImageViewerFragment : Fragment() {
             contentDescription = getString(R.string.close_button_desc)
         }
         root.addView(closeBtn)
+
+        // 회전 버튼 — **한 번 누울 때 손쓸 길이 이것뿐이다.**
+        // `BitmapFactory`가 EXIF를 무시하던 동안 압축을 켜고 들여온 사진은 방향 정보가 사라진 채
+        // 픽셀만 누워 저장됐고(그 부류는 자동으로 되살릴 방법이 없다), 앱에는 회전 수단이
+        // 하나도 없었다. 여기서 90도씩 돌려 사용자가 직접 바로잡는다.
+        val rotateBtn = ImageView(requireContext()).apply {
+            setImageResource(R.drawable.ic_rotate_right)
+            val pad = (12 * density).toInt()
+            setPadding(pad, pad, pad, pad)
+            setColorFilter(android.graphics.Color.WHITE)
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                topMargin = (16 * density).toInt()
+                rightMargin = (8 * density).toInt()
+            }
+            setOnClickListener { rotateCurrent() }
+            contentDescription = getString(R.string.image_rotate_desc)
+        }
+        rotateButton = rotateBtn
+        root.addView(rotateBtn)
 
         // Index indicator
         val idxText = TextView(requireContext()).apply {
@@ -182,14 +208,55 @@ class ImageViewerFragment : Fragment() {
             }
             options.inSampleSize = inSampleSize
             options.inJustDecodeBounds = false
-            BitmapFactory.decodeFile(path, options)
+            val decoded = BitmapFactory.decodeFile(path, options) ?: return null
+            // 썸네일과 **같은 통로**로 EXIF 방향을 적용한다 — 한쪽만 적용하면 목록과 뷰어의
+            // 방향이 달라지고, 그때 사용자는 어느 쪽이 진짜인지 알 수 없다.
+            com.novelcharacter.app.util.ImageOrientationIo.applyFileOrientation(path, decoded)
         } catch (e: Exception) {
             null
         }
     }
 
+    /**
+     * 지금 보고 있는 이미지를 시계 방향 90도 돌려 **파일에 반영한다.**
+     *
+     * **먼저 EXIF 태그만 고쳐 본다** — JPEG면 픽셀을 다시 쓰지 않아 화질이 한 톨도 안 준다.
+     * 네 번 돌려 제자리로 와도 원본 그대로다. 태그를 못 쓰는 포맷(투명도가 있어 PNG로 인코딩된
+     * 파일 — 이 저장소는 파일명을 언제나 `.jpg`로 짓지만 실제 포맷은 내용이 정한다)일 때만
+     * 픽셀을 돌려 다시 쓴다.
+     *
+     * 되돌리기는 **회전 버튼 자신이다** — 세 번 더 누르면 제자리다. 그래서 확인창을 두지 않는다
+     * (R-4가 요구하는 것은 *되돌릴 수 없는* 처분의 사전 고지다).
+     */
+    private fun rotateCurrent() {
+        if (rotating) return
+        val position = viewPager?.currentItem ?: return
+        val path = imagePaths.getOrNull(position) ?: return
+        if (!com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir)) return
+        rotating = true
+        rotateButton?.isEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                com.novelcharacter.app.util.ImageRotation.rotate(path, 90)
+            }
+            if (!isAdded || view == null) return@launch
+            rotating = false
+            rotateButton?.isEnabled = true
+            if (ok) {
+                // 썸네일 캐시는 경로를 키로 들고 있어 그대로 두면 옛 방향이 목록에 남는다.
+                com.novelcharacter.app.util.CharacterImageLoader.contentChanged()
+                viewPager?.adapter?.notifyItemChanged(position)
+            } else {
+                android.widget.Toast.makeText(
+                    requireContext(), R.string.image_rotate_failed, android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
     override fun onDestroyView() {
         pageChangeCallback?.let { viewPager?.unregisterOnPageChangeCallback(it) }
+        rotateButton = null
         pageChangeCallback = null
         viewPager?.adapter = null
         viewPager = null

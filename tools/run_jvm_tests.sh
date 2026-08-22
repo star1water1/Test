@@ -295,6 +295,7 @@ $MAIN/util/ImageAdoptionPlanner.kt
 $MAIN/util/ImageLinkGroupPlanner.kt
 $MAIN/util/ImageTagApplyPlanner.kt
 $MAIN/util/SqlInChunks.kt
+$MAIN/util/ExifOrientation.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
@@ -519,6 +520,7 @@ $TEST/util/ImageAdoptionPlannerTest.kt
 $TEST/util/ImageLinkGroupPlannerTest.kt
 $TEST/util/ImageTagApplyPlannerTest.kt
 $TEST/util/SqlInChunksTest.kt
+$TEST/util/ExifOrientationTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt

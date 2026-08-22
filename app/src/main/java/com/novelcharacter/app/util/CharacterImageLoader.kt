@@ -36,6 +36,21 @@ object CharacterImageLoader {
      * 유지하는 가장 큰 샘플(과다 축소로 인한 흐림 없음). 기존 사이트를 이 유틸로 통합해도 화질이 보존된다.
      * **IO 디스패처에서 호출**할 것(디스크·디코드).
      */
+    /**
+     * 캐시 세대 — **파일 내용이 바뀌면 올린다.** 썸네일 캐시는 화면마다 따로 소유하므로
+     * (아래 `loadCharacterThumbnail`의 `cache` 인자) 한 자리에서 비워 줄 수가 없다. 대신
+     * 키에 이 값을 섞어, 올리는 순간 **모든 캐시의 옛 항목이 자연히 안 맞게** 만든다.
+     *
+     * 회전은 드문 조작이라 전량 무효가 비싸지 않고, 놓치면 목록이 옛 방향을 계속 보여 준다.
+     */
+    private val generation = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 저장된 이미지의 **내용**이 바뀌었음을 알린다(경로는 그대로일 때 — 예: 인앱 회전). */
+    fun contentChanged() { generation.incrementAndGet() }
+
+    /** 캐시 키에 섞을 현재 세대. */
+    fun cacheGeneration(): Int = generation.get()
+
     fun decodeThumbnail(path: String, filesDir: File, reqPx: Int = 128): Bitmap? = runCatching {
         val file = File(path)
         // 봉쇄 판정은 [ImagePathMatch.isInside]가 든다 (B-106 ⓐ · R-39) — 던지지 않고,
@@ -58,7 +73,11 @@ object CharacterImageLoader {
         val maxPixels = 4_000_000L
         while (sample < 1024 && (w.toLong() / sample) * (h.toLong() / sample) > maxPixels) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        BitmapFactory.decodeFile(path, opts)
+        val decoded = BitmapFactory.decodeFile(path, opts) ?: return@runCatching null
+        // **EXIF 방향을 적용한다.** `BitmapFactory`는 그 값을 무시하므로, 적용하지 않으면
+        // 세로로 찍은 사진(폰 카메라는 픽셀을 세우지 않고 방향만 적는다)이 전부 눕는다.
+        // 편입 때 이미 세워 저장된 파일은 방향이 NORMAL이라 여기서 아무 일도 하지 않는다.
+        ImageOrientationIo.applyFileOrientation(path, decoded)
     }.getOrNull()
 }
 
@@ -94,7 +113,9 @@ fun ImageView.loadCharacterThumbnail(
     cache: LruCache<String, Bitmap>? = null,
     isValid: () -> Boolean = { true }
 ): Job? {
-    val key = if (imagePath.isNullOrBlank()) null else "$reqPx@$imagePath"
+    // 세대를 키에 섞는다 — 회전 등으로 내용이 바뀌면 옛 항목이 저절로 안 맞는다.
+    val key = if (imagePath.isNullOrBlank()) null
+        else "${CharacterImageLoader.cacheGeneration()}/$reqPx@$imagePath"
     if (key != null) {
         val hit = cache?.get(key)
         if (hit != null) {

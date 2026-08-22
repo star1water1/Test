@@ -61,6 +61,11 @@ class NovelListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             // 공용 유틸로 라우팅 — 압축 설정(용량↔화질) 적용. 설정은 배치당 1회 로드.
             val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
+            // **실패를 고지한다.** 종전에는 `savedPath == null`에 else가 없어 조용히 빠졌다 —
+            // 5장 골라 3장만 붙어도 아무 말이 없고, 전부 실패하면 화면이 안 변해 **취소와
+            // 구별되지 않았다.** 캐릭터 이미지 줄은 같은 유틸을 쓰면서 이미 고지하고 있었다
+            // (`CharacterImageStripController`) — 같은 조작이 화면마다 다르게 굴면 안 된다.
+            var anyFailed = false
             for (uri in uris) {
                 val savedPath = try {
                     com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "novel", settings)
@@ -69,12 +74,21 @@ class NovelListFragment : Fragment() {
                 }
                 if (savedPath != null) {
                     pendingImagePaths.add(savedPath)
+                } else {
+                    anyFailed = true
                 }
             }
             if (isAdded) {
                 novelImageAdapter?.notifyDataSetChanged()
                 if (pendingImagePaths.isNotEmpty()) {
                     novelImageRecyclerView?.visibility = View.VISIBLE
+                }
+                if (anyFailed) {
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        com.novelcharacter.app.R.string.image_save_failed,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }

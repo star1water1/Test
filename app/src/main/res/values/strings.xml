@@ -334,6 +334,8 @@
     <string name="no_grade_selected">등급 미정</string>
     <string name="hint_multi_text_format">%s (쉼표로 구분)</string>
     <string name="auto_calculated">%s: (자동 계산)</string>
+    <string name="image_rotate_desc">시계 방향으로 90도 돌리기</string>
+    <string name="image_rotate_failed">이미지를 돌리지 못했습니다</string>
     <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="confirm_delete_field">\"%s\" 필드를 삭제하시겠습니까?</string>
     <string name="delete_field_warning_title">필드 삭제 경고</string>
