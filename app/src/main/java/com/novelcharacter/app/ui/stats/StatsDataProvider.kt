@@ -4734,7 +4734,6 @@ class StatsDataProvider {
 
         val novelMap = s.novels.associateBy { it.id }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.fieldDefinitions.associateBy { it.id }
         val charFieldValues = s.fieldValues.groupBy { it.characterId }
 
         // 세계관별 CALCULATED 필드와 수식을 미리 파싱
@@ -4759,10 +4758,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[novel.universeId] ?: continue
 
             val values = charFieldValues[char.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
@@ -4798,7 +4805,6 @@ class StatsDataProvider {
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.eventFieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.eventFieldDefinitions.associateBy { it.id }
         val valuesByEvent = s.eventFieldValues.groupBy { it.eventId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
@@ -4821,10 +4827,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[universeId] ?: continue
 
             val values = valuesByEvent[event.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
@@ -4862,7 +4876,6 @@ class StatsDataProvider {
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.novelFieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.novelFieldDefinitions.associateBy { it.id }
         val valuesByNovel = s.novelFieldValues.groupBy { it.novelId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
@@ -4885,10 +4898,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[universeId] ?: continue
 
             val values = valuesByNovel[novel.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)

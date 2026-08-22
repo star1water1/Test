@@ -461,7 +461,14 @@ object FolderRoundtripPlanner {
     fun shouldDescend(folders: List<String>): Boolean {
         if (folders.isEmpty()) return true
         if (folders[0] == FOLDER_PROCESSED) return false
-        return folders.size < MAX_SCAN_DEPTH
+        // **`<=`다** — 인자는 *그 폴더 자신의 경로*이고 답은 *그 안을 나열할 것인가*이므로,
+        // 깊이 2의 파일을 보려면 깊이 2의 폴더 안으로 들어가야 한다.
+        // 종전 `<`는 `_미배정/세트-1/`·`_분리됨/세트-1/` **안을 한 번도 나열하지 않았고**,
+        // 그래서 [classify]가 정상으로 받는 [Location.UnassignedSet]·[Location.DetachedSet]과
+        // 그 위에 선 세트 규칙 전부가 실제 스캔에서 **도달 불가**였다 — 내보내기는 바로 그
+        // 자리에 파일을 쓰는데(`FolderExportPlanner`) 받아오기가 그것을 못 봤다(왕복이 끊겼다).
+        // 경계는 [classify]의 `> MAX_SCAN_DEPTH`와 짝이어야 한다: 그쪽이 받는 깊이는 여기가 반드시 나열한다.
+        return folders.size <= MAX_SCAN_DEPTH
     }
 
     /** 폴더 경로 → 자리 해석. */

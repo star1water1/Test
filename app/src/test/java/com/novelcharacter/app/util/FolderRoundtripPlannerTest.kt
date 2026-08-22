@@ -61,7 +61,36 @@ class FolderRoundtripPlannerTest {
         assertTrue(FolderRoundtripPlanner.shouldDescend(listOf("_미배정")))
         assertTrue(FolderRoundtripPlanner.shouldDescend(listOf("가온")))
         assertEquals(false, FolderRoundtripPlanner.shouldDescend(listOf("_처리됨")))
-        assertEquals(false, FolderRoundtripPlanner.shouldDescend(listOf("_미배정", "세트1")))
+        // 세트 폴더 **안**을 나열해야 그 안의 파일이 보인다 — 내보내기가 그 자리에 쓴다.
+        assertTrue(FolderRoundtripPlanner.shouldDescend(listOf("_미배정", "세트1")))
+        assertTrue(FolderRoundtripPlanner.shouldDescend(listOf("_분리됨", "세트1")))
+        // 그 아래는 규약 밖이다(classify가 TooDeep으로 받는 깊이).
+        assertEquals(false, FolderRoundtripPlanner.shouldDescend(listOf("_미배정", "세트1", "더")))
+    }
+
+    /**
+     * **두 판정이 짝이어야 한다** — [FolderRoundtripPlanner.classify]가 정상으로 받는 깊이는
+     * [FolderRoundtripPlanner.shouldDescend]가 **반드시 나열한다.**
+     *
+     * 이 불변식이 없던 동안 둘이 한 칸씩 어긋나 있었고, 그래서 `_미배정/<세트>/`·
+     * `_분리됨/<세트>/`를 다루는 규칙 전부가 **도달 불가 코드**였다(내보내기는 그 자리에 쓰는데
+     * 받아오기가 그 폴더 안을 열지 않았다). 함수를 따로 재는 시험은 그 어긋남을 못 본다.
+     */
+    @Test fun shouldDescend_reachesEveryDepthClassifyAccepts() {
+        val paths = listOf(
+            listOf("_미배정", "세트1"), listOf("_분리됨", "세트1"),
+            listOf("_미배정"), listOf("_분리됨"), listOf("_공유"), listOf("_기타"), listOf("가온")
+        )
+        for (path in paths) {
+            val location = FolderRoundtripPlanner.classify(path)
+            if (location is FolderRoundtripPlanner.Location.TooDeep) continue
+            if (location is FolderRoundtripPlanner.Location.Skipped) continue
+            // 그 자리에 놓인 파일을 보려면 그 폴더 안으로 들어가야 한다.
+            assertTrue(
+                "classify는 $path 를 $location 로 받는데 나열이 그 안으로 안 내려간다",
+                FolderRoundtripPlanner.shouldDescend(path)
+            )
+        }
     }
 
     @Test fun processedFolder_isNotEvenCounted() {
