@@ -843,7 +843,12 @@ class DynamicFieldFormBuilder(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                         )
-                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                        // **음수를 받는다** — 값을 만드는 세 공급원(랜덤 생성·AI 추천·엑셀 들이기)이
+                        // 전부 음수를 낼 수 있고 저장도 받는데, **유일한 편집기인 이 칸만** 못 받았다
+                        // (부호 플래그가 없으면 키보드에 마이너스가 없고 붙여넣기도 걸린다).
+                        // 같은 창의 랜덤 범위 칸과 형제 화면들은 이미 부호를 켜 두었다.
+                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                            InputType.TYPE_NUMBER_FLAG_SIGNED
                     }
                     inputLayout.addView(editText)
                     val numberButtons = buildList {

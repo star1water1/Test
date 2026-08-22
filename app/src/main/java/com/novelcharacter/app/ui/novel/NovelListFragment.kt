@@ -633,7 +633,11 @@ class NovelListFragment : Fragment() {
                 borderColor = dialogBinding.editBorderColor.text.toString().trim(),
                 imagePaths = org.json.JSONArray(pendingImagePaths).toString(),
                 imageMode = selectedImageMode,
-                imageCharacterId = selectedImageCharId,
+                // **모드와 참조는 한 벌이다** — 세계관 폼이 이미 지키는 불변식이고(`finalCharId`),
+                // 여기만 조건 없이 실어 *직접 등록* 작품에도 옛 캐릭터 id가 남았다. 그 남은 id가
+                // 그 캐릭터를 지울 때 정리 질의에 걸려 **표지를 잃게 했다**(정리 쪽도 함께 고쳤다).
+                imageCharacterId = selectedImageCharId
+                    .takeIf { selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER },
                 standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
             )
             // 커버 집합도 같은 시점의 폼 상태여야 고지 건수와 실제 반영 범위가 갈리지 않는다.

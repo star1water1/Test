@@ -73,14 +73,32 @@ interface NovelDao {
     @Query("UPDATE novels SET isPinned = :isPinned WHERE id = :id")
     suspend fun setPinned(id: Long, isPinned: Boolean)
 
-    /** 삭제된 캐릭터를 참조하는 imageCharacterId를 null로 정리 */
+    /**
+     * 삭제된 캐릭터를 참조하는 `imageCharacterId`를 null로 정리.
+     *
+     * **모드는 그 캐릭터에 매달린 모드일 때만 내린다.** 종전에는 조건 없이 `'none'`으로
+     * 되돌려, *직접 등록*(custom)한 그림을 쓰는 작품이 **엉뚱한 캐릭터 삭제 한 번에
+     * 표지를 잃었다** — 폼이 모드와 상관없이 `imageCharacterId`를 함께 싣기 때문에
+     * 그 값은 custom 작품에도 남아 있을 수 있다(그 자리도 이 판에서 함께 막았다).
+     * 무작위 모드는 특정 캐릭터에 매달리지 않으므로 역시 그대로 둔다.
+     */
     // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
-    @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
+    // SQL 쌍둥이: Novel.IMAGE_MODE_SELECT_CHARACTER
+    @Query(
+        "UPDATE novels SET imageCharacterId = NULL, " +
+            "imageMode = CASE WHEN imageMode = 'select_character' THEN 'none' ELSE imageMode END " +
+            "WHERE imageCharacterId = :characterId"
+    )
     suspend fun clearImageCharacterRef(characterId: Long)
 
-    /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) */
+    /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) — 판정은 [clearImageCharacterRef]와 같다. */
     // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
-    @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId IN (:characterIds)")
+    // SQL 쌍둥이: Novel.IMAGE_MODE_SELECT_CHARACTER
+    @Query(
+        "UPDATE novels SET imageCharacterId = NULL, " +
+            "imageMode = CASE WHEN imageMode = 'select_character' THEN 'none' ELSE imageMode END " +
+            "WHERE imageCharacterId IN (:characterIds)"
+    )
     suspend fun clearImageCharacterRefs(characterIds: List<Long>)
 
     @Query("DELETE FROM novels")
