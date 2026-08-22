@@ -638,12 +638,6 @@ class ImageManagerViewModel(
             val service = SystemMaintenanceService(getApplication(), db)
             val result = service.cleanOrphanImageFiles()
             load()
-            // AI 태그 제안도 **여기서** 건다 — 화면이 죽어 있어도 걸려야 한다(결과는
-            // `folderTagResult`가 들고 있다가 다시 선 화면에 준다). 종전에는 컨트롤러의 콜백이
-            // 걸었고, 그 콜백은 회전하면 `isAdded` 검사에서 빠져나가 제안이 통째로 사라졌다.
-            val aiSkipped = aiTagFolders.isNotEmpty() &&
-                !runFolderTagSuggest(bundle, result, aiTagFolders)
-            organizeResult.value = OrganizeOutcome(result, aiSkipped)
             onDone(result)
         }
     }
@@ -1759,6 +1753,12 @@ class ImageManagerViewModel(
                 )
             }
             load()
+            // AI 태그 제안도 **여기서** 건다 — 화면이 죽어 있어도 걸려야 한다(결과는
+            // `folderTagResult`가 들고 있다가 다시 선 화면에 준다). 종전에는 컨트롤러의 콜백이
+            // 걸었고, 그 콜백은 회전하면 `isAdded` 검사에서 빠져나가 제안이 통째로 사라졌다.
+            val aiSkipped = aiTagFolders.isNotEmpty() &&
+                !runFolderTagSuggest(bundle, result, aiTagFolders)
+            organizeResult.value = OrganizeOutcome(result, aiSkipped)
             onDone(result)
         }
     }
