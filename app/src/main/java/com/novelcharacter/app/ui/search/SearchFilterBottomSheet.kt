@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
@@ -17,19 +18,39 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetSearchFilterBinding
 import kotlinx.coroutines.launch
 
+/**
+ * 검색의 필드 필터 시트.
+ *
+ * ## 꽂는 배선이 없다 (R-65)
+ *
+ * 종전에는 호스트가 람다 넷(재료 로더 셋 + 적용 하나)을 인스턴스에 꽂았다. 회전하면
+ * FragmentManager가 이 시트를 **기본 생성자로 다시 세우고** 호스트는 다시 꽂지 않았다 —
+ * 시트는 빈 스피너로 멀쩡히 떠 있고 [적용]은 아무 데도 닿지 않는다. **말없는 무동작이라
+ * 고장과 구분되지 않는다.** 되살릴 배선을 다시 세우는 대신 **배선 자체를 없앴다**:
+ * 재료도 처분도 [GlobalSearchViewModel]에 있고, 이 시트는 `childFragmentManager`로 뜨므로
+ * 부모의 ViewModelStore가 곧 이 시트의 것이다(호스트와 **같은 인스턴스**를 든다).
+ *
+ * ## 고르던 것도 지킨다 (R-41)
+ *
+ * 재료는 비동기라 회전 뒤 스피너·칩이 다시 서기 전까지는 고른 것을 되살릴 자리가 없다.
+ * 그래서 **고른 세계관·필드·값**을 [onSaveInstanceState]로 들고 있다가 각 목록이 선 뒤에
+ * 되살린다. 회전이 지키는 것은 저장 가능한 한 벌이 아니라 *고르던 것*이다.
+ */
 class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
     private var _binding: BottomSheetSearchFilterBinding? = null
     private val binding get() = _binding!!
 
+    private val viewModel: GlobalSearchViewModel by viewModels(ownerProducer = { requireParentFragment() })
+
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
 
-    var onFilterApplied: ((FieldFilter) -> Unit)? = null
-    var loadUniverses: (suspend () -> List<Universe>)? = null
-    var loadFields: (suspend (Long) -> List<FieldDefinition>)? = null
-    var loadFieldValues: (suspend (Long) -> List<String>)? = null
+    /** 회전 전에 고르던 것 — 목록이 다시 선 뒤에 이 값으로 되살린다. `null`이면 되살릴 것이 없다. */
+    private var pendingUniverseId: Long? = null
+    private var pendingFieldId: Long? = null
+    private var pendingValues: Set<String> = emptySet()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -40,6 +61,11 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        savedInstanceState?.let { state ->
+            if (state.containsKey(STATE_UNIVERSE_ID)) pendingUniverseId = state.getLong(STATE_UNIVERSE_ID)
+            if (state.containsKey(STATE_FIELD_ID)) pendingFieldId = state.getLong(STATE_FIELD_ID)
+            pendingValues = state.getStringArray(STATE_VALUES)?.toSet() ?: emptySet()
+        }
         setupUniverseSpinner()
         setupFieldSpinner()
         setupApplyButton()
@@ -47,7 +73,7 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupUniverseSpinner() {
         viewLifecycleOwner.lifecycleScope.launch {
-            universes = loadUniverses?.invoke() ?: emptyList()
+            universes = viewModel.getAllUniverses()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
 
@@ -67,21 +93,29 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
             binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
                     val universe = universes.getOrNull(position) ?: return
+                    // 되살릴 자리를 **떠나는 순간** 들고 있던 선택을 버린다 — 안 버리면 다른
+                    // 세계관의 목록에 옛 선택이 되살아난다(같은 이름의 값이 겹칠 수 있다).
+                    if (universe.id != pendingUniverseId) {
+                        pendingUniverseId = null
+                        pendingFieldId = null
+                        pendingValues = emptySet()
+                    }
                     loadFieldsForUniverse(universe.id)
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
-            // 첫 번째 세계관의 필드 로드
-            if (universes.isNotEmpty()) {
-                loadFieldsForUniverse(universes[0].id)
-            }
+            // 회전 전에 고르던 세계관이 있으면 그것을, 없으면 첫 번째를 편다.
+            // (스피너의 첫 선택 통지도 같은 자리를 부르므로 되살리기는 **여러 번 불려도 같은 결과**여야 한다.)
+            val restoreIndex = pendingUniverseId?.let { id -> universes.indexOfFirst { it.id == id } } ?: -1
+            if (restoreIndex > 0) binding.spinnerUniverse.setSelection(restoreIndex)
+            loadFieldsForUniverse(universes[restoreIndex.coerceAtLeast(0)].id)
         }
     }
 
     private fun loadFieldsForUniverse(universeId: Long) {
         viewLifecycleOwner.lifecycleScope.launch {
-            fields = loadFields?.invoke(universeId) ?: emptyList()
+            fields = viewModel.getFieldDefinitions(universeId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
 
@@ -102,15 +136,19 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
             binding.spinnerField.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
                     val field = fields.getOrNull(position) ?: return
+                    if (field.id != pendingFieldId) {
+                        pendingFieldId = null
+                        pendingValues = emptySet()
+                    }
                     loadValuesForField(field.id)
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
-            // 첫 번째 필드의 값 로드
-            if (fields.isNotEmpty()) {
-                loadValuesForField(fields[0].id)
-            }
+            // 세계관과 같은 결 — 고르던 필드가 남아 있으면 그것을 편다.
+            val restoreIndex = pendingFieldId?.let { id -> fields.indexOfFirst { it.id == id } } ?: -1
+            if (restoreIndex > 0) binding.spinnerField.setSelection(restoreIndex)
+            loadValuesForField(fields[restoreIndex.coerceAtLeast(0)].id)
         }
     }
 
@@ -120,7 +158,7 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
     private fun loadValuesForField(fieldDefId: Long) {
         viewLifecycleOwner.lifecycleScope.launch {
-            fieldValues = loadFieldValues?.invoke(fieldDefId) ?: emptyList()
+            fieldValues = viewModel.getFieldValues(fieldDefId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
 
@@ -136,7 +174,8 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
                 val chip = Chip(ctx).apply {
                     text = value
                     isCheckable = true
-                    isChecked = false
+                    // 회전 전에 고른 값은 그대로 골라진 채로 선다(칩은 동적이라 뷰 상태 저장이 못 든다).
+                    isChecked = value in pendingValues
                     textSize = 13f
                 }
                 binding.valueChipGroup.addView(chip)
@@ -173,9 +212,25 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
                 fieldKey = field.key
             )
 
-            onFilterApplied?.invoke(filter)
+            viewModel.addFieldFilter(filter)
             dismiss()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val b = _binding ?: return
+        universes.getOrNull(b.spinnerUniverse.selectedItemPosition)?.let {
+            outState.putLong(STATE_UNIVERSE_ID, it.id)
+        }
+        fields.getOrNull(b.spinnerField.selectedItemPosition)?.let {
+            outState.putLong(STATE_FIELD_ID, it.id)
+        }
+        val checked = (0 until b.valueChipGroup.childCount)
+            .mapNotNull { b.valueChipGroup.getChildAt(it) as? Chip }
+            .filter { it.isChecked }
+            .map { it.text.toString() }
+        outState.putStringArray(STATE_VALUES, checked.toTypedArray())
     }
 
     override fun onDestroyView() {
@@ -185,5 +240,8 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "SearchFilterBottomSheet"
+        private const val STATE_UNIVERSE_ID = "state_universe_id"
+        private const val STATE_FIELD_ID = "state_field_id"
+        private const val STATE_VALUES = "state_values"
     }
 }
