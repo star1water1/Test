@@ -2559,6 +2559,21 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         db.eventFieldValueDao().getValuesByEventList(eventId)
 
     /**
+     * 사건 편집 자리에서 만든 사건 필드를 심는다(P5) — 연표판([com.novelcharacter.app.ui.timeline.TimelineViewModel])과 같은 규칙.
+     * 쓰기를 [viewModelScope]에서 돌리는 이유도 같다(호출자 취소가 삽입을 지우지 않게).
+     */
+    suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition): Long =
+        viewModelScope.async { universeRepository.insertField(field) }.await()
+
+    /**
+     * 사건 편집 창이 **겹침 검사에 쓸 이웃 사건**을 묻는 통로 — 연표 탭과 같은 세 갈래다
+     * (작품 → 세계관 → 전체). 이 화면에서도 사건을 편집할 수 있으므로 같은 통로가 필요하다.
+     */
+    suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
+    suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
+    suspend fun getAllEventsList() = timelineRepository.getAllEventsList()
+
+    /**
      * 사건 삭제 — 캐릭터 화면에서도 연표 탭과 **같은 경로**로 지운다.
      *
      * 종전에는 사건을 지우려면 반드시 연표 탭으로 가야 했다(원칙 04 — 조작 마찰).
