@@ -222,6 +222,10 @@ class SettingsFragment : Fragment() {
         }
 
         // 정리 폴더 왕복 — 이미지 탭에만 있던 것을 설정에서도 바로 쓸 수 있게(사용자 요청).
+        // **결과 관측을 여기서도 건다** — 이미지 탭과 같은 배선이라야 반영 도중 회전해도
+        // 결과 창과 AI 태그 검토 시트가 다시 선 화면에 닿는다(B-136과 같은 이유).
+        organizeFolder.observeFolderTagRun()
+        organizeFolder.observeOrganizeResult()
         binding.organizeFolderExportRow.setOnClickListener { organizeFolder.startOrganizeFolderExport() }
         binding.organizeFolderImportRow.setOnClickListener { organizeFolder.startOrganizeFolderImport() }
         binding.organizeFolderSettingsRow.setOnClickListener { organizeFolder.showOrganizeFolderSettings() }

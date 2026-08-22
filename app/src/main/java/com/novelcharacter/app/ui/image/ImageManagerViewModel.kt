@@ -638,6 +638,12 @@ class ImageManagerViewModel(
             val service = SystemMaintenanceService(getApplication(), db)
             val result = service.cleanOrphanImageFiles()
             load()
+            // AI 태그 제안도 **여기서** 건다 — 화면이 죽어 있어도 걸려야 한다(결과는
+            // `folderTagResult`가 들고 있다가 다시 선 화면에 준다). 종전에는 컨트롤러의 콜백이
+            // 걸었고, 그 콜백은 회전하면 `isAdded` 검사에서 빠져나가 제안이 통째로 사라졌다.
+            val aiSkipped = aiTagFolders.isNotEmpty() &&
+                !runFolderTagSuggest(bundle, result, aiTagFolders)
+            organizeResult.value = OrganizeOutcome(result, aiSkipped)
             onDone(result)
         }
     }
@@ -1640,10 +1646,20 @@ class ImageManagerViewModel(
 
     fun setOrganizeFolderUri(uri: String?, onDone: () -> Unit = {}) {
         viewModelScope.launch {
-            ImageSettingsStore(getApplication()).setOrganizeFolderUri(uri)
-            // 폴더가 바뀌면 지문·진입 감지 캐시는 의미를 잃는다(별칭은 폴더와 무관해 남긴다).
-            withContext(Dispatchers.IO) {
-                com.novelcharacter.app.util.FolderRoundtripPrefs.clearFolderScopedState(getApplication())
+            val store = ImageSettingsStore(getApplication())
+            val previous = store.getOrganizeFolderUri()
+            store.setOrganizeFolderUri(uri)
+            // 폴더가 **바뀌었을 때만** 지문을 버린다(별칭은 폴더와 무관해 언제나 남긴다).
+            //
+            // 종전에는 지정할 때마다 무조건 지웠는데, 설정 창에서 현재 경로를 확인하고 **같은
+            // 폴더를 다시 고르는 것**이 흔하다. 그때 이동 실패 지문까지 사라지면 그 파일들은
+            // 다시 '새 이미지'가 되어 **한 번 더 편입**된다 — 결과 문구가 *"다음 받아오기에서
+            // 다시 편입하지 않습니다"*라고 약속한 바로 그 파일들이다. 장부는 폴더 하나에
+            // 매인 것이므로 수명도 그 폴더의 정체성에 매여야 한다.
+            if (previous != uri) {
+                withContext(Dispatchers.IO) {
+                    com.novelcharacter.app.util.FolderRoundtripPrefs.clearFolderScopedState(getApplication())
+                }
             }
             onDone()
         }
@@ -1697,8 +1713,26 @@ class ImageManagerViewModel(
      * 계획을 반영한다. 진행도는 [onProgress](메인 스레드)로 올라오고, [isCancelled]가 true가
      * 되면 그 항목까지 반영하고 멈춘다.
      */
+    /**
+     * 받아오기 결과 — **화면이 아니라 여기 앉는다**(회전을 넘긴다).
+     *
+     * 종전에는 결과가 콜백으로만 갔고, 콜백은 `fragment.isAdded`를 보고 조용히 빠져나갔다.
+     * 그래서 반영 도중 회전하면 **되돌릴 수 없는 삭제까지 아무 기록 없이** 끝났다(결과 창도
+     * 조작 로그도 없다). 폴더 태그 결과가 같은 이유로 이미 이 모양이다(B-136).
+     */
+    val organizeResult = MutableLiveData<OrganizeOutcome?>()
+
+    fun clearOrganizeResult() { organizeResult.value = null }
+
+    /** @param aiTagSkipped AI 태그 제안을 걸려 했으나 **다른 실행이 이미 돌고 있어** 걸지 못했다. */
+    data class OrganizeOutcome(
+        val result: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
+        val aiTagSkipped: Boolean = false
+    )
+
     fun applyOrganizePlan(
         bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        aiTagFolders: List<String>,
         onProgress: (Int, Int) -> Unit,
         isCancelled: () -> Boolean,
         onDone: (com.novelcharacter.app.util.OrganizeFolderService.ApplyResult) -> Unit
@@ -1717,8 +1751,12 @@ class ImageManagerViewModel(
                     isCancelled = isCancelled
                 )
             }.getOrElse {
-                // 어떤 예외에도 크래시 대신 '반영 없음'으로 통보한다(변수 제어).
-                com.novelcharacter.app.util.OrganizeFolderService.ApplyResult()
+                // 크래시 대신 통보하되 **'반영 없음'이라 말하지 않는다.** 여기까지 오는 예외는
+                // `applyPlan`의 가드 밖(마무리 단계 등)에서 난 것이고, 그 앞의 반영은 이미
+                // 커밋돼 있다 — 빈 결과로 갈음하면 지워진 이미지까지 "0장"이 된다(변수 제어).
+                com.novelcharacter.app.util.OrganizeFolderService.ApplyResult(
+                    abortedReason = it.message?.takeIf { m -> m.isNotBlank() } ?: it::class.java.simpleName
+                )
             }
             load()
             onDone(result)
@@ -1782,9 +1820,18 @@ class ImageManagerViewModel(
     ): TagSuggestOutcome = withContext(Dispatchers.IO) {
         val plan = bundle.plan
         // 신규는 편입 뒤 경로로, 토큰 파일은 이미 아는 경로로 — 둘 다 "이번에 그 폴더에서 온" 것.
+        //
+        // **토큰 파일은 반드시 `bundle.stored(...)`로 저장형을 되찾는다.** 계획의 경로는
+        // 비교의 축인 canonical이고, `image_meta.path`·`getByPaths`는 **정확 일치**다. 기기에 따라
+        // `/data/user/0/…`가 `/data/data/…`의 심볼릭 링크라 둘이 다른 문자열이 되는데, 그때
+        // canonical로 입양하면 **같은 파일의 meta 행이 하나 더 생기고**(유니크 인덱스는 문자열
+        // 기준이라 막지 못한다) 태그가 그 유령 행에 붙어 화면에는 나타나지 않는다.
+        // `applyPlan`의 모든 쓰기가 이 규약을 지키는데 이 경로만 빠져 있었다.
+        // (신규 편입분은 `importedPathById`가 이미 저장형이라 그대로 쓴다.)
         val pathsByFolder = folders.associateWith { folder ->
             val fresh = plan.aiTagFolders[folder].orEmpty().mapNotNull { applied.importedPathById[it] }
-            (fresh + plan.aiTagExistingPaths[folder].orEmpty()).distinct()
+            val existing = plan.aiTagExistingPaths[folder].orEmpty().map { bundle.stored(it) }
+            (fresh + existing).distinct()
         }.filterValues { it.isNotEmpty() }
         if (pathsByFolder.isEmpty()) {
             return@withContext TagSuggestOutcome(
@@ -2265,12 +2312,22 @@ class ImageManagerViewModel(
                     isCancelled = isCancelled
                 )
             }.getOrElse {
-                // 어떤 예외에도 크래시 대신 '내보낸 것 없음'으로 통보한다(변수 제어).
+                // 어떤 예외에도 크래시 대신 통보한다(변수 제어). 여기까지 오면 사본 쓰기가
+                // 통째로 서지 못한 것이라 계수는 실제로 0이다 — 받아오기 쪽과 달리
+                // **되돌릴 수 없는 앱 데이터 변경이 없다**(내보내기는 원본을 읽기만 한다).
                 com.novelcharacter.app.util.OrganizeFolderService.ExportResult()
             }
+            // 결과는 화면이 아니라 여기 앉는다 — 회전해도 요약(특히 **지운 이전 사본 수**)이
+            // 사라지지 않는다. 받아오기와 같은 배선이다.
+            exportResult.value = result
             onDone(result)
         }
     }
+
+    /** 내보내기 결과 — 회전을 넘긴다(받아오기의 [organizeResult]와 같은 이유). */
+    val exportResult = MutableLiveData<com.novelcharacter.app.util.OrganizeFolderService.ExportResult?>()
+
+    fun clearExportResult() { exportResult.value = null }
 
     private suspend fun organizeFolderUri(): android.net.Uri? {
         val raw = ImageSettingsStore(getApplication()).getOrganizeFolderUri() ?: return null

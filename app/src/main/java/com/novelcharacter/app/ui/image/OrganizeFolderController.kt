@@ -137,6 +137,14 @@ class OrganizeFolderController(
     }
 
     fun startOrganizeFolderImport() {
+        // **여기서 스스로 건다 — 호스트가 빠뜨릴 수 있는 배선이었다.**
+        // 이미지 탭은 `onViewCreated`에서 걸어 회전을 넘기지만(B-136), 설정 화면은 이 컨트롤러를
+        // 세워 놓고 그 호출을 하지 않았다. 그래서 그 경로로 받아오면 **AI 태그 요청은 결제되고
+        // 검토 시트는 영영 뜨지 않았다**(결과가 아무도 안 보는 LiveData에 앉는다). 관측을
+        // 시작 시점에도 걸어 두면 호스트가 무엇을 기억하든 결과가 닿는다 — 회전 복구를 위한
+        // `onViewCreated` 호출은 그대로 필요하고, 위 겹걸기 가드가 둘을 함께 성립시킨다.
+        observeFolderTagRun()
+        observeOrganizeResult()
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             if (viewModel.getOrganizeFolderUri() == null) {
                 if (!fragment.isAdded) return@launch
@@ -236,14 +244,6 @@ class OrganizeFolderController(
         bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle
     ) {
         val plan = bundle.plan
-        if (bundle.isEmpty) {
-            MaterialAlertDialogBuilder(fragment.requireContext())
-                .setTitle(R.string.organize_folder_import)
-                .setMessage(R.string.organize_folder_nothing)
-                .setPositiveButton(R.string.confirm, null)
-                .show()
-            return
-        }
         val lines = ArrayList<String>()
         if (plan.imports.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_new, plan.imports.size))
         if (plan.moves.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_move, plan.moves.size))
@@ -251,7 +251,10 @@ class OrganizeFolderController(
         // 묶음만 있는 이미지도 풀리므로, 한 줄에 합치면 어느 쪽이 몇 장인지 알 수 없다.
         val detachCount = plan.detaches.count { it.fromCharacterIds.isNotEmpty() }
         val unlinkCount = plan.detaches.count { it.unlinks }
+        // '살림'(D5) — 배정도 묶음도 없이 표식만 있던 것은 위 두 수에 안 잡힌다.
+        val reviveCount = plan.detaches.count { it.hadDetachedMark && !it.keepsDetachedMark }
         if (detachCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_detach, detachCount))
+        if (reviveCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_revive, reviveCount))
         if (unlinkCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_unlink, unlinkCount))
         // `_삭제승인/` — 이 창에서 **유일하게 되돌릴 수 없는** 처분이다(B-107 D6).
         // 그래서 개수만 말하지 않고 결과를 함께 말한다: 공유본인가 · 대표인가 · 원본은 어디 남는가.
@@ -301,6 +304,19 @@ class OrganizeFolderController(
         if (plan.unknownTokenFiles > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_unknown_token, plan.unknownTokenFiles))
         }
+        if (plan.deleteApprovalUnknown > 0) {
+            lines.add(fragment.getString(
+                R.string.organize_folder_summary_delete_unknown, plan.deleteApprovalUnknown
+            ))
+        }
+        // 예약을 쓰려다 빗나간 폴더 — 이름째 말해야 사용자가 고칠 수 있다(그 폴더는 이번에
+        // 아무 일도 하지 않으므로, 말하지 않으면 조용히 무시한 것이 된다).
+        if (plan.unknownReservedFolders.isNotEmpty()) {
+            lines.add(fragment.getString(
+                R.string.organize_folder_summary_unknown_reserved,
+                plan.unknownReservedFolders.joinToString(", ")
+            ))
+        }
         if (bundle.scan.skippedByFingerprint > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_already, bundle.scan.skippedByFingerprint))
         }
@@ -309,6 +325,28 @@ class OrganizeFolderController(
                 R.string.organize_folder_summary_ignored,
                 bundle.scan.nonImageIgnored, plan.deeperIgnored + bundle.scan.unreadFolders
             ))
+        }
+
+        // **반영할 것이 없어도 고지는 그대로 낸다.** 종전에는 여기서 일찍 빠져나가
+        // "반영할 것을 찾지 못했습니다" 한 줄만 띄웠는데, `plan.isEmpty`는 *행동*이 없다는 뜻이지
+        // *말할 것*이 없다는 뜻이 아니다 — 보류(공유본·같은 토큰 두 위치)·동명 폴더·미지 코드·
+        // 예약 오타·무시한 파일이 전부 그 창에서 사라졌다. 폴더에 넣은 것이 통째로 보류되는
+        // 경우가 실제로 흔한데(`_공유/`에 넣으면 전부 보류다), 그때 사용자는 앱이 폴더를
+        // 못 읽은 것으로 이해한다. 줄 만드는 자리를 하나로 두고 **버튼만 가른다.**
+        if (bundle.isEmpty) {
+            val head = fragment.getString(R.string.organize_folder_nothing)
+            val body = if (lines.isEmpty()) head else head + "\n\n" + lines.joinToString("\n")
+            MaterialAlertDialogBuilder(fragment.requireContext())
+                .setTitle(R.string.organize_folder_import)
+                .setView(cappedScrollView(fragment.requireContext()).apply {
+                    addView(android.widget.TextView(context).apply {
+                        text = body
+                        setPadding(64, 16, 64, 0)
+                    })
+                })
+                .setPositiveButton(R.string.confirm, null)
+                .show()
+            return
         }
 
         // AI 태그 제안 체크박스 — **미설정이면 줄 자체를 감춘다**(R-24: 성립하지 않는 조합의
@@ -367,41 +405,42 @@ class OrganizeFolderController(
             stageRes = R.string.organize_folder_stage_apply,
             onCancel = { cancelled.set(true) }
         )
+        // 결과 창·AI 제안은 **관측이 낸다**(아래 [observeOrganizeResult]) — 이 콜백은 화면이
+        // 죽으면 오지 않지만 결과는 ViewModel에 남으므로, 다시 선 화면이 그것을 받아 띄운다.
+        // 여기서는 진행 창만 닫는다.
         viewModel.applyOrganizePlan(
             bundle,
+            aiTagFolders,
             onProgress = { done, t -> progress.update(done, t) },
             isCancelled = { cancelled.get() }
-        ) { result ->
-            progress.dismiss()
-            if (!fragment.isAdded || fragment.view == null) return@applyOrganizePlan
-            refreshOrganizeFolderBanner()
-            showOrganizeResult(result)
-            // AI 태그는 **부가 단계**다 — 받아오기 결과를 먼저 보이고 그다음에 제안을 띄운다.
-            // 실패해도 위 결과는 이미 확정이라 편입·배정·링크가 되돌아가지 않는다(설계 3-1 ⑤).
-            if (aiTagFolders.isNotEmpty()) runAiTagSuggest(bundle, result, aiTagFolders)
-        }
+        ) { progress.dismiss() }
     }
 
     /**
-     * 폴더 이름으로 태그를 제안받아 검토 시트를 띄운다.
+     * 받아오기 결과 관측 — **회전을 넘기는 배선**. 폴더 태그 결과와 같은 모양이다(B-136).
      *
-     * 적용 대상은 **이번에 그 폴더에서 온 이미지뿐**이다(결정 D-4) — 링크 병합으로 딸려 온
-     * 기존 이미지에는 붙이지 않는다. 사용자가 폴더에 넣은 것과 화면에 나타나는 결과가 어긋나면,
-     * 폴더에 넣은 적 없는 이미지의 태그를 일일이 지워야 한다(조용한 확대).
+     * 종전에는 결과가 콜백으로만 왔고 그 콜백은 `isAdded`에서 조용히 빠져나갔다. 그래서 반영
+     * 도중 회전하면 결과 창도 조작 로그도 없이 끝났다 — `_삭제승인/`이 지운 이미지까지 무기록이다.
      */
-    private fun runAiTagSuggest(
-        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
-        applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
-        folders: List<String>
-    ) {
-        // 실행은 ViewModel이 한다 — 회전이 결제 중인 요청을 끊지 않게(B-136).
-        // 결과는 [observeFolderTagRun]의 관측이 받아 시트를 세우거나 다시 먹인다.
-        if (!viewModel.runFolderTagSuggest(bundle, applied, folders)) {
+    fun observeOrganizeResult() {
+        val owner = fragment.viewLifecycleOwner
+        if (observedResultOwner === owner) return
+        observedResultOwner = owner
+        viewModel.organizeResult.observe(owner) { outcome ->
+            if (outcome == null) return@observe
+            viewModel.clearOrganizeResult()
+            refreshOrganizeFolderBanner()
+            showOrganizeResult(outcome.result)
             // 무통보 무시 금지 — 받아오기는 끝났는데 태그 제안만 조용히 빠지면
             // 사용자는 그 폴더에 제안할 것이 없었다고 잘못 배운다.
-            fragment.notifyError(fragment.getString(R.string.image_ai_tag_already_running))
+            if (outcome.aiTagSkipped) {
+                fragment.notifyError(fragment.getString(R.string.image_ai_tag_already_running))
+            }
         }
     }
+
+    private var observedResultOwner: androidx.lifecycle.LifecycleOwner? = null
+    private var observedExportOwner: androidx.lifecycle.LifecycleOwner? = null
 
     /**
      * 폴더 태그 제안 결과 관측 — **회전을 넘기는 배선** (B-136). 화면이 붙을 때 한 번 부른다.
@@ -410,10 +449,18 @@ class OrganizeFolderController(
      * 빈 껍데기였고 이미 결제한 응답이 사라졌다.
      */
     fun observeFolderTagRun() {
-        viewModel.folderTagResult.observe(fragment.viewLifecycleOwner) { outcome ->
+        val owner = fragment.viewLifecycleOwner
+        // **뷰 수명주기 단위로 한 번만 건다.** 같은 뷰에 두 번 걸면 시트가 두 번 서고,
+        // 뷰가 새로 서면(회전·재부착) 새 주인에게 다시 걸어야 결과가 닿는다.
+        if (observedTagOwner === owner) return
+        observedTagOwner = owner
+        viewModel.folderTagResult.observe(owner) { outcome ->
             if (outcome != null) showFolderTagReview(outcome)
         }
     }
+
+    /** [observeFolderTagRun]을 이미 건 뷰 수명주기의 주인. 겹걸기·빠뜨림을 함께 막는다. */
+    private var observedTagOwner: androidx.lifecycle.LifecycleOwner? = null
 
     private fun showFolderTagReview(outcome: ImageManagerViewModel.TagSuggestOutcome) {
         val notices = ArrayList<String>()
@@ -495,6 +542,9 @@ class OrganizeFolderController(
             ))
         }
         // 서랍에 넣었는데 자동 링크라 그대로인 것 — 아무 말도 없으면 "넣었는데 왜 그대로지"가 된다.
+        if (result.markCleared > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_revive, result.markCleared))
+        }
         if (result.autoLinkedKept > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_auto_kept, result.autoLinkedKept))
         }
@@ -504,6 +554,11 @@ class OrganizeFolderController(
             lines.add(fragment.getString(R.string.organize_folder_result_scattered, result.scattered))
         }
         if (result.cancelled) lines.add(fragment.getString(R.string.organize_folder_result_cancelled))
+        // 중단은 **취소와 다르다** — 사용자가 멈춘 것이 아니라 오류로 끊긴 것이고, 그 앞까지는
+        // 이미 반영됐다. 위 수치가 그 반영분이므로 "아무 일도 없었다"로 읽히지 않게 사유를 붙인다.
+        result.abortedReason?.let {
+            lines.add(fragment.getString(R.string.organize_folder_result_aborted, it))
+        }
         if (result.heldNames.isNotEmpty()) {
             lines.add(fragment.getString(
                 R.string.organize_folder_result_hold,
@@ -516,10 +571,15 @@ class OrganizeFolderController(
                 result.failed.size, result.failed.take(5).joinToString(", ")
             ))
         }
+        // 묶기만 실패한 세트 — 본문의 '링크 세트 N개'가 조용히 줄어 있으면 사용자가 자기가
+        // 만든 폴더 묶음이 어디 갔는지 알 방법이 없다. 파일 실패 목록과 단위가 달라 줄을 나눈다.
+        if (result.linkSetFailed > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_link_failed, result.linkSetFailed))
+        }
         if (result.unmovedOriginals > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_unmoved, result.unmovedOriginals))
         }
-        val opResult = if (result.failed.isEmpty()) {
+        val opResult = if (result.failed.isEmpty() && result.abortedReason == null) {
             OpResult.success(OpResult.CAT_MAINTENANCE, lines.first())
         } else {
             OpResult.failure(OpResult.CAT_MAINTENANCE, lines.first())
@@ -535,6 +595,8 @@ class OrganizeFolderController(
     // ---------- 정리 폴더 왕복 (내보내기) ----------
 
     fun startOrganizeFolderExport() {
+        // 받아오기와 같은 이유로 여기서도 스스로 건다(호스트가 빠뜨릴 수 있는 배선).
+        observeExportResult()
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             if (viewModel.getOrganizeFolderUri() == null) {
                 if (!fragment.isAdded) return@launch
@@ -599,9 +661,12 @@ class OrganizeFolderController(
                 plan.files.size,
                 com.novelcharacter.app.util.StorageAnalyzer.formatBytes(plan.totalBytes)
             ))
+            // `_분리됨/`도 센다 — 갈라 놓은 서랍을 요약이 말하지 않으면, 「뗀 것만」 범위로
+            // 내보낼 때 **모든 칸이 0인 요약**이 뜬다(장수는 맞는데 어디로 가는지가 안 보인다).
             lines.add(fragment.getString(
                 R.string.organize_folder_export_summary_buckets,
-                plan.characterFolders, plan.unassignedCount, plan.setFolders, plan.sharedCount
+                plan.characterFolders, plan.unassignedCount, plan.setFolders, plan.sharedCount,
+                plan.detachedCount
             ))
         }
         if (bundle.cleanup.staleIds.isNotEmpty()) {
@@ -664,13 +729,22 @@ class OrganizeFolderController(
             stageRes = R.string.organize_folder_export_stage,
             onCancel = { cancelled.set(true) }
         )
+        observeExportResult()
         viewModel.runOrganizeExport(
             bundle,
             onProgress = { done, t -> progress.update(done, t) },
             isCancelled = { cancelled.get() }
-        ) { result ->
-            progress.dismiss()
-            if (!fragment.isAdded || fragment.view == null) return@runOrganizeExport
+        ) { progress.dismiss() }
+    }
+
+    /** 내보내기 결과 관측 — 받아오기와 같은 배선(회전을 넘긴다). */
+    fun observeExportResult() {
+        val owner = fragment.viewLifecycleOwner
+        if (observedExportOwner === owner) return
+        observedExportOwner = owner
+        viewModel.exportResult.observe(owner) { result ->
+            if (result == null) return@observe
+            viewModel.clearExportResult()
             refreshOrganizeFolderBanner()
             showOrganizeExportResult(result)
         }

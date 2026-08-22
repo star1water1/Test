@@ -239,6 +239,7 @@ class ImageManagerFragment : Fragment() {
         viewModel.images.observe(viewLifecycleOwner) { applyView() }
         observeAiTagRun()
         organizeFolder.observeFolderTagRun()
+        organizeFolder.observeOrganizeResult()
 
         updateSelectionUi()
         viewModel.load()

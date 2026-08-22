@@ -40,7 +40,17 @@ object OrganizeFolderService {
         val folders: List<String>,
         val name: String,
         val size: Long,
-        val modifiedAt: Long
+        val modifiedAt: Long,
+        /**
+         * 지문 장부가 아는 파일 — **이미 처리했다.** 계획에서는 *맥락으로만* 쓴다
+         * (세트 정족수·같은 토큰 판정에는 들어가고, 어떤 행동도 만들지 않는다).
+         *
+         * 종전에는 나열에서 **통째로 빼** 버렸는데, 그러면 폴더 단위 규칙이 부분 뷰로 판정된다:
+         * 내보낸 세트 폴더(`_미배정/세트-1/`)에 사진 한 장을 더 넣으면 계획에는 그 한 장만 보여
+         * *"2장 이상일 때만 세트"*에 걸려 **묶이지 않고 낱개로 편입**됐다(고지도 없다).
+         * 폴더에 대해 규칙을 세울 때는 그 폴더를 통째로 본다.
+         */
+        val alreadyHandled: Boolean = false
     ) {
         val relativePath: String get() = (folders + name).joinToString("/")
     }
@@ -119,6 +129,13 @@ object OrganizeFolderService {
          */
         val autoLinkedKept: Int = 0,
         /**
+         * 뗀 표식을 지운 수 — `_미배정/`·정리 폴더 직속으로 되돌린 '살림'(D5).
+         *
+         * [detached]·[unlinked]와 **겹치지 않는 축**이다: 배정도 묶음도 없이 표식만 있던
+         * 이미지는 이 수에만 잡힌다. 이 칸이 없으면 그 갈래가 결과에서 통째로 사라진다.
+         */
+        val markCleared: Int = 0,
+        /**
          * `_삭제승인/`으로 **앱에서 지운** 이미지 수(B-107 D6). 되돌릴 수 없으므로 실행 전에
          * 확인창을 거쳤고, 여기 수는 그 확인이 약속한 수와 같아야 한다.
          */
@@ -133,10 +150,22 @@ object OrganizeFolderService {
          */
         val importedPathById: Map<String, String> = emptyMap(),
         val linkedSets: Int = 0,
+        /**
+         * 묶는 데 **실패한** 세트 수. [failed]와 단위가 다르다 — 그쪽은 파일이고 이쪽은 묶음이라
+         * 한 칸에 담으면 결과가 사용자에게 거짓말을 한다(같은 이유로 `detached`/`unlinked`를 갈랐다).
+         */
+        val linkSetFailed: Int = 0,
         val failed: List<String> = emptyList(),
         val heldNames: List<String> = emptyList(),
         val unmovedOriginals: Int = 0,
-        val cancelled: Boolean = false
+        val cancelled: Boolean = false,
+        /**
+         * 예상 못 한 예외로 중단됐을 때의 사유. null이면 끝까지 돌았다.
+         *
+         * **이 칸이 있어야 결과가 정직해진다** — 이것 없이 예외를 빈 결과로 갈음하면
+         * 이미 커밋된 삭제까지 "0장"이라 보고한다(되돌릴 수 없는 처분의 무기록).
+         */
+        val abortedReason: String? = null
     )
 
     // ── 나열 ──
@@ -187,9 +216,13 @@ object OrganizeFolderService {
                 val fingerprint = FolderRoundtripLedger.fingerprintOf(
                     (folders + child.name).joinToString("/"), child.size, child.modifiedAt
                 )
-                if (fingerprint in fingerprints) { skipped++; continue }
+                val handled = fingerprint in fingerprints
+                if (handled) skipped++
                 files.add(
-                    ScannedFile(child.documentId, documentId, folders, child.name, child.size, child.modifiedAt)
+                    ScannedFile(
+                        child.documentId, documentId, folders, child.name, child.size, child.modifiedAt,
+                        alreadyHandled = handled
+                    )
                 )
             }
         }
@@ -306,7 +339,7 @@ object OrganizeFolderService {
             )
 
             val items = scan.files.map {
-                FolderRoundtripPlanner.ScanItem(it.documentId, it.folders, it.name)
+                FolderRoundtripPlanner.ScanItem(it.documentId, it.folders, it.name, it.alreadyHandled)
             }
             // 해소 사다리 — 정확 일치 → `이름#코드` → `이름(작품명)` → 사용자 선택.
             val novels = db.novelDao().getAllNovelsList()
@@ -400,10 +433,18 @@ object OrganizeFolderService {
         var autoLinkedKept = 0
         var deleted = 0
         var deletedBytes = 0L
+        // '뗀 것' 서랍에서 되살린 수(D5의 '살림') — 다른 어떤 계수에도 안 걸리는 갈래다.
+        var markCleared = 0
         // 이번 반영이 멤버를 뺀 링크 그룹 — 누가 혼자 남았는지는 ④가 끝난 뒤에 판정한다.
         val touchedGroups = LinkedHashSet<String>()
         val failures = ArrayList<String>()
-        val processedFiles = ArrayList<ScannedFile>()
+        // **집합이다 — 한 파일이 두 갈래로 반영될 수 있다.** `_미배정/<세트명>/`의 파일은 배정
+        // 해제(③)와 링크 세트(④) 양쪽에 실리는데, 목록이면 같은 파일을 두 번 옮기려 들어
+        // 둘째 시도가 실패로 잡히고 없는 "이동 실패"가 고지된다.
+        val processedFiles = LinkedHashSet<ScannedFile>()
+        // 실패한 항목의 스캔 id — 실패한 파일은 어느 갈래로도 `_처리됨/`에 넣지 않는다
+        // (폴더에 남아 있는 것이 곧 미처리의 표식이라는 규약이 그것에 걸려 있다).
+        val failedIds = HashSet<String>()
         val unmovedFingerprints = ArrayList<String>()
         // 편입 결과 — 링크 세트가 나중에 쓴다(문서 id → 내부 경로).
         val importedPathById = HashMap<String, String>()
@@ -413,6 +454,27 @@ object OrganizeFolderService {
             done++
             onProgress(done, total)
         }
+        /** 실패는 이름(고지용)과 스캔 id(이동 제외용) **양쪽**에 남긴다 — 한 자리에서 함께 적어야 갈리지 않는다. */
+        fun fail(file: ScannedFile) {
+            failures.add(file.name)
+            failedIds.add(file.documentId)
+        }
+
+        // 세트 계수와 흩어진 목록은 **가드 밖**에 둔다 — 아래 try가 중간에 끊겨도
+        // 마무리(⑤)와 결과 보고가 이미 일어난 일을 그대로 말해야 한다.
+        var linkedSets = 0
+        var linkSetFailed = 0
+        val scattered = ArrayList<String>()
+        // 예상 못 한 예외로 중단됐는가. **null이 아니면 결과는 '부분 반영'이다.**
+        //
+        // 종전에는 이 함수가 던지면 호출부(`ImageManagerViewModel.applyOrganizePlan`)가 그것을
+        // 통째로 삼키고 **빈 `ApplyResult()`** 를 돌려줬다. 그러면 화면은 "편입 0 · 이동 0 …"을
+        // **성공으로** 띄운다 — 그 사이 `_삭제승인/`이 이미 지운 이미지가 있어도 그렇다.
+        // 되돌릴 수 없는 처분을 "아무 일도 없었다"로 보고하는 것은 조용한 유실 중에서도 최악이라,
+        // **여기서 붙잡아 그때까지의 계수를 그대로 싣고 사유를 함께 낸다.**
+        var abortedReason: String? = null
+
+        try {
 
         // ① 신규 편입 — 압축 파이프라인은 이미지 탭 임포트와 같은 것을 쓴다.
         for (action in plan.imports) {
@@ -423,12 +485,18 @@ object OrganizeFolderService {
             }.getOrNull()
             val path = uri?.let { ImageImportHelper.importImage(context, it, "img", settings) }
             if (path == null) {
-                failures.add(file.name)
+                fail(file)
                 step()
                 continue
             }
             val now = System.currentTimeMillis()
-            runCatching {
+            // **트랜잭션의 성패를 반드시 본다.** 종전에는 `runCatching`의 결과를 버리고 무조건
+            // 성공으로 셌는데, 이 자리의 실패는 **파일이 이미 내부 저장소에 복사된 뒤**라
+            // 조용한 유실 세 가지가 한꺼번에 났다: ⓐ `image_meta` 행 없는 **고아 파일**이 용량만
+            // 먹은 채 남고 ⓑ 요약이 "N장 편입"이라 **거짓말**을 하고 ⓒ 원본이 `_처리됨/`으로
+            // 옮겨져 **사용자가 넣어 둔 파일이 폴더에서 사라진다**. 아래 ②~③은 모두 `.isSuccess`를
+            // 보고 있었고 이 루프만 빠져 있었다.
+            val stored = runCatching {
                 db.withTransaction {
                     db.imageMetaDao().insert(ImageMeta(path = path, importedAt = now))
                     val target = action.assignCharacterId
@@ -439,6 +507,16 @@ object OrganizeFolderService {
                         }
                     }
                 }
+            }.isSuccess
+            if (!stored) {
+                // 행이 안 생겼으면 그 사본은 **아무도 가리키지 않는 파일**이다 — 지운다.
+                // 남기면 "앱이 원본을 소유한다"는 불변식 밖의 파일이 쌓여, 저장소 정리도
+                // 사용자도 그것이 무엇인지 알 수 없다. 원본은 폴더에 그대로 두므로(아래
+                // `processedFiles`에 넣지 않는다) 사용자가 다시 받아올 수 있다.
+                runCatching { File(path).delete() }
+                fail(file)
+                step()
+                continue
             }
             importedPathById[action.item.id] = path
             imported++
@@ -447,6 +525,24 @@ object OrganizeFolderService {
         }
 
         // ② 배정 이동 — 옛 캐릭터에서 빼고 새 캐릭터에 넣는다(파일은 그대로).
+        //
+        // **소유를 고친 뒤 뗀 표식을 반드시 [DetachedImageMarker.sync]에 맡긴다.** 표식의 불변식은
+        // *"어떤 캐릭터가 쓰고 있는 이미지는 뗀 것이 아니다"*이고([DetachedImageRule]), 그것을
+        // 판정하는 자리는 그 규칙 하나여야 한다. 종전에는 이 루프만 그 호출을 빼먹어, **서랍에서
+        // 꺼내 캐릭터 폴더에 넣은 이미지가 배정된 채로 영영 '뗀 것'에 남았다** — 목록의 뗀 것 칩과
+        // 카드의 "○○에서 뗌"이 계속 걸리고, 사용자가 손으로 표식을 지우기 전에는 풀리지 않는다.
+        //
+        // ③처럼 `markDetached`/`clearMark`를 직접 부르지 않는 이유: 그쪽은 폴더가 뜻을 정하는
+        // 자리(`_분리됨/`은 남기고 `_미배정/`은 지운다)라 판정을 건너뛰어야 하지만, 여기는 **소유가
+        // 뜻을 정하는** 자리다. 그래서 판정을 태우는 쪽이 맞고, 목적지 캐릭터가 그 사이 사라져
+        // 무소속이 되면 규칙이 스스로 표식을 붙인다(그것이 곧 무소속의 정의다).
+        //
+        // **항목마다가 아니라 루프가 끝난 뒤 한 번 부른다.** `sync`는 판정 재료로 *캐릭터 전원의
+        // 이미지 목록*을 훑으므로(`characterOwnedCanonicalPaths`), 항목마다 부르면 비용이
+        // `이동 수 × 캐릭터 수`가 된다 — 이 기능이 겨눈 규모(수백 장)에서 무너지는 축이다.
+        // 이미지 탭 일괄 해제·편집창 저장도 같은 이유로 한 번에 부른다(그쪽이 이 저장소의 관례다).
+        // 취소로 중간에 멈춰도 **그때까지 성공한 것만** 담아 그대로 부르므로 반쪽이 남지 않는다.
+        val movedCandidates = ArrayList<DetachedImageRule.Candidate>()
         if (!cancelled) for (action in plan.moves) {
             if (isCancelled()) { cancelled = true; break }
             val file = fileById[action.item.id] ?: continue
@@ -470,8 +566,24 @@ object OrganizeFolderService {
                     }
                 }
             }.isSuccess
-            if (ok) { moved++; processedFiles.add(file) } else failures.add(file.name)
+            if (ok) {
+                moved++
+                processedFiles.add(file)
+                movedCandidates.add(
+                    DetachedImageRule.Candidate(
+                        storedPath,
+                        action.fromCharacterIds.firstOrNull()
+                            ?.let { db.characterDao().getCharacterById(it)?.code }
+                    )
+                )
+            } else fail(file)
             step()
+        }
+        // 소유를 다 고친 **뒤**에 판정한다(그 순서가 [DetachedImageMarker.sync]의 계약이다).
+        // 실패해도 배정 자체는 이미 확정이라 되돌리지 않는다 — 표식은 파생 사실이고, 다음
+        // 배정 조작이 같은 규칙으로 다시 맞춘다.
+        if (movedCandidates.isNotEmpty()) {
+            runCatching { DetachedImageMarker.sync(db, movedCandidates, gson = gson) }
         }
 
         // ③ 배정 해제 — 파일은 남기고 라이브러리로 승격한다(인앱 '배정 해제'와 같은 규약).
@@ -568,10 +680,12 @@ object OrganizeFolderService {
                 // 한 칸에 담으면 결과가 사용자에게 거짓말을 한다.
                 if (action.fromCharacterIds.isNotEmpty()) detached++
                 if (didUnlink) unlinked++
+                // 표식을 실제로 지운 수 — 배정도 묶음도 없던 항목은 **이 수에만** 잡힌다.
+                if (action.hadDetachedMark && !action.keepsDetachedMark) markCleared++
                 // 겹 갱신 — 커밋된 쓰기만 반영한다(같은 경로가 두 번 실릴 때의 답을 지킨다).
                 if (didUnlink) detachGroups?.put(bundle.stored(action.path), null)
                 processedFiles.add(file)
-            } else failures.add(file.name)
+            } else fail(file)
             step()
         }
 
@@ -618,7 +732,7 @@ object OrganizeFolderService {
                     // 원본은 `_처리됨/`으로 옮긴다 — **앱이 사용자의 폴더 파일을 지우지는 않는다.**
                     // 되돌리기가 없는 처분이라 폴더에 남는 원본이 마지막 안전망이다(D6).
                     processedFiles.add(file)
-                } else failures.add(file.name)
+                } else fail(file)
                 step()
             }
         }
@@ -674,14 +788,20 @@ object OrganizeFolderService {
                 // 겹 갱신 — 커밋된 쓰기만 반영한다(③과 같은 이유).
                 if (didUnlink) unlinkGroups?.put(bundle.stored(action.path), null)
                 processedFiles.add(file)
-            } else failures.add(file.name)
+            } else fail(file)
             step()
         }
 
         // ④ 링크 세트 — 인앱 수동 링크와 같은 흡수·병합 규약(단, 자동 토큰은 흡수하지 않는다.
         //    자동 그룹을 대상으로 삼으면 다음 재동기화가 그 묶음을 도로 풀어 조용히 사라진다).
-        var linkedSets = 0
-        for (set in plan.linkSets) {
+        //
+        // **취소 가드가 이 루프에도 걸린다.** 종전에는 ①~③만 가드가 있고 여기만 없어서, ①에서
+        // 취소해도 세트는 전부 만들어졌다 — 그리고 그 세트는 **반쪽**이었다. 취소로 편입되지 못한
+        // 신규 항목은 `importedPathById`에 없어 빠지므로, 사용자가 사전 확인에서 승인한 "N장 묶음"
+        // 대신 남은 몇 장만 묶인 다른 묶음이 생긴다(취소했는데 지시하지 않은 묶음이 남는다).
+        // 설계 4장이 약속한 *"항목 단위로 완결 — 반쪽 항목이 없다"*가 이 갈래에서만 깨져 있었다.
+        if (!cancelled) for (set in plan.linkSets) {
+            if (isCancelled()) { cancelled = true; break }
             val paths = set.newItemIds.mapNotNull { importedPathById[it] } +
                 set.existingPaths.map { bundle.stored(it) }
             if (paths.size < 2) continue
@@ -710,7 +830,29 @@ object OrganizeFolderService {
                     SqlInChunks.each(ids.toList()) { db.imageMetaDao().setGroup(it, token) }
                 }
             }.isSuccess
-            if (ok) linkedSets++
+            if (ok) {
+                linkedSets++
+                // **묶는 것도 반영이다 — 참여한 원본을 `_처리됨/`으로 보낸다.**
+                // 종전에는 이 자리에 이동 등재가 없어서, *세트로만* 반영되는 파일(`<그 외 이름>/`의
+                // 토큰 파일이 그것이다)이 폴더에 그대로 남았다. 그 파일은 옮겨진 탓에 내보내기
+                // 지문도 어긋나 있어, 진입 감지가 **매번** "정리 폴더에 새 이미지 N장"이라 말하고
+                // 받아오기를 몇 번 하든 같은 화면이 반복됐다. 설계 3장 「처리 후 이동」이 정한
+                // *"반영·편입에 성공한 원본은 옮긴다"*를 이 갈래만 못 지키고 있었다.
+                // 실패한 항목은 제외한다 — 폴더에 남아 있는 것이 미처리의 표식이라는 규약이
+                // 거기 걸려 있다(신규 항목은 ①에서 이미 등재됐다).
+                for (member in set.existing) {
+                    if (member.itemId in failedIds) continue
+                    // 이미 처리한 파일은 **맥락으로 들어온 것**이라 이번에 반영된 것이 아니다 —
+                    // 옮기면 사용자가 내보내 둔 세트 폴더가 한 장 넣을 때마다 비워진다.
+                    fileById[member.itemId]?.takeIf { !it.alreadyHandled }?.let { processedFiles.add(it) }
+                }
+            } else {
+                // **실패를 센다.** 종전에는 조용히 넘겨서 요약의 "링크 세트 N개"가 아무 말 없이
+                // 줄었다 — 사용자는 자기가 만든 폴더 묶음이 왜 없는지 알 방법이 없었다.
+                // 파일 이름 목록([failures])에는 싣지 않는다: 그 목록의 단위는 *파일*인데 여기서
+                // 실패한 것은 *묶음*이고, 참여 파일의 배정 해제(③)는 이미 성공했을 수 있다.
+                linkSetFailed++
+            }
         }
 
         // ④-b 묶음 결산 — 이번 반영이 멤버를 뺀 그룹에서 **누가 혼자 남았는가**를 정한다.
@@ -734,7 +876,6 @@ object OrganizeFolderService {
         val remainingByGroup = runCatching {
             SqlInChunks.flat(touchedGroups) { db.imageMetaDao().getByGroups(it) }
         }.getOrDefault(emptyList()).groupBy { it.linkGroupId }
-        val scattered = ArrayList<String>()
         for (group in touchedGroups) {
             val remaining = remainingByGroup[group].orEmpty()
             if (remaining.size == 1) scattered.add(remaining[0].path)
@@ -744,13 +885,28 @@ object OrganizeFolderService {
             runCatching { FolderRoundtripPrefs.addScatteredPaths(context, scattered) }
         }
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 코루틴 취소는 **중단이지 오류가 아니다** — 삼키면 상위의 취소가 듣지 않는다.
+            throw e
+        } catch (e: Exception) {
+            abortedReason = e.message?.takeIf { it.isNotBlank() } ?: e::class.java.simpleName
+        }
+
         // ⑤ 마무리 — 자동 링크 재동기화(배정 변경분 수렴), 처리분 `_처리됨/` 이동.
+        // **가드 밖이다** — 중단됐더라도 이미 반영된 원본은 `_처리됨/`으로 옮기거나(성공분)
+        // 지문을 남겨야(실패분) 다음 받아오기가 같은 파일을 두 번 편입하지 않는다.
         runCatching { CharacterImageAutoLinker.resyncIfEnabled(context, db) }
 
         var unmoved = 0
         val processedRoot = ensureProcessedRoot(context, treeUri)
+        // `_처리됨/<원폴더명>/`의 문서 id를 **한 번만** 찾는다. 종전에는 파일마다
+        // [ensureDirectory]가 `_처리됨/`을 통째로 다시 나열해, 옮기는 비용이
+        // `옮길 파일 수 × _처리됨 하위 폴더 수`였다 — 그 폴더는 왕복마다 자라기만 하므로
+        // 오래 쓴 사용자일수록 느려지는 축이다. 내보내기의 `folderIds`가 같은 처방을 쓴다.
+        val processedDirs = HashMap<String, String?>()
         for (file in processedFiles) {
-            val ok = processedRoot != null && moveToProcessed(context, treeUri, file, processedRoot)
+            val ok = processedRoot != null &&
+                moveToProcessed(context, treeUri, file, processedRoot, processedDirs)
             if (!ok) {
                 unmoved++
                 unmovedFingerprints.add(
@@ -768,15 +924,18 @@ object OrganizeFolderService {
             detached = detached,
             unlinked = unlinked,
             autoLinkedKept = autoLinkedKept,
+            markCleared = markCleared,
             deleted = deleted,
             deletedBytes = deletedBytes,
             scattered = scattered.size,
             importedPathById = importedPathById,
             linkedSets = linkedSets,
+            linkSetFailed = linkSetFailed,
             failed = failures,
             heldNames = plan.holds.map { it.item.fileName },
             unmovedOriginals = unmoved,
-            cancelled = cancelled
+            cancelled = cancelled,
+            abortedReason = abortedReason
         )
     }
 
@@ -831,9 +990,17 @@ object OrganizeFolderService {
             }
         }
 
+        // **행을 통째로 들고 간다 — 필드를 자리마다 뽑던 것이 `_분리됨/`을 통째로 죽였다.**
+        // 종전에는 `linkGroupId` 하나만 뽑아 지도를 만들었고, 그래서 B-107이 신설한 `isDetached`가
+        // 계획 입력에 실리지 못했다(기본값 false). 결과는 셋이었다 — 내보내기가 `_분리됨/`을 한 번도
+        // 만들지 않고, 「뗀 것만」 범위가 언제나 빈 계획이며, 서랍 이미지가 `_미배정/`으로 나갔다가
+        // 돌아오며 **뗀 표식을 잃었다**(그 자리가 "다시 쓸 것으로 되돌림"이다).
+        // 받아오기 쪽([buildPlan])은 같은 스냅샷에서 `linkedCanonPaths`·`detachedCanonPaths`를 함께
+        // 뽑아 이 함정을 피하고 있었다 — 이쪽만 갱신을 못 받았다. 한 행의 여러 사실은 **한 자리에서**
+        // 뽑는다.
         val metas = db.imageMetaDao().getAllList()
-        val groupByPath = HashMap<String, String?>(metas.size)
-        for (m in metas) groupByPath[canonical(m.path)] = m.linkGroupId
+        val metaByPath = HashMap<String, ImageMeta>(metas.size)
+        for (m in metas) metaByPath[canonical(m.path)] = m
 
         // 작품·세계관 전용 이미지는 v1 범위 밖이지만 **개수는 고지해야** 하므로 후보에 싣는다
         // (캐릭터도 라이브러리도 쥐지 않은 것만 그 부류로 남는다).
@@ -845,17 +1012,21 @@ object OrganizeFolderService {
 
         val candidatePaths = LinkedHashSet<String>().apply {
             addAll(ownersByPath.keys)
-            addAll(groupByPath.keys)
+            addAll(metaByPath.keys)
             addAll(entityPaths)
         }
         val livePaths = candidatePaths.filterTo(LinkedHashSet()) { File(it).exists() }
         val images = candidatePaths.map { path ->
+            // 라이브러리 행이 있는가·묶여 있는가·뗀 것인가는 **같은 행의 세 사실**이다.
+            // 따로 뽑으면 하나가 빠져도 컴파일이 통과한다(위 주석의 사고).
+            val meta = metaByPath[path]
             FolderExportPlanner.ImageInput(
                 path = path,
                 sizeBytes = runCatching { File(path).length() }.getOrDefault(0L),
                 ownerCharacterIds = ownersByPath[path].orEmpty(),
-                linkGroupId = groupByPath[path],
-                inLibrary = path in groupByPath
+                linkGroupId = meta?.linkGroupId,
+                inLibrary = meta != null,
+                isDetached = meta?.isDetached == true
             )
         }
 
@@ -971,14 +1142,24 @@ object OrganizeFolderService {
             val parentUri = parentId?.let {
                 runCatching { DocumentsContract.buildDocumentUriUsingTree(treeUri, it) }.getOrNull()
             }
+            // **실패하면 만들어 둔 문서를 지운다.** 종전에는 스트림을 열지 못하거나 복사 도중
+            // 터졌을 때 빈·잘린 사본이 그대로 남았다 — 이름은 토큰 규약을 만족하므로 정상 사본과
+            // 구별되지 않고, 다음 받아오기가 그것을 **정상 사본으로 읽어** 위치를 반영하며,
+            // 재내보내기가 그 자리에 같은 이름을 쓰려다 provider의 개명(`…(1).jpg`)을 유발해
+            // 토큰을 깨뜨린다. `_처리됨/` 이동 폴백이 같은 이유로 이미 `discardCopy()`를 두고
+            // 있었다 — **실패한 쓰기는 흔적을 남기지 않는다**가 이 파일의 규약이다.
             val ok = parentUri != null && runCatching {
                 val created = DocumentsContract.createDocument(
                     resolver, parentUri, mimeOf(file.fileName), file.fileName
                 ) ?: return@runCatching false
-                resolver.openOutputStream(created)?.use { output ->
-                    File(file.sourcePath).inputStream().use { input -> input.copyTo(output) }
-                    true
-                } ?: false
+                val written = runCatching {
+                    resolver.openOutputStream(created)?.use { output ->
+                        File(file.sourcePath).inputStream().use { input -> input.copyTo(output) }
+                        true
+                    } ?: false
+                }.getOrDefault(false)
+                if (!written) runCatching { DocumentsContract.deleteDocument(resolver, created) }
+                written
             }.getOrDefault(false)
             if (ok) {
                 exported++
@@ -1051,12 +1232,16 @@ object OrganizeFolderService {
         context: Context,
         treeUri: Uri,
         file: ScannedFile,
-        processedRootId: String
+        processedRootId: String,
+        /** `<원폴더명>` → 그 하위 폴더의 문서 id. 호출부가 한 번 만들어 루프 내내 물려 쓴다. */
+        dirCache: MutableMap<String, String?>
     ): Boolean {
         val targetParentId = if (file.folders.isEmpty()) {
             processedRootId
         } else {
-            ensureDirectory(context, treeUri, processedRootId, file.folders.joinToString("_"))
+            val name = file.folders.joinToString("_")
+            if (dirCache.containsKey(name)) dirCache[name]
+            else ensureDirectory(context, treeUri, processedRootId, name).also { dirCache[name] = it }
         } ?: return false
 
         val resolver = context.contentResolver

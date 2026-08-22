@@ -65,6 +65,11 @@ object ImageImportHelper {
         settings: ImageSettingsStore.ImageSettings
     ): String? = withContext(Dispatchers.IO) {
         val bytes = readBounded(context, uri, MAX_INPUT_BYTES) ?: return@withContext null
+        // **0바이트는 편입하지 않는다.** 내용이 없는 파일에는 지킬 데이터가 없으므로, 아래
+        // "디코드 실패 → 원본 폴백"(무단 유실 금지)의 근거가 여기엔 걸리지 않는다.
+        // 그대로 들이면 라이브러리에 **열리지 않는 이미지 행**이 생기고, 정리 폴더 왕복은 그것을
+        // 성공으로 세어 사용자의 원본을 `_처리됨/`으로 치운다 — 실패로 돌려야 원본이 폴더에 남는다.
+        if (bytes.isEmpty()) return@withContext null
 
         val fileName = "${prefix}_${UUID.randomUUID()}.jpg"
         val file = File(context.filesDir, fileName)
