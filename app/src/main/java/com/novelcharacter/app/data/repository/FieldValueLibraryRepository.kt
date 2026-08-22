@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.InitialFieldValues
+import com.novelcharacter.app.util.FieldSuggestionEntries
 import com.novelcharacter.app.util.FieldValueResolver
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.GsonTypes
@@ -66,9 +67,22 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         return entryDao.countByField().associateBy { it.fieldDefinitionId }
     }
 
-    /** 폼 자동완성용 — 세계관의 비숨김 엔트리를 필드별로 1쿼리 배치 로드 */
-    suspend fun suggestionsForUniverse(universeId: Long, entityType: String): Map<Long, List<FieldValueEntry>> =
-        entryDao.getForUniverse(universeId, entityType).groupBy { it.fieldDefinitionId }
+    /**
+     * 폼 자동완성용 — **그릴 필드의 엔트리에서 고른다**(B-129 확장, 2026.08.22).
+     *
+     * 종전에는 `suggestionsForUniverse(universeId, entityType)`가 세계관 단위로 한 번 더
+     * 물었다. 그 질의는 `fd.universeId = :universeId`에 묶여 **전역 구역(무소속)에서는
+     * 원리적으로 아무것도 돌려주지 못했고** — 필드는 그려지는데 제안만 없어 고장과
+     * 구분되지 않았다 — 폼이 허용 목록 판정으로 같은 엔트리를 이미 읽은 뒤라 **두 번째
+     * 조회**이기도 했다. 구역을 묻지 않는 것이 요점이다: **필드 id가 곧 구역**이라
+     * 세계관을 다시 물을 자리가 없다.
+     *
+     * 잣대(숨김 제외 · 사용 횟수 내림차순 · 동률은 값 순)는 [FieldSuggestionEntries]가
+     * 한 벌로 든다 — 두 벌이면 폼이 권하는 값과 라이브러리가 든 값이 갈리고, 갈렸을 때
+     * 어느 쪽이 옳은지 화면에서 알 길이 없다.
+     */
+    suspend fun suggestionsForFields(fieldDefIds: Collection<Long>): Map<Long, List<FieldValueEntry>> =
+        FieldSuggestionEntries.from(entriesForFields(fieldDefIds))
 
     suspend fun resolverForField(fieldDefId: Long): FieldValueResolver =
         FieldValueResolver(entryDao.getByField(fieldDefId))

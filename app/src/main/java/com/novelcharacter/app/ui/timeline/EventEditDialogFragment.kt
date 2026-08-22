@@ -1305,14 +1305,22 @@ class EventEditDialogFragment : DialogFragment() {
         )
     }
 
-    /** 사건 필드 자동완성 — 라이브러리 제안 (1쿼리 배치, 빈 필드는 제안 없음) */
+    /**
+     * 사건 필드 자동완성 — 라이브러리 제안 (1쿼리 배치, 빈 필드는 제안 없음).
+     *
+     * **구역을 묻지 않는다**(B-129 확장, 2026.08.22). 종전에는 첫 필드의 세계관을 집어
+     * (`eventFields.firstOrNull()?.universeId ?: return`) 세계관 단위로 물었는데, 그 모양은
+     * 두 자리에서 제안을 죽였다: ⓐ **전역 구역 필드(`universeId == null`)면 엘비스가
+     * 통째로 돌아 나가** 폼 전체에 제안이 안 붙었고, ⓑ 세계관 질의 자신이 전역 필드를
+     * 걸러내 섞인 목록에서도 그쪽만 빠졌다. 필드는 그려지는데 제안만 없는 자리는
+     * 고장과 구분되지 않는다. **필드 id가 곧 구역**이라 세계관을 다시 물을 자리가 없다.
+     */
     private fun attachEventFieldSuggestions() {
-        val universeId = eventFields.firstOrNull()?.universeId ?: return
+        if (eventFields.isEmpty()) return
         val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp ?: return
         lifecycleScope.launch {
             val suggestions = runCatching {
-                app.fieldValueLibraryRepository.suggestionsForUniverse(
-                    universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+                app.fieldValueLibraryRepository.suggestionsForFields(eventFields.map { it.id })
             }.getOrDefault(emptyMap())
             if (!isAdded) return@launch
             for (field in eventFields) {

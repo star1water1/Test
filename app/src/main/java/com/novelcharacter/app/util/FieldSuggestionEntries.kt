@@ -6,7 +6,8 @@ import com.novelcharacter.app.data.model.FieldValueEntry
  * 입력 폼 자동완성에 세울 값 라이브러리 엔트리를 고른다 (B-129).
  *
  * **왜 순수 계층으로 올렸는가.** 이 잣대는 종전에 SQL에만 있었다 —
- * `FieldValueEntryDao.getForUniverse`의 `isHidden = 0` + `ORDER BY usageCount DESC, value`.
+ * `FieldValueEntryDao.getForUniverse`의 `isHidden = 0` + `ORDER BY usageCount DESC, value`
+ * (그 질의는 2026.08.22에 **없앴다** — 마지막 소비처였던 캐릭터·사건 축이 이리로 왔다).
  * 그 질의는 `fd.universeId = :universeId`로 묶여 있어 **전역 구역(무소속)에서는 원리적으로
  * 아무것도 돌려주지 못한다.** 무소속 작품 폼이 필드를 그리기 시작하면(B-129) 그 자리는
  * *필드는 있는데 제안만 없는* 상태가 되고, 그것은 고장과 구분되지 않는다.

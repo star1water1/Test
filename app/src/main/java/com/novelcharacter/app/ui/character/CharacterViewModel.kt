@@ -1062,6 +1062,29 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getGlobalFieldsList(): List<FieldDefinition> =
         app.defaultFieldTemplateRepository.globalFields()
 
+    /**
+     * **캐릭터 폼이 그릴 필드 목록 — 어느 목록인가의 단일 소스** (R-33, 2026.08.22).
+     *
+     * 세계관이 있으면 그 세계관의 필드를, 없으면(작품 미선택 = 완전 무소속 · 세계관 없는
+     * 작품) **전역 구역의 필드**를 준다. 뒤엣것이 B-119 확장의 사용자 확정이다
+     * (2026.08.07 — *"전역필드라면 세계관 소속이 없더라도 가지게"*).
+     *
+     * **왜 함수로 세웠나.** 이 판정이 두 화면에 손으로 두 벌 적혀 있었고 **실제로 갈렸다**:
+     * 캐릭터 편집 화면은 두 갈래 모두 [getGlobalFieldsList]로 이어 줬는데 **보충(랜덤) 탭은
+     * 두 갈래 모두 `emptyList()`였다.** 그래서 무소속 캐릭터를 보충 탭에서 열면 동적 필드
+     * 구역이 통째로 비고 [✨ AI 추천]까지 숨었는데, 같은 캐릭터를 편집 화면에서 열면
+     * 정상이었다. 어시스턴트의 *'필수 빈칸 N'* 카드는 그 구역의 필수 필드를 세므로,
+     * 사용자는 채울 칸이 있다는 안내를 보고 들어와 **빈 화면**을 만났다.
+     * 보충 탭의 KDoc은 그때도 *"CharacterEditFragment.loadNovels와 동일한 흐름"*이라
+     * 적고 있었다 — **적어 두는 것으로는 안 지켜진다.**
+     *
+     * @param novel 고른 작품. `null`이면 작품 미선택(완전 무소속)이다.
+     */
+    suspend fun fieldsForNovel(novel: Novel?): List<FieldDefinition> {
+        val universeId = novel?.universeId ?: return getGlobalFieldsList()
+        return getFieldsByUniverseList(universeId)
+    }
+
     /** 세계관 밖 정의를 가리키는 보관 값을 화면에 드러내기 위한 조회 (N2) */
     suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
         universeRepository.getFieldsByIds(ids)
@@ -1114,8 +1137,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.getValuesForCharacters(characterIds)
 
     /** 세계관 전체 필드값 일괄 조회 (자동완성 배치 로드용) */
-    suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
-        characterRepository.getAllFieldValuesForUniverse(universeId)
+    /** 자동완성 폴백용 — 폼이 그리는 필드의 값만 (구역을 묻지 않는다 — B-129 확장). */
+    suspend fun getFieldValuesForFields(fieldDefIds: Collection<Long>): List<CharacterFieldValue> =
+        characterRepository.getFieldValuesForFields(fieldDefIds)
 
     // ===== AI 필드 추천 컨텍스트 (CharacterFieldAiSuggester) =====
 
@@ -1740,12 +1764,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun allowedValuesPreview(fieldDefId: Long, limit: Int = 10): List<String> =
         app.database.fieldValueEntryDao().getByField(fieldDefId).map { it.value }.take(limit)
 
-    /** 값 라이브러리 제안 배치 조회 — 필드별 비숨김 엔트리 (usageCount 내림차순) */
-    suspend fun getLibrarySuggestionsForUniverse(
-        universeId: Long,
-        entityType: String = com.novelcharacter.app.data.model.FieldDefinition.ENTITY_CHARACTER
+    /**
+     * 값 라이브러리 제안 배치 조회 — 필드별 비숨김 엔트리 (usageCount 내림차순).
+     *
+     * **구역을 묻지 않는다**(B-129 확장) — 종전의 세계관 단위 질의는 전역 구역에서
+     * 원리적으로 빈 목록이었다. 근거는 `FieldValueLibraryRepository.suggestionsForFields`.
+     */
+    suspend fun getLibrarySuggestionsForFields(
+        fieldDefIds: Collection<Long>
     ): Map<Long, List<com.novelcharacter.app.data.model.FieldValueEntry>> =
-        app.fieldValueLibraryRepository.suggestionsForUniverse(universeId, entityType)
+        app.fieldValueLibraryRepository.suggestionsForFields(fieldDefIds)
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)

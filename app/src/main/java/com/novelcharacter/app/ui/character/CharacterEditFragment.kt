@@ -839,25 +839,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)
                 }
                 viewLifecycleOwner.lifecycleScope.launch {
-                    if (position > 0) {
-                        val novel = novels[position - 1]
-                        val universeId = novel.universeId
-                        formBuilder.currentUniverseId = universeId
-                        // 실루엣 편집기의 상대 생성·분포·작품 평균이 이 작품 축으로 모인다.
-                        formBuilder.currentNovelId = novel.id
-                        if (universeId != null) {
-                            formBuilder.fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
-                        } else {
-                            // 세계관 없는 작품 — 전역 필드는 그래도 가진다 (B-119 확장,
-                            // 2026.08.07 사용자 확정). 종전에는 빈 목록이라 무소속 캐릭터만
-                            // "전역" 필드가 없는 역설이 있었다.
-                            formBuilder.fieldDefinitions = viewModel.getGlobalFieldsList()
-                        }
-                    } else {
-                        formBuilder.currentNovelId = null
-                        // 작품 미선택(완전 무소속)도 같다 — 전역 구역의 필드를 그린다.
-                        formBuilder.fieldDefinitions = viewModel.getGlobalFieldsList()
-                    }
+                    // 어느 목록을 그리는가는 `fieldsForNovel` 한 자리가 정한다 (R-33) —
+                    // 세계관 없는 작품·작품 미선택 둘 다 전역 구역의 필드를 받는다
+                    // (B-119 확장, 2026.08.07 사용자 확정).
+                    val novel = if (position > 0) novels[position - 1] else null
+                    // 실루엣 편집기의 상대 생성·분포·작품 평균이 이 작품 축으로 모인다.
+                    formBuilder.currentNovelId = novel?.id
+                    formBuilder.fieldDefinitions = viewModel.fieldsForNovel(novel)
                     if (_binding == null) return@launch
                     formBuilder.buildForm()
                     // AI 추천은 세계관 필드가 대상 — 렌더된 필드가 있을 때만 진입 버튼 노출

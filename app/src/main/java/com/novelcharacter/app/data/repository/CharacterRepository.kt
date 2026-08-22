@@ -282,9 +282,13 @@ class CharacterRepository(
     suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> =
         SqlInChunks.flat(characterIds) { characterFieldValueDao.getValuesForCharacters(it) }
 
-    /** 세계관 전체 필드값 일괄 조회 (편집 화면 자동완성 배치 로드용) */
-    suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
-        characterFieldValueDao.getAllValuesForUniverse(universeId)
+    /**
+     * 필드 집합의 값 일괄 조회 (편집 화면 자동완성 폴백 — IN 절 상한은 [SqlInChunks]가 지킨다).
+     *
+     * 구역을 묻지 않는다 — 근거는 [com.novelcharacter.app.data.dao.CharacterFieldValueDao.getValuesForFields]에 있다.
+     */
+    suspend fun getFieldValuesForFields(fieldDefIds: Collection<Long>): List<CharacterFieldValue> =
+        SqlInChunks.flat(fieldDefIds.distinct()) { characterFieldValueDao.getValuesForFields(it) }
 
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
