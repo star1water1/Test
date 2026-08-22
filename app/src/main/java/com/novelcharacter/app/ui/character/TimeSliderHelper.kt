@@ -5,6 +5,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.slider.Slider
 import com.novelcharacter.app.R
+import com.novelcharacter.app.ui.common.applyRange
+import com.novelcharacter.app.util.SliderRange
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
@@ -138,51 +140,19 @@ class TimeSliderHelper(
                 val minYear = years.minOrNull() ?: return@launch
                 val maxYear = years.maxOrNull() ?: return@launch
 
-                val adjustedMin = minYear.toFloat()
-                val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()
-
                 binding.yearSlider.isEnabled = true
 
-                // Reset stepSize first to avoid validation errors when range changes
-                binding.yearSlider.stepSize = 0f
+                // **범위·눈금·값은 한 벌로 나온다**(`SliderRange`) — 눈금만 폭에 따라 바꾸고
+                // 경계를 실측값 그대로 넣으면 `(끝 - 시작)`이 눈금의 배수가 아니게 되고,
+                // 그 어김은 **그리기 패스**에서 터져 이 `try/catch`가 원리적으로 못 잡는다
+                // (연도 폭 1,000년이 넘고 10의 배수가 아니면 화면이 열리자마자 죽었다).
+                val spec = SliderRange.of(minYear, maxYear, currentSliderYear)
+                binding.yearSlider.applyRange(spec)
 
-                // Expand range before narrowing to avoid value-out-of-range errors
-                val oldFrom = binding.yearSlider.valueFrom
-                val oldTo = binding.yearSlider.valueTo
-                binding.yearSlider.valueFrom = minOf(oldFrom, adjustedMin)
-                binding.yearSlider.valueTo = maxOf(oldTo, adjustedMax)
-
-                // Now narrow to actual range
-                binding.yearSlider.valueFrom = adjustedMin
-                binding.yearSlider.valueTo = adjustedMax
-
+                // 라벨은 **실측 최소·최대**를 말한다 — 격자에 맞춘 경계가 아니라(사용자가 아는 수).
                 binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
                 binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
-                val totalRange = adjustedMax - adjustedMin
-                val newStepSize = when {
-                    totalRange > 10000 -> 100f
-                    totalRange > 1000 -> 10f
-                    else -> 1f
-                }
-
-                // Set value before stepSize to ensure alignment
-                val sliderYear = currentSliderYear
-                if (sliderYear == null) {
-                    binding.yearSlider.value = adjustedMin
-                    binding.yearLabel.text = getString(R.string.year_label_format, minYear)
-                } else {
-                    val clampedYear = sliderYear.coerceIn(minYear, adjustedMax.toInt())
-                    binding.yearSlider.value = clampedYear.toFloat()
-                    binding.yearLabel.text = getString(R.string.year_label_format, clampedYear)
-                }
-
-                // Align value to step before setting stepSize
-                if (newStepSize > 0f) {
-                    val currentVal = binding.yearSlider.value
-                    val aligned = adjustedMin + (((currentVal - adjustedMin) / newStepSize).toInt() * newStepSize)
-                    binding.yearSlider.value = aligned.coerceIn(adjustedMin, adjustedMax)
-                }
-                binding.yearSlider.stepSize = newStepSize
+                binding.yearLabel.text = getString(R.string.year_label_format, spec.value.toInt())
             } catch (_: Exception) {
                 // Fragment view may have been destroyed during suspend
             }
