@@ -6273,7 +6273,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return
         }
         val repository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
-        val stale = existing.filter { it.id !in matchedGradeSystemIds }
+        // **구역 근거를 필드 정의와 같은 함수로 묻는다**(`ScopedPrune`). 종전에는 전 세계관의
+        // 체계를 떠서 매칭되지 않은 것을 전부 지웠다 — 세계관 하나만 담긴 부분 백업을
+        // 덮어쓰기로 들이면 **말한 적도 없는 다른 세계관의 등급 체계가 통째로 사라졌다**
+        // (참조하던 필드는 독자 표로 강등되어, 되돌리려면 표를 손으로 다시 만들어야 한다).
+        // 바로 아래 필드 정의 정리는 B-130 이후 이미 이 판정을 쓰고 있었고, 그 짝만 빠져 있었다.
+        val pruned = ScopedPrune.plan(
+            existing, matchedGradeSystemIds, idOf = { it.id }, scopeOf = { it.universeId }
+        )
+        val stale = pruned.stale
         var demoted = 0
         for (system in stale) {
             for (field in repository.referencingFields(system)) {
@@ -6290,6 +6298,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val more = if (stale.size > 5) " 외 ${stale.size - 5}개" else ""
             val demotedNote = if (demoted > 0) " — 참조하던 필드 ${demoted}개는 독자 등급 표로 전환했습니다(표 내용은 그대로)" else ""
             result.warnings.add("덮어쓰기: 백업에 없는 등급 체계 ${stale.size}개($names$more)를 삭제했습니다$demotedNote")
+        }
+        // 남긴 것도 반드시 알린다 — 필드 정의 정리와 같은 결(조용히 남기면 그 세계관만 옛
+        // 체계가 살아 있는 상태를 일일이 확인해야만 알게 된다).
+        if (pruned.protectedItems.isNotEmpty()) {
+            val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+            val scopeLabels = pruned.protectedItems.map { it.universeId }.distinct()
+                .joinToString(", ") { universeNames[it] ?: "세계관 #$it" }
+            result.warnings.add(
+                "덮어쓰기: '${spec.sheetName}' 시트가 다루지 않은 세계관($scopeLabels)의 등급 체계 " +
+                "${pruned.protectedItems.size}개는 삭제하지 않고 유지했습니다 — 그 세계관의 행이 " +
+                "백업에 하나도 없어 '지워라'인지 '말한 바 없음'인지 가릴 수 없습니다"
+            )
         }
     }
 
@@ -6612,8 +6632,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 구역(세계관/전역)마다 매칭 근거를 따로 본다 — 판정의 단일 소스는 순수 로직이다.
         // '백업에 없다'와 '백업이 그 구역을 말하지 않았다'를 가르지 않으면, 시트가 다루지도
         // 않은 구역의 정의가 값과 함께 CASCADE로 사라진다(B-130).
+        // **`대상` 열이 없으면 그 파일은 캐릭터 외의 종류를 말하지 않은 것이다**(R-36) —
+        // 모든 행이 캐릭터로 읽히므로 사건·작품 정의는 원리적으로 매칭될 수 없다.
+        // 그때까지 세계관 하나를 구역으로 보면, 캐릭터 행이 매칭됐다는 이유로 그 세계관의
+        // 사건·작품 정의가 값과 함께 CASCADE로 사라진다.
+        val entityTypeStated = resolveHeaderColumns(header.row).containsKey("대상")
         val outcome = FieldDefinitionPrune.plan(
-            db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds
+            db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds, entityTypeStated
         )
         for (field in outcome.stale) db.fieldDefinitionDao().delete(field)
         if (outcome.stale.isNotEmpty()) {
@@ -6625,8 +6650,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 그 구역만 옛 정의가 살아 있는 상태를 일일이 확인해야만 알게 된다(원칙 04).
         if (outcome.protectedFields.isNotEmpty()) {
             val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
-            val scopeLabels = outcome.protectedScopes.joinToString(", ") { scopeId ->
-                if (scopeId == null) FieldScopeCell.GLOBAL_LABEL else universeNames[scopeId] ?: "세계관 #$scopeId"
+            // 구역은 (세계관, 종류)다 — **어느 종류가 남았는지도 말한다**(그 자리를 찾아가야 한다).
+            val scopeLabels = outcome.protectedScopes.joinToString(", ") { (scopeId, entityType) ->
+                val universeLabel =
+                    if (scopeId == null) FieldScopeCell.GLOBAL_LABEL else universeNames[scopeId] ?: "세계관 #$scopeId"
+                // 종류는 그것이 구역의 일부일 때만 붙는다(`대상` 열이 없던 파일).
+                if (entityType == null) universeLabel
+                else "$universeLabel·${FieldValueSheetMapper.entityLabel(entityType)}"
             }
             result.warnings.add(
                 "덮어쓰기: '${spec.sheetName}' 시트가 다루지 않은 구역($scopeLabels)의 필드 정의 " +
