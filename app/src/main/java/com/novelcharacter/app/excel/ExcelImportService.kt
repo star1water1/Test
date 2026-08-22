@@ -3697,6 +3697,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val columnPlan = if (fieldValues == null) emptyMap() else CharacterFieldColumns.plan(
             readHeaderCells(headerRow),
             planFields,
+            // 기대 헤더 표는 **열을 그린 그 함수**가 낸다 — 미리보기와 쓰기가 같은 표를 본다(R-33).
+            CharacterFieldHeaders.expectedHeaders(planFields),
             (CHARACTER_FIXED_HEADERS.mapNotNull { cols[it] } + c.name).filter { it >= 0 }.toSet(),
             CHARACTER_FIXED_HEADERS,
             hasUniverse = universeId != null,
@@ -10970,7 +10972,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         sheetLabel: String
     ): Map<Int, FieldDefinition> {
         val plan = CharacterFieldColumns.plan(
-            readHeaderCells(headerRow), fields, fixedColIndices,
+            readHeaderCells(headerRow), fields,
+            CharacterFieldHeaders.expectedHeaders(fields), fixedColIndices,
             CHARACTER_FIXED_HEADERS, hasUniverse = universe != null,
             multiSuffix = EntityFieldHeaders.MULTI_SUFFIX
         )

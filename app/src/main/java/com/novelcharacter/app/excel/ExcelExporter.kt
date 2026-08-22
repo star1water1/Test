@@ -1664,7 +1664,10 @@ class ExcelExporter(context: Context) {
                 )
             }
 
-            val covered = fields.mapTo(HashSet()) { it.id }
+            // **열을 실제로 받은 필드만** covered다 — 머리가 겹쳐 열을 못 받은 필드까지 담으면
+            // 그 값이 오버플로 시트에서도 빠져 내보내기가 값을 통째로 잃는다
+            // ([CharacterFieldHeaders] ②). 계획은 열을 그리는 쪽과 같은 함수가 낸다.
+            val covered = CharacterFieldHeaders.plan(fields).coveredFieldIds
             universeChars.forEach { coveredFieldIds[it.id] = covered }
 
             exportCharacterSheet(
@@ -1710,7 +1713,7 @@ class ExcelExporter(context: Context) {
             }
             // 열로 담은 것과 오버플로 판정을 **함께** 옮긴다 — 한쪽만 고치면 같은 값이 두 시트에
             // 겹쳐 나가고(열 + 오버플로), 가져오기에서 어느 쪽이 권위인지가 값마다 갈린다.
-            val globalFieldIds = globalFields.mapTo(HashSet()) { it.id }
+            val globalFieldIds = CharacterFieldHeaders.plan(globalFields).coveredFieldIds
             unassignedChars.forEach { coveredFieldIds[it.id] = globalFieldIds }
             val unassignedResolved = unassignedChars.associate { char ->
                 char.id to resolveFieldDisplayValues(
@@ -1909,6 +1912,8 @@ class ExcelExporter(context: Context) {
     ) {
         val novelTitles = novelMap.values.map { it.title }.distinct()
         val spec = characterSpec(fields, novelTitles)
+        // 열 머리를 만든 계획 — 아래 셀 루프가 이것을 돈다(spec의 열과 같은 목록이다).
+        val columnPlan = CharacterFieldHeaders.plan(fields)
         val sheetName = assignSheetName(sheetLabel, usedSheetNames, ownerOf = sheetOwnerOf)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -1933,7 +1938,9 @@ class ExcelExporter(context: Context) {
 
             // 동적 필드 — CALCULATED 실시간 평가를 포함한 표시값은 resolveFieldDisplayValues가 냈다.
             // 숫자 성격 값은 숫자 셀로 나간다(Q-1 ⓐ — setFieldValue가 왕복 멱등 단서를 든다).
-            for (field in fields) {
+            // **머리를 만든 계획을 그대로 돈다** — `fields`를 다시 돌면 열을 못 받은 필드에서
+            // 셀이 하나 더 나가 그 행부터 모든 값이 밀린다(`characterSpec`과 한 소스다).
+            for ((field, _) in columnPlan.columns) {
                 row.createCell(col++).setFieldValue(field, values[field.id] ?: "")
             }
 

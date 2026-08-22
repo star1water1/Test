@@ -103,6 +103,7 @@ $MAIN/excel/ExportProgress.kt
 $MAIN/excel/OverwriteGuard.kt
 $MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EntityFieldHeaders.kt
+$MAIN/excel/CharacterFieldHeaders.kt
 $MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
@@ -349,6 +350,7 @@ TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
+$TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt
 $TEST/excel/EntityFieldValueOverflowTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt

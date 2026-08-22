@@ -21,12 +21,18 @@ class CharacterFieldColumnsTest {
     private fun field(id: Long, key: String, name: String) =
         FieldDefinition(id = id, universeId = 1L, key = key, name = name, type = FieldType.TEXT.name)
 
+    /**
+     * **기대 헤더 표를 비운 채 부른다** — 이 파일의 시험 대부분은 *0단을 지나친 머리*
+     * (손편집·구버전)를 받는 폴백 사다리를 재는 것이고, 그 자리에서만 "키가 이름보다
+     * 앞선다" 같은 규칙이 성립한다. 0단이 걸린 자리는 [CharacterExpectedHeaderTest]가 잰다.
+     */
     private fun plan(
         headers: Map<Int, String>,
         fields: List<FieldDefinition>,
         fixedCols: Set<Int> = emptySet(),
-        hasUniverse: Boolean = true
-    ) = CharacterFieldColumns.plan(headers, fields, fixedCols, FIXED, hasUniverse, MULTI)
+        hasUniverse: Boolean = true,
+        expected: Map<String, FieldDefinition> = emptyMap()
+    ) = CharacterFieldColumns.plan(headers, fields, expected, fixedCols, FIXED, hasUniverse, MULTI)
 
     // ── ① 사다리의 순서 — 안정 식별자 우선, 자연키 폴백 ──────────────────────────
 
@@ -38,8 +44,12 @@ class CharacterFieldColumnsTest {
         assertEquals(target, (out[3] as ColumnFieldOutcome.Matched).field)
     }
 
+    /**
+     * **폴백 사다리 안에서만** 성립하는 규칙이다 — 기대 헤더 표에 있는 머리는 0단이
+     * 먼저 가져간다(그 열을 그렇게 적은 것이 내보내기이므로 그쪽이 옳다).
+     */
     @Test
-    fun `키 완전 일치가 이름 일치보다 앞선다`() {
+    fun `기대 헤더에 없는 머리는 키 완전 일치가 이름 일치보다 앞선다`() {
         val byKey = field(7L, "메모2", "다른 이름")
         val byName = field(8L, "other", "메모2")
         val out = plan(mapOf(1 to "메모2"), listOf(byName, byKey))

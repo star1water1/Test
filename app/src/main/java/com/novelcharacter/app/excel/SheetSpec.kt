@@ -1052,10 +1052,11 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("성", width = 4000))
         add(ColumnSpec("이름(First)", width = 4000))
         add(ColumnSpec("이명", width = 6000))
-        // Dynamic field columns — 고정 열과 겹치거나 동명 필드가 둘 이상이면 필드키를 병기해
-        // 열 정체를 확정한다(병기하지 않으면 가져오기가 first-wins로 값을 뒤바꾼다).
-        val fieldNameCounts = fields.groupingBy { it.name }.eachCount()
-        for (field in fields) {
+        // Dynamic field columns — 머리를 짓는 규칙과 **어느 필드가 열을 받는가**는 모두
+        // [CharacterFieldHeaders]가 든다. 셀을 쓰는 `ExcelExporter.exportCharacterSheet`도
+        // 같은 계획을 도는 것이 요점이다 — 두 벌로 돌면 한쪽만 걸러질 때 **전 필드 값이 한
+        // 칸씩 밀린다**(그 오염은 어느 결함보다 나쁘다).
+        for ((field, headerName) in CharacterFieldHeaders.plan(fields).columns) {
             val options = if (field.fieldType == FieldType.SELECT) {
                 try {
                     val json = org.json.JSONObject(field.config)
@@ -1063,17 +1064,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
                     if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
                 } catch (_: Exception) { null }
             } else null
-            val disambiguate = collidesWithFixedHeader(field.name) || (fieldNameCounts[field.name] ?: 0) > 1
-            val core = characterFieldHeader(field.name, field.key, disambiguate)
-            // 쉼표를 쪼개는 **모든** 필드에 안내를 붙인다 (B-38). 종전에는 `type == "MULTI_TEXT"`
-            // 하나만 보았고, 그래서 '콤마 목록' 표시 형식의 TEXT 필드는 외부 편집자가 쉼표의 뜻을
-            // 모른 채 값을 넣었다 — 안내 없이 넣은 쉼표는 들이기에서 토큰 구조를 조용히 가른다.
-            // 판정은 앱이 이미 쓰는 단일 소스가 든다(B-37이 정렬에서 없앤 하드코딩의 쌍둥이).
-            // 접미사 글자는 [EntityFieldHeaders.MULTI_SUFFIX] 하나가 든다 — 연표·작품 시트도 같은 말을
-            // 쓰고(B-177), 시트마다 다른 말로 안내하면 외부 편집자가 시트마다 다시 배운다.
-            // 리터럴을 두 벌로 두면 한쪽만 고쳐질 때 **가져오기가 그 열을 못 알아본다.**
             val multiToken = FieldValueTokenizer.isMultiToken(field)
-            val headerName = if (multiToken) core + EntityFieldHeaders.MULTI_SUFFIX else core
             add(ColumnSpec(
                 headerName,
                 required = field.isRequired,
