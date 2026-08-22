@@ -37,10 +37,19 @@ object FieldValueTokenizer {
     /** 라이브러리가 값 카탈로그를 관리하는 타입인가.
      *  제외: CALCULATED(파생값), NUMBER(연속값 — 통계 binning 담당),
      *  BODY_SIZE·구조화 입력(파트별 측정치는 카탈로그 값이 아님). */
-    fun supportsLibrary(fd: FieldDefinition): Boolean {
-        if (!isLibraryType(fd.fieldType)) return false
-        return !StructuredInputConfig.fromConfig(fd.config).enabled
-    }
+    fun supportsLibrary(fd: FieldDefinition): Boolean =
+        supportsLibrary(fd.fieldType, StructuredInputConfig.fromConfig(fd.config).enabled)
+
+    /**
+     * 같은 판정을 **아직 [FieldDefinition]이 없는 자리**에서도 부른다 — 필드 편집 창은
+     * 스피너에 든 타입과 스위치 상태만 손에 쥐고 있고, 저장되기 전이라 정의가 없다.
+     *
+     * 그 자리에서 `type in setOf(TEXT, SELECT, …)`로 손수 적으면 [isLibraryType]의
+     * `when`이 지키는 축(새 타입이 **누락**으로 빠지지 않는다)이 그 자리에서만 무너진다
+     * (R-52 · `tools/check_field_type_branch.sh`).
+     */
+    fun supportsLibrary(type: FieldType?, structuredEnabled: Boolean): Boolean =
+        isLibraryType(type) && !structuredEnabled
 
     /** 한 캐릭터/사건이 이 필드에 여러 토큰(콤마 구분)을 가질 수 있는가 */
     fun isMultiToken(fd: FieldDefinition): Boolean {

@@ -161,6 +161,14 @@ interface CharacterStateChangeDao {
     @Query("SELECT id FROM character_state_changes")
     suspend fun getAllChangeIds(): List<Long>
 
+    /**
+     * id로 여러 행을 한 번에 읽는다 — 엑셀 '없는 항목 삭제'가 **지우기 전에 스냅샷**을
+     * 뜨려면 행 자체가 필요한데, 종전에는 id만 읽는 통로뿐이라 그 갈래가 휴지통을
+     * 우회했다. 999-변수 상한은 `SqlInChunks`가 든다(R-54).
+     */
+    @Query("SELECT * FROM character_state_changes WHERE id IN (:ids)")
+    suspend fun getChangesByIds(ids: List<Long>): List<CharacterStateChange>
+
     @Query("DELETE FROM character_state_changes WHERE id = :id")
     suspend fun deleteById(id: Long)
 

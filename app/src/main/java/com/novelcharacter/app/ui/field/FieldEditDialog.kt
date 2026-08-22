@@ -51,6 +51,12 @@ class FieldEditDialog : DialogFragment() {
     /** 생성 모드에서 입력된 값 사전 등록분 (콤마 구분) — 결과 번들로 전달 */
     private var stagedInitialValues: String = ""
 
+    /**
+     * 이 필드의 값 라이브러리 항목 수 — 아직 못 세었으면 `null`이다(프리셋 필드·조회 실패).
+     * '값 제한'이 허용 값 0개로 저장되려 할 때 사유를 말하는 재료다(형제 자리와 같은 처분).
+     */
+    private var fieldLibraryEntryCount: Int? = null
+
     /** 저장 시점의 '전역 기본 필드' 스위치 상태 (B-119). 실행은 호출부가 저장소를 통해 한다. */
     private var stagedDefaultField: Boolean = false
 
@@ -919,6 +925,8 @@ class FieldEditDialog : DialogFragment() {
                 val randomVisible = isRandomizable && entityType in RANDOM_CAPABLE_ENTITY_TYPES
                 binding.randomLayout.visibility = if (randomVisible) View.VISIBLE else View.GONE
                 if (randomVisible) updateRandomNumberOptionsVisibility(binding)
+                // 값 데이터 라이브러리: 라이브러리가 값 카탈로그를 관리하는 종류에서만 (R-24)
+                updateFieldLibraryVisibility(binding)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -1269,6 +1277,8 @@ class FieldEditDialog : DialogFragment() {
             binding.structuredPartsContainer.visibility = visibility
             binding.btnAddStructuredPart.visibility = visibility
             refreshPartSlotRows(binding)
+            // 구조화 입력을 켜면 파트별 측정치가 되어 카탈로그 값이 아니다 — 섹션이 내려간다.
+            updateFieldLibraryVisibility(binding)
         }
 
         binding.btnAddStructuredPart.setOnClickListener {
@@ -1381,6 +1391,7 @@ class FieldEditDialog : DialogFragment() {
                     (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
                         .database.fieldValueEntryDao().getByField(existing.id).size
                 }.getOrDefault(0)
+                fieldLibraryEntryCount = count
                 if (isAdded) {
                     binding.fieldLibrarySummary.text =
                         getString(R.string.field_library_summary_edit, count)
@@ -1402,7 +1413,31 @@ class FieldEditDialog : DialogFragment() {
         binding.spinnerInputMode.setSelection(
             com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES.indexOf(mode).coerceAtLeast(0)
         )
+        updateFieldLibraryVisibility(binding)
     }
+
+    /**
+     * 값 데이터 라이브러리 섹션이 **성립하는가** — 소비처가 없으면 섹션째 내린다 (R-24).
+     *
+     * 종전에는 섹션 안쪽(요약·[열기] 단추)만 종류를 봤고 **섹션 자체는 언제나 서 있었다.**
+     * 그래서 계산·숫자·체형 필드를 만들 때도 '값 사전 등록' 칸과 '입력 모드'가 그대로
+     * 보였고, 거기에 적어 넣은 값은 저장 때 **말없이 버려졌으며**(라이브러리에 등재할
+     * 자리가 없다) '제한'은 아무도 읽지 않는 설정으로 config에 남았다 — 타입을 되돌리면
+     * 그 잠자던 '제한'이 되살아난다.
+     *
+     * 판정은 [com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary]가 낸다 —
+     * 여기서 타입 집합을 손수 적으면 새 타입이 **누락으로** 빠진다(R-52).
+     */
+    private fun updateFieldLibraryVisibility(binding: DialogFieldEditBinding) {
+        binding.fieldLibrarySection.visibility =
+            if (fieldLibrarySupported(binding)) View.VISIBLE else View.GONE
+    }
+
+    /** 지금 창이 든 상태(스피너의 종류 + 구조화 입력 스위치)로 내리는 판정 — 저장 쪽도 이것을 쓴다. */
+    private fun fieldLibrarySupported(binding: DialogFieldEditBinding): Boolean =
+        com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(
+            currentFieldType(), binding.switchStructuredInput.isChecked
+        )
 
     private fun addBinRangeRow(container: LinearLayout, density: Float) {
         val ctx = requireContext()
@@ -2586,10 +2621,31 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
-        // 생성 모드의 값 사전 등록분 — 필드 저장 후 FieldManageFragment가 라이브러리에 등재
-        stagedInitialValues = if (existingField == null) {
+        // 생성 모드의 값 사전 등록분 — 필드 저장 후 FieldManageFragment가 라이브러리에 등재.
+        // **성립하지 않는 종류면 담지 않는다** — 종류를 바꾸기 전에 적어 둔 글자가 칸에
+        // 남아 있는데, 그것을 그대로 실으면 등재할 자리가 없어 조용히 버려진다.
+        stagedInitialValues = if (existingField == null && fieldLibrarySupported(binding)) {
             binding.editInitialValues.text.toString()
         } else ""
+
+        // '값 제한'인데 허용 값이 하나도 없으면 **그 필드의 모든 입력이 막힌다.**
+        // 형제 자리(`FieldValueListFragment`의 입력 모드 창)와 같은 처분으로 사유를 알린다 —
+        // **막지는 않는다**(자율성 우선: 값을 곧 등록할 수도 있다). 그쪽도 알리고 진행한다.
+        if (fieldLibrarySupported(binding)) {
+            val libraryModes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
+            val libraryMode = libraryModes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { libraryModes[0] }
+            val willBeEmpty =
+                if (existingField == null) stagedInitialValues.isBlank() else fieldLibraryEntryCount == 0
+            if (libraryMode == com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODE_RESTRICTED &&
+                willBeEmpty
+            ) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    getString(R.string.field_library_restricted_no_values),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
         // 전역 기본 필드 스위치(B-119) — [deliverResult]에는 binding이 없으므로 여기서 담는다
         // (`stagedInitialValues`와 같은 이유·같은 자리). 스위치를 열지 않은 호출부는 늘 false다.
@@ -3244,13 +3300,23 @@ class FieldEditDialog : DialogFragment() {
         )
     }
 
-    /** 입력 모드(제안/자유/제한)를 config "valueLibrary"에 기록 */
+    /**
+     * 입력 모드(제안/자유/제한)를 config `"valueLibrary"`에 기록한다.
+     *
+     * **성립하지 않는 종류에서는 키를 남기지 않는다** — 기본값(`MODE_SUGGEST`)을 넘기면
+     * `applyToConfig`가 키를 걷어낸다. 남겨 두면 소비처 없는 '제한'이 config에 잠들어
+     * 있다가 종류를 되돌리는 순간 되살아난다(`applyDuelGradeConfig`가 세운 관례 그대로).
+     */
     private fun applyInputModeConfig(binding: DialogFieldEditBinding, configJson: String): String {
-        val modes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
-        val mode = modes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { modes[0] }
-        return com.novelcharacter.app.data.model.FieldValueLibraryConfig.applyToConfig(
-            configJson, com.novelcharacter.app.data.model.FieldValueLibraryConfig(mode)
-        )
+        val config = if (fieldLibrarySupported(binding)) {
+            val modes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
+            com.novelcharacter.app.data.model.FieldValueLibraryConfig(
+                modes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { modes[0] }
+            )
+        } else {
+            com.novelcharacter.app.data.model.FieldValueLibraryConfig()
+        }
+        return com.novelcharacter.app.data.model.FieldValueLibraryConfig.applyToConfig(configJson, config)
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {

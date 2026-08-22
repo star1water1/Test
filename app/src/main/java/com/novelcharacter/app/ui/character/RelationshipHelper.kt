@@ -614,8 +614,10 @@ class RelationshipHelper(
                 .setTitle(getString(R.string.edit_relationship_change))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save), null)
+                // 편집창의 중립 [삭제]도 한 단계를 더 거친다 — 이 삭제는 휴지통을 지나지
+                // 않으므로 즉시 삭제는 되돌릴 길이 없다(형제 자리 `DuelMatchesFragment`와 같은 모양).
                 .setNeutralButton(getString(R.string.delete)) { _, _ ->
-                    viewModel.deleteRelationshipChange(change)
+                    confirmDeleteRelationshipChange(change)
                 }
                 .setNegativeButton(getString(R.string.cancel), null)
                 .create()
@@ -645,16 +647,49 @@ class RelationshipHelper(
         }
     }
 
-    private fun confirmDeleteRelationship(item: RelationshipDisplayItem) {
+    /**
+     * 관계 변화 하나를 지우기 전 확인 — **저장소에서 이 삭제만 확인 없이 즉시 돌고 있었다.**
+     * 휴지통을 지나지 않는 삭제라 되돌릴 길이 없으므로, 그 사실을 말하는 것이 R-4다.
+     */
+    private fun confirmDeleteRelationshipChange(change: CharacterRelationshipChange) {
         val context = try { contextGetter() } catch (_: Exception) { return }
         MaterialAlertDialogBuilder(context)
             .setIcon(R.drawable.ic_warning)
-            .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
-            .setMessage(getString(R.string.confirm_delete_relationship))
+            .setTitle(getString(R.string.rel_change_delete_title))
+            .setMessage(getString(R.string.rel_change_delete_confirm))
             .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                viewModel.deleteRelationshipById(item.relationshipId)
+                viewModel.deleteRelationshipChange(change)
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+    }
+
+    /**
+     * 관계 삭제 확인 — **함께 사라지는 것을 센 뒤에 묻는다** (R-4).
+     *
+     * 관계를 지우면 그 관계에 쌓인 관계 변화가 CASCADE로 함께 사라지는데 종전 문구는
+     * 그것도, 휴지통을 지나지 않는다는 것도 말하지 않았다. 세는 장치는 이 파일이
+     * 이미 `showRelationshipChangesDialog`에서 쓰는 그것이다.
+     */
+    private fun confirmDeleteRelationship(item: RelationshipDisplayItem) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val changeCount = viewModel.getRelationshipChangesList(item.relationshipId).size
+            // 컨텍스트는 **정지점 뒤에** 잡는다 — 기다리는 사이에 화면이 사라질 수 있다.
+            val context = try { contextGetter() } catch (_: Exception) { return@launch }
+            val message = if (changeCount > 0) {
+                getFormattedString(R.string.confirm_delete_relationship_changes, arrayOf(changeCount))
+            } else {
+                getString(R.string.confirm_delete_relationship)
+            }
+            MaterialAlertDialogBuilder(context)
+                .setIcon(R.drawable.ic_warning)
+                .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
+                .setMessage(message)
+                .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                    viewModel.deleteRelationshipById(item.relationshipId)
+                }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+        }
     }
 }

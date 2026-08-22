@@ -11872,6 +11872,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 엑셀에 없는 항목 삭제 ──
 
+    /**
+     * 엑셀에 없는 항목을 지운다 — **처분은 인앱 삭제 경로가 정한다.**
+     *
+     * 인앱이 휴지통을 지나는 것(캐릭터·사건·세력·상태변화)은 여기서도 지나고, 인앱도
+     * 영구 삭제인 것(관계·관계 변화·명대사·이름 은행·세력 관계·세력 소속)은 여기서도
+     * 영구 삭제다. 기준을 시트 종류로 잡으면 **같은 데이터가 경로에 따라 다르게 사라진다.**
+     *
+     * **실패는 삼키지 않는다.** 지우지 못한 행은 그대로 남아 다음 왕복에서 다시 후보가
+     * 되는데, 아무 말이 없으면 사용자는 지워졌다고 믿는다(개발 의도 2번 '변수 제어').
+     */
     private suspend fun deleteUnmatchedEntities(options: ExportOptions, result: ImportResult) {
         val del = options.deleteOptions
 
@@ -11922,7 +11932,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedRelationshipIds) {
                     try { db.characterRelationshipDao().deleteById(id); result.deletedRelationships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("관계 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11933,19 +11945,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedRelationshipChangeIds) {
                     try { db.characterRelationshipChangeDao().deleteById(id); result.deletedRelationshipChanges++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("관계 변화 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
 
-        // 상태 변화
+        // 상태 변화 — 인앱 삭제와 동일 경로로 휴지통 스냅샷을 남긴다.
+        // 종전에는 이 갈래만 우회해, **같은 데이터가 인앱에서는 되돌릴 수 있고 엑셀에서는
+        // 영영 사라졌다.** 처분을 가르는 근거는 인앱 경로이지 시트 종류가 아니다.
         if (del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+            val trash = trashForImport()
             val allIds = db.characterStateChangeDao().getAllChangeIds()
-            for (id in allIds) {
-                if (id !in matchedStateChangeIds) {
-                    try { db.characterStateChangeDao().deleteById(id); result.deletedStateChanges++ }
-                    catch (_: Exception) { }
+            val doomed = allIds.filter { it !in matchedStateChangeIds }
+            val doomedChanges = SqlInChunks.flat(doomed) { db.characterStateChangeDao().getChangesByIds(it) }
+            for (change in doomedChanges) {
+                try {
+                    trash.snapshotStateChange(change)
+                    db.characterStateChangeDao().deleteById(change.id)
+                    result.deletedStateChanges++
+                } catch (e: Exception) {
+                    result.warnings.add("상태변화 '${change.fieldKey} → ${change.newValue}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
                 }
+            }
+            if (result.deletedStateChanges > 0) {
+                result.warnings.add("엑셀에 없는 상태변화 ${result.deletedStateChanges}건을 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
             }
         }
 
@@ -11955,7 +11980,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedQuoteIds) {
                     try { db.characterQuoteDao().deleteById(id); result.deletedQuotes++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("명대사 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11966,7 +11993,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedNameBankIds) {
                     try { db.nameBankDao().deleteById(id); result.deletedNameBank++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("이름 은행 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11977,7 +12006,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedFactionRelationshipIds) {
                     try { db.factionRelationshipDao().deleteById(id); result.deletedFactionRelationships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("세력 관계 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -12020,7 +12051,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedFactionMembershipIds) {
                     try { db.factionMembershipDao().deleteById(id); result.deletedFactionMemberships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("세력 소속 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }

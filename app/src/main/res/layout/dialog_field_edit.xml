@@ -1160,73 +1160,85 @@
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_analysis" />
 
-                <!-- 값 데이터 라이브러리 — 표시 라벨·별칭·카테고리는 라이브러리에서 관리 -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/field_library_title"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary"
-                    android:layout_marginTop="8dp" />
-
-                <TextView
+                <!-- 값 데이터 라이브러리 — 표시 라벨·별칭·카테고리는 라이브러리에서 관리.
+                     **섹션째로 선다.** 라이브러리를 쓰지 않는 타입(계산·숫자·체형)이나
+                     구조화 입력을 켠 필드에서는 이 섹션이 통째로 사라진다 — 종전에는
+                     사전 등록 칸과 '입력 모드'가 그대로 서서, 적어 넣은 값은 저장 때
+                     말없이 버려지고 '제한'은 소비처 없는 설정으로 config에 남았다(R-24). -->
+                <LinearLayout
+                    android:id="@+id/fieldLibrarySection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/purpose_field_library"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary" />
+                    android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/fieldLibrarySummary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
-                    android:textColor="@color/text_secondary" />
+                    <!-- 값 데이터 라이브러리 — 표시 라벨·별칭·카테고리는 라이브러리에서 관리 -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/field_library_title"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginTop="8dp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnOpenFieldLibrary"
-                    style="@style/Widget.App.Button.Tonal"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:visibility="gone"
-                    android:text="@string/field_library_open" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/initialValuesLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:visibility="gone"
-                    android:hint="@string/field_library_initial_values_hint"
-                    app:endIconMode="custom"
-                    app:endIconDrawable="@drawable/ic_help"
-                    app:endIconContentDescription="@string/help_icon_desc">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/editInitialValues"
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:text="@string/purpose_field_library"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary" />
 
-                <!-- 입력 모드 -->
-                <TextView
-                    android:id="@+id/labelInputMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/field_library_menu_input_mode"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary"
-                    android:drawableEnd="@drawable/ic_help"
-                    android:drawablePadding="4dp"
-                    android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="8dp" />
+                    <TextView
+                        android:id="@+id/fieldLibrarySummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.LabelSmall"
+                        android:textColor="@color/text_secondary" />
 
-                <Spinner
-                    android:id="@+id/spinnerInputMode"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnOpenFieldLibrary"
+                        style="@style/Widget.App.Button.Tonal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone"
+                        android:text="@string/field_library_open" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/initialValuesLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:visibility="gone"
+                        android:hint="@string/field_library_initial_values_hint"
+                        app:endIconMode="custom"
+                        app:endIconDrawable="@drawable/ic_help"
+                        app:endIconContentDescription="@string/help_icon_desc">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/editInitialValues"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- 입력 모드 -->
+                    <TextView
+                        android:id="@+id/labelInputMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/field_library_menu_input_mode"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary"
+                        android:drawableEnd="@drawable/ic_help"
+                        android:drawablePadding="4dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:layout_marginTop="8dp" />
+
+                    <Spinner
+                        android:id="@+id/spinnerInputMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp" />
+                </LinearLayout>
 
                 <!-- 통계에서 묶는 기준 -->
                 <TextView
