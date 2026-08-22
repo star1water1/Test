@@ -5988,7 +5988,7 @@
    "date": "2026-08-19",
    "covered": false,
    "tests": [],
-   "evidence": "NarrativeBulkDraftTest.출력_상한이_낮으면_절단_위험을_미리_말한다가 판정식만 잰다(assertFalse(NarrativeFieldAiWriter.draftFitsBudget(AiTokenPolicy.FLOOR, long))). [길게] 누름이 그 판정을 물어 '한 번은 경고만 하고 멈춘다'는 것을 단언하는 시험은 없다 — NarrativeBulkSheet:174의 warned 집합 분기이고, 여기가 새면 곧바로 과금이다.",
+   "evidence": "NarrativeBulkDraftTest.출력_상한이_낮으면_절단_위험을_미리_말한다가 판정식만 잰다(assertFalse(NarrativeFieldAiWriter.draftFitsBudget(AiTokenPolicy.FLOOR, long))). [길게] 누름이 그 판정을 물어 '한 번은 경고만 하고 멈춘다'는 것을 단언하는 시험은 없다 — NarrativeBulkSheet의 warned 집합 분기이고, 여기가 새면 곧바로 과금이다.",
    "kind": "CODE"
   }
  },
@@ -6008,7 +6008,7 @@
    "date": "2026-08-19",
    "covered": false,
    "tests": [],
-   "evidence": "'끈 것은 안 들어간다'는 NarrativeBulkSheet:304 `if (checks[item.fieldId]?.isChecked != true) continue` 한 자리이고 이를 단언하는 시험이 없다. 뒷문장('원문이 안 덮인다')만 NarrativeBulkDraftTest.이미_쓴_필드는_대상에서_빠지고_사유가_남는다가 덮는다(assertEquals(listOf(\"이름_배경\"), bulk.targets.map { it.spec.name })).",
+   "evidence": "'끈 것은 안 들어간다'는 NarrativeBulkSheet.showResult의 `if (!state.isChecked(item.fieldId)) continue` 한 자리이고 이를 단언하는 시험이 없다. 뒷문장('원문이 안 덮인다')만 NarrativeBulkDraftTest.이미_쓴_필드는_대상에서_빠지고_사유가_남는다가 덮는다(assertEquals(listOf(\"이름_배경\"), bulk.targets.map { it.spec.name })).",
    "kind": "CODE"
   }
  },

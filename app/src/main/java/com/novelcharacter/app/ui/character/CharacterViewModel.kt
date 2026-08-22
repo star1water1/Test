@@ -1251,39 +1251,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * **LiveData가 아니어야 한다** — 같은 채널에 되쓰면 관측자가 다시 울려 창이 두 번 뜬다.
      */
+    /**
+     * 필드 추천 검토 창의 회차 상태 — **체크는 [com.novelcharacter.app.util.AiCheckState]가
+     * 든다**(규칙을 두 벌로 적으면 갈린다. `touched` → `seeded` 수정이 한쪽에만 적용되는
+     * 것이 그 모양이다). 여기가 더 드는 것은 *손수 고친 제안*뿐이다.
+     */
     class AiReviewState {
-        /**
-         * 이 회차의 기본 선택을 이미 심었는가.
-         *
-         * **종전에는 `touched`(사용자가 한 번이라도 만졌는가)였고 그것이 결함이었다**
-         * (콜드 검토 2026.08.21). 만진 뒤로는 전 행이 [checked] 하나만 보는데 그 집합에는
-         * *만진 행*만 들어 있어서, 체크 하나를 켜고 회전하면 **기본으로 켜져 있던 나머지가
-         * 통째로 꺼졌다** — 이 상태가 없애려던 것과 정확히 같은 부류가 반대 방향으로 남았다.
-         *
-         * 지금은 첫 조립에서 기본 규칙의 결과를 [checked]에 **그대로 심는다.**
-         * 그러면 [isChecked] 하나가 언제나 전 행의 답이다.
-         */
-        private var seeded = false
-
-        private val checked = mutableSetOf<String>()
+        private val checks = com.novelcharacter.app.util.AiCheckState<String>()
         private val edited = mutableMapOf<String, com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>()
 
-        /**
-         * 회차의 **첫 조립에서만** 기본 선택을 심는다. 두 번째부터는 아무 일도 하지 않는다 —
-         * 그래야 회전으로 다시 조립돼도 사용자의 판단이 기본 규칙에 덮이지 않는다.
-         */
-        fun seedDefaults(defaultOn: Collection<String>) {
-            if (seeded) return
-            seeded = true
-            checked.clear()
-            checked.addAll(defaultOn)
-        }
+        fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn)
 
-        fun setChecked(fieldKey: String, on: Boolean) {
-            if (on) checked.add(fieldKey) else checked.remove(fieldKey)
-        }
+        fun setChecked(fieldKey: String, on: Boolean) = checks.setChecked(fieldKey, on)
 
-        fun isChecked(fieldKey: String): Boolean = fieldKey in checked
+        fun isChecked(fieldKey: String): Boolean = checks.isChecked(fieldKey)
 
         fun remember(suggestion: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion) {
             edited[suggestion.fieldKey] = suggestion
@@ -1296,14 +1277,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             edited[original.fieldKey] ?: original
 
         fun clear() {
-            seeded = false
-            checked.clear()
+            checks.clear()
             edited.clear()
         }
     }
 
     /** 회차 수명이다 — 결과를 비울 때 함께 비운다. */
     val aiReviewState = AiReviewState()
+
+    /**
+     * 서술형 **일괄** 검토 창의 회차 체크 — 형제(위)와 같은 부류다. 종전에는 이 창만 체크를
+     * 다이얼로그의 지역 `CheckBox` 맵에 두어, 회전하면 껐던 필드가 전부 다시 켜졌다.
+     * 키가 필드 id인 것은 그 창이 id로 항목을 세기 때문이다.
+     */
+    val aiNarrativeBulkReviewState = com.novelcharacter.app.util.AiCheckState<Long>()
 
     fun clearAiSuggestResult() {
         aiSuggestResult.value = null
@@ -1525,7 +1512,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 이 한 값에 들어 있다. 검토 중 회전으로 날리면 **다섯 번을 다시 결제**한다.
      */
     val aiNarrativeBulkResult = MutableLiveData<AiNarrativeBulkRun?>()
-    fun clearAiNarrativeBulkResult() { aiNarrativeBulkResult.value = null }
+    /** 회차가 끝났다 — 체크 상태의 수명도 결과와 같다(남겨 두면 다음 회차가 옛 판단을 쓴다). */
+    fun clearAiNarrativeBulkResult() {
+        aiNarrativeBulkResult.value = null
+        aiNarrativeBulkReviewState.clear()
+    }
 
     /**
      * 일괄 초안 실행 — 대상마다 요청 하나를 **순차로** 보낸다.

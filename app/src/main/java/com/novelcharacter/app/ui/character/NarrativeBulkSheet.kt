@@ -264,7 +264,13 @@ object NarrativeBulkSheet {
 
         // 필드마다 체크박스 + 초안 미리보기. 기본은 전부 켬 — 일괄의 목적이 '한 번에 깔기'라
         // 하나씩 켜게 하면 그 목적이 사라진다(조작 마찰). 마음에 안 드는 것만 끄면 된다.
-        val checks = mutableMapOf<Long, CheckBox>()
+        //
+        // **체크는 뷰모델이 든다**(R-38) — 종전에는 아래 `CheckBox` 위젯에만 살아서, 회전
+        // 한 번에 껐던 필드가 전부 다시 켜졌다. 체크가 풀린 화면은 *"내가 아직 안 골랐다"*와
+        // 구별되지 않으므로, 사용자는 마음에 안 들던 초안이 깔리는 줄 모른 채 [적용]을 누른다.
+        // 기본 켜기는 **첫 조립에서만** 심는다 — 두 번째부터 심으면 회전이 판단을 덮는다.
+        val state = viewModel.aiNarrativeBulkReviewState
+        state.seedDefaults(usable.map { it.fieldId })
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
@@ -279,9 +285,9 @@ object NarrativeBulkSheet {
             for (item in usable) {
                 val box = CheckBox(context).apply {
                     text = item.fieldName
-                    isChecked = true
+                    isChecked = state.isChecked(item.fieldId)
+                    setOnCheckedChangeListener { _, on -> state.setChecked(item.fieldId, on) }
                 }
-                checks[item.fieldId] = box
                 addView(box)
                 addView(TextView(context).apply {
                     textSize = 13f
@@ -301,7 +307,7 @@ object NarrativeBulkSheet {
             .setPositiveButton(R.string.ai_narrative_bulk_apply) { _, _ ->
                 var applied = 0
                 for (item in usable) {
-                    if (checks[item.fieldId]?.isChecked != true) continue
+                    if (!state.isChecked(item.fieldId)) continue
                     val field = fieldOf(item.fieldId) ?: continue
                     // 필드마다 토스트를 띄우지 않는다 — 일괄이라 N번 겹쳐 뜨고, 그러면
                     // 정작 읽어야 할 합계 고지가 그 뒤에 가린다.

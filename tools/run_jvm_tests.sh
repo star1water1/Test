@@ -128,6 +128,7 @@ $MAIN/util/FieldValueCellPlan.kt
 $MAIN/util/FieldValueOverlay.kt
 $MAIN/util/FieldValueScan.kt
 $MAIN/util/CharacterFieldColumns.kt
+$MAIN/util/AiCheckState.kt
 $MAIN/backup/BackupChunkFormat.kt
 $MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
@@ -400,6 +401,7 @@ $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
+$TEST/util/AiCheckStateTest.kt
 $TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt

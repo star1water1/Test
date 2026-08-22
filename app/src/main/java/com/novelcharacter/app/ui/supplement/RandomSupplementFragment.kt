@@ -500,6 +500,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             // 서술형도 같은 가드 — 편집 모드가 아닐 때 숨은 폼에 기입하면 재진입 시 폼이 DB에서
             // 재구성되며 유료 응답이 조용히 사라진다. 뽑기는 실행 중 잠기므로 캐릭터는 그대로다.
             if (editorState == EditorState.EDIT) {
+                // **폼이 아직 안 섰으면 미룬다** (R-38) — 회전이면 관측이 다시 붙으며 같은
+                // 회차가 곧바로 재전달되는데, 그 시점의 폼은 비어 있어 검토 창이 전 항목을
+                // *"필드가 사라졌다"*로 읽고 결제된 초안을 버린다. 꺼내는 자리는 아래
+                // [maybeFinishEditHydration] — 그 함수가 이미 이 부류를 꺼내고 있다.
+                if (!isEditFormHydrated()) {
+                    pendingAiNarrativeShow = true
+                    return@observe
+                }
                 com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
                     this, formBuilder, characterViewModel, run
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
@@ -529,6 +537,11 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             // 이 한 값에 들어 있다(R-38). 그래서 단일 서술형과 **같은 가드**를 쓴다:
             // 편집 모드가 아니면 숨은 폼에 기입하지 않고 돌아갈 길을 준다.
             if (editorState == EditorState.EDIT) {
+                // 단일 서술형과 같은 미루기 — 여기 걸린 돈이 더 크다(요청 N건이 한 값에 있다).
+                if (!isEditFormHydrated()) {
+                    pendingAiNarrativeBulkShow = true
+                    return@observe
+                }
                 com.novelcharacter.app.ui.character.NarrativeBulkSheet.showResult(
                     this, formBuilder, characterViewModel, run
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
