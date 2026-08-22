@@ -247,5 +247,51 @@ data class FieldDefinitionSnapshot(
      * 것이라 그 판정과 갈라야 하는데, code 없음 하나로는 두 경우를 가를 수 없다.
      * 옛 페이로드에는 이 키가 없고 기본값 false라 종전 판정이 그대로 선다.
      */
-    val globalScope: Boolean = false
+    val globalScope: Boolean = false,
+
+    // ── 삭제 갈래(KIND_DELETE) 전용 — 덮어쓰기 백업에서는 전부 비어 있다 (R-2: 전부 nullable) ──
+
+    /**
+     * **지워진 정의 그 자체.** 이 칸이 채워져 있으면 복원은 되돌리기가 아니라 **부활**이다.
+     *
+     * [fields]와 칸을 나눈다: 그쪽은 *"덮이기 직전의 살아 있는 정의"*라 복원이 그것을
+     * 다시 덮고, 이쪽은 *"사라진 정의"*라 복원이 새로 심는다 — 처분이 정반대다.
+     */
+    val deletedField: FieldDefinition? = null,
+    /**
+     * 함께 담긴 데이터의 규모 — 휴지통 목록이 *"값 N건이 함께 들어 있다"*를 말하는 재료다.
+     * 이어붙임 행([com.novelcharacter.app.data.model.TrashSnapshot.TYPE_FIELD_DATA])을
+     * 세어 보라고 할 수는 없다(일일이 확인해야 아는 데이터를 만들지 않는다 — 원칙 04).
+     */
+    val deletedValueCount: Int = 0,
+    val deletedEntryCount: Int = 0,
+    val deletedStateChangeCount: Int = 0
+)
+
+/**
+ * 지워진 필드가 들고 있던 데이터의 이어붙임 행 (TYPE_FIELD_DATA).
+ *
+ * 크기 예산([com.novelcharacter.app.data.repository.TrashRepository])만큼 잘려 여러 행이
+ * 된다 — 사유는 [UniverseDataSnapshot]과 같다.
+ *
+ * **붙을 정의는 자연키로 찾는다**(세계관 코드 + 종류 + 키). 복원이 정의를 다시 심을 때
+ * 새 id를 받으므로 옛 `fieldDefinitionId`로는 아무것도 찾을 수 없다(R-1).
+ * 값의 주인(캐릭터·사건·작품)은 코드로 병기해 [refs]에 담는다.
+ */
+data class FieldDataSnapshot(
+    /** 붙을 필드의 자연키 — 셋 다 없으면 붙일 자리를 찾을 수 없다. */
+    val fieldKey: String? = null,
+    val entityType: String? = null,
+    val universeCode: String? = null,
+    /** true면 전역 구역(무소속 — universeId null)의 필드다. [universeCode] 없음이 정상이다. */
+    val globalScope: Boolean = false,
+    /** 목록 표시용 — 정의 행이 없는 이어붙임 행도 자기 이름을 말할 수 있어야 한다. */
+    val fieldName: String? = null,
+    val characterValues: List<CharacterFieldValue>? = null,
+    val eventValues: List<EventFieldValue>? = null,
+    val novelValues: List<NovelFieldValue>? = null,
+    val entries: List<FieldValueEntry>? = null,
+    /** 이 필드 키를 가리키던 상태변화 이력 — 캐릭터가 살아 있어야 붙는다. */
+    val stateChanges: List<CharacterStateChange>? = null,
+    val refs: EntityRefs? = null
 )

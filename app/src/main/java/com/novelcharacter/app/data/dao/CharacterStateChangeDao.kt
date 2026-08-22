@@ -127,8 +127,27 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month IS NOT NULL AND day IS NOT NULL")
     fun observeChangesWithDate(fieldKey: String): LiveData<List<CharacterStateChange>>
 
+    /**
+     * 그 키의 이력 전량 — 필드 정의 삭제가 **지우기 전에 스냅샷**을 뜨는 자리다.
+     * 지우는 짝([deleteChangesByFieldKey])과 범위가 글자 그대로 같아야 한다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey")
+    suspend fun getChangesByFieldKey(fieldKey: String): List<CharacterStateChange>
+
     @Query("DELETE FROM character_state_changes WHERE fieldKey = :fieldKey")
     suspend fun deleteChangesByFieldKey(fieldKey: String)
+
+    /** 위 삭제의 **읽기 쌍둥이** — 범위가 글자 그대로 같아야 스냅샷이 지워질 것을 전부 담는다. */
+    @Query("""
+        SELECT * FROM character_state_changes
+        WHERE fieldKey = :fieldKey
+          AND characterId IN (
+              SELECT c.id FROM characters c
+              INNER JOIN novels n ON c.novelId = n.id
+              WHERE n.universeId = :universeId
+          )
+    """)
+    suspend fun getChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long): List<CharacterStateChange>
 
     @Query("""
         DELETE FROM character_state_changes

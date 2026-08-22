@@ -6675,11 +6675,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val outcome = FieldDefinitionPrune.plan(
             db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds, entityTypeStated
         )
-        for (field in outcome.stale) db.fieldDefinitionDao().delete(field)
+        // 인앱 삭제와 **같은 함수**로 지운다 — 그래야 휴지통 스냅샷과 이력 손질 범위가
+        // 한 벌이 된다(R-33). 종전에는 여기만 DAO를 직접 불러 값·엔트리·이력이
+        // 아무 고지도 없이 영구 소멸했다.
+        val fieldTrash = trashForImport()
+        val fieldRepository = UniverseRepository(
+            db, db.universeDao(), db.fieldDefinitionDao(), db.novelDao()
+        )
+        for (field in outcome.stale) {
+            fieldRepository.deleteField(field, fieldTrash)
+        }
         if (outcome.stale.isNotEmpty()) {
             val names = outcome.stale.take(5).joinToString(", ") { it.name }
             val more = if (outcome.stale.size > 5) " 외 ${outcome.stale.size - 5}개" else ""
-            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${outcome.stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 의도한 것이 아니면 삭제 전 백업으로 되돌리세요")
+            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${outcome.stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
         }
         // 남긴 것도 반드시 알린다 — 조용히 남기면 사용자는 덮어쓰기가 끝난 줄 알고,
         // 그 구역만 옛 정의가 살아 있는 상태를 일일이 확인해야만 알게 된다(원칙 04).

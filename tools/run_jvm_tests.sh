@@ -304,6 +304,7 @@ $MAIN/util/SqlInChunks.kt
 $MAIN/util/ExifOrientation.kt
 $MAIN/util/SliderRange.kt
 $MAIN/util/SafFileCopy.kt
+$MAIN/util/FieldDeleteScope.kt
 $MAIN/util/SpinnerChoice.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
@@ -538,6 +539,7 @@ $TEST/util/SqlInChunksTest.kt
 $TEST/util/ExifOrientationTest.kt
 $TEST/util/SliderRangeTest.kt
 $TEST/util/SafFileCopyTest.kt
+$TEST/util/FieldDeleteScopeTest.kt
 $TEST/util/SpinnerChoiceTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt

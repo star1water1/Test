@@ -889,7 +889,7 @@ class TrashFragment : Fragment() {
                     b.trashItemName.text = item.entityName
                     b.trashItemMeta.text = b.root.context.getString(
                         R.string.trash_item_meta,
-                        typeLabel(b.root.context, item.entityType),
+                        typeLabel(b.root.context, item.entityType, item.operationKind),
                         dateFormat.format(Date(item.deletedAt))
                     )
                     b.btnRestore.setOnClickListener { onRestore(item) }
@@ -918,8 +918,18 @@ class TrashFragment : Fragment() {
         /** 고른 종류 필터를 회전 너머로 나르는 키 — 싣는 쪽과 꺼내는 쪽이 이 상수 하나를 쓴다(R-61의 결). */
         private const val STATE_SELECTED_TYPES = "trash_selected_types"
 
-        /** 알 수 없는 타입은 원문 그대로 보여준다 — 라벨이 없다고 항목을 숨기면 존재를 잃는다. */
-        fun typeLabel(context: android.content.Context, entityType: String): String = when (entityType) {
+        /**
+         * 알 수 없는 타입은 원문 그대로 보여준다 — 라벨이 없다고 항목을 숨기면 존재를 잃는다.
+         *
+         * @param operationKind 같은 타입이라도 **종류가 이름을 가른다** — 필드 정의는
+         *   덮어쓰기 직전 백업일 수도, 실제 삭제일 수도 있고, 삭제 백업에 *'덮어쓰기 직전'*
+         *   라벨이 붙으면 목록이 거짓말을 한다. 넘기지 않으면 종전 라벨 그대로다.
+         */
+        fun typeLabel(
+            context: android.content.Context,
+            entityType: String,
+            operationKind: String? = null
+        ): String = when (entityType) {
             TrashSnapshot.TYPE_CHARACTER -> context.getString(R.string.trash_type_character)
             TrashSnapshot.TYPE_UNIVERSE -> context.getString(R.string.trash_type_universe)
             TrashSnapshot.TYPE_UNIVERSE_DATA -> context.getString(R.string.trash_type_universe_data)
@@ -930,7 +940,15 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_GRADE_SYSTEM -> context.getString(R.string.trash_type_grade_system)
             TrashSnapshot.TYPE_DUEL_AXIS -> context.getString(R.string.trash_type_duel_axis)
             TrashSnapshot.TYPE_DUEL_MATCHES -> context.getString(R.string.trash_type_duel_matches)
-            TrashSnapshot.TYPE_FIELD_DEFINITION -> context.getString(R.string.trash_type_field_definition)
+            // 종류를 모르면 **일반 이름**이다(종류 필터의 라벨이 그렇다) — 'ㅇㅇ 직전'은
+            // 그 백업에만 참인 말이라, 모를 때 붙이면 절반이 거짓이 된다.
+            TrashSnapshot.TYPE_FIELD_DEFINITION ->
+                if (operationKind == TrashSnapshot.KIND_EDIT_BACKUP) {
+                    context.getString(R.string.trash_type_field_definition)
+                } else {
+                    context.getString(R.string.trash_type_field_definition_deleted)
+                }
+            TrashSnapshot.TYPE_FIELD_DATA -> context.getString(R.string.trash_type_field_data)
             else -> entityType
         }
 
@@ -946,7 +964,12 @@ class TrashFragment : Fragment() {
                 // 편집 직전 백업은 지워진 적이 없다 — '삭제'라 부르면 그 자체가 거짓이다.
                 if (row.editBackup) R.string.trash_operation_title_edit_backup
                 else R.string.trash_operation_title,
-                typeLabel(context, row.rootType),
+                typeLabel(
+                    context,
+                    row.rootType,
+                    // 머리글은 묶음의 종류를 이미 알고 있다 — 라벨도 같은 사실을 쓴다.
+                    if (row.editBackup) TrashSnapshot.KIND_EDIT_BACKUP else TrashSnapshot.KIND_DELETE
+                ),
                 row.rootName
             )
     }

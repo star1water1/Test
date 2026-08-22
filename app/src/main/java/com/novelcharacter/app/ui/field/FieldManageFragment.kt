@@ -413,19 +413,48 @@ class FieldManageFragment : Fragment() {
             .show()
     }
 
+    /**
+     * 필드 삭제 확인 — **무엇이 함께 사라지는지 세어서 먼저 말한다** (R-4).
+     *
+     * 종전에는 참조 계산 필드가 있을 때만 창이 떴고, 없으면 **아무것도 묻지 않고 지웠다.**
+     * 그런데 필드를 지우면 그 필드의 값·값 라이브러리 항목·상태변화 이력이 함께 사라진다 —
+     * 형제 삭제 창 여섯은 전부 규모를 말한다(R-18). 이제 그 셋을 세어 붙이고, 휴지통에
+     * 보관된다는 사실도 함께 말한다(이 판이 그 보관을 세웠다).
+     */
     private fun confirmDeleteField(field: FieldDefinition) {
         viewLifecycleOwner.lifecycleScope.launch {
             // 참조 수식은 같은 종류 안에서만 성립한다 — 종류를 넘겨야 사건·작품 필드도 경고가 뜬다(R-29)
             val refs = viewModel.getReferencingCalculatedFields(universeId, field.key, field.entityType)
-            if (refs.isEmpty()) {
-                viewModel.deleteField(field)
-                return@launch
-            }
-            val names = refs.joinToString("\n") { "  • ${it.name}" }
+            val impact = runCatching { viewModel.getFieldDeleteImpact(field) }
+                .getOrDefault(com.novelcharacter.app.data.repository.FieldDeleteImpact())
+            // 컨텍스트는 **정지점 뒤에** 잡는다 — 세는 사이에 화면이 사라질 수 있다.
             if (!isAdded) return@launch
+
+            val sections = ArrayList<String>(2)
+            if (refs.isNotEmpty()) {
+                val names = refs.joinToString("\n") { "  • ${it.name}" }
+                sections.add(getString(R.string.delete_field_warning_message, field.name, names))
+            }
+            sections.add(
+                if (impact.any) {
+                    val lines = listOfNotNull(
+                        impact.values.takeIf { it > 0 }
+                            ?.let { "  • " + getString(R.string.delete_field_impact_values, it) },
+                        impact.libraryEntries.takeIf { it > 0 }
+                            ?.let { "  • " + getString(R.string.delete_field_impact_entries, it) },
+                        impact.stateChanges.takeIf { it > 0 }
+                            ?.let { "  • " + getString(R.string.delete_field_impact_changes, it) }
+                    ).joinToString("\n")
+                    getString(R.string.delete_field_impact_message, field.name, lines)
+                } else {
+                    getString(R.string.delete_field_plain_message, field.name)
+                }
+            )
+
             MaterialAlertDialogBuilder(requireContext())
+                .setIcon(R.drawable.ic_warning)
                 .setTitle(R.string.delete_field_warning_title)
-                .setMessage(getString(R.string.delete_field_warning_message, field.name, names))
+                .setMessage(sections.joinToString("\n\n"))
                 .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteField(field) }
                 .setNegativeButton(R.string.cancel, null)
                 .show()

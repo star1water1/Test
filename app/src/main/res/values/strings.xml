@@ -338,8 +338,14 @@
     <string name="image_rotate_failed">이미지를 돌리지 못했습니다</string>
     <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="confirm_delete_field">\"%s\" 필드를 삭제하시겠습니까?</string>
+    <!-- 삭제 영향 고지 (R-4) — 무엇이 함께 사라지는지 먼저 말한다. 셋 중 있는 줄만 붙는다. -->
+    <string name="delete_field_impact_values">입력된 값 %1$d건</string>
+    <string name="delete_field_impact_entries">값 라이브러리 항목 %1$d개</string>
+    <string name="delete_field_impact_changes">상태변화 이력 %1$d건</string>
+    <string name="delete_field_impact_message">\"%1$s\" 필드를 삭제하면 다음도 함께 사라집니다:\n\n%2$s\n\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="delete_field_plain_message">\"%1$s\" 필드를 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="delete_field_warning_title">필드 삭제 경고</string>
-    <string name="delete_field_warning_message">\'%1$s\' 필드를 삭제하면 다음 계산 필드의 수식이 영향을 받습니다:\n\n%2$s\n\n해당 필드의 계산 결과가 부정확해질 수 있습니다. 삭제하시겠습니까?</string>
+    <string name="delete_field_warning_message">\'%1$s\' 필드를 삭제하면 다음 계산 필드의 수식이 영향을 받습니다:\n\n%2$s\n\n해당 필드의 계산 결과가 부정확해질 수 있습니다.</string>
     <string name="enter_name">이름을 입력하세요</string>
     <string name="name_too_long">이름이 너무 깁니다 (최대 100자)</string>
     <string name="required_field_empty">필수 필드 \'%1$s\'을(를) 입력하세요</string>
@@ -574,6 +580,10 @@
     <string name="trash_type_duel_axis">대결 축</string>
     <string name="trash_type_duel_matches">대결 기록</string>
     <string name="trash_type_field_definition">필드 정의(덮어쓰기 직전)</string>
+    <!-- 같은 타입이지만 종류가 다르다 — 삭제 백업에 '덮어쓰기 직전' 라벨이 붙으면 목록이 거짓말을 한다.
+         종류를 모르는 자리(종류 필터)는 일반 이름을 쓴다. -->
+    <string name="trash_type_field_definition_deleted">필드 정의</string>
+    <string name="trash_type_field_data">필드 데이터(값·라이브러리·이력)</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>

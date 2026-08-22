@@ -322,9 +322,21 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         return KeyMigration(formulaCount, historyCount, unresolvedCount)
     }
 
+    /**
+     * 필드 하나를 지우면 함께 사라지는 것의 규모 — 확인창이 먼저 묻는다(R-4).
+     * 세는 범위는 저장소의 삭제 범위와 같은 함수에서 나온다.
+     */
+    suspend fun getFieldDeleteImpact(field: FieldDefinition) =
+        universeRepository.getFieldDeleteImpact(field)
+
     fun deleteField(field: FieldDefinition) = viewModelScope.launch {
         try {
-            universeRepository.deleteField(field)
+            // **한 조작 = 한 휴지통 인스턴스**(R-3/R-9/R-12) — 정의 한 행과 데이터 이어붙임
+            // 행들이 같은 작업으로 묶여야 '작업 전체 복원'이 반쪽이 되지 않는다.
+            universeRepository.deleteField(
+                field,
+                com.novelcharacter.app.data.repository.TrashRepository(app.database)
+            )
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_deleted, field.name)))
         } catch (e: Exception) {
