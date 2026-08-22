@@ -3,10 +3,12 @@ package com.novelcharacter.app.excel
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.CsvTokens
+import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
 import com.novelcharacter.app.util.RegexCharClasses
@@ -664,12 +666,37 @@ fun universeSpec() = SheetSpec(
 )
 
 /**
- * 작품 시트. [novelFieldHeaders]는 **작품 커스텀 필드**(확-3)의 동적 열이며 규칙은
+ * 작품 시트. [novelFieldColumns]는 **작품 커스텀 필드**(확-3)의 동적 열이며 규칙은
  * [EntityFieldHeaders]가 단일 소스다 — 연표 시트의 사건 필드 열과 같은 규칙을 쓴다.
  */
+/**
+ * 커스텀 필드 열에 실을 드롭다운 — **세 시트가 이 한 함수를 부른다**(캐릭터·작품·사건).
+ *
+ * 종전에는 캐릭터 시트만, 그것도 SELECT만 실었다. GRADE는 값 집합이 정해져 있는데도
+ * 빠졌고, 작품·사건 시트는 두 타입 다 빠져 **같은 필드가 시트에 따라 다르게 나갔다**
+ * (R-18). 규칙을 세 번 적으면 다음 타입이 늘 때 한 자리가 빠진다.
+ *
+ * **`else`를 두지 않는다** — 타입이 늘면 여기가 컴파일을 깨서 답을 강제한다(B-55·R-52).
+ */
+fun customFieldDropdownOptions(field: FieldDefinition): List<String>? = when (field.fieldType) {
+    FieldType.SELECT ->
+        FieldOptionParser.parseSelectOptions(field.config).takeIf { it.isNotEmpty() }
+    FieldType.GRADE ->
+        // **실효 표가 실제로 있을 때만** 싣는다 — `parseGradeOptions`의 C·B·A·S 폴백을
+        // 그대로 실으면 들이기가 받아들이는 것보다 **좁은** 목록이 걸려, 사용자가 쓰던
+        // 등급이 파일에서 거부당한다.
+        if (GradeSystemRef.gradesFromConfig(field.config).isNotEmpty()) {
+            FieldOptionParser.parseGradeOptions(field.config).takeIf { it.isNotEmpty() }
+        } else null
+    // 나머지는 값 집합이 열려 있어 목록을 세울 수 없다.
+    FieldType.TEXT, FieldType.MULTI_TEXT, FieldType.NUMBER,
+    FieldType.CALCULATED, FieldType.BODY_SIZE -> null
+    null -> null
+}
+
 fun novelSpec(
     universeNames: List<String>,
-    novelFieldHeaders: List<String> = emptyList()
+    novelFieldColumns: List<Pair<FieldDefinition, String>> = emptyList()
 ) = SheetSpec(
     sheetName = "작품",
     freezeCols = 1,
@@ -689,7 +716,10 @@ fun novelSpec(
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표준연도", width = 3000),
         ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
-    ) + novelFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 작품 커스텀 필드 (확-3)
+    ) + novelFieldColumns.map { (field, header) ->
+        // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (확-3 · R-18)
+        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+    }
 )
 
 fun fieldDefinitionSpec(
@@ -1057,13 +1087,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         // 같은 계획을 도는 것이 요점이다 — 두 벌로 돌면 한쪽만 걸러질 때 **전 필드 값이 한
         // 칸씩 밀린다**(그 오염은 어느 결함보다 나쁘다).
         for ((field, headerName) in CharacterFieldHeaders.plan(fields).columns) {
-            val options = if (field.fieldType == FieldType.SELECT) {
-                try {
-                    val json = org.json.JSONObject(field.config)
-                    val arr = json.optJSONArray("options")
-                    if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
-                } catch (_: Exception) { null }
-            } else null
+            // 파싱은 앱의 단일 소스에 맡긴다 — 종전에는 이 자리만 `org.json`으로 다시 읽어
+            // 규칙이 두 벌이었다(형제 시트와도 갈렸다).
+            val options = customFieldDropdownOptions(field)
             val multiToken = FieldValueTokenizer.isMultiToken(field)
             add(ColumnSpec(
                 headerName,
@@ -1140,7 +1166,7 @@ fun allCharactersSpec(
 
 fun timelineSpec(
     novelTitles: List<String>,
-    eventFieldHeaders: List<String> = emptyList(),
+    eventFieldColumns: List<Pair<FieldDefinition, String>> = emptyList(),
     universeNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "사건 연표",
@@ -1165,7 +1191,10 @@ fun timelineSpec(
         // 이 열이 없던 구버전 파일은 기존처럼 관련 작품의 세계관에서 유도한다(하위 호환).
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000)
-    ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
+    ) + eventFieldColumns.map { (field, header) ->
+        // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (B-10 · R-18)
+        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+    }
 )
 
 fun stateChangeSpec() = SheetSpec(

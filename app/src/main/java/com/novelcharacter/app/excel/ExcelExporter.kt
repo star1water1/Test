@@ -1330,7 +1330,8 @@ class ExcelExporter(context: Context) {
         val novelFieldColumns = novelFieldPlan.columns
         val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
 
-        val spec = novelSpec(universes.map { it.name }, novelFieldColumns.map { it.second })
+        // 계획의 (필드, 머리) 쌍을 그대로 넘긴다 — 드롭다운 판정에 필드가 필요하다.
+        val spec = novelSpec(universes.map { it.name }, novelFieldColumns)
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2018,7 +2019,7 @@ class ExcelExporter(context: Context) {
 
         val spec = timelineSpec(
             novels.map { it.title },
-            eventFieldColumns.map { it.second },
+            eventFieldColumns,
             universesById.values.map { it.name }
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
