@@ -2847,6 +2847,8 @@
     <string name="organize_folder_result_aborted">오류로 중간에 멈췄습니다 (%s) — 위 수치까지는 이미 반영됐습니다. 남은 파일은 폴더에 그대로 있으니 다시 받아오면 이어서 처리합니다</string>
     <string name="organize_folder_summary_revive">뗀 표시 해제: %d장 — 서랍에서 빼내 다시 쓸 이미지로 되돌립니다</string>
     <string name="organize_folder_result_revive">뗀 표시를 해제했습니다: %d장</string>
+    <string name="organize_folder_summary_settled">이미 제자리에 있는 %d장 — 바꿀 것은 없고 처리됨 폴더로 옮겨 정리합니다</string>
+    <string name="organize_folder_result_settled">이미 제자리이던 %d장을 처리됨 폴더로 옮겼습니다</string>
     <string name="organize_folder_result_unmoved">원본 %d장은 \'_처리됨\' 폴더로 옮기지 못했습니다 — 폴더에 그대로 있지만 다음 받아오기에서 다시 편입하지 않습니다</string>
 
     <!-- 정리 폴더 왕복(정리용 내보내기) -->

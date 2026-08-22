@@ -136,6 +136,12 @@ object OrganizeFolderService {
          */
         val markCleared: Int = 0,
         /**
+         * 바꿀 것이 없어 **정리만 한** 원본 수 — `_처리됨/`으로 옮긴 '확정 무동작' 파일
+         * ([FolderRoundtripPlanner.Plan.settled]). 다른 계수가 전부 0인 채 파일만 옮겨지는
+         * 경우가 있으므로, 이 칸이 없으면 결과가 "아무 일도 없었다"고 말한다.
+         */
+        val settledArchived: Int = 0,
+        /**
          * `_삭제승인/`으로 **앱에서 지운** 이미지 수(B-107 D6). 되돌릴 수 없으므로 실행 전에
          * 확인창을 거쳤고, 여기 수는 그 확인이 약속한 수와 같아야 한다.
          */
@@ -897,6 +903,18 @@ object OrganizeFolderService {
         // 지문을 남겨야(실패분) 다음 받아오기가 같은 파일을 두 번 편입하지 않는다.
         runCatching { CharacterImageAutoLinker.resyncIfEnabled(context, db) }
 
+        // **처분이 확정된 원본도 옮긴다.** 설계 3장은 *"반영·편입에 성공한 원본은 옮긴다"*였는데,
+        // 그 둘 어디에도 안 드는 셋째 상태가 있다 — **볼 필요는 있었으나 바꿀 것이 없던 파일**
+        // (이미 제자리에 있는 것). 종전에는 그것이 `_처리됨/`으로도 안 가고 계수도 안 돼,
+        // 받아와도 아무 일이 없으니 **진입 배너가 영원히 "새 이미지 N장"** 이라 말했다.
+        // 옮기는 것이 곧 "이 파일은 처리됐다"의 표식이고, 이동 실패는 기존 지문 장부가 받는다.
+        // 취소했으면 넓히지 않는다 — "중단 시점까지 반영"이 취소의 계약이다.
+        val settledIds = HashSet<String>()
+        if (!cancelled) for (action in plan.settled) {
+            fileById[action.id]?.let { processedFiles.add(it); settledIds.add(it.documentId) }
+        }
+
+        var settledArchived = 0
         var unmoved = 0
         val processedRoot = ensureProcessedRoot(context, treeUri)
         // `_처리됨/<원폴더명>/`의 문서 id를 **한 번만** 찾는다. 종전에는 파일마다
@@ -907,7 +925,9 @@ object OrganizeFolderService {
         for (file in processedFiles) {
             val ok = processedRoot != null &&
                 moveToProcessed(context, treeUri, file, processedRoot, processedDirs)
-            if (!ok) {
+            if (ok) {
+                if (file.documentId in settledIds) settledArchived++
+            } else {
                 unmoved++
                 unmovedFingerprints.add(
                     FolderRoundtripLedger.fingerprintOf(file.relativePath, file.size, file.modifiedAt)
@@ -925,6 +945,7 @@ object OrganizeFolderService {
             unlinked = unlinked,
             autoLinkedKept = autoLinkedKept,
             markCleared = markCleared,
+            settledArchived = settledArchived,
             deleted = deleted,
             deletedBytes = deletedBytes,
             scattered = scattered.size,

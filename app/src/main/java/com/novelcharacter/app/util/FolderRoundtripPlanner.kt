@@ -413,6 +413,21 @@ object FolderRoundtripPlanner {
         val ambiguousFolders: List<String> = emptyList(),
         val unknownCodeFolders: List<String> = emptyList(),
         val deeperIgnored: Int = 0,
+        /**
+         * **확정 무동작** — 볼 필요는 있었으나 바꿀 것이 없던 파일들.
+         *
+         * 왕복의 처분은 셋인데 종전에는 자료형이 둘뿐이었다: *반영*과 *실패·보류*(폴더에
+         * 남아 있는 것 = 미처리의 표식). 그래서 **이미 제자리에 있는 파일**이 그 둘 중 어디에도
+         * 못 들어가 `_처리됨/`으로도 안 가고 계수도 안 됐고, 진입 배너가 **영원히** "새 이미지
+         * N장"이라 말했다 — 받아와도 아무 일이 없으니 끊을 방법이 없었다.
+         *
+         * 다섯 자리가 여기 담긴다: 서랍의 이미 낱개인 파일 · 되돌리는 자리의 이미 되돌아온 파일 ·
+         * `_분리됨/`의 이미 뗀 파일 · 이미 그 캐릭터에만 배정된 파일 · `_삭제승인/`의 미지 토큰.
+         *
+         * **[actionCount]에는 넣지 않는다** — 진행도 총량은 *파일을 만지는 항목 수*다(R-26).
+         * **`alreadyHandled` 항목도 담지 않는다** — 맥락으로 들어온 것이지 이번에 확정된 것이 아니다.
+         */
+        val settled: List<ScanItem> = emptyList(),
         val miscReadAsCharacter: List<String> = emptyList(),
         /**
          * `_`로 시작하는데 등재된 예약 이름도, 그 이름의 캐릭터도 아닌 1단계 폴더 이름들.
@@ -514,6 +529,7 @@ object FolderRoundtripPlanner {
         val aiTagExistingPaths = LinkedHashMap<String, MutableList<String>>()
         val unknownTokenItems = HashSet<String>()
         var deleteApprovalUnknown = 0
+        val settled = ArrayList<ScanItem>()
         var deeper = 0
         var miscImported = 0
 
@@ -531,8 +547,10 @@ object FolderRoundtripPlanner {
                 miscImported++
             } else if (path in linkedPaths) {
                 unlinkOnly.add(UnlinkOnlyAction(item, path))
+            } else {
+                // 이미 낱개다 — 바꿀 것은 없지만 **처분은 확정됐다**([Plan.settled]).
+                settled.add(item)
             }
-            // 이미 낱개면 할 일 없음 — 계수도 하지 않는다(되돌리는 자리와 같은 규약).
         }
 
         /**
@@ -631,8 +649,10 @@ object FolderRoundtripPlanner {
                                 hadDetachedMark = path in detachedPaths
                             )
                         )
+                    } else {
+                        // 이미 되돌아온 상태 — 확정 무동작([Plan.settled]).
+                        settled.add(item)
                     }
-                    // 배정도 묶음도 표식도 없으면 이미 되돌아온 상태다 — 할 일 없음(계수도 않는다).
                 }
 
                 is Location.DetachedRoot -> {
@@ -650,8 +670,10 @@ object FolderRoundtripPlanner {
                         detaches.add(
                             DetachAction(item, path, owners, unlinks = linked, keepsDetachedMark = true)
                         )
+                    } else {
+                        // 이미 서랍에 있다 — 확정 무동작([Plan.settled]).
+                        settled.add(item)
                     }
-                    // 배정도 묶음도 없으면 이미 서랍에 있는 상태다 — 할 일 없음.
                 }
 
                 is Location.DeleteApproval -> {
@@ -663,7 +685,7 @@ object FolderRoundtripPlanner {
                     // 면제되는 것은 다르다 — 사용자는 지워질 것이라 믿고 넣었고, 파일은 그
                     // 폴더에 그대로 남아 다음 받아오기에도 같은 자리에 선다(변수 제어).
                     if (path != null) deletes.add(DeleteAction(item, path, owners))
-                    else deleteApprovalUnknown++
+                    else { deleteApprovalUnknown++; settled.add(item) }
                 }
 
                 is Location.Shared -> {
@@ -716,8 +738,10 @@ object FolderRoundtripPlanner {
                             holds.add(Hold(item, HoldReason.SHARED_OWNERS))
                         } else if (owners != listOf(target)) {
                             moves.add(MoveAction(item, path, owners, target))
+                        } else {
+                            // 이미 그 캐릭터에만 배정돼 있다 — 확정 무동작([Plan.settled]).
+                            settled.add(item)
                         }
-                        // 이미 그 캐릭터에만 배정돼 있으면 할 일 없음.
                     } else {
                         // 기타 이름(동명 보류 포함) — 배정은 건드리지 않고 폴더끼리 묶는다.
                         val key = location.name
@@ -826,6 +850,7 @@ object FolderRoundtripPlanner {
             ambiguousFolders = ambiguous.toList(),
             unknownCodeFolders = unknownCode.toList(),
             deeperIgnored = deeper,
+            settled = settled,
             miscReadAsCharacter = miscAsCharacter.toList(),
             unknownReservedFolders = unknownReserved.toList(),
             aiTagFolders = aiTagFolders.mapValues { it.value.toList() },

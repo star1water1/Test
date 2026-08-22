@@ -2256,7 +2256,10 @@ class ImageManagerViewModel(
         val uri = runCatching { android.net.Uri.parse(uriString) }.getOrNull() ?: return@withContext 0
         val scan = com.novelcharacter.app.util.OrganizeFolderService.scan(getApplication(), uri)
             ?: return@withContext 0
-        scan.files.size
+        // **이미 처리한 파일은 빼고 센다.** 나열은 그것들을 *맥락*으로 함께 싣지만(세트 정족수·
+        // 같은 토큰 판정에 필요하다), 배너가 말하는 것은 "받아올 것"이다. 빼지 않으면 방금
+        // 내보낸 사본 전량이 "새 이미지 N장"으로 잡힌다.
+        scan.files.count { !it.alreadyHandled }
     }
 
     // ===== 정리 폴더 왕복 (내보내기) =====

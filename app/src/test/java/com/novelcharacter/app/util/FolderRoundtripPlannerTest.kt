@@ -798,4 +798,51 @@ class FolderRoundtripPlannerTest {
         assertEquals(1, q.imports.size)
     }
 
+    // ── 확정 무동작(settled) — 셋째 처분 ──
+
+    /**
+     * 이미 제자리인 파일은 **확정 무동작**으로 잡힌다 — 그래야 `_처리됨/`으로 옮겨져
+     * 진입 배너가 같은 파일을 영원히 "새 이미지"라 말하지 않는다.
+     */
+    @Test fun alreadyInPlaceFilesAreSettled() {
+        // ⓐ 이미 그 캐릭터에만 배정된 캐릭터 폴더 파일
+        val a = plan(listOf(tokenFile("f1", tokenA, "가온")),
+            names = mapOf("가온" to listOf(7L)), owners = mapOf(pathA to listOf(7L)))
+        assertEquals(listOf("f1"), a.settled.map { it.id })
+        assertEquals(0, a.actionCount)
+
+        // ⓑ 되돌리는 자리의 이미 되돌아온 파일
+        val b = plan(listOf(tokenFile("f2", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)))
+        assertEquals(listOf("f2"), b.settled.map { it.id })
+
+        // ⓒ `_분리됨/`의 이미 뗀 파일
+        val c = plan(listOf(tokenFile("f3", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED)))
+        assertEquals(listOf("f3"), c.settled.map { it.id })
+
+        // ⓓ 서랍의 이미 낱개인 파일
+        val d = plan(listOf(tokenFile("f4", tokenA, FolderRoundtripPlanner.FOLDER_MISC)))
+        assertEquals(listOf("f4"), d.settled.map { it.id })
+    }
+
+    /** 할 일이 있으면 확정 무동작이 아니다 — 둘을 겸하면 같은 파일을 두 번 처분한다. */
+    @Test fun filesWithWorkAreNotSettled() {
+        val p = plan(listOf(tokenFile("f1", tokenA, "가온")),
+            names = mapOf("가온" to listOf(7L)), owners = mapOf(pathA to listOf(9L)))
+        assertEquals(1, p.moves.size)
+        assertTrue(p.settled.isEmpty())
+    }
+
+    /** 맥락으로 들어온 파일은 확정 무동작이 아니다 — 이번에 확정된 것이 아니다. */
+    @Test fun handledContextFilesAreNotSettled() {
+        val p = plan(listOf(handledTokenFile("h1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)))
+        assertTrue(p.settled.isEmpty())
+    }
+
+    /** 보류는 확정이 아니다 — 폴더에 남아 있는 것이 미처리의 표식이라는 규약이 거기 걸려 있다. */
+    @Test fun heldFilesAreNotSettled() {
+        val p = plan(listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_SHARED)))
+        assertEquals(1, p.holds.size)
+        assertTrue(p.settled.isEmpty())
+    }
+
 }

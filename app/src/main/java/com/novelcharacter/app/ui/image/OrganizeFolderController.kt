@@ -333,7 +333,14 @@ class OrganizeFolderController(
         // 예약 오타·무시한 파일이 전부 그 창에서 사라졌다. 폴더에 넣은 것이 통째로 보류되는
         // 경우가 실제로 흔한데(`_공유/`에 넣으면 전부 보류다), 그때 사용자는 앱이 폴더를
         // 못 읽은 것으로 이해한다. 줄 만드는 자리를 하나로 두고 **버튼만 가른다.**
-        if (bundle.isEmpty) {
+        // **바꿀 것은 없지만 정리할 것은 있는 경우** — 이미 제자리에 있는 파일을 `_처리됨/`으로
+        // 옮겨 "이 파일은 봤다"를 확정한다. 이것이 없으면 그 파일이 폴더에 영영 남아 진입 배너가
+        // 매번 같은 수를 말한다. **묻지 않고 옮기지는 않는다** — 사용자 폴더를 비우는 일이라
+        // 결과를 먼저 말하고 [적용]을 받는다(R-4).
+        if (plan.settled.isNotEmpty()) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_settled, plan.settled.size))
+        }
+        if (bundle.isEmpty && plan.settled.isEmpty()) {
             val head = fragment.getString(R.string.organize_folder_nothing)
             val body = if (lines.isEmpty()) head else head + "\n\n" + lines.joinToString("\n")
             MaterialAlertDialogBuilder(fragment.requireContext())
@@ -542,6 +549,9 @@ class OrganizeFolderController(
             ))
         }
         // 서랍에 넣었는데 자동 링크라 그대로인 것 — 아무 말도 없으면 "넣었는데 왜 그대로지"가 된다.
+        if (result.settledArchived > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_settled, result.settledArchived))
+        }
         if (result.markCleared > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_revive, result.markCleared))
         }
