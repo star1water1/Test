@@ -175,6 +175,23 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().remove("filter_novel_id").remove("filter_character_id").apply()
     }
 
+    /**
+     * 걸려 있는 필터의 사건 id 캐시를 다시 읽는다 — **사건이 바뀌는 모든 자리가 여기를 지난다.**
+     *
+     * 종전에는 이 세 줄이 사건 CRUD 네 자리에 복사돼 있었고, **작품 캐시만** 갱신했다.
+     * 캐릭터 필터를 걸어 둔 채 사건을 더하거나 지우면 그 캐시가 낡은 채로 남아
+     * 이전/다음 이동과 `N / M` 표기가 **없는 사건을 세거나 새 사건을 못 봤다**(R-33 —
+     * 같은 일을 네 곳에 적어 두면 한 곳이 반드시 뒤처진다).
+     */
+    private suspend fun refreshFilterCaches() {
+        _filterNovelId.value?.let { nid ->
+            _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+        }
+        _filterCharacterId.value?.let { cid ->
+            _characterEventIds.value = timelineRepository.getEventIdsForCharacter(cid).toSet()
+        }
+    }
+
     val visibleRange: LiveData<Pair<Int, Int>> = MediatorLiveData<Pair<Int, Int>>().apply {
         fun update() {
             val zoom = _zoomLevel.value ?: 4
@@ -536,10 +553,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             }
             // 커밋 후 값 라이브러리 수확 (실패 무해)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_added)))
@@ -572,10 +586,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
             if (oldEvent != null && oldEvent.eventType != event.eventType &&
                 (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
@@ -648,10 +659,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
             if (oldEvent != null && oldEvent.eventType != event.eventType &&
                 (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
@@ -818,10 +826,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     cleanupStateChangesForDeletedEvent(event)
                 }
             }
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_deleted)))
         } catch (e: Exception) {

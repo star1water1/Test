@@ -41,6 +41,26 @@ import org.json.JSONObject
  */
 object CalculatedCellEcho {
 
+    /**
+     * **소유자가 이 가져오기에서 새로 생기는 행**의 판정 재료 — 그 행의 입력 칸 자체다.
+     *
+     * 저장된 값과 견주는 것이 이 판정의 계약인데, 새로 생기는 소유자에게는 저장된 값이
+     * 없다. 그래서 재료가 통째로 비고, 수식이 **재료 없이** 평가돼 셀의 값과 어긋난다 —
+     * 아무것도 고치지 않은 파일인데도 **새 캐릭터 행마다** 거짓 경고와 '건너뜀'이 붙었다
+     * (빈 DB 복원이면 전 행이 그렇다).
+     *
+     * 그 행에서는 **내보낸 기기의 저장값이 곧 이 행의 입력 칸**이므로 재료를 행에서 짓는다.
+     * 계산 필드 칸은 재료가 아니고(그것이 산출물이다), 빈 칸도 넣지 않는다 —
+     * 내보내기가 평가에 쓰는 재료도 빈 값을 빼기 때문이다(`resolveFieldDisplayValues`).
+     */
+    fun materialsFromRow(cells: List<Pair<FieldDefinition, String>>): Map<String, String> =
+        cells.asSequence()
+            .filter { (field, value) ->
+                field.fieldType != com.novelcharacter.app.data.model.FieldType.CALCULATED &&
+                    value.isNotBlank()
+            }
+            .associate { (field, value) -> field.key to value }
+
     /** 이 정의의 수식. 없거나 못 읽으면 `null`. */
     fun formulaOf(field: FieldDefinition): String? = try {
         JSONObject(field.config).stringOr("formula", "").takeIf { it.isNotBlank() }

@@ -683,9 +683,11 @@ class FactionManageFragment : Fragment() {
         // 멤버십 관찰 (다이얼로그가 표시되는 동안만)
         val memberObserver = androidx.lifecycle.Observer<List<FactionMembership>> { memberships ->
             viewLifecycleOwner.lifecycleScope.launch {
+                // **이름은 한 번에 읽는다** — 종전에는 소속 행마다 단건 질의를 쳐서 멤버가
+                // 100명이면 창을 열 때마다 질의가 100번 났다(R-53/R-54).
+                val names = viewModel.getCharacterNames(memberships.map { it.characterId }.distinct())
                 val items = memberships.mapNotNull { m ->
-                    val char = viewModel.getCharacterById(m.characterId)
-                    if (char != null) FactionMemberItem(m, char.name) else null
+                    names[m.characterId]?.let { FactionMemberItem(m, it) }
                 }
                 memberAdapter.submitList(items)
             }

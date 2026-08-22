@@ -106,6 +106,43 @@ class CalculatedCellEchoTest {
         assertFalse(CalculatedCellEcho.isAppOutput(broken, "12.00", listOf(broken), emptyMap()))
     }
 
+    // ── 신규 소유자 — 재료를 행에서 짓는다 ─────────────────────────────────────
+
+    /**
+     * **저장값이 없는 행에서도 무편집 왕복은 침묵해야 한다.**
+     *
+     * 새 캐릭터에게는 저장된 값이 없어 재료가 통째로 빈다. 그 상태로 평가하면 수식이
+     * 재료 없이 돌아 셀과 어긋나고, 한 글자도 안 고친 파일에서 **새 행마다** 거짓 경고가
+     * 났다(빈 DB 복원이면 전 행이 그렇다).
+     */
+    @Test
+    fun `신규 소유자는 행의 입력 칸이 재료다`() {
+        val cells = listOf(power to "10", agility to "5", total to "15")
+        val materials = CalculatedCellEcho.materialsFromRow(cells)
+        assertEquals(mapOf("power" to "10", "agility" to "5"), materials)
+        // 그 재료로 보면 내보내기가 쓴 값과 맞아떨어진다 — 침묵한다.
+        val written = FormulaDisplay.evaluateForDisplay("field(power) + field(agility)") {
+            FormulaEvaluator(materials, scope).evaluate(it)
+        }
+        assertTrue(CalculatedCellEcho.isAppOutput(total, written, scope, materials))
+    }
+
+    @Test
+    fun `계산 칸과 빈 칸은 재료가 아니다`() {
+        // 계산 칸은 산출물이라 재료가 될 수 없고, 빈 칸은 내보내기의 평가 재료에서도 빠진다.
+        val materials = CalculatedCellEcho.materialsFromRow(
+            listOf(power to "10", agility to "   ", total to "10")
+        )
+        assertEquals(mapOf("power" to "10"), materials)
+    }
+
+    /** 신규 행이라도 **사람이 계산 열을 고쳤으면** 여전히 말한다 — 침묵으로 기울지 않는다. */
+    @Test
+    fun `신규 소유자도 손으로 고친 계산 열은 앱의 출력이 아니다`() {
+        val materials = CalculatedCellEcho.materialsFromRow(listOf(power to "10", agility to "5"))
+        assertFalse(CalculatedCellEcho.isAppOutput(total, "999", scope, materials))
+    }
+
     /** 깨진 수식은 내보내기가 **오류 표식**을 쓴다 — 그것도 앱의 출력이다. */
     @Test
     fun `깨진 수식의 오류 표식도 앱의 출력이다`() {

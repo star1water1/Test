@@ -80,6 +80,12 @@ class DuelPlayFragment : Fragment() {
 
     private var axisId: Long = -1L
     private var axis: DuelAxis? = null
+
+    /**
+     * 이 화면 진입의 대표 이미지 추첨 시드 — 형제 열넷과 같은 주기다(B-103·B-106).
+     * 같은 화면 안에서는 재바인드·판 전환에 그림이 튀지 않고, 나갔다 들어오면 바뀐다.
+     */
+    private val imageSeed: Long = CharacterRepresentativeImage.newSeed()
     private var characters: List<Character> = emptyList()
     private var charactersByCode: Map<String, Character> = emptyMap()
 
@@ -973,10 +979,18 @@ class DuelPlayFragment : Fragment() {
         }
         if (paths.isEmpty()) return null
 
+        // **시드는 화면이 소유한다** — 종전에는 시드 자리에 `character.id`를 넘겨, 이 캐릭터의
+        // 대표 그림이 앱을 다시 켜도 **영원히 같은 한 장으로 고정**됐다(형제 열넷은 전부
+        // 화면 진입마다 새로 뽑는다). 넷째 인자의 `character.id`는 그대로다 — 그것은 시드가
+        // 아니라 *같은 시드 아래 캐릭터마다 다른 답을 내게 하는* 독립 키다.
+        //
+        // **가중치는 일부러 걸지 않는다**(`duel_system_design_2026-08.md` 13-8-3) —
+        // 카드 그림은 판단 재료라, 무게를 얹으면 이 축이 재려는 것을 이 축이 오염시킨다.
         val pick = CharacterRepresentativeImage.pickFrom(
-            paths, character.representativeImagePath, character.id, character.id
+            paths, character.representativeImagePath, imageSeed, character.id
         )
-        val path = paths[pick.index.coerceAtLeast(0) % paths.size]
+        // 사다리가 낸 답을 그대로 쓴다 — 호출부가 다시 계산하면 단일 소스가 둘이 된다.
+        val path = pick.path ?: return null
         val filesDir = requireContext().filesDir
         val boundCode = character.code
         return viewLifecycleOwner.lifecycleScope.launch {

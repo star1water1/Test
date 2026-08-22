@@ -304,11 +304,35 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 세력별 활성 멤버 수 조회 */
+    /**
+     * 여러 캐릭터의 이름을 **한 번에** 읽는다 — 멤버 목록이 소속 행마다 단건 질의를 치던
+     * 자리의 통로(R-53/R-54). 못 찾은 id는 표에 없다(호출부가 그것으로 걸러 낸다).
+     */
+    suspend fun getCharacterNames(characterIds: List<Long>): Map<Long, String> {
+        return try {
+            characterRepository.getCharactersByIds(characterIds).associate { it.id to it.name }
+        } catch (e: Exception) {
+            Log.e("FactionViewModel", "Failed to get characters", e)
+            emptyMap()
+        }
+    }
+
+    /**
+     * 세력별 활성 멤버 수 — **한 번의 범위 질의로 읽는다.**
+     *
+     * 종전에는 세력마다 단건 질의를 쳐서 목록 한 번 그리는 데 질의가 세력 수만큼 났다
+     * (R-53/R-54 — 목표 규모의 세계관에는 세력이 수십 개다). 활성 판정은 그대로
+     * [FactionStanding]이 한다 — 바뀐 것은 **읽는 통로뿐**이다.
+     *
+     * 질의가 돌려주지 않은 세력(소속이 0건)은 0으로 채운다 — 빠뜨리면 목록이 그 칸을
+     * *"아직 못 셌다"*와 구별하지 못한다.
+     */
     suspend fun getActiveMemberCountsForFactions(factionIds: List<Long>): Map<Long, Int> {
         return try {
+            val byFaction = factionRepository.getMembershipsByFactionIds(factionIds)
+                .groupBy { it.factionId }
             factionIds.associateWith { id ->
-                FactionStanding.countCurrent(factionRepository.getMembershipsByFactionList(id))
+                FactionStanding.countCurrent(byFaction[id].orEmpty())
             }
         } catch (e: Exception) {
             Log.e("FactionViewModel", "Failed to get member counts", e)

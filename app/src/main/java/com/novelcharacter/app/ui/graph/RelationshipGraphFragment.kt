@@ -885,12 +885,22 @@ class RelationshipGraphFragment : Fragment() {
         } else {
             universeFiltered
         }
+        // **'세력 관계' 칩도 여기서 걷는다** — 종전에는 이 거르개가 그리는 자리(showGraph)에만
+        // 있어서, 끈 상태에서도 **그리지 않을 선을** 빈 화면 판정이 세고 · 연결 수 랭킹이
+        // 그것으로 등수를 매기고 · 노드 상한이 그 등수로 사람을 접고 · 엣지 수 표기가 그것을
+        // 셌다. 거르개는 무엇을 그릴지 정하는 자리이므로 세는 자리보다 앞이어야 한다(R-19).
+        // 칩을 누르면 `refreshGraph()`가 이 함수를 다시 돌리므로 반영은 그대로 즉시다.
+        val edgeFiltered = if (binding.graphView.showFactionEdges) {
+            typeFiltered
+        } else {
+            typeFiltered.filter { it.factionId == null }
+        }
         // **세력 좁힘은 상한보다 앞이다** — 뒤에 두면 상한이 고른 세력 밖 인물로 먼저 차서
         // 정작 좁혀 보려던 인물이 접힌다(이 모드를 연 이유가 그것이다). 아래 연결 수 집계도
         // 좁힌 뒤 관계로 세야 '무엇을 남길지'의 랭킹이 화면과 같은 모집단을 본다.
         val narrowedIds = factionNarrowedIds()
         val filteredRelationships = com.novelcharacter.app.util.GraphFactionNarrow
-            .apply(typeFiltered, narrowedIds) { it.characterId1 to it.characterId2 }
+            .apply(edgeFiltered, narrowedIds) { it.characterId1 to it.characterId2 }
 
         if (filteredRelationships.isEmpty()) {
             binding.emptyState.visibility = View.VISIBLE
@@ -899,7 +909,7 @@ class RelationshipGraphFragment : Fragment() {
             // 없습니다"라고 말하면 사용자는 유형 칩을 만지러 가고 거기서는 아무 일도 없다.
             val cause = com.novelcharacter.app.util.GraphFactionNarrow.emptyCause(
                 anyRelationships = allRelationships.isNotEmpty(),
-                afterTypeFilter = typeFiltered.size,
+                afterTypeFilter = edgeFiltered.size,
                 narrowing = narrowedIds != null,
                 typeFiltering = selectedRelTypes.isNotEmpty(),
             )
@@ -1026,11 +1036,9 @@ class RelationshipGraphFragment : Fragment() {
                 isDeceased = char.id in deceasedIds
             )
         }
-        val hideFactionEdges = !binding.graphView.showFactionEdges
-
-        val allEdges = relationships.mapNotNull { rel ->
-            // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
-            if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
+        // '세력 관계' 칩은 **이 목록이 만들어지기 전에** 이미 걷혔다([updateGraph]) —
+        // 여기서 또 걸러 내면 세는 자리와 그리는 자리가 다시 갈린다.
+        val allEdges = relationships.map { rel ->
             val isEdgeSecondary = isEdgeSecondary(rel)
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)

@@ -3732,7 +3732,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          * [charId]가 null이면 확정되지 않은 행(동명이인 충돌)이라 값이 든 칸만 '건너뜀'이다:
          * 사용자가 충돌을 어떻게 정하느냐에 따라 결과가 갈리므로 약속하지 않는다.
          */
-        fun countFieldColumns(row: Row, charId: Long?) {
+        fun countFieldColumns(row: Row, charId: Long?, createdHere: Boolean = false) {
             val scan = fieldValues ?: return
             // **세계관을 옮기는 캐릭터도 미정이다**(B-253) — 가져오기가 이 칸들을 쓰기는 하지만
             // 그 직후 값을 새 세계관 필드로 전량 재매핑하므로, `(소유자, 필드)` 짝 위에서 내린
@@ -3742,11 +3742,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 계산 열 판정의 재료 — **열 루프에 들어가기 전에 굳힌다**(가져오기 쪽과 같은
             // 이유·같은 순서. 종전 `by lazy`는 같은 루프의 `scan.count`가 이미 갱신한 겹을
             // 읽어, 미리보기와 가져오기가 서로 다른 재료를 볼 수도 있었다 — R-33의 결).
-            val storedByKey: Map<String, String> =
-                if (!planHasCalculatedColumn || decided == null) emptyMap()
-                else planFields.asSequence()
+            //
+            // **이 행이 캐릭터를 만드는 경우는 재료를 행에서 짓는다** — 가져오기가 같은
+            // 자리에서 하는 것과 글자 그대로 같다(R-33). 새 소유자에게는 저장된 값이 없어
+            // 재료가 통째로 비고, 그러면 수식이 재료 없이 평가돼 셀과 어긋난다.
+            //
+            // **`decided < 0`(미리보기 임시 id)으로 추론하지 않는다** — 같은 파일의 뒤 행이
+            // 앞 행이 만든 캐릭터를 가리킬 때 가져오기 쪽은 그것을 *기존*으로 보고 장부값을
+            // 쓰므로, 음수 id로 가르면 그 자리에서 미리보기와 가져오기가 갈린다.
+            val storedByKey: Map<String, String> = when {
+                !planHasCalculatedColumn -> emptyMap()
+                createdHere -> CalculatedCellEcho.materialsFromRow(
+                    columnPlan.mapNotNull { (col, outcome) ->
+                        (outcome as? ColumnFieldOutcome.Matched)?.let { it.field to getCellString(row, col) }
+                    }
+                )
+                decided == null -> emptyMap()
+                else -> planFields.asSequence()
                     .mapNotNull { f -> scan.stored(decided, f.id)?.let { f.key to it } }
                     .toMap()
+            }
             for ((col, outcome) in columnPlan) {
                 val cellValue = getCellString(row, col)
                 when (outcome) {
@@ -3860,11 +3875,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelId = novelByCode(r.novelCode)?.id
                     ?: (if (r.novelTitle.isNotBlank()) analysisNovelIdByTitle(r.novelTitle) else null)
                 val byName = if (novelId != null) characterByNameAndNovel(name, novelId) else characterByName(name)
-                countFieldColumns(
-                    row,
-                    if (byName != null) countAgainst(byName, r, i)
+                val byNameId = if (byName != null) countAgainst(byName, r, i)
                     else { newCount++; rememberCreated(r, i) }
-                )
+                countFieldColumns(row, byNameId, createdHere = byName == null)
             } else {
                 // 코드 없음: 이름 기반 매칭 — 동명이인 충돌 가능
                 val allMatches = charactersByName(name)
@@ -3880,12 +3893,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 가르는 축이다.
                 val dbMatches = allMatches.filter { it.id > 0 }
                 if (dbMatches.isEmpty()) {
-                    val createdHere = allMatches.firstOrNull()
-                    countFieldColumns(
-                        row,
-                        if (createdHere != null) countAgainst(createdHere, r, i)
+                    val madeByThisFile = allMatches.firstOrNull()
+                    val rowCharId = if (madeByThisFile != null) countAgainst(madeByThisFile, r, i)
                         else { newCount++; rememberCreated(r, i) }
-                    )
+                    countFieldColumns(row, rowCharId, createdHere = madeByThisFile == null)
                 } else if (dbMatches.size == 1) {
                     countFieldColumns(row, countAgainst(dbMatches[0], r, i))
                 } else {
@@ -7701,11 +7712,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 결과: 엑셀에서 **입력 열만 고친** 정상 왕복이 계산 열마다 거짓 경고와
                 // '건너뜀'을 냈다 — 이 판정이 없애려던 잡음을 자기가 만들었고, 하필
                 // *"내보내기 → 엑셀에서 수치 편집 → 들이기"*라는 가장 흔한 경로다.
-                val storedByKey: Map<String, String> =
-                    if (!sheetHasCalculatedColumn) emptyMap()
-                    else fields.asSequence()
+                //
+                // **이 행이 캐릭터를 만드는 경우는 재료를 행에서 짓는다**: 새 소유자에게는
+                // 저장된 값이 없어 재료가 통째로 비고, 그러면 수식이 재료 없이 평가돼 셀과
+                // 어긋난다 — 아무것도 안 고친 파일에서도 **새 캐릭터 행마다** 거짓 경고가
+                // 났다(빈 DB 복원이면 전 행이 그렇다). 그 행에서는 내보낸 기기의 저장값이
+                // 곧 이 행의 입력 칸이다([CalculatedCellEcho.materialsFromRow]).
+                val storedByKey: Map<String, String> = when {
+                    !sheetHasCalculatedColumn -> emptyMap()
+                    existingChar == null -> CalculatedCellEcho.materialsFromRow(
+                        columnFieldMap.map { (ci, f) -> f to getCellString(row, ci) }
+                    )
+                    else -> fields.asSequence()
                         .mapNotNull { f -> valueLedger.get(charId, f.id)?.value?.let { f.key to it } }
                         .toMap()
+                }
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.

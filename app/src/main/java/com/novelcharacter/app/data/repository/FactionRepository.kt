@@ -118,6 +118,13 @@ class FactionRepository(private val db: AppDatabase) {
     suspend fun getMembershipsByFactionList(factionId: Long): List<FactionMembership> =
         membershipDao.getMembershipsByFactionList(factionId)
 
+    /**
+     * 여러 세력의 소속 이력을 **한 번에** 읽는다 — 세력 수만큼 단건 질의를 치던 자리의 통로
+     * (R-53/R-54). 999-변수 상한은 [SqlInChunks]가 든다.
+     */
+    suspend fun getMembershipsByFactionIds(factionIds: List<Long>): List<FactionMembership> =
+        SqlInChunks.flat(factionIds) { membershipDao.getMembershipsByFactionIds(it) }
+
     fun getMembershipsByCharacter(characterId: Long): LiveData<List<FactionMembership>> =
         membershipDao.getMembershipsByCharacter(characterId)
 
