@@ -117,6 +117,13 @@ class ImageManagerFragment : Fragment() {
     private var galleryBackCallback: androidx.activity.OnBackPressedCallback? = null
     private var galleryPageCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 결과를 듣는 자리는 뷰가 아니라 **조각**이다 — 회전 중에 온 결과를 놓치지 않는다(R-65).
+        setupTagEditResult()
+        setupBatchTagResult()
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -1264,8 +1271,8 @@ class ImageManagerFragment : Fragment() {
         sheet.onAction = { action ->
             when (action) {
                 ImageBatchOperationBottomSheet.Action.ASSIGN -> startAssignFlow(items.map { it.path })
-                ImageBatchOperationBottomSheet.Action.TAG_ADD -> openBatchTagSheet(items.map { it.path }, remove = false)
-                ImageBatchOperationBottomSheet.Action.TAG_REMOVE -> openBatchTagSheet(items.map { it.path }, remove = true)
+                ImageBatchOperationBottomSheet.Action.TAG_ADD -> openBatchTagSheet(remove = false)
+                ImageBatchOperationBottomSheet.Action.TAG_REMOVE -> openBatchTagSheet(remove = true)
                 ImageBatchOperationBottomSheet.Action.AI_TAG -> openAiTagFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.LINK -> startLinkFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.UNLINK -> runUnlink(items.map { it.path })
@@ -1877,23 +1884,34 @@ class ImageManagerFragment : Fragment() {
      * 이미 떠 있으니 자리만 앞이다. 확인 버튼이 곧 동의) ⓑ 제거 칩도 넓힌 목록의 태그에서
      * 뽑는다 — 형제만 가진 태그도 지울 수 있어야 합집합 편집(openTagEdit)과 대칭이 맞는다.
      */
-    private fun openBatchTagSheet(paths: List<String>, remove: Boolean) {
-        val expansion = viewModel.expandWithLinkedGroups(paths)
-        val targets = expansion.allPaths.toList()
-        val sheet = ImageBatchTagBottomSheet()
-        sheet.isRemoveMode = remove
-        if (expansion.addedByLink.isNotEmpty()) {
-            sheet.linkNotice = getString(
-                R.string.image_batch_tag_link_notice,
-                paths.size, expansion.addedByLink.size, targets.size
-            )
-        }
-        sheet.loadChips = if (remove) {
-            { viewModel.getDistinctTagsForPaths(targets) }
-        } else {
-            { viewModel.getTagSuggestions() }
-        }
-        sheet.onConfirm = { tags ->
+    /**
+     * 대상을 받지 않는다 — 일괄 태그의 대상은 **지금의 선택**이고(`selectedItems()`가 그것을
+     * 걸러 낸 것이다), 그 선택은 뷰모델에 살아 회전을 넘는다. 시트와 결과 처리가 같은
+     * 자리에서 다시 세므로 셋이 갈릴 수 없다.
+     */
+    private fun openBatchTagSheet(remove: Boolean) {
+        if (childFragmentManager.isStateSaved) return
+        // **꽂을 것이 없다**(R-65) — 모드는 인자가 나르고, 대상·재료·범위 고지는 시트가
+        // 뷰모델에서 곧장 든다.
+        ImageBatchTagBottomSheet.newInstance(remove)
+            .show(childFragmentManager, ImageBatchTagBottomSheet.TAG)
+    }
+
+    /**
+     * 일괄 태그 결과 — **듣는 자리는 `onCreate`다**(R-65).
+     *
+     * 대상은 **결과가 온 시점의 선택**에서 다시 센다(시트가 고지한 것과 같은 함수) —
+     * 목록이 다시 실려 선택이 줄었으면 그 줄어든 것에 작용해야 한다.
+     */
+    private fun setupBatchTagResult() {
+        childFragmentManager.setFragmentResultListener(
+            ImageBatchTagBottomSheet.RESULT_KEY, this
+        ) { _, bundle ->
+            val tags = bundle.getStringArray(ImageBatchTagBottomSheet.RESULT_TAGS)?.toList().orEmpty()
+            if (tags.isEmpty()) return@setFragmentResultListener
+            val remove = bundle.getBoolean(ImageBatchTagBottomSheet.RESULT_REMOVE)
+            val targets = viewModel.expandWithLinkedGroups(selectedPaths).allPaths.toList()
+            if (targets.isEmpty()) return@setFragmentResultListener
             // 둘 다 취소를 받지 않는다 — 한 트랜잭션(추가) · 끊어 보내는 삭제 질의(제거)라
             // 중간에 멈출 안전한 경계가 없다(뷰모델 주석 참조).
             val progress = showTaskProgress(
@@ -1922,7 +1940,6 @@ class ImageManagerFragment : Fragment() {
                 )
             }
         }
-        sheet.show(childFragmentManager, ImageBatchTagBottomSheet.TAG)
     }
 
     // ---------- 고아 정리 ----------
@@ -1980,17 +1997,24 @@ class ImageManagerFragment : Fragment() {
      * (편집 후 다이얼로그는 같은 고지를 한 단계 늦게, 한 탭 비싸게 한다 — 원칙 04).
      */
     private fun openTagEdit(item: ImageManagerViewModel.ManagedImage) {
-        val family = viewModel.linkedFamily(item.path)
-        val sheet = ImageTagEditBottomSheet()
-        if (family.size > 1) {
-            sheet.currentTags = family.flatMap { it.meta?.tags.orEmpty() }.distinct().sorted()
-            sheet.linkNotice = getString(R.string.image_tag_edit_link_notice, family.size)
-        } else {
-            sheet.currentTags = item.meta?.tags.orEmpty()
-        }
-        sheet.loadSuggestions = { viewModel.getTagSuggestions() }
-        sheet.onSave = { newTags ->
-            viewModel.replaceTags(item.path, newTags) { applied ->
+        if (childFragmentManager.isStateSaved) return
+        // **꽂을 것이 없다**(R-65) — 대상은 인자가 나르고 재료는 시트가 뷰모델에서 든다.
+        // 쓰기와 고지만 여기로 돌아온다([setupTagEditResult]).
+        ImageTagEditBottomSheet.newInstance(item.path)
+            .show(childFragmentManager, ImageTagEditBottomSheet.TAG)
+    }
+
+    /**
+     * 태그 편집 결과 — **듣는 자리는 `onCreate`다**(R-65). 뷰 수명주기에 걸면 회전 중에
+     * 온 결과를 놓치고 그 유실은 조용하다(사용자가 [확인]을 눌렀는데 아무 일도 안 난다).
+     */
+    private fun setupTagEditResult() {
+        childFragmentManager.setFragmentResultListener(
+            ImageTagEditBottomSheet.RESULT_KEY, this
+        ) { _, bundle ->
+            val path = bundle.getString(ImageTagEditBottomSheet.RESULT_PATH) ?: return@setFragmentResultListener
+            val newTags = bundle.getStringArray(ImageTagEditBottomSheet.RESULT_TAGS)?.toList() ?: emptyList()
+            viewModel.replaceTags(path, newTags) { applied ->
                 if (!isAdded || _binding == null) return@replaceTags
                 reportAndNotify(OpResult.success(
                     OpResult.CAT_MAINTENANCE,
@@ -1999,7 +2023,6 @@ class ImageManagerFragment : Fragment() {
                 ))
             }
         }
-        sheet.show(childFragmentManager, ImageTagEditBottomSheet.TAG)
     }
 
     override fun onDestroyView() {
