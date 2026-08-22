@@ -169,7 +169,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 기존 관례(0 = 세계관 문맥 없음)이고, 편집 저장은 existingField.copy라
                 // 필드의 실제 구역(null)이 그대로 보존된다. 세계관 전용 섹션(대결 등급 산정)이
                 // 0에서 꺼지는 것도 옳다 — 전역 필드는 그것을 가질 수 없다(설계 1-2).
-                .newInstance(field.universeId ?: 0L, field)
+                //
+                // **다만 그 0이 '전역 구역'인지 '프리셋 편집'인지는 밝혀야 한다** — 종전에는
+                // 겸직이라 전역 필드의 **키 점유 확인이 통째로 건너뛰어졌고**, 그 구역의
+                // 유니크 색인은 `universeId`가 NULL이라 DB도 막지 못한다(NULL끼리는 다르게
+                // 본다). 즉 키를 바꾸는 이 경로만 마지막 빗장이 없었다(R-57).
+                .newInstance(
+                    field.universeId ?: 0L, field,
+                    globalScope = field.universeId == null
+                )
                 .show(childFragmentManager, "body_analysis_settings")
         }
         // 실루엣 탭 — 크게 보기. 작품 평균은 순위 계산이 이미 모아 둔 이웃 수치를 재사용한다.
