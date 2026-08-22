@@ -233,14 +233,38 @@ data class BodyMeasurements(
             label.trim().lowercase().replace(" ", "")
 
         /**
-         * 수치 하나를 읽는다. 단위 접미사("86cm")·소수점을 견디고, 못 읽으면 null.
+         * 수치 하나를 읽는다. 단위 접미사("86cm")·자릿점("1,200")·소수점을 견디고,
+         * 못 읽으면 null.
+         *
+         * ## **수가 둘 이상이면 null이다**
+         *
+         * 종전에는 숫자·점이 아닌 글자를 **전부 지우고 이어붙였다.** 그래서 `165~170`이
+         * **165170**이 되고 `165cm (168 구두)`가 165168이 됐다 — *"못 읽었다"*가 아니라
+         * **그럴듯한 수**가 나오는 것이 이 결함의 성질이다. 그 수가 어디까지 가는지 보면:
+         * BMI가 0에 수렴해 체형이 *"마른 편"*이 되고, 골격은 `>= 175`라 **"대형"**이 되며,
+         * 실루엣은 화면의 수백 배 위로 나가 **그림이 사라진다.** 화면 어디에도 경고가 없다
+         * (기본 프리셋의 `키`·`체중`이 TEXT 필드라 타입 불일치 검사도 아무 말을 안 한다).
+         *
+         * **부호도 함께 지워졌다** — `-5`가 `5`가 되어 음수가 양수로 뒤집혔다.
+         *
+         * 이 앱에서 관대한 파서는 원래 한 자리뿐이고(대결 필드 연결 — 맨 앞 앵커라 이어붙지
+         * 않는다) 나머지는 전부 엄격하다. 이 함수만 그 관행 밖이었다(개발 의도 2번 —
+         * 조용히 버리거나 왜곡하지 않는다).
          *
          * [BodyAnalysisHelper.parseNumericFromText]와 같은 규칙이며 그쪽이 이 함수에 위임한다.
          */
         fun parseNumber(text: String?): Double? {
             if (text.isNullOrBlank()) return null
-            val cleaned = text.trim().replace(Regex("[^0-9.]"), "")
-            return cleaned.toDoubleOrNull()
+            // 자릿점만 걷어낸다 — 나머지 글자는 **지우지 않고**, 수가 몇 개인지 센다.
+            val cleaned = text.trim().replace(",", "")
+            return NUMBER.findAll(cleaned).map { it.value }.toList()
+                .singleOrNull()?.toDoubleOrNull()
         }
+
+        /**
+         * 수 하나의 모양 — **부호를 포함한다**(빼면 음수가 양수로 뒤집힌다).
+         * 숫자 종류는 ASCII만 본다(R-69 — 기기의 정규식 엔진이 약칭을 다르게 읽는다).
+         */
+        private val NUMBER = Regex("[+-]?[0-9]+(?:\\.[0-9]+)?")
     }
 }

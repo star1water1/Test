@@ -1,6 +1,8 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.CharacterStateChange
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import java.util.GregorianCalendar
 import java.util.Locale
@@ -101,40 +103,32 @@ object BirthdayHelper {
      */
     fun daysUntilBirthday(todayMonth: Int, todayDay: Int, todayYear: Int,
                           birthMonth: Int, birthDay: Int): Int {
-        // DST 전환일 오차 방지를 위해 정오(12시) 기준 계산
-        val today = Calendar.getInstance(Locale.US).apply {
-            set(Calendar.YEAR, todayYear)
-            set(Calendar.MONTH, todayMonth - 1)
-            set(Calendar.DAY_OF_MONTH, todayDay)
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        val effectiveDay = adjustLeapDay(birthMonth, birthDay, todayYear)
-
-        val birthday = Calendar.getInstance(Locale.US).apply {
-            set(Calendar.YEAR, todayYear)
-            set(Calendar.MONTH, birthMonth - 1)
-            set(Calendar.DAY_OF_MONTH, effectiveDay)
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        // 올해 생일이 이미 지났으면 내년 생일로
-        if (birthday.before(today)) {
+        // **역일(曆日)을 센다 — 밀리초 뺄셈이 아니다.**
+        //
+        // 종전에는 두 시각을 정오로 맞춘 뒤 `(밀리초 차) / 하루`를 **정수 나눗셈**했다.
+        // 정오 앵커는 *부호*를 지키지만 **절삭을 막지 못한다**: 봄 서머타임 전환을 지나는
+        // 구간은 실제 경과가 23시간 짧아 몫이 한 칸 내려간다. 무DST 지역(서울)에서는 0건,
+        // 전환이 있는 지역에서는 4년치 전수 대조에서 **수만 건**이 어긋났다.
+        //
+        // 그 어긋남이 화면에 드러나는 자리가 *"오늘! 🎂"*다 — 소비처가 `0 until 7`로
+        // 자르기 때문에, 전환 주에 **내일 생일인 사람이 오늘로 표시되고 강조 테두리까지
+        // 받는다.** 같은 시각 축하 창은 아무도 띄우지 않는다(그쪽은 월·일을 직접 본다) —
+        // 같은 데이터에 화면이 서로 다른 말을 하는 것이고, 이 파일의 형제 주석이 이미
+        // *"규칙이 두 벌이 되면 축하 창과 위젯·알림이 다른 날 다른 사람을 말한다"*고
+        // 적어 둔 그 상황이다(원칙 05).
+        //
+        // `LocalDate`는 시간대·서머타임과 무관한 **날짜 산술**이라 이 축이 원리적으로
+        // 없어진다. 하네스·CI는 UTC(무DST)라 이 부류를 볼 수 없다는 것도 처방의 근거다
+        // (R-70 — *"하네스에서는 옳은데 기기에서만 다른 값"*).
+        val today = LocalDate.of(todayYear, todayMonth, todayDay)
+        val thisYear = LocalDate.of(todayYear, birthMonth, adjustLeapDay(birthMonth, birthDay, todayYear))
+        val target = if (thisYear.isBefore(today)) {
             val nextYear = todayYear + 1
-            val nextEffectiveDay = adjustLeapDay(birthMonth, birthDay, nextYear)
-            birthday.set(Calendar.YEAR, nextYear)
-            birthday.set(Calendar.MONTH, birthMonth - 1) // year 변경 시 month 재설정 보장
-            birthday.set(Calendar.DAY_OF_MONTH, nextEffectiveDay)
+            LocalDate.of(nextYear, birthMonth, adjustLeapDay(birthMonth, birthDay, nextYear))
+        } else {
+            thisYear
         }
-
-        val diffMs = birthday.timeInMillis - today.timeInMillis
-        return (diffMs / (1000L * 60 * 60 * 24)).toInt()
+        return ChronoUnit.DAYS.between(today, target).toInt()
     }
 
     /**

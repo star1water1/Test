@@ -314,4 +314,41 @@ class BodyMeasurementsTest {
         val inferred = BodyMeasurements.inferSlotsForParts(listOf("상", "중"), listOf(false, false))
         assertEquals(emptyList<BodySlot>(), BodyMeasurements.slotsToStore(inferred, inferred))
     }
+
+    // ── 수가 둘 이상이면 읽지 않는다 (개발 의도 2번 — 조용한 왜곡 금지) ─────────
+
+    /**
+     * 종전에는 숫자·점이 아닌 글자를 **전부 지우고 이어붙였다.** 그래서 `165~170`이
+     * **165170**이라는 *그럴듯한 수*가 됐다 — 못 읽었다고 말할 기회를 잃는 것이 이 결함의
+     * 성질이다. 그 수는 BMI를 0으로, 골격을 "대형"으로 만들고 실루엣을 화면 밖으로 보낸다.
+     */
+    @Test
+    fun `범위 표기는 읽지 않는다`() {
+        assertNull(BodyMeasurements.parseNumber("165~170"))
+        assertNull(BodyMeasurements.parseNumber("165-170"))
+        assertNull(BodyMeasurements.parseNumber("165 / 170"))
+        assertNull(BodyMeasurements.parseNumber("165cm (168 구두)"))
+        assertNull(BodyMeasurements.parseNumber("5'7\""))
+    }
+
+    @Test
+    fun `수가 하나면 접미사가 붙어도 읽는다`() {
+        assertEquals(86.0, BodyMeasurements.parseNumber("86cm")!!, 1e-9)
+        assertEquals(86.5, BodyMeasurements.parseNumber(" 86.5 cm ")!!, 1e-9)
+        assertEquals(1200.0, BodyMeasurements.parseNumber("1,200")!!, 1e-9)
+        assertEquals(172.0, BodyMeasurements.parseNumber("키 172")!!, 1e-9)
+    }
+
+    /** 부호를 지우면 음수가 양수로 뒤집힌다 — 종전 구현이 그랬다. */
+    @Test
+    fun `음수는 음수로 읽는다`() {
+        assertEquals(-5.0, BodyMeasurements.parseNumber("-5")!!, 1e-9)
+    }
+
+    @Test
+    fun `수가 없으면 읽지 않는다`() {
+        assertNull(BodyMeasurements.parseNumber("미상"))
+        assertNull(BodyMeasurements.parseNumber("  "))
+        assertNull(BodyMeasurements.parseNumber(null))
+    }
 }
