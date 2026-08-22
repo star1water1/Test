@@ -135,9 +135,13 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
      * Update faction memberships for a given year (time slider).
      */
     fun updateFactionMembershipsForYear(year: Int?) {
-        val allFactions = _factions.value ?: return
-        val allMemberships = _factionMemberships.value ?: return
-        buildCharacterFactionMap(allFactions, allMemberships, year)
+        // 아직 안 실린 재료는 **빈 것으로 본다.** 여기서 조용히 돌아가면 이 부름이 모는
+        // 다시 그리기까지 함께 멈춰(관찰자가 안 깨어난다) 슬라이더가 아무 일도 안 한 것이 된다.
+        buildCharacterFactionMap(
+            _factions.value ?: emptyList(),
+            _factionMemberships.value ?: emptyList(),
+            year
+        )
     }
 
     /**
@@ -261,20 +265,27 @@ class RelationshipGraphFragment : Fragment() {
      * **상한 때문에** 거를 것이 없다는 뜻이다.
      *
      * ⚠️ **`null`이 '아무도 안 줄었다'는 뜻은 아니다**(2026.08.21 좁힘 축 신설). 세력 좁힘은
-     * 상한과 무관하게 인물을 줄이므로, 빠른 경로도 [applyFactionNarrow]를 **따로** 지나야
+     * 상한과 무관하게 인물을 줄이므로, 좁힘 판정([factionNarrowedIds])을 **따로** 지나야
      * 좁혀서 없앤 인물로 뻗는 엣지가 되살아나지 않는다.
      *
-     * **두 자리가 갈리는 것을 막으려고 둔다** — 시점 슬라이더는 노드를 다시 세우지 않고
-     * 엣지만 갈아 끼우는데(`refreshGraphEdgesOnly`), 그 자리가 상한을 모르면 **접힌 인물로
-     * 뻗는 선을 다시 만든다.** 그리기에서는 끝이 없는 엣지를 건너뛰므로 화면이 깨지지는 않지만,
-     * 슬라이더는 *빠른 반응*이 목적인 경로라 만들자마자 버릴 엣지를 관계 수만큼 짓는 것이
-     * 정확히 그 목적에 어긋난다(같은 파일의 `isEdgeSecondary`가 같은 이유로 공용 정의다).
+     * ℹ️ 종전에는 시점 슬라이더가 노드를 다시 세우지 않고 엣지만 갈아 끼우는 **빠른 경로**를
+     * 따로 들고 있어 이 값이 그 경로에도 걸려 있었다. 그 경로는 2026.08.22에 걷어냈다 —
+     * 세력 맵이 시점을 따라 다시 서면 **노드의 세력색·좁힘 대상·사망 표시가 함께 바뀌는데**
+     * 엣지만 갈아 끼우는 경로는 그것을 못 따라갔고, 그 사이 관찰자가 부른 온전한 갱신이
+     * 같은 틱에 이미 돌고 있었다(같은 일을 두 벌 하면서 뒤엣것이 덜 정확했다).
      */
     private var shownNodeIds: Set<Long>? = null
 
+    /**
+     * 마지막으로 띄운 접기 고지(남긴 수 · 접은 수 · 좁힐 수단 문구). **같은 내용이면 다시
+     * 띄우지 않는다** — 이 화면은 칩 하나, 시점 한 칸에도 다시 그리므로 매번 띄우면 토스트가
+     * 조작을 따라다니며 화면을 덮는다. 고지 자체는 [R.id.summaryModeText] 배너가 상시로 든다
+     * (R-14는 *접었으면 몇 명을 접었는지 말하라*이지 *조작마다 말하라*가 아니다).
+     */
+    private var lastCapNotice: Triple<Int, Int, Int>? = null
+
     private var currentUniverseId: Long? = null
     private var currentNovelId: Long? = null
-    private var primaryCharacterIds: Set<Long> = emptySet()
 
     // 세계관/작품 목록 캐시
     private var cachedUniverses: List<Universe> = emptyList()
@@ -359,6 +370,10 @@ class RelationshipGraphFragment : Fragment() {
         viewModel.factions.observe(viewLifecycleOwner) {
             setupFactionChips()
         }
+        // **세력 맵이 바뀌면 여기가 그림을 세운다 — 그 방아쇠는 이 자리 하나다.**
+        // 맵은 ⓐ 자료를 실을 때와 ⓑ 시점이 바뀔 때 다시 서는데(시간뷰는 그 시점에 재적 중인
+        // 소속만 남긴다), 둘 다 노드의 세력색·좁힘 대상·사망 표시를 함께 바꾼다.
+        // 부르는 쪽이 따로 또 그리지 않는 이유가 이것이다(setupTimeSlider 주석).
         viewModel.characterFactionMap.observe(viewLifecycleOwner) {
             refreshGraph()
         }
@@ -646,15 +661,18 @@ class RelationshipGraphFragment : Fragment() {
                 binding.yearLabel.text = getString(R.string.year_label_format, currentYear!!)
                 viewModel.updateFactionMembershipsForYear(currentYear)
             }
-            refreshGraph()
+            // 다시 그리기는 위 부름이 몬다(슬라이더와 같은 결) — 여기서 또 부르면 두 벌이다.
         }
 
         binding.graphYearSlider.addOnChangeListener { _, value, fromUser ->
             if (fromUser && isTimeViewEnabled) {
                 currentYear = value.toInt()
                 binding.yearLabel.text = getString(R.string.year_label_format, value.toInt())
+                // **다시 그리는 것은 이 부름이 몬다** — 세력 맵이 시점을 따라 다시 서면
+                // [observeFactionData]의 관찰자가 그림을 세운다(아래 주석). 여기서 또 그리면
+                // 같은 틱에 같은 일을 두 벌 하고, 종전에는 그 두 벌 중 *뒤엣것*(엣지만 갱신)이
+                // **노드의 세력색과 사망 표시를 시점에 맞추지 못한 채** 얹혔다.
                 viewModel.updateFactionMembershipsForYear(value.toInt())
-                refreshGraphEdgesOnly()
             }
         }
     }
@@ -808,7 +826,6 @@ class RelationshipGraphFragment : Fragment() {
         if (novelId != null) {
             // 특정 작품 선택
             val pIds = allCharacters.filter { it.novelId == novelId }.map { it.id }.toSet()
-            primaryCharacterIds = pIds
             val filtered = allRelationships.filter { rel ->
                 val hasPrimary = rel.characterId1 in pIds || rel.characterId2 in pIds
                 val bothInUniverse = rel.characterId1 in universeCharIds && rel.characterId2 in universeCharIds
@@ -817,7 +834,6 @@ class RelationshipGraphFragment : Fragment() {
             return filtered to pIds
         } else {
             // 세계관 전체
-            primaryCharacterIds = universeCharIds
             val filtered = allRelationships.filter { rel ->
                 rel.characterId1 in universeCharIds && rel.characterId2 in universeCharIds
             }
@@ -841,16 +857,8 @@ class RelationshipGraphFragment : Fragment() {
             allCharacterIds = viewModel.characters.value.orEmpty().map { it.id },
         )
 
-    /** 세력 좁힘을 관계 목록에 적용한다 — 판정은 순수 계층이 든다. */
-    private fun applyFactionNarrow(
-        relationships: List<CharacterRelationship>
-    ): List<CharacterRelationship> =
-        com.novelcharacter.app.util.GraphFactionNarrow.apply(relationships, factionNarrowedIds()) {
-            it.characterId1 to it.characterId2
-        }
-
     /**
-     * 세력 선택 필터의 엣지 2차(흐림) 판정 — showGraph·refreshGraphEdgesOnly가 공용하는
+     * 세력 선택 필터의 엣지 2차(흐림) 판정 — 엣지를 짓는 자리가 공용하는
      * 단일 정의 (한쪽만 갱신되는 산탄 방지). "미소속" sentinel 선택 시에는
      * 세력 무관(수동) 관계선이 1차로 보인다.
      *
@@ -863,56 +871,6 @@ class RelationshipGraphFragment : Fragment() {
                 (com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID in selectedFactions &&
                     rel.factionId == null)
             )
-
-    /**
-     * 엣지만 갱신 (슬라이더 드래그 시 빠른 반응). 노드 레이아웃은 유지.
-     */
-    private fun refreshGraphEdgesOnly() {
-        val chars = viewModel.characters.value ?: return
-        val rels = viewModel.relationships.value ?: return
-        val allChanges = viewModel.relationshipChanges.value ?: emptyList()
-        val year = currentYear ?: return
-
-        val (universeFiltered, _) = applyUniverseNovelFilter(chars, rels)
-
-        val typeFiltered = applyFactionNarrow(
-            if (selectedRelTypes.isNotEmpty()) {
-                universeFiltered.filter { it.relationshipType in selectedRelTypes }
-            } else {
-                universeFiltered
-            }
-        )
-        // 노드 상한을 여기서도 지킨다 — 이 경로는 노드를 다시 세우지 않으므로,
-        // 거르지 않으면 **접힌 인물로 뻗는 엣지**를 관계 수만큼 만들었다가 그리기에서 버린다.
-        val filteredRelationships = shownNodeIds?.let { ids ->
-            typeFiltered.filter { it.characterId1 in ids && it.characterId2 in ids }
-        } ?: typeFiltered
-
-        val hideFactionEdges = !binding.graphView.showFactionEdges
-
-        val edges = filteredRelationships.mapNotNull { rel ->
-            // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
-            if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
-            val isEdgeSecondary = isEdgeSecondary(rel)
-
-            val resolved = viewModel.resolveRelationshipAtYear(rel, year, allChanges)
-            GraphEdge(
-                fromId = rel.characterId1,
-                toId = rel.characterId2,
-                label = resolved.resolvedType,
-                intensity = resolved.resolvedIntensity,
-                isBidirectional = resolved.resolvedBidirectional,
-                // 세력 자동 관계는 두 캐릭터가 모두 재적 중일 때만 유효 — 아니면 점선 표시
-                isActive = viewModel.isFactionEdgeActiveAtYear(rel, year),
-                factionId = rel.factionId,
-                isSecondary = isEdgeSecondary
-            )
-        }
-
-        binding.graphView.updateEdges(edges)
-        // 해당 시점 사망 캐릭터 표시 갱신 (노드 레이아웃은 유지)
-        binding.graphView.updateDeceased(viewModel.deceasedCharacterIdsAtYear(year))
-    }
 
     private fun updateGraph(allCharacters: List<Character>, allRelationships: List<CharacterRelationship>) {
         val allChanges = viewModel.relationshipChanges.value ?: emptyList()
@@ -959,6 +917,7 @@ class RelationshipGraphFragment : Fragment() {
             binding.nodeCountText.text = getString(R.string.graph_node_count, 0)
             binding.edgeCountText.text = getString(R.string.graph_edge_count, 0)
             binding.summaryModeText.visibility = View.GONE
+            lastCapNotice = null
             // 그린 노드가 없으므로 남겨 두면 다음 슬라이더 조작이 **지난 필터의 인물 집합**으로 거른다.
             shownNodeIds = null
             return
@@ -1003,8 +962,15 @@ class RelationshipGraphFragment : Fragment() {
                 factionNarrows -> R.string.graph_too_many_nodes_narrowing
                 else -> R.string.graph_too_many_nodes
             }
-            Toast.makeText(requireContext(), getString(hint), Toast.LENGTH_LONG).show()
+            // **바뀐 것이 있을 때만 띄운다** — 배너는 상시로 서 있고, 토스트는 *새 사실*을
+            // 알리는 자리다. 같은 고지를 조작마다 되풀이하면 그 자체가 방해가 된다.
+            val notice = Triple(capped.shown.size, capped.hiddenCount, hint)
+            if (notice != lastCapNotice) {
+                lastCapNotice = notice
+                Toast.makeText(requireContext(), getString(hint), Toast.LENGTH_LONG).show()
+            }
         } else {
+            lastCapNotice = null
             binding.summaryModeText.visibility = View.GONE
         }
         // 양 끝이 모두 남은 관계만 그린다 — 한쪽이 접힌 관계를 그리면 없는 노드로 선이 뻗는다.

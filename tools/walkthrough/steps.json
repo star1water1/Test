@@ -4926,7 +4926,7 @@
    "date": "2026-08-19",
    "covered": false,
    "tests": [],
-   "evidence": "GraphForceLayoutTest '노드 집합에 없는 끝을 가진 관계는 버린다'는 배치 계산의 엣지 필터다 — assertEquals(1, GraphForceLayout.uniqueEdgePairs(ns, es).size). 시점 슬라이더 경로(refreshGraphEdgesOnly · shownNodeIds)는 RelationshipGraphFragment.kt:797이 따로 들고 그쪽을 보는 시험은 없다.",
+   "evidence": "GraphForceLayoutTest '노드 집합에 없는 끝을 가진 관계는 버린다'는 배치 계산의 엣지 필터다 — assertEquals(1, GraphForceLayout.uniqueEdgePairs(ns, es).size). 시점 슬라이더 경로는 2026.08.22에 온전한 갱신(updateGraph · shownNodeIds) 한 벌로 합쳤고 그쪽을 보는 시험은 없다.",
    "kind": "CODE"
   }
  },

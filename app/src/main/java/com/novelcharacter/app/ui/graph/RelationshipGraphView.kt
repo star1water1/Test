@@ -74,7 +74,7 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private val isDarkMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-    // 엣지 쌍별 개수 캐시 (setGraphData/updateEdges 시 갱신, onDraw마다 재생성 방지)
+    // 엣지 쌍별 개수 캐시 (setGraphData 시 갱신, onDraw마다 재생성 방지)
     private var cachedPairEdgeCount = mapOf<Long, Int>()
 
     private val defaultNodeColor = ContextCompat.getColor(context, R.color.graph_node_fill)
@@ -247,29 +247,35 @@ class RelationshipGraphView @JvmOverloads constructor(
         onNodeLongClickListener = listener
     }
 
+    /**
+     * 그래프 데이터를 갈아 끼운다.
+     *
+     * **같은 인물 집합이면 배치도 확대·이동도 그대로 둔다.** 이 화면은 필터 칩 하나,
+     * 시점 슬라이더 한 칸에도 이 함수를 다시 부른다 — 그때마다 시야를 되돌리고 배치를
+     * 처음부터 계산하면 ⓐ 사용자가 맞춰 놓은 확대·이동이 **조작할 때마다 사라지고**(원칙 04)
+     * ⓑ 노드 수의 제곱인 힘-배치(B-213)가 칩·틱마다 다시 돈다.
+     * 배치가 뜻을 잃는 것은 **노드가 더해지거나 빠졌을 때**뿐이므로 그때만 다시 계산하고
+     * 화면에 맞춘다([fitToScreen]).
+     *
+     * 좌표는 id로 물려받고 나머지 속성(라벨·세력색·사망 표시)은 새 값이 이긴다 —
+     * 시점이 바뀌면 좌표는 그대로여야 하고 색과 †는 따라와야 한다.
+     */
     fun setGraphData(nodeList: List<GraphNode>, edgeList: List<GraphEdge>) {
-        nodes = nodeList.map { it.copy() }
+        val keptPositions = nodes.associate { it.id to (it.x to it.y) }
+        val sameNodeSet = keptPositions.size == nodeList.size && nodeList.all { it.id in keptPositions }
+        nodes = nodeList.map { node ->
+            val kept = keptPositions[node.id]
+            if (kept != null) node.copy(x = kept.first, y = kept.second) else node.copy()
+        }
         edges = edgeList.toList()
         rebuildPairEdgeCache()
-        resetTransform()
-        layoutNodesAsync()
-    }
-
-    /**
-     * 엣지 데이터만 갱신 (노드 레이아웃 유지). 시점 변경 시 사용.
-     */
-    fun updateEdges(edgeList: List<GraphEdge>) {
-        edges = edgeList.toList()
-        rebuildPairEdgeCache()
-        invalidate()
-    }
-
-    /**
-     * 시점 변경 시 사망 상태만 갱신 (노드 레이아웃 유지).
-     */
-    fun updateDeceased(deceasedIds: Set<Long>) {
-        nodes = nodes.map { it.copy(isDeceased = it.id in deceasedIds) }
-        invalidate()
+        if (sameNodeSet) {
+            // 배치가 그대로다 — 그리기만 다시 한다(계산 중인 배치가 있으면 그쪽이 좌표를 마저 얹는다).
+            invalidate()
+        } else {
+            resetTransform()
+            layoutNodesAsync()
+        }
     }
 
     private fun rebuildPairEdgeCache() {
@@ -344,10 +350,14 @@ class RelationshipGraphView @JvmOverloads constructor(
             val positions = withContext(Dispatchers.Default) {
                 computeLayout(nodesCopy, edgesCopy)
             }
-            // Atomically replace with new immutable list containing updated positions
-            nodes = nodesCopy.mapIndexed { i, node ->
-                if (i < positions.size) node.copy(x = positions[i].first, y = positions[i].second)
-                else node
+            // **좌표만 id로 얹는다** — 계산이 도는 동안 속성만 바뀐 갱신([setGraphData]의 같은
+            // 인물 집합 갈래)이 지나갔을 수 있고, 계산에 넣은 옛 벌로 통째로 갈아 끼우면
+            // 그 갱신이 **말없이 되돌아간다**(시점을 옮겼는데 사망 표시가 옛 시점으로 돌아가는 모양).
+            val laidOut = nodesCopy.mapIndexedNotNull { i, node ->
+                positions.getOrNull(i)?.let { node.id to it }
+            }.toMap()
+            nodes = nodes.map { node ->
+                laidOut[node.id]?.let { node.copy(x = it.first, y = it.second) } ?: node
             }
             fitToScreen()
             invalidate()

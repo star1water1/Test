@@ -1149,7 +1149,6 @@
     <string name="graph_no_faction_relationships">고른 세력 안에 서로 이어진 인물이 없습니다 — \'좁히기\'를 끄면 전체를 보면서 강조할 수 있습니다</string>
     <string name="graph_no_scope_relationships">이 작품·세계관 범위에 관계가 없습니다</string>
     <string name="graph_summary_mode">관계가 많은 %1$d명까지 그렸습니다 — 나머지 %2$d명은 접었습니다.</string>
-    <string name="graph_summary_mode_title">요약 모드</string>
     <string name="graph_filter_hint">관계 유형 필터</string>
     <string name="graph_node_count">노드: %d개</string>
     <string name="graph_edge_count">관계: %d개</string>
