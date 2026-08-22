@@ -121,7 +121,12 @@ class ImageViewerFragment : Fragment() {
         appDir = requireContext().filesDir
 
         val pathsJson = arguments?.getString("imagePaths") ?: "[]"
-        startPosition = arguments?.getInt("startPosition", 0) ?: 0
+        // **회전하면 보던 장으로 돌아온다.** 종전에는 회전마다 인자의 진입 위치를 다시 읽어
+        // 무조건 그 장으로 되돌렸다 — 스무 장을 넘겨 보던 사용자가 회전 한 번에 첫 장으로
+        // 튕겼다. 페이저 자신의 계층 상태 복원도 무효였다(id를 `generateViewId()`로 매번
+        // 새로 뽑으므로 복원 번들의 id와 맞지 않는다).
+        startPosition = savedInstanceState?.getInt(STATE_POSITION)
+            ?: arguments?.getInt("startPosition", 0) ?: 0
 
         val rawPaths: List<String> = try {
             com.google.gson.Gson().fromJson(pathsJson, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
@@ -186,10 +191,22 @@ class ImageViewerFragment : Fragment() {
 
         pageChangeCallback = object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
+                // 지금 보는 장을 든다 — 회전 뒤 되살릴 값이 이것이다.
+                startPosition = position
                 updateIndex(position)
             }
         }
         pager.registerOnPageChangeCallback(pageChangeCallback!!)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_POSITION, startPosition)
+    }
+
+    private companion object {
+        /** 보던 장을 회전 너머로 나르는 키(싣는 쪽과 꺼내는 쪽이 이 상수 하나를 쓴다). */
+        const val STATE_POSITION = "viewer_position"
     }
 
     private fun updateIndex(position: Int) {

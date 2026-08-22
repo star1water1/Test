@@ -138,7 +138,11 @@ data class EventStats(
     // 신규
     val calendarTypeDistribution: Map<String, Int>,
     val timePrecision: TimePrecisionStats,
-    val narrativeDensityCurve: List<Pair<Int, Int>>, // 연속 연도 밀도 (빈 연도 포함)
+    /**
+     * 연속 연도 밀도 (빈 연도 포함) — 연도 폭이 넓으면 **구간으로 접힌다**
+     * ([com.novelcharacter.app.util.NarrativeDensityCurve]). 접히지 않은 칸은 한 해다.
+     */
+    val narrativeDensityCurve: List<com.novelcharacter.app.util.NarrativeDensityCurve.Bucket>,
     val eventDescriptionLengthAvg: Float
 )
 
@@ -1295,14 +1299,16 @@ class StatsDataProvider {
                 entry.key?.let { novelMap[it]?.title }
             }
 
-        // 관계가 가장 많은 캐릭터
+        // 관계가 가장 많은 캐릭터 — **스코프 안 인물만 후보다.**
+        // 종전에는 최댓값이 스코프 밖 상대이면 이름 조회가 null이 되어 **안내줄이 통째로
+        // 사라졌다**(화면이 null이면 숨긴다). 값이 틀린 것보다 조용히 없어지는 것이 나쁘다.
         val connCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
-            connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
         }
         val mostConnectedChar = connCount.maxByOrNull { it.value }?.let {
-            charMap[it.key]?.name
+            charMap.getValue(it.key).name
         }
 
         // 데이터 건강 이슈
@@ -1407,22 +1413,30 @@ class StatsDataProvider {
         val relTypeDist = s.relationships.groupBy { it.relationshipType }
             .mapValues { it.value.size }
 
-        // 관계 수 TOP 10
+        // 관계 수 TOP 10 — **순위에 오르는 것은 스코프 안 인물뿐이다.**
+        // 스코프 필터는 관계를 `한쪽 끝이 스코프 안`으로 남기고(그 OR은 '고립' 판정에 필요하다)
+        // 교차참조도 같은 모양이라, 좁히지 않으면 **스코프 밖 상대가 `?` 행으로 목록에 뜬다.**
+        // 같은 파일의 복잡도 순위는 `s.characters`를 돌아 그 일이 원리적으로 불가능한데
+        // 바로 옆에 나란히 그려지는 이 목록만 가능했다 — 같은 성격의 목록 둘이 반대로
+        // 동작하는 것 자체가 결함이다(R-18).
         val relCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
-            relCount[it.characterId2] = (relCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) relCount[it.characterId2] = (relCount[it.characterId2] ?: 0) + 1
         }
+        // 폴백(`?: "?"`)을 지운 것도 처방의 일부다 — 남겨 두면 다음 회귀를 다시 감춘다.
         val topRelChars = relCount.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
-        // 사건 연계 TOP 10
+        // 사건 연계 TOP 10 — 같은 처방.
         val eventCountMap = mutableMapOf<Long, Int>()
         s.crossRefs.forEach { ref ->
-            eventCountMap[ref.characterId] = (eventCountMap[ref.characterId] ?: 0) + 1
+            if (ref.characterId in charMap) {
+                eventCountMap[ref.characterId] = (eventCountMap[ref.characterId] ?: 0) + 1
+            }
         }
         val topEventChars = eventCountMap.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
         // 필드 완성도 — 판정은 [CompletionRate] 하나다(칸 고르기·분자 교집합·필수 가중).
         val statsFieldDefs = s.fieldDefinitions.groupBy { it.universeId }
@@ -1547,12 +1561,19 @@ class StatsDataProvider {
             counts
         }
 
-        val eventCharCounts = s.crossRefs.groupBy { it.eventId }.mapValues { it.value.size }
+        // **사건 축 지표의 모수는 스코프 안 사건이다** (R-51 — 같은 술어·같은 범위·같은 표본).
+        // 스코프 필터는 교차참조를 `캐릭터가 스코프 안 || 사건이 스코프 안`으로 남긴다(그 OR은
+        // 캐릭터 축의 '사건 미연계' 판정에 필요하다). 그래서 여기 그대로 쓰면 분자에는
+        // *스코프 안 캐릭터가 스코프 밖 사건에 참여한 행*이 들어가고 분모는 스코프 안 사건만
+        // 센다 — 참여자가 0명인 사건 하나뿐인데도 카드가 "사건당 평균 1.0"과 "미연계 1"을
+        // **동시에** 말했다. 바로 위 `novelEventCounts`는 같은 `eventIdSet`으로 이미 좁힌다.
+        val scopedEventRefs = s.crossRefs.filter { it.eventId in eventIdSet }
+        val eventCharCounts = scopedEventRefs.groupBy { it.eventId }.mapValues { it.value.size }
         val avgCharsPerEvent = if (s.events.isNotEmpty()) {
             eventCharCounts.values.sum().toFloat() / s.events.size
         } else 0f
 
-        val linkedEventIds = s.crossRefs.map { it.eventId }.toSet()
+        val linkedEventIds = scopedEventRefs.mapTo(HashSet()) { it.eventId }
         val orphanCount = s.events.count { it.id !in linkedEventIds }
 
         val monthDist = s.events.filter { it.month != null }
@@ -1567,12 +1588,13 @@ class StatsDataProvider {
         val yearMonth = s.events.count { it.month != null && it.day == null }
         val yearMonthDay = s.events.count { it.month != null && it.day != null }
 
-        // 신규: 서사 밀도 곡선 (빈 연도 포함)
-        val narrativeDensity = if (yearDensity.isNotEmpty()) {
-            val minYear = yearDensity.keys.min()
-            val maxYear = yearDensity.keys.max()
-            (minYear..maxYear).map { year -> year to (yearDensity[year] ?: 0) }
-        } else emptyList()
+        // 서사 밀도 곡선 (빈 연도 포함) — **항목 수는 연도 폭이 아니라 상한에 묶인다.**
+        // 종전에는 `(minYear..maxYear).map { … }`이라 폭 12만짜리 연표(판타지 역법에서
+        // 정당한 데이터다)가 12만 개를 만들었고, 폭이 수억이면 `OutOfMemoryError`였다 —
+        // 그것은 `Error`라 적재 쪽 `catch (e: Exception)`이 못 잡아 앱이 죽었다.
+        val narrativeDensity = com.novelcharacter.app.util.NarrativeDensityCurve.build(
+            yearDensity, com.novelcharacter.app.util.DisplayCap.DENSITY_CURVE_BUCKETS
+        )
 
         // 신규: 사건 설명 평균 길이
         val descLengths = s.events.map { it.description.length }
@@ -1597,13 +1619,14 @@ class StatsDataProvider {
         val typeDist = s.relationships.groupBy { it.relationshipType }
             .mapValues { it.value.size }
 
+        // 순위에 오르는 것은 스코프 안 인물뿐이다 — 캐릭터 통계의 같은 목록과 한 규칙.
         val connCount = mutableMapOf<Long, Int>()
         s.relationships.forEach {
-            connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
-            connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
+            if (it.characterId1 in charMap) connCount[it.characterId1] = (connCount[it.characterId1] ?: 0) + 1
+            if (it.characterId2 in charMap) connCount[it.characterId2] = (connCount[it.characterId2] ?: 0) + 1
         }
         val topConnected = connCount.entries.sortedByDescending { it.value }.take(10)
-            .map { (charMap[it.key]?.name ?: "?") to it.value }
+            .map { charMap.getValue(it.key).name to it.value }
 
         val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
         val isolated = s.characters.filter { it.id !in relCharIds }.map { it.name }
@@ -1950,6 +1973,10 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
+            // **인사이트의 분자는 여기서 좁히지 않는다** — 그 카드는 채움 수와 **분포를 나란히**
+            // 보이므로 둘이 같은 모수에서 나와야 하고, 분포까지 좁히는 것은 *보관 값을 분포에서
+            // 뺄 것인가*라는 별개 판정이다(값 표는 순위·교차분석·패턴이 함께 쓰는 메모다).
+            // 완성도 두 자리(데이터 개요·필드 분석)는 비율만 보이므로 그 축부터 맞췄다.
             buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
                 mergedFieldDefIds = fds.map { it.id })
         }
@@ -2039,7 +2066,12 @@ class StatsDataProvider {
         rawCounts: Map<String, Int>,
         totalCount: Int,
         universeName: String,
-        mergedFieldDefIds: List<Long>
+        mergedFieldDefIds: List<Long>,
+        /**
+         * 채운 수 — **모수 집합과의 교집합**이어야 한다(R-34). 기본값은 값 표의 합이고,
+         * 그 축의 모수가 캐릭터 소속을 경유하지 않는 자리(사건·작품)에서만 쓴다.
+         */
+        filledCount: Int = rawCounts.values.sum()
     ): FieldInsightResult {
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
@@ -2069,7 +2101,7 @@ class StatsDataProvider {
             }
         }
         return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount,
-            rawCounts.values.sum(),
+            filledCount,
             universeName = universeName, mergedFieldDefIds = mergedFieldDefIds)
     }
 
@@ -2716,8 +2748,10 @@ class StatsDataProvider {
         // 모수는 세계관별로 한 번만 센다 — def마다 작품·캐릭터 전수를 필터하던 것(def×캐릭터
         // 곱)을 걷었다(S6 6차 — fa 완성도가 S6 4차에 간 그 길, 세는 조건 무변경).
         val charCountByUniverse = characterCountsByUniverse(s)
+        // **분자는 분모 집합과의 교집합이다**(R-34) — [filledCountsByFieldDef]가 그 셈을 든다.
+        val filledByDef = filledCountsByFieldDef(s)
         val fieldCompletionDetails = s.fieldDefinitions.filter { it.fieldType != FieldType.CALCULATED }.map { fd ->
-            val filled = countsByFieldDef[fd.id]?.values?.sum() ?: 0
+            val filled = filledByDef[fd.id] ?: 0
             val total = if (s.unassignedScope) s.characters.size
                 else charCountByUniverse[fd.universeId] ?: 0
             val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -2929,11 +2963,13 @@ class StatsDataProvider {
         // 걷었다(S6 4차). 세는 조건은 종전 그대로다: 캐릭터의 작품이 그 세계관 소속일 것.
         // (인사이트 모수도 같은 셈을 쓴다 — S6 5차에 헬퍼로 모았다.)
         val charCountByUniverse = characterCountsByUniverse(s)
+        // **분자는 분모 집합과의 교집합이다**(R-34) — 데이터 개요와 같은 헬퍼를 쓴다.
+        val filledByDef = filledCountsByFieldDef(s)
         val fieldCompletionDetails = s.fieldDefinitions
             .filter { it.fieldType != FieldType.CALCULATED }
             .map { fd ->
                 // 이 필드가 속한 유니버스의 캐릭터 수. 미배정 스코프 모수 = 스코프 캐릭터 전체
-                val filled = countsByFieldDef[fd.id]?.values?.sum() ?: 0
+                val filled = filledByDef[fd.id] ?: 0
                 val total = if (s.unassignedScope) s.characters.size
                     else charCountByUniverse[fd.universeId] ?: 0
                 val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -4268,8 +4304,11 @@ class StatsDataProvider {
         val allFds = fieldDefIds.mapNotNull { id -> s.fieldDefinitions.find { it.id == id } }
         val relevantUniverseIds = allFds.map { it.universeId }.toSet()
         val relevantNovelIds = s.novels.filter { it.universeId in relevantUniverseIds }.map { it.id }.toSet()
-        val relevantCharCount = if (s.unassignedScope) s.characters.size
-            else s.characters.count { it.novelId in relevantNovelIds }
+        // **모수를 수가 아니라 id 집합으로 든다** — 뺄셈으로 이으면 음수가 난다(아래).
+        val scopeCharIds: Set<Long> =
+            if (s.unassignedScope) s.characters.mapTo(HashSet()) { it.id }
+            else s.characters.asSequence().filter { it.novelId in relevantNovelIds }
+                .mapTo(HashSet()) { it.id }
 
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 
@@ -4279,7 +4318,6 @@ class StatsDataProvider {
         val charValues = LinkedHashMap<Long, CharValue>()
         val charValuePriority = HashMap<Long, Int>()
         val processedCharIds = mutableSetOf<Long>()
-        var parseFailed = 0
 
         fun universeOf(charId: Long): Long? =
             charMap[charId]?.novelId?.let { novelMap[it] }?.universeId
@@ -4349,7 +4387,7 @@ class StatsDataProvider {
             for (fv in rawValues) {
                 val char = charMap[fv.characterId] ?: continue
                 processedCharIds.add(char.id)
-                if (fv.value.isBlank()) { parseFailed++; continue }
+                if (fv.value.isBlank()) continue
                 val ownerFd = fieldDefMap[fv.fieldDefinitionId] ?: fd
                 val ownerUniverseId = ownerFd.universeId
 
@@ -4361,7 +4399,7 @@ class StatsDataProvider {
                             // 분포 차트가 보여주는 문자열("170.250")과 순위의 문자열이 갈린다.
                             // 저장 행이 없는 CALCULATED만 서식이 필요하다.
                             putValue(CharValue(char.id, v, fv.value.trim()), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     FieldType.GRADE -> {
                         // 값이 속한 FieldDefinition의 config으로 등급 해석 (세계관별 맵핑 차이 대응).
@@ -4372,7 +4410,7 @@ class StatsDataProvider {
                         val numericValue = resolveGradeValueForRanking(ownerFd, canonical)
                         if (numericValue != null) {
                             putValue(CharValue(char.id, numericValue, fv.value), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     FieldType.BODY_SIZE -> {
                         // 값이 속한 FieldDefinition의 config으로 파싱 (세계관별 separator 차이 대응)
@@ -4386,7 +4424,7 @@ class StatsDataProvider {
                         val partValue = parts.getOrNull(partIdx)?.toDoubleOrNull()
                         if (partValue != null && partValue.isFinite()) {
                             putValue(CharValue(char.id, partValue, fv.value), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     // 빈도 모드: SELECT, TEXT, MULTI_TEXT + 콤마 목록 표시 형식 TEXT까지 동일 경로.
                     // **CALCULATED는 여기 못 온다** — 바깥 갈래가 이미 갈랐다(아래 `} // else
@@ -4398,7 +4436,7 @@ class StatsDataProvider {
                         // 한 캐릭터가 여러 토큰을 가지면 **가장 흔한 토큰**을 대표로 삼는다
                         // (종전 MULTI_TEXT 규칙을 모든 다중값 필드로 넓힌 것이다).
                         val tokens = tokensByValue[fv.characterId to fv.fieldDefinitionId].orEmpty()
-                        if (tokens.isEmpty()) { parseFailed++; continue }
+                        if (tokens.isEmpty()) continue
                         val topToken = tokens.maxByOrNull { frequencyMap[it] ?: 0 }
                         val maxFreq = topToken?.let { frequencyMap[it] ?: 0 } ?: 0
                         if (topToken != null && maxFreq > 0) {
@@ -4406,15 +4444,27 @@ class StatsDataProvider {
                                 CharValue(char.id, maxFreq.toDouble(), "$topToken (${maxFreq}회)"),
                                 ownerUniverseId
                             )
-                        } else parseFailed++
+                        }
                     }
                 }
             }
         } // else (non-CALCULATED)
 
-        // 제외 카운트: 관련 세계관 캐릭터만 기준 (전체 세계관 모드에서 다른 세계관 캐릭터 제외)
-        val noValueCount = relevantCharCount - processedCharIds.size
-        val excludedCount = parseFailed + noValueCount
+        // 제외 카운트 — **모수와 분자를 같은 집합에 세운다.**
+        //
+        // 종전에는 `모수 수 - 값을 본 캐릭터 수`였는데 두 집합이 서로를 포함하지 않았다:
+        // 순위표에는 **스코프 밖 보관 값 보유자**도 실린다(작품을 '없음'으로 바꾼 캐릭터의
+        // 값은 병합 규약이 일부러 남긴다). 그가 모수에는 없으므로 뺄셈이 **음수**가 되어
+        // 화면이 *"3명 참여 | -1명 제외"*라고 말했다. 음수가 아닐 때도 상쇄가 일어난다.
+        //
+        // 이제 *"모수에 있거나 값을 본 캐릭터 중 표에 실리지 않은 수"*를 센다. 그러면
+        // `표에 실린 수 + 제외 수`가 언제나 그 합집합의 크기다.
+        //
+        // `parseFailed`를 더하지 않는 것도 처방의 일부다 — 그것은 **행**을 세는데 문구는
+        // *"N명"*이라, 깨진 보관 행이 하나 더 있는 캐릭터는 **표에 실리면서 동시에 제외로도**
+        // 세어졌다. 파싱에 실패한 캐릭터는 `charValues`에 없으므로 아래 식이 이미 센다.
+        val rankedIds = charValues.keys
+        val excludedCount = (scopeCharIds + processedCharIds).count { it !in rankedIds }
 
         // 정렬 및 순위 할당 (동점 시 표준 경쟁 순위: 1,2,2,4)
         val sorted = if (ascending) {
@@ -4577,6 +4627,50 @@ class StatsDataProvider {
      * 선계수 (S6 4차 완성도 → S6 5차 인사이트 모수가 같은 셈을 쓴다 — R-7).
      * 조건은 종전 그대로다: 캐릭터의 작품이 실재하고, 세는 칸은 그 작품의 세계관이다.
      */
+    /**
+     * 필드 정의 → **모수 집합 안에서** 그 필드를 채운 캐릭터 수 (R-34).
+     *
+     * R-34는 *"분자는 언제나 분모 집합과의 교집합이다 — 값 테이블은 그 칸의 것이 아닌 행을
+     * 정상적으로 담고 있다(N2 보존)"*이다. 완성도의 분자가 그 교집합을 안 쓰면 **작품을
+     * '없음'으로 바꾼 캐릭터의 보관 값**이 그대로 세어진다. 그 캐릭터는 분모
+     * ([characterCountsByUniverse]는 실재하는 작품을 경유해야 센다)에는 없으므로
+     * **완성도가 100%를 넘고**, 넘지 않을 때는 조용히 부풀기만 한다.
+     *
+     * 그 상태는 사고가 아니라 규약이 지키는 정상 상태다 — 값 병합 규약이 *"작품을 '없음'으로
+     * 바꾸면 폼이 비어도 기존 값을 전량 보존한다"*를 명시하고 시험이 그것을 잠근다.
+     *
+     * 세는 규칙을 [characterCountsByUniverse]와 **글자 그대로 맞춘 것이 요점이다** —
+     * 두 벌로 적으면 다시 갈린다.
+     */
+    private fun filledCountsByFieldDef(s: StatsSnapshot): HashMap<Long, Int> {
+        val filledDefIdsByChar = filledCharacterDefIds(s)
+        val out = HashMap<Long, Int>()
+        if (s.unassignedScope) {
+            // 미배정 스코프의 모수는 스코프 캐릭터 전체이고 정의도 스냅샷 전체를 쓴다
+            // (분모 쪽 `s.characters.size`와 같은 잣대).
+            val knownDefIds = s.fieldDefinitions.mapTo(HashSet()) { it.id }
+            for (ch in s.characters) {
+                val ids = filledDefIdsByChar[ch.id] ?: continue
+                for (defId in ids) if (defId in knownDefIds) out.merge(defId, 1, Int::plus)
+            }
+            return out
+        }
+        val defUniverse = s.fieldDefinitions.associate { it.id to it.universeId }
+        val universeByNovelId = HashMap<Long, Long?>()
+        for (n in s.novels) universeByNovelId[n.id] = n.universeId
+        for (ch in s.characters) {
+            val novelId = ch.novelId ?: continue
+            if (novelId !in universeByNovelId) continue
+            val universeId = universeByNovelId[novelId]
+            val ids = filledDefIdsByChar[ch.id] ?: continue
+            for (defId in ids) {
+                // **그 칸의 것만 센다** — 다른 구역의 정의를 가리키는 보관 값은 분자가 아니다.
+                if (defUniverse[defId] == universeId) out.merge(defId, 1, Int::plus)
+            }
+        }
+        return out
+    }
+
     private fun characterCountsByUniverse(s: StatsSnapshot): HashMap<Long?, Int> {
         val universeByNovelId = HashMap<Long, Long?>()
         for (n in s.novels) universeByNovelId[n.id] = n.universeId
@@ -4734,7 +4828,6 @@ class StatsDataProvider {
 
         val novelMap = s.novels.associateBy { it.id }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.fieldDefinitions.associateBy { it.id }
         val charFieldValues = s.fieldValues.groupBy { it.characterId }
 
         // 세계관별 CALCULATED 필드와 수식을 미리 파싱
@@ -4759,10 +4852,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[novel.universeId] ?: continue
 
             val values = charFieldValues[char.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
@@ -4798,7 +4899,6 @@ class StatsDataProvider {
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.eventFieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.eventFieldDefinitions.associateBy { it.id }
         val valuesByEvent = s.eventFieldValues.groupBy { it.eventId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
@@ -4821,10 +4921,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[universeId] ?: continue
 
             val values = valuesByEvent[event.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
@@ -4862,7 +4970,6 @@ class StatsDataProvider {
         if (calculatedFields.isEmpty()) return emptyMap()
 
         val fieldDefByUniverse = s.novelFieldDefinitions.groupBy { it.universeId }
-        val allFieldDefById = s.novelFieldDefinitions.associateBy { it.id }
         val valuesByNovel = s.novelFieldValues.groupBy { it.novelId }
 
         data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
@@ -4885,10 +4992,18 @@ class StatsDataProvider {
             val universeFields = fieldDefByUniverse[universeId] ?: continue
 
             val values = valuesByNovel[novel.id] ?: emptyList()
+            // **재료는 값 행이 아니라 *구역 안 정의*가 몬다.** 값 행에는 다른 세계관 정의를
+            // 가리키는 **보관 값**이 섞여 있고(폼의 권한은 그 폼이 그린 것까지다 — R-5),
+            // 기본 템플릿은 세계관마다 **같은 key**로 심긴다. 그래서 행을 돌며 key로 담으면
+            // 두 구역의 값이 같은 칸을 다투고 **나중 행이 이긴다** — 저장 순서상 그 나중이
+            // 대개 보관 값이라, 수식이 남의 세계관 값으로 계산됐다.
+            // 정의에서 몰면 구역 밖 행은 **구조적으로** 들어올 수 없다(빈 값 건너뛰기도
+            // 형제 구현 `DynamicFieldRenderer.computeCalculatedValues`와 같은 모양이다).
+            val valueByDefId = values.associateBy { it.fieldDefinitionId }
             val fieldKeyValues = mutableMapOf<String, String>()
-            for (fv in values) {
-                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
-                fieldKeyValues[fDef.key] = fv.value
+            for (fd in universeFields) {
+                val v = valueByDefId[fd.id]?.value
+                if (!v.isNullOrBlank()) fieldKeyValues[fd.key] = v
             }
 
             val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)

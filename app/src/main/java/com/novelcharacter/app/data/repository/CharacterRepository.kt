@@ -227,7 +227,13 @@ class CharacterRepository(
         }
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
-    suspend fun updateCharacterDisplayOrders(characters: List<Character>) = characterDao.updateAll(characters)
+    /**
+     * 캐릭터 순서 저장 — **차례만 받아 `displayOrder`만 쓴다.**
+     * 사유는 [UniverseRepository.updateUniverseDisplayOrders]와 같다.
+     */
+    suspend fun updateCharacterDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> characterDao.setDisplayOrder(id, index.toLong()) }
+    }
 
     // ===== CharacterFieldValue =====
     fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>> =
@@ -314,6 +320,13 @@ class CharacterRepository(
 
     suspend fun updateStateChange(change: CharacterStateChange) =
         characterStateChangeDao.update(change)
+
+    suspend fun updateAllStateChanges(changes: List<CharacterStateChange>) =
+        characterStateChangeDao.updateAll(changes)
+
+    /** 여러 캐릭터의 상태변화를 **한 번에** 읽는다 (R-54 — 900개씩 쪼갠다). */
+    suspend fun getChangesByCharacterIds(characterIds: List<Long>): List<CharacterStateChange> =
+        SqlInChunks.flat(characterIds) { characterStateChangeDao.getChangesByCharacterIds(it) }
 
     /**
      * 상태변화 이력 삭제 — 삭제 전 휴지통 스냅샷을 남긴다.
@@ -416,6 +429,19 @@ class CharacterRepository(
 
     suspend fun getAllRelationships(): List<CharacterRelationship> =
         characterRelationshipDao.getAllRelationships()
+
+    /**
+     * 이 인물들에 **어느 끝으로든 닿는** 관계 — 문서·화면이 '이 사람들의 관계'를 물을 때의 통로.
+     *
+     * 전량을 올려 메모리에서 거르지 않는다(R-54). 두 끝을 따로 묻고 합치는 것은 SQLite가
+     * `OR`가 걸린 두 인덱스를 한 질의에서 잘 못 쓰기 때문이다 — id로 중복을 걷는다.
+     */
+    suspend fun getRelationshipsTouching(characterIds: List<Long>): List<CharacterRelationship> {
+        if (characterIds.isEmpty()) return emptyList()
+        val byEnd1 = SqlInChunks.flat(characterIds) { characterRelationshipDao.getRelationshipsByEnd1(it) }
+        val byEnd2 = SqlInChunks.flat(characterIds) { characterRelationshipDao.getRelationshipsByEnd2(it) }
+        return (byEnd1 + byEnd2).distinctBy { it.id }
+    }
 
     suspend fun insertRelationship(relationship: CharacterRelationship): Long {
         require(relationship.characterId1 != relationship.characterId2) {
@@ -889,7 +915,9 @@ class CharacterRepository(
         var eventLinks = 0
         var images = 0
         SqlInChunks.each(ids) { chunk ->
-            relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
+            // 끝마다 따로 묻는다 — 한 질의에 목록을 두 번 실으면 변수가 2배가 되어 상한을 넘는다(R-54).
+            relIds.addAll(characterRelationshipDao.getRelationshipIdsByEnd1(chunk))
+            relIds.addAll(characterRelationshipDao.getRelationshipIdsByEnd2(chunk))
             stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
             quotes += characterQuoteDao.countByCharacterIds(chunk)
             memberships += db.factionMembershipDao().countByCharacterIds(chunk)

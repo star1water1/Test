@@ -26,7 +26,7 @@ import com.novelcharacter.app.util.CsvTokens
  * - [AppSettingsKeys.Kind.BOOLEAN] — [CsvTokens.parseBoolean] (가져오기의 `parseSheetBoolean`이
  *   위임하는 그 함수다. 두 벌로 적으면 둘이 다른 값을 참이라 부르는 날이 온다)
  * - [AppSettingsKeys.Kind.NUMBER] — 수로 견준다. `3`과 `3.0`은 같은 값이고, 숫자 셀은
- *   실제로 후자를 돌려준다([AppSettingsKeys.parseIntCell]의 KDoc이 그 사고를 적어 두었다).
+ *   실제로 후자를 돌려준다([AppSettingsKeys.parseFiniteCell]의 KDoc이 그 사고를 적어 두었다).
  * - [AppSettingsKeys.Kind.TEXT] — 다듬은 글자 그대로. JSON 같은 값은 공백·순서가 달라도
  *   다르다고 보는데, **그쪽으로 틀리는 것이 안전한 방향**이다(안 바뀔 것을 바뀐다고 말하는
  *   것은 놀람이고, 바뀔 것을 안 바뀐다고 말하는 것은 유실이다).

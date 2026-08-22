@@ -23,6 +23,7 @@ import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsEventDetailBinding
+import com.novelcharacter.app.util.NarrativeDensityCurve
 
 class StatsEventDetailFragment : Fragment() {
 
@@ -65,16 +66,30 @@ class StatsEventDetailFragment : Fragment() {
         }
     }
 
-    private fun setupNarrativeDensityChart(data: List<Pair<Int, Int>>) {
+    private fun setupNarrativeDensityChart(data: List<NarrativeDensityCurve.Bucket>) {
         val chart = binding.chartNarrativeDensity
+        val foldNotice = binding.textNarrativeDensityFolded
         if (data.isEmpty()) {
             chart.visibility = View.GONE
+            foldNotice.visibility = View.GONE
             return
+        }
+        // **접었으면 접었다고 말한다**(R-14) — 라벨이 `1000–1011`로 바뀐 것만으로는 사용자가
+        // *한 해가 아니라 구간*임을 알 수 없고, 막대 높이를 한 해의 사건 수로 읽는다.
+        // 숫자는 문구에 박지 않고 실제로 묶인 폭에서 낸다(상한을 옮기면 문구가 따라온다).
+        val foldedWidth = data.firstOrNull { it.folded }?.let { it.toYear - it.fromYear + 1 }
+        if (foldedWidth != null) {
+            foldNotice.text = getString(R.string.stats_narrative_density_folded, foldedWidth)
+            foldNotice.visibility = View.VISIBLE
+        } else {
+            foldNotice.visibility = View.GONE
         }
         val ctx = requireContext()
         val chartValueSmSize = resources.getDimension(R.dimen.stats_text_chart_value_sm) / resources.displayMetrics.scaledDensity
-        val labels = data.map { it.first.toString() }
-        val entries = data.mapIndexed { i, (_, count) -> BarEntry(i.toFloat(), count.toFloat()) }
+        val labels = data.map { b ->
+            if (b.folded) "${b.fromYear}–${b.toYear}" else b.fromYear.toString()
+        }
+        val entries = data.mapIndexed { i, b -> BarEntry(i.toFloat(), b.count.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
             color = ContextCompat.getColor(ctx, R.color.primary)
             valueTextSize = chartValueSmSize

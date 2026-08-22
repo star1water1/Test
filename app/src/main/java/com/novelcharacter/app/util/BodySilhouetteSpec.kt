@@ -124,6 +124,24 @@ object BodySilhouetteSpec {
     ) {
         val anyClamped: Boolean get() = clampedShoulder || clampedWaist || clampedHip
 
+        /**
+         * 앵커 표 — [scaleAt]이 **정점마다 다시 짓던** 것을 여기서 한 번 짓는다.
+         *
+         * 이 표는 오직 이 `Scales`로 정해진다. 종전에는 호출마다 `listOf(...)`로 일곱
+         * 쌍을 새로 만들었고, 그 호출이 드래그 프레임의 정점 수만큼 돌아 **프레임
+         * 할당의 대부분**이 여기서 났다(측정 근거: 콜드 검토). `Scales` 하나가 한 번의
+         * 그리기 전체를 덮으므로 프레임당 한 벌이면 충분하다.
+         *
+         * 두 배열은 **같은 차례로 짝을 이룬다**(i번째 높이의 스케일이 i번째 값이다) —
+         * 나눠 둔 것은 `Pair` 박싱을 없애기 위해서다.
+         */
+        internal val knotFracs: DoubleArray = doubleArrayOf(
+            .845, ANCHOR_SHOULDER, ANCHOR_BUST, ANCHOR_WAIST, ANCHOR_HIP, .290, .006
+        )
+        internal val knotScales: DoubleArray = doubleArrayOf(
+            1.0, shoulder, rib, waist, hip, 1 + (hip - 1) * .52, 1 + (hip - 1) * .12
+        )
+
         fun clampedFor(slot: BodySlot): Boolean = when (slot) {
             BodySlot.SHOULDER -> clampedShoulder
             BodySlot.WAIST -> clampedWaist
@@ -315,8 +333,25 @@ object BodySilhouetteSpec {
     /** 실루엣이 쓰는 밑가슴(cm) — 실측이 있으면 그것, 없으면 허리 + [Measures.ribOffset]. */
     fun figureUnderbust(m: Measures): Double = m.underbust ?: (m.waist + m.ribOffset)
 
-    /** 컵차(cm) = 가슴 − 밑가슴. 음수는 0으로, 상한은 [CUP_DIFF_CAP]. */
-    fun cupDiff(m: Measures): Double = max(0.0, min(m.bust - figureUnderbust(m), CUP_DIFF_CAP))
+    /**
+     * 컵차(cm) = 가슴 − 밑가슴. 음수는 0으로, **상한 없음** — 글자·요약이 쓰는 값이다.
+     *
+     * 상한을 뗀 자리가 여기인 이유는 이 파일 머리의 저작 규칙이다: *"클램프는 표시만이다.
+     * 값은 절대 불변이고, 한계는 캡션으로 나간다 — 그림의 한계이지 값의 한계가 아니다."*
+     * 컵차만 그 규칙을 어기고 있었다. 요약의 나머지 두 축(허리/키 · 힙−허리)은 처음부터
+     * 클램프 없는 값을 쓴다.
+     */
+    fun cupDiffRaw(m: Measures): Double = max(0.0, m.bust - figureUnderbust(m))
+
+    /**
+     * 컵차(cm), 상한 [CUP_DIFF_CAP] — **그림 기하 전용.**
+     *
+     * 상한은 *극단 컵에서 판형이 되는 것을 막는* 작도 사정이라 **글자에 걸면 안 된다.**
+     * 종전에는 [axisSummary]가 이 값을 컵 라벨에 그대로 넘겨, 컵 표를 40cm 위로 넓힌
+     * 사용자에게서 같은 카드가 컵을 두 개 말했다(그림 `J` · 분석 `K`). 실루엣 편집기는
+     * 더 나빴다 — `K`를 고른 직후 같은 시트의 요약이 `컵 J`라고 답했다.
+     */
+    fun cupDiff(m: Measures): Double = min(cupDiffRaw(m), CUP_DIFF_CAP)
 
     /**
      * 부위별 변형 스케일. 표시 클램프가 걸리면 해당 축의 플래그가 선다 — **값은 그대로다.**
@@ -339,30 +374,29 @@ object BodySilhouetteSpec {
         )
     }
 
-    /** 높이 [frac]에서의 몸통 스케일 — 앵커 사이를 코사인으로 잇는다. */
+    /**
+     * 높이 [frac]에서의 몸통 스케일 — 앵커 사이를 코사인으로 잇는다.
+     *
+     * 앵커 표는 [Scales]가 들고 있다(정점마다 다시 짓지 않는다). 답은 종전과 글자 그대로
+     * 같고, 달라진 것은 **표를 언제 짓는가**뿐이다.
+     */
     fun scaleAt(frac: Double, sc: Scales): Double {
-        val knots = listOf(
-            .845 to 1.0,
-            ANCHOR_SHOULDER to sc.shoulder,
-            ANCHOR_BUST to sc.rib,
-            ANCHOR_WAIST to sc.waist,
-            ANCHOR_HIP to sc.hip,
-            .290 to 1 + (sc.hip - 1) * .52,
-            .006 to 1 + (sc.hip - 1) * .12
-        )
-        if (frac >= knots[0].first) return 1.0
-        for (i in 0 until knots.size - 1) {
-            val (a, sa) = knots[i]
-            val (b, sb) = knots[i + 1]
+        val fracs = sc.knotFracs
+        val values = sc.knotScales
+        if (frac >= fracs[0]) return 1.0
+        for (i in 0 until fracs.size - 1) {
+            val a = fracs[i]
+            val b = fracs[i + 1]
             if (frac <= a && frac >= b) {
                 val tt = (a - frac) / (a - b)
                 var w = (1 - cos(PI * tt)) / 2
                 // 허리→힙 구간만 늦게 벌어지게 — 힙 플레어가 빨라 보이는 것을 잡는다.
-                if (a == ANCHOR_WAIST && b == ANCHOR_HIP) w = w.pow(1.3)
-                return sa + (sb - sa) * w
+                // 자리로 가른다(허리 = 3, 힙 = 4) — 값 비교는 표가 바뀌면 조용히 어긋난다.
+                if (i == 3) w = w.pow(1.3)
+                return values[i] + (values[i + 1] - values[i]) * w
             }
         }
-        return knots.last().second
+        return values[values.size - 1]
     }
 
     /** 컵차에서 파생되는 가슴 기하 전부. */
@@ -1077,7 +1111,11 @@ object BodySilhouetteSpec {
         m: Measures,
         config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT
     ): AxisSummary {
-        val cd = cupDiff(m)
+        // **상한 없는 값을 쓴다** — 이 함수는 전부 글자 계층이고(`cd`의 소비처는 컵 라벨과
+        // 아래 `line` 판정뿐, 그림을 하나도 만들지 않는다), 그림용 상한을 여기 들이면
+        // 컵 표를 넓힌 사용자에게서 같은 카드가 컵을 두 개 말한다. `line`의 문턱은 12·15라
+        // 상한(40) 아래이므로 그 출력은 한 글자도 바뀌지 않는다.
+        val cd = cupDiffRaw(m)
         val torsoR = m.waist / m.height
         val hipD = m.hip - m.waist
         val whr = if (m.hip > 0) m.waist / m.hip else 1.0

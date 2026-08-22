@@ -670,12 +670,6 @@ object AppSettingsKeys {
     }
 
     /**
-     * 셀 글자 → 정수. **[Double]을 거치는 것이 일부러다** — 숫자 셀은 `51200`을 `51200.0`으로
-     * 돌려주기도 하므로 `toIntOrNull()`로 바로 받으면 멀쩡한 값이 *"숫자가 아닙니다"*가 된다.
-     */
-    fun parseIntCell(value: String): Int? = value.trim().toDoubleOrNull()?.toInt()
-
-    /**
      * 셀 글자 → **유한한 수**. `NaN`·`Infinity`는 `toDoubleOrNull`이 수로 읽지만
      * 설정값으로는 뜻이 없다 — 그대로 흘리면 `NaN.toInt()==0`이 저장되고 *"조정해
      * 저장했습니다"*라는 거짓 문구까지 붙는다(콜드 검토 2026.08.20). 숫자 설정의 쓰기

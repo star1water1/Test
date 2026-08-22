@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FactionMembership
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -197,5 +198,31 @@ class FactionMembershipMatcherTest {
         val existing = membership(id = 4, joinYear = 10, departedIntensity = 3, createdAt = 500L)
         val row = rowOf(existing).copy(departedIntensity = 4)
         assertTrue(FactionMembershipMatcher.changes(existing, row))
+    }
+
+    // ── 자연키 — **접는 자리마다 이 함수를 쓴다** ───────────────────────────────
+    // `faction_memberships`에는 유니크 제약이 없다(재가입 이력 보존). 키를 손으로 두 벌 적으면
+    // 반드시 갈리고, 갈린 쪽이 이력을 조용히 버린다(되돌리기가 실제로 그랬다).
+
+    @Test
+    fun `자연키는 세력과 가입 탈퇴 연도 탈퇴유형을 함께 본다`() {
+        val a = membership(id = 1, joinYear = 1000, leaveYear = 1010, leaveType = "탈퇴")
+        val b = membership(id = 2, joinYear = 1020, leaveYear = null, leaveType = null)
+        assertNotEquals(
+            "같은 세력의 재가입 이력이 같은 키로 접혔다",
+            FactionMembershipMatcher.naturalKey(1L, a),
+            FactionMembershipMatcher.naturalKey(1L, b)
+        )
+    }
+
+    @Test
+    fun `같은 이력은 같은 키다`() {
+        val a = membership(id = 1, joinYear = 1000, leaveYear = 1010, leaveType = "탈퇴")
+        val b = membership(id = 9, joinYear = 1000, leaveYear = 1010, leaveType = "탈퇴")
+        // 세력 id가 달라도 **해석된 지금의 세력**이 같으면 같은 이력이다(옛 id가 수렴하는 경우).
+        assertEquals(
+            FactionMembershipMatcher.naturalKey(1L, a),
+            FactionMembershipMatcher.naturalKey(1L, b)
+        )
     }
 }

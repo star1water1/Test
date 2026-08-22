@@ -60,25 +60,17 @@ class TimeStateResolver {
             change.newValue.toIntOrNull()
                 ?: if (change.newValue.isBlank()) change.year else null
         }
-        val aliveChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_ALIVE }
-        if (aliveChange != null) {
-            // 명시적 생존여부 StateChange가 있으면 우선 사용
-            result[CharacterStateChange.KEY_ALIVE] = when (aliveChange.newValue) {
-                "dead" -> "false"
-                "alive" -> "true"
-                else -> "" // "unknown" 등 → 표시 안 함
-            }
-            // 사망연도 기반 타임라인 보정: 사망 이전 시점이면 생존으로 표시
-            if (deathYear != null && targetYear < deathYear) {
-                result[CharacterStateChange.KEY_ALIVE] = "true"
-            }
-        } else {
-            // 하위호환: __alive 없으면 기존 birth/death 기반 계산
-            if (deathYear != null && targetYear >= deathYear) {
-                result[CharacterStateChange.KEY_ALIVE] = "false"
-            } else if (birthYear != null && targetYear >= birthYear) {
-                result[CharacterStateChange.KEY_ALIVE] = "true"
-            }
+        // **판정은 [AliveAtYear]가 든다** — 여기 남는 것은 *출력 어휘로 옮기는 일*뿐이다.
+        // 종전에는 판정과 번역이 한 덩어리라, 관계도가 이 자리를 흉내 내면서 **출력 어휘로
+        // 원본 행을 읽는** 실수를 했다(그 비교는 언제나 거짓이었다).
+        //
+        // `UNKNOWN`의 빈 문자열과 `UNSET`의 *키 없음*은 다르다 — 전자는 사용자가 '모른다'를
+        // 고른 것이고 후자는 잴 재료가 없는 것이다. 화면이 그 둘을 다르게 그린다.
+        when (AliveAtYear.resolve(stateChanges, targetYear)) {
+            AliveAtYear.Verdict.DEAD -> result[CharacterStateChange.KEY_ALIVE] = "false"
+            AliveAtYear.Verdict.ALIVE -> result[CharacterStateChange.KEY_ALIVE] = "true"
+            AliveAtYear.Verdict.UNKNOWN -> result[CharacterStateChange.KEY_ALIVE] = ""
+            AliveAtYear.Verdict.UNSET -> Unit
         }
 
         // Evaluate calculated fields

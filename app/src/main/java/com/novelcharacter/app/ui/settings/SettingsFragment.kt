@@ -25,6 +25,7 @@ import com.novelcharacter.app.excel.ImageNoticeRes
 import com.novelcharacter.app.share.WorldPackageExporter
 import com.novelcharacter.app.ui.common.TaskProgressDialog
 import com.novelcharacter.app.util.ProgressScale
+import com.novelcharacter.app.util.SafFileCopy
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -36,7 +37,9 @@ import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.fragment.app.viewModels
 import androidx.room.withTransaction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,6 +65,12 @@ class SettingsFragment : Fragment() {
     private data class PendingExport(val file: File, val ownsFile: Boolean)
 
     private var pendingBackupExport: PendingExport? = null
+
+    /**
+     * 화면이 사라진 뒤에도 도는 갈래가 쓰는 컨텍스트 — `onCreate`에서 잡는다
+     * (액티비티 결과 콜백은 그 뒤에만 온다).
+     */
+    private lateinit var appContext: android.content.Context
 
     /**
      * 자리 고르기가 끝났다(건넸든 취소했든 실패했든) — 약속을 닫고 임시본을 처분한다.
@@ -122,51 +131,105 @@ class SettingsFragment : Fragment() {
         restoreFromEncryptedUri(uri)
     }
 
+    /**
+     * 자리를 고르고 돌아오는 자리 — **형제 경로([com.novelcharacter.app.excel.ExcelTransferController])와
+     * 같은 처분을 쓴다.**
+     *
+     * 종전에는 세 갈래가 조용히 끝났다: ⓐ 화면이 없거나 대기 상태를 잃으면 아무것도 안 하고
+     * 물러섰고(고른 자리에는 `CreateDocument`가 만든 **0바이트 파일**이 그대로 남았다),
+     * ⓑ `openOutputStream`이 널이어도 성공 토스트로 갔으며, ⓒ 복사가 뷰 수명 스코프에서
+     * 돌아 회전 한 번에 끊겼다. 목적지는 **사용자가 이미 고른 실제 파일**이므로 화면 유무는
+     * 물러설 이유가 아니다 — 쓸 것이 있으면 끝까지 쓰고, 없으면 지운다.
+     */
     private val backupExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
+        // 화면 유무는 한 번만 읽는다 — 두 갈래가 서로 다른 답을 보고 갈리지 않게.
+        val onScreen = isAdded && _binding != null
+        val ctx = appContext
+        val pending = pendingBackupExport
         if (uri == null) {
             // 취소도 종결이다 — 캐시 임시본을 여기서 놓지 않으면 주인이 없어진다.
             finishPendingBackupExport()
             return@registerForActivityResult
         }
-        val pending = pendingBackupExport
-        if (!isAdded || pending == null) {
-            finishPendingBackupExport()
+        if (pending == null) {
+            // **자리를 고르고 왔는데 아무 일도 안 일어나면 저장된 줄 안다**(개발 의도 2번).
+            // 인스턴스 상태 복원도 못 살린 회차(프로세스가 죽고 임시본까지 사라진 경우)가
+            // 여기로 온다 — 쓸 것이 없으므로 만들어진 빈 문서를 지우는 것으로 처분한다.
+            runCatching {
+                android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, uri)
+            }
+            if (onScreen) {
+                Toast.makeText(ctx, R.string.export_save_failed, Toast.LENGTH_LONG).show()
+            }
             return@registerForActivityResult
         }
+        // 이 회차가 소유권을 가져간다 — 아래 코루틴의 종결이 등재를 닫고 임시본을 처분한다.
+        pendingBackupExport = null
         val file = pending.file
-        val ctx = requireContext().applicationContext
-        // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어)
-        val progress = createProgressDialog(R.string.backup_export_saving)
-        progress.show()
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    ctx.contentResolver.openOutputStream(uri)?.use { output ->
-                        file.inputStream().use { input -> input.copyTo(output) }
-                    }
+        val ownsFile = pending.ownsFile
+        // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어).
+        // 화면이 없으면 창도 없고, 작업은 그대로 진행된다.
+        val progress = if (onScreen) createProgressDialog(R.string.backup_export_saving).also { it.show() } else null
+        transferScope.launch {
+            val result = SafFileCopy.copyOrDiscard(
+                openOutput = { ctx.contentResolver.openOutputStream(uri) },
+                openInput = { file.inputStream() },
+                deleteDestination = {
+                    android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, uri)
                 }
-                if (_binding != null) {
-                    Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+            )
+            // 종결은 화면과 무관하게 여기서 한다 — 약속을 닫고 소유한 임시본을 지운다.
+            com.novelcharacter.app.excel.ActiveTransfers.release(file)
+            if (ownsFile) file.delete()
+            if (result is SafFileCopy.Result.Failed) {
+                AppLogger.error("Settings", "백업 내보내기 실패", result.cause)
+            }
+            withContext(Dispatchers.Main) {
+                progress?.dismissSafely()
+                // 창이 없으면 말할 자리가 없다 — 이 경로에는 알림 통로가 없으므로 이력만 남는다.
+                if (_binding == null) return@withContext
+                when (result) {
+                    is SafFileCopy.Result.Success ->
+                        Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+                    is SafFileCopy.Result.Failed ->
+                        Toast.makeText(
+                            ctx,
+                            getString(
+                                if (result.destinationRemoved) R.string.backup_export_failed_destination_removed
+                                else R.string.backup_export_failed_destination_unknown
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 내보내기 실패", e)
-                if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
-                }
-            } finally {
-                progress.dismissSafely()
-                finishPendingBackupExport()
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appContext = requireContext().applicationContext
         // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
         excel = com.novelcharacter.app.excel.ExcelTransferController(this)
         excel.restoreState(savedInstanceState)
+        restorePendingBackupExport(savedInstanceState)
+    }
+
+    /**
+     * SAF 대기 상태를 되살린다 — 형제 경로의 `restoreState`와 같은 자리·같은 이유.
+     *
+     * 되살리지 못하면(임시본이 이미 사라졌으면) 대기를 세우지 않는다 — 그 회차는 위
+     * 콜백의 `pending == null` 갈래가 **빈 문서를 지우고 말하는 것**으로 처분한다.
+     * 프로세스가 죽었으면 정적 등재도 비어 있으므로 약속을 다시 세운다.
+     */
+    private fun restorePendingBackupExport(savedInstanceState: Bundle?) {
+        val path = savedInstanceState?.getString(KEY_PENDING_BACKUP_FILE) ?: return
+        val file = File(path)
+        if (!file.exists()) return
+        val owns = savedInstanceState.getBoolean(KEY_PENDING_BACKUP_OWNS)
+        com.novelcharacter.app.excel.ActiveTransfers.hold(file)
+        pendingBackupExport = PendingExport(file, owns)
     }
 
     override fun onCreateView(
@@ -470,6 +533,10 @@ class SettingsFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         excel.saveState(outState)
+        pendingBackupExport?.let {
+            outState.putString(KEY_PENDING_BACKUP_FILE, it.file.absolutePath)
+            outState.putBoolean(KEY_PENDING_BACKUP_OWNS, it.ownsFile)
+        }
     }
 
     private fun updateThemeLabel() {
@@ -900,8 +967,26 @@ class SettingsFragment : Fragment() {
     }
 
     /** 복원용 암호 입력 다이얼로그. */
-    private fun showEnterPassphraseDialog(onEntered: (CharArray) -> Unit) {
-        if (!isAdded) return
+    /**
+     * 복원 암호 입력 — **취소도 종결이다.**
+     *
+     * 이 창은 `restore_ext_*.enc`(백업 한 벌 크기)의 소유권을 쥔 채 뜬다. 종전에는 성공
+     * 외에 나가는 통로가 없어서, 취소하거나 바깥을 눌러 닫으면 그 파일이 **주인 없이**
+     * 캐시에 남았다 — 게다가 [com.novelcharacter.app.excel.ActiveTransfers] 등재가 그대로라
+     * 프로세스가 사는 동안 [앱 캐시 비우기]가 *"저장을 기다리는 파일 N개는 남겼습니다"*라며
+     * 건너뛰었다(거짓 고지 · 개발 의도 2번).
+     *
+     * @param onCancelled 암호를 받지 못한 채 창이 닫혔다 — 부르는 쪽이 임시본을 놓는다.
+     */
+    private fun showEnterPassphraseDialog(
+        onCancelled: () -> Unit = {},
+        onEntered: (CharArray) -> Unit
+    ) {
+        if (!isAdded) {
+            // 띄우지도 못했다 — 이어받을 사람이 없으므로 여기서도 종결이다.
+            onCancelled()
+            return
+        }
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val pad = (24 * density).toInt()
@@ -923,17 +1008,39 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.confirm, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+        var entered = false
         dialog.setValidatedPositiveButton {
             val pass = editPass.text.toString()
             if (pass.isEmpty()) {
                 Toast.makeText(ctx, R.string.backup_passphrase_enter_title, Toast.LENGTH_SHORT).show()
                 false
             } else {
+                entered = true
                 onEntered(pass.toCharArray())
                 true
             }
         }
+        // 취소·바깥 누름·뒤로가기가 전부 여기를 지난다 — 갈래마다 적으면 하나가 빠진다.
+        dialog.setOnDismissListener { if (!entered) onCancelled() }
         dialog.show()
+    }
+
+    /**
+     * 복원 실패의 문구 — **메모리 부족은 갈라 말한다** (R-17).
+     *
+     * *"다시 시도하세요"*는 메모리가 모자란 회차에서 답이 아니다. 줄일 수 있는 축을
+     * 말해야 사용자가 할 일이 생긴다(옛 형식 백업이면 새로 내보낸 뒤 복원).
+     */
+    private fun restoreFailureMessage(t: Throwable): String =
+        if (t is OutOfMemoryError) getString(R.string.backup_restore_failed_out_of_memory)
+        else getString(R.string.backup_restore_failed, t.message)
+
+    /**
+     * 이어받을 사람이 없어진 전송 임시본을 놓는다 — 등재를 닫고 지운다.
+     * **화면 수명 밖에서 돈다**: 창이 닫히는 그 순간이 화면이 사라지는 순간일 수 있다.
+     */
+    private fun discardTransferTemp(file: File) {
+        transferScope.launch { releaseTransferTemp(file, handedOver = false) }
     }
 
     /**
@@ -1075,17 +1182,25 @@ class SettingsFragment : Fragment() {
                     return@launch
                 }
                 if (isPortable) {
-                    // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원
-                    showEnterPassphraseDialog { passphrase ->
+                    // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원.
+                    // **취소하면 여기서 놓는다** — 창이 소유권을 쥔 채 닫히면 주인이 없어진다.
+                    showEnterPassphraseDialog(
+                        onCancelled = { discardTransferTemp(tempEncFile) }
+                    ) { passphrase ->
                         restoreFromPortableFile(tempEncFile, passphrase, ownsEncFile = true)
                     }
                 } else {
                     restoreFromEncryptedFile(tempEncFile, ownsEncFile = true)
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다** — 삼키면 화면 파괴가 '복원 실패'로 둔갑한다(B-228).
+                throw e
+            } catch (t: Throwable) {
+                // **`Error`도 받는다** — 옛 형식 백업의 복호화는 메모리를 크게 쓰고,
+                // `OutOfMemoryError`가 여기를 그냥 지나가면 프로세스가 그대로 죽는다(R-70).
+                AppLogger.error("Settings", "백업 복원 실패 (복호화)", t)
                 if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, restoreFailureMessage(t), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1173,16 +1288,18 @@ class SettingsFragment : Fragment() {
                 excel.importFromLocalFile(tempXlsx!!, ownsFile = true)
                 handedOver = true
 
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 복원 실패", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                AppLogger.error("Settings", "백업 복원 실패", t)
                 progressDialog?.dismiss()
                 if (_binding != null) {
-                    // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
-                    Toast.makeText(
-                        ctx,
-                        getString(R.string.backup_restore_failed, e.message) + "\n" + getString(R.string.backup_restore_device_hint),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내.
+                    // **메모리 부족에는 그 안내를 붙이지 않는다** — 원인이 기기 키가 아니다.
+                    val message =
+                        if (t is OutOfMemoryError) restoreFailureMessage(t)
+                        else restoreFailureMessage(t) + "\n" + getString(R.string.backup_restore_device_hint)
+                    Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
                 }
             } finally {
                 // **인계가 못 일어난 갈래에서 임시본의 주인은 여기다** — 실패도, 화면이
@@ -1227,9 +1344,10 @@ class SettingsFragment : Fragment() {
                                 format = TaskProgressDialog.CountFormat.MEGABYTES
                             )
                         }
-                    } catch (e: Exception) {
+                    } catch (t: Throwable) {
+                        // `Error`도 받는다 — 반쪽 xlsx가 캐시에 남지 않게(R-70). 되던지므로 처분은 그대로다.
                         xlsx.delete()
-                        throw e
+                        throw t
                     }
                     xlsx
                 }
@@ -1246,19 +1364,24 @@ class SettingsFragment : Fragment() {
                 progressDialog?.dismiss()
                 if (_binding != null && isAdded) {
                     Toast.makeText(ctx, R.string.backup_passphrase_wrong, Toast.LENGTH_SHORT).show()
-                    showEnterPassphraseDialog { retry ->
+                    showEnterPassphraseDialog(
+                        // 재입력을 취소했다 — 이 파일을 쥔 것은 이 갈래뿐이다.
+                        onCancelled = { if (ownsEncFile) discardTransferTemp(encFile) }
+                    ) { retry ->
                         restoreFromPortableFile(encFile, retry, ownsEncFile = ownsEncFile)
                     }
                 } else if (ownsEncFile) {
                     // 다시 물을 화면이 없다 — 이어받을 사람이 없으므로 여기서 지운다.
                     withContext(Dispatchers.IO) { encFile.delete() }
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "이식 백업 복원 실패", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                AppLogger.error("Settings", "이식 백업 복원 실패", t)
                 progressDialog?.dismiss()
                 if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
                 if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, restoreFailureMessage(t), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 releaseTransferTemp(tempXlsx, handedOver)
@@ -1476,8 +1599,13 @@ class SettingsFragment : Fragment() {
                 // 파일 삭제
                 withContext(Dispatchers.IO) {
                     // 이미지 파일
+                    // 커밋 전 임시 산출물도 함께 지운다 — 회전 임시본은 `.tmp`라
+                    // 확장자 목록에 걸리지 않아 초기화 뒤에도 홀로 남았다.
                     ctx.filesDir.listFiles()?.filter {
-                        it.isFile && (it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp"))
+                        it.isFile && (
+                            it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp") ||
+                                com.novelcharacter.app.util.ImageImportHelper.isTempArtifact(it.name)
+                            )
                     }?.forEach { it.delete() }
 
                     // 로그
@@ -1513,4 +1641,17 @@ class SettingsFragment : Fragment() {
         _binding = null
     }
 
+    companion object {
+        private const val KEY_PENDING_BACKUP_FILE = "pendingBackupExportFilePath"
+        private const val KEY_PENDING_BACKUP_OWNS = "pendingBackupExportOwnsFile"
+
+        /**
+         * SAF 저장을 **화면 수명에서 떼어 놓는** 스코프.
+         *
+         * 목적지는 사용자가 이미 고른 실제 파일이라, 복사가 회전 한 번에 끊기면 그 자리에
+         * 반쪽 파일이 멀쩡한 이름으로 남는다. `ExcelExporter`가 같은 이유로 자기 스코프를
+         * 드는 그 자리와 같은 처분이다. 프로세스 수명이며 회차마다 코루틴 하나뿐이다.
+         */
+        private val transferScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
 }

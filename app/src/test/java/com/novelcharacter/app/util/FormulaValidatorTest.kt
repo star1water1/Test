@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import com.novelcharacter.app.data.model.FieldType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,8 +19,9 @@ class FormulaValidatorTest {
         formula: String,
         currentKey: String = "total",
         knownKeys: Set<String>? = keys,
-        calculated: Map<String, String> = emptyMap()
-    ) = FormulaValidator.validate(formula, currentKey, knownKeys, calculated)
+        calculated: Map<String, String> = emptyMap(),
+        types: Map<String, FieldType?>? = null
+    ) = FormulaValidator.validate(formula, currentKey, knownKeys, calculated, types)
 
     private inline fun <reified T> hasProblem(problems: List<FormulaValidator.Problem>) =
         problems.any { it is T }
@@ -198,6 +200,93 @@ class FormulaValidatorTest {
     fun `같은 문제는 한 번만 알린다`() {
         val problems = validate("sqrt(1) + sqrt(2) + sqrt(3)")
         assertEquals(listOf("sqrt"), problems.filterIsInstance<FormulaValidator.Problem.UnknownFunctions>().single().names)
+    }
+
+    // ── 있는 키인데 수를 못 낼 수 있는 참조 ──
+    //
+    // 없는 키와 **결과가 같다**(그 자리는 0이 된다). 종전에는 고지만 없어, 수식이 조용히
+    // 그럴듯한 오답을 냈다.
+
+    @Test
+    fun `수를 보장하지 않는 타입의 참조를 알린다`() {
+        val problems = validate(
+            "field(str) + field(note)",
+            knownKeys = keys + "note",
+            types = mapOf("str" to FieldType.NUMBER, "note" to FieldType.TEXT)
+        )
+        assertEquals(
+            listOf("note"),
+            problems.filterIsInstance<FormulaValidator.Problem.NonNumericKeys>().single().keys
+        )
+    }
+
+    @Test
+    fun `수를 내는 타입에는 붙지 않는다`() {
+        // NUMBER·GRADE·CALCULATED는 값이 수로 읽히는 것이 보장된다 — 경고가 붙으면 잡음이다.
+        val problems = validate(
+            "field(str) + field(rank) + field(sub)",
+            knownKeys = keys + setOf("rank", "sub"),
+            types = mapOf(
+                "str" to FieldType.NUMBER,
+                "rank" to FieldType.GRADE,
+                "sub" to FieldType.CALCULATED
+            )
+        )
+        assertTrue(!hasProblem<FormulaValidator.Problem.NonNumericKeys>(problems))
+    }
+
+    @Test
+    fun `타입 표가 없으면 이 검사를 건너뛴다`() {
+        // 목록을 못 읽었을 때 멀쩡한 참조를 경고하는 편이 더 나쁘다(`knownKeys`와 같은 규약).
+        val problems = validate("field(str) + field(note)", knownKeys = keys + "note", types = null)
+        assertTrue(!hasProblem<FormulaValidator.Problem.NonNumericKeys>(problems))
+    }
+
+    @Test
+    fun `없는 키는 이 사유로 두 번 말하지 않는다`() {
+        // 같은 자리를 두 줄로 말하면 사용자가 무엇을 고칠지 알 수 없다.
+        val problems = validate(
+            "field(ghost)",
+            knownKeys = keys,
+            types = mapOf("str" to FieldType.NUMBER)
+        )
+        assertEquals(
+            listOf("ghost"),
+            problems.filterIsInstance<FormulaValidator.Problem.UnknownKeys>().single().keys
+        )
+        assertTrue(!hasProblem<FormulaValidator.Problem.NonNumericKeys>(problems))
+    }
+
+    @Test
+    fun `자기 참조는 이 사유로 겹쳐 말하지 않는다`() {
+        val problems = validate(
+            "field(total) + 1",
+            currentKey = "total",
+            types = mapOf("total" to FieldType.CALCULATED)
+        )
+        assertTrue(hasProblem<FormulaValidator.Problem.SelfReference>(problems))
+        assertTrue(!hasProblem<FormulaValidator.Problem.NonNumericKeys>(problems))
+    }
+
+    /**
+     * **타입 판정의 단일 소스는 평가기다.** 검증기가 자기 표를 따로 들면 둘이 갈리고,
+     * 갈린 쪽은 *"경고는 없는데 0이 된다"* 또는 그 반대가 된다.
+     */
+    @Test
+    fun `판정은 평가기의 술어와 같은 답을 낸다`() {
+        for (type in FieldType.entries) {
+            val problems = validate(
+                "field(x)",
+                knownKeys = setOf("x"),
+                types = mapOf("x" to type)
+            )
+            val warned = hasProblem<FormulaValidator.Problem.NonNumericKeys>(problems)
+            assertEquals(
+                "$type — 경고 여부가 평가기의 술어와 갈렸다",
+                !FormulaEvaluator.isReliablyNumeric(type),
+                warned
+            )
+        }
     }
 
     // ── 어휘 단일 소스 ──

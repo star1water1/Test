@@ -205,10 +205,13 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         fieldDefId: Long,
         field: com.novelcharacter.app.data.model.FieldDefinition,
         initialValues: String
-    ) {
+    ): com.novelcharacter.app.data.repository.FieldValueLibraryRepository.InitialValueOutcome {
         // 해석·등재는 저장소가 단일 소스다 — 종전에는 필드 관리 경로와 두 벌이었고,
         // 이쪽만 runCatching으로 실패를 삼켜 같은 조작의 고지가 화면마다 갈렸다.
-        app.fieldValueLibraryRepository.registerInitialValues(fieldDefId, field, initialValues)
+        //
+        // **결과를 돌려준다** — 종전에는 반환 타입이 `Unit`이라 등재하지 못한 값을 말할
+        // 재료 자체가 없었다(사건 편집만 말했다).
+        return app.fieldValueLibraryRepository.registerInitialValues(fieldDefId, field, initialValues)
     }
 
     /**
@@ -249,9 +252,9 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
+    fun updateDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            novelRepository.updateNovelDisplayOrders(novels)
+            novelRepository.updateNovelDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to update display orders", e)

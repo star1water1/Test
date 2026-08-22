@@ -169,7 +169,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 기존 관례(0 = 세계관 문맥 없음)이고, 편집 저장은 existingField.copy라
                 // 필드의 실제 구역(null)이 그대로 보존된다. 세계관 전용 섹션(대결 등급 산정)이
                 // 0에서 꺼지는 것도 옳다 — 전역 필드는 그것을 가질 수 없다(설계 1-2).
-                .newInstance(field.universeId ?: 0L, field)
+                //
+                // **다만 그 0이 '전역 구역'인지 '프리셋 편집'인지는 밝혀야 한다** — 종전에는
+                // 겸직이라 전역 필드의 **키 점유 확인이 통째로 건너뛰어졌고**, 그 구역의
+                // 유니크 색인은 `universeId`가 NULL이라 DB도 막지 못한다(NULL끼리는 다르게
+                // 본다). 즉 키를 바꾸는 이 경로만 마지막 빗장이 없었다(R-57).
+                .newInstance(
+                    field.universeId ?: 0L, field,
+                    globalScope = field.universeId == null
+                )
                 .show(childFragmentManager, "body_analysis_settings")
         }
         // 실루엣 탭 — 크게 보기. 작품 평균은 순위 계산이 이미 모아 둔 이웃 수치를 재사용한다.
@@ -1038,8 +1046,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         // 편차 0.0%·점수 100을 조용히 받았다(기준 문장은 그것을 '작품 평균'이라 불렀다).
         val peers = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
         val others = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
+        // **값을 캐릭터마다 묻지 않는다** — 작품의 캐스트 전원을 도는 루프라 질의 수가
+        // 인원에 비례한다(R-53·R-54). 실루엣 편집기의 이웃 조회와 같은 처방이다.
+        val valuesByChar = viewModel.getValuesForCharacters(allCharacters.map { it.id })
+            .groupBy { it.characterId }
         for (char in allCharacters) {
-            val charValues = viewModel.getValuesByCharacterList(char.id).associateBy { it.fieldDefinitionId }
+            val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
             resolve(charValues)?.let {
                 peers.add(it)
                 if (char.id != character.id) others.add(it)
@@ -1267,15 +1279,38 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 )
                 val html = withContext(Dispatchers.IO) { pdfExporter.generateHtml(config) }
 
+                // **콜백이 프래그먼트를 붙들지 않게 미리 굳힌다.** 페이지 적재는 비동기라
+                // 사용자가 그 사이에 화면을 나가면 `requireContext()`·`getString()`이
+                // `IllegalStateException`을 던지는데, 그 예외는 **콜백 스레드에서** 나므로
+                // 이 코루틴의 `try/catch`가 원리적으로 못 잡는다(앱이 그대로 죽는다).
+                // 인쇄 관리자는 앱 컨텍스트로 충분하다.
+                val appCtx = requireContext().applicationContext
+                val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+
                 // Use WebView to print as PDF
                 val webView = WebView(requireContext())
+                // **뷰가 사라지면 함께 정리한다** — 종전에는 지역 변수뿐이라 적재 중 화면을
+                // 나가면 프래그먼트를 붙든 채 살아남았다(누수).
+                pdfWebView?.destroy()
+                pdfWebView = webView
                 webView.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
-                        val printManager = requireContext().getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
-                        val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+                        // **진행 표시는 여기서 내린다** — 종전에는 `finally`가 적재를 걸자마자
+                        // 내려, 아직 아무것도 안 된 상태에서 창이 사라졌다.
+                        progress.dismissSafely()
+                        val printManager = appCtx.getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
                         view.createPrintDocumentAdapter(jobName).let { adapter ->
                             printManager.print(jobName, adapter, PrintAttributes.Builder().build())
                         }
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView,
+                        request: android.webkit.WebResourceRequest,
+                        error: android.webkit.WebResourceError
+                    ) {
+                        // 못 그렸으면 그 자리에서 내린다 — 안 내리면 창이 영영 남는다.
+                        progress.dismissSafely()
                     }
                 }
                 webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
@@ -1283,16 +1318,24 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 logOperation(OpResult.success(OpResult.CAT_SHARE,
                     getString(R.string.result_pdf_shared, character.name)))
             } catch (e: Exception) {
+                progress.dismissSafely()
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
                 logOperation(OpResult.failure(OpResult.CAT_SHARE,
                     getString(R.string.result_pdf_share_failed), e.message))
-            } finally {
-                progress.dismissSafely()
             }
         }
     }
 
+    /**
+     * PDF 공유가 쓰는 WebView — **적재가 비동기라 화면보다 오래 산다.**
+     * 뷰가 사라질 때 함께 정리하지 않으면 프래그먼트를 붙든 채 남고, 그때 도착한
+     * 콜백이 이미 떨어져 나간 화면을 만진다.
+     */
+    private var pdfWebView: WebView? = null
+
     override fun onDestroyView() {
+        pdfWebView?.destroy()
+        pdfWebView = null
         relationshipHelper.cancelJob()
         timeSliderHelper.cancelJob()
         binding.imageViewPager.adapter = null

@@ -84,7 +84,14 @@ class AiOrganizeReviewSheet : DialogFragment() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val picked = merges.filter { keyOf(it) in checkedMerges }
                 val pickedCategories = categories.filter { keyOf(it) in checkedCategories }
-                if (picked.isEmpty() && pickedCategories.isEmpty()) return@setOnClickListener
+                if (picked.isEmpty() && pickedCategories.isEmpty()) {
+                    // 형제 자리(AI 제안 검토)와 같은 처분 — 닫지 않되 **사유는 말한다**(R-17).
+                    android.widget.Toast.makeText(
+                        requireContext(), getString(R.string.ai_review_pick_none),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnClickListener
+                }
                 onApply(picked, pickedCategories)
                 dismiss()
             }

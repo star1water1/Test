@@ -589,7 +589,10 @@ class DynamicFieldRenderer(
         val result = if (measured.hasCoreThree) {
             BodyAnalysisHelper().analyze(
                 measured.bust!!, measured.waist!!, measured.hip!!,
-                measured.heightCm, measured.weightKg, config
+                measured.heightCm, measured.weightKg, config,
+                // 실측 밑가슴을 넘긴다 — 그림 계층이 이미 쓰던 **같은 단일 소스**다.
+                // 안 넘기면 같은 카드의 컵이 둘로 갈린다(그림은 실측, 분석은 근사).
+                measuredUnderbust = measured.effectiveUnderbust(config)
             )
         } else null
 

@@ -96,7 +96,13 @@ object BackupChunkFormat {
     const val CHUNK_SIZE = 1024 * 1024
     const val FORMAT_HEADER_SIZE = 8                    // MAGIC(4) + chunkSize(4)
 
-    /** v1 레거시 상한 — 전체 로드 방식이라 메모리 보호용. */
+    /**
+     * v1 레거시 상한.
+     *
+     * **메모리 근거는 사라졌다** — [decryptLegacy]가 흘려 읽도록 바뀌어 피크가 버퍼 하나로
+     * 고정됐다. 상한은 그대로 두되 성격이 달라졌다: *터무니없이 큰 입력에 디스크와 시간을
+     * 통째로 내주지 않는다*는 방어선이다(복호화 산출물은 입력만 한 임시 파일로 떨어진다).
+     */
     const val MAX_LEGACY_FILE_SIZE = 256L * 1024 * 1024
 
     const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
@@ -391,15 +397,27 @@ object BackupChunkFormat {
                 try { fis.close() } catch (_: Exception) { }
             }
             commit(tempFile, outputFile)
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
+            // **`Error`도 받는다** — 복호화는 메모리를 크게 쓰고, `OutOfMemoryError`가 여기를
+            // 그냥 지나가면 반쪽 `.tmp`가 캐시에 남는다(R-70). 되던지므로 처분은 그대로다.
             tempFile.delete()
-            throw e
+            throw t
         }
     }
 
     /**
      * v1 레거시 복호화. 기존 백업 파일과의 하위호환.
-     * 피크 메모리: ~2x 파일 크기 (암호문 + 복호화 결과) — 그래서 [MAX_LEGACY_FILE_SIZE] 상한이 있다.
+     *
+     * **흘려 읽는다.** 종전에는 암호문 전량과 복호화 결과를 함께 메모리에 세워 피크가
+     * 파일 크기의 약 두 배였고(상한 256MB → 최대 512MB), 그 실패는 `OutOfMemoryError`라
+     * 복원 경로의 `catch (Exception)`이 **받지 못해 프로세스가 그대로 죽었다**(R-70).
+     * 이제 피크는 버퍼 하나로 고정된다.
+     *
+     * **`CipherInputStream`은 쓰지 않는다** — 그 구현은 GCM 태그 실패를 `read()`에서
+     * 조용히 삼키고 EOF로 끝낸다. 손상·변조된 v1 백업이 *짧은 평문*으로 통과하는 셈이라,
+     * B-248이 막으려 세운 '잘림의 무음 통과'를 v1 쪽에 새로 만든다.
+     * `update`를 루프로 돌리고 마지막에 `doFinal`을 부르면 태그 실패가
+     * `AEADBadTagException`으로 정상 전파되고, 산출물은 호출부의 `commit` 앞에서 버려진다.
      *
      * @param keyProvider **크기 검사를 통과한 뒤에** 부른다 — 인자로 미리 받아 두면 3바이트짜리
      *   깨진 파일에도 KeyStore가 새 키를 만들어, 그 뒤의 진짜 백업이 열리지 않는다
@@ -425,20 +443,30 @@ object BackupChunkFormat {
                 )
             }
 
-            val ciphertextSize = (fileSize - GCM_IV_LENGTH).toInt()
-            val ciphertext = ByteArray(ciphertextSize)
-            val totalRead = readFully(fis, ciphertext)
-            if (totalRead != ciphertextSize) {
-                throw java.io.IOException(
-                    "암호문이 잘렸습니다: ${ciphertextSize}바이트가 필요한데 ${totalRead}바이트만 읽혔습니다. 백업 파일이 손상되었거나 잘렸을 수 있습니다."
-                )
-            }
-
+            val ciphertextSize = fileSize - GCM_IV_LENGTH
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, keyProvider(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
-            val decrypted = cipher.doFinal(ciphertext)
 
-            FileOutputStream(outputFile).use { fos -> fos.write(decrypted) }
+            var consumed = 0L
+            FileOutputStream(outputFile).use { fos ->
+                val buffer = ByteArray(CHUNK_SIZE)
+                while (true) {
+                    val read = fis.read(buffer)
+                    if (read <= 0) break
+                    consumed += read
+                    // `update`는 null을 돌려줄 수 있다(아직 낼 것이 없을 때) — 그대로 넘긴다.
+                    cipher.update(buffer, 0, read)?.let { fos.write(it) }
+                }
+                // 잘림은 `doFinal`의 태그 검사에서도 드러나지만, **사유를 정확히 말하려고**
+                // 먼저 견준다 — 태그 실패는 '암호가 다르다'와 같은 예외라, 잘린 파일에
+                // 그 문구가 붙으면 사용자가 엉뚱한 것을 고치러 간다.
+                if (consumed != ciphertextSize) {
+                    throw java.io.IOException(
+                        "암호문이 잘렸습니다: ${ciphertextSize}바이트가 필요한데 ${consumed}바이트만 읽혔습니다. 백업 파일이 손상되었거나 잘렸을 수 있습니다."
+                    )
+                }
+                fos.write(cipher.doFinal())
+            }
         }
     }
 
@@ -555,9 +583,11 @@ object BackupChunkFormat {
                 }
             }
             commit(tempFile, outputFile)
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
+            // **`Error`도 받는다** — 복호화는 메모리를 크게 쓰고, `OutOfMemoryError`가 여기를
+            // 그냥 지나가면 반쪽 `.tmp`가 캐시에 남는다(R-70). 되던지므로 처분은 그대로다.
             tempFile.delete()
-            throw e
+            throw t
         }
     }
 

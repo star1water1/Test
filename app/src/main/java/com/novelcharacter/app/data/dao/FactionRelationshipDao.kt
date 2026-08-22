@@ -19,6 +19,10 @@ interface FactionRelationshipDao {
     @Query("SELECT * FROM faction_relationships WHERE factionId1 = :factionId OR factionId2 = :factionId ORDER BY displayOrder, createdAt")
     fun getRelationshipsForFaction(factionId: Long): LiveData<List<FactionRelationship>>
 
+    /** 삭제 영향 고지용 — 이 세력이 한쪽으로 참여한 세력 간 관계 수(COUNT로 센다 — R-54). */
+    @Query("SELECT COUNT(*) FROM faction_relationships WHERE factionId1 = :factionId OR factionId2 = :factionId")
+    suspend fun countForFaction(factionId: Long): Int
+
     /** 세계관 내 모든 세력 간 관계 (그래프/엑셀용) */
     @Query(
         """SELECT fr.* FROM faction_relationships fr

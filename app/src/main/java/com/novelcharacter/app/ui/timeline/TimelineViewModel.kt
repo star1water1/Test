@@ -33,6 +33,15 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val characterRepository = app.characterRepository
     private val universeRepository = app.universeRepository
     private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
+
+    /**
+     * 출생·사망 사건 → 상태변화·필드 동기화의 **단일 소스** — 캐릭터 화면과 같은 클래스다
+     * (종전에는 이 화면과 `CharacterViewModel`에 글자까지 같은 루프가 두 벌 있었다).
+     */
+    private val eventStateSync = com.novelcharacter.app.util.EventStateChangeSync(
+        timelineRepository, characterRepository, novelRepository, universeRepository,
+        semanticSyncHelper, logTag = "TimelineViewModel"
+    )
     private val prefs = application.getSharedPreferences("timeline_ui_state", Context.MODE_PRIVATE)
 
     // 데이터 처리 결과 알림 채널 — 사건 저장/수정/삭제 성공·실패를 OpResult로 일원화
@@ -164,6 +173,23 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _novelEventIds.value = null
         _characterEventIds.value = null
         prefs.edit().remove("filter_novel_id").remove("filter_character_id").apply()
+    }
+
+    /**
+     * 걸려 있는 필터의 사건 id 캐시를 다시 읽는다 — **사건이 바뀌는 모든 자리가 여기를 지난다.**
+     *
+     * 종전에는 이 세 줄이 사건 CRUD 네 자리에 복사돼 있었고, **작품 캐시만** 갱신했다.
+     * 캐릭터 필터를 걸어 둔 채 사건을 더하거나 지우면 그 캐시가 낡은 채로 남아
+     * 이전/다음 이동과 `N / M` 표기가 **없는 사건을 세거나 새 사건을 못 봤다**(R-33 —
+     * 같은 일을 네 곳에 적어 두면 한 곳이 반드시 뒤처진다).
+     */
+    private suspend fun refreshFilterCaches() {
+        _filterNovelId.value?.let { nid ->
+            _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+        }
+        _filterCharacterId.value?.let { cid ->
+            _characterEventIds.value = timelineRepository.getEventIdsForCharacter(cid).toSet()
+        }
     }
 
     val visibleRange: LiveData<Pair<Int, Int>> = MediatorLiveData<Pair<Int, Int>>().apply {
@@ -346,11 +372,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val universeId = novel.universeId
             if (universeId != null) {
                 val characters = characterRepository.getCharactersByNovelList(novelId)
+                // **필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 표준연도 한 번
+                // 고치는 평범한 조작이 캐스트 수만큼 같은 질의를 친다.
+                val fields = universeRepository.getFieldsByUniverseList(universeId)
                 for (character in characters) {
                     try {
                         if (syncHelper.isLinked(character.id)) {
                             val values = characterRepository.getValuesByCharacterList(character.id)
-                            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+                            semanticSyncHelper.syncFieldToStateChange(character.id, fields, values)
                         }
                     } catch (e: Exception) {
                         Log.w("TimelineViewModel", "Failed to sync semantic fields for character ${character.id}", e)
@@ -524,11 +553,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             }
             // 커밋 후 값 라이브러리 수확 (실패 무해)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
-            syncEventTypeToStateChanges(event, characterIds)
+            refreshFilterCaches()
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
@@ -560,16 +586,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
             if (oldEvent != null && oldEvent.eventType != event.eventType &&
                 (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
                 cleanupStateChangesForDeletedEvent(oldEvent)
             }
-            syncEventTypeToStateChanges(event, characterIds)
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
@@ -627,27 +650,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                     timelineRepository.updateAllEvents(shifted)
 
-                    for (s in shifted) {
-                        if (s.eventType == TimelineEvent.TYPE_BIRTH || s.eventType == TimelineEvent.TYPE_DEATH) {
-                            val charIds = timelineRepository.getCharacterIdsForEvent(s.id)
-                            syncEventTypeToStateChanges(s, charIds)
-                        }
-                    }
+                    // **옮긴 사건 전부를 한 벌로 동기화한다** — 종전에는 사건마다 참여
+                    // 캐릭터를 단건으로 묻고 캐릭터마다 다섯 질의 뭉치를 쳤고, 그 전부가
+                    // 이 쓰기 트랜잭션 안이었다(진행 표시도 취소도 없다).
+                    eventStateSync.syncShifted(shifted)
                 }
             }
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
             if (oldEvent != null && oldEvent.eventType != event.eventType &&
                 (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
                 cleanupStateChangesForDeletedEvent(oldEvent)
             }
-            syncEventTypeToStateChanges(event, characterIds)
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
@@ -752,47 +770,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getAllEventNovelNames() = timelineRepository.getAllEventNovelNames()
 
     /**
-     * 사건 유형이 birth/death이면 관련 캐릭터의 상태변화 + 필드 동기화.
-     */
-    private suspend fun syncEventTypeToStateChanges(event: TimelineEvent, characterIds: List<Long>) {
-        val fieldKey = when (event.eventType) {
-            TimelineEvent.TYPE_BIRTH -> CharacterStateChange.KEY_BIRTH
-            TimelineEvent.TYPE_DEATH -> CharacterStateChange.KEY_DEATH
-            else -> return
-        }
-        for (charId in characterIds) {
-            try {
-                val existing = characterRepository.getChangesByCharacterList(charId)
-                    .find { it.fieldKey == fieldKey }
-                val change = if (existing != null) {
-                    existing.copy(
-                        year = event.year,
-                        month = event.month,
-                        day = event.day,
-                        newValue = event.year.toString()
-                    ).also { characterRepository.updateStateChange(it) }
-                } else {
-                    CharacterStateChange(
-                        characterId = charId,
-                        year = event.year,
-                        month = event.month,
-                        day = event.day,
-                        fieldKey = fieldKey,
-                        newValue = event.year.toString()
-                    ).also { characterRepository.insertStateChange(it) }
-                }
-                // 필드 동기화 (출생연도/사망연도 필드 + alive 필드)
-                val character = characterRepository.getCharacterById(charId) ?: continue
-                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
-                val universeId = novel.universeId ?: continue
-                semanticSyncHelper.syncStateChangeToField(charId, universeId, change)
-            } catch (e: Exception) {
-                Log.w("TimelineViewModel", "Failed to sync event type for character $charId", e)
-            }
-        }
-    }
-
-    /**
      * 드래그 재정렬 저장 — 넘어오는 [visualOrder]는 **화면에 보이던 차례**다.
      * 저장 번호는 언제나 시간순 기준이므로 역순 화면이면 뒤에서부터 매긴다(B-47).
      *
@@ -849,10 +826,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     cleanupStateChangesForDeletedEvent(event)
                 }
             }
-            // novelEventIds 캐시 갱신
-            _filterNovelId.value?.let { nid ->
-                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
-            }
+            refreshFilterCaches()
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_deleted)))
         } catch (e: Exception) {
@@ -863,7 +837,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     /**
      * 출생/사망 사건 삭제 전, 연결된 캐릭터의 상태변화 + 필드값을 정리.
-     * syncEventTypeToStateChanges()의 역방향 처리.
+     * [com.novelcharacter.app.util.EventStateChangeSync]의 역방향 처리.
      */
     private suspend fun cleanupStateChangesForDeletedEvent(event: TimelineEvent) {
         val characterIds = timelineRepository.getCharacterIdsForEvent(event.id)

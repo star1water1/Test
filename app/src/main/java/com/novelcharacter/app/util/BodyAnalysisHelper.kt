@@ -90,13 +90,25 @@ class BodyAnalysisHelper {
      *   (B-94). 호스트가 주입하지 않으면 그 기준은 성립하지 않고 카드가 그 사실을 말한다.
      * @param targetRatioOverride 카드에서 즉석 전환한 기준(확정 8번 ㄱ2). `null`이면
      *   필드 설정의 기본 기준이다.
+     * @param measuredUnderbust **실측 밑가슴**(cm). 부위 칸을 밑가슴에 연결했으면 그 값이고,
+     *   `null`이면 근사(허리 + `ribOffset`)로 떨어진다.
+     *
+     *   이 인자가 없어서 **한 카드가 컵을 두 개 말했다.** 그림 계층
+     *   ([BodySilhouetteSpec.figureUnderbust])은 실측을 이미 쓰고 있었는데 분석 계층은 받을
+     *   통로가 없어 무조건 근사를 썼고, 두 값이 같은 카드 같은 열에 서른 줄 간격으로 섰다
+     *   (가슴 88 · 허리 60 · 실측 밑가슴 74면 그림은 `C`, 분석은 `F` — 세 칸 차이다).
+     *   컵 줄 바로 아래 문구가 *"밑가슴을 재는 파트를 연결하면 실측으로 바뀝니다"*라고
+     *   **글로 약속하고 있었다.**
+     *
+     *   맨 뒤에 두는 이유는 위치 인자로 부르는 자리가 여럿이기 때문이다.
      */
     fun analyze(
         bust: Double, waist: Double, hip: Double,
         heightCm: Double?, weightKg: Double?,
         config: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT,
         peerAverage: BodyAnalysisConfig.IdealBody? = null,
-        targetRatioOverride: BodyAnalysisConfig.TargetRatioSource? = null
+        targetRatioOverride: BodyAnalysisConfig.TargetRatioSource? = null,
+        measuredUnderbust: Double? = null
     ): BodyAnalysisResult {
         // 기본 차이/비율 계산
         val bustWaistDiff = bust - waist
@@ -105,8 +117,10 @@ class BodyAnalysisHelper {
         val whr = if (hip > 0) waist / hip else 0.0
         val bustHipRatio = if (hip > 0) bust / hip else 0.0
 
-        // 1. 컵 사이즈 — 흉곽 보정 (V2)
-        val underbust = waist + config.ribOffset
+        // 1. 컵 사이즈 — 실측 밑가슴이 있으면 그것이 이긴다(없으면 흉곽 보정 근사 · V2).
+        // 그림 계층([BodySilhouetteSpec.figureUnderbust])이 쓰는 규칙과 **같은 규칙**이다 —
+        // 갈리면 같은 카드가 컵을 두 개 말한다.
+        val underbust = measuredUnderbust ?: (waist + config.ribOffset)
         val diff = bust - underbust
         val cupSize = if (diff > 0) {
             config.cupMapping

@@ -9,6 +9,8 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.NovelFieldValue
@@ -216,4 +218,25 @@ object WorldPackageScope {
 
     /** `ORDER BY`가 없던 자리 — 기본키만 */
     val FACTION_MEMBERSHIPS: Comparator<FactionMembership> = compareBy { it.id }
+
+    /**
+     * `ORDER BY entityType ASC, displayOrder ASC` + id.
+     *
+     * 질의에 **기본키 타이브레이크가 없다** — 같은 종류 안에서 `displayOrder`가 겹치면
+     * 그 둘의 자리를 SQLite가 정하지 않는다. 겹침은 실제로 만들어진다(엑셀 한 실행이 같은
+     * 순서 번호를 심거나, 프리셋 병합이 기본값 0으로 여럿을 들인다).
+     */
+    val FIELD_DEFINITIONS: Comparator<FieldDefinition> =
+        compareBy<FieldDefinition> { it.entityType }
+            .thenBy { it.displayOrder }
+            .thenBy { it.id }
+
+    /**
+     * `ORDER BY`가 **아예 없던** 자리 — 기본키만.
+     *
+     * 이 절은 [com.novelcharacter.app.util.SqlInChunks]로 조각내 읽는다. 이 파일 머리가
+     * *"조각을 이어 붙이면 질의의 `ORDER BY`가 조각 경계에서 어긋난다"*고 적어 둔 조건에
+     * 정면으로 해당하는데, 정작 비교자가 없어 그 규약 밖에 있었다.
+     */
+    val FIELD_VALUE_ENTRIES: Comparator<FieldValueEntry> = compareBy { it.id }
 }

@@ -91,6 +91,13 @@ class TimelineRepository(
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
         timelineDao.getCharacterIdsForEvent(eventId)
 
+    /**
+     * 여러 사건의 참여 캐릭터를 **한 번에** 읽는다 (R-54 — 900개씩 쪼갠다).
+     * 사건마다 [getCharacterIdsForEvent]를 치면 질의 수가 사건 수만큼이 된다.
+     */
+    suspend fun getCrossRefsByEventIds(eventIds: List<Long>): List<TimelineCharacterCrossRef> =
+        com.novelcharacter.app.util.SqlInChunks.flat(eventIds) { timelineDao.getCrossRefsByEventIds(it) }
+
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsForCharacter(characterId)
 

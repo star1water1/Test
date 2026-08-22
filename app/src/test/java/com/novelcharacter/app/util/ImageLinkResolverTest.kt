@@ -13,6 +13,7 @@ class ImageLinkResolverTest {
         Meta("a1", "G1"), Meta("a2", "G1"), Meta("a3", "G1"),   // 그룹1: 3장
         Meta("b1", "G2"), Meta("b2", "G2"),                     // 그룹2: 2장
         Meta("solo", null),                                     // 미링크 라이브러리
+        Meta("c1", "char:7"), Meta("c2", "char:7"),             // 자동 묶음(캐릭터 7): 2장
     )
 
     @Test fun expand_noLinks_passesThrough() {
@@ -59,5 +60,36 @@ class ImageLinkResolverTest {
         val p = ImageLinkResolver.planLink(listOf("a1", "b1"), metas)
         assertTrue(p.needsMergeConfirm)
         assertEquals(setOf("G1", "G2"), p.groupsInvolved)
+    }
+
+    // ── 자동 토큰(char:N)은 흡수 대상이 아니다 ───────────────────────────────
+    // 흡수하면 그 토큰이 새 묶음의 이름이 되고, **다음 재동기화가 사용자의 묶음을 해체한다**
+    // (자동 계획은 `char:N` 소속을 그 이미지의 캐릭터 등록에 매어 두므로 딸려 온 이미지의
+    // 토큰을 전부 벗긴다). 폴더 왕복 쪽은 이 예외를 이미 갖고 있었고 인앱만 없었다.
+
+    @Test fun planLink_autoGroupNotAbsorbed_becomesNewManualGroup() {
+        val p = ImageLinkResolver.planLink(listOf("c1", "solo"), metas)
+        assertTrue("자동 토큰을 흡수하면 안 된다", p.groupsInvolved.isEmpty())
+        assertEquals(setOf("char:7"), p.autoGroupsTouched)
+        assertFalse(p.needsMergeConfirm)
+    }
+
+    @Test fun planLink_autoPlusManual_keepsOnlyManual() {
+        val p = ImageLinkResolver.planLink(listOf("c1", "a1"), metas)
+        assertEquals(setOf("G1"), p.groupsInvolved)
+        assertEquals(setOf("char:7"), p.autoGroupsTouched)
+        assertFalse("수동이 하나뿐이면 병합이 아니다", p.needsMergeConfirm)
+    }
+
+    @Test fun planLink_autoPlusTwoManual_stillNeedsMerge() {
+        val p = ImageLinkResolver.planLink(listOf("c1", "a1", "b1"), metas)
+        assertEquals(setOf("G1", "G2"), p.groupsInvolved)
+        assertTrue(p.needsMergeConfirm)
+    }
+
+    @Test fun isAbsorbable_onlyManualTokens() {
+        assertTrue(ImageLinkResolver.isAbsorbable("G1"))
+        assertFalse(ImageLinkResolver.isAbsorbable("char:7"))
+        assertFalse(ImageLinkResolver.isAbsorbable(null))
     }
 }

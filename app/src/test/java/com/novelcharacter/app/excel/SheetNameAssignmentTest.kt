@@ -100,6 +100,44 @@ class SheetNameAssignmentTest {
         assertFalse(isSuffixedVariantOf("다른(2)", "세력"))
     }
 
+    // ── 짝 글자(이모지)가 절단 경계에 걸리는 자리 ──────────────────────────────
+    // 코틀린 `String`은 UTF-16 코드 단위의 열이라 이모지 한 글자가 **두 칸**을 쓴다.
+    // 경계에서 쪼개면 **홀로 남은 앞짝**이 되고, 그것은 XML에 실을 수 없는 글자다.
+    // 실측(POI 5.2.5): 쓰기는 죽지 않고 그 자리가 파일에서 `?`로 바뀐다 — 앱이 배정한
+    // 이름과 파일 속 이름이 갈려 세계관 시트를 되찾는 자리가 그것을 못 알아본다.
+
+    @Test
+    fun `절단이 짝 글자를 쪼개지 않는다`() {
+        // 30자 + 이모지 → 31번째 칸이 이모지의 앞짝이다.
+        val name = "가".repeat(30) + "\uD83D\uDE00"
+        val cut = sanitizeSheetNameBase(name)
+        assertEquals(30, cut.length)
+        assertFalse("홀로 남은 앞짝이 있다", cut.any { Character.isHighSurrogate(it) })
+        // 경계가 짝 글자가 아니면 종전 그대로 31자다.
+        assertEquals(31, sanitizeSheetNameBase("가".repeat(50)).length)
+    }
+
+    @Test
+    fun `접미사 절단도 짝 글자를 쪼개지 않는다`() {
+        val used = mutableSetOf<String>()
+        // "(2)" 세 칸을 뺀 28칸의 경계에 이모지가 걸리도록 앞을 27자로 둔다.
+        val name = "가".repeat(27) + "\uD83D\uDE00" + "나".repeat(20)
+        assignSheetName(name, used)
+        val second = assignSheetName(name, used)
+        assertTrue(second.endsWith("(2)"))
+        assertFalse("홀로 남은 앞짝이 있다", second.any { Character.isHighSurrogate(it) })
+        assertTrue("31자 초과: ${second.length}", second.length <= 31)
+    }
+
+    @Test
+    fun `짝 글자로 30자에서 잘린 이름의 접미사 변형도 되찾는다`() {
+        // 절단이 한 칸 덜 갔다고 해서 '잘리지 않은 이름'으로 읽히면 밀려난 시트를 못 찾는다.
+        val base = "가".repeat(30)
+        val suffixed = "가".repeat(27) + "(2)"
+        assertEquals(30, suffixed.length)
+        assertTrue(isSuffixedVariantOf(suffixed, base))
+    }
+
     @Test
     fun `절단된 접미사 시트도 원명의 변형으로 인식한다`() {
         // 31자 한도 때문에 접미사 앞이 잘린 경우 — 가져오기가 되찾을 수 있어야 한다.
@@ -118,7 +156,10 @@ class SheetNameAssignmentTest {
         val hostile = listOf(
             "'따옴표'", "따옴표'", "'앞따옴표", "A/B", "A\\B", "A[B]C", "A*B?C:D",
             "///", "'''", "가".repeat(40), "가".repeat(40), "myworld", "MyWorld", "MYWORLD",
-            UNCLASSIFIED_SHEET_NAME, "세력", "이름 은행", "앱 설정", "세력", ""
+            UNCLASSIFIED_SHEET_NAME, "세력", "이름 은행", "앱 설정", "세력", "",
+            // 짝 글자가 절단 경계에 걸리는 이름들 — 쪼개면 POI가 여기서 죽는다.
+            "가".repeat(30) + "\uD83D\uDE00", "가".repeat(30) + "\uD83D\uDE00",
+            "\uD83D\uDE00".repeat(20), "세계관\uD83C\uDF0D" + "가".repeat(40)
         )
         XSSFWorkbook().use { wb ->
             val used = mutableSetOf<String>()
@@ -132,6 +173,9 @@ class SheetNameAssignmentTest {
                 wb.createSheet(assigned)   // 실패하면 IllegalArgumentException으로 테스트가 깨진다
             }
             assertEquals(RESERVED_SHEET_NAMES.size + hostile.size, wb.numberOfSheets)
+            // **파일로 써 보는 것까지가 이 시험이다** — 시트를 만드는 데 성공해도 쓰기에서
+            // 죽는 이름이 있을 수 있고, 그때 실패하는 것은 백업 파일 전체다(R-6이 겪은 부류).
+            java.io.ByteArrayOutputStream().use { out -> wb.write(out) }
         }
     }
 

@@ -39,8 +39,27 @@ class ExcelImporter(context: Context) {
 
     private val appContext: Context = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
+    /**
+     * 이 스코프의 **최후 방어선** — 형제 `ExcelExporter`가 이미 든 것과 같은 처방(R-70).
+     *
+     * 가져오기는 워크북 파싱이라 `OutOfMemoryError`가 실재하는 자리인데, 스코프에 핸들러가
+     * 없으면 그것이 코루틴 밖으로 나가 **프로세스를 그대로 죽인다** — 백업 복원이 넘긴
+     * xlsx를 실제로 파싱하는 것이 이 스코프라, 복원 쪽만 넓혀도 같은 회차의 다음 구간에서
+     * 같은 모양으로 죽는다. 정상 실패 고지는 각 `launch` 안의 `catch`가 그대로 낸다.
+     */
+    private val importErrorHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, t ->
+        android.util.Log.e("ExcelImporter", "Unhandled in import scope", t)
+        try {
+            com.novelcharacter.app.util.AppLogger.error(
+                "ExcelImporter", "가져오기 스코프에서 처리되지 않은 오류", t
+            )
+        } catch (_: Throwable) {
+            // 로그조차 못 남기는 상태(OOM 등)에서 여기서 또 던지면 프로세스가 죽는다.
+        }
+    }
+
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
-    @Volatile private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    @Volatile private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob + importErrorHandler)
     private val importService = ExcelImportService(db, appContext)
     private var pendingImageFailures = 0
 
@@ -127,7 +146,8 @@ class ExcelImporter(context: Context) {
     private fun ensureActiveScope(): CoroutineScope {
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
             supervisorJob = kotlinx.coroutines.SupervisorJob()
-            importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+            // 다시 세울 때도 **핸들러를 함께 싣는다** — 빠뜨리면 두 번째 회차부터 방어선이 없다.
+            importScope = CoroutineScope(Dispatchers.IO + supervisorJob + importErrorHandler)
         }
         return importScope
     }
@@ -421,7 +441,11 @@ class ExcelImporter(context: Context) {
         // 캐시 비우기가 이 회차의 임시 파일을 앗아가지 않게 등재한다 — 내리는 것은
         // 바깥 `finally`다(고지 부기를 내리는 자리가 아니다. [ActiveTransfers] KDoc).
         ActiveTransfers.enter(this)
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             try {
                 try {
                     routeImport(file)
@@ -459,7 +483,11 @@ class ExcelImporter(context: Context) {
         // 구간은 `launch` 밖에서 세운다 — 근거는 [importFromLocalFile]의 같은 줄에 있다(B-228).
         beginPhase(TransferPhase.IMPORT_INTAKE)
         ActiveTransfers.enter(this)
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
             // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
             //

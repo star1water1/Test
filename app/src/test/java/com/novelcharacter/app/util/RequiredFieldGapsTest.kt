@@ -23,7 +23,7 @@ class RequiredFieldGapsTest {
 
     private fun field(
         name: String,
-        universeId: Long = 1L,
+        universeId: Long? = 1L,
         required: Boolean = true,
         type: String = "TEXT",
         order: Int = 0
@@ -86,16 +86,49 @@ class RequiredFieldGapsTest {
         assertTrue(gaps.isEmpty())
     }
 
-    // ── 3. 소속을 모르는 항목 ─────────────────────────────────────────────────
+    // ── 3. 전역 구역(무소속) 항목 ─────────────────────────────────────────────
 
+    /**
+     * **`null`은 전역 구역(무소속)이다** — *모른다*가 아니다. 그 구역에 필드가 없으면
+     * 셀 것이 없고, 있으면 센다. 종전에는 무조건 건너뛰었는데, 그것은 무소속에 필드가
+     * 아예 0개이던 시절의 전제이고 B-119 확장이 그 전제를 낡게 했다.
+     */
     @Test
-    fun `세계관을 모르는 항목은 건너뛴다`() {
+    fun `전역 구역에 필드가 없으면 셀 것도 없다`() {
         val gaps = RequiredFieldGaps.compute(
-            definitions = listOf(field("나이")),
+            definitions = listOf(field("나이", universeId = 1L)),
             entities = listOf(GapEntity(10L, "작품 미배정", null)),
             filledDefIdsByEntity = emptyMap()
         )
-        assertTrue("소속을 모르면 어느 필드가 적용되는지 알 수 없다", gaps.isEmpty())
+        assertTrue("그 구역의 필드가 없으면 빈 칸도 없다", gaps.isEmpty())
+    }
+
+    @Test
+    fun `전역 구역의 필수 빈칸도 센다`() {
+        val gaps = RequiredFieldGaps.compute(
+            definitions = listOf(field("나이", universeId = null)),
+            entities = listOf(GapEntity(10L, "작품 미배정", null)),
+            filledDefIdsByEntity = emptyMap()
+        )
+        assertEquals(1, gaps.size)
+        assertEquals("작품 미배정", gaps.single().entityName)
+        assertEquals(listOf("나이"), gaps.single().missingFieldNames)
+    }
+
+    /** 구역이 섞여도 각자 자기 구역의 필드만 본다 — 전역이 세계관 항목에 새면 안 된다. */
+    @Test
+    fun `전역 필드가 세계관 항목에 새지 않는다`() {
+        val gaps = RequiredFieldGaps.compute(
+            definitions = listOf(field("전역칸", universeId = null), field("세계관칸", universeId = 1L)),
+            entities = listOf(
+                GapEntity(10L, "무소속", null),
+                GapEntity(11L, "소속", 1L)
+            ),
+            filledDefIdsByEntity = emptyMap()
+        )
+        assertEquals(2, gaps.size)
+        assertEquals(listOf("전역칸"), gaps.first { it.entityName == "무소속" }.missingFieldNames)
+        assertEquals(listOf("세계관칸"), gaps.first { it.entityName == "소속" }.missingFieldNames)
     }
 
     // ── 4. 채움 판정 ──────────────────────────────────────────────────────────

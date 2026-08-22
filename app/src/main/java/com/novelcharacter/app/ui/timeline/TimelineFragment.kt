@@ -19,6 +19,8 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
+import com.novelcharacter.app.ui.common.applyRange
+import com.novelcharacter.app.util.SliderRange
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -680,44 +682,14 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         val minYear = events.minOf { it.year }
         val maxYear = events.maxOf { it.year }
 
-        // Determine step size based on range
-        val rawRange = (maxYear - minYear + 20).toFloat() // +20 for padding
-        val stepSize = when {
-            rawRange > 10000 -> 100f
-            rawRange > 1000 -> 10f
-            else -> 1f
-        }
-
-        // Align range boundaries to step size so range is evenly divisible
-        val step = stepSize.toInt()
-        val alignedFrom = ((minYear - 10).floorDiv(step) * step).toFloat()
-        val alignedTo = (((maxYear + 10) + step - 1).floorDiv(step) * step).toFloat()
-
-        // Ensure valueFrom < valueTo
-        val finalFrom = if (alignedFrom >= alignedTo) alignedFrom - stepSize else alignedFrom
-        val finalTo = if (alignedFrom >= alignedTo) alignedTo + stepSize else alignedTo
+        // **범위·눈금·값은 한 벌로 나온다**(`SliderRange` — 캐릭터 상세의 시점 슬라이더와
+        // 같은 함수다. 종전에는 같은 판단이 두 벌로 적혀 있었고 **한쪽만 옳았다**).
+        val spec = SliderRange.of(minYear, maxYear, viewModel.centerYear.value, pad = 10)
 
         // 바의 축은 **슬라이더와 같은 수**다 — 둘이 한 벌의 눈금으로 읽히도록 레이아웃이
         // 같은 좌우 여백으로 얹어 둔 것이 그 근거다(TimelineDisplayOrder KDoc).
-        binding.eventDensityBar.setRange(finalFrom.toInt(), finalTo.toInt())
-
-        // Reset stepSize to 0 (continuous) first to avoid constraint violations during update
-        binding.yearSlider.stepSize = 0f
-
-        // Set range wide enough to cover both old and new values, then narrow
-        binding.yearSlider.valueFrom = minOf(binding.yearSlider.valueFrom, finalFrom)
-        binding.yearSlider.valueTo = maxOf(binding.yearSlider.valueTo, finalTo)
-
-        // Set value within new range, aligned to step grid
-        val currentCenter = viewModel.centerYear.value ?: 0
-        val aligned = alignToStep(currentCenter.toFloat(), finalFrom, stepSize)
-        val clampedValue = aligned.coerceIn(finalFrom, finalTo)
-        binding.yearSlider.value = clampedValue
-
-        // Now safely narrow the range
-        binding.yearSlider.valueFrom = finalFrom
-        binding.yearSlider.valueTo = finalTo
-        binding.yearSlider.stepSize = stepSize
+        binding.eventDensityBar.setRange(spec.from.toInt(), spec.to.toInt())
+        binding.yearSlider.applyRange(spec)
 
         // Show min/max year labels (actual min/max, not padded range)
         binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)

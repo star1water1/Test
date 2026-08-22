@@ -556,20 +556,92 @@ class FactionManageFragment : Fragment() {
         }
     }
 
+    /**
+     * 세력 삭제 확인 — **무엇이 함께 사라지는지 세어서 먼저 말한다** (R-4).
+     *
+     * 형제 여섯 창(작품·세계관·캐릭터·사건·필드·관계)은 전부 규모를 말하는데 이 창만
+     * 선택지 둘을 내놓고 끝이었다. 그런데 **기본 선택이 캐릭터 관계까지 지우는 쪽**이라,
+     * 무심코 확인을 누르면 세력과 무관한 자동 관계가 함께 사라진다.
+     *
+     * 자동 관계 줄은 다른 둘과 성질이 다르므로 그 사실을 문구가 말한다 — 그 줄만
+     * **고른 쪽에 따라** 삭제되거나 수동 관계로 남는다.
+     */
     private fun showDeleteFactionDialog(faction: Faction) {
-        val items = arrayOf(
-            getString(R.string.faction_delete_with_relations),
-            getString(R.string.faction_delete_keep_relations)
-        )
-        var selectedIndex = 0
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(getString(R.string.faction_delete_title, faction.name))
-            .setSingleChoiceItems(items, 0) { _, which -> selectedIndex = which }
-            .setPositiveButton(R.string.delete) { _, _ ->
-                viewModel.deleteFaction(faction, deleteRelationships = selectedIndex == 0)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val impact = runCatching { viewModel.getFactionDeleteImpact(faction.id) }
+                .getOrDefault(com.novelcharacter.app.data.repository.FactionDeleteImpact())
+            // 컨텍스트는 **정지점 뒤에** 잡는다 — 세는 사이에 화면이 사라질 수 있다.
+            if (!isAdded) return@launch
+
+            val lines = listOfNotNull(
+                impact.members.takeIf { it > 0 }
+                    ?.let { "  • " + getString(R.string.faction_delete_impact_members, it) },
+                impact.factionRelations.takeIf { it > 0 }
+                    ?.let { "  • " + getString(R.string.faction_delete_impact_faction_relations, it) },
+                impact.autoRelations.takeIf { it > 0 }
+                    ?.let { "  • " + getString(R.string.faction_delete_impact_auto_relations, it) }
+            )
+            val message = if (lines.isEmpty()) {
+                getString(R.string.faction_delete_plain_message)
+            } else {
+                getString(R.string.faction_delete_impact_message, lines.joinToString("\n"))
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+
+            // **`setMessage`와 `setSingleChoiceItems`를 함께 쓰지 않는다.** `AlertController`는
+            // 메시지가 있으면 목록을 화면에 붙이지 않는다 — 그러면 선택지 둘이 통째로 사라진
+            // 채 [삭제]가 기본값(관계까지 삭제)으로 실행된다. 고지를 더하려다 죽은 선택지를
+            // 만드는 셈이라, 둘을 한 뷰에 담는다(이 파일의 다른 창들이 쓰는 그 꼴).
+            val ctx = requireContext()
+            val density = resources.displayMetrics.density
+            val pad = (20 * density).toInt()
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, (8 * density).toInt(), pad, 0)
+            }
+            container.addView(android.widget.TextView(ctx).apply {
+                text = message
+                textSize = 14f
+            })
+            val choices = android.widget.RadioGroup(ctx).apply {
+                orientation = android.widget.RadioGroup.VERTICAL
+                val topMargin = (12 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, topMargin, 0, 0) }
+            }
+            // 고른 것은 **id가 아니라 상태 변수**로 든다 — 손으로 매긴 뷰 id는 다른 뷰와
+            // 겹칠 수 있고, 0은 프레임워크가 '없음'과 헷갈리기 쉬운 값이다.
+            var deleteRelations = true
+            val withRelations = android.widget.RadioButton(ctx).apply {
+                id = View.generateViewId()
+                text = getString(R.string.faction_delete_with_relations)
+                textSize = 14f
+            }
+            val keepRelations = android.widget.RadioButton(ctx).apply {
+                id = View.generateViewId()
+                text = getString(R.string.faction_delete_keep_relations)
+                textSize = 14f
+            }
+            choices.addView(withRelations)
+            choices.addView(keepRelations)
+            choices.setOnCheckedChangeListener { _, checkedId ->
+                deleteRelations = checkedId == withRelations.id
+            }
+            // 기본 선택은 종전과 같은 자리다 — 사용자가 익힌 손이 그대로 맞아야 한다.
+            choices.check(withRelations.id)
+            container.addView(choices)
+
+            MaterialAlertDialogBuilder(ctx)
+                .setIcon(R.drawable.ic_warning)
+                .setTitle(getString(R.string.faction_delete_title, faction.name))
+                .setView(container)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    viewModel.deleteFaction(faction, deleteRelationships = deleteRelations)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     // ===== 세력 상세 (멤버 관리) =====
@@ -611,9 +683,11 @@ class FactionManageFragment : Fragment() {
         // 멤버십 관찰 (다이얼로그가 표시되는 동안만)
         val memberObserver = androidx.lifecycle.Observer<List<FactionMembership>> { memberships ->
             viewLifecycleOwner.lifecycleScope.launch {
+                // **이름은 한 번에 읽는다** — 종전에는 소속 행마다 단건 질의를 쳐서 멤버가
+                // 100명이면 창을 열 때마다 질의가 100번 났다(R-53/R-54).
+                val names = viewModel.getCharacterNames(memberships.map { it.characterId }.distinct())
                 val items = memberships.mapNotNull { m ->
-                    val char = viewModel.getCharacterById(m.characterId)
-                    if (char != null) FactionMemberItem(m, char.name) else null
+                    names[m.characterId]?.let { FactionMemberItem(m, it) }
                 }
                 memberAdapter.submitList(items)
             }

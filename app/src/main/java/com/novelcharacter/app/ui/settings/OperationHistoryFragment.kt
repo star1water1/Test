@@ -155,6 +155,10 @@ private class OperationLogAdapter(
                 OpResult.CAT_MAINTENANCE -> R.string.op_cat_maintenance
                 OpResult.CAT_BATCH -> R.string.op_cat_batch
                 OpResult.CAT_DUEL -> R.string.op_cat_duel
+                OpResult.CAT_FIELD_LIBRARY -> R.string.op_cat_field_library
+                // **폴백은 원시 키를 그대로 보인다** — `field_library`가 그 자리에 떴었다.
+                // 분류 상수가 늘 때 이 표도 함께 늘어야 한다는 것이 이 `else`의 값어치다
+                // (열거는 그 자체가 다음 실수의 예약이다 — R-29).
                 else -> null
             }
             return if (resId != null) ctx.getString(resId) else category

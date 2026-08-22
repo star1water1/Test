@@ -453,7 +453,11 @@ class StatsFoldParityTest {
                     .map { it.id }.toSet()
                 val relevantChars = if (s.unassignedScope) s.characters
                     else s.characters.filter { it.novelId in universeNovels }
-                val filled = aug[fd.id]?.count { it.value.isNotBlank() } ?: 0
+                // **분자는 분모 집합과의 교집합이다**(R-34) — 값 표는 그 칸의 것이 아닌 행을
+                // 정상적으로 담는다(작품을 '없음'으로 바꾼 캐릭터의 보관 값). 세면 100%를 넘는다.
+                val relevantCharIds = relevantChars.mapTo(HashSet()) { it.id }
+                val filled = aug[fd.id]
+                    ?.count { it.value.isNotBlank() && it.characterId in relevantCharIds } ?: 0
                 val total = relevantChars.size
                 val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
                 Triple(fd.name, filled to total, rate)

@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.setFragmentResultListener
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -127,6 +128,21 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     // 신규 캐릭터는 지울 데이터가 없어 즉시 연다.
     private var saveGateOpen = false
     private var initialLoadsDone = false
+
+    /**
+     * 폼이 서기 전에 도착한 **유료 서술형 응답**을 미뤄 두는 자리 (R-38).
+     *
+     * 회전하면 관측이 새 뷰 수명주기에 다시 붙으면서 같은 회차가 **곧바로 재전달된다.**
+     * 그런데 그 시점의 `formBuilder.fieldDefinitions`는 아직 비어 있다 — 채우는 것이 스피너
+     * 콜백 안의 코루틴이라 액티비티 재생성이 끝나기 전에는 도착할 수 없다. 그대로 검토 창을
+     * 열면 전 항목이 *"필드가 사라졌다"*로 읽혀 **결제된 초안이 통째로 버려진다**(창이 그
+     * 자리에서 결과를 비운다). 그래서 폼이 다 선 시점([maybeOpenSaveGate])까지 미룬다.
+     *
+     * **미룬 것은 반드시 꺼낸다** — 게이트가 이미 열렸다면 미루지 않고 그 자리에서 연다.
+     * 필드가 정말로 없는 작품이면 검토 창이 스스로 "아무것도"를 말하고 끝낸다(그것이 사실이다).
+     */
+    private var pendingAiNarrativeShow = false
+    private var pendingAiNarrativeBulkShow = false
     // 마지막으로 동적 폼 구성+값 적재가 끝난 스피너 위치 — 현재 선택과 일치할 때만 게이트를 연다
     private var lastHydratedNovelPos = -1
     // DB 필드값 적재(loadFieldValues) 중 프로그램적 setText가 더티를 세우지 않도록
@@ -162,6 +178,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) imageStrip.importUris(uris)
+    }
+
+    /**
+     * 시트에서 오는 결과를 **`onCreate`에서** 듣는다 — 뷰 수명주기에 걸면 회전 중에 온
+     * 결과를 놓친다(R-65). 라이브러리 피커는 사용자가 그 자리에서 고른 다중 선택을 든다.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setFragmentResultListener(ImageLibraryPickerBottomSheet.REQUEST_KEY) { _, bundle ->
+            val picked = bundle.getStringArray(ImageLibraryPickerBottomSheet.RESULT_KEY)?.toList()
+                ?: return@setFragmentResultListener
+            if (picked.isEmpty()) return@setFragmentResultListener
+            // 묶음 지도는 **붙이는 시점의 것**을 다시 읽는다 — 시트가 떠 있는 동안 링크가
+            // 바뀌었을 수 있고, 낡은 지도로 넓히면 붙는 장수가 시트의 약속과 갈린다.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val data = viewModel.getLibraryImages()
+                if (!isAdded || _binding == null) return@launch
+                attachLibraryImages(picked, data.metas)
+            }
+        }
     }
 
     override fun onCreateView(
@@ -463,11 +499,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         viewModel.aiNarrativeResult.observe(viewLifecycleOwner) { run ->
-            if (run != null) {
-                NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run) { id ->
-                    formBuilder.fieldDefinitions.firstOrNull { it.id == id }
-                }
-            }
+            if (run == null) return@observe
+            if (deferUntilFormStands { pendingAiNarrativeShow = true }) return@observe
+            showNarrativeResult(run)
         }
         // 서술형 일괄 초안 (B-45) — 진행 표시가 다른 AI 경로와 다르다: 필드마다 요청 하나라
         // 체감이 길어, 몇 번째를 쓰는 중인지 보이지 않으면 멈춘 것으로 읽힌다.
@@ -492,11 +526,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         viewModel.aiNarrativeBulkResult.observe(viewLifecycleOwner) { run ->
-            if (run != null) {
-                NarrativeBulkSheet.showResult(this, formBuilder, viewModel, run) { id ->
-                    formBuilder.fieldDefinitions.firstOrNull { it.id == id }
-                }
-            }
+            if (run == null) return@observe
+            if (deferUntilFormStands { pendingAiNarrativeBulkShow = true }) return@observe
+            showNarrativeBulkResult(run)
         }
 
         // 데이터 처리 결과 알림 (B-29) — **이 화면에는 이 관측이 없었다.**
@@ -704,6 +736,30 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     /**
+     * 폼이 아직 안 섰으면 [remember]로 미루고 `true`를 돌려준다.
+     *
+     * **게이트가 이미 열렸으면 미루지 않는다** — 그때 폼이 비어 있는 것은 *그 작품에 필드가
+     * 없다*는 사실이고, 미뤄 두면 꺼낼 자리가 영영 오지 않는다(R-65 ⓑ가 이름 붙인 실패).
+     */
+    private inline fun deferUntilFormStands(remember: () -> Unit): Boolean {
+        if (saveGateOpen || formBuilder.fieldDefinitions.isNotEmpty()) return false
+        remember()
+        return true
+    }
+
+    private fun showNarrativeResult(run: CharacterViewModel.AiNarrativeRun) {
+        NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run) { id ->
+            formBuilder.fieldDefinitions.firstOrNull { it.id == id }
+        }
+    }
+
+    private fun showNarrativeBulkResult(run: CharacterViewModel.AiNarrativeBulkRun) {
+        NarrativeBulkSheet.showResult(this, formBuilder, viewModel, run) { id ->
+            formBuilder.fieldDefinitions.firstOrNull { it.id == id }
+        }
+    }
+
+    /**
      * 초기 적재가 끝나고, 동적 폼이 현재 선택된 작품 기준으로 구성·적재 완료된 순간 저장을 연다.
      * 스피너 콜백 코루틴과 초기 적재 코루틴 중 무엇이 먼저 끝나도 동작한다(양방향 래치).
      */
@@ -713,6 +769,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         if (lastHydratedNovelPos != b.spinnerNovel.selectedItemPosition) return
         saveGateOpen = true
         if (supplementMode) b.btnSaveAndNext.isEnabled = true else b.btnSave.isEnabled = true
+        // 폼이 다 선 지금이 미뤄 둔 유료 응답을 열 수 있는 첫 시점이다 (R-38).
+        if (pendingAiNarrativeShow) {
+            pendingAiNarrativeShow = false
+            viewModel.aiNarrativeResult.value?.let { showNarrativeResult(it) }
+        }
+        if (pendingAiNarrativeBulkShow) {
+            pendingAiNarrativeBulkShow = false
+            viewModel.aiNarrativeBulkResult.value?.let { showNarrativeBulkResult(it) }
+        }
         // **폼이 이 캐릭터의 값으로 다 선 시점**이 곧 칸을 잡을 수 있는 시점이고, 이 자리가
         // 그것을 말하는 유일한 신호다(B-259). 더 일찍 잡으면 부트스트랩 콜백의 **전역 필드**
         // 폼에서 찾다가 *없는 칸*이라고 잘못 말한다 — B-267이 그 콜백의 성질을 적어 두었다.
@@ -949,16 +1014,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 ).show()
                 return@launch
             }
-            val sheet = ImageLibraryPickerBottomSheet()
-            sheet.images = data.images
             // 이미 붙어 있는 것은 뺀다 — canonical로 맞춰야 같은 파일의 다른 표기를 걸러낸다
             // (추천 스트립의 excluded 계산과 같은 규칙이다).
             val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
-            sheet.excludePaths = data.images
+            val exclude = data.images
                 .filter { canonicalOrSelf(it.path) in currentCanon }
                 .mapTo(HashSet()) { it.path }
-            sheet.onConfirm = { picked -> attachLibraryImages(picked, data.metas) }
-            sheet.show(parentFragmentManager, "image_library_picker")
+            ImageLibraryPickerBottomSheet.newInstance(exclude)
+                .show(parentFragmentManager, "image_library_picker")
         }
     }
 

@@ -76,6 +76,10 @@ enum class SemanticRole(
             entries.find { it.key == key }
 
         fun fromConfig(configJson: String): SemanticRole? {
+            // **없는 것을 확인하는 데 파서를 세우지 않는다.** 역할 탐색은 필드 목록을 역할마다
+            // 훑으므로 한 번의 동기화에 `필드 수 × 역할 수`만큼 불리는데, 실제로 역할이 붙은
+            // 필드는 세계관마다 한 줌이다. 키 글자가 아예 없으면 그 JSON에 그 키도 없다.
+            if (!configJson.contains(CONFIG_KEY)) return null
             return try {
                 val json = JSONObject(configJson)
                 fromKey(json.stringOrNull(CONFIG_KEY))

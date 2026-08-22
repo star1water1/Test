@@ -16,6 +16,13 @@ interface FactionMembershipDao {
     @Query("SELECT * FROM faction_memberships WHERE factionId = :factionId AND leaveType IS NULL")
     suspend fun getActiveMembershipsByFaction(factionId: Long): List<FactionMembership>
 
+    /**
+     * 삭제 영향 고지용 — 이 세력의 소속 행 수. **탈퇴 이력까지 센다**(삭제는 행을 가리지
+     * 않고 전부 가져간다 — 고지가 실제보다 적은 수를 말하면 그것이 거짓이다).
+     */
+    @Query("SELECT COUNT(*) FROM faction_memberships WHERE factionId = :factionId")
+    suspend fun countByFaction(factionId: Long): Int
+
     /** 특정 캐릭터의 모든 세력 소속 조회 */
     @Query("SELECT * FROM faction_memberships WHERE characterId = :characterId ORDER BY createdAt DESC")
     fun getMembershipsByCharacter(characterId: Long): LiveData<List<FactionMembership>>

@@ -385,36 +385,61 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
+    /**
+     * 캐릭터별 필드 완성도 — **잘린 수를 말하고, 끝까지 갈 수 있다**(R-14 · R-19).
+     *
+     * 종전에는 `take(20)`으로 잘라 놓고 잘린 사실을 어디에도 적지 않았다 — 캐릭터가 21명
+     * 넘는 순간부터 이 카드는 *"이게 전부"*라고 거짓말했고, 게다가 **완성도 내림차순**이라
+     * 잘려 나가는 쪽이 정확히 *가장 덜 채운 캐릭터들*이었다(이 카드가 도우려는 그 사람들).
+     * 같은 축의 다른 명단들은 이미 접기 장치를 쓴다 — 이 자리만 그 훑기에서 빠졌다.
+     *
+     * 정렬은 **접기 전에** 한 번 한다(형제 화면과 같은 규율) — 접힌 뒤에 정렬하면 남는 것이
+     * '가장 낮은 쪽'이 아니게 되고, 그러면 목록이 말하는 것 자체가 달라진다.
+     */
     private fun populateFieldCompletionList(items: List<Pair<String, Float>>) {
-        val container = binding.listFieldCompletion
-        container.removeAllViews()
-        if (items.isEmpty()) {
-            container.addView(makeEmptyTextView())
-            return
-        }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
         val progressHeight = resources.getDimensionPixelSize(R.dimen.stats_progress_bar_height_sm)
-        items.sortedByDescending { it.second }.take(20).forEach { (name, rate) ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                lp.bottomMargin = marginSm
-                layoutParams = lp
+        StatsCappedList.populate(
+            container = binding.listFieldCompletion,
+            // 덜 채운 쪽이 먼저다 — 이 카드가 무엇을 도우려는지가 그 차례에 있다.
+            items = items.sortedBy { it.second },
+            emptyView = { makeEmptyTextView() },
+            toggleView = { makeToggleTextView(it) },
+            moreText = { getString(R.string.stats_show_more, it) },
+            lessText = { getString(R.string.stats_show_less) },
+            makeRow = { (name, rate) ->
+                LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    lp.bottomMargin = marginSm
+                    layoutParams = lp
+                    addView(makeTextView("$name  ${String.format("%.0f", rate)}%"))
+                    addView(
+                        ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                progressHeight
+                            )
+                            max = 100
+                            this.progress = rate.toInt().coerceIn(0, 100)
+                        }
+                    )
+                }
             }
-            row.addView(makeTextView("$name  ${String.format("%.0f", rate)}%"))
-            val progress = ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    progressHeight
-                )
-                max = 100
-                this.progress = rate.toInt().coerceIn(0, 100)
-            }
-            row.addView(progress)
-            container.addView(row)
+        )
+    }
+
+    private fun makeToggleTextView(label: CharSequence): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        return TextView(requireContext()).apply {
+            text = label
+            textSize = textSizeSp
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.accent))
+            setPadding(0, marginSm, 0, marginSm)
         }
     }
 

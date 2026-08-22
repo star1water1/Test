@@ -1,11 +1,14 @@
 package com.novelcharacter.app.excel
 
+import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.CsvTokens
+import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
 import com.novelcharacter.app.util.RegexCharClasses
@@ -167,8 +170,32 @@ val RESERVED_SHEET_NAMES = setOf(
  * (7장 규약: 헤더 규칙·유효값을 양쪽에 따로 두지 않는다).
  */
 fun sanitizeSheetNameBase(name: String): String {
-    val cleaned = name.replace(Regex("[\\[\\]*/\\\\?:]"), "").take(31).trim('\'')
+    val cleaned = takeSheetChars(name.replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH).trim('\'')
     return if (cleaned.isBlank()) "Sheet" else cleaned
+}
+
+/** POI(엑셀)의 시트명 길이 상한. 값이 두 자리에 살면 갈리므로 이 상수 하나가 든다. */
+const val MAX_SHEET_NAME_LENGTH = 31
+
+/**
+ * 시트명을 [max]자로 자르되 **짝 글자(서러게이트 쌍)를 쪼개지 않는다.**
+ *
+ * 코틀린 `String`은 UTF-16 코드 단위의 열이라 이모지 한 글자가 **두 칸**을 쓴다.
+ * 그냥 `take(31)`하면 경계에 걸린 이모지가 반토막 나 **홀로 남은 앞짝**이 되는데,
+ * 그것은 XML에 실을 수 없는 글자다.
+ *
+ * **실측(POI 5.2.5)**: 쓰기는 죽지 않는다 — 대신 그 자리가 파일에서 `?`로 바뀐다.
+ * 그래서 **앱이 배정한 이름과 파일 속 이름이 갈린다**: 세계관 이름으로 시트를 되찾는 자리가
+ * 그 시트를 못 알아보고, 앞짝이 같은 두 이모지(😀·😁은 앞짝이 같다)로 갈린 두 세계관은
+ * 파일에서 **같은 이름 하나**가 된다. 왕복 무결성이 걸린 자리라 애초에 쪼개지 않는다.
+ *
+ * 그래서 경계가 앞짝이면 **한 칸 덜 가져온다**(그 이름은 30자가 된다 —
+ * [isSuffixedVariantOf]의 '잘렸는가' 판정이 그 한 칸을 함께 본다).
+ */
+fun takeSheetChars(name: String, max: Int): String {
+    if (name.length <= max) return name
+    val end = if (Character.isHighSurrogate(name[max - 1])) max - 1 else max
+    return name.substring(0, end)
 }
 
 /**
@@ -205,7 +232,7 @@ fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String
         // 접미사를 붙이므로 마지막 글자는 항상 ')'다 — 여기서 아포스트로피를 더 다듬으면
         // 이름이 한 글자 더 짧아져 `isSuffixedVariantOf`가 원명의 변형으로 알아보지 못하고,
         // 가져오기가 밀려난 시트를 영영 못 찾는다.
-        result = base.take(31 - suffix.length) + suffix
+        result = takeSheetChars(base, MAX_SHEET_NAME_LENGTH - suffix.length) + suffix
         counter++
     }
     usedNames.add(result)
@@ -253,7 +280,11 @@ fun isSuffixedVariantOf(sheetName: String, base: String): Boolean {
     if (sheetName == base) return false
     val stripped = sheetName.replace(Regex("\\([0-9]+\\)$"), "")
     if (stripped == sheetName) return false   // 접미사가 없다
-    return stripped == base || (base.startsWith(stripped) && sheetName.length >= 31)
+    // **한 칸을 덜 봐 준다** — 짝 글자(이모지)가 경계에 걸리면 절단이 30자에서 멈춘다
+    // ([takeSheetChars]). `>= 31`로만 보면 그렇게 잘린 이름을 *잘리지 않은 것*으로 읽어
+    // 밀려난 시트를 영영 못 찾는다.
+    return stripped == base ||
+        (base.startsWith(stripped) && sheetName.length >= MAX_SHEET_NAME_LENGTH - 1)
 }
 
 /**
@@ -635,12 +666,37 @@ fun universeSpec() = SheetSpec(
 )
 
 /**
- * 작품 시트. [novelFieldHeaders]는 **작품 커스텀 필드**(확-3)의 동적 열이며 규칙은
+ * 작품 시트. [novelFieldColumns]는 **작품 커스텀 필드**(확-3)의 동적 열이며 규칙은
  * [EntityFieldHeaders]가 단일 소스다 — 연표 시트의 사건 필드 열과 같은 규칙을 쓴다.
  */
+/**
+ * 커스텀 필드 열에 실을 드롭다운 — **세 시트가 이 한 함수를 부른다**(캐릭터·작품·사건).
+ *
+ * 종전에는 캐릭터 시트만, 그것도 SELECT만 실었다. GRADE는 값 집합이 정해져 있는데도
+ * 빠졌고, 작품·사건 시트는 두 타입 다 빠져 **같은 필드가 시트에 따라 다르게 나갔다**
+ * (R-18). 규칙을 세 번 적으면 다음 타입이 늘 때 한 자리가 빠진다.
+ *
+ * **`else`를 두지 않는다** — 타입이 늘면 여기가 컴파일을 깨서 답을 강제한다(B-55·R-52).
+ */
+fun customFieldDropdownOptions(field: FieldDefinition): List<String>? = when (field.fieldType) {
+    FieldType.SELECT ->
+        FieldOptionParser.parseSelectOptions(field.config).takeIf { it.isNotEmpty() }
+    FieldType.GRADE ->
+        // **실효 표가 실제로 있을 때만** 싣는다 — `parseGradeOptions`의 C·B·A·S 폴백을
+        // 그대로 실으면 들이기가 받아들이는 것보다 **좁은** 목록이 걸려, 사용자가 쓰던
+        // 등급이 파일에서 거부당한다.
+        if (GradeSystemRef.gradesFromConfig(field.config).isNotEmpty()) {
+            FieldOptionParser.parseGradeOptions(field.config).takeIf { it.isNotEmpty() }
+        } else null
+    // 나머지는 값 집합이 열려 있어 목록을 세울 수 없다.
+    FieldType.TEXT, FieldType.MULTI_TEXT, FieldType.NUMBER,
+    FieldType.CALCULATED, FieldType.BODY_SIZE -> null
+    null -> null
+}
+
 fun novelSpec(
     universeNames: List<String>,
-    novelFieldHeaders: List<String> = emptyList()
+    novelFieldColumns: List<Pair<FieldDefinition, String>> = emptyList()
 ) = SheetSpec(
     sheetName = "작품",
     freezeCols = 1,
@@ -660,7 +716,10 @@ fun novelSpec(
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표준연도", width = 3000),
         ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
-    ) + novelFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 작품 커스텀 필드 (확-3)
+    ) + novelFieldColumns.map { (field, header) ->
+        // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (확-3 · R-18)
+        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+    }
 )
 
 fun fieldDefinitionSpec(
@@ -873,6 +932,29 @@ object DuelSheetLabels {
     const val TARGET_IMAGE = "이미지"
     val TARGETS = listOf(TARGET_CHARACTER, TARGET_IMAGE)
 
+    /**
+     * '대상' 칸 해석 — **관대하게 읽되, 못 알아본 것은 삼키지 않는다.**
+     *
+     * 빈 칸(과 열이 없는 파일)은 캐릭터다 — 이 열이 없던 시절의 축이 전부 캐릭터 축이고,
+     * 그 기본값이 없으면 옛 파일이 통째로 안 들어온다.
+     *
+     * **그 밖의 못 알아본 글자는 `null`이다.** 이 열은 축의 *정체*를 이룬다
+     * (자연키와 유니크 색인이 `(세계관, 대상, 이름)`이고, 만든 뒤에는 화면에서도
+     * 바꿀 수 없다 — 편집 창이 그 구역을 감춘다). 그래서 오타 하나가 조용히 캐릭터 축을
+     * 만들면 **파일로도 화면으로도 되돌릴 길이 없다**(R-36이 말한 *정체 열*의 예외 자리).
+     * 부르는 쪽이 이 `null`을 받아 고지하고, 값은 기본값으로 이어 간다.
+     *
+     * 대소문자·앞뒤 공백·전각을 받아들이는 것은 형제 자리
+     * (`FieldValueSheetMapper.entityTypeOf`)와 같은 결이다.
+     */
+    fun targetTypeOrNull(label: String): String? =
+        when (toHalfWidth(label).trim().lowercase()) {
+            "" -> DuelAxis.TARGET_CHARACTER
+            TARGET_IMAGE.lowercase(), DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
+            TARGET_CHARACTER.lowercase(), DuelAxis.TARGET_CHARACTER -> DuelAxis.TARGET_CHARACTER
+            else -> null
+        }
+
     const val KIND_COUNTER = "상성"
     const val KIND_UNDECIDED = "미정"
     val KINDS = listOf(KIND_COUNTER, KIND_UNDECIDED)
@@ -1000,28 +1082,15 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("성", width = 4000))
         add(ColumnSpec("이름(First)", width = 4000))
         add(ColumnSpec("이명", width = 6000))
-        // Dynamic field columns — 고정 열과 겹치거나 동명 필드가 둘 이상이면 필드키를 병기해
-        // 열 정체를 확정한다(병기하지 않으면 가져오기가 first-wins로 값을 뒤바꾼다).
-        val fieldNameCounts = fields.groupingBy { it.name }.eachCount()
-        for (field in fields) {
-            val options = if (field.fieldType == FieldType.SELECT) {
-                try {
-                    val json = org.json.JSONObject(field.config)
-                    val arr = json.optJSONArray("options")
-                    if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
-                } catch (_: Exception) { null }
-            } else null
-            val disambiguate = collidesWithFixedHeader(field.name) || (fieldNameCounts[field.name] ?: 0) > 1
-            val core = characterFieldHeader(field.name, field.key, disambiguate)
-            // 쉼표를 쪼개는 **모든** 필드에 안내를 붙인다 (B-38). 종전에는 `type == "MULTI_TEXT"`
-            // 하나만 보았고, 그래서 '콤마 목록' 표시 형식의 TEXT 필드는 외부 편집자가 쉼표의 뜻을
-            // 모른 채 값을 넣었다 — 안내 없이 넣은 쉼표는 들이기에서 토큰 구조를 조용히 가른다.
-            // 판정은 앱이 이미 쓰는 단일 소스가 든다(B-37이 정렬에서 없앤 하드코딩의 쌍둥이).
-            // 접미사 글자는 [EntityFieldHeaders.MULTI_SUFFIX] 하나가 든다 — 연표·작품 시트도 같은 말을
-            // 쓰고(B-177), 시트마다 다른 말로 안내하면 외부 편집자가 시트마다 다시 배운다.
-            // 리터럴을 두 벌로 두면 한쪽만 고쳐질 때 **가져오기가 그 열을 못 알아본다.**
+        // Dynamic field columns — 머리를 짓는 규칙과 **어느 필드가 열을 받는가**는 모두
+        // [CharacterFieldHeaders]가 든다. 셀을 쓰는 `ExcelExporter.exportCharacterSheet`도
+        // 같은 계획을 도는 것이 요점이다 — 두 벌로 돌면 한쪽만 걸러질 때 **전 필드 값이 한
+        // 칸씩 밀린다**(그 오염은 어느 결함보다 나쁘다).
+        for ((field, headerName) in CharacterFieldHeaders.plan(fields).columns) {
+            // 파싱은 앱의 단일 소스에 맡긴다 — 종전에는 이 자리만 `org.json`으로 다시 읽어
+            // 규칙이 두 벌이었다(형제 시트와도 갈렸다).
+            val options = customFieldDropdownOptions(field)
             val multiToken = FieldValueTokenizer.isMultiToken(field)
-            val headerName = if (multiToken) core + EntityFieldHeaders.MULTI_SUFFIX else core
             add(ColumnSpec(
                 headerName,
                 required = field.isRequired,
@@ -1097,7 +1166,7 @@ fun allCharactersSpec(
 
 fun timelineSpec(
     novelTitles: List<String>,
-    eventFieldHeaders: List<String> = emptyList(),
+    eventFieldColumns: List<Pair<FieldDefinition, String>> = emptyList(),
     universeNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "사건 연표",
@@ -1122,7 +1191,10 @@ fun timelineSpec(
         // 이 열이 없던 구버전 파일은 기존처럼 관련 작품의 세계관에서 유도한다(하위 호환).
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000)
-    ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
+    ) + eventFieldColumns.map { (field, header) ->
+        // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (B-10 · R-18)
+        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+    }
 )
 
 fun stateChangeSpec() = SheetSpec(

@@ -49,8 +49,12 @@ class FieldValueListFragment : Fragment() {
 
     private var searchQuery = ""
     private var sortMode = SORT_USAGE
-    private var selectionMode = false
-    private val selectedIds = linkedSetOf<Long>()
+    // 선택 상태는 **뷰모델이 든다** — 화면이 들면 회전 한 번에 고른 값이 전부 풀린다.
+    // 이름을 그대로 둔 것은 이 화면의 여러 자리가 이 두 이름을 부르기 때문이다(자리는 하나다).
+    private var selectionMode: Boolean
+        get() = viewModel.selectionMode
+        set(value) { viewModel.selectionMode = value }
+    private val selectedIds: LinkedHashSet<Long> get() = viewModel.selectedIds
     private var backCallback: androidx.activity.OnBackPressedCallback? = null
 
     private val prefs by lazy {
@@ -516,12 +520,23 @@ class FieldValueListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val tokens = setOf(entry.value) + entry.aliases()
             val preview = viewModel.previewPropagation(fd, tokens)
-            val options = arrayOf(
-                getString(R.string.field_library_delete_entry_only),
-                getString(R.string.field_library_delete_with_data,
-                    preview.characterValues, preview.eventValues, preview.stateChanges,
-                    preview.novelValues)
-            )
+            // **백업 범위를 사실대로 말한다**(R-4 — 동의는 사실 위에서만 성립한다).
+            // 파괴는 네 종류를 건드리는데 휴지통 스냅샷은 캐릭터 축(값·이력)만 든다 —
+            // 사건·작품 값은 되살릴 자리가 없다(그 축의 되돌리기 경로가 아직 없다).
+            // 그래서 그 둘이 실제로 걸릴 때만 한 줄을 덧붙인다(0건이면 군더더기다).
+            val withData = buildString {
+                append(
+                    getString(
+                        R.string.field_library_delete_with_data,
+                        preview.characterValues, preview.eventValues, preview.stateChanges,
+                        preview.novelValues
+                    )
+                )
+                if (preview.eventValues + preview.novelValues > 0) {
+                    append(getString(R.string.field_library_delete_no_backup))
+                }
+            }
+            val options = arrayOf(getString(R.string.field_library_delete_entry_only), withData)
             var choice = 0
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(getString(R.string.field_library_delete_title, entry.value))

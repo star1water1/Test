@@ -92,8 +92,9 @@ object StorageAnalyzer {
             // (한쪽만 정규화되면 같은 파일이 서로 다른 키가 되어 그대로 고아로 떨어진다).
             val canonical = ImagePathMatch.canonical(f.absolutePath)
             when {
-                // 재압축 임시 산출물은 커밋 전 과도기 파일 — 고아(orphan)로 오분류하지 않는다(관리 탭 통계와 일치).
-                f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER) -> { otherBytes += f.length(); otherCount++ }
+                // 커밋 전 임시 산출물(재압축 미리보기·회전 임시본)은 과도기 파일 —
+                // 고아(orphan)로 오분류하지 않는다(관리 탭 통계와 일치).
+                ImageImportHelper.isTempArtifact(f.name) -> { otherBytes += f.length(); otherCount++ }
                 isImageFile(f.name) -> when {
                     canonical in referencedPaths -> { refBytes += f.length(); refCount++ }
                     canonical in trashHeldPaths -> { trashBytes += f.length(); trashCount++ }

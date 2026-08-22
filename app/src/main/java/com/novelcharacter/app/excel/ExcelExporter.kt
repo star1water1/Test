@@ -253,7 +253,11 @@ class ExcelExporter(context: Context) {
         // 등재는 바깥 `finally`에서 내린다 — 고지 부기가 아니라 **일**을 따라간다.
         ActiveTransfers.enter(this)
         activeProgress = progress
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             if (onFinished == null) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
@@ -457,20 +461,28 @@ class ExcelExporter(context: Context) {
         phase = TransferPhase.EXPORT_SAVE
         // 이 구간은 화면이 사라져도 끝까지 간다 — 그래서 등재도 그 끝까지 남아야 한다.
         ActiveTransfers.enter(this)
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     ExportRetryStore.store(appContext, sourceFile)
-                    val outputStream = appContext.contentResolver.openOutputStream(uri)
-                    if (outputStream == null) {
-                        // 열지 못했어도 CreateDocument가 만든 빈 파일이 목적지에 있다 — 같은 실패 처분으로 간다.
-                        reportSaveFailure(uri, sourceFile, null, onSaveFailed)
-                        return@withContext
-                    }
-                    outputStream.use { out ->
-                        sourceFile.inputStream().use { input ->
-                            input.copyTo(out)
+                    // 열기 실패·복사 실패·반쪽 파일 걷기는 **한 커널이 든다**
+                    // ([com.novelcharacter.app.util.SafFileCopy]) — 백업 내보내기가 같은
+                    // 자리에서 널을 성공으로 흘리고 있었고, 넷째 자리를 막는 것이 R-43이다.
+                    val copied = com.novelcharacter.app.util.SafFileCopy.copyOrDiscard(
+                        openOutput = { appContext.contentResolver.openOutputStream(uri) },
+                        openInput = { sourceFile.inputStream() },
+                        deleteDestination = {
+                            android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
                         }
+                    )
+                    if (copied is com.novelcharacter.app.util.SafFileCopy.Result.Failed) {
+                        android.util.Log.e("ExcelExporter", "Save to URI failed", copied.cause)
+                        reportSaveFailure(uri, sourceFile, copied.cause, onSaveFailed, copied.destinationRemoved)
+                        return@withContext
                     }
                     sourceFile.delete()
                     ExportRetryStore.clear(appContext)
@@ -511,9 +523,15 @@ class ExcelExporter(context: Context) {
         uri: Uri,
         sourceFile: File,
         cause: Exception?,
-        onSaveFailed: (() -> Unit)?
+        onSaveFailed: (() -> Unit)?,
+        /**
+         * 복사 커널이 이미 걷었으면 그 답 — 여기서 다시 지우려 들면 **둘째 시도가 늘 실패해**
+         * 문구가 *"남았을 수 있습니다"*로 갈린다. 커널을 지나지 않은 갈래(쓰기 앞뒤에서 터진
+         * 예외)만 `null`로 와서 아래가 직접 걷는다.
+         */
+        destinationRemoved: Boolean? = null
     ) {
-        val removed = runCatching {
+        val removed = destinationRemoved ?: runCatching {
             android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri)
         }.getOrDefault(false)
         ExportRetryStore.store(appContext, sourceFile)
@@ -1312,7 +1330,8 @@ class ExcelExporter(context: Context) {
         val novelFieldColumns = novelFieldPlan.columns
         val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
 
-        val spec = novelSpec(universes.map { it.name }, novelFieldColumns.map { it.second })
+        // 계획의 (필드, 머리) 쌍을 그대로 넘긴다 — 드롭다운 판정에 필드가 필요하다.
+        val spec = novelSpec(universes.map { it.name }, novelFieldColumns)
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -1656,7 +1675,10 @@ class ExcelExporter(context: Context) {
                 )
             }
 
-            val covered = fields.mapTo(HashSet()) { it.id }
+            // **열을 실제로 받은 필드만** covered다 — 머리가 겹쳐 열을 못 받은 필드까지 담으면
+            // 그 값이 오버플로 시트에서도 빠져 내보내기가 값을 통째로 잃는다
+            // ([CharacterFieldHeaders] ②). 계획은 열을 그리는 쪽과 같은 함수가 낸다.
+            val covered = CharacterFieldHeaders.plan(fields).coveredFieldIds
             universeChars.forEach { coveredFieldIds[it.id] = covered }
 
             exportCharacterSheet(
@@ -1702,7 +1724,7 @@ class ExcelExporter(context: Context) {
             }
             // 열로 담은 것과 오버플로 판정을 **함께** 옮긴다 — 한쪽만 고치면 같은 값이 두 시트에
             // 겹쳐 나가고(열 + 오버플로), 가져오기에서 어느 쪽이 권위인지가 값마다 갈린다.
-            val globalFieldIds = globalFields.mapTo(HashSet()) { it.id }
+            val globalFieldIds = CharacterFieldHeaders.plan(globalFields).coveredFieldIds
             unassignedChars.forEach { coveredFieldIds[it.id] = globalFieldIds }
             val unassignedResolved = unassignedChars.associate { char ->
                 char.id to resolveFieldDisplayValues(
@@ -1901,6 +1923,8 @@ class ExcelExporter(context: Context) {
     ) {
         val novelTitles = novelMap.values.map { it.title }.distinct()
         val spec = characterSpec(fields, novelTitles)
+        // 열 머리를 만든 계획 — 아래 셀 루프가 이것을 돈다(spec의 열과 같은 목록이다).
+        val columnPlan = CharacterFieldHeaders.plan(fields)
         val sheetName = assignSheetName(sheetLabel, usedSheetNames, ownerOf = sheetOwnerOf)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -1925,7 +1949,9 @@ class ExcelExporter(context: Context) {
 
             // 동적 필드 — CALCULATED 실시간 평가를 포함한 표시값은 resolveFieldDisplayValues가 냈다.
             // 숫자 성격 값은 숫자 셀로 나간다(Q-1 ⓐ — setFieldValue가 왕복 멱등 단서를 든다).
-            for (field in fields) {
+            // **머리를 만든 계획을 그대로 돈다** — `fields`를 다시 돌면 열을 못 받은 필드에서
+            // 셀이 하나 더 나가 그 행부터 모든 값이 밀린다(`characterSpec`과 한 소스다).
+            for ((field, _) in columnPlan.columns) {
                 row.createCell(col++).setFieldValue(field, values[field.id] ?: "")
             }
 
@@ -1993,7 +2019,7 @@ class ExcelExporter(context: Context) {
 
         val spec = timelineSpec(
             novels.map { it.title },
-            eventFieldColumns.map { it.second },
+            eventFieldColumns,
             universesById.values.map { it.name }
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)

@@ -6,7 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import androidx.lifecycle.LiveData
+import androidx.fragment.app.setFragmentResult
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
@@ -14,7 +15,6 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldFilter
-import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetCharacterControlsBinding
 import kotlinx.coroutines.Job
@@ -26,39 +26,52 @@ import com.novelcharacter.app.data.model.FieldType
  * 기존 CharacterSortBottomSheet·CharacterFilterBottomSheet의 로직을 그대로 승계했고,
  * 정렬 방향이 드디어 기준 옆(토글 그룹)에 위치한다. '적용' 한 번으로 정렬+필터가
  * 함께 반영된다(원칙 04: 최소 단계). 프리셋은 탭 즉시 적용·닫기(최속 경로).
+ *
+ * ## 꽂는 배선이 없다 (R-65)
+ *
+ * 종전에는 호스트가 재료·처분 **열넷**을 인스턴스에 꽂았다. 회전하면 FragmentManager가 이
+ * 시트를 **기본 생성자로 다시 세우고** 호스트는 다시 꽂지 않았다 — 시트는 빈 목록으로 멀쩡히
+ * 떠 있고 [적용]·[전체 해제]·프리셋 탭이 **아무 데도 닿지 않는다.** 눌러도 아무 일이 없으니
+ * 고장과 구분되지 않고, 사용자는 정렬·필터를 다시 잡은 것이 반영됐다고 읽는다.
+ *
+ * 그래서 배선을 되살리는 대신 **없앴다**:
+ * - **재료와 처분은 [CharacterViewModel]이 든다.** 이 시트는 `childFragmentManager`로 뜨므로
+ *   부모의 ViewModelStore가 곧 이 시트의 것이다 — 호스트와 **같은 인스턴스**를 잡는다.
+ * - **호스트만 할 수 있는 일**(프리셋 저장 창·프리셋 옵션 창)만 결과 채널로 건넨다([RESULT_KEY]).
+ * - **판마다 다른 맥락**(작품 섹션을 보이는가)은 인자 번들로 싣는다 — 번들은 회전을 넘는다.
+ *
+ * ## 고르던 것도 지킨다 (R-41)
+ *
+ * 칩은 동적으로 붙어 뷰 상태 저장이 들지 못하고, 스피너는 어댑터가 비동기라 위치 복원이
+ * 재료보다 먼저 온다. 그래서 **고르던 것**(태그·작품·값·세계관·필드)을 [onSaveInstanceState]로
+ * 들고 있다가 각 목록이 선 뒤에 되살린다 — 회전이 지키는 것은 *적용된 값*이 아니라 *고르던 것*이다.
  */
 class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
-    // ===== 정렬 (CharacterSortBottomSheet 승계) =====
-    var currentSort: CharacterSort = CharacterSort()
-    var loadSortableFields: (suspend () -> List<SortableField>)? = null
-    /** 대결 점수 정렬(B-117)이 고를 축. 비어 있으면 그 선택지가 꺼진다. */
-    var loadSortableDuelAxes: (suspend () -> List<SortableDuelAxis>)? = null
+    private val viewModel: CharacterViewModel by viewModels(ownerProducer = { requireParentFragment() })
 
-    // ===== 필터 (CharacterFilterBottomSheet 승계) =====
-    var currentTags: Set<String> = emptySet()
-    var currentNovelIds: Set<Long> = emptySet()
+    /** 지금 적용돼 있는 정렬 — 시트가 열릴 때의 출발점이다. */
+    private val currentSort: CharacterSort get() = viewModel.sortSpec.value ?: CharacterSort()
+
     /** 작품 필터 섹션 노출 여부 — 전역 목록에서만 의미(단일 작품 스코프면 중복이라 숨김). */
-    var showNovelSection: Boolean = true
-    var loadAllTags: (suspend () -> List<String>)? = null
-    var loadNovels: (suspend () -> List<Novel>)? = null
-    var loadUniverses: (suspend () -> List<Universe>)? = null
-    var loadFields: (suspend (Long) -> List<FieldDefinition>)? = null
-    var loadFieldValues: (suspend (Long) -> List<String>)? = null
-
-    /** 적용: 정렬과 필터를 한 번에 반영 (콜백 표면 = 기존 두 시트의 합집합) */
-    var onApplyAll: ((sort: CharacterSort, tags: Set<String>, novelIds: Set<Long>, fieldFilter: FieldFilter?) -> Unit)? = null
-    var onClearAllFilters: (() -> Unit)? = null
-
-    // ===== 프리셋 =====
-    /** 프래그먼트의 LiveData를 그대로 관찰 — 이름변경/삭제 후 시트가 열려 있어도 목록이 살아있게 */
-    var presetsLive: LiveData<List<CharacterListPreset>>? = null
-    var onApplyPreset: ((CharacterListPreset) -> Unit)? = null
-    var onPresetLongPress: ((CharacterListPreset) -> Unit)? = null
-    var onSavePreset: (() -> Unit)? = null
+    private val showNovelSection: Boolean get() = arguments?.getBoolean(ARG_SHOW_NOVEL_SECTION, true) ?: true
 
     private var _binding: BottomSheetCharacterControlsBinding? = null
     private val binding get() = _binding!!
+
+    /**
+     * 회전 전에 고르던 것. `null`은 *되살릴 것이 없다*는 뜻이고, 그때는 지금 적용된 값
+     * (뷰모델)이 출발점이 된다. 되살린 자리를 떠나면(세계관·필드를 바꾸면) 버린다.
+     */
+    private var pendingTags: Set<String>? = null
+    private var pendingNovelIds: Set<Long>? = null
+    private var pendingUniverseId: Long? = null
+    private var pendingFieldId: Long? = null
+    private var pendingValues: Set<String> = emptySet()
+
+    /** 시트가 출발점으로 삼는 태그 선택 — 되살릴 것이 있으면 그것이 이긴다. */
+    private val startTags: Set<String> get() = pendingTags ?: viewModel.tagFilters.value ?: emptySet()
+    private val startNovelIds: Set<Long> get() = pendingNovelIds ?: viewModel.novelFilters.value ?: emptySet()
 
     private var fields: List<SortableField> = emptyList()
     private var duelAxes: List<SortableDuelAxis> = emptyList()
@@ -81,6 +94,13 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        savedInstanceState?.let { state ->
+            state.getStringArray(STATE_TAGS)?.let { pendingTags = it.toSet() }
+            state.getLongArray(STATE_NOVEL_IDS)?.let { pendingNovelIds = it.toSet() }
+            if (state.containsKey(STATE_UNIVERSE_ID)) pendingUniverseId = state.getLong(STATE_UNIVERSE_ID)
+            if (state.containsKey(STATE_FIELD_ID)) pendingFieldId = state.getLong(STATE_FIELD_ID)
+            pendingValues = state.getStringArray(STATE_VALUES)?.toSet() ?: emptySet()
+        }
 
         setupPresets()
         setupSort()
@@ -93,7 +113,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         setupUniverseSpinner()
 
         binding.btnClearAllFilters.setOnClickListener {
-            onClearAllFilters?.invoke()
+            viewModel.clearAllFilters()
             dismiss()
         }
         binding.btnApply.setOnClickListener { applyAll() }
@@ -102,8 +122,10 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
     // ===== 프리셋 =====
 
     private fun setupPresets() {
-        binding.btnSavePreset.setOnClickListener { onSavePreset?.invoke() }
-        presetsLive?.observe(viewLifecycleOwner) { presets ->
+        // 창을 띄우는 것은 호스트의 일이다 — 시트는 *무엇을 눌렀는지*만 건넨다(R-65).
+        binding.btnSavePreset.setOnClickListener { sendAction(ACTION_SAVE_PRESET) }
+        // 뷰모델의 LiveData를 그대로 관찰 — 이름변경/삭제 후 시트가 열려 있어도 목록이 살아있다.
+        viewModel.presets.observe(viewLifecycleOwner) { presets ->
             val b = _binding ?: return@observe
             val ctx = context ?: return@observe
             b.presetChipGroupSheet.removeAllViews()
@@ -111,13 +133,21 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 b.presetChipGroupSheet.addView(Chip(ctx).apply {
                     text = p.name
                     setOnClickListener {
-                        onApplyPreset?.invoke(p)
+                        viewModel.applyPreset(p)
                         dismiss()
                     }
-                    setOnLongClickListener { onPresetLongPress?.invoke(p); true }
+                    setOnLongClickListener { sendAction(ACTION_PRESET_OPTIONS, p.id); true }
                 })
             }
         }
+    }
+
+    /** 호스트가 할 일을 결과로 건넨다 — 람다를 꽂지 않으므로 회전이 지울 배선이 없다. */
+    private fun sendAction(action: String, presetId: Long = 0L) {
+        setFragmentResult(RESULT_KEY, Bundle().apply {
+            putString(RESULT_ACTION, action)
+            if (presetId != 0L) putLong(RESULT_PRESET_ID, presetId)
+        })
     }
 
     // ===== 정렬 (CharacterSortBottomSheet 로직 승계 + 방향 토글) =====
@@ -158,7 +188,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
      */
     private fun loadSortDuelAxes() {
         viewLifecycleOwner.lifecycleScope.launch {
-            duelAxes = loadSortableDuelAxes?.invoke() ?: emptyList()
+            duelAxes = viewModel.getSortableDuelAxes()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (duelAxes.isEmpty()) {
@@ -182,7 +212,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     private fun loadSortFields() {
         viewLifecycleOwner.lifecycleScope.launch {
-            fields = loadSortableFields?.invoke() ?: emptyList()
+            fields = viewModel.getSortableFields()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (fields.isEmpty()) {
@@ -268,7 +298,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupNovels() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val novels = loadNovels?.invoke() ?: emptyList()
+            val novels = viewModel.getAllNovelsList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             novelsLoaded = true  // 로드 완료(빈 목록 포함) — 이후 apply()는 칩 상태를 신뢰할 수 있음
@@ -280,7 +310,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 text = getString(R.string.stats_no_novel_assigned)
                 tag = noneId
                 isCheckable = true
-                isChecked = noneId in currentNovelIds
+                isChecked = noneId in startNovelIds
             })
             if (novels.isEmpty()) {
                 binding.noNovelsText.visibility = View.VISIBLE
@@ -292,7 +322,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                     text = novel.title
                     tag = novel.id  // 칩 → 작품 id 매핑
                     isCheckable = true
-                    isChecked = novel.id in currentNovelIds
+                    isChecked = novel.id in startNovelIds
                 }
                 binding.novelChipGroup.addView(chip)
             }
@@ -301,7 +331,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupTags() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val tags = loadAllTags?.invoke() ?: emptyList()
+            val tags = viewModel.getAllDistinctTags()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (tags.isEmpty()) {
@@ -313,7 +343,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 val chip = Chip(ctx).apply {
                     text = tag
                     isCheckable = true
-                    isChecked = tag in currentTags
+                    isChecked = tag in startTags
                 }
                 binding.tagChipGroup.addView(chip)
             }
@@ -322,7 +352,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupUniverseSpinner() {
         viewLifecycleOwner.lifecycleScope.launch {
-            universes = loadUniverses?.invoke() ?: emptyList()
+            universes = viewModel.getScopedUniverses()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (universes.isEmpty()) {
@@ -337,11 +367,22 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             )
             binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
-                    universes.getOrNull(position)?.let { loadFieldsForUniverse(it.id) }
+                    val universe = universes.getOrNull(position) ?: return
+                    // 되살릴 자리를 떠나는 순간 들고 있던 선택을 버린다 — 안 버리면 다른
+                    // 세계관의 목록에 옛 선택이 되살아난다(같은 이름의 값이 겹칠 수 있다).
+                    if (universe.id != pendingUniverseId) {
+                        pendingUniverseId = null
+                        pendingFieldId = null
+                        pendingValues = emptySet()
+                    }
+                    loadFieldsForUniverse(universe.id)
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
-            loadFieldsForUniverse(universes[0].id)
+            // 되살리기는 **여러 번 불려도 같은 결과**여야 한다 — 스피너의 첫 선택 통지도 같은 자리를 부른다.
+            val restoreIndex = pendingUniverseId?.let { id -> universes.indexOfFirst { it.id == id } } ?: -1
+            if (restoreIndex > 0) binding.spinnerUniverse.setSelection(restoreIndex)
+            loadFieldsForUniverse(universes[restoreIndex.coerceAtLeast(0)].id)
         }
     }
 
@@ -350,7 +391,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
         fieldLoadJob?.cancel()
         valueLoadJob?.cancel()
         fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
-            filterFields = loadFields?.invoke(universeId) ?: emptyList()
+            filterFields = viewModel.getFilterableFields(universeId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (filterFields.isEmpty()) {
@@ -366,18 +407,25 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             )
             binding.spinnerField.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
-                    filterFields.getOrNull(position)?.let { loadValuesForField(it.id) }
+                    val field = filterFields.getOrNull(position) ?: return
+                    if (field.id != pendingFieldId) {
+                        pendingFieldId = null
+                        pendingValues = emptySet()
+                    }
+                    loadValuesForField(field.id)
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
-            loadValuesForField(filterFields[0].id)
+            val restoreIndex = pendingFieldId?.let { id -> filterFields.indexOfFirst { it.id == id } } ?: -1
+            if (restoreIndex > 0) binding.spinnerField.setSelection(restoreIndex)
+            loadValuesForField(filterFields[restoreIndex.coerceAtLeast(0)].id)
         }
     }
 
     private fun loadValuesForField(fieldDefId: Long) {
         valueLoadJob?.cancel()
         valueLoadJob = viewLifecycleOwner.lifecycleScope.launch {
-            fieldValues = loadFieldValues?.invoke(fieldDefId) ?: emptyList()
+            fieldValues = viewModel.getFieldValues(fieldDefId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             binding.valueChipGroup.removeAllViews()
@@ -390,7 +438,8 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 val chip = Chip(ctx).apply {
                     text = value
                     isCheckable = true
-                    isChecked = false
+                    // 회전 전에 고른 값은 그대로 골라진 채로 선다(칩은 동적이라 뷰 상태 저장이 못 든다).
+                    isChecked = value in pendingValues
                 }
                 binding.valueChipGroup.addView(chip)
             }
@@ -418,7 +467,7 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 }
             }
             ids
-        } else currentNovelIds
+        } else startNovelIds
         // 태그: 시트의 선택 상태를 통째로 반영
         val selectedTags = mutableSetOf<String>()
         for (i in 0 until binding.tagChipGroup.childCount) {
@@ -436,14 +485,68 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             FieldFilter(filterField.id, filterField.name, selectedValues, matchMode, filterField.key)
         } else null
 
-        onApplyAll?.invoke(sort, selectedTags, selectedNovelIds, filter)
+        // 처분은 곧장 뷰모델에 쓴다 — 호스트의 람다를 거치면 회전 뒤 그 람다가 없다.
+        viewModel.setSortSpec(sort)
+        viewModel.setTagFilters(selectedTags)
+        viewModel.setNovelFilters(selectedNovelIds)
+        if (filter != null) viewModel.addFieldFilter(filter)
         dismiss()
     }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val b = _binding ?: return
+        outState.putStringArray(STATE_TAGS, checkedTexts(b.tagChipGroup).toTypedArray())
+        if (showNovelSection && novelsLoaded) {
+            val ids = (0 until b.novelChipGroup.childCount)
+                .mapNotNull { b.novelChipGroup.getChildAt(it) as? Chip }
+                .filter { it.isChecked }
+                .mapNotNull { it.tag as? Long }
+            outState.putLongArray(STATE_NOVEL_IDS, ids.toLongArray())
+        }
+        universes.getOrNull(b.spinnerUniverse.selectedItemPosition)?.let {
+            outState.putLong(STATE_UNIVERSE_ID, it.id)
+        }
+        filterFields.getOrNull(b.spinnerField.selectedItemPosition)?.let {
+            outState.putLong(STATE_FIELD_ID, it.id)
+        }
+        outState.putStringArray(STATE_VALUES, checkedTexts(b.valueChipGroup).toTypedArray())
+    }
+
+    private fun checkedTexts(group: android.view.ViewGroup): List<String> =
+        (0 until group.childCount)
+            .mapNotNull { group.getChildAt(it) as? Chip }
+            .filter { it.isChecked }
+            .map { it.text.toString() }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
     }
 
-    companion object { const val TAG = "CharacterListControlsBottomSheet" }
+    companion object {
+        const val TAG = "CharacterListControlsBottomSheet"
+
+        /**
+         * 호스트가 해야 하는 일만 이 채널로 건넨다(창 띄우기 — 시트는 창의 결과를 받을 자리가 없다).
+         * 나머지 처분은 시트가 뷰모델에 곧장 쓴다.
+         */
+        const val RESULT_KEY = "character_list_controls_result"
+        const val RESULT_ACTION = "action"
+        const val RESULT_PRESET_ID = "presetId"
+        const val ACTION_SAVE_PRESET = "save_preset"
+        const val ACTION_PRESET_OPTIONS = "preset_options"
+
+        private const val ARG_SHOW_NOVEL_SECTION = "arg_show_novel_section"
+        private const val STATE_TAGS = "state_tags"
+        private const val STATE_NOVEL_IDS = "state_novel_ids"
+        private const val STATE_UNIVERSE_ID = "state_universe_id"
+        private const val STATE_FIELD_ID = "state_field_id"
+        private const val STATE_VALUES = "state_values"
+
+        /** @param showNovelSection 전역 목록에서만 참 — 단일 작품 화면에서는 중복이라 숨긴다. */
+        fun newInstance(showNovelSection: Boolean) = CharacterListControlsBottomSheet().apply {
+            arguments = Bundle().apply { putBoolean(ARG_SHOW_NOVEL_SECTION, showNovelSection) }
+        }
+    }
 }

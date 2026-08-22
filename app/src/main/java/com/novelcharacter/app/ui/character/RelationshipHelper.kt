@@ -393,13 +393,18 @@ class RelationshipHelper(
             textTargetName.visibility = View.VISIBLE
             textTargetName.text = item.otherCharacterName
 
+            // **스피너가 저장된 유형을 표현할 수 있어야 한다**(`SpinnerChoice`) — 목록에 없는
+            // 유형(엑셀로 들여온 것 · 세계관 목록에서 지운 것)이면 끼워 넣고 그 자리를 고른다.
+            // 종전에는 못 찾으면 0번에 선 채였고 [저장]이 그 자리를 그대로 읽어,
+            // **설명만 고치러 온 사용자가 관계 유형을 잃었다**(고지도 없었다).
+            val typeChoice = com.novelcharacter.app.util.SpinnerChoice
+                .resolve(typeNames.toList(), relationship.relationshipType)
             spinnerType.adapter = ArrayAdapter(
-                context, android.R.layout.simple_spinner_item, typeNames
+                context, android.R.layout.simple_spinner_item, typeChoice.items
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             // 현재 값으로 초기화
-            val currentTypeIndex = typeNames.indexOf(relationship.relationshipType)
-            if (currentTypeIndex >= 0) spinnerType.setSelection(currentTypeIndex)
+            if (typeChoice.index >= 0) spinnerType.setSelection(typeChoice.index)
             editDesc.setText(relationship.description)
             sliderIntensity.value = relationship.intensity.toFloat().coerceIn(1f, 10f)
             textIntensityValue.text = relationship.intensity.toString()
@@ -413,7 +418,8 @@ class RelationshipHelper(
                 .setTitle(getString(R.string.edit_relationship))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save)) { _, _ ->
-                    val selectedType = typeNames[spinnerType.selectedItemPosition]
+                    val selectedType = typeChoice.items.getOrNull(spinnerType.selectedItemPosition)
+                        ?: relationship.relationshipType
                     val desc = editDesc.text.toString().trim()
                     val intensity = sliderIntensity.value.toInt()
                     val bidirectional = checkBidirectional.isChecked
@@ -570,28 +576,36 @@ class RelationshipHelper(
             val checkBi = dialogView.findViewById<MaterialCheckBox>(R.id.checkChangeBidirectional)
             val spinnerEvent = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerLinkedEvent)
 
-            spinnerType.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, typeNames)
+            // 유형 — 관계 편집 창과 같은 규칙(목록에 없는 유형도 표현한다).
+            val typeChoice = com.novelcharacter.app.util.SpinnerChoice
+                .resolve(typeNames.toList(), change.relationshipType)
+            spinnerType.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, typeChoice.items)
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
-            val eventLabels = mutableListOf(getString(R.string.rel_change_no_event))
-            events.forEach { eventLabels.add("${it.description} (${it.year}년)") }
+            // 사건 — **id가 진실이고 라벨은 그 옆에 선다.** 위치 산수(`idx - 1`)로 읽던 종전
+            // 코드는 *스피너가 못 그린 것*과 *사용자가 '없음'을 고른 것*을 같은 값으로 만들었다:
+            // 연결된 사건이 이 작품 밖이면(캐릭터의 작품이 바뀌었거나 다른 작품의 사건이면)
+            // 목록에 없어 0번에 선 채였고, [저장]이 그 자리를 읽어 **손대지 않은 연결을 끊었다.**
+            val eventChoice = com.novelcharacter.app.util.SpinnerChoice
+                .resolve(listOf<Long?>(null) + events.map { it.id }, change.eventId)
+            val eventLabels = eventChoice.items.map { id ->
+                if (id == null) getString(R.string.rel_change_no_event)
+                else events.firstOrNull { it.id == id }?.let { "${it.description} (${it.year}년)" }
+                    ?: getFormattedString(R.string.rel_change_event_outside, arrayOf(id))
+            }
             spinnerEvent.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, eventLabels)
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             // 기존 값 세팅
             editYear.setText(change.year.toString())
-            val typeIdx = typeNames.indexOf(change.relationshipType)
-            if (typeIdx >= 0) spinnerType.setSelection(typeIdx)
+            if (typeChoice.index >= 0) spinnerType.setSelection(typeChoice.index)
             editDesc.setText(change.description)
             slider.value = change.intensity.toFloat().coerceIn(1f, 10f)
             textValue.text = change.intensity.toString()
             checkBi.isChecked = change.isBidirectional
 
-            // 연결된 사건 선택
-            if (change.eventId != null) {
-                val eventIdx = events.indexOfFirst { it.id == change.eventId }
-                if (eventIdx >= 0) spinnerEvent.setSelection(eventIdx + 1)
-            }
+            // 연결된 사건 선택 — 목록 밖 사건이면 위에서 끼워 넣은 자리다.
+            if (eventChoice.index >= 0) spinnerEvent.setSelection(eventChoice.index)
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
 
@@ -600,19 +614,22 @@ class RelationshipHelper(
                 .setTitle(getString(R.string.edit_relationship_change))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save), null)
+                // 편집창의 중립 [삭제]도 한 단계를 더 거친다 — 이 삭제는 휴지통을 지나지
+                // 않으므로 즉시 삭제는 되돌릴 길이 없다(형제 자리 `DuelMatchesFragment`와 같은 모양).
                 .setNeutralButton(getString(R.string.delete)) { _, _ ->
-                    viewModel.deleteRelationshipChange(change)
+                    confirmDeleteRelationshipChange(change)
                 }
                 .setNegativeButton(getString(R.string.cancel), null)
                 .create()
             dialog.setValidatedPositiveButton {
                 val year = validateChangeYear(editYear, layoutYear) ?: return@setValidatedPositiveButton false
-                val type = typeNames[spinnerType.selectedItemPosition]
+                val type = typeChoice.items.getOrNull(spinnerType.selectedItemPosition)
+                    ?: change.relationshipType
                 val desc = editDesc.text.toString().trim()
                 val intensity = slider.value.toInt()
                 val bidirectional = checkBi.isChecked
-                val eventIdx = spinnerEvent.selectedItemPosition
-                val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
+                // 고른 자리가 곧 id다 — 산수로 되짚지 않는다(0번이 `null` = 없음).
+                val eventId = eventChoice.items.getOrNull(spinnerEvent.selectedItemPosition)
 
                 viewModel.updateRelationshipChange(
                     change.copy(
@@ -630,16 +647,49 @@ class RelationshipHelper(
         }
     }
 
-    private fun confirmDeleteRelationship(item: RelationshipDisplayItem) {
+    /**
+     * 관계 변화 하나를 지우기 전 확인 — **저장소에서 이 삭제만 확인 없이 즉시 돌고 있었다.**
+     * 휴지통을 지나지 않는 삭제라 되돌릴 길이 없으므로, 그 사실을 말하는 것이 R-4다.
+     */
+    private fun confirmDeleteRelationshipChange(change: CharacterRelationshipChange) {
         val context = try { contextGetter() } catch (_: Exception) { return }
         MaterialAlertDialogBuilder(context)
             .setIcon(R.drawable.ic_warning)
-            .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
-            .setMessage(getString(R.string.confirm_delete_relationship))
+            .setTitle(getString(R.string.rel_change_delete_title))
+            .setMessage(getString(R.string.rel_change_delete_confirm))
             .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                viewModel.deleteRelationshipById(item.relationshipId)
+                viewModel.deleteRelationshipChange(change)
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+    }
+
+    /**
+     * 관계 삭제 확인 — **함께 사라지는 것을 센 뒤에 묻는다** (R-4).
+     *
+     * 관계를 지우면 그 관계에 쌓인 관계 변화가 CASCADE로 함께 사라지는데 종전 문구는
+     * 그것도, 휴지통을 지나지 않는다는 것도 말하지 않았다. 세는 장치는 이 파일이
+     * 이미 `showRelationshipChangesDialog`에서 쓰는 그것이다.
+     */
+    private fun confirmDeleteRelationship(item: RelationshipDisplayItem) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val changeCount = viewModel.getRelationshipChangesList(item.relationshipId).size
+            // 컨텍스트는 **정지점 뒤에** 잡는다 — 기다리는 사이에 화면이 사라질 수 있다.
+            val context = try { contextGetter() } catch (_: Exception) { return@launch }
+            val message = if (changeCount > 0) {
+                getFormattedString(R.string.confirm_delete_relationship_changes, arrayOf(changeCount))
+            } else {
+                getString(R.string.confirm_delete_relationship)
+            }
+            MaterialAlertDialogBuilder(context)
+                .setIcon(R.drawable.ic_warning)
+                .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
+                .setMessage(message)
+                .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                    viewModel.deleteRelationshipById(item.relationshipId)
+                }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+        }
     }
 }

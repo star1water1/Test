@@ -11,8 +11,11 @@ import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.FactionSnapshot
+import com.novelcharacter.app.data.model.FieldDataSnapshot
 import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldDefinitionSnapshot
+import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.model.GradeSystemSnapshot
 import com.novelcharacter.app.data.model.Novel
@@ -396,6 +399,93 @@ class EntitySnapshotPayloadTest {
         assertTrue(
             TrashSnapshot.restorePriority("unknown_future_type") >
                 TrashSnapshot.restorePriority(TrashSnapshot.TYPE_STATE_CHANGE)
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 필드 정의 삭제 백업 — 정의 한 행 + 데이터 이어붙임 행
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `필드 삭제 백업은 정의와 규모를 담고 왕복한다`() {
+        val original = FieldDefinitionSnapshot(
+            deletedField = FieldDefinition(
+                id = 12, universeId = 3, key = "mana", name = "마나", type = "NUMBER"
+            ),
+            universeCode = "UNI-1",
+            sourceName = "마나",
+            refs = EntityRefs(universeCode = "UNI-1"),
+            deletedValueCount = 40,
+            deletedEntryCount = 7,
+            deletedStateChangeCount = 5
+        )
+        val back = gson.fromJson(gson.toJson(original), FieldDefinitionSnapshot::class.java)
+        assertEquals("mana", back.deletedField?.key)
+        assertEquals(40, back.deletedValueCount)
+        assertEquals(7, back.deletedEntryCount)
+        assertEquals(5, back.deletedStateChangeCount)
+        // 덮어쓰기 갈래의 칸은 비어 있다 — 두 갈래가 한 타입을 쓰지만 담는 것이 다르다.
+        assertNull(back.fields)
+    }
+
+    @Test
+    fun `덮어쓰기 백업 구버전 payload에는 삭제 칸이 없다`() {
+        // 이 판 이전에 만들어진 스냅샷에는 `deletedField` 키가 아예 없다 — Gson은 그 자리에
+        // null을 주입하고, 읽는 쪽은 그것으로 **덮어쓰기 갈래**임을 안다(R-2).
+        val json = """{"fields": [{"id": 12, "universeId": 3, "key": "mana", "name": "마나",
+                       "type": "NUMBER", "config": "{}", "groupName": "기본 정보",
+                       "displayOrder": 0, "isRequired": false, "entityType": "character"}],
+                       "universeCode": "UNI-1", "sourceName": "프리셋"}"""
+        val back = gson.fromJson(json, FieldDefinitionSnapshot::class.java)
+        assertNull(back.deletedField)
+        assertEquals(1, back.fields?.size)
+        // 수 칸도 없다 — Int는 null이 될 수 없어 Gson이 0을 남긴다.
+        assertEquals(0, back.deletedValueCount)
+    }
+
+    @Test
+    fun `필드 데이터 이어붙임 행은 자연키와 주인 코드를 담고 왕복한다`() {
+        val original = FieldDataSnapshot(
+            fieldKey = "mana",
+            entityType = FieldDefinition.ENTITY_CHARACTER,
+            universeCode = "UNI-1",
+            fieldName = "마나",
+            characterValues = listOf(
+                CharacterFieldValue(id = 1, characterId = 88, fieldDefinitionId = 12, value = "높음")
+            ),
+            entries = listOf(
+                FieldValueEntry(id = 2, fieldDefinitionId = 12, value = "높음")
+            ),
+            stateChanges = listOf(
+                CharacterStateChange(
+                    id = 3, characterId = 88, year = 1200, fieldKey = "mana", newValue = "낮음"
+                )
+            ),
+            refs = EntityRefs(universeCode = "UNI-1", characters = mapOf("88" to "CHR-88"))
+        )
+        val back = gson.fromJson(gson.toJson(original), FieldDataSnapshot::class.java)
+        assertEquals("mana", back.fieldKey)
+        assertEquals("CHR-88", back.refs?.characters?.get("88"))
+        assertEquals(1, back.characterValues?.size)
+        assertEquals(1, back.entries?.size)
+        assertEquals(1, back.stateChanges?.size)
+        // 담지 않은 목록은 null이다 — 읽는 쪽이 orEmpty()로 받아야 한다(R-2).
+        assertNull(back.eventValues)
+        assertNull(back.novelValues)
+    }
+
+    @Test
+    fun `필드 데이터는 자기 정의보다 나중에 복원된다`() {
+        // 값은 정의가 선 뒤에야 붙을 자리가 있다 — 순서가 뒤집히면 조각 전체가 막힌다.
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_FIELD_DATA) >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_FIELD_DEFINITION)
+        )
+        // 그리고 캐릭터·사건보다는 **먼저**다 — 값의 주인은 지워지지 않았으므로 기다릴 것이 없고,
+        // 정의 계층을 먼저 세우는 것이 이 표의 규약이다.
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_FIELD_DATA) <
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_CHARACTER)
         )
     }
 

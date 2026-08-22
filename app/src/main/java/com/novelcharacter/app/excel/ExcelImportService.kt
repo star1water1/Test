@@ -33,6 +33,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.CalculatedCellEcho
+import com.novelcharacter.app.util.stringOr
 import com.novelcharacter.app.util.CharacterValueLedger
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
@@ -346,6 +347,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
+
+    /**
+     * 이 가져오기가 **빈 셀로 지운** 시맨틱 역할 필드 (캐릭터 id → 필드 id들).
+     *
+     * 빈 셀은 값 삭제이고(F1-A 규칙 가), 그러면 그 값에서 파생된 `__birth`·`__death`도
+     * 함께 정리돼야 한다 — 안 그러면 생일을 지운 파일을 들여도 알림이 계속 울린다
+     * (개발 의도 4번 — 내보내기 → 빈 칸 → 들이기가 비움을 반영해야 한다).
+     * 값 목록만으로는 *지워짐*을 볼 수 없으므로 지운 자리에서 세어 둔다.
+     */
+    private val pendingSyncClearedFields = mutableMapOf<Long, MutableSet<Long>>()
 
     // 이 임포트가 쓰는 단 하나의 휴지통 저장소 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다.
     // **인스턴스를 공유해야 한다**: 정리는 "이 작업이 방금 만든 스냅샷"을 보호하는데,
@@ -693,6 +704,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         novelIdCache.clear()
         novelUniverseCache.clear()
         pendingSyncCharacters.clear()
+        pendingSyncClearedFields.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
@@ -3206,7 +3218,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
-        val valueCol = cols["값"] ?: 4
+        // 가져오기와 **같은 판정**이다(R-33) — '값' 열이 없으면 그쪽이 시트를 건너뛰므로
+        // 여기서 위치 폴백으로 세면 미리보기만 있지도 않을 건수를 말한다.
+        val valueCol = cols["값"]
+            ?: return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
         val labelCol = cols["표시라벨"] ?: -1
         // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
         // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
@@ -3694,6 +3709,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val columnPlan = if (fieldValues == null) emptyMap() else CharacterFieldColumns.plan(
             readHeaderCells(headerRow),
             planFields,
+            // 기대 헤더 표는 **열을 그린 그 함수**가 낸다 — 미리보기와 쓰기가 같은 표를 본다(R-33).
+            CharacterFieldHeaders.expectedHeaders(planFields),
             (CHARACTER_FIXED_HEADERS.mapNotNull { cols[it] } + c.name).filter { it >= 0 }.toSet(),
             CHARACTER_FIXED_HEADERS,
             hasUniverse = universeId != null,
@@ -3715,7 +3732,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          * [charId]가 null이면 확정되지 않은 행(동명이인 충돌)이라 값이 든 칸만 '건너뜀'이다:
          * 사용자가 충돌을 어떻게 정하느냐에 따라 결과가 갈리므로 약속하지 않는다.
          */
-        fun countFieldColumns(row: Row, charId: Long?) {
+        fun countFieldColumns(row: Row, charId: Long?, createdHere: Boolean = false) {
             val scan = fieldValues ?: return
             // **세계관을 옮기는 캐릭터도 미정이다**(B-253) — 가져오기가 이 칸들을 쓰기는 하지만
             // 그 직후 값을 새 세계관 필드로 전량 재매핑하므로, `(소유자, 필드)` 짝 위에서 내린
@@ -3725,11 +3742,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 계산 열 판정의 재료 — **열 루프에 들어가기 전에 굳힌다**(가져오기 쪽과 같은
             // 이유·같은 순서. 종전 `by lazy`는 같은 루프의 `scan.count`가 이미 갱신한 겹을
             // 읽어, 미리보기와 가져오기가 서로 다른 재료를 볼 수도 있었다 — R-33의 결).
-            val storedByKey: Map<String, String> =
-                if (!planHasCalculatedColumn || decided == null) emptyMap()
-                else planFields.asSequence()
+            //
+            // **이 행이 캐릭터를 만드는 경우는 재료를 행에서 짓는다** — 가져오기가 같은
+            // 자리에서 하는 것과 글자 그대로 같다(R-33). 새 소유자에게는 저장된 값이 없어
+            // 재료가 통째로 비고, 그러면 수식이 재료 없이 평가돼 셀과 어긋난다.
+            //
+            // **`decided < 0`(미리보기 임시 id)으로 추론하지 않는다** — 같은 파일의 뒤 행이
+            // 앞 행이 만든 캐릭터를 가리킬 때 가져오기 쪽은 그것을 *기존*으로 보고 장부값을
+            // 쓰므로, 음수 id로 가르면 그 자리에서 미리보기와 가져오기가 갈린다.
+            val storedByKey: Map<String, String> = when {
+                !planHasCalculatedColumn -> emptyMap()
+                createdHere -> CalculatedCellEcho.materialsFromRow(
+                    columnPlan.mapNotNull { (col, outcome) ->
+                        (outcome as? ColumnFieldOutcome.Matched)?.let { it.field to getCellString(row, col) }
+                    }
+                )
+                decided == null -> emptyMap()
+                else -> planFields.asSequence()
                     .mapNotNull { f -> scan.stored(decided, f.id)?.let { f.key to it } }
                     .toMap()
+            }
             for ((col, outcome) in columnPlan) {
                 val cellValue = getCellString(row, col)
                 when (outcome) {
@@ -3843,11 +3875,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelId = novelByCode(r.novelCode)?.id
                     ?: (if (r.novelTitle.isNotBlank()) analysisNovelIdByTitle(r.novelTitle) else null)
                 val byName = if (novelId != null) characterByNameAndNovel(name, novelId) else characterByName(name)
-                countFieldColumns(
-                    row,
-                    if (byName != null) countAgainst(byName, r, i)
+                val byNameId = if (byName != null) countAgainst(byName, r, i)
                     else { newCount++; rememberCreated(r, i) }
-                )
+                countFieldColumns(row, byNameId, createdHere = byName == null)
             } else {
                 // 코드 없음: 이름 기반 매칭 — 동명이인 충돌 가능
                 val allMatches = charactersByName(name)
@@ -3863,12 +3893,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 가르는 축이다.
                 val dbMatches = allMatches.filter { it.id > 0 }
                 if (dbMatches.isEmpty()) {
-                    val createdHere = allMatches.firstOrNull()
-                    countFieldColumns(
-                        row,
-                        if (createdHere != null) countAgainst(createdHere, r, i)
+                    val madeByThisFile = allMatches.firstOrNull()
+                    val rowCharId = if (madeByThisFile != null) countAgainst(madeByThisFile, r, i)
                         else { newCount++; rememberCreated(r, i) }
-                    )
+                    countFieldColumns(row, rowCharId, createdHere = madeByThisFile == null)
                 } else if (dbMatches.size == 1) {
                     countFieldColumns(row, countAgainst(dbMatches[0], r, i))
                 } else {
@@ -4503,11 +4531,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
 
-            // 실제 임포트와 동일한 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백
-            val byCode = if (r.relCode.isNotBlank()) rels.byCode.first(r.relCode) else null
-            // 쌍으로 바로 받는다 — 가져오기와 **글자 그대로 같은 두 줄**이다(R-33).
-            val existing = byCode
-                ?: rels.pair(char1.id, char2.id).find { it.relationshipType == r.relationshipType }
+            // 매칭은 가져오기와 **같은 함수**다(R-33·R-53) — 코드 우선 → 자연키 폴백이되,
+            // 코드가 다른 쌍을 가리키면 이 행의 것이 아니다(그러면 여기서도 '새로 만듦'으로 센다).
+            val match = rels.matchRow(r.relCode, char1.id, char2.id, r.relationshipType)
+            val existing = match.existing
             if (existing == null) {
                 newCount++
                 // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
@@ -4515,7 +4542,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 rels.remember(
                     newRelationshipFrom(
                         r, char1.id, char2.id, factionId, i, now,
-                        r.relCode
+                        // 가져오기와 같은 갈래 — 남이 든 코드는 새 관계가 물려받지 못한다.
+                        r.relCode.takeIf { match.canReuseFileCode }.orEmpty()
                     ).copy(id = previewIds.mint())
                 )
                 continue
@@ -5764,6 +5792,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.key.isBlank() && r.name.isBlank()) continue
             total++
             if (r.key.isBlank() || r.name.isBlank()) { skipped++; continue }
+            // 게이트는 가져오기와 **같은 함수**다(R-33) — 미리보기가 예고한 수와 실제가 갈리면
+            // 그 자체가 결함이다.
+            if (r.type != null && !isKnownFieldType(r.type)) { skipped++; continue }
             // 해석 사다리는 가져오기와 **같은 함수**다(코드 → 자리). 앞 행이 만든 것은 색인에
             // 실려 있어 자연히 먼저 잡힌다.
             val existing = templates.resolve(r.code, r.entityType, r.key)
@@ -5834,6 +5865,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.key.isBlank() || r.name.isBlank()) {
                 result.skippedRows++
                 result.errors.add("기본 필드 행 ${excelRow(i)}: 필드키·필드명은 필수입니다")
+                continue
+            }
+            // **타입 게이트** — 짝인 '필드 정의' 시트가 이미 갖고 있던 것이 이 시트에만 없었다.
+            // 두 시트는 같은 어휘를 쓴다(같은 드롭다운·같은 필수 표식 — 시험이 그 동일성을
+            // 못박는다). 모르는 글자가 통과하면 그것이 **템플릿**에 들어가고, 템플릿은
+            // 세계관을 만들 때마다 자동으로 심기므로 **이후 만들어지는 모든 세계관**에
+            // 물질화된다. 그 뒤로는 폼이 맨 텍스트로 그리고, 값 라이브러리에서 빠지고,
+            // 다시 내보낸 파일을 신규 기기에서 들이면 '필드 정의' 게이트가 그 행을 통째로
+            // 건너뛴다 — 왕복이 비대칭이 된다(개발 의도 4번).
+            // `null`은 *파일이 말하지 않았다*이고 그때는 종전 그대로다(새 행은 TEXT, 기존 행은
+            // 그 값을 유지) — **없는 열과 틀린 값은 다르다**(R-36). 말했는데 모르는 글자일 때만 막는다.
+            val declaredType = r.type
+            if (declaredType != null && !isKnownFieldType(declaredType)) {
+                result.skippedRows++
+                result.errors.add(unknownFieldTypeMessage("기본 필드 행 ${excelRow(i)}", declaredType))
                 continue
             }
             val existing = templates.resolve(r.code, r.entityType, r.key)
@@ -6273,7 +6319,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return
         }
         val repository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
-        val stale = existing.filter { it.id !in matchedGradeSystemIds }
+        // **구역 근거를 필드 정의와 같은 함수로 묻는다**(`ScopedPrune`). 종전에는 전 세계관의
+        // 체계를 떠서 매칭되지 않은 것을 전부 지웠다 — 세계관 하나만 담긴 부분 백업을
+        // 덮어쓰기로 들이면 **말한 적도 없는 다른 세계관의 등급 체계가 통째로 사라졌다**
+        // (참조하던 필드는 독자 표로 강등되어, 되돌리려면 표를 손으로 다시 만들어야 한다).
+        // 바로 아래 필드 정의 정리는 B-130 이후 이미 이 판정을 쓰고 있었고, 그 짝만 빠져 있었다.
+        val pruned = ScopedPrune.plan(
+            existing, matchedGradeSystemIds, idOf = { it.id }, scopeOf = { it.universeId }
+        )
+        val stale = pruned.stale
         var demoted = 0
         for (system in stale) {
             for (field in repository.referencingFields(system)) {
@@ -6290,6 +6344,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val more = if (stale.size > 5) " 외 ${stale.size - 5}개" else ""
             val demotedNote = if (demoted > 0) " — 참조하던 필드 ${demoted}개는 독자 등급 표로 전환했습니다(표 내용은 그대로)" else ""
             result.warnings.add("덮어쓰기: 백업에 없는 등급 체계 ${stale.size}개($names$more)를 삭제했습니다$demotedNote")
+        }
+        // 남긴 것도 반드시 알린다 — 필드 정의 정리와 같은 결(조용히 남기면 그 세계관만 옛
+        // 체계가 살아 있는 상태를 일일이 확인해야만 알게 된다).
+        if (pruned.protectedItems.isNotEmpty()) {
+            val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+            val scopeLabels = pruned.protectedItems.map { it.universeId }.distinct()
+                .joinToString(", ") { universeNames[it] ?: "세계관 #$it" }
+            result.warnings.add(
+                "덮어쓰기: '${spec.sheetName}' 시트가 다루지 않은 세계관($scopeLabels)의 등급 체계 " +
+                "${pruned.protectedItems.size}개는 삭제하지 않고 유지했습니다 — 그 세계관의 행이 " +
+                "백업에 하나도 없어 '지워라'인지 '말한 바 없음'인지 가릴 수 없습니다"
+            )
         }
     }
 
@@ -6352,9 +6418,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.errors.add("필드 정의 행 ${excelRow(i)}: 필드 타입이 비어 있음 (허용: ${FieldType.entries.joinToString { it.name }})")
                     continue
                 }
-                if (FieldType.fromName(type) == null) {
+                if (!isKnownFieldType(type)) {
                     result.skippedRows++
-                    result.errors.add("필드 정의 행 ${excelRow(i)}: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})")
+                    result.errors.add(unknownFieldTypeMessage("필드 정의 행 ${excelRow(i)}", type))
                     continue
                 }
                 // F4: 설정(JSON)이 손상(절단·구문 오류)됐으면 조용히 넘기지 않고 경고 (필드 동작 무력화 방지)
@@ -6485,6 +6551,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             "수식이 서로 돌아옵니다(${problem.path.joinToString(" → ")})"
         is FormulaValidator.Problem.UnknownKeys ->
             "이 세계관에 없는 필드 키 ${problem.keys.joinToString(", ")} (그 자리는 0으로 계산됩니다)"
+        is FormulaValidator.Problem.NonNumericKeys ->
+            "${problem.keys.joinToString(", ")} 필드는 값이 수로 읽힌다는 보장이 없습니다 " +
+                "(글자가 들어 있으면 그 자리는 0으로 계산됩니다)"
         is FormulaValidator.Problem.PaddedKeys ->
             "필드 키 앞뒤의 공백까지 이름으로 읽습니다: ${problem.keys.joinToString(", ")}"
         is FormulaValidator.Problem.UnknownFunctions ->
@@ -6612,21 +6681,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 구역(세계관/전역)마다 매칭 근거를 따로 본다 — 판정의 단일 소스는 순수 로직이다.
         // '백업에 없다'와 '백업이 그 구역을 말하지 않았다'를 가르지 않으면, 시트가 다루지도
         // 않은 구역의 정의가 값과 함께 CASCADE로 사라진다(B-130).
+        // **`대상` 열이 없으면 그 파일은 캐릭터 외의 종류를 말하지 않은 것이다**(R-36) —
+        // 모든 행이 캐릭터로 읽히므로 사건·작품 정의는 원리적으로 매칭될 수 없다.
+        // 그때까지 세계관 하나를 구역으로 보면, 캐릭터 행이 매칭됐다는 이유로 그 세계관의
+        // 사건·작품 정의가 값과 함께 CASCADE로 사라진다.
+        val entityTypeStated = resolveHeaderColumns(header.row).containsKey("대상")
         val outcome = FieldDefinitionPrune.plan(
-            db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds
+            db.fieldDefinitionDao().getAllFieldsAllTypes(), matchedFieldDefinitionIds, entityTypeStated
         )
-        for (field in outcome.stale) db.fieldDefinitionDao().delete(field)
+        // 인앱 삭제와 **같은 함수**로 지운다 — 그래야 휴지통 스냅샷과 이력 손질 범위가
+        // 한 벌이 된다(R-33). 종전에는 여기만 DAO를 직접 불러 값·엔트리·이력이
+        // 아무 고지도 없이 영구 소멸했다.
+        val fieldTrash = trashForImport()
+        val fieldRepository = UniverseRepository(
+            db, db.universeDao(), db.fieldDefinitionDao(), db.novelDao()
+        )
+        for (field in outcome.stale) {
+            fieldRepository.deleteField(field, fieldTrash)
+        }
         if (outcome.stale.isNotEmpty()) {
             val names = outcome.stale.take(5).joinToString(", ") { it.name }
             val more = if (outcome.stale.size > 5) " 외 ${outcome.stale.size - 5}개" else ""
-            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${outcome.stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 의도한 것이 아니면 삭제 전 백업으로 되돌리세요")
+            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${outcome.stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
         }
         // 남긴 것도 반드시 알린다 — 조용히 남기면 사용자는 덮어쓰기가 끝난 줄 알고,
         // 그 구역만 옛 정의가 살아 있는 상태를 일일이 확인해야만 알게 된다(원칙 04).
         if (outcome.protectedFields.isNotEmpty()) {
             val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
-            val scopeLabels = outcome.protectedScopes.joinToString(", ") { scopeId ->
-                if (scopeId == null) FieldScopeCell.GLOBAL_LABEL else universeNames[scopeId] ?: "세계관 #$scopeId"
+            // 구역은 (세계관, 종류)다 — **어느 종류가 남았는지도 말한다**(그 자리를 찾아가야 한다).
+            val scopeLabels = outcome.protectedScopes.joinToString(", ") { (scopeId, entityType) ->
+                val universeLabel =
+                    if (scopeId == null) FieldScopeCell.GLOBAL_LABEL else universeNames[scopeId] ?: "세계관 #$scopeId"
+                // 종류는 그것이 구역의 일부일 때만 붙는다(`대상` 열이 없던 파일).
+                if (entityType == null) universeLabel
+                else "$universeLabel·${FieldValueSheetMapper.entityLabel(entityType)}"
             }
             result.warnings.add(
                 "덮어쓰기: '${spec.sheetName}' 시트가 다루지 않은 구역($scopeLabels)의 필드 정의 " +
@@ -6649,7 +6737,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
-        val valueCol = cols["값"] ?: 4
+        // **'값'에는 위치 폴백을 두지 않는다** — 이 열이 엔트리의 정체다.
+        // 종전 `?: 4`는 그 열을 지운 파일에서 4번 자리에 있던 '표시라벨'을 값으로 읽어,
+        // 코드로 매칭된 기존 엔트리의 값을 **라벨로 갈아 끼웠다**(그 값을 참조하던 캐릭터
+        // 필드값이 그 순간 라이브러리에서 미아가 된다). 없으면 소리 내어 건너뛴다.
+        val valueCol = requiredCol(cols, "값", sheet.sheetName, result) ?: return
         val labelCol = cols["표시라벨"] ?: -1
         // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
         // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
@@ -7623,11 +7715,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 결과: 엑셀에서 **입력 열만 고친** 정상 왕복이 계산 열마다 거짓 경고와
                 // '건너뜀'을 냈다 — 이 판정이 없애려던 잡음을 자기가 만들었고, 하필
                 // *"내보내기 → 엑셀에서 수치 편집 → 들이기"*라는 가장 흔한 경로다.
-                val storedByKey: Map<String, String> =
-                    if (!sheetHasCalculatedColumn) emptyMap()
-                    else fields.asSequence()
+                //
+                // **이 행이 캐릭터를 만드는 경우는 재료를 행에서 짓는다**: 새 소유자에게는
+                // 저장된 값이 없어 재료가 통째로 비고, 그러면 수식이 재료 없이 평가돼 셀과
+                // 어긋난다 — 아무것도 안 고친 파일에서도 **새 캐릭터 행마다** 거짓 경고가
+                // 났다(빈 DB 복원이면 전 행이 그렇다). 그 행에서는 내보낸 기기의 저장값이
+                // 곧 이 행의 입력 칸이다([CalculatedCellEcho.materialsFromRow]).
+                val storedByKey: Map<String, String> = when {
+                    !sheetHasCalculatedColumn -> emptyMap()
+                    existingChar == null -> CalculatedCellEcho.materialsFromRow(
+                        columnFieldMap.map { (ci, f) -> f to getCellString(row, ci) }
+                    )
+                    else -> fields.asSequence()
                         .mapNotNull { f -> valueLedger.get(charId, f.id)?.value?.let { f.key to it } }
                         .toMap()
+                }
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
@@ -7714,6 +7816,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.characterFieldValueDao().deleteValue(charId, field.id)
                             valueLedger.remove(charId, field.id)
                             result.clearedFields++
+                            // 역할 필드를 지웠으면 파생 이력도 정리 대상이다 — 값 목록만으로는
+                            // *지워짐*을 볼 수 없어 여기서 세어 둔다.
+                            if (SemanticRole.fromConfig(field.config) != null) {
+                                pendingSyncClearedFields.getOrPut(charId) { mutableSetOf() }.add(field.id)
+                                hasSemanticField = true
+                            }
                         }
                         FieldValueCellEffect.NONE -> Unit
                     }
@@ -8472,18 +8580,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 val factionId = resolvedFaction?.id
 
-                // 쌍으로 바로 받는다 — 종전에는 캐릭터1의 관계 **전부**를 읽어 여기서 걸렀다.
-                val pairRels = rels.pair(char1.id, char2.id)
-                // 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.
-                // 코드로 잡히면 '관계 유형' 편집이 rename으로 인식되어 관계가 분열하지 않는다.
+                // 매칭 규약은 **미리보기와 같은 함수**가 든다(R-33·R-53) — 코드(안정 식별자)
+                // 우선 → 자연키(쌍+유형) 폴백이되, **코드가 이 행과 같은 두 사람의 것일 때만** 따른다.
                 val relCode = rv.relCode
-                val byCode = if (relCode.isNotBlank()) rels.byCode.first(relCode) else null
-                if (relCode.isNotBlank() && byCode == null) {
+                val match = rels.matchRow(relCode, char1.id, char2.id, relationshipType)
+                if (relCode.isNotBlank() && match.existing == null && match.codeOfOtherPair == null) {
                     result.warnings.add("관계 행 ${excelRow(i)}: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
                 }
-                val existing = byCode ?: pairRels.find { it.relationshipType == relationshipType }
-                if (byCode != null && byCode.relationshipType != relationshipType) {
-                    result.warnings.add("관계 행 ${excelRow(i)}: '${char1Name}'–'${char2Name}' 관계 유형을 '${byCode.relationshipType}' → '$relationshipType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
+                match.codeOfOtherPair?.let { other ->
+                    // **행을 복사하면 회색 '코드' 칸이 따라온다** — 그 코드를 따르면 남의 관계가
+                    // 이 행의 값으로 덮이고 이 행이 말한 관계는 만들어지지 않는다(둘 다 말이 없다).
+                    val otherPair = listOfNotNull(
+                        db.characterDao().getCharacterById(other.characterId1)?.name,
+                        db.characterDao().getCharacterById(other.characterId2)?.name
+                    ).joinToString("–").ifBlank { "다른 두 사람" }
+                    result.warnings.add("관계 행 ${excelRow(i)}: 코드 '$relCode'는 '$otherPair'의 관계를 가리켜 이 행에는 쓰지 않았습니다 — 행을 복사했다면 '코드' 칸을 비우세요 (이 행은 '${char1Name}'–'${char2Name}'의 관계로 처리합니다)")
+                }
+                val existing = match.existing
+                if (existing != null && relCode.isNotBlank() && match.codeOfOtherPair == null &&
+                    existing.relationshipType != relationshipType) {
+                    result.warnings.add("관계 행 ${excelRow(i)}: '${char1Name}'–'${char2Name}' 관계 유형을 '${existing.relationshipType}' → '$relationshipType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
                 }
 
                 if (existing != null) {
@@ -8511,8 +8627,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (rc.relCode < 0) touchedPairs.putIfAbsent(setOf(char1.id, char2.id), i to "${char1Name}–${char2Name}")
                     val newRelationship = newRelationshipFrom(
                         rv, char1.id, char2.id, factionId, i, nowMillis,
-                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
-                        code = relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
+                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성).
+                        // **남이 이미 든 코드는 못 쓴다** — 코드 열이 유니크라 넣기 자체가 실패한다.
+                        code = relCode.takeIf { it.isNotBlank() && match.canReuseFileCode }
+                            ?: generateEntityCode()
                     )
                     val newId = db.characterRelationshipDao().insert(newRelationship)
                     // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
@@ -9554,6 +9672,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 그 둘이 갈려 있던 자리다. 개발 의도 2번 — 거짓 고지 금지).
                 val insertedIds = db.characterRelationshipDao().insertAll(newRelationships)
                 val ignored = insertedIds.count { it == -1L }
+                // **방금 만든 것은 '엑셀에 없는 관계'가 아니다** — 등재하지 않으면 같은
+                // 가져오기의 정리('엑셀에 없는 관계 삭제')가 곧바로 도로 지우고, 결과 창은
+                // "자동 관계 N건을 생성했습니다"와 "삭제: 관계 N"을 **동시에** 말한다.
+                // 이 관계의 근거는 관계 시트가 아니라 **세력 소속 시트**이므로, 관계 시트가
+                // 그 쌍을 기술하지 않은 것이 '지워라'가 아니다(같은 파일이 방금 만들라고 했다).
+                matchedRelationshipIds.addAll(insertedIds.filter { it != -1L })
                 created += insertedIds.size - ignored
                 skippedByConflict += ignored
             }
@@ -9978,6 +10102,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCode: String,
         val targetType: String,
         /**
+         * '대상' 칸에 **못 알아본 글자**가 적혀 있었다(빈 칸은 여기 오지 않는다).
+         * 값은 기본값(캐릭터)으로 이어 가고 가져오기가 경고 한 줄을 낸다 —
+         * 이 열은 축의 정체라 잘못 굳으면 되돌릴 길이 없다(`DuelSheetLabels.targetTypeOrNull`).
+         */
+        val unknownTargetLabel: String? = null,
+        /**
          * 필드 연결 셋. **null은 "그 열이 파일에 없다"**이고 `"[]"`는 *"열은 있는데 비었다"*다 —
          * 앞은 이 파일이 그 사실을 말하지 않는 것이고 뒤는 **지우라는 뜻**이라, 둘을 같게
          * 다루면 그 열이 없던 시절에 내보낸 파일을 다시 들이는 것만으로 연결이 지워진다
@@ -10026,15 +10156,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         val targetLabel = cell("대상")
+        // 한국어 말과 저장값을 모두 받는다(대소문자·공백·전각 포함) — 외부 도구가 저장값을
+        // 그대로 쓸 수도 있다. **못 알아본 글자는 삼키지 않는다**(아래 `unknownTargetLabel`).
+        val parsedTarget = DuelSheetLabels.targetTypeOrNull(targetLabel)
         return DuelAxisRowValues(
             name = cell("축이름"),
             universeName = cell("세계관"),
             universeCode = cell("세계관코드"),
-            // 한국어 말과 저장값을 모두 받는다 — 외부 도구가 저장값을 그대로 쓸 수도 있다.
-            targetType = when (targetLabel) {
-                DuelSheetLabels.TARGET_IMAGE, DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
-                else -> DuelAxis.TARGET_CHARACTER
-            },
+            targetType = parsedTarget ?: DuelAxis.TARGET_CHARACTER,
+            unknownTargetLabel = if (parsedTarget == null) targetLabel.trim() else null,
             // 사람이 적은 차례가 곧 영향력 순위다(프로필은 표시 차례다) — 정렬하지 않는다.
             influenceFieldKeys = links("영향필드"),
             outcomeFieldKeys = links("산출필드"),
@@ -10218,6 +10348,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // (세계관, 대상, 이름) 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양).
                 if (axisByCodeMatch == null && existing != null && existing.id in writtenAxisIds) {
                     result.warnings.add("대결 축 행 ${excelRow(i)}: 같은 세계관·대상·이름의 행이 파일 내에서 중복되어 같은 축을 덮어씁니다")
+                }
+                r.unknownTargetLabel?.let { unknown ->
+                    // **정체 열이라 잘못 굳으면 되돌릴 길이 없다** — 축은 (세계관, 대상, 이름)이
+                    // 자연키이고 만든 뒤에는 편집 창이 '겨루는 대상' 구역을 감춘다.
+                    // 그래서 값은 이어 가되(행을 버리면 나머지 멀쩡한 칸까지 잃는다) 사실과
+                    // 고칠 길을 함께 말한다(개발 의도 2번 — 검증 → 알림 → 교정 경로).
+                    result.warnings.add(
+                        "대결 축 행 ${excelRow(i)}: '대상' 칸의 '$unknown'을(를) 알 수 없어 '${DuelSheetLabels.TARGET_CHARACTER}' 축으로 읽었습니다 — 이미지 축이면 그 칸을 '${DuelSheetLabels.TARGET_IMAGE}'로 고쳐 다시 가져오세요(만든 뒤에는 앱에서 바꿀 수 없습니다)"
+                    )
                 }
                 if (r.candidateFiltersMalformed) {
                     // 기존 값을 지키고 그 사실을 말한다 — 괄호 하나 틀린 손편집이 멀쩡한
@@ -10902,7 +11041,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         sheetLabel: String
     ): Map<Int, FieldDefinition> {
         val plan = CharacterFieldColumns.plan(
-            readHeaderCells(headerRow), fields, fixedColIndices,
+            readHeaderCells(headerRow), fields,
+            CharacterFieldHeaders.expectedHeaders(fields), fixedColIndices,
             CHARACTER_FIXED_HEADERS, hasUniverse = universe != null,
             multiSuffix = EntityFieldHeaders.MULTI_SUFFIX
         )
@@ -11375,6 +11515,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * F4: JSON 문자열이 파싱 가능한지 검증한다 (내보내기 32,767자 절단·외부 편집 구문 오류 감지용).
      * 빈 문자열은 유효로 본다. object/array만 최상위로 허용.
      */
+    /**
+     * 아는 필드 타입인가 — **'필드 정의'와 '기본 필드' 두 시트가 같은 잣대를 쓴다.**
+     *
+     * 두 시트는 같은 어휘를 쓴다(같은 드롭다운·같은 필수 표식이고 시험이 그 동일성을
+     * 못박는다). 그런데 게이트는 한쪽에만 있었다 — 판정을 두 벌로 두지 않으려고 여기 모은다.
+     */
+    private fun isKnownFieldType(type: String): Boolean =
+        type.isNotBlank() && FieldType.fromName(type) != null
+
+    /** 모르는 타입을 말하는 한 문장 — 허용 목록을 문구에 박지 않고 열거에서 낸다(R-14). */
+    private fun unknownFieldTypeMessage(where: String, type: String): String =
+        "$where: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})"
+
     private fun isValidJson(value: String, requireTop: Char? = null): Boolean {
         val t = value.trim()
         if (t.isEmpty()) return true
@@ -11421,7 +11574,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun normalizeRelColorsCell(raw: String, rowLabel: String, universeName: String, result: ImportResult?): String? {
         if (raw.isBlank()) return ""
-        if (isValidJson(raw, '{')) return raw
+        // **색 글자 자체를 본다.** 형식이 JSON이어도 값이 색이 아니면 화면이 그것을 칠하려다
+        // 죽거나(감싸지 않은 자리가 하나 있었다) 조용히 회색으로 떨어진다 — 어느 쪽이든
+        // 사용자는 자기가 적은 색이 안 먹은 이유를 알 수 없다(개발 의도 2번).
+        if (isValidJson(raw, '{')) {
+            return filterRelColors(
+                org.json.JSONObject(raw), raw, rowLabel, universeName, result
+            )
+        }
         val pairs = parseRelColorTokens(raw)
         if (pairs.isNotEmpty()) {
             val obj = org.json.JSONObject()
@@ -11429,12 +11589,50 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result?.warnings?.add(
                 "$rowLabel: 세계관 '$universeName'의 커스텀관계색상이 JSON 객체 형식이 아니어서 '유형=색상' 목록으로 해석했습니다(${pairs.size}개) — 정확한 형식은 {\"연인\":\"#E91E63\"} 입니다"
             )
-            return obj.toString()
+            return filterRelColors(obj, raw, rowLabel, universeName, result)
         }
         result?.warnings?.add(
             "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 '${raw.take(40)}'을(를) 해석할 수 없어 적용하지 않고 기존 설정을 유지했습니다 — 형식은 {\"연인\":\"#E91E63\"} 또는 '연인=#E91E63' 쉼표 나열입니다. 비우면 기본 색상으로 돌아갑니다"
         )
         return null
+    }
+
+    /**
+     * 색이 아닌 값을 떨어뜨리고 **어느 유형의 무엇이 왜 안 실렸는지** 말한다.
+     *
+     * 전부 불합격이면 `null`을 돌려 **기존 설정을 파괴하지 않는다** — 해석 불가 입력이
+     * 유효 설정을 지우지 않는다는 이 함수의 대원칙 그대로다.
+     */
+    private fun filterRelColors(
+        obj: org.json.JSONObject,
+        raw: String,
+        rowLabel: String,
+        universeName: String,
+        result: ImportResult?
+    ): String? {
+        val kept = org.json.JSONObject()
+        val dropped = mutableListOf<String>()
+        for (key in obj.keys()) {
+            // `optString`은 기기(libcore)에서 JSON null에 `"null"`을 준다 — 그 값이 색 검사를
+            // 통과할 리는 없지만, 경고 문구에 그대로 실려 사용자를 헷갈리게 한다(R-70).
+            val value = obj.stringOr(key, "")
+            if (com.novelcharacter.app.util.ColorHex.isValidHex(value)) kept.put(key, value.trim())
+            else dropped.add("$key=$value")
+        }
+        if (dropped.isNotEmpty()) {
+            result?.warnings?.add(
+                "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 ${dropped.size}개가 색 형식이 아니어서 싣지 않았습니다(${dropped.take(3).joinToString(", ")}) — 형식은 #RRGGBB 입니다"
+            )
+        }
+        if (kept.length() == 0) {
+            if (dropped.isNotEmpty()) {
+                result?.warnings?.add(
+                    "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 '${raw.take(40)}'에 쓸 수 있는 색이 하나도 없어 기존 설정을 유지했습니다"
+                )
+            }
+            return null
+        }
+        return kept.toString()
     }
 
     /** 월에 맞는 유효한 일수인지 검증 (월이 null이면 1..31 범위만 체크) */
@@ -11707,6 +11905,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 엑셀에 없는 항목 삭제 ──
 
+    /**
+     * 엑셀에 없는 항목을 지운다 — **처분은 인앱 삭제 경로가 정한다.**
+     *
+     * 인앱이 휴지통을 지나는 것(캐릭터·사건·세력·상태변화)은 여기서도 지나고, 인앱도
+     * 영구 삭제인 것(관계·관계 변화·명대사·이름 은행·세력 관계·세력 소속)은 여기서도
+     * 영구 삭제다. 기준을 시트 종류로 잡으면 **같은 데이터가 경로에 따라 다르게 사라진다.**
+     *
+     * **실패는 삼키지 않는다.** 지우지 못한 행은 그대로 남아 다음 왕복에서 다시 후보가
+     * 되는데, 아무 말이 없으면 사용자는 지워졌다고 믿는다(개발 의도 2번 '변수 제어').
+     */
     private suspend fun deleteUnmatchedEntities(options: ExportOptions, result: ImportResult) {
         val del = options.deleteOptions
 
@@ -11757,7 +11965,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedRelationshipIds) {
                     try { db.characterRelationshipDao().deleteById(id); result.deletedRelationships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("관계 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11768,19 +11978,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedRelationshipChangeIds) {
                     try { db.characterRelationshipChangeDao().deleteById(id); result.deletedRelationshipChanges++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("관계 변화 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
 
-        // 상태 변화
+        // 상태 변화 — 인앱 삭제와 동일 경로로 휴지통 스냅샷을 남긴다.
+        // 종전에는 이 갈래만 우회해, **같은 데이터가 인앱에서는 되돌릴 수 있고 엑셀에서는
+        // 영영 사라졌다.** 처분을 가르는 근거는 인앱 경로이지 시트 종류가 아니다.
         if (del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+            val trash = trashForImport()
             val allIds = db.characterStateChangeDao().getAllChangeIds()
-            for (id in allIds) {
-                if (id !in matchedStateChangeIds) {
-                    try { db.characterStateChangeDao().deleteById(id); result.deletedStateChanges++ }
-                    catch (_: Exception) { }
+            val doomed = allIds.filter { it !in matchedStateChangeIds }
+            val doomedChanges = SqlInChunks.flat(doomed) { db.characterStateChangeDao().getChangesByIds(it) }
+            for (change in doomedChanges) {
+                try {
+                    trash.snapshotStateChange(change)
+                    db.characterStateChangeDao().deleteById(change.id)
+                    result.deletedStateChanges++
+                } catch (e: Exception) {
+                    result.warnings.add("상태변화 '${change.fieldKey} → ${change.newValue}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
                 }
+            }
+            if (result.deletedStateChanges > 0) {
+                result.warnings.add("엑셀에 없는 상태변화 ${result.deletedStateChanges}건을 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
             }
         }
 
@@ -11790,7 +12013,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedQuoteIds) {
                     try { db.characterQuoteDao().deleteById(id); result.deletedQuotes++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("명대사 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11801,7 +12026,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedNameBankIds) {
                     try { db.nameBankDao().deleteById(id); result.deletedNameBank++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("이름 은행 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11812,7 +12039,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedFactionRelationshipIds) {
                     try { db.factionRelationshipDao().deleteById(id); result.deletedFactionRelationships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("세력 관계 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -11855,7 +12084,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             for (id in allIds) {
                 if (id !in matchedFactionMembershipIds) {
                     try { db.factionMembershipDao().deleteById(id); result.deletedFactionMemberships++ }
-                    catch (_: Exception) { }
+                    catch (e: Exception) {
+                        result.warnings.add("세력 소속 1건(#$id) 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
             }
         }
@@ -12007,10 +12238,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val syncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
 
         val failedIds = mutableListOf<Long>()
+        // **세계관 필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 이 꼬리가
+        // 가져오기 트랜잭션 안에서 캐릭터 수만큼 같은 질의를 친다. 대상은 세계관이
+        // 섞이므로 표로 든다.
+        val fieldsByUniverse = HashMap<Long, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         for ((characterId, universeId) in pendingSyncCharacters) {
             try {
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
-                syncHelper.syncFieldToStateChange(characterId, universeId, fieldValues)
+                val fields = fieldsByUniverse.getOrPut(universeId) {
+                    universeRepository.getFieldsByUniverseList(universeId)
+                }
+                syncHelper.syncFieldToStateChange(
+                    characterId, fields, fieldValues,
+                    // **이 파일이 실제로 지운 칸만** 비움으로 읽는다. 값 전량을 넘기므로
+                    // 부재를 곧 비움으로 읽으면 연표 사건으로 생긴 `__birth`까지 지워진다.
+                    clearableFieldIds = pendingSyncClearedFields[characterId]
+                )
             } catch (e: Exception) {
                 android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
                 failedIds.add(characterId)

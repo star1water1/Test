@@ -195,6 +195,20 @@ class ImageManagerViewModel(
             prefs.edit().putString("view_mode", value.name).apply()
         }
 
+    /**
+     * 선택 모드와 고른 장 — **회전을 넘긴다**(뷰모델이 화면보다 오래 산다).
+     *
+     * 종전에는 화면이 들고 있어 회전 한 번에 **고른 장 전량이 말없이 사라졌다.**
+     * 수십 장을 골라 일괄 작업을 준비하던 사용자가 화면을 돌리면 처음부터 다시 고른다.
+     *
+     * `savedState`가 아니라 맨 필드인 것은 **크기** 때문이다 — 고른 장이 수천이면
+     * 번들 상한(TransactionTooLarge)에 걸려 *저장 자체가* 앱을 죽인다. 프로세스가 죽으면
+     * 선택은 사라지지만 그것은 그 자리에서 다시 고를 수 있는 것이라 유실 축이 아니다
+     * (캐릭터 목록이 선택을 뷰모델에 두는 것과 같은 결).
+     */
+    var selectionMode = false
+    val selectedPaths = LinkedHashSet<String>()
+
     /** 갤러리 페이지 위치 — 회전·프래그먼트 재생성 생존용(세션 한정, prefs 미기록) */
     var galleryPosition: Int
         get() = savedState["gallery_pos"] ?: 0
@@ -541,7 +555,7 @@ class ImageManagerViewModel(
 
         val files = filesDir.listFiles { f ->
             f.isFile && StorageAnalyzer.isImageFile(f.name) &&
-                !f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER)
+                !ImageImportHelper.isTempArtifact(f.name)
         } ?: emptyArray()
         val items = ArrayList<ManagedImage>(files.size)
         var totalBytes = 0L
@@ -1081,7 +1095,12 @@ class ImageManagerViewModel(
      */
     data class UnlinkResult(val cleared: Int, val autoRelinkable: Int)
     sealed class LinkOutcome {
-        data class Done(val linked: Int, val merged: Boolean) : LinkOutcome()
+        /**
+         * @param autoMoved 자동 묶음(`char:N`)에서 수동 묶음으로 옮겨진 장수 — 0이 아니면
+         *   호출부가 그 사실을 말한다. 손대지 않은 형제 이미지의 링크 배지가 사라질 수 있어
+         *   (자동 묶음에 2장뿐이었으면 남은 1장은 묶음이 아니게 된다) **조용하면 안 된다.**
+         */
+        data class Done(val linked: Int, val merged: Boolean, val autoMoved: Int = 0) : LinkOutcome()
         data class NeedsMerge(val groups: Int) : LinkOutcome()
         object Failed : LinkOutcome()
     }
@@ -1440,7 +1459,13 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 try {
-                    val plan = ImageLinkResolver.planLink(paths, currentMetas())
+                    val metas = currentMetas()
+                    val plan = ImageLinkResolver.planLink(paths, metas)
+                    // 자동 묶음에서 옮겨 오는 장수 — 성공 뒤에 고지에 쓴다.
+                    val autoMoved = if (plan.autoGroupsTouched.isEmpty()) 0 else {
+                        val byPath = metas.associateBy { it.path }
+                        paths.count { byPath[it]?.groupId in plan.autoGroupsTouched }
+                    }
                     if (plan.needsMergeConfirm && !confirmMerge) {
                         LinkOutcome.NeedsMerge(plan.groupsInvolved.size)
                     } else {
@@ -1463,7 +1488,7 @@ class ImageManagerViewModel(
                         runCatching {
                             FolderRoundtripPrefs.removeScatteredPaths(getApplication(), paths)
                         }
-                        LinkOutcome.Done(paths.size, plan.needsMergeConfirm)
+                        LinkOutcome.Done(paths.size, plan.needsMergeConfirm, autoMoved)
                     }
                 } catch (e: Exception) {
                     LinkOutcome.Failed
@@ -1610,11 +1635,14 @@ class ImageManagerViewModel(
         dir.listFiles()?.forEach { f -> if (f.isFile && f.lastModified() < cutoff) runCatching { f.delete() } }
     }
 
-    /** filesDir의 재압축 임시 파일(표식 포함)을 모두 삭제. */
+    /**
+     * filesDir의 **커밋 전 임시 산출물**을 모두 삭제 — 재압축 미리보기 잔여물과 회전 임시본.
+     * 판정은 [ImageImportHelper.isTempArtifact] 한 자리가 든다(표식이 늘면 여기가 함께 따라온다).
+     */
     private fun sweepRecompressTempFiles() {
         val filesDir = getApplication<Application>().filesDir
         filesDir.listFiles { f ->
-            f.isFile && f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER)
+            f.isFile && ImageImportHelper.isTempArtifact(f.name)
         }?.forEach { runCatching { it.delete() } }
     }
 

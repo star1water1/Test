@@ -952,10 +952,33 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         return changed
     }
 
-    private suspend fun collectAffectedCharacterIds(fd: FieldDefinition, tokens: Set<String>): List<Long> =
-        charValueDao.getValuesByFieldDef(fd.id)
-            .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
-            .map { it.characterId }.distinct()
+    /**
+     * 이 토큰이 걸린 캐릭터 — **[rewriteTokens]가 실제로 손대는 모집단과 같아야 한다.**
+     *
+     * 지금 값(`character_field_values`)**과** 상태변화 이력(`character_state_changes`)을 함께 본다.
+     * 종전에는 지금 값만 봤는데, 전파는 이력까지 고쳐 쓰고 토큰이 다 지워지면 **이력 행을
+     * 지운다.** 두 모집단이 갈리면 *"지금 값에는 그 토큰이 없고 과거 이력에만 있는 캐릭터"*가
+     * **스냅샷 없이** 이력을 잃는다 — 이 경로는 되돌릴 수 있다고 약속한 자리라(R-4),
+     * 백업 대상이 파괴 대상보다 좁으면 그 약속이 거짓이 된다.
+     *
+     * 상태변화의 조건은 전파 쪽과 **글자 그대로 같다**: 캐릭터 필드이고 세계관 소속일 때만
+     * 이력이 있다(연표는 세계관 기능이다).
+     */
+    private suspend fun collectAffectedCharacterIds(fd: FieldDefinition, tokens: Set<String>): List<Long> {
+        val ids = LinkedHashSet<Long>()
+        for (row in charValueDao.getValuesByFieldDef(fd.id)) {
+            if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) ids.add(row.characterId)
+        }
+        val scopeForState = fd.universeId
+        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && scopeForState != null) {
+            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(scopeForState, fd.key)) {
+                if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) {
+                    ids.add(change.characterId)
+                }
+            }
+        }
+        return ids.toList()
+    }
 
     private suspend fun supportedDefsById(): Map<Long, FieldDefinition> =
         fieldDao.getAllFieldsAllTypes()

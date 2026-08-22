@@ -85,4 +85,68 @@ class BirthdayHelperTest {
             BirthdayHelper.getTodayBirthdayCharacterIds(rows)
         )
     }
+
+    // ── 남은 일수는 역일(曆日)이다 — 서머타임이 셈을 흔들지 않는다 ──────────────
+    //
+    // 종전에는 두 시각을 정오로 맞춘 뒤 밀리초 차를 정수 나눗셈했다. 정오 앵커는 *부호*를
+    // 지키지만 **절삭을 막지 못한다** — 봄 전환을 지나는 구간은 경과가 23시간 짧아 몫이 한
+    // 칸 내려간다. **하네스와 CI는 UTC(무DST)라 이 축을 원리적으로 못 본다**(R-70), 그래서
+    // 아래 시험도 시간대가 아니라 *역일 산술 자체*를 잰다.
+
+    @Test
+    fun `오늘 생일은 0이다`() {
+        assertEquals(0, BirthdayHelper.daysUntilBirthday(3, 8, 2026, 3, 8))
+    }
+
+    @Test
+    fun `내일 생일은 1이다`() {
+        assertEquals(1, BirthdayHelper.daysUntilBirthday(3, 7, 2026, 3, 8))
+    }
+
+    /** 미국 봄 전환일(2026-03-08)을 걸치는 구간 — 종전 구현이 0을 냈다. */
+    @Test
+    fun `봄 전환을 걸쳐도 하루가 하루다`() {
+        assertEquals(1, BirthdayHelper.daysUntilBirthday(3, 7, 2026, 3, 8))
+        assertEquals(2, BirthdayHelper.daysUntilBirthday(3, 6, 2026, 3, 8))
+        assertEquals(7, BirthdayHelper.daysUntilBirthday(3, 1, 2026, 3, 8))
+    }
+
+    /** 전환을 지나는 **모든** 구간이 어긋났다 — 긴 구간도 잰다. */
+    @Test
+    fun `긴 구간도 역일과 같다`() {
+        assertEquals(151, BirthdayHelper.daysUntilBirthday(1, 15, 2026, 6, 15))
+        assertEquals(37, BirthdayHelper.daysUntilBirthday(2, 1, 2026, 3, 10))
+    }
+
+    @Test
+    fun `올해 생일이 지났으면 내년으로 넘어간다`() {
+        // 2026-12-31 → 2027-01-01
+        assertEquals(1, BirthdayHelper.daysUntilBirthday(12, 31, 2026, 1, 1))
+        // 2026-03-09 → 2027-03-08 (2027은 평년)
+        assertEquals(364, BirthdayHelper.daysUntilBirthday(3, 9, 2026, 3, 8))
+    }
+
+    /** 2/29 생일은 평년에 2/28로 접힌다 — 그 규칙이 역일 산술에서도 그대로다. */
+    @Test
+    fun `윤년 생일이 평년에 접힌다`() {
+        assertEquals(0, BirthdayHelper.daysUntilBirthday(2, 28, 2026, 2, 29))
+        assertEquals(1, BirthdayHelper.daysUntilBirthday(2, 28, 2024, 2, 29))
+    }
+
+    /** 어떤 조합에서도 0..365 밖으로 나가지 않는다. */
+    @Test
+    fun `범위를 벗어나지 않는다`() {
+        for (year in 2024..2027) {
+            for (month in 1..12) {
+                for (day in listOf(1, 15, 28)) {
+                    for (bm in 1..12) {
+                        for (bd in listOf(1, 15, 28, 29, 31)) {
+                            val d = BirthdayHelper.daysUntilBirthday(month, day, year, bm, bd)
+                            assertTrue("$year-$month-$day → $bm/$bd = $d", d in 0..365)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

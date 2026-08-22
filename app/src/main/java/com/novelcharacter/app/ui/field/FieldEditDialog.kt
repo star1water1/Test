@@ -21,7 +21,6 @@ import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.google.android.material.tabs.TabLayout
-import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.BodySlot
@@ -52,6 +51,12 @@ class FieldEditDialog : DialogFragment() {
     /** 생성 모드에서 입력된 값 사전 등록분 (콤마 구분) — 결과 번들로 전달 */
     private var stagedInitialValues: String = ""
 
+    /**
+     * 이 필드의 값 라이브러리 항목 수 — 아직 못 세었으면 `null`이다(프리셋 필드·조회 실패).
+     * '값 제한'이 허용 값 0개로 저장되려 할 때 사유를 말하는 재료다(형제 자리와 같은 처분).
+     */
+    private var fieldLibraryEntryCount: Int? = null
+
     /** 저장 시점의 '전역 기본 필드' 스위치 상태 (B-119). 실행은 호출부가 저장소를 통해 한다. */
     private var stagedDefaultField: Boolean = false
 
@@ -59,6 +64,15 @@ class FieldEditDialog : DialogFragment() {
     private val allowDefaultField: Boolean
         get() = arguments?.getBoolean(ARG_ALLOW_DEFAULT_FIELD) == true
     private var universeId: Long = 0
+
+    /**
+     * 전역 구역(무소속) 필드를 편집하는가.
+     *
+     * [universeId]의 `0`은 **두 가지를 겸했다** — 프리셋 편집(DB에 없다)과 전역 구역
+     * (DB에는 있는데 `universeId`가 `null`이라 호출부가 `?: 0L`로 접는다). 조회할 표가
+     * 다르므로 겸직을 끊는다.
+     */
+    private var isGlobalScope: Boolean = false
     private var existingField: FieldDefinition? = null
 
     /**
@@ -74,15 +88,29 @@ class FieldEditDialog : DialogFragment() {
     // 수식 검증용 — 현재 세계관·같은 대상(캐릭터/사건)의 필드 키 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
     private var universeFieldKeys: Set<String>? = null
 
+    /**
+     * 같은 구역 필드의 키 → 타입 — 수식이 참조한 필드가 **수를 낼 수 있는가**를 검증기가
+     * 묻는 재료다. 로드 전·실패면 null이라 그 검사만 건너뛴다([universeFieldKeys]와 같은 규약).
+     */
+    private var universeFieldTypes: Map<String, com.novelcharacter.app.data.model.FieldType?>? = null
+
     // 수식 검증용 — 전이 순환 참조를 보기 위한 CALCULATED 필드의 키 → 수식 (편집 중인 필드는 제외)
     private var calculatedFormulas: Map<String, String> = emptyMap()
 
     // 동적 분석 항목 관리
+    /**
+     * @property allowedTypes **이 행의 스피너가 딛고 선 목록.** 행이 자기 어댑터의 목록을
+     *   함께 들지 않으면, 걷을 때 *지금 타입*의 목록으로 위치를 읽어 뜻이 갈린다 —
+     *   TEXT의 위치 1은 '값 순위'인데 NUMBER의 위치 1은 '수치 요약'이다. 화면은 끝까지
+     *   '값 순위'를 적고 저장은 NUMERIC이 되는, **말없는 갈음**이다(개발 의도 2번 · R-44).
+     *   같은 파일의 부위 칸·대결 축 행은 이미 위치가 아니라 값을 단일 소스로 세워 두었다.
+     */
     private data class AnalysisRow(
         val container: View,
         val spinnerType: Spinner,
         val spinnerChart: Spinner,
-        val editLimit: EditText
+        val editLimit: EditText,
+        val allowedTypes: List<FieldStatsConfig.StatsType>
     )
     private val analysisRows = mutableListOf<AnalysisRow>()
 
@@ -146,6 +174,27 @@ class FieldEditDialog : DialogFragment() {
     private var fieldTypeSpinner: Spinner? = null
 
     /**
+     * 폼 자체 — [onSaveInstanceState]가 지금 화면 상태를 config로 접어 두려면 필요하다
+     * (창을 `MaterialAlertDialogBuilder.setView`로 세우므로 지역 변수만으로는 닿지 못한다).
+     */
+    private var formBinding: DialogFieldEditBinding? = null
+
+    /**
+     * 회전으로 되살릴 **지금 폼의 config**와 **고른 타입**.
+     *
+     * 이 창의 동적 행들(등급 표 · 분석 · 구간 · 구조화 칸 · 컵 매핑 · 인사이트/체형 규칙)은
+     * 코드가 만든다 — 안정된 id가 없어 **안드로이드의 뷰 상태 저장이 원리적으로 못 든다.**
+     * 그래서 회전하면 그 행들만 저장본(또는 기본값)으로 되돌아갔고, **이름·키 칸은 뷰 상태
+     * 저장이 되살려 주므로 유실이 눈에 보이지도 않았다** — 사용자는 등급 표를 다시 짜 놓고
+     * 화면을 돌린 뒤 그대로 저장한다.
+     *
+     * 처분은 *행을 하나씩 담는 것*이 아니라 **폼을 config로 접는 것**이다 — 저장이 쓰는 그
+     * 함수([buildConfig])를 그대로 쓰므로 담는 규칙과 쓰는 규칙이 갈릴 수 없다(R-33).
+     */
+    private var restoredConfig: String? = null
+    private var restoredType: String? = null
+
+    /**
      * 지금 스피너가 가리키는 타입. 스피너는 [FieldType.entries] 순서로 채워지므로 위치가 곧
      * 타입이다 — 위치가 범위를 벗어나면(스피너가 아직 안 붙었을 때) [FieldType.TEXT]다.
      */
@@ -156,8 +205,14 @@ class FieldEditDialog : DialogFragment() {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogFieldEditBinding.inflate(layoutInflater)
+        formBinding = binding
+        restoredConfig = savedInstanceState?.getString(STATE_FORM_CONFIG)
+        restoredType = savedInstanceState?.getString(STATE_FORM_TYPE)
 
         universeId = arguments?.getLong(ARG_UNIVERSE_ID) ?: 0
+        // **전역 구역인가** — `universeId = 0`이 *프리셋 편집*과 *전역 구역*을 겸하지 않게
+        // 호출부가 밝힌다(둘은 조회할 표가 다르다).
+        isGlobalScope = arguments?.getBoolean(ARG_GLOBAL_SCOPE) == true
         val fieldJson = arguments?.getString(ARG_FIELD_JSON)
         existingField = if (fieldJson != null) Gson().fromJson(fieldJson, FieldDefinition::class.java) else null
         val prefillJson = arguments?.getString(ARG_PREFILL_JSON)
@@ -190,8 +245,30 @@ class FieldEditDialog : DialogFragment() {
             .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
-        // 수식 검증용 필드 목록 로드 (프리셋 편집(universeId=0)은 DB에 없으므로 제외)
-        if (universeId != 0L) {
+        // 수식 검증용·키 점유 확인용 필드 목록 로드.
+        //
+        // **`0`이 두 가지를 겸하고 있었다.** 프리셋 편집은 DB에 없어 조회할 것이 없지만,
+        // **전역 구역(무소속) 필드**도 `universeId`가 `null`이라 호출부가 `?: 0L`로 접어
+        // 넘긴다 — 그래서 캐릭터 상세의 체형 ⚙로 연 전역 필드는 **점유 키를 아예 안 읽었고,
+        // 키 중복 거부가 언제나 통과했다.** 전역 구역의 유니크 색인은 `universeId`가 NULL이라
+        // SQLite가 NULL끼리를 다르게 보므로 **DB도 막지 못한다** — 마지막 빗장이 없다.
+        // (insert 경로는 전부 막혀 있고 이 UPDATE 경로만 뚫려 있었다. R-57이 이름 붙인
+        // *"셋째 쓰기 경로가 조용히 들어오는 것"*이 정확히 이 모양이다.)
+        if (isGlobalScope) {
+            lifecycleScope.launch {
+                try {
+                    val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                    val defs = app.database.fieldDefinitionDao()
+                        .getGlobalFieldsList(currentEntityType())
+                    universeFieldKeys = defs.map { it.key }.toSet()
+                    universeFieldTypes = defs.associate { it.key to it.fieldType }
+                    calculatedFormulas = defs
+                        .filter { it.fieldType == FieldType.CALCULATED && it.id != existingField?.id }
+                        .mapNotNull { def -> formulaOf(def)?.let { def.key to it } }
+                        .toMap()
+                } catch (_: Exception) { /* 로드 실패 시 키 존재·순환 검사만 생략 */ }
+            }
+        } else if (universeId != 0L) {
             lifecycleScope.launch {
                 try {
                     val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
@@ -200,6 +277,7 @@ class FieldEditDialog : DialogFragment() {
                     val defs = app.database.fieldDefinitionDao()
                         .getFieldsByUniverseList(universeId, currentEntityType())
                     universeFieldKeys = defs.map { it.key }.toSet()
+                    universeFieldTypes = defs.associate { it.key to it.fieldType }
                     // 편집 중인 필드는 뺀다 — 그 수식은 저장된 것이 아니라 지금 입력 중인 것이다.
                     calculatedFormulas = defs
                         .filter { it.fieldType == FieldType.CALCULATED && it.id != existingField?.id }
@@ -845,13 +923,18 @@ class FieldEditDialog : DialogFragment() {
                 // 체형 분석 설정: BODY_SIZE 전용
                 binding.bodyAnalysisSettingsLayout.visibility =
                     if (selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
-                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE
+                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE — **그리고 그 종류에 소비처가 있을 때만**
                 val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE || selectedType == FieldType.GRADE
-                binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
-                // 랜덤 생성: NUMBER, SELECT, GRADE
+                val entityType = currentEntityType()
+                binding.percentileLayout.visibility =
+                    if (isNumericType && entityType in PERCENTILE_CAPABLE_ENTITY_TYPES) View.VISIBLE else View.GONE
+                // 랜덤 생성: NUMBER, SELECT, GRADE — 같은 결(🎲을 그리는 폼이 있는 종류만)
                 val isRandomizable = selectedType == FieldType.NUMBER || selectedType == FieldType.SELECT || selectedType == FieldType.GRADE
-                binding.randomLayout.visibility = if (isRandomizable) View.VISIBLE else View.GONE
-                if (isRandomizable) updateRandomNumberOptionsVisibility(binding)
+                val randomVisible = isRandomizable && entityType in RANDOM_CAPABLE_ENTITY_TYPES
+                binding.randomLayout.visibility = if (randomVisible) View.VISIBLE else View.GONE
+                if (randomVisible) updateRandomNumberOptionsVisibility(binding)
+                // 값 데이터 라이브러리: 라이브러리가 값 카탈로그를 관리하는 종류에서만 (R-24)
+                updateFieldLibraryVisibility(binding)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -1202,6 +1285,8 @@ class FieldEditDialog : DialogFragment() {
             binding.structuredPartsContainer.visibility = visibility
             binding.btnAddStructuredPart.visibility = visibility
             refreshPartSlotRows(binding)
+            // 구조화 입력을 켜면 파트별 측정치가 되어 카탈로그 값이 아니다 — 섹션이 내려간다.
+            updateFieldLibraryVisibility(binding)
         }
 
         binding.btnAddStructuredPart.setOnClickListener {
@@ -1211,7 +1296,13 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: FieldType? = currentFieldType()) {
+    private fun addAnalysisRow(
+        container: LinearLayout,
+        density: Float,
+        fieldType: FieldType? = currentFieldType(),
+        /** 되살릴 분석 방법 — 위치가 아니라 **값**으로 고른다. */
+        initial: FieldStatsConfig.StatsType? = null
+    ) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1262,7 +1353,12 @@ class FieldEditDialog : DialogFragment() {
         row.addView(editLimit)
         row.addView(btnRemove)
         container.addView(row)
-        analysisRows.add(AnalysisRow(row, spinnerType, spinnerChart, editLimit))
+        analysisRows.add(AnalysisRow(row, spinnerType, spinnerChart, editLimit, allowedTypes))
+        // 되살릴 값이 있으면 **그 목록 안에서** 자리를 찾는다(위치가 아니라 값이 단일 소스).
+        if (initial != null) {
+            val idx = allowedTypes.indexOf(initial)
+            if (idx >= 0) spinnerType.setSelection(idx)
+        }
     }
 
     /**
@@ -1303,6 +1399,7 @@ class FieldEditDialog : DialogFragment() {
                     (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
                         .database.fieldValueEntryDao().getByField(existing.id).size
                 }.getOrDefault(0)
+                fieldLibraryEntryCount = count
                 if (isAdded) {
                     binding.fieldLibrarySummary.text =
                         getString(R.string.field_library_summary_edit, count)
@@ -1324,7 +1421,31 @@ class FieldEditDialog : DialogFragment() {
         binding.spinnerInputMode.setSelection(
             com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES.indexOf(mode).coerceAtLeast(0)
         )
+        updateFieldLibraryVisibility(binding)
     }
+
+    /**
+     * 값 데이터 라이브러리 섹션이 **성립하는가** — 소비처가 없으면 섹션째 내린다 (R-24).
+     *
+     * 종전에는 섹션 안쪽(요약·[열기] 단추)만 종류를 봤고 **섹션 자체는 언제나 서 있었다.**
+     * 그래서 계산·숫자·체형 필드를 만들 때도 '값 사전 등록' 칸과 '입력 모드'가 그대로
+     * 보였고, 거기에 적어 넣은 값은 저장 때 **말없이 버려졌으며**(라이브러리에 등재할
+     * 자리가 없다) '제한'은 아무도 읽지 않는 설정으로 config에 남았다 — 타입을 되돌리면
+     * 그 잠자던 '제한'이 되살아난다.
+     *
+     * 판정은 [com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary]가 낸다 —
+     * 여기서 타입 집합을 손수 적으면 새 타입이 **누락으로** 빠진다(R-52).
+     */
+    private fun updateFieldLibraryVisibility(binding: DialogFieldEditBinding) {
+        binding.fieldLibrarySection.visibility =
+            if (fieldLibrarySupported(binding)) View.VISIBLE else View.GONE
+    }
+
+    /** 지금 창이 든 상태(스피너의 종류 + 구조화 입력 스위치)로 내리는 판정 — 저장 쪽도 이것을 쓴다. */
+    private fun fieldLibrarySupported(binding: DialogFieldEditBinding): Boolean =
+        com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(
+            currentFieldType(), binding.switchStructuredInput.isChecked
+        )
 
     private fun addBinRangeRow(container: LinearLayout, density: Float) {
         val ctx = requireContext()
@@ -1998,8 +2119,12 @@ class FieldEditDialog : DialogFragment() {
                         )
                     }
                 }
+                // **이름 없는 규칙은 규칙이 아니다** — 분류 결과가 빈 이름으로 나오면
+                // 화면에서 그 체형이 사라진 것과 구분되지 않는다. 못 읽은 것으로 본다.
+                val label = obj.stringOr("label", "")
+                if (label.isBlank()) return null
                 rules.add(BodyAnalysisConfig.BodyTypeRule(
-                    label = obj.stringOr("label", ""),
+                    label = label,
                     conditions = conditions,
                     priority = obj.optInt("priority", i)
                 ))
@@ -2024,6 +2149,8 @@ class FieldEditDialog : DialogFragment() {
         // 체형 분류 규칙
         val bodyTypeRules = if (binding.spinnerBodyTypePreset.selectedItemPosition == 2) {
             // 사용자 정의: JSON 파싱
+            // 저장 검증(`saveField`)을 이미 지났다 — 여기서 못 읽으면 그 검증이 뚫린 것이므로
+            // 마지막 안전망으로만 옛 규칙을 든다(조용한 갈음은 그 검증이 막는다).
             val jsonText = binding.editBodyTypeCustomJson.text.toString().trim()
             jsonToBodyTypeRules(jsonText) ?: currentBodyTypeRules
         } else {
@@ -2100,9 +2227,43 @@ class FieldEditDialog : DialogFragment() {
         )
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val b = formBinding ?: return
+        // **저장이 쓰는 그 함수로 접는다**(R-33) — 담는 규칙과 쓰는 규칙이 갈릴 수 없다.
+        val type = currentFieldType()
+        runCatching { buildConfig(b, type) }.getOrNull()?.let {
+            outState.putString(STATE_FORM_CONFIG, it)
+            // 타입도 함께 나른다 — 동적 행의 선택지가 타입에서 나오므로, 타입 없이 되살리면
+            // 행은 옛 타입의 목록을 들고 서고 스피너만 새 타입으로 복원돼 뜻이 갈린다.
+            outState.putString(STATE_FORM_TYPE, type.name)
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        formBinding = null
+    }
+
     private fun populateFields(binding: DialogFieldEditBinding) {
         // 편집 중인 필드가 없으면 프리필 초안으로 채운다(생성 모드는 그대로 유지된다).
-        val field = existingField ?: prefillField ?: return
+        val base = existingField ?: prefillField
+        // **회전으로 되살릴 폼 상태가 있으면 그것이 이긴다** — 저장본이 아니라 *사용자가
+        // 지금 짜 놓은 것*이 화면의 진실이다(위 [restoredConfig]). 생성 모드에는 바탕이 될
+        // 필드가 없으므로 빈 껍데기를 세워 config만 실어 준다.
+        //
+        // 이름·키·스위치처럼 id가 있는 칸은 이 뒤에 **뷰 상태 저장이 다시 덮는다**(창이
+        // 그 복원을 스스로 한다) — 그것이 옳고, 그래서 여기서는 동적 행만 되살아나면 된다.
+        val field = restoredConfig?.let { cfg ->
+            (base ?: FieldDefinition(
+                universeId = universeId,
+                key = "",
+                name = "",
+                type = restoredType ?: currentFieldType().name,
+                entityType = arguments?.getString(ARG_ENTITY_TYPE)
+                    ?: FieldDefinition.ENTITY_CHARACTER
+            )).copy(config = cfg, type = restoredType ?: (base?.type ?: currentFieldType().name))
+        } ?: base ?: return
 
         binding.editFieldName.setText(field.name)
         binding.editFieldKey.setText(field.key)
@@ -2231,12 +2392,9 @@ class FieldEditDialog : DialogFragment() {
         val density = resources.displayMetrics.density
         binding.analysisListContainer.removeAllViews()
         analysisRows.clear()
-        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.fieldType)
         for (entry in statsConfig.analyses) {
-            addAnalysisRow(binding.analysisListContainer, density, field.fieldType)
+            addAnalysisRow(binding.analysisListContainer, density, field.fieldType, initial = entry.type)
             val row = analysisRows.last()
-            val typeIdx = allowedTypes.indexOf(entry.type)
-            if (typeIdx >= 0) row.spinnerType.setSelection(typeIdx)
             val chartIdx = FieldStatsConfig.ChartType.entries.indexOf(entry.chart)
             if (chartIdx >= 0) row.spinnerChart.setSelection(chartIdx)
             row.editLimit.setText(entry.limit.toString())
@@ -2391,6 +2549,30 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // 체형 분류 '사용자 정의' JSON은 **저장 시점에 검증한다** (R-27).
+        //
+        // 이 칸은 사용자가 **날 JSON을 손으로 적는** 유일한 자리인데, 종전에는 파싱 실패를
+        // `?: currentBodyTypeRules`로 조용히 갈음했다 — 창은 그대로 닫히고 결과 채널은
+        // "필드가 수정되었습니다"를 성공으로 알린다. **적은 규칙이 통째로 사라지는데
+        // 아무도 그 사실을 말하지 않는다**(변수 제어가 금지하는 무통보 폐기).
+        // 등급 표 검증과 같은 모양으로 막고 사유를 말한다 — 창이 닫히지 않으므로 입력이 남는다.
+        if (selectedType == FieldType.BODY_SIZE &&
+            binding.bodyTypeCustomJsonLayout.visibility == View.VISIBLE
+        ) {
+            val jsonText = binding.editBodyTypeCustomJson.text.toString().trim()
+            val messageRes = when {
+                jsonText.isBlank() -> R.string.body_type_custom_json_empty
+                jsonToBodyTypeRules(jsonText) == null -> R.string.body_type_custom_json_invalid
+                else -> null
+            }
+            if (messageRes != null) {
+                android.widget.Toast.makeText(
+                    requireContext(), getString(messageRes), android.widget.Toast.LENGTH_LONG
+                ).show()
+                return false
+            }
+        }
+
         // 대결 등급 산정을 **켜 두었는데 성립하지 않으면 저장을 막는다** (2026.08.07 사용자 보고).
         //
         // 종전에는 그대로 저장이 진행됐고, `applyDuelGradeConfig`가 축을 못 집으면 키를 쓰지
@@ -2447,10 +2629,31 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
-        // 생성 모드의 값 사전 등록분 — 필드 저장 후 FieldManageFragment가 라이브러리에 등재
-        stagedInitialValues = if (existingField == null) {
+        // 생성 모드의 값 사전 등록분 — 필드 저장 후 FieldManageFragment가 라이브러리에 등재.
+        // **성립하지 않는 종류면 담지 않는다** — 종류를 바꾸기 전에 적어 둔 글자가 칸에
+        // 남아 있는데, 그것을 그대로 실으면 등재할 자리가 없어 조용히 버려진다.
+        stagedInitialValues = if (existingField == null && fieldLibrarySupported(binding)) {
             binding.editInitialValues.text.toString()
         } else ""
+
+        // '값 제한'인데 허용 값이 하나도 없으면 **그 필드의 모든 입력이 막힌다.**
+        // 형제 자리(`FieldValueListFragment`의 입력 모드 창)와 같은 처분으로 사유를 알린다 —
+        // **막지는 않는다**(자율성 우선: 값을 곧 등록할 수도 있다). 그쪽도 알리고 진행한다.
+        if (fieldLibrarySupported(binding)) {
+            val libraryModes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
+            val libraryMode = libraryModes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { libraryModes[0] }
+            val willBeEmpty =
+                if (existingField == null) stagedInitialValues.isBlank() else fieldLibraryEntryCount == 0
+            if (libraryMode == com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODE_RESTRICTED &&
+                willBeEmpty
+            ) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    getString(R.string.field_library_restricted_no_values),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
         // 전역 기본 필드 스위치(B-119) — [deliverResult]에는 binding이 없으므로 여기서 담는다
         // (`stagedInitialValues`와 같은 이유·같은 자리). 스위치를 열지 않은 호출부는 늘 false다.
@@ -2553,7 +2756,9 @@ class FieldEditDialog : DialogFragment() {
      * 어휘 분석([FormulaLexer])을 보므로, 함수를 추가해도 검사가 뒤처지지 않는다.
      */
     private fun validateFormula(formula: String, currentKey: String): List<String> =
-        FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)
+        FormulaValidator.validate(
+            formula, currentKey, universeFieldKeys, calculatedFormulas, universeFieldTypes
+        )
             .map { problem ->
                 when (problem) {
                     is FormulaValidator.Problem.UnbalancedParen ->
@@ -2564,6 +2769,8 @@ class FieldEditDialog : DialogFragment() {
                         getString(R.string.formula_warn_circular, problem.path.joinToString(" → "))
                     is FormulaValidator.Problem.UnknownKeys ->
                         getString(R.string.formula_warn_missing_keys, problem.keys.joinToString(", "))
+                    is FormulaValidator.Problem.NonNumericKeys ->
+                        getString(R.string.formula_warn_non_numeric_keys, problem.keys.joinToString(", "))
                     is FormulaValidator.Problem.PaddedKeys ->
                         getString(R.string.formula_warn_padded_keys, problem.keys.joinToString(", ") { "\"$it\"" })
                     is FormulaValidator.Problem.UnknownFunctions ->
@@ -2600,22 +2807,25 @@ class FieldEditDialog : DialogFragment() {
         val oldTypeLabel = FieldType.fromName(oldType)?.label ?: oldType
         val newTypeLabel = newFieldType?.label ?: newType
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
-        val fieldValueDao = app.database.characterFieldValueDao()
+        // **조회도 쓰기도 이 필드의 종류를 본다**(R-29). 이 창은 캐릭터·사건·작품 필드를 모두
+        // 편집하는데 종전에는 캐릭터 값 표 하나만 물었다 — 사건·작품 필드는 값이 아무리 많아도
+        // 조회가 늘 비어 **확인 창이 원리적으로 뜰 수 없었고**, 호환 불가 값도 초기화되지 않은 채
+        // 타입만 바뀌었다(그 값들은 새 타입으로 읽히지 않아 화면과 통계에서 뜻을 잃는다).
+        val access = fieldValueAccess(app, field.entityType)
 
         lifecycleScope.launch {
             try {
-                val values = withContext(Dispatchers.IO) {
-                    fieldValueDao.getValuesByFieldDef(field.id)
+                val nonEmptyValues = withContext(Dispatchers.IO) {
+                    access.loadNonEmpty(field.id)
                 }
 
-                val nonEmptyValues = values.filter { it.value.isNotBlank() }
                 if (nonEmptyValues.isEmpty()) {
                     // 기존 값이 없으면 바로 저장
                     completeSave(field)
                     return@launch
                 }
 
-                val compatible = nonEmptyValues.count { isValueCompatible(it.value, newFieldType) }
+                val compatible = nonEmptyValues.count { isValueCompatible(it, newFieldType) }
                 val incompatible = nonEmptyValues.size - compatible
 
                 if (incompatible == 0) {
@@ -2629,7 +2839,7 @@ class FieldEditDialog : DialogFragment() {
                     .setMessage(getString(R.string.field_type_change_message,
                         oldTypeLabel, newTypeLabel, nonEmptyValues.size, compatible, incompatible))
                     .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
-                        resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newFieldType)
+                        resetIncompatibleValuesAndSave(app, field, access, newFieldType)
                     }
                     .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                         setSaveButtonEnabled(true)
@@ -2650,18 +2860,15 @@ class FieldEditDialog : DialogFragment() {
     private fun resetIncompatibleValuesAndSave(
         app: com.novelcharacter.app.NovelCharacterApp,
         field: FieldDefinition,
-        nonEmptyValues: List<CharacterFieldValue>,
+        access: FieldValueAccess,
         newType: FieldType?
     ) {
-        val fieldValueDao = app.database.characterFieldValueDao()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다
+                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다.
+                // **초기화가 보는 표는 고지가 센 표와 같다** — 접근자 하나가 둘을 함께 정한다.
                 app.database.withTransaction {
-                    val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
-                    toReset.forEach { fv ->
-                        fieldValueDao.update(fv.copy(value = ""))
-                    }
+                    access.resetIncompatible(field.id, newType)
                 }
                 withContext(Dispatchers.Main) {
                     completeSave(field)
@@ -2675,6 +2882,59 @@ class FieldEditDialog : DialogFragment() {
                     setSaveButtonEnabled(true)
                 }
             }
+        }
+    }
+
+    /**
+     * 값 표 접근 — **한 자리가 조회와 쓰기를 함께 정한다**(R-29).
+     *
+     * 종류로 갈리는 기능은 *조회·판정·순서·쓰기가 모두 같은 종류를 봐야* 한다. 둘을 따로
+     * 적으면 한쪽만 고쳐진다 — 이 창이 실제로 그 모양이었다(고지는 캐릭터 표를 세고
+     * 초기화도 캐릭터 표를 지우는데, 편집 대상은 사건·작품 필드일 수 있었다).
+     */
+    private class FieldValueAccess(
+        /** 이 정의에 달린 **비어 있지 않은** 값들. */
+        val loadNonEmpty: suspend (fieldId: Long) -> List<String>,
+        /** 새 타입으로 읽을 수 없는 값을 빈 값으로 되돌린다(트랜잭션 안에서 부른다). */
+        val resetIncompatible: suspend (fieldId: Long, newType: FieldType?) -> Unit
+    )
+
+    private fun fieldValueAccess(
+        app: com.novelcharacter.app.NovelCharacterApp,
+        entityType: String
+    ): FieldValueAccess = when (entityType) {
+        FieldDefinition.ENTITY_EVENT -> {
+            val dao = app.database.eventFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
+        }
+        FieldDefinition.ENTITY_NOVEL -> {
+            val dao = app.database.novelFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
+        }
+        else -> {
+            val dao = app.database.characterFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
         }
     }
 
@@ -3052,24 +3312,38 @@ class FieldEditDialog : DialogFragment() {
         )
     }
 
-    /** 입력 모드(제안/자유/제한)를 config "valueLibrary"에 기록 */
+    /**
+     * 입력 모드(제안/자유/제한)를 config `"valueLibrary"`에 기록한다.
+     *
+     * **성립하지 않는 종류에서는 키를 남기지 않는다** — 기본값(`MODE_SUGGEST`)을 넘기면
+     * `applyToConfig`가 키를 걷어낸다. 남겨 두면 소비처 없는 '제한'이 config에 잠들어
+     * 있다가 종류를 되돌리는 순간 되살아난다(`applyDuelGradeConfig`가 세운 관례 그대로).
+     */
     private fun applyInputModeConfig(binding: DialogFieldEditBinding, configJson: String): String {
-        val modes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
-        val mode = modes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { modes[0] }
-        return com.novelcharacter.app.data.model.FieldValueLibraryConfig.applyToConfig(
-            configJson, com.novelcharacter.app.data.model.FieldValueLibraryConfig(mode)
-        )
+        val config = if (fieldLibrarySupported(binding)) {
+            val modes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
+            com.novelcharacter.app.data.model.FieldValueLibraryConfig(
+                modes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { modes[0] }
+            )
+        } else {
+            com.novelcharacter.app.data.model.FieldValueLibraryConfig()
+        }
+        return com.novelcharacter.app.data.model.FieldValueLibraryConfig.applyToConfig(configJson, config)
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
         val enabled = binding.switchStatsEnabled.isChecked
 
+        // **행이 든 목록으로 읽는다** — 지금 타입의 목록으로 위치를 읽으면, 타입을 바꾼 뒤
+        // 저장할 때 화면이 적은 것과 다른 분석 방법이 조용히 들어간다(위 [AnalysisRow]).
+        // 행의 방법이 지금 타입에서 허용되지 않으면 그 타입의 첫 방법으로 접는다 —
+        // 없는 방법을 저장하면 통계가 그 항목을 읽지 못한다.
         val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type)
         val analyses = analysisRows.map { row ->
             val chartTypes = FieldStatsConfig.ChartType.entries
-            val typePos = row.spinnerType.selectedItemPosition.coerceIn(0, allowedTypes.size - 1)
+            val picked = row.allowedTypes.getOrNull(row.spinnerType.selectedItemPosition)
             FieldStatsConfig.AnalysisEntry(
-                type = allowedTypes[typePos],
+                type = picked?.takeIf { it in allowedTypes } ?: allowedTypes.first(),
                 chart = chartTypes[row.spinnerChart.selectedItemPosition],
                 limit = row.editLimit.text.toString().toIntOrNull() ?: 10
             )
@@ -3111,6 +3385,11 @@ class FieldEditDialog : DialogFragment() {
         private const val ARG_PREFILL_JSON = "prefillJson"
         private const val ARG_ALLOW_DEFAULT_FIELD = "allowDefaultField"
         private const val ARG_RESERVED_KEYS = "reservedKeys"
+        private const val ARG_GLOBAL_SCOPE = "globalScope"
+
+        /** 회전 너머로 폼을 나르는 키 — 담는 쪽과 꺼내는 쪽이 이 상수를 쓴다. */
+        private const val STATE_FORM_CONFIG = "formConfig"
+        private const val STATE_FORM_TYPE = "formType"
 
         /**
          * AI 추천 경로가 **실제로 있는** 필드 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).
@@ -3123,6 +3402,26 @@ class FieldEditDialog : DialogFragment() {
             FieldDefinition.ENTITY_CHARACTER,
             FieldDefinition.ENTITY_EVENT
         )
+
+        /**
+         * 상위 % 표기를 **실제로 그리는** 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).
+         *
+         * 세는 법은 `"percentile"` 설정을 읽는 화면이 있는가다 —
+         * `CharacterDetailFragment`(캐릭터 상세) 하나뿐이다. 사건·작품 상세는 그 칸을 읽지
+         * 않으므로 거기서 스위치를 켜면 **켜지기만 하고 아무 데도 안 나온다.**
+         * 그 종류의 상세가 상위 %를 그리게 되면 여기 한 줄을 더한다.
+         */
+        private val PERCENTILE_CAPABLE_ENTITY_TYPES = setOf(FieldDefinition.ENTITY_CHARACTER)
+
+        /**
+         * 🎲 랜덤 생성을 **실제로 그리는** 종류 (R-24).
+         *
+         * 세는 법은 `RandomConfig.fromConfig(...).enabled`로 🎲 단추를 붙이는 폼이 있는가다 —
+         * `DynamicFieldFormBuilder`(캐릭터 편집·보충 탭)뿐이고, 사건·작품 폼은 제 위젯을
+         * 따로 그려 그 단추를 붙이지 않는다(AI 추천은 `CharacterFieldAiSuggester`가 같은 설정을
+         * 재료로 쓰지만 그것도 캐릭터 축이다).
+         */
+        private val RANDOM_CAPABLE_ENTITY_TYPES = setOf(FieldDefinition.ENTITY_CHARACTER)
 
         /** 대결 등급 컷 스테퍼 한 칸 — 목업이 정한 정밀 경로의 눈금이다(B-113). */
         private const val STEP_PERCENT = 0.5
@@ -3148,12 +3447,17 @@ class FieldEditDialog : DialogFragment() {
             entityType: String = FieldDefinition.ENTITY_CHARACTER,
             prefill: FieldDefinition? = null,
             allowDefaultField: Boolean = false,
-            reservedKeys: Collection<String>? = null
+            reservedKeys: Collection<String>? = null,
+            /** 전역 구역(무소속) 필드를 편집하는가 — 점유 키를 그 구역에서 읽는다. */
+            globalScope: Boolean = false
         ): FieldEditDialog {
             return FieldEditDialog().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_UNIVERSE_ID, universeId)
                     putBoolean(ARG_ALLOW_DEFAULT_FIELD, allowDefaultField)
+                    // 전역 구역 필드는 `universeId`가 null이라 0으로 접혀 오는데, 그 0은
+                    // *프리셋 편집*의 0과 뜻이 다르다 — 그 사실을 여기서 밝혀 나른다.
+                    if (globalScope) putBoolean(ARG_GLOBAL_SCOPE, true)
                     putString(ARG_ENTITY_TYPE, field?.entityType ?: prefill?.entityType ?: entityType)
                     if (reservedKeys != null) {
                         putStringArrayList(ARG_RESERVED_KEYS, ArrayList(reservedKeys))

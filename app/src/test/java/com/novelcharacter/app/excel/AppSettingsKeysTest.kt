@@ -176,14 +176,21 @@ class AppSettingsKeysTest {
         assertEquals("100", AppSettingsKeys.formatNumber(100.0))
     }
 
+    /**
+     * **살아 있는 경로를 잰다.** 종전에는 `parseIntCell`을 쟀는데 그 함수는 2026.08.20에
+     * 숫자 바인딩 15종이 한 벌로 이관되면서 **호출부가 0이 됐다.** 그래서 이 계약은 앱이
+     * 실제로 쓰는 관대 해석의 회귀를 원리적으로 못 잡았고, 반대로 그 고아 함수만 고치면
+     * 동작은 그대로인 채 시험 색만 바뀌었다(R-33이 없애려는 그 모양의 시험판).
+     * 지금 살아 있는 한 벌은 `parseFiniteCell`이고 정수화는 각 write 람다가 한다.
+     */
     @Test
     fun `숫자 셀이 소수로 돌아와도 정수로 읽는다`() {
         // 숫자 셀은 `51200`을 `51200.0`으로 돌려주기도 한다 — `toIntOrNull()`로 바로 받으면
         // 멀쩡한 값이 "숫자가 아닙니다"가 된다.
-        assertEquals(51200, AppSettingsKeys.parseIntCell("51200.0"))
-        assertEquals(3, AppSettingsKeys.parseIntCell(" 3 "))
-        assertNull(AppSettingsKeys.parseIntCell("셋"))
-        assertNull(AppSettingsKeys.parseIntCell(""))
+        assertEquals(51200, AppSettingsKeys.parseFiniteCell("51200.0")?.toInt())
+        assertEquals(3, AppSettingsKeys.parseFiniteCell(" 3 ")?.toInt())
+        assertNull(AppSettingsKeys.parseFiniteCell("셋"))
+        assertNull(AppSettingsKeys.parseFiniteCell(""))
     }
 
     @Test

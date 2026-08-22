@@ -542,6 +542,54 @@ else
   done
 fi
 
+# ── ⑪ 서술형 일괄 검토 창의 **체크가 뷰 밖에 사는가** ──────────────────────────
+# ③이 보는 것은 `DialogFragment`의 `onSaveInstanceState`인데, 이 창은 `object`가 맨
+# `MaterialAlertDialogBuilder`를 띄우는 모양이라 그 축에 원리적으로 안 걸린다. 그래서
+# **체크가 위젯 맵에만 살아** 회전 한 번에 껐던 필드가 전부 다시 켜졌다(형제 다섯 중
+# 이 경로만 빠져 있었다). 체크가 풀린 화면은 *"아직 안 골랐다"*와 구별되지 않는다(R-38).
+#
+# 부류로 본다 — 자리를 세지 않고 ⓐ 회차 상태 그릇을 읽는가 ⓑ 위젯 맵으로 되돌아가지
+# 않았는가를 함께 본다. ⓑ가 없으면 그릇을 읽으면서 위젯도 읽는 절충이 통과한다.
+BULK_SHEET="$SRC/ui/character/NarrativeBulkSheet.kt"
+bulk_state_ok() {   # $1: 파일 — 갖췄으면 0
+  local f="$1" body
+  body=$(grep -vE '^[[:space:]]*(//|\*|/\*)' "$f")
+  printf '%s\n' "$body" | grep -q 'aiNarrativeBulkReviewState' || return 1
+  printf '%s\n' "$body" | grep -qE 'mutableMapOf<[^>]*,[[:space:]]*CheckBox>' && return 1
+  return 0
+}
+
+# 탐지기 자기 시험 5 — 옛 코드를 잡고 지금 코드를 통과시키는가.
+SELFTEST5=$(mktemp)
+cat > "$SELFTEST5" <<'EOF'
+        val checks = mutableMapOf<Long, CheckBox>()
+        if (checks[item.fieldId]?.isChecked != true) continue
+EOF
+bulk_state_ok "$SELFTEST5"; st5_old=$?
+cat > "$SELFTEST5" <<'EOF'
+        val state = viewModel.aiNarrativeBulkReviewState
+        if (!state.isChecked(item.fieldId)) continue
+EOF
+bulk_state_ok "$SELFTEST5"; st5_new=$?
+rm -f "$SELFTEST5"
+if [ "$st5_old" -eq 0 ] || [ "$st5_new" -ne 0 ]; then
+  echo "  ✗ 탐지기 자기 시험 5 실패 (옛=$st5_old 새=$st5_new — 옛은 1, 새는 0이어야 한다)"
+  fail=1
+else
+  echo "  ✓ 탐지기 자기 시험 5 통과 (위젯 맵을 잡고, 회차 상태 그릇은 통과시킨다)"
+fi
+
+if [ ! -f "$BULK_SHEET" ]; then
+  echo "  ✗ 서술형 일괄 검토 창을 찾지 못했습니다: $BULK_SHEET"
+  echo "      → 이름이 바뀌었으면 이 검사를 함께 고칠 것(못 찾은 채 통과하면 위반 없음과 같아 보인다)."
+  fail=1
+elif ! bulk_state_ok "$BULK_SHEET"; then
+  echo "  ✗ 서술형 일괄 검토 창의 체크가 뷰 밖에 살지 않습니다: $BULK_SHEET"
+  echo "      → 회차 체크는 ViewModel의 aiNarrativeBulkReviewState가 들어야 하고,"
+  echo "        위젯 맵(mutableMapOf<Long, CheckBox>)으로 되돌아가면 안 된다 (R-38)."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "  ✓ 유료 엔진은 뷰가 세우지 못한다 — 입구가 ViewModel뿐이다 (B-45)"
   echo "  ✓ 서술형 일괄 진입을 잇는 화면이 결과·실행중·진행을 모두 든다 (B-184)"
@@ -551,6 +599,7 @@ if [ "$fail" -eq 0 ]; then
   echo "  ✓ 빈 결과로 끝난 유료 실행도 말한다 (B-144)"
   echo "  ✓ 이름 추천 시트도 같은 셋을 지킨다 (B-123)"
   echo "  ✓ 값 라이브러리 AI 정리도 같은 셋을 지킨다 (B-155)"
+  echo "  ✓ 서술형 일괄 검토의 체크가 뷰 밖에 산다 (R-38)"
   echo ""
   echo "AI 검토 시트 유료 응답 보존·고지 검사 통과"
   exit 0

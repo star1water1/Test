@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.stringOr
 
 data class PdfConfig(
@@ -40,26 +41,49 @@ class PdfExporter(private val context: Context) {
         } else novels
 
         val novelIds = selectedNovels.map { it.id }.toSet()
-        val allChars = app.characterRepository.getAllCharactersList()
-        val characters = if (config.characterIds != null) {
-            allChars.filter { it.id in config.characterIds }
+        // **읽는 범위가 문서의 범위다**(R-54). 종전에는 캐릭터·필드값·관계·사건·크로스레프를
+        // 전부 `getAll…`로 올린 뒤 메모리에서 걸렀다 — 세계관 하나를 PDF로 뽑으려고 나머지
+        // 세계관의 행을 통째로 읽었고, 좁힌 질의는 이미 다 있었다.
+        val scopedCharacters = if (config.characterIds != null) {
+            // 명시로 고른 인물은 **세계관 밖이어도 든다** — 종전 동작 그대로다(고른 것이 곧 범위다).
+            app.characterRepository.getCharactersByIds(config.characterIds)
         } else {
-            allChars.filter { it.novelId in novelIds }
+            app.characterRepository.getCharactersByUniverseList(config.universeId)
+                .filter { it.novelId in novelIds }
         }
+        // **차례를 여기서 세운다.** 종전에는 목록 질의(`ORDER BY isPinned DESC,
+        // displayOrder ASC, name ASC`)의 차례를 물려받았는데, 범위 질의에는 그 절이 없다 —
+        // 안 세우면 문서의 인물 차례가 회차마다 달라진다.
+        val characters = scopedCharacters.sortedWith(
+            compareByDescending<com.novelcharacter.app.data.model.Character> { it.isPinned }
+                .thenBy { it.displayOrder }
+                .thenBy { it.name }
+        )
+        val characterIds = characters.map { it.id }
 
         val fieldDefs = app.universeRepository.getFieldsByUniverseList(config.universeId)
-        val fieldValues = db.characterFieldValueDao().getAllValuesList()
-        val relationships = app.characterRepository.getAllRelationships()
+        val fieldValues = app.characterRepository.getValuesForCharacters(characterIds)
+        // 관계는 **양 끝 어느 쪽이든** 이 인물들에 닿는 것이다(아래 `relsByChar`가 두 끝을 모두 담는다).
+        val relationships = app.characterRepository.getRelationshipsTouching(characterIds)
         // 사건: 크로스레프 기반 필터링 (다대다)
-        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
-        val eventIdsWithNovels = allEventNovelCrossRefs
-            .filter { it.novelId in novelIds }
-            .map { it.eventId }
-            .toSet()
-        val events = app.timelineRepository.getAllEventsList()
-            .filter { it.id in eventIdsWithNovels || it.universeId == config.universeId }
-            .sortedBy { it.year }
-        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
+        val novelCrossRefs = SqlInChunks.flat(novelIds) {
+            db.timelineDao().getEventNovelCrossRefsByNovelIds(it)
+        }
+        val eventIdsWithNovels = novelCrossRefs.map { it.eventId }.toSet()
+        val universeEvents = app.timelineRepository.getEventsByUniverseList(config.universeId)
+        val extraEventIds = eventIdsWithNovels - universeEvents.mapTo(HashSet()) { it.id }
+        // 같은 해 안의 차례까지 정한다 — 두 질의를 이어 붙이므로 연도만으로는 회차마다 갈린다.
+        val events = (universeEvents + SqlInChunks.flat(extraEventIds) {
+            db.timelineDao().getEventsByIds(it)
+        }).sortedWith(
+            compareBy<com.novelcharacter.app.data.model.TimelineEvent> { it.year }
+                .thenBy { it.displayOrder }
+                .thenBy { it.id }
+        )
+        // 표에 드는 사건의 작품 연결만 든다 — 문서에 없는 사건의 연결은 쓰이지 않는다.
+        val eventNovelIdMap = SqlInChunks.flat(events.map { it.id }) {
+            db.timelineDao().getEventNovelCrossRefsByEventIds(it)
+        }.groupBy({ it.eventId }, { it.novelId })
         val nameBank = if (config.includeNameBank) db.nameBankDao().getAllNamesList() else emptyList()
 
         return buildString {

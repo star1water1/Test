@@ -108,6 +108,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val recentActivityDao = app.recentActivityDao
     private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
 
+    /**
+     * 출생·사망 사건 → 상태변화·필드 동기화의 **단일 소스** — 연표 탭과 같은 클래스다
+     * (종전에는 이 화면과 `TimelineViewModel`에 글자까지 같은 루프가 두 벌 있었다).
+     */
+    private val eventStateSync = com.novelcharacter.app.util.EventStateChangeSync(
+        timelineRepository, characterRepository, novelRepository, universeRepository,
+        semanticSyncHelper, logTag = "CharacterViewModel"
+    )
+
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
@@ -1251,39 +1260,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * **LiveData가 아니어야 한다** — 같은 채널에 되쓰면 관측자가 다시 울려 창이 두 번 뜬다.
      */
+    /**
+     * 필드 추천 검토 창의 회차 상태 — **체크는 [com.novelcharacter.app.util.AiCheckState]가
+     * 든다**(규칙을 두 벌로 적으면 갈린다. `touched` → `seeded` 수정이 한쪽에만 적용되는
+     * 것이 그 모양이다). 여기가 더 드는 것은 *손수 고친 제안*뿐이다.
+     */
     class AiReviewState {
-        /**
-         * 이 회차의 기본 선택을 이미 심었는가.
-         *
-         * **종전에는 `touched`(사용자가 한 번이라도 만졌는가)였고 그것이 결함이었다**
-         * (콜드 검토 2026.08.21). 만진 뒤로는 전 행이 [checked] 하나만 보는데 그 집합에는
-         * *만진 행*만 들어 있어서, 체크 하나를 켜고 회전하면 **기본으로 켜져 있던 나머지가
-         * 통째로 꺼졌다** — 이 상태가 없애려던 것과 정확히 같은 부류가 반대 방향으로 남았다.
-         *
-         * 지금은 첫 조립에서 기본 규칙의 결과를 [checked]에 **그대로 심는다.**
-         * 그러면 [isChecked] 하나가 언제나 전 행의 답이다.
-         */
-        private var seeded = false
-
-        private val checked = mutableSetOf<String>()
+        private val checks = com.novelcharacter.app.util.AiCheckState<String>()
         private val edited = mutableMapOf<String, com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>()
 
-        /**
-         * 회차의 **첫 조립에서만** 기본 선택을 심는다. 두 번째부터는 아무 일도 하지 않는다 —
-         * 그래야 회전으로 다시 조립돼도 사용자의 판단이 기본 규칙에 덮이지 않는다.
-         */
-        fun seedDefaults(defaultOn: Collection<String>) {
-            if (seeded) return
-            seeded = true
-            checked.clear()
-            checked.addAll(defaultOn)
-        }
+        fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn)
 
-        fun setChecked(fieldKey: String, on: Boolean) {
-            if (on) checked.add(fieldKey) else checked.remove(fieldKey)
-        }
+        fun setChecked(fieldKey: String, on: Boolean) = checks.setChecked(fieldKey, on)
 
-        fun isChecked(fieldKey: String): Boolean = fieldKey in checked
+        fun isChecked(fieldKey: String): Boolean = checks.isChecked(fieldKey)
 
         fun remember(suggestion: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion) {
             edited[suggestion.fieldKey] = suggestion
@@ -1296,14 +1286,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             edited[original.fieldKey] ?: original
 
         fun clear() {
-            seeded = false
-            checked.clear()
+            checks.clear()
             edited.clear()
         }
     }
 
     /** 회차 수명이다 — 결과를 비울 때 함께 비운다. */
     val aiReviewState = AiReviewState()
+
+    /**
+     * 서술형 **일괄** 검토 창의 회차 체크 — 형제(위)와 같은 부류다. 종전에는 이 창만 체크를
+     * 다이얼로그의 지역 `CheckBox` 맵에 두어, 회전하면 껐던 필드가 전부 다시 켜졌다.
+     * 키가 필드 id인 것은 그 창이 id로 항목을 세기 때문이다.
+     */
+    val aiNarrativeBulkReviewState = com.novelcharacter.app.util.AiCheckState<Long>()
 
     fun clearAiSuggestResult() {
         aiSuggestResult.value = null
@@ -1525,7 +1521,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 이 한 값에 들어 있다. 검토 중 회전으로 날리면 **다섯 번을 다시 결제**한다.
      */
     val aiNarrativeBulkResult = MutableLiveData<AiNarrativeBulkRun?>()
-    fun clearAiNarrativeBulkResult() { aiNarrativeBulkResult.value = null }
+    /** 회차가 끝났다 — 체크 상태의 수명도 결과와 같다(남겨 두면 다음 회차가 옛 판단을 쓴다). */
+    fun clearAiNarrativeBulkResult() {
+        aiNarrativeBulkResult.value = null
+        aiNarrativeBulkReviewState.clear()
+    }
 
     /**
      * 일괄 초안 실행 — 대상마다 요청 하나를 **순차로** 보낸다.
@@ -1766,7 +1766,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         )
         val universeId = getUniverseIdForCharacter(character.id)
         if (universeId != null) {
-            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+            // **폼이 그린 칸의 범위를 함께 넘긴다** — 그 안에서 빈 채로 돌아온 시맨틱 필드는
+            // *사용자가 비운 것*이다(값 저장 규약이 이미 그렇게 읽는다). 안 넘기면 생일을
+            // 지워도 `__birth`가 남아 알림·홈 배너·위젯이 계속 울린다.
+            semanticSyncHelper.syncFieldToStateChange(
+                character.id, universeId, values,
+                clearableFieldIds = coveredFieldDefinitionIds
+            )
         }
         return preserved
     }
@@ -2236,9 +2242,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
 
-    fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
+    fun updateCharacterDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            characterRepository.updateCharacterDisplayOrders(characters)
+            characterRepository.updateCharacterDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update display orders", e)
@@ -2417,7 +2423,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 eventId
             }
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
-            syncEventTypeToStateChanges(event, characterIds)
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
@@ -2448,7 +2454,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            syncEventTypeToStateChanges(event, characterIds)
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
@@ -2505,18 +2511,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     timelineRepository.updateAllEvents(shifted)
 
-                    for (s in shifted) {
-                        if (s.eventType == TimelineEvent.TYPE_BIRTH || s.eventType == TimelineEvent.TYPE_DEATH) {
-                            val charIds = timelineRepository.getCharacterIdsForEvent(s.id)
-                            syncEventTypeToStateChanges(s, charIds)
-                        }
-                    }
+                    // 연표 탭과 **같은 통로**로 한 벌에 동기화한다(단일 소스) — 종전에는
+                    // 사건마다 참여 캐릭터를 단건으로 묻고 캐릭터마다 다섯 질의를 쳤다.
+                    eventStateSync.syncShifted(shifted)
                 }
             }
             // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
             if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
-            syncEventTypeToStateChanges(event, characterIds)
+            eventStateSync.sync(event, characterIds)
             reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
                 app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
@@ -2556,45 +2559,19 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         db.eventFieldValueDao().getValuesByEventList(eventId)
 
     /**
-     * 사건 편집 자리에서 만든 사건 필드를 심는다(P5) — 연표판([TimelineViewModel])과 같은 규칙.
+     * 사건 편집 자리에서 만든 사건 필드를 심는다(P5) — 연표판([com.novelcharacter.app.ui.timeline.TimelineViewModel])과 같은 규칙.
      * 쓰기를 [viewModelScope]에서 돌리는 이유도 같다(호출자 취소가 삽입을 지우지 않게).
      */
     suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition): Long =
         viewModelScope.async { universeRepository.insertField(field) }.await()
 
+    /**
+     * 사건 편집 창이 **겹침 검사에 쓸 이웃 사건**을 묻는 통로 — 연표 탭과 같은 세 갈래다
+     * (작품 → 세계관 → 전체). 이 화면에서도 사건을 편집할 수 있으므로 같은 통로가 필요하다.
+     */
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()
-
-    private suspend fun syncEventTypeToStateChanges(event: TimelineEvent, characterIds: List<Long>) {
-        val fieldKey = when (event.eventType) {
-            TimelineEvent.TYPE_BIRTH -> CharacterStateChange.KEY_BIRTH
-            TimelineEvent.TYPE_DEATH -> CharacterStateChange.KEY_DEATH
-            else -> return
-        }
-        for (charId in characterIds) {
-            try {
-                val existing = characterRepository.getChangesByCharacterList(charId)
-                    .find { it.fieldKey == fieldKey }
-                val change = if (existing != null) {
-                    existing.copy(year = event.year, month = event.month, day = event.day, newValue = event.year.toString())
-                        .also { characterRepository.updateStateChange(it) }
-                } else {
-                    CharacterStateChange(
-                        characterId = charId, year = event.year,
-                        month = event.month, day = event.day,
-                        fieldKey = fieldKey, newValue = event.year.toString()
-                    ).also { characterRepository.insertStateChange(it) }
-                }
-                val character = characterRepository.getCharacterById(charId) ?: continue
-                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
-                val uId = novel.universeId ?: continue
-                semanticSyncHelper.syncStateChangeToField(charId, uId, change)
-            } catch (e: Exception) {
-                Log.w("CharacterViewModel", "Failed to sync event type for character $charId", e)
-            }
-        }
-    }
 
     /**
      * 사건 삭제 — 캐릭터 화면에서도 연표 탭과 **같은 경로**로 지운다.

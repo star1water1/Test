@@ -27,6 +27,7 @@ import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.FactionSnapshot
 import com.novelcharacter.app.data.model.FieldDefNaturalKey
 import com.novelcharacter.app.data.model.FieldDefRef
+import com.novelcharacter.app.data.model.FieldDataSnapshot
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldDefinitionSnapshot
 import com.novelcharacter.app.data.model.FieldValueEntry
@@ -47,6 +48,7 @@ import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -287,8 +289,13 @@ class TrashRepository(
         revertScope: List<String>? = null
     ) {
         val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(character.id)
-        val relationshipChanges = relationships.flatMap { rel ->
-            db.characterRelationshipChangeDao().getChangesForRelationshipList(rel.id)
+        // 관계마다 단건 조회하지 않는다 — 형제인 [snapshotFaction]이 같은 자리를 이미 그렇게
+        // 고쳐 두었고(그 주석이 "세력 하나에 100명이면 자동 관계가 약 5천 개"라 적어 두었다),
+        // 여기만 남아 있었다. 세력 자동 관계는 가입 때 기존 멤버 전원과 짝지어 생기므로
+        // 한 캐릭터의 관계 수가 세력 크기에 비례한다 — 그 곱만큼 질의가 나가고, 전부
+        // 삭제 트랜잭션 안이다('받쳐주는 확장성' · R-54).
+        val relationshipChanges = SqlInChunks.flat(relationships.map { it.id }) {
+            db.characterRelationshipChangeDao().getChangesForRelationships(it)
         }
         val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(character.id)
         val factionMemberships = db.factionMembershipDao().getMembershipsByCharacterList(character.id)
@@ -817,6 +824,174 @@ class TrashRepository(
         )
     }
 
+    /**
+     * **필드 정의 삭제 백업** — 삭제 트랜잭션 안에서, 지우기 **전에** 부를 것.
+     *
+     * 종전에 이 경로만 휴지통을 지나지 않았다: 정의를 지우면 그 필드의 값(FK CASCADE)·값
+     * 라이브러리 엔트리(FK CASCADE)·상태변화 이력(문자열 참조라 손으로 지운다)이 **아무
+     * 고지도 없이 영구 소멸했다.** 형제 삭제 경로 여덟은 전부 스냅샷을 남긴다.
+     *
+     * **정의 한 행 · 데이터는 이어붙임 행**으로 나눈다 — 캐릭터 수백 명의 값과 그 필드의
+     * 이력은 프로젝트 규모만큼 자라서 한 행에 담으면 payload가 CursorWindow 한도를 넘긴다
+     * (R-10 · [TrashSnapshot.TYPE_FIELD_DATA]).
+     *
+     * 이력의 범위는 [com.novelcharacter.app.util.FieldDeleteScope]가 정한다 — 지우는 쪽과
+     * **같은 함수**라야 담는 범위와 지우는 범위가 갈리지 않는다(R-33).
+     */
+    suspend fun snapshotDeletedField(field: FieldDefinition) {
+        val uCode = field.universeId?.let { universeCode(it) }
+
+        val charValues = if (field.entityType == FieldDefinition.ENTITY_CHARACTER) {
+            db.characterFieldValueDao().getValuesByFieldDef(field.id)
+        } else emptyList()
+        val eventValues = if (field.entityType == FieldDefinition.ENTITY_EVENT) {
+            db.eventFieldValueDao().getValuesByFieldDef(field.id)
+        } else emptyList()
+        val novelValues = if (field.entityType == FieldDefinition.ENTITY_NOVEL) {
+            db.novelFieldValueDao().getValuesByFieldDef(field.id)
+        } else emptyList()
+        val entries = db.fieldValueEntryDao().getByField(field.id)
+        val stateChanges = deletedFieldStateChanges(field)
+
+        insertSnapshot(
+            TrashSnapshot.TYPE_FIELD_DEFINITION,
+            field.name,
+            FieldDefinitionSnapshot(
+                deletedField = field,
+                universeCode = uCode,
+                sourceName = field.name,
+                refs = EntityRefs(universeCode = uCode),
+                globalScope = field.universeId == null,
+                deletedValueCount = charValues.size + eventValues.size + novelValues.size,
+                deletedEntryCount = entries.size,
+                deletedStateChangeCount = stateChanges.size
+            ),
+            emptyList(),
+            // 종류는 인스턴스가 아니라 이 호출이 아는 사실이다(R-12) — 이쪽은 언제나 삭제다.
+            kind = TrashSnapshot.KIND_DELETE
+        )
+
+        writeFieldDataChunks(field, uCode, charValues, eventValues, novelValues, entries, stateChanges)
+    }
+
+    /**
+     * 지워질 상태변화 이력 — 범위 판정은 [com.novelcharacter.app.util.FieldDeleteScope]가 한다.
+     * 삭제 **전에** 세어야 한다(형제 수를 세는 질의가 자기 자신을 빼고 센다).
+     */
+    private suspend fun deletedFieldStateChanges(field: FieldDefinition): List<CharacterStateChange> {
+        val others = db.fieldDefinitionDao().countFieldsByKeyExcluding(field.key, field.id)
+        return when (val scope = com.novelcharacter.app.util.FieldDeleteScope.scopeOf(
+            field.entityType, field.universeId, others
+        )) {
+            com.novelcharacter.app.util.FieldDeleteScope.Scope.None -> emptyList()
+            com.novelcharacter.app.util.FieldDeleteScope.Scope.AllWithKey ->
+                db.characterStateChangeDao().getChangesByFieldKey(field.key)
+            is com.novelcharacter.app.util.FieldDeleteScope.Scope.Universe ->
+                db.characterStateChangeDao().getChangesByFieldKeyAndUniverse(field.key, scope.universeId)
+        }
+    }
+
+    /**
+     * 지워진 필드의 데이터를 크기 예산([PAYLOAD_BUDGET_CHARS]) 단위로 잘라 저장한다.
+     *
+     * 주인(캐릭터·사건·작품)은 **코드로 병기한다** — 이 행들은 정의보다 나중에 복원되고,
+     * 그 사이 주인이 지워졌다 되살아났으면 옛 id는 남을 가리킨다(R-1).
+     */
+    private suspend fun writeFieldDataChunks(
+        field: FieldDefinition,
+        universeCodeValue: String?,
+        charValues: List<CharacterFieldValue>,
+        eventValues: List<EventFieldValue>,
+        novelValues: List<NovelFieldValue>,
+        entries: List<FieldValueEntry>,
+        stateChanges: List<CharacterStateChange>
+    ) {
+        if (charValues.isEmpty() && eventValues.isEmpty() && novelValues.isEmpty() &&
+            entries.isEmpty() && stateChanges.isEmpty()
+        ) return
+
+        val characterCodes = HashMap<String, String>()
+        collectCharacterCodes(charValues.map { it.characterId } + stateChanges.map { it.characterId }, characterCodes)
+        val eventCodes = HashMap<String, String>()
+        for (id in eventValues.map { it.eventId }.distinct()) {
+            eventCode(id)?.let { eventCodes[id.toString()] = it }
+        }
+        val novelCodes = HashMap<String, String>()
+        for (id in novelValues.map { it.novelId }.distinct()) {
+            novelCode(id)?.let { novelCodes[id.toString()] = it }
+        }
+
+        val pendingChars = ArrayList<CharacterFieldValue>()
+        val pendingEvents = ArrayList<EventFieldValue>()
+        val pendingNovels = ArrayList<NovelFieldValue>()
+        val pendingEntries = ArrayList<FieldValueEntry>()
+        val pendingChanges = ArrayList<CharacterStateChange>()
+        var budget = 0
+
+        suspend fun flush() {
+            if (pendingChars.isEmpty() && pendingEvents.isEmpty() && pendingNovels.isEmpty() &&
+                pendingEntries.isEmpty() && pendingChanges.isEmpty()
+            ) return
+            // 이 조각이 실제로 쓰는 참조만 담는다 — 조각마다 전체 맵을 복사하면 그 자체가 커진다.
+            insertSnapshot(
+                TrashSnapshot.TYPE_FIELD_DATA,
+                field.name,
+                FieldDataSnapshot(
+                    fieldKey = field.key,
+                    entityType = field.entityType,
+                    universeCode = universeCodeValue,
+                    globalScope = field.universeId == null,
+                    fieldName = field.name,
+                    characterValues = pendingChars.toList(),
+                    eventValues = pendingEvents.toList(),
+                    novelValues = pendingNovels.toList(),
+                    entries = pendingEntries.toList(),
+                    stateChanges = pendingChanges.toList(),
+                    refs = EntityRefs(
+                        universeCode = universeCodeValue,
+                        characters = (pendingChars.map { it.characterId } + pendingChanges.map { it.characterId })
+                            .distinct()
+                            .mapNotNull { id -> characterCodes[id.toString()]?.let { id.toString() to it } }
+                            .toMap(),
+                        events = pendingEvents.mapNotNull { v ->
+                            eventCodes[v.eventId.toString()]?.let { v.eventId.toString() to it }
+                        }.toMap(),
+                        novels = pendingNovels.mapNotNull { v ->
+                            novelCodes[v.novelId.toString()]?.let { v.novelId.toString() to it }
+                        }.toMap()
+                    )
+                ),
+                emptyList(),
+                kind = TrashSnapshot.KIND_DELETE
+            )
+            pendingChars.clear(); pendingEvents.clear(); pendingNovels.clear()
+            pendingEntries.clear(); pendingChanges.clear()
+            budget = 0
+        }
+
+        for (v in charValues) {
+            pendingChars.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (v in eventValues) {
+            pendingEvents.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (v in novelValues) {
+            pendingNovels.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (e in entries) {
+            pendingEntries.add(e); budget += gson.toJson(e).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (c in stateChanges) {
+            pendingChanges.add(c); budget += gson.toJson(c).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        flush()
+    }
+
     private suspend fun insertSnapshot(
         entityType: String,
         entityName: String,
@@ -970,7 +1145,14 @@ class TrashRepository(
             TrashSnapshot.TYPE_GRADE_SYSTEM -> gradeSystemPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_DUEL_AXIS -> duelAxisPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_DUEL_MATCHES -> duelMatchesPlan(snap, pendingCodes)?.toPreview()
-            TrashSnapshot.TYPE_FIELD_DEFINITION -> fieldDefinitionPlan(snap, pendingCodes)?.toPreview()
+            // 필드 정의는 종류가 처분을 가른다 — 삭제 백업은 되살리기, 편집 백업은 되돌리기다.
+            TrashSnapshot.TYPE_FIELD_DEFINITION ->
+                if (snap.operationKind == TrashSnapshot.KIND_DELETE) {
+                    fieldDeletePlan(snap, pendingCodes)?.toPreview()
+                } else {
+                    fieldDefinitionPlan(snap, pendingCodes)?.toPreview()
+                }
+            TrashSnapshot.TYPE_FIELD_DATA -> fieldDataPlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
     }
@@ -1059,13 +1241,26 @@ class TrashRepository(
                     result = applyDuelMatches(plan)
                 }
                 TrashSnapshot.TYPE_FIELD_DEFINITION -> {
-                    val plan = fieldDefinitionPlan(snap) ?: return@withTransaction
+                    if (snap.operationKind == TrashSnapshot.KIND_DELETE) {
+                        // **부활이다** — 살아 있는 데이터를 덮지 않으므로 되돌리기 동의를
+                        // 묻지 않는다(같은 키가 이미 살아 있으면 계획이 ALREADY_EXISTS로 막는다).
+                        val plan = fieldDeletePlan(snap) ?: return@withTransaction
+                        if (plan.blocker != null) return@withTransaction
+                        result = applyFieldDelete(plan, null)
+                    } else {
+                        val plan = fieldDefinitionPlan(snap) ?: return@withTransaction
+                        if (plan.blocker != null) return@withTransaction
+                        // 살아 있는 정의를 덮는 되돌리기다 — 동의 없이 실행하지 않는다(R-4).
+                        // 캐릭터 되돌리기가 사본으로 내려가는 것과 달리 이쪽은 내려갈 자리가
+                        // 없으므로(정의를 하나 더 만들면 새 필드다) 아무것도 하지 않고 멈춘다.
+                        if (!consentedRevert) return@withTransaction
+                        result = applyFieldDefinitionRevert(plan)
+                    }
+                }
+                TrashSnapshot.TYPE_FIELD_DATA -> {
+                    val plan = fieldDataPlan(snap) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
-                    // 살아 있는 정의를 덮는 되돌리기다 — 동의 없이 실행하지 않는다(R-4).
-                    // 캐릭터 되돌리기가 사본으로 내려가는 것과 달리 이쪽은 내려갈 자리가
-                    // 없으므로(정의를 하나 더 만들면 새 필드다) 아무것도 하지 않고 멈춘다.
-                    if (!consentedRevert) return@withTransaction
-                    result = applyFieldDefinitionRevert(plan)
+                    result = applyFieldData(plan)
                 }
                 else -> return@withTransaction
             }
@@ -1296,6 +1491,14 @@ class TrashRepository(
                 // 미리보기가 "축이 없어 판을 못 살린다"고 사실과 다른 경고를 낸다(유령 유실).
                 TrashSnapshot.TYPE_DUEL_AXIS ->
                     parse(item, DuelAxisSnapshot::class.java)?.axis?.code
+                // 같은 작업의 데이터 조각이 이 정의를 '곧 되살아날 것'으로 보게 한다 —
+                // 없으면 묶음 미리보기가 "붙을 필드가 없어 값을 못 살린다"고 사실과 다른
+                // 경고를 낸다(유령 유실). 필드 정의에는 code가 없으므로 자연키를 쓴다.
+                TrashSnapshot.TYPE_FIELD_DEFINITION ->
+                    if (item.operationKind != TrashSnapshot.KIND_DELETE) null
+                    else parse(item, FieldDefinitionSnapshot::class.java)?.let { snapshot ->
+                        snapshot.deletedField?.let { fieldDefSessionKey(snapshot, it) }
+                    }
                 else -> null
             }
             // B-25 — **둘 다 심는다.** 이 항목이 되살아나면 뒤 항목은 코드로도, 옛 id로도
@@ -1379,10 +1582,23 @@ class TrashRepository(
                     if (plan.blocker != null) return@withTransaction
                     result = applyDuelMatches(plan)
                 }
-                // TYPE_FIELD_DEFINITION은 **일부러 없다.** 이 경로는 '작업 전체 복원'이고
-                // 그 버튼은 편집 백업 묶음에 달리지 않는다(TrashGrouping.needsHeader).
-                // 여기 분기를 두면 동의 없이 살아 있는 정의를 덮는 경로가 생긴다 —
-                // 이 함수에는 사용자의 동의를 실어 나를 인자가 없다(R-4).
+                // **삭제 백업만 여기서 돈다.** 필드 삭제는 정의 한 행 + 데이터 이어붙임 행이
+                // 한 작업이라, 분기가 없으면 정의만 서고 값이 안 붙는 반쪽 복원이 된다(B-14).
+                //
+                // 편집 백업(KIND_EDIT_BACKUP)은 **일부러 없다.** 그 버튼은 편집 백업 묶음에
+                // 달리지 않고(TrashGrouping.needsHeader), 분기를 두면 동의 없이 살아 있는
+                // 정의를 덮는 경로가 생긴다 — 이 함수에는 동의를 실어 나를 인자가 없다(R-4).
+                TrashSnapshot.TYPE_FIELD_DEFINITION -> {
+                    if (item.operationKind != TrashSnapshot.KIND_DELETE) return@withTransaction
+                    val plan = fieldDeletePlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyFieldDelete(plan, session)
+                }
+                TrashSnapshot.TYPE_FIELD_DATA -> {
+                    val plan = fieldDataPlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyFieldData(plan)
+                }
                 else -> return@withTransaction
             }
         }
@@ -1404,10 +1620,19 @@ class TrashRepository(
     private suspend fun harvestRestoredCharacters(characterIds: List<Long>, extraUniverseIds: Set<Long>) {
         val library = FieldValueLibraryRepository(db)
         val universeIds = HashSet<Long>(extraUniverseIds)
+        // **작품은 작품 수만큼만 묻는다** — 종전에는 캐릭터마다 `getNovelById`를 쳐서 질의
+        // 수가 복원 인원에 비례했다(세계관 삭제를 되돌리면 그 세계관 캐릭터 전원이다).
+        // 그 DAO의 일괄 쌍은 KDoc이 *"캐릭터별 getNovelById N+1 제거용"*이라 적어 두었고,
+        // 같은 수리의 전례가 일괄 편집에 이미 있다(R-53·R-54).
+        val novelIds = HashSet<Long>()
         SqlInChunks.each(characterIds.distinct()) { chunk ->
             for (character in db.characterDao().getCharactersByIds(chunk)) {
-                val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
-                if (universeId != null) universeIds.add(universeId)
+                character.novelId?.let { novelIds.add(it) }
+            }
+        }
+        SqlInChunks.each(novelIds.toList()) { chunk ->
+            for (novel in db.novelDao().getNovelsByIds(chunk)) {
+                novel.universeId?.let { universeIds.add(it) }
             }
         }
         if (universeIds.isNotEmpty()) library.harvestUniverses(universeIds)
@@ -1721,7 +1946,7 @@ class TrashRepository(
                 skippedMemberships++
                 continue
             }
-            if (!seenMemberships.add(listOf(newId, m.joinYear, m.leaveYear, m.leaveType))) continue
+            if (!seenMemberships.add(FactionMembershipMatcher.naturalKey(newId, m))) continue
             plannedMemberships.add(m.copy(factionId = newId))
         }
 
@@ -1999,7 +2224,12 @@ class TrashRepository(
         // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다.
         // 지금 이미지 경로를 함께 담는다: 캐릭터 행을 되돌리면 imagePaths도 옛 것으로 바뀌어
         // 현재 파일이 참조를 잃으므로, 담아 두어야 ImageOwnershipGuard가 보호한다.
-        snapshotCharacter(
+        //
+        // **새 인스턴스로 남긴다**: 되돌리기는 그 자체가 하나의 조작이고, `this`로 남기면
+        // 화면이 들고 있는 인스턴스(휴지통은 앱 수준 싱글턴을 쓴다)의 작업에 붙어
+        // **앱 수명 하나가 통째로 한 작업**이 된다(위 [operationId] 계약 · R-3/R-9).
+        // 형제인 필드 정의 되돌리기는 이미 이 꼴이다 — 같은 판이 이 자리만 빠뜨렸다.
+        TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP).snapshotCharacter(
             living,
             parseImagePathStrings(living.imagePaths),
             kind = TrashSnapshot.KIND_EDIT_BACKUP,
@@ -2009,8 +2239,22 @@ class TrashRepository(
         if (RestoreModes.SCOPE_CHARACTER_ROW in scope) {
             // id와 code는 **살아 있는 행의 것**을 유지한다 — payload의 code를 쓰면 유니크 충돌과
             // 재발급이 얽혀 '복원이 실패하거나 code가 바뀌는' 새 경로가 생긴다.
+            //
+            // **`representativeImagePath`를 명시로 넘긴다**(R-2). 그 칸은 v47에서 들어와,
+            // 그 이전에 만들어진 payload에는 키가 없다 — 선언이 non-null이어도 Gson이
+            // Unsafe 할당으로 null을 넣는다. 그 상태에서 `copy`를 부르면 넘기지 않은 인자를
+            // `this`에서 읽어 생성자에 넘기므로 **그 자리에서 NPE**가 난다(B-103이 겪은 그
+            // 지뢰다). 되살리기 갈래는 이미 접고 있었고 이 갈래만 그 정규화보다 앞서
+            // 빠져나가 못 보고 있었다 — 되돌리기가 영구히 실패하는 payload가 실재한다
+            // (`character_row` 범위는 2026.07.26에 섰고 v47은 08.03이라 그 창의 백업이
+            // 보관 기한 안에 아직 살아 있다).
             db.characterDao().update(
-                data.character.copy(id = living.id, code = living.code, novelId = plan.novelId)
+                data.character.copy(
+                    id = living.id,
+                    code = living.code,
+                    novelId = plan.novelId,
+                    representativeImagePath = data.character.representativeImagePath.orEmpty()
+                )
             )
         }
 
@@ -2028,10 +2272,14 @@ class TrashRepository(
         // 먼저 비우면 백업 이후 사용자가 더한 것까지 사라진다.
         var restoredMemberships = 0
         if (RestoreModes.SCOPE_MEMBERSHIPS in scope) {
+            // **접는 키는 계획 쪽과 같아야 한다**(`FactionMembershipMatcher.naturalKey`).
+            // 종전에는 여기만 세력 id 하나로 접어, 같은 세력에 가입→탈퇴→재가입한 이력
+            // 두 줄 중 **첫 줄만 되살아나고 나머지가 말없이 사라졌다**(그 줄은 되살린 수에도
+            // 안 세어져 고지까지 함께 틀렸다). 유니크 제약이 없는 표라 아무도 막지 못한다.
             val existing = db.factionMembershipDao().getMembershipsByCharacterList(living.id)
-                .map { it.factionId }.toHashSet()
+                .mapTo(HashSet()) { FactionMembershipMatcher.naturalKey(it.factionId, it) }
             for (membership in plan.memberships) {
-                if (!existing.add(membership.factionId)) continue
+                if (!existing.add(FactionMembershipMatcher.naturalKey(membership.factionId, membership))) continue
                 db.factionMembershipDao().insert(membership.copy(id = 0, characterId = living.id))
                 restoredMemberships++
             }
@@ -3649,6 +3897,335 @@ class TrashRepository(
             losses = RestoreLossCounts(revertTargetsMissing = plan.missing),
             relinkedByCode = plan.relinkedByCode,
             revertedInPlace = true
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 필드 정의 삭제 되살리기
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class FieldDeletePlan(
+        val data: FieldDefinitionSnapshot,
+        val field: FieldDefinition,
+        val universeId: Long?,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_FIELD_DEFINITION,
+            entityName = field.name,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    /**
+     * 지워진 필드를 **다시 심는** 계획 — 되돌리기([fieldDefinitionPlan])와 정반대다.
+     *
+     * 같은 자연키의 필드가 그 사이 다시 만들어져 있으면 되살리지 않는다([RestoreBlocker.ALREADY_EXISTS]) —
+     * 되살리면 같은 키가 둘이 되고(전역 구역은 색인도 막지 못한다) 값이 어느 쪽에 붙을지
+     * 알 수 없어진다. 스냅샷은 남겨 사용자가 내용을 보고 직접 고르게 한다(R-4).
+     */
+    private suspend fun fieldDeletePlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): FieldDeletePlan? {
+        val data = parse(snap, FieldDefinitionSnapshot::class.java) ?: return null
+        val field = data.deletedField ?: return null
+        @Suppress("SENSELESS_COMPARISON")
+        if (field.key == null || field.entityType == null || field.name == null) return null
+
+        val tally = RestoreTally(legacy = data.refs == null, pendingCodes = pendingCodes)
+        val uCode = data.universeCode ?: data.refs?.universeCode
+        val universeId = if (data.globalScope) null else uCode?.let { code ->
+            session?.lookup(TrashSnapshot.TYPE_UNIVERSE, code)
+                ?: db.universeDao().getUniverseByCode(code)?.id
+                ?: if (code in pendingCodes) RestoreTally.PENDING_ID else null
+        }
+        val previewOnly = universeId == RestoreTally.PENDING_ID
+
+        val living = when {
+            data.globalScope -> db.fieldDefinitionDao().getGlobalFieldByKey(field.key, field.entityType)
+            previewOnly -> null
+            universeId != null -> db.fieldDefinitionDao().getFieldByKey(universeId, field.key, field.entityType)
+            else -> null
+        }
+
+        return FieldDeletePlan(
+            data = data,
+            field = field,
+            universeId = universeId,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = previewOnly,
+            blocker = when {
+                // 전역 구역은 세계관이 없는 것이 정상이다.
+                !data.globalScope && universeId == null -> RestoreBlocker.MISSING_UNIVERSE
+                living != null -> RestoreBlocker.ALREADY_EXISTS
+                else -> null
+            }
+        )
+    }
+
+    private suspend fun applyFieldDelete(plan: FieldDeletePlan, session: RestoreSession?): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 필드 정의 계획이 적용 단계까지 왔다" }
+        val universeId = if (plan.data.globalScope) null else requireNotNull(plan.universeId)
+
+        // **id는 새로 받는다** — 옛 id는 그 사이 남의 필드에 재발급됐을 수 있다(R-1).
+        // 값·엔트리·이력은 이어붙임 행이 자연키로 다시 찾아 붙인다.
+        // 전역키 보증(getGlobalFieldByKey로 먼저 조회 — [fieldDeletePlan]이 살아 있는 같은
+        // 자연키를 찾으면 ALREADY_EXISTS로 막고 여기까지 오지 않는다. 그 조회가 전역 구역의
+        // 유일성을 지키는 유일한 장치다 — 유니크 색인은 NULL을 서로 다르게 본다)
+        val newId = db.fieldDefinitionDao().insert(
+            plan.field.copy(id = 0, universeId = universeId)
+        )
+        session?.record(TrashSnapshot.TYPE_FIELD_DEFINITION, fieldDefSessionKey(plan.data, plan.field), newId)
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_FIELD_DEFINITION,
+            restoredName = plan.field.name
+        )
+    }
+
+    /** 이어붙임 행이 자기 정의를 찾는 세션 키 — 자연키 그대로다(코드가 없는 엔티티다). */
+    private fun fieldDefSessionKey(data: FieldDefinitionSnapshot, field: FieldDefinition): String =
+        fieldDefSessionKey(
+            if (data.globalScope) null else (data.universeCode ?: data.refs?.universeCode),
+            field.entityType,
+            field.key
+        )
+
+    private fun fieldDefSessionKey(universeCode: String?, entityType: String, key: String): String =
+        "fielddef:${universeCode.orEmpty()}:$entityType:$key"
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 지워진 필드의 데이터 (이어붙임 행)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class FieldDataPlan(
+        val data: FieldDataSnapshot,
+        val fieldDefinitionId: Long?,
+        val characterValues: List<Pair<Long, CharacterFieldValue>>,
+        val eventValues: List<Pair<Long, EventFieldValue>>,
+        val novelValues: List<Pair<Long, NovelFieldValue>>,
+        val entries: List<FieldValueEntry>,
+        val stateChanges: List<Pair<Long, CharacterStateChange>>,
+        val losses: RestoreLossCounts,
+        val relinkedByCode: Int,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_FIELD_DATA,
+            entityName = data.fieldName.orEmpty(),
+            losses = losses,
+            relinkedByCode = relinkedByCode,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun fieldDataPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): FieldDataPlan? {
+        val data = parse(snap, FieldDataSnapshot::class.java) ?: return null
+        val key = data.fieldKey ?: return null
+        val entityType = data.entityType ?: return null
+        val refs = data.refs
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
+
+        val uCode = data.universeCode ?: refs?.universeCode
+        val sessionKey = fieldDefSessionKey(if (data.globalScope) null else uCode, entityType, key)
+        // 자기 정의는 이 행보다 **먼저** 복원된다(restorePriority) — 그때 새 id를 받으므로
+        // 세션에 등재된 값이 있으면 그것이 정답이고, 없으면 DB에서 자연키로 찾는다.
+        val defId = session?.lookup(TrashSnapshot.TYPE_FIELD_DEFINITION, sessionKey)
+            ?: if (data.globalScope) {
+                db.fieldDefinitionDao().getGlobalFieldByKey(key, entityType)?.id
+            } else {
+                val universeId = uCode?.let { code ->
+                    session?.lookup(TrashSnapshot.TYPE_UNIVERSE, code)
+                        ?: db.universeDao().getUniverseByCode(code)?.id
+                }
+                universeId?.let { db.fieldDefinitionDao().getFieldByKey(it, key, entityType)?.id }
+            }
+            ?: if (sessionKey in pendingCodes) RestoreTally.PENDING_ID else null
+        val previewOnly = defId == RestoreTally.PENDING_ID
+
+        val charValues = data.characterValues.orEmpty()
+        val eventValues = data.eventValues.orEmpty()
+        val novelValues = data.novelValues.orEmpty()
+        val entries = data.entries.orEmpty()
+        val changes = data.stateChanges.orEmpty()
+
+        val charIndex = characterIndex(
+            charValues.map { it.characterId } + changes.map { it.characterId },
+            refs?.characters?.values.orEmpty(), session
+        )
+        val evIndex = eventIndex(eventValues.map { it.eventId }, refs?.events?.values.orEmpty(), session)
+        val novIndex = novelIndex(novelValues.map { it.novelId }, refs?.novels?.values.orEmpty(), session)
+
+        fun ownerOfCharacter(oldId: Long): Long? {
+            val code = refs?.characters?.get(oldId.toString())
+            return tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    oldId, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
+                ),
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_CHARACTER, oldId, code)
+            ).id
+        }
+
+        var lostValues = 0
+        val plannedChars = ArrayList<Pair<Long, CharacterFieldValue>>(charValues.size)
+        for (v in charValues) {
+            val owner = ownerOfCharacter(v.characterId)
+            if (owner == null) { lostValues++; continue }
+            plannedChars.add(owner to v)
+        }
+        val plannedEvents = ArrayList<Pair<Long, EventFieldValue>>(eventValues.size)
+        for (v in eventValues) {
+            val code = refs?.events?.get(v.eventId.toString())
+            val owner = tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    v.eventId, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
+                ),
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_EVENT, v.eventId, code)
+            ).id
+            if (owner == null) { lostValues++; continue }
+            plannedEvents.add(owner to v)
+        }
+        val plannedNovels = ArrayList<Pair<Long, NovelFieldValue>>(novelValues.size)
+        for (v in novelValues) {
+            val code = refs?.novels?.get(v.novelId.toString())
+            val owner = tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    v.novelId, code, novIndex.codeById, novIndex.idByCode, novIndex.liveIds
+                ),
+                RestoreTally.pendingKeyOf(TrashSnapshot.TYPE_NOVEL, v.novelId, code)
+            ).id
+            if (owner == null) { lostValues++; continue }
+            plannedNovels.add(owner to v)
+        }
+
+        var lostChanges = 0
+        val plannedChanges = ArrayList<Pair<Long, CharacterStateChange>>(changes.size)
+        for (c in changes) {
+            val owner = ownerOfCharacter(c.characterId)
+            if (owner == null) { lostChanges++; continue }
+            plannedChanges.add(owner to c)
+        }
+
+        return FieldDataPlan(
+            data = data,
+            fieldDefinitionId = defId,
+            characterValues = plannedChars,
+            eventValues = plannedEvents,
+            novelValues = plannedNovels,
+            entries = entries,
+            stateChanges = plannedChanges,
+            losses = RestoreLossCounts(
+                orphanFieldValues = lostValues,
+                stateChanges = lostChanges
+            ),
+            relinkedByCode = tally.relinked,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = previewOnly || tally.previewOnly,
+            // 붙을 정의가 없으면 되살리지 않는다 — 값만 심으면 어느 필드의 값인지 알 수 없다.
+            blocker = if (defId == null) RestoreBlocker.MISSING_UNIVERSE else null
+        )
+    }
+
+    private suspend fun applyFieldData(plan: FieldDataPlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 필드 데이터 계획이 적용 단계까지 왔다" }
+        val defId = requireNotNull(plan.fieldDefinitionId)
+
+        // **살아 있는 값을 덮지 않는다** — 그 사이 같은 자리에 새 값이 들어왔으면 그것이 최신이다.
+        var merged = 0
+        val charRows = ArrayList<CharacterFieldValue>(plan.characterValues.size)
+        for ((owner, v) in plan.characterValues) {
+            if (db.characterFieldValueDao().getValue(owner, defId) != null) { merged++; continue }
+            charRows.add(v.copy(id = 0, characterId = owner, fieldDefinitionId = defId))
+        }
+        if (charRows.isNotEmpty()) db.characterFieldValueDao().insertAll(charRows)
+
+        val eventRows = ArrayList<EventFieldValue>(plan.eventValues.size)
+        for ((owner, v) in plan.eventValues) {
+            if (db.eventFieldValueDao().getValue(owner, defId) != null) { merged++; continue }
+            eventRows.add(v.copy(id = 0, eventId = owner, fieldDefinitionId = defId))
+        }
+        if (eventRows.isNotEmpty()) db.eventFieldValueDao().insertAll(eventRows)
+
+        val novelRows = ArrayList<NovelFieldValue>(plan.novelValues.size)
+        for ((owner, v) in plan.novelValues) {
+            if (db.novelFieldValueDao().getValue(owner, defId) != null) { merged++; continue }
+            novelRows.add(v.copy(id = 0, novelId = owner, fieldDefinitionId = defId))
+        }
+        if (novelRows.isNotEmpty()) db.novelFieldValueDao().insertAll(novelRows)
+
+        var skippedEntries = 0
+        val entryRows = ArrayList<FieldValueEntry>(plan.entries.size)
+        for (e in plan.entries) {
+            if (db.fieldValueEntryDao().getByFieldAndValue(defId, e.value) != null) { skippedEntries++; continue }
+            entryRows.add(e.copy(id = 0, fieldDefinitionId = defId))
+        }
+        // **code가 겹치면 재발급한다** — code도 유니크라 하나만 겹쳐도 조각이 통째로 엎어진다.
+        // 버리지 않고 새 code를 주는 것이 이 저장소의 처분이다(`applyDuelMatches`와 같은 꼴):
+        // 되살아나는 내용은 같고, 못 살리는 것보다 코드를 새로 받는 편이 낫다.
+        if (entryRows.isNotEmpty()) {
+            val takenEntryCodes = HashSet<String>()
+            SqlInChunks.each(entryRows.mapNotNull { it.code?.takeIf { c -> c.isNotBlank() } }) { chunk ->
+                takenEntryCodes.addAll(db.fieldValueEntryDao().getByCodes(chunk).mapNotNull { it.code })
+            }
+            // 넣기는 `insertAllIgnore`다 — code를 새로 준 뒤에는 걸릴 것이 없지만, 통로가
+            // IGNORE라 혹시 남은 충돌이 **조각 전체를 엎지는 못한다**(마지막 안전망).
+            db.fieldValueEntryDao().insertAllIgnore(
+                entryRows.map { row ->
+                    // `code`는 선언이 non-null이지만 **payload에서 온 값이라 null일 수 있다**
+                    // (R-2 — Gson은 Unsafe로 할당한다). 안전 호출을 지우지 말 것.
+                    val safe = row.code?.takeIf { it.isNotBlank() && it !in takenEntryCodes }
+                        ?: generateEntityCode()
+                    row.copy(code = safe)
+                }
+            )
+        }
+
+        // 같은 이력이 이미 살아 있으면 넣지 않는다 — **유실이 아니라 수렴이라** 세지 않는다.
+        // (그 이력은 지금 DB에 있고, 한 벌 더 만들면 그것이 손해다.)
+        val changeRows = ArrayList<CharacterStateChange>(plan.stateChanges.size)
+        for ((owner, c) in plan.stateChanges) {
+            val existing = db.characterStateChangeDao()
+                .getChangeByExactKey(owner, c.year, c.month, c.day, c.fieldKey, c.newValue)
+            if (existing != null) continue
+            changeRows.add(c.copy(id = 0, characterId = owner))
+        }
+        if (changeRows.isNotEmpty()) {
+            // **code가 겹치면 재발급한다**(위 엔트리와 같은 사유·같은 처분).
+            val takenChangeCodes = HashSet<String>()
+            SqlInChunks.each(changeRows.mapNotNull { it.code?.takeIf { c -> c.isNotBlank() } }) { chunk ->
+                takenChangeCodes.addAll(db.characterStateChangeDao().getExistingCodes(chunk))
+            }
+            db.characterStateChangeDao().insertAll(
+                changeRows.map { row ->
+                    val safe = row.code?.takeIf { it.isNotBlank() && it !in takenChangeCodes }
+                        ?: generateEntityCode()
+                    row.copy(code = safe)
+                }
+            )
+        }
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_FIELD_DATA,
+            restoredName = plan.data.fieldName.orEmpty(),
+            losses = plan.losses.copy(
+                mergedFieldValues = plan.losses.mergedFieldValues + merged,
+                fieldValueEntries = plan.losses.fieldValueEntries + skippedEntries
+            ),
+            relinkedByCode = plan.relinkedByCode
         )
     }
 

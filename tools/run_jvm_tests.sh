@@ -103,6 +103,7 @@ $MAIN/excel/ExportProgress.kt
 $MAIN/excel/OverwriteGuard.kt
 $MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EntityFieldHeaders.kt
+$MAIN/excel/CharacterFieldHeaders.kt
 $MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
@@ -127,9 +128,14 @@ $MAIN/util/FieldValueCellPlan.kt
 $MAIN/util/FieldValueOverlay.kt
 $MAIN/util/FieldValueScan.kt
 $MAIN/util/CharacterFieldColumns.kt
+$MAIN/util/AiCheckState.kt
+$MAIN/util/SemanticClearPlan.kt
+$MAIN/util/ColorHex.kt
+$MAIN/util/AliveAtYear.kt
 $MAIN/backup/BackupChunkFormat.kt
 $MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
+$MAIN/util/NarrativeDensityCurve.kt
 $MAIN/util/GraphForceLayout.kt
 $MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
@@ -296,6 +302,10 @@ $MAIN/util/ImageLinkGroupPlanner.kt
 $MAIN/util/ImageTagApplyPlanner.kt
 $MAIN/util/SqlInChunks.kt
 $MAIN/util/ExifOrientation.kt
+$MAIN/util/SliderRange.kt
+$MAIN/util/SafFileCopy.kt
+$MAIN/util/FieldDeleteScope.kt
+$MAIN/util/SpinnerChoice.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
@@ -347,6 +357,7 @@ TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
+$TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt
 $TEST/excel/EntityFieldValueOverflowTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
@@ -396,6 +407,11 @@ $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
+$TEST/util/AiCheckStateTest.kt
+$TEST/util/SemanticClearPlanTest.kt
+$TEST/util/ColorHexTest.kt
+$TEST/util/AliveAtYearTest.kt
+$TEST/util/NarrativeDensityCurveTest.kt
 $TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt
@@ -521,6 +537,10 @@ $TEST/util/ImageLinkGroupPlannerTest.kt
 $TEST/util/ImageTagApplyPlannerTest.kt
 $TEST/util/SqlInChunksTest.kt
 $TEST/util/ExifOrientationTest.kt
+$TEST/util/SliderRangeTest.kt
+$TEST/util/SafFileCopyTest.kt
+$TEST/util/FieldDeleteScopeTest.kt
+$TEST/util/SpinnerChoiceTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt

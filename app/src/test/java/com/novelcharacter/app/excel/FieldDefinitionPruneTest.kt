@@ -40,11 +40,11 @@ class FieldDefinitionPruneTest {
             field(4, null, "mood")
         )
         // 시트에는 세계관 10의 두 행만 있었다
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L, 2L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L, 2L), entityTypeStated = true)
 
         assertTrue("전역 필드가 삭제 대상에 들어갔다 — 값이 CASCADE로 함께 사라진다", outcome.stale.isEmpty())
         assertEquals(listOf("theme", "mood"), outcome.protectedFields.map { it.key })
-        assertEquals("고지할 구역은 전역 하나다", listOf<Long?>(null), outcome.protectedScopes)
+        assertEquals("고지할 구역은 전역 하나다", listOf<Pair<Long?, String?>>(null to null), outcome.protectedScopes)
     }
 
     /**
@@ -53,10 +53,10 @@ class FieldDefinitionPruneTest {
      */
     @Test fun 시트가_다루지_않은_세계관도_지키다() {
         val all = listOf(field(1, 10, "gender"), field(2, 20, "rank"))
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = true)
 
         assertTrue(outcome.stale.isEmpty())
-        assertEquals(listOf<Long?>(20L), outcome.protectedScopes)
+        assertEquals(listOf<Pair<Long?, String?>>(20L to null), outcome.protectedScopes)
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ class FieldDefinitionPruneTest {
             field(2, 10, "residence"),   // 백업에서 지워진 것
             field(3, 10, "height")       // 백업에서 지워진 것
         )
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = true)
 
         assertEquals(listOf("residence", "height"), outcome.stale.map { it.key })
         assertTrue(outcome.protectedFields.isEmpty())
@@ -87,7 +87,7 @@ class FieldDefinitionPruneTest {
      */
     @Test fun 전역_행이_있는_백업은_전역_미매칭을_지운다() {
         val all = listOf(field(1, null, "theme"), field(2, null, "mood"))
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = true)
 
         assertEquals(listOf("mood"), outcome.stale.map { it.key })
         assertTrue(outcome.protectedFields.isEmpty())
@@ -103,7 +103,7 @@ class FieldDefinitionPruneTest {
             field(1, 10, "old"),     // 백업에 없다
             field(2, 10, "fresh")    // 이번 가져오기가 새로 만들었다
         )
-        val outcome = FieldDefinitionPrune.plan(all, setOf(2L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(2L), entityTypeStated = true)
 
         assertEquals(listOf("old"), outcome.stale.map { it.key })
     }
@@ -119,7 +119,7 @@ class FieldDefinitionPruneTest {
      */
     @Test fun 매칭이_하나도_없으면_아무것도_지우지_않는다() {
         val all = listOf(field(1, 10, "gender"), field(2, null, "theme"))
-        val outcome = FieldDefinitionPrune.plan(all, emptySet())
+        val outcome = FieldDefinitionPrune.plan(all, emptySet(), entityTypeStated = true)
 
         assertTrue(outcome.stale.isEmpty())
         assertEquals(2, outcome.protectedFields.size)
@@ -132,18 +132,18 @@ class FieldDefinitionPruneTest {
             field(2, 20, "a"), field(3, 20, "b"),
             field(4, null, "g1"), field(5, null, "g2")
         )
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = true)
 
-        assertEquals(listOf<Long?>(20L, null), outcome.protectedScopes)
+        assertEquals(listOf<Pair<Long?, String?>>(20L to null, null to null), outcome.protectedScopes)
         assertEquals(4, outcome.protectedFields.size)
     }
 
     /**
-     * 같은 구역 안에서 entityType이 달라도 **구역은 하나다.**
+     * `대상` 열이 **있으면** 같은 세계관 안에서 entityType이 달라도 구역은 하나다.
      * 시트가 전 종류를 한 장에 싣기 때문이다(R-29) — 캐릭터 행이 매칭됐으면
      * 그 세계관의 사건 필드도 '백업이 다룬 것'이라 미매칭분은 지워진다.
      */
-    @Test fun 구역_판정은_entityType을_가르지_않는다() {
+    @Test fun 대상_열이_있으면_구역_판정은_entityType을_가르지_않는다() {
         val all = listOf(
             FieldDefinition(id = 1, universeId = 10, key = "gender", name = "성별", type = "TEXT"),
             FieldDefinition(
@@ -151,8 +151,42 @@ class FieldDefinitionPruneTest {
                 entityType = FieldDefinition.ENTITY_EVENT
             )
         )
-        val outcome = FieldDefinitionPrune.plan(all, setOf(1L))
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = true)
 
         assertEquals(listOf("place"), outcome.stale.map { it.key })
+    }
+
+    /**
+     * **`대상` 열이 없는 파일은 캐릭터 외의 종류를 말하지 않은 것이다**(R-36 — *없는 열*과
+     * *빈 칸*은 다른 사실). 그 파일에서는 모든 행이 캐릭터로 읽히므로 사건·작품 정의는
+     * 원리적으로 매칭될 수 없다 — 그때도 세계관 하나를 구역으로 보면, 캐릭터 행이
+     * 매칭됐다는 이유로 **그 세계관의 사건·작품 정의가 값과 함께 CASCADE로 사라진다.**
+     */
+    @Test fun 대상_열이_없으면_사건_작품_정의를_지키다() {
+        val all = listOf(
+            FieldDefinition(id = 1, universeId = 10, key = "gender", name = "성별", type = "TEXT"),
+            FieldDefinition(id = 2, universeId = 10, key = "old", name = "옛필드", type = "TEXT"),
+            FieldDefinition(
+                id = 3, universeId = 10, key = "place", name = "장소", type = "TEXT",
+                entityType = FieldDefinition.ENTITY_EVENT
+            ),
+            FieldDefinition(
+                id = 4, universeId = 10, key = "genre", name = "장르", type = "TEXT",
+                entityType = FieldDefinition.ENTITY_NOVEL
+            )
+        )
+        val outcome = FieldDefinitionPrune.plan(all, setOf(1L), entityTypeStated = false)
+
+        // 캐릭터 구역은 근거가 섰으므로 미매칭 캐릭터 필드는 그대로 지워진다(덮어쓰기의 뜻).
+        assertEquals(listOf("old"), outcome.stale.map { it.key })
+        // 사건·작품은 그 파일이 말한 적이 없다 — 남기고 고지한다.
+        assertEquals(listOf("place", "genre"), outcome.protectedFields.map { it.key })
+        assertEquals(
+            listOf<Pair<Long?, String?>>(
+                10L to FieldDefinition.ENTITY_EVENT,
+                10L to FieldDefinition.ENTITY_NOVEL
+            ),
+            outcome.protectedScopes
+        )
     }
 }

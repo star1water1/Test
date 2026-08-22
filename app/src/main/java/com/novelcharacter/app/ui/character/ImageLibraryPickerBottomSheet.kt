@@ -15,8 +15,11 @@ import com.novelcharacter.app.util.LibraryPickerRow
 import com.novelcharacter.app.util.LibraryPickerRows
 import com.novelcharacter.app.util.LinkGroupFold
 import com.novelcharacter.app.util.loadCharacterThumbnail
+import androidx.fragment.app.setFragmentResult
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * 라이브러리에서 이미지를 골라 캐릭터에 붙이는 피커.
@@ -30,18 +33,30 @@ import kotlinx.coroutines.Job
  * **선별은 [ImageFilterHelper]가 한다 — 여기서 다시 짜지 않는다.** 이미지 탭이 쓰는 그
  * 규칙을 그대로 쓰므로 "탭에서 검색되던 것이 피커에서는 안 나오는" 갈림이 생기지 않는다.
  *
- * 호출부 계약: [images]·[onConfirm]을 세팅한 뒤 show한다. 되돌려 주는 것은 **고른 경로들**이며,
- * 링크 그룹 확장·중복 제거·실제 첨부는 **호출부의 몫**이다(추천 첨부와 같은 자리를 지나야
- * 두 경로의 결과가 갈리지 않는다).
+ * 호출부 계약: [newInstance]로 만들어 show하고, 결과는 [RESULT_KEY]로 받는다. 되돌려 주는
+ * 것은 **고른 경로들**이며, 링크 그룹 확장·중복 제거·실제 첨부는 **호출부의 몫**이다
+ * (추천 첨부와 같은 자리를 지나야 두 경로의 결과가 갈리지 않는다).
+ *
+ * ## 회전에 아무것도 잃지 않는다 (R-65)
+ *
+ * 종전에는 콜백을 **필드로 꽂았고**, 회전하면 그 필드가 비어 시트가 조용히 닫혔다
+ * (`onConfirm == null` → 안전 종료). 그 처분은 *현재 상태의 사본*만 든 시트의 것이지,
+ * **사용자가 그 자리에서 만든 것**을 든 시트의 것이 아니다 — 여기서 사라지는 것은 수십 장을
+ * 훑어 고른 다중 선택이다(R-41-a).
+ *
+ * 그래서 배선을 없앴다: 목록은 부모의 [CharacterViewModel]에서 곧장 들고, 이미 붙은 것은
+ * 인자 번들이 나르며, 고른 것은 결과 채널로 건넨다. **고른 경로는
+ * [onSaveInstanceState]가 지킨다** — 검색칸·칩은 뷰 상태 저장이 스스로 든다.
  */
 class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
-    var images: List<LibraryPickerRow> = emptyList()
+    private val viewModel: CharacterViewModel by viewModels(ownerProducer = { requireParentFragment() })
+
+    private var images: List<LibraryPickerRow> = emptyList()
 
     /** 이미 붙어 있는 경로(canonical 비교는 호출부가 맞춰 넣는다) — 목록에서 뺀다. */
-    var excludePaths: Set<String> = emptySet()
-
-    var onConfirm: ((List<String>) -> Unit)? = null
+    private val excludePaths: Set<String>
+        get() = arguments?.getStringArray(ARG_EXCLUDE)?.toSet().orEmpty()
 
     private var _binding: BottomSheetImageLibraryPickerBinding? = null
     private val binding get() = _binding!!
@@ -73,16 +88,9 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // 회전 등으로 콜백이 사라지면 조용한 무동작이 된다 — 그 상태로 남기지 않는다
-        // (`SearchFilterBottomSheet`의 콜백 유실이 같은 부류로 색출된 적이 있다).
-        if (onConfirm == null) { dismissAllowingStateLoss(); return }
-
-        fullMembersByGroup = images.filter { it.linkGroupId != null }
-            .groupBy({ it.linkGroupId!! }, { it.path })
-            .filterValues { it.size > 1 }
-        groupByPath = images.mapNotNull { row ->
-            row.linkGroupId?.takeIf { it in fullMembersByGroup }?.let { row.path to it }
-        }.toMap()
+        // **회전해도 고른 것을 잃지 않는다** — 종전에는 콜백을 필드로 꽂아 두어 회전 한 번에
+        // 시트가 조용히 닫혔고, 수십 장을 훑어 고른 선택이 통째로 사라졌다(R-65 ⓑ).
+        savedInstanceState?.getStringArray(STATE_SELECTED)?.let { selected.addAll(it) }
 
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
@@ -96,14 +104,49 @@ class ImageLibraryPickerBottomSheet : BottomSheetDialogFragment() {
 
         binding.cancelButton.setOnClickListener { dismiss() }
         binding.confirmButton.setOnClickListener {
-            val cb = onConfirm
-            val picked = selected.toList()
+            // 결과는 채널로 건넨다 — 꽂은 콜백은 회전을 못 넘는다.
+            setFragmentResult(
+                REQUEST_KEY,
+                android.os.Bundle().apply { putStringArray(RESULT_KEY, selected.toTypedArray()) }
+            )
             dismiss()
-            cb?.invoke(picked)
         }
 
-        refresh()
+        // 목록은 부모의 뷰모델에서 곧장 든다 — 꽂아 넣던 배선을 없앤다.
+        viewLifecycleOwner.lifecycleScope.launch {
+            val data = viewModel.getLibraryImages()
+            if (_binding == null) return@launch
+            images = data.images
+            fullMembersByGroup = images.filter { it.linkGroupId != null }
+                .groupBy({ it.linkGroupId!! }, { it.path })
+                .filterValues { it.size > 1 }
+            groupByPath = images.mapNotNull { row ->
+                row.linkGroupId?.takeIf { it in fullMembersByGroup }?.let { row.path to it }
+            }.toMap()
+            refresh()
+            updateSelectionUi()
+        }
         updateSelectionUi()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 고른 경로는 **사용자가 그 자리에서 만든 것**이다 — 검색칸·칩은 뷰 상태 저장이 든다.
+        outState.putStringArray(STATE_SELECTED, selected.toTypedArray())
+    }
+
+    companion object {
+        /** 결과 채널 — 호스트가 `onCreate`에서 듣는다(뷰 수명에 걸면 회전 중 결과를 놓친다). */
+        const val REQUEST_KEY = "image_library_picker"
+        const val RESULT_KEY = "picked_paths"
+        private const val ARG_EXCLUDE = "exclude_paths"
+        private const val STATE_SELECTED = "selected_paths"
+
+        fun newInstance(excludePaths: Set<String>) = ImageLibraryPickerBottomSheet().apply {
+            arguments = android.os.Bundle().apply {
+                putStringArray(ARG_EXCLUDE, excludePaths.toTypedArray())
+            }
+        }
     }
 
     private fun refresh() {

@@ -9,7 +9,20 @@ import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.FieldDeleteScope
 import com.novelcharacter.app.util.SqlInChunks
+
+/**
+ * 필드 하나를 지울 때 함께 사라지는 것의 규모 (R-4 — 파괴적 조작은 결과를 먼저 말한다).
+ * 셋이 서로 다른 경로로 사라진다: 값·엔트리는 FK CASCADE, 이력은 키 문자열 손질.
+ */
+data class FieldDeleteImpact(
+    val values: Int = 0,
+    val libraryEntries: Int = 0,
+    val stateChanges: Int = 0
+) {
+    val any: Boolean get() = values > 0 || libraryEntries > 0 || stateChanges > 0
+}
 
 class UniverseRepository(
     private val db: AppDatabase,
@@ -135,7 +148,16 @@ class UniverseRepository(
             emptyList()
         }
     }
-    suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)
+    /**
+     * 세계관 순서 저장 — **차례만 받아 `displayOrder`만 쓴다.**
+     *
+     * 화면이 든 엔티티 사본이 아니라 id 차례를 받는다. 순서 편집이 열려 있는 동안 같은 행이
+     * 다른 경로에서 바뀌어도(이름·설명·이미지·경계선) 그 변경이 순서 저장에 되감기지 않는다.
+     * 한 트랜잭션으로 묶어 중간 상태가 목록에 방출되지 않게 한다.
+     */
+    suspend fun updateUniverseDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> universeDao.setDisplayOrder(id, index.toLong()) }
+    }
 
     // ===== FieldDefinition =====
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
@@ -199,25 +221,67 @@ class UniverseRepository(
     suspend fun updateFieldsOrder(fields: List<FieldDefinition>) =
         fieldDefinitionDao.updateAll(fields)
 
-    suspend fun deleteField(field: FieldDefinition) {
+    /**
+     * 필드 정의 하나를 지운다 — **휴지통을 지난다.**
+     *
+     * 종전에 이 경로만 스냅샷 없이 지웠다: 정의가 사라지면 그 필드의 값과 값 라이브러리
+     * 엔트리가 FK CASCADE로, 상태변화 이력이 아래 손질로 **아무 고지도 없이 영구
+     * 소멸했다.** 형제 삭제 경로 여덟은 전부 스냅샷을 남긴다(R-18).
+     *
+     * 스냅샷은 반드시 삭제 **앞**이고 **같은 트랜잭션 안**이다 — CASCADE가 돌고 나면 담을
+     * 것이 이미 없고, 삭제만 커밋되면 그 자체가 무통보 유실이다.
+     *
+     * 이력의 범위는 [com.novelcharacter.app.util.FieldDeleteScope]가 정한다 — 스냅샷이
+     * 담는 범위와 여기서 지우는 범위가 **같은 함수에서 나와야** 갈리지 않는다(R-33).
+     *
+     * @param trash 이 조작의 휴지통 인스턴스. 한 조작 = 한 인스턴스다(R-3/R-9/R-12).
+     *   **정리(`pruneIfNeeded`)는 여기서 하지 않는다** — 인스턴스를 넘겨받는 자리의 규약이
+     *   그렇다(`GradeSystemRepository.deleteSystem`과 같은 꼴). 엑셀 가져오기는 이 함수를
+     *   **자기 트랜잭션 안에서** 부르는데, 그 안에서 정리가 돌면 스냅샷과 정리가 한 단위로
+     *   묶여 롤백에 함께 사라진다 — 그래서 가져오기는 커밋 뒤에 한 번만 정리한다.
+     */
+    suspend fun deleteField(field: FieldDefinition, trash: TrashRepository) {
         db.withTransaction {
+            trash.snapshotDeletedField(field)
             // 상태변화 이력(fieldKey 문자열 참조) 정리는 캐릭터 필드에만 해당.
             // 사건·작품 필드값은 FK CASCADE로 함께 삭제된다.
-            if (field.entityType == FieldDefinition.ENTITY_CHARACTER) {
-                // 같은 key를 가진 다른 세계관의 필드가 없으면 전체 삭제 (고아 캐릭터 포함)
-                // 있으면 해당 세계관의 캐릭터에 한정하여 삭제
-                val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
-                val fieldUniverseId = field.universeId
-                if (otherFieldsWithSameKey == 0) {
+            val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
+            when (val scope = FieldDeleteScope.scopeOf(
+                field.entityType, field.universeId, otherFieldsWithSameKey
+            )) {
+                FieldDeleteScope.Scope.None -> Unit
+                FieldDeleteScope.Scope.AllWithKey ->
                     db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
-                } else if (fieldUniverseId != null) {
-                    db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, fieldUniverseId)
-                }
-                // 전역 구역 필드(null)에 같은 key의 형제가 남아 있는 경우는 지울 것이 없다 —
-                // 상태변화는 연표(세계관) 기능이 만들고, 무소속 캐릭터에는 연표가 없다.
+                is FieldDeleteScope.Scope.Universe ->
+                    db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, scope.universeId)
             }
             fieldDefinitionDao.delete(field)
         }
+    }
+
+    /**
+     * 필드 하나를 지우면 함께 사라지는 것의 규모 — 확인창이 **무엇을 잃는지 말하기** 위한 재료다(R-4).
+     * 세는 범위는 [deleteField]가 지우는 범위와 같다.
+     */
+    suspend fun getFieldDeleteImpact(field: FieldDefinition): FieldDeleteImpact {
+        val values = when (field.entityType) {
+            FieldDefinition.ENTITY_CHARACTER -> db.characterFieldValueDao().getValuesByFieldDef(field.id).size
+            FieldDefinition.ENTITY_EVENT -> db.eventFieldValueDao().getValuesByFieldDef(field.id).size
+            FieldDefinition.ENTITY_NOVEL -> db.novelFieldValueDao().getValuesByFieldDef(field.id).size
+            else -> 0
+        }
+        val entries = db.fieldValueEntryDao().getByField(field.id).size
+        val others = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
+        val changes = when (val scope = FieldDeleteScope.scopeOf(
+            field.entityType, field.universeId, others
+        )) {
+            FieldDeleteScope.Scope.None -> 0
+            FieldDeleteScope.Scope.AllWithKey ->
+                db.characterStateChangeDao().getChangesByFieldKey(field.key).size
+            is FieldDeleteScope.Scope.Universe ->
+                db.characterStateChangeDao().getChangesByFieldKeyAndUniverse(field.key, scope.universeId).size
+        }
+        return FieldDeleteImpact(values, entries, changes)
     }
 
     suspend fun deleteAllFieldsByUniverse(universeId: Long) =

@@ -20,6 +20,20 @@
 # 콜백을 부르는 자리가 청크인지까지 본다 — 이 갈래를 안 보면 `TrashRepository`의 12곳이
 # 통째로 거짓 양성이 되어 검사를 못 쓰게 된다.
 #
+# ## 축 ② — **한 질의가 같은 목록을 두 번 펼치면 조각이 절반 몫밖에 안 된다** (2026.08.22)
+#
+# `WHERE a IN (:ids) OR b IN (:ids)`는 Room이 `IN` 구간마다 자리표시자를 따로 펼쳐 목록을
+# **두 번** 바인드한다. 그래서 조각 상한(900)을 지킨 목록도 변수는 1,800개가 된다 —
+# 축 ①(통로를 지나는가)은 초록인데 **질의는 죽는다.** 실제로 그랬다:
+# `getRelationshipIdsForCharacters`가 그 모양이었고 호출부는 `SqlInChunks.each`를 예약분 없이
+# 불러, **500명을 고르고 [삭제]를 누르면 확인 창이 뜨기 전에 크래시**였다. 같은 파일의
+# 형제 KDoc이 그 위험을 이미 글자로 적어 두고도 그 짝만 고쳐지지 않은 채였다 —
+# 적어 두는 것으로는 안 지켜진다(이 저장소가 여러 번 도달한 결론).
+#
+# **처분은 하나다: 끝마다 따로 묻는다**(목록 하나짜리 질의 둘 + 호출부가 Set으로 겹 제거).
+# 예약분(`reservedBinds`)으로 조각을 줄이는 길도 있으나, 그것은 **호출부마다** 지켜야 하므로
+# 같은 결함이 다음 호출부에서 다시 난다. 질의의 모양을 고치면 어느 호출부에서도 성립한다.
+#
 # **못 보는 자리(적어 둔다 — R-49의 관행):**
 #  · **인자가 실제로 짧은지는 못 본다.** 상한이 없는 모양이면 든다 — 짧은 것이 확실하면
 #    리터럴로 적거나 통로를 지날 것(지나도 한 덩이면 나누지 않으므로 비용이 늘지 않는다).
@@ -376,6 +390,48 @@ if [ "${st_c:-0}" -ne 5 ]; then
   exit 1
 fi
 echo "  ✓ 탐지기 자기 시험 통과 (위반 5건을 잡고, 인정 통로 다섯은 세지 않는다)"
+
+# ── 축 ② — 같은 목록을 두 번 펼치는 DAO 질의 ────────────────────────────────
+DOUBLE=$(python3 - "$APP/data/dao" <<'PY'
+import glob, os, re, sys
+
+dao_dir = sys.argv[1]
+pat = re.compile(r'@Query\(\s*"""(.*?)"""|@Query\(\s*"((?:[^"\\]|\\.)*)"', re.S)
+seen = 0
+for path in sorted(glob.glob(os.path.join(dao_dir, '*.kt'))):
+    src = open(path, encoding='utf-8').read()
+    for m in pat.finditer(src):
+        q = m.group(1) or m.group(2) or ''
+        if ' IN (:' not in q.replace('\n', ' '):
+            continue
+        seen += 1
+        flat = q.replace('\n', ' ')
+        for name in set(re.findall(r'IN \(:([A-Za-z_][A-Za-z0-9_]*)\)', flat)):
+            occ = len(re.findall(r'IN \(:%s\)' % re.escape(name), flat))
+            if occ > 1:
+                line = src[:m.start()].count('\n') + 1
+                print('%s\t%d\t%s\t%d' % (os.path.relpath(path), line, name, occ))
+print('__SEEN__%d' % seen)
+PY
+)
+dseen=$(printf '%s\n' "$DOUBLE" | sed -n 's/^__SEEN__//p')
+if [ -z "$dseen" ]; then
+  echo "  ✗ 축 ② 스캐너가 자기 출력을 내지 못했습니다 — 실패입니다" >&2
+  exit 2
+fi
+if [ "$dseen" -eq 0 ]; then
+  echo "  ✗ 축 ②가 `IN (:목록)` 질의를 하나도 못 모았습니다 — 정규식이 낡았습니다(fail-closed)" >&2
+  exit 2
+fi
+dcount=$(printf '%s\n' "$DOUBLE" | grep -cv '^__SEEN__' || true)
+if [ "$dcount" -gt 0 ]; then
+  echo "  ✗ 한 질의가 같은 목록을 두 번 펼칩니다 (${dcount}건) — 조각이 절반 몫밖에 안 됩니다"
+  printf '%s\n' "$DOUBLE" | grep -v '^__SEEN__' | while IFS=$'\t' read -r rel ln name occ; do
+    echo "      $rel:$ln  :$name 이(가) IN 절에 ${occ}회 — 끝마다 따로 묻도록 질의를 가르세요 (R-54)"
+  done
+  exit 1
+fi
+echo "  ✓ 축 ② 통과 — 같은 목록을 두 번 펼치는 질의 없음 (IN 질의 ${dseen}종 대조)"
 
 RESULT=$(scan "$APP/data/dao" "$APP")
 count=$(printf '%s\n' "$RESULT" | sed -n 's/^__COUNT__//p')

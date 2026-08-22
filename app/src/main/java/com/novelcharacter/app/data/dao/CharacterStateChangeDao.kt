@@ -41,6 +41,10 @@ interface CharacterStateChangeDao {
     @Update
     suspend fun update(change: CharacterStateChange)
 
+    /** 일괄 갱신 — 사건 연쇄 이동이 캐릭터마다 한 번씩 치던 자리(R-54의 결). */
+    @Update
+    suspend fun updateAll(changes: List<CharacterStateChange>)
+
     @Delete
     suspend fun delete(change: CharacterStateChange)
 
@@ -60,6 +64,14 @@ interface CharacterStateChangeDao {
     /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
     @Query("SELECT * FROM character_state_changes WHERE code = :code LIMIT 1")
     suspend fun getChangeByCode(code: String): CharacterStateChange?
+
+    /**
+     * 이미 쓰이고 있는 code — 여러 행을 한 번에 되살릴 때 **재발급 대상**을 가려낸다
+     * (`DuelMatchDao.getExistingCodes`와 같은 규약). code는 유니크라, 하나만 겹쳐도
+     * `insertAll`이 통째로 엎어져 그 조각이 전부 안 살아난다.
+     */
+    @Query("SELECT code FROM character_state_changes WHERE code IN (:codes)")
+    suspend fun getExistingCodes(codes: List<String>): List<String>
 
     /** 필드 키 변경 시 해당 세계관 캐릭터들의 상태변화 이력 fieldKey를 일괄 갱신 (무통보 이력 파손 방지) */
     @Query("""
@@ -123,8 +135,27 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month IS NOT NULL AND day IS NOT NULL")
     fun observeChangesWithDate(fieldKey: String): LiveData<List<CharacterStateChange>>
 
+    /**
+     * 그 키의 이력 전량 — 필드 정의 삭제가 **지우기 전에 스냅샷**을 뜨는 자리다.
+     * 지우는 짝([deleteChangesByFieldKey])과 범위가 글자 그대로 같아야 한다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey")
+    suspend fun getChangesByFieldKey(fieldKey: String): List<CharacterStateChange>
+
     @Query("DELETE FROM character_state_changes WHERE fieldKey = :fieldKey")
     suspend fun deleteChangesByFieldKey(fieldKey: String)
+
+    /** 위 삭제의 **읽기 쌍둥이** — 범위가 글자 그대로 같아야 스냅샷이 지워질 것을 전부 담는다. */
+    @Query("""
+        SELECT * FROM character_state_changes
+        WHERE fieldKey = :fieldKey
+          AND characterId IN (
+              SELECT c.id FROM characters c
+              INNER JOIN novels n ON c.novelId = n.id
+              WHERE n.universeId = :universeId
+          )
+    """)
+    suspend fun getChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long): List<CharacterStateChange>
 
     @Query("""
         DELETE FROM character_state_changes
@@ -156,6 +187,14 @@ interface CharacterStateChangeDao {
 
     @Query("SELECT id FROM character_state_changes")
     suspend fun getAllChangeIds(): List<Long>
+
+    /**
+     * id로 여러 행을 한 번에 읽는다 — 엑셀 '없는 항목 삭제'가 **지우기 전에 스냅샷**을
+     * 뜨려면 행 자체가 필요한데, 종전에는 id만 읽는 통로뿐이라 그 갈래가 휴지통을
+     * 우회했다. 999-변수 상한은 `SqlInChunks`가 든다(R-54).
+     */
+    @Query("SELECT * FROM character_state_changes WHERE id IN (:ids)")
+    suspend fun getChangesByIds(ids: List<Long>): List<CharacterStateChange>
 
     @Query("DELETE FROM character_state_changes WHERE id = :id")
     suspend fun deleteById(id: Long)

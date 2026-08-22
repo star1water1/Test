@@ -94,7 +94,14 @@ class NovelRepository(
         novelDao.getNovelsByUniverseList(universeId)
     fun searchNovels(query: String): LiveData<List<Novel>> =
         novelDao.searchNovels(sanitizeLikeQuery(query))
-    suspend fun updateNovelDisplayOrders(novels: List<Novel>) = novelDao.updateAll(novels)
+    /**
+     * 작품 순서 저장 — **차례만 받아 `displayOrder`만 쓴다.**
+     * 사유는 [UniverseRepository.updateUniverseDisplayOrders]와 같다(엔티티 통짜 되쓰기가
+     * 편집 중 다른 경로의 변경을 말없이 되돌렸다).
+     */
+    suspend fun updateNovelDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> novelDao.setDisplayOrder(id, index.toLong()) }
+    }
 
     suspend fun setPinned(id: Long, isPinned: Boolean) =
         novelDao.setPinned(id, isPinned)

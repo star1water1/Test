@@ -744,4 +744,188 @@ class StatsConsistencyTest {
         val counted = provider.computeDataOverview(s).healthWarnings.incompleteFieldCount
         assertEquals(named.size, counted)
     }
+
+    // ===== R-51/R-18: 축마다 자기 모수로 좁힌다 (스코프 밖이 순위·평균에 새지 않는다) =====
+    //
+    // 스코프 필터는 관계·교차참조를 `한쪽 끝이 스코프 안`으로 남긴다 — 그 OR은 '고립'·'사건
+    // 미연계' 판정에 필요하다. 그래서 **좁히는 일은 소비처가** 해야 한다.
+
+    private fun scopedSnapshot() = StatsSnapshot(
+        // 스코프 안 둘(A작품), 스코프 밖 하나는 아예 목록에 없다(필터가 이미 잘랐다).
+        characters = listOf(
+            Character(id = 1, name = "안쪽1", novelId = 1),
+            Character(id = 2, name = "안쪽2", novelId = 1)
+        ),
+        novels = listOf(Novel(id = 1, title = "A작품", universeId = uniA)),
+        universes = listOf(Universe(id = uniA, name = "A")),
+        // 사건 하나만 스코프 안이다.
+        events = listOf(
+            com.novelcharacter.app.data.model.TimelineEvent(id = 100, year = 1, description = "안쪽사건")
+        ),
+        // 스코프 밖 인물(id=9)이 안쪽 둘과 이어져 있다 — OR이 남긴 행이다.
+        relationships = listOf(
+            com.novelcharacter.app.data.model.CharacterRelationship(
+                id = 1, characterId1 = 9, characterId2 = 1, relationshipType = "친구"
+            ),
+            com.novelcharacter.app.data.model.CharacterRelationship(
+                id = 2, characterId1 = 9, characterId2 = 2, relationshipType = "친구"
+            )
+        ),
+        relationshipChanges = emptyList(), tags = emptyList(), nameBank = emptyList(),
+        stateChanges = emptyList(), fieldDefinitions = emptyList(), fieldValues = emptyList(),
+        // 안쪽 인물이 **스코프 밖 사건**(id=999)에 참여한 행 — OR이 남긴다.
+        crossRefs = listOf(
+            com.novelcharacter.app.data.model.TimelineCharacterCrossRef(eventId = 999, characterId = 1)
+        )
+    )
+
+    @Test
+    fun `관계 순위에 스코프 밖 인물이 끼어들지 않는다`() {
+        val stats = provider.computeCharacterStats(scopedSnapshot())
+        assertTrue("'?' 행이 떴다: ${stats.topRelationshipChars}",
+            stats.topRelationshipChars.none { it.first == "?" })
+        assertEquals(setOf("안쪽1", "안쪽2"), stats.topRelationshipChars.map { it.first }.toSet())
+    }
+
+    @Test
+    fun `사건 연계 순위도 스코프 안 인물만 센다`() {
+        val stats = provider.computeCharacterStats(scopedSnapshot())
+        assertTrue(stats.topEventLinkedChars.none { it.first == "?" })
+    }
+
+    @Test
+    fun `관계 상세의 순위도 같은 규칙을 쓴다`() {
+        val stats = provider.computeRelationshipStats(scopedSnapshot())
+        assertTrue("'?' 행이 떴다: ${stats.topConnectedChars}",
+            stats.topConnectedChars.none { it.first == "?" })
+    }
+
+    /** 최댓값이 스코프 밖 인물이면 종전에는 이름이 null이 되어 **안내줄이 통째로 사라졌다.** */
+    @Test
+    fun `가장 관계가 많은 캐릭터 안내줄이 사라지지 않는다`() {
+        val summary = provider.computeSummary(scopedSnapshot())
+        assertNotNull("안내줄이 사라졌다", summary.mostConnectedChar)
+        assertTrue(summary.mostConnectedChar in setOf("안쪽1", "안쪽2"))
+    }
+
+    /**
+     * 사건 축 평균의 분자는 **스코프 안 사건의 참여**뿐이다. 종전에는 참여자가 0명인 사건
+     * 하나뿐인데도 "사건당 평균 1.0"과 "미연계 1"을 한 카드가 동시에 말했다.
+     */
+    @Test
+    fun `사건당 평균 캐릭터가 스코프 밖 참여를 세지 않는다`() {
+        val stats = provider.computeEventStats(scopedSnapshot())
+        assertEquals(0f, stats.avgCharsPerEvent, 1e-6f)
+        assertEquals(1, stats.orphanEventCount)
+    }
+
+    // ===== R-34: 완성도의 분자는 분모 집합과의 교집합이다 =====
+
+    /**
+     * 작품을 '없음'으로 바꾼 캐릭터의 값은 **지워지지 않는다** — 값 병합 규약이 일부러
+     * 보존하고(*"폼이 비어도 기존 값을 전량 보존한다"*) 시험이 그것을 잠근다. 그 캐릭터는
+     * 모수(실재하는 작품을 경유해야 센다)에는 없으므로, 분자가 그 값을 세면 **완성도가
+     * 100%를 넘는다.**
+     */
+    private fun keptValueSnapshot() = snapshot(
+        characters = listOf(
+            Character(id = 1, name = "소속1", novelId = 1),
+            Character(id = 2, name = "소속2", novelId = 1),
+            Character(id = 3, name = "무소속", novelId = null)   // 값은 남아 있다
+        ),
+        fieldDefinitions = listOf(charField(10, "power", "힘")),
+        fieldValues = listOf(
+            CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+            CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "20"),
+            CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "30")
+        )
+    )
+
+    @Test
+    fun `데이터 개요 완성도가 100퍼센트를 넘지 않는다`() {
+        val detail = provider.computeDataOverview(keptValueSnapshot()).fieldCompletionByField.single()
+        assertEquals(2, detail.filledCount)
+        assertEquals(2, detail.totalCount)
+        assertEquals(100f, detail.completionRate, 1e-3f)
+    }
+
+    @Test
+    fun `필드 분석 완성도도 같은 모수를 쓴다`() {
+        val detail = provider.computeFieldAnalysis(keptValueSnapshot()).fieldCompletionByField.single()
+        assertEquals(2, detail.filledCount)
+        assertEquals(2, detail.totalCount)
+    }
+
+    /** 다른 세계관 정의를 가리키는 보관 값도 분자가 아니다 — 그 칸의 것이 아니다. */
+    @Test
+    fun `다른 구역 정의의 보관 값은 세지 않는다`() {
+        val s = snapshot(
+            characters = listOf(Character(id = 1, name = "A소속", novelId = 1)),
+            fieldDefinitions = listOf(charField(10, "power", "힘", universeId = uniB)),
+            fieldValues = listOf(CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"))
+        )
+        val detail = provider.computeDataOverview(s).fieldCompletionByField.single()
+        assertEquals(0, detail.filledCount)
+    }
+
+    // ===== 순위표 요약: 참여 + 제외가 모수와 맞는다 (음수 금지) =====
+
+    @Test
+    fun `제외 인원이 음수가 되지 않는다`() {
+        // 보관 값 보유자(작품 '없음')는 순위표에 실리지만 모수에는 없다 — 뺄셈이면 음수다.
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "소속1", novelId = 1),
+                Character(id = 2, name = "소속2", novelId = 1),
+                Character(id = 3, name = "무소속", novelId = null)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "20"),
+                CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "30")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(3, r.entries.size)
+        assertTrue("제외가 음수다: ${r.excludedCount}", r.excludedCount >= 0)
+        assertEquals(0, r.excludedCount)
+    }
+
+    /** 값이 없는 캐릭터는 정확히 한 번만 제외로 세어진다. */
+    @Test
+    fun `값이 없는 캐릭터가 제외로 한 번 세어진다`() {
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "값있음", novelId = 1),
+                Character(id = 2, name = "값없음", novelId = 1)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(1, r.entries.size)
+        assertEquals(1, r.excludedCount)
+    }
+
+    /** 값이 깨진 캐릭터는 표에 없고 제외에 **한 번만** 든다(종전에는 행 수로 두 번 셌다). */
+    @Test
+    fun `파싱 실패가 표와 제외에 동시에 들어가지 않는다`() {
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "정상", novelId = 1),
+                Character(id = 2, name = "깨짐", novelId = 1)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "abc")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(1, r.entries.size)
+        assertEquals(1, r.excludedCount)
+    }
 }

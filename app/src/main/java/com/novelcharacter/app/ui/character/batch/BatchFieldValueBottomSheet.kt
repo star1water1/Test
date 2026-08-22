@@ -188,7 +188,10 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
             FieldType.NUMBER -> {
                 binding.valueInputLayout.visibility = View.VISIBLE
                 binding.valueSpinner.visibility = View.GONE
-                binding.valueInput.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                // 부호를 켠다 — 편집 폼의 같은 칸과 **같은 값 범위**를 받아야 한다
+                // (일괄로는 못 넣는 값이 생기면 그 자체가 두 경로의 갈림이다).
+                binding.valueInput.inputType = InputType.TYPE_CLASS_NUMBER or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
                 binding.valueInputLayout.hint = field.name
                 binding.btnConfirm.isEnabled = true
             }

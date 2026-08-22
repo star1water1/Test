@@ -338,8 +338,14 @@
     <string name="image_rotate_failed">이미지를 돌리지 못했습니다</string>
     <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="confirm_delete_field">\"%s\" 필드를 삭제하시겠습니까?</string>
+    <!-- 삭제 영향 고지 (R-4) — 무엇이 함께 사라지는지 먼저 말한다. 셋 중 있는 줄만 붙는다. -->
+    <string name="delete_field_impact_values">입력된 값 %1$d건</string>
+    <string name="delete_field_impact_entries">값 라이브러리 항목 %1$d개</string>
+    <string name="delete_field_impact_changes">상태변화 이력 %1$d건</string>
+    <string name="delete_field_impact_message">\"%1$s\" 필드를 삭제하면 다음도 함께 사라집니다:\n\n%2$s\n\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="delete_field_plain_message">\"%1$s\" 필드를 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="delete_field_warning_title">필드 삭제 경고</string>
-    <string name="delete_field_warning_message">\'%1$s\' 필드를 삭제하면 다음 계산 필드의 수식이 영향을 받습니다:\n\n%2$s\n\n해당 필드의 계산 결과가 부정확해질 수 있습니다. 삭제하시겠습니까?</string>
+    <string name="delete_field_warning_message">\'%1$s\' 필드를 삭제하면 다음 계산 필드의 수식이 영향을 받습니다:\n\n%2$s\n\n해당 필드의 계산 결과가 부정확해질 수 있습니다.</string>
     <string name="enter_name">이름을 입력하세요</string>
     <string name="name_too_long">이름이 너무 깁니다 (최대 100자)</string>
     <string name="required_field_empty">필수 필드 \'%1$s\'을(를) 입력하세요</string>
@@ -350,6 +356,7 @@
     <string name="formula_warn_message">수식에 문제가 있을 수 있습니다:\n%1$s\n\n그대로 저장하시겠습니까?</string>
     <string name="formula_warn_paren">괄호 짝이 맞지 않습니다</string>
     <string name="formula_warn_missing_keys">존재하지 않는 필드 키: %1$s (그 자리는 0으로 계산됩니다)</string>
+    <string name="formula_warn_non_numeric_keys">%1$s 필드는 값이 수로 읽힌다는 보장이 없습니다 — 글자가 들어 있으면 그 자리는 0으로 계산됩니다</string>
     <string name="formula_warn_self_ref">자기 자신(%1$s)을 참조합니다 — 값이 \'오류\'로 표시됩니다</string>
     <string name="formula_warn_circular">수식이 서로 돌아옵니다: %1$s — 값이 \'오류\'로 표시됩니다</string>
     <string name="formula_warn_padded_keys">필드 키 앞뒤의 공백까지 이름으로 읽습니다: %1$s (공백을 지워 주세요)</string>
@@ -437,7 +444,8 @@
     <!-- RelationshipHelper -->
     <string name="no_other_characters">다른 캐릭터가 없습니다</string>
     <string name="relationship_target_not_found">목록에 있는 캐릭터를 선택하세요</string>
-    <string name="confirm_delete_relationship">이 관계를 삭제하시겠습니까?</string>
+    <string name="confirm_delete_relationship">이 관계를 삭제하시겠습니까?\n휴지통을 거치지 않으므로 되돌릴 수 없습니다.</string>
+    <string name="confirm_delete_relationship_changes">이 관계를 삭제하시겠습니까?\n이 관계에 쌓인 관계 변화 %1$d건도 함께 사라집니다. 휴지통을 거치지 않으므로 되돌릴 수 없습니다.</string>
 
     <!-- ExcelExporter -->
     <string name="export_failed_retry">내보내기 실패: 잠시 후 다시 시도하세요</string>
@@ -539,6 +547,8 @@
          같은 자리에서 또 죽고, 기기에는 물러설 스트리밍 워크북이 없다(java.awt 부재).
          그래서 사용자가 **줄일 수 있는 축**을 말한다. -->
     <string name="export_failed_out_of_memory">기기 메모리가 모자라 내보내기를 끝내지 못했습니다 — 작품 범위를 좁히거나 이미지를 빼고 다시 시도하세요</string>
+    <!-- 복원의 메모리 부족은 줄일 수 있는 축이 다르다 — "다시 시도하세요"는 답이 아니다(R-17). -->
+    <string name="backup_restore_failed_out_of_memory">기기 메모리가 모자라 복원을 끝내지 못했습니다 — 이 백업이 옛 형식이면 통째로 읽습니다. 백업을 만든 기기에서 최신 버전으로 다시 내보낸 뒤 복원해 주세요.</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
     <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>
@@ -573,6 +583,10 @@
     <string name="trash_type_duel_axis">대결 축</string>
     <string name="trash_type_duel_matches">대결 기록</string>
     <string name="trash_type_field_definition">필드 정의(덮어쓰기 직전)</string>
+    <!-- 같은 타입이지만 종류가 다르다 — 삭제 백업에 '덮어쓰기 직전' 라벨이 붙으면 목록이 거짓말을 한다.
+         종류를 모르는 자리(종류 필터)는 일반 이름을 쓴다. -->
+    <string name="trash_type_field_definition_deleted">필드 정의</string>
+    <string name="trash_type_field_data">필드 데이터(값·라이브러리·이력)</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
@@ -707,7 +721,7 @@
     <string name="event_field_created">사건 필드 \'%1$s\'을(를) 추가했습니다</string>
     <string name="event_field_create_failed">사건 필드를 추가하지 못했습니다</string>
     <string name="event_field_key_duplicate">필드 키 \'%1$s\'이(가) 이미 있습니다. 다른 키로 다시 만들어 주세요.</string>
-    <string name="event_field_initial_values_partial">미리 적어 둔 값 중 %1$d개는 등재하지 못했습니다. 필드 데이터 라이브러리에서 직접 추가하실 수 있습니다.</string>
+    <string name="field_initial_values_partial">미리 적어 둔 값 중 %1$d개는 등재하지 못했습니다. 필드 데이터 라이브러리에서 직접 추가하실 수 있습니다.</string>
     <string name="field_target_character">캐릭터 필드</string>
     <string name="field_target_event">사건 필드</string>
     <!-- 작품 커스텀 필드 (확-3) — 사건 필드와 같은 규약, 값은 작품 편집 폼이 만든다 -->
@@ -778,11 +792,14 @@
     <string name="rel_change_year">연도</string>
     <string name="rel_change_linked_event">연결 사건 (선택)</string>
     <string name="rel_change_no_event">없음</string>
+    <string name="rel_change_event_outside">이 작품 밖 사건 (#%1$d)</string>
     <string name="add_relationship_change">관계 변화 추가</string>
     <string name="edit_relationship_change">관계 변화 편집</string>
     <string name="relationship_changes_title">관계 변화 이력</string>
     <string name="no_relationship_changes">관계 변화가 없습니다</string>
     <string name="rel_change_event_format">%s (%d년)</string>
+    <string name="rel_change_delete_title">관계 변화 삭제</string>
+    <string name="rel_change_delete_confirm">이 관계 변화를 삭제합니다. 휴지통을 거치지 않으므로 되돌릴 수 없습니다.</string>
     <string name="year_label_format">%d년</string>
 
     <!-- Round 5 -->
@@ -1087,6 +1104,9 @@
     <string name="backup_export_to_external">백업 내보내기</string>
     <string name="backup_export_success">백업 파일이 저장되었습니다</string>
     <string name="backup_export_failed">백업 내보내기 실패: %s</string>
+    <!-- 저장 실패의 처분 고지 — 엑셀 내보내기와 문구가 다른 이유는 이쪽에는 "앱에 보관해 두었다"가 없기 때문이다(이식 가능 백업의 임시본은 종결과 함께 지운다). -->
+    <string name="backup_export_failed_destination_removed">백업 저장에 실패했습니다 — 쓰다 만 파일은 지웠습니다. 다시 내보내 주세요.</string>
+    <string name="backup_export_failed_destination_unknown">백업 저장에 실패했습니다 — 선택한 위치에 불완전한 파일이 남았을 수 있으니 확인한 뒤 다시 내보내 주세요.</string>
 
     <!-- Sprint 2: Search Presets -->
     <string name="search_presets">검색 프리셋</string>
@@ -1149,7 +1169,6 @@
     <string name="graph_no_faction_relationships">고른 세력 안에 서로 이어진 인물이 없습니다 — \'좁히기\'를 끄면 전체를 보면서 강조할 수 있습니다</string>
     <string name="graph_no_scope_relationships">이 작품·세계관 범위에 관계가 없습니다</string>
     <string name="graph_summary_mode">관계가 많은 %1$d명까지 그렸습니다 — 나머지 %2$d명은 접었습니다.</string>
-    <string name="graph_summary_mode_title">요약 모드</string>
     <string name="graph_filter_hint">관계 유형 필터</string>
     <string name="graph_node_count">노드: %d개</string>
     <string name="graph_edge_count">관계: %d개</string>
@@ -1351,6 +1370,7 @@
 
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>
+    <string name="stats_narrative_density_folded">연도 폭이 넓어 %1$d년씩 묶어 그렸습니다. 막대 하나가 그 구간의 사건 수입니다.</string>
     <string name="stats_time_precision">시간 정밀도 분포</string>
     <string name="stats_precision_year">연도만</string>
     <string name="stats_precision_month">연월</string>
@@ -1847,6 +1867,8 @@
     <string name="body_rank_total">전체 %1$d명 중</string>
     <string name="body_rib_offset_label">흉곽 보정 (cm) — 밑가슴을 허리보다 이만큼 크게 봅니다. 높일수록 컵이 작아집니다.</string>
     <string name="body_rib_offset_hint">흉곽 보정값 (기본 6.0)</string>
+    <string name="body_type_custom_json_invalid">체형 분류 규칙을 읽을 수 없습니다 — JSON 배열이어야 하고 규칙마다 label이 있어야 합니다. 예: [{&quot;label&quot;:&quot;모래시계&quot;,&quot;conditions&quot;:{&quot;bustWaistDiff&quot;:{&quot;min&quot;:20}}}]</string>
+    <string name="body_type_custom_json_empty">체형 분류 규칙이 비어 있습니다 — 규칙을 적거나 프리셋을 고르세요.</string>
 
     <!-- 실루엣 크게 보기 (설계 5-4-3) -->
     <string name="silhouette_large_purpose">그림 참고용입니다. 수치를 고치려면 편집 화면의 실루엣으로 조정을 씁니다. 그림은 여성 성인 기준입니다.</string>
@@ -2032,6 +2054,12 @@
     <string name="faction_delete_title">%s 삭제</string>
     <string name="faction_delete_with_relations">자동 관계도 함께 삭제</string>
     <string name="faction_delete_keep_relations">자동 관계 유지 (수동 전환)</string>
+    <!-- 삭제 영향 고지 (R-4) — 형제 여섯 창과 같은 모양. 있는 줄만 붙는다. -->
+    <string name="faction_delete_impact_members">소속 기록 %1$d건</string>
+    <string name="faction_delete_impact_faction_relations">세력 간 관계 %1$d건</string>
+    <string name="faction_delete_impact_auto_relations">이 세력이 만든 자동 관계 %1$d건 (위 선택에 따라 삭제되거나 수동 관계로 남습니다)</string>
+    <string name="faction_delete_impact_message">삭제하면 다음도 함께 사라집니다:\n\n%1$s\n\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="faction_delete_plain_message">이 세력을 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="close">닫기</string>
     <string name="faction_belonging">소속 세력</string>
     <string name="faction_belonging_empty">소속 세력 없음</string>
@@ -2335,6 +2363,7 @@
     <string name="op_cat_maintenance">유지보수</string>
     <string name="op_cat_batch">일괄 작업</string>
     <string name="op_cat_duel">대결</string>
+    <string name="op_cat_field_library">값 라이브러리</string>
 
     <!-- 결과 알림 요약 (Layer 5) — 세계관/작품/세력/프리셋 -->
     <string name="result_universe_saved">세계관 \"%1$s\" 저장됨</string>
@@ -2710,6 +2739,7 @@
     <string name="image_link_merged_done">%1$d장을 링크했습니다 (그룹 병합됨)</string>
     <string name="image_link_failed">링크에 실패했습니다</string>
     <string name="image_unlink_done">링크 해제 %1$d장</string>
+    <string name="image_link_auto_moved_notice">%1$d장을 자동 묶음에서 이 수동 묶음으로 옮겼습니다. 수동 묶음이 우선이라 다음 정리가 건드리지 않습니다 — 원래 자동 묶음에 2장뿐이었다면 남은 1장은 링크 표시가 사라집니다.</string>
     <string name="image_unlink_auto_notice">%1$d장은 캐릭터에 함께 등록되어 있어 다음 정리 때 자동으로 다시 링크됩니다. 계속 풀어 두려면 자동 링크 설정을 끄거나 캐릭터에서 이미지를 빼세요.</string>
     <string name="image_link_group_info">링크 묶음 · %1$d장</string>
     <string name="image_link_group_info_auto">링크 묶음 · %1$d장 · 캐릭터 자동</string>
@@ -2817,6 +2847,7 @@
     <string name="organize_folder_summary_delete">앱에서 삭제: %1$d장 (되돌릴 수 없습니다)</string>
     <string name="organize_folder_summary_delete_shared">이 중 %1$d장은 캐릭터 여럿이 함께 쓰고 있습니다.</string>
     <string name="organize_folder_summary_delete_representative">이 중에 캐릭터 %1$s의 대표 이미지가 있습니다. 지우면 대표 지정이 풀리고 무작위 표시로 돌아갑니다.</string>
+    <string name="organize_folder_summary_delete_card_image">이 중에 %1$s의 카드 이미지가 있습니다. 지우면 그 카드의 그림이 사라집니다.</string>
     <string name="organize_folder_summary_delete_originals">지운 파일의 원본은 폴더의 \'_처리됨\'에 남습니다.</string>
     <string name="organize_folder_result_deleted">앱에서 삭제 %1$d장 (%2$s 확보)</string>
     <string name="organize_folder_summary_unlink">링크 묶음 해제: %d장</string>
@@ -3040,6 +3071,7 @@
     <string name="ai_test_running">연결 테스트 중…</string>
     <string name="ai_test_success_title">연결 성공</string>
     <string name="ai_test_success">연결 성공 — API 키·서버 주소·모델이 모두 유효합니다.</string>
+    <string name="ai_key_save_failed">API 키를 저장하지 못했습니다. 기기의 보안 저장소를 쓸 수 없는 상태입니다 — 기기를 다시 시작한 뒤 다시 시도해 주세요. 적으신 내용은 그대로 있습니다.</string>
     <string name="ai_test_failed_title">연결 실패</string>
 
     <!-- 발급 가이드 (프리셋별) -->
@@ -3126,7 +3158,8 @@
     <string name="field_library_propagation_join_notice">\n콤마 구분 값은 \", \" 표준 표기로 재조합됩니다.</string>
     <string name="field_library_delete_title">값 삭제 — \'%1$s\'</string>
     <string name="field_library_delete_entry_only">항목만 삭제 (캐릭터 값 유지 — 재수집되면 다시 나타남)</string>
-    <string name="field_library_delete_with_data">데이터에서도 삭제 — 캐릭터 %1$d건 · 사건 %2$d건 · 작품 %4$d건 · 이력 %3$d건 (휴지통 스냅샷 보관)</string>
+    <string name="field_library_delete_with_data">데이터에서도 삭제 — 캐릭터 %1$d건 · 사건 %2$d건 · 작품 %4$d건 · 이력 %3$d건 (캐릭터 값과 이력은 휴지통에 백업)</string>
+    <string name="field_library_delete_no_backup">\n사건 값과 작품 값은 백업되지 않습니다 — 지우면 되돌릴 수 없습니다.</string>
     <string name="field_library_deleted">값이 삭제되었습니다</string>
     <string name="field_library_renamed">\'%1$s\' → \'%2$s\' 변경 완료 (%3$d건 전파)</string>
     <string name="field_library_merged">%1$d개 값을 \'%2$s\'(으)로 병합 (%3$d건 전파)</string>
@@ -3168,6 +3201,7 @@
     <string name="field_library_ai_review_title">AI 정리 제안 검토</string>
     <string name="field_library_ai_apply">선택 적용</string>
     <string name="field_library_ai_select_all">전체 선택/해제</string>
+    <string name="ai_review_pick_none">적용할 항목을 하나 이상 고르세요.</string>
     <string name="field_library_ai_apply_merges">병합 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_apply_categories">카테고리 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_applied">AI 정리 적용 완료 — 병합 %1$d건 · 카테고리 %2$d건</string>

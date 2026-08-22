@@ -13,6 +13,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     suspend fun getAllNovelsList(): List<Novel>
 
+    /** 재색인 전용 — 고정 축 없이 저장 순서로 읽는다(사유는 [CharacterDao.getAllCharactersByDisplayOrder]). */
+    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, id ASC")
+    suspend fun getAllNovelsByDisplayOrder(): List<Novel>
+
     @Query("SELECT * FROM novels WHERE id = :id")
     suspend fun getNovelById(id: Long): Novel?
 
@@ -61,6 +65,17 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' ESCAPE '\\' OR description LIKE '%' || :query || '%' ESCAPE '\\'")
     fun searchNovels(query: String): LiveData<List<Novel>>
 
+    /**
+     * 순서만 쓴다 — 재정렬은 `displayOrder` 한 칸의 일이다.
+     *
+     * 종전에는 화면이 들고 있던 **엔티티 사본 전체**를 `@Update`로 되썼다. 순서 편집을 여는
+     * 동안 다른 화면·들이기·백그라운드 작업이 같은 행을 고치면 그 되쓰기가 **말없이 되돌렸다**
+     * (개발 의도 2번 '변수 제어'). 문장 수는 `@Update` 목록과 같고(행마다 한 문장) 쓰는 열만
+     * 줄어든다 — 호출부가 한 트랜잭션으로 묶는다.
+     */
+    @Query("UPDATE novels SET displayOrder = :order WHERE id = :id")
+    suspend fun setDisplayOrder(id: Long, order: Long)
+
     @Update
     suspend fun updateAll(novels: List<Novel>)
 
@@ -73,14 +88,32 @@ interface NovelDao {
     @Query("UPDATE novels SET isPinned = :isPinned WHERE id = :id")
     suspend fun setPinned(id: Long, isPinned: Boolean)
 
-    /** 삭제된 캐릭터를 참조하는 imageCharacterId를 null로 정리 */
+    /**
+     * 삭제된 캐릭터를 참조하는 `imageCharacterId`를 null로 정리.
+     *
+     * **모드는 그 캐릭터에 매달린 모드일 때만 내린다.** 종전에는 조건 없이 `'none'`으로
+     * 되돌려, *직접 등록*(custom)한 그림을 쓰는 작품이 **엉뚱한 캐릭터 삭제 한 번에
+     * 표지를 잃었다** — 폼이 모드와 상관없이 `imageCharacterId`를 함께 싣기 때문에
+     * 그 값은 custom 작품에도 남아 있을 수 있다(그 자리도 이 판에서 함께 막았다).
+     * 무작위 모드는 특정 캐릭터에 매달리지 않으므로 역시 그대로 둔다.
+     */
     // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
-    @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
+    // SQL 쌍둥이: Novel.IMAGE_MODE_SELECT_CHARACTER
+    @Query(
+        "UPDATE novels SET imageCharacterId = NULL, " +
+            "imageMode = CASE WHEN imageMode = 'select_character' THEN 'none' ELSE imageMode END " +
+            "WHERE imageCharacterId = :characterId"
+    )
     suspend fun clearImageCharacterRef(characterId: Long)
 
-    /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) */
+    /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) — 판정은 [clearImageCharacterRef]와 같다. */
     // SQL 쌍둥이: Novel.IMAGE_MODE_NONE
-    @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId IN (:characterIds)")
+    // SQL 쌍둥이: Novel.IMAGE_MODE_SELECT_CHARACTER
+    @Query(
+        "UPDATE novels SET imageCharacterId = NULL, " +
+            "imageMode = CASE WHEN imageMode = 'select_character' THEN 'none' ELSE imageMode END " +
+            "WHERE imageCharacterId IN (:characterIds)"
+    )
     suspend fun clearImageCharacterRefs(characterIds: List<Long>)
 
     @Query("DELETE FROM novels")

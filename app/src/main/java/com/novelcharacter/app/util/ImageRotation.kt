@@ -69,7 +69,9 @@ object ImageRotation {
             return@withContext false
         }
 
-        val temp = File(file.parentFile, "rotate_${UUID.randomUUID()}.tmp")
+        // 표식을 단다 — 인코딩과 개명 사이에서 죽으면 이 파일이 남는데, 표식이 없으면
+        // 목록·통계·쓸어내기·앱 초기화 어디에도 안 걸려 영영 남는다([ImageImportHelper.isTempArtifact]).
+        val temp = File(file.parentFile, "img${ImageImportHelper.ROTATE_TEMP_MARKER}${UUID.randomUUID()}.tmp")
         val ok = ImageImportHelper.encodeBitmapTo(rotated, temp)
         rotated.recycle()
         if (!ok) { temp.delete(); return@withContext false }

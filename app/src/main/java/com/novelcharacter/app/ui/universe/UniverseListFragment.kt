@@ -32,6 +32,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
+import com.novelcharacter.app.ui.common.parseColorOrNull
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -191,7 +192,11 @@ class UniverseListFragment : Fragment() {
             val fields = PresetTemplates.fieldsFromJson(preset.fieldsJson).toMutableList()
             val editedIndex = if (originalKey != null) fields.indexOfFirst { it.key == originalKey } else -1
             // 다이얼로그의 점유 키 거부는 창을 연 시점의 목록 기준이다 — 저장본과 다시 대조한다(마지막 빗장).
-            val duplicated = fields.withIndex().any { (i, f) -> i != editedIndex && f.key == edited.key }
+            // **판정이 다이얼로그와 같아야 한다**(같은 대상끼리만 점유) — 여기만 넓게 보면
+            // 창이 받아들인 키를 이 빗장이 다시 거절해 사용자가 고칠 수 없는 막다른 골목이 된다.
+            val duplicated = fields.withIndex().any { (i, f) ->
+                i != editedIndex && f.key == edited.key && f.entityType == edited.entityType
+            }
             if (duplicated) {
                 if (isAdded) Toast.makeText(requireContext(), R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
                 return@launch
@@ -254,8 +259,8 @@ class UniverseListFragment : Fragment() {
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.universeRecyclerView.adapter = adapter
 
-        adapter.onOrderChanged = { reorderedList ->
-            viewModel.updateDisplayOrders(reorderedList)
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateDisplayOrders(orderedIds)
         }
         adapter.resolveRandomCharacterImage = { universeId, seed, callback ->
             viewModel.resolveRandomCharacterImage(universeId, seed, callback)
@@ -559,14 +564,14 @@ class UniverseListFragment : Fragment() {
                     setTextColor(android.graphics.Color.parseColor("#DD000000"))
                 }
                 val detailText = TextView(ctx).apply {
-                    // 프리셋이 사건 필드까지 담게 되면서(P5) 한 목록에 두 종류가 섞인다 —
-                    // 표시가 같으면 어느 것이 사건 필드인지 열어 보지 않고는 알 수 없다.
-                    val targetPrefix =
-                        if (field.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
-                            getString(R.string.field_target_event) + " · "
-                        } else {
-                            ""
-                        }
+                    // 프리셋이 사건 필드에 이어 **작품 필드까지** 담는다 — 한 목록에 세 종류가
+                    // 섞이는데 표시가 같으면 어느 것이 어느 종류인지 열어 보지 않고는 알 수
+                    // 없다(원칙 04). 종전에는 사건만 2갈래로 처리해 **작품 필드가 캐릭터
+                    // 필드와 똑같이 보였다** — 저장 쪽은 확-3에서 셋으로 늘었는데 표시 쪽만
+                    // 둘에 남은 뒤처짐이다(R-29 — 열거는 그 자체가 다음 실수의 예약이다).
+                    val targetPrefix = com.novelcharacter.app.ui.field.FieldTargetLabel
+                        .prefixResOrNull(field.entityType)
+                        ?.let { getString(it) + " · " } ?: ""
                     text = "$targetPrefix${field.type} · ${field.groupName} · ${field.key}"
                     textSize = 12f
                     setTextColor(android.graphics.Color.parseColor("#88000000"))
@@ -590,8 +595,18 @@ class UniverseListFragment : Fragment() {
                         }
                         // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 —
                         // 결과(R-65)는 전달 즉시 창이 닫혀 사후 거부가 불가능하다. 점유 키에서 자신은 뺀다.
+                        // **같은 대상끼리만 점유다**(R-29) — 필드의 정체는 `(세계관, 키, 대상)`이라
+                        // 사건 필드 `place`와 캐릭터 필드 `place`는 부딪치지 않는다. 종전에는 종류를
+                        // 안 봐서, 프리셋에 캐릭터 `장소`가 있으면 사건 `장소`를 **만들 수 없었다**
+                        // (형제 자리인 기본 필드 템플릿은 이미 종류를 보고 있었다).
                         com.novelcharacter.app.ui.field.FieldEditDialog
-                            .newInstance(0, field, reservedKeys = fields.filter { it !== field }.map { it.key })
+                            .newInstance(
+                                0, field,
+                                entityType = field.entityType,
+                                reservedKeys = fields
+                                    .filter { it !== field && it.entityType == field.entityType }
+                                    .map { it.key }
+                            )
                             .show(childFragmentManager, "edit_preset_field")
                     }
                 }
@@ -637,9 +652,14 @@ class UniverseListFragment : Fragment() {
                     fields.add(newField)
                     rebuildFieldList()
                 }
-                // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 — 편집 단추와 같은 규칙.
+                // 편집 단추와 같은 규칙 — 새 필드는 캐릭터 종류이므로 점유도 그 종류에서만 센다.
                 com.novelcharacter.app.ui.field.FieldEditDialog
-                    .newInstance(0, null, reservedKeys = fields.map { it.key })
+                    .newInstance(
+                        0, null,
+                        reservedKeys = fields
+                            .filter { it.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_CHARACTER }
+                            .map { it.key }
+                    )
                     .show(childFragmentManager, "add_preset_field")
             }
         }
@@ -1056,13 +1076,18 @@ class UniverseListFragment : Fragment() {
                     val colorHex = currentColors[typeName] ?: "#9E9E9E"
                     val drawable = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.parseColor(colorHex))
+                        // **맨몸으로 부르지 않는다** — 색은 엑셀·월드패키지·손편집으로 들어오는
+                        // 자유 입력이고, 이 자리는 다이얼로그 **조립 중**이라 예외가 나면
+                        // 창이 뜨기도 전에 앱이 죽는다. 같은 파일의 다른 색 자리들은 이미
+                        // 감싸고 있었고 여기만 그 관행 밖이었다.
+                        setColor(parseColorOrNull(colorHex) ?: Color.LTGRAY)
                     }
                     background = drawable
                     setOnClickListener {
                         showColorPickerForType(typeName) { newColor ->
                             currentColors[typeName] = newColor
-                            (background as? android.graphics.drawable.GradientDrawable)?.setColor(Color.parseColor(newColor))
+                            (background as? android.graphics.drawable.GradientDrawable)
+                                ?.setColor(parseColorOrNull(newColor) ?: Color.LTGRAY)
                         }
                     }
                 }

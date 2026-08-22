@@ -47,10 +47,11 @@ object GraphFactionNarrow {
      *
      * 한쪽만 남은 관계를 그리면 없는 노드로 선이 뻗는다(노드 상한이 이미 쓰는 규칙과 같다).
      *
-     * **부르는 자리가 둘이라는 것이 요점이다**: 전체 갱신(`updateGraph`)과 슬라이더의 빠른
-     * 경로(`refreshGraphEdgesOnly`). 빠른 경로가 이것을 안 지나면 좁혀서 없앤 인물로 뻗는
-     * 엣지가 드래그마다 되살아난다 — 상한이 안 걸린 회차에서는 `shownNodeIds`가 `null`이라
-     * 아무도 그것을 거르지 않기 때문이다.
+     * **부르는 자리를 하나로 모아 둔 것이 요점이다**: 전체 갱신(`updateGraph`) 하나가
+     * 시점 슬라이더까지 든다. 2026.08.22 이전에는 슬라이더가 엣지만 갈아 끼우는 빠른 경로를
+     * 따로 들었는데, 그 경로가 이것을 안 지나면 좁혀서 없앤 인물로 뻗는 엣지가 드래그마다
+     * 되살아났다 — 상한이 안 걸린 회차에서는 `shownNodeIds`가 `null`이라 아무도 그것을
+     * 거르지 않기 때문이다. **경로를 나누면 그 갈림이 이런 모양으로 돌아온다.**
      */
     fun <T> apply(items: List<T>, keep: Set<Long>?, ends: (T) -> Pair<Long, Long>): List<T> {
         if (keep == null) return items

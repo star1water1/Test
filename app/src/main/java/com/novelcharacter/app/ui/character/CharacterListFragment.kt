@@ -68,6 +68,12 @@ class CharacterListFragment : Fragment() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 결과를 듣는 자리는 뷰가 아니라 **조각**이다 — 회전 중에 온 결과를 놓치지 않는다(R-65).
+        setupControlsSheetResult()
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -187,6 +193,10 @@ class CharacterListFragment : Fragment() {
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.characterRecyclerView.adapter = adapter
 
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateCharacterDisplayOrders(orderedIds)
+        }
+
         val callback = object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT, 0
         ) {
@@ -205,9 +215,8 @@ class CharacterListFragment : Fragment() {
 
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
-                if (adapter.isReorderMode()) {
-                    viewModel.updateCharacterDisplayOrders(adapter.getReorderedList())
-                }
+                // 세계관·작품 목록과 같은 통로로 나간다 (R-18) — 모드 확인은 어댑터가 한다.
+                adapter.onDragCompleted()
             }
         }
         itemTouchHelper = ItemTouchHelper(callback).also {
@@ -680,33 +689,41 @@ class CharacterListFragment : Fragment() {
         binding.btnClearFilters.setOnClickListener { viewModel.clearAllFilters() }
     }
 
-    /** 정렬·필터·프리셋을 한 시트에서 — 기존 두 시트의 콜백 합집합, ViewModel 무수정. */
-    private fun openControlsSheet() {
-        val sheet = CharacterListControlsBottomSheet()
-        sheet.currentSort = viewModel.sortSpec.value ?: CharacterSort()
-        sheet.loadSortableFields = { viewModel.getSortableFields() }
-        sheet.loadSortableDuelAxes = { viewModel.getSortableDuelAxes() }
-        sheet.currentTags = viewModel.tagFilters.value ?: emptySet()
-        sheet.currentNovelIds = viewModel.novelFilters.value ?: emptySet()
-        // 작품 필터는 전역 목록에서만 의미(이미 한 작품에 스코프된 화면에선 중복이라 숨김).
-        sheet.showNovelSection = (novelId == -1L)
-        sheet.loadAllTags = { viewModel.getAllDistinctTags() }
-        sheet.loadNovels = { viewModel.getAllNovelsList() }
-        sheet.loadUniverses = { viewModel.getScopedUniverses() }
-        sheet.loadFields = { uid -> viewModel.getFilterableFields(uid) }
-        sheet.loadFieldValues = { fid -> viewModel.getFieldValues(fid) }
-        sheet.onApplyAll = { sort, tags, novelIds, filter ->
-            viewModel.setSortSpec(sort)
-            viewModel.setTagFilters(tags)
-            viewModel.setNovelFilters(novelIds)
-            if (filter != null) viewModel.addFieldFilter(filter)
+    /**
+     * 컨트롤 시트가 **호스트만 할 수 있는 일**을 돌려주는 채널을 연다 (R-65).
+     *
+     * **등록은 `onCreate`다** — 뷰 수명주기에 걸면 회전 중에 온 결과를 놓치고, 그 유실은
+     * 조용하다(사용자가 [프리셋 저장]을 눌렀는데 아무 창도 안 뜬다). 정렬·필터·프리셋 적용은
+     * 시트가 뷰모델에 곧장 쓰므로 이 채널로 오지 않는다.
+     */
+    private fun setupControlsSheetResult() {
+        childFragmentManager.setFragmentResultListener(
+            CharacterListControlsBottomSheet.RESULT_KEY, this
+        ) { _, bundle ->
+            when (bundle.getString(CharacterListControlsBottomSheet.RESULT_ACTION)) {
+                CharacterListControlsBottomSheet.ACTION_SAVE_PRESET -> showSavePresetDialog()
+                CharacterListControlsBottomSheet.ACTION_PRESET_OPTIONS -> {
+                    val id = bundle.getLong(CharacterListControlsBottomSheet.RESULT_PRESET_ID)
+                    // 목록에서 다시 집는다 — id만 건네므로 그 사이 지워졌으면 열 창이 없다.
+                    viewModel.presets.value?.firstOrNull { it.id == id }?.let { showPresetOptionsDialog(it) }
+                }
+            }
         }
-        sheet.onClearAllFilters = { viewModel.clearAllFilters() }
-        sheet.presetsLive = viewModel.presets
-        sheet.onApplyPreset = { viewModel.applyPreset(it) }
-        sheet.onPresetLongPress = { showPresetOptionsDialog(it) }
-        sheet.onSavePreset = { showSavePresetDialog() }
-        sheet.show(childFragmentManager, CharacterListControlsBottomSheet.TAG)
+    }
+
+    /**
+     * 정렬·필터·프리셋을 한 시트에서 — 재료도 처분도 시트가 [CharacterViewModel]에서 곧장 든다.
+     *
+     * **꽂을 것이 없다**(R-65): 종전에는 여기서 람다 열넷을 인스턴스에 꽂았고, 회전한 시트는
+     * 그 열넷이 전부 null인 채로 떠 있어 [적용]이 조용한 무동작이었다.
+     * `childFragmentManager`로 띄우는 것이 그 계약이다 — 부모의 ViewModelStore를 그대로 써야
+     * 시트가 이 화면과 **같은 뷰모델 인스턴스**를 잡는다.
+     */
+    private fun openControlsSheet() {
+        if (childFragmentManager.isStateSaved) return
+        // 작품 필터 섹션은 전역 목록에서만 의미(이미 한 작품에 스코프된 화면에선 중복이라 숨김).
+        CharacterListControlsBottomSheet.newInstance(showNovelSection = novelId == -1L)
+            .show(childFragmentManager, CharacterListControlsBottomSheet.TAG)
     }
 
     /** 정렬 상태 칩: "이름 ↑" — 탭=방향 반전(기존 방향 버튼 승계), 수동 정렬은 숨김. */

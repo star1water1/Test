@@ -47,13 +47,22 @@ sealed class ColumnFieldOutcome {
  * 커스텀 열 **전부**가 이 갈래로 가고, 그러면 미리보기는 "필드값 0건"이라 말하면서 가져오기는
  * 수천 건을 쓴다.
  *
- * ## 사다리의 순서 — 안정 식별자 우선, 자연키 폴백
+ * ## 사다리의 순서 — **기대 헤더 정확 일치**가 최우선, 그 아래가 관대 폴백
  *
+ * 0. **내보내기가 만들 머리와 글자까지 같은가**([expectedHeaders] 인자 — 단일 소스는
+ *    `excel/CharacterFieldHeaders`). 걸리면 즉시 확정한다.
  * 1. `이름(필드키)` 병기 머리 — 내보내기가 이름 충돌·동명 시 붙인다
  * 2. `key` 완전 일치 → 대소문자 무시 일치
  * 3. `name` 일치 — **후보가 유일할 때만**(둘이면 근거 없이 고르지 않는다)
  *
  * 그 뒤 **단사(injective) 보장**이 온다: 한 필드에 두 열이 붙으면 **앞 열만** 남긴다.
+ *
+ * **0단이 왜 맨 위인가** — 1단의 정규식 `^(.+)\((.+)\)$`는 *이름 자체가 괄호로 끝나는
+ * 필드*를 병기 머리로 오인한다. `총합(마력)`이라는 이름의 필드가 있고 같은 목록에 키가
+ * `마력`인 다른 필드가 있으면, 그 열이 **남의 필드로 확정된다**(무편집 왕복 한 번에 값이
+ * 뒤바뀌고 고지도 없다). 형제 시트는 이 위험을 명시로 다루고 같은 순서를 골랐다
+ * ([com.novelcharacter.app.excel.EntityFieldHeaders] 머리). 1~3단은 **손편집·구버전 머리**를
+ * 받는 폴백으로 남는다 — 그 자리에서만 "키가 이름보다 앞선다"가 성립한다.
  */
 object CharacterFieldColumns {
 
@@ -64,6 +73,9 @@ object CharacterFieldColumns {
      * @param headers 열 번호 → 열 머리 원문. 빈 머리는 부르는 쪽이 빼고 넣는다.
      * @param fields 이 시트가 볼 수 있는 필드 정의 — **미리보기는 이 파일이 앞서 만들 필드도 함께
      *   넣는다**(가져오기는 '필드 정의' 시트를 먼저 처리하므로 그때 이미 DB에 있다).
+     * @param expectedHeaders 내보내기가 [fields]로 만들 머리 → 필드
+     *   (`CharacterFieldHeaders.expectedHeaders`). **기본값을 두지 않는다** — 두면 부르는 쪽이
+     *   이 단을 조용히 건너뛰고, 그 순간 무편집 왕복이 다시 깨진다.
      * @param fixedColIndices 고정 열 번호 — 커스텀 필드로 오인되면 안 되는 자리.
      * @param fixedHeaders 고정 열 머리 글자 집합 — 2차 방어다. 같은 고정 머리가 두 번 든 파일에서
      *   [fixedColIndices]에 안 잡힌 잔존 열이 가짜 필드를 만드는 것을 막는다.
@@ -73,6 +85,7 @@ object CharacterFieldColumns {
     fun plan(
         headers: Map<Int, String>,
         fields: List<FieldDefinition>,
+        expectedHeaders: Map<String, FieldDefinition>,
         fixedColIndices: Set<Int>,
         fixedHeaders: Set<String>,
         hasUniverse: Boolean,
@@ -93,7 +106,9 @@ object CharacterFieldColumns {
             val stripped = raw.removeSuffix(multiSuffix)
             if (raw in fixedHeaders || stripped in fixedHeaders) continue
 
-            val matched = matchField(raw, fields) ?: matchField(stripped, fields)
+            // 0단 — 내보내기가 적은 그 글자인가. 걸리면 사다리를 타지 않는다(위 KDoc).
+            val matched = expectedHeaders[raw]
+                ?: matchField(raw, fields) ?: matchField(stripped, fields)
             out[col] = when {
                 matched != null -> ColumnFieldOutcome.Matched(matched)
                 else -> {

@@ -285,8 +285,8 @@ class NovelListFragment : Fragment() {
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.novelRecyclerView.adapter = adapter
 
-        adapter.onOrderChanged = { reorderedList ->
-            viewModel.updateDisplayOrders(reorderedList)
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateDisplayOrders(orderedIds)
         }
         adapter.resolveCharacterImage = { novelId, characterId, seed, callback ->
             viewModel.resolveCharacterImage(novelId, characterId, seed, callback)
@@ -633,7 +633,11 @@ class NovelListFragment : Fragment() {
                 borderColor = dialogBinding.editBorderColor.text.toString().trim(),
                 imagePaths = org.json.JSONArray(pendingImagePaths).toString(),
                 imageMode = selectedImageMode,
-                imageCharacterId = selectedImageCharId,
+                // **모드와 참조는 한 벌이다** — 세계관 폼이 이미 지키는 불변식이고(`finalCharId`),
+                // 여기만 조건 없이 실어 *직접 등록* 작품에도 옛 캐릭터 id가 남았다. 그 남은 id가
+                // 그 캐릭터를 지울 때 정리 질의에 걸려 **표지를 잃게 했다**(정리 쪽도 함께 고쳤다).
+                imageCharacterId = selectedImageCharId
+                    .takeIf { selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER },
                 standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
             )
             // 커버 집합도 같은 시점의 폼 상태여야 고지 건수와 실제 반영 범위가 갈리지 않는다.
@@ -759,10 +763,15 @@ class NovelListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val result = try {
                 val newId = viewModel.insertNovelField(toInsert)
-                viewModel.registerInitialValues(newId, toInsert, initialValues)
+                val outcome = viewModel.registerInitialValues(newId, toInsert, initialValues)
                 com.novelcharacter.app.util.OpResult.success(
                     com.novelcharacter.app.util.OpResult.CAT_FIELD,
-                    getString(R.string.novel_field_created, field.name)
+                    getString(R.string.novel_field_created, field.name),
+                    // 등재하지 못한 값을 말한다 — 사건 편집이 쓰는 그 문구를 그대로 쓴다.
+                    // 촉발은 중복이 아니라 DB 예외라, 말하지 않으면 사용자는 자기가 미리
+                    // 적어 둔 값이 어디에도 없다는 것을 알 길이 없다(개발 의도 2번).
+                    outcome.failed.takeIf { it > 0 }
+                        ?.let { getString(R.string.field_initial_values_partial, it) }
                 )
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 android.util.Log.e("NovelList", "Duplicate novel field key: ${field.key}", e)

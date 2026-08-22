@@ -341,15 +341,16 @@ class GlobalSearchFragment : Fragment() {
         }
     }
 
+    /**
+     * 필드 필터 시트를 연다.
+     *
+     * **꽂을 것이 없다** — 시트가 재료도 처분도 [GlobalSearchViewModel]에서 곧장 든다(R-65).
+     * `childFragmentManager`로 띄우는 것이 그 계약이다: 부모의 ViewModelStore를 그대로 써야
+     * 시트가 이 화면과 **같은 뷰모델 인스턴스**를 잡는다.
+     */
     private fun showFilterBottomSheet() {
-        val sheet = SearchFilterBottomSheet()
-        sheet.loadUniverses = { viewModel.getAllUniverses() }
-        sheet.loadFields = { universeId -> viewModel.getFieldDefinitions(universeId) }
-        sheet.loadFieldValues = { fieldDefId -> viewModel.getFieldValues(fieldDefId) }
-        sheet.onFilterApplied = { filter ->
-            viewModel.addFieldFilter(filter)
-        }
-        sheet.show(childFragmentManager, SearchFilterBottomSheet.TAG)
+        if (childFragmentManager.isStateSaved) return
+        SearchFilterBottomSheet().show(childFragmentManager, SearchFilterBottomSheet.TAG)
     }
 
     private fun observeData() {
