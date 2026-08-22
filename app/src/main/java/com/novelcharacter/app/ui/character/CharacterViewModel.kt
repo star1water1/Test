@@ -1766,7 +1766,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         )
         val universeId = getUniverseIdForCharacter(character.id)
         if (universeId != null) {
-            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+            // **폼이 그린 칸의 범위를 함께 넘긴다** — 그 안에서 빈 채로 돌아온 시맨틱 필드는
+            // *사용자가 비운 것*이다(값 저장 규약이 이미 그렇게 읽는다). 안 넘기면 생일을
+            // 지워도 `__birth`가 남아 알림·홈 배너·위젯이 계속 울린다.
+            semanticSyncHelper.syncFieldToStateChange(
+                character.id, universeId, values,
+                clearableFieldIds = coveredFieldDefinitionIds
+            )
         }
         return preserved
     }

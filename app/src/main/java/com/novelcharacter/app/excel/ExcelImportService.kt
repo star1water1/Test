@@ -347,6 +347,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
 
+    /**
+     * 이 가져오기가 **빈 셀로 지운** 시맨틱 역할 필드 (캐릭터 id → 필드 id들).
+     *
+     * 빈 셀은 값 삭제이고(F1-A 규칙 가), 그러면 그 값에서 파생된 `__birth`·`__death`도
+     * 함께 정리돼야 한다 — 안 그러면 생일을 지운 파일을 들여도 알림이 계속 울린다
+     * (개발 의도 4번 — 내보내기 → 빈 칸 → 들이기가 비움을 반영해야 한다).
+     * 값 목록만으로는 *지워짐*을 볼 수 없으므로 지운 자리에서 세어 둔다.
+     */
+    private val pendingSyncClearedFields = mutableMapOf<Long, MutableSet<Long>>()
+
     // 이 임포트가 쓰는 단 하나의 휴지통 저장소 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다.
     // **인스턴스를 공유해야 한다**: 정리는 "이 작업이 방금 만든 스냅샷"을 보호하는데,
     // 스냅샷을 만든 인스턴스와 정리하는 인스턴스가 다르면 보호 목록이 비어 방금 만든 백업을
@@ -693,6 +703,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         novelIdCache.clear()
         novelUniverseCache.clear()
         pendingSyncCharacters.clear()
+        pendingSyncClearedFields.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
@@ -7753,6 +7764,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.characterFieldValueDao().deleteValue(charId, field.id)
                             valueLedger.remove(charId, field.id)
                             result.clearedFields++
+                            // 역할 필드를 지웠으면 파생 이력도 정리 대상이다 — 값 목록만으로는
+                            // *지워짐*을 볼 수 없어 여기서 세어 둔다.
+                            if (SemanticRole.fromConfig(field.config) != null) {
+                                pendingSyncClearedFields.getOrPut(charId) { mutableSetOf() }.add(field.id)
+                                hasSemanticField = true
+                            }
                         }
                         FieldValueCellEffect.NONE -> Unit
                     }
@@ -12088,7 +12105,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val fields = fieldsByUniverse.getOrPut(universeId) {
                     universeRepository.getFieldsByUniverseList(universeId)
                 }
-                syncHelper.syncFieldToStateChange(characterId, fields, fieldValues)
+                syncHelper.syncFieldToStateChange(
+                    characterId, fields, fieldValues,
+                    // **이 파일이 실제로 지운 칸만** 비움으로 읽는다. 값 전량을 넘기므로
+                    // 부재를 곧 비움으로 읽으면 연표 사건으로 생긴 `__birth`까지 지워진다.
+                    clearableFieldIds = pendingSyncClearedFields[characterId]
+                )
             } catch (e: Exception) {
                 android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
                 failedIds.add(characterId)

@@ -33,9 +33,12 @@ class SemanticFieldSyncHelper(
     suspend fun syncFieldToStateChange(
         characterId: Long,
         universeId: Long,
-        values: List<CharacterFieldValue>
+        values: List<CharacterFieldValue>,
+        clearableFieldIds: Set<Long>? = null
     ) = syncMutex.withLock {
-        applyFieldsToStateChange(characterId, universeRepository.getFieldsByUniverseList(universeId), values)
+        applyFieldsToStateChange(
+            characterId, universeRepository.getFieldsByUniverseList(universeId), values, clearableFieldIds
+        )
     }
 
     /**
@@ -53,15 +56,29 @@ class SemanticFieldSyncHelper(
     suspend fun syncFieldToStateChange(
         characterId: Long,
         fields: List<FieldDefinition>,
-        values: List<CharacterFieldValue>
+        values: List<CharacterFieldValue>,
+        clearableFieldIds: Set<Long>? = null
     ) = syncMutex.withLock {
-        applyFieldsToStateChange(characterId, fields, values)
+        applyFieldsToStateChange(characterId, fields, values, clearableFieldIds)
     }
 
+    /**
+     * @param clearableFieldIds **비움을 판정해도 되는 필드 id**. `null`이면 판정하지 않는다.
+     *
+     *   `values`는 *있는 값*만 담는다 — 필드를 비우면 행 자체가 사라지므로 이 루프는
+     *   *지워짐*이라는 신호를 **원리적으로 볼 수 없다.** 그래서 종전에는 생일 필드를 비워도
+     *   `__birth`가 그대로 남아 **알림·홈 배너·위젯이 계속 울렸고**, 상태변화 편집 창이
+     *   그 값을 필드에 되쓰기까지 했다.
+     *
+     *   부재를 곧 비움으로 읽으면 반대 사고가 난다 — 폼이 그 필드를 그리지도 않은 저장이나
+     *   전량 조회를 넘기는 경로에서 **연표 사건으로 생긴 `__birth`가 지워진다.** 그래서
+     *   *"이 화면이 그 칸을 그렸는데 빈 채로 돌아왔다"*를 아는 쪽만 그 범위를 넘긴다.
+     */
     private suspend fun applyFieldsToStateChange(
         characterId: Long,
         fields: List<FieldDefinition>,
-        values: List<CharacterFieldValue>
+        values: List<CharacterFieldValue>,
+        clearableFieldIds: Set<Long>?
     ) {
         val fieldMap = fields.associateBy { it.id }
 
@@ -89,9 +106,9 @@ class SemanticFieldSyncHelper(
                         upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
                         syncDeathToAlive(characterId, fields, isDead = true)
                     } else if (raw.isEmpty()) {
-                        // 사망연도 클리어 → __death 삭제 + alive 갱신
-                        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
-                        syncDeathToAlive(characterId, fields, isDead = false)
+                        // 빈 값이 이 루프에 실려 오는 경로는 실사용에 없다(비우면 값 행 자체가
+                        // 사라진다) — 그래도 오면 아래 비움 처분과 **같은 함수**를 쓴다.
+                        clearDeathDerived(characterId, fields)
                     }
                 }
                 SemanticRole.ALIVE -> {
@@ -143,6 +160,61 @@ class SemanticFieldSyncHelper(
                 else -> Unit
             }
         }
+
+        // **비워진 역할을 처분한다** — 위 루프가 볼 수 없는 신호다(위 KDoc).
+        // 판정 자체는 [SemanticClearPlan]이 든다(순수 — 시험이 닿는다).
+        val cleared = SemanticClearPlan.clearedRoles(fields, values, clearableFieldIds)
+        if (SemanticRole.DEATH_YEAR in cleared) clearDeathDerived(characterId, fields)
+        val clearYear = SemanticRole.BIRTH_YEAR in cleared
+        val clearDate = SemanticRole.BIRTH_DATE in cleared
+        if (clearYear || clearDate) clearBirthDerived(characterId, fields, clearYear, clearDate)
+    }
+
+    /**
+     * 출생 파생 정리 — **지운 칸에 해당하는 만큼만** 지운다.
+     *
+     * 출생연도를 비웠다고 월·일까지 날리면 사용자가 지우지 않은 것을 지우는 것이다. 그래서
+     * 연도는 0(미상)으로 내리고 월·일은 그대로 두며, **셋이 다 비면 그때 행을 지운다.**
+     * 연도를 비웠으면 그 연도에서 파생된 나이 값도 함께 지운다(안 지우면 나이만 남아
+     * 근거 없는 수가 된다).
+     */
+    private suspend fun clearBirthDerived(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        clearYear: Boolean,
+        clearDate: Boolean
+    ) {
+        val existing = findStateChange(characterId, CharacterStateChange.KEY_BIRTH)
+        if (existing != null) {
+            val plan = SemanticClearPlan.planBirthClear(
+                existing.year, existing.month, existing.day, clearYear, clearDate
+            )
+            if (plan.delete) {
+                deleteStateChangeByKey(characterId, CharacterStateChange.KEY_BIRTH)
+            } else {
+                characterRepository.updateStateChange(
+                    existing.copy(
+                        year = plan.year, month = plan.month, day = plan.day,
+                        newValue = buildStateChangeValue(CharacterStateChange.KEY_BIRTH, plan.year)
+                    )
+                )
+            }
+        }
+        if (clearYear) {
+            findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
+        }
+    }
+
+    /**
+     * 사망 파생 정리 — 사망연도를 비우면 사망 기록이 없어진 것이다.
+     *
+     * 이 본문은 종전에 `syncFieldToStateChange`의 *"사망연도가 빈 문자열이면"* 갈래에
+     * 있었는데, **빈 값을 넘기는 호출처가 하나도 없어 닿지 못하는 코드였다**(필드를 비우면
+     * 값 행 자체가 사라진다). 사건 삭제 경로([onDeathEventDeleted])와 같은 처분을 쓴다.
+     */
+    private suspend fun clearDeathDerived(characterId: Long, fields: List<FieldDefinition>) {
+        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
+        syncDeathToAlive(characterId, fields, isDead = false)
     }
 
     /**
