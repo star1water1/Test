@@ -201,7 +201,13 @@ class WorldPackageExporter(private val context: Context) {
         val nameBank = SqlInChunks.flat(characterIds) {
             db.nameBankDao().getNamesByUsedCharacterIds(it)
         }.sortedWith(WorldPackageScope.NAME_BANK)
+        // **정렬 계약을 지난다**(`WorldPackageScope.FACTIONS`) — 이 절만 빠져 있었고, 그래서
+        // 그 비교자는 앱에 호출부가 0이고 시험 하네스만 쓰고 있었다. 질의의 `ORDER BY`에는
+        // 기본키 타이브레이크가 없어 `displayOrder`·`createdAt`이 모두 같은 세력의 자리를
+        // SQLite가 정하지 않는다 — 그 상태는 엑셀 한 실행이 같은 `createdAt`을 심으면서
+        // 실제로 만들어진다. 이 절은 리스트 순서가 곧 JSON 배열 순서다(바이트 재현성).
         val factions = db.factionDao().getFactionsByUniverseList(config.universeId)
+            .sortedWith(WorldPackageScope.FACTIONS)
         val factionIds = factions.map { it.id }
         val factionMemberships = SqlInChunks.flat(factionIds) {
             db.factionMembershipDao().getMembershipsByFactionIds(it)

@@ -1410,10 +1410,19 @@ class TrashRepository(
     private suspend fun harvestRestoredCharacters(characterIds: List<Long>, extraUniverseIds: Set<Long>) {
         val library = FieldValueLibraryRepository(db)
         val universeIds = HashSet<Long>(extraUniverseIds)
+        // **작품은 작품 수만큼만 묻는다** — 종전에는 캐릭터마다 `getNovelById`를 쳐서 질의
+        // 수가 복원 인원에 비례했다(세계관 삭제를 되돌리면 그 세계관 캐릭터 전원이다).
+        // 그 DAO의 일괄 쌍은 KDoc이 *"캐릭터별 getNovelById N+1 제거용"*이라 적어 두었고,
+        // 같은 수리의 전례가 일괄 편집에 이미 있다(R-53·R-54).
+        val novelIds = HashSet<Long>()
         SqlInChunks.each(characterIds.distinct()) { chunk ->
             for (character in db.characterDao().getCharactersByIds(chunk)) {
-                val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
-                if (universeId != null) universeIds.add(universeId)
+                character.novelId?.let { novelIds.add(it) }
+            }
+        }
+        SqlInChunks.each(novelIds.toList()) { chunk ->
+            for (novel in db.novelDao().getNovelsByIds(chunk)) {
+                novel.universeId?.let { universeIds.add(it) }
             }
         }
         if (universeIds.isNotEmpty()) library.harvestUniverses(universeIds)

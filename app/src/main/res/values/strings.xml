@@ -2338,6 +2338,7 @@
     <string name="op_cat_maintenance">유지보수</string>
     <string name="op_cat_batch">일괄 작업</string>
     <string name="op_cat_duel">대결</string>
+    <string name="op_cat_field_library">값 라이브러리</string>
 
     <!-- 결과 알림 요약 (Layer 5) — 세계관/작품/세력/프리셋 -->
     <string name="result_universe_saved">세계관 \"%1$s\" 저장됨</string>

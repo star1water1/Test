@@ -59,7 +59,7 @@ class AppSettingsDiffTest {
 
     /**
      * 숫자 셀은 `51200`을 `51200.0`으로 돌려주기도 한다
-     * ([AppSettingsKeys.parseIntCell]의 KDoc이 그 사고를 적어 두었다) — 글자로 견주면
+     * ([AppSettingsKeys.parseFiniteCell]의 KDoc이 그 사고를 적어 두었다) — 글자로 견주면
      * **왕복만 해도 전부 '갱신'**이 된다.
      */
     @Test

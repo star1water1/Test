@@ -563,14 +563,14 @@ class UniverseListFragment : Fragment() {
                     setTextColor(android.graphics.Color.parseColor("#DD000000"))
                 }
                 val detailText = TextView(ctx).apply {
-                    // 프리셋이 사건 필드까지 담게 되면서(P5) 한 목록에 두 종류가 섞인다 —
-                    // 표시가 같으면 어느 것이 사건 필드인지 열어 보지 않고는 알 수 없다.
-                    val targetPrefix =
-                        if (field.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
-                            getString(R.string.field_target_event) + " · "
-                        } else {
-                            ""
-                        }
+                    // 프리셋이 사건 필드에 이어 **작품 필드까지** 담는다 — 한 목록에 세 종류가
+                    // 섞이는데 표시가 같으면 어느 것이 어느 종류인지 열어 보지 않고는 알 수
+                    // 없다(원칙 04). 종전에는 사건만 2갈래로 처리해 **작품 필드가 캐릭터
+                    // 필드와 똑같이 보였다** — 저장 쪽은 확-3에서 셋으로 늘었는데 표시 쪽만
+                    // 둘에 남은 뒤처짐이다(R-29 — 열거는 그 자체가 다음 실수의 예약이다).
+                    val targetPrefix = com.novelcharacter.app.ui.field.FieldTargetLabel
+                        .prefixResOrNull(field.entityType)
+                        ?.let { getString(it) + " · " } ?: ""
                     text = "$targetPrefix${field.type} · ${field.groupName} · ${field.key}"
                     textSize = 12f
                     setTextColor(android.graphics.Color.parseColor("#88000000"))
