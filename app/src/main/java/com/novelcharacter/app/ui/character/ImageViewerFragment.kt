@@ -236,11 +236,18 @@ class ImageViewerFragment : Fragment() {
         rotating = true
         rotateButton?.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                com.novelcharacter.app.util.ImageRotation.rotate(path, 90)
+            // **빗장은 `finally`로 푼다.** 이 스코프는 뷰가 죽으면 취소되는데, 그때 아래
+            // `isAdded` 검사에서 빠져나가게 두면 빗장이 걸린 채 남는다. 그 프래그먼트가
+            // 백스택에서 다시 서면 **버튼은 멀쩡해 보이는데 눌러도 아무 일이 없다**
+            // (새 뷰의 버튼은 enabled인데 빗장은 옛 값 그대로다).
+            val ok = try {
+                withContext(Dispatchers.IO) {
+                    com.novelcharacter.app.util.ImageRotation.rotate(path, 90)
+                }
+            } finally {
+                rotating = false
             }
             if (!isAdded || view == null) return@launch
-            rotating = false
             rotateButton?.isEnabled = true
             if (ok) {
                 // 썸네일 캐시는 경로를 키로 들고 있어 그대로 두면 옛 방향이 목록에 남는다.
@@ -256,6 +263,9 @@ class ImageViewerFragment : Fragment() {
 
     override fun onDestroyView() {
         pageChangeCallback?.let { viewPager?.unregisterOnPageChangeCallback(it) }
+        // 뷰가 죽으면 빗장도 푼다 — 위 `finally`와 이중이지만, 둘의 실패 모양이 달라 둘 다 둔다
+        // (`finally`는 취소를, 이쪽은 코루틴이 시작조차 못 한 경우를 덮는다).
+        rotating = false
         rotateButton = null
         pageChangeCallback = null
         viewPager?.adapter = null

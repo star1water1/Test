@@ -58,9 +58,6 @@ object ExifOrientation {
         else -> IDENTITY             // 1(NORMAL) · 0(UNDEFINED) · 미지값
     }
 
-    /** 이 방향 값이 가로·세로를 맞바꾸는가 — 크기를 미리 계산하는 자리가 쓴다. */
-    fun swapsDimensions(exifOrientation: Int): Boolean = transformOf(exifOrientation).degrees % 180 != 0
-
     /**
      * 지금 방향에 [degrees]만큼 **더 돌린** 뒤의 EXIF 방향 값 — 인앱 회전이 쓴다.
      *

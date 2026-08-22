@@ -44,15 +44,6 @@ class ExifOrientationTest {
         assertFalse(ExifOrientation.transformOf(8).mirrored)
     }
 
-    @Test fun onlyQuarterTurnsSwapDimensions() {
-        assertFalse(ExifOrientation.swapsDimensions(1))
-        assertFalse(ExifOrientation.swapsDimensions(3))
-        assertTrue(ExifOrientation.swapsDimensions(6))
-        assertTrue(ExifOrientation.swapsDimensions(8))
-        assertTrue(ExifOrientation.swapsDimensions(5))
-        assertTrue(ExifOrientation.swapsDimensions(7))
-    }
-
     @Test fun valueOfIsTheInverseOfTransformOf() {
         for (v in 1..8) {
             assertEquals(v, ExifOrientation.valueOf(ExifOrientation.transformOf(v)))

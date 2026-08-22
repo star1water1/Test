@@ -95,7 +95,8 @@ object ImageImportHelper {
                     // **픽셀을 세워서 저장한다.** 이 갈래는 어차피 재인코딩이라 세우는 데
                     // 추가 손실이 없고, 세우지 않으면 EXIF가 사라진 채 픽셀만 누운 파일이 남아
                     // **원래 방향을 알 방법이 영영 없어진다**(되돌릴 수 없는 유실).
-                    val bmp = ImageOrientationIo.applyTo(decoded, ImageOrientationIo.readOrientation(bytes))
+                    val orientation = ImageOrientationIo.readOrientation(bytes)
+                    val bmp = ImageOrientationIo.applyTo(decoded, orientation)
                     val ok = encodeBitmap(bmp, file, settings.qualityPercent)
                     bmp.recycle()
                     // **이득이 없으면 원본을 쓴다** — `recompressToTemp`가 이미 세운 정책([SkipReason.NO_BENEFIT])을
@@ -103,9 +104,7 @@ object ImageImportHelper {
                     // 원본보다 커질 수 있는데, 그때 압축을 켠 사용자가 얻는 것이 손실뿐이다.
                     // **단, 세울 것이 있었으면 결과가 커도 쓴다** — 그쪽은 용량이 아니라 방향을
                     // 바로잡는 일이고, 원본으로 되돌리면 그 교정이 통째로 사라진다.
-                    val straightened = !ExifOrientation.transformOf(
-                        ImageOrientationIo.readOrientation(bytes)
-                    ).isIdentity
+                    val straightened = !ExifOrientation.transformOf(orientation).isIdentity
                     val encodedSize = if (ok) file.length() else 0L
                     if (!ok || (!straightened && (encodedSize <= 0L || encodedSize >= bytes.size))) {
                         // 인코드 실패 또는 이득 없음 → 원본 폴백(무단 유실 금지)
