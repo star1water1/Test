@@ -32,6 +32,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
+import com.novelcharacter.app.ui.common.parseColorOrNull
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -1075,13 +1076,18 @@ class UniverseListFragment : Fragment() {
                     val colorHex = currentColors[typeName] ?: "#9E9E9E"
                     val drawable = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.parseColor(colorHex))
+                        // **맨몸으로 부르지 않는다** — 색은 엑셀·월드패키지·손편집으로 들어오는
+                        // 자유 입력이고, 이 자리는 다이얼로그 **조립 중**이라 예외가 나면
+                        // 창이 뜨기도 전에 앱이 죽는다. 같은 파일의 다른 색 자리들은 이미
+                        // 감싸고 있었고 여기만 그 관행 밖이었다.
+                        setColor(parseColorOrNull(colorHex) ?: Color.LTGRAY)
                     }
                     background = drawable
                     setOnClickListener {
                         showColorPickerForType(typeName) { newColor ->
                             currentColors[typeName] = newColor
-                            (background as? android.graphics.drawable.GradientDrawable)?.setColor(Color.parseColor(newColor))
+                            (background as? android.graphics.drawable.GradientDrawable)
+                                ?.setColor(parseColorOrNull(newColor) ?: Color.LTGRAY)
                         }
                     }
                 }

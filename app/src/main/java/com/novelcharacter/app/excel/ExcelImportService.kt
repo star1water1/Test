@@ -33,6 +33,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.CalculatedCellEcho
+import com.novelcharacter.app.util.stringOr
 import com.novelcharacter.app.util.CharacterValueLedger
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.FactionStanding
@@ -11540,7 +11541,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun normalizeRelColorsCell(raw: String, rowLabel: String, universeName: String, result: ImportResult?): String? {
         if (raw.isBlank()) return ""
-        if (isValidJson(raw, '{')) return raw
+        // **색 글자 자체를 본다.** 형식이 JSON이어도 값이 색이 아니면 화면이 그것을 칠하려다
+        // 죽거나(감싸지 않은 자리가 하나 있었다) 조용히 회색으로 떨어진다 — 어느 쪽이든
+        // 사용자는 자기가 적은 색이 안 먹은 이유를 알 수 없다(개발 의도 2번).
+        if (isValidJson(raw, '{')) {
+            return filterRelColors(
+                org.json.JSONObject(raw), raw, rowLabel, universeName, result
+            )
+        }
         val pairs = parseRelColorTokens(raw)
         if (pairs.isNotEmpty()) {
             val obj = org.json.JSONObject()
@@ -11548,12 +11556,50 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result?.warnings?.add(
                 "$rowLabel: 세계관 '$universeName'의 커스텀관계색상이 JSON 객체 형식이 아니어서 '유형=색상' 목록으로 해석했습니다(${pairs.size}개) — 정확한 형식은 {\"연인\":\"#E91E63\"} 입니다"
             )
-            return obj.toString()
+            return filterRelColors(obj, raw, rowLabel, universeName, result)
         }
         result?.warnings?.add(
             "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 '${raw.take(40)}'을(를) 해석할 수 없어 적용하지 않고 기존 설정을 유지했습니다 — 형식은 {\"연인\":\"#E91E63\"} 또는 '연인=#E91E63' 쉼표 나열입니다. 비우면 기본 색상으로 돌아갑니다"
         )
         return null
+    }
+
+    /**
+     * 색이 아닌 값을 떨어뜨리고 **어느 유형의 무엇이 왜 안 실렸는지** 말한다.
+     *
+     * 전부 불합격이면 `null`을 돌려 **기존 설정을 파괴하지 않는다** — 해석 불가 입력이
+     * 유효 설정을 지우지 않는다는 이 함수의 대원칙 그대로다.
+     */
+    private fun filterRelColors(
+        obj: org.json.JSONObject,
+        raw: String,
+        rowLabel: String,
+        universeName: String,
+        result: ImportResult?
+    ): String? {
+        val kept = org.json.JSONObject()
+        val dropped = mutableListOf<String>()
+        for (key in obj.keys()) {
+            // `optString`은 기기(libcore)에서 JSON null에 `"null"`을 준다 — 그 값이 색 검사를
+            // 통과할 리는 없지만, 경고 문구에 그대로 실려 사용자를 헷갈리게 한다(R-70).
+            val value = obj.stringOr(key, "")
+            if (com.novelcharacter.app.util.ColorHex.isValidHex(value)) kept.put(key, value.trim())
+            else dropped.add("$key=$value")
+        }
+        if (dropped.isNotEmpty()) {
+            result?.warnings?.add(
+                "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 ${dropped.size}개가 색 형식이 아니어서 싣지 않았습니다(${dropped.take(3).joinToString(", ")}) — 형식은 #RRGGBB 입니다"
+            )
+        }
+        if (kept.length() == 0) {
+            if (dropped.isNotEmpty()) {
+                result?.warnings?.add(
+                    "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 '${raw.take(40)}'에 쓸 수 있는 색이 하나도 없어 기존 설정을 유지했습니다"
+                )
+            }
+            return null
+        }
+        return kept.toString()
     }
 
     /** 월에 맞는 유효한 일수인지 검증 (월이 null이면 1..31 범위만 체크) */

@@ -130,6 +130,8 @@ $MAIN/util/FieldValueScan.kt
 $MAIN/util/CharacterFieldColumns.kt
 $MAIN/util/AiCheckState.kt
 $MAIN/util/SemanticClearPlan.kt
+$MAIN/util/ColorHex.kt
+$MAIN/util/AliveAtYear.kt
 $MAIN/backup/BackupChunkFormat.kt
 $MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
@@ -405,6 +407,8 @@ $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
 $TEST/util/AiCheckStateTest.kt
 $TEST/util/SemanticClearPlanTest.kt
+$TEST/util/ColorHexTest.kt
+$TEST/util/AliveAtYearTest.kt
 $TEST/util/NarrativeDensityCurveTest.kt
 $TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt

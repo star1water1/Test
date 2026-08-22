@@ -147,28 +147,22 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     }
 
     /**
-     * 해당 연도에 사망 상태인 캐릭터 ID 집합.
-     * TimeStateResolver와 동일한 우선순위: 명시적 __alive 상태변화(연도 이하 최신)가 있으면 그 값을,
-     * 없으면 __death 연도(newValue 우선, 없으면 기록 연도) 기준으로 판정한다.
+     * 해당 연도에 사망 상태인 캐릭터 ID 집합 — 판정은
+     * [com.novelcharacter.app.util.AliveAtYear]가 **단일 소스**다.
+     *
+     * 종전에는 이 자리가 판정을 손으로 한 벌 더 짰고, 그러면서 `__alive` 행을 **해석 계층의
+     * 출력 어휘**(`"false"`)로 읽었다 — 원본에 그 값이 들어오는 경로가 없으므로 그 비교는
+     * 언제나 거짓이었고, 이어지는 `continue`가 `__death` 폴백까지 막았다. 사망을 적어 둔
+     * 캐릭터가 시간뷰에서만 †도 회색도 못 받았다. 사망연도 이전 시점 보정도 빠져 있었다.
      */
     fun deceasedCharacterIdsAtYear(year: Int): Set<Long> {
         val changes = _stateChanges.value ?: return emptySet()
-        val deceased = mutableSetOf<Long>()
-        for ((charId, charChanges) in changes.groupBy { it.characterId }) {
-            val aliveChange = charChanges
-                .filter { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE && it.year <= year }
-                .maxWithOrNull(compareBy({ it.year }, { it.month ?: 0 }, { it.day ?: 0 }, { it.id }))
-            if (aliveChange != null) {
-                if (aliveChange.newValue.equals("false", ignoreCase = true)) deceased.add(charId)
-                continue
+        return changes.groupBy { it.characterId }
+            .filterValues {
+                com.novelcharacter.app.util.AliveAtYear.resolve(it, year) ==
+                    com.novelcharacter.app.util.AliveAtYear.Verdict.DEAD
             }
-            val deathChange = charChanges.firstOrNull {
-                it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_DEATH
-            } ?: continue
-            val deathYear = deathChange.newValue.toIntOrNull() ?: deathChange.year
-            if (year >= deathYear) deceased.add(charId)
-        }
-        return deceased
+            .keys
     }
 
     /**
