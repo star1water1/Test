@@ -3206,7 +3206,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
-        val valueCol = cols["값"] ?: 4
+        // 가져오기와 **같은 판정**이다(R-33) — '값' 열이 없으면 그쪽이 시트를 건너뛰므로
+        // 여기서 위치 폴백으로 세면 미리보기만 있지도 않을 건수를 말한다.
+        val valueCol = cols["값"]
+            ?: return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
         val labelCol = cols["표시라벨"] ?: -1
         // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
         // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
@@ -6679,7 +6682,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
-        val valueCol = cols["값"] ?: 4
+        // **'값'에는 위치 폴백을 두지 않는다** — 이 열이 엔트리의 정체다.
+        // 종전 `?: 4`는 그 열을 지운 파일에서 4번 자리에 있던 '표시라벨'을 값으로 읽어,
+        // 코드로 매칭된 기존 엔트리의 값을 **라벨로 갈아 끼웠다**(그 값을 참조하던 캐릭터
+        // 필드값이 그 순간 라이브러리에서 미아가 된다). 없으면 소리 내어 건너뛴다.
+        val valueCol = requiredCol(cols, "값", sheet.sheetName, result) ?: return
         val labelCol = cols["표시라벨"] ?: -1
         // 옛 머리('별칭(콤마구분)')는 [ExcelHeaderAliases]가 이 이름으로 접어 주므로 여기서
         // 다시 묻지 않는다. 종전의 `?: cols["별칭"]`은 **닿을 수 없는 가지였다** —
