@@ -1742,11 +1742,12 @@
     <string name="restore_strategy_overwrite">덮어쓰기</string>
     <string name="restore_strategy_overwrite_desc">선택한 항목의 기존 데이터를 모두 삭제하고\n백업 데이터로 교체합니다.</string>
     <string name="restore_strategy_label">복원 방식</string>
-    <string name="restore_overwrite_warning">⚠ DB에만 있는 데이터가 삭제됩니다: %s</string>
+    <string name="restore_overwrite_warning">⚠ 이 파일이 갱신하지 않는 DB 데이터가 삭제됩니다: %s</string>
+    <string name="restore_overwrite_unread_note">이 수에는 앱이 읽지 못한 행(위 \'건너뜀\')의 몫이 섞여 있습니다 — 파일에 적혀 있어도 이번에 갱신되지 않아 함께 삭제됩니다. 남기고 싶다면 취소한 뒤 그 행을 고쳐 주세요.</string>
     <string name="restore_merge_delete_option">엑셀에 없는 항목 삭제</string>
     <string name="restore_merge_delete_desc">대상: %s</string>
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
-    <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
+    <string name="restore_preview_db_info">현재 DB: %1$d개, 이 파일이 갱신하지 않음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>
     <!-- 사유를 하나로 단정하지 않는다 (B-237) — 이 계수는 원인이 둘이다: ⓐ 선행 항목이 없는데
          그것을 만드는 범주가 선택에서 빠진 행(B-102 ⓑ) ⓑ 필수 칸이 비었거나 해석되지 않는 행.

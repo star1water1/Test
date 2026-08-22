@@ -1746,6 +1746,17 @@ class ExcelImporter(context: Context) {
                     setTextColor(0xFFFF5722.toInt())
                 }
 
+                // **읽지 못한 행의 몫이 이 수에 섞여 있다** (2026.08.22).
+                //
+                // 수 자체는 맞다 — 삭제는 `id !in matchedIds`로 도는데 건너뛴 행은 매칭 id를
+                // 만들지 않으므로 그 항목은 **실제로 지워진다.** 틀린 것은 *사유*였다:
+                // 종전 문구가 *"DB에만 있는 데이터"* · *"백업에 없음"*이라 적어, **파일에
+                // 적혀 있는데 앱이 못 읽은 항목**까지 *파일에 없다*는 근거로 지우게 했다.
+                // 사용자가 취소할지 정하는 근거가 그 사유이므로(개발 의도 2번 — 변수 제어),
+                // 문구를 *"이 파일이 갱신하지 않는"*으로 바꾸고 섞임을 한 줄로 밝힌다.
+                val unreadMixedIn = analysis.categories.any {
+                    it.deletedByOverwrite && it.onlyInDb > 0 && it.skippedCount > 0
+                }
                 if (totalOnlyInDb > 0) {
                     val deleteParts = analysis.categories
                         .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
@@ -1753,7 +1764,10 @@ class ExcelImporter(context: Context) {
                     overwriteWarning.text = appContext.getString(
                         com.novelcharacter.app.R.string.restore_overwrite_warning,
                         deleteParts.joinToString(", ")
-                    )
+                    ) + if (unreadMixedIn) {
+                        "\n" + appContext.getString(
+                            com.novelcharacter.app.R.string.restore_overwrite_unread_note)
+                    } else ""
                 }
                 radioGroup.addView(overwriteWarning)
 
