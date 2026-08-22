@@ -194,10 +194,56 @@ class RelationshipIndexes(rows: List<CharacterRelationship>) {
     /** 이 쌍의 관계 전부 — `getRelationshipsForCharacterList(...).filter { 쌍이 같다 }`의 자리. */
     fun pair(a: Long, b: Long): List<CharacterRelationship> = byPair.all(CharacterPairKey.of(a, b))
 
+    /**
+     * 이 행이 고칠 기존 관계를 고른다 — **미리보기와 가져오기가 같은 함수에서 받는다**(R-33·R-53).
+     *
+     * 규약은 종전과 같다: **코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.**
+     * 다만 코드에 **한 가지 조건**이 붙는다 — 그 코드가 가리키는 관계가 **이 행과 같은 두 사람**의
+     * 것이어야 한다.
+     *
+     * ## 왜 그 조건이 필요한가
+     *
+     * 내보낸 파일에서 '코드' 열은 회색(readOnly)이라, 사용자가 **행을 복사해 이름만 고치면**
+     * 코드는 남의 것이 그대로 따라온다. 조건이 없으면 그 코드를 따라가
+     * ⓐ **남의 관계가 이 행의 값으로 덮이고**(설명·강도·양방향·세력이 통째로)
+     * ⓑ **이 행이 말한 관계는 만들어지지 않는다** — 병합은 두 사람을 바꾸지 않기 때문이다.
+     * 유형까지 같으면 경고도 한 줄 안 뜬다. **말없는 유실이라 사용자가 알 길이 없다.**
+     *
+     * 그래서 **다른 쌍을 가리키는 코드는 이 행의 것이 아니다**([RelationshipRowMatch.codeOfOtherPair]로
+     * 돌려 부르는 쪽이 경고한다). 대신 이 행은 제 쌍 안에서 자연키로 다시 찾고, 없으면 새로 만든다.
+     * **그 새 관계는 파일의 코드를 쓸 수 없다** — 코드 열은 유니크라 남이 이미 든 값을 넣으면
+     * 넣기 자체가 실패한다([RelationshipRowMatch.canReuseFileCode]).
+     */
+    fun matchRow(relCode: String, char1Id: Long, char2Id: Long, relationshipType: String): RelationshipRowMatch {
+        val coded = if (relCode.isNotBlank()) byCode.first(relCode) else null
+        val samePair = coded != null &&
+            CharacterPairKey.of(coded.characterId1, coded.characterId2) == CharacterPairKey.of(char1Id, char2Id)
+        return RelationshipRowMatch(
+            existing = if (samePair) coded
+                       else pair(char1Id, char2Id).find { it.relationshipType == relationshipType },
+            codeOfOtherPair = if (coded != null && !samePair) coded else null
+        )
+    }
+
     fun remember(row: CharacterRelationship) {
         byCode.put(row)
         byPair.put(row)
     }
+}
+
+/**
+ * 관계 행 하나의 매칭 결과 — [RelationshipIndexes.matchRow]가 낸다.
+ *
+ * @property existing 이 행이 고칠 기존 관계. `null`이면 새로 만든다.
+ * @property codeOfOtherPair 파일의 코드가 **다른 두 사람의 관계**를 가리켰을 때 그 관계.
+ *   `null`이면 그런 일이 없다. 부르는 쪽은 이것이 `null`이 아니면 **경고하고 교정 경로를 준다**.
+ */
+data class RelationshipRowMatch(
+    val existing: CharacterRelationship?,
+    val codeOfOtherPair: CharacterRelationship?
+) {
+    /** 새로 만들 때 파일의 코드를 그대로 쓸 수 있는가 — 남이 이미 든 코드면 못 쓴다(유니크 열). */
+    val canReuseFileCode: Boolean get() = codeOfOtherPair == null
 }
 
 /**

@@ -122,6 +122,57 @@ class ImportIdentityIndexesTest {
         assertEquals(rels.pair(3L, 7L), rels.pair(7L, 3L))
     }
 
+    // ── 관계 행 매칭 — 코드가 **다른 쌍**을 가리키면 이 행의 것이 아니다 ────────────
+    // 내보낸 파일의 '코드' 열은 회색(readOnly)이라 **행을 복사하면 남의 코드가 따라온다.**
+    // 그 코드를 따르면 ⓐ 남의 관계가 이 행의 값으로 덮이고 ⓑ 이 행이 말한 관계는 만들어지지
+    // 않는다(병합은 두 사람을 바꾸지 않는다). 유형까지 같으면 경고도 안 뜬다 — 말없는 유실이다.
+
+    @Test
+    fun `행 매칭 — 코드가 같은 쌍을 가리키면 유형이 달라도 그것을 고른다`() {
+        val rels = RelationshipIndexes(listOf(rel(1L, 1L, 2L, type = "친구", code = "R-1")))
+        val m = rels.matchRow("R-1", 1L, 2L, "동료")
+        assertEquals(1L, m.existing?.id)
+        assertEquals(null, m.codeOfOtherPair)
+        assertEquals(true, m.canReuseFileCode)
+    }
+
+    @Test
+    fun `행 매칭 — 코드가 다른 쌍을 가리키면 그 관계를 고치지 않는다`() {
+        val rels = RelationshipIndexes(listOf(rel(1L, 1L, 2L, type = "친구", code = "R-1")))
+        val m = rels.matchRow("R-1", 3L, 4L, "친구")
+        assertEquals(null, m.existing)                 // 3–4에는 아직 관계가 없다 → 새로 만든다
+        assertEquals(1L, m.codeOfOtherPair?.id)        // 부르는 쪽이 이것으로 경고한다
+        assertEquals(false, m.canReuseFileCode)        // 코드 열은 유니크 — 물려받으면 넣기가 죽는다
+    }
+
+    @Test
+    fun `행 매칭 — 코드가 다른 쌍이면 제 쌍의 자연키로 폴백한다`() {
+        val rels = RelationshipIndexes(
+            listOf(rel(1L, 1L, 2L, type = "친구", code = "R-1"), rel(2L, 3L, 4L, type = "친구"))
+        )
+        val m = rels.matchRow("R-1", 3L, 4L, "친구")
+        assertEquals(2L, m.existing?.id)
+        assertEquals(1L, m.codeOfOtherPair?.id)
+    }
+
+    @Test
+    fun `행 매칭 — 쌍 판정에 방향은 없다`() {
+        val rels = RelationshipIndexes(listOf(rel(1L, 7L, 3L, code = "R-9")))
+        assertEquals(1L, rels.matchRow("R-9", 3L, 7L, "친구").existing?.id)
+        assertEquals(null, rels.matchRow("R-9", 3L, 7L, "친구").codeOfOtherPair)
+    }
+
+    @Test
+    fun `행 매칭 — 코드가 비었거나 없는 코드면 자연키가 답한다`() {
+        val rels = RelationshipIndexes(listOf(rel(1L, 1L, 2L, type = "친구", code = "R-1")))
+        assertEquals(1L, rels.matchRow("", 1L, 2L, "친구").existing?.id)
+        val unknown = rels.matchRow("R-없음", 1L, 2L, "친구")
+        assertEquals(1L, unknown.existing?.id)
+        assertEquals(null, unknown.codeOfOtherPair)
+        // 아무도 안 든 코드는 새 관계가 그대로 물려받아도 된다(기기 이전 후 왕복 정체성).
+        assertEquals(true, unknown.canReuseFileCode)
+    }
+
     @Test
     fun `관계 — 다른 쌍은 섞이지 않는다`() {
         val rels = RelationshipIndexes(listOf(rel(1L, 1L, 2L), rel(2L, 1L, 3L)))

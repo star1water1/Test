@@ -4503,11 +4503,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
 
-            // 실제 임포트와 동일한 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백
-            val byCode = if (r.relCode.isNotBlank()) rels.byCode.first(r.relCode) else null
-            // 쌍으로 바로 받는다 — 가져오기와 **글자 그대로 같은 두 줄**이다(R-33).
-            val existing = byCode
-                ?: rels.pair(char1.id, char2.id).find { it.relationshipType == r.relationshipType }
+            // 매칭은 가져오기와 **같은 함수**다(R-33·R-53) — 코드 우선 → 자연키 폴백이되,
+            // 코드가 다른 쌍을 가리키면 이 행의 것이 아니다(그러면 여기서도 '새로 만듦'으로 센다).
+            val match = rels.matchRow(r.relCode, char1.id, char2.id, r.relationshipType)
+            val existing = match.existing
             if (existing == null) {
                 newCount++
                 // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
@@ -4515,7 +4514,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 rels.remember(
                     newRelationshipFrom(
                         r, char1.id, char2.id, factionId, i, now,
-                        r.relCode
+                        // 가져오기와 같은 갈래 — 남이 든 코드는 새 관계가 물려받지 못한다.
+                        r.relCode.takeIf { match.canReuseFileCode }.orEmpty()
                     ).copy(id = previewIds.mint())
                 )
                 continue
@@ -8472,18 +8472,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 val factionId = resolvedFaction?.id
 
-                // 쌍으로 바로 받는다 — 종전에는 캐릭터1의 관계 **전부**를 읽어 여기서 걸렀다.
-                val pairRels = rels.pair(char1.id, char2.id)
-                // 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.
-                // 코드로 잡히면 '관계 유형' 편집이 rename으로 인식되어 관계가 분열하지 않는다.
+                // 매칭 규약은 **미리보기와 같은 함수**가 든다(R-33·R-53) — 코드(안정 식별자)
+                // 우선 → 자연키(쌍+유형) 폴백이되, **코드가 이 행과 같은 두 사람의 것일 때만** 따른다.
                 val relCode = rv.relCode
-                val byCode = if (relCode.isNotBlank()) rels.byCode.first(relCode) else null
-                if (relCode.isNotBlank() && byCode == null) {
+                val match = rels.matchRow(relCode, char1.id, char2.id, relationshipType)
+                if (relCode.isNotBlank() && match.existing == null && match.codeOfOtherPair == null) {
                     result.warnings.add("관계 행 ${excelRow(i)}: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
                 }
-                val existing = byCode ?: pairRels.find { it.relationshipType == relationshipType }
-                if (byCode != null && byCode.relationshipType != relationshipType) {
-                    result.warnings.add("관계 행 ${excelRow(i)}: '${char1Name}'–'${char2Name}' 관계 유형을 '${byCode.relationshipType}' → '$relationshipType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
+                match.codeOfOtherPair?.let { other ->
+                    // **행을 복사하면 회색 '코드' 칸이 따라온다** — 그 코드를 따르면 남의 관계가
+                    // 이 행의 값으로 덮이고 이 행이 말한 관계는 만들어지지 않는다(둘 다 말이 없다).
+                    val otherPair = listOfNotNull(
+                        db.characterDao().getCharacterById(other.characterId1)?.name,
+                        db.characterDao().getCharacterById(other.characterId2)?.name
+                    ).joinToString("–").ifBlank { "다른 두 사람" }
+                    result.warnings.add("관계 행 ${excelRow(i)}: 코드 '$relCode'는 '$otherPair'의 관계를 가리켜 이 행에는 쓰지 않았습니다 — 행을 복사했다면 '코드' 칸을 비우세요 (이 행은 '${char1Name}'–'${char2Name}'의 관계로 처리합니다)")
+                }
+                val existing = match.existing
+                if (existing != null && relCode.isNotBlank() && match.codeOfOtherPair == null &&
+                    existing.relationshipType != relationshipType) {
+                    result.warnings.add("관계 행 ${excelRow(i)}: '${char1Name}'–'${char2Name}' 관계 유형을 '${existing.relationshipType}' → '$relationshipType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
                 }
 
                 if (existing != null) {
@@ -8511,8 +8519,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (rc.relCode < 0) touchedPairs.putIfAbsent(setOf(char1.id, char2.id), i to "${char1Name}–${char2Name}")
                     val newRelationship = newRelationshipFrom(
                         rv, char1.id, char2.id, factionId, i, nowMillis,
-                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
-                        code = relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
+                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성).
+                        // **남이 이미 든 코드는 못 쓴다** — 코드 열이 유니크라 넣기 자체가 실패한다.
+                        code = relCode.takeIf { it.isNotBlank() && match.canReuseFileCode }
+                            ?: generateEntityCode()
                     )
                     val newId = db.characterRelationshipDao().insert(newRelationship)
                     // 같은 쌍·같은 코드를 든 뒷 행이 이것을 봐야 한다 — 못 보면 같은 관계가
