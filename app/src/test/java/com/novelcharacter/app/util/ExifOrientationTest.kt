@@ -30,9 +30,11 @@ class ExifOrientationTest {
         assertEquals(ExifOrientation.Transform(0, true), ExifOrientation.transformOf(2))
         assertEquals(ExifOrientation.Transform(180, false), ExifOrientation.transformOf(3))
         assertEquals(ExifOrientation.Transform(180, true), ExifOrientation.transformOf(4))
-        assertEquals(ExifOrientation.Transform(90, true), ExifOrientation.transformOf(5))
+        // 5·7 — **반전을 먼저 하는 이 표기에서 각이 서로 반대다**(2026.08.22 정정).
+        // 종전 표는 둘을 맞바꿔 들고 있었고 이 시험이 그 오답을 함께 잠그고 있었다.
+        assertEquals(ExifOrientation.Transform(270, true), ExifOrientation.transformOf(5))
         assertEquals(ExifOrientation.Transform(90, false), ExifOrientation.transformOf(6))
-        assertEquals(ExifOrientation.Transform(270, true), ExifOrientation.transformOf(7))
+        assertEquals(ExifOrientation.Transform(90, true), ExifOrientation.transformOf(7))
         assertEquals(ExifOrientation.Transform(270, false), ExifOrientation.transformOf(8))
     }
 
@@ -42,6 +44,45 @@ class ExifOrientationTest {
         assertEquals(270, ExifOrientation.transformOf(8).degrees)
         assertFalse(ExifOrientation.transformOf(6).mirrored)
         assertFalse(ExifOrientation.transformOf(8).mirrored)
+    }
+
+    /**
+     * **표를 되짚어 세운다 — 픽셀 자리로 검산한다.**
+     *
+     * 이 시험이 없는 동안 5와 7이 서로의 각을 들고 있었고, 위 표 시험은 그 오답을 그대로
+     * 적어 두어 **둘이 함께 틀린 채 초록**이었다. 그래서 여기서는 표를 베끼지 않고
+     * **EXIF 정의에서 다시 유도한다**: 2×2 격자에 값의 뜻(어느 행·열이 화면의 어디인가)을
+     * 그대로 적어 저장 픽셀을 만들고, 표가 시키는 변환(**반전 먼저, 회전 나중**)을 적용해
+     * 원본이 되살아나는지 본다.
+     */
+    @Test fun eachValueRestoresTheOriginalPixels() {
+        // 화면에 바로 선 그림 D — 좌상 a · 우상 b · 좌하 c · 우하 d.
+        val d = listOf(listOf("a", "b"), listOf("c", "d"))
+        // 저장 픽셀 S[r][c] — EXIF 정의(0행이 화면의 어디인가 · 0열이 화면의 어디인가) 그대로.
+        val stored = mapOf(
+            1 to listOf(listOf("a", "b"), listOf("c", "d")),   // 0행 위 · 0열 왼쪽
+            2 to listOf(listOf("b", "a"), listOf("d", "c")),   // 0행 위 · 0열 오른쪽
+            3 to listOf(listOf("d", "c"), listOf("b", "a")),   // 0행 아래 · 0열 오른쪽
+            4 to listOf(listOf("c", "d"), listOf("a", "b")),   // 0행 아래 · 0열 왼쪽
+            5 to listOf(listOf("a", "c"), listOf("b", "d")),   // 0행 왼쪽 · 0열 위
+            6 to listOf(listOf("b", "d"), listOf("a", "c")),   // 0행 오른쪽 · 0열 위
+            7 to listOf(listOf("d", "b"), listOf("c", "a")),   // 0행 오른쪽 · 0열 아래
+            8 to listOf(listOf("c", "a"), listOf("d", "b")),   // 0행 왼쪽 · 0열 아래
+        )
+        for ((value, s) in stored) {
+            val t = ExifOrientation.transformOf(value)
+            var grid = s
+            if (t.mirrored) grid = grid.map { it.reversed() }          // 반전이 먼저다
+            repeat(t.degrees / 90) { grid = rotateClockwise(grid) }    // 회전이 나중이다
+            assertEquals("orientation=$value", d, grid)
+        }
+    }
+
+    /** 시계 방향 90도 — (행 i, 열 j) → (행 j, 열 N-1-i). */
+    private fun rotateClockwise(g: List<List<String>>): List<List<String>> {
+        val rows = g.size
+        val cols = g[0].size
+        return List(cols) { i -> List(rows) { j -> g[rows - 1 - j][i] } }
     }
 
     @Test fun valueOfIsTheInverseOfTransformOf() {

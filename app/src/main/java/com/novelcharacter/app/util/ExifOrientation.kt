@@ -51,9 +51,14 @@ object ExifOrientation {
         2 -> Transform(0, true)      // FLIP_HORIZONTAL
         3 -> Transform(180, false)   // ROTATE_180
         4 -> Transform(180, true)    // FLIP_VERTICAL (= 180 회전 + 좌우 반전)
-        5 -> Transform(90, true)     // TRANSPOSE
+        // 5·7은 **반전을 먼저 하는 이 표기에서 각이 서로 반대**다(2026.08.22 정정).
+        // 전치(5)는 주대각선 대칭이고, 좌우 반전을 먼저 걸면 남는 것은 **반시계 90**이다.
+        // 흔히 쓰는 표기(`회전 뒤 반전`)의 *90 + 좌우반전*과 같은 변환이다 —
+        // `R(θ)∘F = F∘R(−θ)`라 순서를 바꾸면 각의 부호가 뒤집힌다. 그 부호를 놓치면
+        // 사진이 **정확히 180° 뒤집혀** 보인다(반전은 맞고 각만 반대라 눈치채기 어렵다).
+        5 -> Transform(270, true)    // TRANSPOSE  (= 좌우 반전 후 270 시계)
         6 -> Transform(90, false)    // ROTATE_90
-        7 -> Transform(270, true)    // TRANSVERSE
+        7 -> Transform(90, true)     // TRANSVERSE (= 좌우 반전 후 90 시계)
         8 -> Transform(270, false)   // ROTATE_270
         else -> IDENTITY             // 1(NORMAL) · 0(UNDEFINED) · 미지값
     }
