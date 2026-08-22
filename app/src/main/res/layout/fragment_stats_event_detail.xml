@@ -55,7 +55,16 @@
             <com.github.mikephil.charting.charts.BarChart
                 android:id="@+id/chartNarrativeDensity"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/stats_chart_height"
+                android:layout_height="@dimen/stats_chart_height" />
+
+            <!-- 연도 폭이 넓어 구간으로 접혔을 때만 보인다 (R-14 — 접었으면 접었다고 말한다) -->
+            <TextView
+                android:id="@+id/textNarrativeDensityFolded"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_caption"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 소설별 사건 수 -->

@@ -1351,6 +1351,7 @@
 
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>
+    <string name="stats_narrative_density_folded">연도 폭이 넓어 %1$d년씩 묶어 그렸습니다. 막대 하나가 그 구간의 사건 수입니다.</string>
     <string name="stats_time_precision">시간 정밀도 분포</string>
     <string name="stats_precision_year">연도만</string>
     <string name="stats_precision_month">연월</string>

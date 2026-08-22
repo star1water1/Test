@@ -132,6 +132,7 @@ $MAIN/util/AiCheckState.kt
 $MAIN/backup/BackupChunkFormat.kt
 $MAIN/util/ImportIdentityIndexes.kt
 $MAIN/util/DisplayCap.kt
+$MAIN/util/NarrativeDensityCurve.kt
 $MAIN/util/GraphForceLayout.kt
 $MAIN/util/CrossTableFold.kt
 $MAIN/util/BackupWorkerPolicy.kt
@@ -402,6 +403,7 @@ $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
 $TEST/util/AiCheckStateTest.kt
+$TEST/util/NarrativeDensityCurveTest.kt
 $TEST/util/CalculatedCellEchoTest.kt
 $TEST/util/DisplayCapTest.kt
 $TEST/util/GraphForceLayoutTest.kt

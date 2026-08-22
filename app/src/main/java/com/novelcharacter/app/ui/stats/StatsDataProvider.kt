@@ -138,7 +138,11 @@ data class EventStats(
     // 신규
     val calendarTypeDistribution: Map<String, Int>,
     val timePrecision: TimePrecisionStats,
-    val narrativeDensityCurve: List<Pair<Int, Int>>, // 연속 연도 밀도 (빈 연도 포함)
+    /**
+     * 연속 연도 밀도 (빈 연도 포함) — 연도 폭이 넓으면 **구간으로 접힌다**
+     * ([com.novelcharacter.app.util.NarrativeDensityCurve]). 접히지 않은 칸은 한 해다.
+     */
+    val narrativeDensityCurve: List<com.novelcharacter.app.util.NarrativeDensityCurve.Bucket>,
     val eventDescriptionLengthAvg: Float
 )
 
@@ -1567,12 +1571,13 @@ class StatsDataProvider {
         val yearMonth = s.events.count { it.month != null && it.day == null }
         val yearMonthDay = s.events.count { it.month != null && it.day != null }
 
-        // 신규: 서사 밀도 곡선 (빈 연도 포함)
-        val narrativeDensity = if (yearDensity.isNotEmpty()) {
-            val minYear = yearDensity.keys.min()
-            val maxYear = yearDensity.keys.max()
-            (minYear..maxYear).map { year -> year to (yearDensity[year] ?: 0) }
-        } else emptyList()
+        // 서사 밀도 곡선 (빈 연도 포함) — **항목 수는 연도 폭이 아니라 상한에 묶인다.**
+        // 종전에는 `(minYear..maxYear).map { … }`이라 폭 12만짜리 연표(판타지 역법에서
+        // 정당한 데이터다)가 12만 개를 만들었고, 폭이 수억이면 `OutOfMemoryError`였다 —
+        // 그것은 `Error`라 적재 쪽 `catch (e: Exception)`이 못 잡아 앱이 죽었다.
+        val narrativeDensity = com.novelcharacter.app.util.NarrativeDensityCurve.build(
+            yearDensity, com.novelcharacter.app.util.DisplayCap.DENSITY_CURVE_BUCKETS
+        )
 
         // 신규: 사건 설명 평균 길이
         val descLengths = s.events.map { it.description.length }
