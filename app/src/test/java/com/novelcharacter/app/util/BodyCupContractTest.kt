@@ -36,10 +36,14 @@ class BodyCupContractTest {
         heightCm = height
     )
 
-    /** 분석 엔진이 내는 컵 글자. */
+    /**
+     * 분석 엔진이 내는 컵 글자 — **앱 화면과 같은 인자로 부른다.**
+     * 종전에는 실측 밑가슴을 안 넘겨서, 이 헬퍼가 근사만 재고 두 계층의 갈림을 못 봤다.
+     */
     private fun analysisCup(m: BodyMeasurements, config: BodyAnalysisConfig): String? =
         BodyAnalysisHelper().analyze(
-            m.bust!!, m.waist!!, m.hip!!, m.heightCm, null, config
+            m.bust!!, m.waist!!, m.hip!!, m.heightCm, null, config,
+            measuredUnderbust = m.effectiveUnderbust(config)
         ).cupSize
 
     /** 그림(3축 요약)이 내는 컵 글자. */
@@ -74,18 +78,70 @@ class BodyCupContractTest {
         }
     }
 
+    /**
+     * **이 시험은 이름이 약속한 것을 재지 않아 깨진 상태로 초록이었다** — 그림끼리만
+     * 비교하고 분석 계층을 한 번도 부르지 않았다. 그동안 분석 엔진에는 실측 밑가슴을 받을
+     * 인자 자체가 없었고, 같은 카드가 같은 열에 컵을 두 개(그림 `C` · 분석 `F`) 말했다.
+     */
     @Test
     fun `실측 밑가슴이 있으면 양쪽 모두 그것을 쓴다`() {
         val config = BodyAnalysisConfig.DEFAULT
-        // 허리 60 + 보정 6 = 68이 근사인데, 실측 74를 넣으면 컵차가 6cm 줄어든다.
+        // 허리 60 + 보정 6 = 66이 근사인데, 실측 74를 넣으면 컵차가 8cm 줄어든다.
         val approx = measurements()
         val measured = measurements(underbust = 74.0)
+        // ⓐ 실측이 실제로 글자를 바꾼다 — 두 계층 각각에서.
         assertNotEquals(figureCup(approx, config), figureCup(measured, config))
+        assertNotEquals(analysisCup(approx, config), analysisCup(measured, config))
+        // ⓑ 그리고 두 계층이 같은 글자를 낸다(이것이 이 파일의 계약이다).
+        assertEquals(analysisCup(measured, config), figureCup(measured, config))
         assertEquals(
             BodySilhouetteSpec.figureUnderbust(BodySilhouetteSpec.measuresFrom(measured, config.ribOffset)!!),
             74.0, 1e-9
         )
         assertEquals(measured.effectiveUnderbust(config)!!, 74.0, 1e-9)
+    }
+
+    /**
+     * **컵 표를 그림 상한(40cm) 위로 넓힌 사용자** — 기본 표는 끝 칸이 열려 있어(999) 두
+     * 계층이 우연히 같은 글자로 뭉개졌고, 그래서 이 축을 지나는 시험이 하나도 없었다.
+     */
+    @Test
+    fun `컵 표가 그림 상한 위로 넓어져도 두 계층이 같다`() {
+        val custom = listOf(
+            BodyAnalysisConfig.CupMappingEntry(30.0, "I"),
+            BodyAnalysisConfig.CupMappingEntry(40.0, "J"),
+            BodyAnalysisConfig.CupMappingEntry(55.0, "K"),
+            BodyAnalysisConfig.CupMappingEntry(999.0, "L")
+        )
+        val config = BodyAnalysisConfig.DEFAULT.copy(cupMapping = custom)
+        // 가슴 120 · 허리 60 · 보정 6 → 컵차 54. 그림 상한에 걸리면 40으로 잘려 "J"가 된다.
+        val m = measurements(bust = 120.0)
+        assertEquals("K", analysisCup(m, config))
+        assertEquals("상한이 글자에 걸렸다", analysisCup(m, config), figureCup(m, config))
+    }
+
+    /** 컵 줄 아래 표시하는 '보정 UB'도 실측을 말해야 한다 — 74를 적은 사용자에게 66을 보였다. */
+    @Test
+    fun `보정 밑가슴 표시가 실측을 말한다`() {
+        val config = BodyAnalysisConfig.DEFAULT
+        val measured = measurements(underbust = 74.0)
+        val result = BodyAnalysisHelper().analyze(
+            measured.bust!!, measured.waist!!, measured.hip!!, measured.heightCm, null, config,
+            measuredUnderbust = measured.effectiveUnderbust(config)
+        )
+        assertEquals(74.0, result.adjustedUnderbust!!, 1e-9)
+    }
+
+    /** 밑가슴을 연결하지 않은 사용자의 결과는 한 글자도 바뀌지 않는다. */
+    @Test
+    fun `실측이 없으면 종전 근사 그대로다`() {
+        val config = BodyAnalysisConfig.DEFAULT
+        val m = measurements()
+        val legacy = BodyAnalysisHelper().analyze(
+            m.bust!!, m.waist!!, m.hip!!, m.heightCm, null, config
+        )
+        assertEquals(legacy.cupSize, analysisCup(m, config))
+        assertEquals(m.waist!! + config.ribOffset, legacy.adjustedUnderbust!!, 1e-9)
     }
 
     @Test
