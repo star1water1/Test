@@ -49,8 +49,12 @@ class FieldValueListFragment : Fragment() {
 
     private var searchQuery = ""
     private var sortMode = SORT_USAGE
-    private var selectionMode = false
-    private val selectedIds = linkedSetOf<Long>()
+    // 선택 상태는 **뷰모델이 든다** — 화면이 들면 회전 한 번에 고른 값이 전부 풀린다.
+    // 이름을 그대로 둔 것은 이 화면의 여러 자리가 이 두 이름을 부르기 때문이다(자리는 하나다).
+    private var selectionMode: Boolean
+        get() = viewModel.selectionMode
+        set(value) { viewModel.selectionMode = value }
+    private val selectedIds: LinkedHashSet<Long> get() = viewModel.selectedIds
     private var backCallback: androidx.activity.OnBackPressedCallback? = null
 
     private val prefs by lazy {

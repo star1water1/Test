@@ -31,6 +31,16 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
     val result: LiveData<OpResult?> = _result
     fun clearResult() { _result.value = null }
 
+    /**
+     * 선택 모드와 고른 값 — **회전을 넘긴다**(뷰모델이 화면보다 오래 산다).
+     *
+     * 종전에는 화면이 들고 있어 회전 한 번에 **병합하려고 고른 값들이 아무 고지 없이
+     * 풀렸다.** 이름은행이 이미 쓰는 처방이고(`NameBankViewModel`), 이미지 관리 화면도
+     * 같은 판에서 이쪽으로 옮겼다 — 새 관용구를 만들지 않는다.
+     */
+    var selectionMode = false
+    val selectedIds = linkedSetOf<Long>()
+
     // ===== 홈 =====
 
     /** 홈 목록 행 — 값 자체는 로드하지 않는다 (countByField 1쿼리 요약) */
