@@ -136,7 +136,10 @@ class WorldPackageExporter(private val context: Context) {
 
         // v3: 사건 필드 정의까지 전 entityType을 싣는다 — 캐릭터 필드만 실으면
         // 사건 필드·값·라이브러리가 통째로 유실된다(세계관 삭제 스냅샷과 같은 규칙)
+        // 정렬 계약을 지난다 — 질의의 `ORDER BY`에 기본키 타이브레이크가 없어 같은 종류
+        // 안에서 `displayOrder`가 겹치면 자리가 정해지지 않는다(바이트 재현성).
         val fieldDefinitions = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(config.universeId)
+            .sortedWith(WorldPackageScope.FIELD_DEFINITIONS)
         val fieldDefinitionIds = fieldDefinitions.map { it.id }
         val fieldValues = SqlInChunks.flat(characterIds) {
             db.characterFieldValueDao().getValuesForCharacters(it)
@@ -190,9 +193,11 @@ class WorldPackageExporter(private val context: Context) {
         }.sortedWith(WorldPackageScope.NOVEL_FIELD_VALUES)
         // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함).
         // IN 목록은 저장소 공통 통로([SqlInChunks] · R-54)를 지난다.
+        // 이 질의에는 `ORDER BY`가 아예 없고 조각내기까지 걸려 있다 — 이 함수 머리가
+        // 적어 둔 그 조건(조각 경계에서 순서가 어긋난다)에 정면으로 해당하는 자리다.
         val fieldValueEntries = SqlInChunks.flat(fieldDefinitionIds) {
             db.fieldValueEntryDao().getForFields(it)
-        }
+        }.sortedWith(WorldPackageScope.FIELD_VALUE_ENTRIES)
         // v5: 등급 체계(U-1) — 필드 config가 code로 참조하므로 함께 싣지 않으면 수신 기기에서
         // 참조가 전부 허공을 가리킨다(정의는 실효 표로 동작하지만 체계 편집·공유가 사라진다).
         val gradeSystems = db.gradeSystemDao().getByUniverseList(config.universeId)

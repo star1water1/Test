@@ -54,6 +54,13 @@ interface CharacterRelationshipDao {
     suspend fun getByFactionList(factionId: Long): List<CharacterRelationship>
 
     /**
+     * 삭제 영향 고지용 — 이 세력이 만든 자동 관계 수. **목록을 불러 세지 않는다**:
+     * 100명 세력이면 그 목록이 수천 행이고, 고지 한 줄을 위해 그것을 다 읽는다(R-54).
+     */
+    @Query("SELECT COUNT(*) FROM character_relationships WHERE factionId = :factionId")
+    suspend fun countByFaction(factionId: Long): Int
+
+    /**
      * id로 일괄 조회 (휴지통 사건 스냅샷용 — B-1).
      * 사건에 매달린 관계 변화 이력의 양 끝 캐릭터를 확인해, 그 캐릭터도 함께 지워지는지 가른다.
      * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).

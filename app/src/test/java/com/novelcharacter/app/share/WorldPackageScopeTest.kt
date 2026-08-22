@@ -9,6 +9,8 @@ import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
@@ -445,7 +447,21 @@ class WorldPackageScopeTest {
         before("세력소속/id", S.FACTION_MEMBERSHIPS,
             FactionMembership(id = 8, factionId = 1, characterId = 1),
             FactionMembership(id = 9, factionId = 1, characterId = 1))
+        before("값라이브러리/id", S.FIELD_VALUE_ENTRIES,
+            FieldValueEntry(id = 8, fieldDefinitionId = 1, value = "v"),
+            FieldValueEntry(id = 9, fieldDefinitionId = 1, value = "v"))
+
+        // 필드 정의: entityType ASC · displayOrder ASC · id ASC
+        // (질의는 앞의 둘만 든다 — 셋째가 없어 겹칠 때 자리가 정해지지 않았다)
+        before("필드정의/종류", S.FIELD_DEFINITIONS, fd(1, "character", 1), fd(1, "event", 1))
+        before("필드정의/표시순서", S.FIELD_DEFINITIONS, fd(1, "character", 1), fd(1, "character", 2))
+        before("필드정의/id", S.FIELD_DEFINITIONS, fd(8, "character", 1), fd(9, "character", 1))
     }
+
+    private fun fd(id: Long, entityType: String, order: Int) = FieldDefinition(
+        id = id, universeId = 1, key = "k$id", name = "n$id", type = "TEXT",
+        displayOrder = order, entityType = entityType
+    )
 
     /** [first]가 [second]보다 앞서야 하고, **뒤집으면 답도 뒤집혀야** 한다(비교자가 그 키를 실제로 본다). */
     private fun <T> before(what: String, cmp: Comparator<T>, first: T, second: T) {

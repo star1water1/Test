@@ -962,7 +962,9 @@ class DynamicFieldFormBuilder(
                         ).apply {
                             bottomMargin = (8 * density).toInt()
                         }
-                        hint = getString(R.string.hint_multi_text_format, field.name)
+                        // **표식은 이름 바로 뒤다** — 이 갈래만 표식을 건너뛰고 있었다.
+                        // 형제 여섯 갈래·형제 두 화면과 같은 모양으로 맞춘다(R-18).
+                        hint = getString(R.string.hint_multi_text_format, RequiredFieldMark.label(field))
                     }
                     val editText = MaterialAutoCompleteTextView(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
@@ -984,6 +986,9 @@ class DynamicFieldFormBuilder(
 
                 FieldType.CALCULATED -> {
                     val textView = TextView(context).apply {
+                        // **필수 표식을 붙이지 않는다** — 사람이 값을 넣는 자리가 아니고,
+                        // `RequiredFieldGaps.countsAsSlot`도 같은 이유로 이 종류를 세지 않는다.
+                        // 붙이면 어시스턴트가 세는 '필수 빈 칸'과 폼이 말하는 것이 갈린다.
                         text = getString(R.string.auto_calculated, field.name)
                         textSize = 14f
                         isEnabled = false

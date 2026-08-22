@@ -573,7 +573,7 @@ class EventEditDialogFragment : DialogFragment() {
             app.fieldValueLibraryRepository.registerInitialValues(newId, field, raw)
         }.getOrNull() ?: return null
         if (outcome.failed <= 0) return null
-        return getString(R.string.event_field_initial_values_partial, outcome.failed)
+        return getString(R.string.field_initial_values_partial, outcome.failed)
     }
 
     /**

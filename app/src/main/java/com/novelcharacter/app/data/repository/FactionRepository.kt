@@ -16,6 +16,19 @@ import com.novelcharacter.app.util.SqlInChunks
  * 수동 관계에 factionId를 부착하는 방식은 탈퇴 시 사용자가 만든 관계가 삭제되는 조용한 유실 경로가 되므로 금지.
  */
 /**
+ * 세력 하나를 지울 때 함께 사라지는 것의 규모 (R-4).
+ *
+ * [autoRelations]만 **선택지에 따라 처분이 갈린다** — '관계도 함께 삭제'면 사라지고,
+ * '관계 유지'면 관계는 남고 *'이 세력의 자동 관계'*라는 지정만 풀린다. 나머지 둘은
+ * 어느 쪽을 골라도 사라진다.
+ */
+data class FactionDeleteImpact(
+    val members: Int = 0,
+    val autoRelations: Int = 0,
+    val factionRelations: Int = 0
+)
+
+/**
  * 탈퇴 기록 편집 결과.
  * [relationChangesMoved]는 탈퇴가 만들었던 관계 변화 중 함께 옮긴 건수 — 0이 아니면 고지한다.
  */
@@ -59,6 +72,20 @@ class FactionRepository(private val db: AppDatabase) {
 
     suspend fun updateFaction(faction: Faction) =
         factionDao.update(faction)
+
+    /**
+     * 세력 하나를 지우면 함께 사라지는 것의 규모 (R-4 — 파괴적 조작은 결과를 먼저 말한다).
+     *
+     * **셋을 갈라 센다.** 소속과 세력 간 관계는 어느 쪽을 고르든 사라지고, 자동 관계는
+     * 고른 쪽에 따라 사라지거나 지정만 풀린다 — 한 수로 뭉치면 확인창이 사실과 다른 말을
+     * 하게 된다. **COUNT로 센다**(목록을 불러 `.size`로 세면 100명 세력에서 수천 행을 읽는다).
+     */
+    suspend fun getFactionDeleteImpact(factionId: Long): FactionDeleteImpact =
+        FactionDeleteImpact(
+            members = membershipDao.countByFaction(factionId),
+            autoRelations = relationshipDao.countByFaction(factionId),
+            factionRelations = factionRelationshipDao.countForFaction(factionId)
+        )
 
     /**
      * 세력 삭제. deleteRelationships=true이면 자동 관계도 함께 삭제.

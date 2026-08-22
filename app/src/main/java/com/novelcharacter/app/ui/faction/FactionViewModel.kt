@@ -85,6 +85,10 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** 세력 하나를 지우면 함께 사라지는 것의 규모 — 확인창이 먼저 묻는다(R-4). */
+    suspend fun getFactionDeleteImpact(factionId: Long) =
+        factionRepository.getFactionDeleteImpact(factionId)
+
     fun deleteFaction(faction: Faction, deleteRelationships: Boolean = true) = viewModelScope.launch {
         try {
             factionRepository.deleteFaction(faction, deleteRelationships)

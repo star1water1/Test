@@ -718,7 +718,7 @@
     <string name="event_field_created">사건 필드 \'%1$s\'을(를) 추가했습니다</string>
     <string name="event_field_create_failed">사건 필드를 추가하지 못했습니다</string>
     <string name="event_field_key_duplicate">필드 키 \'%1$s\'이(가) 이미 있습니다. 다른 키로 다시 만들어 주세요.</string>
-    <string name="event_field_initial_values_partial">미리 적어 둔 값 중 %1$d개는 등재하지 못했습니다. 필드 데이터 라이브러리에서 직접 추가하실 수 있습니다.</string>
+    <string name="field_initial_values_partial">미리 적어 둔 값 중 %1$d개는 등재하지 못했습니다. 필드 데이터 라이브러리에서 직접 추가하실 수 있습니다.</string>
     <string name="field_target_character">캐릭터 필드</string>
     <string name="field_target_event">사건 필드</string>
     <!-- 작품 커스텀 필드 (확-3) — 사건 필드와 같은 규약, 값은 작품 편집 폼이 만든다 -->
@@ -2051,6 +2051,12 @@
     <string name="faction_delete_title">%s 삭제</string>
     <string name="faction_delete_with_relations">자동 관계도 함께 삭제</string>
     <string name="faction_delete_keep_relations">자동 관계 유지 (수동 전환)</string>
+    <!-- 삭제 영향 고지 (R-4) — 형제 여섯 창과 같은 모양. 있는 줄만 붙는다. -->
+    <string name="faction_delete_impact_members">소속 기록 %1$d건</string>
+    <string name="faction_delete_impact_faction_relations">세력 간 관계 %1$d건</string>
+    <string name="faction_delete_impact_auto_relations">이 세력이 만든 자동 관계 %1$d건 (위 선택에 따라 삭제되거나 수동 관계로 남습니다)</string>
+    <string name="faction_delete_impact_message">삭제하면 다음도 함께 사라집니다:\n\n%1$s\n\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="faction_delete_plain_message">이 세력을 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="close">닫기</string>
     <string name="faction_belonging">소속 세력</string>
     <string name="faction_belonging_empty">소속 세력 없음</string>

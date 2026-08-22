@@ -771,7 +771,7 @@ class NovelListFragment : Fragment() {
                     // 촉발은 중복이 아니라 DB 예외라, 말하지 않으면 사용자는 자기가 미리
                     // 적어 둔 값이 어디에도 없다는 것을 알 길이 없다(개발 의도 2번).
                     outcome.failed.takeIf { it > 0 }
-                        ?.let { getString(R.string.event_field_initial_values_partial, it) }
+                        ?.let { getString(R.string.field_initial_values_partial, it) }
                 )
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 android.util.Log.e("NovelList", "Duplicate novel field key: ${field.key}", e)

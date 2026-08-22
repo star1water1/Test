@@ -194,7 +194,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         outcome: com.novelcharacter.app.data.repository.FieldValueLibraryRepository.InitialValueOutcome
     ): String? =
         if (outcome.failed <= 0) null
-        else app.getString(R.string.event_field_initial_values_partial, outcome.failed)
+        else app.getString(R.string.field_initial_values_partial, outcome.failed)
 
     private suspend fun syncDefaultField(field: FieldDefinition, want: Boolean?): String? {
         if (want == null) return null
