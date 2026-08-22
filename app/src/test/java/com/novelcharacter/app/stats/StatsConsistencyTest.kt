@@ -867,4 +867,65 @@ class StatsConsistencyTest {
         val detail = provider.computeDataOverview(s).fieldCompletionByField.single()
         assertEquals(0, detail.filledCount)
     }
+
+    // ===== 순위표 요약: 참여 + 제외가 모수와 맞는다 (음수 금지) =====
+
+    @Test
+    fun `제외 인원이 음수가 되지 않는다`() {
+        // 보관 값 보유자(작품 '없음')는 순위표에 실리지만 모수에는 없다 — 뺄셈이면 음수다.
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "소속1", novelId = 1),
+                Character(id = 2, name = "소속2", novelId = 1),
+                Character(id = 3, name = "무소속", novelId = null)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "20"),
+                CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "30")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(3, r.entries.size)
+        assertTrue("제외가 음수다: ${r.excludedCount}", r.excludedCount >= 0)
+        assertEquals(0, r.excludedCount)
+    }
+
+    /** 값이 없는 캐릭터는 정확히 한 번만 제외로 세어진다. */
+    @Test
+    fun `값이 없는 캐릭터가 제외로 한 번 세어진다`() {
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "값있음", novelId = 1),
+                Character(id = 2, name = "값없음", novelId = 1)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(1, r.entries.size)
+        assertEquals(1, r.excludedCount)
+    }
+
+    /** 값이 깨진 캐릭터는 표에 없고 제외에 **한 번만** 든다(종전에는 행 수로 두 번 셌다). */
+    @Test
+    fun `파싱 실패가 표와 제외에 동시에 들어가지 않는다`() {
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "정상", novelId = 1),
+                Character(id = 2, name = "깨짐", novelId = 1)
+            ),
+            fieldDefinitions = listOf(charField(10, "power", "힘", type = "NUMBER")),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "abc")
+            )
+        )
+        val r = provider.computeRanking(s, listOf(10L), ascending = false)
+        assertEquals(1, r.entries.size)
+        assertEquals(1, r.excludedCount)
+    }
 }

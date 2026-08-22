@@ -4304,8 +4304,11 @@ class StatsDataProvider {
         val allFds = fieldDefIds.mapNotNull { id -> s.fieldDefinitions.find { it.id == id } }
         val relevantUniverseIds = allFds.map { it.universeId }.toSet()
         val relevantNovelIds = s.novels.filter { it.universeId in relevantUniverseIds }.map { it.id }.toSet()
-        val relevantCharCount = if (s.unassignedScope) s.characters.size
-            else s.characters.count { it.novelId in relevantNovelIds }
+        // **모수를 수가 아니라 id 집합으로 든다** — 뺄셈으로 이으면 음수가 난다(아래).
+        val scopeCharIds: Set<Long> =
+            if (s.unassignedScope) s.characters.mapTo(HashSet()) { it.id }
+            else s.characters.asSequence().filter { it.novelId in relevantNovelIds }
+                .mapTo(HashSet()) { it.id }
 
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 
@@ -4315,7 +4318,6 @@ class StatsDataProvider {
         val charValues = LinkedHashMap<Long, CharValue>()
         val charValuePriority = HashMap<Long, Int>()
         val processedCharIds = mutableSetOf<Long>()
-        var parseFailed = 0
 
         fun universeOf(charId: Long): Long? =
             charMap[charId]?.novelId?.let { novelMap[it] }?.universeId
@@ -4385,7 +4387,7 @@ class StatsDataProvider {
             for (fv in rawValues) {
                 val char = charMap[fv.characterId] ?: continue
                 processedCharIds.add(char.id)
-                if (fv.value.isBlank()) { parseFailed++; continue }
+                if (fv.value.isBlank()) continue
                 val ownerFd = fieldDefMap[fv.fieldDefinitionId] ?: fd
                 val ownerUniverseId = ownerFd.universeId
 
@@ -4397,7 +4399,7 @@ class StatsDataProvider {
                             // 분포 차트가 보여주는 문자열("170.250")과 순위의 문자열이 갈린다.
                             // 저장 행이 없는 CALCULATED만 서식이 필요하다.
                             putValue(CharValue(char.id, v, fv.value.trim()), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     FieldType.GRADE -> {
                         // 값이 속한 FieldDefinition의 config으로 등급 해석 (세계관별 맵핑 차이 대응).
@@ -4408,7 +4410,7 @@ class StatsDataProvider {
                         val numericValue = resolveGradeValueForRanking(ownerFd, canonical)
                         if (numericValue != null) {
                             putValue(CharValue(char.id, numericValue, fv.value), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     FieldType.BODY_SIZE -> {
                         // 값이 속한 FieldDefinition의 config으로 파싱 (세계관별 separator 차이 대응)
@@ -4422,7 +4424,7 @@ class StatsDataProvider {
                         val partValue = parts.getOrNull(partIdx)?.toDoubleOrNull()
                         if (partValue != null && partValue.isFinite()) {
                             putValue(CharValue(char.id, partValue, fv.value), ownerUniverseId)
-                        } else parseFailed++
+                        }
                     }
                     // 빈도 모드: SELECT, TEXT, MULTI_TEXT + 콤마 목록 표시 형식 TEXT까지 동일 경로.
                     // **CALCULATED는 여기 못 온다** — 바깥 갈래가 이미 갈랐다(아래 `} // else
@@ -4434,7 +4436,7 @@ class StatsDataProvider {
                         // 한 캐릭터가 여러 토큰을 가지면 **가장 흔한 토큰**을 대표로 삼는다
                         // (종전 MULTI_TEXT 규칙을 모든 다중값 필드로 넓힌 것이다).
                         val tokens = tokensByValue[fv.characterId to fv.fieldDefinitionId].orEmpty()
-                        if (tokens.isEmpty()) { parseFailed++; continue }
+                        if (tokens.isEmpty()) continue
                         val topToken = tokens.maxByOrNull { frequencyMap[it] ?: 0 }
                         val maxFreq = topToken?.let { frequencyMap[it] ?: 0 } ?: 0
                         if (topToken != null && maxFreq > 0) {
@@ -4442,15 +4444,27 @@ class StatsDataProvider {
                                 CharValue(char.id, maxFreq.toDouble(), "$topToken (${maxFreq}회)"),
                                 ownerUniverseId
                             )
-                        } else parseFailed++
+                        }
                     }
                 }
             }
         } // else (non-CALCULATED)
 
-        // 제외 카운트: 관련 세계관 캐릭터만 기준 (전체 세계관 모드에서 다른 세계관 캐릭터 제외)
-        val noValueCount = relevantCharCount - processedCharIds.size
-        val excludedCount = parseFailed + noValueCount
+        // 제외 카운트 — **모수와 분자를 같은 집합에 세운다.**
+        //
+        // 종전에는 `모수 수 - 값을 본 캐릭터 수`였는데 두 집합이 서로를 포함하지 않았다:
+        // 순위표에는 **스코프 밖 보관 값 보유자**도 실린다(작품을 '없음'으로 바꾼 캐릭터의
+        // 값은 병합 규약이 일부러 남긴다). 그가 모수에는 없으므로 뺄셈이 **음수**가 되어
+        // 화면이 *"3명 참여 | -1명 제외"*라고 말했다. 음수가 아닐 때도 상쇄가 일어난다.
+        //
+        // 이제 *"모수에 있거나 값을 본 캐릭터 중 표에 실리지 않은 수"*를 센다. 그러면
+        // `표에 실린 수 + 제외 수`가 언제나 그 합집합의 크기다.
+        //
+        // `parseFailed`를 더하지 않는 것도 처방의 일부다 — 그것은 **행**을 세는데 문구는
+        // *"N명"*이라, 깨진 보관 행이 하나 더 있는 캐릭터는 **표에 실리면서 동시에 제외로도**
+        // 세어졌다. 파싱에 실패한 캐릭터는 `charValues`에 없으므로 아래 식이 이미 센다.
+        val rankedIds = charValues.keys
+        val excludedCount = (scopeCharIds + processedCharIds).count { it !in rankedIds }
 
         // 정렬 및 순위 할당 (동점 시 표준 경쟁 순위: 1,2,2,4)
         val sorted = if (ascending) {
