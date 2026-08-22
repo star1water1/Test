@@ -1,5 +1,6 @@
 package com.novelcharacter.app.excel
 
+import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.CharacterListPreset
@@ -900,6 +901,29 @@ object DuelSheetLabels {
     const val TARGET_CHARACTER = "캐릭터"
     const val TARGET_IMAGE = "이미지"
     val TARGETS = listOf(TARGET_CHARACTER, TARGET_IMAGE)
+
+    /**
+     * '대상' 칸 해석 — **관대하게 읽되, 못 알아본 것은 삼키지 않는다.**
+     *
+     * 빈 칸(과 열이 없는 파일)은 캐릭터다 — 이 열이 없던 시절의 축이 전부 캐릭터 축이고,
+     * 그 기본값이 없으면 옛 파일이 통째로 안 들어온다.
+     *
+     * **그 밖의 못 알아본 글자는 `null`이다.** 이 열은 축의 *정체*를 이룬다
+     * (자연키와 유니크 색인이 `(세계관, 대상, 이름)`이고, 만든 뒤에는 화면에서도
+     * 바꿀 수 없다 — 편집 창이 그 구역을 감춘다). 그래서 오타 하나가 조용히 캐릭터 축을
+     * 만들면 **파일로도 화면으로도 되돌릴 길이 없다**(R-36이 말한 *정체 열*의 예외 자리).
+     * 부르는 쪽이 이 `null`을 받아 고지하고, 값은 기본값으로 이어 간다.
+     *
+     * 대소문자·앞뒤 공백·전각을 받아들이는 것은 형제 자리
+     * (`FieldValueSheetMapper.entityTypeOf`)와 같은 결이다.
+     */
+    fun targetTypeOrNull(label: String): String? =
+        when (toHalfWidth(label).trim().lowercase()) {
+            "" -> DuelAxis.TARGET_CHARACTER
+            TARGET_IMAGE.lowercase(), DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
+            TARGET_CHARACTER.lowercase(), DuelAxis.TARGET_CHARACTER -> DuelAxis.TARGET_CHARACTER
+            else -> null
+        }
 
     const val KIND_COUNTER = "상성"
     const val KIND_UNDECIDED = "미정"

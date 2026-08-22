@@ -9988,6 +9988,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCode: String,
         val targetType: String,
         /**
+         * '대상' 칸에 **못 알아본 글자**가 적혀 있었다(빈 칸은 여기 오지 않는다).
+         * 값은 기본값(캐릭터)으로 이어 가고 가져오기가 경고 한 줄을 낸다 —
+         * 이 열은 축의 정체라 잘못 굳으면 되돌릴 길이 없다(`DuelSheetLabels.targetTypeOrNull`).
+         */
+        val unknownTargetLabel: String? = null,
+        /**
          * 필드 연결 셋. **null은 "그 열이 파일에 없다"**이고 `"[]"`는 *"열은 있는데 비었다"*다 —
          * 앞은 이 파일이 그 사실을 말하지 않는 것이고 뒤는 **지우라는 뜻**이라, 둘을 같게
          * 다루면 그 열이 없던 시절에 내보낸 파일을 다시 들이는 것만으로 연결이 지워진다
@@ -10036,15 +10042,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         val targetLabel = cell("대상")
+        // 한국어 말과 저장값을 모두 받는다(대소문자·공백·전각 포함) — 외부 도구가 저장값을
+        // 그대로 쓸 수도 있다. **못 알아본 글자는 삼키지 않는다**(아래 `unknownTargetLabel`).
+        val parsedTarget = DuelSheetLabels.targetTypeOrNull(targetLabel)
         return DuelAxisRowValues(
             name = cell("축이름"),
             universeName = cell("세계관"),
             universeCode = cell("세계관코드"),
-            // 한국어 말과 저장값을 모두 받는다 — 외부 도구가 저장값을 그대로 쓸 수도 있다.
-            targetType = when (targetLabel) {
-                DuelSheetLabels.TARGET_IMAGE, DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
-                else -> DuelAxis.TARGET_CHARACTER
-            },
+            targetType = parsedTarget ?: DuelAxis.TARGET_CHARACTER,
+            unknownTargetLabel = if (parsedTarget == null) targetLabel.trim() else null,
             // 사람이 적은 차례가 곧 영향력 순위다(프로필은 표시 차례다) — 정렬하지 않는다.
             influenceFieldKeys = links("영향필드"),
             outcomeFieldKeys = links("산출필드"),
@@ -10228,6 +10234,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // (세계관, 대상, 이름) 갈래도 같은 규약으로 고지한다(연표 I2-5와 같은 모양).
                 if (axisByCodeMatch == null && existing != null && existing.id in writtenAxisIds) {
                     result.warnings.add("대결 축 행 ${excelRow(i)}: 같은 세계관·대상·이름의 행이 파일 내에서 중복되어 같은 축을 덮어씁니다")
+                }
+                r.unknownTargetLabel?.let { unknown ->
+                    // **정체 열이라 잘못 굳으면 되돌릴 길이 없다** — 축은 (세계관, 대상, 이름)이
+                    // 자연키이고 만든 뒤에는 편집 창이 '겨루는 대상' 구역을 감춘다.
+                    // 그래서 값은 이어 가되(행을 버리면 나머지 멀쩡한 칸까지 잃는다) 사실과
+                    // 고칠 길을 함께 말한다(개발 의도 2번 — 검증 → 알림 → 교정 경로).
+                    result.warnings.add(
+                        "대결 축 행 ${excelRow(i)}: '대상' 칸의 '$unknown'을(를) 알 수 없어 '${DuelSheetLabels.TARGET_CHARACTER}' 축으로 읽었습니다 — 이미지 축이면 그 칸을 '${DuelSheetLabels.TARGET_IMAGE}'로 고쳐 다시 가져오세요(만든 뒤에는 앱에서 바꿀 수 없습니다)"
+                    )
                 }
                 if (r.candidateFiltersMalformed) {
                     // 기존 값을 지키고 그 사실을 말한다 — 괄호 하나 틀린 손편집이 멀쩡한

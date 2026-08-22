@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.util.DuelFieldLinks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,6 +70,36 @@ class DuelSheetSpecTest {
         assertEquals(listOf(DuelSheetLabels.KIND_COUNTER, DuelSheetLabels.KIND_UNDECIDED), DuelSheetLabels.KINDS)
         // 저장값 쪽도 둘뿐이다 — 라벨이 늘면 여기서 먼저 어긋난다.
         assertNotEquals(DuelCounterVerdict.KIND_COUNTER, DuelCounterVerdict.KIND_UNDECIDED)
+    }
+
+    // ── '대상' 칸 해석 — 정체 열이라 잘못 굳으면 되돌릴 길이 없다 ──────────────
+    // 축의 자연키와 유니크 색인이 `(세계관, 대상, 이름)`이고, 만든 뒤에는 편집 창이 그
+    // 구역을 감춘다. 그래서 오타 하나가 조용히 캐릭터 축을 만들면 파일로도 화면으로도
+    // 고칠 수 없다 — 관대하게 읽되 **못 알아본 것은 삼키지 않는다**.
+
+    @Test
+    fun `대상 칸은 말과 저장값을 모두 받고 공백 대소문자 전각을 견딘다`() {
+        assertEquals(DuelAxis.TARGET_IMAGE, DuelSheetLabels.targetTypeOrNull("이미지"))
+        assertEquals(DuelAxis.TARGET_IMAGE, DuelSheetLabels.targetTypeOrNull("  이미지 "))
+        assertEquals(DuelAxis.TARGET_IMAGE, DuelSheetLabels.targetTypeOrNull("image"))
+        assertEquals(DuelAxis.TARGET_IMAGE, DuelSheetLabels.targetTypeOrNull("IMAGE"))
+        assertEquals(DuelAxis.TARGET_CHARACTER, DuelSheetLabels.targetTypeOrNull("캐릭터"))
+        assertEquals(DuelAxis.TARGET_CHARACTER, DuelSheetLabels.targetTypeOrNull("character"))
+    }
+
+    /** 빈 칸(과 열이 없는 파일)은 캐릭터다 — 이 열이 없던 시절의 축이 전부 그것이다. */
+    @Test
+    fun `빈 칸은 캐릭터다`() {
+        assertEquals(DuelAxis.TARGET_CHARACTER, DuelSheetLabels.targetTypeOrNull(""))
+        assertEquals(DuelAxis.TARGET_CHARACTER, DuelSheetLabels.targetTypeOrNull("   "))
+    }
+
+    /** **못 알아본 글자는 null이다** — 부르는 쪽이 고지하고 값은 기본값으로 이어 간다. */
+    @Test
+    fun `못 알아본 글자는 삼키지 않는다`() {
+        for (label in listOf("이미지들", "사진", "img", "캐릭", "이 미지", "1")) {
+            assertNull("'$label'을 조용히 받아들였다", DuelSheetLabels.targetTypeOrNull(label))
+        }
     }
 
     /** 대상 열의 드롭다운이 실제 저장값 수와 같아야 한다 — 하나가 빠지면 그 축은 엑셀에서 만들 수 없다. */
