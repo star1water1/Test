@@ -800,9 +800,36 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * 빌트인 프리셋을 DB에 시드하는 콜백.
-         * onCreate(최초 설치) 또는 onOpen(업데이트 후)에서 빌트인이 없으면 삽입.
+         * 빌트인 프리셋을 DB에 시드하는 콜백 — **한 번만 심는다.**
+         *
+         * ## 멱등의 기준이 '지금 행이 있는가'였다
+         *
+         * 종전에는 `existing.any { it.isBuiltIn }` 하나만 보고 0이면 다시 심었다. 그 기준은
+         * **사용자가 지운 것**과 **아직 안 심음**을 구별하지 못한다. 그래서 빌트인 프리셋을
+         * 지우고 앱을 다시 켜면 **되살아났고**, 하나만 지우면 유지되는데 둘 다 지우면 둘 다
+         * 돌아와 사용자가 규칙을 짐작할 수도 없었다(원칙 01 · 개발 의도 3번 — 쓸모는
+         * 사용자가 가린다).
+         *
+         * 같은 앱의 대조군이 그 짝을 보여 준다 — 검색 기본 프리셋도 같은 모양으로 심지만
+         * **편집·삭제를 화면에서 막아 둔다**(*"자동 재생성"*과 *"삭제 금지"*가 짝이다).
+         * 세계관 빌트인만 삭제를 열어 두고 자동 재생성까지 했고, 되살리는 길이 사용자 조작으로
+         * 따로 서 있다(프리셋 시트의 [기본 프리셋 복원] — *"복원할 기본 프리셋이 없습니다"*
+         * 문구까지 갖췄다). 자동으로 돌아온다면 그 버튼은 재시작 전까지만 의미 있는 반쪽이다.
+         *
+         * 그래서 기준을 **'심은 적이 있는가'**로 옮긴다. 이 저장소가 이미 쓰는 관용구다
+         * (`app_migrations` prefs — 자동 링크 백필·값 라이브러리 시드가 같은 꼴).
+         * 심기에 성공했을 때만 표식을 세워 중단 시 다음 실행에 다시 시도한다.
          */
+        /** 시드 표식이 사는 곳 — 이 저장소가 이미 쓰는 자리다(자동 링크 백필·값 라이브러리). */
+        private const val SEED_PREFS = "app_migrations"
+
+        /**
+         * 빌트인 프리셋을 **심은 적이 있는가**. 앱 초기화가 이 표식을 지워야 다시 심긴다 —
+         * 그 자리는 `SettingsFragment`의 초기화가 든다(데이터를 통째로 비우는 조작이라
+         * *처음 설치 상태*로 돌아가는 것이 맞다).
+         */
+        const val KEY_BUILT_IN_PRESETS_SEEDED = "built_in_presets_seeded"
+
         private class SeedCallback(private val context: Context) : RoomDatabase.Callback() {
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
@@ -819,10 +846,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
             private suspend fun seedBuiltInPresets(db: AppDatabase) {
+                val prefs = context.getSharedPreferences(SEED_PREFS, Context.MODE_PRIVATE)
+                if (prefs.getBoolean(KEY_BUILT_IN_PRESETS_SEEDED, false)) return
+
                 val dao = db.userPresetTemplateDao()
-                val existing = dao.getAllTemplatesList()
-                val hasBuiltIn = existing.any { it.isBuiltIn }
-                if (hasBuiltIn) return
+                // 표식이 없는데 이미 있다면 이 판 이전에 심긴 것이다 — 다시 심지 않고
+                // 표식만 세운다(그래야 그다음 삭제가 존중된다).
+                if (dao.getAllTemplatesList().any { it.isBuiltIn }) {
+                    prefs.edit().putBoolean(KEY_BUILT_IN_PRESETS_SEEDED, true).apply()
+                    return
+                }
 
                 // 빌트인 프리셋을 DB에 삽입
                 val builtInTemplates = PresetTemplates.getBuiltInTemplates()
@@ -835,6 +868,8 @@ abstract class AppDatabase : RoomDatabase() {
                         isBuiltIn = true
                     ))
                 }
+                // **성공한 뒤에 세운다** — 중간에 죽으면 다음 실행이 다시 시도한다.
+                prefs.edit().putBoolean(KEY_BUILT_IN_PRESETS_SEEDED, true).apply()
                 Log.i(TAG, "Seeded ${builtInTemplates.size} built-in presets to DB")
             }
         }

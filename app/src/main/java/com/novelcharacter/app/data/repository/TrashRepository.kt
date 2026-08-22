@@ -2014,7 +2014,12 @@ class TrashRepository(
         // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다.
         // 지금 이미지 경로를 함께 담는다: 캐릭터 행을 되돌리면 imagePaths도 옛 것으로 바뀌어
         // 현재 파일이 참조를 잃으므로, 담아 두어야 ImageOwnershipGuard가 보호한다.
-        snapshotCharacter(
+        //
+        // **새 인스턴스로 남긴다**: 되돌리기는 그 자체가 하나의 조작이고, `this`로 남기면
+        // 화면이 들고 있는 인스턴스(휴지통은 앱 수준 싱글턴을 쓴다)의 작업에 붙어
+        // **앱 수명 하나가 통째로 한 작업**이 된다(위 [operationId] 계약 · R-3/R-9).
+        // 형제인 필드 정의 되돌리기는 이미 이 꼴이다 — 같은 판이 이 자리만 빠뜨렸다.
+        TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP).snapshotCharacter(
             living,
             parseImagePathStrings(living.imagePaths),
             kind = TrashSnapshot.KIND_EDIT_BACKUP,
@@ -2024,8 +2029,22 @@ class TrashRepository(
         if (RestoreModes.SCOPE_CHARACTER_ROW in scope) {
             // id와 code는 **살아 있는 행의 것**을 유지한다 — payload의 code를 쓰면 유니크 충돌과
             // 재발급이 얽혀 '복원이 실패하거나 code가 바뀌는' 새 경로가 생긴다.
+            //
+            // **`representativeImagePath`를 명시로 넘긴다**(R-2). 그 칸은 v47에서 들어와,
+            // 그 이전에 만들어진 payload에는 키가 없다 — 선언이 non-null이어도 Gson이
+            // Unsafe 할당으로 null을 넣는다. 그 상태에서 `copy`를 부르면 넘기지 않은 인자를
+            // `this`에서 읽어 생성자에 넘기므로 **그 자리에서 NPE**가 난다(B-103이 겪은 그
+            // 지뢰다). 되살리기 갈래는 이미 접고 있었고 이 갈래만 그 정규화보다 앞서
+            // 빠져나가 못 보고 있었다 — 되돌리기가 영구히 실패하는 payload가 실재한다
+            // (`character_row` 범위는 2026.07.26에 섰고 v47은 08.03이라 그 창의 백업이
+            // 보관 기한 안에 아직 살아 있다).
             db.characterDao().update(
-                data.character.copy(id = living.id, code = living.code, novelId = plan.novelId)
+                data.character.copy(
+                    id = living.id,
+                    code = living.code,
+                    novelId = plan.novelId,
+                    representativeImagePath = data.character.representativeImagePath.orEmpty()
+                )
             )
         }
 
