@@ -3126,7 +3126,8 @@
     <string name="field_library_propagation_join_notice">\n콤마 구분 값은 \", \" 표준 표기로 재조합됩니다.</string>
     <string name="field_library_delete_title">값 삭제 — \'%1$s\'</string>
     <string name="field_library_delete_entry_only">항목만 삭제 (캐릭터 값 유지 — 재수집되면 다시 나타남)</string>
-    <string name="field_library_delete_with_data">데이터에서도 삭제 — 캐릭터 %1$d건 · 사건 %2$d건 · 작품 %4$d건 · 이력 %3$d건 (휴지통 스냅샷 보관)</string>
+    <string name="field_library_delete_with_data">데이터에서도 삭제 — 캐릭터 %1$d건 · 사건 %2$d건 · 작품 %4$d건 · 이력 %3$d건 (캐릭터 값과 이력은 휴지통에 백업)</string>
+    <string name="field_library_delete_no_backup">\n사건 값과 작품 값은 백업되지 않습니다 — 지우면 되돌릴 수 없습니다.</string>
     <string name="field_library_deleted">값이 삭제되었습니다</string>
     <string name="field_library_renamed">\'%1$s\' → \'%2$s\' 변경 완료 (%3$d건 전파)</string>
     <string name="field_library_merged">%1$d개 값을 \'%2$s\'(으)로 병합 (%3$d건 전파)</string>
