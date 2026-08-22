@@ -1095,7 +1095,12 @@ class ImageManagerViewModel(
      */
     data class UnlinkResult(val cleared: Int, val autoRelinkable: Int)
     sealed class LinkOutcome {
-        data class Done(val linked: Int, val merged: Boolean) : LinkOutcome()
+        /**
+         * @param autoMoved 자동 묶음(`char:N`)에서 수동 묶음으로 옮겨진 장수 — 0이 아니면
+         *   호출부가 그 사실을 말한다. 손대지 않은 형제 이미지의 링크 배지가 사라질 수 있어
+         *   (자동 묶음에 2장뿐이었으면 남은 1장은 묶음이 아니게 된다) **조용하면 안 된다.**
+         */
+        data class Done(val linked: Int, val merged: Boolean, val autoMoved: Int = 0) : LinkOutcome()
         data class NeedsMerge(val groups: Int) : LinkOutcome()
         object Failed : LinkOutcome()
     }
@@ -1454,7 +1459,13 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 try {
-                    val plan = ImageLinkResolver.planLink(paths, currentMetas())
+                    val metas = currentMetas()
+                    val plan = ImageLinkResolver.planLink(paths, metas)
+                    // 자동 묶음에서 옮겨 오는 장수 — 성공 뒤에 고지에 쓴다.
+                    val autoMoved = if (plan.autoGroupsTouched.isEmpty()) 0 else {
+                        val byPath = metas.associateBy { it.path }
+                        paths.count { byPath[it]?.groupId in plan.autoGroupsTouched }
+                    }
                     if (plan.needsMergeConfirm && !confirmMerge) {
                         LinkOutcome.NeedsMerge(plan.groupsInvolved.size)
                     } else {
@@ -1477,7 +1488,7 @@ class ImageManagerViewModel(
                         runCatching {
                             FolderRoundtripPrefs.removeScatteredPaths(getApplication(), paths)
                         }
-                        LinkOutcome.Done(paths.size, plan.needsMergeConfirm)
+                        LinkOutcome.Done(paths.size, plan.needsMergeConfirm, autoMoved)
                     }
                 } catch (e: Exception) {
                     LinkOutcome.Failed

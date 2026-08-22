@@ -376,7 +376,7 @@ object OrganizeFolderService {
                 for (set in plan.linkSets) {
                     val groups = set.existingPaths
                         .mapNotNull { groupByCanon[canonical(it)] }
-                        .filterNot { AutoLinkPlanner.isAutoToken(it) }
+                        .filter { ImageLinkResolver.isAbsorbable(it) }
                         .distinct()
                     mergedGroups += groups.size
                     val inFolder = set.existingPaths.size
@@ -828,7 +828,7 @@ object OrganizeFolderService {
                     // 조회가 돌려준 순서를 그대로 쓰면 흡수 대상이 달라진다.
                     val existingGroups = paths
                         .mapNotNull { metaByPath[it]?.linkGroupId }
-                        .filterNot { AutoLinkPlanner.isAutoToken(it) }
+                        .filter { ImageLinkResolver.isAbsorbable(it) }
                         .distinct()
                     SqlInChunks.flat(existingGroups) { db.imageMetaDao().getByGroups(it) }
                         .forEach { ids.add(it.id) }

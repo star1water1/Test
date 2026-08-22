@@ -1852,8 +1852,19 @@ class ImageManagerFragment : Fragment() {
             }
             is ImageManagerViewModel.LinkOutcome.Done -> {
                 exitSelection()
-                val msg = if (outcome.merged) getString(R.string.image_link_merged_done, outcome.linked)
-                else getString(R.string.image_link_done, outcome.linked)
+                // 자동 묶음에서 옮겨 온 장이 있으면 말한다 — 그 자동 묶음에 2장뿐이었다면
+                // **손대지 않은 형제 이미지의 링크 배지가 사라진다**(묶음은 2장부터다).
+                // 해제 쪽 자동 고지(`image_unlink_auto_notice`)와 같은 자리·같은 형태다.
+                val msg = buildString {
+                    append(
+                        if (outcome.merged) getString(R.string.image_link_merged_done, outcome.linked)
+                        else getString(R.string.image_link_done, outcome.linked)
+                    )
+                    if (outcome.autoMoved > 0) {
+                        append("\n")
+                        append(getString(R.string.image_link_auto_moved_notice, outcome.autoMoved))
+                    }
+                }
                 reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, msg))
             }
             ImageManagerViewModel.LinkOutcome.Failed ->

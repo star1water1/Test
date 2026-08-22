@@ -41,12 +41,45 @@ object ImageLinkResolver {
     /**
      * 링크 생성 계획: 선택이 이미 몇 개 그룹에 걸치는지 판정한다.
      * 2개 이상 그룹에 걸치면 병합이므로 사용자 확인이 필요하다.
+     *
+     * @param groupsInvolved 흡수·병합 대상 — **수동 토큰만** 담는다([autoGroupsTouched] 참조)
+     * @param autoGroupsTouched 선택에 딸려 온 자동 토큰들. 흡수하지 않고 **고지에만** 쓴다.
      */
-    data class LinkPlan(val groupsInvolved: Set<String>, val needsMergeConfirm: Boolean)
+    data class LinkPlan(
+        val groupsInvolved: Set<String>,
+        val needsMergeConfirm: Boolean,
+        val autoGroupsTouched: Set<String> = emptySet()
+    )
 
+    /**
+     * **자동 토큰(`char:N`)은 흡수하지 않는다.**
+     *
+     * 자동 묶음을 흡수 대상으로 삼으면 그 토큰이 그대로 새 묶음의 이름이 되고, 그러면
+     * **다음 재동기화가 사용자의 묶음을 조용히 해체한다** — 자동 계획은 `char:N` 소속을
+     * *"그 이미지가 캐릭터 N에 등록된 동안만 유효"*로 보므로, 수동으로 딸려 온 이미지들의
+     * 토큰을 전부 벗긴다([AutoLinkPlanner] 머리말: *"자동화는 수동 그룹을 절대 건드리지
+     * 않는다"*). 사용자는 자기가 만든 묶음이 다음 저장 한 번에 사라지는 것을 본다.
+     *
+     * 폴더 왕복 쪽은 이 예외를 이미 갖고 있었고 그 이유까지 주석에 적어 두었다 — **인앱
+     * 링크만 그 예외가 없었다.** 그래서 규칙을 여기 한 자리로 올려 둘이 같은 것을 쓴다.
+     *
+     * 자동 토큰이 붙은 이미지 자체는 선택에 들어 있으므로 새 수동 토큰으로 함께 옮겨진다.
+     * 그 뒤로는 자동 계획이 *비자동 토큰 = 손대지 않음*으로 보호한다.
+     */
     fun planLink(selected: Collection<String>, metas: List<Meta>): LinkPlan {
         val byPath = metas.associateBy { it.path }
         val groups = selected.mapNotNullTo(LinkedHashSet()) { byPath[it]?.groupId }
-        return LinkPlan(groups, groups.size >= 2)
+        val manual = groups.filterTo(LinkedHashSet()) { isAbsorbable(it) }
+        val auto = groups.filterNotTo(LinkedHashSet()) { isAbsorbable(it) }
+        return LinkPlan(manual, manual.size >= 2, auto)
     }
+
+    /**
+     * **흡수해도 되는 토큰인가** — 자동 토큰(`char:N`)은 아니다([planLink] 머리말이 이유다).
+     *
+     * 규칙을 여기 한 자리에 둔 것은 같은 판정이 폴더 왕복 쪽에도 있기 때문이다(그쪽이 먼저
+     * 갖고 있었고 인앱 링크만 빠져 있었다). 두 벌로 두면 다시 한쪽만 고쳐진다.
+     */
+    fun isAbsorbable(groupId: String?): Boolean =
+        groupId != null && !AutoLinkPlanner.isAutoToken(groupId)
 }
