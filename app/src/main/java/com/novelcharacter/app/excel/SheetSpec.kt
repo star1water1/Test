@@ -312,6 +312,12 @@ fun toHalfWidth(value: String): String = CsvTokens.toHalfWidth(value)
 fun splitCsv(value: String): List<String> = CsvTokens.split(value)
 
 /**
+ * 목록 셀 중 **글자 그대로가 곧 정체인 칸** — 태그처럼 조회 없이 그대로 저장되는 자리다.
+ * 사유와 계약은 [CsvTokens.splitIdentity]에 있다.
+ */
+fun splitCsvIdentity(value: String): List<String> = CsvTokens.splitIdentity(value)
+
+/**
  * 목록 셀의 **결합** — 가져오기의 [splitCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
  * 값이 구분자를 품고 있으면 감싸고, 안의 따옴표는 겹쳐 쓴다(엑셀·CSV와 같은 방식).
  */

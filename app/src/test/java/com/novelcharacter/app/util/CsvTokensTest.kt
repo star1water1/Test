@@ -224,4 +224,34 @@ class CsvTokensTest {
         assertEquals(true, CsvTokens.parseBoolean("켬"))
         assertEquals(false, CsvTokens.parseBoolean("아무말"))
     }
+
+    /**
+     * **정체 칸은 전각을 낮춰 읽지 않는다** (2026.08.22).
+     *
+     * 태그처럼 조회 없이 그대로 저장되는 칸에서 정규화는 관대함이 아니라 손실이다 —
+     * 못 찾았다고 말해 줄 상대가 없기 때문이다. 종전에는 `ＮＰＣ` 태그가 **무편집 왕복**
+     * 한 번에 `NPC`로 개명됐고, 그 태그를 쓰던 목록 프리셋이 어떤 캐릭터도 못 걸렀다.
+     */
+    @Test
+    fun `정체 칸은 전각 글자를 그대로 남긴다`() {
+        assertEquals(listOf("ＮＰＣ"), CsvTokens.splitIdentity("ＮＰＣ"))
+        assertEquals(listOf("ｐｏｗｅｒ", "속도"), CsvTokens.splitIdentity("ｐｏｗｅｒ, 속도"))
+        // 대조군 — 값을 *찾는* 칸은 종전의 관대함을 그대로 지킨다.
+        assertEquals(listOf("NPC"), CsvTokens.split("ＮＰＣ"))
+    }
+
+    /**
+     * 정체 칸도 **감싸기는 그대로다** — 쉼표를 품은 태그가 왕복에서 쪼개지지 않는다.
+     *
+     * 전각 **따옴표**(＂)는 이 왕복 밖이다 — [CsvTokens.quote]가 감쌀 때 그것을 반각으로
+     * 고정하기 때문이고(읽는 쪽의 정규화와 이스케이프 자리를 맞추려던 것이다), 정체 칸에서는
+     * 그 한 글자가 왕복에서 바뀐다. 태그에 전각 따옴표를 쓰는 것은 전각 영숫자와 달리 흔한
+     * 모양이 아니라 이번 범위에 넣지 않았다 — **고치려면 감싸기 쪽에도 짝이 필요하다**(R-47).
+     */
+    @Test
+    fun `정체 칸의 무편집 왕복이 글자를 지킨다`() {
+        val tags = listOf("ＮＰＣ", "주인공, 소년", "ｐｏｗｅｒ１")
+        val roundTripped = CsvTokens.splitIdentity(CsvTokens.join(tags))
+        assertEquals(tags, roundTripped)
+    }
 }

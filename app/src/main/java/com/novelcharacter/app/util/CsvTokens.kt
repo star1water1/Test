@@ -77,6 +77,27 @@ object CsvTokens {
         return parseQuoted(source, quotedOnlyIfNeeded) ?: splitLegacy(source)
     }
 
+    /**
+     * **글자 그대로가 곧 정체인 칸**을 쪼갠다 — 전각을 고쳐 읽지 않는다 (B-261의 축, 2026.08.22).
+     *
+     * [split]의 기본 관대함([toHalfWidth])은 *값을 찾는* 칸을 위한 것이다: 이름·코드는 못 찾으면
+     * 가져오기 결과가 말해 주므로 전각을 반각으로 낮춰 읽는 편이 값어치가 있다. 그런데 **조회
+     * 없이 그대로 저장되는 칸**에서는 그 정규화가 관대함이 아니라 **손실**이다 — 말해 줄 상대가
+     * 없기 때문이다.
+     *
+     * 태그가 정확히 그 부류다. `ＮＰＣ`(전각) 태그를 내보낸 파일을 **한 글자도 고치지 않고**
+     * 다시 들이면 종전에는 `NPC`로 바뀌어 저장됐고 경고가 한 줄도 없었다. 그 태그를 쓰던
+     * '목록 프리셋'의 태그 열은 원문(`ＮＰＣ`)으로 왕복하므로, 왕복 한 번에 **프리셋이 어떤
+     * 캐릭터도 걸러 내지 못하게** 됐다 — 두 시트가 같은 글자를 다르게 읽는 셈이다.
+     * `DuelFieldLinks`가 같은 사유로 먼저 이 축을 갈랐다(필드 키가 왕복 한 번에 죽은 연결이 되던 자리).
+     *
+     * **감싸기는 그대로다** — 쉼표를 품은 값은 [quote]가 감싸고 여기서 그대로 풀리므로,
+     * 전각 쉼표를 품은 태그도 왕복에서 쪼개지지 않는다.
+     *
+     * 부르는 자리를 여기 이름으로 두는 것이 요점이다 — 호출부마다 인자를 적으면 다시 두 규칙이 된다.
+     */
+    fun splitIdentity(value: String): List<String> = split(value, normalizeFullWidth = false)
+
     /** 종전 구현 그 자체 — 따옴표가 없거나 CSV 규칙에 어긋날 때의 경로. */
     fun splitLegacy(normalized: String): List<String> =
         normalized.split(",").map { it.trim() }.filter { it.isNotBlank() }

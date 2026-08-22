@@ -1309,7 +1309,26 @@ class ExcelImporter(context: Context) {
      */
     private fun openImportSource(xlsxFile: File): OpenedImportSource {
         val budget = domParseBudgetBytes()
-        if (xlsxFile.length() > budget) {
+        // **구형 .xls는 크기와 무관하게 DOM으로 간다** (2026.08.22).
+        //
+        // 스트리밍 리더는 원리적으로 OOXML 전용이다(`OPCPackage.open`). 그런데 이 함수는
+        // **형식이 아니라 크기만** 보고 경로를 골랐고, `importFromXlsx`의 입구는 `PLAIN_XLSX`와
+        // `LEGACY_OLE2`를 같이 받는다. 그래서 예산을 넘는 .xls가 스트리밍으로 흘러가
+        // `OLE2NotOfficeXmlFileException`을 냈고, 호출부의 `catch`가 그것을
+        // `UnsupportedFileFormatException`으로 접어 **"이 파일은 엑셀 통합문서가 아닙니다 —
+        // CSV는 …"**라는 거짓 고지로 거절했다. 멀쩡한 통합문서이고, 같은 파일이 예산 이하였다면
+        // 그냥 열렸을 것이다. 문구가 CSV 변환을 권해 엉뚱한 교정으로 보내기까지 했다.
+        // 예산 하한이 8MB인데 .xls는 65,536행까지 담으므로 닿는 크기다.
+        //
+        // **앞 판이 암호 파일에서 이미 고친 부류의 남은 절반이다** — `ImportFileFormat`이
+        // *"판정이 파일이 아니라 어느 여는 경로를 탔는가에 붙어 있었다 — 파일 크기라는 무관한
+        // 축이 문구를 갈랐다"*고 적으며 `ENCRYPTED_WORKBOOK`만 파일 쪽으로 옮겼고,
+        // `LEGACY_OLE2`는 그대로 크기가 경로를 정하게 남아 있었다. 이제 셋 다 파일이 정한다.
+        //
+        // DOM이 이 크기를 못 버티면 아래 `OutOfMemoryError` 갈래가 받는다 — 다만 그쪽의
+        // 스트리밍 폴백도 .xls에는 소용이 없으므로 형식을 함께 본다.
+        val isLegacyOle2 = ImportFileFormat.detect(xlsxFile) == ImportFileKind.LEGACY_OLE2
+        if (!isLegacyOle2 && xlsxFile.length() > budget) {
             Log.i("ExcelImporter", "streaming import: ${xlsxFile.length()} bytes > budget $budget")
             val wb = StreamingImportWorkbook(xlsxFile)
             return OpenedImportSource(wb, closer = wb)
@@ -1322,6 +1341,8 @@ class ExcelImporter(context: Context) {
             // **여는 단계에서만** 폴백한다: 이 시점엔 DB에 쓴 것이 없어 다시 시작해도 안전하다
             // (importAll 도중의 OOM을 여기서 되잡으면 부분 반영 위에 두 번 쓰게 된다).
             Log.w("ExcelImporter", "DOM open OOM — falling back to streaming", oom)
+            // .xls에는 스트리밍이 없다 — 폴백해 봐야 형식 오류로 바뀔 뿐이라 사실대로 던진다.
+            if (isLegacyOle2) throw oom
             val wb = StreamingImportWorkbook(xlsxFile)
             OpenedImportSource(wb, closer = wb)
         }

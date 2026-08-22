@@ -2823,7 +2823,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return ImageMetaRowValues(
             fileName = getCellString(row, c.file),
             hasTagCol = c.tag >= 0,
-            tags = if (c.tag >= 0) splitCsv(getCellString(row, c.tag)).toSet() else emptySet(),
+            // 태그는 **조회 없이 그대로 저장된다** — 전각을 낮춰 읽으면 조용한 개명이다.
+            tags = if (c.tag >= 0) splitCsvIdentity(getCellString(row, c.tag)).toSet() else emptySet(),
             hasGroupCol = c.group >= 0,
             groupToken = if (c.group >= 0) getCellString(row, c.group).trim().ifBlank { null } else null,
             hasDetachedCol = c.detachedAt >= 0,
@@ -7718,7 +7719,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val tagsStr = getCellString(row, tagsColIndex)
                     if (tagsStr.isNotBlank()) {
                         db.characterTagDao().deleteAllByCharacter(charId)
-                        val tags = splitCsv(tagsStr)
+                        // 태그는 **조회 없이 그대로 저장된다**(아래 `CharacterTag(tag = tag)`) —
+                        // 전각을 낮춰 읽으면 무편집 왕복에서 태그가 조용히 개명된다.
+                        val tags = splitCsvIdentity(tagsStr)
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
                         }
