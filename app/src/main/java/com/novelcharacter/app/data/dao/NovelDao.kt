@@ -65,6 +65,17 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' ESCAPE '\\' OR description LIKE '%' || :query || '%' ESCAPE '\\'")
     fun searchNovels(query: String): LiveData<List<Novel>>
 
+    /**
+     * 순서만 쓴다 — 재정렬은 `displayOrder` 한 칸의 일이다.
+     *
+     * 종전에는 화면이 들고 있던 **엔티티 사본 전체**를 `@Update`로 되썼다. 순서 편집을 여는
+     * 동안 다른 화면·들이기·백그라운드 작업이 같은 행을 고치면 그 되쓰기가 **말없이 되돌렸다**
+     * (개발 의도 2번 '변수 제어'). 문장 수는 `@Update` 목록과 같고(행마다 한 문장) 쓰는 열만
+     * 줄어든다 — 호출부가 한 트랜잭션으로 묶는다.
+     */
+    @Query("UPDATE novels SET displayOrder = :order WHERE id = :id")
+    suspend fun setDisplayOrder(id: Long, order: Long)
+
     @Update
     suspend fun updateAll(novels: List<Novel>)
 

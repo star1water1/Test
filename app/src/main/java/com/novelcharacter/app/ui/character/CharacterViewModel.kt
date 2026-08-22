@@ -2242,9 +2242,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
 
-    fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
+    fun updateCharacterDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            characterRepository.updateCharacterDisplayOrders(characters)
+            characterRepository.updateCharacterDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update display orders", e)

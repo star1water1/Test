@@ -252,9 +252,9 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
+    fun updateDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            novelRepository.updateNovelDisplayOrders(novels)
+            novelRepository.updateNovelDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to update display orders", e)

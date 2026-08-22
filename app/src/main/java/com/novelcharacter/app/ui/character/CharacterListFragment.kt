@@ -193,6 +193,10 @@ class CharacterListFragment : Fragment() {
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.characterRecyclerView.adapter = adapter
 
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateCharacterDisplayOrders(orderedIds)
+        }
+
         val callback = object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT, 0
         ) {
@@ -211,9 +215,8 @@ class CharacterListFragment : Fragment() {
 
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
-                if (adapter.isReorderMode()) {
-                    viewModel.updateCharacterDisplayOrders(adapter.getReorderedList())
-                }
+                // 세계관·작품 목록과 같은 통로로 나간다 (R-18) — 모드 확인은 어댑터가 한다.
+                adapter.onDragCompleted()
             }
         }
         itemTouchHelper = ItemTouchHelper(callback).also {

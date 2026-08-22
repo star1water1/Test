@@ -227,7 +227,13 @@ class CharacterRepository(
         }
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
-    suspend fun updateCharacterDisplayOrders(characters: List<Character>) = characterDao.updateAll(characters)
+    /**
+     * 캐릭터 순서 저장 — **차례만 받아 `displayOrder`만 쓴다.**
+     * 사유는 [UniverseRepository.updateUniverseDisplayOrders]와 같다.
+     */
+    suspend fun updateCharacterDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> characterDao.setDisplayOrder(id, index.toLong()) }
+    }
 
     // ===== CharacterFieldValue =====
     fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>> =

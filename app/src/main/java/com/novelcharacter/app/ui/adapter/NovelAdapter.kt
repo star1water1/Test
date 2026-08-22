@@ -11,8 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import android.graphics.Color
 import com.google.android.material.card.MaterialCardView
@@ -32,13 +30,11 @@ class NovelAdapter(
     private val onClick: (Novel) -> Unit,
     private val onEditClick: (Novel) -> Unit,
     private val onDeleteClick: (Novel) -> Unit,
-    private val onPinClick: ((Novel) -> Unit)? = null,
-    var onOrderChanged: ((List<Novel>) -> Unit)? = null
-) : ListAdapter<Novel, NovelAdapter.NovelViewHolder>(NovelDiffCallback()) {
+    private val onPinClick: ((Novel) -> Unit)? = null
+) : ReorderableListAdapter<Novel, NovelAdapter.NovelViewHolder>(NovelDiffCallback()) {
 
-    private var isReorderMode = false
-    var itemTouchHelper: ItemTouchHelper? = null
-    private val reorderList = mutableListOf<Novel>()
+    override fun idOf(item: Novel): Long = item.id
+
     private var universeBorderColor: String = ""
     private var universeBorderWidthDp: Float = 1.5f
 
@@ -92,34 +88,6 @@ class NovelAdapter(
         notifyItemRangeChanged(0, itemCount)
     }
 
-    fun setReorderMode(enabled: Boolean) {
-        isReorderMode = enabled
-        if (enabled) {
-            reorderList.clear()
-            reorderList.addAll(currentList)
-        }
-        notifyDataSetChanged()
-    }
-
-    fun isReorderMode() = isReorderMode
-
-    fun onItemMove(from: Int, to: Int) {
-        if (from < 0 || to < 0 || from >= reorderList.size || to >= reorderList.size) return
-        val item = reorderList.removeAt(from)
-        reorderList.add(to, item)
-        notifyItemMoved(from, to)
-    }
-
-    fun onDragCompleted() {
-        if (isReorderMode) {
-            onOrderChanged?.invoke(getReorderedList())
-        }
-    }
-
-    fun getReorderedList(): List<Novel> = reorderList.mapIndexed { index, novel ->
-        novel.copy(displayOrder = index.toLong())
-    }
-
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NovelViewHolder {
         val binding = ItemNovelBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return NovelViewHolder(binding)
@@ -141,11 +109,6 @@ class NovelAdapter(
         }
         super.onBindViewHolder(holder, position, payloads)
     }
-
-    private fun itemAt(position: Int): Novel =
-        if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
-
-    override fun getItemCount(): Int = if (isReorderMode) reorderList.size else super.getItemCount()
 
     override fun onViewRecycled(holder: NovelViewHolder) {
         super.onViewRecycled(holder)
@@ -179,11 +142,11 @@ class NovelAdapter(
             binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
             bindFieldSummary(novel)
 
-            binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            binding.dragHandle.visibility = if (isReorderMode()) View.VISIBLE else View.GONE
             binding.btnMore.setImageResource(R.drawable.ic_more_vert)
-            binding.btnMore.visibility = if (isReorderMode) View.GONE else View.VISIBLE
+            binding.btnMore.visibility = if (isReorderMode()) View.GONE else View.VISIBLE
 
-            if (isReorderMode) {
+            if (isReorderMode()) {
                 binding.dragHandle.setOnTouchListener { _, event ->
                     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                         itemTouchHelper?.startDrag(this)
@@ -313,8 +276,7 @@ class NovelAdapter(
             val pos = bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return false
             return try {
-                val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                current.id == id
+                itemAt(pos).id == id
             } catch (_: IndexOutOfBoundsException) {
                 // 자리 확인과 getItem 사이에 목록이 갈렸다 — 모르면 그리지 않는다.
                 false

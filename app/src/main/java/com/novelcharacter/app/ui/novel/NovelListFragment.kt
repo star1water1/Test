@@ -285,8 +285,8 @@ class NovelListFragment : Fragment() {
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.novelRecyclerView.adapter = adapter
 
-        adapter.onOrderChanged = { reorderedList ->
-            viewModel.updateDisplayOrders(reorderedList)
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateDisplayOrders(orderedIds)
         }
         adapter.resolveCharacterImage = { novelId, characterId, seed, callback ->
             viewModel.resolveCharacterImage(novelId, characterId, seed, callback)

@@ -259,8 +259,8 @@ class UniverseListFragment : Fragment() {
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.universeRecyclerView.adapter = adapter
 
-        adapter.onOrderChanged = { reorderedList ->
-            viewModel.updateDisplayOrders(reorderedList)
+        adapter.onOrderChanged = { orderedIds ->
+            viewModel.updateDisplayOrders(orderedIds)
         }
         adapter.resolveRandomCharacterImage = { universeId, seed, callback ->
             viewModel.resolveRandomCharacterImage(universeId, seed, callback)

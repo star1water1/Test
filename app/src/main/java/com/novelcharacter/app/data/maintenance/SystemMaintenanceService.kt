@@ -442,34 +442,31 @@ class SystemMaintenanceService(
      */
     suspend fun reindexDisplayOrders() {
         db.withTransaction {
+            // 셋 다 **순서 열만** 쓴다 — 재정렬 저장과 같은 통로다(`setDisplayOrder`).
+            // 통짜 `@Update`는 재색인이 손댈 이유가 없는 열까지 되쓴다.
+
             // Universes: single global scope (already sorted by displayOrder ASC)
-            val universes = db.universeDao().getAllUniversesList()
-            val reindexedUniverses = universes.mapIndexed { index, u ->
-                u.copy(displayOrder = index.toLong())
+            db.universeDao().getAllUniversesList().forEachIndexed { index, u ->
+                db.universeDao().setDisplayOrder(u.id, index.toLong())
             }
-            db.universeDao().updateAll(reindexedUniverses)
 
             // Novels: per universeId scope (고정 축 없는 저장 순서로 읽는다)
-            val novels = db.novelDao().getAllNovelsByDisplayOrder()
-            val novelsByUniverse = novels.groupBy { it.universeId }
-            val reindexedNovels = mutableListOf<com.novelcharacter.app.data.model.Novel>()
-            for ((_, scopeNovels) in novelsByUniverse) {
-                scopeNovels.forEachIndexed { index, n ->
-                    reindexedNovels.add(n.copy(displayOrder = index.toLong()))
+            db.novelDao().getAllNovelsByDisplayOrder()
+                .groupBy { it.universeId }
+                .forEach { (_, scopeNovels) ->
+                    scopeNovels.forEachIndexed { index, n ->
+                        db.novelDao().setDisplayOrder(n.id, index.toLong())
+                    }
                 }
-            }
-            db.novelDao().updateAll(reindexedNovels)
 
             // Characters: per novelId scope (고정 축 없는 저장 순서로 읽는다)
-            val characters = db.characterDao().getAllCharactersByDisplayOrder()
-            val charactersByNovel = characters.groupBy { it.novelId }
-            val reindexedCharacters = mutableListOf<com.novelcharacter.app.data.model.Character>()
-            for ((_, scopeChars) in charactersByNovel) {
-                scopeChars.forEachIndexed { index, c ->
-                    reindexedCharacters.add(c.copy(displayOrder = index.toLong()))
+            db.characterDao().getAllCharactersByDisplayOrder()
+                .groupBy { it.novelId }
+                .forEach { (_, scopeChars) ->
+                    scopeChars.forEachIndexed { index, c ->
+                        db.characterDao().setDisplayOrder(c.id, index.toLong())
+                    }
                 }
-            }
-            db.characterDao().updateAll(reindexedCharacters)
         }
     }
 }

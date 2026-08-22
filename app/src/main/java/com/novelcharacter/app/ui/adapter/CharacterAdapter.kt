@@ -9,8 +9,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -31,14 +29,12 @@ class CharacterAdapter(
     private val onPinClick: ((Character) -> Unit)? = null,
     /** 카드 롱프레스(일반 탐색 모드 한정) — 선택 모드 진입 가속기. 이미지 포함 카드 전체에 적용. 반환값 = 이벤트 소비 여부. */
     private val onLongClick: ((Character) -> Boolean)? = null
-) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
+) : ReorderableListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
+
+    override fun idOf(item: Character): Long = item.id
 
     private var isSelectionMode = false
     private var selectedIds = setOf<Long>()
-
-    private var isReorderMode = false
-    var itemTouchHelper: ItemTouchHelper? = null
-    private val reorderList = mutableListOf<Character>()
 
     // Thumbnail cache - max 20MB
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -103,28 +99,6 @@ class CharacterAdapter(
         notifyItemRangeChanged(0, itemCount)
     }
 
-    fun setReorderMode(enabled: Boolean) {
-        isReorderMode = enabled
-        if (enabled) {
-            reorderList.clear()
-            reorderList.addAll(currentList)
-        }
-        notifyDataSetChanged()
-    }
-
-    fun isReorderMode() = isReorderMode
-
-    fun onItemMove(from: Int, to: Int) {
-        if (from < 0 || to < 0 || from >= reorderList.size || to >= reorderList.size) return
-        val item = reorderList.removeAt(from)
-        reorderList.add(to, item)
-        notifyItemMoved(from, to)
-    }
-
-    fun getReorderedList(): List<Character> = reorderList.mapIndexed { index, character ->
-        character.copy(displayOrder = index.toLong())
-    }
-
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
         val binding = ItemCharacterBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -133,12 +107,7 @@ class CharacterAdapter(
     }
 
     override fun onBindViewHolder(holder: CharacterViewHolder, position: Int) {
-        val item = if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
-        holder.bind(item)
-    }
-
-    override fun getItemCount(): Int {
-        return if (isReorderMode) reorderList.size else super.getItemCount()
+        holder.bind(itemAt(position))
     }
 
     override fun onViewRecycled(holder: CharacterViewHolder) {
@@ -191,12 +160,12 @@ class CharacterAdapter(
             }
 
             // Drag handle visibility
-            binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            binding.dragHandle.visibility = if (isReorderMode()) View.VISIBLE else View.GONE
             // More button visibility
             binding.btnMore.setImageResource(R.drawable.ic_more_vert)
-            binding.btnMore.visibility = if (isReorderMode || isSelectionMode) View.GONE else View.VISIBLE
+            binding.btnMore.visibility = if (isReorderMode() || isSelectionMode) View.GONE else View.VISIBLE
 
-            if (isReorderMode) {
+            if (isReorderMode()) {
                 binding.dragHandle.setOnTouchListener { _, event ->
                     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                         itemTouchHelper?.startDrag(this)
@@ -289,7 +258,7 @@ class CharacterAdapter(
             // 이미지가 셀 대부분을 차지하므로 롱프레스를 뷰어가 가로채면 '롱프레스=다중선택'이 안 먹는다
             // → 리스트에선 롱프레스를 다중선택에 양보하고, 이미지 뷰어는 상세화면(이미지 탭)에서 연다.
             // reorder/selection mode에서는 비활성.
-            if (!isReorderMode && !isSelectionMode) {
+            if (!isReorderMode() && !isSelectionMode) {
                 binding.characterImage.setOnClickListener { onClick(character) }
                 if (onLongClick != null) {
                     binding.characterImage.setOnLongClickListener { onLongClick.invoke(character) }
@@ -332,8 +301,7 @@ class CharacterAdapter(
                         val pos = bindingAdapterPosition
                         if (pos != RecyclerView.NO_POSITION) {
                             val currentPaths: List<String> = try {
-                                val currentItem = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                                gson.fromJson(currentItem.imagePaths, imagePathsType) ?: emptyList()
+                                gson.fromJson(itemAt(pos).imagePaths, imagePathsType) ?: emptyList()
                             } catch (e: Exception) {
                                 // List may have been updated between position check and getItem
                                 emptyList()

@@ -168,9 +168,9 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         return UniverseDeleteImpact(novels, characters, events, fields, values)
     }
 
-    fun updateDisplayOrders(universes: List<Universe>) = viewModelScope.launch {
+    fun updateDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            universeRepository.updateUniverseDisplayOrders(universes)
+            universeRepository.updateUniverseDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공은 시각 변화가 피드백(무통보), 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to update display orders", e)

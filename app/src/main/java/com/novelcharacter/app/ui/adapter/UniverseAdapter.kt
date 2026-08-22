@@ -11,8 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import android.graphics.Color
 import android.graphics.Typeface
@@ -34,15 +32,13 @@ class UniverseAdapter(
     private val onDeleteClick: (Universe) -> Unit,
     private val onFieldManageClick: (Universe) -> Unit,
     private val onFactionManageClick: (Universe) -> Unit = {},
-    private val onDuelClick: (Universe) -> Unit = {},
-    var onOrderChanged: ((List<Universe>) -> Unit)? = null
-) : ListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
+    private val onDuelClick: (Universe) -> Unit = {}
+) : ReorderableListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
 
     private var novelCounts: Map<Long, Int> = emptyMap()
     private var fieldCounts: Map<Long, Int> = emptyMap()
-    private var isReorderMode = false
-    var itemTouchHelper: ItemTouchHelper? = null
-    private val reorderList = mutableListOf<Universe>()
+
+    override fun idOf(item: Universe): Long = item.id
 
     /** 세계관에 속한 캐릭터의 랜덤 이미지 경로를 반환하는 콜백 */
     var resolveRandomCharacterImage: ((universeId: Long, seed: Long, callback: (String?) -> Unit) -> Unit)? = null
@@ -84,45 +80,14 @@ class UniverseAdapter(
         notifyItemRangeChanged(0, itemCount)
     }
 
-    fun setReorderMode(enabled: Boolean) {
-        isReorderMode = enabled
-        if (enabled) {
-            reorderList.clear()
-            reorderList.addAll(currentList)
-        }
-        notifyDataSetChanged()
-    }
-
-    fun isReorderMode() = isReorderMode
-
-    fun onItemMove(from: Int, to: Int) {
-        if (from < 0 || to < 0 || from >= reorderList.size || to >= reorderList.size) return
-        val item = reorderList.removeAt(from)
-        reorderList.add(to, item)
-        notifyItemMoved(from, to)
-    }
-
-    fun onDragCompleted() {
-        if (isReorderMode) {
-            onOrderChanged?.invoke(getReorderedList())
-        }
-    }
-
-    fun getReorderedList(): List<Universe> = reorderList.mapIndexed { index, universe ->
-        universe.copy(displayOrder = index.toLong())
-    }
-
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UniverseViewHolder {
         val binding = ItemUniverseBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return UniverseViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: UniverseViewHolder, position: Int) {
-        val item = if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
-        holder.bind(item)
+        holder.bind(itemAt(position))
     }
-
-    override fun getItemCount(): Int = if (isReorderMode) reorderList.size else super.getItemCount()
 
     override fun onViewRecycled(holder: UniverseViewHolder) {
         super.onViewRecycled(holder)
@@ -163,11 +128,11 @@ class UniverseAdapter(
             binding.novelCount.text = binding.root.context.getString(R.string.novel_count_format, nc)
             binding.fieldCount.text = binding.root.context.getString(R.string.field_count_format, fc)
 
-            binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            binding.dragHandle.visibility = if (isReorderMode()) View.VISIBLE else View.GONE
             binding.btnMore.setImageResource(R.drawable.ic_more_vert)
-            binding.btnMore.visibility = if (isReorderMode) View.GONE else View.VISIBLE
+            binding.btnMore.visibility = if (isReorderMode()) View.GONE else View.VISIBLE
 
-            if (isReorderMode) {
+            if (isReorderMode()) {
                 binding.dragHandle.setOnTouchListener { _, event ->
                     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                         itemTouchHelper?.startDrag(this)
@@ -281,8 +246,7 @@ class UniverseAdapter(
             val pos = bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return false
             return try {
-                val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                current.id == id
+                itemAt(pos).id == id
             } catch (_: IndexOutOfBoundsException) {
                 // 자리 확인과 getItem 사이에 목록이 갈렸다 — 모르면 그리지 않는다.
                 false

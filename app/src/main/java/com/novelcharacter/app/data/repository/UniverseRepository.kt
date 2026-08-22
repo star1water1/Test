@@ -135,7 +135,16 @@ class UniverseRepository(
             emptyList()
         }
     }
-    suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)
+    /**
+     * 세계관 순서 저장 — **차례만 받아 `displayOrder`만 쓴다.**
+     *
+     * 화면이 든 엔티티 사본이 아니라 id 차례를 받는다. 순서 편집이 열려 있는 동안 같은 행이
+     * 다른 경로에서 바뀌어도(이름·설명·이미지·경계선) 그 변경이 순서 저장에 되감기지 않는다.
+     * 한 트랜잭션으로 묶어 중간 상태가 목록에 방출되지 않게 한다.
+     */
+    suspend fun updateUniverseDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> universeDao.setDisplayOrder(id, index.toLong()) }
+    }
 
     // ===== FieldDefinition =====
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
