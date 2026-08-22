@@ -288,8 +288,13 @@ class TrashRepository(
         revertScope: List<String>? = null
     ) {
         val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(character.id)
-        val relationshipChanges = relationships.flatMap { rel ->
-            db.characterRelationshipChangeDao().getChangesForRelationshipList(rel.id)
+        // 관계마다 단건 조회하지 않는다 — 형제인 [snapshotFaction]이 같은 자리를 이미 그렇게
+        // 고쳐 두었고(그 주석이 "세력 하나에 100명이면 자동 관계가 약 5천 개"라 적어 두었다),
+        // 여기만 남아 있었다. 세력 자동 관계는 가입 때 기존 멤버 전원과 짝지어 생기므로
+        // 한 캐릭터의 관계 수가 세력 크기에 비례한다 — 그 곱만큼 질의가 나가고, 전부
+        // 삭제 트랜잭션 안이다('받쳐주는 확장성' · R-54).
+        val relationshipChanges = SqlInChunks.flat(relationships.map { it.id }) {
+            db.characterRelationshipChangeDao().getChangesForRelationships(it)
         }
         val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(character.id)
         val factionMemberships = db.factionMembershipDao().getMembershipsByCharacterList(character.id)
