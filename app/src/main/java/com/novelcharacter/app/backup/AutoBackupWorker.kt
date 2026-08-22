@@ -72,7 +72,6 @@ class AutoBackupWorker(
 
     override suspend fun doWork(): Result {
         val statusStore = BackupStatusStore(appContext)
-        val settings = BackupSettingsStore(appContext).getSettings()
         val progress = cancellationSink()
         // **이 워커도 전송이다.** `ExcelExporter.populateWorkbook`만 부르므로 구간(`phase`)이
         // 서지 않아 [ActiveTransfers]가 자동으로 알지 못한다 — 그래서 여기서 명시로 든다.
@@ -80,6 +79,15 @@ class AutoBackupWorker(
         // 캐시 비우기가 그 파일을 앗아갈 수 있다(사용자는 백업이 도는 줄도 모른다).
         com.novelcharacter.app.excel.ActiveTransfers.enter(this)
         return try {
+            // **설정 읽기는 고지 기구가 도는 범위 안이다.** 종전에는 `try` 밖에 있어서 이
+            // 한 줄이 던지면 상태 기록도, 알림도, 작업 이력도 하나도 돌지 않았다 — 배경
+            // 작업이라 화면도 없으니 **사용자는 백업이 멈춘 것을 알 길이 없었다.**
+            //
+            // 폴백은 두지 않는다. 못 읽은 회차는 실패로 접어 아래 `catch`가 받는다 —
+            // `BackupWorkerPolicy`가 재시도 소진 시 알림·이력까지 내므로 반드시 닿는다.
+            // 기본값으로 백업을 만들면 `rotateBackups(기본 3)`이 사용자가 올려 둔 보관분을
+            // 영구 삭제한다(고치려던 것보다 큰 손해다).
+            val settings = BackupSettingsStore(appContext).getSettings()
             Log.i(TAG, "Starting auto backup...")
             // 워크북 구현은 **프로브가 정한다**(B-250) — 손으로 적지 않는다.
             //

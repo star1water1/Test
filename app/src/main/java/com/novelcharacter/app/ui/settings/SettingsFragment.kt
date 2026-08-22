@@ -967,8 +967,26 @@ class SettingsFragment : Fragment() {
     }
 
     /** 복원용 암호 입력 다이얼로그. */
-    private fun showEnterPassphraseDialog(onEntered: (CharArray) -> Unit) {
-        if (!isAdded) return
+    /**
+     * 복원 암호 입력 — **취소도 종결이다.**
+     *
+     * 이 창은 `restore_ext_*.enc`(백업 한 벌 크기)의 소유권을 쥔 채 뜬다. 종전에는 성공
+     * 외에 나가는 통로가 없어서, 취소하거나 바깥을 눌러 닫으면 그 파일이 **주인 없이**
+     * 캐시에 남았다 — 게다가 [com.novelcharacter.app.excel.ActiveTransfers] 등재가 그대로라
+     * 프로세스가 사는 동안 [앱 캐시 비우기]가 *"저장을 기다리는 파일 N개는 남겼습니다"*라며
+     * 건너뛰었다(거짓 고지 · 개발 의도 2번).
+     *
+     * @param onCancelled 암호를 받지 못한 채 창이 닫혔다 — 부르는 쪽이 임시본을 놓는다.
+     */
+    private fun showEnterPassphraseDialog(
+        onCancelled: () -> Unit = {},
+        onEntered: (CharArray) -> Unit
+    ) {
+        if (!isAdded) {
+            // 띄우지도 못했다 — 이어받을 사람이 없으므로 여기서도 종결이다.
+            onCancelled()
+            return
+        }
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val pad = (24 * density).toInt()
@@ -990,17 +1008,39 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.confirm, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+        var entered = false
         dialog.setValidatedPositiveButton {
             val pass = editPass.text.toString()
             if (pass.isEmpty()) {
                 Toast.makeText(ctx, R.string.backup_passphrase_enter_title, Toast.LENGTH_SHORT).show()
                 false
             } else {
+                entered = true
                 onEntered(pass.toCharArray())
                 true
             }
         }
+        // 취소·바깥 누름·뒤로가기가 전부 여기를 지난다 — 갈래마다 적으면 하나가 빠진다.
+        dialog.setOnDismissListener { if (!entered) onCancelled() }
         dialog.show()
+    }
+
+    /**
+     * 복원 실패의 문구 — **메모리 부족은 갈라 말한다** (R-17).
+     *
+     * *"다시 시도하세요"*는 메모리가 모자란 회차에서 답이 아니다. 줄일 수 있는 축을
+     * 말해야 사용자가 할 일이 생긴다(옛 형식 백업이면 새로 내보낸 뒤 복원).
+     */
+    private fun restoreFailureMessage(t: Throwable): String =
+        if (t is OutOfMemoryError) getString(R.string.backup_restore_failed_out_of_memory)
+        else getString(R.string.backup_restore_failed, t.message)
+
+    /**
+     * 이어받을 사람이 없어진 전송 임시본을 놓는다 — 등재를 닫고 지운다.
+     * **화면 수명 밖에서 돈다**: 창이 닫히는 그 순간이 화면이 사라지는 순간일 수 있다.
+     */
+    private fun discardTransferTemp(file: File) {
+        transferScope.launch { releaseTransferTemp(file, handedOver = false) }
     }
 
     /**
@@ -1142,17 +1182,25 @@ class SettingsFragment : Fragment() {
                     return@launch
                 }
                 if (isPortable) {
-                    // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원
-                    showEnterPassphraseDialog { passphrase ->
+                    // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원.
+                    // **취소하면 여기서 놓는다** — 창이 소유권을 쥔 채 닫히면 주인이 없어진다.
+                    showEnterPassphraseDialog(
+                        onCancelled = { discardTransferTemp(tempEncFile) }
+                    ) { passphrase ->
                         restoreFromPortableFile(tempEncFile, passphrase, ownsEncFile = true)
                     }
                 } else {
                     restoreFromEncryptedFile(tempEncFile, ownsEncFile = true)
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다** — 삼키면 화면 파괴가 '복원 실패'로 둔갑한다(B-228).
+                throw e
+            } catch (t: Throwable) {
+                // **`Error`도 받는다** — 옛 형식 백업의 복호화는 메모리를 크게 쓰고,
+                // `OutOfMemoryError`가 여기를 그냥 지나가면 프로세스가 그대로 죽는다(R-70).
+                AppLogger.error("Settings", "백업 복원 실패 (복호화)", t)
                 if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, restoreFailureMessage(t), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1240,16 +1288,18 @@ class SettingsFragment : Fragment() {
                 excel.importFromLocalFile(tempXlsx!!, ownsFile = true)
                 handedOver = true
 
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "백업 복원 실패", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                AppLogger.error("Settings", "백업 복원 실패", t)
                 progressDialog?.dismiss()
                 if (_binding != null) {
-                    // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
-                    Toast.makeText(
-                        ctx,
-                        getString(R.string.backup_restore_failed, e.message) + "\n" + getString(R.string.backup_restore_device_hint),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내.
+                    // **메모리 부족에는 그 안내를 붙이지 않는다** — 원인이 기기 키가 아니다.
+                    val message =
+                        if (t is OutOfMemoryError) restoreFailureMessage(t)
+                        else restoreFailureMessage(t) + "\n" + getString(R.string.backup_restore_device_hint)
+                    Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
                 }
             } finally {
                 // **인계가 못 일어난 갈래에서 임시본의 주인은 여기다** — 실패도, 화면이
@@ -1294,9 +1344,10 @@ class SettingsFragment : Fragment() {
                                 format = TaskProgressDialog.CountFormat.MEGABYTES
                             )
                         }
-                    } catch (e: Exception) {
+                    } catch (t: Throwable) {
+                        // `Error`도 받는다 — 반쪽 xlsx가 캐시에 남지 않게(R-70). 되던지므로 처분은 그대로다.
                         xlsx.delete()
-                        throw e
+                        throw t
                     }
                     xlsx
                 }
@@ -1313,19 +1364,24 @@ class SettingsFragment : Fragment() {
                 progressDialog?.dismiss()
                 if (_binding != null && isAdded) {
                     Toast.makeText(ctx, R.string.backup_passphrase_wrong, Toast.LENGTH_SHORT).show()
-                    showEnterPassphraseDialog { retry ->
+                    showEnterPassphraseDialog(
+                        // 재입력을 취소했다 — 이 파일을 쥔 것은 이 갈래뿐이다.
+                        onCancelled = { if (ownsEncFile) discardTransferTemp(encFile) }
+                    ) { retry ->
                         restoreFromPortableFile(encFile, retry, ownsEncFile = ownsEncFile)
                     }
                 } else if (ownsEncFile) {
                     // 다시 물을 화면이 없다 — 이어받을 사람이 없으므로 여기서 지운다.
                     withContext(Dispatchers.IO) { encFile.delete() }
                 }
-            } catch (e: Exception) {
-                AppLogger.error("Settings", "이식 백업 복원 실패", e)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                AppLogger.error("Settings", "이식 백업 복원 실패", t)
                 progressDialog?.dismiss()
                 if (ownsEncFile) withContext(Dispatchers.IO) { encFile.delete() }
                 if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, restoreFailureMessage(t), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 releaseTransferTemp(tempXlsx, handedOver)

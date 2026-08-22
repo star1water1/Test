@@ -546,6 +546,8 @@
          같은 자리에서 또 죽고, 기기에는 물러설 스트리밍 워크북이 없다(java.awt 부재).
          그래서 사용자가 **줄일 수 있는 축**을 말한다. -->
     <string name="export_failed_out_of_memory">기기 메모리가 모자라 내보내기를 끝내지 못했습니다 — 작품 범위를 좁히거나 이미지를 빼고 다시 시도하세요</string>
+    <!-- 복원의 메모리 부족은 줄일 수 있는 축이 다르다 — "다시 시도하세요"는 답이 아니다(R-17). -->
+    <string name="backup_restore_failed_out_of_memory">기기 메모리가 모자라 복원을 끝내지 못했습니다 — 이 백업이 옛 형식이면 통째로 읽습니다. 백업을 만든 기기에서 최신 버전으로 다시 내보낸 뒤 복원해 주세요.</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
     <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>

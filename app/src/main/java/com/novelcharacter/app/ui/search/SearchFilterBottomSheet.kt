@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetSearchFilterBinding
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +47,10 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
+
+    /** 조회 회차 — 늦게 온 답이 지금 고른 것을 덮지 않게 앞 회차를 끊는다(쌍둥이 시트와 같은 규약). */
+    private var fieldLoadJob: Job? = null
+    private var valueLoadJob: Job? = null
 
     /** 회전 전에 고르던 것 — 목록이 다시 선 뒤에 이 값으로 되살린다. `null`이면 되살릴 것이 없다. */
     private var pendingUniverseId: Long? = null
@@ -113,8 +118,15 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
+    /**
+     * **앞 회차를 끊고 시작한다** — 세계관을 빠르게 갈아 대면 늦게 온 조회가 뒤에 도착해
+     * 지금 고른 세계관의 필드 목록을 덮고, 그 목록으로 값 조회가 다시 걸린다.
+     * 딸린 값 로드까지 함께 끊는다(쌍둥이 시트 `CharacterListControlsBottomSheet`와 같은 모양).
+     */
     private fun loadFieldsForUniverse(universeId: Long) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        fieldLoadJob?.cancel()
+        valueLoadJob?.cancel()
+        fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             fields = viewModel.getFieldDefinitions(universeId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
@@ -156,8 +168,13 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
         // Initial setup handled by universe selection
     }
 
+    /**
+     * **앞 회차를 끊고 시작한다** — 필드를 빠르게 갈아 대면 늦게 온 조회가 칩을 덮어
+     * **다른 필드의 값이 붙은 필터**가 저장된다. 쌍둥이 시트가 같은 판에서 이미 막아 둔 자리다.
+     */
     private fun loadValuesForField(fieldDefId: Long) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        valueLoadJob?.cancel()
+        valueLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             fieldValues = viewModel.getFieldValues(fieldDefId)
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
