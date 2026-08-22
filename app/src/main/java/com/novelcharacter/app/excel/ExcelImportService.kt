@@ -9594,6 +9594,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 그 둘이 갈려 있던 자리다. 개발 의도 2번 — 거짓 고지 금지).
                 val insertedIds = db.characterRelationshipDao().insertAll(newRelationships)
                 val ignored = insertedIds.count { it == -1L }
+                // **방금 만든 것은 '엑셀에 없는 관계'가 아니다** — 등재하지 않으면 같은
+                // 가져오기의 정리('엑셀에 없는 관계 삭제')가 곧바로 도로 지우고, 결과 창은
+                // "자동 관계 N건을 생성했습니다"와 "삭제: 관계 N"을 **동시에** 말한다.
+                // 이 관계의 근거는 관계 시트가 아니라 **세력 소속 시트**이므로, 관계 시트가
+                // 그 쌍을 기술하지 않은 것이 '지워라'가 아니다(같은 파일이 방금 만들라고 했다).
+                matchedRelationshipIds.addAll(insertedIds.filter { it != -1L })
                 created += insertedIds.size - ignored
                 skippedByConflict += ignored
             }

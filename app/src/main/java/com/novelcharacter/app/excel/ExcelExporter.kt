@@ -253,7 +253,11 @@ class ExcelExporter(context: Context) {
         // 등재는 바깥 `finally`에서 내린다 — 고지 부기가 아니라 **일**을 따라간다.
         ActiveTransfers.enter(this)
         activeProgress = progress
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             if (onFinished == null) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
@@ -457,7 +461,11 @@ class ExcelExporter(context: Context) {
         phase = TransferPhase.EXPORT_SAVE
         // 이 구간은 화면이 사라져도 끝까지 간다 — 그래서 등재도 그 끝까지 남아야 한다.
         ActiveTransfers.enter(this)
-        ensureActiveScope().launch {
+        // **본문 진입을 보장한다**(`ATOMIC`) — 등재(`ActiveTransfers.enter`)는 코루틴 밖에서
+        // 오르는데 짝인 하차는 본문의 `finally`에만 있다. 그 사이(디스패치 대기)에 취소가
+        // 들어오면 본문이 **한 줄도 돌지 않아** 등재가 영영 남고, 그때부터 '캐시 비우기'가
+        // *전송 중*이라며 영원히 거절한다(정적 집합이라 앱을 다시 켜야 풀린다).
+        ensureActiveScope().launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     ExportRetryStore.store(appContext, sourceFile)
