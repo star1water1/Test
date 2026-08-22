@@ -5780,6 +5780,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.key.isBlank() && r.name.isBlank()) continue
             total++
             if (r.key.isBlank() || r.name.isBlank()) { skipped++; continue }
+            // 게이트는 가져오기와 **같은 함수**다(R-33) — 미리보기가 예고한 수와 실제가 갈리면
+            // 그 자체가 결함이다.
+            if (r.type != null && !isKnownFieldType(r.type)) { skipped++; continue }
             // 해석 사다리는 가져오기와 **같은 함수**다(코드 → 자리). 앞 행이 만든 것은 색인에
             // 실려 있어 자연히 먼저 잡힌다.
             val existing = templates.resolve(r.code, r.entityType, r.key)
@@ -5850,6 +5853,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (r.key.isBlank() || r.name.isBlank()) {
                 result.skippedRows++
                 result.errors.add("기본 필드 행 ${excelRow(i)}: 필드키·필드명은 필수입니다")
+                continue
+            }
+            // **타입 게이트** — 짝인 '필드 정의' 시트가 이미 갖고 있던 것이 이 시트에만 없었다.
+            // 두 시트는 같은 어휘를 쓴다(같은 드롭다운·같은 필수 표식 — 시험이 그 동일성을
+            // 못박는다). 모르는 글자가 통과하면 그것이 **템플릿**에 들어가고, 템플릿은
+            // 세계관을 만들 때마다 자동으로 심기므로 **이후 만들어지는 모든 세계관**에
+            // 물질화된다. 그 뒤로는 폼이 맨 텍스트로 그리고, 값 라이브러리에서 빠지고,
+            // 다시 내보낸 파일을 신규 기기에서 들이면 '필드 정의' 게이트가 그 행을 통째로
+            // 건너뛴다 — 왕복이 비대칭이 된다(개발 의도 4번).
+            // `null`은 *파일이 말하지 않았다*이고 그때는 종전 그대로다(새 행은 TEXT, 기존 행은
+            // 그 값을 유지) — **없는 열과 틀린 값은 다르다**(R-36). 말했는데 모르는 글자일 때만 막는다.
+            val declaredType = r.type
+            if (declaredType != null && !isKnownFieldType(declaredType)) {
+                result.skippedRows++
+                result.errors.add(unknownFieldTypeMessage("기본 필드 행 ${excelRow(i)}", declaredType))
                 continue
             }
             val existing = templates.resolve(r.code, r.entityType, r.key)
@@ -6388,9 +6406,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.errors.add("필드 정의 행 ${excelRow(i)}: 필드 타입이 비어 있음 (허용: ${FieldType.entries.joinToString { it.name }})")
                     continue
                 }
-                if (FieldType.fromName(type) == null) {
+                if (!isKnownFieldType(type)) {
                     result.skippedRows++
-                    result.errors.add("필드 정의 행 ${excelRow(i)}: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})")
+                    result.errors.add(unknownFieldTypeMessage("필드 정의 행 ${excelRow(i)}", type))
                     continue
                 }
                 // F4: 설정(JSON)이 손상(절단·구문 오류)됐으면 조용히 넘기지 않고 경고 (필드 동작 무력화 방지)
@@ -11463,6 +11481,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * F4: JSON 문자열이 파싱 가능한지 검증한다 (내보내기 32,767자 절단·외부 편집 구문 오류 감지용).
      * 빈 문자열은 유효로 본다. object/array만 최상위로 허용.
      */
+    /**
+     * 아는 필드 타입인가 — **'필드 정의'와 '기본 필드' 두 시트가 같은 잣대를 쓴다.**
+     *
+     * 두 시트는 같은 어휘를 쓴다(같은 드롭다운·같은 필수 표식이고 시험이 그 동일성을
+     * 못박는다). 그런데 게이트는 한쪽에만 있었다 — 판정을 두 벌로 두지 않으려고 여기 모은다.
+     */
+    private fun isKnownFieldType(type: String): Boolean =
+        type.isNotBlank() && FieldType.fromName(type) != null
+
+    /** 모르는 타입을 말하는 한 문장 — 허용 목록을 문구에 박지 않고 열거에서 낸다(R-14). */
+    private fun unknownFieldTypeMessage(where: String, type: String): String =
+        "$where: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})"
+
     private fun isValidJson(value: String, requireTop: Char? = null): Boolean {
         val t = value.trim()
         if (t.isEmpty()) return true

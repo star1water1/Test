@@ -387,14 +387,22 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
-        // 축은 카드가 그린 필드의 종류가 정한다 — 불리언으로 두면 작품 카드가 캐릭터 조회로
-        // 흘러가 0명짜리 빈 시트가 뜬다(S-9와 같은 부류).
-        val axis = when (insight.fieldDefinition.entityType) {
+    /**
+     * 카드가 그린 필드의 **종류가 축을 정한다.**
+     *
+     * 불리언(`== 사건`)으로 두면 작품 카드가 캐릭터 쪽으로 흘러간다 — 드릴다운에서는
+     * 0명짜리 빈 시트가, 교차분석에서는 *"작품 필터를 확인"*이라는 **거짓 사유**가 됐다.
+     * 판정을 한 자리에 두어 두 소비처가 같은 답을 쓰게 한다(R-51).
+     */
+    private fun axisOf(fd: com.novelcharacter.app.data.model.FieldDefinition): StatsEntityAxis =
+        when (fd.entityType) {
             com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT -> StatsEntityAxis.EVENT
             com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL -> StatsEntityAxis.NOVEL
             else -> StatsEntityAxis.CHARACTER
         }
+
+    private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
+        val axis = axisOf(insight.fieldDefinition)
         val sheet = StatsCharacterListBottomSheet.newInstance(
             fieldDefIds = insight.mergedFieldDefIds,
             fieldName = insight.fieldDefinition.name,
@@ -769,14 +777,20 @@ class StatsFieldInsightFragment : Fragment() {
             return
         }
 
-        val byAxis = insights.groupBy {
-            it.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
-        }
+        // **작품 필드를 캐릭터 축에 싣지 않는다.** 종전에는 불리언(`== 사건`)이라 작품 카드가
+        // `false` 쪽으로 떨어져 '캐릭터 필드' 목록에 섰다 — 고르면 조회가 그 id를 캐릭터
+        // 색인에서 못 찾아 *"작품 필터를 확인하세요"*라는 **거짓 사유**로 실패했다(R-17 —
+        // 눌렀는데 아무 일도 안 되거나 엉뚱한 사유가 뜨는 자리는 없어야 한다).
+        //
+        // **작품 축을 새로 열지 않는 것은 사용자 확정이다**(B-66 보류 — *"교차분석 축에도
+        // 작품은 없습니다 … 골랐는데 아무 일도 일어나지 않는 자리는 없어야 합니다"*).
+        // 지금 동작은 그 확정이 전제한 상태와 어긋나 있었던 것이고, 여기서 되돌린다.
+        val byAxis = insights.groupBy { axisOf(it.fieldDefinition) }
         // 축별로 2개 이상인 축만 후보다 — 축 안에서 두 필드를 골라야 표가 만들어진다.
         val axisOptions = mutableListOf<Pair<String, List<FieldInsightResult>>>()
-        byAxis[false]?.takeIf { it.size >= 2 }
+        byAxis[StatsEntityAxis.CHARACTER]?.takeIf { it.size >= 2 }
             ?.let { axisOptions.add(getString(R.string.stats_cross_axis_character) to it) }
-        byAxis[true]?.takeIf { it.size >= 2 }
+        byAxis[StatsEntityAxis.EVENT]?.takeIf { it.size >= 2 }
             ?.let { axisOptions.add(getString(R.string.stats_cross_axis_event) to it) }
 
         if (axisOptions.isEmpty()) {
