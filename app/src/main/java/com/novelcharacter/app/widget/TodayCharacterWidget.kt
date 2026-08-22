@@ -30,8 +30,11 @@ class TodayCharacterWidget : AppWidgetProvider() {
             try {
                 // **시간 상한이 있어야 한다** — `goAsync()`가 준 시간을 넘기면 시스템이
                 // 프로세스를 거둬 가고, 그러면 아래 `pendingResult.finish()`에 닿지도 못한다.
-                // 이 갈래는 생일 상태변화 전량과(경우에 따라) **캐릭터 표 전량**을 올리므로
-                // 저장소가 커질수록 그 위험이 커진다 — 이름 하나를 고르려고 그런다.
+                // 랜덤 갈래는 2026.08.22에 **한 행 질의**로 내렸다(`getRandomCharacter`).
+                // 남은 적재는 생일 상태변화(`fieldKey = __birth`)뿐이고, 그쪽을 날짜로 더
+                // 좁히려면 윤년 보정 규칙(2/29 → 평년 2/28)을 `BirthdayHelper` 밖으로
+                // 꺼내야 해서 **별건으로 남긴다** — 그 규칙이 두 벌이 되면 축하 창이
+                // 오늘 맞지 않은 행의 날짜를 적는 부류가 되살아난다.
                 // 형제 위젯(`RecentCharactersWidget`)이 같은 자리를 이미 이렇게 묶어 두었는데
                 // 이 위젯만 빠져 있었다.
                 val widgetText: String = withTimeoutOrNull(5000L) {
@@ -48,9 +51,9 @@ class TodayCharacterWidget : AppWidgetProvider() {
                             .map { it.name }
                         context.getString(R.string.widget_birthday_today, names.joinToString(", "))
                     } else {
-                        val allChars = db.characterDao().getAllCharactersList()
-                        if (allChars.isNotEmpty()) {
-                            val random = allChars.random()
+                        // **한 행만 묻는다** — 종전에는 표 전량을 올린 뒤 하나를 골랐다.
+                        val random = db.characterDao().getRandomCharacter()
+                        if (random != null) {
                             context.getString(R.string.widget_random_character, random.name)
                         } else {
                             context.getString(R.string.widget_no_birthday)

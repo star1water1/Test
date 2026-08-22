@@ -30,6 +30,56 @@ class WorldPackageFactionRelationshipsTest {
         displayOrder = order
     )
 
+    /**
+     * **좁혀 읽어도 결과가 같다** — 내보내기가 표 전량 대신 *이 세력들에 닿는 관계*만
+     * 읽어도 되는 근거다 (2026.08.22).
+     *
+     * 앞 판은 이 자리를 전량으로 남기며 *"매퍼가 범위 밖까지 세어 고지하므로 좁히면 그
+     * 계수가 달라진다"*고 적었는데, 매퍼의 계약은 그 반대다: `droppedCount`는 **한쪽 끝만**
+     * 걸친 관계만 세고 **양쪽 다 밖인 관계는 세지 않는다.** 좁히기로 빠지는 것이 정확히
+     * 그 *양쪽 다 밖*뿐이므로 `items`도 `droppedCount`도 움직이지 않는다.
+     *
+     * 이 시험이 없으면 다음 판이 같은 오해로 질의를 전량으로 되돌린다.
+     */
+    @Test
+    fun `양쪽 다 집합 밖인 관계는 있으나 없으나 결과가 같다`() {
+        val a = faction(1, "왕국")
+        val b = faction(2, "제국")
+        val outer1 = faction(8, "타세계관1", universeId = 9L)
+        val outer2 = faction(9, "타세계관2", universeId = 9L)
+
+        val touching = listOf(
+            rel(1, 2),          // 양쪽 안 → items
+            rel(1, 8),          // 한쪽 걸침 → droppedCount
+            rel(9, 2)           // 한쪽 걸침 → droppedCount
+        )
+        // 좁힌 질의가 읽지 않는 행 — 양쪽 다 내보내는 집합 밖이다.
+        val bothOutside = listOf(rel(8, 9), rel(9, 8))
+
+        val narrowed = WorldPackageFactionRelationships.toPortable(listOf(a, b), touching)
+        val full = WorldPackageFactionRelationships.toPortable(listOf(a, b), touching + bothOutside)
+
+        assertEquals(full.droppedCount, narrowed.droppedCount)
+        assertEquals(2, narrowed.droppedCount)
+        assertEquals(full.items, narrowed.items)
+        assertEquals(1, narrowed.items.size)
+    }
+
+    /** 좁힌 목록의 **순서**가 달라도 산출은 같다 — 매퍼가 자기 안에서 다시 정렬한다. */
+    @Test
+    fun `입력 순서가 달라도 같은 산출이 나온다`() {
+        val a = faction(1, "왕국")
+        val b = faction(2, "제국")
+        val c = faction(3, "연합")
+        val rels = listOf(rel(1, 2, order = 2), rel(2, 3, order = 1), rel(1, 3, order = 0))
+
+        val forward = WorldPackageFactionRelationships.toPortable(listOf(a, b, c), rels)
+        val reversed = WorldPackageFactionRelationships.toPortable(listOf(a, b, c), rels.reversed())
+
+        assertEquals(forward.items, reversed.items)
+        assertEquals(forward.droppedCount, reversed.droppedCount)
+    }
+
     @Test
     fun `양쪽이 내보내는 집합 안이면 code로 실린다`() {
         val a = faction(1, "왕국")

@@ -35,6 +35,22 @@ interface FactionRelationshipDao {
     @Query("SELECT * FROM faction_relationships ORDER BY displayOrder, createdAt")
     suspend fun getAllRelationshipsList(): List<FactionRelationship>
 
+    /**
+     * 한쪽 끝(factionId1)이 목록 안인 관계 — 월드패키지 내보내기의 범위 질의. 짝은 [getRelationshipsByEnd2].
+     *
+     * **끝마다 따로 묻는 이유는 바인드 상한이다** (R-54). `factionId1 IN (:ids) OR factionId2 IN (:ids)`는
+     * Room이 목록을 **두 번** 펼쳐 변수를 `2 × 길이`만큼 쓰므로 조각 상한(900)이 1,800이 되어
+     * API 31 미만의 기본 상한(999)을 넘긴다 — 캐릭터 관계가 2026.08.22까지 그 모양이었다
+     * (`CharacterRelationshipDao.getRelationshipIdsByEnd1`이 같은 이유로 갈린 짝이다).
+     * 두 끝이 서로 다른 조각에 나뉘어도 같은 행이 나오므로 **호출부가 id로 겹을 없앤다.**
+     */
+    @Query("SELECT * FROM faction_relationships WHERE factionId1 IN (:factionIds)")
+    suspend fun getRelationshipsByEnd1(factionIds: List<Long>): List<FactionRelationship>
+
+    /** 다른 쪽 끝(factionId2)이 목록 안인 관계 — 짝은 [getRelationshipsByEnd1]. */
+    @Query("SELECT * FROM faction_relationships WHERE factionId2 IN (:factionIds)")
+    suspend fun getRelationshipsByEnd2(factionIds: List<Long>): List<FactionRelationship>
+
     @Query("SELECT * FROM faction_relationships WHERE id = :id")
     suspend fun getById(id: Long): FactionRelationship?
 

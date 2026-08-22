@@ -22,6 +22,24 @@ interface DuelMatchDao {
     @Query("SELECT * FROM duel_matches WHERE axisId = :axisId ORDER BY decidedAt ASC, id ASC")
     suspend fun getByAxis(axisId: Long): List<DuelMatch>
 
+    /**
+     * [getByAxis]의 **일괄 짝** — 축 목록으로 한 번에 읽는다 (R-54 통로 필수).
+     *
+     * ⚠️ **위 머리말의 "축을 넘나드는 전수 조회는 두지 않는다"를 어기는 것이 아니다.**
+     * 그 금지는 *표 전체*를 뜨는 질의를 두지 말라는 것이고, 이것은 **넘긴 축 id로 묶인다** —
+     * 읽는 양은 종전 루프가 읽던 것과 **같고**, 줄어드는 것은 질의 수뿐이다. 그래서 화면이
+     * 이것으로 표 전체를 올릴 길이 없다(축 목록을 스스로 만들어 넘겨야 한다).
+     *
+     * 쓰는 자리는 월드패키지 내보내기 하나다 — 종전에는 `axes.flatMap { getByAxis(it.id) }`라
+     * **축마다 질의 하나**였고 축 수에 상한이 없다.
+     *
+     * 조각을 이으면 `ORDER BY`가 경계에서 어긋나므로 **호출부가 다시 정렬한다** —
+     * `WorldPackageDuels.toPortable`이 `(decidedAt, code)`로 자기 안에서 다시 세우므로
+     * 그 자리는 입력 순서에 기대지 않는다(바이트 재현성 계약이 거기 산다).
+     */
+    @Query("SELECT * FROM duel_matches WHERE axisId IN (:axisIds) ORDER BY decidedAt ASC, id ASC")
+    suspend fun getByAxes(axisIds: List<Long>): List<DuelMatch>
+
     @Query("SELECT COUNT(*) FROM duel_matches WHERE axisId = :axisId")
     suspend fun countByAxis(axisId: Long): Int
 

@@ -641,10 +641,24 @@ class TrashRepository(
         val linkedStateChanges = ArrayList<CharacterStateChange>()
         if (stateKey != null) {
             // 함께 지워지는 캐릭터의 이력은 그 캐릭터 스냅샷이 통째로 담으므로 제외한다.
+            //
+            // **일괄로 묻는다** — 종전에는 참여 캐릭터마다 질의 하나였다(N+1). 사건 하나에
+            // 걸리는 인원에 상한이 없어(대규모 전투·집단 사망) 삭제 한 번이 질의 수백 개가
+            // 됐다. 바로 위 관계 이력 조회가 이미 `SqlInChunks`로 도는 그 꼴이다.
+            //
+            // **순서는 종전과 글자 그대로 같게 다시 세운다** — 스냅샷에 담기는 내용의
+            // 순서라 조각 경계에서 흐트러지면 안 된다. 종전 루프는 `characterIds` 차례로
+            // 돌며 각 캐릭터의 이력을 `year` 오름차순으로 붙였다(중복 id가 있으면 두 번
+            // 붙는 것까지 같다).
+            val byChar = SqlInChunks
+                .flat(characterIds.distinct(), reservedBinds = 1) {
+                    db.characterStateChangeDao().getChangesByCharacterIdsAndField(it, stateKey)
+                }
+                .groupBy { it.characterId }
             for (charId in characterIds) {
-                linkedStateChanges.addAll(
-                    db.characterStateChangeDao().getChangesByField(charId, stateKey)
-                )
+                byChar[charId]?.let { rows ->
+                    linkedStateChanges.addAll(rows.sortedBy { it.year })
+                }
             }
         }
 
