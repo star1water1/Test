@@ -105,6 +105,8 @@ class TrashFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 회전 뒤에는 고른 종류를 되살린다 — 칩 글자는 아래 `setupFilterControls`가 다시 적는다.
+        savedInstanceState?.getStringArray(STATE_SELECTED_TYPES)?.let { selectedTypes.addAll(it) }
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.toolbar.inflateMenu(R.menu.menu_trash)
@@ -150,10 +152,13 @@ class TrashFragment : Fragment() {
 
         binding.chipTypeFilter.setOnClickListener { showTypeFilterDialog() }
 
-        // **고른 종류를 칩 글자에 다시 적는다.** 고른 값은 프래그먼트가 들고 있어 화면이 다시
-        // 만들어져도(회전·되돌아오기) 살아남는데, 칩 글자는 XML 기본값("종류 전체")으로 되돌아간다.
-        // 그러면 목록은 걸러진 채로 칩만 *안 걸렸다*고 말하게 된다 — 검색칸·기간 칩은 안드로이드가
-        // 스스로 되살리므로 이 하나만 어긋났다.
+        // **고른 종류를 칩 글자에 다시 적는다.** 뷰만 다시 서는 길(되돌아오기)에서는 고른 값이
+        // 프래그먼트에 남아 있는데 칩 글자는 XML 기본값("종류 전체")으로 되돌아가고, 그러면
+        // 목록은 걸러진 채로 칩만 *안 걸렸다*고 말한다.
+        //
+        // ⚠️ **회전은 그 길이 아니다** — 프래그먼트가 통째로 다시 서므로 고른 값 자체가
+        // 사라진다(종전 주석은 회전도 살아남는다고 반대로 적어 두었다). 그래서 값은
+        // [onSaveInstanceState]가 지키고, 이 줄은 그것을 화면에 다시 적는다.
         updateTypeChipLabel()
     }
 
@@ -804,6 +809,13 @@ class TrashFragment : Fragment() {
             .show()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 고른 종류는 **사용자가 정한 상태**다 — 회전이면 프래그먼트가 새로 서므로 여기서만
+        // 살아남는다(검색칸·기간 칩은 뷰 상태 저장이 스스로 든다).
+        outState.putStringArray(STATE_SELECTED_TYPES, selectedTypes.toTypedArray())
+    }
+
     override fun onDestroyView() {
         binding.trashRecyclerView.adapter = null
         super.onDestroyView()
@@ -903,6 +915,9 @@ class TrashFragment : Fragment() {
     }
 
     companion object {
+        /** 고른 종류 필터를 회전 너머로 나르는 키 — 싣는 쪽과 꺼내는 쪽이 이 상수 하나를 쓴다(R-61의 결). */
+        private const val STATE_SELECTED_TYPES = "trash_selected_types"
+
         /** 알 수 없는 타입은 원문 그대로 보여준다 — 라벨이 없다고 항목을 숨기면 존재를 잃는다. */
         fun typeLabel(context: android.content.Context, entityType: String): String = when (entityType) {
             TrashSnapshot.TYPE_CHARACTER -> context.getString(R.string.trash_type_character)
