@@ -21,7 +21,6 @@ import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.google.android.material.tabs.TabLayout
-import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.BodySlot
@@ -1998,8 +1997,12 @@ class FieldEditDialog : DialogFragment() {
                         )
                     }
                 }
+                // **이름 없는 규칙은 규칙이 아니다** — 분류 결과가 빈 이름으로 나오면
+                // 화면에서 그 체형이 사라진 것과 구분되지 않는다. 못 읽은 것으로 본다.
+                val label = obj.stringOr("label", "")
+                if (label.isBlank()) return null
                 rules.add(BodyAnalysisConfig.BodyTypeRule(
-                    label = obj.stringOr("label", ""),
+                    label = label,
                     conditions = conditions,
                     priority = obj.optInt("priority", i)
                 ))
@@ -2024,6 +2027,8 @@ class FieldEditDialog : DialogFragment() {
         // 체형 분류 규칙
         val bodyTypeRules = if (binding.spinnerBodyTypePreset.selectedItemPosition == 2) {
             // 사용자 정의: JSON 파싱
+            // 저장 검증(`saveField`)을 이미 지났다 — 여기서 못 읽으면 그 검증이 뚫린 것이므로
+            // 마지막 안전망으로만 옛 규칙을 든다(조용한 갈음은 그 검증이 막는다).
             val jsonText = binding.editBodyTypeCustomJson.text.toString().trim()
             jsonToBodyTypeRules(jsonText) ?: currentBodyTypeRules
         } else {
@@ -2391,6 +2396,30 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // 체형 분류 '사용자 정의' JSON은 **저장 시점에 검증한다** (R-27).
+        //
+        // 이 칸은 사용자가 **날 JSON을 손으로 적는** 유일한 자리인데, 종전에는 파싱 실패를
+        // `?: currentBodyTypeRules`로 조용히 갈음했다 — 창은 그대로 닫히고 결과 채널은
+        // "필드가 수정되었습니다"를 성공으로 알린다. **적은 규칙이 통째로 사라지는데
+        // 아무도 그 사실을 말하지 않는다**(변수 제어가 금지하는 무통보 폐기).
+        // 등급 표 검증과 같은 모양으로 막고 사유를 말한다 — 창이 닫히지 않으므로 입력이 남는다.
+        if (selectedType == FieldType.BODY_SIZE &&
+            binding.bodyTypeCustomJsonLayout.visibility == View.VISIBLE
+        ) {
+            val jsonText = binding.editBodyTypeCustomJson.text.toString().trim()
+            val messageRes = when {
+                jsonText.isBlank() -> R.string.body_type_custom_json_empty
+                jsonToBodyTypeRules(jsonText) == null -> R.string.body_type_custom_json_invalid
+                else -> null
+            }
+            if (messageRes != null) {
+                android.widget.Toast.makeText(
+                    requireContext(), getString(messageRes), android.widget.Toast.LENGTH_LONG
+                ).show()
+                return false
+            }
+        }
+
         // 대결 등급 산정을 **켜 두었는데 성립하지 않으면 저장을 막는다** (2026.08.07 사용자 보고).
         //
         // 종전에는 그대로 저장이 진행됐고, `applyDuelGradeConfig`가 축을 못 집으면 키를 쓰지
@@ -2600,22 +2629,25 @@ class FieldEditDialog : DialogFragment() {
         val oldTypeLabel = FieldType.fromName(oldType)?.label ?: oldType
         val newTypeLabel = newFieldType?.label ?: newType
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
-        val fieldValueDao = app.database.characterFieldValueDao()
+        // **조회도 쓰기도 이 필드의 종류를 본다**(R-29). 이 창은 캐릭터·사건·작품 필드를 모두
+        // 편집하는데 종전에는 캐릭터 값 표 하나만 물었다 — 사건·작품 필드는 값이 아무리 많아도
+        // 조회가 늘 비어 **확인 창이 원리적으로 뜰 수 없었고**, 호환 불가 값도 초기화되지 않은 채
+        // 타입만 바뀌었다(그 값들은 새 타입으로 읽히지 않아 화면과 통계에서 뜻을 잃는다).
+        val access = fieldValueAccess(app, field.entityType)
 
         lifecycleScope.launch {
             try {
-                val values = withContext(Dispatchers.IO) {
-                    fieldValueDao.getValuesByFieldDef(field.id)
+                val nonEmptyValues = withContext(Dispatchers.IO) {
+                    access.loadNonEmpty(field.id)
                 }
 
-                val nonEmptyValues = values.filter { it.value.isNotBlank() }
                 if (nonEmptyValues.isEmpty()) {
                     // 기존 값이 없으면 바로 저장
                     completeSave(field)
                     return@launch
                 }
 
-                val compatible = nonEmptyValues.count { isValueCompatible(it.value, newFieldType) }
+                val compatible = nonEmptyValues.count { isValueCompatible(it, newFieldType) }
                 val incompatible = nonEmptyValues.size - compatible
 
                 if (incompatible == 0) {
@@ -2629,7 +2661,7 @@ class FieldEditDialog : DialogFragment() {
                     .setMessage(getString(R.string.field_type_change_message,
                         oldTypeLabel, newTypeLabel, nonEmptyValues.size, compatible, incompatible))
                     .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
-                        resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newFieldType)
+                        resetIncompatibleValuesAndSave(app, field, access, newFieldType)
                     }
                     .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                         setSaveButtonEnabled(true)
@@ -2650,18 +2682,15 @@ class FieldEditDialog : DialogFragment() {
     private fun resetIncompatibleValuesAndSave(
         app: com.novelcharacter.app.NovelCharacterApp,
         field: FieldDefinition,
-        nonEmptyValues: List<CharacterFieldValue>,
+        access: FieldValueAccess,
         newType: FieldType?
     ) {
-        val fieldValueDao = app.database.characterFieldValueDao()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다
+                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다.
+                // **초기화가 보는 표는 고지가 센 표와 같다** — 접근자 하나가 둘을 함께 정한다.
                 app.database.withTransaction {
-                    val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
-                    toReset.forEach { fv ->
-                        fieldValueDao.update(fv.copy(value = ""))
-                    }
+                    access.resetIncompatible(field.id, newType)
                 }
                 withContext(Dispatchers.Main) {
                     completeSave(field)
@@ -2675,6 +2704,59 @@ class FieldEditDialog : DialogFragment() {
                     setSaveButtonEnabled(true)
                 }
             }
+        }
+    }
+
+    /**
+     * 값 표 접근 — **한 자리가 조회와 쓰기를 함께 정한다**(R-29).
+     *
+     * 종류로 갈리는 기능은 *조회·판정·순서·쓰기가 모두 같은 종류를 봐야* 한다. 둘을 따로
+     * 적으면 한쪽만 고쳐진다 — 이 창이 실제로 그 모양이었다(고지는 캐릭터 표를 세고
+     * 초기화도 캐릭터 표를 지우는데, 편집 대상은 사건·작품 필드일 수 있었다).
+     */
+    private class FieldValueAccess(
+        /** 이 정의에 달린 **비어 있지 않은** 값들. */
+        val loadNonEmpty: suspend (fieldId: Long) -> List<String>,
+        /** 새 타입으로 읽을 수 없는 값을 빈 값으로 되돌린다(트랜잭션 안에서 부른다). */
+        val resetIncompatible: suspend (fieldId: Long, newType: FieldType?) -> Unit
+    )
+
+    private fun fieldValueAccess(
+        app: com.novelcharacter.app.NovelCharacterApp,
+        entityType: String
+    ): FieldValueAccess = when (entityType) {
+        FieldDefinition.ENTITY_EVENT -> {
+            val dao = app.database.eventFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
+        }
+        FieldDefinition.ENTITY_NOVEL -> {
+            val dao = app.database.novelFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
+        }
+        else -> {
+            val dao = app.database.characterFieldValueDao()
+            FieldValueAccess(
+                loadNonEmpty = { id -> dao.getValuesByFieldDef(id).map { it.value }.filter { it.isNotBlank() } },
+                resetIncompatible = { id, newType ->
+                    dao.getValuesByFieldDef(id)
+                        .filter { it.value.isNotBlank() && !isValueCompatible(it.value, newType) }
+                        .forEach { dao.update(it.copy(value = "")) }
+                }
+            )
         }
     }
 

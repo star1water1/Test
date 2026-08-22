@@ -1847,6 +1847,8 @@
     <string name="body_rank_total">전체 %1$d명 중</string>
     <string name="body_rib_offset_label">흉곽 보정 (cm) — 밑가슴을 허리보다 이만큼 크게 봅니다. 높일수록 컵이 작아집니다.</string>
     <string name="body_rib_offset_hint">흉곽 보정값 (기본 6.0)</string>
+    <string name="body_type_custom_json_invalid">체형 분류 규칙을 읽을 수 없습니다 — JSON 배열이어야 하고 규칙마다 label이 있어야 합니다. 예: [{&quot;label&quot;:&quot;모래시계&quot;,&quot;conditions&quot;:{&quot;bustWaistDiff&quot;:{&quot;min&quot;:20}}}]</string>
+    <string name="body_type_custom_json_empty">체형 분류 규칙이 비어 있습니다 — 규칙을 적거나 프리셋을 고르세요.</string>
 
     <!-- 실루엣 크게 보기 (설계 5-4-3) -->
     <string name="silhouette_large_purpose">그림 참고용입니다. 수치를 고치려면 편집 화면의 실루엣으로 조정을 씁니다. 그림은 여성 성인 기준입니다.</string>
