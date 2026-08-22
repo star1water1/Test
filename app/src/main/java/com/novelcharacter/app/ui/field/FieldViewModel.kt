@@ -113,8 +113,15 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             val newId = universeRepository.insertField(field)
             // 생성 다이얼로그의 값 사전 등록분 — 해석·등재 규칙은 저장소가 단일 소스다
             // (종전에는 이 로직이 작품 경로와 두 벌이었고 실패 처리가 서로 달랐다).
-            app.fieldValueLibraryRepository.registerInitialValues(newId, field, initialValues)
-            val note = syncDefaultField(field.copy(id = newId), defaultField)
+            val outcome = app.fieldValueLibraryRepository
+                .registerInitialValues(newId, field, initialValues)
+            val note = listOfNotNull(
+                syncDefaultField(field.copy(id = newId), defaultField),
+                // **등재하지 못한 값을 말한다.** 종전에는 반환값을 버려서, 같은 조작의 고지가
+                // 화면마다 갈렸다(사건 편집만 말했다). 촉발은 중복이 아니라 DB 예외라
+                // 사용자는 자기가 적어 둔 값이 어디에도 없다는 것을 알 길이 없었다.
+                initialValuePartialNote(outcome)
+            ).joinToString("\n").takeIf { it.isNotBlank() }
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_added, field.name), note))
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
@@ -178,6 +185,17 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
      *
      * @return 사용자에게 보일 한 줄. 바뀐 것이 없으면 null.
      */
+    /**
+     * 사전 등록에 실패한 값을 말하는 한 줄 — **세 경로가 같은 문구를 쓴다**(사건 편집이
+     * 이미 쓰던 그것). 실패의 촉발은 중복이 아니라 DB 예외이고, 말하지 않으면 사용자는
+     * 자기가 미리 적어 둔 값이 어디에도 없다는 것을 알 길이 없다(개발 의도 2번).
+     */
+    private fun initialValuePartialNote(
+        outcome: com.novelcharacter.app.data.repository.FieldValueLibraryRepository.InitialValueOutcome
+    ): String? =
+        if (outcome.failed <= 0) null
+        else app.getString(R.string.event_field_initial_values_partial, outcome.failed)
+
     private suspend fun syncDefaultField(field: FieldDefinition, want: Boolean?): String? {
         if (want == null) return null
         val repo = app.defaultFieldTemplateRepository

@@ -1038,8 +1038,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         // 편차 0.0%·점수 100을 조용히 받았다(기준 문장은 그것을 '작품 평균'이라 불렀다).
         val peers = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
         val others = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
+        // **값을 캐릭터마다 묻지 않는다** — 작품의 캐스트 전원을 도는 루프라 질의 수가
+        // 인원에 비례한다(R-53·R-54). 실루엣 편집기의 이웃 조회와 같은 처방이다.
+        val valuesByChar = viewModel.getValuesForCharacters(allCharacters.map { it.id })
+            .groupBy { it.characterId }
         for (char in allCharacters) {
-            val charValues = viewModel.getValuesByCharacterList(char.id).associateBy { it.fieldDefinitionId }
+            val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
             resolve(charValues)?.let {
                 peers.add(it)
                 if (char.id != character.id) others.add(it)

@@ -271,6 +271,13 @@ class OrganizeFolderController(
                     bundle.deleteRepresentativeOf.joinToString(", ")
                 ))
             }
+            // 같은 삭제가 작품·세계관 카드의 그림도 끊는다 — 축을 가리지 않고 말한다(R-4).
+            if (bundle.deleteCardImageOf.isNotEmpty()) {
+                lines.add(fragment.getString(
+                    R.string.organize_folder_summary_delete_card_image,
+                    bundle.deleteCardImageOf.joinToString(", ")
+                ))
+            }
             lines.add(fragment.getString(R.string.organize_folder_summary_delete_originals))
         }
         if (plan.linkSets.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_sets, plan.linkSets.size))

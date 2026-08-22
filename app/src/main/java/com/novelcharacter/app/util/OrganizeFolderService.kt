@@ -104,7 +104,15 @@ object OrganizeFolderService {
          * 확인창이 "지우면 대표 지정이 풀린다"를 말하려면 여기 실어야 한다. 되돌릴 수 없는
          * 처분이므로 **결과를 먼저 말하는 것**이 R-4의 요구다.
          */
-        val deleteRepresentativeOf: List<String> = emptyList()
+        val deleteRepresentativeOf: List<String> = emptyList(),
+        /**
+         * `_삭제승인/`이 지울 이미지를 **카드 이미지로 쥔** 작품·세계관 이름들.
+         *
+         * 종전에는 캐릭터 축만 고지했다 — 같은 삭제가 작품·세계관 카드의 그림도 끊는데
+         * 확인창이 그 사실을 말하지 않았다. 되돌릴 수 없는 처분이므로 **결과를 먼저 말하는
+         * 것**이 R-4의 요구이고, 그 요구는 축을 가리지 않는다.
+         */
+        val deleteCardImageOf: List<String> = emptyList()
     ) {
         val isEmpty: Boolean get() = plan.isEmpty
 
@@ -403,9 +411,16 @@ object OrganizeFolderService {
                         ?.let { p -> p in deleteTargets } == true
                 }.map { it.name }
             }
+            // **작품·세계관 카드도 같은 삭제로 그림을 잃는다** — 캐릭터 축만 고지하던 자리다.
+            val cardImageOf = if (deleteTargets.isEmpty()) emptyList() else {
+                fun holds(json: String) = parsePaths(gson, json).any { canonical(it) in deleteTargets }
+                db.novelDao().getAllNovelsList().filter { holds(it.imagePaths) }.map { it.title } +
+                    db.universeDao().getAllUniversesList().filter { holds(it.imagePaths) }.map { it.name }
+            }
             PlanBundle(
                 plan, scan, mergedGroups, mergedOutsiders, storedByCanon.toMap(), candidates,
-                deleteRepresentativeOf = representativeOf
+                deleteRepresentativeOf = representativeOf,
+                deleteCardImageOf = cardImageOf
             )
         }
 

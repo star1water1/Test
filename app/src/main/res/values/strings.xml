@@ -2822,6 +2822,7 @@
     <string name="organize_folder_summary_delete">앱에서 삭제: %1$d장 (되돌릴 수 없습니다)</string>
     <string name="organize_folder_summary_delete_shared">이 중 %1$d장은 캐릭터 여럿이 함께 쓰고 있습니다.</string>
     <string name="organize_folder_summary_delete_representative">이 중에 캐릭터 %1$s의 대표 이미지가 있습니다. 지우면 대표 지정이 풀리고 무작위 표시로 돌아갑니다.</string>
+    <string name="organize_folder_summary_delete_card_image">이 중에 %1$s의 카드 이미지가 있습니다. 지우면 그 카드의 그림이 사라집니다.</string>
     <string name="organize_folder_summary_delete_originals">지운 파일의 원본은 폴더의 \'_처리됨\'에 남습니다.</string>
     <string name="organize_folder_result_deleted">앱에서 삭제 %1$d장 (%2$s 확보)</string>
     <string name="organize_folder_summary_unlink">링크 묶음 해제: %d장</string>

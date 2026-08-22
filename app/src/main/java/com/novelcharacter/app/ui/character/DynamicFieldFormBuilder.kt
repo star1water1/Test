@@ -480,9 +480,13 @@ class DynamicFieldFormBuilder(
             if (characters.isEmpty()) return@launch
             val heightField = fieldDefinitions.firstOrNull { SemanticRole.fromConfig(it.config) == SemanticRole.HEIGHT }
             val weightField = fieldDefinitions.firstOrNull { SemanticRole.fromConfig(it.config) == SemanticRole.WEIGHT }
+            // **값을 캐릭터마다 묻지 않는다** — 작품의 캐스트 전원을 도는 루프라 질의 수가
+            // 인원에 비례한다(R-53·R-54). 일괄 통로가 이미 있다.
+            val valuesByChar = viewModel.getValuesForCharacters(characters.map { it.id })
+                .groupBy { it.characterId }
             val peers = mutableMapOf<Long, com.novelcharacter.app.util.BodyMeasurements>()
             for (character in characters) {
-                val values = viewModel.getValuesByCharacterList(character.id).associateBy { it.fieldDefinitionId }
+                val values = valuesByChar[character.id].orEmpty().associateBy { it.fieldDefinitionId }
                 val raw = values[bodySizeField.id]?.value ?: continue
                 peers[character.id] = com.novelcharacter.app.util.BodyMeasurements.resolve(
                     field = bodySizeField,

@@ -763,10 +763,15 @@ class NovelListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val result = try {
                 val newId = viewModel.insertNovelField(toInsert)
-                viewModel.registerInitialValues(newId, toInsert, initialValues)
+                val outcome = viewModel.registerInitialValues(newId, toInsert, initialValues)
                 com.novelcharacter.app.util.OpResult.success(
                     com.novelcharacter.app.util.OpResult.CAT_FIELD,
-                    getString(R.string.novel_field_created, field.name)
+                    getString(R.string.novel_field_created, field.name),
+                    // 등재하지 못한 값을 말한다 — 사건 편집이 쓰는 그 문구를 그대로 쓴다.
+                    // 촉발은 중복이 아니라 DB 예외라, 말하지 않으면 사용자는 자기가 미리
+                    // 적어 둔 값이 어디에도 없다는 것을 알 길이 없다(개발 의도 2번).
+                    outcome.failed.takeIf { it > 0 }
+                        ?.let { getString(R.string.event_field_initial_values_partial, it) }
                 )
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 android.util.Log.e("NovelList", "Duplicate novel field key: ${field.key}", e)
