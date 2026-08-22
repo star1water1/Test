@@ -778,6 +778,7 @@
     <string name="rel_change_year">연도</string>
     <string name="rel_change_linked_event">연결 사건 (선택)</string>
     <string name="rel_change_no_event">없음</string>
+    <string name="rel_change_event_outside">이 작품 밖 사건 (#%1$d)</string>
     <string name="add_relationship_change">관계 변화 추가</string>
     <string name="edit_relationship_change">관계 변화 편집</string>
     <string name="relationship_changes_title">관계 변화 이력</string>

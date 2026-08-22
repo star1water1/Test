@@ -66,11 +66,21 @@ class DynamicFieldFormBuilder(
     private fun getString(resId: Int): String = contextGetter()?.getString(resId) ?: ""
     private fun getString(resId: Int, arg: Any): String = contextGetter()?.getString(resId, arg) ?: ""
 
-    /** 입력 위젯의 현재 값 직렬화 — 회전 Bundle과 영구 드래프트가 같은 포맷을 공유한다 */
+    /**
+     * 입력 위젯의 현재 값 직렬화 — 회전 Bundle과 영구 드래프트가 같은 포맷을 공유한다.
+     *
+     * **스피너는 위치가 아니라 값으로 담는다**(2026.08.22). 위치로 담으면 옵션 목록이
+     * 바뀐 뒤 되살릴 때 엉뚱한 것을 고르고, 무엇보다 **고아 값**(지금 옵션에 없지만 저장된
+     * 값 — [loadFieldValues]가 스피너 맨 뒤에 덧붙여 보존한다)의 자리가 언제나 *덧붙이기 전*
+     * 어댑터의 범위 밖이라 되살리기가 조용히 건너뛰었다. 그러면 선택이 '선택 없음'으로
+     * 남고 [collectFieldValues]가 빈 값을 걷어, **회전 한 번에 그 값이 지워진다.**
+     * 값으로 담으면 되살리기가 [loadFieldValues]와 **같은 규칙**(찾거나, 없으면 덧붙인다)을 쓴다.
+     */
     private fun widgetStateString(widget: Any): String = when (widget) {
         is MaterialAutoCompleteTextView -> widget.text.toString()
         is TextInputEditText -> widget.text.toString()
-        is Spinner -> widget.selectedItemPosition.toString()
+        // 걷는 자리와 같은 판정이다 — 0번은 '선택 없음'이라 빈 값이다([collectFieldValues]).
+        is Spinner -> if (widget.selectedItemPosition > 0) widget.selectedItem?.toString().orEmpty() else ""
         is LinearLayout -> {
             val parts = mutableListOf<String>()
             for (i in 0 until widget.childCount) {
@@ -84,6 +94,7 @@ class DynamicFieldFormBuilder(
 
     /** 회전 보존: 동적 필드 입력값을 Bundle에 기록한다 (onSaveInstanceState용) */
     fun saveStateTo(outState: Bundle) {
+        outState.putString(STATE_FORMAT_KEY, FORMAT_SPINNER_VALUE.toString())
         for (field in fieldDefinitions) {
             val widget = fieldInputMap[field.id] ?: continue
             val fieldType = FieldType.fromName(field.type)
@@ -100,6 +111,14 @@ class DynamicFieldFormBuilder(
             if (FieldType.fromName(field.type) == FieldType.CALCULATED) continue
             fieldValues[field.id.toString()] = widgetStateString(widget)
         }
+        // **꾸러미가 제 형식을 스스로 말한다**(R-58) — 드래프트는 앱 판올림을 넘어 살아남으므로,
+        // 옛 판이 적은 *위치*와 새 판이 적는 *값*을 읽는 자리가 가릴 수 있어야 한다.
+        // 키가 `__`로 시작해 필드 id(숫자)와 부딪치지 않는다(R-40).
+        //
+        // ⚠️ **빈 묶음에는 붙이지 않는다.** 부르는 쪽이 *"빈 묶음이면 소비하지 않는다"*로
+        // 무음 유실을 막고 있는데(폼 적재 전에 담긴 드래프트가 그 모양이다), 표식을 무조건
+        // 넣으면 그 묶음이 더는 비어 보이지 않아 **필드값이 전량 삭제된다.**
+        if (fieldValues.isNotEmpty()) fieldValues[STATE_FORMAT_KEY] = FORMAT_SPINNER_VALUE.toString()
         return fieldValues
     }
 
@@ -542,47 +561,43 @@ class DynamicFieldFormBuilder(
                         }
                     }
                 }
-                is Spinner -> {
-                    val fieldType = FieldType.fromName(field.type)
-                    if (fieldType == FieldType.SELECT) {
-                        val options = parseSelectOptions(field.config)
-                        val optionWithBlank = mutableListOf(getString(R.string.no_selection))
-                        optionWithBlank.addAll(options)
-                        val idx = optionWithBlank.indexOf(savedValue)
-                        if (idx >= 0) {
-                            widget.setSelection(idx)
-                        } else if (savedValue.isNotBlank()) {
-                            // 고아 값: 현재 옵션에 없지만 저장된 값을 스피너에 추가하여 보존
-                            optionWithBlank.add(savedValue)
-                            val ctx = contextGetter() ?: continue
-                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, optionWithBlank).also {
-                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                            }
-                            widget.setSelection(optionWithBlank.size - 1)
-                        }
-                    } else if (fieldType == FieldType.GRADE) {
-                        val grades = parseGradeOptions(field.config)
-                        val gradeWithBlank = mutableListOf(getString(R.string.no_grade_selected))
-                        gradeWithBlank.addAll(grades)
-                        val idx = gradeWithBlank.indexOf(savedValue)
-                        if (idx >= 0) {
-                            widget.setSelection(idx)
-                        } else if (savedValue.isNotBlank()) {
-                            gradeWithBlank.add(savedValue)
-                            val ctx = contextGetter() ?: continue
-                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, gradeWithBlank).also {
-                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                            }
-                            widget.setSelection(gradeWithBlank.size - 1)
-                        }
-                    }
-                }
+                // 적재와 되살리기가 **같은 함수**를 쓴다 — 두 벌로 적힌 동안 되살리기 쪽만
+                // 고아 값을 잃었다(그 유실은 화면에 아무 흔적도 남기지 않는다).
+                is Spinner -> selectSpinnerValue(widget, savedValue)
             }
         }
     }
 
+    /**
+     * 스피너에 **값으로** 고른다 — 지금 옵션에 없으면 그 값을 맨 뒤에 덧붙여 보존한다.
+     *
+     * 덧붙이는 이유는 자율성이다: 옵션 목록이 바뀌어도 **사용자가 적어 둔 값은 사라지지
+     * 않고**, 그것을 그대로 둘지 새 옵션으로 바꿀지는 사용자가 고른다. 이 규칙이 한 자리에
+     * 있어야 적재(DB)와 되살리기(회전·드래프트)가 갈리지 않는다.
+     */
+    private fun selectSpinnerValue(widget: Spinner, value: String) {
+        val adapter = widget.adapter ?: return
+        if (value.isBlank()) {
+            if (adapter.count > 0) widget.setSelection(0)   // 0번이 '선택 없음'이다
+            return
+        }
+        // 규칙 자체는 순수 계층이 든다 — 관계 편집 창의 스피너들과 **같은 함수**다.
+        val current = (0 until adapter.count).map { adapter.getItem(it)?.toString().orEmpty() }
+        val choice = com.novelcharacter.app.util.SpinnerChoice.resolve(current, value)
+        if (choice.appended) {
+            val ctx = contextGetter() ?: return
+            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, choice.items).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+        }
+        if (choice.index >= 0) widget.setSelection(choice.index)
+    }
+
     /** 회전/드래프트로 보존된 입력값을 폼 위젯에 복원한다 */
     fun restoreFieldValues(saved: Bundle) {
+        // 표식이 없으면 **옛 드래프트**다 — 그 판은 스피너를 위치로 적었다(R-58: 옛 매직을
+        // 읽는 길을 남긴다). 회전 번들은 언제나 같은 판이 적으므로 늘 표식이 있다.
+        val spinnerByPosition = (saved.getString(STATE_FORMAT_KEY)?.toIntOrNull() ?: 0) < FORMAT_SPINNER_VALUE
         for (field in fieldDefinitions) {
             val widget = fieldInputMap[field.id] ?: continue
             val fieldType = FieldType.fromName(field.type)
@@ -593,8 +608,13 @@ class DynamicFieldFormBuilder(
                 is MaterialAutoCompleteTextView -> widget.setText(value, false)
                 is TextInputEditText -> widget.setText(value)
                 is Spinner -> {
-                    val pos = value.toIntOrNull() ?: 0
-                    if (pos in 0 until widget.adapter.count) widget.setSelection(pos)
+                    if (spinnerByPosition) {
+                        // 옛 드래프트(형식 표식 없음) — 그때는 위치로 적었다.
+                        val pos = value.toIntOrNull() ?: 0
+                        if (pos in 0 until widget.adapter.count) widget.setSelection(pos)
+                    } else {
+                        selectSpinnerValue(widget, value)
+                    }
                 }
                 is LinearLayout -> {
                     val parts = value.split("\u001F")
@@ -1199,5 +1219,19 @@ class DynamicFieldFormBuilder(
             }
         }
         return values
+    }
+
+    companion object {
+        /**
+         * 담긴 값의 **형식 표식** 키 (R-58 · R-40).
+         *
+         * 회전 번들과 영구 드래프트가 같은 포맷을 공유하는데, 드래프트만 앱 판올림을 넘어
+         * 살아남는다. 이 표식이 없으면 **옛 드래프트**이고 그 판은 스피너를 *위치*로 적었다.
+         * `__` 접두라 필드 id(숫자 문자열)와 결코 부딪치지 않는다.
+         */
+        const val STATE_FORMAT_KEY = "__field_value_format"
+
+        /** 스피너를 **값**으로 적는 형식. 표식이 없거나 이보다 작으면 옛 판(위치)이다. */
+        const val FORMAT_SPINNER_VALUE = 1
     }
 }
