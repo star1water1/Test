@@ -40,8 +40,16 @@ object AppLogger {
         if (!::logFile.isInitialized) return
         try {
             synchronized(this) {
+                // **회전이지 삭제가 아니다** (2026.08.22). 종전에는 `logFile.delete()`라
+                // 상한에 닿는 순간 기록이 통째로 사라졌고, 목록이 *"총 137건"*에서 **1건**으로
+                // 떨어졌다 — 간헐적 결함을 좇던 사용자가 쌓아 온 것이 예고도 흔적도 없이
+                // 없어지는 자리다(형제인 휴지통은 넘치는 만큼만 덜어낸다).
+                // 남길 것을 고르는 판정은 [LogRotation]이 든다(순수라 시험이 잡는다).
                 if (logFile.exists() && logFile.length() > MAX_SIZE) {
-                    logFile.delete()
+                    val rotated = LogRotation.rotate(
+                        logFile.readText(), MAX_SIZE / 2, ENTRY_SEPARATOR
+                    )
+                    logFile.writeText(rotated)
                 }
                 logFile.appendText(buildString {
                     appendLine(ENTRY_SEPARATOR)

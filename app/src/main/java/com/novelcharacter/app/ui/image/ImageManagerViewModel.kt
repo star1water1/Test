@@ -1008,13 +1008,34 @@ class ImageManagerViewModel(
                 val now = System.currentTimeMillis()
                 for (uri in uris) {
                     val path = ImageImportHelper.importImage(getApplication(), uri, "img", settings)
-                    if (path != null) {
-                        runCatching {
-                            db.imageMetaDao().insert(com.novelcharacter.app.data.model.ImageMeta(path = path, importedAt = now))
-                        }
-                        imported++
-                    } else {
+                    if (path == null) {
                         failed++
+                        continue
+                    }
+                    // **행이 실제로 생겼는지 본다** (2026.08.22). 종전에는 `runCatching`의 결과를
+                    // 버리고 무조건 `imported++`였다. 이 자리의 실패는 **파일이 이미 내부
+                    // 저장소에 복사된 뒤**라 조용한 유실 둘이 함께 났다: ⓐ `image_meta` 행 없는
+                    // **고아 파일**이 용량만 먹은 채 남고 ⓑ 결과가 *"5장 편입"*이라 **거짓말**을
+                    // 하는데 목록에는 그 이미지가 없다 — 사용자는 왜 안 보이는지 알 길이 없다.
+                    //
+                    // **형제 자리는 이미 이렇게 한다** — 정리 폴더 편입(`OrganizeFolderService`)이
+                    // 같은 사유를 주석으로 박아 두고 실패 시 사본을 지운 뒤 실패로 센다.
+                    // 이 자리만 그 갱신을 못 받았다.
+                    val rowId = runCatching {
+                        db.imageMetaDao().insert(
+                            com.novelcharacter.app.data.model.ImageMeta(path = path, importedAt = now))
+                    }.getOrNull()
+                    when {
+                        rowId == null -> {
+                            // 행이 안 생겼으면 그 사본은 **아무도 가리키지 않는 파일**이다 — 지운다.
+                            runCatching { java.io.File(path).delete() }
+                            failed++
+                        }
+                        // `insert`는 IGNORE라 충돌이 예외가 아니라 `-1`이다. 그 경우 그 경로를
+                        // 이미 **다른 행이 소유**하므로 사본을 지우지 않는다(남의 이미지를
+                        // 지우게 된다). 다만 이번 편입으로 늘어난 것은 없으므로 성공으로 세지 않는다.
+                        rowId < 0 -> failed++
+                        else -> imported++
                     }
                 }
                 ImportResult(imported, failed)

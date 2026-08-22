@@ -253,61 +253,41 @@ class NovelCharacterApp : Application() {
                     val deadVal = aliveConfig.stringOr("deadValue", "")
                     if (aliveVal.isBlank() || deadVal.isBlank()) continue
 
-                    // 해당 세계관 캐릭터 처리
-                    val novels = db.novelDao().getNovelsByUniverseList(universe.id)
-                    for (novel in novels) {
-                        val characters = db.characterDao().getCharactersByNovelList(novel.id)
-                        for (char in characters) {
-                            val changes = db.characterStateChangeDao().getChangesByCharacterList(char.id)
-                            val hasDeath = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_DEATH }
-                            val hasBirth = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_BIRTH }
-                            val hasAlive = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE }
+                    // 해당 세계관 캐릭터 처리 — **작품을 거치지 않고 한 질의로 모은다.**
+                    // 종전에는 작품마다 캐릭터를 따로 물어 질의가 작품 수만큼 늘었다.
+                    val characters = db.characterDao().getCharactersByUniverseList(universe.id)
+                    syncAliveFor(characters, aliveFieldFinal, aliveVal, deadVal)
+                }
 
-                            if (hasAlive) continue // 이미 __alive 있으면 스킵
-
-                            val currentValue = db.characterFieldValueDao().getValue(char.id, aliveFieldFinal.id)
-
-                            if (hasDeath) {
-                                // 사망연도 있는 캐릭터 → alive=사망 + __alive="dead"
-                                if (currentValue == null || currentValue.value != deadVal) {
-                                    if (currentValue != null) {
-                                        db.characterFieldValueDao().update(currentValue.copy(value = deadVal))
-                                    } else {
-                                        db.characterFieldValueDao().insert(
-                                            com.novelcharacter.app.data.model.CharacterFieldValue(
-                                                characterId = char.id, fieldDefinitionId = aliveFieldFinal.id, value = deadVal
-                                            )
-                                        )
-                                    }
-                                }
-                                db.characterStateChangeDao().insert(
-                                    com.novelcharacter.app.data.model.CharacterStateChange(
-                                        characterId = char.id, year = 0,
-                                        fieldKey = com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE,
-                                        newValue = "dead"
-                                    )
-                                )
-                            } else if (hasBirth && (currentValue == null || currentValue.value.isBlank())) {
-                                // 출생연도만 있고 alive 비어있음 → alive=생존 + __alive="alive"
-                                if (currentValue != null) {
-                                    db.characterFieldValueDao().update(currentValue.copy(value = aliveVal))
-                                } else {
-                                    db.characterFieldValueDao().insert(
-                                        com.novelcharacter.app.data.model.CharacterFieldValue(
-                                            characterId = char.id, fieldDefinitionId = aliveFieldFinal.id, value = aliveVal
-                                        )
-                                    )
-                                }
-                                db.characterStateChangeDao().insert(
-                                    com.novelcharacter.app.data.model.CharacterStateChange(
-                                        characterId = char.id, year = 0,
-                                        fieldKey = com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE,
-                                        newValue = "alive"
-                                    )
-                                )
-                            }
+                // **미분류(작품 미배정) 캐릭터** — 전역 구역의 alive 필드로 같은 셈을 돈다.
+                //
+                // 종전에는 이 갈래가 아예 없었다. 위 반복이 *작품을 거쳐서만* 캐릭터에 닿으므로
+                // `novelId IS NULL`인 캐릭터는 **어떤 반복에도 들어오지 못했고**, 사망 이력이
+                // 있어도 `__alive`가 안 생겨 연표·통계·필터에서 그 캐릭터만 생존자로 남았다.
+                // 그리고 아래 플래그가 서면 다시는 돌지 않는다.
+                //
+                // 이 저장소는 같은 부류를 이미 글자로 적어 두었다 — `CharacterStateChangeDao`의
+                // *"NULL 외래키는 내부 조인에서 떨어지므로 …는 이 캐릭터들을 절대 만나지 못한다"*(B-13).
+                // 거기서는 미분류 갈래를 따로 만들었는데 이 마이그레이션만 그 갈래가 없었다.
+                runCatching {
+                    val globalAlive = db.fieldDefinitionDao().getGlobalFieldsList()
+                        .find {
+                            com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
+                                com.novelcharacter.app.data.model.SemanticRole.ALIVE
+                        }
+                    if (globalAlive != null) {
+                        val cfg = org.json.JSONObject(globalAlive.config)
+                        val aliveVal = cfg.stringOr("aliveValue", "")
+                        val deadVal = cfg.stringOr("deadValue", "")
+                        if (aliveVal.isNotBlank() && deadVal.isNotBlank()) {
+                            val ids = db.characterDao().getUnclassifiedCharacterIds()
+                            val unassigned = com.novelcharacter.app.util.SqlInChunks
+                                .flat(ids) { db.characterDao().getCharactersByIds(it) }
+                            syncAliveFor(unassigned, globalAlive, aliveVal, deadVal)
                         }
                     }
+                }.onFailure {
+                    android.util.Log.w("NovelCharacterApp", "Alive sync (unassigned) skipped", it)
                 }
 
                 prefs.edit().putBoolean("alive_sync_migrated", true).apply()
@@ -315,6 +295,67 @@ class NovelCharacterApp : Application() {
             } catch (e: Exception) {
                 android.util.Log.e("NovelCharacterApp", "Alive sync migration failed", e)
             }
+        }
+    }
+
+    /**
+     * 생존여부 1회 마이그레이션의 몸통 — **캐릭터 묶음 하나**를 그 구역의 alive 필드에 맞춘다.
+     *
+     * 세계관 갈래와 미분류 갈래가 **같은 함수**를 탄다(R-33). 종전에는 몸통이 세계관 반복
+     * 안에만 있어 미분류 캐릭터를 만날 자리가 아예 없었다.
+     *
+     * **캐릭터마다 묻지 않는다.** 종전에는 이력과 alive 값을 한 명씩 두 질의로 물어,
+     * 캐릭터 수백 명 저장소의 업데이트 후 첫 실행에서 1,000회 안팎의 왕복이 났다.
+     * 둘 다 일괄 짝이 있으므로 한 번에 떠서 메모리 색인으로 판정한다(R-54 통로를 지난다).
+     */
+    private suspend fun syncAliveFor(
+        characters: List<com.novelcharacter.app.data.model.Character>,
+        aliveField: com.novelcharacter.app.data.model.FieldDefinition,
+        aliveVal: String,
+        deadVal: String
+    ) {
+        if (characters.isEmpty()) return
+        val ids = characters.map { it.id }
+        val changesByChar = com.novelcharacter.app.util.SqlInChunks
+            .flat(ids) { database.characterStateChangeDao().getChangesByCharacterIds(it) }
+            .groupBy { it.characterId }
+        val valueByChar = com.novelcharacter.app.util.SqlInChunks
+            .flat(ids) { database.characterFieldValueDao().getValuesForCharacters(it) }
+            .filter { it.fieldDefinitionId == aliveField.id }
+            .associateBy { it.characterId }
+
+        for (char in characters) {
+            val changes = changesByChar[char.id].orEmpty()
+            val keys = com.novelcharacter.app.data.model.CharacterStateChange
+            val hasDeath = changes.any { it.fieldKey == keys.KEY_DEATH }
+            val hasBirth = changes.any { it.fieldKey == keys.KEY_BIRTH }
+            val hasAlive = changes.any { it.fieldKey == keys.KEY_ALIVE }
+            if (hasAlive) continue // 이미 __alive 있으면 스킵
+
+            val currentValue = valueByChar[char.id]
+            val newValue = when {
+                hasDeath -> deadVal
+                hasBirth && (currentValue == null || currentValue.value.isBlank()) -> aliveVal
+                else -> continue
+            }
+            val marker = if (hasDeath) "dead" else "alive"
+
+            if (currentValue == null || currentValue.value != newValue) {
+                if (currentValue != null) {
+                    database.characterFieldValueDao().update(currentValue.copy(value = newValue))
+                } else {
+                    database.characterFieldValueDao().insert(
+                        com.novelcharacter.app.data.model.CharacterFieldValue(
+                            characterId = char.id, fieldDefinitionId = aliveField.id, value = newValue
+                        )
+                    )
+                }
+            }
+            database.characterStateChangeDao().insert(
+                com.novelcharacter.app.data.model.CharacterStateChange(
+                    characterId = char.id, year = 0, fieldKey = keys.KEY_ALIVE, newValue = marker
+                )
+            )
         }
     }
 
