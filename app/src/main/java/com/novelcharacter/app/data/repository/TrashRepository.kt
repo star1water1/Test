@@ -47,6 +47,7 @@ import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1721,7 +1722,7 @@ class TrashRepository(
                 skippedMemberships++
                 continue
             }
-            if (!seenMemberships.add(listOf(newId, m.joinYear, m.leaveYear, m.leaveType))) continue
+            if (!seenMemberships.add(FactionMembershipMatcher.naturalKey(newId, m))) continue
             plannedMemberships.add(m.copy(factionId = newId))
         }
 
@@ -2028,10 +2029,14 @@ class TrashRepository(
         // 먼저 비우면 백업 이후 사용자가 더한 것까지 사라진다.
         var restoredMemberships = 0
         if (RestoreModes.SCOPE_MEMBERSHIPS in scope) {
+            // **접는 키는 계획 쪽과 같아야 한다**(`FactionMembershipMatcher.naturalKey`).
+            // 종전에는 여기만 세력 id 하나로 접어, 같은 세력에 가입→탈퇴→재가입한 이력
+            // 두 줄 중 **첫 줄만 되살아나고 나머지가 말없이 사라졌다**(그 줄은 되살린 수에도
+            // 안 세어져 고지까지 함께 틀렸다). 유니크 제약이 없는 표라 아무도 막지 못한다.
             val existing = db.factionMembershipDao().getMembershipsByCharacterList(living.id)
-                .map { it.factionId }.toHashSet()
+                .mapTo(HashSet()) { FactionMembershipMatcher.naturalKey(it.factionId, it) }
             for (membership in plan.memberships) {
-                if (!existing.add(membership.factionId)) continue
+                if (!existing.add(FactionMembershipMatcher.naturalKey(membership.factionId, membership))) continue
                 db.factionMembershipDao().insert(membership.copy(id = 0, characterId = living.id))
                 restoredMemberships++
             }

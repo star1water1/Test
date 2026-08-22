@@ -44,6 +44,19 @@ object FactionMembershipMatcher {
     )
 
     /**
+     * 소속 이력의 **자연키** — `(세력, 가입연도, 탈퇴연도, 탈퇴유형)`.
+     *
+     * `faction_memberships`에는 유니크 제약이 없다(**재가입 이력을 보존하려고 그렇게 뒀다**).
+     * 그래서 "같은 이력인가"를 묻는 자리마다 키를 손으로 적게 되는데, 그것이 두 벌로 적히면
+     * 반드시 갈린다 — 실제로 되돌리기가 세력 id 하나만 보고 접어 **같은 세력의 재가입 이력
+     * 두 줄 중 첫 줄만 되살리고 나머지를 말없이 버렸다**(계획 쪽은 네 칸을 다 보고 있었다).
+     *
+     * @param factionId 해석된 **지금의** 세력 id — 옛 id를 그대로 넣으면 수렴을 못 본다.
+     */
+    fun naturalKey(factionId: Long, membership: FactionMembership): List<Any?> =
+        listOf(factionId, membership.joinYear, membership.leaveYear, membership.leaveType)
+
+    /**
      * ① 생성일(안정 식별자) 일치 → ② 자연키(가입·탈퇴연도·탈퇴유형) 일치 → ③ 후보가 유일하면 상태 전이.
      *
      * [candidates]는 같은 (세력, 캐릭터) 쌍의 이력 **전체**에서 이미 다른 행이 가져간 것을

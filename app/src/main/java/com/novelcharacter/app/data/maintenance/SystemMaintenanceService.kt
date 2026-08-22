@@ -433,8 +433,12 @@ class SystemMaintenanceService(
      * - Novels: per universeId scope, 0..N-1 within each scope
      * - Characters: per novelId scope, 0..N-1 within each scope
      *
-     * getAllUniversesList/getAllNovelsList/getAllCharactersList already return
-     * results ORDER BY displayOrder ASC, so reindexing preserves user order.
+     * **읽는 질의에 고정(isPinned) 축이 없어야 한다.** 재색인은 읽은 차례를 그대로
+     * `displayOrder`에 굽는데, 화면용 목록 질의는 `isPinned DESC`를 앞세운다 — 그것으로
+     * 읽으면 **고정 여부가 저장 순서에 새겨져** 고정을 풀어도 사용자가 끌어 놓은 차례가
+     * 돌아오지 않는다(되돌릴 수 없는 쓰기다). 그래서 작품·캐릭터는 재색인 전용 질의
+     * (`getAllNovelsByDisplayOrder`·`getAllCharactersByDisplayOrder`)로 읽는다.
+     * 세계관 질의에는 원래 고정 축이 없어 그대로 쓴다.
      */
     suspend fun reindexDisplayOrders() {
         db.withTransaction {
@@ -445,8 +449,8 @@ class SystemMaintenanceService(
             }
             db.universeDao().updateAll(reindexedUniverses)
 
-            // Novels: per universeId scope (already sorted by displayOrder ASC)
-            val novels = db.novelDao().getAllNovelsList()
+            // Novels: per universeId scope (고정 축 없는 저장 순서로 읽는다)
+            val novels = db.novelDao().getAllNovelsByDisplayOrder()
             val novelsByUniverse = novels.groupBy { it.universeId }
             val reindexedNovels = mutableListOf<com.novelcharacter.app.data.model.Novel>()
             for ((_, scopeNovels) in novelsByUniverse) {
@@ -456,8 +460,8 @@ class SystemMaintenanceService(
             }
             db.novelDao().updateAll(reindexedNovels)
 
-            // Characters: per novelId scope (already sorted by displayOrder ASC)
-            val characters = db.characterDao().getAllCharactersList()
+            // Characters: per novelId scope (고정 축 없는 저장 순서로 읽는다)
+            val characters = db.characterDao().getAllCharactersByDisplayOrder()
             val charactersByNovel = characters.groupBy { it.novelId }
             val reindexedCharacters = mutableListOf<com.novelcharacter.app.data.model.Character>()
             for ((_, scopeChars) in charactersByNovel) {

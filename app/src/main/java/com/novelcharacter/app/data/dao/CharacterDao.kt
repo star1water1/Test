@@ -13,6 +13,17 @@ interface CharacterDao {
     @Query("SELECT * FROM characters ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     suspend fun getAllCharactersList(): List<Character>
 
+    /**
+     * 재색인 전용 — **표시 정렬이 아니라 저장 순서**로 읽는다.
+     *
+     * 위 목록 질의는 화면을 위해 `isPinned DESC`를 앞세우는데, 재색인은 읽은 차례를
+     * 그대로 `displayOrder`에 굽는다. 그 질의로 읽으면 **고정 여부가 저장 순서에 새겨져**
+     * 고정을 풀어도 사용자가 끌어 놓은 차례가 돌아오지 않는다(되돌릴 수 없는 쓰기다).
+     * 그래서 여기에는 **고정 축이 없다** — 같은 값이면 id로 갈라 결정적으로 만든다.
+     */
+    @Query("SELECT * FROM characters ORDER BY displayOrder ASC, id ASC")
+    suspend fun getAllCharactersByDisplayOrder(): List<Character>
+
     @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     fun getCharactersByNovel(novelId: Long): LiveData<List<Character>>
 

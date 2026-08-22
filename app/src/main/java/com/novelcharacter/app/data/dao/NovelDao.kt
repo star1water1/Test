@@ -13,6 +13,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     suspend fun getAllNovelsList(): List<Novel>
 
+    /** 재색인 전용 — 고정 축 없이 저장 순서로 읽는다(사유는 [CharacterDao.getAllCharactersByDisplayOrder]). */
+    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, id ASC")
+    suspend fun getAllNovelsByDisplayOrder(): List<Novel>
+
     @Query("SELECT * FROM novels WHERE id = :id")
     suspend fun getNovelById(id: Long): Novel?
 
