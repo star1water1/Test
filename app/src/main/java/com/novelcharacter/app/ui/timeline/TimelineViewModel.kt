@@ -355,11 +355,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val universeId = novel.universeId
             if (universeId != null) {
                 val characters = characterRepository.getCharactersByNovelList(novelId)
+                // **필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 표준연도 한 번
+                // 고치는 평범한 조작이 캐스트 수만큼 같은 질의를 친다.
+                val fields = universeRepository.getFieldsByUniverseList(universeId)
                 for (character in characters) {
                     try {
                         if (syncHelper.isLinked(character.id)) {
                             val values = characterRepository.getValuesByCharacterList(character.id)
-                            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+                            semanticSyncHelper.syncFieldToStateChange(character.id, fields, values)
                         }
                     } catch (e: Exception) {
                         Log.w("TimelineViewModel", "Failed to sync semantic fields for character ${character.id}", e)

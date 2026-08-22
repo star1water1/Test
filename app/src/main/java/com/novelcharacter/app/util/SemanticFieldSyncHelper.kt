@@ -35,7 +35,34 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         values: List<CharacterFieldValue>
     ) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        applyFieldsToStateChange(characterId, universeRepository.getFieldsByUniverseList(universeId), values)
+    }
+
+    /**
+     * 같은 일을 하되 **세계관 필드 목록을 부르는 쪽이 든다.**
+     *
+     * 캐릭터 루프에서 위 함수를 부르면 캐릭터마다 필드 전량을 다시 읽는다 — 그 목록은 루프
+     * 불변량이라 한 번만 읽으면 된다. 표준연도 변경(작품 캐스트 전원) · 일괄 편집 ·
+     * 가져오기 꼬리가 그 루프이고, 뒤의 둘은 **쓰기 트랜잭션 안**이다.
+     *
+     * **캐시를 헬퍼에 심지 않는다.** 이 헬퍼는 ViewModel과 수명이 같고, 사용자가 필드 편집
+     * 창에서 `semanticRole`을 고친 직후 같은 ViewModel로 저장하는 경로가 실재한다 —
+     * 무효화를 놓치면 역할 연동이 조용히 옛 정의로 돈다(변수 제어). 루프가 만들어 넘기는
+     * 표는 그 노출이 원리적으로 없다.
+     */
+    suspend fun syncFieldToStateChange(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        values: List<CharacterFieldValue>
+    ) = syncMutex.withLock {
+        applyFieldsToStateChange(characterId, fields, values)
+    }
+
+    private suspend fun applyFieldsToStateChange(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        values: List<CharacterFieldValue>
+    ) {
         val fieldMap = fields.associateBy { it.id }
 
         for (value in values) {

@@ -12078,10 +12078,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val syncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
 
         val failedIds = mutableListOf<Long>()
+        // **세계관 필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 이 꼬리가
+        // 가져오기 트랜잭션 안에서 캐릭터 수만큼 같은 질의를 친다. 대상은 세계관이
+        // 섞이므로 표로 든다.
+        val fieldsByUniverse = HashMap<Long, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         for ((characterId, universeId) in pendingSyncCharacters) {
             try {
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
-                syncHelper.syncFieldToStateChange(characterId, universeId, fieldValues)
+                val fields = fieldsByUniverse.getOrPut(universeId) {
+                    universeRepository.getFieldsByUniverseList(universeId)
+                }
+                syncHelper.syncFieldToStateChange(characterId, fields, fieldValues)
             } catch (e: Exception) {
                 android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
                 failedIds.add(characterId)
