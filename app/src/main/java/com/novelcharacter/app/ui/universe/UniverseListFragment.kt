@@ -191,7 +191,11 @@ class UniverseListFragment : Fragment() {
             val fields = PresetTemplates.fieldsFromJson(preset.fieldsJson).toMutableList()
             val editedIndex = if (originalKey != null) fields.indexOfFirst { it.key == originalKey } else -1
             // 다이얼로그의 점유 키 거부는 창을 연 시점의 목록 기준이다 — 저장본과 다시 대조한다(마지막 빗장).
-            val duplicated = fields.withIndex().any { (i, f) -> i != editedIndex && f.key == edited.key }
+            // **판정이 다이얼로그와 같아야 한다**(같은 대상끼리만 점유) — 여기만 넓게 보면
+            // 창이 받아들인 키를 이 빗장이 다시 거절해 사용자가 고칠 수 없는 막다른 골목이 된다.
+            val duplicated = fields.withIndex().any { (i, f) ->
+                i != editedIndex && f.key == edited.key && f.entityType == edited.entityType
+            }
             if (duplicated) {
                 if (isAdded) Toast.makeText(requireContext(), R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
                 return@launch
@@ -590,8 +594,18 @@ class UniverseListFragment : Fragment() {
                         }
                         // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 —
                         // 결과(R-65)는 전달 즉시 창이 닫혀 사후 거부가 불가능하다. 점유 키에서 자신은 뺀다.
+                        // **같은 대상끼리만 점유다**(R-29) — 필드의 정체는 `(세계관, 키, 대상)`이라
+                        // 사건 필드 `place`와 캐릭터 필드 `place`는 부딪치지 않는다. 종전에는 종류를
+                        // 안 봐서, 프리셋에 캐릭터 `장소`가 있으면 사건 `장소`를 **만들 수 없었다**
+                        // (형제 자리인 기본 필드 템플릿은 이미 종류를 보고 있었다).
                         com.novelcharacter.app.ui.field.FieldEditDialog
-                            .newInstance(0, field, reservedKeys = fields.filter { it !== field }.map { it.key })
+                            .newInstance(
+                                0, field,
+                                entityType = field.entityType,
+                                reservedKeys = fields
+                                    .filter { it !== field && it.entityType == field.entityType }
+                                    .map { it.key }
+                            )
                             .show(childFragmentManager, "edit_preset_field")
                     }
                 }
@@ -637,9 +651,14 @@ class UniverseListFragment : Fragment() {
                     fields.add(newField)
                     rebuildFieldList()
                 }
-                // 키 중복 거부(다이얼로그 유지·입력 보존)는 다이얼로그가 저장 전에 한다 — 편집 단추와 같은 규칙.
+                // 편집 단추와 같은 규칙 — 새 필드는 캐릭터 종류이므로 점유도 그 종류에서만 센다.
                 com.novelcharacter.app.ui.field.FieldEditDialog
-                    .newInstance(0, null, reservedKeys = fields.map { it.key })
+                    .newInstance(
+                        0, null,
+                        reservedKeys = fields
+                            .filter { it.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_CHARACTER }
+                            .map { it.key }
+                    )
                     .show(childFragmentManager, "add_preset_field")
             }
         }
