@@ -1395,6 +1395,10 @@
     <string name="stats_avg_name_length">평균 이름 길이: %.1f자</string>
     <string name="stats_all_names_used">모든 이름이 사용됨</string>
     <string name="stats_and_more">…외 %d개</string>
+    <string name="stats_field_insight_distribution_wider">아래 분포에는 이 모수 밖의 보관 값도 함께 실립니다 — 채움 수보다 넓습니다.</string>
+    <string name="stats_namebank_scope_note">이름뱅크는 작품에 매이지 않는 전역 목록이라, 위의 수는 작품 필터와 무관한 전체 값입니다.</string>
+    <string name="stats_namebank_used_in_scope">이 범위가 쓴 이름 %1$d개</string>
+    <string name="stats_namebank_used_in_scope_empty">이 범위의 캐릭터가 쓴 이름뱅크 이름이 없습니다.</string>
     <string name="state_change_missing_field">%s (지금 이 캐릭터에 없는 필드)</string>
     <string name="state_change_delete_confirm">이 상태 변화를 삭제하시겠습니까?\n%1$s → %2$s\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="stats_chart_top_kinds_note">상위 %1$d종만 그렸습니다 — 나머지 %2$d종 %3$d건은 차트에 없습니다.</string>

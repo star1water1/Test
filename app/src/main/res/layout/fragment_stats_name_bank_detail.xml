@@ -169,6 +169,26 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 이 범위가 쓴 이름 (작품 필터를 걸었을 때만 선다 — 2026.08.22 사용자 판정).
+                 위의 지표들은 전역 모수이고, 이 카드가 스코프의 물음에 답한다. -->
+            <TextView
+                android:id="@+id/labelUsedInScope"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listUsedInScope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

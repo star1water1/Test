@@ -253,7 +253,23 @@ class StatsScanParityTest {
             val numeric = cfg.analyses
                 .filter { it.type == FieldStatsConfig.StatsType.NUMERIC }
                 .map { NumericBinning.numericValuesOf(rawValues, "", 0).sorted() }
-            LegacyInsight(primaryFd.id, fds.map { it.id }, totalCount, rawValues.size, dists, numeric)
+            // **채움 수는 모수 집합과의 교집합이다**(R-34 · 2026.08.22 사용자 판정).
+            // 종전 대조군은 `rawValues.size`(값 **행** 수)였는데, 그러면 세계관을 떠난
+            // 캐릭터가 보존 중인 값이 분자에만 남아 `3 / 2 (150%)`가 됐다. 여기서도
+            // **캐릭터를 한 번만** 센다 — 같은 세계관에 같은 키의 정의가 둘이면(쌍둥이
+            // 40/41) 행으로 세는 순간 한 사람이 두 번 잡힌다.
+            val groupDefIds = fds.mapTo(HashSet()) { it.id }
+            val filledChars = if (s.unassignedScope) {
+                s.characters.count { ch ->
+                    groupDefIds.any { defId -> aug[defId].orEmpty().any { it.characterId == ch.id } }
+                }
+            } else {
+                s.characters.count { ch ->
+                    ch.novelId in relevantNovelIds &&
+                        groupDefIds.any { defId -> aug[defId].orEmpty().any { it.characterId == ch.id } }
+                }
+            }
+            LegacyInsight(primaryFd.id, fds.map { it.id }, totalCount, filledChars, dists, numeric)
         }
     }
 

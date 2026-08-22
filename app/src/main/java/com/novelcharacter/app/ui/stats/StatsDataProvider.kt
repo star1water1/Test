@@ -189,7 +189,18 @@ data class NameBankStats(
     val nameLengthDistribution: Map<Int, Int>,
     val firstCharDistribution: Map<String, Int>,
     val unusedNames: List<String>,
-    val avgNameLength: Float
+    val avgNameLength: Float,
+    /**
+     * **이 스코프의 캐릭터가 실제로 쓴 이름** — 작품 필터를 걸었을 때의 별도 카드 (2026.08.22 사용자 판정).
+     *
+     * 위의 지표들은 **전역 모수**를 말한다(이름뱅크는 작품에 매이지 않는 저장소다).
+     * 그런데 *"이 작품이 어떤 이름을 썼는가"*는 그 자체로 값어치가 있는 물음이라,
+     * 좁힌 목록을 버리지 않고 **자기 이름을 단 자리**로 옮겨 둔다 — 종전처럼 같은 칸에
+     * 섞어 넣으면 *사용률*이라는 이름이 두 모수를 뜻하게 되고, 그것이 곧 100% 거짓 고지였다.
+     *
+     * 필터가 없으면 이 목록은 [usedNames]와 같은 집합이라 화면이 카드를 세우지 않는다.
+     */
+    val namesUsedInScope: List<String> = emptyList()
 )
 
 // ===== 데이터 건강도 =====
@@ -414,7 +425,19 @@ data class FieldInsightResult(
      * 대표 id 하나만 넘기면 전체 세계관 보기에서 조용한 과소집계가 된다(S-7).
      * 첫 원소는 항상 [fieldDefinition].id — 파싱 기준 def다.
      */
-    val mergedFieldDefIds: List<Long> = listOf(fieldDefinition.id)
+    val mergedFieldDefIds: List<Long> = listOf(fieldDefinition.id),
+    /**
+     * **분포가 채움 수보다 넓은가** — 카드 안에서 두 수의 모수가 갈리는가 (2026.08.22 사용자 판정).
+     *
+     * [filledCount]는 모수([totalCount])와 같은 잣대로 센다(R-34 — 형제 화면 둘과 같은 수를
+     * 말해야 한다). 그런데 **분포는 좁히지 않는다**: *보관 값을 분포에서 뺄 것인가*는
+     * 별개 판정이고, 값 표는 순위·교차분석·패턴이 함께 쓰는 메모라 여기서 정할 것이 아니다.
+     *
+     * 그래서 세계관을 떠난 캐릭터가 보존 중인 값은 **분포에는 서고 채움 수에는 안 선다.**
+     * 갈리는 것 자체는 뜻이 있지만 **말하지 않으면 사용자가 두 수를 같은 모수로 읽는다** —
+     * 그것이 이 깃발이 있는 이유다(R-14 계열: 접거나 좁혔으면 그 사실을 말한다).
+     */
+    val distributionWiderThanFilled: Boolean = false
 )
 
 data class AnalysisResult(
@@ -1107,10 +1130,24 @@ class StatsDataProvider {
         val eventIds = eventIdsForNovel
         val filteredRelationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }
         val relIds = filteredRelationships.map { it.id }.toSet()
-        // nameBank: 작품 필터 시 해당 작품 캐릭터가 사용한 이름만 포함 (미사용 이름 제외)
-        val filteredNameBank = s.nameBank.filter { entry ->
-            entry.usedByCharacterId != null && entry.usedByCharacterId in charIds
-        }
+        // **이름뱅크는 좁히지 않는다 — 작품에 매이지 않는 전역 저장소다** (2026.08.22 사용자 판정).
+        //
+        // 종전에는 *"해당 작품 캐릭터가 사용한 이름만"*으로 걸렀는데, 그러면 **모수에서
+        // 미사용 항목이 통째로 빠져** 그 위에 얹힌 지표가 정의상 참이 될 수 없었다:
+        // `computeNameBankStats`의 `used`와 `size`가 같은 집합이 되어 **사용률이 언제나
+        // 100%**였고 `unusedNames`는 언제나 빈 목록이었다. 이름 200개 중 30개만 쓴 사용자가
+        // 작품 필터를 거는 순간 *'사용률 100% (12/12)'* · *'모든 이름이 사용됨'*을 봤고,
+        // 필터를 풀면 15%로 돌아왔다.
+        //
+        // `name_bank`에는 작품·세계관 외래키가 없다 — *'작품 A의 미사용 이름'*이라는 개념
+        // 자체가 데이터 모델에 없으므로, 좁히는 쪽은 어떤 문구를 붙여도 참이 될 수 없다.
+        // 모수를 전역으로 되돌리면 분자와 분모가 다시 같은 모집단을 말하고(R-34), 필터를
+        // 걸든 말든 **같은 값이 같은 뜻**이다(R-51).
+        //
+        // **스코프가 쓴 이름은 버리지 않는다** — `computeNameBankStats`가 `s.characters`
+        // (이미 좁혀져 있다)로 다시 골라 *'이 작품이 쓴 이름'* 카드를 낸다. 좁힌 목록을
+        // 여기서 만들지 않는 것이 요점이다: 그러면 같은 자료가 두 뜻을 갖게 된다.
+        val filteredNameBank = s.nameBank
         val universeIds = setOfNotNull(novel.universeId)
         val filteredFactions = s.factions.filter { it.universeId in universeIds }
         val factionIds = filteredFactions.map { it.id }.toSet()
@@ -1169,7 +1206,8 @@ class StatsDataProvider {
             relationships = filteredRelationships,
             relationshipChanges = s.relationshipChanges.filter { it.relationshipId in relIds },
             tags = s.tags.filter { it.characterId in charIds },
-            nameBank = s.nameBank.filter { it.usedByCharacterId != null && it.usedByCharacterId in charIds },
+            // 전역 저장소라 좁히지 않는다 — 근거는 [filterByNovel]의 같은 자리에 있다.
+            nameBank = s.nameBank,
             stateChanges = s.stateChanges.filter { it.characterId in charIds },
             fieldDefinitions = s.fieldDefinitions.filter { it.id in referencedDefIds },
             fieldValues = filteredFieldValues,
@@ -1755,6 +1793,14 @@ class StatsDataProvider {
         // 신규: 미사용 이름 목록
         val unusedNames = s.nameBank.filter { !it.isUsed }.map { it.name }
 
+        // **이 스코프가 쓴 이름** — 모수는 전역이되 *이 작품이 무엇을 썼는가*는 따로 낸다.
+        // `s.characters`는 이미 스코프로 좁혀져 있으므로 여기서 다시 고르면 된다
+        // (이름뱅크 쪽을 좁히면 위의 지표 전부가 뜻을 잃는다 — 그것이 종전 결함이었다).
+        val scopedCharIds = s.characters.mapTo(HashSet()) { it.id }
+        val namesUsedInScope = s.nameBank
+            .filter { it.usedByCharacterId != null && it.usedByCharacterId in scopedCharIds }
+            .map { it.name }
+
         // 신규: 평균 이름 길이
         val avgLen = if (s.nameBank.isNotEmpty()) {
             s.nameBank.map { it.name.length }.average().toFloat()
@@ -1769,7 +1815,8 @@ class StatsDataProvider {
             nameLengthDistribution = lengthDist,
             firstCharDistribution = firstCharDist,
             unusedNames = unusedNames,
-            avgNameLength = avgLen
+            avgNameLength = avgLen,
+            namesUsedInScope = namesUsedInScope
         )
     }
 
@@ -2002,12 +2049,22 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            // **인사이트의 분자는 여기서 좁히지 않는다** — 그 카드는 채움 수와 **분포를 나란히**
-            // 보이므로 둘이 같은 모수에서 나와야 하고, 분포까지 좁히는 것은 *보관 값을 분포에서
-            // 뺄 것인가*라는 별개 판정이다(값 표는 순위·교차분석·패턴이 함께 쓰는 메모다).
-            // 완성도 두 자리(데이터 개요·필드 분석)는 비율만 보이므로 그 축부터 맞췄다.
+            // **분자를 모수와 같은 잣대로 좁힌다** (2026.08.22 사용자 판정 · R-34).
+            //
+            // 종전에는 기본값(값 표 건수의 합)을 그대로 썼는데, 분모는 작품→세계관을 경유해
+            // 센 캐릭터 수라 **무소속을 안 세고** 분자는 값 표라 **소속을 안 본다.** 그래서
+            // 세계관을 떠난 캐릭터가 보존 중인 값(그 자체는 정상이다 — 값 병합 규약이 일부러
+            // 남기고 *"보존된 필드값 N개"*까지 고지한다)이 분자에만 남아 **`3 / 2 (150%)`**가
+            // 됐다. 형제 두 자리(데이터 개요·필드 분석)는 이미 교집합으로 고쳐져 있어
+            // **한 앱의 세 화면이 같은 필드에 다른 채움률**을 말하고 있었다.
+            //
+            // **분포는 좁히지 않는다** — 그쪽은 *보관 값을 분포에서 뺄 것인가*라는 별개
+            // 판정이고(값 표는 순위·교차분석·패턴이 함께 쓰는 메모다), 그 판단은 그대로 둔다.
+            // 대신 **카드가 그 사실을 한 줄로 말한다**([FieldInsightResult.distributionWiderThanFilled] —
+            // 두 수의 모수가 갈리는 것을 숨기지 않는 것이 이 선택의 조건이다).
             buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
-                mergedFieldDefIds = fds.map { it.id })
+                mergedFieldDefIds = fds.map { it.id },
+                filledCount = filledCharactersForGroup(s, fds))
         }
 
         // ── 사건 필드 인사이트 (B-10 후속): 캐릭터 필드와 동일 규칙으로 편입 (원칙 02) ──
@@ -2102,6 +2159,8 @@ class StatsDataProvider {
          */
         filledCount: Int = rawCounts.values.sum()
     ): FieldInsightResult {
+        // 분포의 모수(값 표 건수)가 채움 수보다 넓으면 카드가 그 사실을 말한다.
+        val distributionWider = rawCounts.values.sum() > filledCount
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
                 FieldStatsConfig.StatsType.DISTRIBUTION -> {
@@ -2131,7 +2190,8 @@ class StatsDataProvider {
         }
         return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount,
             filledCount,
-            universeName = universeName, mergedFieldDefIds = mergedFieldDefIds)
+            universeName = universeName, mergedFieldDefIds = mergedFieldDefIds,
+            distributionWiderThanFilled = distributionWider)
     }
 
     /**
@@ -4704,6 +4764,53 @@ class StatsDataProvider {
             }
         }
         return out
+    }
+
+    /**
+     * **병합된 필드 그룹**을 채운 캐릭터 수 — 인사이트 카드의 분자 (R-34, 2026.08.22).
+     *
+     * [filledCountsByFieldDef]를 그대로 못 쓰는 이유는 **셈의 단위가 다르기 때문이다.**
+     * 그쪽은 *정의 하나*의 수라 완성도 두 화면(정의마다 한 줄)이 그대로 쓰지만, 인사이트
+     * 카드는 `(key, type)`이 같은 정의를 **세계관을 가로질러 하나로 묶는다.** 그 카드의
+     * 모수는 `fds`의 **서로 다른 세계관**마다 캐릭터 수를 더한 값이므로, 분자도 같은 단위
+     * — 곧 *캐릭터 수* — 여야 한다.
+     *
+     * def별 수를 더하면 **같은 세계관에 같은 키의 정의가 둘일 때**(Pre-Analysis Merge가
+     * 실제로 묶는 그 모양) 한 캐릭터가 두 번 세어져 **비율이 다시 100%를 넘는다.**
+     * 그래서 캐릭터를 한 번만 세고, 그 캐릭터가 그룹의 정의 중 **하나라도** 채웠으면 센다.
+     *
+     * 모수 쪽([characterCountsByUniverse])과 **세는 조건을 글자 그대로 맞춘다** —
+     * 캐릭터의 작품이 실재하고, 그 작품의 세계관이 이 그룹의 세계관 중 하나일 것.
+     * 미배정 스코프는 모수가 스코프 캐릭터 전체이므로 여기서도 세계관을 묻지 않는다.
+     */
+    private fun filledCharactersForGroup(s: StatsSnapshot, fds: List<FieldDefinition>): Int {
+        // **분포와 같은 값 표를 본다**([augmentedCharacterValues] — 저장 값 + CALCULATED).
+        // `filledCharacterDefIds`는 저장 행만 보므로 계산 필드에서 언제나 0이 된다:
+        // 완성도 두 화면은 CALCULATED를 아예 빼서(`fieldType != CALCULATED`) 그 성질이
+        // 드러나지 않지만, 인사이트 카드는 계산 필드도 카드로 낸다. 그 축에서 그것을 쓰면
+        // **분포는 값이 가득한데 채움률만 0%**가 된다.
+        //
+        // 즉 분자와 분포는 **같은 값 표**에서 나오고, 갈리는 것은 *모수 집합*뿐이다 —
+        // 그것이 [FieldInsightResult.distributionWiderThanFilled]가 말하는 그 차이다.
+        val aug = augmentedCharacterValues(s)
+        val filledChars = HashSet<Long>()
+        for (fd in fds) for (v in aug[fd.id].orEmpty()) filledChars.add(v.characterId)
+        if (filledChars.isEmpty()) return 0
+
+        if (s.unassignedScope) return s.characters.count { it.id in filledChars }
+
+        val groupUniverses = fds.mapTo(HashSet()) { it.universeId }
+        val universeByNovelId = HashMap<Long, Long?>()
+        for (n in s.novels) universeByNovelId[n.id] = n.universeId
+        var count = 0
+        for (ch in s.characters) {
+            if (ch.id !in filledChars) continue
+            val novelId = ch.novelId ?: continue
+            if (novelId !in universeByNovelId) continue
+            if (universeByNovelId[novelId] !in groupUniverses) continue
+            count++
+        }
+        return count
     }
 
     private fun characterCountsByUniverse(s: StatsSnapshot): HashMap<Long?, Int> {
