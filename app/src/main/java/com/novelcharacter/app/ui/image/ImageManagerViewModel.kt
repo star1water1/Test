@@ -2232,13 +2232,26 @@ class ImageManagerViewModel(
      * **실패를 알았을 때 되돌아가 다시 적용할 자리가 없다**(다시 얻으려면 재결제다).
      * 그래서 누른 시점에 들어 두었다가 **실패하면 되살린다** — 되살리는 자리가 뷰가 아니라
      * 여기인 것이 요점이다: 적용 중에 회전이 나도 재생성된 화면이 그 값을 보고 시트를 다시 세운다.
+     *
+     * ## 재진입 빗장 — 들 것이 없으면 이미 도는 회차다 (2026.08.22)
+     *
+     * [적용]을 빠르게 두 번 탭하면(시트가 닫히는 프레임 안에 두 번째 탭이 들어간다) 이 함수가
+     * 두 번 돈다. 두 번째 회차의 `pending`은 첫 회차가 이미 비운 **null**이고, 그러면
+     * 적용이 실패했을 때 **첫 회차가 되살려 놓은 유료 응답을 두 번째 회차가 null로 덮는다** —
+     * 사용자는 *"적용 실패 — 다시 적용해 주세요"*를 읽는데 **가리킬 검토 창이 없고**
+     * 결제한 제안이 통째로 사라진다(되받기도 그 결과에 매여 함께 없어진다). 실패하지 않는
+     * 흔한 경우에도 같은 적용이 두 번 돌고 결과 고지가 두 번 뜬다.
+     *
+     * **빗장을 뷰가 아니라 여기 두는 것이 요점이다** — 버튼 비활성화만으로 막으면 회전으로
+     * 시트가 다시 설 때 그 상태가 사라진다(R-65가 되풀이해 세운 규칙). 시트 쪽 비활성화는
+     * 연타 자체를 줄이는 보조 장치로 함께 둔다.
      */
     fun applyImageTags(
         picked: Map<String, List<String>>,
         onDone: (OpResult) -> Boolean
     ) {
         // 누른 **그 시점**에 든다. 코루틴 안에서 읽으면 이미 시트가 닫히며 비운 뒤다.
-        val pending = aiTagResult.value
+        val pending = aiTagResult.value ?: return   // 재진입 빗장 — 아래 KDoc 참조
         // 묶음 전개는 여기서 하지 않는다 — 적용 직전의 살아 있는 명단으로 [applyTagWork]가
         // 편다(공유 불변식의 초크포인트. 폴더판·되받기와 같은 자리를 지난다).
         val work = picked.map { it.key to it.value }
@@ -2272,7 +2285,7 @@ class ImageManagerViewModel(
         pathsByFolder: Map<String, List<String>>,
         onDone: (OpResult) -> Boolean
     ) {
-        val pending = folderTagResult.value
+        val pending = folderTagResult.value ?: return   // 재진입 빗장 — [applyImageTags]와 같은 이유
         folderTagResult.value = null
         viewModelScope.launch {
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {

@@ -136,7 +136,11 @@ class ImageAiTagReviewSheet : BottomSheetDialogFragment() {
             // **닫지 않는다** — 이 시트가 들고 있는 제안이 곧 이미 결제한 몫이다(B-140).
             onRetryOneByOne(retryPaths)
         }
-        view.findViewById<MaterialButton>(R.id.applyButton).setOnClickListener {
+        view.findViewById<MaterialButton>(R.id.applyButton).setOnClickListener { button ->
+            // 연타 보조 가드 — 시트가 닫히는 프레임 안의 두 번째 탭을 줄인다.
+            // **판정은 여기가 아니다**: 회전으로 시트가 다시 서면 이 상태가 사라지므로,
+            // 진짜 빗장은 뷰모델(`applyImageTags`/`applyFolderTags`)이 든다 (R-65).
+            button.isEnabled = false
             onApply(checked.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() })
             dismiss()
         }
