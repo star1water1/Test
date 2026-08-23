@@ -196,6 +196,24 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         if (outcome.failed <= 0) null
         else app.getString(R.string.field_initial_values_partial, outcome.failed)
 
+    /**
+     * 생성 창의 '값 사전 등록'을 라이브러리에 심는다 — [NovelViewModel.registerInitialValues]의
+     * 짝이고, 해석·등재는 저장소가 단일 소스다(위 [insertField]가 쓰는 그 함수).
+     *
+     * **뷰모델이 드는 것이 요점이다.** 사건 편집 창은 이 쓰기를 [inViewModelScope]로 옮겨
+     * *회전을 넘겨 끝까지 가게* 만들어 놓고, 정작 그 안에서 **프래그먼트를 지나 앱을 집었다**
+     * (`activity?.application ?: return null`). 회전하면 옛 창은 detach되어 `activity`가
+     * null이라 그 자리에서 조용히 물러섰고 — **정의는 서고 사용자가 미리 적어 둔 값만
+     * 사라졌다.** 옮긴 것이 막으려던 바로 그 결과다. 뷰모델은 `app`을 들고 있으므로
+     * 여기서는 붙잡을 것이 없어지지 않는다.
+     */
+    suspend fun registerInitialValues(
+        fieldDefId: Long,
+        field: FieldDefinition,
+        initialValues: String
+    ): com.novelcharacter.app.data.repository.FieldValueLibraryRepository.InitialValueOutcome =
+        app.fieldValueLibraryRepository.registerInitialValues(fieldDefId, field, initialValues)
+
     private suspend fun syncDefaultField(field: FieldDefinition, want: Boolean?): String? {
         if (want == null) return null
         val repo = app.defaultFieldTemplateRepository

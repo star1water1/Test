@@ -61,12 +61,47 @@ object FieldValueSheetMapper {
     fun aliasesToCsv(entry: FieldValueEntry): String = joinCsv(entry.aliases())
 
     /**
-     * 콤마 구분 별칭 파싱 — 전각 콤마(，·、)도 수용, trim·중복 제거.
-     * 쪼개기 규칙 자체는 [splitCsv] 단일 소스가 든다(따옴표로 감싼 별칭이 파손되지 않게).
-     * `、`는 [toHalfWidth]의 범위(U+FF01–FF5E) 밖이라 여기서 먼저 낮춘다 — 이 시트 고유의 관대함이다.
+     * 콤마 구분 별칭 파싱 — 전각 콤마(，·、)도 **구분자로는** 수용, trim·중복 제거.
+     *
+     * ## 별칭은 글자 그대로 살아남아야 한다 (B-261의 그 축)
+     *
+     * 종전에는 ⓐ [splitCsv](= `normalizeFullWidth = true`)가 **전각 ASCII를 반각으로 낮추고**
+     * ⓑ 쪼개기 **전에** 셀 전체의 `、`를 `,`로 치환했다. 별칭은 [FieldValueResolver]가
+     * `byAlias[t]`로 **글자 그대로 정확 일치**시켜 쓰는 값이고 조회 없이 그대로 저장되는
+     * 칸이라, 그 관대함은 관대함이 아니라 **손실**이다:
+     *
+     * - `ＮＰＣ`(전각) 별칭이 **한 글자도 안 고친 왕복**에서 `NPC`로 접히고, 그러면
+     *   [applyRow]의 `filter { it != value }`가 canonical과 같아진 그것을 버려 **별칭이
+     *   통째로 사라진다.** 그 뒤로 캐릭터에 저장된 `ＮＰＣ`는 어디에도 접히지 않는다.
+     * - 감싸인 칸(`"a,b、c"`) 안의 `、`까지 갈라 **감싸기 자체를 무력화**했다.
+     *
+     * 태그가 2026.08.22에 정확히 같은 판정을 받고 `splitCsvIdentity`로 갔다 —
+     * *"태그는 조회 없이 그대로 저장된다 — 전각을 낮춰 읽으면 조용한 개명이다"*.
+     * **별칭 열만 그 축이 갈리지 않은 채 남아 있었다.**
+     *
+     * 그래서 쪼개기는 [splitCsvIdentity]가 들고, 전각 구분자 인정은 **감싼 칸이 없을 때만**
+     * 한다. 감싸기는 *"이 안은 값이다"*라는 표시이므로, 그 표시가 있는 칸에서 전각 글자를
+     * 구분자로 읽으면 감싸기가 무력해진다.
+     *
+     * **판정을 `,` 포함 여부로 하면 모자란다** — `CsvTokens.needsQuoting`은 `toHalfWidth`를
+     * 지난 뒤에 보므로 **전각 쉼표(`，`)를 품은 별칭도 내보내기가 감싼다.** 그 토큰에는
+     * ASCII 쉼표가 없어 토큰만 봐서는 감싼 칸에서 온 것인지 알 수 없다(감싼 것과 안 감싼 것이
+     * `splitCsvIdentity`를 지나면 같은 글자가 된다 — 정보가 사라진다). 그래서 **셀에 `"`가
+     * 하나라도 있으면** 그 셀 전체를 엄격하게 읽는다. 값을 지키는 쪽으로 기운 판정이다.
+     *
+     * **남는 비대칭 하나를 적어 둔다:** `CsvTokens.needsQuoting`은 `、`·`，`를 감싸기 대상으로
+     * 보지 않으므로, `、`를 품었지만 `,`는 없는 별칭은 감싸이지 않은 채 나가 왕복에서 둘로
+     * 갈린다(종전과 같다 — 이 수리가 만든 것이 아니다). 그쪽을 고치려면 내보내기 형식이
+     * **모든 CSV 열에서** 바뀌므로 별도 판단이 필요하다.
      */
-    fun csvToAliases(csv: String?): List<String> =
-        splitCsv(csv.orEmpty().replace('、', ',')).distinct()
+    fun csvToAliases(csv: String?): List<String> {
+        val raw = csv.orEmpty()
+        val hasQuotedCell = raw.contains('"')
+        return splitCsvIdentity(raw).flatMap { token ->
+            if (hasQuotedCell || token.contains(',')) listOf(token)
+            else token.split('、', '，').map { it.trim() }.filter { it.isNotBlank() }
+        }.distinct()
+    }
 
     /**
      * 불리언 판정은 [parseSheetBoolean](SheetSpec.kt) 단일 소스에 위임한다 — 시트마다 다른

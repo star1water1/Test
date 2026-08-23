@@ -72,11 +72,22 @@ object FieldValueSorter {
      * 이제 [FieldValueTokenizer]가 그 판단의 단일 소스이므로, 다중 토큰 타입이 늘어도
      * 이 함수는 따라 움직인다.
      *
-     * **대표값 규칙은 바뀌지 않았다** — `minOrNull()`은 종전 `MULTI_TEXT`가 쓰던 그대로이고
-     * (KDoc도 *"토큰 중 사전순 최소값"*이라 적어 두었다), 확정 7-5가 그것을 나머지 타입으로
-     * 넓히기로 정했다. 그래서 **기존 `MULTI_TEXT` 필드의 정렬 결과는 하나도 안 바뀐다** —
-     * 기각된 쪽(맨 앞 토큰)이었다면 전부 조용히 달라졌을 자리다.
+     * **대표값 규칙은 "토큰 중 사전순 최소"다** — 종전 `MULTI_TEXT`가 쓰던 그대로이고
+     * 확정 7-5가 그것을 나머지 타입으로 넓히기로 정했다. 기각된 쪽(맨 앞 토큰)이었다면
+     * 기존 `MULTI_TEXT` 필드의 정렬이 전부 조용히 달라졌을 자리다.
+     *
+     * **다만 "사전순"의 잣대는 뒤에 한 번 고쳐졌다**(2026.08.23) — 대표를 고를 때도
+     * 소문자로 접는다. 그래서 대소문자가 섞인 `MULTI_TEXT` 값(`Zebra, apple`)의 정렬키는
+     * 이때 바뀌었다. 사유는 아래 블록 주석에 있다.
+     */
+    /*
+     * **대표를 고르는 잣대와 줄 세우는 잣대가 같아야 한다.** 종전에는 `minOrNull()`이
+     * **원문 토큰**에 대해 돌아 대문자가 소문자보다 먼저인 UTF-16 순서로 대표를 고르고,
+     * 그 뒤에야 `lowercase()`가 걸렸다 — 같은 함수 안에 잣대가 두 벌이었다. 그래서
+     * `Zebra, apple`의 정렬키가 `zebra`가 되어(대표는 `apple`이어야 한다) 그 캐릭터가
+     * `banana`보다 뒤에 섰고, 사용자는 자기 데이터에 `apple`이 있는데도 앞에 안 오는
+     * 이유를 알 수 없었다. 한글만 든 값은 답이 바뀌지 않는다.
      */
     fun textValue(field: FieldDefinition, rawValue: String): String? =
-        FieldValueTokenizer.tokenize(field, rawValue).minOrNull()?.lowercase()
+        FieldValueTokenizer.tokenize(field, rawValue).minOfOrNull { it.lowercase() }
 }

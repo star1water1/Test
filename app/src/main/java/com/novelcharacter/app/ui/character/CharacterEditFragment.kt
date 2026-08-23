@@ -558,8 +558,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 override fun existingCharacter() = existingCharacter
                 override fun onSavingChanged(saving: Boolean) {
                     if (_binding == null) return
-                    if (supplementMode) binding.btnSaveAndNext.isEnabled = !saving
-                    else binding.btnSave.isEnabled = !saving
+                    // **저장 게이트를 함께 본다** — 이 신호는 이제 `LiveData` 관측으로 오고,
+                    // 관측은 뷰가 STARTED가 될 때 현재 값(`false`)을 **한 번 그냥 흘린다.**
+                    // 게이트만 보고 껐던 버튼을 그 방출이 도로 켜므로, 태그·필드값이 적재되기
+                    // 전에 저장이 가능해지고 그 저장은 빈 스냅샷으로 기존 데이터를 지운다
+                    // (형제 `RandomSupplementFragment`가 같은 자리에서 같이 AND 한다).
+                    if (supplementMode) binding.btnSaveAndNext.isEnabled = !saving && saveGateOpen
+                    else binding.btnSave.isEnabled = !saving && saveGateOpen
                 }
                 override fun onSaved(savedCharacterId: Long) {
                     clearDraft()
@@ -996,6 +1001,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         viewLifecycleOwner.lifecycleScope.launch {
             val data = viewModel.getLibraryImages()
             if (!isAdded || _binding == null) return@launch
+            // 상태 저장 후면 show()가 IllegalStateException — 생략해도 1탭으로 재시도된다
+            // (같은 파일의 형제 둘이 이미 이 가드를 든다. 이 자리만 밖이었다.)
+            if (parentFragmentManager.isStateSaved) return@launch
             if (data.images.isEmpty()) {
                 Toast.makeText(
                     requireContext(), R.string.image_library_picker_empty, Toast.LENGTH_SHORT

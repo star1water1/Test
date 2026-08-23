@@ -98,8 +98,19 @@ class ImageFolderTagSuggesterTest {
 
     // ── 파싱·검증 ──
 
+    /**
+     * 읽힌 응답의 알맹이 — 아래 시험 대부분은 *"읽었다"*를 전제로 고른 태그와 셈만 본다.
+     * 「읽지 못함」을 재는 시험은 [ImageFolderTagSuggester.ParseOutcome]를 직접 견준다.
+     */
+    private fun parsedOk(
+        raw: String,
+        requested: List<String>,
+        vocab: ImageTagVocabulary.Vocabulary
+    ): ImageFolderTagSuggester.ParseOutcome.Ok =
+        parse(raw, requested, vocab) as ImageFolderTagSuggester.ParseOutcome.Ok
+
     @Test fun parse_acceptsRequestedFolders() {
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["풍경","일상"]}]}""",
             listOf("여행"), vocab("풍경")
         )
@@ -111,7 +122,7 @@ class ImageFolderTagSuggesterTest {
 
     /** 어휘 밖의 태그는 **버리지 않고 표시**한다 — 어휘는 참고이지 허용 목록이 아니다. */
     @Test fun parse_marksTagsOutsideVocabularyAsNew() {
-        val (out, _) = parse(
+        val (out, _) = parsedOk(
             """{"folders":[{"name":"여행","tags":["풍경","낯선것"]}]}""",
             listOf("여행"), vocab("풍경")
         )
@@ -128,7 +139,7 @@ class ImageFolderTagSuggesterTest {
      * 통계도 그 지점에서 둘로 갈린다.
      */
     @Test fun parse_foldsTagToExistingVocabularyNotation() {
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["물의 정령","SD"]}]}""",
             listOf("여행"), vocab("물의정령", "sd")
         )
@@ -139,7 +150,7 @@ class ImageFolderTagSuggesterTest {
 
     /** 접을 상대가 없으면 답한 표기 그대로 남고 `새 태그`다 — 어휘는 허용 목록이 아니다. */
     @Test fun parse_keepsUnfoldableTagAsNew() {
-        val (out, _) = parse(
+        val (out, _) = parsedOk(
             """{"folders":[{"name":"여행","tags":["화염 정령"]}]}""",
             listOf("여행"), vocab("물의정령")
         )
@@ -149,7 +160,7 @@ class ImageFolderTagSuggesterTest {
 
     /** 접은 뒤에 같아진 둘은 드롭이 아니다 — 같은 말을 두 번 받은 것뿐이다(배치판과 같은 처분). */
     @Test fun parse_collapsedDuplicateIsNotADrop() {
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["물의 정령","물의정령"]}]}""",
             listOf("여행"), vocab("물의정령")
         )
@@ -160,7 +171,7 @@ class ImageFolderTagSuggesterTest {
     /** 어휘의 필드 값 쪽으로도 접힌다 — `forFolding`이 태그+필드값이기 때문. */
     @Test fun parse_foldsToFieldValuePartOfVocabulary() {
         val v = ImageTagVocabulary.Vocabulary(tags = emptyList(), fieldValues = listOf("흑발"))
-        val (out, _) = parse(
+        val (out, _) = parsedOk(
             """{"folders":[{"name":"인물","tags":["흑 발"]}]}""",
             listOf("인물"), v
         )
@@ -170,7 +181,7 @@ class ImageFolderTagSuggesterTest {
 
     /** 요청하지 않은 폴더는 환각이다 — 통과시키지 않고 센다. */
     @Test fun parse_dropsUnknownFolderAndCounts() {
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["풍경"]},{"name":"없는폴더","tags":["x"]}]}""",
             listOf("여행"), vocab()
         )
@@ -180,7 +191,7 @@ class ImageFolderTagSuggesterTest {
 
     /** 같은 폴더를 두 번 되돌리면 뒤엣것은 버린다 — 어느 쪽이 옳은지 알 수 없다. */
     @Test fun parse_dropsDuplicateFolder() {
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["a"]},{"name":"여행","tags":["b"]}]}""",
             listOf("여행"), vocab()
         )
@@ -191,7 +202,7 @@ class ImageFolderTagSuggesterTest {
 
     @Test fun parse_dropsBlankAndOverlongTags() {
         val long = "가".repeat(AiPromptPolicy.IMAGE_TAG_MAX_LENGTH + 1)
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":["  ","$long","풍경"]}]}""",
             listOf("여행"), vocab()
         )
@@ -201,7 +212,7 @@ class ImageFolderTagSuggesterTest {
 
     @Test fun parse_capsTagsPerFolderAndCounts() {
         val tags = (1..AiPromptPolicy.IMAGE_TAG_MAX_PER_FOLDER + 3).joinToString(",") { "\"t$it\"" }
-        val (out, drops) = parse(
+        val (out, drops) = parsedOk(
             """{"folders":[{"name":"여행","tags":[$tags]}]}""",
             listOf("여행"), vocab()
         )
@@ -211,20 +222,37 @@ class ImageFolderTagSuggesterTest {
 
     /** 근거 없음(빈 배열)은 결손이 아니다 — 프롬프트가 명시적으로 허용한 답이다. */
     @Test fun parse_emptyTagsIsNotADrop() {
-        val (out, drops) = parse("""{"folders":[{"name":"여행","tags":[]}]}""", listOf("여행"), vocab())
+        val outcome = parse("""{"folders":[{"name":"여행","tags":[]}]}""", listOf("여행"), vocab())
+        // **읽지 못한 것이 아니다** — 이 구별이 서지 않으면 정상 답이 실패로 고지된다.
+        assertTrue("정상 응답이 «못 읽음»으로 판정됐다", outcome is ImageFolderTagSuggester.ParseOutcome.Ok)
+        val (out, drops) = outcome as ImageFolderTagSuggester.ParseOutcome.Ok
         assertTrue(out.isEmpty())
         assertTrue(drops.isEmpty)
     }
 
-    @Test fun parse_toleratesGarbage() {
-        val (out, drops) = parse("설명문만 있고 JSON이 없다", listOf("여행"), vocab())
-        assertTrue(out.isEmpty())
-        assertTrue(drops.isEmpty)
+    /**
+     * **읽지 못한 응답은 「제안 0건」과 다른 값이다.** 종전에는 둘 다 *빈 제안 + 빈 셈*이라
+     * 부르는 쪽이 가를 수 없었고, 그래서 «붙일 태그가 없다»는 정상 답에 «다시 시도해
+     * 주세요»가 붙었다(성공한 요청에 값을 한 번 더 치르게 하는 거짓 고지).
+     */
+    @Test fun parse_reportsGarbageAsUnreadable() {
+        assertEquals(
+            ImageFolderTagSuggester.ParseOutcome.Unreadable,
+            parse("설명문만 있고 JSON이 없다", listOf("여행"), vocab())
+        )
+    }
+
+    /** `folders` 배열이 없는 JSON도 뼈대를 못 읽은 것이다. */
+    @Test fun parse_reportsMissingFoldersArrayAsUnreadable() {
+        assertEquals(
+            ImageFolderTagSuggester.ParseOutcome.Unreadable,
+            parse("""{"images":[]}""", listOf("여행"), vocab())
+        )
     }
 
     /** 코드펜스로 감싼 응답도 읽는다(AiJsonExtractor 재사용 확인). */
     @Test fun parse_readsFencedJson() {
-        val (out, _) = parse(
+        val (out, _) = parsedOk(
             "```json\n{\"folders\":[{\"name\":\"여행\",\"tags\":[\"풍경\"]}]}\n```",
             listOf("여행"), vocab()
         )

@@ -248,8 +248,13 @@ class WorldPackageImporter(context: Context) {
         val duelVerdictReg = WorldPackageCodes.Registry(
             SqlInChunks.flat(wantedVerdictCodes) { db.duelCounterVerdictDao().getExistingCodes(it) }
         )
+        // **`claim`하는 등록부는 전부 여기 있어야 한다** — `reissuedCodes`가 이 목록만 더하므로
+        // 빠진 등록부의 재발급은 *"코드를 재발급한 항목 N건"* 고지에서 조용히 사라진다.
+        // `quoteReg`가 그 자리였다(만들고 `claim`까지 하는데 집계만 안 왔다 — 명대사는
+        // 뒤늦게 더해진 축이고, 세 자리 중 둘만 따라온 모양이다).
         val registries = listOf(
-            uniReg, novelReg, charReg, eventReg, scReg, relReg, relChangeReg, factionReg, nameBankReg, entryReg,
+            uniReg, novelReg, charReg, eventReg, scReg, quoteReg, relReg, relChangeReg,
+            factionReg, nameBankReg, entryReg,
             gradeSystemReg, duelAxisReg, duelMatchReg, duelVerdictReg
         )
 

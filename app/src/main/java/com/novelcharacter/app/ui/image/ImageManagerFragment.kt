@@ -1646,6 +1646,12 @@ class ImageManagerFragment : Fragment() {
             // 처방이 다르다 — 파일은 멀쩡히 있고, 할 일은 그 그림을 앱에 들이는 것이다.
             out.add(getString(R.string.image_ai_tag_notice_blocked, it.sumOf { f -> f.paths.size }))
         }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.NOT_REQUESTED]?.let {
+            // **시작조차 안 한 몫** — 앞 배치의 종단 실패로 회차가 끊겼다. 말하지 않으면
+            // 사용자는 그 이미지들이 '태그가 없는 이미지'라고 잘못 배운다(위 `sealed`와 같은
+            // 이유이나 처방이 다르다 — 이쪽은 원인을 고친 뒤 **다시 걸면 된다**).
+            out.add(getString(R.string.image_ai_tag_notice_not_requested, it.sumOf { f -> f.paths.size }))
+        }
         byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.REQUEST_FAILED]
             ?.firstOrNull()?.failure?.let {
             out.add(
@@ -1816,12 +1822,19 @@ class ImageManagerFragment : Fragment() {
      * 자리에 있다 — 다시 떼면 된다. 파괴 경로에만 확인을 두는 것이 R-4의 취지다.
      */
     private fun clearDetachedMarks(paths: List<String>) {
-        viewModel.clearDetachedMark(paths) { cleared ->
+        viewModel.clearDetachedMark(paths) { result ->
             if (!isAdded || _binding == null) return@clearDetachedMark
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(
+                    OpResult.CAT_MAINTENANCE,
+                    getString(R.string.image_manager_clear_detached_failed)
+                ))
+                return@clearDetachedMark
+            }
             exitSelection()
             reportAndNotify(OpResult.success(
                 OpResult.CAT_MAINTENANCE,
-                getString(R.string.image_manager_clear_detached_done, cleared)
+                getString(R.string.image_manager_clear_detached_done, result.cleared)
             ))
         }
     }
@@ -1873,6 +1886,11 @@ class ImageManagerFragment : Fragment() {
     private fun runUnlink(paths: List<String>) {
         viewModel.unlinkImages(paths) { result ->
             if (!isAdded || _binding == null) return@unlinkImages
+            // 형제 둘(배정·배정 해제)과 같은 자리·같은 모양 — 실패는 성공 문구를 타지 않는다.
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_unlink_failed)))
+                return@unlinkImages
+            }
             exitSelection()
             // 자동 링크 대상이면 해제가 다음 재동기화에 되돌아간다 — 조용한 원복 금지, 교정 경로 고지
             val message = buildString {
@@ -1928,11 +1946,25 @@ class ImageManagerFragment : Fragment() {
                 targets.size,
                 if (remove) R.string.image_manager_stage_tag_remove else R.string.image_manager_stage_tag_add
             )
-            val onCount: (Int) -> Unit = { count ->
+            val onCount: (ImageManagerViewModel.TagBatchResult) -> Unit = { result ->
                 progress?.dismiss()
                 if (isAdded && _binding != null) {
-                    exitSelection()
-                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
+                    // **0은 실패의 뜻뿐이다** — 대상이 비었으면 위에서 이미 물러섰다
+                    // (`targets.isEmpty()`). 그래서 종전의 *"0장에 반영했습니다"*는
+                    // 언제나 거짓 고지였다.
+                    if (result.failed) {
+                        reportAndNotify(
+                            OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_failed))
+                        )
+                    } else {
+                        exitSelection()
+                        reportAndNotify(
+                            OpResult.success(
+                                OpResult.CAT_MAINTENANCE,
+                                getString(R.string.image_batch_tag_done, result.affected)
+                            )
+                        )
+                    }
                 }
             }
             if (remove) {
@@ -2023,11 +2055,20 @@ class ImageManagerFragment : Fragment() {
         ) { _, bundle ->
             val path = bundle.getString(ImageTagEditBottomSheet.RESULT_PATH) ?: return@setFragmentResultListener
             val newTags = bundle.getStringArray(ImageTagEditBottomSheet.RESULT_TAGS)?.toList() ?: emptyList()
-            viewModel.replaceTags(path, newTags) { applied ->
+            viewModel.replaceTags(path, newTags) { result ->
                 if (!isAdded || _binding == null) return@replaceTags
+                // 종전에는 실패해도 이 줄로 갔다 — 게다가 문구가 세는 것은 **사용자가 적은
+                // 태그 수**(`newTags.size`)라, 한 글자도 안 써졌는데 *"태그 3개를
+                // 반영했습니다"*가 그대로 떴다. 0으로도 티가 안 나던 자리다.
+                if (result.failed) {
+                    reportAndNotify(OpResult.failure(
+                        OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_failed)
+                    ))
+                    return@replaceTags
+                }
                 reportAndNotify(OpResult.success(
                     OpResult.CAT_MAINTENANCE,
-                    if (applied > 1) getString(R.string.image_tag_edit_done_group, newTags.size, applied)
+                    if (result.affected > 1) getString(R.string.image_tag_edit_done_group, newTags.size, result.affected)
                     else getString(R.string.image_tag_edit_done, newTags.size)
                 ))
             }

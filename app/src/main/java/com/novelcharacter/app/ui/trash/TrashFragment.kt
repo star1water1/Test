@@ -390,7 +390,7 @@ class TrashFragment : Fragment() {
             preview?.blocker?.let { blocker ->
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.trash_restore_blocked_title)
-                    .setMessage(blockerMessage(blocker, preview.entityType))
+                    .setMessage(blockerMessage(blocker, preview.entityType, snapshot.operationKind))
                     .setPositiveButton(R.string.confirm, null)
                     .show()
                 return@launch
@@ -441,16 +441,49 @@ class TrashFragment : Fragment() {
         }
     }
 
-    private fun blockerMessage(blocker: TrashRepository.RestoreBlocker, entityType: String): String = when (blocker) {
+    private fun blockerMessage(
+        blocker: TrashRepository.RestoreBlocker,
+        entityType: String,
+        operationKind: String?
+    ): String = when (blocker) {
         // 같은 사유라도 주어가 다르다 — 세력 문구를 등급 체계에 그대로 쓰면 사실과 다른 안내가 된다.
+        // `else`가 집던 문구는 **세력 전용**이다(*"세력은 세계관 없이 존재할 수 없으므로"*).
+        // 그런데 이 사유를 내는 타입은 셋이 더 있고, 그중 둘은 **처방까지 틀렸다**:
+        // '필드 데이터'가 막히는 실제 이유는 *붙을 필드 정의가 없다*인데 문구는 세계관을
+        // 먼저 복원하라 했고 — 필드 삭제 작업에는 세계관 항목이 아예 없어 **시키는 일을 할
+        // 수가 없다** — '필드 정의' 되돌리기는 세계관이 멀쩡한데도 이 사유를 낸다.
         TrashRepository.RestoreBlocker.MISSING_UNIVERSE -> when (entityType) {
             TrashSnapshot.TYPE_GRADE_SYSTEM -> getString(R.string.trash_restore_blocked_universe_grade_system)
             TrashSnapshot.TYPE_DUEL_AXIS -> getString(R.string.trash_restore_blocked_universe_duel_axis)
+            TrashSnapshot.TYPE_FIELD_DATA -> getString(R.string.trash_restore_blocked_field_data)
+            TrashSnapshot.TYPE_UNIVERSE_DATA -> getString(R.string.trash_restore_blocked_universe_data)
+            // **'필드 정의'는 한 타입이 두 작업을 담는다** — 종류가 처분을 가른다
+            // (`TrashRepository`가 `KIND_DELETE`면 삭제 복원, 아니면 편집 되돌리기로 간다).
+            // 두 계획이 같은 사유를 내는데 사유의 뜻이 다르다: 삭제 복원 쪽은 **세계관이
+            // 실제로 사라진 경우** 하나뿐이고, 되돌리기 쪽이 *"되돌릴 자리가 없다"*이다.
+            // 종류를 안 보고 뒤엣말을 앞쪽에 쓰면 **세계관이 없는 사용자에게 «필드를 다시
+            // 만들라»고 시키는 꼴**이 된다 — 만들 자리도 없고, 만들면 그다음엔 이미 있다는
+            // 사유로 복원이 영영 막힌다.
+            TrashSnapshot.TYPE_FIELD_DEFINITION ->
+                if (operationKind == TrashSnapshot.KIND_DELETE) {
+                    getString(R.string.trash_restore_blocked_universe_field)
+                } else {
+                    getString(R.string.trash_restore_blocked_field_definition)
+                }
             else -> getString(R.string.trash_restore_blocked_universe)
         }
         TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)
         TrashRepository.RestoreBlocker.MISSING_DUEL_AXIS -> getString(R.string.trash_restore_blocked_duel_axis)
-        TrashRepository.RestoreBlocker.ALREADY_EXISTS -> getString(R.string.trash_restore_blocked_exists)
+        // 같은 이유로 갈랐다 — 이 사유도 **네 갈래**가 낸다. 이력 전용 문구를 필드 정의에
+        // 그대로 쓰면 *"기존 이력을 지우고 다시 복원하세요"*가 되는데, 사용자가 그 말을
+        // 따라 지우는 것은 지금 살아 있는 **필드 정의**이고 그 삭제는 값·값 라이브러리·
+        // 상태변화 이력을 함께 데려간다. **안내가 사용자를 파괴 조작으로 민다.**
+        TrashRepository.RestoreBlocker.ALREADY_EXISTS -> when (entityType) {
+            TrashSnapshot.TYPE_FIELD_DEFINITION -> getString(R.string.trash_restore_blocked_exists_field)
+            TrashSnapshot.TYPE_GRADE_SYSTEM -> getString(R.string.trash_restore_blocked_exists_grade_system)
+            TrashSnapshot.TYPE_DUEL_AXIS -> getString(R.string.trash_restore_blocked_exists_duel_axis)
+            else -> getString(R.string.trash_restore_blocked_exists)
+        }
     }
 
     /**
@@ -507,6 +540,18 @@ class TrashFragment : Fragment() {
         }
         if (losses.gradeSystemLinks > 0) {
             details.add(getString(R.string.trash_skip_grade_system_links, losses.gradeSystemLinks))
+        }
+        // **판·처분 둘은 여기 없었다** — 형제 `duelBasisAxisCleared`만 있었고, 그 둘은
+        // `applyDuelMatches`·`applyDuelAxis`가 실제로 채우는 칸이다. 없으면 완전한 무음이다:
+        // `details`가 비면 미리보기는 평범한 «복원하시겠습니까?»로 빠지고 결과 창은
+        // `if (details.isNotEmpty())` 가드에 막혀 아예 서지 않는다. 사용자는 대결 기록 일부가
+        // 되살아나지 않았다는 사실을 어디에서도 듣지 못했다 — 이 함수의 KDoc이 바로 그
+        // 무음 경로가 없다고 보증한 자리다(인자를 통째로 받는 것만으로는 그 보증이 안 선다).
+        if (losses.duelMatches > 0) {
+            details.add(getString(R.string.trash_skip_duel_matches, losses.duelMatches))
+        }
+        if (losses.duelVerdicts > 0) {
+            details.add(getString(R.string.trash_skip_duel_verdicts, losses.duelVerdicts))
         }
         if (losses.duelBasisAxisCleared) {
             details.add(getString(R.string.trash_skip_duel_basis_axis))

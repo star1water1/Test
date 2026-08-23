@@ -136,13 +136,26 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 필터 캐시를 채우는 코루틴 — **앞선 것을 끊는다.**
+     *
+     * 이 캐시는 표시용이 아니라 **판정용**이다([getFilteredEventsInMemory]가 `id in novelIds`로
+     * 거르고, 그 결과가 `N / M` 표기와 [이전]/[다음] 이동을 정한다). Room의 질의 실행기는
+     * 다중 스레드라 완료 순서가 보장되지 않으므로, A→B로 빠르게 바꾸면 **A의 결과가 B 뒤에
+     * 도착해 B의 집합을 덮을 수 있다** — 화면은 B라고 말하면서 A의 사건을 세고 A의 사건으로
+     * 건너뛴다. 아무 고지도 없다. 형제들이 이미 같은 배선을 든다(`computeJob`·`combineJob`·`pruneJob`).
+     */
+    private var novelIdsJob: kotlinx.coroutines.Job? = null
+    private var characterIdsJob: kotlinx.coroutines.Job? = null
+
     fun setFilterNovel(novelId: Long?) {
         _filterNovelId.value = novelId
         prefs.edit().apply {
             if (novelId != null) putLong("filter_novel_id", novelId) else remove("filter_novel_id")
         }.apply()
-        // 작품 필터 기반 사건 ID 캐시 갱신
-        viewModelScope.launch {
+        // 작품 필터 기반 사건 ID 캐시 갱신 — 앞선 조회는 이제 낡았다(위 KDoc).
+        novelIdsJob?.cancel()
+        novelIdsJob = viewModelScope.launch {
             _novelEventIds.value = if (novelId != null) {
                 timelineRepository.getEventIdsByNovel(novelId).toSet()
             } else null
@@ -161,13 +174,18 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().apply {
             if (characterId != null) putLong("filter_character_id", characterId) else remove("filter_character_id")
         }.apply()
-        viewModelScope.launch {
+        characterIdsJob?.cancel()
+        characterIdsJob = viewModelScope.launch {
             _characterEventIds.value = if (characterId != null) {
                 timelineRepository.getEventIdsForCharacter(characterId).toSet()
             } else null
         }
     }
     fun clearFilters() {
+        // **비운 뒤에 뒤늦게 채워지지 않게** 먼저 끊는다 — 이 갈래는 아무 코루틴도 띄우지
+        // 않으므로, 끊지 않으면 앞선 조회가 도착해 방금 비운 캐시를 되채운다.
+        novelIdsJob?.cancel()
+        characterIdsJob?.cancel()
         _filterNovelId.value = null
         _filterCharacterId.value = null
         _novelEventIds.value = null

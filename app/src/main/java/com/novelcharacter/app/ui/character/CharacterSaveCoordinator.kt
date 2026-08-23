@@ -4,6 +4,8 @@ import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.ui.common.inViewModelScope
 import com.google.gson.Gson
@@ -142,12 +144,47 @@ class CharacterSaveCoordinator(
 
     private val gson = Gson()
 
-    var isSaving = false
-        private set
+    /**
+     * **연타 빗장은 뷰모델이 든다** (R-65) — 이 객체는 호스트의 `onViewCreated`에서 매번 새로
+     * 만들어지므로 여기 두면 **회전 한 번에 풀린다.** 사유는 [CharacterViewModel.saving]에.
+     * 읽는 이름은 그대로 둔다 — 보충 탭이 네 자리에서 이 값을 본다.
+     */
+    var isSaving: Boolean
+        get() = viewModel.saving.value == true
+        private set(value) { viewModel.setSaving(value) }
 
     private fun resetSavingState() {
         isSaving = false
-        host.onSavingChanged(false)
+    }
+
+    /**
+     * 저장 사슬 중간의 확인창을 **뷰 수명에 묶어 띄운다** — 화면이 사라지면 빗장을 회수한다.
+     *
+     * 이 셋은 `DialogFragment`가 아니라 맨 `AlertDialog`라 **회전을 넘지 못한다.** 액티비티가
+     * 죽으면 창은 재생성되지 않고, 그때의 `dismiss`는 `OnCancelListener`를 부르지 않으므로
+     * `abortSave()`도 `onCancel()`도 실행되지 않는다 — 사슬을 이어 갈 길도 없다(콜백이
+     * 들어갈 `viewLifecycleOwner.lifecycleScope`가 이미 취소됐다).
+     *
+     * 종전에는 빗장이 이 객체의 필드였고 이 객체가 `onViewCreated`마다 새로 만들어져 그
+     * 누수가 **회전 자체로 저절로 나았다.** 지금은 빗장이 뷰모델에 살아 회전을 넘으므로
+     * (R-65 — 그래야 회전 중 연타가 막힌다) 다시 선 화면이 `true`를 되받아 **저장 버튼이
+     * 영영 꺼진 채로 남는다.** 지키는 것이 없는 빗장이라 버튼만 죽인다.
+     *
+     * [abortSave]가 아니라 [resetSavingState]인 것은 `onSaveThrew`의 취소 갈래와 같은
+     * 구별이다 — 호스트의 이탈 예약 해제는 *사용자가 취소한 것*에 대한 처분이고, 이쪽은
+     * 화면이 사라진 것뿐이다.
+     */
+    private fun MaterialAlertDialogBuilder.showBoundToView(): AlertDialog {
+        val dialog = show()
+        fragment.viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                if (dialog.isShowing) {
+                    dialog.dismiss()
+                    resetSavingState()
+                }
+            }
+        })
+        return dialog
     }
 
     /** 저장 체인이 저장 없이 끝나는 모든 지점(취소·오류)에서 호출 — 성공 경로는 resetSavingState + onSaved */
@@ -239,7 +276,6 @@ class CharacterSaveCoordinator(
         val characterId = host.editingCharacterId()
 
         isSaving = true
-        host.onSavingChanged(true)
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             try {
                 if (checkDuplicates) {
@@ -255,7 +291,15 @@ class CharacterSaveCoordinator(
                         }
 
                         val isEdit = characterId != -1L
-                        if (!fragment.isAdded) { abortSave(); return@launch }
+                        // **상태 저장 뒤에는 창을 띄울 수 없다.** 이 갈래는 질의 둘을 기다린
+                        // 뒤에 오므로(그중 하나는 작품 조회가 중복 수만큼) 이 화면에서 가장
+                        // 오래 걸리는 길이고, 그 사이 회전하면 `show()`가 `IllegalStateException`을
+                        // 던졌다. 그것을 바깥 `catch`가 삼켜 **누른 [저장]이 «저장 실패»로
+                        // 둔갑했다** — 실패한 것은 저장이 아니라 창 띄우기이고, 폼은 회전 너머로
+                        // 멀쩡히 살아 있는데 사용자는 자기 입력이 상했다고 읽는다.
+                        if (!fragment.isAdded || fragment.childFragmentManager.isStateSaved) {
+                            abortSave(); return@launch
+                        }
                         showDuplicateDialog(candidates, isEdit)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
@@ -264,8 +308,7 @@ class CharacterSaveCoordinator(
                     performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
                 }
             } catch (e: Exception) {
-                showSaveFailed()
-                abortSave()
+                onSaveThrew(e)
             }
         }
         return true
@@ -276,6 +319,42 @@ class CharacterSaveCoordinator(
         if (fragment.isAdded) {
             Toast.makeText(ctx, R.string.save_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * 저장 갈래 일곱의 **공통 실패 처분** — 그리고 **취소는 실패가 아니다**.
+     *
+     * 저장 사슬은 화면 수명(`viewLifecycleOwner.lifecycleScope`)에서 돌지만 실제 쓰기는
+     * `viewModel.inViewModelScope { … }`, 즉 `viewModelScope.async{}.await()`이다. 그래서
+     * **회전·뒤로가기로 뷰가 죽으면 쓰기는 끝까지 가고 `await()`만 취소로 던진다.**
+     * `CancellationException`도 `Exception`이라 종전에는 그것이 맨 `catch`에 걸려
+     * — 일곱 자리 어디에도 되던지기가 없었다 — **캐릭터는 저장됐는데
+     * «저장에 실패했습니다» 토스트가 떴다.** `showSaveFailed`는 `context`와 `isAdded`만 보고
+     * 그 둘은 `onDestroyView` 시점에 아직 살아 있어 토스트가 실제로 뜬다.
+     *
+     * 이 저장소는 같은 결함에 이미 세 번 이름을 붙였다(`NovelListFragment.createNovelField` ·
+     * `TimelineViewModel` · `NameSuggestViewModel`). 일곱 자리에 되던지기를 복붙하는 대신
+     * 처분을 한 자리에 모은다 — 여덟 번째 갈래가 생겨도 이 함수를 부르면 규약이 따라온다.
+     */
+    private fun onSaveThrew(e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) {
+            // **취소는 실패가 아니다 — 그러나 빗장은 반드시 푼다.**
+            //
+            // 이 둘을 함께 두지 않으면 두 수리가 서로를 깨뜨린다: 되던지면 이 코루틴이
+            // 죽어 성공 경로의 [resetSavingState]에 닿을 길이 없는데, 빗장은 이제
+            // 뷰모델에 살아 **회전을 넘는다** — 그러면 다시 선 화면의 저장 버튼이
+            // 영영 꺼진 채로 남는다(종전에는 코디네이터가 새로 만들어져 저절로 풀렸다).
+            //
+            // 푸는 것이 옳은 이유: 이 갈래는 *화면이 사라져 사슬이 끊긴* 자리다. 창이 열려
+            // 사용자 응답을 기다리는 동안은 코루틴이 이미 정상 종료해 있으므로 여기 오지
+            // 않는다 — 즉 이 수리가 막으려던 «창이 뜬 채 회전» 갈래의 빗장은 그대로 산다.
+            // [abortSave]가 아니라 [resetSavingState]인 것도 요점이다: 호스트의 이탈 예약
+            // 해제는 *사용자가 취소한 것*에 대한 처분이고, 이쪽은 화면이 사라진 것뿐이다.
+            resetSavingState()
+            throw e
+        }
+        showSaveFailed()
+        abortSave()
     }
 
     private fun showDuplicateDialog(
@@ -293,6 +372,10 @@ class CharacterSaveCoordinator(
      * 결과 도착 시 폼에서 character를 재구성해 처리한다.
      */
     fun registerResultListeners() {
+        // **버튼 상태는 빗장을 따라간다** — 회전 뒤 새 뷰도 이 관측으로 상태를 되받는다.
+        // 종전에는 `host.onSavingChanged`를 빗장과 나란히 손으로 불렀고, 그래서 회전으로
+        // 새로 선 화면은 *저장 중인데 버튼이 켜진* 상태였다. 한 자리로 모으면 갈릴 수 없다.
+        viewModel.saving.observe(fragment.viewLifecycleOwner) { host.onSavingChanged(it) }
         fragment.childFragmentManager.setFragmentResultListener(
             DuplicateCharacterDialog.RESULT_KEY,
             fragment.viewLifecycleOwner
@@ -313,8 +396,7 @@ class CharacterSaveCoordinator(
                         try {
                             performSave(character, isUpdate = false, targetCharacterId = -1L)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -333,8 +415,7 @@ class CharacterSaveCoordinator(
                             )
                             performSave(updatedChar, isUpdate = true, targetCharacterId = target.id)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -343,8 +424,7 @@ class CharacterSaveCoordinator(
                         try {
                             performSave(character, isUpdate = true, targetCharacterId = characterId)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -410,8 +490,7 @@ class CharacterSaveCoordinator(
                                 try {
                                     executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
                                 } catch (e: Exception) {
-                                    showSaveFailed()
-                                    abortSave()
+                                    onSaveThrew(e)
                                 }
                             }
                         },
@@ -543,14 +622,13 @@ class CharacterSaveCoordinator(
                             viewModel.addRestrictedValuesToLibrary(violations)
                             performSave(character, isUpdate, targetCharacterId)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
                 .setNegativeButton(R.string.field_library_restricted_edit_input) { _, _ -> abortSave() }
                 .setOnCancelListener { abortSave() }
-                .show()
+                .showBoundToView()
         }
     }
 
@@ -620,8 +698,7 @@ class CharacterSaveCoordinator(
 
                         executeSave(character, isUpdate, targetCharacterId, fieldValues)
                     } catch (e: Exception) {
-                        showSaveFailed()
-                        abortSave()
+                        onSaveThrew(e)
                     }
                 }
             }
@@ -631,7 +708,7 @@ class CharacterSaveCoordinator(
             .setOnCancelListener {
                 abortSave()
             }
-            .show()
+            .showBoundToView()
     }
 
     /**
@@ -749,7 +826,7 @@ class CharacterSaveCoordinator(
             .setPositiveButton(R.string.cross_universe_move_confirm) { _, _ -> onConfirm() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
-            .show()
+            .showBoundToView()
     }
 
     /**

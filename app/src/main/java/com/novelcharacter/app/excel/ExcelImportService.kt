@@ -920,6 +920,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().deleteAllCrossRefs()
                     db.timelineDao().deleteAllEvents()
                 }
+                // **이름은행이 이 파일로 다시 세워지는가** — 판정을 여기서 한 번 하고 두 자리가
+                // 같은 값을 쓴다. 아래 캐릭터 통짜 삭제의 '사용 중' 정리 고지와, 그 뒤의
+                // `deleteAll`이 **서로를 부정하지 않게** 하는 것이 이 변수의 일이다.
+                // `shouldDelete`는 못 지울 때 경고를 남기므로 **두 번 부르면 경고도 두 벌**이다.
+                val nameBankRebuilt = shouldDelete(effectiveOptions.nameBank, nameBankSpec())
                 if (effectiveOptions.characters) {
                     // 캐릭터 시트는 그 시트 세계관의 필드만 열로 담는다. 미분류 캐릭터·타 세계관 잔여
                     // 필드값은 '캐릭터 필드값' 시트로만 복원되므로, 그 시트가 없는 백업(구버전 파일)이면
@@ -964,7 +969,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             // 못 찾았을 때 *"연결 없이 '사용 중'으로 남겨둡니다"*라고 사용자에게
                             // 고지까지 하는 정상 상태다. 두 고지가 같은 결과창에서 서로를 부정하게 된다.
                             val orphanedNames = db.nameBankDao().clearOrphanedUsage()
-                            if (orphanedNames > 0) {
+                            // **말하는 것은 남을 때만이다.** 정리 자체는 갈래를 안 가린다(위 문단의
+                            // 자리 규약이 그대로다). 다만 이름은행이 이 파일로 **다시 세워지는**
+                            // 갈래에서는 방금 내린 행들이 아래 `deleteAll`로 통째로 사라지고,
+                            // `importNameBank`가 시트의 '사용여부'·'사용캐릭터코드'로 같은 이름들을
+                            // 도로 '사용 중'으로 세운다 — 그래서 *"다시 쓸 수 있습니다"*가 거짓이 된다.
+                            // 전체 백업에는 이름 은행 시트가 늘 있으므로 그것이 오히려 보통 경로다.
+                            if (orphanedNames > 0 && !nameBankRebuilt) {
                                 result.warnings.add(
                                     "덮어쓰기로 캐릭터를 지우면서 임자를 잃은 이름 ${orphanedNames}건의 '사용 중' 표시를 내렸습니다 — 이름은행에서 다시 쓸 수 있습니다"
                                 )
@@ -1003,7 +1014,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
                 }
-                if (shouldDelete(effectiveOptions.nameBank, nameBankSpec())) db.nameBankDao().deleteAll()
+                // 판정은 위에서 이미 했다 — 여기서 다시 부르면 경고가 두 벌이 된다.
+                if (nameBankRebuilt) db.nameBankDao().deleteAll()
                 if (shouldDelete(effectiveOptions.presetTemplates, userPresetTemplateSpec())) db.userPresetTemplateDao().deleteAll()
                 if (shouldDelete(effectiveOptions.searchPresets, searchPresetSpec())) db.searchPresetDao().deleteAll()
                 if (shouldDelete(effectiveOptions.characterListPresets, characterListPresetSpec())) db.characterListPresetDao().deleteAll()
@@ -5023,7 +5035,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     leaveTypeColIndex >= 0
                 ),
                 departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null,
-                departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt() else null,
+                // 이 칸만 통로 밖이었다 — 가져오기는 `parseIntensityWithWarn`으로 1~10을
+                // 클램프하는데 미리보기는 원값을 그대로 봐서, 범위 밖 값이 적힌 행을
+                // '갱신'이라 예고한 뒤 결과 창이 '바뀐 것 없음'이라 말했다(R-33).
+                // 열 없음·빈칸 거동은 그 함수가 종전 표현식과 같다(둘 다 default를 낸다).
+                departedIntensity = parseIntensityWithWarn(row, departedIntensityColIndex, null, "", null),
                 // 가져오기와 **같은 함수**로 읽는다(R-33) — result가 null이라 값만 낸다.
                 createdAt = readCreatedAtCell(row, createdAtColIndex, "세력 소속 행 ${excelRow(i)}", result = null)
             )
@@ -12472,15 +12488,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // FK CASCADE가 세력 간 관계 행을 이미 없애 버려 두 번째 세력의 payload에는
             // 그 관계가 담기지 않는다(faction_relationships에는 code가 없어 그 행이 유일본이다).
             val doomedFactions = SqlInChunks.flat(doomed) { db.factionDao().getByIds(it) }
+            // **백업을 남긴 것만 지운다.** 형제 갈래(상태 변화·사건)는 스냅샷과 삭제가 한
+            // `try` 안이라 스냅샷이 터지면 삭제가 아예 일어나지 않는데, 세력만 위 사유로
+            // 루프를 둘로 가르면서 **그 보호가 함께 떨어져 나갔다** — 두 번째 루프가
+            // 거르지 않은 `doomedFactions`를 그대로 돌아, 백업에 실패한 세력도 지워졌다.
+            // 그 세력은 휴지통에 없으므로 되살릴 길이 없고(소속은 FK CASCADE로 함께,
+            // 자동 관계의 factionId는 SET_NULL로 끊긴다), 바로 위 경고는 정확히 반대를
+            // 말하며(*"삭제하지 않았습니다"*) 아래 요약은 그 건수까지 세어
+            // *"휴지통에서 복구할 수 있습니다"*라고 덧붙였다.
+            val snapshotted = ArrayList<com.novelcharacter.app.data.model.Faction>(doomedFactions.size)
             for (faction in doomedFactions) {
                 try {
                     // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
                     trash.snapshotFaction(faction, deleteRelationships = false)
+                    snapshotted.add(faction)
                 } catch (e: Exception) {
                     result.warnings.add("세력 '${faction.name}' 백업에 실패해 삭제하지 않았습니다: ${e.message}")
                 }
             }
-            for (faction in doomedFactions) {
+            for (faction in snapshotted) {
                 try {
                     db.factionDao().deleteById(faction.id)
                     result.deletedFactions++

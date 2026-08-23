@@ -163,7 +163,13 @@ object FolderNameToken {
             }
         }
         val trimmed = replaced.trim().trim('.').trim()
-        val cut = trimmed.take(MAX_LABEL_LENGTH).trim().trim('.').trim()
+        // **경계 규칙은 [SafeTruncate] 한 벌이 든다** — `take(n)`은 UTF-16이라 32번째 자리가
+        // 하필 보충 문자(이모지 등)면 서러게이트 쌍을 반토막 낸다. 그 반쪽이 그대로
+        // **내보내는 파일 이름**에 실리는데, 위 `FORBIDDEN_LABEL_CHARS` 거르기는 이미 지난
+        // 뒤라 걸러지지도 않는다. SafeTruncate가 세워질 때 엑셀 셀·AI 기조 둘만 옮겨 갔고
+        // 이 세 번째 자리가 남아 있었다 — 그 KDoc이 *"두 벌로 두면 한쪽만 지켜진다"*고
+        // 적어 둔 바로 그 모양이다.
+        val cut = SafeTruncate.atCharLimit(trimmed, MAX_LABEL_LENGTH).trim().trim('.').trim()
         return cut.ifBlank { FALLBACK_LABEL }
     }
 

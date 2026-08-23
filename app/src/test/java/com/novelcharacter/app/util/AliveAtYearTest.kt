@@ -100,4 +100,32 @@ class AliveAtYearTest {
         )
         assertEquals(AliveAtYear.Verdict.ALIVE, AliveAtYear.resolve(changes, 1000))
     }
+
+    @Test
+    fun `태어나기 전이면 alive 행이 있어도 UNSET이다`() {
+        // **두 갈래가 같은 답을 낸다.** 연도 필터가 두 행을 비대칭으로 다뤄
+        // (`__alive`는 year=0이라 늘 남고 출생 행은 미래라 걸린다) `__alive` 행 하나의
+        // 유무가 답을 갈랐다 — 시점 상태 화면이 아직 태어나지 않은 인물을 '생존'으로 그렸다.
+        val withAlive = listOf(
+            change(ALIVE, 0, "alive"),
+            change(BIRTH, 500, "")
+        )
+        val withoutAlive = listOf(change(BIRTH, 500, ""))
+        assertEquals(AliveAtYear.Verdict.UNSET, AliveAtYear.resolve(withAlive, 300))
+        assertEquals(AliveAtYear.resolve(withoutAlive, 300), AliveAtYear.resolve(withAlive, 300))
+        // 태어난 뒤로는 종전대로 적힌 것이 산다.
+        assertEquals(AliveAtYear.Verdict.ALIVE, AliveAtYear.resolve(withAlive, 500))
+        assertEquals(AliveAtYear.Verdict.ALIVE, AliveAtYear.resolve(withAlive, 700))
+    }
+
+    @Test
+    fun `출생 행이 둘이어도 두 갈래가 같은 답을 낸다`() {
+        // `__birth`는 캐릭터당 한 행이 불변식이지만 엑셀·복원이 둘을 만들 수 있다.
+        // 그때 *마지막*을 고르면 두 갈래가 다시 갈린다 — 가장 이른 것이 그 갈림을 없앤다.
+        val two = listOf(change(BIRTH, 500, ""), change(BIRTH, 1000, ""))
+        val withAlive = two + change(ALIVE, 0, "alive")
+        for (y in listOf(300, 500, 700, 1000, 1200)) {
+            assertEquals("targetYear=$y", AliveAtYear.resolve(two, y), AliveAtYear.resolve(withAlive, y))
+        }
+    }
 }

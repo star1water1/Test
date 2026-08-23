@@ -780,6 +780,12 @@ class NovelListFragment : Fragment() {
                     outcome.failed.takeIf { it > 0 }
                         ?.let { getString(R.string.field_initial_values_partial, it) }
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다.** 쓰기 둘은 위 `inViewModelScope`에서 이미 끝까지
+                // 갔는데(그것이 그 블록의 요점이다), 화면을 떠나 이 코루틴이 취소되면
+                // `await()`가 던지는 것을 아래 갈래가 삼켜 **만들어 놓고 «만들기 실패»라
+                // 적는다.** 저장소의 관례가 이미 그렇다(같은 파일의 뷰모델 쪽 형제들).
+                throw e
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 android.util.Log.e("NovelList", "Duplicate novel field key: ${field.key}", e)
                 com.novelcharacter.app.util.OpResult.failure(

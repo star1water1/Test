@@ -130,6 +130,7 @@ $MAIN/util/FieldValueScan.kt
 $MAIN/util/CharacterFieldColumns.kt
 $MAIN/util/AiCheckState.kt
 $MAIN/util/SemanticClearPlan.kt
+$MAIN/util/SemanticAlivePrecedence.kt
 $MAIN/util/ColorHex.kt
 $MAIN/util/AliveAtYear.kt
 $MAIN/backup/BackupChunkFormat.kt
@@ -292,6 +293,7 @@ $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/DateValidation.kt
 $MAIN/util/BirthdayHelper.kt
 $MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt
@@ -413,6 +415,7 @@ $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
 $TEST/util/AiCheckStateTest.kt
 $TEST/util/SemanticClearPlanTest.kt
+$TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
 $TEST/util/AliveAtYearTest.kt
 $TEST/util/NarrativeDensityCurveTest.kt

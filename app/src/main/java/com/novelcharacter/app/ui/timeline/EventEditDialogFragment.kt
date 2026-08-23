@@ -35,6 +35,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
+import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.ui.field.FieldEditDialog
 import com.novelcharacter.app.util.FieldOptionParser
@@ -433,6 +434,10 @@ class EventEditDialogFragment : DialogFragment() {
         val toInsert = field.copy(entityType = FieldDefinition.ENTITY_EVENT)
         // 뷰모델 수명을 빌린다 — 아래 쓰기 둘이 화면보다 오래 살아야 한다.
         val scopeOwner = ViewModelProvider(this)[FieldViewModel::class.java]
+        // **호스트는 붙어 있는 지금 집는다.** 아래 블록은 회전을 넘겨 계속 도는데, 그 안에서
+        // 프래그먼트를 지나면(`parentFragment`·`activity`) 회전 뒤에는 붙잡을 것이 없다 —
+        // `CharacterSaveCoordinator`가 같은 이유로 앱 컨텍스트를 생성 시점에 굳혔다(c241f6f).
+        val provider = requireProvider()
         lifecycleScope.launch {
             val result = try {
                 // **정의와 사전 등록 값은 한 수명에서 만든다** — 정본은
@@ -441,15 +446,30 @@ class EventEditDialogFragment : DialogFragment() {
                 // 값 사전 등록은 **호스트가 아니라 여기서** 심는다. DataProvider 구현이 셋이라
                 // (그중 하나는 완전 수식 이름이라 착수 grep에 안 걸린 전력이 있다 — 1-p장)
                 // 호스트에 맡기면 한 곳이 빠져도 조용하다. 인터페이스의 고지 규약과 같은 취지다.
-                val planted = scopeOwner.inViewModelScope {
-                    val newId = requireProvider().insertEventField(toInsert)
-                    plantInitialValues(newId, toInsert, initialValues)
-                }
+                // 타입을 적어 둔다 — 이 계층은 실클래스패스 프로브가 원리적으로 못 보고
+                // (`probe_view_compile.sh`는 커스텀 뷰만 본다) 차분 컴파일은 androidx가
+                // 미해석이라 추론이 무너진다. 적어 두면 그 자리만은 기계가 대조한다.
+                val outcome: FieldValueLibraryRepository.InitialValueOutcome =
+                    scopeOwner.inViewModelScope {
+                        val newId = provider.insertEventField(toInsert)
+                        // **등재도 뷰모델이 든다** — 종전에는 이 자리가 프래그먼트를 지나
+                        // 앱을 집었고(`activity?.application ?: return null`), 회전하면
+                        // 거기서 조용히 물러서 **정의는 서고 값만 사라졌다** — 옮긴 것이
+                        // 막으려던 바로 그 결과다. 작품 필드 생성이 이미 이 모양이다.
+                        scopeOwner.registerInitialValues(newId, toInsert, initialValues)
+                    }
                 OpResult.success(
                     OpResult.CAT_FIELD,
                     getString(R.string.event_field_created, field.name),
-                    planted
+                    // 등재하지 못한 값을 말한다 — 작품 필드 생성이 쓰는 그 문구 그대로.
+                    outcome.failed.takeIf { it > 0 }
+                        ?.let { getString(R.string.field_initial_values_partial, it) }
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // **취소는 실패가 아니다.** 쓰기는 위 블록에서 이미 끝까지 갔는데(그것이
+                // `inViewModelScope`의 요점이다) 아래 갈래가 삼키면 *만들어 놓고
+                // «만들기 실패»라 적는다*. 저장소의 관례가 이미 그렇다(`NovelViewModel`).
+                throw e
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 Log.e("EventEditDialog", "Duplicate event field key: ${field.key}", e)
                 OpResult.failure(
@@ -563,25 +583,6 @@ class EventEditDialogFragment : DialogFragment() {
             reportAndNotify(result)
             if (result.success) rebuildEventFieldSection()
         }
-    }
-
-    /**
-     * 값 사전 등록분을 라이브러리에 심고, **못 심은 것이 있으면 그 사실을 돌려준다**(무음 유실 금지).
-     * 해석·등재 규칙은 [com.novelcharacter.app.data.repository.FieldValueLibraryRepository]가
-     * 단일 소스다 — 필드 관리·작품 편집도 같은 경로를 쓴다.
-     */
-    private suspend fun plantInitialValues(
-        newId: Long,
-        field: FieldDefinition,
-        raw: String
-    ): String? {
-        if (newId <= 0L || raw.isBlank()) return null
-        val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp ?: return null
-        val outcome = runCatching {
-            app.fieldValueLibraryRepository.registerInitialValues(newId, field, raw)
-        }.getOrNull() ?: return null
-        if (outcome.failed <= 0) return null
-        return getString(R.string.field_initial_values_partial, outcome.failed)
     }
 
     /**

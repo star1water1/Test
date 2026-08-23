@@ -466,6 +466,11 @@ class HomeDashboardFragment : Fragment() {
             // 찍지 않으려고), 그 사이 탭을 빠르게 오가면 두 번째 진입이 아직 안 찍힌 표시를
             // 보고 통과한다. 창이 둘 겹치면 뒤엣것을 닫아도 앞엣것이 남는다.
             if (childFragmentManager.findFragmentByTag(BirthdayCelebrationDialog.TAG) != null) return@launch
+            // **표시를 찍기 전에 띄울 수 있는지 본다.** 상태 저장 뒤면 `show()`가
+            // `IllegalStateException`으로 죽는데, 종전에는 그 바로 앞에서 '오늘 봤음'을
+            // 이미 찍었다 — 크래시로 끝나지 않고 **그 해의 축하가 통째로 사라진다**
+            // (`shouldShow`가 오늘을 걸러 다시는 안 뜬다). 생일은 내년이라 되돌릴 수 없다.
+            if (childFragmentManager.isStateSaved) return@launch
             BirthdayCelebrationPrefs.markShown(ctx, today)
             BirthdayCelebrationDialog.newInstance(pages)
                 .show(childFragmentManager, BirthdayCelebrationDialog.TAG)

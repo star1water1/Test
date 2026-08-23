@@ -181,6 +181,33 @@ class FieldValueSheetMapperTest {
     }
 
     @Test
+    fun aliasCsv_fullWidthAliasSurvivesRoundtrip() {
+        // **별칭은 글자 그대로 살아남는다** — 조회 없이 그대로 저장되고 `byAlias[t]`가
+        // 정확 일치로 쓰는 값이라, 전각을 반각으로 낮춰 읽으면 그것이 곧 조용한 개명이다.
+        // 종전에는 `ＮＰＣ`가 왕복 한 번에 `NPC`로 접혔고, 그러면 canonical과 같아진
+        // 그 별칭을 `applyRow`가 버려 **별칭이 통째로 사라졌다**(태그가 B-261에서 간 그 축).
+        for (alias in listOf("ＮＰＣ", "ＡＢＣ１２３", "Ｓ급")) {
+            assertEquals(listOf(alias), FieldValueSheetMapper.csvToAliases(joinCsv(listOf(alias))))
+        }
+    }
+
+    @Test
+    fun aliasCsv_fullWidthCommaAliasSurvivesRoundtrip() {
+        // **콜드 검토가 잡은 자리**: `needsQuoting`은 `toHalfWidth` 뒤에 보므로 전각 쉼표를
+        // 품은 별칭도 내보내기가 **감싼다**. 그 토큰에는 ASCII 쉼표가 없어 «쉼표를 품었는가»로
+        // 가르면 감싼 칸이 다시 갈린다 — 셀의 `"` 유무로 가르는 것이 그래서다.
+        val aliases = listOf("ＮＰＣ，주식회사", "Seoul")
+        assertEquals(aliases, FieldValueSheetMapper.csvToAliases(joinCsv(aliases)))
+    }
+
+    @Test
+    fun aliasCsv_fullWidthSeparatorDoesNotBreakQuotedCell() {
+        // 감싸인 칸 안의 `、`는 값의 일부다 — 종전에는 셀 전체를 치환해 감싸기를 무력화했다.
+        val aliases = listOf("北斗、南斗, 天", "Seoul")
+        assertEquals(aliases, FieldValueSheetMapper.csvToAliases(joinCsv(aliases)))
+    }
+
+    @Test
     fun aliasCsv_legacyFileStillParses() {
         // 따옴표가 없는 옛 파일은 종전 그대로 읽힌다 — 형식 변경의 필수 조건이다.
         assertEquals(listOf("서울시", "한양"), FieldValueSheetMapper.csvToAliases("서울시, 한양"))

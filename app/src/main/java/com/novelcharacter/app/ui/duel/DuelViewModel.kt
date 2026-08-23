@@ -904,8 +904,13 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         relation: String,
         winnerLabel: String
     ): DuelMatch? {
-        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return null
-        val updated = duelRepository.updateWinner(match, winnerCode) ?: return null
+        // **조회와 쓰기가 한 수명에 든다** — 둘 사이가 중단 지점이고 호출부는 화면 수명이라,
+        // 그 틈에 뷰가 죽으면 쓰기도 이력도 한 줄 없이 사라진다. 사용자는 확인창이 닫히는
+        // 것을 봤으므로 고쳐졌다고 믿는다(조용한 무동작). 형제 넷이 이미 이 모양이다.
+        val updated = inViewModelScope {
+            val match = app.database.duelMatchDao().getByCode(matchCode) ?: return@inViewModelScope null
+            duelRepository.updateWinner(match, winnerCode)
+        } ?: return null
         reportResult(
             _result,
             OpResult.success(
@@ -918,8 +923,18 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 판 하나를 지운다 — **되돌릴 수 없다**(휴지통을 거치지 않는다). 이력이 유일한 자취다. */
     suspend fun deleteMatch(matchCode: String, relation: String) {
-        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return
-        duelRepository.undo(match)
+        // 형제 넷과 같은 모양 — 조회와 쓰기를 한 수명에 둔다(위 [editWinner]와 같은 사유).
+        //
+        // **찾지 못했으면 고지도 없다.** 블록 안의 `return@`은 람다만 빠져나오므로,
+        // 그 결과를 밖에서 다시 받아 가르지 않으면 *지운 것이 없는데* «삭제했습니다»가
+        // 나간다 — 위 [editWinner]는 `?: return null`이 그 자리를 이미 지키고 있다.
+        val deleted = inViewModelScope {
+            val match = app.database.duelMatchDao().getByCode(matchCode)
+                ?: return@inViewModelScope false
+            duelRepository.undo(match)
+            true
+        }
+        if (!deleted) return
         reportResult(
             _result,
             OpResult.success(OpResult.CAT_DUEL, app.getString(R.string.duel_op_match_deleted, relation))

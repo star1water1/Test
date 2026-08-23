@@ -81,6 +81,17 @@ class SemanticFieldSyncHelper(
         clearableFieldIds: Set<Long>?
     ) {
         val fieldMap = fields.associateBy { it.id }
+        // **명시가 파생을 이긴다 — 그 판단은 루프 전에 한 번 접는다**([SemanticAlivePrecedence]).
+        // 루프는 값을 하나씩 처분하므로 *"같은 저장에 생존여부가 함께 실려 왔는가"*를 알 수
+        // 없고, 몰랐기 때문에 사망연도 갈래가 사용자가 고른 '불명'을 매 저장마다 '사망'으로
+        // 되덮었다. 미리 접으면 두 갈래의 **차례가 답을 바꾸지 못한다**.
+        val deathDerivation = SemanticAlivePrecedence.deathDerivation(fields, values)
+        // **비움 처분도 같은 판정을 쓴다.** 사망연도를 *비우는* 저장은 루프 뒤에 무조건 도는데,
+        // 그쪽이 생존여부를 '생존'으로 되쓰면 **같은 저장에서 사용자가 고른 '사망'·'불명'을
+        // 덮는다** — 위 갈래가 막은 되덮기와 방향만 반대인 같은 결함이다. 특히 «연도 불명
+        // 사망»(아래 `deadVal` 갈래가 명시로 허용한다)은 사망연도 칸이 빈 채로 저장되므로
+        // 편집 폼에서는 *언제나* 이 경로를 지난다 — 고른 '사망'이 저장 직후 '생존'이 됐다.
+        val rewriteAliveOnClear = deathDerivation == SemanticAlivePrecedence.DeathDerivation.APPLY
 
         for (value in values) {
             val field = fieldMap[value.fieldDefinitionId] ?: continue
@@ -103,12 +114,25 @@ class SemanticFieldSyncHelper(
                     val raw = value.value.trim()
                     val year = raw.toIntOrNull()
                     if (year != null) {
-                        upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
-                        syncDeathToAlive(characterId, fields, isDead = true)
+                        when (deathDerivation) {
+                            // 생존여부가 안 실려 온 저장 — 종전 그대로 파생시킨다.
+                            SemanticAlivePrecedence.DeathDerivation.APPLY -> {
+                                upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                                syncDeathToAlive(characterId, fields, isDead = true)
+                            }
+                            // '사망'·'불명' — 사망연도 이력은 사실이므로 남기되, 생존여부
+                            // 필드값과 `__alive`는 아래 ALIVE 갈래가 정한다. 여기서 덮으면
+                            // 사용자가 방금 고른 것이 저장 직후 사라진다.
+                            SemanticAlivePrecedence.DeathDerivation.HISTORY_ONLY ->
+                                upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                            // '생존' — ALIVE 갈래가 사망연도와 `__death`를 지운다.
+                            // 여기서 적으면 차례에 따라 그것을 **되살린다**.
+                            SemanticAlivePrecedence.DeathDerivation.SKIP -> Unit
+                        }
                     } else if (raw.isEmpty()) {
                         // 빈 값이 이 루프에 실려 오는 경로는 실사용에 없다(비우면 값 행 자체가
-                        // 사라진다) — 그래도 오면 아래 비움 처분과 **같은 함수**를 쓴다.
-                        clearDeathDerived(characterId, fields)
+                        // 사라진다) — 그래도 오면 아래 비움 처분과 **같은 함수·같은 인자**를 쓴다.
+                        clearDeathDerived(characterId, fields, rewriteAlive = rewriteAliveOnClear)
                     }
                 }
                 SemanticRole.ALIVE -> {
@@ -164,7 +188,9 @@ class SemanticFieldSyncHelper(
         // **비워진 역할을 처분한다** — 위 루프가 볼 수 없는 신호다(위 KDoc).
         // 판정 자체는 [SemanticClearPlan]이 든다(순수 — 시험이 닿는다).
         val cleared = SemanticClearPlan.clearedRoles(fields, values, clearableFieldIds)
-        if (SemanticRole.DEATH_YEAR in cleared) clearDeathDerived(characterId, fields)
+        if (SemanticRole.DEATH_YEAR in cleared) {
+            clearDeathDerived(characterId, fields, rewriteAlive = rewriteAliveOnClear)
+        }
         val clearYear = SemanticRole.BIRTH_YEAR in cleared
         val clearDate = SemanticRole.BIRTH_DATE in cleared
         if (clearYear || clearDate) clearBirthDerived(characterId, fields, clearYear, clearDate)
@@ -211,10 +237,20 @@ class SemanticFieldSyncHelper(
      * 이 본문은 종전에 `syncFieldToStateChange`의 *"사망연도가 빈 문자열이면"* 갈래에
      * 있었는데, **빈 값을 넘기는 호출처가 하나도 없어 닿지 못하는 코드였다**(필드를 비우면
      * 값 행 자체가 사라진다). 사건 삭제 경로([onDeathEventDeleted])와 같은 처분을 쓴다.
+     *
+     * @param rewriteAlive 생존여부까지 '생존'으로 되쓸 것인가. **같은 저장이 생존여부를
+     *   명시로 실어 왔으면 `false`다** — 그때 생존여부를 정하는 것은 이쪽이 아니라 그 값이고
+     *   ([SemanticAlivePrecedence] — 명시가 파생을 이긴다), 되쓰면 사용자가 방금 고른
+     *   '사망'·'불명'이 저장 직후 '생존'으로 돌아간다. `__death` 이력을 지우는 것은 어느
+     *   쪽이든 한다 — 사망연도를 비운 것은 사실이기 때문이다(연도 불명 사망은 허용된다).
      */
-    private suspend fun clearDeathDerived(characterId: Long, fields: List<FieldDefinition>) {
+    private suspend fun clearDeathDerived(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        rewriteAlive: Boolean
+    ) {
         deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
-        syncDeathToAlive(characterId, fields, isDead = false)
+        if (rewriteAlive) syncDeathToAlive(characterId, fields, isDead = false)
     }
 
     /**
