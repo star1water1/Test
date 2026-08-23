@@ -105,6 +105,7 @@ class FieldFilterHelperTest {
         override suspend fun insert(field: FieldDefinition): Long = unused()
         override suspend fun insertAll(fields: List<FieldDefinition>) = unused()
         override suspend fun update(field: FieldDefinition) = unused()
+        override suspend fun setDisplayOrder(id: Long, order: Int) = unused()
         override suspend fun updateAll(fields: List<FieldDefinition>) = unused()
         override suspend fun delete(field: FieldDefinition) = unused()
         override suspend fun getAllFieldsList(entityType: String): List<FieldDefinition> = unused()

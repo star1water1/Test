@@ -9654,7 +9654,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): FactionRelationship = FactionRelationship(
         factionId1 = factionId1, factionId2 = factionId2, relationType = relationType,
         description = r.description, intensity = r.intensity,
-        isBidirectional = r.isBidirectional, displayOrder = r.displayOrder,
+        // 새 행이 순서를 말하지 않았으면 엔티티 기본값(0)이다 — 종전과 같은 값이다.
+        isBidirectional = r.isBidirectional, displayOrder = r.displayOrder ?: 0,
         createdAt = createdAt
     )
 
@@ -9672,7 +9673,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 다른 관계 시트와 동일하게 parseBoolean 사용(P2-10) — 예전 `!= "N"`은 FALSE/0/false 같은
         // falsey 값을 true로 뒤집었다. 열이 없으면 기본 양방향(true).
         isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true,
-        displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
+        // **빈칸·해석 불가는 `null`이다** — 형제 열두 시트와 같은 모양이다. 종전에는 `?: 0`이라
+        // 열 머리만 남아 있으면 **빈칸 하나가 기존 표시 순서를 0으로 덮었다**(무통보 유실).
+        displayOrder = if (orderColIndex >= 0) {
+            getCellString(row, orderColIndex).let { if (it.isBlank()) null else parseNumber(it)?.toInt() }
+        } else null
     )
 
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {

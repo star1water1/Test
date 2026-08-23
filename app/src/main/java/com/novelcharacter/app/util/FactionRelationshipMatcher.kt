@@ -23,7 +23,14 @@ object FactionRelationshipMatcher {
         val description: String = "",
         val intensity: Int = 5,
         val isBidirectional: Boolean = true,
-        val displayOrder: Int = 0
+        /**
+         * 표시 순서 — **`null`이면 이 행이 순서를 말하지 않았다**(빈칸이거나 해석 불가).
+         *
+         * 종전에는 `Int = 0`이라 빈칸이 곧 `0`이었고, 열 머리만 남아 있으면
+         * [ColumnPresence.displayOrder]가 참이므로 **기존 순서가 0으로 덮였다** —
+         * 열두 형제 시트는 전부 `Int?` + `?: existing`으로 기존을 지키는데 이 시트만 밖이었다.
+         */
+        val displayOrder: Int? = null
     )
 
     /**
@@ -67,7 +74,9 @@ object FactionRelationshipMatcher {
         description = if (presence.description) row.description else existing.description,
         intensity = if (presence.intensity) row.intensity else existing.intensity,
         isBidirectional = if (presence.isBidirectional) row.isBidirectional else existing.isBidirectional,
-        displayOrder = if (presence.displayOrder) row.displayOrder else existing.displayOrder
+        // **말하지 않은 것은 바꾸지 않는다** — 열이 없으면(presence=false) 물론이고,
+        // 열은 있는데 칸이 비었거나 해석이 안 되면(`row.displayOrder == null`) 그때도 그대로 둔다.
+        displayOrder = if (presence.displayOrder) row.displayOrder ?: existing.displayOrder else existing.displayOrder
     )
 
     /**

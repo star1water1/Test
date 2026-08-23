@@ -61,8 +61,8 @@ class RelationshipGraphView @JvmOverloads constructor(
      *
      * 그 값들은 전부 **데이터가 바뀔 때만** 바뀌므로 설정자를 통로로 삼아 그때 한 번 짓는다.
      * 통로를 속성 설정자에 둔 것이 요점이다 — 대입 자리가 셋(갱신·단일 노드·배치 완료)이라
-     * 호출을 손으로 달면 **한 자리가 빠지고 캐시만 낡는다**(같은 부류를 이 저장소가
-     * `cachedPairEdgeCount`에서 이미 한 번 겪었다).
+     * 호출을 손으로 달면 **한 자리가 빠지고 캐시만 낡는다**(종전 `cachedPairEdgeCount`가
+     * *"setGraphData 시 갱신"*이라 적어 두고 명시 호출 하나에 매달려 있던 자리다).
      */
     private var nodes = listOf<GraphNode>()
         set(value) {
@@ -82,11 +82,26 @@ class RelationshipGraphView @JvmOverloads constructor(
     /** 노드와 **같은 차례**의 그리기 라벨 — 6글자 절단과 사망 † 접두가 이미 붙어 있다 */
     private var nodeDrawLabels = listOf<String>()
 
-    /** 세력 영역(볼록껍질/단일 원) — 노드 좌표가 바뀔 때만 다시 짓는다 */
-    private var factionAreas = listOf<FactionArea>()
+    /**
+     * 세력 영역(볼록껍질/단일 원)과 세력별 중심점 — **`nodes`가 바뀌면 낡고, 필요할 때 지어진다.**
+     *
+     * 여기만 지연으로 두는 이유는 값이 비싸고(볼록껍질 `O(멤버 log 멤버)`) **꺼져 있을 수 있기**
+     * 때문이다 — `showFactionArea`가 false면 아무도 안 본다. 갱신마다 미리 지으면 그 판은
+     * 통째로 버려진다. 나머지 캐시(노드 색인·라벨·엣지 오프셋)는 늘 쓰이므로 곧장 짓는다.
+     */
+    private var factionGeometryStale = true
+    private var factionAreasCache = listOf<FactionArea>()
+    private var factionCentroidsCache = mapOf<Long, PointF>()
 
-    /** 세력 id → 멤버 중심점 (세력 간 관계 엣지의 양 끝) */
-    private var factionCentroids = mapOf<Long, PointF>()
+    private fun factionAreas(): List<FactionArea> {
+        if (factionGeometryStale) rebuildFactionGeometry()
+        return factionAreasCache
+    }
+
+    private fun factionCentroids(): Map<Long, PointF> {
+        if (factionGeometryStale) rebuildFactionGeometry()
+        return factionCentroidsCache
+    }
 
     /** 엣지와 **같은 차례**의 곡선 오프셋 — 0이면 직선이다 */
     private var edgeCurveOffsets = FloatArray(0)
@@ -117,9 +132,6 @@ class RelationshipGraphView @JvmOverloads constructor(
         set(value) { field = value; invalidate() }
 
     private val isDarkMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-
-    // 엣지 쌍별 개수 캐시 (setGraphData 시 갱신, onDraw마다 재생성 방지)
-    private var cachedPairEdgeCount = mapOf<Long, Int>()
 
     private val defaultNodeColor = ContextCompat.getColor(context, R.color.graph_node_fill)
     private val deceasedNodeColor = 0xFF9E9E9E.toInt() // 시간뷰 사망 노드 회색
@@ -335,18 +347,17 @@ class RelationshipGraphView @JvmOverloads constructor(
      * 고정이라 답이 프레임마다 같으므로 여기서 한 번 짓는다.
      */
     private fun rebuildEdgeGeometry() {
-        // **양 끝이 다 있는 엣지만 센다.** `onDraw`가 끝을 못 찾은 엣지를 건너뛰므로
-        // (관계도는 노드에 상한이 있고 필터가 캐릭터를 좁히니 매달린 엣지가 실재한다)
-        // 세는 모수도 그것과 같아야 한다. 종전에는 **총수는 매달린 것까지 세고 차례는
-        // 안 세어** 다중 엣지의 부채꼴이 한쪽으로 밀려 그려졌다 — 같은 값을 두 잣대로 재던 자리다.
+        // **양 끝이 다 있는 엣지만 센다** — 세는 모수를 그리는 모수와 맞춘다.
+        //
+        // ⚠️ **이것은 그려지는 그림을 바꾸지 않는다.** 한 쌍의 엣지는 끝을 공유하므로 그 쌍은
+        // *전부 매달렸거나 전부 아니다* — 살아 있는 쌍의 총수에 매달린 엣지가 섞일 수가 없다.
+        // 그래도 거르는 것은 **그릴 수 없는 쌍을 세어 두지 않기 위해서**다(모수 일치).
         val counts = mutableMapOf<Long, Int>()
         for (edge in edges) {
             if (edge.fromId !in nodeById || edge.toId !in nodeById) continue
             val key = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
             counts[key] = (counts[key] ?: 0) + 1
         }
-        cachedPairEdgeCount = counts
-
         val offsets = FloatArray(edges.size)
         val seen = mutableMapOf<Long, Int>()
         for ((i, edge) in edges.withIndex()) {
@@ -366,10 +377,11 @@ class RelationshipGraphView @JvmOverloads constructor(
     }
 
     /**
-     * 노드에서 파생되는 기하 — 색인 · 라벨 · 세력 영역 · 세력 중심점.
+     * 노드에서 파생되는 기하 — 색인 · 라벨.
      *
-     * 세력 영역의 볼록껍질은 `O(멤버 수 log 멤버 수)`라 프레임마다 돌 것이 아니다.
-     * 노드 좌표는 배치가 끝날 때만 바뀌므로 그때 한 번 짓는다.
+     * **`nodes` 대입마다 돈다**(좌표가 그대로여도 그렇다) — 그래도 프레임마다 짓던 것에 비하면
+     * 자릿수가 다르다: 대입은 데이터 갱신·단일 노드·배치 완료 셋뿐이고 `onDraw`는 제스처 중
+     * 초당 수십 번이다. 비싼 세력 기하는 여기서 짓지 않고 **낡았다고 표시만** 한다.
      */
     private fun rebuildNodeGeometry() {
         nodeById = nodes.associateBy { it.id }
@@ -382,14 +394,16 @@ class RelationshipGraphView @JvmOverloads constructor(
         }
         nodeDrawLabels = labels
 
-        rebuildFactionGeometry()
+        // 세력 기하는 **낡았다고 표시만 한다** — 그리는 자리가 켜져 있을 때 짓는다.
+        factionGeometryStale = true
         // **엣지 기하가 노드에 딸린다** — 매달린 엣지 판정([nodeById])이 바뀌기 때문이다.
         // 여기서 함께 짓지 않으면 배치가 끝난 뒤 곡선 부채꼴이 옛 모수로 남는다.
         rebuildEdgeGeometry()
     }
 
-    /** 세력 영역(볼록껍질/단일 원)과 세력별 멤버 중심점을 짓는다 */
+    /** 세력 영역(볼록껍질/단일 원)과 세력별 멤버 중심점을 짓는다 — [factionAreas]·[factionCentroids]가 부른다 */
     private fun rebuildFactionGeometry() {
+        factionGeometryStale = false
         // factionId → (color, list of member nodes) 매핑
         val factionNodes = mutableMapOf<Long, Pair<Int, MutableList<GraphNode>>>()
         for (node in nodes) {
@@ -455,7 +469,7 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
             areas.add(FactionArea(factionColor, path, 0f, 0f))
         }
-        factionAreas = areas
+        factionAreasCache = areas
 
         // 세력별 멤버 노드 중심점 — 세력 간 관계 엣지(B-3)의 양 끝이다.
         // **`factionAreas`와 모수가 다르다**: 색을 못 받은 세력(factionColors가 짧은 경우)도
@@ -469,7 +483,7 @@ class RelationshipGraphView @JvmOverloads constructor(
                 acc[2] += 1f
             }
         }
-        factionCentroids = sums.mapValues { (_, acc) -> PointF(acc[0] / acc[2], acc[1] / acc[2]) }
+        factionCentroidsCache = sums.mapValues { (_, acc) -> PointF(acc[0] / acc[2], acc[1] / acc[2]) }
     }
 
     fun resetTransform() {
@@ -740,9 +754,10 @@ class RelationshipGraphView @JvmOverloads constructor(
      * **기하는 [rebuildFactionGeometry]가 짓는다** — 여기서는 칠하기만 한다.
      */
     private fun drawFactionBackgrounds(canvas: Canvas) {
-        if (factionAreas.isEmpty()) return
+        val areas = factionAreas()
+        if (areas.isEmpty()) return
         val padding = nodeRadius * 2f
-        for (area in factionAreas) {
+        for (area in areas) {
             factionBgPaint.color = area.color
             factionBgPaint.alpha = 40
             val path = area.path
@@ -762,12 +777,13 @@ class RelationshipGraphView @JvmOverloads constructor(
      */
     private fun drawFactionRelationEdges(canvas: Canvas) {
         if (factionRelationEdges.isEmpty()) return
-        if (factionCentroids.isEmpty()) return
+        val centroids = factionCentroids()
+        if (centroids.isEmpty()) return
 
         for (edge in factionRelationEdges) {
-            // 세력별 멤버 중심점은 [rebuildFactionGeometry]가 미리 잰다
-            val from = factionCentroids[edge.factionId1] ?: continue
-            val to = factionCentroids[edge.factionId2] ?: continue
+            // 세력별 멤버 중심점은 [rebuildFactionGeometry]가 한 번만 잰다
+            val from = centroids[edge.factionId1] ?: continue
+            val to = centroids[edge.factionId2] ?: continue
             val fromX = from.x
             val fromY = from.y
             val toX = to.x

@@ -212,8 +212,18 @@ class UniverseRepository(
     suspend fun updateField(field: FieldDefinition) =
         fieldDefinitionDao.update(field)
 
-    suspend fun updateFieldsOrder(fields: List<FieldDefinition>) =
-        fieldDefinitionDao.updateAll(fields)
+    /**
+     * 필드 순서 저장 — **차례만 받아 `displayOrder`만 쓴다** ([updateUniverseDisplayOrders]와 같은 규약).
+     *
+     * 종전에는 화면이 든 엔티티 사본을 `@Update`로 통짜 되썼다. 그래서 순서를 끌어 놓는 사이
+     * 같은 행이 다른 경로에서 바뀌면 **그 변경이 되감겼다** — 필드 관리 화면 자신의
+     * 'AI 추천 모드' 메뉴가 그 자리다(같은 목록에서 즉시 DB에 쓰는데, 그 뒤 순서를 저장하면
+     * 화면이 들고 있던 옛 `config`가 다시 올라간다). 한 트랜잭션으로 묶어 중간 상태가
+     * 목록에 방출되지 않게 하는 것도 형제와 같다.
+     */
+    suspend fun updateFieldsOrder(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> fieldDefinitionDao.setDisplayOrder(id, index) }
+    }
 
     /**
      * 필드 정의 하나를 지운다 — **휴지통을 지난다.**
