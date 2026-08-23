@@ -1356,11 +1356,21 @@ class StatsDataProvider {
         val novelMap = s.novels.associateBy { it.id }
         val charMap = s.characters.associateBy { it.id }
 
-        // 가장 캐릭터가 많은 작품
-        val mostActiveNovel = s.characters.groupBy { it.novelId }
-            .maxByOrNull { it.value.size }?.let { entry ->
-                entry.key?.let { novelMap[it]?.title }
-            }
+        // 가장 캐릭터가 많은 작품 — **후보는 이름까지 해석되는 것뿐이다.**
+        //
+        // 종전에는 `groupBy { it.novelId }`의 최대 묶음을 먼저 고르고 그 뒤에 이름을 찾았다.
+        // 그래서 **미배정(`novelId == null`) 묶음이 가장 크면 최대가 그쪽으로 가고**,
+        // 이름이 안 나와 안내 줄이 통째로 사라졌다 — 캐릭터를 가진 작품이 여럿인데도
+        // 화면이 아무 말을 안 한다(원칙 04). 삭제된 작품을 가리키는 낡은 id도 같은 모양이다.
+        // 형제 `mostConnectedChar`는 이미 이 규율이다(이름이 나오는 후보만 겨룬다).
+        //
+        // '작품 미배정' 스코프에서는 결과가 null이고 줄이 숨는 것이 **옳다** — 그 스코프에는
+        // 작품 모수가 0이다.
+        val mostActiveNovel = s.characters
+            .mapNotNull { it.novelId }
+            .groupingBy { it }.eachCount()
+            .mapNotNull { (id, count) -> novelMap[id]?.title?.let { it to count } }
+            .maxByOrNull { it.second }?.first
 
         // 관계가 가장 많은 캐릭터 — **스코프 안 인물만 후보다.**
         // 종전에는 최댓값이 스코프 밖 상대이면 이름 조회가 null이 되어 **안내줄이 통째로
@@ -1714,9 +1724,22 @@ class StatsDataProvider {
         // `coerceAtMost(1f)`가 조용히 접었다 — 세 명이 다섯 관계를 가지면 화면이
         // *"밀도 100%"*라 말했고, 그것은 *모든 쌍이 이어져 있다*는 뜻으로 읽힌다(거짓 고지).
         // 쌍으로 세면 분자와 분모가 **같은 것을 세므로**(R-34) 넘칠 수가 없고 접을 것도 없다.
+        //
+        // **양 끝이 모두 스코프 안인 쌍만 센다.** 작품 필터의 관계 걸러내기는 **OR**이라
+        // (`characterId1 in charIds || characterId2 in charIds`) 한쪽 끝이 스코프 밖인 행이
+        // 스냅샷에 남는다 — 작품을 가로지르는 관계는 이 앱이 지원하는 정상 상태다.
+        // 그 행의 쌍까지 세면 분자는 밖을 세고 분모(`n`)는 안만 세어 **다시 다른 모집단**이
+        // 되고, 클램프를 걷어낸 지금은 **100%를 넘은 값이 그대로 화면에 뜬다.**
+        // 가드는 바로 위 `topConnected`가 쓰는 것과 **같은 것**이다(새 개념을 들이지 않는다).
+        //
+        // 형제 지표들(`typeDist`·`isolated`·설명 완성도)은 넓은 집합을 그대로 쓴다 — 그쪽은
+        // *"이 범위의 인물이 맺은 관계"*를 묻는 것이라 밖으로 뻗은 줄도 답에 든다.
+        // 밀도만 성질이 다르다: 분모가 *"이 범위 안에서 가능한 쌍"*이라 **정의상** 분자도
+        // 안쪽 쌍이어야 한다.
         val n = s.characters.size
         val density = if (n > 1) {
             val linkedPairs = s.relationships
+                .filter { it.characterId1 in charMap && it.characterId2 in charMap }
                 .mapTo(HashSet()) { minOf(it.characterId1, it.characterId2) to maxOf(it.characterId1, it.characterId2) }
                 .size
             val maxPossible = n.toLong() * (n - 1) / 2.0f

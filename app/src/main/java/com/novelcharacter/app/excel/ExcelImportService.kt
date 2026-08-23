@@ -322,8 +322,7 @@ data class ImportResult(
      * 그 기본값을 바꾸지 않되, 기대 어긋남("엑셀에서 지웠는데 왜 남아 있지")을 요약에서 바로 해소한다.
      */
     var keptNotInExcel: Int = 0,
-    val warnings: MutableList<String> = mutableListOf(),
-    val pendingConflicts: MutableList<String> = mutableListOf()
+    val warnings: MutableList<String> = mutableListOf()
 )
 
 class ExcelImportService(private val db: AppDatabase, private val appContext: android.content.Context? = null) {

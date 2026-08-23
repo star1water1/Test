@@ -793,6 +793,46 @@ class StatsConsistencyTest {
         assertTrue(stats.topEventLinkedChars.none { it.first == "?" })
     }
 
+    /**
+     * **네트워크 밀도가 100%를 넘지 않는다** (2026.08.23 · R-34).
+     *
+     * 이 픽스처가 곧 재현이다: 스코프 안 둘, 그리고 그 둘이 각각 **스코프 밖 인물**과 이어진
+     * 행 둘(작품 필터의 관계 걸러내기가 OR이라 남는다). 종전 분자는 그 쌍까지 세어 2,
+     * 분모(`n=2`)는 안쪽만 세어 1 — **밀도가 200%로 그대로 화면에 떴다**(클램프는 같은 판에서
+     * *거짓 고지*로 걷어냈으므로 접어 주지도 않는다).
+     */
+    @Test
+    fun `네트워크 밀도는 스코프 안 쌍만 센다`() {
+        val stats = provider.computeRelationshipStats(scopedSnapshot())
+        assertTrue(
+            "밀도가 100%를 넘었다: ${stats.networkDensity}",
+            stats.networkDensity <= 1f
+        )
+        // 안쪽 둘 사이에는 관계가 없다 — 밖으로만 뻗어 있으므로 0이다.
+        assertEquals(0f, stats.networkDensity, 0.0001f)
+    }
+
+    /**
+     * **미배정 묶음이 가장 커도 '가장 캐릭터가 많은 작품' 줄이 사라지지 않는다** (2026.08.23).
+     *
+     * 종전에는 최대 묶음을 먼저 고르고 이름을 나중에 찾아서, `novelId == null` 묶음이 최대이면
+     * 이름이 null이 되고 화면이 그 줄을 통째로 숨겼다 — 캐릭터를 가진 작품이 있는데도 침묵한다.
+     * 형제 `mostConnectedChar`가 이미 같은 규율(이름이 나오는 후보만 겨룬다)이다.
+     */
+    @Test
+    fun `미배정이 최다여도 가장 많은 작품 안내줄이 남는다`() {
+        val base = scopedSnapshot()
+        val s = base.copy(
+            characters = base.characters + listOf(
+                Character(id = 11, name = "무소속1", novelId = null),
+                Character(id = 12, name = "무소속2", novelId = null),
+                Character(id = 13, name = "무소속3", novelId = null)
+            )
+        )
+        val summary = provider.computeSummary(s)
+        assertEquals("A작품", summary.mostActiveNovel)
+    }
+
     @Test
     fun `관계 상세의 순위도 같은 규칙을 쓴다`() {
         val stats = provider.computeRelationshipStats(scopedSnapshot())

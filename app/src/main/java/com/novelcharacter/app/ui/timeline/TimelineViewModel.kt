@@ -327,12 +327,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setZoomLevel(level: Int) {
-        val clamped = level.coerceIn(1, 5)
-        _zoomLevel.value = clamped
-        prefs.edit().putInt("zoom_level", clamped).apply()
-    }
-
     private var centerYearSaveJob: Job? = null
 
     private fun debounceSaveCenterYear(year: Int) {
@@ -341,11 +335,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             delay(500)
             prefs.edit().putInt("center_year", year).apply()
         }
-    }
-
-    fun setCenter(year: Int) {
-        _centerYear.value = year
-        debounceSaveCenterYear(year)
     }
 
     fun setSelectedYear(year: Int?) {

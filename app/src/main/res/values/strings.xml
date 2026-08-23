@@ -691,6 +691,9 @@
     <string name="trash_skip_name_bank">- 이름 은행 사용 표시 %1$d개 (항목이 삭제됐거나 다른 캐릭터가 사용 중)</string>
     <string name="trash_restore_legacy_note">\n※ 구버전 백업이라 안정 식별자가 없어 일부 참조는 id로만 판단했습니다.</string>
     <string name="trash_restore_note_title">복원 결과</string>
+    <string name="trash_restore_reverted_supplement">되돌리면서 세력 소속 %1$d건과 상태변화 이력 %2$d건을 함께 되살렸습니다</string>
+    <string name="trash_restore_reverted_memberships">되돌리면서 세력 소속 %d건을 함께 되살렸습니다</string>
+    <string name="trash_restore_reverted_state_changes">되돌리면서 상태변화 이력 %d건을 함께 되살렸습니다</string>
     <string name="trash_restore_relinked">참조 %1$d건은 id가 바뀌었지만 코드로 다시 연결했습니다</string>
     <string name="trash_restore_duplicate_rel">관계 %1$d개는 같은 관계가 이미 있어 새로 만들지 않았습니다</string>
     <string name="trash_restore_semantic_note">출생·사망 이력 %1$d개를 되살렸습니다. 다만 그 이력에서 파생되는 필드값(생년·나이·생존 여부)은 그 사이 직접 고쳤을 수 있어 덮어쓰지 않았으니, 캐릭터 화면에서 확인하세요.</string>

@@ -585,7 +585,9 @@ class TrashFragment : Fragment() {
                 logOperation(OpResult.success(OpResult.CAT_TRASH, doneMessage))
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
-                    warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges
+                    warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges,
+                    revertedMemberships = result.revertedMemberships,
+                    revertedStateChanges = result.revertedStateChanges
                 )
             } catch (e: Exception) {
                 if (isAdded) {
@@ -609,7 +611,16 @@ class TrashFragment : Fragment() {
         warned: Boolean,
         predicted: RestoreLossCounts,
         extraNote: String? = null,
-        semanticStateChanges: Int = 0
+        semanticStateChanges: Int = 0,
+        /**
+         * 되돌리기가 **보충한** 세력 소속·상태변화 수.
+         *
+         * 저장소가 줄곧 세어 돌려주고 있었는데 **읽는 곳이 0건이었다**(R-24) — 되돌리기가
+         * 실제로 되살린 데이터를 사용자가 알 길이 없었다. 이 함수의 규약이 정확히
+         * *"미리보기가 예고하지 못하는 결과만 사후에 알린다"*이므로 자리는 여기다.
+         */
+        revertedMemberships: Int = 0,
+        revertedStateChanges: Int = 0
     ) {
         val notes = mutableListOf<String>()
         extraNote?.let { notes.add(it) }
@@ -623,6 +634,16 @@ class TrashFragment : Fragment() {
             if (details.isNotEmpty()) {
                 notes.add(getString(R.string.trash_restore_partial, details))
             }
+        }
+        // 되돌리기가 보충한 것 — 둘 다면 한 줄로 합친다(줄 수를 늘리지 않는다).
+        if (revertedMemberships > 0 && revertedStateChanges > 0) {
+            notes.add(
+                getString(R.string.trash_restore_reverted_supplement, revertedMemberships, revertedStateChanges)
+            )
+        } else if (revertedMemberships > 0) {
+            notes.add(getString(R.string.trash_restore_reverted_memberships, revertedMemberships))
+        } else if (revertedStateChanges > 0) {
+            notes.add(getString(R.string.trash_restore_reverted_state_changes, revertedStateChanges))
         }
         if (relinkedByCode > 0) {
             notes.add(getString(R.string.trash_restore_relinked, relinkedByCode))

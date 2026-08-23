@@ -436,24 +436,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadFactionStats() {
-        if (isFresh(K_FACTION, _factionStats.value)) return
-        _loading.value = true
-        _error.value = null
-        viewModelScope.launch {
-            try {
-                val snapshot = ensureSnapshot()
-                val filtered = getFilteredSnapshot(snapshot)
-                _factionStats.value = withContext(Dispatchers.IO) { provider.computeFactionStats(filtered) }
-                markLoaded(K_FACTION)
-            } catch (e: Exception) {
-                reportError(e)
-            } finally {
-                dismissLoadingIfIdle()
-            }
-        }
-    }
-
     // ===== 순위 =====
     private val _rankingResult = MutableLiveData<RankingResult?>()
     val rankingResult: LiveData<RankingResult?> = _rankingResult
