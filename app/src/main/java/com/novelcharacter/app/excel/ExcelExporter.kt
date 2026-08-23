@@ -1799,14 +1799,23 @@ class ExcelExporter(context: Context) {
             // 미분류 캐릭터도 '전체'에 들어간다 — 빠지면 이 시트의 합계가 앱의 인원수와 어긋나고,
             // 그것을 알아채려면 일일이 세어 봐야 한다(원칙 04).
             //
-            // **여기에는 전역 필드를 넘기지 않는다 — 의도한 제외다**(B-149, 2026.08.10 사용자 확정).
-            // 이 시트는 *두 세계관 이상이 공유하는 필드*를 모으는 집계 시트이고([sharedFields]가
-            // `universeIdsWithCharacters`로 거른다), 전역 필드를 넣으면 시트의 정의가 *공유 필드*에서
-            // *모든 필드*로 달라진다 — 고치는 것이 아니라 **다른 시트를 만드는 것**이다.
+            // **열은 B-149의 확정 그대로다 — 전역 필드가 열을 만들지 않는다**(2026.08.10 사용자
+            // 확정: *"'전체 캐릭터'는 그대로 둔다 — 의도한 제외다"*). 그 확정이 자른 것은
+            // **전역 필드를 열로 세우는 것**이고([sharedFields]가 `universeIdsWithCharacters`로
+            // 거르는 그 자리는 손대지 않았다), 여기서 넘기는 것은 **이미 선 열에 담을 값**이다.
+            //
+            // 종전에는 `emptyList()`라 `fieldIdByKeyType`이 비어 **미분류 행의 필드 칸이 통째로
+            // 빈칸으로 나갔다**(실측 2026.08.24: 7명 중 둘이 25칸·23칸을 채워 두었는데 이 시트에서는
+            // 필드 열 31개가 전부 빈칸). 그러면 성별·나이·종족으로 건 피벗이 209명 중 202명만
+            // 세면서 **화면에는 단서가 없다** — 이 시트가 있는 이유가 정확히 그 축이다.
+            //
+            // **열은 하나도 늘지 않는다**: 열은 `sharedFields`가 이미 정했고, 여기서는
+            // `(필드키, 타입)`이 그 열과 맞는 전역 필드만 값을 찾아 들어간다(안 맞는 전역 필드는
+            // 열이 없어 그대로 지나가고, 그 값은 종전처럼 '미분류 캐릭터' 시트가 든다).
             if (allSheet != null && unassignedChars.isNotEmpty()) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allSpec, allRowCount, sharedFields, "",
-                    unassignedChars, emptyList(), novelMap, emptyMap(), tags,
+                    unassignedChars, globalFields, novelMap, unassignedResolved, tags,
                     banded = allCharacters.size < BANDING_ROW_LIMIT
                 )
             }
