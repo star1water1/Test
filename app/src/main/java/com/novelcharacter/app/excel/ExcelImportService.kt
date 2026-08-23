@@ -12484,15 +12484,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // FK CASCADE가 세력 간 관계 행을 이미 없애 버려 두 번째 세력의 payload에는
             // 그 관계가 담기지 않는다(faction_relationships에는 code가 없어 그 행이 유일본이다).
             val doomedFactions = SqlInChunks.flat(doomed) { db.factionDao().getByIds(it) }
+            // **백업을 남긴 것만 지운다.** 형제 갈래(상태 변화·사건)는 스냅샷과 삭제가 한
+            // `try` 안이라 스냅샷이 터지면 삭제가 아예 일어나지 않는데, 세력만 위 사유로
+            // 루프를 둘로 가르면서 **그 보호가 함께 떨어져 나갔다** — 두 번째 루프가
+            // 거르지 않은 `doomedFactions`를 그대로 돌아, 백업에 실패한 세력도 지워졌다.
+            // 그 세력은 휴지통에 없으므로 되살릴 길이 없고(소속은 FK CASCADE로 함께,
+            // 자동 관계의 factionId는 SET_NULL로 끊긴다), 바로 위 경고는 정확히 반대를
+            // 말하며(*"삭제하지 않았습니다"*) 아래 요약은 그 건수까지 세어
+            // *"휴지통에서 복구할 수 있습니다"*라고 덧붙였다.
+            val snapshotted = ArrayList<com.novelcharacter.app.data.model.Faction>(doomedFactions.size)
             for (faction in doomedFactions) {
                 try {
                     // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
                     trash.snapshotFaction(faction, deleteRelationships = false)
+                    snapshotted.add(faction)
                 } catch (e: Exception) {
                     result.warnings.add("세력 '${faction.name}' 백업에 실패해 삭제하지 않았습니다: ${e.message}")
                 }
             }
-            for (faction in doomedFactions) {
+            for (faction in snapshotted) {
                 try {
                     db.factionDao().deleteById(faction.id)
                     result.deletedFactions++

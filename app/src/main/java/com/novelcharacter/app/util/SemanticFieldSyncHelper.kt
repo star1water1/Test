@@ -81,6 +81,11 @@ class SemanticFieldSyncHelper(
         clearableFieldIds: Set<Long>?
     ) {
         val fieldMap = fields.associateBy { it.id }
+        // **명시가 파생을 이긴다 — 그 판단은 루프 전에 한 번 접는다**([SemanticAlivePrecedence]).
+        // 루프는 값을 하나씩 처분하므로 *"같은 저장에 생존여부가 함께 실려 왔는가"*를 알 수
+        // 없고, 몰랐기 때문에 사망연도 갈래가 사용자가 고른 '불명'을 매 저장마다 '사망'으로
+        // 되덮었다. 미리 접으면 두 갈래의 **차례가 답을 바꾸지 못한다**.
+        val deathDerivation = SemanticAlivePrecedence.deathDerivation(fields, values)
 
         for (value in values) {
             val field = fieldMap[value.fieldDefinitionId] ?: continue
@@ -103,8 +108,21 @@ class SemanticFieldSyncHelper(
                     val raw = value.value.trim()
                     val year = raw.toIntOrNull()
                     if (year != null) {
-                        upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
-                        syncDeathToAlive(characterId, fields, isDead = true)
+                        when (deathDerivation) {
+                            // 생존여부가 안 실려 온 저장 — 종전 그대로 파생시킨다.
+                            SemanticAlivePrecedence.DeathDerivation.APPLY -> {
+                                upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                                syncDeathToAlive(characterId, fields, isDead = true)
+                            }
+                            // '사망'·'불명' — 사망연도 이력은 사실이므로 남기되, 생존여부
+                            // 필드값과 `__alive`는 아래 ALIVE 갈래가 정한다. 여기서 덮으면
+                            // 사용자가 방금 고른 것이 저장 직후 사라진다.
+                            SemanticAlivePrecedence.DeathDerivation.HISTORY_ONLY ->
+                                upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                            // '생존' — ALIVE 갈래가 사망연도와 `__death`를 지운다.
+                            // 여기서 적으면 차례에 따라 그것을 **되살린다**.
+                            SemanticAlivePrecedence.DeathDerivation.SKIP -> Unit
+                        }
                     } else if (raw.isEmpty()) {
                         // 빈 값이 이 루프에 실려 오는 경로는 실사용에 없다(비우면 값 행 자체가
                         // 사라진다) — 그래도 오면 아래 비움 처분과 **같은 함수**를 쓴다.
