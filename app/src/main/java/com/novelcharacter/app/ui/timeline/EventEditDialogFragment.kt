@@ -691,7 +691,31 @@ class EventEditDialogFragment : DialogFragment() {
         }.thenBy { it.name })
     }
 
+    /**
+     * 저장이 도는 중인가 — **연타 빗장**.
+     *
+     * 이 창의 [저장]은 눌러도 창이 닫히지 않고 버튼도 안 죽는다(`setPositiveButton(…, null)` +
+     * `setOnShowListener`로 리스너를 갈아 끼운 배선이라 그렇다). 그런데 저장은 **반드시 한 번
+     * 중단한다** — restricted 검증이 `lifecycleScope.launch`를 지나고, 수정 경로는 그 뒤
+     * `getNovelIdsForEvent`(Room 질의)를 또 지난다. 그 사이 함수는 이미 반환했고 버튼은 살아 있다.
+     *
+     * 두 번 눌리면 신규는 **사건이 둘** 만들어지고, 수정은 연도 이동이 **상대값**이라
+     * (`updateEventAndShiftOthers`의 `delta`) 같은 이동이 두 번 얹혀 **다른 사건들의 연도가
+     * 두 배로 밀린다.**
+     *
+     * ⚠️ **회전은 막지 못한다** — 창이 다시 서면 이 값도 초기화된다. 그것까지 막으려면 빗장이
+     * 뷰모델에 있어야 하는데(R-65), 이 창의 쓰기 통로는 구현이 셋인 인터페이스라 그 자리가 없다.
+     * 여기서 닫는 것은 **연타**이고, 그것이 실제로 손이 닿는 창이다.
+     */
+    private var isSaving = false
+
+    /** 사용자가 다시 결정할 수 있게 창을 돌려줄 때 빗장을 푼다 — 푸는 자리를 빠뜨리면 [저장]이 죽는다. */
+    private fun releaseSaveGuard() {
+        isSaving = false
+    }
+
     private fun onSaveClicked() {
+        if (isSaving) return
         if (!selectionsInitialized) return  // 목록 로딩 중
         val context = context ?: return
 
@@ -755,6 +779,9 @@ class EventEditDialogFragment : DialogFragment() {
 
         // 값과 커버 집합은 같은 프레임에 스냅샷한다(S-6) — 커버는 지금 화면에 렌더된 폼의 권한이다.
         val fieldSubmission = buildFieldSubmission()
+        // **빗장은 여기서 세운다** — 위쪽 검증 갈래 여섯이 전부 그냥 `return`하므로,
+        // 더 일찍 세우면 연도 하나 잘못 적은 사용자가 [저장]을 영영 못 누르게 된다.
+        isSaving = true
         guardRestrictedEventValues(fieldSubmission.values) {
         if (event == null) {
             provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, fieldSubmission)
@@ -820,7 +847,9 @@ class EventEditDialogFragment : DialogFragment() {
                         onProceed()
                     }
                 }
-                .setNegativeButton(R.string.field_library_restricted_edit_input, null)
+                // 입력을 고치러 돌아간다 — 빗장을 푼다(바깥 탭·뒤로가기도 같은 뜻이다).
+                .setNegativeButton(R.string.field_library_restricted_edit_input) { _, _ -> releaseSaveGuard() }
+                .setOnCancelListener { releaseSaveGuard() }
                 .show()
         }
     }
@@ -875,13 +904,16 @@ class EventEditDialogFragment : DialogFragment() {
         }
 
         withContext(Dispatchers.Main) {
-            val ctx = context ?: return@withContext
+            // 창을 띄울 자리가 없으면 저장도 안 일어난다 — 빗장을 들고 있을 이유가 없다.
+            val ctx = context ?: run { releaseSaveGuard(); return@withContext }
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.shift_events_title)
                 .setItems(items.toTypedArray()) { _, which ->
                     actions.getOrNull(which)?.invoke()
                 }
-                .setNegativeButton(R.string.cancel, null)
+                // 고르지 않고 물러난다 — 저장이 일어나지 않았으므로 빗장을 푼다.
+                .setNegativeButton(R.string.cancel) { _, _ -> releaseSaveGuard() }
+                .setOnCancelListener { releaseSaveGuard() }
                 .show()
         }
     }

@@ -149,6 +149,22 @@ interface CharacterFieldValueDao {
     """)
     suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long)
 
+    /**
+     * [deleteValuesNotInUniverse]가 **지울 행 수** — 지우기 전에 세어 고지·스냅샷 판정에 쓴다.
+     *
+     * ⚠️ **술어가 바로 위 DELETE와 글자 그대로 같아야 한다.** 갈리면 *"N개 정리"*라 말하고
+     * 다른 수를 지우거나, 지울 것이 있는데 스냅샷을 안 남긴다. 전역 구역(`universeId IS NULL`)
+     * 값을 남기는 것도 같은 이유로 같아야 한다.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM character_field_values
+        WHERE characterId = :characterId
+        AND fieldDefinitionId NOT IN (
+            SELECT id FROM field_definitions WHERE universeId = :universeId OR universeId IS NULL
+        )
+    """)
+    suspend fun countValuesNotInUniverse(characterId: Long, universeId: Long): Int
+
     /** 세계관 삭제 영향 고지용 — 해당 세계관 필드 정의에 걸린 값 총수 */
     @Query("""
         SELECT COUNT(*) FROM character_field_values

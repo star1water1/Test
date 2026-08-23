@@ -73,6 +73,7 @@ class FieldFilterHelperTest {
         override suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> = unused()
         override suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> = unused()
         override suspend fun getValuesForFields(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
+        override suspend fun countValuesNotInUniverse(characterId: Long, universeId: Long): Int = unused()
         override suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long) = unused()
         override suspend fun countValuesByUniverse(universeId: Long): Int = unused()
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()

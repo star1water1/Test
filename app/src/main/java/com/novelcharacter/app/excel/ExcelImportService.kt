@@ -7863,6 +7863,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 처분 무관(칸 단위가 아니라 **캐릭터 단위 정리**다 — 파일의 어떤 셀이
                         // 시킨 것이 아니라 사용자가 충돌 대화상자에서 고른 것이라, 미리보기가
                         // 예고할 대상도 아니다. 그 결정은 이 창 뒤에 온다).
+                        //
+                        // **되돌릴 자리를 먼저 만들고, 한 일을 말한다.** 이 삭제는 종전에
+                        // ⓐ 휴지통 스냅샷을 안 남기고 ⓑ 결과 요약에 한 줄도 안 적었다 —
+                        // 체크박스가 **기본으로 켜져 있어서**(`ExcelImporter`의 충돌 창) 사용자가
+                        // 의식하지 못한 채 옛 세계관 값이 되돌릴 길 없이 사라졌다.
+                        // 형제인 세계관 이동은 같은 성질의 삭제에 대해 스냅샷을 남기고
+                        // *"(휴지통에 스냅샷 보관)"*이라 말한다 — 이 자리만 그 밖이었다.
+                        //
+                        // 스냅샷은 **같은 저장소 인스턴스**로 남긴다(`trashForImport`) — 새로
+                        // 만들면 커밋 뒤 정리가 방금 만든 백업을 태운다(바로 아래 이동 경로의
+                        // 주석이 같은 함정을 적어 두었다).
+                        val doomedValues = db.characterFieldValueDao()
+                            .countValuesNotInUniverse(charId, universe.id)
+                        if (doomedValues > 0) {
+                            db.characterDao().getCharacterById(charId)?.let { snap ->
+                                trashForImport().snapshotCharacter(
+                                    snap,
+                                    com.novelcharacter.app.util.CharacterRepresentativeImage
+                                        .paths(snap.imagePaths),
+                                    kind = com.novelcharacter.app.data.model.TrashSnapshot.KIND_EDIT_BACKUP,
+                                    revertScope = com.novelcharacter.app.data.repository.RestoreModes.LEGACY_REVERT_SCOPE
+                                )
+                            }
+                            result.warnings.add(
+                                "캐릭터 행 ${excelRow(i)}: '$name' 이전 세계관 필드값 ${doomedValues}개를 정리했습니다(휴지통에 스냅샷 보관) — 충돌 창의 '이전 세계관 필드값 삭제'를 고른 결과입니다"
+                            )
+                        }
                         db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
                         // 장부가 이 캐릭터를 이미 실었다면 그 사본은 방금 지운 값을 아직 들고 있다.
                         // 내려 두면 아래에서 다시 읽는다 — 같은 캐릭터가 시트에 두 번 나오는
