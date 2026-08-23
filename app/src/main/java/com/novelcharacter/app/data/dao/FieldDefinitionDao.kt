@@ -61,12 +61,6 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE `key` = :key AND entityType = :entityType")
     suspend fun getFieldsByKey(key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 
-    @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND type = :type AND entityType = :entityType ORDER BY displayOrder ASC")
-    suspend fun getFieldsByType(universeId: Long, type: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
-
-    @Query("SELECT groupName FROM field_definitions WHERE universeId = :universeId AND entityType = :entityType GROUP BY groupName ORDER BY MIN(displayOrder)")
-    suspend fun getGroupNames(universeId: Long, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<String>
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(field: FieldDefinition): Long
 

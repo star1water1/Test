@@ -56,10 +56,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _crossAnalysis = MutableLiveData<CrossAnalysisResult?>()
     val crossAnalysis: LiveData<CrossAnalysisResult?> = _crossAnalysis
 
-    // ===== 신규: 관계 네트워크 =====
-    private val _relationNetwork = MutableLiveData<RelationshipStats>()
-    val relationNetwork: LiveData<RelationshipStats> = _relationNetwork
-
     // ===== 신규: 작품별 비교 =====
     private val _crossNovelComparison = MutableLiveData<CrossNovelComparison>()
     val crossNovelComparison: LiveData<CrossNovelComparison> = _crossNovelComparison
@@ -194,7 +190,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         // 결과 이름표 — `load*()`와 [markLoaded]가 같은 글자를 쓰게 상수로 둔다.
         const val K_ALL = "all"
         const val K_FIELD_INSIGHTS = "fieldInsights"
-        const val K_RELATION_NETWORK = "relationNetwork"
         const val K_DATA_OVERVIEW = "dataOverview"
         const val K_CROSS_NOVEL = "crossNovel"
         const val K_FACTION = "faction"
@@ -395,24 +390,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                     else -> _error.value = getApplication<Application>()
                         .getString(com.novelcharacter.app.R.string.stats_cross_field_missing)
                 }
-            } catch (e: Exception) {
-                reportError(e)
-            } finally {
-                dismissLoadingIfIdle()
-            }
-        }
-    }
-
-    fun loadRelationNetwork() {
-        if (isFresh(K_RELATION_NETWORK, _relationNetwork.value)) return
-        _loading.value = true
-        _error.value = null
-        viewModelScope.launch {
-            try {
-                val snapshot = ensureSnapshot()
-                val filtered = getFilteredSnapshot(snapshot)
-                _relationNetwork.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
-                markLoaded(K_RELATION_NETWORK)
             } catch (e: Exception) {
                 reportError(e)
             } finally {

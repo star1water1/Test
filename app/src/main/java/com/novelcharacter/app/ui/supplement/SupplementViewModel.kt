@@ -108,10 +108,6 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
     // 전체 캐릭터 감사 결과 — 이슈가 없는 캐릭터도 포함 (랜덤 탭의 완성도 배지·미흡 우선 뽑기용)
     private var allAudits: List<SupplementTarget> = emptyList()
 
-    // 랜덤 탭 뽑기 풀 — 세계관/작품 필터만 적용 (이슈 필터·정렬은 완성도 검사 탭 전용)
-    private val _randomPool = MutableLiveData<List<Character>>(emptyList())
-    val randomPool: LiveData<List<Character>> = _randomPool
-
     // ===== 랜덤 뽑기 엔진 (ViewModel 보유 — 회전 생존, 프로세스 종료 시 소멸은 의도된 결정) =====
 
     /** 랜덤 카드의 단발성 알림 종류 */
@@ -425,7 +421,6 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
         // 완료율의 **분모** — 목록과 같은 범위(세계관·작품)로 좁힌 캐릭터 수다.
         // 뽑기 풀과 같은 집합이라 여기서 함께 낸다(같은 필터를 두 번 적지 않는다).
         _scopedTotal.value = pool.size
-        _randomPool.value = pool
         syncPickEngine(pool)
     }
 

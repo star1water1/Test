@@ -20,7 +20,6 @@ data class PdfConfig(
     val novelIds: List<Long>? = null,
     val characterIds: List<Long>? = null,
     val includeProfiles: Boolean = true,
-    val includeGraph: Boolean = false,
     val includeTimeline: Boolean = true,
     val includeNameBank: Boolean = false,
     val includeFieldDefs: Boolean = true

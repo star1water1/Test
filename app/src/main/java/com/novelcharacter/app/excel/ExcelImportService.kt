@@ -315,7 +315,6 @@ data class ImportResult(
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
-    var autoRepairedValues: Int = 0,
     var newCodesGenerated: Int = 0,
     var clearedFields: Int = 0,
     /**

@@ -102,8 +102,6 @@ class FieldFilterHelperTest {
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()
         override suspend fun getFieldByKey(universeId: Long, key: String, entityType: String): FieldDefinition? = unused()
-        override suspend fun getFieldsByType(universeId: Long, type: String, entityType: String): List<FieldDefinition> = unused()
-        override suspend fun getGroupNames(universeId: Long, entityType: String): List<String> = unused()
         override suspend fun insert(field: FieldDefinition): Long = unused()
         override suspend fun insertAll(fields: List<FieldDefinition>) = unused()
         override suspend fun update(field: FieldDefinition) = unused()

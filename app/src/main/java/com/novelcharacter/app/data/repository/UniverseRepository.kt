@@ -193,12 +193,6 @@ class UniverseRepository(
     suspend fun getFieldByKey(universeId: Long, key: String): FieldDefinition? =
         fieldDefinitionDao.getFieldByKey(universeId, key)
 
-    suspend fun getFieldsByType(universeId: Long, type: String): List<FieldDefinition> =
-        fieldDefinitionDao.getFieldsByType(universeId, type)
-
-    suspend fun getGroupNames(universeId: Long): List<String> =
-        fieldDefinitionDao.getGroupNames(universeId)
-
     /**
      * ⚠️ **전역 구역(`universeId = null`)을 넘길 때는 부르는 쪽이 key 유일성을 책임진다** —
      * 유니크 색인 `(universeId, entityType, key)`는 NULL끼리를 서로 다른 값으로 보므로
