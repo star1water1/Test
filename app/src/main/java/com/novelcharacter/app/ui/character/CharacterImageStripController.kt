@@ -159,16 +159,27 @@ class CharacterImageStripController(
             // 닿는다(화면 수명 스코프라 코루틴 자체가 끊긴다). 여러 장을 고른 사용자는
             // *일부만 붙은* 결과를 받고 그 사실을 어디서도 듣지 못했다.
             val stranded = mutableListOf<String>()
+            // **시도를 마친 장수** — `uris.size`와의 차가 곧 *손도 못 댄 몫*이다.
+            //
+            // 위 문단이 *"끝까지 가져온다"*라고 적어 놓았지만 실제로는 못 갔다: 루프의 유일한
+            // 중단점(`importImage`)이 취소를 되던지므로 회전이 들어오면 **남은 uri는 시도조차
+            // 되지 않은 채** 루프를 빠져나갔고, `stranded`에도 안 들어가 어디에도 세어지지
+            // 않았다. 열 장을 고른 사용자가 두 장만 받고 **나머지 여덟이 왜 없는지 들을 곳이
+            // 없었다**(개발 의도 2번 — 말없이 유실되지 않는다).
+            var processed = 0
             try {
                 for (uri in uris) {
                     val filePath = try {
                         com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         // 취소는 실패가 아니다 — 삼키면 아래 `anyFailed` 고지가 거짓이 된다.
+                        // 이 장은 `processed`에 들지 않는다 — 시도가 끝나지 않았다.
                         throw e
                     } catch (e: Exception) {
                         null
                     }
+                    // 성공이든 실패든 **이 장의 시도는 끝났다** — `continue`보다 앞에 둔다.
+                    processed++
                     if (filePath == null) {
                         anyFailed = true
                         continue
@@ -189,20 +200,33 @@ class CharacterImageStripController(
                 // **붙은 적이 없는** 새 파일이다 — 지우면 방금 고른 것이 통째로 사라진다.
                 // `adoptOrphans`는 참조·보류·meta·드래프트가 보호하는 경로를 건너뛰므로
                 // 정상적으로 붙은 것은 건드리지 않는다.
-                if (stranded.isNotEmpty()) {
+                val notAttempted = uris.size - processed
+                if (stranded.isNotEmpty() || notAttempted > 0) {
                     withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                        val adopted = runCatching {
+                        val adopted = if (stranded.isEmpty()) 0 else runCatching {
                             com.novelcharacter.app.util.ImageOwnershipGuard
                                 .adoptOrphans(app.database, ctx, stranded)
                         }.getOrDefault(0)
-                        if (adopted > 0) {
+                        // **세 몫을 따로 말한다.** 종전에는 `adopted > 0`만 말했는데,
+                        // `adoptOrphans`가 예외 하나에 0을 돌려주므로(`getOrDefault(0)`)
+                        // **디스크에 쓴 파일이 주인도 meta도 없이 남은 실패**가 정확히
+                        // *담을 것이 없었다*와 같은 침묵으로 나갔다.
+                        val lines = buildList {
+                            if (adopted > 0) {
+                                add(ctx.getString(R.string.image_import_stranded_adopted, adopted))
+                            }
+                            val notAdopted = stranded.size - adopted
+                            if (notAdopted > 0) {
+                                add(ctx.getString(R.string.image_import_stranded_failed, notAdopted))
+                            }
+                            if (notAttempted > 0) {
+                                add(ctx.getString(R.string.image_import_interrupted, notAttempted))
+                            }
+                        }
+                        if (lines.isNotEmpty()) {
                             // 화면이 사라져도 고지는 간다 — 앱 컨텍스트로, 이 블록 안에서.
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(
-                                    ctx,
-                                    ctx.getString(R.string.image_import_stranded_adopted, adopted),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(ctx, lines.joinToString("\n"), Toast.LENGTH_LONG).show()
                             }
                         }
                     }

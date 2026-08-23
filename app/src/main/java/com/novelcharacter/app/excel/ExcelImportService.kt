@@ -920,6 +920,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().deleteAllCrossRefs()
                     db.timelineDao().deleteAllEvents()
                 }
+                // **이름은행이 이 파일로 다시 세워지는가** — 판정을 여기서 한 번 하고 두 자리가
+                // 같은 값을 쓴다. 아래 캐릭터 통짜 삭제의 '사용 중' 정리 고지와, 그 뒤의
+                // `deleteAll`이 **서로를 부정하지 않게** 하는 것이 이 변수의 일이다.
+                // `shouldDelete`는 못 지울 때 경고를 남기므로 **두 번 부르면 경고도 두 벌**이다.
+                val nameBankRebuilt = shouldDelete(effectiveOptions.nameBank, nameBankSpec())
                 if (effectiveOptions.characters) {
                     // 캐릭터 시트는 그 시트 세계관의 필드만 열로 담는다. 미분류 캐릭터·타 세계관 잔여
                     // 필드값은 '캐릭터 필드값' 시트로만 복원되므로, 그 시트가 없는 백업(구버전 파일)이면
@@ -964,7 +969,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             // 못 찾았을 때 *"연결 없이 '사용 중'으로 남겨둡니다"*라고 사용자에게
                             // 고지까지 하는 정상 상태다. 두 고지가 같은 결과창에서 서로를 부정하게 된다.
                             val orphanedNames = db.nameBankDao().clearOrphanedUsage()
-                            if (orphanedNames > 0) {
+                            // **말하는 것은 남을 때만이다.** 정리 자체는 갈래를 안 가린다(위 문단의
+                            // 자리 규약이 그대로다). 다만 이름은행이 이 파일로 **다시 세워지는**
+                            // 갈래에서는 방금 내린 행들이 아래 `deleteAll`로 통째로 사라지고,
+                            // `importNameBank`가 시트의 '사용여부'·'사용캐릭터코드'로 같은 이름들을
+                            // 도로 '사용 중'으로 세운다 — 그래서 *"다시 쓸 수 있습니다"*가 거짓이 된다.
+                            // 전체 백업에는 이름 은행 시트가 늘 있으므로 그것이 오히려 보통 경로다.
+                            if (orphanedNames > 0 && !nameBankRebuilt) {
                                 result.warnings.add(
                                     "덮어쓰기로 캐릭터를 지우면서 임자를 잃은 이름 ${orphanedNames}건의 '사용 중' 표시를 내렸습니다 — 이름은행에서 다시 쓸 수 있습니다"
                                 )
@@ -1003,7 +1014,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
                 }
-                if (shouldDelete(effectiveOptions.nameBank, nameBankSpec())) db.nameBankDao().deleteAll()
+                // 판정은 위에서 이미 했다 — 여기서 다시 부르면 경고가 두 벌이 된다.
+                if (nameBankRebuilt) db.nameBankDao().deleteAll()
                 if (shouldDelete(effectiveOptions.presetTemplates, userPresetTemplateSpec())) db.userPresetTemplateDao().deleteAll()
                 if (shouldDelete(effectiveOptions.searchPresets, searchPresetSpec())) db.searchPresetDao().deleteAll()
                 if (shouldDelete(effectiveOptions.characterListPresets, characterListPresetSpec())) db.characterListPresetDao().deleteAll()
