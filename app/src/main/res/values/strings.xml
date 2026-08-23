@@ -2281,6 +2281,9 @@
     <string name="batch_field_title_set">필드값 일괄 설정</string>
     <string name="batch_field_title_clear">필드값 일괄 삭제</string>
     <string name="batch_field_select_universe">세계관 선택</string>
+    <string name="batch_field_multi_scope_info">선택 캐릭터가 여러 구역에 속합니다. 고른 구역의 캐릭터에만 적용됩니다.</string>
+    <string name="batch_field_scope_global">전역 구역 (작품 미배정)</string>
+    <string name="batch_field_no_scope">선택한 캐릭터의 구역을 찾을 수 없어 설정할 필드가 없습니다. 캐릭터를 다시 고르거나 목록을 새로 고쳐 주세요.</string>
     <string name="batch_field_select_field">필드 선택</string>
     <string name="batch_field_multi_universe_info">선택 캐릭터가 여러 세계관에 속합니다. 해당 세계관 캐릭터에만 적용됩니다.</string>
     <string name="batch_field_set_confirm">%1$d명의 \'%2$s\' 필드에 값 설정</string>

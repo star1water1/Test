@@ -5361,10 +5361,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             raws[col] = rawHeader
         }
         // 1패스: 예약 헤더와 문자 그대로 일치하는 열 (별칭 확장 없음)
+        val reservedClaimed = HashSet<String>()
         if (reservedHeaders.isNotEmpty()) {
             for (col in 0 until lastCol) {
                 val raw = raws[col] ?: continue
-                if (raw in reservedHeaders && raw !in result) result[raw] = col
+                if (raw in reservedHeaders && raw !in result) {
+                    result[raw] = col
+                    reservedClaimed.add(raw)
+                }
             }
         }
         // 2패스: 나머지 열에 별칭 해석 적용 (이미 확정된 표준명은 덮어쓰지 않음)
@@ -5375,8 +5379,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result[canonical] = col
             } else if (result[canonical] != col && report != null) {
                 val prevRaw = raws[result[canonical]!!] ?: canonical
+                val label = sheetLabel ?: headerRow.sheet?.sheetName ?: "시트"
+                // **버려진 열만 '무시했다'고 말한다** (R-51 — 고지는 실제로 일어난 일이다).
+                //
+                // 예약 헤더를 주는 시트(캐릭터)는 고정 열로 못 간 나머지를 **동적 필드
+                // 사다리**로 보낸다 — 그 사다리는 *원문* 헤더로 판정하므로, 별칭으로만
+                // 겹친 열은 버려지지 않고 **커스텀 필드 열로 읽히고 필드까지 만들어진다.**
+                // 종전에는 그 자리에도 "뒤쪽 열을 무시했습니다"가 떠서, 사용자는 값이 들어온
+                // 열을 두고 안 들어왔다고 들었다.
+                //
+                // 뒤 열의 원문이 **그 자체로 고정 헤더**면 사다리도 그것을 건너뛰므로
+                // 정말 버려진다 — 그때는 종전 문구가 맞다.
+                val notDropped = canonical in reservedClaimed && raw !in reservedHeaders
                 report.warnings.add(
-                    "${sheetLabel ?: headerRow.sheet?.sheetName ?: "시트"}: 헤더 '$prevRaw'와(과) '$raw'이(가) 같은 열 '$canonical'로 해석되어 뒤쪽 열을 무시했습니다 — 커스텀 필드명이 고정 열 이름과 겹치지 않는지 확인하세요"
+                    if (notDropped) {
+                        "$label: 헤더 '$raw'은(는) 고정 열 '$canonical'의 다른 표기로도 읽히는데 이 시트에는 이미 '$prevRaw' 열이 있어 커스텀 필드 열로 읽습니다 — 고정 열로 쓸 생각이었다면 '$prevRaw' 열을 지우거나 이 열 이름을 바꿔 주세요"
+                    } else {
+                        "$label: 헤더 '$prevRaw'와(과) '$raw'이(가) 같은 열 '$canonical'로 해석되어 뒤쪽 열을 무시했습니다 — 커스텀 필드명이 고정 열 이름과 겹치지 않는지 확인하세요"
+                    }
                 )
             }
         }

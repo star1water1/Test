@@ -77,8 +77,10 @@ class CharacterCompareFragment : Fragment() {
                 characters.map { char ->
                     async {
                         val novel = char.novelId?.let { viewModel.getNovelById(it) }
-                        val universeId = novel?.universeId
-                        val fields = if (universeId != null) viewModel.getFieldsByUniverseList(universeId) else emptyList()
+                        // **미분류 캐릭터도 필드를 가진다**(전역 구역 — B-119). 종전에는 빈
+                        // 목록이라 비교표에서 그 캐릭터의 칸이 통째로 비었다. 판정은
+                        // `fieldsForNovel` 한 자리다(R-33 — 보충 탭도 같은 함수를 쓴다).
+                        val fields = viewModel.fieldsForNovel(novel)
                         val values = viewModel.getValuesByCharacterList(char.id)
                         val tags = viewModel.getTagsByCharacterList(char.id).map { it.tag }
 

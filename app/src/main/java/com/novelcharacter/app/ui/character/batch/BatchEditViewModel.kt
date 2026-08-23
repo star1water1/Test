@@ -115,6 +115,30 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         return resolveCharUniverse(ids).values.filterNotNull().distinct()
     }
 
+    /**
+     * 선택에 걸린 **구역** — 세계관들과, 전역 구역(작품 미배정)이 섞여 있는가.
+     *
+     * [getUniverseIdsForSelection]은 `filterNotNull()`로 **미분류를 통째로 떨어뜨린다.**
+     * 그 목록만 보는 화면은 작품 미배정 캐릭터만 고른 사용자에게 *빈 스피너와 죽은 버튼*을
+     * 주고 사유를 말하지 않는다 — 그 캐릭터들도 전역 구역 필드를 가지는데(B-119) 말이다.
+     * 쓰기 쪽은 이미 옳다: `setFieldValue`의 `universeByChar[it] == fieldDef.universeId`가
+     * 전역 필드(`universeId == null`)를 **미분류 캐릭터에게만** 찍는다.
+     */
+    data class SelectionScopes(val universeIds: List<Long>, val hasGlobal: Boolean)
+
+    suspend fun getScopesForSelection(): SelectionScopes {
+        val ids = _selectedIds.value?.toList() ?: return SelectionScopes(emptyList(), false)
+        val byChar = resolveCharUniverse(ids)
+        return SelectionScopes(
+            universeIds = byChar.values.filterNotNull().distinct(),
+            hasGlobal = byChar.values.any { it == null }
+        )
+    }
+
+    /** 전역 구역(세계관 없음) 캐릭터 필드 — 미분류 캐릭터가 쓰는 목록이다. */
+    suspend fun getGlobalFieldsList(): List<FieldDefinition> =
+        app.database.fieldDefinitionDao().getGlobalFieldsList()
+
     // ===== 배치 작업 =====
 
     /**
