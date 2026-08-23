@@ -143,25 +143,20 @@ class SemanticFieldSyncHelper(
                     val aliveVal = config.stringOr("aliveValue", "")
                     val deadVal = config.stringOr("deadValue", "")
 
-                    when (raw) {
-                        deadVal -> {
-                            // "사망" 선택 → 사망연도는 건드리지 않음 (연도 불명 사망 허용)
-                            upsertAliveStateChange(characterId, "dead")
+                    // 값 → 표식의 대응은 [SemanticAlivePrecedence.aliveMarker]가 든다 —
+                    // 1회 마이그레이션이 같은 대응을 따로 적었다가 갈렸던 자리다(그쪽 KDoc).
+                    // 여기 남는 것은 표식마다의 **곁 처분**뿐이다.
+                    val marker = SemanticAlivePrecedence.aliveMarker(raw, aliveVal, deadVal) ?: continue
+                    upsertAliveStateChange(characterId, marker)
+                    if (marker == CharacterStateChange.ALIVE_MARKER_ALIVE) {
+                        // "생존" 선택 → 사망연도 있으면 클리어
+                        val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
+                        if (deathYearField != null) {
+                            deleteFieldValueIfExists(characterId, deathYearField.id)
                         }
-                        aliveVal -> {
-                            // "생존" 선택 → 사망연도 있으면 클리어
-                            upsertAliveStateChange(characterId, "alive")
-                            val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
-                            if (deathYearField != null) {
-                                deleteFieldValueIfExists(characterId, deathYearField.id)
-                            }
-                            deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
-                        }
-                        else -> {
-                            // "불명" 등 중립 → 사망연도 유지
-                            upsertAliveStateChange(characterId, "unknown")
-                        }
+                        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
                     }
+                    // "사망"·"불명"은 사망연도를 건드리지 않는다(연도 불명 사망을 허용한다).
                 }
                 SemanticRole.AGE -> {
                     // 나이 → 출생연도 역산: birthYear = standardYear - age
@@ -372,9 +367,14 @@ class SemanticFieldSyncHelper(
         return month to day
     }
 
+    /**
+     * 이 캐릭터의 [fieldKey] **정본 행**. 쓰는 쪽(여기)과 읽는 쪽이 같은 행을 집게
+     * [SingletonStateChanges.pick]이 든다 — 종전 `find`는 DAO의 `ORDER BY`에 기댄 답이라
+     * 그 차례를 아는 사람만 두 자리가 같다는 것을 알 수 있었다(R-50).
+     */
     private suspend fun findStateChange(characterId: Long, fieldKey: String): CharacterStateChange? {
         val changes = characterRepository.getChangesByCharacterList(characterId)
-        return changes.find { it.fieldKey == fieldKey }
+        return SingletonStateChanges.pick(changes, fieldKey)
     }
 
     private suspend fun upsertStateChange(
@@ -467,7 +467,11 @@ class SemanticFieldSyncHelper(
         }
         if (targetValue.isNotBlank()) {
             upsertFieldValue(characterId, aliveField.id, targetValue)
-            upsertAliveStateChange(characterId, if (isDead) "dead" else "alive")
+            upsertAliveStateChange(
+                characterId,
+                if (isDead) CharacterStateChange.ALIVE_MARKER_DEAD
+                else CharacterStateChange.ALIVE_MARKER_ALIVE
+            )
         } else {
             deleteFieldValueIfExists(characterId, aliveField.id)
             deleteStateChangeByKey(characterId, CharacterStateChange.KEY_ALIVE)

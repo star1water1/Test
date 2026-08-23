@@ -62,6 +62,18 @@ data class StateChangeNaturalKey(
 )
 
 /**
+ * 밑줄 키의 **슬롯** 키 — `(캐릭터, 필드키)` (2026.08.23).
+ *
+ * `__birth`·`__death`·`__alive`는 캐릭터당 한 행이 불변식이라([SingletonStateChanges])
+ * 자연키가 빗나가도 **그 자리에 이미 있는 행이 곧 같은 행**이다. 이 키가 없으면 파일에서
+ * 연도만 고친 `__birth` 행이 자연키에 안 걸려 **둘째 줄이 되고**, 그때부터 같은 캐릭터의
+ * 나이가 화면마다 갈린다(실제로 사용자 데이터에 그 모양이 남아 있었다).
+ *
+ * 일반 필드의 이력에는 쓰지 않는다 — 그쪽은 여러 줄이 정상이다.
+ */
+data class StateChangeSlotKey(val characterId: Long, val fieldKey: String)
+
+/**
  * 명대사의 자연키 — `(캐릭터, 대사 글자)` (사용자 요청 2026.08.20).
  *
  * **대사 글자를 키에 넣는 것이 요점이다.** 차례(`sortOrder`)로 잡으면 사용자가 목록을
@@ -119,19 +131,64 @@ class StateChangeIndexes(rows: List<CharacterStateChange>) {
         keyOf = { StateChangeNaturalKey(it.characterId, it.year, it.fieldKey, it.newValue) }
     )
 
+    /**
+     * 밑줄 키의 슬롯 축 — 코드·자연키가 둘 다 빗나갔을 때의 마지막 사다리([StateChangeSlotKey]).
+     * **키를 내는 자리에서 걸러야** 일반 필드의 이력이 이 축에 실리지 않는다.
+     */
+    val bySlot = ImportLookupIndex<StateChangeSlotKey, CharacterStateChange>(
+        idOf = { it.id },
+        keyOf = {
+            if (SingletonStateChanges.isSingleton(it.fieldKey)) {
+                StateChangeSlotKey(it.characterId, it.fieldKey)
+            } else null
+        }
+    )
+
     init {
         val ordered = rows.sortedBy { it.id }
         byCode.load(ordered)
         byNaturalKey.load(ordered)
+        bySlot.load(ordered)
     }
+
+    /** 어느 사다리에서 잡혔는가 — 부르는 쪽이 *고지할지*를 이것으로 가른다. */
+    enum class Via { CODE, NATURAL, SLOT }
+
+    /** @property row 없으면 신규. @property via [row]가 null이면 null. */
+    data class Resolution(val row: CharacterStateChange?, val via: Via?)
+
+    /**
+     * 이 행의 정체 — **코드 → 자연키 → (밑줄 키만) 슬롯**.
+     *
+     * 셋째 칸이 2026.08.23에 들어왔다. 종전 사다리는 둘뿐이라, 파일에서 `__birth`의 연도만
+     * 고치면(코드 칸을 함께 지웠거나 구버전 파일이라 코드가 없으면) 자연키가 빗나가
+     * **둘째 줄이 들어갔다.** 그 뒤로 같은 캐릭터의 나이가 프로필과 연표에서 갈린다 —
+     * 실제 사용자 데이터에 그 모양이 남아 있었다.
+     *
+     * **사다리를 여기 하나로 두는 것이 요점이다**(R-33) — 미리보기와 가져오기가 각자 적으면
+     * 예고와 처분이 다른 행을 고른다.
+     */
+    fun resolve(code: String, key: StateChangeNaturalKey): Resolution {
+        code.takeIf { it.isNotBlank() }?.let { byCode.first(it) }?.let { return Resolution(it, Via.CODE) }
+        byNaturalKey.first(key)?.let { return Resolution(it, Via.NATURAL) }
+        slotOwner(key.characterId, key.fieldKey)?.let { return Resolution(it, Via.SLOT) }
+        return Resolution(null, null)
+    }
+
+    /** 이 밑줄 자리를 지금 누가 쓰는가 — 밑줄 키가 아니면 언제나 null. */
+    fun slotOwner(characterId: Long, fieldKey: String): CharacterStateChange? =
+        if (SingletonStateChanges.isSingleton(fieldKey)) {
+            bySlot.first(StateChangeSlotKey(characterId, fieldKey))
+        } else null
 
     /**
      * 이 행을 썼다고 기록한다. **자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있으므로**
-     * 두 축을 함께 갱신한다 — 한쪽만 갱신하면 뒤 행이 *이미 다른 이력이 된 행*을 옛 키로 잡는다.
+     * 세 축을 함께 갱신한다 — 한쪽만 갱신하면 뒤 행이 *이미 다른 이력이 된 행*을 옛 키로 잡는다.
      */
     fun remember(row: CharacterStateChange) {
         byCode.put(row)
         byNaturalKey.put(row)
+        bySlot.put(row)
     }
 }
 

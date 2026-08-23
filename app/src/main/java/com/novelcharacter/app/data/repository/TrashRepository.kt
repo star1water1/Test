@@ -50,6 +50,7 @@ import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
 import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.SqlInChunks
+import com.novelcharacter.app.util.SingletonStateChanges
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -4651,11 +4652,10 @@ class TrashRepository(
          *
          * 일반 필드의 이력은 여러 줄이 정상이다(그것이 '상태변화'다). 이 셋만은 시맨틱 동기화가
          * 첫 건을 진실로 쓰므로, 복원이 두 번째 줄을 만들면 어느 쪽이 진짜인지 알 수 없게 된다.
+         *
+         * **정의는 [SingletonStateChanges]에 산다** — 여기서 두 번째로 적으면, *복원이 막는 키*와
+         * *읽기가 정본을 고르는 키*가 갈리는 날이 온다. 이름은 부르는 자리를 위해 남긴다.
          */
-        val SINGLETON_STATE_KEYS = setOf(
-            CharacterStateChange.KEY_BIRTH,
-            CharacterStateChange.KEY_DEATH,
-            CharacterStateChange.KEY_ALIVE
-        )
+        val SINGLETON_STATE_KEYS = SingletonStateChanges.KEYS
     }
 }

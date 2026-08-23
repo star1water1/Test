@@ -155,8 +155,10 @@ object ConsistencyChecker {
         val result = mutableListOf<DeathBeforeBirth>()
         for ((charId, changes) in changesByChar) {
             val char = charById[charId] ?: continue
-            val birth = changes.find { it.fieldKey == CharacterStateChange.KEY_BIRTH }?.year
-            val death = changes.find { it.fieldKey == CharacterStateChange.KEY_DEATH }?.year
+            // 정본 한 행은 [SingletonStateChanges]가 고른다 — `find`는 DAO의 `ORDER BY`에
+            // 기대는 답이라, 이력을 다르게 실어 온 호출부에서 조용히 다른 행을 집었다.
+            val birth = SingletonStateChanges.pick(changes, CharacterStateChange.KEY_BIRTH)?.year
+            val death = SingletonStateChanges.pick(changes, CharacterStateChange.KEY_DEATH)?.year
             // year 0은 "연도 미상" placeholder일 수 있으므로 오탐 방지를 위해 제외한다.
             if (birth != null && death != null && birth != 0 && death != 0 && death < birth) {
                 result.add(

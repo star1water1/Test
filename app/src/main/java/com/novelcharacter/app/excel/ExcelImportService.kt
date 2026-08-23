@@ -4589,9 +4589,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
 
-            // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = (if (r.fileCode.isNotBlank()) changes.byCode.first(r.fileCode) else null)
-                ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, r.fieldKey, r.newValue))
+            // 실제 임포트와 **같은 함수**다(R-33): 코드 → 자연키 → 밑줄 키의 슬롯.
+            val existing = changes.resolve(
+                r.fileCode, StateChangeNaturalKey(character.id, year, r.fieldKey, r.newValue)
+            ).row
             if (existing == null) {
                 newCount++
                 changes.remember(
@@ -8658,14 +8659,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
                     result.warnings.add("상태변화 행 ${excelRow(i)}: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
-                // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val changeByCodeMatch = if (fileCode.isNotBlank()) changes.byCode.first(fileCode) else null
-                val existing = changeByCodeMatch
-                    ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
+                // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 → 밑줄 키의 슬롯.
+                // 사다리는 [StateChangeIndexes.resolve]가 든다 — 미리보기와 같은 함수다(R-33).
+                val resolution = changes.resolve(
+                    fileCode, StateChangeNaturalKey(character.id, year, fieldKey, newValue)
+                )
+                val existing = resolution.row
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
                 // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
-                if (changeByCodeMatch == null && existing != null && existing.id in matchedStateChangeIds) {
+                if (resolution.via != StateChangeIndexes.Via.CODE &&
+                    existing != null && existing.id in matchedStateChangeIds
+                ) {
                     result.warnings.add("상태변화 행 ${excelRow(i)}: 같은 캐릭터·연도·필드·값의 행이 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
+                // 슬롯으로 잡혔다 = **연도나 값을 고친 밑줄 키 행**이다. 종전에는 이 자리가
+                // 신규 삽입이라 둘째 줄이 생겼다 — 지금은 그 자리의 행을 고치고, 사용자가
+                // *새 이력을 적었다고 믿는 일*이 없게 무엇을 했는지 말한다(개발 의도 2번).
+                if (resolution.via == StateChangeIndexes.Via.SLOT && existing != null) {
+                    result.warnings.add(
+                        "상태변화 행 ${excelRow(i)}: '$fieldKey'은(는) 캐릭터당 한 행이라 " +
+                            "새 행을 만들지 않고 '${character.name}'의 기존 행을 고쳤습니다"
+                    )
                 }
 
                 if (existing != null) {

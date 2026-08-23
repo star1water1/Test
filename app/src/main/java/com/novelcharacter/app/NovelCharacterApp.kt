@@ -32,7 +32,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.SemanticAlivePrecedence
+import com.novelcharacter.app.util.SingletonStateChanges
 import com.novelcharacter.app.util.stringOr
 
 class NovelCharacterApp : Application() {
@@ -139,6 +142,8 @@ class NovelCharacterApp : Application() {
         }
         // 생존여부↔사망연도 연동 데이터 마이그레이션 (1회)
         migrateAliveSyncIfNeeded()
+        // 밑줄 키 이력의 둘째 줄 정리 (1회)
+        repairSingletonStateChangesIfNeeded()
         // 필드 데이터 라이브러리 백필 시드 (1회) + 중단된 임포트 후 수확 재시도
         seedFieldValueLibraryIfNeeded()
         // 캐릭터 자동 링크 최초 정리 (1회)
@@ -215,9 +220,70 @@ class NovelCharacterApp : Application() {
         }
     }
 
+    /**
+     * **밑줄 키 이력의 둘째 줄 정리** (1회, 2026.08.23).
+     *
+     * `__birth`·`__death`·`__alive`는 캐릭터당 한 행이 불변식인데([SingletonStateChanges])
+     * **DB가 그것을 강제하지 않는다.** 2026.08.22 이전의 일괄 삽입은 같은 (캐릭터, 키)를
+     * 두 줄로 넣을 수 있었고, 그 수리에는 **소급이 없었다** — 이미 생긴 둘째 줄은 그대로
+     * 남아, 같은 캐릭터의 나이가 프로필(165)과 연표(163)에서 갈렸다.
+     * (실측: 사용자가 내보낸 파일에서 두 캐릭터가 그 모양이었다. 두 줄의 생성 시각이
+     * 밀리초까지 같아 그 일괄 삽입이 범인이라는 것도 그 파일이 보여 줬다.)
+     *
+     * **읽는 쪽은 이미 정본 하나를 보게 고쳤다** — 이 정리가 없어도 답은 갈리지 않는다.
+     * 그래도 지우는 이유는 둘이다: ⓐ 생일 알림은 `__birth` 행을 *전부* 훑으므로
+     * (`BirthdayHelper.todayBirthdays`) 둘째 줄의 월·일이 남아 있으면 엉뚱한 날 축하 창이
+     * 뜬다. ⓑ 내보낸 파일이 안내와 어긋난 채(*"캐릭터당 한 행"*) 나간다.
+     *
+     * **휴지통에 담지 않는다** — 파생 행의 정리는 스냅샷을 남기지 않는다는 규약 그대로다
+     * (`SemanticFieldSyncHelper.deleteStateChangeByKey`의 근거와 같다: 이 행을 만든 원인의
+     * 스냅샷이 이미 있고, 여기서 또 담으면 사용자가 지운 적 없는 항목이 휴지통에 쌓인다).
+     * 대신 **무엇을 지웠는지 로그에 남긴다** — 말없이 사라지지는 않는다(개발 의도 2번).
+     * 사용자는 설정 > 로그에서 그 줄을 읽을 수 있다.
+     *
+     * 성공해야만 플래그를 세운다 — 중단되면 다음 실행이 다시 돈다(멱등: 정본은 늘 같은 행이다).
+     */
+    private fun repairSingletonStateChangesIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        if (prefs.getBoolean("singleton_state_repaired", false)) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val dao = database.characterStateChangeDao()
+                val strays = dao.getAllChangesList()
+                    .groupBy { it.characterId }
+                    .values
+                    .flatMap { SingletonStateChanges.strays(it) }
+                for (stray in strays) {
+                    AppLogger.warn(
+                        "SingletonStateRepair",
+                        "캐릭터 ${stray.characterId}의 '${stray.fieldKey}' 둘째 줄을 지웠습니다 " +
+                            "(연도 ${stray.year}, 값 '${stray.newValue}', 코드 ${stray.code ?: "-"}) — " +
+                            "이 키는 캐릭터당 한 행이라 정본 한 줄만 남깁니다"
+                    )
+                    dao.delete(stray)
+                }
+                prefs.edit().putBoolean("singleton_state_repaired", true).apply()
+                android.util.Log.i(
+                    "NovelCharacterApp",
+                    "Singleton state-change repair completed (${strays.size} stray rows removed)"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "NovelCharacterApp",
+                    "Singleton state-change repair failed — will retry on next launch", e
+                )
+            }
+        }
+    }
+
     private fun migrateAliveSyncIfNeeded() {
         val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
-        if (prefs.getBoolean("alive_sync_migrated", false)) return
+        // **플래그가 v2다** — 종전 갈래가 *사망·출생 이력이 있는가*만 보고 표식을 정해,
+        // **생존여부 칸은 채워져 있는데 이력이 하나도 없는 캐릭터**를 통째로 건너뛰었다.
+        // 이미 마친 설치에는 그 구멍이 남아 있으므로(실측: 사용자 데이터에서 두 명) 한 번 더 돈다.
+        // 멱등이라 다시 돌아도 안전하다 — 아래 `syncAliveFor`는 이미 `__alive`가 있으면 넘어간다.
+        if (prefs.getBoolean("alive_sync_migrated_v2", false)) return
 
         appScope.launch(Dispatchers.IO) {
             try {
@@ -290,7 +356,10 @@ class NovelCharacterApp : Application() {
                     android.util.Log.w("NovelCharacterApp", "Alive sync (unassigned) skipped", it)
                 }
 
-                prefs.edit().putBoolean("alive_sync_migrated", true).apply()
+                prefs.edit()
+                    .putBoolean("alive_sync_migrated", true)
+                    .putBoolean("alive_sync_migrated_v2", true)
+                    .apply()
                 android.util.Log.i("NovelCharacterApp", "Alive sync migration completed")
             } catch (e: Exception) {
                 android.util.Log.e("NovelCharacterApp", "Alive sync migration failed", e)
@@ -326,19 +395,35 @@ class NovelCharacterApp : Application() {
 
         for (char in characters) {
             val changes = changesByChar[char.id].orEmpty()
-            val keys = com.novelcharacter.app.data.model.CharacterStateChange
+            val keys = CharacterStateChange
             val hasDeath = changes.any { it.fieldKey == keys.KEY_DEATH }
             val hasBirth = changes.any { it.fieldKey == keys.KEY_BIRTH }
             val hasAlive = changes.any { it.fieldKey == keys.KEY_ALIVE }
             if (hasAlive) continue // 이미 __alive 있으면 스킵
 
             val currentValue = valueByChar[char.id]
+            // **셋째 갈래가 2026.08.23에 들어왔다** — 값이 이미 있으면 그 값이 곧 답이다.
+            // 종전에는 갈래가 둘뿐이라(사망 이력 / 출생 이력 + 빈 값) **이력이 하나도 없는데
+            // 생존여부만 골라 둔 캐릭터**가 `else -> continue`로 빠졌다. 그 캐릭터는 값과
+            // 이력이 어긋난 채 남아 연표·통계·필터가 혼자 다르게 셌고, 플래그가 서면
+            // 다시는 돌지 않았다. 대응은 저장 경로와 **같은 함수**가 든다(R-33).
+            val chosen = currentValue?.value.orEmpty()
+            val chosenMarker = SemanticAlivePrecedence.aliveMarker(chosen, aliveVal, deadVal)
             val newValue = when {
                 hasDeath -> deadVal
-                hasBirth && (currentValue == null || currentValue.value.isBlank()) -> aliveVal
+                hasBirth && chosenMarker == null -> aliveVal
+                chosenMarker != null -> chosen
                 else -> continue
             }
-            val marker = if (hasDeath) "dead" else "alive"
+            val marker = when {
+                // 사망 이력이 있으면 그것이 이긴다(종전 차례 그대로).
+                hasDeath -> CharacterStateChange.ALIVE_MARKER_DEAD
+                // **사용자가 고른 값이 곧 답이다** — '불명'을 골라 둔 캐릭터에 '생존'을 적으면
+                // 사용자의 판단을 앱이 뒤집는 것이다(개발 의도 3번 · SemanticAlivePrecedence의 규칙).
+                chosenMarker != null -> chosenMarker
+                // 값은 비었고 출생 이력만 있는 갈래 — 종전 그대로 '생존'으로 연다.
+                else -> CharacterStateChange.ALIVE_MARKER_ALIVE
+            }
 
             if (currentValue == null || currentValue.value != newValue) {
                 if (currentValue != null) {
@@ -352,7 +437,7 @@ class NovelCharacterApp : Application() {
                 }
             }
             database.characterStateChangeDao().insert(
-                com.novelcharacter.app.data.model.CharacterStateChange(
+                CharacterStateChange(
                     characterId = char.id, year = 0, fieldKey = keys.KEY_ALIVE, newValue = marker
                 )
             )
