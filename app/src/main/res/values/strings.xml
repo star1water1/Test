@@ -2757,6 +2757,7 @@
     <string name="image_link_merged_done">%1$d장을 링크했습니다 (그룹 병합됨)</string>
     <string name="image_link_failed">링크에 실패했습니다</string>
     <string name="image_unlink_done">링크 해제 %1$d장</string>
+    <string name="image_unlink_failed">링크 해제에 실패했습니다</string>
     <string name="image_link_auto_moved_notice">%1$d장을 자동 묶음에서 이 수동 묶음으로 옮겼습니다. 수동 묶음이 우선이라 다음 정리가 건드리지 않습니다 — 원래 자동 묶음에 2장뿐이었다면 남은 1장은 링크 표시가 사라집니다.</string>
     <string name="image_unlink_auto_notice">%1$d장은 캐릭터에 함께 등록되어 있어 다음 정리 때 자동으로 다시 링크됩니다. 계속 풀어 두려면 자동 링크 설정을 끄거나 캐릭터에서 이미지를 빼세요.</string>
     <string name="image_link_group_info">링크 묶음 · %1$d장</string>
@@ -2764,6 +2765,7 @@
     <!-- 묶어 보기에서 필터가 식구를 가려 위 수와 단추의 장수가 갈릴 때만 붙는다(정박) -->
     <string name="image_link_group_info_visible"> · 지금 화면에는 %1$d장</string>
     <string name="image_batch_tag_done">이미지 %1$d장에 태그를 반영했습니다</string>
+    <string name="image_batch_tag_failed">태그 반영에 실패했습니다</string>
     <string name="image_batch_tag_link_notice">선택 %1$d장에 링크된 %2$d장이 함께 포함되어 총 %3$d장에 적용됩니다.</string>
     <string name="image_tag_filter_empty">등록된 이미지 태그가 없습니다</string>
     <string name="image_tag_filter_untagged">태그 없는 이미지만</string>

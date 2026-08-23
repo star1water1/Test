@@ -1873,6 +1873,11 @@ class ImageManagerFragment : Fragment() {
     private fun runUnlink(paths: List<String>) {
         viewModel.unlinkImages(paths) { result ->
             if (!isAdded || _binding == null) return@unlinkImages
+            // 형제 둘(배정·배정 해제)과 같은 자리·같은 모양 — 실패는 성공 문구를 타지 않는다.
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_unlink_failed)))
+                return@unlinkImages
+            }
             exitSelection()
             // 자동 링크 대상이면 해제가 다음 재동기화에 되돌아간다 — 조용한 원복 금지, 교정 경로 고지
             val message = buildString {
@@ -1928,11 +1933,25 @@ class ImageManagerFragment : Fragment() {
                 targets.size,
                 if (remove) R.string.image_manager_stage_tag_remove else R.string.image_manager_stage_tag_add
             )
-            val onCount: (Int) -> Unit = { count ->
+            val onCount: (ImageManagerViewModel.TagBatchResult) -> Unit = { result ->
                 progress?.dismiss()
                 if (isAdded && _binding != null) {
-                    exitSelection()
-                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
+                    // **0은 실패의 뜻뿐이다** — 대상이 비었으면 위에서 이미 물러섰다
+                    // (`targets.isEmpty()`). 그래서 종전의 *"0장에 반영했습니다"*는
+                    // 언제나 거짓 고지였다.
+                    if (result.failed) {
+                        reportAndNotify(
+                            OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_failed))
+                        )
+                    } else {
+                        exitSelection()
+                        reportAndNotify(
+                            OpResult.success(
+                                OpResult.CAT_MAINTENANCE,
+                                getString(R.string.image_batch_tag_done, result.affected)
+                            )
+                        )
+                    }
                 }
             }
             if (remove) {

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.image
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -59,6 +60,9 @@ class ImageManagerViewModel(
     enum class ViewMode { GRID, GALLERY }
 
     companion object {
+        /** 로그 태그 — 삼킨 예외는 적어도 자취를 남긴다(형제 뷰모델들과 같은 관행). */
+        private const val TAG = "ImageManagerViewModel"
+
         /**
          * 기준마다의 기본 방향 — 방향 축이 생기기 전의 **고정 방향과 같다**(크기·날짜는
          * 큰/새 것부터, 이름은 가나다). 기준을 바꿀 때 컨트롤 시트가 이 값을 제안한다
@@ -1113,8 +1117,22 @@ class ImageManagerViewModel(
      * 링크 해제 결과. [autoRelinkable] = 자동 링크(캐릭터 묶음)였고 그 캐릭터에 여전히 등록되어
      * 있어, 자동 링크 설정이 켜진 동안 다음 재동기화(저장·배정 등)가 도로 묶을 이미지 수 —
      * 해제가 조용히 되돌아가지 않도록 고지에 쓴다(변수 제어).
+     *
+     * **[failed]는 형제 둘([AssignResult]·[UnassignResult])이 이미 드는 칸이다** — 이것만
+     * 밖에 있었다. 없으면 실패가 `cleared = 0`으로 접혀 *지울 것이 없었다*와 구별되지 않고,
+     * 호출부는 그 0을 **성공 고지**로 적는다(`OpResult`의 계약: *"모든 실패는 항상 알린다"*).
      */
-    data class UnlinkResult(val cleared: Int, val autoRelinkable: Int)
+    data class UnlinkResult(val cleared: Int, val autoRelinkable: Int, val failed: Boolean = false)
+
+    /**
+     * 일괄 태그 추가·제거의 결과. [affected] = 반영된 이미지 수.
+     *
+     * **[failed]가 있는 이유는 0이 두 뜻이기 때문이다** — 종전에는 두 함수가 예외를 `0`으로
+     * 삼켰고, 호출부는 대상이 비었는지를 부르기 **전에** 이미 걸러 내므로(`targets.isEmpty()`)
+     * 그 0은 *실패했다*는 뜻뿐이었는데 화면은 그것을 *"이미지 0장에 태그를 반영했습니다"*라는
+     * **성공**으로 적었다. 형제 셋(`AssignResult`·`UnassignResult`·`BulkDeleteResult`)과 같은 모양이다.
+     */
+    data class TagBatchResult(val affected: Int, val failed: Boolean = false)
     sealed class LinkOutcome {
         /**
          * @param autoMoved 자동 묶음(`char:N`)에서 수동 묶음으로 옮겨진 장수 — 0이 아니면
@@ -1559,7 +1577,10 @@ class ImageManagerViewModel(
                         }
                         UnlinkResult(targets.size, countAutoRelinkable(targets))
                     }
-                } catch (e: Exception) { UnlinkResult(0, 0) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to unlink images", e)
+                    UnlinkResult(0, 0, failed = true)
+                }
             }
             load()
             onDone(result)
@@ -1592,10 +1613,10 @@ class ImageManagerViewModel(
         paths: List<String>,
         tags: List<String>,
         onProgress: (Int, Int) -> Unit = { _, _ -> },
-        onDone: (Int) -> Unit
+        onDone: (TagBatchResult) -> Unit
     ) {
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 try {
                     val targets = expandWithLinkedGroups(paths).allPaths.toList()
                     var processed = 0
@@ -1610,11 +1631,14 @@ class ImageManagerViewModel(
                             db.imageTagDao().insertAll(tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) })
                         }
                     }
-                    targets.size
-                } catch (e: Exception) { 0 }
+                    TagBatchResult(targets.size)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to add tags to images", e)
+                    TagBatchResult(0, failed = true)
+                }
             }
             load()
-            onDone(count)
+            onDone(result)
         }
     }
 
@@ -1629,15 +1653,20 @@ class ImageManagerViewModel(
      * 된다(조용한 유실). **이 자리가 R-54의 `reservedBinds`가 있는 이유다** — 질의가
      * `imageId IN (…) AND tag IN (…)`이라 두 목록이 한 예산을 나눠 쓴다.
      * 끊어 보내면 진행도의 단위도 생긴다.
+     *
+     * **삼키는 쪽도 함께 고쳤다**(2026.08.23) — 위 문단이 *"catch가 0으로 삼킨다"*를 결함으로
+     * 적어 두고도 그 catch는 그대로였다. 상한을 없앤 것은 **한 원인**을 없앤 것이고, 다른
+     * 원인(디스크·잠금·마이그레이션 중 실패)으로 던지면 여전히 0이 나가 화면이 성공이라
+     * 적었다. 이제 [TagBatchResult.failed]로 갈라 나간다.
      */
     fun removeTagsFromImages(
         paths: List<String>,
         tags: List<String>,
         onProgress: (Int, Int) -> Unit = { _, _ -> },
-        onDone: (Int) -> Unit
+        onDone: (TagBatchResult) -> Unit
     ) {
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 try {
                     // 링크 묶음으로 넓힌다 — 추가만 넓히고 제거를 안 넓히면 지운 태그가
                     // 형제에 남아 묶음이 도로 갈라진다(공유 불변식의 대칭 축. 시트가 사전 고지).
@@ -1651,11 +1680,14 @@ class ImageManagerViewModel(
                         processed += chunk.size
                         onProgress(processed, ids.size)
                     }
-                    ids.size
-                } catch (e: Exception) { 0 }
+                    TagBatchResult(ids.size)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to remove tags from images", e)
+                    TagBatchResult(0, failed = true)
+                }
             }
             load()
-            onDone(count)
+            onDone(result)
         }
     }
 
