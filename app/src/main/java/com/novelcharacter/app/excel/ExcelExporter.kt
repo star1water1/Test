@@ -2307,8 +2307,15 @@ class ExcelExporter(context: Context) {
 
         val allUniverses = db.universeDao().getAllUniversesList()
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
+        // 드롭다운 목록은 **이 시트에 실제로 실리는 값**까지 담는다 — 세력의 자동관계유형이
+        // 이 시트의 행을 만드는데 종전 목록에는 그 글자가 없었다([RelationshipTypeOptions]).
+        val relationshipTypes = RelationshipTypeOptions.forCharacterRelations(
+            customTypes = allCustomTypes,
+            factionAutoTypes = allFactions.map { it.autoRelationType },
+            typesInUse = allRelationships.map { it.relationshipType }
+        )
         // 동명 세력은 드롭다운에서 구분되지 않으므로 접는다 — 대상 확정은 '세력코드' 열이 한다
-        val spec = relationshipSpec(allCustomTypes, allFactions.map { it.name }.distinct())
+        val spec = relationshipSpec(relationshipTypes, allFactions.map { it.name }.distinct())
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2551,7 +2558,14 @@ class ExcelExporter(context: Context) {
         val customTypes = db.universeDao().getAllUniversesList()
             .flatMap { it.getRelationshipTypes() }.distinct()
 
-        val spec = factionRelationshipSpec(allFactions.map { it.name }, customTypes)
+        // 세력 간 관계는 어휘가 캐릭터 관계와 다르다(동맹·적대…) — 쓰이는 값을 함께 싣는다.
+        val spec = factionRelationshipSpec(
+            allFactions.map { it.name },
+            RelationshipTypeOptions.forFactionRelations(
+                customTypes = customTypes,
+                typesInUse = allRelationships.map { it.relationType }
+            )
+        )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
