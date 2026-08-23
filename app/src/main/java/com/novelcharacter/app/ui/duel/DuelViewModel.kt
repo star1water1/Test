@@ -931,7 +931,9 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * 스냅샷을 갖지 않는다) **이력에 남기는 것이 유일한 자취**다.
      */
     suspend fun deleteMatches(matches: List<DuelMatch>, relation: String) {
-        matches.forEach { duelRepository.undo(it) }
+        // 형제 셋(`undo`·`undoGroup`·`recordGroup`)과 같은 모양으로 맞춘다 — 쓰기는 화면보다
+        // 오래 사는 스코프에서, 여럿을 지우는 것은 **한 트랜잭션**에서.
+        inViewModelScope { duelRepository.undoAll(matches) }
         reportResult(
             _result,
             OpResult.success(

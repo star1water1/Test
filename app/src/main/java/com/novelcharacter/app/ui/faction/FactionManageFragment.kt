@@ -117,7 +117,7 @@ class FactionManageFragment : Fragment() {
                 // 이동이 한 번도 없었다면(pending == null) 저장할 변경도 없다
                 val listToSave = pendingOrderList ?: return
                 pendingOrderList = null
-                viewModel.updateFactionOrder(listToSave)
+                viewModel.updateFactionOrder(listToSave.map { it.id })
             }
         })
         itemTouchHelper?.attachToRecyclerView(binding.factionRecyclerView)

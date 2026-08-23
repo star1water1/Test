@@ -305,6 +305,17 @@ class DuelRepository(private val db: AppDatabase) {
     suspend fun undoGroup(groupId: String) = db.duelMatchDao().deleteByGroup(groupId)
 
     /**
+     * 고른 판들을 통째로 되돌린다 — 상성 상세의 [잘못 눌렀다].
+     *
+     * `undoGroup`과 같은 자세다: **반쪽 되돌리기를 만들지 않는다.** 종전에는 화면이
+     * `matches.forEach { undo(it) }`로 하나씩 지워, 회전 한 번이면 절반만 지워지고
+     * 아무도 그 사실을 말하지 않았다.
+     */
+    suspend fun undoAll(matches: List<DuelMatch>) = db.withTransaction {
+        SqlInChunks.each(matches.map { it.id }) { db.duelMatchDao().deleteByIds(it) }
+    }
+
+    /**
      * 기록 화면의 손편집 — **승자만 고친다.**
      *
      * @param winnerCode 이긴 쪽. null이면 무승부다. 두 참가자 중 어느 쪽도 아니면 고치지 않고

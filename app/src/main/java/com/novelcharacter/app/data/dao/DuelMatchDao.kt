@@ -95,6 +95,16 @@ interface DuelMatchDao {
     suspend fun deleteByGroup(groupId: String)
 
     /**
+     * 판 여럿을 **한 문장으로** 지운다 — 상성 상세의 [잘못 눌렀다]가 쓴다.
+     *
+     * 하나씩 `delete`를 부르면 되돌리기가 **항목 단위로 완결되지 않는다**: 화면이 사라져
+     * 코루틴이 끊기면 절반만 지워진 채 남고, 상성 판정은 그 절반 위에서 다시 계산된다.
+     * 999-변수 상한은 [com.novelcharacter.app.util.SqlInChunks]가 든다.
+     */
+    @Query("DELETE FROM duel_matches WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+
+    /**
      * 기록 화면의 손편집 — **승자만 바뀐다.** 참가자와 시각은 그대로 두는 것이 설계다:
      * 참가자를 바꾸면 그 판은 *다른 판*이 되고, 시각을 바꾸면 *언제 정했는가*라는 사실이
      * 거짓이 된다. 둘 다 고치고 싶으면 지우고 다시 붙이는 것이 정직한 경로다.

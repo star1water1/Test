@@ -129,4 +129,35 @@ class ImagePathMatchTest {
             assertFalse(ImagePathMatch.isInside(bad, root))
         }
     }
+
+    // ===== 원문 지름길이 답을 바꾸지 않는가 (2026.08.23) =====
+
+    @Test fun indexIn_keepsTheEarliestMatchEvenWhenALaterOneMatchesLiterally() {
+        // **지름길이 차례를 바꾸면 안 된다.** 앞자리가 *다른 표기로 같은 파일*을 가리키면
+        // 답은 그 앞자리다 — 목록을 통째로 원문 대조한 뒤 정규로 되짚으면 여기서 갈린다.
+        assertEquals(0, ImagePathMatch.indexIn(listOf("$dir/./same.jpg", "$dir/same.jpg"), "$dir/same.jpg"))
+    }
+
+    @Test fun indexIn_findsTheLiteralMatchIgnoringSurroundingSpace() {
+        assertEquals(1, ImagePathMatch.indexIn(listOf("$dir/b.jpg", "$dir/a.jpg"), " $dir/a.jpg "))
+    }
+
+    @Test fun indexIn_stillMatchesThroughCanonicalWhenTheTextDiffers() {
+        assertEquals(0, ImagePathMatch.indexIn(listOf("$dir/sub/../a.jpg"), "$dir/a.jpg"))
+    }
+
+    @Test fun indexIn_missIsStillMinusOne() {
+        assertEquals(-1, ImagePathMatch.indexIn(listOf("$dir/c.jpg"), "$dir/none.jpg"))
+        assertEquals(-1, ImagePathMatch.indexIn(listOf("$dir/c.jpg"), null))
+        assertEquals(-1, ImagePathMatch.indexIn(listOf("$dir/c.jpg"), "   "))
+        assertEquals(-1, ImagePathMatch.indexIn(emptyList(), "$dir/c.jpg"))
+    }
+
+    @Test fun same_shortcutAgreesWithCanonical() {
+        assertTrue(ImagePathMatch.same("$dir/d.jpg", " $dir/d.jpg "))
+        assertTrue(ImagePathMatch.same("$dir/d.jpg", "$dir/./d.jpg"))
+        assertFalse(ImagePathMatch.same("$dir/d.jpg", "$dir/e.jpg"))
+        assertFalse(ImagePathMatch.same("", ""))
+        assertFalse(ImagePathMatch.same(null, null))
+    }
 }

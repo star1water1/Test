@@ -1382,6 +1382,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                             logRepo.logAsync(
                                 OpResult.failure(OpResult.CAT_SHARE, shareFailed, error.description?.toString())
                             )
+                            // **조용히 실패하지 않는다**(개발 의도 2번). 위 빗장이 인쇄
+                            // 대화상자까지 막으므로, 말하지 않으면 사용자에게는 *아무 일도
+                            // 안 일어난 것*이다 — 종전에는 오류 페이지라도 대화상자가 떴다.
+                            if (isAdded) {
+                                Toast.makeText(requireContext(), shareFailed, Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 }
