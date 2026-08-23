@@ -996,6 +996,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         viewLifecycleOwner.lifecycleScope.launch {
             val data = viewModel.getLibraryImages()
             if (!isAdded || _binding == null) return@launch
+            // 상태 저장 후면 show()가 IllegalStateException — 생략해도 1탭으로 재시도된다
+            // (같은 파일의 형제 둘이 이미 이 가드를 든다. 이 자리만 밖이었다.)
+            if (parentFragmentManager.isStateSaved) return@launch
             if (data.images.isEmpty()) {
                 Toast.makeText(
                     requireContext(), R.string.image_library_picker_empty, Toast.LENGTH_SHORT

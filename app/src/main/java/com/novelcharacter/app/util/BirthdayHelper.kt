@@ -37,7 +37,12 @@ object BirthdayHelper {
         val todayYear = today.get(Calendar.YEAR)
 
         return birthChanges
-            .filter { it.month != null && it.day != null }
+            // **실재하는 날만 센다.** 종전에는 null만 걸렀고, 아래 [daysUntilBirthday]가
+            // `LocalDate.of`에 그대로 넘기므로 `month = 13`·`day = 0`인 행 하나가
+            // **홈 대시보드를 열 때마다 `DateTimeException`으로 죽였다.** 앱의 쓰기 문은
+            // 전부 범위를 막지만 월드패키지 가져오기만 그 밖이라 그런 행이 들어올 수 있다.
+            // `adjustLeapDay`는 상한만 자르므로(`coerceAtMost`) 하한을 막지 못한다.
+            .filter { isRealMonthDay(it.month, it.day) }
             .mapNotNull { change ->
                 val days = daysUntilBirthday(todayMonth, todayDay, todayYear, change.month!!, change.day!!)
                 if (days in 0 until daysAhead) {

@@ -293,6 +293,7 @@ $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/DateValidation.kt
 $MAIN/util/BirthdayHelper.kt
 $MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt

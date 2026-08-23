@@ -1544,10 +1544,15 @@ class StatsDataProvider {
         }
 
         // 신규: 그룹별 필드 완성도 — 세 화면이 같은 헬퍼를 쓴다(B-100).
+        //
+        // **미배정 스코프에서는 novelId 경유가 불가하다** — 데이터 건강·데이터 개요가 쓰는
+        // 그 분기를 여기도 둔다. 없으면 '작품 미배정' 필터에서 이 표만 통째로 비어,
+        // 같은 물음에 세 화면이 다른 답을 낸다.
         val fieldCompletionByGroup = groupCompletionAverages(
             characters = s.characters,
             fieldsForChar = { char ->
-                char.novelId?.let { novelMap[it] }?.let { statsFieldDefs[it.universeId] }
+                if (s.unassignedScope) s.fieldDefinitions.ifEmpty { null }
+                else char.novelId?.let { novelMap[it] }?.let { statsFieldDefs[it.universeId] }
             },
             filledDefIdsByChar = filledDefIdsByChar,
             weights = s.completionWeights
@@ -1894,8 +1899,15 @@ class StatsDataProvider {
         val unlinked = s.characters.filter { it.id !in eventCharIds }.map { it.name }
 
         // 중복 태그 (대소문자/공백 차이로 중복된 태그)
+        //
+        // **표기가 실제로 갈렸을 때만이다.** 종전에는 정규화 키의 **행 수**(`it.value.size > 1`)를
+        // 봤는데, `character_tags`는 `(characterId, tag)`가 유니크라 그 수가 둘 이상이라는 것은
+        // *서로 다른 캐릭터가 같은 태그를 썼다*는 뜻일 뿐이다. 그래서 '주인공'을 두 명에게
+        // 붙이기만 해도 중복으로 잡혔고, 바로 아래 `distinct()`가 표기를 접어 **목록에는
+        // 멀쩡한 태그 하나가 그대로 떴다** — 무엇이 중복이라는 것인지 화면만 보고는 알 수 없다.
+        // 이 수는 메인 카드의 '발견 사항 N건'에도 실려 그 수까지 부풀렸다.
         val dupTags = s.tags.groupBy { it.tag.lowercase().trim() }
-            .filter { it.value.size > 1 }
+            .filter { g -> g.value.map { it.tag }.distinct().size > 1 }
             .flatMap { it.value.map { t -> t.tag }.distinct() }
 
         // 신규: 메모 미작성 캐릭터
@@ -1905,11 +1917,15 @@ class StatsDataProvider {
         val emptyDescRels = s.relationships.count { it.description.isBlank() }
 
         // 신규: 그룹별 필드 완성도 — 세 화면이 같은 헬퍼를 쓴다(B-100).
+        //
+        // **바로 위에서 만든 [fieldsForChar]를 그대로 넘긴다.** 종전에는 여기만 미배정
+        // 분기가 빠진 새 람다를 인라인으로 지었고, '작품 미배정' 필터에서는 스코프의 모든
+        // 캐릭터가 `novelId == null`이라 그 람다가 언제나 null을 돌려줘 헬퍼가 전원을
+        // 건너뛰었다 — 표가 **통째로 비었다**. 같은 화면의 미입력률은 그 분기를 지나므로
+        // 한 화면의 두 수가 서로 다른 모집단을 세고 있었다(R-51).
         val completionByGroup = groupCompletionAverages(
             characters = s.characters,
-            fieldsForChar = { char ->
-                char.novelId?.let { novelMap[it] }?.let { fieldDefByUniverse[it.universeId] }
-            },
+            fieldsForChar = fieldsForChar,
             filledDefIdsByChar = filledDefIdsByChar,
             weights = s.completionWeights
         )

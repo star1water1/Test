@@ -342,14 +342,29 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         // **지울 길 없는 행**이 되고, 값 있는 그림자를 지우면 무소속 캐릭터의 값이 사라진다
         // (개발 의도 2번 — 이 기능이 캐릭터 데이터를 지우는 경우는 없다).
         val (global, universal) = linked.partition { it.universeId == null }
-        val globalToDelete = ArrayList<Long>()
+        val globalToDelete = ArrayList<FieldDefinition>()
         val toDemote = ArrayList(universal)
         for (shadow in global) {
-            if (valuesOf(shadow).isEmpty()) globalToDelete.add(shadow.id) else toDemote.add(shadow)
+            if (valuesOf(shadow).isEmpty()) globalToDelete.add(shadow) else toDemote.add(shadow)
         }
         val demoted = DefaultFieldPlan.demote(toDemote)
         for (row in demoted) fieldDao.update(row)
-        SqlInChunks.each(globalToDelete) { fieldDao.deleteGlobalByIds(it) }
+        // **지우기 전에 휴지통에 남긴다** — 형제 삭제 경로 여덟이 전부 그렇다(R-18).
+        //
+        // `valuesOf`가 보는 것은 `character_field_values`뿐이라 **값 라이브러리 엔트리는
+        // 묻지 않는다.** 그런데 `FieldValueEntry`는 `fieldDefinitionId`에 `onDelete = CASCADE`가
+        // 걸려 있어, 값이 0행인 그림자를 지우면 그 필드에 쌓인 엔트리 — 사용자가 손댄
+        // **표시 라벨·별칭·카테고리·설명·숨김 표식** — 이 함께 통째로 사라졌다. 되돌릴 자리가
+        // 없었다. 확인 문구도 *"필드와 캐릭터 값은 지워지지 않습니다"*라고만 하고 라이브러리가
+        // 함께 죽는다는 사실은 말하지 않는다.
+        //
+        // `snapshotDeletedField`가 정의와 엔트리를 한 벌로 담으므로(`UniverseRepository.deleteField`가
+        // 쓰는 그 함수다) 이 한 줄로 되살릴 길이 선다.
+        if (globalToDelete.isNotEmpty()) {
+            val trash = TrashRepository(db)
+            for (shadow in globalToDelete) trash.snapshotDeletedField(shadow)
+        }
+        SqlInChunks.each(globalToDelete.map { it.id }) { fieldDao.deleteGlobalByIds(it) }
         templateDao.delete(template)
         // **정리한 수도 함께 돌려준다.** 종전에는 강등 수 하나만 냈고, 그래서 결과 문구가
         // 그 수를 말할 재료조차 없었다 — 확인 문구는 *"필드와 캐릭터 값은 지워지지 않습니다"*라

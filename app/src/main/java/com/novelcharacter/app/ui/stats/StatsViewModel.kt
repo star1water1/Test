@@ -488,8 +488,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                         .getCharactersByUniverseList(axis.universeId).map { it.code }
                     app.duelRepository.scoresOf(axis, participants)
                 }
-                val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+                // **필터도 IO에서 돈다** — `filterByNovel`은 스냅샷의 전체 리스트 열여섯을
+                // 통째로 순회한다(필드값이 앱에서 가장 큰 컬렉션이다). 형제 경로가 같은 사유를
+                // 이미 적어 두었는데(`getFilteredSnapshot` — *"규모에 비례한 메인 스레드 잰크
+                // 방지"*) 순위 둘만 그 밖에서 돌아, 정렬을 토글할 때마다 손가락 아래에서 돌았다.
                 _rankingResult.value = withContext(Dispatchers.IO) {
+                    val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
                     provider.computeDuelRanking(scoped, scores, ascending)
                 }
             } catch (e: Exception) {
@@ -502,9 +506,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
-                // filterByNovel 후 다른 세계관의 fieldDefId가 스냅샷에 없을 수 있음 → 교집합
-                val validIds = fieldDefIds.filter { id -> scoped.fieldDefinitions.any { it.id == id } }
+                // **필터와 교집합을 함께 IO로 넘긴다** — 위 [loadDuelRanking]과 같은 사유이고,
+                // 교집합 쪽도 `filter { any { } }`라 (고른 필드 × 정의 수)를 메인에서 돌았다.
+                val (scoped, validIds) = withContext(Dispatchers.IO) {
+                    val sc = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+                    // filterByNovel 후 다른 세계관의 fieldDefId가 스냅샷에 없을 수 있음 → 교집합
+                    val ids = sc.fieldDefinitions.mapTo(HashSet()) { it.id }
+                    sc to fieldDefIds.filter { it in ids }
+                }
                 if (validIds.isEmpty()) {
                     _rankingResult.value = RankingResult(emptyList(), "", "", ascending, 0, 0)
                     return@launch

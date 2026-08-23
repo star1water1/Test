@@ -149,4 +149,49 @@ class BirthdayHelperTest {
             }
         }
     }
+
+    // ===== 실재하지 않는 월·일 (월드패키지가 열어 둔 문) =====
+
+    private fun birth(id: Long, month: Int?, day: Int?) = CharacterStateChange(
+        characterId = id,
+        year = 1000,
+        month = month,
+        day = day,
+        fieldKey = CharacterStateChange.KEY_BIRTH,
+        newValue = ""
+    )
+
+    /**
+     * **크래시 회귀 방지** — `filterUpcoming`은 `LocalDate.of`에 월·일을 그대로 넘기므로
+     * 범위 밖 값 하나가 홈 대시보드를 열 때마다 `DateTimeException`으로 죽였다.
+     *
+     * 앱의 쓰기 문은 전부 범위를 막지만 **월드패키지 가져오기만 그 밖**이라 그런 행이
+     * 실제로 들어올 수 있다. 조용히 보정하지 않고 **배제**하는 것이 규약이다 —
+     * 엉뚱한 날짜를 축하하면 그것이 곧 거짓 고지다.
+     */
+    @Test
+    fun `실재하지 않는 월일은 던지지 않고 빠진다`() {
+        val bad = listOf(
+            birth(1L, 13, 1),
+            birth(2L, 0, 15),
+            birth(3L, -1, 3),
+            birth(4L, 3, 0),
+            birth(5L, 3, -5),
+            birth(6L, 2, 30),
+            birth(7L, 4, 31),
+            birth(8L, null, 5),
+            birth(9L, 5, null)
+        )
+        assertTrue("실재하지 않는 날이 결과에 남았다", BirthdayHelper.filterUpcoming(bad, 366).isEmpty())
+        assertTrue("todayBirthdays도 집으면 안 된다", BirthdayHelper.todayBirthdays(bad).isEmpty())
+    }
+
+    /** 배제가 지나치지 않은가 — 열두 달의 1일은 366일 창에 전부 걸린다. */
+    @Test
+    fun `실재하는 날은 그대로 걸린다`() {
+        val good = (1..12).map { m -> birth(m.toLong(), m, 1) }
+        assertEquals(12, BirthdayHelper.filterUpcoming(good, 366).size)
+        // 2월 29일은 이 앱이 판타지 역법 때문에 언제나 허용한다(maxDayOfMonth의 계약).
+        assertEquals(1, BirthdayHelper.filterUpcoming(listOf(birth(99L, 2, 29)), 366).size)
+    }
 }

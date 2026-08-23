@@ -255,7 +255,15 @@ class CharacterSaveCoordinator(
                         }
 
                         val isEdit = characterId != -1L
-                        if (!fragment.isAdded) { abortSave(); return@launch }
+                        // **상태 저장 뒤에는 창을 띄울 수 없다.** 이 갈래는 질의 둘을 기다린
+                        // 뒤에 오므로(그중 하나는 작품 조회가 중복 수만큼) 이 화면에서 가장
+                        // 오래 걸리는 길이고, 그 사이 회전하면 `show()`가 `IllegalStateException`을
+                        // 던졌다. 그것을 바깥 `catch`가 삼켜 **누른 [저장]이 «저장 실패»로
+                        // 둔갑했다** — 실패한 것은 저장이 아니라 창 띄우기이고, 폼은 회전 너머로
+                        // 멀쩡히 살아 있는데 사용자는 자기 입력이 상했다고 읽는다.
+                        if (!fragment.isAdded || fragment.childFragmentManager.isStateSaved) {
+                            abortSave(); return@launch
+                        }
                         showDuplicateDialog(candidates, isEdit)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
@@ -264,8 +272,7 @@ class CharacterSaveCoordinator(
                     performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
                 }
             } catch (e: Exception) {
-                showSaveFailed()
-                abortSave()
+                onSaveThrew(e)
             }
         }
         return true
@@ -276,6 +283,27 @@ class CharacterSaveCoordinator(
         if (fragment.isAdded) {
             Toast.makeText(ctx, R.string.save_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * 저장 갈래 일곱의 **공통 실패 처분** — 그리고 **취소는 실패가 아니다**.
+     *
+     * 저장 사슬은 화면 수명(`viewLifecycleOwner.lifecycleScope`)에서 돌지만 실제 쓰기는
+     * `viewModel.inViewModelScope { … }`, 즉 `viewModelScope.async{}.await()`이다. 그래서
+     * **회전·뒤로가기로 뷰가 죽으면 쓰기는 끝까지 가고 `await()`만 취소로 던진다.**
+     * `CancellationException`도 `Exception`이라 종전에는 그것이 맨 `catch`에 걸려
+     * — 일곱 자리 어디에도 되던지기가 없었다 — **캐릭터는 저장됐는데
+     * «저장에 실패했습니다» 토스트가 떴다.** `showSaveFailed`는 `context`와 `isAdded`만 보고
+     * 그 둘은 `onDestroyView` 시점에 아직 살아 있어 토스트가 실제로 뜬다.
+     *
+     * 이 저장소는 같은 결함에 이미 세 번 이름을 붙였다(`NovelListFragment.createNovelField` ·
+     * `TimelineViewModel` · `NameSuggestViewModel`). 일곱 자리에 되던지기를 복붙하는 대신
+     * 처분을 한 자리에 모은다 — 여덟 번째 갈래가 생겨도 이 함수를 부르면 규약이 따라온다.
+     */
+    private fun onSaveThrew(e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        showSaveFailed()
+        abortSave()
     }
 
     private fun showDuplicateDialog(
@@ -313,8 +341,7 @@ class CharacterSaveCoordinator(
                         try {
                             performSave(character, isUpdate = false, targetCharacterId = -1L)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -333,8 +360,7 @@ class CharacterSaveCoordinator(
                             )
                             performSave(updatedChar, isUpdate = true, targetCharacterId = target.id)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -343,8 +369,7 @@ class CharacterSaveCoordinator(
                         try {
                             performSave(character, isUpdate = true, targetCharacterId = characterId)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -410,8 +435,7 @@ class CharacterSaveCoordinator(
                                 try {
                                     executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
                                 } catch (e: Exception) {
-                                    showSaveFailed()
-                                    abortSave()
+                                    onSaveThrew(e)
                                 }
                             }
                         },
@@ -543,8 +567,7 @@ class CharacterSaveCoordinator(
                             viewModel.addRestrictedValuesToLibrary(violations)
                             performSave(character, isUpdate, targetCharacterId)
                         } catch (e: Exception) {
-                            showSaveFailed()
-                            abortSave()
+                            onSaveThrew(e)
                         }
                     }
                 }
@@ -620,8 +643,7 @@ class CharacterSaveCoordinator(
 
                         executeSave(character, isUpdate, targetCharacterId, fieldValues)
                     } catch (e: Exception) {
-                        showSaveFailed()
-                        abortSave()
+                        onSaveThrew(e)
                     }
                 }
             }
