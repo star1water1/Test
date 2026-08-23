@@ -25,6 +25,7 @@ import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
+import com.novelcharacter.app.data.maintenance.LegacyValueFormats
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
@@ -144,6 +145,8 @@ class NovelCharacterApp : Application() {
         migrateAliveSyncIfNeeded()
         // 밑줄 키 이력의 둘째 줄 정리 (1회)
         repairSingletonStateChangesIfNeeded()
+        // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색
+        repairLegacyValueFormatsIfNeeded()
         // 필드 데이터 라이브러리 백필 시드 (1회) + 중단된 임포트 후 수확 재시도
         seedFieldValueLibraryIfNeeded()
         // 캐릭터 자동 링크 최초 정리 (1회)
@@ -272,6 +275,52 @@ class NovelCharacterApp : Application() {
                 android.util.Log.e(
                     "NovelCharacterApp",
                     "Singleton state-change repair failed — will retry on next launch", e
+                )
+            }
+        }
+    }
+
+    /**
+     * **옛 경로가 남긴 규격 밖 값 정리** (1회, 2026.08.24).
+     *
+     * 무엇을 왜 고치는지는 [LegacyValueFormats]가 든다 — SQL이 그쪽에 사는 것은
+     * `tools/check_dao_sql_twins.sh`가 살아 있는 SQL의 자리를 못박아 두었기 때문이다.
+     * 여기는 **1회 플래그와 고지**만 든다.
+     *
+     * 성공해야만 플래그를 세운다 — 중단되면 다음 실행이 다시 돈다(멱등이라 같은 상태로 수렴한다).
+     * **말없이 고치지 않는다**: 무엇을 몇 건 고쳤는지 로그에 남기고, 사용자는 설정 > 로그에서
+     * 그 줄을 읽는다(개발 의도 2번). 형제 정리들과 같은 규약이다.
+     */
+    private fun repairLegacyValueFormatsIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        if (prefs.getBoolean("legacy_value_formats_repaired", false)) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val repaired = LegacyValueFormats.repair(database.openHelper.writableDatabase)
+                if (repaired.timestamps > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "수정일이 생성일보다 이른 행 ${repaired.timestamps}건의 수정일을 생성일로 올렸습니다 " +
+                            "— 그 행이 만들어지기 전에 고쳐졌다는 뜻이 되어 정렬이 틀렸습니다"
+                    )
+                }
+                if (repaired.colors > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "'#'이 빠진 색 ${repaired.colors}건에 '#'을 붙였습니다 — 색은 그대로이고 표기만 맞췄습니다"
+                    )
+                }
+                prefs.edit().putBoolean("legacy_value_formats_repaired", true).apply()
+                android.util.Log.i(
+                    "NovelCharacterApp",
+                    "Legacy value format repair completed " +
+                        "(timestamps=${repaired.timestamps}, colors=${repaired.colors})"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "NovelCharacterApp",
+                    "Legacy value format repair failed — will retry on next launch", e
                 )
             }
         }
@@ -562,5 +611,6 @@ class NovelCharacterApp : Application() {
         const val BIRTHDAY_CHANNEL_ID = "birthday_channel"
         const val BACKUP_CHANNEL_ID = "backup_channel"
         const val TRANSFER_CHANNEL_ID = "transfer_channel"
+
     }
 }

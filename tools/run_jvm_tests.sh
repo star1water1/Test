@@ -425,6 +425,7 @@ $TEST/util/AiCheckStateTest.kt
 $TEST/util/SemanticClearPlanTest.kt
 $TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
+$TEST/util/ColorHexNormalizeTest.kt
 $TEST/util/CharacterNameIndexTest.kt
 $TEST/util/SingletonStateChangesTest.kt
 $TEST/util/RecordTimestampsTest.kt

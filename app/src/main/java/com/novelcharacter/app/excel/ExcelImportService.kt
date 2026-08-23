@@ -67,6 +67,7 @@ import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
 import com.novelcharacter.app.util.SingletonStateChanges
+import com.novelcharacter.app.util.ColorHex
 import com.novelcharacter.app.util.CharacterNameIndex
 import com.novelcharacter.app.util.RecordTimestamps
 import com.novelcharacter.app.util.StateChangeNaturalKey
@@ -1396,7 +1397,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             code = getCellCode(row, c.code, ctx, result),
             description = if (c.hasDesc) getCellString(row, c.desc) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
-            borderColor = if (c.borderColor >= 0) getCellString(row, c.borderColor) else null,
+            // `#`이 빠진 글자는 저장 형식으로 올려 받는다 — 뜻은 같은데 글자가 갈리면 파일이
+            // 스스로 안내('테두리색(HEX)')와 어긋난다([ColorHex.normalizedOrNull]).
+            // 알아볼 수 없는 글자는 종전대로 그대로 둔다(여기서 버리면 무음 유실이다).
+            borderColor = if (c.borderColor >= 0) {
+                getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
+            } else null,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
             imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
@@ -1510,7 +1516,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     private fun readNovelRow(row: Row, c: NovelCols, ctx: String, result: ImportResult?): NovelRowValues {
-        val borderColor = if (c.borderColor >= 0) getCellString(row, c.borderColor) else null
+        // 세계관 갈래와 같은 규약이다 — 형제 둘이 다른 글자를 저장하면 상속 판정이 갈린다.
+        val borderColor = if (c.borderColor >= 0) {
+            getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
+        } else null
         return NovelRowValues(
             title = getCellString(row, c.title),
             code = getCellCode(row, c.code, ctx, result),
