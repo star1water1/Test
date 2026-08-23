@@ -2603,8 +2603,12 @@ class ExcelExporter(context: Context) {
         for ((axis, matches) in matchesByAxis) {
             for (match in matches) {
                 val row = sheet.createRow(++rowIndex)
-                val aName = participantName(axis, match.aCode, nameByCode)
-                val bName = participantName(axis, match.bCode, nameByCode)
+                // 이름을 못 찾으면 **코드를 그대로 적는다** — 형제 시트('대결 상성')가 이미
+                // 그 처분이고, 비우면 필수 열이 빈 채로 나간다. 캐릭터 축에서도 걸린다:
+                // 판은 삭제된 캐릭터를 가리킬 수 있고(적합이 '사라진 참가자'로 세는 그 갈래),
+                // 그때 이름 칸을 비우면 같은 행의 코드 칸보다 **덜 알려 준다.**
+                val aName = participantName(axis, match.aCode, nameByCode).ifEmpty { match.aCode }
+                val bName = participantName(axis, match.bCode, nameByCode).ifEmpty { match.bCode }
                 row.createCell(0).setTextSafe(axis.name)
                 row.createCell(1).setTextSafe(axis.code)
                 row.createCell(2).setTextSafe(aName)
@@ -2623,6 +2627,9 @@ class ExcelExporter(context: Context) {
                         if (sameName) w else participantName(axis, w, nameByCode).ifEmpty { w }
                     } ?: DuelSheetLabels.WINNER_DRAW
                 )
+                // 위 `ifEmpty`가 이름 자리에 코드를 세우므로 [sameName]은 *코드가 같을 때*도
+                // 참이 된다 — 그 경우도 승자를 코드로 적는 쪽이 맞다(같은 글자 둘 중 어느
+                // 쪽인지 가려 주지 못하는 것은 마찬가지다).
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())
                 row.createCell(9).setTextSafe(match.code)

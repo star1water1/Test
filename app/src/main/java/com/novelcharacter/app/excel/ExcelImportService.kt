@@ -3252,11 +3252,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
 
             // 이미지 축 재매핑도 가져오기와 같은 함수를 지난다(R-33) — 안 그러면 예고가
-            // '건너뜀'이라 적고 실행은 갱신하거나 그 반대가 된다.
-            val aCode = r.aCode.ifBlank { codeByName[r.aName]?.singleOrNull().orEmpty() }
-                .let { followImageParticipant(axis, it) }
-            val bCode = r.bCode.ifBlank { codeByName[r.bName]?.singleOrNull().orEmpty() }
-                .let { followImageParticipant(axis, it) }
+            // '건너뜀'이라 적고 실행은 갱신하거나 그 반대가 된다. **코드 칸에만 건다**:
+            // 이름으로 되찾은 값은 캐릭터 코드라 경로 표의 키가 될 수 없고, 그래도 걸어 두면
+            // *경로 표에 캐릭터 코드가 없다*는 우연에 두 경로의 일치가 기대게 된다.
+            val aCode = r.aCode.takeIf { it.isNotBlank() }?.let { followImageParticipant(axis, it) }
+                ?: codeByName[r.aName]?.singleOrNull().orEmpty()
+            val bCode = r.bCode.takeIf { it.isNotBlank() }?.let { followImageParticipant(axis, it) }
+                ?: codeByName[r.bName]?.singleOrNull().orEmpty()
             if (aCode.isBlank() || bCode.isBlank()) {
                 val nameAmbiguous = (r.aCode.isBlank() && (codeByName[r.aName]?.size ?: 0) > 1) ||
                     (r.bCode.isBlank() && (codeByName[r.bName]?.size ?: 0) > 1)

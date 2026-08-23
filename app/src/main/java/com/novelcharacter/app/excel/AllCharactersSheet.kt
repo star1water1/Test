@@ -111,10 +111,12 @@ object AllCharactersSheet {
         val taken = HashSet<String>(candidates.size)
         return candidates.mapIndexed { index, candidate ->
             val base = baseHeaders[index]
+            // 병기 꼴은 형제 규칙 그대로다 — `이름(…)`의 괄호 안에 키와 타입을 함께 넣는다.
+            // (두 번째 인자가 *키*가 아니라 *괄호 안에 들어갈 글자*라는 뜻으로 쓰인 자리다.)
             val wanted = if ((baseCounts[base] ?: 0) > 1) {
                 characterFieldHeader(
-                    candidate.name,
-                    candidate.key + TYPE_SEPARATOR + candidate.type,
+                    fieldName = candidate.name,
+                    fieldKey = candidate.key + TYPE_SEPARATOR + candidate.type,
                     disambiguate = true
                 )
             } else {
