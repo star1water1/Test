@@ -244,4 +244,27 @@ class DuelImageParticipantsTest {
         assertEquals("$dir/a.jpg", DuelImageParticipants.follow("$dir/a.jpg", emptyMap()))
         assertEquals("$dir/b.jpg", DuelImageParticipants.follow("$dir/a.jpg", mapOf("$dir/a.jpg" to "$dir/b.jpg")))
     }
+
+    // ── displayName (2026.08.23 — 엑셀 '대결 기록'의 필수 열이 빈칸으로 나가던 자리) ──
+
+    @Test
+    fun `displayName은 경로에서 파일 이름만 뗀다`() {
+        assertEquals("char_a.jpg", DuelImageParticipants.displayName("$dir/char_a.jpg"))
+        assertEquals("char_a.jpg", DuelImageParticipants.displayName("char_a.jpg"))
+    }
+
+    @Test
+    fun `displayName은 없는 척하지 않는다`() {
+        // 파일 이름을 못 떼면 받은 글자 그대로다 — "이름 없음"으로 갈음하면 사용자가
+        // 파일에서 그 참가자를 되찾을 단서가 사라진다(개발 의도 2번).
+        assertEquals("$dir/", DuelImageParticipants.displayName("$dir/"))
+        assertEquals("", DuelImageParticipants.displayName(null))
+        assertEquals("", DuelImageParticipants.displayName("   "))
+    }
+
+    @Test
+    fun `displayName은 앞뒤 공백을 들이지 않는다`() {
+        // 엑셀 셀은 공백이 섞여 들어온다 — 이름에 그것이 실리면 화면과 시트가 갈린다.
+        assertEquals("char_a.jpg", DuelImageParticipants.displayName("  $dir/char_a.jpg  "))
+    }
 }

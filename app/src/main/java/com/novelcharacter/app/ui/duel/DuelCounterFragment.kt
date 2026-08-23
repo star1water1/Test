@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.databinding.FragmentDuelCounterBinding
 import com.novelcharacter.app.ui.adapter.DuelCounterAdapter
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelStandings
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
@@ -62,9 +63,9 @@ class DuelCounterFragment : Fragment() {
     /** 이미지 축인가 — 관계의 이름을 캐릭터가 아니라 **파일 이름**에서 낸다. */
     private var imageAxis: Boolean = false
 
-    /** 경로에서 파일 이름만 — 대결 카드·순위표와 같은 규칙이다(설계 13-4). */
+    /** 경로에서 파일 이름만 — 대결 카드·순위표·엑셀과 **한 함수**를 쓴다(설계 13-4). */
     private fun participantName(code: String): String =
-        if (imageAxis) code.substringAfterLast('/').ifBlank { code }
+        if (imageAxis) DuelImageParticipants.displayName(code)
         else charactersByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
 
     override fun onCreateView(

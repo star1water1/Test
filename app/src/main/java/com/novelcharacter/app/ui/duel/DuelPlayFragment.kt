@@ -31,6 +31,7 @@ import com.novelcharacter.app.util.DuelCardInfo
 import com.novelcharacter.app.util.DuelSystemFields
 import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.DuelImageFit
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelPairing
 import com.novelcharacter.app.util.DuelRound
 import com.novelcharacter.app.util.DuelSession
@@ -605,7 +606,7 @@ class DuelPlayFragment : Fragment() {
             // 이미지 축의 이름은 **파일 이름**이다. 경로를 통째로 적으면 카드 폭을 다 먹으면서
             // 두 카드가 앞부분이 똑같아 오히려 못 가른다. 파일 이름은 폴더를 열었을 때
             // 사용자가 실제로 보는 이름이라 정리할 때 그대로 이어진다.
-            name = if (isImageAxis) fileNameOf(code) else {
+            name = if (isImageAxis) DuelImageParticipants.displayName(code) else {
                 character?.displayName ?: getString(R.string.duel_unknown_participant)
             },
             values = fieldValues[code].orEmpty(),
@@ -617,10 +618,6 @@ class DuelPlayFragment : Fragment() {
             showInfluences = showInfluence,
             compact = compact
         )
-
-    /** 경로에서 파일 이름만. 비어 있으면 *"이름 없음"*이 아니라 경로 그대로다(없는 척하지 않는다). */
-    private fun fileNameOf(path: String): String =
-        path.substringAfterLast('/').ifBlank { path }
 
     /** 정해진 것을 붙인다 — 여기서 정하는 것은 **말글뿐**이다(단위·빈 값 표시). */
     private fun paintCard(views: ViewDuelCardBinding, card: DuelCardInfo.Card) {

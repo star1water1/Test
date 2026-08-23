@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
@@ -23,8 +24,10 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.DuelCandidateFilter
 import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.OpResult
 import kotlinx.coroutines.CoroutineScope
@@ -115,8 +118,22 @@ class ExcelExporter(context: Context) {
     // XLSX 셀 규격(32,767자) 초과로 잘린 셀 수 — 내보내기 1회 단위 집계
     private var truncatedCellCount = 0
 
-    /** 셀 한도 초과 텍스트를 잘라 기록한다 — 값 하나 때문에 전체 내보내기가 실패(POI 예외)하지 않도록. */
+    /**
+     * 셀 한도 초과 텍스트를 잘라 기록한다 — 값 하나 때문에 전체 내보내기가 실패(POI 예외)하지 않도록.
+     *
+     * **빈 값은 값을 넣지 않는다 — 빈 칸으로 둔다.** 이 함수가 부르는 모든 자리는 방금 만든
+     * 빈 셀이고([finishDataRow]가 서식을 입히려고 열마다 셀을 만든다), 거기에 길이 0 문자열을
+     * 넣으면 **엑셀이 그 칸을 '빈 칸'으로 보지 않는다** — `ISBLANK`가 거짓이고 `COUNTBLANK`가
+     * 세지 않으며 필터의 '(필드 값 없음)'에도 안 걸린다. 그런데 서식만 입고 값이 없는 칸은
+     * 진짜 빈 칸이라, 종전 파일은 **한 행 안에서 두 표기가 섞여 있었다**(2026.08.23 실측:
+     * 길이 0 문자열 19,845칸 · 진짜 빈 칸 2,491칸). 전 인원 피벗이 존재 이유인 '전체 캐릭터'는
+     * 8,987칸 중 5,876칸이 길이 0 문자열이었다.
+     *
+     * **가져오기에는 무영향이다** — `ExcelCellValue.normalize`가 BLANK를 `""`로 접고,
+     * 이미 이 파일에 있던 진짜 빈 칸 2,491개가 그 경로로 왕복해 왔다.
+     */
     private fun org.apache.poi.ss.usermodel.Cell.setTextSafe(value: String) {
+        if (value.isEmpty()) return
         if (value.length > XLSX_CELL_LIMIT) {
             // 경계 처리는 truncateForCell(단일 소스)이 든다 — 서러게이트 쌍을 반쪽 내지 않는다.
             setCellValue(truncateForCell(value, XLSX_CELL_LIMIT))
@@ -890,9 +907,8 @@ class ExcelExporter(context: Context) {
     private fun Sheet.freezeAndFilter(lastCol: Int, dataRowCount: Int, freezeCols: Int) {
         // 헤더 행 + 정체 열(spec.freezeCols — V-6). 넓은 시트를 오른쪽으로 넘겨도 행의 주인이 보인다.
         createFreezePane(freezeCols, 1)
-        if (dataRowCount > 0) {
-            setAutoFilter(org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, lastCol - 1))
-        }
+        // **머리글 행이 아니라 데이터 끝까지**가 범위다 — 판정은 [autoFilterRange]가 든다.
+        autoFilterRange(dataRowCount, lastCol)?.let { setAutoFilter(it) }
     }
 
     private fun addDropdownValidation(
@@ -1177,6 +1193,18 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 그 둘 말고 원하는 상황 이름을 직접 적어도 됩니다(예: 첫 등장). 앱에도 그대로 보입니다."),
             GuideLine("", styles.guideBody, "• 대사 글자를 고쳐도 '코드' 열이 같으면 같은 대사를 고친 것으로 인식합니다."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("'캐릭터 상태변화' 시트", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "한 행이 '어느 해에 이 값이 이렇게 됐다'입니다. 연표 화면과 나이 계산이 이 시트를 씁니다."),
+            GuideLine("", styles.guideBody, "• '필드키'는 보통 캐릭터 필드의 필드키입니다. 다만 ${CharacterStateChange.KEY_BIRTH}·${CharacterStateChange.KEY_DEATH}·${CharacterStateChange.KEY_ALIVE} 로 시작하는"),
+            GuideLine("", styles.guideBody, "  밑줄 두 개짜리 키는 앱이 출생연도·생일·사망연도·생존 여부에서 스스로 만드는 행입니다."),
+            GuideLine("", styles.guideBody, "  ${CharacterStateChange.KEY_BIRTH}은 '연도'가 출생연도이고 '월'·'일'이 생일입니다(캐릭터당 한 행)."),
+            GuideLine("", styles.guideBody, "  ${CharacterStateChange.KEY_ALIVE}은 '새 값'이 alive·dead·unknown 중 하나이고 '연도'는 쓰지 않아 0입니다."),
+            GuideLine("", styles.guideBody, "• 이 밑줄 키들은 그대로 두세요 — 지우거나 고쳐 적으면 생일 알림·홈 화면·위젯이 그 캐릭터를"),
+            GuideLine("", styles.guideBody, "  다르게 셉니다. 값을 바꾸려면 캐릭터 시트의 출생연도·생일·사망연도·생존 여부 칸을 고치세요."),
+            GuideLine("", styles.guideBody, "  앱이 그 칸을 보고 이 행을 다시 맞춥니다."),
+            GuideLine("", styles.guideBody, "• 밑줄로 시작하지 않는 필드키 행은 직접 적고 고쳐도 됩니다(예: 소속이 몇 년에 바뀌었는가)."),
+            GuideLine("", styles.guideBody, "• '코드' 열이 그 행의 정체입니다. 지우지 마세요 — 연도·값·설명을 고쳐도 같은 행으로 인식합니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("필드 열의 '(쉼표 구분)' 표시", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 열 머리에 '(쉼표 구분)'이 붙은 칸은 쉼표로 여러 값을 적는 칸입니다(캐릭터·작품·연표 공통)."),
             GuideLine("", styles.guideBody, "• 값 자체에 쉼표를 넣으려면 그 값을 따옴표로 감싸세요: \"홍길동, 어릴 적 이름\", 아무개"),
@@ -1189,6 +1217,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 그래서 이 시트는 지우거나 이름을 바꿔도 데이터에 영향이 없습니다."),
             GuideLine("", styles.guideBody, "• 필드 열은 여러 세계관이 함께 쓰는 필드만 실립니다(열 이름에 필드키를 함께 적습니다)."),
             GuideLine("", styles.guideBody, "  한 세계관에만 있는 필드는 그 세계관의 캐릭터 시트에 있습니다."),
+            GuideLine("", styles.guideBody, "• 같은 필드키가 세계관마다 타입이 다르면 열이 타입별로 갈립니다 — 값을 섞으면 그 열로 만든"),
+            GuideLine("", styles.guideBody, "  피벗이 틀리기 때문입니다. 그때는 열 이름에 타입도 함께 적습니다(예: 키(height·NUMBER))."),
+            GuideLine("", styles.guideBody, "  그 글자는 '필드 정의' 시트의 '타입' 열과 같습니다."),
             GuideLine("", styles.guideBody, "• 세계관 칸이 빈 행은 미분류 캐릭터입니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'등급 체계' 시트 (등급 구성 공유)", styles.guideSection, ""),
@@ -1297,7 +1328,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setTextSafe(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
-            row.createCell(6).setTextSafe(universe.imagePaths)
+            row.createCell(6).setTextSafe(CharacterRepresentativeImage.cellText(universe.imagePaths))
             row.createCell(7).setTextSafe(universe.imageMode)
             row.createCell(8).setTextSafe(universe.customRelationshipTypes)
             row.createCell(9).setTextSafe(universe.customRelationshipColors)
@@ -1347,7 +1378,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setTextSafe(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
-            row.createCell(8).setTextSafe(novel.imagePaths)
+            row.createCell(8).setTextSafe(CharacterRepresentativeImage.cellText(novel.imagePaths))
             row.createCell(9).setTextSafe(novel.imageMode)
             novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
             row.createCell(11).setTextSafe(if (novel.inheritUniverseBorder) "Y" else "N")
@@ -1956,14 +1987,14 @@ class ExcelExporter(context: Context) {
             }
 
             // 이미지경로 — 편집이 반영된다(세계관·작품 시트와 같은 규약, B-222 WD-6)
-            row.createCell(col++).setTextSafe(character.imagePaths)
+            row.createCell(col++).setTextSafe(CharacterRepresentativeImage.cellText(character.imagePaths))
 
             // 대표이미지 (B-103 D8) — 사람이 읽고 고칠 수 있도록 파일명으로 싣는다.
             // 한 행 안에서 파일명이 겹치면 규약이 알아서 전체 경로로 떨어진다.
             row.createCell(col++).setTextSafe(
                 com.novelcharacter.app.util.RepresentativeImageCell.toCell(
                     character.representativeImagePath,
-                    com.novelcharacter.app.util.CharacterRepresentativeImage.paths(character.imagePaths)
+                    CharacterRepresentativeImage.paths(character.imagePaths)
                 )
             )
 
@@ -2548,6 +2579,12 @@ class ExcelExporter(context: Context) {
      *
      * **승자를 이름으로 적는 것이 이 시트의 요점이다.** 코드를 적으라고 하면 사람이 고칠 수
      * 없고, 그러면 이 시트를 엑셀에 싣는 뜻이 없어진다(사용자 요청: *"엑셀에서도 편집"*).
+     *
+     * **그래서 이름은 축의 종류를 보고 짓는다**(R-51 — 같은 값이 축마다 다른 것을 뜻한다).
+     * 캐릭터 축은 캐릭터 표에서 찾고 **이미지 축은 파일 이름**이다([participantName]).
+     * 2026.08.23까지 이 자리는 캐릭터 표만 보고 `?: ""`로 떨어뜨려, 이미지 축의 판은
+     * **필수 열인 '참가자1'·'참가자2'가 통째로 빈칸으로 나갔다**(실측 36행 중 23행) —
+     * 안내 시트가 스스로 *"빨간 헤더 = 비워두면 대개 해당 행을 읽지 않습니다"*라 적는 그 열이다.
      */
     private suspend fun exportDuelMatches(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
@@ -2566,22 +2603,25 @@ class ExcelExporter(context: Context) {
         for ((axis, matches) in matchesByAxis) {
             for (match in matches) {
                 val row = sheet.createRow(++rowIndex)
+                val aName = participantName(axis, match.aCode, nameByCode)
+                val bName = participantName(axis, match.bCode, nameByCode)
                 row.createCell(0).setTextSafe(axis.name)
                 row.createCell(1).setTextSafe(axis.code)
-                row.createCell(2).setTextSafe(nameByCode[match.aCode] ?: "")
+                row.createCell(2).setTextSafe(aName)
                 row.createCell(3).setTextSafe(match.aCode)
-                row.createCell(4).setTextSafe(nameByCode[match.bCode] ?: "")
+                row.createCell(4).setTextSafe(bName)
                 row.createCell(5).setTextSafe(match.bCode)
                 // 승자 이름을 못 찾으면 **코드를 그대로 적는다** — 비우면 무승부로 되읽혀
                 // 사용자가 고른 승패가 왕복 한 번에 사라진다(개발 의도 4번).
                 // 두 참가자의 표시 이름이 같은 판(동명이인 대결)은 승자를 **코드로** 적는다 —
                 // 이름을 적으면 가져오기가 어느 쪽인지 정할 수 없고(모호 거부), first-match로
                 // 고르면 무편집 왕복만으로 승패가 뒤집힌다(가져오기는 코드를 먼저 받는다).
-                val sameName = nameByCode[match.aCode] != null &&
-                    nameByCode[match.aCode] == nameByCode[match.bCode]
+                // 이미지 축도 같은 위험을 진다 — 폴더가 다르면 **파일 이름이 같을 수 있다.**
+                val sameName = aName.isNotEmpty() && aName == bName
                 row.createCell(6).setTextSafe(
-                    match.winnerCode?.let { w -> if (sameName) w else nameByCode[w] ?: w }
-                        ?: DuelSheetLabels.WINNER_DRAW
+                    match.winnerCode?.let { w ->
+                        if (sameName) w else participantName(axis, w, nameByCode).ifEmpty { w }
+                    } ?: DuelSheetLabels.WINNER_DRAW
                 )
                 row.createCell(7).setTextSafe(match.groupId ?: "")
                 row.createCell(8).setCellValue(match.decidedAt.toDouble())
@@ -2591,6 +2631,24 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, rowIndex)
+    }
+
+    /**
+     * 참가자 코드 → 사람이 읽는 이름. **축의 종류가 그 뜻을 정한다**(R-51).
+     *
+     * 캐릭터 축은 [nameByCode]가 답이고, 이미지 축의 코드는 경로라 그 표에 애초에 없다 —
+     * 파일 이름이 답이며 그 판정은 앱의 대결 화면과 **한 함수**를 쓴다
+     * ([DuelImageParticipants.displayName]). 못 찾으면 빈 글자다: 부르는 쪽이 *빈 이름*을
+     * 코드로 갈음할지 무승부로 읽을지 정해야 해서, 여기서 갈음하면 그 판단이 사라진다.
+     */
+    private fun participantName(
+        axis: DuelAxis,
+        code: String?,
+        nameByCode: Map<String, String>
+    ): String {
+        val raw = code?.trim().orEmpty()
+        if (raw.isEmpty()) return ""
+        return if (axis.isImageAxis) DuelImageParticipants.displayName(raw) else nameByCode[raw].orEmpty()
     }
 
     /** 대결 **상성** — 층 B의 사용자 판정. 파생이 아니라 판정이라 싣는다. */
@@ -2628,7 +2686,11 @@ class ExcelExporter(context: Context) {
                     }
                 )
                 // 뜻이 있는 순서다(천적은 [센 쪽, 잡는 쪽], 순환은 이기는 차례) — 정렬하지 않는다.
-                row.createCell(4).setTextSafe(joinCsv(members) { nameByCode[it] ?: it })
+                // 이름을 못 찾으면 **코드를 그대로 적는다**(형제 시트와 같은 처분) — 이미지 축은
+                // 파일 이름이 이름이라 [participantName]이 답을 낸다.
+                row.createCell(4).setTextSafe(
+                    joinCsv(members) { participantName(axis, it, nameByCode).ifEmpty { it } }
+                )
                 row.createCell(5).setTextSafe(joinCsv(members))
                 row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
                 row.createCell(7).setTextSafe(verdict.code)

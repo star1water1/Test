@@ -17,6 +17,7 @@ import com.novelcharacter.app.databinding.FragmentDuelMatchesBinding
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.ui.adapter.DuelMatchAdapter
 import com.novelcharacter.app.util.CharacterRepresentativeImage
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelMatchLog
 import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.Job
@@ -234,7 +235,7 @@ class DuelMatchesFragment : Fragment() {
             for (path in CharacterRepresentativeImage.paths(character.imagePaths)) {
                 out[path] = getString(
                     R.string.duel_image_match_participant,
-                    path.substringAfterLast('/').ifBlank { path },
+                    DuelImageParticipants.displayName(path),
                     character.displayName
                 )
             }

@@ -92,6 +92,27 @@ object CharacterRepresentativeImage {
         }.getOrDefault(false)
 
     /**
+     * 엑셀 '이미지경로' 칸에 적을 글자 — **빈 목록은 빈 칸이다**([isPathListJson]의 내보내기 쪽 짝).
+     *
+     * 앱은 이미지가 없으면 `"[]"`를 든다. 그것을 그대로 적으면 편집 가능한(파란) 칸에 `[]`가
+     * 서는데, 같은 안내 시트가 *"칸을 비우면 값이 지워집니다"*라 말하므로 사용자는 그 글자를
+     * 지워야 하는지 둬야 하는지 알 수 없다(2026.08.23 실측: 세계관 8/8 · 작품 15/15 ·
+     * 캐릭터 160/209행). 가져오기는 **빈 칸을 `"[]"`로 읽으므로**(`ExcelImportService`의
+     * `ifBlank { "[]" }`) 뜻은 한 글자도 달라지지 않는다.
+     *
+     * **목록으로 안 읽히는 값은 그대로 싣는다.** 앱이 든 글자를 내보내기가 지우면 그 백업으로는
+     * 되돌릴 수 없고, 가져오기의 *"목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다"* 경고도
+     * 뜨지 않는다 — 조용한 유실이다(개발 의도 2번). 그래서 판정이 **두 단**이다: 읽히는가,
+     * 읽혀서 비었는가.
+     */
+    fun cellText(imagePathsJson: String?): String {
+        val raw = imagePathsJson.orEmpty()
+        if (raw.isBlank()) return ""
+        if (!isPathListJson(raw)) return raw
+        return if (paths(raw).isEmpty()) "" else raw
+    }
+
+    /**
      * [paths] + [pickFrom]. 호출부 대부분이 이것을 쓴다.
      *
      * @param weights 추첨 무게(B-104 ⓑ). 기본값 null이 **종전 그대로의 균등 추첨**이므로,
