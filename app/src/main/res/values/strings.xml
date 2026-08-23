@@ -482,7 +482,7 @@
          그 사실과 고칠 자리를 함께 말한다(변수 제어: 검증 → 알림 → 바로잡을 경로). -->
     <string name="import_failed_title">가져오기 실패</string>
     <string name="import_failed_nothing_applied">가져오기가 도중에 멈췄습니다. 데이터는 하나도 반영되지 않았습니다 — 기존 데이터는 그대로입니다.\n\n%1$s\n\n그 단계의 시트를 확인한 뒤 다시 가져오십시오.</string>
-    <string name="import_failed_where">마지막으로 끝낸 단계: %1$s (누적 %2$d행 처리) — 그다음 단계에서 멈췄습니다</string>
+    <string name="import_failed_where">멈춘 자리: %1$s (누적 %2$d행 처리)</string>
     <string name="import_failed_where_unknown">첫 단계를 끝내기 전에 멈췄습니다</string>
 
     <!-- TimelineAdapter -->

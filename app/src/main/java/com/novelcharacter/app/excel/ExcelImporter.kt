@@ -2321,8 +2321,14 @@ class ExcelImporter(context: Context) {
      * 트랜잭션 밖에서 만든 이미지 파일은 [rollbackRestoredImages]가 이미 지웠다.
      */
     private fun showImportFailedDialog(lastDonePhase: String, lastDoneRows: Int) {
-        // [lastDonePhase]는 마지막으로 **끝낸** 단계다(진행 보고가 단계 종료 시점에 온다).
-        // 누적 행 수도 파일 전체 기준이라 "그 시트의 몇 번째 행"이 아니다 — 문구가 그대로 말한다.
+        // [lastDonePhase]는 **마지막으로 알려 온 자리**다.
+        //
+        // 종전 문구는 *"마지막으로 끝낸 단계 … 그다음 단계에서 멈췄습니다"*였다 — 진행 보고가
+        // 시트 종료 시점에만 왔기 때문이다. 2026.08.23에 시트 **안에서도** 알리게 되면서
+        // (`dataRows`) 그 문장이 사실이 아니게 됐다: 이제 여기 담기는 것은 *끝낸* 단계가 아니라
+        // *돌던* 자리다. 문구를 그 사실에 맞췄다 — **더 유용해졌다**(어느 시트에서 멈췄는지 말한다).
+        //
+        // 누적 행 수는 여전히 파일 전체 기준이라 "그 시트의 몇 번째 행"이 아니다 — 문구가 그대로 말한다.
         val where = if (lastDonePhase.isBlank()) {
             appContext.getString(com.novelcharacter.app.R.string.import_failed_where_unknown)
         } else {

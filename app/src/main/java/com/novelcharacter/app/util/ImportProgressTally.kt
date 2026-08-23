@@ -54,6 +54,27 @@ class ImportProgressTally(totalRows: Int) {
         rowsDoneInSheet > 0 && rowsDoneInSheet % TICK_ROWS == 0
 
     /**
+     * **시트 안 중간 보고의 출발점** — 누계와 *이미 보인 값* 중 큰 쪽이다.
+     *
+     * 누계([ExcelImportService]의 `processedRowsSoFar`)에 자기 몫을 **0으로 얹는 구간**이
+     * 실재한다 — 캐릭터 시트는 세계관마다 여러 장인데 묶음 끝에서 한 번, 그것도 `0`으로
+     * 보고한다. 그래서 중간 보고가 보인 값을 누계가 따라가지 않으면 다음 시트의 출발점이
+     * **이미 보인 값보다 낮고**, [show]의 단조 빗장이 그것을 통째로 눌러 **막대가 그 뒤로
+     * 얼어붙는다.**
+     */
+    fun sheetBase(processedSoFar: Int): Int = maxOf(processedSoFar, lastShownRows)
+
+    /**
+     * **누계를 앞으로 민다 — 이미 보인 값 아래로는 내려가지 않는다.**
+     *
+     * [sheetBase]와 짝이다: 중간 보고가 보인 만큼을 누계가 흡수해야 다음 구간이 그 위에서
+     * 이어진다. 0으로 보고하는 구간이 실제로 돈 행을 여기서 되찾는 셈이라, 종전에 그 구간이
+     * 통째로 누락되던 것도 함께 메워진다.
+     */
+    fun advance(processedSoFar: Int, rowsInPhase: Int): Int =
+        maxOf(processedSoFar + rowsInPhase, lastShownRows)
+
+    /**
      * 끝맺음 — 막대를 분모까지 올린다. **알릴 것이 없으면 null이다.**
      */
     fun settle(): Int? {
