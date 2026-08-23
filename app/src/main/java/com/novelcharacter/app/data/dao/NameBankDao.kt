@@ -94,6 +94,23 @@ interface NameBankDao {
     )
     suspend fun clearOrphanedUsage(): Int
 
+    /**
+     * **반대 방향의 어긋남을 세운다 — 연결은 살아 있는데 표시가 내려간 행.**
+     *
+     * [clearOrphanedUsage]가 *표시는 있는데 연결이 없는* 쪽만 봤다. 짝은 언제나 함께
+     * 움직이는데([markAsUsed]·[markAsAvailable]가 둘을 같이 쓴다) 그 반쪽만 수리하니
+     * `isUsed = 0 AND usedByCharacterId IS NOT NULL`인 행은 영영 남았다.
+     *
+     * 그 행이 해로운 이유는 **'미사용 이름' 목록이 `WHERE isUsed = 0`이기 때문**이다 —
+     * 이미 캐릭터가 쓰고 있는 이름이 후보로 다시 뜨고, 사용자는 같은 이름을 둘째
+     * 캐릭터에게 배정한다. 살아 있는 캐릭터를 가리킬 때만 올린다(죽은 참조는 위 질의의 몫).
+     */
+    @Query(
+        "UPDATE name_bank SET isUsed = 1 WHERE isUsed = 0 AND " +
+            "usedByCharacterId IS NOT NULL AND usedByCharacterId IN (SELECT id FROM characters)"
+    )
+    suspend fun restoreLinkedUsage(): Int
+
     @Query("DELETE FROM name_bank")
     suspend fun deleteAll()
 

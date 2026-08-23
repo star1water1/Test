@@ -280,6 +280,8 @@ class SystemMaintenanceService(
         // (이쪽은 NULL만, 저쪽은 없는 캐릭터까지). 같은 이름의 정리가 부르는 자리에 따라
         // 다른 일을 했다는 뜻이다. DAO 한 벌로 모아 넓은 쪽(저쪽)에 맞춘다.
         db.nameBankDao().clearOrphanedUsage()
+        // **짝은 두 방향이다** — 표시만 남은 행뿐 아니라 *연결만 남은 행*도 어긋남이다.
+        db.nameBankDao().restoreLinkedUsage()
     }
 
     /**
@@ -388,8 +390,10 @@ class SystemMaintenanceService(
 
             // 이름은행: isUsed=true인데 usedByCharacterId가 NULL이거나 존재하지 않는 캐릭터를 가리키는 경우.
             // 술어는 [NameBankDao.clearOrphanedUsage] 한 자리다(엑셀 가져오기도 같은 것을 쓴다).
-            clearedNameBank = db.nameBankDao().clearOrphanedUsage()
-            if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
+            // 두 방향을 함께 센다 — 표시만 남은 행(내린다)과 연결만 남은 행(올린다).
+            clearedNameBank = db.nameBankDao().clearOrphanedUsage() +
+                db.nameBankDao().restoreLinkedUsage()
+            if (clearedNameBank > 0) details.add("이름은행 사용표시 어긋남 $clearedNameBank 건 정리")
 
             // 최근 활동: 존재하지 않는 엔티티를 참조하는 레코드 삭제
             // SQL 쌍둥이: RecentActivity.TYPE_CHARACTER

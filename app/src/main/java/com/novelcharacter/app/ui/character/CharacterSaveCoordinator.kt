@@ -16,6 +16,17 @@ import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
 
 /**
+ * 편집 화면이 새로 적는 이름의 글자 상한.
+ *
+ * **가져오기 경로는 이것을 강제하지 않는다** — 엑셀 셀은 이미 `MAX_FIELD_LENGTH`에서
+ * 잘리고, 여기서 다시 자르면 이름이 자연키인 매칭이 어긋나 **같은 캐릭터가 둘로 늘어난다**
+ * (이미 들어와 있는 긴 이름은 파일 쪽 원문과 길이가 다르게 된다). 그래서 상한은 *새로
+ * 적는 자리*에만 걸고, 이미 있는 긴 이름은 [CharacterSaveCoordinator.requestSave]가
+ * 그대로 통과시킨다.
+ */
+private const val MAX_NAME_LENGTH = 100
+
+/**
  * 캐릭터 저장 체인 공용 코디네이터 — CharacterEditFragment에서 추출.
  * 이름/필수 필드 검증 → (옵션) 중복 이름 검사 → 나이-출생연도 연동 충돌 감지 →
  * 교차 세계관 이동 고지 → DB 저장(태그·이미지 정리 포함)의 전체 체인을 담당한다.
@@ -186,7 +197,16 @@ class CharacterSaveCoordinator(
             Toast.makeText(ctx, R.string.enter_name, Toast.LENGTH_SHORT).show()
             return false
         }
-        if (name.length > 100) {
+        // **상한은 사용자가 *지금 적은* 이름에만 건다.**
+        //
+        // 엑셀·월드패키지로 들어온 이름은 이 화면을 지나지 않으므로 상한을 넘을 수 있는데,
+        // 종전에는 그런 캐릭터를 열어 **다른 칸만 고쳐도** 저장이 막혔다 — 이름을 줄이기
+        // 전에는 아무것도 못 고치는 상태이고, 문구는 *"이름이 너무 깁니다"*라고만 말해
+        // 사용자는 자기가 건드리지도 않은 칸 때문에 막혔다는 것을 알 수 없었다.
+        // 거부가 아니라 수용·교정이 이 저장소의 규약이다(개발 의도 4번 · 원칙 04).
+        //
+        // 이름을 **바꾸지 않은 저장은 통과시킨다** — 이 저장이 그 값을 새로 만드는 것이 아니다.
+        if (name.length > MAX_NAME_LENGTH && name != host.existingCharacter()?.name?.trim()) {
             Toast.makeText(ctx, R.string.name_too_long, Toast.LENGTH_SHORT).show()
             return false
         }

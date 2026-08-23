@@ -1686,13 +1686,34 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
     }
 
+    /**
+     * **'사용 중'의 두 벌을 한 판정으로 묶는다** (R-33 · R-51).
+     *
+     * 이 표의 '사용 중'은 `isUsed`(불리언)와 `usedByCharacterId`(외래키) **두 벌**인데
+     * ([NameBankDao.clearOrphanedUsage]의 KDoc이 그 사실을 적는다), 가져오기는 그 둘을
+     * 따로 채웠다 — 사용여부 열이 'N'인데 사용캐릭터 열이 캐릭터를 가리키면 **연결은 있는데
+     * '미사용'인 행**이 생긴다. 그 행이 해로운 이유는 '미사용 이름' 목록이 `WHERE isUsed = 0`
+     * 이기 때문이다: 이미 쓰이는 이름이 후보로 다시 떠 **같은 이름이 둘째 캐릭터에게 배정된다.**
+     *
+     * **처분은 연결을 지키고 표시를 올린다.** 앱의 짝(`markAsUsed`)이 둘을 함께 세우고,
+     * 표시는 한 번의 조작으로 되돌릴 수 있지만 **사용자가 적은 캐릭터 이름은 되찾을 길이
+     * 없다**(개발 의도 2번 — 지우는 쪽을 고르지 않는다). 가져오기는 그 사실을 고지한다.
+     *
+     * 미리보기도 이 함수를 지난다 — 여기서 갈리면 '변경/동일' 예고가 실행과 어긋난다.
+     */
+    private fun nameBankUsedFlag(
+        usedFlag: Boolean?,
+        existingUsed: Boolean?,
+        usedByCharacterId: Long?
+    ): Boolean = (usedFlag ?: existingUsed ?: false) || usedByCharacterId != null
+
     private fun mergeNameBankEntry(existing: NameBankEntry, r: NameBankRowValues, usedByCharacterId: Long?): NameBankEntry =
         existing.copy(
             // 코드 매칭 시 이름/성별 편집 반영 (code는 불변 유지 — 정체성)
             // 열 없음(null) = 기존 값 유지(F1-A) — 열을 지운 파일이 값을 지우면 안 된다.
             name = r.name, gender = r.gender ?: existing.gender,
             origin = r.origin ?: existing.origin, notes = r.notes ?: existing.notes,
-            isUsed = r.usedFlag ?: existing.isUsed,
+            isUsed = nameBankUsedFlag(r.usedFlag, existing.isUsed, usedByCharacterId),
             usedByCharacterId = usedByCharacterId,
             createdAt = r.createdAt ?: existing.createdAt
         )
@@ -3107,7 +3128,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelAxisRow(row, cols, now)
+            val r = readDuelAxisRow(row, cols, now, "대결 축 행 ${excelRow(i)}", null)
             if (r.name.isBlank()) continue
             inBackup++
 
@@ -3172,7 +3193,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelMatchRow(row, cols, now)
+            val r = readDuelMatchRow(row, cols, now, "대결 기록 행 ${excelRow(i)}", null)
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
@@ -3281,7 +3302,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelVerdictRow(row, cols, now)
+            val r = readDuelVerdictRow(row, cols, now, "대결 상성 행 ${excelRow(i)}", null)
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
@@ -4836,10 +4857,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (existing == null) {
                 newCount++
                 // 이 시트가 방금 만든 항목 — 뒤 행이 이것과 매칭될 수 있다(가져오기와 같은 성질 ②).
+                // 한 번만 묻는다 — 캐릭터 조회라 두 번 부르면 행마다 왕복이 두 배가 된다.
+                val previewUsedBy = resolveNameBankUsedBy(r, null, "이름 은행 행 ${excelRow(i)}", result = null)
                 val created = NameBankEntry(
                     name = r.name, gender = r.gender ?: "", origin = r.origin ?: "", notes = r.notes ?: "",
-                    isUsed = r.usedFlag ?: false,
-                    usedByCharacterId = resolveNameBankUsedBy(r, null, "이름 은행 행 ${excelRow(i)}", result = null),
+                    isUsed = nameBankUsedFlag(r.usedFlag, null, previewUsedBy),
+                    usedByCharacterId = previewUsedBy,
                     createdAt = r.createdAt ?: now,
                     code = r.code.ifBlank { "" }
                 ).copy(id = previewIds.mint())
@@ -9133,6 +9156,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val effectiveUsed = r.usedFlag ?: existing?.isUsed ?: false
                 // 참조를 조회했는데 해석에 실패하면 연결이 조용히 끊긴다 —
                 // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
+                // 반대 방향의 어긋남 — 연결은 해석됐는데 사용여부가 'N'이다. 조용히 한쪽만
+                // 채우면 '미사용 이름' 목록에 이미 쓰이는 이름이 떠 같은 이름이 두 번 배정된다.
+                if (usedByCharacterId != null && !effectiveUsed) {
+                    result.warnings.add(
+                        "이름 은행 행 ${excelRow(i)}: 사용여부가 '아니오'인데 사용 캐릭터가 지정되어 " +
+                        "'사용 중'으로 맞춥니다 — 이름을 풀려면 '사용 캐릭터' 칸도 함께 비워 주세요"
+                    )
+                }
                 if (effectiveUsed && r.usedIntent == RefIntent.LOOKUP && usedByCharacterId == null) {
                     result.warnings.add(
                         "이름 은행 행 ${excelRow(i)}: 사용 캐릭터 '${r.usedByCharName.ifBlank { r.usedByCharCode }}'을(를) 찾을 수 없어 " +
@@ -9154,7 +9185,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newCode = if (r.code.isNotBlank()) r.code else generateEntityCode()
                     val newEntry = NameBankEntry(
                         name = name, gender = r.gender ?: "", origin = r.origin ?: "", notes = r.notes ?: "",
-                        isUsed = r.usedFlag ?: false, usedByCharacterId = usedByCharacterId,
+                        isUsed = nameBankUsedFlag(r.usedFlag, null, usedByCharacterId),
+                        usedByCharacterId = usedByCharacterId,
                         createdAt = r.createdAt ?: nowMillis, code = newCode
                     )
                     val newId = db.nameBankDao().insert(newEntry)
@@ -10403,9 +10435,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long
     )
 
-    private fun readDuelAxisRow(row: Row, cols: Map<String, Int>, now: Long): DuelAxisRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelAxisRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelAxisRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
 
         /** 열이 있을 때만 읽는다 — 없으면 null이고, 병합이 그 칸을 건드리지 않는다. */
         fun links(header: String): String? =
@@ -10443,7 +10483,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 리셋하던 자리다. null이면 병합이 기존 순서를 지킨다(R-36).
             displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt(),
             code = cell("코드"),
-            createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // **형제 24자리와 같은 통로를 지난다**(R-33). 종전에는 이 줄만 밖에 있어
+            // 해석 불가가 경고 없이 '지금 시각'으로 굳었다 — 사용자는 읽기 전용 열을
+            // 잘못 건드린 사실을 어디서도 듣지 못했다. 병합은 이 값을 안 쓰므로
+            // (`mergeDuelAxis`가 `createdAt`을 건드리지 않는다) 폴백은 신규 행에만 닿는다.
+            createdAt = readEpochMillisCell(
+                row, cols["생성일"] ?: -1, rowLabel, "생성일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10596,7 +10643,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelAxisRow(row, cols, now)
+                val r = readDuelAxisRow(row, cols, now, "대결 축 행 ${excelRow(i)}", result)
                 if (r.name.isBlank()) continue
 
                 val universe = universeByCodeOrName(r.universeCode, r.universeName)
@@ -10688,9 +10735,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val decidedAt: Long
     )
 
-    private fun readDuelMatchRow(row: Row, cols: Map<String, Int>, now: Long): DuelMatchRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelMatchRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelMatchRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
         return DuelMatchRowValues(
             axisName = cell("축"),
             axisCode = cell("축코드"),
@@ -10703,7 +10758,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             hasGroupCol = cols.containsKey("묶음"),
             groupId = cell("묶음"),
             code = cell("코드"),
-            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // '생성일' 형제들과 **같은 통로를 지난다** — 해석 불가를 조용히 접지 않는다.
+            // 병합은 판정일을 바꾸지 않으므로(`mergeDuelMatch`) 폴백은 신규 행에만 닿는다.
+            decidedAt = readEpochMillisCell(
+                row, cols["판정일"] ?: -1, rowLabel, "판정일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10792,7 +10852,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelMatchRow(row, cols, now)
+                val r = readDuelMatchRow(row, cols, now, "대결 기록 행 ${excelRow(i)}", result)
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
 
                 val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
@@ -10893,9 +10953,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val decidedAt: Long
     )
 
-    private fun readDuelVerdictRow(row: Row, cols: Map<String, Int>, now: Long): DuelVerdictRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelVerdictRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelVerdictRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
         return DuelVerdictRowValues(
             axisName = cell("축"),
             axisCode = cell("축코드"),
@@ -10904,7 +10972,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             code = cell("코드"),
             hasKindCol = cols.containsKey("종류"),
             kindLabel = cell("종류"),
-            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // '대결 기록' 시트와 같은 통로다 — 두 시트의 같은 열이 다르게 처분되면 안 된다.
+            decidedAt = readEpochMillisCell(
+                row, cols["판정일"] ?: -1, rowLabel, "판정일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10979,7 +11051,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelVerdictRow(row, cols, now)
+                val r = readDuelVerdictRow(row, cols, now, "대결 상성 행 ${excelRow(i)}", result)
 
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
                 val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
