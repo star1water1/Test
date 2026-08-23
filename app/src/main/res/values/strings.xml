@@ -2717,6 +2717,7 @@
     <string name="image_remove_pending_delete_done">이미지 %1$d장을 앱에서 지웠습니다.</string>
     <string name="image_remove_pending_delete_protected">이미지 %1$d장은 다른 곳에서 쓰고 있어 지우지 않았습니다.</string>
     <string name="image_manager_clear_detached_done">이미지 %1$d장을 서랍에서 뺐습니다.</string>
+    <string name="image_manager_clear_detached_failed">뗀 표식 지우기에 실패했습니다</string>
     <string name="image_manager_link_any">링크 전체</string>
     <string name="image_manager_link_linked">링크됨</string>
     <string name="image_manager_link_unlinked">링크 없음</string>

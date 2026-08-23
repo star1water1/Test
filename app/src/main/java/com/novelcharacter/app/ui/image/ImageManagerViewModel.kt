@@ -1056,13 +1056,13 @@ class ImageManagerViewModel(
      * 형제만 가진 태그가 몰래 지워질 자리가 없다(합집합에 이미 보였다).
      * 필요 시 라이브러리로 입양(adopt) 후 교체. @param onDone 반영된 장수.
      */
-    fun replaceTags(path: String, tags: List<String>, onDone: (Int) -> Unit) {
+    fun replaceTags(path: String, tags: List<String>, onDone: (TagBatchResult) -> Unit) {
         viewModelScope.launch {
             val applied = withContext(Dispatchers.IO) {
-                runCatching {
+                try {
                     val targets = liveTagRoster(listOf(path))[path] ?: listOf(path)
                     val now = System.currentTimeMillis()
-                    db.withTransaction {
+                    val applied = db.withTransaction {
                         val idByPath = ImageAdoption.adoptAll(db, targets, now)
                         var done = 0
                         for (t in targets) {
@@ -1074,7 +1074,11 @@ class ImageManagerViewModel(
                         }
                         done
                     }
-                }.getOrDefault(0)
+                    TagBatchResult(applied)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to replace tags for $path", e)
+                    TagBatchResult(0, failed = true)
+                }
             }
             load()
             onDone(applied)
@@ -1133,6 +1137,14 @@ class ImageManagerViewModel(
      * **성공**으로 적었다. 형제 셋(`AssignResult`·`UnassignResult`·`BulkDeleteResult`)과 같은 모양이다.
      */
     data class TagBatchResult(val affected: Int, val failed: Boolean = false)
+
+    /**
+     * 뗀 표식 지우기의 결과. [cleared] = 서랍에서 뺀 장수.
+     *
+     * 같은 사유로 [failed]를 든다 — 대상은 **선택에서 오므로 빈 적이 없고**, 그래서 종전의
+     * `0`은 *실패했다*는 뜻뿐이었는데 화면은 *"뗀 표식 0장을 지웠습니다"*라는 성공으로 적었다.
+     */
+    data class ClearMarkResult(val cleared: Int, val failed: Boolean = false)
     sealed class LinkOutcome {
         /**
          * @param autoMoved 자동 묶음(`char:N`)에서 수동 묶음으로 옮겨진 장수 — 0이 아니면
@@ -1488,13 +1500,16 @@ class ImageManagerViewModel(
      * **소유를 보지 않는다.** 판정을 태우면 캐릭터가 안 쓰는 이미지는 지워도 곧바로 다시 붙어
      * 버튼이 듣지 않는다. 안 쓰면서 서랍에도 두지 않는 것은 사용자의 자유다.
      */
-    fun clearDetachedMark(paths: List<String>, onDone: (Int) -> Unit) {
+    fun clearDetachedMark(paths: List<String>, onDone: (ClearMarkResult) -> Unit) {
         viewModelScope.launch {
             val cleared = withContext(Dispatchers.IO) {
-                runCatching {
+                try {
                     com.novelcharacter.app.util.DetachedImageMarker.clearMark(db, paths)
-                    paths.size
-                }.getOrDefault(0)
+                    ClearMarkResult(paths.size)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to clear detached mark", e)
+                    ClearMarkResult(0, failed = true)
+                }
             }
             load()
             onDone(cleared)

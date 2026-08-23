@@ -1816,12 +1816,19 @@ class ImageManagerFragment : Fragment() {
      * 자리에 있다 — 다시 떼면 된다. 파괴 경로에만 확인을 두는 것이 R-4의 취지다.
      */
     private fun clearDetachedMarks(paths: List<String>) {
-        viewModel.clearDetachedMark(paths) { cleared ->
+        viewModel.clearDetachedMark(paths) { result ->
             if (!isAdded || _binding == null) return@clearDetachedMark
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(
+                    OpResult.CAT_MAINTENANCE,
+                    getString(R.string.image_manager_clear_detached_failed)
+                ))
+                return@clearDetachedMark
+            }
             exitSelection()
             reportAndNotify(OpResult.success(
                 OpResult.CAT_MAINTENANCE,
-                getString(R.string.image_manager_clear_detached_done, cleared)
+                getString(R.string.image_manager_clear_detached_done, result.cleared)
             ))
         }
     }
@@ -2042,11 +2049,20 @@ class ImageManagerFragment : Fragment() {
         ) { _, bundle ->
             val path = bundle.getString(ImageTagEditBottomSheet.RESULT_PATH) ?: return@setFragmentResultListener
             val newTags = bundle.getStringArray(ImageTagEditBottomSheet.RESULT_TAGS)?.toList() ?: emptyList()
-            viewModel.replaceTags(path, newTags) { applied ->
+            viewModel.replaceTags(path, newTags) { result ->
                 if (!isAdded || _binding == null) return@replaceTags
+                // 종전에는 실패해도 이 줄로 갔다 — 게다가 문구가 세는 것은 **사용자가 적은
+                // 태그 수**(`newTags.size`)라, 한 글자도 안 써졌는데 *"태그 3개를
+                // 반영했습니다"*가 그대로 떴다. 0으로도 티가 안 나던 자리다.
+                if (result.failed) {
+                    reportAndNotify(OpResult.failure(
+                        OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_failed)
+                    ))
+                    return@replaceTags
+                }
                 reportAndNotify(OpResult.success(
                     OpResult.CAT_MAINTENANCE,
-                    if (applied > 1) getString(R.string.image_tag_edit_done_group, newTags.size, applied)
+                    if (result.affected > 1) getString(R.string.image_tag_edit_done_group, newTags.size, result.affected)
                     else getString(R.string.image_tag_edit_done, newTags.size)
                 ))
             }
