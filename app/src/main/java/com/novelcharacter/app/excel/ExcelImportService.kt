@@ -10336,13 +10336,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **미리 입양하는 것이 "건너뛸 행까지 입양"이 되지 않는 근거:** 루프의
         // `sheet.getRow(i) ?: continue`는 방어일 뿐 실제로 걸리지 않는다 — `plan.rows`의 `i`는
         // 위에서 `sheet.getRow(i)`가 **null이 아닌 행만** 골라 만든 것이다.
-        // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지면 종전에는 그 행이 입양되지
-        // 않았고 지금은 이미 입양돼 있다. 결과는 *라이브러리 행 하나가 더 생기는 것*이고
-        // 유실이 아니다(고지도 그대로 — `newImageMeta`는 그 줄에 닿아야 오른다).
-        // **입양 대상을 고르려면 각 행이 무엇을 요구하는지 먼저 알아야 한다** — 라이브러리에
-        // 없는 그림의 *빈 행*은 아무 일도 하지 않으므로 입양하지 않는다([asksNothing]).
-        // 여기서 못 읽은 행은 지도에 안 들어가고, 아래 루프가 **같은 자리에서 같은 메시지로**
-        // 다시 읽어 던진다 — 실패의 보고 위치를 옮기지 않는다.
+        //
+        // **입양 대상을 고르려면 각 행이 무엇을 요구하는지 먼저 알아야 한다**(2026.08.23) —
+        // 이 시트는 이제 라이브러리에 없는 그림도 싣는데([ImageSheetRows]) 그 *빈 행*은
+        // 아무 일도 하지 않으므로 입양하면 안 된다([asksNothing]). 그래서 행 읽기를 여기로
+        // 올려 지도에 담는다.
+        //
+        // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지는 행은 이 지도에 안 들어가
+        // 입양 대상에 그대로 남는다(요구를 알 수 없으니 종전대로 다룬다). 그러면 종전과 같이
+        // *라이브러리 행 하나가 더 생기고* 유실은 없다 — 고지도 그대로다(`newImageMeta`는
+        // 그 줄에 닿아야 오른다). 던진 행은 아래 루프가 **같은 자리에서 같은 메시지로** 다시
+        // 읽어 던지므로 실패의 보고 위치도 옮기지 않는다.
         val rowValues: Map<Int, ImageMetaRowValues> = plan.rows.mapNotNull { p ->
             val row = sheet.getRow(p.rowIndex) ?: return@mapNotNull null
             runCatching { readImageMetaRow(row, imc, result) }.getOrNull()?.let { p.rowIndex to it }
@@ -10373,6 +10377,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 읽기도 미리보기와 **같은 함수**다(규약 R-33). 위에서 한 번 읽어 뒀고,
                 // 그때 던진 행만 여기서 다시 읽어 같은 자리에서 던진다.
                 val r = rowValues[i] ?: readImageMetaRow(row, imc, result)
+
+                // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면 사용자가
+                // 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                // **이 고지가 아래 건너뛰기보다 앞에 있어야 한다** — 라이브러리에 없는 그림의
+                // 행은 못 읽는 값을 적어도 상태가 안 바뀌어([asksNothing]) 그대로 건너뛰는데,
+                // 고지가 뒤에 있으면 그 행만 무음이 된다.
+                if (r.hasDetachedCol && r.detachedRaw.isNotBlank() && r.detachedAt == null) {
+                    result.warnings.add("이미지 행 ${excelRow(i)}: '뗀날짜' 값 \"${r.detachedRaw}\"을(를) 읽을 수 없어 그대로 두었습니다")
+                }
 
                 // 위에서 한 번에 읽어 둔 색인이다 (B-238).
                 val existing = existingByPath[path]
@@ -10415,12 +10428,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 빈칸이면 서랍에서 뺀다. **출처 열은 읽지 않는다**(readOnly): 앱이 아는 출처를
                 // 사용자가 적은 문자열로 덮어쓰면 화면이 없는 캐릭터를 가리키게 된다.
                 if (r.hasDetachedCol) {
-                    // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면
-                    // 사용자가 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                    // 못 읽는 값의 고지는 **위에서 이미 했다**(건너뛰는 행도 말해야 하므로).
                     // 병합 결과가 기존과 같다는 것이 곧 '손대지 않는다'이다.
-                    if (r.detachedRaw.isNotBlank() && r.detachedAt == null) {
-                        result.warnings.add("이미지 행 ${excelRow(i)}: '뗀날짜' 값 \"${r.detachedRaw}\"을(를) 읽을 수 없어 그대로 두었습니다")
-                    }
                     val targetDetachedAt = target.detachedAt
                     when {
                         targetDetachedAt == current.detachedAt -> Unit  // 바뀌지 않으면 쓰지 않는다
