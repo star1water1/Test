@@ -2290,6 +2290,22 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
 
+    /**
+     * **쓰기는 화면 수명이 아니라 뷰모델 수명에서 돈다** (`TimelineViewModel`·`DuelViewModel`의 규약).
+     *
+     * 캐릭터 저장은 한 번의 조작이 **여러 쓰기의 사슬**이다 — 캐릭터·필드값 → 자동 링크
+     * 재동기화 → 제거 이미지 정리 → 뗀 표식 → 예약 삭제 → **태그** → 이름은행 링크.
+     * 그 사슬이 호출부 스코프(`viewLifecycleOwner.lifecycleScope`)에서 그대로 돌면,
+     * 저장을 누른 직후 회전하거나 나갈 때 **앞쪽만 커밋되고 뒤가 잘린다** — 캐릭터는
+     * 저장됐는데 방금 고친 태그는 옛 값 그대로이고, **아무 고지도 없다.**
+     *
+     * `async{}.await()`인 것이 요점이다: 만든 코루틴은 호출부의 자식이 아니라
+     * `viewModelScope`의 자식이므로 **호출부가 취소돼도 계속 간다.** 뷰모델은 회전을
+     * 넘겨 살아남으므로 그 사슬이 끝까지 도착한다.
+     */
+    suspend fun <T> inViewModelScope(block: suspend () -> T): T =
+        viewModelScope.async { block() }.await()
+
     fun updateCharacterDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {
             characterRepository.updateCharacterDisplayOrders(orderedIds)

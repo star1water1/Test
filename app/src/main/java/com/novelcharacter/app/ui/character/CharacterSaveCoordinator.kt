@@ -34,6 +34,20 @@ class CharacterSaveCoordinator(
     private val host: Host
 ) {
 
+    /**
+     * **앱 컨텍스트와 DB는 생성 시점에 굳힌다** — 저장의 쓰기 사슬은 화면보다 오래 산다.
+     *
+     * 종전에는 헬퍼마다 `fragment.context` · `fragment.activity?.application`으로 그때그때
+     * 집었고, 뷰가 죽으면 둘 다 null이라 **`?: return`으로 조용히 빠져나갔다** — 제거 이미지
+     * 정리·뗀 표식·예약 삭제가 통째로 건너뛰고 아무 말이 없었다(조용한 유실). 회전 한 번이
+     * 그 창이다. 코디네이터는 붙어 있는 프래그먼트로 만들어지므로 여기서 굳히는 것이 안전하다.
+     */
+    private val appContext: android.content.Context = fragment.requireContext().applicationContext
+
+    private val appDb by lazy {
+        (appContext as com.novelcharacter.app.NovelCharacterApp).database
+    }
+
     /** 저장 시점의 폼 입력 스냅샷 — 코디네이터는 호스트 뷰를 직접 알지 않는다 */
     data class FormSnapshot(
         val name: String,
@@ -348,6 +362,11 @@ class CharacterSaveCoordinator(
         crossUniverseConfirmed: Boolean = false
     ) {
         val snapshot = host.snapshot()
+        // **폼에서 읽을 것은 여기서 다 읽는다.** 아래 쓰기 사슬은 뷰모델 수명으로 넘어가
+        // 화면이 사라진 뒤에도 계속 가므로, 그 안에서 폼을 다시 만지면 사라진 뷰를 만진다.
+        val previousPaths = host.existingCharacter()?.imagePaths
+        val pendingDeletes = host.pendingImageDeletes().toList()
+        val tagList = MultiValueInput.parse(snapshot.tags)
         val savedCharId: Long
         if (isUpdate && targetCharacterId != -1L) {
             val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
@@ -373,34 +392,44 @@ class CharacterSaveCoordinator(
                     return
                 }
             }
-            applyCharacterUpdate(character, fieldValues, crossUniv, scopeMove.leavingUniverse)
             savedCharId = targetCharacterId
-            // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
-            // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
-            resyncAutoLink()
-            val previousPaths = host.existingCharacter()?.imagePaths
-            cleanupRemovedImages(previousPaths, snapshot.imagePaths)
-            syncDetachedMarks(character.code, previousPaths, snapshot.imagePaths)
-            // 명시적 삭제는 맨 뒤다 — 이 캐릭터의 참조가 빠진 뒤라야 "다른 곳이 쓰는가"를
-            // 제대로 판정할 수 있다(D7).
-            applyPendingImageDeletes()
+            // **여기부터가 쓰기 사슬이고, 화면 수명 밖에서 돈다** ([CharacterViewModel.inViewModelScope]).
+            // 이 사슬은 캐릭터·필드값 → 자동 링크 → 이미지 정리 → 뗀 표식 → 예약 삭제 →
+            // 태그 → 이름은행으로 이어지는데, 종전에는 통째로 `viewLifecycleOwner`에서 돌아
+            // **저장을 누른 직후 회전하면 앞쪽만 커밋되고 뒤가 잘렸다** — 캐릭터는 저장됐는데
+            // 방금 고친 태그는 옛 값이고 아무 고지도 없다(조용한 유실).
+            viewModel.inViewModelScope {
+                applyCharacterUpdate(character, fieldValues, crossUniv, scopeMove.leavingUniverse)
+                // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
+                // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
+                resyncAutoLink()
+                cleanupRemovedImages(previousPaths, snapshot.imagePaths)
+                syncDetachedMarks(character.code, previousPaths, snapshot.imagePaths)
+                // 명시적 삭제는 맨 뒤다 — 이 캐릭터의 참조가 빠진 뒤라야 "다른 곳이 쓰는가"를
+                // 제대로 판정할 수 있다(D7).
+                applyPendingImageDeletes(pendingDeletes)
+                viewModel.replaceAllTagsSuspend(
+                    targetCharacterId, tagList.map { CharacterTag(characterId = targetCharacterId, tag = it) }
+                )
+                syncNameBankLink(targetCharacterId, character.name)
+            }
         } else {
-            val newId = viewModel.insertCharacterSuspend(character)
-            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = newId) }
-                ?: host.collectFieldValues(newId)
-            viewModel.saveAllFieldValues(newId, fieldValues)
-            savedCharId = newId
-            resyncAutoLink()
-            // 새 캐릭터도 서랍을 건드린다 — 전에 뗐던 이미지를 다시 골라 쓰는 경로가 여기다.
-            // 뗄 것은 없으므로(옛 목록이 없다) 이 호출은 지우기만 한다.
-            syncDetachedMarks(character.code, null, snapshot.imagePaths)
-            applyPendingImageDeletes()
+            val formValues = resolvedFieldValues ?: host.collectFieldValues(-1L)
+            savedCharId = viewModel.inViewModelScope {
+                val newId = viewModel.insertCharacterSuspend(character)
+                viewModel.saveAllFieldValues(newId, formValues.map { it.copy(characterId = newId) })
+                resyncAutoLink()
+                // 새 캐릭터도 서랍을 건드린다 — 전에 뗐던 이미지를 다시 골라 쓰는 경로가 여기다.
+                // 뗄 것은 없으므로(옛 목록이 없다) 이 호출은 지우기만 한다.
+                syncDetachedMarks(character.code, null, snapshot.imagePaths)
+                applyPendingImageDeletes(pendingDeletes)
+                viewModel.replaceAllTagsSuspend(
+                    newId, tagList.map { CharacterTag(characterId = newId, tag = it) }
+                )
+                syncNameBankLink(newId, character.name)
+                newId
+            }
         }
-
-        val tagList = MultiValueInput.parse(snapshot.tags)
-        viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
-
-        syncNameBankLink(savedCharId, character.name)
 
         resetSavingState()
         if (fragment.isAdded && fragment.view != null) {
@@ -434,7 +463,7 @@ class CharacterSaveCoordinator(
         }
         host.onNameBankLinkApplied()
         if (outcome.isSilent) return
-        val ctx = fragment.context?.applicationContext ?: return
+        val ctx = appContext
         val message = buildString {
             outcome.linkedName?.let { append(ctx.getString(R.string.name_bank_link_marked_used, it)) }
             if (outcome.releasedCount > 0) {
@@ -454,8 +483,7 @@ class CharacterSaveCoordinator(
     }
 
     private fun notifyNameBank(messageRes: Int) {
-        val ctx = fragment.context?.applicationContext ?: return
-        Toast.makeText(ctx, messageRes, Toast.LENGTH_LONG).show()
+        Toast.makeText(appContext, messageRes, Toast.LENGTH_LONG).show()
     }
 
     /** restricted 위반 안내 — 사유(위반 토큰)와 허용 값 미리보기 + 두 가지 교정 경로 */
@@ -653,7 +681,7 @@ class CharacterSaveCoordinator(
      * 해야 한다(원칙 04). 작품을 다시 배정하면 되살아난다는 교정 경로까지 함께 알린다.
      */
     private fun notifyPreservedFieldValues(count: Int) {
-        val ctx = fragment.context?.applicationContext ?: return
+        val ctx = appContext
         // Snackbar가 아니라 Toast인 이유: 저장이 끝나면 host.onSaved가 곧바로 popBackStack해
         // 프래그먼트 뷰가 사라진다. 뷰에 붙는 고지는 사용자에게 도달하지 못한다.
         Toast.makeText(ctx, ctx.getString(R.string.field_values_preserved, count), Toast.LENGTH_LONG).show()
@@ -672,7 +700,7 @@ class CharacterSaveCoordinator(
      * *잘 처리됐다*는 사실이 아니다(활성 프로바이더 고지가 '첫 등록'에는 침묵하는 것과 같은 규칙).
      */
     private fun notifyKeptGlobalValues(count: Int) {
-        val ctx = fragment.context?.applicationContext ?: return
+        val ctx = appContext
         Toast.makeText(
             ctx, ctx.getString(R.string.global_field_values_kept, count), Toast.LENGTH_LONG
         ).show()
@@ -703,10 +731,8 @@ class CharacterSaveCoordinator(
      * 실패해도 저장을 되돌리지 않는다 — 링크는 다음 저장·배정의 전체 재동기화가 치유한다.
      */
     private suspend fun resyncAutoLink() {
-        val appCtx = fragment.context?.applicationContext ?: return
-        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
         try {
-            com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appCtx, db)
+            com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appContext, appDb)
         } catch (_: Exception) { /* 저장이 우선 — 링크는 다음 재동기화가 수렴시킨다 */ }
     }
 
@@ -722,14 +748,12 @@ class CharacterSaveCoordinator(
         val currentSet = currentPaths.toSet()
         val removed = oldPaths.filter { it !in currentSet }
         if (removed.isEmpty()) return
-        val appCtx = fragment.context?.applicationContext ?: return
-        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
         try {
-            when (com.novelcharacter.app.util.ImageSettingsStore(appCtx).getEditorRemovePolicy()) {
+            when (com.novelcharacter.app.util.ImageSettingsStore(appContext).getEditorRemovePolicy()) {
                 com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY ->
-                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(db, appCtx, removed)
+                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(appDb, appContext, removed)
                 com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT ->
-                    com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(db, appCtx, removed)
+                    com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(appDb, appContext, removed)
             }
         } catch (_: Exception) { /* 보존이 삭제보다 안전 — 실패 시 파일 유지 */ }
     }
@@ -755,11 +779,10 @@ class CharacterSaveCoordinator(
         } catch (_: Exception) { emptyList() }
         val touched = (oldPaths + currentPaths).distinct()
         if (touched.isEmpty()) return
-        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
         // 표식은 부가 정보다 — 실패해도 저장 자체를 되돌리지 않는다(파일도 소유도 이미 맞다).
         runCatching {
             com.novelcharacter.app.util.DetachedImageMarker.sync(
-                db, touched, code.takeIf { it.isNotBlank() }
+                appDb, touched, code.takeIf { it.isNotBlank() }
             )
         }
     }
@@ -775,10 +798,9 @@ class CharacterSaveCoordinator(
      * 이미지는 사용자가 명시적으로 골라도 영영 안 지워진다. 대신 보호해야 할 것을 직접 본다 —
      * **다른 엔티티가 쓰는가 · 휴지통이 쥐고 있는가.** 못 지운 것은 세어서 알린다(조용한 실패 금지).
      */
-    private suspend fun applyPendingImageDeletes() {
-        val pending = host.pendingImageDeletes()
+    private suspend fun applyPendingImageDeletes(pending: List<String>) {
         if (pending.isEmpty()) return
-        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        val db = appDb
         var deleted = 0
         var protectedCount = 0
         runCatching {
