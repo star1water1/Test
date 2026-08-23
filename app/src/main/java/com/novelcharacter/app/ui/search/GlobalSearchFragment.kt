@@ -65,7 +65,12 @@ class GlobalSearchFragment : Fragment() {
             onEventClick = { event ->
                 // 연표로 직행하여 해당 연도 표시 — center_year는 TimelineFragment.onResume이 소비
                 val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
-                prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).commit()
+                // `apply()`로 충분하다 — 같은 프로세스의 읽기(`TimelineFragment.onResume`)는
+                // 메모리에 이미 반영된 값을 본다. `commit()`은 그 위에 **디스크 쓰기까지**
+                // 주 스레드가 기다리게 하는데, 하필 바로 다음 줄이 화면 전환이라
+                // 그 지연이 전환 프레임에 그대로 얹힌다. 같은 키를 쓰는 형제
+                // (`TimelineViewModel`)는 이미 `apply()`다.
+                prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).apply()
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.timelineFragment)
             },
             onNovelClick = { novel ->

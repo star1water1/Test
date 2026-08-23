@@ -851,14 +851,20 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val valuesByChar = viewModel.getValuesForCharacters(characters.map { it.id })
             .groupBy { it.characterId }
 
-        return characters.mapNotNull { char ->
-            val charKeyValues = mutableMapOf<String, String>()
-            for (v in valuesByChar[char.id].orEmpty()) {
-                val key = fieldIdToKey[v.fieldDefinitionId] ?: continue
-                if (v.value.isNotBlank()) charKeyValues[key] = v.value
+        // **평가는 배경에서 돈다.** 이 루프는 세계관(또는 작품) **전원**의 수식을 한 명씩
+        // 평가한다 — 캐릭터 수백 명 저장소에서 상세 화면을 열 때마다 그만큼의 파싱·계산이
+        // 붙는데, 부르는 쪽이 `viewLifecycleOwner.lifecycleScope`(= 주 스레드)라 그 시간이
+        // 그대로 화면 멈춤이었다. 뷰를 만지지 않는 순수 계산이라 그대로 옮길 수 있다.
+        return withContext(Dispatchers.Default) {
+            characters.mapNotNull { char ->
+                val charKeyValues = mutableMapOf<String, String>()
+                for (v in valuesByChar[char.id].orEmpty()) {
+                    val key = fieldIdToKey[v.fieldDefinitionId] ?: continue
+                    if (v.value.isNotBlank()) charKeyValues[key] = v.value
+                }
+                val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
+                try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }
             }
-            val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
-            try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }
         }
     }
 
@@ -1080,11 +1086,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         // 인원에 비례한다(R-53·R-54). 실루엣 편집기의 이웃 조회와 같은 처방이다.
         val valuesByChar = viewModel.getValuesForCharacters(allCharacters.map { it.id })
             .groupBy { it.characterId }
-        for (char in allCharacters) {
-            val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
-            resolve(charValues)?.let {
-                peers.add(it)
-                if (char.id != character.id) others.add(it)
+        // 같은 이유로 배경에서 돈다 — 작품의 캐스트 전원을 도는 루프이고 `resolve`는
+        // 필드 설정 파싱을 지난다. 뷰를 만지지 않는다.
+        withContext(Dispatchers.Default) {
+            for (char in allCharacters) {
+                val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
+                resolve(charValues)?.let {
+                    peers.add(it)
+                    if (char.id != character.id) others.add(it)
+                }
             }
         }
         // 이웃이 없으면 빈 목록이다 — `peerAverageBody`가 null을 내고, 화면은 '작품 평균'

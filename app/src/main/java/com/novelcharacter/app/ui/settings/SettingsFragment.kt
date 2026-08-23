@@ -455,6 +455,9 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    /** 자동 백업 폴더를 한 번 훑어 얻은 것 — 개수와 총 바이트 */
+    private class BackupDirStats(val count: Int, val totalBytes: Long)
+
     private fun loadBackupStatus() {
         val app = requireContext().applicationContext as NovelCharacterApp
         val statusStore = app.backupStatusStore
@@ -486,13 +489,22 @@ class SettingsFragment : Fragment() {
             }
 
             // Count backup files + total size (용량 잠식을 사용자가 인지할 수 있도록)
-            val backupDir = File(filesDir, "backups")
-            val backupFiles = backupDir.listFiles { f ->
-                f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
-            } ?: emptyArray()
-            val totalMb = String.format(Locale.US, "%.1f", backupFiles.sumOf { it.length() } / 1024.0 / 1024.0)
+            //
+            // **디렉터리 훑기와 파일 크기 조회는 디스크를 친다** — 이 코루틴은
+            // `viewLifecycleOwner.lifecycleScope`(= 주 스레드)에서 도는데, 자동 백업이
+            // 쌓이면 파일마다 `length()`가 붙는다(설정 화면에 들어올 때마다). 값만 내고
+            // 뷰를 만지지 않는 구간이라 그대로 IO로 내린다.
+            val backupStats = withContext(Dispatchers.IO) {
+                val backupDir = File(filesDir, "backups")
+                val backupFiles = backupDir.listFiles { f ->
+                    f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
+                } ?: emptyArray()
+                BackupDirStats(backupFiles.size, backupFiles.sumOf { it.length() })
+            }
+            if (_binding == null) return@launch
+            val totalMb = String.format(Locale.US, "%.1f", backupStats.totalBytes / 1024.0 / 1024.0)
             sb.appendLine(
-                getString(R.string.backup_file_count, backupFiles.size) +
+                getString(R.string.backup_file_count, backupStats.count) +
                     getString(R.string.backup_total_size_suffix, totalMb)
             )
             // 기기 종속 암호화 상시 고지 — 폰 교체용 백업으로 오인하지 않도록

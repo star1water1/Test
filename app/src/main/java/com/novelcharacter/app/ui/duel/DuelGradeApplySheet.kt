@@ -18,7 +18,9 @@ import com.novelcharacter.app.util.DuelGradeAssign
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifyResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * **[등급 반영] 미리보기** — 대결 순위에서 나온 등급을 필드 값으로 쓰기 **직전**의 화면
@@ -71,54 +73,66 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
     private fun load(view: View) {
         val summary = view.findViewById<TextView>(R.id.summaryText)
         val app = requireContext().applicationContext as NovelCharacterApp
+        // **문구를 미리 굳힌다** — 아래 블록은 배경에서 도는데 `getString`은 프래그먼트를
+        // 거치므로(`requireContext()`) 그 사이에 화면이 사라지면 배경 스레드에서
+        // `IllegalStateException`이 난다. 상세 화면의 PDF 경로가 같은 이유로 이미 굳힌다.
+        val foreignAxisText = getString(R.string.duel_grade_axis_foreign)
+        val fixCutsText = getString(R.string.duel_grade_apply_fix_cuts)
         viewLifecycleOwner.lifecycleScope.launch {
-            val loaded = try {
-                val field = app.database.fieldDefinitionDao().getFieldById(fieldId)
-                val axis = app.duelRepository.axisByCode(axisCode)
-                val spec = field?.let { DuelGradeRef.fromConfig(it.config) }
-                if (field == null || axis == null || spec == null) {
-                    null
-                } else if (axis.universeId != field.universeId) {
-                    // 소속 검사(설계 4-2 ⓑ) — 축 code는 전역 유니크라 **남의 세계관 축을
-                    // 정확히 찾는다.** 강등이 한 경로라도 빠졌을 때의 두 번째 방어선이다.
-                    Loaded.Blocked(getString(R.string.duel_grade_axis_foreign))
-                } else {
-                    val labels = DuelGradeAssign.orderedLabels(
-                        com.novelcharacter.app.data.model.GradeSystemRef.gradesFromConfig(field.config)
-                    )
-                    val problems = DuelGradeAssign.validate(spec.cuts, labels)
-                    if (problems.isNotEmpty()) {
-                        Loaded.Blocked(getString(R.string.duel_grade_apply_fix_cuts))
+            // **점수 적합을 주 스레드에서 돌리지 않는다.** `DuelViewModel`의 KDoc이 그
+            // 이유를 실측으로 든다 — 900명·18,000판에서 *적합 128ms*이고 캐릭터 수의
+            // 제곱에 붙는다. 그 계층은 전부 `Dispatchers.Default`로 넘기는데 **이 시트와
+            // 필드 편집의 [경계 제안]만 그 밖에 있었다.** Room의 중단 함수는 스스로 자기
+            // 실행기로 옮기므로 이 감싸기와 겹치지 않는다.
+            val loaded = withContext(Dispatchers.Default) {
+                try {
+                    val field = app.database.fieldDefinitionDao().getFieldById(fieldId)
+                    val axis = app.duelRepository.axisByCode(axisCode)
+                    val spec = field?.let { DuelGradeRef.fromConfig(it.config) }
+                    if (field == null || axis == null || spec == null) {
+                        null
+                    } else if (axis.universeId != field.universeId) {
+                        // 소속 검사(설계 4-2 ⓑ) — 축 code는 전역 유니크라 **남의 세계관 축을
+                        // 정확히 찾는다.** 강등이 한 경로라도 빠졌을 때의 두 번째 방어선이다.
+                        Loaded.Blocked(foreignAxisText)
                     } else {
-                        val characters = app.characterRepository
-                            .getCharactersByUniverseList(field.universeId)
-                        val scores = app.duelRepository.scoresOf(axis, characters.map { it.code })
-                        val assigned = DuelGradeAssign.assign(scores, spec.cuts, labels)
-                        // **저장소를 거친다** — DAO를 직접 부르면 `IN (:ids)`가 SQLite 변수
-                        // 상한(999)에 걸려, 캐릭터가 많은 세계관에서 미리보기가 예외로 죽는다.
-                        // 저장소 쪽이 그 청크 분할을 들고 있다.
-                        val codeById = characters.associate { it.id to it.code }
-                        val currentValues = app.characterRepository
-                            .getValuesForCharacters(characters.map { it.id })
-                            .filter { it.fieldDefinitionId == fieldId }
-                            .mapNotNull { value ->
-                                codeById[value.characterId]?.let { it to value.value }
-                            }
-                            .toMap()
-                        Loaded.Ready(
-                            axisName = axis.name,
-                            fieldName = field.name,
-                            scored = scores.scored,
-                            unplayed = scores.unplayed,
-                            assignments = assigned.associate { it.code to it.label },
-                            preview = DuelGradeAssign.preview(assigned, currentValues, spec.lastApplied),
-                            nameByCode = characters.associate { it.code to it.displayName }
+                        val labels = DuelGradeAssign.orderedLabels(
+                            com.novelcharacter.app.data.model.GradeSystemRef.gradesFromConfig(field.config)
                         )
+                        val problems = DuelGradeAssign.validate(spec.cuts, labels)
+                        if (problems.isNotEmpty()) {
+                            Loaded.Blocked(fixCutsText)
+                        } else {
+                            val characters = app.characterRepository
+                                .getCharactersByUniverseList(field.universeId)
+                            val scores = app.duelRepository.scoresOf(axis, characters.map { it.code })
+                            val assigned = DuelGradeAssign.assign(scores, spec.cuts, labels)
+                            // **저장소를 거친다** — DAO를 직접 부르면 `IN (:ids)`가 SQLite 변수
+                            // 상한(999)에 걸려, 캐릭터가 많은 세계관에서 미리보기가 예외로 죽는다.
+                            // 저장소 쪽이 그 청크 분할을 들고 있다.
+                            val codeById = characters.associate { it.id to it.code }
+                            val currentValues = app.characterRepository
+                                .getValuesForCharacters(characters.map { it.id })
+                                .filter { it.fieldDefinitionId == fieldId }
+                                .mapNotNull { value ->
+                                    codeById[value.characterId]?.let { it to value.value }
+                                }
+                                .toMap()
+                            Loaded.Ready(
+                                axisName = axis.name,
+                                fieldName = field.name,
+                                scored = scores.scored,
+                                unplayed = scores.unplayed,
+                                assignments = assigned.associate { it.code to it.label },
+                                preview = DuelGradeAssign.preview(assigned, currentValues, spec.lastApplied),
+                                nameByCode = characters.associate { it.code to it.displayName }
+                            )
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to build duel grade preview", e)
+                    null
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to build duel grade preview", e)
-                null
             }
             if (!isAdded) return@launch
             when (loaded) {
