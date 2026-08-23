@@ -437,9 +437,15 @@ class ImageBatchTagSuggesterTest {
         )
 
         // 첫 배치를 접고 멈춘다 — 학습된 사실이라 남은 배치도 같은 결과다.
-        assertEquals(1, result.failures.size)
         assertEquals(BatchFailKind.IMAGES_UNSUPPORTED, result.failures.first().kind)
         assertEquals(listOf("a", "b"), result.failures.first().paths)
+        // **남은 배치도 결손으로 남는다.** 종전에는 여기서 `break`만 하고 끝나 시작조차
+        // 하지 않은 몫이 흔적 없이 사라졌고, 화면은 접힌 배치 하나만 말했다 — 사용자는
+        // 나머지가 '태그가 없는 이미지'라고 잘못 배운다. 사유를 갈라 두는 것이 요점이다:
+        // 이쪽만 **돈을 안 썼고**, 그래서 되받기 대상이 아니라 *다시 걸면 되는* 몫이다.
+        assertEquals(2, result.failures.size)
+        assertEquals(BatchFailKind.NOT_REQUESTED, result.failures[1].kind)
+        assertEquals(listOf("c"), result.failures[1].paths)
         assertTrue(result.suggestions.isEmpty())
         // 준비기조차 부르지 않는다.
         assertEquals(0, loader.calls)

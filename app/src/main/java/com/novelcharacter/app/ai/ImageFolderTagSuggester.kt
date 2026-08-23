@@ -88,6 +88,14 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
 
     companion object {
 
+        /** 응답을 읽지 못했을 때 — 형제들이 쓰는 그 문구 그대로다(자리마다 다르게 말하지 않는다). */
+        const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
+
+        /** 출력 상한에 걸려 잘린 경우 — 원인과 교정 경로를 정확히 말한다(재시도는 같은 결과다). */
+        const val TRUNCATED_MESSAGE =
+            "AI 응답이 출력 상한에 걸려 잘려 일부 폴더를 건너뛰었습니다 — " +
+                "설정 → AI 연동에서 출력 토큰 상한을 올리면 한 번에 더 많이 처리할 수 있습니다."
+
         /** 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준. 집합은 [AiErrorPolicy]가 단일 소스다. */
         private val TERMINAL_ERRORS = AiErrorPolicy.TERMINAL
 
@@ -215,6 +223,16 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                     AiProviderFallback.switchNoteOf(result)
                         ?.let { if (it !in notes) notes.add(it) }
                     val (parsed, tally) = parse(result.text, chunk, vocab)
+                    // **읽지 못한 응답도 말한다.** `parse`는 JSON을 못 찾거나 `folders` 배열이
+                    // 없으면 *빈 제안 + 빈 셈*을 돌려주는데, 종전에는 그것이 성공과 구별되지
+                    // 않아 `Result`가 통째로 비었고 — `failures`는 `AiResult.Failure` 타입이라
+                    // 파싱 실패를 담을 자리 자체가 없다 — 컨트롤러가 **시트를 아예 띄우지 않고
+                    // 조용히 끝냈다.** 사용자는 값을 치른 응답이 어디로 갔는지 알 길이 없다.
+                    // 형제 넷이 전부 이 갈래를 명시로 다룬다(`CharacterFieldAiSuggester` 외).
+                    if (parsed.isEmpty() && tally.isEmpty) {
+                        val note = if (result.truncated) TRUNCATED_MESSAGE else PARSE_FAILURE_MESSAGE
+                        if (note !in notes) notes.add(note)
+                    }
                     all.addAll(parsed)
                     drops += tally
                 }

@@ -142,12 +142,17 @@ class CharacterSaveCoordinator(
 
     private val gson = Gson()
 
-    var isSaving = false
-        private set
+    /**
+     * **연타 빗장은 뷰모델이 든다** (R-65) — 이 객체는 호스트의 `onViewCreated`에서 매번 새로
+     * 만들어지므로 여기 두면 **회전 한 번에 풀린다.** 사유는 [CharacterViewModel.saving]에.
+     * 읽는 이름은 그대로 둔다 — 보충 탭이 네 자리에서 이 값을 본다.
+     */
+    var isSaving: Boolean
+        get() = viewModel.saving.value == true
+        private set(value) { viewModel.setSaving(value) }
 
     private fun resetSavingState() {
         isSaving = false
-        host.onSavingChanged(false)
     }
 
     /** 저장 체인이 저장 없이 끝나는 모든 지점(취소·오류)에서 호출 — 성공 경로는 resetSavingState + onSaved */
@@ -239,7 +244,6 @@ class CharacterSaveCoordinator(
         val characterId = host.editingCharacterId()
 
         isSaving = true
-        host.onSavingChanged(true)
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             try {
                 if (checkDuplicates) {
@@ -321,6 +325,10 @@ class CharacterSaveCoordinator(
      * 결과 도착 시 폼에서 character를 재구성해 처리한다.
      */
     fun registerResultListeners() {
+        // **버튼 상태는 빗장을 따라간다** — 회전 뒤 새 뷰도 이 관측으로 상태를 되받는다.
+        // 종전에는 `host.onSavingChanged`를 빗장과 나란히 손으로 불렀고, 그래서 회전으로
+        // 새로 선 화면은 *저장 중인데 버튼이 켜진* 상태였다. 한 자리로 모으면 갈릴 수 없다.
+        viewModel.saving.observe(fragment.viewLifecycleOwner) { host.onSavingChanged(it) }
         fragment.childFragmentManager.setFragmentResultListener(
             DuplicateCharacterDialog.RESULT_KEY,
             fragment.viewLifecycleOwner

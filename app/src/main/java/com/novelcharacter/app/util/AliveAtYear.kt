@@ -35,9 +35,9 @@ object AliveAtYear {
      * @param targetYear 판정할 해
      */
     fun resolve(changes: List<CharacterStateChange>, targetYear: Int): Verdict {
-        val relevant = changes
-            .filter { it.year <= targetYear }
+        val ordered = changes
             .sortedWith(compareBy({ it.year }, { it.month ?: 0 }, { it.day ?: 0 }, { it.id }))
+        val relevant = ordered.filter { it.year <= targetYear }
 
         fun yearOf(change: CharacterStateChange?): Int? = change?.let {
             it.newValue.toIntOrNull() ?: if (it.newValue.isBlank()) it.year else null
@@ -46,8 +46,17 @@ object AliveAtYear {
         val deathYear = yearOf(relevant.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH })
         val birthYear = yearOf(relevant.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH })
         val aliveChange = relevant.findLast { it.fieldKey == CharacterStateChange.KEY_ALIVE }
+        // **걸러내지 않은 목록에서 읽는 출생** — 아래 갈래가 쓴다. 연도 필터가 두 행을
+        // 비대칭으로 다루기 때문이다: `__alive` 행은 `year = 0`으로 들어오므로
+        // (`SemanticFieldSyncHelper.upsertAliveStateChange`) **어느 시점에서도 남는데**
+        // 출생 행은 미래라 걸러진다. 그래서 `__alive`가 있는 캐릭터는 태어나기 전 해에도
+        // '생존'으로 판정됐고, `__alive`가 없는 하위호환 갈래는 같은 데이터에 UNSET을 냈다 —
+        // **행 하나의 유무가 답을 갈랐다.** 고르는 규칙은 위와 같다(같은 정렬의 findLast).
+        val declaredBirthYear = yearOf(ordered.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH })
 
         if (aliveChange != null) {
+            // 태어나기 전이면 판정할 것이 없다 — 아래 하위호환 갈래와 **같은 답**이다.
+            if (declaredBirthYear != null && targetYear < declaredBirthYear) return Verdict.UNSET
             // 사망연도 기반 보정 — 사망 이전 시점이면 살아 있다(적힌 것보다 시점이 이긴다).
             if (deathYear != null && targetYear < deathYear) return Verdict.ALIVE
             return when (aliveChange.newValue) {

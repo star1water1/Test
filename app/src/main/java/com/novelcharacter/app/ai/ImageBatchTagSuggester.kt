@@ -162,7 +162,18 @@ class ImageBatchTagSuggester(
         RESPONSE_TRUNCATED,
 
         /** 요청 자체가 실패했다([failure]에 원인). */
-        REQUEST_FAILED
+        REQUEST_FAILED,
+
+        /**
+         * **요청조차 하지 않았다** — 앞 배치의 종단 실패로 회차가 끊겼다.
+         *
+         * 갈라 두는 이유는 이 사유만 *"돈을 안 썼다"*이기 때문이다. 종전에는 끊은 자리에서
+         * `break`만 하고 남은 배치를 어디에도 안 적어, 열 장을 걸어 놓고 두 장에서 끊기면
+         * **나머지 여덟이 흔적 없이 사라졌다** — 화면은 접힌 배치 하나만 말한다.
+         * 형제 `CharacterFieldAiSuggester`가 같은 자리를 이미 `NOT_REQUESTED`로 고쳤다.
+         * **되받기 대상에는 넣지 않는다** — 되받으면 끊은 그 사유를 다시 만나 돈만 쓴다.
+         */
+        NOT_REQUESTED
     }
 
     /** 접힌 배치. [paths]는 그 배치가 담고 있던 이미지 — 재시도 경로가 이것을 쓴다. */
@@ -439,7 +450,7 @@ class ImageBatchTagSuggester(
         var cancelled = false
 
         onProgress(0, totalRequests, 0, totalImages)
-        for (batch in batches) {
+        for ((batchIndex, batch) in batches.withIndex()) {
             if (isCancelled()) { cancelled = true; break }
 
             var stop = false
@@ -518,7 +529,13 @@ class ImageBatchTagSuggester(
             doneRequests++
             doneImages += batch.size
             onProgress(doneRequests, totalRequests, doneImages, totalImages)
-            if (stop) break
+            if (stop) {
+                // **남은 배치도 결손으로 남긴다** — 시작조차 안 한 몫이 조용히 사라지지 않게.
+                for (rest in batches.drop(batchIndex + 1)) {
+                    failures.add(BatchFailure(rest, BatchFailKind.NOT_REQUESTED))
+                }
+                break
+            }
         }
         return Result(all, drops, failures, cancelled, notes)
     }

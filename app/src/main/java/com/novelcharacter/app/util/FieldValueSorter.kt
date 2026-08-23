@@ -77,6 +77,14 @@ object FieldValueSorter {
      * 넓히기로 정했다. 그래서 **기존 `MULTI_TEXT` 필드의 정렬 결과는 하나도 안 바뀐다** —
      * 기각된 쪽(맨 앞 토큰)이었다면 전부 조용히 달라졌을 자리다.
      */
+    /*
+     * **대표를 고르는 잣대와 줄 세우는 잣대가 같아야 한다.** 종전에는 `minOrNull()`이
+     * **원문 토큰**에 대해 돌아 대문자가 소문자보다 먼저인 UTF-16 순서로 대표를 고르고,
+     * 그 뒤에야 `lowercase()`가 걸렸다 — 같은 함수 안에 잣대가 두 벌이었다. 그래서
+     * `Zebra, apple`의 정렬키가 `zebra`가 되어(대표는 `apple`이어야 한다) 그 캐릭터가
+     * `banana`보다 뒤에 섰고, 사용자는 자기 데이터에 `apple`이 있는데도 앞에 안 오는
+     * 이유를 알 수 없었다. 한글만 든 값은 답이 바뀌지 않는다.
+     */
     fun textValue(field: FieldDefinition, rawValue: String): String? =
-        FieldValueTokenizer.tokenize(field, rawValue).minOrNull()?.lowercase()
+        FieldValueTokenizer.tokenize(field, rawValue).minOfOrNull { it.lowercase() }
 }

@@ -2126,16 +2126,21 @@ class StatsDataProvider {
         // 이 축은 스냅샷 메모가 없어 여기서 접는다 — 저장 행 먼저, 계산값 나중(종전 연결 순서
         // 그대로라 첫 등장 순서도 같다). 블랭크를 거르는 것도 종전 그대로다.
         val eventValueCountsByFieldDef = HashMap<Long, LinkedHashMap<String, Int>>()
+        // **채운 주체도 함께 모은다** — 아래 채움률의 분자가 모수와 같은 집합을 세게 하려면
+        // *값 행 수*가 아니라 *그 값을 든 사건*이 필요하다(R-34). 같은 훑음에서 짓는다.
+        val eventIdsByFieldDef = HashMap<Long, HashSet<Long>>()
         for (fv in s.eventFieldValues) {
             if (fv.value.isBlank()) continue
             eventValueCountsByFieldDef.getOrPut(fv.fieldDefinitionId) { LinkedHashMap() }
                 .merge(fv.value, 1) { a, b -> a + b }
+            eventIdsByFieldDef.getOrPut(fv.fieldDefinitionId) { HashSet() }.add(fv.eventId)
         }
-        for ((_, fieldMap) in computeAllEventCalculatedValues(s)) {
+        for ((eventId, fieldMap) in computeAllEventCalculatedValues(s)) {
             for ((fieldDefId, value) in fieldMap) {
                 if (value.isBlank()) continue
                 eventValueCountsByFieldDef.getOrPut(fieldDefId) { LinkedHashMap() }
                     .merge(value, 1) { a, b -> a + b }
+                eventIdsByFieldDef.getOrPut(fieldDefId) { HashSet() }.add(eventId)
             }
         }
         val eventFieldGroups = analyzableDefs(s, s.eventFieldDefinitions)
@@ -2148,27 +2153,40 @@ class StatsDataProvider {
             // 모수 = 해당 세계관들의 사건 수 (사건 필드는 세계관 소속 사건에만 부여 가능)
             val universeIds = fds.map { it.universeId }.toSet()
             val totalCount = s.events.count { it.universeId in universeIds }
+            // **분자도 같은 조건으로 센다** (R-34). 종전에는 기본값(값 표의 합)이 쓰였는데,
+            // 그것은 소속과 무관하게 그 정의에 달린 값 **행**을 전부 세므로 ⓐ 한 사건이 여러
+            // 행을 들면 겹쳐 세고 ⓑ 세계관을 옮겨 간 사건의 보관 값까지 센다. 그래서 채움률이
+            // 100%를 넘거나, 모수가 0인 그룹에서 `N / 0`이 됐다. 캐릭터 축만 이 규약으로
+            // 고쳐졌고 사건·작품이 남아 있었다.
+            val filledEventIds = HashSet<Long>()
+            for (fd in fds) eventIdsByFieldDef[fd.id]?.let { filledEventIds.addAll(it) }
+            val filledEvents = s.events.count { it.id in filledEventIds && it.universeId in universeIds }
 
             val universeName = if (fds.size == 1) {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
             buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
-                mergedFieldDefIds = fds.map { it.id })
+                mergedFieldDefIds = fds.map { it.id },
+                filledCount = filledEvents)
         }
 
         // ── 작품 필드 인사이트 (확-3): 같은 규칙으로 편입 (원칙 02) ──
         val novelValueCountsByFieldDef = HashMap<Long, LinkedHashMap<String, Int>>()
+        // 사건 축과 같다 — 채움률의 분자가 모수와 같은 집합을 세게 하는 재료다(R-34).
+        val novelIdsByFieldDef = HashMap<Long, HashSet<Long>>()
         for (fv in s.novelFieldValues) {
             if (fv.value.isBlank()) continue
             novelValueCountsByFieldDef.getOrPut(fv.fieldDefinitionId) { LinkedHashMap() }
                 .merge(fv.value, 1) { a, b -> a + b }
+            novelIdsByFieldDef.getOrPut(fv.fieldDefinitionId) { HashSet() }.add(fv.novelId)
         }
-        for ((_, fieldMap) in computeAllNovelCalculatedValues(s)) {
+        for ((novelId, fieldMap) in computeAllNovelCalculatedValues(s)) {
             for ((fieldDefId, value) in fieldMap) {
                 if (value.isBlank()) continue
                 novelValueCountsByFieldDef.getOrPut(fieldDefId) { LinkedHashMap() }
                     .merge(value, 1) { a, b -> a + b }
+                novelIdsByFieldDef.getOrPut(fieldDefId) { HashSet() }.add(novelId)
             }
         }
         val novelFieldGroups = analyzableDefs(s, s.novelFieldDefinitions)
@@ -2181,13 +2199,18 @@ class StatsDataProvider {
             // 모수 = 해당 세계관들의 작품 수 (작품 필드는 세계관 소속 작품에만 부여 가능)
             val universeIds = fds.map { it.universeId }.toSet()
             val totalCount = s.novels.count { it.universeId in universeIds }
+            // 분자도 같은 조건으로 센다 — 사유는 사건 축의 같은 자리에 있다(R-34).
+            val filledNovelIds = HashSet<Long>()
+            for (fd in fds) novelIdsByFieldDef[fd.id]?.let { filledNovelIds.addAll(it) }
+            val filledNovels = s.novels.count { it.id in filledNovelIds && it.universeId in universeIds }
 
             val universeName = if (fds.size == 1) {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
             buildFieldInsight(s, primaryFd, statsConfig, rawCounts, totalCount, universeName,
-                mergedFieldDefIds = fds.map { it.id })
+                mergedFieldDefIds = fds.map { it.id },
+                filledCount = filledNovels)
         }
 
         return characterInsights + eventInsights + novelInsights

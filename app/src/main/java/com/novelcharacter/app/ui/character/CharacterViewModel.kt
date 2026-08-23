@@ -125,6 +125,23 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val result: LiveData<OpResult?> = _result
     fun clearResult() { _result.value = null }
 
+    /**
+     * **저장 진행 중** — 연타 빗장이 뷰가 아니라 여기 산다 (R-65).
+     *
+     * 종전에는 [CharacterSaveCoordinator]의 필드였는데 그 객체는 호스트의 `onViewCreated`에서
+     * **매번 새로 만들어진다.** 즉 회전 한 번에 빗장이 `false`로 되살아나고 저장 버튼도
+     * 레이아웃 기본값(켜짐)으로 돌아왔다 — 그런데 **쓰기 사슬은 `inViewModelScope`라 회전을
+     * 넘겨 계속 돈다.** 창이 열려 있는 구간이 특히 길다(중복 이름 창은 사용자 응답을 기다린다).
+     * 그 사이 두 번째 저장이 들어가면 신규 캐릭터는 `id = 0`으로 조립되므로 **두 번째 행**이
+     * 생긴다. 뷰모델은 회전을 넘겨 살아남으므로 여기 두면 빗장도 함께 넘어간다
+     * (`NameSuggestViewModel._depositing`이 같은 사유로 쓰는 배선이다).
+     */
+    private val _saving = MutableLiveData(false)
+    val saving: LiveData<Boolean> = _saving
+
+    /** [CharacterSaveCoordinator]만 부른다 — 빗장의 주인은 그쪽 한 자리다. */
+    fun setSaving(value: Boolean) { _saving.value = value }
+
     private val _currentNovelId = MutableLiveData<Long?>()
 
     // ===== 다가오는 생일 (반응형: DB 변경 시 자동 갱신) =====

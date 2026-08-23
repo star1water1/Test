@@ -72,7 +72,16 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
         // **고른 것은 화면보다 오래 산다.** 종전에는 회전 한 번에 기본 체크로 통째로
         // 되돌아갔고 아무 말도 없었다 — 손값 묶음에서 하나씩 훑어 끈 사용자가 그 판단을
         // 잃는다(원칙 04 · 개발 의도 2번).
-        outState.putStringArrayList(KEY_CHECKED, ArrayList(checked))
+        //
+        // **다만 «아직 안 정해졌다»와 «전부 껐다»를 가른다.** `checked`는 [render]가
+        // 불려야 채워지는데 그 앞에 `load`의 중단 구간이 있다(DB에서 미리보기를 다시
+        // 계산한다 — 캐릭터가 많은 세계관일수록 넓다). 그 창에서 회전하면 **빈 목록**이
+        // 실리고, 되살릴 때 `if (restored != null)`은 빈 리스트도 non-null이라 기본 체크
+        // 갈래로 못 가 **[반영 (0)]이 비활성으로 선다** — 빈 칸·지난 반영값 묶음이 켜져
+        // 있어야 한다는 확정(Q1)과 어긋난다. 미리보기가 서기 전에는 들고 있던 복원값을
+        // 그대로 넘겨, 아직 정해지지 않았다는 사실이 다음 회차까지 간다.
+        val save = if (preview != null) checked.toList() else restoredChecked
+        if (save != null) outState.putStringArrayList(KEY_CHECKED, ArrayList(save))
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

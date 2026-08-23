@@ -61,6 +61,10 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val _presetSaveFailedEvent = MutableLiveData<Event<String>?>()
     val presetSaveFailedEvent: LiveData<Event<String>?> = _presetSaveFailedEvent
 
+    /** 프리셋 삭제 완료 — 고지는 **실제로 지운 뒤에** 나간다(종전에는 걸어 놓고 바로 띄웠다). */
+    private val _presetDeletedEvent = MutableLiveData<Event<String>?>()
+    val presetDeletedEvent: LiveData<Event<String>?> = _presetDeletedEvent
+
     private val db = app.database
 
     // 필드 필터 캐시 무효화 — character_field_values / field_definitions 변경을 관측(오프메인).
@@ -405,9 +409,25 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun deletePreset(id: Long) {
+    /**
+     * 프리셋 삭제 — **한 일과 고지가 어긋나지 않게** 결과를 낸다.
+     *
+     * 종전에는 화면이 이 함수를 걸어 놓고 **곧바로** «삭제했습니다»를 띄웠다(한 일과 무관하게
+     * 무조건 뜨는 고지). 게다가 이 파일에서 **유일하게 `try`가 없는 쓰기**라, 예외가 나면
+     * 코루틴 밖으로 나가 앱이 죽는데 그 직전에 이미 성공을 말한 뒤였다 — B-191이 저장
+     * 경로에서 없앤 바로 그 모양이 삭제 경로에만 남아 있었다.
+     */
+    fun deletePreset(id: Long, name: String) {
         viewModelScope.launch {
-            searchPresetRepository.deletePreset(id)
+            try {
+                searchPresetRepository.deletePreset(id)
+                _presetDeletedEvent.value = Event(name)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("GlobalSearchViewModel", "Failed to delete preset", e)
+                _presetSaveFailedEvent.value = Event(name)
+            }
         }
     }
 

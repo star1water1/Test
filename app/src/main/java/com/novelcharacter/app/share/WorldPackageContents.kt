@@ -248,9 +248,15 @@ object WorldPackageParser {
             ?: return malformed(e.STATE_CHANGES)
         val tags = read(e.TAGS, object : TypeToken<List<CharacterTag?>>() {})
             ?: return malformed(e.TAGS)
-        // **옛 꾸러미에는 이 파일이 없다** — 그때는 명대사가 없던 것이지 깨진 것이 아니므로
-        // `malformed`가 아니라 빈 목록이다(파일 자체가 없는 것과 내용이 깨진 것은 다르다).
-        val quotes = read(e.QUOTES, object : TypeToken<List<CharacterQuote?>>() {}) ?: emptyList()
+        // **옛 꾸러미(엔트리 없음)는 [read]가 이미 빈 목록으로 받는다** — 그러므로 여기 오는
+        // `null`은 오직 *JSON이 깨졌을 때*뿐이고, 그것은 형제 스무 곳과 같이 사유와 함께
+        // 거부해야 한다. 종전 `?: emptyList()`는 그 둘을 한 값으로 접어, 손상·손편집으로
+        // `quotes.json`이 깨진 꾸러미가 **«명대사가 없는 꾸러미»로 통과하고 명대사 전량이
+        // 아무 고지 없이 빠졌다.** `droppedRows` 고지에도 안 잡힌다 — `scrub`을 지나기 전에
+        // 이미 빈 목록이라 버린 행이 0이기 때문이다. 바로 위 [read]의 주석이 세운 규칙
+        // (*"엔트리 부재는 빈 목록, JSON 파손은 Malformed"*)이 이 자리에만 안 걸려 있었다.
+        val quotes = read(e.QUOTES, object : TypeToken<List<CharacterQuote?>>() {})
+            ?: return malformed(e.QUOTES)
         val relationships = read(e.RELATIONSHIPS, object : TypeToken<List<CharacterRelationship?>>() {})
             ?: return malformed(e.RELATIONSHIPS)
         val relationshipChanges =

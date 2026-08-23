@@ -1646,6 +1646,12 @@ class ImageManagerFragment : Fragment() {
             // 처방이 다르다 — 파일은 멀쩡히 있고, 할 일은 그 그림을 앱에 들이는 것이다.
             out.add(getString(R.string.image_ai_tag_notice_blocked, it.sumOf { f -> f.paths.size }))
         }
+        byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.NOT_REQUESTED]?.let {
+            // **시작조차 안 한 몫** — 앞 배치의 종단 실패로 회차가 끊겼다. 말하지 않으면
+            // 사용자는 그 이미지들이 '태그가 없는 이미지'라고 잘못 배운다(위 `sealed`와 같은
+            // 이유이나 처방이 다르다 — 이쪽은 원인을 고친 뒤 **다시 걸면 된다**).
+            out.add(getString(R.string.image_ai_tag_notice_not_requested, it.sumOf { f -> f.paths.size }))
+        }
         byKind[com.novelcharacter.app.ai.ImageBatchTagSuggester.BatchFailKind.REQUEST_FAILED]
             ?.firstOrNull()?.failure?.let {
             out.add(

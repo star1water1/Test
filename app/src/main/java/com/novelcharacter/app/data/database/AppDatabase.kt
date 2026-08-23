@@ -1596,14 +1596,26 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 for ((table, indexName) in tables) {
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `code` TEXT")
-                    val cursor = db.query("SELECT id FROM `$table` WHERE code IS NULL")
-                    while (cursor.moveToNext()) {
+                    // **id를 먼저 다 읽고 나서 쓴다** — 커서를 연 채 그 커서의 `WHERE`를
+                    // 무효화하면 안 된다. 안드로이드 `SQLiteCursor`는 결과를 `CursorWindow`
+                    // 단위로 담고, 창을 넘는 위치로 `moveToNext`가 가면 **같은 문장을 다시
+                    // 실행해** 절대 위치 N으로 건너뛴다. 그 시점에는 앞서 처리한 N행이 이미
+                    // `code IS NOT NULL`이라 결과에서 빠져 있으므로 **그 사이 행이 통째로
+                    // 건너뛰어지고**, 캐시된 `mCount` 때문에 루프도 일찍 끝난다. 남은 행은
+                    // `code = NULL`인데 뒤이은 유니크 인덱스가 막지 못한다(SQLite는 NULL끼리를
+                    // 서로 다르게 본다) — 예외도 로그도 없이 통과하고 주석이 약속한
+                    // *"전 행 백필"*만 거짓이 된다. 읽기와 쓰기가 안 겹치면 창 재채움이
+                    // 결과를 바꿀 수 없다. `tools/verify_room_migration.py`가 재현하는 형태이기도 하다.
+                    val ids = ArrayList<Long>()
+                    db.query("SELECT id FROM `$table` WHERE code IS NULL").use { c ->
+                        while (c.moveToNext()) ids.add(c.getLong(0))
+                    }
+                    for (id in ids) {
                         db.execSQL(
                             "UPDATE `$table` SET code = ? WHERE id = ?",
-                            arrayOf(generateEntityCode(), cursor.getLong(0))
+                            arrayOf(generateEntityCode(), id)
                         )
                     }
-                    cursor.close()
                     db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `$indexName` ON `$table`(`code`)")
                 }
 
@@ -1657,14 +1669,20 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "Migrating database from version 37 to 38 — 이름 은행 안정 식별자(code) (F3-D)")
                 db.execSQL("ALTER TABLE `name_bank` ADD COLUMN `code` TEXT NOT NULL DEFAULT ''")
                 // 기존 행 백필 (유니크 인덱스 생성 전에 각 행에 고유 코드 부여 — 충돌 방지)
-                val cursor = db.query("SELECT id FROM `name_bank` WHERE code IS NULL OR code = ''")
-                while (cursor.moveToNext()) {
+                // 읽기와 쓰기를 겹치지 않게 가른다 — 사유는 MIGRATION_34_35의 같은 자리에 있다.
+                // **이쪽은 더 나쁘게 끝난다:** 컬럼이 `NOT NULL DEFAULT ''`라 건너뛴 행은
+                // NULL이 아니라 `''`로 남고, 그러면 아래 유니크 인덱스가 `''` 중복으로 **실패해**
+                // 마이그레이션이 죽는다(파괴적 폴백이 없으니 기동 불가로 나타난다).
+                val ids = ArrayList<Long>()
+                db.query("SELECT id FROM `name_bank` WHERE code IS NULL OR code = ''").use { c ->
+                    while (c.moveToNext()) ids.add(c.getLong(0))
+                }
+                for (id in ids) {
                     db.execSQL(
                         "UPDATE `name_bank` SET code = ? WHERE id = ?",
-                        arrayOf(generateEntityCode(), cursor.getLong(0))
+                        arrayOf(generateEntityCode(), id)
                     )
                 }
-                cursor.close()
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_name_bank_code` ON `name_bank`(`code`)")
                 Log.i(TAG, "Migration from version 37 to 38 completed successfully")
             }
@@ -1762,14 +1780,19 @@ abstract class AppDatabase : RoomDatabase() {
                 if (!hasCode) {
                     db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `code` TEXT")
                 }
-                val cursor = db.query("SELECT id FROM `character_relationships` WHERE code IS NULL")
-                while (cursor.moveToNext()) {
+                // 읽기와 쓰기를 겹치지 않게 가른다 — 사유는 MIGRATION_34_35의 같은 자리에 있다.
+                // 이 표가 셋 중 가장 커질 수 있는 축이라(관계는 캐릭터 수의 제곱에 붙는다)
+                // 창을 넘길 여지도 여기가 가장 크다.
+                val ids = ArrayList<Long>()
+                db.query("SELECT id FROM `character_relationships` WHERE code IS NULL").use { c ->
+                    while (c.moveToNext()) ids.add(c.getLong(0))
+                }
+                for (id in ids) {
                     db.execSQL(
                         "UPDATE `character_relationships` SET code = ? WHERE id = ?",
-                        arrayOf(generateEntityCode(), cursor.getLong(0))
+                        arrayOf(generateEntityCode(), id)
                     )
                 }
-                cursor.close()
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationships_code` ON `character_relationships`(`code`)")
 
                 Log.i(TAG, "Migration from version 41 to 42 completed successfully")

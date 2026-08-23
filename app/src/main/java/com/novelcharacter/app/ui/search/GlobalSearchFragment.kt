@@ -116,6 +116,12 @@ class GlobalSearchFragment : Fragment() {
             }
         }
         // 저장·편집이 실패하면 말한다 — 종전에는 예외가 코루틴 밖으로 나가 앱이 죽었다(B-191).
+        viewModel.presetDeletedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let {
+                val ctx = context ?: return@observe
+                Toast.makeText(ctx, R.string.search_preset_deleted, Toast.LENGTH_SHORT).show()
+            }
+        }
         viewModel.presetSaveFailedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let {
                 val ctx = context ?: return@observe
@@ -247,10 +253,9 @@ class GlobalSearchFragment : Fragment() {
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.delete_warning_title)
             .setMessage(getString(R.string.confirm_delete_search_preset, preset.name))
-            .setPositiveButton(R.string.delete) { _, _ ->
-                viewModel.deletePreset(preset.id)
-                Toast.makeText(ctx, R.string.search_preset_deleted, Toast.LENGTH_SHORT).show()
-            }
+            // **고지는 지운 뒤에** — 종전에는 여기서 바로 띄웠고, 그것은 한 일과 무관하게
+            // 무조건 뜨는 고지였다. 결과는 아래 관측 둘이 갈라 말한다.
+            .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePreset(preset.id, preset.name) }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }

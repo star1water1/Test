@@ -5035,7 +5035,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     leaveTypeColIndex >= 0
                 ),
                 departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null,
-                departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt() else null,
+                // 이 칸만 통로 밖이었다 — 가져오기는 `parseIntensityWithWarn`으로 1~10을
+                // 클램프하는데 미리보기는 원값을 그대로 봐서, 범위 밖 값이 적힌 행을
+                // '갱신'이라 예고한 뒤 결과 창이 '바뀐 것 없음'이라 말했다(R-33).
+                // 열 없음·빈칸 거동은 그 함수가 종전 표현식과 같다(둘 다 default를 낸다).
+                departedIntensity = parseIntensityWithWarn(row, departedIntensityColIndex, null, "", null),
                 // 가져오기와 **같은 함수**로 읽는다(R-33) — result가 null이라 값만 낸다.
                 createdAt = readCreatedAtCell(row, createdAtColIndex, "세력 소속 행 ${excelRow(i)}", result = null)
             )
