@@ -785,6 +785,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         trashForPrune = null
 
         val totalRows = countTotalRows(workbook)
+        // 시트 안 진행 보고의 통로 ([dataRows])와 그 셈을 이 회차 것으로 새로 세운다.
+        progressSink = onProgress
+        progressTally = com.novelcharacter.app.util.ImportProgressTally(totalRows)
 
         // OVERWRITE 전략 시 CASCADE 종속 카테고리를 자동 포함하여 데이터 정합성 보장.
         // 예: 세계관 덮어쓰기 → 필드 정의·세력이 CASCADE 삭제되므로 재가져오기 필수.
@@ -1261,7 +1264,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("필드 데이터 라이브러리 수확이 지연되었습니다 — 다음 앱 시작 시 자동 재시도됩니다")
         }
 
+        settleProgress(onProgress)
+        progressSink = null
+
         return result
+    }
+
+    /**
+     * **회차의 끝맺음 — 막대를 분모까지 굳힌다.** 판정 원문은 [ImportProgressTally.settle].
+     */
+    private fun settleProgress(onProgress: (ImportProgress) -> Unit) {
+        val rows = progressTally.settle() ?: return
+        onProgress(ImportProgress(progressTally.lastPhase, rows, progressTally.totalRows))
     }
 
     // ── 복원 미리보기 분석 (읽기 전용) ──
@@ -2963,6 +2977,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이 메모만 빠져 있었고, 세계관 이동 판정(B-253)이 이 값 위에 선다.
         novelUniverseCache.clear()
         val totalRows = countTotalRows(workbook)
+        // 시트 안 진행 보고의 통로 ([dataRows])와 그 셈을 이 회차 것으로 새로 세운다.
+        progressSink = onProgress
+        progressTally = com.novelcharacter.app.util.ImportProgressTally(totalRows)
 
         // 필드값 범주 셋 (B-187). **겹은 미리보기 시작에 한 번만 싣는다** — 표를 행마다 묻지
         // 않고(R-53), 같은 읽기가 '현재 DB' 총계도 먹인다(B-236과 같은 처방).
@@ -3040,6 +3057,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **맨 뒤다 — 가져오기가 그 순서이기 때문이다**(`importAll`은 앱 설정을 커밋 뒤에
         // 적용한다. DataStore·SharedPreferences는 DB 트랜잭션이 되돌리지 못한다).
         if (options.appSettings) categories.add(analyzeAppSettings(workbook, onProgress, totalRows))
+
+        settleProgress(onProgress)
+        progressSink = null
 
         return RestoreAnalysis(categories, characterConflicts)
     }
@@ -5181,9 +5201,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private var processedRowsSoFar = 0
 
+    /**
+     * 이번 회차의 진행 통로 — [dataRows]가 행을 돌며 여기로 알린다.
+     *
+     * 회차 밖에서는 null이라 [dataRows]가 종전과 똑같은 `IntRange`를 돌려준다
+     * (시험·직접 호출이 진행 보고에 매이지 않는다).
+     *
+     * **수명:** 회차 입구에서 세우고 출구에서 내린다. 예외로 끝난 회차는 통로가 남지만
+     * 해로울 것이 없다 — [dataRows]는 회차 안에서만 불리고, 다음 회차 입구가 덮어쓰며,
+     * 이 서비스 자체가 화면의 `ExcelTransferController`와 **같은 수명**이라 붙든 람다가
+     * 그 화면보다 오래 살지 않는다.
+     */
+    private var progressSink: ((ImportProgress) -> Unit)? = null
+
+    /** 무엇을 얼마로 보일지는 순수 계층이 정한다 — 판정 원문은 [ImportProgressTally] */
+    private var progressTally = com.novelcharacter.app.util.ImportProgressTally(1)
+
     private fun reportProgress(onProgress: (ImportProgress) -> Unit, phase: String, rowsInPhase: Int, totalRows: Int) {
         processedRowsSoFar += rowsInPhase
-        onProgress(ImportProgress(phase, processedRowsSoFar, totalRows))
+        emitProgress(onProgress, phase, processedRowsSoFar)
     }
 
     // ── Tolerant header matching (Sprint C) ──
@@ -5313,8 +5349,50 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun headerRowOrFirst(sheet: Sheet, expectedFirstHeader: String): Row? =
         locateHeaderRow(sheet, expectedFirstHeader) ?: sheet.getRow(0)
 
-    private fun dataRows(sheet: Sheet, headerRow: Row): IntRange =
-        (headerRow.rowNum + 1)..sheet.lastRowNum
+    /**
+     * **데이터 루프의 범위 — 그리고 그 루프가 도는 동안 진행을 알린다.**
+     *
+     * 종전에는 진행 보고가 **시트 하나를 다 돈 뒤 한 번**이었다(`reportProgress`가 함수 끝에
+     * 있다). 그래서 캐릭터 6,000행짜리 파일에서 **막대가 한 번도 안 움직인 채 몇십 초**가
+     * 흘렀고, 사용자가 보는 것은 *멈춘 화면*이다 — 취소도 없는 구간이라(R-26이 반쪽 상태를
+     * 금지한다) 기다리는 것 말고 할 수 있는 일이 없는데 **무엇을 얼마나 기다리는지도 모른다.**
+     *
+     * **통로를 여기 둔 것이 요점이다.** 행 루프 52자리가 전부 이 함수를 지나므로
+     * 자리마다 보고를 심을 것이 없고, **다음에 생길 시트도 공짜로 얻는다**
+     * (자리마다 정하게 두면 하나가 빠지고 그 시트에서만 막대가 다시 멈춘다 — B-231이
+     * 데이터 루프 시작점에서 겪은 것과 같은 부류다).
+     *
+     * 중간 보고는 **누계를 건드리지 않는다** — `processedRowsSoFar`는 함수 끝의
+     * `reportProgress`가 시트 몫을 통째로 얹는 단일 소스로 남는다. 여기서는 *"그 시트를
+     * 어디까지 돌았는가"*만 더해 보여 준다(이중 계수 없음).
+     *
+     * 이름표는 **시트 이름**이다. 내보내기가 시트를 범주 이름으로 짓고 캐릭터 시트는
+     * 세계관 이름으로 지으므로, 끝에 오는 `reportProgress`의 이름표와 사실상 같은 글자다.
+     */
+    private fun dataRows(sheet: Sheet, headerRow: Row): Iterable<Int> {
+        val first = headerRow.rowNum + 1
+        val last = sheet.lastRowNum
+        val sink = progressSink ?: return first..last
+        val label = sheet.sheetName
+        val baseRows = processedRowsSoFar
+        return Iterable {
+            object : Iterator<Int> {
+                private var next = first
+                private var done = 0
+                override fun hasNext(): Boolean = next <= last
+                override fun next(): Int {
+                    val v = next++
+                    done++
+                    if (progressTally.shouldTick(done)) emitProgress(sink, label, baseRows + done)
+                    return v
+                }
+            }
+        }
+    }
+
+    private fun emitProgress(sink: (ImportProgress) -> Unit, phase: String, rows: Int) {
+        sink(ImportProgress(phase, progressTally.show(phase, rows), progressTally.totalRows))
+    }
 
     /**
      * 0-기반 행 색인(POI·스트리밍 공통) → **엑셀 화면의 행 번호**(1-기반).

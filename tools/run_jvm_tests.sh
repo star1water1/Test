@@ -149,6 +149,7 @@ $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
 $MAIN/util/LogRotation.kt
 $MAIN/util/SafeTruncate.kt
+$MAIN/util/ImportProgressTally.kt
 $MAIN/util/NovelAxisLabels.kt
 $MAIN/util/NumericBinning.kt
 $MAIN/util/FieldValueMatchSpec.kt
@@ -516,6 +517,7 @@ $TEST/stats/StatsKeysParityTest.kt
 $TEST/stats/StatsFoldParityTest.kt
 $TEST/stats/NovelAxisLabelsTest.kt
 $TEST/util/LogRotationTest.kt
+$TEST/util/ImportProgressTallyTest.kt
 $TEST/stats/StatsScanParityTest.kt
 $TEST/stats/StatsOverviewParityTest.kt
 $TEST/stats/NumericBinDrilldownTest.kt
