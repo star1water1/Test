@@ -117,10 +117,12 @@ class UniverseRepository(
             // 3. 이 세계관의 사건 삭제 (사건 필드값·캐릭터/작품 연결은 FK CASCADE)
             db.timelineDao().deleteAllByUniverse(universe.id)
 
-            // 4. FieldDefinition은 FK CASCADE로 삭제되지만,
-            // CharacterStateChange는 string fieldKey 참조라 CASCADE 대상이 아니므로 명시적 삭제
-            // (field_definitions 테이블이 아직 존재하는 시점에 실행해야 서브쿼리 동작)
-            db.characterStateChangeDao().deleteAllChangesByUniverse(universe.id)
+            // 4. 상태변화 이력은 **1단계가 이미 가져갔다** — `character_state_changes`는
+            //    `characterId`에 `onDelete = CASCADE`가 걸려 있고, 이 세계관의 캐릭터는
+            //    전부 1단계에서 지워진다. 종전에는 여기에 `deleteAllChangesByUniverse`가
+            //    있었는데 **언제나 0행을 지웠다**(같은 캐릭터 집합을 조건으로 걸었다).
+            //    미분류 캐릭터(`novelId IS NULL`)의 이력은 이 삭제의 범위 밖이며, 키만 보고
+            //    지우면 다른 세계관의 이력이 함께 사라진다(B-13 · `UnassignedHistoryScope`).
             db.recentActivityDao().deleteByEntity(RecentActivity.TYPE_UNIVERSE, universe.id)
             universeDao.delete(universe)
         }
@@ -193,12 +195,6 @@ class UniverseRepository(
     suspend fun getFieldByKey(universeId: Long, key: String): FieldDefinition? =
         fieldDefinitionDao.getFieldByKey(universeId, key)
 
-    suspend fun getFieldsByType(universeId: Long, type: String): List<FieldDefinition> =
-        fieldDefinitionDao.getFieldsByType(universeId, type)
-
-    suspend fun getGroupNames(universeId: Long): List<String> =
-        fieldDefinitionDao.getGroupNames(universeId)
-
     /**
      * ⚠️ **전역 구역(`universeId = null`)을 넘길 때는 부르는 쪽이 key 유일성을 책임진다** —
      * 유니크 색인 `(universeId, entityType, key)`는 NULL끼리를 서로 다른 값으로 보므로
@@ -218,8 +214,18 @@ class UniverseRepository(
     suspend fun updateField(field: FieldDefinition) =
         fieldDefinitionDao.update(field)
 
-    suspend fun updateFieldsOrder(fields: List<FieldDefinition>) =
-        fieldDefinitionDao.updateAll(fields)
+    /**
+     * 필드 순서 저장 — **차례만 받아 `displayOrder`만 쓴다** ([updateUniverseDisplayOrders]와 같은 규약).
+     *
+     * 종전에는 화면이 든 엔티티 사본을 `@Update`로 통짜 되썼다. 그래서 순서를 끌어 놓는 사이
+     * 같은 행이 다른 경로에서 바뀌면 **그 변경이 되감겼다** — 필드 관리 화면 자신의
+     * 'AI 추천 모드' 메뉴가 그 자리다(같은 목록에서 즉시 DB에 쓰는데, 그 뒤 순서를 저장하면
+     * 화면이 들고 있던 옛 `config`가 다시 올라간다). 한 트랜잭션으로 묶어 중간 상태가
+     * 목록에 방출되지 않게 하는 것도 형제와 같다.
+     */
+    suspend fun updateFieldsOrder(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> fieldDefinitionDao.setDisplayOrder(id, index) }
+    }
 
     /**
      * 필드 정의 하나를 지운다 — **휴지통을 지난다.**

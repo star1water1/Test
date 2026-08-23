@@ -354,7 +354,7 @@ class FieldValueListFragment : Fragment() {
                 getString(R.string.field_library_propagation_message,
                     preview.characterValues, preview.eventValues, preview.stateChanges,
                     preview.novelValues)
-            ) + joinNoticeIfMulti(fd)
+            ) + joinNoticeIfMulti(fd) + requireContext().unattributedHistoryLine(preview)
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.field_library_menu_merge)
                 .setMessage(message)
@@ -463,7 +463,8 @@ class FieldValueListFragment : Fragment() {
                 preview.novelValues) +
                 joinNoticeIfMulti(fd) +
                 (if (preview.whitespaceNormalized > 0)
-                    getString(R.string.field_library_propagation_whitespace) else "")
+                    getString(R.string.field_library_propagation_whitespace) else "") +
+                requireContext().unattributedHistoryLine(preview)
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle("'${entry.value}' → '$newValue'")
                 .setMessage(message)
@@ -535,6 +536,7 @@ class FieldValueListFragment : Fragment() {
                 if (preview.eventValues + preview.novelValues > 0) {
                     append(getString(R.string.field_library_delete_no_backup))
                 }
+                append(requireContext().unattributedHistoryLine(preview))
             }
             val options = arrayOf(getString(R.string.field_library_delete_entry_only), withData)
             var choice = 0

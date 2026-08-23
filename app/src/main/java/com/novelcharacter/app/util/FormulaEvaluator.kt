@@ -75,7 +75,7 @@ class FormulaEvaluator(
 
     private fun extractFormula(fieldDef: FieldDefinition): String? {
         return try {
-            val config = Gson().fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP)
+            val config = GSON.fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP)
             config["formula"] as? String
         } catch (e: Exception) {
             Log.w("FormulaEvaluator", "Failed to parse config for field '${fieldDef.key}'", e)
@@ -266,6 +266,9 @@ class FormulaEvaluator(
     }
 
     companion object {
+        /** 형제들(`FieldOptionParser`·`GradeValueResolver`·`GradeTable`)과 같은 벌 — 참조마다 새로 만들지 않는다 */
+        private val GSON = Gson()
+
         private const val MAX_TOKENS = 500
 
         /**

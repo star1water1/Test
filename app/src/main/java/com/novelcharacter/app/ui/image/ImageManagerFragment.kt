@@ -1743,9 +1743,8 @@ class ImageManagerFragment : Fragment() {
                     val idx = novelSpinner.selectedItemPosition
                     if (idx <= 0) null else novels[idx - 1].id
                 }
-                viewLifecycleOwner.lifecycleScope.launch {
-                    val row = viewModel.createCharacterForAssign(name, novelId)
-                    if (!isAdded) return@launch
+                // 만들기부터 배정까지 뷰모델 수명에서 돈다 — 회전해도 반쪽으로 끝나지 않는다.
+                viewModel.createCharacterForAssign(name, novelId) { row ->
                     doAssign(paths, ImageManagerViewModel.OwnerType.CHARACTER, row)
                 }
                 true

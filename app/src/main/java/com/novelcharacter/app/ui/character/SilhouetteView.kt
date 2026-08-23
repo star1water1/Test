@@ -124,6 +124,77 @@ class SilhouetteView @JvmOverloads constructor(
     private val scratchPath = Path()
     private val scratchRect = RectF()
 
+    // ── 파생 기하 캐시 ──────────────────────────────────────────────────────
+    //
+    // **`onDraw`는 그리기만 한다.** 종전에는 프레임마다 `front(m)`·`side(m)`·`bustGeom(m)`·
+    // `volumeShapes(m)`·`handles(m)`(둘)을 새로 지었다 — 전부 cm 정점 목록을 새로 만드는
+    // 함수라, **손가락이 핸들을 끄는 동안** 프레임마다 리스트 수십 개가 나고 죽는다.
+    // 관계도(`RelationshipGraphView`)가 같은 판에서 옮겨 간 그 처방이다.
+    //
+    // **입력이 그대로면 다시 짓지 않는다** — 무효화를 세터마다 손으로 적으면 새 입력이
+    // 생길 때 하나를 빠뜨리고, 그 증상은 *"값을 바꿨는데 그림이 안 바뀐다"*라 원인이
+    // 그림 코드로 안 보인다. [Measures]가 데이터 클래스라 `==`이 그 판정을 대신한다.
+    private var geomFor: Measures? = null
+    private var geomFacing: Facing? = null
+    private var frontFigure: BodySilhouetteSpec.FrontFigure? = null
+    private var sideFigure: BodySilhouetteSpec.SideFigure? = null
+    private var bustGeomCache: BodySilhouetteSpec.BustGeom? = null
+    private var volumeCache: List<VolumeShape> = emptyList()
+    private var handlesCache: List<BodySilhouetteSpec.HandleAnchor> = emptyList()
+
+    private var ghostFor: Measures? = null
+    private var ghostFacing: Facing? = null
+    private var ghostFront: BodySilhouetteSpec.FrontFigure? = null
+    private var ghostSide: BodySilhouetteSpec.SideFigure? = null
+    /** 유령 위팔의 바깥 모서리 — `armEdge`도 새 목록을 만든다. */
+    private var ghostArmEdges: List<List<PointCm>> = emptyList()
+
+    // 파선 효과 셋은 `density`만 쓴다 — 프레임마다 새로 만들 이유가 없다.
+    private val dashOutline = DashPathEffect(floatArrayOf(4f * density, 3f * density), 0f)
+    private val dashGuide = DashPathEffect(floatArrayOf(3f * density, 3f * density), 0f)
+    private val dashHandle = DashPathEffect(floatArrayOf(3f * density, 2f * density), 0f)
+
+    /** 현재 [measures]·[facing]에 맞는 기하를 갖춘다. 이미 맞으면 아무 일도 하지 않는다. */
+    private fun ensureGeometry(m: Measures) {
+        if (geomFor == m && geomFacing == facing) return
+        val bg = BodySilhouetteSpec.bustGeom(m)
+        bustGeomCache = bg
+        handlesCache = BodySilhouetteSpec.handles(m, BodySilhouetteSpec.scales(m), bg)
+        when (facing) {
+            Facing.FRONT -> {
+                frontFigure = BodySilhouetteSpec.front(m)
+                sideFigure = null
+                volumeCache = BodySilhouetteSpec.volumeShapes(m)
+            }
+            Facing.SIDE -> {
+                sideFigure = BodySilhouetteSpec.side(m)
+                frontFigure = null
+                volumeCache = emptyList()
+            }
+        }
+        geomFor = m
+        geomFacing = facing
+    }
+
+    private fun ensureGhostGeometry(ghost: Measures) {
+        if (ghostFor == ghost && ghostFacing == facing) return
+        when (facing) {
+            Facing.FRONT -> {
+                val f = BodySilhouetteSpec.front(ghost)
+                ghostFront = f
+                ghostSide = null
+                ghostArmEdges = f.arms.map { BodySilhouetteSpec.armEdge(it, true) }
+            }
+            Facing.SIDE -> {
+                ghostSide = BodySilhouetteSpec.side(ghost)
+                ghostFront = null
+                ghostArmEdges = emptyList()
+            }
+        }
+        ghostFor = ghost
+        ghostFacing = facing
+    }
+
     // ── 좌표 변환 ───────────────────────────────────────────────────────────
 
     private var k = 1f
@@ -158,6 +229,7 @@ class SilhouetteView @JvmOverloads constructor(
         cx = (left + right) / 2f
         baseY = bottom
 
+        ensureGeometry(m)
         overlayMeasures?.let { drawGhost(canvas, it) }
         when (facing) {
             Facing.FRONT -> drawFront(canvas, m)
@@ -168,7 +240,7 @@ class SilhouetteView @JvmOverloads constructor(
     }
 
     private fun drawFront(canvas: Canvas, m: Measures) {
-        val f = BodySilhouetteSpec.front(m)
+        val f = frontFigure ?: return
         val ow = outlineWidth
 
         // 위팔 — 몸통 뒤에 깔린다.
@@ -195,8 +267,8 @@ class SilhouetteView @JvmOverloads constructor(
             canvas.restore()
         }
 
-        strokeOutline(canvas, f.body, m, BodySilhouetteSpec.bustGeom(m), ow)
-        drawVolume(canvas, BodySilhouetteSpec.volumeShapes(m))
+        strokeOutline(canvas, f.body, m, bustGeomCache ?: BodySilhouetteSpec.bustGeom(m), ow)
+        drawVolume(canvas, volumeCache)
 
         buildPath(f.head, closed = true, into = scratchPath)
         fillPaint.color = figureColor
@@ -211,7 +283,7 @@ class SilhouetteView @JvmOverloads constructor(
     }
 
     private fun drawSide(canvas: Canvas, m: Measures) {
-        val f = BodySilhouetteSpec.side(m)
+        val f = sideFigure ?: return
         val ow = outlineWidth
 
         buildPath(f.body, closed = true, into = bodyPath)
@@ -294,8 +366,7 @@ class SilhouetteView @JvmOverloads constructor(
             val from = max(0, i - 1)
             val to = min(loop.size - 1, j + 1)
             buildPath(loop.subList(from, to + 1), closed = false, into = scratchPath)
-            strokePaint.pathEffect =
-                if (state) DashPathEffect(floatArrayOf(4f * density, 3f * density), 0f) else null
+            strokePaint.pathEffect = if (state) dashOutline else null
             canvas.drawPath(scratchPath, strokePaint)
             i = j + 1
         }
@@ -304,28 +375,35 @@ class SilhouetteView @JvmOverloads constructor(
 
     /** 유령 오버레이 — 윤곽만, 무채색, 항상 뒤에(설계 5-4-1). */
     private fun drawGhost(canvas: Canvas, ghost: Measures) {
+        // **기하를 먼저 갖춘 뒤에 페인트를 물들인다.** 물들인 채 중간에 빠져나가면
+        // 알파 204와 파선이 다음 그림에 그대로 얹힌다(이 함수 끝의 두 줄이 되돌리는 것들이다).
+        ensureGhostGeometry(ghost)
         strokePaint.color = ghostColor
         strokePaint.strokeWidth = max(1.3f * density, outlineWidth * .65f)
-        strokePaint.pathEffect = DashPathEffect(floatArrayOf(4f * density, 3f * density), 0f)
+        strokePaint.pathEffect = dashOutline
         strokePaint.alpha = 204
         when (facing) {
             Facing.FRONT -> {
-                val f = BodySilhouetteSpec.front(ghost)
-                for (arm in f.arms) {
-                    buildPath(BodySilhouetteSpec.armEdge(arm, true), closed = false, into = scratchPath)
+                val f = ghostFront
+                if (f != null) {
+                    for (edge in ghostArmEdges) {
+                        buildPath(edge, closed = false, into = scratchPath)
+                        canvas.drawPath(scratchPath, strokePaint)
+                    }
+                    buildPath(f.body, closed = true, into = scratchPath)
+                    canvas.drawPath(scratchPath, strokePaint)
+                    buildPath(f.head, closed = true, into = scratchPath)
                     canvas.drawPath(scratchPath, strokePaint)
                 }
-                buildPath(f.body, closed = true, into = scratchPath)
-                canvas.drawPath(scratchPath, strokePaint)
-                buildPath(f.head, closed = true, into = scratchPath)
-                canvas.drawPath(scratchPath, strokePaint)
             }
             Facing.SIDE -> {
-                val f = BodySilhouetteSpec.side(ghost)
-                buildPath(f.body, closed = true, into = scratchPath)
-                canvas.drawPath(scratchPath, strokePaint)
-                buildPath(f.head, closed = true, into = scratchPath)
-                canvas.drawPath(scratchPath, strokePaint)
+                val f = ghostSide
+                if (f != null) {
+                    buildPath(f.body, closed = true, into = scratchPath)
+                    canvas.drawPath(scratchPath, strokePaint)
+                    buildPath(f.head, closed = true, into = scratchPath)
+                    canvas.drawPath(scratchPath, strokePaint)
+                }
             }
         }
         strokePaint.alpha = 255
@@ -374,15 +452,13 @@ class SilhouetteView @JvmOverloads constructor(
 
     /** 부위 가이드라인 — 가는 수평선 + 좌측 부위명 + 우측 수치. */
     private fun drawGuides(canvas: Canvas, m: Measures) {
-        val handles = BodySilhouetteSpec.handles(m)
-        for (h in handles) {
+        for (h in handlesCache) {
             val y = py(m.height * h.heightFraction)
             val halfPx = (h.halfCm * k).toFloat()
             val warn = h.warn
             strokePaint.color = if (warn) warnColor else guideColor
             strokePaint.strokeWidth = 1f * density
-            strokePaint.pathEffect =
-                if (h.estimated) DashPathEffect(floatArrayOf(3f * density, 3f * density), 0f) else null
+            strokePaint.pathEffect = if (h.estimated) dashGuide else null
             canvas.drawLine(cx - halfPx, y, cx + halfPx, y, strokePaint)
             strokePaint.pathEffect = null
 
@@ -401,7 +477,7 @@ class SilhouetteView @JvmOverloads constructor(
     /** 핸들 — 한쪽만 잡아도 좌우 대칭으로 움직인다(설계 5-4-4). */
     private fun drawHandles(canvas: Canvas, m: Measures) {
         val radius = 6f * density
-        for (h in BodySilhouetteSpec.handles(m)) {
+        for (h in handlesCache) {
             val y = py(m.height * h.heightFraction)
             val halfPx = (h.halfCm * k).toFloat()
             for (side in intArrayOf(-1, 1)) {
@@ -412,9 +488,7 @@ class SilhouetteView @JvmOverloads constructor(
                 fillPaint.alpha = 255
                 strokePaint.color = if (h.warn) warnColor else accentColor
                 strokePaint.strokeWidth = 2f * density
-                strokePaint.pathEffect = if (h.estimated) {
-                    DashPathEffect(floatArrayOf(3f * density, 2f * density), 0f)
-                } else null
+                strokePaint.pathEffect = if (h.estimated) dashHandle else null
                 canvas.drawCircle(x, y, radius, strokePaint)
                 strokePaint.pathEffect = null
             }
@@ -501,7 +575,8 @@ class SilhouetteView @JvmOverloads constructor(
         val touch = 24f * density
         var best: BodySlot? = null
         var bestDist = Float.MAX_VALUE
-        for (h in BodySilhouetteSpec.handles(m)) {
+        ensureGeometry(m)
+        for (h in handlesCache) {
             if (h.estimated) continue
             val hy = py(m.height * h.heightFraction)
             val halfPx = (h.halfCm * k).toFloat()

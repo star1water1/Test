@@ -347,10 +347,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateFieldOrder(fields: List<FieldDefinition>) = viewModelScope.launch {
+    /** @param orderedIds 새 차례의 필드 id — **엔티티 사본이 아니다**(형제 셋과 같은 규약). */
+    fun updateFieldOrder(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            val updated = fields.mapIndexed { index, field -> field.copy(displayOrder = index) }
-            universeRepository.updateFieldsOrder(updated)
+            universeRepository.updateFieldsOrder(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field order", e)

@@ -75,6 +75,42 @@ interface NameBankDao {
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId IN (:characterIds)")
     suspend fun resetUsageByCharacterIds(characterIds: List<Long>)
 
+    /**
+     * **고아가 된 '사용 중' 표시를 내린다 — 몇 줄을 내렸는지 돌려준다.**
+     *
+     * 이 표의 '사용 중'은 두 벌이다: `isUsed`(불리언)와 `usedByCharacterId`(외래키).
+     * 외래키는 `onDelete = SET_NULL`이라 캐릭터가 어떤 경로로든 지워지면 **DB가 알아서
+     * NULL로 만드는데**, `isUsed`는 앱이 짝지어 내려 줘야 한다. 그 짝을 지나지 않는 삭제가
+     * 실재한다 — 엑셀 덮어쓰기의 `characterDao().deleteAll()`이 그렇다.
+     *
+     * 그러면 **모든 이름이 임자 없이 '사용 중'으로 굳는다**: 사용률이 정의상 100%가 되고
+     * '미사용 이름'이 영영 빈 목록이며, 사용자가 이름을 하나씩 열어 고치는 것 말고는
+     * 되돌릴 길이 없다. 유지보수 화면이 같은 수리를 들고 있었지만 **사용자가 그것을 눌러야만**
+     * 돌았다 — 자기가 만든 어긋남은 만든 자리에서 갚는 것이 맞다.
+     */
+    @Query(
+        "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND " +
+            "(usedByCharacterId IS NULL OR usedByCharacterId NOT IN (SELECT id FROM characters))"
+    )
+    suspend fun clearOrphanedUsage(): Int
+
+    /**
+     * **반대 방향의 어긋남을 세운다 — 연결은 살아 있는데 표시가 내려간 행.**
+     *
+     * [clearOrphanedUsage]가 *표시는 있는데 연결이 없는* 쪽만 봤다. 짝은 언제나 함께
+     * 움직이는데([markAsUsed]·[markAsAvailable]가 둘을 같이 쓴다) 그 반쪽만 수리하니
+     * `isUsed = 0 AND usedByCharacterId IS NOT NULL`인 행은 영영 남았다.
+     *
+     * 그 행이 해로운 이유는 **'미사용 이름' 목록이 `WHERE isUsed = 0`이기 때문**이다 —
+     * 이미 캐릭터가 쓰고 있는 이름이 후보로 다시 뜨고, 사용자는 같은 이름을 둘째
+     * 캐릭터에게 배정한다. 살아 있는 캐릭터를 가리킬 때만 올린다(죽은 참조는 위 질의의 몫).
+     */
+    @Query(
+        "UPDATE name_bank SET isUsed = 1 WHERE isUsed = 0 AND " +
+            "usedByCharacterId IS NOT NULL AND usedByCharacterId IN (SELECT id FROM characters)"
+    )
+    suspend fun restoreLinkedUsage(): Int
+
     @Query("DELETE FROM name_bank")
     suspend fun deleteAll()
 

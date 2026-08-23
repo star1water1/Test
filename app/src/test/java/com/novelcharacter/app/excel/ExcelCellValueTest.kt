@@ -39,6 +39,15 @@ class ExcelCellValueTest {
         assertEquals("hello", normalize(cell { it.setCellValue("  hello  ") }))
     }
 
+    @Test fun string_alreadyTrimmedValueSurvivesUnchanged() {
+        // **무편집 왕복의 계약**(개발 의도 4번). 내보내기는 원문을 그대로 쓰므로, 저장이
+        // 앞뒤 공백을 들이지 않는 한 이 함수를 지나도 값이 달라지지 않아야 한다.
+        // 안쪽 공백·줄바꿈·탭은 값의 일부다 — 건드리면 그것이 곧 왜곡이다.
+        for (v in listOf("붉은 머리", "a b  c", "첫 줄\n둘째 줄", "탭\t사이", "가")) {
+            assertEquals(v, normalize(cell { it.setCellValue(v) }))
+        }
+    }
+
     @Test fun string_empty() {
         assertEquals("", normalize(cell { it.setCellValue("") }))
     }

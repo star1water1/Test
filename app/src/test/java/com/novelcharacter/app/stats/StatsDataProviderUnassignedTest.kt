@@ -252,11 +252,30 @@ class StatsDataProviderUnassignedTest {
             .none { it.fieldDefinition.entityType == FieldDefinition.ENTITY_NOVEL })
     }
 
+    /**
+     * **개요의 수와 건강도의 명단이 같은 것을 센다** (2026.08.23).
+     *
+     * 종전 계약은 *"전체 스코프에서 작품 미배정 = 미완성"*이었는데, **건강도 명단은 그
+     * 캐릭터를 통째로 뺐다.** 그래서 개요가 *"필드 미입력: N명"*이라 적어 놓고 눌러서 연
+     * 명단에는 더 적은 이름만 있었다 — 눌러도 확인할 수 없는 경고다(원칙 04).
+     *
+     * 새 계약: **잴 칸이 없는 것은 '미입력'이 아니라 '미배정'이다.** 둘을 갈라 각각 센다.
+     */
     @Test
-    fun fullScope_unassignedCharacterStillCountedIncomplete() {
-        // 회귀 고정: 필터 없는 전체 스코프에서는 기존 판정('작품 미배정 = 미완성') 불변
-        val overview = provider.computeDataOverview(snapshot())
-        assertEquals(1, overview.healthWarnings.incompleteFieldCount)
+    fun overviewIncompleteCountMatchesHealthList() {
+        val s = snapshot()
+        val overview = provider.computeDataOverview(s)
+        val health = provider.computeDataHealth(s)
+        assertEquals(health.incompleteFieldChars.size, overview.healthWarnings.incompleteFieldCount)
+    }
+
+    @Test
+    fun fullScope_unassignedIsCountedAsNoNovelNotIncomplete() {
+        val overview = provider.computeDataOverview(snapshot()).healthWarnings
+        // 미배정 하나 — '미입력'이 아니라 '미배정'으로 센다.
+        assertEquals(1, overview.noNovelCount)
+        // 배정된 캐릭터(1번)는 세계관 100의 필드 둘 중 하나만 채웠다(50%) — 하한 미만이 아니다.
+        assertEquals(0, overview.incompleteFieldCount)
     }
 
     // ===== B-30: 계산 필드는 산출하지 않되, 그 사실을 센다 (확정 7-4) =====

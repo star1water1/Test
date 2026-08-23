@@ -161,9 +161,8 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
             is FieldValueLibraryRepository.RenameResult.Renamed -> {
                 val summary = app.getString(
                     R.string.field_library_renamed, entry.value, r.entry.value, r.report.total)
-                val detail = if (r.report.configUpdated)
-                    app.getString(R.string.field_library_config_synced) else null
-                reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY, summary, detail))
+                reportResult(_result, OpResult.success(
+                    OpResult.CAT_FIELD_LIBRARY, summary, detailOf(r.report)))
                 repo.recountUsage(fd.id)
             }
             is FieldValueLibraryRepository.RenameResult.Conflict -> onConflict(r.conflictWith)
@@ -175,9 +174,8 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         val outcome = repo.mergeValues(fd, targetId, sourceIds) ?: return@viewModelScopeLaunch
         val summary = app.getString(
             R.string.field_library_merged, sourceIds.size, outcome.target.value, outcome.report.total)
-        val detail = if (outcome.report.configUpdated)
-            app.getString(R.string.field_library_config_synced) else null
-        reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY, summary, detail))
+        reportResult(_result, OpResult.success(
+            OpResult.CAT_FIELD_LIBRARY, summary, detailOf(outcome.report)))
         repo.recountUsage(fd.id)
     }
 
@@ -191,8 +189,21 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         } else {
             app.getString(R.string.field_library_deleted)
         }
-        reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY, summary))
+        reportResult(_result, OpResult.success(
+            OpResult.CAT_FIELD_LIBRARY, summary, detailOf(report)))
     }
+
+    /**
+     * 결과 알림의 **부가 줄** — config 동기화 고지와 「가리지 못해 남긴 이력」 고지를 합친다.
+     *
+     * 칸이 하나뿐이라 한쪽만 실으면 나중에 붙은 쪽이 앞의 것을 조용히 지운다. 둘 다 없으면
+     * `null`이라 알림에 빈 줄이 생기지 않는다.
+     */
+    private fun detailOf(report: FieldValueLibraryRepository.PropagationReport): String? =
+        listOfNotNull(
+            if (report.configUpdated) app.getString(R.string.field_library_config_synced) else null,
+            app.unattributedHistoryNotice(report).takeIf { it.isNotEmpty() }
+        ).joinToString(" · ").takeIf { it.isNotEmpty() }
 
     /**
      * 미사용·미큐레이션 엔트리 정리 — **파괴적**이라 예약된 재집계를 반드시 먼저 소진한다.

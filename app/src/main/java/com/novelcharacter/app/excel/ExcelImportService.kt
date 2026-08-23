@@ -285,7 +285,6 @@ data class ImportResult(
     var deletedQuotes: Int = 0,
     var deletedRelationshipChanges: Int = 0,
     var deletedNameBank: Int = 0,
-    var deletedFields: Int = 0,
     var deletedFactions: Int = 0,
     var deletedFactionMemberships: Int = 0,
     var deletedFactionRelationships: Int = 0,
@@ -315,7 +314,6 @@ data class ImportResult(
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
-    var autoRepairedValues: Int = 0,
     var newCodesGenerated: Int = 0,
     var clearedFields: Int = 0,
     /**
@@ -324,14 +322,64 @@ data class ImportResult(
      * 그 기본값을 바꾸지 않되, 기대 어긋남("엑셀에서 지웠는데 왜 남아 있지")을 요약에서 바로 해소한다.
      */
     var keptNotInExcel: Int = 0,
-    val warnings: MutableList<String> = mutableListOf(),
-    val pendingConflicts: MutableList<String> = mutableListOf()
+    val warnings: MutableList<String> = mutableListOf()
 )
 
 class ExcelImportService(private val db: AppDatabase, private val appContext: android.content.Context? = null) {
 
     /** 캐릭터 행 임포트 중 별칭 표기 감지용 필드별 해석기 캐시 — 행마다 쿼리하지 않는다 (검토 A7) */
     private val importAliasResolvers = HashMap<Long, com.novelcharacter.app.util.FieldValueResolver>()
+
+    // ── 복원 미리보기의 표 겹 (B-236의 남은 축) ──
+    //
+    // **미리보기 한 회차는 DB에 쓰지 않는다**(`analyze*` 안의 쓰기 0건). 그런데 범주마다 같은
+    // 표를 처음부터 다시 읽고 있었다 — 실측: 작품 4회 · 세력 4회 · 캐릭터 3회 · 대결 축 3회 ·
+    // 관계 2회 · 세력 소속 2회. **캐릭터 수백 명 저장소에서 전량 적재가 세 번**이고,
+    // 미리보기는 *사용자가 화면 앞에서 기다리는 자리*라 그 비용이 그대로 체감된다.
+    //
+    // `check_preview_row_queries.sh`가 세운 잣대와 같은 근거인데 그 검사의 눈에는 안 잡혔다 —
+    // 그것은 *행 루프 안*을 보고 이 자리는 *루프 앞이지만 함수를 건너뛰며 여러 번*이다.
+    // (그 검사가 자기 사각을 이미 적어 두었다: *"루프 앞이면 무조건 한 번인지는 못 본다"*.)
+    //
+    // **수명은 분석 한 회차다** — [resetAnalysisSnapshots]가 형제 색인들과 같은 자리에서 비운다.
+    // 같은 인스턴스가 직전 가져오기를 돌았을 수 있어(`ExcelImporter`가 서비스를 하나만 든다)
+    // 비우지 않으면 지난 실행의 사본을 세어 *"바뀔 것"*을 사실과 다르게 말한다.
+    //
+    // ⚠️ **`import*`는 이 겹을 쓰지 않는다.** 그쪽은 도는 동안 같은 표에 쓰므로 겹이 곧 낡은 값이다.
+    private var snapNovels: List<Novel>? = null
+    private var snapFactions: List<Faction>? = null
+    private var snapCharacters: List<Character>? = null
+    private var snapDuelAxes: List<DuelAxis>? = null
+    private var snapRelationships: List<CharacterRelationship>? = null
+    private var snapMemberships: List<FactionMembership>? = null
+
+    private suspend fun analysisNovels(): List<Novel> =
+        snapNovels ?: db.novelDao().getAllNovelsList().also { snapNovels = it }
+
+    private suspend fun analysisFactions(): List<Faction> =
+        snapFactions ?: db.factionDao().getAllFactionsList().also { snapFactions = it }
+
+    private suspend fun analysisCharacters(): List<Character> =
+        snapCharacters ?: db.characterDao().getAllCharactersList().also { snapCharacters = it }
+
+    private suspend fun analysisDuelAxes(): List<DuelAxis> =
+        snapDuelAxes ?: db.duelAxisDao().getAllList().also { snapDuelAxes = it }
+
+    private suspend fun analysisRelationships(): List<CharacterRelationship> =
+        snapRelationships ?: db.characterRelationshipDao().getAllRelationships().also { snapRelationships = it }
+
+    private suspend fun analysisMemberships(): List<FactionMembership> =
+        snapMemberships ?: db.factionMembershipDao().getAllMembershipsList().also { snapMemberships = it }
+
+    /** 미리보기 겹을 비운다 — 형제 색인들과 **같은 자리**에서 불린다(수명이 갈리면 지난 실행을 센다) */
+    private fun resetAnalysisSnapshots() {
+        snapNovels = null
+        snapFactions = null
+        snapCharacters = null
+        snapDuelAxes = null
+        snapRelationships = null
+        snapMemberships = null
+    }
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     // 캐릭터의 세계관(작품→세계관) 캐시 — 세력 참조의 동명 해소 힌트용. 행마다 쿼리하지 않는다.
@@ -717,6 +765,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val result = ImportResult()
         novelIdCache.clear()
         novelUniverseCache.clear()
+        // 미리보기 겹은 가져오기가 쓰지 않지만, 여기서도 비운다 — 남겨 두면 이 가져오기가
+        // 바꾼 표를 **다음 미리보기가 옛 사본으로** 셀 수 있다(분석 시작의 비우기와 이중 방어).
+        resetAnalysisSnapshots()
         pendingSyncCharacters.clear()
         pendingSyncClearedFields.clear()
         importAliasResolvers.clear()
@@ -732,6 +783,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         trashForPrune = null
 
         val totalRows = countTotalRows(workbook)
+        // 시트 안 진행 보고의 통로 ([dataRows])와 그 셈을 이 회차 것으로 새로 세운다.
+        progressSink = onProgress
+        progressTally = com.novelcharacter.app.util.ImportProgressTally(totalRows)
 
         // OVERWRITE 전략 시 CASCADE 종속 카테고리를 자동 포함하여 데이터 정합성 보장.
         // 예: 세계관 덮어쓰기 → 필드 정의·세력이 CASCADE 삭제되므로 재가져오기 필수.
@@ -894,7 +948,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 "이 값들은 미분류 캐릭터이거나 다른 세계관 필드를 가리켜 캐릭터 시트로는 복원되지 않습니다. " +
                                 "완전한 덮어쓰기를 원하면 지금 데이터를 최신 형식으로 한 번 내보낸 뒤 다시 시도하세요"
                             )
-                        else -> { db.characterDao().deleteAll(); wipedByOverwrite.add("characters") }
+                        else -> {
+                            db.characterDao().deleteAll()
+                            wipedByOverwrite.add("characters")
+                            // **이름은행의 '사용 중'을 여기서 함께 내린다.**
+                            //
+                            // 이 표의 '사용 중'은 두 벌이다(`isUsed` · `usedByCharacterId`). 외래키는
+                            // `onDelete = SET_NULL`이라 DB가 알아서 임자를 지우는데 `isUsed`는 앱이
+                            // 짝지어 내려야 한다 — `deleteCharactersCascade`는 그 짝(`resetUsageByCharacterIds`)을
+                            // 지나지만 **이 통짜 삭제만 그 밖이다.** 안 내리면 이름 전부가 임자 없이
+                            // '사용 중'으로 굳어 **사용률이 정의상 100%**가 되고 '미사용 이름'이 영영 빈다.
+                            //
+                            // ⚠️ **자리가 여기인 것이 요점이다.** 커밋 뒤로 미루면 뒤이어 도는
+                            // `importNameBank`가 **일부러 남긴** '사용 중'까지 지운다 — 그쪽은 참조를
+                            // 못 찾았을 때 *"연결 없이 '사용 중'으로 남겨둡니다"*라고 사용자에게
+                            // 고지까지 하는 정상 상태다. 두 고지가 같은 결과창에서 서로를 부정하게 된다.
+                            val orphanedNames = db.nameBankDao().clearOrphanedUsage()
+                            if (orphanedNames > 0) {
+                                result.warnings.add(
+                                    "덮어쓰기로 캐릭터를 지우면서 임자를 잃은 이름 ${orphanedNames}건의 '사용 중' 표시를 내렸습니다 — 이름은행에서 다시 쓸 수 있습니다"
+                                )
+                            }
+                        }
                     }
                 }
                 // 값 라이브러리(필드 데이터)는 시트가 있을 때만 비우고 재구성한다.
@@ -1208,7 +1283,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("필드 데이터 라이브러리 수확이 지연되었습니다 — 다음 앱 시작 시 자동 재시도됩니다")
         }
 
+        settleProgress(onProgress)
+        progressSink = null
+
         return result
+    }
+
+    /**
+     * **회차의 끝맺음 — 막대를 분모까지 굳힌다.** 판정 원문은 [ImportProgressTally.settle].
+     */
+    private fun settleProgress(onProgress: (ImportProgress) -> Unit) {
+        val rows = progressTally.settle() ?: return
+        onProgress(ImportProgress(progressTally.lastPhase, rows, progressTally.totalRows))
     }
 
     // ── 복원 미리보기 분석 (읽기 전용) ──
@@ -1600,13 +1686,34 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
     }
 
+    /**
+     * **'사용 중'의 두 벌을 한 판정으로 묶는다** (R-33 · R-51).
+     *
+     * 이 표의 '사용 중'은 `isUsed`(불리언)와 `usedByCharacterId`(외래키) **두 벌**인데
+     * ([NameBankDao.clearOrphanedUsage]의 KDoc이 그 사실을 적는다), 가져오기는 그 둘을
+     * 따로 채웠다 — 사용여부 열이 'N'인데 사용캐릭터 열이 캐릭터를 가리키면 **연결은 있는데
+     * '미사용'인 행**이 생긴다. 그 행이 해로운 이유는 '미사용 이름' 목록이 `WHERE isUsed = 0`
+     * 이기 때문이다: 이미 쓰이는 이름이 후보로 다시 떠 **같은 이름이 둘째 캐릭터에게 배정된다.**
+     *
+     * **처분은 연결을 지키고 표시를 올린다.** 앱의 짝(`markAsUsed`)이 둘을 함께 세우고,
+     * 표시는 한 번의 조작으로 되돌릴 수 있지만 **사용자가 적은 캐릭터 이름은 되찾을 길이
+     * 없다**(개발 의도 2번 — 지우는 쪽을 고르지 않는다). 가져오기는 그 사실을 고지한다.
+     *
+     * 미리보기도 이 함수를 지난다 — 여기서 갈리면 '변경/동일' 예고가 실행과 어긋난다.
+     */
+    private fun nameBankUsedFlag(
+        usedFlag: Boolean?,
+        existingUsed: Boolean?,
+        usedByCharacterId: Long?
+    ): Boolean = (usedFlag ?: existingUsed ?: false) || usedByCharacterId != null
+
     private fun mergeNameBankEntry(existing: NameBankEntry, r: NameBankRowValues, usedByCharacterId: Long?): NameBankEntry =
         existing.copy(
             // 코드 매칭 시 이름/성별 편집 반영 (code는 불변 유지 — 정체성)
             // 열 없음(null) = 기존 값 유지(F1-A) — 열을 지운 파일이 값을 지우면 안 된다.
             name = r.name, gender = r.gender ?: existing.gender,
             origin = r.origin ?: existing.origin, notes = r.notes ?: existing.notes,
-            isUsed = r.usedFlag ?: existing.isUsed,
+            isUsed = nameBankUsedFlag(r.usedFlag, existing.isUsed, usedByCharacterId),
             usedByCharacterId = usedByCharacterId,
             createdAt = r.createdAt ?: existing.createdAt
         )
@@ -2884,6 +2991,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetEventIndex()
         resetNovelIndex()
         resetUniverseIndex()
+        // 표 겹도 같은 사유로 같은 자리에서 비운다 — 위 색인들과 수명이 하나여야 한다.
+        resetAnalysisSnapshots()
         // 시트별 캐시도 여기서 비운다 — 위 색인들과 같은 사유다(미리보기는 직전 가져오기 뒤에
         // 돌 수 있고, 이 맵들은 `Sheet` 객체를 키로 들고 있어 비우지 않으면 그 참조가 남는다).
         // 종전에는 `importAll`에서만 비웠다. `headerRowIndexBySheet`는 B-231 ⓑ가 세운 것이고,
@@ -2908,6 +3017,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 이 메모만 빠져 있었고, 세계관 이동 판정(B-253)이 이 값 위에 선다.
         novelUniverseCache.clear()
         val totalRows = countTotalRows(workbook)
+        // 시트 안 진행 보고의 통로 ([dataRows])와 그 셈을 이 회차 것으로 새로 세운다.
+        progressSink = onProgress
+        progressTally = com.novelcharacter.app.util.ImportProgressTally(totalRows)
 
         // 필드값 범주 셋 (B-187). **겹은 미리보기 시작에 한 번만 싣는다** — 표를 행마다 묻지
         // 않고(R-53), 같은 읽기가 '현재 DB' 총계도 먹인다(B-236과 같은 처방).
@@ -2986,6 +3098,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 적용한다. DataStore·SharedPreferences는 DB 트랜잭션이 되돌리지 못한다).
         if (options.appSettings) categories.add(analyzeAppSettings(workbook, onProgress, totalRows))
 
+        settleProgress(onProgress)
+        progressSink = null
+        // **표 겹을 여기서 놓는다** — 이 서비스는 화면(`ExcelTransferController`)과 수명이 같아,
+        // 안 놓으면 캐릭터·관계 **전량 사본**이 그 화면이 살아 있는 내내 붙들려 있다.
+        // 다음 회차 입구가 어차피 비우지만, 그때까지 바닥을 올려 놓는 것이 이 표들의 크기다
+        // (같은 사유로 `valueLedger.reset()`이 가져오기 끝에 서 있다).
+        resetAnalysisSnapshots()
+
         return RestoreAnalysis(categories, characterConflicts)
     }
 
@@ -2995,7 +3115,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = duelAxisSpec()
         val label = "대결 축"
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allAxes = db.duelAxisDao().getAllList()
+        val allAxes = analysisDuelAxes()
         val existingTotal = allAxes.size
         val sheet = sheetForAnalysis(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
@@ -3008,7 +3128,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelAxisRow(row, cols, now)
+            val r = readDuelAxisRow(row, cols, now, "대결 축 행 ${excelRow(i)}", null)
             if (r.name.isBlank()) continue
             inBackup++
 
@@ -3039,7 +3159,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeDuelAxis(existing, r, universe.id)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "대결 축 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 축 분석", sheet.lastRowNum)
         return CategoryAnalysis("duelAxes", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3056,7 +3176,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다.
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
-        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
+        val axes = analysisDuelAxes() + analysisCreatedDuelAxes
         // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
         // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
         // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
@@ -3064,7 +3184,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
+        val codeByName = analysisCharacters()
             .groupBy({ it.displayName }, { it.code })
         // **판 자신에는 그 근거가 적용되지 않아 행마다 `getByCode`가 남아 있었다**(B-236 — 가져오기
         // 쪽이 B-210에서 겪은 것과 같은 자리다). 코드 열에 인덱스가 없어 그 하나하나가 풀스캔이다.
@@ -3073,7 +3193,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelMatchRow(row, cols, now)
+            val r = readDuelMatchRow(row, cols, now, "대결 기록 행 ${excelRow(i)}", null)
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
@@ -3130,7 +3250,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeDuelMatch(existing, r, winnerCode, r.groupId.ifBlank { null })
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "대결 기록 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 기록 분석", sheet.lastRowNum)
         return CategoryAnalysis("duelMatches", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3160,7 +3280,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다(R-53).
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
-        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
+        val axes = analysisDuelAxes() + analysisCreatedDuelAxes
         // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
         // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
         // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
@@ -3168,7 +3288,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
+        val codeByName = analysisCharacters()
             .groupBy({ it.displayName }, { it.code })
         val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
             idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
@@ -3182,7 +3302,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
-            val r = readDuelVerdictRow(row, cols, now)
+            val r = readDuelVerdictRow(row, cols, now, "대결 상성 행 ${excelRow(i)}", null)
             if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
             inBackup++
 
@@ -3231,7 +3351,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             verdictCodes.put(merged)
             verdictMemberKeys.put(merged)
         }
-        reportProgress(onProgress, "대결 상성 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 상성 분석", sheet.lastRowNum)
         return CategoryAnalysis("duelVerdicts", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3346,7 +3466,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
         }
-        reportProgress(onProgress, label, sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, label, sheet.lastRowNum)
         return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
@@ -3431,7 +3551,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             if (mergeImageMetaState(current, r) != current) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "이미지 분석", sheet.lastRowNum)
         return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3492,7 +3612,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "세계관 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세계관 분석", sheet.lastRowNum)
         return CategoryAnalysis("universes", "세계관", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3505,7 +3625,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): CategoryAnalysis {
         val spec = novelSpec(emptyList())
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.novelDao().getAllNovelsList().size
+        val existingTotal = analysisNovels().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
 
         val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
@@ -3515,10 +3635,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 필드 열 수집도 가져오기와 **같은 재료·같은 해석기**다(`EntityFieldHeaders` → `EntityFieldColumnResolver`).
         val novelFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_NOVEL)
-        val universeIdsByName = if (fieldValues == null) emptyMap() else
-            analysisUniverses().associate { it.name to it.id }
+        // 세계관 표는 **한 번만 뜬다** — 이름→id와 id→이름 두 맵이 같은 목록에서 나와야
+        // 이 파일이 만들 세계관이 한쪽에만 있는 일이 없다.
+        val analysisUniverseList = if (fieldValues == null) emptyList() else analysisUniverses()
+        val universeIdsByName = analysisUniverseList.associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, novelFields)
+        else analysisEntityFieldColumns(
+            headerRow, novelFields, analysisUniverseList.associate { it.id to it.name }
+        )
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
@@ -3563,7 +3687,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 novelFields, universeIdsByName
             )
         }
-        reportProgress(onProgress, "작품 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "작품 분석", sheet.lastRowNum)
         return CategoryAnalysis("novels", "작품", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3633,7 +3757,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "필드 정의 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "필드 정의 분석", sheet.lastRowNum)
         return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -3658,7 +3782,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          */
         fieldValues: FieldValueScan? = null
     ): CharacterAnalysisResult {
-        val existingTotal = db.characterDao().getAllCharactersList().size
+        val existingTotal = analysisCharacters().size
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         val allConflicts = mutableListOf<CharacterConflict>()
 
@@ -3706,7 +3830,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
-        reportProgress(onProgress, "캐릭터 분석", 0, totalRows)
+        reportProgress(onProgress, "캐릭터 분석", 0)
         val category = CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
         return CharacterAnalysisResult(category, allConflicts)
     }
@@ -4214,12 +4338,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * **필드 목록은 받는다** — 부르는 쪽이 같은 목록을 `EntityFieldColumnResolver`에도 넘기므로,
      * 여기서 다시 뜨면 같은 표를 한 번 더 읽는다.
      */
+    /**
+     * @param universeNamesById 구역 이름표. **부르는 쪽이 [analysisUniverses]로 지어 넘긴다.**
+     *
+     * 종전에는 이 함수가 `db.universeDao().getAllUniversesList()`를 **생으로** 떴다.
+     * 그러면 *이 파일이 만들 세계관*([analysisCreatedUniverses])이 이름표에 없어, 빈 DB
+     * 복원에서 그 세계관의 `필드:` 열이 통째로 해석에 실패한다 — **미리보기는 "0건"이라
+     * 말하는데 가져오기는 같은 파일의 정의로 전부 쓴다**(B-187이 작품 순서에서 겪은 것과
+     * 같은 모양이다). 부르는 두 자리는 바로 위에서 이미 `analysisUniverses()`로
+     * `universeIdsByName`을 만들고 있었다 — **한 함수 안에서 두 잣대를 쓰고 있었던 셈이다.**
+     */
     private suspend fun analysisEntityFieldColumns(
         headerRow: Row,
-        fields: List<FieldDefinition>
+        fields: List<FieldDefinition>,
+        universeNamesById: Map<Long, String>
     ): List<EventFieldColumn> = collectEntityFieldColumns(
-        headerRow, fields,
-        db.universeDao().getAllUniversesList().associate { it.id to it.name },
+        headerRow, fields, universeNamesById,
         result = null, sheetLabel = ""
     )
 
@@ -4278,13 +4412,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = TimelineCols(cols, descColIndex)
         val now = System.currentTimeMillis()
         // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 사건 필드 열도 작품 시트와 같은 재료로 같은 해석기를 부른다(B-65 · B-187).
         val eventFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_EVENT)
-        val universeIdsByName = if (fieldValues == null) emptyMap() else
-            analysisUniverses().associate { it.name to it.id }
+        // 세계관 표는 **한 번만 뜬다** — 이름→id와 id→이름 두 맵이 같은 목록에서 나와야
+        // 이 파일이 만들 세계관이 한쪽에만 있는 일이 없다.
+        val analysisUniverseList = if (fieldValues == null) emptyList() else analysisUniverses()
+        val universeIdsByName = analysisUniverseList.associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, eventFields)
+        else analysisEntityFieldColumns(
+            headerRow, eventFields, analysisUniverseList.associate { it.id to it.name }
+        )
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
@@ -4337,7 +4475,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 fieldValues, eventFields, universeIdsByName
             )
         }
-        reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "사건 분석", sheet.lastRowNum)
         return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4360,7 +4498,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         // 가져오기와 **같은 판정**의 제목 색인이다(규약 R-33) — 동명 작품이면 힌트를 포기한다.
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 키 모양과 싣는 순서가 갈리면
         // 같은 `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
         val changes = StateChangeIndexes(allChanges)
@@ -4416,7 +4554,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeStateChange(existing, r, character.id, CODE_BACKFILL_PREVIEW)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum)
         return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4443,7 +4581,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         // 가져오기와 **같은 판정**의 제목 색인이다(R-33) — 동명 작품이면 힌트를 포기한다.
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 정체성 색인도 가져오기와 **같은 클래스**다 — 키 모양과 싣는 순서가 갈리면 같은
         // `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
         val quotes = QuoteIndexes(allQuotes)
@@ -4488,7 +4626,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeQuote(existing, r, character.id, CODE_BACKFILL_PREVIEW)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "명대사 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "명대사 분석", sheet.lastRowNum)
         return CategoryAnalysis("quotes", "명대사", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4496,7 +4634,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = relationshipSpec()
         val sheet = sheetForAnalysis(workbook, spec)
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        val allRelationships = analysisRelationships()
         val existingTotal = allRelationships.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
 
@@ -4509,7 +4647,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
         val factionRefUsed = c.faction >= 0 || c.factionCode >= 0
-        val factionIndex = FactionIndex(if (factionRefUsed) db.factionDao().getAllFactionsList() else emptyList())
+        val factionIndex = FactionIndex(if (factionRefUsed) analysisFactions() else emptyList())
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236). 종전에는 **행마다** 캐릭터1의 관계
         // 전부를 다시 읽어(`getRelationshipsForCharacterList`) 여기서 쌍을 걸렀다.
         val rels = RelationshipIndexes(allRelationships)
@@ -4586,7 +4724,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "관계 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "관계 분석", sheet.lastRowNum)
         return CategoryAnalysis("relationships", "관계", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4607,7 +4745,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 이 시트가 행마다 물던 표는 둘이다:
         // 부모 **관계**(쌍)와 **관계 변화**(코드·자연키).
-        val parentRels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
+        val parentRels = RelationshipIndexes(analysisRelationships())
         val relChanges = RelationshipChangeIndexes(allRelChanges)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
@@ -4670,7 +4808,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "관계 변화 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "관계 변화 분석", sheet.lastRowNum)
         return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4719,10 +4857,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (existing == null) {
                 newCount++
                 // 이 시트가 방금 만든 항목 — 뒤 행이 이것과 매칭될 수 있다(가져오기와 같은 성질 ②).
+                // 한 번만 묻는다 — 캐릭터 조회라 두 번 부르면 행마다 왕복이 두 배가 된다.
+                val previewUsedBy = resolveNameBankUsedBy(r, null, "이름 은행 행 ${excelRow(i)}", result = null)
                 val created = NameBankEntry(
                     name = r.name, gender = r.gender ?: "", origin = r.origin ?: "", notes = r.notes ?: "",
-                    isUsed = r.usedFlag ?: false,
-                    usedByCharacterId = resolveNameBankUsedBy(r, null, "이름 은행 행 ${excelRow(i)}", result = null),
+                    isUsed = nameBankUsedFlag(r.usedFlag, null, previewUsedBy),
+                    usedByCharacterId = previewUsedBy,
                     createdAt = r.createdAt ?: now,
                     code = r.code.ifBlank { "" }
                 ).copy(id = previewIds.mint())
@@ -4739,7 +4879,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             nameBankCodes.put(merged)
             nameBankByName.put(merged)
         }
-        reportProgress(onProgress, "이름 은행 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "이름 은행 분석", sheet.lastRowNum)
         return CategoryAnalysis("nameBank", "이름 은행", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
@@ -4747,7 +4887,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = factionSpec()
         val sheet = sheetForAnalysis(workbook, spec)
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allFactions = db.factionDao().getAllFactionsList()
+        val allFactions = analysisFactions()
         val existingTotal = allFactions.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
 
@@ -4794,14 +4934,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeFaction(existing, r, universeId = resolvedUniverse?.id ?: existing.universeId)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "세력 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력 분석", sheet.lastRowNum)
         return CategoryAnalysis("factions", "세력", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeFactionMemberships(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = factionMembershipSpec()
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.factionMembershipDao().getAllMembershipsList().size
+        val existingTotal = analysisMemberships().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
         val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
@@ -4820,9 +4960,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (charNameColIndex < 0) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
         // 루프 밖에서 1회 — 행마다 전체 세력/소속을 다시 읽지 않는다.
-        // 소속은 위에서 existingTotal 때문에 이미 한 번 읽었으므로 그 목록을 쌍으로 묶어 재사용한다.
-        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
-        val membershipsByPair = db.factionMembershipDao().getAllMembershipsList()
+        // 소속은 위에서 existingTotal 때문에 이미 한 번 읽었고, 그 목록을 쌍으로 묶어 재사용한다
+        // (**주석은 줄곧 그렇게 적었는데 코드는 표를 한 번 더 읽고 있었다** — 겹이 그것을 잇는다).
+        val factionIndex = FactionIndex(analysisFactions())
+        val membershipsByPair = analysisMemberships()
             .groupBy { it.factionId to it.characterId }
         val presence = factionMembershipPresence(
             joinYearColIndex, leaveYearColIndex, leaveTypeColIndex,
@@ -4896,7 +5037,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (FactionMembershipMatcher.changes(existingMembership, rowValues, presence)) updateCount++ else unchangedCount++
             }
         }
-        reportProgress(onProgress, "세력 소속 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력 소속 분석", sheet.lastRowNum)
         return CategoryAnalysis("factionMemberships", "세력 소속", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -4920,7 +5061,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val orderColIndex = cols["표시순서"] ?: -1
         if (faction2ColIndex < 0 || typeColIndex < 0) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
-        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
+        val factionIndex = FactionIndex(analysisFactions())
         // 가져오기가 굴리는 것과 **같은 맵**이다(B-233) — 새로 만든 행을 즉시 등재해야
         // 같은 쌍·같은 유형이 시트에 두 번 나올 때 둘째 행이 첫째와 매칭된다.
         val existingByKey = existingRels.associateByTo(mutableMapOf()) {
@@ -4969,7 +5110,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
             if (FactionRelationshipMatcher.changes(existing, rowValues, presence)) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "세력 관계 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력 관계 분석", sheet.lastRowNum)
         return CategoryAnalysis("factionRelationships", "세력 관계", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -5014,7 +5155,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergePresetTemplate(existing, r, now)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "필드 템플릿 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "필드 템플릿 분석", sheet.lastRowNum)
         return CategoryAnalysis("presetTemplates", "필드 템플릿", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
@@ -5060,7 +5201,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
             existingByName[r.name] = merged
         }
-        reportProgress(onProgress, "검색 프리셋 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "검색 프리셋 분석", sheet.lastRowNum)
         return CategoryAnalysis("searchPresets", "검색 프리셋", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
@@ -5109,7 +5250,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
             existingByName[r.name] = merged
         }
-        reportProgress(onProgress, "목록 프리셋 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "목록 프리셋 분석", sheet.lastRowNum)
         return CategoryAnalysis("characterListPresets", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
@@ -5125,9 +5266,35 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private var processedRowsSoFar = 0
 
-    private fun reportProgress(onProgress: (ImportProgress) -> Unit, phase: String, rowsInPhase: Int, totalRows: Int) {
-        processedRowsSoFar += rowsInPhase
-        onProgress(ImportProgress(phase, processedRowsSoFar, totalRows))
+    /**
+     * 이번 회차의 진행 통로 — [dataRows]가 행을 돌며 여기로 알린다.
+     *
+     * 회차 밖에서는 null이라 [dataRows]가 종전과 똑같은 `IntRange`를 돌려준다
+     * (시험·직접 호출이 진행 보고에 매이지 않는다).
+     *
+     * **수명:** 회차 입구에서 세우고 출구에서 내린다. 예외로 끝난 회차는 통로가 남지만
+     * 해로울 것이 없다 — [dataRows]는 회차 안에서만 불리고, 다음 회차 입구가 덮어쓰며,
+     * 이 서비스 자체가 화면의 `ExcelTransferController`와 **같은 수명**이라 붙든 람다가
+     * 그 화면보다 오래 살지 않는다.
+     */
+    private var progressSink: ((ImportProgress) -> Unit)? = null
+
+    /** 무엇을 얼마로 보일지는 순수 계층이 정한다 — 판정 원문은 [ImportProgressTally] */
+    private var progressTally = com.novelcharacter.app.util.ImportProgressTally(1)
+
+    /**
+     * 구간 하나가 끝났다고 알린다.
+     *
+     * **분모는 인자로 받지 않는다** — [progressTally]가 회차 입구에서 한 번 받아 든다.
+     * 종전에는 51자리가 `totalRows`를 손으로 날랐고, 셈이 순수 계층으로 내려간 뒤에는
+     * 그 인자가 아무 데도 안 쓰였다(R-24: 살릴 수 없는 배선을 남기지 않는다).
+     */
+    private fun reportProgress(onProgress: (ImportProgress) -> Unit, phase: String, rowsInPhase: Int) {
+        // **이미 보인 값을 흡수한다** — 자기 몫을 `0`으로 얹는 구간이 있어(캐릭터 시트 묶음),
+        // 그러지 않으면 다음 구간의 출발점이 보인 값보다 낮아 막대가 얼어붙는다
+        // (판정 원문은 [ImportProgressTally.advance]).
+        processedRowsSoFar = progressTally.advance(processedRowsSoFar, rowsInPhase)
+        emitProgress(onProgress, phase, processedRowsSoFar)
     }
 
     // ── Tolerant header matching (Sprint C) ──
@@ -5194,10 +5361,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             raws[col] = rawHeader
         }
         // 1패스: 예약 헤더와 문자 그대로 일치하는 열 (별칭 확장 없음)
+        val reservedClaimed = HashSet<String>()
         if (reservedHeaders.isNotEmpty()) {
             for (col in 0 until lastCol) {
                 val raw = raws[col] ?: continue
-                if (raw in reservedHeaders && raw !in result) result[raw] = col
+                if (raw in reservedHeaders && raw !in result) {
+                    result[raw] = col
+                    reservedClaimed.add(raw)
+                }
             }
         }
         // 2패스: 나머지 열에 별칭 해석 적용 (이미 확정된 표준명은 덮어쓰지 않음)
@@ -5208,8 +5379,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result[canonical] = col
             } else if (result[canonical] != col && report != null) {
                 val prevRaw = raws[result[canonical]!!] ?: canonical
+                val label = sheetLabel ?: headerRow.sheet?.sheetName ?: "시트"
+                // **버려진 열만 '무시했다'고 말한다** (R-51 — 고지는 실제로 일어난 일이다).
+                //
+                // 예약 헤더를 주는 시트(캐릭터)는 고정 열로 못 간 나머지를 **동적 필드
+                // 사다리**로 보낸다 — 그 사다리는 *원문* 헤더로 판정하므로, 별칭으로만
+                // 겹친 열은 버려지지 않고 **커스텀 필드 열로 읽히고 필드까지 만들어진다.**
+                // 종전에는 그 자리에도 "뒤쪽 열을 무시했습니다"가 떠서, 사용자는 값이 들어온
+                // 열을 두고 안 들어왔다고 들었다.
+                //
+                // 뒤 열의 원문이 **그 자체로 고정 헤더**면 사다리도 그것을 건너뛰므로
+                // 정말 버려진다 — 그때는 종전 문구가 맞다.
+                val notDropped = canonical in reservedClaimed && raw !in reservedHeaders
                 report.warnings.add(
-                    "${sheetLabel ?: headerRow.sheet?.sheetName ?: "시트"}: 헤더 '$prevRaw'와(과) '$raw'이(가) 같은 열 '$canonical'로 해석되어 뒤쪽 열을 무시했습니다 — 커스텀 필드명이 고정 열 이름과 겹치지 않는지 확인하세요"
+                    if (notDropped) {
+                        "$label: 헤더 '$raw'은(는) 고정 열 '$canonical'의 다른 표기로도 읽히는데 이 시트에는 이미 '$prevRaw' 열이 있어 커스텀 필드 열로 읽습니다 — 고정 열로 쓸 생각이었다면 '$prevRaw' 열을 지우거나 이 열 이름을 바꿔 주세요"
+                    } else {
+                        "$label: 헤더 '$prevRaw'와(과) '$raw'이(가) 같은 열 '$canonical'로 해석되어 뒤쪽 열을 무시했습니다 — 커스텀 필드명이 고정 열 이름과 겹치지 않는지 확인하세요"
+                    }
                 )
             }
         }
@@ -5257,8 +5444,50 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun headerRowOrFirst(sheet: Sheet, expectedFirstHeader: String): Row? =
         locateHeaderRow(sheet, expectedFirstHeader) ?: sheet.getRow(0)
 
-    private fun dataRows(sheet: Sheet, headerRow: Row): IntRange =
-        (headerRow.rowNum + 1)..sheet.lastRowNum
+    /**
+     * **데이터 루프의 범위 — 그리고 그 루프가 도는 동안 진행을 알린다.**
+     *
+     * 종전에는 진행 보고가 **시트 하나를 다 돈 뒤 한 번**이었다(`reportProgress`가 함수 끝에
+     * 있다). 그래서 캐릭터 6,000행짜리 파일에서 **막대가 한 번도 안 움직인 채 몇십 초**가
+     * 흘렀고, 사용자가 보는 것은 *멈춘 화면*이다 — 취소도 없는 구간이라(R-26이 반쪽 상태를
+     * 금지한다) 기다리는 것 말고 할 수 있는 일이 없는데 **무엇을 얼마나 기다리는지도 모른다.**
+     *
+     * **통로를 여기 둔 것이 요점이다.** 행 루프 52자리가 전부 이 함수를 지나므로
+     * 자리마다 보고를 심을 것이 없고, **다음에 생길 시트도 공짜로 얻는다**
+     * (자리마다 정하게 두면 하나가 빠지고 그 시트에서만 막대가 다시 멈춘다 — B-231이
+     * 데이터 루프 시작점에서 겪은 것과 같은 부류다).
+     *
+     * 중간 보고는 **누계를 건드리지 않는다** — `processedRowsSoFar`는 함수 끝의
+     * `reportProgress`가 시트 몫을 통째로 얹는 단일 소스로 남는다. 여기서는 *"그 시트를
+     * 어디까지 돌았는가"*만 더해 보여 준다(이중 계수 없음).
+     *
+     * 이름표는 **시트 이름**이다. 내보내기가 시트를 범주 이름으로 짓고 캐릭터 시트는
+     * 세계관 이름으로 지으므로, 끝에 오는 `reportProgress`의 이름표와 사실상 같은 글자다.
+     */
+    private fun dataRows(sheet: Sheet, headerRow: Row): Iterable<Int> {
+        val first = headerRow.rowNum + 1
+        val last = sheet.lastRowNum
+        val sink = progressSink ?: return first..last
+        val label = sheet.sheetName
+        val baseRows = progressTally.sheetBase(processedRowsSoFar)
+        return Iterable {
+            object : Iterator<Int> {
+                private var next = first
+                private var done = 0
+                override fun hasNext(): Boolean = next <= last
+                override fun next(): Int {
+                    val v = next++
+                    done++
+                    if (progressTally.shouldTick(done)) emitProgress(sink, label, baseRows + done)
+                    return v
+                }
+            }
+        }
+    }
+
+    private fun emitProgress(sink: (ImportProgress) -> Unit, phase: String, rows: Int) {
+        sink(ImportProgress(phase, progressTally.show(phase, rows), progressTally.totalRows))
+    }
 
     /**
      * 0-기반 행 색인(POI·스트리밍 공통) → **엑셀 화면의 행 번호**(1-기반).
@@ -5411,7 +5640,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val c = UniverseCols(cols, spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
@@ -5534,7 +5763,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("세계관 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "세계관", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세계관", sheet.lastRowNum)
     }
 
     // ── 작품 가져오기 ──
@@ -5546,7 +5775,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 작품 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val nc = NovelCols(cols, spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
@@ -5696,7 +5925,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("작품 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "작품", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "작품", sheet.lastRowNum)
     }
 
     /**
@@ -5863,7 +6092,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else unchangedCount++
             }
         }
-        reportProgress(onProgress, "기본 필드 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "기본 필드 분석", sheet.lastRowNum)
         return CategoryAnalysis("defaultFields", label, total, newCount, updateCount, unchangedCount, existingTotal, skipped)
     }
 
@@ -5970,7 +6199,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.newDefaultFields++
             }
         }
-        reportProgress(onProgress, "기본 필드", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "기본 필드", sheet.lastRowNum)
     }
 
     private class DefaultFieldCols(cols: Map<String, Int>) {
@@ -6159,7 +6388,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val merged = mergeGradeSystem(existing, group.name, group.gradesJson(), rename)
             if (merged != existing) updateCount++ else unchangedCount++
         }
-        reportProgress(onProgress, "등급 체계 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "등급 체계 분석", sheet.lastRowNum)
         return CategoryAnalysis("gradeSystems", label, groups.size + scan.unresolvedUniverseGroups, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
@@ -6322,7 +6551,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.newGradeSystems++
             }
         }
-        reportProgress(onProgress, "등급 체계", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "등급 체계", sheet.lastRowNum)
     }
 
     /** GradeTable의 타입 문제 → 가져오기 결과 문구 (다이얼로그 문구와 별개 — 결과 창은 서술형이다). */
@@ -6408,7 +6637,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        val fdc = FieldDefCols(resolveHeaderColumns(headerRow, result, spec.sheetName), spec.firstColumnHeader)
 
         val entitySeen = mutableMapOf<Long, Int>()
         // 파싱이 읽지 않는 `설정(JSON)` 키 — 행마다 고지하면 수백 줄이 되므로 모아서 한 줄로
@@ -6537,7 +6766,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         // 수식 검증은 **전량 적재 뒤**에 돈다 (B-54).
         warnImportedFormulaProblems(touchedFormulaScopes, result)
-        reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "필드 정의", sheet.lastRowNum)
     }
 
     /**
@@ -6776,7 +7005,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
@@ -6930,7 +7159,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("필드 데이터 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "필드 데이터", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "필드 데이터", sheet.lastRowNum)
     }
 
     // ── 세계관별 캐릭터 시트 가져오기 ──
@@ -7069,7 +7298,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 위치 폴백 금지 — 첫 열만 checkHeaderOrReport가 보증한다
         val charCodeCol = cols["캐릭터코드"] ?: 0
         val charNameCol = cols["캐릭터이름"] ?: -1
@@ -7221,7 +7450,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("캐릭터 필드값 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "캐릭터 필드값", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "캐릭터 필드값", sheet.lastRowNum)
     }
 
     // ── 작품·사건 필드값 오버플로 가져오기 (B-65) ──
@@ -7245,7 +7474,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 위치 폴백 금지 — 첫 열만 checkHeaderOrReport가 보증한다
         val codeCol = cols["작품코드"] ?: 0
         val titleCol = cols["작품제목"] ?: -1
@@ -7365,7 +7594,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("작품 필드값 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "작품 필드값", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "작품 필드값", sheet.lastRowNum)
     }
 
     /**
@@ -7381,7 +7610,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val codeCol = cols["사건코드"] ?: 0
         val descCol = cols["사건설명"] ?: -1
         val uNameCol = cols["세계관"] ?: -1
@@ -7478,7 +7707,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("사건 필드값 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "사건 필드값", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "사건 필드값", sheet.lastRowNum)
     }
 
     /**
@@ -7677,6 +7906,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 처분 무관(칸 단위가 아니라 **캐릭터 단위 정리**다 — 파일의 어떤 셀이
                         // 시킨 것이 아니라 사용자가 충돌 대화상자에서 고른 것이라, 미리보기가
                         // 예고할 대상도 아니다. 그 결정은 이 창 뒤에 온다).
+                        //
+                        // **되돌릴 자리를 먼저 만들고, 한 일을 말한다.** 이 삭제는 종전에
+                        // ⓐ 휴지통 스냅샷을 안 남기고 ⓑ 결과 요약에 한 줄도 안 적었다 —
+                        // 체크박스가 **기본으로 켜져 있어서**(`ExcelImporter`의 충돌 창) 사용자가
+                        // 의식하지 못한 채 옛 세계관 값이 되돌릴 길 없이 사라졌다.
+                        // 형제인 세계관 이동은 같은 성질의 삭제에 대해 스냅샷을 남기고
+                        // *"(휴지통에 스냅샷 보관)"*이라 말한다 — 이 자리만 그 밖이었다.
+                        //
+                        // 스냅샷은 **같은 저장소 인스턴스**로 남긴다(`trashForImport`) — 새로
+                        // 만들면 커밋 뒤 정리가 방금 만든 백업을 태운다(바로 아래 이동 경로의
+                        // 주석이 같은 함정을 적어 두었다).
+                        val doomedValues = db.characterFieldValueDao()
+                            .countValuesNotInUniverse(charId, universe.id)
+                        if (doomedValues > 0) {
+                            db.characterDao().getCharacterById(charId)?.let { snap ->
+                                trashForImport().snapshotCharacter(
+                                    snap,
+                                    com.novelcharacter.app.util.CharacterRepresentativeImage
+                                        .paths(snap.imagePaths),
+                                    kind = com.novelcharacter.app.data.model.TrashSnapshot.KIND_EDIT_BACKUP,
+                                    revertScope = com.novelcharacter.app.data.repository.RestoreModes.LEGACY_REVERT_SCOPE
+                                )
+                            }
+                            result.warnings.add(
+                                "캐릭터 행 ${excelRow(i)}: '$name' 이전 세계관 필드값 ${doomedValues}개를 정리했습니다(휴지통에 스냅샷 보관) — 충돌 창의 '이전 세계관 필드값 삭제'를 고른 결과입니다"
+                            )
+                        }
                         db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
                         // 장부가 이 캐릭터를 이미 실었다면 그 사본은 방금 지운 값을 아직 들고 있다.
                         // 내려 두면 아래에서 다시 읽는다 — 같은 캐릭터가 시트에 두 번 나오는
@@ -7916,7 +8172,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("$sheetLabel 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, universe?.name ?: "미분류 캐릭터", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, universe?.name ?: "미분류 캐릭터", sheet.lastRowNum)
     }
 
     // ── 연표 가져오기 ──
@@ -7928,7 +8184,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 사건 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 사건 설명으로 오기록되므로 검증 후 스킵
         val descColIndex = TimelineCols.descColumn(cols)
             ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
@@ -8258,7 +8514,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("연표 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "사건 연표", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "사건 연표", sheet.lastRowNum)
     }
 
     // ── 상태변화 가져오기 ──
@@ -8269,7 +8525,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록되므로 검증 후 스킵
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
         val fieldKeyColIndex = requiredCol(cols, "필드키", sheet.sheetName, result) ?: return
@@ -8390,7 +8646,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("상태변화 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "상태변화", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "상태변화", sheet.lastRowNum)
     }
 
     // ── 캐릭터 명대사 가져오기 (사용자 요청 2026.08.20) ──
@@ -8411,7 +8667,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록된다(R-36).
         val textColIndex = requiredCol(cols, "대사", sheet.sheetName, result) ?: return
         val qc = QuoteCols(cols, textColIndex)
@@ -8503,7 +8759,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("명대사 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "명대사", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "명대사", sheet.lastRowNum)
     }
 
     // ── 캐릭터 관계 가져오기 ──
@@ -8514,7 +8770,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
         val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
         val typeColIndex = requiredCol(cols, "관계 유형", sheet.sheetName, result) ?: return
@@ -8714,17 +8970,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "수동 관계로 되돌리려면 '세력' 칸을 비우세요"
             )
         }
-        reportProgress(onProgress, "관계", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "관계", sheet.lastRowNum)
     }
 
     // ── 관계 변화 가져오기 ──
 
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = findSheet(workbook, relationshipChangeSpec(), result) ?: return
+        // 형제 `import*`와 같은 모양으로 명세를 한 번만 짓는다 — 종전에는 같은 호출이 두 벌이었다.
+        val spec = relationshipChangeSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = headerRowOrReport(sheet, "캐릭터1", result) ?: return
 
-        reportUnknownColumns(headerRow, relationshipChangeSpec(), result)
-        val cols = resolveHeaderColumns(headerRow)
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
         val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
@@ -8847,7 +9105,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("관계 변화 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "관계 변화", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "관계 변화", sheet.lastRowNum)
     }
 
     // ── 이름 은행 가져오기 ──
@@ -8858,7 +9116,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val nbc = NameBankCols(resolveHeaderColumns(headerRow))
+        val nbc = NameBankCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         // 자연키 맵은 이미 있었다 — **코드 축만 빠져 있어 행마다 표를 다시 물었다**(B-210).
@@ -8918,6 +9176,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val effectiveUsed = r.usedFlag ?: existing?.isUsed ?: false
                 // 참조를 조회했는데 해석에 실패하면 연결이 조용히 끊긴다 —
                 // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
+                // 반대 방향의 어긋남 — 연결은 해석됐는데 사용여부가 'N'이다. 조용히 한쪽만
+                // 채우면 '미사용 이름' 목록에 이미 쓰이는 이름이 떠 같은 이름이 두 번 배정된다.
+                if (usedByCharacterId != null && !effectiveUsed) {
+                    result.warnings.add(
+                        "이름 은행 행 ${excelRow(i)}: 사용여부가 '아니오'인데 사용 캐릭터가 지정되어 " +
+                        "'사용 중'으로 맞춥니다 — 이름을 풀려면 '사용 캐릭터' 칸도 함께 비워 주세요"
+                    )
+                }
                 if (effectiveUsed && r.usedIntent == RefIntent.LOOKUP && usedByCharacterId == null) {
                     result.warnings.add(
                         "이름 은행 행 ${excelRow(i)}: 사용 캐릭터 '${r.usedByCharName.ifBlank { r.usedByCharCode }}'을(를) 찾을 수 없어 " +
@@ -8939,7 +9205,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newCode = if (r.code.isNotBlank()) r.code else generateEntityCode()
                     val newEntry = NameBankEntry(
                         name = name, gender = r.gender ?: "", origin = r.origin ?: "", notes = r.notes ?: "",
-                        isUsed = r.usedFlag ?: false, usedByCharacterId = usedByCharacterId,
+                        isUsed = nameBankUsedFlag(r.usedFlag, null, usedByCharacterId),
+                        usedByCharacterId = usedByCharacterId,
                         createdAt = r.createdAt ?: nowMillis, code = newCode
                     )
                     val newId = db.nameBankDao().insert(newEntry)
@@ -8955,7 +9222,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("이름 은행 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "이름 은행", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "이름 은행", sheet.lastRowNum)
     }
 
     // ── 필드 템플릿 가져오기 ──
@@ -8967,7 +9234,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val ptc = PresetTemplateCols(resolveHeaderColumns(headerRow))
+        val ptc = PresetTemplateCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         // 동명 템플릿은 DB가 허용한다(name 유니크 인덱스 없음) — 이름 맵으로 접으면 편집이 유실된다.
@@ -9016,7 +9283,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("필드 템플릿 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "필드 템플릿", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "필드 템플릿", sheet.lastRowNum)
     }
 
     // ── 검색 프리셋 가져오기 ──
@@ -9047,7 +9314,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val spc = SearchPresetCols(resolveHeaderColumns(headerRow))
+        val spc = SearchPresetCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         val existingPresets = db.searchPresetDao().getAllPresetsList()
@@ -9095,7 +9362,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (PresetLimit.exceeded(totalAfter)) {
             result.warnings.add("검색 프리셋이 ${totalAfter}개로 인앱 권장 한도(${PresetLimit.RECOMMENDED_MAX}개)를 초과했습니다 — 검색 화면에서 정리할 수 있습니다")
         }
-        reportProgress(onProgress, "검색 프리셋", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "검색 프리셋", sheet.lastRowNum)
     }
 
     // ── 캐릭터 목록 프리셋 가져오기 ──
@@ -9110,7 +9377,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val lpc = ListPresetCols(resolveHeaderColumns(headerRow))
+        val lpc = ListPresetCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         val existingByName = db.characterListPresetDao().getAllPresetsList()
@@ -9160,7 +9427,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (PresetLimit.exceeded(totalAfter)) {
             result.warnings.add("목록 프리셋이 ${totalAfter}개로 인앱 권장 한도(${PresetLimit.RECOMMENDED_MAX}개)를 초과했습니다 — 캐릭터 탭에서 정리할 수 있습니다")
         }
-        reportProgress(onProgress, "목록 프리셋", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "목록 프리셋", sheet.lastRowNum)
     }
 
     // ── 앱 설정 가져오기 ──
@@ -9217,7 +9484,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 AppSettingsDiff.Effect.SKIPPED -> skippedCount++
             }
         }
-        reportProgress(onProgress, "앱 설정 분석", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "앱 설정 분석", sheet.lastRowNum)
         return CategoryAnalysis("appSettings", label, inBackup, 0, updateCount, unchangedCount, existingTotal, skippedCount = skippedCount, deletedByOverwrite = false)
     }
 
@@ -9228,7 +9495,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val keyColIndex = cols["설정키"] ?: 0
         // 위치 폴백 금지 — '설정값' 열을 지운 파일에서 이웃 열(또는 빈칸)이 값으로 읽혀
         // 불리언·테마 등 빈 값을 유효값으로 읽는 바인딩 전부가 무음 초기화되고 '복원 N건'으로
@@ -9306,7 +9573,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val fc = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        val fc = FactionCols(resolveHeaderColumns(headerRow, result, spec.sheetName), spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
         // 세력 정체성 색인 (B-210) — 행마다 코드·(이름,세계관)으로 표를 묻던 자리.
@@ -9429,7 +9696,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("세력 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "세력", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력", sheet.lastRowNum)
     }
 
     // ── 세력 소속 가져오기 ──
@@ -9484,7 +9751,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): FactionRelationship = FactionRelationship(
         factionId1 = factionId1, factionId2 = factionId2, relationType = relationType,
         description = r.description, intensity = r.intensity,
-        isBidirectional = r.isBidirectional, displayOrder = r.displayOrder,
+        // 새 행이 순서를 말하지 않았으면 엔티티 기본값(0)이다 — 종전과 같은 값이다.
+        isBidirectional = r.isBidirectional, displayOrder = r.displayOrder ?: 0,
         createdAt = createdAt
     )
 
@@ -9502,7 +9770,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 다른 관계 시트와 동일하게 parseBoolean 사용(P2-10) — 예전 `!= "N"`은 FALSE/0/false 같은
         // falsey 값을 true로 뒤집었다. 열이 없으면 기본 양방향(true).
         isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true,
-        displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
+        // **빈칸·해석 불가는 `null`이다** — 형제 열두 시트와 같은 모양이다. 종전에는 `?: 0`이라
+        // 열 머리만 남아 있으면 **빈칸 하나가 기존 표시 순서를 0으로 덮었다**(무통보 유실).
+        displayOrder = if (orderColIndex >= 0) {
+            getCellString(row, orderColIndex).let { if (it.isBlank()) null else parseNumber(it)?.toInt() }
+        } else null
     )
 
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -9511,7 +9783,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0
         val charNameColIndex = cols["캐릭터"] ?: -1
         val joinYearColIndex = cols["가입연도"] ?: -1
@@ -9666,7 +9938,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("세력 소속 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "세력 소속", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력 소속", sheet.lastRowNum)
     }
 
     /**
@@ -9748,7 +10020,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val faction1ColIndex = cols[spec.firstColumnHeader] ?: cols["세력1"] ?: 0
         val faction2ColIndex = cols["세력2"] ?: -1
         val typeColIndex = cols["관계 유형"] ?: -1
@@ -9866,7 +10138,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("세력 관계 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "세력 관계", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "세력 관계", sheet.lastRowNum)
     }
 
     // ── 이미지 라이브러리 메타 (G3) ──
@@ -9905,7 +10177,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 열 해석은 미리보기와 **같은 클래스**다(규약 R-33).
         // '뗀날짜'의 출처는 readOnly라 **읽지 않는다**(사용자가 적은 코드를 믿으면 없는 캐릭터를
         // 가리키게 된다). 시각만 읽고, 새로 붙는 표식의 출처는 앱이 아는 값으로만 채운다.
-        val imc = ImageMetaCols(resolveHeaderColumns(headerRow))
+        val imc = ImageMetaCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
 
         // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로. basename 충돌은 무음 last-wins 대신 고지한다.
         val remap = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap)
@@ -10130,7 +10402,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (skippedMissing > 0) {
             result.warnings.add("이미지 ${skippedMissing}건: 파일을 찾을 수 없어 태그·링크 복원을 건너뛰었습니다 (이미지 포함 ZIP 백업으로 가져오면 함께 복원됩니다)")
         }
-        reportProgress(onProgress, "이미지", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "이미지", sheet.lastRowNum)
     }
 
     // ── 대결 가져오기 (B-104 ㄹ1) ──
@@ -10183,9 +10455,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAt: Long
     )
 
-    private fun readDuelAxisRow(row: Row, cols: Map<String, Int>, now: Long): DuelAxisRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelAxisRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelAxisRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
 
         /** 열이 있을 때만 읽는다 — 없으면 null이고, 병합이 그 칸을 건드리지 않는다. */
         fun links(header: String): String? =
@@ -10223,7 +10503,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 리셋하던 자리다. null이면 병합이 기존 순서를 지킨다(R-36).
             displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt(),
             code = cell("코드"),
-            createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // **형제 24자리와 같은 통로를 지난다**(R-33). 종전에는 이 줄만 밖에 있어
+            // 해석 불가가 경고 없이 '지금 시각'으로 굳었다 — 사용자는 읽기 전용 열을
+            // 잘못 건드린 사실을 어디서도 듣지 못했다. 병합은 이 값을 안 쓰므로
+            // (`mergeDuelAxis`가 `createdAt`을 건드리지 않는다) 폴백은 신규 행에만 닿는다.
+            createdAt = readEpochMillisCell(
+                row, cols["생성일"] ?: -1, rowLabel, "생성일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10376,7 +10663,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelAxisRow(row, cols, now)
+                val r = readDuelAxisRow(row, cols, now, "대결 축 행 ${excelRow(i)}", result)
                 if (r.name.isBlank()) continue
 
                 val universe = universeByCodeOrName(r.universeCode, r.universeName)
@@ -10448,7 +10735,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("대결 축 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "대결 축 가져오기", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 축 가져오기", sheet.lastRowNum)
     }
 
     private data class DuelMatchRowValues(
@@ -10468,9 +10755,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val decidedAt: Long
     )
 
-    private fun readDuelMatchRow(row: Row, cols: Map<String, Int>, now: Long): DuelMatchRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelMatchRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelMatchRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
         return DuelMatchRowValues(
             axisName = cell("축"),
             axisCode = cell("축코드"),
@@ -10483,7 +10778,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             hasGroupCol = cols.containsKey("묶음"),
             groupId = cell("묶음"),
             code = cell("코드"),
-            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // '생성일' 형제들과 **같은 통로를 지난다** — 해석 불가를 조용히 접지 않는다.
+            // 병합은 판정일을 바꾸지 않으므로(`mergeDuelMatch`) 폴백은 신규 행에만 닿는다.
+            decidedAt = readEpochMillisCell(
+                row, cols["판정일"] ?: -1, rowLabel, "판정일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10572,7 +10872,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelMatchRow(row, cols, now)
+                val r = readDuelMatchRow(row, cols, now, "대결 기록 행 ${excelRow(i)}", result)
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
 
                 val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
@@ -10656,7 +10956,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("대결 기록 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum)
     }
 
     private data class DuelVerdictRowValues(
@@ -10673,9 +10973,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val decidedAt: Long
     )
 
-    private fun readDuelVerdictRow(row: Row, cols: Map<String, Int>, now: Long): DuelVerdictRowValues {
-        fun cell(header: String, dateHint: Boolean = false) =
-            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+    private fun readDuelVerdictRow(
+        row: Row,
+        cols: Map<String, Int>,
+        now: Long,
+        rowLabel: String,
+        result: ImportResult?
+    ): DuelVerdictRowValues {
+        // `dateHint`는 더 이상 필요 없다 — 이 시트의 시각 열은 **13자리 밀리초**이고
+        // (안내 시트가 그렇게 적는다) 그 값은 엑셀 날짜 시리얼 상한(2958466)의 한참 위라
+        // 힌트가 걸린 적이 없다. 시각 열은 `readEpochMillisCell`이 따로 읽는다.
+        fun cell(header: String) = getCellString(row, cols[header] ?: -1)
         return DuelVerdictRowValues(
             axisName = cell("축"),
             axisCode = cell("축코드"),
@@ -10684,7 +10992,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             code = cell("코드"),
             hasKindCol = cols.containsKey("종류"),
             kindLabel = cell("종류"),
-            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+            // '대결 기록' 시트와 같은 통로다 — 두 시트의 같은 열이 다르게 처분되면 안 된다.
+            decidedAt = readEpochMillisCell(
+                row, cols["판정일"] ?: -1, rowLabel, "판정일", result,
+                consequence = "지금 시각으로 새로 만듭니다"
+            ) ?: now
         )
     }
 
@@ -10759,7 +11071,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val r = readDuelVerdictRow(row, cols, now)
+                val r = readDuelVerdictRow(row, cols, now, "대결 상성 행 ${excelRow(i)}", result)
 
                 if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
                 val axis = r.axisCode.takeIf { it.isNotBlank() }?.let { axisByCode[it] }
@@ -10860,7 +11172,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("대결 상성 행 ${excelRow(i)}: ${e.message}")
             }
         }
-        reportProgress(onProgress, "대결 상성 가져오기", sheet.lastRowNum, totalRows)
+        reportProgress(onProgress, "대결 상성 가져오기", sheet.lastRowNum)
     }
 
     // ── 유틸리티 메서드 ──

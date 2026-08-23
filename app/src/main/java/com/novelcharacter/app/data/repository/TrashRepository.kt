@@ -263,6 +263,13 @@ class TrashRepository(
             get() = restored.fold(RestoreLossCounts()) { acc, r -> acc + r.losses }
         val relinkedByCode: Int get() = restored.sumOf { it.relinkedByCode }
         val duplicateRelationships: Int get() = restored.sumOf { it.duplicateRelationships }
+
+        // 아래 셋도 **여기서 접는다** — 종전에는 화면이 `restored.sumOf { … }`를 손으로 적었고,
+        // 그래서 형제 둘(되돌리기가 보충한 세력 소속·상태변화)은 아예 안 적혀 **작업 전체
+        // 복원만 그 고지를 빠뜨렸다**(R-33 — 같은 판단이 두 자리에 살면 한쪽이 낡는다).
+        val restoredSemanticStateChanges: Int get() = restored.sumOf { it.restoredSemanticStateChanges }
+        val revertedMemberships: Int get() = restored.sumOf { it.revertedMemberships }
+        val revertedStateChanges: Int get() = restored.sumOf { it.revertedStateChanges }
     }
 
     // ──────────────────────────────────────────────────────────────────────

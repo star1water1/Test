@@ -107,8 +107,15 @@ class FactionRepository(private val db: AppDatabase) {
         trash.pruneIfNeeded()
     }
 
-    suspend fun updateFactionDisplayOrders(factions: List<Faction>) =
-        factionDao.updateAll(factions)
+    /**
+     * 표시 순서만 저장한다 — 한 트랜잭션에서 `displayOrder` 열만 쓴다.
+     *
+     * [com.novelcharacter.app.data.repository.UniverseRepository.updateFieldsOrder]와 같은
+     * 모양이다. 통짜 되쓰기가 **같은 화면의 다른 편집을 되감던 것**이 옮긴 이유다.
+     */
+    suspend fun updateFactionDisplayOrders(orderedIds: List<Long>) = db.withTransaction {
+        orderedIds.forEachIndexed { index, id -> factionDao.setDisplayOrder(id, index) }
+    }
 
     // ===== Membership =====
 

@@ -2004,14 +2004,25 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 작품 미배정 캐릭터를 작품에 배정한다. 정규 경로(`batchChangeNovel`)를 통해 세계관이
-     * 바뀌는 경우 고아 필드값·세력 소속 정리 + `updatedAt` 갱신까지 일관 처리한다.
-     * 캐릭터가 이미 삭제됐으면 false(호출부가 "성공" 오알림을 피하도록).
+     * 미배정 캐릭터를 작품에 배정한다 — **이동 셈을 돌려준다**(캐릭터가 없으면 null).
+     *
+     * 정규 경로(`batchChangeNovel`)를 지나므로 세계관이 바뀌면 고아 필드값·세력 소속 정리와
+     * `updatedAt` 갱신까지 일관 처리된다. 캐릭터가 이미 삭제됐으면 `null`이다 — 호출부가
+     * *"성공"* 오알림을 내지 않도록.
+     *
+     * **종전에는 `Boolean`이었고 그것이 결함이었다.** `batchChangeNovel`은
+     * [UniverseMoveCounts]를 내는데(이관·제거·보관 수) 이 함수가 그것을 **버렸다.**
+     * 미배정 캐릭터는 세계관을 떠나며 남긴 값을 들고 있을 수 있고(B-128이 일부러 보존하는
+     * 정상 상태다), 작품에 배정하는 순간 그 값이 새 세계관 정의로 이관되거나 **제거된다.**
+     * 화면은 *"OO을(를) '작품'에 배정했습니다"*만 말했으니 **유실이 조용히 삼켜졌다.**
+     *
+     * 일괄 편집 쪽은 같은 저장소 함수를 부르면서 그 셈을 끝까지 나른다 —
+     * `BatchEditViewModel.changeNovel`의 주석이 *"counts.move를 반드시 전달 — 누락하면 …
+     * 유실이 조용히 삼켜진다(변수 제어)"*라고 적어 두었다. 도우미 경로만 그 밖이었다.
      */
-    suspend fun assignNovel(characterId: Long, novelId: Long): Boolean {
-        if (characterRepository.getCharacterById(characterId) == null) return false
-        characterRepository.batchChangeNovel(listOf(characterId), novelId)
-        return true
+    suspend fun assignNovel(characterId: Long, novelId: Long): com.novelcharacter.app.data.repository.UniverseMoveCounts? {
+        if (characterRepository.getCharacterById(characterId) == null) return null
+        return characterRepository.batchChangeNovel(listOf(characterId), novelId)
     }
 
     /** 캐릭터가 속한 세계관의 관계 유형 목록을 반환 (세계관 미배정 시 기본 유형) */
@@ -2289,6 +2300,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
+
 
     fun updateCharacterDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
         try {

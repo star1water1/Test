@@ -172,4 +172,33 @@ class UnassignedHistoryScopeTest {
         )
         assertEquals(listOf(9L, 7L, 8L), plan.migrate)
     }
+
+    // ===== notifiable — 고지에 실을 캐릭터 =====
+
+    @Test
+    fun `이번 값을 든 이력의 주인만 고지한다`() {
+        // 이 필드에 이력이 있다는 것만으로 세면, 바뀔 것이 없는 이름변경에도 경고가 붙는다.
+        val ids = UnassignedHistoryScope.notifiable(
+            listOf(11L to "붉은 머리", 12L to "검은 머리", 13L to "붉은 머리")
+        ) { it == "붉은 머리" }
+        assertEquals(listOf(11L, 13L), ids)
+    }
+
+    @Test
+    fun `한 캐릭터가 이력을 여럿 들어도 한 명으로 센다`() {
+        // 행을 세면 "미분류 캐릭터 3명"이 실제로는 한 명이 된다 — 고지는 사람 수로 말한다.
+        val ids = UnassignedHistoryScope.notifiable(
+            listOf(11L to "붉은 머리", 11L to "붉은 머리", 11L to "붉은 머리")
+        ) { it == "붉은 머리" }
+        assertEquals(listOf(11L), ids)
+    }
+
+    @Test
+    fun `걸리는 값이 하나도 없으면 비어 있다`() {
+        // 비어 있어야 호출부가 아무 말도 하지 않는다 — 정상 조작에 잔소리를 달지 않는다.
+        val ids = UnassignedHistoryScope.notifiable(
+            listOf(11L to "검은 머리", 12L to "금발")
+        ) { it == "붉은 머리" }
+        assertEquals(emptyList<Long>(), ids)
+    }
 }

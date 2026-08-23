@@ -16,9 +16,11 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DuelGradeRef
 import com.novelcharacter.app.util.DuelGradeAssign
 import com.novelcharacter.app.util.OpResult
-import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifyResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * **[등급 반영] 미리보기** — 대결 순위에서 나온 등급을 필드 값으로 쓰기 **직전**의 화면
@@ -50,15 +52,33 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
     private val checked = LinkedHashSet<String>()
     private var nameByCode: Map<String, String> = emptyMap()
 
+    /**
+     * **회전을 넘긴 체크 상태** — 미리보기를 다시 세우기 전까지 들고 있는 임시 자리.
+     *
+     * 이 시트는 세울 때마다 DB에서 미리보기를 다시 계산하므로(`load`), 회전 뒤의 목록이
+     * 회전 전과 다를 수 있다. 그래서 되살릴 때 **지금 목록에 있는 줄만** 되살린다 —
+     * 없는 코드를 체크에 남기면 [반영 (N)]의 N이 화면의 체크 수와 갈린다.
+     */
+    private var restoredChecked: List<String>? = null
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.sheet_duel_grade_apply, container, false)
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // **고른 것은 화면보다 오래 산다.** 종전에는 회전 한 번에 기본 체크로 통째로
+        // 되돌아갔고 아무 말도 없었다 — 손값 묶음에서 하나씩 훑어 끈 사용자가 그 판단을
+        // 잃는다(원칙 04 · 개발 의도 2번).
+        outState.putStringArrayList(KEY_CHECKED, ArrayList(checked))
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         fieldId = arguments?.getLong(ARG_FIELD_ID) ?: 0L
         axisCode = arguments?.getString(ARG_AXIS_CODE).orEmpty()
+        restoredChecked = savedInstanceState?.getStringArrayList(KEY_CHECKED)
         view.findViewById<MaterialButton>(R.id.applyButton).isEnabled = false
         load(view)
     }
@@ -71,54 +91,66 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
     private fun load(view: View) {
         val summary = view.findViewById<TextView>(R.id.summaryText)
         val app = requireContext().applicationContext as NovelCharacterApp
+        // **문구를 미리 굳힌다** — 아래 블록은 배경에서 도는데 `getString`은 프래그먼트를
+        // 거치므로(`requireContext()`) 그 사이에 화면이 사라지면 배경 스레드에서
+        // `IllegalStateException`이 난다. 상세 화면의 PDF 경로가 같은 이유로 이미 굳힌다.
+        val foreignAxisText = getString(R.string.duel_grade_axis_foreign)
+        val fixCutsText = getString(R.string.duel_grade_apply_fix_cuts)
         viewLifecycleOwner.lifecycleScope.launch {
-            val loaded = try {
-                val field = app.database.fieldDefinitionDao().getFieldById(fieldId)
-                val axis = app.duelRepository.axisByCode(axisCode)
-                val spec = field?.let { DuelGradeRef.fromConfig(it.config) }
-                if (field == null || axis == null || spec == null) {
-                    null
-                } else if (axis.universeId != field.universeId) {
-                    // 소속 검사(설계 4-2 ⓑ) — 축 code는 전역 유니크라 **남의 세계관 축을
-                    // 정확히 찾는다.** 강등이 한 경로라도 빠졌을 때의 두 번째 방어선이다.
-                    Loaded.Blocked(getString(R.string.duel_grade_axis_foreign))
-                } else {
-                    val labels = DuelGradeAssign.orderedLabels(
-                        com.novelcharacter.app.data.model.GradeSystemRef.gradesFromConfig(field.config)
-                    )
-                    val problems = DuelGradeAssign.validate(spec.cuts, labels)
-                    if (problems.isNotEmpty()) {
-                        Loaded.Blocked(getString(R.string.duel_grade_apply_fix_cuts))
+            // **점수 적합을 주 스레드에서 돌리지 않는다.** `DuelViewModel`의 KDoc이 그
+            // 이유를 실측으로 든다 — 900명·18,000판에서 *적합 128ms*이고 캐릭터 수의
+            // 제곱에 붙는다. 그 계층은 전부 `Dispatchers.Default`로 넘기는데 **이 시트와
+            // 필드 편집의 [경계 제안]만 그 밖에 있었다.** Room의 중단 함수는 스스로 자기
+            // 실행기로 옮기므로 이 감싸기와 겹치지 않는다.
+            val loaded = withContext(Dispatchers.Default) {
+                try {
+                    val field = app.database.fieldDefinitionDao().getFieldById(fieldId)
+                    val axis = app.duelRepository.axisByCode(axisCode)
+                    val spec = field?.let { DuelGradeRef.fromConfig(it.config) }
+                    if (field == null || axis == null || spec == null) {
+                        null
+                    } else if (axis.universeId != field.universeId) {
+                        // 소속 검사(설계 4-2 ⓑ) — 축 code는 전역 유니크라 **남의 세계관 축을
+                        // 정확히 찾는다.** 강등이 한 경로라도 빠졌을 때의 두 번째 방어선이다.
+                        Loaded.Blocked(foreignAxisText)
                     } else {
-                        val characters = app.characterRepository
-                            .getCharactersByUniverseList(field.universeId)
-                        val scores = app.duelRepository.scoresOf(axis, characters.map { it.code })
-                        val assigned = DuelGradeAssign.assign(scores, spec.cuts, labels)
-                        // **저장소를 거친다** — DAO를 직접 부르면 `IN (:ids)`가 SQLite 변수
-                        // 상한(999)에 걸려, 캐릭터가 많은 세계관에서 미리보기가 예외로 죽는다.
-                        // 저장소 쪽이 그 청크 분할을 들고 있다.
-                        val codeById = characters.associate { it.id to it.code }
-                        val currentValues = app.characterRepository
-                            .getValuesForCharacters(characters.map { it.id })
-                            .filter { it.fieldDefinitionId == fieldId }
-                            .mapNotNull { value ->
-                                codeById[value.characterId]?.let { it to value.value }
-                            }
-                            .toMap()
-                        Loaded.Ready(
-                            axisName = axis.name,
-                            fieldName = field.name,
-                            scored = scores.scored,
-                            unplayed = scores.unplayed,
-                            assignments = assigned.associate { it.code to it.label },
-                            preview = DuelGradeAssign.preview(assigned, currentValues, spec.lastApplied),
-                            nameByCode = characters.associate { it.code to it.displayName }
+                        val labels = DuelGradeAssign.orderedLabels(
+                            com.novelcharacter.app.data.model.GradeSystemRef.gradesFromConfig(field.config)
                         )
+                        val problems = DuelGradeAssign.validate(spec.cuts, labels)
+                        if (problems.isNotEmpty()) {
+                            Loaded.Blocked(fixCutsText)
+                        } else {
+                            val characters = app.characterRepository
+                                .getCharactersByUniverseList(field.universeId)
+                            val scores = app.duelRepository.scoresOf(axis, characters.map { it.code })
+                            val assigned = DuelGradeAssign.assign(scores, spec.cuts, labels)
+                            // **저장소를 거친다** — DAO를 직접 부르면 `IN (:ids)`가 SQLite 변수
+                            // 상한(999)에 걸려, 캐릭터가 많은 세계관에서 미리보기가 예외로 죽는다.
+                            // 저장소 쪽이 그 청크 분할을 들고 있다.
+                            val codeById = characters.associate { it.id to it.code }
+                            val currentValues = app.characterRepository
+                                .getValuesForCharacters(characters.map { it.id })
+                                .filter { it.fieldDefinitionId == fieldId }
+                                .mapNotNull { value ->
+                                    codeById[value.characterId]?.let { it to value.value }
+                                }
+                                .toMap()
+                            Loaded.Ready(
+                                axisName = axis.name,
+                                fieldName = field.name,
+                                scored = scores.scored,
+                                unplayed = scores.unplayed,
+                                assignments = assigned.associate { it.code to it.label },
+                                preview = DuelGradeAssign.preview(assigned, currentValues, spec.lastApplied),
+                                nameByCode = characters.associate { it.code to it.displayName }
+                            )
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to build duel grade preview", e)
+                    null
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to build duel grade preview", e)
-                null
             }
             if (!isAdded) return@launch
             when (loaded) {
@@ -141,7 +173,15 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
         assignments = data.assignments
         nameByCode = data.nameByCode
         checked.clear()
-        data.preview.defaultChecked.forEach { checked.add(it.code) }
+        val restored = restoredChecked
+        restoredChecked = null
+        if (restored != null) {
+            // 되살릴 때는 **지금 목록에 있는 줄만** 받는다 — 미리보기는 다시 계산된 것이다.
+            val live = data.preview.rows.mapTo(HashSet()) { it.code }
+            restored.filterTo(checked) { it in live }
+        } else {
+            data.preview.defaultChecked.forEach { checked.add(it.code) }
+        }
 
         view.findViewById<TextView>(R.id.titleText).text =
             getString(R.string.duel_grade_apply_title, data.axisName, data.fieldName)
@@ -242,31 +282,52 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
         val app = requireContext().applicationContext as NovelCharacterApp
         val selected = LinkedHashSet(checked)
         val all = assignments
+        val fieldIdNow = fieldId
+        val failedText = getString(R.string.duel_grade_apply_failed)
         viewLifecycleOwner.lifecycleScope.launch {
-            val result = try {
-                app.duelRepository.applyGrades(fieldId, all, selected, System.currentTimeMillis())
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to apply duel grades", e)
-                null
+            // **반영은 시작하면 끝까지 가고, 끝난 사실도 끝까지 간다.**
+            //
+            // 종전에는 이 구간이 화면 수명 그대로였다. 트랜잭션 자체는 Room이 롤백해 주므로
+            // 반쪽 쓰기는 안 났지만, **커밋된 뒤 돌아오는 길에 취소가 던져지면 이력도 토스트도
+            // 통째로 사라졌다** — 사용자는 수십 명의 등급이 바뀐 것을 어디서도 듣지 못한다.
+            // 그래서 쓰기와 고지를 한 `NonCancellable` 블록에 함께 넣고, 고지는 앱 컨텍스트로
+            // 보낸다(`Fragment.logOperation`은 화면이 사라지면 조용히 아무것도 안 적는다).
+            val result = withContext(NonCancellable) {
+                val written = try {
+                    app.duelRepository.applyGrades(fieldIdNow, all, selected, System.currentTimeMillis())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to apply duel grades", e)
+                    null
+                }
+                if (written == null) {
+                    app.operationLogRepository.logAsync(
+                        OpResult.failure(OpResult.CAT_DUEL, failedText)
+                    )
+                } else {
+                    // 이력에 남긴다 — 되돌릴 자리(휴지통)를 찾는 사람이 "언제 무엇이 바뀌었나"를
+                    // 여기서 짚는다(B-113 ②의 답).
+                    app.operationLogRepository.logAsync(
+                        OpResult.success(
+                            OpResult.CAT_DUEL,
+                            app.getString(R.string.duel_grade_op_applied, written)
+                        )
+                    )
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            app,
+                            app.getString(R.string.duel_grade_apply_done, written),
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                written
             }
             if (!isAdded) return@launch
             if (result == null) {
-                notifyResult(
-                    OpResult.failure(OpResult.CAT_DUEL, getString(R.string.duel_grade_apply_failed))
-                )
+                notifyResult(OpResult.failure(OpResult.CAT_DUEL, failedText))
                 button.isEnabled = true
                 return@launch
             }
-            // 이력에 남긴다 — 되돌릴 자리(휴지통)를 찾는 사람이 "언제 무엇이 바뀌었나"를
-            // 여기서 짚는다(B-113 ②의 답).
-            logOperation(
-                OpResult.success(OpResult.CAT_DUEL, getString(R.string.duel_grade_op_applied, result))
-            )
-            android.widget.Toast.makeText(
-                requireContext(),
-                getString(R.string.duel_grade_apply_done, result),
-                android.widget.Toast.LENGTH_LONG
-            ).show()
             dismiss()
         }
     }
@@ -295,6 +356,7 @@ class DuelGradeApplySheet : BottomSheetDialogFragment() {
         private const val TAG = "DuelGradeApplySheet"
         private const val ARG_FIELD_ID = "fieldId"
         private const val ARG_AXIS_CODE = "axisCode"
+        private const val KEY_CHECKED = "checkedCodes"
 
         fun newInstance(fieldId: Long, axisCode: String) = DuelGradeApplySheet().apply {
             arguments = Bundle().apply {

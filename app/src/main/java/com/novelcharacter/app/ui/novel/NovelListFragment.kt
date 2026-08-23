@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.novel
 
+import com.novelcharacter.app.ui.common.inViewModelScope
 import android.graphics.Color
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.drawable.GradientDrawable
@@ -762,8 +763,14 @@ class NovelListFragment : Fragment() {
         )
         viewLifecycleOwner.lifecycleScope.launch {
             val result = try {
-                val newId = viewModel.insertNovelField(toInsert)
-                val outcome = viewModel.registerInitialValues(newId, toInsert, initialValues)
+                // **정의와 사전 등록 값은 한 수명에서 만든다** — 정본은
+                // `FieldViewModel.insertField`이고 그쪽은 `viewModelScope`에서 돈다.
+                // 이 자리만 화면 수명이라, 만들고 나서 회전하면 **정의는 섰는데 값이 없다**
+                // (그리고 부분 실패를 말하는 아래 문구는 취소돼 뜨지도 않는다).
+                val outcome = viewModel.inViewModelScope {
+                    val id = viewModel.insertNovelField(toInsert)
+                    viewModel.registerInitialValues(id, toInsert, initialValues)
+                }
                 com.novelcharacter.app.util.OpResult.success(
                     com.novelcharacter.app.util.OpResult.CAT_FIELD,
                     getString(R.string.novel_field_created, field.name),

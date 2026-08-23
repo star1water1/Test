@@ -35,7 +35,10 @@ import com.novelcharacter.app.databinding.ItemTrashOperationBinding
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.reportAndNotify
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -565,7 +568,14 @@ class TrashFragment : Fragment() {
     ) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val result = trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
+                // **복원은 시작하면 끝까지 간다** — 항목마다 트랜잭션이 따로라, 화면 수명에서
+                // 그대로 돌면 회전 한 번에 **절반만 되살아난 채 멈춘다**(취소는 중단점마다
+                // 걸린다). 그것은 취소가 아니라 **반쪽 상태**이고, 이 저장소는 같은 이유로
+                // 엑셀 가져오기의 반영 구간을 이미 `NonCancellable`로 두었다
+                // (*"항목 단위로 완결되지 않는 작업이라 R-26이 취소를 요구하지 않는 자리"*).
+                val result = withContext(NonCancellable) {
+                    trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
+                }
                 resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 if (result == null) {
@@ -585,8 +595,16 @@ class TrashFragment : Fragment() {
                 logOperation(OpResult.success(OpResult.CAT_TRASH, doneMessage))
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
-                    warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges
+                    warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges,
+                    revertedMemberships = result.revertedMemberships,
+                    revertedStateChanges = result.revertedStateChanges
                 )
+            } catch (e: CancellationException) {
+                // **취소는 실패가 아니다.** 위 구간이 `NonCancellable`이라 복원 자체는 끝났고,
+                // 여기 온 것은 *고지할 화면이 사라졌다*는 뜻뿐이다. 종전에는 이 갈래가 아래
+                // `catch (e: Exception)`에 걸려 **성공한 복원을 '복원 실패'로 이력에 적었다**
+                // (B-228이 세운 자세 — 화면 파괴를 실패로 둔갑시키지 않는다).
+                throw e
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
@@ -609,7 +627,16 @@ class TrashFragment : Fragment() {
         warned: Boolean,
         predicted: RestoreLossCounts,
         extraNote: String? = null,
-        semanticStateChanges: Int = 0
+        semanticStateChanges: Int = 0,
+        /**
+         * 되돌리기가 **보충한** 세력 소속·상태변화 수.
+         *
+         * 저장소가 줄곧 세어 돌려주고 있었는데 **읽는 곳이 0건이었다**(R-24) — 되돌리기가
+         * 실제로 되살린 데이터를 사용자가 알 길이 없었다. 이 함수의 규약이 정확히
+         * *"미리보기가 예고하지 못하는 결과만 사후에 알린다"*이므로 자리는 여기다.
+         */
+        revertedMemberships: Int = 0,
+        revertedStateChanges: Int = 0
     ) {
         val notes = mutableListOf<String>()
         extraNote?.let { notes.add(it) }
@@ -623,6 +650,16 @@ class TrashFragment : Fragment() {
             if (details.isNotEmpty()) {
                 notes.add(getString(R.string.trash_restore_partial, details))
             }
+        }
+        // 되돌리기가 보충한 것 — 둘 다면 한 줄로 합친다(줄 수를 늘리지 않는다).
+        if (revertedMemberships > 0 && revertedStateChanges > 0) {
+            notes.add(
+                getString(R.string.trash_restore_reverted_supplement, revertedMemberships, revertedStateChanges)
+            )
+        } else if (revertedMemberships > 0) {
+            notes.add(getString(R.string.trash_restore_reverted_memberships, revertedMemberships))
+        } else if (revertedStateChanges > 0) {
+            notes.add(getString(R.string.trash_restore_reverted_state_changes, revertedStateChanges))
         }
         if (relinkedByCode > 0) {
             notes.add(getString(R.string.trash_restore_relinked, relinkedByCode))
@@ -695,7 +732,14 @@ class TrashFragment : Fragment() {
     private fun restoreOperation(row: TrashListPlan.Row.Header, predicted: RestoreLossCounts) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val result = trashRepository.restoreOperation(row.opKey, row.editBackup)
+                // **복원은 시작하면 끝까지 간다** — 항목마다 트랜잭션이 따로라, 화면 수명에서
+                // 그대로 돌면 회전 한 번에 **절반만 되살아난 채 멈춘다**(취소는 중단점마다
+                // 걸린다). 그것은 취소가 아니라 **반쪽 상태**이고, 이 저장소는 같은 이유로
+                // 엑셀 가져오기의 반영 구간을 이미 `NonCancellable`로 두었다
+                // (*"항목 단위로 완결되지 않는 작업이라 R-26이 취소를 요구하지 않는 자리"*).
+                val result = withContext(NonCancellable) {
+                    trashRepository.restoreOperation(row.opKey, row.editBackup)
+                }
                 resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 Toast.makeText(
@@ -715,8 +759,17 @@ class TrashFragment : Fragment() {
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
                     warned = true, predicted = predicted, extraNote = failedNote,
-                    semanticStateChanges = result.restored.sumOf { it.restoredSemanticStateChanges }
+                    semanticStateChanges = result.restoredSemanticStateChanges,
+                    // 작업 전체 복원도 되돌리기를 한다 — 항목 하나 복원과 같은 것을 말해야 한다.
+                    revertedMemberships = result.revertedMemberships,
+                    revertedStateChanges = result.revertedStateChanges
                 )
+            } catch (e: CancellationException) {
+                // **취소는 실패가 아니다.** 위 구간이 `NonCancellable`이라 복원 자체는 끝났고,
+                // 여기 온 것은 *고지할 화면이 사라졌다*는 뜻뿐이다. 종전에는 이 갈래가 아래
+                // `catch (e: Exception)`에 걸려 **성공한 복원을 '복원 실패'로 이력에 적었다**
+                // (B-228이 세운 자세 — 화면 파괴를 실패로 둔갑시키지 않는다).
+                throw e
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()

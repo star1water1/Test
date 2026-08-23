@@ -28,8 +28,7 @@ class WorldPackageExporter(private val context: Context) {
     data class ExportConfig(
         val universeId: Long,
         val novelIds: List<Long>? = null, // null = all novels
-        val includeImages: Boolean = true,
-        val compressImages: Boolean = false
+        val includeImages: Boolean = true
     )
 
     /**

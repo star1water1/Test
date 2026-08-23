@@ -50,9 +50,68 @@ class RelationshipGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
+    /**
+     * **그리기 기하는 `onDraw`가 아니라 여기서 짓는다**(B-214의 프레임 할당 축).
+     *
+     * `onDraw`는 확대·이동 제스처가 도는 동안 **프레임마다** 불린다(캔버스 변환만 바뀌고
+     * 노드 좌표는 그대로다). 그런데 종전에는 그 안에서 노드 색인(`associateBy`)·다중 엣지
+     * 색인 맵·잘린 라벨 문자열·세력 볼록껍질·세력 중심점을 **매번 새로 지었다** — 노드 N,
+     * 엣지 E, 세력 F에 대해 프레임마다 `O(N + E + F·N log N)` 할당이 붙고, 그 쓰레기가
+     * 곧 손가락 아래에서 도는 GC다.
+     *
+     * 그 값들은 전부 **데이터가 바뀔 때만** 바뀌므로 설정자를 통로로 삼아 그때 한 번 짓는다.
+     * 통로를 속성 설정자에 둔 것이 요점이다 — 대입 자리가 셋(갱신·단일 노드·배치 완료)이라
+     * 호출을 손으로 달면 **한 자리가 빠지고 캐시만 낡는다**(종전 `cachedPairEdgeCount`가
+     * *"setGraphData 시 갱신"*이라 적어 두고 명시 호출 하나에 매달려 있던 자리다).
+     */
     private var nodes = listOf<GraphNode>()
+        set(value) {
+            field = value
+            rebuildNodeGeometry()
+        }
     private var edges = listOf<GraphEdge>()
+        set(value) {
+            field = value
+            rebuildEdgeGeometry()
+        }
     private var factionRelationEdges = listOf<FactionRelationEdge>()
+
+    /** 노드 id → 노드 (엣지 양 끝을 찾는다) */
+    private var nodeById = mapOf<Long, GraphNode>()
+
+    /** 노드와 **같은 차례**의 그리기 라벨 — 6글자 절단과 사망 † 접두가 이미 붙어 있다 */
+    private var nodeDrawLabels = listOf<String>()
+
+    /**
+     * 세력 영역(볼록껍질/단일 원)과 세력별 중심점 — **`nodes`가 바뀌면 낡고, 필요할 때 지어진다.**
+     *
+     * 여기만 지연으로 두는 이유는 값이 비싸고(볼록껍질 `O(멤버 log 멤버)`) **꺼져 있을 수 있기**
+     * 때문이다 — `showFactionArea`가 false면 아무도 안 본다. 갱신마다 미리 지으면 그 판은
+     * 통째로 버려진다. 나머지 캐시(노드 색인·라벨·엣지 오프셋)는 늘 쓰이므로 곧장 짓는다.
+     */
+    private var factionGeometryStale = true
+    private var factionAreasCache = listOf<FactionArea>()
+    private var factionCentroidsCache = mapOf<Long, PointF>()
+
+    private fun factionAreas(): List<FactionArea> {
+        if (factionGeometryStale) rebuildFactionGeometry()
+        return factionAreasCache
+    }
+
+    private fun factionCentroids(): Map<Long, PointF> {
+        if (factionGeometryStale) rebuildFactionGeometry()
+        return factionCentroidsCache
+    }
+
+    /** 엣지와 **같은 차례**의 곡선 오프셋 — 0이면 직선이다 */
+    private var edgeCurveOffsets = FloatArray(0)
+
+    /**
+     * 세력 영역 한 덩어리의 그리기 기하.
+     *
+     * [path]가 있으면 다각형이고, 없으면 ([cx], [cy]) 중심의 원이다(멤버가 한 명인 세력).
+     */
+    private class FactionArea(val color: Int, val path: Path?, val cx: Float, val cy: Float)
 
     /** 세력 간 관계 엣지 설정 (B-3) — 세력 영역 표시가 켜져 있을 때 함께 그려진다 */
     fun setFactionRelationEdges(edgeList: List<FactionRelationEdge>) {
@@ -74,9 +133,6 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private val isDarkMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-    // 엣지 쌍별 개수 캐시 (setGraphData 시 갱신, onDraw마다 재생성 방지)
-    private var cachedPairEdgeCount = mapOf<Long, Int>()
-
     private val defaultNodeColor = ContextCompat.getColor(context, R.color.graph_node_fill)
     private val deceasedNodeColor = 0xFF9E9E9E.toInt() // 시간뷰 사망 노드 회색
 
@@ -91,8 +147,11 @@ class RelationshipGraphView @JvmOverloads constructor(
         strokeWidth = 2f
     }
 
+    /** 관계 유형 색이 없을 때의 기본 엣지 색 — 종전에는 **엣지마다 프레임마다** 리소스를 물었다 */
+    private val defaultEdgeColor = ContextCompat.getColor(context, R.color.graph_edge)
+
     private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = ContextCompat.getColor(context, R.color.graph_edge)
+        color = defaultEdgeColor
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
@@ -133,9 +192,6 @@ class RelationshipGraphView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
-    // 세력 배경 경로
-    private val factionHullPath = Path()
-
     // 관계 타입별 기본 색 — 리소스 유래(라이트/다크는 리소스 한정자가 자동 반영).
     // 사용자 커스텀(setRelationshipColors)이 이 위에 오버레이된다.
     private val defaultRelationshipColors: Map<String, Int> = mapOf(
@@ -172,6 +228,13 @@ class RelationshipGraphView @JvmOverloads constructor(
     }
 
     private val nodeRadius = 40f
+
+    /**
+     * 세력 영역의 둥근 모서리 — 값이 상수([nodeRadius])라 프레임마다 새로 만들 것이 아니다.
+     *
+     * **선언이 [nodeRadius] 뒤인 것이 요점이다** — 앞에 두면 초기화 차례상 0으로 지어진다.
+     */
+    private val factionCornerEffect = CornerPathEffect(nodeRadius * 2f * 0.6f)
     private var scaleFactor = 1f
     private var translateX = 0f
     private var translateY = 0f
@@ -268,7 +331,6 @@ class RelationshipGraphView @JvmOverloads constructor(
             if (kept != null) node.copy(x = kept.first, y = kept.second) else node.copy()
         }
         edges = edgeList.toList()
-        rebuildPairEdgeCache()
         if (sameNodeSet) {
             // 배치가 그대로다 — 그리기만 다시 한다(계산 중인 배치가 있으면 그쪽이 좌표를 마저 얹는다).
             invalidate()
@@ -278,13 +340,150 @@ class RelationshipGraphView @JvmOverloads constructor(
         }
     }
 
-    private fun rebuildPairEdgeCache() {
+    /**
+     * 엣지에서 파생되는 기하 — 쌍별 개수와 **엣지마다의 곡선 오프셋**.
+     *
+     * 오프셋은 종전에 `onDraw` 안에서 `mutableMapOf`에 등장 차례를 세며 구했다. 엣지 차례가
+     * 고정이라 답이 프레임마다 같으므로 여기서 한 번 짓는다.
+     */
+    private fun rebuildEdgeGeometry() {
+        // **양 끝이 다 있는 엣지만 센다** — 세는 모수를 그리는 모수와 맞춘다.
+        //
+        // ⚠️ **이것은 그려지는 그림을 바꾸지 않는다.** 한 쌍의 엣지는 끝을 공유하므로 그 쌍은
+        // *전부 매달렸거나 전부 아니다* — 살아 있는 쌍의 총수에 매달린 엣지가 섞일 수가 없다.
+        // 그래도 거르는 것은 **그릴 수 없는 쌍을 세어 두지 않기 위해서**다(모수 일치).
         val counts = mutableMapOf<Long, Int>()
         for (edge in edges) {
+            if (edge.fromId !in nodeById || edge.toId !in nodeById) continue
             val key = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
             counts[key] = (counts[key] ?: 0) + 1
         }
-        cachedPairEdgeCount = counts
+        val offsets = FloatArray(edges.size)
+        val seen = mutableMapOf<Long, Int>()
+        for ((i, edge) in edges.withIndex()) {
+            if (edge.fromId !in nodeById || edge.toId !in nodeById) continue
+            val key = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
+            val total = counts[key] ?: 1
+            val idx = seen.getOrPut(key) { 0 }
+            seen[key] = idx + 1
+            // 곡선 오프셋 (0이면 직선, 양수/음수로 좌우 분리) — 종전 onDraw의 셈 그대로다.
+            offsets[i] = if (total <= 1) 0f else {
+                val spread = 40f  // 곡선 간 간격
+                val center = (total - 1) / 2f
+                (idx - center) * spread
+            }
+        }
+        edgeCurveOffsets = offsets
+    }
+
+    /**
+     * 노드에서 파생되는 기하 — 색인 · 라벨.
+     *
+     * **`nodes` 대입마다 돈다**(좌표가 그대로여도 그렇다) — 그래도 프레임마다 짓던 것에 비하면
+     * 자릿수가 다르다: 대입은 데이터 갱신·단일 노드·배치 완료 셋뿐이고 `onDraw`는 제스처 중
+     * 초당 수십 번이다. 비싼 세력 기하는 여기서 짓지 않고 **낡았다고 표시만** 한다.
+     */
+    private fun rebuildNodeGeometry() {
+        nodeById = nodes.associateBy { it.id }
+
+        val labels = ArrayList<String>(nodes.size)
+        for (node in nodes) {
+            // 노드 이름: 6글자까지 표시, 시간뷰 사망 시 † 접두
+            val base = if (node.label.length > 6) node.label.take(6) + "…" else node.label
+            labels.add(if (node.isDeceased) "†$base" else base)
+        }
+        nodeDrawLabels = labels
+
+        // 세력 기하는 **낡았다고 표시만 한다** — 그리는 자리가 켜져 있을 때 짓는다.
+        factionGeometryStale = true
+        // **엣지 기하가 노드에 딸린다** — 매달린 엣지 판정([nodeById])이 바뀌기 때문이다.
+        // 여기서 함께 짓지 않으면 배치가 끝난 뒤 곡선 부채꼴이 옛 모수로 남는다.
+        rebuildEdgeGeometry()
+    }
+
+    /** 세력 영역(볼록껍질/단일 원)과 세력별 멤버 중심점을 짓는다 — [factionAreas]·[factionCentroids]가 부른다 */
+    private fun rebuildFactionGeometry() {
+        factionGeometryStale = false
+        // factionId → (color, list of member nodes) 매핑
+        val factionNodes = mutableMapOf<Long, Pair<Int, MutableList<GraphNode>>>()
+        for (node in nodes) {
+            for (i in node.factionIds.indices) {
+                if (i >= node.factionColors.size) break
+                val fId = node.factionIds[i]
+                val fColor = node.factionColors[i]
+                val entry = factionNodes.getOrPut(fId) { fColor to mutableListOf() }
+                entry.second.add(node)
+            }
+        }
+
+        val padding = nodeRadius * 2f
+        val areas = ArrayList<FactionArea>(factionNodes.size)
+        for ((_, pair) in factionNodes) {
+            val (factionColor, memberNodes) = pair
+            if (memberNodes.size < 2) {
+                // 단일 노드: 원으로 표시
+                if (memberNodes.size == 1) {
+                    val n = memberNodes[0]
+                    areas.add(FactionArea(factionColor, null, n.x, n.y))
+                }
+                continue
+            }
+
+            // Convex hull 계산 (Graham scan)
+            val points = memberNodes.map { PointF(it.x, it.y) }
+            val hull = computeConvexHull(points)
+            if (hull.size < 2) continue
+
+            // hull + padding 으로 둥근 영역 그리기
+            val path = Path()
+            if (hull.size == 2) {
+                // 두 점: 둥근 사각형으로 처리
+                val p0 = hull[0]
+                val p1 = hull[1]
+                val dx = p1.x - p0.x
+                val dy = p1.y - p0.y
+                val dist = sqrt(dx * dx + dy * dy)
+                if (dist < 1f) continue
+                val nx = -dy / dist * padding
+                val ny = dx / dist * padding
+                path.moveTo(p0.x + nx, p0.y + ny)
+                path.lineTo(p1.x + nx, p1.y + ny)
+                path.lineTo(p1.x - nx, p1.y - ny)
+                path.lineTo(p0.x - nx, p0.y - ny)
+                path.close()
+            } else {
+                // 다각형을 padding만큼 확장 (각 꼭짓점을 중심에서 바깥으로)
+                val cx = hull.map { it.x }.average().toFloat()
+                val cy = hull.map { it.y }.average().toFloat()
+                val expanded = hull.map { p ->
+                    val dx = p.x - cx
+                    val dy = p.y - cy
+                    val dist = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                    PointF(p.x + dx / dist * padding, p.y + dy / dist * padding)
+                }
+                path.moveTo(expanded[0].x, expanded[0].y)
+                for (i in 1 until expanded.size) {
+                    path.lineTo(expanded[i].x, expanded[i].y)
+                }
+                path.close()
+            }
+            areas.add(FactionArea(factionColor, path, 0f, 0f))
+        }
+        factionAreasCache = areas
+
+        // 세력별 멤버 노드 중심점 — 세력 간 관계 엣지(B-3)의 양 끝이다.
+        // **`factionAreas`와 모수가 다르다**: 색을 못 받은 세력(factionColors가 짧은 경우)도
+        // 관계 엣지는 그린다. 그래서 영역 셈을 재활용하지 않고 따로 센다.
+        val sums = mutableMapOf<Long, FloatArray>()  // factionId -> [sumX, sumY, count]
+        for (node in nodes) {
+            for (fId in node.factionIds) {
+                val acc = sums.getOrPut(fId) { floatArrayOf(0f, 0f, 0f) }
+                acc[0] += node.x
+                acc[1] += node.y
+                acc[2] += 1f
+            }
+        }
+        factionCentroidsCache = sums.mapValues { (_, acc) -> PointF(acc[0] / acc[2], acc[1] / acc[2]) }
     }
 
     fun resetTransform() {
@@ -394,24 +593,21 @@ class RelationshipGraphView @JvmOverloads constructor(
         canvas.scale(scaleFactor, scaleFactor)
         canvas.translate(translateX, translateY)
 
-        val nodeMap = nodes.associateBy { it.id }
-
         // Draw faction backgrounds (before edges and nodes)
         if (showFactionArea) {
             drawFactionBackgrounds(canvas)
             drawFactionRelationEdges(canvas)
         }
 
-        // 같은 노드 쌍 사이의 곡선 오프셋 인덱스
-        val pairEdgeIndex = mutableMapOf<Long, Int>()
-
         // Draw edges with type-based colors and intensity-based width
-        for (edge in edges) {
-            val from = nodeMap[edge.fromId] ?: continue
-            val to = nodeMap[edge.toId] ?: continue
+        // **`withIndex()`를 쓰지 않는다** — 항목마다 `IndexedValue`를 하나씩 만든다.
+        // 이 루프의 할당을 없애려던 것이 이 수리라 그 자리에 다른 할당을 넣지 않는다.
+        for (edgeIndex in edges.indices) {
+            val edge = edges[edgeIndex]
+            val from = nodeById[edge.fromId] ?: continue
+            val to = nodeById[edge.toId] ?: continue
 
-            val edgeColor = relationshipColors[edge.label]
-                ?: ContextCompat.getColor(context, R.color.graph_edge)
+            val edgeColor = relationshipColors[edge.label] ?: defaultEdgeColor
 
             // isSecondary(세력 필터), isActive(시간뷰) 모두 반영
             val edgeAlpha = when {
@@ -428,20 +624,8 @@ class RelationshipGraphView @JvmOverloads constructor(
                 edgePaint.pathEffect = null
             }
 
-            // 같은 노드 쌍의 다중 엣지 → 곡선으로 분리
-            val pairKey = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
-            val totalEdges = cachedPairEdgeCount[pairKey] ?: 1
-            val edgeIdx = pairEdgeIndex.getOrPut(pairKey) { 0 }
-            pairEdgeIndex[pairKey] = edgeIdx + 1
-
-            // 곡선 오프셋 계산 (0이면 직선, 양수/음수로 좌우 분리)
-            val curveOffset = if (totalEdges <= 1) {
-                0f
-            } else {
-                val spread = 40f  // 곡선 간 간격
-                val center = (totalEdges - 1) / 2f
-                (edgeIdx - center) * spread
-            }
+            // 같은 노드 쌍의 다중 엣지 → 곡선으로 분리 ([rebuildEdgeGeometry]가 미리 잰다)
+            val curveOffset = edgeCurveOffsets.getOrElse(edgeIndex) { 0f }
 
             // 라벨 위치 계산
             val midX: Float
@@ -522,7 +706,8 @@ class RelationshipGraphView @JvmOverloads constructor(
 
         // Draw nodes
         val showFactionRings = showFactionBorder
-        for (node in nodes) {
+        for (nodeIndex in nodes.indices) {
+            val node = nodes[nodeIndex]
             // Draw faction rings outside the node circle
             if (showFactionRings && node.factionColors.isNotEmpty()) {
                 val ringWidth = 4f
@@ -550,9 +735,8 @@ class RelationshipGraphView @JvmOverloads constructor(
             canvas.drawCircle(node.x, node.y, nodeRadius, nodeStrokePaint)
 
             textPaint.alpha = if (node.isSecondary) 120 else 255
-            // 노드 이름: 6글자까지 표시 (원래 4글자), 시간뷰 사망 시 † 접두
-            val baseLabel = if (node.label.length > 6) node.label.take(6) + "…" else node.label
-            val label = if (node.isDeceased) "†$baseLabel" else baseLabel
+            // 이름 절단(6글자)과 사망 † 접두는 [rebuildNodeGeometry]가 미리 붙여 둔다
+            val label = nodeDrawLabels.getOrElse(nodeIndex) { node.label }
             canvas.drawText(label, node.x, node.y + textPaint.textSize / 3, textPaint)
         }
         // Reset paint states
@@ -566,79 +750,23 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     /**
      * 세력별 멤버 노드들을 감싸는 반투명 배경(convex hull + padding)을 그린다.
+     *
+     * **기하는 [rebuildFactionGeometry]가 짓는다** — 여기서는 칠하기만 한다.
      */
     private fun drawFactionBackgrounds(canvas: Canvas) {
-        // factionId → (color, list of member nodes) 매핑
-        val factionNodes = mutableMapOf<Long, Pair<Int, MutableList<GraphNode>>>()
-        for (node in nodes) {
-            for (i in node.factionIds.indices) {
-                if (i >= node.factionColors.size) break
-                val fId = node.factionIds[i]
-                val fColor = node.factionColors[i]
-                val entry = factionNodes.getOrPut(fId) { fColor to mutableListOf() }
-                entry.second.add(node)
-            }
-        }
-
+        val areas = factionAreas()
+        if (areas.isEmpty()) return
         val padding = nodeRadius * 2f
-        for ((_, pair) in factionNodes) {
-            val (factionColor, memberNodes) = pair
-            if (memberNodes.size < 2) {
-                // 단일 노드: 원으로 표시
-                if (memberNodes.size == 1) {
-                    val n = memberNodes[0]
-                    factionBgPaint.color = factionColor
-                    factionBgPaint.alpha = 40
-                    canvas.drawCircle(n.x, n.y, padding, factionBgPaint)
-                }
+        for (area in areas) {
+            factionBgPaint.color = area.color
+            factionBgPaint.alpha = 40
+            val path = area.path
+            if (path == null) {
+                canvas.drawCircle(area.cx, area.cy, padding, factionBgPaint)
                 continue
             }
-
-            // Convex hull 계산 (Graham scan)
-            val points = memberNodes.map { PointF(it.x, it.y) }
-            val hull = computeConvexHull(points)
-            if (hull.size < 2) continue
-
-            // hull + padding 으로 둥근 영역 그리기
-            factionHullPath.rewind()
-            if (hull.size == 2) {
-                // 두 점: 둥근 사각형으로 처리
-                val p0 = hull[0]
-                val p1 = hull[1]
-                val dx = p1.x - p0.x
-                val dy = p1.y - p0.y
-                val dist = sqrt(dx * dx + dy * dy)
-                if (dist < 1f) continue
-                val nx = -dy / dist * padding
-                val ny = dx / dist * padding
-                factionHullPath.moveTo(p0.x + nx, p0.y + ny)
-                factionHullPath.lineTo(p1.x + nx, p1.y + ny)
-                factionHullPath.lineTo(p1.x - nx, p1.y - ny)
-                factionHullPath.lineTo(p0.x - nx, p0.y - ny)
-                factionHullPath.close()
-            } else {
-                // 다각형을 padding만큼 확장 (각 꼭짓점을 중심에서 바깥으로)
-                val cx = hull.map { it.x }.average().toFloat()
-                val cy = hull.map { it.y }.average().toFloat()
-                val expanded = hull.map { p ->
-                    val dx = p.x - cx
-                    val dy = p.y - cy
-                    val dist = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
-                    PointF(p.x + dx / dist * padding, p.y + dy / dist * padding)
-                }
-                factionHullPath.moveTo(expanded[0].x, expanded[0].y)
-                for (i in 1 until expanded.size) {
-                    factionHullPath.lineTo(expanded[i].x, expanded[i].y)
-                }
-                factionHullPath.close()
-            }
-
-            // 둥근 모서리 효과
-            val cornerEffect = CornerPathEffect(padding * 0.6f)
-            factionBgPaint.color = factionColor
-            factionBgPaint.alpha = 40
-            factionBgPaint.pathEffect = cornerEffect
-            canvas.drawPath(factionHullPath, factionBgPaint)
+            factionBgPaint.pathEffect = factionCornerEffect
+            canvas.drawPath(path, factionBgPaint)
             factionBgPaint.pathEffect = null
         }
     }
@@ -649,29 +777,19 @@ class RelationshipGraphView @JvmOverloads constructor(
      */
     private fun drawFactionRelationEdges(canvas: Canvas) {
         if (factionRelationEdges.isEmpty()) return
-
-        // 세력별 멤버 노드 중심점 계산
-        val sums = mutableMapOf<Long, FloatArray>()  // factionId -> [sumX, sumY, count]
-        for (node in nodes) {
-            for (fId in node.factionIds) {
-                val acc = sums.getOrPut(fId) { floatArrayOf(0f, 0f, 0f) }
-                acc[0] += node.x
-                acc[1] += node.y
-                acc[2] += 1f
-            }
-        }
-        if (sums.isEmpty()) return
+        val centroids = factionCentroids()
+        if (centroids.isEmpty()) return
 
         for (edge in factionRelationEdges) {
-            val from = sums[edge.factionId1] ?: continue
-            val to = sums[edge.factionId2] ?: continue
-            val fromX = from[0] / from[2]
-            val fromY = from[1] / from[2]
-            val toX = to[0] / to[2]
-            val toY = to[1] / to[2]
+            // 세력별 멤버 중심점은 [rebuildFactionGeometry]가 한 번만 잰다
+            val from = centroids[edge.factionId1] ?: continue
+            val to = centroids[edge.factionId2] ?: continue
+            val fromX = from.x
+            val fromY = from.y
+            val toX = to.x
+            val toY = to.y
 
-            val edgeColor = relationshipColors[edge.label]
-                ?: ContextCompat.getColor(context, R.color.graph_edge)
+            val edgeColor = relationshipColors[edge.label] ?: defaultEdgeColor
 
             edgePaint.color = Color.argb(200, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
             edgePaint.strokeWidth = (edge.intensity * 0.8f).coerceIn(2f, 8f)

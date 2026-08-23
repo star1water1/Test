@@ -250,7 +250,7 @@ class FieldManageFragment : Fragment() {
                 // 이 순서는 이 목록만의 것이 아니라 **편집 폼의 칸 순서이자 엑셀 열 순서**라
                 // 한 번 덮이면 되돌릴 방법이 없다 — 두 자리를 닫는 것이 B-85의 처방이다.
                 if (!sortMode.allowsManualReorder) return
-                viewModel.updateFieldOrder(listToSave)
+                viewModel.updateFieldOrder(listToSave.map { it.id })
             }
         })
         itemTouchHelper?.attachToRecyclerView(binding.fieldRecyclerView)

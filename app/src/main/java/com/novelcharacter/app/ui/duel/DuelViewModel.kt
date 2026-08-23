@@ -28,6 +28,7 @@ import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import com.novelcharacter.app.ui.common.inViewModelScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.repository.TrashRepository
@@ -773,8 +774,11 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * **쓰기는 화면 수명이 아니라 뷰모델 수명에서 돈다** (2026.08.22 · `TimelineViewModel`의 규약).
+    /*
+     * **쓰기는 화면 수명이 아니라 뷰모델 수명에서 돈다** — 규약 원문과 사유는
+     * [com.novelcharacter.app.ui.common.inViewModelScope]에 있다(2026.08.23에 한 자리로 모았다).
+     *
+     * 이 화면이 그 규약에 걸린 사유만 여기 남긴다.
      *
      * 대결 화면의 `answer()`는 화면 상태를 **먼저** 앞으로 민 뒤 기록을 뒤에서 돌린다.
      * 그 기록이 호출부 스코프(`viewLifecycleOwner.lifecycleScope`)에서 그대로 돌면,
@@ -787,8 +791,6 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * 남아 있었다. 되돌리기 둘도 같은 성질이라 함께 옮긴다(취소된 되돌리기는 *지웠다고
      * 생각했는데 그대로*가 된다).
      */
-    private suspend fun <T> inViewModelScope(block: suspend () -> T): T =
-        viewModelScope.async { block() }.await()
 
     /**
      * 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다.
@@ -929,7 +931,9 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * 스냅샷을 갖지 않는다) **이력에 남기는 것이 유일한 자취**다.
      */
     suspend fun deleteMatches(matches: List<DuelMatch>, relation: String) {
-        matches.forEach { duelRepository.undo(it) }
+        // 형제 셋(`undo`·`undoGroup`·`recordGroup`)과 같은 모양으로 맞춘다 — 쓰기는 화면보다
+        // 오래 사는 스코프에서, 여럿을 지우는 것은 **한 트랜잭션**에서.
+        inViewModelScope { duelRepository.undoAll(matches) }
         reportResult(
             _result,
             OpResult.success(

@@ -756,11 +756,14 @@ class FieldEditDialog : DialogFragment() {
      * 이 축의 점수표를 읽는다 — 순위표·목록 정렬·통계와 **같은 진입점**
      * ([com.novelcharacter.app.data.repository.DuelRepository.scoresOf])이라
      * 여기서 본 수와 순위표의 수가 갈리지 않는다([DuelScoreIndex] 계약 1).
+     *
+     * @param app 앱 컨테이너를 **인자로 받는다** — 이 함수는 배경에서 도는데
+     *   `requireContext()`는 창이 사라지면 그 스레드에서 `IllegalStateException`을 던진다.
      */
     private suspend fun loadDuelScores(
+        app: com.novelcharacter.app.NovelCharacterApp,
         axis: com.novelcharacter.app.data.model.DuelAxis
     ): com.novelcharacter.app.util.DuelScoreIndex.AxisScores {
-        val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         val participants = app.characterRepository
             .getCharactersByUniverseList(axis.universeId).map { it.code }
         return app.duelRepository.scoresOf(axis, participants)
@@ -777,12 +780,18 @@ class FieldEditDialog : DialogFragment() {
         val labels = currentGradeLabels()
         if (labels.size < 2) return
         binding.btnDuelGradeSuggest.isEnabled = false
+        val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         lifecycleScope.launch {
-            val suggestion = try {
-                com.novelcharacter.app.util.DuelGradeAssign.suggestCuts(loadDuelScores(axis), labels)
-            } catch (e: Exception) {
-                Log.e("FieldEditDialog", "Failed to suggest duel grade cuts", e)
-                null
+            // **점수 적합을 주 스레드에서 돌리지 않는다** — `DuelViewModel`의 KDoc이 실측을
+            // 든다(900명·18,000판에서 적합 128ms, 캐릭터 수의 제곱). 그 계층은 전부
+            // `Dispatchers.Default`로 넘기는데 이 버튼과 대결 등급 반영 시트만 밖에 있었다.
+            val suggestion = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                try {
+                    com.novelcharacter.app.util.DuelGradeAssign.suggestCuts(loadDuelScores(app, axis), labels)
+                } catch (e: Exception) {
+                    Log.e("FieldEditDialog", "Failed to suggest duel grade cuts", e)
+                    null
+                }
             }
             if (!isAdded) return@launch
             binding.btnDuelGradeSuggest.isEnabled = true

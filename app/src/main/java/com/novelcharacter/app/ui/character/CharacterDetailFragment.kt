@@ -851,14 +851,20 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val valuesByChar = viewModel.getValuesForCharacters(characters.map { it.id })
             .groupBy { it.characterId }
 
-        return characters.mapNotNull { char ->
-            val charKeyValues = mutableMapOf<String, String>()
-            for (v in valuesByChar[char.id].orEmpty()) {
-                val key = fieldIdToKey[v.fieldDefinitionId] ?: continue
-                if (v.value.isNotBlank()) charKeyValues[key] = v.value
+        // **평가는 배경에서 돈다.** 이 루프는 세계관(또는 작품) **전원**의 수식을 한 명씩
+        // 평가한다 — 캐릭터 수백 명 저장소에서 상세 화면을 열 때마다 그만큼의 파싱·계산이
+        // 붙는데, 부르는 쪽이 `viewLifecycleOwner.lifecycleScope`(= 주 스레드)라 그 시간이
+        // 그대로 화면 멈춤이었다. 뷰를 만지지 않는 순수 계산이라 그대로 옮길 수 있다.
+        return withContext(Dispatchers.Default) {
+            characters.mapNotNull { char ->
+                val charKeyValues = mutableMapOf<String, String>()
+                for (v in valuesByChar[char.id].orEmpty()) {
+                    val key = fieldIdToKey[v.fieldDefinitionId] ?: continue
+                    if (v.value.isNotBlank()) charKeyValues[key] = v.value
+                }
+                val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
+                try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }
             }
-            val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
-            try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }
         }
     }
 
@@ -1080,11 +1086,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         // 인원에 비례한다(R-53·R-54). 실루엣 편집기의 이웃 조회와 같은 처방이다.
         val valuesByChar = viewModel.getValuesForCharacters(allCharacters.map { it.id })
             .groupBy { it.characterId }
-        for (char in allCharacters) {
-            val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
-            resolve(charValues)?.let {
-                peers.add(it)
-                if (char.id != character.id) others.add(it)
+        // 같은 이유로 배경에서 돈다 — 작품의 캐스트 전원을 도는 루프이고 `resolve`는
+        // 필드 설정 파싱을 지난다. 뷰를 만지지 않는다.
+        withContext(Dispatchers.Default) {
+            for (char in allCharacters) {
+                val charValues = valuesByChar[char.id].orEmpty().associateBy { it.fieldDefinitionId }
+                resolve(charValues)?.let {
+                    peers.add(it)
+                    if (char.id != character.id) others.add(it)
+                }
             }
         }
         // 이웃이 없으면 빈 목록이다 — `peerAverageBody`가 null을 내고, 화면은 '작품 평균'
@@ -1125,9 +1135,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             // 통계 화면과 다른 %로 보였다.**
             val statsCtx = context ?: return@launch
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
-            val universeId = novel?.universeId
-            val fieldCompletion = if (universeId != null) {
-                val fields = viewModel.getFieldsByUniverseList(universeId)
+            // **어느 목록인가는 `fieldsForNovel` 한 자리가 정한다**(R-33). 종전에는 세계관이
+            // 없으면 곧장 `0f`였다 — 미배정 캐릭터의 완성도가 **전역 구역 필드를 다 채워도
+            // 언제나 0%**였고, 그 0이 아래 복잡도 점수·잠재력 등급·특화 유형까지 끌어내렸다.
+            // 전역 필드는 2026.08.07 사용자 확정이 그 캐릭터에게 주기로 한 바로 그 필드다.
+            val fields = viewModel.fieldsForNovel(novel)
+            val fieldCompletion = if (fields.isEmpty()) 0f else {
                 val filledDefIds = viewModel.getValuesByCharacterList(characterId)
                     .filter { it.value.isNotBlank() }
                     .map { it.fieldDefinitionId }
@@ -1136,7 +1149,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     fields, filledDefIds,
                     com.novelcharacter.app.ui.stats.CompletionWeightPrefs.weights(statsCtx)
                 ) ?: 0f
-            } else 0f
+            }
 
             // 복잡도 점수 (StatsDataProvider와 동일한 가중치)
             val relWeight = relationships.size * 2f
@@ -1316,6 +1329,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 인쇄 관리자는 앱 컨텍스트로 충분하다.
                 val appCtx = requireContext().applicationContext
                 val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+                // **이력 문구도 미리 굳힌다** — 아래 콜백은 화면보다 오래 살 수 있고,
+                // 그때 `getString`은 프래그먼트를 거치므로 쓸 수 없다(`jobName`과 같은 이유).
+                val shareOk = getString(R.string.result_pdf_shared, character.name)
+                val shareFailed = getString(R.string.result_pdf_share_failed)
+                val logRepo = (appCtx as com.novelcharacter.app.NovelCharacterApp).operationLogRepository
 
                 // Use WebView to print as PDF
                 val webView = WebView(requireContext())
@@ -1323,15 +1341,31 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 나가면 프래그먼트를 붙든 채 살아남았다(누수).
                 pdfWebView?.destroy()
                 pdfWebView = webView
+                // **주 프레임이 실패한 뒤의 `onPageFinished`를 성공으로 세지 않는다.**
+                // WebView는 주 프레임이 죽어도 오류 페이지를 얹고 `onPageFinished`를 부른다 —
+                // 빗장이 없으면 이력에 *"공유 실패"*와 *"PDF로 공유했습니다"*가 **나란히**
+                // 남고, 인쇄 대화상자에는 캐릭터 대신 **오류 페이지가 PDF로** 올라간다.
+                //
+                // 빗장이 클로저에 사는 것이 맞다(R-65의 '뷰가 든 빗장'이 아니다): 수명이
+                // 화면이 아니라 **이번 적재**이고, 회전하면 `onDestroyView`가 WebView째
+                // 파괴해 이 적재 자체가 사라지므로 넘겨야 할 상태가 남지 않는다.
+                var mainFrameFailed = false
                 webView.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
                         // **진행 표시는 여기서 내린다** — 종전에는 `finally`가 적재를 걸자마자
                         // 내려, 아직 아무것도 안 된 상태에서 창이 사라졌다.
                         progress.dismissSafely()
+                        if (mainFrameFailed) return
                         val printManager = appCtx.getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
                         view.createPrintDocumentAdapter(jobName).let { adapter ->
                             printManager.print(jobName, adapter, PrintAttributes.Builder().build())
                         }
+                        // **성공은 여기서 적는다.** 종전에는 `loadDataWithBaseURL`을 걸자마자
+                        // 적어서, 적재가 실패해도 이력에는 *"PDF로 공유했습니다"*가 남았다 —
+                        // 인쇄 대화상자는 뜬 적도 없는데 기록만 성공이었다(거짓 고지).
+                        // `Fragment.logOperation`을 쓰지 않는 것은 그쪽이 화면이 사라지면
+                        // 조용히 아무것도 안 적기 때문이다 — 이 콜백은 화면 밖에서 온다.
+                        logRepo.logAsync(OpResult.success(OpResult.CAT_SHARE, shareOk))
                     }
 
                     override fun onReceivedError(
@@ -1341,12 +1375,25 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     ) {
                         // 못 그렸으면 그 자리에서 내린다 — 안 내리면 창이 영영 남는다.
                         progress.dismissSafely()
+                        // **주 프레임이 실패했을 때만 적는다** — 나중에 HTML이 이미지를
+                        // 물고 오는 날 하위 리소스 오류마다 실패가 쌓이면 이력이 못 쓰게 된다.
+                        if (request.isForMainFrame) {
+                            mainFrameFailed = true
+                            logRepo.logAsync(
+                                OpResult.failure(OpResult.CAT_SHARE, shareFailed, error.description?.toString())
+                            )
+                            // **조용히 실패하지 않는다**(개발 의도 2번). 위 빗장이 인쇄
+                            // 대화상자까지 막으므로, 말하지 않으면 사용자에게는 *아무 일도
+                            // 안 일어난 것*이다 — 종전에는 오류 페이지라도 대화상자가 떴다.
+                            if (isAdded) {
+                                Toast.makeText(requireContext(), shareFailed, Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                 }
+                // PDF는 시스템 인쇄 대화상자로 넘어가므로 성공 통보는 그쪽이 담당 —
+                // 이력은 **적재가 끝난 뒤** 위 `onPageFinished`가 적는다.
                 webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                // PDF는 시스템 인쇄 대화상자로 넘어가므로 성공 통보는 그쪽이 담당 — 이력만 기록
-                logOperation(OpResult.success(OpResult.CAT_SHARE,
-                    getString(R.string.result_pdf_shared, character.name)))
             } catch (e: Exception) {
                 progress.dismissSafely()
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()

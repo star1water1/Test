@@ -27,6 +27,16 @@ interface CharacterStateChangeDao {
      *
      * `fieldKey`가 목록 밖 변수 하나를 더 쓰므로 통로에 예약분 1을 밝힌다.
      */
+    /**
+     * 여러 캐릭터의 이력을 **한 번에** — 캐릭터마다 [getChangesByCharacterList]를 치던 자리의 통로.
+     *
+     * 표준연도를 한 번 고치면 그 작품의 캐스트 전원이 재동기화되는데, 종전에는 그 루프가
+     * 캐릭터마다 이 표를 두 번(연동 판정 · 이력 갱신) 물었다 — 질의 수가 인원에 비례한다.
+     * 999-변수 상한은 [com.novelcharacter.app.util.SqlInChunks]가 든다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds) ORDER BY year ASC")
+    suspend fun getChangesForCharacters(characterIds: List<Long>): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds) AND fieldKey = :fieldKey ORDER BY year ASC")
     suspend fun getChangesByCharacterIdsAndField(
         characterIds: List<Long>,
@@ -139,6 +149,19 @@ interface CharacterStateChangeDao {
     """)
     suspend fun getChangesByFieldKeyForUniverse(universeId: Long, fieldKey: String): List<CharacterStateChange>
 
+    /**
+     * 같은 용도의 **캐릭터 지정판** — 위 질의가 `JOIN novels` 때문에 원리적으로 못 만나는
+     * 미분류 캐릭터(B-13)를 [migrateFieldKeyForCharacters]와 **같은 방식으로** 집는다.
+     *
+     * 대상은 `UnassignedHistoryScope`가 가린다 — 키는 세계관 안에서만 유일해서 이력 행
+     * 하나만으로는 그것이 어느 세계관의 것인지 알 수 없기 때문이다.
+     */
+    @Query("""
+        SELECT * FROM character_state_changes
+        WHERE fieldKey = :fieldKey AND characterId IN (:characterIds)
+    """)
+    suspend fun getChangesByFieldKeyForCharacters(characterIds: List<Long>, fieldKey: String): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
 
@@ -184,18 +207,20 @@ interface CharacterStateChangeDao {
     suspend fun deleteChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long)
 
     /** 세계관에 속한 모든 필드의 state change 삭제 (세계관 삭제 시 사용) */
-    @Query("""
-        DELETE FROM character_state_changes
-        WHERE fieldKey IN (
-            SELECT `key` FROM field_definitions WHERE universeId = :universeId
-        )
-        AND characterId IN (
-            SELECT c.id FROM characters c
-            INNER JOIN novels n ON c.novelId = n.id
-            WHERE n.universeId = :universeId
-        )
-    """)
-    suspend fun deleteAllChangesByUniverse(universeId: Long)
+    // `deleteAllChangesByUniverse`는 없앴다(R-24 — 2026.08.23). **언제나 0행을 지웠다.**
+    //
+    // 그 질의의 두 조건 중 뒤엣것이 `characterId IN (이 세계관 캐릭터)`였는데, 세계관 삭제는
+    // **그 캐릭터들을 먼저 지운다**(`deleteCharactersCascade`, 같은 트랜잭션의 1단계)이고
+    // 이 표는 `characterId`에 `onDelete = CASCADE`가 걸려 있어 그 시점에 이미 함께 사라진다.
+    // 즉 4단계에 닿았을 때 후보 집합이 비어 있다. 붙어 있던 주석은 *"fieldKey가 문자열
+    // 참조라 CASCADE 대상이 아니므로 명시적 삭제"*라고 적었는데, 지우지 못하는 몫은
+    // **미분류 캐릭터(`novelId IS NULL`)의 이력**이고 그 질의의 `INNER JOIN novels`는
+    // 애초에 그들을 만나지 못했다(B-13).
+    //
+    // **그 몫을 여기서 지우면 안 된다**: 이력 행에는 세계관이 없고 `fieldKey`는
+    // `(universeId, entityType, key)`에서만 유일하므로, 키만 보고 지우면 **다른 세계관의
+    // 이력이 함께 사라진다**(`UnassignedHistoryScope`의 KDoc이 같은 이유로 일괄 UPDATE를
+    // 금지한다). 가리는 법이 필요하면 그 순수 판정을 지날 것.
 
     @Query("DELETE FROM character_state_changes")
     suspend fun deleteAll()

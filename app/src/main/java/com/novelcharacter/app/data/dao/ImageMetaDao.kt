@@ -118,10 +118,6 @@ interface ImageMetaDao {
     @Query("UPDATE image_meta SET detachedAt = NULL, detachedFromCode = NULL WHERE path IN (:paths)")
     suspend fun clearDetachedByPaths(paths: List<String>)
 
-    /** 서랍 크기 — 요약 줄이 쓴다. 목록을 실어 나르지 않으려고 세는 질의를 따로 둔다. */
-    @Query("SELECT COUNT(*) FROM image_meta WHERE detachedAt IS NOT NULL")
-    suspend fun countDetached(): Int
-
     @Query("DELETE FROM image_meta WHERE path IN (:paths)")
     suspend fun deleteByPaths(paths: List<String>)
 

@@ -115,9 +115,43 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         return resolveCharUniverse(ids).values.filterNotNull().distinct()
     }
 
+    /**
+     * 선택에 걸린 **구역** — 세계관들과, 전역 구역(작품 미배정)이 섞여 있는가.
+     *
+     * [getUniverseIdsForSelection]은 `filterNotNull()`로 **미분류를 통째로 떨어뜨린다.**
+     * 그 목록만 보는 화면은 작품 미배정 캐릭터만 고른 사용자에게 *빈 스피너와 죽은 버튼*을
+     * 주고 사유를 말하지 않는다 — 그 캐릭터들도 전역 구역 필드를 가지는데(B-119) 말이다.
+     * 쓰기 쪽은 이미 옳다: `setFieldValue`의 `universeByChar[it] == fieldDef.universeId`가
+     * 전역 필드(`universeId == null`)를 **미분류 캐릭터에게만** 찍는다.
+     */
+    data class SelectionScopes(val universeIds: List<Long>, val hasGlobal: Boolean)
+
+    suspend fun getScopesForSelection(): SelectionScopes {
+        val ids = _selectedIds.value?.toList() ?: return SelectionScopes(emptyList(), false)
+        val byChar = resolveCharUniverse(ids)
+        return SelectionScopes(
+            universeIds = byChar.values.filterNotNull().distinct(),
+            hasGlobal = byChar.values.any { it == null }
+        )
+    }
+
+    /** 전역 구역(세계관 없음) 캐릭터 필드 — 미분류 캐릭터가 쓰는 목록이다. */
+    suspend fun getGlobalFieldsList(): List<FieldDefinition> =
+        app.database.fieldDefinitionDao().getGlobalFieldsList()
+
     // ===== 배치 작업 =====
 
-    fun setPinned(pinned: Boolean) = launchBatchOp("setPinned") { ids ->
+    /**
+     * **끄는 것과 켜는 것을 다른 이름으로 낸다.**
+     *
+     * 종전에는 둘 다 `"setPinned"`라 결과 문구와 **작업 이력**이 고정을 *해제*했을 때도
+     * *"고정 설정 20건"*이라 적었다. 스낵바는 사라지지만 이력은 남는다 — 나중에 그
+     * 줄을 읽는 사람은 반대로 이해한다(변수 제어: 한 일과 다른 말을 하지 않는다).
+     *
+     * 문구는 이미 있었다 — `batch_op_result_unpin`("고정 해제")이 strings.xml에 서 있는데
+     * **가리키는 곳이 0건**이었다(R-24: 살릴 수 없는 배선을 남기면 다음 사람이 있는 줄 믿는다).
+     */
+    fun setPinned(pinned: Boolean) = launchBatchOp(if (pinned) "setPinned" else "unsetPinned") { ids ->
         characterRepository.batchSetPinned(ids, pinned)
         BatchCounts(ids.size)
     }

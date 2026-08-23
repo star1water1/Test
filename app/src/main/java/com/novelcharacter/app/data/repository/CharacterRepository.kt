@@ -294,6 +294,10 @@ class CharacterRepository(
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
         characterStateChangeDao.getChangesByCharacter(characterId)
 
+    /** 여러 캐릭터의 상태변화 이력 일괄 조회 (IN 절 변수 상한은 [SqlInChunks]가 지킨다) */
+    suspend fun getChangesForCharacters(characterIds: List<Long>): List<CharacterStateChange> =
+        SqlInChunks.flat(characterIds.distinct()) { characterStateChangeDao.getChangesForCharacters(it) }
+
     suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
         characterStateChangeDao.getChangesByCharacterList(characterId)
 

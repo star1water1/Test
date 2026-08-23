@@ -739,26 +739,25 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 binding.previewTags.text = tags.joinToString(", ") { "#${it.tag}" }
             }
 
-            val universeId = novel?.universeId
-            if (universeId != null) {
-                val fields = characterViewModel.getFieldsByUniverseList(universeId)
-                val values = characterViewModel.getValuesByCharacterList(character.id)
-                if (_binding == null || displayedCharacter?.id != character.id) return@launch
-                // 값 라이브러리 표시 라벨 — 통계·칩과 표기 일치 (검토 A12)
-                fieldRenderer.valueResolvers = runCatching {
-                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
-                        .fieldValueLibraryRepository.resolversForFields(fields.map { it.id })
-                }.getOrDefault(emptyMap())
-                // 위 suspend 조회 중 뷰가 파괴됐을 수 있다 — binding 재확인 (NPE 방지)
-                if (_binding == null || displayedCharacter?.id != character.id) return@launch
-                fieldRenderer.displayDynamicFields(fields, values)
-                // 필드가 없으면 컨테이너를 접어 패널 하단의 빈 상단 마진을 없앤다
-                binding.dynamicFieldsContainer.visibility =
-                    if (binding.dynamicFieldsContainer.childCount > 0) View.VISIBLE else View.GONE
-            } else {
-                binding.dynamicFieldsContainer.removeAllViews()
-                binding.dynamicFieldsContainer.visibility = View.GONE
-            }
+            // **미분류 캐릭터도 필드를 가진다** — 세계관이 없으면 *전역 구역* 필드다(B-119).
+            // 종전에는 `universeId == null`이면 통째로 접어, 작품 미배정 캐릭터의 값이
+            // 이 패널에서만 통째로 안 보였다(편집 화면·상세는 이미 보여 준다).
+            // 판정은 `fieldsForNovel` 한 자리다 — 여기서 다시 갈래를 적으면 그 답이 갈린다(R-33).
+            val fields = characterViewModel.fieldsForNovel(novel)
+            val values = characterViewModel.getValuesByCharacterList(character.id)
+            if (_binding == null || displayedCharacter?.id != character.id) return@launch
+            // 값 라이브러리 표시 라벨 — 통계·칩과 표기 일치 (검토 A12)
+            fieldRenderer.valueResolvers = runCatching {
+                (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
+                    .fieldValueLibraryRepository.resolversForFields(fields.map { it.id })
+            }.getOrDefault(emptyMap())
+            // 위 suspend 조회 중 뷰가 파괴됐을 수 있다 — binding 재확인 (NPE 방지)
+            if (_binding == null || displayedCharacter?.id != character.id) return@launch
+            // 컨테이너를 비우는 것은 `displayDynamicFields`가 한다(그 함수 첫 줄).
+            fieldRenderer.displayDynamicFields(fields, values)
+            // 필드가 없으면 컨테이너를 접어 패널 하단의 빈 상단 마진을 없앤다
+            binding.dynamicFieldsContainer.visibility =
+                if (binding.dynamicFieldsContainer.childCount > 0) View.VISIBLE else View.GONE
         }
     }
 

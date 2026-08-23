@@ -76,7 +76,13 @@ object ImagePathMatch {
      * "지정 없음"은 무엇과도 같지 않다.
      */
     fun same(a: String?, b: String?): Boolean {
-        val ca = canonical(a)
+        val ra = a?.trim().orEmpty()
+        if (ra.isEmpty()) return false
+        // **원문이 같으면 재지 않는다.** `canonical`은 파일 시스템 호출이고(경로 조각마다
+        // stat), 같은 문자열은 반드시 같은 답을 내므로 이 지름길은 답을 바꾸지 않는다.
+        // 이 함수는 어댑터 bind에서도 불린다 — 스크롤 한 번에 목록 길이만큼 붙던 비용이다.
+        if (ra == b?.trim()) return true
+        val ca = canonical(ra)
         if (ca.isEmpty()) return false
         return ca == canonical(b)
     }
@@ -85,11 +91,29 @@ object ImagePathMatch {
      * [paths] 안에서 [target]과 같은 파일의 위치. 없으면 -1.
      *
      * 목록 쪽을 매번 정규화하므로 호출부가 순서를 바꾸거나 걸러도 결과가 흔들리지 않는다.
+     *
+     * **자리마다 원문을 먼저 본다 — 답은 그대로이고 파일 시스템 호출만 준다.**
+     * 원문이 같으면 정규 경로도 반드시 같으므로(같은 입력·같은 함수), 자리 하나의 판정은
+     * `원문 일치 || 정규 일치`와 `정규 일치`가 **글자 그대로 같은 답**이다. 걷는 차례를
+     * 바꾸지 않는 것이 요점이다 — 목록을 통째로 원문 대조한 뒤 정규로 되짚으면 *"앞자리의
+     * 다른 표기가 같은 파일인 경우"*에 위치가 달라진다. [target] 쪽도 **늦게 잰다**:
+     * 첫 자리에서 원문으로 걸리면 아예 재지 않는다.
+     *
+     * 이 함수는 대표 이미지 판정을 지나 **어댑터 bind**에서 불린다(`CharacterAdapter`) —
+     * 스크롤 한 번에 목록 길이만큼 stat이 붙던 자리다.
      */
     fun indexIn(paths: List<String>, target: String?): Int {
-        val ct = canonical(target)
-        if (ct.isEmpty()) return -1
-        return paths.indexOfFirst { canonical(it) == ct }
+        val raw = target?.trim().orEmpty()
+        if (raw.isEmpty()) return -1
+        var ct: String? = null
+        for (i in paths.indices) {
+            val p = paths[i].trim()
+            if (p == raw) return i
+            val c = ct ?: canonical(raw).also { ct = it }
+            if (c.isEmpty()) return -1
+            if (canonical(p) == c) return i
+        }
+        return -1
     }
 
     /** [paths] 안에 [target]과 같은 파일이 있는가. */

@@ -101,10 +101,9 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateFactionOrder(factions: List<Faction>) = viewModelScope.launch {
+    fun updateFactionOrder(orderedIds: List<Long>) = viewModelScope.launch {
         try {
-            val updated = factions.mapIndexed { index, f -> f.copy(displayOrder = index) }
-            factionRepository.updateFactionDisplayOrders(updated)
+            factionRepository.updateFactionDisplayOrders(orderedIds)
             // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("FactionViewModel", "Failed to update faction order", e)

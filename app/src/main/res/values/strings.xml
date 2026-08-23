@@ -482,7 +482,7 @@
          그 사실과 고칠 자리를 함께 말한다(변수 제어: 검증 → 알림 → 바로잡을 경로). -->
     <string name="import_failed_title">가져오기 실패</string>
     <string name="import_failed_nothing_applied">가져오기가 도중에 멈췄습니다. 데이터는 하나도 반영되지 않았습니다 — 기존 데이터는 그대로입니다.\n\n%1$s\n\n그 단계의 시트를 확인한 뒤 다시 가져오십시오.</string>
-    <string name="import_failed_where">마지막으로 끝낸 단계: %1$s (누적 %2$d행 처리) — 그다음 단계에서 멈췄습니다</string>
+    <string name="import_failed_where">멈춘 자리: %1$s (누적 %2$d행 처리)</string>
     <string name="import_failed_where_unknown">첫 단계를 끝내기 전에 멈췄습니다</string>
 
     <!-- TimelineAdapter -->
@@ -691,6 +691,9 @@
     <string name="trash_skip_name_bank">- 이름 은행 사용 표시 %1$d개 (항목이 삭제됐거나 다른 캐릭터가 사용 중)</string>
     <string name="trash_restore_legacy_note">\n※ 구버전 백업이라 안정 식별자가 없어 일부 참조는 id로만 판단했습니다.</string>
     <string name="trash_restore_note_title">복원 결과</string>
+    <string name="trash_restore_reverted_supplement">되돌리면서 세력 소속 %1$d건과 상태변화 이력 %2$d건을 함께 되살렸습니다</string>
+    <string name="trash_restore_reverted_memberships">되돌리면서 세력 소속 %d건을 함께 되살렸습니다</string>
+    <string name="trash_restore_reverted_state_changes">되돌리면서 상태변화 이력 %d건을 함께 되살렸습니다</string>
     <string name="trash_restore_relinked">참조 %1$d건은 id가 바뀌었지만 코드로 다시 연결했습니다</string>
     <string name="trash_restore_duplicate_rel">관계 %1$d개는 같은 관계가 이미 있어 새로 만들지 않았습니다</string>
     <string name="trash_restore_semantic_note">출생·사망 이력 %1$d개를 되살렸습니다. 다만 그 이력에서 파생되는 필드값(생년·나이·생존 여부)은 그 사이 직접 고쳤을 수 있어 덮어쓰지 않았으니, 캐릭터 화면에서 확인하세요.</string>
@@ -1386,7 +1389,7 @@
     <string name="stats_network_density_label">네트워크 밀도: %.1f%%</string>
     <string name="stats_avg_connections">캐릭터당 평균 연결: %.1f개</string>
     <string name="stats_desc_completeness">관계 설명 완성도: %.0f%% (미작성 %d건)</string>
-    <string name="stats_reciprocal_pairs">양방향 관계 쌍: %d</string>
+    <string name="stats_reciprocal_pairs">양쪽에서 각각 등록한 쌍: %d</string>
 
     <!-- Stats: 이름은행 확장 -->
     <string name="stats_name_length_dist">이름 길이 분포</string>
@@ -1611,6 +1614,7 @@
     <string name="stats_overview_health">건강도 경고</string>
     <string name="stats_overview_no_image_count">이미지 미등록: %d명</string>
     <string name="stats_overview_incomplete_field_count">필드 미입력: %d명</string>
+    <string name="stats_overview_no_novel_count">작품 미배정: %d명</string>
     <string name="stats_overview_isolated_count">고립 캐릭터: %d명</string>
     <string name="stats_overview_unlinked_count">사건 미연계: %d명</string>
     <string name="stats_overview_all_healthy">모든 항목이 양호합니다</string>
@@ -2277,6 +2281,9 @@
     <string name="batch_field_title_set">필드값 일괄 설정</string>
     <string name="batch_field_title_clear">필드값 일괄 삭제</string>
     <string name="batch_field_select_universe">세계관 선택</string>
+    <string name="batch_field_multi_scope_info">선택 캐릭터가 여러 구역에 속합니다. 고른 구역의 캐릭터에만 적용됩니다.</string>
+    <string name="batch_field_scope_global">전역 구역 (작품 미배정)</string>
+    <string name="batch_field_no_scope">선택한 캐릭터의 구역을 찾을 수 없어 설정할 필드가 없습니다. 캐릭터를 다시 고르거나 목록을 새로 고쳐 주세요.</string>
     <string name="batch_field_select_field">필드 선택</string>
     <string name="batch_field_multi_universe_info">선택 캐릭터가 여러 세계관에 속합니다. 해당 세계관 캐릭터에만 적용됩니다.</string>
     <string name="batch_field_set_confirm">%1$d명의 \'%2$s\' 필드에 값 설정</string>
@@ -2739,6 +2746,7 @@
     <string name="image_unassign_confirm">%1$d장을 소유자에게서 해제하시겠습니까? 파일은 삭제되지 않고 라이브러리(미배정)에 남습니다.</string>
     <string name="image_unassign_pick_owners">해제할 소유자 선택</string>
     <string name="image_unassign_done">해제 %1$d장</string>
+    <string name="image_import_stranded_adopted">화면이 닫혀 이미지 %1$d장을 캐릭터에 붙이지 못했습니다. 이미지 탭에 미배정으로 담아 두었습니다.</string>
     <string name="image_unassign_note_adopted">미배정으로 이동 %1$d장</string>
     <string name="image_unassign_failed">배정 해제에 실패했습니다</string>
     <string name="image_link_action">링크 (같은 캐릭터 묶음)</string>
@@ -3165,6 +3173,7 @@
     <string name="field_library_rename_conflict_merge">\'%1$s\'은(는) 이미 존재합니다. 두 값을 병합하시겠습니까?</string>
     <string name="field_library_propagation_message">캐릭터 값 %1$d건 · 사건 값 %2$d건 · 작품 값 %4$d건 · 상태변화 이력 %3$d건이 함께 변경됩니다.</string>
     <string name="field_library_propagation_whitespace">\n(공백 표기가 표준화되는 행 포함)</string>
+    <string name="field_library_propagation_unattributed">미분류 캐릭터 %1$d명의 상태변화 이력은 소속 세계관을 가릴 수 없어 옛 표기로 남습니다.</string>
     <string name="field_library_propagation_join_notice">\n콤마 구분 값은 \", \" 표준 표기로 재조합됩니다.</string>
     <string name="field_library_delete_title">값 삭제 — \'%1$s\'</string>
     <string name="field_library_delete_entry_only">항목만 삭제 (캐릭터 값 유지 — 재수집되면 다시 나타남)</string>

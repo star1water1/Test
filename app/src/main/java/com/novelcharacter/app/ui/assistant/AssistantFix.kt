@@ -109,10 +109,26 @@ fun Fragment.runAssignNovel(cvm: CharacterViewModel, characterId: Long, characte
             .setItems(titles) { _, which ->
                 val novel = novels[which]
                 lifecycleScope.launch {
-                    val ok = cvm.assignNovel(characterId, novel.id)
+                    val move = cvm.assignNovel(characterId, novel.id)
                     if (!isAdded) return@launch
-                    if (ok) {
-                        notifySuccess(getString(R.string.assistant_novel_assigned, characterName, novel.title))
+                    if (move != null) {
+                        // **이동으로 무엇이 사라졌는지 함께 말한다** — 미배정 캐릭터는 세계관을
+                        // 떠나며 남긴 값을 들고 있을 수 있고(B-128), 배정은 그 값을 새 세계관
+                        // 정의로 이관하거나 제거한다. 일괄 편집 쪽은 이미 같은 셈을 같은 문구로
+                        // 나른다 — 이 경로만 결과를 버리고 "배정했습니다"만 말했다.
+                        val parts = mutableListOf(
+                            getString(R.string.assistant_novel_assigned, characterName, novel.title)
+                        )
+                        if (move.hasRemoval) {
+                            parts.add(
+                                getString(R.string.batch_note_moved_removed, move.removedValues, move.removedMemberships)
+                            )
+                        }
+                        // 보관은 유실이 아니지만 **화면 어디에도 안 그려지므로** 말해야 한다(원칙 04).
+                        if (move.keptGlobalValues > 0) {
+                            parts.add(getString(R.string.batch_note_moved_kept, move.keptGlobalValues))
+                        }
+                        notifySuccess(parts.joinToString(" · "))
                     } else {
                         notifyError(getString(R.string.assistant_character_gone))
                     }

@@ -61,12 +61,6 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE `key` = :key AND entityType = :entityType")
     suspend fun getFieldsByKey(key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 
-    @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND type = :type AND entityType = :entityType ORDER BY displayOrder ASC")
-    suspend fun getFieldsByType(universeId: Long, type: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
-
-    @Query("SELECT groupName FROM field_definitions WHERE universeId = :universeId AND entityType = :entityType GROUP BY groupName ORDER BY MIN(displayOrder)")
-    suspend fun getGroupNames(universeId: Long, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<String>
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(field: FieldDefinition): Long
 
@@ -75,6 +69,16 @@ interface FieldDefinitionDao {
 
     @Update
     suspend fun update(field: FieldDefinition)
+
+    /**
+     * 표시 순서 **한 칸만** 바꾼다 — 형제 넷(`UniverseDao`·`NovelDao`·`CharacterDao`·`DuelAxisDao`)에
+     * 이미 있는 것과 같은 질의다.
+     *
+     * 순서 저장이 `@Update`로 **엔티티 통짜를 되쓰면**, 화면이 목록을 든 사이 같은 행이 다른
+     * 경로에서 바뀐 것(이 화면 자신의 'AI 추천 모드' 메뉴가 그렇다)이 **되감긴다.**
+     */
+    @Query("UPDATE field_definitions SET displayOrder = :order WHERE id = :id")
+    suspend fun setDisplayOrder(id: Long, order: Int)
 
     @Update
     suspend fun updateAll(fields: List<FieldDefinition>)

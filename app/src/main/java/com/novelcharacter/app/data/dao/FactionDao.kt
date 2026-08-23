@@ -36,6 +36,16 @@ interface FactionDao {
     @Update
     suspend fun updateAll(factions: List<Faction>)
 
+    /**
+     * 순서만 바꾼다 — **엔티티 통짜를 되쓰지 않는다** (필드 정의 쪽과 같은 처방).
+     *
+     * `@Update`로 통짜를 되쓰면, 화면이 목록을 든 사이 같은 행이 다른 경로에서 바뀐 것이
+     * **되감긴다.** 세력 관리 화면은 목록을 어댑터에 들고 있다가 드래그가 끝난 뒤에야
+     * 저장하므로, 그사이 세력 편집 다이얼로그가 고친 이름·색·설명이 옛 값으로 돌아갔다.
+     */
+    @Query("UPDATE factions SET displayOrder = :order WHERE id = :id")
+    suspend fun setDisplayOrder(id: Long, order: Int)
+
     @Query("DELETE FROM factions")
     suspend fun deleteAll()
 

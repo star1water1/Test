@@ -107,6 +107,20 @@ class TimelineRepository(
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineDao.getCharactersForEvent(eventId)
 
+    /**
+     * 여러 사건의 등장 캐릭터 — 사건 id → 캐릭터 목록. 등장이 없는 사건은 **키가 없다**.
+     *
+     * 호출부는 *"키가 없다 = 등장 없음"*으로 읽어야 하고, 그래서 이 표를 쓰는 화면은
+     * 표 자체의 유무로 *"아직 못 받았다"*를 가른다(연표 카드가 그렇게 쓴다).
+     */
+    suspend fun getCharactersForEvents(eventIds: List<Long>): Map<Long, List<Character>> {
+        if (eventIds.isEmpty()) return emptyMap()
+        val rows = com.novelcharacter.app.util.SqlInChunks.flat(eventIds.distinct()) { chunk ->
+            timelineDao.getCharactersForEvents(chunk)
+        }
+        return rows.groupBy({ it.eventId }, { it.character })
+    }
+
     // ===== Timeline-Novel linkage (다대다: 사건 ↔ 작품) =====
     suspend fun getNovelIdsForEvent(eventId: Long): List<Long> =
         timelineDao.getNovelIdsForEvent(eventId)

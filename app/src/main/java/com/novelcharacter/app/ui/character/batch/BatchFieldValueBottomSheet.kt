@@ -30,7 +30,17 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
     private val isClearMode: Boolean
         get() = arguments?.getBoolean(ARG_CLEAR_MODE) ?: false
 
-    private var universes: List<Universe> = emptyList()
+    /**
+     * 스피너에 올릴 **구역** — 세계관들과, 선택에 미분류 캐릭터가 있으면 *전역 구역*.
+     *
+     * `universeId == null`이 전역 구역이고, 쓰기 쪽이 그 값을 **미분류 캐릭터에게만**
+     * 찍는다(`BatchEditViewModel.setFieldValue`의 스코프 필터). 종전에는 이 목록이
+     * 세계관만 담아, 작품 미배정 캐릭터만 고른 사용자는 **빈 스피너와 죽은 버튼**을 받고
+     * 그 이유를 어디서도 듣지 못했다.
+     */
+    private data class Scope(val label: String, val universeId: Long?)
+
+    private var scopes: List<Scope> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var selectedField: FieldDefinition? = null
     private var fieldLoadJob: kotlinx.coroutines.Job? = null
@@ -54,31 +64,46 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val universeIds = batchViewModel.getUniverseIdsForSelection()
+            val selection = batchViewModel.getScopesForSelection()
             if (_binding == null) return@launch
-
-            if (universeIds.size > 1) {
-                binding.multiUniverseInfo.visibility = View.VISIBLE
-            }
 
             // 세계관 로드
             val app = batchViewModel.getApplication<NovelCharacterApp>()
-            universes = universeIds.mapNotNull { app.universeRepository.getUniverseById(it) }
+            val universes: List<Universe> =
+                selection.universeIds.mapNotNull { app.universeRepository.getUniverseById(it) }
             if (_binding == null) return@launch
 
-            if (universes.isEmpty()) {
+            scopes = universes.map { Scope(it.name, it.id) } +
+                if (selection.hasGlobal) {
+                    listOf(Scope(getString(R.string.batch_field_scope_global), null))
+                } else {
+                    emptyList()
+                }
+
+            if (scopes.size > 1) {
+                // 문구를 여기서 짓는다 — 레이아웃의 기본값은 *세계관*만 말하는데, 이 목록에는
+                // 전역 구역이 섞일 수 있다(같은 문자열을 쓰는 상태변화 시트는 그대로 둔다).
+                binding.multiUniverseInfo.text = getString(R.string.batch_field_multi_scope_info)
+                binding.multiUniverseInfo.visibility = View.VISIBLE
+            }
+
+            if (scopes.isEmpty()) {
+                // **죽은 버튼만 남기지 않는다** — 왜 못 하는지 그 자리에서 말한다(변수 제어).
                 binding.btnConfirm.isEnabled = false
+                binding.multiUniverseInfo.text = getString(R.string.batch_field_no_scope)
+                binding.multiUniverseInfo.visibility = View.VISIBLE
                 return@launch
             }
 
-            val universeNames = universes.map { it.name }
-            val uAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, universeNames)
+            val uAdapter = ArrayAdapter(
+                requireContext(), android.R.layout.simple_spinner_item, scopes.map { it.label }
+            )
             uAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.universeSpinner.adapter = uAdapter
 
             binding.universeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    loadFieldsForUniverse(universes[position].id)
+                    scopes.getOrNull(position)?.let { loadFieldsForScope(it) }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
@@ -131,10 +156,14 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private fun loadFieldsForUniverse(universeId: Long) {
-        fieldLoadJob?.cancel() // 이전 로드 취소 → 세계관 빠른 전환 시 경합 방지
+    private fun loadFieldsForScope(scope: Scope) {
+        fieldLoadJob?.cancel() // 이전 로드 취소 → 구역 빠른 전환 시 경합 방지
         fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
-            val allFields = batchViewModel.getFieldsByUniverseList(universeId)
+            val allFields = if (scope.universeId == null) {
+                batchViewModel.getGlobalFieldsList()
+            } else {
+                batchViewModel.getFieldsByUniverseList(scope.universeId)
+            }
             // CALCULATED 필드는 제외 (자동 계산 → 수동 설정 불가)
             fields = allFields.filter { it.fieldType != FieldType.CALCULATED }
             if (_binding == null) return@launch

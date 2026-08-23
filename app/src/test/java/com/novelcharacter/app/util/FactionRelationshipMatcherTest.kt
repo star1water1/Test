@@ -144,4 +144,39 @@ class FactionRelationshipMatcherTest {
         assertEquals(42L, applied.id)
         assertEquals("안정 식별자를 조용히 바꾸지 않는다", 1_000L, applied.createdAt)
     }
+
+    /**
+     * **빈칸·해석 불가는 표시 순서를 덮지 않는다** (2026.08.23).
+     *
+     * 종전 `RowValues.displayOrder`는 `Int = 0`이라 빈칸이 곧 `0`이었고, 열 머리만 남아 있으면
+     * [FactionRelationshipMatcher.ColumnPresence.displayOrder]가 참이므로 **기존 순서가 0으로
+     * 덮였다.** 형제 열두 시트는 전부 `Int?` + `?: existing`이었는데 이 시트만 그 밖이었다.
+     */
+    @Test
+    fun `표시순서 빈칸은 기존 순서를 지킨다`() {
+        val existing = FactionRelationship(
+            id = 1L, factionId1 = 1L, factionId2 = 2L, relationType = "동맹", displayOrder = 7
+        )
+        val row = FactionRelationshipMatcher.RowValues(
+            description = existing.description, intensity = existing.intensity,
+            isBidirectional = existing.isBidirectional, displayOrder = null
+        )
+        val applied = FactionRelationshipMatcher.apply(existing, row)
+        assertEquals(7, applied.displayOrder)
+        // 바뀐 것이 없으므로 '변경'으로도 세지 않는다.
+        assertFalse(FactionRelationshipMatcher.changes(existing, row))
+    }
+
+    @Test
+    fun `표시순서를 적으면 그 값으로 바뀐다`() {
+        val existing = FactionRelationship(
+            id = 1L, factionId1 = 1L, factionId2 = 2L, relationType = "동맹", displayOrder = 7
+        )
+        val row = FactionRelationshipMatcher.RowValues(
+            description = existing.description, intensity = existing.intensity,
+            isBidirectional = existing.isBidirectional, displayOrder = 0
+        )
+        assertEquals(0, FactionRelationshipMatcher.apply(existing, row).displayOrder)
+        assertTrue(FactionRelationshipMatcher.changes(existing, row))
+    }
 }
