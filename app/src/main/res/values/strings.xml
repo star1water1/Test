@@ -1386,7 +1386,7 @@
     <string name="stats_network_density_label">네트워크 밀도: %.1f%%</string>
     <string name="stats_avg_connections">캐릭터당 평균 연결: %.1f개</string>
     <string name="stats_desc_completeness">관계 설명 완성도: %.0f%% (미작성 %d건)</string>
-    <string name="stats_reciprocal_pairs">양방향 관계 쌍: %d</string>
+    <string name="stats_reciprocal_pairs">양쪽에서 각각 등록한 쌍: %d</string>
 
     <!-- Stats: 이름은행 확장 -->
     <string name="stats_name_length_dist">이름 길이 분포</string>
@@ -1611,6 +1611,7 @@
     <string name="stats_overview_health">건강도 경고</string>
     <string name="stats_overview_no_image_count">이미지 미등록: %d명</string>
     <string name="stats_overview_incomplete_field_count">필드 미입력: %d명</string>
+    <string name="stats_overview_no_novel_count">작품 미배정: %d명</string>
     <string name="stats_overview_isolated_count">고립 캐릭터: %d명</string>
     <string name="stats_overview_unlinked_count">사건 미연계: %d명</string>
     <string name="stats_overview_all_healthy">모든 항목이 양호합니다</string>

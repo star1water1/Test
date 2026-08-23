@@ -117,7 +117,17 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ===== 배치 작업 =====
 
-    fun setPinned(pinned: Boolean) = launchBatchOp("setPinned") { ids ->
+    /**
+     * **끄는 것과 켜는 것을 다른 이름으로 낸다.**
+     *
+     * 종전에는 둘 다 `"setPinned"`라 결과 문구와 **작업 이력**이 고정을 *해제*했을 때도
+     * *"고정 설정 20건"*이라 적었다. 스낵바는 사라지지만 이력은 남는다 — 나중에 그
+     * 줄을 읽는 사람은 반대로 이해한다(변수 제어: 한 일과 다른 말을 하지 않는다).
+     *
+     * 문구는 이미 있었다 — `batch_op_result_unpin`("고정 해제")이 strings.xml에 서 있는데
+     * **가리키는 곳이 0건**이었다(R-24: 살릴 수 없는 배선을 남기면 다음 사람이 있는 줄 믿는다).
+     */
+    fun setPinned(pinned: Boolean) = launchBatchOp(if (pinned) "setPinned" else "unsetPinned") { ids ->
         characterRepository.batchSetPinned(ids, pinned)
         BatchCounts(ids.size)
     }

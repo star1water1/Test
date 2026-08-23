@@ -2184,7 +2184,10 @@ class ExcelImporter(context: Context) {
         }
         val relTotal = result.newRelationships + result.updatedRelationships
         if (relTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationships, relTotal))
-        if (result.newRelationshipChanges > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, result.newRelationshipChanges))
+        // **신규와 갱신을 함께 센다** — 형제 '관계'가 그 모양이다(`relTotal`). 종전에는 신규만
+        // 세어, 이미 있는 관계 변화의 연도·유형만 고친 왕복이 이 줄을 통째로 잃었다.
+        val rcTotal = result.newRelationshipChanges + result.updatedRelationshipChanges
+        if (rcTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, rcTotal))
         val nbTotal = result.newNameBank + result.updatedNameBank
         if (nbTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_names, nbTotal))
         val ptTotal = result.newPresetTemplates + result.updatedPresetTemplates
@@ -2193,6 +2196,13 @@ class ExcelImporter(context: Context) {
         if (spTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_search_presets, spTotal))
         val lpTotal = result.newListPresets + result.updatedListPresets
         if (lpTotal > 0) parts.add("목록 프리셋 ${lpTotal}건")
+        // **세력 셋을 시트 차례대로 말한다.** 종전에는 '세력 관계'만 있었고 세력 자신과
+        // 세력 소속은 세기만 하고 **한 번도 말하지 않았다** — 세력만 고친 왕복이 결과창에서
+        // *"바뀐 것 없음"*으로 끝났고, 사용자는 가져오기가 먹었는지 알 길이 없었다.
+        val facTotal = result.newFactions + result.updatedFactions
+        if (facTotal > 0) parts.add("세력 ${facTotal}건")
+        val fmTotal = result.newFactionMemberships + result.updatedFactionMemberships
+        if (fmTotal > 0) parts.add("세력 소속 ${fmTotal}건")
         val frTotal = result.newFactionRelationships + result.updatedFactionRelationships
         if (frTotal > 0) parts.add("세력 관계 ${frTotal}건")
         val imTotal = result.newImageMeta + result.updatedImageMeta
@@ -2218,7 +2228,7 @@ class ExcelImporter(context: Context) {
         // 삭제 건수 요약
         val totalDeleted = result.deletedCharacters + result.deletedRelationships + result.deletedEvents +
             result.deletedStateChanges + result.deletedQuotes + result.deletedRelationshipChanges + result.deletedNameBank +
-            result.deletedFields + result.deletedFactions + result.deletedFactionMemberships +
+            result.deletedFactions + result.deletedFactionMemberships +
             result.deletedFactionRelationships
         if (totalDeleted > 0) {
             val delParts = mutableListOf<String>()

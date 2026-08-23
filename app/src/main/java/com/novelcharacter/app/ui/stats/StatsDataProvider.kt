@@ -597,7 +597,15 @@ data class HealthWarnings(
     val noImageCount: Int,
     val incompleteFieldCount: Int,
     val isolatedCharCount: Int,
-    val unlinkedCharCount: Int
+    val unlinkedCharCount: Int,
+    /**
+     * 작품이 배정되지 않아 **잴 칸 자체가 없는** 캐릭터 수.
+     *
+     * 종전에는 [incompleteFieldCount]에 얹혀 있었다 — 그러면 개요의 수와 건강도 명단이
+     * 갈리고(명단은 이 부류를 `noNovelChars`로 따로 낸다), *필드를 안 채운 것*과
+     * *잴 수 없는 것*이 한 수에 섞인다.
+     */
+    val noNovelCount: Int = 0
 )
 
 // ===== 패턴 감지 & 서사적 인사이트 (개선 3) =====
@@ -1698,11 +1706,21 @@ class StatsDataProvider {
         val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
         val isolated = s.characters.filter { it.id !in relCharIds }.map { it.name }
 
-        // 신규: 네트워크 밀도 = 실제관계 / 가능한관계(n*(n-1)/2)
+        // 네트워크 밀도 = **이어진 쌍** / 가능한 쌍(n*(n-1)/2).
+        //
+        // **분자가 행 수가 아니라 쌍 수인 것이 요점이다.** 한 쌍은 유형을 달리해 여러 관계를
+        // 가질 수 있고(자연키가 `(캐릭터1, 캐릭터2, 유형)`이다) 방향을 바꿔 한 벌 더 둘 수도
+        // 있다. 행을 세면 분자가 분모를 넘어 **밀도가 100%를 넘고**, 종전에는 그것을
+        // `coerceAtMost(1f)`가 조용히 접었다 — 세 명이 다섯 관계를 가지면 화면이
+        // *"밀도 100%"*라 말했고, 그것은 *모든 쌍이 이어져 있다*는 뜻으로 읽힌다(거짓 고지).
+        // 쌍으로 세면 분자와 분모가 **같은 것을 세므로**(R-34) 넘칠 수가 없고 접을 것도 없다.
         val n = s.characters.size
         val density = if (n > 1) {
+            val linkedPairs = s.relationships
+                .mapTo(HashSet()) { minOf(it.characterId1, it.characterId2) to maxOf(it.characterId1, it.characterId2) }
+                .size
             val maxPossible = n.toLong() * (n - 1) / 2.0f
-            (s.relationships.size / maxPossible).coerceAtMost(1f)
+            linkedPairs / maxPossible
         } else 0f
 
         // 신규: 설명 완성도
@@ -1832,18 +1850,16 @@ class StatsDataProvider {
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
         val filledDefIdsByChar = filledCharacterDefIds(s)
 
-        // 미배정 스코프: novelId 경유가 불가 — 보존 정의 대비 채움률로 판정
-        // (computeDataOverview의 incompleteCount와 같은 기준 — 개수·명단 일치)
+        // 미배정 스코프: novelId 경유가 불가 — 보존 정의 대비 채움률로 판정.
+        // 판정 자체는 [incompleteFieldRate] 한 자리다(개요와 같은 잣대 — 개수·명단이 맞는다).
         val fieldsForChar: (Character) -> List<FieldDefinition>? = { char ->
             if (s.unassignedScope) s.fieldDefinitions.ifEmpty { null }
             else char.novelId?.let { novelMap[it] }?.let { fieldDefByUniverse[it.universeId] }
         }
         val incomplete = s.characters.mapNotNull { char ->
-            val fields = fieldsForChar(char) ?: return@mapNotNull null
-            val rate = CompletionRate.percentOf(
-                fields, filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
-            ) ?: return@mapNotNull null
-            if (rate < INCOMPLETE_THRESHOLD_PERCENT) char.name to rate else null
+            incompleteFieldRate(
+                fieldsForChar(char), filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
+            )?.let { char.name to it }
         }
 
         // 관계 없는 캐릭터
@@ -2858,16 +2874,19 @@ class StatsDataProvider {
 
         // 건강도
         val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
+        // 판정은 [incompleteFieldRate] 한 자리다 — 건강도 명단과 **같은 잣대**여야 개요의
+        // 수를 눌렀을 때 그만큼의 이름이 나온다.
         val incompleteCount = s.characters.count { char ->
-            // 전체 스코프에서 작품 미배정은 그대로 '미완성'이다(종전 판정 유지) — 미배정
-            // 스코프에서는 그 판정이 스코프 전원을 미완성으로 만들므로 보존 정의 대비로 잰다.
-            if (!s.unassignedScope && char.novelId == null) return@count true
-            if (!s.unassignedScope && novelMap[char.novelId] == null) return@count true
-            val fields = fieldsForChar(char) ?: return@count false
-            val rate = CompletionRate.percentOf(
-                fields, filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
-            ) ?: return@count false   // 셀 칸이 없으면 미완성이 아니다(기존 관용구)
-            rate < INCOMPLETE_THRESHOLD_PERCENT
+            incompleteFieldRate(
+                fieldsForChar(char), filledDefIdsByChar[char.id].orEmpty(), s.completionWeights
+            ) != null
+        }
+        // **미배정은 따로 센다.** 종전에는 이 수에 얹혀 있었는데, 그것은 *필드를 안 채운 것*이
+        // 아니라 *잴 칸이 없는 것*이라 성질이 다르고, 건강도 화면은 이미 둘을 갈라 놓았다
+        // (`noNovelChars`). 얹어 두면 개요의 수만 크고 명단은 짧아 **눌러서 확인할 수 없는
+        // 경고**가 된다(원칙 04).
+        val noNovelCount = if (s.unassignedScope) 0 else s.characters.count { char ->
+            char.novelId == null || novelMap[char.novelId] == null
         }
         val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
         val isolatedCount = s.characters.count { it.id !in relCharIds }
@@ -2886,7 +2905,7 @@ class StatsDataProvider {
             yearDensity = yearDensity,
             nameBankUsageRate = nameBankRate,
             nameBankGenderDist = genderDist,
-            healthWarnings = HealthWarnings(noImageCount, incompleteCount, isolatedCount, unlinkedCount),
+            healthWarnings = HealthWarnings(noImageCount, incompleteCount, isolatedCount, unlinkedCount, noNovelCount),
             requiredSlotCount = s.fieldDefinitions.count { RequiredFieldGaps.countsAsSlot(it) },
             requiredWeight = s.completionWeights.requiredWeight
         )
@@ -5172,6 +5191,30 @@ class StatsDataProvider {
      */
     private fun resolveGradeValueForRanking(fieldDef: FieldDefinition, gradeLabel: String): Double? {
         return com.novelcharacter.app.util.GradeValueResolver.resolveFromConfig(fieldDef, gradeLabel)
+    }
+
+    /**
+     * **'필드 미입력'의 판정 한 자리** — 개요의 **수**와 건강도의 **명단**이 여기서 갈리지 않는다.
+     *
+     * 미입력이면 채움률(%)을, 아니면 null을 낸다. **잴 칸이 없으면(작품 미배정·정의 없음)
+     * 미입력이 아니다** — 그쪽은 별도 항목이 따로 말한다(건강도의 `noNovelChars`,
+     * 개요의 '작품 미배정').
+     *
+     * 종전에는 두 자리가 손으로 두 벌 적혀 있었고 **하필 미배정 갈래가 정반대**였다:
+     * 개요는 `char.novelId == null`을 그대로 미입력으로 세고, 건강도는 그 캐릭터를 통째로
+     * 뺐다. 그래서 개요가 *"필드 미입력: 12명"*이라 적어 놓고 눌러서 연 명단에는 다섯만
+     * 있었다 — **같은 이름의 수가 두 화면에서 달랐다**(R-51). 더 나쁜 것은 건강도 쪽 주석이
+     * *"computeDataOverview의 incompleteCount와 같은 기준 — 개수·명단 일치"*라고
+     * **사실이 아닌 것을 적어 두고 있었다**는 점이다.
+     */
+    private fun incompleteFieldRate(
+        fields: List<FieldDefinition>?,
+        filledDefIds: Set<Long>,
+        weights: CompletionWeights
+    ): Float? {
+        val defs = fields ?: return null
+        val rate = CompletionRate.percentOf(defs, filledDefIds, weights) ?: return null
+        return if (rate < INCOMPLETE_THRESHOLD_PERCENT) rate else null
     }
 
     companion object {

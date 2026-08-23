@@ -589,6 +589,7 @@ class CharacterListFragment : Fragment() {
 
     private fun getOperationLabel(operation: String): String = when (operation) {
         "setPinned" -> getString(R.string.batch_op_result_pin)
+        "unsetPinned" -> getString(R.string.batch_op_result_unpin)
         "changeNovel" -> getString(R.string.batch_op_result_change_novel)
         "addTags" -> getString(R.string.batch_op_result_add_tags)
         "removeTags" -> getString(R.string.batch_op_result_remove_tags)

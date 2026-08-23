@@ -285,7 +285,6 @@ data class ImportResult(
     var deletedQuotes: Int = 0,
     var deletedRelationshipChanges: Int = 0,
     var deletedNameBank: Int = 0,
-    var deletedFields: Int = 0,
     var deletedFactions: Int = 0,
     var deletedFactionMemberships: Int = 0,
     var deletedFactionRelationships: Int = 0,

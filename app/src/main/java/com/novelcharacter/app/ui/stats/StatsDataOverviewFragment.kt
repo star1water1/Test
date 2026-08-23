@@ -319,7 +319,8 @@ class StatsDataOverviewFragment : Fragment() {
 
         val warnings = stats.healthWarnings
         val hasIssues = warnings.noImageCount > 0 || warnings.incompleteFieldCount > 0 ||
-            warnings.isolatedCharCount > 0 || warnings.unlinkedCharCount > 0
+            warnings.isolatedCharCount > 0 || warnings.unlinkedCharCount > 0 ||
+            warnings.noNovelCount > 0
 
         if (!hasIssues) {
             container.addView(makeTextView(getString(R.string.stats_overview_all_healthy)))
@@ -331,6 +332,11 @@ class StatsDataOverviewFragment : Fragment() {
         }
         if (warnings.incompleteFieldCount > 0) {
             container.addView(makeTextView(getString(R.string.stats_overview_incomplete_field_count, warnings.incompleteFieldCount)))
+        }
+        // '필드 미입력' 바로 아래에 둔다 — 종전에는 이 수가 그쪽에 얹혀 있었고,
+        // 가르고 나면 두 줄이 이웃해야 무엇이 갈라진 것인지 읽힌다.
+        if (warnings.noNovelCount > 0) {
+            container.addView(makeTextView(getString(R.string.stats_overview_no_novel_count, warnings.noNovelCount)))
         }
         if (warnings.isolatedCharCount > 0) {
             container.addView(makeTextView(getString(R.string.stats_overview_isolated_count, warnings.isolatedCharCount)))
