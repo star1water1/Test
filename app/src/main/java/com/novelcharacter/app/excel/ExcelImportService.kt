@@ -332,6 +332,57 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /** 캐릭터 행 임포트 중 별칭 표기 감지용 필드별 해석기 캐시 — 행마다 쿼리하지 않는다 (검토 A7) */
     private val importAliasResolvers = HashMap<Long, com.novelcharacter.app.util.FieldValueResolver>()
 
+    // ── 복원 미리보기의 표 겹 (B-236의 남은 축) ──
+    //
+    // **미리보기 한 회차는 DB에 쓰지 않는다**(`analyze*` 안의 쓰기 0건). 그런데 범주마다 같은
+    // 표를 처음부터 다시 읽고 있었다 — 실측: 작품 4회 · 세력 4회 · 캐릭터 3회 · 대결 축 3회 ·
+    // 관계 2회 · 세력 소속 2회. **캐릭터 수백 명 저장소에서 전량 적재가 세 번**이고,
+    // 미리보기는 *사용자가 화면 앞에서 기다리는 자리*라 그 비용이 그대로 체감된다.
+    //
+    // `check_preview_row_queries.sh`가 세운 잣대와 같은 근거인데 그 검사의 눈에는 안 잡혔다 —
+    // 그것은 *행 루프 안*을 보고 이 자리는 *루프 앞이지만 함수를 건너뛰며 여러 번*이다.
+    // (그 검사가 자기 사각을 이미 적어 두었다: *"루프 앞이면 무조건 한 번인지는 못 본다"*.)
+    //
+    // **수명은 분석 한 회차다** — [resetAnalysisSnapshots]가 형제 색인들과 같은 자리에서 비운다.
+    // 같은 인스턴스가 직전 가져오기를 돌았을 수 있어(`ExcelImporter`가 서비스를 하나만 든다)
+    // 비우지 않으면 지난 실행의 사본을 세어 *"바뀔 것"*을 사실과 다르게 말한다.
+    //
+    // ⚠️ **`import*`는 이 겹을 쓰지 않는다.** 그쪽은 도는 동안 같은 표에 쓰므로 겹이 곧 낡은 값이다.
+    private var snapNovels: List<Novel>? = null
+    private var snapFactions: List<Faction>? = null
+    private var snapCharacters: List<Character>? = null
+    private var snapDuelAxes: List<DuelAxis>? = null
+    private var snapRelationships: List<CharacterRelationship>? = null
+    private var snapMemberships: List<FactionMembership>? = null
+
+    private suspend fun analysisNovels(): List<Novel> =
+        snapNovels ?: db.novelDao().getAllNovelsList().also { snapNovels = it }
+
+    private suspend fun analysisFactions(): List<Faction> =
+        snapFactions ?: db.factionDao().getAllFactionsList().also { snapFactions = it }
+
+    private suspend fun analysisCharacters(): List<Character> =
+        snapCharacters ?: db.characterDao().getAllCharactersList().also { snapCharacters = it }
+
+    private suspend fun analysisDuelAxes(): List<DuelAxis> =
+        snapDuelAxes ?: db.duelAxisDao().getAllList().also { snapDuelAxes = it }
+
+    private suspend fun analysisRelationships(): List<CharacterRelationship> =
+        snapRelationships ?: db.characterRelationshipDao().getAllRelationships().also { snapRelationships = it }
+
+    private suspend fun analysisMemberships(): List<FactionMembership> =
+        snapMemberships ?: db.factionMembershipDao().getAllMembershipsList().also { snapMemberships = it }
+
+    /** 미리보기 겹을 비운다 — 형제 색인들과 **같은 자리**에서 불린다(수명이 갈리면 지난 실행을 센다) */
+    private fun resetAnalysisSnapshots() {
+        snapNovels = null
+        snapFactions = null
+        snapCharacters = null
+        snapDuelAxes = null
+        snapRelationships = null
+        snapMemberships = null
+    }
+
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     // 캐릭터의 세계관(작품→세계관) 캐시 — 세력 참조의 동명 해소 힌트용. 행마다 쿼리하지 않는다.
     private val novelUniverseCache = mutableMapOf<Long, Long?>()
@@ -716,6 +767,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val result = ImportResult()
         novelIdCache.clear()
         novelUniverseCache.clear()
+        // 미리보기 겹은 가져오기가 쓰지 않지만, 여기서도 비운다 — 남겨 두면 이 가져오기가
+        // 바꾼 표를 **다음 미리보기가 옛 사본으로** 셀 수 있다(분석 시작의 비우기와 이중 방어).
+        resetAnalysisSnapshots()
         pendingSyncCharacters.clear()
         pendingSyncClearedFields.clear()
         importAliasResolvers.clear()
@@ -2883,6 +2937,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetEventIndex()
         resetNovelIndex()
         resetUniverseIndex()
+        // 표 겹도 같은 사유로 같은 자리에서 비운다 — 위 색인들과 수명이 하나여야 한다.
+        resetAnalysisSnapshots()
         // 시트별 캐시도 여기서 비운다 — 위 색인들과 같은 사유다(미리보기는 직전 가져오기 뒤에
         // 돌 수 있고, 이 맵들은 `Sheet` 객체를 키로 들고 있어 비우지 않으면 그 참조가 남는다).
         // 종전에는 `importAll`에서만 비웠다. `headerRowIndexBySheet`는 B-231 ⓑ가 세운 것이고,
@@ -2994,7 +3050,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = duelAxisSpec()
         val label = "대결 축"
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allAxes = db.duelAxisDao().getAllList()
+        val allAxes = analysisDuelAxes()
         val existingTotal = allAxes.size
         val sheet = sheetForAnalysis(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
@@ -3055,7 +3111,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다.
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
-        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
+        val axes = analysisDuelAxes() + analysisCreatedDuelAxes
         // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
         // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
         // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
@@ -3063,7 +3119,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
+        val codeByName = analysisCharacters()
             .groupBy({ it.displayName }, { it.code })
         // **판 자신에는 그 근거가 적용되지 않아 행마다 `getByCode`가 남아 있었다**(B-236 — 가져오기
         // 쪽이 B-210에서 겪은 것과 같은 자리다). 코드 열에 인덱스가 없어 그 하나하나가 풀스캔이다.
@@ -3159,7 +3215,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다(R-53).
         // **DB 먼저, 이 파일이 만들 축이 뒤**(형제 목록들과 같은 순서 규약) —
         // 이것이 없으면 *파일이 만들 축*과 *오타*를 가릴 재료가 없다.
-        val axes = db.duelAxisDao().getAllList() + analysisCreatedDuelAxes
+        val axes = analysisDuelAxes() + analysisCreatedDuelAxes
         // **빈 코드는 키가 아니다**(콜드 검토 2026.08.21). '대결 축' 시트에 코드 칸이 빈 축이
         // 둘 이상 있으면 — 손편집 파일이나 '코드' 열이 없는 옛 파일이 그렇다 — 종전 색인은
         // `""` 키 하나에 **마지막 축**만 남겼고, 축코드 없이 이름만 적은 기록·상성 행이
@@ -3167,7 +3223,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
+        val codeByName = analysisCharacters()
             .groupBy({ it.displayName }, { it.code })
         val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
             idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
@@ -3504,7 +3560,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): CategoryAnalysis {
         val spec = novelSpec(emptyList())
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.novelDao().getAllNovelsList().size
+        val existingTotal = analysisNovels().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
 
         val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
@@ -3657,7 +3713,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
          */
         fieldValues: FieldValueScan? = null
     ): CharacterAnalysisResult {
-        val existingTotal = db.characterDao().getAllCharactersList().size
+        val existingTotal = analysisCharacters().size
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         val allConflicts = mutableListOf<CharacterConflict>()
 
@@ -4277,7 +4333,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = TimelineCols(cols, descColIndex)
         val now = System.currentTimeMillis()
         // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 사건 필드 열도 작품 시트와 같은 재료로 같은 해석기를 부른다(B-65 · B-187).
         val eventFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_EVENT)
         val universeIdsByName = if (fieldValues == null) emptyMap() else
@@ -4359,7 +4415,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         // 가져오기와 **같은 판정**의 제목 색인이다(규약 R-33) — 동명 작품이면 힌트를 포기한다.
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 키 모양과 싣는 순서가 갈리면
         // 같은 `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
         val changes = StateChangeIndexes(allChanges)
@@ -4442,7 +4498,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         // 가져오기와 **같은 판정**의 제목 색인이다(R-33) — 동명 작품이면 힌트를 포기한다.
-        val novelTitles = NovelTitleIndex(db.novelDao().getAllNovelsList())
+        val novelTitles = NovelTitleIndex(analysisNovels())
         // 정체성 색인도 가져오기와 **같은 클래스**다 — 키 모양과 싣는 순서가 갈리면 같은
         // `merge*`를 써도 **비교 상대**가 달라져 예고가 거짓이 된다(R-33).
         val quotes = QuoteIndexes(allQuotes)
@@ -4495,7 +4551,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = relationshipSpec()
         val sheet = sheetForAnalysis(workbook, spec)
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        val allRelationships = analysisRelationships()
         val existingTotal = allRelationships.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
 
@@ -4508,7 +4564,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
         val factionRefUsed = c.faction >= 0 || c.factionCode >= 0
-        val factionIndex = FactionIndex(if (factionRefUsed) db.factionDao().getAllFactionsList() else emptyList())
+        val factionIndex = FactionIndex(if (factionRefUsed) analysisFactions() else emptyList())
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236). 종전에는 **행마다** 캐릭터1의 관계
         // 전부를 다시 읽어(`getRelationshipsForCharacterList`) 여기서 쌍을 걸렀다.
         val rels = RelationshipIndexes(allRelationships)
@@ -4606,7 +4662,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236) — 이 시트가 행마다 물던 표는 둘이다:
         // 부모 **관계**(쌍)와 **관계 변화**(코드·자연키).
-        val parentRels = RelationshipIndexes(db.characterRelationshipDao().getAllRelationships())
+        val parentRels = RelationshipIndexes(analysisRelationships())
         val relChanges = RelationshipChangeIndexes(allRelChanges)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
@@ -4746,7 +4802,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = factionSpec()
         val sheet = sheetForAnalysis(workbook, spec)
         // 이 한 번의 읽기가 총계와 색인 둘 다를 먹인다 (B-236).
-        val allFactions = db.factionDao().getAllFactionsList()
+        val allFactions = analysisFactions()
         val existingTotal = allFactions.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
 
@@ -4800,7 +4856,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun analyzeFactionMemberships(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = factionMembershipSpec()
         val sheet = sheetForAnalysis(workbook, spec)
-        val existingTotal = db.factionMembershipDao().getAllMembershipsList().size
+        val existingTotal = analysisMemberships().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
         val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
@@ -4819,9 +4875,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (charNameColIndex < 0) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
         // 루프 밖에서 1회 — 행마다 전체 세력/소속을 다시 읽지 않는다.
-        // 소속은 위에서 existingTotal 때문에 이미 한 번 읽었으므로 그 목록을 쌍으로 묶어 재사용한다.
-        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
-        val membershipsByPair = db.factionMembershipDao().getAllMembershipsList()
+        // 소속은 위에서 existingTotal 때문에 이미 한 번 읽었고, 그 목록을 쌍으로 묶어 재사용한다
+        // (**주석은 줄곧 그렇게 적었는데 코드는 표를 한 번 더 읽고 있었다** — 겹이 그것을 잇는다).
+        val factionIndex = FactionIndex(analysisFactions())
+        val membershipsByPair = analysisMemberships()
             .groupBy { it.factionId to it.characterId }
         val presence = factionMembershipPresence(
             joinYearColIndex, leaveYearColIndex, leaveTypeColIndex,
@@ -4919,7 +4976,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val orderColIndex = cols["표시순서"] ?: -1
         if (faction2ColIndex < 0 || typeColIndex < 0) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
-        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
+        val factionIndex = FactionIndex(analysisFactions())
         // 가져오기가 굴리는 것과 **같은 맵**이다(B-233) — 새로 만든 행을 즉시 등재해야
         // 같은 쌍·같은 유형이 시트에 두 번 나올 때 둘째 행이 첫째와 매칭된다.
         val existingByKey = existingRels.associateByTo(mutableMapOf()) {
