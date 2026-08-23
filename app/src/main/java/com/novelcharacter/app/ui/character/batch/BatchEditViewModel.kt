@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.UniverseMoveCounts
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.SingletonStateChanges
 import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.launch
 
@@ -291,9 +292,10 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         val dao = app.database.characterStateChangeDao()
         // 단일키(__birth/__death/__alive)는 캐릭터당 1행 불변식을 가진다. 이를 무시하고 blind-insert하면
         // 같은 캐릭터에 두 번째 __birth가 생겨 필드값(새 값)↔연표/나이(ORDER BY year ASC로 옛 값)가 어긋난다.
-        val isSingular = fieldKey == CharacterStateChange.KEY_BIRTH ||
-            fieldKey == CharacterStateChange.KEY_DEATH ||
-            fieldKey == CharacterStateChange.KEY_ALIVE
+        // 판정은 [SingletonStateChanges]가 든다 — 이 목록을 손으로 다시 적으면
+        // *복원이 막는 키* · *읽기가 정본을 고르는 키* · *여기가 blind-insert를 막는 키*가
+        // 언젠가 갈린다(2026.08.23에 앞의 둘을 모았고, 이 셋째 벌만 남아 있었다).
+        val isSingular = SingletonStateChanges.isSingleton(fieldKey)
         // __birth/__death는 개별 경로처럼 birth_year/death_year·나이·생존 필드로 역동기화해야
         // 연표·필드값·통계가 어긋나지 않는다(연결성·변수 제어). 개별 경로: insertStateChange→syncStateChangeToField.
         val isSemantic = fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH

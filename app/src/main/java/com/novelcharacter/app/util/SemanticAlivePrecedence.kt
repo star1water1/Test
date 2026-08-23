@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.SemanticRole
 import org.json.JSONObject
@@ -38,6 +39,31 @@ import org.json.JSONObject
  * 사용자의 판단이고, 사망연도에서 끌어낸 값은 *추측*이다(개발 의도 3번 — 자율성 우선).
  */
 object SemanticAlivePrecedence {
+
+    /**
+     * 생존여부 **필드값 → `__alive` 행의 표식**. 빈 값이면 null — 적을 것이 없다.
+     *
+     * 이 대응이 함수가 된 것은 **두 자리가 그것을 각자 적고 있었기 때문이다**(2026.08.23).
+     * 저장 경로(`SemanticFieldSyncHelper`)는 값에서 표식을 끌어냈는데, 1회 마이그레이션
+     * (`NovelCharacterApp.syncAliveFor`)은 *사망·출생 이력이 있는가*만 보고 표식을 정했다.
+     * 그래서 **생존여부 칸은 채워져 있는데 이력이 하나도 없는 캐릭터**가 마이그레이션의
+     * 어느 갈래에도 안 걸려 `__alive` 행 없이 남았다 — 연표·통계·필터가 그 캐릭터만
+     * 다르게 셌다(실측: 사용자 데이터에서 두 명).
+     *
+     * 규칙은 저장 경로가 쓰던 것 그대로다: 사망값 → 사망, 생존값 → 생존, **그 밖의 모든
+     * 값은 '불명'**('불명' 선택지뿐 아니라 사용자가 선택지를 고친 뒤 남은 옛 값도 여기 온다 —
+     * 모르는 값을 생존·사망 어느 쪽으로도 접지 않는 것이 요점이다).
+     * 사망값과 생존값이 같게 설정된 파일에서는 **사망이 이긴다**(종전 `when`의 차례 그대로).
+     */
+    fun aliveMarker(rawValue: String, aliveValue: String, deadValue: String): String? {
+        val raw = rawValue.trim()
+        if (raw.isEmpty()) return null
+        return when (raw) {
+            deadValue -> CharacterStateChange.ALIVE_MARKER_DEAD
+            aliveValue -> CharacterStateChange.ALIVE_MARKER_ALIVE
+            else -> CharacterStateChange.ALIVE_MARKER_UNKNOWN
+        }
+    }
 
     /** 사망연도 갈래가 이번 저장에서 어디까지 할 것인가. */
     enum class DeathDerivation {

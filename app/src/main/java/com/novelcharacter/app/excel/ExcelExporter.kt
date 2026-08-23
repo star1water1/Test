@@ -839,7 +839,9 @@ class ExcelExporter(context: Context) {
                 cell.numericCellValue != kotlin.math.floor(cell.numericCellValue)
             cell.cellStyle = styles.cellStyleFor(col, bandRow, fractionalCalc)
             if (col.wrap && cell.cellType == org.apache.poi.ss.usermodel.CellType.STRING) {
-                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, col.width))
+                // 줄수는 **실제로 적용될 너비**로 잰다 — 머리글 때문에 넓어진 열은
+                // 그만큼 덜 접히므로, 스펙 값으로 재면 높이가 필요보다 커진다([columnWidthFor]).
+                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, columnWidthFor(col)))
             }
         }
         // 엑셀은 파일을 열 때 행 높이를 재계산하지 않는다 — wrap이 보이려면 여기서(행을 쓰는
@@ -895,9 +897,9 @@ class ExcelExporter(context: Context) {
                 addDropdownValidation(sheet, colIndex, dataRowCount, options)
             }
         }
-        // Column widths
+        // Column widths — 머리글이 잘리지 않을 만큼은 보장한다([columnWidthFor]).
         spec.columns.forEachIndexed { index, col ->
-            sheet.setColumnWidth(index, col.width)
+            sheet.setColumnWidth(index, columnWidthFor(col))
         }
         sheet.freezeAndFilter(spec.columns.size, dataRowCount, spec.freezeCols)
     }
@@ -1016,9 +1018,18 @@ class ExcelExporter(context: Context) {
             // 종전 문구는 "이미지경로 컬럼은 … 수정하지 마세요"라는 **일괄 금지**였는데,
             // 캐릭터·세계관·작품 시트의 그 열은 파란 헤더(편집 가능)이고 가져오기가 실제로
             // 읽어 반영한다 — 안내가 실동작과 어긋나 있었다 (B-222 ③).
-            GuideLine("", styles.guideBody, "• 이미지경로는 앱 내부 경로입니다. 캐릭터·세계관·작품 시트에서는 편집이 반영되지만,"),
-            GuideLine("", styles.guideBody, "  적을 값은 이 파일에 이미 있는 경로여야 합니다(새 경로를 지어내면 그림이 없는 자리가 됩니다)."),
-            GuideLine("", styles.guideBody, "  '이미지' 시트의 이미지경로는 회색 — 그 행의 정체이므로 고치지 마세요."),
+            // 종전 문구는 **적을 모양을 말하지 않았다.** 이 칸은 경로 하나가 아니라 JSON
+            // 배열인데, 안내는 *"적을 값은 … 경로여야 합니다"*라 읽혀 경로 한 줄을 붙여넣게
+            // 만들었다 — 그러면 목록으로 안 읽혀 편집이 통째로 무시된다(경고는 나가지만,
+            // 안내를 따랐는데 안 되는 것은 안내 쪽 결함이다).
+            GuideLine("", styles.guideBody, "• 이미지경로는 앱 내부 경로를 JSON 배열로 적는 칸입니다: [\"/…/char_1.jpg\",\"/…/char_2.jpg\"]"),
+            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품 시트에서는 편집이 반영됩니다. 적을 값은 이 파일에 이미 있는"),
+            GuideLine("", styles.guideBody, "  경로여야 합니다(새 경로를 지어내면 그림이 없는 자리가 됩니다)."),
+            GuideLine("", styles.guideBody, "  칸을 비우면 그 항목의 그림 배정이 풀립니다. 배열로 읽을 수 없는 값은 기존 배정을"),
+            GuideLine("", styles.guideBody, "  그대로 두고 가져오기 결과에서 알려 드립니다."),
+            // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
+            // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
+            GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
             GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
             // '완전한 백업입니다' 고지가 이 셋의 미수록을 말하지 않아, 기기 이전 뒤 휴지통
@@ -1036,6 +1047,11 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 캐릭터가 없는 세계관도 시트가 만들어집니다. 그 세계관의 필드가 열로 준비되어 있습니다."),
             GuideLine("", styles.guideBody, "• 빈 시트는 '엑셀에 없는 항목 삭제'의 대상이 아닙니다 — 행이 하나도 없는 시트로는 기존 데이터를 지우지 않습니다."),
             GuideLine("", styles.guideBody, "• 그래서 실수로 행을 모두 지운 파일을 들여와도 그 종류가 통째로 사라지지 않습니다."),
+            // 위 첫 줄이 *"데이터가 없는 종류도 빈 시트로 나간다"*고 단정하는데 **셋은 예외다.**
+            // 종전에는 그 사실이 '작품 필드값'·'사건 필드값' 절에만 한 줄 적혀 있어,
+            // 앞머리만 읽은 사람은 없는 시트를 찾게 됐다(실제로 이 파일에 셋 다 없다).
+            GuideLine("", styles.guideBody, "• 예외가 셋입니다 — '캐릭터 필드값'·'작품 필드값'·'사건 필드값'은 담을 값이 있을 때만"),
+            GuideLine("", styles.guideBody, "  만들어집니다. 파일에 없으면 담을 값이 없다는 뜻이고, 그것이 정상입니다(아래 각 절 참조)."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
             // 13자리 밀리초 값은 외부 편집자에게 아무 뜻이 없다 — "지우지 마세요"만 있고
@@ -1087,6 +1103,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  칸을 비우면 그 이미지의 링크가 풀립니다. 'char:'로 시작하는 값은 캐릭터 자동 링크라"),
             GuideLine("", styles.guideBody, "  가져온 뒤 현재 배정 기준으로 다시 계산됩니다 (직접 적을 필요가 없습니다)"),
             GuideLine("", styles.guideBody, "  '뗀날짜' 칸을 비우면 뗀 이미지 서랍에서 꺼냅니다(뗀 적 없음이 됩니다). '뗀곳'은 앱이 채우는 열입니다"),
+            // 이 시트가 라이브러리 표만 싣던 동안, 태그·묶음이 아직 없는 그림(=그림이 한 장뿐인
+            // 캐릭터의 그림)은 행 자체가 없어 엑셀에서 손댈 길이 없었다 — 그 사실을 알 방법도
+            // 없었으므로 안내에 적는다(원칙 04).
+            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품이 쓰는 그림은 태그·묶음이 아직 없어도 모두 행으로 실립니다."),
+            GuideLine("", styles.guideBody, "  그런 행은 칸이 비어 있고, 비운 채로 다시 들여오면 아무 일도 일어나지 않습니다 —"),
+            GuideLine("", styles.guideBody, "  태그나 링크그룹을 적는 순간 그 그림이 라이브러리 관리로 들어옵니다."),
             GuideLine("", styles.guideBody, "• 대결 기록: 승자 칸은 참가자 이름(또는 코드)입니다. 비우거나 '${DuelSheetLabels.WINNER_DRAW}'이라 적으면 무승부입니다"),
             GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
             GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
@@ -1176,6 +1198,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• '값' 칸을 비우면 그 값이 삭제됩니다. 행을 지워도 값은 지워지지 않습니다(업서트 전용)."),
             GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
             GuideLine("", styles.guideBody, "• 캐릭터를 다시 작품에 배정하면 값이 캐릭터 시트로 옮겨가 이 시트에서 사라집니다(정상)."),
+            // 형제 절('작품 필드값'·'사건 필드값')은 이 사실을 적고 있었는데 이 절만 없었다 —
+            // 그래서 *"유일한 보관처"*만 읽고 시트를 찾다가 없으면 유실로 오해할 수 있었다.
+            GuideLine("", styles.guideBody, "• 담을 값이 없으면 시트 자체가 만들어지지 않습니다(정상입니다)."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'작품 필드값'·'사건 필드값' 시트", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 작품·연표 시트는 모든 세계관의 필드를 열로 싣습니다. 열 이름이 맞으면 다른 세계관의"),
@@ -1427,7 +1452,10 @@ class ExcelExporter(context: Context) {
                     .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
                     .map { (value, fd) -> Triple(novel, fd, value.value) }
             }
-        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+        // **이 셋만 빈 시트를 만들지 않는다** — 담을 값이 없으면 시트 자체가 없다.
+        // (형제 시트들은 반대다: 머리글만 있는 빈 시트로 나가 새 데이터를 적을 자리가 된다.
+        //  '사용 안내'의 「빈 시트 안내」가 그 예외를 함께 적는다 — 안내와 이 줄은 한 짝이다.)
+        if (rows.isEmpty()) return
 
         val spec = novelFieldValueSpec(universeMap.values.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -1914,7 +1942,10 @@ class ExcelExporter(context: Context) {
                     .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
                     .map { (value, fd) -> Triple(ch, fd, value.value) }
             }
-        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+        // **이 셋만 빈 시트를 만들지 않는다** — 담을 값이 없으면 시트 자체가 없다.
+        // (형제 시트들은 반대다: 머리글만 있는 빈 시트로 나가 새 데이터를 적을 자리가 된다.
+        //  '사용 안내'의 「빈 시트 안내」가 그 예외를 함께 적는다 — 안내와 이 줄은 한 짝이다.)
+        if (rows.isEmpty()) return
 
         val spec = characterFieldValueSpec(universes.map { it.name })
         val sheet = workbook.createSheet(sheetName)
@@ -2141,7 +2172,10 @@ class ExcelExporter(context: Context) {
                     .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
                     .map { (value, fd) -> Triple(event, fd, value.value) }
             }
-        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+        // **이 셋만 빈 시트를 만들지 않는다** — 담을 값이 없으면 시트 자체가 없다.
+        // (형제 시트들은 반대다: 머리글만 있는 빈 시트로 나가 새 데이터를 적을 자리가 된다.
+        //  '사용 안내'의 「빈 시트 안내」가 그 예외를 함께 적는다 — 안내와 이 줄은 한 짝이다.)
+        if (rows.isEmpty()) return
 
         val spec = eventFieldValueSpec(universesById.values.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -2358,26 +2392,47 @@ class ExcelExporter(context: Context) {
     private suspend fun exportImageMeta(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val metas = db.imageMetaDao().getAllList()
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+        val metaByPath = metas.associateBy { it.path }
+
+        // **라이브러리 표만 실으면 그림이 한 장뿐인 캐릭터의 그림이 통째로 빠진다** —
+        // 근거·실측은 [ImageSheetRows]의 머리말.
+        //
+        // **zip과 같은 두 걸음을 지난다**(`ImageZipHelper.wrapWithImages`): 참조를 모으고
+        // → `ImagePathClassifier`로 *담을 수 있는 것*만 남긴다. 두 걸음 중 하나만 흉내 내면
+        // **파일이 없어진 참조가 행으로 나가고**, 그 행은 되가져올 때 파일명을 해석하지 못해
+        // 「파일을 찾을 수 없어 …를 건너뛰었습니다」라는 **없는 유실 고지**를 만든다
+        // (그 부류를 없앤 것이 `analyzeImageMeta`의 주석이 적어 둔 앞선 수리다).
+        // 읽지 못한 imagePaths는 여기서 다시 세지 않는다 — 그 고지는 zip 래핑이 든다(B-225).
+        val referenced = runCatching {
+            val appDir = com.novelcharacter.app.util.ImagePathMatch
+                .canonical(appContext.filesDir.absolutePath)
+            ImagePathClassifier.classify(ImageZipHelper.collectAllImagePaths(db), appDir).includable
+        }.getOrDefault(emptyList())
+        val rows = ImageSheetRows.plan(metas.map { it.path }, referenced)
 
         val spec = imageMetaSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        metas.forEachIndexed { i, meta ->
+        rows.forEachIndexed { i, planned ->
+            val meta = if (planned.inLibrary) metaByPath[planned.path] else null
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setTextSafe(java.io.File(meta.path).name)
-            row.createCell(1).setTextSafe(tagsByImage[meta.id]?.let { joinCsv(it) } ?: "")
-            row.createCell(2).setTextSafe(meta.linkGroupId ?: "")
+            row.createCell(0).setTextSafe(planned.fileName)
+            // 라이브러리 행이 없는 그림은 태그·링크·뗀 표식이 **없는 것**이라 칸이 빈다.
+            // 가져오기는 그 빈 행을 아무 일도 하지 않는 행으로 읽는다(멱등) — 사용자가 여기에
+            // 태그를 적는 순간 비로소 라이브러리에 편입된다.
+            row.createCell(1).setTextSafe(meta?.let { tagsByImage[it.id]?.let { t -> joinCsv(t) } } ?: "")
+            row.createCell(2).setTextSafe(meta?.linkGroupId ?: "")
             // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
             // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
-            meta.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
-            row.createCell(4).setTextSafe(meta.detachedFromCode ?: "")
-            finishDataRow(row, spec, banded = metas.size < BANDING_ROW_LIMIT)
+            meta?.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            row.createCell(4).setTextSafe(meta?.detachedFromCode ?: "")
+            finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
 
-        applySpecFormatting(sheet, spec, metas.size)
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 이름 은행 ──

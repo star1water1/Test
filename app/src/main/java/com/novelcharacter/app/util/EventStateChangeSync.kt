@@ -80,17 +80,13 @@ class EventStateChangeSync(
             .getNovelsByIds(characters.values.mapNotNull { it.novelId }.distinct())
             .associateBy { it.id }
         // 캐릭터마다 이력 전량을 다시 묻지 않는다 — 한 번에 읽어 캐릭터별로 가른다.
-        // **차례를 단건 질의와 맞춘다** — 일괄 질의에는 `ORDER BY`가 없고(청크 경계에서
+        // **차례는 여기서 정하지 않는다** — 일괄 질의에는 `ORDER BY`가 없고(청크 경계에서
         // 어긋나므로 DAO가 일부러 뺐다), 그 차이가 같은 키의 이력이 둘 이상일 때
-        // *어느 줄을 갱신하는가*를 갈랐다. SQLite의 `ASC`는 NULL이 앞이다.
+        // *어느 줄을 갱신하는가*를 갈랐다. 아래 [SingletonStateChanges.pick]이 차례에
+        // 기대지 않고 정본을 집으므로, 단건 질의를 쓰는 자리와 같은 행에 닿는다.
         val changesByCharacter = characterRepository
             .getChangesByCharacterIds(charIds)
             .groupBy { it.characterId }
-            .mapValues { (_, list) ->
-                list.sortedWith(
-                    compareBy({ it.year }, { it.month ?: Int.MIN_VALUE }, { it.day ?: Int.MIN_VALUE })
-                )
-            }
 
         // 쓰기는 모아서 낸다. **삽입은 같은 (캐릭터, 키)가 한 번만 들어가게** 접는다 —
         // 한 캐릭터가 옮겨진 출생 사건 둘에 걸려 있으면 종전에는 두 번째가 첫 번째를 읽어
@@ -105,7 +101,8 @@ class EventStateChangeSync(
             val fieldKey = fieldKeyOf(event) ?: continue
             for (charId in target.characterIds) {
                 val character = characters[charId] ?: continue
-                val existing = changesByCharacter[charId]?.find { it.fieldKey == fieldKey }
+                val existing = changesByCharacter[charId]
+                    ?.let { SingletonStateChanges.pick(it, fieldKey) }
                 val change = if (existing != null) {
                     existing.copy(
                         year = event.year,

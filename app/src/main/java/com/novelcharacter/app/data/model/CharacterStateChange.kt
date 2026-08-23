@@ -37,5 +37,21 @@ data class CharacterStateChange(
         const val KEY_DEATH = "__death"
         const val KEY_ALIVE = "__alive"
         const val KEY_AGE = "__age"
+
+        /**
+         * [KEY_ALIVE] 행의 `newValue`가 담는 **원본 어휘** — 화면이 쓰는 출력 어휘
+         * (`"true"`/`"false"`)와 다르다.
+         *
+         * 이 셋이 상수가 된 것은 그 둘이 실제로 섞였기 때문이다: 관계도 시간뷰가 원본 행을
+         * *출력 어휘로* 비교해(`newValue == "false"`) **언제나 거짓인 조건**을 들고 있었다
+         * ([com.novelcharacter.app.util.AliveAtYear]의 머리말). 적는 자리와 읽는 자리가
+         * 같은 상수를 보면 그 부류가 다시 생기지 않는다.
+         *
+         * (`AppDatabase`의 Room 마이그레이션은 일부러 글자 그대로 둔다 — 지나간 마이그레이션은
+         * 그때의 값으로 굳은 기록이라, 상수가 바뀌면 과거가 함께 바뀐다.)
+         */
+        const val ALIVE_MARKER_ALIVE = "alive"
+        const val ALIVE_MARKER_DEAD = "dead"
+        const val ALIVE_MARKER_UNKNOWN = "unknown"
     }
 }

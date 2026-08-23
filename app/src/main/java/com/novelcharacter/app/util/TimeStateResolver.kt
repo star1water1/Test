@@ -39,12 +39,19 @@ class TimeStateResolver {
             .sortedWith(compareBy({ it.year }, { it.month ?: 0 }, { it.day ?: 0 }))
 
         for (change in relevantChanges) {
+            // 밑줄 키는 **차례가 아니라 정본이 이긴다** — 캐릭터당 한 행이 불변식이라
+            // '나중 이력이 덮는다'는 규칙이 성립하지 않는다(파생 행이지 이력이 아니다).
+            // 두 줄이 남아 있으면 종전에는 뒤 줄이 이겨, 같은 캐릭터의 나이가
+            // 프로필과 연표에서 갈렸다.
+            if (SingletonStateChanges.isSingleton(change.fieldKey)) continue
             result[change.fieldKey] = change.newValue
+        }
+        for (key in SingletonStateChanges.KEYS) {
+            SingletonStateChanges.pick(relevantChanges, key)?.let { result[key] = it.newValue }
         }
 
         // Calculate age from birth year (newValue holds the actual birth year)
-        // Use findLast to get the most recent entry in case of corrections/retcons
-        val birthChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH }
+        val birthChange = SingletonStateChanges.pick(relevantChanges, CharacterStateChange.KEY_BIRTH)
         val birthYear = birthChange?.let { change ->
             change.newValue.toIntOrNull()
                 ?: if (change.newValue.isBlank()) change.year else null
@@ -55,7 +62,7 @@ class TimeStateResolver {
         }
 
         // Check alive status: __alive StateChange 우선, 없으면 birth/death 기반 계산
-        val deathChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH }
+        val deathChange = SingletonStateChanges.pick(relevantChanges, CharacterStateChange.KEY_DEATH)
         val deathYear = deathChange?.let { change ->
             change.newValue.toIntOrNull()
                 ?: if (change.newValue.isBlank()) change.year else null

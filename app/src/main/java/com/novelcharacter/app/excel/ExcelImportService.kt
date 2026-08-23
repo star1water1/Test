@@ -66,6 +66,8 @@ import com.novelcharacter.app.util.RelationshipIndexes
 import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
+import com.novelcharacter.app.util.SingletonStateChanges
+import com.novelcharacter.app.util.RecordTimestamps
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
@@ -1836,9 +1838,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             filtersJson = r.filtersJson ?: existing.filtersJson,
             sortMode = r.sortMode ?: existing.sortMode,
             isDefault = r.isDefault ?: existing.isDefault,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
+    }
+
+    /**
+     * 이 행이 **만들** 검색 프리셋 — 미리보기와 가져오기가 같은 함수를 지난다(R-33).
+     * 종전에는 두 자리가 각자 생성자를 적고 있어, 한쪽만 고치면 예고와 처분이 갈렸다.
+     */
+    private fun newSearchPresetFrom(r: SearchPresetRowValues, now: Long): SearchPreset {
+        val created = createdAtFor(r.createdAt, r.updatedAt, now)
+        return SearchPreset(
+            name = r.name,
+            query = r.query ?: "",
+            filtersJson = r.filtersJson ?: "{}",
+            sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
+            isDefault = r.isDefault ?: false,
+            createdAt = created,
+            updatedAt = stampedUpdatedAt(created, r.updatedAt ?: now)
+        )
     }
 
     private class ListPresetCols(cols: Map<String, Int>) {
@@ -1953,9 +1973,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             bodySizePartIndex = if (r.hasBodyPartCol) r.bodySizePartIndex else existing.bodySizePartIndex,
             novelIdsJson = r.novelIdsJson ?: existing.novelIdsJson,
             isDefault = r.isDefault ?: existing.isDefault,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
+    }
+
+    /** 이 행이 **만들** 목록 프리셋 — [newSearchPresetFrom]과 같은 근거(R-33). */
+    private fun newListPresetFrom(r: ListPresetRowValues, now: Long): CharacterListPreset {
+        val created = createdAtFor(r.createdAt, r.updatedAt, now)
+        return CharacterListPreset(
+            name = r.name,
+            tagsJson = r.tagsJson ?: "[]",
+            fieldFiltersJson = r.fieldFiltersJson ?: "{}",
+            sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
+            sortFieldKey = r.sortFieldKey,
+            sortDuelAxisCode = r.sortDuelAxisCode,
+            sortAscending = r.sortAscending ?: true,
+            bodySizePartIndex = r.bodySizePartIndex,
+            novelIdsJson = r.novelIdsJson ?: "[]",
+            isDefault = r.isDefault ?: false,
+            createdAt = created,
+            updatedAt = stampedUpdatedAt(created, r.updatedAt ?: now)
+        )
     }
 
     private class PresetTemplateCols(cols: Map<String, Int>) {
@@ -2008,8 +2048,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             description = r.description ?: "",
             fieldsJson = r.fieldsJson ?: "[]",
             isBuiltIn = r.isBuiltIn ?: false,
-            createdAt = r.createdAt ?: now,
-            updatedAt = r.updatedAt ?: now
+            createdAt = createdAtFor(r.createdAt, r.updatedAt, now),
+            // 수정일은 생성일 아래로 내려가지 않는다 — 근거는 [RecordTimestamps].
+            updatedAt = stampedUpdatedAt(createdAtFor(r.createdAt, r.updatedAt, now), r.updatedAt ?: now)
         )
 
     private fun mergePresetTemplate(existing: UserPresetTemplate, r: PresetTemplateRowValues, now: Long): UserPresetTemplate {
@@ -2018,10 +2059,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             description = r.description ?: existing.description,
             fieldsJson = r.fieldsJson ?: existing.fieldsJson,
             isBuiltIn = r.isBuiltIn ?: existing.isBuiltIn,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
     }
+
+    /**
+     * 병합이 적을 수정일 — [RecordTimestamps]를 지나는 자리를 한 이름으로 모은다.
+     * 프리셋 셋(필드 템플릿·검색·목록)이 같은 규약이라, 자리마다 적으면 한 벌만 고쳐진다.
+     */
+    private fun stampedUpdatedAt(createdAt: Long, updatedAt: Long): Long =
+        RecordTimestamps.orderedUpdatedAt(createdAt, updatedAt)
+
+    /**
+     * **신규 행의 생성일** — 파일 값이 없으면 *수정일*, 그것도 없으면 지금.
+     *
+     * 수정일로 내려가는 갈래가 요점이다. 생성일을 지금으로 지어내면 [stampedUpdatedAt]이
+     * 파일의 수정일을 *지금*으로 밀어 올려 **사용자가 적은 값을 버린다**(콜드 검토 2026.08.24 —
+     * 손으로 만든 파일에서 생성일 열만 지운 경우가 그 모양이다). 수정일을 바닥으로 삼으면
+     * 그 값이 그대로 살고 짝의 차례도 성립한다 — *언제 만들어졌는지는 모르지만 적어도
+     * 마지막으로 고친 그때에는 있었다*가 그 뜻이다.
+     */
+    private fun createdAtFor(fileCreatedAt: Long?, fileUpdatedAt: Long?, now: Long): Long =
+        fileCreatedAt ?: fileUpdatedAt ?: now
 
     private class FieldDefCols(cols: Map<String, Int>, firstHeader: String) {
         val universeName = cols[firstHeader] ?: cols["세계관"] ?: 0
@@ -2979,6 +3040,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
     }
 
+    /** 아무 태그·링크·뗀 표식도 없는 상태 — [asksNothing]의 견줄 자리. */
+    private val EMPTY_IMAGE_META_STATE = ImageMetaState(emptySet(), null, null)
+
+    /**
+     * 이 행이 **아무것도 요구하지 않는가.**
+     *
+     * '이미지' 시트는 이제 라이브러리에 없는 그림도 싣는다([ImageSheetRows]) — 그림이 한 장뿐인
+     * 캐릭터의 그림이 통째로 빠지던 자리다. 그 행들은 태그·링크·뗀 표식 칸이 비어 나가는데,
+     * **행이 있다는 것만으로 라이브러리에 편입하면 안 된다**: 편입의 진입점은 태그·링크·뗀
+     * 표식이라는 것이 `ImageMetaDao.adopt`가 세운 규약이고, 그렇지 않으면 파일을 한 번
+     * 왕복시키는 것만으로 라이브러리가 수백 행 불어난다.
+     *
+     * 판정은 **빈 상태에 이 행을 적용해 봐서 그대로인가**로 낸다 — [mergeImageMetaState]가
+     * 이미 열 없음·빈칸·못 읽는 값의 처분을 전부 들고 있으므로, 그 규약을 여기서 두 번째로
+     * 적지 않는다(그러면 반드시 갈린다).
+     */
+    private fun ImageMetaRowValues.asksNothing(): Boolean =
+        mergeImageMetaState(EMPTY_IMAGE_META_STATE, this) == EMPTY_IMAGE_META_STATE
+
     /** 행을 기존 상태에 적용한 결과 — 가져오기와 미리보기의 단일 소스(규약 R-33). */
     private fun mergeImageMetaState(existing: ImageMetaState, r: ImageMetaRowValues): ImageMetaState =
         ImageMetaState(
@@ -3594,7 +3674,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(planned.rowIndex) ?: continue
             val r = readImageMetaRow(row, c, result = null)
             val existing = metaByPath.first(planned.path)
-            if (existing == null) { newCount++; continue }
+            // 가져오기와 **같은 판정**이다(R-33) — 라이브러리에 없는 그림의 빈 행은
+            // 아무 일도 하지 않으므로 '신규'가 아니라 '변경 없음'이다.
+            if (existing == null) {
+                if (r.asksNothing()) unchangedCount++ else newCount++
+                continue
+            }
             val current = ImageMetaState(
                 tags = if (r.hasTagCol) tagsByImage[existing.id].orEmpty() else emptySet(),
                 linkGroupId = existing.linkGroupId,
@@ -4589,9 +4674,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
 
-            // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = (if (r.fileCode.isNotBlank()) changes.byCode.first(r.fileCode) else null)
-                ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, r.fieldKey, r.newValue))
+            // 실제 임포트와 **같은 함수**다(R-33): 코드 → 자연키 → 밑줄 키의 슬롯.
+            val existing = changes.resolve(
+                r.fileCode, StateChangeNaturalKey(character.id, year, r.fieldKey, r.newValue)
+            ).row
             if (existing == null) {
                 newCount++
                 changes.remember(
@@ -5241,15 +5327,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[r.name]
             if (existing == null) {
                 newCount++
-                existingByName[r.name] = SearchPreset(
-                    name = r.name,
-                    query = r.query ?: "",
-                    filtersJson = r.filtersJson ?: "{}",
-                    sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
-                    isDefault = r.isDefault ?: false,
-                    createdAt = r.createdAt ?: now,
-                    updatedAt = r.updatedAt ?: now
-                )
+                // 신규도 가져오기와 **같은 함수**다(R-33).
+                existingByName[r.name] = newSearchPresetFrom(r, now)
                 continue
             }
             val merged = mergeSearchPreset(existing, r, now)
@@ -5285,20 +5364,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[r.name]
             if (existing == null) {
                 newCount++
-                existingByName[r.name] = CharacterListPreset(
-                    name = r.name,
-                    tagsJson = r.tagsJson ?: "[]",
-                    fieldFiltersJson = r.fieldFiltersJson ?: "{}",
-                    sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
-                    sortFieldKey = r.sortFieldKey,
-                    sortDuelAxisCode = r.sortDuelAxisCode,
-                    sortAscending = r.sortAscending ?: true,
-                    bodySizePartIndex = r.bodySizePartIndex,
-                    novelIdsJson = r.novelIdsJson ?: "[]",
-                    isDefault = r.isDefault ?: false,
-                    createdAt = r.createdAt ?: now,
-                    updatedAt = r.updatedAt ?: now
-                )
+                // 신규도 가져오기와 **같은 함수**다(R-33).
+                existingByName[r.name] = newListPresetFrom(r, now)
                 continue
             }
             val merged = mergeListPreset(existing, r, now)
@@ -8539,13 +8606,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         if (r.eventType == TimelineEvent.TYPE_BIRTH || r.eventType == TimelineEvent.TYPE_DEATH) {
                             val stateKey = if (r.eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
                             for (character in resolvedCharacters) {
-                                val existing = db.characterStateChangeDao()
-                                    .getChangeByNaturalKey(character.id, year, stateKey, year.toString())
-                                if (existing == null) {
+                                // **자연키가 아니라 슬롯으로 찾는다** — `__birth`·`__death`는
+                                // 캐릭터당 한 행이 불변식이라([SingletonStateChanges]), 연도가
+                                // 다른 출생 사건을 만나면 자연키는 빗나가고 **둘째 줄이 들어갔다.**
+                                // 그것이 사용자 데이터에 실제로 남아 있던 모양이다(연표 1303 ·
+                                // 프로필 1301 → 나이가 163과 165로 갈렸다). 인앱 쌍둥이
+                                // (`EventStateChangeSync`)는 같은 자리를 슬롯으로 잡는다 —
+                                // 두 경로가 같은 규약을 봐야 한다.
+                                val slot = SingletonStateChanges.pick(
+                                    db.characterStateChangeDao().getChangesByField(character.id, stateKey),
+                                    stateKey
+                                )
+                                if (slot == null) {
                                     db.characterStateChangeDao().insert(CharacterStateChange(
                                         characterId = character.id, year = year, month = r.month, day = r.day,
                                         fieldKey = stateKey, newValue = year.toString()
                                     ))
+                                } else if (slot.year != year || slot.month != r.month || slot.day != r.day ||
+                                    slot.newValue != year.toString()
+                                ) {
+                                    // 사건이 진실이면 그 자리의 행을 **고친다**(종전에는 둘째 줄).
+                                    db.characterStateChangeDao().update(
+                                        slot.copy(
+                                            year = year, month = r.month, day = r.day,
+                                            newValue = year.toString()
+                                        )
+                                    )
                                 }
                                 // 작품→세계관은 이미 메모된 helper가 있다 — 참가자마다 작품을
                                 // 다시 읽던 자리다(B-210. 같은 작품을 든 참가자가 되풀이된다).
@@ -8658,14 +8744,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
                     result.warnings.add("상태변화 행 ${excelRow(i)}: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
-                // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
-                val changeByCodeMatch = if (fileCode.isNotBlank()) changes.byCode.first(fileCode) else null
-                val existing = changeByCodeMatch
-                    ?: changes.byNaturalKey.first(StateChangeNaturalKey(character.id, year, fieldKey, newValue))
+                // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 → 밑줄 키의 슬롯.
+                // 사다리는 [StateChangeIndexes.resolve]가 든다 — 미리보기와 같은 함수다(R-33).
+                val resolution = changes.resolve(
+                    fileCode, StateChangeNaturalKey(character.id, year, fieldKey, newValue)
+                )
+                val existing = resolution.row
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로 고지한다
                 // (연표 I2-5와 같은 모양 — 이 시트가 이미 쓴 이력을 자연키로 다시 잡으면 무고지로 덮었다).
-                if (changeByCodeMatch == null && existing != null && existing.id in matchedStateChangeIds) {
+                if (resolution.via != StateChangeIndexes.Via.CODE &&
+                    existing != null && existing.id in matchedStateChangeIds
+                ) {
                     result.warnings.add("상태변화 행 ${excelRow(i)}: 같은 캐릭터·연도·필드·값의 행이 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
+                // 슬롯으로 잡혔다 = **연도나 값을 고친 밑줄 키 행**이다. 종전에는 이 자리가
+                // 신규 삽입이라 둘째 줄이 생겼다 — 지금은 그 자리의 행을 고치고, 사용자가
+                // *새 이력을 적었다고 믿는 일*이 없게 무엇을 했는지 말한다(개발 의도 2번).
+                if (resolution.via == StateChangeIndexes.Via.SLOT && existing != null) {
+                    result.warnings.add(
+                        "상태변화 행 ${excelRow(i)}: '$fieldKey'은(는) 캐릭터당 한 행이라 " +
+                            "새 행을 만들지 않고 '${character.name}'의 기존 행을 고쳤습니다"
+                    )
                 }
 
                 if (existing != null) {
@@ -9391,15 +9490,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.searchPresetDao().update(mergedSearchPreset)
                     if (mergedSearchPreset != existing) result.updatedSearchPresets++ else result.unchangedRows++
                 } else {
-                    val newPreset = SearchPreset(
-                        name = name,
-                        query = r.query ?: "",
-                        filtersJson = r.filtersJson ?: "{}",
-                        sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
-                        isDefault = r.isDefault ?: false,
-                        createdAt = r.createdAt ?: nowMillis,
-                        updatedAt = r.updatedAt ?: nowMillis
-                    )
+                    // 신규도 미리보기와 **같은 함수**다(R-33).
+                    val newPreset = newSearchPresetFrom(r, nowMillis)
                     val newId = db.searchPresetDao().insert(newPreset)
                     existingByName[name] = newPreset.copy(id = newId)
                     result.newSearchPresets++
@@ -9454,20 +9546,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterListPresetDao().update(mergedListPreset)
                     if (mergedListPreset != existing) result.updatedListPresets++ else result.unchangedRows++
                 } else {
-                    val newPreset = CharacterListPreset(
-                        name = name,
-                        tagsJson = r.tagsJson ?: "[]",
-                        fieldFiltersJson = r.fieldFiltersJson ?: "{}",
-                        sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
-                        sortFieldKey = r.sortFieldKey,
-                        sortDuelAxisCode = r.sortDuelAxisCode,
-                        sortAscending = r.sortAscending ?: true,
-                        bodySizePartIndex = r.bodySizePartIndex,
-                        novelIdsJson = r.novelIdsJson ?: "[]",
-                        isDefault = r.isDefault ?: false,
-                        createdAt = r.createdAt ?: nowMillis,
-                        updatedAt = r.updatedAt ?: nowMillis
-                    )
+                    // 신규도 미리보기와 **같은 함수**다(R-33).
+                    val newPreset = newListPresetFrom(r, nowMillis)
                     val newId = db.characterListPresetDao().insert(newPreset)
                     existingByName[name] = newPreset.copy(id = newId)
                     result.newListPresets++
@@ -10288,13 +10368,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **미리 입양하는 것이 "건너뛸 행까지 입양"이 되지 않는 근거:** 루프의
         // `sheet.getRow(i) ?: continue`는 방어일 뿐 실제로 걸리지 않는다 — `plan.rows`의 `i`는
         // 위에서 `sheet.getRow(i)`가 **null이 아닌 행만** 골라 만든 것이다.
-        // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지면 종전에는 그 행이 입양되지
-        // 않았고 지금은 이미 입양돼 있다. 결과는 *라이브러리 행 하나가 더 생기는 것*이고
-        // 유실이 아니다(고지도 그대로 — `newImageMeta`는 그 줄에 닿아야 오른다).
+        //
+        // **입양 대상을 고르려면 각 행이 무엇을 요구하는지 먼저 알아야 한다**(2026.08.23) —
+        // 이 시트는 이제 라이브러리에 없는 그림도 싣는데([ImageSheetRows]) 그 *빈 행*은
+        // 아무 일도 하지 않으므로 입양하면 안 된다([asksNothing]). 그래서 행 읽기를 여기로
+        // 올려 지도에 담는다.
+        //
+        // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지는 행은 이 지도에 안 들어가
+        // 입양 대상에 그대로 남는다(요구를 알 수 없으니 종전대로 다룬다). 그러면 종전과 같이
+        // *라이브러리 행 하나가 더 생기고* 유실은 없다 — 고지도 그대로다(`newImageMeta`는
+        // 그 줄에 닿아야 오른다). 던진 행은 아래 루프가 **같은 자리에서 같은 메시지로** 다시
+        // 읽어 던지므로 실패의 보고 위치도 옮기지 않는다.
+        val rowValues: Map<Int, ImageMetaRowValues> = plan.rows.mapNotNull { p ->
+            val row = sheet.getRow(p.rowIndex) ?: return@mapNotNull null
+            runCatching { readImageMetaRow(row, imc, result) }.getOrNull()?.let { p.rowIndex to it }
+        }.toMap()
+        val adoptTargets = plan.rows
+            .filter { it.path !in existingByPath }
+            .filterNot { rowValues[it.rowIndex]?.asksNothing() == true }
+            .map { it.path }
         val adoptAttempt = runCatching {
-            com.novelcharacter.app.util.ImageAdoption.adoptAll(
-                db, wantedPaths.filterNot { it in existingByPath }, now
-            )
+            com.novelcharacter.app.util.ImageAdoption.adoptAll(db, adoptTargets, now)
         }
         val adoptedByPath: Map<String, Long> = adoptAttempt.getOrDefault(emptyMap())
         val skippedMissing = plan.unresolved.size
@@ -10312,11 +10406,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
 
-                // 읽기도 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readImageMetaRow(row, imc, result)
+                // 읽기도 미리보기와 **같은 함수**다(규약 R-33). 위에서 한 번 읽어 뒀고,
+                // 그때 던진 행만 여기서 다시 읽어 같은 자리에서 던진다.
+                val r = rowValues[i] ?: readImageMetaRow(row, imc, result)
+
+                // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면 사용자가
+                // 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                // **이 고지가 아래 건너뛰기보다 앞에 있어야 한다** — 라이브러리에 없는 그림의
+                // 행은 못 읽는 값을 적어도 상태가 안 바뀌어([asksNothing]) 그대로 건너뛰는데,
+                // 고지가 뒤에 있으면 그 행만 무음이 된다.
+                if (r.hasDetachedCol && r.detachedRaw.isNotBlank() && r.detachedAt == null) {
+                    result.warnings.add("이미지 행 ${excelRow(i)}: '뗀날짜' 값 \"${r.detachedRaw}\"을(를) 읽을 수 없어 그대로 두었습니다")
+                }
 
                 // 위에서 한 번에 읽어 둔 색인이다 (B-238).
                 val existing = existingByPath[path]
+                // 라이브러리에 없는 그림의 **빈 행** — 이 시트가 그 그림도 싣게 되면서 생겼다.
+                // 아무 일도 하지 않고 '변경 없음'으로 센다(항등식 유지: inBackup = new+update+unchanged+skipped).
+                if (existing == null && r.asksNothing()) { result.unchangedRows++; continue }
                 val imageId = existing?.id ?: adoptedByPath[path] ?: throw (
                     adoptAttempt.exceptionOrNull()
                         ?: IllegalStateException("이미지 라이브러리 행을 만들지 못했습니다")
@@ -10353,12 +10460,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 빈칸이면 서랍에서 뺀다. **출처 열은 읽지 않는다**(readOnly): 앱이 아는 출처를
                 // 사용자가 적은 문자열로 덮어쓰면 화면이 없는 캐릭터를 가리키게 된다.
                 if (r.hasDetachedCol) {
-                    // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면
-                    // 사용자가 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                    // 못 읽는 값의 고지는 **위에서 이미 했다**(건너뛰는 행도 말해야 하므로).
                     // 병합 결과가 기존과 같다는 것이 곧 '손대지 않는다'이다.
-                    if (r.detachedRaw.isNotBlank() && r.detachedAt == null) {
-                        result.warnings.add("이미지 행 ${excelRow(i)}: '뗀날짜' 값 \"${r.detachedRaw}\"을(를) 읽을 수 없어 그대로 두었습니다")
-                    }
                     val targetDetachedAt = target.detachedAt
                     when {
                         targetDetachedAt == current.detachedAt -> Unit  // 바뀌지 않으면 쓰지 않는다

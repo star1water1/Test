@@ -91,14 +91,42 @@ class AliveAtYearTest {
         assertEquals(AliveAtYear.Verdict.UNSET, AliveAtYear.resolve(emptyList(), 1000))
     }
 
-    /** 같은 해에 여러 행이면 마지막(월·일·id 순)이 이긴다. */
+    /**
+     * `__alive`가 여러 행이면 **정본(가장 이른 행)**이 이긴다 — 2026.08.23에 뒤집혔다.
+     *
+     * 종전 규칙은 *마지막이 이긴다*였는데, **쓰는 쪽은 첫 행을 고친다**
+     * (`SemanticFieldSyncHelper.upsertAliveStateChange` → `findStateChange` → 첫 건).
+     * 두 규칙이 붙어 있는 동안, 두 행이 남은 캐릭터는 **사용자가 방금 고른 생존여부가
+     * 화면에 안 나왔다** — 편집기는 첫 행을 고치고 판정은 둘째 행을 읽었다.
+     *
+     * 이 키는 애초에 캐릭터당 한 행이 불변식이라([SingletonStateChanges]) 둘째 행은
+     * 지워질 것이고, 그때까지도 답이 쓰는 쪽과 갈리지 않는 것이 이 시험이 잠그는 것이다.
+     */
     @Test
-    fun `같은 해의 마지막 기록이 이긴다`() {
+    fun `alive 행이 둘이면 정본이 이긴다`() {
         val changes = listOf(
             change(ALIVE, 1000, "dead", id = 1),
             change(ALIVE, 1000, "alive", id = 2)
         )
-        assertEquals(AliveAtYear.Verdict.ALIVE, AliveAtYear.resolve(changes, 1000))
+        assertEquals(AliveAtYear.Verdict.DEAD, AliveAtYear.resolve(changes, 1000))
+        // 실린 차례가 답을 바꾸지 않는다.
+        assertEquals(AliveAtYear.Verdict.DEAD, AliveAtYear.resolve(changes.reversed(), 1000))
+    }
+
+    /**
+     * **쓰는 쪽과 읽는 쪽이 같은 행을 본다** — 이 판의 요점을 그대로 잰다.
+     * `SemanticFieldSyncHelper`가 고치는 행([SingletonStateChanges.pick])의 값이 곧 판정이다.
+     */
+    @Test
+    fun `쓰는 쪽이 고치는 행이 곧 판정이다`() {
+        val rows = listOf(
+            change(ALIVE, 0, "dead", id = 1),
+            change(ALIVE, 0, "alive", id = 2)
+        )
+        val edited = rows.map {
+            if (it.id == SingletonStateChanges.pick(rows, ALIVE)?.id) it.copy(newValue = "alive") else it
+        }
+        assertEquals(AliveAtYear.Verdict.ALIVE, AliveAtYear.resolve(edited, 1000))
     }
 
     @Test

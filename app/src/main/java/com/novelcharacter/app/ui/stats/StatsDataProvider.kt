@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.stats
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.util.CompletionRate
+import com.novelcharacter.app.util.SingletonStateChanges
 import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.DuelScoreIndex
 import com.novelcharacter.app.util.CompletionWeights
@@ -1536,8 +1537,9 @@ class StatsDataProvider {
         val stateChangesByChar = s.stateChanges.groupBy { it.characterId }
         val survivalPeriods = s.characters.mapNotNull { char ->
             val changes = stateChangesByChar[char.id] ?: return@mapNotNull null
-            val birth = changes.find { it.fieldKey == CharacterStateChange.KEY_BIRTH }?.year
-            val death = changes.find { it.fieldKey == CharacterStateChange.KEY_DEATH }?.year
+            // 정본 한 행은 [SingletonStateChanges]가 고른다 (ConsistencyChecker와 같은 술어 — R-34).
+            val birth = SingletonStateChanges.pick(changes, CharacterStateChange.KEY_BIRTH)?.year
+            val death = SingletonStateChanges.pick(changes, CharacterStateChange.KEY_DEATH)?.year
             if (birth != null && death != null) {
                 char.name to (death - birth)
             } else null

@@ -55,6 +55,81 @@ class ImportIdentityIndexesTest {
         assertNull(indexes.byNaturalKey.first(StateChangeNaturalKey(2L, 1993, "직업", "기사")))
     }
 
+    // ── ①-a 밑줄 키에는 **슬롯**이라는 셋째 사다리가 있다 (2026.08.23) ───────────
+    // `__birth`·`__death`·`__alive`는 캐릭터당 한 행이 불변식이라, 코드도 자연키도 빗나가면
+    // *그 자리에 이미 있는 행*이 곧 같은 행이다. 이 칸이 없던 동안 파일에서 연도만 고친
+    // `__birth` 행은 **둘째 줄**이 됐고, 그때부터 같은 캐릭터의 나이가 화면마다 갈렸다.
+
+    private fun birth(id: Long, year: Int, code: String?, charId: Long = 1L) =
+        CharacterStateChange(
+            id = id, characterId = charId, year = year,
+            fieldKey = CharacterStateChange.KEY_BIRTH, newValue = year.toString(), code = code
+        )
+
+    @Test
+    fun `상태변화 — 밑줄 키는 연도를 고쳐도 그 자리의 행을 잡는다`() {
+        val indexes = StateChangeIndexes(listOf(birth(1L, 1301, "SC-B")))
+        // 코드를 지우고 연도만 고친 행 — 코드·자연키 둘 다 빗나간다.
+        val r = indexes.resolve("", StateChangeNaturalKey(1L, 1303, CharacterStateChange.KEY_BIRTH, "1303"))
+        assertEquals(1L, r.row?.id)
+        assertEquals(StateChangeIndexes.Via.SLOT, r.via)
+    }
+
+    @Test
+    fun `상태변화 — 코드와 자연키가 슬롯보다 먼저다`() {
+        val indexes = StateChangeIndexes(listOf(birth(1L, 1301, "SC-B"), birth(5L, 1301, "SC-C", charId = 2L)))
+        val byCode = indexes.resolve("SC-B", StateChangeNaturalKey(1L, 9999, CharacterStateChange.KEY_BIRTH, "9999"))
+        assertEquals(StateChangeIndexes.Via.CODE, byCode.via)
+        assertEquals(1L, byCode.row?.id)
+        val byNatural = indexes.resolve("", StateChangeNaturalKey(1L, 1301, CharacterStateChange.KEY_BIRTH, "1301"))
+        assertEquals(StateChangeIndexes.Via.NATURAL, byNatural.via)
+        assertEquals(1L, byNatural.row?.id)
+    }
+
+    @Test
+    fun `상태변화 — 슬롯은 캐릭터를 넘지 않는다`() {
+        val indexes = StateChangeIndexes(listOf(birth(1L, 1301, "SC-B", charId = 1L)))
+        val other = indexes.resolve("", StateChangeNaturalKey(2L, 1303, CharacterStateChange.KEY_BIRTH, "1303"))
+        assertNull(other.row)
+        assertNull(other.via)
+    }
+
+    /** 일반 필드의 이력은 여러 줄이 정상이므로 **슬롯 축에 실리지 않는다.** */
+    @Test
+    fun `상태변화 — 일반 필드에는 슬롯이 없다`() {
+        val indexes = StateChangeIndexes(listOf(change(1L, "SC-1", year = 1993, key = "직업", value = "기사")))
+        val r = indexes.resolve("", StateChangeNaturalKey(1L, 1999, "직업", "기사단장"))
+        assertNull(r.row)
+        assertNull(indexes.slotOwner(1L, "직업"))
+    }
+
+    /**
+     * **슬롯은 `LIMIT 1`이 아니라 *정본*을 준다** (콜드 검토 2026.08.24).
+     * 둘째 줄이 먼저 삽입돼 id가 작으면 `first`는 읽는 쪽이 아무도 안 보는 행을 준다 —
+     * 그러면 가져오기가 「기존 행을 고쳤습니다」라 말해 놓고 화면은 옛 값을 보인다.
+     */
+    @Test
+    fun `상태변화 — 슬롯은 id가 아니라 정본을 준다`() {
+        // 둘째 줄(1303)이 먼저 들어가 id가 작다.
+        val indexes = StateChangeIndexes(listOf(birth(2L, 1303, "SC-X"), birth(9L, 1301, "SC-Y")))
+        assertEquals(9L, indexes.slotOwner(1L, CharacterStateChange.KEY_BIRTH)?.id)
+        val r = indexes.resolve("", StateChangeNaturalKey(1L, 1350, CharacterStateChange.KEY_BIRTH, "1350"))
+        assertEquals(9L, r.row?.id)
+        assertEquals(StateChangeIndexes.Via.SLOT, r.via)
+    }
+
+    @Test
+    fun `상태변화 — 새로 넣은 행도 그 자리의 주인이 된다`() {
+        val indexes = StateChangeIndexes(emptyList())
+        assertNull(indexes.slotOwner(1L, CharacterStateChange.KEY_BIRTH))
+        indexes.remember(birth(3L, 1301, "SC-N"))
+        assertEquals(3L, indexes.slotOwner(1L, CharacterStateChange.KEY_BIRTH)?.id)
+        // 같은 파일의 뒤 행이 연도를 다르게 적어 와도 그 행을 다시 잡는다(둘째 줄이 안 생긴다).
+        val r = indexes.resolve("", StateChangeNaturalKey(1L, 1310, CharacterStateChange.KEY_BIRTH, "1310"))
+        assertEquals(3L, r.row?.id)
+        assertEquals(StateChangeIndexes.Via.SLOT, r.via)
+    }
+
     @Test
     fun `대결 축 — 재료가 표시순으로 와도 id가 작은 행이 답이다`() {
         // `getAllList()`는 `ORDER BY universeId ASC, displayOrder ASC, id ASC`다.

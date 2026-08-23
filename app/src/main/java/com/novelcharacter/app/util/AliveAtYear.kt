@@ -43,9 +43,13 @@ object AliveAtYear {
             it.newValue.toIntOrNull() ?: if (it.newValue.isBlank()) it.year else null
         }
 
-        val deathYear = yearOf(relevant.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH })
-        val birthYear = yearOf(relevant.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH })
-        val aliveChange = relevant.findLast { it.fieldKey == CharacterStateChange.KEY_ALIVE }
+        // **거른 목록 안에서 정본을 고른다.** 연도 필터는 그대로 두고(아래 `__alive`의
+        // `year = 0` 주석이 그 필터에 기대고 있다) *같은 키가 둘 이상일 때 누가 이기는가*만
+        // [SingletonStateChanges]에 맡긴다 — 종전 `findLast`는 아래 `declaredBirthYear`의
+        // `min`과 정반대 행을 집어, **한 함수 안에서 두 답**이 나왔다.
+        val deathYear = yearOf(SingletonStateChanges.pick(relevant, CharacterStateChange.KEY_DEATH))
+        val birthYear = yearOf(SingletonStateChanges.pick(relevant, CharacterStateChange.KEY_BIRTH))
+        val aliveChange = SingletonStateChanges.pick(relevant, CharacterStateChange.KEY_ALIVE)
         // **걸러내지 않은 목록에서 읽는 출생** — 아래 갈래가 쓴다. 연도 필터가 두 행을
         // 비대칭으로 다루기 때문이다: `__alive` 행은 `year = 0`으로 들어오므로
         // (`SemanticFieldSyncHelper.upsertAliveStateChange`) **어느 시점에서도 남는데**
@@ -58,10 +62,11 @@ object AliveAtYear {
         // 500과 1000 두 행에 targetYear 700이면 이쪽은 1000을 보고 UNSET, 아래 갈래는
         // 걸러진 목록에서 500을 보고 ALIVE다. 가장 이른 것을 고르면 *어느 선언보다도 앞선
         // 해*에만 UNSET이라 두 갈래의 답이 모든 경우에 같아진다.
-        val declaredBirthYear = ordered
-            .filter { it.fieldKey == CharacterStateChange.KEY_BIRTH }
-            .mapNotNull { yearOf(it) }
-            .minOrNull()
+        //
+        // 위 갈래도 이제 [SingletonStateChanges.pick](= 가장 이른 행)을 쓰므로 **두 값의
+        // 근거가 한 술어**다. 여기가 거르지 않은 목록을 보는 것만이 남은 차이이고, 그것은
+        // 위 문단이 적은 대로 일부러다.
+        val declaredBirthYear = yearOf(SingletonStateChanges.pick(ordered, CharacterStateChange.KEY_BIRTH))
 
         if (aliveChange != null) {
             // 태어나기 전이면 판정할 것이 없다 — 아래 하위호환 갈래와 **같은 답**이다.
@@ -69,9 +74,9 @@ object AliveAtYear {
             // 사망연도 기반 보정 — 사망 이전 시점이면 살아 있다(적힌 것보다 시점이 이긴다).
             if (deathYear != null && targetYear < deathYear) return Verdict.ALIVE
             return when (aliveChange.newValue) {
-                "dead" -> Verdict.DEAD
-                "alive" -> Verdict.ALIVE
-                else -> Verdict.UNKNOWN   // "unknown" 및 사용자 자유 입력
+                CharacterStateChange.ALIVE_MARKER_DEAD -> Verdict.DEAD
+                CharacterStateChange.ALIVE_MARKER_ALIVE -> Verdict.ALIVE
+                else -> Verdict.UNKNOWN   // ALIVE_MARKER_UNKNOWN 및 사용자 자유 입력
             }
         }
         // 하위호환: `__alive`가 없으면 출생·사망으로 셈한다.
