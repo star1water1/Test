@@ -1329,6 +1329,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 인쇄 관리자는 앱 컨텍스트로 충분하다.
                 val appCtx = requireContext().applicationContext
                 val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+                // **이력 문구도 미리 굳힌다** — 아래 콜백은 화면보다 오래 살 수 있고,
+                // 그때 `getString`은 프래그먼트를 거치므로 쓸 수 없다(`jobName`과 같은 이유).
+                val shareOk = getString(R.string.result_pdf_shared, character.name)
+                val shareFailed = getString(R.string.result_pdf_share_failed)
+                val logRepo = (appCtx as com.novelcharacter.app.NovelCharacterApp).operationLogRepository
 
                 // Use WebView to print as PDF
                 val webView = WebView(requireContext())
@@ -1345,6 +1350,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                         view.createPrintDocumentAdapter(jobName).let { adapter ->
                             printManager.print(jobName, adapter, PrintAttributes.Builder().build())
                         }
+                        // **성공은 여기서 적는다.** 종전에는 `loadDataWithBaseURL`을 걸자마자
+                        // 적어서, 적재가 실패해도 이력에는 *"PDF로 공유했습니다"*가 남았다 —
+                        // 인쇄 대화상자는 뜬 적도 없는데 기록만 성공이었다(거짓 고지).
+                        // `Fragment.logOperation`을 쓰지 않는 것은 그쪽이 화면이 사라지면
+                        // 조용히 아무것도 안 적기 때문이다 — 이 콜백은 화면 밖에서 온다.
+                        logRepo.logAsync(OpResult.success(OpResult.CAT_SHARE, shareOk))
                     }
 
                     override fun onReceivedError(
@@ -1354,12 +1365,18 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     ) {
                         // 못 그렸으면 그 자리에서 내린다 — 안 내리면 창이 영영 남는다.
                         progress.dismissSafely()
+                        // **주 프레임이 실패했을 때만 적는다** — 나중에 HTML이 이미지를
+                        // 물고 오는 날 하위 리소스 오류마다 실패가 쌓이면 이력이 못 쓰게 된다.
+                        if (request.isForMainFrame) {
+                            logRepo.logAsync(
+                                OpResult.failure(OpResult.CAT_SHARE, shareFailed, error.description?.toString())
+                            )
+                        }
                     }
                 }
+                // PDF는 시스템 인쇄 대화상자로 넘어가므로 성공 통보는 그쪽이 담당 —
+                // 이력은 **적재가 끝난 뒤** 위 `onPageFinished`가 적는다.
                 webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                // PDF는 시스템 인쇄 대화상자로 넘어가므로 성공 통보는 그쪽이 담당 — 이력만 기록
-                logOperation(OpResult.success(OpResult.CAT_SHARE,
-                    getString(R.string.result_pdf_shared, character.name)))
             } catch (e: Exception) {
                 progress.dismissSafely()
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
