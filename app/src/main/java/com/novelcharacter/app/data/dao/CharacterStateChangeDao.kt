@@ -139,6 +139,19 @@ interface CharacterStateChangeDao {
     """)
     suspend fun getChangesByFieldKeyForUniverse(universeId: Long, fieldKey: String): List<CharacterStateChange>
 
+    /**
+     * 같은 용도의 **캐릭터 지정판** — 위 질의가 `JOIN novels` 때문에 원리적으로 못 만나는
+     * 미분류 캐릭터(B-13)를 [migrateFieldKeyForCharacters]와 **같은 방식으로** 집는다.
+     *
+     * 대상은 `UnassignedHistoryScope`가 가린다 — 키는 세계관 안에서만 유일해서 이력 행
+     * 하나만으로는 그것이 어느 세계관의 것인지 알 수 없기 때문이다.
+     */
+    @Query("""
+        SELECT * FROM character_state_changes
+        WHERE fieldKey = :fieldKey AND characterId IN (:characterIds)
+    """)
+    suspend fun getChangesByFieldKeyForCharacters(characterIds: List<Long>, fieldKey: String): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
 

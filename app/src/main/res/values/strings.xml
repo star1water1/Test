@@ -3169,6 +3169,7 @@
     <string name="field_library_rename_conflict_merge">\'%1$s\'은(는) 이미 존재합니다. 두 값을 병합하시겠습니까?</string>
     <string name="field_library_propagation_message">캐릭터 값 %1$d건 · 사건 값 %2$d건 · 작품 값 %4$d건 · 상태변화 이력 %3$d건이 함께 변경됩니다.</string>
     <string name="field_library_propagation_whitespace">\n(공백 표기가 표준화되는 행 포함)</string>
+    <string name="field_library_propagation_unattributed">미분류 캐릭터 %1$d명의 상태변화 이력은 소속 세계관을 가릴 수 없어 옛 표기로 남습니다.</string>
     <string name="field_library_propagation_join_notice">\n콤마 구분 값은 \", \" 표준 표기로 재조합됩니다.</string>
     <string name="field_library_delete_title">값 삭제 — \'%1$s\'</string>
     <string name="field_library_delete_entry_only">항목만 삭제 (캐릭터 값 유지 — 재수집되면 다시 나타남)</string>

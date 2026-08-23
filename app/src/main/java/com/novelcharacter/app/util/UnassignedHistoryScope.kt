@@ -110,4 +110,22 @@ object UnassignedHistoryScope {
         }
         return Plan(migrate, skipped)
     }
+
+    /**
+     * **고지에 실을 캐릭터** — 손대지 않을 이력 중 *이번에 바뀌는 값을 실제로 든* 행의 주인만.
+     *
+     * [Plan.reportable]은 *이 필드에 이력이 있다*까지만 가린다. 값 이름변경·병합·삭제는 그중
+     * **그 값을 든 행**만 건드리므로, 걸러내지 않으면 바뀔 것이 하나도 없는 조작에도 경고가
+     * 붙는다(R-51 — 한 화면의 두 수는 같은 모집단을 세야 한다).
+     *
+     * **캐릭터 단위로 접는 것이 요점이다.** 한 캐릭터가 같은 필드의 이력을 여러 해에 걸쳐
+     * 들 수 있는데, 행을 세면 *"미분류 캐릭터 7명"*이 실제로는 두 명이 된다. 누적하는 자리
+     * (AI 정리는 병합 여럿의 답을 모은다)에서도 같은 이유로 수가 아니라 id가 오간다.
+     *
+     * @param untouched (캐릭터 id, 이력이 든 값) 쌍. 순서를 보존한다.
+     * @param holdsValue 그 값이 이번 조작에 걸리는가 — 값을 쪼개는 법은 필드 설정마다 달라
+     *   여기서 정하지 않는다(다중 토큰·구분자·공백 표준화는 `FieldValueTokenizer`의 몫이다).
+     */
+    fun notifiable(untouched: List<Pair<Long, String>>, holdsValue: (String) -> Boolean): List<Long> =
+        untouched.filter { holdsValue(it.second) }.map { it.first }.distinct()
 }

@@ -16,6 +16,8 @@ import com.novelcharacter.app.util.FieldSuggestionEntries
 import com.novelcharacter.app.util.FieldValueResolver
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.UnassignedHistoryScope
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -490,20 +492,30 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val affectedCharacterIds: List<Long> = emptyList(),
         val snapshottedCharacters: Int = 0,
         /** 작품 필드값 행 수 (확-3) — 종류가 늘면 합계에도 함께 들어와야 한다 */
-        val novelValues: Int = 0
+        val novelValues: Int = 0,
+        /**
+         * **가리지 못해 손대지 않은 미분류 캐릭터** (B-13 · [UnassignedHistoryScope]).
+         *
+         * 이력 행 하나만으로는 그것이 어느 세계관의 것인지 알 수 없어 옮기지 않은 몫이다.
+         * **유실이 아니다** — 그대로 살아 있고 옛 표기를 든다. 다만 조용히 넘기지 않는다.
+         * [total]에 넣지 않는 것이 요점이다: 그 수는 *바뀐 것*을 세는 칸이고 이쪽은 *안 바꾼 것*이다.
+         *
+         * **수가 아니라 id를 든다** — AI 정리는 병합 여럿의 보고를 누적하는데, 한 캐릭터가
+         * 두 값을 들고 있으면 수를 더하는 순간 같은 사람을 두 번 센다
+         * ([affectedCharacterIds]가 `distinct()`를 쓰는 것과 같은 이유다).
+         */
+        val unattributedHistoryCharacterIds: List<Long> = emptyList()
     ) {
         val total: Int get() = characterValues + eventValues + stateChanges + novelValues
 
-        operator fun plus(o: PropagationReport) = PropagationReport(
-            characterValues + o.characterValues,
-            eventValues + o.eventValues,
-            stateChanges + o.stateChanges,
-            whitespaceNormalized + o.whitespaceNormalized,
-            configUpdated || o.configUpdated,
-            (affectedCharacterIds + o.affectedCharacterIds).distinct(),
-            snapshottedCharacters + o.snapshottedCharacters,
-            novelValues + o.novelValues
-        )
+        /** 고지에 쓰는 수 — 세는 법이 한 자리에만 있어야 화면마다 다른 답이 나오지 않는다(R-51). */
+        val unattributedHistoryCharacters: Int get() = unattributedHistoryCharacterIds.size
+
+        // `plus`는 없앴다(R-24 — 2026.08.23). **부르는 자리가 하나도 없었다.**
+        // 있는 줄 믿고 쓰면 조용히 틀린다: 칸마다 더하는 법이 달라야 하는데(수는 합,
+        // 캐릭터 id는 `distinct()`) 그 사실이 이 자리에만 적혀 있어, 칸이 늘 때마다
+        // *여기도 고쳐야 한다*는 것을 아무도 모른다. AI 정리처럼 실제로 누적하는
+        // 자리는 자기가 무엇을 세는지 알고 모은다(`AiOrganizeSheet` — id는 집합으로).
     }
 
     sealed class RenameResult {
@@ -654,17 +666,14 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         for (row in novelValueDao.getValuesByFieldDef(fd.id)) {
             if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) novelRows++
         }
-        val fdUniverseId = fd.universeId
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && fdUniverseId != null) {
-            // 전역 구역 필드(null)는 건너뛴다 — 상태변화는 세계관 캐릭터의 표라 무소속 값에는
-            // 해당 행이 원리적으로 없다(0건 순회를 거르는 것이지 데이터를 거르는 것이 아니다).
-            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fdUniverseId, fd.key)) {
-                if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) stateRows++
-            }
+        val stateScan = scanStateChanges(fd)
+        for (change in stateScan.changes) {
+            if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) stateRows++
         }
         return PropagationReport(
             charRows, eventRows, stateRows,
-            affectedCharacterIds = affected.distinct(), novelValues = novelRows
+            affectedCharacterIds = affected.distinct(), novelValues = novelRows,
+            unattributedHistoryCharacterIds = stateScan.untouchedCharacters(fd, tokens)
         )
     }
 
@@ -683,13 +692,8 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val eventIds = eventValueDao.getValuesByFieldDef(fd.id)
             .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
             .map { it.eventId }.distinct()
-        var stateCount = 0
-        val fdScope = fd.universeId
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && fdScope != null) {
-            // 전역 구역 필드(null)는 상태변화가 원리적으로 없다 — 연표는 세계관 기능이다.
-            stateCount = stateChangeDao.getChangesByFieldKeyForUniverse(fdScope, fd.key)
-                .count { change -> FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens } }
-        }
+        val stateCount = scanStateChanges(fd).changes
+            .count { change -> FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens } }
         val novelIds = novelValueDao.getValuesByFieldDef(fd.id)
             .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
             .map { it.novelId }.distinct()
@@ -879,28 +883,27 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             }
         }
         // 상태변화 이력 — 연도 슬라이더·성장 그래프가 읽는 시간축 데이터 (A2: 무통보 이력 파손 방지)
-        val scopeForState = fd.universeId
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && scopeForState != null) {
-            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(scopeForState, fd.key)) {
-                val tokens = FieldValueTokenizer.tokenize(fd, change.newValue)
-                val mapped = mapTokens(tokens) ?: continue
-                affected.add(change.characterId)
-                if (mapped.isEmpty()) {
-                    stateChangeDao.delete(change)
+        val stateScan = scanStateChanges(fd)
+        for (change in stateScan.changes) {
+            val tokens = FieldValueTokenizer.tokenize(fd, change.newValue)
+            val mapped = mapTokens(tokens) ?: continue
+            affected.add(change.characterId)
+            if (mapped.isEmpty()) {
+                stateChangeDao.delete(change)
+                stateRows++
+            } else {
+                val joined = FieldValueTokenizer.join(mapped)
+                if (joined != change.newValue) {
+                    stateChangeDao.update(change.copy(newValue = joined))
                     stateRows++
-                } else {
-                    val joined = FieldValueTokenizer.join(mapped)
-                    if (joined != change.newValue) {
-                        stateChangeDao.update(change.copy(newValue = joined))
-                        stateRows++
-                        if (FieldValueTokenizer.join(tokens) != change.newValue) whitespaceOnly++
-                    }
+                    if (FieldValueTokenizer.join(tokens) != change.newValue) whitespaceOnly++
                 }
             }
         }
         return PropagationReport(
             charRows, eventRows, stateRows, whitespaceOnly, false, affected.distinct(),
-            novelValues = novelRows
+            novelValues = novelRows,
+            unattributedHistoryCharacterIds = stateScan.untouchedCharacters(fd, matchTokens)
         )
     }
 
@@ -978,17 +981,81 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
      * 상태변화의 조건은 전파 쪽과 **글자 그대로 같다**: 캐릭터 필드이고 세계관 소속일 때만
      * 이력이 있다(연표는 세계관 기능이다).
      */
+    /**
+     * 이 정의의 **상태변화 이력** — 세계관 캐릭터에 더해 **가릴 수 있는 미분류 캐릭터**까지.
+     *
+     * `getChangesByFieldKeyForUniverse`의 `JOIN novels`는 `novelId IS NULL`인 캐릭터를
+     * **원리적으로 못 만난다**(B-13). 그런데 값 전파의 *값* 갈래는 `getValuesByFieldDef`
+     * (필드 id 기준)라 그 캐릭터의 행도 고친다 — 그래서 종전에는 **값은 새 표기로 바뀌고
+     * 그 값의 이력만 옛 표기로 남았다.** 연도 슬라이더·성장 그래프가 읽는 시간축이 값과
+     * 어긋나는 것이고, 아무도 그 사실을 말하지 않았다.
+     *
+     * 닿는 길은 정상 조작이다: 캐릭터에서 작품을 '없음'으로 저장하면 짝을 못 찾은 값이
+     * **보관 값**으로 세계관 정의를 계속 가리킨 채 남고(N2 · B-128), 이력도 그대로 살아 있다.
+     *
+     * **귀속 판정은 새로 짜지 않는다** — 필드 키 이름변경이 이미 쓰는 순서를 그대로 쓴다
+     * (`getUnassignedCharactersWithFieldKey` → `getValueUniversesForCharacters` →
+     * [UnassignedHistoryScope.plan]). 둘째 잣대를 만들면 같은 물음에 두 답이 생긴다(원칙 05).
+     *
+     * **네 자리가 이 함수를 지나는 것이 요점이다**(미리보기·사용처·전파·영향 캐릭터 수집).
+     * 한 자리만 넓히면 미리보기와 실행이 갈리고, 특히 [collectAffectedCharacterIds]가 좁으면
+     * **휴지통 스냅샷 없이 이력이 지워지는** 더 나쁜 자리가 된다.
+     */
+    private suspend fun scanStateChanges(fd: FieldDefinition): StateChangeScan {
+        val scope = fd.universeId
+        // 전역 구역 필드(null)는 건너뛴다 — 상태변화는 세계관 캐릭터의 표라 해당 행이 없다.
+        if (fd.entityType != FieldDefinition.ENTITY_CHARACTER || scope == null) {
+            return StateChangeScan(emptyList(), emptyList())
+        }
+        val inUniverse = stateChangeDao.getChangesByFieldKeyForUniverse(scope, fd.key)
+        val candidates = stateChangeDao.getUnassignedCharactersWithFieldKey(fd.key)
+        if (candidates.isEmpty()) return StateChangeScan(inUniverse, emptyList())
+        val attribution = SqlInChunks
+            .flat(candidates) { charValueDao.getValueUniversesForCharacters(it) }
+            .groupBy({ it.characterId }, { it.universeId })
+            .mapValues { (_, ids) -> ids.toSet() }
+        val plan = UnassignedHistoryScope.plan(candidates, attribution, scope)
+        val extra = SqlInChunks.flat(plan.migrate) {
+            stateChangeDao.getChangesByFieldKeyForCharacters(it, fd.key)
+        }
+        // 가리지 못한 것은 **건드리지 않고 센다** — 조용히 넘기면 사용자는 자기 연표 일부가
+        // 옛 표기로 남은 것을 영영 모른다(개발 의도 2번). `FOREIGN`은 세지 않는다 —
+        // 남의 세계관 것으로 판명된 것이라, 세면 자기 조작과 무관한 숫자를 받는다.
+        //
+        // **수가 아니라 행을 들고 나간다.** 고지는 *이번에 손대는 토큰*을 실제로 든 몫만
+        // 말해야 하는데(R-51 — 같은 화면의 두 수가 같은 모집단을 세야 한다), 그 판정에는
+        // `newValue`가 필요하다. 캐릭터 수만 넘기면 *이 필드에 이력이 있다*는 것만으로
+        // 세어, 바뀔 것이 하나도 없는 이름변경에도 경고가 붙는다.
+        val untouched = SqlInChunks.flat(plan.reportable) {
+            stateChangeDao.getChangesByFieldKeyForCharacters(it, fd.key)
+        }
+        return StateChangeScan(inUniverse + extra, untouched)
+    }
+
+    /** [scanStateChanges]의 답 — 손댈 이력과, 가리지 못해 손대지 않을 이력. */
+    private class StateChangeScan(
+        val changes: List<CharacterStateChange>,
+        val untouched: List<CharacterStateChange>
+    ) {
+        /**
+         * 이번 토큰을 실제로 든 채 **옛 표기로 남을** 캐릭터.
+         *
+         * 비어 있으면 호출부는 아무 말도 하지 않는다 — 정상 조작에 잔소리를 달지 않는다(원칙 04).
+         */
+        fun untouchedCharacters(fd: FieldDefinition, tokens: Set<String>): List<Long> =
+            UnassignedHistoryScope.notifiable(untouched.map { it.characterId to it.newValue }) { v ->
+                FieldValueTokenizer.tokenize(fd, v).any { it in tokens }
+            }
+    }
+
     private suspend fun collectAffectedCharacterIds(fd: FieldDefinition, tokens: Set<String>): List<Long> {
         val ids = LinkedHashSet<Long>()
         for (row in charValueDao.getValuesByFieldDef(fd.id)) {
             if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) ids.add(row.characterId)
         }
-        val scopeForState = fd.universeId
-        if (fd.entityType == FieldDefinition.ENTITY_CHARACTER && scopeForState != null) {
-            for (change in stateChangeDao.getChangesByFieldKeyForUniverse(scopeForState, fd.key)) {
-                if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) {
-                    ids.add(change.characterId)
-                }
+        for (change in scanStateChanges(fd).changes) {
+            if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) {
+                ids.add(change.characterId)
             }
         }
         return ids.toList()

@@ -191,12 +191,16 @@ object AiOrganizeSheet {
             var totalEvents = 0
             var totalStates = 0
             var totalNovels = 0
+            // 병합마다 따로 물으므로 **캐릭터는 id로 모은다** — 한 캐릭터가 두 값을 들고 있으면
+            // 수를 더하는 순간 같은 사람을 두 번 센다.
+            val untouchedIds = LinkedHashSet<Long>()
             for (m in merges) {
                 val report = viewModel.previewPropagation(outcome.field, m.variants.toSet())
                 totalChars += report.characterValues
                 totalEvents += report.eventValues
                 totalStates += report.stateChanges
                 totalNovels += report.novelValues
+                untouchedIds.addAll(report.unattributedHistoryCharacterIds)
             }
             val message = buildString {
                 if (merges.isNotEmpty()) {
@@ -204,6 +208,11 @@ object AiOrganizeSheet {
                     append("\n")
                     append(fragment.getString(R.string.field_library_propagation_message,
                         totalChars, totalEvents, totalStates, totalNovels))
+                    if (untouchedIds.isNotEmpty()) {
+                        append("\n")
+                        append(context.getString(
+                            R.string.field_library_propagation_unattributed, untouchedIds.size))
+                    }
                 }
                 if (categories.isNotEmpty()) {
                     if (isNotEmpty()) append("\n")
