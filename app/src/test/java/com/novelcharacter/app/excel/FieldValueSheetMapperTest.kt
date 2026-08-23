@@ -192,6 +192,15 @@ class FieldValueSheetMapperTest {
     }
 
     @Test
+    fun aliasCsv_fullWidthCommaAliasSurvivesRoundtrip() {
+        // **콜드 검토가 잡은 자리**: `needsQuoting`은 `toHalfWidth` 뒤에 보므로 전각 쉼표를
+        // 품은 별칭도 내보내기가 **감싼다**. 그 토큰에는 ASCII 쉼표가 없어 «쉼표를 품었는가»로
+        // 가르면 감싼 칸이 다시 갈린다 — 셀의 `"` 유무로 가르는 것이 그래서다.
+        val aliases = listOf("ＮＰＣ，주식회사", "Seoul")
+        assertEquals(aliases, FieldValueSheetMapper.csvToAliases(joinCsv(aliases)))
+    }
+
+    @Test
     fun aliasCsv_fullWidthSeparatorDoesNotBreakQuotedCell() {
         // 감싸인 칸 안의 `、`는 값의 일부다 — 종전에는 셀 전체를 치환해 감싸기를 무력화했다.
         val aliases = listOf("北斗、南斗, 天", "Seoul")

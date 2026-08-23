@@ -637,6 +637,7 @@
     <string name="trash_restore_blocked_universe_duel_axis">이 대결 축이 속한 세계관이 없어 복원할 수 없습니다. 축은 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n세계관을 먼저 복원한 뒤 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_field_data">이 값들이 붙을 필드 정의가 없어 복원할 수 없습니다. 값은 정의 없이 존재할 수 없으므로 아무 필드에나 붙이지 않습니다.\n같은 삭제로 만들어진 \'필드 정의\' 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_universe_data">이 부가 데이터가 속한 세계관이 없어 복원할 수 없습니다.\n같은 삭제로 만들어진 세계관 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
+    <string name="trash_restore_blocked_universe_field">이 필드가 속한 세계관이 없어 복원할 수 없습니다. 필드는 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n같은 삭제로 만들어진 세계관 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_field_definition">되돌릴 자리가 남아 있지 않아 복원할 수 없습니다. 백업한 뒤에 그 필드들이 삭제된 것으로 보입니다.\n필드를 다시 만든 뒤 시도하거나, 같은 삭제의 다른 항목을 먼저 복원하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_duel_axis">이 대결 기록이 붙을 축이 없어 복원할 수 없습니다. 판은 축 없이 존재할 수 없으므로 아무 축에나 붙이지 않습니다.\n같은 삭제로 만들어진 \'대결 축\' 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_title">복원할 수 없음</string>

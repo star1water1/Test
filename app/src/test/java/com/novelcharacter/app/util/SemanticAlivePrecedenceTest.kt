@@ -111,9 +111,12 @@ class SemanticAlivePrecedenceTest {
         }
     }
 
-    /** 설정을 못 읽으면 **종전 동작을 지킨다** — 모른다고 파생을 끄면 더 흔한 경로가 죽는다. */
+    /**
+     * 못 읽는 config는 **필드 자체가 안 잡혀** 종전 동작이 된다 — `SemanticRole.fromConfig`가
+     * 파싱 문지기이므로, 판정 함수 안쪽에 파싱 갈래를 따로 둘 필요가 없다는 것을 잰다.
+     */
     @Test
-    fun `설정이 깨져 있으면 종전 동작을 지킨다`() {
+    fun `설정을 못 읽는 필드는 잡히지 않아 종전 동작이 된다`() {
         assertEquals(
             SemanticAlivePrecedence.DeathDerivation.APPLY,
             SemanticAlivePrecedence.deathDerivation(

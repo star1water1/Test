@@ -924,10 +924,17 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     /** 판 하나를 지운다 — **되돌릴 수 없다**(휴지통을 거치지 않는다). 이력이 유일한 자취다. */
     suspend fun deleteMatch(matchCode: String, relation: String) {
         // 형제 넷과 같은 모양 — 조회와 쓰기를 한 수명에 둔다(위 [editWinner]와 같은 사유).
-        inViewModelScope {
-            val match = app.database.duelMatchDao().getByCode(matchCode) ?: return@inViewModelScope
+        //
+        // **찾지 못했으면 고지도 없다.** 블록 안의 `return@`은 람다만 빠져나오므로,
+        // 그 결과를 밖에서 다시 받아 가르지 않으면 *지운 것이 없는데* «삭제했습니다»가
+        // 나간다 — 위 [editWinner]는 `?: return null`이 그 자리를 이미 지키고 있다.
+        val deleted = inViewModelScope {
+            val match = app.database.duelMatchDao().getByCode(matchCode)
+                ?: return@inViewModelScope false
             duelRepository.undo(match)
+            true
         }
+        if (!deleted) return
         reportResult(
             _result,
             OpResult.success(OpResult.CAT_DUEL, app.getString(R.string.duel_op_match_deleted, relation))

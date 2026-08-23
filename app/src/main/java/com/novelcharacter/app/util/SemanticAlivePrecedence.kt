@@ -72,13 +72,13 @@ object SemanticAlivePrecedence {
             ?.takeIf { it.isNotEmpty() }
             ?: return DeathDerivation.APPLY
 
-        // 설정을 못 읽으면 종전 동작을 지킨다 — 모른다고 파생을 끄면 사망연도만 적은
-        // 사용자가 생존여부를 영영 못 받는다(그쪽이 더 흔한 경로다).
-        val aliveValue = try {
-            JSONObject(aliveField.config).stringOr("aliveValue", "")
-        } catch (_: Exception) {
-            return DeathDerivation.APPLY
-        }
+        // **여기 온 config는 반드시 파싱된다** — 위의 `SemanticRole.fromConfig`가 이미
+        // `JSONObject(config)`를 세우고 실패하면 null을 내는 문지기라, 못 읽는 config를
+        // 든 필드는 애초에 안 잡히고 위의 `?: return APPLY`(생존여부 필드 없음)로 나간다.
+        // 그것이 곧 *"설정을 못 읽으면 종전 동작을 지킨다"*이기도 하다 — 모른다고 파생을
+        // 끄면 사망연도만 적은 사용자가 생존여부를 영영 못 받는다(그쪽이 더 흔한 경로다).
+        // 그래서 이 자리에 try/catch를 한 벌 더 두지 않는다(닿지 않는 갈래는 시험도 못 잰다).
+        val aliveValue = JSONObject(aliveField.config).stringOr("aliveValue", "")
 
         // '생존'은 사망연도 자체를 지우는 선택이다 — 파생이 그것을 되살리면 안 된다.
         return if (aliveValue.isNotEmpty() && chosen == aliveValue) DeathDerivation.SKIP

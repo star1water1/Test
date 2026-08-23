@@ -79,20 +79,29 @@ object FieldValueSheetMapper {
      * *"태그는 조회 없이 그대로 저장된다 — 전각을 낮춰 읽으면 조용한 개명이다"*.
      * **별칭 열만 그 축이 갈리지 않은 채 남아 있었다.**
      *
-     * 그래서 쪼개기는 [splitCsvIdentity]가 들고, 전각 구분자 인정은 **감싸지 않은 토큰
-     * 안으로만** 옮긴다. 쉼표를 품은 토큰은 감싼 칸에서만 나오므로(감싸지 않았으면
-     * `splitCsvIdentity`가 이미 갈랐다) 그 토큰은 원문 그대로 둔다.
+     * 그래서 쪼개기는 [splitCsvIdentity]가 들고, 전각 구분자 인정은 **감싼 칸이 없을 때만**
+     * 한다. 감싸기는 *"이 안은 값이다"*라는 표시이므로, 그 표시가 있는 칸에서 전각 글자를
+     * 구분자로 읽으면 감싸기가 무력해진다.
+     *
+     * **판정을 `,` 포함 여부로 하면 모자란다** — `CsvTokens.needsQuoting`은 `toHalfWidth`를
+     * 지난 뒤에 보므로 **전각 쉼표(`，`)를 품은 별칭도 내보내기가 감싼다.** 그 토큰에는
+     * ASCII 쉼표가 없어 토큰만 봐서는 감싼 칸에서 온 것인지 알 수 없다(감싼 것과 안 감싼 것이
+     * `splitCsvIdentity`를 지나면 같은 글자가 된다 — 정보가 사라진다). 그래서 **셀에 `"`가
+     * 하나라도 있으면** 그 셀 전체를 엄격하게 읽는다. 값을 지키는 쪽으로 기운 판정이다.
      *
      * **남는 비대칭 하나를 적어 둔다:** `CsvTokens.needsQuoting`은 `、`·`，`를 감싸기 대상으로
      * 보지 않으므로, `、`를 품었지만 `,`는 없는 별칭은 감싸이지 않은 채 나가 왕복에서 둘로
      * 갈린다(종전과 같다 — 이 수리가 만든 것이 아니다). 그쪽을 고치려면 내보내기 형식이
      * **모든 CSV 열에서** 바뀌므로 별도 판단이 필요하다.
      */
-    fun csvToAliases(csv: String?): List<String> =
-        splitCsvIdentity(csv.orEmpty()).flatMap { token ->
-            if (token.contains(',')) listOf(token)
+    fun csvToAliases(csv: String?): List<String> {
+        val raw = csv.orEmpty()
+        val hasQuotedCell = raw.contains('"')
+        return splitCsvIdentity(raw).flatMap { token ->
+            if (hasQuotedCell || token.contains(',')) listOf(token)
             else token.split('、', '，').map { it.trim() }.filter { it.isNotBlank() }
         }.distinct()
+    }
 
     /**
      * 불리언 판정은 [parseSheetBoolean](SheetSpec.kt) 단일 소스에 위임한다 — 시트마다 다른

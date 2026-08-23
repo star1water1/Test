@@ -334,43 +334,60 @@ class DefaultFieldTemplateRepository(private val db: AppDatabase) {
         val cleanedShadows: Int
     )
 
-    suspend fun deleteTemplate(template: DefaultFieldTemplate): UnlinkOutcome = db.withTransaction {
-        val linked = linkedFields(template.code)
-        // 전역 구역의 그림자는 **값이 있으면 강등, 없으면 삭제**로 가른다 (2026.08.07).
-        // 세계관 필드는 일괄 강등이 맞다 — 그 세계관의 관리 화면이 있어 사용자가 처분할 수
-        // 있다. 전역 구역에는 정의를 관리할 화면이 없으므로, 값 없는 그림자를 강등으로 남기면
-        // **지울 길 없는 행**이 되고, 값 있는 그림자를 지우면 무소속 캐릭터의 값이 사라진다
-        // (개발 의도 2번 — 이 기능이 캐릭터 데이터를 지우는 경우는 없다).
-        val (global, universal) = linked.partition { it.universeId == null }
-        val globalToDelete = ArrayList<FieldDefinition>()
-        val toDemote = ArrayList(universal)
-        for (shadow in global) {
-            if (valuesOf(shadow).isEmpty()) globalToDelete.add(shadow) else toDemote.add(shadow)
+    suspend fun deleteTemplate(template: DefaultFieldTemplate): UnlinkOutcome {
+        // **인스턴스는 트랜잭션 밖에서 만든다** — 안에서 만들면 블록 밖으로 나오지 못해
+        // 정리를 부를 자리가 없다. 이 경로는 인스턴스를 넘겨받는 자리가 아니라 **스스로
+        // 지우는 자리**이므로 정리도 스스로 진다(`UniverseRepository.deleteUniverse`의 꼴).
+        val trash = TrashRepository(db)
+        val outcome = db.withTransaction {
+            val linked = linkedFields(template.code)
+            // 전역 구역의 그림자는 **값이 있으면 강등, 없으면 삭제**로 가른다 (2026.08.07).
+            // 세계관 필드는 일괄 강등이 맞다 — 그 세계관의 관리 화면이 있어 사용자가 처분할 수
+            // 있다. 전역 구역에는 정의를 관리할 화면이 없으므로, 값 없는 그림자를 강등으로 남기면
+            // **지울 길 없는 행**이 되고, 값 있는 그림자를 지우면 무소속 캐릭터의 값이 사라진다
+            // (개발 의도 2번 — 이 기능이 캐릭터 데이터를 지우는 경우는 없다).
+            val (global, universal) = linked.partition { it.universeId == null }
+            val globalToDelete = ArrayList<FieldDefinition>()
+            val toDemote = ArrayList(universal)
+            for (shadow in global) {
+                if (valuesOf(shadow).isEmpty()) globalToDelete.add(shadow) else toDemote.add(shadow)
+            }
+            val demoted = DefaultFieldPlan.demote(toDemote)
+            for (row in demoted) fieldDao.update(row)
+            // **지우기 전에 휴지통에 남긴다** — 형제 삭제 경로 여덟이 전부 그렇다(R-18).
+            //
+            // `valuesOf`가 보는 것은 **그 필드가 붙은 주인의 값 표**(캐릭터·사건·작품 중 하나)뿐이라
+            // **값 라이브러리 엔트리는 묻지 않는다.** 그런데 `FieldValueEntry`는 `fieldDefinitionId`에 `onDelete = CASCADE`가
+            // 걸려 있어, 값이 0행인 그림자를 지우면 그 필드에 쌓인 엔트리 — 사용자가 손댄
+            // **표시 라벨·별칭·카테고리·설명·숨김 표식** — 이 함께 통째로 사라졌다. 되돌릴 자리가
+            // 없었다. 확인 문구도 *"필드와 캐릭터 값은 지워지지 않습니다"*라고만 하고 라이브러리가
+            // 함께 죽는다는 사실은 말하지 않는다.
+            //
+            // `snapshotDeletedField`가 정의와 엔트리를 한 벌로 담으므로(`UniverseRepository.deleteField`가
+            // 쓰는 그 함수다) 이 한 줄로 되살릴 길이 선다.
+            //
+            // **이력은 담지 않는다** — 이 경로는 이력을 지우지 않기 때문이다(R-33: 담는 범위와
+            // 지우는 범위는 같은 것이라야 한다). 형제(`deleteField`)는 정의를 지우면서 그 키의
+            // 이력도 함께 지우므로 담는 것이 맞지만, 이쪽이 지우는 것은 **값이 0행인 전역
+            // 그림자 정의 한 행**뿐이다. 담기만 하면 복원 미리보기가 *"이력 N건을 되살린다"*고
+            // 말해 놓고 실제로는 이미 살아 있는 그 행들을 전부 건너뛴다 — 셈과 결과가 갈린다.
+            for (shadow in globalToDelete) {
+                trash.snapshotDeletedField(shadow, deletesStateChanges = false)
+            }
+            SqlInChunks.each(globalToDelete.map { it.id }) { fieldDao.deleteGlobalByIds(it) }
+            templateDao.delete(template)
+            // **정리한 수도 함께 돌려준다.** 종전에는 강등 수 하나만 냈고, 그래서 결과 문구가
+            // 그 수를 말할 재료조차 없었다 — 확인 문구는 *"필드와 캐릭터 값은 지워지지 않습니다"*라
+            // 단정하는데 값 없는 전역 그림자는 실제로 삭제됐다(처분이 넓어질 때 그것을 설명하던
+            // 문장이 함께 낡은 자리다).
+            UnlinkOutcome(demoted = demoted.size, cleanedShadows = globalToDelete.size)
         }
-        val demoted = DefaultFieldPlan.demote(toDemote)
-        for (row in demoted) fieldDao.update(row)
-        // **지우기 전에 휴지통에 남긴다** — 형제 삭제 경로 여덟이 전부 그렇다(R-18).
-        //
-        // `valuesOf`가 보는 것은 `character_field_values`뿐이라 **값 라이브러리 엔트리는
-        // 묻지 않는다.** 그런데 `FieldValueEntry`는 `fieldDefinitionId`에 `onDelete = CASCADE`가
-        // 걸려 있어, 값이 0행인 그림자를 지우면 그 필드에 쌓인 엔트리 — 사용자가 손댄
-        // **표시 라벨·별칭·카테고리·설명·숨김 표식** — 이 함께 통째로 사라졌다. 되돌릴 자리가
-        // 없었다. 확인 문구도 *"필드와 캐릭터 값은 지워지지 않습니다"*라고만 하고 라이브러리가
-        // 함께 죽는다는 사실은 말하지 않는다.
-        //
-        // `snapshotDeletedField`가 정의와 엔트리를 한 벌로 담으므로(`UniverseRepository.deleteField`가
-        // 쓰는 그 함수다) 이 한 줄로 되살릴 길이 선다.
-        if (globalToDelete.isNotEmpty()) {
-            val trash = TrashRepository(db)
-            for (shadow in globalToDelete) trash.snapshotDeletedField(shadow)
-        }
-        SqlInChunks.each(globalToDelete.map { it.id }) { fieldDao.deleteGlobalByIds(it) }
-        templateDao.delete(template)
-        // **정리한 수도 함께 돌려준다.** 종전에는 강등 수 하나만 냈고, 그래서 결과 문구가
-        // 그 수를 말할 재료조차 없었다 — 확인 문구는 *"필드와 캐릭터 값은 지워지지 않습니다"*라
-        // 단정하는데 값 없는 전역 그림자는 실제로 삭제됐다(처분이 넓어질 때 그것을 설명하던
-        // 문장이 함께 낡은 자리다).
-        UnlinkOutcome(demoted = demoted.size, cleanedShadows = globalToDelete.size)
+        // **남긴 스냅샷은 보관 한도·기한을 받는다** — 정리는 주기 작업이 아니라 지우는 경로가
+        // 손으로 부르는 것이라(호출처 열여덟), 여기서 안 부르면 이 경로로만 지우는 사용자의
+        // 휴지통은 영영 정리되지 않는다. 커밋 **뒤**에 부르는 것이 요점이다 — 트랜잭션 안에서
+        // 돌면 스냅샷과 정리가 한 단위로 묶여 롤백에 함께 사라진다.
+        if (outcome.cleanedShadows > 0) trash.pruneIfNeeded()
+        return outcome
     }
 
     /** 승격 해제 — [deleteTemplate]과 같은 일이며, 화면이 부르는 이름만 다르다. */

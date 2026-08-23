@@ -4,6 +4,8 @@ import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.ui.common.inViewModelScope
 import com.google.gson.Gson
@@ -153,6 +155,36 @@ class CharacterSaveCoordinator(
 
     private fun resetSavingState() {
         isSaving = false
+    }
+
+    /**
+     * 저장 사슬 중간의 확인창을 **뷰 수명에 묶어 띄운다** — 화면이 사라지면 빗장을 회수한다.
+     *
+     * 이 셋은 `DialogFragment`가 아니라 맨 `AlertDialog`라 **회전을 넘지 못한다.** 액티비티가
+     * 죽으면 창은 재생성되지 않고, 그때의 `dismiss`는 `OnCancelListener`를 부르지 않으므로
+     * `abortSave()`도 `onCancel()`도 실행되지 않는다 — 사슬을 이어 갈 길도 없다(콜백이
+     * 들어갈 `viewLifecycleOwner.lifecycleScope`가 이미 취소됐다).
+     *
+     * 종전에는 빗장이 이 객체의 필드였고 이 객체가 `onViewCreated`마다 새로 만들어져 그
+     * 누수가 **회전 자체로 저절로 나았다.** 지금은 빗장이 뷰모델에 살아 회전을 넘으므로
+     * (R-65 — 그래야 회전 중 연타가 막힌다) 다시 선 화면이 `true`를 되받아 **저장 버튼이
+     * 영영 꺼진 채로 남는다.** 지키는 것이 없는 빗장이라 버튼만 죽인다.
+     *
+     * [abortSave]가 아니라 [resetSavingState]인 것은 `onSaveThrew`의 취소 갈래와 같은
+     * 구별이다 — 호스트의 이탈 예약 해제는 *사용자가 취소한 것*에 대한 처분이고, 이쪽은
+     * 화면이 사라진 것뿐이다.
+     */
+    private fun MaterialAlertDialogBuilder.showBoundToView(): AlertDialog {
+        val dialog = show()
+        fragment.viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                if (dialog.isShowing) {
+                    dialog.dismiss()
+                    resetSavingState()
+                }
+            }
+        })
+        return dialog
     }
 
     /** 저장 체인이 저장 없이 끝나는 모든 지점(취소·오류)에서 호출 — 성공 경로는 resetSavingState + onSaved */
@@ -305,7 +337,22 @@ class CharacterSaveCoordinator(
      * 처분을 한 자리에 모은다 — 여덟 번째 갈래가 생겨도 이 함수를 부르면 규약이 따라온다.
      */
     private fun onSaveThrew(e: Exception) {
-        if (e is kotlinx.coroutines.CancellationException) throw e
+        if (e is kotlinx.coroutines.CancellationException) {
+            // **취소는 실패가 아니다 — 그러나 빗장은 반드시 푼다.**
+            //
+            // 이 둘을 함께 두지 않으면 두 수리가 서로를 깨뜨린다: 되던지면 이 코루틴이
+            // 죽어 성공 경로의 [resetSavingState]에 닿을 길이 없는데, 빗장은 이제
+            // 뷰모델에 살아 **회전을 넘는다** — 그러면 다시 선 화면의 저장 버튼이
+            // 영영 꺼진 채로 남는다(종전에는 코디네이터가 새로 만들어져 저절로 풀렸다).
+            //
+            // 푸는 것이 옳은 이유: 이 갈래는 *화면이 사라져 사슬이 끊긴* 자리다. 창이 열려
+            // 사용자 응답을 기다리는 동안은 코루틴이 이미 정상 종료해 있으므로 여기 오지
+            // 않는다 — 즉 이 수리가 막으려던 «창이 뜬 채 회전» 갈래의 빗장은 그대로 산다.
+            // [abortSave]가 아니라 [resetSavingState]인 것도 요점이다: 호스트의 이탈 예약
+            // 해제는 *사용자가 취소한 것*에 대한 처분이고, 이쪽은 화면이 사라진 것뿐이다.
+            resetSavingState()
+            throw e
+        }
         showSaveFailed()
         abortSave()
     }
@@ -581,7 +628,7 @@ class CharacterSaveCoordinator(
                 }
                 .setNegativeButton(R.string.field_library_restricted_edit_input) { _, _ -> abortSave() }
                 .setOnCancelListener { abortSave() }
-                .show()
+                .showBoundToView()
         }
     }
 
@@ -661,7 +708,7 @@ class CharacterSaveCoordinator(
             .setOnCancelListener {
                 abortSave()
             }
-            .show()
+            .showBoundToView()
     }
 
     /**
@@ -779,7 +826,7 @@ class CharacterSaveCoordinator(
             .setPositiveButton(R.string.cross_universe_move_confirm) { _, _ -> onConfirm() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
-            .show()
+            .showBoundToView()
     }
 
     /**

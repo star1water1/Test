@@ -858,8 +858,16 @@ class TrashRepository(
      *
      * 이력의 범위는 [com.novelcharacter.app.util.FieldDeleteScope]가 정한다 — 지우는 쪽과
      * **같은 함수**라야 담는 범위와 지우는 범위가 갈리지 않는다(R-33).
+     *
+     * @param deletesStateChanges 부르는 삭제가 상태변화 이력**도** 지우는가. 기본값은
+     *   [com.novelcharacter.app.data.repository.UniverseRepository.deleteField]의 처분이다 —
+     *   그쪽은 정의를 지우면서 같은 범위의 이력도 함께 지우므로 담아야 되살릴 수 있다.
+     *   `false`인 호출은 정의만 지우고 이력은 그대로 두는 경로다
+     *   ([DefaultFieldTemplateRepository.deleteTemplate]의 전역 그림자 정리). 그 경로에서
+     *   이력을 담으면 **지우지도 않은 것이 백업에 들어가** 복원 미리보기가 *"이력 N건을
+     *   되살린다"*고 말해 놓고 실제로는 이미 살아 있는 그 행들을 전부 건너뛴다(R-33).
      */
-    suspend fun snapshotDeletedField(field: FieldDefinition) {
+    suspend fun snapshotDeletedField(field: FieldDefinition, deletesStateChanges: Boolean = true) {
         val uCode = field.universeId?.let { universeCode(it) }
 
         val charValues = if (field.entityType == FieldDefinition.ENTITY_CHARACTER) {
@@ -872,7 +880,7 @@ class TrashRepository(
             db.novelFieldValueDao().getValuesByFieldDef(field.id)
         } else emptyList()
         val entries = db.fieldValueEntryDao().getByField(field.id)
-        val stateChanges = deletedFieldStateChanges(field)
+        val stateChanges = if (deletesStateChanges) deletedFieldStateChanges(field) else emptyList()
 
         insertSnapshot(
             TrashSnapshot.TYPE_FIELD_DEFINITION,

@@ -115,13 +115,22 @@ class GlobalSearchFragment : Fragment() {
                 Toast.makeText(ctx, getString(R.string.search_preset_applied, name), Toast.LENGTH_SHORT).show()
             }
         }
-        // 저장·편집이 실패하면 말한다 — 종전에는 예외가 코루틴 밖으로 나가 앱이 죽었다(B-191).
+        // 고지는 **실제로 지운 뒤에** 나간다 — 종전에는 걸어 놓고 바로 띄웠다.
         viewModel.presetDeletedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let {
                 val ctx = context ?: return@observe
                 Toast.makeText(ctx, R.string.search_preset_deleted, Toast.LENGTH_SHORT).show()
             }
         }
+        // 삭제 실패는 **삭제라고 말한다** — 저장 채널로 흘리면 «저장 실패»가 떠 사용자가
+        // 무엇이 실패했는지 알 수 없다(프리셋은 목록에 그대로 남아 있다).
+        viewModel.presetDeleteFailedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let {
+                val ctx = context ?: return@observe
+                Toast.makeText(ctx, R.string.result_preset_delete_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+        // 저장·편집이 실패하면 말한다 — 종전에는 예외가 코루틴 밖으로 나가 앱이 죽었다(B-191).
         viewModel.presetSaveFailedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let {
                 val ctx = context ?: return@observe

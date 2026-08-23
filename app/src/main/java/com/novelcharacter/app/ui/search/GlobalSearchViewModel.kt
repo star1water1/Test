@@ -65,6 +65,15 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val _presetDeletedEvent = MutableLiveData<Event<String>?>()
     val presetDeletedEvent: LiveData<Event<String>?> = _presetDeletedEvent
 
+    /**
+     * 삭제가 실패했다 — **저장 실패와 채널을 같이 쓰지 않는다.** 위 채널의 관측자는
+     * *"프리셋 저장 실패"*를 띄우므로, 삭제 실패를 거기로 흘리면 **한 조작은 삭제인데 고지는
+     * 저장을 말한다**(프리셋도 목록에 그대로 남아, 무엇이 실패했는지도 지금 상태가 무엇인지도
+     * 알 수 없다). 이 함수가 세운 계약이 바로 *"한 일과 고지가 어긋나지 않게"*다.
+     */
+    private val _presetDeleteFailedEvent = MutableLiveData<Event<String>?>()
+    val presetDeleteFailedEvent: LiveData<Event<String>?> = _presetDeleteFailedEvent
+
     private val db = app.database
 
     // 필드 필터 캐시 무효화 — character_field_values / field_definitions 변경을 관측(오프메인).
@@ -426,7 +435,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("GlobalSearchViewModel", "Failed to delete preset", e)
-                _presetSaveFailedEvent.value = Event(name)
+                _presetDeleteFailedEvent.value = Event(name)
             }
         }
     }

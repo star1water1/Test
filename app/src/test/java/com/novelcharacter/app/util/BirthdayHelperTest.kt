@@ -152,15 +152,6 @@ class BirthdayHelperTest {
 
     // ===== 실재하지 않는 월·일 (월드패키지가 열어 둔 문) =====
 
-    private fun birth(id: Long, month: Int?, day: Int?) = CharacterStateChange(
-        characterId = id,
-        year = 1000,
-        month = month,
-        day = day,
-        fieldKey = CharacterStateChange.KEY_BIRTH,
-        newValue = ""
-    )
-
     /**
      * **크래시 회귀 방지** — `filterUpcoming`은 `LocalDate.of`에 월·일을 그대로 넘기므로
      * 범위 밖 값 하나가 홈 대시보드를 열 때마다 `DateTimeException`으로 죽였다.

@@ -390,7 +390,7 @@ class TrashFragment : Fragment() {
             preview?.blocker?.let { blocker ->
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.trash_restore_blocked_title)
-                    .setMessage(blockerMessage(blocker, preview.entityType))
+                    .setMessage(blockerMessage(blocker, preview.entityType, snapshot.operationKind))
                     .setPositiveButton(R.string.confirm, null)
                     .show()
                 return@launch
@@ -441,7 +441,11 @@ class TrashFragment : Fragment() {
         }
     }
 
-    private fun blockerMessage(blocker: TrashRepository.RestoreBlocker, entityType: String): String = when (blocker) {
+    private fun blockerMessage(
+        blocker: TrashRepository.RestoreBlocker,
+        entityType: String,
+        operationKind: String?
+    ): String = when (blocker) {
         // 같은 사유라도 주어가 다르다 — 세력 문구를 등급 체계에 그대로 쓰면 사실과 다른 안내가 된다.
         // `else`가 집던 문구는 **세력 전용**이다(*"세력은 세계관 없이 존재할 수 없으므로"*).
         // 그런데 이 사유를 내는 타입은 셋이 더 있고, 그중 둘은 **처방까지 틀렸다**:
@@ -453,7 +457,19 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_DUEL_AXIS -> getString(R.string.trash_restore_blocked_universe_duel_axis)
             TrashSnapshot.TYPE_FIELD_DATA -> getString(R.string.trash_restore_blocked_field_data)
             TrashSnapshot.TYPE_UNIVERSE_DATA -> getString(R.string.trash_restore_blocked_universe_data)
-            TrashSnapshot.TYPE_FIELD_DEFINITION -> getString(R.string.trash_restore_blocked_field_definition)
+            // **'필드 정의'는 한 타입이 두 작업을 담는다** — 종류가 처분을 가른다
+            // (`TrashRepository`가 `KIND_DELETE`면 삭제 복원, 아니면 편집 되돌리기로 간다).
+            // 두 계획이 같은 사유를 내는데 사유의 뜻이 다르다: 삭제 복원 쪽은 **세계관이
+            // 실제로 사라진 경우** 하나뿐이고, 되돌리기 쪽이 *"되돌릴 자리가 없다"*이다.
+            // 종류를 안 보고 뒤엣말을 앞쪽에 쓰면 **세계관이 없는 사용자에게 «필드를 다시
+            // 만들라»고 시키는 꼴**이 된다 — 만들 자리도 없고, 만들면 그다음엔 이미 있다는
+            // 사유로 복원이 영영 막힌다.
+            TrashSnapshot.TYPE_FIELD_DEFINITION ->
+                if (operationKind == TrashSnapshot.KIND_DELETE) {
+                    getString(R.string.trash_restore_blocked_universe_field)
+                } else {
+                    getString(R.string.trash_restore_blocked_field_definition)
+                }
             else -> getString(R.string.trash_restore_blocked_universe)
         }
         TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)

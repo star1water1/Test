@@ -51,8 +51,17 @@ object AliveAtYear {
         // (`SemanticFieldSyncHelper.upsertAliveStateChange`) **어느 시점에서도 남는데**
         // 출생 행은 미래라 걸러진다. 그래서 `__alive`가 있는 캐릭터는 태어나기 전 해에도
         // '생존'으로 판정됐고, `__alive`가 없는 하위호환 갈래는 같은 데이터에 UNSET을 냈다 —
-        // **행 하나의 유무가 답을 갈랐다.** 고르는 규칙은 위와 같다(같은 정렬의 findLast).
-        val declaredBirthYear = yearOf(ordered.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH })
+        // **행 하나의 유무가 답을 갈랐다.**
+        //
+        // **가장 이른 것을 고른다.** `__birth`는 캐릭터당 한 행이 불변식이지만 엑셀·복원이
+        // 두 행을 만들 수 있고, 그때 *마지막*을 고르면 두 갈래가 **다시** 갈린다:
+        // 500과 1000 두 행에 targetYear 700이면 이쪽은 1000을 보고 UNSET, 아래 갈래는
+        // 걸러진 목록에서 500을 보고 ALIVE다. 가장 이른 것을 고르면 *어느 선언보다도 앞선
+        // 해*에만 UNSET이라 두 갈래의 답이 모든 경우에 같아진다.
+        val declaredBirthYear = ordered
+            .filter { it.fieldKey == CharacterStateChange.KEY_BIRTH }
+            .mapNotNull { yearOf(it) }
+            .minOrNull()
 
         if (aliveChange != null) {
             // 태어나기 전이면 판정할 것이 없다 — 아래 하위호환 갈래와 **같은 답**이다.

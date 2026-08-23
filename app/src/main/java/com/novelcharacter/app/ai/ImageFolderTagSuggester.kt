@@ -72,6 +72,21 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         )
     }
 
+    /**
+     * 한 응답을 읽은 결과 — **「읽지 못함」과 「읽었는데 제안이 0건」을 가른다.**
+     *
+     * 둘은 알맹이가 같은 모양(빈 제안 · 빈 셈)이라 부르는 쪽에서 셈으로는 구별할 수 없다.
+     * 그런데 처분은 정반대다: 앞쪽은 값을 치르고도 못 받은 것이라 고지해야 하고, 뒤쪽은
+     * *"이 폴더에 붙일 태그가 없다"*는 **프롬프트가 명시로 허용한 정상 답**이라 조용히
+     * 지나가야 한다. 형제 [ImageBatchTagSuggester.ParseOutcome]와 같은 꼴이다.
+     */
+    sealed class ParseOutcome {
+        data class Ok(val folders: List<FolderSuggestion>, val drops: DropTally) : ParseOutcome()
+
+        /** JSON을 못 찾았거나 `folders` 배열이 없다 — 응답의 뼈대 자체를 못 읽었다. */
+        object Unreadable : ParseOutcome()
+    }
+
     /** 실행 결과 — 성공분과 실패를 **함께** 돌려준다(부분 실패에도 얻은 것은 준다). */
     data class Result(
         val suggestions: List<FolderSuggestion> = emptyList(),
@@ -150,8 +165,8 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
             raw: String,
             requested: Collection<String>,
             vocab: ImageTagVocabulary.Vocabulary
-        ): Pair<List<FolderSuggestion>, DropTally> {
-            val json = AiJsonExtractor.extractObject(raw) ?: return emptyList<FolderSuggestion>() to DropTally()
+        ): ParseOutcome {
+            val json = AiJsonExtractor.extractObject(raw) ?: return ParseOutcome.Unreadable
             val wanted = requested.toHashSet()
             val folding = vocab.forFolding
             val known = vocab.all
@@ -160,7 +175,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
             var blank = 0
             var over = 0
 
-            val arr = json.optJSONArray("folders") ?: return emptyList<FolderSuggestion>() to DropTally()
+            val arr = json.optJSONArray("folders") ?: return ParseOutcome.Unreadable
             val seen = HashSet<String>()
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
@@ -187,7 +202,9 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                 if (picked.isEmpty()) continue   // 근거 없음은 결손이 아니다(프롬프트가 허용한 답)
                 out.add(FolderSuggestion(name, picked.values.toList()))
             }
-            return out to DropTally(unknownFolder = unknown, blankOrTooLong = blank, overPerFolderCap = over)
+            return ParseOutcome.Ok(
+                out, DropTally(unknownFolder = unknown, blankOrTooLong = blank, overPerFolderCap = over)
+            )
         }
     }
 
@@ -222,19 +239,27 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
                     // 한도로 밀려 다른 프로바이더가 답한 청크 (B-108 확정 ⓑ).
                     AiProviderFallback.switchNoteOf(result)
                         ?.let { if (it !in notes) notes.add(it) }
-                    val (parsed, tally) = parse(result.text, chunk, vocab)
-                    // **읽지 못한 응답도 말한다.** `parse`는 JSON을 못 찾거나 `folders` 배열이
-                    // 없으면 *빈 제안 + 빈 셈*을 돌려주는데, 종전에는 그것이 성공과 구별되지
-                    // 않아 `Result`가 통째로 비었고 — `failures`는 `AiResult.Failure` 타입이라
+                    // **읽지 못한 응답도 말한다.** 종전에는 파싱 실패가 성공과 구별되지 않아
+                    // `Result`가 통째로 비었고 — `failures`는 `AiResult.Failure` 타입이라
                     // 파싱 실패를 담을 자리 자체가 없다 — 컨트롤러가 **시트를 아예 띄우지 않고
                     // 조용히 끝냈다.** 사용자는 값을 치른 응답이 어디로 갔는지 알 길이 없다.
                     // 형제 넷이 전부 이 갈래를 명시로 다룬다(`CharacterFieldAiSuggester` 외).
-                    if (parsed.isEmpty() && tally.isEmpty) {
-                        val note = if (result.truncated) TRUNCATED_MESSAGE else PARSE_FAILURE_MESSAGE
-                        if (note !in notes) notes.add(note)
+                    //
+                    // **판정은 `parse`가 내린다** — 「읽지 못함」과 「읽었는데 붙일 태그가 없음」은
+                    // 결과가 같은 모양(빈 제안·빈 셈)이라 부르는 쪽에서 셈으로 가를 수 없다.
+                    // 후자는 프롬프트가 명시로 허용한 답이고(`picked.isEmpty()` 자리의 주석),
+                    // 그것을 실패로 읽으면 **성공한 요청에 «다시 시도해 주세요»가 붙어** 사용자가
+                    // 값을 한 번 더 치른다. 형제(`ImageBatchTagSuggester.ParseOutcome`)와 같은 꼴이다.
+                    when (val outcome = parse(result.text, chunk, vocab)) {
+                        is ParseOutcome.Ok -> {
+                            all.addAll(outcome.folders)
+                            drops += outcome.drops
+                        }
+                        ParseOutcome.Unreadable -> {
+                            val note = if (result.truncated) TRUNCATED_MESSAGE else PARSE_FAILURE_MESSAGE
+                            if (note !in notes) notes.add(note)
+                        }
                     }
-                    all.addAll(parsed)
-                    drops += tally
                 }
                 is AiResult.Failure -> {
                     failures.add(result)
