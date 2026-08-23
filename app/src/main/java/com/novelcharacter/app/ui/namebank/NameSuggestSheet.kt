@@ -109,6 +109,7 @@ class NameSuggestSheet : BottomSheetDialogFragment() {
 
         viewModel.pool.observe(viewLifecycleOwner) { render() }
         viewModel.running.observe(viewLifecycleOwner) { render() }
+        viewModel.depositing.observe(viewLifecycleOwner) { render() }
         viewModel.depositPlan.observe(viewLifecycleOwner) { render() }
         viewModel.result.observe(viewLifecycleOwner) { result ->
             result?.let {
@@ -284,7 +285,10 @@ class NameSuggestSheet : BottomSheetDialogFragment() {
         val plan = viewModel.depositPlan.value
         val count = plan?.defaultChecked?.size ?: 0
         binding.btnDeposit.text = getString(R.string.ai_name_deposit, count)
-        binding.btnDeposit.isEnabled = plan != null && plan.items.isNotEmpty()
+        // 담기 중에는 버튼을 내린다 — 빗장은 뷰모델이 들지만(회전을 넘긴다) 누를 수 있는
+        // 채로 두면 사용자가 같은 조작을 두 번 한 줄로 안다.
+        binding.btnDeposit.isEnabled = plan != null && plan.items.isNotEmpty() &&
+            viewModel.depositing.value != true
         // 걸러진 것을 개수로 말한다 (R-14) — 27개를 만들었는데 14개만 담기면 그 차이가 보여야 한다.
         binding.depositNote.text = when {
             plan == null || pool.isEmpty -> ""

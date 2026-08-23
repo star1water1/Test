@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiErrorMessages
@@ -69,6 +70,16 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _running = MutableLiveData(false)
     val running: LiveData<Boolean> = _running
+
+    /**
+     * **담기 진행 중** — 연타 빗장이 뷰가 아니라 여기 산다(R-65).
+     *
+     * 종전에는 빗장이 아예 없었다. [deposit]은 *중복 대조 → 삽입*인데 그 둘이 한
+     * 트랜잭션이 아니었으므로, 두 번 누르면 **둘째 회차가 첫째의 삽입을 보기 전에** 대조를
+     * 마쳐 같은 이름이 두 벌 들어갔다. 뷰에 두면 회전 한 번에 풀려 같은 창이 다시 열린다.
+     */
+    private val _depositing = MutableLiveData(false)
+    val depositing: LiveData<Boolean> = _depositing
 
     /** 담기 계획 — 풀·은행·캐릭터 이름이 바뀔 때마다 다시 선다. 화면의 (N)이 이 값이다. */
     private val _depositPlan = MutableLiveData(
@@ -292,7 +303,13 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
      * 되돌아갈 자리가 사라진다(R-38 · B-163의 교훈).
      */
     fun deposit(names: List<String>) = viewModelScope.launch {
-        withContext(NonCancellable) { depositInternal(names) }
+        if (_depositing.value == true) return@launch
+        _depositing.value = true
+        try {
+            withContext(NonCancellable) { depositInternal(names) }
+        } finally {
+            _depositing.value = false
+        }
     }
 
     private suspend fun depositInternal(names: List<String>) {
@@ -302,27 +319,33 @@ class NameSuggestViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
         try {
-            // 쓰기 직전에 다시 대조한다 — 시트가 열려 있는 동안 다른 화면이 은행을 고쳤을 수 있다.
-            val existing = app.nameBankRepository.getAllNameBankList()
             val origin = app.getString(R.string.ai_name_deposit_origin)
             var inserted = 0
             var skipped = 0
-            val seen = existing.mapTo(HashSet()) {
-                com.novelcharacter.app.util.NameBankMatch.normalize(it.name)
-            }
             val insertedNames = mutableListOf<String>()
-            for (raw in names) {
-                val name = raw.trim()
-                if (name.isEmpty()) { skipped++; continue }
-                if (!seen.add(com.novelcharacter.app.util.NameBankMatch.normalize(name))) {
-                    skipped++
-                    continue
+            // **대조와 삽입을 한 트랜잭션에 둔다.** 둘이 갈려 있으면 다른 화면(또는 연타로
+            // 겹친 둘째 회차)이 그 사이에 같은 이름을 넣어도 이쪽 대조는 그것을 못 보고,
+            // 같은 이름이 두 벌 들어간다. 빗장(`_depositing`)은 같은 화면의 연타를 막고
+            // 트랜잭션은 화면 밖에서 온 쓰기까지 막는다 — 둘이 막는 것이 다르다.
+            app.database.withTransaction {
+                // 쓰기 직전에 다시 대조한다 — 시트가 열려 있는 동안 다른 화면이 은행을 고쳤을 수 있다.
+                val existing = app.nameBankRepository.getAllNameBankList()
+                val seen = existing.mapTo(HashSet()) {
+                    com.novelcharacter.app.util.NameBankMatch.normalize(it.name)
                 }
-                app.nameBankRepository.insertNameBankEntry(
-                    NameBankEntry(name = name, gender = setup.gender.trim(), origin = origin)
-                )
-                inserted++
-                insertedNames.add(name)
+                for (raw in names) {
+                    val name = raw.trim()
+                    if (name.isEmpty()) { skipped++; continue }
+                    if (!seen.add(com.novelcharacter.app.util.NameBankMatch.normalize(name))) {
+                        skipped++
+                        continue
+                    }
+                    app.nameBankRepository.insertNameBankEntry(
+                        NameBankEntry(name = name, gender = setup.gender.trim(), origin = origin)
+                    )
+                    inserted++
+                    insertedNames.add(name)
+                }
             }
             val summary = buildString {
                 append(app.getString(R.string.ai_name_deposit_done, inserted))

@@ -117,10 +117,12 @@ class UniverseRepository(
             // 3. 이 세계관의 사건 삭제 (사건 필드값·캐릭터/작품 연결은 FK CASCADE)
             db.timelineDao().deleteAllByUniverse(universe.id)
 
-            // 4. FieldDefinition은 FK CASCADE로 삭제되지만,
-            // CharacterStateChange는 string fieldKey 참조라 CASCADE 대상이 아니므로 명시적 삭제
-            // (field_definitions 테이블이 아직 존재하는 시점에 실행해야 서브쿼리 동작)
-            db.characterStateChangeDao().deleteAllChangesByUniverse(universe.id)
+            // 4. 상태변화 이력은 **1단계가 이미 가져갔다** — `character_state_changes`는
+            //    `characterId`에 `onDelete = CASCADE`가 걸려 있고, 이 세계관의 캐릭터는
+            //    전부 1단계에서 지워진다. 종전에는 여기에 `deleteAllChangesByUniverse`가
+            //    있었는데 **언제나 0행을 지웠다**(같은 캐릭터 집합을 조건으로 걸었다).
+            //    미분류 캐릭터(`novelId IS NULL`)의 이력은 이 삭제의 범위 밖이며, 키만 보고
+            //    지우면 다른 세계관의 이력이 함께 사라진다(B-13 · `UnassignedHistoryScope`).
             db.recentActivityDao().deleteByEntity(RecentActivity.TYPE_UNIVERSE, universe.id)
             universeDao.delete(universe)
         }

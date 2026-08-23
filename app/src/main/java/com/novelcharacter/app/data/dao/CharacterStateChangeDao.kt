@@ -197,18 +197,20 @@ interface CharacterStateChangeDao {
     suspend fun deleteChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long)
 
     /** 세계관에 속한 모든 필드의 state change 삭제 (세계관 삭제 시 사용) */
-    @Query("""
-        DELETE FROM character_state_changes
-        WHERE fieldKey IN (
-            SELECT `key` FROM field_definitions WHERE universeId = :universeId
-        )
-        AND characterId IN (
-            SELECT c.id FROM characters c
-            INNER JOIN novels n ON c.novelId = n.id
-            WHERE n.universeId = :universeId
-        )
-    """)
-    suspend fun deleteAllChangesByUniverse(universeId: Long)
+    // `deleteAllChangesByUniverse`는 없앴다(R-24 — 2026.08.23). **언제나 0행을 지웠다.**
+    //
+    // 그 질의의 두 조건 중 뒤엣것이 `characterId IN (이 세계관 캐릭터)`였는데, 세계관 삭제는
+    // **그 캐릭터들을 먼저 지운다**(`deleteCharactersCascade`, 같은 트랜잭션의 1단계)이고
+    // 이 표는 `characterId`에 `onDelete = CASCADE`가 걸려 있어 그 시점에 이미 함께 사라진다.
+    // 즉 4단계에 닿았을 때 후보 집합이 비어 있다. 붙어 있던 주석은 *"fieldKey가 문자열
+    // 참조라 CASCADE 대상이 아니므로 명시적 삭제"*라고 적었는데, 지우지 못하는 몫은
+    // **미분류 캐릭터(`novelId IS NULL`)의 이력**이고 그 질의의 `INNER JOIN novels`는
+    // 애초에 그들을 만나지 못했다(B-13).
+    //
+    // **그 몫을 여기서 지우면 안 된다**: 이력 행에는 세계관이 없고 `fieldKey`는
+    // `(universeId, entityType, key)`에서만 유일하므로, 키만 보고 지우면 **다른 세계관의
+    // 이력이 함께 사라진다**(`UnassignedHistoryScope`의 KDoc이 같은 이유로 일괄 UPDATE를
+    // 금지한다). 가리는 법이 필요하면 그 순수 판정을 지날 것.
 
     @Query("DELETE FROM character_state_changes")
     suspend fun deleteAll()

@@ -48,6 +48,9 @@ class DuplicateCharacterDialog : DialogFragment() {
         const val RESULT_RESOLUTION = "resolution"
         const val RESULT_SELECTED_CHARACTER_ID = "selected_character_id"
 
+        /** 후보 카드가 보여 주는 메모 미리보기 길이 — 값과 자르는 법을 한 자리에 둔다. */
+        private const val MEMO_PREVIEW_CHARS = 50
+
         private const val ARG_IS_EDIT_MODE = "is_edit_mode"
         private const val ARG_CANDIDATES_JSON = "candidates_json"
         private const val STATE_SELECTED_POSITION = "selected_position"
@@ -202,7 +205,13 @@ class DuplicateCharacterDialog : DialogFragment() {
                 holder.tvMemo.visibility = View.GONE
             } else {
                 holder.tvMemo.visibility = View.VISIBLE
-                holder.tvMemo.text = if (memo.length > 50) memo.substring(0, 50) + "…" else memo
+                // **절단은 단일 소스를 지난다** — `substring`은 UTF-16이라 이모지 같은
+                // 보충 문자의 서러게이트 쌍을 반토막 내고, 그 반쪽이 칸에 깨진 글자로 남는다.
+                holder.tvMemo.text = if (memo.length > MEMO_PREVIEW_CHARS) {
+                    com.novelcharacter.app.util.SafeTruncate.atCharLimit(memo, MEMO_PREVIEW_CHARS) + "…"
+                } else {
+                    memo
+                }
             }
 
             // 공용 유틸: 바운즈 없는 고정 샘플(=4) 대신 요청 크기 다운샘플 + filesDir 경로가드.

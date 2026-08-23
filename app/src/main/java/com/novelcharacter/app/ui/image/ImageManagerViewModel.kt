@@ -1145,18 +1145,29 @@ class ImageManagerViewModel(
      *
      * @return 만들어진 캐릭터의 [PickRow]. 배정은 호출부가 기존 경로로 잇는다.
      */
-    suspend fun createCharacterForAssign(name: String, novelId: Long?): PickRow =
-        withContext(Dispatchers.IO) {
-            val character = com.novelcharacter.app.data.model.Character(
-                name = name.trim(),
-                novelId = novelId
-            )
-            val newId = db.characterDao().insert(character)
-            val subtitle = novelId?.let { id ->
-                db.novelDao().getAllNovelsList().firstOrNull { it.id == id }?.title
-            } ?: ""
-            PickRow(newId, character.name, subtitle)
+    fun createCharacterForAssign(name: String, novelId: Long?, onCreated: (PickRow) -> Unit) {
+        // **만들기와 배정은 화면보다 오래 사는 한 흐름이다.**
+        //
+        // 종전에는 화면이 `viewLifecycleOwner.lifecycleScope`에서 이 함수를 부르고 돌아와
+        // 배정을 이었는데, 그 사이 회전이 들어오면 `if (!isAdded) return@launch`가 걸려
+        // **빈 캐릭터만 생기고 이미지는 안 붙었다** — 그리고 아무도 그 사실을 말하지 않는다.
+        // 이어지는 `assignToTarget`이 이미 `viewModelScope`이므로, 앞머리만 여기로 옮기면
+        // 두 단계가 같은 수명에서 돈다.
+        viewModelScope.launch {
+            val row = withContext(Dispatchers.IO) {
+                val character = com.novelcharacter.app.data.model.Character(
+                    name = name.trim(),
+                    novelId = novelId
+                )
+                val newId = db.characterDao().insert(character)
+                val subtitle = novelId?.let { id ->
+                    db.novelDao().getAllNovelsList().firstOrNull { it.id == id }?.title
+                } ?: ""
+                PickRow(newId, character.name, subtitle)
+            }
+            onCreated(row)
         }
+    }
 
     /**
      * 경로 → 그 경로가 속한 링크 묶음 전원(현재 목록 기준, 2장 이상만) — 태그 공유 불변식
