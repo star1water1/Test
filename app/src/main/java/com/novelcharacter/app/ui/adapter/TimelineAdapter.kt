@@ -52,6 +52,25 @@ class TimelineAdapter(
             }
         }
 
+    /**
+     * 사건 ID → 등장 캐릭터 (외부에서 **한 번에** 실어 준다).
+     *
+     * **`null`은 "아직 못 받았다"이고 빈 목록은 "등장이 없다"이다** — 둘을 같게 다루면
+     * 등장 없는 카드마다 폴백 질의가 다시 난다. 표가 실린 뒤에는 바인딩이 **질의를 띄우지
+     * 않는다**: 종전에는 카드가 그려질 때마다 코루틴 하나와 질의 하나가 났고, 되돌아오면
+     * 같은 카드에 또 났다(사건 수백 건에서 스크롤이 그대로 느려지는 자리).
+     *
+     * 표를 안 실은 화면(캐릭터 상세의 연표 절)은 종전처럼 [loadCharactersForEvent]로 간다 —
+     * 그쪽은 한 캐릭터의 사건만 그리므로 카드 수가 애초에 적다.
+     */
+    var charactersMap: Map<Long, List<Character>>? = null
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyItemRangeChanged(0, itemCount)
+            }
+        }
+
     var isReorderMode: Boolean = false
         set(value) {
             if (field != value) {
@@ -279,17 +298,16 @@ class TimelineAdapter(
             // Load related character chips via callback (repository 경유)
             binding.characterChipGroup.removeAllViews()
             val eventId = event.id
-            loadJob = coroutineScope.launch {
-                val characters = loadCharactersForEvent(eventId)
-                // Double-check: boundEventId may change if ViewHolder was recycled and rebound
-                if (boundEventId == eventId && bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                    characters.forEach { character ->
-                        val chip = Chip(binding.root.context).apply {
-                            text = character.name
-                            textSize = 11f
-                            isClickable = false
-                        }
-                        binding.characterChipGroup.addView(chip)
+            val prefetched = charactersMap
+            if (prefetched != null) {
+                // 표가 실려 있으면 **질의도 코루틴도 띄우지 않는다.**
+                addCharacterChips(prefetched[eventId].orEmpty())
+            } else {
+                loadJob = coroutineScope.launch {
+                    val characters = loadCharactersForEvent(eventId)
+                    // Double-check: boundEventId may change if ViewHolder was recycled and rebound
+                    if (boundEventId == eventId && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                        addCharacterChips(characters)
                     }
                 }
             }
@@ -298,6 +316,18 @@ class TimelineAdapter(
             binding.root.setOnLongClickListener {
                 onLongClick(event)
                 true
+            }
+        }
+
+        /** 등장 캐릭터 칩 — 실어 온 표에서 오든 질의에서 오든 그리는 법은 하나다(R-33). */
+        private fun addCharacterChips(characters: List<Character>) {
+            for (character in characters) {
+                val chip = Chip(binding.root.context).apply {
+                    text = character.name
+                    textSize = 11f
+                    isClickable = false
+                }
+                binding.characterChipGroup.addView(chip)
             }
         }
 

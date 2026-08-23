@@ -509,6 +509,21 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
+    /** 목록에 그려지는 사건의 등장 캐릭터를 **한 번에** 조회한다(카드가 바인딩마다 묻지 않게). */
+    private var eventCharactersJob: Job? = null
+
+    private fun loadEventCharacters(events: List<TimelineEvent>) {
+        // 필드값 요약과 같은 규약 — 앞선 조회는 이미 낡았다.
+        eventCharactersJob?.cancel()
+        if (events.isEmpty()) {
+            adapter.charactersMap = emptyMap()
+            return
+        }
+        eventCharactersJob = viewLifecycleOwner.lifecycleScope.launch {
+            adapter.charactersMap = viewModel.getCharactersForEvents(events.map { it.id })
+        }
+    }
+
     /** 값을 valueFrom 기준 stepSize 배수로 정렬 (Slider 제약 충족) */
     private fun alignToStep(value: Float, valueFrom: Float, stepSize: Float): Float {
         if (stepSize <= 0f) return value
@@ -556,6 +571,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             adapter.novelNamesMap = cachedNovelNamesMap
             // 카드에 얹을 사건 필드값 — 화면에 실린 사건만 조회
             loadEventFieldSummaries(events)
+            // 등장 캐릭터도 같은 규약으로 한 번에 — 카드가 바인딩마다 묻던 자리다
+            loadEventCharacters(events)
             // 이동 후 해당 연도의 사건으로 스크롤 (네비게이션으로 인한 변경일 때만)
             if (pendingScrollToYear) {
                 pendingScrollToYear = false

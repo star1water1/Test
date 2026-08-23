@@ -476,6 +476,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
 
+    /** 목록에 실린 사건의 등장 캐릭터를 한 번에 — 카드가 바인딩마다 묻지 않게 한다. */
+    suspend fun getCharactersForEvents(eventIds: List<Long>): Map<Long, List<Character>> =
+        timelineRepository.getCharactersForEvents(eventIds)
+
     // 소설별 캐릭터 목록 (다이얼로그용)
     suspend fun getCharactersByNovel(novelId: Long): List<Character> =
         characterRepository.getCharactersByNovelList(novelId)
