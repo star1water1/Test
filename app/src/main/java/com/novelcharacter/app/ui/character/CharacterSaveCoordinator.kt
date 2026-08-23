@@ -177,7 +177,13 @@ class CharacterSaveCoordinator(
                 .retain(snapshot.representativeImagePath, snapshot.imagePaths),
             createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            memo = snapshot.memo,
+            // **앞뒤 공백을 남기지 않는다** — 같은 함수의 이름 네 칸이 이미 그렇고, 메모만
+            // 밖에 있었다. 그 공백이 DB에 들어가면 **무편집 엑셀 왕복이 값을 바꾼다**:
+            // 내보내기는 원문 그대로 쓰는데(`setTextSafe`) 들이기는 셀을 다듬으므로
+            // (`ExcelCellValue.normalize` — 외부 편집의 관대 수용이라 없앨 것이 아니다)
+            // 한 글자도 안 고친 왕복에서 메모만 조용히 달라진다(개발 의도 4번).
+            // 고칠 자리는 다듬는 쪽이 아니라 **공백이 들어오는 쪽**이다.
+            memo = snapshot.memo.trim(),
             code = existingCharacter?.code ?: generateEntityCode(),
             displayOrder = existingCharacter?.displayOrder ?: 0,
             isPinned = existingCharacter?.isPinned ?: false
