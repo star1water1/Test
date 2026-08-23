@@ -217,19 +217,36 @@ class WorldPackageExporter(private val context: Context) {
         val factionMemberships = SqlInChunks.flat(factionIds) {
             db.factionMembershipDao().getMembershipsByFactionIds(it)
         }.sortedWith(WorldPackageScope.FACTION_MEMBERSHIPS)
-        // 세력 간 관계 (B-6) — 전량을 매퍼에 넘긴다: 양쪽 소속 판정(포함/한쪽 걸침/범위 밖)은
-        // 매퍼가 하고, 한쪽 걸침은 개수로 돌려받아 고지한다
+        // 세력 간 관계 (B-6) — 양쪽 소속 판정(포함/한쪽 걸침/범위 밖)은 매퍼가 하고,
+        // 한쪽 걸침은 개수로 돌려받아 고지한다.
+        //
+        // **전량이 아니라 이 세력들에 닿는 것만 읽는다**(2026.08.22). 앞 판이 전량으로 둔
+        // 사유는 *"매퍼가 범위 밖까지 세어 고지하므로 좁히면 그 계수가 달라진다"*였는데,
+        // **매퍼를 읽어 보면 그렇지 않다**: `droppedCount`는 *한쪽 끝만 이 집합에 걸친*
+        // 관계만 세고, **양쪽 다 집합 밖인 관계는 세지 않는다**(그 KDoc이 그렇게 적어 뒀다).
+        // 좁히기로 빠지는 것이 정확히 그 *양쪽 다 밖* 뿐이라 `items`도 `droppedCount`도
+        // 그대로다 — 그 동치를 시험이 잡는다(`WorldPackageFactionRelationshipsTest`).
+        // 끝마다 따로 묻는 것은 바인드 상한 때문이고(R-54), 겹은 id로 없앤다.
+        val factionRelationships = (
+            SqlInChunks.flat(factionIds) { db.factionRelationshipDao().getRelationshipsByEnd1(it) } +
+                SqlInChunks.flat(factionIds) { db.factionRelationshipDao().getRelationshipsByEnd2(it) }
+            ).distinctBy { it.id }.sortedWith(compareBy({ it.displayOrder }, { it.createdAt }))
         val factionRelResult = WorldPackageFactionRelationships.toPortable(
             factions,
-            db.factionRelationshipDao().getAllRelationshipsList()
+            factionRelationships
         )
 
         // v6: 대결 (B-118) — 축은 **세계관 단위**라 전부 싣고, 판·상성은 참가자가 이번
         // 패키지에 함께 가는 것만 싣는다. 거르는 규칙과 계수는 [WorldPackageDuels]가 단일
         // 소스다(순수 계층 — 참가자 재배선의 위험이 전부 거기 있고, 배선에 묻으면 시험이 없다).
         val duelAxes = db.duelAxisDao().getByUniverseList(config.universeId)
-        val duelMatches = duelAxes.flatMap { db.duelMatchDao().getByAxis(it.id) }
-        val duelVerdicts = duelAxes.flatMap { db.duelCounterVerdictDao().getByAxis(it.id) }
+        // **축마다 묻지 않는다** — 종전 `axes.flatMap { getByAxis(it.id) }`는 축 수만큼
+        // 질의를 쳤고 축 수에 상한이 없다. 읽는 행은 그대로이고 줄어드는 것은 질의 수다.
+        // 순서는 `WorldPackageDuels.toPortable`이 `(decidedAt, code)`로 다시 세우므로
+        // 조각 경계가 바이트 재현성에 닿지 않는다.
+        val duelAxisIds = duelAxes.map { it.id }
+        val duelMatches = SqlInChunks.flat(duelAxisIds) { db.duelMatchDao().getByAxes(it) }
+        val duelVerdicts = SqlInChunks.flat(duelAxisIds) { db.duelCounterVerdictDao().getByAxes(it) }
         // 이미지 축의 참가자는 **경로**다 — 실리는 캐릭터의 imagePaths가 그 범위다.
         val duelResult = WorldPackageDuels.toPortable(
             axes = duelAxes,

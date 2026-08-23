@@ -63,6 +63,40 @@ class StatsDataProviderUnassignedTest {
         )
     }
 
+    /**
+     * **필드 인사이트의 채움률이 100%를 넘지 않는다** (2026.08.22 사용자 판정 · R-34).
+     *
+     * 이 스냅샷이 곧 결함의 재현이다: 캐릭터 2번은 작품이 없는데(`novelId = null`) 세계관
+     * 100의 필드 40에 값을 **보존**하고 있다 — 값 병합 규약이 일부러 남기는 정상 상태다.
+     * 모수는 작품→세계관을 경유해 세므로 그 캐릭터를 안 세는데, 종전 분자는 값 표의 **행
+     * 수**라 소속을 안 봐서 `2 / 1 (200%)`가 됐다. 형제 두 화면(데이터 개요·필드 분석)은
+     * 이미 교집합으로 고쳐져 있어 한 앱의 세 화면이 다른 채움률을 말하고 있었다.
+     */
+    @Test
+    fun fieldInsightFilledNeverExceedsTotal() {
+        // 세계관 100의 필드 40에 값을 든 캐릭터 **셋** 중 둘이 무소속이다.
+        // 모수(작품 경유)는 1인데 값 행은 3 — 종전 분자(행 수)라면 `3 / 1 (300%)`이다.
+        val base = snapshot()
+        val s = base.copy(
+            characters = base.characters + listOf(
+                Character(id = 3L, name = "무소속2", novelId = null),
+                Character(id = 4L, name = "무소속3", novelId = null)
+            ),
+            fieldValues = base.fieldValues + listOf(
+                CharacterFieldValue(characterId = 3L, fieldDefinitionId = 40L, value = "값3"),
+                CharacterFieldValue(characterId = 4L, fieldDefinitionId = 40L, value = "값4")
+            )
+        )
+        val insights = provider.computeFieldInsights(s)
+        assertTrue("인사이트가 하나는 나와야 대조가 성립한다", insights.isNotEmpty())
+        for (i in insights) {
+            assertTrue(
+                "채움(${i.filledCount}) > 모수(${i.totalCount}) — ${i.fieldDefinition.name}",
+                i.filledCount <= i.totalCount
+            )
+        }
+    }
+
     @Test
     fun unassignedScope_onlyUnassignedCharactersRemain() {
         val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
@@ -90,10 +124,33 @@ class StatsDataProviderUnassignedTest {
     }
 
     @Test
-    fun unassignedScope_tagsAndNameBankScoped() {
+    fun unassignedScope_tagsScoped() {
         val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
         assertEquals(listOf("b"), filtered.tags.map { it.tag })
-        assertEquals(listOf(30L), filtered.nameBank.map { it.id })
+    }
+
+    /**
+     * **이름뱅크는 스코프가 좁혀도 전량 그대로다** (2026.08.22 사용자 판정).
+     *
+     * 종전에는 *"이 스코프 캐릭터가 쓴 이름만"*으로 걸렀는데, 그러면 **모수에서 미사용
+     * 항목이 통째로 빠져** `used == size`가 되고 **사용률이 정의상 언제나 100%**였다.
+     * *'모든 이름이 사용됨'*이라는 거짓 고지가 거기서 나왔다. `name_bank`에는 작품·세계관
+     * 외래키가 없어 *'이 작품의 미사용 이름'*이라는 개념 자체가 데이터 모델에 없다.
+     *
+     * *이 스코프가 쓴 이름*은 버리지 않는다 — [NameBankStats.namesUsedInScope]가 든다.
+     */
+    @Test
+    fun nameBankStaysGlobalUnderScope() {
+        val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
+        assertEquals(listOf(30L, 31L, 32L), filtered.nameBank.map { it.id })
+
+        val stats = provider.computeNameBankStats(filtered)
+        // 미사용 하나(32)가 모수에 남아 있으므로 사용률이 100%가 아니다.
+        assertEquals(3, stats.totalNames)
+        assertEquals(2, stats.usedNames)
+        assertEquals(listOf("미사용"), stats.unusedNames)
+        // 스코프(미배정 캐릭터 2번)가 쓴 이름만 따로 나온다.
+        assertEquals(listOf("이름1"), stats.namesUsedInScope)
     }
 
     @Test

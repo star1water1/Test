@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.duel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
@@ -26,6 +27,8 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.repository.TrashRepository
 
@@ -733,10 +736,10 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun recordGroup(
         axisId: Long,
         outcomes: List<Triple<String, String, String?>>
-    ): List<DuelMatch> = duelRepository.recordGroup(axisId, outcomes)
+    ): List<DuelMatch> = inViewModelScope { duelRepository.recordGroup(axisId, outcomes) }
 
     /** 층 B ① — 그 판을 지운다. 점수는 다시 적합하면 그것이 정확한 답이다. */
-    suspend fun undo(match: DuelMatch) = duelRepository.undo(match)
+    suspend fun undo(match: DuelMatch) = inViewModelScope { duelRepository.undo(match) }
 
     /**
      * 층 B ①의 묶음판 — 한 화면이 낸 판을 **통째로** 지운다.
@@ -745,7 +748,47 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
      * 그 사이에 기록 화면에서 한 판이 지워졌을 때 남은 것을 못 지우고, 그러면 사용자가
      * 취소한 화면의 절반이 살아남는다.
      */
-    suspend fun undoGroup(groupId: String) = duelRepository.undoGroup(groupId)
+    suspend fun undoGroup(groupId: String) = inViewModelScope { duelRepository.undoGroup(groupId) }
+
+    /**
+     * 축 순서 재정렬 — **뷰모델 수명에서, 한 트랜잭션으로** (형제 셋과 같은 모양).
+     *
+     * 종전에는 화면이 `viewLifecycleOwner.lifecycleScope`에서 축마다 `saveAxis`를 따로
+     * 불렀다. 끌어 놓고 손을 떼자마자 회전하거나 뒤로 나가면 **앞쪽 몇 개만 새 번호로
+     * 저장되고** 나머지는 옛 번호로 남아, `displayOrder`가 겹치거나 건너뛰어 목록 차례가
+     * 화면에서 본 것과 다르게 굳었다. 실패 고지도 없었다.
+     *
+     * 재정렬은 초고빈도 조작이라 **성공은 무통보**다(시각 변화가 곧 피드백) — 실패만 알린다.
+     */
+    fun updateAxisDisplayOrders(orderedIds: List<Long>) = viewModelScope.launch {
+        try {
+            duelRepository.updateAxisDisplayOrders(orderedIds)
+        } catch (e: Exception) {
+            android.util.Log.e("DuelViewModel", "Failed to update axis display orders", e)
+            reportResult(_result, OpResult.failure(
+                OpResult.CAT_DUEL,
+                getApplication<android.app.Application>()
+                    .getString(com.novelcharacter.app.R.string.result_duel_axis_reorder_failed),
+                e.message))
+        }
+    }
+
+    /**
+     * **쓰기는 화면 수명이 아니라 뷰모델 수명에서 돈다** (2026.08.22 · `TimelineViewModel`의 규약).
+     *
+     * 대결 화면의 `answer()`는 화면 상태를 **먼저** 앞으로 민 뒤 기록을 뒤에서 돌린다.
+     * 그 기록이 호출부 스코프(`viewLifecycleOwner.lifecycleScope`)에서 그대로 돌면,
+     * 판정 직후 수십~수백 ms 안에 회전하거나 다른 화면으로 나갈 때 **트랜잭션이 취소되어
+     * 롤백된다** — 화면은 다음 짝으로 넘어가 있는데 방금 누른 판정은 DB에 한 줄도 없고
+     * 아무 고지도 없다. 사용자는 판정했다고 믿지만 대기열에 다시 나오고 점수에도 안 잡힌다.
+     *
+     * `TimelineViewModel.insertEventField`가 같은 이유로 이미 이 모양이다 —
+     * *"쓰기는 뷰모델이 들고, 화면은 결과를 받아 고지만 한다."* 대결 축만 그 규약 밖에
+     * 남아 있었다. 되돌리기 둘도 같은 성질이라 함께 옮긴다(취소된 되돌리기는 *지웠다고
+     * 생각했는데 그대로*가 된다).
+     */
+    private suspend fun <T> inViewModelScope(block: suspend () -> T): T =
+        viewModelScope.async { block() }.await()
 
     /**
      * 층 B ②·③ — 같은 관계에 다시 판정하면 덮어쓴다.

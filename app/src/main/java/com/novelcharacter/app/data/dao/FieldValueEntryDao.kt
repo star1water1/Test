@@ -25,14 +25,12 @@ interface FieldValueEntryDao {
     )
     fun getByFieldLive(fieldDefId: Long): LiveData<List<FieldValueEntry>>
 
-    /** 폼 자동완성 1쿼리 배치 로드 (숨김 제외) */
-    @Query(
-        """SELECT fve.* FROM field_value_entries fve
-           INNER JOIN field_definitions fd ON fve.fieldDefinitionId = fd.id
-           WHERE fd.universeId = :universeId AND fd.entityType = :entityType AND fve.isHidden = 0
-           ORDER BY fve.usageCount DESC, fve.value"""
-    )
-    suspend fun getForUniverse(universeId: Long, entityType: String): List<FieldValueEntry>
+    // 폼 자동완성용 세계관 단위 질의(`getForUniverse`)는 없앴다 (B-129 확장, 2026.08.22).
+    // `fd.universeId = :universeId`로 묶여 있어 **전역 구역(universeId IS NULL)에서는
+    // 원리적으로 빈 목록**이었고, 폼은 이미 [getForFields]로 같은 필드의 엔트리를 읽으므로
+    // 그 질의는 두 번째 조회이기도 했다. 제안 잣대(숨김 제외 · 사용 횟수 내림차순)는
+    // `util/FieldSuggestionEntries`가 한 벌로 든다 — 작품 축이 먼저 그렇게 옮겼고
+    // (B-129) 캐릭터·사건 축이 이 판에 따라왔다.
 
     /** IN 청크(999)는 레포지토리에서 처리 */
     @Query("SELECT * FROM field_value_entries WHERE fieldDefinitionId IN (:fieldDefIds)")

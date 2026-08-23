@@ -1395,6 +1395,14 @@
     <string name="stats_avg_name_length">평균 이름 길이: %.1f자</string>
     <string name="stats_all_names_used">모든 이름이 사용됨</string>
     <string name="stats_and_more">…외 %d개</string>
+    <string name="ai_image_tag_policy_truncated">길이 상한 %1$d자를 넘어 앞 %1$d자까지만 저장했습니다.</string>
+    <string name="stats_field_insight_distribution_wider">아래 분포에는 이 모수 밖의 보관 값도 함께 실립니다 — 채움 수보다 넓습니다.</string>
+    <string name="stats_namebank_scope_note">이름뱅크는 작품에 매이지 않는 전역 목록이라, 위의 수는 작품 필터와 무관한 전체 값입니다.</string>
+    <string name="stats_namebank_used_in_scope">이 범위가 쓴 이름 %1$d개</string>
+    <string name="stats_namebank_used_in_scope_empty">이 범위의 캐릭터가 쓴 이름뱅크 이름이 없습니다.</string>
+    <string name="state_change_missing_field">%s (지금 이 캐릭터에 없는 필드)</string>
+    <string name="state_change_delete_confirm">이 상태 변화를 삭제하시겠습니까?\n%1$s → %2$s\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="stats_chart_top_kinds_note">상위 %1$d종만 그렸습니다 — 나머지 %2$d종 %3$d건은 차트에 없습니다.</string>
 
     <!-- Stats: 데이터 건강도 확장 -->
     <string name="stats_no_memo">메모 미작성</string>
@@ -1742,11 +1750,12 @@
     <string name="restore_strategy_overwrite">덮어쓰기</string>
     <string name="restore_strategy_overwrite_desc">선택한 항목의 기존 데이터를 모두 삭제하고\n백업 데이터로 교체합니다.</string>
     <string name="restore_strategy_label">복원 방식</string>
-    <string name="restore_overwrite_warning">⚠ DB에만 있는 데이터가 삭제됩니다: %s</string>
+    <string name="restore_overwrite_warning">⚠ 이 파일이 갱신하지 않는 DB 데이터가 삭제됩니다: %s</string>
+    <string name="restore_overwrite_unread_note">이 수에는 앱이 읽지 못한 행(위 \'건너뜀\')의 몫이 섞여 있습니다 — 파일에 적혀 있어도 이번에 갱신되지 않아 함께 삭제됩니다. 남기고 싶다면 취소한 뒤 그 행을 고쳐 주세요.</string>
     <string name="restore_merge_delete_option">엑셀에 없는 항목 삭제</string>
     <string name="restore_merge_delete_desc">대상: %s</string>
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
-    <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
+    <string name="restore_preview_db_info">현재 DB: %1$d개, 이 파일이 갱신하지 않음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>
     <!-- 사유를 하나로 단정하지 않는다 (B-237) — 이 계수는 원인이 둘이다: ⓐ 선행 항목이 없는데
          그것을 만드는 범주가 선택에서 빠진 행(B-102 ⓑ) ⓑ 필수 칸이 비었거나 해석되지 않는 행.
@@ -2400,6 +2409,7 @@
     <string name="result_faction_update_failed">세력 수정 실패</string>
     <string name="result_faction_delete_failed">세력 삭제 실패</string>
     <string name="result_faction_reorder_failed">세력 순서 변경 실패</string>
+    <string name="result_duel_axis_reorder_failed">대결 축 순서 변경 실패</string>
     <string name="result_faction_member_added">세력 멤버 %1$d명 추가됨</string>
     <string name="result_faction_member_add_failed">세력 멤버 추가 실패</string>
     <string name="result_faction_member_removed">세력 멤버 제거됨</string>
@@ -3434,7 +3444,6 @@
     <string name="image_tag_review_apply_failed">태그를 저장하지 못했습니다. 하나도 적용되지 않았으니 저장 공간을 확인한 뒤 검토 창에서 다시 적용해 주세요</string>
     <string name="image_tag_review_notice_dropped">모델이 되돌린 것 중 %1$d건은 형식에 맞지 않아 제외했습니다</string>
     <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
-    <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>
     <string name="image_tag_review_notice_failed">일부 요청이 실패했습니다: %1$s</string>
 
     <!-- 이미지 내용 일괄 AI 태깅 (B-121) — 폴더 이름을 읽는 위 기능과 달리 그림 자체를 보낸다 -->

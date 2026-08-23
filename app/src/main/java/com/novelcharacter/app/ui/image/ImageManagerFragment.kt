@@ -1523,7 +1523,6 @@ class ImageManagerFragment : Fragment() {
         if (d.unreadable > 0) notices.add(getString(R.string.image_ai_tag_notice_unreadable, d.unreadable))
         if (d.blocked > 0) notices.add(getString(R.string.image_ai_tag_notice_blocked, d.blocked))
         if (d.vocabTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
-        if (d.policyTruncated > 0) notices.add(getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         if (result.cancelled) notices.add(getString(R.string.image_ai_tag_notice_cancelled))
         // 링크 묶음 고지 — 체크한 태그가 **화면에 없는 식구에도 붙는다**는 사실을 적용 전에
         // 말한다(변수 제어). 표본 실행만이 아니라 **모든 실행**이 대상이다 — 전개는 적용

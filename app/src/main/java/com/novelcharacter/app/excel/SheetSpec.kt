@@ -312,6 +312,12 @@ fun toHalfWidth(value: String): String = CsvTokens.toHalfWidth(value)
 fun splitCsv(value: String): List<String> = CsvTokens.split(value)
 
 /**
+ * 목록 셀 중 **글자 그대로가 곧 정체인 칸** — 태그처럼 조회 없이 그대로 저장되는 자리다.
+ * 사유와 계약은 [CsvTokens.splitIdentity]에 있다.
+ */
+fun splitCsvIdentity(value: String): List<String> = CsvTokens.splitIdentity(value)
+
+/**
  * 목록 셀의 **결합** — 가져오기의 [splitCsv]와 한 쌍이다 (B-27 ② · 규약 R-47).
  * 값이 구분자를 품고 있으면 감싸고, 안의 따옴표는 겹쳐 쓴다(엑셀·CSV와 같은 방식).
  */
@@ -395,11 +401,10 @@ const val EXCEL_CELL_TEXT_LIMIT = 32767
  * 반쪽 서러게이트가 마지막 글자로 남는다. 한도 안이면 원문 그대로다 — 내보내기 절단과
  * 가져오기 저장 한도가 같은 함수를 써야 경계 처리도 함께 움직인다.
  */
-fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String {
-    if (value.length <= limit) return value
-    val cut = value.take(limit)
-    return if (cut.isNotEmpty() && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
-}
+fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String =
+    // 경계 규칙(서러게이트 쌍을 쪼개지 않는다)은 `util/SafeTruncate` 한 벌이 든다 —
+    // 두 벌로 두었더니 AI 기조 문구 절단만 맨 `take()`로 남아 있었다.
+    com.novelcharacter.app.util.SafeTruncate.atCharLimit(value, limit)
 
 // ── 시각 개편(2026.08.14 사용자 확정 Q-1~Q-3) — 표현 계층의 순수 판정들 ──
 

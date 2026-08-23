@@ -43,14 +43,10 @@ class StateChangeAdapter(
             }
             binding.textYear.text = yearText
 
-            // Field key - display a friendly name for special keys
-            binding.textFieldKey.text = when (change.fieldKey) {
-                CharacterStateChange.KEY_BIRTH -> binding.root.context.getString(R.string.birth)
-                CharacterStateChange.KEY_DEATH -> binding.root.context.getString(R.string.death)
-                CharacterStateChange.KEY_ALIVE -> binding.root.context.getString(R.string.alive_status)
-                CharacterStateChange.KEY_AGE -> binding.root.context.getString(R.string.age)
-                else -> change.fieldKey
-            }
+            // 필드 이름 — 번역은 한 자리가 든다(`StateChangeFieldLabel`). 종전에는 이 자리와
+            // 수정·삭제 창이 따로 적어, 같은 행이 목록에서는 '출생'이고 창에서는 `__birth`였다.
+            binding.textFieldKey.text = com.novelcharacter.app.ui.common.StateChangeFieldLabel
+                .of(binding.root.context, change.fieldKey)
 
             // New value
             binding.textNewValue.text = change.newValue

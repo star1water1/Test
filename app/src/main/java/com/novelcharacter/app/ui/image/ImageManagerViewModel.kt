@@ -1008,13 +1008,34 @@ class ImageManagerViewModel(
                 val now = System.currentTimeMillis()
                 for (uri in uris) {
                     val path = ImageImportHelper.importImage(getApplication(), uri, "img", settings)
-                    if (path != null) {
-                        runCatching {
-                            db.imageMetaDao().insert(com.novelcharacter.app.data.model.ImageMeta(path = path, importedAt = now))
-                        }
-                        imported++
-                    } else {
+                    if (path == null) {
                         failed++
+                        continue
+                    }
+                    // **행이 실제로 생겼는지 본다** (2026.08.22). 종전에는 `runCatching`의 결과를
+                    // 버리고 무조건 `imported++`였다. 이 자리의 실패는 **파일이 이미 내부
+                    // 저장소에 복사된 뒤**라 조용한 유실 둘이 함께 났다: ⓐ `image_meta` 행 없는
+                    // **고아 파일**이 용량만 먹은 채 남고 ⓑ 결과가 *"5장 편입"*이라 **거짓말**을
+                    // 하는데 목록에는 그 이미지가 없다 — 사용자는 왜 안 보이는지 알 길이 없다.
+                    //
+                    // **형제 자리는 이미 이렇게 한다** — 정리 폴더 편입(`OrganizeFolderService`)이
+                    // 같은 사유를 주석으로 박아 두고 실패 시 사본을 지운 뒤 실패로 센다.
+                    // 이 자리만 그 갱신을 못 받았다.
+                    val rowId = runCatching {
+                        db.imageMetaDao().insert(
+                            com.novelcharacter.app.data.model.ImageMeta(path = path, importedAt = now))
+                    }.getOrNull()
+                    when {
+                        rowId == null -> {
+                            // 행이 안 생겼으면 그 사본은 **아무도 가리키지 않는 파일**이다 — 지운다.
+                            runCatching { java.io.File(path).delete() }
+                            failed++
+                        }
+                        // `insert`는 IGNORE라 충돌이 예외가 아니라 `-1`이다. 그 경우 그 경로를
+                        // 이미 **다른 행이 소유**하므로 사본을 지우지 않는다(남의 이미지를
+                        // 지우게 된다). 다만 이번 편입으로 늘어난 것은 없으므로 성공으로 세지 않는다.
+                        rowId < 0 -> failed++
+                        else -> imported++
                     }
                 }
                 ImportResult(imported, failed)
@@ -2211,13 +2232,26 @@ class ImageManagerViewModel(
      * **실패를 알았을 때 되돌아가 다시 적용할 자리가 없다**(다시 얻으려면 재결제다).
      * 그래서 누른 시점에 들어 두었다가 **실패하면 되살린다** — 되살리는 자리가 뷰가 아니라
      * 여기인 것이 요점이다: 적용 중에 회전이 나도 재생성된 화면이 그 값을 보고 시트를 다시 세운다.
+     *
+     * ## 재진입 빗장 — 들 것이 없으면 이미 도는 회차다 (2026.08.22)
+     *
+     * [적용]을 빠르게 두 번 탭하면(시트가 닫히는 프레임 안에 두 번째 탭이 들어간다) 이 함수가
+     * 두 번 돈다. 두 번째 회차의 `pending`은 첫 회차가 이미 비운 **null**이고, 그러면
+     * 적용이 실패했을 때 **첫 회차가 되살려 놓은 유료 응답을 두 번째 회차가 null로 덮는다** —
+     * 사용자는 *"적용 실패 — 다시 적용해 주세요"*를 읽는데 **가리킬 검토 창이 없고**
+     * 결제한 제안이 통째로 사라진다(되받기도 그 결과에 매여 함께 없어진다). 실패하지 않는
+     * 흔한 경우에도 같은 적용이 두 번 돌고 결과 고지가 두 번 뜬다.
+     *
+     * **빗장을 뷰가 아니라 여기 두는 것이 요점이다** — 버튼 비활성화만으로 막으면 회전으로
+     * 시트가 다시 설 때 그 상태가 사라진다(R-65가 되풀이해 세운 규칙). 시트 쪽 비활성화는
+     * 연타 자체를 줄이는 보조 장치로 함께 둔다.
      */
     fun applyImageTags(
         picked: Map<String, List<String>>,
         onDone: (OpResult) -> Boolean
     ) {
         // 누른 **그 시점**에 든다. 코루틴 안에서 읽으면 이미 시트가 닫히며 비운 뒤다.
-        val pending = aiTagResult.value
+        val pending = aiTagResult.value ?: return   // 재진입 빗장 — 아래 KDoc 참조
         // 묶음 전개는 여기서 하지 않는다 — 적용 직전의 살아 있는 명단으로 [applyTagWork]가
         // 편다(공유 불변식의 초크포인트. 폴더판·되받기와 같은 자리를 지난다).
         val work = picked.map { it.key to it.value }
@@ -2251,7 +2285,7 @@ class ImageManagerViewModel(
         pathsByFolder: Map<String, List<String>>,
         onDone: (OpResult) -> Boolean
     ) {
-        val pending = folderTagResult.value
+        val pending = folderTagResult.value ?: return   // 재진입 빗장 — [applyImageTags]와 같은 이유
         folderTagResult.value = null
         viewModelScope.launch {
             val outcome: TagApplyOutcome = withContext(Dispatchers.IO) {

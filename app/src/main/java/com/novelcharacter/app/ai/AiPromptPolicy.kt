@@ -138,8 +138,11 @@ object AiPromptPolicy {
 
     fun clampImageTagPolicy(raw: String?): String {
         val trimmed = raw?.trim().orEmpty()
-        return if (trimmed.length <= IMAGE_TAG_POLICY_MAX_CHARS) trimmed
-        else trimmed.take(IMAGE_TAG_POLICY_MAX_CHARS)
+        // **서러게이트 쌍을 쪼개지 않는다** — 종전 `take()`는 600자 경계에 이모지가 걸리면
+        // 마지막 글자를 반쪽으로 남겼고, 그 반쪽이 설정 칸에도 프롬프트에도 그대로 실렸다.
+        // 엑셀 셀 절단이 이미 지키던 규칙을 `util/SafeTruncate` 한 벌로 모아 함께 쓴다.
+        return com.novelcharacter.app.util.SafeTruncate
+            .atCharLimit(trimmed, IMAGE_TAG_POLICY_MAX_CHARS)
     }
 
     /** 폴더 수 → 요청 수. 비용 고지의 단일 소스(고지와 실제가 갈리면 안 된다). */

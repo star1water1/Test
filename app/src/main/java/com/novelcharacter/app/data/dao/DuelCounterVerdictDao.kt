@@ -14,6 +14,13 @@ interface DuelCounterVerdictDao {
     @Query("SELECT * FROM duel_counter_verdicts WHERE axisId = :axisId ORDER BY decidedAt ASC, id ASC")
     suspend fun getByAxis(axisId: Long): List<DuelCounterVerdict>
 
+    /**
+     * [getByAxis]의 **일괄 짝** — 짝인 `DuelMatchDao.getByAxes`와 같은 이유·같은 계약이다
+     * (R-54 통로 필수 · 순서는 `WorldPackageDuels.toPortable`이 다시 세운다).
+     */
+    @Query("SELECT * FROM duel_counter_verdicts WHERE axisId IN (:axisIds) ORDER BY decidedAt ASC, id ASC")
+    suspend fun getByAxes(axisIds: List<Long>): List<DuelCounterVerdict>
+
     @Query("SELECT * FROM duel_counter_verdicts WHERE axisId = :axisId AND memberKey = :memberKey LIMIT 1")
     suspend fun getByMemberKey(axisId: Long, memberKey: String): DuelCounterVerdict?
 

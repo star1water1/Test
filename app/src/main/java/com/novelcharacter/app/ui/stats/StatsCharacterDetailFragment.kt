@@ -26,6 +26,7 @@ import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsCharacterDetailBinding
+import com.novelcharacter.app.util.ValueDistributions
 
 class StatsCharacterDetailFragment : Fragment() {
 
@@ -246,37 +247,7 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
-    private fun setupTagPieChart(data: Map<String, Int>) {
-        val chart = binding.chartTagDistribution
-        if (data.isEmpty()) {
-            chart.visibility = View.GONE
-            return
-        }
-        val ctx = requireContext()
-        val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
-        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
-        val entries = data.entries.take(10).map { PieEntry(it.value.toFloat(), it.key) }
-        val dataSet = PieDataSet(entries, "").apply {
-            colors = chartColors()
-            valueTextSize = captionSize
-            valueTextColor = Color.WHITE
-            valueFormatter = PercentFormatter(chart)
-        }
-        chart.apply {
-            this.data = PieData(dataSet)
-            description.isEnabled = false
-            isDrawHoleEnabled = true
-            holeRadius = 40f
-            applyDarkModeHole(this)
-            setUsePercentValues(true)
-            legend.isEnabled = true
-            legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
-            setEntryLabelColor(Color.WHITE)
-            setEntryLabelTextSize(chartValueSize)
-            animateY(600)
-            invalidate()
-        }
-    }
+    private fun setupTagPieChart(data: Map<String, Int>) = setupPieChart(binding.chartTagDistribution, data)
 
     private fun setupNovelCharBarChart(data: Map<String, Int>) {
         val chart = binding.chartNovelCharCounts
@@ -309,16 +280,40 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
-    private fun setupRelTypePieChart(data: Map<String, Int>) {
-        val chart = binding.chartRelTypeDist
+    private fun setupRelTypePieChart(data: Map<String, Int>) = setupPieChart(binding.chartRelTypeDist, data)
+
+    /**
+     * 이 화면의 파이 둘(태그 분포 · 관계 유형 분포) — **상한을 적용하되 분모는 모집단으로 남긴다**
+     * (R-14 · S-17이 `ValueDistributions`로 세운 그 규칙).
+     *
+     * **종전에 둘이 서로 반대로 틀려 있었다.** 태그 파이는 `data.entries.take(10)`으로 자른 뒤
+     * `setUsePercentValues(true)`를 켰는데, MPAndroidChart의 백분율 분모는 **넘긴 엔트리의 합**이라
+     * 남은 열 조각끼리 100%가 됐다 — 태그 30종·총 100건에서 10건짜리 태그가 **10%가 아니라 25%**로
+     * 그려졌고, 나머지 20종은 조각도 범례도 고지도 없이 사라져 *태그가 열 종뿐*으로 읽혔다.
+     * 관계 유형 파이는 반대로 상한이 **아예 없어** 유형이 많으면 범례가 무너졌다.
+     *
+     * 그래서 한 함수로 모은다(둘의 나머지 코드는 글자 그대로 같았다). `ValueDistributions.view`가
+     * 접고, 접힌 몫은 **'기타 N종' 조각으로 파이에 남는다** — 조각으로 남기는 것이 요점이다:
+     * 분모가 모집단으로 돌아와 나머지 조각의 비율이 참이 되고, 잘린 종수·건수도 함께 보고된다
+     * (상한은 감추는 장치가 아니라 접는 장치다 — R-14).
+     */
+    private fun setupPieChart(chart: PieChart, data: Map<String, Int>) {
         if (data.isEmpty()) {
             chart.visibility = View.GONE
             return
         }
+        chart.visibility = View.VISIBLE
         val ctx = requireContext()
         val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
         val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
-        val entries = data.entries.map { PieEntry(it.value.toFloat(), it.key) }
+        val view = ValueDistributions.view(data, ValueDistributions.DEFAULT_DISPLAY_LIMIT)
+        val entries = view.shown.map { PieEntry(it.count.toFloat(), it.label) } +
+            if (view.hasHidden) {
+                listOf(PieEntry(
+                    view.hiddenCount.toFloat(),
+                    getString(R.string.stats_distribution_others, view.hiddenKinds)
+                ))
+            } else emptyList()
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = captionSize

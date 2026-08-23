@@ -179,7 +179,21 @@ data class CategoryAnalysis(
      */
     val deletedByOverwrite: Boolean = true
 ) {
-    /** 백업에 없고 DB에만 있는 항목 수 ([deletedByOverwrite]인 범주에서는 덮어쓰기 시 삭제 대상) */
+    /**
+     * **이 파일이 갱신하지 않는** DB 항목 수 ([deletedByOverwrite]인 범주에서는 덮어쓰기 시 삭제 대상).
+     *
+     * **이름과 문구가 "백업에 없음"이면 안 되는 이유**(2026.08.22). 이 수는 삭제 대상으로는
+     * 정확하다 — 삭제는 `id !in matchedIds`로 도는데 [skippedCount]에 잡힌 행은 매칭 id를
+     * 만들지 못하므로 그 항목은 **실제로 지워진다.** 그러나 그 항목은 **백업에 있다**:
+     * 앱이 그 행을 못 읽었을 뿐이다(필수 칸이 비었거나, 이 버전이 모르는 값이거나).
+     *
+     * 그래서 *"백업에 없음"* · *"DB에만 있는 데이터"*라는 종전 문구는 **수는 맞는데 사유가
+     * 틀린 고지**였고, 사용자가 취소할지 정하는 근거가 바로 그 사유다. 화면 문구를
+     * *"이 파일이 갱신하지 않는"*으로 바꾸고, [skippedCount]가 0이 아닌 범주에서는
+     * 덮어쓰기 경고가 **섞임을 한 줄로 밝힌다**(`restore_overwrite_unread_note`).
+     *
+     * 식에서 [skippedCount]를 빼지 않는 것도 그 때문이다 — 빼면 *지워질 수*를 적게 말한다.
+     */
     val onlyInDb: Int get() = existingTotal - (updateCount + unchangedCount)
 }
 
@@ -1661,7 +1675,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             sortMode = sortMode,
             isDefault = if (c.isDefault >= 0) parseBoolean(getCellString(row, c.isDefault)) else null,
             createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
-            updatedAt = if (c.updatedAt >= 0) parseNumber(getCellString(row, c.updatedAt))?.toLong() else null
+            // '생성일'과 **같은 통로를 지난다** — 종전에는 이 줄만 밖에 있어 해석 불가가
+            // 무경고로 버려졌다(같은 행의 이웃 열이 서로 다르게 처분되던 자리).
+            updatedAt = readEpochMillisCell(
+                row, c.updatedAt, ctx, "수정일", result,
+                consequence = "빈 칸과 같게 처리합니다(기존 항목은 수정 시각 유지)"
+            )
         )
     }
 
@@ -1768,7 +1787,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             novelIdsJson = novelIdsJson,
             isDefault = sheetBooleanOrKeep(c.isDefault >= 0, getCellString(row, c.isDefault)),
             createdAt = readCreatedAtCell(row, c.createdAt, ctx, result),
-            updatedAt = if (c.updatedAt >= 0) parseNumber(getCellString(row, c.updatedAt))?.toLong() else null
+            // '생성일'과 **같은 통로를 지난다** — 종전에는 이 줄만 밖에 있어 해석 불가가
+            // 무경고로 버려졌다(같은 행의 이웃 열이 서로 다르게 처분되던 자리).
+            updatedAt = readEpochMillisCell(
+                row, c.updatedAt, ctx, "수정일", result,
+                consequence = "빈 칸과 같게 처리합니다(기존 항목은 수정 시각 유지)"
+            )
         )
     }
 
@@ -1818,7 +1842,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             fieldsJson = if (c.fieldsJson >= 0) getCellString(row, c.fieldsJson).ifBlank { "[]" } else null,
             isBuiltIn = sheetBooleanOrKeep(c.builtIn >= 0, getCellString(row, c.builtIn)),
             createdAt = createdAt,
-            updatedAt = if (c.updatedAt >= 0) parseNumber(getCellString(row, c.updatedAt))?.toLong() else null
+            // '생성일'과 **같은 통로를 지난다** — 종전에는 이 줄만 밖에 있어 해석 불가가
+            // 무경고로 버려졌다(같은 행의 이웃 열이 서로 다르게 처분되던 자리).
+            updatedAt = readEpochMillisCell(
+                row, c.updatedAt, ctx, "수정일", result,
+                consequence = "빈 칸과 같게 처리합니다(기존 항목은 수정 시각 유지)"
+            )
         )
     }
 
@@ -2794,7 +2823,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return ImageMetaRowValues(
             fileName = getCellString(row, c.file),
             hasTagCol = c.tag >= 0,
-            tags = if (c.tag >= 0) splitCsv(getCellString(row, c.tag)).toSet() else emptySet(),
+            // 태그는 **조회 없이 그대로 저장된다** — 전각을 낮춰 읽으면 조용한 개명이다.
+            tags = if (c.tag >= 0) splitCsvIdentity(getCellString(row, c.tag)).toSet() else emptySet(),
             hasGroupCol = c.group >= 0,
             groupToken = if (c.group >= 0) getCellString(row, c.group).trim().ifBlank { null } else null,
             hasDetachedCol = c.detachedAt >= 0,
@@ -4838,9 +4868,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭 규칙은 실제 가져오기와 **같은 함수**를 쓴다(FactionMembershipMatcher).
             // 활성만 보던 종전 규칙은 탈퇴 이력 행을 매번 '신규'로, 나아가 '백업에 없음'으로
             // 세어 아무것도 안 고친 파일에 삭제를 예고했다 — 실제로는 매칭돼 그대로 남는데도.
-            val analyzedLeaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
+            // 미리보기도 가져오기와 **같은 함수**로 읽는다 (R-33) — 갈리면 예고한 건수와
+            // 실제가 어긋난다. 경고는 결과 창의 것이라 여기서는 싣지 않는다(`result = null`).
+            val analyzedLeaveYear = readYearCell(row, leaveYearColIndex, "", "탈퇴연도", null)
             val rowValues = FactionMembershipMatcher.RowValues(
-                joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null,
+                joinYear = readYearCell(row, joinYearColIndex, "", "가입연도", null),
                 leaveYear = analyzedLeaveYear,
                 // 가져오기가 바로잡는 반쪽 표식을 미리보기도 **같은 함수로** 바로잡는다 (B-206 · R-33) —
                 // 안 그러면 '변경'으로 셀 행을 '동일'이라 말한다.
@@ -5236,6 +5268,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 같은 결과 창에서 표기가 갈리던 결함의 수리, 2026.08.20).
      */
     private fun excelRow(index: Int): Int = index + 1
+
+    /**
+     * 0-기반 열 색인 → **엑셀 화면의 열 문자**(A·Z·AA…).
+     *
+     * [excelRow]와 같은 이유다 — 경고가 *"열13"*이라 적으면 사용자는 엑셀 머리글이 `M`인
+     * 그 칸에 닿으려고 열을 손으로 세어야 한다. 행은 2026.08.20에 맞춰졌는데 열은 그대로였다.
+     *
+     * **새로 짜지 않고 이미 있는 변환을 지난다** — 두 벌로 적으면 `AA` 경계에서 갈린다.
+     */
+    private fun excelColumn(index: Int): String =
+        com.novelcharacter.app.excel.DropdownListLimits.columnLetter(index)
 
     /**
      * 헤더 첫 컬럼 검증 + 실패 시 시트를 건너뛰는 이유를 오류로 보고 (무통보 스킵 방지).
@@ -7676,7 +7719,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val tagsStr = getCellString(row, tagsColIndex)
                     if (tagsStr.isNotBlank()) {
                         db.characterTagDao().deleteAllByCharacter(charId)
-                        val tags = splitCsv(tagsStr)
+                        // 태그는 **조회 없이 그대로 저장된다**(아래 `CharacterTag(tag = tag)`) —
+                        // 전각을 낮춰 읽으면 무편집 왕복에서 태그가 조용히 개명된다.
+                        val tags = splitCsvIdentity(tagsStr)
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
                         }
@@ -9536,8 +9581,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
-                val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
-                val leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
+                // 해석 불가는 **경고와 함께** 빈 값이 된다 — 조용히 접으면 DB의 연도가 지워진다.
+                val yearRowLabel = "세력 가입 행 ${excelRow(i)}"
+                val joinYear = readYearCell(row, joinYearColIndex, yearRowLabel, "가입연도", result)
+                val leaveYear = readYearCell(row, leaveYearColIndex, yearRowLabel, "탈퇴연도", result)
                 val rawLeaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else "")
                 // 탈퇴연도만 적히고 탈퇴유형이 빈 행을 바로잡는다 (B-206) — 판정은 순수
                 // (FactionStanding), 미리보기 분석도 **같은 함수**를 쓴다(R-33).
@@ -11087,7 +11134,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 단사(injective) 보장: 한 필드에 2개 이상의 열이 붙으면 뒤 열을 버린다.
                 // (동명 헤더가 든 기존 파일 보호 — 두 열이 같은 필드에 쓰이면 앞 열 값이 뒤 열 값으로 조용히 덮인다)
                 is ColumnFieldOutcome.Duplicate -> result.errors.add(
-                    "$sheetLabel: 열 ${col + 1}과(와) 열 ${outcome.keptColumn + 1}이(가) 같은 필드 '${outcome.field.name}'에 대응해 열 ${col + 1}을(를) 무시했습니다 — 중복 헤더를 정리해 주세요"
+                    "$sheetLabel: 열 ${excelColumn(col)}과(와) 열 ${excelColumn(outcome.keptColumn)}이(가) 같은 필드 '${outcome.field.name}'에 대응해 열 ${excelColumn(col)}을(를) 무시했습니다 — 중복 헤더를 정리해 주세요"
                 )
             }
         }
@@ -11677,6 +11724,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * [result]가 null이면 **고지 없이 같은 값만** 낸다 — 복원 미리보기 분석이 쓰는 경로다.
      * 분석이 따로 파싱하면 가져오기와 강도가 갈려 '동일' 판정이 어긋난다(B-87).
      */
+    /**
+     * 연도 칸 하나 — **해석 불가를 조용히 null로 접지 않는다** (2026.08.22).
+     *
+     * 종전에는 세력 소속의 가입·탈퇴연도가 맨 `parseNumber(getCellString(...))`이라
+     * `1990년`·`미상`·`1,990` 같은 꼴이 **경고 한 줄 없이 null**이 됐다. 그 null이
+     * 그대로 매처에 실리는데, **열이 시트에 있으면 `presence = true`**라
+     * `joinYear = if (presence.joinYear) row.joinYear else existing.joinYear`가
+     * **DB에 있던 연도를 null로 덮었다.** 매칭이 끊기지도 않는다 — '생성일' 열의 안정
+     * 식별자로 행은 그대로 붙고 **값만 지워진다.**
+     *
+     * 같은 행 안에 비대칭이 있었다: 바로 아래 '강도'는 [parseIntensityWithWarn]이,
+     * '생성일'은 [readCreatedAtCell]이 각각 경고를 실었고 **연도 두 칸만 맨손이었다.**
+     *
+     * 빈 칸은 경고하지 않는다 — *비움*은 사용자가 적어 넣은 뜻이라 해석 실패와 다르다.
+     */
+    private fun readYearCell(
+        row: Row,
+        colIndex: Int,
+        rowLabel: String,
+        columnName: String,
+        result: ImportResult?
+    ): Int? {
+        if (colIndex < 0) return null
+        val raw = getCellString(row, colIndex)
+        val parsed = parseNumber(raw)?.toInt()
+        if (raw.isNotBlank() && parsed == null) {
+            result?.warnings?.add(
+                "$rowLabel: $columnName '$raw'을(를) 숫자로 읽을 수 없어 빈 값으로 처리합니다 — 기존에 적혀 있던 연도가 지워집니다"
+            )
+        }
+        return parsed
+    }
+
     private fun parseIntensityWithWarn(row: Row, colIndex: Int, default: Int?, rowLabel: String, result: ImportResult?): Int? {
         if (colIndex < 0) return default
         val raw = getCellString(row, colIndex)
@@ -11709,12 +11789,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         rowLabel: String,
         result: ImportResult?,
         consequence: String = "빈 칸과 같게 처리합니다(기존 항목은 생성 시각 유지, 새 항목은 지금 시각)"
+    ): Long? = readEpochMillisCell(row, colIndex, rowLabel, "생성일", result, consequence)
+
+    /**
+     * 밀리초 시각 열 하나를 읽는다 — **열 이름을 받는 것이 요점이다.**
+     *
+     * 종전에는 이 몸통이 `readCreatedAtCell` 안에 있으면서 문구에 `"생성일"`을 박아 두었고,
+     * 그래서 **바로 옆 '수정일' 열이 이 통로 밖에 남았다**: 프리셋 세 시트가
+     * `parseNumber(getCellString(row, c.updatedAt))?.toLong()` 한 줄로 읽어 **해석 불가를
+     * 조용히 버렸다.** 한 행 안에서 두 이웃 열의 처분이 갈려, 사용자는 '생성일' 경고만
+     * 고치고 '수정일'은 반영된 줄 알았다(그 열도 회색 readOnly라 손대지 말라는 자리인데,
+     * 손댄 사실 자체가 안 알려졌다).
+     *
+     * 이름을 인자로 올린 이유가 그것이다 — 문구에 박아 두면 **다음 밀리초 열이 또 밖에 선다.**
+     */
+    private fun readEpochMillisCell(
+        row: Row,
+        colIndex: Int,
+        rowLabel: String,
+        columnName: String,
+        result: ImportResult?,
+        consequence: String
     ): Long? {
         if (colIndex < 0) return null
         val raw = getCellString(row, colIndex)
         val parsed = parseNumber(raw)?.toLong()
         if (raw.isNotBlank() && parsed == null) {
-            result?.warnings?.add("$rowLabel: 생성일 '$raw'을(를) 숫자로 읽을 수 없어 $consequence — '생성일' 열은 수정하지 마세요")
+            result?.warnings?.add("$rowLabel: $columnName '$raw'을(를) 숫자로 읽을 수 없어 $consequence — '$columnName' 열은 수정하지 마세요")
         }
         return parsed
     }
@@ -11791,7 +11892,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (raw.length > maxLength) {
             truncatedFieldCount++
             val sheetName = row.sheet?.sheetName ?: "?"
-            truncatedDetails.add("${sheetName} 행${excelRow(row.rowNum)} 열${cellIndex + 1}")
+            // 열도 행처럼 **엑셀 화면의 표기**로 적는다 — "열13"이라 적으면 머리글이 `M`인
+            // 그 칸에 닿으려고 사용자가 열을 손으로 세어야 한다.
+            truncatedDetails.add("${sheetName} 행${excelRow(row.rowNum)} 열${excelColumn(cellIndex)}")
             // 경계 처리는 truncateForCell(단일 소스) — 내보내기 절단과 같은 함수라 서러게이트
             // 쌍이 반쪽으로 남지 않는다.
             return truncateForCell(raw, maxLength)

@@ -1155,18 +1155,11 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 viewLifecycleOwner.lifecycleScope.launch {
-                    if (position > 0) {
-                        val novel = novels[position - 1]
-                        val universeId = novel.universeId
-                        formBuilder.currentUniverseId = universeId
-                        formBuilder.fieldDefinitions = if (universeId != null) {
-                            characterViewModel.getFieldsByUniverseList(universeId)
-                        } else {
-                            emptyList()
-                        }
-                    } else {
-                        formBuilder.fieldDefinitions = emptyList()
-                    }
+                    // 편집 화면과 **같은 함수**가 목록을 정한다 (R-33). 종전에는 두 갈래
+                    // 모두 `emptyList()`라 무소속 캐릭터의 동적 필드 구역이 이 탭에서만
+                    // 통째로 비었다 — 같은 캐릭터가 편집 화면에서는 정상이었다.
+                    val novel = if (position > 0) novels[position - 1] else null
+                    formBuilder.fieldDefinitions = characterViewModel.fieldsForNovel(novel)
                     if (_binding == null) return@launch
                     formBuilder.buildForm()
                     // AI 추천은 세계관 필드가 대상 — 편집 화면과 같은 노출 조건 (A-3)

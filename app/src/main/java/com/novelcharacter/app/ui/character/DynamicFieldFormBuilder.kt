@@ -34,7 +34,9 @@ import kotlinx.coroutines.launch
  * 캐릭터 편집 화면과 보충탭 인라인 편집 등 어떤 화면에서도 재사용할 수 있다.
  *
  * 호스트 계약:
- * - [fieldDefinitions]와 [currentUniverseId]를 설정한 뒤 [buildForm]을 호출한다.
+ * - [fieldDefinitions]를 설정한 뒤 [buildForm]을 호출한다.
+ *   (**구역은 따로 받지 않는다** — 필드 정의가 이미 자기 구역을 들고 있고, 자동완성이
+ *   구역을 묻지 않게 되면서 마지막 소비처가 없어졌다. B-129 확장, 2026.08.22.)
  * - 사용자 입력 변경 시 [onFieldChanged]가 호출된다(더티 플래그 훅).
  * - 회전 보존은 [saveStateTo]/[restoreFieldValues], 영구 드래프트는 [widgetStateStrings]를 쓴다.
  */
@@ -49,7 +51,6 @@ class DynamicFieldFormBuilder(
 ) {
 
     var fieldDefinitions: List<FieldDefinition> = emptyList()
-    var currentUniverseId: Long? = null
 
     /**
      * 지금 고른 작품 — 실루엣 편집기의 상대 생성·분포·작품 평균이 이 축으로 모인다.
@@ -1030,12 +1031,21 @@ class DynamicFieldFormBuilder(
 
         // 자동완성 데이터 배치 로드: 라이브러리 제안(정규값·별칭 매칭, usageCount 순) 우선.
         // 엔트리가 없는 필드(시드 전·신규)는 기존 distinct 경로로 폴백해 제안이 끊기지 않는다.
-        val uId = currentUniverseId
-        if (uId != null && autoCompleteTargets.isNotEmpty()) {
+        //
+        // **세계관을 묻지 않는다**(B-129 확장, 2026.08.22). 종전 조건은 *"호스트가 세계관을
+        // 알 때만"*이었고, 그 아래 두 질의도 세계관 단위였다. 그런데 **전역 구역 필드를 그리는
+        // 폼은 정확히 그 세계관이 없는 폼**이라(무소속 캐릭터·세계관 없는 작품 —
+        // `CharacterEditFragment`가 그때 `getGlobalFieldsList()`를 싣는다), 그 조건이
+        // **전역 필드에서 자동완성을 통째로 껐다** — 라이브러리 제안도, distinct 폴백도.
+        // 필드는 그려지는데 제안만 없어 고장과 구분되지 않았다. 작품 축은 B-129에서 먼저
+        // 옮겨 갔고(`NovelListFragment.attachNovelFieldSuggestions`) 이 축이 뒤늦게 따라온다.
+        // **필드 id가 곧 구역**이라 두 질의 모두 구역을 다시 물을 자리가 없다.
+        if (autoCompleteTargets.isNotEmpty()) {
             val defsById = fieldDefinitions.associateBy { it.id }
+            val targetFieldIds = autoCompleteTargets.map { it.first }.distinct()
             scopeGetter().launch {
-                val libraryByField = viewModel.getLibrarySuggestionsForUniverse(uId)
-                val valuesByField = viewModel.getAllFieldValuesForUniverse(uId)
+                val libraryByField = viewModel.getLibrarySuggestionsForFields(targetFieldIds)
+                val valuesByField = viewModel.getFieldValuesForFields(targetFieldIds)
                     .groupBy { it.fieldDefinitionId }
                 if (!isAlive()) return@launch
                 val ctx = contextGetter() ?: return@launch

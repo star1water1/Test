@@ -100,14 +100,24 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds)")
     suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue>
 
-    /** 세계관 전체의 필드값 일괄 조회 (편집 화면 자동완성 배치 로드용) */
-    @Query("""
-        SELECT cfv.* FROM character_field_values cfv
-        INNER JOIN characters c ON cfv.characterId = c.id
-        INNER JOIN novels n ON c.novelId = n.id
-        WHERE n.universeId = :universeId AND cfv.value != ''
-    """)
-    suspend fun getAllValuesForUniverse(universeId: Long): List<CharacterFieldValue>
+    /**
+     * 필드 집합의 값 일괄 조회 — 편집 화면 자동완성의 **폴백**(라이브러리 엔트리가 없는 필드).
+     *
+     * **세계관을 묻지 않는다 — 필드 id가 곧 구역이다**(B-129 확장, 2026.08.22). 종전 질의는
+     * `characters → novels → n.universeId = :universeId`로 조인했는데, 그 모양은
+     * **전역 구역(`universeId IS NULL`) 필드에서 원리적으로 아무것도 돌려주지 못했다**:
+     * 전역 필드를 그리는 폼은 무소속 캐릭터(= `novelId IS NULL`)의 것이라 조인 자체가
+     * 한 행도 남기지 않는다. 그래서 *필드는 그려지는데 제안만 없는* 자리가 됐고,
+     * 그것은 고장과 구분되지 않는다.
+     *
+     * 폼이 그리는 필드만 묻는 것이라 종전보다 **덜 읽는다**(세계관 전체 → 그 폼의 필드).
+     * 소속이 바뀌며 남은 옛 값 행이 있으면 그것도 후보에 서는데, 그 행은 **그 필드에 실제로
+     * 저장된 값**이므로 제안으로서 틀리지 않다(정리는 [deleteValuesNotInUniverse]가 한다).
+     *
+     * 목록은 [com.novelcharacter.app.util.SqlInChunks]를 지나야 한다 (R-54).
+     */
+    @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId IN (:fieldDefIds) AND value != ''")
+    suspend fun getValuesForFields(fieldDefIds: List<Long>): List<CharacterFieldValue>
 
     /** 특정 필드에 특정 값을 가진 캐릭터 ID 조회 (필터링용) */
     @Query("""

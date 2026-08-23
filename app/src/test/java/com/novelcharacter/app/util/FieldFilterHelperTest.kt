@@ -72,7 +72,7 @@ class FieldFilterHelperTest {
         override suspend fun getFieldValuesForNovel(novelId: Long, fieldDefId: Long): List<String> = unused()
         override suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> = unused()
         override suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> = unused()
-        override suspend fun getAllValuesForUniverse(universeId: Long): List<CharacterFieldValue> = unused()
+        override suspend fun getValuesForFields(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
         override suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long) = unused()
         override suspend fun countValuesByUniverse(universeId: Long): Int = unused()
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()
@@ -123,7 +123,6 @@ class FieldFilterHelperTest {
         override suspend fun getByField(fieldDefId: Long): List<FieldValueEntry> = entries[fieldDefId].orEmpty()
 
         override fun getByFieldLive(fieldDefId: Long): LiveData<List<FieldValueEntry>> = unused()
-        override suspend fun getForUniverse(universeId: Long, entityType: String): List<FieldValueEntry> = unused()
         override suspend fun getForFields(fieldDefIds: List<Long>): List<FieldValueEntry> = unused()
         override suspend fun getAllList(): List<FieldValueEntry> = unused()
         override suspend fun countByField(): List<FieldEntryCount> = unused()

@@ -14,6 +14,21 @@ interface CharacterDao {
     suspend fun getAllCharactersList(): List<Character>
 
     /**
+     * 아무 캐릭터 하나 — *오늘의 캐릭터* 위젯이 생일자가 없을 때 뽑는 자리다.
+     *
+     * **표 전량을 올려 `random()`을 부르지 않는다.** 종전 위젯은 `getAllCharactersList()`로
+     * 캐릭터를 전부 객체로 지은 뒤 하나만 쓰고 버렸다 — 이름 한 줄을 위해 표 전체를
+     * CursorWindow에 담고 행마다 객체를 만드는 것이라, 저장소가 커지면 위젯이 `goAsync()`가
+     * 준 시간을 넘겨 *"업데이트를 미뤘습니다"*만 보이게 된다(그 시간 상한은 2c56eeb가 걸어
+     * 두었고, **줄여야 할 것은 질의 자체라고 같은 커밋이 적어 두었다**).
+     *
+     * `ORDER BY RANDOM()`도 표를 훑기는 하지만 **행을 객체로 짓지 않고 한 행만 돌려준다** —
+     * 비용이 행 수에 붙되 상수가 훨씬 작고, 메모리는 한 행이다.
+     */
+    @Query("SELECT * FROM characters ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomCharacter(): Character?
+
+    /**
      * 재색인 전용 — **표시 정렬이 아니라 저장 순서**로 읽는다.
      *
      * 위 목록 질의는 화면을 위해 `isPinned DESC`를 앞세우는데, 재색인은 읽은 차례를

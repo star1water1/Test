@@ -134,11 +134,10 @@ class DuelAxisListFragment : Fragment() {
                 super.clearView(recyclerView, viewHolder)
                 val ordered = pendingOrderList ?: return
                 pendingOrderList = null
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ordered.forEachIndexed { index, axis ->
-                        if (axis.displayOrder != index) viewModel.saveAxis(axis.copy(displayOrder = index))
-                    }
-                }
+                // **목록만 넘긴다** — 쓰기는 뷰모델이 한 트랜잭션으로 든다(형제 셋과 같은 모양).
+                // 종전에는 여기서 축마다 따로 저장해, 손을 떼자마자 나가면 앞쪽 몇 개만
+                // 새 번호로 굳었다.
+                viewModel.updateAxisDisplayOrders(ordered.map { it.id })
             }
         })
         touchHelper.attachToRecyclerView(binding.axisRecyclerView)

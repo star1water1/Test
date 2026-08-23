@@ -482,7 +482,6 @@ class OrganizeFolderController(
         val dropped = d.unknownFolder + d.blankOrTooLong + d.overPerFolderCap
         if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
         if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
-        if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
         // 링크 묶음 전개 고지 — 적용은 살아 있는 명단으로 묶음 전원에 붙으므로(공유 불변식 —
         // ViewModel.applyTagWork), 폴더 안 경로가 물고 오는 **폴더 밖 식구 수**를 적용 전에
         // 말한다(변수 제어 — 조용한 확대 금지. 이미지판 검토 시트의 묶음 고지와 같은 자리).

@@ -66,7 +66,42 @@ class StatsNameBankDetailFragment : Fragment() {
             setupNameLengthChart(stats.nameLengthDistribution)
             setupFirstCharChart(stats.firstCharDistribution)
             populateUnusedNames(stats.unusedNames)
+            populateUsedInScope(stats)
         }
+    }
+
+    /**
+     * **이 범위가 쓴 이름** — 작품 필터를 걸었을 때만 서는 카드 (2026.08.22 사용자 판정).
+     *
+     * 위의 지표들(사용률·미사용 목록·분포 넷)은 **전역 모수**다. 이름뱅크에는 작품·세계관
+     * 외래키가 없어 *'작품 A의 미사용 이름'*이라는 개념 자체가 없기 때문이다 — 종전에는
+     * 필터가 이름뱅크를 좁혀 **사용률이 정의상 언제나 100%**가 됐고 *'모든 이름이 사용됨'*
+     * 이라는 거짓 고지가 떴다.
+     *
+     * 그렇다고 *"이 작품이 무엇을 썼는가"*를 버리지는 않는다 — **자기 이름을 단 자리**로
+     * 옮겨 여기서 답한다. 필터가 없으면 이 목록은 전역 사용분과 같은 집합이라 세우지 않는다.
+     */
+    private fun populateUsedInScope(stats: com.novelcharacter.app.ui.stats.NameBankStats) {
+        val scoped = viewModel.selectedNovelId.value != null
+        binding.labelUsedInScope.visibility = if (scoped) View.VISIBLE else View.GONE
+        binding.listUsedInScope.visibility = if (scoped) View.VISIBLE else View.GONE
+        if (!scoped) return
+
+        binding.labelUsedInScope.text =
+            getString(R.string.stats_namebank_used_in_scope, stats.namesUsedInScope.size)
+        val container = binding.listUsedInScope
+        container.removeAllViews()
+        if (stats.namesUsedInScope.isEmpty()) {
+            container.addView(makeTextView(getString(R.string.stats_namebank_used_in_scope_empty)))
+        } else {
+            stats.namesUsedInScope.take(30).forEach { container.addView(makeTextView(it)) }
+            if (stats.namesUsedInScope.size > 30) {
+                container.addView(makeTextView(
+                    getString(R.string.stats_and_more, stats.namesUsedInScope.size - 30)))
+            }
+        }
+        // 위의 수가 왜 필터를 안 따라가는지 그 자리에서 말한다 (R-51).
+        container.addView(makeTextView(getString(R.string.stats_namebank_scope_note)))
     }
 
     private fun setupNameLengthChart(data: Map<Int, Int>) {
@@ -100,6 +135,9 @@ class StatsNameBankDetailFragment : Fragment() {
         }
     }
 
+    /** 첫 글자 분포 막대의 표시 상한 — 문구는 이 상수에서 채운다(R-14). */
+    private val FIRST_CHAR_CHART_LIMIT = 15
+
     private fun setupFirstCharChart(data: Map<String, Int>) {
         val chart = binding.chartFirstChar
         if (data.isEmpty()) {
@@ -108,9 +146,27 @@ class StatsNameBankDetailFragment : Fragment() {
         }
         val ctx = requireContext()
         val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
-        val top15 = data.entries.take(15)
-        val labels = top15.map { it.key }
-        val entries = top15.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
+        // **자른 종수를 말한다** (R-14 — *"상한을 두는 것만으로는 절반이다"*).
+        // 종전에는 `data.entries.take(15)` 뒤에 아무 고지가 없어, 성씨가 40종이어도
+        // 15개 막대가 전부인 것처럼 보였다 — *없는 성씨*라 판단해 새 이름을 짓게 되는 자리다.
+        // 같은 화면의 미사용 이름 목록은 이미 `stats_and_more`로 잘린 수를 말한다(한 화면
+        // 안에서 같은 성격의 두 목록이 반대로 돌던 것을 맞춘다).
+        // 막대는 '기타'로 접지 않는다 — 첫 글자 분포에서 '기타' 막대는 글자가 아니라
+        // 묶음이라 x축의 뜻이 갈린다. 접는 대신 **밖에서 말한다.**
+        val view = com.novelcharacter.app.util.ValueDistributions.view(data, FIRST_CHAR_CHART_LIMIT)
+        binding.firstCharTruncNote.apply {
+            if (view.hasHidden) {
+                text = getString(
+                    R.string.stats_chart_top_kinds_note,
+                    view.shown.size, view.hiddenKinds, view.hiddenCount
+                )
+                visibility = View.VISIBLE
+            } else {
+                visibility = View.GONE
+            }
+        }
+        val labels = view.shown.map { it.label }
+        val entries = view.shown.mapIndexed { i, e -> BarEntry(i.toFloat(), e.count.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = chartValueSize

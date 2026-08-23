@@ -48,6 +48,7 @@ import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.util.stringOr
 
@@ -95,6 +96,19 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     private lateinit var fieldRenderer: DynamicFieldRenderer
     private lateinit var timeSliderHelper: TimeSliderHelper
     private lateinit var stateChangeHelper: StateChangeHelper
+
+    /**
+     * [상태 변화 추가] 창의 '필드' 선택지 — **시점 슬라이더의 목록과 다른 채널이다** (2026.08.22).
+     *
+     * 종전에는 둘이 `timeSliderHelper.cachedFields` 하나를 함께 봤다. 그런데 두 소비처가
+     * 원하는 것이 다르다: 슬라이더는 *그릴 값이 있는 필드*를 원하고, 이 창은 *상태 변화를
+     * 달 수 있는 필드*를 원한다. 무소속 캐릭터에서 그 차이가 드러난다 — 그 갈래는 값이
+     * 가리키는 정의를 직접 찾아 손수 그리므로 슬라이더 쪽은 비워 두어야 하는데, 창은
+     * **전역 구역의 필드**를 골라야 한다(2026.08.07 사용자 확정).
+     *
+     * 한 변수에 묶어 둔 채 창만 고치면 슬라이더가 값 없는 필드로 화면을 덮는다.
+     */
+    private var stateChangeFieldChoices: List<FieldDefinition> = emptyList()
     private lateinit var relationshipHelper: RelationshipHelper
     private lateinit var quoteHelper: QuoteHelper
 
@@ -207,7 +221,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             characterId = characterId,
             contextGetter = { requireContext() },
             getString = { id -> getString(id) },
-            cachedFieldsGetter = { timeSliderHelper.cachedFields },
+            cachedFieldsGetter = { stateChangeFieldChoices },
             onSliderUpdate = { timeSliderHelper.updateSliderRange() }
         )
 
@@ -567,12 +581,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
             val universeId = novel?.universeId
             if (universeId != null) {
-                val fields = viewModel.getFieldsByUniverseList(universeId)
+                // 어느 목록인가는 `fieldsForNovel` 한 자리가 정한다 (R-33) — 세계관이 있으면
+                // 그 세계관의 필드이므로 종전과 같은 값이다.
+                val fields = viewModel.fieldsForNovel(novel)
                 if (_binding == null) return@launch
                 val values = viewModel.getValuesByCharacterList(character.id)
                 if (_binding == null) return@launch
                 timeSliderHelper.cachedFields = fields
                 timeSliderHelper.cachedValues = values
+                stateChangeFieldChoices = fields
 
                 // CALCULATED 필드 사전 계산 (단일 계산, 결과 공유)
                 val valueMap = values.associateBy { it.fieldDefinitionId }
@@ -618,8 +635,21 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     .getFieldsByIds(values.map { it.fieldDefinitionId }.distinct())
                     .filter { it.fieldType != FieldType.CALCULATED }
                 if (_binding == null) return@launch
-                // cachedFields는 상태변화 추가 다이얼로그의 '필드' 선택지 소스이기도 하다.
-                // 여기에 타 세계관 정의를 넣으면 소속되지도 않은 세계관의 필드가 선택 가능해진다.
+                // **상태 변화 선택지는 전역 구역의 필드다** — 편집·보충 탭과 같은 함수가
+                // 정한다(R-33). 종전에는 이 자리가 그 판정의 **세 번째 사본**이었고 하필
+                // null 갈래가 정반대(`emptyList()`)라, 편집 화면에서는 정상으로 뜨는 전역
+                // 필드를 **상세의 [상태 변화 추가]에서는 고를 수 없었다**(출생·사망·생존
+                // 여부 셋만 떴다). 전역 필드는 타 세계관이 아니라 2026.08.07 사용자 확정
+                // (*"전역필드라면 세계관 소속이 없더라도 가지게"*)이 이 캐릭터에게 주기로 한
+                // 바로 그 필드다. `orphanFields`(옛 세계관 정의를 가리킬 수 있다)는 여기
+                // 넣지 않는다 — 소속되지도 않은 세계관의 필드가 선택 가능해진다.
+                stateChangeFieldChoices = viewModel.fieldsForNovel(novel)
+                // **시점 슬라이더 쪽은 비운 채로 둔다.** 이 갈래는 값이 가리키는 정의를
+                // 직접 찾아 아래에서 손수 그리는데, `timeSliderHelper.cachedFields`가 차면
+                // 슬라이더를 움직이거나 [시점 보기 해제]를 누를 때 그 그림이
+                // **값 없는 전역 필드로 덮인다**(`applyTimeView`·`resetTimeView`가
+                // `cachedFields`로 컨테이너를 다시 그린다). 두 소비처가 원하는 것이 다르므로
+                // 채널을 갈랐다 — 한 변수에 묶어 두었던 것이 이 갈래의 뿌리였다.
                 timeSliderHelper.cachedFields = emptyList()
                 timeSliderHelper.cachedValues = emptyList()
                 timeSliderHelper.cachedPercentileData = emptyMap()

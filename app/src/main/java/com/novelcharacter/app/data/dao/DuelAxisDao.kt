@@ -22,6 +22,13 @@ interface DuelAxisDao {
     @Query("SELECT * FROM duel_axes ORDER BY universeId ASC, displayOrder ASC, id ASC")
     suspend fun getAllList(): List<DuelAxis>
 
+    /**
+     * 순서 한 줄만 바꾼다 — 재정렬이 축 전체를 되쓰지 않게 (형제 축들과 같은 모양).
+     * 일괄 갱신은 `DuelRepository.updateAxisDisplayOrders`가 **한 트랜잭션**으로 묶는다.
+     */
+    @Query("UPDATE duel_axes SET displayOrder = :order WHERE id = :id")
+    suspend fun setDisplayOrder(id: Long, order: Int)
+
     @Query("SELECT * FROM duel_axes WHERE id = :id")
     suspend fun getById(id: Long): DuelAxis?
 

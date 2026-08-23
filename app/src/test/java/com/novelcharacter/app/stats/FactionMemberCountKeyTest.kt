@@ -63,8 +63,61 @@ class FactionMemberCountKeyTest {
         val result = provider.computeFactionStats(s)
 
         assertEquals(mapOf(1L to 2, 2L to 1), result.factionMemberCounts)
-        // 화면이 쓰는 합계 — 이름으로 접히면 2명(또는 1명)이 되어 한 세력이 통째로 사라졌다
+        // 세력별 합계 — 이름으로 접히면 2명(또는 1명)이 되어 한 세력이 통째로 사라졌다
         assertEquals(3, result.factionMemberCounts.values.sum())
+    }
+
+    /**
+     * **요약 줄의 두 수는 단위가 같아야 한다** (2026.08.22).
+     *
+     * 종전 요약은 `factionMemberCounts.values.sum()`(소속 **행** 수)을 *"소속 멤버 N명"*으로
+     * 적고 바로 옆에 *"미소속 M명"*(캐릭터 수)을 나란히 적었다. 겸직이 있으면 둘을 더한 값이
+     * **캐릭터 총원을 넘었고**, 어느 수가 틀린 것인지 화면에서 알 길이 없었다.
+     */
+    @Test
+    fun `소속 캐릭터 수와 미소속 수를 더하면 총원이다`() {
+        val s = snapshot(
+            factions = listOf(faction(1L, "기사단"), faction(2L, "상단")),
+            memberships = listOf(
+                // 10번이 두 세력에 겸직한다 — 행은 둘, 캐릭터는 하나다.
+                FactionMembership(id = 1L, factionId = 1L, characterId = 10L),
+                FactionMembership(id = 2L, factionId = 2L, characterId = 10L),
+                FactionMembership(id = 3L, factionId = 1L, characterId = 11L)
+            ),
+            characters = listOf(
+                Character(id = 10L, name = "가"),
+                Character(id = 11L, name = "나"),
+                Character(id = 12L, name = "다")
+            )
+        )
+
+        val result = provider.computeFactionStats(s)
+
+        assertEquals(3, result.factionMemberCounts.values.sum())   // 행 수는 셋
+        assertEquals(2, result.memberCharacterCount)               // 캐릭터는 둘
+        assertEquals(1, result.factionlessCharacterCount)
+        assertEquals(
+            s.characters.size,
+            result.memberCharacterCount + result.factionlessCharacterCount
+        )
+    }
+
+    /** 같은 세력에 재가입한 이력이 두 줄이어도 **겸직이 아니다** — 세력을 세지 행을 세지 않는다. */
+    @Test
+    fun `같은 세력 재가입은 다중 소속으로 세지 않는다`() {
+        val s = snapshot(
+            factions = listOf(faction(1L, "기사단")),
+            memberships = listOf(
+                FactionMembership(id = 1L, factionId = 1L, characterId = 10L),
+                FactionMembership(id = 2L, factionId = 1L, characterId = 10L)
+            ),
+            characters = listOf(Character(id = 10L, name = "가"))
+        )
+
+        val result = provider.computeFactionStats(s)
+
+        assertEquals(0, result.multiMemberCharacters)
+        assertEquals(1, result.memberCharacterCount)
     }
 
     @Test

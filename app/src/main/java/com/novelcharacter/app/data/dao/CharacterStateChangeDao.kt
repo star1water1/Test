@@ -18,6 +18,21 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND fieldKey = :fieldKey ORDER BY year ASC")
     suspend fun getChangesByField(characterId: Long, fieldKey: String): List<CharacterStateChange>
 
+    /**
+     * [getChangesByField]의 **일괄 짝** — 캐릭터마다 한 질의를 치던 자리를 접는다 (R-54 통로 필수).
+     *
+     * `ORDER BY`가 단건 짝과 글자 그대로 같지만 **조각 경계에서 어긋나므로**, 캐릭터별
+     * 묶음의 순서까지 종전과 같아야 하는 호출부는 받아서 다시 세운다
+     * (`TrashRepository.snapshotEvent`가 그렇게 쓴다 — 스냅샷 내용의 순서가 걸린 자리다).
+     *
+     * `fieldKey`가 목록 밖 변수 하나를 더 쓰므로 통로에 예약분 1을 밝힌다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds) AND fieldKey = :fieldKey ORDER BY year ASC")
+    suspend fun getChangesByCharacterIdsAndField(
+        characterIds: List<Long>,
+        fieldKey: String
+    ): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes ORDER BY characterId ASC, year ASC, month ASC, day ASC")
     suspend fun getAllChangesList(): List<CharacterStateChange>
 

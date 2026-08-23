@@ -326,7 +326,7 @@ class ImageBatchTagSuggesterTest {
         // 같은 어휘·같은 기조를 두 번 실었으니 잘린 것도 **같은 것 한 번**이다.
         val tally = ImageBatchTagSuggester.DropTally(
             blankOrTooLong = 2, overPerImageCap = 1,
-            unreadable = 3, vocabTruncated = 120, policyTruncated = 40
+            unreadable = 3, vocabTruncated = 120
         )
         val previous = ImageBatchTagSuggester.Result(drops = tally)
         val retry = ImageBatchTagSuggester.Result(drops = tally)
@@ -338,7 +338,6 @@ class ImageBatchTagSuggesterTest {
         assertEquals(2, merged.overPerImageCap)
         // ⓒ 프롬프트·파일이 만든 것은 큰 쪽을 든다(더하면 120이 240이 된다).
         assertEquals(120, merged.vocabTruncated)
-        assertEquals(40, merged.policyTruncated)
         assertEquals(3, merged.unreadable)
     }
 

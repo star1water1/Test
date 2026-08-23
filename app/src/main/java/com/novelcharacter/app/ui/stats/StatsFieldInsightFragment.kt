@@ -127,6 +127,12 @@ class StatsFieldInsightFragment : Fragment() {
 
             // 완성도 표시
             cardContent.addView(makeCompletionText(insight))
+            // 채움 수와 분포의 모수가 갈리면 **그 사실을 말한다** (2026.08.22 사용자 판정).
+            // 비율은 형제 화면 둘과 같은 잣대로 좁혔지만(R-34) 분포는 그대로 넓으므로,
+            // 말하지 않으면 사용자가 두 수를 같은 모수로 읽는다.
+            if (insight.distributionWiderThanFilled) {
+                cardContent.addView(makeDistributionWiderNote())
+            }
 
             // 각 분석 결과 렌더링
             insight.analysisResults.forEach { result ->
@@ -189,6 +195,21 @@ class StatsFieldInsightFragment : Fragment() {
             addView(settingsBtn)
         }
     }
+
+    /** 분포가 채움 수보다 넓다는 한 줄 — 근거는 `FieldInsightResult.distributionWiderThanFilled`. */
+    private fun makeDistributionWiderNote(): TextView =
+        TextView(requireContext()).apply {
+            text = getString(R.string.stats_field_insight_distribution_wider)
+            textSize = resources.getDimension(R.dimen.stats_text_chart_value_sm) /
+                resources.displayMetrics.scaledDensity
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+            layoutParams = lp
+        }
 
     private fun makeCompletionText(insight: FieldInsightResult): TextView {
         val rate = if (insight.totalCount > 0) insight.filledCount * 100f / insight.totalCount else 0f

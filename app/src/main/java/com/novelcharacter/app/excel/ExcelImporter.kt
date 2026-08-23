@@ -1309,7 +1309,26 @@ class ExcelImporter(context: Context) {
      */
     private fun openImportSource(xlsxFile: File): OpenedImportSource {
         val budget = domParseBudgetBytes()
-        if (xlsxFile.length() > budget) {
+        // **구형 .xls는 크기와 무관하게 DOM으로 간다** (2026.08.22).
+        //
+        // 스트리밍 리더는 원리적으로 OOXML 전용이다(`OPCPackage.open`). 그런데 이 함수는
+        // **형식이 아니라 크기만** 보고 경로를 골랐고, `importFromXlsx`의 입구는 `PLAIN_XLSX`와
+        // `LEGACY_OLE2`를 같이 받는다. 그래서 예산을 넘는 .xls가 스트리밍으로 흘러가
+        // `OLE2NotOfficeXmlFileException`을 냈고, 호출부의 `catch`가 그것을
+        // `UnsupportedFileFormatException`으로 접어 **"이 파일은 엑셀 통합문서가 아닙니다 —
+        // CSV는 …"**라는 거짓 고지로 거절했다. 멀쩡한 통합문서이고, 같은 파일이 예산 이하였다면
+        // 그냥 열렸을 것이다. 문구가 CSV 변환을 권해 엉뚱한 교정으로 보내기까지 했다.
+        // 예산 하한이 8MB인데 .xls는 65,536행까지 담으므로 닿는 크기다.
+        //
+        // **앞 판이 암호 파일에서 이미 고친 부류의 남은 절반이다** — `ImportFileFormat`이
+        // *"판정이 파일이 아니라 어느 여는 경로를 탔는가에 붙어 있었다 — 파일 크기라는 무관한
+        // 축이 문구를 갈랐다"*고 적으며 `ENCRYPTED_WORKBOOK`만 파일 쪽으로 옮겼고,
+        // `LEGACY_OLE2`는 그대로 크기가 경로를 정하게 남아 있었다. 이제 셋 다 파일이 정한다.
+        //
+        // DOM이 이 크기를 못 버티면 아래 `OutOfMemoryError` 갈래가 받는다 — 다만 그쪽의
+        // 스트리밍 폴백도 .xls에는 소용이 없으므로 형식을 함께 본다.
+        val isLegacyOle2 = ImportFileFormat.detect(xlsxFile) == ImportFileKind.LEGACY_OLE2
+        if (!isLegacyOle2 && xlsxFile.length() > budget) {
             Log.i("ExcelImporter", "streaming import: ${xlsxFile.length()} bytes > budget $budget")
             val wb = StreamingImportWorkbook(xlsxFile)
             return OpenedImportSource(wb, closer = wb)
@@ -1322,6 +1341,8 @@ class ExcelImporter(context: Context) {
             // **여는 단계에서만** 폴백한다: 이 시점엔 DB에 쓴 것이 없어 다시 시작해도 안전하다
             // (importAll 도중의 OOM을 여기서 되잡으면 부분 반영 위에 두 번 쓰게 된다).
             Log.w("ExcelImporter", "DOM open OOM — falling back to streaming", oom)
+            // .xls에는 스트리밍이 없다 — 폴백해 봐야 형식 오류로 바뀔 뿐이라 사실대로 던진다.
+            if (isLegacyOle2) throw oom
             val wb = StreamingImportWorkbook(xlsxFile)
             OpenedImportSource(wb, closer = wb)
         }
@@ -1738,6 +1759,15 @@ class ExcelImporter(context: Context) {
                 }
                 radioGroup.addView(overwriteDesc)
 
+                // **읽지 못한 행의 몫이 `onlyInDb`에 섞여 있는가** — 덮어쓰기 경고와 병합
+                // 삭제 목록이 **함께 쓰는 판정**이다. 두 갈래가 같은 `onlyInDb`를 근거로
+                // 지우므로 사유의 거짓됨도 똑같이 성립한다: 종전에는 덮어쓰기 쪽만 그 사실을
+                // 밝히고 병합 쪽은 *"캐릭터 (3개)"*라고만 적어, 사용자가 **파일에 적혀 있는
+                // 항목**을 '파일에 없다'는 근거로 체크해 지웠다.
+                val unreadMixedIn = analysis.categories.any {
+                    it.onlyInDb > 0 && it.skippedCount > 0
+                }
+
                 // 덮어쓰기 경고
                 val overwriteWarning = TextView(act).apply {
                     visibility = android.view.View.GONE
@@ -1746,6 +1776,14 @@ class ExcelImporter(context: Context) {
                     setTextColor(0xFFFF5722.toInt())
                 }
 
+                // **읽지 못한 행의 몫이 이 수에 섞여 있다** (2026.08.22).
+                //
+                // 수 자체는 맞다 — 삭제는 `id !in matchedIds`로 도는데 건너뛴 행은 매칭 id를
+                // 만들지 않으므로 그 항목은 **실제로 지워진다.** 틀린 것은 *사유*였다:
+                // 종전 문구가 *"DB에만 있는 데이터"* · *"백업에 없음"*이라 적어, **파일에
+                // 적혀 있는데 앱이 못 읽은 항목**까지 *파일에 없다*는 근거로 지우게 했다.
+                // 사용자가 취소할지 정하는 근거가 그 사유이므로(개발 의도 2번 — 변수 제어),
+                // 문구를 *"이 파일이 갱신하지 않는"*으로 바꾸고 섞임을 한 줄로 밝힌다.
                 if (totalOnlyInDb > 0) {
                     val deleteParts = analysis.categories
                         .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
@@ -1753,7 +1791,10 @@ class ExcelImporter(context: Context) {
                     overwriteWarning.text = appContext.getString(
                         com.novelcharacter.app.R.string.restore_overwrite_warning,
                         deleteParts.joinToString(", ")
-                    )
+                    ) + if (unreadMixedIn) {
+                        "\n" + appContext.getString(
+                            com.novelcharacter.app.R.string.restore_overwrite_unread_note)
+                    } else ""
                 }
                 radioGroup.addView(overwriteWarning)
 
@@ -1772,6 +1813,17 @@ class ExcelImporter(context: Context) {
                 }
                 container.addView(deleteSectionLabel)
 
+                // 덮어쓰기 경고와 **같은 문구**를 단다 — 두 갈래가 같은 수를 근거로 지운다.
+                val deleteUnreadNote = TextView(act).apply {
+                    text = appContext.getString(
+                        com.novelcharacter.app.R.string.restore_overwrite_unread_note)
+                    textSize = 12f
+                    setPadding(dp16, 0, 0, dp8 / 2)
+                    setTextColor(0xFFFF5722.toInt())
+                    visibility = android.view.View.GONE
+                }
+                container.addView(deleteUnreadNote)
+
                 // 카테고리별 체크박스 생성
                 data class DeleteCatCheckbox(val key: String, val checkbox: CheckBox)
                 val deleteCatCheckboxes = mutableListOf<DeleteCatCheckbox>()
@@ -1782,7 +1834,11 @@ class ExcelImporter(context: Context) {
                 }
                 for (cat in deletableCats) {
                     val cb = CheckBox(act).apply {
-                        text = "${cat.label} (${cat.onlyInDb}개)"
+                        // 40줄 위 덮어쓰기 경고가 쓰는 것과 **같은 서식 리소스**다 —
+                        // 손으로 짜면 두 자리의 표기가 갈린다.
+                        text = appContext.getString(
+                            com.novelcharacter.app.R.string.restore_overwrite_delete_item,
+                            cat.label, cat.onlyInDb)
                         textSize = 13f
                     }
                     deleteContainer.addView(cb)
@@ -1800,6 +1856,8 @@ class ExcelImporter(context: Context) {
                     val showDelete = checkedId == mergeRadio.id && deletableCats.isNotEmpty()
                     deleteSectionLabel.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                     deleteContainer.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
+                    deleteUnreadNote.visibility =
+                        if (showDelete && unreadMixedIn) android.view.View.VISIBLE else android.view.View.GONE
                 }
 
                 MaterialAlertDialogBuilder(act)

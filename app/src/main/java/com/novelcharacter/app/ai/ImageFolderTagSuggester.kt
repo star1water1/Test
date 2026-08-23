@@ -53,25 +53,22 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
      * @param blankOrTooLong 빈 태그·공백만·길이 초과.
      * @param overPerFolderCap 폴더당 상한을 넘어 버린 건수.
      * @param vocabTruncated 프롬프트에 싣지 못하고 자른 어휘 수.
-     * @param policyTruncated 기조 문구를 자른 글자 수(0이면 자르지 않았다).
      */
     data class DropTally(
         val unknownFolder: Int = 0,
         val blankOrTooLong: Int = 0,
         val overPerFolderCap: Int = 0,
         val vocabTruncated: Int = 0,
-        val policyTruncated: Int = 0
     ) {
         val isEmpty: Boolean
             get() = unknownFolder == 0 && blankOrTooLong == 0 && overPerFolderCap == 0 &&
-                vocabTruncated == 0 && policyTruncated == 0
+                vocabTruncated == 0
 
         operator fun plus(other: DropTally) = DropTally(
             unknownFolder + other.unknownFolder,
             blankOrTooLong + other.blankOrTooLong,
             overPerFolderCap + other.overPerFolderCap,
             vocabTruncated + other.vocabTruncated,
-            policyTruncated + other.policyTruncated
         )
     }
 
@@ -200,7 +197,6 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
     ): Result {
         if (folders.isEmpty()) return Result()
         val policy = AiPromptPolicy.clampImageTagPolicy(policyRaw)
-        val policyTruncated = (policyRaw.trim().length - policy.length).coerceAtLeast(0)
         val system = buildSystemPrompt(
             vocab, policy, templates.templateOf(PromptTemplates.Id.FOLDER_TAG_SYSTEM)
         )
@@ -209,7 +205,7 @@ class ImageFolderTagSuggester(private val aiService: AiService) {
         val all = ArrayList<FolderSuggestion>()
         val failures = ArrayList<AiResult.Failure>()
         val notes = ArrayList<String>()
-        var drops = DropTally(vocabTruncated = vocab.truncated, policyTruncated = policyTruncated)
+        var drops = DropTally(vocabTruncated = vocab.truncated)
 
         for (chunk in chunkFolders(folders)) {
             val request = AiRequest(system = system, userText = buildUserText(chunk, imageCounts, userTemplate))
