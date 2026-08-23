@@ -5410,7 +5410,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val c = UniverseCols(cols, spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
@@ -5545,7 +5545,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 작품 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val nc = NovelCols(cols, spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
@@ -6407,7 +6407,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        val fdc = FieldDefCols(resolveHeaderColumns(headerRow, result, spec.sheetName), spec.firstColumnHeader)
 
         val entitySeen = mutableMapOf<Long, Int>()
         // 파싱이 읽지 않는 `설정(JSON)` 키 — 행마다 고지하면 수백 줄이 되므로 모아서 한 줄로
@@ -6775,7 +6775,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val universeCol = cols["세계관"] ?: 0
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
@@ -7068,7 +7068,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 위치 폴백 금지 — 첫 열만 checkHeaderOrReport가 보증한다
         val charCodeCol = cols["캐릭터코드"] ?: 0
         val charNameCol = cols["캐릭터이름"] ?: -1
@@ -7244,7 +7244,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 위치 폴백 금지 — 첫 열만 checkHeaderOrReport가 보증한다
         val codeCol = cols["작품코드"] ?: 0
         val titleCol = cols["작품제목"] ?: -1
@@ -7380,7 +7380,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val codeCol = cols["사건코드"] ?: 0
         val descCol = cols["사건설명"] ?: -1
         val uNameCol = cols["세계관"] ?: -1
@@ -7927,7 +7927,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 사건 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 사건 설명으로 오기록되므로 검증 후 스킵
         val descColIndex = TimelineCols.descColumn(cols)
             ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
@@ -8268,7 +8268,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록되므로 검증 후 스킵
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
         val fieldKeyColIndex = requiredCol(cols, "필드키", sheet.sheetName, result) ?: return
@@ -8410,7 +8410,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록된다(R-36).
         val textColIndex = requiredCol(cols, "대사", sheet.sheetName, result) ?: return
         val qc = QuoteCols(cols, textColIndex)
@@ -8513,7 +8513,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
         val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
         val typeColIndex = requiredCol(cols, "관계 유형", sheet.sheetName, result) ?: return
@@ -8719,11 +8719,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── 관계 변화 가져오기 ──
 
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = findSheet(workbook, relationshipChangeSpec(), result) ?: return
+        // 형제 `import*`와 같은 모양으로 명세를 한 번만 짓는다 — 종전에는 같은 호출이 두 벌이었다.
+        val spec = relationshipChangeSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = headerRowOrReport(sheet, "캐릭터1", result) ?: return
 
-        reportUnknownColumns(headerRow, relationshipChangeSpec(), result)
-        val cols = resolveHeaderColumns(headerRow)
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
         val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
@@ -8857,7 +8859,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val nbc = NameBankCols(resolveHeaderColumns(headerRow))
+        val nbc = NameBankCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         // 자연키 맵은 이미 있었다 — **코드 축만 빠져 있어 행마다 표를 다시 물었다**(B-210).
@@ -8966,7 +8968,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val ptc = PresetTemplateCols(resolveHeaderColumns(headerRow))
+        val ptc = PresetTemplateCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         // 동명 템플릿은 DB가 허용한다(name 유니크 인덱스 없음) — 이름 맵으로 접으면 편집이 유실된다.
@@ -9046,7 +9048,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val spc = SearchPresetCols(resolveHeaderColumns(headerRow))
+        val spc = SearchPresetCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         val existingPresets = db.searchPresetDao().getAllPresetsList()
@@ -9109,7 +9111,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val lpc = ListPresetCols(resolveHeaderColumns(headerRow))
+        val lpc = ListPresetCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
         val nowMillis = System.currentTimeMillis()
 
         val existingByName = db.characterListPresetDao().getAllPresetsList()
@@ -9227,7 +9229,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val keyColIndex = cols["설정키"] ?: 0
         // 위치 폴백 금지 — '설정값' 열을 지운 파일에서 이웃 열(또는 빈칸)이 값으로 읽혀
         // 불리언·테마 등 빈 값을 유효값으로 읽는 바인딩 전부가 무음 초기화되고 '복원 N건'으로
@@ -9305,7 +9307,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val fc = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
+        val fc = FactionCols(resolveHeaderColumns(headerRow, result, spec.sheetName), spec.firstColumnHeader)
         val nowMillis = System.currentTimeMillis()
 
         // 세력 정체성 색인 (B-210) — 행마다 코드·(이름,세계관)으로 표를 묻던 자리.
@@ -9510,7 +9512,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0
         val charNameColIndex = cols["캐릭터"] ?: -1
         val joinYearColIndex = cols["가입연도"] ?: -1
@@ -9747,7 +9749,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = headerRowOrReport(sheet, spec.firstColumnHeader, result) ?: return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
         val faction1ColIndex = cols[spec.firstColumnHeader] ?: cols["세력1"] ?: 0
         val faction2ColIndex = cols["세력2"] ?: -1
         val typeColIndex = cols["관계 유형"] ?: -1
@@ -9904,7 +9906,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 열 해석은 미리보기와 **같은 클래스**다(규약 R-33).
         // '뗀날짜'의 출처는 readOnly라 **읽지 않는다**(사용자가 적은 코드를 믿으면 없는 캐릭터를
         // 가리키게 된다). 시각만 읽고, 새로 붙는 표식의 출처는 앱이 아는 값으로만 채운다.
-        val imc = ImageMetaCols(resolveHeaderColumns(headerRow))
+        val imc = ImageMetaCols(resolveHeaderColumns(headerRow, result, spec.sheetName))
 
         // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로. basename 충돌은 무음 last-wins 대신 고지한다.
         val remap = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap)
