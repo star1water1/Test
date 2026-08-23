@@ -1469,10 +1469,19 @@ fun appSettingsSpec() = SheetSpec(
  * zip 리맵(원경로 basename 매칭) 또는 로컬 filesDir 존재 확인으로 해석한다.
  * 링크그룹 토큰은 내보낸 값을 그대로 보존해 재가져오기가 멱등이 되게 한다.
  */
+/**
+ * '이미지' 시트에서 **그 행이 어느 그림인가**를 담는 칸의 이름.
+ *
+ * 상수인 이유는 **'사용 안내'가 이 이름을 그대로 싣기 때문이다.** 종전 안내는 그 자리를
+ * *"'이미지' 시트의 이미지경로"*라 적었는데 그런 열은 없었다 — 캐릭터·세계관·작품 시트의
+ * 열 이름이 안내에 그대로 옮겨 붙은 것이다. 두 자리가 같은 이름을 각자 적는 한 또 갈린다.
+ */
+const val IMAGE_SHEET_IDENTITY_COLUMN = "파일명"
+
 fun imageMetaSpec() = SheetSpec(
     sheetName = "이미지",
     columns = listOf(
-        ColumnSpec("파일명", required = true, readOnly = true, width = 10000),
+        ColumnSpec(IMAGE_SHEET_IDENTITY_COLUMN, required = true, readOnly = true, width = 10000),
         ColumnSpec("태그", width = 10000),
         // 편집 가능(결정 D2) — 같은 문자열을 쓴 행끼리 한 묶음이 된다. 회색으로 두면 "앱이 채우는
         // 열"로 읽혀 아무도 손대지 않는다. 여는 이상 규약도 태그 열과 같아야 한다:
