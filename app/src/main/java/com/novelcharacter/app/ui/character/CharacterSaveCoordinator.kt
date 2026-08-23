@@ -5,6 +5,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.novelcharacter.app.ui.common.inViewModelScope
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
@@ -393,7 +394,7 @@ class CharacterSaveCoordinator(
                 }
             }
             savedCharId = targetCharacterId
-            // **여기부터가 쓰기 사슬이고, 화면 수명 밖에서 돈다** ([CharacterViewModel.inViewModelScope]).
+            // **여기부터가 쓰기 사슬이고, 화면 수명 밖에서 돈다** ([com.novelcharacter.app.ui.common.inViewModelScope]).
             // 이 사슬은 캐릭터·필드값 → 자동 링크 → 이미지 정리 → 뗀 표식 → 예약 삭제 →
             // 태그 → 이름은행으로 이어지는데, 종전에는 통째로 `viewLifecycleOwner`에서 돌아
             // **저장을 누른 직후 회전하면 앞쪽만 커밋되고 뒤가 잘렸다** — 캐릭터는 저장됐는데

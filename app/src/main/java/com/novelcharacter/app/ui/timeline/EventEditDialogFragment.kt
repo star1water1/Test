@@ -11,6 +11,7 @@ import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.ViewModelProvider
+import com.novelcharacter.app.ui.common.inViewModelScope
 import com.novelcharacter.app.ui.character.InitialHydrationGuard
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.ui.field.FieldViewModel
@@ -430,13 +431,20 @@ class EventEditDialogFragment : DialogFragment() {
     private fun createEventField(field: FieldDefinition, initialValues: String = "") {
         // 이 경로로 들어온 것은 사건 필드다 — 종류를 여기서 못박아 호출부마다 되풀이하지 않는다.
         val toInsert = field.copy(entityType = FieldDefinition.ENTITY_EVENT)
+        // 뷰모델 수명을 빌린다 — 아래 쓰기 둘이 화면보다 오래 살아야 한다.
+        val scopeOwner = ViewModelProvider(this)[FieldViewModel::class.java]
         lifecycleScope.launch {
             val result = try {
-                val newId = requireProvider().insertEventField(toInsert)
+                // **정의와 사전 등록 값은 한 수명에서 만든다** — 정본은
+                // `FieldViewModel.insertField`이고 그쪽은 `viewModelScope`에서 돈다.
+                // 작품 필드 생성이 같은 자리에서 같은 이유로 함께 옮겨 갔다(형제를 남기지 않는다).
                 // 값 사전 등록은 **호스트가 아니라 여기서** 심는다. DataProvider 구현이 셋이라
                 // (그중 하나는 완전 수식 이름이라 착수 grep에 안 걸린 전력이 있다 — 1-p장)
                 // 호스트에 맡기면 한 곳이 빠져도 조용하다. 인터페이스의 고지 규약과 같은 취지다.
-                val planted = plantInitialValues(newId, toInsert, initialValues)
+                val planted = scopeOwner.inViewModelScope {
+                    val newId = requireProvider().insertEventField(toInsert)
+                    plantInitialValues(newId, toInsert, initialValues)
+                }
                 OpResult.success(
                     OpResult.CAT_FIELD,
                     getString(R.string.event_field_created, field.name),

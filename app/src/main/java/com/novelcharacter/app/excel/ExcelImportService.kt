@@ -3607,10 +3607,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // 필드 열 수집도 가져오기와 **같은 재료·같은 해석기**다(`EntityFieldHeaders` → `EntityFieldColumnResolver`).
         val novelFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_NOVEL)
-        val universeIdsByName = if (fieldValues == null) emptyMap() else
-            analysisUniverses().associate { it.name to it.id }
+        // 세계관 표는 **한 번만 뜬다** — 이름→id와 id→이름 두 맵이 같은 목록에서 나와야
+        // 이 파일이 만들 세계관이 한쪽에만 있는 일이 없다.
+        val analysisUniverseList = if (fieldValues == null) emptyList() else analysisUniverses()
+        val universeIdsByName = analysisUniverseList.associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, novelFields)
+        else analysisEntityFieldColumns(
+            headerRow, novelFields, analysisUniverseList.associate { it.id to it.name }
+        )
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
@@ -4306,12 +4310,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * **필드 목록은 받는다** — 부르는 쪽이 같은 목록을 `EntityFieldColumnResolver`에도 넘기므로,
      * 여기서 다시 뜨면 같은 표를 한 번 더 읽는다.
      */
+    /**
+     * @param universeNamesById 구역 이름표. **부르는 쪽이 [analysisUniverses]로 지어 넘긴다.**
+     *
+     * 종전에는 이 함수가 `db.universeDao().getAllUniversesList()`를 **생으로** 떴다.
+     * 그러면 *이 파일이 만들 세계관*([analysisCreatedUniverses])이 이름표에 없어, 빈 DB
+     * 복원에서 그 세계관의 `필드:` 열이 통째로 해석에 실패한다 — **미리보기는 "0건"이라
+     * 말하는데 가져오기는 같은 파일의 정의로 전부 쓴다**(B-187이 작품 순서에서 겪은 것과
+     * 같은 모양이다). 부르는 두 자리는 바로 위에서 이미 `analysisUniverses()`로
+     * `universeIdsByName`을 만들고 있었다 — **한 함수 안에서 두 잣대를 쓰고 있었던 셈이다.**
+     */
     private suspend fun analysisEntityFieldColumns(
         headerRow: Row,
-        fields: List<FieldDefinition>
+        fields: List<FieldDefinition>,
+        universeNamesById: Map<Long, String>
     ): List<EventFieldColumn> = collectEntityFieldColumns(
-        headerRow, fields,
-        db.universeDao().getAllUniversesList().associate { it.id to it.name },
+        headerRow, fields, universeNamesById,
         result = null, sheetLabel = ""
     )
 
@@ -4373,10 +4387,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelTitles = NovelTitleIndex(analysisNovels())
         // 사건 필드 열도 작품 시트와 같은 재료로 같은 해석기를 부른다(B-65 · B-187).
         val eventFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_EVENT)
-        val universeIdsByName = if (fieldValues == null) emptyMap() else
-            analysisUniverses().associate { it.name to it.id }
+        // 세계관 표는 **한 번만 뜬다** — 이름→id와 id→이름 두 맵이 같은 목록에서 나와야
+        // 이 파일이 만들 세계관이 한쪽에만 있는 일이 없다.
+        val analysisUniverseList = if (fieldValues == null) emptyList() else analysisUniverses()
+        val universeIdsByName = analysisUniverseList.associate { it.name to it.id }
         val fieldColumns = if (fieldValues == null) emptyList()
-        else analysisEntityFieldColumns(headerRow, eventFields)
+        else analysisEntityFieldColumns(
+            headerRow, eventFields, analysisUniverseList.associate { it.id to it.name }
+        )
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
