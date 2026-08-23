@@ -1341,11 +1341,21 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 나가면 프래그먼트를 붙든 채 살아남았다(누수).
                 pdfWebView?.destroy()
                 pdfWebView = webView
+                // **주 프레임이 실패한 뒤의 `onPageFinished`를 성공으로 세지 않는다.**
+                // WebView는 주 프레임이 죽어도 오류 페이지를 얹고 `onPageFinished`를 부른다 —
+                // 빗장이 없으면 이력에 *"공유 실패"*와 *"PDF로 공유했습니다"*가 **나란히**
+                // 남고, 인쇄 대화상자에는 캐릭터 대신 **오류 페이지가 PDF로** 올라간다.
+                //
+                // 빗장이 클로저에 사는 것이 맞다(R-65의 '뷰가 든 빗장'이 아니다): 수명이
+                // 화면이 아니라 **이번 적재**이고, 회전하면 `onDestroyView`가 WebView째
+                // 파괴해 이 적재 자체가 사라지므로 넘겨야 할 상태가 남지 않는다.
+                var mainFrameFailed = false
                 webView.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
                         // **진행 표시는 여기서 내린다** — 종전에는 `finally`가 적재를 걸자마자
                         // 내려, 아직 아무것도 안 된 상태에서 창이 사라졌다.
                         progress.dismissSafely()
+                        if (mainFrameFailed) return
                         val printManager = appCtx.getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
                         view.createPrintDocumentAdapter(jobName).let { adapter ->
                             printManager.print(jobName, adapter, PrintAttributes.Builder().build())
@@ -1368,6 +1378,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                         // **주 프레임이 실패했을 때만 적는다** — 나중에 HTML이 이미지를
                         // 물고 오는 날 하위 리소스 오류마다 실패가 쌓이면 이력이 못 쓰게 된다.
                         if (request.isForMainFrame) {
+                            mainFrameFailed = true
                             logRepo.logAsync(
                                 OpResult.failure(OpResult.CAT_SHARE, shareFailed, error.description?.toString())
                             )

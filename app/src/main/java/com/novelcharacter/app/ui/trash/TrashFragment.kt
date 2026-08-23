@@ -759,7 +759,10 @@ class TrashFragment : Fragment() {
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
                     warned = true, predicted = predicted, extraNote = failedNote,
-                    semanticStateChanges = result.restored.sumOf { it.restoredSemanticStateChanges }
+                    semanticStateChanges = result.restoredSemanticStateChanges,
+                    // 작업 전체 복원도 되돌리기를 한다 — 항목 하나 복원과 같은 것을 말해야 한다.
+                    revertedMemberships = result.revertedMemberships,
+                    revertedStateChanges = result.revertedStateChanges
                 )
             } catch (e: CancellationException) {
                 // **취소는 실패가 아니다.** 위 구간이 `NonCancellable`이라 복원 자체는 끝났고,

@@ -756,8 +756,7 @@ class FieldEditDialog : DialogFragment() {
      * 이 축의 점수표를 읽는다 — 순위표·목록 정렬·통계와 **같은 진입점**
      * ([com.novelcharacter.app.data.repository.DuelRepository.scoresOf])이라
      * 여기서 본 수와 순위표의 수가 갈리지 않는다([DuelScoreIndex] 계약 1).
-     */
-    /**
+     *
      * @param app 앱 컨테이너를 **인자로 받는다** — 이 함수는 배경에서 도는데
      *   `requireContext()`는 창이 사라지면 그 스레드에서 `IllegalStateException`을 던진다.
      */

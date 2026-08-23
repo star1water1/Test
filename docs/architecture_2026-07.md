@@ -331,8 +331,10 @@ app/src/main/java/com/novelcharacter/app/
 `FieldDefinition.entityType`이 축이다. **DAO 기본 인자가 `ENTITY_CHARACTER`라는 것이 함정이다** —
 호출부가 대상을 넘기지 않으면 조용히 캐릭터 필드를 본다(로드맵 5가 `FieldEditDialog`에서
 실제로 이 결함을 잡았다). 새 대상을 열 때는 **규약 R-29의 전수 명령**을 돌릴 것 —
-`getFieldsByUniverse*`뿐 아니라 `getAllFieldsList`·`getFieldByKey`·`getGroupNames`·
-`countFieldsByKeyExcluding`도 같은 기본값을 갖는다.
+`getFieldsByUniverse*`뿐 아니라 `getAllFieldsList`·`getFieldByKey`·`getFieldsByKey`·
+`getGlobalFieldsList`·`getGlobalFieldByKey`·`countFieldsByKeyExcluding`도 같은 기본값을 갖는다.
+**이 목록을 손으로 대조하지 말 것** — R-29의 전수 명령 ②가 DAO에서 직접 뽑는다(이름을 적으면
+낡는다: 종전 목록은 사라진 함수 둘을 들고 실재하는 셋을 빠뜨린 채 서 있었다).
 
 **한 종류를 여는 데 드는 자리**(확-3 작품 축이 실측한 것 — 세션 로그 1-t·1-u장):
 값 테이블 + DAO(캐릭터·사건판과 **동형**으로) · 병합 규약(`*FieldValueMerge` — R-5) ·

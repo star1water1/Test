@@ -513,10 +513,19 @@ CALCULATED 필드는 `character_field_values`/`event_field_values`에 행이 없
 > ```sh
 > # ① 세계관 단위 조회
 > grep -rn 'getFieldsByUniverseList(\|getFieldsByUniverse(' app/src/main/java --include=*.kt
-> # ② 같은 기본값(캐릭터)을 가진 나머지 — 전체 조회·키 조회·그룹·중복 판정
-> grep -rn 'getAllFieldsList(\|getFieldByKey(\|getFieldsByType(\|getGroupNames(\|countFieldsByKeyExcluding(' \
->   app/src/main/java --include=*.kt
+> # ② 같은 기본값(캐릭터)을 가진 나머지 — **이름을 적지 않고 뽑는다**
+> FNS=$(grep -oE 'fun [A-Za-z]+\([^)]*ENTITY_CHARACTER' \
+>   app/src/main/java/com/novelcharacter/app/data/dao/FieldDefinitionDao.kt \
+>   | sed -E 's/fun ([A-Za-z]+).*/\1\\(/' | sort -u | paste -sd'|')
+> grep -rnE "$FNS" app/src/main/java --include=*.kt | grep -v FieldDefinitionDao.kt
 > ```
+>
+> **②가 이름을 열거하던 것이 결함이었다**(2026.08.23에 고쳤다). 열거된 다섯 중 **둘은
+> 이미 사라진 함수**였고(`getFieldsByType`·`getGroupNames` — 저장소 전체 0건), 그사이
+> 새로 생긴 셋(`getGlobalFieldsList`·`getGlobalFieldByKey`·`getFieldsByKey`)은 **명단 밖이라
+> 전수에서 통째로 빠졌다 — 호출 자리 24곳이다.** 그 24곳은 실제로는 전부 캐릭터 전용이 맞아
+> 결함으로 이어지지 않았지만, **명단이 낡은 채로 초록을 내는 것이 이 규약이 막으려던 그것**이다.
+> 이 문서가 바로 위에서 *"건수를 적으면 낡는다"*고 적어 놓고 **이름을 적어 같은 병에 걸렸다.**
 > 각 자리가 **캐릭터 전용이 맞는지** 하나씩 답할 것. 세는 법을 적는 이유는 건수를
 > 적으면 낡기 때문이다(등재 시점 45 → 확-3 착수 시 52).
 >

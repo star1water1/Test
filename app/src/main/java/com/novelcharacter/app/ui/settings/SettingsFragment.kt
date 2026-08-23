@@ -37,6 +37,7 @@ import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.fragment.app.viewModels
 import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -1593,19 +1594,24 @@ class SettingsFragment : Fragment() {
                     db.defaultFieldTemplateDao().deleteAll()
                 }
 
-                // ⚠️ **여기부터는 취소되지 않는다** (`NonCancellable`).
+                // ⚠️ **뒤처리 전부가 한 `NonCancellable` 블록 안에 있어야 한다 — 나누면 샌다.**
                 //
-                // 위 트랜잭션이 커밋된 순간 DB는 이미 비었다. 그런데 `withContext`는 부모 잡이
-                // 이미 취소돼 있으면 **블록을 시작조차 하지 않고 던진다** — 회전 한 번이면
-                // (`MainActivity`에 `configChanges`가 없어 액티비티가 재생성된다) 아래 두 단계가
-                // 통째로 건너뛰어 **DB만 비고 설정·파일은 그대로 남는 반쪽 초기화**가 된다.
-                // 그리고 아래 `catch (e: Exception)`이 취소까지 삼키고 `_binding`도 null이라
-                // **사용자에게 아무 고지도 가지 않는다.**
+                // 위 트랜잭션이 커밋된 순간 DB는 이미 비었고, 남은 뒤처리(설정·파일·로그·백업·
+                // DataStore)는 반드시 따라와야 한다. 남는 것의 해악은 이 함수 자신이 적어 두었다 —
+                // `folder_roundtrip_prefs`가 남으면 사용자가 정리 폴더에 다시 놓은 이미지가
+                // *"이미 내보낸 사본"*으로 판정돼 무통보로 안 들어온다. **시작한 초기화는 끝까지
+                // 간다**(R-26이 취소를 요구하지 않는 부류다 — 반쪽 상태가 취소보다 나쁘다).
                 //
-                // 남는 것의 해악은 이 함수 자신이 적어 두었다 — `folder_roundtrip_prefs`가 남으면
-                // 사용자가 정리 폴더에 다시 놓은 이미지가 *"이미 내보낸 사본"*으로 판정돼
-                // 무통보로 안 들어온다. 그래서 **시작한 초기화는 끝까지 간다**(R-26이 취소를
-                // 요구하지 않는 부류다 — 반쪽 상태가 취소보다 나쁘다).
+                // **`NonCancellable`이 지키는 것은 블록 *안*뿐이다.** 블록이 끝나 바깥 코루틴으로
+                // 돌아오는 순간 `DispatchedTask`가 바깥 잡을 다시 보고, 그사이 취소됐으면
+                // 거기서 던진다. 그래서 종전처럼 두 블록으로 나누면 **첫 블록만 돌고 둘째 블록은
+                // 시작조차 못 한다** — 회전 한 번이면(`MainActivity`에 `configChanges`가 없어
+                // 액티비티가 재생성된다) 설정만 비고 파일·로그·백업·DataStore는 그대로 남았다.
+                // 코루틴 하니스로 실측한 모양이다(2026.08.23). **여기를 다시 쪼개지 말 것.**
+                //
+                // 같은 이유로 **완료 고지도 이 블록 안에서 나간다.** 바깥으로 빼면 돌아오는 길에
+                // 취소가 던져져 고지가 통째로 사라지고, 아래 `catch`가 그 취소를 잡아
+                // *"초기화 실패"*라고 말한다 — 다 지워 놓고 실패했다고 말하는 자리다.
 
                 // SharedPreferences 초기화 (테마 제외) — 초기화가 UI 상태 찌꺼기를 남기지 않게
                 // 실제 사용 중인 prefs 파일명과 일치시켜 유지한다(과거 죽은 이름 4개 교정:
@@ -1637,11 +1643,8 @@ class SettingsFragment : Fragment() {
                         ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
                             .edit().clear().apply()
                     }
-                }
 
-                // 파일 삭제
-                withContext(Dispatchers.IO + NonCancellable) {
-                    // 이미지 파일
+                    // 파일 삭제 — 이미지 파일.
                     // 커밋 전 임시 산출물도 함께 지운다 — 회전 임시본은 `.tmp`라
                     // 확장자 목록에 걸리지 않아 초기화 뒤에도 홀로 남았다.
                     ctx.filesDir.listFiles()?.filter {
@@ -1661,17 +1664,26 @@ class SettingsFragment : Fragment() {
 
                     // DataStore
                     app.backupStatusStore.clear()
+
+                    // **고지는 화면이 사라져도 간다** — 앱 컨텍스트로, 이 블록 *안에서* 띄운다.
+                    // 되돌릴 수 없는 파괴가 끝난 사실을 회전 한 번에 잃으면, 사용자는 초기화가
+                    // 됐는지 만 것인지 알 방법이 없다(개발 의도 2번).
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(app, R.string.reset_complete, Toast.LENGTH_LONG).show()
+                    }
                 }
 
-                // **고지는 화면이 사라져도 간다** — 앱 컨텍스트로 띄운다.
-                // 되돌릴 수 없는 파괴가 끝난 사실을 회전 한 번에 잃으면, 사용자는 초기화가
-                // 됐는지 만 것인지 알 방법이 없다(개발 의도 2번). 뷰를 만지는 두 줄만 뷰가
-                // 살아 있을 때 돈다.
-                Toast.makeText(app, R.string.reset_complete, Toast.LENGTH_LONG).show()
+                // 뷰를 만지는 두 줄만 뷰가 살아 있을 때 돈다.
                 if (_binding != null) {
                     loadBackupStatus()
                     loadErrorLogSummary()
                 }
+            } catch (e: CancellationException) {
+                // **취소는 실패가 아니다.** 여기에 닿았다는 것은 파괴와 뒤처리가 위
+                // `NonCancellable` 블록에서 끝났고 완료 고지도 이미 나갔다는 뜻이거나,
+                // 트랜잭션이 롤백돼 **아무것도 지워지지 않았다**는 뜻이다. 둘 다 «실패»가
+                // 아니므로 실패 고지를 띄우지 않는다 — 띄우면 다 지워 놓고 실패했다고 말한다.
+                throw e
             } catch (e: Exception) {
                 AppLogger.error("Settings", "앱 초기화 실패", e)
                 Toast.makeText(app, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()

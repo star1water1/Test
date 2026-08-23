@@ -2004,12 +2004,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 작품 미배정 캐릭터를 작품에 배정한다. 정규 경로(`batchChangeNovel`)를 통해 세계관이
-     * 바뀌는 경우 고아 필드값·세력 소속 정리 + `updatedAt` 갱신까지 일관 처리한다.
-     * 캐릭터가 이미 삭제됐으면 false(호출부가 "성공" 오알림을 피하도록).
-     */
-    /**
      * 미배정 캐릭터를 작품에 배정한다 — **이동 셈을 돌려준다**(캐릭터가 없으면 null).
+     *
+     * 정규 경로(`batchChangeNovel`)를 지나므로 세계관이 바뀌면 고아 필드값·세력 소속 정리와
+     * `updatedAt` 갱신까지 일관 처리된다. 캐릭터가 이미 삭제됐으면 `null`이다 — 호출부가
+     * *"성공"* 오알림을 내지 않도록.
      *
      * **종전에는 `Boolean`이었고 그것이 결함이었다.** `batchChangeNovel`은
      * [UniverseMoveCounts]를 내는데(이관·제거·보관 수) 이 함수가 그것을 **버렸다.**
