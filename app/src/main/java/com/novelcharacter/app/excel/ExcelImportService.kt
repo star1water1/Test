@@ -3027,6 +3027,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
     }
 
+    /** 아무 태그·링크·뗀 표식도 없는 상태 — [asksNothing]의 견줄 자리. */
+    private val EMPTY_IMAGE_META_STATE = ImageMetaState(emptySet(), null, null)
+
+    /**
+     * 이 행이 **아무것도 요구하지 않는가.**
+     *
+     * '이미지' 시트는 이제 라이브러리에 없는 그림도 싣는다([ImageSheetRows]) — 그림이 한 장뿐인
+     * 캐릭터의 그림이 통째로 빠지던 자리다. 그 행들은 태그·링크·뗀 표식 칸이 비어 나가는데,
+     * **행이 있다는 것만으로 라이브러리에 편입하면 안 된다**: 편입의 진입점은 태그·링크·뗀
+     * 표식이라는 것이 `ImageMetaDao.adopt`가 세운 규약이고, 그렇지 않으면 파일을 한 번
+     * 왕복시키는 것만으로 라이브러리가 수백 행 불어난다.
+     *
+     * 판정은 **빈 상태에 이 행을 적용해 봐서 그대로인가**로 낸다 — [mergeImageMetaState]가
+     * 이미 열 없음·빈칸·못 읽는 값의 처분을 전부 들고 있으므로, 그 규약을 여기서 두 번째로
+     * 적지 않는다(그러면 반드시 갈린다).
+     */
+    private fun ImageMetaRowValues.asksNothing(): Boolean =
+        mergeImageMetaState(EMPTY_IMAGE_META_STATE, this) == EMPTY_IMAGE_META_STATE
+
     /** 행을 기존 상태에 적용한 결과 — 가져오기와 미리보기의 단일 소스(규약 R-33). */
     private fun mergeImageMetaState(existing: ImageMetaState, r: ImageMetaRowValues): ImageMetaState =
         ImageMetaState(
@@ -3642,7 +3661,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val row = sheet.getRow(planned.rowIndex) ?: continue
             val r = readImageMetaRow(row, c, result = null)
             val existing = metaByPath.first(planned.path)
-            if (existing == null) { newCount++; continue }
+            // 가져오기와 **같은 판정**이다(R-33) — 라이브러리에 없는 그림의 빈 행은
+            // 아무 일도 하지 않으므로 '신규'가 아니라 '변경 없음'이다.
+            if (existing == null) {
+                if (r.asksNothing()) unchangedCount++ else newCount++
+                continue
+            }
             val current = ImageMetaState(
                 tags = if (r.hasTagCol) tagsByImage[existing.id].orEmpty() else emptySet(),
                 linkGroupId = existing.linkGroupId,
@@ -10315,10 +10339,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **남는 차이 하나는 적어 둔다:** `readImageMetaRow`가 던지면 종전에는 그 행이 입양되지
         // 않았고 지금은 이미 입양돼 있다. 결과는 *라이브러리 행 하나가 더 생기는 것*이고
         // 유실이 아니다(고지도 그대로 — `newImageMeta`는 그 줄에 닿아야 오른다).
+        // **입양 대상을 고르려면 각 행이 무엇을 요구하는지 먼저 알아야 한다** — 라이브러리에
+        // 없는 그림의 *빈 행*은 아무 일도 하지 않으므로 입양하지 않는다([asksNothing]).
+        // 여기서 못 읽은 행은 지도에 안 들어가고, 아래 루프가 **같은 자리에서 같은 메시지로**
+        // 다시 읽어 던진다 — 실패의 보고 위치를 옮기지 않는다.
+        val rowValues: Map<Int, ImageMetaRowValues> = plan.rows.mapNotNull { p ->
+            val row = sheet.getRow(p.rowIndex) ?: return@mapNotNull null
+            runCatching { readImageMetaRow(row, imc, result) }.getOrNull()?.let { p.rowIndex to it }
+        }.toMap()
+        val adoptTargets = plan.rows
+            .filter { it.path !in existingByPath }
+            .filterNot { rowValues[it.rowIndex]?.asksNothing() == true }
+            .map { it.path }
         val adoptAttempt = runCatching {
-            com.novelcharacter.app.util.ImageAdoption.adoptAll(
-                db, wantedPaths.filterNot { it in existingByPath }, now
-            )
+            com.novelcharacter.app.util.ImageAdoption.adoptAll(db, adoptTargets, now)
         }
         val adoptedByPath: Map<String, Long> = adoptAttempt.getOrDefault(emptyMap())
         val skippedMissing = plan.unresolved.size
@@ -10336,11 +10370,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
 
-                // 읽기도 미리보기와 **같은 함수**다(규약 R-33).
-                val r = readImageMetaRow(row, imc, result)
+                // 읽기도 미리보기와 **같은 함수**다(규약 R-33). 위에서 한 번 읽어 뒀고,
+                // 그때 던진 행만 여기서 다시 읽어 같은 자리에서 던진다.
+                val r = rowValues[i] ?: readImageMetaRow(row, imc, result)
 
                 // 위에서 한 번에 읽어 둔 색인이다 (B-238).
                 val existing = existingByPath[path]
+                // 라이브러리에 없는 그림의 **빈 행** — 이 시트가 그 그림도 싣게 되면서 생겼다.
+                // 아무 일도 하지 않고 '변경 없음'으로 센다(항등식 유지: inBackup = new+update+unchanged+skipped).
+                if (existing == null && r.asksNothing()) { result.unchangedRows++; continue }
                 val imageId = existing?.id ?: adoptedByPath[path] ?: throw (
                     adoptAttempt.exceptionOrNull()
                         ?: IllegalStateException("이미지 라이브러리 행을 만들지 못했습니다")

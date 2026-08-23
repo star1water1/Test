@@ -839,7 +839,9 @@ class ExcelExporter(context: Context) {
                 cell.numericCellValue != kotlin.math.floor(cell.numericCellValue)
             cell.cellStyle = styles.cellStyleFor(col, bandRow, fractionalCalc)
             if (col.wrap && cell.cellType == org.apache.poi.ss.usermodel.CellType.STRING) {
-                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, col.width))
+                // 줄수는 **실제로 적용될 너비**로 잰다 — 머리글 때문에 넓어진 열은
+                // 그만큼 덜 접히므로, 스펙 값으로 재면 높이가 필요보다 커진다([columnWidthFor]).
+                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, columnWidthFor(col)))
             }
         }
         // 엑셀은 파일을 열 때 행 높이를 재계산하지 않는다 — wrap이 보이려면 여기서(행을 쓰는
@@ -895,9 +897,9 @@ class ExcelExporter(context: Context) {
                 addDropdownValidation(sheet, colIndex, dataRowCount, options)
             }
         }
-        // Column widths
+        // Column widths — 머리글이 잘리지 않을 만큼은 보장한다([columnWidthFor]).
         spec.columns.forEachIndexed { index, col ->
-            sheet.setColumnWidth(index, col.width)
+            sheet.setColumnWidth(index, columnWidthFor(col))
         }
         sheet.freezeAndFilter(spec.columns.size, dataRowCount, spec.freezeCols)
     }
@@ -1101,6 +1103,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  칸을 비우면 그 이미지의 링크가 풀립니다. 'char:'로 시작하는 값은 캐릭터 자동 링크라"),
             GuideLine("", styles.guideBody, "  가져온 뒤 현재 배정 기준으로 다시 계산됩니다 (직접 적을 필요가 없습니다)"),
             GuideLine("", styles.guideBody, "  '뗀날짜' 칸을 비우면 뗀 이미지 서랍에서 꺼냅니다(뗀 적 없음이 됩니다). '뗀곳'은 앱이 채우는 열입니다"),
+            // 이 시트가 라이브러리 표만 싣던 동안, 태그·묶음이 아직 없는 그림(=그림이 한 장뿐인
+            // 캐릭터의 그림)은 행 자체가 없어 엑셀에서 손댈 길이 없었다 — 그 사실을 알 방법도
+            // 없었으므로 안내에 적는다(원칙 04).
+            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품이 쓰는 그림은 태그·묶음이 아직 없어도 모두 행으로 실립니다."),
+            GuideLine("", styles.guideBody, "  그런 행은 칸이 비어 있고, 비운 채로 다시 들여오면 아무 일도 일어나지 않습니다 —"),
+            GuideLine("", styles.guideBody, "  태그나 링크그룹을 적는 순간 그 그림이 라이브러리 관리로 들어옵니다."),
             GuideLine("", styles.guideBody, "• 대결 기록: 승자 칸은 참가자 이름(또는 코드)입니다. 비우거나 '${DuelSheetLabels.WINNER_DRAW}'이라 적으면 무승부입니다"),
             GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
             GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
@@ -2384,26 +2392,38 @@ class ExcelExporter(context: Context) {
     private suspend fun exportImageMeta(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val metas = db.imageMetaDao().getAllList()
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+        val metaByPath = metas.associateBy { it.path }
+
+        // **라이브러리 표만 실으면 그림이 한 장뿐인 캐릭터의 그림이 통째로 빠진다** —
+        // 근거·실측은 [ImageSheetRows]의 머리말. 참조 집합은 백업 zip이 담을 것을 고르는
+        // 그 함수를 그대로 쓴다(두 벌로 적으면 *파일에 실린 그림*과 *시트에 적힌 그림*이 갈린다).
+        // 읽지 못한 imagePaths는 여기서 다시 세지 않는다 — 그 고지는 zip 래핑이 든다(B-225).
+        val referenced = runCatching { ImageZipHelper.collectAllImagePaths(db) }.getOrDefault(emptySet())
+        val rows = ImageSheetRows.plan(metas.map { it.path }, referenced)
 
         val spec = imageMetaSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        metas.forEachIndexed { i, meta ->
+        rows.forEachIndexed { i, planned ->
+            val meta = if (planned.inLibrary) metaByPath[planned.path] else null
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setTextSafe(java.io.File(meta.path).name)
-            row.createCell(1).setTextSafe(tagsByImage[meta.id]?.let { joinCsv(it) } ?: "")
-            row.createCell(2).setTextSafe(meta.linkGroupId ?: "")
+            row.createCell(0).setTextSafe(planned.fileName)
+            // 라이브러리 행이 없는 그림은 태그·링크·뗀 표식이 **없는 것**이라 칸이 빈다.
+            // 가져오기는 그 빈 행을 아무 일도 하지 않는 행으로 읽는다(멱등) — 사용자가 여기에
+            // 태그를 적는 순간 비로소 라이브러리에 편입된다.
+            row.createCell(1).setTextSafe(meta?.let { tagsByImage[it.id]?.let { t -> joinCsv(t) } } ?: "")
+            row.createCell(2).setTextSafe(meta?.linkGroupId ?: "")
             // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
             // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
-            meta.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
-            row.createCell(4).setTextSafe(meta.detachedFromCode ?: "")
-            finishDataRow(row, spec, banded = metas.size < BANDING_ROW_LIMIT)
+            meta?.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            row.createCell(4).setTextSafe(meta?.detachedFromCode ?: "")
+            finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
 
-        applySpecFormatting(sheet, spec, metas.size)
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     // ── 이름 은행 ──

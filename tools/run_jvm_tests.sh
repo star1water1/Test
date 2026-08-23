@@ -116,6 +116,7 @@ $MAIN/excel/SheetResolver.kt
 $MAIN/excel/UniverseSheetPlan.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
+$MAIN/excel/ImageSheetRows.kt
 $MAIN/util/ProgressScale.kt
 $MAIN/util/DialogScrollCap.kt
 $MAIN/util/RequiredFieldGaps.kt
@@ -371,6 +372,8 @@ $TEST/excel/EntityFieldValueOverflowTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
+$TEST/excel/ImageSheetRowsTest.kt
+$TEST/excel/ColumnWidthFitTest.kt
 $TEST/excel/GradeSystemSheetTest.kt
 $TEST/excel/DefaultFieldSheetTest.kt
 $TEST/excel/FieldDefinitionPruneTest.kt

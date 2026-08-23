@@ -492,6 +492,55 @@ fun customFieldColumnWidth(type: FieldType?, multiToken: Boolean): Int = when {
     else -> 6000
 }
 
+/** 엑셀 열 너비의 단위 — 기준 글꼴 한 글자가 256이다. */
+private const val WIDTH_PER_CHAR = 256
+
+/**
+ * 열 이름이 넘치지 않을 만큼의 너비 상한. **이미 싣고 있는 가장 넓은 열**('앱 설정'의
+ * `입력 가능한 값`)과 같다 — 이보다 넓어지면 이름 하나가 표를 못 쓰게 만든다.
+ * 필드 이름은 사용자가 짓는 것이라 길이에 상한이 없으므로 여기서 접는다.
+ */
+private const val HEADER_FIT_WIDTH_CAP = 16000
+
+/**
+ * 이 글자가 **두 칸을 먹는가** — 한글·한자·가나·전각 기호.
+ * 엑셀은 기준 글꼴의 '0' 너비로 열 너비를 세는데 CJK 글자는 그 두 배로 그려진다.
+ */
+private fun isWideGlyph(c: Char): Boolean = c.code in 0x1100..0x115F ||
+    c.code in 0x2E80..0xA4CF || c.code in 0xAC00..0xD7A3 ||
+    c.code in 0xF900..0xFAFF || c.code in 0xFE30..0xFE4F || c.code in 0xFF00..0xFF60
+
+/**
+ * 이 머리글이 잘리지 않을 최소 열 너비.
+ *
+ * ## 왜 필요했는가 — '전체 캐릭터'가 자기 열 이름을 못 보여 줬다
+ *
+ * 열 너비는 [customFieldColumnWidth]가 **필드 타입만 보고** 정한다. 세계관별 캐릭터 시트는
+ * 머리글이 필드 이름뿐이라 그 값으로 넉넉한데, '전체 캐릭터' 시트의 머리글에는 언제나
+ * `(필드키)`가, 같은 키가 타입별로 갈릴 때는 `·타입`까지 붙는다. 그래서 **그 시트에서만**
+ * 머리글이 이웃 칸에 막혀 잘렸다(머리글은 가운데 정렬이고 줄바꿈이 없다).
+ *
+ * 실측(2026.08.23, 사용자가 내보낸 파일): 43열 중 **8열**이 잘렸다.
+ * `초월자 세대(transcendent_generation)`는 너비 15.6칸에 이름이 36칸이었다.
+ * 그 시트의 존재 이유가 *"정렬·필터·피벗을 걸 때 쓰세요"*인데 열 이름이 안 읽혔다.
+ *
+ * **판정을 열 하나하나가 아니라 [columnWidthFor] 한 자리에 두는 것이 요점이다** — 스펙마다
+ * 손으로 넓히면 새 열이 생길 때마다 같은 자리를 다시 밟는다.
+ */
+fun headerFitWidth(header: String): Int {
+    if (header.isEmpty()) return 0
+    // 양옆 여백 두 칸 — 가운데 정렬이라 글자가 테두리에 붙지 않게 한다.
+    var cells = 2
+    for (c in header) cells += if (isWideGlyph(c)) 2 else 1
+    return minOf(cells * WIDTH_PER_CHAR, HEADER_FIT_WIDTH_CAP)
+}
+
+/**
+ * 이 열이 실제로 쓸 너비 — 스펙이 정한 값과 **머리글이 요구하는 값 중 넓은 쪽**.
+ * 스펙 값은 *내용*을 보고 정한 것이라 그대로 살리고, 이름이 그보다 길 때만 늘린다.
+ */
+fun columnWidthFor(col: ColumnSpec): Int = maxOf(col.width, headerFitWidth(col.header))
+
 /**
  * 내보내는 워크북 전체의 글꼴 (P-10 · 2026.08.17 사용자 지시 *"엑셀파일의 폰트를 고딕으로"*).
  *
