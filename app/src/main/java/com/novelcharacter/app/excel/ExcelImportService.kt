@@ -66,6 +66,7 @@ import com.novelcharacter.app.util.RelationshipIndexes
 import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
+import com.novelcharacter.app.util.RecordTimestamps
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
@@ -1836,9 +1837,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             filtersJson = r.filtersJson ?: existing.filtersJson,
             sortMode = r.sortMode ?: existing.sortMode,
             isDefault = r.isDefault ?: existing.isDefault,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
+    }
+
+    /**
+     * 이 행이 **만들** 검색 프리셋 — 미리보기와 가져오기가 같은 함수를 지난다(R-33).
+     * 종전에는 두 자리가 각자 생성자를 적고 있어, 한쪽만 고치면 예고와 처분이 갈렸다.
+     */
+    private fun newSearchPresetFrom(r: SearchPresetRowValues, now: Long): SearchPreset {
+        val created = r.createdAt ?: now
+        return SearchPreset(
+            name = r.name,
+            query = r.query ?: "",
+            filtersJson = r.filtersJson ?: "{}",
+            sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
+            isDefault = r.isDefault ?: false,
+            createdAt = created,
+            updatedAt = stampedUpdatedAt(created, r.updatedAt ?: now)
+        )
     }
 
     private class ListPresetCols(cols: Map<String, Int>) {
@@ -1953,9 +1972,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             bodySizePartIndex = if (r.hasBodyPartCol) r.bodySizePartIndex else existing.bodySizePartIndex,
             novelIdsJson = r.novelIdsJson ?: existing.novelIdsJson,
             isDefault = r.isDefault ?: existing.isDefault,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
+    }
+
+    /** 이 행이 **만들** 목록 프리셋 — [newSearchPresetFrom]과 같은 근거(R-33). */
+    private fun newListPresetFrom(r: ListPresetRowValues, now: Long): CharacterListPreset {
+        val created = r.createdAt ?: now
+        return CharacterListPreset(
+            name = r.name,
+            tagsJson = r.tagsJson ?: "[]",
+            fieldFiltersJson = r.fieldFiltersJson ?: "{}",
+            sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
+            sortFieldKey = r.sortFieldKey,
+            sortDuelAxisCode = r.sortDuelAxisCode,
+            sortAscending = r.sortAscending ?: true,
+            bodySizePartIndex = r.bodySizePartIndex,
+            novelIdsJson = r.novelIdsJson ?: "[]",
+            isDefault = r.isDefault ?: false,
+            createdAt = created,
+            updatedAt = stampedUpdatedAt(created, r.updatedAt ?: now)
+        )
     }
 
     private class PresetTemplateCols(cols: Map<String, Int>) {
@@ -2009,7 +2048,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             fieldsJson = r.fieldsJson ?: "[]",
             isBuiltIn = r.isBuiltIn ?: false,
             createdAt = r.createdAt ?: now,
-            updatedAt = r.updatedAt ?: now
+            // 수정일은 생성일 아래로 내려가지 않는다 — 근거는 [RecordTimestamps].
+            updatedAt = stampedUpdatedAt(r.createdAt ?: now, r.updatedAt ?: now)
         )
 
     private fun mergePresetTemplate(existing: UserPresetTemplate, r: PresetTemplateRowValues, now: Long): UserPresetTemplate {
@@ -2018,10 +2058,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             description = r.description ?: existing.description,
             fieldsJson = r.fieldsJson ?: existing.fieldsJson,
             isBuiltIn = r.isBuiltIn ?: existing.isBuiltIn,
-            updatedAt = r.updatedAt ?: existing.updatedAt
+            updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
-        return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
+        return if (content == existing) existing
+        else content.copy(updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: now))
     }
+
+    /**
+     * 병합이 적을 수정일 — [RecordTimestamps]를 지나는 자리를 한 이름으로 모은다.
+     * 프리셋 셋(필드 템플릿·검색·목록)이 같은 규약이라, 자리마다 적으면 한 벌만 고쳐진다.
+     */
+    private fun stampedUpdatedAt(createdAt: Long, updatedAt: Long): Long =
+        RecordTimestamps.orderedUpdatedAt(createdAt, updatedAt)
 
     private class FieldDefCols(cols: Map<String, Int>, firstHeader: String) {
         val universeName = cols[firstHeader] ?: cols["세계관"] ?: 0
@@ -5242,15 +5290,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[r.name]
             if (existing == null) {
                 newCount++
-                existingByName[r.name] = SearchPreset(
-                    name = r.name,
-                    query = r.query ?: "",
-                    filtersJson = r.filtersJson ?: "{}",
-                    sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
-                    isDefault = r.isDefault ?: false,
-                    createdAt = r.createdAt ?: now,
-                    updatedAt = r.updatedAt ?: now
-                )
+                // 신규도 가져오기와 **같은 함수**다(R-33).
+                existingByName[r.name] = newSearchPresetFrom(r, now)
                 continue
             }
             val merged = mergeSearchPreset(existing, r, now)
@@ -5286,20 +5327,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[r.name]
             if (existing == null) {
                 newCount++
-                existingByName[r.name] = CharacterListPreset(
-                    name = r.name,
-                    tagsJson = r.tagsJson ?: "[]",
-                    fieldFiltersJson = r.fieldFiltersJson ?: "{}",
-                    sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
-                    sortFieldKey = r.sortFieldKey,
-                    sortDuelAxisCode = r.sortDuelAxisCode,
-                    sortAscending = r.sortAscending ?: true,
-                    bodySizePartIndex = r.bodySizePartIndex,
-                    novelIdsJson = r.novelIdsJson ?: "[]",
-                    isDefault = r.isDefault ?: false,
-                    createdAt = r.createdAt ?: now,
-                    updatedAt = r.updatedAt ?: now
-                )
+                // 신규도 가져오기와 **같은 함수**다(R-33).
+                existingByName[r.name] = newListPresetFrom(r, now)
                 continue
             }
             val merged = mergeListPreset(existing, r, now)
@@ -9405,15 +9434,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.searchPresetDao().update(mergedSearchPreset)
                     if (mergedSearchPreset != existing) result.updatedSearchPresets++ else result.unchangedRows++
                 } else {
-                    val newPreset = SearchPreset(
-                        name = name,
-                        query = r.query ?: "",
-                        filtersJson = r.filtersJson ?: "{}",
-                        sortMode = r.sortMode ?: SearchPreset.SORT_RELEVANCE,
-                        isDefault = r.isDefault ?: false,
-                        createdAt = r.createdAt ?: nowMillis,
-                        updatedAt = r.updatedAt ?: nowMillis
-                    )
+                    // 신규도 미리보기와 **같은 함수**다(R-33).
+                    val newPreset = newSearchPresetFrom(r, nowMillis)
                     val newId = db.searchPresetDao().insert(newPreset)
                     existingByName[name] = newPreset.copy(id = newId)
                     result.newSearchPresets++
@@ -9468,20 +9490,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterListPresetDao().update(mergedListPreset)
                     if (mergedListPreset != existing) result.updatedListPresets++ else result.unchangedRows++
                 } else {
-                    val newPreset = CharacterListPreset(
-                        name = name,
-                        tagsJson = r.tagsJson ?: "[]",
-                        fieldFiltersJson = r.fieldFiltersJson ?: "{}",
-                        sortKind = r.sortKind ?: CharacterListPreset.SORT_MANUAL,
-                        sortFieldKey = r.sortFieldKey,
-                        sortDuelAxisCode = r.sortDuelAxisCode,
-                        sortAscending = r.sortAscending ?: true,
-                        bodySizePartIndex = r.bodySizePartIndex,
-                        novelIdsJson = r.novelIdsJson ?: "[]",
-                        isDefault = r.isDefault ?: false,
-                        createdAt = r.createdAt ?: nowMillis,
-                        updatedAt = r.updatedAt ?: nowMillis
-                    )
+                    // 신규도 미리보기와 **같은 함수**다(R-33).
+                    val newPreset = newListPresetFrom(r, nowMillis)
                     val newId = db.characterListPresetDao().insert(newPreset)
                     existingByName[name] = newPreset.copy(id = newId)
                     result.newListPresets++
