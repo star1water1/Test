@@ -148,22 +148,64 @@ class CharacterImageStripController(
     fun importUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val ctx = fragment.context?.applicationContext ?: return
+        val app = ctx as? com.novelcharacter.app.NovelCharacterApp ?: return
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
             var anyFailed = false
-            for (uri in uris) {
-                val filePath = try {
-                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
-                } catch (e: Exception) {
-                    null
-                }
-                if (recyclerViewGetter() == null) return@launch
-                if (filePath != null) {
+            // **폼이 받지 못한 파일** — 이미 디스크에 있는데 가리키는 곳이 없는 몫이다.
+            //
+            // 종전에는 `recyclerViewGetter() == null`이면 그 자리에서 `return@launch`라
+            // ⓐ 방금 쓴 파일이 **고아**로 남고 ⓑ 남은 uri는 **말없이 버려졌다.** 회전 한 번이면
+            // 닿는다(화면 수명 스코프라 코루틴 자체가 끊긴다). 여러 장을 고른 사용자는
+            // *일부만 붙은* 결과를 받고 그 사실을 어디서도 듣지 못했다.
+            val stranded = mutableListOf<String>()
+            try {
+                for (uri in uris) {
+                    val filePath = try {
+                        com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // 취소는 실패가 아니다 — 삼키면 아래 `anyFailed` 고지가 거짓이 된다.
+                        throw e
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (filePath == null) {
+                        anyFailed = true
+                        continue
+                    }
+                    // 폼이 없어도 **끝까지 가져온다** — 사용자가 고른 것을 버리지 않는다.
+                    if (recyclerViewGetter() == null) {
+                        stranded.add(filePath)
+                        continue
+                    }
                     imagePaths.add(filePath)
                     refresh()
                     onChanged()
-                } else {
-                    anyFailed = true
+                }
+            } finally {
+                // **지우지 않고 라이브러리에 담는다**(개발 의도 2번 — 사용자가 고른 것이다).
+                // 편집창의 제거 정책(`EditorRemovePolicy`)을 따르지 않는 것은 성질이 달라서다:
+                // 그쪽은 *붙어 있던 것을 뗀* 조작이라 사용자가 처분을 정했고, 이쪽은
+                // **붙은 적이 없는** 새 파일이다 — 지우면 방금 고른 것이 통째로 사라진다.
+                // `adoptOrphans`는 참조·보류·meta·드래프트가 보호하는 경로를 건너뛰므로
+                // 정상적으로 붙은 것은 건드리지 않는다.
+                if (stranded.isNotEmpty()) {
+                    withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                        val adopted = runCatching {
+                            com.novelcharacter.app.util.ImageOwnershipGuard
+                                .adoptOrphans(app.database, ctx, stranded)
+                        }.getOrDefault(0)
+                        if (adopted > 0) {
+                            // 화면이 사라져도 고지는 간다 — 앱 컨텍스트로, 이 블록 안에서.
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    ctx,
+                                    ctx.getString(R.string.image_import_stranded_adopted, adopted),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
                 }
             }
             if (anyFailed && fragment.isAdded) {

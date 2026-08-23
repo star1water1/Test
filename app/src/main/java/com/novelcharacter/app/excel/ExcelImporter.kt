@@ -1764,9 +1764,16 @@ class ExcelImporter(context: Context) {
                 // 지우므로 사유의 거짓됨도 똑같이 성립한다: 종전에는 덮어쓰기 쪽만 그 사실을
                 // 밝히고 병합 쪽은 *"캐릭터 (3개)"*라고만 적어, 사용자가 **파일에 적혀 있는
                 // 항목**을 '파일에 없다'는 근거로 체크해 지웠다.
-                val unreadMixedIn = analysis.categories.any {
-                    it.onlyInDb > 0 && it.skippedCount > 0
-                }
+                //
+                // **판정은 목록마다 그 목록의 모집단으로 한다**(R-51 — 고지가 가리키는 수와
+                // 고지를 켜는 근거가 같은 행에서 나와야 한다). 종전에는 판정 **하나**를 두
+                // 목록이 같이 썼는데 **두 목록의 모집단이 다르다**: 덮어쓰기는
+                // `deletedByOverwrite`인 범주만 지우고, 병합 삭제는 `deletableKeys`인 범주만
+                // 목록에 올린다. 그래서 어느 목록에도 안 뜨는 범주가 읽히지 않았다는 이유로
+                // **그 목록과 무관한 경고**가 붙었다.
+                val overwriteDeleteCats = analysis.categories
+                    .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
+                val unreadMixedInOverwrite = overwriteDeleteCats.any { it.skippedCount > 0 }
 
                 // 덮어쓰기 경고
                 val overwriteWarning = TextView(act).apply {
@@ -1785,13 +1792,12 @@ class ExcelImporter(context: Context) {
                 // 사용자가 취소할지 정하는 근거가 그 사유이므로(개발 의도 2번 — 변수 제어),
                 // 문구를 *"이 파일이 갱신하지 않는"*으로 바꾸고 섞임을 한 줄로 밝힌다.
                 if (totalOnlyInDb > 0) {
-                    val deleteParts = analysis.categories
-                        .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
+                    val deleteParts = overwriteDeleteCats
                         .map { appContext.getString(com.novelcharacter.app.R.string.restore_overwrite_delete_item, it.label, it.onlyInDb) }
                     overwriteWarning.text = appContext.getString(
                         com.novelcharacter.app.R.string.restore_overwrite_warning,
                         deleteParts.joinToString(", ")
-                    ) + if (unreadMixedIn) {
+                    ) + if (unreadMixedInOverwrite) {
                         "\n" + appContext.getString(
                             com.novelcharacter.app.R.string.restore_overwrite_unread_note)
                     } else ""
@@ -1804,6 +1810,8 @@ class ExcelImporter(context: Context) {
                 val deletableKeys = setOf("characters", "timeline", "stateChanges", "quotes", "relationships",
                     "relationshipChanges", "nameBank", "factions", "factionMemberships", "factionRelationships")
                 val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
+                // 이 목록의 모집단으로 다시 잰다 — 위 덮어쓰기 판정과 대상이 다르다.
+                val unreadMixedInDelete = deletableCats.any { it.skippedCount > 0 }
                 val deleteSectionLabel = TextView(act).apply {
                     text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_option)
                     setTypeface(null, Typeface.BOLD)
@@ -1857,7 +1865,7 @@ class ExcelImporter(context: Context) {
                     deleteSectionLabel.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                     deleteContainer.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                     deleteUnreadNote.visibility =
-                        if (showDelete && unreadMixedIn) android.view.View.VISIBLE else android.view.View.GONE
+                        if (showDelete && unreadMixedInDelete) android.view.View.VISIBLE else android.view.View.GONE
                 }
 
                 MaterialAlertDialogBuilder(act)
