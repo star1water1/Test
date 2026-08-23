@@ -1158,6 +1158,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
+        // **이름은행의 '사용 중'을 캐릭터와 다시 맞춘다** — 커밋 이후 한 번.
+        //
+        // 이 표의 '사용 중'은 두 벌이다(`isUsed` · `usedByCharacterId`). 외래키는
+        // `onDelete = SET_NULL`이라 DB가 알아서 임자를 지우는데 `isUsed`는 앱이 짝지어
+        // 내려야 하고, **덮어쓰기의 `characterDao().deleteAll()`은 그 짝을 지나지 않는다.**
+        // 그러면 이름 전부가 임자 없이 '사용 중'으로 굳어 **사용률이 정의상 100%**가 되고
+        // '미사용 이름'이 영영 빈 목록이 된다 — 사용자가 이름을 하나씩 열어 고치는 것 말고는
+        // 되돌릴 길이 없었다(유지보수 화면의 같은 수리는 눌러야만 돈다).
+        //
+        // `deleteNotInExcel`로 지운 캐릭터도 같은 자리에 걸리므로 조건 없이 한 번 돌린다 —
+        // 어긋난 것이 없으면 0행이다. **몇 줄을 되돌렸는지 말한다**(무통보 교정 금지).
+        val nameBankFixed = runCatching { db.nameBankDao().clearOrphanedUsage() }.getOrDefault(0)
+        if (nameBankFixed > 0) {
+            result.warnings.add(
+                "캐릭터가 사라져 임자를 잃은 이름 ${nameBankFixed}건의 '사용 중' 표시를 내렸습니다 — 이름은행에서 다시 쓸 수 있습니다"
+            )
+        }
+
         // 휴지통 정리는 커밋 이후 — 트랜잭션 안에서 하면 스냅샷과 정리가 한 단위로 묶여 롤백 시 함께 사라진다
         val trashToPrune = trashForPrune
         if (trashToPrune != null) {

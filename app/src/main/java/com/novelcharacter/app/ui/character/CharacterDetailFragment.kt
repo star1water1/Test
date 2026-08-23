@@ -1135,9 +1135,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             // 통계 화면과 다른 %로 보였다.**
             val statsCtx = context ?: return@launch
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
-            val universeId = novel?.universeId
-            val fieldCompletion = if (universeId != null) {
-                val fields = viewModel.getFieldsByUniverseList(universeId)
+            // **어느 목록인가는 `fieldsForNovel` 한 자리가 정한다**(R-33). 종전에는 세계관이
+            // 없으면 곧장 `0f`였다 — 미배정 캐릭터의 완성도가 **전역 구역 필드를 다 채워도
+            // 언제나 0%**였고, 그 0이 아래 복잡도 점수·잠재력 등급·특화 유형까지 끌어내렸다.
+            // 전역 필드는 2026.08.07 사용자 확정이 그 캐릭터에게 주기로 한 바로 그 필드다.
+            val fields = viewModel.fieldsForNovel(novel)
+            val fieldCompletion = if (fields.isEmpty()) 0f else {
                 val filledDefIds = viewModel.getValuesByCharacterList(characterId)
                     .filter { it.value.isNotBlank() }
                     .map { it.fieldDefinitionId }
@@ -1146,7 +1149,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     fields, filledDefIds,
                     com.novelcharacter.app.ui.stats.CompletionWeightPrefs.weights(statsCtx)
                 ) ?: 0f
-            } else 0f
+            }
 
             // 복잡도 점수 (StatsDataProvider와 동일한 가중치)
             val relWeight = relationships.size * 2f

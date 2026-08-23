@@ -275,9 +275,11 @@ class SystemMaintenanceService(
      * (can happen if FK SET_NULL fires without going through CharacterRepository.deleteCharacter).
      */
     suspend fun cleanOrphanedNameBankUsage() {
-        db.openHelper.writableDatabase.execSQL(
-            "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND usedByCharacterId IS NULL"
-        )
+        // 판정은 [NameBankDao.clearOrphanedUsage] 한 자리다 — 종전에는 같은 술어가
+        // 이 파일에만 두 벌(여기 · [cleanup])이었고 **둘의 조건이 서로 달랐다**
+        // (이쪽은 NULL만, 저쪽은 없는 캐릭터까지). 같은 이름의 정리가 부르는 자리에 따라
+        // 다른 일을 했다는 뜻이다. DAO 한 벌로 모아 넓은 쪽(저쪽)에 맞춘다.
+        db.nameBankDao().clearOrphanedUsage()
     }
 
     /**
@@ -384,16 +386,10 @@ class SystemMaintenanceService(
             clearedImageRefs = clearedNovelImageRefs + clearedUniverseImageRefs + clearedNovelIdRefs
             if (clearedImageRefs > 0) details.add("댕글링 이미지 참조 $clearedImageRefs 건 정리")
 
-            // 이름은행: isUsed=true인데 usedByCharacterId가 NULL이거나 존재하지 않는 캐릭터를 가리키는 경우
-            db.openHelper.writableDatabase.execSQL(
-                "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND (usedByCharacterId IS NULL OR usedByCharacterId NOT IN (SELECT id FROM characters))"
-            )
-            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
-                if (c.moveToNext()) {
-                    clearedNameBank = c.getInt(0)
-                    if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
-                }
-            }
+            // 이름은행: isUsed=true인데 usedByCharacterId가 NULL이거나 존재하지 않는 캐릭터를 가리키는 경우.
+            // 술어는 [NameBankDao.clearOrphanedUsage] 한 자리다(엑셀 가져오기도 같은 것을 쓴다).
+            clearedNameBank = db.nameBankDao().clearOrphanedUsage()
+            if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
 
             // 최근 활동: 존재하지 않는 엔티티를 참조하는 레코드 삭제
             // SQL 쌍둥이: RecentActivity.TYPE_CHARACTER

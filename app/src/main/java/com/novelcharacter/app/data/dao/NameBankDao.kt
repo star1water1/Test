@@ -75,6 +75,25 @@ interface NameBankDao {
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId IN (:characterIds)")
     suspend fun resetUsageByCharacterIds(characterIds: List<Long>)
 
+    /**
+     * **고아가 된 '사용 중' 표시를 내린다 — 몇 줄을 내렸는지 돌려준다.**
+     *
+     * 이 표의 '사용 중'은 두 벌이다: `isUsed`(불리언)와 `usedByCharacterId`(외래키).
+     * 외래키는 `onDelete = SET_NULL`이라 캐릭터가 어떤 경로로든 지워지면 **DB가 알아서
+     * NULL로 만드는데**, `isUsed`는 앱이 짝지어 내려 줘야 한다. 그 짝을 지나지 않는 삭제가
+     * 실재한다 — 엑셀 덮어쓰기의 `characterDao().deleteAll()`이 그렇다.
+     *
+     * 그러면 **모든 이름이 임자 없이 '사용 중'으로 굳는다**: 사용률이 정의상 100%가 되고
+     * '미사용 이름'이 영영 빈 목록이며, 사용자가 이름을 하나씩 열어 고치는 것 말고는
+     * 되돌릴 길이 없다. 유지보수 화면이 같은 수리를 들고 있었지만 **사용자가 그것을 눌러야만**
+     * 돌았다 — 자기가 만든 어긋남은 만든 자리에서 갚는 것이 맞다.
+     */
+    @Query(
+        "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND " +
+            "(usedByCharacterId IS NULL OR usedByCharacterId NOT IN (SELECT id FROM characters))"
+    )
+    suspend fun clearOrphanedUsage(): Int
+
     @Query("DELETE FROM name_bank")
     suspend fun deleteAll()
 
