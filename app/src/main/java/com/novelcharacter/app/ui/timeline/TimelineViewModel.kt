@@ -364,11 +364,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 // **필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 표준연도 한 번
                 // 고치는 평범한 조작이 캐스트 수만큼 같은 질의를 친다.
                 val fields = universeRepository.getFieldsByUniverseList(universeId)
+                // **재료도 루프 불변량처럼 다룬다** — 종전에는 캐릭터마다 이력 한 번(연동
+                // 판정)과 값 한 번을 물어, 위 `onStandardYearChanged`가 방금 훑은 표를
+                // 인원 수만큼 다시 읽었다. 그 함수가 쓴 결과 **뒤에** 뜨므로 최신이다.
+                val ids = characters.map { it.id }
+                val changesById = characterRepository.getChangesForCharacters(ids)
+                    .groupBy { it.characterId }
+                val valuesById = characterRepository.getValuesForCharacters(ids)
+                    .groupBy { it.characterId }
                 for (character in characters) {
                     try {
-                        if (syncHelper.isLinked(character.id)) {
-                            val values = characterRepository.getValuesByCharacterList(character.id)
-                            semanticSyncHelper.syncFieldToStateChange(character.id, fields, values)
+                        val changes = changesById[character.id].orEmpty()
+                        // 판정은 `syncHelper.isLinked`가 쓰는 그 순수 함수다(단일 소스).
+                        if (!com.novelcharacter.app.util.StandardYearLink.isUnlinkedIn(changes)) {
+                            semanticSyncHelper.syncFieldToStateChange(
+                                character.id, fields, valuesById[character.id].orEmpty()
+                            )
                         }
                     } catch (e: Exception) {
                         Log.w("TimelineViewModel", "Failed to sync semantic fields for character ${character.id}", e)

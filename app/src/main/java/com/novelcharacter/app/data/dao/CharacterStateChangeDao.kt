@@ -27,6 +27,16 @@ interface CharacterStateChangeDao {
      *
      * `fieldKey`가 목록 밖 변수 하나를 더 쓰므로 통로에 예약분 1을 밝힌다.
      */
+    /**
+     * 여러 캐릭터의 이력을 **한 번에** — 캐릭터마다 [getChangesByCharacterList]를 치던 자리의 통로.
+     *
+     * 표준연도를 한 번 고치면 그 작품의 캐스트 전원이 재동기화되는데, 종전에는 그 루프가
+     * 캐릭터마다 이 표를 두 번(연동 판정 · 이력 갱신) 물었다 — 질의 수가 인원에 비례한다.
+     * 999-변수 상한은 [com.novelcharacter.app.util.SqlInChunks]가 든다.
+     */
+    @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds) ORDER BY year ASC")
+    suspend fun getChangesForCharacters(characterIds: List<Long>): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE characterId IN (:characterIds) AND fieldKey = :fieldKey ORDER BY year ASC")
     suspend fun getChangesByCharacterIdsAndField(
         characterIds: List<Long>,

@@ -305,6 +305,13 @@ object OrganizeFolderService {
     ): PlanBundle =
         withContext(Dispatchers.IO) {
             val gson = Gson()
+            // **한 계획 안에서 같은 경로를 두 번 재지 않는다** (B-175의 그 처방).
+            // `canonical`은 `File.canonicalPath` — 경로 조각마다 stat이 붙는 파일 시스템
+            // 호출이고, 이 함수는 라이브러리 행·캐릭터가 쥔 경로·삭제 대상을 **네 번 훑는다**.
+            // 같은 경로가 그 훑음마다 다시 재어졌다. 수명은 이 계획 하나다(전역 캐시로 두면
+            // 파일이 옮겨졌을 때 낡은 값을 든다 — `Canonicalizer`의 계약).
+            val canon = ImagePathMatch.Canonicalizer()
+            fun canonical(path: String): String = canon.of(path)
             val characters = db.characterDao().getAllCharactersList()
 
             // 캐릭터 이름 사전 — 트림 기준. 동명이 둘 이상이면 해소 사다리가 코드·작품으로 좁힌다.
@@ -407,7 +414,7 @@ object OrganizeFolderService {
             val deleteTargets = plan.deletes.mapTo(HashSet()) { canonical(it.path) }
             val representativeOf = if (deleteTargets.isEmpty()) emptyList() else {
                 characters.filter {
-                    ImagePathMatch.canonical(it.representativeImagePath).takeIf { p -> p.isNotEmpty() }
+                    canonical(it.representativeImagePath).takeIf { p -> p.isNotEmpty() }
                         ?.let { p -> p in deleteTargets } == true
                 }.map { it.name }
             }
