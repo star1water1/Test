@@ -28,6 +28,7 @@ import com.novelcharacter.app.util.SqlInChunks
 import com.novelcharacter.app.util.reportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.repository.TrashRepository
 

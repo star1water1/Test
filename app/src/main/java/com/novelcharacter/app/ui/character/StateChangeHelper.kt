@@ -138,7 +138,9 @@ class StateChangeHelper(
             ?.takeIf { key -> fieldOptions.none { it.first == key } }
         if (orphanKey != null) {
             fieldOptions.add(
-                orphanKey to getString(
+                // 서식 인자가 있는 문구는 **`getString` 람다가 아니라 Context**로 짓는다 —
+                // 이 헬퍼의 `getString`은 `(Int) -> String`이라 인자를 받지 못한다.
+                orphanKey to context.getString(
                     R.string.state_change_missing_field,
                     com.novelcharacter.app.ui.common.StateChangeFieldLabel
                         .of(context, orphanKey, cachedFields)
@@ -268,7 +270,7 @@ class StateChangeHelper(
         val context = try { contextGetter() } catch (_: Exception) { return }
         MaterialAlertDialogBuilder(context)
             .setTitle(getString(R.string.delete))
-            .setMessage(getString(R.string.state_change_delete_confirm, label, change.newValue))
+            .setMessage(context.getString(R.string.state_change_delete_confirm, label, change.newValue))
             .setPositiveButton(R.string.delete) { _, _ ->
                 // 결과는 viewModel.result 채널이 실제 완료 후 통보
                 viewModel.deleteStateChange(change)

@@ -48,6 +48,7 @@ import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.util.stringOr
 
