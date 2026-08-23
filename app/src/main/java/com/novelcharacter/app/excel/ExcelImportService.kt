@@ -1627,7 +1627,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             universeCode = getCellCode(row, c.universeCode, ctx, result),
             // F1-A: 열 없음 → null(기존 유지). 열 있음 → 셀 값(빈칸 = 비움 의도 존중).
             description = if (c.desc >= 0) getCellString(row, c.desc) else null,
-            color = if (c.color >= 0) getCellString(row, c.color).ifBlank { "#2196F3" } else null,
+            // 테두리색 두 갈래와 같은 문을 지난다 — 앱 안의 '색'이 표마다 다른 규칙이면
+            // 같은 값이 자리마다 다른 글자로 저장된다([ColorHex.normalizedOrNull]).
+            color = if (c.color >= 0) {
+                getCellString(row, c.color).ifBlank { "#2196F3" }.let { ColorHex.normalizedOrNull(it) ?: it }
+            } else null,
             autoRelationType = if (c.autoRelType >= 0) getCellString(row, c.autoRelType) else null,
             autoRelationIntensity = if (c.autoRelIntensity >= 0) (parseIntensityWithWarn(row, c.autoRelIntensity, 5, ctx, result) ?: 5) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
@@ -3367,8 +3371,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val winnerCode = when (
                 val winner = resolveDuelWinner(
                     followImageParticipant(axis, r.winnerText),
-                    aCode, duelParticipantNames(r.aName, aCode, namesByCode),
-                    bCode, duelParticipantNames(r.bName, bCode, namesByCode)
+                    aCode, r.aName, bCode, r.bName, namesByCode
                 )
             ) {
                 is DuelWinner.Resolved -> winner.code
@@ -11005,18 +11008,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun resolveDuelWinner(
         text: String,
-        aCode: String, aNames: Set<String>,
-        bCode: String, bNames: Set<String>
+        aCode: String, aRowName: String,
+        bCode: String, bRowName: String,
+        namesByCode: Map<String, Set<String>>
     ): DuelWinner {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || trimmed == DuelSheetLabels.WINNER_DRAW) return DuelWinner.Resolved(null)
         if (trimmed == aCode) return DuelWinner.Resolved(aCode)
         if (trimmed == bCode) return DuelWinner.Resolved(bCode)
-        // **이름은 참가자마다 여럿일 수 있다** — 그 행에 적힌 표기와 캐릭터가 읽히는 표기
-        // 전부다([CharacterNameIndex.namesByCode]). 종전에는 그 행의 표기 하나만 봐서,
-        // 캐릭터 시트의 이름을 승자 칸에 적으면 두 참가자 어느 쪽과도 안 맞아 행이 거부됐다.
-        val hitsA = trimmed in aNames
-        val hitsB = trimmed in bNames
+        val hitsA = matchesParticipant(trimmed, aRowName, aCode, namesByCode)
+        val hitsB = matchesParticipant(trimmed, bRowName, bCode, namesByCode)
         return when {
             hitsA && hitsB -> DuelWinner.Ambiguous
             hitsA -> DuelWinner.Resolved(aCode)
@@ -11025,17 +11026,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
     }
 
-    /** 승자 대조에 쓸 한 참가자의 이름 전부 — 그 행에 적힌 표기 + 그 캐릭터가 읽히는 표기. */
-    private fun duelParticipantNames(
+    /**
+     * 이 글자가 그 참가자인가 — **그 행에 적힌 표기이거나, 그 캐릭터가 읽히는 표기**다
+     * ([CharacterNameIndex.namesByCode]). 종전에는 그 행의 표기 하나만 봐서, 캐릭터 시트의
+     * 이름을 승자 칸에 적으면 두 참가자 어느 쪽과도 안 맞아 그 행이 거부됐다.
+     *
+     * 집합을 미리 만들지 않고 **여기서 견주는** 것은 '대결 기록'이 이 앱에서 가장 큰 시트이기
+     * 때문이다(수만 행) — 승자 칸이 비었거나 코드인 흔한 갈래는 위에서 이미 끝나므로,
+     * 이 자리는 행마다 도는 비용에 아무것도 더하지 않는다.
+     */
+    private fun matchesParticipant(
+        text: String,
         rowName: String,
         code: String,
         namesByCode: Map<String, Set<String>>
-    ): Set<String> {
-        val out = LinkedHashSet<String>()
-        rowName.trim().takeIf { it.isNotEmpty() }?.let { out.add(it) }
-        out.addAll(namesByCode[code].orEmpty())
-        return out
-    }
+    ): Boolean = text == rowName.trim() || text in namesByCode[code].orEmpty()
 
     private suspend fun importDuelMatches(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelMatchSpec()
@@ -11107,9 +11112,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val winnerText = followImageParticipant(axis, r.winnerText)
                 val winnerCode = when (
                     val winner = resolveDuelWinner(
-                        winnerText,
-                        aCode, duelParticipantNames(r.aName, aCode, namesByCode),
-                        bCode, duelParticipantNames(r.bName, bCode, namesByCode)
+                        winnerText, aCode, r.aName, bCode, r.bName, namesByCode
                     )
                 ) {
                     is DuelWinner.Resolved -> winner.code
@@ -12182,7 +12185,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // `optString`은 기기(libcore)에서 JSON null에 `"null"`을 준다 — 그 값이 색 검사를
             // 통과할 리는 없지만, 경고 문구에 그대로 실려 사용자를 헷갈리게 한다(R-70).
             val value = obj.stringOr(key, "")
-            if (com.novelcharacter.app.util.ColorHex.isValidHex(value)) kept.put(key, value.trim())
+            // **버리기 전에 다듬는다** — `#`이 빠졌을 뿐인 값을 떨어뜨리면, 같은 글자를
+            // 받아 주는 테두리색·세력 색상과 이 앱의 '색'이 두 규칙이 된다(콜드 검토 2026.08.24).
+            val normalized = ColorHex.normalizedOrNull(value)
+            if (normalized != null) kept.put(key, normalized)
             else dropped.add("$key=$value")
         }
         if (dropped.isNotEmpty()) {

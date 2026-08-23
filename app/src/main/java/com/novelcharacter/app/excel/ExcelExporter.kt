@@ -1035,7 +1035,8 @@ class ExcelExporter(context: Context) {
             // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.
             GuideLine("", styles.guideBody, "• 대표이미지는 그 캐릭터의 카드·목록에 먼저 보일 그림입니다. 경로가 아니라 **파일명**을 적습니다:"),
             GuideLine("", styles.guideBody, "  char_1.jpg (같은 행 '이미지경로'에 든 그림 중 하나여야 합니다 — 그 목록에 없으면 기존 지정을 그대로 두고 알려 드립니다)"),
-            GuideLine("", styles.guideBody, "  칸을 비우면 지정이 풀려 목록의 첫 그림이 대표가 됩니다. 열을 통째로 지우면 기존 지정이 유지됩니다."),
+            GuideLine("", styles.guideBody, "  칸을 비우면 지정이 풀려 그 캐릭터의 그림 중에서 앱이 골라 보여 줍니다(첫 장으로 고정되지 않습니다)."),
+            GuideLine("", styles.guideBody, "  열을 통째로 지우면 기존 지정이 유지됩니다."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
             GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
             // '완전한 백업입니다' 고지가 이 셋의 미수록을 말하지 않아, 기기 이전 뒤 휴지통
