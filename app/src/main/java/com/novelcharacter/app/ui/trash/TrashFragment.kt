@@ -35,7 +35,10 @@ import com.novelcharacter.app.databinding.ItemTrashOperationBinding
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.reportAndNotify
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -565,7 +568,14 @@ class TrashFragment : Fragment() {
     ) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val result = trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
+                // **복원은 시작하면 끝까지 간다** — 항목마다 트랜잭션이 따로라, 화면 수명에서
+                // 그대로 돌면 회전 한 번에 **절반만 되살아난 채 멈춘다**(취소는 중단점마다
+                // 걸린다). 그것은 취소가 아니라 **반쪽 상태**이고, 이 저장소는 같은 이유로
+                // 엑셀 가져오기의 반영 구간을 이미 `NonCancellable`로 두었다
+                // (*"항목 단위로 완결되지 않는 작업이라 R-26이 취소를 요구하지 않는 자리"*).
+                val result = withContext(NonCancellable) {
+                    trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
+                }
                 resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 if (result == null) {
@@ -589,6 +599,12 @@ class TrashFragment : Fragment() {
                     revertedMemberships = result.revertedMemberships,
                     revertedStateChanges = result.revertedStateChanges
                 )
+            } catch (e: CancellationException) {
+                // **취소는 실패가 아니다.** 위 구간이 `NonCancellable`이라 복원 자체는 끝났고,
+                // 여기 온 것은 *고지할 화면이 사라졌다*는 뜻뿐이다. 종전에는 이 갈래가 아래
+                // `catch (e: Exception)`에 걸려 **성공한 복원을 '복원 실패'로 이력에 적었다**
+                // (B-228이 세운 자세 — 화면 파괴를 실패로 둔갑시키지 않는다).
+                throw e
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
@@ -716,7 +732,14 @@ class TrashFragment : Fragment() {
     private fun restoreOperation(row: TrashListPlan.Row.Header, predicted: RestoreLossCounts) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val result = trashRepository.restoreOperation(row.opKey, row.editBackup)
+                // **복원은 시작하면 끝까지 간다** — 항목마다 트랜잭션이 따로라, 화면 수명에서
+                // 그대로 돌면 회전 한 번에 **절반만 되살아난 채 멈춘다**(취소는 중단점마다
+                // 걸린다). 그것은 취소가 아니라 **반쪽 상태**이고, 이 저장소는 같은 이유로
+                // 엑셀 가져오기의 반영 구간을 이미 `NonCancellable`로 두었다
+                // (*"항목 단위로 완결되지 않는 작업이라 R-26이 취소를 요구하지 않는 자리"*).
+                val result = withContext(NonCancellable) {
+                    trashRepository.restoreOperation(row.opKey, row.editBackup)
+                }
                 resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 Toast.makeText(
@@ -738,6 +761,12 @@ class TrashFragment : Fragment() {
                     warned = true, predicted = predicted, extraNote = failedNote,
                     semanticStateChanges = result.restored.sumOf { it.restoredSemanticStateChanges }
                 )
+            } catch (e: CancellationException) {
+                // **취소는 실패가 아니다.** 위 구간이 `NonCancellable`이라 복원 자체는 끝났고,
+                // 여기 온 것은 *고지할 화면이 사라졌다*는 뜻뿐이다. 종전에는 이 갈래가 아래
+                // `catch (e: Exception)`에 걸려 **성공한 복원을 '복원 실패'로 이력에 적었다**
+                // (B-228이 세운 자세 — 화면 파괴를 실패로 둔갑시키지 않는다).
+                throw e
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()

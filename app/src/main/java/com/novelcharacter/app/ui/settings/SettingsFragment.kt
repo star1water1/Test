@@ -39,6 +39,7 @@ import androidx.fragment.app.viewModels
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1174,36 +1175,50 @@ class SettingsFragment : Fragment() {
     private fun restoreFromEncryptedUri(uri: Uri) {
         if (!isAdded) return
         val ctx = requireContext().applicationContext
+        // **임시본의 주인을 `finally`가 든다.**
+        //
+        // `createTransferTemp`은 만드는 즉시 `ActiveTransfers.hold`로 등재한다. 그런데 종전에는
+        // 놓는 자리가 **정상 갈래 안쪽에만** 있어서, `withContext` 경계에서 취소가 걸리면
+        // (회전 한 번이면 그렇게 된다 — 액티비티가 재생성된다) 대입도, `!isAdded` 삭제 갈래도,
+        // 인계도 전부 지나가지 못했다. 남은 파일은 **백업 한 벌 크기로 캐시에 앉은 채
+        // '저장을 기다리는 파일'로 등재돼 있어 캐시 비우기가 영영 건너뛴다** — 프로세스가
+        // 죽기 전에는 아무도 그것을 놓지 않는다.
+        //
+        // 종전 `!isAdded` 갈래에도 구멍이 있었다: 파일은 지우면서 **등재는 안 닫았다.**
+        // 둘을 함께 닫는 것이 `discardTransferTemp`이고, 그것은 **화면과 다른 스코프**
+        // (`transferScope`)에서 돌므로 취소된 이 스코프의 `finally`에서도 끝까지 간다.
+        var tempEncFile: File? = null
+        var handedOver = false
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val tempEncFile = withContext(Dispatchers.IO) {
-                    val temp = createTransferTemp(ctx, "restore_ext_", ".enc")
+                val temp = withContext(Dispatchers.IO) {
+                    val t = createTransferTemp(ctx, "restore_ext_", ".enc")
+                    tempEncFile = t
                     ctx.contentResolver.openInputStream(uri)?.use { input ->
-                        temp.outputStream().use { output -> input.copyTo(output) }
+                        t.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw Exception(getString(R.string.backup_file_open_failed))
-                    temp
+                    t
                 }
+                tempEncFile = temp
                 // **소유권을 함께 넘긴다.** 종전에는 *"비동기로 읽으므로 즉시 지우면 경쟁
                 // 조건"*이라며 삭제를 포기하고 시스템에 맡겼는데, 받는 쪽도 남의 파일로 보아
                 // 지우지 않아 **소유자가 아무도 없었다** — 복원할 때마다 옮겨 온 백업이
                 // 캐시에 그대로 쌓였다. 만든 자리가 지운다(이 저장소의 규약).
-                val isPortable = withContext(Dispatchers.IO) { BackupEncryptor.isPortableFormat(tempEncFile) }
-                if (!isAdded) {
-                    // 화면이 사라져 아무도 이어받지 않는다 — 여기서 지운다.
-                    withContext(Dispatchers.IO) { tempEncFile.delete() }
-                    return@launch
-                }
+                val isPortable = withContext(Dispatchers.IO) { BackupEncryptor.isPortableFormat(temp) }
+                // 화면이 사라졌으면 아무도 이어받지 않는다 — 아래 `finally`가 놓는다.
+                if (!isAdded) return@launch
                 if (isPortable) {
                     // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원.
                     // **취소하면 여기서 놓는다** — 창이 소유권을 쥔 채 닫히면 주인이 없어진다.
                     showEnterPassphraseDialog(
-                        onCancelled = { discardTransferTemp(tempEncFile) }
+                        onCancelled = { discardTransferTemp(temp) }
                     ) { passphrase ->
-                        restoreFromPortableFile(tempEncFile, passphrase, ownsEncFile = true)
+                        restoreFromPortableFile(temp, passphrase, ownsEncFile = true)
                     }
                 } else {
-                    restoreFromEncryptedFile(tempEncFile, ownsEncFile = true)
+                    restoreFromEncryptedFile(temp, ownsEncFile = true)
                 }
+                handedOver = true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // **취소는 실패가 아니다** — 삼키면 화면 파괴가 '복원 실패'로 둔갑한다(B-228).
                 throw e
@@ -1214,6 +1229,8 @@ class SettingsFragment : Fragment() {
                 if (_binding != null) {
                     Toast.makeText(ctx, restoreFailureMessage(t), Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                if (!handedOver) tempEncFile?.let { discardTransferTemp(it) }
             }
         }
     }
@@ -1576,11 +1593,25 @@ class SettingsFragment : Fragment() {
                     db.defaultFieldTemplateDao().deleteAll()
                 }
 
+                // ⚠️ **여기부터는 취소되지 않는다** (`NonCancellable`).
+                //
+                // 위 트랜잭션이 커밋된 순간 DB는 이미 비었다. 그런데 `withContext`는 부모 잡이
+                // 이미 취소돼 있으면 **블록을 시작조차 하지 않고 던진다** — 회전 한 번이면
+                // (`MainActivity`에 `configChanges`가 없어 액티비티가 재생성된다) 아래 두 단계가
+                // 통째로 건너뛰어 **DB만 비고 설정·파일은 그대로 남는 반쪽 초기화**가 된다.
+                // 그리고 아래 `catch (e: Exception)`이 취소까지 삼키고 `_binding`도 null이라
+                // **사용자에게 아무 고지도 가지 않는다.**
+                //
+                // 남는 것의 해악은 이 함수 자신이 적어 두었다 — `folder_roundtrip_prefs`가 남으면
+                // 사용자가 정리 폴더에 다시 놓은 이미지가 *"이미 내보낸 사본"*으로 판정돼
+                // 무통보로 안 들어온다. 그래서 **시작한 초기화는 끝까지 간다**(R-26이 취소를
+                // 요구하지 않는 부류다 — 반쪽 상태가 취소보다 나쁘다).
+
                 // SharedPreferences 초기화 (테마 제외) — 초기화가 UI 상태 찌꺼기를 남기지 않게
                 // 실제 사용 중인 prefs 파일명과 일치시켜 유지한다(과거 죽은 이름 4개 교정:
                 // search_filters→search_ui_state, namebank_prefs→namebank_ui_state,
                 // graph_prefs→graph_ui_state, universe_list_state→character_list_ui)
-                withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO + NonCancellable) {
                     listOf(
                         // **`image_index_prefs`는 이제 쓰는 코드가 없다 (B-106 ⓑ)** — 작품·세계관
                         // 카드도 시드 방식으로 옮겨 가며 저장소가 사라졌다. **그래도 목록에 남긴다:**
@@ -1609,7 +1640,7 @@ class SettingsFragment : Fragment() {
                 }
 
                 // 파일 삭제
-                withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO + NonCancellable) {
                     // 이미지 파일
                     // 커밋 전 임시 산출물도 함께 지운다 — 회전 임시본은 `.tmp`라
                     // 확장자 목록에 걸리지 않아 초기화 뒤에도 홀로 남았다.
@@ -1632,16 +1663,18 @@ class SettingsFragment : Fragment() {
                     app.backupStatusStore.clear()
                 }
 
+                // **고지는 화면이 사라져도 간다** — 앱 컨텍스트로 띄운다.
+                // 되돌릴 수 없는 파괴가 끝난 사실을 회전 한 번에 잃으면, 사용자는 초기화가
+                // 됐는지 만 것인지 알 방법이 없다(개발 의도 2번). 뷰를 만지는 두 줄만 뷰가
+                // 살아 있을 때 돈다.
+                Toast.makeText(app, R.string.reset_complete, Toast.LENGTH_LONG).show()
                 if (_binding != null) {
-                    Toast.makeText(ctx, R.string.reset_complete, Toast.LENGTH_LONG).show()
                     loadBackupStatus()
                     loadErrorLogSummary()
                 }
             } catch (e: Exception) {
                 AppLogger.error("Settings", "앱 초기화 실패", e)
-                if (_binding != null) {
-                    Toast.makeText(ctx, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                Toast.makeText(app, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
                 progress.dismissSafely()
             }
