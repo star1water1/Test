@@ -175,10 +175,18 @@ class StateChangeIndexes(rows: List<CharacterStateChange>) {
         return Resolution(null, null)
     }
 
-    /** 이 밑줄 자리를 지금 누가 쓰는가 — 밑줄 키가 아니면 언제나 null. */
+    /**
+     * 이 밑줄 자리를 지금 누가 쓰는가 — 밑줄 키가 아니면 언제나 null.
+     *
+     * **`first`가 아니라 [SingletonStateChanges.pick]이다.** 형제 축들은 `LIMIT 1`(= 작은 id)을
+     * 흉내 내는 것이 곧 정답이라 `first`를 쓰는데, 이 축이 대신하는 것은 질의가 아니라
+     * *정본이 어느 행인가*라는 판정이다. 그 둘은 **한 캐릭터에 밑줄 키 행이 둘일 때 갈린다** —
+     * 둘째 줄이 먼저 삽입돼 id가 작으면 `first`는 **읽는 쪽이 아무도 안 보는 행**을 준다.
+     * 그러면 가져오기가 「기존 행을 고쳤습니다」라 말해 놓고 화면은 옛 값을 그대로 보인다.
+     */
     fun slotOwner(characterId: Long, fieldKey: String): CharacterStateChange? =
         if (SingletonStateChanges.isSingleton(fieldKey)) {
-            bySlot.first(StateChangeSlotKey(characterId, fieldKey))
+            SingletonStateChanges.pick(bySlot.all(StateChangeSlotKey(characterId, fieldKey)), fieldKey)
         } else null
 
     /**

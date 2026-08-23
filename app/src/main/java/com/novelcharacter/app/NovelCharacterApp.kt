@@ -282,8 +282,14 @@ class NovelCharacterApp : Application() {
         // **플래그가 v2다** — 종전 갈래가 *사망·출생 이력이 있는가*만 보고 표식을 정해,
         // **생존여부 칸은 채워져 있는데 이력이 하나도 없는 캐릭터**를 통째로 건너뛰었다.
         // 이미 마친 설치에는 그 구멍이 남아 있으므로(실측: 사용자 데이터에서 두 명) 한 번 더 돈다.
-        // 멱등이라 다시 돌아도 안전하다 — 아래 `syncAliveFor`는 이미 `__alive`가 있으면 넘어간다.
         if (prefs.getBoolean("alive_sync_migrated_v2", false)) return
+        // **두 번째 실행이 하는 일은 [syncAliveFor]뿐이다.** 아래 필드 정의 손질
+        // (`semanticRole`·`aliveValue`·`deadValue`를 **선택지 차례로** 부여하는 것)은
+        // *한 번만* 도는 것을 전제로 쓰인 heuristic이라, 다시 돌면 v1 이후에 만들어진 세계관까지
+        // 훑는다. 선택지가 [생존, 사망] 차례가 아닌 필드에서는 그 부여가 **뒤집힌 짝**을 만들고,
+        // 그 뒤 [syncAliveFor]가 뒤집힌 표식을 적고 **필드값까지 덮어쓴다** — 되돌릴 자리가 없다.
+        // 그래서 v1을 이미 마친 설치에서는 손질을 건너뛴다(콜드 검토 2026.08.24).
+        val firstRun = !prefs.getBoolean("alive_sync_migrated", false)
 
         appScope.launch(Dispatchers.IO) {
             try {
@@ -293,7 +299,7 @@ class NovelCharacterApp : Application() {
                 for (universe in allUniverses) {
                     val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
                     // alive 필드 찾기: key="alive" + type="SELECT" + semanticRole 없음
-                    val aliveField = fields.find { f ->
+                    val aliveField = if (!firstRun) null else fields.find { f ->
                         f.key == "alive" && f.fieldType == FieldType.SELECT &&
                             com.novelcharacter.app.data.model.SemanticRole.fromConfig(f.config) == null
                     }

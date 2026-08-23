@@ -40,6 +40,22 @@ class RecordTimestampsTest {
     }
 
     /**
+     * **지어낸 생성일이 파일의 수정일을 버리면 안 된다** (콜드 검토 2026.08.24).
+     *
+     * 손으로 만든 파일에서 생성일 열만 지운 경우가 그 모양이다. 생성일을 *지금*으로 지어내면
+     * 이 규칙이 파일의 수정일을 지금으로 밀어 올려 사용자가 적은 값이 사라진다 —
+     * 그래서 신규 행의 생성일은 **수정일을 바닥으로** 삼는다(`createdAtFor`).
+     */
+    @Test
+    fun `생성일이 없으면 수정일이 바닥이라 그 값이 산다`() {
+        val now = created + 999_999
+        // 잘못된 짝: 생성일을 지금으로 지어내면 파일의 수정일이 지금으로 밀린다.
+        assertEquals(now, RecordTimestamps.orderedUpdatedAt(now, stale))
+        // 옳은 짝: 수정일을 바닥으로 삼으면 그 값이 그대로 산다.
+        assertEquals(stale, RecordTimestamps.orderedUpdatedAt(stale, stale))
+    }
+
+    /**
      * 규칙이 **고치는 것은 뒤집힌 짝뿐**이다. 옛 파일을 들여도 정상인 짝은 건드리지 않는다 —
      * 왕복 충실성(파일의 수정일을 그대로 받는다)을 버리지 않는 것이 이 규칙의 조건이다.
      */

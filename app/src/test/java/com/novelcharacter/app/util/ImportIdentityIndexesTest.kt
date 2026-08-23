@@ -103,6 +103,21 @@ class ImportIdentityIndexesTest {
         assertNull(indexes.slotOwner(1L, "직업"))
     }
 
+    /**
+     * **슬롯은 `LIMIT 1`이 아니라 *정본*을 준다** (콜드 검토 2026.08.24).
+     * 둘째 줄이 먼저 삽입돼 id가 작으면 `first`는 읽는 쪽이 아무도 안 보는 행을 준다 —
+     * 그러면 가져오기가 「기존 행을 고쳤습니다」라 말해 놓고 화면은 옛 값을 보인다.
+     */
+    @Test
+    fun `상태변화 — 슬롯은 id가 아니라 정본을 준다`() {
+        // 둘째 줄(1303)이 먼저 들어가 id가 작다.
+        val indexes = StateChangeIndexes(listOf(birth(2L, 1303, "SC-X"), birth(9L, 1301, "SC-Y")))
+        assertEquals(9L, indexes.slotOwner(1L, CharacterStateChange.KEY_BIRTH)?.id)
+        val r = indexes.resolve("", StateChangeNaturalKey(1L, 1350, CharacterStateChange.KEY_BIRTH, "1350"))
+        assertEquals(9L, r.row?.id)
+        assertEquals(StateChangeIndexes.Via.SLOT, r.via)
+    }
+
     @Test
     fun `상태변화 — 새로 넣은 행도 그 자리의 주인이 된다`() {
         val indexes = StateChangeIndexes(emptyList())

@@ -2395,10 +2395,19 @@ class ExcelExporter(context: Context) {
         val metaByPath = metas.associateBy { it.path }
 
         // **라이브러리 표만 실으면 그림이 한 장뿐인 캐릭터의 그림이 통째로 빠진다** —
-        // 근거·실측은 [ImageSheetRows]의 머리말. 참조 집합은 백업 zip이 담을 것을 고르는
-        // 그 함수를 그대로 쓴다(두 벌로 적으면 *파일에 실린 그림*과 *시트에 적힌 그림*이 갈린다).
+        // 근거·실측은 [ImageSheetRows]의 머리말.
+        //
+        // **zip과 같은 두 걸음을 지난다**(`ImageZipHelper.wrapWithImages`): 참조를 모으고
+        // → `ImagePathClassifier`로 *담을 수 있는 것*만 남긴다. 두 걸음 중 하나만 흉내 내면
+        // **파일이 없어진 참조가 행으로 나가고**, 그 행은 되가져올 때 파일명을 해석하지 못해
+        // 「파일을 찾을 수 없어 …를 건너뛰었습니다」라는 **없는 유실 고지**를 만든다
+        // (그 부류를 없앤 것이 `analyzeImageMeta`의 주석이 적어 둔 앞선 수리다).
         // 읽지 못한 imagePaths는 여기서 다시 세지 않는다 — 그 고지는 zip 래핑이 든다(B-225).
-        val referenced = runCatching { ImageZipHelper.collectAllImagePaths(db) }.getOrDefault(emptySet())
+        val referenced = runCatching {
+            val appDir = com.novelcharacter.app.util.ImagePathMatch
+                .canonical(appContext.filesDir.absolutePath)
+            ImagePathClassifier.classify(ImageZipHelper.collectAllImagePaths(db), appDir).includable
+        }.getOrDefault(emptyList())
         val rows = ImageSheetRows.plan(metas.map { it.path }, referenced)
 
         val spec = imageMetaSpec()

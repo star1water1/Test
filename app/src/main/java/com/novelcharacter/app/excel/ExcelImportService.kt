@@ -66,6 +66,7 @@ import com.novelcharacter.app.util.RelationshipIndexes
 import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
+import com.novelcharacter.app.util.SingletonStateChanges
 import com.novelcharacter.app.util.RecordTimestamps
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
@@ -1848,7 +1849,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 종전에는 두 자리가 각자 생성자를 적고 있어, 한쪽만 고치면 예고와 처분이 갈렸다.
      */
     private fun newSearchPresetFrom(r: SearchPresetRowValues, now: Long): SearchPreset {
-        val created = r.createdAt ?: now
+        val created = createdAtFor(r.createdAt, r.updatedAt, now)
         return SearchPreset(
             name = r.name,
             query = r.query ?: "",
@@ -1980,7 +1981,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     /** 이 행이 **만들** 목록 프리셋 — [newSearchPresetFrom]과 같은 근거(R-33). */
     private fun newListPresetFrom(r: ListPresetRowValues, now: Long): CharacterListPreset {
-        val created = r.createdAt ?: now
+        val created = createdAtFor(r.createdAt, r.updatedAt, now)
         return CharacterListPreset(
             name = r.name,
             tagsJson = r.tagsJson ?: "[]",
@@ -2047,9 +2048,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             description = r.description ?: "",
             fieldsJson = r.fieldsJson ?: "[]",
             isBuiltIn = r.isBuiltIn ?: false,
-            createdAt = r.createdAt ?: now,
+            createdAt = createdAtFor(r.createdAt, r.updatedAt, now),
             // 수정일은 생성일 아래로 내려가지 않는다 — 근거는 [RecordTimestamps].
-            updatedAt = stampedUpdatedAt(r.createdAt ?: now, r.updatedAt ?: now)
+            updatedAt = stampedUpdatedAt(createdAtFor(r.createdAt, r.updatedAt, now), r.updatedAt ?: now)
         )
 
     private fun mergePresetTemplate(existing: UserPresetTemplate, r: PresetTemplateRowValues, now: Long): UserPresetTemplate {
@@ -2070,6 +2071,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun stampedUpdatedAt(createdAt: Long, updatedAt: Long): Long =
         RecordTimestamps.orderedUpdatedAt(createdAt, updatedAt)
+
+    /**
+     * **신규 행의 생성일** — 파일 값이 없으면 *수정일*, 그것도 없으면 지금.
+     *
+     * 수정일로 내려가는 갈래가 요점이다. 생성일을 지금으로 지어내면 [stampedUpdatedAt]이
+     * 파일의 수정일을 *지금*으로 밀어 올려 **사용자가 적은 값을 버린다**(콜드 검토 2026.08.24 —
+     * 손으로 만든 파일에서 생성일 열만 지운 경우가 그 모양이다). 수정일을 바닥으로 삼으면
+     * 그 값이 그대로 살고 짝의 차례도 성립한다 — *언제 만들어졌는지는 모르지만 적어도
+     * 마지막으로 고친 그때에는 있었다*가 그 뜻이다.
+     */
+    private fun createdAtFor(fileCreatedAt: Long?, fileUpdatedAt: Long?, now: Long): Long =
+        fileCreatedAt ?: fileUpdatedAt ?: now
 
     private class FieldDefCols(cols: Map<String, Int>, firstHeader: String) {
         val universeName = cols[firstHeader] ?: cols["세계관"] ?: 0
@@ -8593,13 +8606,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         if (r.eventType == TimelineEvent.TYPE_BIRTH || r.eventType == TimelineEvent.TYPE_DEATH) {
                             val stateKey = if (r.eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
                             for (character in resolvedCharacters) {
-                                val existing = db.characterStateChangeDao()
-                                    .getChangeByNaturalKey(character.id, year, stateKey, year.toString())
-                                if (existing == null) {
+                                // **자연키가 아니라 슬롯으로 찾는다** — `__birth`·`__death`는
+                                // 캐릭터당 한 행이 불변식이라([SingletonStateChanges]), 연도가
+                                // 다른 출생 사건을 만나면 자연키는 빗나가고 **둘째 줄이 들어갔다.**
+                                // 그것이 사용자 데이터에 실제로 남아 있던 모양이다(연표 1303 ·
+                                // 프로필 1301 → 나이가 163과 165로 갈렸다). 인앱 쌍둥이
+                                // (`EventStateChangeSync`)는 같은 자리를 슬롯으로 잡는다 —
+                                // 두 경로가 같은 규약을 봐야 한다.
+                                val slot = SingletonStateChanges.pick(
+                                    db.characterStateChangeDao().getChangesByField(character.id, stateKey),
+                                    stateKey
+                                )
+                                if (slot == null) {
                                     db.characterStateChangeDao().insert(CharacterStateChange(
                                         characterId = character.id, year = year, month = r.month, day = r.day,
                                         fieldKey = stateKey, newValue = year.toString()
                                     ))
+                                } else if (slot.year != year || slot.month != r.month || slot.day != r.day ||
+                                    slot.newValue != year.toString()
+                                ) {
+                                    // 사건이 진실이면 그 자리의 행을 **고친다**(종전에는 둘째 줄).
+                                    db.characterStateChangeDao().update(
+                                        slot.copy(
+                                            year = year, month = r.month, day = r.day,
+                                            newValue = year.toString()
+                                        )
+                                    )
                                 }
                                 // 작품→세계관은 이미 메모된 helper가 있다 — 참가자마다 작품을
                                 // 다시 읽던 자리다(B-210. 같은 작품을 든 참가자가 되풀이된다).
