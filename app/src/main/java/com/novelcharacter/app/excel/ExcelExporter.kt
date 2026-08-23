@@ -2657,7 +2657,10 @@ class ExcelExporter(context: Context) {
      */
     private suspend fun exportDuelMatches(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
-        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+        // **형제 시트 아홉 장과 같은 글자를 적는다** — `displayName`은 성·이름 칸이 있으면
+        // `"성 이름"`으로 새로 조립해 캐릭터 시트와 다른 이름이 됐다([CharacterNameIndex]).
+        val nameByCode = db.characterDao().getAllCharactersList()
+            .associate { it.code to it.name.ifBlank { it.displayName } }
 
         val spec = duelMatchSpec(axes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -2730,7 +2733,10 @@ class ExcelExporter(context: Context) {
     /** 대결 **상성** — 층 B의 사용자 판정. 파생이 아니라 판정이라 싣는다. */
     private suspend fun exportDuelVerdicts(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
-        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+        // **형제 시트 아홉 장과 같은 글자를 적는다** — `displayName`은 성·이름 칸이 있으면
+        // `"성 이름"`으로 새로 조립해 캐릭터 시트와 다른 이름이 됐다([CharacterNameIndex]).
+        val nameByCode = db.characterDao().getAllCharactersList()
+            .associate { it.code to it.name.ifBlank { it.displayName } }
 
         val spec = duelVerdictSpec(axes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)

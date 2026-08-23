@@ -134,6 +134,7 @@ $MAIN/util/AiCheckState.kt
 $MAIN/util/SemanticClearPlan.kt
 $MAIN/util/SemanticAlivePrecedence.kt
 $MAIN/util/ColorHex.kt
+$MAIN/util/CharacterNameIndex.kt
 $MAIN/util/SingletonStateChanges.kt
 $MAIN/util/RecordTimestamps.kt
 $MAIN/util/AliveAtYear.kt
@@ -424,6 +425,7 @@ $TEST/util/AiCheckStateTest.kt
 $TEST/util/SemanticClearPlanTest.kt
 $TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
+$TEST/util/CharacterNameIndexTest.kt
 $TEST/util/SingletonStateChangesTest.kt
 $TEST/util/RecordTimestampsTest.kt
 $TEST/util/AliveAtYearTest.kt
