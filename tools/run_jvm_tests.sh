@@ -116,6 +116,7 @@ $MAIN/excel/SheetResolver.kt
 $MAIN/excel/UniverseSheetPlan.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
+$MAIN/excel/RelationshipTypeOptions.kt
 $MAIN/excel/ImageSheetRows.kt
 $MAIN/util/ProgressScale.kt
 $MAIN/util/DialogScrollCap.kt
@@ -133,6 +134,7 @@ $MAIN/util/AiCheckState.kt
 $MAIN/util/SemanticClearPlan.kt
 $MAIN/util/SemanticAlivePrecedence.kt
 $MAIN/util/ColorHex.kt
+$MAIN/util/CharacterNameIndex.kt
 $MAIN/util/SingletonStateChanges.kt
 $MAIN/util/RecordTimestamps.kt
 $MAIN/util/AliveAtYear.kt
@@ -372,6 +374,7 @@ $TEST/excel/EntityFieldValueOverflowTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
+$TEST/excel/RelationshipTypeOptionsTest.kt
 $TEST/excel/ImageSheetRowsTest.kt
 $TEST/excel/ColumnWidthFitTest.kt
 $TEST/excel/GradeSystemSheetTest.kt
@@ -422,6 +425,8 @@ $TEST/util/AiCheckStateTest.kt
 $TEST/util/SemanticClearPlanTest.kt
 $TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
+$TEST/util/ColorHexNormalizeTest.kt
+$TEST/util/CharacterNameIndexTest.kt
 $TEST/util/SingletonStateChangesTest.kt
 $TEST/util/RecordTimestampsTest.kt
 $TEST/util/AliveAtYearTest.kt

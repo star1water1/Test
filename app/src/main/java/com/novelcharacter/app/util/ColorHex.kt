@@ -27,5 +27,23 @@ object ColorHex {
     fun isValidHex(raw: String?): Boolean =
         raw != null && HEX.matches(raw.trim())
 
+    /**
+     * 저장 형식으로 다듬은 색 글자, 아니면 `null`.
+     *
+     * **`#`이 빠진 글자를 받아 준다** — 손편집·옛 경로가 `000000`을 그대로 넣었고
+     * (실측 2026.08.24: 사용자가 내보낸 파일의 '세계관' 한 행이 그 모양이었다. 나머지
+     * 일곱 행은 전부 `#RRGGBB`였다), 그러면 같은 뜻의 값이 파일 안에서 두 글자가 된다.
+     *
+     * **넓히는 것이 아니라 좁히는 쪽이다**: 받는 글자는 그대로이고(16진 3·6·8자리),
+     * *저장되는 모양*을 하나로 만든다. 명명색은 여전히 받지 않는다 — [isValidHex]의 근거 그대로다.
+     */
+    fun normalizedOrNull(raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        if (isValidHex(trimmed)) return trimmed
+        val prefixed = "#$trimmed"
+        return if (isValidHex(prefixed)) prefixed else null
+    }
+
     private val HEX = Regex("^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 }

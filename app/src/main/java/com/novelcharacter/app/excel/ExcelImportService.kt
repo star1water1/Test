@@ -67,6 +67,8 @@ import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
 import com.novelcharacter.app.util.SingletonStateChanges
+import com.novelcharacter.app.util.ColorHex
+import com.novelcharacter.app.util.CharacterNameIndex
 import com.novelcharacter.app.util.RecordTimestamps
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
@@ -1395,7 +1397,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             code = getCellCode(row, c.code, ctx, result),
             description = if (c.hasDesc) getCellString(row, c.desc) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
-            borderColor = if (c.borderColor >= 0) getCellString(row, c.borderColor) else null,
+            // `#`이 빠진 글자는 저장 형식으로 올려 받는다 — 뜻은 같은데 글자가 갈리면 파일이
+            // 스스로 안내('테두리색(HEX)')와 어긋난다([ColorHex.normalizedOrNull]).
+            // 알아볼 수 없는 글자는 종전대로 그대로 둔다(여기서 버리면 무음 유실이다).
+            borderColor = if (c.borderColor >= 0) {
+                getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
+            } else null,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
             imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
@@ -1509,7 +1516,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     private fun readNovelRow(row: Row, c: NovelCols, ctx: String, result: ImportResult?): NovelRowValues {
-        val borderColor = if (c.borderColor >= 0) getCellString(row, c.borderColor) else null
+        // 세계관 갈래와 같은 규약이다 — 형제 둘이 다른 글자를 저장하면 상속 판정이 갈린다.
+        val borderColor = if (c.borderColor >= 0) {
+            getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
+        } else null
         return NovelRowValues(
             title = getCellString(row, c.title),
             code = getCellCode(row, c.code, ctx, result),
@@ -1617,7 +1627,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             universeCode = getCellCode(row, c.universeCode, ctx, result),
             // F1-A: 열 없음 → null(기존 유지). 열 있음 → 셀 값(빈칸 = 비움 의도 존중).
             description = if (c.desc >= 0) getCellString(row, c.desc) else null,
-            color = if (c.color >= 0) getCellString(row, c.color).ifBlank { "#2196F3" } else null,
+            // 테두리색 두 갈래와 같은 문을 지난다 — 앱 안의 '색'이 표마다 다른 규칙이면
+            // 같은 값이 자리마다 다른 글자로 저장된다([ColorHex.normalizedOrNull]).
+            color = if (c.color >= 0) {
+                getCellString(row, c.color).ifBlank { "#2196F3" }.let { ColorHex.normalizedOrNull(it) ?: it }
+            } else null,
             autoRelationType = if (c.autoRelType >= 0) getCellString(row, c.autoRelType) else null,
             autoRelationIntensity = if (c.autoRelIntensity >= 0) (parseIntensityWithWarn(row, c.autoRelIntensity, 5, ctx, result) ?: 5) else null,
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
@@ -3303,8 +3317,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = analysisCharacters()
-            .groupBy({ it.displayName }, { it.code })
+        // 이름 색인은 **두 표기를 모두** 든다 — 내보내기가 `displayName`을 적던 옛 파일과
+        // 지금의 `name`을 함께 읽어야 한다(근거는 [CharacterNameIndex]).
+        val charactersForNames = analysisCharacters()
+        val codeByName = CharacterNameIndex.byWrittenName(charactersForNames)
+        val namesByCode = CharacterNameIndex.namesByCode(charactersForNames)
         // **판 자신에는 그 근거가 적용되지 않아 행마다 `getByCode`가 남아 있었다**(B-236 — 가져오기
         // 쪽이 B-210에서 겪은 것과 같은 자리다). 코드 열에 인덱스가 없어 그 하나하나가 풀스캔이다.
         val matches = DuelMatchIndexes(db.duelMatchDao().getAllList())
@@ -3353,7 +3370,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 승자 해석은 가져오기와 **같은 함수·같은 갈래**다(R-33) — 모호(동명 참가자)·미상은 스킵.
             val winnerCode = when (
                 val winner = resolveDuelWinner(
-                    followImageParticipant(axis, r.winnerText), aCode, r.aName, bCode, r.bName
+                    followImageParticipant(axis, r.winnerText),
+                    aCode, r.aName, bCode, r.bName, namesByCode
                 )
             ) {
                 is DuelWinner.Resolved -> winner.code
@@ -3417,8 +3435,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // (`ImportLookupIndex`의 `takeIf { it.isNotBlank() }`).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = analysisCharacters()
-            .groupBy({ it.displayName }, { it.code })
+        // 이름 색인은 **두 표기를 모두** 든다 — 내보내기가 `displayName`을 적던 옛 파일과
+        // 지금의 `name`을 함께 읽어야 한다(근거는 [CharacterNameIndex]).
+        val codeByName = CharacterNameIndex.byWrittenName(analysisCharacters())
         val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
             idOf = { it.id }, keyOf = { it.code.takeIf { c -> c.isNotBlank() } }
         )
@@ -10989,19 +11008,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun resolveDuelWinner(
         text: String,
-        aCode: String, aName: String,
-        bCode: String, bName: String
+        aCode: String, aRowName: String,
+        bCode: String, bRowName: String,
+        namesByCode: Map<String, Set<String>>
     ): DuelWinner {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || trimmed == DuelSheetLabels.WINNER_DRAW) return DuelWinner.Resolved(null)
-        return when (trimmed) {
-            aCode -> DuelWinner.Resolved(aCode)
-            bCode -> DuelWinner.Resolved(bCode)
-            aName -> if (aName == bName) DuelWinner.Ambiguous else DuelWinner.Resolved(aCode)
-            bName -> DuelWinner.Resolved(bCode)
+        if (trimmed == aCode) return DuelWinner.Resolved(aCode)
+        if (trimmed == bCode) return DuelWinner.Resolved(bCode)
+        val hitsA = matchesParticipant(trimmed, aRowName, aCode, namesByCode)
+        val hitsB = matchesParticipant(trimmed, bRowName, bCode, namesByCode)
+        return when {
+            hitsA && hitsB -> DuelWinner.Ambiguous
+            hitsA -> DuelWinner.Resolved(aCode)
+            hitsB -> DuelWinner.Resolved(bCode)
             else -> DuelWinner.Unknown
         }
     }
+
+    /**
+     * 이 글자가 그 참가자인가 — **그 행에 적힌 표기이거나, 그 캐릭터가 읽히는 표기**다
+     * ([CharacterNameIndex.namesByCode]). 종전에는 그 행의 표기 하나만 봐서, 캐릭터 시트의
+     * 이름을 승자 칸에 적으면 두 참가자 어느 쪽과도 안 맞아 그 행이 거부됐다.
+     *
+     * 집합을 미리 만들지 않고 **여기서 견주는** 것은 '대결 기록'이 이 앱에서 가장 큰 시트이기
+     * 때문이다(수만 행) — 승자 칸이 비었거나 코드인 흔한 갈래는 위에서 이미 끝나므로,
+     * 이 자리는 행마다 도는 비용에 아무것도 더하지 않는다.
+     */
+    private fun matchesParticipant(
+        text: String,
+        rowName: String,
+        code: String,
+        namesByCode: Map<String, Set<String>>
+    ): Boolean = text == rowName.trim() || text in namesByCode[code].orEmpty()
 
     private suspend fun importDuelMatches(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = duelMatchSpec()
@@ -11018,8 +11057,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 빈 코드는 키가 아니다 — 미리보기 색인과 같은 규약이라야 예고와 실행이 갈리지 않는다(R-33).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
-            .groupBy({ it.displayName }, { it.code })
+        // 미리보기와 **같은 색인**이다(R-33) — 두 표기를 모두 키로 든다([CharacterNameIndex]).
+        val charactersForNames = db.characterDao().getAllCharactersList()
+        val codeByName = CharacterNameIndex.byWrittenName(charactersForNames)
+        val namesByCode = CharacterNameIndex.namesByCode(charactersForNames)
         // 판 자신도 같은 대접을 한다 (B-210) — 바로 위 문단이 축·캐릭터에 세운 근거가
         // **판에는 적용되지 않아** 행마다 `getByCode`가 남아 있었다(코드 열에 인덱스가 없어
         // 그 하나하나가 풀스캔이다).
@@ -11069,7 +11110,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 어느 쪽과도 안 맞아 **그 행이 통째로 거부된다**. 이름·'비슷함'은 표에 없어
                 // 그대로 지나간다.
                 val winnerText = followImageParticipant(axis, r.winnerText)
-                val winnerCode = when (val winner = resolveDuelWinner(winnerText, aCode, r.aName, bCode, r.bName)) {
+                val winnerCode = when (
+                    val winner = resolveDuelWinner(
+                        winnerText, aCode, r.aName, bCode, r.bName, namesByCode
+                    )
+                ) {
                     is DuelWinner.Resolved -> winner.code
                     DuelWinner.Ambiguous -> {
                         result.skippedRows++
@@ -11215,8 +11260,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 빈 코드는 키가 아니다 — 미리보기 색인과 같은 규약이라야 예고와 실행이 갈리지 않는다(R-33).
         val axisByCode = axes.filter { it.code.isNotBlank() }.associateBy { it.code }
         val axesByName = axes.groupBy { it.name }
-        val codeByName = db.characterDao().getAllCharactersList()
-            .groupBy({ it.displayName }, { it.code })
+        // 미리보기와 **같은 색인**이다(R-33) — 두 표기를 모두 키로 든다([CharacterNameIndex]).
+        val codeByName = CharacterNameIndex.byWrittenName(db.characterDao().getAllCharactersList())
         // 상성도 행마다 코드·구성원키로 표를 물었다 (B-210). 둘 다 한 번 읽어 답한다.
         val allVerdicts = db.duelCounterVerdictDao().getAllList().sortedBy { it.id }
         val verdictCodes = ImportLookupIndex<String, DuelCounterVerdict>(
@@ -12140,7 +12185,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // `optString`은 기기(libcore)에서 JSON null에 `"null"`을 준다 — 그 값이 색 검사를
             // 통과할 리는 없지만, 경고 문구에 그대로 실려 사용자를 헷갈리게 한다(R-70).
             val value = obj.stringOr(key, "")
-            if (com.novelcharacter.app.util.ColorHex.isValidHex(value)) kept.put(key, value.trim())
+            // **버리기 전에 다듬는다** — `#`이 빠졌을 뿐인 값을 떨어뜨리면, 같은 글자를
+            // 받아 주는 테두리색·세력 색상과 이 앱의 '색'이 두 규칙이 된다(콜드 검토 2026.08.24).
+            val normalized = ColorHex.normalizedOrNull(value)
+            if (normalized != null) kept.put(key, normalized)
             else dropped.add("$key=$value")
         }
         if (dropped.isNotEmpty()) {

@@ -1313,7 +1313,11 @@ fun quoteSpec() = SheetSpec(
 )
 
 fun relationshipSpec(
-    customTypes: List<String> = emptyList(),
+    /**
+     * '관계 유형' 드롭다운에 실을 목록 — 기본 유형만이 아니라 **이 시트에 실제로 실리는 값**을
+     * 담아야 한다. 목록을 짓는 판정은 [RelationshipTypeOptions.forCharacterRelations]가 든다.
+     */
+    relationshipTypes: List<String> = Universe.DEFAULT_RELATIONSHIP_TYPES,
     factionNames: List<String> = emptyList()
 ) = SheetSpec(
     sheetName = "캐릭터 관계",
@@ -1321,7 +1325,7 @@ fun relationshipSpec(
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
         ColumnSpec("캐릭터2", required = true, width = 6000),
-        ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
+        ColumnSpec("관계 유형", required = true, dropdownOptions = relationshipTypes, width = 5000),
         ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
@@ -1470,13 +1474,14 @@ fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
 
 fun factionRelationshipSpec(
     factionNames: List<String> = emptyList(),
-    customTypes: List<String> = emptyList()
+    /** 판정은 [RelationshipTypeOptions.forFactionRelations]가 든다 — 근거는 그 문서에 있다. */
+    relationshipTypes: List<String> = Universe.DEFAULT_RELATIONSHIP_TYPES
 ) = SheetSpec(
     sheetName = "세력 관계",
     columns = listOf(
         ColumnSpec("세력1", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("세력2", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
-        ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
+        ColumnSpec("관계 유형", required = true, dropdownOptions = relationshipTypes, width = 5000),
         ColumnSpec("설명", width = 10000, wrap = true),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),

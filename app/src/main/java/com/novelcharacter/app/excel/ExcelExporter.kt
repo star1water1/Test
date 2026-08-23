@@ -1030,6 +1030,13 @@ class ExcelExporter(context: Context) {
             // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
             // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
             GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
+            // 캐릭터 시트 아홉 장 전부에 파란(편집 가능) 열로 있고 가져오기가 실제로 읽는데,
+            // 안내에는 한 줄도 없었다 — 바로 위 '이미지경로'는 다섯 줄을 쓰는 그 자리에서다.
+            // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.
+            GuideLine("", styles.guideBody, "• 대표이미지는 그 캐릭터의 카드·목록에 먼저 보일 그림입니다. 경로가 아니라 **파일명**을 적습니다:"),
+            GuideLine("", styles.guideBody, "  char_1.jpg (같은 행 '이미지경로'에 든 그림 중 하나여야 합니다 — 그 목록에 없으면 기존 지정을 그대로 두고 알려 드립니다)"),
+            GuideLine("", styles.guideBody, "  칸을 비우면 지정이 풀려 그 캐릭터의 그림 중에서 앱이 골라 보여 줍니다(첫 장으로 고정되지 않습니다)."),
+            GuideLine("", styles.guideBody, "  열을 통째로 지우면 기존 지정이 유지됩니다."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
             GuideLine("", styles.guideBody, "• 이 '사용 안내' 시트는 가져오기 시 무시됩니다"),
             // '완전한 백업입니다' 고지가 이 셋의 미수록을 말하지 않아, 기기 이전 뒤 휴지통
@@ -1095,6 +1102,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
             GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
+            // 형제인 '캐릭터 관계'는 행의 '코드' 열이 있어 유형을 고쳐도 같은 관계로 인식하는데
+            // (바로 위 두 줄), **'세력 관계'에는 그 열이 없다** — 자연키가 (세력1, 세력2, 유형)이라
+            // 유형을 고치면 새 관계가 되고 옛 관계가 남는다. 같은 위험인데 경고가 한쪽에만 있었다.
+            GuideLine("", styles.guideBody, "• 세력 관계: 이 시트에는 행의 '코드' 열이 없어 세력1+세력2+관계 유형이 그 행의 정체입니다 —"),
+            GuideLine("", styles.guideBody, "  '관계 유형'을 고치면 새 관계가 생기고 기존 관계가 그대로 남습니다(고칠 셋 중 유형만 그렇습니다)."),
+            GuideLine("", styles.guideBody, "  유형을 바꾸려면 기존 행의 값을 고치는 대신 그 행을 앱에서 지우고 새로 만드는 편이 확실합니다."),
             GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
             GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
             GuideLine("", styles.guideBody, "• 이름 은행: 코드로 매칭합니다(이름·성별을 고쳐도 같은 항목으로 인식). 코드가 없으면 이름+성별로 매칭. 사용여부는 Y/N"),
@@ -1799,14 +1812,23 @@ class ExcelExporter(context: Context) {
             // 미분류 캐릭터도 '전체'에 들어간다 — 빠지면 이 시트의 합계가 앱의 인원수와 어긋나고,
             // 그것을 알아채려면 일일이 세어 봐야 한다(원칙 04).
             //
-            // **여기에는 전역 필드를 넘기지 않는다 — 의도한 제외다**(B-149, 2026.08.10 사용자 확정).
-            // 이 시트는 *두 세계관 이상이 공유하는 필드*를 모으는 집계 시트이고([sharedFields]가
-            // `universeIdsWithCharacters`로 거른다), 전역 필드를 넣으면 시트의 정의가 *공유 필드*에서
-            // *모든 필드*로 달라진다 — 고치는 것이 아니라 **다른 시트를 만드는 것**이다.
+            // **열은 B-149의 확정 그대로다 — 전역 필드가 열을 만들지 않는다**(2026.08.10 사용자
+            // 확정: *"'전체 캐릭터'는 그대로 둔다 — 의도한 제외다"*). 그 확정이 자른 것은
+            // **전역 필드를 열로 세우는 것**이고([sharedFields]가 `universeIdsWithCharacters`로
+            // 거르는 그 자리는 손대지 않았다), 여기서 넘기는 것은 **이미 선 열에 담을 값**이다.
+            //
+            // 종전에는 `emptyList()`라 `fieldIdByKeyType`이 비어 **미분류 행의 필드 칸이 통째로
+            // 빈칸으로 나갔다**(실측 2026.08.24: 7명 중 둘이 25칸·23칸을 채워 두었는데 이 시트에서는
+            // 필드 열 31개가 전부 빈칸). 그러면 성별·나이·종족으로 건 피벗이 209명 중 202명만
+            // 세면서 **화면에는 단서가 없다** — 이 시트가 있는 이유가 정확히 그 축이다.
+            //
+            // **열은 하나도 늘지 않는다**: 열은 `sharedFields`가 이미 정했고, 여기서는
+            // `(필드키, 타입)`이 그 열과 맞는 전역 필드만 값을 찾아 들어간다(안 맞는 전역 필드는
+            // 열이 없어 그대로 지나가고, 그 값은 종전처럼 '미분류 캐릭터' 시트가 든다).
             if (allSheet != null && unassignedChars.isNotEmpty()) {
                 allRowCount += appendAllCharacterRows(
                     allSheet, allSpec, allRowCount, sharedFields, "",
-                    unassignedChars, emptyList(), novelMap, emptyMap(), tags,
+                    unassignedChars, globalFields, novelMap, unassignedResolved, tags,
                     banded = allCharacters.size < BANDING_ROW_LIMIT
                 )
             }
@@ -2307,8 +2329,15 @@ class ExcelExporter(context: Context) {
 
         val allUniverses = db.universeDao().getAllUniversesList()
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
+        // 드롭다운 목록은 **이 시트에 실제로 실리는 값**까지 담는다 — 세력의 자동관계유형이
+        // 이 시트의 행을 만드는데 종전 목록에는 그 글자가 없었다([RelationshipTypeOptions]).
+        val relationshipTypes = RelationshipTypeOptions.forCharacterRelations(
+            customTypes = allCustomTypes,
+            factionAutoTypes = allFactions.map { it.autoRelationType },
+            typesInUse = allRelationships.map { it.relationshipType }
+        )
         // 동명 세력은 드롭다운에서 구분되지 않으므로 접는다 — 대상 확정은 '세력코드' 열이 한다
-        val spec = relationshipSpec(allCustomTypes, allFactions.map { it.name }.distinct())
+        val spec = relationshipSpec(relationshipTypes, allFactions.map { it.name }.distinct())
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2551,7 +2580,14 @@ class ExcelExporter(context: Context) {
         val customTypes = db.universeDao().getAllUniversesList()
             .flatMap { it.getRelationshipTypes() }.distinct()
 
-        val spec = factionRelationshipSpec(allFactions.map { it.name }, customTypes)
+        // 세력 간 관계는 어휘가 캐릭터 관계와 다르다(동맹·적대…) — 쓰이는 값을 함께 싣는다.
+        val spec = factionRelationshipSpec(
+            allFactions.map { it.name },
+            RelationshipTypeOptions.forFactionRelations(
+                customTypes = customTypes,
+                typesInUse = allRelationships.map { it.relationType }
+            )
+        )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2643,7 +2679,10 @@ class ExcelExporter(context: Context) {
      */
     private suspend fun exportDuelMatches(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
-        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+        // **형제 시트 아홉 장과 같은 글자를 적는다** — `displayName`은 성·이름 칸이 있으면
+        // `"성 이름"`으로 새로 조립해 캐릭터 시트와 다른 이름이 됐다([CharacterNameIndex]).
+        val nameByCode = db.characterDao().getAllCharactersList()
+            .associate { it.code to it.name.ifBlank { it.displayName } }
 
         val spec = duelMatchSpec(axes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -2716,7 +2755,10 @@ class ExcelExporter(context: Context) {
     /** 대결 **상성** — 층 B의 사용자 판정. 파생이 아니라 판정이라 싣는다. */
     private suspend fun exportDuelVerdicts(workbook: Workbook, usedSheetNames: MutableSet<String>) {
         val axes = db.duelAxisDao().getAllList()
-        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+        // **형제 시트 아홉 장과 같은 글자를 적는다** — `displayName`은 성·이름 칸이 있으면
+        // `"성 이름"`으로 새로 조립해 캐릭터 시트와 다른 이름이 됐다([CharacterNameIndex]).
+        val nameByCode = db.characterDao().getAllCharactersList()
+            .associate { it.code to it.name.ifBlank { it.displayName } }
 
         val spec = duelVerdictSpec(axes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
