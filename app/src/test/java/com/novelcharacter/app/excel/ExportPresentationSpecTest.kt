@@ -306,4 +306,37 @@ class ExportPresentationSpecTest {
 
     private fun assertEquals(expected: Double, actual: Double?) =
         org.junit.Assert.assertEquals(expected, actual!!, 0.0)
+
+    // ── autoFilterRange (2026.08.23 — 내보낸 29개 시트 전부가 머리글 한 줄만 잡고 있었다) ──
+
+    @Test
+    fun `자동 필터는 마지막 데이터 행까지 잡는다`() {
+        // 종전에는 `(0, 0, …)`이라 저장된 범위가 `A1:M1`이었다. 파일은 멀쩡히 열리므로
+        // 빠뜨렸다는 사실 자체가 안 보였다 — 그래서 그 수를 여기서 직접 잰다.
+        val range = autoFilterRange(dataRowCount = 8, columnCount = 13)!!
+        assertEquals(0, range.firstRow)
+        assertEquals("머리글이 0행이라 마지막 데이터 행 번호가 곧 행 수다", 8, range.lastRow)
+        assertEquals(0, range.firstColumn)
+        assertEquals(12, range.lastColumn)
+        assertEquals("A1:M9", range.formatAsString())
+    }
+
+    @Test
+    fun `데이터가 없으면 필터를 걸지 않는다`() {
+        // 머리글만 있는 시트에 필터를 걸면 화살표만 뜨고 걸 것이 없다.
+        assertNull(autoFilterRange(dataRowCount = 0, columnCount = 13))
+        assertNull(autoFilterRange(dataRowCount = -1, columnCount = 13))
+    }
+
+    @Test
+    fun `열이 없으면 필터를 걸지 않는다`() {
+        // `columnCount - 1`이 음수가 되어 CellRangeAddress 자체가 뒤집힌다.
+        assertNull(autoFilterRange(dataRowCount = 5, columnCount = 0))
+    }
+
+    @Test
+    fun `한 행짜리 시트도 그 한 행을 잡는다`() {
+        val range = autoFilterRange(dataRowCount = 1, columnCount = 1)!!
+        assertEquals("A1:A2", range.formatAsString())
+    }
 }

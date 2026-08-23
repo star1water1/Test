@@ -23,6 +23,7 @@ import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelStandingsBinding
 import com.novelcharacter.app.ui.adapter.DuelStandingsAdapter
 import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelStandings
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.launch
@@ -80,7 +81,7 @@ class DuelStandingsFragment : Fragment() {
         adapter = DuelStandingsAdapter { code ->
             // 이미지 축의 참가자 코드는 경로다 — 줄에 경로를 통째로 적으면 앞부분이 전부
             // 같아 오히려 못 가른다. 폴더에서 사용자가 실제로 보는 **파일 이름**을 쓴다.
-            if (imageAxis) code.substringAfterLast('/').ifBlank { code }
+            if (imageAxis) DuelImageParticipants.displayName(code)
             else namesByCode[code]?.displayName ?: getString(R.string.duel_unknown_participant)
         }
         binding.standingsRecyclerView.layoutManager = LinearLayoutManager(requireContext())

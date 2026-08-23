@@ -69,6 +69,7 @@ import com.novelcharacter.app.util.StateChangeIndexes
 import com.novelcharacter.app.util.StateChangeNaturalKey
 import com.novelcharacter.app.util.ImportedFormulaAudit
 import com.novelcharacter.app.util.PresetLimit
+import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.CharacterRepresentativeImage
@@ -734,6 +735,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
     }
+
+    /**
+     * 이미지 축의 참가자 코드를 ZIP 복원의 재매핑에 태운다 (R-42 · R-51).
+     *
+     * **참가자 코드의 뜻은 축이 정한다** — 캐릭터 축은 개명되지 않는 `Character.code`이고
+     * 이미지 축은 **경로**다. 그런데 이 파일이 든 경로는 **내보낸 기기의 것**이고, 복원은
+     * 원 파일이 없으면 새 UUID로 자리를 잡는다(`ExcelImporter.buildImageRemap`). 그래서
+     * 옮기지 않으면 판이 **통째로 고아가 된다** — 캐릭터의 `이미지경로`·`대표이미지`·'이미지'
+     * 시트는 이미 이 표를 타는데 대결만 안 타고 있었다(2026.08.23 검토).
+     *
+     * 같은 기기에서도 걸린다: 사라진 파일을 복원이 새 UUID로 채우면 `followImageRenames`가
+     * **DB를 먼저 옮겨 놓으므로**, 옛 경로를 든 시트 행이 *"코드 '…'는 다른 참가자의 판입니다"*로
+     * 거부된다. 그 거부는 사용자가 고칠 수도 없다.
+     *
+     * 형제 교환 경로(`WorldPackageDuels.fromPortable`)가 같은 갈래를 이미 명시로 든다.
+     * 사슬·고리 처리는 그쪽과 **한 함수**를 쓴다([DuelImageParticipants.follow]).
+     *
+     * 캐릭터 축이거나 재매핑이 없으면 **받은 글자 그대로다** — 정규화한 값을 저장에 넣지
+     * 않는 것이 R-42의 규칙 1이다.
+     */
+    private fun followImageParticipant(axis: DuelAxis, value: String): String =
+        if (axis.isImageAxis && imagePathRemap.isNotEmpty()) {
+            DuelImageParticipants.follow(value, imagePathRemap)
+        } else {
+            value
+        }
 
     /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
     private fun remapImagePaths(imagePathsJson: String): String {
@@ -3224,8 +3251,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 continue
             }
 
-            val aCode = r.aCode.ifBlank { codeByName[r.aName]?.singleOrNull().orEmpty() }
-            val bCode = r.bCode.ifBlank { codeByName[r.bName]?.singleOrNull().orEmpty() }
+            // 이미지 축 재매핑도 가져오기와 같은 함수를 지난다(R-33) — 안 그러면 예고가
+            // '건너뜀'이라 적고 실행은 갱신하거나 그 반대가 된다. **코드 칸에만 건다**:
+            // 이름으로 되찾은 값은 캐릭터 코드라 경로 표의 키가 될 수 없고, 그래도 걸어 두면
+            // *경로 표에 캐릭터 코드가 없다*는 우연에 두 경로의 일치가 기대게 된다.
+            val aCode = r.aCode.takeIf { it.isNotBlank() }?.let { followImageParticipant(axis, it) }
+                ?: codeByName[r.aName]?.singleOrNull().orEmpty()
+            val bCode = r.bCode.takeIf { it.isNotBlank() }?.let { followImageParticipant(axis, it) }
+                ?: codeByName[r.bName]?.singleOrNull().orEmpty()
             if (aCode.isBlank() || bCode.isBlank()) {
                 val nameAmbiguous = (r.aCode.isBlank() && (codeByName[r.aName]?.size ?: 0) > 1) ||
                     (r.bCode.isBlank() && (codeByName[r.bName]?.size ?: 0) > 1)
@@ -3238,7 +3271,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
             if (aCode == bCode) { skippedCount++; continue }
             // 승자 해석은 가져오기와 **같은 함수·같은 갈래**다(R-33) — 모호(동명 참가자)·미상은 스킵.
-            val winnerCode = when (val winner = resolveDuelWinner(r.winnerText, aCode, r.aName, bCode, r.bName)) {
+            val winnerCode = when (
+                val winner = resolveDuelWinner(
+                    followImageParticipant(axis, r.winnerText), aCode, r.aName, bCode, r.bName
+                )
+            ) {
                 is DuelWinner.Resolved -> winner.code
                 DuelWinner.Ambiguous, DuelWinner.Unknown -> { skippedCount++; continue }
             }
@@ -3329,7 +3366,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 참가자 해석도 같은 사다리다. **동명이인은 가져오기가 영원히 거부하므로 skipped**이고,
             // *아직 없는 이름*은 캐릭터 시트가 만들어 줄 수 있어 '신규'다(`analyzeDuelMatches`와 같은 갈래).
-            val members = when (val m = DuelRecords.resolveMembers(r.rawCodes, r.names, codeByName)) {
+            val members = when (val m = DuelRecords.resolveMembers(
+                    r.rawCodes.map { followImageParticipant(axis, it) }, r.names, codeByName
+                )) {
                 is DuelRecords.MemberResolution.Resolved -> m.members
                 is DuelRecords.MemberResolution.Unresolved -> {
                     if (!m.ambiguous && options.characters) newCount++ else skippedCount++
@@ -10910,7 +10949,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 참가자는 **코드가 정체**다. 코드가 비어 있을 때만 이름으로 찾고, 동명이인이면
                 // 거부한다 — 아무나 골라 붙이는 것이 R-1이 말하는 오배정이다.
                 fun resolveParticipant(code: String, name: String): String? {
-                    if (code.isNotBlank()) return code
+                    // 코드가 있으면 그것이 정체다 — 이미지 축이면 복원 재매핑을 태운다(R-42).
+                    if (code.isNotBlank()) return followImageParticipant(axis, code)
                     val candidates = codeByName[name].orEmpty()
                     return if (candidates.size == 1) candidates.first() else null
                 }
@@ -10922,7 +10962,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val winnerCode = when (val winner = resolveDuelWinner(r.winnerText, aCode, r.aName, bCode, r.bName)) {
+                // 승자도 같은 표를 탄다 — 참가자만 옮기면 옛 경로를 든 승자 칸이 두 참가자
+                // 어느 쪽과도 안 맞아 **그 행이 통째로 거부된다**. 이름·'비슷함'은 표에 없어
+                // 그대로 지나간다.
+                val winnerText = followImageParticipant(axis, r.winnerText)
+                val winnerCode = when (val winner = resolveDuelWinner(winnerText, aCode, r.aName, bCode, r.bName)) {
                     is DuelWinner.Resolved -> winner.code
                     DuelWinner.Ambiguous -> {
                         result.skippedRows++
@@ -11113,7 +11157,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 해석 실패 인원을 조용히 빼지 않는다 — 인원이 줄어든 상성은 사용자가 적은
                 // 것과 **다른 판정**이고, 그것을 그대로 저장하면 무음 왜곡이다('대결 기록'의
                 // resolveParticipant와 같은 규약: 동명이인·미등록은 거부하고 코드를 안내한다).
-                val members = when (val m = DuelRecords.resolveMembers(r.rawCodes, r.names, codeByName)) {
+                val members = when (val m = DuelRecords.resolveMembers(
+                    r.rawCodes.map { followImageParticipant(axis, it) }, r.names, codeByName
+                )) {
                     is DuelRecords.MemberResolution.Resolved -> m.members
                     is DuelRecords.MemberResolution.Unresolved -> {
                         result.skippedRows++

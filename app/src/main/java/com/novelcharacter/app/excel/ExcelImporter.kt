@@ -1154,8 +1154,12 @@ class ExcelImporter(context: Context) {
                 val verifiedXlsx = xlsxFile ?: return  // already checked above
                 importService.imagePathRemap = if (options.images) imagePathRemap else emptyMap()
                 importFromXlsx(verifiedXlsx, options, stageProgress)
-                importService.imagePathRemap = emptyMap()
             } finally {
+                // **표는 어느 길로 나가든 비운다.** 종전에는 `importFromXlsx` 바로 뒤에 있어
+                // 예외·취소로 나가면 이 회차의 개명 표가 서비스에 **남았고**, 다음 가져오기가
+                // 그것을 든 채 돌았다. 지금은 무해하거나 옳은 쪽으로 접히지만(사슬을 따라가면
+                // 이 기기에 실재하는 경로다) 다음 소비처가 그 성질을 물려받는다는 보장이 없다.
+                importService.imagePathRemap = emptyMap()
                 // **되살려 놓고 반영에 닿지 못한 장은 여기서 지운다** (B-228).
                 // 미리보기·충돌 창에서 사용자가 취소하면 `importFromXlsx`가 **예외 없이** 돌아오므로
                 // B-77의 되돌리기(그쪽은 catch에 있다)가 돌지 않는다 — 그러면 가리킬 행이 없는

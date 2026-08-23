@@ -119,4 +119,78 @@ class AllCharactersSheetTest {
         assertEquals(fixed + 2, spec.columns.size)
         assertEquals("성별(gender)", spec.columns[fixed].header)
     }
+
+    // ── 머리 유일성 (2026.08.23 — 실제로 내보낸 파일에 `키(height)` 열이 둘 있었다) ──
+
+    @Test
+    fun `타입이 갈려 머리가 겹치면 타입을 병기한다`() {
+        // 바로 위 시험이 잠근 *합치지 않는다*의 뒷면이다. 각 타입 그룹이 세계관 2곳 이상이면
+        // 열이 **둘 다 선다** — 그때 머리가 같으면 어느 열이 어느 축인지 알 방법이 없다.
+        val fields = listOf(
+            field(1, 10, "height", "키", type = "NUMBER"),
+            field(2, 20, "height", "키", type = "NUMBER"),
+            field(3, 30, "height", "키", type = "TEXT"),
+            field(4, 40, "height", "키", type = "TEXT")
+        )
+        val shared = AllCharactersSheet.sharedFields(fields, setOf(10L, 20L, 30L, 40L))
+        assertEquals(2, shared.size)
+        assertEquals(
+            setOf("키(height·NUMBER)", "키(height·TEXT)"),
+            shared.mapTo(HashSet()) { it.header }
+        )
+    }
+
+    @Test
+    fun `머리가 안 겹치면 타입을 붙이지 않는다`() {
+        // 겹칠 때만 붙인다 — 안 그러면 모든 열이 `성별(gender·SELECT)`이 되어 길어지기만 한다.
+        val fields = listOf(
+            field(1, 10, "gender", "성별", type = "SELECT"),
+            field(2, 20, "gender", "성별", type = "SELECT")
+        )
+        assertEquals("성별(gender)", AllCharactersSheet.sharedFields(fields, setOf(10L, 20L)).single().header)
+    }
+
+    @Test
+    fun `같은 키라도 이름이 갈려 있으면 병기하지 않는다`() {
+        // 판정이 *키가 겹치는가*가 아니라 **머리가 겹치는가**인 이유다 — 이미 갈려 있다.
+        val fields = listOf(
+            field(1, 10, "height", "키", type = "NUMBER"),
+            field(2, 20, "height", "키", type = "NUMBER"),
+            field(3, 30, "height", "신장", type = "TEXT"),
+            field(4, 40, "height", "신장", type = "TEXT")
+        )
+        val shared = AllCharactersSheet.sharedFields(fields, setOf(10L, 20L, 30L, 40L))
+        assertEquals(setOf("키(height)", "신장(height)"), shared.mapTo(HashSet()) { it.header })
+    }
+
+    @Test
+    fun `이름 자체가 병기 꼴이어도 머리는 유일하다`() {
+        // 필드 이름은 사용자가 자유롭게 짓는다(원칙 01) — 병기가 남의 머리와 부딪힐 수 있다.
+        // 형제 시트가 `규모(명)`에서 겪은 부류라 번호 단으로 닫는다.
+        val fields = listOf(
+            field(1, 10, "height", "키", type = "NUMBER"),
+            field(2, 20, "height", "키", type = "NUMBER"),
+            field(3, 30, "height", "키", type = "TEXT"),
+            field(4, 40, "height", "키", type = "TEXT"),
+            field(5, 10, "h2", "키(height·NUMBER)"),
+            field(6, 20, "h2", "키(height·NUMBER)")
+        )
+        val headers = AllCharactersSheet.sharedFields(fields, setOf(10L, 20L, 30L, 40L)).map { it.header }
+        assertEquals("머리가 겹치면 안 된다", headers.size, headers.toSet().size)
+    }
+
+    @Test
+    fun `열 이름은 spec의 열 이름과 그대로 같다`() {
+        // 머리를 짓는 자리와 열을 그리는 자리가 갈리면 값이 다른 열에 앉는다.
+        val fields = listOf(
+            field(1, 10, "height", "키", type = "NUMBER"),
+            field(2, 20, "height", "키", type = "NUMBER"),
+            field(3, 30, "height", "키", type = "TEXT"),
+            field(4, 40, "height", "키", type = "TEXT")
+        )
+        val shared = AllCharactersSheet.sharedFields(fields, setOf(10L, 20L, 30L, 40L))
+        val spec = allCharactersSpec(shared.map { it.header }, shared.map { it.type })
+        val headers = spec.columns.map { it.header }
+        assertEquals("시트 전체에서 열 이름이 유일해야 한다", headers.size, headers.toSet().size)
+    }
 }

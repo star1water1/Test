@@ -11,6 +11,7 @@ import com.novelcharacter.app.util.CsvTokens
 import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.FieldValueTokenizer
 import org.apache.poi.ss.usermodel.Row
+import org.apache.poi.ss.util.CellRangeAddress
 import com.novelcharacter.app.util.RegexCharClasses
 
 /**
@@ -98,6 +99,22 @@ fun collidesWithFixedHeader(fieldName: String): Boolean =
 /** 커스텀 필드 열 헤더에 병기하는 안정 식별자 형식 — 가져오기가 이 키로 열을 확정한다 */
 fun characterFieldHeader(fieldName: String, fieldKey: String, disambiguate: Boolean): String =
     if (disambiguate) "$fieldName($fieldKey)" else fieldName
+
+/**
+ * 자동 필터가 걸릴 범위 — 머리글 행부터 **마지막 데이터 행까지**. `null`이면 걸지 않는다.
+ *
+ * 머리글이 0행이므로 마지막 데이터 행의 번호가 곧 [dataRowCount]다.
+ *
+ * **왜 순수 함수인가.** 종전 이 자리는 호출부에 `CellRangeAddress(0, 0, 0, lastCol - 1)`로
+ * 인라인돼 있었고, 그래서 저장된 범위가 `A1:M1` — 머리글 한 줄뿐이었다. POI는 그것을
+ * `_xlnm._FilterDatabase`에도 그대로 적는다. **파일은 멀쩡히 열리고 가져오기도 되므로**
+ * 빠뜨렸다는 사실 자체를 자동 검증이 볼 방법이 없었다(「세션 착수 규칙」 4번의 그 사각).
+ * 2026.08.23 검토가 내보낸 파일을 뜯어 보고서야 드러났고, 데이터가 있는 29개 시트 전부가
+ * 그 상태였다. 판정을 여기로 꺼내면 시험이 그 수를 직접 잰다.
+ */
+fun autoFilterRange(dataRowCount: Int, columnCount: Int): CellRangeAddress? =
+    if (dataRowCount <= 0 || columnCount <= 0) null
+    else CellRangeAddress(0, dataRowCount, 0, columnCount - 1)
 
 /** Default border color presets for color picker UI. */
 val BORDER_COLOR_PRESETS = listOf(
