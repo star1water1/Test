@@ -96,6 +96,32 @@ class AiProtocolCodecTest {
         assertFalse(body.has("max_tokens"))
     }
 
+    /**
+     * 파라미터 이름 거부를 배운 모델은 **첫 요청부터** max_completion_tokens로 나간다 —
+     * 안 배우면 그 모델로 가는 모든 요청이 400 → 재시도의 2회 왕복이다.
+     */
+    @Test
+    fun `학습된 파라미터 이름은 첫 조립부터 max_completion_tokens를 쓴다`() {
+        val learned = config(protocol = AiProtocol.OPENAI_COMPAT, baseUrl = "https://api.openai.com/v1")
+            .copy(maxTokensParamUnsupported = true)
+        val spec = AiProtocolCodec.buildRequest(learned, "k", AiRequest(userText = "hi", maxTokens = 512))
+        val body = JsonParser.parseString(spec.bodyJson).asJsonObject
+        assertEquals(512, body.get("max_completion_tokens").asInt)
+        assertNull(body.get("max_tokens"))
+    }
+
+    /** 학습 전(null)·다른 프로토콜에서는 종전 그대로 max_tokens다 — 회귀 없음. */
+    @Test
+    fun `학습값이 없으면 종전 이름 그대로 max_tokens다`() {
+        val spec = AiProtocolCodec.buildRequest(
+            config(protocol = AiProtocol.OPENAI_COMPAT, baseUrl = "https://api.openai.com/v1"),
+            "k", AiRequest(userText = "hi", maxTokens = 512)
+        )
+        val body = JsonParser.parseString(spec.bodyJson).asJsonObject
+        assertEquals(512, body.get("max_tokens").asInt)
+        assertNull(body.get("max_completion_tokens"))
+    }
+
     @Test
     fun `max_tokens 파라미터 오류 판정은 400 본문 기준`() {
         val body = """{"error":{"message":"Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead."}}"""
@@ -291,6 +317,29 @@ class AiProtocolCodecTest {
         assertEquals(AiErrorKind.QUOTA_EXCEEDED, AiProtocolCodec.parseError(429, body).kind)
     }
 
+    /**
+     * Anthropic은 크레딧 소진을 **403 `billing_error`**로 돌려준다. INVALID_KEY로 뭉뚱그리면
+     * 안내가 멀쩡한 키를 재발급하라 시키고, 자동 전환(B-108)의 방아쇠가 서지 않는다.
+     */
+    @Test
+    fun `anthropic 크레딧 소진 403은 QUOTA로 구분한다`() {
+        val body = """{"type":"error","error":{"type":"billing_error","message":"Your credit balance is too low to access the Anthropic API."}}"""
+        assertEquals(AiErrorKind.QUOTA_EXCEEDED, AiProtocolCodec.parseError(403, body).kind)
+    }
+
+    @Test
+    fun `크레딧 표식이 없는 403은 INVALID_KEY로 남는다`() {
+        val body = """{"type":"error","error":{"type":"permission_error","message":"Your API key does not have permission to use the specified resource."}}"""
+        assertEquals(AiErrorKind.INVALID_KEY, AiProtocolCodec.parseError(403, body).kind)
+    }
+
+    /** 같은 표식이 400으로 오던 시기의 표현도 같은 분류다 — 파라미터 지목 판정보다 앞선다. */
+    @Test
+    fun `anthropic 크레딧 소진 400도 QUOTA로 구분한다`() {
+        val body = """{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"""
+        assertEquals(AiErrorKind.QUOTA_EXCEEDED, AiProtocolCodec.parseError(400, body).kind)
+    }
+
     @Test
     fun `gemini 잘못된 키 400은 INVALID_KEY로 구분한다`() {
         val body = """{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}"""
@@ -367,6 +416,23 @@ class AiProtocolCodecTest {
         """.trimIndent()
         val models = AiProtocolCodec.parseModelList(AiProtocol.ANTHROPIC, body)
         assertEquals(listOf("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"), models)
+    }
+
+    /**
+     * Anthropic 목록은 2026-03부터 모델별 `max_tokens`(출력 상한)를 실어 준다 — 400을 겪기
+     * 전에 상한을 배우는 경로다. 없는 구버전 응답에서는 null로 남아 종전과 같다(회귀 없음).
+     */
+    @Test
+    fun `anthropic 모델목록의 max_tokens를 출력 상한으로 읽는다`() {
+        val body = """
+            {"data":[
+              {"id":"claude-opus-5","max_input_tokens":1000000,"max_tokens":128000},
+              {"id":"claude-legacy","created_at":"2024-01-01T00:00:00Z"}
+            ]}
+        """.trimIndent()
+        val models = AiProtocolCodec.parseModelInfos(AiProtocol.ANTHROPIC, body)
+        assertEquals(128000, AiProtocolCodec.detectedLimitFor(models, "claude-opus-5"))
+        assertNull(AiProtocolCodec.detectedLimitFor(models, "claude-legacy"))
     }
 
     @Test

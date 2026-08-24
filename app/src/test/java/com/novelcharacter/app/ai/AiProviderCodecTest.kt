@@ -39,6 +39,7 @@ class AiProviderCodecTest {
         priority = 3,
         detectedOutputLimit = 8192,
         temperatureUnsupported = true,
+        maxTokensParamUnsupported = true,
         imagesUnsupported = true,
         cooldownUntilMillis = 5_000L
     )
