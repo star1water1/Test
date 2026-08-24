@@ -366,7 +366,15 @@ class OrganizeFolderController(
         // AI 태그 제안 체크박스 — **미설정이면 줄 자체를 감춘다**(R-24: 성립하지 않는 조합의
         // 설정은 보이지 않는다). 체크 상태는 기억하지 않는다: 비용이 드는 동작의 기본값은
         // 꺼짐이어야 하고, 폴더 구성은 매번 다르다.
-        val tagFolders = plan.aiTagFolders.keys.toList()
+        //
+        // **`aiTagFolders`(신규 파일) 하나만 보면 안 된다.** `FolderRoundtripPlanner.Plan`의
+        // KDoc이 명시하는 대로 신규(`aiTagFolders`)와 토큰(`aiTagExistingPaths`)은 "이번에 그
+        // 폴더에서 온" 이미지의 두 갈래일 뿐, 태그 적용 대상은 **합집합**이다(D-4). 신규
+        // 파일이 하나도 없고 이미 앱이 아는(토큰) 이미지만 있는 '그 외' 폴더 — 예: 내보낸
+        // 이미지를 파일관리자에서 재배치해 다시 받아오는 경우 — 는 `aiTagFolders`에 잡히지
+        // 않아, 이 줄만 보면 체크박스가 아예 안 뜨거나(다른 신규 폴더가 없을 때) 뜨더라도
+        // 그 폴더만 요청·검토 시트에서 조용히 빠졌다 — 사용자에게 사유 고지도 없었다.
+        val tagFolders = (plan.aiTagFolders.keys + plan.aiTagExistingPaths.keys).toList()
         val aiUsable = tagFolders.isNotEmpty() &&
             runCatching { com.novelcharacter.app.ai.AiService(fragment.requireContext()).hasUsableProvider() }
                 .getOrDefault(false)
@@ -501,8 +509,20 @@ class OrganizeFolderController(
             )
             notices.add(fragment.getString(R.string.image_tag_review_notice_failed, reason))
         }
-        // 제안도 없고 할 말도 없으면 시트를 띄우지 않는다 — 빈 창은 그 자체가 소음이다.
+        // 제안도 할 말도 없으면 시트는 안 띄운다(빈 창은 그 자체가 소음이다) — **그러나
+        // 침묵하지는 않는다.** 이 조합은 실패가 아니라 정상 경로다: 프롬프트가 "폴더 이름에서
+        // 근거를 찾을 수 없으면 빈 배열로 둔다"고 시키고, 빈 배열은 드롭으로도 세지 않으므로
+        // 모델이 전부 그렇게 답하면 제안도 고지도 없이 끝난다.
+        //
+        // **종전에는 여기서 조용히 반환했다** — "폴더 받아오기에 딸린 곁가지라 사용자가
+        // 그것만 기다리고 있지 않다"는 판단이었다. 그런데 이 체크박스도 요청 건수를 미리
+        // 고지하고 사용자가 명시로 체크해 돈을 쓴 동작이다(형제 이미지판과 같은 R-24·비용
+        // 고지 계약) — "곁가지라 안 기다린다"는 전제가 실사용에서 틀렸다(실사용 보고: 새
+        // 사진을 받아왔는데 검토 창이 뜨지 않고 아무 알림도 없었다). 형제
+        // `ImageManagerFragment.showAiTagReview`가 이미 B-144·R-17로 지킨 규칙 — **침묵은
+        // 고장과 구분되지 않는다** — 을 여기도 그대로 적용한다.
         if (outcome.result.suggestions.isEmpty() && notices.isEmpty()) {
+            fragment.notifyError(fragment.getString(R.string.image_folder_tag_review_nothing))
             viewModel.clearFolderTagResult()
             return
         }
