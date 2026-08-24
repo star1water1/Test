@@ -1,5 +1,7 @@
 package com.novelcharacter.app.util
 
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.SemanticRole
 import java.util.Locale
 
 /**
@@ -64,6 +66,16 @@ object BirthDateFormat {
         if (!isRealMonthDay(month, day)) return null
         return month!! to day!!
     }
+
+    /**
+     * 이 필드가 **생일 칸인가** — 저장 모양을 적용할 대상인지의 단일 소스.
+     *
+     * 같은 한 줄이 세 자리에 손으로 적혀 있었다: 내보내기의 셀 서식 판정 · 가져오기의 날짜 힌트 ·
+     * (그리고 이 판이 넣으려던 폼의 저장 모양). 셋이 갈리면 **같은 칸을 자리마다 다르게 읽는다** —
+     * 그 갈림이 실제로 R-33 위반 하나를 만들고 있었다(가져오기만 날짜 힌트를 줬다).
+     */
+    fun isBirthDateField(field: FieldDefinition?): Boolean =
+        field != null && SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
 
     /** 저장 모양(`MM-DD`)으로 다듬은 글자, 읽을 수 없으면 `null`. */
     fun canonicalOrNull(value: String?): String? = parse(value)?.let { (m, d) -> of(m, d) }

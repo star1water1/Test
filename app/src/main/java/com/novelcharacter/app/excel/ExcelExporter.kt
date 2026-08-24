@@ -882,8 +882,9 @@ class ExcelExporter(context: Context) {
 
     private fun isBirthDateField(field: FieldDefinition): Boolean =
         birthDateByConfig.getOrPut(field.config) {
-            com.novelcharacter.app.data.model.SemanticRole.fromConfig(field.config) ==
-                com.novelcharacter.app.data.model.SemanticRole.BIRTH_DATE
+            // 판정 자체는 [BirthDateFormat.isBirthDateField]가 든다 — 여기는 **캐시일 뿐**이다.
+            // 같은 한 줄이 세 자리에 살던 것을 모았다(내보내기 · 가져오기의 날짜 힌트 · 폼의 저장 모양).
+            com.novelcharacter.app.util.BirthDateFormat.isBirthDateField(field)
         }
 
     /**
