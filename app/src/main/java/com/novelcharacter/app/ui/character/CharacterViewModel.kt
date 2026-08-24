@@ -1814,10 +1814,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)
-        val universeId = getUniverseIdForCharacter(characterId)
-        if (universeId != null) {
-            semanticSyncHelper.syncFieldToStateChange(characterId, universeId, values)
-        }
+        // **무소속도 동기화한다** — `null`은 전역 구역이라는 뜻이다(B-119 확장).
+        // 종전의 `if (universeId != null)` 가드가 무소속 캐릭터를 통째로 빼고 있었다.
+        semanticSyncHelper.syncFieldToStateChange(
+            characterId, getUniverseIdForCharacter(characterId), values
+        )
     }
 
     /** @return 폼이 커버하지 않아 보존된 필드값 개수 (N2 — 호출부가 고지에 쓴다) */
@@ -1829,16 +1830,17 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val preserved = characterRepository.updateCharacterWithFields(
             character, values, coveredFieldDefinitionIds
         )
-        val universeId = getUniverseIdForCharacter(character.id)
-        if (universeId != null) {
-            // **폼이 그린 칸의 범위를 함께 넘긴다** — 그 안에서 빈 채로 돌아온 시맨틱 필드는
-            // *사용자가 비운 것*이다(값 저장 규약이 이미 그렇게 읽는다). 안 넘기면 생일을
-            // 지워도 `__birth`가 남아 알림·홈 배너·위젯이 계속 울린다.
-            semanticSyncHelper.syncFieldToStateChange(
-                character.id, universeId, values,
-                clearableFieldIds = coveredFieldDefinitionIds
-            )
-        }
+        // **폼이 그린 칸의 범위를 함께 넘긴다** — 그 안에서 빈 채로 돌아온 시맨틱 필드는
+        // *사용자가 비운 것*이다(값 저장 규약이 이미 그렇게 읽는다). 안 넘기면 생일을
+        // 지워도 `__birth`가 남아 알림·홈 배너·위젯이 계속 울린다.
+        //
+        // **무소속(`universeId == null`)도 지난다** — 전역 구역의 필드로 돈다. 종전 가드가
+        // 그 캐릭터들을 빼고 있어, 무소속에서는 생일을 *적어도* `__birth`가 안 생기고
+        // *지워도* 남았다(양쪽 다 이 한 자리에 걸려 있었다).
+        semanticSyncHelper.syncFieldToStateChange(
+            character.id, getUniverseIdForCharacter(character.id), values,
+            clearableFieldIds = coveredFieldDefinitionIds
+        )
         return preserved
     }
 
@@ -1847,7 +1849,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * 세력 소속·스냅샷을 건드리지 않는 것이 [updateCharacterAcrossUniverse]와 다른 점이다 —
      * 이탈은 이동이 아니고, 확정이 정한 것은 값의 처분뿐이다.
-     * 시맨틱 동기화는 세계관 스코프가 있어야 성립하므로 여기서는 부르지 않는다(무소속이 됐다).
+     *
+     * **시맨틱 동기화는 이탈 뒤에도 돈다 — 무소속에는 전역 구역이 있다**(B-119 확장).
+     * 종전 주석은 *"세계관 스코프가 있어야 성립하므로 부르지 않는다"*였는데, 그 전제가
+     * 낡았다. 안 부르면 이탈한 캐릭터의 생일·사망연도·생존여부가 이관돼 살아 있는데도
+     * `__birth`·`__death`·`__alive`는 **떠나기 전 세계관 필드로 만든 옛 행 그대로** 남는다.
      *
      * @return 이어 준 수 · 보관한 수 · 폼 밖이라 보존된 수 — 호출부가 고지에 쓴다.
      */
@@ -1855,8 +1861,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         character: Character,
         values: List<CharacterFieldValue>,
         coveredFieldDefinitionIds: Set<Long>?
-    ): com.novelcharacter.app.data.repository.CharacterRepository.LeaveUniverseResult =
-        characterRepository.updateCharacterLeavingUniverse(character, values, coveredFieldDefinitionIds)
+    ): com.novelcharacter.app.data.repository.CharacterRepository.LeaveUniverseResult {
+        val result =
+            characterRepository.updateCharacterLeavingUniverse(character, values, coveredFieldDefinitionIds)
+        // 이관된 **최종 값**으로 돈다 — 넘겨받은 `values`는 옛 세계관 필드를 가리킨다.
+        val stored = characterRepository.getValuesByCharacterList(character.id)
+        semanticSyncHelper.syncFieldToStateChange(character.id, null, stored)
+        return result
+    }
 
     private suspend fun getUniverseIdForCharacter(characterId: Long): Long? {
         val character = characterRepository.getCharacterById(characterId) ?: return null

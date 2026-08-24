@@ -412,8 +412,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
     }
 
-    // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
-    private val pendingSyncCharacters = mutableMapOf<Long, Long>()
+    // 임포트 후 시맨틱 동기화 대상 (characterId → 그 캐릭터의 필드 **구역**).
+    //
+    // **값이 nullable인 것이 요점이다** — `null`은 "모른다"가 아니라 **무소속**(전역 구역)이다.
+    // 종전에는 `Long`이라 세 등재 자리가 전부 `if (uId != null)`로 감쌌고, 그래서 미분류
+    // 캐릭터는 생일·출생연도·사망연도를 파일로 들여와도 `__birth`·`__death`·`__alive`가
+    // 따라오지 않았다(실측 2026.08.24: 사용자 파일의 미분류 2명).
+    private val pendingSyncCharacters = mutableMapOf<Long, Long?>()
 
     /**
      * 이 가져오기가 **빈 셀로 지운** 시맨틱 역할 필드 (캐릭터 id → 필드 id들).
@@ -8005,6 +8010,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 val charId: Long
+                // 이 행이 끝난 뒤 이 캐릭터가 실제로 든 작품 — 아래 동기화 구역이 그것을 본다.
+                val finalNovelId: Long?
                 if (existingChar != null) {
                     charId = existingChar.id
                     // 빈칸으로 기존 텍스트가 지워지는 경우 요약("지워진 값 N건")에 집계 — 조용한 per-cell 삭제 방지(변수 제어).
@@ -8037,6 +8044,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         i, nowMillis, result
                     )
                     db.characterDao().update(mergedChar)
+                    finalNovelId = mergedChar.novelId
                     // 정체성 색인도 함께 옮긴다 — 이름·코드가 바뀌었으면 **옛 키로는 더 이상
                     // 잡히지 않아야** SQL과 같은 답이 된다(B-210).
                     rememberCharacter(mergedChar)
@@ -8088,6 +8096,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (code.isBlank()) result.newCodesGenerated++
                     val newCharacter = newCharacterFrom(r, newCode, novelId, i, nowMillis, result)
                     charId = db.characterDao().insert(newCharacter)
+                    finalNovelId = newCharacter.novelId
                     // 방금 만든 캐릭터를 **곧바로 읽히게** 한다 — 같은 파일의 뒷 행·뒷 시트가
                     // 코드·이름으로 이 캐릭터를 찾는다(연표 참가자·상태변화·이름 은행).
                     // 빠뜨리면 *있는 것을 없다고* 보고 같은 캐릭터가 둘로 갈린다(B-210).
@@ -8275,10 +8284,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         hasSemanticField = true
                     }
                 }
-                // 시맨틱 역할 필드가 임포트되었으면 동기화 대상에 추가 (이동 시엔 새 세계관 기준)
+                // 시맨틱 역할 필드가 임포트되었으면 동기화 대상에 추가 (이동 시엔 새 세계관 기준).
+                //
+                // **구역은 시트가 아니라 이 캐릭터의 최종 작품이 정한다.** 종전 폴백
+                // `universe?.id`는 두 자리에서 틀렸다: ⓐ 미분류 시트에서는 null이 되어
+                // **동기화가 통째로 빠졌고**, ⓑ 세계관 없는 작품으로 옮긴 행에서는
+                // (`universeMoveOf`가 그 이동을 null로 돌려주므로) **시트의 세계관**으로 떨어져
+                // 이 캐릭터가 더는 갖지 않은 구역의 필드로 돌았다.
                 if (hasSemanticField) {
-                    val syncUniverseId = movedToUniverseId ?: universe?.id
-                    if (syncUniverseId != null) pendingSyncCharacters[charId] = syncUniverseId
+                    pendingSyncCharacters[charId] = movedToUniverseId
+                        ?: finalNovelId?.let { universeIdOfNovel(it) }
                 }
 
                 // F3-A: 세계관 이동이면 편집화면과 동일한 P0 로직으로 필드값 재매핑·타 세계관 세력 소속 정리·스냅샷.
@@ -8654,10 +8669,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 }
                                 // 작품→세계관은 이미 메모된 helper가 있다 — 참가자마다 작품을
                                 // 다시 읽던 자리다(B-210. 같은 작품을 든 참가자가 되풀이된다).
-                                val uId = eventUniverseId ?: universeIdOfCharacter(character)
-                                if (uId != null) {
-                                    pendingSyncCharacters[character.id] = uId
-                                }
+                                // 무소속 참가자도 등재한다 — `null`은 전역 구역이다.
+                                pendingSyncCharacters[character.id] =
+                                    eventUniverseId ?: universeIdOfCharacter(character)
                             }
                         }
                     }
@@ -8809,10 +8823,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // __death/__birth 상태변화 임포트 시 필드 동기화 대상에 추가
                 if (fieldKey == CharacterStateChange.KEY_DEATH || fieldKey == CharacterStateChange.KEY_BIRTH) {
                     // 같은 캐릭터·같은 작품이 여러 행에 되풀이되므로 메모된 helper로 답한다(B-210).
-                    val uId = universeIdOfCharacter(character)
-                    if (uId != null) {
-                        pendingSyncCharacters[character.id] = uId
-                    }
+                    // 무소속(`null`)도 등재한다 — 전역 구역의 필드로 돈다.
+                    pendingSyncCharacters[character.id] = universeIdOfCharacter(character)
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -12879,12 +12891,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **세계관 필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 이 꼬리가
         // 가져오기 트랜잭션 안에서 캐릭터 수만큼 같은 질의를 친다. 대상은 세계관이
         // 섞이므로 표로 든다.
-        val fieldsByUniverse = HashMap<Long, List<com.novelcharacter.app.data.model.FieldDefinition>>()
+        val fieldsByUniverse = HashMap<Long?, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         for ((characterId, universeId) in pendingSyncCharacters) {
             try {
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
                 val fields = fieldsByUniverse.getOrPut(universeId) {
-                    universeRepository.getFieldsByUniverseList(universeId)
+                    universeRepository.getFieldsForCharacterScope(universeId)
                 }
                 syncHelper.syncFieldToStateChange(
                     characterId, fields, fieldValues,

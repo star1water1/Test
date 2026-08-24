@@ -376,12 +376,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             syncHelper.onStandardYearChanged(updatedNovel, oldStdYear, newStdYear)
 
             // 표준연도 변경 후 시맨틱 필드 전체 재동기화 (나이/생존여부 재계산)
-            val universeId = novel.universeId
-            if (universeId != null) {
+            run {
                 val characters = characterRepository.getCharactersByNovelList(novelId)
                 // **필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 표준연도 한 번
                 // 고치는 평범한 조작이 캐스트 수만큼 같은 질의를 친다.
-                val fields = universeRepository.getFieldsByUniverseList(universeId)
+                //
+                // **세계관 없는 작품도 돈다** — 그 캐스트는 전역 구역의 필드를 쓴다. 위
+                // `onStandardYearChanged`와 **같은 판정**을 지나야 둘이 갈리지 않는다.
+                val fields = universeRepository.getFieldsForCharacterScope(novel.universeId)
                 // **재료도 루프 불변량처럼 다룬다** — 종전에는 캐릭터마다 이력 한 번(연동
                 // 판정)과 값 한 번을 물어, 위 `onStandardYearChanged`가 방금 훑은 표를
                 // 인원 수만큼 다시 읽었다. 그 함수가 쓴 결과 **뒤에** 뜨므로 최신이다.

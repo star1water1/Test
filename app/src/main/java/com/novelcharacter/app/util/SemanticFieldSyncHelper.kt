@@ -29,15 +29,19 @@ class SemanticFieldSyncHelper(
     /**
      * 방향 1: 커스텀 필드값 저장 후 → CharacterStateChange 동기화.
      * 캐릭터의 필드값 목록에서 semanticRole이 있는 필드를 찾아 대응하는 상태변화를 생성/갱신.
+     *
+     * @param universeId **`null`은 "모른다"가 아니라 무소속이다** — 전역 구역의 필드로 돈다
+     *   ([UniverseRepository.getFieldsForCharacterScope]). 종전에는 부르는 자리마다
+     *   `if (universeId != null)`로 감싸 무소속이 통째로 빠져 있었다.
      */
     suspend fun syncFieldToStateChange(
         characterId: Long,
-        universeId: Long,
+        universeId: Long?,
         values: List<CharacterFieldValue>,
         clearableFieldIds: Set<Long>? = null
     ) = syncMutex.withLock {
         applyFieldsToStateChange(
-            characterId, universeRepository.getFieldsByUniverseList(universeId), values, clearableFieldIds
+            characterId, universeRepository.getFieldsForCharacterScope(universeId), values, clearableFieldIds
         )
     }
 
@@ -254,10 +258,10 @@ class SemanticFieldSyncHelper(
      */
     suspend fun syncStateChangeToField(
         characterId: Long,
-        universeId: Long,
+        universeId: Long?,
         change: CharacterStateChange
     ) = syncMutex.withLock {
-        applyStateChangeToFields(characterId, universeRepository.getFieldsByUniverseList(universeId), change)
+        applyStateChangeToFields(characterId, universeRepository.getFieldsForCharacterScope(universeId), change)
     }
 
     /**
@@ -311,8 +315,8 @@ class SemanticFieldSyncHelper(
      * - __birth CharacterStateChange 삭제
      * - birth_year, age, birth_date 필드값 클리어
      */
-    suspend fun onBirthEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+    suspend fun onBirthEventDeleted(characterId: Long, universeId: Long?) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsForCharacterScope(universeId)
         deleteStateChangeByKey(characterId, CharacterStateChange.KEY_BIRTH)
         findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
         findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
@@ -325,8 +329,8 @@ class SemanticFieldSyncHelper(
      * - death_year 필드값 클리어
      * - alive 필드를 "생존"으로 복원 (출생 기록이 있을 때) 또는 클리어
      */
-    suspend fun onDeathEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+    suspend fun onDeathEventDeleted(characterId: Long, universeId: Long?) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsForCharacterScope(universeId)
         deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
         findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
         syncDeathToAlive(characterId, fields, isDead = false)

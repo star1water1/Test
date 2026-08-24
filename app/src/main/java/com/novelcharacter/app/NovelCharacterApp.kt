@@ -147,6 +147,8 @@ class NovelCharacterApp : Application() {
         repairSingletonStateChangesIfNeeded()
         // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색
         repairLegacyValueFormatsIfNeeded()
+        // 무소속 캐릭터의 시맨틱 이력 소급 (1회) — 살아 있는 경로가 그들을 빼고 있었다
+        backfillUnclassifiedSemanticStateIfNeeded()
         // 필드 데이터 라이브러리 백필 시드 (1회) + 중단된 임포트 후 수확 재시도
         seedFieldValueLibraryIfNeeded()
         // 캐릭터 자동 링크 최초 정리 (1회)
@@ -321,6 +323,62 @@ class NovelCharacterApp : Application() {
                 android.util.Log.e(
                     "NovelCharacterApp",
                     "Legacy value format repair failed — will retry on next launch", e
+                )
+            }
+        }
+    }
+
+    /**
+     * **무소속 캐릭터의 시맨틱 이력 소급** (1회, 2026.08.24).
+     *
+     * 살아 있는 경로가 무소속을 통째로 빼고 있었다 — 저장·일괄 편집·가져오기가 전부
+     * `if (universeId != null)`로 시맨틱 동기화를 감쌌기 때문이다
+     * ([UniverseRepository.getFieldsForCharacterScope]의 KDoc이 그 경위를 든다).
+     * 그 가드를 걷어도 **이미 어긋난 데이터는 그대로 남는다** — 사용자가 그 캐릭터를 다시
+     * 저장해야만 맞춰지는데, 무엇이 어긋났는지 화면에 단서가 없어 다시 저장할 이유가 없다.
+     * (실측 2026.08.24: 사용자 파일의 미분류 2명이 생일을 든 채 `__birth` 행이 없었다 —
+     * 생일이 있는 47명 중 정확히 그 둘뿐이었고, 둘 다 무소속이었다.)
+     *
+     * **소급의 몸통은 살아 있는 경로 그 자체다** — [SemanticFieldSyncHelper.syncFieldToStateChange]를
+     * 무소속 구역(`null`)으로 부른다. 여기서 대응 규칙을 따로 적으면 그 벌이 언젠가 갈린다
+     * (`migrateAliveSyncIfNeeded`가 값→표식 대응을 따로 적었다가 갈렸던 자리 — 그 KDoc).
+     *
+     * **지우지 않는다.** `clearableFieldIds`를 넘기지 않으므로 이 소급은 **없는 행을 세우기만**
+     * 한다(그 인자가 null이면 비움 판정 자체를 하지 않는다 — 그쪽 KDoc). 사용자가 앱에서
+     * 지운 이력이 이 정리로 되살아나거나, 값 없는 칸 때문에 있던 이력이 사라지는 일이 없다.
+     *
+     * 성공해야만 플래그를 세운다 — 중단되면 다음 실행이 다시 돈다(멱등: 같은 값이면 같은 행).
+     */
+    private fun backfillUnclassifiedSemanticStateIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        if (prefs.getBoolean("unclassified_semantic_backfilled", false)) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val ids = database.characterDao().getUnclassifiedCharacterIds()
+                if (ids.isNotEmpty()) {
+                    val helper = com.novelcharacter.app.util.SemanticFieldSyncHelper(
+                        characterRepository, universeRepository, novelRepository
+                    )
+                    // 값은 **한 번에** 뜬다 — 무소속이 수백일 수 있고, 캐릭터마다 물으면
+                    // 그 수만큼 질의가 늘어난다(받쳐주는 확장성). 통로는 저장소 공통이다.
+                    val valuesById = characterRepository.getValuesForCharacters(ids)
+                        .groupBy { it.characterId }
+                    for (id in ids) {
+                        val values = valuesById[id].orEmpty()
+                        if (values.isEmpty()) continue
+                        helper.syncFieldToStateChange(id, null, values)
+                    }
+                }
+                prefs.edit().putBoolean("unclassified_semantic_backfilled", true).apply()
+                android.util.Log.i(
+                    "NovelCharacterApp",
+                    "Unclassified semantic backfill completed (${ids.size} characters)"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "NovelCharacterApp",
+                    "Unclassified semantic backfill failed — will retry on next launch", e
                 )
             }
         }
