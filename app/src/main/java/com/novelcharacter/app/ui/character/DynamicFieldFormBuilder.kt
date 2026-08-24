@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.RequiredEnforcement
 import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
+import com.novelcharacter.app.util.BirthDateFormat
 import com.novelcharacter.app.util.RequiredFieldGaps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -1225,7 +1226,17 @@ class DynamicFieldFormBuilder(
                             partValues.add(partEdit?.text?.toString()?.trim() ?: "")
                         }
                         if (partValues.any { it.isNotEmpty() }) {
-                            config.joinValues(partValues)
+                            // **저장 모양은 [BirthDateFormat]이 든다.** 월 칸에 `5`, 일 칸에
+                            // `30`을 적으면 이 합치기가 `5-30`을 내는데, 앱의 다른 두 생산자
+                            // (계절 랜덤 생성 · 상태변화 역방향)는 `05-30`을 낸다 — 그래서 같은
+                            // 생일이 내보낸 파일 안에서 **두 글자**가 됐다(실측 2026.08.24: 둘).
+                            //
+                            // **여기서 다듬는 것이 요점이다** — 저장 직후 값 라이브러리 수확이
+                            // 지나가므로, 뒤늦게 고치면 라이브러리에 아무도 안 쓰는 `5-30`이 남는다.
+                            val joined = config.joinValues(partValues)
+                            if (BirthDateFormat.isBirthDateField(field)) {
+                                BirthDateFormat.canonicalOrNull(joined) ?: joined
+                            } else joined
                         } else ""
                     } else ""
                 }

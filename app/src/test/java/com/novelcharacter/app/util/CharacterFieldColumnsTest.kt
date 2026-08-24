@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -191,5 +192,53 @@ class CharacterFieldColumnsTest {
     fun `빈 머리 열은 계획에 들어가지 않는다`() {
         val out = plan(mapOf(1 to "", 2 to "   "), emptyList())
         assertTrue(out.isEmpty())
+    }
+
+    // ── ⑦ 날짜 힌트 — 가져오기와 미리보기가 같은 글자를 보게 하는 판정 (R-33) ──────
+
+    private fun roleField(id: Long, key: String, config: String) = FieldDefinition(
+        id = id, universeId = 1, key = key, name = key, type = FieldType.TEXT.name, config = config
+    )
+
+    @Test
+    fun `생일 역할 필드만 날짜 힌트로 읽는다`() {
+        val birth = roleField(1, "birth_date", """{"semanticRole":"birth_date"}""")
+        assertTrue(readsCellAsDate(birth))
+        assertTrue(ColumnFieldOutcome.Matched(birth).readsCellAsDate())
+    }
+
+    @Test
+    fun `다른 역할과 역할 없는 필드는 힌트가 없다`() {
+        assertFalse(readsCellAsDate(roleField(2, "birth_year", """{"semanticRole":"birth_year"}""")))
+        assertFalse(readsCellAsDate(roleField(3, "age", """{"semanticRole":"age"}""")))
+        assertFalse(readsCellAsDate(roleField(4, "memo", "{}")))
+        assertFalse(readsCellAsDate(roleField(5, "broken", "not json")))
+    }
+
+    @Test
+    fun `생일 칸은 읽는 자리에서 저장 모양으로 다듬어진다`() {
+        val birth = roleField(1, "birth_date", """{"semanticRole":"birth_date"}""")
+        assertEquals("05-30", normalizeFieldCell(birth, "5-30"))
+        assertEquals("05-30", ColumnFieldOutcome.Matched(birth).normalizeFieldCell("5/30"))
+        // 이미 규격이면 그대로다 — 무편집 왕복이 '변경'이 되지 않는다.
+        assertEquals("05-30", normalizeFieldCell(birth, "05-30"))
+    }
+
+    @Test
+    fun `읽을 수 없는 글자와 다른 필드의 칸은 손대지 않는다`() {
+        val birth = roleField(1, "birth_date", """{"semanticRole":"birth_date"}""")
+        assertEquals("봄", normalizeFieldCell(birth, "봄"))
+        assertEquals("", normalizeFieldCell(birth, ""))
+        assertEquals("5-30", normalizeFieldCell(roleField(2, "memo", "{}"), "5-30"))
+        assertEquals("5-30", normalizeFieldCell(null, "5-30"))
+    }
+
+    @Test
+    fun `필드에 붙지 않은 열은 힌트가 없다`() {
+        // 붙을 필드가 없으면 그 열의 값은 어차피 버려진다 — 두 쪽 다 같은 글자를 보면 된다.
+        assertFalse(readsCellAsDate(null))
+        assertFalse(ColumnFieldOutcome.AutoCreate("생일").readsCellAsDate())
+        assertFalse(ColumnFieldOutcome.Ambiguous("생일", 2).readsCellAsDate())
+        assertFalse(ColumnFieldOutcome.Unresolved("생일").readsCellAsDate())
     }
 }

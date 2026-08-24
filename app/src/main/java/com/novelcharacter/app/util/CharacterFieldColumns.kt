@@ -3,6 +3,54 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.data.model.FieldDefinition
 
 /**
+ * 이 필드의 셀을 **날짜 힌트로 읽는가**(`getCellString(dateHint = …)`) — 가져오기와 미리보기의
+ * 단일 소스.
+ *
+ * ## 왜 힌트가 필요한가
+ *
+ * 생일 칸에 `5-30`을 적으면 **엑셀이 그것을 날짜 셀로 바꾼다**(값은 시리얼 숫자, 서식만 날짜).
+ * 힌트 없이 읽으면 그 칸은 `45812` 같은 수가 되고, 힌트를 주면 `05-30`이 된다. 앱이 내보내는
+ * 생일은 글자라 이 갈래는 **사용자가 손댄 파일에서만** 열리는데, 그것이 이 칸의 흔한 경로다.
+ *
+ * ## 왜 여기 사는가 — 한쪽만 힌트를 주면 갈린다 (R-33)
+ *
+ * 가져오기는 힌트를 줬고 **미리보기는 안 줬다.** 그래서 날짜 셀이 된 생일 한 칸에서 두 쪽이
+ * **다른 글자를 보고** 서로 다른 답을 냈다 — 미리보기가 *"바뀐다"*고 예고한 칸을 가져오기가
+ * 그대로 두거나(`45812` vs 저장된 `05-30`), 반대로 *"동일"*이라 한 칸을 덮는다.
+ * 규약 R-33이 없애려는 그 갈림이고, 판정이 두 자리에 손으로 적혀 있던 것이 원인이다.
+ *
+ * `null`(어느 필드에도 안 붙은 열)은 힌트가 없다 — 붙을 필드가 없으면 그 열의 값은 버려진다.
+ */
+fun readsCellAsDate(field: FieldDefinition?): Boolean = BirthDateFormat.isBirthDateField(field)
+
+/** [readsCellAsDate]의 열 단위 짝 — 미리보기는 필드가 아니라 열의 처분을 들고 돈다. */
+fun ColumnFieldOutcome.readsCellAsDate(): Boolean =
+    readsCellAsDate((this as? ColumnFieldOutcome.Matched)?.field)
+
+/**
+ * 읽어 온 셀 글자를 그 필드의 **저장 모양**으로 다듬는다 — 지금 대상은 생일 하나다.
+ *
+ * ## 왜 읽는 자리에서 다듬는가 — 값 라이브러리가 먼저 지나간다
+ *
+ * 종전에는 파일이 말한 글자를 그대로 저장하고, 가져오기 꼬리의 시맨틱 동기화가 나중에
+ * 저장 모양으로 되썼다. 그 사이에 **값 라이브러리 수확이 지나간다**(`harvestForCharacter`는
+ * 저장 직후에 돈다) — 그러면 라이브러리에 `5-30`이 한 줄 남고, 뒤이어 값은 `05-30`이 되어
+ * **아무 캐릭터도 쓰지 않는 값**이 자동완성·통계 목록에 서 있게 된다.
+ *
+ * 읽는 자리에서 다듬으면 저장·수확·동기화가 **처음부터 같은 글자**를 본다. 무편집 왕복도
+ * 그때 비로소 멱등이 된다 — 옛 파일의 `5-30`은 한 번 `05-30`으로 들어오고, 같은 파일을 다시
+ * 들여도 그 칸은 '동일'이다(종전에는 들일 때마다 '변경'이었다).
+ *
+ * **읽을 수 없는 글자는 그대로 둔다** — 우리가 못 읽는다고 사용자가 적은 것을 바꾸지 않는다.
+ */
+fun normalizeFieldCell(field: FieldDefinition?, raw: String): String =
+    if (BirthDateFormat.isBirthDateField(field)) BirthDateFormat.canonicalOrNull(raw) ?: raw else raw
+
+/** [normalizeFieldCell]의 열 단위 짝 — [ColumnFieldOutcome.readsCellAsDate]와 같은 이유다. */
+fun ColumnFieldOutcome.normalizeFieldCell(raw: String): String =
+    normalizeFieldCell((this as? ColumnFieldOutcome.Matched)?.field, raw)
+
+/**
  * 캐릭터 시트의 **동적 필드 열 하나**가 무엇에 대응하는가 (B-187).
  *
  * [CharacterFieldColumns.plan]이 열마다 하나씩 낸다. 가져오기는 이것을 받아 실제로 쓰고

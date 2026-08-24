@@ -77,6 +77,8 @@ import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.CardImageAdoption
+import com.novelcharacter.app.util.normalizeFieldCell
+import com.novelcharacter.app.util.readsCellAsDate
 import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.withImagePaths
 import com.novelcharacter.app.util.GradeValueResolver
@@ -4121,7 +4123,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     .toMap()
             }
             for ((col, outcome) in columnPlan) {
-                val cellValue = getCellString(row, col)
+                // **가져오기와 같은 힌트로 읽는다**([readsCellAsDate]) — 종전에는 이쪽만 힌트가
+                // 없어, 엑셀이 날짜 셀로 바꿔 둔 생일 한 칸에서 두 쪽이 다른 글자를 보고
+                // 서로 다른 답을 냈다(R-33).
+                val cellValue = outcome.normalizeFieldCell(
+                    getCellString(row, col, dateHint = outcome.readsCellAsDate())
+                )
                 when (outcome) {
                     is ColumnFieldOutcome.Matched -> {
                         // 계산 필드는 저장하지 않는다(F4) — 가져오기가 `continue`하는 그 자리다.
@@ -8229,7 +8236,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val storedByKey: Map<String, String> = when {
                     !sheetHasCalculatedColumn -> emptyMap()
                     existingChar == null -> CalculatedCellEcho.materialsFromRow(
-                        columnFieldMap.map { (ci, f) -> f to getCellString(row, ci) }
+                        columnFieldMap.map { (ci, f) ->
+                            // 아래 저장 갈래와 **같은 글자**여야 한다 — 수식이 보는 값과 저장되는
+                            // 값이 다르면 계산 필드의 '앱이 적어 낸 값인가' 판정이 갈린다.
+                            f to normalizeFieldCell(
+                                f, getCellString(row, ci, dateHint = readsCellAsDate(f))
+                            )
+                        }
                     )
                     else -> fields.asSequence()
                         .mapNotNull { f -> valueLedger.get(charId, f.id)?.value?.let { f.key to it } }
@@ -8261,8 +8274,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                     // 이 (캐릭터, 필드)는 캐릭터 시트가 권위 — '캐릭터 필드값' 시트의 같은 항목은 무시된다
                     importedCharFieldPairs.add(charId to field.id)
-                    val isDateField = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
-                    val value = getCellString(row, colIndex, dateHint = isDateField)
+                    // 날짜 힌트도 저장 모양 정규화도 [readsCellAsDate]·[normalizeFieldCell]이
+                    // 든다 — 미리보기가 **같은 두 함수**를 쓴다(R-33).
+                    val value = normalizeFieldCell(
+                        field, getCellString(row, colIndex, dateHint = readsCellAsDate(field))
+                    )
                     // 필드 타입 검증 (F1-B): 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴)
                     if (value.isNotBlank()) {
                         // **타입이 늘면 여기가 컴파일을 깬다** (B-55). 코틀린은 enum을 받는

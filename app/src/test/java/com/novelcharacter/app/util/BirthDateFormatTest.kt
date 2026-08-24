@@ -122,6 +122,21 @@ class BirthDateFormatTest {
         assertFalse(BirthDateFormat.needsRepair(null))
     }
 
+    // ── 대상 판정: 같은 한 줄이 세 자리에 살던 것을 모았다 ──
+
+    @Test
+    fun `생일 역할 필드만 대상이다`() {
+        fun f(config: String) = com.novelcharacter.app.data.model.FieldDefinition(
+            universeId = 1, key = "k", name = "n",
+            type = com.novelcharacter.app.data.model.FieldType.TEXT.name, config = config
+        )
+        assertTrue(BirthDateFormat.isBirthDateField(f("""{"semanticRole":"birth_date"}""")))
+        assertFalse(BirthDateFormat.isBirthDateField(f("""{"semanticRole":"birth_year"}""")))
+        assertFalse(BirthDateFormat.isBirthDateField(f("{}")))
+        assertFalse(BirthDateFormat.isBirthDateField(f("not json")))
+        assertFalse(BirthDateFormat.isBirthDateField(null))
+    }
+
     @Test
     fun `정리는 멱등이다`() {
         val once = BirthDateFormat.canonicalOrNull("5-30")
