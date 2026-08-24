@@ -5,6 +5,7 @@ import com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.FieldValueEntry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -1096,5 +1097,106 @@ class CharacterFieldAiSuggesterTest {
         assertEquals(CharacterFieldAiSuggester.MAX_MISSING_LINES + 1, lines.size)
         assertTrue(lines.last().contains("외 3개"))
         assertTrue(CharacterFieldAiSuggester.missingLines(emptyList()).isEmpty())
+    }
+
+    // ===== 실행 루프 — 청킹·취소·진행도 (결정형 진행도 R-26) =====
+    //
+    // 이 절이 `suggest(prompts, targets, ...)`(AiService 호출 본체)를 직접 잰다.
+    // [ImageBatchTagSuggester]와 같은 이유로 생성자를 람다 다섯으로 갈랐다 — 순수 JVM
+    // 하네스는 AiService를 스텁으로 대신하는데 스텁 생성자는 인자가 없고 진짜는 Context를
+    // 받아, 그 차이 위에 시험을 세우면 로컬에서만 컴파일되고 CI에서 깨진다.
+
+    private fun successAt(vararg keys: String) = AiResult.Success(
+        text = keys.joinToString(",", "{\"suggestions\":[", "]}") {
+            "{\"key\":\"$it\",\"value\":\"값\",\"reason\":\"근거\"}"
+        },
+        model = "test-model"
+    )
+
+    private fun suggester(
+        maxTokens: Int = 540,   // TOKENS_PER_SUGGESTION(270)의 2배 — targetsPerRequest == 2
+        complete: suspend (AiRequest) -> AiResult
+    ) = CharacterFieldAiSuggester(
+        complete = complete,
+        effectiveMaxTokens = { maxTokens },
+        temperatureFor = { null },
+        isTemperatureUnsupported = { false },
+        isImagesUnsupported = { false }
+    )
+
+    @Test
+    fun suggest_reportsProgressPerChunk_requestsAndTargetsBothCounted() = runBlocking {
+        // 5개 대상, 청크당 2개 → [2,2,1] = 요청 3건. 눈금은 요청 수로, 곁줄은 필드 수로 센다
+        // (TaskProgressDialog가 요구하는 두 단위 — 하나만 세면 남은 시간을 가늠할 수 없다).
+        val targets = (1..5).map { spec("f$it") }
+        val seen = mutableListOf<List<Int>>()
+        // 어느 청크가 왔는지는 이 시험의 관심사가 아니다(진행도만 잰다) — 응답은 매번 빈 배열.
+        val outcome = suggester { successAt() }
+            .suggest(
+                context(), targets,
+                onProgress = { done, total, doneT, totalT -> seen.add(listOf(done, total, doneT, totalT)) }
+            ) { "err" }
+
+        assertEquals(
+            listOf(listOf(0, 3, 0, 5), listOf(1, 3, 2, 5), listOf(2, 3, 4, 5), listOf(3, 3, 5, 5)),
+            seen
+        )
+        // 진행도 계약과 별개로 전량 응답 계약도 지킨다 — 요청 대상 전체가 계산에 잡혀야 한다
+        assertEquals(5, outcome.suggestions.size + outcome.missing.size)
+    }
+
+    @Test
+    fun suggest_cancelStopsBeforeNextChunk_finishesTheOneInFlight() = runBlocking {
+        // 취소는 "더 시작하지 않음"이다 — 이미 나간 청크는 끝까지 받는다(R-26).
+        val targets = (1..5).map { spec("f$it") }
+        var calls = 0
+        // 청크는 [f1,f2]·[f3,f4]·[f5] 순으로 결정적이다(chunked(2)) — 취소가 첫 청크
+        // 뒤에서 걸리므로 이 시험에는 그 청크의 응답만 있으면 된다.
+        val outcome = suggester {
+            calls++
+            successAt("f1", "f2")
+        }.suggest(context(), targets, isCancelled = { calls >= 1 }) { "err" }
+
+        assertEquals("첫 청크만 나가야 한다 — 그 뒤부터 취소로 막는다", 1, calls)
+        assertEquals(listOf("f1", "f2"), outcome.suggestions.map { it.fieldKey }.sorted())
+        val cancelled = outcome.missing.filter { it.cause == CharacterFieldAiSuggester.MissingCause.CANCELLED }
+        assertEquals(listOf("f3", "f4", "f5"), cancelled.map { it.fieldKey })
+        // 불변식: suggestions + missing = 요청 대상 전체 — 취소로 시작 안 한 몫도 결손으로 남는다
+        assertEquals(targets.size, outcome.suggestions.size + outcome.missing.size)
+    }
+
+    @Test
+    fun suggest_cancelBeforeFirstChunk_makesNoRequestAtAll() = runBlocking {
+        val targets = (1..3).map { spec("f$it") }
+        val outcome = suggester { throw AssertionError("요청을 만들면 안 된다 — 이미 취소됐다") }
+            .suggest(context(), targets, isCancelled = { true }) { "err" }
+
+        assertTrue(outcome.suggestions.isEmpty())
+        assertEquals(3, outcome.missing.size)
+        assertTrue(outcome.missing.all { it.cause == CharacterFieldAiSuggester.MissingCause.CANCELLED })
+    }
+
+    @Test
+    fun suggest_terminalFailureStopsRemainingChunks_marksNotRequested() = runBlocking {
+        // 취소와 처분은 같은 모양이지만(더 시작하지 않음) 사유는 갈라야 한다 — 하나는
+        // 사용자가 골랐고 하나는 앞선 실패가 결정했다. 처방이 다르다(재실행 vs 설정 교정).
+        val targets = (1..5).map { spec("f$it") }
+        var calls = 0
+        val outcome = suggester {
+            calls++
+            AiResult.Failure(AiErrorKind.INVALID_KEY)
+        }.suggest(context(), targets) { "키 오류" }
+
+        assertEquals(1, calls)
+        assertEquals(
+            setOf("f1", "f2"),
+            outcome.missing.filter { it.cause == CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED }
+                .map { it.fieldKey }.toSet()
+        )
+        assertEquals(
+            setOf("f3", "f4", "f5"),
+            outcome.missing.filter { it.cause == CharacterFieldAiSuggester.MissingCause.NOT_REQUESTED }
+                .map { it.fieldKey }.toSet()
+        )
     }
 }

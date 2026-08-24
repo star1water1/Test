@@ -441,6 +441,7 @@ object AiFieldSuggestSheet {
         CharacterFieldAiSuggester.MissingCause.UNREADABLE,
         CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED,
         CharacterFieldAiSuggester.MissingCause.NOT_REQUESTED,
+        CharacterFieldAiSuggester.MissingCause.CANCELLED,
         CharacterFieldAiSuggester.MissingCause.INVALID,
         CharacterFieldAiSuggester.MissingCause.DUPLICATE
     )

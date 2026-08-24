@@ -13,7 +13,6 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -93,11 +92,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private lateinit var fieldRenderer: DynamicFieldRenderer
     private lateinit var backCallback: OnBackPressedCallback
 
-    // AI 추천 (A-3) — 진행 다이얼로그 + 편집 하이드레이션 완료 후 결과 표시 예약
-    private var aiProgressDialog: AlertDialog? = null
+    // AI 추천 (A-3) — 진행 다이얼로그 + 편집 하이드레이션 완료 후 결과 표시 예약.
+    // 편집 화면(CharacterEditFragment)과 같은 규약이다 — 청크가 둘 이상일 때만 취소를 붙인다.
+    private var aiProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
     // 서술형 일괄만 창을 따로 든다 (B-184) — 필드마다 요청 하나라 *몇 번째를 쓰는 중인가*를
     // 계속 고쳐 써야 하고, 짧은 값·단일 서술형과 문구가 다르다(편집 화면과 같은 구조).
-    private var aiBulkProgressDialog: AlertDialog? = null
+    private var aiBulkProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
     private var pendingAiResultShow = false
     private var pendingAiNarrativeShow = false
     private var pendingAiNarrativeBulkShow = false
@@ -489,6 +489,9 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         characterViewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
             updateAiProgress(running == true || characterViewModel.aiNarrativeRunning.value == true)
         }
+        characterViewModel.aiSuggestProgress.observe(viewLifecycleOwner) { (done, total) ->
+            if (total > 0) aiProgressDialog?.update(done, total)
+        }
         characterViewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->
             updateAiProgress(running == true || characterViewModel.aiSuggestRunning.value == true)
         }
@@ -526,8 +529,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         }
         characterViewModel.aiNarrativeBulkProgress.observe(viewLifecycleOwner) { (done, total) ->
             if (total > 0) {
-                aiBulkProgressDialog?.setMessage(
-                    getString(R.string.ai_narrative_bulk_running, done, total)
+                aiBulkProgressDialog?.update(
+                    done, total, stage = getString(R.string.ai_narrative_bulk_running, done, total)
                 )
             }
         }
@@ -575,13 +578,23 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             .show()
     }
 
+    /**
+     * 짧은 값 추천·서술형 단건이 이 창을 공유한다(동시 실행은 VM이 막는다) — 편집 화면
+     * (CharacterEditFragment)과 같은 규약이다. 취소는 짧은 값 추천에만 붙인다 — 서술형
+     * 단건은 청크 개념 자체가 없어(요청 하나가 전부) 취소가 막을 '다음 요청'이 원리적으로
+     * 없다.
+     */
     private fun updateAiProgress(show: Boolean) {
         if (show) {
             if (aiProgressDialog == null && isAdded) {
-                aiProgressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setMessage(R.string.ai_field_running)
-                    .setCancelable(false)
-                    .show()
+                val suggestRunning = characterViewModel.aiSuggestRunning.value == true
+                aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                    requireContext(),
+                    titleRes = R.string.ai_field_suggest_title,
+                    total = if (suggestRunning) characterViewModel.aiSuggestProgress.value?.second ?: 0 else 1,
+                    stageRes = R.string.ai_field_running,
+                    onCancel = if (suggestRunning) ({ characterViewModel.cancelAiSuggestRun() }) else null
+                )
             }
         } else {
             aiProgressDialog?.dismiss()
@@ -592,15 +605,18 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     /**
      * 서술형 일괄 초안의 진행 창 (B-184) — 창을 따로 드는 이유는 **문구가 계속 바뀌기
      * 때문**이다(`n/총`). 공용 창에 실으면 짧은 값·단일 서술형이 함께 도는 동안 서로의
-     * 문구를 덮는다.
+     * 문구를 덮는다. 대상이 둘 이상일 때가 흔한 경로라 여기는 항상 취소를 붙인다.
      */
     private fun updateAiBulkProgress(show: Boolean) {
         if (show) {
             if (aiBulkProgressDialog == null && isAdded) {
-                aiBulkProgressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setMessage(R.string.ai_field_running)
-                    .setCancelable(false)
-                    .show()
+                aiBulkProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                    requireContext(),
+                    titleRes = R.string.ai_narrative_bulk_title,
+                    total = characterViewModel.aiNarrativeBulkProgress.value?.second ?: 0,
+                    stageRes = R.string.ai_narrative_bulk_stage,
+                    onCancel = { characterViewModel.cancelAiNarrativeBulkRun() }
+                )
             }
         } else {
             aiBulkProgressDialog?.dismiss()

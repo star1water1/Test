@@ -52,6 +52,19 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     val running = MutableLiveData(false)
     val result = MutableLiveData<Run?>()
 
+    /** 지금까지 끝낸 요청 수 대 총 요청 수 — 결정형 진행도(R-26)의 재료. */
+    val progress = MutableLiveData(0 to 0)
+
+    /**
+     * 취소 깃발 — 창이 회전으로 다시 만들어져도 이 인스턴스는 살아 있으므로(창 스코프 VM)
+     * 실행이 취소를 놓치지 않는다(`CharacterViewModel.aiSuggestCancelled`와 같은 규약).
+     */
+    @Volatile
+    private var cancelled = false
+
+    /** 취소 요청. 즉시 중단이 아니라 **더 시작하지 않음**이다 — 청크 하나는 끝까지 받는다. */
+    fun cancelRun() { cancelled = true }
+
     fun clearResult() { result.value = null }
 
     /**
@@ -69,18 +82,26 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         eventId: Long
     ): Boolean {
         if (running.value == true) return false
+        cancelled = false
+        val aiService = AiService(getApplication())
+        // 총량을 먼저 센다 — 캐릭터 축(CharacterViewModel.runAiSuggest)과 같은 규약이다.
+        progress.value = 0 to CharacterFieldAiSuggester.requestCountFor(
+            targets.size, aiService.effectiveMaxTokens()
+        )
         running.value = true
         viewModelScope.launch {
             val outcome = try {
                 val settings = AiPromptSettings(getApplication())
-                EventFieldAiSuggester(AiService(getApplication())).suggest(
+                EventFieldAiSuggester(aiService).suggest(
                     context = context,
                     targets = withFieldUsage(targets, settings),
                     scope = settings.eventContextScope,
                     minConfidence = settings.minConfidence,
                     creativity = settings.creativity,
                     // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
-                    templates = settings.asTemplateSource()
+                    templates = settings.asTemplateSource(),
+                    onProgress = { done, total, _, _ -> progress.value = done to total },
+                    isCancelled = { cancelled }
                 ) { failure -> AiErrorMessages.of(getApplication(), failure) }
             } catch (e: Exception) {
                 // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
@@ -92,6 +113,7 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
             }
             result.value = Run(targets, outcome, eventId)
             running.value = false
+            progress.value = 0 to 0
         }
         return true
     }
