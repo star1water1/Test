@@ -1,6 +1,8 @@
 package com.novelcharacter.app.data.maintenance
 
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.util.BirthDateFormat
 
 /**
  * **옛 경로가 남긴 규격 밖 값 정리** (1회 실행, 2026.08.24) — 둘 다 *지금은 들어올 수 없는데
@@ -38,13 +40,27 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * SQLite에는 정규식이 없어 `GLOB`으로 적는다: `*[^0-9A-Fa-f]*`가 *16진 아닌 글자가 하나라도
  * 있는가*이므로, 부정하면 *전부 16진 글자*가 된다.
  *
+ * ## ③ 0이 빠진 생일
+ *
+ * 실측: 생일이 있는 47명 중 둘이 `5-30`·`6-7`이고 나머지 마흔다섯은 `MM-DD`였다. 같은 캐릭터의
+ * '캐릭터 상태변화' 행은 `05-30`·`06-07`이라 **한 파일이 같은 생일을 두 글자로 적었다.**
+ * 만드는 자리 셋 중 편집 화면의 구조화 입력만 0을 안 채우던 것이 원인이고, 그 문은
+ * [BirthDateFormat]이 막았다 — 여기서 이미 든 값을 올린다.
+ *
+ * **판정을 SQL로 적지 않는다.** 0 채움은 문자열 연산이라 SQLite로 적으면 그 규칙이 두 벌이
+ * 되고(코틀린 쪽과), 무엇보다 *읽을 수 있는가*의 술어([isRealMonthDay])까지 옮겨 적어야 한다.
+ * 그래서 후보만 넓게 긁어 오고 판정·변환은 [BirthDateFormat]이 든다.
+ *
+ * **읽을 수 없는 값은 건드리지 않는다** — 사용자가 적어 둔 글자를 우리가 못 읽는다고 해서
+ * 바꾸지 않는다(개발 의도 2번).
+ *
  * **멱등이다** — 몇 번을 돌려도 같은 상태로 수렴한다(고친 행은 조건에서 빠진다).
  */
 object LegacyValueFormats {
 
     /** 몇 건을 올렸는가 — 부르는 쪽이 사용자에게 말할 재료다(말없이 고치지 않는다). */
-    data class Repaired(val timestamps: Int, val colors: Int) {
-        val any: Boolean get() = timestamps > 0 || colors > 0
+    data class Repaired(val timestamps: Int, val colors: Int, val birthDates: Int = 0) {
+        val any: Boolean get() = timestamps > 0 || colors > 0 || birthDates > 0
     }
 
     /**
@@ -77,7 +93,43 @@ object LegacyValueFormats {
             colors += count(db, "SELECT COUNT(*) FROM $table WHERE $where")
             db.execSQL("UPDATE $table SET $column = '#' || $column WHERE $where")
         }
-        return Repaired(timestamps = timestamps, colors = colors)
+        return Repaired(
+            timestamps = timestamps, colors = colors, birthDates = repairBirthDates(db)
+        )
+    }
+
+    /**
+     * ③ — 생일 필드값을 저장 모양(`MM-DD`)으로 올린다. @return 고친 행 수.
+     *
+     * 후보를 **넓게** 긁는다(`config LIKE '%birth_date%'`) — 역할 판정은 JSON이라 SQL이
+     * 정확히 흉내 낼 수 없고(`{"semanticRole": "birth_date"}`처럼 빈칸이 든 config가 손편집·
+     * 월드패키지로 들어올 수 있다), 좁게 긁으면 그 행만 조용히 남는다. 걸러 내는 것은
+     * [SemanticRole.fromConfig]다 — 앱이 실제로 쓰는 그 판정이다.
+     */
+    private fun repairBirthDates(db: SupportSQLiteDatabase): Int {
+        // (행 id, 지금 값) — 판정을 통과한 것만 담는다. 한 질의로 끝낸다.
+        val targets = ArrayList<Pair<Long, String>>()
+        db.query(
+            "SELECT v.id, v.value, f.config FROM character_field_values v " +
+                "JOIN field_definitions f ON f.id = v.fieldDefinitionId " +
+                "WHERE f.config LIKE '%birth_date%' AND v.value <> ''"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                if (SemanticRole.fromConfig(cursor.getString(2)) != SemanticRole.BIRTH_DATE) continue
+                val value = cursor.getString(1)
+                if (BirthDateFormat.needsRepair(value)) targets.add(cursor.getLong(0) to value)
+            }
+        }
+        var fixed = 0
+        for ((id, value) in targets) {
+            val canonical = BirthDateFormat.canonicalOrNull(value) ?: continue
+            db.execSQL(
+                "UPDATE character_field_values SET value = ? WHERE id = ?",
+                arrayOf<Any>(canonical, id)
+            )
+            fixed++
+        }
+        return fixed
     }
 
     /**

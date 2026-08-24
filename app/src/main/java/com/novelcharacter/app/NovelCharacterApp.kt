@@ -145,7 +145,7 @@ class NovelCharacterApp : Application() {
         migrateAliveSyncIfNeeded()
         // 밑줄 키 이력의 둘째 줄 정리 (1회)
         repairSingletonStateChangesIfNeeded()
-        // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색
+        // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색 · 규격 밖 생일
         repairLegacyValueFormatsIfNeeded()
         // 무소속 캐릭터의 시맨틱 이력 소급 (1회) — 살아 있는 경로가 그들을 빼고 있었다
         backfillUnclassifiedSemanticStateIfNeeded()
@@ -295,7 +295,10 @@ class NovelCharacterApp : Application() {
      */
     private fun repairLegacyValueFormatsIfNeeded() {
         val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
-        if (prefs.getBoolean("legacy_value_formats_repaired", false)) return
+        // **플래그가 v2다** — 2026.08.24에 ③(0이 빠진 생일)이 늘었는데, v1을 이미 마친 설치는
+        // 그 플래그 때문에 다시 돌지 않아 새 항목만 조용히 건너뛴다. 세 항목이 전부 멱등이라
+        // (그 object의 KDoc) 한 번 더 도는 값은 0건이고, 새 항목만 실제로 잡힌다.
+        if (prefs.getBoolean("legacy_value_formats_repaired_v2", false)) return
 
         appScope.launch(Dispatchers.IO) {
             try {
@@ -313,11 +316,22 @@ class NovelCharacterApp : Application() {
                         "'#'이 빠진 색 ${repaired.colors}건에 '#'을 붙였습니다 — 색은 그대로이고 표기만 맞췄습니다"
                     )
                 }
-                prefs.edit().putBoolean("legacy_value_formats_repaired", true).apply()
+                if (repaired.birthDates > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "0이 빠진 생일 ${repaired.birthDates}건을 MM-DD로 맞췄습니다 " +
+                            "— 날짜는 그대로이고 표기만 맞췄습니다(연표 이력은 이미 그 모양이었습니다)"
+                    )
+                }
+                prefs.edit()
+                    .putBoolean("legacy_value_formats_repaired", true)
+                    .putBoolean("legacy_value_formats_repaired_v2", true)
+                    .apply()
                 android.util.Log.i(
                     "NovelCharacterApp",
                     "Legacy value format repair completed " +
-                        "(timestamps=${repaired.timestamps}, colors=${repaired.colors})"
+                        "(timestamps=${repaired.timestamps}, colors=${repaired.colors}, " +
+                        "birthDates=${repaired.birthDates})"
                 )
             } catch (e: Exception) {
                 android.util.Log.e(
