@@ -34,6 +34,7 @@ class AiService(context: Context) {
     private val appContext = context.applicationContext
     private val providerStore = AiProviderStore(appContext)
     private val keyStore = AiKeyStore(appContext)
+    private val usageStore = AiUsageStore(appContext)
 
     /**
      * 활성 프로바이더(또는 지정 [config])로 요청을 수행한다.
@@ -199,7 +200,31 @@ class AiService(context: Context) {
             }
         }
 
+    /**
+     * HTTP 실행 + **성공 사용량 기록**. 기록을 이 출구 하나에 두는 이유는 표식(B-150)·전환
+     * 고지(B-108)와 같다 — 호출부 여덟이 각자 기록하면 여덟 벌이 되고 빠뜨린 자리는 조용하다.
+     * 연결 테스트·명시 지정 호출도 실제로 과금되므로 함께 센다. 실패는 기록하지 않는다 —
+     * 과금 축은 usage이고, 실패에는 usage가 없다.
+     */
     private suspend fun execute(
+        config: AiProviderConfig, apiKey: String, request: AiRequest
+    ): AiResult = withContext(Dispatchers.IO) {
+        val result = executeUnrecorded(config, apiKey, request)
+        if (result is AiResult.Success) {
+            usageStore.record(
+                providerId = config.id,
+                displayName = config.displayName,
+                // 응답이 보고한 실제 모델이다 — 요청 모델과 다를 수 있고(별칭·라우터),
+                // 집계가 답할 질문은 "실제로 누가 썼는가"다.
+                model = result.model,
+                inputTokens = result.inputTokens,
+                outputTokens = result.outputTokens
+            )
+        }
+        result
+    }
+
+    private suspend fun executeUnrecorded(
         config: AiProviderConfig, apiKey: String, request: AiRequest
     ): AiResult = withContext(Dispatchers.IO) {
         // 상한 셋의 **교집합**을 쓴다: 이 요청이 요구한 값 ∩ 사용자 설정 ∩ 탐지된 모델 상한.
@@ -223,12 +248,19 @@ class AiService(context: Context) {
         val strippedUpfront = request1.hasImages() && saved.imagesUnsupported == true
         val request0 = if (strippedUpfront) request1.withoutImages() else request1
 
+        // **사전 제거 고지는 어느 출구로 나가든 붙는다.** 종전에는 첫 호출 성공 분기에만
+        // 붙어 있어, 사전 제거된 요청이 재시도 경로(①②③)로 성공하면 고지가 조용히
+        // 빠졌다 — 사용자는 그림을 붙였는데 결과가 그대로인 이유를 영영 모른다(A-7의
+        // 그 부류). 출구마다 손으로 붙이면 다음 출구가 또 빠뜨리므로 한 함수로 모은다.
+        fun noted(result: AiResult): AiResult =
+            if (strippedUpfront && result is AiResult.Success && !result.imagesOmitted) {
+                result.copy(imagesOmitted = true)
+            } else result
+
         val spec = AiProtocolCodec.buildRequest(config, apiKey, request0)
         val first = call(spec, config.protocol, config.model)
         if (first !is AiResult.Failure) {
-            return@withContext if (strippedUpfront && first is AiResult.Success) {
-                first.copy(imagesOmitted = true)
-            } else first
+            return@withContext noted(first)
         }
 
         // ① OpenAI 신형 모델의 max_tokens **파라미터 이름** 거부 → max_completion_tokens 로 1회 재시도.
@@ -237,6 +269,14 @@ class AiService(context: Context) {
         ) {
             val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, request0)
             val second = call(retry, config.protocol, config.model)
+            // **성공한 재시도는 기억한다** — 안 그러면 그 모델로 가는 모든 요청이 400 → 재시도의
+            // 2회 왕복으로 남는다(지연이 배가 되고 레이트리밋도 두 배로 두드린다). 기억되면
+            // [AiProtocolCodec.buildRequest]가 첫 요청부터 max_completion_tokens로 조립한다.
+            // 형제 ②·③·④와 같은 형태다: 재시도가 통해야 배운 것이다. R-23 대상.
+            if (second is AiResult.Success) {
+                rememberMaxTokensParamUnsupported(config.id)
+                return@withContext noted(second)
+            }
             // 추론 모델은 파라미터 이름과 temperature를 **둘 다** 거부한다 — 이름을 고친 재시도가
             // temperature 거부로 떨어지면 여기서 ②를 이어 준다. 이 연쇄를 끊으면 창작도를 켠
             // 사용자는 그 모델에서 영영 400만 받는다(한 번 성공하면 둘 다 기억되어 다음부터 1회 호출).
@@ -250,8 +290,9 @@ class AiService(context: Context) {
                     config.protocol, config.model
                 )
                 if (third is AiResult.Success) {
+                    rememberMaxTokensParamUnsupported(config.id)
                     rememberTemperatureUnsupported(config.id)
-                    return@withContext third.copy(temperatureOmitted = true)
+                    return@withContext noted(third.copy(temperatureOmitted = true))
                 }
                 return@withContext third
             }
@@ -268,7 +309,7 @@ class AiService(context: Context) {
             val second = call(retrySpec, config.protocol, config.model)
             if (second is AiResult.Success) {
                 rememberTemperatureUnsupported(config.id)
-                return@withContext second.copy(temperatureOmitted = true)
+                return@withContext noted(second.copy(temperatureOmitted = true))
             }
             return@withContext second
         }
@@ -308,7 +349,7 @@ class AiService(context: Context) {
                 )
                 val second = call(retrySpec, config.protocol, config.model)
                 if (second is AiResult.Success) rememberDetectedLimit(config.id, learned)
-                return@withContext second
+                return@withContext noted(second)
             }
         }
         first
@@ -326,6 +367,16 @@ class AiService(context: Context) {
         val current = providerStore.get(configId) ?: return
         if (current.detectedOutputLimit == limit) return
         providerStore.save(current.copy(detectedOutputLimit = limit))
+    }
+
+    /**
+     * `max_tokens` **파라미터 이름** 거부를 학습해 기록한다 (OPENAI_COMPAT 전용, R-23 대상).
+     * 다음 요청부터 [AiProtocolCodec.buildRequest]가 첫 호출부터 max_completion_tokens로 조립한다.
+     */
+    fun rememberMaxTokensParamUnsupported(configId: String) {
+        val current = providerStore.get(configId) ?: return
+        if (current.maxTokensParamUnsupported == true) return
+        providerStore.save(current.copy(maxTokensParamUnsupported = true))
     }
 
     /** temperature 거부를 학습해 기록한다 — 다음 요청부터 싣지 않는다 (A-4, R-23 대상). */

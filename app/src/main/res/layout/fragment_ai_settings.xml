@@ -86,6 +86,111 @@
                 android:layout_marginTop="12dp"
                 android:text="@string/ai_settings_add_provider" />
 
+            <!-- Section: AI 사용량 — 관문(AiService)이 성공 요청마다 쌓는 실측 집계.
+                 회당 토큰은 각 실행 결과가 이미 말하므로 여기는 기간·프로바이더 축만 맡는다. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/ai_settings_usage_section"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingTop="24dp"
+                android:paddingBottom="4dp" />
+
+            <!-- 목적문 (R-25) -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="@string/ai_settings_usage_intro"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <RadioGroup
+                        android:id="@+id/usagePeriodGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/usagePeriodToday"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_usage_period_today" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/usagePeriod7"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_usage_period_7" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/usagePeriod30"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_usage_period_30" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/usagePeriodAll"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_usage_period_all" />
+                    </RadioGroup>
+
+                    <TextView
+                        android:id="@+id/usageSinceNote"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/usageSummaryText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall" />
+
+                    <TextView
+                        android:id="@+id/usageUnmeteredNote"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/usageClearButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/ai_usage_clear_button" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Section: AI 추천 일관성 — 프롬프트에 무엇을 얼마나 실을지.
                  일관성과 토큰은 교환 관계이고 그 교환비는 데이터 규모·모델·과금마다 다르므로
                  개발자가 정하지 않고 사용자가 정한다(자율성 우선). 0 = 끔. -->

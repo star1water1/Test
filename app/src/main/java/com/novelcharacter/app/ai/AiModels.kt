@@ -64,8 +64,8 @@ data class AiProviderConfig(
     val maxOutputTokens: Int? = null,
     /**
      * 이 모델이 실제로 허용하는 출력 상한 — **탐지값**이다. 두 경로로 학습한다:
-     * ① 모델 목록 조회가 알려주는 경우(Gemini의 `outputTokenLimit`)
-     * ② 상한 초과 400 오류가 본문에 적어 주는 경우(Anthropic·OpenAI)
+     * ① 모델 목록 조회가 알려주는 경우(Gemini `outputTokenLimit` · Anthropic `max_tokens`)
+     * ② 상한 초과 400 오류가 본문에 적어 주는 경우(OpenAI 호환 등 목록이 침묵하는 곳)
      * 정적 표를 두지 않는 이유: 표는 새 모델이 나올 때마다 낡는다(AiPresets 모델 추천의 기존 한계).
      */
     val detectedOutputLimit: Int? = null,
@@ -76,6 +76,17 @@ data class AiProviderConfig(
      * null = 모름(정상 가정). R-23에 따라 모델·주소가 바뀌면 함께 버린다.
      */
     val temperatureUnsupported: Boolean? = null,
+    /**
+     * 이 모델이 `max_tokens`라는 **파라미터 이름**을 거부한다고 학습했는가 (OPENAI_COMPAT 전용).
+     * OpenAI 신형(추론) 모델은 같은 값을 `max_completion_tokens`로 받는다.
+     *
+     * 종전에는 이 사실을 기억하지 않아 **그 모델로 가는 모든 요청이 400 → 재시도의 2회
+     * 왕복**이었다 — 문서는 *"성공하면 기억되어 다음부터는 1회 호출"*이라 적었는데 기억되는
+     * 것은 temperature뿐이었다. 학습되면 [AiProtocolCodec.buildRequest]가 첫 요청부터
+     * `max_completion_tokens`로 조립한다. null = 모름(종전 이름 사용).
+     * [temperatureUnsupported]와 같은 성격이라 R-23을 함께 탄다.
+     */
+    val maxTokensParamUnsupported: Boolean? = null,
     /**
      * 이 모델이 **이미지를 받지 않는다**고 학습했는가 (A-7).
      * 같은 프로토콜 안에서도 비전 지원은 모델마다 갈리고, 목록 조회는 그 사실을 알려주지
@@ -93,6 +104,7 @@ data class AiProviderConfig(
      */
     fun hasLearnedFacts(): Boolean =
         detectedOutputLimit != null || temperatureUnsupported != null ||
+            maxTokensParamUnsupported != null ||
             imagesUnsupported != null || cooldownUntilMillis != null
 
     /** 오류 문구에 실을 표식 (B-150). 설정 전체가 아니라 **사용자가 알아볼 두 값**만 넘긴다. */
@@ -179,7 +191,10 @@ object AiTokenPolicy {
  */
 data class AiModelInfo(
     val id: String,
-    /** 프로바이더가 알려준 출력 토큰 상한. 모르면 null(Anthropic·OpenAI는 목록에 없다). */
+    /**
+     * 프로바이더가 알려준 출력 토큰 상한. 모르면 null — Gemini(`outputTokenLimit`)와
+     * Anthropic(`max_tokens`, 2026-03부터)은 목록이 알려주고, OpenAI 호환 목록에는 없다.
+     */
     val outputTokenLimit: Int? = null
 )
 

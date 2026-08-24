@@ -101,7 +101,97 @@ class AiSettingsFragment : Fragment() {
         setupConsistencySliders()
         setupCreativityGroup()
         setupPromptTemplates()
+        setupUsageCard()
         refreshList()
+    }
+
+    /**
+     * AI 사용량 카드 — 관문([AiService])이 성공 요청마다 쌓은 실측 집계를 기간·프로바이더별로
+     * 보여준다. 회당 토큰은 각 실행 결과가 이미 말하므로(`field_library_ai_token_usage`)
+     * 여기는 **기간 축**만 맡는다 — BYOK 사용자가 실제로 묻는 것은 "이 키로 얼마나 썼는가"다.
+     *
+     * 기간 라디오의 체크 상태는 뷰 상태로 저장·복원되므로(id가 있는 RadioGroup) 회전에도
+     * 선택이 남는다 — 첫 조립에서만 기본값(오늘)을 심는다.
+     */
+    private fun setupUsageCard() {
+        if (binding.usagePeriodGroup.checkedRadioButtonId == View.NO_ID) {
+            binding.usagePeriodGroup.check(R.id.usagePeriodToday)
+        }
+        binding.usagePeriodGroup.setOnCheckedChangeListener { _, _ -> renderUsage() }
+        binding.usageClearButton.setOnClickListener { confirmUsageClear() }
+        renderUsage()
+    }
+
+    private fun renderUsage() {
+        val store = com.novelcharacter.app.ai.AiUsageStore(requireContext())
+        val data = store.snapshot()
+        val today = store.today()
+        val ledger = com.novelcharacter.app.ai.AiUsageLedger
+        var sinceNote: String? = null
+        val summaries = when (binding.usagePeriodGroup.checkedRadioButtonId) {
+            R.id.usagePeriodAll -> {
+                ledger.earliestSinceDay(data.totals)?.let {
+                    sinceNote = getString(
+                        R.string.ai_usage_since_note, java.time.LocalDate.ofEpochDay(it).toString()
+                    )
+                }
+                ledger.totalsSummary(data.totals)
+            }
+            R.id.usagePeriod7 -> ledger.summarize(data.days, today - 6)
+            R.id.usagePeriod30 -> ledger.summarize(data.days, today - 29)
+            else -> ledger.summarize(data.days, today)
+        }
+        binding.usageSinceNote.text = sinceNote
+        binding.usageSinceNote.visibility = if (sinceNote != null) View.VISIBLE else View.GONE
+
+        val fmt = java.text.NumberFormat.getIntegerInstance()
+        binding.usageSummaryText.text = when {
+            data.totals.isEmpty() -> getString(R.string.ai_usage_empty)
+            summaries.isEmpty() -> getString(R.string.ai_usage_empty_period)
+            else -> buildString {
+                summaries.forEach { s ->
+                    append(getString(R.string.ai_usage_row_title, s.displayName, s.model)).append('\n')
+                    append(
+                        getString(
+                            R.string.ai_usage_row_body,
+                            fmt.format(s.requests), fmt.format(s.inputTokens), fmt.format(s.outputTokens)
+                        )
+                    ).append('\n')
+                }
+                // 합계는 줄이 둘 이상일 때만 — 하나뿐이면 같은 수를 두 번 적는 것이다.
+                if (summaries.size > 1) {
+                    append(
+                        getString(
+                            R.string.ai_usage_total_row,
+                            fmt.format(summaries.sumOf { it.requests }),
+                            fmt.format(summaries.sumOf { it.inputTokens }),
+                            fmt.format(summaries.sumOf { it.outputTokens })
+                        )
+                    )
+                }
+            }.trimEnd()
+        }
+
+        // 토큰 미보고 요청을 0으로 합치면 집계가 작게 보이는 거짓이 된다 — 갈라 말한다(변수 제어).
+        val unmetered = summaries.sumOf { it.unmeteredRequests }
+        binding.usageUnmeteredNote.text =
+            if (unmetered > 0) getString(R.string.ai_usage_unmetered_note, unmetered) else null
+        binding.usageUnmeteredNote.visibility = if (unmetered > 0) View.VISIBLE else View.GONE
+        binding.usageClearButton.isEnabled = data.totals.isNotEmpty()
+    }
+
+    /** 기록 삭제는 파괴적 동작이다 — 실행 전에 결과를 말하고 확인을 받는다(R-4). */
+    private fun confirmUsageClear() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.ai_usage_clear_button)
+            .setMessage(R.string.ai_usage_clear_confirm)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                com.novelcharacter.app.ai.AiUsageStore(requireContext()).clear()
+                Toast.makeText(requireContext(), R.string.ai_usage_cleared, Toast.LENGTH_SHORT).show()
+                renderUsage()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     /**
@@ -131,6 +221,8 @@ class AiSettingsFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         renderPromptTemplateSummary()
+        // 사용량은 이 화면 밖(AI 실행)에서 쌓인다 — 돌아올 때마다 다시 그려야 최신이다.
+        renderUsage()
     }
 
     /**
@@ -868,6 +960,10 @@ class AiSettingsFragment : Fragment() {
             maxOutputTokens = b.maxTokensSlider.value.toInt(),
             detectedOutputLimit = if (identityChanged) null else detectedLimit,
             temperatureUnsupported = if (identityChanged) null else base.temperatureUnsupported,
+            // 파라미터 이름 거부(max_completion_tokens)도 같은 부류다 — 남겨 두면 옛 이름을
+            // 받는 새 모델에 계속 새 이름으로 나간다(대개 양쪽을 받아 증상이 없지만,
+            // 엄격한 호환 서버에서는 400이 되고 원인을 짚을 길이 없다).
+            maxTokensParamUnsupported = if (identityChanged) null else base.maxTokensParamUnsupported,
             // 이미지 거부도 같은 부류다 (A-7) — 비전 지원은 같은 프로토콜 안에서도 모델마다
             // 갈리므로, 안 받던 모델에서 배운 사실을 받는 모델에 물려주면 **첨부가 영영
             // 조용히 빠진다**. 새 값을 여기 빠뜨리면 두 학습값의 규칙이 갈린다(R-23 본문).

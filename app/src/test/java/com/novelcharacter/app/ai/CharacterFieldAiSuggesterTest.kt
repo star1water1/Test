@@ -946,6 +946,25 @@ class CharacterFieldAiSuggesterTest {
         assertTrue(parsed.missing.isEmpty())
     }
 
+    /**
+     * 중복의 기준은 "채택된 key"다 — 첫 항목이 검증에서 떨어졌으면(옵션 불일치 등)
+     * 뒤의 멀쩡한 항목이 자리를 잇는다. 종전에는 "본 key" 기준이라 뒤 항목이 중복으로
+     * 버려졌고, 유료 응답에 실려 온 쓸 수 있는 답을 앱이 버리고 재요청을 결제하게 했다.
+     */
+    @Test
+    fun parse_앞_항목이_떨어진_key는_뒤의_유효한_항목이_채택된다() {
+        val targets = listOf(spec("gender", type = FieldType.SELECT, options = listOf("남", "여")))
+        val text = """{"suggestions":[
+            {"key":"gender","value":"무성","reason":"옵션에 없음"},
+            {"key":"gender","value":"여","reason":"유효한 둘째 건"}
+        ]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(1, parsed.suggestions.size)
+        assertEquals("여", parsed.suggestions[0].value)
+        assertEquals(1, parsed.droppedCount)
+        assertTrue(parsed.missing.isEmpty())
+    }
+
     // ===== 옵션 매칭 (표기 차이 교정) =====
 
     @Test

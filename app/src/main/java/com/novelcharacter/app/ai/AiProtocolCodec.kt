@@ -28,7 +28,13 @@ object AiProtocolCodec {
     fun buildRequest(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec =
         when (config.protocol) {
             AiProtocol.ANTHROPIC -> buildAnthropic(config, apiKey, request)
-            AiProtocol.OPENAI_COMPAT -> buildOpenAiCompat(config, apiKey, request, useMaxCompletionTokens = false)
+            // 파라미터 이름 거부를 이미 배운 모델(OpenAI 신형)은 **첫 요청부터**
+            // max_completion_tokens로 나간다 — 안 그러면 매 요청이 400 → 재시도의 2회 왕복이다.
+            // 학습·초기화(R-23)는 관문과 설정 화면이 맡고 여기서는 학습값을 읽기만 한다.
+            AiProtocol.OPENAI_COMPAT -> buildOpenAiCompat(
+                config, apiKey, request,
+                useMaxCompletionTokens = config.maxTokensParamUnsupported == true
+            )
             AiProtocol.GEMINI -> buildGemini(config, apiKey, request)
         }
 
@@ -412,19 +418,27 @@ object AiProtocolCodec {
     /**
      * 모델 목록 응답 → [AiModelInfo] 목록(id + 알려진 출력 상한).
      *
-     * Gemini는 같은 응답에 `outputTokenLimit`을 실어 보내는데 종전 파서가 id만 뽑고 버렸다 —
-     * 모델별 상한을 **조회로 알 수 있는 유일한 프로토콜**이므로 되살린다.
-     * Anthropic·OpenAI 목록에는 상한이 없어 null이고, 그쪽은 상한 초과 오류에서 학습한다
-     * ([parseMaxTokensLimitFromError]).
+     * Gemini는 같은 응답에 `outputTokenLimit`을, **Anthropic은 `max_tokens`(2026-03부터
+     * 목록 응답에 실린 출력 상한)를** 실어 보낸다 — 종전 파서는 둘 다 id만 뽑고 버렸고
+     * Gemini 쪽만 먼저 되살렸었다. 조회가 알려주는 상한은 400을 겪기 **전에** 배우는 경로라
+     * 오류 학습([parseMaxTokensLimitFromError])보다 싸고 정확하다.
+     * OpenAI 호환 목록에는 여전히 상한이 없어 null이고, 그쪽만 상한 초과 오류에서 학습한다.
      */
     fun parseModelInfos(protocol: AiProtocol, body: String): List<AiModelInfo> = try {
         val root = JsonParser.parseString(body).asJsonObject
         when (protocol) {
             // Anthropic은 최신순으로 내려주므로 정렬하지 않고 그대로 보존한다.
+            // `max_tokens`는 목록이 알려주는 출력 상한이다 — 구버전 응답에는 없고, 그러면
+            // null로 남아 종전과 동일하게 오류 학습 경로가 맡는다(회귀 없음).
             AiProtocol.ANTHROPIC -> root.getAsJsonArray("data")
                 ?.filterIsInstance<JsonObject>()
-                ?.mapNotNull { it.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString }
-                ?.map { AiModelInfo(it) }
+                ?.mapNotNull { m ->
+                    val id = m.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString
+                        ?: return@mapNotNull null
+                    val limit = m.get("max_tokens")?.takeIf { it.isJsonPrimitive }
+                        ?.runCatching { asInt }?.getOrNull()?.takeIf { it > 0 }
+                    AiModelInfo(id, limit)
+                }
                 .orEmpty()
 
             AiProtocol.OPENAI_COMPAT -> root.getAsJsonArray("data")
@@ -497,7 +511,16 @@ object AiProtocolCodec {
         val detail = extractErrorMessage(body)
         val kind = when (httpCode) {
             401 -> AiErrorKind.INVALID_KEY
-            403 -> AiErrorKind.INVALID_KEY
+            403 ->
+                // Anthropic은 **크레딧 소진도 403**으로 돌려준다 — 오류 타입만 다르다
+                // (`permission_error` / `billing_error`가 같은 코드를 쓴다는 것이 공식 오류
+                // 표의 관찰이다). 뭉뚱그려 INVALID_KEY로 두면 둘이 함께 틀린다: 안내가
+                // 멀쩡한 키를 재발급하라고 시키고, 자동 전환(B-108)의 방아쇠(QUOTA_EXCEEDED)가
+                // Anthropic에서만 서지 않아 둘째 프로바이더를 두고도 실패를 받는다.
+                // 판정은 **관찰된 표식 둘**로 좁게 잡는다(B-160의 규약 — 짐작으로 넓히지 않는다).
+                // 타입은 detail(message 추출본)에 없으므로 원문 body에서 본다.
+                if (isCreditExhausted(body, detail)) AiErrorKind.QUOTA_EXCEEDED
+                else AiErrorKind.INVALID_KEY
             402 -> AiErrorKind.QUOTA_EXCEEDED
             404 -> AiErrorKind.MODEL_NOT_FOUND
             408 -> AiErrorKind.TIMEOUT
@@ -511,6 +534,10 @@ object AiProtocolCodec {
                 // **이 갈래가 먼저다** — 그 본문에도 `argument`가 들어 있어 순서를 바꾸면
                 // 키 문제가 파라미터 문제로 읽히고, 고칠 곳을 다시 놓친다.
                 if (detail?.contains("API key not valid", ignoreCase = true) == true) AiErrorKind.INVALID_KEY
+                // 크레딧 소진을 400으로 돌려주던 시기의 Anthropic 표현("credit balance is
+                // too low")도 같은 분류다 — 403 갈래와 같은 이유이며, 문구가 결제 외의 뜻으로
+                // 나올 수 없어 오탐 여지가 없다.
+                else if (isCreditExhausted(body, detail)) AiErrorKind.QUOTA_EXCEEDED
                 // 본문이 요청 항목을 지목하면 모델명·주소를 확인하라는 일반 문구는 거짓이다 (B-161).
                 else if (isParameterRejectedError(httpCode, detail)) AiErrorKind.UNSUPPORTED_PARAM
                 else AiErrorKind.BAD_REQUEST
@@ -518,6 +545,15 @@ object AiProtocolCodec {
         }
         return AiResult.Failure(kind, detail = detail, httpCode = httpCode)
     }
+
+    /**
+     * 이 오류가 **크레딧(잔액) 소진**을 말하는가 — 402·`insufficient_quota`(429) 밖의
+     * 표현들을 모은다. 표식은 관찰로만 늘린다(B-160): `billing_error`는 Anthropic 오류
+     * 타입(403), "credit balance is too low"는 Anthropic 안내문의 관찰된 문구다.
+     */
+    private fun isCreditExhausted(body: String?, detail: String?): Boolean =
+        body?.contains("billing_error") == true ||
+            detail?.contains("credit balance is too low", ignoreCase = true) == true
 
     /** 3사 오류 봉투( {"error":{...}} / Anthropic {"error":{"message"}} ) 공통 해석. 실패 시 원문 일부. */
     private fun extractErrorMessage(body: String?): String? {

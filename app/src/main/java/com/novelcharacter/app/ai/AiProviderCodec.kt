@@ -80,6 +80,7 @@ object AiProviderCodec {
         //    B-132는 그중 이 두 자리만 빠뜨린 사고였다.
         c.detectedOutputLimit?.let { addProperty("detectedOutputLimit", it) }
         c.temperatureUnsupported?.let { addProperty("temperatureUnsupported", it) }
+        c.maxTokensParamUnsupported?.let { addProperty("maxTokensParamUnsupported", it) }
         c.imagesUnsupported?.let { addProperty("imagesUnsupported", it) }
         c.cooldownUntilMillis?.let { addProperty("cooldownUntilMillis", it) }
     }
@@ -99,6 +100,7 @@ object AiProviderCodec {
         priority = o.get("priority")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
         detectedOutputLimit = o.get("detectedOutputLimit")?.takeIf { it.isJsonPrimitive }?.asInt,
         temperatureUnsupported = o.get("temperatureUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
+        maxTokensParamUnsupported = o.get("maxTokensParamUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
         imagesUnsupported = o.get("imagesUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
         cooldownUntilMillis = o.get("cooldownUntilMillis")?.takeIf { it.isJsonPrimitive }?.asLong
     )
