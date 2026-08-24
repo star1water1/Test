@@ -268,6 +268,8 @@ $MAIN/ai/PromptTemplateValidator.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/ai/ImageTagVocabulary.kt
 $MAIN/ai/ImageBatchTagSuggester.kt
+$MAIN/ai/AiUsageLedger.kt
+$MAIN/ai/AiUsageCodec.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImagePathMatch.kt
@@ -608,6 +610,7 @@ $TEST/util/JsonTextTest.kt
 $TEST/ai/PromptTemplatesTest.kt
 $TEST/ai/PromptTemplateValidatorTest.kt
 $TEST/ai/AiTokenPolicyTest.kt
+$TEST/ai/AiUsageLedgerTest.kt
 $TEST/ai/NarrativeFieldTest.kt
 $TEST/ai/CharacterNameAiSuggesterTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt

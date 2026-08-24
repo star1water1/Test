@@ -725,6 +725,10 @@ object AppSettingsKeys {
         "backup_status" to
             "마지막 백업의 성공·실패 시각과 사유. **설정이 아니라 그 기기에서 일어난 일의 기록이다** — " +
             "옮기면 새 기기가 하지도 않은 백업을 했다고 말한다.",
+        "ai_usage" to
+            "AI 사용량 누적 원장(`AiUsageStore`). **설정이 아니라 이 기기에서 나간 요청의 측정 기록이다** — " +
+            "옮기면 새 기기가 하지도 않은 요청을 썼다고 세고, 합치면 같은 요청이 두 번 세어진다" +
+            "(`backup_status`와 같은 근거). 프로바이더 id에 매여 있어 다른 기기에서는 가리킬 곳도 다르다.",
         "character_list_ui" to "목록 화면의 마지막 보기 상태(스크롤·펼침).",
         "image_manager_ui_state" to "이미지 탭의 마지막 필터·정렬·보기 상태.",
         "character_detail_ui_state" to "상세 화면의 마지막 정렬.",
