@@ -39,9 +39,16 @@ data class SheetSpec(
     /**
      * 틀 고정 열 수(시각 개편 V-6) — `createFreezePane(freezeCols, 1)`.
      * 행의 정체를 이루는 왼쪽 열들만 고정한다(캐릭터=이름, 전체 캐릭터=세계관·작품·이름).
-     * 0이면 종전과 같이 헤더 행만 고정된다.
+     * `0`은 *"고정할 정체 열이 없다"*는 **답**이지 기본값이 아니다.
+     *
+     * ⚠️ **기본값을 두지 않는다.** 종전에는 `= 0`이라 새 시트가 이 칸을 안 적으면 조용히
+     * 머리글만 고정됐고, **스물여덟 중 열넷이 그렇게 서 있었다**(실측 2026.08.24 사용자
+     * 파일: 열 16개짜리 '관계 변화', 12개짜리 '대결 축'·'목록 프리셋', 10개짜리 세력 셋…).
+     * 빠뜨렸다는 사실이 어디에도 안 적히므로 **빠뜨릴수록 결과가 깨끗해 보인다** — 규약 R-43이
+     * 말하는 *침묵하는 목록*의 모양이다. 여기서는 검사를 세우는 대신 **컴파일이 답을
+     * 강제하게** 한다(R-52와 같은 처방): 새 시트는 이 칸을 적지 않으면 서지 못한다.
      */
-    val freezeCols: Int = 0
+    val freezeCols: Int
 ) {
     val firstColumnHeader: String get() = columns.firstOrNull()?.header ?: ""
 
@@ -1010,6 +1017,7 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
  */
 fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "작품 필드값",
+    freezeCols = 2,  // 작품코드·작품제목 — 오른쪽으로 넘겨도 행의 주인이 보인다 (V-6)
     columns = listOf(
         ColumnSpec("작품코드", required = true, readOnly = true, width = 4000),
         ColumnSpec("작품제목", readOnly = true, width = 8000),
@@ -1030,6 +1038,7 @@ fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
  */
 fun eventFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "사건 필드값",
+    freezeCols = 2,  // 사건코드·사건설명 (V-6)
     columns = listOf(
         ColumnSpec("사건코드", required = true, readOnly = true, width = 4000),
         ColumnSpec("사건설명", readOnly = true, width = 10000),
@@ -1130,6 +1139,7 @@ object DuelSheetLabels {
  */
 fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 축",
+    freezeCols = 1,  // 축이름 (V-6)
     columns = listOf(
         ColumnSpec("축이름", required = true, width = 6000),
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
@@ -1183,6 +1193,7 @@ fun duelMatchSpec(axisNames: List<String> = emptyList()) = SheetSpec(
  */
 fun duelVerdictSpec(axisNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 상성",
+    freezeCols = 1,  // 축 — 형제 시트(대결 기록)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("축", required = true, dropdownOptions = axisNames.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("축코드", readOnly = true, width = 4000),
@@ -1407,6 +1418,7 @@ fun relationshipSpec(
 
 fun relationshipChangeSpec() = SheetSpec(
     sheetName = "관계 변화",
+    freezeCols = 2,  // 캐릭터1·캐릭터2 — 형제 시트(캐릭터 관계)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
         ColumnSpec("캐릭터2", required = true, width = 6000),
@@ -1435,6 +1447,7 @@ fun relationshipChangeSpec() = SheetSpec(
 
 fun nameBankSpec() = SheetSpec(
     sheetName = "이름 은행",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 5000),
         ColumnSpec("성별", width = 3000),
@@ -1451,6 +1464,7 @@ fun nameBankSpec() = SheetSpec(
 
 fun userPresetTemplateSpec() = SheetSpec(
     sheetName = "필드 템플릿",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("설명", width = 15000, wrap = true),
@@ -1467,6 +1481,7 @@ fun userPresetTemplateSpec() = SheetSpec(
  */
 fun characterListPresetSpec() = SheetSpec(
     sheetName = "목록 프리셋",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("태그(JSON)", width = 10000),
@@ -1489,6 +1504,7 @@ fun characterListPresetSpec() = SheetSpec(
 
 fun searchPresetSpec() = SheetSpec(
     sheetName = "검색 프리셋",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("검색어", width = 10000),
@@ -1503,6 +1519,7 @@ fun searchPresetSpec() = SheetSpec(
 
 fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "세력",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
@@ -1519,6 +1536,7 @@ fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
 
 fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "세력 소속",
+    freezeCols = 2,  // 세력·캐릭터 — 이 둘이 행의 정체다 (V-6)
     columns = listOf(
         ColumnSpec("세력", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("캐릭터", required = true, width = 8000),
@@ -1539,6 +1557,7 @@ fun factionRelationshipSpec(
     relationshipTypes: List<String> = Universe.DEFAULT_RELATIONSHIP_TYPES
 ) = SheetSpec(
     sheetName = "세력 관계",
+    freezeCols = 2,  // 세력1·세력2 — 형제 시트(캐릭터 관계)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("세력1", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("세력2", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
@@ -1569,6 +1588,7 @@ fun factionRelationshipSpec(
  */
 fun appSettingsSpec() = SheetSpec(
     sheetName = "앱 설정",
+    freezeCols = 1,  // 설정키 (V-6)
     columns = listOf(
         ColumnSpec("설정키", required = true, width = 8000),
         // AI 메시지 양식이 여러 줄이라 wrap을 켠다 — 안 켜면 셀을 열기 전에는 첫 줄만 보인다.
@@ -1595,6 +1615,7 @@ const val IMAGE_SHEET_IDENTITY_COLUMN = "파일명"
 
 fun imageMetaSpec() = SheetSpec(
     sheetName = "이미지",
+    freezeCols = 1,  // 파일명 — 그 행의 정체다 (V-6)
     columns = listOf(
         ColumnSpec(IMAGE_SHEET_IDENTITY_COLUMN, required = true, readOnly = true, width = 10000),
         ColumnSpec("태그", width = 10000),
