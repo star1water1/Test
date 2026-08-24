@@ -337,6 +337,15 @@ class AiProviderFallbackTest {
         assertFalse(config("a", priority = 3).hasLearnedFacts())
     }
 
+    /** 단가도 우선순위와 같은 성격이다 — 모델을 바꿨다고 적어 둔 단가를 지우면 유실이다. */
+    @Test
+    fun 단가는_학습값이_아니다() {
+        val priced = config("a").copy(
+            inputPricePerMillionTokens = 3.0, outputPricePerMillionTokens = 15.0
+        )
+        assertFalse(priced.hasLearnedFacts())
+    }
+
     // ── 관문이 결과에 표식을 새긴다 ──────────────────────────────────────────
 
     @Test

@@ -41,7 +41,9 @@ class AiProviderCodecTest {
         temperatureUnsupported = true,
         maxTokensParamUnsupported = true,
         imagesUnsupported = true,
-        cooldownUntilMillis = 5_000L
+        cooldownUntilMillis = 5_000L,
+        inputPricePerMillionTokens = 3.0,
+        outputPricePerMillionTokens = 15.0
     )
 
     // ── ① 부류째 막는 잠금 ────────────────────────────────────────────────────

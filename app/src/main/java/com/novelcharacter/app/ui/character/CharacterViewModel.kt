@@ -1289,6 +1289,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val aiSuggestRunning = MutableLiveData(false)
     val aiSuggestResult = MutableLiveData<AiSuggestRun?>()
 
+    /** 지금까지 끝낸 요청 수 대 총 요청 수 — 결정형 진행도(R-26)의 재료. */
+    val aiSuggestProgress = MutableLiveData(0 to 0)
+
+    /**
+     * 취소 깃발 — 실행이 뷰 밖(ViewModel)에 있으므로 깃발도 뷰 밖에 있어야 한다.
+     * 진행 다이얼로그의 손잡이가 이 깃발을 들면 회전으로 그 창이 사라질 때 실행이 취소를
+     * 영영 못 본다(이미지 일괄 태깅이 B-136에서 이미 겪은 자리 — `aiTagCancelled`와 같은 규약).
+     */
+    @Volatile
+    private var aiSuggestCancelled = false
+
+    /** 취소 요청. 즉시 중단이 아니라 **더 시작하지 않음**이다 — 청크 하나는 끝까지 받는다. */
+    fun cancelAiSuggestRun() { aiSuggestCancelled = true }
+
     /**
      * **검토 중 사용자가 만든 상태** — 유료 응답과 다른 채널이다.
      *
@@ -1388,12 +1402,18 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         imagePaths: List<String> = emptyList()
     ): Boolean {
         if (aiSuggestRunning.value == true) return false
+        aiSuggestCancelled = false
+        val aiService = com.novelcharacter.app.ai.AiService(getApplication())
+        // **총량을 먼저 센다** — 진행 창은 `aiSuggestRunning`을 보고 서면서 이 값으로 총량을
+        // 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로 바뀐다
+        // (ImageManagerViewModel.runImageTagSuggest와 같은 규약).
+        aiSuggestProgress.value = 0 to com.novelcharacter.app.ai.CharacterFieldAiSuggester.requestCountFor(
+            targets.size, aiService.effectiveMaxTokens()
+        )
         aiSuggestRunning.value = true
         viewModelScope.launch {
             try {
-                val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
-                    com.novelcharacter.app.ai.AiService(getApplication())
-                )
+                val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(aiService)
                 val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
                 val floor = if (applyConfidenceFilter) settings.minConfidence else null
                 val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
@@ -1402,7 +1422,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val outcome = suggester.suggest(
                     aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images,
                     // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
-                    settings.asTemplateSource()
+                    settings.asTemplateSource(),
+                    onProgress = { done, total, _, _ -> aiSuggestProgress.value = done to total },
+                    isCancelled = { aiSuggestCancelled }
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
@@ -1413,6 +1435,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             } finally {
                 aiSuggestRunning.value = false
+                aiSuggestProgress.value = 0 to 0
             }
         }
         return true
@@ -1589,6 +1612,17 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
+     * 취소 깃발 — 실행이 뷰 밖에 있으므로 깃발도 뷰 밖에 있어야 한다(위 `aiSuggestCancelled`와
+     * 같은 규약). 필드 하나에 요청 하나라 필드 여러 개를 걸면 순차 대기가 가장 길게 체감되는
+     * 경로이고, 그동안 취소할 길이 없었다.
+     */
+    @Volatile
+    private var aiNarrativeBulkCancelled = false
+
+    /** 취소 요청. 즉시 중단이 아니라 **더 시작하지 않음**이다 — 지금 도는 필드는 끝까지 받는다. */
+    fun cancelAiNarrativeBulkRun() { aiNarrativeBulkCancelled = true }
+
+    /**
      * 일괄 초안 실행 — 대상마다 요청 하나를 **순차로** 보낸다.
      *
      * 순차인 이유는 둘이다. ① 결정적 실패(키 없음·한도 초과)를 만나면 남은 필드를 보내지
@@ -1609,8 +1643,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     ): Boolean {
         if (aiNarrativeBulkRunning.value == true) return false
         if (targets.isEmpty()) return false
-        aiNarrativeBulkRunning.value = true
+        aiNarrativeBulkCancelled = false
+        // 총량을 먼저 센다 — 진행 창은 `aiNarrativeBulkRunning`을 보고 서면서 이 값으로
+        // 총량을 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로
+        // 바뀐다(짧은 값 추천 `runAiSuggest`와 같은 규약).
         aiNarrativeBulkProgress.value = 0 to targets.size
+        aiNarrativeBulkRunning.value = true
         viewModelScope.launch {
             val items = mutableListOf<AiNarrativeBulkItem>()
             val notRequested = mutableListOf<String>()
@@ -1627,7 +1665,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 var aborted = false
                 for ((index, target) in targets.withIndex()) {
-                    if (aborted) {
+                    // 취소는 결정적 실패로 끊긴 것과 같은 처분이다 — 지금 도는 요청은 끝까지
+                    // 받고(끝난 몫은 버리지 않는다), 남은 필드만 시작하지 않는다.
+                    if (aborted || aiNarrativeBulkCancelled) {
                         notRequested.add(target.spec.name)
                         continue
                     }
@@ -1665,6 +1705,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 aiNarrativeBulkResult.value =
                     AiNarrativeBulkRun(items, notRequested, length, runFailure)
                 aiNarrativeBulkRunning.value = false
+                aiNarrativeBulkProgress.value = 0 to 0
             }
         }
         return true

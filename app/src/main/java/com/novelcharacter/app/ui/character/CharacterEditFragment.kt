@@ -16,7 +16,6 @@ import android.widget.TextView
 import android.widget.LinearLayout
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.setFragmentResultListener
@@ -97,15 +96,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
     private lateinit var formBuilder: DynamicFieldFormBuilder
-    // ✨ AI 추천 진행 다이얼로그 — 실행 상태는 VM(aiSuggestRunning), 표시만 뷰 수명에 묶는다
-    private var aiProgressDialog: androidx.appcompat.app.AlertDialog? = null
+    // ✨ AI 추천 진행 다이얼로그 — 실행 상태는 VM(aiSuggestRunning), 표시만 뷰 수명에 묶는다.
+    // 짧은 값 추천·서술형 단건이 이 손잡이를 공유한다(동시 실행은 VM이 막는다) — R-26의
+    // 결정형 진행도·취소는 청크가 둘 이상일 때만 의미가 있어(단건은 항상 총량 1),
+    // [TaskProgressDialog]가 총량에 따라 취소 제공 여부를 스스로 가른다.
+    private var aiProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
 
     /**
      * 서술형 일괄 초안 전용 진행 창 (B-45) — 추천 경로와 **공유하지 않는다.**
      * 이쪽만 진행 수(몇/몇)를 갱신하는데, 창을 공유하면 다른 경로가 끝낼 때 이 창이 함께
      * 닫히거나 그쪽 문구가 진행 수를 덮어쓴다.
      */
-    private var aiBulkProgressDialog: androidx.appcompat.app.AlertDialog? = null
+    private var aiBulkProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
     // 저장 체인(검증→중복→연동 충돌→교차 세계관→DB) — 공용 코디네이터에 위임
     private lateinit var saveCoordinator: CharacterSaveCoordinator
     private var hasUnsavedChanges = false
@@ -469,15 +471,24 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         viewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
             if (running == true) {
                 if (aiProgressDialog == null) {
-                    aiProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.ai_field_running)
-                        .setCancelable(false)
-                        .show()
+                    aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        requireContext(),
+                        titleRes = R.string.ai_field_suggest_title,
+                        total = viewModel.aiSuggestProgress.value?.second ?: 0,
+                        stageRes = R.string.ai_field_running,
+                        // 청크 하나뿐이면(필드별 ✨) 취소가 그 한 요청이 끝나기 전까지는 아무
+                        // 효과가 없다 — 이미지 일괄 태깅의 마지막 배치도 같은 성질이라(취소해도
+                        // 이미 나간 그 배치는 끝까지 받는다) 새로운 예외가 아니다. 항상 제공한다.
+                        onCancel = { viewModel.cancelAiSuggestRun() }
+                    )
                 }
             } else {
                 aiProgressDialog?.dismiss()
                 aiProgressDialog = null
             }
+        }
+        viewModel.aiSuggestProgress.observe(viewLifecycleOwner) { (done, total) ->
+            if (total > 0) aiProgressDialog?.update(done, total)
         }
         viewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
             if (run != null) {
@@ -485,13 +496,17 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         // 서술형 작성 — 진행 다이얼로그는 추천 경로와 공유한다(동시 실행은 VM이 막는다).
+        // 이쪽은 청크 개념 자체가 없다(요청 하나가 전부) — 취소를 붙여도 막을 '다음 요청'이
+        // 원리적으로 없어 항상 헛돈다. 그래서 여기만 취소를 붙이지 않는다.
         viewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->
             if (running == true) {
                 if (aiProgressDialog == null) {
-                    aiProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.ai_field_running)
-                        .setCancelable(false)
-                        .show()
+                    aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        requireContext(),
+                        titleRes = R.string.ai_field_suggest_title,
+                        total = 1,
+                        stageRes = R.string.ai_field_running
+                    )
                 }
             } else {
                 aiProgressDialog?.dismiss()
@@ -504,14 +519,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             showNarrativeResult(run)
         }
         // 서술형 일괄 초안 (B-45) — 진행 표시가 다른 AI 경로와 다르다: 필드마다 요청 하나라
-        // 체감이 길어, 몇 번째를 쓰는 중인지 보이지 않으면 멈춘 것으로 읽힌다.
+        // 체감이 길어, 몇 번째를 쓰는 중인지 보이지 않으면 멈춘 것으로 읽힌다. 대상이 둘
+        // 이상일 때가 흔한 경로라 여기는 항상 취소를 붙인다.
         viewModel.aiNarrativeBulkRunning.observe(viewLifecycleOwner) { running ->
             if (running == true) {
                 if (aiBulkProgressDialog == null) {
-                    aiBulkProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.ai_field_running)
-                        .setCancelable(false)
-                        .show()
+                    aiBulkProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        requireContext(),
+                        titleRes = R.string.ai_narrative_bulk_title,
+                        total = viewModel.aiNarrativeBulkProgress.value?.second ?: 0,
+                        stageRes = R.string.ai_narrative_bulk_stage,
+                        onCancel = { viewModel.cancelAiNarrativeBulkRun() }
+                    )
                 }
             } else {
                 aiBulkProgressDialog?.dismiss()
@@ -520,8 +539,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
         viewModel.aiNarrativeBulkProgress.observe(viewLifecycleOwner) { (done, total) ->
             if (total > 0) {
-                aiBulkProgressDialog?.setMessage(
-                    getString(R.string.ai_narrative_bulk_running, done, total)
+                aiBulkProgressDialog?.update(
+                    done, total, stage = getString(R.string.ai_narrative_bulk_running, done, total)
                 )
             }
         }
@@ -1523,6 +1542,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 재생성 뷰의 aiSuggestRunning 관측이 필요하면 다시 띄운다.
         aiProgressDialog?.dismiss()
         aiProgressDialog = null
+        aiBulkProgressDialog?.dismiss()
+        aiBulkProgressDialog = null
         imageStrip.detach()
         binding.recommendationRecyclerView.adapter = null
         recMatchJob?.cancel()

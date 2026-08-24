@@ -152,4 +152,49 @@ class AiUsageLedgerTest {
         assertEquals("p1", back.days[0].providerId)
         assertTrue(back.totals.isNotEmpty())
     }
+
+    // ── 사용자 단가로 어림한 비용 ────────────────────────────────────────────────
+
+    private fun summary(inputTokens: Long, outputTokens: Long) = AiUsageLedger.Summary(
+        providerId = "p1", displayName = "앤트로픽", model = "claude-sonnet-5",
+        requests = 1, inputTokens = inputTokens, outputTokens = outputTokens, unmeteredRequests = 0
+    )
+
+    @Test
+    fun 단가가_둘_다_있으면_토큰수_비례로_계산한다() {
+        val cost = AiUsageLedger.estimatedCost(
+            summary(inputTokens = 2_000_000, outputTokens = 1_000_000),
+            inputPricePerMillionTokens = 3.0, outputPricePerMillionTokens = 15.0
+        )
+        // 입력 2M × 3 + 출력 1M × 15 = 6 + 15 = 21
+        assertEquals(21.0, cost!!, 0.0001)
+    }
+
+    @Test
+    fun 단가가_한쪽만_있으면_계산하지_않는다() {
+        // 절반만 맞는 금액을 전체 금액처럼 보여 주지 않는다 — 안 보여 주는 쪽이 낫다.
+        assertNull(
+            AiUsageLedger.estimatedCost(
+                summary(1_000_000, 1_000_000),
+                inputPricePerMillionTokens = 3.0, outputPricePerMillionTokens = null
+            )
+        )
+        assertNull(
+            AiUsageLedger.estimatedCost(
+                summary(1_000_000, 1_000_000),
+                inputPricePerMillionTokens = null, outputPricePerMillionTokens = 15.0
+            )
+        )
+        assertNull(
+            AiUsageLedger.estimatedCost(summary(1_000_000, 1_000_000), null, null)
+        )
+    }
+
+    @Test
+    fun 토큰이_0이면_비용도_0이다() {
+        val cost = AiUsageLedger.estimatedCost(
+            summary(0, 0), inputPricePerMillionTokens = 3.0, outputPricePerMillionTokens = 15.0
+        )
+        assertEquals(0.0, cost!!, 0.0001)
+    }
 }

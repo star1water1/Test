@@ -145,6 +145,13 @@ class AiSettingsFragment : Fragment() {
         binding.usageSinceNote.visibility = if (sinceNote != null) View.VISIBLE else View.GONE
 
         val fmt = java.text.NumberFormat.getIntegerInstance()
+        val costFmt = java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }
+        // 단가는 프로바이더 편집에서 사용자가 직접 적은 값이다(학습값도 앱이 두는 표도 아니다) —
+        // 프로바이더가 지워졌으면(providerStore.get이 null) 어림할 근거가 없다.
+        val costOf: (com.novelcharacter.app.ai.AiUsageLedger.Summary) -> Double? = { s ->
+            val cfg = providerStore.get(s.providerId)
+            ledger.estimatedCost(s, cfg?.inputPricePerMillionTokens, cfg?.outputPricePerMillionTokens)
+        }
         binding.usageSummaryText.text = when {
             data.totals.isEmpty() -> getString(R.string.ai_usage_empty)
             summaries.isEmpty() -> getString(R.string.ai_usage_empty_period)
@@ -156,7 +163,9 @@ class AiSettingsFragment : Fragment() {
                             R.string.ai_usage_row_body,
                             fmt.format(s.requests), fmt.format(s.inputTokens), fmt.format(s.outputTokens)
                         )
-                    ).append('\n')
+                    )
+                    costOf(s)?.let { append(getString(R.string.ai_usage_row_cost_suffix, costFmt.format(it))) }
+                    append('\n')
                 }
                 // 합계는 줄이 둘 이상일 때만 — 하나뿐이면 같은 수를 두 번 적는 것이다.
                 if (summaries.size > 1) {
@@ -168,6 +177,19 @@ class AiSettingsFragment : Fragment() {
                             fmt.format(summaries.sumOf { it.outputTokens })
                         )
                     )
+                    // 전부 단가가 있을 때만 합산한다 — 하나라도 빠지면 그 합은 실제보다 작은데
+                    // 숫자만 보면 전체로 읽힌다(위 「단가가 한쪽만 있으면 계산하지 않는다」와 같은 근거).
+                    val costs = summaries.map { costOf(it) }
+                    if (costs.all { it != null }) {
+                        append(
+                            getString(
+                                R.string.ai_usage_total_row_cost_suffix,
+                                costFmt.format(costs.sumOf { it!! })
+                            )
+                        )
+                    } else if (costs.any { it != null }) {
+                        append('\n').append(getString(R.string.ai_usage_cost_partial_note))
+                    }
                 }
             }.trimEnd()
         }
@@ -588,6 +610,8 @@ class AiSettingsFragment : Fragment() {
         dialogBinding.nameInput.setText(config.displayName)
         dialogBinding.modelInput.setText(config.model)
         dialogBinding.baseUrlInput.setText(config.baseUrl)
+        dialogBinding.inputPriceInput.setText(formatPriceOrBlank(config.inputPricePerMillionTokens))
+        dialogBinding.outputPriceInput.setText(formatPriceOrBlank(config.outputPricePerMillionTokens))
 
         // ── 출력 토큰 상한 슬라이더 ──
         // 상한을 아예 두지 않는 선택지는 없다(Anthropic은 max_tokens가 필수). 그래서 "둘 것인가"가
@@ -924,6 +948,14 @@ class AiSettingsFragment : Fragment() {
         class VH(val binding: ItemAiModelBinding) : RecyclerView.ViewHolder(binding.root)
     }
 
+    /** 단가 표시 — 정수면 소수점을 붙이지 않는다("3.0"보다 "3"이 입력칸에서 덜 거슬린다). */
+    private fun formatPriceOrBlank(price: Double?): String {
+        if (price == null) return ""
+        return if (price == Math.floor(price) && !price.isInfinite()) {
+            price.toLong().toString()
+        } else price.toString()
+    }
+
     /** 입력 필드 → 설정 객체. 검증 실패 시 해당 필드에 오류를 표시하고 null(다이얼로그 유지). */
     private fun readConfig(
         b: DialogAiProviderEditBinding, base: AiProviderConfig, detectedLimit: Int? = base.detectedOutputLimit
@@ -971,7 +1003,12 @@ class AiSettingsFragment : Fragment() {
             // 한도 쿨다운도 같은 부류다 (B-108) — *"이 키는 한도에 걸렸다"*는 그 모델·그 서버에서
             // 배운 사실이라, 남겨 두면 **모델을 바꿔 놓고도 그 프로바이더가 계속 뒤로 밀린다**.
             // 사용자가 볼 수 있는 표시가 없는 미룸이라, 원인을 짚을 길이 없는 침묵이 된다.
-            cooldownUntilMillis = if (identityChanged) null else base.cooldownUntilMillis
+            cooldownUntilMillis = if (identityChanged) null else base.cooldownUntilMillis,
+            // priority와 같은 이유로 identityChanged를 보지 않는다 — 사용자가 적어 둔 단가는
+            // 모델을 바꿔도 유효한 값일 수 있고, 지우면 다시 찾아 입력해야 하는 유실이다.
+            // 빈 칸은 null(미설정) — "적지 않음"과 "0으로 적음"은 다른 상태다.
+            inputPricePerMillionTokens = b.inputPriceInput.text?.toString()?.trim()?.toDoubleOrNull(),
+            outputPricePerMillionTokens = b.outputPriceInput.text?.toString()?.trim()?.toDoubleOrNull()
             // priority는 여기 없다 — 사용자가 정한 값이라 R-23 대상이 아니고, base.copy가
             // 그대로 나른다. 목록 순서는 끌어 놓기가 정한다([applyReorder]).
         )

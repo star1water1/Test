@@ -68,6 +68,10 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         creativity: AiCreativity = AiCreativity.DEFAULT,
         /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
         templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
+        /** `(끝낸 요청 수, 총 요청 수, 끝낸 필드 수, 총 필드 수)` — 결정형 진행도(R-26)의 재료. 엔진 그대로 위임 */
+        onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
+        /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
+        isCancelled: () -> Boolean = { false },
         errorMessageOf: (AiResult.Failure) -> String
     ): CharacterFieldAiSuggester.SuggestOutcome = engine.suggest(
         prompts = object : FieldPromptSource {
@@ -91,6 +95,8 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         // 사건에는 이미지가 없다 — 캐릭터 축의 첨부 경로(A-7)는 캐릭터 이미지 목록을 근거로
         // 삼는 것이고, 사건 축에는 그 목록 자체가 없다. 빈 채로 두는 것이 정확하다.
         images = emptyList(),
+        onProgress = onProgress,
+        isCancelled = isCancelled,
         errorMessageOf = errorMessageOf
     )
 

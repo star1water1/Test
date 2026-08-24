@@ -1184,7 +1184,7 @@ class EventEditDialogFragment : DialogFragment() {
     private fun aiViewModel(): EventFieldAiViewModel =
         ViewModelProvider(this)[EventFieldAiViewModel::class.java]
 
-    private var aiProgressDialog: AlertDialog? = null
+    private var aiProgressDialog: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? = null
 
     /** 진행 표시와 결과 수신 — 창이 다시 만들어져도 VM에 남아 있던 결과가 그대로 뜬다. */
     private fun observeAiSuggest() {
@@ -1192,15 +1192,24 @@ class EventEditDialogFragment : DialogFragment() {
         vm.running.observe(this) { running ->
             if (running == true) {
                 if (aiProgressDialog == null && isAdded) {
-                    aiProgressDialog = MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.ai_event_field_running)
-                        .setCancelable(false)
-                        .show()
+                    aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        requireContext(),
+                        titleRes = R.string.ai_event_field_suggest_title,
+                        total = vm.progress.value?.second ?: 0,
+                        stageRes = R.string.ai_event_field_running,
+                        // 청크 하나뿐이면 그 한 요청이 끝나기 전까지 아무 효과가 없지만,
+                        // 이미지 일괄 태깅의 마지막 배치도 같은 성질이라(취소해도 이미 나간
+                        // 그 배치는 끝까지 받는다) 새로운 예외가 아니다 — 항상 제공한다.
+                        onCancel = { vm.cancelRun() }
+                    )
                 }
             } else {
                 aiProgressDialog?.dismiss()
                 aiProgressDialog = null
             }
+        }
+        vm.progress.observe(this) { (done, total) ->
+            if (total > 0) aiProgressDialog?.update(done, total)
         }
         vm.result.observe(this) { run ->
             if (run == null || !isAdded) return@observe

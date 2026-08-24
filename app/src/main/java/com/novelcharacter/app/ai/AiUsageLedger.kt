@@ -169,4 +169,23 @@ object AiUsageLedger {
 
     /** 누적이 열린 첫 기록일 — 총계가 비어 있으면 null. "누적(…부터)" 라벨이 쓴다. */
     fun earliestSinceDay(totals: List<Total>): Long? = totals.minOfOrNull { it.sinceDay }
+
+    /**
+     * 사용자가 [AiProviderConfig]에 적어 둔 단가로 어림한 비용 — **추정이지 청구서가 아니다.**
+     * 이 오브젝트도 앱도 단가표를 두지 않는다(모델마다 다르고 곧 낡는다) — 곱하는 값은
+     * 전부 사용자가 직접 입력한 것이다.
+     *
+     * **둘 다 있어야 계산한다.** 한쪽만 있으면 절반은 빠진 금액인데 화면에는 숫자 하나만
+     * 뜨므로 사용자는 그것을 전체 비용으로 읽는다 — 부정확한 절반을 보여 주느니 안 보여
+     * 주는 쪽이 낫다(「한계」의 판단과 같은 근거).
+     */
+    fun estimatedCost(
+        summary: Summary,
+        inputPricePerMillionTokens: Double?,
+        outputPricePerMillionTokens: Double?
+    ): Double? {
+        if (inputPricePerMillionTokens == null || outputPricePerMillionTokens == null) return null
+        return summary.inputTokens / 1_000_000.0 * inputPricePerMillionTokens +
+            summary.outputTokens / 1_000_000.0 * outputPricePerMillionTokens
+    }
 }

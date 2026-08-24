@@ -40,7 +40,31 @@ import com.novelcharacter.app.util.stringOr
  *
  * 프롬프트 조립·응답 파싱은 AiService 미호출 순수 함수로 분리되어 단위 테스트된다.
  */
-class CharacterFieldAiSuggester(private val aiService: AiService) {
+class CharacterFieldAiSuggester(
+    private val complete: suspend (AiRequest) -> AiResult,
+    private val effectiveMaxTokens: () -> Int,
+    private val temperatureFor: (AiCreativity) -> Double?,
+    private val isTemperatureUnsupported: () -> Boolean,
+    private val isImagesUnsupported: () -> Boolean
+) {
+
+    /**
+     * 앱이 쓰는 입구 — [AiService] 하나를 넘기면 된다(호출측은 종전과 글자 그대로 같다).
+     *
+     * **다섯으로 갈라 받는 것은 [ImageBatchTagSuggester]와 같은 이유다.** 순수 JVM 하네스는
+     * `AiService`를 스텁으로 대신하는데(진짜는 `Context`·okhttp에 묶여 있다) 스텁의 생성자는
+     * 인자가 없고 진짜는 `Context`를 받는다 — 그 차이 위에 시험을 세우면 로컬에서만
+     * 컴파일되고 Gradle(CI)에서 깨진다(2026.08.12에 실제로 그렇게 깨진 전례가 있다).
+     * 람다로 받으면 두 환경이 같은 것을 보므로 이 함수의 청킹·취소·진행도 배선을
+     * JVM 시험이 직접 잰다.
+     */
+    constructor(aiService: AiService) : this(
+        complete = { aiService.complete(it) },
+        effectiveMaxTokens = { aiService.effectiveMaxTokens() },
+        temperatureFor = { aiService.temperatureFor(it) },
+        isTemperatureUnsupported = { aiService.isTemperatureUnsupported() },
+        isImagesUnsupported = { aiService.isImagesUnsupported() }
+    )
 
     /** 프롬프트에 넣을 캐릭터 컨텍스트 스냅샷 — 호출측(편집 화면)이 라이브 위젯+DB에서 조립 */
     data class CharacterAiContext(
@@ -220,6 +244,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         REQUEST_FAILED("요청이 실패함"),
         NOT_REQUESTED("앞선 결정적 실패로 요청하지 않음"),
 
+        /** 사용자가 실행 중 취소해 요청하지 않음 — [NOT_REQUESTED]와 처방은 같지만(다시 걸면 된다) 사유는 다르다 */
+        CANCELLED("사용자가 취소해 요청하지 않음"),
+
         /** 사용자가 정한 근거 강도 기준에 못 미쳐 제외 — 설정을 낮추면 받을 수 있다 */
         BELOW_CONFIDENCE("설정한 근거 강도에 못 미쳐 제외"),
 
@@ -317,6 +344,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         images: List<AiImage> = emptyList(),
         /** 사용자가 고친 양식. 넘기지 않으면 기본 양식이다 (사용자 요청 2026.08.20). */
         templates: PromptTemplates.Source = PromptTemplates.Source.DEFAULTS,
+        /** `(끝낸 요청 수, 총 요청 수, 끝낸 필드 수, 총 필드 수)` — 결정형 진행도(R-26)의 재료 */
+        onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
+        /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
+        isCancelled: () -> Boolean = { false },
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome = suggest(
         prompts = object : FieldPromptSource {
@@ -334,6 +365,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         minConfidence = minConfidence,
         creativity = creativity,
         images = images,
+        onProgress = onProgress,
+        isCancelled = isCancelled,
         errorMessageOf = errorMessageOf
     )
 
@@ -362,6 +395,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 고지가 연인원을 말한다**([AiPromptPolicy.imageSendCount]).
          */
         images: List<AiImage> = emptyList(),
+        /** `(끝낸 요청 수, 총 요청 수, 끝낸 필드 수, 총 필드 수)` — 결정형 진행도(R-26)의 재료 */
+        onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
+        /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
+        isCancelled: () -> Boolean = { false },
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -373,19 +410,32 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         var inputTokens = 0
         var outputTokens = 0
 
-        val maxTokens = aiService.effectiveMaxTokens()
-        val temperature = aiService.temperatureFor(creativity)
+        val maxTokens = effectiveMaxTokens()
+        val temperature = temperatureFor(creativity)
         // 이 모델이 temperature를 거부한다고 이미 학습한 경우 — 창작도를 올렸는데 아무 변화가
         // 없는 이유를 사용자가 알 수 있어야 한다 (§6-5 ④, 조용한 실패 금지)
-        if (creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()) {
+        if (creativity != AiCreativity.BALANCED && isTemperatureUnsupported()) {
             failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
         }
         // 이미지도 같다 (A-7) — 이미 거부를 배운 모델이면 붙였어도 나가지 않는다는 사실을 말한다.
-        if (images.isNotEmpty() && aiService.isImagesUnsupported()) {
+        if (images.isNotEmpty() && isImagesUnsupported()) {
             failures.add(IMAGES_UNSUPPORTED_NOTE)
         }
         val chunks = chunkTargets(targets, maxTokens)
+        val totalRequests = chunks.size
+        val totalTargets = targets.size
+        var doneTargets = 0
+        onProgress(0, totalRequests, 0, totalTargets)
         for ((chunkIndex, chunk) in chunks.withIndex()) {
+            if (isCancelled()) {
+                // **사용자가 취소해 시작하지 않은 몫도 결손으로 남긴다** — 그러지 않으면
+                // `suggestions + missing = 요청 대상 전체` 불변식이 깨져 이 청크 이후의
+                // 필드가 조용히 사라진다(터미널 실패 갈래가 이미 지키는 그 불변식과 같다).
+                for (rest in chunks.drop(chunkIndex)) {
+                    rest.forEach { missing.add(MissingField(it.key, it.name, MissingCause.CANCELLED)) }
+                }
+                break
+            }
             val prompt = prompts.user(chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
@@ -399,7 +449,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 // 시스템 프롬프트에 이어 붙이면 반드시 한쪽이 샌다.
                 imageSystemRule = imageRule(images.size)
             )
-            when (val result = aiService.complete(request)) {
+            var stopAfterChunk = false
+            when (val result = complete(request)) {
                 is AiResult.Success -> {
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
@@ -447,17 +498,20 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 is AiResult.Failure -> {
                     failures.add(errorMessageOf(result))
                     chunk.forEach { missing.add(MissingField(it.key, it.name, MissingCause.REQUEST_FAILED)) }
-                    if (result.kind in TERMINAL_ERRORS) {
-                        // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.
-                        // 종전에는 여기서 break만 하고 끝나, 뒤쪽 필드들이 흔적 없이 사라졌다.
-                        for (rest in chunks.drop(chunkIndex + 1)) {
-                            rest.forEach {
-                                missing.add(MissingField(it.key, it.name, MissingCause.NOT_REQUESTED))
-                            }
-                        }
-                        break
-                    }
+                    stopAfterChunk = result.kind in TERMINAL_ERRORS
                 }
+            }
+            // 진행도는 성공·실패를 가리지 않고 청크 하나가 끝날 때마다 한 번 오른다
+            // (ImageBatchTagSuggester와 같은 규칙 — 접힌 청크도 '끝난 요청'이다).
+            doneTargets += chunk.size
+            onProgress(chunkIndex + 1, totalRequests, doneTargets, totalTargets)
+            if (stopAfterChunk) {
+                // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.
+                // 종전에는 여기서 break만 하고 끝나, 뒤쪽 필드들이 흔적 없이 사라졌다.
+                for (rest in chunks.drop(chunkIndex + 1)) {
+                    rest.forEach { missing.add(MissingField(it.key, it.name, MissingCause.NOT_REQUESTED)) }
+                }
+                break
             }
         }
         return SuggestOutcome(

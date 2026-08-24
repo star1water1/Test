@@ -94,7 +94,21 @@ data class AiProviderConfig(
      * 그 사실은 결과 고지 한 줄로 알린다(조용한 실패 금지).
      * null = 모름(정상 가정). [temperatureUnsupported]와 같은 성격이라 R-23을 함께 탄다.
      */
-    val imagesUnsupported: Boolean? = null
+    val imagesUnsupported: Boolean? = null,
+    /**
+     * 백만 입력·출력 토큰당 단가 — **사용자가 직접 적은 값**이다(학습값이 아니다).
+     *
+     * 이 앱은 단가표를 두지 않는다 — 모델·제공사마다 다르고 새 모델이 나올 때마다 낡아
+     * *"틀린 요금은 안 보여 주느니만 못하다"*(문서의 「한계」)는 판단을 이미 내렸다.
+     * 대신 사용자가 제공사 요금 문서에서 직접 확인해 적은 값을 [AiUsageLedger]의 실측 토큰
+     * 수에 곱하기만 한다 — 앱이 정확성을 주장하지 않으므로 유지보수 부담도 지지 않는다.
+     *
+     * `priority`와 같은 성격이라(사용자가 정한 값) R-23 초기화 대상이 아니고
+     * [hasLearnedFacts]에도 들어가지 않는다 — 모델을 바꿨다고 사용자가 적어 둔 단가를
+     * 지우면 다시 찾아 입력해야 하는 조용한 유실이 된다.
+     */
+    val inputPricePerMillionTokens: Double? = null,
+    val outputPricePerMillionTokens: Double? = null
 ) {
     /**
      * R-23 — 오류·조회 응답에서 **학습한** 사실이 하나라도 있는가.

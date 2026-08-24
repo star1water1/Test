@@ -3044,6 +3044,10 @@
     <string name="ai_usage_row_body">요청 %1$s건 · 입력 %2$s · 출력 %3$s</string>
     <string name="ai_usage_total_row">합계 — 요청 %1$s건 · 입력 %2$s · 출력 %3$s</string>
     <string name="ai_usage_unmetered_note">토큰 수를 알려주지 않은 요청 %1$d건은 요청 수에만 들어 있습니다.</string>
+    <!-- 사용자가 프로바이더 편집에서 적은 단가로 어림한 비용 — 앱이 단가를 알지 못하면 표시하지 않는다. -->
+    <string name="ai_usage_row_cost_suffix"> · 약 %1$s</string>
+    <string name="ai_usage_total_row_cost_suffix"> · 약 %1$s</string>
+    <string name="ai_usage_cost_partial_note">일부 프로바이더는 단가가 없어 합계에 비용을 더하지 않았습니다 — 프로바이더 편집에서 단가를 적으면 표시됩니다.</string>
     <string name="ai_usage_clear_button">기록 지우기</string>
     <string name="ai_usage_clear_confirm">AI 사용량 기록을 모두 지웁니다. 프로바이더 설정과 API 키는 그대로 남습니다. 지운 기록은 되돌릴 수 없습니다.</string>
     <string name="ai_usage_cleared">사용량 기록을 지웠습니다</string>
@@ -3090,6 +3094,11 @@
     <string name="ai_edit_max_tokens_value_detected">%1$d 토큰 (이 모델 최대 %2$d)</string>
     <string name="ai_edit_max_tokens_hint">한 번에 받을 응답의 최대 길이입니다. 올리면 한 요청에 더 많이 처리해 요청 수가 줄고, 실제 생성된 만큼만 과금됩니다. 모델이 허용하는 값보다 크게는 요청하지 않습니다.</string>
     <string name="ai_edit_max_tokens_learned">이 모델의 출력 상한을 %1$d 토큰으로 확인했습니다 — 상한을 그 값에 맞췄습니다.</string>
+    <!-- 단가(선택) — 사용자가 직접 입력한 값을 사용량 카드가 곱하기만 한다. 앱은 단가표를 두지 않는다(모델마다 다르고 곧 낡는다). -->
+    <string name="ai_edit_price_label">단가 (선택)</string>
+    <string name="ai_edit_price_purpose">입력해 두면 설정 → AI 연동의 사용량 카드에 예상 비용이 함께 표시됩니다. 제공사 요금 문서에서 직접 확인해 적어 주세요 — 앱이 자동으로 갱신하지 않습니다.</string>
+    <string name="ai_edit_price_input_hint">입력 백만 토큰당</string>
+    <string name="ai_edit_price_output_hint">출력 백만 토큰당</string>
     <!-- R-23: 학습값은 그 모델·주소에 한정된 사실 — 대상이 바뀌면 초기화하고 조용히 두지 않는다 -->
     <string name="ai_edit_learned_reset">모델이 바뀌어 이 모델에 대해 학습한 값을 초기화했습니다 (다음 요청에서 다시 감지)</string>
     <string name="ai_edit_error_required">필수 입력입니다</string>
@@ -3414,6 +3423,8 @@
     <string name="ai_narrative_bulk_budget_warning">지금 출력 상한(%1$d토큰)으로는 이 분량이 잘릴 수 있습니다 — 분량을 줄이거나 설정 → AI 연동에서 상한을 올려 주세요.</string>
     <string name="ai_narrative_bulk_excluded_line">제외: %1$s</string>
     <string name="ai_narrative_bulk_no_targets">일괄 초안을 쓸 서술형 필드가 없습니다.</string>
+    <!-- 숫자 없는 정적 설명 — 진행 창을 처음 띄울 때만 쓴다(그 자리는 아직 진행 수를 모른다). -->
+    <string name="ai_narrative_bulk_stage">서술형 초안을 쓰는 중</string>
     <string name="ai_narrative_bulk_running">서술형 초안을 쓰는 중입니다 (%1$d/%2$d)</string>
     <string name="ai_narrative_bulk_pick">폼에 넣을 초안을 고르세요</string>
     <string name="ai_narrative_bulk_applied">초안 %1$d개를 폼에 넣었습니다</string>
@@ -3466,6 +3477,7 @@
     <string name="ai_field_applied">AI 추천 %1$d건을 폼에 적용했습니다 — 저장 시 반영됩니다</string>
     <string name="ai_field_apply_none">적용하지 못했습니다 — 폼이 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.</string>
     <!-- 사건 필드 AI 추천 (B-43). 진행 문구가 캐릭터판과 갈리는 이유는 분석 대상이 실제로 다르기 때문이다. -->
+    <string name="ai_event_field_suggest_title">AI 사건 필드 추천</string>
     <string name="ai_event_field_running">AI가 사건 정보를 분석하는 중…</string>
     <string name="ai_event_context_unavailable">사건 정보를 아직 불러오지 못했습니다 — 작품을 고르거나 잠시 후 다시 시도하세요</string>
     <string name="ai_event_target_changed">요청한 사건과 지금 편집 중인 사건이 다릅니다 — 값을 적용하지 않습니다</string>

@@ -83,6 +83,10 @@ object AiProviderCodec {
         c.maxTokensParamUnsupported?.let { addProperty("maxTokensParamUnsupported", it) }
         c.imagesUnsupported?.let { addProperty("imagesUnsupported", it) }
         c.cooldownUntilMillis?.let { addProperty("cooldownUntilMillis", it) }
+        // 단가는 학습값이 아니라 우선순위와 같은 사용자 설정이다 — 그래도 null 생략 규칙은
+        // 그대로 따른다: "입력하지 않음"과 "0원으로 입력함"은 다른 상태다.
+        c.inputPricePerMillionTokens?.let { addProperty("inputPricePerMillionTokens", it) }
+        c.outputPricePerMillionTokens?.let { addProperty("outputPricePerMillionTokens", it) }
     }
 
     fun fromJson(o: JsonObject): AiProviderConfig = AiProviderConfig(
@@ -102,6 +106,10 @@ object AiProviderCodec {
         temperatureUnsupported = o.get("temperatureUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
         maxTokensParamUnsupported = o.get("maxTokensParamUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
         imagesUnsupported = o.get("imagesUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean,
-        cooldownUntilMillis = o.get("cooldownUntilMillis")?.takeIf { it.isJsonPrimitive }?.asLong
+        cooldownUntilMillis = o.get("cooldownUntilMillis")?.takeIf { it.isJsonPrimitive }?.asLong,
+        inputPricePerMillionTokens =
+            o.get("inputPricePerMillionTokens")?.takeIf { it.isJsonPrimitive }?.asDouble,
+        outputPricePerMillionTokens =
+            o.get("outputPricePerMillionTokens")?.takeIf { it.isJsonPrimitive }?.asDouble
     )
 }
