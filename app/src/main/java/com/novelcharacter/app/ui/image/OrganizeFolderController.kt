@@ -366,7 +366,15 @@ class OrganizeFolderController(
         // AI 태그 제안 체크박스 — **미설정이면 줄 자체를 감춘다**(R-24: 성립하지 않는 조합의
         // 설정은 보이지 않는다). 체크 상태는 기억하지 않는다: 비용이 드는 동작의 기본값은
         // 꺼짐이어야 하고, 폴더 구성은 매번 다르다.
-        val tagFolders = plan.aiTagFolders.keys.toList()
+        //
+        // **`aiTagFolders`(신규 파일) 하나만 보면 안 된다.** `FolderRoundtripPlanner.Plan`의
+        // KDoc이 명시하는 대로 신규(`aiTagFolders`)와 토큰(`aiTagExistingPaths`)은 "이번에 그
+        // 폴더에서 온" 이미지의 두 갈래일 뿐, 태그 적용 대상은 **합집합**이다(D-4). 신규
+        // 파일이 하나도 없고 이미 앱이 아는(토큰) 이미지만 있는 '그 외' 폴더 — 예: 내보낸
+        // 이미지를 파일관리자에서 재배치해 다시 받아오는 경우 — 는 `aiTagFolders`에 잡히지
+        // 않아, 이 줄만 보면 체크박스가 아예 안 뜨거나(다른 신규 폴더가 없을 때) 뜨더라도
+        // 그 폴더만 요청·검토 시트에서 조용히 빠졌다 — 사용자에게 사유 고지도 없었다.
+        val tagFolders = (plan.aiTagFolders.keys + plan.aiTagExistingPaths.keys).toList()
         val aiUsable = tagFolders.isNotEmpty() &&
             runCatching { com.novelcharacter.app.ai.AiService(fragment.requireContext()).hasUsableProvider() }
                 .getOrDefault(false)
