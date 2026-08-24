@@ -103,6 +103,8 @@ class FieldFilterHelperTest {
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()
         override suspend fun getFieldByKey(universeId: Long, key: String, entityType: String): FieldDefinition? = unused()
+        override suspend fun getMaxDisplayOrder(universeId: Long, entityType: String): Int? = unused()
+        override suspend fun getMaxDisplayOrderGlobal(entityType: String): Int? = unused()
         override suspend fun insert(field: FieldDefinition): Long = unused()
         override suspend fun insertAll(fields: List<FieldDefinition>) = unused()
         override suspend fun update(field: FieldDefinition) = unused()

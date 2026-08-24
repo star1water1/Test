@@ -92,6 +92,8 @@ class NovelRepository(
         novelDao.getNovelsByUniverse(universeId)
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =
         novelDao.getNovelsByUniverseList(universeId)
+    fun getUnassignedNovels(): LiveData<List<Novel>> =
+        novelDao.getUnassignedNovels()
     fun searchNovels(query: String): LiveData<List<Novel>> =
         novelDao.searchNovels(sanitizeLikeQuery(query))
     /**

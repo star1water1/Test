@@ -42,6 +42,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel>
 
+    /** 세계관 미배정 작품만 — 목록 화면의 "세계관 미배정만 보기" 필터(캐릭터 쪽 "작품 미배정"과 대칭). */
+    @Query("SELECT * FROM novels WHERE universeId IS NULL ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
+    fun getUnassignedNovels(): LiveData<List<Novel>>
+
     @Query("SELECT universeId, COUNT(*) as cnt FROM novels WHERE universeId IN (:universeIds) GROUP BY universeId")
     suspend fun getNovelCountsByUniverses(universeIds: List<Long>): List<UniverseCount>
 

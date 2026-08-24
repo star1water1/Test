@@ -24,4 +24,10 @@
         android:title="@string/reorder_mode"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_filter_unassigned_universe"
+        android:title="@string/novel_filter_unassigned_universe"
+        android:checkable="true"
+        app:showAsAction="never" />
+
 </menu>

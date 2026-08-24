@@ -244,6 +244,7 @@ $MAIN/ui/stats/StatsDataProvider.kt
 $MAIN/util/StandardYearLink.kt
 $MAIN/util/ConsistencyChecker.kt
 $MAIN/util/UnassignedFilter.kt
+$MAIN/util/FieldOrderAssignment.kt
 $MAIN/data/model/RandomConfig.kt
 $MAIN/data/model/SemanticRole.kt
 $MAIN/data/model/RequiredEnforcement.kt
@@ -555,6 +556,7 @@ $TEST/util/StatsFieldPolicyTest.kt
 $TEST/util/CardFieldSummaryTest.kt
 $TEST/util/FieldSuggestionEntriesTest.kt
 $TEST/util/UnassignedFilterTest.kt
+$TEST/util/FieldOrderAssignmentTest.kt
 $TEST/util/DetachedImageRuleTest.kt
 $TEST/util/FieldValueResolverTest.kt
 $TEST/util/ImageFilterHelperTest.kt

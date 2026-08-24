@@ -1099,6 +1099,7 @@ class ExcelExporter(context: Context) {
             // 결과를 바꾸는 칸인데 안내에 한 줄도 없었다.
             GuideLine("", styles.guideBody, "  '표준연도'는 그 작품의 '지금'입니다 — 나이 = 표준연도 − 출생연도로 이어져,"),
             GuideLine("", styles.guideBody, "  고치면 연동을 켠 캐릭터의 나이(또는 출생연도)가 함께 다시 셈해집니다. 비우면 연동이 쉽니다"),
+            GuideLine("", styles.guideBody, "  세계관 칸이 빈 행은 미분류 작품입니다 — 목록 화면 툴바의 '세계관 미배정만 보기'로 모아 볼 수 있습니다"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
             GuideLine("", styles.guideBody, "  'AI추천'(Y/개별만/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
             GuideLine("", styles.guideBody, "  (Y=일괄 추천과 ✨ 모두, 개별만=✨ 버튼으로 요청할 때만, N=AI가 건드리지 않음)"),
