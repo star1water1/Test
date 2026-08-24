@@ -1035,7 +1035,7 @@ class ExcelExporter(context: Context) {
             // 없었다(실측 2026.08.24 사용자 파일: 세계관 8·작품 15가 전부 `custom`이 아니었다).
             GuideLine("", styles.guideBody, "• 세계관·작품 카드는 '이미지모드'가 무엇을 보여 줄지 정합니다: custom=이 행의 이미지경로,"),
             GuideLine("", styles.guideBody, "  random_character·select_character=소속 캐릭터의 그림(select는 '이미지캐릭터코드'로 지정),"),
-            GuideLine("", styles.guideBody, "  random_novel·select_novel=소속 작품의 그림(세계관 전용), none=안 보임."),
+            GuideLine("", styles.guideBody, "  random_novel·select_novel=소속 작품의 그림(세계관 전용 · select는 '이미지작품코드'), none=안 보임."),
             GuideLine("", styles.guideBody, "  그림이 없던 none 카드에 이미지경로를 적으면 custom으로 올리고 결과에서 알려 드립니다"),
             GuideLine("", styles.guideBody, "  (앱에서 그림을 붙일 때와 같은 동작입니다). 그 밖의 모드는 적어 넣은 경로보다 모드가 우선합니다."),
             // 캐릭터 시트 아홉 장 전부에 파란(편집 가능) 열로 있고 가져오기가 실제로 읽는데,
@@ -1443,8 +1443,10 @@ class ExcelExporter(context: Context) {
         // **쓰이는 값도 함께 넘긴다** — 목록이 자기 시트의 값을 모르면 되돌리기가 막힌다(R-33 계열).
         val spec = novelSpec(
             universes.map { it.name }, novelFieldColumns,
-            fieldValuesInUse = allNovelFieldValues.groupBy({ it.fieldDefinitionId }, { it.value })
-                .mapValues { (_, values) -> values.toSet() }
+            fieldValuesInUse = dropdownValuesInUse(
+                novelFieldColumns.map { it.first },
+                allNovelFieldValues.map { it.fieldDefinitionId to it.value }
+            )
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
@@ -2054,10 +2056,21 @@ class ExcelExporter(context: Context) {
         // 이 시트가 실제로 싣는 값 — `resolvedValues`가 셀에 들어갈 표시값 그대로다.
         // 드롭다운이 **자기 시트의 값**을 담게 하는 재료이고, 셀 루프가 쓰는 것과 같은 표라
         // 목록과 셀이 갈릴 수 없다.
+        //
+        // **목록이 서는 필드만 모은다.** 전부 모으면 열린 값 집합(TEXT·MULTI_TEXT·메모성 글)까지
+        // 캐릭터 수만큼 집합에 쌓이는데, 그 값들은 어디서도 읽히지 않는다 — 목표 규모
+        // (캐릭터 6,420 · 필드 수십)에서 그것이 곧 내보내기 한 번의 순수 낭비다.
+        // 판정은 목록을 짓는 그 함수가 든다(여기서 타입을 다시 적으면 새 타입에서 갈린다).
+        val dropdownFieldIds = fields.filter { customFieldDropdownOptions(it) != null }
+            .mapTo(HashSet()) { it.id }
         val valuesInUse = HashMap<Long, MutableSet<String>>()
-        for (byField in resolvedValues.values) {
-            for ((fieldId, value) in byField) {
-                if (value.isNotBlank()) valuesInUse.getOrPut(fieldId) { HashSet() }.add(value)
+        if (dropdownFieldIds.isNotEmpty()) {
+            for (byField in resolvedValues.values) {
+                for ((fieldId, value) in byField) {
+                    if (fieldId in dropdownFieldIds && value.isNotBlank()) {
+                        valuesInUse.getOrPut(fieldId) { HashSet() }.add(value)
+                    }
+                }
             }
         }
         val spec = characterSpec(fields, novelTitles, valuesInUse)
@@ -2162,8 +2175,10 @@ class ExcelExporter(context: Context) {
             eventFieldColumns,
             universesById.values.map { it.name },
             // 쓰이는 값도 재료다 — 작품·캐릭터 시트와 같은 규약(그 함수의 KDoc).
-            fieldValuesInUse = allEventFieldValues.groupBy({ it.fieldDefinitionId }, { it.value })
-                .mapValues { (_, values) -> values.toSet() }
+            fieldValuesInUse = dropdownValuesInUse(
+                eventFieldColumns.map { it.first },
+                allEventFieldValues.map { it.fieldDefinitionId to it.value }
+            )
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
@@ -2373,6 +2388,26 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allRows.size)
+    }
+
+    /**
+     * 필드 id → 그 열에 실리는 값들 — **드롭다운이 서는 필드만** 모은다(작품·연표 공용).
+     *
+     * 목록 없는 필드까지 모으면 어디서도 안 읽히는 집합을 값 수만큼 쌓는다. 어느 필드에
+     * 목록이 서는가는 [customFieldDropdownOptions]가 답한다 — 여기서 타입을 다시 적으면
+     * 새 타입이 늘 때 두 자리가 갈린다.
+     */
+    private fun dropdownValuesInUse(
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        values: List<Pair<Long, String>>
+    ): Map<Long, Set<String>> {
+        val ids = fields.filter { customFieldDropdownOptions(it) != null }.mapTo(HashSet()) { it.id }
+        if (ids.isEmpty()) return emptyMap()
+        val out = HashMap<Long, MutableSet<String>>()
+        for ((fieldId, value) in values) {
+            if (fieldId in ids && value.isNotBlank()) out.getOrPut(fieldId) { HashSet() }.add(value)
+        }
+        return out
     }
 
     // ── 캐릭터 관계 ──

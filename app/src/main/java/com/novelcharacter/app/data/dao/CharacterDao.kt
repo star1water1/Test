@@ -137,6 +137,23 @@ interface CharacterDao {
     suspend fun getUnclassifiedCharacterIds(): List<Long>
 
     /**
+     * **필드 구역이 전역인 캐릭터** id — 작품이 없거나, **작품에 세계관이 없는** 캐릭터.
+     *
+     * [getUnclassifiedCharacterIds]와 다르다: 그쪽은 `novelId IS NULL`만 본다. 세계관 없는
+     * 작품에 든 캐릭터도 세계관이 없으므로 전역 구역의 필드를 쓰는데
+     * ([com.novelcharacter.app.data.repository.UniverseRepository.getFieldsForCharacterScope] ·
+     * 내보내기의 '미분류 캐릭터' 시트도 `novel?.universeId == null`로 고른다),
+     * 그 갈래가 좁은 질의에서 빠져 있었다.
+     *
+     * `LEFT JOIN`이라야 한다 — 내부 조인은 `novelId IS NULL`인 행을 통째로 떨어뜨린다(B-13).
+     */
+    @Query(
+        "SELECT c.id FROM characters c LEFT JOIN novels n ON c.novelId = n.id " +
+            "WHERE c.novelId IS NULL OR n.universeId IS NULL"
+    )
+    suspend fun getGlobalScopeCharacterIds(): List<Long>
+
+    /**
      * 코드로 일괄 조회 (휴지통 복원의 참조 재해석용 — B-1).
      * 단건 조회를 참조 수만큼 반복하면 세계관 복원처럼 참조가 수백 건인 경로가 무너진다.
      * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).

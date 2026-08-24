@@ -167,9 +167,15 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         // 따라서 대상 세계관만 확인하고 역할별 판단은 헬퍼에 위임한다(setField/clearField 경로와 동일).
         var syncFailures = 0
         // **옮겨 간 곳이 무소속이어도 돈다** — `null`은 전역 구역이다(B-119 확장). 종전
-        // 두 겹 가드(`newNovelId != null` · `newUniverseId != null`)는 *작품에서 뺐다*와
-        // *세계관 없는 작품으로 옮겼다*를 둘 다 건너뛰어, 그 캐릭터의 `__birth`·`__death`·
-        // `__alive`가 **옛 세계관 필드로 만든 행 그대로** 남았다.
+        // 두 겹 가드(`newNovelId != null` · `newUniverseId != null`)가 *작품에서 뺐다*와
+        // *세계관 없는 작품으로 옮겼다*를 둘 다 건너뛰던 자리다.
+        //
+        // **그 두 갈래에서 지금 바뀌는 것은 대개 없다** — `batchChangeNovel`의 값 이관도
+        // `newUniverseId != null`일 때만 돌아, 값이 옛 세계관 필드를 계속 가리키기 때문이다
+        // (그러면 아래 동기화가 그 값을 못 알아보고 지나간다). 여기서 가드를 걷는 것은
+        // **구역 판정을 한 자리로 모으기 위해서**이고, 실효는 값이 이미 전역 구역에 있는
+        // 캐릭터(무소속끼리의 일괄 조작)에서 난다. 값 이관이 그 갈래까지 덮게 되면
+        // 이 자리는 고칠 것 없이 따라온다.
         val newUniverseId = newNovelId?.let { novelRepository.getNovelById(it)?.universeId }
         // 값 일괄 로드 + 단일 트랜잭션 — setField/addStateChange와 동일하게 N+1·개별 커밋 제거(받쳐주는 확장성).
         val valuesByChar = characterRepository.getValuesForCharacters(ids).groupBy { it.characterId }

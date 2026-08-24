@@ -1604,30 +1604,35 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     )
 
     /**
+     * 표시 방식을 올렸으면 **그렇게 말한다** — 사용자가 고치지 않은 칸이 바뀌었기 때문이다
+     * (규약 R-44: 관문이 사용자가 고르지 않은 것으로 바꿨으면 결과가 그렇게 말한다).
+     *
+     * 인앱 배정도 같은 승격을 하고 같은 고지를 낸다(`AssignResult.modeChanged`) — 그쪽에만
+     * 있던 짝이다.
+     *
+     * @param requested **파일이 말한 모드**다(열이 없으면 기존 값). 여기에 `existing.imageMode`를
+     *   넘기면 안 된다 — 사용자가 파일에서 모드를 직접 고친 행까지 *"그림이 처음 붙어 올렸다"*고
+     *   말하게 되고, 그것은 **일어나지 않은 일을 고지하는 것**이다(거짓 고지는 무고지보다 나쁘다).
+     * @param applied 승격까지 지난 최종 모드. 둘이 다른 것은 오직 승격이 걸렸을 때뿐이다.
+     */
+    private fun warnCardImageAdopted(
+        rowLabel: String, name: String, requested: String, applied: String, result: ImportResult
+    ) {
+        if (requested == applied) return
+        result.warnings.add(
+            "$rowLabel: '$name'에 그림이 처음 붙어 '이미지모드'를 '$requested' → '$applied'로 올렸습니다 " +
+                "— 그러지 않으면 적어 넣은 '이미지경로'가 카드에 보이지 않습니다. " +
+                "안 보이게 두려면 '이미지모드'를 '$requested'로 되돌려 다시 가져오세요"
+        )
+    }
+
+    /**
      * 카드에 그림이 처음 붙었으면 표시 방식을 `custom`으로 올린다 — 판정은 [CardImageAdoption]이
      * 든다(인앱 이미지 배정이 쓰는 그 함수).
      *
      * **`merge*` 안에 두는 것이 요점이다** — 미리보기와 가져오기가 같은 함수를 지나므로
      * (R-33) 이 승격이 한쪽에만 걸리는 일이 없다. 고지는 부르는 쪽이 든다.
      */
-    /**
-     * 표시 방식을 올렸으면 **그렇게 말한다** — 사용자가 고치지 않은 칸이 바뀌었기 때문이다
-     * (규약 R-44: 관문이 사용자가 고르지 않은 것으로 바꿨으면 결과가 그렇게 말한다).
-     *
-     * 인앱 배정도 같은 승격을 하고 같은 고지를 낸다(`AssignResult.modeChanged`) — 그쪽에만
-     * 있던 짝이다.
-     */
-    private fun warnCardImageAdopted(
-        rowLabel: String, name: String, before: String, after: String, result: ImportResult
-    ) {
-        if (before == after) return
-        result.warnings.add(
-            "$rowLabel: '$name'에 그림이 처음 붙어 '이미지모드'를 '$before' → '$after'로 올렸습니다 " +
-                "— 그러지 않으면 적어 넣은 '이미지경로'가 카드에 보이지 않습니다. " +
-                "안 보이게 두려면 '이미지모드'를 '$before'로 되돌려 다시 가져오세요"
-        )
-    }
-
     private fun adoptedCardImageMode(requested: String, before: String?, after: String?): String =
         CardImageAdoption.adoptedModeOrNull(
             requested,
@@ -5916,7 +5921,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 아직 없을 수 있기 때문이다. 미리보기는 되붙은 뒤의 값을 넣어 같은 함수를 부른다.
                     val mergedUniverse = mergeUniverse(existing, r, imageCharacterId = null, imageNovelId = null)
                     warnCardImageAdopted(
-                        "세계관 행 ${excelRow(i)}", name, existing.imageMode, mergedUniverse.imageMode, result
+                        "세계관 행 ${excelRow(i)}", name,
+                        requested = r.imageMode ?: existing.imageMode,
+                        applied = mergedUniverse.imageMode, result = result
                     )
                     db.universeDao().update(mergedUniverse)
                     // 이름·코드가 바뀌었을 수 있다 — 옛 키를 끊어야 뒷 시트가 SQL과 같은 답을 본다(B-210).
@@ -6075,7 +6082,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 이미지 캐릭터는 여기서 null로 두고 Phase 2가 코드로 되붙인다.
                     val mergedNovel = mergeNovel(existing, r, effectiveUniverseId, imageCharacterId = null)
                     warnCardImageAdopted(
-                        "작품 행 ${excelRow(i)}", title, existing.imageMode, mergedNovel.imageMode, result
+                        "작품 행 ${excelRow(i)}", title,
+                        requested = r.imageMode ?: existing.imageMode,
+                        applied = mergedNovel.imageMode, result = result
                     )
                     db.novelDao().update(mergedNovel)
                     // 코드가 바뀌었을 수 있다 — 옛 코드를 끊어야 뒤 행·뒤 시트가 SQL과 같은 답을 본다(B-210).

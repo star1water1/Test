@@ -369,7 +369,10 @@ class NovelCharacterApp : Application() {
 
         appScope.launch(Dispatchers.IO) {
             try {
-                val ids = database.characterDao().getUnclassifiedCharacterIds()
+                // **작품이 없는 캐릭터만이 아니다** — 세계관 없는 작품에 든 캐릭터도 전역
+                // 구역을 쓴다(그 질의의 KDoc). `getUnclassifiedCharacterIds`를 쓰면 그 갈래가
+                // 소급에서 빠지는데, 살아 있는 경로는 이제 그들도 전역 구역으로 돈다.
+                val ids = database.characterDao().getGlobalScopeCharacterIds()
                 if (ids.isNotEmpty()) {
                     val helper = com.novelcharacter.app.util.SemanticFieldSyncHelper(
                         characterRepository, universeRepository, novelRepository
