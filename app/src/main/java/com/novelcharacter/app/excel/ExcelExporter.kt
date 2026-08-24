@@ -1123,6 +1123,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  링크그룹은 같은 문자열을 적은 행끼리 한 묶음이 됩니다 — 아무 이름이나 써도 되고, 두 장 이상일 때만 묶입니다"),
             GuideLine("", styles.guideBody, "  칸을 비우면 그 이미지의 링크가 풀립니다. 'char:'로 시작하는 값은 캐릭터 자동 링크라"),
             GuideLine("", styles.guideBody, "  가져온 뒤 현재 배정 기준으로 다시 계산됩니다 (직접 적을 필요가 없습니다)"),
+            // 그 토큰의 숫자는 앱 안의 id라 파일만으로는 누구인지 알 길이 없었다 — 이름 열을
+            // 곁에 세우고 여기서 그 자리를 말한다.
+            GuideLine("", styles.guideBody, "  그 토큰이 누구인지는 옆의 회색 '링크 캐릭터' 칸이 이름으로 알려 줍니다(앱이 채우는 열)."),
             GuideLine("", styles.guideBody, "  '뗀날짜' 칸을 비우면 뗀 이미지 서랍에서 꺼냅니다(뗀 적 없음이 됩니다). '뗀곳'은 앱이 채우는 열입니다"),
             // 이 시트가 라이브러리 표만 싣던 동안, 태그·묶음이 아직 없는 그림(=그림이 한 장뿐인
             // 캐릭터의 그림)은 행 자체가 없어 엑셀에서 손댈 길이 없었다 — 그 사실을 알 방법도
@@ -2450,6 +2453,8 @@ class ExcelExporter(context: Context) {
         val metas = db.imageMetaDao().getAllList()
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
         val metaByPath = metas.associateBy { it.path }
+        // `char:<id>` 토큰을 사람이 읽는 이름으로 옮길 표 — 행마다 묻지 않는다(1,400행 규모).
+        val charNameById = db.characterDao().getAllCharactersList().associate { it.id to it.name }
 
         // **라이브러리 표만 실으면 그림이 한 장뿐인 캐릭터의 그림이 통째로 빠진다** —
         // 근거·실측은 [ImageSheetRows]의 머리말.
@@ -2481,11 +2486,17 @@ class ExcelExporter(context: Context) {
             // 태그를 적는 순간 비로소 라이브러리에 편입된다.
             row.createCell(1).setTextSafe(meta?.let { tagsByImage[it.id]?.let { t -> joinCsv(t) } } ?: "")
             row.createCell(2).setTextSafe(meta?.linkGroupId ?: "")
+            // 자동 링크 토큰이 가리키는 캐릭터의 이름 — 읽기 전용(그 열의 근거는 spec).
+            // 수동 묶음(UUID)은 캐릭터가 없으므로 빈칸이다.
+            row.createCell(3).setTextSafe(
+                com.novelcharacter.app.util.AutoLinkPlanner.characterIdOf(meta?.linkGroupId)
+                    ?.let { charNameById[it] } ?: ""
+            )
             // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
             // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
-            meta?.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
-            row.createCell(4).setTextSafe(meta?.detachedFromCode ?: "")
+            meta?.detachedAt?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setTextSafe(meta?.detachedFromCode ?: "")
             finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
 
