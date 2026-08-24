@@ -591,9 +591,14 @@ object AiFieldSuggestSheet {
         if (retryTargets.isNotEmpty()) {
             list.addView(
                 outlinedButton(context, density, fragment.getString(R.string.ai_field_retry_missing, retryTargets.size)) {
-                    // 보완 재요청과 같은 규칙 — 재요청 전에 지금 고른 것을 폼에 적용해 지킨다
+                    // 보완 재요청과 같은 규칙 — 재요청 전에 지금 고른 것을 폼에 적용해 지킨다.
+                    // **적용이 실패하면 여기서 멈춘다** (B-163) — 실패한 채 결과를 비우고
+                    // 재요청으로 가면 체크해 둔 유료 제안이 폼에도 결과에도 없는 채 사라진다.
+                    // 창은 그대로 남고 applySelected가 사유를 이미 알렸으므로 그 자리에서 다시 시도한다.
                     val keep = rows.filter { it.cb.isChecked }.map { it.suggestion }
-                    if (keep.isNotEmpty()) applySelected(fragment, formBuilder, keep)
+                    if (keep.isNotEmpty() && !applySelected(fragment, formBuilder, keep)) {
+                        return@outlinedButton
+                    }
                     dialogRef?.dismiss()
                     viewModel.clearAiSuggestResult()
                     runSuggest(
@@ -907,10 +912,14 @@ object AiFieldSuggestSheet {
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 val hint = instruction.text?.toString().orEmpty().trim()
-                dialog.dismiss()
-                // 선택분을 먼저 폼에 적용 — 재요청으로 검토 화면을 잃어도 고른 것은 남는다
+                // 선택분을 먼저 폼에 적용 — 재요청으로 검토 화면을 잃어도 고른 것은 남는다.
+                // **적용이 실패하면 창을 닫기 전에 멈춘다** (B-163) — 닫은 뒤 실패를 알면
+                // 체크해 둔 유료 제안을 되돌릴 자리가 없다. 사유는 applySelected가 알렸다.
                 val keep = allRows.filter { it.cb.isChecked && it !== row }.map { it.suggestion }
-                if (keep.isNotEmpty()) applySelected(fragment, formBuilder, keep)
+                if (keep.isNotEmpty() && !applySelected(fragment, formBuilder, keep)) {
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
                 dismissReview()
                 viewModel.clearAiSuggestResult()
                 val target = row.spec.copy(

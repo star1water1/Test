@@ -13,6 +13,7 @@ import com.novelcharacter.app.ai.AiService
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.ai.NarrativeFieldAiWriter
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.launch
 
@@ -299,31 +300,51 @@ object NarrativeBulkSheet {
             }
         }
 
-        MaterialAlertDialogBuilder(context)
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_narrative_bulk_pick)
             // 본문 스크롤에는 높이 상한이 있어야 한다 (R-31) — 필드가 많으면 [적용] 버튼이
             // 화면 밖으로 밀려 **고른 것을 넣을 길이 없어진다.**
             .setView(com.novelcharacter.app.util.cappedScrollView(context).apply { addView(panel) })
-            .setPositiveButton(R.string.ai_narrative_bulk_apply) { _, _ ->
-                var applied = 0
-                for (item in usable) {
-                    if (!state.isChecked(item.fieldId)) continue
-                    val field = fieldOf(item.fieldId) ?: continue
-                    // 필드마다 토스트를 띄우지 않는다 — 일괄이라 N번 겹쳐 뜨고, 그러면
-                    // 정작 읽어야 할 합계 고지가 그 뒤에 가린다.
-                    formBuilder.applyRandomValue(field, item.outcome.drafts.first().text, showToast = false)
-                    applied++
-                }
-                Toast.makeText(
-                    context,
-                    fragment.getString(R.string.ai_narrative_bulk_applied, applied),
-                    Toast.LENGTH_SHORT
-                ).show()
-                viewModel.clearAiNarrativeBulkResult()
-            }
+            .setPositiveButton(R.string.ai_narrative_bulk_apply, null) // 검증 통과 시에만 닫힘
             .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiNarrativeBulkResult() }
             .setOnCancelListener { viewModel.clearAiNarrativeBulkResult() }
-            .show()
+            .create()
+        // **비우는 것은 적용이 성립한 뒤다** (B-163 — 형제 검토 창들이 지키는 그 규칙).
+        // 종전에는 [적용]이 무조건 결과를 비워서, 고른 것이 0개거나 검토 중 필드가 지워져
+        // 아무것도 못 넣은 경우에도 **결제한 초안이 통째로 사라졌다** — 짧은 값 검토 창은
+        // 빈 선택을 막는데(R-17) 이 창만 조용히 비웠다.
+        dialog.setValidatedPositiveButton {
+            val picked = usable.filter { state.isChecked(it.fieldId) }
+            if (picked.isEmpty()) {
+                Toast.makeText(
+                    context, R.string.ai_review_pick_none, Toast.LENGTH_SHORT
+                ).show()
+                return@setValidatedPositiveButton false
+            }
+            var applied = 0
+            var vanished = 0
+            for (item in picked) {
+                // 검토 중 다른 화면에서 필드가 지워졌을 수 있다 — 조용히 덜 세지 않고 갈라 센다.
+                val field = fieldOf(item.fieldId)
+                if (field == null) {
+                    vanished++
+                    continue
+                }
+                // 필드마다 토스트를 띄우지 않는다 — 일괄이라 N번 겹쳐 뜨고, 그러면
+                // 정작 읽어야 할 합계 고지가 그 뒤에 가린다.
+                formBuilder.applyRandomValue(field, item.outcome.drafts.first().text, showToast = false)
+                applied++
+            }
+            Toast.makeText(
+                context,
+                if (vanished == 0) fragment.getString(R.string.ai_narrative_bulk_applied, applied)
+                else fragment.getString(R.string.ai_narrative_bulk_applied_vanished, applied, vanished),
+                Toast.LENGTH_SHORT
+            ).show()
+            viewModel.clearAiNarrativeBulkResult()
+            true
+        }
+        dialog.show()
     }
 
     /**

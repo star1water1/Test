@@ -1238,8 +1238,14 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
         /**
          * 응답 파싱 + 실제 필드 정의 기준 검증 (AiService 미호출 — 단위 테스트 대상).
-         * 드롭 규칙: 미지 key, 같은 key 중복(첫 건만 채택), SELECT/GRADE 옵션 불일치,
+         * 드롭 규칙: 미지 key, 같은 key 중복, SELECT/GRADE 옵션 불일치,
          * NUMBER 비수치(선행 숫자 추출 실패), 생일 형식·달력 위반, 현재 값과 동일한 제안.
+         *
+         * **중복의 기준은 "채택된 key"다 — "본 key"가 아니다.** 종전에는 등장한 key를 전부
+         * 중복 후보로 삼아서, 같은 key의 첫 항목이 검증에서 떨어지면(옵션 불일치·강도 미달)
+         * **뒤의 멀쩡한 항목까지 중복으로 버려졌다** — 유료 응답에 쓸 수 있는 답이 실려
+         * 있는데 앱이 버리고 사용자가 재요청을 결제하는, 이 파일이 금지한 바로 그 부류다.
+         * 앞 항목이 떨어졌으면 뒤 항목이 자리를 잇고, 채택이 있었던 key만 중복으로 센다.
          *
          * 빈 value는 드롭이 아니라 **모델이 밝힌 추천 불가**(DECLINED)로 분류한다 — 형식을 어긴
          * 것이 아니라 계약대로 사유를 적어 낸 것이므로, 드롭 수에 섞으면 사유가 사라진다.
@@ -1255,7 +1261,6 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             val root = AiJsonExtractor.extractObject(text) ?: return null
             val arr = root.optJSONArray("suggestions")
             val byKey = targets.associateBy { it.key }
-            val seenKeys = mutableSetOf<String>()
             val resolved = mutableSetOf<String>()
             // 같은 key에 사유가 여러 번 붙으면 **첫 사유**를 남긴다(뒤의 중복 항목이 원인을 덮지 않게)
             val causeByKey = LinkedHashMap<String, MissingField>()
@@ -1280,7 +1285,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     continue
                 }
                 if (rawValue.isEmpty()) { note(spec, MissingCause.DECLINED, reason); continue }
-                if (!seenKeys.add(key)) {
+                if (key in resolved) {
                     dropped++
                     note(spec, MissingCause.DUPLICATE, rawValue)
                     continue
