@@ -6,6 +6,8 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
+import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,12 +55,14 @@ class ConsistencyCheckerTest {
             roleField(birthFieldId, "birth_year", SemanticRole.BIRTH_YEAR)
         ),
         fieldValues: List<CharacterFieldValue> = emptyList(),
-        stateChanges: List<CharacterStateChange> = emptyList()
+        stateChanges: List<CharacterStateChange> = emptyList(),
+        events: List<TimelineEvent> = emptyList(),
+        crossRefs: List<TimelineCharacterCrossRef> = emptyList()
     ) = StatsSnapshot(
         characters = characters,
         novels = novels,
         universes = listOf(Universe(id = universeId, name = "세계")),
-        events = emptyList(),
+        events = events,
         relationships = emptyList(),
         relationshipChanges = emptyList(),
         tags = emptyList(),
@@ -66,7 +70,7 @@ class ConsistencyCheckerTest {
         stateChanges = stateChanges,
         fieldDefinitions = fieldDefinitions,
         fieldValues = fieldValues,
-        crossRefs = emptyList()
+        crossRefs = crossRefs
     )
 
     private fun character(id: Long, name: String = "이름$id", novel: Long? = novelId) =
@@ -352,6 +356,137 @@ class ConsistencyCheckerTest {
     fun `빈 스냅샷은 조용하다`() {
         val r = ConsistencyChecker.check(snapshot(novels = emptyList()))
         assertEquals(0, r.total)
+    }
+
+    // ── 연표 연도 ↔ 캐릭터 출생·사망연도 ──────────────────────────────────────
+    //
+    // 같은 사실을 두 자리에 적어 둔 것이라 갈리면 한쪽이 틀렸는데, 앱이 그것을 말하는 자리가
+    // 없었다(실측 2026.08.24 사용자 파일: 연표 한 행이 두 캐릭터의 탄생을 1303년이라 적고
+    // 그 둘의 출생연도는 1301년이었다).
+
+    private fun birthEvent(id: Long, year: Int, desc: String = "탄생") =
+        TimelineEvent(id = id, year = year, description = desc, eventType = TimelineEvent.TYPE_BIRTH)
+
+    private fun deathEvent(id: Long, year: Int, desc: String = "사망") =
+        TimelineEvent(id = id, year = year, description = desc, eventType = TimelineEvent.TYPE_DEATH)
+
+    private fun birthChange(charId: Long, year: Int) =
+        CharacterStateChange(
+            characterId = charId, year = year,
+            fieldKey = CharacterStateChange.KEY_BIRTH, newValue = year.toString()
+        )
+
+    private fun deathChange(charId: Long, year: Int) =
+        CharacterStateChange(
+            characterId = charId, year = year,
+            fieldKey = CharacterStateChange.KEY_DEATH, newValue = year.toString()
+        )
+
+    @Test
+    fun `연표 탄생 연도가 캐릭터 출생연도와 다르면 잡는다`() {
+        val s = snapshot(
+            characters = listOf(character(1, "루스트라")),
+            stateChanges = listOf(birthChange(1, 1301)),
+            events = listOf(birthEvent(90, 1303, "루스트라 출생.")),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+
+        val found = ConsistencyChecker.check(s).eventYearMismatches
+
+        assertEquals(1, found.size)
+        val m = found.single()
+        assertEquals(1L, m.characterId)
+        assertEquals("루스트라", m.characterName)
+        assertEquals(90L, m.eventId)
+        assertEquals(1303, m.eventYear)
+        assertEquals(1301, m.characterYear)
+        assertTrue(m.isBirth)
+    }
+
+    @Test
+    fun `한 사건에 걸린 참가자마다 따로 잡는다`() {
+        // 실측이 그 모양이었다 — 한 행이 두 캐릭터의 탄생을 함께 적고 있었다.
+        val s = snapshot(
+            characters = listOf(character(1, "루스트라"), character(2, "시카엘")),
+            stateChanges = listOf(birthChange(1, 1301), birthChange(2, 1301)),
+            events = listOf(birthEvent(90, 1303, "루스트라 출생. 시카엘 출생.")),
+            crossRefs = listOf(
+                TimelineCharacterCrossRef(eventId = 90, characterId = 1),
+                TimelineCharacterCrossRef(eventId = 90, characterId = 2)
+            )
+        )
+
+        assertEquals(2, ConsistencyChecker.check(s).eventYearMismatches.size)
+    }
+
+    @Test
+    fun `사망 사건도 같은 규칙이다`() {
+        val s = snapshot(
+            characters = listOf(character(1)),
+            stateChanges = listOf(deathChange(1, 1400)),
+            events = listOf(deathEvent(91, 1402)),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 91, characterId = 1))
+        )
+
+        val m = ConsistencyChecker.check(s).eventYearMismatches.single()
+        assertEquals(false, m.isBirth)
+        assertEquals(1402, m.eventYear)
+        assertEquals(1400, m.characterYear)
+    }
+
+    @Test
+    fun `연도가 같으면 조용하다`() {
+        val s = snapshot(
+            characters = listOf(character(1)),
+            stateChanges = listOf(birthChange(1, 1301)),
+            events = listOf(birthEvent(90, 1301)),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+        assertEquals(0, ConsistencyChecker.check(s).total)
+    }
+
+    @Test
+    fun `연도 미상 0은 어느 쪽에 있어도 어긋남이 아니다`() {
+        // 생일만 적어 둔 캐릭터의 `__birth`는 연도가 0이다 — 그것을 어긋남이라 부르면
+        // **맞는 데이터를 고치라고 권하게 되고**, 그 거짓 고지가 진짜 고지를 묻는다.
+        val charYearZero = snapshot(
+            characters = listOf(character(1)),
+            stateChanges = listOf(birthChange(1, 0)),
+            events = listOf(birthEvent(90, 1301)),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+        assertEquals(0, ConsistencyChecker.check(charYearZero).total)
+
+        val eventYearZero = snapshot(
+            characters = listOf(character(1)),
+            stateChanges = listOf(birthChange(1, 1301)),
+            events = listOf(birthEvent(90, 0)),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+        assertEquals(0, ConsistencyChecker.check(eventYearZero).total)
+    }
+
+    @Test
+    fun `일반 사건은 보지 않는다`() {
+        // 시맨틱 유형이 아닌 사건의 연도는 캐릭터의 출생·사망과 아무 관계가 없다.
+        val s = snapshot(
+            characters = listOf(character(1)),
+            stateChanges = listOf(birthChange(1, 1301)),
+            events = listOf(TimelineEvent(id = 90, year = 1500, description = "즉위")),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+        assertEquals(0, ConsistencyChecker.check(s).total)
+    }
+
+    @Test
+    fun `이력이 없는 참가자는 어긋남이 아니다`() {
+        // 연표에만 적힌 캐릭터다 — 견줄 짝이 없으면 말할 것도 없다.
+        val s = snapshot(
+            characters = listOf(character(1)),
+            events = listOf(birthEvent(90, 1301)),
+            crossRefs = listOf(TimelineCharacterCrossRef(eventId = 90, characterId = 1))
+        )
+        assertEquals(0, ConsistencyChecker.check(s).total)
     }
 
     // ── 연동 계약 자체 ───────────────────────────────────────────────────────
