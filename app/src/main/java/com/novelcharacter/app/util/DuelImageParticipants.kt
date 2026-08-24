@@ -106,6 +106,33 @@ object DuelImageParticipants {
     }
 
     /**
+     * 이미지 축의 판·처분이 참조하는 이미지 경로 전부 — **엑셀·백업 완전성이 이 데이터를 아는
+     * 유일한 자리**(`ImageZipHelper.collectDuelImagePaths`가 부른다).
+     *
+     * `winnerCode`는 담지 않는다 — 무승부가 아니면 `aCode`·`bCode` 중 하나와 같으므로
+     * 이미 집합에 있다(설계 4장 ④: "승자는 참가자 둘 중 하나").
+     *
+     * **[com.novelcharacter.app.excel.ImageZipHelper.collectAllImagePathsWithStatus]와 다른
+     * 물음이다.** 그 함수는 "지금 캐릭터·세계관·작품이 쓰는가"(고아 정리·`StorageAnalyzer`의
+     * 계약)를 답하고, 여기는 "이 백업이 이 그림을 담아야 왕복이 되는가"를 답한다 — 지워진
+     * 그림이 낀 판은 이미 정상 상태로 다뤄지므로([DuelRecords]의 orphan 집계) 두 물음을
+     * 하나로 합치면 안 된다.
+     */
+    fun referencedPaths(matches: List<DuelMatch>, verdicts: List<DuelCounterVerdict>): Set<String> {
+        val out = HashSet<String>(matches.size * 2 + verdicts.size * 2)
+        for (match in matches) {
+            if (match.aCode.isNotBlank()) out.add(match.aCode)
+            if (match.bCode.isNotBlank()) out.add(match.bCode)
+        }
+        for (verdict in verdicts) {
+            for (member in DuelRecords.decodeMembers(verdict.memberCodes)) {
+                if (member.isNotBlank()) out.add(member)
+            }
+        }
+        return out
+    }
+
+    /**
      * 한 코드를 개명 표에 따라 옮긴다. **사슬을 끝까지 따라간다** — 한 표 안에 `a→b`와 `b→c`가
      * 함께 있을 수 있고(`FolderRoundtripLedger.putRenameBounded`가 넣을 때 접기는 하지만,
      * 이 함수가 받는 표는 그 장부만이 아니다), 한 번만 따라가면 중간 경로에서 멈춘다.

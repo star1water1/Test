@@ -11149,6 +11149,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // **키 모양과 싣는 순서는 미리보기와 같은 클래스가 든다**(B-236 — `util/ImportIdentityIndexes.kt`).
         val matches = DuelMatchIndexes(db.duelMatchDao().getAllList())
 
+        // 이미지 축 참가자가 **이 기기에 실재하는가** — 존재 확인 한 번당 파일 시스템 호출이므로
+        // 같은 경로가 되풀이되는 큰 시트에서 비용이 겹치지 않게 문자열당 한 번만 잰다
+        // (참가자 코드는 경로라 그 표기가 곧 열쇠다). 캐릭터 축은 검사 자체를 안 하므로
+        // 비용도 0이다.
+        val imageParticipantExistsCache = HashMap<String, Boolean>()
+        fun imageParticipantExists(path: String) = imageParticipantExistsCache.getOrPut(path) {
+            runCatching { java.io.File(path).exists() }.getOrDefault(false)
+        }
+        var missingImageParticipantRows = 0
+
         val seenCodes = HashSet<String>()
         for (i in dataRows(sheet, headerRow)) {
             try {
@@ -11186,6 +11196,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.skippedRows++
                     result.errors.add("대결 기록 행 ${excelRow(i)}: 참가자를 정할 수 없음 ('${r.aName}' · '${r.bName}') — 참가자 코드를 함께 적어 주세요")
                     continue
+                }
+                // 이미지 축의 코드는 경로다(R-42) — 이미지가 담기지 않은 백업(이미지 미포함
+                // 내보내기·zip 없이 XLSX만 다시 들인 경우)은 그 경로가 이 기기 어디도 가리키지
+                // 않는다. **거부하지 않는다** — 판을 지우면 무음 유실이고, 그림이 지워진 판을
+                // 고아로 세는 것은 이미 정상 경로다([util.DuelRecords]). 여기서는 그 사실을
+                // 가져오기 직후에 한 번 더 알려서, 순위표를 열기 전에 원인을 알게 한다.
+                if (axis.isImageAxis && (!imageParticipantExists(aCode) || !imageParticipantExists(bCode))) {
+                    missingImageParticipantRows++
                 }
 
                 // 승자도 같은 표를 탄다 — 참가자만 옮기면 옛 경로를 든 승자 칸이 두 참가자
@@ -11245,6 +11263,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.skippedRows++
                 result.errors.add("대결 기록 행 ${excelRow(i)}: ${e.message}")
             }
+        }
+        if (missingImageParticipantRows > 0) {
+            result.warnings.add(
+                "대결 기록: 이미지 참가자가 이 기기에 없는 판 ${missingImageParticipantRows}건 — " +
+                    "이미지가 포함된 백업으로 다시 가져오면 복구됩니다. 그 전까지는 순위표에서 고아 판으로 표시됩니다"
+            )
         }
         reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum)
     }
@@ -11358,6 +11382,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val verdictCodesSeen = mutableSetOf<String>()
         val writtenVerdictIds = mutableSetOf<Long>()
 
+        // '대결 기록'과 같은 근거·같은 캐시다 — 이미지가 담기지 않은 백업의 경로는 이 기기
+        // 어디도 가리키지 않는다(R-42). 거부하지 않고 가져오기 직후에 한 번 알린다.
+        val imageParticipantExistsCache = HashMap<String, Boolean>()
+        fun imageParticipantExists(path: String) = imageParticipantExistsCache.getOrPut(path) {
+            runCatching { java.io.File(path).exists() }.getOrDefault(false)
+        }
+        var missingImageParticipantRows = 0
+
         for (i in dataRows(sheet, headerRow)) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -11404,6 +11436,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.skippedRows++
                     result.errors.add("대결 상성 행 ${excelRow(i)}: 참가자가 둘 이상이어야 판정할 관계가 있습니다")
                     continue
+                }
+                if (axis.isImageAxis && members.any { !imageParticipantExists(it) }) {
+                    missingImageParticipantRows++
                 }
 
                 val code = r.code
@@ -11463,6 +11498,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.skippedRows++
                 result.errors.add("대결 상성 행 ${excelRow(i)}: ${e.message}")
             }
+        }
+        if (missingImageParticipantRows > 0) {
+            result.warnings.add(
+                "대결 상성: 이미지 참가자가 이 기기에 없는 판정 ${missingImageParticipantRows}건 — " +
+                    "이미지가 포함된 백업으로 다시 가져오면 복구됩니다"
+            )
         }
         reportProgress(onProgress, "대결 상성 가져오기", sheet.lastRowNum)
     }

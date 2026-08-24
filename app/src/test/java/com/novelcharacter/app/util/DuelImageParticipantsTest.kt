@@ -267,4 +267,49 @@ class DuelImageParticipantsTest {
         // 엑셀 셀은 공백이 섞여 들어온다 — 이름에 그것이 실리면 화면과 시트가 갈린다.
         assertEquals("char_a.jpg", DuelImageParticipants.displayName("  $dir/char_a.jpg  "))
     }
+
+    // ── referencedPaths (엑셀·백업이 참조된 이미지를 셀 때 이 그림들을 놓치던 자리) ──
+
+    @Test
+    fun `referencedPaths는 판의 두 참가자를 모두 담는다`() {
+        val paths = DuelImageParticipants.referencedPaths(
+            matches = listOf(match("$dir/a.jpg", "$dir/b.jpg")),
+            verdicts = emptyList()
+        )
+        assertEquals(setOf("$dir/a.jpg", "$dir/b.jpg"), paths)
+    }
+
+    @Test
+    fun `referencedPaths는 승자 칸을 따로 담지 않는다 — 참가자 둘 중 하나와 같다`() {
+        // 승자는 무승부가 아니면 aCode·bCode 중 하나와 같은 문자열이다(설계 4장 ④) —
+        // 따로 넣으면 중복일 뿐이고, 여기서는 집합 크기로 그것을 확인한다.
+        val paths = DuelImageParticipants.referencedPaths(
+            matches = listOf(match("$dir/a.jpg", "$dir/b.jpg", winner = "$dir/a.jpg")),
+            verdicts = emptyList()
+        )
+        assertEquals(2, paths.size)
+    }
+
+    @Test
+    fun `referencedPaths는 상성의 구성원 전부를 담는다 — 순환도 셋 다`() {
+        val paths = DuelImageParticipants.referencedPaths(
+            matches = emptyList(),
+            verdicts = listOf(verdict(listOf("$dir/a.jpg", "$dir/b.jpg", "$dir/c.jpg")))
+        )
+        assertEquals(setOf("$dir/a.jpg", "$dir/b.jpg", "$dir/c.jpg"), paths)
+    }
+
+    @Test
+    fun `referencedPaths는 빈 코드를 담지 않는다`() {
+        val paths = DuelImageParticipants.referencedPaths(
+            matches = listOf(match("$dir/a.jpg", "")),
+            verdicts = emptyList()
+        )
+        assertEquals(setOf("$dir/a.jpg"), paths)
+    }
+
+    @Test
+    fun `referencedPaths는 빈 입력에 빈 집합을 돌려준다`() {
+        assertTrue(DuelImageParticipants.referencedPaths(emptyList(), emptyList()).isEmpty())
+    }
 }

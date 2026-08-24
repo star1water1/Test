@@ -45,9 +45,11 @@ object ImageZipHelper {
         val gson = Gson()
         val appDir = appContext.filesDir
 
-        // 모든 이미지 경로 수집 — 엔티티 참조 + 라이브러리(meta) 미배정 이미지.
+        // 모든 이미지 경로 수집 — 엔티티 참조 + 라이브러리(meta) 미배정 이미지 + 이미지 축 대결.
         // meta 합류는 이 함수 내부에서만 한다: collectAllImagePaths 자체의 의미(엔티티 참조 집합)는
-        // StorageAnalyzer·고아 정리 소비처가 의존하므로 바꾸지 않는다.
+        // StorageAnalyzer·고아 정리 소비처가 의존하므로 바꾸지 않는다. 대결도 같은 이유로
+        // 별도 함수([collectDuelImagePaths])다 — "지금 캐릭터가 쓰는가"와 "이 백업이 왕복하려면
+        // 담아야 하는가"는 다른 물음이다(그 함수 KDoc).
         //
         // **읽기 실패를 세어서 들고 나온다(B-225).** 종전에는 이 자리가 손상된 imagePaths를
         // 조용히 건너뛰고(parseImagePaths → null) 라이브러리 조회 실패를 빈 목록으로 삼켰다.
@@ -56,12 +58,16 @@ object ImageZipHelper {
         // 못 읽은 것은 담기지도 않으므로, 이것을 세지 않으면 유실이 무음이 된다.
         val collected = collectAllImagePathsWithStatus(db, gson)
         val metaPaths = runCatching { db.imageMetaDao().getAllPaths() }
+        val duelPaths = runCatching { collectDuelImagePaths(db) }
         val imagePathSet = buildSet {
             addAll(collected.paths)
             addAll(metaPaths.getOrDefault(emptyList()))
+            addAll(duelPaths.getOrDefault(emptySet()))
         }
-        // 라이브러리 조회는 통째로 성공하거나 통째로 실패한다 — 실패는 '항목 하나'로 센다.
-        val unreadableRefCount = collected.unreadableCount + if (metaPaths.isFailure) 1 else 0
+        // 라이브러리·대결 조회는 통째로 성공하거나 통째로 실패한다 — 실패는 '항목 하나'로 센다.
+        val unreadableRefCount = collected.unreadableCount +
+            (if (metaPaths.isFailure) 1 else 0) +
+            (if (duelPaths.isFailure) 1 else 0)
 
         // 담을 수 있는 것 / 파일 없음 / 앱 저장소 밖 — 판정은 ImagePathClassifier 단일 소스
         val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
@@ -181,6 +187,7 @@ object ImageZipHelper {
             val imagePathSet = buildSet {
                 addAll(collectAllImagePaths(db, gson))
                 addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
+                addAll(runCatching { collectDuelImagePaths(db) }.getOrDefault(emptySet()))
             }
             val appDirCanonical = com.novelcharacter.app.util.ImagePathMatch.canonical(appDir.absolutePath)
             ImagePathClassifier.classify(imagePathSet, appDirCanonical).includable
@@ -242,5 +249,36 @@ object ImageZipHelper {
         for (n in db.novelDao().getAllNovelsList()) consume(n.imagePaths)
 
         return CollectResult(paths, unreadable)
+    }
+
+    /**
+     * 이미지 축 대결 기록·상성이 참조하는 이미지 경로 — [wrapWithImages]·[estimateImageBytes]가
+     * "참조된 이미지" 모집단에 합류시킨다(2026.08.24 — 이 백업만으로는 왕복이 안 되는 것을
+     * 아무도 경고하지 않던 자리).
+     *
+     * **[collectAllImagePathsWithStatus]와 갈라 두는 이유**: 그 함수는 StorageAnalyzer·고아
+     * 정리가 "지금 캐릭터/세계관/작품이 쓰는가"를 판정하는 자리라 그 함수 KDoc이 스스로
+     * "바꾸지 않는다"고 못박아 두었다. 이미지 축 대결은 그 물음과 다르다 — 판이 지워진 그림을
+     * 가리키는 것 자체는 이미 정상 상태로 다뤄지고([util.DuelRecords]의 orphan 집계),
+     * 여기서 묻는 것은 "지금 살아 있는가"가 아니라 **"이 백업이 그 그림을 담아야 왕복이
+     * 되는가"**다. 그래서 고아 정리의 모집단을 넓히지 않고, 이 함수를 부르는 두 소비처에서만
+     * 합류시킨다.
+     *
+     * 이미지 축이 없으면 질의를 열지 않는다 — 이 기능을 안 쓰는 세계관의 비용은 0이다.
+     */
+    suspend fun collectDuelImagePaths(db: AppDatabase): Set<String> {
+        val imageAxisIds = db.duelAxisDao().getAllList()
+            .filter { it.isImageAxis }
+            .map { it.id }
+        if (imageAxisIds.isEmpty()) return emptySet()
+        // 축 수는 세계관당 몇 행짜리라(설계 13-9) 상한을 넘길 일이 실사용에서 없지만,
+        // R-54 통로가 유일하게 인정하는 길이라 여기서도 그대로 지난다.
+        val matches = com.novelcharacter.app.util.SqlInChunks.flat(imageAxisIds) { chunk ->
+            db.duelMatchDao().getByAxes(chunk)
+        }
+        val verdicts = com.novelcharacter.app.util.SqlInChunks.flat(imageAxisIds) { chunk ->
+            db.duelCounterVerdictDao().getByAxes(chunk)
+        }
+        return com.novelcharacter.app.util.DuelImageParticipants.referencedPaths(matches, verdicts)
     }
 }
