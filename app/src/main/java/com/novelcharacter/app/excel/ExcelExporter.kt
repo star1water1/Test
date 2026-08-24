@@ -1405,10 +1405,16 @@ class ExcelExporter(context: Context) {
             universeMap.mapValues { (_, u) -> u.name }
         )
         val novelFieldColumns = novelFieldPlan.columns
-        val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
+        val allNovelFieldValues = db.novelFieldValueDao().getAllValuesList()
+        val novelFieldValuesByNovel = allNovelFieldValues.groupBy { it.novelId }
 
         // 계획의 (필드, 머리) 쌍을 그대로 넘긴다 — 드롭다운 판정에 필드가 필요하다.
-        val spec = novelSpec(universes.map { it.name }, novelFieldColumns)
+        // **쓰이는 값도 함께 넘긴다** — 목록이 자기 시트의 값을 모르면 되돌리기가 막힌다(R-33 계열).
+        val spec = novelSpec(
+            universes.map { it.name }, novelFieldColumns,
+            fieldValuesInUse = allNovelFieldValues.groupBy({ it.fieldDefinitionId }, { it.value })
+                .mapValues { (_, values) -> values.toSet() }
+        )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2014,7 +2020,16 @@ class ExcelExporter(context: Context) {
         sheetOwnerOf: String? = null
     ) {
         val novelTitles = novelMap.values.map { it.title }.distinct()
-        val spec = characterSpec(fields, novelTitles)
+        // 이 시트가 실제로 싣는 값 — `resolvedValues`가 셀에 들어갈 표시값 그대로다.
+        // 드롭다운이 **자기 시트의 값**을 담게 하는 재료이고, 셀 루프가 쓰는 것과 같은 표라
+        // 목록과 셀이 갈릴 수 없다.
+        val valuesInUse = HashMap<Long, MutableSet<String>>()
+        for (byField in resolvedValues.values) {
+            for ((fieldId, value) in byField) {
+                if (value.isNotBlank()) valuesInUse.getOrPut(fieldId) { HashSet() }.add(value)
+            }
+        }
+        val spec = characterSpec(fields, novelTitles, valuesInUse)
         // 열 머리를 만든 계획 — 아래 셀 루프가 이것을 돈다(spec의 열과 같은 목록이다).
         val columnPlan = CharacterFieldHeaders.plan(fields)
         val sheetName = assignSheetName(sheetLabel, usedSheetNames, ownerOf = sheetOwnerOf)
@@ -2109,16 +2124,21 @@ class ExcelExporter(context: Context) {
         )
         val eventFieldColumns = eventFieldPlan.columns
 
+        val allEventFieldValues = db.eventFieldValueDao().getAllValuesList()
+
         val spec = timelineSpec(
             novels.map { it.title },
             eventFieldColumns,
-            universesById.values.map { it.name }
+            universesById.values.map { it.name },
+            // 쓰이는 값도 재료다 — 작품·캐릭터 시트와 같은 규약(그 함수의 KDoc).
+            fieldValuesInUse = allEventFieldValues.groupBy({ it.fieldDefinitionId }, { it.value })
+                .mapValues { (_, values) -> values.toSet() }
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        val eventFieldValuesByEvent = db.eventFieldValueDao().getAllValuesList().groupBy { it.eventId }
+        val eventFieldValuesByEvent = allEventFieldValues.groupBy { it.eventId }
 
         // Batch load all cross-refs and characters to avoid N+1 queries
         val allCrossRefs = db.timelineDao().getAllCrossRefs()
