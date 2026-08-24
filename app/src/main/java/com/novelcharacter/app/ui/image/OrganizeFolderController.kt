@@ -509,8 +509,20 @@ class OrganizeFolderController(
             )
             notices.add(fragment.getString(R.string.image_tag_review_notice_failed, reason))
         }
-        // 제안도 없고 할 말도 없으면 시트를 띄우지 않는다 — 빈 창은 그 자체가 소음이다.
+        // 제안도 할 말도 없으면 시트는 안 띄운다(빈 창은 그 자체가 소음이다) — **그러나
+        // 침묵하지는 않는다.** 이 조합은 실패가 아니라 정상 경로다: 프롬프트가 "폴더 이름에서
+        // 근거를 찾을 수 없으면 빈 배열로 둔다"고 시키고, 빈 배열은 드롭으로도 세지 않으므로
+        // 모델이 전부 그렇게 답하면 제안도 고지도 없이 끝난다.
+        //
+        // **종전에는 여기서 조용히 반환했다** — "폴더 받아오기에 딸린 곁가지라 사용자가
+        // 그것만 기다리고 있지 않다"는 판단이었다. 그런데 이 체크박스도 요청 건수를 미리
+        // 고지하고 사용자가 명시로 체크해 돈을 쓴 동작이다(형제 이미지판과 같은 R-24·비용
+        // 고지 계약) — "곁가지라 안 기다린다"는 전제가 실사용에서 틀렸다(실사용 보고: 새
+        // 사진을 받아왔는데 검토 창이 뜨지 않고 아무 알림도 없었다). 형제
+        // `ImageManagerFragment.showAiTagReview`가 이미 B-144·R-17로 지킨 규칙 — **침묵은
+        // 고장과 구분되지 않는다** — 을 여기도 그대로 적용한다.
         if (outcome.result.suggestions.isEmpty() && notices.isEmpty()) {
+            fragment.notifyError(fragment.getString(R.string.image_folder_tag_review_nothing))
             viewModel.clearFolderTagResult()
             return
         }
