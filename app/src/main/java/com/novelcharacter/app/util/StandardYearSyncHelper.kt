@@ -26,9 +26,11 @@ class StandardYearSyncHelper(
      */
     suspend fun onStandardYearChanged(novel: Novel, oldStdYear: Int?, newStdYear: Int?) {
         if (newStdYear == null) return
-        val universeId = novel.universeId ?: return
         val characters = characterRepository.getCharactersByNovelList(novel.id)
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        // **세계관 없는 작품도 돈다** — 그 캐스트는 전역 구역의 필드를 쓴다(B-119 확장).
+        // 종전 `novel.universeId ?: return`은 그런 작품의 표준연도 변경을 통째로 무시해,
+        // 나이·출생연도 연동이 그 작품에서만 죽어 있었다(단일 소스는 아래 한 자리다).
+        val fields = universeRepository.getFieldsForCharacterScope(novel.universeId)
 
         val ageField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.AGE }
         val birthYearField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BIRTH_YEAR }

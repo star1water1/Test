@@ -299,6 +299,8 @@ $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/DateValidation.kt
+$MAIN/util/BirthDateFormat.kt
+$MAIN/util/CardImageAdoption.kt
 $MAIN/util/BirthdayHelper.kt
 $MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt
@@ -368,6 +370,9 @@ TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
+$TEST/excel/CustomFieldDropdownOptionsTest.kt
+$TEST/excel/SheetFreezeColsTest.kt
+$TEST/excel/ImageSheetColumnOrderTest.kt
 $TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt
 $TEST/excel/EntityFieldValueOverflowTest.kt
@@ -426,6 +431,8 @@ $TEST/util/SemanticClearPlanTest.kt
 $TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
 $TEST/util/ColorHexNormalizeTest.kt
+$TEST/util/BirthDateFormatTest.kt
+$TEST/util/CardImageAdoptionTest.kt
 $TEST/util/CharacterNameIndexTest.kt
 $TEST/util/SingletonStateChangesTest.kt
 $TEST/util/RecordTimestampsTest.kt

@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.model.TimelineEvent
 
 /**
  * 스냅샷 하나만으로 캐릭터 데이터의 "진짜 모순"을 배치 검사한다.
@@ -50,17 +51,43 @@ object ConsistencyChecker {
         val deathYear: Int
     )
 
+    /**
+     * 연표의 **탄생·사망 사건 연도**가 그 캐릭터의 출생·사망연도와 다른 경우.
+     *
+     * 두 숫자는 같은 사실을 두 자리에 적은 것이라 갈리면 하나는 틀렸는데, **앱이 그것을 말하는
+     * 자리가 없었다.** 실측(2026.08.24 사용자가 내보낸 파일): 연표 한 행이 두 캐릭터의 탄생을
+     * 1303년이라 적고 그 둘의 출생연도는 1301년이었다.
+     *
+     * **어느 쪽이 옳은지는 알 수 없다** — 그래서 형제([DeathBeforeBirth])와 같이 *열기 전용*
+     * 카드로 낸다. 자동으로 맞추면 사용자가 적어 둔 쪽을 우리가 고르는 것이 된다.
+     *
+     * @param isBirth 탄생 사건인가(아니면 사망 사건).
+     * @param characterYear 캐릭터 쪽 연도. 사건 쪽은 [eventYear].
+     */
+    data class EventYearMismatch(
+        val characterId: Long,
+        val characterName: String,
+        val eventId: Long,
+        val eventDescription: String,
+        val isBirth: Boolean,
+        val eventYear: Int,
+        val characterYear: Int
+    )
+
     data class Result(
         val ageMismatches: List<AgeMismatch>,
-        val deathBeforeBirth: List<DeathBeforeBirth>
+        val deathBeforeBirth: List<DeathBeforeBirth>,
+        val eventYearMismatches: List<EventYearMismatch> = emptyList()
     ) {
-        val total: Int get() = ageMismatches.size + deathBeforeBirth.size
+        val total: Int
+            get() = ageMismatches.size + deathBeforeBirth.size + eventYearMismatches.size
     }
 
     fun check(s: StatsSnapshot): Result =
         Result(
             ageMismatches = checkAgeMismatches(s),
-            deathBeforeBirth = checkDeathBeforeBirth(s)
+            deathBeforeBirth = checkDeathBeforeBirth(s),
+            eventYearMismatches = checkEventYearMismatches(s)
         )
 
     /** 한 세계관에서 나이·출생연도 역할을 맡은 필드 정의. 둘 다 있어야 검사가 성립한다. */
@@ -167,6 +194,54 @@ object ConsistencyChecker {
                         characterName = char.name,
                         birthYear = birth,
                         deathYear = death
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    /**
+     * 연표의 탄생·사망 사건 연도 ↔ 캐릭터의 `__birth`·`__death` 연도.
+     *
+     * **비용은 참가자 연결 수에 비례한다** — 사건마다 캐릭터 전량을 훑지 않는다(형제
+     * [checkAgeMismatches]가 목표 규모에서 327만 회를 돌던 그 모양을 되풀이하지 않는다).
+     *
+     * 연도 `0`은 *미상* 자리표시자라 양쪽 어디에 있어도 건너뛴다 — 형제
+     * [checkDeathBeforeBirth]가 같은 이유로 같은 갈래를 둔다. 자리표시자를 어긋남이라 부르면
+     * 생일만 적어 둔 캐릭터 전원이 경고에 걸린다(거짓 고지가 진짜 고지를 묻는다).
+     */
+    private fun checkEventYearMismatches(s: StatsSnapshot): List<EventYearMismatch> {
+        val semanticEvents = s.events.filter {
+            it.eventType == TimelineEvent.TYPE_BIRTH || it.eventType == TimelineEvent.TYPE_DEATH
+        }
+        if (semanticEvents.isEmpty()) return emptyList()
+
+        val charIdsByEvent = s.crossRefs.groupBy({ it.eventId }, { it.characterId })
+        val charById = s.characters.associateBy { it.id }
+        // 정본 한 행은 [SingletonStateChanges]가 고른다 — 형제 검사와 같은 술어여야
+        // 두 카드가 같은 캐릭터를 두고 다른 연도를 말하지 않는다(R-34).
+        val changesByChar = s.stateChanges.groupBy { it.characterId }
+
+        val result = mutableListOf<EventYearMismatch>()
+        for (event in semanticEvents) {
+            val isBirth = event.eventType == TimelineEvent.TYPE_BIRTH
+            val key = if (isBirth) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
+            if (event.year == 0) continue
+            for (charId in charIdsByEvent[event.id].orEmpty()) {
+                val char = charById[charId] ?: continue
+                val changes = changesByChar[charId] ?: continue
+                val year = SingletonStateChanges.pick(changes, key)?.year ?: continue
+                if (year == 0 || year == event.year) continue
+                result.add(
+                    EventYearMismatch(
+                        characterId = charId,
+                        characterName = char.name,
+                        eventId = event.id,
+                        eventDescription = event.description,
+                        isBirth = isBirth,
+                        eventYear = event.year,
+                        characterYear = year
                     )
                 )
             }

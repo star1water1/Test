@@ -10,7 +10,6 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
-import java.util.Locale
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -29,15 +28,19 @@ class SemanticFieldSyncHelper(
     /**
      * 방향 1: 커스텀 필드값 저장 후 → CharacterStateChange 동기화.
      * 캐릭터의 필드값 목록에서 semanticRole이 있는 필드를 찾아 대응하는 상태변화를 생성/갱신.
+     *
+     * @param universeId **`null`은 "모른다"가 아니라 무소속이다** — 전역 구역의 필드로 돈다
+     *   ([UniverseRepository.getFieldsForCharacterScope]). 종전에는 부르는 자리마다
+     *   `if (universeId != null)`로 감싸 무소속이 통째로 빠져 있었다.
      */
     suspend fun syncFieldToStateChange(
         characterId: Long,
-        universeId: Long,
+        universeId: Long?,
         values: List<CharacterFieldValue>,
         clearableFieldIds: Set<Long>? = null
     ) = syncMutex.withLock {
         applyFieldsToStateChange(
-            characterId, universeRepository.getFieldsByUniverseList(universeId), values, clearableFieldIds
+            characterId, universeRepository.getFieldsForCharacterScope(universeId), values, clearableFieldIds
         )
     }
 
@@ -105,10 +108,24 @@ class SemanticFieldSyncHelper(
                     syncBirthYearToAge(characterId, year, fields)
                 }
                 SemanticRole.BIRTH_DATE -> {
-                    val parts = parseBirthDate(value.value) ?: continue
+                    val parts = BirthDateFormat.parse(value.value) ?: continue
                     val existingBirth = findStateChange(characterId, CharacterStateChange.KEY_BIRTH)
                     val year = existingBirth?.year ?: 0
                     upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, parts.first, parts.second)
+                    // **저장 모양을 여기서 맞춘다** — 편집 화면의 구조화 입력(월 칸·일 칸)은
+                    // 0을 채우지 않아 `5-30`을 저장하는데, 바로 아래 역방향은 언제나
+                    // `05-30`을 되쓴다. 그래서 같은 생일이 캐릭터 시트와 '캐릭터 상태변화'
+                    // 시트에서 **다른 글자**로 나갔다(실측 2026.08.24 사용자 파일: 둘).
+                    //
+                    // 두 방향이 다 지나는 자리는 여기 하나뿐이라 문도 하나다 — 폼·일괄 편집·
+                    // 가져오기가 전부 이 함수를 지난다. 읽을 수 없는 글자는 위에서 이미
+                    // `continue`로 빠졌으므로, 여기서 값을 잃는 갈래는 없다.
+                    if (BirthDateFormat.needsRepair(value.value)) {
+                        upsertFieldValue(
+                            characterId, value.fieldDefinitionId,
+                            BirthDateFormat.of(parts.first, parts.second)
+                        )
+                    }
                 }
                 SemanticRole.DEATH_YEAR -> {
                     val raw = value.value.trim()
@@ -254,10 +271,10 @@ class SemanticFieldSyncHelper(
      */
     suspend fun syncStateChangeToField(
         characterId: Long,
-        universeId: Long,
+        universeId: Long?,
         change: CharacterStateChange
     ) = syncMutex.withLock {
-        applyStateChangeToFields(characterId, universeRepository.getFieldsByUniverseList(universeId), change)
+        applyStateChangeToFields(characterId, universeRepository.getFieldsForCharacterScope(universeId), change)
     }
 
     /**
@@ -291,8 +308,10 @@ class SemanticFieldSyncHelper(
                 // month/day → birth_date 필드
                 val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
                 if (birthDateField != null && change.month != null && change.day != null) {
-                    val dateStr = String.format(Locale.US, "%02d-%02d", change.month, change.day)
-                    upsertFieldValue(characterId, birthDateField.id, dateStr)
+                    upsertFieldValue(
+                        characterId, birthDateField.id,
+                        BirthDateFormat.of(change.month, change.day)
+                    )
                 }
             }
             CharacterStateChange.KEY_DEATH -> {
@@ -311,8 +330,8 @@ class SemanticFieldSyncHelper(
      * - __birth CharacterStateChange 삭제
      * - birth_year, age, birth_date 필드값 클리어
      */
-    suspend fun onBirthEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+    suspend fun onBirthEventDeleted(characterId: Long, universeId: Long?) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsForCharacterScope(universeId)
         deleteStateChangeByKey(characterId, CharacterStateChange.KEY_BIRTH)
         findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
         findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
@@ -325,8 +344,8 @@ class SemanticFieldSyncHelper(
      * - death_year 필드값 클리어
      * - alive 필드를 "생존"으로 복원 (출생 기록이 있을 때) 또는 클리어
      */
-    suspend fun onDeathEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
+    suspend fun onDeathEventDeleted(characterId: Long, universeId: Long?) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsForCharacterScope(universeId)
         deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
         findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
         syncDeathToAlive(characterId, fields, isDead = false)
@@ -338,33 +357,6 @@ class SemanticFieldSyncHelper(
 
     private fun findFieldByRole(fields: List<FieldDefinition>, role: SemanticRole): FieldDefinition? {
         return fields.find { SemanticRole.fromConfig(it.config) == role }
-    }
-
-    /**
-     * "MM-DD", "M-D", 또는 "YYYY-MM-DD" 형식의 생일 문자열을 파싱.
-     * 엑셀이 날짜를 자동 변환하여 연도가 붙는 경우 연도를 무시하고 월/일만 추출.
-     * @return Pair(month, day) 또는 null
-     */
-    private fun parseBirthDate(value: String): Pair<Int, Int>? {
-        val trimmed = value.trim()
-        val parts = trimmed.split("-", "/", ".")
-        val month: Int?
-        val day: Int?
-        when (parts.size) {
-            2 -> {
-                month = parts[0].trim().toIntOrNull()
-                day = parts[1].trim().toIntOrNull()
-            }
-            3 -> {
-                // YYYY-MM-DD → 연도 무시, 월/일만 추출
-                month = parts[1].trim().toIntOrNull()
-                day = parts[2].trim().toIntOrNull()
-            }
-            else -> return null
-        }
-        if (month == null || day == null) return null
-        if (month !in 1..12 || !isValidDay(month, day)) return null
-        return month to day
     }
 
     /**

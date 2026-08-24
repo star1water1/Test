@@ -169,6 +169,24 @@ class UniverseRepository(
         fieldDefinitionDao.getFieldsByUniverseList(universeId)
 
     /**
+     * **캐릭터 한 명의 필드 구역**을 편다 — 세계관에 속하면 그 세계관의 필드, 무소속이면
+     * 전역 구역(`universeId IS NULL` — B-119 확장)의 필드.
+     *
+     * **이 함수가 없어서 무소속이 시맨틱 동기화에서 통째로 빠져 있었다.** 부르는 자리들이
+     * *"세계관 id가 없으면 필드 목록을 못 만든다"*고 각자 판단해 `if (universeId != null)`로
+     * 동기화를 건너뛰었고(저장 두 자리 · 일괄 편집 · 가져오기 세 자리), 그래서 무소속 캐릭터는
+     * **생일·출생연도·사망연도·생존여부를 고쳐도 `__birth`·`__death`·`__alive`가 따라오지
+     * 않았다.** 실측(2026.08.24 사용자 파일): 생일이 있는 47명 중 미분류 2명만 `__birth` 행이
+     * 없었다 — 안내 시트가 스스로 적는 대로 *생일 알림·홈 화면·위젯이 그 캐릭터를 다르게 센다*.
+     *
+     * 같은 구멍을 1회 마이그레이션은 이미 메웠고(`NovelCharacterApp.migrateAliveSyncIfNeeded`의
+     * 미분류 갈래), **살아 있는 경로만 남아 있었다.** 판단을 여기 한 자리로 모아 그 갈림을 없앤다.
+     */
+    suspend fun getFieldsForCharacterScope(universeId: Long?): List<FieldDefinition> =
+        if (universeId == null) fieldDefinitionDao.getGlobalFieldsList()
+        else fieldDefinitionDao.getFieldsByUniverseList(universeId)
+
+    /**
      * 세계관·entityType을 가리지 않는 id 조회 — 보관 중인(세계관 밖) 필드값 표시용 (N2).
      * IN 절 변수 한도를 넘지 않도록 [SqlInChunks]가 나눈다 — 저장소 공통 통로.
      */

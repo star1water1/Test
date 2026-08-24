@@ -200,8 +200,11 @@ EOF
 # 실측으로 확인한 그대로다(B-251 ⓐ: 넓은 스텁이었으면 타입 불일치 일곱이 조용히 통과했다).
 # 그래서 **지금 범위 안 코드가 실제로 부르는 것만** 적는다. 좁으면 나중에 *가짜 오류*로 드러나
 # 그 자리에서 한 줄 보태면 되고, 넓으면 **아무 데서도 안 드러난다.**
-#   - `query`/`execSQL`의 `bindArgs` 오버로드는 뺐다 — 범위 안에서 부르는 자리가 없다
+#   - `query`의 `bindArgs` 오버로드는 뺐다 — 범위 안에서 부르는 자리가 없다
 #     (`AppDatabase.kt`의 마이그레이션이 쓰지만 그 파일은 프로브가 스스로 스텁으로 세운다).
+#   - `execSQL`의 `bindArgs` 오버로드는 **2026.08.24에 보탰다** — `LegacyValueFormats`의
+#     생일 정리가 값을 바인딩해 쓴다(그 자리는 SQL 리터럴로 이을 수 없는 사용자 글자다).
+#     좁게 두었던 것이 예고대로 *가짜 오류*로 드러나 한 줄 보탠 사례다.
 #   - `Cursor`는 `moveToFirst`·`getColumnIndex`·`count` 따위를 두지 않는다 — 같은 이유다.
 #   - `Cursor : java.io.Closeable`은 **진짜 그대로**이며 뺄 수 없다. 이 계층의 관용구가
 #     `query(…).use { … }`이고, `use`는 `Closeable`의 확장이라 이 관계가 없으면 열일곱 자리가
@@ -217,6 +220,7 @@ interface SupportSQLiteOpenHelper {
 interface SupportSQLiteDatabase {
     fun query(query: String): android.database.Cursor
     fun execSQL(sql: String)
+    fun execSQL(sql: String, bindArgs: Array<out Any?>)
 }
 EOF
 

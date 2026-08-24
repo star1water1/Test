@@ -36,7 +36,8 @@ object FieldRandomGenerator {
             (1..maxDay).map { day -> month to day }
         }
         val (m, d) = validDates.random()
-        return String.format(Locale.US, "%02d-%02d", m, d)
+        // 저장 모양은 [BirthDateFormat]이 든다 — 만드는 자리가 셋이라 여기서 다시 적으면 갈린다.
+        return BirthDateFormat.of(m, d)
     }
 
     /**

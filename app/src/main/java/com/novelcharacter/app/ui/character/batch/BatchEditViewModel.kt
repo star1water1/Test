@@ -166,22 +166,27 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         // 무관한 birth/death/alive/birth_date 재동기화까지 함께 누락된다(setFieldValue 경로와 불일치).
         // 따라서 대상 세계관만 확인하고 역할별 판단은 헬퍼에 위임한다(setField/clearField 경로와 동일).
         var syncFailures = 0
-        if (newNovelId != null) {
-            val newNovel = novelRepository.getNovelById(newNovelId)
-            val newUniverseId = newNovel?.universeId
-            if (newUniverseId != null) {
-                // 값 일괄 로드 + 단일 트랜잭션 — setField/addStateChange와 동일하게 N+1·개별 커밋 제거(받쳐주는 확장성).
-                val valuesByChar = characterRepository.getValuesForCharacters(ids).groupBy { it.characterId }
-                app.database.withTransaction {
-                    for (charId in ids) {
-                        try {
-                            val values = valuesByChar[charId] ?: emptyList()
-                            semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
-                            syncFailures++
-                        }
-                    }
+        // **옮겨 간 곳이 무소속이어도 돈다** — `null`은 전역 구역이다(B-119 확장). 종전
+        // 두 겹 가드(`newNovelId != null` · `newUniverseId != null`)가 *작품에서 뺐다*와
+        // *세계관 없는 작품으로 옮겼다*를 둘 다 건너뛰던 자리다.
+        //
+        // **그 두 갈래에서 지금 바뀌는 것은 대개 없다** — `batchChangeNovel`의 값 이관도
+        // `newUniverseId != null`일 때만 돌아, 값이 옛 세계관 필드를 계속 가리키기 때문이다
+        // (그러면 아래 동기화가 그 값을 못 알아보고 지나간다). 여기서 가드를 걷는 것은
+        // **구역 판정을 한 자리로 모으기 위해서**이고, 실효는 값이 이미 전역 구역에 있는
+        // 캐릭터(무소속끼리의 일괄 조작)에서 난다. 값 이관이 그 갈래까지 덮게 되면
+        // 이 자리는 고칠 것 없이 따라온다.
+        val newUniverseId = newNovelId?.let { novelRepository.getNovelById(it)?.universeId }
+        // 값 일괄 로드 + 단일 트랜잭션 — setField/addStateChange와 동일하게 N+1·개별 커밋 제거(받쳐주는 확장성).
+        val valuesByChar = characterRepository.getValuesForCharacters(ids).groupBy { it.characterId }
+        app.database.withTransaction {
+            for (charId in ids) {
+                try {
+                    val values = valuesByChar[charId] ?: emptyList()
+                    semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
+                    syncFailures++
                 }
             }
         }
@@ -243,14 +248,19 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         // **세계관 필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 이 쓰기 트랜잭션이
         // 선택 인원만큼 같은 질의를 친다. 이 함수는 값 조회를 이미 일괄화해 두었는데
         // 필드 정의 재조회만 그 정리에서 빠져 있었다. 선택은 세계관이 섞일 수 있어 표다.
-        val fieldsByUniverse = HashMap<Long, List<com.novelcharacter.app.data.model.FieldDefinition>>()
+        //
+        // **키가 nullable인 것이 요점이다** — `?: continue`로 미분류를 떨어뜨리던 자리였다.
+        // 이 함수에 들어온 `scoped`는 이미 `universeByChar[it] == fieldDef.universeId`를 통과한
+        // 캐릭터들이라, 전역 필드(`universeId == null`)를 찍으면 **전원이 미분류다** — 그때
+        // 이 루프가 한 명도 안 돌고, 생존여부를 일괄로 바꿔도 `__alive`가 그대로였다.
+        val fieldsByUniverse = HashMap<Long?, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         app.database.withTransaction {
             for (charId in scoped) {
                 try {
-                    val universeId = universeByChar[charId] ?: continue
+                    val universeId = universeByChar[charId]
                     val allValues = valuesByChar[charId] ?: emptyList()
                     val fields = fieldsByUniverse.getOrPut(universeId) {
-                        universeRepository.getFieldsByUniverseList(universeId)
+                        universeRepository.getFieldsForCharacterScope(universeId)
                     }
                     semanticSyncHelper.syncFieldToStateChange(charId, fields, allValues)
                 } catch (e: Exception) {
@@ -304,7 +314,11 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         var syncFailures = 0
         // **세계관 필드 목록은 루프 불변량이다** — 캐릭터마다 다시 읽으면 이 트랜잭션이
         // 선택 인원만큼 같은 질의를 친다. 선택은 세계관이 섞일 수 있어 표로 든다.
-        val stateFieldsByUniverse = HashMap<Long, List<com.novelcharacter.app.data.model.FieldDefinition>>()
+        //
+        // **키가 nullable이다** — 특수키(`__birth`·`__death`)는 `fieldUniverseId`가 null이라
+        // 선택 전체가 대상이고, 그 안에는 미분류가 섞인다. 종전 `?.let`은 그들만 역동기화에서
+        // 빼, `__birth` 행은 들어가고 출생연도·생일 필드값은 안 따라오는 반쪽 상태를 만들었다.
+        val stateFieldsByUniverse = HashMap<Long?, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         // 단일 트랜잭션 — 500명이면 개별 커밋 500회(fsync)를 1회로. 규모에서 깨지지 않게(받쳐주는 확장성).
         app.database.withTransaction {
             for (charId in targets) {
@@ -329,12 +343,11 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 inserted++
                 if (isSemantic) {
                     try {
-                        universeByChar[charId]?.let { universeId ->
-                            val fields = stateFieldsByUniverse.getOrPut(universeId) {
-                                universeRepository.getFieldsByUniverseList(universeId)
-                            }
-                            semanticSyncHelper.syncStateChangeToField(charId, fields, change)
+                        val universeId = universeByChar[charId]
+                        val fields = stateFieldsByUniverse.getOrPut(universeId) {
+                            universeRepository.getFieldsForCharacterScope(universeId)
                         }
+                        semanticSyncHelper.syncStateChangeToField(charId, fields, change)
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to sync semantic field after batch state change for character $charId", e)
                         syncFailures++

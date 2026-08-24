@@ -1030,6 +1030,14 @@ class ExcelExporter(context: Context) {
             // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
             // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
             GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
+            // **세계관·작품에는 '이미지모드'가 함께 걸린다** — 그 칸이 `custom`이 아니면 위 줄이
+            // 약속한 *"편집이 반영됩니다"*가 카드에서 참이 되지 않는데, 안내에 그 열이 한 줄도
+            // 없었다(실측 2026.08.24 사용자 파일: 세계관 8·작품 15가 전부 `custom`이 아니었다).
+            GuideLine("", styles.guideBody, "• 세계관·작품 카드는 '이미지모드'가 무엇을 보여 줄지 정합니다: custom=이 행의 이미지경로,"),
+            GuideLine("", styles.guideBody, "  random_character·select_character=소속 캐릭터의 그림(select는 '이미지캐릭터코드'로 지정),"),
+            GuideLine("", styles.guideBody, "  random_novel·select_novel=소속 작품의 그림(세계관 전용 · select는 '이미지작품코드'), none=안 보임."),
+            GuideLine("", styles.guideBody, "  그림이 없던 none 카드에 이미지경로를 적으면 custom으로 올리고 결과에서 알려 드립니다"),
+            GuideLine("", styles.guideBody, "  (앱에서 그림을 붙일 때와 같은 동작입니다). 그 밖의 모드는 적어 넣은 경로보다 모드가 우선합니다."),
             // 캐릭터 시트 아홉 장 전부에 파란(편집 가능) 열로 있고 가져오기가 실제로 읽는데,
             // 안내에는 한 줄도 없었다 — 바로 위 '이미지경로'는 다섯 줄을 쓰는 그 자리에서다.
             // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.
@@ -1071,8 +1079,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
             GuideLine("", styles.guideBody, "• 단, 참조 코드 열은 이름이 겹칠 때 직접 채워 대상을 확정할 수 있습니다 (코드가 이름보다 우선)."),
-            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력 소속'·'세력 관계' 시트의 세력코드 열에"),
-            GuideLine("", styles.guideBody, "  '세력' 시트의 코드 값을 붙여넣으세요. (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
+            // 종전에는 두 시트를 묶어 *"세력코드 열"*이라 적었는데 **'세력 관계'에는 그런 열이
+            // 없다** — 그 시트의 코드 열은 `세력1코드`·`세력2코드` 둘이다(`factionRelationshipSpec`).
+            // 지난 판의 *"'이미지' 시트의 이미지경로"*와 같은 부류다.
+            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력' 시트의 코드 값을 코드 열에 붙여넣으세요 —"),
+            GuideLine("", styles.guideBody, "  '세력 소속'은 '세력코드', '세력 관계'는 '세력1코드'·'세력2코드'입니다."),
+            GuideLine("", styles.guideBody, "  (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
             GuideLine("", styles.guideBody, "• 사건 연표/상태변화/관계 변화 시트에도 코드 열이 있습니다. 지우지 마세요 —"),
             GuideLine("", styles.guideBody, "  설명·연도·값을 편집해도 같은 항목으로 인식하는 기준입니다. (구버전 파일도 계속 가져올 수 있습니다)"),
             GuideLine("", styles.guideBody, ""),
@@ -1082,6 +1094,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  쉼표 구분(연인, 라이벌 / 연인=#E91E63)으로 적어도 해석하지만 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
+            // '표준연도'는 나이 ↔ 출생연도 연동의 기준점이라 **고치면 캐스트의 나이가 다시 셈해진다.**
+            // 결과를 바꾸는 칸인데 안내에 한 줄도 없었다.
+            GuideLine("", styles.guideBody, "  '표준연도'는 그 작품의 '지금'입니다 — 나이 = 표준연도 − 출생연도로 이어져,"),
+            GuideLine("", styles.guideBody, "  고치면 연동을 켠 캐릭터의 나이(또는 출생연도)가 함께 다시 셈해집니다. 비우면 연동이 쉽니다"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
             GuideLine("", styles.guideBody, "  'AI추천'(Y/개별만/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
             GuideLine("", styles.guideBody, "  (Y=일괄 추천과 ✨ 모두, 개별만=✨ 버튼으로 요청할 때만, N=AI가 건드리지 않음)"),
@@ -1090,6 +1106,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 등급 체계: 한 행이 등급 하나입니다. 세계관+체계명(코드 우선)으로 묶어 같은 체계로 인식합니다"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
+            // 둘 다 파란(편집 가능) 열이고 화면을 바꾸는데 안내에 없었다.
+            GuideLine("", styles.guideBody, "  '역법'은 그 연도를 세는 달력 이름입니다 — 아무 이름이나 쓸 수 있고, 통계가 역법별로 나눠 셉니다"),
+            GuideLine("", styles.guideBody, "  '임시배치' Y는 자리만 잡아 둔 사건이라는 표시입니다(연표에서 📌와 흐린 배경으로 보입니다)"),
             GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
             GuideLine("", styles.guideBody, "  (생성일이 남아 있으면 이름만 바꿔도 같은 템플릿으로 인식합니다)"),
             GuideLine("", styles.guideBody, "• 검색 프리셋: 이름으로 매칭. 정렬모드는 ${SearchPreset.SORT_MODES.joinToString("/")} 만 인식하며,"),
@@ -1102,6 +1121,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
             GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
+            // 두 값의 결과가 다른데(자동 관계를 지우는가 / 유형만 바꾸는가) 안내에 없었다.
+            GuideLine("", styles.guideBody, "  '탈퇴유형'은 나간 방식입니다: 순수제거=그 세력의 자동 관계까지 지움,"),
+            GuideLine("", styles.guideBody, "  설정상탈퇴=관계를 남기고 '탈퇴후관계유형'(비우면 '전 <자동관계유형>')로 바꿈. 빈 칸이면 아직 소속 중입니다"),
             // 형제인 '캐릭터 관계'는 행의 '코드' 열이 있어 유형을 고쳐도 같은 관계로 인식하는데
             // (바로 위 두 줄), **'세력 관계'에는 그 열이 없다** — 자연키가 (세력1, 세력2, 유형)이라
             // 유형을 고치면 새 관계가 되고 옛 관계가 남는다. 같은 위험인데 경고가 한쪽에만 있었다.
@@ -1115,6 +1137,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  링크그룹은 같은 문자열을 적은 행끼리 한 묶음이 됩니다 — 아무 이름이나 써도 되고, 두 장 이상일 때만 묶입니다"),
             GuideLine("", styles.guideBody, "  칸을 비우면 그 이미지의 링크가 풀립니다. 'char:'로 시작하는 값은 캐릭터 자동 링크라"),
             GuideLine("", styles.guideBody, "  가져온 뒤 현재 배정 기준으로 다시 계산됩니다 (직접 적을 필요가 없습니다)"),
+            // 그 토큰의 숫자는 앱 안의 id라 파일만으로는 누구인지 알 길이 없었다 — 이름 열을
+            // 곁에 세우고 여기서 그 자리를 말한다.
+            GuideLine("", styles.guideBody, "  그 토큰이 누구인지는 옆의 회색 '링크 캐릭터' 칸이 이름으로 알려 줍니다(앱이 채우는 열)."),
             GuideLine("", styles.guideBody, "  '뗀날짜' 칸을 비우면 뗀 이미지 서랍에서 꺼냅니다(뗀 적 없음이 됩니다). '뗀곳'은 앱이 채우는 열입니다"),
             // 이 시트가 라이브러리 표만 싣던 동안, 태그·묶음이 아직 없는 그림(=그림이 한 장뿐인
             // 캐릭터의 그림)은 행 자체가 없어 엑셀에서 손댈 길이 없었다 — 그 사실을 알 방법도
@@ -1124,6 +1149,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  태그나 링크그룹을 적는 순간 그 그림이 라이브러리 관리로 들어옵니다."),
             GuideLine("", styles.guideBody, "• 대결 기록: 승자 칸은 참가자 이름(또는 코드)입니다. 비우거나 '${DuelSheetLabels.WINNER_DRAW}'이라 적으면 무승부입니다"),
             GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
+            GuideLine("", styles.guideBody, "  '묶음'은 한 화면이 한 번에 낸 판들을 잇는 값입니다 — 같은 글자를 든 행끼리 함께 되돌아갑니다. 비우면 단독 판입니다"),
             GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
             GuideLine("", styles.guideBody, "  종류는 '${DuelSheetLabels.KIND_COUNTER}'/'${DuelSheetLabels.KIND_UNDECIDED}' 중 하나입니다"),
             GuideLine("", styles.guideBody, ""),
@@ -1205,8 +1231,13 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 가져오기 결과에서 경고/오류 내역을 확인할 수 있습니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'캐릭터 필드값' 시트", styles.guideSection, ""),
-            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 세계관의 필드만 열로 만듭니다. 미분류 캐릭터의 필드값이나"),
-            GuideLine("", styles.guideBody, "  다른 세계관 필드를 가리키는 잔여 값은 이 시트가 **유일한 보관처**입니다."),
+            // 종전에는 *"미분류 캐릭터의 필드값 … 은 이 시트가 유일한 보관처"*라 적었는데,
+            // B-119 확장이 무소속에 전역 구역 필드를 준 뒤로 **'미분류 캐릭터' 시트가 그 값을
+            // 열로 싣는다**(`ExcelExporter.exportCharacters`의 그 갈래). 실측(2026.08.24
+            // 사용자 파일): 미분류 두 명의 값 18·16칸이 그 시트에 있고 '캐릭터 필드값' 시트는
+            // 아예 없었다 — 안내대로 읽으면 **데이터가 안 실렸다고 결론난다.**
+            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 필드만 열로 만듭니다(미분류 시트는 전역 필드가 그 열입니다)."),
+            GuideLine("", styles.guideBody, "  그 열로 담기지 못한 잔여 값 — 다른 세계관 필드를 가리키는 값 — 은 이 시트가 **유일한 보관처**입니다."),
             GuideLine("", styles.guideBody, "• 정체성은 캐릭터코드 + 세계관 + 필드키입니다 — 이 열들을 수정하면 값이 다른 곳에 붙습니다."),
             GuideLine("", styles.guideBody, "• '값' 칸을 비우면 그 값이 삭제됩니다. 행을 지워도 값은 지워지지 않습니다(업서트 전용)."),
             GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
@@ -1216,6 +1247,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 담을 값이 없으면 시트 자체가 만들어지지 않습니다(정상입니다)."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'작품 필드값'·'사건 필드값' 시트", styles.guideSection, ""),
+            // 그 두 시트의 필드 열은 머리가 `필드:이름` 꼴인데, 그 접두를 어디서도 말하지 않았다 —
+            // 새 필드 열을 손으로 세우려는 사용자는 그 규칙을 알 길이 없다.
+            GuideLine("", styles.guideBody, "• 작품·연표 시트의 필드 열은 머리가 '필드:'로 시작합니다(예: 필드:장소)."),
+            GuideLine("", styles.guideBody, "  같은 이름의 필드가 여러 세계관에 있으면 '필드:이름(세계관명)'으로 갈라 적습니다."),
             GuideLine("", styles.guideBody, "• 작품·연표 시트는 모든 세계관의 필드를 열로 싣습니다. 열 이름이 맞으면 다른 세계관의"),
             GuideLine("", styles.guideBody, "  필드여도 값이 그대로 되돌아옵니다 — 세계관을 옮긴 뒤 남은 값도 유실되지 않습니다."),
             GuideLine("", styles.guideBody, "• 같은 이름의 필드가 한 구역에 둘 있으면 열이 하나만 서므로, 나머지 값이 이 시트로 옵니다."),
@@ -1303,10 +1338,14 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  ('프로필필드'는 견주지 않는 칸이라 ▼가 뜻을 갖지 않습니다.)"),
             GuideLine("", styles.guideBody, "• 캐릭터 표의 열도 sys:이름으로 적을 수 있습니다. 예) sys:another_name(이명)"),
             GuideLine("", styles.guideBody, "  앱이 모르는 sys: 이름은 값이 영영 비므로 가져오기 결과에서 알려 드립니다."),
+            GuideLine("", styles.guideBody, "• '기준축' Y는 대표·정리의 기준으로 쓸 축입니다 — 그 순위가 대표 이미지 추첨의 가중치와"),
+            GuideLine("", styles.guideBody, "  걸러낼 후보 제안을 정합니다. 세계관당 하나뿐이라, 여럿에 Y를 적으면 마지막 행이 켜집니다."),
+            GuideLine("", styles.guideBody, "• '후보필터(JSON)'는 그 축에 올릴 대상을 좁히는 조건입니다. 비우면 전부입니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
-            GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다.")
+            GuideLine("", styles.guideBody, "• 작품의 '테두리상속' Y는 테두리색이 빈 칸일 때 세계관 색을 쓰겠다는 뜻입니다."),
+            GuideLine("", styles.guideBody, "  그 칸에 색을 적으면 상속 여부와 상관없이 적은 색이 보입니다.")
         )
 
         // 구조(P-7): A열은 좁은 견본·섹션 열, B열 하나가 본문이다 — 종전에는 본문이 A열에 들어가고
@@ -1397,10 +1436,18 @@ class ExcelExporter(context: Context) {
             universeMap.mapValues { (_, u) -> u.name }
         )
         val novelFieldColumns = novelFieldPlan.columns
-        val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
+        val allNovelFieldValues = db.novelFieldValueDao().getAllValuesList()
+        val novelFieldValuesByNovel = allNovelFieldValues.groupBy { it.novelId }
 
         // 계획의 (필드, 머리) 쌍을 그대로 넘긴다 — 드롭다운 판정에 필드가 필요하다.
-        val spec = novelSpec(universes.map { it.name }, novelFieldColumns)
+        // **쓰이는 값도 함께 넘긴다** — 목록이 자기 시트의 값을 모르면 되돌리기가 막힌다(R-33 계열).
+        val spec = novelSpec(
+            universes.map { it.name }, novelFieldColumns,
+            fieldValuesInUse = dropdownValuesInUse(
+                novelFieldColumns.map { it.first },
+                allNovelFieldValues.map { it.fieldDefinitionId to it.value }
+            )
+        )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -2006,7 +2053,27 @@ class ExcelExporter(context: Context) {
         sheetOwnerOf: String? = null
     ) {
         val novelTitles = novelMap.values.map { it.title }.distinct()
-        val spec = characterSpec(fields, novelTitles)
+        // 이 시트가 실제로 싣는 값 — `resolvedValues`가 셀에 들어갈 표시값 그대로다.
+        // 드롭다운이 **자기 시트의 값**을 담게 하는 재료이고, 셀 루프가 쓰는 것과 같은 표라
+        // 목록과 셀이 갈릴 수 없다.
+        //
+        // **목록이 서는 필드만 모은다.** 전부 모으면 열린 값 집합(TEXT·MULTI_TEXT·메모성 글)까지
+        // 캐릭터 수만큼 집합에 쌓이는데, 그 값들은 어디서도 읽히지 않는다 — 목표 규모
+        // (캐릭터 6,420 · 필드 수십)에서 그것이 곧 내보내기 한 번의 순수 낭비다.
+        // 판정은 목록을 짓는 그 함수가 든다(여기서 타입을 다시 적으면 새 타입에서 갈린다).
+        val dropdownFieldIds = fields.filter { customFieldDropdownOptions(it) != null }
+            .mapTo(HashSet()) { it.id }
+        val valuesInUse = HashMap<Long, MutableSet<String>>()
+        if (dropdownFieldIds.isNotEmpty()) {
+            for (byField in resolvedValues.values) {
+                for ((fieldId, value) in byField) {
+                    if (fieldId in dropdownFieldIds && value.isNotBlank()) {
+                        valuesInUse.getOrPut(fieldId) { HashSet() }.add(value)
+                    }
+                }
+            }
+        }
+        val spec = characterSpec(fields, novelTitles, valuesInUse)
         // 열 머리를 만든 계획 — 아래 셀 루프가 이것을 돈다(spec의 열과 같은 목록이다).
         val columnPlan = CharacterFieldHeaders.plan(fields)
         val sheetName = assignSheetName(sheetLabel, usedSheetNames, ownerOf = sheetOwnerOf)
@@ -2101,16 +2168,23 @@ class ExcelExporter(context: Context) {
         )
         val eventFieldColumns = eventFieldPlan.columns
 
+        val allEventFieldValues = db.eventFieldValueDao().getAllValuesList()
+
         val spec = timelineSpec(
             novels.map { it.title },
             eventFieldColumns,
-            universesById.values.map { it.name }
+            universesById.values.map { it.name },
+            // 쓰이는 값도 재료다 — 작품·캐릭터 시트와 같은 규약(그 함수의 KDoc).
+            fieldValuesInUse = dropdownValuesInUse(
+                eventFieldColumns.map { it.first },
+                allEventFieldValues.map { it.fieldDefinitionId to it.value }
+            )
         )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        val eventFieldValuesByEvent = db.eventFieldValueDao().getAllValuesList().groupBy { it.eventId }
+        val eventFieldValuesByEvent = allEventFieldValues.groupBy { it.eventId }
 
         // Batch load all cross-refs and characters to avoid N+1 queries
         val allCrossRefs = db.timelineDao().getAllCrossRefs()
@@ -2316,6 +2390,26 @@ class ExcelExporter(context: Context) {
         applySpecFormatting(sheet, spec, allRows.size)
     }
 
+    /**
+     * 필드 id → 그 열에 실리는 값들 — **드롭다운이 서는 필드만** 모은다(작품·연표 공용).
+     *
+     * 목록 없는 필드까지 모으면 어디서도 안 읽히는 집합을 값 수만큼 쌓는다. 어느 필드에
+     * 목록이 서는가는 [customFieldDropdownOptions]가 답한다 — 여기서 타입을 다시 적으면
+     * 새 타입이 늘 때 두 자리가 갈린다.
+     */
+    private fun dropdownValuesInUse(
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        values: List<Pair<Long, String>>
+    ): Map<Long, Set<String>> {
+        val ids = fields.filter { customFieldDropdownOptions(it) != null }.mapTo(HashSet()) { it.id }
+        if (ids.isEmpty()) return emptyMap()
+        val out = HashMap<Long, MutableSet<String>>()
+        for ((fieldId, value) in values) {
+            if (fieldId in ids && value.isNotBlank()) out.getOrPut(fieldId) { HashSet() }.add(value)
+        }
+        return out
+    }
+
     // ── 캐릭터 관계 ──
 
     private suspend fun exportRelationships(workbook: Workbook, usedSheetNames: MutableSet<String>) {
@@ -2422,6 +2516,8 @@ class ExcelExporter(context: Context) {
         val metas = db.imageMetaDao().getAllList()
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
         val metaByPath = metas.associateBy { it.path }
+        // `char:<id>` 토큰을 사람이 읽는 이름으로 옮길 표 — 행마다 묻지 않는다(1,400행 규모).
+        val charNameById = db.characterDao().getAllCharactersList().associate { it.id to it.name }
 
         // **라이브러리 표만 실으면 그림이 한 장뿐인 캐릭터의 그림이 통째로 빠진다** —
         // 근거·실측은 [ImageSheetRows]의 머리말.
@@ -2453,11 +2549,17 @@ class ExcelExporter(context: Context) {
             // 태그를 적는 순간 비로소 라이브러리에 편입된다.
             row.createCell(1).setTextSafe(meta?.let { tagsByImage[it.id]?.let { t -> joinCsv(t) } } ?: "")
             row.createCell(2).setTextSafe(meta?.linkGroupId ?: "")
+            // 자동 링크 토큰이 가리키는 캐릭터의 이름 — 읽기 전용(그 열의 근거는 spec).
+            // 수동 묶음(UUID)은 캐릭터가 없으므로 빈칸이다.
+            row.createCell(3).setTextSafe(
+                com.novelcharacter.app.util.AutoLinkPlanner.characterIdOf(meta?.linkGroupId)
+                    ?.let { charNameById[it] } ?: ""
+            )
             // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
             // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
             // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
-            meta?.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
-            row.createCell(4).setTextSafe(meta?.detachedFromCode ?: "")
+            meta?.detachedAt?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setTextSafe(meta?.detachedFromCode ?: "")
             finishDataRow(row, spec, banded = rows.size < BANDING_ROW_LIMIT)
         }
 

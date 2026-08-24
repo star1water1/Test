@@ -2592,6 +2592,9 @@
     <string name="assistant_death_title">사망연도가 출생보다 앞선 캐릭터 %1$d명</string>
     <string name="assistant_death_detail_one">%1$s — 출생 %2$d년, 사망 %3$d년으로 사망이 출생보다 앞섭니다. 둘 중 하나가 오타일 수 있습니다.</string>
     <string name="assistant_death_detail_many">%1$s 외 %2$d명 — 사망연도가 출생연도보다 앞섭니다. 카드를 눌러 확인하세요.</string>
+    <string name="assistant_event_year_title">연표 연도가 캐릭터와 다른 곳 %1$d건</string>
+    <string name="assistant_event_year_detail_one">%1$s — 연표는 %2$d년, 캐릭터는 %3$d년입니다. 같은 일을 두 자리에 적어 둔 것이라 한쪽이 오타입니다.</string>
+    <string name="assistant_event_year_detail_many">%1$s 외 %2$d건 — 연표의 탄생·사망 연도가 캐릭터의 출생·사망연도와 다릅니다. 카드를 눌러 확인하세요.</string>
     <string name="assistant_death_action">확인하기</string>
 
     <!-- 데이터 건강 제안 -->
@@ -2671,6 +2674,7 @@
     <string name="assistant_sort_created">생성순</string>
     <string name="assistant_affected_age_subtitle">표준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
     <string name="assistant_affected_death_subtitle">출생 %1$d · 사망 %2$d</string>
+    <string name="assistant_affected_event_year_subtitle">연표 %1$d · 캐릭터 %2$d</string>
     <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (표준연도 %2$d년)</string>
     <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했습니다</string>
     <string name="assistant_dismissed">숨겼습니다</string>

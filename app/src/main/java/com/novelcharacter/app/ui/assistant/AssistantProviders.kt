@@ -161,6 +161,48 @@ class ConsistencyProvider : InsightProvider {
             )
         }
 
+        // 연표의 탄생·사망 연도 ↔ 캐릭터의 출생·사망연도. 두 숫자는 같은 사실인데 갈리면
+        // **앱이 그것을 말하는 자리가 없었다**(실측 2026.08.24 사용자 파일: 연표 한 행이
+        // 두 캐릭터의 탄생을 1303년이라 적고 그 둘의 출생연도는 1301년이었다).
+        // 어느 쪽이 옳은지 알 수 없어 형제(사망<출생)와 같이 **열기 전용**이다.
+        val eventYears = ctx.consistency.eventYearMismatches
+        if (eventYears.isNotEmpty()) {
+            val first = eventYears.first()
+            val detail = if (eventYears.size == 1) {
+                res.getString(
+                    R.string.assistant_event_year_detail_one,
+                    first.characterName, first.eventYear, first.characterYear
+                )
+            } else {
+                res.getString(
+                    R.string.assistant_event_year_detail_many,
+                    first.characterName, eventYears.size - 1
+                )
+            }
+            val affected = eventYears.sortedBy { it.characterName }.map {
+                AffectedRow(
+                    characterId = it.characterId,
+                    name = it.characterName,
+                    subtitle = res.getString(
+                        R.string.assistant_affected_event_year_subtitle, it.eventYear, it.characterYear
+                    ),
+                    imagePath = rowImage(charById[it.characterId], ctx.imageSeed),
+                    updatedAt = charById[it.characterId]?.updatedAt
+                )
+            }
+            out.add(
+                aggregateCard(
+                    res, "consistency_event_year", category, InsightSeverity.CONSISTENCY,
+                    res.getString(R.string.assistant_event_year_title, eventYears.size), detail, affected,
+                    singlePrimary = InsightAction.Navigate(
+                        R.id.characterDetailFragment, first.characterId,
+                        res.getString(R.string.assistant_action_check)
+                    ),
+                    resurfaceValue = affectedSignature(affected), resurfaceExact = true
+                )
+            )
+        }
+
         return out
     }
 }

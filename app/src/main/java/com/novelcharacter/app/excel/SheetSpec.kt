@@ -39,9 +39,16 @@ data class SheetSpec(
     /**
      * 틀 고정 열 수(시각 개편 V-6) — `createFreezePane(freezeCols, 1)`.
      * 행의 정체를 이루는 왼쪽 열들만 고정한다(캐릭터=이름, 전체 캐릭터=세계관·작품·이름).
-     * 0이면 종전과 같이 헤더 행만 고정된다.
+     * `0`은 *"고정할 정체 열이 없다"*는 **답**이지 기본값이 아니다.
+     *
+     * ⚠️ **기본값을 두지 않는다.** 종전에는 `= 0`이라 새 시트가 이 칸을 안 적으면 조용히
+     * 머리글만 고정됐고, **스물여덟 중 열넷이 그렇게 서 있었다**(실측 2026.08.24 사용자
+     * 파일: 열 16개짜리 '관계 변화', 12개짜리 '대결 축'·'목록 프리셋', 10개짜리 세력 셋…).
+     * 빠뜨렸다는 사실이 어디에도 안 적히므로 **빠뜨릴수록 결과가 깨끗해 보인다** — 규약 R-43이
+     * 말하는 *침묵하는 목록*의 모양이다. 여기서는 검사를 세우는 대신 **컴파일이 답을
+     * 강제하게** 한다(R-52와 같은 처방): 새 시트는 이 칸을 적지 않으면 서지 못한다.
      */
-    val freezeCols: Int = 0
+    val freezeCols: Int
 ) {
     val firstColumnHeader: String get() = columns.firstOrNull()?.header ?: ""
 
@@ -749,25 +756,71 @@ fun universeSpec() = SheetSpec(
  *
  * **`else`를 두지 않는다** — 타입이 늘면 여기가 컴파일을 깨서 답을 강제한다(B-55·R-52).
  */
-fun customFieldDropdownOptions(field: FieldDefinition): List<String>? = when (field.fieldType) {
-    FieldType.SELECT ->
-        FieldOptionParser.parseSelectOptions(field.config).takeIf { it.isNotEmpty() }
-    FieldType.GRADE ->
-        // **실효 표가 실제로 있을 때만** 싣는다 — `parseGradeOptions`의 C·B·A·S 폴백을
-        // 그대로 실으면 들이기가 받아들이는 것보다 **좁은** 목록이 걸려, 사용자가 쓰던
-        // 등급이 파일에서 거부당한다.
-        if (GradeSystemRef.gradesFromConfig(field.config).isNotEmpty()) {
-            FieldOptionParser.parseGradeOptions(field.config).takeIf { it.isNotEmpty() }
-        } else null
-    // 나머지는 값 집합이 열려 있어 목록을 세울 수 없다.
-    FieldType.TEXT, FieldType.MULTI_TEXT, FieldType.NUMBER,
-    FieldType.CALCULATED, FieldType.BODY_SIZE -> null
-    null -> null
+fun customFieldDropdownOptions(
+    field: FieldDefinition,
+    /**
+     * 이 파일이 그 열에 **실제로 싣는 값들**. 정의에 없는 값이 섞여 있을 수 있고, 그것이
+     * 이 인자가 있는 이유다 — 아래 [withValuesInUse]의 근거.
+     */
+    valuesInUse: Collection<String> = emptyList()
+): List<String>? {
+    val defined = when (field.fieldType) {
+        FieldType.SELECT ->
+            FieldOptionParser.parseSelectOptions(field.config).takeIf { it.isNotEmpty() }
+        FieldType.GRADE ->
+            // **실효 표가 실제로 있을 때만** 싣는다 — `parseGradeOptions`의 C·B·A·S 폴백을
+            // 그대로 실으면 들이기가 받아들이는 것보다 **좁은** 목록이 걸려, 사용자가 쓰던
+            // 등급이 파일에서 거부당한다.
+            if (GradeSystemRef.gradesFromConfig(field.config).isNotEmpty()) {
+                FieldOptionParser.parseGradeOptions(field.config).takeIf { it.isNotEmpty() }
+            } else null
+        // 나머지는 값 집합이 열려 있어 목록을 세울 수 없다.
+        FieldType.TEXT, FieldType.MULTI_TEXT, FieldType.NUMBER,
+        FieldType.CALCULATED, FieldType.BODY_SIZE -> null
+        null -> null
+    } ?: return null
+    return withValuesInUse(defined, valuesInUse)
+}
+
+/**
+ * 정의된 목록에 **그 시트에 실제로 실리는 값**을 이어 붙인다 — [RelationshipTypeOptions]가
+ * 관계 유형 두 열에 세운 그 규칙을, 필드 열에도 세운다.
+ *
+ * ## 왜 필요한가 — 목록이 자기 시트의 값을 모르면 안내가 거짓이 된다
+ *
+ * 유효성 검사는 `showError = true`로 실린다. 그래서 목록 밖 값이 담긴 칸을 사용자가 고쳤다가
+ * **원래 값으로 되돌리려 하면 엑셀이 막는다.** 관계 유형 두 열이 2026.08.24에 정확히 그
+ * 모양이었고(135행 중 87행이 자기 시트의 드롭다운 밖 값), 그때 처방을 그 두 열에만 세웠다.
+ *
+ * **SELECT·GRADE 열은 같은 성질인데 그대로 남아 있었다.** 목록 밖 값은 지금도 생긴다 —
+ * 안내 시트가 스스로 그 경로를 적어 둔다: *"체계에서 등급 행을 지우면 참조 필드의 그 등급도
+ * 빠집니다. **캐릭터에 저장된 값은 지워지지 않고 해석만 빠집니다.**"* SELECT도 같다(선택지를
+ * 지우거나 이름을 바꿔도 저장된 값은 남는다). 옛 파일로 들여온 값도 같은 자리에 온다.
+ *
+ * **좁히는 것이 아니라 넓히는 쪽이다** — 정의된 선택지는 차례까지 그대로 두고, 그 밖에
+ * 실리는 값만 뒤에 사전순으로 붙인다. 목록이 길어져도 개수 한도는 없다
+ * ([DropdownListLimits]가 숨김 시트 범위 참조로 옮겨 싣는다).
+ *
+ * **없던 목록을 만들지는 않는다** — [customFieldDropdownOptions]가 `null`을 돌려주는 타입
+ * (열린 값 집합)과 실효 등급표가 없는 GRADE는 여기 오지 않는다. 쓰이는 값만으로 목록을 세우면
+ * *들이기가 받아들이는 것보다 좁은* 목록이 되어, 그 함수가 이미 피한 함정에 다시 빠진다.
+ */
+private fun withValuesInUse(defined: List<String>, valuesInUse: Collection<String>): List<String> {
+    if (valuesInUse.isEmpty()) return defined
+    val taken = defined.toHashSet()
+    val extra = valuesInUse
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it !in taken }
+        .distinct()
+        .sorted()
+    return if (extra.isEmpty()) defined else defined + extra
 }
 
 fun novelSpec(
     universeNames: List<String>,
-    novelFieldColumns: List<Pair<FieldDefinition, String>> = emptyList()
+    novelFieldColumns: List<Pair<FieldDefinition, String>> = emptyList(),
+    /** 필드 id → 이 시트에 실리는 값들 — 드롭다운이 자기 시트의 값을 알게 한다([withValuesInUse]). */
+    fieldValuesInUse: Map<Long, Set<String>> = emptyMap()
 ) = SheetSpec(
     sheetName = "작품",
     freezeCols = 1,
@@ -789,7 +842,11 @@ fun novelSpec(
         ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
     ) + novelFieldColumns.map { (field, header) ->
         // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (확-3 · R-18)
-        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+        ColumnSpec(
+            header,
+            dropdownOptions = customFieldDropdownOptions(field, fieldValuesInUse[field.id].orEmpty()),
+            width = 6000
+        )
     }
 )
 
@@ -960,6 +1017,7 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
  */
 fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "작품 필드값",
+    freezeCols = 2,  // 작품코드·작품제목 — 오른쪽으로 넘겨도 행의 주인이 보인다 (V-6)
     columns = listOf(
         ColumnSpec("작품코드", required = true, readOnly = true, width = 4000),
         ColumnSpec("작품제목", readOnly = true, width = 8000),
@@ -980,6 +1038,7 @@ fun novelFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
  */
 fun eventFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "사건 필드값",
+    freezeCols = 2,  // 사건코드·사건설명 (V-6)
     columns = listOf(
         ColumnSpec("사건코드", required = true, readOnly = true, width = 4000),
         ColumnSpec("사건설명", readOnly = true, width = 10000),
@@ -1080,6 +1139,7 @@ object DuelSheetLabels {
  */
 fun duelAxisSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 축",
+    freezeCols = 1,  // 축이름 (V-6)
     columns = listOf(
         ColumnSpec("축이름", required = true, width = 6000),
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
@@ -1133,6 +1193,7 @@ fun duelMatchSpec(axisNames: List<String> = emptyList()) = SheetSpec(
  */
 fun duelVerdictSpec(axisNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "대결 상성",
+    freezeCols = 1,  // 축 — 형제 시트(대결 기록)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("축", required = true, dropdownOptions = axisNames.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("축코드", readOnly = true, width = 4000),
@@ -1145,7 +1206,12 @@ fun duelVerdictSpec(axisNames: List<String> = emptyList()) = SheetSpec(
     )
 )
 
-fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = SheetSpec(
+fun characterSpec(
+    fields: List<FieldDefinition>,
+    novelTitles: List<String>,
+    /** 필드 id → 이 시트에 실리는 값들 — 드롭다운이 자기 시트의 값을 알게 한다([withValuesInUse]). */
+    fieldValuesInUse: Map<Long, Set<String>> = emptyMap()
+) = SheetSpec(
     sheetName = "",  // Sheet name is set dynamically (universe name or "미분류 캐릭터")
     freezeCols = 1,  // 이름 열 — 오른쪽으로 스크롤해도 행의 주인이 보인다 (V-6)
     columns = buildList {
@@ -1160,7 +1226,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         for ((field, headerName) in CharacterFieldHeaders.plan(fields).columns) {
             // 파싱은 앱의 단일 소스에 맡긴다 — 종전에는 이 자리만 `org.json`으로 다시 읽어
             // 규칙이 두 벌이었다(형제 시트와도 갈렸다).
-            val options = customFieldDropdownOptions(field)
+            val options = customFieldDropdownOptions(field, fieldValuesInUse[field.id].orEmpty())
             val multiToken = FieldValueTokenizer.isMultiToken(field)
             add(ColumnSpec(
                 headerName,
@@ -1238,7 +1304,9 @@ fun allCharactersSpec(
 fun timelineSpec(
     novelTitles: List<String>,
     eventFieldColumns: List<Pair<FieldDefinition, String>> = emptyList(),
-    universeNames: List<String> = emptyList()
+    universeNames: List<String> = emptyList(),
+    /** 필드 id → 이 시트에 실리는 값들 — 드롭다운이 자기 시트의 값을 알게 한다([withValuesInUse]). */
+    fieldValuesInUse: Map<Long, Set<String>> = emptyMap()
 ) = SheetSpec(
     sheetName = "사건 연표",
     freezeCols = 1,
@@ -1264,7 +1332,11 @@ fun timelineSpec(
         ColumnSpec("세계관코드", readOnly = true, width = 4000)
     ) + eventFieldColumns.map { (field, header) ->
         // 캐릭터 시트와 **같은 함수**로 드롭다운을 정한다 (B-10 · R-18)
-        ColumnSpec(header, dropdownOptions = customFieldDropdownOptions(field), width = 6000)
+        ColumnSpec(
+            header,
+            dropdownOptions = customFieldDropdownOptions(field, fieldValuesInUse[field.id].orEmpty()),
+            width = 6000
+        )
     }
 )
 
@@ -1346,6 +1418,7 @@ fun relationshipSpec(
 
 fun relationshipChangeSpec() = SheetSpec(
     sheetName = "관계 변화",
+    freezeCols = 2,  // 캐릭터1·캐릭터2 — 형제 시트(캐릭터 관계)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
         ColumnSpec("캐릭터2", required = true, width = 6000),
@@ -1374,6 +1447,7 @@ fun relationshipChangeSpec() = SheetSpec(
 
 fun nameBankSpec() = SheetSpec(
     sheetName = "이름 은행",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 5000),
         ColumnSpec("성별", width = 3000),
@@ -1390,6 +1464,7 @@ fun nameBankSpec() = SheetSpec(
 
 fun userPresetTemplateSpec() = SheetSpec(
     sheetName = "필드 템플릿",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("설명", width = 15000, wrap = true),
@@ -1406,6 +1481,7 @@ fun userPresetTemplateSpec() = SheetSpec(
  */
 fun characterListPresetSpec() = SheetSpec(
     sheetName = "목록 프리셋",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("태그(JSON)", width = 10000),
@@ -1428,6 +1504,7 @@ fun characterListPresetSpec() = SheetSpec(
 
 fun searchPresetSpec() = SheetSpec(
     sheetName = "검색 프리셋",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("검색어", width = 10000),
@@ -1442,6 +1519,7 @@ fun searchPresetSpec() = SheetSpec(
 
 fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "세력",
+    freezeCols = 1,  // 이름 (V-6)
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
@@ -1458,6 +1536,7 @@ fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
 
 fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
     sheetName = "세력 소속",
+    freezeCols = 2,  // 세력·캐릭터 — 이 둘이 행의 정체다 (V-6)
     columns = listOf(
         ColumnSpec("세력", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("캐릭터", required = true, width = 8000),
@@ -1478,6 +1557,7 @@ fun factionRelationshipSpec(
     relationshipTypes: List<String> = Universe.DEFAULT_RELATIONSHIP_TYPES
 ) = SheetSpec(
     sheetName = "세력 관계",
+    freezeCols = 2,  // 세력1·세력2 — 형제 시트(캐릭터 관계)와 같은 자리 (V-6)
     columns = listOf(
         ColumnSpec("세력1", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("세력2", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
@@ -1508,6 +1588,7 @@ fun factionRelationshipSpec(
  */
 fun appSettingsSpec() = SheetSpec(
     sheetName = "앱 설정",
+    freezeCols = 1,  // 설정키 (V-6)
     columns = listOf(
         ColumnSpec("설정키", required = true, width = 8000),
         // AI 메시지 양식이 여러 줄이라 wrap을 켠다 — 안 켜면 셀을 열기 전에는 첫 줄만 보인다.
@@ -1534,6 +1615,7 @@ const val IMAGE_SHEET_IDENTITY_COLUMN = "파일명"
 
 fun imageMetaSpec() = SheetSpec(
     sheetName = "이미지",
+    freezeCols = 1,  // 파일명 — 그 행의 정체다 (V-6)
     columns = listOf(
         ColumnSpec(IMAGE_SHEET_IDENTITY_COLUMN, required = true, readOnly = true, width = 10000),
         ColumnSpec("태그", width = 10000),
@@ -1541,6 +1623,15 @@ fun imageMetaSpec() = SheetSpec(
         // 열"로 읽혀 아무도 손대지 않는다. 여는 이상 규약도 태그 열과 같아야 한다:
         // 열이 없으면 기존 유지, 열이 있고 빈칸이면 해제(설계 9장 C-3).
         ColumnSpec("링크그룹", width = 9000),
+        // **`char:` 토큰이 누구인지 파일 안에서 읽을 수 있게 한다.** 자동 링크 토큰은
+        // `char:<캐릭터 내부 id>`인데(`AutoLinkPlanner.AUTO_TOKEN_PREFIX`), 이 워크북의 다른
+        // 참조는 전부 16자리 코드라 **그 숫자를 캐릭터로 되짚을 길이 파일 어디에도 없었다**
+        // (실측 2026.08.24 사용자 파일: 1,443행 중 1,437행이 `char:273` 꼴이다).
+        //
+        // 토큰 자체는 그대로 둔다 — 자동 링크 엔진의 불변식이고, 표기를 바꾸면 그 엔진과
+        // DAO 질의까지 함께 옮겨야 한다. 대신 **읽기 전용 이름 열**을 곁에 세운다.
+        // 형제 시트가 이미 쓰는 관용구다('이름 은행'의 사용 캐릭터 · '작품 필드값'의 작품제목).
+        ColumnSpec("링크 캐릭터", readOnly = true, width = 6000),
         // 뗀 이미지 서랍(B-107 D1) — **빈칸 = 뗀 적 없음**이라 열 하나가 값과 상태를 겸한다.
         // 편집 가능한 이유는 서랍을 엑셀에서도 비울 수 있어야 하기 때문이다(개발 의도 4번).
         // 규약은 태그·링크그룹과 같다: 열이 없으면 기존 유지, 열이 있고 빈칸이면 해제.
