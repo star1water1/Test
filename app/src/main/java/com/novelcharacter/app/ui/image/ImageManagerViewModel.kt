@@ -1324,8 +1324,12 @@ class ImageManagerViewModel(
                                 val wasEmpty = parsePaths(n.imagePaths).isEmpty()
                                 val (json, added, skipped) = appendPaths(n.imagePaths, expansion.allPaths, reportAppend)
                                 var updated = n.copy(imagePaths = json)
-                                if (n.imageMode == com.novelcharacter.app.data.model.Novel.IMAGE_MODE_NONE && wasEmpty && added > 0) {
-                                    updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Novel.IMAGE_MODE_CUSTOM)
+                                // 판정은 [CardImageAdoption]이 든다 — 엑셀 가져오기가 같은 일을
+                                // 하면서 이 규칙을 몰라 **아무 일도 안 일어났다**(그 KDoc).
+                                com.novelcharacter.app.util.CardImageAdoption.adoptedModeOrNull(
+                                    n.imageMode, hadImages = !wasEmpty, hasImages = !wasEmpty || added > 0
+                                )?.let { mode ->
+                                    updated = updated.copy(imageMode = mode)
                                     modeChanged = true
                                 }
                                 db.novelDao().update(updated)
@@ -1336,8 +1340,10 @@ class ImageManagerViewModel(
                                 val wasEmpty = parsePaths(u.imagePaths).isEmpty()
                                 val (json, added, skipped) = appendPaths(u.imagePaths, expansion.allPaths, reportAppend)
                                 var updated = u.copy(imagePaths = json)
-                                if (u.imageMode == com.novelcharacter.app.data.model.Universe.IMAGE_MODE_NONE && wasEmpty && added > 0) {
-                                    updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Universe.IMAGE_MODE_CUSTOM)
+                                com.novelcharacter.app.util.CardImageAdoption.adoptedModeOrNull(
+                                    u.imageMode, hadImages = !wasEmpty, hasImages = !wasEmpty || added > 0
+                                )?.let { mode ->
+                                    updated = updated.copy(imageMode = mode)
                                     modeChanged = true
                                 }
                                 db.universeDao().update(updated)

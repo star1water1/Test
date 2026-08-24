@@ -1030,6 +1030,14 @@ class ExcelExporter(context: Context) {
             // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
             // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
             GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
+            // **세계관·작품에는 '이미지모드'가 함께 걸린다** — 그 칸이 `custom`이 아니면 위 줄이
+            // 약속한 *"편집이 반영됩니다"*가 카드에서 참이 되지 않는데, 안내에 그 열이 한 줄도
+            // 없었다(실측 2026.08.24 사용자 파일: 세계관 8·작품 15가 전부 `custom`이 아니었다).
+            GuideLine("", styles.guideBody, "• 세계관·작품 카드는 '이미지모드'가 무엇을 보여 줄지 정합니다: custom=이 행의 이미지경로,"),
+            GuideLine("", styles.guideBody, "  random_character·select_character=소속 캐릭터의 그림(select는 '이미지캐릭터코드'로 지정),"),
+            GuideLine("", styles.guideBody, "  random_novel·select_novel=소속 작품의 그림(세계관 전용), none=안 보임."),
+            GuideLine("", styles.guideBody, "  그림이 없던 none 카드에 이미지경로를 적으면 custom으로 올리고 결과에서 알려 드립니다"),
+            GuideLine("", styles.guideBody, "  (앱에서 그림을 붙일 때와 같은 동작입니다). 그 밖의 모드는 적어 넣은 경로보다 모드가 우선합니다."),
             // 캐릭터 시트 아홉 장 전부에 파란(편집 가능) 열로 있고 가져오기가 실제로 읽는데,
             // 안내에는 한 줄도 없었다 — 바로 위 '이미지경로'는 다섯 줄을 쓰는 그 자리에서다.
             // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.

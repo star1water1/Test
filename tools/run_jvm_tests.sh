@@ -300,6 +300,7 @@ $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/DateValidation.kt
 $MAIN/util/BirthDateFormat.kt
+$MAIN/util/CardImageAdoption.kt
 $MAIN/util/BirthdayHelper.kt
 $MAIN/util/BirthdayCelebration.kt
 $MAIN/util/AiImageAttach.kt
@@ -428,6 +429,7 @@ $TEST/util/SemanticAlivePrecedenceTest.kt
 $TEST/util/ColorHexTest.kt
 $TEST/util/ColorHexNormalizeTest.kt
 $TEST/util/BirthDateFormatTest.kt
+$TEST/util/CardImageAdoptionTest.kt
 $TEST/util/CharacterNameIndexTest.kt
 $TEST/util/SingletonStateChangesTest.kt
 $TEST/util/RecordTimestampsTest.kt
