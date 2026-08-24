@@ -30,8 +30,9 @@ interface DuelMatchDao {
      * 읽는 양은 종전 루프가 읽던 것과 **같고**, 줄어드는 것은 질의 수뿐이다. 그래서 화면이
      * 이것으로 표 전체를 올릴 길이 없다(축 목록을 스스로 만들어 넘겨야 한다).
      *
-     * 쓰는 자리는 월드패키지 내보내기 하나다 — 종전에는 `axes.flatMap { getByAxis(it.id) }`라
-     * **축마다 질의 하나**였고 축 수에 상한이 없다.
+     * 쓰는 자리는 둘이다 — 월드패키지 내보내기와 `ImageZipHelper.collectDuelImagePaths`(이미지
+     * 축 참가자를 엑셀·백업의 "참조된 이미지" 집합에 합류시킨다, 2026.08.24). 종전에는
+     * `axes.flatMap { getByAxis(it.id) }`라 **축마다 질의 하나**였고 축 수에 상한이 없다.
      *
      * 조각을 이으면 `ORDER BY`가 경계에서 어긋나므로 **호출부가 다시 정렬한다** —
      * `WorldPackageDuels.toPortable`이 `(decidedAt, code)`로 자기 안에서 다시 세우므로
