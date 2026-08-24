@@ -1079,8 +1079,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
             GuideLine("", styles.guideBody, "• 단, 참조 코드 열은 이름이 겹칠 때 직접 채워 대상을 확정할 수 있습니다 (코드가 이름보다 우선)."),
-            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력 소속'·'세력 관계' 시트의 세력코드 열에"),
-            GuideLine("", styles.guideBody, "  '세력' 시트의 코드 값을 붙여넣으세요. (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
+            // 종전에는 두 시트를 묶어 *"세력코드 열"*이라 적었는데 **'세력 관계'에는 그런 열이
+            // 없다** — 그 시트의 코드 열은 `세력1코드`·`세력2코드` 둘이다(`factionRelationshipSpec`).
+            // 지난 판의 *"'이미지' 시트의 이미지경로"*와 같은 부류다.
+            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력' 시트의 코드 값을 코드 열에 붙여넣으세요 —"),
+            GuideLine("", styles.guideBody, "  '세력 소속'은 '세력코드', '세력 관계'는 '세력1코드'·'세력2코드'입니다."),
+            GuideLine("", styles.guideBody, "  (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
             GuideLine("", styles.guideBody, "• 사건 연표/상태변화/관계 변화 시트에도 코드 열이 있습니다. 지우지 마세요 —"),
             GuideLine("", styles.guideBody, "  설명·연도·값을 편집해도 같은 항목으로 인식하는 기준입니다. (구버전 파일도 계속 가져올 수 있습니다)"),
             GuideLine("", styles.guideBody, ""),
@@ -1090,6 +1094,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  쉼표 구분(연인, 라이벌 / 연인=#E91E63)으로 적어도 해석하지만 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
+            // '표준연도'는 나이 ↔ 출생연도 연동의 기준점이라 **고치면 캐스트의 나이가 다시 셈해진다.**
+            // 결과를 바꾸는 칸인데 안내에 한 줄도 없었다.
+            GuideLine("", styles.guideBody, "  '표준연도'는 그 작품의 '지금'입니다 — 나이 = 표준연도 − 출생연도로 이어져,"),
+            GuideLine("", styles.guideBody, "  고치면 연동을 켠 캐릭터의 나이(또는 출생연도)가 함께 다시 셈해집니다. 비우면 연동이 쉽니다"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
             GuideLine("", styles.guideBody, "  'AI추천'(Y/개별만/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
             GuideLine("", styles.guideBody, "  (Y=일괄 추천과 ✨ 모두, 개별만=✨ 버튼으로 요청할 때만, N=AI가 건드리지 않음)"),
@@ -1098,6 +1106,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 등급 체계: 한 행이 등급 하나입니다. 세계관+체계명(코드 우선)으로 묶어 같은 체계로 인식합니다"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
+            // 둘 다 파란(편집 가능) 열이고 화면을 바꾸는데 안내에 없었다.
+            GuideLine("", styles.guideBody, "  '역법'은 그 연도를 세는 달력 이름입니다 — 아무 이름이나 쓸 수 있고, 통계가 역법별로 나눠 셉니다"),
+            GuideLine("", styles.guideBody, "  '임시배치' Y는 자리만 잡아 둔 사건이라는 표시입니다(연표에서 📌와 흐린 배경으로 보입니다)"),
             GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
             GuideLine("", styles.guideBody, "  (생성일이 남아 있으면 이름만 바꿔도 같은 템플릿으로 인식합니다)"),
             GuideLine("", styles.guideBody, "• 검색 프리셋: 이름으로 매칭. 정렬모드는 ${SearchPreset.SORT_MODES.joinToString("/")} 만 인식하며,"),
@@ -1110,6 +1121,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
             GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
+            // 두 값의 결과가 다른데(자동 관계를 지우는가 / 유형만 바꾸는가) 안내에 없었다.
+            GuideLine("", styles.guideBody, "  '탈퇴유형'은 나간 방식입니다: 순수제거=그 세력의 자동 관계까지 지움,"),
+            GuideLine("", styles.guideBody, "  설정상탈퇴=관계를 남기고 '탈퇴후관계유형'(비우면 '전 <자동관계유형>')로 바꿈. 빈 칸이면 아직 소속 중입니다"),
             // 형제인 '캐릭터 관계'는 행의 '코드' 열이 있어 유형을 고쳐도 같은 관계로 인식하는데
             // (바로 위 두 줄), **'세력 관계'에는 그 열이 없다** — 자연키가 (세력1, 세력2, 유형)이라
             // 유형을 고치면 새 관계가 되고 옛 관계가 남는다. 같은 위험인데 경고가 한쪽에만 있었다.
@@ -1135,6 +1149,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  태그나 링크그룹을 적는 순간 그 그림이 라이브러리 관리로 들어옵니다."),
             GuideLine("", styles.guideBody, "• 대결 기록: 승자 칸은 참가자 이름(또는 코드)입니다. 비우거나 '${DuelSheetLabels.WINNER_DRAW}'이라 적으면 무승부입니다"),
             GuideLine("", styles.guideBody, "  두 참가자의 이름이 같으면 승자 칸에 코드를 적어 주세요. 행의 '코드' 칸은 그 판의 정체이니 지우지 마세요"),
+            GuideLine("", styles.guideBody, "  '묶음'은 한 화면이 한 번에 낸 판들을 잇는 값입니다 — 같은 글자를 든 행끼리 함께 되돌아갑니다. 비우면 단독 판입니다"),
             GuideLine("", styles.guideBody, "• 대결 상성: '참가자들'의 적힌 차례에 뜻이 있습니다(천적은 센 쪽이 앞, 순환은 이기는 차례)."),
             GuideLine("", styles.guideBody, "  종류는 '${DuelSheetLabels.KIND_COUNTER}'/'${DuelSheetLabels.KIND_UNDECIDED}' 중 하나입니다"),
             GuideLine("", styles.guideBody, ""),
@@ -1216,8 +1231,13 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 가져오기 결과에서 경고/오류 내역을 확인할 수 있습니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'캐릭터 필드값' 시트", styles.guideSection, ""),
-            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 세계관의 필드만 열로 만듭니다. 미분류 캐릭터의 필드값이나"),
-            GuideLine("", styles.guideBody, "  다른 세계관 필드를 가리키는 잔여 값은 이 시트가 **유일한 보관처**입니다."),
+            // 종전에는 *"미분류 캐릭터의 필드값 … 은 이 시트가 유일한 보관처"*라 적었는데,
+            // B-119 확장이 무소속에 전역 구역 필드를 준 뒤로 **'미분류 캐릭터' 시트가 그 값을
+            // 열로 싣는다**(`ExcelExporter.exportCharacters`의 그 갈래). 실측(2026.08.24
+            // 사용자 파일): 미분류 두 명의 값 18·16칸이 그 시트에 있고 '캐릭터 필드값' 시트는
+            // 아예 없었다 — 안내대로 읽으면 **데이터가 안 실렸다고 결론난다.**
+            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 필드만 열로 만듭니다(미분류 시트는 전역 필드가 그 열입니다)."),
+            GuideLine("", styles.guideBody, "  그 열로 담기지 못한 잔여 값 — 다른 세계관 필드를 가리키는 값 — 은 이 시트가 **유일한 보관처**입니다."),
             GuideLine("", styles.guideBody, "• 정체성은 캐릭터코드 + 세계관 + 필드키입니다 — 이 열들을 수정하면 값이 다른 곳에 붙습니다."),
             GuideLine("", styles.guideBody, "• '값' 칸을 비우면 그 값이 삭제됩니다. 행을 지워도 값은 지워지지 않습니다(업서트 전용)."),
             GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
@@ -1227,6 +1247,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 담을 값이 없으면 시트 자체가 만들어지지 않습니다(정상입니다)."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'작품 필드값'·'사건 필드값' 시트", styles.guideSection, ""),
+            // 그 두 시트의 필드 열은 머리가 `필드:이름` 꼴인데, 그 접두를 어디서도 말하지 않았다 —
+            // 새 필드 열을 손으로 세우려는 사용자는 그 규칙을 알 길이 없다.
+            GuideLine("", styles.guideBody, "• 작품·연표 시트의 필드 열은 머리가 '필드:'로 시작합니다(예: 필드:장소)."),
+            GuideLine("", styles.guideBody, "  같은 이름의 필드가 여러 세계관에 있으면 '필드:이름(세계관명)'으로 갈라 적습니다."),
             GuideLine("", styles.guideBody, "• 작품·연표 시트는 모든 세계관의 필드를 열로 싣습니다. 열 이름이 맞으면 다른 세계관의"),
             GuideLine("", styles.guideBody, "  필드여도 값이 그대로 되돌아옵니다 — 세계관을 옮긴 뒤 남은 값도 유실되지 않습니다."),
             GuideLine("", styles.guideBody, "• 같은 이름의 필드가 한 구역에 둘 있으면 열이 하나만 서므로, 나머지 값이 이 시트로 옵니다."),
@@ -1314,10 +1338,14 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  ('프로필필드'는 견주지 않는 칸이라 ▼가 뜻을 갖지 않습니다.)"),
             GuideLine("", styles.guideBody, "• 캐릭터 표의 열도 sys:이름으로 적을 수 있습니다. 예) sys:another_name(이명)"),
             GuideLine("", styles.guideBody, "  앱이 모르는 sys: 이름은 값이 영영 비므로 가져오기 결과에서 알려 드립니다."),
+            GuideLine("", styles.guideBody, "• '기준축' Y는 대표·정리의 기준으로 쓸 축입니다 — 그 순위가 대표 이미지 추첨의 가중치와"),
+            GuideLine("", styles.guideBody, "  걸러낼 후보 제안을 정합니다. 세계관당 하나뿐이라, 여럿에 Y를 적으면 마지막 행이 켜집니다."),
+            GuideLine("", styles.guideBody, "• '후보필터(JSON)'는 그 축에 올릴 대상을 좁히는 조건입니다. 비우면 전부입니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
-            GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다.")
+            GuideLine("", styles.guideBody, "• 작품의 '테두리상속' Y는 테두리색이 빈 칸일 때 세계관 색을 쓰겠다는 뜻입니다."),
+            GuideLine("", styles.guideBody, "  그 칸에 색을 적으면 상속 여부와 상관없이 적은 색이 보입니다.")
         )
 
         // 구조(P-7): A열은 좁은 견본·섹션 열, B열 하나가 본문이다 — 종전에는 본문이 A열에 들어가고
