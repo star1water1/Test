@@ -61,6 +61,17 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE `key` = :key AND entityType = :entityType")
     suspend fun getFieldsByKey(key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 
+    /**
+     * 새 필드의 순서 배정에 쓰는 현재 최댓값 — 없으면 null([FieldOrderAssignment]가 -1 취급).
+     * `NovelDao.getNextDisplayOrderInUniverse`와 같은 이유로 IS NULL 질의를 따로 둔다
+     * (전역 구역은 `= :universeId`로 못 잡는다).
+     */
+    @Query("SELECT MAX(displayOrder) FROM field_definitions WHERE universeId = :universeId AND entityType = :entityType")
+    suspend fun getMaxDisplayOrder(universeId: Long, entityType: String = FieldDefinition.ENTITY_CHARACTER): Int?
+
+    @Query("SELECT MAX(displayOrder) FROM field_definitions WHERE universeId IS NULL AND entityType = :entityType")
+    suspend fun getMaxDisplayOrderGlobal(entityType: String = FieldDefinition.ENTITY_CHARACTER): Int?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(field: FieldDefinition): Long
 

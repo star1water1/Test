@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.FieldDeleteScope
+import com.novelcharacter.app.util.FieldOrderAssignment
 import com.novelcharacter.app.util.SqlInChunks
 
 /**
@@ -218,11 +219,26 @@ class UniverseRepository(
      * 유니크 색인 `(universeId, entityType, key)`는 NULL끼리를 서로 다른 값으로 보므로
      * 그 구역에서는 아무것도 막지 않는다(B-230 ⓑ). 세계관 필드라면 색인이 잡아
      * `SQLiteConstraintException`이 뜨지만, 전역 구역에서는 **조용히 중복이 들어간다.**
+     *
+     * **새 필드(id == 0)는 순서를 여기서 매긴다** — 필드 관리·작품·사건 세 다이얼로그 모두
+     * `displayOrder`를 안 채운 채(기본 0) 필드를 만들어 넘기므로, 그대로 심으면 같은
+     * (세계관, 종류) 안의 기존 0번 필드와 겹친다. 판정은 [FieldOrderAssignment]가 순수하게
+     * 낸다 — 여기서는 그 판정에 넘길 현재 최댓값만 조회한다.
+     *
+     * **최댓값 조회와 삽입을 한 트랜잭션으로 묶는다** — [insertUniverse]·
+     * [com.novelcharacter.app.data.repository.NovelRepository.insertNovel]과 같은 "다음 순서
+     * 조회 후 삽입" 모양이라 같은 이유로 같은 처방을 쓴다. 트랜잭션이 없으면 같은 구역에
+     * 두 삽입이 겹칠 때 둘 다 같은 최댓값을 읽어 같은 순서를 받을 수 있다 — 이 함수가
+     * 고치려던 바로 그 겹침이 여기서 다시 생긴다(콜드 검토 2026.08.24).
      */
     // 전역키 보증(호출부 책임 — 위 KDoc. 전역 구역에 실제로 심는 자리는
     // DefaultFieldTemplateRepository이고 그쪽이 planPlant로 기존 key를 거른다)
-    suspend fun insertField(field: FieldDefinition): Long =
-        fieldDefinitionDao.insert(field)
+    suspend fun insertField(field: FieldDefinition): Long = db.withTransaction {
+        val existingMaxOrder = field.universeId?.let {
+            fieldDefinitionDao.getMaxDisplayOrder(it, field.entityType)
+        } ?: fieldDefinitionDao.getMaxDisplayOrderGlobal(field.entityType)
+        fieldDefinitionDao.insert(FieldOrderAssignment.resolve(field, existingMaxOrder))
+    }
 
     /** 전역 구역을 담을 수 있다 — 유일성 책임은 [insertField]의 KDoc과 같다. */
     // 전역키 보증(호출부 책임 — 위 KDoc)

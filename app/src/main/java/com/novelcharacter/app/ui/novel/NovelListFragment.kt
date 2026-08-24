@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -31,6 +32,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.FieldValueFixRoute
+import com.novelcharacter.app.util.UnassignedFilter
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
@@ -50,6 +52,8 @@ class NovelListFragment : Fragment() {
     private lateinit var adapter: NovelAdapter
     private var itemTouchHelper: ItemTouchHelper? = null
     private var universeId: Long = -1L
+    /** '세계관 미배정만 보기' 토글 상태 — 전체 작품 화면(universeId == -1L)에서만 켤 수 있다. */
+    private var showUnassignedUniverseOnly = false
     private val pendingImagePaths = mutableListOf<String>()
     private var novelImageRecyclerView: RecyclerView? = null
     private var novelImageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
@@ -163,6 +167,10 @@ class NovelListFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
+        // 특정 세계관으로 들어온 화면에서는 숨긴다 — 여기 뜨는 작품은 전부 그 세계관
+        // 소속이라 '미배정만 보기'가 걸러낼 것이 없다.
+        binding.toolbar.menu.findItem(R.id.action_filter_unassigned_universe)?.isVisible =
+            (universeId == -1L)
         setupAddNovelFieldPath()
         observeData()
 
@@ -336,9 +344,25 @@ class NovelListFragment : Fragment() {
                     toggleReorderMode()
                     true
                 }
+                R.id.action_filter_unassigned_universe -> {
+                    toggleUnassignedUniverseFilter(item)
+                    true
+                }
                 else -> false
             }
         }
+    }
+
+    /**
+     * '세계관 미배정만 보기' 토글 — 캐릭터 목록의 '작품 미배정' 필터 칩과 대칭인 기능이다.
+     * 세계관 없는 작품은 전용 목록·엑셀 시트가 없어 여태 '전체 작품'에 섞인 채로만 존재했다.
+     */
+    private fun toggleUnassignedUniverseFilter(item: MenuItem) {
+        showUnassignedUniverseOnly = !showUnassignedUniverseOnly
+        item.isChecked = showUnassignedUniverseOnly
+        viewModel.setUniverseFilter(
+            if (showUnassignedUniverseOnly) UnassignedFilter.UNASSIGNED_UNIVERSE_FILTER else -1L
+        )
     }
 
     private fun observeData() {
@@ -350,6 +374,11 @@ class NovelListFragment : Fragment() {
             adapter.submitList(novels)
             loadNovelFieldSummaries(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
+            // "작품이 아예 없다"와 "미배정만 보기라 없다"는 다른 사실이다(R-17) — 필터를
+            // 켠 채 빈 화면을 보면 전자로 오해해 필터를 끌 생각을 못 할 수 있다.
+            binding.emptyText.setText(
+                if (showUnassignedUniverseOnly) R.string.no_novels_unassigned_universe else R.string.no_novels
+            )
         }
 
         // Load universe border color for inheritance

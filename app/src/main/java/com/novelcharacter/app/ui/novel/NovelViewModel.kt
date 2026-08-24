@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.repository.NovelFieldValueMerge
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.UnassignedFilter
 import com.novelcharacter.app.util.reportResult
 import android.util.Log
 import kotlinx.coroutines.launch
@@ -47,10 +48,10 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     val filteredNovels: LiveData<List<Novel>> = _universeId.switchMap { uid ->
-        if (uid == null || uid == -1L) {
-            novelRepository.allNovels
-        } else {
-            novelRepository.getNovelsByUniverse(uid)
+        when {
+            uid == null || uid == -1L -> novelRepository.allNovels
+            uid == UnassignedFilter.UNASSIGNED_UNIVERSE_FILTER -> novelRepository.getUnassignedNovels()
+            else -> novelRepository.getNovelsByUniverse(uid)
         }
     }
 

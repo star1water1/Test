@@ -39,6 +39,9 @@
     <string name="related_characters">관련 캐릭터</string>
     <string name="no_characters">등록된 캐릭터가 없습니다</string>
     <string name="no_novels">등록된 작품이 없습니다</string>
+    <!-- '세계관 미배정만 보기' 필터가 켜진 채 목록이 비었을 때 — 일반 no_novels를 쓰면
+         "작품이 아예 없다"는 거짓 사실이 된다(R-17). -->
+    <string name="no_novels_unassigned_universe">세계관 미배정 작품이 없습니다</string>
     <string name="no_universes">등록된 세계관이 없습니다</string>
     <string name="no_events">등록된 사건이 없습니다</string>
     <string name="no_fields">등록된 필드가 없습니다</string>
@@ -749,6 +752,10 @@
          어디서 만드는지를 이 줄이 말한다 — 그 말이 없으면 단추만 사라진 화면이 된다. -->
     <string name="novel_field_global_scope">이 작품은 세계관에 속하지 않아 전역 기본 필드를 씁니다. 필드 관리에서 작품 필드를 만든 뒤 \'전역 기본 필드\'를 켜면 여기에도 나타나고, 그렇게 만든 필드는 설정 → 기본 필드 관리에 모입니다.</string>
     <string name="novel_title_required">작품 제목을 입력하세요</string>
+    <!-- 전체 작품 목록 툴바 — 세계관 없는 작품(캐릭터 쪽 '작품 미배정'과 대칭)만 걸러 본다.
+         특정 세계관으로 들어온 화면에서는 의미가 없어 숨긴다(그 세계관 소속만 보이는 화면이라
+         무배정 작품이 나올 수 없다). -->
+    <string name="novel_filter_unassigned_universe">세계관 미배정만 보기</string>
     <!-- 온보딩/기능 힌트 (B-8) -->
     <string name="onboarding_welcome_title">시작하기</string>
     <string name="onboarding_welcome_message">이 앱은 다음 구조로 이루어져 있습니다:\n\n세계관 → 작품 → 캐릭터 → 사건\n\n① \'세계관\' 탭에서 세계관을 만들고\n② 세계관 안에 작품을, 작품 안에 캐릭터를 추가하세요\n③ \'연표\' 탭에서 사건을 배치하고 캐릭터와 연결할 수 있습니다\n\n필드(속성)는 세계관 단위로 자유롭게 정의할 수 있고, 모든 데이터는 엑셀로 내보내고 다시 들여올 수 있습니다.</string>
