@@ -147,9 +147,13 @@ class AiSettingsFragment : Fragment() {
         val fmt = java.text.NumberFormat.getIntegerInstance()
         val costFmt = java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }
         // 단가는 프로바이더 편집에서 사용자가 직접 적은 값이다(학습값도 앱이 두는 표도 아니다) —
-        // 프로바이더가 지워졌으면(providerStore.get이 null) 어림할 근거가 없다.
+        // 프로바이더가 지워졌으면(맵에 없으면) 어림할 근거가 없다.
+        // 목록을 한 번만 읽는다 — providerStore.get()은 호출마다 SharedPreferences를 다시
+        // 읽고 JSON을 다시 해석하므로, 요약 줄마다(그리고 합계에서 또) 부르면 프로바이더
+        // 수만큼 그 비용이 곱으로 붙는다.
+        val priceById = providerStore.list().associateBy { it.id }
         val costOf: (com.novelcharacter.app.ai.AiUsageLedger.Summary) -> Double? = { s ->
-            val cfg = providerStore.get(s.providerId)
+            val cfg = priceById[s.providerId]
             ledger.estimatedCost(s, cfg?.inputPricePerMillionTokens, cfg?.outputPricePerMillionTokens)
         }
         binding.usageSummaryText.text = when {
@@ -956,6 +960,17 @@ class AiSettingsFragment : Fragment() {
         } else price.toString()
     }
 
+    /**
+     * 단가 입력 파싱 — 빈 칸·해석 불가는 이미 `toDoubleOrNull()`이 null로 돌려준다.
+     * **여기서 한 걸음 더 가른다**: 음수·`NaN`·무한대는 단가로 성립하지 않는데
+     * `toDoubleOrNull()`은 "NaN"·"Infinity" 같은 리터럴 문자열도(붙여넣기로 들어올 수 있다)
+     * 그대로 통과시킨다. 통과시키면 이 값이 [AiUsageLedger.estimatedCost]까지 흘러가
+     * 사용량 카드에 "NaN"이 뜨는 조용한 오염이 된다 — 형식이 이상한 입력을 저장에서
+     * 조용히 거르는 것도, 지어낸 숫자를 보여 주지 않는 것도 이 앱의 같은 원칙이다.
+     */
+    private fun parsePrice(raw: CharSequence?): Double? =
+        raw?.toString()?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
+
     /** 입력 필드 → 설정 객체. 검증 실패 시 해당 필드에 오류를 표시하고 null(다이얼로그 유지). */
     private fun readConfig(
         b: DialogAiProviderEditBinding, base: AiProviderConfig, detectedLimit: Int? = base.detectedOutputLimit
@@ -1007,8 +1022,8 @@ class AiSettingsFragment : Fragment() {
             // priority와 같은 이유로 identityChanged를 보지 않는다 — 사용자가 적어 둔 단가는
             // 모델을 바꿔도 유효한 값일 수 있고, 지우면 다시 찾아 입력해야 하는 유실이다.
             // 빈 칸은 null(미설정) — "적지 않음"과 "0으로 적음"은 다른 상태다.
-            inputPricePerMillionTokens = b.inputPriceInput.text?.toString()?.trim()?.toDoubleOrNull(),
-            outputPricePerMillionTokens = b.outputPriceInput.text?.toString()?.trim()?.toDoubleOrNull()
+            inputPricePerMillionTokens = parsePrice(b.inputPriceInput.text),
+            outputPricePerMillionTokens = parsePrice(b.outputPriceInput.text)
             // priority는 여기 없다 — 사용자가 정한 값이라 R-23 대상이 아니고, base.copy가
             // 그대로 나른다. 목록 순서는 끌어 놓기가 정한다([applyReorder]).
         )
