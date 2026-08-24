@@ -280,14 +280,28 @@ class DuelImageParticipantsTest {
     }
 
     @Test
-    fun `referencedPaths는 승자 칸을 따로 담지 않는다 — 참가자 둘 중 하나와 같다`() {
+    fun `referencedPaths는 정상 판의 승자 칸을 겹쳐 담아도 집합 크기가 늘지 않는다`() {
         // 승자는 무승부가 아니면 aCode·bCode 중 하나와 같은 문자열이다(설계 4장 ④) —
-        // 따로 넣으면 중복일 뿐이고, 여기서는 집합 크기로 그것을 확인한다.
+        // Set이 중복을 그냥 흡수하므로 크기는 여전히 2다.
         val paths = DuelImageParticipants.referencedPaths(
             matches = listOf(match("$dir/a.jpg", "$dir/b.jpg", winner = "$dir/a.jpg")),
             verdicts = emptyList()
         )
         assertEquals(2, paths.size)
+        assertEquals(setOf("$dir/a.jpg", "$dir/b.jpg"), paths)
+    }
+
+    @Test
+    fun `referencedPaths는 깨진 판의 승자 칸도 담는다 — 참가자 어느 쪽도 아닌 셋째 경로`() {
+        // 외부에서 편집된 엑셀 등으로 승자가 두 참가자 중 어느 쪽도 아닐 수 있다
+        // (DuelMatch.isWellFormed가 그 부류를 malformedMatches로 센다). 그 경로가 다른 판의
+        // 참가자로 우연히 안 걸리면, 여기서 빠뜨리는 순간 이 함수가 막으려는 문제
+        // (참조를 몰라 zip·손실 고지가 놓치는 것)가 그대로 재현된다.
+        val paths = DuelImageParticipants.referencedPaths(
+            matches = listOf(match("$dir/a.jpg", "$dir/b.jpg", winner = "$dir/c.jpg")),
+            verdicts = emptyList()
+        )
+        assertEquals(setOf("$dir/a.jpg", "$dir/b.jpg", "$dir/c.jpg"), paths)
     }
 
     @Test

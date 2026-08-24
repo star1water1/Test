@@ -264,7 +264,9 @@ object ImageZipHelper {
      * 되는가"**다. 그래서 고아 정리의 모집단을 넓히지 않고, 이 함수를 부르는 두 소비처에서만
      * 합류시킨다.
      *
-     * 이미지 축이 없으면 질의를 열지 않는다 — 이 기능을 안 쓰는 세계관의 비용은 0이다.
+     * **축 표는 언제나 한 번 읽는다**(이미지 축이 있는지 자체를 그것으로 안다 — 13-9가 기준
+     * 축 지정에서 쓴 것과 같은 처분: "지정이 없으면 축 표를 한 번 읽고 끝난다"). 이미지 축이
+     * 없으면 거기서 끝난다 — 판·상성 질의는 열지 않는다.
      */
     suspend fun collectDuelImagePaths(db: AppDatabase): Set<String> {
         val imageAxisIds = db.duelAxisDao().getAllList()

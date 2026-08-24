@@ -109,8 +109,11 @@ object DuelImageParticipants {
      * 이미지 축의 판·처분이 참조하는 이미지 경로 전부 — **엑셀·백업 완전성이 이 데이터를 아는
      * 유일한 자리**(`ImageZipHelper.collectDuelImagePaths`가 부른다).
      *
-     * `winnerCode`는 담지 않는다 — 무승부가 아니면 `aCode`·`bCode` 중 하나와 같으므로
-     * 이미 집합에 있다(설계 4장 ④: "승자는 참가자 둘 중 하나").
+     * `winnerCode`도 담는다 — 정상 판이면 `aCode`·`bCode` 중 하나와 같아 `Set`이 그냥
+     * 흡수하지만, **깨진 판**([DuelMatch.isWellFormed] — 외부 편집된 엑셀 등으로 승자가 두
+     * 참가자 어느 쪽도 아닌 경우, `malformedMatches`로 세어지는 그 부류)은 승자가 **셋째
+     * 경로**일 수 있다. 그 경로가 다른 판의 참가자로 우연히 안 걸리면 여기서 빠뜨리는 순간
+     * 이 함수가 막으려는 바로 그 문제(참조를 몰라 zip·손실 고지가 놓치는 것)가 재현된다.
      *
      * **[com.novelcharacter.app.excel.ImageZipHelper.collectAllImagePathsWithStatus]와 다른
      * 물음이다.** 그 함수는 "지금 캐릭터·세계관·작품이 쓰는가"(고아 정리·`StorageAnalyzer`의
@@ -119,10 +122,11 @@ object DuelImageParticipants {
      * 하나로 합치면 안 된다.
      */
     fun referencedPaths(matches: List<DuelMatch>, verdicts: List<DuelCounterVerdict>): Set<String> {
-        val out = HashSet<String>(matches.size * 2 + verdicts.size * 2)
+        val out = HashSet<String>(matches.size * 3 + verdicts.size * 2)
         for (match in matches) {
             if (match.aCode.isNotBlank()) out.add(match.aCode)
             if (match.bCode.isNotBlank()) out.add(match.bCode)
+            match.winnerCode?.let { if (it.isNotBlank()) out.add(it) }
         }
         for (verdict in verdicts) {
             for (member in DuelRecords.decodeMembers(verdict.memberCodes)) {

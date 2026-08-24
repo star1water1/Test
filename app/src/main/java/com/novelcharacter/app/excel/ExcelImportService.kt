@@ -11197,15 +11197,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.errors.add("대결 기록 행 ${excelRow(i)}: 참가자를 정할 수 없음 ('${r.aName}' · '${r.bName}') — 참가자 코드를 함께 적어 주세요")
                     continue
                 }
-                // 이미지 축의 코드는 경로다(R-42) — 이미지가 담기지 않은 백업(이미지 미포함
-                // 내보내기·zip 없이 XLSX만 다시 들인 경우)은 그 경로가 이 기기 어디도 가리키지
-                // 않는다. **거부하지 않는다** — 판을 지우면 무음 유실이고, 그림이 지워진 판을
-                // 고아로 세는 것은 이미 정상 경로다([util.DuelRecords]). 여기서는 그 사실을
-                // 가져오기 직후에 한 번 더 알려서, 순위표를 열기 전에 원인을 알게 한다.
-                if (axis.isImageAxis && (!imageParticipantExists(aCode) || !imageParticipantExists(bCode))) {
-                    missingImageParticipantRows++
-                }
-
                 // 승자도 같은 표를 탄다 — 참가자만 옮기면 옛 경로를 든 승자 칸이 두 참가자
                 // 어느 쪽과도 안 맞아 **그 행이 통째로 거부된다**. 이름·'비슷함'은 표에 없어
                 // 그대로 지나간다.
@@ -11241,6 +11232,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.skippedRows++
                     result.errors.add("대결 기록 행 ${excelRow(i)}: 코드 '${r.code}'는 다른 참가자의 판입니다 — 새 판이면 코드 칸을 비워 주세요")
                     continue
+                }
+                // 이미지 축의 코드는 경로다(R-42) — 이미지가 담기지 않은 백업(이미지 미포함
+                // 내보내기·zip 없이 XLSX만 다시 들인 경우)은 그 경로가 이 기기 어디도 가리키지
+                // 않는다. **거부하지 않는다** — 판을 지우면 무음 유실이고, 그림이 지워진 판을
+                // 고아로 세는 것은 이미 정상 경로다([util.DuelRecords]). 여기서는 그 사실을
+                // 가져오기 직후에 한 번 더 알려서, 순위표를 열기 전에 원인을 알게 한다.
+                // **여기서 재는 이유** — 위의 거부 갈래(승자 모호·미상·다른 참가자의 판)를 전부
+                // 지난 뒤라야 이 행이 실제로 판으로 쓰인다. 더 일찍 재면 그 갈래로 스킵된 행까지
+                // 세어 "N건은 이미지만 갖추면 복구됩니다"가 **거짓**이 된다(콜드 검토 2026.08.24).
+                if (axis.isImageAxis && (!imageParticipantExists(aCode) || !imageParticipantExists(bCode))) {
+                    missingImageParticipantRows++
                 }
                 if (existing == null) {
                     val newMatch = newDuelMatchFrom(
