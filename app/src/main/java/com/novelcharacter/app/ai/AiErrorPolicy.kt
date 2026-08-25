@@ -37,6 +37,12 @@ object AiErrorPolicy {
      * 실어 같은 400을 받으므로 돈만 쓴다. **뭉뚱그려진 [AiErrorKind.BAD_REQUEST]는 여기
      * 넣지 않는다**: 그쪽은 본문이 원인을 지목하지 않은 나머지라, 재시도로 풀릴 여지가
      * 있는 것까지 섞여 있다. 좁은 판정 위에서만 중단이 정당하다.
+     *
+     * [AiErrorKind.IMAGES_UNSUPPORTED]도 같은 이유로 종단이다 — 이미지는 청크가 바뀌어도
+     * 같이 실려 나가므로 남은 청크는 전부 같은 실패를 받는다. 관문이 이 값을 되돌려주는 일은
+     * **드물지만 있다**(전환 후보가 전부 떨어지고 되돌아간 곳까지 실패한 자리 — 콜드 검토
+     * 2026.08.25). 드물다고 판정을 비워 두면 그때 "청크를 바꿔 다시 보낸다"가 조용히
+     * 기본값이 되어, 될 리 없는 요청에 돈을 계속 쓴다.
      */
     val TERMINAL: Set<AiErrorKind> = setOf(
         AiErrorKind.NO_PROVIDER,
@@ -45,7 +51,8 @@ object AiErrorPolicy {
         AiErrorKind.INVALID_KEY,
         AiErrorKind.QUOTA_EXCEEDED,
         AiErrorKind.MODEL_NOT_FOUND,
-        AiErrorKind.UNSUPPORTED_PARAM
+        AiErrorKind.UNSUPPORTED_PARAM,
+        AiErrorKind.IMAGES_UNSUPPORTED
     )
 
     /** 이 실패를 만나면 남은 청크를 보내지 않는다. */

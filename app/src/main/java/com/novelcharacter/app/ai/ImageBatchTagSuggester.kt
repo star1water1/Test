@@ -41,6 +41,11 @@ import com.novelcharacter.app.util.stringOr
  * **학습 전 첫 실행은 막지 않는다.** 가드는 *배운 사실*만 말하고, 배우는 유일한 경로가
  * 그 첫 실행이다(막으면 영영 못 배운다).
  *
+ * **가드가 보는 것은 활성 하나가 아니라 전환 사슬 전부다**(2026.08.25 —
+ * [AiService.isImagesUnsupported]). 활성이 그림을 거부해도 등록된 다음 프로바이더가 받아 주면
+ * 관문이 그쪽으로 넘겨 그림을 그대로 쓰므로, 활성만 보고 접으면 **살아 있는 길을 두고 배치를
+ * 통째로 버린다.** 사슬 전부가 거부를 배웠을 때만 접는다.
+ *
  * 프롬프트 조립·응답 파싱·검증·접기는 전부 [AiService] 미호출 순수 함수라 단위 테스트된다.
  */
 class ImageBatchTagSuggester(
@@ -48,7 +53,10 @@ class ImageBatchTagSuggester(
     private val complete: suspend (AiRequest) -> AiResult,
     /** 사용자가 올려 둔 출력 상한(A-4의 교집합 규칙). */
     private val effectiveMaxTokens: () -> Int,
-    /** 활성 모델이 그림을 거부한다고 **이미 배웠는가**(A-7). 배치마다 다시 묻는다 — B-157. */
+    /**
+     * 전환 사슬의 **모든** 모델이 그림을 거부한다고 이미 배웠는가(A-7). 배치마다 다시 묻는다
+     * — B-157. 하나라도 받아 줄 여지가 있으면 거짓이라 요청이 그대로 나가고 전환이 일어난다.
+     */
     private val imagesUnsupported: () -> Boolean
 ) {
 

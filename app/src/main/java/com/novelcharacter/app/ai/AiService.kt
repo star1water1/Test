@@ -82,11 +82,22 @@ class AiService(context: Context) {
     }
 
     /**
-     * 자동 전환 루프 (B-108). [first]는 관문이 이미 키까지 확인한 활성 프로바이더다.
+     * 자동 전환 루프 (B-108, 이미지 미지원 전환은 2026.08.25 확장). [first]는 관문이 이미
+     * 키까지 확인한 활성 프로바이더다.
      *
      * 실패를 **마지막 것으로** 돌려주는 이유: 사용자가 고칠 것은 경로가 아니라 지금 막힌 자리이고,
      * 전부 한도면 마지막 한도 오류가 그 사실을 그대로 말한다. 표식(B-150)이 붙어 있어 어느
      * 프로바이더의 실패인지도 함께 나간다.
+     *
+     * **`allowImageSwitch`는 [AiProviderFallback.hasImageCapableCandidateAfter]가 정한다** —
+     * *넘겨서 얻을 것이 있을 때만* 참이다. 참이면 그 후보는 이미지를 거부해도 물러서지 않고
+     * 곧장 다음 후보로 넘어간다(이미지를 뺀 채 조용히 "성공"해 버리면 폴백 루프가 전환할
+     * 기회조차 못 본다). 거짓이면 [execute]가 종전 A-7 그대로 물러선다 — 이미지를 빼고
+     * 1회 재시도해 텍스트로라도 답한다.
+     *
+     * *"마지막 후보인가"로 묻지 않는 이유*는 그 함수의 KDoc에 있다: 등록된 곳이 전부 거부를
+     * 배웠으면 넘겨도 얻을 것이 없는데, 그렇게 물으면 **사용자가 고른 활성을 건너뛰고 맨 뒤가
+     * 답한다.**
      */
     private suspend fun completeWithFallback(
         first: AiProviderConfig, firstKey: String, request: AiRequest
@@ -99,22 +110,36 @@ class AiService(context: Context) {
             nowMillis = now
         )
         // 활성이 쿨다운 중이면 순서가 다른 곳부터 시작한다 — 그 자체가 전환이므로 고지 대상이다.
-        var switchedFrom: AiProviderRef? =
-            if (chain.firstOrNull()?.id != first.id) first.ref() else null
+        // 쿨다운은 한도 계열에서만 붙으므로 사유는 null(= 한도, 종전 문구)이 맞다.
+        var origin: AiProviderFallback.SwitchOrigin? =
+            if (chain.firstOrNull()?.id != first.id) {
+                AiProviderFallback.SwitchOrigin(first.ref())
+            } else null
         var last: AiResult.Failure? = null
+        // **이미지 때문에 건너뛴 첫 후보** — 넘어간 곳들이 전부 실패하면 여기로 돌아온다.
+        // 그 곳은 이미지를 못 받을 뿐 **글로는 답할 수 있고**, 종전에는 실제로 그렇게 답했다.
+        // 이것이 없으면 전환이 종전의 '성공(글만)'을 **하드 실패로 바꾼다** — 사용자가 겪는
+        // 것은 개선이 아니라 회귀다(콜드 검토 2026.08.25).
+        var imageSkipped: Pair<AiProviderConfig, String>? = null
 
-        for (candidate in chain) {
+        for ((index, candidate) in chain.withIndex()) {
             val apiKey =
                 if (candidate.id == first.id) firstKey else keyStore.getKey(candidate.id) ?: continue
+            // **"마지막이 아니면 넘긴다"가 아니라 "넘겨서 얻을 것이 있으면 넘긴다"이다.**
+            // 등록된 곳이 전부 거부를 배웠으면 넘겨도 결국 글만 보내게 되므로, 그때는
+            // 넘기지 않고 **사용자가 고른 활성이 답한다**(종전과 같다). 판정은 순수 계층이 든다.
+            val allowImageSwitch =
+                AiProviderFallback.hasImageCapableCandidateAfter(chain, index)
             var retriesUsed = 0
             while (true) {
-                val result = execute(candidate, apiKey, request)
+                val result = execute(candidate, apiKey, request, allowImageSwitch)
                 if (result !is AiResult.Failure) {
                     // 지금 되는 것이 쿨다운이 낡았다는 증거다 — 남아 있으면 지운다.
                     // 만료를 쓸어 담는 별도 경로를 두지 않는 이유: 성공한 자리에서만 지우면
                     // 요청마다 저장소를 쓰지 않으면서도 낡은 값이 쌓이지 않는다.
                     if (candidate.cooldownUntilMillis != null) clearCooldown(candidate.id)
-                    return result.withProvider(candidate.ref()).withSwitchedFrom(switchedFrom)
+                    return result.withProvider(candidate.ref())
+                        .withSwitchedFrom(origin?.from, origin?.reason)
                 }
                 last = result.copy(provider = candidate.ref())
                 when (AiProviderFallback.dispositionOf(result.kind, retriesUsed)) {
@@ -123,14 +148,59 @@ class AiService(context: Context) {
                         delay(AiProviderFallback.RATE_LIMIT_BACKOFF_MILLIS)
                     }
                     AiProviderFallback.Disposition.SWITCH -> {
-                        rememberCooldown(candidate.id, AiProviderFallback.cooldownUntil(now))
-                        // 고지가 가리킬 곳은 **처음 밀린 곳**이다 — 판정은 순수 계층이 든다.
-                        switchedFrom =
-                            AiProviderFallback.firstSwitchSource(switchedFrom, candidate.ref())
+                        // 쿨다운은 한도 계열에만 준다 — 이미지 미지원은 텍스트 요청에는
+                        // 이 프로바이더가 여전히 멀쩡하므로 뒤로 미룰 이유가 없다.
+                        if (AiProviderFallback.earnsCooldown(result.kind)) {
+                            rememberCooldown(candidate.id, AiProviderFallback.cooldownUntil(now))
+                        }
+                        // 이미지 때문에 넘기는 것이라면 이 곳은 **글로는 답할 수 있다** —
+                        // 돌아올 자리로 적어 둔다(첫 곳만: 사용자가 고른 활성에 가장 가깝다).
+                        if (result.kind == AiErrorKind.IMAGES_UNSUPPORTED && imageSkipped == null) {
+                            imageSkipped = candidate to apiKey
+                        }
+                        // 고지가 가리킬 곳과 사유는 **처음 밀린 곳**의 것이다 — 둘이 한 값이라
+                        // 어긋난 조합이 만들어질 자리가 없다. 판정은 순수 계층이 든다.
+                        origin = AiProviderFallback.firstSwitchOrigin(
+                            origin, candidate.ref(), result.kind
+                        )
                         break
                     }
-                    AiProviderFallback.Disposition.STOP -> return last
+                    AiProviderFallback.Disposition.STOP ->
+                        return lastResort(imageSkipped, request, origin, last, first)
                 }
+            }
+        }
+        return lastResort(imageSkipped, request, origin, last, first)
+    }
+
+    /**
+     * 전환이 전부 실패했을 때의 **마지막 수단** — 이미지 때문에 건너뛴 곳으로 돌아간다.
+     *
+     * **왜 있는가 (콜드 검토 2026.08.25):** 이미지 미지원이 전환 방아쇠가 되면서, 건너뛴 곳이
+     * *글로는 답할 수 있다*는 사실이 버려질 수 있게 됐다. 넘어간 곳이 키 복호화 실패로
+     * 건너뛰어지거나(`getKey`가 null — 기기 이전·Keystore 손상) 네트워크·5xx·잘못된 키로
+     * 떨어지면, **종전에는 성공(글만)이던 요청이 하드 실패가 된다.** 사용자가 겪는 것은
+     * 개선이 아니라 회귀이고, 학습값 때문에 그 뒤로는 HTTP 왕복조차 없이 즉시·영구히 실패한다.
+     *
+     * 돌아갈 때 `allowImageSwitch = false`로 부르는 것이 요점이다 — 그래야 그 곳이 A-7의
+     * 종전 처분(이미지를 빼고 답한다)으로 물러서고, `imagesOmitted` 고지도 그대로 붙는다.
+     * 돌아간 곳까지 실패하면 원래 실패를 돌려준다 — 사용자가 고칠 것은 그쪽이다.
+     *
+     * 표식은 [origin]을 그대로 얹는다. 흔한 경우는 건너뛴 곳이 곧 활성이라 `from == to`가 되고,
+     * [AiProviderFallback.switchNoteOf]가 그때 고지를 접는다(전환이 사실상 없었으므로).
+     */
+    private suspend fun lastResort(
+        imageSkipped: Pair<AiProviderConfig, String>?,
+        request: AiRequest,
+        origin: AiProviderFallback.SwitchOrigin?,
+        last: AiResult.Failure?,
+        first: AiProviderConfig
+    ): AiResult {
+        imageSkipped?.let { (config, apiKey) ->
+            val result = execute(config, apiKey, request, allowImageSwitch = false)
+            if (result is AiResult.Success) {
+                return result.withProvider(config.ref())
+                    .withSwitchedFrom(origin?.from, origin?.reason)
             }
         }
         // chain이 비는 경우는 없다(활성이 언제나 들어간다). 그래도 값으로 돌려준다 —
@@ -207,9 +277,9 @@ class AiService(context: Context) {
      * 과금 축은 usage이고, 실패에는 usage가 없다.
      */
     private suspend fun execute(
-        config: AiProviderConfig, apiKey: String, request: AiRequest
+        config: AiProviderConfig, apiKey: String, request: AiRequest, allowImageSwitch: Boolean = false
     ): AiResult = withContext(Dispatchers.IO) {
-        val result = executeUnrecorded(config, apiKey, request)
+        val result = executeUnrecorded(config, apiKey, request, allowImageSwitch)
         if (result is AiResult.Success) {
             usageStore.record(
                 providerId = config.id,
@@ -225,7 +295,7 @@ class AiService(context: Context) {
     }
 
     private suspend fun executeUnrecorded(
-        config: AiProviderConfig, apiKey: String, request: AiRequest
+        config: AiProviderConfig, apiKey: String, request: AiRequest, allowImageSwitch: Boolean = false
     ): AiResult = withContext(Dispatchers.IO) {
         // 상한 셋의 **교집합**을 쓴다: 이 요청이 요구한 값 ∩ 사용자 설정 ∩ 탐지된 모델 상한.
         // 요청값으로 정책을 덮어쓰지 않는 이유 — 그러면 `effectiveMaxTokens()`를 부르지 않은
@@ -245,7 +315,17 @@ class AiService(context: Context) {
         // 이미지도 같은 태도다 (A-7) — 받지 않는다고 이미 배운 모델에는 애초에 싣지 않는다.
         // 뺐다는 사실은 성공 결과에 실어 보내야 한다: 그러지 않으면 사용자는 그림을 붙였는데
         // 결과가 그대로인 이유를 영영 모른다.
-        val strippedUpfront = request1.hasImages() && saved.imagesUnsupported == true
+        val knownImagesUnsupported = request1.hasImages() && saved.imagesUnsupported == true
+
+        // **전환 후보가 남아 있으면 이 프로바이더는 애초에 두드리지 않는다** (2026.08.25 —
+        // 이 프로바이더가 이미지를 거부한다는 것은 이미 배운 사실이라 왕복 한 번을 더 써서
+        // 재확인할 이유가 없다). 곧장 관문의 폴백 루프로 돌려주면 다음 후보(비전이 될 수도
+        // 있는)로 넘어간다 — 여기서 조용히 텍스트로 답해 버리면 매 요청이 이 학습값을 만난
+        // 순간 전환 기회를 스스로 닫는다.
+        if (knownImagesUnsupported && allowImageSwitch) {
+            return@withContext AiResult.Failure(AiErrorKind.IMAGES_UNSUPPORTED)
+        }
+        val strippedUpfront = knownImagesUnsupported
         val request0 = if (strippedUpfront) request1.withoutImages() else request1
 
         // **사전 제거 고지는 어느 출구로 나가든 붙는다.** 종전에는 첫 호출 성공 분기에만
@@ -314,17 +394,28 @@ class AiService(context: Context) {
             return@withContext second
         }
 
-        // ④ 모델이 **이미지 자체**를 거부 → 빼고 1회 재시도, 성공하면 기억한다 (A-7).
-        //    ②와 같은 형태의 유연한 교정이다. 여기서 물러서지 않으면 비전 미지원 모델을 쓰는
-        //    사용자는 첨부를 켠 순간부터 400만 받게 되고, 그 원인이 이미지라는 것도 알 수 없다.
-        //    학습값은 R-23에 따라 모델·주소가 바뀌면 함께 버려진다.
+        // ④ 모델이 **이미지 자체**를 거부 (A-7, 2026.08.25 전환 확장).
+        //    학습은 재확인을 기다리지 않고 **감지한 그 자리에서** 한다 — 종전에는 아래 재시도가
+        //    성공해야만 기억했는데, 그러면 재시도가 (이미지와 무관한 사유로) 또 실패하는
+        //    드문 경우 학습이 안 남아 다음 요청도 같은 이미지를 다시 실어 같은 400을 받는다.
+        //    이 판정([AiProtocolCodec.isImagesUnsupportedError]) 자체가 이미 좁게 잡혀 있어
+        //    오탐 여지가 낮다(형제 ②의 규약과 같다).
         if (request0.hasImages() &&
             AiProtocolCodec.isImagesUnsupportedError(first.httpCode ?: 0, first.detail)
         ) {
+            rememberImagesUnsupported(config.id)
+            // 전환 후보가 남아 있으면 여기서 물러서지 않는다 — 등록된 다른 프로바이더 중
+            // 비전이 되는 곳이 있으면 이미지를 그대로 실어 이어서 물을 수 있다. 관문의 폴백
+            // 루프([AiProviderFallback.dispositionOf])가 이 분류를 보고 다음 후보로 넘긴다.
+            if (allowImageSwitch) {
+                return@withContext first.copy(kind = AiErrorKind.IMAGES_UNSUPPORTED)
+            }
+            // 더 두드릴 후보가 없다(단일 프로바이더 · 명시 지정 · 전환 사슬의 마지막) — 이미지를
+            // 빼고 1회 재시도해 텍스트로라도 답한다. 여기서 물러서지 않으면 비전 미지원 모델을
+            // 쓰는 사용자는 첨부를 켠 순간부터 400만 받게 되고, 그 원인도 알 수 없다.
             val retrySpec = AiProtocolCodec.buildRequest(config, apiKey, request0.withoutImages())
             val second = call(retrySpec, config.protocol, config.model)
             if (second is AiResult.Success) {
-                rememberImagesUnsupported(config.id)
                 return@withContext second.copy(imagesOmitted = true)
             }
             return@withContext second
@@ -411,12 +502,30 @@ class AiService(context: Context) {
     }
 
     /**
-     * 활성 모델이 이미지를 거부한다고 학습했는가 — 첨부 고지·결과 고지용 (A-7).
-     * 다이얼로그가 이 값을 읽어 **붙이기 전에** 미리 말할 수 있다: 이미 아는 사실을
-     * 알리지 않고 요청부터 보내면 사용자는 같은 실망을 매번 되풀이한다.
+     * 지금 이미지를 실어도 **결국 이미지 없이 답하게 될 것**이 이미 확실한가 — 첨부 고지·
+     * 배치 사전 차단용 (A-7, B-157). 다이얼로그가 이 값을 읽어 **붙이기 전에** 미리 말할 수
+     * 있다: 이미 아는 사실을 알리지 않고 요청부터 보내면 사용자는 같은 실망을 매번 되풀이한다.
+     *
+     * **활성 하나만 보지 않는다 — [AiProviderFallback.order]가 실제 요청에서 두드릴 사슬
+     * 전체를 본다** (2026.08.25, 사용자 요청으로 이미지 미지원도 전환 대상이 된 것의 짝).
+     * 활성이 이미지를 거부한다고 배웠어도 등록된 다른 프로바이더가 받아 줄 수 있으면 관문이
+     * 그쪽으로 넘어가 이미지를 그대로 쓴다 — 활성만 보고 여기서 참을 돌려주면 [ImageBatchTagSuggester]
+     * 의 B-157 가드가 그 전환 기회가 있는데도 배치를 통째로 접고, 첨부 고지들([AiImageAttachRow]
+     * 등)은 실제로는 나갈 이미지를 두고 "글만 보냈습니다"라고 미리 거짓말한다. 그래서 사슬
+     * **전부**가 이미지를 거부한다고 배웠을 때만 참이다 — 하나라도 아직 안 배웠거나(첫 시도라
+     * 기회를 줘야 한다) 지원한다고 배웠으면 거짓이라, 요청은 그대로 나가고 전환이 일어난다.
      */
-    fun isImagesUnsupported(): Boolean =
-        providerStore.active()?.imagesUnsupported == true
+    fun isImagesUnsupported(): Boolean {
+        val active = providerStore.active() ?: return false
+        val chain = AiProviderFallback.order(
+            configs = providerStore.list(),
+            active = active,
+            hasKey = { keyStore.hasKey(it) },
+            nowMillis = System.currentTimeMillis()
+        )
+        if (chain.isEmpty()) return false
+        return chain.all { it.imagesUnsupported == true }
+    }
 
     /**
      * 활성 프로바이더에 실을 창작도 샘플링 값 (A-4). null = 싣지 않는다:

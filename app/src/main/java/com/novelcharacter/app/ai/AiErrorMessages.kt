@@ -33,6 +33,7 @@ object AiErrorMessages {
         AiErrorKind.MODEL_NOT_FOUND -> R.string.ai_error_model_not_found
         AiErrorKind.BAD_REQUEST -> R.string.ai_error_bad_request
         AiErrorKind.UNSUPPORTED_PARAM -> R.string.ai_error_unsupported_param
+        AiErrorKind.IMAGES_UNSUPPORTED -> R.string.ai_error_images_unsupported
         AiErrorKind.NETWORK -> R.string.ai_error_network
         AiErrorKind.TIMEOUT -> R.string.ai_error_timeout
         AiErrorKind.SERVER -> R.string.ai_error_server
