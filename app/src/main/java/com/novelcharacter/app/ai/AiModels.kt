@@ -355,7 +355,16 @@ sealed class AiResult {
          * 고지는 [AiProviderFallback.switchNoteOf]가 단일 소스다 — 호출부는 그 한 줄을
          * 자기 고지 채널에 얹기만 한다.
          */
-        val switchedFrom: AiProviderRef? = null
+        val switchedFrom: AiProviderRef? = null,
+        /**
+         * [switchedFrom]가 **왜** 밀렸는지 (B-108 확장 — 이미지 미지원 전환, 2026.08.25).
+         *
+         * [AiProviderFallback.switchNote]가 이 값으로 문구를 가른다 — 한도로 밀린 것과 이미지를
+         * 못 받아 밀린 것은 사용자에게 할 말이 다르다("한도로 이어서 처리했습니다"는 이미지
+         * 전환에서는 거짓말이 된다). null이면 한도(종전 문구, 회귀 없음)이거나 전환이 없었다는
+         * 뜻이다.
+         */
+        val switchedFromReason: AiErrorKind? = null
     ) : AiResult()
 
     data class Failure(
@@ -386,11 +395,14 @@ fun AiResult.withProvider(ref: AiProviderRef): AiResult = when (this) {
 }
 
 /**
- * 성공에 *"어디서 밀려 왔는가"*를 새긴다 (B-108). [from]이 null이면 전환이 없었으므로 그대로 둔다.
- * 실패에는 붙이지 않는다 — 전부 실패했으면 사용자가 볼 것은 마지막 오류이지 경로가 아니다.
+ * 성공에 *"어디서, 왜 밀려 왔는가"*를 새긴다 (B-108, [reason]은 2026.08.25 확장). [from]이
+ * null이면 전환이 없었으므로 그대로 둔다. 실패에는 붙이지 않는다 — 전부 실패했으면 사용자가
+ * 볼 것은 마지막 오류이지 경로가 아니다. [reason]의 기본값 null은 종전 호출부(전부 한도 전환)와
+ * 글자 그대로 같은 문구를 낸다 — 회귀가 없다.
  */
-fun AiResult.withSwitchedFrom(from: AiProviderRef?): AiResult =
-    if (from != null && this is AiResult.Success) copy(switchedFrom = from) else this
+fun AiResult.withSwitchedFrom(from: AiProviderRef?, reason: AiErrorKind? = null): AiResult =
+    if (from != null && this is AiResult.Success) copy(switchedFrom = from, switchedFromReason = reason)
+    else this
 
 /**
  * 오류 분류 — 잘못된 상태를 조용히 삼키지 않고, 각 분류마다 사용자 안내문과
@@ -443,6 +455,28 @@ enum class AiErrorKind {
      * (지목 표현과 거부 표현이 함께 있어야 참).
      */
     UNSUPPORTED_PARAM,
+
+    /**
+     * 400인데 **이미지를 거부**한 것 — 모델이 비전을 지원하지 않는다 (A-7 확장, 사용자 요청
+     * 2026.08.25: *"이미지 안 받는 api모델에 이미지 보내서 실패하면 바로 다음 모델로 변경해서
+     * 재시도"*).
+     *
+     * [UNSUPPORTED_PARAM]과 가른 이유: 그쪽은 사용자가 요청 항목을 손보면 풀리는 실패이지만,
+     * 이것은 **그 모델 자체가 비전을 아예 못 하는** 구조적 한계라 같은 프로바이더에 다시
+     * 물어도 같은 답이 온다. 그래서 [AiProviderFallback.dispositionOf]가 이 분류만 따로
+     * [AiProviderFallback.Disposition.SWITCH]로 보낸다 — 등록된 다른 프로바이더 중 비전을
+     * 지원하는 곳이 있으면 이미지를 그대로 실어 이어서 물을 수 있다. [AiErrorKind.INVALID_KEY]가
+     * 전환 대상이 아닌 것과는 다른 이유다 — 그쪽은 사용자가 고쳐야 할 실수를 다른 곳의 성공으로
+     * 덮는 것이고, 이것은 고칠 실수가 없다(키도 설정도 멀쩡하다). 등록된 모델 중 비전이 되는
+     * 것으로 넘기는 것이 자율성 우선(개발 의도)이 요구하는 바로 그 동작이다.
+     *
+     * **관문([AiService]) 밖으로는 사실상 나가지 않는다** — 전환 후보가 남아 있으면 다음
+     * 프로바이더로 넘어가고, 더 없으면 마지막 후보가 이미지를 빼고 다시 물어 텍스트로만
+     * 답한다([AiResult.Success.imagesOmitted]로 고지, 종전 A-7 동작 그대로). 그래도 분류를
+     * 값으로 두는 이유는 그 판정이 순수 계층([AiProviderFallback])의 시험 대상이 되려면
+     * 값으로 존재해야 하기 때문이다.
+     */
+    IMAGES_UNSUPPORTED,
 
     /** 연결 불가(호스트/SSL 포함) */
     NETWORK,

@@ -3165,6 +3165,7 @@
     <string name="ai_error_model_not_found">모델을 찾을 수 없습니다. 모델명(또는 서버 주소)을 확인해 주세요.</string>
     <string name="ai_error_bad_request">요청 형식 오류입니다. 모델명과 서버 주소를 확인해 주세요.</string>
     <string name="ai_error_unsupported_param">이 모델이 받지 않는 항목이 요청에 있습니다. 아래 원문이 가리키는 항목을 확인해 주세요.</string>
+    <string name="ai_error_images_unsupported">이 모델은 이미지를 지원하지 않습니다. 설정 → AI 연동에서 이미지를 읽는 프로바이더를 추가해 두면 자동으로 전환해 이어서 처리합니다.</string>
     <string name="ai_error_network">서버에 연결할 수 없습니다. 인터넷 연결과 서버 주소를 확인해 주세요.</string>
     <string name="ai_error_timeout">응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.</string>
     <string name="ai_error_server">제공사 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.</string>
@@ -3531,7 +3532,7 @@
     <string name="image_ai_tag_privacy">이미지는 AI 제공사 서버로 전송됩니다. 장당 대략 250~1,600토큰이 듭니다(제공사마다 다릅니다).</string>
     <!-- B-157: 이미 배운 거부는 누르기 전에 말한다. 실행기가 요청조차 만들지 않으므로,
          말하지 않으면 "눌렀는데 아무것도 안 나왔다"만 남는다. -->
-    <string name="image_ai_tag_no_vision_upfront">지금 모델은 이미지를 받지 않는 것으로 확인됐습니다. 이대로 보내면 요청 없이 멈추니, 설정에서 이미지를 읽는 모델로 바꾼 뒤 실행해 주세요.</string>
+    <string name="image_ai_tag_no_vision_upfront">등록된 모델이 전부 이미지를 받지 않는 것으로 확인됐습니다. 이대로 보내면 요청 없이 멈추니, 설정 → AI 연동에서 이미지를 읽는 모델을 추가하거나 바꾼 뒤 실행해 주세요.</string>
     <string name="image_ai_tag_stage">이미지를 보내는 중</string>
     <string name="image_ai_tag_progress">이미지 %1$d/%2$d</string>
     <string name="image_ai_tag_notice_unreadable">이미지 %1$d장은 파일을 읽지 못해 빼고 보냈습니다</string>
@@ -3561,7 +3562,7 @@
     <string name="ai_image_reshuffle">🎲 다시 뽑기</string>
     <string name="ai_image_cost_notice">고른 %1$d장이 요청마다 실려 모두 %2$d장이 나갑니다 — 장당 대략 %3$d~%4$d토큰이 더 들고(제공사마다 다릅니다), 이미지는 AI 제공사 서버로 전송됩니다</string>
     <string name="ai_image_representative_missing">지정한 대표 이미지가 없어 전부 무작위로 골랐습니다</string>
-    <string name="ai_image_unsupported_notice">이 모델은 이미지를 받지 않는다고 확인된 적이 있습니다 — 글만 전송됩니다</string>
+    <string name="ai_image_unsupported_notice">등록된 모델이 전부 이미지를 받지 않는다고 확인됐습니다 — 글만 전송됩니다</string>
     <string name="ai_image_skipped">이미지 %d장을 읽지 못해 빼고 보냈습니다</string>
     <string name="ai_image_blocked">이미지 %d장은 앱이 보관하는 파일이 아니어서 보내지 않았습니다. 그 이미지를 앱에 다시 추가하면 함께 보냅니다</string>
     <string name="ai_attach_images_label">AI에 함께 보낼 이미지</string>

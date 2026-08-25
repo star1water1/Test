@@ -42,6 +42,9 @@ class AiErrorPolicyTest {
         // 모델이 받지 않는 항목은 청크가 바뀐다고 받아 주지 않는다 (B-161) — 남은 요청은
         // 전부 같은 항목을 실어 같은 400을 받으므로 돈만 쓴다.
         AiErrorKind.UNSUPPORTED_PARAM to true,
+        // 같은 기준이다 — 다만 이 값이 관문 밖으로 나오는 경로는 사실상 없다(전환 후보가
+        // 남았으면 넘기고, 소진되면 이미지를 빼고 텍스트로 답한다). 그래도 판정은 받아 둔다.
+        AiErrorKind.IMAGES_UNSUPPORTED to true,
         // 다음 청크가 성공할 수 있는 것 — 중단하면 될 일을 안 하는 것이 된다
         AiErrorKind.RATE_LIMITED to false,
         // 뭉뚱그려진 400은 여기 남는다 — 본문이 원인을 지목하지 않은 나머지라 재시도로

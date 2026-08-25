@@ -127,9 +127,15 @@ class AiProviderFallbackTest {
         }
     }
 
+    /**
+     * 한도 계열은 **전환과 쿨다운이 한 벌이다** — 전환하는데 쿨다운을 안 주면 다음 요청이
+     * 그 키부터 다시 두드린다. 예외는 [AiErrorKind.IMAGES_UNSUPPORTED] 하나뿐이고
+     * 아래 시험이 그것을 따로 못 박는다.
+     */
     @Test
-    fun 쿨다운을_받는_집합은_전환하는_집합과_같다() {
+    fun 이미지_미지원을_뺀_전환_집합은_쿨다운_집합과_같다() {
         for (kind in AiErrorKind.values()) {
+            if (kind == AiErrorKind.IMAGES_UNSUPPORTED) continue
             val switches = AiProviderFallback.dispositionOf(
                 kind, retriesUsed = AiProviderFallback.RATE_LIMIT_RETRIES
             ) == Disposition.SWITCH
@@ -138,6 +144,59 @@ class AiProviderFallbackTest {
                 switches, AiProviderFallback.earnsCooldown(kind)
             )
         }
+    }
+
+    // ── ⑤ 이미지 미지원은 전환하되 쿨다운은 받지 않는다 (2026.08.25 사용자 요청) ──────
+
+    /**
+     * 사용자 요청: *"이미지 안 받는 api모델에 이미지 보내서 실패하면 바로 다음 모델로
+     * 변경해서 재시도하고 그것도 안 되면 다음 모델로 가고."*
+     *
+     * 재시도 횟수를 안 보는 것이 요점이다 — 같은 프로바이더에 다시 물어도 그 모델은 여전히
+     * 이미지를 거부한다. 429처럼 한 번 더 두드리면 왕복만 늘고 사용감은 더 뻑뻑해진다.
+     */
+    @Test
+    fun 이미지_미지원은_재시도_없이_곧바로_다음_모델로_간다() {
+        assertEquals(
+            Disposition.SWITCH,
+            AiProviderFallback.dispositionOf(AiErrorKind.IMAGES_UNSUPPORTED, retriesUsed = 0)
+        )
+    }
+
+    /**
+     * **[AiErrorKind.INVALID_KEY]와 갈리는 자리다.** 둘 다 *"같은 곳에 다시 물어도 영영 안
+     * 되는 것"*이지만 틀린 키는 **사용자가 고쳐야 할 실수**라 다른 곳의 성공으로 덮으면
+     * 영영 못 본다. 이미지 미지원에는 고칠 실수가 없다 — 키도 설정도 멀쩡하고, 그 모델이
+     * 비전을 안 할 뿐이다. 이 시험이 없으면 다음 사람이 닮은 점을 보고 둘을 통일한다.
+     */
+    @Test
+    fun 이미지_미지원은_전환하고_잘못된_키는_전환하지_않는다() {
+        assertEquals(
+            Disposition.SWITCH,
+            AiProviderFallback.dispositionOf(AiErrorKind.IMAGES_UNSUPPORTED, retriesUsed = 0)
+        )
+        assertEquals(
+            Disposition.STOP,
+            AiProviderFallback.dispositionOf(AiErrorKind.INVALID_KEY, retriesUsed = 0)
+        )
+    }
+
+    /**
+     * 쿨다운은 *"이 프로바이더가 잠시 못 쓴다"*는 뜻인데, 이미지를 거부한 프로바이더는
+     * **텍스트만 있는 다음 요청에는 여전히 멀쩡하다.** 주면 이미지 요청 하나 때문에 10분간
+     * 텍스트 요청까지 그 프로바이더가 뒤로 밀린다 — `imagesUnsupported` 학습값이 이미
+     * "이미지를 실을 때만 건너뛴다"는 더 좁은 회피를 맡고 있어 겹쳐 막을 이유가 없다.
+     */
+    @Test
+    fun 이미지_미지원은_전환하되_쿨다운은_받지_않는다() {
+        assertEquals(
+            Disposition.SWITCH,
+            AiProviderFallback.dispositionOf(AiErrorKind.IMAGES_UNSUPPORTED, retriesUsed = 0)
+        )
+        assertFalse(
+            "텍스트 요청에는 이 프로바이더가 여전히 멀쩡하다 — 뒤로 미룰 이유가 없다",
+            AiProviderFallback.earnsCooldown(AiErrorKind.IMAGES_UNSUPPORTED)
+        )
     }
 
     // ── ③ 쿨다운은 미루는 것이지 빼는 것이 아니다 ────────────────────────────
@@ -302,6 +361,38 @@ class AiProviderFallbackTest {
     }
 
     /**
+     * 이미지 때문에 밀린 전환에 *"한도로"*라고 적으면 **거짓말이다** — 그 프로바이더는 한도에
+     * 걸린 적이 없고, 사용자는 멀쩡한 결제 상태를 확인하러 간다(변수 제어의 반대).
+     */
+    @Test
+    fun 이미지_때문에_밀렸으면_한도라고_말하지_않는다() {
+        val switched = AiResult.Success(
+            text = "ok",
+            model = "gpt-vision",
+            provider = AiProviderRef("비전 되는 키", "gpt-vision"),
+            switchedFrom = AiProviderRef("주 키", "text-only"),
+            switchedFromReason = AiErrorKind.IMAGES_UNSUPPORTED
+        )
+        val note = AiProviderFallback.switchNoteOf(switched)!!
+        assertFalse("한도에 걸린 적이 없는데 한도라고 말하면 엉뚱한 곳을 고치러 간다", note.contains("한도"))
+        assertTrue("왜 밀렸는지", note.contains("이미지"))
+        assertTrue("어디서 밀렸는지", note.contains("주 키"))
+        assertTrue("누가 이어받았는지", note.contains("비전 되는 키"))
+    }
+
+    /** 사유가 없으면(한도 전환·종전 호출부) **글자 그대로 종전 문구**다 — 회귀가 없다. */
+    @Test
+    fun 사유를_안_적으면_종전_한도_문구_그대로다() {
+        val from = AiProviderRef("주 키", "m1")
+        val to = AiProviderRef("백업 키", "m2")
+        assertEquals(
+            AiProviderFallback.switchNote(from, to),
+            AiProviderFallback.switchNote(from, to, AiErrorKind.RATE_LIMITED)
+        )
+        assertTrue(AiProviderFallback.switchNote(from, to).contains("한도"))
+    }
+
+    /**
      * A→B→C로 두 번 밀렸을 때 고지가 가리키는 곳은 **A**다.
      * 덮어쓰면 *"'B' 한도로 'C'가"*가 되는데 **사용자는 B를 고른 적도 본 적도 없다** —
      * 아는 이름은 '사용 중'으로 지정한 그것 하나뿐이다.
@@ -310,11 +401,61 @@ class AiProviderFallbackTest {
     fun 두_번_밀려도_고지는_사용자가_고른_곳을_가리킨다() {
         val a = AiProviderRef("주 키", "m1")
         val b = AiProviderRef("둘째 키", "m2")
-        assertEquals(a, AiProviderFallback.firstSwitchSource(null, a))
+        assertEquals(
+            a,
+            AiProviderFallback.firstSwitchOrigin(null, a, AiErrorKind.QUOTA_EXCEEDED).from
+        )
+        val first = AiProviderFallback.SwitchOrigin(a, AiErrorKind.QUOTA_EXCEEDED)
         assertEquals(
             "덮어쓰면 사용자가 본 적 없는 이름이 고지에 뜬다",
-            a, AiProviderFallback.firstSwitchSource(a, b)
+            a,
+            AiProviderFallback.firstSwitchOrigin(first, b, AiErrorKind.IMAGES_UNSUPPORTED).from
         )
+    }
+
+    /**
+     * **곳과 사유는 한 값이라 갈릴 수 없다.** A가 한도로 밀린 뒤 B가 이미지로 밀렸을 때
+     * 사유까지 덮어쓰면 고지가 *"'A'이(가) 이미지를 지원하지 않아"*가 되는데, **A는 한도로
+     * 밀린 것이라 멀쩡한 A의 모델을 비전 되는 것으로 바꾸러 간다.** 틀린 곳을 고치라고
+     * 시키는 부류이고, 이 저장소가 반복해 이름 붙인 그 결함이다.
+     */
+    @Test
+    fun 곳이_처음_것이면_사유도_처음_것이다() {
+        val a = AiProviderRef("주 키", "m1")
+        val b = AiProviderRef("둘째 키", "m2")
+        val first = AiProviderFallback.firstSwitchOrigin(null, a, AiErrorKind.QUOTA_EXCEEDED)
+        val after = AiProviderFallback.firstSwitchOrigin(first, b, AiErrorKind.IMAGES_UNSUPPORTED)
+        assertEquals(a, after.from)
+        assertEquals(
+            "곳과 사유가 갈리면 고지가 멀쩡한 곳을 고치라고 시킨다",
+            AiErrorKind.QUOTA_EXCEEDED, after.reason
+        )
+    }
+
+    /**
+     * **전환 방아쇠가 넷째로 늘 때 문구를 함께 안 고치면 여기서 실패한다.**
+     * `switchNote`의 `else` 가지가 *"한도로"*라, 한도가 아닌 새 사유가 붙으면 **조용히
+     * 거짓말하는 고지**가 된다(사용자는 멀쩡한 결제 상태를 확인하러 간다). 사람이 기억하는
+     * 것에 기대지 않으려고 기계로 잠근다 — `tools/check_ai_switch_notice.sh`가 *부르는가*를
+     * 보는 것과 같은 자리에서 이쪽은 *참인가*를 본다.
+     */
+    @Test
+    fun 전환하는_모든_사유에_참인_문구가_붙는다() {
+        val from = AiProviderRef("주 키", "m1")
+        val to = AiProviderRef("백업 키", "m2")
+        for (kind in AiErrorKind.values()) {
+            val switches = AiProviderFallback.dispositionOf(
+                kind, retriesUsed = AiProviderFallback.RATE_LIMIT_RETRIES
+            ) == Disposition.SWITCH
+            if (!switches) continue
+            val isLimit =
+                kind == AiErrorKind.RATE_LIMITED || kind == AiErrorKind.QUOTA_EXCEEDED
+            assertEquals(
+                "$kind — '한도로'는 한도 계열에서만 참이다. 새 전환 사유를 더했으면 " +
+                    "switchNote의 가지도 함께 더할 것",
+                isLimit, AiProviderFallback.switchNote(from, to, kind).contains("한도")
+            )
+        }
     }
 
     // ── 학습값 등재 (R-23) ────────────────────────────────────────────────────

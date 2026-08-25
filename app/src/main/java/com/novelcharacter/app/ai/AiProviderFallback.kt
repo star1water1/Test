@@ -68,16 +68,36 @@ object AiProviderFallback {
      * *"그 키로는 영영 안 되는 것"*이라는 점에서 크레딧 소진과 닮았지만 전환 대상이 아니다 —
      * 키가 틀렸다는 사실을 다른 프로바이더의 성공으로 덮으면 사용자는 **틀린 키를 영영 고치지
      * 않는다**(고칠 곳이 있는 실패를 조용한 성공으로 바꾸는 것은 변수 제어의 반대다).
-     * 확정이 방아쇠로 든 것도 한도 둘뿐이다.
+     * 확정(7-1)이 방아쇠로 든 것은 한도 둘이다.
+     *
+     * **[AiErrorKind.IMAGES_UNSUPPORTED]가 셋째 방아쇠다** (사용자 요청 2026.08.25). 이것도
+     * [AiErrorKind.INVALID_KEY]처럼 *"같은 프로바이더에 다시 물어도 영영 안 되는 것"*이지만,
+     * 가른 이유는 **고칠 실수가 있는가**다 — 틀린 키는 사용자가 고쳐야 할 실수이고 다른 곳의
+     * 성공으로 덮으면 그 실수를 영영 못 본다. 반면 "이 모델이 비전을 안 한다"는 고칠 실수가
+     * 아니다(키도 설정도 멀쩡하다) — 등록해 둔 다른 프로바이더 중 비전이 되는 곳으로 넘겨
+     * 원래 요청(이미지 포함)을 그대로 이어가는 것이 자율성 우선(개발 의도)이 요구하는 동작이다.
+     * 재시도 횟수를 안 보는 이유도 [AiErrorKind.QUOTA_EXCEEDED]와 같다 — 같은 프로바이더에
+     * 다시 물어도 이미지를 여전히 거부하므로 재시도할 이유가 없다.
      */
     fun dispositionOf(kind: AiErrorKind, retriesUsed: Int): Disposition = when (kind) {
         AiErrorKind.RATE_LIMITED ->
             if (retriesUsed < RATE_LIMIT_RETRIES) Disposition.RETRY_SAME else Disposition.SWITCH
         AiErrorKind.QUOTA_EXCEEDED -> Disposition.SWITCH
+        AiErrorKind.IMAGES_UNSUPPORTED -> Disposition.SWITCH
         else -> Disposition.STOP
     }
 
-    /** 이 실패가 프로바이더를 쿨다운에 넣는 부류인가 — [Disposition.SWITCH]와 같은 집합이다. */
+    /**
+     * 이 실패가 프로바이더를 쿨다운에 넣는 부류인가.
+     *
+     * **[Disposition.SWITCH]의 집합과 더는 같지 않다** (2026.08.25 —
+     * [AiErrorKind.IMAGES_UNSUPPORTED]가 전환은 하되 쿨다운은 받지 않는 유일한 예외다).
+     * 쿨다운은 *"이 프로바이더가 잠시/영영 못 쓴다"*는 뜻인데, 이미지를 거부한 프로바이더는
+     * **텍스트만 있는 다음 요청에는 여전히 완전히 멀쩡하다.** 쿨다운을 주면 이미지 요청
+     * 하나 때문에 10분 동안 텍스트 요청까지 그 프로바이더를 뒤로 미루는 부작용이 생긴다 —
+     * [AiProviderConfig.imagesUnsupported] 학습값이 이미 "이미지를 실을 때만 건너뛴다"는
+     * 더 좁고 정확한 회피를 담당하므로 쿨다운으로 겹쳐 막을 이유가 없다.
+     */
     fun earnsCooldown(kind: AiErrorKind): Boolean =
         kind == AiErrorKind.RATE_LIMITED || kind == AiErrorKind.QUOTA_EXCEEDED
 
@@ -160,18 +180,42 @@ object AiProviderFallback {
         }
 
     /**
+     * 고지가 가리킬 **밀린 곳과 그 사유** — 한 값이다.
+     *
+     * **둘을 한 값으로 묶은 것이 요점이다**(2026.08.25). 종전에는 곳만 순수 계층이 정했는데,
+     * 사유가 붙으면서 *"곳은 처음 것, 사유도 그 처음 것"*이라는 짝이 생겼다. 따로 두면
+     * [AiService]의 루프가 둘을 각각 갱신하게 되고, 그 순간 **곳은 A인데 사유는 C의 것**인
+     * 조합이 만들어진다 — 그러면 고지가 *"'A'이(가) 이미지를 지원하지 않아"*라고 적는데
+     * 정작 A는 한도로 밀린 것이라 **사용자가 멀쩡한 A의 모델을 비전 되는 것으로 바꾸러 간다.**
+     * 한 값이면 그 조합이 만들어질 자리가 없다.
+     */
+    data class SwitchOrigin(
+        val from: AiProviderRef,
+        /**
+         * 왜 밀렸는가. `null`은 **한도 계열**이다(종전 문구를 그대로 낸다) — 쿨다운으로 이미
+         * 뒤로 밀려 있던 활성을 건너뛴 경우처럼 *어느* 한도였는지까지는 남기지 않는 자리가
+         * 있어서다. [switchNote]가 가르는 것은 한도인가 아닌가뿐이라 그것으로 충분하다.
+         */
+        val reason: AiErrorKind? = null
+    )
+
+    /**
      * 전환이 두 번 이상 일어났을 때 **고지가 가리킬 곳**을 정한다 — 처음 밀린 곳이다.
      *
      * 덮어쓰면 A→B→C에서 고지가 *"'B' 한도로 'C'가"*가 되는데, **사용자는 B를 고른 적도 본 적도
      * 없다.** 사용자가 아는 이름은 '사용 중'으로 지정한 그것 하나이고, 한 줄짜리 고지가 가리켜야
      * 할 것도 그것이다(중간 경로는 한 줄에 담을 것이 아니다).
      *
+     * **사유도 함께 처음 것이 이긴다** — A가 한도로 밀린 뒤 B가 이미지로 밀렸어도 고지가 가리킬
+     * 것은 여전히 *"A가 한도로"*다. 사용자가 아는 이름이 A이므로 사유도 A가 밀린 사유여야 짝이 맞다.
+     *
      * **판정을 여기 두는 이유:** 이 규칙이 사는 자리는 [AiService]의 루프인데 그곳은 Context·
      * 네트워크에 매여 **어떤 로컬 검증도 못 본다.** 한 줄짜리 규칙이라도 순수로 빼야 시험이 닿고,
      * 그러지 않으면 *"덮어쓰는 편이 최신이라 낫지 않나"*로 되돌릴 때 아무도 막지 못한다.
      */
-    fun firstSwitchSource(current: AiProviderRef?, candidate: AiProviderRef): AiProviderRef =
-        current ?: candidate
+    fun firstSwitchOrigin(
+        current: SwitchOrigin?, candidate: AiProviderRef, reason: AiErrorKind?
+    ): SwitchOrigin = current ?: SwitchOrigin(candidate, reason)
 
     /**
      * 전환 고지 한 줄 (확정 ⓑ) — **단일 소스**다.
@@ -179,9 +223,19 @@ object AiProviderFallback {
      * 조용히 바꾸면 사용자는 자기가 고른 모델의 답인 줄 알고 **다른 회사 다른 모델이 쓴 글**을
      * 받는다(개발 의도 2번 — 변수 제어). 문구를 여기 하나로 두는 이유는 B-150이 실증한 것이다:
      * 호출부에 맡기면 자리가 여섯이 되고, **빠뜨린 자리는 종전과 똑같이 조용하다.**
+     *
+     * [reason]으로 문구를 가른다(2026.08.25) — *"한도로 이어서 처리했습니다"*는 이미지 미지원
+     * 전환에서는 거짓말이다(그 프로바이더는 한도에 걸린 적이 없다). `null`은 한도 전환이거나
+     * (구분할 이유가 없던) 종전 호출부와 같아 **글자 그대로 종전 문구**를 낸다 — 회귀가 없다.
      */
-    fun switchNote(from: AiProviderRef, to: AiProviderRef): String =
-        "'${from.displayName}' 한도로 '${to.displayName}'(${to.model})가 이어서 처리했습니다"
+    fun switchNote(from: AiProviderRef, to: AiProviderRef, reason: AiErrorKind? = null): String =
+        when (reason) {
+            AiErrorKind.IMAGES_UNSUPPORTED ->
+                "'${from.displayName}'이(가) 이미지를 지원하지 않아 " +
+                    "'${to.displayName}'(${to.model})가 이어서 처리했습니다"
+            else ->
+                "'${from.displayName}' 한도로 '${to.displayName}'(${to.model})가 이어서 처리했습니다"
+        }
 
     /**
      * 결과에서 전환 고지를 뽑는다 — 전환이 없었으면 null.
@@ -193,6 +247,6 @@ object AiProviderFallback {
         val success = result as? AiResult.Success ?: return null
         val from = success.switchedFrom ?: return null
         val to = success.provider ?: return null
-        return switchNote(from, to)
+        return switchNote(from, to, success.switchedFromReason)
     }
 }
