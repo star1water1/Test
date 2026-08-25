@@ -431,6 +431,65 @@ class AiProviderFallbackTest {
         assertTrue("누가 이어받았는지", note.contains("비전 되는 키"))
     }
 
+    /**
+     * **넘어간 곳도 그림을 못 실었으면 *"이어서 처리했습니다"*는 거짓이다** (콜드 검토).
+     * 그 말의 유일한 읽음은 *"넘어간 곳이 그림을 봤다"*인데, 실제로는 그쪽도 글만 보냈다.
+     * 그대로 두면 같은 결과 창에 *"글만 보냈습니다"*와 나란히 서서 **서로 반대되는 말**이 된다.
+     */
+    @Test
+    fun 넘어간_곳도_그림을_못_실었으면_그렇게_말한다() {
+        val switched = AiResult.Success(
+            text = "ok",
+            model = "m2",
+            provider = AiProviderRef("둘째 키", "m2"),
+            switchedFrom = AiProviderRef("주 키", "m1"),
+            switchedFromReason = AiErrorKind.IMAGES_UNSUPPORTED,
+            imagesOmitted = true
+        )
+        val note = AiProviderFallback.switchNoteOf(switched)!!
+        assertTrue("그쪽도 못 받았다는 사실", note.contains("그쪽도"))
+        assertTrue("결국 글만 갔다는 사실", note.contains("글만"))
+        assertFalse(
+            "그림을 본 곳이 이어받은 것처럼 읽히면 안 된다",
+            note.contains("이어서 처리했습니다")
+        )
+    }
+
+    /** 넘어간 곳이 그림을 실제로 실었으면 종전 문구 그대로다 — 이 판이 산 그 동작이다. */
+    @Test
+    fun 넘어간_곳이_그림을_실었으면_이어서_처리했다고_말한다() {
+        val switched = AiResult.Success(
+            text = "ok",
+            model = "gpt-vision",
+            provider = AiProviderRef("비전 키", "gpt-vision"),
+            switchedFrom = AiProviderRef("주 키", "m1"),
+            switchedFromReason = AiErrorKind.IMAGES_UNSUPPORTED,
+            imagesOmitted = false
+        )
+        val note = AiProviderFallback.switchNoteOf(switched)!!
+        assertTrue(note.contains("이어서 처리했습니다"))
+        assertFalse(note.contains("그쪽도"))
+    }
+
+    /**
+     * **밀린 곳과 답한 곳이 같으면 고지가 없다** (콜드 검토). 그 조합은 실제로 만들어진다 —
+     * 활성이 쿨다운이라 뒤로 밀렸는데 앞의 후보가 떨어져 결국 활성이 답하거나, 이미지 때문에
+     * 건너뛴 곳으로 관문이 되돌아간 경우다. 그대로 두면 *"'A' 한도로 'A'가 이어서
+     * 처리했습니다"* — 자기가 자기에게 넘겼다는 말이 되고, 애초에 **사용자가 고른 그곳이
+     * 답한 것**이라 알릴 전환이 없다.
+     */
+    @Test
+    fun 자기가_자기에게_넘겼다고_말하지_않는다() {
+        val same = AiProviderRef("주 키", "m1")
+        val selfHandoff = AiResult.Success(
+            text = "ok", model = "m1", provider = same, switchedFrom = same
+        )
+        assertNull(
+            "전환이 사실상 없었다 — 사용자가 고른 그곳이 답했다",
+            AiProviderFallback.switchNoteOf(selfHandoff)
+        )
+    }
+
     /** 사유가 없으면(한도 전환·종전 호출부) **글자 그대로 종전 문구**다 — 회귀가 없다. */
     @Test
     fun 사유를_안_적으면_종전_한도_문구_그대로다() {

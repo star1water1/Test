@@ -246,25 +246,44 @@ object AiProviderFallback {
      * 전환에서는 거짓말이다(그 프로바이더는 한도에 걸린 적이 없다). `null`은 한도 전환이거나
      * (구분할 이유가 없던) 종전 호출부와 같아 **글자 그대로 종전 문구**를 낸다 — 회귀가 없다.
      */
-    fun switchNote(from: AiProviderRef, to: AiProviderRef, reason: AiErrorKind? = null): String =
-        when (reason) {
-            AiErrorKind.IMAGES_UNSUPPORTED ->
-                "'${from.displayName}'이(가) 이미지를 지원하지 않아 " +
-                    "'${to.displayName}'(${to.model})가 이어서 처리했습니다"
-            else ->
-                "'${from.displayName}' 한도로 '${to.displayName}'(${to.model})가 이어서 처리했습니다"
-        }
+    fun switchNote(
+        from: AiProviderRef,
+        to: AiProviderRef,
+        reason: AiErrorKind? = null,
+        /**
+         * 넘어간 곳도 **결국 이미지를 못 실었는가**. 참이면 *"이어서 처리했습니다"*가 거짓이다 —
+         * 그 말의 유일한 읽음은 *"넘어간 곳이 그림을 봤다"*인데 실제로는 그쪽도 글만 보냈다
+         * (콜드 검토 2026.08.25).
+         */
+        destinationOmittedImages: Boolean = false
+    ): String = when {
+        reason == AiErrorKind.IMAGES_UNSUPPORTED && destinationOmittedImages ->
+            "'${from.displayName}'이(가) 이미지를 지원하지 않아 " +
+                "'${to.displayName}'(${to.model})로 넘겼지만 그쪽도 받지 않아 글만 보냈습니다"
+        reason == AiErrorKind.IMAGES_UNSUPPORTED ->
+            "'${from.displayName}'이(가) 이미지를 지원하지 않아 " +
+                "'${to.displayName}'(${to.model})가 이어서 처리했습니다"
+        else ->
+            "'${from.displayName}' 한도로 '${to.displayName}'(${to.model})가 이어서 처리했습니다"
+    }
 
     /**
      * 결과에서 전환 고지를 뽑는다 — 전환이 없었으면 null.
      *
      * 인앱 기능 여섯이 각자 자기 고지 채널(`failures`·`notes`)에 이 **한 줄**만 얹으면 되도록
      * 판정과 문구를 함께 여기 둔다. `tools/check_ai_switch_notice.sh`가 그 등재를 기계로 본다.
+     *
+     * **밀린 곳과 답한 곳이 같으면 고지하지 않는다**(콜드 검토 2026.08.25). 그 조합은
+     * 실제로 만들어진다 — 활성이 쿨다운이라 뒤로 밀렸는데 앞의 후보가 떨어져 결국 활성이
+     * 답하거나, 이미지 때문에 건너뛴 곳으로 [AiService]가 되돌아간 경우다. 그대로 두면
+     * *"'A' 한도로 'A'가 이어서 처리했습니다"* — 자기가 자기에게 넘겼다는 말이 된다.
+     * 게다가 그때는 **사용자가 고른 그곳이 답한 것**이라 애초에 알릴 전환이 없다.
      */
     fun switchNoteOf(result: AiResult): String? {
         val success = result as? AiResult.Success ?: return null
         val from = success.switchedFrom ?: return null
         val to = success.provider ?: return null
-        return switchNote(from, to, success.switchedFromReason)
+        if (from == to) return null
+        return switchNote(from, to, success.switchedFromReason, success.imagesOmitted)
     }
 }
