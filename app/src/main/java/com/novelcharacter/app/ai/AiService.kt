@@ -89,10 +89,15 @@ class AiService(context: Context) {
      * 전부 한도면 마지막 한도 오류가 그 사실을 그대로 말한다. 표식(B-150)이 붙어 있어 어느
      * 프로바이더의 실패인지도 함께 나간다.
      *
-     * **사슬의 마지막 후보만 `allowImageSwitch = false`로 부른다** — 더 넘길 곳이 없으면
-     * [execute]가 종전 A-7 그대로(이미지를 빼고 1회 재시도해 텍스트로라도 답한다) 물러서고,
-     * 그 전 후보들은 이미지를 거부해도 곧장 다음 후보로 넘어간다(그 프로바이더가 이미지를
-     * 뺀 채 조용히 "성공"해 버리면 폴백 루프가 전환할 기회조차 못 본다).
+     * **`allowImageSwitch`는 [AiProviderFallback.hasImageCapableCandidateAfter]가 정한다** —
+     * *넘겨서 얻을 것이 있을 때만* 참이다. 참이면 그 후보는 이미지를 거부해도 물러서지 않고
+     * 곧장 다음 후보로 넘어간다(이미지를 뺀 채 조용히 "성공"해 버리면 폴백 루프가 전환할
+     * 기회조차 못 본다). 거짓이면 [execute]가 종전 A-7 그대로 물러선다 — 이미지를 빼고
+     * 1회 재시도해 텍스트로라도 답한다.
+     *
+     * *"마지막 후보인가"로 묻지 않는 이유*는 그 함수의 KDoc에 있다: 등록된 곳이 전부 거부를
+     * 배웠으면 넘겨도 얻을 것이 없는데, 그렇게 물으면 **사용자가 고른 활성을 건너뛰고 맨 뒤가
+     * 답한다.**
      */
     private suspend fun completeWithFallback(
         first: AiProviderConfig, firstKey: String, request: AiRequest
@@ -115,7 +120,11 @@ class AiService(context: Context) {
         for ((index, candidate) in chain.withIndex()) {
             val apiKey =
                 if (candidate.id == first.id) firstKey else keyStore.getKey(candidate.id) ?: continue
-            val allowImageSwitch = index != chain.lastIndex
+            // **"마지막이 아니면 넘긴다"가 아니라 "넘겨서 얻을 것이 있으면 넘긴다"이다.**
+            // 등록된 곳이 전부 거부를 배웠으면 넘겨도 결국 글만 보내게 되므로, 그때는
+            // 넘기지 않고 **사용자가 고른 활성이 답한다**(종전과 같다). 판정은 순수 계층이 든다.
+            val allowImageSwitch =
+                AiProviderFallback.hasImageCapableCandidateAfter(chain, index)
             var retriesUsed = 0
             while (true) {
                 val result = execute(candidate, apiKey, request, allowImageSwitch)

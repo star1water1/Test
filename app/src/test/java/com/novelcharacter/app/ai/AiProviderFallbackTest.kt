@@ -163,6 +163,57 @@ class AiProviderFallbackTest {
         )
     }
 
+    // ── ⑥ 전환은 *얻을 것이 있을 때* 한다 (콜드 검토 2026.08.25) ──────────────────
+
+    private fun noVision(id: String, priority: Int = 0) =
+        config(id, priority = priority).copy(imagesUnsupported = true)
+
+    /**
+     * **이 시험이 막는 회귀가 이 판에서 실제로 났다.** 처음 구현은 `allowImageSwitch`를
+     * *"마지막 후보가 아닌가"*로 물었는데, 등록된 곳이 **전부** 거부를 배운 상태에서는
+     * 셋 다 똑같이 글만 보낼 수 있는데도 활성 A를 건너뛰고 B도 건너뛰어 **맨 뒤 C가 답했다.**
+     * 사용자가 고르지 않은 곳이 답하는 것이고, 얻은 것은 없다.
+     */
+    @Test
+    fun 전부_거부를_배웠으면_넘기지_않는다_활성이_답해야_한다() {
+        val chain = listOf(noVision("active"), noVision("b", 1), noVision("c", 2))
+        assertFalse(
+            "넘겨도 결국 글만 보내게 된다 — 그러면 사용자가 고른 활성이 답해야 한다",
+            AiProviderFallback.hasImageCapableCandidateAfter(chain, 0)
+        )
+    }
+
+    /** 뒤에 받아 줄 여지가 있으면 넘긴다 — 이 판이 사용자 요청으로 산 동작이다. */
+    @Test
+    fun 뒤에_받아_줄_곳이_남았으면_넘긴다() {
+        val chain = listOf(noVision("active"), config("vision", priority = 1))
+        assertTrue(AiProviderFallback.hasImageCapableCandidateAfter(chain, 0))
+    }
+
+    /**
+     * **아직 안 배운 곳(`null`)은 "받아 줄 여지"다.** 거부로 치면 첫 시도의 기회가 사라지고
+     * 그 곳은 영영 못 배운다 — 배우는 유일한 경로가 실제로 보내 보는 것이다.
+     */
+    @Test
+    fun 아직_안_배운_곳은_받아_줄_여지로_친다() {
+        val chain = listOf(noVision("active"), config("unknown", priority = 1))
+        assertNull("전제 — 아직 배운 것이 없다", chain[1].imagesUnsupported)
+        assertTrue(AiProviderFallback.hasImageCapableCandidateAfter(chain, 0))
+    }
+
+    /** 마지막 후보 뒤에는 아무도 없다 — 여기서는 물러서서 글로라도 답해야 한다. */
+    @Test
+    fun 마지막_후보_뒤에는_넘길_곳이_없다() {
+        val chain = listOf(config("a"), config("b", priority = 1))
+        assertFalse(AiProviderFallback.hasImageCapableCandidateAfter(chain, chain.lastIndex))
+    }
+
+    /** 프로바이더가 하나뿐이면 전환 자체가 없다 — 종전과 글자 그대로 같아야 한다. */
+    @Test
+    fun 하나뿐이면_넘길_곳이_없다() {
+        assertFalse(AiProviderFallback.hasImageCapableCandidateAfter(listOf(config("only")), 0))
+    }
+
     /**
      * **[AiErrorKind.INVALID_KEY]와 갈리는 자리다.** 둘 다 *"같은 곳에 다시 물어도 영영 안
      * 되는 것"*이지만 틀린 키는 **사용자가 고쳐야 할 실수**라 다른 곳의 성공으로 덮으면
