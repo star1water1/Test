@@ -186,4 +186,25 @@ class GradeTableTest {
         assertEquals(1, GradeTable.duplicateValues(outcome.grades).size)
     }
 
+    /**
+     * 화면 둘이 **같은 답**을 받는가 — 필드 편집과 등급 체계 편집이 각자 행을 훑어 맵을
+     * 짓고 있던 것을 콜드 검토가 잡았다(2026.08.25). *어느 행을 세는가*는 판정이라
+     * [GradeTable.build]가 그 단일 소스이고, 이 함수가 그것을 그대로 쓴다.
+     */
+    @Test
+    fun `편집 행에서 바로 겹침을 본다`() {
+        val rows = listOf("F" to "0.5", "E" to "1", "C" to "0.5")
+        val groups = GradeTable.duplicateValuesOf(rows)
+        assertEquals(1, groups.size)
+        assertEquals(listOf("F", "C"), groups.single().labels)
+    }
+
+    /** 못 쓰는 행은 [GradeTable.build]가 이미 떨군다 — 겹침 판정도 그 표만 본다. */
+    @Test
+    fun `해석 못 하는 행은 겹침에 끼지 않는다`() {
+        // 라벨 없는 행·숫자 아닌 행·빈 행은 표에 못 들어가므로 겹칠 것도 없다.
+        val rows = listOf("" to "0.5", "E" to "숫자아님", "" to "", "F" to "0.5")
+        assertTrue(GradeTable.duplicateValuesOf(rows).isEmpty())
+    }
+
 }

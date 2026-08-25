@@ -146,6 +146,17 @@ object GradeTable {
     /** 같은 수치를 든 라벨 무리 — 라벨은 표에 있던 차례 그대로다. */
     data class DuplicateValueGroup(val value: Double, val labels: List<String>)
 
+    /**
+     * **편집 행 그대로에서** 수치 겹침을 본다 — 필드 편집과 등급 체계 편집이 같은 답을 받는다.
+     *
+     * 두 화면이 각자 행을 훑어 맵을 짓고 있었다(콜드 검토 2026.08.25 — 이 판이 만든 것이다).
+     * *어느 행을 세는가*는 판정이라, 두 벌로 두면 한쪽이 빈 라벨을 세거나 해석 불가 숫자를
+     * 달리 다루는 순간 같은 표가 화면마다 다른 말을 듣는다. [build]가 이미 그 판정의 단일
+     * 소스이므로(빈 행 건너뛰기·라벨 중복·숫자 해석) **그것이 낸 표를 그대로 본다.**
+     */
+    fun duplicateValuesOf(rows: List<Pair<String, String>>): List<DuplicateValueGroup> =
+        duplicateValues(build(rows).grades)
+
     /** 1.0 → "1", 0.5 → "0.5" — JSON의 정수 등급이 편집 칸에서 "1.0"으로 불어나지 않게. */
     fun formatValue(value: Double): String =
         if (value == Math.floor(value) && !value.isInfinite() && Math.abs(value) < 1e15) {

@@ -51,10 +51,14 @@ object ImagePathCell {
     fun fileName(path: String): String = path.trim().substringAfterLast('/')
 
     /**
-     * 셀에 적을 글자 — **파일명 배열**. 규약의 두 단은
-     * [CharacterRepresentativeImage.cellText]에서 그대로 잇는다:
+     * 셀에 적을 글자 — **파일명 배열**. 규약의 두 단은 종전 `cellText`에서 그대로 잇는다:
      * 목록으로 안 읽히는 값은 **원문 그대로**(내보내기가 앱의 글자를 지우면 그 백업으로는
      * 되돌릴 수 없다), 읽혀서 비었으면 **빈 칸**(편집 가능한 칸에 `[]`를 세우지 않는다).
+     *
+     * 한 가지가 달라진다: 종전에는 읽히는 목록을 **원문 문자열 그대로** 실었는데 이제
+     * [CharacterRepresentativeImage.paths]가 낸 목록을 다시 적는다. 그래서 **빈 원소가
+     * 떨어져 나간다**(`["", "/a/b.jpg"]` → `["b.jpg"]`). 유실이 아니다 — 빈 경로는 그림이
+     * 아니고, 앱의 모든 읽는 자리가 이미 그 함수를 지나 그것을 걸러 왔다.
      */
     fun toCell(imagePathsJson: String?): String {
         val raw = imagePathsJson.orEmpty()

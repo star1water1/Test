@@ -196,10 +196,15 @@ object AppSettingsBindings {
                         val store = AiProviderStore(ctx)
                         // 쿨다운은 **이 기기의 것**이라 파일이 정하지 않는다 — 옛 파일이나
                         // 손으로 적은 값이 든 경우까지 여기서 막힌다(`keepDeviceState`).
+                        //
+                        // **들이기 전에 한 번만 뜬다.** `store.get`은 매번 목록 전체를 다시
+                        // 해석하고, 무엇보다 *이 기기가 갖고 있던 값*이라는 뜻이 그 시점의
+                        // 스냅샷이라야 분명해진다(루프 도중의 저장이 그 뜻을 흐리지 않는다).
+                        val deviceState = store.list().associateBy { it.id }
                         for (config in decoded.configs) {
                             store.save(
                                 com.novelcharacter.app.ai.AiProviderCodec
-                                    .keepDeviceState(config, store.get(config.id))
+                                    .keepDeviceState(config, deviceState[config.id])
                             )
                         }
                         // 일부는 실제로 들어갔다 — '아무것도 안 썼다'(No)로 세면 계수가 거짓이 된다.

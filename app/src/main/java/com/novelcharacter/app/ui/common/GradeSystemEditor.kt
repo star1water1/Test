@@ -99,14 +99,13 @@ object GradeSystemEditor {
             }
 
             fun renderCollisionNotice() {
-                val grades = LinkedHashMap<String, Double>()
-                for (row in rows) {
-                    val label = row.editLabel.text.toString().trim()
-                    val value = row.editValue.text.toString().trim().toDoubleOrNull()
-                    if (label.isEmpty() || value == null || !value.isFinite()) continue
-                    grades[label] = value
-                }
-                val text = gradeValueCollisionMessage(ctx, GradeTable.duplicateValues(grades))
+                // 행을 세는 규칙은 순수 계층이 든다 — 필드 편집 화면과 **같은 함수**다.
+                val text = gradeValueCollisionMessage(
+                    ctx,
+                    GradeTable.duplicateValuesOf(
+                        rows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+                    )
+                )
                 collisionNotice.text = text.orEmpty()
                 collisionNotice.visibility =
                     if (text == null) android.view.View.GONE else android.view.View.VISIBLE

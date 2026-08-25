@@ -1620,15 +1620,12 @@ class FieldEditDialog : DialogFragment() {
      * .BadNumber]가 저장에서 막는 자리라 여기서 또 말할 것이 없다.
      */
     private fun renderGradeValueCollisionNotice(binding: DialogFieldEditBinding) {
-        val grades = LinkedHashMap<String, Double>()
-        for (row in gradeRows) {
-            val label = row.editLabel.text.toString().trim()
-            val value = row.editValue.text.toString().trim().toDoubleOrNull()
-            if (label.isEmpty() || value == null || !value.isFinite()) continue
-            grades[label] = value
-        }
+        // 행을 세는 규칙은 순수 계층이 든다 — 등급 체계 편집 화면과 **같은 함수**다.
         val text = com.novelcharacter.app.ui.common.gradeValueCollisionMessage(
-            requireContext(), com.novelcharacter.app.util.GradeTable.duplicateValues(grades)
+            requireContext(),
+            com.novelcharacter.app.util.GradeTable.duplicateValuesOf(
+                gradeRows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+            )
         )
         binding.textGradeValueCollisionNotice.text = text.orEmpty()
         binding.textGradeValueCollisionNotice.visibility =
