@@ -301,6 +301,7 @@ $MAIN/util/DuelAiContext.kt
 $MAIN/util/DuelGradeAssign.kt
 $MAIN/util/DuelAxisChoice.kt
 $MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/ImagePathCell.kt
 $MAIN/util/DateValidation.kt
 $MAIN/util/BirthDateFormat.kt
 $MAIN/util/CardImageAdoption.kt
@@ -509,6 +510,7 @@ $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/util/ImagePathMatchTest.kt
 $TEST/util/CharacterRepresentativeImageTest.kt
+$TEST/util/ImagePathCellTest.kt
 $TEST/util/RepresentativeImageCellTest.kt
 $TEST/excel/CharacterSpecColumnOrderTest.kt
 $TEST/data/SnapshotRefResolverTest.kt

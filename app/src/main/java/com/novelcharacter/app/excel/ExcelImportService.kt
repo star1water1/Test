@@ -774,24 +774,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             value
         }
 
-    /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
+    /**
+     * '이미지경로' 셀 → 저장할 경로 목록. 표기 규약은 [com.novelcharacter.app.util.ImagePathCell]이
+     * 단일 소스이고, 이 함수는 그것이 필요로 하는 **이 기기의 사정 둘**만 채워 넣는다.
+     *
+     * ① 파일명 → 절대경로. '이미지' 시트가 이미 쓰는 사다리와 같은 차례다
+     * ([importImageMeta]의 KDoc): zip 복원 리맵(원경로 basename) → 로컬 `filesDir`.
+     * 둘 다 아니면 **`filesDir` 아래로 붙인다** — 파일이 없어도 경로는 만든다. 그것이
+     * 옛 표기(절대경로)를 그대로 싣던 시절과 **같은 결과**이고(없는 파일을 가리키는 경로가
+     * 남는다), 여기서 토큰을 버리면 이미지 배정이 조용히 사라진다(개발 의도 2번).
+     *
+     * ② 옛 절대경로 토큰의 재매핑 — 종전 동작 그대로다.
+     */
     private fun remapImagePaths(imagePathsJson: String): String {
-        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return "[]"
-        return try {
-            val gson = com.google.gson.Gson()
-            val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
-                ?: return "[]"
-            if (imagePathRemap.isEmpty()) gson.toJson(paths) else {
-                val remapped = paths.map { remapImagePath(it) }
-                gson.toJson(remapped)
-            }
-        } catch (_: Exception) {
-            // 레거시: 단일 경로 문자열 → JSON 배열로 변환
-            if (imagePathsJson.isNotBlank()) {
-                val remapped = remapImagePath(imagePathsJson)
-                org.json.JSONArray(listOf(remapped)).toString()
-            } else "[]"
-        }
+        val filesDir = appContext?.filesDir
+        val byBasename = if (imagePathRemap.isEmpty()) emptyMap()
+        else ImageMetaRowResolver.buildRemapByBasename(imagePathRemap).byBasename
+        return com.novelcharacter.app.util.ImagePathCell.fromCell(
+            imagePathsJson,
+            resolveName = { name ->
+                byBasename[name]
+                    ?: filesDir?.let { dir -> java.io.File(dir, name).absolutePath }
+            },
+            remapPath = { remapImagePath(it) }
+        )
     }
 
     suspend fun importAll(

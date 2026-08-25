@@ -377,46 +377,8 @@ class CharacterRepresentativeImageTest {
         assertEquals(listOf("a.jpg"), CharacterRepresentativeImage.paths("[\"a.jpg\"]"))
     }
 
-    // ── cellText (2026.08.23 — 편집 가능한 칸에 리터럴 `[]`가 서 있었다) ──
-
-    @Test
-    fun `빈 목록은 빈 칸이다`() {
-        // 가져오기가 빈 칸을 "[]"로 읽으므로 뜻이 달라지지 않는다.
-        assertEquals("", CharacterRepresentativeImage.cellText("[]"))
-        assertEquals("", CharacterRepresentativeImage.cellText("[ ]"))
-        assertEquals("", CharacterRepresentativeImage.cellText(""))
-        assertEquals("", CharacterRepresentativeImage.cellText("   "))
-        assertEquals("", CharacterRepresentativeImage.cellText(null))
-    }
-
-    @Test
-    fun `공백뿐인 원소만 든 목록도 빈 칸이다`() {
-        // paths가 이미 걸러내는 값이라 담긴 경로가 하나도 없다.
-        assertEquals("", CharacterRepresentativeImage.cellText("""["", "  "]"""))
-    }
-
-    @Test
-    fun `경로가 있으면 원문 그대로다`() {
-        val json = """["/a/b.jpg","/a/c.jpg"]"""
-        assertEquals(json, CharacterRepresentativeImage.cellText(json))
-    }
-
-    @Test
-    fun `목록으로 안 읽히는 값은 지우지 않고 그대로 싣는다`() {
-        // 내보내기가 지우면 그 백업으로 되돌릴 수 없고, 가져오기의 "읽을 수 없어 기존
-        // 배정을 유지합니다" 경고도 안 뜬다 — 조용한 유실이다(개발 의도 2번).
-        assertEquals("[깨진", CharacterRepresentativeImage.cellText("[깨진"))
-        assertEquals("/a/b.jpg", CharacterRepresentativeImage.cellText("/a/b.jpg"))
-    }
-
-    @Test
-    fun `빈 칸으로 낸 값은 가져오기가 읽는 빈 목록과 같은 뜻이다`() {
-        // 가져오기 쪽 규약(`ifBlank { "[]" }`)과 짝이 맞는지 성질로 잰다.
-        for (raw in listOf("[]", "[ ]", "", "   ", """["", "  "]""")) {
-            val cell = CharacterRepresentativeImage.cellText(raw)
-            val reread = cell.ifBlank { "[]" }
-            assertTrue("'$raw' → '$cell' → '$reread'", CharacterRepresentativeImage.paths(reread).isEmpty())
-            assertTrue(CharacterRepresentativeImage.isPathListJson(reread))
-        }
-    }
+    // 종전 이 자리에 있던 `cellText` 시험 여섯은 [ImagePathCellTest]로 옮겼다 (2026.08.25) —
+    // 그 칸의 표기가 절대경로에서 파일명으로 바뀌면서 판정도 `ImagePathCell`로 옮겨 갔고,
+    // 시험을 두 파일에 두면 한쪽이 낡는다. 그중 하나(`경로가 있으면 원문 그대로다`)는
+    // **계약이 바뀐 시험**이라 그쪽에서 새 계약(파일명으로 줄인다)으로 다시 섰다.
 }

@@ -1023,11 +1023,14 @@ class ExcelExporter(context: Context) {
             // 배열인데, 안내는 *"적을 값은 … 경로여야 합니다"*라 읽혀 경로 한 줄을 붙여넣게
             // 만들었다 — 그러면 목록으로 안 읽혀 편집이 통째로 무시된다(경고는 나가지만,
             // 안내를 따랐는데 안 되는 것은 안내 쪽 결함이다).
-            GuideLine("", styles.guideBody, "• 이미지경로는 앱 내부 경로를 JSON 배열로 적는 칸입니다: [\"/…/char_1.jpg\",\"/…/char_2.jpg\"]"),
-            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품 시트에서는 편집이 반영됩니다. 적을 값은 이 파일에 이미 있는"),
-            GuideLine("", styles.guideBody, "  경로여야 합니다(새 경로를 지어내면 그림이 없는 자리가 됩니다)."),
+            // 2026.08.25: 이 칸이 절대경로 배열에서 **파일명 배열**로 바뀌었다(`ImagePathCell`).
+            // 안내도 그 모양을 그대로 보여 준다 — 예시 한 줄이 다섯 줄의 설명보다 정확하다.
+            GuideLine("", styles.guideBody, "• 이미지경로는 그림의 **파일명**을 JSON 배열로 적는 칸입니다: [\"char_1.jpg\",\"char_2.jpg\"]"),
+            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품 시트에서는 편집이 반영됩니다. 적을 값은 이 파일의 '이미지' 시트에"),
+            GuideLine("", styles.guideBody, "  있는 파일명이어야 합니다(없는 이름을 지어내면 그림이 없는 자리가 됩니다)."),
             GuideLine("", styles.guideBody, "  칸을 비우면 그 항목의 그림 배정이 풀립니다. 배열로 읽을 수 없는 값은 기존 배정을"),
             GuideLine("", styles.guideBody, "  그대로 두고 가져오기 결과에서 알려 드립니다."),
+            GuideLine("", styles.guideBody, "  옛 파일이 든 전체 경로(/…/char_1.jpg)도 그대로 읽습니다 — 고쳐 적지 않아도 됩니다."),
             // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
             // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
             GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
@@ -1044,6 +1047,7 @@ class ExcelExporter(context: Context) {
             // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.
             GuideLine("", styles.guideBody, "• 대표이미지는 그 캐릭터의 카드·목록에 먼저 보일 그림입니다. 경로가 아니라 **파일명**을 적습니다:"),
             GuideLine("", styles.guideBody, "  char_1.jpg (같은 행 '이미지경로'에 든 그림 중 하나여야 합니다 — 그 목록에 없으면 기존 지정을 그대로 두고 알려 드립니다)"),
+            GuideLine("", styles.guideBody, "  이제 '이미지경로'도 파일명이라 두 칸이 같은 글자를 씁니다 — 목록에서 하나를 골라 붙여 넣으면 됩니다."),
             GuideLine("", styles.guideBody, "  칸을 비우면 지정이 풀려 그 캐릭터의 그림 중에서 앱이 골라 보여 줍니다(첫 장으로 고정되지 않습니다)."),
             GuideLine("", styles.guideBody, "  열을 통째로 지우면 기존 지정이 유지됩니다."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
@@ -1407,7 +1411,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setTextSafe(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
-            row.createCell(6).setTextSafe(CharacterRepresentativeImage.cellText(universe.imagePaths))
+            row.createCell(6).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(universe.imagePaths))
             row.createCell(7).setTextSafe(universe.imageMode)
             row.createCell(8).setTextSafe(universe.customRelationshipTypes)
             row.createCell(9).setTextSafe(universe.customRelationshipColors)
@@ -1465,7 +1469,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setTextSafe(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
-            row.createCell(8).setTextSafe(CharacterRepresentativeImage.cellText(novel.imagePaths))
+            row.createCell(8).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(novel.imagePaths))
             row.createCell(9).setTextSafe(novel.imageMode)
             novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
             row.createCell(11).setTextSafe(if (novel.inheritUniverseBorder) "Y" else "N")
@@ -2109,7 +2113,7 @@ class ExcelExporter(context: Context) {
             }
 
             // 이미지경로 — 편집이 반영된다(세계관·작품 시트와 같은 규약, B-222 WD-6)
-            row.createCell(col++).setTextSafe(CharacterRepresentativeImage.cellText(character.imagePaths))
+            row.createCell(col++).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(character.imagePaths))
 
             // 대표이미지 (B-103 D8) — 사람이 읽고 고칠 수 있도록 파일명으로 싣는다.
             // 한 행 안에서 파일명이 겹치면 규약이 알아서 전체 경로로 떨어진다.
