@@ -367,14 +367,20 @@ object AppSettingsKeys {
      * **키는 여기 없다**(`AiProviderConfig`에 그 칸이 없고, 키는 [AI_API_KEYS]가 따로 든다).
      * 그래서 이 행은 평문 위험 없이 실린다 — 새 기기는 주소·모델·순서를 그대로 받고
      * 키만 다시 넣으면 된다.
+     *
+     * **쿨다운도 여기 없다** — 싣는 목록은 `AiProviderCodec.encodeForTransfer`가 내고,
+     * 그 함수가 기기에 매인 칸을 뺀다(사유는 그 KDoc). 들일 때도 이 기기의 값을 그대로 둔다.
      */
     val AI_PROVIDERS = Spec("ai_providers", Kind.TEXT,
         note = "등록해 둔 AI 프로바이더 목록입니다.",
         domain = Domain.AppOwned("설정의 AI 연동",
-            extra = "항목마다 id·protocol·displayName·baseUrl·model이 있는 JSON 배열입니다. " +
+            extra = "항목마다 id·protocol·displayName·baseUrl·model과, 앱이 오류·모델 조회에서 " +
+                "배운 사실(출력 상한 등)이 있는 JSON 배열입니다. " +
                 "배열로 읽히지 않으면 그 행을 건너뛰고, 항목 하나가 깨지면 그 항목만 건너뛴 뒤 " +
                 "개수를 알려 드립니다. 파일에 없는 프로바이더는 지워지지 않습니다. " +
-                "API 키는 이 칸에 들어가지 않습니다."))
+                "API 키는 이 칸에 들어가지 않습니다. " +
+                "한도에 걸려 잠시 뒤로 미뤄 둔 시각은 그 기기의 것이라 싣지 않습니다 — " +
+                "이 파일로는 다른 기기의 프로바이더가 잠기지 않습니다."))
     val AI_ACTIVE_PROVIDER = Spec("ai_active_provider", Kind.TEXT,
         note = "지금 AI 요청을 보낼 프로바이더입니다.",
         domain = Domain.AppOwned("설정의 AI 연동",

@@ -1126,12 +1126,12 @@ class ExcelExporter(context: Context) {
             // 두 값의 결과가 다른데(자동 관계를 지우는가 / 유형만 바꾸는가) 안내에 없었다.
             GuideLine("", styles.guideBody, "  '탈퇴유형'은 나간 방식입니다: 순수제거=그 세력의 자동 관계까지 지움,"),
             GuideLine("", styles.guideBody, "  설정상탈퇴=관계를 남기고 '탈퇴후관계유형'(비우면 '전 <자동관계유형>')로 바꿈. 빈 칸이면 아직 소속 중입니다"),
-            // 형제인 '캐릭터 관계'는 행의 '코드' 열이 있어 유형을 고쳐도 같은 관계로 인식하는데
-            // (바로 위 두 줄), **'세력 관계'에는 그 열이 없다** — 자연키가 (세력1, 세력2, 유형)이라
-            // 유형을 고치면 새 관계가 되고 옛 관계가 남는다. 같은 위험인데 경고가 한쪽에만 있었다.
-            GuideLine("", styles.guideBody, "• 세력 관계: 이 시트에는 행의 '코드' 열이 없어 세력1+세력2+관계 유형이 그 행의 정체입니다 —"),
-            GuideLine("", styles.guideBody, "  '관계 유형'을 고치면 새 관계가 생기고 기존 관계가 그대로 남습니다(고칠 셋 중 유형만 그렇습니다)."),
-            GuideLine("", styles.guideBody, "  유형을 바꾸려면 기존 행의 값을 고치는 대신 그 행을 앱에서 지우고 새로 만드는 편이 확실합니다."),
+            // 2026.08.25: 종전 안내는 *"이 시트에는 코드 열이 없으니 유형을 바꾸려면 앱에서
+            // 지우고 새로 만드세요"*였다 — 형제('캐릭터 관계')가 코드로 푼 문제를 사용자에게
+            // 떠넘긴 것이라, 스키마 v58이 그 열을 세우고 이 안내가 형제와 같은 말을 한다.
+            GuideLine("", styles.guideBody, "• 세력 관계: 관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),
+            GuideLine("", styles.guideBody, "  (코드를 비우고 유형만 바꾸면 새 관계가 생기고 기존 관계가 그대로 남습니다)"),
+            GuideLine("", styles.guideBody, "  코드 열이 없는 옛 파일도 그대로 들어옵니다 — 그때는 세력1+세력2+관계 유형으로 맞춥니다"),
             GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
             GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
             GuideLine("", styles.guideBody, "• 이름 은행: 코드로 매칭합니다(이름·성별을 고쳐도 같은 항목으로 인식). 코드가 없으면 이름+성별로 매칭. 사용여부는 Y/N"),
@@ -2710,6 +2710,9 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction1?.code ?: "")
             row.createCell(8).setTextSafe(faction2?.code ?: "")
             row.createCell(9).setCellValue(rel.createdAt.toDouble())
+            // 관계의 정체 — 없는 행은 있을 수 없지만(v58 마이그레이션이 백필한다) 빈 글자로
+            // 두면 가져오기가 자연키 폴백을 그대로 타므로 종전 동작이다.
+            row.createCell(10).setTextSafe(rel.code ?: "")
             finishDataRow(row, spec, banded = allRelationships.size < BANDING_ROW_LIMIT)
         }
 

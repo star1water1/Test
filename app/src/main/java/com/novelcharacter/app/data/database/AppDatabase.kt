@@ -115,7 +115,7 @@ import com.novelcharacter.app.util.stringOr
         DuelCounterVerdict::class,
         DefaultFieldTemplate::class
     ],
-    version = 57,
+    version = 58,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -2272,6 +2272,52 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 57 to 58 — faction_relationships 안정 식별자(code)")
+
+                // **형제가 v42에 받은 칸을 이 표만 못 받고 있었다.** 세력 관계의 자연키는
+                // (세력1, 세력2, 관계 유형)이라 엑셀에서 유형을 고치면 rename인지 신규인지
+                // 구별할 수 없었고, 가져오기는 새 관계를 만들며 옛 관계를 그대로 남겼다 —
+                // 한 쌍이 두 줄이 된다(사용자 파일에 이미 그 모양이 있었다).
+                //
+                // 절차는 `MIGRATION_41_42`(character_relationships)와 **글자 그대로 같다**:
+                // 칼럼 존재 확인 → 추가 → 전 행 백필 → 유니크 인덱스. 백필이 먼저라 유니크
+                // 충돌이 불가능하고, nullable TEXT라 `DEFAULT` 절 없는 ALTER TABLE 결과가
+                // 엔티티 선언(`code: String?`)과 정확히 맞는다.
+                //
+                // 존재 확인을 먼저 하는 이유도 그쪽과 같다 — 중간 빌드를 거친 기기에서 이미
+                // 칼럼이 있으면 ALTER TABLE이 "duplicate column name"으로 실패해, 파괴적
+                // 폴백을 쓰지 않는 이 앱에서는 **시작 시마다 기동 불가**로 나타난다.
+                val hasCode = db.query("PRAGMA table_info(`faction_relationships`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "code") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasCode) {
+                    db.execSQL("ALTER TABLE `faction_relationships` ADD COLUMN `code` TEXT")
+                }
+                // 읽기와 쓰기를 겹치지 않게 가른다 — 사유는 MIGRATION_34_35의 같은 자리에 있다.
+                // 이 표는 세력 수의 제곱에 붙지만 세력은 캐릭터보다 훨씬 적어, 셋 중 가장 작다.
+                val ids = ArrayList<Long>()
+                db.query("SELECT id FROM `faction_relationships` WHERE code IS NULL").use { c ->
+                    while (c.moveToNext()) ids.add(c.getLong(0))
+                }
+                for (id in ids) {
+                    db.execSQL(
+                        "UPDATE `faction_relationships` SET code = ? WHERE id = ?",
+                        arrayOf(generateEntityCode(), id)
+                    )
+                }
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_faction_relationships_code` ON `faction_relationships`(`code`)")
+
+                Log.i(TAG, "Migration from version 57 to 58 completed successfully")
+            }
+        }
+
         /**
          * 이 DB가 아는 마이그레이션 **전부** — 앱과 시험이 **같은 목록**을 본다 (B-9).
          *
@@ -2340,7 +2386,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_53_54,
             MIGRATION_54_55,
             MIGRATION_55_56,
-            MIGRATION_56_57
+            MIGRATION_56_57,
+            MIGRATION_57_58
         )
 
         fun getDatabase(context: Context): AppDatabase {

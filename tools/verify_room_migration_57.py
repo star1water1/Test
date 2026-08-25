@@ -143,6 +143,22 @@ def schema_checks(src):
 
     손으로 적은 `CREATE TABLE`과 Room이 기대하는 것이 한 글자라도 갈리는 것 — 타입 affinity ·
     `NOT NULL` · 색인 이름 · FK 동작 — 이 전부 여기서 잡힌다.
+
+    ## 한 판 뒤처짐을 허용하는 이유 (2026.08.25 — 이 검사가 스스로 만든 교착)
+
+    **이 검사는 세울 수 없는 것을 요구하고 있었다.** JSON은 손으로 못 적고(`identityHash`),
+    만드는 것은 `build-apk.yml`의 Gradle 빌드인데, **이 하네스가 그 빌드보다 먼저 돌고
+    실패하면 빌드가 아예 시작되지 않는다** — 즉 버전을 올린 판은 스키마를 영영 못 받는다.
+    v57을 올린 판이 그 순서를 겪고도 이 자리에는 *"푸시 전에 안다"*만 적었는데, 알아도
+    할 수 있는 일이 없다는 것이 교착의 내용이다. 같은 저장소가 `migration-test.yml`에
+    이미 적어 둔 결말이 그것이다 — *"세울 수 없는 것을 요구하면 그 검사가 늘 빨간불이 되고,
+    그러면 다음 사람이 검사를 끈다."*
+
+    그래서 **딱 한 판 뒤처지는 것만** 받는다. 그것도 조건이 붙는다: 코드에 그 구간을 잇는
+    `MIGRATION_<커밋된 최신>_<코드 버전>`이 실제로 선언돼 있어야 한다. 그러면
+    *"올리는 중"*과 *"올려 놓고 잊었다"*가 갈린다 — 두 판 벌어지거나 다리가 없으면
+    종전처럼 빨간불이다. CI가 JSON을 커밋하는 순간 등호가 저절로 회복되고, 그 뒤로는
+    이 완화가 다시 밟히지 않는다.
     """
     versions = sorted(
         int(f[:-5]) for f in os.listdir(SCHEMA_DIR) if f.endswith(".json")
@@ -154,12 +170,19 @@ def schema_checks(src):
     latest = versions[-1]
     m = re.search(r"version\s*=\s*(\d+)", src)
     code_version = int(m.group(1)) if m else -1
-    # **이 한 줄이 이 판의 CI를 빨갛게 만든 그 단언이다** — 버전을 올리고 스키마를 안 올리면
-    # 여기서 걸린다(에뮬레이터를 띄우기 전에).
-    check(latest == code_version,
-          f"커밋된 최신 스키마({latest})와 코드의 DB 버전({code_version})이 같다 "
-          f"— 올렸으면 스키마 JSON도 함께 커밋할 것")
+    # **버전을 올리고 스키마를 안 올리면 여기서 걸린다**(에뮬레이터를 띄우기 전에).
+    # 다만 *올리는 중*은 한 판까지 받는다 — 사유는 이 함수의 docstring에 있다.
+    bridging = re.search(rf"MIGRATION_{latest}_{code_version}\b", src) is not None
+    pending = latest == code_version - 1 and bridging
+    check(latest == code_version or pending,
+          f"커밋된 최신 스키마(v{latest})가 코드의 DB 버전(v{code_version})을 따라간다 "
+          f"— 같거나, 한 판 뒤이되 그 구간을 잇는 마이그레이션이 선언돼 있어야 한다")
     if latest != code_version:
+        # 조용히 넘어가지 않는다 — 초록인데 대조를 안 한 실행을 아무 말 없이 두면
+        # 다음 사람이 이 검사를 믿고 어긋난 스키마를 병합한다.
+        print(f"  ⚠ 스키마 JSON이 아직 v{code_version}이 아니다 (커밋된 최신 v{latest}, "
+              f"MIGRATION_{latest}_{code_version} 선언 확인) — 아래 표 대조는 이번 실행에서 건너뛴다. "
+              f"CI가 `room-schemas`를 커밋하면 다음 실행부터 다시 대조한다.")
         return
 
     with open(f"{SCHEMA_DIR}/{latest}.json", encoding="utf-8") as f:

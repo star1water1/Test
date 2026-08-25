@@ -1568,7 +1568,11 @@ fun factionRelationshipSpec(
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("세력1코드", readOnly = true, width = 4000),
         ColumnSpec("세력2코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true)
+        ColumnSpec("생성일", readOnly = true, width = 5000, millis = true),
+        // 관계 자체의 안정 식별자 — 형제 시트('캐릭터 관계')와 **같은 자리에 같은 뜻**이다.
+        // 이 열이 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다(자연키가 세력1+세력2+유형이라
+        // 코드 없이는 rename과 신규를 구별할 수 없어, 고친 행마다 관계가 하나씩 늘었다).
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 

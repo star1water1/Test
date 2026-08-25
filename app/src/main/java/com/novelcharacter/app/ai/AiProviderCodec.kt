@@ -36,6 +36,42 @@ object AiProviderCodec {
     fun encode(configs: List<AiProviderConfig>): String =
         JsonArray().apply { configs.forEach { add(toJson(it)) } }.toString()
 
+    /**
+     * **기기 밖으로 나가는 목록** — 엑셀 '앱 설정' 시트·월드패키지가 쓴다.
+     *
+     * [encode]와 갈라 두는 것이 요점이다. 저장소가 쓰는 [encode]는 *"이 기기의 지금 상태를
+     * 그대로 적는다"*이고, 여기는 *"다른 기기에서도 참인 것만 적는다"*라 **물음이 다르다.**
+     * 같은 함수로 두면 그 갈림이 없어져, 저장에 새 칸이 늘 때마다 그것이 이식 가능한지 아무도
+     * 묻지 않은 채 파일에 실린다 — [AiProviderConfig.cooldownUntilMillis]가 실제로 그렇게 실렸다.
+     *
+     * ## 무엇을 빼는가 — 쿨다운 하나다
+     *
+     * 학습값 다섯 중 넷(`detectedOutputLimit`·`temperatureUnsupported`·
+     * `maxTokensParamUnsupported`·`imagesUnsupported`)은 **그 모델·그 주소에 대한 사실**이라
+     * 기기를 옮겨도 참이다. 싣는 편이 낫다 — 새 기기가 같은 400을 다시 겪으며 배우지 않는다.
+     *
+     * [AiProviderConfig.cooldownUntilMillis]만 다르다. 그것은 *"이 키가 **언제까지** 뒤로
+     * 밀린다"*는 **벽시계 한 점**이라 파일이 옮기는 순간 뜻을 잃는다. 실측(2026.08.25 사용자
+     * 파일): 내보낸 시점 기준 아직 지나지 않은 쿨다운 둘이 그대로 실려 있었고, 그 파일을
+     * 곧바로 다른 기기에 들이면 **멀쩡한 프로바이더 둘이 잠긴 채로 시작한다** — 사용자는
+     * 이유를 볼 길이 없다(그 화면은 "N분 뒤"만 말한다).
+     */
+    fun encodeForTransfer(configs: List<AiProviderConfig>): String =
+        encode(configs.map(::forTransfer))
+
+    /** 이식용으로 다듬은 한 항목 — 기기에 매인 칸을 비운다([encodeForTransfer]가 사유를 든다). */
+    fun forTransfer(c: AiProviderConfig): AiProviderConfig = c.copy(cooldownUntilMillis = null)
+
+    /**
+     * 들여온 항목에 **이 기기의** 쿨다운을 도로 얹는다 — 파일은 그 칸을 말하지 않으므로
+     * 없는 것을 "없음"으로 읽어 지우면 안 된다(옛 파일이 든 값도 여기서 함께 막힌다).
+     *
+     * [current]가 null이면(이 기기에 없던 프로바이더) 쿨다운도 없다 — 처음 보는 키를
+     * 밀어 둘 근거가 없다.
+     */
+    fun keepDeviceState(incoming: AiProviderConfig, current: AiProviderConfig?): AiProviderConfig =
+        incoming.copy(cooldownUntilMillis = current?.cooldownUntilMillis)
+
     fun decode(raw: String?): DecodeResult {
         if (raw == null) return DecodeResult(emptyList())
         val array = try {

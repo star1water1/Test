@@ -62,6 +62,59 @@ object FactionRelationshipMatcher {
         byKey[key(factionId1, factionId2, relationType)]
             ?: byKey[key(factionId2, factionId1, relationType)]
 
+    /** 방향을 지운 쌍 키 — 한 쌍은 한 행이므로 (1,2)와 (2,1)은 같은 쌍이다. */
+    private fun pairKey(a: Long, b: Long): Pair<Long, Long> = if (a <= b) a to b else b to a
+
+    /**
+     * 한 행의 매칭 결과 — [matchRow]가 낸다. 형제([com.novelcharacter.app.util.RelationshipRowMatch])와
+     * 같은 모양이라 부르는 쪽의 고지 문구도 같은 갈래로 짠다.
+     *
+     * @property existing 이 행이 고칠 기존 관계. `null`이면 새로 만든다.
+     * @property codeOfOtherPair 파일의 코드가 **다른 두 세력의 관계**를 가리켰을 때 그 관계.
+     */
+    data class RowMatch(
+        val existing: FactionRelationship?,
+        val codeOfOtherPair: FactionRelationship?
+    ) {
+        /** 새로 만들 때 파일의 코드를 그대로 쓸 수 있는가 — 남이 이미 든 코드면 못 쓴다(유니크 열). */
+        val canReuseFileCode: Boolean get() = codeOfOtherPair == null
+    }
+
+    /**
+     * 이 행이 고칠 기존 관계를 고른다 — **코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백**
+     * (v58, 2026.08.25). 규약·조건·사유가 전부 형제
+     * [com.novelcharacter.app.util.RelationshipIndexes.matchRow]와 같다.
+     *
+     * ## 왜 코드가 먼저인가
+     *
+     * 자연키에 **관계 유형이 들어 있다.** 그래서 코드가 없던 종전에는 시트에서 유형을 고치는
+     * 순간 그 행이 *다른 관계*가 됐다 — 가져오기는 새 관계를 만들고 옛 관계는 그대로 남는다.
+     * 사용자 파일에 이미 그 모양이 있었다(같은 쌍이 '동맹'과 '동' 두 행). 종전 판은 이 자리를
+     * 안내 문구로 막았고("앱에서 지우고 새로 만드세요"), 이 함수가 그것을 대신한다.
+     *
+     * ## 코드에 붙는 한 가지 조건
+     *
+     * '코드' 열은 회색(readOnly)이라 **행을 복사하면 남의 코드가 따라온다.** 조건이 없으면
+     * 그 코드를 따라가 남의 관계가 이 행의 값으로 덮이고, 이 행이 말한 관계는 만들어지지
+     * 않는다(둘 다 말이 없다). 그래서 **같은 두 세력의 관계일 때만** 코드를 따른다.
+     */
+    fun matchRow(
+        byKey: Map<Triple<Long, Long, String>, FactionRelationship>,
+        byCode: Map<String, FactionRelationship>,
+        relCode: String,
+        factionId1: Long,
+        factionId2: Long,
+        relationType: String
+    ): RowMatch {
+        val coded = if (relCode.isNotBlank()) byCode[relCode] else null
+        val samePair = coded != null &&
+            pairKey(coded.factionId1, coded.factionId2) == pairKey(factionId1, factionId2)
+        return RowMatch(
+            existing = if (samePair) coded else match(byKey, factionId1, factionId2, relationType),
+            codeOfOtherPair = if (coded != null && !samePair) coded else null
+        )
+    }
+
     /**
      * 매칭된 관계에 행을 적용한 결과. 시트에 없던 열은 [existing]의 값을 그대로 둔다.
      * `createdAt`은 갱신하지 않는다 — 안정 식별자를 조용히 바꾸지 않는다.

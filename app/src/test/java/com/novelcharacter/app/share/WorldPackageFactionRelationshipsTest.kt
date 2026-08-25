@@ -23,11 +23,12 @@ class WorldPackageFactionRelationshipsTest {
         id2: Long,
         type: String = "동맹",
         order: Int = 0,
-        bidirectional: Boolean = true
+        bidirectional: Boolean = true,
+        code: String? = "REL-$id1-$id2"
     ) = FactionRelationship(
         factionId1 = id1, factionId2 = id2, relationType = type,
         description = "d", intensity = 7, isBidirectional = bidirectional,
-        displayOrder = order
+        displayOrder = order, code = code
     )
 
     /**
@@ -236,4 +237,44 @@ class WorldPackageFactionRelationshipsTest {
         assertEquals("적대", rel.relationType)
         assertEquals(5, rel.displayOrder)
     }
+    // ── 관계 자신의 코드 (v58, 2026.08.25) ──
+
+    /**
+     * 코드가 실리지 않으면 패키지를 한 번 건널 때마다 새로 발급되어, 엑셀 '세력 관계' 시트의
+     * 코드 매칭이 **기기를 옮기는 순간 끊긴다.** 형제(`CharacterRelationship`)는 엔티티를
+     * 통째로 실어 이미 갖고 있던 칸이다.
+     */
+    @Test
+    fun `관계의 코드가 패키지를 왕복한다`() {
+        val factions = listOf(faction(1, "A"), faction(2, "B"))
+        val portable = WorldPackageFactionRelationships
+            .toPortable(factions, listOf(rel(1, 2, code = "KEEP-ME"))).items
+        assertEquals("KEEP-ME", portable.single().code)
+
+        val back = WorldPackageFactionRelationships.fromPortable(
+            portable, mapOf("FC1" to 11L, "FC2" to 22L), emptyMap()
+        ).relationships
+        assertEquals("KEEP-ME", back.single().code)
+    }
+
+    /**
+     * 옛 패키지(코드 칸 없음)는 그대로 읽힌다 — 새로 발급하므로 **오늘까지의 동작 그대로**다.
+     * 이것이 성립하기 때문에 패키지 판올림이 필요하지 않다(R-64).
+     */
+    @Test
+    fun `코드 없는 옛 패키지는 새 코드를 받는다`() {
+        val portable = listOf(
+            PortableFactionRelationship(
+                factionCode1 = "F1", factionName1 = "A",
+                factionCode2 = "F2", factionName2 = "B",
+                relationType = "동맹", description = "", intensity = 5,
+                isBidirectional = true, displayOrder = 0
+            )
+        )
+        val back = WorldPackageFactionRelationships.fromPortable(
+            portable, mapOf("F1" to 11L, "F2" to 22L), emptyMap()
+        ).relationships
+        assertTrue("코드가 발급되지 않았다", !back.single().code.isNullOrBlank())
+    }
+
 }

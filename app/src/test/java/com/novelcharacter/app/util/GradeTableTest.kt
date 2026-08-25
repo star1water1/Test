@@ -138,4 +138,52 @@ class GradeTableTest {
         val json = com.google.gson.Gson().toJson(mapOf("grades" to outcome.grades))
         assertEquals(rows, GradeTable.fromConfigRows(json))
     }
+    // ── duplicateValues (2026.08.25 — 체계 부착이 조용히 만든 겹침) ──
+
+    /** 겹치는 것이 없으면 빈 목록이다 — 정상 표에 잔소리를 달지 않는다. */
+    @Test
+    fun `수치가 전부 다르면 겹침이 없다`() {
+        assertTrue(
+            GradeTable.duplicateValues(mapOf("F" to 0.5, "E" to 1.0, "D" to 2.0)).isEmpty()
+        )
+    }
+
+    /**
+     * 사용자 파일에서 실제로 나온 모양 — `{C:0.5,B:1,A:2,S:3}`짜리 필드를 `F~SSS` 체계에
+     * 붙이면 실효 표가 이렇게 된다. 무리는 숫자 오름차순, 라벨은 표에 있던 차례 그대로다.
+     */
+    @Test
+    fun `체계 부착이 만든 겹침 셋을 전부 낸다`() {
+        val effective = linkedMapOf(
+            "F" to 0.5, "E" to 1.0, "D" to 2.0,
+            "C" to 0.5, "B" to 1.0, "A" to 2.0,
+            "S" to 3.0, "SS" to 7.0, "SSS" to 8.0
+        )
+        val groups = GradeTable.duplicateValues(effective)
+        assertEquals(listOf(0.5, 1.0, 2.0), groups.map { it.value })
+        assertEquals(listOf("F", "C"), groups[0].labels)
+        assertEquals(listOf("E", "B"), groups[1].labels)
+        assertEquals(listOf("D", "A"), groups[2].labels)
+    }
+
+    /** 셋 이상이 같은 숫자면 한 무리로 묶인다. */
+    @Test
+    fun `셋이 같은 숫자면 한 무리다`() {
+        val groups = GradeTable.duplicateValues(linkedMapOf("A" to 1.0, "B" to 1.0, "C" to 1.0))
+        assertEquals(1, groups.size)
+        assertEquals(listOf("A", "B", "C"), groups.single().labels)
+    }
+
+    /**
+     * 겹침은 [GradeTable.Problem]이 아니다 — 행은 멀쩡하므로 [GradeTable.build]가 막지 않고
+     * 값도 그대로 담는다. 막았다면 이미 겹친 표를 가진 사용자가 다른 칸도 못 고친다.
+     */
+    @Test
+    fun `겹침은 저장을 막지 않는다`() {
+        val outcome = GradeTable.build(listOf("F" to "0.5", "C" to "0.5"))
+        assertTrue(outcome.problems.isEmpty())
+        assertEquals(mapOf("F" to 0.5, "C" to 0.5), outcome.grades)
+        assertEquals(1, GradeTable.duplicateValues(outcome.grades).size)
+    }
+
 }

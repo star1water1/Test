@@ -21,7 +21,16 @@ data class PortableFactionRelationship(
     val description: String,
     val intensity: Int,
     val isBidirectional: Boolean,
-    val displayOrder: Int
+    val displayOrder: Int,
+    /**
+     * 관계 자신의 안정 식별자(v58, 2026.08.25) — **nullable이라 옛 패키지도 그대로 읽힌다**
+     * (없으면 가져오기가 새로 발급한다. 형제인 `CharacterRelationship`은 엔티티를 통째로
+     * 실어 이 칸을 이미 갖고 있었고, 이 표만 DTO에 빠져 있었다).
+     *
+     * 없으면 패키지를 한 번 건널 때마다 코드가 새로 발급되어, 엑셀 '세력 관계' 시트의
+     * 코드 매칭이 기기를 옮기는 순간 끊긴다 — 그것이 이 칸을 더한 이유다.
+     */
+    val code: String? = null
 )
 
 object WorldPackageFactionRelationships {
@@ -58,7 +67,8 @@ object WorldPackageFactionRelationships {
                         description = rel.description,
                         intensity = rel.intensity,
                         isBidirectional = rel.isBidirectional,
-                        displayOrder = rel.displayOrder
+                        displayOrder = rel.displayOrder,
+                        code = rel.code
                     )
                 )
                 f1 != null || f2 != null -> dropped++
@@ -114,7 +124,11 @@ object WorldPackageFactionRelationships {
                     description = item.description,
                     intensity = item.intensity,
                     isBidirectional = item.isBidirectional,
-                    displayOrder = item.displayOrder
+                    displayOrder = item.displayOrder,
+                    // 옛 패키지(code 없음)는 엔티티 기본값이 새로 발급한다. 겹치는 코드의
+                    // 재발급은 부르는 쪽이 등록부로 처리한다(`WorldPackageImporter`).
+                    code = item.code?.takeIf { it.isNotBlank() }
+                        ?: com.novelcharacter.app.data.model.generateEntityCode()
                 )
             )
         }
