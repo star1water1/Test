@@ -146,7 +146,7 @@ class NovelCharacterApp : Application() {
         // 밑줄 키 이력의 둘째 줄 정리 (1회)
         repairSingletonStateChangesIfNeeded()
         // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색 · 규격 밖 생일
-        // · 라이브러리에 남은 옛 생일 표기
+        // · 라이브러리에 남은 옛 생일 표기 · 세력 연결을 잃은 자동 관계
         repairLegacyValueFormatsIfNeeded()
         // 무소속 캐릭터의 시맨틱 이력 소급 (1회) — 살아 있는 경로가 그들을 빼고 있었다
         backfillUnclassifiedSemanticStateIfNeeded()
@@ -298,7 +298,7 @@ class NovelCharacterApp : Application() {
         val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
         // **플래그가 v3다** — 항목이 늘 때마다 올린다. 이미 마친 설치는 옛 플래그 때문에 다시
         // 돌지 않아 **새 항목만 조용히 건너뛰기** 때문이다(v2가 ③을 위해 올린 그 이유 그대로).
-        // 2026.08.25에 ④(값 라이브러리에 남은 규격 밖 생일 표기)가 늘었다.
+        // 2026.08.25에 ④(라이브러리에 남은 규격 밖 생일)·⑤(세력 연결을 잃은 자동 관계)가 늘었다.
         // 항목이 전부 멱등이라(그 object의 KDoc) 한 번 더 도는 값은 0건이고, 새 항목만 잡힌다.
         if (prefs.getBoolean("legacy_value_formats_repaired_v3", false)) return
 
@@ -332,6 +332,13 @@ class NovelCharacterApp : Application() {
                             "— 옛 표기는 별칭으로 남겨 두어 검색·통계가 계속 같은 값으로 봅니다"
                     )
                 }
+                if (repaired.factionRelinks > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "세력 연결이 끊겨 있던 자동 관계 ${repaired.factionRelinks}건을 도로 이었습니다 " +
+                            "— 이제 멤버 탈퇴·세력 삭제가 그 관계까지 함께 셉니다"
+                    )
+                }
                 val edit = prefs.edit()
                     .putBoolean("legacy_value_formats_repaired", true)
                     .putBoolean("legacy_value_formats_repaired_v2", true)
@@ -353,7 +360,8 @@ class NovelCharacterApp : Application() {
                     "Legacy value format repair completed " +
                         "(timestamps=${repaired.timestamps}, colors=${repaired.colors}, " +
                         "birthDates=${repaired.birthDates}, " +
-                        "birthDateEntries=${repaired.birthDateEntries})"
+                        "birthDateEntries=${repaired.birthDateEntries}, " +
+                        "factionRelinks=${repaired.factionRelinks})"
                 )
             } catch (e: Exception) {
                 android.util.Log.e(
