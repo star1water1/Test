@@ -70,6 +70,30 @@ class AppDatabaseMigrationTest {
      * 커밋된 최신 스키마로 DB를 만든 뒤 **진짜 Room으로 연다.** 엔티티가 그 사이에 바뀌었는데
      * 스키마를 다시 커밋하지 않았다면 `identityHash`가 어긋나 여기서 던진다 —
      * **이 한 시험이 B-9이 막으려던 사고의 대부분을 덮는다.**
+     *
+     * ## 한 판 뒤처짐을 받는 이유 (2026.08.25)
+     *
+     * 아래 버전 대조는 **세울 수 없는 것을 요구하고 있었다.** 스키마 JSON은 손으로 못 적고
+     * (`identityHash`), 만드는 것은 `build-apk.yml`의 Gradle 빌드이며, 그 빌드가 커밋을
+     * 미는 것은 **이 워크플로가 이미 돈 뒤**다. 그래서 **버전을 올린 PR은 첫 회차에서 반드시
+     * 빨간불**이고, 올린 사람이 로컬에서 할 수 있는 일이 없다.
+     *
+     * *"봇이 커밋하면 다음 회차에 낫는다"*도 그대로는 성립하지 않았다 — 그 커밋은
+     * `GITHUB_TOKEN`으로 밀려 **워크플로를 다시 트리거하지 않고**(GitHub 기본 규칙),
+     * 재실행에는 별도 권한이 필요하다. 실측(2026.08.25): 재실행·수동 실행이 둘 다
+     * `403 Resource not accessible by integration`이라 **또 한 번 푸시하는 것 말고 길이 없었다.**
+     *
+     * 그래서 **딱 한 판 뒤처지는 것만**, 그것도 **코드에 그 구간을 잇는 마이그레이션이 실제로
+     * 선언돼 있을 때만** 받는다. 그러면 *"올리는 중"*과 *"올려 놓고 잊었다"*가 갈린다 —
+     * 두 판 벌어지거나 다리가 없으면 종전처럼 빨간불이다.
+     *
+     * **이 완화가 무엇을 약하게 하지 않는지가 요점이다:** 이 시험의 값어치는 위의
+     * `identityHash` 대조이고 **그것은 조건 없이 그대로 돈다**(DB를 여는 순간 Room이 던진다).
+     * 완화되는 것은 *"새 JSON을 커밋했는가"*라는 부기 한 줄뿐이며, 그 커밋은 사람이 아니라
+     * 봇이 하므로 잊힐 자리도 아니다.
+     *
+     * 순수 하네스 쪽 쌍(`tools/verify_room_migration_57.py`)이 같은 규칙을 든다 —
+     * **둘이 갈리면 한쪽이 반드시 낡는다.**
      */
     @Test
     fun 커밋된_최신_스키마가_현행_엔티티와_맞는다() {
@@ -93,10 +117,15 @@ class AppDatabaseMigrationTest {
             // **`use`로 감싸지 않는다** — 그러면 Room이 들고 있는 열린 DB를 밑에서 닫아 버리고,
             // 뒤따르는 `db.close()`가 이미 닫힌 것을 다시 닫는다. 닫는 일은 아래 `finally` 하나가 진다.
             val open = db.openHelper.writableDatabase
-            assertEquals(
-                "커밋된 최신 스키마($latest)와 코드의 DB 버전이 다르다 — " +
-                    "버전을 올렸으면 새 스키마 JSON도 함께 커밋할 것.",
-                latest, open.version
+            // 한 판 뒤처짐은 **그 구간을 잇는 마이그레이션이 있을 때만** 받는다(위 KDoc).
+            val bridged = open.version == latest + 1 &&
+                AppDatabase.ALL_MIGRATIONS.any { it.startVersion == latest && it.endVersion == open.version }
+            assertTrue(
+                "커밋된 최신 스키마($latest)와 코드의 DB 버전(${open.version})이 맞지 않는다 — " +
+                    "같거나, 한 판 뒤이되 MIGRATION_${latest}_${open.version}이 선언돼 있어야 한다. " +
+                    "버전을 올렸으면 새 스키마 JSON도 함께 커밋할 것" +
+                    "(빌드가 만든 것을 그대로 넣는다 — 손으로 적으면 identityHash가 어긋난다).",
+                open.version == latest || bridged
             )
         } finally {
             db.close()
