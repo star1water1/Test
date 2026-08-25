@@ -775,6 +775,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
     /**
+     * '이미지경로' 셀 한 칸을 읽는다 — **캐릭터·세계관·작품이 같은 함수를 쓴다**.
+     *
+     * 반환 규약은 세 갈래다(F1-A):
+     *  - `null` = **말한 바 없음** → 부르는 쪽이 기존 배정을 유지한다.
+     *    열이 아예 없을 때와, **목록으로 읽을 수 없을 때**가 여기 온다.
+     *  - `"[]"` = 비움 의도(빈 칸·빈 배열) → 배정이 풀린다.
+     *  - 그 밖 = 해석된 경로 목록.
+     *
+     * ## 왜 한 함수로 모았나 (2026.08.25)
+     *
+     * 안내 시트는 *"배열로 읽을 수 없는 값은 기존 배정을 그대로 두고 알려 드립니다"*를
+     * **캐릭터·세계관·작품 셋 모두에** 대해 약속하는데, 그 처분은 **캐릭터에만** 있었다.
+     * 세계관·작품은 깨진 값을 그대로 [remapImagePaths]에 넘겨 **기존 배정을 덮었고**
+     * 경고도 없었다 — 안내가 약속한 것과 코드가 하는 일이 갈린 자리다.
+     */
+    private fun readImagePathsCell(
+        row: Row,
+        colIndex: Int,
+        ctx: String,
+        result: ImportResult?
+    ): String? {
+        if (colIndex < 0) return null
+        val cell = getCellString(row, colIndex).ifBlank { "[]" }
+        if (!CharacterRepresentativeImage.isPathListJson(cell)) {
+            result?.warnings?.add(
+                "$ctx: 이미지경로 '${truncateForCell(cell, SETTING_VALUE_IN_WARNING)}'을(를) 목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다 — 배정을 지우려면 칸을 비우세요"
+            )
+            return null
+        }
+        return remapImagePaths(cell)
+    }
+
+    /**
      * '이미지경로' 셀 → 저장할 경로 목록. 표기 규약은 [com.novelcharacter.app.util.ImagePathCell]이
      * 단일 소스이고, 이 함수는 그것이 필요로 하는 **이 기기의 사정 둘**만 채워 넣는다.
      *
@@ -787,6 +820,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * ② 옛 절대경로 토큰의 재매핑 — 종전 동작 그대로다.
      */
     private fun remapImagePaths(imagePathsJson: String): String {
+        // `appContext`가 null인 것은 **생성자 기본값뿐**이고 앱은 언제나 채워 넘긴다
+        // (`ExcelImporter`가 유일한 생성 자리다). 그래도 널을 무시하지 않는 것은 이 파일의
+        // 다른 자리와 같은 관례다 — 못 풀면 토큰을 **원문 그대로** 남긴다(버리지 않는다).
         val filesDir = appContext?.filesDir
         val byBasename = if (imagePathRemap.isEmpty()) emptyMap()
         else ImageMetaRowResolver.buildRemapByBasename(imagePathRemap).byBasename
@@ -1418,7 +1454,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
             } else null,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
-            imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
+            imagePaths = readImagePathsCell(row, c.imagePath, ctx, result),
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
             // 두 열은 JSON이다. 소비처가 파싱 실패를 무음으로 삼키고 기본값으로 돌아가므로 여기서 검증한다.
             // null = 열 없음 또는 해석 불가 → 기존 값 유지.
@@ -1547,7 +1583,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
             borderColor = borderColor,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
-            imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
+            imagePaths = readImagePathsCell(row, c.imagePath, ctx, result),
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
             imageCharCode = getCellCode(row, c.imageCharCode, ctx, result).ifBlank { null },
             hasImageCharCol = c.imageCharCode >= 0,
@@ -2988,22 +3024,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     )
 
     private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, result: ImportResult?): CharacterRowValues {
-        // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
-        val rawImagePaths: String? = if (c.image >= 0) {
-            val cell = getCellString(row, c.image).ifBlank { "[]" }
-            // **읽을 수 없는 값은 비움(배정 해제)이 아니라 기존 유지 + 경고다** (콜드 검토
-            // 2026.08.20 — 생성일과 같은 처분). 종전에는 깨진 편집이 그대로 저장돼 모든 읽는
-            // 자리가 빈 목록으로 해석했다 — 오타 하나가 이미지 배정 전체를 무고지로 풀었다.
-            // 빈 칸·유효한 빈 배열('[]'·'[ ]')만 비움 의도로 읽는다(F1-A). 미리보기도 이
-            // 함수를 지나므로 예고와 처분이 갈리지 않는다(R-33 — result=null이면 값만 든다).
-            if (CharacterRepresentativeImage.isPathListJson(cell)) cell
-            else {
-                result?.warnings?.add(
-                    "$ctx: 이미지경로 '${truncateForCell(cell, SETTING_VALUE_IN_WARNING)}'을(를) 목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다 — 배정을 지우려면 칸을 비우세요"
-                )
-                null
-            }
-        } else null
+        // **읽을 수 없는 값은 비움(배정 해제)이 아니라 기존 유지 + 경고다** (콜드 검토
+        // 2026.08.20 — 생성일과 같은 처분). 종전에는 깨진 편집이 그대로 저장돼 모든 읽는
+        // 자리가 빈 목록으로 해석했다 — 오타 하나가 이미지 배정 전체를 무고지로 풀었다.
+        // 빈 칸·유효한 빈 배열('[]'·'[ ]')만 비움 의도로 읽는다(F1-A). 미리보기도 이
+        // 함수를 지나므로 예고와 처분이 갈리지 않는다(R-33 — result=null이면 값만 든다).
+        // 판정과 해석을 [readImagePathsCell]이 함께 든다 — 세계관·작품과 같은 함수다.
+        val rawImagePaths: String? = readImagePathsCell(row, c.image, ctx, result)
         return CharacterRowValues(
             name = getCellString(row, c.name),
             code = getCellCode(row, c.code, ctx, result),  // F4: 숫자 코드 방어
@@ -3014,7 +3041,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             anotherName = if (c.anotherName >= 0) getCellString(row, c.anotherName) else null,
             lastName = if (c.lastName >= 0) getCellString(row, c.lastName) else null,
             firstName = if (c.firstName >= 0) getCellString(row, c.firstName) else null,
-            imagePaths = rawImagePaths?.let { remapImagePaths(it) },
+            imagePaths = rawImagePaths,
             // 대표이미지 열(B-103 D8). **열 없음과 빈 칸은 다른 상태다** —
             // 열 없음은 "말하지 않았다"(기존 유지), 빈 칸은 "지정 없음으로 하라"(해제).
             representativeCell = if (c.representative >= 0) getCellString(row, c.representative) else null,
@@ -5330,8 +5357,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "세력 관계 행 ${excelRow(i)}", null
             )
             val relCode = if (relCodeColIndex >= 0) getCellString(row, relCodeColIndex).trim() else ""
-            val existing = FactionRelationshipMatcher
+            val matched = FactionRelationshipMatcher
                 .matchRow(existingByKey, existingByCode, relCode, f1.id, f2.id, relType).existing
+            // 가져오기와 **같은 갈래**다(R-33) — 유형을 옮기려는 자리에 다른 관계가 이미 있으면
+            // 유니크에 걸려 그 행은 건너뛴다. 여기서 세지 않으면 미리보기가 '변경'이라 예고한다.
+            if (matched != null && matched.relationType != relType) {
+                val taken = FactionRelationshipMatcher.match(existingByKey, f1.id, f2.id, relType)
+                if (taken != null && taken.id != matched.id) { skippedCount++; continue }
+            }
+            val existing = matched
             if (existing == null) {
                 newCount++
                 val minted = newFactionRelationshipFrom(rowValues, f1.id, f2.id, relType, now, generateEntityCode())
@@ -10430,7 +10464,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ).joinToString("–").ifBlank { "다른 두 세력" }
                     result.warnings.add("세력 관계 행 ${excelRow(i)}: 코드 '$relCode'는 '$otherPair'의 관계를 가리켜 이 행에는 쓰지 않았습니다 — 행을 복사했다면 '코드' 칸을 비우세요 (이 행은 '${faction1.name}'–'${faction2.name}'의 관계로 처리합니다)")
                 }
-                val existing = rowMatch.existing
+                var existing = rowMatch.existing
+                if (existing != null && existing.relationType != relType) {
+                    // 유형을 옮기려는데 **그 자리에 이미 다른 관계가 있으면** 유니크 인덱스가
+                    // (세력1, 세력2, 유형)이라 갱신이 실패한다. 예외로 떨어뜨리면 사용자가 보는
+                    // 것은 SQL 문구 하나뿐이라, 여기서 먼저 갈라 무엇을 어떻게 하라고 말한다.
+                    // **어느 쪽도 지우지 않는다** — 둘 다 사용자가 만든 관계다.
+                    val taken = FactionRelationshipMatcher
+                        .match(existingByKey, faction1.id, faction2.id, relType)
+                    if (taken != null && taken.id != existing.id) {
+                        result.skippedRows++
+                        result.errors.add("세력 관계 행 ${excelRow(i)}: '${faction1.name}'–'${faction2.name}'에는 이미 '$relType' 관계가 따로 있어 이 행의 유형을 바꾸지 않았습니다 — 먼저 그 관계를 앱에서 지우거나 이 행의 '코드' 칸을 비우세요")
+                        existing = null
+                    }
+                }
                 if (existing != null && relCode.isNotBlank() && rowMatch.codeOfOtherPair == null &&
                     existing.relationType != relType
                 ) {
@@ -10439,6 +10486,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("세력 관계 행 ${excelRow(i)}: '${faction1.name}'–'${faction2.name}' 관계 유형을 '${existing.relationType}' → '$relType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
                 }
 
+                if (existing == null && rowMatch.existing != null) {
+                    // 위에서 갈라 낸 충돌 — 새로 만들지 않는다(그것도 같은 유니크에 걸린다).
+                    continue
+                }
                 if (existing != null) {
                     // 열 없음 = 기존값 유지(무음 손실 방지), 빈칸=삭제 집계 — 캐릭터 관계 시트와 동일 의미론
                     if (descColIndex >= 0 && rowValues.description == "" && existing.description.isNotBlank()) result.clearedFields++
