@@ -339,6 +339,25 @@ class NovelCharacterApp : Application() {
                             "— 이제 멤버 탈퇴·세력 삭제가 그 관계까지 함께 셉니다"
                     )
                 }
+                // **집계를 그 자리에서 다시 센다** — ④의 이름 변경은 행의 `usageCount`를 그대로
+                // 둔 채 값만 옮기므로, 실측의 `05-30`처럼 *쓰이는데 0으로 적힌* 행이 남는다.
+                // 그 상태의 행은 '미사용 자동수집 정리'가 지우자고 권한다(B-60이 못박은 부류) —
+                // 방금 붙인 별칭이 그 자리에서 사라진다.
+                // **세는 것은 표 셋을 도는 그 함수 하나다**(SQL로 옮겨 적으면 규칙이 두 벌이 된다).
+                // 실패해도 아래 플래그를 막지 않는다 — `field_library_harvest_pending`이
+                // 다음 실행의 수확·전체 재집계로 같은 자리를 다시 덮는 durable한 그물이고,
+                // 여기 재집계는 **이번 세션의 창을 닫는** 몫이다.
+                if (repaired.birthDateEntryFieldIds.isNotEmpty()) {
+                    try {
+                        fieldValueLibraryRepository
+                            .recountUsageForFieldsOrThrow(repaired.birthDateEntryFieldIds)
+                    } catch (e: Exception) {
+                        AppLogger.warn(
+                            "LegacyValueRepair",
+                            "생일 값의 사용 횟수를 다시 세지 못했습니다 — 다음 실행이 다시 셉니다: ${e.message}"
+                        )
+                    }
+                }
                 val edit = prefs.edit()
                     .putBoolean("legacy_value_formats_repaired", true)
                     .putBoolean("legacy_value_formats_repaired_v2", true)

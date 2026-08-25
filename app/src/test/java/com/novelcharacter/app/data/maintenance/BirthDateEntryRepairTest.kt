@@ -104,7 +104,7 @@ class BirthDateEntryRepairTest {
         // `(fieldDefinitionId, value)`가 유니크라, 계획이 같은 값을 둘로 만들면 쓰기가 죽는다.
         val before = listOf(entry(1, "6-7"), entry(2, "06-07"), entry(3, "2020-06-07"))
         val after = apply(before, BirthDateEntryRepair.plan(before))
-        assertEquals(after.map { it.value }.distinct().size, after.size)
+        assertEquals(after.size, after.map { it.value }.distinct().size)
     }
 
     /** 계획을 실제로 적용한다 — [LegacyValueFormats]의 쓰기와 같은 처분이어야 한다. */

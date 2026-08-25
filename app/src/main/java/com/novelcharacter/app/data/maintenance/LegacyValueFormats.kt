@@ -93,12 +93,20 @@ object LegacyValueFormats {
         val colors: Int,
         val birthDates: Int = 0,
         val birthDateEntries: Int = 0,
+        /**
+         * ④가 엔트리를 옮긴 필드 — **부르는 쪽이 그 필드의 집계를 다시 세라는 뜻이다.**
+         *
+         * 이름 변경은 행의 `usageCount`를 그대로 둔 채 값만 옮긴다. 그래서 실측의 `05-30`처럼
+         * *쓰이는데 0으로 적힌* 행이 한 세션 동안 남고, 그 상태의 행은
+         * **'미사용 자동수집 정리'가 지우자고 권한다** — 이 저장소가 B-60에서 이미 겪고
+         * 규칙으로 못박은 그 부류다(`FieldValueLibraryRepository`의 그 KDoc).
+         *
+         * 집계를 여기서 세지 않는 것이 요점이다: 세는 규칙은 표 셋을 도는 그 함수 하나이고,
+         * SQL로 옮겨 적으면 그 규칙이 두 벌이 된다.
+         */
+        val birthDateEntryFieldIds: Set<Long> = emptySet(),
         val factionRelinks: Int = 0
     ) {
-        val any: Boolean
-            get() = timestamps > 0 || colors > 0 || birthDates > 0 ||
-                birthDateEntries > 0 || factionRelinks > 0
-
         /**
          * 값 라이브러리를 건드렸는가 — 부르는 쪽이 **다음 실행의 수확을 예약할지** 가른다.
          *
@@ -143,13 +151,14 @@ object LegacyValueFormats {
         // 적혀야 한다. named argument의 평가 차례에 기대면 인자를 재배열하는 것만으로
         // 실행 차례가 조용히 바뀐다.
         val birthDates = repairBirthDates(db)
-        val birthDateEntries = repairBirthDateEntries(db)
+        val entryRepair = repairBirthDateEntries(db)
         val factionRelinks = relinkFactionAutoRelations(db)
         return Repaired(
             timestamps = timestamps,
             colors = colors,
             birthDates = birthDates,
-            birthDateEntries = birthDateEntries,
+            birthDateEntries = entryRepair.fixed,
+            birthDateEntryFieldIds = entryRepair.fieldIds,
             factionRelinks = factionRelinks
         )
     }
@@ -197,7 +206,9 @@ object LegacyValueFormats {
      * **필드 단위로 통째로 넘긴다** — 저장 모양의 행이 이미 있는지 알아야 이름 변경과 병합이
      * 갈리고, 그것을 모르면 `(fieldDefinitionId, value)` 유니크 색인에 걸린다.
      */
-    private fun repairBirthDateEntries(db: SupportSQLiteDatabase): Int {
+    private class EntryRepair(val fixed: Int, val fieldIds: Set<Long>)
+
+    private fun repairBirthDateEntries(db: SupportSQLiteDatabase): EntryRepair {
         // 필드 id → 그 필드의 엔트리 전부.
         val byField = LinkedHashMap<Long, MutableList<BirthDateEntryRepair.Entry>>()
         db.query(
@@ -219,8 +230,9 @@ object LegacyValueFormats {
         }
 
         var fixed = 0
+        val touched = HashSet<Long>()
         val now = System.currentTimeMillis()
-        for (entries in byField.values) {
+        for ((fieldId, entries) in byField) {
             for (action in BirthDateEntryRepair.plan(entries)) {
                 when (action) {
                     is BirthDateEntryRepair.Action.Rename -> db.execSQL(
@@ -248,9 +260,10 @@ object LegacyValueFormats {
                     }
                 }
                 fixed++
+                touched.add(fieldId)
             }
         }
-        return fixed
+        return EntryRepair(fixed, touched)
     }
 
     /**
