@@ -376,6 +376,7 @@ $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CustomFieldDropdownOptionsTest.kt
 $TEST/excel/SheetFreezeColsTest.kt
+$TEST/excel/NumberWarningFreeColumnsTest.kt
 $TEST/excel/ImageSheetColumnOrderTest.kt
 $TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt

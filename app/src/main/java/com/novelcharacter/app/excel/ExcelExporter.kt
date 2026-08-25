@@ -903,6 +903,50 @@ class ExcelExporter(context: Context) {
             sheet.setColumnWidth(index, columnWidthFor(col))
         }
         sheet.freezeAndFilter(spec.columns.size, dataRowCount, spec.freezeCols)
+        suppressNumberStoredAsText(sheet, spec, dataRowCount)
+    }
+
+    /**
+     * **앱이 채우는(회색) 열에서 엑셀의 '텍스트로 저장된 숫자' 표식을 끈다** (2026.08.25).
+     *
+     * ## 왜
+     *
+     * 코드는 UUID의 앞 16자라(`generateEntityCode`) 16글자가 **전부 숫자일 수 있다** —
+     * 확률은 `(10/16)^16` ≈ 4만 3천분의 1이고, 항목이 천 단위면 파일마다 몇 건씩 나온다.
+     * 실제로 사용자 파일의 캐릭터 코드 하나가 `2057265523594451`이었다.
+     *
+     * 그 칸에 엑셀이 녹색 삼각형과 **[숫자로 변환]**을 띄운다. 눌리면 16자리가 배정밀도
+     * 부동소수(유효 15자리)로 접혀 **코드가 다른 글자로 바뀐다** — 열 단위로 누르면 그
+     * 시트의 정체가 통째로 어긋나고, 가져오기는 *"코드를 찾지 못해 이름으로 매칭"*으로
+     * 떨어지거나 남의 행을 가리킨다. 사용자가 고칠 수 있는 실수가 아니다(그 칸은 회색이라
+     * *고치지 마세요*라고 안내해 둔 자리인데, 엑셀이 먼저 고치라고 권한다).
+     *
+     * ## 범위
+     *
+     * 어느 열을 끄는가는 [numberWarningFreeColumns]가 정한다(사유도 그쪽에 있다) —
+     * 한 줄로 말하면 **앱이 채우는 회색 글자 열만**이다.
+     *
+     * 범위는 드롭다운과 같은 여유분까지 — 사용자가 이어 붙인 행에서도 같게 동작한다.
+     * `SXSSF`에는 이 API가 없어 `XSSF` 층으로 내려가 건다(탭 색과 같은 자리·같은 이유이며,
+     * 두 구현이 같은 XML을 낸다는 것은 실측으로 확인했다).
+     */
+    private fun suppressNumberStoredAsText(sheet: Sheet, spec: SheetSpec, dataRowCount: Int) {
+        // 판정은 순수 계층이 든다([numberWarningFreeColumns]) — 그 함수가 사유도 함께 든다.
+        val gray = spec.numberWarningFreeColumns()
+        if (gray.isEmpty()) return
+        val xssf = when (val wb = sheet.workbook) {
+            is org.apache.poi.xssf.streaming.SXSSFWorkbook ->
+                wb.xssfWorkbook.getSheet(sheet.sheetName) ?: return
+            is org.apache.poi.xssf.usermodel.XSSFWorkbook -> wb.getSheet(sheet.sheetName) ?: return
+            else -> return
+        }
+        val lastRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
+        for (index in gray) {
+            xssf.addIgnoredErrors(
+                org.apache.poi.ss.util.CellRangeAddress(1, lastRow, index, index),
+                org.apache.poi.ss.usermodel.IgnoredErrorType.NUMBER_STORED_AS_TEXT
+            )
+        }
     }
 
     // ── 기존 유틸리티 ──
@@ -1016,6 +1060,11 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
             GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
             GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
+            // 드롭다운(유효성 검사)은 마지막 데이터 행 + 여유분까지만 걸린다 — 그보다 아래
+            // 행에서는 목록이 뜨지 않는데, 안내가 그 사실을 말하지 않아 사용자가 *"드롭다운이
+            // 깨졌다"*로 읽는다. 값은 손으로 적어도 그대로 들어온다는 것이 요점이다.
+            GuideLine("", styles.guideBody, "  드롭다운은 마지막 행에서 ${DROPDOWN_EXTRA_ROWS}행 아래까지 걸려 있습니다 — 그보다 더 아래에 적어도"),
+            GuideLine("", styles.guideBody, "  값은 그대로 들어옵니다(목록만 안 뜹니다). 목록을 다시 쓰려면 한 번 내보냈다가 이어서 적으세요."),
             // 종전 문구는 "이미지경로 컬럼은 … 수정하지 마세요"라는 **일괄 금지**였는데,
             // 캐릭터·세계관·작품 시트의 그 열은 파란 헤더(편집 가능)이고 가져오기가 실제로
             // 읽어 반영한다 — 안내가 실동작과 어긋나 있었다 (B-222 ③).
@@ -1296,6 +1345,11 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 그래서 이 시트는 지우거나 이름을 바꿔도 데이터에 영향이 없습니다."),
             GuideLine("", styles.guideBody, "• 필드 열은 여러 세계관이 함께 쓰는 필드만 실립니다(열 이름에 필드키를 함께 적습니다)."),
             GuideLine("", styles.guideBody, "  한 세계관에만 있는 필드는 그 세계관의 캐릭터 시트에 있습니다."),
+            // 같은 키를 세계관마다 다른 이름으로 부르면 그중 하나가 머리로 서는데, 안내가
+            // 그 사실을 말하지 않아 *"권능(authority) 열에 왜 '권능/특수능력' 값이 있지"*가 된다.
+            GuideLine("", styles.guideBody, "  같은 필드키를 세계관마다 다른 이름으로 부르면 **가장 많이 쓰인 이름**이 열 머리가 됩니다"),
+            GuideLine("", styles.guideBody, "  (동수면 가나다순). 그래서 머리의 이름과 다른 이름으로 부르던 세계관의 값도 같은 열에 담깁니다 —"),
+            GuideLine("", styles.guideBody, "  어느 축인지는 괄호 안 필드키가 정합니다."),
             GuideLine("", styles.guideBody, "• 같은 필드키가 세계관마다 타입이 다르면 열이 타입별로 갈립니다 — 값을 섞으면 그 열로 만든"),
             GuideLine("", styles.guideBody, "  피벗이 틀리기 때문입니다. 그때는 열 이름에 타입도 함께 적습니다(예: 키(height·NUMBER))."),
             GuideLine("", styles.guideBody, "  그 글자는 '필드 정의' 시트의 '타입' 열과 같습니다."),
