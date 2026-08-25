@@ -348,6 +348,20 @@
                         android:textColor="@color/text_secondary"
                         android:visibility="gone"
                         android:layout_marginBottom="4dp" />
+
+                    <!-- 2026.08.25: 등급의 숫자는 곧 순위라, 두 등급이 같은 숫자를 들면 그
+                         필드는 둘의 우열을 말하지 못한다. 체계를 고르면 라벨은 체계 것으로
+                         바뀌고 숫자는 이 필드가 쓰던 것이 남으므로(재정의) 그 충돌은 **가만히**
+                         생긴다 — 실제 파일에서 필드 넷이 그 모양이었다. 저장은 막지 않는다
+                         (이미 그런 표를 가진 사용자가 다른 칸도 못 고친다). 겹침이 없으면 숨긴다. -->
+                    <TextView
+                        android:id="@+id/textGradeValueCollisionNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/error"
+                        android:visibility="gone"
+                        android:layout_marginBottom="4dp" />
                 </LinearLayout>
 
                 <!-- B-69: 등급 행은 동적으로 추가·삭제한다 (addGradeRow — 구간·칸 행과 같은 방식).

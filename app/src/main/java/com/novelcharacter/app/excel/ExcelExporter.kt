@@ -903,6 +903,50 @@ class ExcelExporter(context: Context) {
             sheet.setColumnWidth(index, columnWidthFor(col))
         }
         sheet.freezeAndFilter(spec.columns.size, dataRowCount, spec.freezeCols)
+        suppressNumberStoredAsText(sheet, spec, dataRowCount)
+    }
+
+    /**
+     * **앱이 채우는(회색) 열에서 엑셀의 '텍스트로 저장된 숫자' 표식을 끈다** (2026.08.25).
+     *
+     * ## 왜
+     *
+     * 코드는 UUID의 앞 16자라(`generateEntityCode`) 16글자가 **전부 숫자일 수 있다** —
+     * 확률은 `(10/16)^16` ≈ 4만 3천분의 1이고, 항목이 천 단위면 파일마다 몇 건씩 나온다.
+     * 실제로 사용자 파일의 캐릭터 코드 하나가 `2057265523594451`이었다.
+     *
+     * 그 칸에 엑셀이 녹색 삼각형과 **[숫자로 변환]**을 띄운다. 눌리면 16자리가 배정밀도
+     * 부동소수(유효 15자리)로 접혀 **코드가 다른 글자로 바뀐다** — 열 단위로 누르면 그
+     * 시트의 정체가 통째로 어긋나고, 가져오기는 *"코드를 찾지 못해 이름으로 매칭"*으로
+     * 떨어지거나 남의 행을 가리킨다. 사용자가 고칠 수 있는 실수가 아니다(그 칸은 회색이라
+     * *고치지 마세요*라고 안내해 둔 자리인데, 엑셀이 먼저 고치라고 권한다).
+     *
+     * ## 범위
+     *
+     * 어느 열을 끄는가는 [numberWarningFreeColumns]가 정한다(사유도 그쪽에 있다) —
+     * 한 줄로 말하면 **앱이 채우는 회색 글자 열만**이다.
+     *
+     * 범위는 드롭다운과 같은 여유분까지 — 사용자가 이어 붙인 행에서도 같게 동작한다.
+     * `SXSSF`에는 이 API가 없어 `XSSF` 층으로 내려가 건다(탭 색과 같은 자리·같은 이유이며,
+     * 두 구현이 같은 XML을 낸다는 것은 실측으로 확인했다).
+     */
+    private fun suppressNumberStoredAsText(sheet: Sheet, spec: SheetSpec, dataRowCount: Int) {
+        // 판정은 순수 계층이 든다([numberWarningFreeColumns]) — 그 함수가 사유도 함께 든다.
+        val gray = spec.numberWarningFreeColumns()
+        if (gray.isEmpty()) return
+        val xssf = when (val wb = sheet.workbook) {
+            is org.apache.poi.xssf.streaming.SXSSFWorkbook ->
+                wb.xssfWorkbook.getSheet(sheet.sheetName) ?: return
+            is org.apache.poi.xssf.usermodel.XSSFWorkbook -> wb.getSheet(sheet.sheetName) ?: return
+            else -> return
+        }
+        val lastRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
+        for (index in gray) {
+            xssf.addIgnoredErrors(
+                org.apache.poi.ss.util.CellRangeAddress(1, lastRow, index, index),
+                org.apache.poi.ss.usermodel.IgnoredErrorType.NUMBER_STORED_AS_TEXT
+            )
+        }
     }
 
     // ── 기존 유틸리티 ──
@@ -1016,6 +1060,11 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
             GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
             GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
+            // 드롭다운(유효성 검사)은 마지막 데이터 행 + 여유분까지만 걸린다 — 그보다 아래
+            // 행에서는 목록이 뜨지 않는데, 안내가 그 사실을 말하지 않아 사용자가 *"드롭다운이
+            // 깨졌다"*로 읽는다. 값은 손으로 적어도 그대로 들어온다는 것이 요점이다.
+            GuideLine("", styles.guideBody, "  드롭다운은 마지막 행에서 ${DROPDOWN_EXTRA_ROWS}행 아래까지 걸려 있습니다 — 그보다 더 아래에 적어도"),
+            GuideLine("", styles.guideBody, "  값은 그대로 들어옵니다(목록만 안 뜹니다). 목록을 다시 쓰려면 한 번 내보냈다가 이어서 적으세요."),
             // 종전 문구는 "이미지경로 컬럼은 … 수정하지 마세요"라는 **일괄 금지**였는데,
             // 캐릭터·세계관·작품 시트의 그 열은 파란 헤더(편집 가능)이고 가져오기가 실제로
             // 읽어 반영한다 — 안내가 실동작과 어긋나 있었다 (B-222 ③).
@@ -1023,11 +1072,14 @@ class ExcelExporter(context: Context) {
             // 배열인데, 안내는 *"적을 값은 … 경로여야 합니다"*라 읽혀 경로 한 줄을 붙여넣게
             // 만들었다 — 그러면 목록으로 안 읽혀 편집이 통째로 무시된다(경고는 나가지만,
             // 안내를 따랐는데 안 되는 것은 안내 쪽 결함이다).
-            GuideLine("", styles.guideBody, "• 이미지경로는 앱 내부 경로를 JSON 배열로 적는 칸입니다: [\"/…/char_1.jpg\",\"/…/char_2.jpg\"]"),
-            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품 시트에서는 편집이 반영됩니다. 적을 값은 이 파일에 이미 있는"),
-            GuideLine("", styles.guideBody, "  경로여야 합니다(새 경로를 지어내면 그림이 없는 자리가 됩니다)."),
+            // 2026.08.25: 이 칸이 절대경로 배열에서 **파일명 배열**로 바뀌었다(`ImagePathCell`).
+            // 안내도 그 모양을 그대로 보여 준다 — 예시 한 줄이 다섯 줄의 설명보다 정확하다.
+            GuideLine("", styles.guideBody, "• 이미지경로는 그림의 **파일명**을 JSON 배열로 적는 칸입니다: [\"char_1.jpg\",\"char_2.jpg\"]"),
+            GuideLine("", styles.guideBody, "  캐릭터·세계관·작품 시트에서는 편집이 반영됩니다. 적을 값은 이 파일의 '이미지' 시트에"),
+            GuideLine("", styles.guideBody, "  있는 파일명이어야 합니다(없는 이름을 지어내면 그림이 없는 자리가 됩니다)."),
             GuideLine("", styles.guideBody, "  칸을 비우면 그 항목의 그림 배정이 풀립니다. 배열로 읽을 수 없는 값은 기존 배정을"),
             GuideLine("", styles.guideBody, "  그대로 두고 가져오기 결과에서 알려 드립니다."),
+            GuideLine("", styles.guideBody, "  옛 파일이 든 전체 경로(/…/char_1.jpg)도 그대로 읽습니다 — 고쳐 적지 않아도 됩니다."),
             // 종전에는 *"'이미지' 시트의 이미지경로"*라 적었는데 **그 시트에 그런 열이 없다** —
             // 그 시트가 그림을 가리키는 칸은 회색 '파일명'이다(`imageMetaSpec`).
             GuideLine("", styles.guideBody, "  '이미지' 시트에서 그림을 가리키는 칸은 회색 '${IMAGE_SHEET_IDENTITY_COLUMN}'입니다 — 그 행의 정체이므로 고치지 마세요."),
@@ -1044,6 +1096,7 @@ class ExcelExporter(context: Context) {
             // 형식이 다른 것이 특히 걸린다: 이쪽은 **경로가 아니라 파일명**이다.
             GuideLine("", styles.guideBody, "• 대표이미지는 그 캐릭터의 카드·목록에 먼저 보일 그림입니다. 경로가 아니라 **파일명**을 적습니다:"),
             GuideLine("", styles.guideBody, "  char_1.jpg (같은 행 '이미지경로'에 든 그림 중 하나여야 합니다 — 그 목록에 없으면 기존 지정을 그대로 두고 알려 드립니다)"),
+            GuideLine("", styles.guideBody, "  이제 '이미지경로'도 파일명이라 두 칸이 같은 글자를 씁니다 — 목록에서 하나를 골라 붙여 넣으면 됩니다."),
             GuideLine("", styles.guideBody, "  칸을 비우면 지정이 풀려 그 캐릭터의 그림 중에서 앱이 골라 보여 줍니다(첫 장으로 고정되지 않습니다)."),
             GuideLine("", styles.guideBody, "  열을 통째로 지우면 기존 지정이 유지됩니다."),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
@@ -1126,12 +1179,12 @@ class ExcelExporter(context: Context) {
             // 두 값의 결과가 다른데(자동 관계를 지우는가 / 유형만 바꾸는가) 안내에 없었다.
             GuideLine("", styles.guideBody, "  '탈퇴유형'은 나간 방식입니다: 순수제거=그 세력의 자동 관계까지 지움,"),
             GuideLine("", styles.guideBody, "  설정상탈퇴=관계를 남기고 '탈퇴후관계유형'(비우면 '전 <자동관계유형>')로 바꿈. 빈 칸이면 아직 소속 중입니다"),
-            // 형제인 '캐릭터 관계'는 행의 '코드' 열이 있어 유형을 고쳐도 같은 관계로 인식하는데
-            // (바로 위 두 줄), **'세력 관계'에는 그 열이 없다** — 자연키가 (세력1, 세력2, 유형)이라
-            // 유형을 고치면 새 관계가 되고 옛 관계가 남는다. 같은 위험인데 경고가 한쪽에만 있었다.
-            GuideLine("", styles.guideBody, "• 세력 관계: 이 시트에는 행의 '코드' 열이 없어 세력1+세력2+관계 유형이 그 행의 정체입니다 —"),
-            GuideLine("", styles.guideBody, "  '관계 유형'을 고치면 새 관계가 생기고 기존 관계가 그대로 남습니다(고칠 셋 중 유형만 그렇습니다)."),
-            GuideLine("", styles.guideBody, "  유형을 바꾸려면 기존 행의 값을 고치는 대신 그 행을 앱에서 지우고 새로 만드는 편이 확실합니다."),
+            // 2026.08.25: 종전 안내는 *"이 시트에는 코드 열이 없으니 유형을 바꾸려면 앱에서
+            // 지우고 새로 만드세요"*였다 — 형제('캐릭터 관계')가 코드로 푼 문제를 사용자에게
+            // 떠넘긴 것이라, 스키마 v58이 그 열을 세우고 이 안내가 형제와 같은 말을 한다.
+            GuideLine("", styles.guideBody, "• 세력 관계: 관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),
+            GuideLine("", styles.guideBody, "  (코드를 비우고 유형만 바꾸면 새 관계가 생기고 기존 관계가 그대로 남습니다)"),
+            GuideLine("", styles.guideBody, "  코드 열이 없는 옛 파일도 그대로 들어옵니다 — 그때는 세력1+세력2+관계 유형으로 맞춥니다"),
             GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
             GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
             GuideLine("", styles.guideBody, "• 이름 은행: 코드로 매칭합니다(이름·성별을 고쳐도 같은 항목으로 인식). 코드가 없으면 이름+성별로 매칭. 사용여부는 Y/N"),
@@ -1292,6 +1345,11 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 그래서 이 시트는 지우거나 이름을 바꿔도 데이터에 영향이 없습니다."),
             GuideLine("", styles.guideBody, "• 필드 열은 여러 세계관이 함께 쓰는 필드만 실립니다(열 이름에 필드키를 함께 적습니다)."),
             GuideLine("", styles.guideBody, "  한 세계관에만 있는 필드는 그 세계관의 캐릭터 시트에 있습니다."),
+            // 같은 키를 세계관마다 다른 이름으로 부르면 그중 하나가 머리로 서는데, 안내가
+            // 그 사실을 말하지 않아 *"권능(authority) 열에 왜 '권능/특수능력' 값이 있지"*가 된다.
+            GuideLine("", styles.guideBody, "  같은 필드키를 세계관마다 다른 이름으로 부르면 **가장 많이 쓰인 이름**이 열 머리가 됩니다"),
+            GuideLine("", styles.guideBody, "  (동수면 가나다순). 그래서 머리의 이름과 다른 이름으로 부르던 세계관의 값도 같은 열에 담깁니다 —"),
+            GuideLine("", styles.guideBody, "  어느 축인지는 괄호 안 필드키가 정합니다."),
             GuideLine("", styles.guideBody, "• 같은 필드키가 세계관마다 타입이 다르면 열이 타입별로 갈립니다 — 값을 섞으면 그 열로 만든"),
             GuideLine("", styles.guideBody, "  피벗이 틀리기 때문입니다. 그때는 열 이름에 타입도 함께 적습니다(예: 키(height·NUMBER))."),
             GuideLine("", styles.guideBody, "  그 글자는 '필드 정의' 시트의 '타입' 열과 같습니다."),
@@ -1407,7 +1465,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setTextSafe(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
-            row.createCell(6).setTextSafe(CharacterRepresentativeImage.cellText(universe.imagePaths))
+            row.createCell(6).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(universe.imagePaths))
             row.createCell(7).setTextSafe(universe.imageMode)
             row.createCell(8).setTextSafe(universe.customRelationshipTypes)
             row.createCell(9).setTextSafe(universe.customRelationshipColors)
@@ -1465,7 +1523,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setTextSafe(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
-            row.createCell(8).setTextSafe(CharacterRepresentativeImage.cellText(novel.imagePaths))
+            row.createCell(8).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(novel.imagePaths))
             row.createCell(9).setTextSafe(novel.imageMode)
             novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
             row.createCell(11).setTextSafe(if (novel.inheritUniverseBorder) "Y" else "N")
@@ -2109,7 +2167,7 @@ class ExcelExporter(context: Context) {
             }
 
             // 이미지경로 — 편집이 반영된다(세계관·작품 시트와 같은 규약, B-222 WD-6)
-            row.createCell(col++).setTextSafe(CharacterRepresentativeImage.cellText(character.imagePaths))
+            row.createCell(col++).setTextSafe(com.novelcharacter.app.util.ImagePathCell.toCell(character.imagePaths))
 
             // 대표이미지 (B-103 D8) — 사람이 읽고 고칠 수 있도록 파일명으로 싣는다.
             // 한 행 안에서 파일명이 겹치면 규약이 알아서 전체 경로로 떨어진다.
@@ -2710,6 +2768,9 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(faction1?.code ?: "")
             row.createCell(8).setTextSafe(faction2?.code ?: "")
             row.createCell(9).setCellValue(rel.createdAt.toDouble())
+            // 관계의 정체 — 없는 행은 있을 수 없지만(v58 마이그레이션이 백필한다) 빈 글자로
+            // 두면 가져오기가 자연키 폴백을 그대로 타므로 종전 동작이다.
+            row.createCell(10).setTextSafe(rel.code ?: "")
             finishDataRow(row, spec, banded = allRelationships.size < BANDING_ROW_LIMIT)
         }
 

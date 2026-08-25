@@ -110,6 +110,53 @@ object GradeTable {
         return Outcome(grades, problems)
     }
 
+    /**
+     * **수치가 겹치는 등급 무리** — 같은 숫자를 든 라벨이 둘 이상인 무리만, 숫자 오름차순으로.
+     * 겹치는 것이 없으면 빈 목록이다.
+     *
+     * ## 왜 [Problem]이 아닌가
+     *
+     * [Problem]에 든 다섯은 전부 **그 행을 못 쓰게 만드는 것**이라 [build]가 행을 버리고
+     * 화면이 저장을 막는다. 수치 겹침은 다르다 — 행은 멀쩡하고 값도 사용자가 적은 그대로다.
+     * 무너지는 것은 **표의 뜻**이다: GRADE 필드에서 숫자는 곧 순위이므로, `C`와 `F`가 같은
+     * 0.5이면 그 필드는 두 등급의 우열을 말하지 못한다. 저장을 막을 일은 아니고(막으면
+     * 이미 그런 표를 가진 사용자가 다른 칸도 못 고친다) **말해 줄 일**이다 — 그래서 판정만
+     * 여기 두고 처분은 부르는 쪽이 정한다(화면은 안내 줄, 가져오기는 경고 한 줄).
+     *
+     * ## 왜 생겼는가 (2026.08.25 사용자 파일)
+     *
+     * 등급 체계를 고르면 표가 체계의 라벨로 바뀌는데 **그 필드가 쓰던 숫자는 남는다**
+     * (`FieldEditDialog`가 `currentValues[label]`을 그대로 옮긴다 — 재정의로 남기려는
+     * 의도된 동작이다). 그래서 `{C:0.5,B:1,A:2,S:3}`짜리 필드를 `F~SSS` 체계에 붙이면
+     * 실효 표가 `{F:0.5,E:1,D:2,C:0.5,B:1,A:2,…}`가 된다 — **C가 F와, B가 E와, A가 D와
+     * 같은 점수다.** 화면은 "재정의 N개"라고만 말해 그 충돌을 알려 주지 않았고, 실제
+     * 파일에서 그런 필드가 넷 나왔다(전투 센스·마력 회복 속도·지략·fgbde).
+     *
+     * 앱이 등급을 늘어놓는 유일한 규칙이 **수치 오름차순**이라([FieldOptionParser
+     * .parseGradeOptions]·[fromConfigRows]·'등급 체계' 시트가 전부 그 규칙이다) 겹친 표는
+     * 드롭다운 차례도 무너뜨린다 — 사용자가 본 `F,C,E,B,D,A,S,SS,SSS`가 그 모양이다.
+     */
+    fun duplicateValues(grades: Map<String, Double>): List<DuplicateValueGroup> =
+        grades.entries
+            .groupBy { it.value }
+            .filterValues { it.size > 1 }
+            .toSortedMap()
+            .map { (value, entries) -> DuplicateValueGroup(value, entries.map { it.key }) }
+
+    /** 같은 수치를 든 라벨 무리 — 라벨은 표에 있던 차례 그대로다. */
+    data class DuplicateValueGroup(val value: Double, val labels: List<String>)
+
+    /**
+     * **편집 행 그대로에서** 수치 겹침을 본다 — 필드 편집과 등급 체계 편집이 같은 답을 받는다.
+     *
+     * 두 화면이 각자 행을 훑어 맵을 짓고 있었다(콜드 검토 2026.08.25 — 이 판이 만든 것이다).
+     * *어느 행을 세는가*는 판정이라, 두 벌로 두면 한쪽이 빈 라벨을 세거나 해석 불가 숫자를
+     * 달리 다루는 순간 같은 표가 화면마다 다른 말을 듣는다. [build]가 이미 그 판정의 단일
+     * 소스이므로(빈 행 건너뛰기·라벨 중복·숫자 해석) **그것이 낸 표를 그대로 본다.**
+     */
+    fun duplicateValuesOf(rows: List<Pair<String, String>>): List<DuplicateValueGroup> =
+        duplicateValues(build(rows).grades)
+
     /** 1.0 → "1", 0.5 → "0.5" — JSON의 정수 등급이 편집 칸에서 "1.0"으로 불어나지 않게. */
     fun formatValue(value: Double): String =
         if (value == Math.floor(value) && !value.isInfinite() && Math.abs(value) < 1e15) {

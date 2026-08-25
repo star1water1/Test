@@ -410,6 +410,9 @@ class FieldEditDialog : DialogFragment() {
             if (count > 0) {
                 binding.textGradeOverrideNotice.text = getString(R.string.grade_override_notice, count)
             }
+            // 겹침 안내도 같은 통로로 — 재정의가 곧 겹침을 만드는 자리라(체계의 라벨 위에
+            // 이 필드의 옛 숫자가 남는다) 둘을 따로 그리면 한쪽만 낡는다.
+            renderGradeValueCollisionNotice(binding)
         }
         onGradeOverridesChanged = { renderOverrideNotice() }
 
@@ -421,6 +424,8 @@ class FieldEditDialog : DialogFragment() {
             // 견줄 기준이 없어졌으므로 재정의라는 말도 성립하지 않는다 — 표식과 요약을 함께 내린다.
             gradeRows.forEach { it.overrideBadge?.visibility = View.GONE }
             binding.textGradeOverrideNotice.visibility = View.GONE
+            // 겹침은 체계와 무관하다 — 독자 표에서도 같은 숫자 둘은 순위를 못 가린다.
+            renderGradeValueCollisionNotice(binding)
             return
         }
         container.removeAllViews()
@@ -431,7 +436,7 @@ class FieldEditDialog : DialogFragment() {
                 container, density, label,
                 currentValues[label] ?: com.novelcharacter.app.util.GradeTable.formatValue(def),
                 lockedLabel = true,
-                onRowsChanged = { refreshDuelGradeEditor(binding) },
+                onRowsChanged = { onGradeTableChanged(binding) },
                 // 체계를 골랐으므로 견줄 기준이 생겼다 — 여기부터 '재정의'가 성립한다(B-71 ②).
                 systemDefault = def
             )
@@ -1259,13 +1264,13 @@ class FieldEditDialog : DialogFragment() {
         binding.btnAddGrade.setOnClickListener {
             addGradeRow(
                 binding.gradeRowsContainer, density,
-                onRowsChanged = { refreshDuelGradeEditor(binding) }
+                onRowsChanged = { onGradeTableChanged(binding) }
             )
         }
         com.novelcharacter.app.util.GradeTable.DEFAULT_ROWS.forEach { (label, value) ->
             addGradeRow(
                 binding.gradeRowsContainer, density, label, value,
-                onRowsChanged = { refreshDuelGradeEditor(binding) }
+                onRowsChanged = { onGradeTableChanged(binding) }
             )
         }
 
@@ -1591,6 +1596,41 @@ class FieldEditDialog : DialogFragment() {
      * 아직 모르므로 콜백으로 잇는다. 체계를 고르는 자리에서 채워 넣는다.
      */
     private var onGradeOverridesChanged: (() -> Unit)? = null
+
+    /**
+     * 등급 행이 바뀌면 함께 도는 것들 — 대결 등급 컷 재조정(B-113)과 **수치 겹침 안내**.
+     *
+     * 행 추가·삭제·포커스 이탈이 전부 이 한 통로로 들어온다. 종전에는 `onRowsChanged`가
+     * 컷 재조정만 불렀는데, 겹침 안내를 그 옆에 손으로 하나 더 붙이면 **네 자리 중 하나를
+     * 빠뜨리는 것이 다음 판의 기본값**이 된다.
+     */
+    private fun onGradeTableChanged(binding: DialogFieldEditBinding) {
+        refreshDuelGradeEditor(binding)
+        renderGradeValueCollisionNotice(binding)
+    }
+
+    /**
+     * 수치가 겹치는 등급이 있으면 한 줄로 말한다 — 없으면 줄을 숨긴다(정상에 잔소리 금지).
+     *
+     * **저장을 막지 않는다.** 이미 겹친 표를 가진 사용자가 다른 칸도 못 고치게 되고,
+     * 겹침 자체는 사용자가 일부러 만들 수도 있는 값이다(판정과 처분의 갈림 —
+     * [com.novelcharacter.app.util.GradeTable.duplicateValues]의 KDoc).
+     *
+     * 읽을 수 없는 숫자는 세지 않는다 — 그쪽은 [com.novelcharacter.app.util.GradeTable.Problem
+     * .BadNumber]가 저장에서 막는 자리라 여기서 또 말할 것이 없다.
+     */
+    private fun renderGradeValueCollisionNotice(binding: DialogFieldEditBinding) {
+        // 행을 세는 규칙은 순수 계층이 든다 — 등급 체계 편집 화면과 **같은 함수**다.
+        val text = com.novelcharacter.app.ui.common.gradeValueCollisionMessage(
+            requireContext(),
+            com.novelcharacter.app.util.GradeTable.duplicateValuesOf(
+                gradeRows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+            )
+        )
+        binding.textGradeValueCollisionNotice.text = text.orEmpty()
+        binding.textGradeValueCollisionNotice.visibility =
+            if (text == null) View.GONE else View.VISIBLE
+    }
 
     /** 지금 화면에 선 등급 행 중 체계 기본과 다른 숫자를 든 것의 수. */
     private fun countGradeOverrides(): Int =
@@ -2320,9 +2360,12 @@ class FieldEditDialog : DialogFragment() {
             gradeRowsFromConfig.forEach { (label, value) ->
                 addGradeRow(
                     gradeContainer, density, label, value,
-                    onRowsChanged = { refreshDuelGradeEditor(binding) }
+                    onRowsChanged = { onGradeTableChanged(binding) }
                 )
             }
+            // 겹친 표는 **열자마자** 보여야 한다 — 이 화면은 이미 그런 표를 든 필드를 연다
+            // (실제 파일의 넷). 행을 건드려야 뜨는 안내는 그 필드에서 영영 안 뜬다.
+            renderGradeValueCollisionNotice(binding)
         }
         // 체계 참조 (U-1) — 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다.
         pendingGradeSystemCode =

@@ -221,6 +221,8 @@
     <string name="grade_system_created_toast">등급 체계 \'%1$s\'을(를) 만들어 이 필드에 걸었습니다.</string>
     <string name="grade_override_badge">재정의</string>
     <string name="grade_override_notice">이 필드에서 숫자를 %1$d개 재정의했습니다. 재정의한 등급은 체계를 고쳐도 따라가지 않습니다.</string>
+    <string name="grade_value_collision_notice">%1$s이(가) 같은 숫자입니다. 등급의 숫자가 곧 순위라, 이대로는 이 필드가 그 등급들의 우열을 가리지 못합니다.</string>
+    <string name="grade_value_collision_group">%1$s(%2$s)</string>
     <string name="grade_system_name_hint">체계 이름 (예: 능력 등급)</string>
     <string name="grade_system_name_required_error">체계 이름을 입력하세요.</string>
     <string name="grade_system_name_duplicate_error">같은 이름의 체계가 이 세계관에 이미 있습니다.</string>

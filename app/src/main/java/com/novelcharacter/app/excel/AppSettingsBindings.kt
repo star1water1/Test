@@ -180,7 +180,10 @@ object AppSettingsBindings {
         // 프로바이더 목록은 코덱이 낸 JSON 그대로 싣는다. 앱이 쓰는 형식을 그대로 두는 것이
         // 요점이다 — 여기서 시트 전용 형식을 새로 만들면 코덱이 바뀔 때마다 두 벌이 갈린다.
         Binding(AppSettingsKeys.AI_PROVIDERS,
-            read = { ctx -> AiProviderStore(ctx).list().takeIf { it.isNotEmpty() }?.let { com.novelcharacter.app.ai.AiProviderCodec.encode(it) } },
+            // **`encode`가 아니라 `encodeForTransfer`다** — 이 칸은 기기 밖으로 나간다.
+            // 쿨다운(벽시계 한 점)이 파일을 타고 옮겨 다니던 자리이고, 그 함수의 KDoc이
+            // 무엇을 왜 빼는지 든다. 저장소가 쓰는 `encode`와 갈라 두는 것이 요점이다.
+            read = { ctx -> AiProviderStore(ctx).list().takeIf { it.isNotEmpty() }?.let { com.novelcharacter.app.ai.AiProviderCodec.encodeForTransfer(it) } },
             write = { ctx, v ->
                 val decoded = com.novelcharacter.app.ai.AiProviderCodec.decode(v)
                 // **읽지 못한 것과 하나도 없는 것을 가른다** — 코덱이 이미 그 둘을 갈라 두었고
@@ -191,7 +194,19 @@ object AppSettingsBindings {
                     decoded.configs.isEmpty() -> Applied.No("담긴 프로바이더가 없습니다")
                     else -> {
                         val store = AiProviderStore(ctx)
-                        for (config in decoded.configs) store.save(config)
+                        // 쿨다운은 **이 기기의 것**이라 파일이 정하지 않는다 — 옛 파일이나
+                        // 손으로 적은 값이 든 경우까지 여기서 막힌다(`keepDeviceState`).
+                        //
+                        // **들이기 전에 한 번만 뜬다.** `store.get`은 매번 목록 전체를 다시
+                        // 해석하고, 무엇보다 *이 기기가 갖고 있던 값*이라는 뜻이 그 시점의
+                        // 스냅샷이라야 분명해진다(루프 도중의 저장이 그 뜻을 흐리지 않는다).
+                        val deviceState = store.list().associateBy { it.id }
+                        for (config in decoded.configs) {
+                            store.save(
+                                com.novelcharacter.app.ai.AiProviderCodec
+                                    .keepDeviceState(config, deviceState[config.id])
+                            )
+                        }
                         // 일부는 실제로 들어갔다 — '아무것도 안 썼다'(No)로 세면 계수가 거짓이 된다.
                         if (decoded.skipped > 0) Applied.Adjusted("프로바이더 ${decoded.skipped}개를 읽지 못해 건너뛰고 나머지를 넣었습니다")
                         else Applied.Yes

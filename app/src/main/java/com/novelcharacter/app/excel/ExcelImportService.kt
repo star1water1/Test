@@ -774,24 +774,66 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             value
         }
 
-    /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
-    private fun remapImagePaths(imagePathsJson: String): String {
-        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return "[]"
-        return try {
-            val gson = com.google.gson.Gson()
-            val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
-                ?: return "[]"
-            if (imagePathRemap.isEmpty()) gson.toJson(paths) else {
-                val remapped = paths.map { remapImagePath(it) }
-                gson.toJson(remapped)
-            }
-        } catch (_: Exception) {
-            // 레거시: 단일 경로 문자열 → JSON 배열로 변환
-            if (imagePathsJson.isNotBlank()) {
-                val remapped = remapImagePath(imagePathsJson)
-                org.json.JSONArray(listOf(remapped)).toString()
-            } else "[]"
+    /**
+     * '이미지경로' 셀 한 칸을 읽는다 — **캐릭터·세계관·작품이 같은 함수를 쓴다**.
+     *
+     * 반환 규약은 세 갈래다(F1-A):
+     *  - `null` = **말한 바 없음** → 부르는 쪽이 기존 배정을 유지한다.
+     *    열이 아예 없을 때와, **목록으로 읽을 수 없을 때**가 여기 온다.
+     *  - `"[]"` = 비움 의도(빈 칸·빈 배열) → 배정이 풀린다.
+     *  - 그 밖 = 해석된 경로 목록.
+     *
+     * ## 왜 한 함수로 모았나 (2026.08.25)
+     *
+     * 안내 시트는 *"배열로 읽을 수 없는 값은 기존 배정을 그대로 두고 알려 드립니다"*를
+     * **캐릭터·세계관·작품 셋 모두에** 대해 약속하는데, 그 처분은 **캐릭터에만** 있었다.
+     * 세계관·작품은 깨진 값을 그대로 [remapImagePaths]에 넘겨 **기존 배정을 덮었고**
+     * 경고도 없었다 — 안내가 약속한 것과 코드가 하는 일이 갈린 자리다.
+     */
+    private fun readImagePathsCell(
+        row: Row,
+        colIndex: Int,
+        ctx: String,
+        result: ImportResult?
+    ): String? {
+        if (colIndex < 0) return null
+        val cell = getCellString(row, colIndex).ifBlank { "[]" }
+        if (!CharacterRepresentativeImage.isPathListJson(cell)) {
+            result?.warnings?.add(
+                "$ctx: 이미지경로 '${truncateForCell(cell, SETTING_VALUE_IN_WARNING)}'을(를) 목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다 — 배정을 지우려면 칸을 비우세요"
+            )
+            return null
         }
+        return remapImagePaths(cell)
+    }
+
+    /**
+     * '이미지경로' 셀 → 저장할 경로 목록. 표기 규약은 [com.novelcharacter.app.util.ImagePathCell]이
+     * 단일 소스이고, 이 함수는 그것이 필요로 하는 **이 기기의 사정 둘**만 채워 넣는다.
+     *
+     * ① 파일명 → 절대경로. '이미지' 시트가 이미 쓰는 사다리와 같은 차례다
+     * ([importImageMeta]의 KDoc): zip 복원 리맵(원경로 basename) → 로컬 `filesDir`.
+     * 둘 다 아니면 **`filesDir` 아래로 붙인다** — 파일이 없어도 경로는 만든다. 그것이
+     * 옛 표기(절대경로)를 그대로 싣던 시절과 **같은 결과**이고(없는 파일을 가리키는 경로가
+     * 남는다), 여기서 토큰을 버리면 이미지 배정이 조용히 사라진다(개발 의도 2번).
+     *
+     * ② 옛 절대경로 토큰의 재매핑 — 종전 동작 그대로다.
+     */
+    private fun remapImagePaths(imagePathsJson: String): String {
+        // `appContext`가 null인 것은 **생성자 기본값뿐**이고 앱은 언제나 채워 넘긴다
+        // (`ExcelImporter`가 유일한 생성 자리다). 그래도 널을 무시하지 않는 것은 이 파일의
+        // 다른 자리와 같은 관례다 — 못 풀면 토큰을 **원문 그대로** 남긴다(버리지 않는다).
+        val filesDir = appContext?.filesDir
+        val byBasename = if (imagePathRemap.isEmpty()) emptyMap()
+        else ImageMetaRowResolver.buildRemapByBasename(imagePathRemap).byBasename
+        return com.novelcharacter.app.util.ImagePathCell.fromCell(
+            imagePathsJson,
+            resolveName = { name ->
+                byBasename[name]
+                    ?: filesDir?.let { dir -> java.io.File(dir, name).absolutePath }
+            },
+            remapPath = { remapImagePath(it) }
+        )
     }
 
     suspend fun importAll(
@@ -1412,7 +1454,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 getCellString(row, c.borderColor).let { ColorHex.normalizedOrNull(it) ?: it }
             } else null,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
-            imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
+            imagePaths = readImagePathsCell(row, c.imagePath, ctx, result),
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
             // 두 열은 JSON이다. 소비처가 파싱 실패를 무음으로 삼키고 기본값으로 돌아가므로 여기서 검증한다.
             // null = 열 없음 또는 해석 불가 → 기존 값 유지.
@@ -1541,7 +1583,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
             borderColor = borderColor,
             borderWidthDp = if (c.borderWidth >= 0) (parseNumber(getCellString(row, c.borderWidth))?.toFloat() ?: 1.5f) else null,
-            imagePaths = if (c.imagePath >= 0) remapImagePaths(getCellString(row, c.imagePath).ifBlank { "[]" }) else null,
+            imagePaths = readImagePathsCell(row, c.imagePath, ctx, result),
             imageMode = if (c.imageMode >= 0) getCellString(row, c.imageMode).ifBlank { "none" } else null,
             imageCharCode = getCellCode(row, c.imageCharCode, ctx, result).ifBlank { null },
             hasImageCharCol = c.imageCharCode >= 0,
@@ -2982,22 +3024,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     )
 
     private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, result: ImportResult?): CharacterRowValues {
-        // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
-        val rawImagePaths: String? = if (c.image >= 0) {
-            val cell = getCellString(row, c.image).ifBlank { "[]" }
-            // **읽을 수 없는 값은 비움(배정 해제)이 아니라 기존 유지 + 경고다** (콜드 검토
-            // 2026.08.20 — 생성일과 같은 처분). 종전에는 깨진 편집이 그대로 저장돼 모든 읽는
-            // 자리가 빈 목록으로 해석했다 — 오타 하나가 이미지 배정 전체를 무고지로 풀었다.
-            // 빈 칸·유효한 빈 배열('[]'·'[ ]')만 비움 의도로 읽는다(F1-A). 미리보기도 이
-            // 함수를 지나므로 예고와 처분이 갈리지 않는다(R-33 — result=null이면 값만 든다).
-            if (CharacterRepresentativeImage.isPathListJson(cell)) cell
-            else {
-                result?.warnings?.add(
-                    "$ctx: 이미지경로 '${truncateForCell(cell, SETTING_VALUE_IN_WARNING)}'을(를) 목록으로 읽을 수 없어 기존 이미지 배정을 유지합니다 — 배정을 지우려면 칸을 비우세요"
-                )
-                null
-            }
-        } else null
+        // **읽을 수 없는 값은 비움(배정 해제)이 아니라 기존 유지 + 경고다** (콜드 검토
+        // 2026.08.20 — 생성일과 같은 처분). 종전에는 깨진 편집이 그대로 저장돼 모든 읽는
+        // 자리가 빈 목록으로 해석했다 — 오타 하나가 이미지 배정 전체를 무고지로 풀었다.
+        // 빈 칸·유효한 빈 배열('[]'·'[ ]')만 비움 의도로 읽는다(F1-A). 미리보기도 이
+        // 함수를 지나므로 예고와 처분이 갈리지 않는다(R-33 — result=null이면 값만 든다).
+        // 판정과 해석을 [readImagePathsCell]이 함께 든다 — 세계관·작품과 같은 함수다.
+        val rawImagePaths: String? = readImagePathsCell(row, c.image, ctx, result)
         return CharacterRowValues(
             name = getCellString(row, c.name),
             code = getCellCode(row, c.code, ctx, result),  // F4: 숫자 코드 방어
@@ -3008,7 +3041,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             anotherName = if (c.anotherName >= 0) getCellString(row, c.anotherName) else null,
             lastName = if (c.lastName >= 0) getCellString(row, c.lastName) else null,
             firstName = if (c.firstName >= 0) getCellString(row, c.firstName) else null,
-            imagePaths = rawImagePaths?.let { remapImagePaths(it) },
+            imagePaths = rawImagePaths,
             // 대표이미지 열(B-103 D8). **열 없음과 빈 칸은 다른 상태다** —
             // 열 없음은 "말하지 않았다"(기존 유지), 빈 칸은 "지정 없음으로 하라"(해제).
             representativeCell = if (c.representative >= 0) getCellString(row, c.representative) else null,
@@ -5275,6 +5308,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val intensityColIndex = cols["강도"] ?: -1
         val bidirectionalColIndex = cols["양방향"] ?: -1
         val orderColIndex = cols["표시순서"] ?: -1
+        // 관계 자신의 코드 — 옛 파일에는 없는 열이라 없으면 종전처럼 자연키로만 맞춘다.
+        val relCodeColIndex = cols["코드"] ?: -1
         if (faction2ColIndex < 0 || typeColIndex < 0) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
         val factionIndex = FactionIndex(analysisFactions())
@@ -5283,6 +5318,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingByKey = existingRels.associateByTo(mutableMapOf()) {
             FactionRelationshipMatcher.key(it.factionId1, it.factionId2, it.relationType)
         }
+        // 코드 축도 가져오기와 **같은 모양**으로 든다(R-33) — 없으면 미리보기가 유형을 고친
+        // 행을 '신규'라 예고하고 실제 가져오기는 '변경'을 한다.
+        val existingByCode = existingRels.mapNotNull { rel ->
+            rel.code?.takeIf { it.isNotBlank() }?.let { it to rel }
+        }.toMap(mutableMapOf())
         val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
         val now = System.currentTimeMillis()
@@ -5316,12 +5356,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 row, descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex,
                 "세력 관계 행 ${excelRow(i)}", null
             )
-            val existing = FactionRelationshipMatcher.match(existingByKey, f1.id, f2.id, relType)
+            val relCode = if (relCodeColIndex >= 0) getCellString(row, relCodeColIndex).trim() else ""
+            val matched = FactionRelationshipMatcher
+                .matchRow(existingByKey, existingByCode, relCode, f1.id, f2.id, relType).existing
+            // 가져오기와 **같은 갈래**다(R-33) — 유형을 옮기려는 자리에 다른 관계가 이미 있으면
+            // 유니크에 걸려 그 행은 건너뛴다. 여기서 세지 않으면 미리보기가 '변경'이라 예고한다.
+            if (matched != null && matched.relationType != relType) {
+                val taken = FactionRelationshipMatcher.match(existingByKey, f1.id, f2.id, relType)
+                if (taken != null && taken.id != matched.id) { skippedCount++; continue }
+            }
+            val existing = matched
             if (existing == null) {
                 newCount++
-                existingByKey[FactionRelationshipMatcher.key(f1.id, f2.id, relType)] =
-                    newFactionRelationshipFrom(rowValues, f1.id, f2.id, relType, now)
-                        .copy(id = previewIds.mint())
+                val minted = newFactionRelationshipFrom(rowValues, f1.id, f2.id, relType, now, generateEntityCode())
+                    .copy(id = previewIds.mint())
+                existingByKey[FactionRelationshipMatcher.key(f1.id, f2.id, relType)] = minted
+                minted.code?.let { existingByCode[it] = minted }
                 continue
             }
             if (FactionRelationshipMatcher.changes(existing, rowValues, presence)) updateCount++ else unchangedCount++
@@ -6719,6 +6769,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     "등급 체계 '${group.name}' (행 ${excelRow(group.firstRowNum)}부터): " + gradeProblemText(problem)
                 )
             }
+            // 체계의 겹침은 **그 체계를 참조하는 필드 전체**로 번진다 — 필드보다 먼저 말한다.
+            noticeGradeValueCollision(
+                outcome.grades, "등급 체계 '${group.name}' (행 ${excelRow(group.firstRowNum)}부터)", result
+            )
             if (outcome.grades.isEmpty()) {
                 result.skippedRows++
                 result.errors.add("등급 체계 '${group.name}': 유효한 등급 행이 없어 건너뜀")
@@ -7110,7 +7164,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         val jsonCode = ref.codeFromConfig(config)
-        return when (refColumnIntent(nameColumnPresent, codeColumnPresent, cellName, cellCode)) {
+        val merged = when (refColumnIntent(nameColumnPresent, codeColumnPresent, cellName, cellCode)) {
             RefIntent.CLEAR -> ref.demote(config)
             RefIntent.LOOKUP ->
                 resolve(cellCode, cellName)?.let { applyResolved(it) }
@@ -7119,17 +7173,48 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 jsonCode != null ->
                     resolve(jsonCode, null)?.let { applyResolved(it) } ?: demoteWithNotice(jsonCode)
                 else -> {
-                    val existingCode = existingConfig?.let { ref.codeFromConfig(it) } ?: return config
-                    resolve(existingCode, null)?.let { applyResolved(it) }
-                        ?: try {
-                            // 참조가 이미 끊겨 있던 기존 상태 그대로 — 가져오기가 상태를 조용히 바꾸지 않는다.
-                            org.json.JSONObject(config).put(ref.CONFIG_KEY, existingCode).toString()
-                        } catch (_: Exception) {
-                            config
-                        }
+                    val existingCode = existingConfig?.let { ref.codeFromConfig(it) }
+                    when {
+                        existingCode == null -> config
+                        else -> resolve(existingCode, null)?.let { applyResolved(it) }
+                            ?: try {
+                                // 참조가 이미 끊겨 있던 기존 상태 그대로 — 가져오기가 상태를 조용히 바꾸지 않는다.
+                                org.json.JSONObject(config).put(ref.CONFIG_KEY, existingCode).toString()
+                            } catch (_: Exception) {
+                                config
+                            }
+                    }
                 }
             }
         }
+        // **출구가 하나여야 이 고지가 전 분기를 덮는다** — 겹침은 참조를 얹든 강등하든
+        // 그대로 남는 성질이라, 분기마다 손으로 붙이면 다음 분기가 빠진다.
+        noticeGradeValueCollision(ref.gradesFromConfig(merged), "필드 정의 행 ${excelRow(rowIndex)}: 필드 '$fieldName'", result)
+        return merged
+    }
+
+    /**
+     * 등급 표의 **수치가 겹치면** 결과에서 말한다 — 거부하지 않는다(관대 수용).
+     *
+     * 판정은 [com.novelcharacter.app.util.GradeTable.duplicateValues]가 단일 소스이고 그
+     * KDoc이 왜 [com.novelcharacter.app.util.GradeTable.Problem]이 아닌지를 든다. 요지는
+     * *행은 멀쩡한데 표의 뜻이 무너졌다*는 것이다 — GRADE 필드에서 숫자는 곧 순위라,
+     * 두 등급이 같은 숫자면 그 필드는 둘의 우열을 말하지 못하고 앱이 등급을 늘어놓는
+     * 유일한 규칙(수치 오름차순)도 무너진다.
+     */
+    private fun noticeGradeValueCollision(
+        grades: Map<String, Double>,
+        context: String,
+        result: ImportResult?
+    ) {
+        val groups = com.novelcharacter.app.util.GradeTable.duplicateValues(grades)
+        if (groups.isEmpty()) return
+        val listed = groups.joinToString(", ") { group ->
+            "${group.labels.joinToString("·")}(${com.novelcharacter.app.util.GradeTable.formatValue(group.value)})"
+        }
+        result?.warnings?.add(
+            "$context: 등급 $listed 이(가) 같은 숫자입니다 — 숫자가 곧 순위라 이대로는 그 등급들의 우열이 가려지지 않습니다"
+        )
     }
 
     /**
@@ -9983,13 +10068,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /** [newUniverseFrom]과 같은 규약 — 이 행이 **만들** 세력 관계(R-33 셋째 · B-233). */
     private fun newFactionRelationshipFrom(
         r: FactionRelationshipMatcher.RowValues,
-        factionId1: Long, factionId2: Long, relationType: String, createdAt: Long
+        factionId1: Long, factionId2: Long, relationType: String, createdAt: Long,
+        /** 이 행이 쓸 코드 — 파일의 것을 그대로 쓸 수 없으면 부르는 쪽이 새로 낸다(v58). */
+        code: String
     ): FactionRelationship = FactionRelationship(
         factionId1 = factionId1, factionId2 = factionId2, relationType = relationType,
         description = r.description, intensity = r.intensity,
         // 새 행이 순서를 말하지 않았으면 엔티티 기본값(0)이다 — 종전과 같은 값이다.
         isBidirectional = r.isBidirectional, displayOrder = r.displayOrder ?: 0,
-        createdAt = createdAt
+        createdAt = createdAt, code = code
     )
 
     private fun factionRelationshipRowValues(
@@ -10267,17 +10354,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val faction1CodeColIndex = cols["세력1코드"] ?: -1
         val faction2CodeColIndex = cols["세력2코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
+        // 관계 자신의 코드(v58) — 옛 파일에는 없는 열이다. 없으면 자연키로만 맞추는
+        // 종전 동작 그대로라, 이 열이 생겼다고 옛 파일이 달리 읽히지 않는다.
+        val relCodeColIndex = cols["코드"] ?: -1
 
         if (faction2ColIndex < 0 || typeColIndex < 0) {
             result.errors.add("세력 관계 시트: '세력2' 또는 '관계 유형' 컬럼을 찾을 수 없음")
             return
         }
 
-        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
+        val allFactions = db.factionDao().getAllFactionsList()
+        val factionIndex = FactionIndex(allFactions)
+        // 코드가 남의 관계를 가리켰을 때 **그 남이 누구인지** 말해 주는 자리에만 쓴다.
+        val factionNameById = allFactions.associate { it.id to it.name }
         val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
-        val existingByKey = db.factionRelationshipDao().getAllRelationshipsList()
+        val allExistingRels = db.factionRelationshipDao().getAllRelationshipsList()
+        val existingByKey = allExistingRels
             .associateBy { FactionRelationshipMatcher.key(it.factionId1, it.factionId2, it.relationType) }
             .toMutableMap()
+        // 코드 축(v58) — 유형을 고친 행이 **같은 관계**로 돌아오는 통로다.
+        val existingByCode = allExistingRels.mapNotNull { rel ->
+            rel.code?.takeIf { it.isNotBlank() }?.let { it to rel }
+        }.toMap(mutableMapOf())
         val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
         for (i in dataRows(sheet, headerRow)) {
@@ -10347,21 +10445,86 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val createdAt = readCreatedAtCell(row, createdAtColIndex, "세력 관계 행 ${excelRow(i)}", result)
                     ?: System.currentTimeMillis()
 
-                // 정방향/역방향 모두 매칭하여 중복 생성 방지 — 규칙은 미리보기 분석과 같은 함수다(B-87)
-                val existing = FactionRelationshipMatcher.match(existingByKey, faction1.id, faction2.id, relType)
+                // 정방향/역방향 모두 매칭하여 중복 생성 방지 — 규칙은 미리보기 분석과 같은 함수다(B-87).
+                // **코드가 먼저다**(v58) — 자연키에 관계 유형이 들어 있어, 코드가 없던 종전에는
+                // 시트에서 유형을 고치는 것만으로 그 행이 *다른 관계*가 되어 옛 관계가 그대로 남았다.
+                val relCode = if (relCodeColIndex >= 0) getCellString(row, relCodeColIndex).trim() else ""
+                val rowMatch = FactionRelationshipMatcher.matchRow(
+                    existingByKey, existingByCode, relCode, faction1.id, faction2.id, relType
+                )
+                if (relCode.isNotBlank() && rowMatch.existing == null && rowMatch.codeOfOtherPair == null) {
+                    result.warnings.add("세력 관계 행 ${excelRow(i)}: 코드 '$relCode'를 찾지 못해 세력·유형으로 매칭합니다 — 의도한 새 관계면 '코드' 칸을 비우세요")
+                }
+                rowMatch.codeOfOtherPair?.let { other ->
+                    // 행을 복사하면 회색 '코드' 칸이 따라온다 — 그 코드를 따르면 남의 관계가
+                    // 이 행의 값으로 덮이고 이 행이 말한 관계는 만들어지지 않는다(형제 시트와 같은 갈래).
+                    val otherPair = listOfNotNull(
+                        factionNameById[other.factionId1],
+                        factionNameById[other.factionId2]
+                    ).joinToString("–").ifBlank { "다른 두 세력" }
+                    result.warnings.add("세력 관계 행 ${excelRow(i)}: 코드 '$relCode'는 '$otherPair'의 관계를 가리켜 이 행에는 쓰지 않았습니다 — 행을 복사했다면 '코드' 칸을 비우세요 (이 행은 '${faction1.name}'–'${faction2.name}'의 관계로 처리합니다)")
+                }
+                var existing = rowMatch.existing
+                if (existing != null && existing.relationType != relType) {
+                    // 유형을 옮기려는데 **그 자리에 이미 다른 관계가 있으면** 유니크 인덱스가
+                    // (세력1, 세력2, 유형)이라 갱신이 실패한다. 예외로 떨어뜨리면 사용자가 보는
+                    // 것은 SQL 문구 하나뿐이라, 여기서 먼저 갈라 무엇을 어떻게 하라고 말한다.
+                    // **어느 쪽도 지우지 않는다** — 둘 다 사용자가 만든 관계다.
+                    val taken = FactionRelationshipMatcher
+                        .match(existingByKey, faction1.id, faction2.id, relType)
+                    if (taken != null && taken.id != existing.id) {
+                        result.skippedRows++
+                        result.errors.add("세력 관계 행 ${excelRow(i)}: '${faction1.name}'–'${faction2.name}'에는 이미 '$relType' 관계가 따로 있어 이 행의 유형을 바꾸지 않았습니다 — 먼저 그 관계를 앱에서 지우거나 이 행의 '코드' 칸을 비우세요")
+                        existing = null
+                    }
+                }
+                if (existing != null && relCode.isNotBlank() && rowMatch.codeOfOtherPair == null &&
+                    existing.relationType != relType
+                ) {
+                    // 종전에는 여기서 **관계가 하나 더 생겼다**. 이제는 같은 행을 고친 것으로 읽고,
+                    // 무엇을 했는지 말한다(조용히 바꾸지 않는다).
+                    result.warnings.add("세력 관계 행 ${excelRow(i)}: '${faction1.name}'–'${faction2.name}' 관계 유형을 '${existing.relationType}' → '$relType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
+                }
 
+                if (existing == null && rowMatch.existing != null) {
+                    // 위에서 갈라 낸 충돌 — 새로 만들지 않는다(그것도 같은 유니크에 걸린다).
+                    continue
+                }
                 if (existing != null) {
                     // 열 없음 = 기존값 유지(무음 손실 방지), 빈칸=삭제 집계 — 캐릭터 관계 시트와 동일 의미론
                     if (descColIndex >= 0 && rowValues.description == "" && existing.description.isNotBlank()) result.clearedFields++
+                    // 코드로 찾았으면 유형도 이 행의 것으로 옮긴다 — 그것이 코드 매칭의 요점이다.
+                    // (자연키로 찾았으면 유형이 이미 같아 값이 바뀌지 않는다.)
+                    // 코드 없는 옛 행은 이 왕복에서 백필한다 — 다음 파일부터 유형 편집이 산다.
                     val mergedFactionRel = FactionRelationshipMatcher.apply(existing, rowValues, presence)
+                        .copy(
+                            relationType = relType,
+                            code = existing.code ?: relCode.takeIf {
+                                it.isNotBlank() && rowMatch.canReuseFileCode
+                            } ?: generateEntityCode()
+                        )
                     db.factionRelationshipDao().update(mergedFactionRel)
+                    // 유형이 바뀌었으면 옛 키로는 다시 못 찾는다 — 두 축을 함께 갱신한다.
+                    existingByKey.remove(
+                        FactionRelationshipMatcher.key(existing.factionId1, existing.factionId2, existing.relationType)
+                    )
+                    existingByKey[FactionRelationshipMatcher.key(mergedFactionRel.factionId1, mergedFactionRel.factionId2, mergedFactionRel.relationType)] = mergedFactionRel
+                    mergedFactionRel.code?.let { existingByCode[it] = mergedFactionRel }
                     matchedFactionRelationshipIds.add(existing.id)
                     if (mergedFactionRel != existing) result.updatedFactionRelationships++ else result.unchangedRows++
                 } else {
-                    val newRel = newFactionRelationshipFrom(rowValues, faction1.id, faction2.id, relType, createdAt)
+                    val newRel = newFactionRelationshipFrom(
+                        rowValues, faction1.id, faction2.id, relType, createdAt,
+                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성).
+                        // **남이 이미 든 코드는 못 쓴다** — 코드 열이 유니크라 넣기 자체가 실패한다.
+                        code = relCode.takeIf { it.isNotBlank() && rowMatch.canReuseFileCode }
+                            ?: generateEntityCode()
+                    )
                     val newId = db.factionRelationshipDao().insert(newRel)
                     if (newId > 0) {
-                        existingByKey[FactionRelationshipMatcher.key(faction1.id, faction2.id, relType)] = newRel.copy(id = newId)
+                        val saved = newRel.copy(id = newId)
+                        existingByKey[FactionRelationshipMatcher.key(faction1.id, faction2.id, relType)] = saved
+                        saved.code?.let { existingByCode[it] = saved }
                         matchedFactionRelationshipIds.add(newId)
                         result.newFactionRelationships++
                     } else {

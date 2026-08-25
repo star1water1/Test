@@ -218,6 +218,62 @@ class AiProviderCodecTest {
         assertTrue("cooldownUntilMillis 키가 남아 있다", !o.has("cooldownUntilMillis"))
     }
 
+    // ── 이식(엑셀·월드패키지) — 기기에 매인 칸은 나가지 않는다 (2026.08.25) ──
+
+    /** 쿨다운은 벽시계 한 점이라 파일을 타면 뜻을 잃는다 — 싣지 않는다. */
+    @Test
+    fun 이식_인코딩은_쿨다운을_싣지_않는다() {
+        val json = AiProviderCodec
+            .encodeForTransfer(listOf(full().copy(cooldownUntilMillis = 1_700_000_000_000L)))
+        val o = JsonParser.parseString(json).asJsonArray[0].asJsonObject
+        assertTrue("이식 목록에 cooldownUntilMillis가 실렸다", !o.has("cooldownUntilMillis"))
+    }
+
+    /** 나머지 학습값 넷은 그 모델·그 주소의 사실이라 기기를 옮겨도 참이다 — 함께 나간다. */
+    @Test
+    fun 이식_인코딩은_모델_학습값은_그대로_싣는다() {
+        val json = AiProviderCodec.encodeForTransfer(
+            listOf(
+                full().copy(
+                    cooldownUntilMillis = 1L,
+                    detectedOutputLimit = 4096,
+                    temperatureUnsupported = true,
+                    maxTokensParamUnsupported = true,
+                    imagesUnsupported = true
+                )
+            )
+        )
+        val c = AiProviderCodec.decode(json).configs.single()
+        assertEquals(4096, c.detectedOutputLimit)
+        assertEquals(true, c.temperatureUnsupported)
+        assertEquals(true, c.maxTokensParamUnsupported)
+        assertEquals(true, c.imagesUnsupported)
+        assertNull(c.cooldownUntilMillis)
+    }
+
+    /** 저장소가 쓰는 [AiProviderCodec.encode]는 그대로다 — 갈라 둔 것이 이 수리의 요점이다. */
+    @Test
+    fun 저장_인코딩은_여전히_쿨다운을_싣는다() {
+        val decoded = AiProviderCodec
+            .decode(AiProviderCodec.encode(listOf(full().copy(cooldownUntilMillis = 42L))))
+        assertEquals(42L, decoded.configs.single().cooldownUntilMillis)
+    }
+
+    /** 옛 파일이 쿨다운을 들고 있어도 이 기기의 값이 이긴다. */
+    @Test
+    fun 들여오기는_이_기기의_쿨다운을_지킨다() {
+        val incoming = full().copy(cooldownUntilMillis = 9_999_999_999_999L)
+        val current = full().copy(cooldownUntilMillis = 55L)
+        assertEquals(55L, AiProviderCodec.keepDeviceState(incoming, current).cooldownUntilMillis)
+    }
+
+    /** 이 기기에 없던 프로바이더는 밀어 둘 근거가 없다 — 쿨다운 없음으로 들어온다. */
+    @Test
+    fun 처음_보는_프로바이더는_쿨다운_없이_들어온다() {
+        val incoming = full().copy(cooldownUntilMillis = 9_999_999_999_999L)
+        assertNull(AiProviderCodec.keepDeviceState(incoming, null).cooldownUntilMillis)
+    }
+
     /** 구버전 설정에는 둘 다 없다 — 우선순위는 0, 쿨다운은 없음으로 읽혀 종전과 같다. */
     @Test
     fun 옛_JSON은_우선순위_0에_쿨다운_없음으로_읽힌다() {

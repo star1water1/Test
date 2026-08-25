@@ -26,7 +26,8 @@ class FactionRelationshipMatcherTest {
         description: String = "",
         intensity: Int = 5,
         isBidirectional: Boolean = true,
-        displayOrder: Int = 0
+        displayOrder: Int = 0,
+        code: String? = "code$id"
     ) = FactionRelationship(
         id = id,
         factionId1 = factionId1,
@@ -36,8 +37,15 @@ class FactionRelationshipMatcherTest {
         intensity = intensity,
         isBidirectional = isBidirectional,
         displayOrder = displayOrder,
-        createdAt = 1_000L
+        createdAt = 1_000L,
+        code = code
     )
+
+    private fun keyMap(vararg rels: FactionRelationship) =
+        rels.associateBy { FactionRelationshipMatcher.key(it.factionId1, it.factionId2, it.relationType) }
+
+    private fun codeMap(vararg rels: FactionRelationship) =
+        rels.mapNotNull { r -> r.code?.let { it to r } }.toMap()
 
     /** 내보낸 행을 그대로 되읽었을 때의 RowValues (엑셀 왕복의 정상 경로) */
     private fun rowOf(r: FactionRelationship) = FactionRelationshipMatcher.RowValues(
@@ -179,4 +187,70 @@ class FactionRelationshipMatcherTest {
         assertEquals(0, FactionRelationshipMatcher.apply(existing, row).displayOrder)
         assertTrue(FactionRelationshipMatcher.changes(existing, row))
     }
+    // ── 코드 우선 매칭 (v58, 2026.08.25) ──
+
+    /**
+     * **이 판이 고친 결함 그 자체다.** 자연키에 관계 유형이 들어 있어, 코드가 없던 종전에는
+     * 시트에서 유형을 고치는 순간 그 행이 *다른 관계*가 됐다 — 새 관계가 생기고 옛 관계가
+     * 그대로 남았다(사용자 파일의 `2 ↔ 1`이 '동맹'과 '동' 두 행).
+     */
+    @Test
+    fun `코드가 같으면 유형을 고쳐도 같은 관계다`() {
+        val existing = relation(id = 7, relationType = "동맹", code = "REL7")
+        val match = FactionRelationshipMatcher.matchRow(
+            keyMap(existing), codeMap(existing), "REL7", 1, 2, "동"
+        )
+        assertSame(existing, match.existing)
+        assertNull(match.codeOfOtherPair)
+    }
+
+    /** 코드 열이 없는 옛 파일은 종전 그대로 — 자연키로 맞춘다. */
+    @Test
+    fun `코드가 비면 자연키로 맞춘다`() {
+        val existing = relation(id = 7, relationType = "동맹")
+        val match = FactionRelationshipMatcher.matchRow(
+            keyMap(existing), codeMap(existing), "", 1, 2, "동맹"
+        )
+        assertSame(existing, match.existing)
+        assertTrue(match.canReuseFileCode)
+    }
+
+    /** 세력1·세력2가 뒤바뀐 행도 같은 쌍이다 — 코드 조건이 그 성질을 깨뜨리면 안 된다. */
+    @Test
+    fun `뒤집힌 쌍도 코드로 같은 관계다`() {
+        val existing = relation(id = 7, factionId1 = 1, factionId2 = 2, relationType = "동맹", code = "REL7")
+        val match = FactionRelationshipMatcher.matchRow(
+            keyMap(existing), codeMap(existing), "REL7", 2, 1, "적대"
+        )
+        assertSame(existing, match.existing)
+    }
+
+    /**
+     * '코드' 열은 회색이라 **행을 복사하면 남의 코드가 따라온다.** 그 코드를 따르면 남의
+     * 관계가 이 행의 값으로 덮이고 이 행이 말한 관계는 만들어지지 않는다 — 둘 다 말이 없다.
+     */
+    @Test
+    fun `다른 쌍을 가리키는 코드는 따르지 않는다`() {
+        val other = relation(id = 7, factionId1 = 1, factionId2 = 2, relationType = "동맹", code = "REL7")
+        val match = FactionRelationshipMatcher.matchRow(
+            keyMap(other), codeMap(other), "REL7", 3, 4, "적대"
+        )
+        assertNull(match.existing)
+        assertSame(other, match.codeOfOtherPair)
+        // 유니크 열이라 남이 든 코드를 새 행에 재사용할 수 없다.
+        assertFalse(match.canReuseFileCode)
+    }
+
+    /** 파일의 코드가 이 기기에 없으면(다른 기기에서 옮겨 온 파일) 자연키로 떨어진다. */
+    @Test
+    fun `모르는 코드는 자연키 폴백이다`() {
+        val existing = relation(id = 7, relationType = "동맹", code = "REL7")
+        val match = FactionRelationshipMatcher.matchRow(
+            keyMap(existing), codeMap(existing), "없는코드", 1, 2, "동맹"
+        )
+        assertSame(existing, match.existing)
+        assertNull(match.codeOfOtherPair)
+        assertTrue(match.canReuseFileCode)
+    }
+
 }

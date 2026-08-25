@@ -88,6 +88,35 @@ object GradeSystemEditor {
 
             val rows = mutableListOf<SystemRow>()
 
+            // 수치가 겹치면 그 체계를 참조하는 **필드 전체**가 두 등급의 우열을 못 가린다 —
+            // 필드 편집 화면과 같은 판정·같은 문구를 쓴다(`gradeValueCollisionMessage`).
+            // 저장은 막지 않는다: 겹침은 못 쓰는 표가 아니라 뜻이 무너진 표라, 처분은 알림이다.
+            val collisionNotice = TextView(ctx).apply {
+                textSize = 12f
+                setTextColor(ctx.getColor(R.color.error))
+                setPadding(0, (4 * dp).toInt(), 0, (4 * dp).toInt())
+                visibility = android.view.View.GONE
+            }
+
+            fun renderCollisionNotice() {
+                // 행을 세는 규칙은 순수 계층이 든다 — 필드 편집 화면과 **같은 함수**다.
+                val text = gradeValueCollisionMessage(
+                    ctx,
+                    GradeTable.duplicateValuesOf(
+                        rows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+                    )
+                )
+                collisionNotice.text = text.orEmpty()
+                collisionNotice.visibility =
+                    if (text == null) android.view.View.GONE else android.view.View.VISIBLE
+            }
+
+            // **글자마다가 아니라 포커스를 뗄 때다** — 타이핑 중간의 반쪽 숫자로 경고가
+            // 붙었다 떨어지면 신호가 아니라 소음이 된다(등급 행의 다른 갱신과 같은 잣대).
+            val notifyOnFocusLost = android.view.View.OnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) renderCollisionNotice()
+            }
+
             fun addRow(label: String = "", value: String = "", originalLabel: String? = null) {
                 val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -110,6 +139,8 @@ object GradeSystemEditor {
                     textSize = 13f
                     if (value.isNotEmpty()) setText(value)
                 }
+                editLabel.onFocusChangeListener = notifyOnFocusLost
+                editValue.onFocusChangeListener = notifyOnFocusLost
                 val entry = SystemRow(editLabel, editValue, originalLabel)
                 val btnRemove = TextView(ctx).apply {
                     text = "✕"
@@ -118,6 +149,7 @@ object GradeSystemEditor {
                     setOnClickListener {
                         rowsContainer.removeView(row)
                         rows.remove(entry)
+                        renderCollisionNotice()
                     }
                 }
                 row.addView(editLabel)
@@ -135,6 +167,11 @@ object GradeSystemEditor {
             } else {
                 GradeTable.DEFAULT_ROWS.forEach { (label, value) -> addRow(label, value) }
             }
+
+            // 겹친 체계는 **열자마자** 보여야 한다 — 행을 건드려야 뜨는 안내는
+            // 이미 겹친 체계에서 영영 안 뜬다.
+            layout.addView(collisionNotice)
+            renderCollisionNotice()
 
             val addGradeBtn = TextView(ctx).apply {
                 text = ctx.getString(R.string.label_add_grade)

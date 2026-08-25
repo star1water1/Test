@@ -220,6 +220,10 @@ class WorldPackageImporter(context: Context) {
         val relReg = WorldPackageCodes.Registry(db.characterRelationshipDao().getAllRelationships().map { it.code })
         val relChangeReg = WorldPackageCodes.Registry(db.characterRelationshipChangeDao().getAllChanges().map { it.code })
         val factionReg = WorldPackageCodes.Registry(db.factionDao().getAllFactionsList().map { it.code })
+        // 세력 간 관계도 코드를 갖는다(v58) — 유니크 열이라 겹치면 새로 발급해야 한다.
+        val factionRelReg = WorldPackageCodes.Registry(
+            db.factionRelationshipDao().getAllRelationshipsList().map { it.code }
+        )
         // 은행 전량을 한 번만 읽어 코드 사전을 만든다 — v1·v2 패키지는 원 기기 은행 전체가
         // 실려 있어, 행마다 점조회하면 트랜잭션 안에서 수천 쿼리가 된다(규모).
         val existingNameBank = db.nameBankDao().getAllNamesList()
@@ -254,7 +258,7 @@ class WorldPackageImporter(context: Context) {
         // 뒤늦게 더해진 축이고, 세 자리 중 둘만 따라온 모양이다).
         val registries = listOf(
             uniReg, novelReg, charReg, eventReg, scReg, quoteReg, relReg, relChangeReg,
-            factionReg, nameBankReg, entryReg,
+            factionReg, factionRelReg, nameBankReg, entryReg,
             gradeSystemReg, duelAxisReg, duelMatchReg, duelVerdictReg
         )
 
@@ -612,9 +616,9 @@ class WorldPackageImporter(context: Context) {
                     contents.factionRelationships, factionIdByOldCode, factionIdByUniqueName
                 )
                 unresolvedFactionRels = factionRelResult.unresolvedCount
-                factionRelResult.relationships.chunked(CHUNK).forEach {
-                    db.factionRelationshipDao().insertAll(it)
-                }
+                factionRelResult.relationships
+                    .map { it.copy(code = claimNullable(factionRelReg, it.code)) }
+                    .chunked(CHUNK).forEach { db.factionRelationshipDao().insertAll(it) }
 
                 // 11. 사건 — 이 세계관 소속이던 사건만 새 세계관으로. 다른 세계관 소속이었던
                 //     (작품 연계로만 실려 온) 사건은 소속 없이 들어오며 개수를 고지한다.
