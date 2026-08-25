@@ -304,6 +304,7 @@ $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/ImagePathCell.kt
 $MAIN/util/DateValidation.kt
 $MAIN/util/BirthDateFormat.kt
+$MAIN/data/maintenance/BirthDateEntryRepair.kt
 $MAIN/util/CardImageAdoption.kt
 $MAIN/util/BirthdayHelper.kt
 $MAIN/util/BirthdayCelebration.kt
@@ -468,6 +469,7 @@ $TEST/util/DuelFieldLinksTest.kt
 $TEST/util/DuelSystemFieldsTest.kt
 $TEST/util/DuelAxisTransferTest.kt
 $TEST/util/FactionStandingTest.kt
+$TEST/data/maintenance/BirthDateEntryRepairTest.kt
 $TEST/util/DuelCardInfoTest.kt
 $TEST/util/DuelMatchLogTest.kt
 $TEST/util/AiImageAttachTest.kt
