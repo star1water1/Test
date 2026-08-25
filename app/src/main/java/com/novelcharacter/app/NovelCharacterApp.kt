@@ -146,6 +146,7 @@ class NovelCharacterApp : Application() {
         // 밑줄 키 이력의 둘째 줄 정리 (1회)
         repairSingletonStateChangesIfNeeded()
         // 옛 경로가 남긴 규격 밖 값 정리 (1회) — 역전된 수정일 · '#' 빠진 색 · 규격 밖 생일
+        // · 라이브러리에 남은 옛 생일 표기 · 세력 연결을 잃은 자동 관계
         repairLegacyValueFormatsIfNeeded()
         // 무소속 캐릭터의 시맨틱 이력 소급 (1회) — 살아 있는 경로가 그들을 빼고 있었다
         backfillUnclassifiedSemanticStateIfNeeded()
@@ -295,10 +296,11 @@ class NovelCharacterApp : Application() {
      */
     private fun repairLegacyValueFormatsIfNeeded() {
         val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
-        // **플래그가 v2다** — 2026.08.24에 ③(0이 빠진 생일)이 늘었는데, v1을 이미 마친 설치는
-        // 그 플래그 때문에 다시 돌지 않아 새 항목만 조용히 건너뛴다. 세 항목이 전부 멱등이라
-        // (그 object의 KDoc) 한 번 더 도는 값은 0건이고, 새 항목만 실제로 잡힌다.
-        if (prefs.getBoolean("legacy_value_formats_repaired_v2", false)) return
+        // **플래그가 v3다** — 항목이 늘 때마다 올린다. 이미 마친 설치는 옛 플래그 때문에 다시
+        // 돌지 않아 **새 항목만 조용히 건너뛰기** 때문이다(v2가 ③을 위해 올린 그 이유 그대로).
+        // 2026.08.25에 ④(라이브러리에 남은 규격 밖 생일)·⑤(세력 연결을 잃은 자동 관계)가 늘었다.
+        // 항목이 전부 멱등이라(그 object의 KDoc) 한 번 더 도는 값은 0건이고, 새 항목만 잡힌다.
+        if (prefs.getBoolean("legacy_value_formats_repaired_v3", false)) return
 
         appScope.launch(Dispatchers.IO) {
             try {
@@ -323,15 +325,62 @@ class NovelCharacterApp : Application() {
                             "— 날짜는 그대로이고 표기만 맞췄습니다(연표 이력은 이미 그 모양이었습니다)"
                     )
                 }
-                prefs.edit()
+                if (repaired.birthDateEntries > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "필드 데이터의 생일 값 ${repaired.birthDateEntries}건을 MM-DD로 맞췄습니다 " +
+                            "— 옛 표기는 별칭으로 남겨 두어 검색·통계가 계속 같은 값으로 봅니다"
+                    )
+                }
+                if (repaired.factionRelinks > 0) {
+                    AppLogger.warn(
+                        "LegacyValueRepair",
+                        "세력 연결이 끊겨 있던 자동 관계 ${repaired.factionRelinks}건을 도로 이었습니다 " +
+                            "— 이제 멤버 탈퇴·세력 삭제가 그 관계까지 함께 셉니다"
+                    )
+                }
+                // **집계를 그 자리에서 다시 센다** — ④의 이름 변경은 행의 `usageCount`를 그대로
+                // 둔 채 값만 옮기므로, 실측의 `05-30`처럼 *쓰이는데 0으로 적힌* 행이 남는다.
+                // 그 상태의 행은 '미사용 자동수집 정리'가 지우자고 권한다(B-60이 못박은 부류) —
+                // 방금 붙인 별칭이 그 자리에서 사라진다.
+                // **세는 것은 표 셋을 도는 그 함수 하나다**(SQL로 옮겨 적으면 규칙이 두 벌이 된다).
+                // 실패해도 아래 플래그를 막지 않는다 — `field_library_harvest_pending`이
+                // 다음 실행의 수확·전체 재집계로 같은 자리를 다시 덮는 durable한 그물이고,
+                // 여기 재집계는 **이번 세션의 창을 닫는** 몫이다.
+                if (repaired.birthDateEntryFieldIds.isNotEmpty()) {
+                    try {
+                        fieldValueLibraryRepository
+                            .recountUsageForFieldsOrThrow(repaired.birthDateEntryFieldIds)
+                    } catch (e: Exception) {
+                        AppLogger.warn(
+                            "LegacyValueRepair",
+                            "생일 값의 사용 횟수를 다시 세지 못했습니다 — 다음 실행이 다시 셉니다: ${e.message}"
+                        )
+                    }
+                }
+                val edit = prefs.edit()
                     .putBoolean("legacy_value_formats_repaired", true)
                     .putBoolean("legacy_value_formats_repaired_v2", true)
-                    .apply()
+                    .putBoolean("legacy_value_formats_repaired_v3", true)
+                // **다음 실행의 수확을 예약한다.** ④는 *이미 라이브러리에 있는* 행만 고치므로,
+                // 라이브러리가 아예 모르는 저장 모양(캐릭터 값만 ③으로 올라간 값)은 수확이
+                // 데려와야 하고 `usageCount`도 다시 세야 한다. **이번 실행에 붙이지 않는 것은
+                // 일부러다** — `seedFieldValueLibraryIfNeeded`는 `onCreate`에서 이 함수보다
+                // 뒤에 불리지만 **플래그를 코루틴 밖에서 먼저 읽는다.** 여기서 세워도 이번
+                // 회차는 이미 읽고 지나갔고, 설령 읽는다 해도 두 코루틴이 같은 디스패처에서
+                // 경쟁해 수확이 ③보다 먼저 돌 수 있다(그러면 옛 표기를 다시 걷는다).
+                // 다음 실행은 그 경쟁이 없다 — 그때는 값이 이미 저장 모양이다.
+                if (repaired.needsLibraryHarvest) {
+                    edit.putBoolean("field_library_harvest_pending", true)
+                }
+                edit.apply()
                 android.util.Log.i(
                     "NovelCharacterApp",
                     "Legacy value format repair completed " +
                         "(timestamps=${repaired.timestamps}, colors=${repaired.colors}, " +
-                        "birthDates=${repaired.birthDates})"
+                        "birthDates=${repaired.birthDates}, " +
+                        "birthDateEntries=${repaired.birthDateEntries}, " +
+                        "factionRelinks=${repaired.factionRelinks})"
                 )
             } catch (e: Exception) {
                 android.util.Log.e(
