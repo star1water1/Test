@@ -1547,8 +1547,8 @@ DB 쓰기도 고른 태그 수만큼의 삽입 하나뿐이다(폴더판과 같�
 
 | 문서 | 다룬 것 | 상태 |
 |------|---------|------|
-| `archive/search_filter_sort_perf_2026-07.md` (PR-E) | 캐릭터 목록 필터·정렬이 키 입력마다 DB 전체 재조회·수식 재평가를 하던 것 | **구현 완료** — `CharacterViewModel`에 Room `InvalidationTracker` 에폭 + 스테이지드 메모이제이션 실재(`:169~207`) |
-| `archive/storage_optimization_design_2026-07.md` | 앱 용량 ~3GB의 정체(자동 백업 이미지 ×3벌 상주 등) | **구현 완료** — `util/StorageAnalyzer` 실재(고아 이미지 범주 포함), 자동 백업 이미지 포함 기본값이 `true` → **`false`로 뒤집혔다** |
+| [archive/search_filter_sort_perf_2026-07.md](https://github.com/star1water1/Test/blob/ac7057af4014717743a2547dab5d0db176c4fce7/docs/archive/search_filter_sort_perf_2026-07.md) (PR-E) | 캐릭터 목록 필터·정렬이 키 입력마다 DB 전체 재조회·수식 재평가를 하던 것 | **구현 완료** — `CharacterViewModel`에 Room `InvalidationTracker` 에폭 + 스테이지드 메모이제이션 실재(`:169~207`) |
+| [archive/storage_optimization_design_2026-07.md](https://github.com/star1water1/Test/blob/ac7057af4014717743a2547dab5d0db176c4fce7/docs/archive/storage_optimization_design_2026-07.md) | 앱 용량 ~3GB의 정체(자동 백업 이미지 ×3벌 상주 등) | **구현 완료** — `util/StorageAnalyzer` 실재(고아 이미지 범주 포함), 자동 백업 이미지 포함 기본값이 `true` → **`false`로 뒤집혔다** |
 | `excel_streaming_import_2026-07.md` (PR②) | 가져오기가 파일 전체를 DOM으로 메모리 적재하는 것 | ✅ **구현 완료 (2026.07.29, S2)** — 설계 원칙(이중 경로 + per-row 비분기)은 그대로 지켰고, 접근면 추상화라는 수단이 더해졌다 |
 
 **읽는 순서:** S1·S2는 완료됐고 **S4는 S1의 측정 결과로 취소됐다**(3-3 — 줄일 것은 적재가

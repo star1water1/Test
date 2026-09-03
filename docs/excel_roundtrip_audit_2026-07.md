@@ -47,7 +47,7 @@
 ### 2-1. DB 마이그레이션 (v41 → v42) — ✅ **통과 (2026-07-26)**
 
 > v42→v43 업그레이드 확인에 **포함돼 함께 통과했다** — 기록은
-> `docs/archive/device_verification_passed_2026-07.md` 3-1장.
+> [docs/archive/device_verification_passed_2026-07.md](https://github.com/star1water1/Test/blob/ac7057af4014717743a2547dab5d0db176c4fce7/docs/archive/device_verification_passed_2026-07.md) 3-1장.
 > 아래 절차는 재확인이 필요할 때 쓰라고 남긴다.
 
 2차 세션은 **DB 스키마를 전혀 건드리지 않았다**(v42 그대로). 따라서 아래 확인은 1차 세션 몫 그대로 남아 있다.
