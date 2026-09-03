@@ -90,14 +90,21 @@ S1이 먼저이고, 이후에는 준비물 의존 때문에 워크스루의 순�
 검증 시점·범위는 [AGENTS.md의 검증 기준](../AGENTS.md#검증)을 따른다.
 프로브를 쓸 때는 최신 `origin/master`의 변경 없는 체크아웃/워크트리 결과와 수정본을 비교한다. 기준선과 수정본의 출력 파일은 별도 이름으로 보관한다.
 
-아래 명령은 **저장소 루트의 Bash 환경**(Linux/WSL 등)용이다. Java 17·Python 3이 필요하고,
-JVM 준비 스크립트는 필요한 jar을 내려받으므로 해당 다운로드 경로에 접근할 수 있어야 한다.
-PowerShell에 Bash 명령을 그대로 붙여 넣지 않는다. 아래는 필요한 명령을 골라 실행하는 예시다.
+아래 명령은 **저장소 루트의 Linux/WSL Bash 환경**용이다. Java 17·Python 3·curl이 필요하며,
+Bash와 Java는 같은 Linux/WSL 환경의 것을 쓴다. PowerShell에 그대로 붙여 넣지 않는다.
+
+JVM 준비 스크립트는 **Gradle 8.14.3 배포본의 `lib` 디렉터리**가 있어야 한다.
+기본 위치는 `/opt/gradle-8.14.3/lib`이며, 다른 곳에 설치하거나 압축을 풀었다면
+`export GRADLE_LIB="/실제/gradle-8.14.3/lib"`로 절대 경로를 지정한다.
+그 안의 Kotlin compiler·stdlib 2.0.21과 `trove4j-*.jar`를 복사하므로 먼저 파일 존재를 확인한다.
+정확한 파일명과 복사 방법은 `tools/setup_jvm_env.sh`의 1절이 정한다.
+**이 세 jar은 준비 스크립트가 다운로드하지 않는다.** 나머지 의존성은 Maven Central에서 받으므로
+`https://repo1.maven.org/maven2`에 접근할 수 있어야 한다. 아래는 필요한 명령을 골라 실행하는 예시다.
 
 ```bash
 JARS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/novelcharacter-jvm.XXXXXX")" || exit 1
 export JARS_DIR
-bash tools/setup_jvm_env.sh
+bash tools/setup_jvm_env.sh || exit 1
 bash tools/run_jvm_tests.sh
 bash tools/probe_compile.sh "$JARS_DIR/probe.txt"
 bash tools/probe_view_compile.sh "$JARS_DIR/view.txt"
