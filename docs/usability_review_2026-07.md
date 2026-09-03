@@ -4,7 +4,7 @@
 >
 > 시나리오 판정은 그때의 코드를 추적한 결과이고, 인용된 `파일:라인`은 **대부분 밀렸다.**
 > 이후 세션들이 여기서 나온 지적의 상당수를 처리했다(대응 설계서는
-> `docs/archive/usability_fix_design_2026-07.md` — D-1~D-6 구현 완료).
+> [docs/archive/usability_fix_design_2026-07.md](https://github.com/star1water1/Test/blob/ac7057af4014717743a2547dab5d0db176c4fce7/docs/archive/usability_fix_design_2026-07.md) — D-1~D-6 구현 완료).
 >
 > **확인된 예 — P0-1의 근거가 사라졌다.** "복원 경로가 50MB에서 거부한다"는 진단은
 > `MAX_IMPORT_FILE_SIZE`에 기대는데, 그 상한은 **S2에서 통째로 없어졌다**

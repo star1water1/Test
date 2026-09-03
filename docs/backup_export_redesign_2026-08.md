@@ -24,7 +24,7 @@
 
 | 경로 | 격발 | 산출물 | 이미지 | 진행도 표시 |
 |------|------|--------|--------|------------|
-| **자동 백업** | 주기 전용(1일, 배터리 낮음 아님 조건 — `NovelCharacterApp.scheduleAutoBackup`, `enqueueUniquePeriodicWork("auto_backup", KEEP)`). **수동 격발 경로 없음**(`OneTimeWorkRequest` 사용 0건) | 내부 `.enc`(암호화, 기본 기기 전용) | 설정 토글(`BackupSettingsStore.includeImages`) — **기본 제외**(저장 공간 결정, `archive/storage_optimization_design`) | 백그라운드(상태 카드·이력·최종 실패 시 시스템 알림) |
+| **자동 백업** | 주기 전용(1일, 배터리 낮음 아님 조건 — `NovelCharacterApp.scheduleAutoBackup`, `enqueueUniquePeriodicWork("auto_backup", KEEP)`). **수동 격발 경로 없음**(`OneTimeWorkRequest` 사용 0건) | 내부 `.enc`(암호화, 기본 기기 전용) | 설정 토글(`BackupSettingsStore.includeImages`) — **기본 제외**(저장 공간 결정, [archive/storage_optimization_design](https://github.com/star1water1/Test/blob/ac7057af4014717743a2547dab5d0db176c4fce7/docs/archive/storage_optimization_design_2026-07.md)) | 백그라운드(상태 카드·이력·최종 실패 시 시스템 알림) |
 | **엑셀 내보내기** | **진입 4곳, 구현 2벌** — 설정·홈은 `ExcelTransferController` 공용, **세계관·작품 목록은 자체 복제 흐름**(각자 exporter·SAF 런처·모드 다이얼로그·스피너 — 공용은 옵션 창 `ExportOptionsDialog.show`뿐) | `.xlsx` 또는 이미지 포함 `.zip` | 항목 선택 18개 중 **마지막** 체크박스 "이미지 (파일 크기 증가)" — **기본 꺼짐**(`ExportOptions.images = false`. 17개는 미리 켜져 있어 "다 선택됐네"로 읽힌다) | **조회형 스피너**(`createProgressDialog` — R-26 위반, B-51의 엑셀 몫) |
 | **백업 내보내기** | 설정 → **'백업 복원' 다이얼로그의 첫 항목**(`backup_export_to_external` — 독립 행이 아니다) | 기존 `.enc`의 반출(이식 가능/기기 전용 선택. 최신 파일 = lastModified 최대 선택) | 그 `.enc`가 담은 만큼(= 대개 없음) | 저장 스피너 |
 | **월드패키지** | 설정 '데이터' 섹션 행(`worldPackageRow`) | `.ncworld` | **토글 미배선**(B-73 — 문자열 4키 죽은 정의, 수신측 고지는 배선됨) | 스피너(`world_package_exporting`) |
