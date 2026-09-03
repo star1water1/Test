@@ -11,10 +11,9 @@
 - 남은 백로그의 재개 조건은 3장에 있다. 현재 진행을 위해 먼저 받아야 할 사용자 판정은 없다. `B-258`의 미선택 갈래는 사용자가 그 작업을 열 때 판단한다.
 - 우선 대기는 [실기기 워크스루](device_walkthrough.md)의 **S1(15분)** 회신이다. 새 파일·기기 회신·사용자 요청이 오면 해당 범위를 처리한다.
 
-## 1. 판의 정의
+## 1. 작업 절차
 
-작업 범위·범위 밖 발견의 처리·질문 기준·완료 보고는 [AGENTS.md](../AGENTS.md)가 정한다.
-문서·검토·테스트 자체를 요청받은 작업도 그 요청을 완료하면 된다.
+[AGENTS.md](../AGENTS.md)의 세션 시작·범위와 판단·검증을 따른다.
 
 ## 2. 실기기 확인
 
@@ -34,11 +33,7 @@ S1이 먼저이고, 이후에는 준비물 의존 때문에 워크스루의 순�
 단계·절·묶음을 확인할 때만 `python3 tools/walkthrough/verify.py`를 실행한다.
 닫힌 `remaining_work_2026-07.md`의 옛 절 수를 현재 워크스루 단계 수로 사용하지 않는다.
 
-**순회표 걷어내기는 관련 기능 작업에 딸려 갈 때만 한다.** 분류는 `steps.json`의 `axis`·`audit`가
-가지고 있으므로 다시 분류·계수하거나 별도 작업으로 열지 않는다. 해당 단계의 실제 코드와 시험을
-읽은 뒤, 삭제 대신 `drop`과 근거 코드 조각 `anchor`를 기록하고 `verify.py`로 확인한다.
-코드로 확인되는 사실을 위해 시험을 새로 만들지 않으며, 애매한 단계는 남긴다.
-Robolectric 도입 대신 필요한 경우 그 화면의 판정 로직을 순수 계층으로 추출하는 기존 방침을 따른다.
+순회표 걷어내기는 관련 기능 작업에 딸릴 때만 검토한다. 해당 단계의 편집·재생성은 `tools/walkthrough/emit.py`의 안내를 따르고 `verify.py`로 확인한다.
 
 ## 3. 살아 있는 백로그 — **11건**
 
@@ -92,23 +87,23 @@ Robolectric 도입 대신 필요한 경우 그 화면의 판정 로직을 순수
 **77** · 정적 검사 **54종 실패 0**. Room 스키마는 **v58**이며 해당 앱 변경에서 마이그레이션은 없었다.
 이 값은 이전 실행 기록이다. 문서 수정만으로 실행일이나 통과 상태를 갱신하지 않는다.
 
-코드 변경 전에는 `git fetch origin master`로 기준을 갱신하고, 변경 영역의 검증을 실행해 비교한다.
-작업 규약의 필수 검사는 포함하며, 전체 실행 여부는 [AGENTS.md의 검증 기준](../AGENTS.md#검증)을 따른다.
-프로브의 기준선은 변경 없는 `origin/master` 체크아웃/워크트리에서 만들고 수정본 결과와 비교한다.
+검증 시점·범위는 [AGENTS.md의 검증 기준](../AGENTS.md#검증)을 따른다.
+프로브를 쓸 때는 최신 `origin/master`의 변경 없는 체크아웃/워크트리 결과와 수정본을 비교한다. 기준선과 수정본의 출력 파일은 별도 이름으로 보관한다.
 
 아래 명령은 **저장소 루트의 Bash 환경**(Linux/WSL 등)용이다. Java 17·Python 3이 필요하고,
 JVM 준비 스크립트는 필요한 jar을 내려받으므로 해당 다운로드 경로에 접근할 수 있어야 한다.
-PowerShell에 Bash 명령을 그대로 붙여 넣지 않는다. `JARS_DIR`에는 쓰기 가능한 임시 경로를 명시한다.
+PowerShell에 Bash 명령을 그대로 붙여 넣지 않는다. 아래는 필요한 명령을 골라 실행하는 예시다.
 
 ```bash
-export JARS_DIR="${TMPDIR:-/tmp}/novelcharacter-jvm"
+JARS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/novelcharacter-jvm.XXXXXX")" || exit 1
+export JARS_DIR
 bash tools/setup_jvm_env.sh
 bash tools/run_jvm_tests.sh
 bash tools/probe_compile.sh "$JARS_DIR/probe.txt"
 bash tools/probe_view_compile.sh "$JARS_DIR/view.txt"
 ```
 
-각 명령의 실패를 확인한 뒤 다음 단계로 진행한다. 준비된 환경은 재사용하며, 의존성이 바뀌면 다시 준비한다.
+`JARS_DIR`는 작업별로 한 번 생성해 그 작업에서 재사용한다. 다른 작업과 공유하거나 같은 경로의 하네스를 동시에 실행하지 않는다. 각 명령의 실패를 확인하고, 의존성이 바뀌면 다시 준비한다.
 특정 규약의 정적 검사·마이그레이션 하네스는 해당 파일을 실행한다. 전체가 필요하면 다음처럼 실패를 전파한다:
 
 ```bash
@@ -124,8 +119,3 @@ bash tools/probe_view_compile.sh "$JARS_DIR/view.txt"
 - `triage_unresolved.sh`는 입력한 차분 컴파일 결과에서 실제 오류 후보를 고른다. 종료 코드나 후보가 항상 일정하다고 가정하지 말고, 기준선과 현재 결과를 대조한다.
 - CI가 다루는 범위는 `.github/workflows/build-apk.yml`과 `.github/workflows/migration-test.yml`이 정한다. 문서 전용 변경은 경로 필터로 실행되지 않을 수 있다.
 - Excel 입출력을 바꾸면 가능할 때 실제 파일을 열어 왕복 결과를 확인한다. 원본을 다시 확인하지 않은 추정으로 수리하지 않고, 파일·기기가 없으면 남은 검증을 보고한다.
-
-## 5. 착수 절차
-
-[AGENTS.md의 세션 시작·범위와 판단·검증](../AGENTS.md)을 따른다. 이 문서에 같은 절차를 복제하지 않는다.
-제품 원칙은 `CLAUDE.md`, 작업별 코드 규약은 `docs/conventions.md`의 관련 절만 읽는다.
