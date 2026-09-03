@@ -23,7 +23,7 @@ git switch -c codex/task-name origin/master  # task-name을 실제 작업 이름
 진행 중인 작업을 이어받았다면 새로 분기하지 않고 현재 브랜치를 먼저 확인한다:
 
 ```bash
-git rev-list --count HEAD..origin/master   # master에서 빠진 커밋
+git rev-list --count HEAD..origin/master   # 현재 브랜치가 origin/master보다 뒤처진 커밋 수
 git rev-list --count origin/master..HEAD   # 현재 브랜치의 고유 커밋
 ```
 
