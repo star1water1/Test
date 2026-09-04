@@ -24,7 +24,7 @@
 set -u
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 . "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # jar 버전 단일 소스 (B-84)
-SP="${JARS_DIR:-$(jvm_env_default_jars_dir)}"
+SP="${JARS_DIR:?JARS_DIR를 지정하세요 (docs/status.md 4장의 작업별 mktemp 경로)}"
 jvm_env_require_jars "$SP"
 MAIN=$REPO/app/src/main/java/com/novelcharacter/app
 TEST=$REPO/app/src/test/java/com/novelcharacter/app

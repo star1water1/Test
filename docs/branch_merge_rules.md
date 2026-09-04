@@ -1,18 +1,23 @@
 # 브랜치·병합 규칙
 
-사람·Codex·Claude 등 모든 작업자에게 적용하는 Git 절차다. 작업 범위와 검증 기준은
+모든 작업자에게 적용하는 Git 절차다. 작업 범위와 검증 기준은
 [AGENTS.md](../AGENTS.md)를 따른다. 과거 브랜치 정리 기록은 Git 이력에 있으며, 현행 작업 절차가 아니다.
 
 ## 1. 기준 브랜치
 
 - 기본 브랜치와 최신 코드의 기준은 `master`다.
-- 새 작업은 최신 `origin/master`에서 시작한다. 오래된 `claude/*` 등 다른 작업 브랜치를 기준으로 삼지 않는다.
+- 새 작업은 최신 `origin/master`에서 시작한다. 오래된 작업 브랜치를 기준으로 삼지 않는다.
 - `master`에 직접 push하거나 force-push하지 않는다. 모든 변경은 PR을 거친다.
 
 ## 2. 작업 시작·최신화
 
 먼저 미커밋 변경과 진행 중인 작업을 확인한다. 사용자 변경을 버리거나 기존 브랜치를 강제로 재설정하지 않는다.
-새 작업 브랜치에는 목적이 드러나는 이름을 사용한다(`codex/...` 등).
+Codex가 관리하는 worktree는 detached HEAD로 시작할 수 있다. 이때는 현재 checkout을 보존하고,
+필요한 경우 Codex 앱의 **Create branch** 또는 **Handoff**를 사용한다. 아래 예시를 맞추기 위해
+`switch`·`checkout`·`reset`을 실행하지 않는다. 사용자가 고른 브랜치나 변경을 이어받은 경우도
+명시적인 요청 없이 다른 브랜치로 옮기지 않는다.
+
+일반 로컬 checkout에서 새 작업을 시작할 때는 목적이 드러나는 브랜치 이름을 사용한다(`codex/...` 등).
 
 ```bash
 git status --short
@@ -20,7 +25,7 @@ git fetch origin master
 git switch -c codex/task-name origin/master  # task-name을 실제 작업 이름으로 바꾼다
 ```
 
-진행 중인 작업을 이어받았다면 새로 분기하지 않고 현재 브랜치를 먼저 확인한다:
+진행 중인 작업을 이어받았거나 Codex worktree에서 시작했다면 새로 분기하지 않고 현재 상태를 먼저 확인한다:
 
 ```bash
 git rev-list --count HEAD..origin/master   # 현재 브랜치가 origin/master보다 뒤처진 커밋 수

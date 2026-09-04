@@ -39,25 +39,6 @@ COMMONS_COLLECTIONS4_VER=4.4
 COMMONS_LANG3_VER=3.14.0
 SPARSEBITSET_VER=1.3
 
-# 기본 jar 디렉터리 — **세션마다 달라지는 자리라 상수로 적지 않는다.**
-#
-# 종전에는 `run_jvm_tests.sh`·`differential_compile.sh` 둘이 *어느 한 세션의 스크래치패드
-# 절대 경로*를 기본값으로 박아 두었다. 그 세션이 끝나면 그 경로는 존재하지 않으므로,
-# `JARS_DIR`를 손으로 주지 않는 모든 실행이 *"jar이 없습니다"*로 죽는다 —
-# 2026.08.21에 실제로 그랬고, 그때 나오는 안내는 *"setup_jvm_env.sh를 다시 돌리세요"*라
-# **이미 받아 둔 jar을 다시 받게 만든다.** 있는 곳을 찾아 쓰는 것이 맞다.
-#
-# 판정은 **jar 하나의 실재**로 한다(둘 다 반드시 쓰는 것). 나머지는 부르는 쪽의
-# `jvm_env_require_jars`가 버전까지 본다 — 여기서 전부 재면 그 검사와 두 벌이 된다.
-jvm_env_default_jars_dir() {
-  local marker="kotlin-stdlib-2.0.21.jar" d
-  for d in /tmp/claude-*/-home-user-Test/*/scratchpad; do
-    [ -f "$d/$marker" ] && { printf '%s' "$d"; return 0; }
-  done
-  # 못 찾으면 종전 안내가 가리키는 자리를 그대로 낸다 — 죽는 자리는 부르는 쪽이다.
-  printf '%s' "${TMPDIR:-/tmp}/novelcharacter-jvm"
-}
-
 # jar이 실제로 있는지 본다. **앱이 버전을 올렸는데 `setup_jvm_env.sh`를 다시 돌리지 않은
 # 상태**가 이 검사의 표적이다 — kotlinc는 없는 클래스패스 항목을 경고만 하고 지나가므로,
 # 그대로 두면 POI 미해결 오류 수십 건으로 나타나 원인을 엉뚱한 곳(테스트)에서 찾게 된다.

@@ -45,8 +45,8 @@
 set -u
 OUT="$1"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
-. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # 기본 jar 디렉터리 판정 한 벌
-SP="${JARS_DIR:-$(jvm_env_default_jars_dir)}"
+. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # jar 버전 단일 소스
+SP="${JARS_DIR:?JARS_DIR를 지정하세요 (docs/status.md 4장의 작업별 mktemp 경로)}"
 cd "$REPO"
 find app/src/main/java -name '*.kt' > $SP/files.txt
 java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar" \
