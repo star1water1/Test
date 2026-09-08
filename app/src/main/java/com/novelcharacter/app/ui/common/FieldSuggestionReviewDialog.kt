@@ -1,0 +1,239 @@
+package com.novelcharacter.app.ui.common
+
+import android.view.View
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.novelcharacter.app.R
+import com.novelcharacter.app.ai.CharacterFieldAiSuggester
+import com.novelcharacter.app.ai.FieldSuggestionReviewState
+import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.cappedScrollView
+
+/** Review UI shared by character and event fields; domain validation stays in the suggester. */
+object FieldSuggestionReviewDialog {
+    private val active = java.util.WeakHashMap<Fragment, AlertDialog>()
+    fun show(
+        fragment: Fragment,
+        targets: List<CharacterFieldAiSuggester.FieldSpec>,
+        outcome: CharacterFieldAiSuggester.SuggestOutcome,
+        state: FieldSuggestionReviewState,
+        notices: String,
+        onApply: (List<CharacterFieldAiSuggester.Suggestion>) -> Boolean,
+        onClose: () -> Unit,
+        onRefine: (List<String>, String) -> Boolean,
+        retryKeys: List<String> = emptyList(),
+        canApply: Boolean = true
+    ) {
+        active.remove(fragment)?.dismiss()
+        val context = fragment.requireContext()
+        val pad = (16 * context.resources.displayMetrics.density).toInt()
+        val specs = targets.associateBy { it.key }
+        val originals = outcome.suggestions.associateBy { it.fieldKey }
+        state.seedDefaults(outcome.suggestions.filter {
+            specs[it.fieldKey]?.currentValue.isNullOrBlank() &&
+                it.confidence != CharacterFieldAiSuggester.Confidence.LOW
+        }.map { it.fieldKey })
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad)
+        }
+        fun label(value: String) = TextView(context).apply {
+            text = value
+            textSize = 14f
+            setTextIsSelectable(true)
+            setPadding(0, pad / 2, 0, pad / 2)
+        }
+        fun button(title: String, action: () -> Unit) = MaterialButton(context, null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = title
+            setOnClickListener { action() }
+        }
+        panel.addView(label(notices))
+        val boxes = linkedMapOf<String, CheckBox>()
+        val commitEdits = linkedMapOf<String, () -> Boolean>()
+        lateinit var dialog: AlertDialog
+        fun refine(keys: List<String>, instruction: String) {
+            if (keys.isEmpty()) {
+                Toast.makeText(context, R.string.ai_review_pick_none, Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (keys.any { commitEdits[it]?.invoke() == false }) return
+            if (onRefine(keys, instruction)) dialog.dismiss()
+        }
+        for ((key, original) in originals) {
+            val spec = specs[key] ?: continue
+            state.current(original)
+            val box = CheckBox(context).apply {
+                text = spec.name
+                textSize = 16f
+                isChecked = state.isChecked(key)
+                setOnCheckedChangeListener { _, on -> state.setChecked(key, on) }
+            }
+            boxes[key] = box
+            panel.addView(box)
+            val value = label("")
+            val source = label("")
+            val note = label("")
+            fun render() {
+                val current = state.current(original)
+                value.text = buildString {
+                    if (spec.currentValue.isNotBlank()) append(context.getString(
+                        R.string.ai_field_overwrite_format, spec.currentValue, current.value))
+                    else append(current.value)
+                    if (current.editedByUser) append("  [직접 수정]")
+                    else current.confidence?.let { append("  [${it.label}]") }
+                    if (current.outsideLibrary) append("  [목록 밖]")
+                }
+                source.text = current.sourceEvidence?.let { "원문 근거\n“$it”" }.orEmpty()
+                source.isVisible = source.text.isNotEmpty()
+                val memo = current.suggestionNote ?: current.reason
+                note.text = if (memo.isBlank()) "" else "AI 제안 메모\n$memo"
+                note.isVisible = memo.isNotBlank()
+            }
+            render()
+            panel.addView(value); panel.addView(source); panel.addView(note)
+            val editor = EditText(context).apply {
+                hint = context.getString(R.string.ai_field_refine_value_hint)
+                setText(state.editDrafts[key] ?: state.current(original).value)
+                setSingleLine(false)
+                minLines = 2
+                isVisible = key in state.editDrafts
+                doAfterTextChanged { if (isVisible) state.editDrafts[key] = it.toString() }
+            }
+            val format = label(listOfNotNull(spec.formatHint,
+                spec.options.takeIf { it.isNotEmpty() }?.joinToString(", ")).joinToString("\n"))
+            format.isVisible = false
+            lateinit var done: View
+            fun commit(): Boolean {
+                if (!editor.isVisible) return true
+                val raw = editor.text.toString().trim()
+                if (raw.isBlank()) {
+                    editor.error = context.getString(R.string.ai_field_refine_value_required)
+                    return false
+                }
+                return when (val valid = CharacterFieldAiSuggester.normalizeChecked(raw, spec)) {
+                    is CharacterFieldAiSuggester.Normalized.Rejected -> {
+                        editor.error = valid.cause.label
+                        false
+                    }
+                    is CharacterFieldAiSuggester.Normalized.Ok -> {
+                        state.remember(state.current(original).copy(value=valid.value,
+                            editedByUser=true, outsideLibrary=valid.outsideLibrary))
+                        state.editDrafts.remove(key)
+                        editor.isVisible = false; done.isVisible = false; format.isVisible = false
+                        render()
+                        true
+                    }
+                }
+            }
+            commitEdits[key] = { commit() }
+            done = button("수정 반영 · AI 호출 없음") { commit() }.apply { isVisible=editor.isVisible }
+            panel.addView(editor); panel.addView(format); panel.addView(done)
+            panel.addView(button("직접 수정") {
+                editor.setText(state.editDrafts[key] ?: state.current(original).value)
+                editor.isVisible = true; done.isVisible = true
+                state.editDrafts[key] = editor.text.toString()
+                format.isVisible = format.text.isNotBlank()
+                editor.requestFocus()
+            })
+            panel.addView(button("원래 AI 제안으로 되돌리기") {
+                state.reset(original)
+                editor.isVisible = false; done.isVisible = false; format.isVisible = false
+                render()
+            })
+            if (spec.type == FieldType.TEXT && !spec.isBirthDate && spec.structuredSeparator == null &&
+                (original.suggestionNote ?: original.reason).isNotBlank()) {
+                panel.addView(button("메모를 현재 제안에 합치기") {
+                    val current = state.current(original)
+                    editor.isVisible = true; done.isVisible = true
+                    editor.setText(current.value + "\n" + (current.suggestionNote ?: current.reason))
+                    state.editDrafts[key] = editor.text.toString()
+                    editor.requestFocus()
+                })
+            }
+            val instruction = EditText(context).apply {
+                hint = "AI에게 보완할 방향을 알려 주세요"
+                setText(state.instructions[key].orEmpty())
+                setSingleLine(false)
+                doAfterTextChanged { state.instructions[key] = it.toString() }
+            }
+            panel.addView(instruction)
+            panel.addView(button("이 항목 AI 보완 · 요청 1건") { refine(listOf(key), instruction.text.toString()) })
+            panel.addView(View(context).apply {
+                setBackgroundColor(context.getColor(R.color.outline_variant))
+                layoutParams=LinearLayout.LayoutParams(-1, 1)
+            })
+        }
+        if (originals.isEmpty()) panel.addView(label(context.getString(R.string.ai_field_nothing)))
+        if (retryKeys.isNotEmpty()) panel.addView(button("못 받은 ${retryKeys.size}개만 다시 요청") {
+            refine(retryKeys, "")
+        })
+        if (originals.size > 1) {
+            val common = EditText(context).apply {
+                hint = "선택한 항목에 함께 적용할 방향"
+                setText(state.instructions["__bulk"].orEmpty())
+                setSingleLine(false)
+                doAfterTextChanged { state.instructions["__bulk"] = it.toString() }
+            }
+            panel.addView(common)
+            val bulkButton = button("선택 항목 AI 보완") {
+                refine(originals.keys.filter { state.isChecked(it) }, common.text.toString())
+            }
+            fun updateCost() {
+                val count = boxes.keys.count { state.isChecked(it) }
+                val requests = CharacterFieldAiSuggester.requestCountFor(count,
+                    com.novelcharacter.app.ai.AiService(context).effectiveMaxTokens())
+                bulkButton.text = "선택 ${count}개 AI 보완 · 요청 ${requests}건"
+            }
+            boxes.forEach { (key, box) -> box.setOnCheckedChangeListener { _, on ->
+                state.setChecked(key, on)
+                updateCost()
+            } }
+            updateCost()
+            panel.addView(bulkButton)
+        }
+        dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.ai_field_review_title)
+            .setView(cappedScrollView(context).apply { addView(panel) })
+            .setPositiveButton(R.string.ai_field_apply, null)
+            .setNegativeButton("검토 마치기") { _, _ -> onClose() }
+            .setNeutralButton(R.string.field_library_ai_select_all, null)
+            .create()
+        dialog.setOnCancelListener { onClose() }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = canApply && originals.isNotEmpty()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val keys = originals.keys.filter { state.isChecked(it) }
+                if (keys.isEmpty()) Toast.makeText(context, R.string.ai_review_pick_none, Toast.LENGTH_SHORT).show()
+                else if (keys.all { commitEdits[it]?.invoke() != false } &&
+                    onApply(keys.map { state.current(originals.getValue(it)) })) dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val select = boxes.values.any { !it.isChecked }
+                boxes.values.forEach { it.isChecked = select }
+            }
+        }
+        val observer = object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) { dialog.dismiss() }
+        }
+        val owner = fragment.viewLifecycleOwnerLiveData.value ?: fragment
+        owner.lifecycle.addObserver(observer)
+        dialog.setOnDismissListener {
+            owner.lifecycle.removeObserver(observer)
+            if (active[fragment] === dialog) active.remove(fragment)
+        }
+        active[fragment] = dialog
+        dialog.show()
+    }
+}

@@ -110,7 +110,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         val request = AiRequest(
             system = buildSystemPrompt(
                 creativity, templates.templateOf(PromptTemplates.Id.NARRATIVE_SYSTEM)
-            ),
+            ) + CreativeBriefing.DATA_RULE,
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity),

@@ -1283,7 +1283,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
          * base64가 아니라 **경로**를 들고 있는 이유: 유료 응답을 들고 회전을 넘기는
          * 객체라 수 MB의 바이트를 얹으면 그 자체가 비용이다(다시 읽는 편이 싸다).
          */
-        val imagePaths: List<String> = emptyList()
+        val imagePaths: List<String> = emptyList(),
+        val context: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext? = null
     )
 
     val aiSuggestRunning = MutableLiveData(false)
@@ -1320,34 +1321,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 든다**(규칙을 두 벌로 적으면 갈린다. `touched` → `seeded` 수정이 한쪽에만 적용되는
      * 것이 그 모양이다). 여기가 더 드는 것은 *손수 고친 제안*뿐이다.
      */
-    class AiReviewState {
-        private val checks = com.novelcharacter.app.util.AiCheckState<String>()
-        private val edited = mutableMapOf<String, com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>()
-
-        fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn)
-
-        fun setChecked(fieldKey: String, on: Boolean) = checks.setChecked(fieldKey, on)
-
-        fun isChecked(fieldKey: String): Boolean = checks.isChecked(fieldKey)
-
-        fun remember(suggestion: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion) {
-            edited[suggestion.fieldKey] = suggestion
-        }
-
-        /** 손수 고친 값이 있으면 그것, 없으면 원본. */
-        fun current(
-            original: com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion
-        ): com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion =
-            edited[original.fieldKey] ?: original
-
-        fun clear() {
-            checks.clear()
-            edited.clear()
-        }
-    }
-
-    /** 회차 수명이다 — 결과를 비울 때 함께 비운다. */
-    val aiReviewState = AiReviewState()
+    val aiReviewState = com.novelcharacter.app.ai.FieldSuggestionReviewState()
+    val aiBriefingDrafts = mutableMapOf<Long, String>()
 
     /**
      * 서술형 **일괄** 검토 창의 회차 체크 — 형제(위)와 같은 부류다. 종전에는 이 창만 체크를
@@ -1399,9 +1374,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         /** 요청 대상 캐릭터 id — [AiSuggestRun.targetCharacterId]로 그대로 실린다 */
         targetCharacterId: Long = -1L,
         /** 함께 보낼 이미지 경로 (A-7) — 고르기는 [com.novelcharacter.app.util.AiImageAttach]가 이미 끝냈다 */
-        imagePaths: List<String> = emptyList()
+        imagePaths: List<String> = emptyList(),
+        carryOver: AiSuggestRun? = null
     ): Boolean {
         if (aiSuggestRunning.value == true) return false
+        if (aiSuggestResult.value != null && carryOver == null) {
+            restoreAiSuggestResult()
+            return false
+        }
         aiSuggestCancelled = false
         val aiService = com.novelcharacter.app.ai.AiService(getApplication())
         // **총량을 먼저 센다** — 진행 창은 `aiSuggestRunning`을 보고 서면서 이 값으로 총량을
@@ -1419,8 +1399,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
                     imagePaths, getApplication<android.app.Application>().filesDir
                 )
+                val enrichedTargets = withFieldUsage(targets)
                 val outcome = suggester.suggest(
-                    aiContext, withFieldUsage(targets), floor, settings.creativity, prepared.images,
+                    aiContext, enrichedTargets, floor, settings.creativity, prepared.images,
                     // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
                     settings.asTemplateSource(),
                     onProgress = { done, total, _, _ -> aiSuggestProgress.value = done to total },
@@ -1428,11 +1409,30 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
+                val noticed = outcome.copy(failures = outcome.failures + imageNotices(prepared))
+                val merged = if (carryOver == null) noticed else
+                    com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome, noticed)
+                aiReviewState.replaced(outcome.suggestions)
+                val specs = if (carryOver == null) enrichedTargets else {
+                    val byKey = enrichedTargets.associateBy { it.key }
+                    carryOver.targets.map { byKey[it.key] ?: it }
+                }
                 aiSuggestResult.value = AiSuggestRun(
-                    targets, singleMode,
-                    outcome.copy(failures = outcome.failures + imageNotices(prepared)),
-                    targetCharacterId, imagePaths
+                    specs, carryOver?.singleMode ?: singleMode, merged,
+                    targetCharacterId, imagePaths, aiContext
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val failure = app.getString(R.string.ai_error_unknown)
+                val previous = carryOver?.outcome
+                val outcome = previous?.copy(failures = previous.failures + failure) ?:
+                    com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome(
+                        emptyList(), 0, listOf(failure), emptyList(), 0, 0,
+                        targets.map { com.novelcharacter.app.ai.CharacterFieldAiSuggester.MissingField(
+                            it.key, it.name, com.novelcharacter.app.ai.CharacterFieldAiSuggester.MissingCause.NOT_RETURNED) })
+                aiSuggestResult.value = carryOver?.copy(outcome=outcome) ?:
+                    AiSuggestRun(targets, singleMode, outcome, targetCharacterId, imagePaths, aiContext)
             } finally {
                 aiSuggestRunning.value = false
                 aiSuggestProgress.value = 0 to 0
