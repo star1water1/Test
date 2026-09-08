@@ -252,6 +252,9 @@ $MAIN/ai/CharacterFieldAiSuggester.kt
 $MAIN/ai/CreativeBriefing.kt
 $MAIN/ai/FieldSuggestionReviewState.kt
 $MAIN/ai/NarrativeReviewState.kt
+$MAIN/speech/SpeechModels.kt
+$MAIN/speech/SpeechSession.kt
+$MAIN/speech/SpeechVocabulary.kt
 $MAIN/ai/FieldPromptSource.kt
 $MAIN/ai/EventFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
@@ -609,6 +612,7 @@ $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/CreativeReviewTest.kt
 $TEST/ai/NarrativeReviewTest.kt
+$TEST/ai/SpeechInputTest.kt
 $TEST/ai/EventFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
 $TEST/ai/NarrativeBulkDraftTest.kt
