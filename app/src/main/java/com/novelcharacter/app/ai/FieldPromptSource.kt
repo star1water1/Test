@@ -20,6 +20,7 @@ package com.novelcharacter.app.ai
  * 하나만 구현해 들어온다.
  */
 interface FieldPromptSource {
+    val evidenceSource: String get() = ""
 
     /**
      * 시스템 프롬프트 — 응답 스키마와 축별 근거 규칙.

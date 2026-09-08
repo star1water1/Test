@@ -249,6 +249,8 @@ $MAIN/data/model/RandomConfig.kt
 $MAIN/data/model/SemanticRole.kt
 $MAIN/data/model/RequiredEnforcement.kt
 $MAIN/ai/CharacterFieldAiSuggester.kt
+$MAIN/ai/CreativeBriefing.kt
+$MAIN/ai/FieldSuggestionReviewState.kt
 $MAIN/ai/FieldPromptSource.kt
 $MAIN/ai/EventFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
@@ -604,6 +606,7 @@ $TEST/util/FactionMembershipMatcherTest.kt
 $TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
+$TEST/ai/CreativeReviewTest.kt
 $TEST/ai/EventFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
 $TEST/ai/NarrativeBulkDraftTest.kt
