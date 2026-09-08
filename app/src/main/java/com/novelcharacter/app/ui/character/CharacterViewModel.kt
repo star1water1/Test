@@ -1329,7 +1329,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 다이얼로그의 지역 `CheckBox` 맵에 두어, 회전하면 껐던 필드가 전부 다시 켜졌다.
      * 키가 필드 id인 것은 그 창이 id로 항목을 세기 때문이다.
      */
-    val aiNarrativeBulkReviewState = com.novelcharacter.app.util.AiCheckState<Long>()
+    val aiNarrativeBulkReviewState = com.novelcharacter.app.ai.NarrativeReviewState()
+    val aiNarrativeReviewState = com.novelcharacter.app.ai.NarrativeReviewState()
 
     fun clearAiSuggestResult() {
         aiSuggestResult.value = null
@@ -1514,7 +1515,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     val aiNarrativeRunning = MutableLiveData(false)
     val aiNarrativeResult = MutableLiveData<AiNarrativeRun?>()
-    fun clearAiNarrativeResult() { aiNarrativeResult.value = null }
+    fun clearAiNarrativeResult() {
+        aiNarrativeResult.value = null
+        aiNarrativeReviewState.clear()
+        narrativeRequest = null
+    }
 
     /**
      * 서술형 작성 실행. 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알린다.
@@ -1531,7 +1536,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         /** 함께 보낼 이미지 경로 (A-7) — 외모 묘사가 이 기능의 최대 수혜자다 */
         imagePaths: List<String> = emptyList()
     ): Boolean {
-        if (aiNarrativeRunning.value == true) return false
+        if (aiNarrativeRunning.value == true || aiNarrativeResult.value != null) return false
+        narrativeRequest = NarrativeRequest(aiContext, fieldId, characterId, spec, mode, length, imagePaths)
         aiNarrativeRunning.value = true
         viewModelScope.launch {
             try {
@@ -1556,6 +1562,73 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, noticed)
             } finally {
                 aiNarrativeRunning.value = false
+            }
+        }
+        return true
+    }
+
+    private data class NarrativeRequest(
+        val context: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
+        val fieldId: Long,
+        val characterId: Long,
+        val spec: com.novelcharacter.app.ai.NarrativeFieldAiWriter.FieldSpec,
+        val mode: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode,
+        val length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
+        val imagePaths: List<String>
+    )
+    private var narrativeRequest: NarrativeRequest? = null
+    private var narrativeBulkRequests = emptyMap<Long, NarrativeRequest>()
+
+    fun narrativeOriginal(fieldId: Long): String = narrativeBulkRequests[fieldId]?.spec?.currentValue.orEmpty()
+
+    /** Append new alternatives to one field. Existing candidates, edits and selections survive failure. */
+    fun refineAiNarrative(fieldId: Long, candidate: Int, instruction: String, bulk: Boolean): Boolean {
+        if (aiNarrativeRunning.value == true || aiNarrativeBulkRunning.value == true) return false
+        val request = (if (bulk) narrativeBulkRequests[fieldId] else narrativeRequest) ?: return false
+        val previous = if (bulk) aiNarrativeBulkResult.value?.items?.firstOrNull { it.fieldId == fieldId }?.outcome
+            else aiNarrativeResult.value?.outcome
+        previous ?: return false
+        val draft = previous.drafts.getOrNull(candidate) ?: return false
+        val state = if (bulk) aiNarrativeBulkReviewState else aiNarrativeReviewState
+        val text = state.current(fieldId, candidate, draft.text)
+        if (text.isBlank()) return false
+        if (bulk) { aiNarrativeBulkProgress.value = 0 to 1; aiNarrativeBulkRunning.value = true }
+        else aiNarrativeRunning.value = true
+        viewModelScope.launch {
+            try {
+                val writer = com.novelcharacter.app.ai.NarrativeFieldAiWriter(com.novelcharacter.app.ai.AiService(getApplication()))
+                val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
+                val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(request.imagePaths,
+                    getApplication<android.app.Application>().filesDir)
+                val spec = withStyleSamples(request.spec.copy(currentValue=text, userInstruction=instruction),
+                    fieldId, request.characterId)
+                val next = writer.write(request.context, spec,
+                    com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.POLISH, request.length,
+                    com.novelcharacter.app.ai.NarrativeFieldAiWriter.DEFAULT_VARIANTS,
+                    settings.creativity, prepared.images, settings.asTemplateSource()) {
+                    com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), it)
+                }
+                val merged = com.novelcharacter.app.ai.NarrativeReviewState.merge(previous,
+                    next.copy(failures=next.failures + imageNotices(prepared)))
+                if (bulk) {
+                    val run = aiNarrativeBulkResult.value
+                    aiNarrativeBulkResult.value = run?.copy(items=run.items.map {
+                        if (it.fieldId == fieldId) it.copy(outcome=merged) else it
+                    })
+                } else aiNarrativeResult.value = aiNarrativeResult.value?.copy(outcome=merged)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val failed = previous.copy(failures=previous.failures + app.getString(R.string.ai_error_unknown))
+                if (bulk) {
+                    val run = aiNarrativeBulkResult.value
+                    aiNarrativeBulkResult.value = run?.copy(items=run.items.map {
+                        if (it.fieldId == fieldId) it.copy(outcome=failed) else it
+                    })
+                } else aiNarrativeResult.value = aiNarrativeResult.value?.copy(outcome=failed)
+            } finally {
+                if (bulk) { aiNarrativeBulkRunning.value=false; aiNarrativeBulkProgress.value=0 to 0 }
+                else aiNarrativeRunning.value=false
             }
         }
         return true
@@ -1609,6 +1682,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun clearAiNarrativeBulkResult() {
         aiNarrativeBulkResult.value = null
         aiNarrativeBulkReviewState.clear()
+        narrativeBulkRequests = emptyMap()
     }
 
     /**
@@ -1641,8 +1715,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
         imagePaths: List<String> = emptyList()
     ): Boolean {
-        if (aiNarrativeBulkRunning.value == true) return false
+        if (aiNarrativeBulkRunning.value == true || aiNarrativeBulkResult.value != null) return false
         if (targets.isEmpty()) return false
+        narrativeBulkRequests = targets.associate { it.fieldId to NarrativeRequest(aiContext, it.fieldId,
+            characterId, it.spec, com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.DRAFT, length, imagePaths) }
         aiNarrativeBulkCancelled = false
         // 총량을 먼저 센다 — 진행 창은 `aiNarrativeBulkRunning`을 보고 서면서 이 값으로
         // 총량을 정하므로, 순서가 뒤집히면 첫 순간에 총량 0(불확정 막대)으로 떴다가 곧바로

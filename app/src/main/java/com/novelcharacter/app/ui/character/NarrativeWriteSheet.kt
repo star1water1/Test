@@ -159,7 +159,7 @@ object NarrativeWriteSheet {
         // 컨텍스트 조립은 뷰 접근이라 뷰 스코프(이 단계 취소는 과금 전이므로 무해),
         // 실행은 VM 위임(회전 생존).
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val aiContext = contextLoader()
+            val aiContext = contextLoader().copy(briefing=viewModel.aiBriefingDrafts[characterId].orEmpty())
             if (!fragment.isAdded) return@launch
             val started = viewModel.runAiNarrative(
                 aiContext, field.id, characterId, spec, mode, length,
@@ -183,68 +183,32 @@ object NarrativeWriteSheet {
         run: CharacterViewModel.AiNarrativeRun,
         fieldOf: (Long) -> FieldDefinition?
     ) {
-        val context = fragment.requireContext()
-        val outcome = run.outcome
-        val notices = buildNotices(fragment, outcome)
-
-        if (outcome.drafts.isEmpty()) {
-            MaterialAlertDialogBuilder(context)
-                .setTitle(fragment.getString(R.string.ai_narrative_title, run.fieldName))
-                .setMessage(
-                    buildString {
-                        append(fragment.getString(R.string.ai_field_nothing))
-                        if (notices.isNotEmpty()) append("\n").append(notices)
-                    }
-                )
-                .setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearAiNarrativeResult() }
-                .setOnCancelListener { viewModel.clearAiNarrativeResult() }
-                .show()
-            return
-        }
-
-        val field = fieldOf(run.fieldId)
-        if (field == null) {
-            // 검토 중 필드가 사라졌다(다른 화면에서 삭제 등) — 조용히 닫지 않는다.
-            MaterialAlertDialogBuilder(context)
-                .setTitle(fragment.getString(R.string.ai_narrative_title, run.fieldName))
-                .setMessage(R.string.ai_narrative_field_gone)
-                .setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearAiNarrativeResult() }
-                .setOnCancelListener { viewModel.clearAiNarrativeResult() }
-                .show()
-            return
-        }
-
-        // 후보를 고르게 한다. 이어쓰기는 원문 뒤에 붙는다는 사실이 미리보기에 드러나야 한다.
-        val isContinue = run.mode == NarrativeFieldAiWriter.Mode.CONTINUE
-        val labels = outcome.drafts.mapIndexed { i, d ->
-            val head = fragment.getString(R.string.ai_narrative_draft_label, i + 1)
-            "$head\n${d.text.take(PREVIEW_CHARS)}${if (d.text.length > PREVIEW_CHARS) "…" else ""}"
-        }.toTypedArray()
-
-        MaterialAlertDialogBuilder(context)
-            .setTitle(
-                fragment.getString(
-                    if (isContinue) R.string.ai_narrative_pick_continue else R.string.ai_narrative_pick,
-                    run.fieldName
-                )
-            )
-            .setMessage(notices.takeIf { it.isNotEmpty() })
-            .setItems(labels) { _, which ->
-                val chosen = outcome.drafts[which].text
-                // 이어쓰기는 **원문 뒤에 붙인다** — 실행 시점의 원문을 기준으로 조립하므로
-                // 검토 중 사용자가 원문을 더 고쳤다면 그 편집이 사라질 수 있다. 그래서
-                // 지금 폼에 있는 값을 다시 읽어 그 뒤에 잇는다(사용자 입력 우선).
-                val live = formBuilder.collectFieldValues(0L)
-                    .firstOrNull { it.fieldDefinitionId == run.fieldId }?.value.orEmpty()
-                val finalText = if (isContinue && live.isNotBlank()) {
-                    live.trimEnd() + "\n\n" + chosen
-                } else chosen
-                formBuilder.applyRandomValue(field, finalText)
-                viewModel.clearAiNarrativeResult()
+        com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
+            fragment,
+            listOf(com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(run.fieldId, run.fieldName,
+                run.originalValue, run.outcome.drafts, run.mode == NarrativeFieldAiWriter.Mode.CONTINUE)),
+            viewModel.aiNarrativeReviewState, buildNotices(fragment, run.outcome),
+            onApply = { selected ->
+                val field = fieldOf(run.fieldId)
+                val chosen = selected[run.fieldId]
+                val live = formBuilder.collectFieldValues(0L).firstOrNull { it.fieldDefinitionId == run.fieldId }?.value.orEmpty()
+                val text = chosen?.let { com.novelcharacter.app.ai.NarrativeReviewState.appliedText(live, it,
+                    run.mode == NarrativeFieldAiWriter.Mode.CONTINUE) }
+                if (field != null && text != null && formBuilder.applyReviewedValue(field, text)) {
+                    viewModel.clearAiNarrativeResult()
+                    true
+                } else {
+                    Toast.makeText(fragment.requireContext(), R.string.ai_narrative_field_gone, Toast.LENGTH_LONG).show()
+                    false
+                }
+            },
+            onClose = { viewModel.clearAiNarrativeResult() },
+            onRefine = { id, candidate, instruction ->
+                val started = viewModel.refineAiNarrative(id, candidate, instruction, false)
+                if (!started) Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
+                started
             }
-            .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiNarrativeResult() }
-            .setOnCancelListener { viewModel.clearAiNarrativeResult() }
-            .show()
+        )
     }
 
     /** 토큰 사용·드롭·절단·실패 — 조용히 버린 것이 없음을 항상 보인다. */
