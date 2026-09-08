@@ -121,6 +121,7 @@ object NarrativeBulkSheet {
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
+            addView(AiFieldSuggestSheet.briefingInput(fragment,viewModel,characterId,formBuilder,contextLoader))
             addView(costText)
             addView(excludedText)
             addView(showExcludedLink)
@@ -241,7 +242,8 @@ object NarrativeBulkSheet {
         com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
             fragment,
             run.items.map { com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(it.fieldId,
-                it.fieldName, viewModel.narrativeOriginal(it.fieldId), it.outcome.drafts) },
+                it.fieldName, viewModel.narrativeOriginal(it.fieldId), it.outcome.drafts,
+                imageCount=viewModel.narrativeImageCount(it.fieldId,true)) },
             viewModel.aiNarrativeBulkReviewState, buildNotices(fragment, run, gone),
             onApply = { selected ->
                 val applied = selected.count { (id, text) ->
@@ -259,7 +261,8 @@ object NarrativeBulkSheet {
                 val started = viewModel.refineAiNarrative(id, candidate, instruction, true)
                 if (!started) Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
                 started
-            }
+            },
+            running=viewModel.aiNarrativeBulkRunning
         )
     }
 

@@ -1324,6 +1324,31 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val aiReviewState = com.novelcharacter.app.ai.FieldSuggestionReviewState()
     val aiBriefingDrafts = mutableMapOf<Long, String>()
 
+    /** Only current names, related work/world and relevant field vocabulary; no memo/prose export. */
+    suspend fun speechTerms(context: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
+        characterId: Long, fields: List<FieldDefinition>): List<com.novelcharacter.app.speech.SpeechVocabulary.Term> {
+        val terms=mutableListOf<com.novelcharacter.app.speech.SpeechVocabulary.Term>()
+        fun add(text:String, rank:Int) { terms.add(com.novelcharacter.app.speech.SpeechVocabulary.Term(text,rank)) }
+        add(context.name,0);context.aliases.forEach {add(it,0)}
+        context.factions.forEach {add(it,1)}
+        val character=if(characterId>0) characterRepository.getCharacterById(characterId) else null
+        character?.novelId?.let { id ->
+            novelRepository.getNovelById(id)?.let { novel ->
+                add(novel.title,1)
+                novel.universeId?.let {universeRepository.getUniverseById(it)?.let { world->add(world.name,1)}}
+            }
+            characterRepository.getCharactersByNovelList(id).forEach {add(it.name,2)}
+        }
+        if(characterId>0) app.nameBankRepository.getEntriesUsedByCharacter(characterId).forEach {add(it.name,1)}
+        val specs=fields.mapNotNull {com.novelcharacter.app.ai.CharacterFieldAiSuggester.fieldSpecOf(it,"")}
+        withFieldUsage(specs).forEach { spec ->
+            spec.options.forEach {add(it,3)}
+            spec.usageExamples.forEach {add(it,3)}
+            spec.canonicalByVariant.keys.forEach {add(it,4)}
+        }
+        return terms
+    }
+
     /**
      * 서술형 **일괄** 검토 창의 회차 체크 — 형제(위)와 같은 부류다. 종전에는 이 창만 체크를
      * 다이얼로그의 지역 `CheckBox` 맵에 두어, 회전하면 껐던 필드가 전부 다시 켜졌다.
@@ -1560,6 +1585,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val noticed = outcome.copy(failures = outcome.failures + imageNotices(prepared))
                 aiNarrativeResult.value =
                     AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, noticed)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                aiNarrativeResult.value = AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue,
+                    com.novelcharacter.app.ai.NarrativeFieldAiWriter.WriteOutcome(emptyList(),0,
+                        listOf("서술형 요청을 마치지 못했습니다. 연결과 AI 설정을 확인하세요."),emptyList(),false,0,0))
             } finally {
                 aiNarrativeRunning.value = false
             }
@@ -1580,6 +1611,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private var narrativeBulkRequests = emptyMap<Long, NarrativeRequest>()
 
     fun narrativeOriginal(fieldId: Long): String = narrativeBulkRequests[fieldId]?.spec?.currentValue.orEmpty()
+    fun narrativeImageCount(fieldId: Long, bulk: Boolean): Int =
+        (if(bulk) narrativeBulkRequests[fieldId] else narrativeRequest)?.imagePaths?.size ?: 0
 
     /** Append new alternatives to one field. Existing candidates, edits and selections survive failure. */
     fun refineAiNarrative(fieldId: Long, candidate: Int, instruction: String, bulk: Boolean): Boolean {
@@ -1588,10 +1621,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val previous = if (bulk) aiNarrativeBulkResult.value?.items?.firstOrNull { it.fieldId == fieldId }?.outcome
             else aiNarrativeResult.value?.outcome
         previous ?: return false
-        val draft = previous.drafts.getOrNull(candidate) ?: return false
+        val draft = previous.drafts.getOrNull(candidate)
         val state = if (bulk) aiNarrativeBulkReviewState else aiNarrativeReviewState
-        val text = state.current(fieldId, candidate, draft.text)
-        if (text.isBlank()) return false
+        val text = draft?.let {state.current(fieldId, candidate, it.text)} ?: request.spec.currentValue
+        if (draft != null && text.isBlank()) return false
         if (bulk) { aiNarrativeBulkProgress.value = 0 to 1; aiNarrativeBulkRunning.value = true }
         else aiNarrativeRunning.value = true
         viewModelScope.launch {
@@ -1603,7 +1636,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val spec = withStyleSamples(request.spec.copy(currentValue=text, userInstruction=instruction),
                     fieldId, request.characterId)
                 val next = writer.write(request.context, spec,
-                    com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.POLISH, request.length,
+                    if(draft == null) request.mode else com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode.POLISH, request.length,
                     com.novelcharacter.app.ai.NarrativeFieldAiWriter.DEFAULT_VARIANTS,
                     settings.creativity, prepared.images, settings.asTemplateSource()) {
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), it)

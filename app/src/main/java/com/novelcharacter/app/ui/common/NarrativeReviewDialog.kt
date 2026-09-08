@@ -22,12 +22,14 @@ import com.novelcharacter.app.util.cappedScrollView
 
 object NarrativeReviewDialog {
     data class Item(val id: Long, val name: String, val original: String,
-        val drafts: List<NarrativeFieldAiWriter.Draft>, val continueWriting: Boolean = false)
+        val drafts: List<NarrativeFieldAiWriter.Draft>, val continueWriting: Boolean = false,
+        val imageCount: Int = 0)
     private val active = java.util.WeakHashMap<Fragment, AlertDialog>()
 
     fun show(fragment: Fragment, items: List<Item>, state: NarrativeReviewState, notices: String,
         onApply: (Map<Long, String>) -> Boolean, onClose: () -> Unit,
-        onRefine: (Long, Int, String) -> Boolean) {
+        onRefine: (Long, Int, String) -> Boolean,
+        running: androidx.lifecycle.LiveData<Boolean>? = null) {
         active.remove(fragment)?.dismiss()
         val context = fragment.requireContext()
         val pad = (16 * context.resources.displayMetrics.density).toInt()
@@ -78,15 +80,15 @@ object NarrativeReviewDialog {
                         if(isVisible) { state.edits[key]=it.toString(); text.text=it.toString() }
                     }
                 }
-                // RadioGroup contains only radio buttons. Full drafts stay beside each choice in this panel.
-                content.addView(label("후보 ${index+1}"))
-                content.addView(text); content.addView(editor)
-                content.addView(button("후보 ${index+1} 직접 수정 · AI 호출 없음") {
+                // Each radio button stays immediately above its full draft and editor.
+                candidates.addView(label("후보 ${index+1}"))
+                candidates.addView(text); candidates.addView(editor)
+                candidates.addView(button("후보 ${index+1} 직접 수정 · AI 호출 없음") {
                     editor.isVisible=!editor.isVisible
                     if(editor.isVisible) { state.editing.add(key); editor.requestFocus() }
                     else state.editing.remove(key)
                 })
-                content.addView(button("후보 ${index+1} 원문으로 되돌리기") {
+                candidates.addView(button("후보 ${index+1} 원문으로 되돌리기") {
                     state.edits.remove(key); editor.setText(draft.text); text.text=draft.text
                 })
             }
@@ -95,15 +97,13 @@ object NarrativeReviewDialog {
             }
             content.addView(candidates)
             if(item.drafts.isEmpty()) content.addView(label(context.getString(R.string.ai_field_nothing)))
-            val instruction=EditText(context).apply {
-                hint="선택한 후보를 어떻게 보완할지 알려 주세요"
-                setText(state.instructions[item.id].orEmpty()); setSingleLine(false)
-                doAfterTextChanged { state.instructions[item.id]=it.toString() }
-            }
-            content.addView(instruction)
-            content.addView(button("AI 보완 · 요청 1건 · 이전 후보 유지") {
-                if(onRefine(item.id,state.chosen(item.id),instruction.text.toString())) dialog.dismiss()
-            }.apply { isEnabled=item.drafts.isNotEmpty() })
+            content.addView(NaturalLanguageInput.create(fragment,"narrative-refine:${item.id}",
+                "선택한 후보를 어떻게 보완할지 알려 주세요",state.instructions[item.id].orEmpty(),
+                onChanged={state.instructions[item.id]=it}))
+            if(item.imageCount>0) content.addView(label("AI 보완·재요청에는 첫 요청의 이미지 ${item.imageCount}장이 다시 전송됩니다. 이미지마다 약 ${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MIN}~${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MAX} 토큰이 추가됩니다."))
+            content.addView(button(if(item.drafts.isEmpty()) "이 항목 다시 요청 · 요청 1건" else "AI 보완 · 요청 1건 · 이전 후보 유지") {
+                if(onRefine(item.id,state.chosen(item.id),state.instructions[item.id].orEmpty())) dialog.dismiss()
+            })
             panel.addView(content)
         }
         dialog=MaterialAlertDialogBuilder(context).setTitle("서술형 결과 검토")
@@ -125,13 +125,18 @@ object NarrativeReviewDialog {
             }
         }
         val owner=fragment.viewLifecycleOwnerLiveData.value ?: fragment
+        val runningObserver=androidx.lifecycle.Observer<Boolean> { busy ->
+            if(active[fragment]===dialog) {if(busy==true) dialog.hide() else dialog.show()}
+        }
         val observer=object: DefaultLifecycleObserver { override fun onDestroy(owner: LifecycleOwner) { dialog.dismiss() } }
         owner.lifecycle.addObserver(observer)
         dialog.setOnDismissListener {
+            running?.removeObserver(runningObserver)
             owner.lifecycle.removeObserver(observer)
             if(active[fragment]===dialog) active.remove(fragment)
         }
         active[fragment]=dialog
         dialog.show()
+        running?.observe(owner,runningObserver)
     }
 }

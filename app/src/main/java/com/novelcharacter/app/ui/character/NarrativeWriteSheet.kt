@@ -95,6 +95,10 @@ object NarrativeWriteSheet {
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
+            addView(com.novelcharacter.app.ui.common.NaturalLanguageInput.create(fragment,"briefing:$characterId",
+                "캐릭터 구상 (선택) · 생각나는 대로 적어 주세요",viewModel.aiBriefingDrafts[characterId].orEmpty(),
+                onChanged={viewModel.aiBriefingDrafts[characterId]=it},
+                terms={viewModel.speechTerms(contextLoader(),characterId,listOf(field))}))
             addView(android.widget.TextView(context).apply {
                 textSize = 14f
                 text = fragment.getString(
@@ -123,7 +127,7 @@ object NarrativeWriteSheet {
         refreshImageCost()
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_narrative_length_title)
-            .setView(panel)
+            .setView(com.novelcharacter.app.util.cappedScrollView(context).apply {addView(panel)})
             .setNegativeButton(R.string.cancel, null)
             .create()
         for (length in lengths) {
@@ -186,7 +190,8 @@ object NarrativeWriteSheet {
         com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
             fragment,
             listOf(com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(run.fieldId, run.fieldName,
-                run.originalValue, run.outcome.drafts, run.mode == NarrativeFieldAiWriter.Mode.CONTINUE)),
+                run.originalValue, run.outcome.drafts, run.mode == NarrativeFieldAiWriter.Mode.CONTINUE,
+                viewModel.narrativeImageCount(run.fieldId,false))),
             viewModel.aiNarrativeReviewState, buildNotices(fragment, run.outcome),
             onApply = { selected ->
                 val field = fieldOf(run.fieldId)
@@ -207,7 +212,8 @@ object NarrativeWriteSheet {
                 val started = viewModel.refineAiNarrative(id, candidate, instruction, false)
                 if (!started) Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
                 started
-            }
+            },
+            running=viewModel.aiNarrativeRunning
         )
     }
 

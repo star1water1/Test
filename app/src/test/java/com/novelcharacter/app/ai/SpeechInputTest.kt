@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechInputTest {
+    @org.junit.Test fun configTransferKeepsPreferencesWithoutPrivatePayloads() {
+        val config=SpeechConfig(SpeechMode.CLOUD,"provider-1","whisper-large-v3","ko",false)
+        val json=SpeechProtocol.encodeConfig(config)
+        org.junit.Assert.assertEquals(config,SpeechProtocol.decodeConfig(json))
+        org.junit.Assert.assertFalse(json.contains("key"))
+        org.junit.Assert.assertFalse(json.contains("seconds"))
+    }
+    @org.junit.Test fun malformedTransferredConfigCannotOverwritePreferences() {
+        org.junit.Assert.assertNull(SpeechProtocol.decodeConfig("{}"))
+        org.junit.Assert.assertNull(SpeechProtocol.decodeConfig("{\"mode\":\"UNKNOWN\"}"))
+        val raw=SpeechProtocol.encodeConfig(SpeechConfig()).replace("true","\"true\"")
+        org.junit.Assert.assertNull(SpeechProtocol.decodeConfig(raw))
+    }
     @Test fun transcribeEndpointHandlesProviderBases() {
         assertEquals("https://api.openai.com/v1/audio/transcriptions",SpeechProtocol.endpoint("https://api.openai.com/"))
         assertEquals("https://api.groq.com/openai/v1/audio/transcriptions",SpeechProtocol.endpoint("https://api.groq.com/openai/v1"))

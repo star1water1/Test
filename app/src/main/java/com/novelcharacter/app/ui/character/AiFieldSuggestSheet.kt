@@ -73,7 +73,7 @@ object AiFieldSuggestSheet {
             setTextColor(context.getColor(R.color.text_secondary))
             isVisible = false
         }
-        val briefingInput = briefingInput(fragment, viewModel, targetCharacterId)
+        val briefingInput = briefingInput(fragment, viewModel, targetCharacterId, formBuilder, contextLoader)
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
@@ -230,7 +230,7 @@ object AiFieldSuggestSheet {
                 isVisible = false
             }
         }
-        val briefingInput = briefingInput(fragment, viewModel, targetCharacterId)
+        val briefingInput = briefingInput(fragment, viewModel, targetCharacterId, formBuilder, contextLoader)
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
@@ -327,14 +327,13 @@ object AiFieldSuggestSheet {
 
     // ===== 공통 파이프라인 =====
 
-    private fun briefingInput(fragment: Fragment, viewModel: CharacterViewModel, characterId: Long): EditText =
-        EditText(fragment.requireContext()).apply {
-            hint = "캐릭터 구상 (선택) · 생각나는 대로 적어 주세요"
-            minLines = 3
-            setSingleLine(false)
-            setText(viewModel.aiBriefingDrafts[characterId].orEmpty())
-            doAfterTextChanged { viewModel.aiBriefingDrafts[characterId] = it.toString() }
-        }
+    fun briefingInput(fragment: Fragment, viewModel: CharacterViewModel, characterId: Long,
+        formBuilder: DynamicFieldFormBuilder,
+        contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext): LinearLayout =
+        com.novelcharacter.app.ui.common.NaturalLanguageInput.create(fragment, "briefing:$characterId",
+            "캐릭터 구상 (선택) · 생각나는 대로 적어 주세요", viewModel.aiBriefingDrafts[characterId].orEmpty(),
+            onChanged={viewModel.aiBriefingDrafts[characterId]=it},
+            terms={viewModel.speechTerms(contextLoader(),characterId,formBuilder.fieldDefinitions)})
 
     private fun guardProvider(fragment: Fragment): Boolean {
         val context = fragment.requireContext()
@@ -426,7 +425,9 @@ object AiFieldSuggestSheet {
                     started
                 }
             },
-            retryKeys = retryableTargets(run).map { it.key }
+            retryKeys = retryableTargets(run).map { it.key },
+            imageCount = run.imagePaths.size,
+            running = viewModel.aiSuggestRunning
         )
     }
 

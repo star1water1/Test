@@ -109,6 +109,10 @@ class NovelCharacterApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.init(filesDir)
+        // A previous process cannot resume its recorder. Remove only this feature's orphaned audio.
+        java.io.File(cacheDir, "voice-input").listFiles()?.filter {
+            it.isFile && it.name.startsWith("voice-") && it.extension == "m4a"
+        }?.forEach { it.delete() }
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         // Migrate DataStore → SharedPreferences cache on first launch

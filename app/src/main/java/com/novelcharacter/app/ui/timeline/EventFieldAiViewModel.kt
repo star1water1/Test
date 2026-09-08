@@ -46,11 +46,13 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
          * 요청 시점의 사건 id(미저장 신규는 -1). 창이 결과를 받을 때 지금 편집 중인 사건과
          * 견줘, 다른 사건이면 적용하지 않는다 — 캐릭터 축이 A-3에서 세운 오적용 차단과 같다.
          */
-        val eventId: Long
+        val eventId: Long,
+        val context: EventFieldAiSuggester.EventAiContext? = null
     )
 
     val running = MutableLiveData(false)
     val result = MutableLiveData<Run?>()
+    val reviewState = com.novelcharacter.app.ai.FieldSuggestionReviewState()
 
     /** 지금까지 끝낸 요청 수 대 총 요청 수 — 결정형 진행도(R-26)의 재료. */
     val progress = MutableLiveData(0 to 0)
@@ -65,7 +67,7 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     /** 취소 요청. 즉시 중단이 아니라 **더 시작하지 않음**이다 — 청크 하나는 끝까지 받는다. */
     fun cancelRun() { cancelled = true }
 
-    fun clearResult() { result.value = null }
+    fun clearResult() { result.value = null; reviewState.clear() }
 
     /**
      * 유료 응답을 **되살린다** — 적용이 실패했을 때 다시 결제하지 않고 검토로 돌아가기 위한 자리.
@@ -79,9 +81,11 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     fun run(
         context: EventFieldAiSuggester.EventAiContext,
         targets: List<CharacterFieldAiSuggester.FieldSpec>,
-        eventId: Long
+        eventId: Long,
+        carryOver: Run? = null
     ): Boolean {
         if (running.value == true) return false
+        if (result.value != null && carryOver == null) { result.value = result.value; return false }
         cancelled = false
         val aiService = AiService(getApplication())
         // 총량을 먼저 센다 — 캐릭터 축(CharacterViewModel.runAiSuggest)과 같은 규약이다.
@@ -90,11 +94,13 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         )
         running.value = true
         viewModelScope.launch {
+            var enriched = targets
             val outcome = try {
                 val settings = AiPromptSettings(getApplication())
+                enriched = withFieldUsage(targets, settings)
                 EventFieldAiSuggester(aiService).suggest(
                     context = context,
-                    targets = withFieldUsage(targets, settings),
+                    targets = enriched,
                     scope = settings.eventContextScope,
                     minConfidence = settings.minConfidence,
                     creativity = settings.creativity,
@@ -103,6 +109,8 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
                     onProgress = { done, total, _, _ -> progress.value = done to total },
                     isCancelled = { cancelled }
                 ) { failure -> AiErrorMessages.of(getApplication(), failure) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
                 // 여기서 그냥 던지면 ⓐ 코루틴이 죽어 앱이 내려가고 ⓑ 살아남아도 결과가 없어
@@ -111,7 +119,10 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
                 Log.e("EventFieldAiViewModel", "Event field AI suggest failed", e)
                 failureOutcome(targets, e)
             }
-            result.value = Run(targets, outcome, eventId)
+            if (carryOver != null) reviewState.replaced(outcome.suggestions)
+            result.value = Run(carryOver?.targets ?: enriched,
+                if(carryOver == null) outcome else com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome,outcome),
+                eventId, context)
             running.value = false
             progress.value = 0 to 0
         }
@@ -127,7 +138,7 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         error: Exception
     ): CharacterFieldAiSuggester.SuggestOutcome {
         val base = getApplication<Application>().getString(R.string.ai_error_unknown)
-        val detail = error.message.orEmpty()
+        val detail = ""
         return CharacterFieldAiSuggester.SuggestOutcome(
             suggestions = emptyList(),
             droppedCount = 0,

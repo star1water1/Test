@@ -37,6 +37,22 @@ enum class SpeechError(val message: String) {
 }
 
 object SpeechProtocol {
+    /** Transfer preferences only, excluding keys, recordings, transcripts and local usage counters. */
+    fun encodeConfig(config: SpeechConfig): String = JSONObject()
+        .put("mode",config.mode.name).put("providerId",config.providerId).put("model",config.model)
+        .put("language",config.language).put("sendHints",config.sendHints).toString()
+
+    fun decodeConfig(raw: String): SpeechConfig? = try {
+        val json=JSONObject(raw)
+        val mode=SpeechMode.entries.firstOrNull {it.name==json.opt("mode")}
+        val provider=json.opt("providerId") as? String
+        val model=json.opt("model") as? String
+        val language=json.opt("language") as? String
+        val hints=json.opt("sendHints") as? Boolean
+        if(mode==null || provider==null || model.isNullOrBlank() || language==null || hints==null) null
+        else SpeechConfig(mode,provider,model,language,hints)
+    } catch(_: Exception) {null}
+
     const val MAX_AUDIO_BYTES = 20_000_000L
     const val MAX_RECORDING_MS = 15 * 60 * 1000
 
@@ -53,14 +69,16 @@ object SpeechProtocol {
 
     /** Model-specific fields are sent only for the explicitly selected supported model family. */
     fun parameters(config: SpeechConfig, terms: List<String>): List<Pair<String,String>> = buildList {
+        val bounded=SpeechVocabulary.select(terms.mapIndexed {index,term->SpeechVocabulary.Term(term,index)},
+            if(config.model.trim()=="gpt-transcribe") 1200 else 220).terms
         add("model" to config.model.trim())
         if(config.model.trim()=="gpt-transcribe") {
             if(config.language.isNotBlank()) add("languages[]" to config.language.trim())
-            if(config.sendHints) terms.forEach { add("keywords[]" to it) }
+            if(config.sendHints) bounded.forEach { add("keywords[]" to it) }
         } else {
             add("response_format" to "json")
             if(config.language.isNotBlank()) add("language" to config.language.trim())
-            if(config.sendHints && terms.isNotEmpty()) add("prompt" to terms.joinToString(", "))
+            if(config.sendHints && bounded.isNotEmpty()) add("prompt" to bounded.joinToString(", "))
         }
     }
     fun parse(code: Int, body: String, model: String): SpeechResult {

@@ -33,7 +33,9 @@ object FieldSuggestionReviewDialog {
         onClose: () -> Unit,
         onRefine: (List<String>, String) -> Boolean,
         retryKeys: List<String> = emptyList(),
-        canApply: Boolean = true
+        canApply: Boolean = true,
+        imageCount: Int = 0,
+        running: androidx.lifecycle.LiveData<Boolean>? = null
     ) {
         active.remove(fragment)?.dismiss()
         val context = fragment.requireContext()
@@ -60,6 +62,7 @@ object FieldSuggestionReviewDialog {
             setOnClickListener { action() }
         }
         panel.addView(label(notices))
+        if(imageCount>0) panel.addView(label("AI 보완·재요청은 첫 요청의 이미지 ${imageCount}장을 요청마다 다시 보냅니다. 이미지마다 약 ${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MIN}~${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MAX} 토큰이 추가됩니다."))
         val boxes = linkedMapOf<String, CheckBox>()
         val commitEdits = linkedMapOf<String, () -> Boolean>()
         lateinit var dialog: AlertDialog
@@ -162,39 +165,34 @@ object FieldSuggestionReviewDialog {
                     editor.requestFocus()
                 })
             }
-            val instruction = EditText(context).apply {
-                hint = "AI에게 보완할 방향을 알려 주세요"
-                setText(state.instructions[key].orEmpty())
-                setSingleLine(false)
-                doAfterTextChanged { state.instructions[key] = it.toString() }
-            }
-            panel.addView(instruction)
-            panel.addView(button("이 항목 AI 보완 · 요청 1건") { refine(listOf(key), instruction.text.toString()) })
+            panel.addView(NaturalLanguageInput.create(fragment,"field-refine:$key",
+                "AI에게 보완할 방향을 알려 주세요",state.instructions[key].orEmpty(),
+                onChanged={state.instructions[key]=it},
+                terms={ (spec.options+spec.usageExamples+spec.canonicalByVariant.keys).map {
+                    com.novelcharacter.app.speech.SpeechVocabulary.Term(it,0) } }))
+            panel.addView(button("이 항목 AI 보완 · 요청 1건") { refine(listOf(key), state.instructions[key].orEmpty()) })
             panel.addView(View(context).apply {
                 setBackgroundColor(context.getColor(R.color.outline_variant))
                 layoutParams=LinearLayout.LayoutParams(-1, 1)
             })
         }
         if (originals.isEmpty()) panel.addView(label(context.getString(R.string.ai_field_nothing)))
-        if (retryKeys.isNotEmpty()) panel.addView(button("못 받은 ${retryKeys.size}개만 다시 요청") {
+        if (retryKeys.isNotEmpty()) panel.addView(button("못 받은 ${retryKeys.size}개 다시 요청 · 요청 ${CharacterFieldAiSuggester.requestCountFor(retryKeys.size,com.novelcharacter.app.ai.AiService(context).effectiveMaxTokens())}건") {
             refine(retryKeys, "")
         })
         if (originals.size > 1) {
-            val common = EditText(context).apply {
-                hint = "선택한 항목에 함께 적용할 방향"
-                setText(state.instructions["__bulk"].orEmpty())
-                setSingleLine(false)
-                doAfterTextChanged { state.instructions["__bulk"] = it.toString() }
-            }
-            panel.addView(common)
+            panel.addView(NaturalLanguageInput.create(fragment,"field-refine:__bulk",
+                "선택한 항목에 함께 적용할 방향",state.instructions["__bulk"].orEmpty(),
+                onChanged={state.instructions["__bulk"]=it}))
             val bulkButton = button("선택 항목 AI 보완") {
-                refine(originals.keys.filter { state.isChecked(it) }, common.text.toString())
+                refine(originals.keys.filter { state.isChecked(it) }, state.instructions["__bulk"].orEmpty())
             }
             fun updateCost() {
                 val count = boxes.keys.count { state.isChecked(it) }
                 val requests = CharacterFieldAiSuggester.requestCountFor(count,
                     com.novelcharacter.app.ai.AiService(context).effectiveMaxTokens())
                 bulkButton.text = "선택 ${count}개 AI 보완 · 요청 ${requests}건"
+                if(imageCount>0) bulkButton.append(" · 이미지 총 ${imageCount*requests}장 전송")
             }
             boxes.forEach { (key, box) -> box.setOnCheckedChangeListener { _, on ->
                 state.setChecked(key, on)
@@ -228,12 +226,17 @@ object FieldSuggestionReviewDialog {
             override fun onDestroy(owner: LifecycleOwner) { dialog.dismiss() }
         }
         val owner = fragment.viewLifecycleOwnerLiveData.value ?: fragment
+        val runningObserver=androidx.lifecycle.Observer<Boolean> { busy ->
+            if(active[fragment]===dialog) {if(busy==true) dialog.hide() else dialog.show()}
+        }
         owner.lifecycle.addObserver(observer)
         dialog.setOnDismissListener {
+            running?.removeObserver(runningObserver)
             owner.lifecycle.removeObserver(observer)
             if (active[fragment] === dialog) active.remove(fragment)
         }
         active[fragment] = dialog
         dialog.show()
+        running?.observe(owner,runningObserver)
     }
 }
