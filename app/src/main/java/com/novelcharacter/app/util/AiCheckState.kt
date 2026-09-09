@@ -27,6 +27,11 @@ package com.novelcharacter.app.util
  */
 class AiCheckState<K> {
 
+    data class Snapshot<K>(val seeded: Boolean, val checked: Set<K>)
+    fun snapshot() = Snapshot(seeded, checked.toSet())
+    fun restore(value: Snapshot<K>) {
+        seeded = value.seeded; checked.clear(); checked.addAll(value.checked)
+    }
     private var seeded = false
     private val checked = mutableSetOf<K>()
 

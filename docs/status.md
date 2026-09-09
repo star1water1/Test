@@ -5,7 +5,7 @@
 
 ## 0. 지금 무엇을 하는가
 
-- 사용자 지정 작업: `codex/creative-ai-voice-review`에서 [창작 AI UX·음성 입력 개선](creative_ai_voice_plan.md)을 구현했다. 관련 194개 테스트와 로컬 APK 빌드는 통과했으며, 완료 판정은 해당 PR의 Linux CI에서 확인한다. 실제 기기·유료 전사는 미확인이다.
+- 사용자 지정 작업: [PR #402](https://github.com/star1water1/Test/pull/402)에서 [창작 AI UX·음성 입력 개선](creative_ai_voice_plan.md)과 받은 결과·편집의 종료 후 복구, 일괄 서술형 미요청 선택 이어받기를 구현했다. 관련 216개 테스트와 로컬 APK 빌드는 통과했다. 최종 통합 검증은 해당 PR 검사에서 확인한다. 실제 기기·유료 전사는 미확인이다.
 
 - **자율적으로 고를 수 있는 기능 작업은 0건이다.** 아래 대기 상태는 사용자의 새 요청을 막지 않는다.
 - 최근 앱 변경은 [PR #395](https://github.com/star1water1/Test/pull/395)(2026.08.25)까지 병합됐다. 최신 검증 기록은 4장에만 둔다.

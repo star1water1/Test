@@ -33,6 +33,8 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -keepattributes InnerClasses,EnclosingMethod
+# Creative review request snapshots contain Kotlin pairs (field label/current value).
+-keep class kotlin.Pair { *; }
 -dontwarn com.google.gson.**
 
 # Keep Room entity and DAO classes

@@ -1,6 +1,9 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.app.Application
+import com.novelcharacter.app.ui.common.ReviewSlot
+import com.novelcharacter.app.ui.common.ReviewLiveData
+import com.novelcharacter.app.ai.FieldSuggestionReviewState
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
@@ -51,8 +54,32 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     )
 
     val running = MutableLiveData(false)
-    val result = MutableLiveData<Run?>()
-    val reviewState = com.novelcharacter.app.ai.FieldSuggestionReviewState()
+    private data class SavedReview(val run: Run, val state: FieldSuggestionReviewState.Snapshot, val inFlight: Boolean)
+    private val slot=ReviewSlot(application,SavedReview::class.java)
+    private var checkpoint: Run? = null
+    private fun save(run: Run, inFlight: Boolean = false): Boolean {
+        checkpoint=run
+        return slot.save(SavedReview(run,reviewState.snapshot(),inFlight))
+    }
+    val result = ReviewLiveData<Run> { it?.let { save(it) } }
+    fun recover(eventId: Long): Boolean {
+        if (running.value == true) {
+            android.widget.Toast.makeText(app,R.string.ai_event_field_running,android.widget.Toast.LENGTH_SHORT).show()
+            return true
+        }
+        if (result.value != null) { result.value=result.value; return true }
+        val saved=slot.read("event:$eventId:fields")
+        if (slot.failed) return true
+        saved ?: return false
+        reviewState.restore(saved.state)
+        result.value=saved.run.let { if (!saved.inFlight) it else it.copy(outcome=it.outcome.copy(
+            failures=it.outcome.failures + "이전 실행이 중단되었습니다. 받은 결과는 보관했습니다. 응답을 받지 못한 요청도 과금되었을 수 있습니다. 재요청 전에 사용량을 확인하세요.")) }
+        android.widget.Toast.makeText(app,"보관한 사건 AI 검토를 다시 열었습니다. 새 요청은 보내지 않았습니다. 요청 당시 사건과 원문을 확인하세요.",android.widget.Toast.LENGTH_LONG).show()
+        return true
+    }
+    val reviewState = FieldSuggestionReviewState().apply {
+        onChanged={ checkpoint?.let { save(it,running.value==true) } }
+    }
 
     /** 지금까지 끝낸 요청 수 대 총 요청 수 — 결정형 진행도(R-26)의 재료. */
     val progress = MutableLiveData(0 to 0)
@@ -67,7 +94,12 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     /** 취소 요청. 즉시 중단이 아니라 **더 시작하지 않음**이다 — 청크 하나는 끝까지 받는다. */
     fun cancelRun() { cancelled = true }
 
-    fun clearResult() { result.value = null; reviewState.clear() }
+    fun clearResult() {
+        val inputs=(checkpoint?.targets.orEmpty().map { it.key } + "__bulk")
+            .map { "field-refine:${reviewState.sessionId}:$it" }
+        if (!slot.clear(inputs)) return
+        checkpoint=null; result.value = null; reviewState.clear()
+    }
 
     /**
      * 유료 응답을 **되살린다** — 적용이 실패했을 때 다시 결제하지 않고 검토로 돌아가기 위한 자리.
@@ -86,6 +118,12 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     ): Boolean {
         if (running.value == true) return false
         if (result.value != null && carryOver == null) { result.value = result.value; return false }
+        if (carryOver == null && recover(eventId)) return false
+        val initial=carryOver ?: Run(targets,CharacterFieldAiSuggester.SuggestOutcome(emptyList(),0,
+            emptyList(),emptyList(),0,0,targets.map { CharacterFieldAiSuggester.MissingField(
+                it.key,it.name,CharacterFieldAiSuggester.MissingCause.NOT_RETURNED) }),eventId,context)
+        if(!slot.beginRequest()) return false
+        if (!save(initial,true)) { slot.endRequest(); return false }
         cancelled = false
         val aiService = AiService(getApplication())
         // 총량을 먼저 센다 — 캐릭터 축(CharacterViewModel.runAiSuggest)과 같은 규약이다.
@@ -95,6 +133,7 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         running.value = true
         viewModelScope.launch {
             var enriched = targets
+            var lastPartial: CharacterFieldAiSuggester.SuggestOutcome? = null
             val outcome = try {
                 val settings = AiPromptSettings(getApplication())
                 enriched = withFieldUsage(targets, settings)
@@ -107,9 +146,16 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
                     // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
                     templates = settings.asTemplateSource(),
                     onProgress = { done, total, _, _ -> progress.value = done to total },
-                    isCancelled = { cancelled }
+                    isCancelled = { cancelled || slot.failed },
+                    onCheckpoint={ partial ->
+                        lastPartial=partial
+                        reviewState.replaced(partial.suggestions)
+                        save(initial.copy(targets=carryOver?.targets ?: enriched,outcome=if(carryOver==null) partial
+                            else FieldSuggestionReviewState.merge(carryOver.outcome,partial)),true)
+                    }
                 ) { failure -> AiErrorMessages.of(getApplication(), failure) }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                slot.endRequest()
                 throw e
             } catch (e: Exception) {
                 // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
@@ -117,12 +163,14 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
                 // 검토 창이 안 열려, **비용을 확인받고 돌린 유료 실행이 아무 흔적도 남기지 않는다.**
                 // 사용자가 보는 증상은 *눌렀는데 아무 일도 안 일어남*이라 실패인지도 모른다.
                 Log.e("EventFieldAiViewModel", "Event field AI suggest failed", e)
-                failureOutcome(targets, e)
+                lastPartial?.let { it.copy(failures=it.failures+app.getString(R.string.ai_error_unknown)) }
+                    ?: failureOutcome(targets, e)
             }
             if (carryOver != null) reviewState.replaced(outcome.suggestions)
             result.value = Run(carryOver?.targets ?: enriched,
                 if(carryOver == null) outcome else com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome,outcome),
                 eventId, context)
+            slot.endRequest()
             running.value = false
             progress.value = 0 to 0
         }

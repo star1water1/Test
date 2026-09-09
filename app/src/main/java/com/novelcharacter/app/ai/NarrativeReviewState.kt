@@ -4,21 +4,38 @@ import com.novelcharacter.app.util.AiCheckState
 
 /** Candidate indices remain stable because refinement appends rather than replaces paid drafts. */
 class NarrativeReviewState {
+    var onChanged: () -> Unit = {}
+    fun changed() = onChanged()
+    var sessionId: String = java.util.UUID.randomUUID().toString(); private set
+    val resumeSelection = mutableSetOf<Long>()
+    data class Snapshot(val sessionId: String, val checks: AiCheckState.Snapshot<Long>,
+        val choices: Map<Long, Int>, val edits: Map<String, String>, val editing: Set<String>,
+        val expanded: Set<Long>, val instructions: Map<Long, String>, val resumeSelection: Set<Long>)
+    fun snapshot() = Snapshot(sessionId, checks.snapshot(), choices.toMap(), edits.toMap(),
+        editing.toSet(), expanded.toSet(), instructions.toMap(), resumeSelection.toSet())
+    fun restore(value: Snapshot) {
+        sessionId=value.sessionId; checks.restore(value.checks)
+        choices.clear(); choices.putAll(value.choices); edits.clear(); edits.putAll(value.edits)
+        editing.clear(); editing.addAll(value.editing); expanded.clear(); expanded.addAll(value.expanded)
+        instructions.clear(); instructions.putAll(value.instructions)
+        resumeSelection.clear(); resumeSelection.addAll(value.resumeSelection)
+    }
     private val checks = AiCheckState<Long>()
     private val choices = mutableMapOf<Long, Int>()
     val edits = mutableMapOf<String, String>()
     val editing = mutableSetOf<String>()
     val expanded = mutableSetOf<Long>()
     val instructions = mutableMapOf<Long, String>()
-    fun seedDefaults(ids: Collection<Long>) = checks.seedDefaults(ids)
+    fun seedDefaults(ids: Collection<Long>) = checks.seedDefaults(ids).also { changed() }
     fun isChecked(id: Long) = checks.isChecked(id)
-    fun setChecked(id: Long, value: Boolean) = checks.setChecked(id, value)
-    fun choose(id: Long, index: Int) { choices[id] = index }
+    fun setChecked(id: Long, value: Boolean) = checks.setChecked(id, value).also { changed() }
+    fun choose(id: Long, index: Int) { choices[id] = index; changed() }
     fun chosen(id: Long) = choices[id] ?: 0
     fun key(id: Long, index: Int) = "$id:$index"
     fun current(id: Long, index: Int, original: String) = edits[key(id, index)] ?: original
     fun clear() {
         checks.clear(); choices.clear(); edits.clear(); editing.clear(); expanded.clear(); instructions.clear()
+        resumeSelection.clear(); sessionId=java.util.UUID.randomUUID().toString()
     }
     companion object {
         fun merge(previous: NarrativeFieldAiWriter.WriteOutcome, next: NarrativeFieldAiWriter.WriteOutcome) =

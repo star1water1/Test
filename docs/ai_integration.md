@@ -1018,6 +1018,7 @@ AI 정리는 영향을 받지 않는다 — 그 둘은 *추천*이 아니다.
 - `CreativeBriefing`: 확정 데이터와 자유 구상을 별도 구획으로 전달한다. 빈 브리핑은 기존 사용자 프롬프트를 그대로 유지한다. `sourceEvidence`는 브리핑의 정확한 부분 문자열만 인정하고, `suggestionNote`는 AI 제안 메모로 따로 표시한다.
 - `FieldSuggestionReviewState` / `FieldSuggestionReviewDialog`: 캐릭터와 사건 검토의 체크·직접 수정·원본 복구·항목/선택 묶음 보완을 공유한다. 성공한 대상만 교체하고 부분 실패는 이전 결과와 함께 남긴다. 수정은 `normalizeChecked`, 캐릭터 폼 적용은 `applyReviewedValue`를 통과한다. DB 저장·생일·의미 필드 동기화는 기존 저장 체인이 맡는다.
 - `NarrativeReviewState` / `NarrativeReviewDialog`: 단건과 일괄 모두 원문·후보 전체를 읽고 수정·비교·보완할 수 있다. 보완은 새 후보를 뒤에 추가해 기존 인덱스·선택·수정값을 유지한다. 이어쓰기 적용은 현재 폼의 원문을 사용한다.
+- `ReviewJournal` / `ReviewSlot`: 받은 추천·서술형·전사와 편집·선택을 기기 백업 제외 영역에 원자적으로 보관한다. 요청 대상별 복구는 AI 진입에서 새 호출 전에 수행한다. 일괄 서술형은 응답마다 저장하고 미요청 ID만 선택해 이어 요청한다. 중단 당시 진행 중인 요청은 과금 가능성을 알리며 자동 반복하지 않는다. 보존·삭제 및 실제 통신 중단의 한계는 계획의 운영 제약 절을 따른다.
 - `NaturalLanguageInput` / `VoiceInputSheet` / `VoiceInputViewModel`: 자연어 입력에 텍스트/마이크를 제공하는 공용 UI다. 음성 확인 결과만 입력창에 추가하고 AI 생성·DB 저장을 실행하지 않는다. 브리핑 및 필드/서술형 보완 지시에 연결한다.
 - `speech/`: 음성 capability는 파일과 녹음 시간 기준이라 텍스트 생성 `AiService`와 분리한다. `SpeechSettings`는 전사 제공자 id와 전사 모델을 선택하고, `SpeechTranscriber`는 기존 `AiProviderStore`/`AiKeyStore`를 읽는다. 사용량도 텍스트 토큰과 분리한다. OpenAI 전용 keywords/languages와 호환 prompt/language 차이는 `SpeechProtocol`이 담당한다.
 - `SpeechVocabulary`: 현재 이름·별칭·관련 작품/세계관/인물·세력·선택 필드 용례만 우선순위로 선별한다. 최대 48개, 전용 모델/온디바이스 1,200 UTF-8 바이트, 호환 prompt 220바이트다. 잘린 후보 수와 전송 목록을 표시한다. 교정은 유일한 한 글자 차이 후보만 제안하며 원문을 자동으로 바꾸지 않는다.

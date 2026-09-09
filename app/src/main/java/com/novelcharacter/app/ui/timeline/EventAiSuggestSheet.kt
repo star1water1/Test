@@ -32,6 +32,7 @@ object EventAiSuggestSheet {
         contextLoader: suspend () -> EventFieldAiSuggester.EventAiContext?
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recover(eventId)) return
         if (!AiFieldSuggestSheet.guardUsableProvider(fragment)) return
 
         MaterialAlertDialogBuilder(context)
@@ -75,6 +76,7 @@ object EventAiSuggestSheet {
     ) {
         val mismatched = run.eventId != currentEventId
         val notices = AiFieldSuggestSheet.buildNoticeLines(fragment, run.outcome).toMutableList()
+        notices.add(0,"요청 당시 사건: ${run.context?.description.orEmpty()}")
         if(mismatched) notices.add(fragment.getString(R.string.ai_event_target_changed))
         com.novelcharacter.app.ui.common.FieldSuggestionReviewDialog.show(
             fragment,run.targets,run.outcome,viewModel.reviewState,notices.joinToString("\n"),

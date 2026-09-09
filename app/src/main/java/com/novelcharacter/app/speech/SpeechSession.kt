@@ -30,6 +30,15 @@ class SpeechSession {
     fun deviceResult(text: String) {
         original=text;draft=text;phase=Phase.REVIEW;error=null
     }
+    data class Snapshot(val original: String, val draft: String, val awaitingResponse: Boolean)
+    fun snapshot() = Snapshot(original,draft,phase==Phase.TRANSCRIBING)
+    /** A restore never starts recording or repeats a paid request. Audio is deliberately ephemeral. */
+    fun restore(value: Snapshot) {
+        revision++
+        original=value.original; draft=value.draft
+        phase=if(original.isNotBlank()) Phase.REVIEW else if(value.awaitingResponse) Phase.ERROR else Phase.IDLE
+        error=if(value.awaitingResponse && original.isBlank()) SpeechError.FILE else null
+    }
     fun fail(reason: SpeechError) { error=reason;phase=Phase.ERROR }
     fun reset() { revision++;phase=Phase.IDLE;original="";draft="";error=null }
 }

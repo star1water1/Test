@@ -772,13 +772,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     private fun showNarrativeResult(run: CharacterViewModel.AiNarrativeRun) {
-        NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run) { id ->
+        NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run, characterId) { id ->
             formBuilder.fieldDefinitions.firstOrNull { it.id == id }
         }
     }
 
     private fun showNarrativeBulkResult(run: CharacterViewModel.AiNarrativeBulkRun) {
-        NarrativeBulkSheet.showResult(this, formBuilder, viewModel, run) { id ->
+        NarrativeBulkSheet.showResult(this, formBuilder, viewModel, run, characterId) { id ->
             formBuilder.fieldDefinitions.firstOrNull { it.id == id }
         }
     }

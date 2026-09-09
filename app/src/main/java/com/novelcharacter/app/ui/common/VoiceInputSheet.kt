@@ -28,6 +28,7 @@ class VoiceInputSheet : DialogFragment() {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context=requireContext()
+        model.bind(inputKey)
         model.terms=requireArguments().getStringArrayList("terms").orEmpty()
         model.omitted=requireArguments().getInt("omitted")
         val panel=LinearLayout(context).apply {
@@ -69,18 +70,19 @@ class VoiceInputSheet : DialogFragment() {
                 })
             }
         }
-        editor.doAfterTextChanged {model.session.draft=it.toString();renderCorrections()}
+        editor.doAfterTextChanged {model.editDraft(it.toString());renderCorrections()}
         val reset=button("전사 원문으로 되돌리기") {editor.setText(model.session.original)};panel.addView(reset)
         val accept=button("확인한 내용을 입력에 추가") {
             val text=editor.text.toString()
             if(text.isBlank()) editor.error="추가할 내용을 입력하세요."
             else {
-                ViewModelProvider(requireParentFragment())[NaturalLanguageInputModel::class.java].accept(inputKey,text)
-                model.discard();dismiss()
+                if(ViewModelProvider(requireParentFragment())[NaturalLanguageInputModel::class.java].accept(inputKey,text)) {
+                    model.discard();dismiss()
+                }
             }
         };panel.addView(accept)
         val discard=button("녹음과 전사 내용 버리기") {model.discard()};panel.addView(discard)
-        panel.addView(label().apply {text="입력에 추가한 뒤 내용을 더 고칠 수 있습니다. AI 생성과 저장은 각 화면에서 따로 실행합니다. 임시 녹음은 전사 성공·버리기·편집 화면 종료 때 삭제합니다. 실패한 녹음은 재시도를 위해 현재 편집 화면에만 보관합니다."})
+        panel.addView(label().apply {text="입력에 추가한 뒤 내용을 더 고칠 수 있습니다. AI 생성과 저장은 각 화면에서 따로 실행합니다. 임시 녹음은 전사 성공·버리기·편집 화면 종료 때 삭제합니다. 실패한 녹음은 재시도를 위해 현재 편집 화면에만 보관합니다. 받은 전사 원문과 수정 내용은 이 기기에 보관하며 같은 입력의 마이크를 다시 열면 복구합니다. 앱 삭제·데이터 삭제 시에는 지워집니다."})
         model.updates.observe(this) {
             val config=SpeechSettings(context).read()
             val phase=model.session.phase

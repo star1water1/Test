@@ -352,6 +352,7 @@ class CharacterFieldAiSuggester(
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
         /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
         isCancelled: () -> Boolean = { false },
+        onCheckpoint: (SuggestOutcome) -> Unit = {},
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome = suggest(
         prompts = object : FieldPromptSource {
@@ -372,6 +373,7 @@ class CharacterFieldAiSuggester(
         images = images,
         onProgress = onProgress,
         isCancelled = isCancelled,
+        onCheckpoint = onCheckpoint,
         errorMessageOf = errorMessageOf
     )
 
@@ -404,6 +406,7 @@ class CharacterFieldAiSuggester(
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
         /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
         isCancelled: () -> Boolean = { false },
+        onCheckpoint: (SuggestOutcome) -> Unit = {},
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -454,6 +457,18 @@ class CharacterFieldAiSuggester(
                 // 시스템 프롬프트에 이어 붙이면 반드시 한쪽이 샌다.
                 imageSystemRule = imageRule(images.size)
             )
+            // Persist dispatch intent as well: the current chunk may be billed if the process dies.
+            onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
+                truncationNotes.toList(), inputTokens, outputTokens,
+                missing.toList() + chunks.drop(chunkIndex).flatten().map {
+                    MissingField(it.key, it.name, if (it in chunk) MissingCause.NOT_RETURNED else MissingCause.NOT_REQUESTED)
+                }, unknownKeys.distinct()))
+            if (isCancelled()) {
+                chunks.drop(chunkIndex).flatten().forEach {
+                    missing.add(MissingField(it.key,it.name,MissingCause.CANCELLED))
+                }
+                break
+            }
             var stopAfterChunk = false
             when (val result = complete(request)) {
                 is AiResult.Success -> {
@@ -509,6 +524,11 @@ class CharacterFieldAiSuggester(
             // 진행도는 성공·실패를 가리지 않고 청크 하나가 끝날 때마다 한 번 오른다
             // (ImageBatchTagSuggester와 같은 규칙 — 접힌 청크도 '끝난 요청'이다).
             doneTargets += chunk.size
+            onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
+                truncationNotes.toList(), inputTokens, outputTokens,
+                missing.toList() + chunks.drop(chunkIndex + 1).flatten().map {
+                    MissingField(it.key, it.name, MissingCause.NOT_REQUESTED)
+                }, unknownKeys.distinct()))
             onProgress(chunkIndex + 1, totalRequests, doneTargets, totalTargets)
             if (stopAfterChunk) {
                 // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.

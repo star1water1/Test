@@ -4,26 +4,43 @@ import com.novelcharacter.app.util.AiCheckState
 
 /** One review session, owned by a ViewModel. UI recreation never reseeds user decisions. */
 class FieldSuggestionReviewState {
+    var onChanged: () -> Unit = {}
+    fun changed() = onChanged()
+    var sessionId: String = java.util.UUID.randomUUID().toString(); private set
+    data class Snapshot(val sessionId: String, val checks: AiCheckState.Snapshot<String>,
+        val edited: Map<String, CharacterFieldAiSuggester.Suggestion>,
+        val originals: Map<String, CharacterFieldAiSuggester.Suggestion>,
+        val editDrafts: Map<String, String>, val instructions: Map<String, String>)
+    fun snapshot() = Snapshot(sessionId, checks.snapshot(), edited.toMap(), originals.toMap(),
+        editDrafts.toMap(), instructions.toMap())
+    fun restore(value: Snapshot) {
+        sessionId=value.sessionId; checks.restore(value.checks)
+        edited.clear(); edited.putAll(value.edited); originals.clear(); originals.putAll(value.originals)
+        editDrafts.clear(); editDrafts.putAll(value.editDrafts)
+        instructions.clear(); instructions.putAll(value.instructions)
+    }
     private val checks = AiCheckState<String>()
     private val edited = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
     private val originals = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
     val editDrafts = mutableMapOf<String, String>()
     val instructions = mutableMapOf<String, String>()
 
-    fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn)
-    fun setChecked(fieldKey: String, on: Boolean) = checks.setChecked(fieldKey, on)
+    fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn).also { changed() }
+    fun setChecked(fieldKey: String, on: Boolean) = checks.setChecked(fieldKey, on).also { changed() }
     fun isChecked(fieldKey: String) = checks.isChecked(fieldKey)
     fun remember(suggestion: CharacterFieldAiSuggester.Suggestion) {
         edited[suggestion.fieldKey] = suggestion
+        changed()
     }
     fun current(original: CharacterFieldAiSuggester.Suggestion): CharacterFieldAiSuggester.Suggestion {
-        originals.putIfAbsent(original.fieldKey, original)
+        if (originals.putIfAbsent(original.fieldKey, original) == null) changed()
         return edited[original.fieldKey] ?: original
     }
     fun reset(original: CharacterFieldAiSuggester.Suggestion): CharacterFieldAiSuggester.Suggestion {
         editDrafts.remove(original.fieldKey)
         val first = originals[original.fieldKey] ?: original
         edited[original.fieldKey] = first
+        changed()
         return first
     }
     /** Only successful replacements change an edit; failures and other fields stay untouched. */
@@ -39,6 +56,7 @@ class FieldSuggestionReviewState {
         originals.clear()
         editDrafts.clear()
         instructions.clear()
+        sessionId=java.util.UUID.randomUUID().toString()
     }
 
     companion object {

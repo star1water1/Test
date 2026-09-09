@@ -40,6 +40,7 @@ object NarrativeWriteSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recoverAiNarrative(characterId)) return
         if (!guardProvider(fragment)) return
 
         val current = formBuilder.collectFieldValues(0L)
@@ -185,14 +186,22 @@ object NarrativeWriteSheet {
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
         run: CharacterViewModel.AiNarrativeRun,
+        currentCharacterId: Long,
         fieldOf: (Long) -> FieldDefinition?
     ) {
+        if(viewModel.narrativeOwner(false)!=currentCharacterId) {
+            MaterialAlertDialogBuilder(fragment.requireContext()).setTitle("다른 캐릭터의 AI 검토")
+                .setMessage("${viewModel.narrativeTargetName(false)}의 결과입니다. 해당 캐릭터로 돌아가 같은 AI 버튼을 누르면 다시 열 수 있습니다.")
+                .setPositiveButton("내용 보관",null)
+                .setNegativeButton("검토 내용 버리기") { _,_->viewModel.clearAiNarrativeResult() }.show()
+            return
+        }
         com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
             fragment,
             listOf(com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(run.fieldId, run.fieldName,
                 run.originalValue, run.outcome.drafts, run.mode == NarrativeFieldAiWriter.Mode.CONTINUE,
                 viewModel.narrativeImageCount(run.fieldId,false))),
-            viewModel.aiNarrativeReviewState, buildNotices(fragment, run.outcome),
+            viewModel.aiNarrativeReviewState, "요청 당시 캐릭터: ${viewModel.narrativeTargetName(false)}\n" + buildNotices(fragment, run.outcome),
             onApply = { selected ->
                 val field = fieldOf(run.fieldId)
                 val chosen = selected[run.fieldId]

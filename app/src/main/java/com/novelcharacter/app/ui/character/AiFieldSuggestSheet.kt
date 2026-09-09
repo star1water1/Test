@@ -54,6 +54,7 @@ object AiFieldSuggestSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recoverAiSuggest(targetCharacterId)) return
         if (!guardProvider(fragment)) return
 
         val currentValue = currentValuesByFieldId(formBuilder)[field.id] ?: ""
@@ -154,6 +155,7 @@ object AiFieldSuggestSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recoverAiSuggest(targetCharacterId)) return
         if (!guardProvider(fragment)) return
 
         // 대상 규칙의 단일 소스 — 보충(랜덤) 탭도 같은 함수를 쓴다. 여기서 필터를 직접
@@ -398,7 +400,7 @@ object AiFieldSuggestSheet {
     ) {
         com.novelcharacter.app.ui.common.FieldSuggestionReviewDialog.show(
             fragment, run.targets, run.outcome, viewModel.aiReviewState,
-            buildNotices(fragment, run.outcome),
+            "요청 당시 캐릭터: ${run.context?.name.orEmpty()}\n" + buildNotices(fragment, run.outcome),
             onApply = { selected ->
                 if (applySelected(fragment, formBuilder, selected)) {
                     viewModel.clearAiSuggestResult()

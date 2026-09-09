@@ -47,6 +47,7 @@ object NarrativeBulkSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recoverAiNarrativeBulk(characterId)) return
         if (!guardProvider(fragment)) return
 
         val bulk = NarrativeFieldAiWriter.bulkDraftTargetsOf(
@@ -236,15 +237,23 @@ object NarrativeBulkSheet {
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
         run: CharacterViewModel.AiNarrativeBulkRun,
+        currentCharacterId: Long,
         fieldOf: (Long) -> FieldDefinition?
     ) {
+        if(viewModel.narrativeOwner(true)!=currentCharacterId) {
+            MaterialAlertDialogBuilder(fragment.requireContext()).setTitle("다른 캐릭터의 AI 검토")
+                .setMessage("${viewModel.narrativeTargetName(true)}의 결과입니다. 해당 캐릭터로 돌아가 같은 AI 버튼을 누르면 다시 열 수 있습니다.")
+                .setPositiveButton("내용 보관",null)
+                .setNegativeButton("검토 내용 버리기") { _,_->viewModel.clearAiNarrativeBulkResult() }.show()
+            return
+        }
         val gone = run.items.filter { it.hasDraft && fieldOf(it.fieldId) == null }
         com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
             fragment,
             run.items.map { com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(it.fieldId,
                 it.fieldName, viewModel.narrativeOriginal(it.fieldId), it.outcome.drafts,
                 imageCount=viewModel.narrativeImageCount(it.fieldId,true)) },
-            viewModel.aiNarrativeBulkReviewState, buildNotices(fragment, run, gone),
+            viewModel.aiNarrativeBulkReviewState, "요청 당시 캐릭터: ${viewModel.narrativeTargetName(true)}\n" + buildNotices(fragment, run, gone),
             onApply = { selected ->
                 val applied = selected.count { (id, text) ->
                     fieldOf(id)?.let { formBuilder.applyReviewedValue(it, text) } == true
@@ -262,6 +271,8 @@ object NarrativeBulkSheet {
                 if (!started) Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
                 started
             },
+            pending=viewModel.pendingNarrativeItems(),
+            onResume={ ids -> viewModel.resumeAiNarrativeBulk(ids) },
             running=viewModel.aiNarrativeBulkRunning
         )
     }
