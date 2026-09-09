@@ -136,7 +136,7 @@ object NaturalLanguageInput {
         return createBound(fragment,key,hint,initial,onChanged,terms)
     }
 
-    private fun createBound(fragment: Fragment, key: String, hint: String, initial: String,
+    internal fun createBound(fragment: Fragment, key: String, hint: String, initial: String,
         onChanged: (String)->Unit, terms: suspend ()->List<SpeechVocabulary.Term>): LinearLayout {
         val context=fragment.requireContext()
         val model=ViewModelProvider(fragment)[NaturalLanguageInputModel::class.java]

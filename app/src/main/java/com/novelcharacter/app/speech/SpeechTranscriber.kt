@@ -13,6 +13,8 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** Dedicated audio capability. No provider fallback, redirect or automatic paid retry. */
 class SpeechTranscriber(context: Context) {
@@ -41,11 +43,23 @@ class SpeechTranscriber(context: Context) {
                 .addFormDataPart("file","voice.m4a",file.asRequestBody("audio/mp4".toMediaType()))
             SpeechProtocol.parameters(config,terms).forEach {(name,value)->body.addFormDataPart(name,value)}
             val request=Request.Builder().url(endpoint).header("Authorization","Bearer $key").post(body.build()).build()
-            client.newCall(request).execute().use { response ->
-                // Error bodies may echo credentials or private audio/context. Never log or surface them.
-                val result=SpeechProtocol.parse(response.code,response.peekBody(2_000_000).string(),config.model)
-                if(result is SpeechResult.Success) SpeechSettings(app).recordUsage(seconds)
-                result
+            // Same cancellation contract as AiService: cancelling the coroutine cancels the call.
+            suspendCancellableCoroutine<SpeechResult> { continuation ->
+                val call=client.newCall(request)
+                continuation.invokeOnCancellation {call.cancel()}
+                call.enqueue(object: okhttp3.Callback {
+                    override fun onFailure(call: okhttp3.Call,e: java.io.IOException) {
+                        if(continuation.isActive) continuation.resume(SpeechResult.Failure(SpeechError.NETWORK))
+                    }
+                    override fun onResponse(call: okhttp3.Call,response: okhttp3.Response) {
+                        val result=try {response.use {
+                            // Error bodies may echo credentials or private audio/context.
+                            SpeechProtocol.parse(it.code,it.peekBody(2_000_000).string(),config.model)
+                        }} catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
+                        if(result is SpeechResult.Success) SpeechSettings(app).recordUsage(seconds)
+                        if(continuation.isActive) continuation.resume(result)
+                    }
+                })
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { SpeechResult.Failure(SpeechError.NETWORK) }
