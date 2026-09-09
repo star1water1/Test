@@ -7,10 +7,12 @@ class SpeechSession {
     var original=""; private set
     var draft=""
     var error: SpeechError?=null; private set
+    var sessionId: String = java.util.UUID.randomUUID().toString(); private set
     private var revision=0
     fun startRecording(permission: Boolean): Boolean {
         if(phase==Phase.RECORDING || phase==Phase.TRANSCRIBING) return false
         if(!permission) { fail(SpeechError.PERMISSION); return false }
+        sessionId=java.util.UUID.randomUUID().toString()
         phase=Phase.RECORDING; error=null
         return true
     }
@@ -30,15 +32,20 @@ class SpeechSession {
     fun deviceResult(text: String) {
         original=text;draft=text;phase=Phase.REVIEW;error=null
     }
-    data class Snapshot(val original: String, val draft: String, val awaitingResponse: Boolean)
-    fun snapshot() = Snapshot(original,draft,phase==Phase.TRANSCRIBING)
+    data class Snapshot(val original: String, val draft: String, val awaitingResponse: Boolean,
+        val sessionId: String? = null)
+    fun snapshot() = Snapshot(original,draft,phase==Phase.TRANSCRIBING,sessionId)
     /** A restore never starts recording or repeats a paid request. Audio is deliberately ephemeral. */
     fun restore(value: Snapshot) {
         revision++
+        sessionId=value.sessionId?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
         original=value.original; draft=value.draft
         phase=if(original.isNotBlank()) Phase.REVIEW else if(value.awaitingResponse) Phase.ERROR else Phase.IDLE
         error=if(value.awaitingResponse && original.isBlank()) SpeechError.FILE else null
     }
     fun fail(reason: SpeechError) { error=reason;phase=Phase.ERROR }
-    fun reset() { revision++;phase=Phase.IDLE;original="";draft="";error=null }
+    fun reset() {
+        revision++;sessionId=java.util.UUID.randomUUID().toString()
+        phase=Phase.IDLE;original="";draft="";error=null
+    }
 }

@@ -29,6 +29,27 @@ class ReviewJournal(private val root: File) {
         envelope(owner)?.let { Entry(it.revision, requireNotNull(gson.fromJson(it.payload, type))) }
     }
     fun revision(owner: String): String? = synchronized(lock) { envelope(owner)?.revision }
+    /** Recovery discovery only. Reading a catalog never claims or removes a draft. */
+    data class Catalog(val owners: List<String>, val unreadableCount: Int)
+    fun owners(prefix: String): Catalog = synchronized(lock) {
+        if (!root.exists()) return@synchronized Catalog(emptyList(), 0)
+        check(root.isDirectory)
+        var unreadable = 0
+        val owners = checkNotNull(root.listFiles()).filter { it.isFile && it.extension == "json" }.mapNotNull { stored ->
+            try {
+                val record = gson.fromJson(stored.readText(Charsets.UTF_8), Envelope::class.java)
+                if (!record.owner.startsWith(prefix)) null else {
+                    check(stored.name == file(record.owner).name) { "Review filename mismatch" }
+                    envelope(record.owner) // Validate version/checksum before offering recovery.
+                    record.owner
+                }
+            } catch (_: Exception) {
+                unreadable++
+                null // Leave damaged records intact; do not hide other recoverable inputs.
+            }
+        }
+        Catalog(owners.sorted(), unreadable)
+    }
     /** Compare-and-swap prevents a second editor from silently overwriting newer decisions. */
     fun write(owner: String, value: Any, expectedRevision: String?): String = synchronized(lock) {
         check(envelope(owner)?.revision == expectedRevision) { "Review changed in another editor" }

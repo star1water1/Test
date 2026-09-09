@@ -76,8 +76,9 @@ class VoiceInputSheet : DialogFragment() {
             val text=editor.text.toString()
             if(text.isBlank()) editor.error="추가할 내용을 입력하세요."
             else {
-                if(ViewModelProvider(requireParentFragment())[NaturalLanguageInputModel::class.java].accept(inputKey,text)) {
-                    model.discard();dismiss()
+                model.editDraft(text)
+                if(model.acceptInto(ViewModelProvider(requireParentFragment())[NaturalLanguageInputModel::class.java])) {
+                    dismiss()
                 }
             }
         };panel.addView(accept)
