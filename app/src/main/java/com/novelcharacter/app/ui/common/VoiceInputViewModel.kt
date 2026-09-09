@@ -81,7 +81,7 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
             if(!saveTranscript()) return false
             if(!input.accept(com.novelcharacter.app.ai.CreativeInputState.Delivery(
                     key,session.sessionId,session.draft,session.original))) return false
-            discard() // Receipt is durable; even failed cleanup cannot append this session twice.
+            discardHeld() // Receipt is durable; reuse this lease through source cleanup.
             return true
         } finally { slot.endRequest() }
     }
@@ -254,7 +254,10 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         if(session.phase==SpeechSession.Phase.TRANSCRIBING) return
         if(session.phase==SpeechSession.Phase.RECORDING) stop(false)
         if(!slot.beginRequest()) return
-        try {
+        try {discardHeld()} finally {slot.endRequest()}
+    }
+    /** Caller already holds the voice lease. ReviewRequestLease is deliberately non-reentrant. */
+    private fun discardHeld() {
         if(!preserve {
             pendingAudio?.let {
                 pendingAudio=audioStore.release(it);released=true
@@ -266,7 +269,6 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         deviceGeneration++
         recognizer?.cancel();recognizer?.destroy();recognizer=null
         session.reset();refresh()
-        } finally {slot.endRequest()}
     }
     override fun onCleared() {
         if(recorder!=null) stop(false)
