@@ -110,7 +110,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         val request = AiRequest(
             system = buildSystemPrompt(
                 creativity, templates.templateOf(PromptTemplates.Id.NARRATIVE_SYSTEM)
-            ),
+            ) + CreativeBriefing.DATA_RULE,
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity),
@@ -180,7 +180,8 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
          * 호출측 VM이 DB에서 싣는다. 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판이다 —
          * 값 목록으로는 문체(어투·시점·문장 길이·상세도)를 전할 수 없기 때문에 글로 전한다.
          */
-        val styleSamples: List<String> = emptyList()
+        val styleSamples: List<String> = emptyList(),
+        val userInstruction: String = ""
     )
 
     data class ParsedDrafts(val drafts: List<Draft>, val droppedCount: Int)
@@ -562,7 +563,9 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                     "초안개수" to variants.toString()
                 )
             )
-            return PromptBuild(text, notes)
+            val instruction = if (field.userInstruction.isBlank()) "" else
+                "\n\n[이번 보완 지시]\n" + org.json.JSONObject().put("instruction", field.userInstruction).toString()
+            return PromptBuild(CreativeBriefing.appendTo(text, context.briefing) + instruction, notes)
         }
 
         private fun instructionFor(mode: Mode): String = when (mode) {

@@ -88,7 +88,9 @@ class CharacterFieldAiSuggester(
          */
         val duelStandings: List<DuelAiContext.Standing> = emptyList(),
         /** 조회에 실패해 프롬프트에서 빠진 섹션명 — 절단 고지와 같은 경로로 표면화 (변수 제어) */
-        val loadFailures: List<String> = emptyList()
+        val loadFailures: List<String> = emptyList(),
+        /** Optional intent, kept separate from existing DB/form data. Never automatically saved. */
+        val briefing: String = ""
     )
 
     /** 추천 대상 필드 스펙 — [fieldSpecOf]로 FieldDefinition에서 파생 */
@@ -169,7 +171,9 @@ class CharacterFieldAiSuggester(
          * `restricted` 필드의 허용 목록 밖 값인가 (B-79). **거른다는 뜻이 아니라 표시한다는 뜻이다** —
          * 채택하면 저장 시 기존 가드가 "추가하고 저장 / 입력 수정"을 묻는다.
          */
-        val outsideLibrary: Boolean = false
+        val outsideLibrary: Boolean = false,
+        val sourceEvidence: String? = null,
+        val suggestionNote: String? = null
     )
 
     /**
@@ -348,6 +352,7 @@ class CharacterFieldAiSuggester(
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
         /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
         isCancelled: () -> Boolean = { false },
+        onCheckpoint: (SuggestOutcome) -> Unit = {},
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome = suggest(
         prompts = object : FieldPromptSource {
@@ -355,11 +360,12 @@ class CharacterFieldAiSuggester(
                 buildSystemPrompt(
                     minConfidence, creativity,
                     templates.templateOf(PromptTemplates.Id.CHAR_FIELD_SYSTEM)
-                )
+                ) + if (context.briefing.isBlank()) "" else CreativeBriefing.INTENT_RULE
 
             override fun user(targets: List<FieldSpec>) = buildUserPrompt(
                 context, targets, templates.templateOf(PromptTemplates.Id.CHAR_FIELD_USER)
             )
+            override val evidenceSource: String get() = context.briefing
         },
         targets = targets,
         minConfidence = minConfidence,
@@ -367,6 +373,7 @@ class CharacterFieldAiSuggester(
         images = images,
         onProgress = onProgress,
         isCancelled = isCancelled,
+        onCheckpoint = onCheckpoint,
         errorMessageOf = errorMessageOf
     )
 
@@ -399,6 +406,7 @@ class CharacterFieldAiSuggester(
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
         /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
         isCancelled: () -> Boolean = { false },
+        onCheckpoint: (SuggestOutcome) -> Unit = {},
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -440,7 +448,7 @@ class CharacterFieldAiSuggester(
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = prompts.system(minConfidence, creativity),
+                system = prompts.system(minConfidence, creativity) + CreativeBriefing.DATA_RULE,
                 userText = prompt.text,
                 maxTokens = maxTokens,
                 temperature = temperature,
@@ -449,6 +457,18 @@ class CharacterFieldAiSuggester(
                 // 시스템 프롬프트에 이어 붙이면 반드시 한쪽이 샌다.
                 imageSystemRule = imageRule(images.size)
             )
+            // Persist dispatch intent as well: the current chunk may be billed if the process dies.
+            onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
+                truncationNotes.toList(), inputTokens, outputTokens,
+                missing.toList() + chunks.drop(chunkIndex).flatten().map {
+                    MissingField(it.key, it.name, if (it in chunk) MissingCause.NOT_RETURNED else MissingCause.NOT_REQUESTED)
+                }, unknownKeys.distinct()))
+            if (isCancelled()) {
+                chunks.drop(chunkIndex).flatten().forEach {
+                    missing.add(MissingField(it.key,it.name,MissingCause.CANCELLED))
+                }
+                break
+            }
             var stopAfterChunk = false
             when (val result = complete(request)) {
                 is AiResult.Success -> {
@@ -467,7 +487,7 @@ class CharacterFieldAiSuggester(
                     // 청크마다 뜰 수 있으므로 같은 줄은 한 번만 남긴다.
                     AiProviderFallback.switchNoteOf(result)
                         ?.let { if (it !in failures) failures.add(it) }
-                    val parsed = parseResponse(result.text, chunk, minConfidence)
+                    val parsed = parseResponse(result.text, chunk, minConfidence, prompts.evidenceSource)
                     if (parsed == null) {
                         // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.
                         // 종전에는 둘 다 "형식 오류 — 다시 시도해 주세요"로 떨어져, 재시도해도
@@ -504,6 +524,11 @@ class CharacterFieldAiSuggester(
             // 진행도는 성공·실패를 가리지 않고 청크 하나가 끝날 때마다 한 번 오른다
             // (ImageBatchTagSuggester와 같은 규칙 — 접힌 청크도 '끝난 요청'이다).
             doneTargets += chunk.size
+            onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
+                truncationNotes.toList(), inputTokens, outputTokens,
+                missing.toList() + chunks.drop(chunkIndex + 1).flatten().map {
+                    MissingField(it.key, it.name, MissingCause.NOT_REQUESTED)
+                }, unknownKeys.distinct()))
             onProgress(chunkIndex + 1, totalRequests, doneTargets, totalTargets)
             if (stopAfterChunk) {
                 // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.
@@ -1180,7 +1205,7 @@ class CharacterFieldAiSuggester(
                     PromptTemplates.T_TARGET_FIELDS to targetSection
                 )
             )
-            return PromptBuild(text, notes)
+            return PromptBuild(CreativeBriefing.appendTo(text, context.briefing), notes)
         }
 
         /**
@@ -1310,7 +1335,8 @@ class CharacterFieldAiSuggester(
         fun parseResponse(
             text: String,
             targets: List<FieldSpec>,
-            minConfidence: Confidence? = null
+            minConfidence: Confidence? = null,
+            evidenceSource: String = ""
         ): ParsedSuggestions? {
             val root = AiJsonExtractor.extractObject(text) ?: return null
             val arr = root.optJSONArray("suggestions")
@@ -1364,7 +1390,9 @@ class CharacterFieldAiSuggester(
                             out.add(
                                 Suggestion(
                                     key, normalized.value, reason, confidence,
-                                    outsideLibrary = normalized.outsideLibrary
+                                    outsideLibrary = normalized.outsideLibrary,
+                                    sourceEvidence = CreativeBriefing.verifiedEvidence(obj.stringOr("sourceEvidence"), evidenceSource),
+                                    suggestionNote = obj.stringOr("suggestionNote").takeIf { it.isNotBlank() }
                                 )
                             )
                             resolved.add(key)

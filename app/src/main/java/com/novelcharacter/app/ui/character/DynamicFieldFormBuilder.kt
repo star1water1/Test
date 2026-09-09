@@ -263,6 +263,19 @@ class DynamicFieldFormBuilder(
      * 🎲 랜덤·✨ AI 추천 공용 값 주입 — 폼 위젯에만 기입하고 더티 플래그를 세운다 (DB 미접근).
      * 영속화는 사용자가 저장을 눌러야 저장 체인(생일 __birth 동기화 포함)을 타고 이뤄진다.
      */
+    /** AI review applies only validated values to widgets that are actually present. */
+    fun applyReviewedValue(field: FieldDefinition, raw: String): Boolean {
+        val widget = fieldInputMap[field.id] ?: return false
+        val spec = com.novelcharacter.app.ai.CharacterFieldAiSuggester.fieldSpecOf(field, "") ?: return false
+        val valid = com.novelcharacter.app.ai.CharacterFieldAiSuggester.normalizeChecked(raw, spec)
+            as? com.novelcharacter.app.ai.CharacterFieldAiSuggester.Normalized.Ok ?: return false
+        if (widget is Spinner && (0 until widget.count).none {
+                widget.getItemAtPosition(it).toString() == valid.value }) return false
+        if (widget !is android.widget.EditText && widget !is LinearLayout && widget !is Spinner) return false
+        applyRandomValue(field, valid.value, showToast=false)
+        return true
+    }
+
     fun applyRandomValue(
         field: com.novelcharacter.app.data.model.FieldDefinition,
         value: String,

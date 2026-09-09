@@ -306,7 +306,8 @@ object PromptTemplates {
     fun responseFormat(id: Id): String = when (id) {
         Id.CHAR_FIELD_SYSTEM, Id.EVENT_FIELD_SYSTEM ->
             "반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:\n" +
-                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}"""
+                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low","sourceEvidence":null,"suggestionNote":null}]}""" +
+                "\nsourceEvidence는 제공된 브리핑의 정확한 원문 인용이 있을 때만 문자열로 쓰고 없으면 null이다. suggestionNote는 선택적인 창작 제안 메모이며 없으면 null이다. reason의 맥락상 추천 이유는 별도로 반드시 적는다."
 
         Id.NARRATIVE_SYSTEM ->
             "반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:\n" +

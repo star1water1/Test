@@ -222,6 +222,19 @@ object AppSettingsBindings {
                 else if (store.get(id) == null) Applied.No("그 id의 프로바이더가 없습니다 — ${AppSettingsKeys.AI_PROVIDERS.key} 행이 먼저 들어와야 합니다")
                 else { store.setActiveId(id); Applied.Yes }
             }),
+        Binding(AppSettingsKeys.SPEECH_CONFIG,
+            read = { com.novelcharacter.app.speech.SpeechProtocol.encodeConfig(com.novelcharacter.app.speech.SpeechSettings(it).read()) },
+            write = { ctx, value ->
+                val config=com.novelcharacter.app.speech.SpeechProtocol.decodeConfig(value)
+                val provider=config?.providerId?.let {AiProviderStore(ctx).get(it)}
+                val providerError=config?.let { com.novelcharacter.app.speech.SpeechProtocol.providerError(it,
+                    provider?.protocol==com.novelcharacter.app.ai.AiProtocol.OPENAI_COMPAT,provider?.baseUrl) }
+                when {
+                    config==null -> Applied.No("음성 설정 JSON의 방식·제공자·모델·언어·힌트 값을 확인하세요.")
+                    providerError!=null -> Applied.No(providerError.message + " 기존 음성 설정을 유지했습니다. 프로바이더 목록을 먼저 가져오세요.")
+                    else -> {com.novelcharacter.app.speech.SpeechSettings(ctx).save(config);Applied.Yes}
+                }
+            }),
         numberBinding(AppSettingsKeys.AI_USAGE_EXAMPLE_COUNT,
             read = { AiPromptSettings(it).usageExampleCount },
             write = { ctx, d -> AiPromptSettings(ctx).usageExampleCount = d.toInt() }),

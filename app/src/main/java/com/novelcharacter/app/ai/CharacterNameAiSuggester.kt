@@ -224,7 +224,7 @@ class CharacterNameAiSuggester(private val aiService: AiService) {
         val aiRequest = AiRequest(
             system = buildSystemPrompt(
                 creativity, templates.templateOf(PromptTemplates.Id.NAME_SYSTEM)
-            ),
+            ) + CreativeBriefing.DATA_RULE,
             userText = prompt.text,
             maxTokens = aiService.effectiveMaxTokens(),
             temperature = aiService.temperatureFor(creativity)

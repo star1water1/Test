@@ -96,6 +96,7 @@ class AiSettingsFragment : Fragment() {
         binding.providerList.layoutManager = LinearLayoutManager(ctx)
         binding.providerList.adapter = adapter
         binding.addProviderButton.setOnClickListener { showPresetPicker() }
+        binding.speechSettingsButton.setOnClickListener { com.novelcharacter.app.ui.common.SpeechSettingsDialog.show(this) }
         attachReorder()
 
         setupConsistencySliders()

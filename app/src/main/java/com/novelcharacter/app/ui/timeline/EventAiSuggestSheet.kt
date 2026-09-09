@@ -14,21 +14,7 @@ import com.novelcharacter.app.ui.character.AiFieldSuggestSheet
 import com.novelcharacter.app.util.cappedScrollView
 import kotlinx.coroutines.launch
 
-/**
- * 사건 필드 AI 추천의 **비용 고지 → 실행 → 검토** 창 (B-43).
- *
- * ## 캐릭터 축의 시트를 그대로 쓰지 않는 이유
- *
- * 그쪽은 `DynamicFieldFormBuilder`(캐릭터 폼의 위젯 조립기)와 `CharacterViewModel`에
- * 묶여 있는데 사건 편집 창은 그 둘을 쓰지 않는다 — 위젯을 스피너·입력칸으로 직접 세우고,
- * 실행은 창 자신의 [EventFieldAiViewModel]이 든다. 억지로 한 시트에 밀어 넣으려면 폼 접근을
- * 인터페이스로 추상화해야 하는데, 그 수술은 **이미 잘 도는 캐릭터 화면을 건드린다**.
- *
- * 대신 **갈리면 안 되는 것은 전부 부른다** — 제공사 가드와 결과 고지 문구가 그것이고
- * ([AiFieldSuggestSheet.guardUsableProvider] · [AiFieldSuggestSheet.buildNoticeLines]),
- * 그 둘이 *같은 상태를 두 화면이 다르게 설명하는* 유일한 자리다. 검증·정규화·결손 분류는
- * 애초에 순수 계층 한 벌이다.
- */
+/** Event-specific context and form application; character/event result review uses the same UI and validator. */
 object EventAiSuggestSheet {
 
     /**
@@ -46,6 +32,7 @@ object EventAiSuggestSheet {
         contextLoader: suspend () -> EventFieldAiSuggester.EventAiContext?
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recover(eventId)) return
         if (!AiFieldSuggestSheet.guardUsableProvider(fragment)) return
 
         MaterialAlertDialogBuilder(context)
@@ -87,99 +74,39 @@ object EventAiSuggestSheet {
         /** 채택분을 폼에 기입한다. 성공 여부를 돌려준다 — 실패하면 유료 응답을 되살린다 */
         applyValues: (List<CharacterFieldAiSuggester.Suggestion>) -> Boolean
     ) {
-        val context = fragment.requireContext()
-        val outcome = run.outcome
-        val notices = AiFieldSuggestSheet.buildNoticeLines(fragment, outcome).joinToString("\n")
-
-        // 요청 도중 다른 사건으로 옮겨 갔다 — 남의 사건에 값을 심지 않는다.
-        // 버리지도 않는다: 무엇이 왜 적용되지 않았는지 말하고 응답 내용은 그대로 보여 준다.
         val mismatched = run.eventId != currentEventId
-        val density = context.resources.displayMetrics.density
-        val pad = (16 * density).toInt()
-
-        val list = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, pad / 2)
-        }
-        if (mismatched) {
-            list.addView(TextView(context).apply {
-                text = fragment.getString(R.string.ai_event_target_changed)
-                textSize = 13f
-                setTextColor(context.getColor(R.color.error))
-                setPadding(0, 0, 0, pad / 2)
-            })
-        }
-        list.addView(TextView(context).apply {
-            text = notices
-            textSize = 13f
-            setTextColor(context.getColor(R.color.text_secondary))
-            isVisible = notices.isNotBlank()
-            setPadding(0, 0, 0, pad / 2)
-        })
-
-        // 진입점이 필드 하나짜리 ✨이고 파서가 같은 key의 중복을 접으므로 제안은 **최대 1건**이다.
-        // 그래서 체크리스트가 아니라 단일 확인이다 — 1건에 체크박스는 조작 마찰만 늘린다(원칙 04).
-        // 캐릭터 축이 같은 자리에서 같은 결론에 닿아 있다(`AiFieldSuggestSheet.showSingleConfirm`).
-        val specByKey = run.targets.associateBy { it.key }
-        val suggestion = outcome.suggestions.firstOrNull()
-        val spec = suggestion?.let { specByKey[it.fieldKey] }
-        if (suggestion != null && spec != null) {
-            list.addView(TextView(context).apply {
-                textSize = 15f
-                text = buildString {
-                    append(spec.name).append(": ").append(suggestion.value)
-                    suggestion.confidence?.let { append("  [").append(it.label).append(']') }
-                    if (suggestion.outsideLibrary) {
-                        append("  [").append(fragment.getString(R.string.ai_field_outside_library)).append(']')
-                    }
-                    if (spec.currentValue.isNotBlank()) {
-                        // 덮어쓰기가 되는 자리라는 것을 값과 **같은 줄에서** 보여 준다 (변수 제어)
-                        append('\n').append(
-                            fragment.getString(
-                                R.string.ai_field_overwrite_format, spec.currentValue, suggestion.value
-                            )
-                        )
-                    }
-                    if (suggestion.reason.isNotBlank()) {
-                        append("\n\n").append(
-                            fragment.getString(R.string.ai_field_reason_format, suggestion.reason)
-                        )
-                    }
-                }
-            })
-        } else {
-            list.addView(TextView(context).apply {
-                text = fragment.getString(R.string.ai_field_nothing)
-                textSize = 14f
-            })
-        }
-
-        // 근거가 길어도 창이 화면을 넘지 않고 안에서 스크롤된다 (R-31)
-        val scroll = cappedScrollView(context).apply { addView(list) }
-        val builder = MaterialAlertDialogBuilder(context)
-            .setTitle(spec?.name ?: fragment.getString(R.string.ai_field_review_title))
-            .setView(scroll)
-            .setOnCancelListener { viewModel.clearResult() }
-        if (suggestion != null && !mismatched) {
-            builder.setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearResult() }
-            builder.setPositiveButton(R.string.ai_field_single_apply) { _, _ ->
-                // **비우는 것은 적용이 성공한 뒤다** (B-163) — 실패해 놓고 비우면
-                // 되돌아가 다시 적용할 자리가 없어 재결제가 된다.
-                if (applyValues(listOf(suggestion))) {
+        val notices = AiFieldSuggestSheet.buildNoticeLines(fragment, run.outcome).toMutableList()
+        notices.add(0,"요청 당시 사건: ${run.context?.description.orEmpty()}")
+        if(mismatched) notices.add(fragment.getString(R.string.ai_event_target_changed))
+        com.novelcharacter.app.ui.common.FieldSuggestionReviewDialog.show(
+            fragment,run.targets,run.outcome,viewModel.reviewState,notices.joinToString("\n"),
+            onApply={ selected ->
+                if(applyValues(selected)) {
                     viewModel.clearResult()
-                    Toast.makeText(
-                        context, fragment.getString(R.string.ai_field_applied, 1), Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(fragment.requireContext(),fragment.getString(R.string.ai_field_applied,selected.size),Toast.LENGTH_SHORT).show()
+                    true
                 } else {
-                    viewModel.restoreResult(run)
-                    Toast.makeText(context, R.string.ai_field_apply_none, Toast.LENGTH_LONG).show()
+                    Toast.makeText(fragment.requireContext(),R.string.ai_field_apply_none,Toast.LENGTH_LONG).show()
+                    false // Retain the open dialog and response, including direct edits.
                 }
-            }
-        } else {
-            // 적용할 것이 없거나 남의 사건이다 — 닫는 길만 준다. 그래도 창은 뜬다(B-144).
-            builder.setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearResult() }
-        }
-        builder.show()
+            },
+            onClose={viewModel.clearResult()},
+            onRefine={ keys,instruction ->
+                val context=run.context
+                if(context==null || mismatched) false else {
+                    val targets=run.targets.filter {it.key in keys}.map { spec ->
+                        val current=run.outcome.suggestions.firstOrNull {it.fieldKey==spec.key}
+                            ?.let {viewModel.reviewState.current(it)}
+                        spec.copy(userInstruction=instruction.takeIf {it.isNotBlank()},
+                            rejectedValues=spec.rejectedValues+listOfNotNull(current?.value))
+                    }
+                    viewModel.run(context,targets,run.eventId,carryOver=run)
+                }
+            },
+            retryKeys=com.novelcharacter.app.ai.FieldSuggestionReviewState.retryableKeys(run.outcome),
+            canApply=!mismatched,
+            running=viewModel.running
+        )
     }
 
     /**

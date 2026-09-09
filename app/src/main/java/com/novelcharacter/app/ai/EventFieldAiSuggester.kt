@@ -72,6 +72,7 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         onProgress: suspend (doneRequests: Int, totalRequests: Int, doneTargets: Int, totalTargets: Int) -> Unit = { _, _, _, _ -> },
         /** 매 청크 앞에서 확인한다. 취소는 즉시 중단이 아니라 **더 시작하지 않음**이다. */
         isCancelled: () -> Boolean = { false },
+        onCheckpoint: (CharacterFieldAiSuggester.SuggestOutcome) -> Unit = {},
         errorMessageOf: (AiResult.Failure) -> String
     ): CharacterFieldAiSuggester.SuggestOutcome = engine.suggest(
         prompts = object : FieldPromptSource {
@@ -97,6 +98,7 @@ class EventFieldAiSuggester(private val aiService: AiService) {
         images = emptyList(),
         onProgress = onProgress,
         isCancelled = isCancelled,
+        onCheckpoint = onCheckpoint,
         errorMessageOf = errorMessageOf
     )
 

@@ -512,7 +512,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                     return@observe
                 }
                 com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
-                    this, formBuilder, characterViewModel, run
+                    this, formBuilder, characterViewModel, run, displayedCharacter?.id ?: -1L
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             } else {
                 offerReturnToEdit(
@@ -546,7 +546,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                     return@observe
                 }
                 com.novelcharacter.app.ui.character.NarrativeBulkSheet.showResult(
-                    this, formBuilder, characterViewModel, run
+                    this, formBuilder, characterViewModel, run, displayedCharacter?.id ?: -1L
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             } else {
                 offerReturnToEdit(
@@ -961,7 +961,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             pendingAiNarrativeShow = false
             characterViewModel.aiNarrativeResult.value?.let { run ->
                 com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
-                    this, formBuilder, characterViewModel, run
+                    this, formBuilder, characterViewModel, run, displayedCharacter?.id ?: -1L
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             }
         }
@@ -969,7 +969,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             pendingAiNarrativeBulkShow = false
             characterViewModel.aiNarrativeBulkResult.value?.let { run ->
                 com.novelcharacter.app.ui.character.NarrativeBulkSheet.showResult(
-                    this, formBuilder, characterViewModel, run
+                    this, formBuilder, characterViewModel, run, displayedCharacter?.id ?: -1L
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             }
         }

@@ -47,6 +47,7 @@ object NarrativeBulkSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (viewModel.recoverAiNarrativeBulk(characterId)) return
         if (!guardProvider(fragment)) return
 
         val bulk = NarrativeFieldAiWriter.bulkDraftTargetsOf(
@@ -121,6 +122,7 @@ object NarrativeBulkSheet {
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
+            addView(AiFieldSuggestSheet.briefingInput(fragment,viewModel,characterId,formBuilder,contextLoader))
             addView(costText)
             addView(excludedText)
             addView(showExcludedLink)
@@ -212,7 +214,7 @@ object NarrativeBulkSheet {
     ) {
         // 컨텍스트 조립만 뷰 스코프(이 단계 취소는 과금 전이라 무해), 실행은 VM 위임(회전 생존).
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val aiContext = contextLoader()
+            val aiContext = contextLoader().copy(briefing=viewModel.aiBriefingDrafts[characterId].orEmpty())
             if (!fragment.isAdded) return@launch
             val started = viewModel.runAiNarrativeBulk(aiContext, characterId, targets, length, imagePaths)
             if (!started) {
@@ -235,122 +237,46 @@ object NarrativeBulkSheet {
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
         run: CharacterViewModel.AiNarrativeBulkRun,
+        currentCharacterId: Long,
         fieldOf: (Long) -> FieldDefinition?
     ) {
-        val context = fragment.requireContext()
-        val density = context.resources.displayMetrics.density
-        val pad = (20 * density).toInt()
-
-        // **초안은 받았는데 필드가 사라진 것**(검토 중 다른 화면에서 삭제 등)을 따로 센다.
-        // 종전 판은 이것을 `usable` 필터로 걸러 내기만 하고 고지에서도 빠뜨려, **결제한 초안이
-        // 아무 말 없이 사라졌다** — 이 저장소가 가장 경계하는 그 모양이다(콜드 검토가 잡았다).
-        val gone = run.items.filter { it.hasDraft && fieldOf(it.fieldId) == null }
-        val usable = run.items.filter { it.hasDraft && fieldOf(it.fieldId) != null }
-        val notices = buildNotices(fragment, run, gone)
-
-        if (usable.isEmpty()) {
-            MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.ai_narrative_bulk_title)
-                .setMessage(
-                    buildString {
-                        append(fragment.getString(R.string.ai_narrative_bulk_nothing))
-                        if (notices.isNotEmpty()) append("\n\n").append(notices)
-                    }
-                )
-                .setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearAiNarrativeBulkResult() }
-                .setOnCancelListener { viewModel.clearAiNarrativeBulkResult() }
-                .show()
+        if(viewModel.narrativeOwner(true)!=currentCharacterId) {
+            MaterialAlertDialogBuilder(fragment.requireContext()).setTitle("다른 캐릭터의 AI 검토")
+                .setMessage("${viewModel.narrativeTargetName(true)}의 결과입니다. 해당 캐릭터로 돌아가 같은 AI 버튼을 누르면 다시 열 수 있습니다.")
+                .setPositiveButton("내용 보관",null)
+                .setNegativeButton("검토 내용 버리기") { _,_->viewModel.clearAiNarrativeBulkResult() }.show()
             return
         }
-
-        // 필드마다 체크박스 + 초안 미리보기. 기본은 전부 켬 — 일괄의 목적이 '한 번에 깔기'라
-        // 하나씩 켜게 하면 그 목적이 사라진다(조작 마찰). 마음에 안 드는 것만 끄면 된다.
-        //
-        // **체크는 뷰모델이 든다**(R-38) — 종전에는 아래 `CheckBox` 위젯에만 살아서, 회전
-        // 한 번에 껐던 필드가 전부 다시 켜졌다. 체크가 풀린 화면은 *"내가 아직 안 골랐다"*와
-        // 구별되지 않으므로, 사용자는 마음에 안 들던 초안이 깔리는 줄 모른 채 [적용]을 누른다.
-        // 기본 켜기는 **첫 조립에서만** 심는다 — 두 번째부터 심으면 회전이 판단을 덮는다.
-        val state = viewModel.aiNarrativeBulkReviewState
-        state.seedDefaults(usable.map { it.fieldId })
-        val panel = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-            if (notices.isNotEmpty()) {
-                addView(TextView(context).apply {
-                    textSize = 12f
-                    setTextColor(context.getColor(R.color.text_secondary))
-                    text = notices
-                    setPadding(0, 0, 0, (8 * density).toInt())
-                })
-            }
-            for (item in usable) {
-                val box = CheckBox(context).apply {
-                    text = item.fieldName
-                    isChecked = state.isChecked(item.fieldId)
-                    setOnCheckedChangeListener { _, on -> state.setChecked(item.fieldId, on) }
+        val gone = run.items.filter { it.hasDraft && fieldOf(it.fieldId) == null }
+        com.novelcharacter.app.ui.common.NarrativeReviewDialog.show(
+            fragment,
+            run.items.map { com.novelcharacter.app.ui.common.NarrativeReviewDialog.Item(it.fieldId,
+                it.fieldName, viewModel.narrativeOriginal(it.fieldId), it.outcome.drafts,
+                imageCount=viewModel.narrativeImageCount(it.fieldId,true)) },
+            viewModel.aiNarrativeBulkReviewState, "요청 당시 캐릭터: ${viewModel.narrativeTargetName(true)}\n" + buildNotices(fragment, run, gone),
+            onApply = { selected ->
+                val applied = selected.count { (id, text) ->
+                    fieldOf(id)?.let { formBuilder.applyReviewedValue(it, text) } == true
                 }
-                addView(box)
-                addView(TextView(context).apply {
-                    textSize = 13f
-                    setTextColor(context.getColor(R.color.text_secondary))
-                    val draft = item.outcome.drafts.first().text
-                    text = draft.take(PREVIEW_CHARS) + if (draft.length > PREVIEW_CHARS) "…" else ""
-                    setPadding((12 * density).toInt(), 0, 0, (10 * density).toInt())
-                })
-            }
-        }
-
-        val dialog = MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_narrative_bulk_pick)
-            // 본문 스크롤에는 높이 상한이 있어야 한다 (R-31) — 필드가 많으면 [적용] 버튼이
-            // 화면 밖으로 밀려 **고른 것을 넣을 길이 없어진다.**
-            .setView(com.novelcharacter.app.util.cappedScrollView(context).apply { addView(panel) })
-            .setPositiveButton(R.string.ai_narrative_bulk_apply, null) // 검증 통과 시에만 닫힘
-            .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiNarrativeBulkResult() }
-            .setOnCancelListener { viewModel.clearAiNarrativeBulkResult() }
-            .create()
-        // **비우는 것은 적용이 성립한 뒤다** (B-163 — 형제 검토 창들이 지키는 그 규칙).
-        // 종전에는 [적용]이 무조건 결과를 비워서, 고른 것이 0개거나 검토 중 필드가 지워져
-        // 아무것도 못 넣은 경우에도 **결제한 초안이 통째로 사라졌다** — 짧은 값 검토 창은
-        // 빈 선택을 막는데(R-17) 이 창만 조용히 비웠다.
-        dialog.setValidatedPositiveButton {
-            val picked = usable.filter { state.isChecked(it.fieldId) }
-            if (picked.isEmpty()) {
-                Toast.makeText(
-                    context, R.string.ai_review_pick_none, Toast.LENGTH_SHORT
-                ).show()
-                return@setValidatedPositiveButton false
-            }
-            var applied = 0
-            var vanished = 0
-            for (item in picked) {
-                // 검토 중 다른 화면에서 필드가 지워졌을 수 있다 — 조용히 덜 세지 않고 갈라 센다.
-                val field = fieldOf(item.fieldId)
-                if (field == null) {
-                    vanished++
-                    continue
-                }
-                // 필드마다 토스트를 띄우지 않는다 — 일괄이라 N번 겹쳐 뜨고, 그러면
-                // 정작 읽어야 할 합계 고지가 그 뒤에 가린다.
-                formBuilder.applyRandomValue(field, item.outcome.drafts.first().text, showToast = false)
-                applied++
-            }
-            Toast.makeText(
-                context,
-                if (vanished == 0) fragment.getString(R.string.ai_narrative_bulk_applied, applied)
-                else fragment.getString(R.string.ai_narrative_bulk_applied_vanished, applied, vanished),
-                Toast.LENGTH_SHORT
-            ).show()
-            viewModel.clearAiNarrativeBulkResult()
-            true
-        }
-        dialog.show()
+                Toast.makeText(fragment.requireContext(), fragment.getString(R.string.ai_narrative_bulk_applied, applied),
+                    Toast.LENGTH_LONG).show()
+                if (applied == selected.size && applied > 0) {
+                    viewModel.clearAiNarrativeBulkResult()
+                    true
+                } else false
+            },
+            onClose = { viewModel.clearAiNarrativeBulkResult() },
+            onRefine = { id, candidate, instruction ->
+                val started = viewModel.refineAiNarrative(id, candidate, instruction, true)
+                if (!started) Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
+                started
+            },
+            pending=viewModel.pendingNarrativeItems(),
+            onResume={ ids -> viewModel.resumeAiNarrativeBulk(ids) },
+            running=viewModel.aiNarrativeBulkRunning
+        )
     }
 
-    /**
-     * 토큰 사용·실패·보내지 않은 필드 — **조용히 버린 것이 없음을 항상 보인다.**
-     * 토큰은 필드마다 따로 나오므로 합해서 한 줄로 말한다(필드별로 늘어놓으면 검토가 안 읽힌다).
-     */
     private fun buildNotices(
         fragment: Fragment,
         run: CharacterViewModel.AiNarrativeBulkRun,

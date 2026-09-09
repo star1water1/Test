@@ -52,7 +52,7 @@ class CharacterFieldAiSuggesterTest {
         val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
         assertTrue(
             prompt.contains(
-                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}"""
+                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low","sourceEvidence":null,"suggestionNote":null}]}"""
             )
         )
     }

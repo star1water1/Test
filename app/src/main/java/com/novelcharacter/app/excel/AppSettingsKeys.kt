@@ -386,6 +386,11 @@ object AppSettingsKeys {
         domain = Domain.AppOwned("설정의 AI 연동",
             extra = "`ai_providers`에 실려 있는 항목의 id 하나입니다. 목록에 없는 id는 그 행을 " +
                 "건너뛰므로 `ai_providers` 행이 먼저 들어와야 합니다."))
+    val SPEECH_CONFIG = Spec("speech_config", Kind.TEXT,
+        note = "음성 입력의 방식·전사 제공자·모델·언어·고유명사 힌트 설정입니다.",
+        domain = Domain.AppOwned("AI 연동의 음성 입력 설정",
+            extra = "mode·providerId·model·language·sendHints를 담은 JSON입니다. 제공자 목록을 먼저 가져오세요. " +
+                "API 키·녹음·전사 원문·기기별 사용량은 이 행에 포함하지 않습니다. 온디바이스 지원은 기기마다 다릅니다."))
     val AI_USAGE_EXAMPLE_COUNT = Spec("ai_usage_example_count", Kind.NUMBER,
         note = "짧은 값 추천에 함께 보낼 기존 값 예시 개수입니다.",
         domain = Domain.Ints(0, AiPromptPolicy.USAGE_EXAMPLES_MAX, unit = "개",
@@ -620,7 +625,7 @@ object AppSettingsKeys {
         IMAGE_MAX_LONG_EDGE_PX, IMAGE_SKIP_BELOW_ENABLED, IMAGE_SKIP_BELOW_BYTES,
         IMAGE_EDITOR_REMOVE_POLICY, IMAGE_AUTO_LINK_BY_CHARACTER,
         AI_PROVIDERS, AI_ACTIVE_PROVIDER,
-        AI_USAGE_EXAMPLE_COUNT, AI_STYLE_SAMPLE_COUNT, AI_MIN_CONFIDENCE, AI_CREATIVITY,
+        SPEECH_CONFIG, AI_USAGE_EXAMPLE_COUNT, AI_STYLE_SAMPLE_COUNT, AI_MIN_CONFIDENCE, AI_CREATIVITY,
         AI_ATTACH_IMAGE_COUNT, AI_ATTACH_REPRESENTATIVE_FIRST,
         AI_IMAGE_TAG_POLICY, AI_IMAGE_TAG_BATCH_SIZE,
         AI_IMAGE_TAG_GROUP_UNIT, AI_IMAGE_TAG_GROUP_SAMPLE_SIZE, AI_NAME_SUGGEST_BATCH_SIZE,
@@ -754,6 +759,7 @@ object AppSettingsKeys {
             "**어느 축을 따르는가는 DB가 들어** 이미 백업·엑셀을 따라 넘어간다.",
         "ai_keys" to "API 키의 암호화 저장소. 값은 ${AI_API_KEYS.key}로 **동의했을 때만** 실린다.",
         "ai_providers" to "프로바이더 저장소. 값은 ${AI_PROVIDERS.key}·${AI_ACTIVE_PROVIDER.key}로 실린다.",
+        "speech_input" to "음성 환경 설정은 ${SPEECH_CONFIG.key}로 실린다. 전사 요청 수·녹음 시간은 기기별 사용 기록이라 싣지 않는다.",
         "ai_prompt_settings" to "AI 프롬프트 설정 저장소. 값은 `ai_`로 시작하는 키들로 실린다.",
         "stats_prefs" to "통계 설정 저장소. 값은 `stats_`로 시작하는 키들로 실린다.",
         "supplement_criteria" to "보충 기준 저장소. 값은 `supplement_check_`·`supplement_field_threshold`로 실린다.",
