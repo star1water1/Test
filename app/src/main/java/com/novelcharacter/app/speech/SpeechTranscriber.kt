@@ -25,6 +25,9 @@ class SpeechTranscriber(context: Context) {
         terms: List<String>, seconds: Long): SpeechResult = withContext(Dispatchers.IO) {
         val provider=AiProviderStore(app).get(config.providerId)
             ?: return@withContext SpeechResult.Failure(SpeechError.NO_PROVIDER)
+        if(config.mode!=SpeechMode.CLOUD) return@withContext SpeechResult.Failure(SpeechError.CONFIG)
+        SpeechProtocol.providerError(config,provider.protocol==com.novelcharacter.app.ai.AiProtocol.OPENAI_COMPAT,
+            provider.baseUrl)?.let { return@withContext SpeechResult.Failure(it) }
         val endpoint=SpeechProtocol.endpoint(provider.baseUrl)
             ?: return@withContext SpeechResult.Failure(SpeechError.CONFIG)
         if(config.model.isBlank()) return@withContext SpeechResult.Failure(SpeechError.CONFIG)

@@ -88,6 +88,7 @@ object FieldSuggestionReviewDialog {
             panel.addView(box)
             val value = label("")
             val source = label("")
+            val reason = label("")
             val note = label("")
             fun render() {
                 val current = state.current(original)
@@ -101,12 +102,14 @@ object FieldSuggestionReviewDialog {
                 }
                 source.text = current.sourceEvidence?.let { "원문 근거\n“$it”" }.orEmpty()
                 source.isVisible = source.text.isNotEmpty()
-                val memo = current.suggestionNote ?: current.reason
+                reason.text=if(current.reason.isBlank()) "" else "추천 이유\n${current.reason}"
+                reason.isVisible=current.reason.isNotBlank()
+                val memo = current.suggestionNote.orEmpty()
                 note.text = if (memo.isBlank()) "" else "AI 제안 메모\n$memo"
                 note.isVisible = memo.isNotBlank()
             }
             render()
-            panel.addView(value); panel.addView(source); panel.addView(note)
+            panel.addView(value); panel.addView(source); panel.addView(reason); panel.addView(note)
             val editor = EditText(context).apply {
                 hint = context.getString(R.string.ai_field_refine_value_hint)
                 setText(state.editDrafts[key] ?: state.current(original).value)
@@ -158,7 +161,7 @@ object FieldSuggestionReviewDialog {
             })
             if (spec.type == FieldType.TEXT && !spec.isBirthDate && spec.structuredSeparator == null &&
                 (original.suggestionNote ?: original.reason).isNotBlank()) {
-                panel.addView(button("메모를 현재 제안에 합치기") {
+                panel.addView(button(if(original.suggestionNote.isNullOrBlank()) "추천 이유를 현재 제안에 합치기" else "제안 메모를 현재 제안에 합치기") {
                     val current = state.current(original)
                     editor.isVisible = true; done.isVisible = true
                     editor.setText(current.value + "\n" + (current.suggestionNote ?: current.reason))

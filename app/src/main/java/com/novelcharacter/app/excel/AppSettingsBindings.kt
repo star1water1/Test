@@ -227,10 +227,11 @@ object AppSettingsBindings {
             write = { ctx, value ->
                 val config=com.novelcharacter.app.speech.SpeechProtocol.decodeConfig(value)
                 val provider=config?.providerId?.let {AiProviderStore(ctx).get(it)}
+                val providerError=config?.let { com.novelcharacter.app.speech.SpeechProtocol.providerError(it,
+                    provider?.protocol==com.novelcharacter.app.ai.AiProtocol.OPENAI_COMPAT,provider?.baseUrl) }
                 when {
                     config==null -> Applied.No("음성 설정 JSON의 방식·제공자·모델·언어·힌트 값을 확인하세요.")
-                    config.providerId.isNotBlank() && (provider==null || provider.protocol!=com.novelcharacter.app.ai.AiProtocol.OPENAI_COMPAT) ->
-                        Applied.No("음성 전사에 사용할 호환 제공자가 없습니다. 프로바이더 목록을 먼저 가져오세요.")
+                    providerError!=null -> Applied.No(providerError.message + " 기존 음성 설정을 유지했습니다. 프로바이더 목록을 먼저 가져오세요.")
                     else -> {com.novelcharacter.app.speech.SpeechSettings(ctx).save(config);Applied.Yes}
                 }
             }),

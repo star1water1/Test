@@ -442,21 +442,9 @@ object AiFieldSuggestSheet {
         run: CharacterViewModel.AiSuggestRun
     ): List<CharacterFieldAiSuggester.FieldSpec> {
         val specByKey = run.targets.associateBy { it.key }
-        return run.outcome.missing
-            .filter { it.cause in RETRYABLE_CAUSES }
-            .mapNotNull { specByKey[it.fieldKey] }
+        return com.novelcharacter.app.ai.FieldSuggestionReviewState.retryableKeys(run.outcome)
+            .mapNotNull { specByKey[it] }
     }
-
-    private val RETRYABLE_CAUSES = setOf(
-        CharacterFieldAiSuggester.MissingCause.NOT_RETURNED,
-        CharacterFieldAiSuggester.MissingCause.TRUNCATED,
-        CharacterFieldAiSuggester.MissingCause.UNREADABLE,
-        CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED,
-        CharacterFieldAiSuggester.MissingCause.NOT_REQUESTED,
-        CharacterFieldAiSuggester.MissingCause.CANCELLED,
-        CharacterFieldAiSuggester.MissingCause.INVALID,
-        CharacterFieldAiSuggester.MissingCause.DUPLICATE
-    )
 
     /**
      * 공통 상단 고지 — 수신 수·결손 명세·드롭·절단·부분 실패.

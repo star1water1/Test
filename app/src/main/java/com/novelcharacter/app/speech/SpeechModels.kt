@@ -53,6 +53,14 @@ object SpeechProtocol {
         else SpeechConfig(mode,provider,model,language,hints)
     } catch(_: Exception) {null}
 
+    /** Import and transport share provider checks; device recognition never needs a cloud provider. */
+    fun providerError(config: SpeechConfig, compatible: Boolean, baseUrl: String?): SpeechError? = when {
+        config.mode==SpeechMode.ON_DEVICE -> null
+        config.providerId.isBlank() || !compatible -> SpeechError.NO_PROVIDER
+        baseUrl==null || endpoint(baseUrl)==null -> SpeechError.CONFIG
+        else -> null
+    }
+
     const val MAX_AUDIO_BYTES = 20_000_000L
     const val MAX_RECORDING_MS = 15 * 60 * 1000
 

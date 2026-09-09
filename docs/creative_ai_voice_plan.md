@@ -49,8 +49,8 @@
 
 M1 → M6 구현 뒤 사용자 후속 요청으로 M7을 보완했다. 원격 통합 검증 결과는 [PR #402의 검사](https://github.com/star1water1/Test/pull/402/checks)에서 확인한다.
 
-- 새 순수 테스트: `CreativeReviewTest` 11, `NarrativeReviewTest` 5, `SpeechInputTest` 21, `ReviewJournalTest` 17 (총 54).
-- 최종 관련 회귀 테스트: 9개 클래스 216개 통과. 기존 필드·사건 validator, 체크 초기화, 앱 설정 카탈로그/차분 검사를 포함한다. 새 검사는 파일 손상·임시 쓰기 중단·다른 편집 창 충돌·항목별 저장·미요청 선별·전사 및 긴 편집본 복원을 다룬다.
+- 새 순수 테스트: `CreativeReviewTest` 13, `NarrativeReviewTest` 5, `SpeechInputTest` 24, `ReviewJournalTest` 17 (총 59).
+- 최종 관련 회귀 테스트: 10개 클래스 238개 통과. 기존 필드·사건 validator, 체크 초기화, 앱 설정 카탈로그/차분 검사를 포함한다. 새 검사는 파일 손상·임시 쓰기 중단·다른 편집 창 충돌·항목별 저장·미요청 선별·전사 및 긴 편집본 복원을 다룬다.
 - 전체 Windows Gradle 실행: 설정 왕복 테스트 2개 추가 전 4,101개 중 4,098개 통과. 3개 실패는 Linux 절대 경로를 가정한 기존 `DetachedImageRuleTest` 2개와 `ImagePathMatchTest` 1개다. 변경 전 `398c6be6`에서도 같은 3개 실패를 재현했다. 관련 코드·시험을 임의로 수정하거나 검사를 제외하지 않았다.
 - Android SDK / JDK 17 / Gradle 8.11.1에서 `assembleDebug` 성공. 정적 검사와 스키마 하네스의 최종 판정은 Linux PR CI에서 확인한다.
 - 실제 마이크·권한 UI·온디바이스 가용성·유료 전사 품질은 기기와 API 키가 없어 미확인이다. 테스트의 permission/rotation 항목은 순수 상태와 ViewModel 배선 검증이며 실제 화면 회전 계측 통과를 뜻하지 않는다.

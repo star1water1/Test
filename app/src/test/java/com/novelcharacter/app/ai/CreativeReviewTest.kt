@@ -7,6 +7,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CreativeReviewTest {
+    @Test fun lockedResponseFormatIncludesProvenanceWithoutReplacingReason() {
+        listOf(PromptTemplates.Id.CHAR_FIELD_SYSTEM,PromptTemplates.Id.EVENT_FIELD_SYSTEM).forEach { id ->
+            val json=PromptTemplates.responseFormat(id).substringAfter('\n').substringBefore('\n')
+            val fields=org.json.JSONObject(json).getJSONArray("suggestions").getJSONObject(0)
+            assertTrue(fields.has("reason")); assertTrue(fields.has("confidence"))
+            assertTrue(fields.has("sourceEvidence")); assertTrue(fields.isNull("sourceEvidence"))
+            assertTrue(fields.has("suggestionNote")); assertTrue(fields.isNull("suggestionNote"))
+        }
+    }
+    @Test fun sharedRetryPolicyExcludesUnchangedConfidenceAndRejectedValues() {
+        val missing=MissingCause.entries.map { MissingField(it.name,it.label,it) }
+        val keys=FieldSuggestionReviewState.retryableKeys(SuggestOutcome(emptyList(),0,emptyList(),emptyList(),0,0,missing))
+        listOf(MissingCause.BELOW_CONFIDENCE,MissingCause.REPEATED,MissingCause.SAME_AS_CURRENT,MissingCause.DECLINED)
+            .forEach { assertFalse(it.name in keys) }
+        listOf(MissingCause.REQUEST_FAILED,MissingCause.CANCELLED,MissingCause.NOT_REQUESTED)
+            .forEach { assertTrue(it.name in keys) }
+    }
     private val context = CharacterAiContext("서린", emptyList(), emptyList(), "북부 출신",
         emptyList(), emptyList(), emptyList(), emptyList())
     private val spec = FieldSpec("mood", "성격", FieldType.TEXT, emptyList(), false, null, "")

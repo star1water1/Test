@@ -5,6 +5,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechInputTest {
+    @Test fun cloudImportRequiresSelectedCompatibleProvider() {
+        assertEquals(SpeechError.NO_PROVIDER,SpeechProtocol.providerError(SpeechConfig(),true,"https://example.com"))
+        assertEquals(SpeechError.NO_PROVIDER,SpeechProtocol.providerError(SpeechConfig(providerId="missing"),false,null))
+        assertEquals(SpeechError.NO_PROVIDER,SpeechProtocol.providerError(SpeechConfig(providerId="wrong-protocol"),false,"https://example.com"))
+    }
+    @Test fun deviceImportIgnoresMissingOrStaleCloudProvider() {
+        assertNull(SpeechProtocol.providerError(SpeechConfig(mode=SpeechMode.ON_DEVICE),false,null))
+        assertNull(SpeechProtocol.providerError(SpeechConfig(mode=SpeechMode.ON_DEVICE,providerId="stale"),false,"invalid"))
+    }
+    @Test fun cloudImportChecksHttpsBeforeReplacingExistingSettings() {
+        val config=SpeechConfig(providerId="compatible")
+        assertEquals(SpeechError.CONFIG,SpeechProtocol.providerError(config,true,"http://example.com"))
+        assertNull(SpeechProtocol.providerError(config,true,"https://example.com/v1"))
+    }
     @org.junit.Test fun configTransferKeepsPreferencesWithoutPrivatePayloads() {
         val config=SpeechConfig(SpeechMode.CLOUD,"provider-1","whisper-large-v3","ko",false)
         val json=SpeechProtocol.encodeConfig(config)

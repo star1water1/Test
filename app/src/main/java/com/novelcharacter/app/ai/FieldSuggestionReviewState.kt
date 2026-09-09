@@ -60,6 +60,19 @@ class FieldSuggestionReviewState {
     }
 
     companion object {
+        /** Unchanged confidence/rejected values cannot be fixed by paying for the same retry. */
+        fun retryableKeys(outcome: CharacterFieldAiSuggester.SuggestOutcome): List<String> =
+            outcome.missing.filter { it.cause in RETRYABLE_CAUSES }.map { it.fieldKey }.distinct()
+        private val RETRYABLE_CAUSES = setOf(
+            CharacterFieldAiSuggester.MissingCause.NOT_RETURNED,
+            CharacterFieldAiSuggester.MissingCause.TRUNCATED,
+            CharacterFieldAiSuggester.MissingCause.UNREADABLE,
+            CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED,
+            CharacterFieldAiSuggester.MissingCause.NOT_REQUESTED,
+            CharacterFieldAiSuggester.MissingCause.CANCELLED,
+            CharacterFieldAiSuggester.MissingCause.INVALID,
+            CharacterFieldAiSuggester.MissingCause.DUPLICATE
+        )
         fun merge(
             previous: CharacterFieldAiSuggester.SuggestOutcome,
             retry: CharacterFieldAiSuggester.SuggestOutcome

@@ -103,8 +103,7 @@ object EventAiSuggestSheet {
                     viewModel.run(context,targets,run.eventId,carryOver=run)
                 }
             },
-            retryKeys=run.outcome.missing.filter {it.cause!=CharacterFieldAiSuggester.MissingCause.SAME_AS_CURRENT &&
-                it.cause!=CharacterFieldAiSuggester.MissingCause.DECLINED}.map {it.fieldKey},
+            retryKeys=com.novelcharacter.app.ai.FieldSuggestionReviewState.retryableKeys(run.outcome),
             canApply=!mismatched,
             running=viewModel.running
         )
