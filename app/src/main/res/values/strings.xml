@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="speech_settings_title">음성 입력 설정</string>
     <string name="app_name">NovelCharacter</string>
     <string name="tab_home">홈</string>
     <string name="tab_universes">세계관</string>
