@@ -252,6 +252,13 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
     private fun endAudioUse() {pendingAudio?.let {PendingAudioStore.end(it.record.id,this)}}
     fun discard() {
         if(session.phase==SpeechSession.Phase.TRANSCRIBING) return
+        if(session.phase==SpeechSession.Phase.RECORDING && recognizer!=null) {
+            // stopListening completes asynchronously and still owns the capture lease.
+            // Explicit discard cancels that capture before taking a fresh cleanup lease.
+            deviceGeneration++
+            recognizer?.cancel();recognizer?.destroy();recognizer=null
+            session.transcriptionInterrupted();slot.endRequest()
+        }
         if(session.phase==SpeechSession.Phase.RECORDING) stop(false)
         if(!slot.beginRequest()) return
         try {discardHeld()} finally {slot.endRequest()}
