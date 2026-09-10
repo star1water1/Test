@@ -1,9 +1,9 @@
 package com.novelcharacter.app.ai
 
-import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.ViewModelStore
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.novelcharacter.app.MainActivity
@@ -27,7 +27,7 @@ class VoiceRecordingServiceTest {
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val app get()=instrumentation.targetContext.applicationContext as Application
     private val store get()=PendingAudio.store(app)
-    private lateinit var activity: Activity
+    private var activity: ActivityScenario<MainActivity>?=null
     private lateinit var config: SpeechConfig
     private val owners=mutableListOf<String>()
     private val holders=mutableListOf<ViewModelStore>()
@@ -35,16 +35,20 @@ class VoiceRecordingServiceTest {
         instrumentation.uiAutomation.executeShellCommand("pm grant ${app.packageName} android.permission.RECORD_AUDIO")
             .use {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()}
         config=SpeechSettings(app).read();SpeechSettings(app).save(SpeechConfig(providerId="fake-unused",model="fake-unused"))
-        activity=instrumentation.startActivitySync(Intent(app,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        activity=ActivityScenario.launch(MainActivity::class.java)
     }
-    @After fun cleanupOnlyTestData()=runBlocking(Dispatchers.Main) {
+    @After fun cleanupOnlyTestData() {
+        runBlocking(Dispatchers.Main) {
         VoiceRecordingService.state?.takeIf {it.running && it.inputKey in owners}?.let {VoiceRecordingService.stop(app,it.id)}
         withTimeout(15_000) {while(VoiceRecordingService.state?.let {it.running && it.inputKey in owners}==true) delay(25)}
         holders.forEach {it.clear()}
         store.catalog().items.filter {it.record.inputKey in owners}.forEach {store.cleanup(store.release(it))}
         val journal=ReviewJournal(File(app.noBackupFilesDir,"creative-reviews"))
         owners.forEach {key->journal.revision("voice:$key")?.let {journal.clear("voice:$key",it)}}
-        SpeechSettings(app).save(config);activity.finish()
+        if(::config.isInitialized) SpeechSettings(app).save(config)
+        }
+        // close() waits for DESTROYED. finish() alone let the next API 35 launch race the old task.
+        activity?.close()
     }
     private fun model(key: String="briefing:service-test:${UUID.randomUUID()}"): VoiceInputViewModel {
         owners.add(key)

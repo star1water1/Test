@@ -41,6 +41,8 @@ jobs:
         include:
           - api: 26
             arch: x86
+          - api: 33
+            arch: x86_64
           - api: 35
             arch: x86_64
 
