@@ -17,6 +17,8 @@ class SpeechSession {
         return true
     }
     fun audioReady() { phase=Phase.READY; error=null }
+    /** Attach only to a verified live service, never start a microphone during restore. */
+    fun attachRecording(id: String) {check(sessionId==id);phase=Phase.RECORDING;error=null}
     fun beginTranscription(): Int? {
         if(phase!=Phase.READY && phase!=Phase.ERROR && phase!=Phase.REVIEW) return null
         phase=Phase.TRANSCRIBING; error=null

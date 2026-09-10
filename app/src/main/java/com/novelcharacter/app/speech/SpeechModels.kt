@@ -62,7 +62,9 @@ object SpeechProtocol {
     }
 
     const val MAX_AUDIO_BYTES = 20_000_000L
-    const val MAX_RECORDING_MS = 15 * 60 * 1000
+    const val AAC_BIT_RATE = 64000
+    // Derived from the existing 20 MB transport ceiling, with room for AAC/container overhead.
+    const val MAX_RECORDING_MS = ((MAX_AUDIO_BYTES - 800_000L) / (AAC_BIT_RATE / 8) * 1000).toInt()
 
     fun endpoint(baseUrl: String): String? = try {
         val uri=URI(baseUrl.trim())

@@ -37,7 +37,8 @@ class PendingAudioRecoverySheet : DialogFragment() {
             fun open(item:PendingAudioStore.Item) {
                 val current=try {store.read(item.record.id)} catch(_: Exception) {null}
                 if(current==null) {label("이 녹음의 보관 상태가 바뀌었습니다. 목록을 다시 열어 확인하세요.");return}
-                if(PendingAudioStore.isActive(item.record.id)) {
+                if(PendingAudioStore.isActive(item.record.id) &&
+                    com.novelcharacter.app.speech.VoiceRecordingService.state?.let {it.id==item.record.id && it.running}!=true) {
                     label("다른 창에서 이 녹음을 사용 중입니다. 해당 창에서 마친 뒤 다시 열어 주세요.");return
                 }
                 PendingAudioRecoverySheet().apply {arguments=Bundle().apply {
@@ -54,6 +55,7 @@ class PendingAudioRecoverySheet : DialogFragment() {
                     val r=item.record
                     val state=when(r.phase) {
                         PendingAudioStore.Phase.RECORDING,PendingAudioStore.Phase.INTERRUPTED->"중단된 녹음 · 음성 구간 확인 필요"
+                        PendingAudioStore.Phase.CAPTURED->"녹음 보관 완료 · 전사 대기"
                         PendingAudioStore.Phase.READY->"전사 대기"
                         PendingAudioStore.Phase.TRANSCRIBING->"이전 전사 완료 여부 확인 필요"
                         PendingAudioStore.Phase.REVIEW->"전사 확인 대기"

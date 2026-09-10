@@ -8,12 +8,15 @@ import java.util.UUID
 
 /** Audio stays outside JSON. A durable release decision always precedes deletion. */
 class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
-    enum class Phase { RECORDING, READY, TRANSCRIBING, REVIEW, INTERRUPTED, RELEASED }
+    enum class Phase { RECORDING, CAPTURED, READY, TRANSCRIBING, REVIEW, INTERRUPTED, RELEASED }
     data class Record(val version: Int = 1, val id: String, val inputKey: String,
         val phase: Phase, val createdAt: Long, val durationMs: Long = 0,
         val bytes: Long = 0, val checksum: String? = null, val attemptId: String? = null,
         val providerId: String? = null, val model: String? = null,
-        val transcript: SpeechSession.Snapshot? = null)
+        val transcript: SpeechSession.Snapshot? = null,
+        // Nullable: old records contain only their finalized m4a, never infer a PCM source.
+        val captureFormat: String? = null, val checkpointBytes: Long? = null,
+        val interruption: String? = null)
     data class Item(val record: Record, val revision: String)
     data class Orphan(val name: String, val legacy: Boolean)
     data class Catalog(val items: List<Item>, val orphans: List<Orphan>, val unreadable: Int)
@@ -32,24 +35,38 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
         return file
     }
     fun file(id: String): File = contained(File(root, "audio"), "${validId(id)}.m4a")
+    fun pcmFile(id: String): File = contained(File(root, "audio"), "${validId(id)}.pcm")
+    fun encodingFile(id: String): File = contained(File(root, "audio"), "${validId(id)}.encoding")
     fun read(id: String): Item? = journal.read(owner(id), Record::class.java)?.let {
         val r = it.value
         check(r.version == 1 && r.id == id && r.inputKey.isNotBlank() && r.phase in Phase.entries)
         check(r.transcript==null || r.transcript.sessionId==r.id)
+        check(r.captureFormat==null || r.captureFormat==PcmCapture.FORMAT)
+        check(r.checkpointBytes==null || r.checkpointBytes>=0 && r.checkpointBytes%2==0L)
         Item(r, it.revision)
     }
-    fun create(id: String, inputKey: String): Item = synchronized(lock) {
+    fun create(id: String, inputKey: String, pcm: Boolean = false): Item = synchronized(lock) {
         require(inputKey.isNotBlank())
         val f = file(id)
-        check(!f.exists() && read(id) == null)
+        check(!f.exists() && !pcmFile(id).exists() && !encodingFile(id).exists() && read(id) == null)
         check(f.parentFile!!.isDirectory || f.parentFile!!.mkdirs())
         // Identity exists before recorder creation, including before the first audio byte.
-        val r = Record(id = id, inputKey = inputKey, phase = Phase.RECORDING, createdAt = System.currentTimeMillis())
+        val r = Record(id = id, inputKey = inputKey, phase = Phase.RECORDING, createdAt = System.currentTimeMillis(),
+            captureFormat = if(pcm) PcmCapture.FORMAT else null, checkpointBytes = if(pcm) 0L else null)
         Item(r, journal.write(owner(id), r, null))
     }
     private fun save(item: Item, value: Record): Item {
         check(value.id == item.record.id && value.inputKey == item.record.inputKey)
         return Item(value, journal.write(owner(value.id), value, item.revision))
+    }
+    /** Caller fsyncs PCM first. A failed journal write leaves the audio prefix available. */
+    fun checkpoint(item: Item, bytes: Long, finished: Boolean = false, reason: String? = null): Item = synchronized(lock) {
+        check(item.record.captureFormat==PcmCapture.FORMAT)
+        check(item.record.phase in setOf(Phase.RECORDING,Phase.INTERRUPTED,Phase.CAPTURED))
+        check(bytes>= (item.record.checkpointBytes ?: 0) && bytes%2==0L && pcmFile(item.record.id).length()>=bytes)
+        save(item,item.record.copy(checkpointBytes=bytes,durationMs=PcmCapture.durationMs(bytes),
+            phase=if(finished) {if(reason==null) Phase.CAPTURED else Phase.INTERRUPTED} else Phase.RECORDING,
+            interruption=reason))
     }
     fun ready(item: Item, durationMs: Long): Item = synchronized(lock) {
         require(durationMs > 0)
@@ -79,8 +96,8 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
         val kept = transcript ?: item.record.transcript
         save(item, item.record.copy(phase = if (kept != null) Phase.REVIEW else Phase.READY, transcript = kept))
     }
-    fun interrupted(item: Item): Item = synchronized(lock) {
-        save(item, item.record.copy(phase = Phase.INTERRUPTED))
+    fun interrupted(item: Item, reason: String? = null): Item = synchronized(lock) {
+        save(item, item.record.copy(phase = Phase.INTERRUPTED, interruption=reason ?: item.record.interruption))
     }
     fun release(item: Item): Item = synchronized(lock) {
         check(!isActive(item.record.id)) { "Recording is in use" }
@@ -88,11 +105,11 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
     }
     fun cleanup(item: Item) = synchronized(lock) {
         check(item.record.phase == Phase.RELEASED && !isActive(item.record.id))
-        val f = file(item.record.id)
+        val files = listOf(file(item.record.id),pcmFile(item.record.id),encodingFile(item.record.id))
         val current=read(item.record.id)
-        if(current==null) {check(!f.exists());return@synchronized}
+        if(current==null) {check(files.none {it.exists()});return@synchronized}
         check(current.revision == item.revision)
-        check(!f.exists() || f.delete()) { "Audio deletion failed" }
+        files.forEach { f -> check(!f.exists() || f.delete()) { "Audio deletion failed" } }
         journal.clear(owner(item.record.id), item.revision)
     }
     fun catalog(): Catalog = synchronized(lock) {
@@ -101,7 +118,7 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
         val items = catalog.owners.mapNotNull {
             try { read(it.removePrefix("audio:")) } catch (_: Exception) { unreadable++; null }
         }
-        val known = items.map { "${it.record.id}.m4a" }.toSet()
+        val known = items.flatMap { listOf("${it.record.id}.m4a","${it.record.id}.pcm","${it.record.id}.encoding") }.toSet()
         val orphan = File(root, "audio").listFiles().orEmpty()
             .filter { it.isFile && it.name !in known }.map { Orphan(it.name, false) } +
             legacyRoot?.listFiles().orEmpty().filter {
@@ -114,7 +131,7 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
     /** Explicit recovery creates a new independent Brief; it never guesses a character. */
     fun importOrphan(orphan: Orphan, durationMs: Long): Item = synchronized(lock) {
         check(orphan in catalog().orphans)
-        check(!isActive(orphan.name.removeSuffix(".m4a")))
+        check(!isActive(orphan.name.substringBeforeLast('.')))
         val source = orphanFile(orphan)
         val id = UUID.randomUUID().toString()
         val item = create(id, "briefing:draft:${UUID.randomUUID()}")
@@ -145,7 +162,7 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
     fun discardOrphan(orphan: Orphan) = synchronized(lock) {
         check(orphan in catalog().orphans)
         // A damaged record can conceal ownership: refuse deletion of a live session by name.
-        check(!isActive(orphan.name.removeSuffix(".m4a")))
+        check(!isActive(orphan.name.substringBeforeLast('.')))
         check(orphanFile(orphan).delete())
     }
     companion object {

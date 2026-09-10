@@ -2,7 +2,6 @@ package com.novelcharacter.app.ui.common
 
 import android.app.Application
 import android.content.Intent
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -17,6 +16,8 @@ import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Scoped to the host, so closing/recreating the voice sheet cannot discard an in-flight paid result. */
 class VoiceInputViewModel(application: Application): AndroidViewModel(application) {
@@ -26,6 +27,9 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
     private val audioStore=PendingAudio.store(application)
     private var pendingAudio: PendingAudioStore.Item?=null
     private var transcription: kotlinx.coroutines.Job?=null
+    private var captureWatch: kotlinx.coroutines.Job?=null
+    private var transcribeAfterStop=false
+    private var discardAfterStop=false
     internal var transcribeFile: suspend (SpeechConfig,File,File,List<String>,Long)->SpeechResult = { config,file,root,hints,duration ->
         SpeechTranscriber(application).transcribe(config,file,root,hints,duration)
     }
@@ -53,7 +57,8 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
                 else candidates.singleOrNull().also { check(candidates.size<=1) }
             if(item!=null) {
                 check(saved==null || saved.sessionId==item.record.id || saved.original.isBlank())
-                check(!PendingAudioStore.isActive(item.record.id))
+                val live=VoiceRecordingService.state?.takeIf {it.id==item.record.id && it.running}
+                check(!PendingAudioStore.isActive(item.record.id) || live!=null)
                 pendingAudio=item
                 released=item.record.phase==PendingAudioStore.Phase.RELEASED
                 audio=audioStore.file(item.record.id)
@@ -68,6 +73,8 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
                     } else notice="보관한 녹음을 복구했습니다. 확인한 전사를 입력에 추가하거나 직접 버릴 때까지 원본을 보관합니다."
                     if(session.original.isBlank()) session.audioReady()
                     check(saveTranscript())
+                    item.record.interruption?.let {notice=it}
+                    if(live!=null) {session.attachRecording(item.record.id);watchCapture()}
                 } else notice="이미 처리한 녹음 파일이 남아 있습니다. 남은 파일 정리만 실행할 수 있습니다."
             }
         }
@@ -90,7 +97,6 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
     val updates=MutableLiveData(0)
     var notice="";private set
     var seconds=0L;private set
-    private var recorder: MediaRecorder?=null
     private var recognizer: SpeechRecognizer?=null
     private var deviceGeneration=0
     private var audio: File?=null
@@ -101,7 +107,8 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
 
     fun refresh() { saveTranscript(); updates.value=(updates.value ?: 0)+1 }
     fun start(permission: Boolean) {
-        if(slot.failed || blocked || pendingAudio!=null || session.original.isNotBlank()) return
+        if(slot.failed || blocked || pendingAudio!=null || recognizer!=null || session.original.isNotBlank()) return
+        if(VoiceRecordingService.state?.running==true) {notice="다른 입력에서 녹음 중입니다. 보관한 녹음 목록에서 마친 뒤 다시 시작하세요.";refresh();return}
         val config=SpeechSettings(getApplication()).read()
         if(config.mode==SpeechMode.CLOUD && config.providerId.isBlank()) {session.fail(SpeechError.NO_PROVIDER);refresh();return}
         if(!permission) {session.startRecording(false);refresh();return}
@@ -112,39 +119,46 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         refresh()
         viewModelScope.launch {
             while(session.phase==SpeechSession.Phase.RECORDING) {
-                seconds=(SystemClock.elapsedRealtime()-started)/1000
+                if(pendingAudio==null) seconds=(SystemClock.elapsedRealtime()-started)/1000
                 refresh();delay(1000)
             }
         }
     }
     private fun startFile() {
         try {
-            pendingAudio=audioStore.create(session.sessionId,checkNotNull(boundKey))
-            check(PendingAudioStore.claim(session.sessionId,this))
+            pendingAudio=audioStore.create(session.sessionId,checkNotNull(boundKey),pcm=true)
             audio=audioStore.file(session.sessionId)
             check(saveTranscript())
-            @Suppress("DEPRECATION")
-            val rec=if(Build.VERSION.SDK_INT>=31) MediaRecorder(getApplication()) else MediaRecorder()
-            recorder=rec
-            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
-            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            rec.setAudioSamplingRate(16000);rec.setAudioEncodingBitRate(64000)
-            rec.setOutputFile(audio!!.absolutePath)
-            rec.setMaxDuration(SpeechProtocol.MAX_RECORDING_MS)
-            rec.setMaxFileSize(SpeechProtocol.MAX_AUDIO_BYTES)
-            rec.setOnInfoListener { _,what,_->
-                if(what==MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED || what==MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
-                    notice="녹음 한도에 도달해 녹음을 마쳤습니다. 현재 녹음을 전사한 뒤 이어서 입력할 수 있습니다."
-                    stop(false)
-                }
-            }
-            rec.setOnErrorListener { _,_,_->stop(false);session.fail(SpeechError.RECORDING);refresh()}
-            rec.prepare();rec.start()
+            VoiceRecordingService.launch(getApplication(),checkNotNull(pendingAudio))
+            watchCapture()
         } catch(_: Exception) {
-            recorder?.release();recorder=null;session.fail(SpeechError.RECORDING)
-            endAudioUse();slot.endRequest()
+            session.fail(SpeechError.RECORDING)
             notice="녹음을 시작하지 못했습니다. 생성된 파일이 있다면 보관한 녹음 목록에 남겨 두었습니다."
+        } finally {slot.endRequest()} // The service owns capture independently of an editor.
+    }
+    private fun watchCapture() {
+        if(captureWatch?.isActive==true) return
+        val id=checkNotNull(pendingAudio).record.id
+        captureWatch=viewModelScope.launch {
+            while(true) {
+                val live=VoiceRecordingService.state?.takeIf {it.id==id} ?: break
+                seconds=live.durationMs/1000;notice=live.message
+                if(!live.running) {
+                    if(!preserve {pendingAudio=checkNotNull(audioStore.read(id))}) blocked=true
+                    session.audioReady();refresh()
+                    if(discardAfterStop) {discardAfterStop=false;discard()}
+                    else if(transcribeAfterStop) {transcribeAfterStop=false;transcribe()}
+                    break
+                }
+                refresh();delay(500)
+            }
+        }
+    }
+    fun isServiceRecording()=VoiceRecordingService.state?.let {it.id==session.sessionId && it.running}==true
+    fun leaveVisibleScreen() {
+        if(!isServiceRecording() && recognizer!=null) {
+            notice="화면을 벗어나 온디바이스 인식을 마칩니다. 이 모드는 녹음 파일을 보관하지 않습니다."
+            stop(false)
         }
     }
     private fun startDevice(config: SpeechConfig) {
@@ -160,7 +174,7 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB:Float) {}
                 override fun onBufferReceived(buffer:ByteArray?) {}
-                override fun onEndOfSpeech() {}
+                override fun onEndOfSpeech() {if(generation==deviceGeneration) waitForDeviceResult(generation)}
                 override fun onError(error:Int) {
                     if(generation!=deviceGeneration) return
                     session.fail(if(error==SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) SpeechError.PERMISSION
@@ -188,62 +202,80 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
     }
     fun stop(transcribe: Boolean) {
         if(session.phase!=SpeechSession.Phase.RECORDING) return
-        if(recognizer!=null) {recognizer?.stopListening();return}
-        try {
-            recorder?.stop();recorder?.release();recorder=null
-            val item=checkNotNull(pendingAudio)
-            pendingAudio=audioStore.ready(item,PendingAudio.durationMs(checkNotNull(audio)))
-            seconds=pendingAudio!!.record.durationMs/1000
-            session.audioReady()
-        } catch(_: Exception) {
-            recorder?.release();recorder=null;session.fail(SpeechError.RECORDING)
-            preserve { pendingAudio=pendingAudio?.let { audioStore.interrupted(it) } }
-            notice="녹음 종료를 확인하지 못했습니다. 원본 파일은 남겨 두었습니다. 재전사 전에 읽을 수 있는 음성 구간을 확인합니다."
-        } finally {
-            endAudioUse();slot.endRequest()
+        if(recognizer!=null) {
+            recognizer?.stopListening()
+            waitForDeviceResult(deviceGeneration)
+            return
         }
+        transcribeAfterStop=transcribe
+        VoiceRecordingService.stop(getApplication(),session.sessionId)
+    }
+    fun isDeviceBusy()=recognizer!=null
+    private fun waitForDeviceResult(generation: Int) {
+        session.transcriptionInterrupted()
+        notice="온디바이스 인식을 마치고 결과를 기다립니다. 녹음은 계속되지 않습니다."
         refresh()
-        if(transcribe && session.phase==SpeechSession.Phase.READY) transcribe()
+        viewModelScope.launch {
+            delay(8000)
+            if(generation==deviceGeneration && recognizer!=null) {
+                deviceGeneration++;recognizer?.cancel();recognizer?.destroy();recognizer=null
+                slot.endRequest();session.fail(SpeechError.DEVICE_UNAVAILABLE);refresh()
+            }
+        }
     }
     fun transcribe() {
-        if(blocked || released || transcription?.isActive==true) return
+        if(blocked || released || transcription?.isActive==true || isServiceRecording()) return
         val item=pendingAudio ?: return
         if(!slot.beginRequest()) return
         val config=SpeechSettings(getApplication()).read()
         if(config.mode!=SpeechMode.CLOUD) {notice="보관한 파일을 전사하려면 외부 전사 설정을 선택하세요. 제공자를 자동 전환하지 않습니다.";slot.endRequest();refresh();return}
         if(!PendingAudioStore.claim(item.record.id,this)) {slot.endRequest();return}
-        if(!preserve {
-            // Re-read revision before allowing a network request from an old recovery window.
-            check(audioStore.read(item.record.id)?.revision==item.revision)
-            if(item.record.phase in setOf(PendingAudioStore.Phase.RECORDING,PendingAudioStore.Phase.INTERRUPTED))
-                pendingAudio=audioStore.ready(item,PendingAudio.durationMs(audioStore.file(item.record.id)))
-            pendingAudio=audioStore.beginAttempt(checkNotNull(pendingAudio),config.providerId,config.model)
-            seconds=checkNotNull(pendingAudio).record.durationMs/1000
-        }) {endAudioUse();slot.endRequest();refresh();return}
+        if(!preserve {check(audioStore.read(item.record.id)?.revision==item.revision)}) {endAudioUse();slot.endRequest();refresh();return}
         val id=session.beginTranscription() ?: run {endAudioUse();slot.endRequest();return}
         if(!saveTranscript()) {endAudioUse();slot.endRequest();session.transcriptionInterrupted();refresh();return}
-        notice="녹음 원본은 전사 확인 전까지 보관합니다. 재시도도 추가 과금될 수 있습니다."
+        notice="보관한 원본에서 전송 파일을 준비합니다. 취소해도 원본은 남습니다. 재시도는 추가 과금될 수 있습니다."
         refresh()
         transcription=viewModelScope.launch {
             try {
-            val result=try {transcribeFile(config,
-                audioStore.verifiedFile(checkNotNull(pendingAudio)),audioRoot,terms,seconds)}
-                catch(e: CancellationException) {throw e}
-                catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
-            session.complete(id,result)
-            // Both records keep audio alive. Even a successful response never deletes it here.
-            if(saveTranscript()) preserve {
-                pendingAudio=audioStore.finishAttempt(checkNotNull(pendingAudio),
-                    if(result is SpeechResult.Success) session.snapshot() else null)
-            }
-            refresh()
+                // Encoding/fsync/hash must not block an editor or depend on its lifecycle callbacks.
+                pendingAudio=withContext(Dispatchers.IO) {
+                    val current=checkNotNull(pendingAudio)
+                    if(current.record.phase in setOf(PendingAudioStore.Phase.RECORDING,PendingAudioStore.Phase.CAPTURED,PendingAudioStore.Phase.INTERRUPTED))
+                        PcmEncoding.prepare(audioStore,current) else current
+                }
+                seconds=checkNotNull(pendingAudio).record.durationMs/1000
+                val file=withContext(Dispatchers.IO) {audioStore.verifiedFile(checkNotNull(pendingAudio))}
+                if(file.length()>SpeechProtocol.MAX_AUDIO_BYTES) {
+                    session.fail(SpeechError.TOO_LARGE);refresh();return@launch
+                }
+                pendingAudio=withContext(Dispatchers.IO) {audioStore.beginAttempt(checkNotNull(pendingAudio),config.providerId,config.model)}
+                notice="전사 중입니다. 확인하거나 직접 버릴 때까지 녹음 원본을 보관합니다.";refresh()
+                val result=try {transcribeFile(config,file,audioRoot,terms,seconds)}
+                    catch(e: CancellationException) {throw e}
+                    catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
+                session.complete(id,result)
+                if(saveTranscript()) preserve {
+                    pendingAudio=audioStore.finishAttempt(checkNotNull(pendingAudio),
+                        if(result is SpeechResult.Success) session.snapshot() else null)
+                }
+                refresh()
             } catch(e: CancellationException) {
                 session.transcriptionInterrupted()
-                preserve { pendingAudio=audioStore.finishAttempt(checkNotNull(pendingAudio),null) }
+                preserve {
+                    // A cancelled IO result may already have committed. We still hold this audio lease.
+                    pendingAudio=checkNotNull(audioStore.read(item.record.id))
+                    if(pendingAudio!!.record.phase==PendingAudioStore.Phase.TRANSCRIBING)
+                        pendingAudio=audioStore.finishAttempt(checkNotNull(pendingAudio),null)
+                }
                 notice="전사를 중단했습니다. 녹음과 이전 전사는 보관했습니다. 서버의 처리·과금 여부는 확인이 필요합니다."
                 refresh()
                 throw e
-            } finally { endAudioUse();slot.endRequest() }
+            } catch(_: Exception) {
+                preserve {pendingAudio=checkNotNull(audioStore.read(item.record.id))}
+                session.fail(SpeechError.FILE)
+                notice="전송 파일을 준비하거나 보관 상태를 갱신하지 못했습니다. 원본은 지우지 않았습니다. 저장 공간을 확인하고 다시 시도하세요."
+                refresh()
+            } finally {endAudioUse();slot.endRequest()}
         }
     }
     fun cancelTranscription() { transcription?.cancel() }
@@ -252,14 +284,14 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
     private fun endAudioUse() {pendingAudio?.let {PendingAudioStore.end(it.record.id,this)}}
     fun discard() {
         if(session.phase==SpeechSession.Phase.TRANSCRIBING) return
-        if(session.phase==SpeechSession.Phase.RECORDING && recognizer!=null) {
+        if(recognizer!=null) {
             // stopListening completes asynchronously and still owns the capture lease.
             // Explicit discard cancels that capture before taking a fresh cleanup lease.
             deviceGeneration++
             recognizer?.cancel();recognizer?.destroy();recognizer=null
             session.transcriptionInterrupted();slot.endRequest()
         }
-        if(session.phase==SpeechSession.Phase.RECORDING) stop(false)
+        if(isServiceRecording()) {discardAfterStop=true;stop(false);return}
         if(!slot.beginRequest()) return
         try {discardHeld()} finally {slot.endRequest()}
     }
@@ -278,9 +310,9 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         session.reset();refresh()
     }
     override fun onCleared() {
-        if(recorder!=null) stop(false)
-        recorder?.release();recognizer?.destroy()
-        if(transcription?.isActive!=true) {endAudioUse();slot.endRequest()}
+        recognizer?.destroy()
+        // Cancellation may still be unwinding encoding/IO. Only its finally may release these leases.
+        if(transcription==null || transcription!!.isCompleted) {endAudioUse();slot.endRequest()}
         super.onCleared()
     }
 }

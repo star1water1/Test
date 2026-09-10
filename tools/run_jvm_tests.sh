@@ -259,6 +259,7 @@ $MAIN/ai/ReviewRequestLease.kt
 $MAIN/speech/SpeechModels.kt
 $MAIN/speech/SpeechSession.kt
 $MAIN/speech/PendingAudioStore.kt
+$MAIN/speech/PcmCapture.kt
 $MAIN/speech/SpeechVocabulary.kt
 $MAIN/ai/FieldPromptSource.kt
 $MAIN/ai/EventFieldAiSuggester.kt
@@ -620,6 +621,7 @@ $TEST/ai/CreativeInputStateTest.kt
 $TEST/ai/NarrativeReviewTest.kt
 $TEST/ai/SpeechInputTest.kt
 $TEST/ai/PendingAudioStoreTest.kt
+$TEST/ai/PcmCaptureTest.kt
 $TEST/ai/ReviewJournalTest.kt
 $TEST/ai/EventFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt

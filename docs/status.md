@@ -5,7 +5,7 @@
 
 ## 0. 지금 무엇을 하는가
 
-- 사용자 지정 작업: 병합된 [PR #402](https://github.com/star1water1/Test/pull/402) 이후 실사용 안정화를 milestone별로 진행한다. M1은 [PR #403](https://github.com/star1water1/Test/pull/403)이며, 현재 구현 범위는 [안정화 M2: pending audio 보존·재전사](creative_ai_voice_plan.md#실사용-안정화-m2--pending-audio-보존재전사)다. M1의 입력/음성 식별에 의존하며 정상 종료된 녹음의 실패·취소·종료 후 복구를 다룬다. background/화면 잠금·녹음 중 kill 안전성은 M3, AI prompt/보완 동시성은 후속 milestone이다. 실제 기기·유료 전사는 미확인이다.
+- 사용자 지정 작업: 병합된 [PR #402](https://github.com/star1water1/Test/pull/402) 이후 실사용 안정화를 milestone별로 진행한다. M1 [#403](https://github.com/star1water1/Test/pull/403)·M2 [#404](https://github.com/star1water1/Test/pull/404)에 이어 현재 범위는 [안정화 M3: 서비스 녹음·중단 복구](creative_ai_voice_plan.md#실사용-안정화-m3--서비스-녹음과-중단-복구)다. 외부 전사용 원본 보존과 서비스 수명을 구현·검증하며, 온디바이스 장시간/파일 복구와 실기기 gate는 미완료다. AI prompt·보완 동시성은 후속 milestone이다.
 
 - **자율적으로 고를 수 있는 기능 작업은 0건이다.** 아래 대기 상태는 사용자의 새 요청을 막지 않는다.
 - 최근 앱 변경은 [PR #395](https://github.com/star1water1/Test/pull/395)(2026.08.25)까지 병합됐다. 최신 검증 기록은 4장에만 둔다.
