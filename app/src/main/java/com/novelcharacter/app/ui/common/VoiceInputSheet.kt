@@ -94,6 +94,8 @@ class VoiceInputSheet : DialogFragment() {
             val config=SpeechSettings(context).read()
             val phase=model.session.phase
             val busy=phase==SpeechSession.Phase.RECORDING || phase==SpeechSession.Phase.TRANSCRIBING || model.isDeviceBusy()
+            (dialog as? androidx.appcompat.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_NEGATIVE)?.text=
+                if(model.isServiceRecording()) "닫기 · 녹음 계속" else "닫기 · 내용 보관"
             val cloud=config.mode==SpeechMode.CLOUD
             val vocabulary=SpeechVocabulary.select(requireArguments().getStringArrayList("terms").orEmpty()
                 .mapIndexed {index,term->SpeechVocabulary.Term(term,index)},if(config.model.trim()=="gpt-transcribe" || !cloud) 1200 else 220)
@@ -136,6 +138,7 @@ class VoiceInputSheet : DialogFragment() {
             .setNegativeButton("닫기 · 내용 보관",null).create()
     }
 
+    override fun onStart() {super.onStart();model.refresh()}
     override fun onStop() {
         if(activity?.isChangingConfigurations!=true) model.leaveVisibleScreen()
         super.onStop()
