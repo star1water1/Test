@@ -223,8 +223,8 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         viewModelScope.launch {
             delay(8000)
             if(generation==deviceGeneration && recognizer!=null) {
-                deviceGeneration++;recognizer?.cancel();recognizer?.destroy();recognizer=null
-                slot.endRequest();session.fail(SpeechError.DEVICE_UNAVAILABLE);refresh()
+                notice="온디바이스 결과를 아직 기다리고 있습니다. 녹음은 계속되지 않습니다. 기다리거나 버리기를 선택해 인식을 취소할 수 있습니다."
+                refresh() // A slow recognizer may still return valuable text; never time it out silently.
             }
         }
     }
