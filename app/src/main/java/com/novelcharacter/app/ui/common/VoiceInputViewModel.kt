@@ -141,10 +141,15 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         val id=checkNotNull(pendingAudio).record.id
         captureWatch=viewModelScope.launch {
             while(true) {
-                val live=VoiceRecordingService.state?.takeIf {it.id==id} ?: break
-                seconds=live.durationMs/1000;notice=live.message
-                if(!live.running) {
+                val live=VoiceRecordingService.state?.takeIf {it.id==id}
+                if(live!=null) {seconds=live.durationMs/1000;notice=live.message}
+                // Another input may have started after this service completed, before this observer ran.
+                if(live?.running!=true && !PendingAudioStore.isActive(id)) {
                     if(!preserve {pendingAudio=checkNotNull(audioStore.read(id))}) blocked=true
+                    if(live==null) {
+                        seconds=(pendingAudio?.record?.durationMs ?: 0)/1000
+                        notice=pendingAudio?.record?.interruption ?: "녹음을 보관했습니다. 전사를 실행할 수 있습니다."
+                    }
                     session.audioReady();refresh()
                     if(discardAfterStop) {discardAfterStop=false;discard()}
                     else if(transcribeAfterStop) {transcribeAfterStop=false;transcribe()}

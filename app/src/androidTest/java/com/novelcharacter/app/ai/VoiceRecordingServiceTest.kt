@@ -89,6 +89,18 @@ class VoiceRecordingServiceTest {
         assertFalse(VoiceRecordingService.state!!.running)
         assertEquals(item,store.read(id))
     }
+    @Test fun nextInputRecordingDoesNotLeavePreviousEditorShowingCapture()=runBlocking(Dispatchers.Main) {
+        val first=model();first.start(true)
+        withTimeout(15_000) {while((VoiceRecordingService.state?.durationMs ?: 0)<1000) delay(25)}
+        first.stop(false)
+        withTimeout(15_000) {while(VoiceRecordingService.state!!.running) delay(1)}
+        val second=model();second.start(true)
+        withTimeout(15_000) {while(first.session.phase==SpeechSession.Phase.RECORDING || (VoiceRecordingService.state?.durationMs ?: 0)<1000) delay(25)}
+        assertEquals(SpeechSession.Phase.READY,first.session.phase)
+        assertEquals(second.session.sessionId,VoiceRecordingService.state!!.id)
+        assertNotEquals(first.session.sessionId,second.session.sessionId)
+        assertTrue(first.hasAudio());assertTrue(second.isServiceRecording())
+    }
     @Test fun deniedPermissionCreatesNoRecordingAndStartsNoService()=runBlocking(Dispatchers.Main) {
         val vm=model();vm.start(false)
         assertEquals(SpeechError.PERMISSION,vm.session.error)
