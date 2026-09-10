@@ -259,6 +259,9 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
                     catch(e: CancellationException) {throw e}
                     catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
                 session.complete(id,result)
+                notice=if(result is SpeechResult.Success && session.retainedEdits)
+                    "새 전사 원문이 도착했습니다. 요청 중 직접 고친 내용은 유지했습니다. 원문을 확인하고 필요한 부분만 반영하세요."
+                    else "녹음 원본은 입력에 추가하거나 직접 버릴 때까지 보관합니다."
                 if(saveTranscript()) preserve {
                     pendingAudio=audioStore.finishAttempt(checkNotNull(pendingAudio),
                         if(result is SpeechResult.Success) session.snapshot() else null)

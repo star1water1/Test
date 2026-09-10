@@ -95,6 +95,7 @@ class VoiceRecordingServiceTest {
     }
     @Test fun nextInputRecordingDoesNotLeavePreviousEditorShowingCapture()=runBlocking(Dispatchers.Main) {
         val first=model();first.start(true)
+        var requests=0;first.transcribeFile={_,_,_,_,_->requests++;SpeechResult.Success("unexpected","fake")}
         withTimeout(15_000) {while((VoiceRecordingService.state?.durationMs ?: 0)<1000) delay(25)}
         first.stop(false)
         withTimeout(15_000) {while(VoiceRecordingService.state!!.running) delay(1)}
@@ -104,6 +105,7 @@ class VoiceRecordingServiceTest {
         assertEquals(second.session.sessionId,VoiceRecordingService.state!!.id)
         assertNotEquals(first.session.sessionId,second.session.sessionId)
         assertTrue(first.hasAudio());assertTrue(second.isServiceRecording())
+        assertEquals(0,requests) // In-app stop-and-keep must not issue a paid request.
     }
     @Test fun deniedPermissionCreatesNoRecordingAndStartsNoService()=runBlocking(Dispatchers.Main) {
         val vm=model();vm.start(false)

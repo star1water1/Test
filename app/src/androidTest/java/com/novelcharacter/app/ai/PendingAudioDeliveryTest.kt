@@ -127,6 +127,25 @@ class PendingAudioDeliveryTest {
         assertFalse(vm.acceptInto(NaturalLanguageInputModel(app,SavedStateHandle())))
         assertEquals(PendingAudioStore.Phase.TRANSCRIBING,store.read(item.record.id)!!.record.phase)
     }
+    @Test fun delayedRetranscriptionPersistsLatestEditsAndDeliversThemOnce()=runBlocking(Dispatchers.Main) {
+        val item=ready();val vm=model(item)
+        vm.transcribeFile={_,_,_,_,_->SpeechResult.Success("첫 원문","fake")};vm.transcribe();finished(vm)
+        val response=kotlinx.coroutines.CompletableDeferred<SpeechResult>()
+        var started=false
+        vm.transcribeFile={_,_,_,_,_->started=true;response.await()}
+        vm.transcribe()
+        withTimeout(20_000) {while(!started) delay(20)}
+        vm.editDraft("응답을 기다리며 직접 고친 내용")
+        response.complete(SpeechResult.Success("나중에 도착한 새 원문","fake"));finished(vm)
+        assertTrue(vm.notice.contains("유지"))
+        val restored=model(store.read(item.record.id)!!)
+        assertEquals("나중에 도착한 새 원문",restored.session.original)
+        assertEquals("응답을 기다리며 직접 고친 내용",restored.session.draft)
+        val input=NaturalLanguageInputModel(app,SavedStateHandle())
+        assertTrue(restored.acceptInto(input));assertFalse(restored.acceptInto(input))
+        assertEquals("응답을 기다리며 직접 고친 내용",input.values[item.record.inputKey])
+        assertFalse(store.file(item.record.id).exists())
+    }
     @Test fun failedRetranscriptionKeepsPreviousRawAndEdit()=runBlocking(Dispatchers.Main) {
         val item=ready();val vm=model(item)
         vm.transcribeFile={_,_,_,_,_->SpeechResult.Success("첫 원문","fake")};vm.transcribe();finished(vm)

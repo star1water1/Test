@@ -115,6 +115,29 @@ class SpeechInputTest {
         assertEquals("기존 전사",session.original);assertEquals("직접 수정",session.draft)
         assertEquals(SpeechError.NETWORK,session.error)
     }
+    @Test fun retranscriptionKeepsEditsMadeWhileWaitingAndStillExposesNewRaw() {
+        val session=SpeechSession();session.deviceResult("이전 원문")
+        val request=session.beginTranscription()!!
+        session.draft="사용자가 방금 수정한 글"
+        session.complete(request,SpeechResult.Success("새 전사 원문","test"))
+        assertEquals("사용자가 방금 수정한 글",session.draft)
+        assertEquals("새 전사 원문",session.original)
+        assertEquals(SpeechSession.Phase.REVIEW,session.phase)
+    }
+    @Test fun editingBackToPreviousTextStillCountsAsUserEditing() {
+        val session=SpeechSession();session.deviceResult("이전 글")
+        val request=session.beginTranscription()!!
+        session.draft="수정";session.draft="이전 글"
+        session.complete(request,SpeechResult.Success("새 전사","test"))
+        assertEquals("이전 글",session.draft)
+    }
+    @Test fun untouchedDraftUsesExplicitlyRequestedNewTranscription() {
+        val session=SpeechSession();session.deviceResult("이전 원문")
+        val request=session.beginTranscription()!!
+        session.draft=session.draft // Rendering an unchanged editor is not a user edit.
+        session.complete(request,SpeechResult.Success("새 전사","test"))
+        assertEquals("새 전사",session.draft)
+    }
     @Test fun staleCompletionCannotOverwriteNewSession() {
         val session=SpeechSession();session.audioReady();val id=session.beginTranscription()!!
         session.reset();session.complete(id,SpeechResult.Success("낡은 응답","test"))

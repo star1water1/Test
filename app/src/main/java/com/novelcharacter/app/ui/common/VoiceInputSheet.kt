@@ -53,6 +53,7 @@ class VoiceInputSheet : DialogFragment() {
         }
         panel.addView(record)
         val stop=button("녹음 마치고 전사") {model.stop(true)};panel.addView(stop)
+        val keep=button("녹음 마치고 보관 · 전사는 나중에") {model.stop(false)};panel.addView(keep)
         val retry=button("현재 녹음 전사 · 외부 요청 1건") {model.transcribe()};panel.addView(retry)
         val cancel=button("전사 중단 · 녹음 보관") {model.cancelTranscription()};panel.addView(cancel)
         val cleanup=button("이미 처리한 녹음의 남은 파일 정리") {model.discard()};panel.addView(cleanup)
@@ -122,6 +123,7 @@ class VoiceInputSheet : DialogFragment() {
             permissions.isVisible=model.session.error==SpeechError.PERMISSION
             record.isVisible=!busy && !model.hasAudio() && !model.needsCleanup() && model.session.original.isBlank()
             stop.isVisible=phase==SpeechSession.Phase.RECORDING
+            keep.isVisible=phase==SpeechSession.Phase.RECORDING && model.isServiceRecording()
             retry.isVisible=!busy && model.hasAudio() && cloud
             retry.text=if(model.session.original.isNotBlank()) "보관한 녹음 다시 전사 · 외부 요청 1건" else "현재 녹음 전사 · 외부 요청 1건"
             cancel.isVisible=phase==SpeechSession.Phase.TRANSCRIBING
