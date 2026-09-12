@@ -254,6 +254,8 @@ $MAIN/ai/AiInputPreflight.kt
 $MAIN/ai/BoundedResponse.kt
 $MAIN/ai/CreativeInputState.kt
 $MAIN/ai/FieldSuggestionReviewState.kt
+$MAIN/ai/FieldReviewApply.kt
+$MAIN/ai/FieldReviewOwner.kt
 $MAIN/ai/NarrativeReviewState.kt
 $MAIN/ai/NarrativeResumePlan.kt
 $MAIN/ai/ReviewJournal.kt
@@ -619,6 +621,7 @@ $TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/CreativeReviewTest.kt
+$TEST/ai/FieldReviewRevisionTest.kt
 $TEST/ai/AiInputIntegrityTest.kt
 $TEST/ai/CreativeInputStateTest.kt
 $TEST/ai/NarrativeReviewTest.kt
