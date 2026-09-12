@@ -22,6 +22,12 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.novelcharacter.app.databinding.ActivityMainBinding
 import com.novelcharacter.app.util.ThemeHelper
 import com.novelcharacter.app.util.navigateSafe
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.novelcharacter.app.speech.PendingAudio
+import com.novelcharacter.app.ui.common.PendingAudioRecoverySheet
 
 class MainActivity : AppCompatActivity() {
 
@@ -48,6 +54,27 @@ class MainActivity : AppCompatActivity() {
         setupNavigation()
         requestNotificationPermission()
         handleDeepLink(intent)
+        binding.pendingAudio.setOnClickListener {PendingAudioRecoverySheet.open(supportFragmentManager)}
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPendingAudio()
+    }
+
+    fun refreshPendingAudio() {
+        lifecycleScope.launch {
+            val catalog=try {withContext(Dispatchers.IO) {
+                val store=PendingAudio.store(this@MainActivity)
+                // Failed migration retains its cache source and remains visible in the catalog.
+                runCatching {store.preserveLegacy()}
+                store.catalog()
+            }}
+                catch(_: Exception) {null}
+            val count=catalog?.let {it.items.size+it.orphans.size+it.unreadable}
+            binding.pendingAudio.visibility=if(count==0) View.GONE else View.VISIBLE
+            binding.pendingAudio.text=if(count==null) "보관한 녹음 확인 필요" else "보관한 녹음 ${count}건 · 확인"
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

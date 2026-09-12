@@ -18,7 +18,7 @@ class SpeechSession {
     }
     fun audioReady() { phase=Phase.READY; error=null }
     fun beginTranscription(): Int? {
-        if(phase!=Phase.READY && phase!=Phase.ERROR) return null
+        if(phase!=Phase.READY && phase!=Phase.ERROR && phase!=Phase.REVIEW) return null
         phase=Phase.TRANSCRIBING; error=null
         return ++revision
     }
@@ -32,10 +32,13 @@ class SpeechSession {
     fun deviceResult(text: String) {
         original=text;draft=text;phase=Phase.REVIEW;error=null
     }
+    fun transcriptionInterrupted() {
+        revision++;phase=if(original.isNotBlank()) Phase.REVIEW else Phase.READY;error=null
+    }
     data class Snapshot(val original: String, val draft: String, val awaitingResponse: Boolean,
         val sessionId: String? = null)
     fun snapshot() = Snapshot(original,draft,phase==Phase.TRANSCRIBING,sessionId)
-    /** A restore never starts recording or repeats a paid request. Audio is deliberately ephemeral. */
+    /** A restore never starts recording or repeats a paid request. The audio store restores files. */
     fun restore(value: Snapshot) {
         revision++
         sessionId=value.sessionId?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()

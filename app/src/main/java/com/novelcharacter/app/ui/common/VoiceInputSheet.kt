@@ -28,7 +28,7 @@ class VoiceInputSheet : DialogFragment() {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context=requireContext()
-        model.bind(inputKey)
+        model.bind(inputKey,requireArguments().getString("audioId"))
         model.terms=requireArguments().getStringArrayList("terms").orEmpty()
         model.omitted=requireArguments().getInt("omitted")
         val panel=LinearLayout(context).apply {
@@ -54,6 +54,8 @@ class VoiceInputSheet : DialogFragment() {
         panel.addView(record)
         val stop=button("녹음 마치고 전사") {model.stop(true)};panel.addView(stop)
         val retry=button("현재 녹음 전사 · 외부 요청 1건") {model.transcribe()};panel.addView(retry)
+        val cancel=button("전사 중단 · 녹음 보관") {model.cancelTranscription()};panel.addView(cancel)
+        val cleanup=button("이미 처리한 녹음의 남은 파일 정리") {model.discard()};panel.addView(cleanup)
         val raw=label();panel.addView(raw)
         val editor=EditText(context).apply {
             hint="전사 내용을 확인하고 고쳐 주세요";setSingleLine(false);minLines=4;setText(model.session.draft)
@@ -82,7 +84,11 @@ class VoiceInputSheet : DialogFragment() {
                 }
             }
         };panel.addView(accept)
-        val discard=button("녹음과 전사 내용 버리기") {model.discard()};panel.addView(discard)
+        val discard=button("녹음과 전사 내용 버리기") {
+            MaterialAlertDialogBuilder(context).setTitle("녹음과 전사 내용을 버리시겠습니까?")
+                .setMessage("이 녹음과 아직 추가하지 않은 전사를 삭제합니다. 이미 입력에 추가한 내용은 남습니다.")
+                .setPositiveButton("버리기") {_,_->model.discard()}.setNegativeButton("취소",null).show()
+        };panel.addView(discard)
         panel.addView(label().apply {text="입력에 추가한 뒤 내용을 더 고칠 수 있습니다. AI 생성과 저장은 각 화면에서 따로 실행합니다. 임시 녹음은 전사 성공·버리기·편집 화면 종료 때 삭제합니다. 실패한 녹음은 재시도를 위해 현재 편집 화면에만 보관합니다. 받은 전사 원문과 수정 내용은 이 기기에 보관하며 같은 입력의 마이크를 다시 열면 복구합니다. 앱 삭제·데이터 삭제 시에는 지워집니다."})
         model.updates.observe(this) {
             val config=SpeechSettings(context).read()
@@ -108,13 +114,16 @@ class VoiceInputSheet : DialogFragment() {
             },model.notice.takeIf {it.isNotBlank()}).joinToString("\n")
             settings.isEnabled=!busy
             permissions.isVisible=model.session.error==SpeechError.PERMISSION
-            record.isVisible=!busy && !model.hasAudio() && model.session.original.isBlank()
+            record.isVisible=!busy && !model.hasAudio() && !model.needsCleanup() && model.session.original.isBlank()
             stop.isVisible=phase==SpeechSession.Phase.RECORDING
             retry.isVisible=!busy && model.hasAudio() && cloud
+            retry.text=if(model.session.original.isNotBlank()) "보관한 녹음 다시 전사 · 외부 요청 1건" else "현재 녹음 전사 · 외부 요청 1건"
+            cancel.isVisible=phase==SpeechSession.Phase.TRANSCRIBING
+            cleanup.isVisible=model.needsCleanup()
             raw.text="전사 원문\n${model.session.original}"
             val hasText=model.session.original.isNotBlank()
             raw.isVisible=hasText;editor.isVisible=hasText;reset.isVisible=hasText;accept.isVisible=hasText
-            accept.isEnabled=!busy;discard.isEnabled=phase!=SpeechSession.Phase.TRANSCRIBING
+            accept.isEnabled=!busy && !model.needsCleanup();discard.isEnabled=phase!=SpeechSession.Phase.TRANSCRIBING
             if(editor.text.toString()!=model.session.draft) editor.setText(model.session.draft)
             renderCorrections()
         }
@@ -127,14 +136,18 @@ class VoiceInputSheet : DialogFragment() {
         if(activity?.isChangingConfigurations!=true && model.session.phase==SpeechSession.Phase.RECORDING) model.stop(false)
         super.onStop()
     }
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        (activity as? com.novelcharacter.app.MainActivity)?.refreshPendingAudio()
+        super.onDismiss(dialog)
+    }
 
     companion object {
-        fun open(host:Fragment,key:String,terms:List<SpeechVocabulary.Term>) {
+        fun open(host:Fragment,key:String,terms:List<SpeechVocabulary.Term>,audioId:String?=null) {
             val tag="voice:$key"
             if(host.childFragmentManager.isStateSaved || host.childFragmentManager.findFragmentByTag(tag)!=null) return
             val selected=SpeechVocabulary.select(terms,byteBudget=1200)
             VoiceInputSheet().apply {
-                arguments=Bundle().apply {putString("key",key);putStringArrayList("terms",ArrayList(selected.terms));putInt("omitted",selected.omitted)}
+                arguments=Bundle().apply {putString("key",key);putString("audioId",audioId);putStringArrayList("terms",ArrayList(selected.terms));putInt("omitted",selected.omitted)}
             }.showNow(host.childFragmentManager,tag)
         }
     }
