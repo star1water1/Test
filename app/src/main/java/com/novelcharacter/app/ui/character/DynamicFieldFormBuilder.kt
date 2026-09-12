@@ -265,15 +265,39 @@ class DynamicFieldFormBuilder(
      */
     /** AI review applies only validated values to widgets that are actually present. */
     fun applyReviewedValue(field: FieldDefinition, raw: String): Boolean {
-        val widget = fieldInputMap[field.id] ?: return false
-        val spec = com.novelcharacter.app.ai.CharacterFieldAiSuggester.fieldSpecOf(field, "") ?: return false
-        val valid = com.novelcharacter.app.ai.CharacterFieldAiSuggester.normalizeChecked(raw, spec)
-            as? com.novelcharacter.app.ai.CharacterFieldAiSuggester.Normalized.Ok ?: return false
-        if (widget is Spinner && (0 until widget.count).none {
-                widget.getItemAtPosition(it).toString() == valid.value }) return false
-        if (widget !is android.widget.EditText && widget !is LinearLayout && widget !is Spinner) return false
-        applyRandomValue(field, valid.value, showToast=false)
+        val valid = reviewedValue(field, raw) ?: return false
+        applyRandomValue(field, valid, showToast=false)
         return true
+    }
+
+    fun liveAiSpecs(): List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec> {
+        val values = collectFieldValues(-1L).associateBy { it.fieldDefinitionId }
+        return fieldDefinitions.filter { it.id in fieldInputMap }.mapNotNull {
+            com.novelcharacter.app.ai.CharacterFieldAiSuggester.fieldSpecOf(it, values[it.id]?.value.orEmpty())
+        }
+    }
+
+    /** Validation finishes for every selected widget before the first write; runs on the UI thread. */
+    fun applyReviewedValues(selected: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.Suggestion>): Boolean {
+        if (selected.isEmpty()) return false
+        val fields = fieldDefinitions.associateBy { it.key }
+        val prepared = selected.map { suggestion ->
+            val field = fields[suggestion.fieldKey] ?: return false
+            field to (reviewedValue(field, suggestion.value) ?: return false)
+        }
+        prepared.forEach { (field, value) -> applyRandomValue(field, value, showToast=false) }
+        return true
+    }
+
+    private fun reviewedValue(field: FieldDefinition, raw: String): String? {
+        val widget = fieldInputMap[field.id] ?: return null
+        val spec = com.novelcharacter.app.ai.CharacterFieldAiSuggester.fieldSpecOf(field, "") ?: return null
+        val valid = com.novelcharacter.app.ai.CharacterFieldAiSuggester.normalizeChecked(raw, spec)
+            as? com.novelcharacter.app.ai.CharacterFieldAiSuggester.Normalized.Ok ?: return null
+        if (widget is Spinner && (0 until widget.count).none {
+                widget.getItemAtPosition(it).toString() == valid.value }) return null
+        if (widget !is android.widget.EditText && widget !is LinearLayout && widget !is Spinner) return null
+        return valid.value
     }
 
     fun applyRandomValue(

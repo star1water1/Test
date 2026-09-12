@@ -24,10 +24,10 @@ package com.novelcharacter.app.ai
  * **끈 재료는 조용히 빠지지 않는다** — 뺀 항목을 절단 고지와 같은 경로로 표면화한다(R-14).
  * 추천이 빈약할 때 사용자가 *"내가 꺼 둔 탓"*임을 알 수 있어야 하기 때문이다.
  */
-class EventFieldAiSuggester(private val aiService: AiService) {
+class EventFieldAiSuggester internal constructor(private val engine: CharacterFieldAiSuggester) {
 
     /** 실행 규칙은 축을 타지 않는다 — 프롬프트만 갈아 끼워 같은 엔진으로 들어간다. */
-    private val engine = CharacterFieldAiSuggester(aiService)
+    constructor(aiService: AiService) : this(CharacterFieldAiSuggester(aiService))
 
     /**
      * 프롬프트에 실을 사건 컨텍스트 — 호출측(사건 편집 창)이 라이브 입력값 + DB에서 조립한다.

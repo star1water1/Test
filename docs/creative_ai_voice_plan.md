@@ -115,6 +115,8 @@ M3의 남은 실기기 gate:
 
 대상은 사용자 회신 기준 갤럭시 노트20·Android 13(API 33)이며 온디바이스 인식 미지원이다. 이 기기에서는 외부 전사용 녹음과 미지원 고지·자동 전환 없음이 확인 대상이다. CI에도 API 33을 포함하되 실제 삼성 기기 검증을 대신하지 않는다.
 
+2026.09.12 사용자 회신: 간단한 실사용에서 문제를 발견하지 못했으며 후속 개발 진행을 요청했다. 아래 항목별 실행 결과가 없어 전체 gate 통과로 처리하지 않는다.
+
 1. 5–10분, 20분 이상, 37–40분 경고/종료를 녹음하고 앞·중간·끝의 실제 음성 및 decoded 길이 비교. 알림 허용/거부, 낮은 저장 공간도 포함한다.
 2. 홈·화면 잠금·앱 전환·회전·편집 화면 종료·알림 중지에서 동일 ID와 캡처 길이 확인.
 3. 정상 stop 후 kill, 녹음 중 무통지 kill, force-stop, 시스템 서비스 중지를 각각 실행하고 재실행 후 유효 음성 구간과 중단 고지 확인. 자동 마이크/유료 요청은 0건이어야 한다.
@@ -122,6 +124,38 @@ M3의 남은 실기기 gate:
 5. API 31/33+ 온디바이스 지원과 파일 입력 계약을 확인한다. 지원 불명인 상태를 장시간 복구 성공으로 분류하지 않는다.
 
 설계 근거: [Android microphone FGS 유형과 시작 전제](https://developer.android.com/develop/background-work/services/fgs/service-types), [마이크 공유와 silencing callback](https://developer.android.com/media/platform/sharing-audio-input), [RecognizerIntent의 오디오 입력 계약](https://developer.android.com/reference/android/speech/RecognizerIntent#EXTRA_AUDIO_SOURCE).
+
+## 실사용 안정화 M4 — 전체 AI 입력 전달과 한도 감지
+
+필드 추천·보완에서 브리핑과 보완 지시를 모든 요청에 원문 그대로 싣는다. 보완 지시·현재값·거절값에 있던 300자 절단을 제거한다. 기존 custom system/user 양식과 필수 자리표를 유지하며, 브리핑은 양식 확장 후 별도 JSON 자료로 추가한다. 다른 DB 참고자료의 기존 상한과 절단 고지는 유지한다.
+
+`AiService`의 각 실제 전송 직전, 이미지 제거·출력 예산 보정 후의 최종 protocol body를 검사한다. 공식 Gemini·Anthropic 주소에서는 같은 제공자의 모델 상세 조회와 토큰 계산 API를 사용한다. Gemini의 입력/출력 상한은 따로 검사하고 Anthropic은 입력량과 출력 여유의 합계도 검사한다. 모델·주소별 고정 표나 출력 상한에서 입력 한도를 추론하는 장치는 없다. 조회·계산이 지원되지 않거나 실패한 호환 서버는 ‘확인 불가’이며 원문 그대로 전송한다. 계산값 역시 추정이며 모델의 완전한 이해나 임의 서버 내부의 무절단을 보장하지 않는다.
+
+초과가 확인되면 생성 호출 없이 원문·기존 유료 결과를 유지하고 모델 변경, 첨부·참고자료 전송 선택, 출력 상한 조정을 안내한다. 큰 브리핑 자체는 대상 필드 수를 줄여도 해결되지 않음을 알린다. 입력량 조회도 같은 자료를 서버에 보내므로 최초/보완 요청 안내에 포함한다. 기존 자동 제공자 전환이 일어날 때는 실제 후보마다 다시 검사하며, 입력 초과 자체로 자동 전환하거나 요청을 나누지는 않는다.
+
+앱이 생성한 요청 ID·최종 body hash·실제 전송 text·브리핑/보완 지시 snapshot·참고자료 생략 고지·실제 이미지 수·모델·한도 판정을 결과와 같은 journal에 보관한다. 제안은 그 요청 ID를 참조한다. 키·이미지 바이트는 기록하지 않는다. 새 필드는 nullable로 기존 review JSON을 읽으며, 재요청 병합과 checkpoint도 같은 자료를 유지한다. 이 기록은 M6의 검증 재료이고 LLM이 반환한 origin이나 요청 ID를 신뢰하는 장치가 아니다.
+
+응답은 AI 20 MB, 전사 기존 2 MB 읽기 상한에서 한 바이트 더 확인해 초과를 별도 실패로 처리한다. 잘린 JSON을 빈 전사로 오진하거나 성공으로 파싱하지 않으며 기존 결과·녹음은 보관한다. 지원 중인 JSON 전사 응답에서 전체 발화 처리를 확정할 공통 신호는 확인되지 않았다. 글자 수나 임의 확장 필드를 완료 증명으로 삼지 않고, 결과 도착 후 사용자가 누락과 고유명사를 확인하도록 안내한다.
+
+자동 검증은 긴 한국어·Unicode와 마지막 부정/정정의 wire text 일치, 모든 target 청크와 custom 양식, 토큰 경계·출력 여유·이미지, 미상/조회 실패/취소, 초과 시 생성 0건, 오류 분류, receipt 복원·기존 유료 결과 병합을 포함한다. 실제 유료 서버의 한도와 긴 글의 의미 반영은 별도 기기 확인이다. M5의 늦은 AI 응답 보호·최신 AI 복원과 M6 origin/선택 정책은 이번 범위에 넣지 않는다.
+
+계약 근거: [Gemini models](https://ai.google.dev/api/models), [Gemini countTokens](https://ai.google.dev/api/tokens), [Anthropic model 정보](https://platform.claude.com/docs/en/api/models/retrieve), [Anthropic 토큰 계산](https://platform.claude.com/docs/en/build-with-claude/token-counting), [파일 전사 응답](https://developers.openai.com/api/docs/guides/speech-to-text).
+
+## 실사용 안정화 M5 — 보완 응답·편집 revision과 적용 안전성
+
+캐릭터·사건 필드 검토는 `FieldSuggestionReviewState`의 공통 reducer를 사용한다. 요청을 시작할 때 검토 session ID, generation, 대상별 사용자 revision을 잡고 누적 checkpoint와 최종 응답을 같은 `(generation, fieldKey)`로 한 번만 처리한다. 직접 입력 중인 draft, 확정 수정, 체크 변경, reset도 revision에 반영한다. 응답 이후의 재렌더는 사용자 선택을 다시 초기화하지 않는다.
+
+요청 이후 사용자가 수정했으면 현재 값·draft·체크를 유지하고 받은 보완값과 앱 소유 입력 receipt를 별도 후보에 보관한다. 사용자가 후보를 명시적으로 채택하거나 최근 AI 값으로 돌아갈 수 있다. 더 오래된 generation은 현재 값과 reset 기준을 바꾸지 않으며 별도 후보로 남는다. 보완 실패는 이전 유료 결과와 reset 기준을 유지한다. 새 snapshot 속성은 nullable이며 기존 journal·CAS·lease와 checkpoint-before-observe를 재사용한다. 복원은 자동 재요청하지 않는다.
+
+기존 요청 직렬화를 유지하면서 보완 중 검토창을 열어 두고 직접 수정·체크·reset을 허용한다. 적용·추가 보완·검토 폐기는 실행 중 잠그며 닫기/보관과 남은 요청 중단은 제공한다. 진행 중인 요청은 끝까지 받을 수 있고 과금될 수 있음을 같은 화면에서 알린다. 전체 행의 안정적 갱신·스크롤/포커스 유지·긴 편집 표면은 M7 범위다.
+
+검토의 기존값은 요청 당시 값 대신 현재 폼에서 읽는다. 적용 직전 값/필드 설정이 달라졌으면 현재 비교를 갱신하고 다시 확인하게 한다. 최신 필드 정의·옵션·실제 위젯을 대상으로 선택 전체를 먼저 검증하고 나서 기입한다. 삭제된 항목·변경된 옵션·없는 위젯 때문에 일부만 적용하거나 사건 선택지에 AI 값을 임의로 추가하지 않는다. Room 저장은 기존 폼 저장 동작이 맡는다.
+
+저장 전 캐릭터·사건의 필드 검토에는 각각 `character:draft:<UUID>:fields`, `event:draft:<UUID>:fields` 슬롯을 사용한다. 같은 ViewModel의 회전은 선택을 유지하며, 새 편집 화면/프로세스에서는 보관 목록의 요청 당시 이름을 보고 명시적으로 이어 연다. 기존 `-1` 검토도 목록으로 열 수 있고 새 구상에 자동 연결하거나 삭제하지 않는다. 이는 필드 AI 검토 식별자이며 Creator Brief UUID나 폼 전체 드래프트 식별자를 대신하지 않는다. 서술형 검토의 기존 슬롯은 이번 변경 범위 밖이다.
+
+자동 검증은 `FieldReviewRevisionTest`의 역순/중복·미완성/확정 수정·reset·다른 필드·실패·legacy JSON·receipt/세션 복원·신규 owner·일괄 preflight, 기존 review/journal/입력 시험과 `FieldReviewDeliveryTest`의 실제 두 ViewModel/엔진/slot 연결을 포함한다. 계측에서는 전송만 fake로 대체해 지연 응답, 직렬 guard, 복원 시 무과금, 후보 보존, 독립 신규 사건 검토를 확인한다. 객체 재생성 시험은 실제 process kill이나 키보드 조작 검증을 대신하지 않는다.
+
+기기에서는 노트20 Android 13에서 캐릭터·사건·보충 화면 각각 보완 중 입력/확정/체크/reset, 응답 도착 후 후보 채택, 회전·편집창 재진입, 새 구상 A/B와 구버전 -1 검토 선택, 현재 폼 값/옵션 변경 후 적용을 확인한다. M6 origin/기본 선택 정책과 M7 세부 검토 UX는 후속 범위다. 녹음·전사·pending audio는 이번에 변경하지 않는다.
 
 ## 기기에서 이어 확인할 시나리오
 

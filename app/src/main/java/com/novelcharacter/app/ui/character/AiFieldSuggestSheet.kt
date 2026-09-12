@@ -54,6 +54,12 @@ object AiFieldSuggestSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (targetCharacterId == -1L && viewModel.needsNewFieldReviewChoice() &&
+            com.novelcharacter.app.ui.common.NewFieldReviewChoice.show(fragment,
+                viewModel.savedNewFieldReviews(), viewModel::chooseNewFieldReview) {
+                showForField(fragment, field, formBuilder, viewModel, targetCharacterId,
+                    imagePaths, representativePath, contextLoader)
+            }) return
         if (viewModel.recoverAiSuggest(targetCharacterId)) return
         if (!guardProvider(fragment)) return
 
@@ -155,6 +161,12 @@ object AiFieldSuggestSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
+        if (targetCharacterId == -1L && viewModel.needsNewFieldReviewChoice() &&
+            com.novelcharacter.app.ui.common.NewFieldReviewChoice.show(fragment,
+                viewModel.savedNewFieldReviews(), viewModel::chooseNewFieldReview) {
+                showForCharacter(fragment, formBuilder, viewModel, targetCharacterId, extraNote,
+                    imagePaths, representativePath, onNarrativeBulk, contextLoader)
+            }) return
         if (viewModel.recoverAiSuggest(targetCharacterId)) return
         if (!guardProvider(fragment)) return
 
@@ -429,7 +441,10 @@ object AiFieldSuggestSheet {
             },
             retryKeys = retryableTargets(run).map { it.key },
             imageCount = run.imagePaths.size,
-            running = viewModel.aiSuggestRunning
+            running = viewModel.aiSuggestRunning,
+            liveSpecs = { formBuilder.liveAiSpecs() },
+            progress = viewModel.aiSuggestProgress,
+            onCancel = { viewModel.cancelAiSuggestRun() }
         )
     }
 
@@ -502,13 +517,7 @@ object AiFieldSuggestSheet {
         formBuilder: DynamicFieldFormBuilder,
         selected: List<CharacterFieldAiSuggester.Suggestion>
     ): Boolean {
-        val fieldByKey = formBuilder.fieldDefinitions.associateBy { it.key }
-        var applied = 0
-        for (s in selected) {
-            val field = fieldByKey[s.fieldKey]
-            if (field == null || !formBuilder.applyReviewedValue(field, s.value)) continue
-            applied++
-        }
+        val applied = if (formBuilder.applyReviewedValues(selected)) selected.size else 0
         if (applied == selected.size && applied > 0) {
             fragment.notifySuccess(fragment.getString(R.string.ai_field_applied, applied))
         } else {

@@ -28,12 +28,14 @@ class ReviewSlot<T>(private val app: Application, private val type: Class<T>) {
         entry?.value
     }
     fun beginRequest(): Boolean = attempt {
+        // Only read() binds an owner; preview() is for recovery list labels.
         val key=checkNotNull(owner)
         check(journal.revision(key)==revision) { "Review changed in another editor" }
         check(leases.acquire(key,this)) { "LIVE_REQUEST" }
         true
     } ?: false
     fun endRequest() { owner?.let { leases.release(it,this) } }
+    fun preview(key: String): T? = attempt { journal.read(key, type)?.value }
     fun save(value: T): Boolean = attempt {
         val key = checkNotNull(owner)
         check(!leases.heldByOther(key,this)) { "LIVE_REQUEST" }

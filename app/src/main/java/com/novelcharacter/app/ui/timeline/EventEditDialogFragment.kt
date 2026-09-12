@@ -1190,7 +1190,7 @@ class EventEditDialogFragment : DialogFragment() {
     private fun observeAiSuggest() {
         val vm = aiViewModel()
         vm.running.observe(this) { running ->
-            if (running == true) {
+            if (running == true && vm.result.value == null) {
                 if (aiProgressDialog == null && isAdded) {
                     aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),
@@ -1218,7 +1218,8 @@ class EventEditDialogFragment : DialogFragment() {
                 viewModel = vm,
                 run = run,
                 currentEventId = editingEvent?.id ?: -1L,
-                applyValues = ::applyAiSuggestions
+                applyValues = ::applyAiSuggestions,
+                liveSpecs = { liveAiSpecs() }
             )
         }
     }
@@ -1244,31 +1245,32 @@ class EventEditDialogFragment : DialogFragment() {
     private fun applyAiSuggestions(
         suggestions: List<CharacterFieldAiSuggester.Suggestion>
     ): Boolean {
-        if (_binding == null) return false
+        if (_binding == null || suggestions.isEmpty()) return false
         val byKey = eventFields.associateBy { it.key }
-        var applied = 0
-        for (suggestion in suggestions) {
-            val field = byKey[suggestion.fieldKey] ?: continue
-            when (val widget = eventFieldInputMap[field.id]) {
+        val prepared = com.novelcharacter.app.ai.FieldReviewApply.prepare(suggestions, liveAiSpecs())
+        if (prepared.errors.isNotEmpty()) return false
+        val writes = prepared.values.map { suggestion ->
+            val field = byKey[suggestion.fieldKey] ?: return false
+            val widget = eventFieldInputMap[field.id] ?: return false
+            when (widget) {
                 is android.widget.Spinner -> {
-                    val adapter = widget.adapter as? ArrayAdapter<String> ?: continue
-                    val idx = (0 until adapter.count).firstOrNull {
-                        adapter.getItem(it) == suggestion.value
-                    } ?: run {
-                        // 목록에 없는 값이면 **버리지 않고 항목을 늘려 담는다** — 이 폼이 저장된
-                        // 고아 값에 대해 이미 하는 처분과 같다(위 '고아 값 보존'). 조용히 빠지면
-                        // 사용자는 적용을 눌렀는데 값이 안 바뀐 이유를 알 수 없다.
-                        adapter.add(suggestion.value)
-                        adapter.count - 1
-                    }
-                    widget.setSelection(idx); applied++
+                    val index = (0 until widget.count).firstOrNull {
+                        widget.getItemAtPosition(it).toString() == suggestion.value
+                    } ?: return false
+                    { widget.setSelection(index) }
                 }
-                is android.widget.EditText -> { widget.setText(suggestion.value); applied++ }
-                else -> Unit
+                is android.widget.EditText -> { { widget.setText(suggestion.value) } }
+                else -> return false
             }
         }
-        return applied > 0
+        writes.forEach { it() }
+        return true
     }
+
+    private fun liveAiSpecs(): List<CharacterFieldAiSuggester.FieldSpec> =
+        if (_binding == null) emptyList() else eventFields.filter { it.id in eventFieldInputMap }
+            .mapNotNull { field -> CharacterFieldAiSuggester.fieldSpecOf(field,
+                eventFieldWidgetValue(eventFieldInputMap.getValue(field.id))) }
 
     /**
      * 프롬프트에 실을 사건 컨텍스트 — **창의 라이브 입력값**이 기준이다(저장된 값이 아니라).
