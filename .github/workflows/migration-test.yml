@@ -24,6 +24,9 @@ on:
       - 'app/src/main/java/com/novelcharacter/app/data/database/**'
       - 'app/src/main/java/com/novelcharacter/app/data/model/**'
       - 'app/src/androidTest/**'
+      - 'app/src/main/java/com/novelcharacter/app/speech/**'
+      - 'app/src/main/java/com/novelcharacter/app/ui/common/VoiceInput*'
+      - 'app/src/main/AndroidManifest.xml'
       - 'app/build.gradle.kts'
       - '.github/workflows/migration-test.yml'
   workflow_dispatch:
@@ -32,6 +35,16 @@ jobs:
   migration:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 26
+            arch: x86
+          - api: 33
+            arch: x86_64
+          - api: 35
+            arch: x86_64
 
     steps:
       - name: Checkout code
@@ -106,8 +119,8 @@ jobs:
         if: steps.schemas.outputs.present == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 26
-          arch: x86
+          api-level: ${{ matrix.api }}
+          arch: ${{ matrix.arch }}
           target: default
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon
@@ -116,7 +129,7 @@ jobs:
         if: always() && steps.schemas.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: migration-test-report
+          name: migration-test-report-api-${{ matrix.api }}
           path: app/build/reports/androidTests/
           retention-days: 14
           if-no-files-found: warn

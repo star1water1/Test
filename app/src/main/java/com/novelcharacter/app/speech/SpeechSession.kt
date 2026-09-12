@@ -5,7 +5,11 @@ class SpeechSession {
     enum class Phase { IDLE, RECORDING, READY, TRANSCRIBING, REVIEW, ERROR }
     var phase=Phase.IDLE; private set
     var original=""; private set
+    private var draftRevision=0L
+    private var requestedDraftRevision=0L
+    var retainedEdits=false; private set
     var draft=""
+        set(value) {if(field!=value) draftRevision++;field=value}
     var error: SpeechError?=null; private set
     var sessionId: String = java.util.UUID.randomUUID().toString(); private set
     private var revision=0
@@ -17,15 +21,23 @@ class SpeechSession {
         return true
     }
     fun audioReady() { phase=Phase.READY; error=null }
+    /** Attach only to a verified live service, never start a microphone during restore. */
+    fun attachRecording(id: String) {check(sessionId==id);phase=Phase.RECORDING;error=null}
     fun beginTranscription(): Int? {
         if(phase!=Phase.READY && phase!=Phase.ERROR && phase!=Phase.REVIEW) return null
         phase=Phase.TRANSCRIBING; error=null
+        requestedDraftRevision=draftRevision;retainedEdits=false
         return ++revision
     }
     fun complete(requestId: Int, result: SpeechResult) {
         if(requestId!=revision || phase!=Phase.TRANSCRIBING) return
         when(result) {
-            is SpeechResult.Success->{original=result.text;draft=result.text;phase=Phase.REVIEW;error=null}
+            is SpeechResult.Success->{
+                retainedEdits=draftRevision!=requestedDraftRevision
+                original=result.text
+                if(!retainedEdits) draft=result.text
+                phase=Phase.REVIEW;error=null
+            }
             is SpeechResult.Failure->fail(result.kind)
         }
     }

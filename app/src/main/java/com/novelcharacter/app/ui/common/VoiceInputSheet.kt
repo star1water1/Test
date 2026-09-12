@@ -53,6 +53,7 @@ class VoiceInputSheet : DialogFragment() {
         }
         panel.addView(record)
         val stop=button("녹음 마치고 전사") {model.stop(true)};panel.addView(stop)
+        val keep=button("녹음 마치고 보관 · 전사는 나중에") {model.stop(false)};panel.addView(keep)
         val retry=button("현재 녹음 전사 · 외부 요청 1건") {model.transcribe()};panel.addView(retry)
         val cancel=button("전사 중단 · 녹음 보관") {model.cancelTranscription()};panel.addView(cancel)
         val cleanup=button("이미 처리한 녹음의 남은 파일 정리") {model.discard()};panel.addView(cleanup)
@@ -89,11 +90,13 @@ class VoiceInputSheet : DialogFragment() {
                 .setMessage("이 녹음과 아직 추가하지 않은 전사를 삭제합니다. 이미 입력에 추가한 내용은 남습니다.")
                 .setPositiveButton("버리기") {_,_->model.discard()}.setNegativeButton("취소",null).show()
         };panel.addView(discard)
-        panel.addView(label().apply {text="입력에 추가한 뒤 내용을 더 고칠 수 있습니다. AI 생성과 저장은 각 화면에서 따로 실행합니다. 임시 녹음은 전사 성공·버리기·편집 화면 종료 때 삭제합니다. 실패한 녹음은 재시도를 위해 현재 편집 화면에만 보관합니다. 받은 전사 원문과 수정 내용은 이 기기에 보관하며 같은 입력의 마이크를 다시 열면 복구합니다. 앱 삭제·데이터 삭제 시에는 지워집니다."})
+        panel.addView(label().apply {text="입력에 추가한 뒤 내용을 더 고칠 수 있습니다. AI 생성과 저장은 따로 실행합니다. 외부 전사용 녹음은 확인한 전사를 입력에 추가하거나 직접 버릴 때까지 이 기기에 보관합니다. 전사 실패나 창 닫기로 삭제하지 않습니다. 앱 삭제·데이터 삭제 시에는 지워집니다."})
         model.updates.observe(this) {
             val config=SpeechSettings(context).read()
             val phase=model.session.phase
-            val busy=phase==SpeechSession.Phase.RECORDING || phase==SpeechSession.Phase.TRANSCRIBING
+            val busy=phase==SpeechSession.Phase.RECORDING || phase==SpeechSession.Phase.TRANSCRIBING || model.isDeviceBusy()
+            (dialog as? androidx.appcompat.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_NEGATIVE)?.text=
+                if(model.isServiceRecording()) "닫기 · 녹음 계속" else "닫기 · 내용 보관"
             val cloud=config.mode==SpeechMode.CLOUD
             val vocabulary=SpeechVocabulary.select(requireArguments().getStringArrayList("terms").orEmpty()
                 .mapIndexed {index,term->SpeechVocabulary.Term(term,index)},if(config.model.trim()=="gpt-transcribe" || !cloud) 1200 else 220)
@@ -101,12 +104,16 @@ class VoiceInputSheet : DialogFragment() {
             model.omitted=requireArguments().getInt("omitted")+vocabulary.omitted
             val selected=AiProviderStore(context).list().firstOrNull {it.id==config.providerId}
             provider.text=if(cloud) "외부 전사: ${selected?.displayName ?: "제공자 미설정"} · ${config.model}\n녹음 파일을 선택한 서버에 보내며 전사 비용이 별도로 발생합니다. 재시도도 새 요청입니다."
-                else "온디바이스 인식 · 음성을 기기 안에서 처리합니다."
+                else "온디바이스 인식 · 음성을 기기 안에서 처리합니다. 화면을 벗어나면 인식을 마칩니다. 인식기가 제공한 전사만 보관하며 녹음 파일 복구와 장시간 인식은 지원 여부가 확인되지 않았습니다."
+            if(cloud) provider.append("\n화면 잠금·앱 전환 중에도 알림의 녹음 서비스를 사용합니다. 앱의 20 MB 전송 기준으로 최대 약 40분이며 종료 3분 전부터 안내합니다. 원본 보관은 분당 약 1.9 MB, 전송 파일은 약 0.5 MB를 더 사용합니다. 서버별 한도·비용은 다를 수 있습니다.")
+            if(cloud && (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() ||
+                context.getSystemService(android.app.NotificationManager::class.java).getNotificationChannel("voice-recording")?.importance==android.app.NotificationManager.IMPORTANCE_NONE))
+                provider.append("\n알림이 꺼져 있어 알림에서 중지할 수 없습니다. 앱의 보관한 녹음 목록을 열어 중지하거나 시스템 설정에서 알림을 켜세요.")
             hints.text=if(!config.sendHints) "고유명사 힌트 전송 꺼짐" else
                 "전사에 참고할 용어 ${model.terms.size}개 (범위·길이 제한으로 ${model.omitted}개 제외)\n"+model.terms.joinToString(", ")
             status.text=listOfNotNull(when(phase) {
                 SpeechSession.Phase.IDLE->"녹음 준비"
-                SpeechSession.Phase.RECORDING->"녹음 중 · ${model.seconds}초"
+                SpeechSession.Phase.RECORDING->if(model.isServiceRecording()) "저장한 음성 · ${model.seconds}초" else "온디바이스 인식 중 · 경과 ${model.seconds}초"
                 SpeechSession.Phase.READY->"녹음 완료 · ${model.seconds}초 · 전사를 실행하세요."
                 SpeechSession.Phase.TRANSCRIBING->"전사 중 · 창을 닫아도 현재 편집 화면에서 결과를 보관합니다."
                 SpeechSession.Phase.REVIEW->"전사 완료 · 원문과 고유명사를 확인하세요."
@@ -116,6 +123,7 @@ class VoiceInputSheet : DialogFragment() {
             permissions.isVisible=model.session.error==SpeechError.PERMISSION
             record.isVisible=!busy && !model.hasAudio() && !model.needsCleanup() && model.session.original.isBlank()
             stop.isVisible=phase==SpeechSession.Phase.RECORDING
+            keep.isVisible=phase==SpeechSession.Phase.RECORDING && model.isServiceRecording()
             retry.isVisible=!busy && model.hasAudio() && cloud
             retry.text=if(model.session.original.isNotBlank()) "보관한 녹음 다시 전사 · 외부 요청 1건" else "현재 녹음 전사 · 외부 요청 1건"
             cancel.isVisible=phase==SpeechSession.Phase.TRANSCRIBING
@@ -132,8 +140,9 @@ class VoiceInputSheet : DialogFragment() {
             .setNegativeButton("닫기 · 내용 보관",null).create()
     }
 
+    override fun onStart() {super.onStart();model.refresh()}
     override fun onStop() {
-        if(activity?.isChangingConfigurations!=true && model.session.phase==SpeechSession.Phase.RECORDING) model.stop(false)
+        if(activity?.isChangingConfigurations!=true) model.leaveVisibleScreen()
         super.onStop()
     }
     override fun onDismiss(dialog: android.content.DialogInterface) {

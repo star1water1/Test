@@ -5,6 +5,9 @@
     <!-- AI API 호출(BYOK) 전용 — 사용자가 등록한 프로바이더 서버에만 접속한다 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
@@ -27,6 +30,9 @@
         android:theme="@style/Theme.NovelCharacter"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="34">
+
+        <service android:name=".speech.VoiceRecordingService"
+            android:exported="false" android:foregroundServiceType="microphone" />
 
         <activity
             android:name=".MainActivity"
