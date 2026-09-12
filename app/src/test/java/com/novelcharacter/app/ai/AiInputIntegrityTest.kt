@@ -75,10 +75,14 @@ class AiInputIntegrityTest {
     }
 
     @Test fun customTemplatesAndEveryTargetChunkKeepBriefAndInstruction() = runBlocking {
-        val custom = "{{추천할필드}}" + "템플릿".repeat(1900)
+        val userToken = "{{추천할필드}}"
+        val systemToken = "{{응답형식}}"
+        val custom = userToken + "양".repeat(AiPromptPolicy.PROMPT_TEMPLATE_MAX_CHARS - userToken.length)
+        val customSystem = systemToken + "식".repeat(AiPromptPolicy.PROMPT_TEMPLATE_MAX_CHARS - systemToken.length)
         val templates = object: PromptTemplates.Source {
             override fun templateOf(id: PromptTemplates.Id) = when(id) {
                 PromptTemplates.Id.CHAR_FIELD_USER -> custom
+                PromptTemplates.Id.CHAR_FIELD_SYSTEM -> customSystem
                 else -> PromptTemplates.Source.DEFAULTS.templateOf(id)
             }
         }
@@ -88,6 +92,14 @@ class AiInputIntegrityTest {
             assertEquals(brief, JSONObject(request.messages.single().text.substringAfterLast("/ data]\n")).getString("briefing"))
             assertTrue(request.messages.single().text.contains(brief))
             assertTrue(request.messages.single().text.contains(custom.substringAfter("}}")))
+            assertTrue(request.system!!.contains(customSystem.substringAfter("}}")))
+            for (protocol in AiProtocol.entries) {
+                val sent = AiInputPreflight.send(config(protocol),
+                    AiProtocolCodec.buildRequest(config(protocol), "fixture-key", request),
+                    request.inputSource!!, { null }, { AiResult.Success("value", "test") }) as AiResult.Success
+                assertEquals(listOf(request.effectiveSystem()!!, request.messages.single().text),
+                    sent.inputReceipt!!.sentText)
+            }
             assertEquals(brief, request.inputSource!!.briefing)
             assertTrue(request.inputSource!!.instructions.values.all { it == brief })
             AiResult.Success("""{"suggestions":[]}""","test")
@@ -95,6 +107,7 @@ class AiInputIntegrityTest {
         engine.suggest(context, (1..12).map {field.copy(key="k"+it,userInstruction=brief)}, templates=templates) {"failure"}
         assertTrue(calls > 1)
         assertEquals(custom, templates.templateOf(PromptTemplates.Id.CHAR_FIELD_USER))
+        assertEquals(customSystem, templates.templateOf(PromptTemplates.Id.CHAR_FIELD_SYSTEM))
     }
 
     @Test fun geminiCounterContainsTheEntireFinalGenerateRequest() {
