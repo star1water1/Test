@@ -509,6 +509,10 @@ object AiProtocolCodec {
     /** 비 2xx 응답 → 분류 + 제공사 원문 메시지. */
     fun parseError(httpCode: Int, body: String?): AiResult.Failure {
         val detail = extractErrorMessage(body)
+        if (httpCode == 413 || (httpCode in listOf(400, 422) && isInputOverflow(body))) {
+            // Do not let an input-context error teach an output-token limit or trigger paid retries.
+            return AiResult.Failure(AiErrorKind.INPUT_TOO_LARGE, httpCode = httpCode)
+        }
         val kind = when (httpCode) {
             401 -> AiErrorKind.INVALID_KEY
             403 ->
@@ -544,6 +548,13 @@ object AiProtocolCodec {
             else -> AiErrorKind.UNKNOWN
         }
         return AiResult.Failure(kind, detail = detail, httpCode = httpCode)
+    }
+
+    private fun isInputOverflow(body: String?): Boolean {
+        val text = body?.lowercase(java.util.Locale.ROOT) ?: return false
+        return text.contains("context_length_exceeded") || text.contains("prompt is too long") ||
+            text.contains("maximum context length") ||
+            (text.contains("input token count") && text.contains("exceeds"))
     }
 
     /**

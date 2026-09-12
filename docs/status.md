@@ -5,7 +5,7 @@
 
 ## 0. 지금 무엇을 하는가
 
-- 사용자 지정 작업: [PR #402](https://github.com/star1water1/Test/pull/402) 이후 안정화 M1 [#403](https://github.com/star1water1/Test/pull/403)·M2 [#404](https://github.com/star1water1/Test/pull/404)·M3 [#405](https://github.com/star1water1/Test/pull/405)의 입력 전달·녹음 보존·서비스 수명을 구현했다. 현재 남은 확인은 [M3 실기기 gate](creative_ai_voice_plan.md#실사용-안정화-m3--서비스-녹음과-중단-복구)다. 대상은 갤럭시 노트20·Android 13이며 사용자 회신상 온디바이스 인식 미지원이다. 화면 잠금·전화·무통지 kill·장시간 발화 보존은 미검증이고, 다른 기기의 온디바이스 장시간/파일 복구도 보장하지 않는다. AI prompt·보완 동시성은 후속 milestone이다.
+- 사용자 지정 작업: M1 [#403](https://github.com/star1water1/Test/pull/403)·M2 [#404](https://github.com/star1water1/Test/pull/404)·M3 [#405](https://github.com/star1water1/Test/pull/405)는 master에 병합했다. 현재 작업은 [M4 전체 AI 입력 전달·한도 감지](creative_ai_voice_plan.md#실사용-안정화-m4--전체-ai-입력-전달과-한도-감지)다. 사용자 회신상 노트20·Android 13에서 간단히 사용한 범위에는 문제가 없었으나 항목별 결과·긴 녹음·무통지 kill 검증은 미확인이다. [M3 실기기 gate](creative_ai_voice_plan.md#실사용-안정화-m3--서비스-녹음과-중단-복구)를 통과로 바꾸지 않는다. 온디바이스 인식은 사용자 회신상 미지원이고, AI 보완 동시성·origin 판단·검토 UX는 M5 이후 범위다.
 
 - **자율적으로 고를 수 있는 기능 작업은 0건이다.** 아래 대기 상태는 사용자의 새 요청을 막지 않는다.
 - 안정화 변경의 커밋별 CI 결과는 위 PR에서 확인한다. 기존 전체 기준선과 검증 명령은 4장에 있다.
@@ -19,7 +19,7 @@
 
 ## 2. 실기기 확인
 
-**실기기 통과를 새로 확인한 것은 없다.** 마지막 통과 기록은 2026.08.01이며, 절차와 현재 단계는
+**항목별 실기기 통과를 새로 확인한 것은 없다.** 2026.09.12 사용자 회신은 노트20에서 간단한 실사용 중 문제가 없었다는 수준이며, 개별 시나리오 통과로 확대하지 않는다. 마지막 항목별 통과 기록은 2026.08.01이며, 절차와 현재 단계는
 [device_walkthrough.md](device_walkthrough.md)와 `tools/walkthrough/steps.json`에서 확인한다.
 S1이 먼저이고, 이후에는 준비물 의존 때문에 워크스루의 순서를 따른다.
 실기기 확인은 별도 큐이며 앱 코드 PR의 CI 검증을 대체하거나 병합을 막는 조건이 아니다.

@@ -268,7 +268,8 @@ data class AiRequest(
      * 그림을 근거로 삼아 날조된 출처를 낸다**(B-139 — 실제로 둘 다 빠뜨리고 있었다).
      * 갈라 두면 [effectiveSystem]이 [hasImages]로 판정하므로 **빠뜨릴 자리 자체가 없다.**
      */
-    val imageSystemRule: String? = null
+    val imageSystemRule: String? = null,
+    val inputSource: AiInputSource? = null
 ) {
     constructor(
         system: String? = null,
@@ -276,10 +277,11 @@ data class AiRequest(
         maxTokens: Int = DEFAULT_MAX_TOKENS,
         temperature: Double? = null,
         images: List<AiImage> = emptyList(),
-        imageSystemRule: String? = null
+        imageSystemRule: String? = null,
+        inputSource: AiInputSource? = null
     ) : this(
         system, listOf(AiMessage(AiRole.USER, userText, images)), maxTokens, temperature,
-        imageSystemRule
+        imageSystemRule, inputSource
     )
 
     /** 이 요청이 이미지를 싣고 있는가 — 거부 재시도·고지 판정의 단일 소스 (A-7). */
@@ -364,7 +366,8 @@ sealed class AiResult {
          * 전환에서는 거짓말이 된다). null이면 한도(종전 문구, 회귀 없음)이거나 전환이 없었다는
          * 뜻이다.
          */
-        val switchedFromReason: AiErrorKind? = null
+        val switchedFromReason: AiErrorKind? = null,
+        val inputReceipt: AiInputReceipt? = null
     ) : AiResult()
 
     data class Failure(
@@ -443,6 +446,8 @@ enum class AiErrorKind {
 
     /** 400 등 요청 형식 문제 */
     BAD_REQUEST,
+    INPUT_TOO_LARGE,
+    RESPONSE_TOO_LARGE,
 
     /**
      * 400인데 **본문이 요청의 어떤 항목을 지목해** 거부한 것 (B-161).

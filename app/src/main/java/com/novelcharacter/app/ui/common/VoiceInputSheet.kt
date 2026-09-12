@@ -116,7 +116,7 @@ class VoiceInputSheet : DialogFragment() {
                 SpeechSession.Phase.RECORDING->if(model.isServiceRecording()) "저장한 음성 · ${model.seconds}초" else "온디바이스 인식 중 · 경과 ${model.seconds}초"
                 SpeechSession.Phase.READY->"녹음 완료 · ${model.seconds}초 · 전사를 실행하세요."
                 SpeechSession.Phase.TRANSCRIBING->"전사 중 · 창을 닫아도 현재 편집 화면에서 결과를 보관합니다."
-                SpeechSession.Phase.REVIEW->"전사 완료 · 원문과 고유명사를 확인하세요."
+                SpeechSession.Phase.REVIEW->"전사 결과 도착 · 전체 발화가 반영됐는지와 고유명사를 확인하세요. 결과 수신만으로 누락 없음을 확인할 수는 없습니다."
                 SpeechSession.Phase.ERROR->model.session.error?.message
             },model.notice.takeIf {it.isNotBlank()}).joinToString("\n")
             settings.isEnabled=!busy
