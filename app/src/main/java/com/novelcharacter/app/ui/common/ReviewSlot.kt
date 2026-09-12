@@ -13,6 +13,13 @@ class ReviewSlot<T>(private val app: Application, private val type: Class<T>) {
     private var revision: String? = null
     private var lastSaved: T? = null
     var failed = false; private set
+    fun savedKeys(prefix: String): List<String> = attempt {
+        val catalog=journal.owners(prefix)
+        if(catalog.unreadableCount>0) Toast.makeText(app,
+            "보관한 내용 중 ${catalog.unreadableCount}건을 읽지 못했습니다. 해당 파일은 지우지 않았습니다.",
+            Toast.LENGTH_LONG).show()
+        catalog.owners
+    }.orEmpty()
     fun read(key: String): T? = attempt {
         check(!leases.heldByOther(key,this)) { "LIVE_REQUEST" }
         val entry = journal.read(key, type)

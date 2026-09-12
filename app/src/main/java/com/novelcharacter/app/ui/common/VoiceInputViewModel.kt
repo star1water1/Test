@@ -30,11 +30,24 @@ class VoiceInputViewModel(application: Application): AndroidViewModel(applicatio
         boundKey=key
         if(saved!=null) {
             session.restore(saved)
+            // Legacy sessions acquire an ID before an input can acknowledge their delivery.
+            saveTranscript()
             notice=if(saved.awaitingResponse) "이전 전사가 중단되었습니다. 응답을 받지 못한 요청도 과금되었을 수 있습니다. 임시 녹음은 삭제되었으며 자동으로 재요청하지 않습니다."
                 else "보관한 전사 원문과 수정 내용을 복구했습니다. 새 요청은 보내지 않았습니다."
         }
     }
     fun editDraft(text: String) { session.draft=text; saveTranscript() }
+    fun acceptInto(input: NaturalLanguageInputModel): Boolean {
+        val key=boundKey ?: return false
+        if(session.phase!=SpeechSession.Phase.REVIEW || session.draft.isBlank() || !slot.beginRequest()) return false
+        try {
+            if(!saveTranscript()) return false
+            if(!input.accept(com.novelcharacter.app.ai.CreativeInputState.Delivery(
+                    key,session.sessionId,session.draft,session.original))) return false
+            discard() // Receipt is durable; even failed cleanup cannot append this session twice.
+            return true
+        } finally { slot.endRequest() }
+    }
     private fun saveTranscript(): Boolean = if(boundKey!=null &&
         (session.original.isNotBlank() || session.phase==SpeechSession.Phase.TRANSCRIBING)) slot.save(session.snapshot()) else true
     val updates=MutableLiveData(0)
