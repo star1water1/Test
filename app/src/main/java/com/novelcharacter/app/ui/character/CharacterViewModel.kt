@@ -1297,17 +1297,27 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private data class SavedFieldReview(val run: AiSuggestRun,
         val state: FieldSuggestionReviewState.Snapshot, val inFlight: Boolean)
     private val fieldSlot = ReviewSlot(application, SavedFieldReview::class.java)
+    private val fieldOwner = com.novelcharacter.app.ai.FieldReviewOwner("character")
+    fun needsNewFieldReviewChoice() = fieldOwner.needsChoice && aiSuggestResult.value == null && aiSuggestRunning.value != true
+    fun savedNewFieldReviews(): List<Pair<String, String>> = fieldSlot.savedKeys("character:")
+        .filter { fieldOwner.isNewKey(it) }.map { it to fieldSlot.preview(it)?.run?.context?.name.orEmpty() }
+    fun chooseNewFieldReview(key: String?) { fieldOwner.choose(key) }
     private var fieldCheckpoint: AiSuggestRun? = null
     private fun saveFieldReview(run: AiSuggestRun, inFlight: Boolean = false): Boolean {
         fieldCheckpoint = run
         return fieldSlot.save(SavedFieldReview(run, aiReviewState.snapshot(), inFlight))
     }
-    val aiSuggestResult = ReviewLiveData<AiSuggestRun> { it?.let { saveFieldReview(it) } }
+    val aiSuggestResult = ReviewLiveData<AiSuggestRun> { it?.let { saveFieldReview(it, aiSuggestRunning.value == true) } }
+    internal var fieldSuggesterFactory: (com.novelcharacter.app.ai.AiService) -> CharacterFieldAiSuggester =
+        { CharacterFieldAiSuggester(it) }
     /** The same AI entry opens the saved review before provider checks or new billing. */
     fun recoverAiSuggest(characterId: Long): Boolean {
-        if (aiSuggestRunning.value == true) { runningReviewNotice(); return true }
+        if (aiSuggestRunning.value == true) {
+            if (aiSuggestResult.value != null) aiSuggestResult.value = fieldCheckpoint else runningReviewNotice()
+            return true
+        }
         if (aiSuggestResult.value != null) { restoreAiSuggestResult(); return true }
-        val saved = fieldSlot.read("character:$characterId:fields")
+        val saved = fieldSlot.read(fieldOwner.key(characterId))
         if (fieldSlot.failed) return true
         saved ?: return false
         aiReviewState.restore(saved.state)
@@ -1397,10 +1407,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun clearAiSuggestResult() {
+        if (aiSuggestRunning.value == true) { runningReviewNotice(); return }
         val inputs=(fieldCheckpoint?.targets.orEmpty().map { it.key } + "__bulk")
             .map { "field-refine:${aiReviewState.sessionId}:$it" }
         if (!fieldSlot.clear(inputs)) return
         fieldCheckpoint = null
+        fieldOwner.clear()
         aiSuggestResult.value = null
         aiReviewState.clear()
     }
@@ -1457,6 +1469,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 targets.map { CharacterFieldAiSuggester.MissingField(it.key, it.name,
                     CharacterFieldAiSuggester.MissingCause.NOT_RETURNED) }), targetCharacterId, imagePaths, aiContext)
         if (!fieldSlot.beginRequest()) return false
+        val request = aiReviewState.beginRequest(targets.map { it.key }, initial.outcome.suggestions)
         if (!saveFieldReview(initial, true)) { fieldSlot.endRequest(); return false }
         aiSuggestCancelled = false
         val aiService = com.novelcharacter.app.ai.AiService(getApplication())
@@ -1468,8 +1481,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         )
         aiSuggestRunning.value = true
         viewModelScope.launch {
+            var completed = false
             try {
-                val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(aiService)
+                val suggester = fieldSuggesterFactory(aiService)
                 val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
                 val floor = if (applyConfidenceFilter) settings.minConfidence else null
                 val prepared = com.novelcharacter.app.util.AiImagePreparer.prepare(
@@ -1485,8 +1499,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     onCheckpoint = { partial ->
                         val noticed=partial.copy(failures=partial.failures + imageNotices(prepared))
                         val merged = if (carryOver == null) noticed else FieldSuggestionReviewState.merge(carryOver.outcome, noticed)
-                        aiReviewState.replaced(partial.suggestions)
-                        saveFieldReview(initial.copy(outcome=merged, targets=carryOver?.targets ?: enrichedTargets), true)
+                        if (aiReviewState.receive(request, partial))
+                            saveFieldReview(initial.copy(outcome=merged, targets=carryOver?.targets ?: enrichedTargets), true)
+                        else aiReviewState.changed()
                     }
                 ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
@@ -1494,7 +1509,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val noticed = outcome.copy(failures = outcome.failures + imageNotices(prepared))
                 val merged = if (carryOver == null) noticed else
                     com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome, noticed)
-                aiReviewState.replaced(outcome.suggestions)
+                if (!aiReviewState.receive(request, outcome)) {
+                    aiReviewState.changed()
+                    return@launch
+                }
                 val specs = if (carryOver == null) enrichedTargets else {
                     val byKey = enrichedTargets.associateBy { it.key }
                     carryOver.targets.map { byKey[it.key] ?: it }
@@ -1503,6 +1521,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     specs, carryOver?.singleMode ?: singleMode, merged,
                     targetCharacterId, imagePaths, aiContext
                 )
+                completed = true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1515,10 +1534,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                             it.key, it.name, com.novelcharacter.app.ai.CharacterFieldAiSuggester.MissingCause.NOT_RETURNED) })
                 aiSuggestResult.value = carryOver?.copy(outcome=outcome) ?:
                     AiSuggestRun(targets, singleMode, outcome, targetCharacterId, imagePaths, aiContext)
+                completed = true
             } finally {
                 fieldSlot.endRequest()
                 aiSuggestRunning.value = false
                 aiSuggestProgress.value = 0 to 0
+                if (completed) fieldCheckpoint?.let { saveFieldReview(it) }
             }
         }
         return true

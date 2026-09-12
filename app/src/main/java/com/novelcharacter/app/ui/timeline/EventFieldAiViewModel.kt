@@ -54,21 +54,28 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     )
 
     val running = MutableLiveData(false)
+    internal var suggesterFactory: (AiService) -> EventFieldAiSuggester = { EventFieldAiSuggester(it) }
     private data class SavedReview(val run: Run, val state: FieldSuggestionReviewState.Snapshot, val inFlight: Boolean)
     private val slot=ReviewSlot(application,SavedReview::class.java)
+    private val owner = com.novelcharacter.app.ai.FieldReviewOwner("event")
+    fun needsNewReviewChoice() = owner.needsChoice && result.value == null && running.value != true
+    fun savedNewReviews(): List<Pair<String, String>> = slot.savedKeys("event:")
+        .filter { owner.isNewKey(it) }.map { it to slot.preview(it)?.run?.context?.description.orEmpty() }
+    fun chooseNewReview(key: String?) { owner.choose(key) }
     private var checkpoint: Run? = null
     private fun save(run: Run, inFlight: Boolean = false): Boolean {
         checkpoint=run
         return slot.save(SavedReview(run,reviewState.snapshot(),inFlight))
     }
-    val result = ReviewLiveData<Run> { it?.let { save(it) } }
+    val result = ReviewLiveData<Run> { it?.let { save(it, running.value == true) } }
     fun recover(eventId: Long): Boolean {
         if (running.value == true) {
+            if (result.value != null) { result.value = checkpoint; return true }
             android.widget.Toast.makeText(app,R.string.ai_event_field_running,android.widget.Toast.LENGTH_SHORT).show()
             return true
         }
         if (result.value != null) { result.value=result.value; return true }
-        val saved=slot.read("event:$eventId:fields")
+        val saved=slot.read(owner.key(eventId))
         if (slot.failed) return true
         saved ?: return false
         reviewState.restore(saved.state)
@@ -95,10 +102,11 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
     fun cancelRun() { cancelled = true }
 
     fun clearResult() {
+        if (running.value == true) return
         val inputs=(checkpoint?.targets.orEmpty().map { it.key } + "__bulk")
             .map { "field-refine:${reviewState.sessionId}:$it" }
         if (!slot.clear(inputs)) return
-        checkpoint=null; result.value = null; reviewState.clear()
+        checkpoint=null; result.value = null; reviewState.clear(); owner.clear()
     }
 
     /**
@@ -123,6 +131,7 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
             emptyList(),emptyList(),0,0,targets.map { CharacterFieldAiSuggester.MissingField(
                 it.key,it.name,CharacterFieldAiSuggester.MissingCause.NOT_RETURNED) }),eventId,context)
         if(!slot.beginRequest()) return false
+        val request = reviewState.beginRequest(targets.map { it.key }, initial.outcome.suggestions)
         if (!save(initial,true)) { slot.endRequest(); return false }
         cancelled = false
         val aiService = AiService(getApplication())
@@ -132,47 +141,56 @@ class EventFieldAiViewModel(application: Application) : AndroidViewModel(applica
         )
         running.value = true
         viewModelScope.launch {
-            var enriched = targets
-            var lastPartial: CharacterFieldAiSuggester.SuggestOutcome? = null
-            val outcome = try {
-                val settings = AiPromptSettings(getApplication())
-                enriched = withFieldUsage(targets, settings)
-                EventFieldAiSuggester(aiService).suggest(
-                    context = context,
-                    targets = enriched,
-                    scope = settings.eventContextScope,
-                    minConfidence = settings.minConfidence,
-                    creativity = settings.creativity,
-                    // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
-                    templates = settings.asTemplateSource(),
-                    onProgress = { done, total, _, _ -> progress.value = done to total },
-                    isCancelled = { cancelled || slot.failed },
-                    onCheckpoint={ partial ->
-                        lastPartial=partial
-                        reviewState.replaced(partial.suggestions)
-                        save(initial.copy(targets=carryOver?.targets ?: enriched,outcome=if(carryOver==null) partial
-                            else FieldSuggestionReviewState.merge(carryOver.outcome,partial)),true)
-                    }
-                ) { failure -> AiErrorMessages.of(getApplication(), failure) }
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            var completed = false
+            try {
+                var enriched = targets
+                var lastPartial: CharacterFieldAiSuggester.SuggestOutcome? = null
+                val outcome = try {
+                    val settings = AiPromptSettings(getApplication())
+                    enriched = withFieldUsage(targets, settings)
+                    suggesterFactory(aiService).suggest(
+                        context = context,
+                        targets = enriched,
+                        scope = settings.eventContextScope,
+                        minConfidence = settings.minConfidence,
+                        creativity = settings.creativity,
+                        // 사용자가 고친 메시지 양식 (2026.08.20). 손댄 적이 없으면 기본 양식이다.
+                        templates = settings.asTemplateSource(),
+                        onProgress = { done, total, _, _ -> progress.value = done to total },
+                        isCancelled = { cancelled || slot.failed },
+                        onCheckpoint={ partial ->
+                            lastPartial=partial
+                            if (reviewState.receive(request, partial))
+                                save(initial.copy(targets=carryOver?.targets ?: enriched,outcome=if(carryOver==null) partial
+                                    else FieldSuggestionReviewState.merge(carryOver.outcome,partial)),true)
+                            else reviewState.changed()
+                        }
+                    ) { failure -> AiErrorMessages.of(getApplication(), failure) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
+                    // 여기서 그냥 던지면 ⓐ 코루틴이 죽어 앱이 내려가고 ⓑ 살아남아도 결과가 없어
+                    // 검토 창이 안 열려, **비용을 확인받고 돌린 유료 실행이 아무 흔적도 남기지 않는다.**
+                    // 사용자가 보는 증상은 *눌렀는데 아무 일도 안 일어남*이라 실패인지도 모른다.
+                    Log.e("EventFieldAiViewModel", "Event field AI suggest failed", e)
+                    lastPartial?.let { it.copy(failures=it.failures+app.getString(R.string.ai_error_unknown)) }
+                        ?: failureOutcome(targets, e)
+                }
+                if (!reviewState.receive(request, outcome)) {
+                    reviewState.changed()
+                    return@launch
+                }
+                result.value = Run(carryOver?.targets ?: enriched,
+                    if(carryOver == null) outcome else com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome,outcome),
+                    eventId, context)
+                completed = true
+            } finally {
                 slot.endRequest()
-                throw e
-            } catch (e: Exception) {
-                // **예기치 못한 예외도 결과로 만든다** (B-144가 이름 붙인 결함).
-                // 여기서 그냥 던지면 ⓐ 코루틴이 죽어 앱이 내려가고 ⓑ 살아남아도 결과가 없어
-                // 검토 창이 안 열려, **비용을 확인받고 돌린 유료 실행이 아무 흔적도 남기지 않는다.**
-                // 사용자가 보는 증상은 *눌렀는데 아무 일도 안 일어남*이라 실패인지도 모른다.
-                Log.e("EventFieldAiViewModel", "Event field AI suggest failed", e)
-                lastPartial?.let { it.copy(failures=it.failures+app.getString(R.string.ai_error_unknown)) }
-                    ?: failureOutcome(targets, e)
+                running.value = false
+                progress.value = 0 to 0
+                if (completed) checkpoint?.let { save(it) }
             }
-            if (carryOver != null) reviewState.replaced(outcome.suggestions)
-            result.value = Run(carryOver?.targets ?: enriched,
-                if(carryOver == null) outcome else com.novelcharacter.app.ai.FieldSuggestionReviewState.merge(carryOver.outcome,outcome),
-                eventId, context)
-            slot.endRequest()
-            running.value = false
-            progress.value = 0 to 0
         }
         return true
     }
