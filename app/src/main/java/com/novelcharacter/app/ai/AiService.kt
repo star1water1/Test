@@ -338,17 +338,19 @@ class AiService(context: Context) {
             } else result
 
         val spec = AiProtocolCodec.buildRequest(config, apiKey, request0)
-        val first = call(spec, config.protocol, config.model)
+        val first = call(spec, config, request.inputSource)
         if (first !is AiResult.Failure) {
             return@withContext noted(first)
         }
+        if (first.kind == AiErrorKind.INPUT_TOO_LARGE || first.kind == AiErrorKind.RESPONSE_TOO_LARGE)
+            return@withContext first
 
         // ① OpenAI 신형 모델의 max_tokens **파라미터 이름** 거부 → max_completion_tokens 로 1회 재시도.
         if (config.protocol == AiProtocol.OPENAI_COMPAT &&
             AiProtocolCodec.isMaxTokensParamError(first.httpCode ?: 0, first.detail)
         ) {
             val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, request0)
-            val second = call(retry, config.protocol, config.model)
+            val second = call(retry, config, request.inputSource)
             // **성공한 재시도는 기억한다** — 안 그러면 그 모델로 가는 모든 요청이 400 → 재시도의
             // 2회 왕복으로 남는다(지연이 배가 되고 레이트리밋도 두 배로 두드린다). 기억되면
             // [AiProtocolCodec.buildRequest]가 첫 요청부터 max_completion_tokens로 조립한다.
@@ -367,7 +369,7 @@ class AiService(context: Context) {
                     AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(
                         config, apiKey, request0.copy(temperature = null)
                     ),
-                    config.protocol, config.model
+                    config, request.inputSource
                 )
                 if (third is AiResult.Success) {
                     rememberMaxTokensParamUnsupported(config.id)
@@ -386,7 +388,7 @@ class AiService(context: Context) {
             AiProtocolCodec.isTemperatureUnsupportedError(first.httpCode ?: 0, first.detail)
         ) {
             val retrySpec = AiProtocolCodec.buildRequest(config, apiKey, request0.copy(temperature = null))
-            val second = call(retrySpec, config.protocol, config.model)
+            val second = call(retrySpec, config, request.inputSource)
             if (second is AiResult.Success) {
                 rememberTemperatureUnsupported(config.id)
                 return@withContext noted(second.copy(temperatureOmitted = true))
@@ -414,7 +416,7 @@ class AiService(context: Context) {
             // 빼고 1회 재시도해 텍스트로라도 답한다. 여기서 물러서지 않으면 비전 미지원 모델을
             // 쓰는 사용자는 첨부를 켠 순간부터 400만 받게 되고, 그 원인도 알 수 없다.
             val retrySpec = AiProtocolCodec.buildRequest(config, apiKey, request0.withoutImages())
-            val second = call(retrySpec, config.protocol, config.model)
+            val second = call(retrySpec, config, request.inputSource)
             if (second is AiResult.Success) {
                 return@withContext second.copy(imagesOmitted = true)
             }
@@ -438,7 +440,7 @@ class AiService(context: Context) {
                 val retrySpec = AiProtocolCodec.buildRequest(
                     config, apiKey, request0.copy(maxTokens = learned)
                 )
-                val second = call(retrySpec, config.protocol, config.model)
+                val second = call(retrySpec, config, request.inputSource)
                 if (second is AiResult.Success) rememberDetectedLimit(config.id, learned)
                 return@withContext noted(second)
             }
@@ -543,6 +545,16 @@ class AiService(context: Context) {
         providerStore.active()?.temperatureUnsupported == true
 
     private suspend fun call(
+        spec: AiProtocolCodec.HttpSpec, config: AiProviderConfig, source: AiInputSource?
+    ): AiResult = if (source == null) callRaw(spec, config.protocol, config.model)
+    else AiInputPreflight.send(config, spec, source, inspect = { probe ->
+        when (val raw = executeHttp(probe)) {
+            is RawResponse.Http -> AiInputPreflight.Reply(raw.code, raw.body.orEmpty())
+            is RawResponse.NetworkError -> null
+        }
+    }, generate = { callRaw(spec, config.protocol, config.model) })
+
+    private suspend fun callRaw(
         spec: AiProtocolCodec.HttpSpec, protocol: AiProtocol, requestedModel: String
     ): AiResult = when (val raw = executeHttp(spec)) {
         is RawResponse.NetworkError -> raw.failure
@@ -579,7 +591,13 @@ class AiService(context: Context) {
                 override fun onResponse(call: Call, response: Response) {
                     // 본문 스트리밍 중 타임아웃 등도 기존과 동일하게 분류한다 (TIMEOUT 유지)
                     val raw = try {
-                        response.use { RawResponse.Http(it.code, it.body?.string()) }
+                        response.use {
+                            val body = it.body
+                            RawResponse.Http(it.code, body?.let { value ->
+                                val bytes = BoundedResponse.read(value.byteStream(), BoundedResponse.AI_BYTES)
+                                String(bytes, value.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
+                            })
+                        }
                     } catch (e: Exception) {
                         classifyNetworkException(e)
                     }
@@ -596,6 +614,8 @@ class AiService(context: Context) {
 
     /** HTTP 예외 → 실패 분류 (executeHttp의 onResponse/onFailure 공용 — 분류 회귀 방지) */
     private fun classifyNetworkException(e: Exception): RawResponse.NetworkError = when (e) {
+        is BoundedResponse.TooLarge ->
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.RESPONSE_TOO_LARGE))
         is SocketTimeoutException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message))
         is InterruptedIOException ->
