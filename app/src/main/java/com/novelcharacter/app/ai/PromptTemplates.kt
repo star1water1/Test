@@ -306,8 +306,10 @@ object PromptTemplates {
     fun responseFormat(id: Id): String = when (id) {
         Id.CHAR_FIELD_SYSTEM, Id.EVENT_FIELD_SYSTEM ->
             "반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:\n" +
-                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low","sourceEvidence":null,"suggestionNote":null}]}""" +
-                "\nsourceEvidence는 제공된 브리핑의 정확한 원문 인용이 있을 때만 문자열로 쓰고 없으면 null이다. suggestionNote는 선택적인 창작 제안 메모이며 없으면 null이다. reason의 맥락상 추천 이유는 별도로 반드시 적는다."
+                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low","sourceEvidence":null,"suggestionNote":null,"origin":null,"sourceType":null}]}""" +
+                "\nsourceEvidence는 실제 제공된 브리핑·해당 필드의 보완 지시·참고자료의 정확한 원문 인용이며 없으면 null이다. sourceType은 BRIEF, INSTRUCTION, CONTEXT, IMAGE 중 해당 자료이며 모르면 null이다. " +
+                "origin은 선택 정보로 DIRECT(직접 대응), INTERPRETED(해석), CREATIVE(창작) 문자열 또는 이들의 배열이다. 값 자체에 여러 출처 방식이 섞이면 모두 표시하고 창작 부분을 숨기지 마라. " +
+                "이미지 전송이나 인용의 존재만으로 직접 대응 또는 사실이라고 주장하지 마라. 불명확하면 null이다. suggestionNote는 값과 별도의 선택적인 창작 제안 메모이며 없으면 null이다. reason의 맥락상 추천 이유는 별도로 반드시 적는다."
 
         Id.NARRATIVE_SYSTEM ->
             "반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:\n" +

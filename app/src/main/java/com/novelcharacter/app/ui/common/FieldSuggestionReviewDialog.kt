@@ -46,10 +46,9 @@ object FieldSuggestionReviewDialog {
         var specs = liveSpecs().associateBy { it.key }
         val requestSpecs = targets.associateBy { it.key }
         val originals = outcome.suggestions.associateBy { it.fieldKey }
-        state.seedDefaults(outcome.suggestions.filter {
-            specs[it.fieldKey]?.currentValue.isNullOrBlank() &&
-                it.confidence != CharacterFieldAiSuggester.Confidence.LOW
-        }.map { it.fieldKey })
+        var syncingChecks = false
+        fun provenance(value: CharacterFieldAiSuggester.Suggestion) = com.novelcharacter.app.ai.FieldProvenance.assess(
+            value, specs[value.fieldKey], state.receipt(value, outcome.inputReceipts.orEmpty()), state.isDirectConfirmed(value))
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, pad)
@@ -92,12 +91,13 @@ object FieldSuggestionReviewDialog {
         }
         for ((key, original) in originals) {
             val spec = specs[key] ?: requestSpecs[key] ?: continue
-            state.current(original)
+            val initial = state.current(original)
+            state.syncSelection(initial, provenance(initial).defaultOn)
             val box = CheckBox(context).apply {
                 text = spec.name
                 textSize = 16f
                 isChecked = state.isChecked(key)
-                setOnCheckedChangeListener { _, on -> state.setChecked(key, on) }
+                setOnCheckedChangeListener { _, on -> if (!syncingChecks) state.setChecked(key, on) }
             }
             boxes[key] = box
             panel.addView(box)
@@ -107,6 +107,11 @@ object FieldSuggestionReviewDialog {
             val note = label("")
             fun render() {
                 val current = state.current(original)
+                val assessment = provenance(current)
+                state.syncSelection(current, assessment.defaultOn)
+                syncingChecks = true
+                box.isChecked = state.isChecked(key)
+                syncingChecks = false
                 value.text = buildString {
                     val live = specs[key]
                     if (live == null) append("현재 폼에 없는 항목입니다. 제안은 보관했습니다.\n")
@@ -117,8 +122,12 @@ object FieldSuggestionReviewDialog {
                     else current.confidence?.let { append("  [${it.label}]") }
                     if (current.outsideLibrary) append("  [목록 밖]")
                 }
-                source.text = current.sourceEvidence?.let { "원문 근거\n“$it”" }.orEmpty()
-                source.isVisible = source.text.isNotEmpty()
+                source.text = buildString {
+                    if (current.editedByUser) append("수정 전 AI 제안의 출처\n")
+                    append(assessment.label).append("\n").append(assessment.explanation)
+                    if (state.needsSelectionReview(key)) append("\n현재 AI 제안은 출처를 다시 확인해야 하므로 이전 체크를 해제했습니다.")
+                    assessment.evidence.firstOrNull()?.let { append("\n원문 인용: “${it.quote}”") }
+                }
                 reason.text=if(current.reason.isBlank()) "" else "추천 이유\n${current.reason}"
                 reason.isVisible=current.reason.isNotBlank()
                 val memo = current.suggestionNote.orEmpty()
@@ -128,6 +137,38 @@ object FieldSuggestionReviewDialog {
             renders[key] = { render() }
             render()
             panel.addView(value); panel.addView(source); panel.addView(reason); panel.addView(note)
+            panel.addView(button("당시 자료·인용 맥락 보기") {
+                val current = state.current(original)
+                val session = state.sessionId
+                val assessment = provenance(current)
+                val detail = buildString {
+                    append("확인할 제안값\n").append(current.value).append("\n\n")
+                    append(assessment.dispatch).append("\n\n").append(assessment.explanation)
+                    current.provenance?.let {
+                        append("\n모델의 분류 주장: ").append(it.origins.orEmpty().joinToString(", ").ifBlank { "미제공" })
+                        append("\n모델의 자료 주장: ").append(it.source ?: "미제공")
+                    }
+                    current.provenance?.quote?.let { append("\n\n모델이 제시한 인용\n").append(it) }
+                    assessment.evidence.forEach {
+                        val name = when (it.source) { "BRIEF" -> "브리핑"; "INSTRUCTION" -> "보완 지시"; else -> "참고자료" }
+                        append("\n\n당시 ").append(name).append("의 전체 맥락\n").append(it.context)
+                    }
+                }
+                MaterialAlertDialogBuilder(context).setTitle("전송 자료와 인용 확인")
+                    .setView(cappedScrollView(context).apply { addView(label(detail)) })
+                    .setNegativeButton("닫기", null).apply {
+                        if (assessment.evidence.isNotEmpty() && current.provenance?.origins
+                                ?.map { it.uppercase(java.util.Locale.ROOT) } == listOf("DIRECT") &&
+                            current.provenance.malformed == false) {
+                            setPositiveButton("원문과 값의 대응 확인 · 항목 선택") { _, _ ->
+                                // The confirmation belongs to exactly the value and request the user saw.
+                                if (state.sessionId == session && state.current(original) == current) {
+                                    state.confirmDirect(current); state.setChecked(key, true); render()
+                                } else Toast.makeText(context, "제안이 바뀌었습니다. 새 값과 원문을 다시 확인하세요.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }.show()
+            })
             val editor = EditText(context).apply {
                 hint = context.getString(R.string.ai_field_refine_value_hint)
                 setText(state.editDrafts[key] ?: state.current(original).value)
@@ -228,7 +269,7 @@ object FieldSuggestionReviewDialog {
                 if(imageCount>0) bulkButton.append(" · 이미지 총 ${imageCount*requests}장 전송")
             }
             boxes.forEach { (key, box) -> box.setOnCheckedChangeListener { _, on ->
-                state.setChecked(key, on)
+                if (!syncingChecks) state.setChecked(key, on)
                 updateCost()
             } }
             updateCost()

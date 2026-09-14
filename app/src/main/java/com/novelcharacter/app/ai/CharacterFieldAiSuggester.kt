@@ -174,7 +174,8 @@ class CharacterFieldAiSuggester(
         val outsideLibrary: Boolean = false,
         val sourceEvidence: String? = null,
         val suggestionNote: String? = null,
-        val inputReceiptId: String? = null
+        val inputReceiptId: String? = null,
+        val provenance: FieldProvenance.Claim? = null
     )
 
     /**
@@ -301,7 +302,8 @@ class CharacterFieldAiSuggester(
      * 돌려주는데, companion 안의 중첩 타입은 `Outer.Companion.Inner`로만 닿아
      * 시그니처마다 `Companion`이 끼어든다.
      */
-    data class PromptBuild(val text: String, val truncationNotes: List<String>)
+    data class PromptBuild(val text: String, val truncationNotes: List<String>,
+        val contextText: List<String>? = null)
 
     /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
     sealed class Normalized {
@@ -461,7 +463,7 @@ class CharacterFieldAiSuggester(
                 imageSystemRule = imageRule(images.size),
                 inputSource = AiInputSource(prompts.evidenceSource,
                     chunk.mapNotNull { t -> t.userInstruction?.let { t.key to it } }.toMap(),
-                    prompt.truncationNotes.toList())
+                    prompt.truncationNotes.toList(), prompt.contextText)
             )
             // Persist dispatch intent as well: the current chunk may be billed if the process dies.
             onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
@@ -1197,9 +1199,7 @@ class CharacterFieldAiSuggester(
                 )
             )
 
-            val text = PromptTokens.expand(
-                template,
-                mapOf(
+            val materials = mapOf(
                     "캐릭터명" to context.name.trim().ifEmpty { "(미정)" },
                     "이명목록" to context.aliases.joinToString(", "),
                     "태그목록" to
@@ -1218,8 +1218,11 @@ class CharacterFieldAiSuggester(
                     "입력된필드표" to filledText,
                     PromptTemplates.T_TARGET_FIELDS to targetSection
                 )
-            )
-            return PromptBuild(CreativeBriefing.appendTo(text, context.briefing), notes)
+            val text = PromptTokens.expand(template, materials)
+            val contextText = materials.filter { (key, value) ->
+                key in used && key != PromptTemplates.T_TARGET_FIELDS && value.isNotBlank()
+            }.values.toList()
+            return PromptBuild(CreativeBriefing.appendTo(text, context.briefing), notes, contextText)
         }
 
         /**
@@ -1406,7 +1409,8 @@ class CharacterFieldAiSuggester(
                                     key, normalized.value, reason, confidence,
                                     outsideLibrary = normalized.outsideLibrary,
                                     sourceEvidence = CreativeBriefing.verifiedEvidence(obj.stringOr("sourceEvidence"), evidenceSource),
-                                    suggestionNote = obj.stringOr("suggestionNote").takeIf { it.isNotBlank() }
+                                    suggestionNote = obj.stringOr("suggestionNote").takeIf { it.isNotBlank() },
+                                    provenance = FieldProvenance.readClaim(obj)
                                 )
                             )
                             resolved.add(key)

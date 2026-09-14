@@ -229,9 +229,7 @@ class EventFieldAiSuggester internal constructor(private val engine: CharacterFi
                 )
             )
 
-            val text = PromptTokens.expand(
-                template,
-                mapOf(
+            val materials = mapOf(
                     "사건설명" to descText,
                     "때" to context.dateLabel.trim(),
                     "유형" to context.eventTypeLabel.trim(),
@@ -251,8 +249,11 @@ class EventFieldAiSuggester internal constructor(private val engine: CharacterFi
                     "입력된필드표" to filledText,
                     PromptTemplates.T_TARGET_FIELDS to targetSection
                 )
-            )
-            return CharacterFieldAiSuggester.PromptBuild(text, notes)
+            val text = PromptTokens.expand(template, materials)
+            val contextText = materials.filter { (key, value) ->
+                key in used && key != PromptTemplates.T_TARGET_FIELDS && value.isNotBlank()
+            }.values.toList()
+            return CharacterFieldAiSuggester.PromptBuild(text, notes, contextText)
         }
     }
 }
