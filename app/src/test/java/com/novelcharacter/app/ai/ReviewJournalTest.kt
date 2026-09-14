@@ -104,7 +104,7 @@ class ReviewJournalTest {
         val first=Suggestion("a","최초 제안","이유",sourceEvidence="원문",suggestionNote="메모")
         state.seedDefaults(listOf("a","b")); state.setChecked("b",false)
         state.current(first); state.remember(first.copy(value="손수 고친 값"))
-        state.editDrafts["a"]="고치다 만 글"; state.instructions["a"]="범위는 유지"
+        state.setDraft("a", "고치다 만 글"); state.instructions["a"]="범위는 유지"
         journal().write("state",state.snapshot(),null)
         val recovered=FieldSuggestionReviewState()
         recovered.restore(journal().read("state",FieldSuggestionReviewState.Snapshot::class.java)!!.value)

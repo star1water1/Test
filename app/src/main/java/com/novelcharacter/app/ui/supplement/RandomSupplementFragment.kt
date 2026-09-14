@@ -487,13 +487,15 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
 
     private fun observeAi() {
         characterViewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
-            updateAiProgress(running == true || characterViewModel.aiNarrativeRunning.value == true)
+            updateAiProgress((running == true && characterViewModel.aiSuggestResult.value == null) ||
+                characterViewModel.aiNarrativeRunning.value == true)
         }
         characterViewModel.aiSuggestProgress.observe(viewLifecycleOwner) { (done, total) ->
             if (total > 0) aiProgressDialog?.update(done, total)
         }
         characterViewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->
-            updateAiProgress(running == true || characterViewModel.aiSuggestRunning.value == true)
+            updateAiProgress(running == true || (characterViewModel.aiSuggestRunning.value == true &&
+                characterViewModel.aiSuggestResult.value == null))
         }
         characterViewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
             if (run != null) maybeShowAiResult(run)

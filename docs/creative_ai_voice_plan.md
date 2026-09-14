@@ -141,6 +141,22 @@ M3의 남은 실기기 gate:
 
 계약 근거: [Gemini models](https://ai.google.dev/api/models), [Gemini countTokens](https://ai.google.dev/api/tokens), [Anthropic model 정보](https://platform.claude.com/docs/en/api/models/retrieve), [Anthropic 토큰 계산](https://platform.claude.com/docs/en/build-with-claude/token-counting), [파일 전사 응답](https://developers.openai.com/api/docs/guides/speech-to-text).
 
+## 실사용 안정화 M5 — 보완 응답·편집 revision과 적용 안전성
+
+캐릭터·사건 필드 검토는 `FieldSuggestionReviewState`의 공통 reducer를 사용한다. 요청을 시작할 때 검토 session ID, generation, 대상별 사용자 revision을 잡고 누적 checkpoint와 최종 응답을 같은 `(generation, fieldKey)`로 한 번만 처리한다. 직접 입력 중인 draft, 확정 수정, 체크 변경, reset도 revision에 반영한다. 응답 이후의 재렌더는 사용자 선택을 다시 초기화하지 않는다.
+
+요청 이후 사용자가 수정했으면 현재 값·draft·체크를 유지하고 받은 보완값과 앱 소유 입력 receipt를 별도 후보에 보관한다. 사용자가 후보를 명시적으로 채택하거나 최근 AI 값으로 돌아갈 수 있다. 더 오래된 generation은 현재 값과 reset 기준을 바꾸지 않으며 별도 후보로 남는다. 보완 실패는 이전 유료 결과와 reset 기준을 유지한다. 새 snapshot 속성은 nullable이며 기존 journal·CAS·lease와 checkpoint-before-observe를 재사용한다. 복원은 자동 재요청하지 않는다.
+
+기존 요청 직렬화를 유지하면서 보완 중 검토창을 열어 두고 직접 수정·체크·reset을 허용한다. 적용·추가 보완·검토 폐기는 실행 중 잠그며 닫기/보관과 남은 요청 중단은 제공한다. 진행 중인 요청은 끝까지 받을 수 있고 과금될 수 있음을 같은 화면에서 알린다. 전체 행의 안정적 갱신·스크롤/포커스 유지·긴 편집 표면은 M7 범위다.
+
+검토의 기존값은 요청 당시 값 대신 현재 폼에서 읽는다. 적용 직전 값/필드 설정이 달라졌으면 현재 비교를 갱신하고 다시 확인하게 한다. 최신 필드 정의·옵션·실제 위젯을 대상으로 선택 전체를 먼저 검증하고 나서 기입한다. 삭제된 항목·변경된 옵션·없는 위젯 때문에 일부만 적용하거나 사건 선택지에 AI 값을 임의로 추가하지 않는다. Room 저장은 기존 폼 저장 동작이 맡는다.
+
+저장 전 캐릭터·사건의 필드 검토에는 각각 `character:draft:<UUID>:fields`, `event:draft:<UUID>:fields` 슬롯을 사용한다. 같은 ViewModel의 회전은 선택을 유지하며, 새 편집 화면/프로세스에서는 보관 목록의 요청 당시 이름을 보고 명시적으로 이어 연다. 기존 `-1` 검토도 목록으로 열 수 있고 새 구상에 자동 연결하거나 삭제하지 않는다. 이는 필드 AI 검토 식별자이며 Creator Brief UUID나 폼 전체 드래프트 식별자를 대신하지 않는다. 서술형 검토의 기존 슬롯은 이번 변경 범위 밖이다.
+
+자동 검증은 `FieldReviewRevisionTest`의 역순/중복·미완성/확정 수정·reset·다른 필드·실패·legacy JSON·receipt/세션 복원·신규 owner·일괄 preflight, 기존 review/journal/입력 시험과 `FieldReviewDeliveryTest`의 실제 두 ViewModel/엔진/slot 연결을 포함한다. 계측에서는 전송만 fake로 대체해 지연 응답, 직렬 guard, 복원 시 무과금, 후보 보존, 독립 신규 사건 검토를 확인한다. 객체 재생성 시험은 실제 process kill이나 키보드 조작 검증을 대신하지 않는다.
+
+기기에서는 노트20 Android 13에서 캐릭터·사건·보충 화면 각각 보완 중 입력/확정/체크/reset, 응답 도착 후 후보 채택, 회전·편집창 재진입, 새 구상 A/B와 구버전 -1 검토 선택, 현재 폼 값/옵션 변경 후 적용을 확인한다. M6 origin/기본 선택 정책과 M7 세부 검토 UX는 후속 범위다. 녹음·전사·pending audio는 이번에 변경하지 않는다.
+
 ## 기기에서 이어 확인할 시나리오
 
 1. AI 연동 제공자를 등록하고 음성 설정에서 전사 모델 선택. 첫 캐릭터 추천과 단건/일괄 서술형에서 브리핑 없이 실행한 결과를 기존 흐름과 비교한다.

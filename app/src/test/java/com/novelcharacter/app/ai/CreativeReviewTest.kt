@@ -82,7 +82,7 @@ class CreativeReviewTest {
         val state = FieldSuggestionReviewState()
         state.seedDefaults(listOf("a", "b"))
         state.setChecked("b", false)
-        state.editDrafts["a"] = "미완성 입력..."
+        state.setDraft("a", "미완성 입력...")
         state.seedDefaults(listOf("a", "b"))
         assertTrue(state.isChecked("a"))
         assertFalse(state.isChecked("b"))
@@ -96,11 +96,12 @@ class CreativeReviewTest {
         state.remember(a.copy(value="직접 수정")); state.remember(b.copy(value="다른 수정"))
         state.setChecked("b", false)
         val next = a.copy(value="보완")
-        state.replaced(listOf(next))
+        val request = state.beginRequest(listOf("a"), listOf(a, b))
+        state.receive(request, outcome(next))
         assertEquals("보완", state.current(next).value)
         assertEquals("다른 수정", state.current(b).value)
         assertFalse(state.isChecked("b"))
-        assertEquals("처음", state.reset(next).value)
+        assertEquals("보완", state.reset(next).value)
     }
     @Test fun failedRetryKeepsPaidSuggestionAndReportsFailure() {
         val first = Suggestion("a", "유료 응답", "")

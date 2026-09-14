@@ -469,7 +469,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // AI 추천 실행 상태·결과 관측 — 실행은 VM(회전 생존)이 수행하므로 진행 다이얼로그와
         // 결과 다이얼로그가 화면 재생성을 넘어 복원된다. 결과 소비(clear)는 다이얼로그 액션 시점.
         viewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
-            if (running == true) {
+            if (running == true && viewModel.aiSuggestResult.value == null) {
                 if (aiProgressDialog == null) {
                     aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),

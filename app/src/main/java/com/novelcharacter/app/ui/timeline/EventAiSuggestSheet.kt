@@ -32,6 +32,11 @@ object EventAiSuggestSheet {
         contextLoader: suspend () -> EventFieldAiSuggester.EventAiContext?
     ) {
         val context = fragment.requireContext()
+        if (eventId == -1L && viewModel.needsNewReviewChoice() &&
+            com.novelcharacter.app.ui.common.NewFieldReviewChoice.show(fragment,
+                viewModel.savedNewReviews(), viewModel::chooseNewReview) {
+                showForField(fragment, fieldName, spec, viewModel, eventId, contextLoader)
+            }) return
         if (viewModel.recover(eventId)) return
         if (!AiFieldSuggestSheet.guardUsableProvider(fragment)) return
 
@@ -72,7 +77,8 @@ object EventAiSuggestSheet {
         /** 지금 창이 편집 중인 사건 id — 요청 시점과 다르면 적용하지 않는다 */
         currentEventId: Long,
         /** 채택분을 폼에 기입한다. 성공 여부를 돌려준다 — 실패하면 유료 응답을 되살린다 */
-        applyValues: (List<CharacterFieldAiSuggester.Suggestion>) -> Boolean
+        applyValues: (List<CharacterFieldAiSuggester.Suggestion>) -> Boolean,
+        liveSpecs: () -> List<CharacterFieldAiSuggester.FieldSpec>
     ) {
         val mismatched = run.eventId != currentEventId
         val notices = AiFieldSuggestSheet.buildNoticeLines(fragment, run.outcome).toMutableList()
@@ -105,7 +111,10 @@ object EventAiSuggestSheet {
             },
             retryKeys=com.novelcharacter.app.ai.FieldSuggestionReviewState.retryableKeys(run.outcome),
             canApply=!mismatched,
-            running=viewModel.running
+            running=viewModel.running,
+            liveSpecs=liveSpecs,
+            progress=viewModel.progress,
+            onCancel={viewModel.cancelRun()}
         )
     }
 
