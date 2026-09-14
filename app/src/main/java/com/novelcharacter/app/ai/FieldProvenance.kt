@@ -89,8 +89,9 @@ object FieldProvenance {
         }
         val dispatch = if (actual == null) "당시 전송 기록 없음" else buildString {
             append("당시 모델: ${actual.model} · 실제 이미지 전송 ${actual.imageCount}장")
-            append("\n참고자료 기록 ${actual.source.contextText?.size ?: 0}개")
-            if (actual.source.contextText == null) append(" · 구버전은 참고자료 구분 기록 없음")
+            val materials = actual.source.contextText
+            if (materials == null) append("\n참고자료 구분 기록 없음 · 구버전")
+            else append("\n참고자료 기록 ${materials.size}개")
             actual.source.contextNotes.forEach { append("\n").append(it) }
         }
         return Assessment(label, defaultOn, explanation, matched.distinct(), dispatch)

@@ -34,6 +34,10 @@ class FieldSuggestionReviewState {
         received.clear(); received.addAll(value.received.orEmpty())
         held.clear(); held.addAll(value.candidates.orEmpty())
         selectionValues.clear(); selectionValues.putAll(value.selectionValues.orEmpty())
+        if (value.selectionValues == null) {
+            // Explicitly edited legacy values already belong to the user, not a new model proposal.
+            value.edited.values.filter { it.editedByUser }.forEach { selectionValues[it.fieldKey] = it }
+        }
         explicitOff.clear(); explicitOff.addAll(value.explicitOff.orEmpty())
         if (value.selectionValues == null && value.checks.seeded) {
             // Legacy snapshots cannot distinguish an unchecked default from a user's refusal.

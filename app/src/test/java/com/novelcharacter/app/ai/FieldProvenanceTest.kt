@@ -198,4 +198,21 @@ class FieldProvenanceTest {
         assertEquals(direct, state.current(newer)); assertTrue(state.isDirectConfirmed(direct))
         assertEquals(newer, state.candidates("rank").single().suggestion)
     }
+    @Test fun oldManuallyEditedSelectionSurvivesPolicyUpgradeButUnverifiedAiDefaultsNeedReview() {
+        val manual = value().copy(value = "A", editedByUser = true)
+        fun restoreLegacy(edit: Boolean): FieldSuggestionReviewState {
+            val state = FieldSuggestionReviewState()
+            state.current(value()); state.seedDefaults(listOf("rank"))
+            if (edit) state.remember(manual)
+            val json = JsonParser.parseString(Gson().toJson(state.snapshot())).asJsonObject
+            listOf("selectionValues", "explicitOff", "selectionRecheck", "confirmedDirect").forEach { json.remove(it) }
+            return FieldSuggestionReviewState().apply {
+                restore(Gson().fromJson(json, FieldSuggestionReviewState.Snapshot::class.java))
+            }
+        }
+        val edited = restoreLegacy(true); edited.syncSelection(manual, false)
+        assertTrue(edited.isChecked("rank"))
+        val ai = restoreLegacy(false); ai.syncSelection(value(), false)
+        assertFalse(ai.isChecked("rank")); assertTrue(ai.needsSelectionReview("rank"))
+    }
 }
