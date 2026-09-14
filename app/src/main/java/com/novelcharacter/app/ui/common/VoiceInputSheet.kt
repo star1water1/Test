@@ -93,7 +93,7 @@ class VoiceInputSheet : DialogFragment() {
         }
         panel.addView(editor)
         viewport.anchor("transcript",editor);viewport.editor("transcript",editor)
-        val expand=button("긴 글 넓게 편집") { TranscriptEditorSheet.open(requireParentFragment(),inputKey,requireArguments().getString("audioId")) }
+        val expand=button("긴 글 넓게 편집") { TranscriptEditorSheet.open(requireParentFragment(),inputKey,requireArguments().getString("audioId"),editor.selectionStart,editor.selectionEnd) }
         panel.addView(expand)
         val corrections=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL}
         val correct=disclosure("corrections","고유명사 교정 후보",corrections)
@@ -189,6 +189,10 @@ class VoiceInputSheet : DialogFragment() {
             if(editor.text.toString()!=model.session.draft) {
                 val position=editor.selectionStart.coerceAtLeast(0)
                 editor.setText(model.session.draft);editor.setSelection(position.coerceAtMost(editor.length()))
+            }
+            model.pendingEditorSelection?.let { (start,end) ->
+                editor.setSelection(start.coerceIn(0,editor.length()),end.coerceIn(0,editor.length()))
+                model.pendingEditorSelection=null
             }
             renderCorrections()
         }

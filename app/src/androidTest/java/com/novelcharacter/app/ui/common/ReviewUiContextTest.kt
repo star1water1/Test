@@ -115,8 +115,10 @@ class ReviewUiContextTest {
                 val expanded=a.host.childFragmentManager.findFragmentByTag("transcript-editor:$key") as TranscriptEditorSheet
                 val editor=all(expanded.requireDialog().window!!.decorView).filterIsInstance<EditText>().single()
                 assertEquals(original,editor.text.toString())
+                assertEquals(10,editor.selectionStart);assertEquals(25,editor.selectionEnd)
                 editor.text.replace(0,1,"고침")
                 assertTrue(model.session.draft.startsWith("고침"));assertEquals(original,model.session.original)
+                editor.setSelection(7,12)
                 assertTrue(editor.height>0)
                 expanded.dismiss()
             }
@@ -124,6 +126,7 @@ class ReviewUiContextTest {
             scenario.onActivity {
                 val editor=all(voice.requireDialog().window!!.decorView).filterIsInstance<EditText>().single()
                 assertEquals(model.session.draft,editor.text.toString())
+                assertEquals(7,editor.selectionStart);assertEquals(12,editor.selectionEnd)
                 assertTrue(voice.requireDialog().isShowing)
                 model.discard() // Only the test's UUID-keyed transcript, never a user's recording.
             }

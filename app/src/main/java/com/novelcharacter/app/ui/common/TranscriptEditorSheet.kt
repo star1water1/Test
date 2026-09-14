@@ -28,8 +28,8 @@ class TranscriptEditorSheet : DialogFragment() {
         panel.addView(TextView(context).apply { text = "전사 편집 · 수정 내용은 보관됩니다. 입력에 추가는 이전 화면에서 실행하세요." })
         val field = EditText(context).apply {
             gravity = Gravity.TOP; setSingleLine(false); setText(model.session.draft)
-            setSelection((savedInstanceState?.getInt("start") ?: 0).coerceIn(0,length()),
-                (savedInstanceState?.getInt("end") ?: 0).coerceIn(0,length()))
+            setSelection((savedInstanceState?.getInt("start") ?: requireArguments().getInt("start")).coerceIn(0,length()),
+                (savedInstanceState?.getInt("end") ?: requireArguments().getInt("end")).coerceIn(0,length()))
             doAfterTextChanged { model.editDraft(it.toString()) }
         }
         field.post { field.scrollTo(0,savedInstanceState?.getInt("scroll") ?: 0) }
@@ -61,13 +61,17 @@ class TranscriptEditorSheet : DialogFragment() {
         // The parent review receives this same draft when it is exposed again.
         editor?.requestFocus()
     }
+    override fun onStop() {
+        editor?.let { model.pendingEditorSelection=it.selectionStart to it.selectionEnd }
+        super.onStop()
+    }
     override fun onDestroyView() { model.updates.removeObservers(this); editor=null; super.onDestroyView() }
     override fun onDismiss(dialog: android.content.DialogInterface) { model.refresh(); super.onDismiss(dialog) }
     companion object {
-        fun open(host: Fragment, key: String, audioId: String? = null) {
+        fun open(host: Fragment, key: String, audioId: String? = null, start: Int = 0, end: Int = start) {
             val tag = "transcript-editor:$key"
             if (host.childFragmentManager.isStateSaved || host.childFragmentManager.findFragmentByTag(tag) != null) return
-            TranscriptEditorSheet().apply { arguments=Bundle().apply { putString("key",key); putString("audioId",audioId) } }
+            TranscriptEditorSheet().apply { arguments=Bundle().apply { putString("key",key); putString("audioId",audioId); putInt("start",start); putInt("end",end) } }
                 .show(host.childFragmentManager,tag)
         }
     }
