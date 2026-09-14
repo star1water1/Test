@@ -473,6 +473,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 if (aiProgressDialog == null) {
                     aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),
+                        aiRequests = true,
                         titleRes = R.string.ai_field_suggest_title,
                         total = viewModel.aiSuggestProgress.value?.second ?: 0,
                         stageRes = R.string.ai_field_running,
@@ -503,6 +504,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 if (aiProgressDialog == null) {
                     aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),
+                        aiRequests = true,
                         titleRes = R.string.ai_field_suggest_title,
                         total = 1,
                         stageRes = R.string.ai_field_running
@@ -526,6 +528,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 if (aiBulkProgressDialog == null) {
                     aiBulkProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),
+                        aiRequests = true,
                         titleRes = R.string.ai_narrative_bulk_title,
                         total = viewModel.aiNarrativeBulkProgress.value?.second ?: 0,
                         stageRes = R.string.ai_narrative_bulk_stage,
