@@ -32,6 +32,8 @@ object AiErrorMessages {
         AiErrorKind.QUOTA_EXCEEDED -> R.string.ai_error_quota
         AiErrorKind.MODEL_NOT_FOUND -> R.string.ai_error_model_not_found
         AiErrorKind.BAD_REQUEST -> R.string.ai_error_bad_request
+        AiErrorKind.INPUT_TOO_LARGE -> R.string.ai_error_input_too_large
+        AiErrorKind.RESPONSE_TOO_LARGE -> R.string.ai_error_response_too_large
         AiErrorKind.UNSUPPORTED_PARAM -> R.string.ai_error_unsupported_param
         AiErrorKind.IMAGES_UNSUPPORTED -> R.string.ai_error_images_unsupported
         AiErrorKind.NETWORK -> R.string.ai_error_network

@@ -52,7 +52,9 @@ object AiErrorPolicy {
         AiErrorKind.QUOTA_EXCEEDED,
         AiErrorKind.MODEL_NOT_FOUND,
         AiErrorKind.UNSUPPORTED_PARAM,
-        AiErrorKind.IMAGES_UNSUPPORTED
+        AiErrorKind.IMAGES_UNSUPPORTED,
+        AiErrorKind.INPUT_TOO_LARGE,
+        AiErrorKind.RESPONSE_TOO_LARGE
     )
 
     /** 이 실패를 만나면 남은 청크를 보내지 않는다. */

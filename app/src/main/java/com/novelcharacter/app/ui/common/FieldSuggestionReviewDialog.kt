@@ -62,6 +62,7 @@ object FieldSuggestionReviewDialog {
             setOnClickListener { action() }
         }
         panel.addView(label(notices))
+        panel.addView(label(com.novelcharacter.app.ai.AiInputPreflight.SEND_NOTICE))
         panel.addView(label("받은 결과와 수정·선택 내용은 이 기기에 보관합니다. 편집 화면을 다시 연 뒤 같은 AI 버튼을 누르면 검토를 이어갈 수 있습니다. 앱 삭제·데이터 삭제 시에는 지워집니다."))
         if(imageCount>0) panel.addView(label("AI 보완·재요청은 첫 요청의 이미지 ${imageCount}장을 요청마다 다시 보냅니다. 이미지마다 약 ${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MIN}~${com.novelcharacter.app.ai.AiPromptPolicy.IMAGE_TOKENS_MAX} 토큰이 추가됩니다."))
         val boxes = linkedMapOf<String, CheckBox>()

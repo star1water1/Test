@@ -173,7 +173,8 @@ class CharacterFieldAiSuggester(
          */
         val outsideLibrary: Boolean = false,
         val sourceEvidence: String? = null,
-        val suggestionNote: String? = null
+        val suggestionNote: String? = null,
+        val inputReceiptId: String? = null
     )
 
     /**
@@ -328,7 +329,8 @@ class CharacterFieldAiSuggester(
          */
         val missing: List<MissingField> = emptyList(),
         /** 응답에 섞여 온 목록 밖 key(환각) — 드롭 수에도 포함되지만 원인이 달라 따로 고지한다 */
-        val unknownKeys: List<String> = emptyList()
+        val unknownKeys: List<String> = emptyList(),
+        val inputReceipts: List<AiInputReceipt>? = null
     ) {
         /** 요청 대상 수 — 받은 수와 나란히 고지하기 위한 파생값 */
         val requestedCount: Int get() = suggestions.size + missing.size
@@ -415,6 +417,7 @@ class CharacterFieldAiSuggester(
         val truncationNotes = mutableListOf<String>()
         val missing = mutableListOf<MissingField>()
         val unknownKeys = mutableListOf<String>()
+        val inputReceipts = mutableListOf<AiInputReceipt>()
         var inputTokens = 0
         var outputTokens = 0
 
@@ -455,14 +458,17 @@ class CharacterFieldAiSuggester(
                 images = images,
                 // 이미지 절은 이미지와 한 몸으로 간다 (B-139) — 빼는 경로가 둘이라
                 // 시스템 프롬프트에 이어 붙이면 반드시 한쪽이 샌다.
-                imageSystemRule = imageRule(images.size)
+                imageSystemRule = imageRule(images.size),
+                inputSource = AiInputSource(prompts.evidenceSource,
+                    chunk.mapNotNull { t -> t.userInstruction?.let { t.key to it } }.toMap(),
+                    prompt.truncationNotes.toList())
             )
             // Persist dispatch intent as well: the current chunk may be billed if the process dies.
             onCheckpoint(SuggestOutcome(suggestions.toList(), dropped, failures.toList(),
                 truncationNotes.toList(), inputTokens, outputTokens,
                 missing.toList() + chunks.drop(chunkIndex).flatten().map {
                     MissingField(it.key, it.name, if (it in chunk) MissingCause.NOT_RETURNED else MissingCause.NOT_REQUESTED)
-                }, unknownKeys.distinct()))
+                }, unknownKeys.distinct(), inputReceipts.toList()))
             if (isCancelled()) {
                 chunks.drop(chunkIndex).flatten().forEach {
                     missing.add(MissingField(it.key,it.name,MissingCause.CANCELLED))
@@ -472,6 +478,11 @@ class CharacterFieldAiSuggester(
             var stopAfterChunk = false
             when (val result = complete(request)) {
                 is AiResult.Success -> {
+                    result.inputReceipt?.let {
+                        inputReceipts.add(it)
+                        val notice = it.budget.notice()
+                        if (notice !in truncationNotes) truncationNotes.add(notice)
+                    }
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
                     // 이번 요청에서 temperature 거부를 학습해 빼고 재시도한 성공 — 같은 고지 한 줄
@@ -497,7 +508,9 @@ class CharacterFieldAiSuggester(
                             if (result.truncated) MissingCause.TRUNCATED else MissingCause.UNREADABLE
                         chunk.forEach { missing.add(MissingField(it.key, it.name, cause)) }
                     } else {
-                        suggestions.addAll(parsed.suggestions)
+                        suggestions.addAll(parsed.suggestions.map {
+                            it.copy(inputReceiptId = result.inputReceipt?.id)
+                        })
                         dropped += parsed.droppedCount
                         unknownKeys.addAll(parsed.unknownKeys)
                         // 잘린 응답에서 못 받은 항목은 '모델이 뺀 것'이 아니라 '상한에 잘린 것'이다 —
@@ -528,7 +541,7 @@ class CharacterFieldAiSuggester(
                 truncationNotes.toList(), inputTokens, outputTokens,
                 missing.toList() + chunks.drop(chunkIndex + 1).flatten().map {
                     MissingField(it.key, it.name, MissingCause.NOT_REQUESTED)
-                }, unknownKeys.distinct()))
+                }, unknownKeys.distinct(), inputReceipts.toList()))
             onProgress(chunkIndex + 1, totalRequests, doneTargets, totalTargets)
             if (stopAfterChunk) {
                 // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.
@@ -547,7 +560,8 @@ class CharacterFieldAiSuggester(
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             missing = missing,
-            unknownKeys = unknownKeys.distinct()
+            unknownKeys = unknownKeys.distinct(),
+            inputReceipts = inputReceipts.toList()
         )
     }
 
@@ -1246,7 +1260,7 @@ class CharacterFieldAiSuggester(
                     }
                 }
                 if (t.currentValue.isNotBlank()) {
-                    sb.append(" / 현재 값: ").append(t.currentValue.take(MAX_VALUE_CHARS))
+                    sb.append(" / 현재 값: ").append(t.currentValue)
                 }
                 // 표기 기조 — 이 작품이 이 필드를 실제로 어떻게 써 왔는지. 전량이 아니라 선별분이므로
                 // 몇 종 중 몇 개인지 함께 적어 모델이 "이게 전부"라고 오해하지 않게 한다.
@@ -1283,11 +1297,11 @@ class CharacterFieldAiSuggester(
                 // 재요청 맥락 — 사용자가 무엇을 더 원하고 무엇을 물렸는지. 이 둘이 없으면
                 // 재요청은 첫 요청과 같은 프롬프트가 되어 같은 답을 되받는다(과금만 두 번).
                 t.userInstruction?.takeIf { it.isNotBlank() }?.let {
-                    sb.append(" / 사용자 지시: ").append(it.take(MAX_VALUE_CHARS))
+                    sb.append(" / 사용자 지시: ").append(it)
                 }
                 if (t.rejectedValues.isNotEmpty()) {
                     sb.append(" / 이미 물린 값(다시 내지 말 것): ")
-                        .append(t.rejectedValues.joinToString(", ") { it.take(MAX_VALUE_CHARS) })
+                        .append(t.rejectedValues.joinToString(", "))
                 }
                 // restricted 필드의 허용 목록을 다 싣지 못했으면 조용히 두지 않는다 (R-14).
                 // **결손 고지가 아니라 정확도 고지다** — 목록 밖 제안은 B-79 이후 버려지지 않고

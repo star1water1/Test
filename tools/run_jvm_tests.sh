@@ -250,6 +250,8 @@ $MAIN/data/model/SemanticRole.kt
 $MAIN/data/model/RequiredEnforcement.kt
 $MAIN/ai/CharacterFieldAiSuggester.kt
 $MAIN/ai/CreativeBriefing.kt
+$MAIN/ai/AiInputPreflight.kt
+$MAIN/ai/BoundedResponse.kt
 $MAIN/ai/CreativeInputState.kt
 $MAIN/ai/FieldSuggestionReviewState.kt
 $MAIN/ai/NarrativeReviewState.kt
@@ -617,6 +619,7 @@ $TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/CreativeReviewTest.kt
+$TEST/ai/AiInputIntegrityTest.kt
 $TEST/ai/CreativeInputStateTest.kt
 $TEST/ai/NarrativeReviewTest.kt
 $TEST/ai/SpeechInputTest.kt

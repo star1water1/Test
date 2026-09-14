@@ -3451,8 +3451,10 @@
     <!-- ✨ AI 필드 값 추천 (CharacterFieldAiSuggester / AiFieldSuggestSheet) -->
     <string name="ai_field_suggest_entry">✨ AI 필드 추천</string>
     <string name="ai_field_suggest_title">AI 필드 추천</string>
-    <string name="ai_field_cost_notice">필드 %1$d개를 요청 %2$d건으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
-    <string name="ai_field_cost_notice_single">\'%1$s\' 필드 값을 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
+    <string name="ai_error_input_too_large">전체 입력 또는 출력 여유가 모델 한도를 넘습니다. 원문과 이전 결과는 유지됩니다. AI 연동에서 더 큰 입력을 지원하는 모델을 선택하거나, 첨부·참고자료 전송 선택 또는 출력 상한을 조정한 뒤 다시 요청하세요. 브리핑 자체가 크면 필드 수만 줄여도 해결되지 않습니다.</string>
+    <string name="ai_error_response_too_large">서버 응답이 앱에서 읽을 수 있는 크기를 넘었습니다. 잘린 응답을 결과로 사용하지 않았습니다. 원문과 이전 결과는 유지됩니다. 제공자의 응답 형식이나 요청 대상을 조정하세요.</string>
+    <string name="ai_field_cost_notice">필드 %1$d개를 요청 %2$d건으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.\n브리핑·보완 지시는 줄이지 않습니다. 지원 제공자에는 같은 자료로 입력량을 먼저 조회합니다. 한도 초과가 확인되면 생성을 멈추며, 한도를 확인할 수 없는 서버는 원문 그대로 요청합니다.</string>
+    <string name="ai_field_cost_notice_single">\'%1$s\' 필드 값을 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.\n브리핑·보완 지시는 줄이지 않습니다. 지원 제공자에는 같은 자료로 입력량을 먼저 조회합니다. 한도 초과가 확인되면 생성을 멈추며, 한도를 확인할 수 없는 서버는 원문 그대로 요청합니다.</string>
     <string name="ai_field_include_filled">이미 입력된 필드도 포함</string>
     <string name="ai_field_no_empty_fields">추천할 빈 필드가 없습니다. \'이미 입력된 필드도 포함\'을 켜세요.</string>
     <string name="ai_field_no_targets">추천할 수 있는 필드가 없습니다.</string>

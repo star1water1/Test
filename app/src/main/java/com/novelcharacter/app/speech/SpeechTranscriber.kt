@@ -54,8 +54,15 @@ class SpeechTranscriber(context: Context) {
                     override fun onResponse(call: okhttp3.Call,response: okhttp3.Response) {
                         val result=try {response.use {
                             // Error bodies may echo credentials or private audio/context.
-                            SpeechProtocol.parse(it.code,it.peekBody(2_000_000).string(),config.model)
-                        }} catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
+                            val body = it.body
+                            val bytes = body?.let { b ->
+                                com.novelcharacter.app.ai.BoundedResponse.read(b.byteStream(),
+                                    com.novelcharacter.app.ai.BoundedResponse.SPEECH_BYTES)
+                            }
+                            SpeechProtocol.parse(it.code, bytes?.toString(Charsets.UTF_8).orEmpty(), config.model)
+                        }} catch(_: com.novelcharacter.app.ai.BoundedResponse.TooLarge) {
+                            SpeechResult.Failure(SpeechError.RESPONSE_TOO_LARGE)
+                        } catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
                         if(result is SpeechResult.Success) SpeechSettings(app).recordUsage(seconds)
                         if(continuation.isActive) continuation.resume(result)
                     }

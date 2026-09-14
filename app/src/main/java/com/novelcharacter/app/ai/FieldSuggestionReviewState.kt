@@ -94,7 +94,8 @@ class FieldSuggestionReviewState {
                 truncationNotes = (previous.truncationNotes + retry.truncationNotes).distinct(),
                 inputTokens = previous.inputTokens + retry.inputTokens,
                 outputTokens = previous.outputTokens + retry.outputTokens,
-                unknownKeys = (previous.unknownKeys + retry.unknownKeys).distinct()
+                unknownKeys = (previous.unknownKeys + retry.unknownKeys).distinct(),
+                inputReceipts = (previous.inputReceipts.orEmpty() + retry.inputReceipts.orEmpty()).distinctBy { it.id }
             )
         }
     }
