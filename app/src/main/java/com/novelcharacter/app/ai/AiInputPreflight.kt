@@ -10,7 +10,8 @@ import java.util.UUID
 data class AiInputSource(
     val briefing: String,
     val instructions: Map<String, String>,
-    val contextNotes: List<String>
+    val contextNotes: List<String>,
+    val contextText: List<String>? = null
 )
 data class AiInputReceipt(
     val id: String,

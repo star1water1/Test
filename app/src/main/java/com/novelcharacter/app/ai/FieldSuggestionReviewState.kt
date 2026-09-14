@@ -13,13 +13,16 @@ class FieldSuggestionReviewState {
         val editDrafts: Map<String, String>, val instructions: Map<String, String>,
         val latestAi: Map<String, CharacterFieldAiSuggester.Suggestion>? = null,
         val revisions: Map<String, Long>? = null, val generation: Long? = null,
-        val received: Set<String>? = null, val candidates: List<Candidate>? = null)
+        val received: Set<String>? = null, val candidates: List<Candidate>? = null,
+        val selectionValues: Map<String, CharacterFieldAiSuggester.Suggestion>? = null,
+        val explicitOff: Set<String>? = null, val selectionRecheck: Set<String>? = null,
+        val confirmedDirect: Map<String, CharacterFieldAiSuggester.Suggestion>? = null)
     data class Request(val sessionId: String, val generation: Long, val revisions: Map<String, Long>)
     data class Candidate(val id: String, val suggestion: CharacterFieldAiSuggester.Suggestion,
         val receipt: AiInputReceipt?, val stale: Boolean)
     fun snapshot() = Snapshot(sessionId, checks.snapshot(), edited.toMap(), originals.toMap(),
         editDrafts.toMap(), instructions.toMap(), latestAi.toMap(), revisions.toMap(), generation,
-        received.toSet(), held.toList())
+        received.toSet(), held.toList(), selectionValues.toMap(), explicitOff.toSet(), selectionRecheck.toSet(), confirmedDirect.toMap())
     fun restore(value: Snapshot) {
         sessionId=value.sessionId; checks.restore(value.checks)
         edited.clear(); edited.putAll(value.edited); originals.clear(); originals.putAll(value.originals)
@@ -30,6 +33,18 @@ class FieldSuggestionReviewState {
         generation = (value.generation ?: 0L) + 1 // Old callbacks cannot become current after recovery.
         received.clear(); received.addAll(value.received.orEmpty())
         held.clear(); held.addAll(value.candidates.orEmpty())
+        selectionValues.clear(); selectionValues.putAll(value.selectionValues.orEmpty())
+        if (value.selectionValues == null) {
+            // Explicitly edited legacy values already belong to the user, not a new model proposal.
+            value.edited.values.filter { it.editedByUser }.forEach { selectionValues[it.fieldKey] = it }
+        }
+        explicitOff.clear(); explicitOff.addAll(value.explicitOff.orEmpty())
+        if (value.selectionValues == null && value.checks.seeded) {
+            // Legacy snapshots cannot distinguish an unchecked default from a user's refusal.
+            explicitOff.addAll(value.originals.keys - value.checks.checked)
+        }
+        selectionRecheck.clear(); selectionRecheck.addAll(value.selectionRecheck.orEmpty())
+        confirmedDirect.clear(); confirmedDirect.putAll(value.confirmedDirect.orEmpty())
     }
     private val checks = AiCheckState<String>()
     private val edited = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
@@ -41,10 +56,16 @@ class FieldSuggestionReviewState {
     private var generation = 0L
     private val received = mutableSetOf<String>()
     private val held = mutableListOf<Candidate>()
+    private val selectionValues = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
+    private val explicitOff = mutableSetOf<String>()
+    private val selectionRecheck = mutableSetOf<String>()
+    private val confirmedDirect = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
     val instructions = mutableMapOf<String, String>()
 
     fun seedDefaults(defaultOn: Collection<String>) = checks.seedDefaults(defaultOn).also { changed() }
     fun setChecked(fieldKey: String, on: Boolean) {
+        if (on) explicitOff.remove(fieldKey) else explicitOff.add(fieldKey)
+        selectionRecheck.remove(fieldKey)
         if (checks.isChecked(fieldKey) != on) touch(fieldKey)
         checks.setChecked(fieldKey, on); changed()
     }
@@ -56,7 +77,9 @@ class FieldSuggestionReviewState {
     fun removeDraft(key: String) { if (drafts.remove(key) != null) touch(key); changed() }
     fun isChecked(fieldKey: String) = checks.isChecked(fieldKey)
     fun remember(suggestion: CharacterFieldAiSuggester.Suggestion) {
+        confirmedDirect.remove(suggestion.fieldKey)
         edited[suggestion.fieldKey] = suggestion
+        selectionValues[suggestion.fieldKey] = suggestion // Editing is not a new AI proposal.
         touch(suggestion.fieldKey)
         changed()
     }
@@ -74,6 +97,26 @@ class FieldSuggestionReviewState {
         return latest
     }
     fun candidates(key: String): List<Candidate> = held.filter { it.suggestion.fieldKey == key }
+    fun receipt(value: CharacterFieldAiSuggester.Suggestion, receipts: List<AiInputReceipt>): AiInputReceipt? =
+        receipts.firstOrNull { it.id == value.inputReceiptId } ?:
+            held.firstOrNull { it.receipt?.id == value.inputReceiptId }?.receipt
+    fun needsSelectionReview(key: String) = key in selectionRecheck
+    fun isDirectConfirmed(value: CharacterFieldAiSuggester.Suggestion) = confirmedDirect[value.fieldKey] == value
+    fun confirmDirect(value: CharacterFieldAiSuggester.Suggestion) {
+        confirmedDirect[value.fieldKey] = value
+        touch(value.fieldKey)
+        changed()
+    }
+    /** Rerenders preserve decisions; a different AI proposal needs its own selection decision. */
+    fun syncSelection(value: CharacterFieldAiSuggester.Suggestion, defaultOn: Boolean) {
+        val key = value.fieldKey
+        if (selectionValues[key] == value) return
+        selectionRecheck.remove(key)
+        if (!defaultOn && checks.isChecked(key)) selectionRecheck.add(key)
+        checks.setChecked(key, defaultOn && key !in explicitOff)
+        selectionValues[key] = value
+        changed()
+    }
     fun adopt(id: String): Boolean {
         val candidate = held.firstOrNull { it.id == id } ?: return false
         val key = candidate.suggestion.fieldKey
@@ -118,6 +161,8 @@ class FieldSuggestionReviewState {
         drafts.clear()
         instructions.clear()
         latestAi.clear(); revisions.clear(); received.clear(); held.clear(); generation = 0
+        selectionValues.clear(); explicitOff.clear(); selectionRecheck.clear()
+        confirmedDirect.clear()
         sessionId=java.util.UUID.randomUUID().toString()
     }
 
