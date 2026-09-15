@@ -18,8 +18,11 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
         val captureFormat: String? = null, val checkpointBytes: Long? = null,
         val interruption: String? = null)
     data class Item(val record: Record, val revision: String)
-    data class Orphan(val name: String, val legacy: Boolean)
-    data class Catalog(val items: List<Item>, val orphans: List<Orphan>, val unreadable: Int)
+    data class Orphan(val name: String, val legacy: Boolean, val checksum: String? = null)
+    data class DamagedRecord(val name: String, val checksum: String)
+    data class Catalog(val items: List<Item>, val orphans: List<Orphan>, val damaged: List<DamagedRecord>) {
+        val unreadable get() = damaged.size
+    }
     private val journal = ReviewJournal(File(root, "records"))
     private fun validId(id: String): String {
         require(UUID.fromString(id).toString() == id) { "Invalid recording ID" }
@@ -114,17 +117,33 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
     }
     fun catalog(): Catalog = synchronized(lock) {
         val catalog = journal.owners("audio:")
-        var unreadable = catalog.unreadableCount
         val items = catalog.owners.mapNotNull {
-            try { read(it.removePrefix("audio:")) } catch (_: Exception) { unreadable++; null }
+            try { read(it.removePrefix("audio:")) } catch (_: Exception) { null }
         }
+        val readableNames = items.map { journal.fileName(owner(it.record.id)) }.toSet()
+        val records = File(root, "records")
+        val damaged = (if (records.exists()) checkNotNull(records.listFiles()) else emptyArray())
+            .filter { it.isFile && it.extension == "json" && it.name !in readableNames }
+            .map { DamagedRecord(it.name, checksum(contained(records, it.name))) }
         val known = items.flatMap { listOf("${it.record.id}.m4a","${it.record.id}.pcm","${it.record.id}.encoding") }.toSet()
         val orphan = File(root, "audio").listFiles().orEmpty()
             .filter { it.isFile && it.name !in known }.map { Orphan(it.name, false) } +
             legacyRoot?.listFiles().orEmpty().filter {
                 it.isFile && it.name.startsWith("voice-") && it.extension == "m4a"
             }.map { Orphan(it.name, true) }
-        Catalog(items.sortedByDescending { it.record.createdAt }, orphan, unreadable)
+        Catalog(items.sortedByDescending { it.record.createdAt }, orphan, damaged)
+    }
+    /** Explicit list action; transcript/input journals are independent and remain intact. */
+    fun discard(item: Item) = synchronized(lock) { cleanup(release(item)) }
+
+    /** A corrupt record cannot authorize deleting audio or another input's transcript. */
+    fun discardDamaged(record: DamagedRecord) = synchronized(lock) {
+        // Unknown ownership: wait until all recording/transcription holders have finished.
+        check(active.isEmpty()) { "Recording is in use" }
+        check(record in catalog().damaged) { "Stored record changed" }
+        val file = contained(File(root, "records"), record.name)
+        check(checksum(file) == record.checksum) { "Stored record changed" }
+        check(file.delete()) { "Record deletion failed" }
     }
     fun orphanFile(orphan: Orphan): File = contained(
         if (orphan.legacy) checkNotNull(legacyRoot) else File(root, "audio"), orphan.name)
@@ -159,10 +178,17 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
             check(from.delete())
         }
     }
+    /** Hash only the selected orphan, off the UI thread; listing long recordings stays cheap. */
+    fun selectOrphan(orphan: Orphan): Orphan = synchronized(lock) {
+        check(orphan.copy(checksum=null) in catalog().orphans)
+        check(!isActive(orphan.name.substringBeforeLast('.')))
+        orphan.copy(checksum=checksum(orphanFile(orphan)))
+    }
     fun discardOrphan(orphan: Orphan) = synchronized(lock) {
-        check(orphan in catalog().orphans)
+        check(orphan.copy(checksum=null) in catalog().orphans)
         // A damaged record can conceal ownership: refuse deletion of a live session by name.
         check(!isActive(orphan.name.substringBeforeLast('.')))
+        check(orphan.checksum != null && checksum(orphanFile(orphan)) == orphan.checksum) { "Audio changed" }
         check(orphanFile(orphan).delete())
     }
     companion object {

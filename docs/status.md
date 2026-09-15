@@ -5,7 +5,7 @@
 
 ## 0. 지금 무엇을 하는가
 
-- 사용자 지정 작업: M1 [#403](https://github.com/star1water1/Test/pull/403)·M2 [#404](https://github.com/star1water1/Test/pull/404)·M3 [#405](https://github.com/star1water1/Test/pull/405)는 master에 병합했다. M4 [#406](https://github.com/star1water1/Test/pull/406)·M5 [#407](https://github.com/star1water1/Test/pull/407)도 검토·CI 확인 후 master에 병합했다. M6 [#408](https://github.com/star1water1/Test/pull/408)도 최종 CI 확인 후 master에 병합했다. 현재 사용자 지정 작업은 [M7 검토·음성 편집 문맥](creative_ai_voice_plan.md#실사용-안정화-m7--검토음성-편집-문맥)이다. 사용자 회신상 노트20·Android 13에서 간단히 사용한 범위에는 문제가 없었으나 항목별 결과·긴 녹음·무통지 kill 검증은 미확인이다. [M3 실기기 gate](creative_ai_voice_plan.md#실사용-안정화-m3--서비스-녹음과-중단-복구)를 통과로 바꾸지 않는다. 온디바이스 인식은 사용자 회신상 미지원이고, 상세 검토 UX의 후속 범위는 M7에 남아 있다.
+- 사용자 지정 작업: M1~M7은 master에 병합했다(최근 [M7 #409](https://github.com/star1water1/Test/pull/409)). 현재 작업은 사용자 실사용 보고에 따른 **보관한 녹음의 직접 정리와 상단 표시 갱신**이다. 정상 녹음은 복구 화면 진입 없이 파일을 삭제하고, 읽지 못하는 기록도 확인 후 정리할 수 있게 한다. 입력 글과 별도로 보관된 전사는 유지하며 사용 중·변경된 대상의 삭제를 거부한다. M8은 시작하지 않았다. 노트20·Android 13의 상세 기기 검증과 [M3 실기기 gate](creative_ai_voice_plan.md#실사용-안정화-m3--서비스-녹음과-중단-복구)는 미확인이고 온디바이스 인식은 사용자 회신상 미지원이다.
 
 - **자율적으로 고를 수 있는 기능 작업은 0건이다.** 아래 대기 상태는 사용자의 새 요청을 막지 않는다.
 - 안정화 변경의 커밋별 CI 결과는 위 PR에서 확인한다. 기존 전체 기준선과 검증 명령은 4장에 있다.

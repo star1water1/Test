@@ -16,7 +16,8 @@ class ReviewJournal(private val root: File) {
     private val gson = Gson()
     private fun hash(text: String) = MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    private fun file(owner: String) = File(root, hash(owner) + ".json")
+    internal fun fileName(owner: String) = hash(owner) + ".json"
+    private fun file(owner: String) = File(root, fileName(owner))
     private fun envelope(owner: String): Envelope? {
         val file = file(owner)
         if (!file.exists()) return null
