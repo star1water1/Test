@@ -31,8 +31,24 @@ internal class ReviewViewContext(private val scroll: ScrollView) {
             focus?.value?.selectionEnd ?: 0, expanded.toSet())
     }
     private var restoration = 0
+    private var pendingReveal: String? = null
+    fun cancelRestore() { restoration++; pendingReveal=null }
+    fun revealEditor(key: String) {
+        cancelRestore()
+        val editor=editors[key] ?: return
+        pendingReveal=key
+        val token=restoration
+        scroll.doOnLayout {
+            scroll.post {
+                if (!scroll.isAttachedToWindow || token!=restoration) return@post
+                editor.requestRectangleOnScreen(android.graphics.Rect(0,0,editor.width,
+                    editor.height.coerceAtMost(scroll.height)),true)
+                pendingReveal=null
+            }
+        }
+    }
     fun restore(value: Viewport?, focus: Boolean = true) {
-        if (value == null) return
+        if (value == null || pendingReveal != null) return
         val token = ++restoration
         scroll.doOnLayout {
             if (!scroll.isAttachedToWindow || token != restoration) return@doOnLayout

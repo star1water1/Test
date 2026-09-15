@@ -8,7 +8,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
-import androidx.core.view.doOnLayout
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -86,12 +85,18 @@ object FieldSuggestionReviewDialog {
         }
         val scroll = cappedScrollView(context).apply { addView(panel) }
         val viewContext = ReviewViewContext(scroll).apply { expanded.addAll(state.viewport?.expanded.orEmpty()) }
+        scroll.setOnTouchListener { _, event ->
+            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN ||
+                event.actionMasked == android.view.MotionEvent.ACTION_MOVE) viewContext.cancelRestore()
+            false
+        }
         fun disclosure(key: String, title: String, parent: LinearLayout, body: LinearLayout) {
             body.isVisible = key in viewContext.expanded
             val toggle = button("") {}
             fun caption() { toggle.text = title + if (body.isVisible) " 접기" else " 펼치기" }
             caption()
             toggle.setOnClickListener {
+                viewContext.cancelRestore()
                 body.isVisible = !body.isVisible
                 if (body.isVisible) viewContext.expanded.add(key) else viewContext.expanded.remove(key)
                 caption(); state.viewport = viewContext.capture(); state.changed()
@@ -231,10 +236,7 @@ object FieldSuggestionReviewDialog {
             viewContext.editor("edit:$key", editor)
             fun focusEditor() {
                 editor.requestFocus()
-                scroll.doOnLayout {
-                    editor.requestRectangleOnScreen(android.graphics.Rect(0,0,editor.width,
-                        editor.height.coerceAtMost(scroll.height)),true)
-                }
+                viewContext.revealEditor("edit:$key")
             }
             val format = label(listOfNotNull(spec.formatHint,
                 spec.options.takeIf { it.isNotEmpty() }?.joinToString(", ")).joinToString("\n"))
