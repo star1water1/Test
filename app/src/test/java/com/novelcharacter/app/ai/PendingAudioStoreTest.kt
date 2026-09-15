@@ -123,7 +123,8 @@ class PendingAudioStoreTest {
         val catalog=store().catalog()
         assertEquals(1,catalog.unreadable)
         assertEquals(PendingAudioStore.Phase.RECORDING,catalog.items.single().record.phase)
-        assertEquals(listOf(PendingAudioStore.Orphan("leftover.tmp",false)),catalog.orphans)
+        assertEquals("leftover.tmp",catalog.orphans.single().name)
+        assertNotNull(catalog.orphans.single().checksum)
         assertTrue(damaged.exists());assertTrue(orphan.exists())
     }
     @Test fun legacyCacheMovesOnlyAfterVerifiedCopyAndNoOwnerIsGuessed() {
@@ -147,4 +148,73 @@ class PendingAudioStoreTest {
         rejects {store().preserveLegacy()}
         assertArrayEquals(bytes,original.readBytes());assertEquals("different",other.readText())
     }
+    @Test fun listDiscardRemovesAllAudioFormatsAndRecordWithoutTouchingOtherRecording() {
+        val chosen=ready();val other=ready()
+        store().pcmFile(chosen.record.id).writeBytes(bytes)
+        store().encodingFile(chosen.record.id).writeBytes(bytes)
+        store().discard(chosen)
+        assertNull(store().read(chosen.record.id))
+        assertFalse(store().file(chosen.record.id).exists())
+        assertFalse(store().pcmFile(chosen.record.id).exists())
+        assertFalse(store().encodingFile(chosen.record.id).exists())
+        assertEquals(listOf(other),store().catalog().items)
+        assertArrayEquals(bytes,store().verifiedFile(other).readBytes())
+    }
+    @Test fun damagedRecordCanBeExplicitlyRemovedWithoutDeletingUnknownAudio() {
+        val audio=ready()
+        File(store().root,"records").listFiles()!!.single().writeText("broken")
+        val catalog=store().catalog()
+        assertEquals(1,catalog.unreadable)
+        assertTrue(catalog.items.isEmpty())
+        store().discardDamaged(catalog.damaged.single())
+        assertEquals(0,store().catalog().unreadable)
+        assertArrayEquals(bytes,store().file(audio.record.id).readBytes())
+        store().discardOrphan(store().catalog().orphans.single())
+        assertTrue(store().catalog().orphans.isEmpty())
+    }
+    @Test fun damagedSnapshotCannotDeleteChangedOrRepairedRecord() {
+        val item=ready()
+        val file=File(store().root,"records").listFiles()!!.single()
+        val original=file.readBytes()
+        file.writeText("broken")
+        val damaged=store().catalog().damaged.single()
+        file.writeText("different broken content")
+        rejects {store().discardDamaged(damaged)}
+        assertTrue(file.exists())
+        file.writeBytes(original)
+        rejects {store().discardDamaged(damaged)}
+        assertEquals(item,store().read(item.record.id))
+    }
+    @Test fun invalidPayloadWithValidEnvelopeIsOfferedForExplicitCleanup() {
+        val id=UUID.randomUUID().toString()
+        val journal=ReviewJournal(File(store().root,"records"))
+        journal.write("audio:$id",PendingAudioStore.Record(version=99,id=id,inputKey="input",phase=PendingAudioStore.Phase.READY,createdAt=1),null)
+        val catalog=store().catalog()
+        assertTrue(catalog.items.isEmpty());assertEquals(1,catalog.unreadable)
+        store().discardDamaged(catalog.damaged.single())
+        assertEquals(0,store().catalog().unreadable)
+    }
+    @Test fun unknownOwnershipBlocksDamagedCleanupWhileAnyRecordingIsActive() {
+        ready()
+        File(store().root,"records").listFiles()!!.single().writeText("broken")
+        val record=store().catalog().damaged.single()
+        val id=UUID.randomUUID().toString();val holder=Any()
+        try {
+            assertTrue(PendingAudioStore.claim(id,holder))
+            rejects {store().discardDamaged(record)}
+            assertEquals(1,store().catalog().unreadable)
+        } finally {PendingAudioStore.end(id,holder)}
+        store().discardDamaged(record)
+        assertEquals(0,store().catalog().unreadable)
+    }
+    @Test fun staleOrphanCannotRemoveChangedBytesAndFreshChoiceCan() {
+        val file=File(store().root,"audio/leftover.tmp").apply {parentFile.mkdirs();writeText("first")}
+        val orphan=store().catalog().orphans.single()
+        file.writeText("newer")
+        rejects {store().discardOrphan(orphan)}
+        assertEquals("newer",file.readText())
+        store().discardOrphan(store().catalog().orphans.single())
+        assertFalse(file.exists())
+    }
+
 }
