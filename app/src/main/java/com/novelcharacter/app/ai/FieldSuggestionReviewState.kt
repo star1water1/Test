@@ -16,14 +16,16 @@ class FieldSuggestionReviewState {
         val received: Set<String>? = null, val candidates: List<Candidate>? = null,
         val selectionValues: Map<String, CharacterFieldAiSuggester.Suggestion>? = null,
         val explicitOff: Set<String>? = null, val selectionRecheck: Set<String>? = null,
-        val confirmedDirect: Map<String, CharacterFieldAiSuggester.Suggestion>? = null)
+        val confirmedDirect: Map<String, CharacterFieldAiSuggester.Suggestion>? = null,
+        val viewport: ReviewPresentation.Viewport? = null)
     data class Request(val sessionId: String, val generation: Long, val revisions: Map<String, Long>)
     data class Candidate(val id: String, val suggestion: CharacterFieldAiSuggester.Suggestion,
         val receipt: AiInputReceipt?, val stale: Boolean)
     fun snapshot() = Snapshot(sessionId, checks.snapshot(), edited.toMap(), originals.toMap(),
         editDrafts.toMap(), instructions.toMap(), latestAi.toMap(), revisions.toMap(), generation,
-        received.toSet(), held.toList(), selectionValues.toMap(), explicitOff.toSet(), selectionRecheck.toSet(), confirmedDirect.toMap())
+        received.toSet(), held.toList(), selectionValues.toMap(), explicitOff.toSet(), selectionRecheck.toSet(), confirmedDirect.toMap(), viewport)
     fun restore(value: Snapshot) {
+        viewport=value.viewport
         sessionId=value.sessionId; checks.restore(value.checks)
         edited.clear(); edited.putAll(value.edited); originals.clear(); originals.putAll(value.originals)
         drafts.clear(); drafts.putAll(value.editDrafts)
@@ -46,6 +48,8 @@ class FieldSuggestionReviewState {
         selectionRecheck.clear(); selectionRecheck.addAll(value.selectionRecheck.orEmpty())
         confirmedDirect.clear(); confirmedDirect.putAll(value.confirmedDirect.orEmpty())
     }
+    var viewport: ReviewPresentation.Viewport? = null
+    fun latest(original: CharacterFieldAiSuggester.Suggestion) = latestAi[original.fieldKey] ?: original
     private val checks = AiCheckState<String>()
     private val edited = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
     private val originals = mutableMapOf<String, CharacterFieldAiSuggester.Suggestion>()
@@ -155,6 +159,7 @@ class FieldSuggestionReviewState {
         return currentRequest
     }
     fun clear() {
+        viewport = null
         checks.clear()
         edited.clear()
         originals.clear()

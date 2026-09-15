@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 
 /** Scoped to the host, so closing/recreating the voice sheet cannot discard an in-flight paid result. */
 class VoiceInputViewModel(application: Application): AndroidViewModel(application) {
+    var pendingEditorSelection: Pair<Int,Int>? = null
+    var viewport: com.novelcharacter.app.ai.ReviewPresentation.Viewport? = null
     val session=SpeechSession()
     private val slot=ReviewSlot(application,SpeechSession.Snapshot::class.java)
     private var boundKey: String?=null

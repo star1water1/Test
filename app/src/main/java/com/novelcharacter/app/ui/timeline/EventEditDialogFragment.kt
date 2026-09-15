@@ -1194,6 +1194,7 @@ class EventEditDialogFragment : DialogFragment() {
                 if (aiProgressDialog == null && isAdded) {
                     aiProgressDialog = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
                         requireContext(),
+                        aiRequests = true,
                         titleRes = R.string.ai_event_field_suggest_title,
                         total = vm.progress.value?.second ?: 0,
                         stageRes = R.string.ai_event_field_running,

@@ -37,7 +37,8 @@ object TaskProgressDialog {
     class Handle internal constructor(
         private val dialog: AlertDialog,
         private val binding: DialogTaskProgressBinding,
-        private val context: Context
+        private val context: Context,
+        private val aiRequests: Boolean
     ) {
         /** 사용자가 취소를 눌렀는가 — 작업 루프가 매 항목마다 확인한다. */
         @Volatile
@@ -62,6 +63,14 @@ object TaskProgressDialog {
             format: CountFormat = CountFormat.ITEMS
         ) {
             if (stage != null) binding.stageText.text = stage
+            if (aiRequests) {
+                val display = com.novelcharacter.app.ai.ReviewPresentation.progress(current, total)
+                binding.indeterminateBar.visibility = if (display.indeterminate) android.view.View.VISIBLE else android.view.View.GONE
+                binding.progressBar.visibility = if (display.indeterminate) android.view.View.GONE else android.view.View.VISIBLE
+                if (total > 1) binding.progressBar.progress = (current.coerceIn(0, total).toLong() * 100 / total).toInt()
+                binding.countText.text = display.text
+                return
+            }
             val safeTotal = total.coerceAtLeast(0)
             if (safeTotal == 0) {
                 val done = current.coerceAtLeast(0)
@@ -115,7 +124,8 @@ object TaskProgressDialog {
         total: Int,
         @StringRes stageRes: Int? = null,
         format: CountFormat = CountFormat.ITEMS,
-        onCancel: (() -> Unit)? = null
+        onCancel: (() -> Unit)? = null,
+        aiRequests: Boolean = false
     ): Handle {
         val binding = DialogTaskProgressBinding.inflate(android.view.LayoutInflater.from(context))
         val builder = MaterialAlertDialogBuilder(context)
@@ -123,7 +133,7 @@ object TaskProgressDialog {
             .setView(binding.root)
             .setCancelable(false)
         val dialog = builder.create()
-        val handle = Handle(dialog, binding, context)
+        val handle = Handle(dialog, binding, context, aiRequests)
         if (onCancel != null) {
             dialog.setButton(AlertDialog.BUTTON_NEGATIVE, context.getString(R.string.cancel)) { _, _ ->
                 handle.isCancelled = true
