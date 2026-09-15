@@ -57,6 +57,11 @@ class PendingAudioRecoveryUiTest {
     private fun all(view: View): List<View> = listOf(view) + if(view is ViewGroup) (0 until view.childCount).flatMap { all(view.getChildAt(it)) } else emptyList()
     private fun texts(activity: MainActivity) = all(sheet(activity).requireDialog().window!!.decorView).filterIsInstance<TextView>()
     private fun click(activity: MainActivity, text: String) = texts(activity).single { it.text.toString() == text }.performClick()
+    private fun confirmDelete() {
+        // Dialog.show() posts its onShow callback. Wait for validated button wiring before clicking.
+        instrumentation.waitForIdleSync()
+        scenario!!.onActivity { sheet(it).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+    }
     private fun awaitUi(predicate: (MainActivity) -> Boolean) {
         val deadline = android.os.SystemClock.elapsedRealtime() + 10_000
         do {
@@ -65,7 +70,11 @@ class PendingAudioRecoveryUiTest {
             if (ready) return
             Thread.sleep(25)
         } while(android.os.SystemClock.elapsedRealtime() < deadline)
-        fail("UI did not reach the expected recovery state")
+        var observed = ""
+        scenario!!.onActivity { a ->
+            observed = "banner=${a.findViewById<View>(R.id.pending_audio).visibility}; list=${texts(a).map { it.text }}; confirmation=${sheet(a).confirmation?.isShowing}"
+        }
+        fail("UI did not reach the expected recovery state: $observed")
     }
     @Test fun cancelThenDeleteRefreshesListAndBannerAndSurvivesRecreationWithoutTouchingText() {
         val voice = journal.read("voice:$key",SpeechSession.Snapshot::class.java)
@@ -79,8 +88,8 @@ class PendingAudioRecoveryUiTest {
         assertNotNull(store.read(id));assertTrue(store.file(id).exists())
         scenario!!.onActivity { a ->
             click(a,"녹음 파일 삭제")
-            sheet(a).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         }
+        confirmDelete()
         awaitUi { a -> !a.findViewById<View>(R.id.pending_audio).isShown && texts(a).any { it.text.toString() == "보관한 녹음이 없습니다." } }
         assertNull(store.read(id));assertFalse(store.file(id).exists())
         assertEquals(voice,journal.read("voice:$key",SpeechSession.Snapshot::class.java))
@@ -94,8 +103,8 @@ class PendingAudioRecoveryUiTest {
         awaitUi { texts(it).any { view -> view.text.toString() == "읽지 못하는 기록 정리" } }
         scenario!!.onActivity { a ->
             click(a,"읽지 못하는 기록 정리")
-            sheet(a).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         }
+        confirmDelete()
         awaitUi { a -> texts(a).none { it.text.toString() == "읽지 못하는 기록 정리" } && texts(a).any { it.text.toString() == "녹음 파일 삭제" } }
         assertTrue(store.file(id).exists())
         scenario!!.onActivity { a ->
@@ -103,7 +112,7 @@ class PendingAudioRecoveryUiTest {
             click(a,"녹음 파일 삭제")
         }
         awaitUi { sheet(it).confirmation?.isShowing == true }
-        scenario!!.onActivity { sheet(it).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+        confirmDelete()
         awaitUi { a -> !a.findViewById<View>(R.id.pending_audio).isShown && texts(a).any { it.text.toString() == "보관한 녹음이 없습니다." } }
         assertFalse(recordFile!!.exists());assertFalse(store.file(id).exists())
         assertNotNull(journal.read("voice:$key",SpeechSession.Snapshot::class.java))
@@ -116,8 +125,8 @@ class PendingAudioRecoveryUiTest {
             assertTrue(PendingAudioStore.claim(id,holder))
             scenario!!.onActivity { a ->
                 click(a,"녹음 파일 삭제")
-                sheet(a).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
             }
+            confirmDelete()
             awaitUi { a -> sheet(a).confirmation?.let { prompt ->
                 prompt.isShowing && all(prompt.window!!.decorView).filterIsInstance<TextView>().any { it.text.toString().startsWith("정리하지 못했습니다.") }
             } == true }
