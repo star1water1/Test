@@ -101,8 +101,9 @@ class PendingAudioRecoveryUiTest {
         scenario!!.onActivity { a ->
             assertTrue(a.findViewById<View>(R.id.pending_audio).isShown)
             click(a,"녹음 파일 삭제")
-            sheet(a).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         }
+        awaitUi { sheet(it).confirmation?.isShowing == true }
+        scenario!!.onActivity { sheet(it).confirmation!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
         awaitUi { a -> !a.findViewById<View>(R.id.pending_audio).isShown && texts(a).any { it.text.toString() == "보관한 녹음이 없습니다." } }
         assertFalse(recordFile!!.exists());assertFalse(store.file(id).exists())
         assertNotNull(journal.read("voice:$key",SpeechSession.Snapshot::class.java))

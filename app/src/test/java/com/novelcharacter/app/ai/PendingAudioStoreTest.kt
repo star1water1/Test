@@ -124,7 +124,7 @@ class PendingAudioStoreTest {
         assertEquals(1,catalog.unreadable)
         assertEquals(PendingAudioStore.Phase.RECORDING,catalog.items.single().record.phase)
         assertEquals("leftover.tmp",catalog.orphans.single().name)
-        assertNotNull(catalog.orphans.single().checksum)
+        assertNull(catalog.orphans.single().checksum)
         assertTrue(damaged.exists());assertTrue(orphan.exists())
     }
     @Test fun legacyCacheMovesOnlyAfterVerifiedCopyAndNoOwnerIsGuessed() {
@@ -169,7 +169,7 @@ class PendingAudioStoreTest {
         store().discardDamaged(catalog.damaged.single())
         assertEquals(0,store().catalog().unreadable)
         assertArrayEquals(bytes,store().file(audio.record.id).readBytes())
-        store().discardOrphan(store().catalog().orphans.single())
+        store().discardOrphan(store().selectOrphan(store().catalog().orphans.single()))
         assertTrue(store().catalog().orphans.isEmpty())
     }
     @Test fun damagedSnapshotCannotDeleteChangedOrRepairedRecord() {
@@ -209,11 +209,11 @@ class PendingAudioStoreTest {
     }
     @Test fun staleOrphanCannotRemoveChangedBytesAndFreshChoiceCan() {
         val file=File(store().root,"audio/leftover.tmp").apply {parentFile.mkdirs();writeText("first")}
-        val orphan=store().catalog().orphans.single()
+        val orphan=store().selectOrphan(store().catalog().orphans.single())
         file.writeText("newer")
         rejects {store().discardOrphan(orphan)}
         assertEquals("newer",file.readText())
-        store().discardOrphan(store().catalog().orphans.single())
+        store().discardOrphan(store().selectOrphan(store().catalog().orphans.single()))
         assertFalse(file.exists())
     }
 

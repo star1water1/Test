@@ -33,11 +33,11 @@ class PendingAudioRecoverySheet : DialogFragment() {
             setPadding(pad, pad, pad, pad)
         }
         fun label(text: String) { panel.addView(TextView(context).apply { this.text = text; setPadding(0,12,0,12) }) }
-        fun button(text: String, description: String = text, action: () -> Unit) {
-            panel.addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        fun button(text: String, description: String = text, action: () -> Unit): MaterialButton =
+            MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 this.text = text; contentDescription = description; setOnClickListener { action() }
-            })
-        }
+                panel.addView(this)
+            }
         val key = arguments?.getString("key")
         if (key != null) {
             label("이 녹음의 원래 입력을 확인하고 수정할 수 있습니다. 전사 추가는 이 입력만 바꾸며 캐릭터 필드를 자동 저장하지 않습니다.")
@@ -60,7 +60,7 @@ class PendingAudioRecoverySheet : DialogFragment() {
                 } }.showNow(parentFragmentManager,tag)
             }
             fun confirm(title: String, message: String, action: () -> Unit) {
-                if (confirmation?.isShowing == true) return
+                if (!isAdded || parentFragmentManager.isStateSaved || reload == null || confirmation?.isShowing == true) return
                 val prompt = MaterialAlertDialogBuilder(context).setTitle(title).setMessage(message)
                     .setPositiveButton("삭제",null).setNegativeButton("취소",null).create()
                 confirmation = prompt
@@ -126,7 +126,9 @@ class PendingAudioRecoverySheet : DialogFragment() {
                     catalog.orphans.forEachIndexed { index, orphan ->
                         val title = "대상을 확인할 수 없는 녹음 ${index + 1}"
                         label(title)
-                        button("새 구상으로 복구", "$title · 새 구상으로 복구") {
+                        lateinit var recover: MaterialButton
+                        recover = button("새 구상으로 복구", "$title · 새 구상으로 복구") {
+                            recover.isEnabled = false
                             lifecycleScope.launch {
                                 try {
                                     val item = withContext(Dispatchers.IO) { store.importOrphan(orphan,PendingAudio.durationMs(store.orphanFile(orphan))) }
@@ -134,10 +136,20 @@ class PendingAudioRecoverySheet : DialogFragment() {
                                     (activity as? com.novelcharacter.app.MainActivity)?.refreshPendingAudio()
                                 } catch (e: CancellationException) { throw e }
                                 catch (_: Exception) { label("녹음 복구를 마치지 못했습니다. 원본은 남겨 두었습니다. 목록을 새로고침해 보관 상태를 확인하세요.") }
+                                finally { recover.isEnabled = true }
                             }
                         }
-                        button("녹음 파일 삭제", "$title · 녹음 파일 삭제") {
-                            confirm("이 녹음 파일을 삭제하시겠습니까?", "$title\n\n이 파일은 복구할 수 없습니다. 입력한 글은 남습니다.") { store.discardOrphan(orphan) }
+                        lateinit var remove: MaterialButton
+                        remove = button("녹음 파일 삭제", "$title · 녹음 파일 삭제") {
+                            remove.isEnabled = false
+                            lifecycleScope.launch {
+                                try {
+                                    val selected = withContext(Dispatchers.IO) { store.selectOrphan(orphan) }
+                                    confirm("이 녹음 파일을 삭제하시겠습니까?", "$title\n\n이 파일은 복구할 수 없습니다. 입력한 글은 남습니다.") { store.discardOrphan(selected) }
+                                } catch (e: CancellationException) { throw e }
+                                catch (_: Exception) { label("파일을 확인하지 못했습니다. 사용 중인 녹음을 마치고 목록을 새로고침해 다시 확인하세요.") }
+                                finally { remove.isEnabled = true }
+                            }
                         }
                     }
                 }

@@ -127,10 +127,10 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
             .map { DamagedRecord(it.name, checksum(contained(records, it.name))) }
         val known = items.flatMap { listOf("${it.record.id}.m4a","${it.record.id}.pcm","${it.record.id}.encoding") }.toSet()
         val orphan = File(root, "audio").listFiles().orEmpty()
-            .filter { it.isFile && it.name !in known }.map { Orphan(it.name, false, checksum(contained(File(root, "audio"), it.name))) } +
+            .filter { it.isFile && it.name !in known }.map { Orphan(it.name, false) } +
             legacyRoot?.listFiles().orEmpty().filter {
                 it.isFile && it.name.startsWith("voice-") && it.extension == "m4a"
-            }.map { Orphan(it.name, true, checksum(contained(checkNotNull(legacyRoot), it.name))) }
+            }.map { Orphan(it.name, true) }
         Catalog(items.sortedByDescending { it.record.createdAt }, orphan, damaged)
     }
     /** Explicit list action; transcript/input journals are independent and remain intact. */
@@ -178,10 +178,17 @@ class PendingAudioStore(val root: File, private val legacyRoot: File? = null) {
             check(from.delete())
         }
     }
+    /** Hash only the selected orphan, off the UI thread; listing long recordings stays cheap. */
+    fun selectOrphan(orphan: Orphan): Orphan = synchronized(lock) {
+        check(orphan.copy(checksum=null) in catalog().orphans)
+        check(!isActive(orphan.name.substringBeforeLast('.')))
+        orphan.copy(checksum=checksum(orphanFile(orphan)))
+    }
     fun discardOrphan(orphan: Orphan) = synchronized(lock) {
-        check(orphan in catalog().orphans)
+        check(orphan.copy(checksum=null) in catalog().orphans)
         // A damaged record can conceal ownership: refuse deletion of a live session by name.
         check(!isActive(orphan.name.substringBeforeLast('.')))
+        check(orphan.checksum != null && checksum(orphanFile(orphan)) == orphan.checksum) { "Audio changed" }
         check(orphanFile(orphan).delete())
     }
     companion object {
