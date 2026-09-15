@@ -18,6 +18,7 @@ class TranscriptEditorSheet : DialogFragment() {
     private val model by lazy { ViewModelProvider(requireParentFragment())
         .get("voice:${requireArguments().getString("key")}", VoiceInputViewModel::class.java) }
     private var editor: EditText? = null
+    private var selectionDelivered = false
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         model.bind(requireArguments().getString("key")!!,requireArguments().getString("audioId"))
         val context = requireContext()
@@ -62,11 +63,16 @@ class TranscriptEditorSheet : DialogFragment() {
         editor?.requestFocus()
     }
     override fun onStop() {
-        editor?.let { model.pendingEditorSelection=it.selectionStart to it.selectionEnd }
+        if (!selectionDelivered) editor?.let { model.pendingEditorSelection=it.selectionStart to it.selectionEnd }
         super.onStop()
     }
     override fun onDestroyView() { model.updates.removeObservers(this); editor=null; super.onDestroyView() }
-    override fun onDismiss(dialog: android.content.DialogInterface) { model.refresh(); super.onDismiss(dialog) }
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        // DialogFragment can deliver dismissal before onStop on an explicit close.
+        editor?.let { model.pendingEditorSelection=it.selectionStart to it.selectionEnd }
+        selectionDelivered=true
+        model.refresh(); super.onDismiss(dialog)
+    }
     companion object {
         fun open(host: Fragment, key: String, audioId: String? = null, start: Int = 0, end: Int = start) {
             val tag = "transcript-editor:$key"

@@ -8,6 +8,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
+import androidx.core.view.doOnLayout
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -228,6 +229,13 @@ object FieldSuggestionReviewDialog {
                 doAfterTextChanged { if (isVisible) state.setDraft(key, it.toString()) }
             }
             viewContext.editor("edit:$key", editor)
+            fun focusEditor() {
+                editor.requestFocus()
+                scroll.doOnLayout {
+                    editor.requestRectangleOnScreen(android.graphics.Rect(0,0,editor.width,
+                        editor.height.coerceAtMost(scroll.height)),true)
+                }
+            }
             val format = label(listOfNotNull(spec.formatHint,
                 spec.options.takeIf { it.isNotEmpty() }?.joinToString(", ")).joinToString("\n"))
             format.isVisible = editor.isVisible && format.text.isNotBlank()
@@ -264,7 +272,7 @@ object FieldSuggestionReviewDialog {
                 editor.isVisible = true; done.isVisible = true
                 state.setDraft(key, editor.text.toString())
                 format.isVisible = format.text.isNotBlank()
-                editor.requestFocus()
+                focusEditor()
             })
             val reset = button("최근 AI 제안으로 되돌리기") {
                 state.reset(original)
@@ -295,7 +303,7 @@ object FieldSuggestionReviewDialog {
                 val memo = current.suggestionNote?.takeIf { it.isNotBlank() } ?: current.reason
                 editor.isVisible = true; done.isVisible = true
                 editor.setText(current.value + "\n" + memo)
-                state.setDraft(key, editor.text.toString()); editor.requestFocus()
+                state.setDraft(key, editor.text.toString()); focusEditor()
             }
             why.addView(mergeMemo)
             val previousActions = renderActions

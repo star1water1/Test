@@ -47,6 +47,7 @@ class ReviewUiContextTest {
             }
             instrumentation.waitForIdleSync()
             scenario.onActivity { a ->
+                assertTrue("Editing row must be in the visible viewport",editor.getGlobalVisibleRect(android.graphics.Rect()))
                 screenY=IntArray(2).also {editor.getLocationOnScreen(it)}[1]
                 val reply=SuggestOutcome(listOf(Suggestion("1",(1..20).joinToString("\n") {"앞 행의 새 값 $it"},"새 이유"),Suggestion("8","늦은 AI 값","새 이유")),0,emptyList(),emptyList(),0,0)
                 a.model.state.receive(request,reply)
@@ -104,6 +105,12 @@ class ReviewUiContextTest {
                 val dialog=voice.requireDialog() as AlertDialog
                 val editor=all(dialog.window!!.decorView).filterIsInstance<EditText>().single()
                 editor.setSelection(10,25)
+                assertNotNull(model.session.beginTranscription());model.refresh()
+                assertFalse(buttons(dialog,"확인한 내용을 입력에 추가").single().isEnabled)
+                assertTrue(buttons(dialog,"전사 중단 · 녹음 보관").single().isShown)
+                assertNull(model.session.beginTranscription())
+                model.session.transcriptionInterrupted();model.refresh()
+                assertTrue(buttons(dialog,"확인한 내용을 입력에 추가").single().isEnabled)
                 buttons(dialog,"전사 원문 비교 펼치기").single().performClick()
                 buttons(dialog,"전사 원문 비교 접기").single().performClick()
                 assertEquals(original,model.session.draft);assertEquals(original,model.session.original)
