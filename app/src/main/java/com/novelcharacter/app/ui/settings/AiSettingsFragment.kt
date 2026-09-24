@@ -152,7 +152,7 @@ class AiSettingsFragment : Fragment() {
         val costText: (Double) -> String = { if (it > 0 && it < 0.01) "<0.01" else costFmt.format(it) }
         // Costs were captured per successful request. Current provider prices cannot rewrite history.
         val costOf: (com.novelcharacter.app.ai.AiUsageLedger.Summary) -> Double? = { s ->
-            s.pricedCost.takeIf { s.unpricedRequests == 0 && s.requests > 0 }
+            s.pricedCost.takeIf { s.modelKnown && s.unpricedRequests == 0 && s.requests > 0 }
         }
         binding.usageSummaryText.text = getString(R.string.ai_usage_text_title) + "\n" + when {
             data.totals.isEmpty() -> getString(R.string.ai_usage_empty)
@@ -213,7 +213,8 @@ class AiSettingsFragment : Fragment() {
             append(getString(R.string.ai_usage_speech_title)).append('\n')
             if (speech.isEmpty()) append(getString(R.string.ai_usage_empty_period))
             speech.forEach { s ->
-                append(getString(R.string.ai_usage_row_title, s.displayName, s.model)).append('\n')
+                append(getString(R.string.ai_usage_row_title, s.displayName,
+                    s.model.ifBlank { getString(R.string.ai_usage_unknown_model) })).append('\n')
                 append(getString(R.string.ai_usage_speech_row, fmt.format(s.requests),
                     fmt.format(s.seconds / 60), fmt.format(s.seconds % 60)))
                 if (s.unpricedRequests == 0 && s.requests > 0)

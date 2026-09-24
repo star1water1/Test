@@ -82,7 +82,8 @@ object SpeechSettingsDialog {
                 !device.isChecked && (model.text.isNullOrBlank() || SpeechProtocol.endpoint(picked!!.baseUrl)==null)->{
                     model.error=SpeechError.CONFIG.message;false
                 }
-                price.text.isNotBlank() && (price.text.toString().toDoubleOrNull()?.let { !it.isFinite() || it < 0 } != false) -> {
+                !device.isChecked && price.text.isNotBlank() &&
+                    (price.text.toString().toDoubleOrNull()?.let { !it.isFinite() || it < 0 } != false) -> {
                     price.error="0 이상의 숫자를 입력하거나 비워 주세요.";false
                 }
                 !device.isChecked && (picked?.id != saved.providerId || model.text.toString().trim() != saved.model.trim()) &&
