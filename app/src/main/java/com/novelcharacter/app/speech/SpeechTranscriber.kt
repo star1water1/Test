@@ -38,6 +38,7 @@ class SpeechTranscriber(context: Context) {
         if(file.length()>SpeechProtocol.MAX_AUDIO_BYTES) return@withContext SpeechResult.Failure(SpeechError.TOO_LARGE)
         val key=AiKeyStore(app).getKey(provider.id)
             ?: return@withContext SpeechResult.Failure(SpeechError.NO_KEY)
+        val pricePerMinute = SpeechSettings(app).pricePerMinute(config, provider.baseUrl)
         try {
             val body=MultipartBody.Builder().setType(MultipartBody.FORM)
                 .addFormDataPart("file","voice.m4a",file.asRequestBody("audio/mp4".toMediaType()))
@@ -63,8 +64,17 @@ class SpeechTranscriber(context: Context) {
                         }} catch(_: com.novelcharacter.app.ai.BoundedResponse.TooLarge) {
                             SpeechResult.Failure(SpeechError.RESPONSE_TOO_LARGE)
                         } catch(_: Exception) {SpeechResult.Failure(SpeechError.NETWORK)}
-                        if(result is SpeechResult.Success) SpeechSettings(app).recordUsage(seconds)
-                        if(continuation.isActive) continuation.resume(result)
+                        if(continuation.isActive) {
+                            if(result is SpeechResult.Success) {
+                                try {
+                                    com.novelcharacter.app.ai.AiUsageStore(app).recordSpeech(
+                                        provider.id, provider.displayName, result.model, seconds, pricePerMinute)
+                                } catch (e: Exception) {
+                                    com.novelcharacter.app.util.AppLogger.error("SpeechTranscriber", "전사 사용량 기록 실패", e)
+                                }
+                            }
+                            continuation.resume(result)
+                        }
                     }
                 })
             }

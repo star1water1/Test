@@ -14,7 +14,8 @@ import java.time.LocalDate
  */
 class AiUsageStore(context: Context) {
 
-    private val sp = context.applicationContext
+    private val app = context.applicationContext
+    private val sp = app
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /** 오늘의 epoch day — 화면의 "오늘"과 같은 눈금이 되도록 기기 시간대 기준이다. */
@@ -31,17 +32,28 @@ class AiUsageStore(context: Context) {
         displayName: String,
         model: String,
         inputTokens: Int?,
-        outputTokens: Int?
+        outputTokens: Int?,
+        inputPrice: Double? = null,
+        outputPrice: Double? = null
     ) = synchronized(LOCK) {
         val next = AiUsageLedger.record(
-            snapshot(), today(), providerId, displayName, model, inputTokens, outputTokens
+            snapshot(), today(), providerId, displayName, model, inputTokens, outputTokens,
+            inputPrice, outputPrice
         )
+        sp.edit().putString(KEY_LEDGER, AiUsageCodec.encode(next)).apply()
+    }
+
+    fun recordSpeech(providerId: String, displayName: String, model: String, seconds: Long,
+        pricePerMinute: Double?) = synchronized(LOCK) {
+        val next = AiUsageLedger.recordSpeech(snapshot(), today(), providerId, displayName,
+            model, seconds, pricePerMinute)
         sp.edit().putString(KEY_LEDGER, AiUsageCodec.encode(next)).apply()
     }
 
     /** 기록 전체 삭제 — 파괴적 동작이므로 호출부가 실행 전에 확인을 받는다(R-4). */
     fun clear() = synchronized(LOCK) {
         sp.edit().remove(KEY_LEDGER).apply()
+        com.novelcharacter.app.speech.SpeechSettings(app).clearLegacyUsage()
     }
 
     companion object {

@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import android.text.InputType
 import androidx.fragment.app.Fragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.ai.AiProtocol
@@ -50,6 +51,16 @@ object SpeechSettingsDialog {
         panel.addView(TextView(context).apply {
             text="OpenAI: gpt-transcribe / gpt-4o-transcribe\nGroq: whisper-large-v3 / whisper-large-v3-turbo\n직접 등록한 호환 서버의 전사 모델도 입력할 수 있습니다."
         })
+        panel.addView(TextView(context).apply {
+            text="전사 단가 (선택). 제공자가 녹음 분당 요금을 청구할 때만 그 단가를 직접 입력하세요. 다른 방식의 요금이면 비워 두세요. 예상 비용은 실제 청구액과 다를 수 있습니다."
+        })
+        val oldPrice = store.pricePerMinute(saved,
+            providers.firstOrNull { it.id == saved.providerId }?.baseUrl)?.toString().orEmpty()
+        val price = EditText(context).apply {
+            hint="녹음 1분당 단가"; inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(oldPrice); setSingleLine(true)
+        }
+        panel.addView(price)
         val language=EditText(context).apply {hint="인식 언어 코드 (ko, ja, en · 비우면 자동)";setText(saved.language);setSingleLine(true)}
         panel.addView(language)
         val hints=CheckBox(context).apply {text="현재 문맥의 고유명사를 인식에 참고";isChecked=saved.sendHints}
@@ -58,8 +69,8 @@ object SpeechSettingsDialog {
             text="켜면 녹음 화면에 표시되는 이름과 용어만 전사에 함께 보냅니다. 전체 메모나 DB는 보내지 않습니다."
         })
         val usage=store.usage()
-        panel.addView(TextView(context).apply {
-            text="이 기기에서 성공한 외부 전사 ${usage.first}건 · 녹음 ${usage.second}초. 실제 과금은 제공자에서 확인하세요."
+        if (usage.first > 0) panel.addView(TextView(context).apply {
+            text="이전 버전 전사 기록 ${usage.first}건 · 녹음 ${usage.second}초는 날짜·제공자·모델을 구분할 수 없습니다. 새 기록은 AI 연동의 사용량 카드에서 확인하세요."
         })
         val dialog=MaterialAlertDialogBuilder(context).setTitle("음성 입력 설정")
             .setView(cappedScrollView(context).apply {addView(panel)})
@@ -71,9 +82,19 @@ object SpeechSettingsDialog {
                 !device.isChecked && (model.text.isNullOrBlank() || SpeechProtocol.endpoint(picked!!.baseUrl)==null)->{
                     model.error=SpeechError.CONFIG.message;false
                 }
+                price.text.isNotBlank() && (price.text.toString().toDoubleOrNull()?.let { !it.isFinite() || it < 0 } != false) -> {
+                    price.error="0 이상의 숫자를 입력하거나 비워 주세요.";false
+                }
+                !device.isChecked && (picked?.id != saved.providerId || model.text.toString().trim() != saved.model.trim()) &&
+                    oldPrice.isNotBlank() && price.text.toString() == oldPrice -> {
+                    price.error="제공자나 모델이 바뀌었습니다. 새 단가를 다시 입력하거나 비워 주세요.";false
+                }
                 else->{
-                    store.save(SpeechConfig(if(device.isChecked) SpeechMode.ON_DEVICE else SpeechMode.CLOUD,
-                        picked?.id.orEmpty(),model.text.toString(),language.text.toString(),hints.isChecked))
+                    val next = SpeechConfig(if(device.isChecked) SpeechMode.ON_DEVICE else SpeechMode.CLOUD,
+                        picked?.id.orEmpty(),model.text.toString(),language.text.toString(),hints.isChecked)
+                    store.save(next)
+                    if (!device.isChecked) store.savePrice(next, picked?.baseUrl,
+                        price.text.toString().toDoubleOrNull())
                     onSaved();true
                 }
             }

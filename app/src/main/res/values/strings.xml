@@ -3043,12 +3043,20 @@
     <string name="ai_settings_prompt_count">%1$d개</string>
     <string name="ai_settings_prompt_off">보내지 않음</string>
     <string name="ai_settings_usage_section">AI 사용량</string>
-    <string name="ai_settings_usage_intro">앱이 보낸 AI 요청이 실제로 쓴 토큰을 이 기기에 쌓아, 여기에서 기간별·프로바이더별로 보여줍니다. 회당 사용량은 각 실행 결과에 그대로 표시되고, 이 기록은 백업·엑셀로 나가지 않습니다.</string>
+    <string name="ai_settings_usage_intro">이 기기에서 확인한 성공 응답의 텍스트 토큰과 외부 전사 시간을 기간·제공자·모델별로 보여줍니다. 비용은 요청 당시 사용자가 입력한 단가로 계산한 추정치입니다. 실패·취소·응답을 받지 못한 요청의 실제 과금은 제공자에서 확인하세요. 이 기록은 백업·엑셀로 나가지 않습니다.</string>
+    <string name="ai_usage_text_title">텍스트 생성 · 토큰</string>
+    <string name="ai_usage_speech_title">외부 음성 전사 · 녹음 시간</string>
+    <string name="ai_usage_unknown_model">이전 기록 · 모델 구분 불가</string>
+    <string name="ai_usage_unpriced_row"> · 비용 미확인 %1$d건</string>
+    <string name="ai_usage_speech_row">요청 %1$s건 · 녹음 %2$s분 %3$s초</string>
+    <string name="ai_usage_speech_unpriced"> · 비용 미확인 %1$d건</string>
+    <string name="ai_usage_speech_unknown_duration"> · 시간 미확인 %1$d건</string>
+    <string name="ai_usage_speech_legacy">이전 기록 · 제공자·모델·날짜 구분 불가: 요청 %1$s건 · 녹음 %2$s초 · 비용 계산 불가</string>
     <string name="ai_usage_period_today">오늘</string>
     <string name="ai_usage_period_7">7일</string>
     <string name="ai_usage_period_30">30일</string>
     <string name="ai_usage_period_all">누적</string>
-    <string name="ai_usage_since_note">%1$s부터 센 값입니다.</string>
+    <string name="ai_usage_since_note">날짜별 기록은 %1$s부터 셉니다. 이전 버전의 구분 불가 기록은 별도로 표시합니다.</string>
     <string name="ai_usage_empty">아직 기록된 사용량이 없습니다. 다음 AI 요청부터 셉니다.</string>
     <string name="ai_usage_empty_period">이 기간에는 기록된 사용량이 없습니다.</string>
     <string name="ai_usage_row_title">%1$s · %2$s</string>
@@ -3058,9 +3066,9 @@
     <!-- 사용자가 프로바이더 편집에서 적은 단가로 어림한 비용 — 앱이 단가를 알지 못하면 표시하지 않는다. -->
     <string name="ai_usage_row_cost_suffix"> · 약 %1$s</string>
     <string name="ai_usage_total_row_cost_suffix"> · 약 %1$s</string>
-    <string name="ai_usage_cost_partial_note">일부 프로바이더는 단가가 없어 합계에 비용을 더하지 않았습니다 — 프로바이더 편집에서 단가를 적으면 표시됩니다.</string>
+    <string name="ai_usage_cost_partial_note">일부 요청은 당시 단가·토큰·모델을 확인할 수 없어 전체 비용을 계산하지 않았습니다.</string>
     <string name="ai_usage_clear_button">기록 지우기</string>
-    <string name="ai_usage_clear_confirm">AI 사용량 기록을 모두 지웁니다. 프로바이더 설정과 API 키는 그대로 남습니다. 지운 기록은 되돌릴 수 없습니다.</string>
+    <string name="ai_usage_clear_confirm">텍스트와 음성 전사 사용량 기록(이전 버전 총계 포함)을 모두 지웁니다. 프로바이더·음성 설정과 API 키는 남습니다. 지운 기록은 되돌릴 수 없습니다.</string>
     <string name="ai_usage_cleared">사용량 기록을 지웠습니다</string>
     <string name="ai_settings_usage_examples_cost">필드 1개당 입력 토큰 약 %1$d 증가</string>
     <string name="ai_settings_style_samples_cost">요청 1건당 입력 토큰 약 %1$d 증가</string>
