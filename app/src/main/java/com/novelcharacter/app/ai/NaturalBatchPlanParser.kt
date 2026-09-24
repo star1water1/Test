@@ -63,7 +63,7 @@ object NaturalBatchPlanParser {
                     NaturalBatchPlan.Kind.SET_FIELD_VALUE,
                     NaturalBatchPlan.Kind.ADD_FIELD_VALUE,
                     NaturalBatchPlan.Kind.REMOVE_FIELD_VALUE ->
-                        ensure(field != null && value != null && related == null && faction == null &&
+                        ensure(field != null && !value.isNullOrBlank() && related == null && faction == null &&
                             relationship == null && type == null && description == null &&
                             intensity == null && bidirectional == null && joinYear == null &&
                             leaveYear == null && leaveMode == null, "Invalid field operation")
@@ -78,13 +78,13 @@ object NaturalBatchPlanParser {
                             leaveYear == null && leaveMode == null,
                             "Add relationship needs another character and type")
                     NaturalBatchPlan.Kind.UPDATE_RELATIONSHIP ->
-                        ensure((relationship != null || (related != null && type != null)) &&
+                        ensure(relationship != null && related == null &&
                             field == null && faction == null && value == null && joinYear == null &&
                             leaveYear == null && leaveMode == null &&
                             (type != null || description != null || intensity != null || bidirectional != null),
                             "Invalid relationship update")
                     NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP ->
-                        ensure((relationship != null || (related != null && type != null)) &&
+                        ensure(relationship != null && related == null && type == null &&
                             field == null && faction == null && value == null && description == null &&
                             intensity == null && bidirectional == null && joinYear == null &&
                             leaveYear == null && leaveMode == null, "Invalid relationship removal")
