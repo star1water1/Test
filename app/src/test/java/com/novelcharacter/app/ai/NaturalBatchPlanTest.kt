@@ -87,6 +87,13 @@ class NaturalBatchPlanTest {
         assertTrue(plan.unresolved.all { it.segmentIds == listOf(segments[0].id) })
     }
 
+    @Test fun longUserFieldValueIsNotArbitrarilyCutByTheAiEnvelope() {
+        val longValue = "설정".repeat(7_000)
+        val plan = parse(response().put("operations", JSONArray().put(operation(value = longValue)))
+            .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))))
+        assertEquals(longValue, plan.operations.single().value)
+    }
+
     @Test fun omissionsFailuresAndConflictsStayVisible() {
         val complete = parse(response().put("operations", JSONArray().put(operation()))
             .put("constraints", JSONArray().put(JSONObject().put("id", "comparison")

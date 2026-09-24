@@ -51,9 +51,10 @@ object NaturalBatchPlanParser {
                 val related = item.optionalString("relatedRef")
                 val faction = item.optionalString("factionRef")
                 val relationship = item.optionalString("relationshipRef")
-                val value = item.optionalString("value", allowEmpty = true, maxLength = 12_000)
+                val value = item.optionalString("value", allowEmpty = true, maxLength = MAX_RESPONSE_CHARS)
                 val type = item.optionalString("relationshipType")
-                val description = item.optionalString("relationshipDescription", allowEmpty = true)
+                val description = item.optionalString("relationshipDescription", allowEmpty = true,
+                    maxLength = MAX_RESPONSE_CHARS)
                 val intensity = item.optionalInt("intensity")
                 val bidirectional = item.optionalBoolean("bidirectional")
                 val joinYear = item.optionalInt("joinYear")
