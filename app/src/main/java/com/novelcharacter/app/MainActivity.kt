@@ -62,14 +62,17 @@ class MainActivity : AppCompatActivity() {
         refreshPendingAudio()
     }
 
+    private var pendingAudioRefresh: kotlinx.coroutines.Job? = null
     fun refreshPendingAudio() {
-        lifecycleScope.launch {
+        pendingAudioRefresh?.cancel()
+        pendingAudioRefresh = lifecycleScope.launch {
             val catalog=try {withContext(Dispatchers.IO) {
                 val store=PendingAudio.store(this@MainActivity)
                 // Failed migration retains its cache source and remains visible in the catalog.
                 runCatching {store.preserveLegacy()}
                 store.catalog()
             }}
+                catch(e: kotlinx.coroutines.CancellationException) {throw e}
                 catch(_: Exception) {null}
             val count=catalog?.let {it.items.size+it.orphans.size+it.unreadable}
             binding.pendingAudio.visibility=if(count==0) View.GONE else View.VISIBLE

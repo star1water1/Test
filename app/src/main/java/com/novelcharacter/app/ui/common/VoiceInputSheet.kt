@@ -213,6 +213,7 @@ class VoiceInputSheet : DialogFragment() {
     }
     override fun onDestroyView() { model.updates.removeObservers(this); viewContext=null; super.onDestroyView() }
     override fun onDismiss(dialog: android.content.DialogInterface) {
+        parentFragment?.takeIf { it.isAdded }?.parentFragmentManager?.setFragmentResult(PendingAudioRecoverySheet.CHANGED, Bundle())
         (activity as? com.novelcharacter.app.MainActivity)?.refreshPendingAudio()
         super.onDismiss(dialog)
     }
