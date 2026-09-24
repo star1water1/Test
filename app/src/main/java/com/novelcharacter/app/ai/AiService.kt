@@ -288,7 +288,10 @@ class AiService(context: Context) {
                 // 집계가 답할 질문은 "실제로 누가 썼는가"다.
                 model = result.model,
                 inputTokens = result.inputTokens,
-                outputTokens = result.outputTokens
+                outputTokens = result.outputTokens,
+                // User prices belong to the configured model. A router may return another one.
+                inputPrice = config.inputPricePerMillionTokens.takeIf { result.model == config.model },
+                outputPrice = config.outputPricePerMillionTokens.takeIf { result.model == config.model }
             )
         }
         result

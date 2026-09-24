@@ -17,6 +17,7 @@ import com.google.gson.JsonParser
 object AiUsageCodec {
 
     fun encode(data: AiUsageLedger.Data): String = JsonObject().apply {
+        addProperty("version", 2)
         add("days", JsonArray().apply {
             data.days.forEach { b ->
                 add(JsonObject().apply {
@@ -28,6 +29,9 @@ object AiUsageCodec {
                     addProperty("inputTokens", b.inputTokens)
                     addProperty("outputTokens", b.outputTokens)
                     addProperty("unmeteredRequests", b.unmeteredRequests)
+                    addProperty("modelKnown", b.modelKnown)
+                    addProperty("pricedCost", b.pricedCost)
+                    addProperty("unpricedRequests", b.unpricedRequests)
                 })
             }
         })
@@ -42,8 +46,29 @@ object AiUsageCodec {
                     addProperty("outputTokens", t.outputTokens)
                     addProperty("unmeteredRequests", t.unmeteredRequests)
                     addProperty("sinceDay", t.sinceDay)
+                    addProperty("modelKnown", t.modelKnown)
+                    addProperty("pricedCost", t.pricedCost)
+                    addProperty("unpricedRequests", t.unpricedRequests)
                 })
             }
+        })
+        add("speechDays", JsonArray().apply {
+            data.speechDays.forEach { b -> add(JsonObject().apply {
+                addProperty("epochDay", b.epochDay); addProperty("providerId", b.providerId)
+                addProperty("displayName", b.displayName); addProperty("model", b.model)
+                addProperty("requests", b.requests); addProperty("seconds", b.seconds)
+                addProperty("unknownDurationRequests", b.unknownDurationRequests)
+                addProperty("pricedCost", b.pricedCost); addProperty("unpricedRequests", b.unpricedRequests)
+            }) }
+        })
+        add("speechTotals", JsonArray().apply {
+            data.speechTotals.forEach { t -> add(JsonObject().apply {
+                addProperty("providerId", t.providerId); addProperty("displayName", t.displayName)
+                addProperty("model", t.model); addProperty("requests", t.requests)
+                addProperty("seconds", t.seconds); addProperty("unknownDurationRequests", t.unknownDurationRequests)
+                addProperty("pricedCost", t.pricedCost); addProperty("unpricedRequests", t.unpricedRequests)
+                addProperty("sinceDay", t.sinceDay)
+            }) }
         })
     }.toString()
 
@@ -54,7 +79,16 @@ object AiUsageCodec {
         } catch (_: Exception) {
             return AiUsageLedger.Data()
         }
-        val days = root.getAsJsonArray("days")
+        val version = try { root.get("version")?.asInt ?: 1 } catch (_: Exception) { 1 }
+        fun array(name: String): JsonArray? = try { root.getAsJsonArray(name) } catch (_: Exception) { null }
+        fun price(o: JsonObject): Double? = try {
+            o.get("pricedCost")?.asDouble?.takeIf { it.isFinite() && it >= 0 }
+        } catch (_: Exception) { null }
+        fun unpriced(o: JsonObject, requests: Int): Int = try {
+            if (version >= 2 && price(o) != null) o.get("unpricedRequests")?.asInt
+                ?.takeIf { it in 0..requests } ?: requests else requests
+        } catch (_: Exception) { requests }
+        val days = array("days")
             ?.filterIsInstance<JsonObject>()
             ?.mapNotNull { o ->
                 try {
@@ -66,14 +100,17 @@ object AiUsageCodec {
                         requests = o.get("requests")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
                         inputTokens = o.get("inputTokens")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
                         outputTokens = o.get("outputTokens")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
-                        unmeteredRequests = o.get("unmeteredRequests")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                        unmeteredRequests = o.get("unmeteredRequests")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                        modelKnown = version >= 2 && o.get("modelKnown")?.takeIf { it.isJsonPrimitive }?.asBoolean == true,
+                        pricedCost = if (version >= 2) price(o) ?: 0.0 else 0.0,
+                        unpricedRequests = unpriced(o, o.get("requests")?.asInt ?: 0)
                     )
                 } catch (_: Exception) {
                     null
                 }
             }
             .orEmpty()
-        val totals = root.getAsJsonArray("totals")
+        val totals = array("totals")
             ?.filterIsInstance<JsonObject>()
             ?.mapNotNull { o ->
                 try {
@@ -85,13 +122,34 @@ object AiUsageCodec {
                         inputTokens = o.get("inputTokens")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
                         outputTokens = o.get("outputTokens")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
                         unmeteredRequests = o.get("unmeteredRequests")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                        sinceDay = o.get("sinceDay").asLong
+                        sinceDay = o.get("sinceDay").asLong,
+                        modelKnown = version >= 2 && o.get("modelKnown")?.takeIf { it.isJsonPrimitive }?.asBoolean == true,
+                        pricedCost = if (version >= 2) price(o) ?: 0.0 else 0.0,
+                        unpricedRequests = unpriced(o, o.get("requests")?.asInt ?: 0)
                     )
                 } catch (_: Exception) {
                     null
                 }
             }
             .orEmpty()
-        return AiUsageLedger.Data(days, totals)
+        val speechDays = array("speechDays")?.filterIsInstance<JsonObject>()?.mapNotNull { o ->
+            try { AiUsageLedger.SpeechBucket(
+                o.get("epochDay").asLong, o.get("providerId").asString,
+                o.get("displayName")?.asString.orEmpty(), o.get("model")?.asString.orEmpty(),
+                o.get("requests").asInt, o.get("seconds").asLong,
+                o.get("unknownDurationRequests")?.asInt ?: 0,
+                price(o) ?: 0.0, unpriced(o, o.get("requests").asInt)
+            ) } catch (_: Exception) { null }
+        }.orEmpty()
+        val speechTotals = array("speechTotals")?.filterIsInstance<JsonObject>()?.mapNotNull { o ->
+            try { AiUsageLedger.SpeechTotal(
+                o.get("providerId").asString, o.get("displayName")?.asString.orEmpty(),
+                o.get("model")?.asString.orEmpty(), o.get("requests").asInt, o.get("seconds").asLong,
+                o.get("unknownDurationRequests")?.asInt ?: 0,
+                price(o) ?: 0.0, unpriced(o, o.get("requests").asInt),
+                o.get("sinceDay").asLong
+            ) } catch (_: Exception) { null }
+        }.orEmpty()
+        return AiUsageLedger.Data(days, totals, speechDays, speechTotals)
     }
 }

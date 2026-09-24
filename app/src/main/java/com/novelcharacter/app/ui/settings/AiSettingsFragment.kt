@@ -126,12 +126,14 @@ class AiSettingsFragment : Fragment() {
     private fun renderUsage() {
         val store = com.novelcharacter.app.ai.AiUsageStore(requireContext())
         val data = store.snapshot()
+        val legacySpeech = com.novelcharacter.app.speech.SpeechSettings(requireContext()).usage()
         val today = store.today()
         val ledger = com.novelcharacter.app.ai.AiUsageLedger
         var sinceNote: String? = null
         val summaries = when (binding.usagePeriodGroup.checkedRadioButtonId) {
             R.id.usagePeriodAll -> {
-                ledger.earliestSinceDay(data.totals)?.let {
+                listOfNotNull(ledger.earliestSinceDay(data.totals),
+                    data.speechTotals.minOfOrNull { it.sinceDay }).minOrNull()?.let {
                     sinceNote = getString(
                         R.string.ai_usage_since_note, java.time.LocalDate.ofEpochDay(it).toString()
                     )
@@ -147,29 +149,26 @@ class AiSettingsFragment : Fragment() {
 
         val fmt = java.text.NumberFormat.getIntegerInstance()
         val costFmt = java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }
-        // 단가는 프로바이더 편집에서 사용자가 직접 적은 값이다(학습값도 앱이 두는 표도 아니다) —
-        // 프로바이더가 지워졌으면(맵에 없으면) 어림할 근거가 없다.
-        // 목록을 한 번만 읽는다 — providerStore.get()은 호출마다 SharedPreferences를 다시
-        // 읽고 JSON을 다시 해석하므로, 요약 줄마다(그리고 합계에서 또) 부르면 프로바이더
-        // 수만큼 그 비용이 곱으로 붙는다.
-        val priceById = providerStore.list().associateBy { it.id }
+        val costText: (Double) -> String = { if (it > 0 && it < 0.01) "<0.01" else costFmt.format(it) }
+        // Costs were captured per successful request. Current provider prices cannot rewrite history.
         val costOf: (com.novelcharacter.app.ai.AiUsageLedger.Summary) -> Double? = { s ->
-            val cfg = priceById[s.providerId]
-            ledger.estimatedCost(s, cfg?.inputPricePerMillionTokens, cfg?.outputPricePerMillionTokens)
+            s.pricedCost.takeIf { s.modelKnown && s.unpricedRequests == 0 && s.requests > 0 }
         }
-        binding.usageSummaryText.text = when {
+        binding.usageSummaryText.text = getString(R.string.ai_usage_text_title) + "\n" + when {
             data.totals.isEmpty() -> getString(R.string.ai_usage_empty)
             summaries.isEmpty() -> getString(R.string.ai_usage_empty_period)
             else -> buildString {
                 summaries.forEach { s ->
-                    append(getString(R.string.ai_usage_row_title, s.displayName, s.model)).append('\n')
+                    append(getString(R.string.ai_usage_row_title, s.displayName,
+                        if (s.modelKnown) s.model else getString(R.string.ai_usage_unknown_model))).append('\n')
                     append(
                         getString(
                             R.string.ai_usage_row_body,
                             fmt.format(s.requests), fmt.format(s.inputTokens), fmt.format(s.outputTokens)
                         )
                     )
-                    costOf(s)?.let { append(getString(R.string.ai_usage_row_cost_suffix, costFmt.format(it))) }
+                    costOf(s)?.let { append(getString(R.string.ai_usage_row_cost_suffix, costText(it))) }
+                    if (s.unpricedRequests > 0) append(getString(R.string.ai_usage_unpriced_row, s.unpricedRequests))
                     append('\n')
                 }
                 // 합계는 줄이 둘 이상일 때만 — 하나뿐이면 같은 수를 두 번 적는 것이다.
@@ -189,7 +188,7 @@ class AiSettingsFragment : Fragment() {
                         append(
                             getString(
                                 R.string.ai_usage_total_row_cost_suffix,
-                                costFmt.format(costs.sumOf { it!! })
+                                costText(costs.sumOf { it!! })
                             )
                         )
                     } else if (costs.any { it != null }) {
@@ -204,7 +203,33 @@ class AiSettingsFragment : Fragment() {
         binding.usageUnmeteredNote.text =
             if (unmetered > 0) getString(R.string.ai_usage_unmetered_note, unmetered) else null
         binding.usageUnmeteredNote.visibility = if (unmetered > 0) View.VISIBLE else View.GONE
-        binding.usageClearButton.isEnabled = data.totals.isNotEmpty()
+        val speech = when (binding.usagePeriodGroup.checkedRadioButtonId) {
+            R.id.usagePeriodAll -> ledger.speechTotalsSummary(data.speechTotals)
+            R.id.usagePeriod7 -> ledger.summarizeSpeech(data.speechDays, today - 6)
+            R.id.usagePeriod30 -> ledger.summarizeSpeech(data.speechDays, today - 29)
+            else -> ledger.summarizeSpeech(data.speechDays, today)
+        }
+        binding.usageSpeechSummaryText.text = buildString {
+            append(getString(R.string.ai_usage_speech_title)).append('\n')
+            if (speech.isEmpty()) append(getString(R.string.ai_usage_empty_period))
+            speech.forEach { s ->
+                append(getString(R.string.ai_usage_row_title, s.displayName,
+                    s.model.ifBlank { getString(R.string.ai_usage_unknown_model) })).append('\n')
+                append(getString(R.string.ai_usage_speech_row, fmt.format(s.requests),
+                    fmt.format(s.seconds / 60), fmt.format(s.seconds % 60)))
+                if (s.unpricedRequests == 0 && s.requests > 0)
+                    append(getString(R.string.ai_usage_row_cost_suffix, costText(s.pricedCost)))
+                else append(getString(R.string.ai_usage_speech_unpriced, s.unpricedRequests))
+                if (s.unknownDurationRequests > 0)
+                    append(getString(R.string.ai_usage_speech_unknown_duration, s.unknownDurationRequests))
+                append('\n')
+            }
+            if (binding.usagePeriodGroup.checkedRadioButtonId == R.id.usagePeriodAll && legacySpeech.first > 0) {
+                append(getString(R.string.ai_usage_speech_legacy, fmt.format(legacySpeech.first),
+                    fmt.format(legacySpeech.second))).append('\n')
+            }
+        }.trimEnd()
+        binding.usageClearButton.isEnabled = data.totals.isNotEmpty() || data.speechTotals.isNotEmpty() || legacySpeech.first > 0
     }
 
     /** 기록 삭제는 파괴적 동작이다 — 실행 전에 결과를 말하고 확인을 받는다(R-4). */
