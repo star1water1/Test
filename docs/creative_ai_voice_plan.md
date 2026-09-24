@@ -34,7 +34,7 @@
 | M6 | 통합 검증, 문서, PR와 CI | 관련/전체 단위 테스트, 정적 검사, APK 빌드, CI 초록. 실제 기기·유료 API 미확인 항목 명시 |
 | M7 | 받은 결과·편집의 종료 후 복구, 일괄 서술형 미요청 선택 이어받기 | 파일 왕복·체크/후보/원문 보존, 응답별 저장, 중단/미요청 구분, 중복 요청 차단, 손상·다른 편집 창의 덮어쓰기 거부 |
 
-각 milestone은 순서대로 구현하고 관련 테스트를 통과한 뒤 다음 단계로 진행한다. 미래 AI 자연어 일괄 편집·Change Plan engine·범용 DB mutation framework는 이번 범위에 없다.
+각 milestone은 순서대로 구현하고 관련 테스트를 통과한 뒤 다음 단계로 진행한다. AI 자연어 일괄편집의 Change Plan은 별도 [현재 코드 기반 구현 계획](ai_natural_language_batch_edit_plan.md)을 따른다. 범용 DB mutation framework는 이번 범위에 없다.
 
 ## STT 방식 조사 (2026-09-08 공식 문서)
 
