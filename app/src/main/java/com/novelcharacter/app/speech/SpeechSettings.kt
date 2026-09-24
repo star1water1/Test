@@ -4,7 +4,7 @@ import android.content.Context
 
 /** Device-local preferences. API keys stay exclusively in AiKeyStore. */
 class SpeechSettings(context: Context) {
-    private val prefs=context.applicationContext.getSharedPreferences("speech_input",Context.MODE_PRIVATE)
+    private val prefs=(context.applicationContext ?: context).getSharedPreferences("speech_input",Context.MODE_PRIVATE)
     fun read()=SpeechConfig(
         mode=SpeechMode.entries.firstOrNull {it.name==prefs.getString("mode",null)} ?: SpeechMode.CLOUD,
         providerId=prefs.getString("provider","").orEmpty(),

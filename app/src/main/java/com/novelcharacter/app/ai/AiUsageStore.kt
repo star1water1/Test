@@ -14,7 +14,7 @@ import java.time.LocalDate
  */
 class AiUsageStore(context: Context) {
 
-    private val app = context.applicationContext
+    private val app = context.applicationContext ?: context
     private val sp = app
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
