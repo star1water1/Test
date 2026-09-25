@@ -6,6 +6,14 @@ import com.novelcharacter.app.data.model.Character
 
 @Dao
 interface CharacterDao {
+    /** AI 일괄편집의 1차 색인. 메모·이미지 등 큰 열은 후보를 찾는 동안 읽지 않는다. */
+    @Query("SELECT id, name, firstName, lastName, anotherName, novelId, code FROM characters WHERE novelId = :novelId")
+    suspend fun getNaturalBatchIndexByNovel(novelId: Long): List<NaturalBatchCharacterIndex>
+
+    @Query("""SELECT c.id, c.name, c.firstName, c.lastName, c.anotherName, c.novelId, c.code
+        FROM characters c INNER JOIN novels n ON c.novelId = n.id WHERE n.universeId = :universeId""")
+    suspend fun getNaturalBatchIndexByUniverse(universeId: Long): List<NaturalBatchCharacterIndex>
+
     // Pinned-first sorting: isPinned DESC ensures pinned items appear at top
     @Query("SELECT * FROM characters ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     fun getAllCharacters(): LiveData<List<Character>>
@@ -168,3 +176,13 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE novelId IN (:novelIds)")
     suspend fun getCharactersByNovelIds(novelIds: List<Long>): List<Character>
 }
+
+data class NaturalBatchCharacterIndex(
+    val id: Long,
+    val name: String,
+    val firstName: String,
+    val lastName: String,
+    val anotherName: String,
+    val novelId: Long?,
+    val code: String
+)
