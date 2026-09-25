@@ -134,6 +134,16 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         checkpoint()
     }
 
+    fun clearAnalysis() {
+        val state = review ?: return
+        if (busy || storageFailed || state.plan == null) return
+        state.clearAnalysis()
+        context = null; prepared = null
+        scrollPosition = 0; expanded.clear()
+        message = "이전 분석과 선택을 비웠습니다. 원문을 확인한 뒤 다시 분석해 주세요."
+        checkpoint()
+    }
+
     fun editInput(text: String) {
         if (storageFailed) return
         if (busy && !analyzing) { pendingInput = text; return }

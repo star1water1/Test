@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.NaturalBatchAppliedOperation
 import com.novelcharacter.app.data.model.NaturalBatchRowChange
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RequiredEnforcement
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
@@ -49,6 +50,8 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val targetId: Long?, val fieldId: Long?,
         val expectedValue: String?, val expectedType: String?, val expectedConfig: String?,
         val expectedKey: String?, val expectedUniverseId: Long?,
+        val expectedCharacterCode: String?, val expectedNovelCode: String?,
+        val expectedUniverseCode: String?,
         val editedValue: String?, val decision: Decision
     )
 
@@ -64,6 +67,7 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
     private data class Live(
         val characters: Map<Long, Character>,
         val novels: Map<Long, Novel>,
+        val universes: Map<Long, Universe>,
         val fields: Map<Long, FieldDefinition>,
         val values: Map<Pair<Long, Long>, CharacterFieldValue>,
         val entries: Map<Long, List<FieldValueEntry>>,
@@ -78,6 +82,9 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val novels = SqlInChunks.flat(characters.values.mapNotNull { it.novelId }.distinct()) {
             db.novelDao().getNovelsByIds(it)
         }.associateBy { it.id }
+        val universes = novels.values.mapNotNull { it.universeId }.distinct().mapNotNull { id ->
+            db.universeDao().getUniverseById(id)?.let { id to it }
+        }.toMap()
         val fields = SqlInChunks.flat(fieldIds) { db.fieldDefinitionDao().getFieldsByIds(it) }
             .associateBy { it.id }
         val values = SqlInChunks.flat(fieldIds, reservedBinds = SqlInChunks.LIMIT / 2) { ids ->
@@ -88,7 +95,8 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val appliedKeys = SqlInChunks.flat(items.map { key(input, it.operation.id) }) {
             journal.existingKeys(it)
         }.toSet()
-        return Live(characters, novels, fields, values, library.entriesForFields(fieldIds), appliedKeys)
+        return Live(characters, novels, universes, fields, values,
+            library.entriesForFields(fieldIds), appliedKeys)
     }
 
     /** The same evaluator runs at preview time and again under the write transaction. */
@@ -103,11 +111,13 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         })
         val seeds = plan.operations.filter { it.id in review.selected }.map { op ->
             val targetId = context.characters[op.targetRef]?.id
+            val target = context.characters[op.targetRef]
             val fieldId = op.fieldRef?.let { context.fields[it]?.id }
             val original = if (op.fieldRef != null) context.values[op.targetRef to op.fieldRef] else null
             val contextField = op.fieldRef?.let(context.fields::get)
             val seed = Item(op, targetId, fieldId, original, contextField?.type,
                 contextField?.config, contextField?.key, contextField?.universeId,
+                target?.code, target?.novelCode, target?.universeCode,
                 review.edits[op.id], Decision(op.id, Status.UNSUPPORTED))
             seed
         }
@@ -237,11 +247,20 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val fieldId = item.fieldId ?: return result(Status.MISSING_FIELD)
         val character = (live?.characters?.get(characterId) ?: if (live == null)
             db.characterDao().getCharacterById(characterId) else null) ?: return result(Status.MISSING_TARGET)
+        if (item.expectedCharacterCode.isNullOrBlank() || character.code != item.expectedCharacterCode)
+            return result(Status.STALE, "인물 식별자가 분석 당시와 달라졌습니다. 다시 분석해 주세요")
         val novel = character.novelId?.let { if (live == null) db.novelDao().getNovelById(it)
-            else live.novels[it] }
+            else live.novels[it] } ?: return result(Status.STALE, "작품 식별자가 분석 당시와 달라졌습니다. 다시 분석해 주세요")
+        if (item.expectedNovelCode.isNullOrBlank() || novel.code != item.expectedNovelCode)
+            return result(Status.STALE, "작품 식별자가 분석 당시와 달라졌습니다. 다시 분석해 주세요")
+        val universe = novel.universeId?.let { if (live == null) db.universeDao().getUniverseById(it)
+            else live.universes[it] }
+        if (universe?.code != item.expectedUniverseCode ||
+            (novel.universeId != null && item.expectedUniverseCode.isNullOrBlank()))
+            return result(Status.STALE, "세계관 식별자가 분석 당시와 달라졌습니다. 다시 분석해 주세요")
         val scopeOk = when (input.scope.kind) {
-            NaturalBatchInput.ScopeKind.WORK -> character.novelId == input.scope.id && novel != null
-            NaturalBatchInput.ScopeKind.UNIVERSE -> novel?.universeId == input.scope.id
+            NaturalBatchInput.ScopeKind.WORK -> character.novelId == input.scope.id
+            NaturalBatchInput.ScopeKind.UNIVERSE -> novel.universeId == input.scope.id
         }
         if (!scopeOk) return result(Status.STALE, "Character left the selected scope")
         val field = (live?.fields?.get(fieldId) ?: if (live == null)

@@ -39,6 +39,7 @@ class NaturalBatchFragment : Fragment() {
     private lateinit var editorPanel: LinearLayout
     private lateinit var editSourceButton: MaterialButton
     private lateinit var analyzeButton: MaterialButton
+    private lateinit var resetButton: MaterialButton
     private lateinit var summary: TextView
     private lateinit var notice: TextView
     private lateinit var resultButton: MaterialButton
@@ -95,6 +96,11 @@ class NaturalBatchFragment : Fragment() {
             setOnClickListener { confirmAnalysis() }
         }
         top.addView(analyzeButton)
+        resetButton = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "새 분석 준비"
+            setOnClickListener { confirmReset() }
+        }
+        top.addView(resetButton)
         summary = TextView(ctx).apply { textSize = 14f; setPadding(0, dp(8), 0, dp(4)) }
         top.addView(summary)
         selectRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
@@ -216,6 +222,8 @@ class NaturalBatchFragment : Fragment() {
         analyzeButton.isVisible = plan == null
         analyzeButton.isEnabled = snapshot?.input?.text?.isNotBlank() == true &&
             !model.busy && !model.storageFailed
+        resetButton.isVisible = plan != null
+        resetButton.isEnabled = !model.busy && !model.storageFailed
         val selected = snapshot?.selected?.size ?: 0
         summary.text = if (plan == null) {
             "범위와 원문을 확인한 뒤 분석하세요. 전사만으로 AI 요청이나 저장이 시작되지 않습니다."
@@ -287,14 +295,14 @@ class NaturalBatchFragment : Fragment() {
                     .setPositiveButton("확인", null).show()
                 return
             }
-            NaturalBatchViewModel.BusyKind.ANALYSIS -> Unit
+            NaturalBatchViewModel.BusyKind.ANALYSIS -> {
+                MaterialAlertDialogBuilder(requireContext()).setTitle("AI 분석 중")
+                    .setMessage("보낸 요청의 응답을 보관할 때까지 기다려 주세요. 이미 보낸 AI 요청은 비용이 발생할 수 있습니다.")
+                    .setPositiveButton("계속 기다리기", null).show()
+                return
+            }
             else -> { findNavController().popBackStack(); return }
         }
-        MaterialAlertDialogBuilder(requireContext()).setTitle("AI 분석 중")
-            .setMessage("지금 나가면 진행 중인 요청의 결과를 받지 못할 수 있습니다. 이미 보낸 AI 요청은 비용이 발생할 수 있습니다.")
-            .setPositiveButton("계속 기다리기", null)
-            .setNegativeButton("화면 나가기") { _, _ -> findNavController().popBackStack() }
-            .show()
     }
 
     private fun revealSource() {
@@ -317,6 +325,13 @@ class NaturalBatchFragment : Fragment() {
         MaterialAlertDialogBuilder(requireContext()).setTitle("AI 분석 시작")
             .setMessage("원문 ${input.segments().size}개 문단을 분석합니다. 예상 요청은 1회이며, 응답이 잘리거나 형식이 맞지 않아도 비용이 발생할 수 있습니다. 제안은 검토 전에는 저장되지 않습니다.")
             .setPositiveButton("분석") { _, _ -> editingSource = false; model.analyze() }
+            .setNegativeButton("취소", null).show()
+    }
+
+    private fun confirmReset() {
+        MaterialAlertDialogBuilder(requireContext()).setTitle("새 분석 준비")
+            .setMessage("현재 제안과 선택을 비웁니다. 이미 적용한 변경과 되돌리기 기록은 유지됩니다. 다시 AI 분석을 시작하면 비용이 발생할 수 있습니다.")
+            .setPositiveButton("제안 비우기") { _, _ -> model.clearAnalysis() }
             .setNegativeButton("취소", null).show()
     }
 

@@ -74,7 +74,8 @@ class NaturalBatchPlanTest {
 
     @Test fun scopedContextJournalRestoresPairKeyedValues() {
         val context = NaturalBatchContext(
-            mapOf("c1" to NaturalBatchContext.Character(10, 20, 7, "민아", listOf("미나"), "C-1", "첫 작품")),
+            mapOf("c1" to NaturalBatchContext.Character(10, 20, 7, "민아", listOf("미나"),
+                "C-1", "첫 작품", "N-1", "U-1")),
             mapOf("f1" to NaturalBatchContext.Field(30, 7, "직업", "job", "text", "{}")),
             emptyMap(), emptyMap(), mapOf(("c1" to "f1") to "기자"), listOf("생략 1건"))
         val gson = Gson()
@@ -278,6 +279,13 @@ class NaturalBatchPlanTest {
         restored.restore(snapshot)
         assertTrue(restored.isSelected(secondId))
         assertFalse(restored.accept(request, merged))
+        restored.clearAnalysis()
+        assertEquals(null, restored.plan)
+        assertEquals(input.text, restored.input.text)
+        assertFalse(restored.isSelected(secondId))
+        val nextRequest = restored.beginAnalysis()
+        assertFalse(restored.accept(request, merged))
+        assertTrue(restored.accept(nextRequest, merged))
         restored.editInput(input.text + " 추가")
         assertEquals(null, restored.plan)
         assertFalse(restored.isSelected(secondId))
