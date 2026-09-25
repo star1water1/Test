@@ -2,6 +2,7 @@ package com.novelcharacter.app.ai
 
 /** Pure review decisions. Persistence and domain validation are added at their own milestones. */
 class NaturalBatchReviewState(initial: NaturalBatchInput) {
+    private val ownerSessionId = initial.sessionId
     data class Request(val sessionId: String, val scopeRevision: Long,
         val inputRevision: Long, val generation: Long)
     data class Snapshot(val input: NaturalBatchInput, val plan: NaturalBatchMerge?,
@@ -19,6 +20,7 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
     fun snapshot() = Snapshot(input, plan, selected.toSet(), confirmed.toSet(), edits.toMap(), generation)
 
     fun restore(saved: Snapshot) {
+        require(saved.input.sessionId == ownerSessionId) { "Review owner mismatch" }
         input = saved.input
         plan = saved.plan?.takeIf { it.sessionId == input.sessionId &&
             it.scopeRevision == input.scopeRevision && it.inputRevision == input.inputRevision }
@@ -48,6 +50,7 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
     }
 
     fun beginAnalysis(): Request {
+        require(plan == null) { "Existing review must be preserved before a new analysis" }
         generation++
         acceptedGeneration = null
         return Request(input.sessionId, input.scopeRevision, input.inputRevision, generation)

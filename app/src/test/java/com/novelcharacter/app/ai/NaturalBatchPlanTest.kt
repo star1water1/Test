@@ -230,6 +230,10 @@ class NaturalBatchPlanTest {
         val firstId = merged.operations.first { it.fieldRef == "f1" }.id
         val secondId = merged.operations.first { it.fieldRef == "f2" }.id
         assertTrue(review.accept(request, merged))
+        try {
+            review.beginAnalysis()
+            fail("A new analysis must not overwrite an active paid review")
+        } catch (_: IllegalArgumentException) { }
         assertFalse(review.isSelected(firstId))
         review.confirm(firstId)
         review.confirm(secondId)
@@ -249,5 +253,10 @@ class NaturalBatchPlanTest {
         assertEquals(null, restored.plan)
         assertFalse(restored.isSelected(secondId))
         assertEquals(1L, restored.input.inputRevision)
+        val anotherOwner = NaturalBatchReviewState(input.copy(sessionId = "another-session"))
+        try {
+            anotherOwner.restore(snapshot)
+            fail("Review recovery must keep its owner")
+        } catch (_: IllegalArgumentException) { }
     }
 }
