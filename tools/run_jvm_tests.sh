@@ -256,7 +256,9 @@ $MAIN/ai/CreativeInputState.kt
 $MAIN/ai/NaturalBatchPlan.kt
 $MAIN/ai/NaturalBatchPlanParser.kt
 $MAIN/ai/NaturalBatchReviewState.kt
+$MAIN/ai/NaturalBatchReviewSelection.kt
 $MAIN/ai/NaturalBatchContext.kt
+$MAIN/ai/NaturalBatchContextSnapshot.kt
 $MAIN/ai/NaturalBatchEvidenceGuard.kt
 $MAIN/ai/FieldSuggestionReviewState.kt
 $MAIN/ai/FieldReviewApply.kt
