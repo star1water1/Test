@@ -100,6 +100,12 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds)")
     suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue>
 
+    /** 자연어 일괄편집: 원문에 언급된 필드의 현재값만 읽는다. 두 목록 모두 호출부에서 청크한다. */
+    @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds) AND fieldDefinitionId IN (:fieldIds)")
+    suspend fun getNaturalBatchValues(
+        characterIds: List<Long>, fieldIds: List<Long>
+    ): List<CharacterFieldValue>
+
     /**
      * 필드 집합의 값 일괄 조회 — 편집 화면 자동완성의 **폴백**(라이브러리 엔트리가 없는 필드).
      *

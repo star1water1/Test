@@ -72,6 +72,7 @@ class FieldFilterHelperTest {
         override suspend fun getFieldValuesForNovel(novelId: Long, fieldDefId: Long): List<String> = unused()
         override suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> = unused()
         override suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> = unused()
+        override suspend fun getNaturalBatchValues(characterIds: List<Long>, fieldIds: List<Long>): List<CharacterFieldValue> = unused()
         override suspend fun getValuesForFields(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
         override suspend fun countValuesNotInUniverse(characterId: Long, universeId: Long): Int = unused()
         override suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long) = unused()
