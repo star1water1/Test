@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ai
 
+import com.novelcharacter.app.data.model.FieldType
+
 /** A valid request ref is still not proof that the quoted words identify that row. */
 object NaturalBatchEvidenceGuard {
     fun check(plan: NaturalBatchPlan, context: NaturalBatchContext): NaturalBatchPlan {
@@ -21,10 +23,14 @@ object NaturalBatchEvidenceGuard {
                 fieldTerms, operation.fieldRef)
             val faction = operation.factionRef == null || uniqueMention(quote,
                 factionTerms, operation.factionRef)
-            if (target && related && field && faction) safe += operation
+            val fieldType = operation.fieldRef?.let { context.fields[it]?.type?.let(FieldType::fromName) }
+            val unwritable = operation.fieldRef != null &&
+                (fieldType == null || fieldType == FieldType.CALCULATED)
+            if (target && related && field && faction && !unwritable) safe += operation
             else unresolved += NaturalBatchPlan.Unresolved(operation.id,
                 operation.evidence.segmentIds, quote,
-                "인용한 원문만으로 대상 또는 필드를 하나로 확인할 수 없습니다")
+                if (unwritable) "계산 필드 또는 알 수 없는 필드 타입은 직접 수정할 수 없습니다"
+                else "인용한 원문만으로 대상 또는 필드를 하나로 확인할 수 없습니다")
         }
         return plan.copy(operations = safe, unresolved = unresolved)
     }

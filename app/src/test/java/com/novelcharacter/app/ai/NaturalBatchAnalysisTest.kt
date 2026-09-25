@@ -40,6 +40,13 @@ class NaturalBatchAnalysisTest {
         val checked = NaturalBatchEvidenceGuard.check(plan, context)
         assertEquals(listOf("specific"), checked.operations.map { it.id })
         assertEquals(listOf("ambiguous"), checked.unresolved.map { it.id })
+
+        val calculated = context.copy(fields = context.fields +
+            ("f3" to NaturalBatchContext.Field(24, 7, "합계", "total", "CALCULATED", "{}")))
+        val computed = operation("computed", "김민아의 합계").copy(fieldRef = "f3")
+        val computedResult = NaturalBatchEvidenceGuard.check(plan.copy(operations = listOf(computed)), calculated)
+        assertTrue(computedResult.operations.isEmpty())
+        assertTrue(computedResult.unresolved.single().reason.contains("계산 필드"))
     }
 
     @Test fun workScopeKeepsAmbiguousAliasesButExcludesOtherWorksAndFieldZones() {
