@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ui.character.batch
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -71,6 +73,10 @@ class NaturalBatchUiTest {
     }
 
     @Test fun sourceAndScopeSurviveRotationAndFreshEditorWithoutPaidRequest() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            instrumentation.uiAutomation.grantRuntimePermission(app.packageName,
+                Manifest.permission.POST_NOTIFICATIONS)
+        }
         val journal = ReviewJournal(File(app.noBackupFilesDir, "creative-reviews"))
         assumeTrue("Do not replace an existing user review",
             journal.revision("natural-batch:active") == null)

@@ -236,8 +236,10 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val batch = prepared ?: return
         if (busy || storageFailed || batch.items.none { it.decision.status == NaturalBatchFieldExecutor.Status.READY }) return
         val id = UUID.randomUUID().toString()
+        val previousResults = results
+        results = null
         executions += ExecutionRecord(id, System.currentTimeMillis(), 0)
-        if (!checkpoint()) { executions.removeAll { it.id == id }; return }
+        if (!checkpoint()) { executions.removeAll { it.id == id }; results = previousResults; return }
         busy = true; busyKind = BusyKind.APPLY; prepared = null; signal()
         viewModelScope.launch {
             try {
@@ -248,7 +250,16 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
                 message = "적용 결과를 확인해 주세요. 충돌한 항목은 원래 값을 유지했습니다."
                 checkpoint()
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { message = "적용 결과를 확인하지 못했습니다. 실행 기록을 확인한 뒤 되돌릴 수 있습니다: ${e.message}" }
+            catch (e: Exception) {
+                try {
+                    val applied = reconcileExecution(id)
+                    if (!storageFailed) message = if (applied > 0)
+                        "적용 중 오류가 났지만 ${applied}건의 실행 기록을 찾았습니다. 되돌리기에서 확인할 수 있습니다: ${e.message}"
+                    else "적용 중 오류가 났습니다. 실행 기록에 적용된 변경이 없습니다: ${e.message}"
+                } catch (_: Exception) {
+                    message = "적용 결과와 실행 기록을 확인하지 못했습니다. 앱을 다시 열어 복구 상태를 확인해 주세요: ${e.message}"
+                }
+            }
             finally { busy = false; busyKind = null; flushPendingInput(); signal() }
         }
     }
@@ -256,6 +267,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
     fun undo(id: String) {
         if (undoChoices.none { it.id == id }) return
         if (busy || storageFailed) return
+        results = null
         busy = true; busyKind = BusyKind.UNDO; message = null; signal()
         viewModelScope.launch {
             try {
@@ -267,7 +279,14 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
                 checkpoint()
                 message = "되돌리기 결과를 확인해 주세요. 이후 바뀐 행은 덮어쓰지 않았습니다."
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { message = "되돌리기에 실패했습니다: ${e.message ?: "다시 시도해 주세요"}" }
+            catch (e: Exception) {
+                try {
+                    reconcileExecution(id)
+                    if (!storageFailed) message = "되돌리기 중 오류가 났습니다. 실행 기록을 다시 읽었습니다: ${e.message ?: "다시 시도해 주세요"}"
+                } catch (_: Exception) {
+                    message = "되돌리기 결과를 확인하지 못했습니다. 앱을 다시 열어 복구 상태를 확인해 주세요: ${e.message}"
+                }
+            }
             finally { busy = false; busyKind = null; flushPendingInput(); signal() }
         }
     }
@@ -291,6 +310,17 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val next = pendingInput ?: return
         pendingInput = null
         editInput(next)
+    }
+
+    private suspend fun reconcileExecution(id: String): Int {
+        val operations = withContext(Dispatchers.IO) { db.naturalBatchJournalDao().operations(id) }
+        if (operations.isEmpty()) executions.removeAll { it.id == id }
+        else executions.replaceAll { record ->
+            if (record.id == id) record.copy(applied = operations.size,
+                undone = operations.count { it.undone }) else record
+        }
+        checkpoint()
+        return operations.size
     }
 
     private fun checkpoint(): Boolean {
