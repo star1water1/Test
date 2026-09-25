@@ -66,6 +66,9 @@ import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.NaturalBatchAppliedOperation
+import com.novelcharacter.app.data.model.NaturalBatchRowChange
+import com.novelcharacter.app.data.dao.NaturalBatchJournalDao
 import com.novelcharacter.app.data.model.CharacterQuote
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
@@ -113,9 +116,11 @@ import com.novelcharacter.app.util.stringOr
         DuelAxis::class,
         DuelMatch::class,
         DuelCounterVerdict::class,
-        DefaultFieldTemplate::class
+        DefaultFieldTemplate::class,
+        NaturalBatchAppliedOperation::class,
+        NaturalBatchRowChange::class
     ],
-    version = 58,
+    version = 59,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -150,6 +155,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun duelAxisDao(): DuelAxisDao
     abstract fun duelMatchDao(): DuelMatchDao
     abstract fun duelCounterVerdictDao(): DuelCounterVerdictDao
+    abstract fun naturalBatchJournalDao(): NaturalBatchJournalDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -2329,6 +2335,30 @@ abstract class AppDatabase : RoomDatabase() {
          * **시험이 같은 목록을 쓰는 것이 요점이다.** 시험이 자기 목록을 따로 들면
          * 두 벌이 되고, 빠뜨린 쪽이 어느 쪽인지 아무도 모르게 된다.
          */
+        private val MIGRATION_58_59 = object : Migration(58, 59) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `natural_batch_operations` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `operationKey` TEXT NOT NULL, `executionId` TEXT NOT NULL,
+                    `sessionId` TEXT NOT NULL, `scopeRevision` INTEGER NOT NULL,
+                    `inputRevision` INTEGER NOT NULL, `operationId` TEXT NOT NULL,
+                    `characterId` INTEGER NOT NULL, `characterNovelId` INTEGER,
+                    `fieldId` INTEGER NOT NULL, `fieldUniverseId` INTEGER,
+                    `fieldKey` TEXT NOT NULL, `fieldType` TEXT NOT NULL,
+                    `fieldConfig` TEXT NOT NULL,
+                    `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL)""")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_natural_batch_operations_operationKey` ON `natural_batch_operations` (`operationKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_natural_batch_operations_executionId` ON `natural_batch_operations` (`executionId`)")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `natural_batch_row_changes` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `operationKey` TEXT NOT NULL, `rowKind` TEXT NOT NULL,
+                    `rowId` INTEGER NOT NULL, `beforeJson` TEXT, `afterJson` TEXT,
+                    FOREIGN KEY(`operationKey`) REFERENCES `natural_batch_operations`(`operationKey`) ON UPDATE NO ACTION ON DELETE CASCADE)""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_natural_batch_row_changes_operationKey` ON `natural_batch_row_changes` (`operationKey`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_natural_batch_row_changes_operationKey_rowKind_rowId` ON `natural_batch_row_changes` (`operationKey`, `rowKind`, `rowId`)")
+            }
+        }
+
         @JvmField
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -2387,7 +2417,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_54_55,
             MIGRATION_55_56,
             MIGRATION_56_57,
-            MIGRATION_57_58
+            MIGRATION_57_58,
+            MIGRATION_58_59
         )
 
         fun getDatabase(context: Context): AppDatabase {

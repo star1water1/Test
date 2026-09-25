@@ -30,6 +30,7 @@ class ResetPlanTest {
         "recent_activities", "search_presets", "user_preset_templates",
         "factions", "faction_memberships", "faction_relationships",
         "trash_snapshots", "event_field_values", "novel_field_values", "operation_logs",
+        "natural_batch_operations", "natural_batch_row_changes",
         "character_list_presets", "image_meta", "image_tags", "field_value_entries",
         "grade_systems",
         // 대결 (B-104) — 축은 세계관 CASCADE, 판·처분은 축 CASCADE.

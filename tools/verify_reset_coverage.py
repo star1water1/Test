@@ -129,6 +129,7 @@ def main():
         "timeline_events": "timelineDao",
         "name_bank": "nameBankDao",
         "operation_logs": "operationLogDao",
+        "natural_batch_operations": "naturalBatchJournalDao",
         "trash_snapshots": "trashSnapshotDao",
         "character_list_presets": "characterListPresetDao",
         "image_meta": "imageMetaDao",

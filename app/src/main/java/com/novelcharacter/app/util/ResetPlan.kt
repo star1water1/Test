@@ -69,6 +69,7 @@ object ResetPlan {
         // S-13이 추가한 넷 — FK가 없어 어떤 부모로도 지워지지 않는 독립 테이블이다.
         explicit("trash_snapshots"),
         explicit("operation_logs"),
+        explicit("natural_batch_operations"),
         explicit("character_list_presets"),
         explicit("image_meta"),
         // 전역 기본 필드 템플릿(B-119) — **전역이라 매달릴 부모가 없다.** 세계관이 지워져도
@@ -78,6 +79,7 @@ object ResetPlan {
 
         // ── 부모 CASCADE로 사라지는 것 ──
         cascade("character_field_values", via = "characters"),
+        cascade("natural_batch_row_changes", via = "natural_batch_operations"),
         cascade("character_tags", via = "characters"),
         // 명대사(사용자 요청 2026.08.20) — characters가 explicit로 지워지므로 함께 사라진다.
         cascade("character_quotes", via = "characters"),
