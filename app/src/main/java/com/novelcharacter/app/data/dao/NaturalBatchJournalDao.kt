@@ -17,7 +17,7 @@ interface NaturalBatchJournalDao {
     @Query("SELECT operationKey FROM natural_batch_operations WHERE operationKey IN (:keys)")
     suspend fun existingKeys(keys: List<String>): List<String>
 
-    @Query("SELECT * FROM natural_batch_operations WHERE executionId = :executionId ORDER BY appliedAt, operationKey")
+    @Query("SELECT * FROM natural_batch_operations WHERE executionId = :executionId ORDER BY id")
     suspend fun operations(executionId: String): List<NaturalBatchAppliedOperation>
 
     @Query("SELECT * FROM natural_batch_row_changes WHERE operationKey = :key ORDER BY id")

@@ -157,11 +157,14 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
                     val afterStates = db.characterStateChangeDao().getChangesByCharacterList(characterId)
                     val changes = rowChanges(key, beforeValues, afterValues, beforeStates, afterStates)
                     val field = requireNotNull(db.fieldDefinitionDao().getFieldById(fieldId))
-                    journal.insert(NaturalBatchAppliedOperation(key, executionId,
-                        prepared.input.sessionId, prepared.input.scopeRevision,
-                        prepared.input.inputRevision, item.operation.id, characterId,
-                        character.novelId, fieldId, field.universeId, field.key,
-                        field.type, field.config))
+                    journal.insert(NaturalBatchAppliedOperation(operationKey = key,
+                        executionId = executionId, sessionId = prepared.input.sessionId,
+                        scopeRevision = prepared.input.scopeRevision,
+                        inputRevision = prepared.input.inputRevision,
+                        operationId = item.operation.id, characterId = characterId,
+                        characterNovelId = character.novelId, fieldId = fieldId,
+                        fieldUniverseId = field.universeId, fieldKey = field.key,
+                        fieldType = field.type, fieldConfig = field.config))
                     journal.insertChanges(changes)
                     val primaryRowId = afterValues.firstOrNull { it.fieldDefinitionId == fieldId }?.id ?: cell?.id
                     fresh.copy(status = Status.APPLIED, sideEffects = changes.count {

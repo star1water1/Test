@@ -2338,6 +2338,7 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_58_59 = object : Migration(58, 59) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""CREATE TABLE IF NOT EXISTS `natural_batch_operations` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     `operationKey` TEXT NOT NULL, `executionId` TEXT NOT NULL,
                     `sessionId` TEXT NOT NULL, `scopeRevision` INTEGER NOT NULL,
                     `inputRevision` INTEGER NOT NULL, `operationId` TEXT NOT NULL,
@@ -2345,8 +2346,8 @@ abstract class AppDatabase : RoomDatabase() {
                     `fieldId` INTEGER NOT NULL, `fieldUniverseId` INTEGER,
                     `fieldKey` TEXT NOT NULL, `fieldType` TEXT NOT NULL,
                     `fieldConfig` TEXT NOT NULL,
-                    `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL,
-                    PRIMARY KEY(`operationKey`))""")
+                    `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL)""")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_natural_batch_operations_operationKey` ON `natural_batch_operations` (`operationKey`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_natural_batch_operations_executionId` ON `natural_batch_operations` (`executionId`)")
                 db.execSQL("""CREATE TABLE IF NOT EXISTS `natural_batch_row_changes` (
                     `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

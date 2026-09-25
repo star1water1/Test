@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 59,
-    "identityHash": "6a81a45354566a8dcf7402166e0da213",
+    "identityHash": "2623c9239d0d6997f5b49bca0869f4a6",
     "entities": [
       {
         "tableName": "novels",
@@ -3490,8 +3490,14 @@
       },
       {
         "tableName": "natural_batch_operations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationKey` TEXT NOT NULL, `executionId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `scopeRevision` INTEGER NOT NULL, `inputRevision` INTEGER NOT NULL, `operationId` TEXT NOT NULL, `characterId` INTEGER NOT NULL, `characterNovelId` INTEGER, `fieldId` INTEGER NOT NULL, `fieldUniverseId` INTEGER, `fieldKey` TEXT NOT NULL, `fieldType` TEXT NOT NULL, `fieldConfig` TEXT NOT NULL, `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL, PRIMARY KEY(`operationKey`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `operationKey` TEXT NOT NULL, `executionId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `scopeRevision` INTEGER NOT NULL, `inputRevision` INTEGER NOT NULL, `operationId` TEXT NOT NULL, `characterId` INTEGER NOT NULL, `characterNovelId` INTEGER, `fieldId` INTEGER NOT NULL, `fieldUniverseId` INTEGER, `fieldKey` TEXT NOT NULL, `fieldType` TEXT NOT NULL, `fieldConfig` TEXT NOT NULL, `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL)",
         "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
           {
             "fieldPath": "operationKey",
             "columnName": "operationKey",
@@ -3582,12 +3588,21 @@
           }
         ],
         "primaryKey": {
-          "autoGenerate": false,
+          "autoGenerate": true,
           "columnNames": [
-            "operationKey"
+            "id"
           ]
         },
         "indices": [
+          {
+            "name": "index_natural_batch_operations_operationKey",
+            "unique": true,
+            "columnNames": [
+              "operationKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_natural_batch_operations_operationKey` ON `${TABLE_NAME}` (`operationKey`)"
+          },
           {
             "name": "index_natural_batch_operations_executionId",
             "unique": false,
@@ -3683,7 +3698,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6a81a45354566a8dcf7402166e0da213')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2623c9239d0d6997f5b49bca0869f4a6')"
     ]
   }
 }

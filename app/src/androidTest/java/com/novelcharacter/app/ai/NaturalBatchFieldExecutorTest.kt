@@ -95,6 +95,17 @@ class NaturalBatchFieldExecutorTest {
         assertEquals(1, db.naturalBatchJournalDao().operations("run-1").size)
     }
 
+    @Test fun undoRunsInTheReverseOfTheActualInsertOrder() = runBlocking {
+        val (review, context) = review(operation("first", "c1", "f1", "2001"),
+            operation("second", "c2", "f2", "new"))
+        assertEquals(listOf(NaturalBatchFieldExecutor.Status.APPLIED,
+            NaturalBatchFieldExecutor.Status.APPLIED),
+            executor.apply(executor.preflight(review, context), "run-order").map { it.status })
+        assertEquals(listOf("first", "second"),
+            db.naturalBatchJournalDao().operations("run-order").map { it.operationId })
+        assertEquals(listOf("second", "first"), executor.undo("run-order").map { it.operationId })
+    }
+
     @Test fun semanticSideEffectAndUndoUseRealRowsAndRejectLaterChanges() = runBlocking {
         val (review, context) = review(operation("birth", "c1", "f1", "2001"))
         val prepared = executor.preflight(review, context)

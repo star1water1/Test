@@ -5,9 +5,12 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /** Durable, app-owned idempotency key. The AI cannot choose this key. */
-@Entity(tableName = "natural_batch_operations", indices = [Index("executionId")])
+@Entity(tableName = "natural_batch_operations", indices = [
+    Index(value = ["operationKey"], unique = true), Index("executionId")
+])
 data class NaturalBatchAppliedOperation(
-    @PrimaryKey val operationKey: String,
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val operationKey: String,
     val executionId: String,
     val sessionId: String,
     val scopeRevision: Long,
