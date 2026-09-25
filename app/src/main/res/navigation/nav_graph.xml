@@ -167,6 +167,16 @@
     </fragment>
 
     <fragment
+        android:id="@+id/naturalBatchFragment"
+        android:name="com.novelcharacter.app.ui.character.batch.NaturalBatchFragment"
+        android:label="AI 자연어 일괄편집">
+        <argument
+            android:name="novelId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
         android:id="@+id/characterDetailFragment"
         android:name="com.novelcharacter.app.ui.character.CharacterDetailFragment"
         android:label="캐릭터 상세"

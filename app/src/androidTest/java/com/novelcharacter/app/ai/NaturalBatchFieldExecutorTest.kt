@@ -28,10 +28,10 @@ class NaturalBatchFieldExecutorTest {
         db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
             AppDatabase::class.java).build()
         executor = NaturalBatchFieldExecutor(db)
-        db.universeDao().insert(Universe(id = 1, name = "World"))
-        db.novelDao().insert(Novel(id = 10, title = "Book", universeId = 1))
-        db.characterDao().insert(Character(id = 100, name = "Alice", novelId = 10))
-        db.characterDao().insert(Character(id = 101, name = "Bob", novelId = 10))
+        db.universeDao().insert(Universe(id = 1, name = "World", code = "U"))
+        db.novelDao().insert(Novel(id = 10, title = "Book", universeId = 1, code = "N"))
+        db.characterDao().insert(Character(id = 100, name = "Alice", novelId = 10, code = "A"))
+        db.characterDao().insert(Character(id = 101, name = "Bob", novelId = 10, code = "B"))
         db.fieldDefinitionDao().insert(FieldDefinition(id = 20, universeId = 1,
             key = "birth", name = "Birth", type = "NUMBER", config = """{"semanticRole":"birth_year"}"""))
         db.fieldDefinitionDao().insert(FieldDefinition(id = 21, universeId = 1,
@@ -66,8 +66,8 @@ class NaturalBatchFieldExecutorTest {
         ops.forEach { state.confirm(it.id); state.setSelected(it.id, true) }
         val context = NaturalBatchContext(
             characters = mapOf(
-                "c1" to NaturalBatchContext.Character(100, 10, 1, "Alice", emptyList(), "A", "Book"),
-                "c2" to NaturalBatchContext.Character(101, 10, 1, "Bob", emptyList(), "B", "Book")),
+                "c1" to NaturalBatchContext.Character(100, 10, 1, "Alice", emptyList(), "A", "Book", "N", "U"),
+                "c2" to NaturalBatchContext.Character(101, 10, 1, "Bob", emptyList(), "B", "Book", "N", "U")),
             fields = mapOf(
                 "f1" to NaturalBatchContext.Field(20, 1, "Birth", "birth", "NUMBER",
                     """{"semanticRole":"birth_year"}"""),
@@ -130,6 +130,29 @@ class NaturalBatchFieldExecutorTest {
         db.fieldDefinitionDao().update(field.copy(config = """{"inputMode":"restricted"}"""))
         assertEquals(NaturalBatchFieldExecutor.Status.FIELD_CHANGED,
             executor.apply(prepared, "run-3").single().status)
+        assertEquals("old", db.characterFieldValueDao().getValue(101, 21)?.value)
+    }
+
+    @Test fun reusedNumericTargetIdCannotApplyAnOldReview() = runBlocking {
+        val (review, context) = review(operation("reissued", "c2", "f2", "new"))
+        val old = db.characterDao().getCharacterById(101)!!
+        db.characterDao().update(old.copy(code = "different-character"))
+        val prepared = executor.preflight(review, context)
+        assertEquals(NaturalBatchFieldExecutor.Status.STALE, prepared.items.single().decision.status)
+        assertEquals("old", db.characterFieldValueDao().getValue(101, 21)?.value)
+    }
+
+    @Test fun reusedNumericScopeIdsCannotApplyAnOldReview() = runBlocking {
+        val (review, context) = review(operation("reissued-scope", "c2", "f2", "new"))
+        val novel = db.novelDao().getNovelById(10)!!
+        db.novelDao().update(novel.copy(code = "different-work"))
+        assertEquals(NaturalBatchFieldExecutor.Status.STALE,
+            executor.preflight(review, context).items.single().decision.status)
+        db.novelDao().update(novel)
+        val universe = db.universeDao().getUniverseById(1)!!
+        db.universeDao().update(universe.copy(code = "different-world"))
+        assertEquals(NaturalBatchFieldExecutor.Status.STALE,
+            executor.preflight(review, context).items.single().decision.status)
         assertEquals("old", db.characterFieldValueDao().getValue(101, 21)?.value)
     }
 

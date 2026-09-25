@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ai
 
+import com.google.gson.Gson
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -53,6 +54,35 @@ class NaturalBatchPlanTest {
         assertEquals(1L, input.changeScope(NaturalBatchInput.Scope(
             NaturalBatchInput.ScopeKind.WORK, 5)).scopeRevision)
         assertFalse(NaturalBatchPlans.merge(input.copy(text = ""), emptyList()).complete)
+    }
+
+    @Test fun bulkReviewSelectionKeepsCreativeDestructiveAndConflictedItemsOff() {
+        val extracted = parse(response().put("operations", JSONArray().put(operation()))
+            .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))))
+            .operations.single()
+        assertTrue(NaturalBatchReviewSelection.canBulkSelect(extracted, emptySet()))
+        assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(
+            origin = NaturalBatchPlan.Origin.CREATIVE), emptySet()))
+        assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(
+            kind = NaturalBatchPlan.Kind.REMOVE_FIELD_VALUE), emptySet()))
+        assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(
+            evidence = extracted.evidence.copy(matched = false)), emptySet()))
+        assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted, setOf(extracted.id)))
+        assertFalse(NaturalBatchReviewSelection.canSelect(extracted.copy(
+            kind = NaturalBatchPlan.Kind.JOIN_FACTION), emptySet()))
+    }
+
+    @Test fun scopedContextJournalRestoresPairKeyedValues() {
+        val context = NaturalBatchContext(
+            mapOf("c1" to NaturalBatchContext.Character(10, 20, 7, "민아", listOf("미나"),
+                "C-1", "첫 작품", "N-1", "U-1")),
+            mapOf("f1" to NaturalBatchContext.Field(30, 7, "직업", "job", "text", "{}")),
+            emptyMap(), emptyMap(), mapOf(("c1" to "f1") to "기자"), listOf("생략 1건"))
+        val gson = Gson()
+        val encoded = gson.toJson(NaturalBatchContextSnapshot.from(context))
+        val restored = gson.fromJson(encoded, NaturalBatchContextSnapshot::class.java).restore()
+        assertEquals(context, restored)
+        assertEquals("기자", restored.values["c1" to "f1"])
     }
 
     @Test fun strictSchemaRejectsUnknownKindsTypesRefsAndStaleResponses() {
@@ -249,6 +279,13 @@ class NaturalBatchPlanTest {
         restored.restore(snapshot)
         assertTrue(restored.isSelected(secondId))
         assertFalse(restored.accept(request, merged))
+        restored.clearAnalysis()
+        assertEquals(null, restored.plan)
+        assertEquals(input.text, restored.input.text)
+        assertFalse(restored.isSelected(secondId))
+        val nextRequest = restored.beginAnalysis()
+        assertFalse(restored.accept(request, merged))
+        assertTrue(restored.accept(nextRequest, merged))
         restored.editInput(input.text + " 추가")
         assertEquals(null, restored.plan)
         assertFalse(restored.isSelected(secondId))

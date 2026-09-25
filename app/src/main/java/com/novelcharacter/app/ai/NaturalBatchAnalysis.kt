@@ -15,13 +15,13 @@ class NaturalBatchContextLoader(private val db: AppDatabase) {
         val scope = input.scope
         val work = if (scope.kind == NaturalBatchInput.ScopeKind.WORK)
             db.novelDao().getNovelById(scope.id) ?: error("선택한 작품을 찾을 수 없습니다") else null
-        if (scope.kind == NaturalBatchInput.ScopeKind.UNIVERSE) {
-            requireNotNull(db.universeDao().getUniverseById(scope.id)) { "선택한 세계관을 찾을 수 없습니다" }
-        }
         val universeId = work?.universeId ?: if (scope.kind == NaturalBatchInput.ScopeKind.UNIVERSE)
             scope.id else null
+        val universe = universeId?.let { db.universeDao().getUniverseById(it) }
+        if (universeId != null) requireNotNull(universe) { "선택한 세계관을 찾을 수 없습니다" }
         val works = if (work != null) listOf(work) else db.novelDao().getNovelsByUniverseList(scope.id)
         val titles = works.associate { it.id to it.title }
+        val novelCodes = works.associate { it.id to it.code }
         val characters = (if (work != null) db.characterDao().getNaturalBatchIndexByNovel(work.id)
             else db.characterDao().getNaturalBatchIndexByUniverse(scope.id)).map { character ->
             val displayName = if (character.firstName.isNotBlank() || character.lastName.isNotBlank())
@@ -32,7 +32,8 @@ class NaturalBatchContextLoader(private val db: AppDatabase) {
                 .distinct()
             NaturalBatchContext.Character(character.id, character.novelId,
                 if (work != null) work.universeId else scope.id, displayName,
-                aliases, character.code, character.novelId?.let(titles::get))
+                aliases, character.code, character.novelId?.let(titles::get),
+                character.novelId?.let(novelCodes::get), universe?.code)
         }
         val definitions = if (universeId == null) db.fieldDefinitionDao()
             .getGlobalFieldsList(FieldDefinition.ENTITY_CHARACTER)

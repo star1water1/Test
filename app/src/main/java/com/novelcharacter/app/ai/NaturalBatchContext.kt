@@ -11,7 +11,8 @@ data class NaturalBatchContext(
 ) {
     data class Character(
         val id: Long, val novelId: Long?, val universeId: Long?, val name: String,
-        val aliases: List<String>, val code: String, val workTitle: String?
+        val aliases: List<String>, val code: String, val workTitle: String?,
+        val novelCode: String? = null, val universeCode: String? = null
     )
     data class Field(
         val id: Long, val universeId: Long?, val name: String, val key: String,

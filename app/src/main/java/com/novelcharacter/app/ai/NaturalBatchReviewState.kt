@@ -42,6 +42,9 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
         if (next != input) { input = next; invalidate() }
     }
 
+    /** An explicit review decision may retire a plan without changing the original text. */
+    fun clearAnalysis() = invalidate()
+
     private fun invalidate() {
         generation++
         acceptedGeneration = null

@@ -245,7 +245,8 @@ class CharacterListFragment : Fragment() {
             }
             popup.menu.add(0, MENU_COMPARE, 1, R.string.compare_mode_label)
             popup.menu.add(0, MENU_BATCH_EDIT, 2, R.string.batch_edit_mode)
-            popup.menu.add(0, MENU_REORDER, 3, R.string.reorder_mode)
+            popup.menu.add(0, MENU_NATURAL_BATCH, 3, "AI 자연어 일괄편집")
+            popup.menu.add(0, MENU_REORDER, 4, R.string.reorder_mode)
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_SUPPLEMENT -> {
@@ -269,6 +270,11 @@ class CharacterListFragment : Fragment() {
                     MENU_BATCH_EDIT -> {
                         if (adapter.isReorderMode()) toggleReorderMode()
                         if (!isSelectionMode) enterSelectionMode()
+                        true
+                    }
+                    MENU_NATURAL_BATCH -> {
+                        findNavController().navigateSafe(navOriginId, R.id.naturalBatchFragment,
+                            Bundle().apply { putLong("novelId", novelId) })
                         true
                     }
                     else -> false
@@ -988,5 +994,6 @@ class CharacterListFragment : Fragment() {
         private const val MENU_COMPARE = 12
         private const val MENU_BATCH_EDIT = 13
         private const val MENU_REORDER = 14
+        private const val MENU_NATURAL_BATCH = 15
     }
 }
