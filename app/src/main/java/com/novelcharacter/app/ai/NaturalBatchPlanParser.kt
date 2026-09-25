@@ -21,11 +21,13 @@ object NaturalBatchPlanParser {
         response: String,
         input: NaturalBatchInput,
         requestedSegments: Set<String>,
-        refs: NaturalBatchRefs
+        refs: NaturalBatchRefs,
+        requestSequence: Long
     ): NaturalBatchPlan {
         val validSegments = input.segments().map { it.id }.toSet()
         val segmentsById = input.segments().associateBy { it.id }
         ensure(requestedSegments.isNotEmpty() && requestedSegments.all { it in validSegments }, "Invalid request segments")
+        ensure(requestSequence >= 0, "Invalid request sequence")
         ensure(response.length <= MAX_RESPONSE_CHARS, "Response is too large")
         val trimmed = response.trim()
         ensure(trimmed.startsWith('{') && trimmed.endsWith('}'), "Expected one JSON object")
@@ -60,6 +62,7 @@ object NaturalBatchPlanParser {
                 val joinYear = item.optionalInt("joinYear")
                 val leaveYear = item.optionalInt("leaveYear")
                 val leaveMode = item.optionalEnum<NaturalBatchPlan.LeaveMode>("leaveMode")
+                val origin = item.enum<NaturalBatchPlan.Origin>("origin")
                 when (kind) {
                     NaturalBatchPlan.Kind.SET_FIELD_VALUE,
                     NaturalBatchPlan.Kind.ADD_FIELD_VALUE,
@@ -118,7 +121,7 @@ object NaturalBatchPlanParser {
                 }
                 NaturalBatchPlan.Operation(item.string("id"), kind, target, field, related, faction,
                     relationship, value, type, description, intensity, bidirectional, joinYear,
-                    leaveYear, leaveMode, item.enum("origin"),
+                    leaveYear, leaveMode, origin,
                     NaturalBatchPlan.Evidence(ids, quote, matched))
             }
             val constraints = root.array("constraints").objects().mapNotNull { item ->
@@ -162,7 +165,8 @@ object NaturalBatchPlanParser {
                 unresolved.map { it.id } + notes.map { it.id }
             ensure(ids.distinct().size == ids.size, "Duplicate item ID")
             return NaturalBatchPlan(input.sessionId, input.scopeRevision, input.inputRevision,
-                operations, constraints, unresolved, notes, status)
+                operations, constraints, unresolved, notes, status, requestedSegments.toSet(),
+                requestSequence)
         } catch (e: NaturalBatchFormatException) {
             throw e
         } catch (e: Exception) {

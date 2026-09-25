@@ -33,8 +33,9 @@ class NaturalBatchPlanTest {
             if (reason != null) put("reason", reason)
         }
 
-    private fun parse(root: JSONObject) = NaturalBatchPlanParser.parse(root.toString(), input,
-        segments.map { it.id }.toSet(), refs)
+    private fun parse(root: JSONObject, requested: Set<String> = segments.map { it.id }.toSet(),
+        sequence: Long = 0) =
+        NaturalBatchPlanParser.parse(root.toString(), input, requested, refs, sequence)
 
     private fun invalid(root: JSONObject) {
         try {
@@ -57,7 +58,7 @@ class NaturalBatchPlanTest {
     @Test fun strictSchemaRejectsUnknownKindsTypesRefsAndStaleResponses() {
         try {
             NaturalBatchPlanParser.parse(response().toString() + response().toString(), input,
-                segments.map { it.id }.toSet(), refs)
+                segments.map { it.id }.toSet(), refs, 0)
             fail("Expected a single JSON object")
         } catch (_: NaturalBatchFormatException) { }
         invalid(response().put("extra", 1))
@@ -67,6 +68,8 @@ class NaturalBatchPlanTest {
         invalid(response().put("operations", JSONArray().put(operation().put("value", JSONObject.NULL))))
         invalid(response().put("operations", JSONArray().put(operation().put("value", ""))))
         invalid(response().put("operations", JSONArray().put(operation().put("origin", "MADE_UP"))))
+        invalid(response().put("operations", JSONArray().put(operation().put("targetRef", "outside")
+            .put("origin", "MADE_UP"))))
         invalid(response().put("operations", JSONArray().put(operation().put("segmentIds", JSONArray().put("unknown")))))
         val ambiguousRelationship = operation().put("kind", "UPDATE_RELATIONSHIP")
             .put("relatedRef", "c2").put("relationshipType", "동료")
@@ -120,11 +123,11 @@ class NaturalBatchPlanTest {
         val conflictMerge = NaturalBatchPlans.merge(input, listOf(conflict))
         assertTrue(conflictMerge.complete)
         assertTrue(conflictMerge.hasConflicts)
-        assertEquals(setOf("op1", "op2"), conflictMerge.conflicts)
+        assertEquals(conflictMerge.operations.map { it.id }.toSet(), conflictMerge.conflicts)
         val review = NaturalBatchReviewState(input)
         assertTrue(review.accept(review.beginAnalysis(), conflictMerge))
         try {
-            review.confirm("op1")
+            review.confirm(conflictMerge.operations.first().id)
             fail("Conflicting operation must not be selectable")
         } catch (_: IllegalArgumentException) { }
     }
@@ -135,8 +138,86 @@ class NaturalBatchPlanTest {
                 .put(status(segments[1].id, "PROCESSED"))))
         assertFalse(plan.operations.single().evidence.matched)
         assertEquals(NaturalBatchPlan.ReviewStatus.NEEDS_REVIEW,
-            NaturalBatchPlans.merge(input, listOf(plan)).status(plan.operations.single()))
+            NaturalBatchPlans.merge(input, listOf(plan)).let { it.status(it.operations.single()) })
         assertTrue(segments[1].id in NaturalBatchPlans.merge(input, listOf(plan)).incompleteSegments)
+    }
+
+    @Test fun retryReplacesOnlyItsSegmentAndPreservesSuccessfulWork() {
+        val first = parse(response().put("operations", JSONArray().put(operation()))
+            .put("unresolved", JSONArray().put(JSONObject().put("id", "old-unresolved")
+                .put("segmentIds", JSONArray().put(segments[1].id))
+                .put("text", "미처리").put("reason", "청크 절단")))
+            .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))
+                .put(status(segments[1].id, "UNPROCESSED"))))
+        val later = parse(response().put("operations", JSONArray().put(
+            operation("op1", "빠름", segments[1].id).put("targetRef", "c2")
+                .put("fieldRef", "f2").put("quote", segments[1].text)))
+            .put("segmentStatus", JSONArray().put(status(segments[1].id, "PROCESSED"))),
+            setOf(segments[1].id), sequence = 1)
+        assertEquals(setOf(segments[1].id), NaturalBatchPlans.retryScope(input, listOf(first),
+            setOf(segments[1].id)))
+        val merged = NaturalBatchPlans.merge(input, listOf(first, later))
+        assertTrue(merged.complete)
+        assertFalse(merged.hasConflicts)
+        assertEquals(2, merged.operations.size)
+        assertEquals(2, merged.operations.map { it.id }.toSet().size)
+        assertTrue(merged.unresolved.isEmpty())
+        assertEquals("기자", merged.operations.first { it.fieldRef == "f1" }.value)
+        assertEquals("빠름", merged.operations.first { it.fieldRef == "f2" }.value)
+        assertEquals(merged, NaturalBatchPlans.merge(input, listOf(later, first)))
+        val ambiguousOrder = later.copy(requestSequence = first.requestSequence)
+        try {
+            NaturalBatchPlans.merge(input, listOf(first, ambiguousOrder))
+            fail("Overlapping requests need distinct app-issued sequence numbers")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun independentChunksMayReuseLocalIdsWithoutInventingAConflict() {
+        val first = parse(response().put("operations", JSONArray().put(operation()))
+            .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))),
+            setOf(segments[0].id))
+        val second = parse(response().put("operations", JSONArray().put(
+            operation("op1", "빠름", segments[1].id).put("targetRef", "c2")
+                .put("fieldRef", "f2").put("quote", segments[1].text)))
+            .put("segmentStatus", JSONArray().put(status(segments[1].id, "PROCESSED"))),
+            setOf(segments[1].id))
+        val merged = NaturalBatchPlans.merge(input, listOf(first, second))
+        assertTrue(merged.complete)
+        assertFalse(merged.hasConflicts)
+        assertEquals(2, merged.operations.map { it.id }.toSet().size)
+        val review = NaturalBatchReviewState(input)
+        assertTrue(review.accept(review.beginAnalysis(), merged))
+        merged.operations.forEach { review.confirm(it.id); review.setSelected(it.id, true) }
+        assertTrue(merged.operations.all { review.isSelected(it.id) })
+    }
+
+    @Test fun retryOfCrossSegmentItemRequiresItsWholeContext() {
+        val comparison = JSONObject().put("id", "constraint-1")
+            .put("segmentIds", JSONArray().put(segments[0].id).put(segments[1].id))
+            .put("leftTargetRef", "c2").put("rightTargetRef", "c1")
+            .put("fieldRef", "f2").put("comparison", "GREATER_THAN")
+            .put("description", "두 문단의 설정을 함께 해석")
+        val first = parse(response().put("constraints", JSONArray().put(comparison))
+            .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))
+                .put(status(segments[1].id, "UNPROCESSED"))))
+        assertEquals(segments.map { it.id }.toSet(), NaturalBatchPlans.retryScope(input,
+            listOf(first), setOf(segments[1].id)))
+        val incompleteRetry = parse(response().put("segmentStatus", JSONArray()
+            .put(status(segments[1].id, "IGNORED", "재검토 후 변경 없음"))),
+            setOf(segments[1].id), sequence = 1)
+        try {
+            NaturalBatchPlans.merge(input, listOf(first, incompleteRetry))
+            fail("Retry must not split a previously cited item")
+        } catch (_: IllegalArgumentException) { }
+        val fullRetry = parse(response().put("segmentStatus", JSONArray()
+            .put(status(segments[0].id, "IGNORED", "재검토 후 변경 없음"))
+            .put(status(segments[1].id, "IGNORED", "재검토 후 변경 없음"))),
+            sequence = 1)
+        val merged = NaturalBatchPlans.merge(input, listOf(first, fullRetry))
+        assertTrue(merged.complete)
+        assertTrue(merged.constraints.isEmpty())
+        assertEquals(setOf(segments[1].id), NaturalBatchPlans.retryScope(input,
+            listOf(first, fullRetry), setOf(segments[1].id)))
     }
 
     @Test fun inputEditInvalidatesWholePlanAndDirectEditOnlyItsOwnDecision() {
@@ -145,25 +226,28 @@ class NaturalBatchPlanTest {
             .put("segmentStatus", JSONArray().put(status(segments[0].id, "PROCESSED"))))
         val review = NaturalBatchReviewState(input)
         val request = review.beginAnalysis()
-        assertTrue(review.accept(request, NaturalBatchPlans.merge(input, listOf(plan))))
-        assertFalse(review.isSelected("op1"))
-        review.confirm("op1")
-        review.confirm("op2")
-        review.setSelected("op1", true)
-        review.setSelected("op2", true)
-        assertFalse(review.accept(request, NaturalBatchPlans.merge(input, listOf(plan))))
-        assertTrue(review.isSelected("op2"))
-        review.editProposal("op1", "작가")
-        assertFalse(review.isSelected("op1"))
-        assertTrue(review.isSelected("op2"))
+        val merged = NaturalBatchPlans.merge(input, listOf(plan))
+        val firstId = merged.operations.first { it.fieldRef == "f1" }.id
+        val secondId = merged.operations.first { it.fieldRef == "f2" }.id
+        assertTrue(review.accept(request, merged))
+        assertFalse(review.isSelected(firstId))
+        review.confirm(firstId)
+        review.confirm(secondId)
+        review.setSelected(firstId, true)
+        review.setSelected(secondId, true)
+        assertFalse(review.accept(request, merged))
+        assertTrue(review.isSelected(secondId))
+        review.editProposal(firstId, "작가")
+        assertFalse(review.isSelected(firstId))
+        assertTrue(review.isSelected(secondId))
         val snapshot = review.snapshot()
         val restored = NaturalBatchReviewState(input)
         restored.restore(snapshot)
-        assertTrue(restored.isSelected("op2"))
-        assertFalse(restored.accept(request, NaturalBatchPlans.merge(input, listOf(plan))))
+        assertTrue(restored.isSelected(secondId))
+        assertFalse(restored.accept(request, merged))
         restored.editInput(input.text + " 추가")
         assertEquals(null, restored.plan)
-        assertFalse(restored.isSelected("op2"))
+        assertFalse(restored.isSelected(secondId))
         assertEquals(1L, restored.input.inputRevision)
     }
 }

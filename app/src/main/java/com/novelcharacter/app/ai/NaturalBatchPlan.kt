@@ -57,7 +57,10 @@ data class NaturalBatchPlan(
     val constraints: List<Constraint>,
     val unresolved: List<Unresolved>,
     val notes: List<Note>,
-    val segmentStatus: List<SegmentStatus>
+    val segmentStatus: List<SegmentStatus>,
+    val requestedSegments: Set<String>,
+    /** App-issued request order, never supplied by the model. */
+    val requestSequence: Long
 ) {
     enum class Origin { EXTRACTED, DERIVED, CREATIVE }
     enum class Kind {
@@ -134,6 +137,35 @@ data class NaturalBatchMerge(
 }
 
 object NaturalBatchPlans {
+    /** Keep enough original context when a cited item crosses the requested retry boundary. */
+    fun retryScope(input: NaturalBatchInput, chunks: List<NaturalBatchPlan>, seeds: Set<String>): Set<String> {
+        val valid = input.segments().map { it.id }.toSet()
+        require(seeds.isNotEmpty() && seeds.all { it in valid })
+        require(chunks.all { it.sessionId == input.sessionId &&
+            it.scopeRevision == input.scopeRevision && it.inputRevision == input.inputRevision &&
+            it.requestedSegments.all { id -> id in valid } })
+        val ordered = chunks.sortedBy { it.requestSequence }
+        val latestOwner = mutableMapOf<String, Int>()
+        ordered.forEachIndexed { index, chunk ->
+            chunk.requestedSegments.forEach { latestOwner[it] = index }
+        }
+        val groups = ordered.flatMapIndexed { index, chunk ->
+            (chunk.operations.map { it.evidence.segmentIds } +
+                chunk.constraints.map { it.segmentIds } +
+                chunk.unresolved.map { it.segmentIds } + chunk.notes.map { it.segmentIds })
+                .filter { ids -> ids.all { latestOwner[it] == index } }
+        }
+        val scope = seeds.toMutableSet()
+        var changed: Boolean
+        do {
+            changed = false
+            groups.forEach { ids ->
+                if (ids.any { it in scope } && scope.addAll(ids)) changed = true
+            }
+        } while (changed)
+        return scope
+    }
+
     fun merge(
         input: NaturalBatchInput,
         chunks: List<NaturalBatchPlan>,
@@ -143,24 +175,61 @@ object NaturalBatchPlans {
         require(failedSegments.all { it in validSegments })
         require(chunks.all {
             it.sessionId == input.sessionId && it.scopeRevision == input.scopeRevision &&
-                it.inputRevision == input.inputRevision
+                it.inputRevision == input.inputRevision && it.requestSequence >= 0 &&
+                it.requestedSegments.isNotEmpty() &&
+                it.requestedSegments.all { id -> id in validSegments }
         })
-        val operations = chunks.flatMap { it.operations }
-        val allIds = chunks.flatMap { chunk ->
-            chunk.operations.map { it.id } + chunk.constraints.map { it.id } +
-                chunk.unresolved.map { it.id } + chunk.notes.map { it.id }
+        val ordered = chunks.sortedBy { it.requestSequence }
+        val latestOwner = mutableMapOf<String, Int>()
+        val lastSequence = mutableMapOf<String, Long>()
+        ordered.forEachIndexed { index, chunk ->
+            chunk.requestedSegments.forEach { id ->
+                require(lastSequence[id] != chunk.requestSequence) {
+                    "Two responses for one segment have the same request sequence"
+                }
+                lastSequence[id] = chunk.requestSequence
+                latestOwner[id] = index
+            }
         }
+        fun retained(index: Int, ids: List<String>): Boolean {
+            require(ids.isNotEmpty() && ids.all { it in ordered[index].requestedSegments })
+            val ownership = ids.map { latestOwner[it] == index }
+            require(ownership.all { it } || ownership.none { it }) {
+                "Retry splits a cited item; expand the retry with retryScope"
+            }
+            return ownership.all { it }
+        }
+        fun identity(chunk: NaturalBatchPlan, id: String) =
+            chunk.requestSequence.toString() + ":" +
+                chunk.requestedSegments.sorted().joinToString("+") + "|" + id
+        val operations = ordered.flatMapIndexed { index, chunk ->
+            chunk.operations.filter { retained(index, it.evidence.segmentIds) }
+                .map { it.copy(id = identity(chunk, it.id)) }
+        }
+        val constraints = ordered.flatMapIndexed { index, chunk ->
+            chunk.constraints.filter { retained(index, it.segmentIds) }
+                .map { it.copy(id = identity(chunk, it.id)) }
+        }
+        val unresolved = ordered.flatMapIndexed { index, chunk ->
+            chunk.unresolved.filter { retained(index, it.segmentIds) }
+                .map { it.copy(id = identity(chunk, it.id)) }
+        }
+        val notes = ordered.flatMapIndexed { index, chunk ->
+            chunk.notes.filter { retained(index, it.segmentIds) }
+                .map { it.copy(id = identity(chunk, it.id)) }
+        }
+        val allIds = operations.map { it.id } + constraints.map { it.id } +
+            unresolved.map { it.id } + notes.map { it.id }
         val duplicatedIds = allIds.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
         val collisions = operations.groupBy { it.collisionKey() }.values
             .filter { it.size > 1 }.flatten().map { it.id }.toSet()
         val conflicts = collisions + duplicatedIds
-        val status = chunks.flatMap { it.segmentStatus }.groupBy { it.segmentId }
-        val covered = chunks.flatMap { chunk ->
-            chunk.operations.flatMap { it.evidence.segmentIds } +
-                chunk.constraints.flatMap { it.segmentIds } +
-                chunk.unresolved.flatMap { it.segmentIds } +
-                chunk.notes.flatMap { it.segmentIds }
-        }.toSet()
+        val status = ordered.flatMapIndexed { index, chunk ->
+            chunk.segmentStatus.filter { latestOwner[it.segmentId] == index }
+        }.groupBy { it.segmentId }
+        val covered = (operations.flatMap { it.evidence.segmentIds } +
+            constraints.flatMap { it.segmentIds } + unresolved.flatMap { it.segmentIds } +
+            notes.flatMap { it.segmentIds }).toSet()
         val incomplete = validSegments.filterTo(mutableSetOf()) { id ->
             val entries = status[id].orEmpty()
             val one = entries.singleOrNull()
@@ -169,8 +238,7 @@ object NaturalBatchPlans {
                 (one?.coverage == NaturalBatchPlan.Coverage.IGNORED && id in covered)
         }
         return NaturalBatchMerge(input.sessionId, input.scopeRevision, input.inputRevision,
-            operations, chunks.flatMap { it.constraints }, chunks.flatMap { it.unresolved },
-            chunks.flatMap { it.notes }, conflicts, incomplete + failedSegments,
+            operations, constraints, unresolved, notes, conflicts, incomplete + failedSegments,
             failedSegments, validSegments.isNotEmpty() && incomplete.isEmpty() && failedSegments.isEmpty())
     }
 }
