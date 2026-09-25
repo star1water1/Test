@@ -256,6 +256,8 @@ $MAIN/ai/CreativeInputState.kt
 $MAIN/ai/NaturalBatchPlan.kt
 $MAIN/ai/NaturalBatchPlanParser.kt
 $MAIN/ai/NaturalBatchReviewState.kt
+$MAIN/ai/NaturalBatchContext.kt
+$MAIN/ai/NaturalBatchEvidenceGuard.kt
 $MAIN/ai/FieldSuggestionReviewState.kt
 $MAIN/ai/FieldReviewApply.kt
 $MAIN/ai/FieldReviewOwner.kt
@@ -393,6 +395,7 @@ $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
 "
+# NaturalBatchAnalysisTest needs AppDatabase/Room and AiService; Gradle testDebugUnitTest runs it.
 TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
