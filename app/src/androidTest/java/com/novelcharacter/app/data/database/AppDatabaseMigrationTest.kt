@@ -47,6 +47,19 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppDatabaseMigrationTest {
 
+    @Test
+    fun naturalBatchJournalMigrationMatchesRoomSchema() {
+        helper.createDatabase(TEST_DB, 58).close()
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, 59, true,
+            *AppDatabase.ALL_MIGRATIONS)
+        migrated.query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'natural_batch_%'").use { rows ->
+            val names = mutableSetOf<String>()
+            while (rows.moveToNext()) names += rows.getString(0)
+            assertEquals(setOf("natural_batch_operations", "natural_batch_row_changes"), names)
+        }
+        migrated.close()
+    }
+
     @get:Rule
     val helper: MigrationTestHelper = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),

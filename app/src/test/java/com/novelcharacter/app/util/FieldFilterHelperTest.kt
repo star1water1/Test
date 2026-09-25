@@ -63,6 +63,8 @@ class FieldFilterHelperTest {
         override suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> = unused()
         override suspend fun getAllValuesList(): List<CharacterFieldValue> = unused()
         override suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue? = unused()
+        override suspend fun getValueById(id: Long): CharacterFieldValue? = unused()
+        override suspend fun deleteById(id: Long) = unused()
         override suspend fun insert(value: CharacterFieldValue): Long = unused()
         override suspend fun insertAll(values: List<CharacterFieldValue>) = unused()
         override suspend fun update(value: CharacterFieldValue) = unused()

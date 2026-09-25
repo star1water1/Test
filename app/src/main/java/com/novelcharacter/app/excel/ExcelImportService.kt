@@ -898,6 +898,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 덮어쓰기 전략: 선택된 카테고리의 기존 데이터를 먼저 삭제
             // CASCADE 안전 순서: 종속 데이터 → 상위 엔티티
             if (strategy == ImportStrategy.OVERWRITE) {
+                var batchHistoryInvalidated = false
                 // 덮어쓰기의 대원칙: **백업이 복원할 수 없는 것은 지우지 않는다.**
                 // 시트가 없는 카테고리를 지우면 되돌릴 방법이 전혀 없으므로(휴지통도 거치지 않는다)
                 // 모든 삭제를 "백업에 유효한 시트가 있는가"로 가드하고, 건너뛴 경우 사용자에게 알린다.
@@ -976,7 +977,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (shouldDelete(effectiveOptions.factionMemberships, factionMembershipSpec())) db.factionMembershipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factions, factionSpec())) { db.factionDao().deleteAll(); wipedByOverwrite.add("factions") }
-                if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) db.characterStateChangeDao().deleteAll()
+                if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) {
+                    db.characterStateChangeDao().deleteAll()
+                    batchHistoryInvalidated = true
+                }
                 if (shouldDelete(effectiveOptions.quotes, quoteSpec())) db.characterQuoteDao().deleteAll()
                 // 대결(B-104) — **축을 지우면 그 아래 판이 CASCADE로 함께 죽는다.** 그래서
                 // 축 시트만 보고 지우면 *"기록 시트가 빈 파일"* 하나가 수만 판을 없앤다.
@@ -1036,6 +1040,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             )
                         else -> {
                             db.characterDao().deleteAll()
+                            batchHistoryInvalidated = true
                             wipedByOverwrite.add("characters")
                             // **이름은행의 '사용 중'을 여기서 함께 내린다.**
                             //
@@ -1090,6 +1095,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             )
                         else -> {
                             db.universeDao().deleteAll()
+                            batchHistoryInvalidated = true
                             wipedByOverwrite.add("universes")
                             result.warnings.add("덮어쓰기: 세계관을 삭제하면서 필드 정의와 모든 필드값이 함께 삭제되었습니다 — 백업의 '필드 정의'·'필드 데이터'·캐릭터 시트로 재구성됩니다")
                         }
@@ -1103,6 +1109,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 이미지 태그는 image_meta FK CASCADE로 함께 삭제 — 파일은 지우지 않는다(백업 재가져오기로 보호 복원).
                 // meta는 미배정 이미지의 유일한 삭제 보호막이라 복원하지 못하면 이후 고아 정리가 파일까지 지운다.
                 if (shouldDelete(effectiveOptions.imageMeta, imageMetaSpec())) db.imageMetaDao().deleteAll()
+                // Excel does not carry the private execution journal. Replacing its source rows
+                // invalidates old Undo/idempotency records even if imported IDs happen to match.
+                if (batchHistoryInvalidated && db.naturalBatchJournalDao().countOperations() > 0) {
+                    db.naturalBatchJournalDao().deleteAll()
+                    result.warnings.add("덮어쓰기로 자연어 일괄편집의 이전 되돌리기 기록을 초기화했습니다")
+                }
             }
 
             // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)

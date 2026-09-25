@@ -1585,6 +1585,7 @@ class SettingsFragment : Fragment() {
                     // 그 파일은 남긴다"는 규약과 충돌하고, 그 사이 복원하면 깨진 캐릭터가 되살아난다.
                     db.trashSnapshotDao().deleteAll()
                     db.operationLogDao().clear()
+                    db.naturalBatchJournalDao().deleteAll()
                     db.characterListPresetDao().deleteAll()
                     // image_meta는 FK가 없어 어떤 부모로도 지워지지 않았다. 이것을 지워야
                     // 자식 image_tags의 CASCADE도 비로소 성립한다(그전까지 태그가 영원히 남았다).
