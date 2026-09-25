@@ -40,6 +40,7 @@ class NaturalBatchFieldExecutorTest {
             fieldDefinitionId = 20, value = "2000"))
         db.characterFieldValueDao().insert(CharacterFieldValue(characterId = 101,
             fieldDefinitionId = 21, value = "old"))
+        Unit
     }
 
     @After fun close() { db.close() }
