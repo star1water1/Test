@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.model
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -18,11 +19,14 @@ data class NaturalBatchAppliedOperation(
     val operationId: String,
     val characterId: Long,
     val characterNovelId: Long?,
-    val fieldId: Long,
+    val fieldId: Long?,
     val fieldUniverseId: Long?,
     val fieldKey: String,
     val fieldType: String,
     val fieldConfig: String,
     val undone: Boolean = false,
-    val appliedAt: Long = System.currentTimeMillis()
+    val appliedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "'field'") val entityKind: String = "field",
+    /** Stable endpoint/scope identities for relationship records; legacy field metadata stays above. */
+    val guardJson: String? = null
 )

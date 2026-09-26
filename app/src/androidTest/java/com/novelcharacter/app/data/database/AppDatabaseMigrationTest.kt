@@ -47,6 +47,36 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppDatabaseMigrationTest {
 
+    @Test fun relationshipJournalMigrationPreservesFieldUndoRecords() {
+        helper.createDatabase(TEST_DB, 59).apply {
+            execSQL("""INSERT INTO natural_batch_operations
+                (id, operationKey, executionId, sessionId, scopeRevision, inputRevision, operationId,
+                 characterId, characterNovelId, fieldId, fieldUniverseId, fieldKey, fieldType, fieldConfig, undone, appliedAt)
+                VALUES (7, 'legacy', 'execution', 'session', 2, 3, 'proposal', 100, 10, 20, 1, 'trait', 'TEXT', '{}', 0, 123)""")
+            execSQL("""INSERT INTO natural_batch_row_changes
+                (id, operationKey, rowKind, rowId, beforeJson, afterJson)
+                VALUES (9, 'legacy', 'field', 42, 'before', 'after')""")
+            close()
+        }
+        helper.runMigrationsAndValidate(TEST_DB, 60, true, *AppDatabase.ALL_MIGRATIONS).apply {
+            query("SELECT id, fieldId, entityKind, guardJson FROM natural_batch_operations WHERE operationKey='legacy'").use {
+                assertTrue(it.moveToFirst()); assertEquals(7L, it.getLong(0)); assertEquals(20L, it.getLong(1))
+                assertEquals("field", it.getString(2)); assertTrue(it.isNull(3))
+            }
+            query("SELECT id, rowId, beforeJson, afterJson FROM natural_batch_row_changes WHERE operationKey='legacy'").use {
+                assertTrue(it.moveToFirst()); assertEquals(9L, it.getLong(0)); assertEquals(42L, it.getLong(1))
+                assertEquals("before", it.getString(2)); assertEquals("after", it.getString(3))
+            }
+            // MigrationTestHelper validates FK definitions but does not enable their runtime enforcement.
+            execSQL("PRAGMA foreign_keys = ON")
+            execSQL("DELETE FROM natural_batch_operations WHERE operationKey='legacy'")
+            query("SELECT COUNT(*) FROM natural_batch_row_changes").use {
+                assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
+            }
+            close()
+        }
+    }
+
     @Test
     fun naturalBatchJournalMigrationMatchesRoomSchema() {
         helper.createDatabase(TEST_DB, 58).close()

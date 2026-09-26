@@ -60,10 +60,12 @@ class NaturalBatchContextLoader(private val db: AppDatabase) {
             SqlInChunks.flat(ids) { db.characterRelationshipDao().getRelationshipsByEnd2(it) }
         val relationships = links.distinctBy { it.id }.filter { it.factionId == null }.map {
             NaturalBatchContext.Relationship(it.id, it.characterId1, it.characterId2,
-                it.relationshipType, it.description, it.isBidirectional, it.intensity)
+                it.relationshipType, it.description, it.isBidirectional, it.intensity, it.code)
         }
         NaturalBatchContextSelector.select(input, work?.universeId, characters,
-            fields, factions, relationships, values)
+            fields, factions, relationships, values).copy(
+                relationshipTypes = universe?.getRelationshipTypes()
+                    ?: com.novelcharacter.app.data.model.Universe.DEFAULT_RELATIONSHIP_TYPES)
     }
 }
 
@@ -133,6 +135,10 @@ object NaturalBatchPrompt {
         Each operation needs id, kind, targetRef, origin, segmentIds, quote and the kind-specific fields.
         Field edits need fieldRef and value except CLEAR_FIELD_VALUE, which has no value.
         ADD_RELATIONSHIP needs relatedRef and relationshipType. UPDATE_RELATIONSHIP and REMOVE_RELATIONSHIP need relationshipRef.
+        Relationship types must come from relationshipTypes. For an add, include bidirectional and intensity
+        when stated; otherwise the app uses bidirectional=true and intensity=5. Updates preserve omitted properties.
+        Quote both endpoints for relationship edits. Never change or remove a faction-generated relationship directly.
+        Do not invent a relationship change year; these operations edit the base relationship only.
         JOIN_FACTION and LEAVE_FACTION need factionRef; LEAVE_FACTION also needs leaveMode REMOVE or DEPART,
         and DEPART needs leaveYear. Constraints need id, segmentIds, leftTargetRef, rightTargetRef,
         fieldRef, comparison (GREATER_THAN, LESS_THAN, EQUAL_TO), description.
@@ -162,6 +168,7 @@ object NaturalBatchPrompt {
             .put("factions", JSONArray().apply { context.factions.forEach { (ref, faction) ->
                 put(JSONObject().put("ref", ref).put("name", faction.name).put("code", faction.code))
             } })
+            .put("relationshipTypes", JSONArray(context.relationshipTypes.orEmpty()))
             .put("relationships", JSONArray().apply { context.relationships.forEach { (ref, link) ->
                 put(JSONObject().put("ref", ref).put("firstRef", context.characters.entries
                     .first { it.value.id == link.firstId }.key)

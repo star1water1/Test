@@ -120,7 +120,7 @@ import com.novelcharacter.app.util.stringOr
         NaturalBatchAppliedOperation::class,
         NaturalBatchRowChange::class
     ],
-    version = 59,
+    version = 60,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -2359,6 +2359,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Preserve both the existing field journal and its children while allowing non-field records. */
+        private val MIGRATION_59_60 = object : Migration(59, 60) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TEMP TABLE natural_batch_changes_copy AS SELECT * FROM natural_batch_row_changes")
+                db.execSQL("DROP TABLE natural_batch_row_changes")
+                db.execSQL("""CREATE TABLE `natural_batch_operations_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `operationKey` TEXT NOT NULL, `executionId` TEXT NOT NULL,
+                    `sessionId` TEXT NOT NULL, `scopeRevision` INTEGER NOT NULL,
+                    `inputRevision` INTEGER NOT NULL, `operationId` TEXT NOT NULL,
+                    `characterId` INTEGER NOT NULL, `characterNovelId` INTEGER,
+                    `fieldId` INTEGER, `fieldUniverseId` INTEGER,
+                    `fieldKey` TEXT NOT NULL, `fieldType` TEXT NOT NULL, `fieldConfig` TEXT NOT NULL,
+                    `undone` INTEGER NOT NULL, `appliedAt` INTEGER NOT NULL,
+                    `entityKind` TEXT NOT NULL DEFAULT 'field', `guardJson` TEXT)""")
+                db.execSQL("""INSERT INTO natural_batch_operations_new
+                    (id, operationKey, executionId, sessionId, scopeRevision, inputRevision, operationId,
+                     characterId, characterNovelId, fieldId, fieldUniverseId, fieldKey, fieldType, fieldConfig, undone, appliedAt)
+                    SELECT id, operationKey, executionId, sessionId, scopeRevision, inputRevision, operationId,
+                     characterId, characterNovelId, fieldId, fieldUniverseId, fieldKey, fieldType, fieldConfig, undone, appliedAt
+                    FROM natural_batch_operations""")
+                db.execSQL("DROP TABLE natural_batch_operations")
+                db.execSQL("ALTER TABLE natural_batch_operations_new RENAME TO natural_batch_operations")
+                db.execSQL("CREATE UNIQUE INDEX `index_natural_batch_operations_operationKey` ON `natural_batch_operations` (`operationKey`)")
+                db.execSQL("CREATE INDEX `index_natural_batch_operations_executionId` ON `natural_batch_operations` (`executionId`)")
+                db.execSQL("""CREATE TABLE `natural_batch_row_changes` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `operationKey` TEXT NOT NULL, `rowKind` TEXT NOT NULL,
+                    `rowId` INTEGER NOT NULL, `beforeJson` TEXT, `afterJson` TEXT,
+                    FOREIGN KEY(`operationKey`) REFERENCES `natural_batch_operations`(`operationKey`) ON UPDATE NO ACTION ON DELETE CASCADE)""")
+                db.execSQL("INSERT INTO natural_batch_row_changes SELECT * FROM natural_batch_changes_copy")
+                db.execSQL("DROP TABLE natural_batch_changes_copy")
+                db.execSQL("CREATE INDEX `index_natural_batch_row_changes_operationKey` ON `natural_batch_row_changes` (`operationKey`)")
+                db.execSQL("CREATE UNIQUE INDEX `index_natural_batch_row_changes_operationKey_rowKind_rowId` ON `natural_batch_row_changes` (`operationKey`, `rowKind`, `rowId`)")
+            }
+        }
+
         @JvmField
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -2418,7 +2455,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_55_56,
             MIGRATION_56_57,
             MIGRATION_57_58,
-            MIGRATION_58_59
+            MIGRATION_58_59,
+            MIGRATION_59_60
         )
 
         fun getDatabase(context: Context): AppDatabase {

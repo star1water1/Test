@@ -19,6 +19,13 @@ object NaturalBatchEvidenceGuard {
             val target = uniqueMention(quote, characterTerms, operation.targetRef)
             val related = operation.relatedRef == null || uniqueMention(quote,
                 characterTerms, operation.relatedRef)
+            val relationship = operation.relationshipRef?.let(context.relationships::get)
+            val endpoints = operation.relationshipRef == null || (relationship != null &&
+                listOf(relationship.firstId, relationship.secondId).all { id ->
+                    val ref = context.characters.entries.firstOrNull { it.value.id == id }?.key
+                    ref != null && uniqueMention(quote, characterTerms, ref)
+                } && context.characters[operation.targetRef]?.id in
+                    listOf(relationship.firstId, relationship.secondId))
             val field = operation.fieldRef == null || uniqueMention(quote,
                 fieldTerms, operation.fieldRef)
             val faction = operation.factionRef == null || uniqueMention(quote,
@@ -26,7 +33,7 @@ object NaturalBatchEvidenceGuard {
             val fieldType = operation.fieldRef?.let { context.fields[it]?.type?.let(FieldType::fromName) }
             val unwritable = operation.fieldRef != null &&
                 (fieldType == null || fieldType == FieldType.CALCULATED)
-            if (target && related && field && faction && !unwritable) safe += operation
+            if (target && related && endpoints && field && faction && !unwritable) safe += operation
             else unresolved += NaturalBatchPlan.Unresolved(operation.id,
                 operation.evidence.segmentIds, quote,
                 if (unwritable) "계산 필드 또는 알 수 없는 필드 타입은 직접 수정할 수 없습니다"

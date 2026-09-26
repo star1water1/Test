@@ -70,6 +70,10 @@ class NaturalBatchPlanTest {
         assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted, setOf(extracted.id)))
         assertFalse(NaturalBatchReviewSelection.canSelect(extracted.copy(
             kind = NaturalBatchPlan.Kind.JOIN_FACTION), emptySet()))
+        for (kind in NaturalBatchReviewSelection.relationshipKinds) {
+            assertTrue(NaturalBatchReviewSelection.canSelect(extracted.copy(kind = kind), emptySet()))
+            assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(kind = kind), emptySet()))
+        }
     }
 
     @Test fun scopedContextJournalRestoresPairKeyedValues() {

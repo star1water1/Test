@@ -9,6 +9,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NaturalBatchAnalysisTest {
+    @Test fun relationshipReferenceStillRequiresBothQuotedEndpoints() {
+        val first = NaturalBatchContext.Character(1, 10, 7, "Alice", emptyList(), "A", "Book")
+        val second = NaturalBatchContext.Character(2, 10, 7, "Bob", emptyList(), "B", "Book")
+        val context = NaturalBatchContext(mapOf("c1" to first, "c2" to second), emptyMap(),
+            emptyMap(), mapOf("r1" to NaturalBatchContext.Relationship(3, 1, 2, "동료", "", true, 5, "R")),
+            emptyMap(), emptyList(), listOf("동료", "친구"))
+        val op = NaturalBatchPlan.Operation("edit", NaturalBatchPlan.Kind.UPDATE_RELATIONSHIP,
+            "c1", null, null, null, "r1", null, "친구", null, null, null, null, null, null,
+            NaturalBatchPlan.Origin.EXTRACTED, NaturalBatchPlan.Evidence(listOf("s0"), "Alice is a friend", true))
+        val plan = NaturalBatchPlan("session", 0, 0, listOf(op), emptyList(), emptyList(), emptyList(),
+            emptyList(), setOf("s0"), 0)
+        assertTrue(NaturalBatchEvidenceGuard.check(plan, context).operations.isEmpty())
+        val valid = op.copy(evidence = op.evidence.copy(quote = "Alice and Bob are friends"))
+        assertEquals(listOf(valid), NaturalBatchEvidenceGuard.check(plan.copy(operations = listOf(valid)), context).operations)
+        val outsider = context.copy(characters = context.characters + ("c3" to first.copy(id = 4, name = "Carol", code = "C")))
+        assertTrue(NaturalBatchEvidenceGuard.check(plan.copy(operations = listOf(valid.copy(targetRef = "c3",
+            evidence = valid.evidence.copy(quote = "Alice, Bob and Carol")))), outsider).operations.isEmpty())
+        val request = NaturalBatchPrompt.request(NaturalBatchInput("session", NaturalBatchInput.Scope(
+            NaturalBatchInput.ScopeKind.WORK, 10), 0, 0, "Alice and Bob"), context, 1024)
+        assertTrue(request.messages.single().text.contains("relationshipTypes"))
+    }
     private val scope = NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, 10)
     private val input = NaturalBatchInput("session", scope, 0, 0,
         "민아의 직업은 기자다. 세력 새벽단에 들어갔다.")

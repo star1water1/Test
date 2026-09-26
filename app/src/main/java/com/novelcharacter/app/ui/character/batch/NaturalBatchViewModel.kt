@@ -204,8 +204,21 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val operation = state.plan?.operations?.firstOrNull { it.id == id } ?: return
         if (busy || storageFailed || !NaturalBatchReviewSelection.canSelect(operation,
                 state.plan!!.conflicts) ||
+            operation.kind !in NaturalBatchReviewSelection.fieldKinds ||
             operation.kind == NaturalBatchPlan.Kind.CLEAR_FIELD_VALUE || value.isBlank()) return
         state.editProposal(id, value)
+        prepared = null
+        checkpoint()
+    }
+
+    fun editRelationship(id: String, draft: com.novelcharacter.app.ai.NaturalBatchRelationshipEdits.Draft) {
+        val state = review ?: return
+        val operation = state.plan?.operations?.firstOrNull { it.id == id } ?: return
+        if (busy || storageFailed || !NaturalBatchReviewSelection.canSelect(operation, state.plan!!.conflicts) ||
+            operation.kind !in NaturalBatchReviewSelection.relationshipKinds ||
+            operation.kind == NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP ||
+            draft.type !in context?.relationshipTypes.orEmpty() || draft.intensity !in 1..10) return
+        state.editProposal(id, draft.encode())
         prepared = null
         checkpoint()
     }
