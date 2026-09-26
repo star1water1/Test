@@ -338,7 +338,14 @@ class FactionRepository(private val db: AppDatabase) {
         otherCharIds: List<Long>
     ): Pair<Int, Int> {
         if (otherCharIds.isEmpty()) return 0 to 0
-        val newRelationships = otherCharIds.map { otherCharId ->
+        // A reverse manual link also overlaps a bidirectional auto link. IGNORE only catches ordered keys.
+        val existing = relationshipDao.getRelationshipsForCharacterList(characterId)
+            .filter { it.relationshipType == faction.autoRelationType }
+        val available = otherCharIds.distinct().filter { other -> existing.none {
+            (it.characterId1 == characterId && it.characterId2 == other) ||
+                (it.characterId2 == characterId && it.characterId1 == other)
+        } }
+        val newRelationships = available.map { otherCharId ->
             val (c1, c2) = if (characterId < otherCharId)
                 characterId to otherCharId else otherCharId to characterId
             CharacterRelationship(
@@ -350,9 +357,9 @@ class FactionRepository(private val db: AppDatabase) {
                 factionId = faction.id
             )
         }
-        val insertedIds = relationshipDao.insertAll(newRelationships)
-        val skipped = insertedIds.count { it == -1L }
-        return (insertedIds.size - skipped) to skipped
+        val insertedIds = if (newRelationships.isEmpty()) emptyList() else relationshipDao.insertAll(newRelationships)
+        val ignored = insertedIds.count { it == -1L }
+        return (insertedIds.size - ignored) to (otherCharIds.distinct().size - available.size + ignored)
     }
 
     // ===== 핵심 비즈니스 로직: 순수 제거 =====

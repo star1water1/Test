@@ -44,11 +44,17 @@ class NaturalBatchContextLoader(private val db: AppDatabase) {
         }
         val factions = if (universeId == null) emptyList() else
             db.factionDao().getFactionsByUniverseList(universeId).map {
-                NaturalBatchContext.Faction(it.id, it.universeId, it.name, it.code)
+                NaturalBatchContext.Faction(it.id, it.universeId, it.name, it.code,
+                    it.autoRelationType, it.autoRelationIntensity, universe?.code)
             }
         val index = NaturalBatchContextSelector.select(input, work?.universeId, characters,
             fields, factions, emptyList(), emptyMap())
         val ids = index.characters.values.map { it.id }
+        val currentMemberships = SqlInChunks.flat(ids) {
+            db.factionMembershipDao().getCurrentMembershipsForCharacters(it)
+        }
+        val includedFactions = if (input.text.contains("무소속"))
+            currentMemberships.map { it.factionId }.toSet() else emptySet()
         val mentionedFields = NaturalBatchContextSelector.mentionedFieldIds(input,
             index.fields.values)
         val values = SqlInChunks.flat(mentionedFields, reservedBinds = SqlInChunks.LIMIT / 2) { fieldIds ->
@@ -62,8 +68,12 @@ class NaturalBatchContextLoader(private val db: AppDatabase) {
             NaturalBatchContext.Relationship(it.id, it.characterId1, it.characterId2,
                 it.relationshipType, it.description, it.isBidirectional, it.intensity, it.code)
         }
-        NaturalBatchContextSelector.select(input, work?.universeId, characters,
-            fields, factions, relationships, values).copy(
+        val selected = NaturalBatchContextSelector.select(input, work?.universeId, characters,
+            fields, factions, relationships, values, includedFactions)
+        val memberships = SqlInChunks.flat(selected.factions.values.map { it.id }) {
+            db.factionMembershipDao().getMembershipsByFactionIds(it)
+        }.filter { it.characterId in ids }
+        selected.copy(memberships = memberships,
                 relationshipTypes = universe?.getRelationshipTypes()
                     ?: com.novelcharacter.app.data.model.Universe.DEFAULT_RELATIONSHIP_TYPES)
     }
@@ -140,7 +150,12 @@ object NaturalBatchPrompt {
         Quote both endpoints for relationship edits. Never change or remove a faction-generated relationship directly.
         Do not invent a relationship change year; these operations edit the base relationship only.
         JOIN_FACTION and LEAVE_FACTION need factionRef; LEAVE_FACTION also needs leaveMode REMOVE or DEPART,
-        and DEPART needs leaveYear. Constraints need id, segmentIds, leftTargetRef, rightTargetRef,
+        and DEPART needs leaveYear. For DEPART, include relationshipType and intensity only when stated;
+        otherwise leave them omitted for the user to choose. REMOVE deletes the current membership and its auto links;
+        DEPART preserves membership history and creates relationship changes at leaveYear.
+        Never interpret leaving one faction as leaving all factions. For an explicit 무소속 request,
+        propose one REMOVE per current faction in currentMemberships, each individually reviewed and initially off.
+        Preserve past memberships and optional joinYear on JOIN_FACTION. Constraints need id, segmentIds, leftTargetRef, rightTargetRef,
         fieldRef, comparison (GREATER_THAN, LESS_THAN, EQUAL_TO), description.
         Unresolved items need id, segmentIds, text, reason. Suggestion notes need id, segmentIds, text.
         segmentStatus needs one entry for every segment: segmentId, status PROCESSED, IGNORED, or UNPROCESSED;
@@ -166,7 +181,14 @@ object NaturalBatchPrompt {
                     .put("type", field.type).put("config", field.config))
             } })
             .put("factions", JSONArray().apply { context.factions.forEach { (ref, faction) ->
-                put(JSONObject().put("ref", ref).put("name", faction.name).put("code", faction.code))
+                put(JSONObject().put("ref", ref).put("name", faction.name).put("code", faction.code)
+                    .put("autoRelationType", faction.autoRelationType).put("autoRelationIntensity", faction.autoRelationIntensity))
+            } })
+            .put("currentMemberships", JSONArray().apply { context.memberships.orEmpty().filter { it.leaveType == null }.forEach { row ->
+                val characterRef = context.characters.entries.firstOrNull { it.value.id == row.characterId }?.key
+                val factionRef = context.factions.entries.firstOrNull { it.value.id == row.factionId }?.key
+                if (characterRef != null && factionRef != null) put(JSONObject().put("characterRef", characterRef)
+                    .put("factionRef", factionRef).put("joinYear", row.joinYear ?: JSONObject.NULL))
             } })
             .put("relationshipTypes", JSONArray(context.relationshipTypes.orEmpty()))
             .put("relationships", JSONArray().apply { context.relationships.forEach { (ref, link) ->

@@ -53,13 +53,15 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val expectedCharacterCode: String?, val expectedNovelCode: String?,
         val expectedUniverseCode: String?,
         val editedValue: String?, val decision: Decision,
-        val relationship: NaturalBatchRelationshipEdits.Item? = null
+        val relationship: NaturalBatchRelationshipEdits.Item? = null,
+        val faction: NaturalBatchFactionEdits.Item? = null
     )
 
     private val gson = Gson()
     private val journal get() = db.naturalBatchJournalDao()
     private val library = FieldValueLibraryRepository(db)
     private val relationships = NaturalBatchRelationshipEdits(db)
+    private val factions = NaturalBatchFactionEdits(db)
     private val characterRepository = CharacterRepository(db, db.characterDao(), db.characterFieldValueDao(),
         db.characterStateChangeDao(), db.characterTagDao(), db.characterRelationshipDao(), db.nameBankDao())
     private val sync = SemanticFieldSyncHelper(characterRepository,
@@ -117,6 +119,24 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         }, context, review.edits)
         val relationshipItems = relationshipPreparation.items
         val relationConflicts = relationships.conflicts(relationshipItems.values)
+        val factionItems = factions.prepare(selected.filter { it.kind in NaturalBatchReviewSelection.factionKinds },
+            context, review.edits)
+        val factionKeys = factionItems.mapValues { factions.collisionKeys(it.value, factionItems.values) }
+        fun relationKeys(item: NaturalBatchRelationshipEdits.Item) = listOfNotNull(item.before, item.after).map {
+            "${minOf(it.characterId1, it.characterId2)}:${maxOf(it.characterId1, it.characterId2)}:${it.relationshipType}"
+        }.toSet()
+        val mixedConflicts = mutableSetOf<String>()
+        factionItems.values.groupBy { it.target?.id to it.faction?.id }.values.filter { it.size > 1 }
+            .forEach { group -> mixedConflicts.addAll(group.map { it.operation.id }) }
+        factionItems.forEach { (id, item) ->
+            relationshipItems.forEach { (relationId, relation) -> if (factionKeys.getValue(id).intersect(relationKeys(relation)).isNotEmpty()) {
+                mixedConflicts += id; mixedConflicts += relationId
+            } }
+            factionItems.forEach { (otherId, other) -> if (id != otherId && item.faction?.id != other.faction?.id &&
+                    factionKeys.getValue(id).intersect(factionKeys.getValue(otherId)).isNotEmpty()) {
+                mixedConflicts += id; mixedConflicts += otherId
+            } }
+        }
         val seeds = selected.map { op ->
             val targetId = context.characters[op.targetRef]?.id
             val target = context.characters[op.targetRef]
@@ -126,16 +146,24 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
             val seed = Item(op, targetId, fieldId, original, contextField?.type,
                 contextField?.config, contextField?.key, contextField?.universeId,
                 target?.code, target?.novelCode, target?.universeCode,
-                review.edits[op.id], Decision(op.id, Status.UNSUPPORTED), relationshipItems[op.id])
+                review.edits[op.id], Decision(op.id, Status.UNSUPPORTED), relationshipItems[op.id], factionItems[op.id])
             seed
         }
         val live = load(review.input, seeds)
-        Prepared(review.input, seeds.map { it.copy(decision = if (it.operation.id in relationConflicts)
+        val decisions = seeds.associate { it.operation.id to if (it.operation.id in mixedConflicts)
+            Decision(it.operation.id, Status.STALE, "세력 자동 관계와 다른 제안의 파급이 겹칩니다. 하나의 변경 묶음만 선택해 주세요")
+            else if (it.operation.id in relationConflicts)
             Decision(it.operation.id, Status.STALE, "같은 인물 쌍과 관계 유형의 제안이 겹칩니다. 하나만 선택해 주세요")
+            else if (it.faction != null) {
+                if (key(review.input, it.operation.id) in live.appliedKeys) Decision(it.operation.id, Status.ALREADY_APPLIED)
+                else factions.evaluate(review.input, it.faction)
+            }
             else if (it.relationship != null) {
                 if (key(review.input, it.operation.id) in live.appliedKeys) Decision(it.operation.id, Status.ALREADY_APPLIED)
                 else relationships.evaluate(review.input, it.relationship, relationshipPreparation.live)
-            } else evaluate(review.input, it, live)) })
+            } else evaluate(review.input, it, live) }
+        val preview = factions.preview(factionItems.values.toList(), decisions)
+        Prepared(review.input, seeds.map { it.copy(decision = preview.getValue(it.operation.id)) })
     }
 
     /** Each independent operation commits with its journal; a bad row cannot undo safe rows. */
@@ -146,7 +174,9 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
                 it.scopeRevision == prepared.input.scopeRevision &&
                 it.inputRevision == prepared.input.inputRevision
         }) { "Execution ID belongs to another review" }
+        val factionResults = applyFactionGroups(prepared, executionId)
         val result = prepared.items.map { item ->
+            factionResults[item.operation.id]?.let { return@map it }
             if (item.decision.status != Status.READY) return@map item.decision
             try {
                 db.withTransaction {
@@ -231,6 +261,13 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
                     val current = journal.operation(operation.operationKey)
                         ?: return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT, "Execution record missing")
                     if (current.undone) return@withTransaction Decision(operation.operationId, Status.ALREADY_UNDONE)
+                    if (current.entityKind == NaturalBatchFactionEdits.ENTITY_KIND) {
+                        if (!factions.undo(current, journal.changes(operation.operationKey)))
+                            return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT,
+                                "소속·세력 설정·상대 인물·자동 관계 또는 변화 이력이 이후 바뀌었습니다")
+                        journal.markUndone(operation.operationKey)
+                        return@withTransaction Decision(operation.operationId, Status.UNDONE)
+                    }
                     if (current.entityKind == NaturalBatchRelationshipEdits.ENTITY_KIND) {
                         if (!relationships.undo(current, journal.changes(operation.operationKey)))
                             return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT,
@@ -270,6 +307,45 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         return result
     }
 
+    /** A faction's dependent operations commit together; previewed effects cannot partially disappear. */
+    private suspend fun applyFactionGroups(prepared: Prepared, executionId: String): Map<String, Decision> {
+        val results = mutableMapOf<String, Decision>()
+        prepared.items.filter { it.faction != null }.groupBy { it.faction!!.faction?.id }.values.forEach { group ->
+            try {
+                val decisions = db.withTransaction {
+                    val ready = group.filter { it.decision.status == Status.READY }
+                    val pending = ready.filter { journal.operation(key(prepared.input, it.operation.id)) == null }
+                    if (pending.isEmpty()) return@withTransaction group.map { if (it in ready)
+                        Decision(it.operation.id, Status.ALREADY_APPLIED) else it.decision }
+                    val factionId = requireNotNull(pending.first().faction!!.faction).id
+                    val targetIds = group.mapNotNull { it.targetId }.distinct()
+                    val live = factions.read(factionId, targetIds)
+                    if (pending.size != ready.size || pending.any { live != it.faction!!.scene ||
+                            factions.evaluate(prepared.input, it.faction, live).status != Status.READY })
+                        return@withTransaction group.map { if (it in ready) Decision(it.operation.id, Status.STALE,
+                            "같은 세력의 소속·자동 관계·이력이 적용 전 확인 뒤 바뀌었습니다. 적용 전 확인을 다시 해 주세요") else it.decision }
+                    group.map { item ->
+                        if (item !in ready) return@map item.decision
+                        val operationKey = key(prepared.input, item.operation.id)
+                        val (changes, guard, decision) = factions.apply(requireNotNull(item.faction), operationKey, targetIds)
+                        journal.insert(NaturalBatchAppliedOperation(operationKey = operationKey, executionId = executionId,
+                            sessionId = prepared.input.sessionId, scopeRevision = prepared.input.scopeRevision,
+                            inputRevision = prepared.input.inputRevision, operationId = item.operation.id,
+                            characterId = requireNotNull(item.targetId), characterNovelId = item.faction.target?.novelId,
+                            fieldId = null, fieldUniverseId = null, fieldKey = "", fieldType = "", fieldConfig = "",
+                            entityKind = NaturalBatchFactionEdits.ENTITY_KIND, guardJson = guard))
+                        journal.insertChanges(changes)
+                        decision
+                    }
+                }
+                decisions.forEach { results[it.operationId] = it }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { group.forEach { results[it.operation.id] = if (it.decision.status == Status.READY)
+                Decision(it.operation.id, Status.FAILED, e.message ?: "세력 변경 묶음을 저장하지 못했습니다") else it.decision } }
+        }
+        return results
+    }
+
     private suspend fun evaluate(input: NaturalBatchInput, item: Item, live: Live? = null): Decision {
         val op = item.operation
         fun result(status: Status, reason: String = "", before: String? = null, after: String? = null) =
@@ -277,7 +353,7 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         if (if (live == null) journal.operation(key(input, op.id)) != null
             else key(input, op.id) in live.appliedKeys) return result(Status.ALREADY_APPLIED)
         if (item.relationship != null) return relationships.evaluate(input, item.relationship)
-        if (op.kind !in FIELD_KINDS) return result(Status.UNSUPPORTED, "세력 변경은 아직 적용할 수 없습니다")
+        if (op.kind !in FIELD_KINDS) return result(Status.UNSUPPORTED, "이 변경 종류는 지원하지 않습니다")
         val characterId = item.targetId ?: return result(Status.MISSING_TARGET)
         val fieldId = item.fieldId ?: return result(Status.MISSING_FIELD)
         val character = (live?.characters?.get(characterId) ?: if (live == null)

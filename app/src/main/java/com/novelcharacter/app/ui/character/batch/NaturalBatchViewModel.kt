@@ -237,6 +237,19 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun editFaction(id: String, draft: com.novelcharacter.app.ai.NaturalBatchFactionEdits.Draft) {
+        val state = review ?: return
+        val operation = state.plan?.operations?.firstOrNull { it.id == id } ?: return
+        if (busy || storageFailed || !NaturalBatchReviewSelection.canSelect(operation, state.plan!!.conflicts) ||
+            operation.kind !in NaturalBatchReviewSelection.factionKinds) return
+        if (operation.leaveMode == NaturalBatchPlan.LeaveMode.DEPART &&
+            (draft.leaveYear == null || draft.type !in context?.relationshipTypes.orEmpty() ||
+                draft.intensity == null || draft.intensity !in 1..10)) return
+        state.editProposal(id, draft.encode())
+        prepared = null
+        checkpoint()
+    }
+
     fun selectExtracted() {
         val state = review ?: return
         val plan = state.plan ?: return

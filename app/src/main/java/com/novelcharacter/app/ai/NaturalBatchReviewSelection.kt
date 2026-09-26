@@ -8,7 +8,8 @@ object NaturalBatchReviewSelection {
 
     val relationshipKinds = setOf(NaturalBatchPlan.Kind.ADD_RELATIONSHIP,
         NaturalBatchPlan.Kind.UPDATE_RELATIONSHIP, NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP)
-    val supportedKinds = fieldKinds + relationshipKinds
+    val factionKinds = setOf(NaturalBatchPlan.Kind.JOIN_FACTION, NaturalBatchPlan.Kind.LEAVE_FACTION)
+    val supportedKinds = fieldKinds + relationshipKinds + factionKinds
 
     fun canSelect(operation: NaturalBatchPlan.Operation, conflicts: Set<String>) =
         operation.kind in supportedKinds && operation.id !in conflicts

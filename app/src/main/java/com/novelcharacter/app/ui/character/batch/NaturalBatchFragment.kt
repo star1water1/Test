@@ -30,6 +30,7 @@ import com.novelcharacter.app.ai.NaturalBatchPlan
 import com.novelcharacter.app.ai.NaturalBatchReviewState
 import com.novelcharacter.app.ai.NaturalBatchReviewSelection
 import com.novelcharacter.app.ai.NaturalBatchRelationshipEdits
+import com.novelcharacter.app.ai.NaturalBatchFactionEdits
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
@@ -151,6 +152,7 @@ class NaturalBatchFragment : Fragment() {
                     menu.add(0, 1, 1, "필드 제안")
                     menu.add(0, 2, 2, "확인 필요·참고")
                     menu.add(0, 3, 3, "관계 제안")
+                    menu.add(0, 4, 4, "세력 제안")
                     setOnMenuItemClickListener { item -> filter = item.itemId; render(); true }
                     show()
                 }
@@ -237,6 +239,7 @@ class NaturalBatchFragment : Fragment() {
             "범위와 원문을 확인한 뒤 분석하세요. 전사만으로 AI 요청이나 저장이 시작되지 않습니다."
         } else {
             "제안 ${plan.operations.size} · 관계 ${plan.operations.count { it.kind in NaturalBatchReviewSelection.relationshipKinds }} · " +
+                "세력 ${plan.operations.count { it.kind in NaturalBatchReviewSelection.factionKinds }} · " +
                 "선택 $selected · 창작 ${plan.operations.count { it.origin == NaturalBatchPlan.Origin.CREATIVE }} · " +
                 "충돌 ${plan.conflicts.size} · 해석 불가 ${plan.unresolved.size} · 미처리 문단 ${plan.incompleteSegments.size}"
         }
@@ -267,7 +270,7 @@ class NaturalBatchFragment : Fragment() {
         undoButton.isEnabled = !model.busy && !model.storageFailed
         busyBack.isEnabled = model.busyKind in setOf(NaturalBatchViewModel.BusyKind.ANALYSIS,
             NaturalBatchViewModel.BusyKind.APPLY, NaturalBatchViewModel.BusyKind.UNDO)
-        filterButton.text = when (filter) { 1 -> "필드 제안"; 2 -> "확인 필요·참고"; 3 -> "관계 제안"; else -> "전체" }
+        filterButton.text = when (filter) { 1 -> "필드 제안"; 2 -> "확인 필요·참고"; 3 -> "관계 제안"; 4 -> "세력 제안"; else -> "전체" }
         rows.submit(snapshot, model.analysisContext)
         if (!restoredScroll && plan != null) {
             restoredScroll = true
@@ -398,7 +401,9 @@ class NaturalBatchFragment : Fragment() {
             val relatedId = if (old == null) operation.relatedRef?.let { context?.characters?.get(it)?.id }
                 else if (old.firstId == context?.characters?.get(operation.targetRef)?.id) old.secondId else old.firstId
             "${context?.characters?.values?.firstOrNull { it.id == relatedId }?.name ?: "대상 확인"} · ${kindLabel(operation.kind)}"
-        } else operation.fieldRef?.let { context?.fields?.get(it)?.name } ?: kindLabel(operation.kind)
+        } else if (operation.kind in NaturalBatchReviewSelection.factionKinds)
+            "${operation.factionRef?.let { context?.factions?.get(it)?.name } ?: "세력 확인 필요"} · ${kindLabel(operation.kind)}"
+        else operation.fieldRef?.let { context?.fields?.get(it)?.name } ?: kindLabel(operation.kind)
         return "$character · $field"
     }
 
@@ -508,6 +513,86 @@ class NaturalBatchFragment : Fragment() {
         NaturalBatchFieldExecutor.Status.ALREADY_UNDONE -> "이미 되돌림"
     }
 
+    private fun factionDetails(operation: NaturalBatchPlan.Operation): String {
+        val context = model.analysisContext ?: return "세력 자료 확인 필요"
+        val faction = operation.factionRef?.let(context.factions::get) ?: return "세력 확인 필요"
+        val target = context.characters[operation.targetRef] ?: return "인물 확인 필요"
+        val memberships = context.memberships ?: return "이전 검토에는 소속 이력이 없습니다. 다시 분석해 주세요"
+        val pair = memberships.filter { it.factionId == faction.id && it.characterId == target.id }
+        val active = pair.filter { it.leaveType == null }
+        val draft = NaturalBatchFactionEdits.Draft.from(operation, model.snapshot?.edits?.get(operation.id))
+            ?: return "소속 제안을 직접 수정해 주세요"
+        val current = active.singleOrNull()?.let { "소속 중 · 가입 ${it.joinYear?.toString() ?: "시점 불명"}" }
+            ?: if (active.size > 1) "활성 소속 여러 줄 · 이력 확인 필요" else "현재 소속 없음"
+        val proposed = when {
+            operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION -> "가입 · ${draft.joinYear?.toString() ?: "시점 불명"}"
+            operation.leaveMode == NaturalBatchPlan.LeaveMode.REMOVE -> "현재 소속 제거 · 자동 관계와 변화 이력도 삭제"
+            else -> "설정상 탈퇴 · ${draft.leaveYear?.toString() ?: "연도 선택 필요"}\n" +
+                "탈퇴 후 관계 ${draft.type ?: "유형 선택 필요"} · 강도 ${draft.intensity?.toString() ?: "선택 필요"}"
+        }
+        return "${faction.name}\n현재 $current\n변경 $proposed\n" +
+            "과거 소속 이력 ${pair.count { it.leaveType != null }}건 유지 · 다른 세력 소속 유지\n" +
+            "자동 관계의 생성·삭제·변화 수는 적용 전 확인에서 표시합니다."
+    }
+
+    private fun editFaction(operation: NaturalBatchPlan.Operation) {
+        val context = model.analysisContext ?: return
+        val draft = NaturalBatchFactionEdits.Draft.from(operation, model.snapshot?.edits?.get(operation.id)) ?: return
+        val joining = operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION
+        val form = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        form.addView(TextView(requireContext()).apply { text = factionDetails(operation) })
+        val year = EditText(requireContext()).apply {
+            hint = if (joining) "가입 연도 (비우면 시점 불명)" else "탈퇴 연도"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+            setText((if (joining) draft.joinYear else draft.leaveYear)?.toString().orEmpty())
+        }
+        form.addView(year)
+        val types = listOf("관계 유형 선택") + context.relationshipTypes.orEmpty()
+        val type = Spinner(requireContext()).apply {
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, types)
+            setSelection(types.indexOf(draft.type).coerceAtLeast(0))
+        }
+        val intensity = EditText(requireContext()).apply {
+            hint = "탈퇴 후 관계 강도 (1~10)"; inputType = InputType.TYPE_CLASS_NUMBER
+            setText(draft.intensity?.toString().orEmpty())
+        }
+        if (!joining) {
+            form.addView(TextView(requireContext()).apply { text = "탈퇴 후 관계 유형" })
+            form.addView(type); form.addView(intensity)
+        }
+        val error = TextView(requireContext()).apply { textSize = 13f }
+        form.addView(error)
+        val scroll = cappedScrollView(requireContext()).apply { addView(form) }
+        val dialog = MaterialAlertDialogBuilder(requireContext()).setTitle("소속 제안 직접 수정")
+            .setMessage("수정 후 이 항목을 다시 선택하세요. 다른 소속과 과거 이력은 유지합니다.")
+            .setView(scroll).setPositiveButton("수정", null).setNegativeButton("취소", null).create()
+        dialog.setValidatedPositiveButton {
+            val rawYear = year.text.toString().trim()
+            val number = rawYear.toIntOrNull()
+            val strength = intensity.text.toString().toIntOrNull()
+            when {
+                (rawYear.isNotEmpty() && number == null) || (!joining && number == null) -> {
+                    year.showInlineError("정수 연도를 입력하세요"); false
+                }
+                !joining && type.selectedItemPosition == 0 -> {
+                    error.text = "탈퇴 후 관계 유형을 선택하세요"; false
+                }
+                !joining && (strength == null || strength !in 1..10) -> {
+                    intensity.showInlineError("1부터 10까지 입력하세요"); false
+                }
+                else -> {
+                    model.editFaction(operation.id, NaturalBatchFactionEdits.Draft(
+                        if (joining) number else null, if (joining) null else number,
+                        if (joining) null else types[type.selectedItemPosition], if (joining) null else strength))
+                    true
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun kindLabel(kind: NaturalBatchPlan.Kind) = when (kind) {
         NaturalBatchPlan.Kind.SET_FIELD_VALUE -> "값 지정"
         NaturalBatchPlan.Kind.ADD_FIELD_VALUE -> "값 추가"
@@ -552,6 +637,7 @@ class NaturalBatchFragment : Fragment() {
                 1 -> proposals.filter { it.operation.kind in NaturalBatchReviewSelection.fieldKinds }
                 2 -> proposals.filter { !NaturalBatchReviewSelection.canBulkSelect(it.operation, plan!!.conflicts) } + info
                 3 -> proposals.filter { it.operation.kind in NaturalBatchReviewSelection.relationshipKinds }
+                4 -> proposals.filter { it.operation.kind in NaturalBatchReviewSelection.factionKinds }
                 else -> proposals + info
             }
             notifyDataSetChanged()
@@ -593,7 +679,8 @@ class NaturalBatchFragment : Fragment() {
                     val field = operation.fieldRef?.let { context?.fields?.get(it)?.name }
                     val supported = operation.kind in NaturalBatchReviewSelection.supportedKinds
                     val conflict = operation.id in snapshot?.plan?.conflicts.orEmpty()
-                    val title = if (operation.kind in NaturalBatchReviewSelection.relationshipKinds) labelFor(operation.id)
+                    val title = if (operation.kind in NaturalBatchReviewSelection.relationshipKinds ||
+                        operation.kind in NaturalBatchReviewSelection.factionKinds) labelFor(operation.id)
                         else if (field != null) "$target · $field · ${kindLabel(operation.kind)}"
                         else "$target · ${kindLabel(operation.kind)}"
                     column.addView(CheckBox(ctx).apply {
@@ -610,10 +697,11 @@ class NaturalBatchFragment : Fragment() {
                     }
                     val warning = when {
                         conflict -> "충돌 · 같은 대상의 다른 제안과 함께 적용할 수 없습니다"
-                        !supported -> "세력 제안 · 후속 단계에서 적용 지원"
+                        !supported -> "지원하지 않는 제안"
                         !operation.evidence.matched -> "원문 인용 불일치 · 직접 확인 필요"
                         operation.destructive -> "제거 변경 · 직접 선택해야 적용됩니다"
                         operation.kind in NaturalBatchReviewSelection.relationshipKinds -> "양쪽 인물과 방향을 확인한 뒤 직접 선택하세요"
+                        operation.kind in NaturalBatchReviewSelection.factionKinds -> "소속 이력과 자동 관계 파급을 확인한 뒤 직접 선택하세요"
                         else -> ""
                     }
                     column.addView(TextView(ctx).apply {
@@ -627,7 +715,8 @@ class NaturalBatchFragment : Fragment() {
                         val current = before?.ifBlank { "(비어 있음)" } ?: "(비어 있음)"
                         val proposal = edited ?: operation.value
                         text = if (operation.kind in NaturalBatchReviewSelection.relationshipKinds)
-                            relationshipDetails(operation) else when (operation.kind) {
+                            relationshipDetails(operation) else if (operation.kind in NaturalBatchReviewSelection.factionKinds)
+                            factionDetails(operation) else when (operation.kind) {
                             NaturalBatchPlan.Kind.ADD_FIELD_VALUE -> "현재 $current\n추가할 값 ${proposal.orEmpty()}"
                             NaturalBatchPlan.Kind.REMOVE_FIELD_VALUE -> "현재 $current\n제거할 값 ${proposal.orEmpty()}"
                             else -> "$current  →  ${proposal ?: "(비우기)"}"
@@ -641,12 +730,15 @@ class NaturalBatchFragment : Fragment() {
                         setOnClickListener { model.toggleExpanded(operation.id) }
                     })
                     if (supported && !conflict && operation.kind !in setOf(
-                            NaturalBatchPlan.Kind.CLEAR_FIELD_VALUE, NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP)) {
+                            NaturalBatchPlan.Kind.CLEAR_FIELD_VALUE, NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP) &&
+                        !(operation.kind == NaturalBatchPlan.Kind.LEAVE_FACTION && operation.leaveMode == NaturalBatchPlan.LeaveMode.REMOVE)) {
                         actions.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                            text = if (operation.kind in NaturalBatchReviewSelection.relationshipKinds) "관계 수정" else "값 수정"
+                            text = if (operation.kind in NaturalBatchReviewSelection.relationshipKinds) "관계 수정"
+                                else if (operation.kind in NaturalBatchReviewSelection.factionKinds) "소속 수정" else "값 수정"
                             isEnabled = !model.busy && !model.storageFailed
                             setOnClickListener {
                                 if (operation.kind in NaturalBatchReviewSelection.relationshipKinds) editRelationship(operation)
+                                else if (operation.kind in NaturalBatchReviewSelection.factionKinds) editFaction(operation)
                                 else editValue(operation)
                             }
                         })
