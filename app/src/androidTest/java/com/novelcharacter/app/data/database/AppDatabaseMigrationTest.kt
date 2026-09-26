@@ -67,6 +67,8 @@ class AppDatabaseMigrationTest {
                 assertTrue(it.moveToFirst()); assertEquals(9L, it.getLong(0)); assertEquals(42L, it.getLong(1))
                 assertEquals("before", it.getString(2)); assertEquals("after", it.getString(3))
             }
+            // MigrationTestHelper validates FK definitions but does not enable their runtime enforcement.
+            execSQL("PRAGMA foreign_keys = ON")
             execSQL("DELETE FROM natural_batch_operations WHERE operationKey='legacy'")
             query("SELECT COUNT(*) FROM natural_batch_row_changes").use {
                 assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
