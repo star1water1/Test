@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.NaturalBatchAppliedOperation
 import com.novelcharacter.app.data.model.NaturalBatchRowChange
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.util.SqlInChunks
+import com.novelcharacter.app.util.FactionStanding
 
 /** Membership proposals reuse the repository's three meanings, with a journal for every affected row. */
 class NaturalBatchFactionEdits(private val db: AppDatabase) {
@@ -33,6 +34,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val faction: NaturalBatchContext.Faction?, val expectedPair: List<FactionMembership>?,
         val types: List<String>?, val draft: Draft?, val scene: Scene?)
     private data class Guard(val targetId: Long, val before: Scene, val after: Scene)
+    private data class GuardRef(val version: Int, val chunks: Int)
     private val gson = Gson()
     private val memberships get() = db.factionMembershipDao()
     private val links get() = db.characterRelationshipDao()
@@ -44,7 +46,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val faction = db.factionDao().getById(factionId)
         val universe = faction?.let { db.universeDao().getUniverseById(it.universeId) }
         val rows = memberships.getMembershipsByFactionList(factionId).sortedBy { it.id }
-        val peers = (rows.filter { it.leaveType == null }.map { it.characterId } + targetIds).toSet()
+        val peers = (rows.filter { FactionStanding.isCurrent(it) }.map { it.characterId } + targetIds).toSet()
         val related = (SqlInChunks.flat(targetIds) { links.getRelationshipsByEnd1(it) } +
             SqlInChunks.flat(targetIds) { links.getRelationshipsByEnd2(it) }).distinctBy { it.id }
             .filter { it.factionId == factionId || (it.relationshipType == faction?.autoRelationType &&
@@ -53,7 +55,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val changes = SqlInChunks.flat(related.filter { it.factionId == factionId }.map { it.id }) {
             history.getChangesForRelationships(it)
         }.sortedBy { it.id }
-        val ids = (targetIds + rows.filter { it.leaveType == null }.map { it.characterId } +
+        val ids = (targetIds + rows.filter { FactionStanding.isCurrent(it) }.map { it.characterId } +
             related.flatMap { listOf(it.characterId1, it.characterId2) }).distinct()
         val characters = SqlInChunks.flat(ids) { db.characterDao().getCharactersByIds(it) }
         val novels = SqlInChunks.flat(characters.mapNotNull { it.novelId }.distinct()) {
@@ -113,7 +115,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val pair = scene.memberships.filter { it.characterId == target.id }
         if (item.expectedPair == null || pair != item.expectedPair) return fail(Status.STALE,
             "소속 이력이 분석 당시와 다릅니다. 다시 분석해 주세요")
-        val active = pair.filter { it.leaveType == null }
+        val active = pair.filter { FactionStanding.isCurrent(it) }
         if (active.size > 1) return fail(Status.STALE, "활성 소속이 여러 줄입니다. 세력 화면에서 이력을 확인해 주세요")
         if (op.kind == NaturalBatchPlan.Kind.JOIN_FACTION && active.isNotEmpty()) return fail(Status.ALREADY_SATISFIED,
             "이미 소속된 세력입니다. 기존 가입 연도와 이력은 유지합니다")
@@ -145,7 +147,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val scene = item.scene ?: return emptySet()
         val target = item.target?.id ?: return emptySet()
         return if (item.operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION)
-            (scene.memberships.filter { it.leaveType == null }.map { it.characterId } +
+            (scene.memberships.filter { FactionStanding.isCurrent(it) }.map { it.characterId } +
                 selected.filter { it.faction?.id == item.faction?.id && it.operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION }
                     .mapNotNull { it.target?.id }).distinct().filter { it != target }.map {
                 pairKey(target, it, scene.faction!!.autoRelationType)
@@ -172,7 +174,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         val id = requireNotNull(item.target).id
         val faction = requireNotNull(scene.faction)
         val draft = requireNotNull(item.draft)
-        val old = scene.memberships.filter { it.characterId == id && it.leaveType == null }
+        val old = scene.memberships.filter { it.characterId == id && FactionStanding.isCurrent(it) }
         val auto = scene.links.filter { it.factionId == faction.id && touches(it, id) }
         val deletedHistory = scene.history.filter { row -> auto.any { it.id == row.relationshipId } }
         var rows = scene.memberships
@@ -185,7 +187,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         var mockId = minOf(-1L, (rows.map { it.id } + relations.map { it.id } + changes.map { it.id }).minOrNull() ?: -1) - 1
         when {
             item.operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION -> {
-                val peers = rows.filter { it.leaveType == null && it.characterId != id }.map { it.characterId }.distinct()
+                val peers = rows.filter { FactionStanding.isCurrent(it) && it.characterId != id }.map { it.characterId }.distinct()
                 val available = peers.filter { peer -> relations.none {
                     pairKey(it.characterId1, it.characterId2, it.relationshipType) == pairKey(id, peer, faction.autoRelationType)
                 } }
@@ -198,7 +200,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
                 after = "가입 · ${draft.joinYear?.toString() ?: "시점 불명"}"
             }
             item.operation.leaveMode == NaturalBatchPlan.LeaveMode.REMOVE -> {
-                rows = rows.filter { !(it.characterId == id && it.leaveType == null) }
+                rows = rows.filter { !(it.characterId == id && FactionStanding.isCurrent(it)) }
                 relations = relations.filter { it !in auto }
                 changes = changes.filter { it !in deletedHistory }
                 impact = auto.size + deletedHistory.size
@@ -241,7 +243,18 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
             diff(key, RELATIONSHIP, before.links, after.links, { it.id }) +
             diff(key, HISTORY, before.history, after.history, { it.id })
         check(diff.isNotEmpty()) { "소속 변경을 저장하지 못했습니다" }
-        return Triple(diff, gson.toJson(Guard(id, before, after)), decision.copy(status = Status.APPLIED))
+        // R-10: a growing roster/link/history snapshot must never occupy one CursorWindow row.
+        val payload = gson.toJson(Guard(id, before, after))
+        val parts = mutableListOf<NaturalBatchRowChange>()
+        var start = 0
+        while (start < payload.length) {
+            var end = minOf(start + GUARD_CHARS, payload.length)
+            if (end < payload.length && payload[end - 1].isHighSurrogate() && payload[end].isLowSurrogate()) end--
+            parts += NaturalBatchRowChange(operationKey = key, rowKind = GUARD, rowId = parts.size + 1L,
+                beforeJson = null, afterJson = payload.substring(start, end))
+            start = end
+        }
+        return Triple(diff + parts, gson.toJson(GuardRef(1, parts.size)), decision.copy(status = Status.APPLIED))
     }
 
     private fun <T> diff(key: String, kind: String, before: List<T>, after: List<T>, id: (T) -> Long): List<NaturalBatchRowChange> {
@@ -254,7 +267,13 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
 
     /** Unchanged peers, stable codes, current auto links/history, and every after-image are required. */
     suspend fun undo(record: NaturalBatchAppliedOperation, changes: List<NaturalBatchRowChange>): Boolean {
-        val guard = record.guardJson?.let { gson.fromJson(it, Guard::class.java) } ?: return false
+        val ref = record.guardJson?.let { gson.fromJson(it, GuardRef::class.java) } ?: return false
+        val parts = changes.filter { it.rowKind == GUARD }.sortedBy { it.rowId }
+        if (ref.version != 1 || ref.chunks <= 0 || parts.size != ref.chunks || parts.withIndex().any {
+                it.value.rowId != it.index + 1L || it.value.beforeJson != null || it.value.afterJson == null
+            }) return false
+        val guard = gson.fromJson(parts.joinToString("") { requireNotNull(it.afterJson) }, Guard::class.java)
+        val rows = changes.filter { it.rowKind != GUARD }
         val expected = guard.after
         val faction = expected.faction ?: return false
         val live = read(faction.id, listOf(guard.targetId))
@@ -270,13 +289,13 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
             if (!identity(person, NaturalBatchContext.Character(row.id, row.novelId, novel.universeId, row.name,
                     emptyList(), row.code, novel.title, novel.code, universe?.code))) return false
         }
-        fun relevantMemberships(scene: Scene) = scene.memberships.filter { it.characterId == guard.targetId || it.leaveType == null }.sortedBy { it.id }
+        fun relevantMemberships(scene: Scene) = scene.memberships.filter { it.characterId == guard.targetId || FactionStanding.isCurrent(it) }.sortedBy { it.id }
         fun auto(scene: Scene) = scene.links.filter { it.factionId == faction.id && touches(it, guard.targetId) }.sortedBy { it.id }
         fun autoHistory(scene: Scene) = scene.history.filter { row -> auto(scene).any { it.id == row.relationshipId } }.sortedBy { it.id }
         if (relevantMemberships(live) != relevantMemberships(expected) || auto(live) != auto(expected) ||
             autoHistory(live) != autoHistory(expected)) return false
-        if (changes.isEmpty() || changes.any { it.rowKind !in setOf(MEMBERSHIP, RELATIONSHIP, HISTORY) }) return false
-        for (change in changes) {
+        if (rows.isEmpty() || rows.any { it.rowKind !in setOf(MEMBERSHIP, RELATIONSHIP, HISTORY) }) return false
+        for (change in rows) {
             val current = when (change.rowKind) {
                 MEMBERSHIP -> memberships.getById(change.rowId)
                 RELATIONSHIP -> links.getById(change.rowId)
@@ -297,10 +316,10 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
             }
         }
         // Delete newly-created history first, then links, then memberships. Restore parents before children.
-        for (kind in listOf(HISTORY, RELATIONSHIP, MEMBERSHIP)) changes.filter { it.rowKind == kind && it.beforeJson == null }.forEach {
+        for (kind in listOf(HISTORY, RELATIONSHIP, MEMBERSHIP)) rows.filter { it.rowKind == kind && it.beforeJson == null }.forEach {
             when (kind) { HISTORY -> history.deleteById(it.rowId); RELATIONSHIP -> links.deleteById(it.rowId); else -> memberships.deleteById(it.rowId) }
         }
-        for (kind in listOf(MEMBERSHIP, RELATIONSHIP, HISTORY)) changes.filter { it.rowKind == kind && it.beforeJson != null }.forEach {
+        for (kind in listOf(MEMBERSHIP, RELATIONSHIP, HISTORY)) rows.filter { it.rowKind == kind && it.beforeJson != null }.forEach {
             when (kind) {
                 MEMBERSHIP -> gson.fromJson(it.beforeJson, FactionMembership::class.java).let { row ->
                     if (it.afterJson == null) memberships.insert(row) else memberships.update(row) }
@@ -318,5 +337,7 @@ class NaturalBatchFactionEdits(private val db: AppDatabase) {
         private const val MEMBERSHIP = "faction_membership"
         private const val RELATIONSHIP = "relationship"
         private const val HISTORY = "relationship_history"
+        private const val GUARD = "faction_guard"
+        private const val GUARD_CHARS = 50_000
     }
 }

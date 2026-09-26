@@ -31,6 +31,7 @@ import com.novelcharacter.app.ai.NaturalBatchReviewState
 import com.novelcharacter.app.ai.NaturalBatchReviewSelection
 import com.novelcharacter.app.ai.NaturalBatchRelationshipEdits
 import com.novelcharacter.app.ai.NaturalBatchFactionEdits
+import com.novelcharacter.app.util.FactionStanding
 import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
@@ -519,7 +520,7 @@ class NaturalBatchFragment : Fragment() {
         val target = context.characters[operation.targetRef] ?: return "인물 확인 필요"
         val memberships = context.memberships ?: return "이전 검토에는 소속 이력이 없습니다. 다시 분석해 주세요"
         val pair = memberships.filter { it.factionId == faction.id && it.characterId == target.id }
-        val active = pair.filter { it.leaveType == null }
+        val active = pair.filter { FactionStanding.isCurrent(it) }
         val draft = NaturalBatchFactionEdits.Draft.from(operation, model.snapshot?.edits?.get(operation.id))
             ?: return "소속 제안을 직접 수정해 주세요"
         val current = active.singleOrNull()?.let { "소속 중 · 가입 ${it.joinYear?.toString() ?: "시점 불명"}" }
@@ -531,7 +532,7 @@ class NaturalBatchFragment : Fragment() {
                 "탈퇴 후 관계 ${draft.type ?: "유형 선택 필요"} · 강도 ${draft.intensity?.toString() ?: "선택 필요"}"
         }
         return "${faction.name}\n현재 $current\n변경 $proposed\n" +
-            "과거 소속 이력 ${pair.count { it.leaveType != null }}건 유지 · 다른 세력 소속 유지\n" +
+            "과거 소속 이력 ${pair.count { !FactionStanding.isCurrent(it) }}건 유지 · 다른 세력 소속 유지\n" +
             "자동 관계의 생성·삭제·변화 수는 적용 전 확인에서 표시합니다."
     }
 

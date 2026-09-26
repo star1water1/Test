@@ -228,4 +228,33 @@ class NaturalBatchFactionExecutorTest {
         assertEquals(1, NaturalBatchEvidenceGuard.check(plan, context).operations.size)
         assertTrue(NaturalBatchEvidenceGuard.check(plan.copy(operations = listOf(op().copy(evidence = plan.operations.single().evidence))), context).operations.isEmpty())
     }
+
+    @Test fun largeUnicodeUndoGuardIsSplitBelowCursorWindowAndRestoresEveryRow() = runBlocking {
+        join(100, year = 2000)
+        val description = "설정😀".repeat(400)
+        val peerIds = (1000L until 1300L).toList()
+        peerIds.forEach { id ->
+            db.characterDao().insert(Character(id = id, name = "Peer $id", novelId = 10, code = "P$id"))
+            db.factionMembershipDao().insert(FactionMembership(factionId = 20, characterId = id))
+        }
+        db.characterRelationshipDao().insertAll(peerIds.map { id ->
+            CharacterRelationship(characterId1 = 100, characterId2 = id, relationshipType = "동료",
+                description = description, factionId = 20)
+        })
+        val prepared = prepare(depart())
+        assertEquals(300, prepared.items.single().decision.sideEffects)
+        assertEquals(Status.APPLIED, executor.apply(prepared, "large").single().status)
+        val record = db.naturalBatchJournalDao().operations("large").single()
+        val rows = db.naturalBatchJournalDao().changes(record.operationKey)
+        val parts = rows.filter { it.rowKind == "faction_guard" }
+        assertTrue(record.guardJson!!.length < 100)
+        assertTrue(parts.size > 1)
+        assertTrue(parts.sumOf { it.afterJson!!.toByteArray(Charsets.UTF_8).size } > 2 * 1024 * 1024)
+        assertTrue(parts.all { it.afterJson!!.toByteArray(Charsets.UTF_8).size < 200_000 })
+        assertEquals(Status.UNDONE, executor.undo("large").single().status)
+        assertTrue(db.characterRelationshipDao().getByFactionList(20).all { it.description == description })
+        assertTrue(db.characterRelationshipChangeDao().getChangesForRelationships(
+            db.characterRelationshipDao().getByFactionList(20).map { it.id }).isEmpty())
+        assertNotNull(db.factionMembershipDao().getActiveMembership(20, 100))
+    }
 }

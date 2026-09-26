@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.SqlInChunks
+import com.novelcharacter.app.util.FactionStanding
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -184,7 +185,7 @@ object NaturalBatchPrompt {
                 put(JSONObject().put("ref", ref).put("name", faction.name).put("code", faction.code)
                     .put("autoRelationType", faction.autoRelationType).put("autoRelationIntensity", faction.autoRelationIntensity))
             } })
-            .put("currentMemberships", JSONArray().apply { context.memberships.orEmpty().filter { it.leaveType == null }.forEach { row ->
+            .put("currentMemberships", JSONArray().apply { context.memberships.orEmpty().filter { FactionStanding.isCurrent(it) }.forEach { row ->
                 val characterRef = context.characters.entries.firstOrNull { it.value.id == row.characterId }?.key
                 val factionRef = context.factions.entries.firstOrNull { it.value.id == row.factionId }?.key
                 if (characterRef != null && factionRef != null) put(JSONObject().put("characterRef", characterRef)
