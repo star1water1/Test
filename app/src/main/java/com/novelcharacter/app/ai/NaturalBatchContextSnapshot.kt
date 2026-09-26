@@ -5,7 +5,8 @@ data class NaturalBatchContextSnapshot(
     val characters: List<RefCharacter>, val fields: List<RefField>,
     val factions: List<RefFaction>, val relationships: List<RefRelationship>,
     val values: List<RefValue>, val omitted: List<String>,
-    val relationshipTypes: List<String>? = null
+    val relationshipTypes: List<String>? = null,
+    val memberships: List<com.novelcharacter.app.data.model.FactionMembership>? = null
 ) {
     data class RefCharacter(val ref: String, val value: NaturalBatchContext.Character)
     data class RefField(val ref: String, val value: NaturalBatchContext.Field)
@@ -16,7 +17,7 @@ data class NaturalBatchContextSnapshot(
     fun restore() = NaturalBatchContext(
         characters.associate { it.ref to it.value }, fields.associate { it.ref to it.value },
         factions.associate { it.ref to it.value }, relationships.associate { it.ref to it.value },
-        values.associate { (it.characterRef to it.fieldRef) to it.value }, omitted, relationshipTypes)
+        values.associate { (it.characterRef to it.fieldRef) to it.value }, omitted, relationshipTypes, memberships)
 
     companion object {
         fun from(context: NaturalBatchContext) = NaturalBatchContextSnapshot(
@@ -25,6 +26,6 @@ data class NaturalBatchContextSnapshot(
             context.factions.map { RefFaction(it.key, it.value) },
             context.relationships.map { RefRelationship(it.key, it.value) },
             context.values.map { RefValue(it.key.first, it.key.second, it.value) },
-            context.omitted, context.relationshipTypes)
+            context.omitted, context.relationshipTypes, context.memberships)
     }
 }

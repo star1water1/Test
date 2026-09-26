@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.util.FactionStanding
 
 /** A valid request ref is still not proof that the quoted words identify that row. */
 object NaturalBatchEvidenceGuard {
@@ -29,7 +30,11 @@ object NaturalBatchEvidenceGuard {
             val field = operation.fieldRef == null || uniqueMention(quote,
                 fieldTerms, operation.fieldRef)
             val faction = operation.factionRef == null || uniqueMention(quote,
-                factionTerms, operation.factionRef)
+                factionTerms, operation.factionRef) || (operation.kind == NaturalBatchPlan.Kind.LEAVE_FACTION &&
+                operation.leaveMode == NaturalBatchPlan.LeaveMode.REMOVE && quote.contains("무소속") &&
+                context.memberships.orEmpty().any { FactionStanding.isCurrent(it) &&
+                    it.characterId == context.characters[operation.targetRef]?.id &&
+                    it.factionId == context.factions[operation.factionRef]?.id })
             val fieldType = operation.fieldRef?.let { context.fields[it]?.type?.let(FieldType::fromName) }
             val unwritable = operation.fieldRef != null &&
                 (fieldType == null || fieldType == FieldType.CALCULATED)

@@ -102,7 +102,7 @@ object NaturalBatchPlanParser {
                             (leaveMode != NaturalBatchPlan.LeaveMode.DEPART || leaveYear != null) &&
                             (leaveMode != NaturalBatchPlan.LeaveMode.REMOVE || leaveYear == null) &&
                             field == null && related == null && relationship == null && value == null &&
-                            type == null && description == null && intensity == null &&
+                            (leaveMode == NaturalBatchPlan.LeaveMode.DEPART || (type == null && intensity == null)) && description == null &&
                             bidirectional == null && joinYear == null, "Invalid faction departure")
                 }
                 ensure(intensity == null || intensity in 1..10, "Invalid relationship intensity")

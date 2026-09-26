@@ -68,9 +68,7 @@ class NaturalBatchPlanTest {
         assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(
             evidence = extracted.evidence.copy(matched = false)), emptySet()))
         assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted, setOf(extracted.id)))
-        assertFalse(NaturalBatchReviewSelection.canSelect(extracted.copy(
-            kind = NaturalBatchPlan.Kind.JOIN_FACTION), emptySet()))
-        for (kind in NaturalBatchReviewSelection.relationshipKinds) {
+        for (kind in NaturalBatchReviewSelection.relationshipKinds + NaturalBatchReviewSelection.factionKinds) {
             assertTrue(NaturalBatchReviewSelection.canSelect(extracted.copy(kind = kind), emptySet()))
             assertFalse(NaturalBatchReviewSelection.canBulkSelect(extracted.copy(kind = kind), emptySet()))
         }
@@ -87,6 +85,38 @@ class NaturalBatchPlanTest {
         val restored = gson.fromJson(encoded, NaturalBatchContextSnapshot::class.java).restore()
         assertEquals(context, restored)
         assertEquals("기자", restored.values["c1" to "f1"])
+    }
+
+    @Test fun departureContractKeepsExplicitRelationshipAndRejectsItForPureRemoval() {
+        fun departure(mode: String) = JSONObject().put("id", "leave").put("kind", "LEAVE_FACTION")
+            .put("targetRef", "c1").put("factionRef", "fa1").put("leaveMode", mode)
+            .put("origin", "EXTRACTED").put("segmentIds", JSONArray().put(segments[0].id)).put("quote", segments[0].text)
+        val explicit = departure("DEPART").put("leaveYear", -10).put("relationshipType", "라이벌").put("intensity", 7)
+        val op = parse(response().put("operations", JSONArray().put(explicit))).operations.single()
+        assertEquals(-10, op.leaveYear); assertEquals("라이벌", op.relationshipType); assertEquals(7, op.intensity)
+        invalid(response().put("operations", JSONArray().put(departure("REMOVE").put("relationshipType", "라이벌"))))
+        invalid(response().put("operations", JSONArray().put(departure("DEPART").put("leaveYear", 2000).put("intensity", 11))))
+        val undecided = parse(response().put("operations", JSONArray().put(departure("DEPART").put("leaveYear", 2000)))).operations.single()
+        assertEquals(null, undecided.relationshipType); assertEquals(null, undecided.intensity)
+    }
+
+    @Test fun membershipReviewRoundTripKeepsHistoryAndMissingLegacyDataRemainsUnknown() {
+        val context = NaturalBatchContext(emptyMap(), emptyMap(), mapOf("a1" to NaturalBatchContext.Faction(
+            20, 7, "Dawn", "D", "동료", 5, "U")), emptyMap(), emptyMap(), emptyList(), listOf("동료"),
+            listOf(com.novelcharacter.app.data.model.FactionMembership(id = 30, factionId = 20, characterId = 100, joinYear = 1990)))
+        val gson = Gson()
+        val encoded = gson.toJson(NaturalBatchContextSnapshot.from(context))
+        assertEquals(context, gson.fromJson(encoded, NaturalBatchContextSnapshot::class.java).restore())
+        val legacy = JSONObject(encoded).apply {
+            remove("memberships")
+            getJSONArray("factions").getJSONObject(0).getJSONObject("value").apply {
+                remove("autoRelationType"); remove("autoRelationIntensity"); remove("universeCode")
+            }
+        }
+        val restored = gson.fromJson(legacy.toString(), NaturalBatchContextSnapshot::class.java).restore()
+        assertEquals(null, restored.memberships)
+        assertEquals(null, restored.factions.getValue("a1").autoRelationType)
+        assertEquals(null, restored.factions.getValue("a1").universeCode)
     }
 
     @Test fun strictSchemaRejectsUnknownKindsTypesRefsAndStaleResponses() {

@@ -23,11 +23,14 @@ import com.novelcharacter.app.ai.NaturalBatchInput
 import com.novelcharacter.app.ai.NaturalBatchPlan
 import com.novelcharacter.app.ai.NaturalBatchMerge
 import com.novelcharacter.app.ai.NaturalBatchRelationshipEdits
+import com.novelcharacter.app.ai.NaturalBatchFactionEdits
 import com.novelcharacter.app.ai.NaturalBatchReviewState
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.repository.FactionRepository
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -140,6 +143,97 @@ class NaturalBatchUiTest {
             }
         }
     }
+    @Test fun factionReviewShowsHistoryAndRetainsChosenDepartureAcrossRecreationApplyUndo() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            instrumentation.uiAutomation.grantRuntimePermission(app.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val journal = ReviewJournal(File(app.noBackupFilesDir, "creative-reviews"))
+        assumeTrue("Do not replace an existing user review", journal.revision("natural-batch:active") == null)
+        val universeId = runBlocking(Dispatchers.IO) { db.universeDao().insert(Universe(name = "소속 UI 검증 세계관")) }
+        val novelId = runBlocking(Dispatchers.IO) { db.novelDao().insert(Novel(title = "소속 UI 검증 작품", universeId = universeId)) }
+        val input = NaturalBatchInput.create(NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, novelId), "Alice는 Dawn에서 2010년에 탈퇴했다")
+        try {
+            val context = runBlocking(Dispatchers.IO) {
+                val alice = db.characterDao().insert(Character(name = "Alice", novelId = novelId))
+                val bob = db.characterDao().insert(Character(name = "Bob", novelId = novelId))
+                val faction = db.factionDao().insert(Faction(universeId = universeId, name = "Dawn", autoRelationType = "동료"))
+                FactionRepository(db).addMember(faction, alice, 2000)
+                FactionRepository(db).addMember(faction, bob)
+                NaturalBatchContextLoader(db).load(input)
+            }
+            val operation = NaturalBatchPlan.Operation("ui-membership", NaturalBatchPlan.Kind.LEAVE_FACTION,
+                "c1", null, null, "a1", null, null, null, null, null, null, null, 2010, NaturalBatchPlan.LeaveMode.DEPART,
+                NaturalBatchPlan.Origin.EXTRACTED, NaturalBatchPlan.Evidence(listOf(input.segments().single().id), input.text, true))
+            val state = NaturalBatchReviewState(input)
+            assertTrue(state.accept(state.beginAnalysis(), NaturalBatchMerge(input.sessionId, 0, 0, listOf(operation),
+                emptyList(), emptyList(), emptyList(), emptySet(), emptySet(), emptySet(), true)))
+            journal.write("natural-batch:active", SavedReview(state.snapshot(), NaturalBatchContextSnapshot.from(context)), null)
+            launch(novelId).use { scenario ->
+                scenario.onActivity { activity ->
+                    textViews(screen(activity)!!.requireView()).first { it.text.toString() == "전체" }.performClick()
+                }
+                var clicked = false
+                for (attempt in 0 until 50) {
+                    instrumentation.waitForIdleSync()
+                    var node = instrumentation.uiAutomation.rootInActiveWindow
+                        ?.findAccessibilityNodeInfosByText("세력 제안")?.firstOrNull { it.text?.toString() == "세력 제안" }
+                    while (node != null && !node.isClickable) node = node.parent
+                    if (node?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) == true) {
+                        clicked = true; break
+                    }
+                    Thread.sleep(100)
+                }
+                assertTrue("Faction filter menu must be reachable", clicked)
+                scenario.onActivity { activity ->
+                    val fragment = screen(activity)!!
+                    val model = ViewModelProvider(fragment)[NaturalBatchViewModel::class.java]
+                    val texts = textViews(fragment.requireView())
+                    assertTrue(texts.any { it.text.contains("가입 2000") && it.text.contains("유형 선택 필요") })
+                    assertTrue(texts.filterIsInstance<CheckBox>().any { it.isEnabled && !it.isChecked && it.text.contains("Dawn") })
+                    model.selectExtracted(); assertTrue(model.snapshot!!.selected.isEmpty())
+                    model.select(operation.id, true)
+                    model.editFaction(operation.id, NaturalBatchFactionEdits.Draft(null, 2010, "라이벌", 7))
+                    assertTrue(model.snapshot!!.selected.isEmpty())
+                }
+                scenario.recreate(); awaitScreen(scenario)
+                scenario.onActivity { activity ->
+                    val fragment = screen(activity)!!
+                    val model = ViewModelProvider(fragment)[NaturalBatchViewModel::class.java]
+                    assertTrue(textViews(fragment.requireView()).any { it.text.contains("라이벌") && it.text.contains("강도 7") })
+                    model.select(operation.id, true); model.preflight()
+                }
+                awaitIdle(scenario) { !it.busy && it.preview != null }
+                scenario.onActivity { activity ->
+                    val model = ViewModelProvider(screen(activity)!!)[NaturalBatchViewModel::class.java]
+                    assertEquals(NaturalBatchFieldExecutor.Status.READY, model.preview!!.single().status)
+                    assertTrue(model.preview!!.single().reason.contains("1건의 관계 변화 추가"))
+                    model.applyPrepared()
+                }
+                awaitIdle(scenario) { !it.busy && it.results != null }
+                scenario.recreate(); awaitScreen(scenario)
+                scenario.onActivity { activity ->
+                    val model = ViewModelProvider(screen(activity)!!)[NaturalBatchViewModel::class.java]
+                    assertEquals(NaturalBatchFieldExecutor.Status.APPLIED, model.results!!.single().status)
+                    model.undo(model.undoChoices.single().id)
+                }
+                awaitIdle(scenario) { !it.busy && it.results?.singleOrNull()?.status == NaturalBatchFieldExecutor.Status.UNDONE }
+            }
+            runBlocking(Dispatchers.IO) {
+                assertEquals(2000, db.factionMembershipDao().getActiveMembership(context.factions.getValue("a1").id,
+                    context.characters.getValue("c1").id)!!.joinYear)
+                val relation = db.characterRelationshipDao().getByFactionList(context.factions.getValue("a1").id).single()
+                assertTrue(db.characterRelationshipChangeDao().getChangesForRelationshipList(relation.id).isEmpty())
+            }
+        } finally {
+            journal.clear("natural-batch:active", journal.revision("natural-batch:active"), listOf("natural-batch:${input.sessionId}"))
+            runBlocking(Dispatchers.IO) {
+                db.openHelper.writableDatabase.execSQL("DELETE FROM natural_batch_operations WHERE sessionId = ?", arrayOf(input.sessionId))
+                db.novelDao().deleteById(novelId)
+                db.universeDao().getUniverseById(universeId)?.let { db.universeDao().delete(it) }
+            }
+        }
+    }
+
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val app get() = instrumentation.targetContext
     private val db get() = AppDatabase.getDatabase(app)

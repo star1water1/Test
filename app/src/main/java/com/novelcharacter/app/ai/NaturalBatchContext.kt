@@ -9,7 +9,9 @@ data class NaturalBatchContext(
     val values: Map<Pair<String, String>, String>,
     val omitted: List<String>,
     /** Nullable for reviews saved before relationship editing was available. */
-    val relationshipTypes: List<String>? = null
+    val relationshipTypes: List<String>? = null,
+    /** Null in older saved reviews; an empty list means the pairs were read and have no history. */
+    val memberships: List<com.novelcharacter.app.data.model.FactionMembership>? = null
 ) {
     data class Character(
         val id: Long, val novelId: Long?, val universeId: Long?, val name: String,
@@ -20,7 +22,9 @@ data class NaturalBatchContext(
         val id: Long, val universeId: Long?, val name: String, val key: String,
         val type: String, val config: String
     )
-    data class Faction(val id: Long, val universeId: Long, val name: String, val code: String)
+    data class Faction(val id: Long, val universeId: Long, val name: String, val code: String,
+        val autoRelationType: String? = null, val autoRelationIntensity: Int? = null,
+        val universeCode: String? = null)
     data class Relationship(
         val id: Long, val firstId: Long, val secondId: Long, val type: String,
         val description: String, val bidirectional: Boolean, val intensity: Int,
@@ -44,7 +48,8 @@ object NaturalBatchContextSelector {
         fields: List<NaturalBatchContext.Field>,
         factions: List<NaturalBatchContext.Faction>,
         relationships: List<NaturalBatchContext.Relationship>,
-        values: Map<Pair<Long, Long>, String>
+        values: Map<Pair<Long, Long>, String>,
+        includedFactionIds: Set<Long> = emptySet()
     ): NaturalBatchContext {
         val scope = input.scope
         val universeId = if (scope.kind == NaturalBatchInput.ScopeKind.UNIVERSE) scope.id else workUniverseId
@@ -64,9 +69,9 @@ object NaturalBatchContextSelector {
             it.universeId == universeId && it.type.isNotBlank()
         }.sortedBy { it.id }
         val selectedFactions = if (universeId == null) emptyList() else factions.filter {
-            it.universeId == universeId && listOf(it.name, it.code).any { term ->
+            it.universeId == universeId && (it.id in includedFactionIds || listOf(it.name, it.code).any { term ->
                 term.isNotBlank() && input.text.contains(term, ignoreCase = true)
-            }
+            })
         }.sortedBy { it.id }
         val selectedRelationships = relationships.filter {
             it.firstId in selectedIds && it.secondId in selectedIds
