@@ -6,6 +6,9 @@ import com.novelcharacter.app.data.model.CharacterRelationshipChange
 
 @Dao
 interface CharacterRelationshipChangeDao {
+    @Query("SELECT * FROM character_relationship_changes WHERE id = :id")
+    suspend fun getById(id: Long): CharacterRelationshipChange?
+
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId ORDER BY year ASC, month ASC, day ASC")
     fun getChangesForRelationship(relationshipId: Long): LiveData<List<CharacterRelationshipChange>>
 

@@ -7,7 +7,9 @@ data class NaturalBatchContext(
     val factions: Map<String, Faction>,
     val relationships: Map<String, Relationship>,
     val values: Map<Pair<String, String>, String>,
-    val omitted: List<String>
+    val omitted: List<String>,
+    /** Nullable for reviews saved before relationship editing was available. */
+    val relationshipTypes: List<String>? = null
 ) {
     data class Character(
         val id: Long, val novelId: Long?, val universeId: Long?, val name: String,
@@ -21,7 +23,8 @@ data class NaturalBatchContext(
     data class Faction(val id: Long, val universeId: Long, val name: String, val code: String)
     data class Relationship(
         val id: Long, val firstId: Long, val secondId: Long, val type: String,
-        val description: String, val bidirectional: Boolean, val intensity: Int
+        val description: String, val bidirectional: Boolean, val intensity: Int,
+        val code: String? = null
     )
 
     fun refs() = NaturalBatchRefs(characters.keys, fields.keys, relationships.keys, factions.keys)

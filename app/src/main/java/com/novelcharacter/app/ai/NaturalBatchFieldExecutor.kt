@@ -25,7 +25,7 @@ import com.novelcharacter.app.util.SqlInChunks
 import kotlinx.coroutines.CancellationException
 import java.security.MessageDigest
 
-/** M3 domain boundary. Only confirmed, selected field proposals reach this executor. */
+/** Confirmed field and manual relationship proposals share one execution and durable journal. */
 class NaturalBatchFieldExecutor(private val db: AppDatabase) {
     enum class Status { READY, APPLIED, ALREADY_SATISFIED, ALREADY_APPLIED, STALE,
         MISSING_TARGET, MISSING_FIELD, FIELD_CHANGED, INVALID_VALUE, UNSUPPORTED, FAILED,
@@ -52,12 +52,14 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val expectedKey: String?, val expectedUniverseId: Long?,
         val expectedCharacterCode: String?, val expectedNovelCode: String?,
         val expectedUniverseCode: String?,
-        val editedValue: String?, val decision: Decision
+        val editedValue: String?, val decision: Decision,
+        val relationship: NaturalBatchRelationshipEdits.Item? = null
     )
 
     private val gson = Gson()
     private val journal get() = db.naturalBatchJournalDao()
     private val library = FieldValueLibraryRepository(db)
+    private val relationships = NaturalBatchRelationshipEdits(db)
     private val characterRepository = CharacterRepository(db, db.characterDao(), db.characterFieldValueDao(),
         db.characterStateChangeDao(), db.characterTagDao(), db.characterRelationshipDao(), db.nameBankDao())
     private val sync = SemanticFieldSyncHelper(characterRepository,
@@ -109,7 +111,13 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
             selected in review.confirmed && selected !in plan.conflicts &&
                 plan.operations.any { it.id == selected }
         })
-        val seeds = plan.operations.filter { it.id in review.selected }.map { op ->
+        val selected = plan.operations.filter { it.id in review.selected }
+        val relationshipPreparation = relationships.prepare(selected.filter {
+            it.kind in NaturalBatchReviewSelection.relationshipKinds
+        }, context, review.edits)
+        val relationshipItems = relationshipPreparation.items
+        val relationConflicts = relationships.conflicts(relationshipItems.values)
+        val seeds = selected.map { op ->
             val targetId = context.characters[op.targetRef]?.id
             val target = context.characters[op.targetRef]
             val fieldId = op.fieldRef?.let { context.fields[it]?.id }
@@ -118,11 +126,16 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
             val seed = Item(op, targetId, fieldId, original, contextField?.type,
                 contextField?.config, contextField?.key, contextField?.universeId,
                 target?.code, target?.novelCode, target?.universeCode,
-                review.edits[op.id], Decision(op.id, Status.UNSUPPORTED))
+                review.edits[op.id], Decision(op.id, Status.UNSUPPORTED), relationshipItems[op.id])
             seed
         }
         val live = load(review.input, seeds)
-        Prepared(review.input, seeds.map { it.copy(decision = evaluate(review.input, it, live)) })
+        Prepared(review.input, seeds.map { it.copy(decision = if (it.operation.id in relationConflicts)
+            Decision(it.operation.id, Status.STALE, "같은 인물 쌍과 관계 유형의 제안이 겹칩니다. 하나만 선택해 주세요")
+            else if (it.relationship != null) {
+                if (key(review.input, it.operation.id) in live.appliedKeys) Decision(it.operation.id, Status.ALREADY_APPLIED)
+                else relationships.evaluate(review.input, it.relationship, relationshipPreparation.live)
+            } else evaluate(review.input, it, live)) })
     }
 
     /** Each independent operation commits with its journal; a bad row cannot undo safe rows. */
@@ -144,6 +157,18 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
                     if (fresh.status != Status.READY || fresh.after != item.decision.after ||
                         fresh.before != item.decision.before) return@withTransaction fresh
                     val characterId = requireNotNull(item.targetId)
+                    if (item.relationship != null) {
+                        val (changes, guard) = relationships.apply(item.relationship, key)
+                        journal.insert(NaturalBatchAppliedOperation(operationKey = key,
+                            executionId = executionId, sessionId = prepared.input.sessionId,
+                            scopeRevision = prepared.input.scopeRevision, inputRevision = prepared.input.inputRevision,
+                            operationId = item.operation.id, characterId = characterId,
+                            characterNovelId = db.characterDao().getCharacterById(characterId)?.novelId,
+                            fieldId = null, fieldUniverseId = null, fieldKey = "", fieldType = "", fieldConfig = "",
+                            entityKind = NaturalBatchRelationshipEdits.ENTITY_KIND, guardJson = guard))
+                        journal.insertChanges(changes)
+                        return@withTransaction fresh.copy(status = Status.APPLIED)
+                    }
                     val fieldId = requireNotNull(item.fieldId)
                     val beforeValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
                     val beforeStates = db.characterStateChangeDao().getChangesByCharacterList(characterId)
@@ -206,6 +231,15 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
                     val current = journal.operation(operation.operationKey)
                         ?: return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT, "Execution record missing")
                     if (current.undone) return@withTransaction Decision(operation.operationId, Status.ALREADY_UNDONE)
+                    if (current.entityKind == NaturalBatchRelationshipEdits.ENTITY_KIND) {
+                        if (!relationships.undo(current, journal.changes(operation.operationKey)))
+                            return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT,
+                                "관계·양쪽 인물·변화 이력 또는 연결 사건이 이후 바뀌었습니다")
+                        journal.markUndone(operation.operationKey)
+                        return@withTransaction Decision(operation.operationId, Status.UNDONE)
+                    }
+                    if (current.entityKind != "field" || current.fieldId == null)
+                        return@withTransaction Decision(operation.operationId, Status.UNDO_CONFLICT, "알 수 없는 실행 기록입니다")
                     val character = db.characterDao().getCharacterById(current.characterId)
                     val field = db.fieldDefinitionDao().getFieldById(current.fieldId)
                     if (character == null || character.novelId != current.characterNovelId ||
@@ -240,9 +274,10 @@ class NaturalBatchFieldExecutor(private val db: AppDatabase) {
         val op = item.operation
         fun result(status: Status, reason: String = "", before: String? = null, after: String? = null) =
             Decision(op.id, status, reason, before, after)
-        if (op.kind !in FIELD_KINDS) return result(Status.UNSUPPORTED, "Relationship and faction edits are not available yet")
         if (if (live == null) journal.operation(key(input, op.id)) != null
             else key(input, op.id) in live.appliedKeys) return result(Status.ALREADY_APPLIED)
+        if (item.relationship != null) return relationships.evaluate(input, item.relationship)
+        if (op.kind !in FIELD_KINDS) return result(Status.UNSUPPORTED, "세력 변경은 아직 적용할 수 없습니다")
         val characterId = item.targetId ?: return result(Status.MISSING_TARGET)
         val fieldId = item.fieldId ?: return result(Status.MISSING_FIELD)
         val character = (live?.characters?.get(characterId) ?: if (live == null)
