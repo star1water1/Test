@@ -177,4 +177,26 @@ class NaturalBatchChunkExecutionTest {
             assertEquals(1, calls.get())
         } finally { gate.complete(Unit); main { store.clear() } }
     }
+
+    @Test fun providerFailureStopsRemainingRequestsAndKeepsTheirOriginalText() = fixture { input ->
+        val calls = AtomicInteger()
+        val analyzer = NaturalBatchAnalyzer(NaturalBatchContextLoader(db)::load, {
+            calls.incrementAndGet(); AiResult.Failure(AiErrorKind.RATE_LIMITED)
+        }, { 4096 })
+        lateinit var model: NaturalBatchViewModel
+        val store = ViewModelStore()
+        try {
+            main { model = NaturalBatchViewModel(app, analyzer); store.put("model", model); model.open(input.scope.id) }
+            await { model.snapshot != null && !model.busy }
+            main { model.editInput(input.text); model.analyze() }
+            await { !model.busy }
+            main {
+                assertEquals(input.text, model.snapshot!!.input.text)
+                assertEquals(50, model.snapshot!!.plan!!.incompleteSegments.size)
+                assertEquals(50, model.analysisFailures.size)
+                assertTrue(model.snapshot!!.plan!!.operations.isEmpty())
+            }
+            assertEquals(1, calls.get())
+        } finally { main { store.clear() } }
+    }
 }

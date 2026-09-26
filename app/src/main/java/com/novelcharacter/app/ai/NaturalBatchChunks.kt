@@ -10,7 +10,8 @@ object NaturalBatchChunks {
         plans: List<NaturalBatchPlan> = emptyList()): List<Set<String>> {
         require(targetChars > 0 && targetSegments > 0)
         val segments = input.segments()
-        require(ids.all { id -> segments.any { it.id == id } })
+        val lengths = segments.associate { it.id to it.text.length }
+        require(ids.all { it in lengths })
         val result = mutableListOf<Set<String>>()
         var current = linkedSetOf<String>()
         var size = 0L
@@ -19,7 +20,7 @@ object NaturalBatchChunks {
             if (segment.id !in remaining) return@forEach
             val group = if (plans.isEmpty()) setOf(segment.id) else NaturalBatchPlans.retryScope(input, plans, setOf(segment.id))
             require(group.all { it in ids }) { "Retry must include the entire cited range" }
-            val length = segments.filter { it.id in group }.sumOf { it.text.length.toLong() }
+            val length = group.sumOf { lengths.getValue(it).toLong() }
             if (current.isNotEmpty() && (size + length > targetChars || current.size + group.size > targetSegments)) {
                 result += current; current = linkedSetOf(); size = 0
             }
@@ -45,12 +46,12 @@ object NaturalBatchChunks {
         }
         return all.copy(characters = characters, factions = factions,
             relationships = all.relationships.filterValues { it.firstId in characterIds && it.secondId in characterIds },
-            values = all.values.filterKeys { refs -> run {
+            values = all.values.filterKeys { refs ->
                 val field = all.fields[refs.second]
                 refs.first in characters && field != null && listOf(field.name, field.key).any {
                     it.isNotBlank() && text.contains(it, ignoreCase = true)
                 }
-            } },
+            },
             memberships = memberships?.filter { row -> factions.values.any { it.id == row.factionId } })
     }
 }
