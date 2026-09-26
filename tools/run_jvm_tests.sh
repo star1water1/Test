@@ -254,6 +254,7 @@ $MAIN/ai/AiInputPreflight.kt
 $MAIN/ai/BoundedResponse.kt
 $MAIN/ai/CreativeInputState.kt
 $MAIN/ai/NaturalBatchPlan.kt
+$MAIN/ai/NaturalBatchChunks.kt
 $MAIN/ai/NaturalBatchPlanParser.kt
 $MAIN/ai/NaturalBatchReviewState.kt
 $MAIN/ai/NaturalBatchReviewSelection.kt
@@ -637,6 +638,7 @@ $TEST/ai/ReviewPresentationTest.kt
 $TEST/ai/AiInputIntegrityTest.kt
 $TEST/ai/CreativeInputStateTest.kt
 $TEST/ai/NaturalBatchPlanTest.kt
+$TEST/ai/NaturalBatchChunksTest.kt
 $TEST/ai/NarrativeReviewTest.kt
 $TEST/ai/SpeechInputTest.kt
 $TEST/ai/PendingAudioStoreTest.kt

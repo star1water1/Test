@@ -6,6 +6,8 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.ai.AiService
 import com.novelcharacter.app.ai.NaturalBatchAnalyzer
+import com.novelcharacter.app.ai.NaturalBatchChunks
+import com.novelcharacter.app.ai.NaturalBatchChunkState
 import com.novelcharacter.app.ai.NaturalBatchContext
 import com.novelcharacter.app.ai.NaturalBatchContextSnapshot
 import com.novelcharacter.app.ai.NaturalBatchFieldExecutor
@@ -23,7 +25,9 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /** Owns a paid review outside the Fragment view and checkpoints every explicit decision. */
-class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
+class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
+    private val analyzer: NaturalBatchAnalyzer = NaturalBatchAnalyzer(AppDatabase.getDatabase(app), AiService(app))
+) : AndroidViewModel(app) {
     enum class BusyKind { LOADING, ANALYSIS, PREFLIGHT, APPLY, UNDO }
     data class ScopeOption(val scope: NaturalBatchInput.Scope, val label: String)
     data class ExecutionRecord(val id: String, val createdAt: Long,
@@ -32,17 +36,21 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val review: NaturalBatchReviewState.Snapshot,
         val context: NaturalBatchContextSnapshot?, val executions: List<ExecutionRecord>,
         val results: List<NaturalBatchFieldExecutor.Decision>?, val scrollPosition: Int = 0,
-        val expanded: Set<String> = emptySet()
+        val expanded: Set<String> = emptySet(),
+        val chunks: NaturalBatchChunkState? = null
     )
 
     private val db = AppDatabase.getDatabase(app)
     private val slot = ReviewSlot(app, SavedReview::class.java)
-    private val analyzer = NaturalBatchAnalyzer(db, AiService(app))
     private val executor = NaturalBatchFieldExecutor(db)
     private var review: NaturalBatchReviewState? = null
     private var context: NaturalBatchContext? = null
     private var prepared: NaturalBatchFieldExecutor.Prepared? = null
     private var analyzing = false
+    private var chunks: NaturalBatchChunkState? = null
+    private var stopAnalysis = false
+    var analysisDone = 0; private set
+    var analysisTotal = 0; private set
     private var pendingInput: String? = null
     private val executions = mutableListOf<ExecutionRecord>()
     var results: List<NaturalBatchFieldExecutor.Decision>? = null; private set
@@ -60,6 +68,22 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
     val preview get() = prepared?.items?.map { it.decision }
     val canUndo get() = executions.any { it.undone < it.applied }
     val undoChoices get() = executions.filter { it.undone < it.applied }
+    val analysisFailures get() = chunks?.failures.orEmpty()
+    val retrySegments get() = review?.let { state ->
+        val seeds = state.plan?.incompleteSegments.orEmpty()
+        if (seeds.isEmpty()) emptySet() else chunks?.let {
+            NaturalBatchPlans.retryScope(state.input, it.plans, seeds)
+        }
+    }.orEmpty()
+
+    fun requestCount(retry: Boolean = false): Int {
+        val state = review ?: return 0
+        return NaturalBatchChunks.partition(state.input,
+            if (retry) retrySegments else state.input.segments().map { it.id }.toSet(),
+            plans = if (retry) chunks?.plans.orEmpty() else emptyList()).size
+    }
+
+    fun stopAfterRequest() { stopAnalysis = true; signal() }
 
     fun open(preferredWorkId: Long) {
         if (review != null || busy) return
@@ -83,6 +107,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
                         restored.restore(saved.review)
                         review = restored
                         context = saved.context?.restore()
+                        chunks = saved.chunks
                         executions.clear(); executions.addAll(saved.executions)
                         results = saved.results
                         scrollPosition = saved.scrollPosition.coerceAtLeast(0)
@@ -128,7 +153,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         if (busy || storageFailed || options.none { it.scope == scope }) return
         val state = review ?: NaturalBatchReviewState(NaturalBatchInput.create(scope)).also { review = it }
         state.changeScope(scope)
-        context = null; prepared = null
+        context = null; prepared = null; chunks = null
         scrollPosition = 0; expanded.clear()
         message = "범위가 바뀌어 이전 분석과 선택을 비웠습니다. 원문을 확인한 뒤 다시 분석해 주세요."
         checkpoint()
@@ -138,7 +163,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val state = review ?: return
         if (busy || storageFailed || state.plan == null) return
         state.clearAnalysis()
-        context = null; prepared = null
+        context = null; prepared = null; chunks = null
         scrollPosition = 0; expanded.clear()
         message = "이전 분석과 선택을 비웠습니다. 원문을 확인한 뒤 다시 분석해 주세요."
         checkpoint()
@@ -150,37 +175,64 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
         val state = review ?: return
         if (state.input.text == text) return
         state.editInput(text)
-        context = null; prepared = null
+        context = null; prepared = null; chunks = null
         scrollPosition = 0; expanded.clear()
         message = "원문이 바뀌어 이전 분석과 선택을 비웠습니다. 다시 분석해 주세요."
         checkpoint()
     }
 
-    fun analyze() {
+    fun analyze(retry: Boolean = false) {
         val state = review ?: return
-        if (busy || storageFailed || state.input.text.isBlank() || state.plan != null) return
-        if (!slot.beginRequest()) { storageFailed = true; signal(); return }
-        busy = true; busyKind = BusyKind.ANALYSIS; analyzing = true; message = null; signal()
-        val request = state.beginAnalysis()
+        if (busy || storageFailed || state.input.text.isBlank() ||
+            (!retry && state.plan != null) || (retry && retrySegments.isEmpty())) return
         val input = state.input
+        val requests = NaturalBatchChunks.partition(input,
+            if (retry) retrySegments else input.segments().map { it.id }.toSet(),
+            plans = if (retry) chunks?.plans.orEmpty() else emptyList())
+        if (!slot.beginRequest()) { storageFailed = true; signal(); return }
+        busy = true; busyKind = BusyKind.ANALYSIS; analyzing = true; message = null
+        stopAnalysis = false; analysisDone = 0; analysisTotal = requests.size; prepared = null
+        val request = if (retry) state.beginRetry() else state.beginAnalysis()
+        signal()
         viewModelScope.launch {
             try {
-                when (val outcome = withContext(Dispatchers.IO) { analyzer.analyze(input, request.generation) }) {
-                    is NaturalBatchAnalyzer.Outcome.Ready -> {
-                        val merge = NaturalBatchPlans.merge(input, listOf(outcome.plan))
-                        if (state.accept(request, merge)) {
-                            context = outcome.context
-                            checkpoint()
-                            message = if (merge.operations.isEmpty() && merge.unresolved.isEmpty() &&
-                                merge.constraints.isEmpty() && merge.notes.isEmpty())
-                                "변경 후보를 찾지 못했습니다. 원문과 범위를 확인해 주세요. 분석 요청은 비용이 발생했을 수 있습니다."
-                            else "분석 결과를 검토해 주세요. 분석 요청은 비용이 발생했을 수 있습니다."
-                        } else message = "분석 중 원문이 바뀌어 이전 응답을 검토에 넣지 않았습니다. 다시 분석해 주세요."
+                val ctx = if (retry) checkNotNull(context) else withContext(Dispatchers.IO) { analyzer.loadContext(input) }
+                if (state.input != input) return@launch
+                context = ctx
+                var ledger = if (retry) checkNotNull(chunks) else NaturalBatchChunkState.create(input)
+                chunks = ledger
+                if (!state.acceptProgress(request, ledger.merge(input)) || !checkpoint()) return@launch
+                for (ids in requests) {
+                    if (stopAnalysis || state.input != input || storageFailed) break
+                    val reservation = ledger.reserve(input, ids)
+                    ledger = reservation.first; chunks = ledger
+                    if (!state.acceptProgress(request, ledger.merge(input)) || !checkpoint()) break
+                    val outcome = try {
+                        withContext(Dispatchers.IO) { analyzer.analyzeChunk(input, ctx, ids, reservation.second) }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { stopAnalysis = true; NaturalBatchAnalyzer.Outcome.Failed(
+                        "분석을 마치지 못했습니다: ${e.message ?: "다시 시도해 주세요"}") }
+                    if (state.input != input) break
+                    ledger = when (outcome) {
+                        is NaturalBatchAnalyzer.Outcome.Ready -> ledger.finish(reservation.second, outcome.plan)
+                        is NaturalBatchAnalyzer.Outcome.Failed -> ledger.finish(reservation.second, null,
+                            outcome.reason + if (outcome.billedResponse != null) " 응답 비용이 발생했을 수 있습니다." else "")
                     }
-                    is NaturalBatchAnalyzer.Outcome.Failed -> {
-                        message = outcome.reason + if (outcome.billedResponse != null)
-                            "\n응답을 받았으므로 비용이 발생했을 수 있습니다." else ""
+                    chunks = ledger
+                    analysisDone++
+                    if (!state.acceptProgress(request, ledger.merge(input)) || !checkpoint()) break
+                    // Authentication, quota and network failures must not fan out into more paid attempts.
+                    if (outcome is NaturalBatchAnalyzer.Outcome.Failed && outcome.providerFailure != null) {
+                        stopAnalysis = true
                     }
+                }
+                if (!storageFailed && state.input == input) {
+                    val merge = state.plan!!
+                    message = if (!merge.complete)
+                        "분석이 불완전합니다. 요청 $analysisDone/${requests.size}회 완료 · 미처리 ${merge.incompleteSegments.size}개 문단. 받은 제안은 보관했습니다. 미처리 재분석으로 이어갈 수 있습니다."
+                    else if (merge.operations.isEmpty() && merge.unresolved.isEmpty() && merge.constraints.isEmpty() && merge.notes.isEmpty())
+                        "변경 후보를 찾지 못했습니다. 원문과 범위를 확인해 주세요. 분석 비용이 발생했을 수 있습니다."
+                    else "분석 결과를 검토해 주세요. 완료 요청 $analysisDone/${requests.size}회. 분석 비용이 발생했을 수 있습니다."
                 }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { message = "분석을 마치지 못했습니다: ${e.message ?: "다시 시도해 주세요"}" }
@@ -253,7 +305,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
     fun selectExtracted() {
         val state = review ?: return
         val plan = state.plan ?: return
-        if (busy || storageFailed) return
+        if (busy || storageFailed || !plan.complete) return
         plan.operations.filter { NaturalBatchReviewSelection.canBulkSelect(it, plan.conflicts) }
             .forEach { state.confirm(it.id); state.setSelected(it.id, true) }
         prepared = null
@@ -362,7 +414,7 @@ class NaturalBatchViewModel(app: Application) : AndroidViewModel(app) {
     private fun checkpoint(): Boolean {
         val state = review ?: return false
         val okay = slot.save(SavedReview(state.snapshot(), context?.let(NaturalBatchContextSnapshot::from),
-            executions.toList(), results, scrollPosition, expanded.toSet()))
+            executions.toList(), results, scrollPosition, expanded.toSet(), chunks))
         storageFailed = !okay
         if (!okay) message = "검토 내용을 보관하지 못했습니다. 저장 공간과 다른 편집 창을 확인해 주세요."
         signal()

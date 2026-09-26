@@ -36,12 +36,13 @@ import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
 import com.novelcharacter.app.ui.common.NaturalLanguageInput
+import com.novelcharacter.app.ui.common.TaskProgressDialog
 
 /** Full-screen review. A model response is always inert until each selected row is confirmed. */
 class NaturalBatchFragment : Fragment() {
     private sealed interface Row {
         data class Proposal(val operation: NaturalBatchPlan.Operation) : Row
-        data class Info(val id: String, val title: String, val body: String) : Row
+        data class Info(val id: String, val title: String, val body: String, val collapsible: Boolean = false) : Row
     }
     private val model: NaturalBatchViewModel by viewModels()
     private lateinit var scopeButton: MaterialButton
@@ -49,6 +50,8 @@ class NaturalBatchFragment : Fragment() {
     private lateinit var editSourceButton: MaterialButton
     private lateinit var analyzeButton: MaterialButton
     private lateinit var resetButton: MaterialButton
+    private lateinit var retryButton: MaterialButton
+    private var analysisProgress: TaskProgressDialog.Handle? = null
     private lateinit var summary: TextView
     private lateinit var notice: TextView
     private lateinit var resultButton: MaterialButton
@@ -92,12 +95,14 @@ class NaturalBatchFragment : Fragment() {
             text = "범위 선택"
             setOnClickListener { chooseScope() }
         }
-        top.addView(scopeButton)
+        val scopeRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        scopeRow.addView(scopeButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         editSourceButton = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "원문 보기·수정"
             setOnClickListener { revealSource() }
         }
-        top.addView(editSourceButton)
+        scopeRow.addView(editSourceButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        top.addView(scopeRow)
         editorPanel = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         top.addView(editorPanel)
         analyzeButton = MaterialButton(ctx).apply {
@@ -109,7 +114,14 @@ class NaturalBatchFragment : Fragment() {
             text = "새 분석 준비"
             setOnClickListener { confirmReset() }
         }
-        top.addView(resetButton)
+        val analysisActions = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        analysisActions.addView(resetButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        retryButton = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "미처리 재분석"
+            setOnClickListener { confirmAnalysis(retry = true) }
+        }
+        analysisActions.addView(retryButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        top.addView(analysisActions)
         summary = TextView(ctx).apply { textSize = 14f; setPadding(0, dp(8), 0, dp(4)) }
         top.addView(summary)
         selectRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
@@ -205,6 +217,11 @@ class NaturalBatchFragment : Fragment() {
         super.onStop()
     }
 
+    override fun onDestroyView() {
+        analysisProgress?.dismiss(); analysisProgress = null
+        super.onDestroyView()
+    }
+
     private fun render() {
         val snapshot = model.snapshot
         scopeButton.text = model.options.firstOrNull { it.scope == snapshot?.input?.scope }?.label ?: "범위 선택"
@@ -221,7 +238,7 @@ class NaturalBatchFragment : Fragment() {
             }
         }
         val plan = snapshot?.plan
-        if (previousPlan != null && previousPlan !== plan) {
+        if (previousPlan != null && plan == null) {
             list.scrollToPosition(0)
             restoredScroll = false
         }
@@ -235,6 +252,17 @@ class NaturalBatchFragment : Fragment() {
             !model.busy && !model.storageFailed
         resetButton.isVisible = plan != null
         resetButton.isEnabled = !model.busy && !model.storageFailed
+        retryButton.isVisible = model.retrySegments.isNotEmpty()
+        retryButton.isEnabled = !model.busy && !model.storageFailed
+        if (model.busyKind == NaturalBatchViewModel.BusyKind.ANALYSIS && model.analysisTotal > 0) {
+            if (analysisProgress == null) analysisProgress = TaskProgressDialog.show(requireContext(),
+                com.novelcharacter.app.R.string.natural_batch_analysis_title, model.analysisTotal,
+                onCancel = model::stopAfterRequest, aiRequests = true)
+            analysisProgress?.update(model.analysisDone, model.analysisTotal,
+                "AI 분석 · 취소하면 보낸 요청의 응답을 보관한 뒤 멈춥니다")
+        } else {
+            analysisProgress?.dismiss(); analysisProgress = null
+        }
         val selected = snapshot?.selected?.size ?: 0
         summary.text = if (plan == null) {
             "범위와 원문을 확인한 뒤 분석하세요. 전사만으로 AI 요청이나 저장이 시작되지 않습니다."
@@ -260,7 +288,7 @@ class NaturalBatchFragment : Fragment() {
         }
         notice.isVisible = notice.text.isNotBlank()
         selectRow.isVisible = plan != null
-        selectExtractedButton.isEnabled = !model.busy && !model.storageFailed &&
+        selectExtractedButton.isEnabled = !model.busy && !model.storageFailed && plan?.complete == true &&
             plan?.operations.orEmpty().any { NaturalBatchReviewSelection.canBulkSelect(it,
                 plan?.conflicts.orEmpty()) && it.id !in snapshot?.selected.orEmpty() }
         clearSelectionButton.isEnabled = selected > 0 && !model.busy && !model.storageFailed
@@ -326,7 +354,7 @@ class NaturalBatchFragment : Fragment() {
             .setNegativeButton("취소", null).show()
     }
 
-    private fun confirmAnalysis() {
+    private fun confirmAnalysis(retry: Boolean = false) {
         val input = model.snapshot?.input ?: return
         if (input.text.isBlank()) return
         if (!AiService(requireContext()).hasUsableProvider()) {
@@ -335,9 +363,13 @@ class NaturalBatchFragment : Fragment() {
                 .setPositiveButton("확인", null).show()
             return
         }
-        MaterialAlertDialogBuilder(requireContext()).setTitle("AI 분석 시작")
-            .setMessage("원문 ${input.segments().size}개 문단을 분석합니다. 예상 요청은 1회이며, 응답이 잘리거나 형식이 맞지 않아도 비용이 발생할 수 있습니다. 제안은 검토 전에는 저장되지 않습니다.")
-            .setPositiveButton("분석") { _, _ -> editingSource = false; model.analyze() }
+        val ids = if (retry) model.retrySegments else input.segments().map { it.id }.toSet()
+        val large = input.segments().count { it.id in ids && it.text.length > com.novelcharacter.app.ai.NaturalBatchChunks.TARGET_CHARS }
+        MaterialAlertDialogBuilder(requireContext()).setTitle(if (retry) "미처리 구간 다시 분석" else "AI 분석 시작")
+            .setMessage("${ids.size}개 문단을 ${model.requestCount(retry)}회 요청으로 분석합니다. 응답이 잘리거나 형식이 맞지 않아도 비용이 발생할 수 있습니다. 제안은 검토 전에는 저장되지 않습니다." +
+                (if (retry) "\n성공한 제안과 선택은 유지합니다. 여러 문단을 함께 인용한 제안은 그 문단 전체를 다시 분석하고 선택을 다시 확인합니다." else "") +
+                (if (large > 0) "\n긴 문단 ${large}개는 정정·부정 문맥을 유지하기 위해 자르지 않습니다. 응답이 잘리면 원문을 빈 줄로 나누거나 출력 한도를 높여 주세요." else ""))
+            .setPositiveButton("분석") { _, _ -> editingSource = false; model.analyze(retry) }
             .setNegativeButton("취소", null).show()
     }
 
@@ -612,13 +644,14 @@ class NaturalBatchFragment : Fragment() {
         private var items: List<Row> = emptyList()
         private var snapshot: NaturalBatchReviewState.Snapshot? = null
         private var context: NaturalBatchContext? = null
+        private var sources: Map<String, String> = emptyMap()
 
         fun submit(next: NaturalBatchReviewState.Snapshot?, analysis: NaturalBatchContext?) {
             snapshot = next; context = analysis
+            sources = next?.input?.segments()?.associate { it.id to it.text }.orEmpty()
             val plan = next?.plan
             val proposals = plan?.operations.orEmpty().map(Row::Proposal)
-            fun source(ids: List<String>): String = next?.input?.segments()
-                ?.filter { it.id in ids }?.joinToString("\n\n") { it.text }.orEmpty()
+            fun source(ids: List<String>): String = sources.filterKeys { it in ids }.values.joinToString("\n\n")
             val info = buildList {
                 plan?.unresolved.orEmpty().forEach {
                     add(Row.Info(it.id, "해석 불가", "${it.text}\n${it.reason}\n원문: ${source(it.segmentIds)}"))
@@ -631,7 +664,7 @@ class NaturalBatchFragment : Fragment() {
                     add(Row.Info(it.id, "창작 참고 메모", "${it.text}\n원문: ${source(it.segmentIds)}"))
                 }
                 plan?.incompleteSegments.orEmpty().forEach { id ->
-                    add(Row.Info(id, "미처리 원문", next?.input?.segments()?.firstOrNull { it.id == id }?.text.orEmpty()))
+                    add(Row.Info(id, "미처리 원문", "${model.analysisFailures[id] ?: "응답에서 이 문단의 처리를 확인하지 못했습니다."}\n원문: ${sources[id].orEmpty()}", collapsible = true))
                 }
             }
             items = when (filter) {
@@ -672,7 +705,14 @@ class NaturalBatchFragment : Fragment() {
             when (row) {
                 is Row.Info -> {
                     column.addView(TextView(ctx).apply { text = row.title; textSize = 16f })
-                    column.addView(TextView(ctx).apply { text = row.body; textSize = 14f })
+                    if (!row.collapsible || model.isExpanded(row.id)) {
+                        column.addView(TextView(ctx).apply { text = row.body; textSize = 14f })
+                    }
+                    if (row.collapsible) column.addView(MaterialButton(ctx, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = if (model.isExpanded(row.id)) "원문·오류 접기" else "원문·오류 보기"
+                        setOnClickListener { model.toggleExpanded(row.id) }
+                    })
                 }
                 is Row.Proposal -> {
                     val operation = row.operation
@@ -746,8 +786,7 @@ class NaturalBatchFragment : Fragment() {
                     }
                     column.addView(actions)
                     if (model.isExpanded(operation.id)) {
-                        val source = snapshot?.input?.segments()?.filter { it.id in operation.evidence.segmentIds }
-                            ?.joinToString("\n\n") { it.text }.orEmpty()
+                        val source = operation.evidence.segmentIds.mapNotNull(sources::get).joinToString("\n\n")
                         column.addView(TextView(ctx).apply {
                             text = "원문: $source\n인용: ${operation.evidence.quote}" +
                                 if (operation.evidence.matched) "" else "\n인용이 원문과 일치하지 않아 확인이 필요합니다."

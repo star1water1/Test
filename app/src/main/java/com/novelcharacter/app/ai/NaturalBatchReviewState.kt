@@ -70,6 +70,27 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
         return true
     }
 
+    fun beginRetry(): Request {
+        require(plan != null) { "No review to retry" }
+        generation++
+        acceptedGeneration = null
+        return Request(input.sessionId, input.scopeRevision, input.inputRevision, generation)
+    }
+
+    /** Progressive checkpoints preserve only unchanged, still nonconflicting review decisions. */
+    fun acceptProgress(request: Request, response: NaturalBatchMerge): Boolean {
+        if (request != Request(input.sessionId, input.scopeRevision, input.inputRevision, generation) ||
+            response.sessionId != input.sessionId || response.scopeRevision != input.scopeRevision ||
+            response.inputRevision != input.inputRevision) return false
+        val previous = plan?.operations.orEmpty().associateBy { it.id }
+        val retained = response.operations.filter { it == previous[it.id] && it.id !in response.conflicts }
+            .map { it.id }.toSet()
+        selected.retainAll(retained); confirmed.retainAll(retained)
+        edits.keys.retainAll(retained)
+        plan = response
+        return true
+    }
+
     fun confirm(id: String) {
         require(plan?.operations?.any { it.id == id } == true)
         require(id !in plan!!.conflicts) { "Conflicting proposal" }
