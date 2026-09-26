@@ -9,6 +9,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NaturalBatchAnalysisTest {
+    @Test fun chunkRequestDoesNotSendOtherParagraphsOrAcceptTheirReferences() = runBlocking {
+        val input = NaturalBatchInput.create(NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, 10),
+            "Alice의 직업은 기자다\n\nBob의 직업은 비공개다")
+        val segments = input.segments()
+        val context = NaturalBatchContext(mapOf(
+            "c4" to NaturalBatchContext.Character(4, 10, 7, "Alice", emptyList(), "C4", null),
+            "c9" to NaturalBatchContext.Character(9, 10, 7, "Bob", emptyList(), "C9", null)),
+            mapOf("f1" to NaturalBatchContext.Field(1, 7, "직업", "job", "TEXT", "{}")),
+            emptyMap(), emptyMap(), mapOf(("c9" to "f1") to "비공개"), emptyList())
+        val response = JSONObject().put("schemaVersion", 1).put("sessionId", input.sessionId)
+            .put("scopeRevision", 0).put("inputRevision", 0)
+            .put("operations", JSONArray().put(JSONObject().put("id", "outside").put("kind", "SET_FIELD_VALUE")
+                .put("targetRef", "c9").put("fieldRef", "f1").put("value", "기자").put("origin", "EXTRACTED")
+                .put("segmentIds", JSONArray().put(segments.first().id)).put("quote", segments.first().text)))
+            .put("constraints", JSONArray()).put("unresolved", JSONArray()).put("suggestionNotes", JSONArray())
+            .put("segmentStatus", JSONArray().put(JSONObject().put("segmentId", segments.first().id).put("status", "PROCESSED")))
+        val analyzer = NaturalBatchAnalyzer({ error("A frozen context must not be reloaded") }, { request ->
+            assertFalse(request.messages.single().text.contains("Bob"))
+            assertFalse(request.messages.single().text.contains("비공개"))
+            assertFalse(request.inputSource!!.instructions.values.any { it.contains("Bob") })
+            AiResult.Success(response.toString(), "scripted")
+        }, { 4096 })
+        val result = analyzer.analyzeChunk(input, context, setOf(segments.first().id), 1)
+        assertTrue(result is NaturalBatchAnalyzer.Outcome.Ready)
+        assertTrue((result as NaturalBatchAnalyzer.Outcome.Ready).plan.operations.isEmpty())
+        assertEquals(1, result.plan.unresolved.size)
+        response.getJSONArray("segmentStatus").getJSONObject(0).put("segmentId", segments.last().id)
+        val invalid = analyzer.analyzeChunk(input, context, setOf(segments.first().id), 2)
+        assertTrue(invalid is NaturalBatchAnalyzer.Outcome.Failed)
+        assertTrue((invalid as NaturalBatchAnalyzer.Outcome.Failed).billedResponse != null)
+    }
     @Test fun relationshipReferenceStillRequiresBothQuotedEndpoints() {
         val first = NaturalBatchContext.Character(1, 10, 7, "Alice", emptyList(), "A", "Book")
         val second = NaturalBatchContext.Character(2, 10, 7, "Bob", emptyList(), "B", "Book")

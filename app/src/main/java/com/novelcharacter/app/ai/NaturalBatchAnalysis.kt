@@ -109,7 +109,16 @@ class NaturalBatchAnalyzer(
         val context = try { contextLoader(input) }
             catch (e: IllegalArgumentException) { return Outcome.Failed(e.message ?: "범위를 확인해 주세요") }
             catch (e: IllegalStateException) { return Outcome.Failed(e.message ?: "범위를 확인해 주세요") }
-        val request = NaturalBatchPrompt.request(input, context, maxTokens())
+        return analyzeChunk(input, context, segments.map { it.id }.toSet(), requestSequence)
+    }
+
+    suspend fun loadContext(input: NaturalBatchInput): NaturalBatchContext = contextLoader(input)
+
+    suspend fun analyzeChunk(input: NaturalBatchInput, context: NaturalBatchContext,
+        ids: Set<String>, requestSequence: Long): Outcome {
+        require(requestSequence >= 0)
+        val scoped = NaturalBatchChunks.context(input, ids, context)
+        val request = NaturalBatchPrompt.request(input, scoped, maxTokens(), ids)
         return when (val result = complete(request)) {
             is AiResult.Failure -> Outcome.Failed("AI 분석 요청이 실패했습니다", result)
             is AiResult.Success -> {
@@ -119,7 +128,7 @@ class NaturalBatchAnalyzer(
                 try {
                     Outcome.Ready(NaturalBatchEvidenceGuard.check(
                         NaturalBatchPlanParser.parse(result.text, input,
-                            segments.map { it.id }.toSet(), context.refs(), requestSequence), context),
+                            ids, scoped.refs(), requestSequence), scoped),
                         context, result)
                 } catch (e: NaturalBatchFormatException) {
                     Outcome.Failed("AI 응답 형식을 확인할 수 없습니다: ${e.message}",
@@ -164,12 +173,15 @@ object NaturalBatchPrompt {
         Cite only exact, nonempty substrings of supplied segment text in quote. Do not claim certainty from a matching quote alone.
     """.trimIndent()
 
-    fun request(input: NaturalBatchInput, context: NaturalBatchContext, maxTokens: Int): AiRequest {
+    fun request(input: NaturalBatchInput, context: NaturalBatchContext, maxTokens: Int,
+        ids: Set<String> = input.segments().map { it.id }.toSet()): AiRequest {
+        val segments = input.segments().filter { it.id in ids }
+        require(ids.isNotEmpty() && segments.size == ids.size)
         val data = JSONObject()
             .put("sessionId", input.sessionId).put("scopeRevision", input.scopeRevision)
             .put("inputRevision", input.inputRevision)
             .put("scope", JSONObject().put("kind", input.scope.kind.name).put("id", input.scope.id))
-            .put("segments", JSONArray().apply { input.segments().forEach {
+            .put("segments", JSONArray().apply { segments.forEach {
                 put(JSONObject().put("id", it.id).put("text", it.text))
             } })
             .put("characters", JSONArray().apply { context.characters.forEach { (ref, character) ->
@@ -207,7 +219,7 @@ object NaturalBatchPrompt {
         val body = data.toString()
         return AiRequest(system = SYSTEM, userText = "Untrusted data block (JSON):\n$body",
             maxTokens = maxTokens, inputSource = AiInputSource(
-                briefing = "자연어 일괄편집 분석", instructions = mapOf("original" to input.text),
+                briefing = "자연어 일괄편집 분석", instructions = mapOf("original" to segments.joinToString("\n\n") { it.text }),
                 contextNotes = context.omitted, contextText = listOf(body)))
     }
 }
