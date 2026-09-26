@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
@@ -203,5 +204,42 @@ class NaturalBatchRelationshipExecutorTest {
         db.universeDao().update(world.copy(customRelationshipTypes = "[\"우정\"]"))
         assertEquals(Status.STALE, prepare(operation(), ctx).items.single().decision.status)
         assertEquals(Status.INVALID_VALUE, prepare(operation()).items.single().decision.status)
+    }
+
+    @Test fun historyAddedAfterDeletePreviewBlocksTheEntireDeletion() = runBlocking {
+        val old = relation()
+        val prepared = prepare(operation(NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP))
+        db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(relationshipId = old.id,
+            year = 2030, relationshipType = "라이벌"))
+        assertEquals(Status.STALE, executor.apply(prepared, "changed-history").single().status)
+        assertEquals(old, db.characterRelationshipDao().getById(old.id))
+        assertEquals(1, db.characterRelationshipChangeDao().getChangesForRelationshipList(old.id).size)
+        assertTrue(db.naturalBatchJournalDao().operations("changed-history").isEmpty())
+    }
+
+    @Test fun mixedFieldAndRelationshipExecutionCanUndoBothKinds() = runBlocking {
+        val fieldId = db.fieldDefinitionDao().insert(FieldDefinition(universeId = 1,
+            key = "trait", name = "Trait", type = "TEXT"))
+        val field = operation(id = "field").copy(kind = NaturalBatchPlan.Kind.SET_FIELD_VALUE,
+            fieldRef = "f1", relatedRef = null, relationshipType = null, value = "kind")
+        val ctx = context().copy(fields = mapOf("f1" to NaturalBatchContext.Field(fieldId, 1,
+            "Trait", "trait", "TEXT", "{}")))
+        val prepared = executor.preflight(review(field, operation()).snapshot(), ctx)
+        assertTrue(prepared.items.all { it.decision.status == Status.READY })
+        assertTrue(executor.apply(prepared, "mixed").all { it.status == Status.APPLIED })
+        assertEquals("kind", db.characterFieldValueDao().getValue(100, fieldId)!!.value)
+        assertEquals(setOf("field", "relationship"), db.naturalBatchJournalDao().operations("mixed").map { it.entityKind }.toSet())
+        assertTrue(executor.undo("mixed").all { it.status == Status.UNDONE })
+        assertNull(db.characterFieldValueDao().getValue(100, fieldId))
+        assertTrue(db.characterRelationshipDao().getAllRelationships().isEmpty())
+    }
+
+    @Test fun workWithoutUniverseUsesGlobalRelationshipTypesAndCanUndo() = runBlocking {
+        val book = db.novelDao().getNovelById(10)!!
+        db.novelDao().update(book.copy(universeId = null))
+        val prepared = prepare(operation())
+        assertEquals(Status.READY, prepared.items.single().decision.status)
+        assertEquals(Status.APPLIED, executor.apply(prepared, "global").single().status)
+        assertEquals(Status.UNDONE, executor.undo("global").single().status)
     }
 }
