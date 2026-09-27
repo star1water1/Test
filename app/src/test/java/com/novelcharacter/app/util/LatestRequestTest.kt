@@ -9,6 +9,18 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class LatestRequestTest {
+    @Test fun deselectingCriterionInvalidatesPendingRankingWithoutAnotherRequest() = runTest {
+        val requests = LatestRequest(backgroundScope)
+        val pending = CompletableDeferred<Unit>()
+        var published = false
+        requests.launch(load = { withContext(NonCancellable) { pending.await() }; "old ranking" },
+            publish = { published = true }, onError = { throw it })
+        runCurrent()
+        requests.cancel()
+        pending.complete(Unit)
+        runCurrent()
+        assertFalse(published)
+    }
     @Test fun olderNonCooperativeCalculationCannotReplaceNewRanking() = runTest {
         val requests = LatestRequest(backgroundScope)
         val old = CompletableDeferred<Unit>()

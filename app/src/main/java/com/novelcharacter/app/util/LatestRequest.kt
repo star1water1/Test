@@ -10,6 +10,12 @@ class LatestRequest(private val scope: CoroutineScope) {
     private var job: Job? = null
     private var generation = 0L
 
+    fun cancel() {
+        generation++
+        job?.cancel()
+        job = null
+    }
+
     fun <T> launch(load: suspend () -> T, publish: (T) -> Unit, onError: (Exception) -> Unit) {
         val request = ++generation
         job?.cancel()

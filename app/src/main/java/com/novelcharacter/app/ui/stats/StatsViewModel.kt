@@ -447,6 +447,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private var rankingSourcesJob: Job? = null
 
     fun loadRankingSources(universeId: Long?) {
+        clearRanking()
         // 이전 로드 취소 — 세계관 전환/복원 시 여러 로드가 겹쳐 마지막 것이 아닌 결과가
         // 스피너를 덮어쓰는 경쟁을 막는다(마지막 요청만 확정).
         rankingSourcesJob?.cancel()
@@ -474,6 +475,11 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * *무엇을 보이는가*에만 쓴다([StatsDataProvider.computeDuelRanking]).
      */
     private val rankingRequest = com.novelcharacter.app.util.LatestRequest(viewModelScope)
+
+    fun clearRanking() {
+        rankingRequest.cancel()
+        _rankingResult.value = null
+    }
 
     fun loadDuelRanking(axisCode: String, ascending: Boolean = false, novelId: Long? = null) {
         rankingRequest.launch(load = {
