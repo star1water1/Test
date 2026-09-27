@@ -25,6 +25,10 @@ import com.novelcharacter.app.ai.NaturalBatchMerge
 import com.novelcharacter.app.ai.NaturalBatchRelationshipEdits
 import com.novelcharacter.app.ai.NaturalBatchFactionEdits
 import com.novelcharacter.app.ai.NaturalBatchReviewState
+import com.novelcharacter.app.ai.NaturalBatchChunks
+import com.novelcharacter.app.ai.NaturalBatchChunkState
+import com.novelcharacter.app.data.model.FieldDefinition
+import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
@@ -48,12 +52,110 @@ class NaturalBatchUiTest {
         val review: NaturalBatchReviewState.Snapshot, val context: NaturalBatchContextSnapshot,
         val executions: List<NaturalBatchViewModel.ExecutionRecord> = emptyList(),
         val results: List<NaturalBatchFieldExecutor.Decision>? = null,
-        val scrollPosition: Int = 0, val expanded: Set<String> = emptySet()
+        val scrollPosition: Int = 0, val expanded: Set<String> = emptySet(),
+        val chunks: NaturalBatchChunkState? = null
     )
 
     private fun textViews(view: View): List<TextView> = buildList {
         if (view is TextView) add(view)
         if (view is ViewGroup) for (index in 0 until view.childCount) addAll(textViews(view.getChildAt(index)))
+    }
+
+    @Test fun fiftyReviewRowsKeepScrollEditsAndCollapsedFailureSourcesAcrossRecreation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) instrumentation.uiAutomation
+            .grantRuntimePermission(app.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        val journal = ReviewJournal(File(app.noBackupFilesDir, "creative-reviews"))
+        assumeTrue("Do not replace an existing user review", journal.revision("natural-batch:active") == null)
+        val universeId = runBlocking(Dispatchers.IO) { db.universeDao().insert(Universe(name = "50개 검토 검증")) }
+        val novelId = runBlocking(Dispatchers.IO) { db.novelDao().insert(Novel(title = "검토 작품", universeId = universeId)) }
+        val input = NaturalBatchInput.create(NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, novelId),
+            (1..10).flatMap { person -> (1..5).map { field -> "인물${person}의 속성${field}은 값${person}_$field" } }.joinToString("\n\n"))
+        try {
+            val context = runBlocking(Dispatchers.IO) {
+                (1..10).forEach { db.characterDao().insert(Character(name = "인물$it", novelId = novelId)) }
+                (1..5).forEach { db.fieldDefinitionDao().insert(FieldDefinition(universeId = universeId,
+                    key = "review_scale_$it", name = "속성$it", type = "TEXT")) }
+                NaturalBatchContextLoader(db).load(input)
+            }
+            var ledger = NaturalBatchChunkState.create(input)
+            NaturalBatchChunks.partition(input).forEach { ids ->
+                val reserved = ledger.reserve(input, ids)
+                val operations = input.segments().filter { it.id in ids }.mapIndexed { index, segment ->
+                    val person = Regex("인물[0-9]+").find(segment.text)!!.value
+                    val field = Regex("속성[0-9]+").find(segment.text)!!.value
+                    NaturalBatchPlan.Operation("op$index", NaturalBatchPlan.Kind.SET_FIELD_VALUE,
+                        context.characters.entries.single { it.value.name == person }.key,
+                        context.fields.entries.single { it.value.name == field }.key,
+                        null, null, null, "새 값", null, null, null, null, null, null, null,
+                        NaturalBatchPlan.Origin.EXTRACTED, NaturalBatchPlan.Evidence(listOf(segment.id), segment.text, true))
+                }
+                ledger = reserved.first.finish(reserved.second, NaturalBatchPlan(input.sessionId, 0, 0,
+                    operations, emptyList(), emptyList(), emptyList(), ids.map {
+                        NaturalBatchPlan.SegmentStatus(it, NaturalBatchPlan.Coverage.PROCESSED, null)
+                    }, ids, reserved.second))
+            }
+            val failedIds = NaturalBatchChunks.partition(input)[1]
+            val reserved = ledger.reserve(input, failedIds)
+            ledger = reserved.first.finish(reserved.second, null, "응답이 출력 한도에서 잘렸습니다")
+            val review = NaturalBatchReviewState(input)
+            assertTrue(review.accept(review.beginAnalysis(), ledger.merge(input)))
+            val keptId = review.plan!!.operations.first().id
+            review.editProposal(keptId, "직접 수정한 값"); review.confirm(keptId); review.setSelected(keptId, true)
+            journal.write("natural-batch:active", SavedReview(review.snapshot(), NaturalBatchContextSnapshot.from(context), chunks = ledger), null)
+            launch(novelId).use { scenario ->
+                awaitIdle(scenario) { !it.busy }
+                val started = android.os.SystemClock.elapsedRealtimeNanos()
+                scenario.onActivity { activity ->
+                    val fragment = screen(activity)!!
+                    val views = textViews(fragment.requireView())
+                    assertTrue(views.any { it.text == "미처리 재분석" && it.isEnabled })
+                    val recycler = findRecycler(fragment.requireView())!!
+                    assertEquals(50, recycler.adapter!!.itemCount)
+                    assertTrue("Review list must remain usable below the summary", recycler.height > 0)
+                    recycler.scrollToPosition(49)
+                }
+                for (attempt in 0 until 60) {
+                    instrumentation.waitForIdleSync()
+                    var reached = false
+                    scenario.onActivity { activity ->
+                        reached = textViews(findRecycler(screen(activity)!!.requireView())!!)
+                            .any { it.text == "원문·오류 보기" }
+                    }
+                    if (reached) break
+                    Thread.sleep(50)
+                }
+                scenario.onActivity { activity ->
+                    val fragment = screen(activity)!!
+                    val recycler = findRecycler(fragment.requireView())!!
+                    assertTrue(recycler.childCount < recycler.adapter!!.itemCount)
+                    assertTrue(textViews(recycler).any { it.text == "원문·오류 보기" })
+                    assertFalse(textViews(recycler).any { it.text.contains("원문: 인물") })
+                }
+                android.util.Log.i("NaturalBatchScale", "reviewRows=50 scrollMs=${(android.os.SystemClock.elapsedRealtimeNanos() - started) / 1_000_000.0}")
+                scenario.recreate(); awaitScreen(scenario); awaitIdle(scenario) { !it.busy }
+                scenario.onActivity { activity ->
+                    val model = ViewModelProvider(screen(activity)!!)[NaturalBatchViewModel::class.java]
+                    assertEquals(setOf(keptId), model.snapshot!!.selected)
+                    assertEquals("직접 수정한 값", model.snapshot!!.edits[keptId])
+                    assertEquals(12, model.retrySegments.size)
+                    assertTrue(model.scrollPosition > 0)
+                }
+            }
+        } finally {
+            journal.clear("natural-batch:active", journal.revision("natural-batch:active"), listOf("natural-batch:${input.sessionId}"))
+            runBlocking(Dispatchers.IO) {
+                db.novelDao().deleteById(novelId)
+                db.universeDao().getUniverseById(universeId)?.let { db.universeDao().delete(it) }
+            }
+        }
+    }
+
+    private fun findRecycler(view: View): RecyclerView? {
+        if (view is RecyclerView) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) {
+            findRecycler(view.getChildAt(index))?.let { return it }
+        }
+        return null
     }
 
     private fun awaitIdle(scenario: ActivityScenario<MainActivity>, done: (NaturalBatchViewModel) -> Boolean) {
