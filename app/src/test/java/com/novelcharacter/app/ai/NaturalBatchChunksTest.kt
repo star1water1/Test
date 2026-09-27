@@ -94,6 +94,11 @@ class NaturalBatchChunksTest {
             listOf(first, plan(input, setOf(ids[1]), 1, "의사")))))
         assertTrue(review.plan!!.hasConflicts)
         assertTrue(review.snapshot().selected.isEmpty())
+        assertEquals("탐정", review.editedValue(id))
+        val restored = NaturalBatchReviewState(input)
+        restored.restore(Gson().fromJson(Gson().toJson(review.snapshot()), NaturalBatchReviewState.Snapshot::class.java))
+        assertEquals("탐정", restored.editedValue(id))
+        assertTrue(restored.snapshot().selected.isEmpty())
         review.editInput("바뀐 원문")
         assertFalse(review.acceptProgress(retry, NaturalBatchPlans.merge(input, listOf(first))))
     }

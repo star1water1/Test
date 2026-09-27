@@ -114,6 +114,16 @@ class NaturalBatchAnalyzer(
 
     suspend fun loadContext(input: NaturalBatchInput): NaturalBatchContext = contextLoader(input)
 
+    /** Output settings affect request sizing; the parser's coverage array limit is shared. */
+    fun requests(input: NaturalBatchInput, ids: Set<String> = input.segments().map { it.id }.toSet(),
+        plans: List<NaturalBatchPlan> = emptyList()): List<Set<String>> {
+        val budget = maxTokens().coerceAtLeast(1).toLong()
+        return NaturalBatchChunks.partition(input, ids,
+            targetChars = (budget * NaturalBatchChunks.TARGET_CHARS / 4096).coerceIn(1, Int.MAX_VALUE.toLong()).toInt(),
+            targetSegments = (budget * NaturalBatchChunks.TARGET_SEGMENTS / 4096)
+                .coerceIn(1, NaturalBatchPlanParser.MAX_ITEMS.toLong()).toInt(), plans = plans)
+    }
+
     suspend fun analyzeChunk(input: NaturalBatchInput, context: NaturalBatchContext,
         ids: Set<String>, requestSequence: Long): Outcome {
         require(requestSequence >= 0)

@@ -22,9 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger
 class NaturalBatchChunkScaleTest {
     @Test fun detailedContextQueryCountDoesNotGrowPerCharacterOrField() = runBlocking {
         val queries = AtomicInteger()
+        // Room's invalidation/schema polling varies by Android version and is not a context read.
+        val contextTable = Regex("(?i)\\bFROM\\s+(?:characters|character_field_values|novels|universes|field_definitions|factions|faction_memberships|character_relationships)\\b")
         val db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
             AppDatabase::class.java).setQueryCallback({ sql, _ ->
-                if (sql.trimStart().startsWith("SELECT", ignoreCase = true)) queries.incrementAndGet()
+                if (sql.trimStart().startsWith("SELECT", ignoreCase = true) && contextTable.containsMatchIn(sql)) queries.incrementAndGet()
             }, Executor { it.run() }).build()
         try {
             db.universeDao().insert(Universe(id = 1, name = "청크 규모 검증"))

@@ -366,7 +366,7 @@ class NaturalBatchFragment : Fragment() {
         val ids = if (retry) model.retrySegments else input.segments().map { it.id }.toSet()
         val large = input.segments().count { it.id in ids && it.text.length > com.novelcharacter.app.ai.NaturalBatchChunks.TARGET_CHARS }
         MaterialAlertDialogBuilder(requireContext()).setTitle(if (retry) "미처리 구간 다시 분석" else "AI 분석 시작")
-            .setMessage("${ids.size}개 문단을 ${model.requestCount(retry)}회 요청으로 분석합니다. 응답이 잘리거나 형식이 맞지 않아도 비용이 발생할 수 있습니다. 제안은 검토 전에는 저장되지 않습니다." +
+            .setMessage("${ids.size}개 문단을 분석합니다. 예상 요청은 ${model.requestCount(retry)}회이며, 응답이 잘리거나 형식이 맞지 않아도 비용이 발생할 수 있습니다. 제안은 검토 전에는 저장되지 않습니다." +
                 (if (retry) "\n성공한 제안과 선택은 유지합니다. 여러 문단을 함께 인용한 제안은 그 문단 전체를 다시 분석하고 선택을 다시 확인합니다." else "") +
                 (if (large > 0) "\n긴 문단 ${large}개는 정정·부정 문맥을 유지하기 위해 자르지 않습니다. 응답이 잘리면 원문을 빈 줄로 나누거나 출력 한도를 높여 주세요." else ""))
             .setPositiveButton("분석") { _, _ -> editingSource = false; model.analyze(retry) }

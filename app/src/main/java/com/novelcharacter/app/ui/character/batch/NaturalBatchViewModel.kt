@@ -5,8 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.ai.AiService
+import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.NaturalBatchAnalyzer
-import com.novelcharacter.app.ai.NaturalBatchChunks
 import com.novelcharacter.app.ai.NaturalBatchChunkState
 import com.novelcharacter.app.ai.NaturalBatchContext
 import com.novelcharacter.app.ai.NaturalBatchContextSnapshot
@@ -78,7 +78,7 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
 
     fun requestCount(retry: Boolean = false): Int {
         val state = review ?: return 0
-        return NaturalBatchChunks.partition(state.input,
+        return analyzer.requests(state.input,
             if (retry) retrySegments else state.input.segments().map { it.id }.toSet(),
             plans = if (retry) chunks?.plans.orEmpty() else emptyList()).size
     }
@@ -186,7 +186,7 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
         if (busy || storageFailed || state.input.text.isBlank() ||
             (!retry && state.plan != null) || (retry && retrySegments.isEmpty())) return
         val input = state.input
-        val requests = NaturalBatchChunks.partition(input,
+        val requests = analyzer.requests(input,
             if (retry) retrySegments else input.segments().map { it.id }.toSet(),
             plans = if (retry) chunks?.plans.orEmpty() else emptyList())
         if (!slot.beginRequest()) { storageFailed = true; signal(); return }
@@ -216,7 +216,8 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
                     ledger = when (outcome) {
                         is NaturalBatchAnalyzer.Outcome.Ready -> ledger.finish(reservation.second, outcome.plan)
                         is NaturalBatchAnalyzer.Outcome.Failed -> ledger.finish(reservation.second, null,
-                            outcome.reason + if (outcome.billedResponse != null) " 응답 비용이 발생했을 수 있습니다." else "")
+                            (outcome.providerFailure?.let { AiErrorMessages.of(getApplication(), it) } ?: outcome.reason) +
+                                if (outcome.billedResponse != null) " 응답 비용이 발생했을 수 있습니다." else "")
                     }
                     chunks = ledger
                     analysisDone++

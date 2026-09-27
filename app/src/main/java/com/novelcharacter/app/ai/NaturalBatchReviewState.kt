@@ -24,10 +24,11 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
         input = saved.input
         plan = saved.plan?.takeIf { it.sessionId == input.sessionId &&
             it.scopeRevision == input.scopeRevision && it.inputRevision == input.inputRevision }
-        val ids = plan?.operations?.map { it.id }?.toSet().orEmpty() - plan?.conflicts.orEmpty()
+        val operationIds = plan?.operations?.map { it.id }?.toSet().orEmpty()
+        val ids = operationIds - plan?.conflicts.orEmpty()
         selected.clear(); selected.addAll(saved.selected intersect saved.confirmed intersect ids)
         confirmed.clear(); confirmed.addAll(saved.confirmed intersect ids)
-        edits.clear(); edits.putAll(saved.edits.filterKeys { it in ids })
+        edits.clear(); edits.putAll(saved.edits.filterKeys { it in operationIds })
         generation = saved.generation + 1 // Callbacks from before process restoration are stale.
         acceptedGeneration = null
     }
@@ -83,10 +84,11 @@ class NaturalBatchReviewState(initial: NaturalBatchInput) {
             response.sessionId != input.sessionId || response.scopeRevision != input.scopeRevision ||
             response.inputRevision != input.inputRevision) return false
         val previous = plan?.operations.orEmpty().associateBy { it.id }
-        val retained = response.operations.filter { it == previous[it.id] && it.id !in response.conflicts }
+        val unchanged = response.operations.filter { it == previous[it.id] }
             .map { it.id }.toSet()
+        val retained = unchanged - response.conflicts
         selected.retainAll(retained); confirmed.retainAll(retained)
-        edits.keys.retainAll(retained)
+        edits.keys.retainAll(unchanged)
         plan = response
         return true
     }

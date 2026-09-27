@@ -15,7 +15,7 @@ class NaturalBatchFormatException(message: String) : IllegalArgumentException(me
 /** The AI can describe candidates, but only app-issued request references survive parsing. */
 object NaturalBatchPlanParser {
     private const val MAX_RESPONSE_CHARS = 1_000_000
-    private const val MAX_ITEMS = 500
+    internal const val MAX_ITEMS = 500
 
     fun parse(
         response: String,

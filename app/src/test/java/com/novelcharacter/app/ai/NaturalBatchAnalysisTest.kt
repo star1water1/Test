@@ -9,6 +9,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NaturalBatchAnalysisTest {
+    @Test fun requestSizingUsesOutputBudgetWithoutExceedingParserCoverageLimit() {
+        val input = NaturalBatchInput.create(NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, 10),
+            (1..50).joinToString("\n\n") { "인물${it}의 직업은 기자다" })
+        var tokens = 4096
+        val analyzer = NaturalBatchAnalyzer({ error("No database read for an estimate") },
+            { error("No paid request for an estimate") }, { tokens })
+        assertEquals(5, analyzer.requests(input).size)
+        tokens = 512
+        assertEquals(50, analyzer.requests(input).size)
+        tokens = 8192
+        assertEquals(3, analyzer.requests(input).size)
+        tokens = Int.MAX_VALUE
+        assertTrue(analyzer.requests(input).all { it.size <= NaturalBatchPlanParser.MAX_ITEMS })
+    }
     @Test fun chunkRequestDoesNotSendOtherParagraphsOrAcceptTheirReferences() = runBlocking {
         val input = NaturalBatchInput.create(NaturalBatchInput.Scope(NaturalBatchInput.ScopeKind.WORK, 10),
             "Alice의 직업은 기자다\n\nBob의 직업은 비공개다")
