@@ -7,12 +7,12 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.novelcharacter.app.ui.common.inViewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
-import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
@@ -79,7 +79,9 @@ class CharacterSaveCoordinator(
          * 저장에서 사라진다. [buildCharacterFromForm]이 새 목록에 남아 있는지 한 번 더 거른다.
          */
         val representativeImagePath: String = ""
-    )
+    ) {
+        fun frozen(): FormSnapshot = copy(imagePaths = imagePaths.toList())
+    }
 
     interface Host {
         /** 현재 폼 입력의 스냅샷 (중복 다이얼로그 결과가 회전 후 도착해도 최신 폼 기준으로 재구성) */
@@ -321,36 +323,9 @@ class CharacterSaveCoordinator(
         }
     }
 
-    /**
-     * 저장 갈래 일곱의 **공통 실패 처분** — 그리고 **취소는 실패가 아니다**.
-     *
-     * 저장 사슬은 화면 수명(`viewLifecycleOwner.lifecycleScope`)에서 돌지만 실제 쓰기는
-     * `viewModel.inViewModelScope { … }`, 즉 `viewModelScope.async{}.await()`이다. 그래서
-     * **회전·뒤로가기로 뷰가 죽으면 쓰기는 끝까지 가고 `await()`만 취소로 던진다.**
-     * `CancellationException`도 `Exception`이라 종전에는 그것이 맨 `catch`에 걸려
-     * — 일곱 자리 어디에도 되던지기가 없었다 — **캐릭터는 저장됐는데
-     * «저장에 실패했습니다» 토스트가 떴다.** `showSaveFailed`는 `context`와 `isAdded`만 보고
-     * 그 둘은 `onDestroyView` 시점에 아직 살아 있어 토스트가 실제로 뜬다.
-     *
-     * 이 저장소는 같은 결함에 이미 세 번 이름을 붙였다(`NovelListFragment.createNovelField` ·
-     * `TimelineViewModel` · `NameSuggestViewModel`). 일곱 자리에 되던지기를 복붙하는 대신
-     * 처분을 한 자리에 모은다 — 여덟 번째 갈래가 생겨도 이 함수를 부르면 규약이 따라온다.
-     */
     private fun onSaveThrew(e: Exception) {
         if (e is kotlinx.coroutines.CancellationException) {
-            // **취소는 실패가 아니다 — 그러나 빗장은 반드시 푼다.**
-            //
-            // 이 둘을 함께 두지 않으면 두 수리가 서로를 깨뜨린다: 되던지면 이 코루틴이
-            // 죽어 성공 경로의 [resetSavingState]에 닿을 길이 없는데, 빗장은 이제
-            // 뷰모델에 살아 **회전을 넘는다** — 그러면 다시 선 화면의 저장 버튼이
-            // 영영 꺼진 채로 남는다(종전에는 코디네이터가 새로 만들어져 저절로 풀렸다).
-            //
-            // 푸는 것이 옳은 이유: 이 갈래는 *화면이 사라져 사슬이 끊긴* 자리다. 창이 열려
-            // 사용자 응답을 기다리는 동안은 코루틴이 이미 정상 종료해 있으므로 여기 오지
-            // 않는다 — 즉 이 수리가 막으려던 «창이 뜬 채 회전» 갈래의 빗장은 그대로 산다.
-            // [abortSave]가 아니라 [resetSavingState]인 것도 요점이다: 호스트의 이탈 예약
-            // 해제는 *사용자가 취소한 것*에 대한 처분이고, 이쪽은 화면이 사라진 것뿐이다.
-            resetSavingState()
+            resetSavingState() // setSaving preserves an active ViewModel-owned write.
             throw e
         }
         showSaveFailed()
@@ -376,6 +351,20 @@ class CharacterSaveCoordinator(
         // 종전에는 `host.onSavingChanged`를 빗장과 나란히 손으로 불렀고, 그래서 회전으로
         // 새로 선 화면은 *저장 중인데 버튼이 켜진* 상태였다. 한 자리로 모으면 갈릴 수 없다.
         viewModel.saving.observe(fragment.viewLifecycleOwner) { host.onSavingChanged(it) }
+        viewModel.formSaveResult.observe(fragment.viewLifecycleOwner) {
+            val result = viewModel.consumeFormSaveResult() ?: return@observe
+            result.fold(onSuccess = { receipt ->
+                receipt.imageDeletes?.let { counts -> host.onPendingImageDeletesApplied(counts.first, counts.second) }
+                host.onNameBankLinkApplied()
+                if (receipt.keptGlobalFields > 0) notifyKeptGlobalValues(receipt.keptGlobalFields)
+                else if (receipt.preservedFields > 0) notifyPreservedFieldValues(receipt.preservedFields)
+                Toast.makeText(appContext, R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+                host.onSaved(receipt.characterId)
+            }, onFailure = {
+                showSaveFailed()
+                abortSave()
+            })
+        }
         fragment.childFragmentManager.setFragmentResultListener(
             DuplicateCharacterDialog.RESULT_KEY,
             fragment.viewLifecycleOwner
@@ -468,80 +457,45 @@ class CharacterSaveCoordinator(
         resolvedFieldValues: List<CharacterFieldValue>? = null,
         crossUniverseConfirmed: Boolean = false
     ) {
-        val snapshot = host.snapshot()
-        // **폼에서 읽을 것은 여기서 다 읽는다.** 아래 쓰기 사슬은 뷰모델 수명으로 넘어가
-        // 화면이 사라진 뒤에도 계속 가므로, 그 안에서 폼을 다시 만지면 사라진 뷰를 만진다.
-        val previousPaths = host.existingCharacter()?.imagePaths
+        val snapshot = host.snapshot().frozen()
+        val previousPaths = if (isUpdate && targetCharacterId != -1L)
+            viewModel.getCharacterByIdSuspend(targetCharacterId)?.imagePaths else host.existingCharacter()?.imagePaths
         val pendingDeletes = host.pendingImageDeletes().toList()
         val tagList = MultiValueInput.parse(snapshot.tags)
-        val savedCharId: Long
-        if (isUpdate && targetCharacterId != -1L) {
-            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
-                ?: host.collectFieldValues(targetCharacterId)
-            // 다른 세계관으로 이동하는 저장이면 유실 고지·이관 처리(변수 제어: 조용한 필드값 유실 방지)
-            val scopeMove = scopeMoveOf(character, targetCharacterId)
-            val crossUniv = scopeMove.crossUniverseId
-            if (crossUniv != null && !crossUniverseConfirmed) {
-                val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
-                if (loss.hasRemoval) {
-                    showCrossUniverseMoveDialog(loss,
-                        onConfirm = {
-                            fragment.viewLifecycleOwner.lifecycleScope.launch {
-                                try {
-                                    executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
-                                } catch (e: Exception) {
-                                    onSaveThrew(e)
-                                }
-                            }
-                        },
-                        onCancel = { abortSave() })
-                    return
-                }
-            }
-            savedCharId = targetCharacterId
-            // **여기부터가 쓰기 사슬이고, 화면 수명 밖에서 돈다** ([com.novelcharacter.app.ui.common.inViewModelScope]).
-            // 이 사슬은 캐릭터·필드값 → 자동 링크 → 이미지 정리 → 뗀 표식 → 예약 삭제 →
-            // 태그 → 이름은행으로 이어지는데, 종전에는 통째로 `viewLifecycleOwner`에서 돌아
-            // **저장을 누른 직후 회전하면 앞쪽만 커밋되고 뒤가 잘렸다** — 캐릭터는 저장됐는데
-            // 방금 고친 태그는 옛 값이고 아무 고지도 없다(조용한 유실).
-            viewModel.inViewModelScope {
-                applyCharacterUpdate(character, fieldValues, crossUniv, scopeMove.leavingUniverse)
-                // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
-                // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
-                resyncAutoLink()
-                cleanupRemovedImages(previousPaths, snapshot.imagePaths)
-                syncDetachedMarks(character.code, previousPaths, snapshot.imagePaths)
-                // 명시적 삭제는 맨 뒤다 — 이 캐릭터의 참조가 빠진 뒤라야 "다른 곳이 쓰는가"를
-                // 제대로 판정할 수 있다(D7).
-                applyPendingImageDeletes(pendingDeletes)
-                viewModel.replaceAllTagsSuspend(
-                    targetCharacterId, tagList.map { CharacterTag(characterId = targetCharacterId, tag = it) }
-                )
-                syncNameBankLink(targetCharacterId, character.name)
-            }
-        } else {
-            val formValues = resolvedFieldValues ?: host.collectFieldValues(-1L)
-            savedCharId = viewModel.inViewModelScope {
-                val newId = viewModel.insertCharacterSuspend(character)
-                viewModel.saveAllFieldValues(newId, formValues.map { it.copy(characterId = newId) })
-                resyncAutoLink()
-                // 새 캐릭터도 서랍을 건드린다 — 전에 뗐던 이미지를 다시 골라 쓰는 경로가 여기다.
-                // 뗄 것은 없으므로(옛 목록이 없다) 이 호출은 지우기만 한다.
-                syncDetachedMarks(character.code, null, snapshot.imagePaths)
-                applyPendingImageDeletes(pendingDeletes)
-                viewModel.replaceAllTagsSuspend(
-                    newId, tagList.map { CharacterTag(characterId = newId, tag = it) }
-                )
-                syncNameBankLink(newId, character.name)
-                newId
+        val coveredIds = host.coveredFieldDefinitionIds().toSet()
+        val nameBankEntryId = host.requestedNameBankEntryId()
+        val updating = isUpdate && targetCharacterId != -1L
+        val fieldValues = resolvedFieldValues?.map { it.copy(characterId = if (updating) targetCharacterId else -1L) }
+            ?: host.collectFieldValues(if (updating) targetCharacterId else -1L)
+        val scopeMove = if (updating) scopeMoveOf(character, targetCharacterId) else ScopeMove(null, null)
+        val crossUniv = scopeMove.crossUniverseId
+        if (updating && crossUniv != null && !crossUniverseConfirmed) {
+            val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
+            if (loss.hasRemoval) {
+                showCrossUniverseMoveDialog(loss,
+                    onConfirm = {
+                        fragment.viewLifecycleOwner.lifecycleScope.launch {
+                            try {
+                                executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
+                            } catch (e: Exception) { onSaveThrew(e) }
+                        }
+                    }, onCancel = { abortSave() })
+                return
             }
         }
-
-        resetSavingState()
-        if (fragment.isAdded && fragment.view != null) {
-            Toast.makeText(fragment.requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+        // Freeze every form input before leaving the view lifetime. File effects follow commit.
+        viewModel.startFormSave {
+            val saved = viewModel.persistForm(character, fieldValues, tagList, coveredIds, updating,
+                crossUniv, scopeMove.leavingUniverse)
+            val deleted = withContext(Dispatchers.IO) {
+                resyncAutoLink()
+                if (updating) cleanupRemovedImages(previousPaths, snapshot.imagePaths)
+                syncDetachedMarks(character.code, if (updating) previousPaths else null, snapshot.imagePaths)
+                applyPendingImageDeletes(pendingDeletes)
+            }
+            syncNameBankLink(saved.id, character.name, nameBankEntryId)
+            CharacterViewModel.FormSaveReceipt(saved.id, deleted, saved.preserved, saved.keptGlobal)
         }
-        host.onSaved(savedCharId)
     }
 
     /**
@@ -555,8 +509,7 @@ class CharacterSaveCoordinator(
      * `Toast`인 것은 [notifyPreservedFieldValues]와 같은 이유다 — 저장 직후 호스트가
      * `popBackStack`하므로 뷰에 붙는 고지는 사용자에게 도달하지 못한다.
      */
-    private suspend fun syncNameBankLink(savedCharacterId: Long, savedName: String) {
-        val requested = host.requestedNameBankEntryId()
+    private suspend fun syncNameBankLink(savedCharacterId: Long, savedName: String, requested: Long?) {
         val outcome = try {
             viewModel.applyNameBankLink(savedCharacterId, savedName, requested)
         } catch (e: Exception) {
@@ -564,10 +517,8 @@ class CharacterSaveCoordinator(
             // 고른 것이 있었는데 못 걸었다면 그 사실만은 말한다 — 자동 대조뿐이었다면
             // 사용자가 지시한 조작이 아니므로 실패를 알릴 것이 없다(소음).
             if (requested != null) notifyNameBank(R.string.name_bank_link_failed)
-            host.onNameBankLinkApplied()
             return
         }
-        host.onNameBankLinkApplied()
         if (outcome.isSilent) return
         val ctx = appContext
         val message = buildString {
@@ -749,36 +700,6 @@ class CharacterSaveCoordinator(
     }
 
     /**
-     * 세계관 이동 여부에 따라 이관 저장(같은 이름 필드 유지·유실 시 스냅샷) 또는 일반 저장을 선택한다.
-     *
-     * 일반 저장에는 **폼이 실제로 렌더한 필드 정의 집합**을 함께 넘긴다. 폼의 권한을 그
-     * 집합까지로 한정해야 작품을 '없음'으로 바꾼 저장이 필드값을 전량 삭제하지 않는다(N2).
-     */
-    private suspend fun applyCharacterUpdate(
-        character: Character,
-        values: List<CharacterFieldValue>,
-        crossUniverseId: Long?,
-        leavingUniverse: Boolean
-    ) {
-        if (crossUniverseId != null) {
-            val counts = viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
-            if (counts.keptGlobalValues > 0) notifyKeptGlobalValues(counts.keptGlobalValues)
-        } else if (leavingUniverse) {
-            // 세계관을 떠나는 저장 — 값을 전역 구역의 짝으로 이어 준다 (B-128).
-            val outcome = viewModel.updateCharacterLeavingUniverse(
-                character, values, host.coveredFieldDefinitionIds()
-            )
-            if (outcome.kept > 0) notifyKeptGlobalValues(outcome.kept)
-            else if (outcome.preserved > 0) notifyPreservedFieldValues(outcome.preserved)
-        } else {
-            val preserved = viewModel.updateCharacterWithFields(
-                character, values, host.coveredFieldDefinitionIds()
-            )
-            if (preserved > 0) notifyPreservedFieldValues(preserved)
-        }
-    }
-
-    /**
      * 화면에 보이지 않지만 지우지 않고 남긴 필드값을 알린다.
      *
      * 유실은 막았으니 이제 '일일이 확인하지 않으면 존재를 알 수 없는 데이터'가 되지 않게
@@ -902,8 +823,8 @@ class CharacterSaveCoordinator(
      * 이미지는 사용자가 명시적으로 골라도 영영 안 지워진다. 대신 보호해야 할 것을 직접 본다 —
      * **다른 엔티티가 쓰는가 · 휴지통이 쥐고 있는가.** 못 지운 것은 세어서 알린다(조용한 실패 금지).
      */
-    private suspend fun applyPendingImageDeletes(pending: List<String>) {
-        if (pending.isEmpty()) return
+    private suspend fun applyPendingImageDeletes(pending: List<String>): Pair<Int, Int>? {
+        if (pending.isEmpty()) return null
         val db = appDb
         var deleted = 0
         var protectedCount = 0
@@ -927,11 +848,12 @@ class CharacterSaveCoordinator(
                     db = db, path = path,
                     owners = com.novelcharacter.app.util.ImageDeletionService.Owners.NONE,
                     linkGroupId = groupByPath[path],
-                    gson = gson
+                    gson = gson,
+                    recoveryDir = java.io.File(appContext.filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
                 )
                 if (freed != null) deleted++ else protectedCount++
             }
         }
-        host.onPendingImageDeletesApplied(deleted, protectedCount)
+        return deleted to protectedCount
     }
 }

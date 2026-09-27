@@ -639,7 +639,8 @@ class ImageManagerViewModel(
                 universeIds = item.owners.filter { it.type == OwnerType.UNIVERSE }.map { it.id }
             ),
             linkGroupId = item.meta?.linkGroupId,
-            gson = gson
+            gson = gson,
+            recoveryDir = File(getApplication<Application>().filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
         )
 
     private fun removePath(json: String, path: String, canon: String): String {

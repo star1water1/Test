@@ -31,6 +31,7 @@ object BackupEncryptor {
     /** 패스프레이즈 최소 길이 — 화면이 입력 검증에 그대로 쓴다. */
     const val MIN_PASSPHRASE_LENGTH = BackupChunkFormat.MIN_PASSPHRASE_LENGTH
 
+    @Synchronized
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 

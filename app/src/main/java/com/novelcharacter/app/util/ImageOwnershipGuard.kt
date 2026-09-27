@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import androidx.room.withTransaction
 import android.content.Context
 import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
@@ -102,8 +103,10 @@ object ImageOwnershipGuard {
         excludeTrashSnapshotIds: Set<Long>
     ): Int {
         if (candidates.isEmpty()) return 0
-        val protectedSet = collectProtectedPaths(db, context, excludeTrashSnapshotIds)
-        return deleteUnprotectedIn(candidates, protectedSet)
+        return db.withTransaction {
+            val protectedSet = collectProtectedPaths(db, context, excludeTrashSnapshotIds)
+            deleteUnprotectedIn(candidates, protectedSet)
+        }
     }
 
     /** 이미 계산해 둔 보호 집합으로 삭제한다 — 반복 호출에서 재계산을 피하기 위한 형태. */

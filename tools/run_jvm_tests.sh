@@ -67,6 +67,11 @@ fi
 # **프로브(`ui/**` 제외)도 이 하네스도 싣지 못했고, 그래서 시험이 0건이었다** — 스냅샷을
 # `util/`로 옮기고 표준연도 연동 계약을 순수 오브젝트로 가르니 둘 다 닿는다.
 SOURCES="
+$MAIN/util/RetainedWrite.kt
+$MAIN/util/LatestRequest.kt
+$MAIN/util/RecoverableFileDelete.kt
+$MAIN/util/ImageExportGate.kt
+$MAIN/backup/BackupPublication.kt
 $MAIN/data/model/EntityCode.kt
 $MAIN/data/model/Character.kt
 $MAIN/data/model/CharacterQuote.kt
@@ -400,6 +405,11 @@ $STUBS/AiServiceStub.kt
 "
 # NaturalBatchAnalysisTest needs AppDatabase/Room and AiService; Gradle testDebugUnitTest runs it.
 TESTS="
+$TEST/util/RetainedWriteTest.kt
+$TEST/util/LatestRequestTest.kt
+$TEST/util/RecoverableFileDeleteTest.kt
+$TEST/util/ImageExportGateTest.kt
+$TEST/backup/BackupPublicationTest.kt
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt

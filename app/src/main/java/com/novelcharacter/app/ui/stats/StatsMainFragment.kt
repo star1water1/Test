@@ -157,6 +157,7 @@ class StatsMainFragment : Fragment() {
                 if (suppressFieldSpinnerCallback) return
                 if (pos == 0) {
                     selectedFieldIndex = -1
+                    viewModel.clearRanking()
                     rankingPrefs.edit().remove("ranking_field_key").apply()
                     binding.rankingBodySizeRow.visibility = View.GONE
                     binding.rankingEmpty.visibility = View.VISIBLE
@@ -253,7 +254,14 @@ class StatsMainFragment : Fragment() {
 
         viewModel.rankingResult.observe(viewLifecycleOwner) { result ->
             val b = _binding ?: return@observe
-            if (result == null) return@observe
+            if (result == null) {
+                b.rankingRecyclerView.visibility = View.GONE
+                b.rankingEmpty.visibility = View.VISIBLE
+                b.rankingEmpty.text = getString(R.string.stats_ranking_select_field)
+                b.rankingSummary.text = ""
+                b.rankingDistribution.visibility = View.GONE
+                return@observe
+            }
             if (result.entries.isEmpty()) {
                 b.rankingRecyclerView.visibility = View.GONE
                 b.rankingEmpty.visibility = View.VISIBLE
