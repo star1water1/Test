@@ -134,6 +134,7 @@ object ImageDeletionService {
                 if (linkGroupId != null) db.imageMetaDao().clearGroupIfSingleton(linkGroupId)
                 // 마지막에 시도한다 — 실패하면 위의 참조 정리가 통째로 되돌아간다.
                 if (existed) staged = RecoverableFileDelete.stage(file, recoveryDir)
+                verifyDeferredConstraints(db)
             }
             // A failed final unlink keeps the journal for startup recovery, after the DB commit.
             val removed = runCatching { staged?.commit() ?: true }.getOrDefault(false)
@@ -144,6 +145,19 @@ object ImageDeletionService {
         } catch (_: Exception) {
             staged?.rollback()
             null
+        }
+    }
+
+    private fun verifyDeferredConstraints(db: AppDatabase) {
+        val sqlite = db.openHelper.writableDatabase
+        val deferred = sqlite.query("PRAGMA defer_foreign_keys").use {
+            it.moveToFirst() && it.getInt(0) != 0
+        }
+        if (!deferred) return
+        // Android's SQLiteSession can release the connection after a failed COMMIT without
+        // rolling back a deferred FK violation. Reject it while Room still owns the transaction.
+        sqlite.query("PRAGMA foreign_key_check").use {
+            if (it.moveToFirst()) throw android.database.sqlite.SQLiteConstraintException("Deferred image deletion constraint")
         }
     }
 

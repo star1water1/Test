@@ -45,8 +45,8 @@ class ImageDeletionTransactionTest {
         assertNull(db.imageMetaDao().getByPath(image.absolutePath))
         assertFalse(image.exists())
     }
-    @Test fun failedCommitRestoresDatabaseAndOriginalBytes() = runBlocking {
-        // Deferred FK failure occurs at COMMIT, after the file has been staged.
+    @Test fun deferredConstraintFailureRestoresDatabaseAndOriginalBytes() = runBlocking {
+        // This violation would fail at COMMIT. Reject it after staging, before Room ends the transaction.
         db.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_commit AFTER DELETE ON image_meta BEGIN INSERT INTO character_tags(characterId, tag) VALUES (999999, 'invalid owner'); END")
         db.openHelper.writableDatabase.execSQL("PRAGMA defer_foreign_keys = ON")
         db.openHelper.writableDatabase.query("PRAGMA defer_foreign_keys").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
