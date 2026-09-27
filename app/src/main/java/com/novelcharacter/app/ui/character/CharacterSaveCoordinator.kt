@@ -79,7 +79,9 @@ class CharacterSaveCoordinator(
          * 저장에서 사라진다. [buildCharacterFromForm]이 새 목록에 남아 있는지 한 번 더 거른다.
          */
         val representativeImagePath: String = ""
-    )
+    ) {
+        fun frozen(): FormSnapshot = copy(imagePaths = imagePaths.toList())
+    }
 
     interface Host {
         /** 현재 폼 입력의 스냅샷 (중복 다이얼로그 결과가 회전 후 도착해도 최신 폼 기준으로 재구성) */
@@ -455,8 +457,9 @@ class CharacterSaveCoordinator(
         resolvedFieldValues: List<CharacterFieldValue>? = null,
         crossUniverseConfirmed: Boolean = false
     ) {
-        val snapshot = host.snapshot().let { it.copy(imagePaths = it.imagePaths.toList()) }
-        val previousPaths = host.existingCharacter()?.imagePaths
+        val snapshot = host.snapshot().frozen()
+        val previousPaths = if (isUpdate && targetCharacterId != -1L)
+            viewModel.getCharacterByIdSuspend(targetCharacterId)?.imagePaths else host.existingCharacter()?.imagePaths
         val pendingDeletes = host.pendingImageDeletes().toList()
         val tagList = MultiValueInput.parse(snapshot.tags)
         val coveredIds = host.coveredFieldDefinitionIds().toSet()
