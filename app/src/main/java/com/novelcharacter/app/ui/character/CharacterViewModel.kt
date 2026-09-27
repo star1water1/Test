@@ -146,7 +146,30 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val saving: LiveData<Boolean> = _saving
 
     /** [CharacterSaveCoordinator]만 부른다 — 빗장의 주인은 그쪽 한 자리다. */
-    fun setSaving(value: Boolean) { _saving.value = value }
+    fun setSaving(value: Boolean) {
+        if (value || !formWrite.isRunning) _saving.value = value
+    }
+
+    data class FormSaveReceipt(
+        val characterId: Long,
+        val imageDeletes: Pair<Int, Int>?,
+        val preservedFields: Int = 0,
+        val keptGlobalFields: Int = 0
+    )
+
+    private val formSaver by lazy {
+        com.novelcharacter.app.data.repository.CharacterFormSaver(app.database, characterRepository, universeRepository, novelRepository)
+    }
+    suspend fun persistForm(character: Character, values: List<CharacterFieldValue>, tags: List<String>,
+        coveredIds: Set<Long>, updating: Boolean, crossUniverseId: Long?, leavingUniverse: Boolean) =
+        formSaver.save(character, values, tags, coveredIds, updating, crossUniverseId, leavingUniverse)
+
+    private val formWrite = com.novelcharacter.app.util.RetainedWrite<FormSaveReceipt>(viewModelScope) {
+        _saving.value = it
+    }
+    val formSaveResult = formWrite.result.asLiveData()
+    fun consumeFormSaveResult(): Result<FormSaveReceipt>? = formWrite.consume()
+    fun startFormSave(block: suspend () -> FormSaveReceipt) = formWrite.start(block)
 
     private val _currentNovelId = MutableLiveData<Long?>()
 

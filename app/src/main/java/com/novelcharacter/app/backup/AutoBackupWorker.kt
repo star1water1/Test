@@ -1,5 +1,8 @@
 package com.novelcharacter.app.backup
 
+import androidx.room.withTransaction
+import com.novelcharacter.app.util.ImageExportGate
+
 import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
@@ -103,7 +106,7 @@ class AutoBackupWorker(
             ExportWorkbooks.useTempDirectory(appContext.cacheDir)
             val workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
             val imageReport: com.novelcharacter.app.excel.ImageZipReport
-            val truncatedCells: Int
+            var truncatedCells = 0
             try {
                 // 공유·저장 내보내기와 동일한 단일 소스(ExcelExporter)를 재사용한다.
                 // 별도 export 로직을 두면 포맷이 드리프트(세력관계 시트·사건 코드·커스텀 필드·
@@ -112,10 +115,9 @@ class AutoBackupWorker(
                 // 반환값(잘린 셀 수)을 버리지 않는다 — 수동 내보내기는 토스트·이력으로 알리는데
                 // 마지막 방어선인 자동 백업만 무기록이면, 그 백업만 믿고 복원했을 때 잘린
                 // 데이터가 무음으로 확정된다.
-                truncatedCells = ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions(), progress)
-
-                // Write workbook to bytes, encrypt, and save to internal storage
-                imageReport = saveEncryptedBackup(workbook, settings.includeImages, progress)
+                imageReport = saveEncryptedBackup(workbook, settings.includeImages, progress) {
+                    truncatedCells = ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions(), progress)
+                }
             } finally {
                 // 임시 파일까지 함께 놓는다 — 배경 경로라 남은 것을 아무도 알아채지 못한다.
                 try { ExportWorkbooks.release(workbook) } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
@@ -218,7 +220,8 @@ class AutoBackupWorker(
     private suspend fun saveEncryptedBackup(
         workbook: Workbook,
         includeImages: Boolean,
-        progress: com.novelcharacter.app.excel.ExportProgressSink?
+        progress: com.novelcharacter.app.excel.ExportProgressSink?,
+        populateWorkbook: suspend () -> Unit
     ): com.novelcharacter.app.excel.ImageZipReport {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) {
@@ -226,8 +229,7 @@ class AutoBackupWorker(
         }
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val fileName = "$BACKUP_PREFIX$timestamp$BACKUP_EXTENSION"
-        val backupFile = File(backupDir, fileName)
+        val backupFile = BackupPublication.destination(backupDir, BACKUP_PREFIX, timestamp, BACKUP_EXTENSION)
 
         val tempXlsx = File.createTempFile("backup_", ".xlsx", backupDir)
         val tempZip = File.createTempFile("backup_", ".zip", backupDir)
@@ -238,34 +240,35 @@ class AutoBackupWorker(
         val tempEnc = File.createTempFile("backup_", ".enc.part", backupDir)
         try {
             // 1. XLSX 쓰기
-            tempXlsx.outputStream().use { fos ->
-                workbook.write(fos)
+            val report = ImageExportGate.run {
+                AppDatabase.getDatabase(appContext).withTransaction {
+                    populateWorkbook()
+                    tempXlsx.outputStream().use { fos ->
+                        workbook.write(fos)
+                    }
+
+                    // 2. 이미지 포함 ZIP 래핑 (설정으로 제외 가능 — 용량 절약)
+                    if (includeImages) {
+                        val db = AppDatabase.getDatabase(appContext)
+                        com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
+                            tempXlsx, tempZip, db, appContext, progress
+                        )
+                    } else {
+                        com.novelcharacter.app.excel.ImageZipReport.NOT_REQUESTED
+                    }
+
+                    // 3. 암호화 (이미지가 담겼으면 ZIP, 아니면 XLSX)
+                }
             }
 
-            // 2. 이미지 포함 ZIP 래핑 (설정으로 제외 가능 — 용량 절약)
-            val report = if (includeImages) {
-                val db = AppDatabase.getDatabase(appContext)
-                com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
-                    tempXlsx, tempZip, db, appContext, progress
-                )
-            } else {
-                com.novelcharacter.app.excel.ImageZipReport.NOT_REQUESTED
-            }
-
-            // 3. 암호화 (이미지가 담겼으면 ZIP, 아니면 XLSX)
             val sourceFile = if (report.created) tempZip else tempXlsx
             BackupEncryptor.encryptFile(sourceFile, tempEnc)
 
             // 4. 완성된 것만 최종 이름으로 — 같은 파일 시스템 안이라 rename은 원자적이다
-            if (!tempEnc.renameTo(backupFile)) {
-                throw java.io.IOException("Failed to finalize backup file: ${backupFile.name}")
-            }
+            BackupPublication.publish(tempEnc, backupFile)
             Log.i(TAG, "Encrypted backup saved (includeImages=$includeImages, " +
                 "images=${report.includedCount}/${report.referencedCount}): ${backupFile.absolutePath}")
             return report
-        } catch (e: Exception) {
-            backupFile.delete()
-            throw e
         } finally {
             tempXlsx.delete()
             tempZip.delete()

@@ -109,6 +109,14 @@ class NovelCharacterApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.init(filesDir)
+        appScope.launch(Dispatchers.IO) {
+            com.novelcharacter.app.util.ImageExportGate.run {
+                val unresolved = com.novelcharacter.app.util.RecoverableFileDelete.recover(
+                    java.io.File(filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
+                )
+                if (unresolved > 0) android.util.Log.w("NovelCharacterApp", "Image deletion recovery pending: $unresolved")
+            }
+        }
         // Pending/legacy voice files are discovered by the recovery UI, never deleted at startup.
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))

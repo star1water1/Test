@@ -1,5 +1,8 @@
 package com.novelcharacter.app.share
 
+import androidx.room.withTransaction
+import com.novelcharacter.app.util.ImageExportGate
+
 import android.content.Context
 import android.util.Log
 import com.google.gson.GsonBuilder
@@ -21,7 +24,8 @@ import com.novelcharacter.app.util.RegexCharClasses
 // WorldPackageManifest·엔트리 이름 상수·schemaVersion 이력은 WorldPackageContents.kt에 있다
 // (파서·임포터와 공유하는 순수 계층 — 순수 JVM 하네스가 실행 검증한다).
 
-class WorldPackageExporter(private val context: Context) {
+class WorldPackageExporter(private val context: Context,
+    private val db: com.novelcharacter.app.data.database.AppDatabase = (context.applicationContext as NovelCharacterApp).database) {
 
     private val gson = GsonBuilder().setPrettyPrinting().create()
 
@@ -100,14 +104,18 @@ class WorldPackageExporter(private val context: Context) {
     }
 
     suspend fun export(config: ExportConfig, progress: ProgressSink = ProgressSink()): ExportResult {
-        val app = context.applicationContext as NovelCharacterApp
-        val db = app.database
+        return ImageExportGate.run {
+            db.withTransaction { exportSnapshot(config, progress) }
+        }
+    }
+
+    private suspend fun exportSnapshot(config: ExportConfig, progress: ProgressSink): ExportResult {
 
         // Load data
-        val universe = app.universeRepository.getUniverseById(config.universeId)
+        val universe = db.universeDao().getUniverseById(config.universeId)
             ?: throw IllegalArgumentException("Universe not found")
 
-        val allNovels = app.novelRepository.getNovelsByUniverseList(config.universeId)
+        val allNovels = db.novelDao().getNovelsByUniverseList(config.universeId)
         val novels = if (config.novelIds != null) {
             allNovels.filter { it.id in config.novelIds }
         } else allNovels
@@ -257,7 +265,7 @@ class WorldPackageExporter(private val context: Context) {
 
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^${RegexCharClasses.FILENAME_KEEP}]"), "_")}.ncworld"
-        val exportsDir = File(context.cacheDir, "exports")
+        val exportsDir = File(File(context.cacheDir, "exports"), java.util.UUID.randomUUID().toString())
         exportsDir.mkdirs()
         val outputFile = File(exportsDir, fileName)
         // 집계는 try 밖에 둔다 — 반환 시점에 읽어야 한다(ImageZipHelper의 failedPaths와 같은 이유).

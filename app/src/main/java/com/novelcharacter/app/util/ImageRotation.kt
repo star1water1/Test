@@ -36,7 +36,9 @@ object ImageRotation {
      *
      * 실패하면 **원본은 한 바이트도 바뀌지 않는다**(임시 파일에 다 쓴 뒤에야 갈아 끼운다).
      */
-    suspend fun rotate(path: String, degrees: Int): Boolean = withContext(Dispatchers.IO) {
+    suspend fun rotate(path: String, degrees: Int): Boolean = ImageExportGate.run { rotateImage(path, degrees) }
+
+    private suspend fun rotateImage(path: String, degrees: Int): Boolean = withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists() || !file.isFile) return@withContext false
 

@@ -101,7 +101,8 @@ class CharacterRepository(
     suspend fun updateCharacterWithFields(
         character: Character,
         values: List<CharacterFieldValue>,
-        coveredFieldDefinitionIds: Set<Long>? = null
+        coveredFieldDefinitionIds: Set<Long>? = null,
+        runPostCommit: Boolean = true
     ): Int {
         var preserved = 0
         db.withTransaction {
@@ -115,7 +116,7 @@ class CharacterRepository(
             }
             characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
         }
-        fieldLibrary.harvestForCharacter(character.id)
+        if (runPostCommit) fieldLibrary.harvestForCharacter(character.id)
         return preserved
     }
 
@@ -136,7 +137,8 @@ class CharacterRepository(
     suspend fun updateCharacterLeavingUniverse(
         character: Character,
         values: List<CharacterFieldValue>,
-        coveredFieldDefinitionIds: Set<Long>?
+        coveredFieldDefinitionIds: Set<Long>?,
+        runPostCommit: Boolean = true
     ): LeaveUniverseResult {
         var result = LeaveUniverseResult()
         db.withTransaction {
@@ -184,7 +186,7 @@ class CharacterRepository(
                 preserved = (preserved - plan.transfers.size).coerceAtLeast(0)
             )
         }
-        fieldLibrary.harvestForCharacter(character.id)
+        if (runPostCommit) fieldLibrary.harvestForCharacter(character.id)
         return result
     }
 
@@ -263,11 +265,25 @@ class CharacterRepository(
     suspend fun getFieldValueByKey(characterId: Long, fieldKey: String): CharacterFieldValue? =
         characterFieldValueDao.getValueByFieldKey(characterId, fieldKey)
 
-    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
+    /** Called after the form transaction, never while holding Room's write connection. */
+    suspend fun finishFormSave(characterId: Long, pruneMoveBackup: Boolean) {
+        fieldLibrary.harvestForCharacter(characterId)
+        if (pruneMoveBackup) {
+            try {
+                TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP).pruneIfNeeded()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("CharacterRepository", "Form backup cleanup deferred", e)
+            }
+        }
+    }
+
+    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>, runPostCommit: Boolean = true) {
         characterFieldValueDao.replaceAllByCharacter(characterId, values)
         // resolveAgeLinkage처럼 상위 트랜잭션 안에서 불릴 수 있다 — 수확은 캐릭터 1명 분량의
         // 소규모 작업이고 내부 runCatching이라 상위 저장을 실패시키지 않는다.
-        fieldLibrary.harvestForCharacter(characterId)
+        if (runPostCommit) fieldLibrary.harvestForCharacter(characterId)
     }
 
     /** 같은 작품 내 모든 캐릭터의 특정 필드 값 (백분위 계산용) */
@@ -729,7 +745,8 @@ class CharacterRepository(
     suspend fun updateCharacterAcrossUniverse(
         character: Character,
         formValues: List<CharacterFieldValue>,
-        newUniverseId: Long
+        newUniverseId: Long,
+        runPostCommit: Boolean = true
     ): UniverseMoveCounts {
         // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않았다 (B-15).
         // 편집 직전 백업이다 — 캐릭터는 지워지지 않는다(B-2).
@@ -800,9 +817,9 @@ class CharacterRepository(
             if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
             UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0, keptGlobal)
         }.also {
-            trash.pruneIfNeeded()
+            if (runPostCommit) trash.pruneIfNeeded()
             // 세계관 간 이동 저장도 폼 값 저장 경로 — 새 세계관 필드로 수확 (검토 A6)
-            fieldLibrary.harvestForCharacter(character.id)
+            if (runPostCommit) fieldLibrary.harvestForCharacter(character.id)
         }
     }
 

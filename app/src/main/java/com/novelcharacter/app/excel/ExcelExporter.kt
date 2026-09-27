@@ -1,5 +1,8 @@
 package com.novelcharacter.app.excel
 
+import androidx.room.withTransaction
+import com.novelcharacter.app.util.ImageExportGate
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -52,10 +55,9 @@ import java.util.Date
 import java.util.Locale
 import com.novelcharacter.app.util.stringOr
 
-class ExcelExporter(context: Context) {
+class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.getDatabase(context.applicationContext)) {
 
     private val appContext = context.applicationContext
-    private val db = AppDatabase.getDatabase(appContext)
     /**
      * 이 스코프에서 **처리되지 않은 것이 프로세스를 죽이지 않게** 한다.
      *
@@ -163,7 +165,7 @@ class ExcelExporter(context: Context) {
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
         progress: ExportProgressSink? = null
-    ): Int {
+    ): Int = db.withTransaction {
         truncatedCellCount = 0
         styles = ExcelStyles(workbook)
         val usedSheetNames = mutableSetOf<String>()
@@ -225,7 +227,7 @@ class ExcelExporter(context: Context) {
             progress?.onSheets?.invoke(index + 1, plan.size)
         }
         applyTabColors(workbook)
-        return truncatedCellCount
+        truncatedCellCount
     }
 
     /**
@@ -297,49 +299,57 @@ class ExcelExporter(context: Context) {
                 // 임시 파일이 생긴다). 두 구현이 같은 파일을 낸다는 것은 시험이 잠근다.
                 ExportWorkbooks.useTempDirectory(appContext.cacheDir)
                 workbook = ExportWorkbooks.create(streaming = ExportWorkbooks.isStreamingSupported())
-                populateWorkbook(workbook, options, progress)
+                val outputWorkbook = checkNotNull(workbook)
+                val prepared = ImageExportGate.run {
+                    db.withTransaction {
+                        populateWorkbook(outputWorkbook, options, progress)
 
-                // 내보내기 요약(시트/행 건수) — 사용 안내 시트와 드롭다운 목록 보관 시트(B-221)는
-                // 데이터가 아니므로 제외한다. 세면 "시트 N개"가 사용자가 볼 시트 수와 어긋난다.
-                var exportedSheets = 0
-                var exportedRows = 0
-                for (i in 0 until workbook.numberOfSheets) {
-                    val s = workbook.getSheetAt(i)
-                    if (s.sheetName == GUIDE_SHEET_NAME) continue
-                    // 숨긴 시트는 사용자가 볼 것이 아니다 — 지금은 드롭다운 목록 보관처뿐이고,
-                    // 이름이 아니라 '숨김'으로 거르므로 나중에 같은 부류가 늘어도 함께 빠진다.
-                    if (workbook.isSheetHidden(i)) continue
-                    exportedSheets++
-                    exportedRows += maxOf(0, s.physicalNumberOfRows - 1)
-                }
+                        // 내보내기 요약(시트/행 건수) — 사용 안내 시트와 드롭다운 목록 보관 시트(B-221)는
+                        // 데이터가 아니므로 제외한다. 세면 "시트 N개"가 사용자가 볼 시트 수와 어긋난다.
+                        var exportedSheets = 0
+                        var exportedRows = 0
+                        for (i in 0 until outputWorkbook.numberOfSheets) {
+                            val s = outputWorkbook.getSheetAt(i)
+                            if (s.sheetName == GUIDE_SHEET_NAME) continue
+                            // 숨긴 시트는 사용자가 볼 것이 아니다 — 지금은 드롭다운 목록 보관처뿐이고,
+                            // 이름이 아니라 '숨김'으로 거르므로 나중에 같은 부류가 늘어도 함께 빠진다.
+                            if (outputWorkbook.isSheetHidden(i)) continue
+                            exportedSheets++
+                            exportedRows += maxOf(0, s.physicalNumberOfRows - 1)
+                        }
 
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val xlsxFileName = "NovelCharacter_$timestamp.xlsx"
-                val xlsxFile = saveWorkbook(workbook, xlsxFileName)
-                orphanFile = xlsxFile
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                        val xlsxFileName = "NovelCharacter_$timestamp.xlsx"
+                        val xlsxFile = saveWorkbook(outputWorkbook, xlsxFileName)
+                        orphanFile = xlsxFile
 
-                val file: File
-                val fileName: String
-                var imageReport = ImageZipReport.NOT_REQUESTED
-                if (options.images) {
-                    val zipFileName = "NovelCharacter_$timestamp.zip"
-                    val wrapped = wrapWithImages(xlsxFile, zipFileName, progress)
-                    imageReport = wrapped.second
-                    val zipFile: File? = wrapped.first
-                    if (zipFile != null) {
-                        file = zipFile
-                        fileName = zipFileName
-                        xlsxFile.delete()
-                    } else {
-                        // 담을 이미지가 없으면 XLSX 그대로 사용 — 제외 사유는 아래에서 반드시 통보한다
-                        file = xlsxFile
-                        fileName = xlsxFileName
+                        val file: File
+                        val fileName: String
+                        var imageReport = ImageZipReport.NOT_REQUESTED
+                        if (options.images) {
+                            val zipFileName = "NovelCharacter_$timestamp.zip"
+                            val wrapped = wrapWithImages(xlsxFile, zipFileName, progress)
+                            imageReport = wrapped.second
+                            val zipFile: File? = wrapped.first
+                            if (zipFile != null) {
+                                file = zipFile
+                                fileName = zipFileName
+                                xlsxFile.delete()
+                            } else {
+                                // 담을 이미지가 없으면 XLSX 그대로 사용 — 제외 사유는 아래에서 반드시 통보한다
+                                file = xlsxFile
+                                fileName = xlsxFileName
+                            }
+                        } else {
+                            file = xlsxFile
+                            fileName = xlsxFileName
+                        }
+                        orphanFile = file
+
+                        PreparedExport(file, fileName, imageReport, exportedSheets, exportedRows)
                     }
-                } else {
-                    file = xlsxFile
-                    fileName = xlsxFileName
                 }
-                orphanFile = file
+                val (file, fileName, imageReport, exportedSheets, exportedRows) = prepared
 
                 val imageNotice = buildImageNotice(imageReport, options.isCompleteBackup)
                 val imageDetail = buildImageDetail(imageReport)
@@ -1000,8 +1010,16 @@ class ExcelExporter(context: Context) {
         sheet.addValidationData(validation)
     }
 
+    private data class PreparedExport(
+        val file: File,
+        val fileName: String,
+        val imageReport: ImageZipReport,
+        val sheets: Int,
+        val rows: Int
+    )
+
     private fun saveWorkbook(workbook: Workbook, fileName: String): File {
-        val exportsDir = File(appContext.cacheDir, "exports")
+        val exportsDir = File(File(appContext.cacheDir, "exports"), java.util.UUID.randomUUID().toString())
         exportsDir.mkdirs()
         // 저장(SAF) 실패로 보관 중인 파일은 회전 정리에서 뺀다 — 지우면 재시도 창의
         // "보관되어 있습니다"가 거짓이 된다([ExportRetryStore]가 실존 확인으로 닫는 약속).
@@ -2975,7 +2993,7 @@ class ExcelExporter(context: Context) {
         zipFileName: String,
         progress: ExportProgressSink? = null
     ): Pair<File?, ImageZipReport> {
-        val exportsDir = File(appContext.cacheDir, "exports")
+        val exportsDir = checkNotNull(xlsxFile.parentFile)
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
         try {

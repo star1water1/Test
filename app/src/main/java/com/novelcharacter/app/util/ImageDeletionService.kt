@@ -96,44 +96,55 @@ object ImageDeletionService {
      *        필요한 이유는 가드(`>= 2`)가 *읽은 값으로 분기*하기 때문인데, 여기서는 읽은 값이
      *        분기하지 않고 SQL의 `WHERE`로 그대로 흘러간다 — **판정을 코틀린이 아니라 DB가
      *        지금 상태에서 한다.** 등재가 예상한 위험(B-243 — *"겹이 필요하다"*)은 그래서 없었다.
-     * @return 확보한 바이트. **실패하면 null**이고 그때는 아무것도 바뀌지 않았다(트랜잭션 롤백).
+     * @param recoveryDir 앱 filesDir 아래의 삭제 복구 기록 보관처. 캐시에 두지 않는다.
+     * @return 확보한 바이트. **실패하면 null**이고 DB는 롤백되고 원본 파일을 복원한다. 복원 실패 시 복구 기록을 보존한다.
      */
     suspend fun delete(
         db: AppDatabase,
         path: String,
         owners: Owners,
         linkGroupId: String?,
-        gson: Gson = Gson()
-    ): Long? = try {
-        val file = File(path)
-        val canon = ImagePathMatch.canonical(path).ifEmpty { path }
-        val existed = file.exists()
-        val size = if (existed) file.length() else 0L
-        db.withTransaction {
-            for (id in owners.characterIds) {
-                db.characterDao().getCharacterById(id)?.let { c ->
-                    db.characterDao().update(c.withImagePaths(removePath(gson, c.imagePaths, path, canon)))
+        gson: Gson = Gson(),
+        recoveryDir: File
+    ): Long? = ImageExportGate.run {
+        var staged: RecoverableFileDelete? = null
+        try {
+            val file = File(path)
+            val canon = ImagePathMatch.canonical(path).ifEmpty { path }
+            val existed = file.exists()
+            val size = if (existed) file.length() else 0L
+            db.withTransaction {
+                for (id in owners.characterIds) {
+                    db.characterDao().getCharacterById(id)?.let { c ->
+                        db.characterDao().update(c.withImagePaths(removePath(gson, c.imagePaths, path, canon)))
+                    }
                 }
-            }
-            for (id in owners.novelIds) {
-                db.novelDao().getNovelById(id)?.let { n ->
-                    db.novelDao().update(n.copy(imagePaths = removePath(gson, n.imagePaths, path, canon)))
+                for (id in owners.novelIds) {
+                    db.novelDao().getNovelById(id)?.let { n ->
+                        db.novelDao().update(n.copy(imagePaths = removePath(gson, n.imagePaths, path, canon)))
+                    }
                 }
-            }
-            for (id in owners.universeIds) {
-                db.universeDao().getUniverseById(id)?.let { u ->
-                    db.universeDao().update(u.copy(imagePaths = removePath(gson, u.imagePaths, path, canon)))
+                for (id in owners.universeIds) {
+                    db.universeDao().getUniverseById(id)?.let { u ->
+                        db.universeDao().update(u.copy(imagePaths = removePath(gson, u.imagePaths, path, canon)))
+                    }
                 }
+                db.imageMetaDao().deleteByPaths(listOf(path, canon))
+                // 단발 허용(이미지 한 장을 지우는 경로다 — 토큰 루프가 아니다. B-239·B-241 확인)
+                if (linkGroupId != null) db.imageMetaDao().clearGroupIfSingleton(linkGroupId)
+                // 마지막에 시도한다 — 실패하면 위의 참조 정리가 통째로 되돌아간다.
+                if (existed) staged = RecoverableFileDelete.stage(file, recoveryDir)
             }
-            db.imageMetaDao().deleteByPaths(listOf(path, canon))
-            // 단발 허용(이미지 한 장을 지우는 경로다 — 토큰 루프가 아니다. B-239·B-241 확인)
-            if (linkGroupId != null) db.imageMetaDao().clearGroupIfSingleton(linkGroupId)
-            // 마지막에 시도한다 — 실패하면 위의 참조 정리가 통째로 되돌아간다.
-            if (existed && !file.delete()) throw java.io.IOException("파일 삭제 실패: $path")
+            // A failed final unlink keeps the journal for startup recovery, after the DB commit.
+            val removed = runCatching { staged?.commit() ?: true }.getOrDefault(false)
+            if (removed) size else 0L
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            staged?.rollback()
+            throw e
+        } catch (_: Exception) {
+            staged?.rollback()
+            null
         }
-        size
-    } catch (_: Exception) {
-        null
     }
 
     private fun removePath(gson: Gson, json: String, path: String, canon: String): String {
