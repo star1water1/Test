@@ -1366,16 +1366,18 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     /**
-     * 폼에 지금 적혀 있는 성별 값 — [SemanticRole.GENDER]를 단 필드에서 읽는다. 없거나 비면 null이고, 그때 선택 시트의 성별 축은 무효다.
+     * 폼에 지금 적혀 있는 성별 값 — 성별 필드는 [GenderFieldResolver][com.novelcharacter.app.util.GenderFieldResolver]가
+     * 집는다(역할 먼저, 없으면 `gender` key). 없거나 비면 null이고, 그때 선택 시트의 성별 축은 무효다.
      *
      * **DB가 아니라 폼에서 읽는다** — 편집 중에 성별을 바꾼 사용자에게는 그쪽이 지금의 사실이다.
-     * **라벨로 추측하지 않는다**(R-20) — 역할 표식이 유일한 근거다.
+     * **라벨로 추측하지 않는다**(R-20) — 역할 표식과 프리셋 key만 근거다. 종전에는 역할만 봐서
+     * 역할 없는 프리셋 성별 필드의 세계관에서 [은행]의 *"성별이 같은 이름 먼저"*가 조용히
+     * 꺼졌다(일괄 등록은 key 폴백으로 같은 필드를 잡고 있었다 — S5 `10-ㄱ`).
      */
     private fun currentGenderValue(): String? {
         if (!::formBuilder.isInitialized) return null
-        val genderField = formBuilder.fieldDefinitions.firstOrNull {
-            SemanticRole.fromConfig(it.config) == SemanticRole.GENDER
-        } ?: return null
+        val genderField = com.novelcharacter.app.util.GenderFieldResolver
+            .pick(formBuilder.fieldDefinitions) ?: return null
         return formBuilder.collectFieldValues(characterId)
             .firstOrNull { it.fieldDefinitionId == genderField.id }
             ?.value

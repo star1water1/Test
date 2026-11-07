@@ -304,15 +304,11 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
             var genderFieldMissing = false
             if (mapGender && universeId != null) {
                 val fields = app.database.fieldDefinitionDao().getFieldsByUniverseList(universeId)
-                // 역할 필드는 세계관에 하나여야 하지만 사용자가 둘에 같은 역할을 줄 수도 있다 —
-                // 그때 첫 번째를 쓰는 것은 필드 관리의 차례가 사용자가 정한 차례이기 때문이다
-                // (`DuelPlayFragment`가 같은 자리에서 정해 둔 규칙).
-                val fd = fields.firstOrNull {
-                    com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
-                        com.novelcharacter.app.data.model.SemanticRole.GENDER
+                // 역할 우선·`gender` key 폴백 규칙은 캐릭터 편집의 [은행]과 **한 자리**다
+                // (`GenderFieldResolver` — 둘이 갈려 [은행]만 폴백을 잃었던 적이 있다, S5 10-ㄱ).
                 // 폴백도 **이미 읽은 목록에서** 찾는다 — 두 번째 조회를 하면 그 둘이
                 // 같은 entityType을 보는지가 두 자리의 기본값에 달리게 된다(R-29의 부류).
-                } ?: fields.firstOrNull { it.key == "gender" }
+                val fd = com.novelcharacter.app.util.GenderFieldResolver.pick(fields)
                 val type = fd?.let { com.novelcharacter.app.data.model.FieldType.fromName(it.type) }
                 when (type) {
                     com.novelcharacter.app.data.model.FieldType.SELECT -> {
