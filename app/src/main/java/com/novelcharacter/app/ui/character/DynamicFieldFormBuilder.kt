@@ -65,6 +65,18 @@ class DynamicFieldFormBuilder(
     var aiSuggestHandler: ((FieldDefinition) -> Unit)? = null
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
 
+    /**
+     * 동적 스피너의 *코드가 고른 위치* — 뒤늦은 `onItemSelected`를 사용자 선택과 가른다.
+     * 스피너를 코드로 고를 때는 언제나 [selectQuietly]를 거친다(판정 근거는 [SpinnerChangeGate]).
+     */
+    private val spinnerGate = com.novelcharacter.app.util.SpinnerChangeGate()
+
+    /** 코드가 스피너를 고른다 — 이 선택의 콜백은 더티를 세우지 않는다. */
+    private fun selectQuietly(widget: Spinner, position: Int) {
+        spinnerGate.markProgrammatic(widget, position)
+        widget.setSelection(position)
+    }
+
     private fun getString(resId: Int): String = contextGetter()?.getString(resId) ?: ""
     private fun getString(resId: Int, arg: Any): String = contextGetter()?.getString(resId, arg) ?: ""
 
@@ -331,7 +343,7 @@ class DynamicFieldFormBuilder(
                 val idx = (0 until widget.count).firstOrNull {
                     widget.getItemAtPosition(it).toString() == value
                 } ?: return
-                widget.setSelection(idx)
+                selectQuietly(widget, idx)
             }
         }
         onFieldChanged()
@@ -621,7 +633,7 @@ class DynamicFieldFormBuilder(
     private fun selectSpinnerValue(widget: Spinner, value: String) {
         val adapter = widget.adapter ?: return
         if (value.isBlank()) {
-            if (adapter.count > 0) widget.setSelection(0)   // 0번이 '선택 없음'이다
+            if (adapter.count > 0) selectQuietly(widget, 0)   // 0번이 '선택 없음'이다
             return
         }
         // 규칙 자체는 순수 계층이 든다 — 관계 편집 창의 스피너들과 **같은 함수**다.
@@ -633,7 +645,7 @@ class DynamicFieldFormBuilder(
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
-        if (choice.index >= 0) widget.setSelection(choice.index)
+        if (choice.index >= 0) selectQuietly(widget, choice.index)
     }
 
     /** 회전/드래프트로 보존된 입력값을 폼 위젯에 복원한다 */
@@ -654,10 +666,13 @@ class DynamicFieldFormBuilder(
                     if (spinnerByPosition) {
                         // 옛 드래프트(형식 표식 없음) — 그때는 위치로 적었다.
                         val pos = value.toIntOrNull() ?: 0
-                        if (pos in 0 until widget.adapter.count) widget.setSelection(pos)
+                        if (pos in 0 until widget.adapter.count) selectQuietly(widget, pos)
                     } else {
                         selectSpinnerValue(widget, value)
                     }
+                    // 되살린 값은 **미저장 입력**이다 — 글 칸은 setText가 워처를 불러 저절로 더티가
+                    // 서는데, 스피너는 코드 선택을 조용히 고르므로 여기서 같은 몫을 낸다.
+                    onFieldChanged()
                 }
                 is LinearLayout -> {
                     val parts = value.split("\u001F")
@@ -708,6 +723,7 @@ class DynamicFieldFormBuilder(
         val container = containerGetter()
         container.removeAllViews()
         fieldInputMap.clear()
+        spinnerGate.clear()
 
         val context = contextGetter() ?: return
         val density = context.resources.displayMetrics.density
@@ -1143,13 +1159,17 @@ class DynamicFieldFormBuilder(
             when (widget) {
                 is TextInputEditText -> widget.addTextChangedListener(watcher)
                 is MaterialAutoCompleteTextView -> widget.addTextChangedListener(watcher)
-                is Spinner -> widget.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    private var initialized = false
-                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                        if (initialized) { onFieldChanged() }
-                        initialized = true
+                is Spinner -> {
+                    // 지금 위치가 기준선이다 — 첫 레이아웃 콜백은 그 위치로 오므로 세지 않는다.
+                    // 종전의 *첫 콜백 한 번만 삼키기*는 적재 콜백과 순서가 갈리면 열기만 해도
+                    // 미저장이 됐다(S5 에뮬레이터 — 값 있는 SELECT 필드의 캐릭터).
+                    spinnerGate.markProgrammatic(widget, widget.selectedItemPosition)
+                    widget.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                            if (spinnerGate.onSelected(widget, position)) onFieldChanged()
+                        }
+                        override fun onNothingSelected(parent: AdapterView<*>?) {}
                     }
-                    override fun onNothingSelected(parent: AdapterView<*>?) {}
                 }
                 is LinearLayout -> {
                     for (i in 0 until widget.childCount) {
