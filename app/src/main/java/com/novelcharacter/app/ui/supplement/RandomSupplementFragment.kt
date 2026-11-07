@@ -81,6 +81,10 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     // 드래프트/회전 상태
     private var suppressDraftSave = false
     private var pendingFieldValues: Bundle? = null
+    /** 작품 스피너 콜백의 폼 구성 — 마지막 선택만 살아남는다 (편집 화면과 같은 처방). */
+    private val novelFormLauncher = com.novelcharacter.app.util.LatestOnlyLauncher()
+    /** 동적 폼이 지어져 채워진 작품 스피너 자리 — 편집 회차마다 [loadNovelsForEdit]가 -1로 되돌린다. */
+    private var formNovelPos = -1
     private var pendingEditRestore: Bundle? = null
 
     // 저장 완료 후 실행할 이탈 동작 (편집 종료·탭 전환 등)
@@ -1165,13 +1169,21 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         novelNames.addAll(novels.map { it.title })
 
         val ctx = context ?: return
+        // 새 편집 회차(다른 캐릭터일 수 있다)는 폼을 처음부터 짓는다 — 같은 작품 자리라도.
+        formNovelPos = -1
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerNovel.adapter = adapter
 
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                viewLifecycleOwner.lifecycleScope.launch {
+                // 이미 이 자리로 지어 채운 폼이면 다시 짓지 않는다 — 스피너가 같은 자리를 두 번
+                // 알리면 둘째 콜백이 보존값 대신 DB 값으로 폼을 다시 채우고, 초기화 뒤라
+                // 사용자 변경으로 세기까지 했다(편집 화면 onItemSelected 주석).
+                if (position == formNovelPos && !novelFormLauncher.isRunning) return
+                // 앞선 콜백의 코루틴은 취소한다 — 편집 화면과 같은 경쟁이다(늦게 깬 옛 콜백이
+                // 새 작품의 폼을 옛 목록으로 다시 짓거나 DB 값으로 덮는다. LatestOnlyLauncher KDoc).
+                novelFormLauncher.launch(viewLifecycleOwner.lifecycleScope) {
                     // 편집 화면과 **같은 함수**가 목록을 정한다 (R-33). 종전에는 두 갈래
                     // 모두 `emptyList()`라 무소속 캐릭터의 동적 필드 구역이 이 탭에서만
                     // 통째로 비었다 — 같은 캐릭터가 편집 화면에서는 정상이었다.
@@ -1194,6 +1206,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                         }
                     }
 
+                    formNovelPos = position
                     if (!novelSpinnerInitialized) {
                         // 초기(프로그램적) 선택이 목표 위치에 도달했을 때만 변경 추적 시작
                         // — 목표 도달 전의 중간(0) 콜백은 사용자 변경이 아니다
