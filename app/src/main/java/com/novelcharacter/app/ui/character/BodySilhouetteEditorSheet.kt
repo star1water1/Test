@@ -561,6 +561,13 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         val slider = Slider(requireContext()).apply {
             valueFrom = range.start.toFloat()
             valueTo = range.endInclusive.toFloat()
+            // **값을 범위 안에 먼저 세운다.** 코드로 만든 `Slider`의 값은 생성 시점의 기본
+            // 범위(0..1)에서 0으로 잡히고, 위에서 범위를 옮겨도 따라오지 않는다. 그대로 두면
+            // 값을 한 번도 쓰지 않는 행(체중이 빈 캐릭터 — `weightSliderInitial`이 이 0을
+            // 기억했다가 되쓴다)이 **그리기 패스에서 IllegalStateException으로 죽는다**
+            // (S3 에뮬레이터 점검 2026.11.07 — 체중 필드가 있는 세계관에서 체중 없는 캐릭터의
+            // 🧍를 누르면 앱이 닫혔다).
+            value = valueFrom
             stepSize = 0f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
