@@ -69,6 +69,7 @@ fi
 SOURCES="
 $MAIN/util/RetainedWrite.kt
 $MAIN/util/LatestRequest.kt
+$MAIN/util/LatestOnlyLauncher.kt
 $MAIN/util/RecoverableFileDelete.kt
 $MAIN/util/ImageExportGate.kt
 $MAIN/backup/BackupPublication.kt
@@ -407,6 +408,7 @@ $STUBS/AiServiceStub.kt
 TESTS="
 $TEST/util/RetainedWriteTest.kt
 $TEST/util/LatestRequestTest.kt
+$TEST/util/LatestOnlyLauncherTest.kt
 $TEST/util/RecoverableFileDeleteTest.kt
 $TEST/util/ImageExportGateTest.kt
 $TEST/backup/BackupPublicationTest.kt
