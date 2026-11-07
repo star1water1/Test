@@ -593,9 +593,24 @@ class DynamicFieldFormBuilder(
     private fun formatMeasure(value: Double): String =
         com.novelcharacter.app.util.BodyEditorModel.formatValue(value)
 
-    /** DB에 저장된 필드값을 폼 위젯에 채운다 */
+    /**
+     * 폼을 지을 때마다 오르는 세대 번호 — [loadFieldValues]가 조회로 멈춘 사이 폼이 다시
+     * 지어졌는지 가리는 열쇠다.
+     */
+    private var formGeneration = 0
+
+    /**
+     * DB에 저장된 필드값을 폼 위젯에 채운다.
+     *
+     * **조회 중에 폼이 다시 지어졌으면 아무것도 쓰지 않는다.** [fieldDefinitions]와
+     * [fieldInputMap]은 공유 상태라, 깨어난 뒤에 읽으면 *조회를 부른 폼*이 아니라 *그사이
+     * 새로 지어진 폼*을 본다 — 회전 복원에서 늦게 깬 초기 콜백이 방금 복원된 작품 폼을 DB
+     * 값으로 덮던 길이다. 새 폼은 그것을 지은 쪽이 채운다(복원 또는 제 적재).
+     */
     suspend fun loadFieldValues(characterId: Long) {
+        val generation = formGeneration
         val values = viewModel.getValuesByCharacterList(characterId)
+        if (generation != formGeneration) return
         val valueMap = values.associateBy { it.fieldDefinitionId }
 
         for (field in fieldDefinitions) {
@@ -724,6 +739,7 @@ class DynamicFieldFormBuilder(
         container.removeAllViews()
         fieldInputMap.clear()
         spinnerGate.clear()
+        formGeneration++
 
         val context = contextGetter() ?: return
         val density = context.resources.displayMetrics.density

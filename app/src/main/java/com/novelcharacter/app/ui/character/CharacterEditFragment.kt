@@ -49,6 +49,7 @@ import com.novelcharacter.app.ui.namebank.NameSuggestSheet
 import com.novelcharacter.app.ui.namebank.NameSuggestViewModel
 import com.novelcharacter.app.ui.timeline.EventEditDialogFragment
 import com.novelcharacter.app.util.CharacterDraftPrefs
+import com.novelcharacter.app.util.LatestOnlyLauncher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,6 +123,30 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      * 못한 채 묶음만 사라진다.**
      */
     private var pendingFieldValuesNovelId: Long = -1L
+
+    /**
+     * [pendingFieldValues]가 **미저장 입력 없이** 담긴 묶음인가 — 회전·복귀 직전에
+     * `hasUnsavedChanges`가 거짓이었다는 뜻이다([STATE_HAD_UNSAVED]).
+     *
+     * 그런 묶음을 위젯에 되쓰는 것은 *사용자 변경*이 아니다. 종전에는 복원의 `setText`가
+     * 워처를 깨워 더티를 세웠고, 그래서 **회전만 해도** 나갈 때 *"저장되지 않은 변경사항"*이
+     * 떴다. 보충 탭은 같은 사실을 `randomDirty`로 넘겨 이미 지키고 있었다.
+     */
+    private var pendingFieldValuesClean = false
+
+    /** 복원 원천을 담을 때 미저장 입력이 있었는가([STATE_HAD_UNSAVED]) — 복원 원천이 없으면 무의미하다. */
+    private var restoredHadUnsaved = true
+
+    /**
+     * 플랫폼의 **뷰 상태 복원** 구간인가 — onViewCreated 끝에서 [onViewStateRestored]까지.
+     *
+     * 그 사이 `TextView.onRestoreInstanceState`가 이름·메모 등 고정 칸에 `setText`를 하고,
+     * 판정기는 아직 *적재 전*이라 그것을 *사용자가 먼저 적은 것*으로 센다(B-268). 칸을
+     * 적재로부터 지키는 표시는 그대로 두되 — 그것은 회전 전 값이 맞다 — 담을 때 미저장 입력이
+     * 없었다면 **더티는 세우지 않는다.** 안 그러면 회전만 해도 나갈 때 미저장 경고가 떴다.
+     * 이 구간은 동기라 사용자 입력이 끼어들 수 없다.
+     */
+    private var restoringViewState = false
     // 저장 완료/명시적 폐기 후 onPause의 드래프트 재기록 차단 (B-6)
     private var suppressDraftSave = false
 
@@ -147,6 +172,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private var pendingAiNarrativeBulkShow = false
     // 마지막으로 동적 폼 구성+값 적재가 끝난 스피너 위치 — 현재 선택과 일치할 때만 게이트를 연다
     private var lastHydratedNovelPos = -1
+    /** 작품 스피너 콜백의 폼 구성 — 마지막 선택만 살아남는다([LatestOnlyLauncher] KDoc). */
+    private val novelFormLauncher = LatestOnlyLauncher()
     // DB 필드값 적재(loadFieldValues) 중 프로그램적 setText가 더티를 세우지 않도록
     // (기존 캐릭터를 열기만 해도 미저장 상태가 되던 가짜 양성 차단)
     private var suppressFieldDirty = false
@@ -263,6 +290,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         if (hasUnsavedChanges && _binding != null && ::formBuilder.isInitialized) {
             outState.putString(STATE_DRAFT, gson.toJson(collectDraft()))
         }
+        outState.putBoolean(STATE_HAD_UNSAVED, hasUnsavedChanges)
     }
 
     /**
@@ -384,6 +412,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     // 스피너 콜백의 buildForm 이후 소비되도록 보관 — 주인 작품을 함께 적는다
                     pendingFieldValues = bundle
                     pendingFieldValuesNovelId = draft.novelId
+                    pendingFieldValuesClean = false   // 드래프트는 곧 미저장 입력이다
                     binding.spinnerNovel.setSelection(targetPos)
                 }
             }
@@ -656,6 +685,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         } else {
             -1L
         }
+        restoredHadUnsaved = restoreSource?.getBoolean(STATE_HAD_UNSAVED, true) ?: true
+        pendingFieldValuesClean = pendingFieldValues != null && !restoredHadUnsaved
 
         binding.toolbar.setNavigationOnClickListener { handleBackPress() }
 
@@ -728,6 +759,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 maybeOfferDraftRestore()
             }
         }
+        // 마지막 줄이어야 한다 — 이 뒤로 플랫폼의 뷰 상태 복원만 돈다([restoringViewState]).
+        restoringViewState = true
+    }
+
+    override fun onViewStateRestored(savedInstanceState: Bundle?) {
+        super.onViewStateRestored(savedInstanceState)
+        restoringViewState = false
     }
 
     /**
@@ -865,7 +903,22 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     novelSpinnerTouched = false
                     hydrationGuard.onFieldChanged(InitialHydrationGuard.KEY_NOVEL)
                 }
-                viewLifecycleOwner.lifecycleScope.launch {
+                // **이미 이 자리로 지어 채운 폼이면 다시 짓지 않는다.** 스피너는 같은 자리의
+                // 선택을 두 번 알릴 때가 있다(회전 복원 직후 실측 — 프로그램적 선택과 레이아웃이
+                // 겹치는 자리). 첫 콜백이 보존 묶음을 소비하고 나면 둘째 콜백은 묶음이 없으니
+                // 폼을 새로 지어 **DB 값으로** 채웠다 — 회전이 편집을 되돌리던 둘째 길이다.
+                // 진행 중인 콜백이 있으면 건너뛰지 않는다: 그것이 다른 작품의 폼을 짓는 중이면
+                // 이 콜백이 그것을 대신해야 한다.
+                if (position == lastHydratedNovelPos && !novelFormLauncher.isRunning) {
+                    maybeOpenSaveGate()
+                    return
+                }
+                // **앞선 콜백의 코루틴은 취소한다** — 회전 복원에서 초기 콜백(0번 — 전역 폼)이
+                // DB 조회로 멈춘 사이 작품 콜백이 폼을 다시 짓고 보존값을 복원하면, 늦게 깬
+                // 앞의 것이 **이미 작품 폼이 된** 위젯에 DB 값을 덮고 `lastHydratedNovelPos`도
+                // 0으로 되돌렸다. 묶음 소비(B-267)는 맞았는데 그 뒤에 덮였다 — DB가 차가운 첫
+                // 회전에서만 보이는 경쟁이라 재현이 들쭉날쭉했다.
+                novelFormLauncher.launch(viewLifecycleOwner.lifecycleScope) {
                     // 어느 목록을 그리는가는 `fieldsForNovel` 한 자리가 정한다 (R-33) —
                     // 세계관 없는 작품·작품 미선택 둘 다 전역 구역의 필드를 받는다
                     // (B-119 확장, 2026.08.07 사용자 확정).
@@ -899,7 +952,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     val saved = pendingFieldValues
                     val belongsHere = pendingFieldValuesNovelId == positionNovelId
                     if (saved != null && belongsHere && formBuilder.fieldDefinitions.isNotEmpty()) {
-                        formBuilder.restoreFieldValues(saved)
+                        // 미저장 입력이 없던 묶음의 되쓰기는 더티를 세우지 않는다
+                        // ([pendingFieldValuesClean] — 회전만 해도 뜨던 미저장 경고).
+                        val clean = pendingFieldValuesClean
+                        if (clean) suppressFieldDirty = true
+                        try {
+                            formBuilder.restoreFieldValues(saved)
+                        } finally {
+                            if (clean) suppressFieldDirty = false
+                        }
                         pendingFieldValues = null
                     } else if (saved == null || !belongsHere) {
                         val existing = existingCharacter
@@ -907,7 +968,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                             // 초기 하이드레이션의 DB 값 적재는 사용자 변경이 아니다 — 워처의
                             // 가짜 미저장(캐릭터를 열기만 해도 더티) 차단. 게이트가 열린 뒤의
                             // 재적재(사용자 작품 변경)는 억제하지 않아 기존 더티 보호를 유지한다.
-                            // (회전/드래프트 복원 경로도 복원값이 곧 미저장 입력이므로 억제 없음)
+                            // (드래프트 복원은 복원값이 곧 미저장 입력이므로 억제 없음 — 회전 복원의
+                            //  억제 여부는 위 갈래가 [pendingFieldValuesClean]로 가린다)
                             val initialHydration = !saveGateOpen
                             if (initialHydration) suppressFieldDirty = true
                             try {
@@ -1438,6 +1500,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 // 적재 중의 프로그램적 setText는 사용자 편집이 아니다 — 더티도 세우지 않는다
                 // (기존 캐릭터를 열기만 해도 미저장이 되던 가짜 양성을 여기서도 막는다).
                 if (!hydrationGuard.onFieldChanged(key)) return
+                // 뷰 상태 복원의 되쓰기는 담을 때 깨끗했으면 더티가 아니다([restoringViewState]).
+                if (restoringViewState && !restoredHadUnsaved) return
                 hasUnsavedChanges = true
                 updateSaveButtonState()
             }
@@ -1581,5 +1645,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         /** [은행]에서 고른 항목 (B-124 ⓐ) — 저장 시점에 쓰이므로 저장 전까지 살아 있어야 한다. */
         const val STATE_NAME_BANK_ENTRY = "nameBankEntryId"
+
+        /**
+         * 담는 순간 미저장 입력이 있었는가 — [pendingFieldValuesClean]의 근거.
+         *
+         * [STATE_DRAFT]의 유무로 대신하지 않는다: 그것은 뷰가 살아 있을 때만 실리므로, 뷰가 이미
+         * 죽은 백스택 조각의 저장에서는 더티여도 빠진다. 그때 *깨끗하다*로 읽으면 미저장 입력이
+         * 경고 없이 버려진다. **키가 없으면 더티로 읽는다**(옛 번들 — 경고가 한 번 더 뜨는 쪽이 안전하다).
+         */
+        const val STATE_HAD_UNSAVED = "hadUnsavedChanges"
     }
 }
