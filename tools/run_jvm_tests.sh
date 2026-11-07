@@ -356,6 +356,7 @@ $MAIN/util/SliderRange.kt
 $MAIN/util/SafFileCopy.kt
 $MAIN/util/FieldDeleteScope.kt
 $MAIN/util/SpinnerChoice.kt
+$MAIN/util/SpinnerChangeGate.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
@@ -368,6 +369,7 @@ $MAIN/ui/character/InitialHydrationGuard.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/util/NameBankMatch.kt
 $MAIN/util/NameBankPickOrder.kt
+$MAIN/util/GenderFieldResolver.kt
 $MAIN/excel/StreamingXlsxReader.kt
 $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/DropdownListLimits.kt
@@ -618,6 +620,7 @@ $TEST/util/SliderRangeTest.kt
 $TEST/util/SafFileCopyTest.kt
 $TEST/util/FieldDeleteScopeTest.kt
 $TEST/util/SpinnerChoiceTest.kt
+$TEST/util/SpinnerChangeGateTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt
@@ -631,6 +634,7 @@ $TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/util/NameBankMatchTest.kt
 $TEST/util/NameBankPickOrderTest.kt
+$TEST/util/GenderFieldResolverTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
 $TEST/excel/SheetResolverTest.kt
