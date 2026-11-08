@@ -157,6 +157,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private var initialLoadsDone = false
 
     /**
+     * 작품 선택이 이 캐릭터의 것으로 정해졌는가 — DB 적재와 무음 복원이 끝난 뒤 참이 된다.
+     * 그 전의 선택(회전 복원의 0번 부트스트랩 콜백)으로 지은 폼은 이 캐릭터의 폼이 아니다.
+     */
+    private var novelSelectionSettled = false
+
+    /** 지금 폼을 지은 스피너 자리 — [novelSelectionSettled]와 함께 *폼이 다 섰는가*를 가린다. */
+    private var formBuildPosition = -1
+
+    /**
      * 폼이 서기 전에 도착한 **유료 서술형 응답**을 미뤄 두는 자리 (R-38).
      *
      * 회전하면 관측이 새 뷰 수명주기에 다시 붙으면서 같은 회차가 **곧바로 재전달된다.**
@@ -461,6 +470,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 }
             }
         )
+        // 실루엣 편집기는 폼이 이 캐릭터의 작품으로 다 선 뒤에만 *필드가 없다*고 판정한다 —
+        // 회전 복원의 첫 콜백이 짓는 전역 필드 폼을 보고 닫던 결함(S6 에뮬레이터).
+        // 저장 게이트로는 모자란다: 신규 캐릭터는 게이트가 처음부터 열려 있다.
+        formBuilder.formSettled = {
+            novelSelectionSettled && _binding?.spinnerNovel?.selectedItemPosition == formBuildPosition
+        }
         // ✨ AI 필드 추천 — 필드별(폼 인라인 버튼) + 전체(폼 상단 버튼) 이중 진입 (원칙 04)
         formBuilder.aiSuggestHandler = { field ->
             // 경로 분기의 단일 소스는 필드 속성이다(사용자가 직접 정하고, 자동은 표시 형식으로 판단).
@@ -726,6 +741,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         saveGateOpen = false
         initialLoadsDone = false
         lastHydratedNovelPos = -1
+        novelSelectionSettled = false
+        formBuildPosition = -1
         novelSpinnerTouched = false
 
         // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
@@ -758,6 +775,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 // 구별) — 영구 드래프트는 세션을 넘은 값이라 종전대로 **묻는다** (B-6).
                 maybeOfferDraftRestore()
             }
+            // 작품 선택이 이 캐릭터의 것으로 정해졌다(DB 적재·무음 복원 뒤). 그 전에 지어진
+            // 폼을 보고 미뤘던 실루엣 편집기 판정을 여기서 한 번 더 본다.
+            novelSelectionSettled = true
+            formBuilder.dismissOrphanedSilhouetteEditor()
         }
         // 마지막 줄이어야 한다 — 이 뒤로 플랫폼의 뷰 상태 복원만 돈다([restoringViewState]).
         restoringViewState = true
@@ -927,6 +948,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     formBuilder.currentNovelId = novel?.id
                     formBuilder.fieldDefinitions = viewModel.fieldsForNovel(novel)
                     if (_binding == null) return@launch
+                    formBuildPosition = position
                     formBuilder.buildForm()
                     // AI 추천은 세계관 필드가 대상 — 렌더된 필드가 있을 때만 진입 버튼 노출
                     binding.btnAiSuggest.visibility =
@@ -982,6 +1004,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
                     lastHydratedNovelPos = position
                     maybeOpenSaveGate()
+                    // 선택이 정해지기 전이라 미뤘던 판정을, 정해진 선택의 폼이 선 지금 마저 본다.
+                    formBuilder.dismissOrphanedSilhouetteEditor()
                 }
             }
 

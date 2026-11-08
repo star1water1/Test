@@ -58,6 +58,14 @@ class DynamicFieldFormBuilder(
      * 설정되지 않으면 그 셋이 재료 없이 조용히 빠진다(호스트가 작품을 모르는 화면).
      */
     var currentNovelId: Long? = null
+
+    /**
+     * 폼이 이 캐릭터의 작품으로 **다 섰는가** — 호스트가 작품 선택이 정해졌는지로 답한다.
+     * 다 서기 전의 폼(회전 복원의 전역 필드 부트스트랩 폼)을 보고 실루엣 편집기를 닫지
+     * 않기 위해서다([SilhouetteRebindRule]). 신호가 없는 호스트는 종전 판정 그대로 —
+     * **목록이 비어 있지 않으면** 다 선 것으로 본다(아직 조회 중인 빈 목록에서 닫지 않는다).
+     */
+    var formSettled: () -> Boolean = { fieldDefinitions.isNotEmpty() }
     /**
      * 필드별 ✨ AI 추천 진입 훅 — 호스트가 설정하면 편집 가능 필드(CALCULATED·미지 타입 제외)에
      * 🎲과 같은 문법의 ✨ 버튼이 붙는다. null이면 폼은 기존과 동일하게 렌더된다.
@@ -401,7 +409,9 @@ class DynamicFieldFormBuilder(
      *   [적용]이 눌리는데 아무 일도 안 나는 단추가 된다.
      * - **필드가 사라진 시트** → 되쓸 자리가 없으므로 닫는다. **목록이 실제로 선 뒤에만
      *   닫는다** — 아직 조회 중이라 비어 있는 것과 정말 없어진 것은 다르고, 앞엣것에서
-     *   닫으면 이 판이 막으려던 그 유실을 우리 손으로 낸다.
+     *   닫으면 이 판이 막으려던 그 유실을 우리 손으로 낸다. **폼이 이 캐릭터의 작품으로
+     *   다 선 뒤에만 닫는다**([formSettled]) — 회전 복원의 첫 콜백이 짓는 전역 필드 폼에는
+     *   체형 필드가 없다. 다 서기 전에 미룬 판정은 [dismissOrphanedSilhouetteEditor]가 마저 한다.
      */
     fun rebindSilhouetteEditor() {
         val fm = fragmentManagerGetter() ?: return
@@ -410,9 +420,7 @@ class DynamicFieldFormBuilder(
         val fieldId = sheet.restoredFieldId ?: sheet.bodySizeFieldId
         val field = fieldDefinitions.firstOrNull { it.id == fieldId }
         if (field == null || fieldInputMap[fieldId] == null) {
-            if (sheet.isAwaitingRestore && fieldDefinitions.isNotEmpty()) {
-                sheet.dismissAllowingStateLoss()
-            }
+            dismissIfOrphaned(sheet, fieldInForm = false)
             return
         }
         // **되살리는 길에서는 스냅샷을 절대 다시 읽지 않는다**(`snapshot = false`).
@@ -421,6 +429,30 @@ class DynamicFieldFormBuilder(
         // 잃은 것을 되찾자고 만든 길이 새 유실을 내는 자리다.
         val config = bindSilhouetteEditor(sheet, field, snapshot = false)
         loadBodyPeers(field, config, sheet)
+    }
+
+    /**
+     * 폼이 다 선 순간에 부른다 — 다 서기 전이라 닫기를 미뤘던 편집기가 정말 제 필드를 잃었으면
+     * 이제 닫는다([SilhouetteRebindRule]). 필드가 있으면 이미 [rebindSilhouetteEditor]가 세웠다.
+     */
+    fun dismissOrphanedSilhouetteEditor() {
+        val fm = fragmentManagerGetter() ?: return
+        val sheet = fm.findFragmentByTag(BodySilhouetteEditorSheet.TAG)
+            as? BodySilhouetteEditorSheet ?: return
+        val fieldId = sheet.restoredFieldId ?: sheet.bodySizeFieldId
+        val inForm = fieldDefinitions.any { it.id == fieldId } && fieldInputMap[fieldId] != null
+        dismissIfOrphaned(sheet, inForm)
+    }
+
+    private fun dismissIfOrphaned(sheet: BodySilhouetteEditorSheet, fieldInForm: Boolean) {
+        if (com.novelcharacter.app.util.SilhouetteRebindRule.shouldDismiss(
+                awaitingRestore = sheet.isAwaitingRestore,
+                fieldInForm = fieldInForm,
+                formSettled = formSettled()
+            )
+        ) {
+            sheet.dismissAllowingStateLoss()
+        }
     }
 
     /**

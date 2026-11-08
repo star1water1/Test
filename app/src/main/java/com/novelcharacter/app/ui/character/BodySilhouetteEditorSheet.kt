@@ -371,9 +371,12 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
             pendingRelativeSelection = state.relativeHeightIndex to state.relativeVolumeIndex
         }
 
-        // 컵 지정은 스위치가 가슴 축을 잠그는 부수 효과를 함께 든다 — 리스너를 태워 그 잠금까지
-        // 같이 되살린다(값만 넣으면 흐려 보이는데 눌리는 줄이 생긴다).
-        if (state.cupMode) binding.switchCupMode.isChecked = true
+        // 컵 지정은 스위치가 컵 줄을 펴고 가슴 축을 잠그는 부수 효과를 함께 든다.
+        // **리스너에 기대지 않고 직접 입힌다** — 스위치는 XML id라 플랫폼의 뷰 상태 복원이
+        // 리스너가 걸리기 전에 이미 켜 두고, 그러면 여기서 켜도 *바뀐 것이 없어* 리스너가
+        // 안 돈다. 스위치는 켜져 있는데 컵 줄이 사라졌다(S6 에뮬레이터 2026-11-08 · 8-ㄴ-5).
+        binding.switchCupMode.isChecked = state.cupMode
+        applyCupModeUi(state.cupMode)
 
         if (state.generatorOpen) toggleGeneratorPanel()
         if (state.sideFacing) setFacing(side = true)
@@ -908,13 +911,16 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
                 setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             })
         }
-        binding.switchCupMode.setOnCheckedChangeListener { _, isChecked ->
-            cupMode = isChecked
-            binding.cupSizeContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
-            // 컵을 직접 지정하면 가슴 축은 할 일이 없다 — 두 경로가 동시에 살아 있으면 어느 쪽이 이겼는지 모른다.
-            binding.rgBust.alpha = if (isChecked) .4f else 1f
-            for (i in 0 until binding.rgBust.childCount) binding.rgBust.getChildAt(i).isEnabled = !isChecked
-        }
+        binding.switchCupMode.setOnCheckedChangeListener { _, isChecked -> applyCupModeUi(isChecked) }
+    }
+
+    /** 컵 지정 켜짐/꺼짐을 화면에 입힌다 — 리스너와 회전 복원이 **같은 한 자리**를 지난다. */
+    private fun applyCupModeUi(enabled: Boolean) {
+        cupMode = enabled
+        binding.cupSizeContainer.visibility = if (enabled) View.VISIBLE else View.GONE
+        // 컵을 직접 지정하면 가슴 축은 할 일이 없다 — 두 경로가 동시에 살아 있으면 어느 쪽이 이겼는지 모른다.
+        binding.rgBust.alpha = if (enabled) .4f else 1f
+        for (i in 0 until binding.rgBust.childCount) binding.rgBust.getChildAt(i).isEnabled = !enabled
     }
 
     private var relativeBuilt = false
