@@ -358,6 +358,7 @@ $MAIN/util/SafFileCopy.kt
 $MAIN/util/FieldDeleteScope.kt
 $MAIN/util/SpinnerChoice.kt
 $MAIN/util/SpinnerChangeGate.kt
+$MAIN/util/StateChangeFieldNames.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
@@ -623,6 +624,7 @@ $TEST/util/SafFileCopyTest.kt
 $TEST/util/FieldDeleteScopeTest.kt
 $TEST/util/SpinnerChoiceTest.kt
 $TEST/util/SpinnerChangeGateTest.kt
+$TEST/util/StateChangeFieldNamesTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt

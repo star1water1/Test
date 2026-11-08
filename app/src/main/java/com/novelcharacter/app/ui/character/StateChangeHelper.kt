@@ -19,6 +19,9 @@ import com.novelcharacter.app.databinding.DialogStateChangeBinding
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.StateChangeAdapter
 import com.novelcharacter.app.util.DetailListSort
+import com.novelcharacter.app.util.StateChangeFieldNames
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class StateChangeHelper(
     private val binding: FragmentCharacterDetailBinding,
@@ -41,7 +44,8 @@ class StateChangeHelper(
     fun setup() {
         stateChangeAdapter = StateChangeAdapter(
             onClick = { change -> showEditDeleteDialog(change) },
-            onLongClick = { change -> showEditDeleteDialog(change) }
+            onLongClick = { change -> showEditDeleteDialog(change) },
+            labelOf = { ctx, key -> labelOf(ctx, key) }
         )
         binding.stateChangesRecyclerView.layoutManager = LinearLayoutManager(contextGetter())
         binding.stateChangesRecyclerView.adapter = stateChangeAdapter
@@ -60,8 +64,31 @@ class StateChangeHelper(
             currentChanges = changes
             render()
             onSliderUpdate()
+            loadOutsideNames(changes)
         }
     }
+
+    /**
+     * 폼 밖(다른 구역)에서 찾은 필드 이름 — 작품 미배정·세계관 이동으로 폼에서 빠진 필드를
+     * 든 행도 **내부 키가 아니라 이름**으로 부르기 위해서다([StateChangeFieldNames]).
+     */
+    private var outsideNames: Map<String, String> = emptyMap()
+
+    private fun loadOutsideNames(changes: List<CharacterStateChange>) {
+        val keys = StateChangeFieldNames.customKeys(changes.map { it.fieldKey })
+        if (keys.isEmpty()) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val names = StateChangeFieldNames.unambiguous(viewModel.getCharacterFieldsByKeys(keys))
+            if (names == outsideNames) return@launch
+            outsideNames = names
+            stateChangeAdapter.notifyDataSetChanged()
+        }
+    }
+
+    /** 행·수정 창·삭제 창이 **같은 한 자리**에서 이름을 짓는다. */
+    private fun labelOf(context: Context, fieldKey: String): String =
+        com.novelcharacter.app.ui.common.StateChangeFieldLabel
+            .of(context, fieldKey, cachedFieldsGetter(), outsideNames)
 
     // ── 보기 정렬(B-85) ──
 
@@ -142,8 +169,7 @@ class StateChangeHelper(
                 // 이 헬퍼의 `getString`은 `(Int) -> String`이라 인자를 받지 못한다.
                 orphanKey to context.getString(
                     R.string.state_change_missing_field,
-                    com.novelcharacter.app.ui.common.StateChangeFieldLabel
-                        .of(context, orphanKey, cachedFields)
+                    labelOf(context, orphanKey)
                 )
             )
         }
@@ -244,8 +270,7 @@ class StateChangeHelper(
         val context = try { contextGetter() } catch (_: Exception) { return }
         // 필드 이름은 목록 행과 **같은 함수**가 짓는다 — 종전에는 이 자리만 내부 키를
         // 날것으로 보여 줘, 같은 행이 목록에서는 '출생'이고 창에서는 `__birth`였다.
-        val label = com.novelcharacter.app.ui.common.StateChangeFieldLabel
-            .of(context, change.fieldKey, cachedFieldsGetter())
+        val label = labelOf(context, change.fieldKey)
         MaterialAlertDialogBuilder(context)
             .setTitle(getString(R.string.edit_or_delete))
             .setMessage("$label → ${change.newValue}")

@@ -1100,6 +1100,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // ===== FieldDefinition =====
+    /** 키로 찾은 캐릭터 필드 정의 — 구역(세계관·전역)을 가리지 않는다(상태변화 행의 이름 찾기). */
+    suspend fun getCharacterFieldsByKeys(keys: Collection<String>): List<FieldDefinition> =
+        keys.flatMap { universeRepository.getCharacterFieldsByKey(it) }
+
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         universeRepository.getFieldsByUniverseList(universeId)
 

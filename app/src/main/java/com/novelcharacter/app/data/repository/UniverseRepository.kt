@@ -166,6 +166,10 @@ class UniverseRepository(
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
         fieldDefinitionDao.getFieldsByUniverse(universeId)
 
+    /** 키로 찾은 캐릭터 필드 정의 — 모든 구역(세계관·전역). */
+    suspend fun getCharacterFieldsByKey(key: String): List<FieldDefinition> =
+        fieldDefinitionDao.getFieldsByKey(key)
+
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         fieldDefinitionDao.getFieldsByUniverseList(universeId)
 
