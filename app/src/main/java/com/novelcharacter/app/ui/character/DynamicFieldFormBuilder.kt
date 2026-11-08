@@ -62,9 +62,10 @@ class DynamicFieldFormBuilder(
     /**
      * 폼이 이 캐릭터의 작품으로 **다 섰는가** — 호스트가 작품 선택이 정해졌는지로 답한다.
      * 다 서기 전의 폼(회전 복원의 전역 필드 부트스트랩 폼)을 보고 실루엣 편집기를 닫지
-     * 않기 위해서다([SilhouetteRebindRule]). 게이트가 없는 호스트는 늘 참이다.
+     * 않기 위해서다([SilhouetteRebindRule]). 신호가 없는 호스트는 종전 판정 그대로 —
+     * **목록이 비어 있지 않으면** 다 선 것으로 본다(아직 조회 중인 빈 목록에서 닫지 않는다).
      */
-    var formSettled: () -> Boolean = { true }
+    var formSettled: () -> Boolean = { fieldDefinitions.isNotEmpty() }
     /**
      * 필드별 ✨ AI 추천 진입 훅 — 호스트가 설정하면 편집 가능 필드(CALCULATED·미지 타입 제외)에
      * 🎲과 같은 문법의 ✨ 버튼이 붙는다. null이면 폼은 기존과 동일하게 렌더된다.
@@ -447,7 +448,6 @@ class DynamicFieldFormBuilder(
         if (com.novelcharacter.app.util.SilhouetteRebindRule.shouldDismiss(
                 awaitingRestore = sheet.isAwaitingRestore,
                 fieldInForm = fieldInForm,
-                formHasFields = fieldDefinitions.isNotEmpty(),
                 formSettled = formSettled()
             )
         ) {
