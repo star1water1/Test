@@ -12,7 +12,11 @@ import com.novelcharacter.app.databinding.ItemStateChangeBinding
 
 class StateChangeAdapter(
     private val onClick: (CharacterStateChange) -> Unit,
-    private val onLongClick: (CharacterStateChange) -> Unit
+    private val onLongClick: (CharacterStateChange) -> Unit,
+    /** 필드 이름 — 호스트가 폼의 필드와 폼 밖에서 찾은 이름으로 짓는다(행과 창이 같은 이름을 쓴다). */
+    private val labelOf: (android.content.Context, String) -> String = { ctx, key ->
+        com.novelcharacter.app.ui.common.StateChangeFieldLabel.of(ctx, key)
+    }
 ) : ListAdapter<CharacterStateChange, StateChangeAdapter.StateChangeViewHolder>(StateChangeDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StateChangeViewHolder {
@@ -45,8 +49,7 @@ class StateChangeAdapter(
 
             // 필드 이름 — 번역은 한 자리가 든다(`StateChangeFieldLabel`). 종전에는 이 자리와
             // 수정·삭제 창이 따로 적어, 같은 행이 목록에서는 '출생'이고 창에서는 `__birth`였다.
-            binding.textFieldKey.text = com.novelcharacter.app.ui.common.StateChangeFieldLabel
-                .of(binding.root.context, change.fieldKey)
+            binding.textFieldKey.text = labelOf(binding.root.context, change.fieldKey)
 
             // New value
             binding.textNewValue.text = change.newValue

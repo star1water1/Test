@@ -55,9 +55,32 @@ class SilhouetteLargeDialog : DialogFragment() {
 
     private var silhouette: SilhouetteView? = null
 
+    /**
+     * 하단 토글 셋의 상태 — **회전·다크모드 전환을 넘긴다.**
+     *
+     * 그림은 arguments가 넘기지만 토글은 사용자가 이 창에서 고른 것이라 arguments에 없다.
+     * 종전에는 담지 않아 되살아난 창이 기본값(측면 끔 · 라벨 켬 · 작품 평균 끔)으로 섰고,
+     * 켜 둔 '작품 평균' 오버레이가 회전 한 번에 꺼졌다(S8 에뮬레이터 2026-11-08 · `1-ㄹ2`).
+     */
+    private var sideOn = false
+    private var labelsOn = true
+    private var overlayOn = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setStyle(STYLE_NORMAL, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+        savedInstanceState?.let {
+            sideOn = it.getBoolean(STATE_SIDE, sideOn)
+            labelsOn = it.getBoolean(STATE_LABELS, labelsOn)
+            overlayOn = it.getBoolean(STATE_OVERLAY, overlayOn)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_SIDE, sideOn)
+        outState.putBoolean(STATE_LABELS, labelsOn)
+        outState.putBoolean(STATE_OVERLAY, overlayOn)
     }
 
     override fun onCreateView(
@@ -113,7 +136,10 @@ class SilhouetteLargeDialog : DialogFragment() {
         val view = SilhouetteView(ctx).apply {
             this.measures = figure
             // 크게 보기에서는 라벨이 기본 켬이다(5-4-1) — 크기가 있으니 읽힌다.
-            showLabels = true
+            // 토글 셋은 담아 둔 상태로 선다(회전·다크모드 전환 뒤에도 사용자가 고른 그대로).
+            showLabels = labelsOn
+            facing = if (sideOn) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
+            overlayMeasures = if (overlayOn) peerAverage else null
             interactive = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
@@ -164,13 +190,15 @@ class SilhouetteLargeDialog : DialogFragment() {
         }
 
         bar.addView(
-            toggle(getString(R.string.silhouette_view_side), false) { on ->
+            toggle(getString(R.string.silhouette_view_side), sideOn) { on ->
+                sideOn = on
                 silhouette?.facing =
                     if (on) SilhouetteView.Facing.SIDE else SilhouetteView.Facing.FRONT
             }
         )
         bar.addView(
-            toggle(getString(R.string.silhouette_large_labels), true) { on ->
+            toggle(getString(R.string.silhouette_large_labels), labelsOn) { on ->
+                labelsOn = on
                 silhouette?.showLabels = on
             }
         )
@@ -179,7 +207,8 @@ class SilhouetteLargeDialog : DialogFragment() {
         val average = peerAverage
         if (average != null) {
             bar.addView(
-                toggle(getString(R.string.silhouette_overlay_average), false) { on ->
+                toggle(getString(R.string.silhouette_overlay_average), overlayOn) { on ->
+                    overlayOn = on
                     silhouette?.overlayMeasures = if (on) average else null
                 }
             )
@@ -199,6 +228,10 @@ class SilhouetteLargeDialog : DialogFragment() {
         /** 굳혀 담은 그림 — 회전·다크모드 전환을 이 둘이 넘긴다. */
         private const val ARG_MEASURES = "measures"
         private const val ARG_PEER_AVERAGE = "peerAverage"
+
+        private const val STATE_SIDE = "large_side"
+        private const val STATE_LABELS = "large_labels"
+        private const val STATE_OVERLAY = "large_overlay"
 
         /**
          * @param measured 호스트가 해석한 수치 · @param peers 같은 작품 이웃(작품 평균의 재료)

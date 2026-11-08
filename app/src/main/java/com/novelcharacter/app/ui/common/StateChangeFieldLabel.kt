@@ -21,12 +21,14 @@ object StateChangeFieldLabel {
     fun of(
         context: Context,
         fieldKey: String,
-        fields: List<FieldDefinition> = emptyList()
+        fields: List<FieldDefinition> = emptyList(),
+        // 폼 밖(다른 구역)에서 찾은 이름 — [com.novelcharacter.app.util.StateChangeFieldNames]. 폼이 이긴다.
+        outsideNames: Map<String, String> = emptyMap()
     ): String = when (fieldKey) {
         CharacterStateChange.KEY_BIRTH -> context.getString(R.string.birth)
         CharacterStateChange.KEY_DEATH -> context.getString(R.string.death)
         CharacterStateChange.KEY_ALIVE -> context.getString(R.string.alive_status)
         CharacterStateChange.KEY_AGE -> context.getString(R.string.age)
-        else -> fields.firstOrNull { it.key == fieldKey }?.name ?: fieldKey
+        else -> fields.firstOrNull { it.key == fieldKey }?.name ?: outsideNames[fieldKey] ?: fieldKey
     }
 }
