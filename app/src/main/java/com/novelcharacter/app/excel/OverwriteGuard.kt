@@ -55,4 +55,55 @@ object OverwriteGuard {
      */
     fun hasDataRow(rowTexts: Sequence<Sequence<String>>): Boolean =
         rowTexts.any { row -> row.any { it.isNotBlank() } }
+
+    /**
+     * 부모를 통째로 지울 때 **FK CASCADE로 함께 사라지는 자식 하나**(S22 덮어쓰기 가드).
+     *
+     * 덮어쓰기는 세계관·캐릭터를 `deleteAll`로 비운 뒤 파일로 다시 세운다. 그때 그 아래
+     * 표(필드 정의 → 설정·값 라이브러리, 세력·소속, 대결 축·판, 관계·상태변화…)도 DB가
+     * 함께 지운다 — **자식 시트를 지키는 가드가 '유지했습니다'라고 말한 뒤에도.**
+     * 그래서 부모를 지우기 전에 자식마다 *지금 몇 건 있고 이 파일이 되살릴 수 있는가*를 묻는다.
+     *
+     * @param label 사용자에게 보일 이름(시트 이름과 같게 — 사용자가 그 시트를 찾아가야 한다)
+     * @param existing 지금 DB에 있는 건수(부모를 지우면 사라질 몫)
+     * @param source 그 자식의 시트가 복원 재료인가
+     * @param missingColumns 시트는 있으나 **지금 값이 든 열**이 파일에 없는 것 — 열이 없으면
+     *   다시 세운 행이 그 칸을 빈 값으로 받는다(기존 값으로 메울 행이 이미 지워졌다).
+     * @param notSelected 이번 가져오기 항목에서 빠졌다 — 시트가 있어도 읽지 않으므로 복원 재료가 아니다.
+     * @param keptOwner 임자(캐릭터·작품·사건)를 **남겨 둔** 값이다 — 부모가 지워지면 값만 사라지고
+     *   임자 행은 그대로라, 파일로 다시 세울 자리가 없다. [existing]이 0이 아니면 막는다.
+     */
+    data class CascadeChild(
+        val label: String,
+        val existing: Int,
+        val source: RestoreSource,
+        val missingColumns: List<String> = emptyList(),
+        val notSelected: Boolean = false,
+        val keptOwner: Boolean = false
+    )
+
+    /** 부모 통삭제를 **막는** 자식들 — 지금 데이터가 있는데 이 파일로 되살릴 수 없는 것. */
+    fun cascadeBlockers(children: List<CascadeChild>): List<CascadeChild> =
+        children.filter { c ->
+            c.existing > 0 && (
+                c.notSelected || c.keptOwner ||
+                    c.source != RestoreSource.HAS_ROWS || c.missingColumns.isNotEmpty()
+                )
+        }
+
+    /**
+     * 막은 사유를 한 줄로 — 무엇이 몇 건이고 **사용자가 무엇을 하면 되는가**가 갈리게 적는다
+     * (시트 없음 → 다시 내보내기 · 행 없음 → 그 시트에 행 적기 · 열 없음 → 그 열 되살리기).
+     */
+    fun describeBlockers(blockers: List<CascadeChild>): String =
+        blockers.joinToString(", ") { b ->
+            val why = when {
+                b.notSelected -> "가져올 항목에서 빠짐"
+                b.keptOwner -> "임자를 남겨 둠"
+                b.source == RestoreSource.MISSING -> "시트 없음"
+                b.source == RestoreSource.EMPTY -> "데이터 행 없음"
+                else -> b.missingColumns.joinToString("·") { "'$it'" } + " 열 없음"
+            }
+            "'${b.label}' ${b.existing}건($why)"
+        }
 }

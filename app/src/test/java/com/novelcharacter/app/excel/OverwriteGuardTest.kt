@@ -89,4 +89,73 @@ class OverwriteGuardTest {
     fun `행이 하나도 없으면 데이터 행 없음이다`() {
         assertFalse(OverwriteGuard.hasDataRow(emptySequence()))
     }
+
+    // ── 부모 통삭제의 CASCADE 가드 (S22) ──
+
+    private fun child(
+        existing: Int,
+        source: RestoreSource = RestoreSource.HAS_ROWS,
+        missing: List<String> = emptyList(),
+        notSelected: Boolean = false,
+        keptOwner: Boolean = false
+    ) = OverwriteGuard.CascadeChild("자식", existing, source, missing, notSelected, keptOwner)
+
+    @Test
+    fun `지금 없는 자식은 무엇이 빠져도 막지 않는다`() {
+        val none = listOf(
+            child(0, RestoreSource.MISSING),
+            child(0, RestoreSource.EMPTY),
+            child(0, missing = listOf("설정(JSON)")),
+            child(0, notSelected = true),
+            child(0, keptOwner = true)
+        )
+        assertTrue(OverwriteGuard.cascadeBlockers(none).isEmpty())
+    }
+
+    @Test
+    fun `되살릴 수 있는 자식만 있으면 부모를 지운다`() {
+        assertTrue(OverwriteGuard.cascadeBlockers(listOf(child(90), child(6))).isEmpty())
+    }
+
+    @Test
+    fun `시트가 없거나 비었으면 부모를 막는다 - 유지했다고 말한 자식이 CASCADE로 사라지던 자리`() {
+        // 3-ㄴ-4: 세력 소속 시트 내용만 지움 → "유지했습니다" 뒤에 캐릭터 통삭제가 90건을 지웠다.
+        // 3-ㅅ-12: 대결 축 시트를 뺌 → 세계관 통삭제가 축 6개·판 131개를 지웠다.
+        val blockers = OverwriteGuard.cascadeBlockers(
+            listOf(child(90, RestoreSource.EMPTY), child(6, RestoreSource.MISSING), child(3))
+        )
+        assertEquals(listOf(90, 6), blockers.map { it.existing })
+    }
+
+    @Test
+    fun `값이 든 열이 빠지면 행이 있어도 막는다`() {
+        // 3-ㄴ-5: '설정(JSON)' 열을 지운 파일이 선택지·계산식·등급표를 전부 {}로 만들었다.
+        val blockers = OverwriteGuard.cascadeBlockers(listOf(child(53, missing = listOf("설정(JSON)"))))
+        assertEquals(1, blockers.size)
+    }
+
+    @Test
+    fun `가져올 항목에서 빠진 자식과 임자를 남긴 값은 시트가 있어도 막는다`() {
+        assertEquals(1, OverwriteGuard.cascadeBlockers(listOf(child(131, notSelected = true))).size)
+        assertEquals(1, OverwriteGuard.cascadeBlockers(listOf(child(8, keptOwner = true))).size)
+    }
+
+    @Test
+    fun `사유는 사용자가 할 일이 갈리게 적는다`() {
+        val text = OverwriteGuard.describeBlockers(
+            listOf(
+                OverwriteGuard.CascadeChild("대결 축", 6, RestoreSource.MISSING),
+                OverwriteGuard.CascadeChild("세력 소속", 90, RestoreSource.EMPTY),
+                OverwriteGuard.CascadeChild("필드 정의", 53, RestoreSource.HAS_ROWS, listOf("설정(JSON)")),
+                OverwriteGuard.CascadeChild("대결 기록", 131, RestoreSource.HAS_ROWS, notSelected = true),
+                OverwriteGuard.CascadeChild("캐릭터 필드값", 8, RestoreSource.HAS_ROWS, keptOwner = true)
+            )
+        )
+        assertEquals(
+            "'대결 축' 6건(시트 없음), '세력 소속' 90건(데이터 행 없음), " +
+                "'필드 정의' 53건('설정(JSON)' 열 없음), '대결 기록' 131건(가져올 항목에서 빠짐), " +
+                "'캐릭터 필드값' 8건(임자를 남겨 둠)",
+            text
+        )
+    }
 }
