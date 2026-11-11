@@ -457,6 +457,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 시트의 세계관과 캐릭터의 실제 세계관은 다를 수 있고(엑셀 편집으로 작품 이동),
     // 삭제 판정은 실제 세계관 기준이라 분리하면 "엑셀에 있는데 삭제"가 발생한다.
     private val matchedCharacterIds = mutableSetOf<Long>()
+
+    /**
+     * 이 가져오기에서 캐릭터를 잡은 행의 코드(캐릭터 id → 코드). 코드 미해석 행의 이름 폴백은
+     * 앞 행이 차지한 캐릭터를 다시 잡지 않는데, **같은 코드를 되풀이한 행**은 다른 항목이 아니다 —
+     * 중복 코드는 뒤 행이 이기는 규약 그대로 같은 캐릭터로 가야 한다(S22 · Codex 리뷰).
+     */
+    private val claimCodeByCharacterId = HashMap<Long, String>()
     // 실제로 헤더 검증을 통과해 처리한 캐릭터 시트의 세계관 — 삭제 범위를 이 세계관들로 한정한다
     private val importedCharacterSheetUniverseIds = mutableSetOf<Long>()
     private var unclassifiedSheetImported = false
@@ -660,6 +667,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 한 캐릭터로 접혀 하나가 사라졌다). 가져오기가 그 행을 새로 만들므로 미리보기도 '신규'로 센다.
      */
     private val analysisClaimedCharacterIds = mutableSetOf<Long>()
+
+    /** 미리보기가 캐릭터를 잡은 행의 코드 — 가져오기의 [claimCodeByCharacterId]와 짝(R-33). */
+    private val analysisClaimCodeByCharacterId = HashMap<Long, String>()
 
     private val matchedEventIds = mutableSetOf<Long>()
     private val matchedRelationshipIds = mutableSetOf<Long>()
@@ -975,8 +985,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 없다(소비 추적이 있어 `find`를 두 번 부르면 같은 답이 나오지 않는다).
                 // **판정은 한 글자도 바뀌지 않는다** — 하나라도 HAS_ROWS면 복원 가능이고,
                 // 그 경우 미분류 조회 결과는 사유에만 쓰여 결론에 닿지 않는다.
-                val charSheetSources = guardUniverses.map { u -> charSheetSource(guardSheets.find(u)) } +
-                    charSheetSource(findUnclassifiedSheet(workbook, guardSheets.consumed))
+                // 시트 자체도 든다 — 열(태그)을 따져야 한다(S22 · Codex 리뷰). `find`는 소비를
+                // 기록하므로 한 번만 부르고 그 결과를 판정과 열 검사가 함께 쓴다.
+                val guardCharSheets: List<Sheet?> = guardUniverses.map { u -> guardSheets.find(u) } +
+                    findUnclassifiedSheet(workbook, guardSheets.consumed)
+                val charSheetSources = guardCharSheets.map { charSheetSource(it) }
                 val charactersRestorable = charSheetSources.any { it == RestoreSource.HAS_ROWS }
 
                 /**
@@ -1093,8 +1106,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 source = if (enabled) classify(spec) else RestoreSource.MISSING,
                                 notSelected = !enabled
                             )
+                        // 태그는 캐릭터 시트의 '태그' 열로만 되살아난다 — 열이 없으면 가져오기가
+                        // 태그를 건드리지 않으므로(열 없음 = 유지) 통삭제 뒤에는 되살릴 길이 없다.
+                        val taggedByScope = countGroupedByNullableId(
+                            "SELECT n.universeId, COUNT(DISTINCT t.characterId) FROM character_tags t " +
+                                "JOIN characters c ON c.id = t.characterId " +
+                                "LEFT JOIN novels n ON n.id = c.novelId GROUP BY n.universeId"
+                        )
+                        val scopeIds: List<Long?> = guardUniverses.map { it.id } + listOf<Long?>(null)
+                        val tagChildren = scopeIds.mapIndexedNotNull { idx, scopeId ->
+                            val sheet = guardCharSheets[idx] ?: return@mapIndexedNotNull null
+                            if (charSheetSources[idx] != RestoreSource.HAS_ROWS) return@mapIndexedNotNull null
+                            val label = (if (scopeId == null) UNCLASSIFIED_SHEET_NAME else guardUniverses[idx].name) + " 태그"
+                            OverwriteGuard.CascadeChild(
+                                label = label,
+                                existing = taggedByScope[scopeId] ?: 0,
+                                source = RestoreSource.HAS_ROWS,
+                                missingColumns = if (sheetHeaderHas(sheet, "이름", "태그")) emptyList() else listOf("태그")
+                            )
+                        }
                         OverwriteGuard.cascadeBlockers(
-                            scopeChildren + listOf(
+                            scopeChildren + tagChildren + listOf(
                                 child(relationshipSpec().sheetName, "character_relationships", effectiveOptions.relationships, relationshipSpec()),
                                 child(relationshipChangeSpec().sheetName, "character_relationship_changes", effectiveOptions.relationshipChanges, relationshipChangeSpec()),
                                 child(stateChangeSpec().sheetName, "character_state_changes", effectiveOptions.stateChanges, stateChangeSpec()),
@@ -1181,16 +1213,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (shouldDelete(effectiveOptions.novels, novelSpec(emptyList()))) {
                     val keptAssigned = if ("characters" in wipedByOverwrite) 0
                         else countRows("SELECT COUNT(*) FROM characters WHERE novelId IS NOT NULL")
+                    // 작품 필드값은 작품 시트의 `필드:` 열과 '작품 필드값' 시트로만 되살아난다 —
+                    // 둘 다 담지 않은 값은 CASCADE로 사라진다(S22 · Codex 리뷰).
+                    val novelValueSpec = novelFieldValueSpec()
+                    val novelValueSource = classify(novelValueSpec)
                     val novelBlockers = OverwriteGuard.cascadeBlockers(listOf(
-                        OverwriteGuard.CascadeChild("캐릭터의 작품 배정", keptAssigned, RestoreSource.HAS_ROWS, keptOwner = true)
+                        OverwriteGuard.CascadeChild("캐릭터의 작품 배정", keptAssigned, RestoreSource.HAS_ROWS, keptOwner = true),
+                        OverwriteGuard.CascadeChild(
+                            novelValueSpec.sheetName,
+                            if (novelValueSource == RestoreSource.HAS_ROWS) 0 else countNovelValuesOutsideNovelSheet(workbook),
+                            novelValueSource
+                        )
                     ))
                     if (novelBlockers.isEmpty()) {
                         db.novelDao().deleteAll(); wipedByOverwrite.add("novels")
                     } else {
                         result.warnings.add(
-                            "기존 작품을 삭제하지 않고 유지했습니다 (덮어쓰기 제외) — 지우면 " +
-                                OverwriteGuard.describeBlockers(novelBlockers) +
-                                "이(가) 풀려 캐릭터가 '미분류'로 떨어집니다. 파일의 작품 행은 기존 작품에 병합됩니다"
+                            "기존 작품을 삭제하지 않고 유지했습니다 (덮어쓰기 제외) — 작품을 지우면 함께 사라지거나 " +
+                                "풀리는 " + OverwriteGuard.describeBlockers(novelBlockers) +
+                                "을(를) 이 파일로 되살릴 수 없습니다(작품 배정이 풀리면 캐릭터가 '미분류'로 떨어집니다). " +
+                                "파일의 작품 행은 기존 작품에 병합됩니다"
                         )
                     }
                 }
@@ -1287,6 +1329,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
             matchedCharacterIds.clear()
+            claimCodeByCharacterId.clear()
             importedCharacterSheetUniverseIds.clear()
             unclassifiedSheetImported = false
             consumedCharacterSheetNames.clear()
@@ -3410,6 +3453,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         analysisCreatedDuelAxes.clear()
         analysisUniverseMovedCharacterIds.clear()
         analysisClaimedCharacterIds.clear()
+        analysisClaimCodeByCharacterId.clear()
         // 작품→세계관 메모도 여기서 비운다 — **직전 가져오기가 작품의 세계관을 옮겼을 수 있다**
         // (`migrateCharacterToUniverse` 경로). 위 색인들을 비우는 사유가 그대로 걸리는데
         // 이 메모만 빠져 있었고, 세계관 이동 판정(B-253)이 이 값 위에 선다.
@@ -3990,6 +4034,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         // 이 파일의 앞 행이 이미 잡은 세계관(가져오기의 `entitySeen`과 짝 — S22).
         val claimedUniverseIds = HashSet<Long>()
+        val claimCodeByUniverseId = HashMap<Long, String>()
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             // 읽기도 가져오기와 **같은 함수**다 — 비교식만 맞추고 리더를 각자 두면
@@ -4008,8 +4053,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 코드가 적힌 행의 이름 폴백은 **앞 행이 차지한 세계관을 다시 잡지 않는다** —
             // 가져오기와 같은 규칙이다(S22, R-33). 코드 칸이 빈 행은 종전대로 이름으로 잡는다.
             val existing = universeByCode(r.code)
-                ?: universeByName(r.name)?.takeIf { r.code.isBlank() || it.id !in claimedUniverseIds }
-            if (existing != null) claimedUniverseIds.add(existing.id)
+                ?: universeByName(r.name)?.takeIf {
+                    r.code.isBlank() || it.id !in claimedUniverseIds || claimCodeByUniverseId[it.id] == r.code
+                }
+            if (existing != null) {
+                claimedUniverseIds.add(existing.id)
+                if (r.code.isNotBlank()) claimCodeByUniverseId.putIfAbsent(existing.id, r.code)
+            }
             if (existing == null) {
                 newCount++
                 // 이 시트가 방금 만든 세계관 — 뒤 행이 이것과 매칭된다(가져오기와 같다, B-233).
@@ -4025,6 +4075,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     .copy(id = previewIds.mint())
                 rememberUniverse(created)
                 claimedUniverseIds.add(created.id)
+                if (r.code.isNotBlank()) claimCodeByUniverseId.putIfAbsent(created.id, r.code)
                 // **캐릭터 시트를 훑는 자리도 이것을 봐야 한다**(B-254) — 그쪽은 이 함수 밖에서
                 // 돌므로 색인이 아니라 목록으로 넘긴다(위 [analysisCreatedUniverses]).
                 analysisCreatedUniverses.add(created)
@@ -4414,6 +4465,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 analysisUniverseMovedCharacterIds.add(existing.id)
             }
             analysisClaimedCharacterIds.add(existing.id)
+            if (r.code.isNotBlank()) analysisClaimCodeByCharacterId.putIfAbsent(existing.id, r.code)
             val merged = mergeCharacter(existing, r, novelId, rowIndex, now, result = null)
             if (merged != existing) updateCount++
             // 갱신된 값도 되돌려 놓는다 — 같은 캐릭터를 가리키는 뒤 행은 이 결과 위에서 판정되고,
@@ -4434,6 +4486,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             ).copy(id = previewIds.mint())
             rememberCharacter(created)
             analysisClaimedCharacterIds.add(created.id)
+            if (r.code.isNotBlank()) analysisClaimCodeByCharacterId.putIfAbsent(created.id, r.code)
             return created.id
         }
 
@@ -4463,7 +4516,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelId = novelByCode(r.novelCode)?.id
                     ?: (if (r.novelTitle.isNotBlank()) analysisNovelIdByTitle(r.novelTitle) else null)
                 val byName = (if (novelId != null) characterByNameAndNovel(name, novelId) else characterByName(name))
-                    ?.takeIf { it.id !in analysisClaimedCharacterIds }
+                    ?.takeIf { it.id !in analysisClaimedCharacterIds || analysisClaimCodeByCharacterId[it.id] == r.code }
                 val byNameId = if (byName != null) countAgainst(byName, r, i)
                     else { newCount++; rememberCreated(r, i) }
                 countFieldColumns(row, byNameId, createdHere = byName == null)
@@ -5336,6 +5389,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         // 이 파일의 앞 행이 이미 잡은 세력(가져오기의 `entitySeen`과 짝 — S22).
         val claimedFactionIds = HashSet<Long>()
+        val claimCodeByFactionId = HashMap<Long, String>()
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             val r = readFactionRow(row, c, "세력 행 ${excelRow(i)}", result = null)
@@ -5355,8 +5409,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 코드가 적힌 행의 이름 폴백은 앞 행이 차지한 세력을 다시 잡지 않는다(가져오기와 같다 — S22).
             val existing = (if (r.code.isNotBlank()) factions.byCode.first(r.code) else null)
                 ?: resolvedUniverse?.let { factions.byNameKey.first(FactionNameKey(r.name, it.id)) }
-                    ?.takeIf { r.code.isBlank() || it.id !in claimedFactionIds }
-            if (existing != null) claimedFactionIds.add(existing.id)
+                    ?.takeIf { r.code.isBlank() || it.id !in claimedFactionIds || claimCodeByFactionId[it.id] == r.code }
+            if (existing != null) {
+                claimedFactionIds.add(existing.id)
+                if (r.code.isNotBlank()) claimCodeByFactionId.putIfAbsent(existing.id, r.code)
+            }
             if (existing == null) {
                 // 자동관계유형 열이 아예 없는 파일에서 가져오기는 **신규를 만들지 않는다**(R-36) —
                 // 만들지 않는 행은 등재할 것도 없다.
@@ -5369,6 +5426,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         .copy(id = previewIds.mint())
                     factions.remember(created)
                     claimedFactionIds.add(created.id)
+                    if (r.code.isNotBlank()) claimCodeByFactionId.putIfAbsent(created.id, r.code)
                 }
                 continue
             }
@@ -6089,6 +6147,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
+        // 세계관을 잡은 행의 코드 — 같은 코드를 되풀이한 행은 같은 항목이다(S22 · Codex 리뷰).
+        val claimCodeById = HashMap<Long, String>()
         val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in dataRows(sheet, headerRow)) {
@@ -6136,7 +6196,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // **이 파일의 앞 행이 이미 차지한 것은 이름으로 다시 잡지 않는다**(S22) — 코드가
                         // 서로 다른 동명 두 행이 덮어쓰기 뒤(전량 삭제로 코드가 아직 없다) 한 항목으로
                         // 접혀 하나가 사라졌다. 앞 행이 잡은 것이면 오타가 아니라 별개 항목이다.
-                        val byName = universeByName(name)?.takeIf { it.id !in entitySeen }
+                        val byName = universeByName(name)?.takeIf { it.id !in entitySeen || claimCodeById[it.id] == code }
                         if (byName != null) {
                             existing = byName
                             matchedByName = true
@@ -6165,6 +6225,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("세계관 행 ${excelRow(i)}: 행 ${excelRow(prevRow)} 과 같은 항목('$name')을 다시 덮어씀 — 별개의 세계관으로 넣으려면 '코드' 칸을 비우고 이름을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
+                    if (code.isNotBlank()) claimCodeById.putIfAbsent(existing.id, code)
                     // F1-A: 이미지 열이 있으나 비어 기존 이미지를 지우는 경우 요약 고지
                     if (imagePathsFromExcel != null && (imagePathsFromExcel == "[]" || imagePathsFromExcel.isBlank()) &&
                         existing.imagePaths.isNotBlank() && existing.imagePaths != "[]") {
@@ -6207,6 +6268,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (imageCharCode != null) deferredUniverseImageCharCodes[newId] = DeferredImageRef(imageCharCode, originalId = null)
                     if (imageNovelCode != null) deferredUniverseImageNovelCodes[newId] = DeferredImageRef(imageNovelCode, originalId = null)
                     entitySeen[newId] = i
+                    if (code.isNotBlank()) claimCodeById.putIfAbsent(newId, code)
                     result.newUniverses++
                 }
             } catch (e: Exception) {
@@ -8334,7 +8396,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             characterByNameAndNovel(name, novelId)
                         } else {
                             characterByName(name)
-                        })?.takeIf { it.id !in matchedCharacterIds }
+                        })?.takeIf { it.id !in matchedCharacterIds || claimCodeByCharacterId[it.id] == code }
                         if (byName != null) {
                             existingChar = byName
                             result.nameBasedMappings++
@@ -8461,6 +8523,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // matched ID 추적 (deleteNotInExcel용) — 시트 세계관과 무관하게 전역 등록.
                 // 엑셀 편집으로 캐릭터가 다른 세계관 작품으로 이동해도 삭제 대상이 되지 않게 한다.
                 matchedCharacterIds.add(charId)
+                if (code.isNotBlank()) claimCodeByCharacterId.putIfAbsent(charId, code)
 
                 val prevRow = entitySeen[charId]
                 if (prevRow != null) {
@@ -10107,6 +10170,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val factions = FactionIdentityIndexes(db.factionDao().getAllFactionsList())
 
         val codesSeen = mutableMapOf<String, Int>()
+        // 세력을 잡은 행의 코드 — 같은 코드를 되풀이한 행은 같은 항목이다(S22 · Codex 리뷰).
+        val claimCodeById = HashMap<Long, String>()
         val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in dataRows(sheet, headerRow)) {
@@ -10166,7 +10231,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 서로 다른 동명 두 행이 덮어쓰기 뒤(전량 삭제로 코드가 아직 없다) 한 항목으로
                         // 접혀 하나가 사라졌다. 앞 행이 잡은 것이면 오타가 아니라 별개 항목이다.
                         val byName = factions.byNameKey.first(FactionNameKey(name, universeId))
-                            ?.takeIf { it.id !in entitySeen }
+                            ?.takeIf { it.id !in entitySeen || claimCodeById[it.id] == code }
                         if (byName != null) {
                             existing = byName
                             matchedByName = true
@@ -10193,6 +10258,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("세력 행 ${excelRow(i)}: 행 ${excelRow(prevRow)} 과 같은 항목('$name')을 다시 덮어씀 — 별개의 세력으로 넣으려면 '코드' 칸을 비우고 이름을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
+                    if (code.isNotBlank()) claimCodeById.putIfAbsent(existing.id, code)
                     if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedFaction = mergeFaction(existing, r, universeId)
@@ -10216,6 +10282,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     factions.remember(newFaction.copy(id = newId))
                     matchedFactionIds.add(newId)
                     entitySeen[newId] = i
+                    if (code.isNotBlank()) claimCodeById.putIfAbsent(newId, code)
                     result.newFactions++
                 }
             } catch (e: Exception) {
@@ -12866,6 +12933,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val sheet = resolveSpecSheet(workbook, spec) ?: return false
         val headerRow = SheetResolver.locateHeader(sheet, spec.firstColumnHeader)?.row ?: return false
         return header in resolveHeaderColumns(headerRow)
+    }
+
+    /** 그 시트의 헤더(첫 열 [firstHeader]로 찾은 행)에 이 표준 열이 있는가. */
+    private fun sheetHeaderHas(sheet: Sheet, firstHeader: String, header: String): Boolean {
+        val headerRow = SheetResolver.locateHeader(sheet, firstHeader)?.row ?: return false
+        return header in resolveHeaderColumns(headerRow)
+    }
+
+    /**
+     * 작품 시트의 `필드:` 열이 **담지 못하는** 지금의 작품 필드값 수 — '작품 필드값' 시트가
+     * 비었거나 없을 때 작품 통삭제가 영영 잃을 몫이다(S22 · Codex 리뷰).
+     * 열 해석은 가져오기와 **같은 함수**([collectEntityFieldColumns])이고, 이름 폴백 열은
+     * 그 이름의 필드 전부를 덮는 것으로 넉넉히 센다(막을 몫을 줄이는 쪽 — 지우지 않는 쪽이 안전하다).
+     */
+    private suspend fun countNovelValuesOutsideNovelSheet(workbook: Workbook): Int {
+        if (countRows("SELECT COUNT(*) FROM novel_field_values") == 0) return 0
+        val fields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL)
+        val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+        val covered = HashSet<Long>()
+        val sheet = resolveSpecSheet(workbook, novelSpec(emptyList()))
+        val headerRow = sheet?.let { SheetResolver.locateHeader(it, novelSpec(emptyList()).firstColumnHeader)?.row }
+        if (headerRow != null) {
+            for (col in collectEntityFieldColumns(headerRow, fields, universeNamesById, result = null, sheetLabel = "")) {
+                val exact = col.resolved
+                if (exact != null) covered.add(exact.id)
+                else fields.filter { it.name == col.fieldName }.forEach { covered.add(it.id) }
+            }
+        }
+        val calculated = fields.filter { it.fieldType == FieldType.CALCULATED }.mapTo(HashSet()) { it.id }
+        val ids = (covered + calculated).joinToString(",").ifEmpty { "-1" }
+        return countRows(
+            "SELECT COUNT(*) FROM novel_field_values WHERE value <> '' AND fieldDefinitionId NOT IN ($ids)"
+        )
     }
 
     /**
