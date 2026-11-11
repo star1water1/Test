@@ -1280,6 +1280,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 child(duelAxisSpec().sheetName, "SELECT COUNT(*) FROM duel_axes", effectiveOptions.duels, duelAxisSpec()),
                                 child(duelMatchSpec().sheetName, "SELECT COUNT(*) FROM duel_matches", effectiveOptions.duels, duelMatchSpec()),
                                 child(duelVerdictSpec().sheetName, "SELECT COUNT(*) FROM duel_counter_verdicts", effectiveOptions.duels, duelVerdictSpec()),
+                                // 남겨 둔 작품·사건의 **세계관 배정** — `universeId`가 SET NULL이라 세계관을
+                                // 지우면 그 작품(과 캐릭터)·사건이 말없이 무소속이 된다(S22 · Codex 리뷰).
+                                // 이번에 다시 세운 표는 이미 비어 0건이다.
+                                OverwriteGuard.CascadeChild(
+                                    "작품의 세계관 배정",
+                                    countRows("SELECT COUNT(*) FROM novels WHERE universeId IS NOT NULL"),
+                                    RestoreSource.HAS_ROWS, keptOwner = true
+                                ),
+                                OverwriteGuard.CascadeChild(
+                                    "사건의 세계관 배정",
+                                    countRows("SELECT COUNT(*) FROM timeline_events WHERE universeId IS NOT NULL"),
+                                    RestoreSource.HAS_ROWS, keptOwner = true
+                                ),
                                 keptValues("캐릭터 필드값", "character_field_values"),
                                 keptValues("작품 필드값", "novel_field_values"),
                                 keptValues("사건 필드값", "event_field_values")
