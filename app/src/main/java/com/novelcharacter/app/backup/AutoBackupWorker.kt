@@ -288,6 +288,11 @@ class AutoBackupWorker(
                 (file.name.endsWith(".xlsx") || file.name.endsWith(".zip") || file.name.endsWith(".enc.part")) &&
                 file.lastModified() < orphanCutoff
         }?.forEach { it.delete() }
+        // 이미지 STORED 사본(큰 그림)의 고아 — 수동·월드패키지 내보내기도 같은 cacheDir에 두므로
+        // 여기서 함께 치운다. 같은 나이 기준이라 진행 중인 다른 내보내기의 사본은 건드리지 않는다.
+        // (이 PR 이전 빌드가 backups/에 남겼을 수 있는 것도 함께.)
+        com.novelcharacter.app.excel.StoredZipEntry.sweepStaleScratch(appContext.cacheDir, ORPHAN_TEMP_AGE_MS)
+        com.novelcharacter.app.excel.StoredZipEntry.sweepStaleScratch(backupDir, ORPHAN_TEMP_AGE_MS)
 
         val backupFiles = backupDir.listFiles { file ->
             file.name.startsWith(BACKUP_PREFIX) && file.name.endsWith(BACKUP_EXTENSION)

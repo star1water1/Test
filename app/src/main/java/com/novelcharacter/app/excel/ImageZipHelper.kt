@@ -126,7 +126,9 @@ object ImageZipHelper {
                     // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패(파일이 방금 지워졌다,
                     // 권한이 없다)가 이 부류의 대부분인데, 순서가 반대면 그 흔한 실패마다
                     // 0바이트 엔트리가 ZIP에 남는다. 이쪽은 그 자리에서 통째로 건너뛴다.
-                    StoredZipEntry.write(zip, zipPath, imageFile, scratchDir = outputZipFile.parentFile ?: imageFile.parentFile)
+                    // 큰 그림의 사본은 cacheDir에 둔다 — 출력 ZIP 옆(자동 백업이면 filesDir/backups)에
+                    // 두면 중단 때 남은 사본을 어떤 청소도 치우지 않았다(PR #432 리뷰).
+                    StoredZipEntry.write(zip, zipPath, imageFile, scratchDir = appContext.cacheDir)
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
                     failedPaths.add(path)

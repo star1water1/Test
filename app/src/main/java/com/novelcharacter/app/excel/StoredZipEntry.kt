@@ -31,6 +31,26 @@ object StoredZipEntry {
     /** 이 크기 이하는 메모리 사본으로 굳힌다 — 대부분의 그림이 여기 든다(디스크 왕복 없음). */
     const val IN_MEMORY_LIMIT: Long = 16L * 1024 * 1024
 
+    /** 큰 그림 사본의 이름 모양 — [sweepStaleScratch]가 이 모양만 지운다. */
+    const val SCRATCH_PREFIX = "zipimg_"
+    const val SCRATCH_SUFFIX = ".tmp"
+
+    /**
+     * [dir]에 남은 **오래된** 사본([SCRATCH_PREFIX]…[SCRATCH_SUFFIX])을 지우고 지운 수를 낸다.
+     *
+     * [write]는 사본을 `finally`에서 지우지만, 백업이 그 사이에 강제 종료되면(자동 백업 작업이
+     * 죽는 흔한 갈래) 16 MiB 넘는 사본이 그대로 남는다(PR #432 리뷰). **오래된 것만** 지운다 —
+     * 지금 함께 도는 다른 내보내기의 사본을 태우지 않으려는 것이다(백업 고아 청소와 같은 규약).
+     */
+    fun sweepStaleScratch(dir: File, olderThanMs: Long, now: Long = System.currentTimeMillis()): Int {
+        val cutoff = now - olderThanMs
+        val stale = dir.listFiles { f ->
+            f.isFile && f.name.startsWith(SCRATCH_PREFIX) && f.name.endsWith(SCRATCH_SUFFIX) &&
+                f.lastModified() < cutoff
+        } ?: return 0
+        return stale.count { it.delete() }
+    }
+
     /** 원본의 (크기, CRC32) — 한 번 끝까지 훑어서 잰다. [sink]가 있으면 읽은 바이트를 그대로 흘린다. */
     fun measure(input: InputStream, sink: OutputStream? = null): Pair<Long, Long> {
         val crc = CRC32()
@@ -54,7 +74,8 @@ object StoredZipEntry {
      * 실패한 장이 0바이트·반쪽 엔트리를 남기지 않는다). 엔트리는 사본에서 쓰므로 원본이 그 사이에
      * 바뀌어도 크기·CRC가 어긋나지 않는다.
      *
-     * @param scratchDir 큰 그림([inMemoryLimit] 초과)의 사본을 둘 곳 — 쓰고 나면 지운다.
+     * @param scratchDir 큰 그림([inMemoryLimit] 초과)의 사본을 둘 곳 — 쓰고 나면 지운다. 중단으로
+     *   남은 사본은 [sweepStaleScratch]가 치우므로 **그 청소가 도는 곳**(앱 `cacheDir`)을 넘긴다.
      * @param inMemoryLimit 메모리 사본 상한 — 시험이 임시 파일 갈래를 고르려고 낮춘다.
      */
     fun write(
@@ -72,7 +93,7 @@ object StoredZipEntry {
             return
         }
         scratchDir.mkdirs()
-        val copy = File.createTempFile("zipimg_", ".tmp", scratchDir)
+        val copy = File.createTempFile(SCRATCH_PREFIX, SCRATCH_SUFFIX, scratchDir)
         try {
             val (size, crc) = file.inputStream().use { input ->
                 FileOutputStream(copy).use { out -> measure(input, out) }

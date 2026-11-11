@@ -116,4 +116,22 @@ class StoredZipEntryTest {
         }
         assertEquals(listOf("data.xlsx"), names)
     }
+
+    @Test
+    fun `중단으로 남은 오래된 사본만 지운다`() {
+        val dir = createTempDir()
+        try {
+            val now = 10_000_000_000L
+            val age = 6L * 60 * 60 * 1000
+            val stale = File(dir, "zipimg_1.tmp").apply { writeText("x"); setLastModified(now - age - 1) }
+            val fresh = File(dir, "zipimg_2.tmp").apply { writeText("x"); setLastModified(now - 1000) }
+            val other = File(dir, "backup_3.zip").apply { writeText("x"); setLastModified(now - age - 1) }
+            assertEquals(1, StoredZipEntry.sweepStaleScratch(dir, age, now))
+            assertEquals(false, stale.exists())
+            assertEquals(true, fresh.exists())
+            assertEquals(true, other.exists())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }
