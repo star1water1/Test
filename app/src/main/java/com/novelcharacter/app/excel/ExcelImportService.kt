@@ -1202,7 +1202,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         "'${fieldValueLibrarySpec().sheetName}' 시트에 " +
                             libraryMissingColumns.joinToString("·") { "'$it'" } +
                             " 열이 없어 기존 값 라이브러리를 삭제하지 않고 유지했습니다 (덮어쓰기 제외) — " +
-                            "지우면 그 열에 적혀 있던 표기·별칭이 되살아나지 않습니다"
+                            "지우면 그 열에 적혀 있던 값(표기·별칭·출처 등)이 되살아나지 않습니다"
                     )
                 } else if (shouldDelete(effectiveOptions.fieldDefinitions, fieldValueLibrarySpec())) {
                     db.fieldValueEntryDao().deleteAll()
@@ -12993,7 +12993,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             FieldValueSheetMapper.ALIAS_HEADER to "aliasesJson NOT IN ('', '[]')",
             "카테고리" to "category <> ''",
             "설명" to "description <> ''",
-            "숨김" to "isHidden <> 0"
+            "숨김" to "isHidden <> 0",
+            // 출처는 값이 아니라 **내력**이다 — 열 없이 다시 세우면 전부 IMPORT가 되어
+            // '미사용 자동수집 정리'(source='AUTO')의 대상이 바뀐다(S22 · Codex 리뷰).
+            "출처" to "source <> '${com.novelcharacter.app.data.model.FieldValueEntry.SOURCE_IMPORT}'"
         ).filter { (header, cond) ->
             !sheetHasColumn(workbook, spec, header) &&
                 countRows("SELECT COUNT(*) FROM field_value_entries WHERE $cond") > 0
