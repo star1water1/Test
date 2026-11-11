@@ -227,6 +227,8 @@ class AutoBackupWorker(
         if (!backupDir.exists()) {
             backupDir.mkdirs()
         }
+        // 고아를 먼저 치운다 — 공간이 빠듯하면 그것들이 이번 백업을 굶긴다(PR #432 리뷰).
+        sweepOrphanTemps(backupDir)
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backupFile = BackupPublication.destination(backupDir, BACKUP_PREFIX, timestamp, BACKUP_EXTENSION)
@@ -276,12 +278,14 @@ class AutoBackupWorker(
         }
     }
 
-    private fun rotateBackups(maxBackups: Int) {
-        val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
-        if (!backupDir.exists()) return
-
-        // 중단된 이전 백업의 고아 임시 파일 청소 — **오래된 것만** 지운다(설계 D2 무해화 ①).
-        // 조건 없이 지우면 지금 함께 돌고 있는 다른 인스턴스(주기 ↔ 수동)의 작업 파일을 태운다.
+    /**
+     * 중단된 이전 백업·내보내기의 고아 임시 파일 청소 — **오래된 것만** 지운다(설계 D2 무해화 ①).
+     * 조건 없이 지우면 지금 함께 돌고 있는 다른 인스턴스(주기 ↔ 수동)의 작업 파일을 태운다.
+     *
+     * **새 백업을 쓰기 전에도 부른다**(PR #432 리뷰) — 회전에서만 치우면, 고아가 저장 공간을
+     * 차지해 백업이 실패하는 동안 회전에 닿지 못해 고아가 영영 남는다.
+     */
+    private fun sweepOrphanTemps(backupDir: File) {
         val orphanCutoff = System.currentTimeMillis() - ORPHAN_TEMP_AGE_MS
         backupDir.listFiles { file ->
             file.name.startsWith("backup_") &&
@@ -289,10 +293,16 @@ class AutoBackupWorker(
                 file.lastModified() < orphanCutoff
         }?.forEach { it.delete() }
         // 이미지 STORED 사본(큰 그림)의 고아 — 수동·월드패키지 내보내기도 같은 cacheDir에 두므로
-        // 여기서 함께 치운다. 같은 나이 기준이라 진행 중인 다른 내보내기의 사본은 건드리지 않는다.
-        // (이 PR 이전 빌드가 backups/에 남겼을 수 있는 것도 함께.)
+        // 여기서 함께 치운다. (이 PR 이전 빌드가 backups/에 남겼을 수 있는 것도 함께.)
         com.novelcharacter.app.excel.StoredZipEntry.sweepStaleScratch(appContext.cacheDir, ORPHAN_TEMP_AGE_MS)
         com.novelcharacter.app.excel.StoredZipEntry.sweepStaleScratch(backupDir, ORPHAN_TEMP_AGE_MS)
+    }
+
+    private fun rotateBackups(maxBackups: Int) {
+        val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
+        if (!backupDir.exists()) return
+
+        sweepOrphanTemps(backupDir)
 
         val backupFiles = backupDir.listFiles { file ->
             file.name.startsWith(BACKUP_PREFIX) && file.name.endsWith(BACKUP_EXTENSION)
