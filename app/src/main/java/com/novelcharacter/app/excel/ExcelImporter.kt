@@ -64,6 +64,16 @@ class ExcelImporter(context: Context) {
     private var pendingImageFailures = 0
 
     /**
+     * 해제하다 **엔트리 자체가 깨져** 건너뛴 이미지 수(S25 4-ㄴ2).
+     *
+     * 2026-08-02 ~ 수정 전 빌드의 전체 백업은 첫 이미지 한 장의 deflate 스트림이 깨져 있다
+     * (내보내기의 `setLevel` 전환 — [StoredZipEntry] 참조). 종전에는 그 한 장의 `ZipException`이
+     * 가져오기 전체를 *"가져오기 실패"*로 끝내, **이미 사용자 손에 있는 백업이 통째로 쓸모없었다.**
+     * 이미지 한 장은 데이터가 아니므로 그 장만 건너뛰고 결과에 사실대로 말한다.
+     */
+    private var pendingCorruptImageEntries = 0
+
+    /**
      * 지금 돌고 있는 구간 (B-228). 도는 것이 없으면 null이다.
      *
      * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
@@ -1063,10 +1073,24 @@ class ExcelImporter(context: Context) {
                                 continue
                             }
                             imageFile.parentFile?.mkdirs()
-                            val copied = zip.getInputStream(entry).use { input ->
-                                FileOutputStream(imageFile).use { output ->
-                                    copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                            // **깨진 이미지 엔트리 한 장은 건너뛴다** — 위 [pendingCorruptImageEntries].
+                            // data.xlsx가 깨진 것은 여기 오지 않는다(그쪽은 종전대로 실패다).
+                            val copied = try {
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(imageFile).use { output ->
+                                        copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                                    }
                                 }
+                            } catch (e: java.util.zip.ZipException) {
+                                imageFile.delete()
+                                pendingCorruptImageEntries++
+                                Log.w("ExcelImporter", "Skipping corrupt image entry: ${entry.name}", e)
+                                continue
+                            } catch (e: java.io.EOFException) {
+                                imageFile.delete()
+                                pendingCorruptImageEntries++
+                                Log.w("ExcelImporter", "Skipping truncated image entry: ${entry.name}", e)
+                                continue
                             }
                             imageTotalBytes += copied
                             if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) {
@@ -1536,6 +1560,18 @@ class ExcelImporter(context: Context) {
                     result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
                     pendingImageFailures = 0
                 }
+                if (pendingCorruptImageEntries > 0) {
+                    // **맨 앞에 둔다** — 빈 앱 복원은 행마다 *"새로 생성됨"* 안내가 수천 줄 붙어,
+                    // 끝에 달면 상세·이력의 길이 상한에 잘려 **유일하게 데이터가 빠진 사실이 안 보인다.**
+                    result.warnings.add(
+                        0,
+                        appContext.getString(
+                            com.novelcharacter.app.R.string.import_corrupt_image_entries,
+                            pendingCorruptImageEntries
+                        )
+                    )
+                    pendingCorruptImageEntries = 0
+                }
                 // 여기까지 왔으면 트랜잭션이 커밋됐다 — 되살린 이미지는 이제 가리킬 행이 있다.
                 restoredImagePaths = emptyList()
 
@@ -1591,6 +1627,7 @@ class ExcelImporter(context: Context) {
             // 실패" **거짓 경고**가 붙는다 — 계수를 가져오기 한 번의 수명으로 좁힌다.
             // (성공 갈래는 소비 직후 이미 0이라 이 대입은 무해하다.)
             pendingImageFailures = 0
+            pendingCorruptImageEntries = 0
         }
     }
 
