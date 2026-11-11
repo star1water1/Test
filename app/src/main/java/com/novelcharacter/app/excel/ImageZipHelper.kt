@@ -126,7 +126,7 @@ object ImageZipHelper {
                     // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패(파일이 방금 지워졌다,
                     // 권한이 없다)가 이 부류의 대부분인데, 순서가 반대면 그 흔한 실패마다
                     // 0바이트 엔트리가 ZIP에 남는다. 이쪽은 그 자리에서 통째로 건너뛴다.
-                    StoredZipEntry.write(zip, zipPath, imageFile)
+                    StoredZipEntry.write(zip, zipPath, imageFile, scratchDir = outputZipFile.parentFile ?: imageFile.parentFile)
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
                     failedPaths.add(path)

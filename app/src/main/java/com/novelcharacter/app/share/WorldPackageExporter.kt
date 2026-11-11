@@ -492,7 +492,7 @@ class WorldPackageExporter(private val context: Context,
                         // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패가 이 부류의 대부분인데,
                         // 순서가 반대면 그 흔한 실패마다 0바이트 엔트리가 남고 받는 기기는 그것을
                         // 멀쩡한 이미지로 복원한다(결번이라야 "유실"로 세어 고지된다).
-                        com.novelcharacter.app.excel.StoredZipEntry.write(zip, entryName, imageFile)
+                        com.novelcharacter.app.excel.StoredZipEntry.write(zip, entryName, imageFile, scratchDir = context.cacheDir)
                         tally.included++
                     } catch (e: Exception) {
                         // **여기까지 왔으면 엔트리가 이미 열려 있을 수 있다**(`copyTo`가 중간에

@@ -46,7 +46,10 @@ class StoredZipEntryTest {
             val zipFile = File(dir, "backup.zip")
             ZipOutputStream(zipFile.outputStream()).use { zip ->
                 zip.putNextEntry(ZipEntry("data.xlsx")); zip.write(xlsx); zip.closeEntry()
-                files.forEachIndexed { i, f -> StoredZipEntry.write(zip, "images/img$i.jpg", f) }
+                files.forEachIndexed { i, f ->
+                    // 짝수 장은 메모리 사본, 홀수 장은 임시 파일 사본 갈래로 쓴다 — 둘 다 같은 바이트여야 한다.
+                    StoredZipEntry.write(zip, "images/img$i.jpg", f, scratchDir = dir, inMemoryLimit = if (i % 2 == 0) Long.MAX_VALUE else 0)
+                }
                 zip.putNextEntry(ZipEntry("image_map.json")); zip.write(json); zip.closeEntry()
             }
 
@@ -62,11 +65,35 @@ class StoredZipEntryTest {
                 assertEquals(ZipEntry.DEFLATED, z.getEntry("image_map.json").method)
                 assertArrayEquals(json, z.getInputStream(z.getEntry("image_map.json")).readBytes())
             }
+            // 임시 파일 갈래가 사본을 남기지 않는다.
+            assertEquals(emptyList<String>(), dir.list()!!.filter { it.startsWith("zipimg_") })
             // 스트리밍 리더(ZipInputStream)도 STORED 엔트리를 끝까지 읽는다.
             ZipInputStream(zipFile.inputStream()).use { zin ->
                 var count = 0
                 while (zin.nextEntry != null) { zin.readBytes(); count++ }
                 assertEquals(2 + images.size, count)
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `한 장이 실패해도 뒤 엔트리와 ZIP 마감이 멀쩡하다`() {
+        // 리뷰(PR #432): 실패한 STORED 엔트리가 열린 채 남으면 뒤 엔트리·마감이 함께 죽는다.
+        val dir = createTempDir()
+        try {
+            val ok = File(dir, "ok.jpg").apply { writeBytes(bytes(5000, 9)) }
+            val missing = File(dir, "gone.jpg")
+            val zipFile = File(dir, "b.zip")
+            ZipOutputStream(zipFile.outputStream()).use { zip ->
+                try { StoredZipEntry.write(zip, "images/gone.jpg", missing, dir) } catch (_: java.io.IOException) { }
+                StoredZipEntry.write(zip, "images/ok.jpg", ok, dir)
+                zip.putNextEntry(ZipEntry("image_map.json")); zip.write("{}".toByteArray()); zip.closeEntry()
+            }
+            ZipFile(zipFile).use { z ->
+                assertEquals(listOf("images/ok.jpg", "image_map.json"), z.entries().toList().map { it.name })
+                assertArrayEquals(ok.readBytes(), z.getInputStream(z.getEntry("images/ok.jpg")).readBytes())
             }
         } finally {
             dir.deleteRecursively()
@@ -80,7 +107,7 @@ class StoredZipEntryTest {
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry("data.xlsx")); zip.write(byteArrayOf(1, 2, 3)); zip.closeEntry()
             try {
-                StoredZipEntry.write(zip, "images/gone.jpg", missing)
+                StoredZipEntry.write(zip, "images/gone.jpg", missing, scratchDir = missing.parentFile!!)
             } catch (_: java.io.IOException) {
             }
         }
