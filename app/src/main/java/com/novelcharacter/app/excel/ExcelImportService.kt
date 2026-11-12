@@ -13619,7 +13619,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     universeRepository.getFieldsForCharacterScope(universeId)
                 }
                 // **이력의 연도만 고친 파일** — 아래 필드 → 이력 동기화가 그 편집을 도로 덮기 전에
-                // 처분한다([SemanticYearEditPrecedence]). 종전에는 결과가 "고쳤습니다"라 말하고
+                // 처분한다([SemanticYearEditPrecedence]). **연도(와 연동된 나이)만** 옮긴다 —
+                // 생일·생존여부는 이 파일의 명시를 지키도록 뒤 동기화에 맡긴다. 종전에는 결과가 "고쳤습니다"라 말하고
                 // DB는 그대로였다(S11 3-ㅇ-14).
                 applySemanticYearEdits(characterId, fields, syncHelper, result)
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
@@ -13671,20 +13672,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 else SemanticYearEditPrecedence.decide(oldYear, change.year, current)
             when (decision) {
                 SemanticYearEditPrecedence.Decision.APPLY_STATE ->
-                    syncHelper.syncStateChangeToField(characterId, fields, change)
+                    syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, change.year)
                 // 맞는 경우도 출생이면 한 번 지난다 — 연동된 나이를 이 연도로 맞추는 것이 일이다
                 // (필드와 이력은 맞는데 나이만 다른 파일이면 아래 동기화가 나이로 출생을 되쓴다).
-                // 사망은 지나지 않는다 — 그 갈래는 생존여부를 '사망'으로 되쓰는데, 맞는 연도에
-                // 그럴 이유가 없다(사용자가 고른 생존여부를 덮는다 — [SemanticAlivePrecedence]).
+                // 사망은 지날 것이 없다 — 사망연도가 이미 맞고, 생존여부는 뒤 동기화가 정한다.
                 SemanticYearEditPrecedence.Decision.CONSISTENT ->
-                    if (isBirth) syncHelper.syncStateChangeToField(characterId, fields, change)
+                    if (isBirth) syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, change.year)
                 SemanticYearEditPrecedence.Decision.FIELD_WINS_CONFLICT -> {
                     // **필드가 이긴다는 말을 지킨다** — 출생이면 연동된 나이도 그 필드 연도로
                     // 맞춰 둔다. 안 맞추면 아래 동기화가 값 목록의 차례에 따라 옛 나이로 출생연도까지
                     // 되쓸 수 있다(PR #436 리뷰: 기준 1000·출생연도 990·나이 30 → 970).
                     val fieldYear = current?.trim()?.toIntOrNull()
                     if (isBirth && fieldYear != null) {
-                        syncHelper.syncStateChangeToField(characterId, fields, change.copy(year = fieldYear))
+                        syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, fieldYear)
                     }
                     val name = runCatching { db.characterDao().getCharacterById(characterId)?.name }.getOrNull() ?: "#$characterId"
                     // 이 갈래는 필드가 있을 때만 온다(없으면 위에서 APPLY_STATE).
