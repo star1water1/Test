@@ -408,4 +408,15 @@ class ImportIdentityIndexesTest {
         assertEquals(first, pickEventByNaturalKey(listOf(first, second), universeId = null))
         assertNull(pickEventByNaturalKey(emptyList(), universeId = null))
     }
+
+    @Test
+    fun `그 세계관 사건이 없으면 무소속 사건을 잡고 다른 세계관 사건은 잡지 않는다`() {
+        // 소속 없이 작품만 이어진 사건 — 행은 그 작품에서 세계관을 유도한다(PR #434 리뷰).
+        val detached = event(1, universeId = null)
+        val other = event(2, universeId = 10)
+        assertEquals(detached, pickEventByNaturalKey(listOf(other, detached), universeId = 20))
+        // 같은 세계관 사건이 있으면 그것이 먼저다.
+        val own = event(3, universeId = 20)
+        assertEquals(own, pickEventByNaturalKey(listOf(detached, own), universeId = 20))
+    }
 }
