@@ -1371,6 +1371,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedFieldDefinitionIds.clear()
             matchedGradeSystemIds.clear()
             pendingAutoRelationMemberships.clear()
+            // **어느 시트보다 먼저 뜬다** — 미리보기([analyzeTimeline])가 보는 것과 같은 시점이다.
+            // '작품' 시트가 작품을 다른 세계관으로 옮긴 뒤에 뜨면, 같은 파일의 코드 없는 사건 행을
+            // 미리보기와 가져오기가 서로 다르게 판정한다(PR #434 리뷰).
+            preImportEventNovelUniverses = eventLinkedNovelUniverses()
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
             // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
@@ -8796,7 +8800,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 아예 못 센다).
         val eventsWithNovelLinks = db.timelineDao().getAllEventNovelCrossRefs().mapTo(HashSet()) { it.eventId }
         // 자연키 폴백의 무소속 갈래 재료 — 미리보기와 같은 함수·같은 시점(시트를 읽기 전)이다.
-        val eventNovelUniverses = eventLinkedNovelUniverses()
+        // [importAll]이 첫 시트 전에 떠 둔 것을 쓴다(작품 시트가 그 사이 세계관을 옮겼을 수 있다).
+        val eventNovelUniverses = preImportEventNovelUniverses ?: eventLinkedNovelUniverses()
         val eventsWithParticipants = db.timelineDao().getAllCrossRefs().mapTo(HashSet()) { it.eventId }
         val eventCodesSeen = mutableSetOf<String>()
         // 정의 없는 "필드:" 열의 값 유실 고지용 — (헤더명) 단위로 1회만 경고
@@ -12425,6 +12430,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 가져오기와 미리보기가 **시트를 읽기 전의 DB**로 같은 답을 낸다(R-33). 이번에 만든 사건은
      * 여기 없으므로 그 갈래의 후보가 아니다(양쪽 같다).
      */
+    /** [importAll]이 첫 시트 전에 뜬 [eventLinkedNovelUniverses] — 가져오기 한 번의 수명이다. */
+    private var preImportEventNovelUniverses: Map<Long, Set<Long?>>? = null
+
     private suspend fun eventLinkedNovelUniverses(): Map<Long, Set<Long?>> {
         val novelUniverse = db.novelDao().getAllNovelsList().associate { it.id to it.universeId }
         val out = HashMap<Long, MutableSet<Long?>>()
