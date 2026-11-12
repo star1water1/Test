@@ -4218,7 +4218,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allFieldDefs.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
         val c = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         // 행마다 `getFieldByKey`·`getGlobalFieldByKey`를 묻던 자리 (B-236).
         val fieldDefs = FieldDefinitionIndexes(allFieldDefs)
@@ -4932,7 +4932,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = db.timelineDao().getAllEventsList().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         // 실제 임포트와 동일한 설명 열 해석 — 없으면 가져오기도 시트를 통째로 건너뛴다.
         val descColIndex = TimelineCols.descColumn(cols)
@@ -5017,7 +5017,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allChanges.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         // 실제 임포트와 동일하게 필수 열이 없으면 시트를 통째로 건너뛴다(위치 폴백 금지).
         val yearColIndex = cols["연도"] ?: return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
@@ -5103,7 +5103,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allQuotes.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         // 실제 임포트와 동일하게 필수 열이 없으면 시트를 통째로 건너뛴다(위치 폴백 금지).
         val textColIndex = cols["대사"] ?: return CategoryAnalysis("quotes", "명대사", 0, 0, 0, 0, existingTotal)
@@ -5168,7 +5168,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allRelationships.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         // 실제 임포트와 동일하게 필수 열이 없으면 시트를 통째로 건너뛴다(위치 폴백 금지).
         val char2NameColIndex = cols["캐릭터2"] ?: return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
@@ -5266,7 +5266,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allRelChanges.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, "이름") ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, "캐릭터1") ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         // 실제 임포트와 동일하게 필수 열이 없으면 시트를 통째로 건너뛴다(위치 폴백 금지).
         val char2NameColIndex = cols["캐릭터2"] ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
@@ -5349,7 +5349,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = existingNames.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("nameBank", "이름 은행", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("nameBank", "이름 은행", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("nameBank", "이름 은행", 0, 0, 0, 0, existingTotal)
         val c = NameBankCols(resolveHeaderColumns(headerRow))
         val now = System.currentTimeMillis()
 
@@ -5421,7 +5421,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = allFactions.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
         val c = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
         // 정체성 색인도 가져오기와 **같은 클래스**다(B-236).
@@ -5484,7 +5484,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = analysisMemberships().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0
         val charNameColIndex = cols["캐릭터"] ?: -1
@@ -5592,7 +5592,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = existingRels.size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         val faction1ColIndex = cols[spec.firstColumnHeader] ?: cols["세력1"] ?: 0
         val faction2ColIndex = cols["세력2"] ?: -1
@@ -5976,15 +5976,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /**
      * 헤더 행 — 찾으면 그 행, **못 찾으면 0행** (B-231 ⓑ).
      *
-     * 헤더 첫 열을 **검증하지 않는 자리**의 통로다. 미리보기 여럿과 이미지 메타는 첫 열이
-     * 어긋난 시트도 읽고(구버전 헤더·손편집 파일의 관대 수용 — `sheetForRead`의 정확명 폴백이
-     * 그 앞단이다) **필수 열이 없을 때** 비로소 시트를 건너뛴다. 여기서 `locateHeaderRow`만
+     * 헤더 첫 열을 **검증하지 않는 자리**의 통로다. 이미지 메타는 첫 열이 어긋난 시트도
+     * 읽고(구버전 헤더·손편집 파일의 관대 수용 — `sheetForRead`의 정확명 폴백이 그 앞단이다)
+     * **필수 열이 없을 때** 비로소 시트를 건너뛴다.
+     *
+     * **미리보기는 이것을 쓰지 않는다** — 짝인 가져오기가 [headerRowOrReport]로 시트를 건너뛰는
+     * 자리에서 미리보기만 0행을 읽으면 가져오기가 하지 않을 일을 약속한다(S22: "신규 1 / 동일 18"·
+     * "엑셀에 없는 항목 삭제 1개"를 말하고 가져오기는 그 시트를 건너뛰었다). 미리보기는
+     * [locateHeaderRow]를 쓴다 — [headerRowOrReport]가 받는 행과 정확히 같은 행을 받는다
+     * (둘 다 앞 10행에서 같은 [isValidHeader]로 찾는다). 여기서 `locateHeaderRow`만
      * 쓰면 그 관대함이 사라져 **B-231이 고치려던 것과 반대 방향으로** 파일을 더 거부하게 된다.
      *
      * 즉 이 함수가 바꾸는 것은 **헤더가 아래에 있는 파일뿐이다** — 0행이 헤더면 답이 종전과 같다.
      */
     private fun headerRowOrFirst(sheet: Sheet, expectedFirstHeader: String): Row? =
         locateHeaderRow(sheet, expectedFirstHeader) ?: sheet.getRow(0)
+
 
     /**
      * **데이터 루프의 범위 — 그리고 그 루프가 도는 동안 진행을 알린다.**
@@ -6605,7 +6612,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (sheet == null || sheet.lastRowNum < 1) {
             return CategoryAnalysis("defaultFields", label, 0, 0, 0, 0, existingTotal)
         }
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader)
             ?: return CategoryAnalysis("defaultFields", label, 0, 0, 0, 0, existingTotal)
 
         val c = DefaultFieldCols(resolveHeaderColumns(headerRow))
@@ -6905,7 +6912,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val existingTotal = db.gradeSystemDao().getAllList().size
         val sheet = sheetForAnalysis(workbook, spec)
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
-        val headerRow = headerRowOrFirst(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = locateHeaderRow(sheet, spec.firstColumnHeader) ?: return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
 
         var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         // 이 시트가 앞서 만든 체계 — 해석이 DAO 직접 조회라 색인이 없어 여기에 겹쳐 둔다(B-233).
