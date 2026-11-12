@@ -278,7 +278,7 @@
     <string name="duel_grade_change_new">— → %1$s · 상위 %2$s%%</string>
     <string name="duel_grade_change">%1$s → %2$s · 상위 %3$s%%</string>
     <string name="duel_grade_badge_boundary">경계</string>
-    <string name="duel_grade_foot_note">\'경계\'는 ±오차가 컷을 가로지르는 캐릭터입니다 — 판을 더 쌓으면 확실해집니다. 반영 전 값은 휴지통에 백업됩니다.</string>
+    <string name="duel_grade_foot_note">\'경계\'는 ±오차가 컷을 가로지르는 캐릭터입니다 — 판을 더 쌓으면 확실해집니다. 덮어쓰는 값은 휴지통에 백업됩니다.</string>
     <string name="duel_grade_apply_count">반영 (%1$d)</string>
     <string name="duel_grade_apply_empty">바뀔 값이 없습니다. 순위와 등급이 이미 맞습니다.</string>
     <string name="duel_grade_apply_load_failed">미리보기를 세우지 못했습니다. 축과 등급 표를 확인하세요.</string>
@@ -293,7 +293,7 @@
     <string name="duel_grade_create_axis_failed">대결 축을 만들지 못했습니다</string>
     <string name="duel_grade_create_axis_name_required">축 이름을 입력하세요</string>
     <string name="duel_grade_save_blocked">%1$s 이대로 저장하면 대결 등급 산정이 켜지지 않습니다.</string>
-    <string name="duel_grade_apply_done">%1$d명의 등급을 반영했습니다. 반영 전 값은 휴지통에 있습니다.</string>
+    <string name="duel_grade_apply_done">%1$d명의 등급을 반영했습니다. 덮어쓴 값은 휴지통에 있습니다.</string>
     <string name="duel_grade_op_applied">대결 등급 반영 — %1$d명</string>
     <string name="duel_grade_apply_entry">순위를 등급 값으로 반영 — 받는 필드 %1$d개</string>
     <string name="duel_grade_pick_field_title">어느 필드에 반영할지 고르세요</string>
@@ -1200,9 +1200,9 @@
     <string name="graph_edge_count">관계: %d개</string>
     <string name="graph_zoom_reset">확대/축소 초기화</string>
     <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
-    <string name="graph_too_many_nodes">인물이 많아 일부를 접었습니다. 작품·관계 유형 필터로 좁히면 접힌 인물도 볼 수 있습니다. (세력 칩은 좁히지 않고 고른 세력을 강조합니다 — 세력으로 좁히려면 \'좁히기\'를 켜세요)</string>
-    <string name="graph_too_many_nodes_narrowing">인물이 많아 일부를 접었습니다. 작품·관계 유형·세력 필터로 좁히면 접힌 인물도 볼 수 있습니다.</string>
-    <string name="graph_too_many_nodes_no_factions">인물이 많아 일부를 접었습니다. 작품·관계 유형 필터로 좁히면 접힌 인물도 볼 수 있습니다.</string>
+    <string name="graph_too_many_nodes">인물이 많아 일부를 접었습니다 — 작품·관계 유형 필터로 좁히세요. 세력으로 좁히려면 \'좁히기\'를 켜세요</string>
+    <string name="graph_too_many_nodes_narrowing">인물이 많아 일부를 접었습니다 — 작품·관계 유형·세력 필터로 좁히면 모두 보입니다</string>
+    <string name="graph_too_many_nodes_no_factions">인물이 많아 일부를 접었습니다 — 작품·관계 유형 필터로 좁히면 모두 보입니다</string>
     <string name="graph_filter_all">전체</string>
     <string name="graph_filter_all_universes">전체 세계관</string>
     <string name="graph_filter_all_novels">전체 작품</string>
@@ -2295,10 +2295,10 @@
     <!-- '작품 미지정'은 아무것도 제거하지 않는다 — 제거를 예고하면 사실과 다른 경고가 된다. -->
     <string name="batch_novel_unassign_notice">작품을 미지정으로 두면 필드값은 지워지지 않고 그대로 보관됩니다. 다시 작품에 배정하면 값이 그대로 보입니다.</string>
     <!-- 편집 화면 저장 시, 폼이 렌더하지 않아 보존된 값 고지 (원칙 04: 존재를 알 수 없는 데이터 금지) -->
-    <string name="field_values_preserved">화면에 없는 필드값 %1$d개는 지우지 않고 보관했습니다 — 작품을 다시 배정하면 그대로 보입니다</string>
+    <string name="field_values_preserved">화면에 없는 필드값 %1$d개는 보관했습니다 — 작품을 다시 배정하면 보입니다</string>
     <string name="global_field_values_kept">필드값 %1$d개는 옮길 곳의 값이 이미 있거나 형식이 달라 옮기지 않고 보관했습니다 — 값은 그대로 남아 있으니 필요하면 직접 옮겨 적으세요</string>
-    <string name="event_field_values_preserved">화면에 없는 사건 필드값 %1$d개는 지우지 않고 보관했습니다 — 원래 세계관의 작품만 선택하면 그대로 보입니다</string>
-    <string name="novel_field_values_preserved">화면에 없는 작품 필드값 %1$d개는 지우지 않고 보관했습니다 — 원래 세계관으로 되돌리면 그대로 보입니다</string>
+    <string name="event_field_values_preserved">화면에 없는 사건 필드값 %1$d개는 보관했습니다 — 원래 세계관의 작품만 고르면 보입니다</string>
+    <string name="novel_field_values_preserved">화면에 없는 작품 필드값 %1$d개는 보관했습니다 — 원래 세계관으로 되돌리면 보입니다</string>
     <string name="result_batch_move_detail">필드 %1$d개 이관 · %2$d개 제거 · 세력 %3$d개 제거(휴지통 백업)</string>
     <string name="result_batch_move_remapped">필드 %1$d개 이관</string>
     <string name="cross_universe_move_title">다른 세계관으로 이동</string>

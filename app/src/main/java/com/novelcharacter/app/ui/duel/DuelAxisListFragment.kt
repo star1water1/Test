@@ -141,6 +141,7 @@ class DuelAxisListFragment : Fragment() {
             }
         })
         touchHelper.attachToRecyclerView(binding.axisRecyclerView)
+        adapter.itemTouchHelper = touchHelper
     }
 
     /**
