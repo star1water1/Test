@@ -3873,7 +3873,10 @@ class TrashRepository(
             universeId = universeId,
             targets = targets,
             missing = missing,
-            relinkedByCode = tally.relinked + targets.size,
+            // **id가 실제로 바뀐 것만** 다시 연결한 것이다 — 자연키로 찾았어도 id가 백업과 같으면
+            // 그냥 그 필드다. 종전에는 찾은 전부를 세어, 덮어쓰기 직전 백업을 곧바로 되돌리면
+            // "참조 1건은 id가 바뀌었지만 코드로 다시 연결했습니다"라 사실과 다르게 말했다(S12 4-ㅌ2).
+            relinkedByCode = tally.relinked + targets.count { (living, backup) -> living.id != backup.id },
             legacyPayload = tally.legacyGuess,
             previewOnly = previewOnly,
             blocker = when {
