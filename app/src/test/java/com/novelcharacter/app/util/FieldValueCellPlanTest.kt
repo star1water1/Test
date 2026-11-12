@@ -112,11 +112,21 @@ class FieldValueCellPlanTest {
         )
     }
 
+    // 타입 변경의 '빈 값으로 초기화'가 남긴 행(value = '')은 이미 비어 있다 — 빈 셀이 그것을
+    // '비움'으로 세면 무편집 왕복 미리보기가 "지금 저장된 값이 지워집니다"라 거짓 예고한다(⑯).
     @Test
-    fun `기존이 빈 문자열이면 빈 셀은 비움이다`() {
+    fun `기존이 빈 문자열이면 빈 셀은 아무 일도 없다`() {
         assertEquals(
-            FieldValueCellEffect.CLEAR,
+            FieldValueCellEffect.NONE,
             FieldValueCellPlan.effectOf("", existingValue = "", columnPresent = true)
+        )
+    }
+
+    @Test
+    fun `기존이 공백뿐이어도 빈 셀은 아무 일도 없다`() {
+        assertEquals(
+            FieldValueCellEffect.NONE,
+            FieldValueCellPlan.effectOf("  ", existingValue = " ", columnPresent = true)
         )
     }
 

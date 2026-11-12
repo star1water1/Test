@@ -7795,12 +7795,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 if (existing != null) {
+                    // '동일'은 미리보기와 **같은 판정**으로 가른다(R-33) — [FieldValueSheetMapper.applyRow]가
+                    // `updatedAt`을 매번 새로 찍으므로 `candidate != existing`은 매칭된 행마다 참이었다.
+                    // 그 결과 무편집 왕복이 "필드 데이터 N건(업데이트)"을 말하고 갱신 시각을 전부 갈아 썼다(⑰).
+                    // 같으면 쓰지 않는다 — 형제 목록·코드 색인도 기존 그대로라 손댈 것이 없다.
+                    if (FieldValueSheetMapper.effectOf(existing, outcome) == FieldValueSheetMapper.RowEffect.UNCHANGED) {
+                        result.unchangedRows++
+                        continue
+                    }
                     db.fieldValueEntryDao().update(candidate)
                     siblings.removeAll { it.id == candidate.id }
                     siblings.add(candidate)
                     // 코드가 바뀌었을 수 있다(파일의 코드를 받는 갈래) — 색인이 옛 코드를
                     // 계속 가리키면 그 코드를 든 다음 행이 **남의 것을 자기 것으로 본다**.
                     entryCodes.put(candidate)
+                    // 위에서 '동일'을 걸렀으므로 여기의 `!=`는 늘 참이다 — 집계 옆에 판정을 남겨 두는 것은
+                    // 정적 검사(check_restore_preview_parity ③)가 보는 모양이다.
                     if (candidate != existing) result.updatedFieldValueEntries++ else result.unchangedRows++
                 } else {
                     // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용).
