@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.Universe
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,12 +82,12 @@ class FieldValueSheetMapperTest {
 
     @Test
     fun fieldValueLibrarySpec_columnOrderMatchesExporterCellIndices() {
-        // ExcelExporter가 셀 인덱스 0..12로 기록하므로 spec 열 순서가 계약이다.
+        // ExcelExporter가 셀 인덱스 0..13으로 기록하므로 spec 열 순서가 계약이다.
         // '출처'를 끼워 넣으며 사용횟수·코드를 재번호했는데, 이 계약이 깨지면
         // 사용횟수 자리에 코드 문자열이 들어가는 조용한 오염이 난다(차분 컴파일로는 안 잡힌다).
         assertEquals(
             listOf("세계관", "필드키", "필드명", "대상", "값", "표시라벨", "별칭 (쉼표 구분)",
-                   "카테고리", "설명", "숨김", "출처", "사용횟수", "코드"),
+                   "카테고리", "설명", "숨김", "출처", "사용횟수", "코드", "세계관코드"),
             fieldValueLibrarySpec().columns.map { it.header }
         )
     }
@@ -445,6 +446,47 @@ class FieldValueSheetMapperTest {
         assertEquals(
             FieldValueSheetMapper.RowEffect.UNCHANGED,
             FieldValueSheetMapper.effectOf(existing, 1, row("서울"), listOf(existing))
+        )
+    }
+
+    // ── 세계관 해석: 코드 → 이름, 동명이면 고르지 않는다 (S22 3-ㅅ-1) ──────────────
+
+    private val worldB1 = Universe(id = 1, name = "WorldB", code = "ub1")
+    private val worldB2 = Universe(id = 2, name = "WorldB", code = "ub2")
+    private val worldA = Universe(id = 3, name = "WorldA", code = "ua")
+    private val all = listOf(worldB1, worldB2, worldA)
+
+    @Test
+    fun `세계관코드가 있으면 동명이어도 그 세계관이다`() {
+        val ref = FieldValueSheetMapper.resolveUniverse("ub1", "WorldB", all) { true }
+        assertEquals(FieldValueSheetMapper.UniverseRef.Found(worldB1), ref)
+    }
+
+    @Test
+    fun `이름이 하나뿐이면 코드 없이도 그 세계관이다`() {
+        val ref = FieldValueSheetMapper.resolveUniverse("", "WorldA", all) { false }
+        assertEquals(FieldValueSheetMapper.UniverseRef.Found(worldA), ref)
+    }
+
+    @Test
+    fun `코드 없는 동명 행은 그 필드를 가진 세계관이 하나일 때만 정한다`() {
+        // 앞 WorldB에만 있는 필드 — 종전에는 뒤 WorldB로 보내져 '찾을 수 없음'으로 버려졌다.
+        val onlyFirst = FieldValueSheetMapper.resolveUniverse("", "WorldB", all) { it == 1L }
+        assertEquals(FieldValueSheetMapper.UniverseRef.Found(worldB1), onlyFirst)
+        // 양쪽에 있는 필드 — 종전에는 뒤 WorldB로 겹쳐 들어갔다. 이제는 고르지 않는다.
+        val both = FieldValueSheetMapper.resolveUniverse("", "WorldB", all) { it == 1L || it == 2L }
+        assertEquals(FieldValueSheetMapper.UniverseRef.Ambiguous(2), both)
+    }
+
+    @Test
+    fun `모르는 코드는 이름으로 내려가고 이름도 없으면 못 찾는다`() {
+        assertEquals(
+            FieldValueSheetMapper.UniverseRef.Found(worldA),
+            FieldValueSheetMapper.resolveUniverse("gone", "WorldA", all) { false }
+        )
+        assertEquals(
+            FieldValueSheetMapper.UniverseRef.NotFound,
+            FieldValueSheetMapper.resolveUniverse("", "Nowhere", all) { true }
         )
     }
 }

@@ -1807,6 +1807,7 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
             row.createCell(10).setTextSafe(entry.source)
             row.createCell(11).setCellValue(entry.usageCount.toDouble())
             row.createCell(12).setTextSafe(entry.code)
+            row.createCell(13).setTextSafe(universe?.code ?: "")
             finishDataRow(row, spec, banded)
         }
 
