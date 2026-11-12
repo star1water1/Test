@@ -17,7 +17,10 @@ enum class FieldValueCellEffect {
     /** 값이 있고 기존 값과 같다 — **쓰지 않는다.** */
     UNCHANGED,
 
-    /** 셀이 비었고 그 열이 파일에 있으며 기존 값이 있다 — 기존 행이 **지워진다**(F1-A: 비움 의도). */
+    /**
+     * 셀이 비었고 그 열이 파일에 있으며 기존 값이 있다 — 기존 행이 **지워진다**(F1-A: 비움 의도).
+     * 기존 행의 값이 이미 비어 있으면(빈 문자열·공백) 지울 것이 없으므로 [NONE]이다.
+     */
     CLEAR,
 
     /** 아무 일도 일어나지 않는다 — 셀도 비었고 지울 것도 없거나, 값 열 자체가 파일에 없다. */
@@ -77,7 +80,9 @@ object FieldValueCellPlan {
             existingValue != cellValue -> FieldValueCellEffect.UPDATE
             else -> FieldValueCellEffect.UNCHANGED
         }
-        columnPresent && existingValue != null -> FieldValueCellEffect.CLEAR
+        // 이미 빈 값이 저장된 칸(타입 변경의 '빈 값으로 초기화'가 남기는 행)은 **지울 값이 없다** —
+        // 비움으로 세면 무편집 왕복이 "비움 N개 — 지금 저장된 값이 지워집니다"라 예고한다(⑯).
+        columnPresent && !existingValue.isNullOrBlank() -> FieldValueCellEffect.CLEAR
         else -> FieldValueCellEffect.NONE
     }
 }
