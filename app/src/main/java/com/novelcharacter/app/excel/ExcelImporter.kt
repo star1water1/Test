@@ -2315,6 +2315,14 @@ class ExcelImporter(context: Context) {
             parts.add("🧹 빈 셀로 지워진 값 ${result.clearedFields}건")
         }
 
+        // **'바뀐 것 없음'은 경고가 있어도 말한다**(S22 3-ㅅ-13) — 종전에는 경고 줄이 `parts`를
+        // 채워 아래 갈래에 닿지 못했고, 아무것도 바뀌지 않은 가져오기가 "⚠ 21건 경고"로만 보였다.
+        if (parts.isEmpty() && result.unchangedRows > 0 && result.warnings.isNotEmpty()) {
+            return r.getString(
+                com.novelcharacter.app.R.string.import_result_unchanged_with_warnings,
+                result.unchangedRows, result.warnings.size
+            )
+        }
         if (result.warnings.isNotEmpty()) {
             parts.add("⚠ ${result.warnings.size}건 경고")
         }

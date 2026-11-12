@@ -705,6 +705,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     /** 위 범주에서 새로 만들어진 행 수 — 무음이 아니라 범주당 한 줄로 요약해 고지한다. */
     private val createdAfterWipe = mutableMapOf<String, Int>()
+
+    /**
+     * **가져오기 전에 하나도 없던** 범주 — 빈 앱으로 복원(병합)하는 자리다.
+     *
+     * 병합의 행별 "코드가 기존에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요"는 앱에서 지운
+     * 항목이 옛 파일로 되살아나는 것을 잡는 고지인데, 비어 있던 범주에서는 **모든 행이 예외 없이**
+     * 걸리고 지운 것이 있을 수 없다. 덮어쓰기로 비운 범주([wipedByOverwrite])와 같은 처분으로
+     * 범주당 한 줄로 요약한다 — S25 실측: 빈 앱 복원 한 번에 이 문구 3836줄, 상세·이력의 길이
+     * 상한에 진짜 경고가 묻혔다.
+     */
+    private val emptyBeforeImport = mutableSetOf<String>()
+
+    /**
+     * 이번 가져오기가 찾지 못한 시트 — **한 줄로** 말한다(S22 3-ㅅ-13).
+     * 시트 하나만 든 파일(예: '기본 필드'만)을 들이면 종전에는 고른 범주마다 한 줄씩 20줄이
+     * 쌓여, 바뀐 것이 없는 가져오기가 "⚠ 21건 경고"로 보였고 진짜 경고가 그 속에 묻혔다.
+     */
+    private val missingSheetNames = LinkedHashSet<String>()
+    private val createdIntoEmpty = mutableMapOf<String, Int>()
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
     // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
     private val matchedFieldDefinitionIds = mutableSetOf<Long>()
@@ -885,6 +904,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         truncatedFieldCount = 0
         wipedByOverwrite.clear()
         createdAfterWipe.clear()
+        createdIntoEmpty.clear()
+        missingSheetNames.clear()
+        // **어느 삭제·행보다 먼저** 센다 — 비어 있었는가는 가져오기 전의 사실이다.
+        emptyBeforeImport.clear()
+        for ((category, table) in createdNewByCodeTables) {
+            if (countRows("SELECT COUNT(*) FROM $table") == 0) emptyBeforeImport.add(category)
+        }
         truncatedDetails.clear()
         mergedCellMaps.clear()
         headerRowIndexBySheet.clear()
@@ -1477,6 +1503,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 덮어쓰기로 비운 범주의 신규 생성은 여기서 한 줄로 요약한다(행마다 알리지 않는다).
             reportCreatedAfterWipe(result)
+            reportMissingSheets(result)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
             if (strategy == ImportStrategy.MERGE) {
@@ -6164,7 +6191,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return resolved
         }
         if (exact == null) {
-            result.warnings.add("'${spec.sheetName}' 시트를 찾을 수 없어 해당 데이터를 건너뛰었습니다.")
+            // 시트마다 한 줄이 아니라 끝에서 한 줄로 모은다([reportMissingSheets]).
+            missingSheetNames.add(spec.sheetName)
         } else {
             // 이름은 맞지만 헤더가 spec과 다르다 — 헤더 경고는 호출부(checkHeaderOrReport)가 낸다.
             consumedSheetNames.add(exact.sheetName)
@@ -13482,7 +13510,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         "universes" to Triple("세계관", "개", "를"),
         "novels" to Triple("작품", "개", "를"),
         "characters" to Triple("캐릭터", "명", "을"),
-        "factions" to Triple("세력", "개", "를")
+        "factions" to Triple("세력", "개", "를"),
+        "duelAxes" to Triple("대결 축", "개", "를")
+    )
+
+    /** [warnCreatedNewByCode] 범주 → 표 — [emptyBeforeImport]를 세는 재료. */
+    private val createdNewByCodeTables = listOf(
+        "universes" to "universes",
+        "novels" to "novels",
+        "characters" to "characters",
+        "factions" to "factions",
+        "duelAxes" to "duel_axes"
     )
 
     /**
@@ -13495,6 +13533,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun warnCreatedNewByCode(category: String, message: String, result: ImportResult) {
         if (category in wipedByOverwrite) {
             createdAfterWipe[category] = (createdAfterWipe[category] ?: 0) + 1
+            return
+        }
+        if (category in emptyBeforeImport) {
+            createdIntoEmpty[category] = (createdIntoEmpty[category] ?: 0) + 1
             return
         }
         result.warnings.add(message)
@@ -13514,6 +13556,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "덮어쓰기가 먼저 지운 자리라 확인하실 것이 없습니다"
             )
         }
+        for ((category, count) in createdIntoEmpty) {
+            if (count <= 0) continue
+            val (label, unit, particle) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
+            result.warnings.add(
+                "$label $count$unit$particle 백업의 코드 그대로 새로 만들었습니다 — " +
+                "가져오기 전 앱에 ${label}이(가) 하나도 없던 상태라 확인하실 것이 없습니다"
+            )
+        }
+    }
+
+    /** [missingSheetNames]를 한 줄로 — 무엇이 빠졌는지는 그대로 말한다. */
+    private fun reportMissingSheets(result: ImportResult) {
+        if (missingSheetNames.isEmpty()) return
+        val names = missingSheetNames.joinToString(", ") { "'$it'" }
+        result.warnings.add("이 파일에 없는 시트 ${missingSheetNames.size}개는 건너뛰었습니다: $names")
     }
 
     private suspend fun countKeptUnmatchedEntities(options: ExportOptions, result: ImportResult) {
