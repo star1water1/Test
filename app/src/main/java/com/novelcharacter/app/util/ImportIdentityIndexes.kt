@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.TimelineEvent
 
 /**
  * 가져오기와 **복원 미리보기**가 함께 쓰는 정체성 색인 묶음 (B-236).
@@ -52,6 +53,22 @@ import com.novelcharacter.app.data.model.FieldDefinition
  * 어느 파일인지 고르게 되고 그 선택은 반드시 갈린다.
  */
 data class EventNaturalKey(val year: Int, val description: String)
+
+/**
+ * 자연키(연도+설명)가 같은 사건들 중 **이 행이 가리킬 것**을 고른다 — 가져오기와 미리보기가
+ * 함께 쓴다(규약 R-33).
+ *
+ * [universeId]는 행이 밝힌 소속(세계관 열 또는 관련 작품에서 유도)이다. 밝혔으면 **그 세계관의
+ * 사건만** 후보다. 종전에는 세계관을 보지 않아, 코드 없는 행(구버전 파일·v35 이전 월드패키지로
+ * 들어온 사건)이 **다른 세계관의 같은 연도·설명 사건**에 합쳐졌다 — 월드패키지로 복제한 세계관이
+ * 백업 왕복 한 번에 원본 사건으로 빨려 들어간 실측(사건 19→11). 밝히지 않았으면(null) 종전처럼
+ * 첫 후보다 — 소속을 모르는 구버전 파일의 갱신 경로를 지킨다.
+ *
+ * @param candidates `LIMIT 1`의 순서(id 오름차순)로 실린 후보 — [ImportLookupIndex.all].
+ */
+fun pickEventByNaturalKey(candidates: List<TimelineEvent>, universeId: Long?): TimelineEvent? =
+    if (universeId == null) candidates.firstOrNull()
+    else candidates.firstOrNull { it.universeId == universeId }
 
 /** `getByAxisAndMember(axisId, memberKey)`의 키. */
 data class DuelVerdictMemberKey(val axisId: Long, val memberKey: String)

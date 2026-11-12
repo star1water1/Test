@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.TimelineEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -376,5 +377,35 @@ class ImportIdentityIndexesTest {
         assertNull(indexes.byCode.first(""))
         // 자연키 축에는 그대로 있다 — 코드가 없을 뿐 행은 실재한다.
         assertNotEquals(null, indexes.byNaturalKey.first(StateChangeNaturalKey(1L, 1993, "직업", "기사")))
+    }
+
+    // ── 사건 자연키는 행이 밝힌 세계관 안에서만 찾는다 ────────────────────────────
+    // 코드 없는 행이 **다른 세계관의 같은 연도·설명 사건**에 합쳐지던 자리다(복제 세계관이
+    // 백업 왕복 한 번에 원본 사건으로 빨려 들어갔다 — 사건 19→11).
+
+    private fun event(id: Long, universeId: Long?) =
+        TimelineEvent(id = id, year = 1200, description = "Battle", universeId = universeId, code = null)
+
+    @Test
+    fun `소속을 밝힌 행은 그 세계관의 사건만 잡는다`() {
+        val original = event(1, universeId = 10)
+        val copy = event(2, universeId = 20)
+        assertEquals(copy, pickEventByNaturalKey(listOf(original, copy), universeId = 20))
+        assertEquals(original, pickEventByNaturalKey(listOf(original, copy), universeId = 10))
+    }
+
+    @Test
+    fun `소속을 밝힌 행에 그 세계관 사건이 없으면 다른 세계관 사건에 합치지 않는다`() {
+        // 빈 앱 복원: 원본 세계관의 사건만 먼저 들어와 있고, 복제 세계관의 행이 뒤따른다.
+        val original = event(1, universeId = 10)
+        assertNull(pickEventByNaturalKey(listOf(original), universeId = 20))
+    }
+
+    @Test
+    fun `소속을 모르는 행은 종전처럼 첫 후보를 잡는다`() {
+        val first = event(1, universeId = 10)
+        val second = event(2, universeId = 20)
+        assertEquals(first, pickEventByNaturalKey(listOf(first, second), universeId = null))
+        assertNull(pickEventByNaturalKey(emptyList(), universeId = null))
     }
 }

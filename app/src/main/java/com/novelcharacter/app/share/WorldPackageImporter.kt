@@ -636,7 +636,10 @@ class WorldPackageImporter(context: Context) {
                         event.copy(
                             id = 0,
                             universeId = mappedUniverseId,
-                            code = claimNullable(eventReg, event.code)
+                            // 코드가 없던 사건(v35 이전 패키지)도 **새로 발급한다** — v35 이행이 기기의
+                            // 모든 사건에 코드를 백필한 것과 같은 약속이다. null로 두면 엑셀 왕복이
+                            // 자연키로 되찾다가 다른 세계관의 같은 사건에 합친다(복제 세계관 실측).
+                            code = eventReg.claim(event.code)
                         )
                     )
                 }

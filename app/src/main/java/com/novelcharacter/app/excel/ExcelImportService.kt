@@ -48,6 +48,7 @@ import com.novelcharacter.app.util.DuelAxisNameKey
 import com.novelcharacter.app.util.DuelMatchIndexes
 import com.novelcharacter.app.util.DuelVerdictMemberKey
 import com.novelcharacter.app.util.EventNaturalKey
+import com.novelcharacter.app.util.pickEventByNaturalKey
 import com.novelcharacter.app.util.FactionIdentityIndexes
 import com.novelcharacter.app.util.FactionNameKey
 import com.novelcharacter.app.util.DefaultFieldTemplateIndexes
@@ -4951,7 +4952,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭보다 **먼저** 푼다 — 신규 갈래도 이 값으로 사건을 짓기 때문이다(B-233).
             val links = resolveTimelineLinks(row, c, r, novelTitles, "연표 행 ${excelRow(i)}", result = null)
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = eventByCode(r.fileCode) ?: eventByNaturalKey(year, r.description)
+            val existing = eventByCode(r.fileCode) ?: eventByNaturalKey(year, r.description, links.universeId)
             if (existing == null) {
                 newCount++
                 // 이 시트가 방금 만든 사건 — 같은 코드·같은 자연키를 든 뒷 행이 이것과 매칭된다.
@@ -8853,7 +8854,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 // 매칭: 코드 우선(설명·연도 편집을 같은 사건으로 인식) → 자연키 폴백(구버전 파일 호환)
                 val eventByCodeMatch = eventByCode(fileCode)
-                val existingEvent = eventByCodeMatch ?: eventByNaturalKey(year, description)
+                val existingEvent = eventByCodeMatch ?: eventByNaturalKey(year, description, links.universeId)
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로
                 // 고지한다(I2-5). 이 시트가 이미 쓴 사건을 자연키로 다시 잡으면 그 행이 앞 행을
                 // 무고지로 덮는다(형제 시트 전부가 코드 중복을 고지하는데 이 갈래만 침묵이었다).
@@ -12403,10 +12404,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return eventCodes.first(code)
     }
 
-    /** `getEventByNaturalKey`(LIMIT 1)의 자리. */
-    private suspend fun eventByNaturalKey(year: Int, description: String): TimelineEvent? {
+    /**
+     * `getEventByNaturalKey`(LIMIT 1)의 자리 — 행이 소속을 밝혔으면 **그 세계관 안에서만** 찾는다
+     * ([pickEventByNaturalKey]).
+     */
+    private suspend fun eventByNaturalKey(year: Int, description: String, universeId: Long?): TimelineEvent? {
         ensureEventIndex()
-        return eventNaturalKeys.first(EventNaturalKey(year, description))
+        return pickEventByNaturalKey(eventNaturalKeys.all(EventNaturalKey(year, description)), universeId)
     }
 
     /** `getEventById`의 자리. */
