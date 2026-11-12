@@ -996,6 +996,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // **"내용 있는 데이터 행이 1개 이상인가"**다. 물리 행 번호(lastRowNum)로 재면
                 // 내용만 지우고 스타일만 남은 행이 잔존하는 시트를 복원 재료로 오판한다 —
                 // 사유·경계는 그 파일의 KDoc에 있다.
+                // 시트는 있는데 **열 이름 행을 못 찾은** 시트들(문구용 어구 "'시트명'"). 판정은 MISSING과
+                // 같지만 사용자가 할 일이 다르다 — "시트가 없다"고 말하면 있는 시트를 두고 헤맨다.
+                val headerMissingLabels = mutableSetOf<String>()
                 fun classify(spec: SheetSpec): RestoreSource {
                     val sheet = resolveSpecSheet(workbook, spec)
                     // **열 이름 행을 못 찾으면 복원 재료가 아니다** — 가져오기([headerRowOrReport])가
@@ -1003,7 +1006,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 헤더 행을 지운 파일로 덮어쓰면 **이 범주를 지운 뒤 한 행도 넣지 못했다**(PR #440 —
                     // 미리보기 짝을 맞추다 드러난 자리). 캐릭터 시트([charSheetSource])와 같은 처분이다.
                     if (sheet != null && SheetResolver.locateHeader(sheet, spec.firstColumnHeader) == null) {
+                        headerMissingLabels.add("'${spec.sheetName}'")
                         return RestoreSource.MISSING
+                    }
+                    // 조회([resolveSpecSheet])가 머리글로 정체를 확인하므로, 열 이름 행을 지운 시트는
+                    // 여기 **null로 온다**(에뮬레이터 실측 — 위 갈래만으로는 문구가 그대로였다).
+                    // 그 이름의 시트가 파일에 있으면 '없는' 것이 아니라 '읽지 못한' 것이다.
+                    if (sheet == null && workbook.getSheet(spec.sheetName) != null) {
+                        headerMissingLabels.add("'${spec.sheetName}'")
                     }
                     return OverwriteGuard.classify(sheetHasDataRow(sheet, spec.firstColumnHeader))
                 }
@@ -1024,7 +1034,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                  */
                 fun keepReason(source: RestoreSource, label: String): String = when (source) {
                     RestoreSource.EMPTY -> "$label 시트에 데이터 행이 없어"
-                    RestoreSource.MISSING -> "백업에 $label 시트가 없어"
+                    RestoreSource.MISSING ->
+                        if (label in headerMissingLabels) "$label 시트에서 열 이름 행을 찾지 못해"
+                        else "백업에 $label 시트가 없어"
                     // 지울 수 있는 상태라 사유가 필요 없다 — 부르는 쪽이 이 값을 넘기면 그것이 결함이다.
                     RestoreSource.HAS_ROWS -> "$label 시트를 복원 재료로 쓸 수 없어"
                 }
@@ -1135,6 +1147,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val existingMatches = db.duelMatchDao().countAll()
                     if (matchSource == RestoreSource.HAS_ROWS || existingMatches == 0) {
                         db.duelAxisDao().deleteAll()
+                        wipedByOverwrite.add("duelAxes")
                     } else {
                         result.warnings.add(
                             keepReason(matchSource, "'${duelMatchSpec().sheetName}'") +
@@ -1405,6 +1418,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.universeDao().deleteAll()
                             batchHistoryInvalidated = true
                             wipedByOverwrite.add("universes")
+                            // 대결 축은 세계관의 외래키 CASCADE로 함께 지워졌다 — 관계(⑱)와 같은 처분이다.
+                            // (에뮬레이터 실측: 덮어쓰기 복원에서 축마다 "기존 축에 없어 새로 생성됨"이 나왔다.)
+                            wipedByOverwrite.add("duelAxes")
                             result.warnings.add("덮어쓰기: 세계관을 삭제하면서 필드 정의와 모든 필드값이 함께 삭제되었습니다 — 백업의 '필드 정의'·'필드 데이터'·캐릭터 시트로 재구성됩니다")
                         }
                     }
@@ -7228,10 +7244,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기([importGradeSystems])가 읽은 **그 시트**의 존재를 물어야 한다 — 정확명만
         // 보면 밀린 시트를 읽어 매칭까지 해 놓고 "시트가 없다"며 정리를 건너뛴다(B-217).
         // 헤더 행은 0행이 아닐 수 있다(B-231 ⓑ) — 가져오기가 읽은 그 행을 같은 함수로 찾는다.
-        val header = SheetResolver.sheetForRead(workbook, spec)
-            ?.let { SheetResolver.locateHeader(it, spec.firstColumnHeader) }
+        val sheetForRead = SheetResolver.sheetForRead(workbook, spec)
+        val header = sheetForRead?.let { SheetResolver.locateHeader(it, spec.firstColumnHeader) }
         if (header == null) {
-            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 등급 체계를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+            result.warnings.add(missingSheetOrHeaderReason(spec, sheetForRead != null) + " 기존 등급 체계를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
             return
         }
         if (matchedGradeSystemIds.isEmpty()) {
@@ -7617,10 +7633,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기([importFieldDefinitions] — findSheet)가 읽은 **그 시트**의 존재를 물어야
         // 한다 — 정확명만 보면 밀린 시트에서 매칭해 놓고 정리를 건너뛴다(B-217).
         // 헤더 행은 0행이 아닐 수 있다(B-231 ⓑ) — 가져오기가 읽은 그 행을 같은 함수로 찾는다.
-        val header = SheetResolver.sheetForRead(workbook, spec)
-            ?.let { SheetResolver.locateHeader(it, spec.firstColumnHeader) }
+        val sheetForRead = SheetResolver.sheetForRead(workbook, spec)
+        val header = sheetForRead?.let { SheetResolver.locateHeader(it, spec.firstColumnHeader) }
         if (header == null) {
-            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 필드 정의를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+            result.warnings.add(missingSheetOrHeaderReason(spec, sheetForRead != null) + " 기존 필드 정의를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
             return
         }
         // 시트는 있는데 한 건도 매칭되지 않았다면 정상적인 "전부 삭제"가 아니라 행 단위 실패다
@@ -13653,6 +13669,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
         }
     }
+
+    /** 덮어쓰기가 지우지 않은 사유의 앞머리 — 시트가 아예 없는 것과 열 이름 행만 없는 것을 가른다. */
+    private fun missingSheetOrHeaderReason(spec: SheetSpec, sheetExists: Boolean): String =
+        if (sheetExists) "'${spec.sheetName}' 시트에서 열 이름 행을 찾지 못해"
+        else "백업에 '${spec.sheetName}' 시트가 없어"
 
     /** [missingSheetNames]를 한 줄로 — 무엇이 빠졌는지는 그대로 말한다. */
     private fun reportMissingSheets(result: ImportResult) {

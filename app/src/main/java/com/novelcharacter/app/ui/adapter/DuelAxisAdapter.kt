@@ -1,9 +1,11 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
@@ -23,6 +25,12 @@ class DuelAxisAdapter(
     private val onStandings: (DuelAxis) -> Unit,
     private val onMatches: (DuelAxis) -> Unit
 ) : ListAdapter<DuelAxis, DuelAxisAdapter.AxisViewHolder>(DiffCallback()) {
+
+    /**
+     * 손잡이를 잡는 순간 끌기를 시작하게 하는 통로 — 다른 목록(세계관·작품·캐릭터·필드)과 같다.
+     * 종전에는 손잡이가 그림뿐이라 행을 길게 눌러야만 끌렸다.
+     */
+    var itemTouchHelper: ItemTouchHelper? = null
 
     /** 축 id → 요약 문구. 판 수 집계가 비동기라 목록보다 늦게 온다. */
     private var summaries: Map<Long, String> = emptyMap()
@@ -47,6 +55,12 @@ class DuelAxisAdapter(
                 ?: binding.root.context.getString(R.string.duel_axis_summary_loading)
 
             binding.root.setOnClickListener { onClick(axis) }
+            binding.dragHandle.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    itemTouchHelper?.startDrag(this)
+                }
+                false
+            }
             binding.btnAxisMenu.setOnClickListener { view ->
                 val popup = PopupMenu(view.context, view)
                 popup.menu.add(0, 1, 0, R.string.duel_standings)

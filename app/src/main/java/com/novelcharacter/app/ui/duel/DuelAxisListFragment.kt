@@ -141,6 +141,7 @@ class DuelAxisListFragment : Fragment() {
             }
         })
         touchHelper.attachToRecyclerView(binding.axisRecyclerView)
+        adapter.itemTouchHelper = touchHelper
     }
 
     /**
@@ -910,6 +911,12 @@ class DuelAxisListFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // 끌기 도우미는 RecyclerView를 쥐고 있고, 어댑터는 프래그먼트가 쥐고 있다 — 뒤로 가기 스택에
+        // 남은 동안 파괴된 뷰 트리가 그 사슬로 살아남지 않게 여기서 끊는다(PR #446 리뷰).
+        if (::adapter.isInitialized) {
+            adapter.itemTouchHelper?.attachToRecyclerView(null)
+            adapter.itemTouchHelper = null
+        }
         _binding = null
     }
 }
