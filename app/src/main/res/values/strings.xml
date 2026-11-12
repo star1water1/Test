@@ -212,7 +212,7 @@
     <string name="grade_system_standalone">독자 표 (이 필드 전용)</string>
     <string name="grade_system_dangling">참조하던 등급 체계를 찾을 수 없어 독자 표로 표시합니다. 저장하면 독자 표로 확정됩니다.</string>
     <string name="grade_systems_label">등급 체계</string>
-    <string name="grade_systems_desc">여러 등급 필드가 같은 등급 구성을 쓰도록 세계관 단위로 묶습니다. 필드 편집의 \'등급 체계\'에서 참조하며, 여기서 고치면 참조하는 필드 전체에 반영됩니다.</string>
+    <string name="grade_systems_desc">여러 등급 필드가 같은 등급 구성을 쓰도록 세계관 단위로 묶습니다. 필드 편집의 \'등급 체계\'에서 참조하며, 여기서 고치면 참조하는 필드 전체에 반영됩니다. 추가·수정·삭제는 누르는 즉시 저장되며, 이 창의 저장·취소와 상관없습니다.</string>
     <string name="grade_systems_add">+ 체계 추가</string>
     <string name="grade_system_row_format">%1$s — %2$s</string>
     <string name="grade_system_add_title">등급 체계 추가</string>
@@ -298,8 +298,8 @@
     <string name="duel_grade_apply_entry">순위를 등급 값으로 반영 — 받는 필드 %1$d개</string>
     <string name="duel_grade_pick_field_title">어느 필드에 반영할지 고르세요</string>
     <string name="grade_system_delete_title">등급 체계 삭제</string>
-    <string name="grade_system_delete_confirm">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드는 없습니다. 삭제한 체계는 휴지통에 보관됩니다.</string>
-    <string name="grade_system_delete_confirm_refs">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드 %2$d개는 지금 표를 그대로 가진 독자 표로 바뀝니다(값·통계는 그대로). 삭제한 체계는 휴지통에 보관됩니다.</string>
+    <string name="grade_system_delete_confirm">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드는 없습니다. 세계관 편집을 취소해도 되돌아가지 않고 바로 지워지며, 삭제한 체계는 휴지통에서 복원할 수 있습니다.</string>
+    <string name="grade_system_delete_confirm_refs">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드 %2$d개는 지금 표를 그대로 가진 독자 표로 바뀝니다(값·통계는 그대로). 세계관 편집을 취소해도 되돌아가지 않고 바로 지워지며, 삭제한 체계는 휴지통에서 복원할 수 있습니다.</string>
     <string name="grade_system_deleted_toast">\'%1$s\' 체계를 삭제했습니다</string>
     <string name="grade_system_deleted_toast_refs">\'%1$s\' 체계를 삭제했습니다. 필드 %2$d개가 독자 표로 바뀌었습니다.</string>
     <string name="result_grade_system_save_failed">등급 체계 \'%1$s\' 저장 실패</string>
