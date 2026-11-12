@@ -77,6 +77,7 @@ import com.novelcharacter.app.util.PresetLimit
 import com.novelcharacter.app.util.DuelImageParticipants
 import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.SemanticYearEditPrecedence
 import com.novelcharacter.app.util.CardImageAdoption
 import com.novelcharacter.app.util.normalizeFieldCell
 import com.novelcharacter.app.util.readsCellAsDate
@@ -433,6 +434,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 값 목록만으로는 *지워짐*을 볼 수 없으므로 지운 자리에서 세어 둔다.
      */
     private val pendingSyncClearedFields = mutableMapOf<Long, MutableSet<Long>>()
+
+    /**
+     * 이 가져오기가 **연도를 고친** `__birth`·`__death` 이력 (캐릭터 id → (옛 연도, 고친 행)들).
+     *
+     * 가져오기 뒤 동기화는 필드 → 이력 한 방향이라, 이력의 연도만 고친 파일은 필드값이 **도로
+     * 덮었다**([SemanticYearEditPrecedence]). 동기화 앞에서 이 목록으로 그 편집을 필드로 옮기거나,
+     * 두 시트가 다른 연도를 말하면 알린다.
+     */
+    private val pendingSemanticYearEdits = mutableMapOf<Long, MutableList<Pair<Int, CharacterStateChange>>>()
 
     // 이 임포트가 쓰는 단 하나의 휴지통 저장소 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다.
     // **인스턴스를 공유해야 한다**: 정리는 "이 작업이 방금 만든 스냅샷"을 보호하는데,
@@ -869,6 +879,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         resetAnalysisSnapshots()
         pendingSyncCharacters.clear()
         pendingSyncClearedFields.clear()
+        pendingSemanticYearEdits.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
@@ -9277,6 +9288,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedStateChange = mergeStateChange(existing, r, character.id, generateEntityCode())
                     db.characterStateChangeDao().update(mergedStateChange)
+                    if ((fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH) &&
+                        mergedStateChange.year != existing.year
+                    ) {
+                        pendingSemanticYearEdits.getOrPut(character.id) { mutableListOf() }
+                            .add(existing.year to mergedStateChange)
+                    }
                     // 자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면
                     // 뒤 행이 **이미 다른 이력이 된 행**을 옛 키로 다시 잡는다(B-210).
                     changes.remember(mergedStateChange)
@@ -13598,10 +13615,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fieldsByUniverse = HashMap<Long?, List<com.novelcharacter.app.data.model.FieldDefinition>>()
         for ((characterId, universeId) in pendingSyncCharacters) {
             try {
-                val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
                 val fields = fieldsByUniverse.getOrPut(universeId) {
                     universeRepository.getFieldsForCharacterScope(universeId)
                 }
+                // **이력의 연도만 고친 파일** — 아래 필드 → 이력 동기화가 그 편집을 도로 덮기 전에
+                // 처분한다([SemanticYearEditPrecedence]). **연도(와 연동된 나이)만** 옮긴다 —
+                // 생일·생존여부는 이 파일의 명시를 지키도록 뒤 동기화에 맡긴다. 종전에는 결과가 "고쳤습니다"라 말하고
+                // DB는 그대로였다(S11 3-ㅇ-14).
+                applySemanticYearEdits(characterId, fields, syncHelper, result)
+                val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
                 syncHelper.syncFieldToStateChange(
                     characterId, fields, fieldValues,
                     // **이 파일이 실제로 지운 칸만** 비움으로 읽는다. 값 전량을 넘기므로
@@ -13624,6 +13646,55 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "캐릭터 ${failedIds.size}명: 출생·사망연도와 상태변화를 맞추지 못했습니다 ($detail) — " +
                     "데이터는 그대로 들어왔고, 해당 캐릭터를 열어 저장하면 다시 맞춰집니다"
             )
+        }
+    }
+
+    /** [pendingSemanticYearEdits]의 한 캐릭터 몫을 처분한다 — 필드로 옮기거나, 충돌을 알린다. */
+    private suspend fun applySemanticYearEdits(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        syncHelper: SemanticFieldSyncHelper,
+        result: ImportResult
+    ) {
+        val edits = pendingSemanticYearEdits[characterId] ?: return
+        for ((oldYear, change) in edits) {
+            val isBirth = change.fieldKey == CharacterStateChange.KEY_BIRTH
+            val role = if (isBirth) SemanticRole.BIRTH_YEAR else SemanticRole.DEATH_YEAR
+            val field = fields.find { SemanticRole.fromConfig(it.config) == role }
+            val current = field?.let { f ->
+                db.characterFieldValueDao().getValuesByCharacterList(characterId)
+                    .find { it.fieldDefinitionId == f.id }?.value
+            }
+            // 연도 필드가 없으면 이 파일이 말한 연도는 이력뿐이다 — 그대로 옮긴다. 출생이면
+            // 연동된 나이가 그것을 따라야 한다(없으면 남은 옛 나이가 아래 동기화에서 출생 연도를
+            // 역산해 편집을 도로 덮는다 — PR #436 리뷰).
+            val decision = if (field == null) SemanticYearEditPrecedence.Decision.APPLY_STATE
+                else SemanticYearEditPrecedence.decide(oldYear, change.year, current)
+            when (decision) {
+                SemanticYearEditPrecedence.Decision.APPLY_STATE ->
+                    syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, change.year)
+                // 맞는 경우도 출생이면 한 번 지난다 — 연동된 나이를 이 연도로 맞추는 것이 일이다
+                // (필드와 이력은 맞는데 나이만 다른 파일이면 아래 동기화가 나이로 출생을 되쓴다).
+                // 사망은 지날 것이 없다 — 사망연도가 이미 맞고, 생존여부는 뒤 동기화가 정한다.
+                SemanticYearEditPrecedence.Decision.CONSISTENT ->
+                    if (isBirth) syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, change.year)
+                SemanticYearEditPrecedence.Decision.FIELD_WINS_CONFLICT -> {
+                    // **필드가 이긴다는 말을 지킨다** — 출생이면 연동된 나이도 그 필드 연도로
+                    // 맞춰 둔다. 안 맞추면 아래 동기화가 값 목록의 차례에 따라 옛 나이로 출생연도까지
+                    // 되쓸 수 있다(PR #436 리뷰: 기준 1000·출생연도 990·나이 30 → 970).
+                    val fieldYear = current?.trim()?.toIntOrNull()
+                    if (isBirth && fieldYear != null) {
+                        syncHelper.syncLifeYearToField(characterId, fields, change.fieldKey, fieldYear)
+                    }
+                    val name = runCatching { db.characterDao().getCharacterById(characterId)?.name }.getOrNull() ?: "#$characterId"
+                    // 이 갈래는 필드가 있을 때만 온다(없으면 위에서 APPLY_STATE).
+                    val fieldName = field?.name.orEmpty()
+                    result.warnings.add(
+                        "캐릭터 '$name': '상태 변화' 시트의 ${if (isBirth) "출생" else "사망"} 연도(${change.year})와 '$fieldName' 값(${current?.trim()})이 " +
+                            "달라 '$fieldName'을(를) 따랐습니다 — 연도를 바꾸려면 '$fieldName'을(를) 고쳐 다시 가져오세요"
+                    )
+                }
+            }
         }
     }
 

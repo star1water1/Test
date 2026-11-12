@@ -293,6 +293,47 @@ class SemanticFieldSyncHelper(
         applyStateChangeToFields(characterId, fields, change)
     }
 
+    /**
+     * **연도만** 필드로 옮긴다 — 출생이면 출생연도 + 연동된 나이, 사망이면 사망연도.
+     *
+     * 가져오기가 '상태 변화' 시트에서 고친 연도를 살릴 때 쓴다([SemanticYearEditPrecedence]).
+     * [syncStateChangeToField]는 이력의 **나머지**까지 옮긴다 — 생일(월·일)을 이력의 옛 값으로
+     * 덮고, 사망이면 생존여부를 '사망'으로 되쓴다. 같은 파일이 그 칸들을 명시로 실어 왔으면
+     * 그 명시를 지운다(PR #436 리뷰). 생존여부는 뒤의 필드 → 이력 동기화가
+     * [SemanticAlivePrecedence]로 정한다.
+     */
+    suspend fun syncLifeYearToField(
+        characterId: Long,
+        fields: List<FieldDefinition>,
+        fieldKey: String,
+        year: Int
+    ) = syncMutex.withLock {
+        // **연도 0은 '모름'이다** — 고친 것이 모름이면 옛 연도를 남기지 않고 비운다. 남기면 뒤의
+        // 필드 → 이력 동기화가 그 옛 연도로 방금 고친 이력을 도로 덮는다(PR #436 리뷰).
+        // 출생이면 연동된 나이도 함께 비운다(남은 나이가 같은 일을 한다).
+        if (year == 0) {
+            when (fieldKey) {
+                CharacterStateChange.KEY_BIRTH -> {
+                    findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+                    if (standardYearSyncHelper.isLinked(characterId)) {
+                        findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
+                    }
+                }
+                CharacterStateChange.KEY_DEATH ->
+                    findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+            }
+            return@withLock
+        }
+        when (fieldKey) {
+            CharacterStateChange.KEY_BIRTH -> {
+                findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { upsertFieldValue(characterId, it.id, year.toString()) }
+                syncBirthYearToAge(characterId, year, fields)
+            }
+            CharacterStateChange.KEY_DEATH ->
+                findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { upsertFieldValue(characterId, it.id, year.toString()) }
+        }
+    }
+
     private suspend fun applyStateChangeToFields(
         characterId: Long,
         fields: List<FieldDefinition>,
@@ -305,6 +346,11 @@ class SemanticFieldSyncHelper(
                 if (birthYearField != null && change.year != 0) {
                     upsertFieldValue(characterId, birthYearField.id, change.year.toString())
                 }
+                // **연동된 나이도 함께 맞춘다** — 반대 방향(출생연도 필드 → 이력)이 하는 일과 같다.
+                // 안 맞추면 남은 옛 나이가 다음 필드 → 이력 동기화의 AGE 갈래에서 출생연도를
+                // 역산해 **방금 고친 연도를 도로 덮는다**(PR #436 리뷰 — 기준연도 1000·나이 30이면
+                // 970→980 편집이 970으로 돌아간다). 연도 0(모름)은 위와 같이 건드리지 않는다.
+                if (change.year != 0) syncBirthYearToAge(characterId, change.year, fields)
                 // month/day → birth_date 필드
                 val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
                 if (birthDateField != null && change.month != null && change.day != null) {
