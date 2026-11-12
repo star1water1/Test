@@ -64,16 +64,26 @@ data class EventNaturalKey(val year: Int, val description: String)
  * 백업 왕복 한 번에 원본 사건으로 빨려 들어간 실측(사건 19→11). 밝히지 않았으면(null) 종전처럼
  * 첫 후보다 — 소속을 모르는 구버전 파일의 갱신 경로를 지킨다.
  *
- * 그 세계관의 사건이 없으면 **무소속 사건**을 잡는다 — 소속 없이 작품만 이어진 사건은 행이
- * 그 작품에서 세계관을 유도하므로(관련 작품 → 세계관), 무소속을 빼면 같은 사건을 못 알아보고
- * 새로 만든다(PR #434 리뷰). 다른 세계관의 사건은 끝까지 후보가 아니다.
+ * 그 세계관의 사건이 없으면 **이 세계관 작품에만 이어진 무소속 사건**을 잡는다 — 그런 사건은
+ * 행이 그 작품에서 세계관을 유도하므로(관련 작품 → 세계관), 빼면 같은 사건을 못 알아보고 새로
+ * 만든다(PR #434 리뷰). 다른 세계관 작품에 이어진 무소속 사건(월드패키지가 소속을 끊은 남의
+ * 사건)이나 연결이 없는 무소속 사건은 후보가 아니다 — 잡으면 그 사건을 이 세계관으로 끌고 와
+ * 연결까지 갈아 끼운다. 다른 세계관의 사건은 끝까지 후보가 아니다.
+ *
+ * @param linkedNovelUniverses 무소속 사건이 이어진 작품들의 세계관 — 연결이 없으면 빈 집합.
  *
  * @param candidates `LIMIT 1`의 순서(id 오름차순)로 실린 후보 — [ImportLookupIndex.all].
  */
-fun pickEventByNaturalKey(candidates: List<TimelineEvent>, universeId: Long?): TimelineEvent? =
+fun pickEventByNaturalKey(
+    candidates: List<TimelineEvent>,
+    universeId: Long?,
+    linkedNovelUniverses: (TimelineEvent) -> Set<Long?> = { emptySet() }
+): TimelineEvent? =
     if (universeId == null) candidates.firstOrNull()
     else candidates.firstOrNull { it.universeId == universeId }
-        ?: candidates.firstOrNull { it.universeId == null }
+        ?: candidates.firstOrNull { ev ->
+            ev.universeId == null && linkedNovelUniverses(ev).let { it.isNotEmpty() && it.all { u -> u == universeId } }
+        }
 
 /** `getByAxisAndMember(axisId, memberKey)`의 키. */
 data class DuelVerdictMemberKey(val axisId: Long, val memberKey: String)

@@ -410,13 +410,24 @@ class ImportIdentityIndexesTest {
     }
 
     @Test
-    fun `그 세계관 사건이 없으면 무소속 사건을 잡고 다른 세계관 사건은 잡지 않는다`() {
+    fun `그 세계관 사건이 없으면 이 세계관 작품에만 이어진 무소속 사건을 잡는다`() {
         // 소속 없이 작품만 이어진 사건 — 행은 그 작품에서 세계관을 유도한다(PR #434 리뷰).
         val detached = event(1, universeId = null)
         val other = event(2, universeId = 10)
-        assertEquals(detached, pickEventByNaturalKey(listOf(other, detached), universeId = 20))
+        val links = mapOf(1L to setOf<Long?>(20L))
+        assertEquals(detached, pickEventByNaturalKey(listOf(other, detached), universeId = 20) { links[it.id] ?: emptySet() })
         // 같은 세계관 사건이 있으면 그것이 먼저다.
         val own = event(3, universeId = 20)
-        assertEquals(own, pickEventByNaturalKey(listOf(detached, own), universeId = 20))
+        assertEquals(own, pickEventByNaturalKey(listOf(detached, own), universeId = 20) { links[it.id] ?: emptySet() })
+    }
+
+    @Test
+    fun `다른 세계관 작품에 이어졌거나 연결이 없는 무소속 사건은 잡지 않는다`() {
+        // 월드패키지가 소속을 끊은 남의 사건 — 잡으면 이 세계관으로 끌고 와 연결까지 갈아 끼운다.
+        val foreign = event(1, universeId = null)
+        val unlinked = event(2, universeId = null)
+        val mixed = event(3, universeId = null)
+        val links = mapOf(1L to setOf<Long?>(10L), 3L to setOf<Long?>(10L, 20L))
+        assertNull(pickEventByNaturalKey(listOf(foreign, unlinked, mixed), universeId = 20) { links[it.id] ?: emptySet() })
     }
 }
