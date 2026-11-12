@@ -7809,7 +7809,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 코드가 바뀌었을 수 있다(파일의 코드를 받는 갈래) — 색인이 옛 코드를
                     // 계속 가리키면 그 코드를 든 다음 행이 **남의 것을 자기 것으로 본다**.
                     entryCodes.put(candidate)
-                    result.updatedFieldValueEntries++
+                    // 위에서 '동일'을 걸렀으므로 여기의 `!=`는 늘 참이다 — 집계 옆에 판정을 남겨 두는 것은
+                    // 정적 검사(check_restore_preview_parity ③)가 보는 모양이다.
+                    if (candidate != existing) result.updatedFieldValueEntries++ else result.unchangedRows++
                 } else {
                     // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용).
                     // **같은 파일 안에서 방금 만든 엔트리도 상대다** — 그래서 색인은 아래에서 함께 갱신한다.
