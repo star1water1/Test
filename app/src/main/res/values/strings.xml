@@ -796,6 +796,8 @@
     <string name="import_xlsx_too_large">백업 안의 데이터 시트가 너무 큽니다 (최대 1GB). 파일이 손상되었을 수 있으니 다시 내보낸 백업으로 시도해 주세요.</string>
     <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
     <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
+    <!-- 백업 안의 이미지 엔트리가 깨져 그 장만 건너뛰었다 (S25 4-ㄴ2 — 수정 전 빌드의 백업은 첫 이미지가 깨져 있다) -->
+    <string name="import_corrupt_image_entries">백업 안의 이미지 %d장이 손상되어 건너뛰었습니다 — 그 그림은 되살아나지 않았고, 나머지 데이터와 이미지는 들어왔습니다</string>
     <string name="import_oom">기기 메모리가 부족해 데이터를 한 번에 처리하지 못했습니다. 데이터(캐릭터·필드·사건 등)가 매우 많은 경우이니, 작품(세계관)을 나눠 내보낸 뒤 부분씩 가져와 주세요. (이미지 용량은 이 한계와 무관합니다.)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
     <string name="relationship_already_exists">이 캐릭터와는 이미 관계가 있습니다</string>

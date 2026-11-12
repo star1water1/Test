@@ -16,7 +16,6 @@ import com.novelcharacter.app.excel.ImageZipReport
 import com.novelcharacter.app.util.SqlInChunks
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import com.novelcharacter.app.util.RegexCharClasses
@@ -333,8 +332,8 @@ class WorldPackageExporter(private val context: Context,
                 if (config.includeImages) {
                     // 이미지 구간은 무압축(설계 D8 — ImageZipHelper와 짝. R-16).
                     // 이미 압축된 형식에 deflate를 걸어 얻는 것이 없으므로 CPU만 지불하게 된다.
-                    // 위 JSON 엔트리들은 압축이 실효가 있어 기본 수준으로 이미 기록됐다.
-                    zip.setLevel(Deflater.NO_COMPRESSION)
+                    // 장마다 STORED로 쓴다([com.novelcharacter.app.excel.StoredZipEntry]) — 종전의
+                    // `setLevel` 전환은 안드로이드에서 전환 직후 엔트리를 깨뜨렸다(S25 4-ㄴ2).
                     var written = 0
                     progress.onImages(0, imageTotal)
                     for ((json, prefix) in imageGroups) {
@@ -349,10 +348,9 @@ class WorldPackageExporter(private val context: Context,
                             progress.onImages(written, imageTotal)
                         }
                     }
-                    zip.setLevel(Deflater.DEFAULT_COMPRESSION)
                     // **이미지 구간 뒤라야 한다** — 어느 장이 잘렸는지는 다 써 봐야 안다.
                     // 실패가 없어도 싣는다: 있으면 "잘린 장은 이것뿐"이고 없으면 "모른다"라,
-                    // 빈 목록이 *아는 것*과 *모르는 것*을 가른다. JSON이라 압축을 되돌린 뒤다.
+                    // 빈 목록이 *아는 것*과 *모르는 것*을 가른다. JSON은 기본 deflate 그대로다(수준 전환 없음).
                     writeJsonEntry(zip, WorldPackageEntries.IMAGE_FAILURES, imageTally.truncated)
                 }
             }
@@ -494,18 +492,15 @@ class WorldPackageExporter(private val context: Context,
                         // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패가 이 부류의 대부분인데,
                         // 순서가 반대면 그 흔한 실패마다 0바이트 엔트리가 남고 받는 기기는 그것을
                         // 멀쩡한 이미지로 복원한다(결번이라야 "유실"로 세어 고지된다).
-                        imageFile.inputStream().use { input ->
-                            zip.putNextEntry(ZipEntry(entryName))
-                            input.copyTo(zip)
-                            zip.closeEntry()
-                        }
+                        com.novelcharacter.app.excel.StoredZipEntry.write(zip, entryName, imageFile, scratchDir = context.cacheDir)
                         tally.included++
                     } catch (e: Exception) {
-                        // **여기까지 왔으면 엔트리가 이미 열려 있을 수 있다**(`copyTo`가 중간에
-                        // 던진 갈래). 아래 `closeEntry()`는 지금까지 쓴 바이트로 그 엔트리를
-                        // **정상 종료**하므로 zip은 온전하고 **내용만 잘린 장**이 남는다 —
-                        // 결번이 아니라서 받는 기기가 유실로 세지 못한다. 그래서 이름을 함께
-                        // 적어 `image_failures.json`으로 보낸다(B-234 · 확정 19장 5번).
+                        // 원본 쪽 실패(못 연다·읽다 끊긴다)는 [StoredZipEntry]가 엔트리를 열기
+                        // **전에** 던지므로 결번으로 남는다. 엔트리가 열린 뒤의 실패는 출력 ZIP
+                        // 쓰기 자체의 실패라 STORED 크기·CRC가 어긋나 아래 `closeEntry()`도 던지고
+                        // 내보내기가 통째로 실패한다 — 종전(deflate)처럼 *내용만 잘린 장*이 남는
+                        // 갈래는 없어졌다. 이름은 그대로 `image_failures.json`에 적는다(B-234 ·
+                        // 확정 19장 5번 — 받는 기기가 유실로 센다).
                         Log.w("WorldPackageExporter", "Failed to add image $entryName", e)
                         tally.fail(entryName, path)
                         try { zip.closeEntry() } catch (_: Exception) { }

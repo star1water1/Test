@@ -6,7 +6,6 @@ import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -102,10 +101,9 @@ object ImageZipHelper {
 
             // 이미지 구간은 무압축(설계 D8) — JPEG·PNG는 이미 압축된 형식이라 deflate가
             // 사실상 0%를 벌면서 전량에 CPU를 지불한다(실측: 744.3MB → 740MB, -0.6%).
-            // STORED가 아니라 setLevel인 이유: STORED는 항목마다 size·crc를 미리 채워야 해
-            // 파일을 두 번 읽거나 통째로 버퍼링해야 한다. 이 방식은 스트리밍(copyTo)이 그대로다.
-            // 압축 수준은 zip 리더에게 투명하므로 왕복 규약은 무변경이다.
-            zip.setLevel(Deflater.NO_COMPRESSION)
+            // **엔트리마다 STORED로 쓴다([StoredZipEntry]).** 종전에는 여기서
+            // `setLevel(NO_COMPRESSION)`으로 수준을 바꿨는데, 안드로이드에서 그 전환 직후
+            // 엔트리(첫 이미지)의 deflate 스트림이 깨져 백업 전체가 복원되지 않았다(S25 4-ㄴ2).
 
             // 이미지 추가 (파일명 충돌 방지)
             val usedNames = mutableSetOf<String>()
@@ -128,11 +126,9 @@ object ImageZipHelper {
                     // **엔트리를 여는 것은 원본을 연 뒤다.** 열기 실패(파일이 방금 지워졌다,
                     // 권한이 없다)가 이 부류의 대부분인데, 순서가 반대면 그 흔한 실패마다
                     // 0바이트 엔트리가 ZIP에 남는다. 이쪽은 그 자리에서 통째로 건너뛴다.
-                    imageFile.inputStream().use { input ->
-                        zip.putNextEntry(ZipEntry(zipPath))
-                        input.copyTo(zip)
-                        zip.closeEntry()
-                    }
+                    // 큰 그림의 사본은 cacheDir에 둔다 — 출력 ZIP 옆(자동 백업이면 filesDir/backups)에
+                    // 두면 중단 때 남은 사본을 어떤 청소도 치우지 않았다(PR #432 리뷰).
+                    StoredZipEntry.write(zip, zipPath, imageFile, scratchDir = appContext.cacheDir)
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
                     failedPaths.add(path)
@@ -146,9 +142,7 @@ object ImageZipHelper {
                 Log.w(TAG, "${failedPaths.size} of ${existingImages.size} images failed to add to ZIP")
             }
 
-            // 이미지 구간 종료 — JSON은 압축이 실효가 있으므로 기본 수준으로 원복한다
-            zip.setLevel(Deflater.DEFAULT_COMPRESSION)
-
+            // image_map.json은 기본 수준(deflate) 그대로다 — 수준을 바꾼 적이 없다.
             // image_map.json 추가
             zip.putNextEntry(ZipEntry("image_map.json"))
             zip.write(gson.toJson(imageMap).toByteArray())

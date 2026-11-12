@@ -107,6 +107,7 @@ $MAIN/excel/ImageZipReport.kt
 $MAIN/excel/ExportOptions.kt
 $MAIN/excel/ExportProgress.kt
 $MAIN/excel/OverwriteGuard.kt
+$MAIN/excel/StoredZipEntry.kt
 $MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EntityFieldHeaders.kt
 $MAIN/excel/CharacterFieldHeaders.kt
@@ -457,6 +458,7 @@ $TEST/excel/CharacterRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
+$TEST/excel/StoredZipEntryTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/excel/TransferInterruptionTest.kt
 $TEST/util/CacheSweepTest.kt

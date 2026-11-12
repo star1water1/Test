@@ -64,6 +64,16 @@ class ExcelImporter(context: Context) {
     private var pendingImageFailures = 0
 
     /**
+     * 해제하다 **엔트리 자체가 깨져** 건너뛴 이미지 수(S25 4-ㄴ2).
+     *
+     * 2026-08-02 ~ 수정 전 빌드의 전체 백업은 첫 이미지 한 장의 deflate 스트림이 깨져 있다
+     * (내보내기의 `setLevel` 전환 — [StoredZipEntry] 참조). 종전에는 그 한 장의 `ZipException`이
+     * 가져오기 전체를 *"가져오기 실패"*로 끝내, **이미 사용자 손에 있는 백업이 통째로 쓸모없었다.**
+     * 이미지 한 장은 데이터가 아니므로 그 장만 건너뛰고 결과에 사실대로 말한다.
+     */
+    private var pendingCorruptImageEntries = 0
+
+    /**
      * 지금 돌고 있는 구간 (B-228). 도는 것이 없으면 null이다.
      *
      * 화면이 사라졌을 때 **끊는가 · 말하는가**를 [TransferInterruption]이 이 값으로 정한다.
@@ -972,6 +982,8 @@ class ExcelImporter(context: Context) {
     // ── ZIP에서 가져오기 ──
 
     private suspend fun importFromZip(zipTempFile: File, progress: TaskProgressDialog.Handle? = null) {
+        // 회차 계수는 이 가져오기 한 번의 것이다 — 지난 회차가 조기 반환으로 남긴 값을 비운다(PR #432 리뷰).
+        pendingCorruptImageEntries = 0
         val extractDir = File(appContext.cacheDir, "import_extract_${System.currentTimeMillis()}")
         // 해제 구간의 취소는 안전하다 — 산출물이 전부 [extractDir] 안에 있고 아래 finally가
         // 통째로 지운다. 아직 DB에도 filesDir에도 쓴 것이 없다.
@@ -1007,6 +1019,9 @@ class ExcelImporter(context: Context) {
             // (엔트리 헤더의 크기 선언은 신뢰할 수 없으므로 실제 해제 바이트를 계수)
             ZipFile(zipTempFile).use { zip ->
                 var imageCount = 0
+                // 상한(엔트리 수)은 **시도한** 이미지 엔트리로 센다 — 깨져 건너뛴 장도 해제를 시도한
+                // 일이다. 성공한 장만 세면 깨진 엔트리를 되풀이한 파일이 상한을 우회한다(PR #432 리뷰).
+                var imageEntriesSeen = 0
                 var imageTotalBytes = 0L
                 var processed = 0
                 for (entry in zip.entries()) {
@@ -1050,7 +1065,7 @@ class ExcelImporter(context: Context) {
                             }
                         }
                         entry.name.startsWith("images/") -> {
-                            if (imageCount >= MAX_IMAGE_ENTRY_COUNT) {
+                            if (imageEntriesSeen >= MAX_IMAGE_ENTRY_COUNT) {
                                 withContext(Dispatchers.Main) {
                                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_too_many_images, Toast.LENGTH_LONG).show()
                                 }
@@ -1063,10 +1078,32 @@ class ExcelImporter(context: Context) {
                                 continue
                             }
                             imageFile.parentFile?.mkdirs()
-                            val copied = zip.getInputStream(entry).use { input ->
-                                FileOutputStream(imageFile).use { output ->
-                                    copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                            imageEntriesSeen++
+                            // **깨진 이미지 엔트리 한 장은 건너뛴다** — 위 [pendingCorruptImageEntries].
+                            // data.xlsx가 깨진 것은 여기 오지 않는다(그쪽은 종전대로 실패다).
+                            val copied = try {
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(imageFile).use { output ->
+                                        copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                                    }
                                 }
+                            } catch (e: java.io.IOException) {
+                                // ZipException(손상)·EOFException(잘림)만 건너뛴다 — 그 밖의 I/O 실패
+                                // (디스크 가득 등)는 종전대로 가져오기 실패다.
+                                if (e !is java.util.zip.ZipException && e !is java.io.EOFException) throw e
+                                // **깨지기 전에 쓴 바이트도 총량 상한에 센다**(PR #432 리뷰) —
+                                // 세지 않으면 깨진 엔트리를 되풀이한 파일이 8GB 상한을 우회한다.
+                                imageTotalBytes += imageFile.length()
+                                imageFile.delete()
+                                pendingCorruptImageEntries++
+                                Log.w("ExcelImporter", "Skipping corrupt image entry: ${entry.name}", e)
+                                if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_images_too_large, Toast.LENGTH_LONG).show()
+                                    }
+                                    return
+                                }
+                                continue
                             }
                             imageTotalBytes += copied
                             if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) {
@@ -1173,6 +1210,9 @@ class ExcelImporter(context: Context) {
             // **지우기가 먼저다.** 아래 닫기는 메인으로 건너가는 suspend 호출이라 스코프가
             // 취소된 상태면 그 자리에서 던진다 — 순서가 반대면 해제 폴더가 캐시에 남는다.
             extractDir.deleteRecursively()
+            // 옵션 창 취소 등 조기 반환에도 깨진 장 수가 다음 가져오기에 새지 않게 비운다(PR #432 리뷰).
+            // 정상 경로는 결과에 싣고 이미 0으로 만들었다.
+            pendingCorruptImageEntries = 0
             // 조기 반환·예외·취소 어느 쪽으로 나가도 내가 연 창은 닫는다 (B-219 ①).
             // 정상 경로는 옵션 창을 띄우기 전에 이미 닫았고, `dismiss`가 멱등이라 무해하다.
             dismissTaskProgress(ownedProgress)
@@ -1536,6 +1576,18 @@ class ExcelImporter(context: Context) {
                     result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
                     pendingImageFailures = 0
                 }
+                if (pendingCorruptImageEntries > 0) {
+                    // **맨 앞에 둔다** — 빈 앱 복원은 행마다 *"새로 생성됨"* 안내가 수천 줄 붙어,
+                    // 끝에 달면 상세·이력의 길이 상한에 잘려 **유일하게 데이터가 빠진 사실이 안 보인다.**
+                    result.warnings.add(
+                        0,
+                        appContext.getString(
+                            com.novelcharacter.app.R.string.import_corrupt_image_entries,
+                            pendingCorruptImageEntries
+                        )
+                    )
+                    pendingCorruptImageEntries = 0
+                }
                 // 여기까지 왔으면 트랜잭션이 커밋됐다 — 되살린 이미지는 이제 가리킬 행이 있다.
                 restoredImagePaths = emptyList()
 
@@ -1591,6 +1643,7 @@ class ExcelImporter(context: Context) {
             // 실패" **거짓 경고**가 붙는다 — 계수를 가져오기 한 번의 수명으로 좁힌다.
             // (성공 갈래는 소비 직후 이미 0이라 이 대입은 무해하다.)
             pendingImageFailures = 0
+            pendingCorruptImageEntries = 0
         }
     }
 
