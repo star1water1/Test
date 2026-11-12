@@ -908,14 +908,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         missingSheetNames.clear()
         // **어느 삭제·행보다 먼저** 센다 — 비어 있었는가는 가져오기 전의 사실이다.
         emptyBeforeImport.clear()
-        // **휴지통까지 비어 있어야 '지운 적 없음'이다**(PR #439 리뷰) — 표가 비었다는 것만으로는
-        // 모른다. 앱에서 전부 지운 뒤 옛 백업을 병합하면 표는 비어 있어도 지운 항목이 휴지통에
-        // 있고, 행별 고지가 바로 그 되살아남을 잡는 자리다. 세계관을 지우면 그 아래 캐릭터는
-        // 세계관 스냅샷에만 실리므로 종류별로 가르지 않고 휴지통 전체로 본다 — 빈 앱(새 설치·
-        // 초기화 직후)이 이 요약의 대상이다.
-        if (countRows("SELECT COUNT(*) FROM trash_snapshots") == 0) {
-            for ((category, table) in createdNewByCodeTables) {
-                if (countRows("SELECT COUNT(*) FROM $table") == 0) emptyBeforeImport.add(category)
+        // **그 범주를 담을 수 있는 휴지통 항목까지 없어야 '지운 적 없음'이다**(PR #439 리뷰) —
+        // 표가 비었다는 것만으로는 모른다. 앱에서 전부 지운 뒤 옛 백업을 병합하면 표는 비어 있어도
+        // 지운 항목이 휴지통에 있고, 행별 고지가 바로 그 되살아남을 잡는 자리다. 반대로 휴지통
+        // 전체를 보면 사건 하나 지운 흔적이 수천 행의 요약을 막는다 — 범주마다 **그것을 담는
+        // 종류**만 본다(세계관 삭제는 한 작업으로 작품·캐릭터를 각자의 스냅샷에 남긴다).
+        for ((category, table) in createdNewByCodeTables) {
+            if (countRows("SELECT COUNT(*) FROM $table") != 0) continue
+            val types = trashTypesHolding(category).joinToString(",") { "'$it'" }
+            if (countRows("SELECT COUNT(*) FROM trash_snapshots WHERE entityType IN ($types)") == 0) {
+                emptyBeforeImport.add(category)
             }
         }
         truncatedDetails.clear()
@@ -13520,6 +13522,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         "factions" to Triple("세력", "개", "를"),
         "duelAxes" to Triple("대결 축", "개", "를")
     )
+
+    /**
+     * 이 범주의 항목을 **담을 수 있는** 휴지통 종류 — [emptyBeforeImport]의 '지운 적 없음' 판정.
+     * 세계관 삭제는 한 작업으로 그 아래 작품·캐릭터·세력·축을 지우므로 세계관 종류는 모두에 든다.
+     */
+    private fun trashTypesHolding(category: String): List<String> {
+        val world = listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_UNIVERSE, com.novelcharacter.app.data.model.TrashSnapshot.TYPE_UNIVERSE_DATA)
+        return world + when (category) {
+            "universes" -> emptyList()
+            "novels" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_NOVEL)
+            "characters" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_CHARACTER, com.novelcharacter.app.data.model.TrashSnapshot.TYPE_NOVEL)
+            "factions" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_FACTION)
+            "duelAxes" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_DUEL_AXIS)
+            else -> emptyList()
+        }
+    }
 
     /** [warnCreatedNewByCode] 범주 → 표 — [emptyBeforeImport]를 세는 재료. */
     private val createdNewByCodeTables = listOf(
