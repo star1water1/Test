@@ -1692,7 +1692,9 @@ class ExcelImporter(context: Context) {
                 // 지우는 경로가 없어 여기 들어오면 *"앱 설정 N개를 삭제합니다"*라는 거짓 고지가
                 // 경고문에 실린다 — 범주별 *"백업에 없음: N개"* 줄은 참이라 그대로 남는다.
                 val totalOnlyInDb = analysis.categories
-                    .filter { it.deletedByOverwrite }
+                    // 아래 삭제 목록과 **같은 모집단**이다 — 못 읽은 시트를 여기만 세면 경고가 뜨고
+                    // 목록은 비는 거짓 경고가 된다(PR #440 리뷰).
+                    .filter { it.deletedByOverwrite && !it.sheetUnreadable }
                     .sumOf { it.onlyInDb.coerceAtLeast(0) }
 
                 for (cat in analysis.categories) {
@@ -1829,7 +1831,7 @@ class ExcelImporter(context: Context) {
                 // 목록에 올린다. 그래서 어느 목록에도 안 뜨는 범주가 읽히지 않았다는 이유로
                 // **그 목록과 무관한 경고**가 붙었다.
                 val overwriteDeleteCats = analysis.categories
-                    .filter { it.deletedByOverwrite && it.onlyInDb > 0 }
+                    .filter { it.deletedByOverwrite && !it.sheetUnreadable && it.onlyInDb > 0 }
                 val unreadMixedInOverwrite = overwriteDeleteCats.any { it.skippedCount > 0 }
 
                 // 덮어쓰기 경고
@@ -1866,7 +1868,8 @@ class ExcelImporter(context: Context) {
                 // MERGE 모드 항목별 삭제 옵션 (삭제 지원 카테고리만 표시)
                 val deletableKeys = setOf("characters", "timeline", "stateChanges", "quotes", "relationships",
                     "relationshipChanges", "nameBank", "factions", "factionMemberships", "factionRelationships")
-                val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
+                // 열 이름 행을 못 찾아 가져오기가 건너뛸 시트는 지울 수 없다 — 올리면 거짓 예고다(PR #440 리뷰).
+                val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys && !it.sheetUnreadable }
                 // 이 목록의 모집단으로 다시 잰다 — 위 덮어쓰기 판정과 대상이 다르다.
                 val unreadMixedInDelete = deletableCats.any { it.skippedCount > 0 }
                 val deleteSectionLabel = TextView(act).apply {
