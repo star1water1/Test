@@ -761,7 +761,9 @@ class FieldManageFragment : Fragment() {
             // 사라진 미리보기를 다시 그리려 든다.
             dialog.setOnDismissListener { convertibleTypesChanged = null }
 
-            dialog.show()
+            // **배선이 `show()`보다 먼저다** — [setValidatedPositiveButton]은 클릭 처리를
+            // `setOnShowListener`에서 단다. 뜬 뒤에 부르면 그 리스너가 영영 불리지 않아
+            // '적용'을 눌러도 아무 일도 없다(S25 ② — 필드 합치기가 한 번도 적용되지 않았다).
             dialog.setValidatedPositiveButton {
                 if (selected.isEmpty()) {
                     Toast.makeText(ctx, R.string.merge_none_selected, Toast.LENGTH_SHORT).show()
@@ -772,6 +774,7 @@ class FieldManageFragment : Fragment() {
                     true
                 }
             }
+            dialog.show()
             // 첫 소스는 스피너가 붙으면서 리스너를 부르지만, 그것은 다음 레이아웃 패스의 일이라
             // 창이 잠깐 빈 채로 뜬다. 여기서 한 번 부르고, 겹쳐도 위 [loadToken]이 뒤엣것만
             // 반영하므로 두 번 그려지지 않는다.

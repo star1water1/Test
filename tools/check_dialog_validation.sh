@@ -10,11 +10,12 @@
 #   `dialog.setValidatedPositiveButton { ... false /* 실패: 창 유지 */ ... true /* 성공 */ }`
 # 그리고 실패는 `showInlineError`로 고칠 칸에 붙인다(util/AlertDialogExt.kt가 단일 소스).
 #
-# ## 이 검사가 보는 것은 둘이다
+# ## 이 검사가 보는 것은 셋이다
 #
 #   [A] **조기 return** — `return@setPositiveButton` (기준선 0건 동결)
 #   [B] **가드-래핑** — 저장을 `if`로 **감싸** 실패 경로가 아무것도 하지 않는 형태
 #       (기준선 파일로 동결. 아래가 그 사유다)
+#   [C] **배선 순서** — `show()` 뒤에 단 `setValidatedPositiveButton` (기준선 0건 동결)
 #
 # ## [B]를 더한 이유 — [A]만으로는 원리적으로 못 잡는다 (B-76)
 #
@@ -85,6 +86,72 @@ if [ "$COUNT" -ne 0 ]; then
 fi
 
 echo "  ✓ [A] 자동 닫힘 버튼 안의 조기 return 없음"
+
+# ─────────────────────────────────────────────────────────────────────
+# [C] 배선 순서 — `x.show()` 뒤의 `x.setValidatedPositiveButton` (기준선 0건 동결)
+# ─────────────────────────────────────────────────────────────────────
+# `setValidatedPositiveButton`은 클릭 처리를 `setOnShowListener`에서 단다. 창이 **이미 뜬 뒤**
+# 부르면 그 리스너는 영영 불리지 않고, 버튼이 null 리스너 그대로라 **눌러도 아무 일도 없다.**
+# 화면은 멀쩡히 떠서 밖에서 보이지 않는 고장이다 — 실증이 필드 합치기(S25 ②: 한 번도 적용되지
+# 않았다). 같은 변수의 `show()`가 앞 40줄 안에 있고 그 사이에 그 변수의 새 선언이 없으면 센다.
+order_scan() {
+  python3 - "$1" <<'PY'
+import os, re, sys
+for root, _, files in os.walk(sys.argv[1]):
+    for f in sorted(files):
+        if not f.endswith('.kt'):
+            continue
+        p = os.path.join(root, f)
+        lines = open(p, encoding='utf-8').read().split('\n')
+        for i, line in enumerate(lines):
+            m = re.search(r'\b(\w+)\.setValidatedPositiveButton\b', line)
+            if not m:
+                continue
+            v = re.escape(m.group(1))
+            for j in range(i - 1, max(-1, i - 41), -1):
+                if re.search(r'\b(val|var)\s+%s\b' % v, lines[j]):
+                    break
+                if re.search(r'\b%s\.show\(\)' % v, lines[j]):
+                    print('%s:%d' % (p, i + 1))
+                    break
+PY
+}
+ORDER_SELF=$(mktemp -d)
+cat > "$ORDER_SELF/F.kt" <<'KT'
+fun bad() {
+    val dialog = b.create()
+    dialog.show()
+    dialog.setValidatedPositiveButton { true }   // ← 잡아야 한다
+}
+fun good() {
+    val dialog = b.create()
+    dialog.setValidatedPositiveButton { true }
+    dialog.show()
+}
+fun redeclared() {
+    val d = b.create()
+    d.show()
+    val other = 1
+    val d2 = b.create()
+    d2.setValidatedPositiveButton { true }       // 다른 변수 — 안 잡아야 한다
+    d2.show()
+}
+KT
+ORDER_SELF_N=$(order_scan "$ORDER_SELF" | grep -c . || true)
+rm -rf "$ORDER_SELF"
+if [ "$ORDER_SELF_N" -ne 1 ]; then
+  echo "  ✗ [C] 판정기 자기 시험 실패 — 픽스처에서 1건을 기대했는데 ${ORDER_SELF_N}건" >&2
+  exit 1
+fi
+ORDER_HITS=$(order_scan "$SRC" || true)
+if [ -n "$ORDER_HITS" ]; then
+  echo "  ✗ [C] show() 뒤에 setValidatedPositiveButton — 저장 버튼이 아무 일도 하지 않습니다" >&2
+  printf '%s\n' "$ORDER_HITS" | sed 's/^/      /' >&2
+  echo "" >&2
+  echo "  고치는 법: setValidatedPositiveButton { ... }을 show()보다 먼저 부를 것" >&2
+  exit 1
+fi
+echo "  ✓ [C] setValidatedPositiveButton이 모두 show()보다 먼저"
 
 # ─────────────────────────────────────────────────────────────────────
 # [B] 가드-래핑 — 구조로 본다(낱말 하나로는 못 본다)
