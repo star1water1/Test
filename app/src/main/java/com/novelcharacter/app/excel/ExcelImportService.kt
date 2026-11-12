@@ -1009,6 +1009,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         headerMissingLabels.add("'${spec.sheetName}'")
                         return RestoreSource.MISSING
                     }
+                    // 조회([resolveSpecSheet])가 머리글로 정체를 확인하므로, 열 이름 행을 지운 시트는
+                    // 여기 **null로 온다**(에뮬레이터 실측 — 위 갈래만으로는 문구가 그대로였다).
+                    // 그 이름의 시트가 파일에 있으면 '없는' 것이 아니라 '읽지 못한' 것이다.
+                    if (sheet == null && workbook.getSheet(spec.sheetName) != null) {
+                        headerMissingLabels.add("'${spec.sheetName}'")
+                    }
                     return OverwriteGuard.classify(sheetHasDataRow(sheet, spec.firstColumnHeader))
                 }
                 /** 이 spec의 시트를 근거로 기존 데이터를 지워도 되는가(= 데이터 행이 있는가). */
