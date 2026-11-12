@@ -9365,7 +9365,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 연표가 새로 만든 행은 가져오기 전에 없었으므로 신규로 센다(미리보기도 그렇게 센다).
                     val insertedByTimeline = existing.id in timelineInsertedStateChangeIds
                     val existingBeforeImport = preTimelineStateChanges[existing.id] ?: existing
-                    if ((fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH) &&
+                    // 연표가 방금 만든 행에는 '가져오기 전 연도'가 없다 — 사건 연도를 옛 연도로 삼으면
+                    // 사건과 맞는 연도 필드를 '안 고친 값'으로 오인해 이력 연도로 덮는다(PR #444 리뷰).
+                    // 그 경우는 편집 우선 규칙을 건너뛰고 뒤의 필드 → 이력 동기화에 맡긴다.
+                    if (!insertedByTimeline &&
+                        (fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH) &&
                         mergedStateChange.year != existingBeforeImport.year
                     ) {
                         pendingSemanticYearEdits.getOrPut(character.id) { mutableListOf() }
