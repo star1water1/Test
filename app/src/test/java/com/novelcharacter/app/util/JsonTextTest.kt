@@ -78,4 +78,28 @@ class JsonTextTest {
             .filter { it.isNotEmpty() }
         assertEquals(listOf("실내", "야외"), picked)
     }
+
+    // ── 뜻이 같은 JSON은 기존 글자를 지킨다 (S11 3-ㄱ-2 — 왕복의 가짜 '변경') ──
+
+    @Test
+    fun `키 순서만 다른 객체는 기존 글자를 돌려준다`() {
+        val existing = """{"a":1,"b":{"x":[1,2],"y":"z"}}"""
+        val incoming = """{"b":{"y":"z","x":[1,2]},"a":1.0}"""
+        assertEquals(existing, keepIfJsonEquivalent(existing, incoming))
+    }
+
+    @Test
+    fun `내용이 다르면 들어온 글자다`() {
+        assertEquals("""{"a":2}""", keepIfJsonEquivalent("""{"a":1}""", """{"a":2}"""))
+        // 배열은 차례가 뜻이다
+        assertEquals("[2,1]", keepIfJsonEquivalent("[1,2]", "[2,1]"))
+        assertEquals("""{"a":1,"b":2}""", keepIfJsonEquivalent("""{"a":1}""", """{"a":1,"b":2}"""))
+    }
+
+    @Test
+    fun `JSON이 아니거나 없으면 들어온 글자다`() {
+        assertEquals("abc", keepIfJsonEquivalent("ABC", "abc"))
+        assertEquals("{}", keepIfJsonEquivalent(null, "{}"))
+        assertEquals(null, keepIfJsonEquivalent("{}", null))
+    }
 }
