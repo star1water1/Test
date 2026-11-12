@@ -2232,7 +2232,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun mergeSearchPreset(existing: SearchPreset, r: SearchPresetRowValues, now: Long): SearchPreset {
         val content = existing.copy(
             query = r.query ?: existing.query,
-            filtersJson = r.filtersJson ?: existing.filtersJson,
+            // 뜻이 같으면 기존 글자 — 키 순서만 다른 왕복이 '변경'이 되지 않게(S11 3-ㄱ-2).
+            filtersJson = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.filtersJson, r.filtersJson) ?: existing.filtersJson,
             sortMode = r.sortMode ?: existing.sortMode,
             isDefault = r.isDefault ?: existing.isDefault,
             updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
@@ -2361,14 +2362,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private fun mergeListPreset(existing: CharacterListPreset, r: ListPresetRowValues, now: Long): CharacterListPreset {
         val content = existing.copy(
-            tagsJson = r.tagsJson ?: existing.tagsJson,
-            fieldFiltersJson = r.fieldFiltersJson ?: existing.fieldFiltersJson,
+            tagsJson = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.tagsJson, r.tagsJson) ?: existing.tagsJson,
+            fieldFiltersJson = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.fieldFiltersJson, r.fieldFiltersJson) ?: existing.fieldFiltersJson,
             sortKind = r.sortKind ?: existing.sortKind,
             sortFieldKey = if (r.hasSortFieldKeyCol) r.sortFieldKey else existing.sortFieldKey,
             sortDuelAxisCode = if (r.hasDuelAxisCol) r.sortDuelAxisCode else existing.sortDuelAxisCode,
             sortAscending = r.sortAscending ?: existing.sortAscending,
             bodySizePartIndex = if (r.hasBodyPartCol) r.bodySizePartIndex else existing.bodySizePartIndex,
-            novelIdsJson = r.novelIdsJson ?: existing.novelIdsJson,
+            novelIdsJson = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.novelIdsJson, r.novelIdsJson) ?: existing.novelIdsJson,
             isDefault = r.isDefault ?: existing.isDefault,
             updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
@@ -2454,7 +2455,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val content = existing.copy(
             name = r.name,                                 // 생성일 매칭이면 rename 반영
             description = r.description ?: existing.description,
-            fieldsJson = r.fieldsJson ?: existing.fieldsJson,
+            fieldsJson = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.fieldsJson, r.fieldsJson) ?: existing.fieldsJson,
             isBuiltIn = r.isBuiltIn ?: existing.isBuiltIn,
             updatedAt = stampedUpdatedAt(existing.createdAt, r.updatedAt ?: existing.updatedAt)
         )
@@ -2691,7 +2692,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private fun mergeFieldDefinition(existing: FieldDefinition, r: FieldDefRowValues, mergedConfig: String): FieldDefinition =
         existing.copy(
-            name = r.name, type = r.type, config = mergedConfig,
+            // 설정 JSON은 뜻이 같으면 기존 글자다 — 키 순서만 다른 왕복이 '변경'이 되지 않게(S11 3-ㄱ-2).
+            name = r.name, type = r.type, config = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.config, mergedConfig) ?: mergedConfig,
             groupName = r.groupName ?: existing.groupName, displayOrder = r.displayOrder ?: existing.displayOrder,
             isRequired = r.isRequired ?: existing.isRequired
         )

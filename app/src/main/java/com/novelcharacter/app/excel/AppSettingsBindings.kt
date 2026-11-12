@@ -226,6 +226,15 @@ object AppSettingsBindings {
             read = { com.novelcharacter.app.speech.SpeechProtocol.encodeConfig(com.novelcharacter.app.speech.SpeechSettings(it).read()) },
             write = { ctx, value ->
                 val config=com.novelcharacter.app.speech.SpeechProtocol.decodeConfig(value)
+                // **제공자를 가리키지 않는 같은 설정은 검증할 것이 없다**(S11) — 기본 설정(CLOUD·제공자 없음)
+                // 그대로인 기기에서 내보낸 파일을 다시 들이면, 검증이 '제공자 없음'으로 매번 경고했다.
+                // 제공자를 가리키는 설정은 같아도 검증한다 — 같은 파일의 ai_providers 행이 그 제공자를
+                // 바꿨을 수 있다(PR #441 리뷰: 프로토콜·주소가 바뀌면 전사가 실패하는데 성공으로 보였다).
+                if (config != null && config.providerId.isBlank() &&
+                    config == com.novelcharacter.app.speech.SpeechSettings(ctx).read()
+                ) {
+                    return@Binding Applied.Yes
+                }
                 val provider=config?.providerId?.let {AiProviderStore(ctx).get(it)}
                 val providerError=config?.let { com.novelcharacter.app.speech.SpeechProtocol.providerError(it,
                     provider?.protocol==com.novelcharacter.app.ai.AiProtocol.OPENAI_COMPAT,provider?.baseUrl) }

@@ -52,3 +52,46 @@ fun JSONObject.stringOrNull(name: String): String? =
 /** [stringOr]의 배열판 — 원소가 JSON `null`이면 [fallback]. */
 fun JSONArray.stringOr(index: Int, fallback: String = ""): String =
     if (isNull(index)) fallback else optString(index, fallback)
+
+/**
+ * **뜻이 같은 JSON이면 [existing]을 그대로 돌려준다** — 아니면 [incoming].
+ *
+ * 엑셀 왕복의 JSON 칸(필드 정의 설정·프리셋 필터 등)은 내보낼 때와 들일 때 **키 순서**가
+ * 달라질 수 있다(저장 경로마다 직렬화기가 다르다). 글자로 비교하면 아무것도 고치지 않은 파일을
+ * 다시 들여도 미리보기가 '변경'을, 가져오기가 '업데이트'를 말한다(S11 3-ㄱ-2). 객체는 키 순서와
+ * 무관하게, 배열은 차례대로, 수는 값으로 견준다. 어느 한쪽이 JSON으로 읽히지 않으면 글자 비교다.
+ */
+fun keepIfJsonEquivalent(existing: String?, incoming: String?): String? {
+    if (existing == null || incoming == null || existing == incoming) return incoming
+    val a = parseJsonOrNull(existing) ?: return incoming
+    val b = parseJsonOrNull(incoming) ?: return incoming
+    return if (jsonEquivalent(a, b)) existing else incoming
+}
+
+private fun parseJsonOrNull(raw: String): Any? = try {
+    val t = raw.trim()
+    if (t.isEmpty()) null else {
+        val tokener = org.json.JSONTokener(t)
+        val value = tokener.nextValue().takeIf { it is JSONObject || it is JSONArray }
+        // **값 뒤에 남은 글자가 있으면 JSON이 아니다** — nextValue는 첫 값만 읽고 끝을 확인하지
+        // 않는다. 그대로 두면 `{"a":1} 편집` 같은 칸이 기존과 '같다'로 보여 편집이 조용히
+        // 버려진다(PR #441 리뷰). 글자 비교로 떨어뜨린다.
+        if (value != null && tokener.nextClean() == 0.toChar()) value else null
+    }
+} catch (_: Exception) {
+    null
+}
+
+private fun jsonEquivalent(a: Any?, b: Any?): Boolean = when {
+    a is JSONObject && b is JSONObject -> {
+        // 안드로이드의 org.json에는 keySet()이 없다 — keys() 반복자로 뜬다.
+        val keysA = a.keys().asSequence().toSet()
+        keysA == b.keys().asSequence().toSet() && keysA.all { k -> jsonEquivalent(a.opt(k), b.opt(k)) }
+    }
+    a is JSONArray && b is JSONArray ->
+        a.length() == b.length() && (0 until a.length()).all { jsonEquivalent(a.opt(it), b.opt(it)) }
+    a is Number && b is Number ->
+        runCatching { java.math.BigDecimal(a.toString()).compareTo(java.math.BigDecimal(b.toString())) == 0 }
+            .getOrDefault(a == b)
+    else -> a == b
+}
