@@ -1070,9 +1070,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         "캐릭터 관계",
                         listOf(Triple(relationshipChangeSpec().sheetName, "character_relationship_changes", relationshipChangeSpec()))
                     ) { effectiveOptions.relationshipChanges }
-                ) db.characterRelationshipDao().deleteAll()
+                ) { db.characterRelationshipDao().deleteAll(); wipedByOverwrite.add("relationships") }
                 if (shouldDelete(effectiveOptions.factionMemberships, factionMembershipSpec())) db.factionMembershipDao().deleteAll()
-                if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
+                if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) {
+                    db.factionRelationshipDao().deleteAll(); wipedByOverwrite.add("factionRelationships")
+                }
                 if (shouldDelete(effectiveOptions.factions, factionSpec()) &&
                     !cascadeBlocked(
                         "세력",
@@ -1084,7 +1086,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         if (spec.sheetName == factionMembershipSpec().sheetName) effectiveOptions.factionMemberships
                         else effectiveOptions.factionRelationships
                     }
-                ) { db.factionDao().deleteAll(); wipedByOverwrite.add("factions") }
+                ) {
+                    db.factionDao().deleteAll(); wipedByOverwrite.add("factions")
+                    // 세력 관계는 세력의 외래키 CASCADE로 함께 지워졌다 — 이 가져오기가 비운 자리다.
+                    wipedByOverwrite.add("factionRelationships")
+                }
                 if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) {
                     db.characterStateChangeDao().deleteAll()
                     batchHistoryInvalidated = true
@@ -1213,6 +1219,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.characterDao().deleteAll()
                             batchHistoryInvalidated = true
                             wipedByOverwrite.add("characters")
+                            // 캐릭터 관계는 캐릭터의 외래키 CASCADE로 함께 지워졌다 — 되묻지 않고 요약한다(⑱).
+                            wipedByOverwrite.add("relationships")
                             // **이름은행의 '사용 중'을 여기서 함께 내린다.**
                             //
                             // 이 표의 '사용 중'은 두 벌이다(`isUsed` · `usedByCharacterId`). 외래키는
@@ -9618,8 +9626,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 우선 → 자연키(쌍+유형) 폴백이되, **코드가 이 행과 같은 두 사람의 것일 때만** 따른다.
                 val relCode = rv.relCode
                 val match = rels.matchRow(relCode, char1.id, char2.id, relationshipType)
+                // 코드도 자연키(쌍+유형)도 빗나간 행 = **새로 만드는** 행이다. 종전 문구("캐릭터·유형으로
+                // 매칭합니다 — 의도한 새 관계면 코드를 비우세요")는 이 갈래에서 늘 거짓이었다 — 자연키가
+                // 맞았으면 여기 오지 않는다. 다른 범주의 '새로 생성됨'과 같은 고지로, 같은 상한으로 묶는다(⑱:
+                // 빈 앱 복원에서 3527줄).
                 if (relCode.isNotBlank() && match.existing == null && match.codeOfOtherPair == null) {
-                    result.warnings.add("관계 행 ${excelRow(i)}: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
+                    warnCreatedNewByCode("relationships", "관계 행 ${excelRow(i)}: 코드 '$relCode'가 기존 관계에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                 }
                 match.codeOfOtherPair?.let { other ->
                     // **행을 복사하면 회색 '코드' 칸이 따라온다** — 그 코드를 따르면 남의 관계가
@@ -10853,8 +10865,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val rowMatch = FactionRelationshipMatcher.matchRow(
                     existingByKey, existingByCode, relCode, faction1.id, faction2.id, relType
                 )
+                // 형제 시트(관계)와 같은 갈래 — 코드도 자연키도 빗나갔으니 새로 만든다(⑱).
                 if (relCode.isNotBlank() && rowMatch.existing == null && rowMatch.codeOfOtherPair == null) {
-                    result.warnings.add("세력 관계 행 ${excelRow(i)}: 코드 '$relCode'를 찾지 못해 세력·유형으로 매칭합니다 — 의도한 새 관계면 '코드' 칸을 비우세요")
+                    warnCreatedNewByCode("factionRelationships", "세력 관계 행 ${excelRow(i)}: 코드 '$relCode'가 기존 세력 관계에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                 }
                 rowMatch.codeOfOtherPair?.let { other ->
                     // 행을 복사하면 회색 '코드' 칸이 따라온다 — 그 코드를 따르면 남의 관계가
@@ -13541,7 +13554,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         "novels" to Triple("작품", "개", "를"),
         "characters" to Triple("캐릭터", "명", "을"),
         "factions" to Triple("세력", "개", "를"),
-        "duelAxes" to Triple("대결 축", "개", "를")
+        "duelAxes" to Triple("대결 축", "개", "를"),
+        "relationships" to Triple("관계", "개", "를"),
+        "factionRelationships" to Triple("세력 관계", "개", "를")
     )
 
     /**
