@@ -134,6 +134,7 @@ $MAIN/util/CharacterValueLedger.kt
 $MAIN/util/ImportLookupIndex.kt
 $MAIN/util/PreviewCreations.kt
 $MAIN/util/FieldValueCellPlan.kt
+$MAIN/util/LifeEventYearMismatch.kt
 $MAIN/util/FieldValueOverlay.kt
 $MAIN/util/FieldValueScan.kt
 $MAIN/util/CharacterFieldColumns.kt
@@ -477,6 +478,7 @@ $TEST/util/ImportIdentityIndexesTest.kt
 $TEST/util/SemanticYearEditPrecedenceTest.kt
 $TEST/util/PreviewCreationsTest.kt
 $TEST/util/FieldValueCellPlanTest.kt
+$TEST/util/LifeEventYearMismatchTest.kt
 $TEST/util/FieldValueScanTest.kt
 $TEST/util/DefaultFieldSlotGuardTest.kt
 $TEST/util/CharacterFieldColumnsTest.kt
