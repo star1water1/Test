@@ -140,6 +140,7 @@ $MAIN/util/CharacterFieldColumns.kt
 $MAIN/util/AiCheckState.kt
 $MAIN/util/SemanticClearPlan.kt
 $MAIN/util/SemanticAlivePrecedence.kt
+$MAIN/util/SemanticYearEditPrecedence.kt
 $MAIN/util/ColorHex.kt
 $MAIN/util/CharacterNameIndex.kt
 $MAIN/util/SingletonStateChanges.kt
@@ -473,6 +474,7 @@ $TEST/util/BirthdayHelperTest.kt
 $TEST/util/CharacterValueLedgerTest.kt
 $TEST/util/ImportLookupIndexTest.kt
 $TEST/util/ImportIdentityIndexesTest.kt
+$TEST/util/SemanticYearEditPrecedenceTest.kt
 $TEST/util/PreviewCreationsTest.kt
 $TEST/util/FieldValueCellPlanTest.kt
 $TEST/util/FieldValueScanTest.kt
