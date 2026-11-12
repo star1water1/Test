@@ -2,6 +2,7 @@ package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.Universe
 
 /**
  * "필드 데이터" 시트 행 ↔ FieldValueEntry 매핑 (순수 JVM — 단위 테스트 대상).
@@ -10,6 +11,45 @@ import com.novelcharacter.app.data.model.FieldValueEntry
  * 거부가 아니라 관대 수용(전각 콤마, Y/y/예 등)으로 처리한다.
  */
 object FieldValueSheetMapper {
+
+    /** 행의 세계관 해석 결과 — [resolveUniverse]. */
+    sealed class UniverseRef {
+        data class Found(val universe: Universe) : UniverseRef()
+        object NotFound : UniverseRef()
+        /** 이름이 같은 세계관이 [count]개이고 코드도 필드 키도 하나로 좁히지 못했다. */
+        data class Ambiguous(val count: Int) : UniverseRef()
+    }
+
+    /**
+     * '필드 데이터' 행의 세계관을 정한다 — 가져오기와 복원 미리보기가 **같은 함수**를 쓴다(R-33).
+     *
+     * 코드 → 이름 순이다(형제 시트의 `universeByCodeOrName`과 같은 사다리). **이름이 여럿에 걸리면
+     * 첫 것을 고르지 않는다** — 종전에는 `associateBy { name }`이라 동명 세계관 둘 중 **나중 것**이
+     * 모든 행을 받았고, 앞 세계관에만 있는 필드의 값은 '찾을 수 없음'으로 버려지고 양쪽에 있는
+     * 필드의 값은 뒤 세계관으로 겹쳐 들어갔다(S22 3-ㅅ-1). 코드 열이 없는 옛 파일은 그 필드 키를
+     * 가진 세계관이 **하나뿐**일 때만 그것으로 정하고, 아니면 [UniverseRef.Ambiguous]다.
+     *
+     * @param hasField 그 세계관에 이 행의 (필드 키, 대상) 정의가 있는가.
+     */
+    fun resolveUniverse(
+        code: String,
+        name: String,
+        universes: List<Universe>,
+        hasField: (universeId: Long) -> Boolean
+    ): UniverseRef {
+        if (code.isNotBlank()) {
+            universes.firstOrNull { it.code == code }?.let { return UniverseRef.Found(it) }
+        }
+        val byName = universes.filter { it.name == name }
+        return when {
+            byName.isEmpty() -> UniverseRef.NotFound
+            byName.size == 1 -> UniverseRef.Found(byName[0])
+            else -> {
+                val withField = byName.filter { hasField(it.id) }
+                if (withField.size == 1) UniverseRef.Found(withField[0]) else UniverseRef.Ambiguous(byName.size)
+            }
+        }
+    }
 
     const val ENTITY_LABEL_CHARACTER = "캐릭터"
     const val ENTITY_LABEL_EVENT = "사건"

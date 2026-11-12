@@ -1012,7 +1012,11 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         // readOnly로 두지 않는 이유: 특정 값을 MANUAL로 올려 정리 대상에서 빼는 것은 실사용 가치가 있다.
         ColumnSpec("출처", dropdownOptions = listOf("AUTO", "MANUAL", "IMPORT", "AI"), width = 3500),
         ColumnSpec("사용횟수", readOnly = true, width = 3500),
-        ColumnSpec("코드", readOnly = true, width = 4000)
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        // 동명 세계관을 가르는 열 — 이름만으로는 같은 이름의 세계관 둘 중 어디 값인지 모른다
+        // (S22 3-ㅅ-1: 한쪽 값이 빠지고 다른 쪽에 겹쳐 들어갔다). 형제 시트들과 같은 이름이다.
+        // 맨 뒤에 둔다 — 앞 열의 위치 폴백(세계관 0 · 필드키 1)을 흔들지 않는다.
+        ColumnSpec("세계관코드", readOnly = true, width = 4000)
     )
 )
 

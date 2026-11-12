@@ -3855,10 +3855,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val hiddenCol = cols["숨김"] ?: -1
         val codeCol = cols["코드"] ?: -1
         val sourceCol = cols["출처"] ?: -1
+        val universeCodeCol = cols["세계관코드"] ?: -1
 
-        // 실제 가져오기와 같은 경로로 필드를 찾는다: 세계관명 → 필드(키, 대상). 행마다 쿼리하지
-        // 않으려고 한 번에 읽어 (세계관, 키, 대상)으로 색인할 뿐, getFieldByKey와 같은 결과다.
-        val universesByName = analysisUniverses().associateBy { it.name }
+        // 실제 가져오기와 같은 경로로 필드를 찾는다: 세계관(코드 → 이름) → 필드(키, 대상). 행마다
+        // 쿼리하지 않으려고 한 번에 읽어 (세계관, 키, 대상)으로 색인할 뿐, getFieldByKey와 같은 결과다.
+        // 세계관 해석은 가져오기와 **같은 함수**다([FieldValueSheetMapper.resolveUniverse] · R-33).
+        val analysisUniverseList = analysisUniverses()
         // 필드도 **DB의 것 + 이 파일이 만들 것**이다(B-254와 같은 근거) — 짝인
         // `importFieldValueLibrary`는 `importFieldDefinitions`가 **먼저** 심어 DAO 조회로 답이
         // 맞는다. 종전에는 여기만 DB 스냅샷이라, 빈 DB 복원에서 이 시트의 행이 **전부**
@@ -3875,6 +3877,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (e in existingEntries) entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        // 가져오기가 건너뛸 행 — 덮어쓰기 복원이면 라이브러리를 비운 뒤라 **그 값은 잃는다**.
+        // 세지 않으면 미리보기가 그 결과를 말하지 않는다(PR #435 리뷰).
+        var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             val value = getCellString(row, valueCol)
@@ -3902,7 +3907,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 종전에는 여기만 그 갈래가 없어 전역 행을 전부 '신규'로 세었는데, 정작 가져오기는
             // 그 행을 건너뛰었다 — 미리보기가 약속한 건수가 실제와 다른 거짓 예고였다(B-130).
             val globalScope = FieldScopeCell.isGlobal(universeName)
-            val universe = if (globalScope) null else universesByName[universeName]
+            val universeRef = if (globalScope) null else FieldValueSheetMapper.resolveUniverse(
+                if (universeCodeCol >= 0) getCellString(row, universeCodeCol) else "",
+                universeName, analysisUniverseList
+            ) { uid -> fieldDefs.find(uid, fieldKey, imported.entityType) != null }
+            // 가져오기가 건너뛸 행(동명 세계관을 못 가름) — 신규·갱신이 아니라 '건너뜀'으로 센다.
+            if (universeRef is FieldValueSheetMapper.UniverseRef.Ambiguous) { skippedCount++; continue }
+            val universe = (universeRef as? FieldValueSheetMapper.UniverseRef.Found)?.universe
             val fd = if (globalScope) {
                 fieldDefs.find(null, fieldKey, imported.entityType)
             } else {
@@ -3939,7 +3950,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, label, sheet.lastRowNum)
-        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     // 세는 자리 없음(행을 먼저 모아 `sheetRows.size`로 세므로 *세기 전에 버리는* 자리가 없다 —
@@ -7591,9 +7602,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val hiddenCol = cols["숨김"] ?: -1
         val codeCol = cols["코드"] ?: -1
         val sourceCol = cols["출처"] ?: -1
+        val universeCodeCol = cols["세계관코드"] ?: -1
 
         // 배치 로드: 행마다 쿼리하지 않는다 (검토 A7 — 대용량 파일 성능)
-        val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
+        // 동명 세계관은 **이름으로 고르지 않는다**([FieldValueSheetMapper.resolveUniverse]).
+        val allUniverses = db.universeDao().getAllUniversesList()
+        // 동명 세계관을 필드 키로 좁히는 재료 — '필드 정의' 시트가 이미 심은 뒤라 지금의 DB가 답이다.
+        val fieldIndex = FieldDefinitionIndexes(db.fieldDefinitionDao().getAllFieldsAllTypes())
         val entriesByField = HashMap<Long, MutableList<com.novelcharacter.app.data.model.FieldValueEntry>>()
         // 코드 유일성 확인도 **같은 목록**에서 답한다 (B-210) — 종전에는 신규 엔트리마다
         // `getByCode`를 한 번 더 쳤는데, 그 행들은 방금 전부 읽어 손에 들고 있었다.
@@ -7621,11 +7636,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 이 갈래가 없던 동안 그 행들은 전부 skippedRows로 버려져, 덮어쓰기로 지워진
                 // 전역 값을 **파일로 되돌릴 길이 없었다**(B-130).
                 val globalScope = FieldScopeCell.isGlobal(universeName)
-                val universe = if (globalScope) null else universesByName[universeName]
-                if (universe == null && !globalScope) {
-                    result.skippedRows++
-                    result.warnings.add("필드 데이터 행 ${excelRow(i)}: 세계관 '$universeName'을(를) 찾을 수 없음")
-                    continue
+                val entityTypeOfRow = FieldValueSheetMapper.entityTypeOf(if (entityCol >= 0) getCellString(row, entityCol) else null)
+                val universe = if (globalScope) null else {
+                    val universeCode = if (universeCodeCol >= 0) getCellString(row, universeCodeCol) else ""
+                    when (val ref = FieldValueSheetMapper.resolveUniverse(universeCode, universeName, allUniverses) { uid ->
+                        fieldIndex.find(uid, fieldKey, entityTypeOfRow) != null
+                    }) {
+                        is FieldValueSheetMapper.UniverseRef.Found -> ref.universe
+                        is FieldValueSheetMapper.UniverseRef.Ambiguous -> {
+                            result.skippedRows++
+                            result.warnings.add(
+                                "필드 데이터 행 ${excelRow(i)}: 이름이 '$universeName'인 세계관이 ${ref.count}개라 어느 쪽 값인지 정할 수 없어 건너뜀 — " +
+                                    "'세계관코드' 열이 있는 파일(지금 버전의 내보내기)로 다시 가져오세요"
+                            )
+                            continue
+                        }
+                        FieldValueSheetMapper.UniverseRef.NotFound -> {
+                            result.skippedRows++
+                            result.warnings.add("필드 데이터 행 ${excelRow(i)}: 세계관 '$universeName'을(를) 찾을 수 없음")
+                            continue
+                        }
+                    }
                 }
                 val imported = FieldValueSheetMapper.ImportedRow(
                     universeName = universeName,
