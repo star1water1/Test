@@ -1422,6 +1422,8 @@
     <string name="stats_all_names_used">모든 이름이 사용됨</string>
     <string name="stats_and_more">…외 %d개</string>
     <string name="ai_image_tag_policy_truncated">길이 상한 %1$d자를 넘어 앞 %1$d자까지만 저장했습니다.</string>
+    <string name="ai_image_tag_policy_over_limit">%1$d자를 넘었습니다 — 넘은 부분은 저장되지 않습니다.</string>
+    <string name="ai_image_tag_policy_truncated_on_leave">AI 이미지 태그 기조가 %1$d자를 넘어 앞 %1$d자까지만 저장했습니다.</string>
     <string name="stats_field_insight_distribution_wider">아래 분포에는 이 모수 밖의 보관 값도 함께 실립니다 — 채움 수보다 넓습니다.</string>
     <string name="stats_namebank_scope_note">이름뱅크는 작품에 매이지 않는 전역 목록이라, 위의 수는 작품 필터와 무관한 전체 값입니다.</string>
     <string name="stats_namebank_used_in_scope">이 범위가 쓴 이름 %1$d개</string>

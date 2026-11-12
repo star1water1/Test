@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.core.widget.doAfterTextChanged
 import androidx.annotation.StringRes
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -455,6 +456,16 @@ class AiSettingsFragment : Fragment() {
         binding.imageTagPolicyEdit.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) commitImageTagPolicy(settings)
         }
+        // **넘는 순간 말한다** — 확정은 포커스가 떠날 때인데, 이 화면의 다른 조작(라디오·슬라이더)은
+        // 포커스를 가져가지 않아 그 시점이 *화면을 떠날 때*로 미뤄지기 일쑤다. 그때 붙는 오류는
+        // 사라지는 화면에 붙어 아무도 못 본다(S20 12-ㅎ3: 616자 → 다시 열면 600자, 고지 없음).
+        // 적는 동안 칸 아래에 *넘은 부분은 저장되지 않는다*를 미리 적는다.
+        binding.imageTagPolicyEdit.doAfterTextChanged { text ->
+            val over = (text?.toString()?.trim()?.length ?: 0) > AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS
+            binding.imageTagPolicyLayout.error = if (over) {
+                getString(R.string.ai_image_tag_policy_over_limit, AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS)
+            } else null
+        }
     }
 
     /**
@@ -470,18 +481,22 @@ class AiSettingsFragment : Fragment() {
      * 자르는 규칙을 여기 두 벌로 적지 않기 위해서다. 잘렸으면 칸의 글자도 저장된 값으로
      * 맞춰, 화면에 보이는 것과 저장된 것이 갈리지 않게 한다.
      */
-    private fun commitImageTagPolicy(settings: AiPromptSettings) {
-        val binding = _binding ?: return
+    /** @return 잘라 저장했는가 — 화면을 떠나는 자리는 칸 오류를 아무도 못 보므로 따로 말한다. */
+    private fun commitImageTagPolicy(settings: AiPromptSettings): Boolean {
+        val binding = _binding ?: return false
         val typed = binding.imageTagPolicyEdit.text?.toString().orEmpty()
         settings.imageTagPolicy = typed
         val stored = settings.imageTagPolicy
-        if (stored != typed.trim()) {
+        return if (stored != typed.trim()) {
+            binding.imageTagPolicyEdit.setText(stored)
+            // setText가 위 감시를 지나 오류를 지우므로 그 **뒤에** 단다.
             binding.imageTagPolicyLayout.error =
                 getString(R.string.ai_image_tag_policy_truncated,
                     AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS)
-            binding.imageTagPolicyEdit.setText(stored)
+            true
         } else {
             binding.imageTagPolicyLayout.error = null
+            false
         }
     }
 
@@ -1137,7 +1152,15 @@ class AiSettingsFragment : Fragment() {
     override fun onDestroyView() {
         // 포커스를 둔 채 뒤로 가면 focusChange가 오지 않는다 — 여기서 한 번 더 확정하지 않으면
         // 방금 쓴 기조가 조용히 사라진다(입력 유실 금지, R-27과 같은 취지).
-        _binding?.let { commitImageTagPolicy(AiPromptSettings(requireContext())) }
+        val truncated = _binding != null && commitImageTagPolicy(AiPromptSettings(requireContext()))
+        // 사라지는 화면의 칸 오류는 아무도 못 본다 — 앱 컨텍스트의 토스트로 남긴다(S20 12-ㅎ3).
+        if (truncated) {
+            Toast.makeText(
+                requireContext().applicationContext,
+                getString(R.string.ai_image_tag_policy_truncated_on_leave, AiPromptPolicy.IMAGE_TAG_POLICY_MAX_CHARS),
+                Toast.LENGTH_LONG
+            ).show()
+        }
         super.onDestroyView()
         _binding = null
     }
