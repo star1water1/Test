@@ -466,6 +466,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /** 연표의 출생·사망 사건이 **새로** 만든 `__birth`·`__death` 행 id — 가져오기 전에는 없던 행이다. */
     private val timelineInsertedStateChangeIds = mutableSetOf<Long>()
 
+    /**
+     * 위 행 중 상태 변화 시트가 **이미 신규로 센** 행 id. 표식([timelineInsertedStateChangeIds])과
+     * 따로 든다 — 표식을 지우면 같은 행을 다시 잡는 중복 행이 연표의 사건 연도를 '가져오기 전'으로
+     * 오인해 연도 편집 우선 규칙을 탄다(PR #444 리뷰).
+     */
+    private val timelineInsertedCountedIds = mutableSetOf<Long>()
+
     /** 연표의 출생·사망 사건이 말한 연도 (캐릭터 id → (상태 키, 연도, 사건 설명)들) — 동기화 뒤 대조용. */
     private val lifeEventYears = mutableMapOf<Long, MutableList<Triple<String, Int, String>>>()
 
@@ -926,6 +933,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         pendingSemanticYearEdits.clear()
         preTimelineStateChanges.clear()
         timelineInsertedStateChangeIds.clear()
+        timelineInsertedCountedIds.clear()
         lifeEventYears.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
@@ -9381,10 +9389,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     matchedStateChangeIds.add(existing.id)
                     when {
                         // 한 번만 신규로 센다 — 같은 행을 다시 잡는 뒤 행은 중복 고지가 이미 나갔다.
-                        insertedByTimeline -> {
-                            timelineInsertedStateChangeIds.remove(existing.id)
-                            result.newStateChanges++
-                        }
+                        // 표식은 지우지 않는다(뒤 중복 행도 '가져오기 전 기준 없음'으로 다뤄야 한다).
+                        insertedByTimeline && timelineInsertedCountedIds.add(existing.id) -> result.newStateChanges++
                         mergedStateChange != existingBeforeImport -> result.updatedStateChanges++
                         else -> result.unchangedRows++
                     }
