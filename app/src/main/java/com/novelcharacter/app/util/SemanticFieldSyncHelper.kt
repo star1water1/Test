@@ -305,6 +305,11 @@ class SemanticFieldSyncHelper(
                 if (birthYearField != null && change.year != 0) {
                     upsertFieldValue(characterId, birthYearField.id, change.year.toString())
                 }
+                // **연동된 나이도 함께 맞춘다** — 반대 방향(출생연도 필드 → 이력)이 하는 일과 같다.
+                // 안 맞추면 남은 옛 나이가 다음 필드 → 이력 동기화의 AGE 갈래에서 출생연도를
+                // 역산해 **방금 고친 연도를 도로 덮는다**(PR #436 리뷰 — 기준연도 1000·나이 30이면
+                // 970→980 편집이 970으로 돌아간다). 연도 0(모름)은 위와 같이 건드리지 않는다.
+                if (change.year != 0) syncBirthYearToAge(characterId, change.year, fields)
                 // month/day → birth_date 필드
                 val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
                 if (birthDateField != null && change.month != null && change.day != null) {
