@@ -713,6 +713,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     /** 위 범주에서 새로 만들어진 행 수 — 무음이 아니라 범주당 한 줄로 요약해 고지한다. */
     private val createdAfterWipe = mutableMapOf<String, Int>()
+
+    /**
+     * 병합의 "코드가 기존에 없어 새로 생성됨" 고지 — **범주마다 앞 몇 줄만 행별로 싣는다.**
+     *
+     * 이 고지는 앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는 자리라 버릴 수 없다 — 그러나
+     * 빈 앱 복원에서는 모든 행이 걸려 S25 실측 한 번에 3836줄이 되었고, 상세·이력의 길이 상한에
+     * 진짜 경고가 묻혔다. '지운 적이 없다'를 확정할 근거는 앱에 없다(휴지통은 비우거나 보관
+     * 기한으로 사라진다 — PR #439 리뷰). 그래서 판정하지 않고 **줄 수를 묶는다**: 범주당
+     * [CREATED_NEW_LIST_CAP]줄까지는 그대로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 나머지 건수 한 줄.
+     */
+    private val createdNewMessages = mutableMapOf<String, MutableList<String>>()
+    private val createdNewCounts = mutableMapOf<String, Int>()
+
+    /**
+     * 이번 가져오기가 찾지 못한 시트 — **한 줄로** 말한다(S22 3-ㅅ-13).
+     * 시트 하나만 든 파일(예: '기본 필드'만)을 들이면 종전에는 고른 범주마다 한 줄씩 20줄이
+     * 쌓여, 바뀐 것이 없는 가져오기가 "⚠ 21건 경고"로 보였고 진짜 경고가 그 속에 묻혔다.
+     */
+    private val missingSheetNames = LinkedHashSet<String>()
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
     // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
     private val matchedFieldDefinitionIds = mutableSetOf<Long>()
@@ -893,6 +912,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         truncatedFieldCount = 0
         wipedByOverwrite.clear()
         createdAfterWipe.clear()
+        createdNewMessages.clear()
+        createdNewCounts.clear()
+        missingSheetNames.clear()
         truncatedDetails.clear()
         mergedCellMaps.clear()
         headerRowIndexBySheet.clear()
@@ -1492,6 +1514,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 덮어쓰기로 비운 범주의 신규 생성은 여기서 한 줄로 요약한다(행마다 알리지 않는다).
             reportCreatedAfterWipe(result)
+            reportMissingSheets(result)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
             if (strategy == ImportStrategy.MERGE) {
@@ -6186,7 +6209,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return resolved
         }
         if (exact == null) {
-            result.warnings.add("'${spec.sheetName}' 시트를 찾을 수 없어 해당 데이터를 건너뛰었습니다.")
+            // 시트마다 한 줄이 아니라 끝에서 한 줄로 모은다([reportMissingSheets]).
+            missingSheetNames.add(spec.sheetName)
         } else {
             // 이름은 맞지만 헤더가 spec과 다르다 — 헤더 경고는 호출부(checkHeaderOrReport)가 낸다.
             consumedSheetNames.add(exact.sheetName)
@@ -13504,14 +13528,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         "universes" to Triple("세계관", "개", "를"),
         "novels" to Triple("작품", "개", "를"),
         "characters" to Triple("캐릭터", "명", "을"),
-        "factions" to Triple("세력", "개", "를")
+        "factions" to Triple("세력", "개", "를"),
+        "duelAxes" to Triple("대결 축", "개", "를")
     )
 
     /**
      * "코드가 기존에 없어 새로 생성됨" 고지.
      *
      * 병합에서는 **행마다** 알린다 — 앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는 자리라
-     * 어느 행·어느 코드인지가 곧 값어치다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
+     * 어느 행·어느 코드인지가 곧 값어치다. 다만 범주당 줄 수를 묶는다([createdNewMessages]) —
+     * 빈 앱 복원에서 수천 줄이 다른 경고를 묻었다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
      * [reportCreatedAfterWipe]가 범주당 한 줄로 요약한다(사유는 [wipedByOverwrite] 참조).
      */
     private fun warnCreatedNewByCode(category: String, message: String, result: ImportResult) {
@@ -13519,7 +13545,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             createdAfterWipe[category] = (createdAfterWipe[category] ?: 0) + 1
             return
         }
-        result.warnings.add(message)
+        val n = (createdNewCounts[category] ?: 0) + 1
+        createdNewCounts[category] = n
+        // 줄은 상한까지만 쥔다 — 수는 끝까지 센다([reportCreatedAfterWipe]가 접는다).
+        if (n <= CREATED_NEW_LIST_CAP) createdNewMessages.getOrPut(category) { mutableListOf() }.add(message)
     }
 
     /**
@@ -13536,6 +13565,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "덮어쓰기가 먼저 지운 자리라 확인하실 것이 없습니다"
             )
         }
+        for ((category, count) in createdNewCounts) {
+            val lines = createdNewMessages[category].orEmpty()
+            if (count <= CREATED_NEW_LIST_CAP) {
+                result.warnings.addAll(lines)
+                continue
+            }
+            result.warnings.addAll(lines.take(CREATED_NEW_LIST_HEAD))
+            val (label, unit, _) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
+            result.warnings.add(
+                "같은 이유(코드가 기존에 없어 새로 생성됨)로 만든 $label ${count - CREATED_NEW_LIST_HEAD}$unit 더 있습니다 " +
+                "(모두 $count$unit) — 빈 앱으로 복원했다면 정상이고, 아니라면 앱에서 지운 항목이 되살아난 것인지 확인하세요"
+            )
+        }
+    }
+
+    /** [missingSheetNames]를 한 줄로 — 무엇이 빠졌는지는 그대로 말한다. */
+    private fun reportMissingSheets(result: ImportResult) {
+        if (missingSheetNames.isEmpty()) return
+        val names = missingSheetNames.joinToString(", ") { "'$it'" }
+        result.warnings.add("이 파일에 없는 시트 ${missingSheetNames.size}개는 건너뛰었습니다: $names")
     }
 
     private suspend fun countKeptUnmatchedEntities(options: ExportOptions, result: ImportResult) {
@@ -13727,6 +13776,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     companion object {
+        /** [createdNewMessages] — 범주당 이 줄 수까지는 행별로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 요약. */
+        private const val CREATED_NEW_LIST_CAP = 20
+        private const val CREATED_NEW_LIST_HEAD = 10
+
         // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT

@@ -2318,9 +2318,22 @@ class ExcelImporter(context: Context) {
             parts.add("🧹 빈 셀로 지워진 값 ${result.clearedFields}건")
         }
 
-        if (result.warnings.isNotEmpty()) {
-            parts.add("⚠ ${result.warnings.size}건 경고")
+        // **'바뀐 것 없음'은 경고가 있어도 말한다**(S22 3-ㅅ-13) — 종전에는 경고 줄이 `parts`를
+        // 채워 아래 갈래에 닿지 못했고, 아무것도 바뀌지 않은 가져오기가 "⚠ 21건 경고"로만 보였다.
+        // **오류도 요약에 센다**(S22) — 시트를 통째로 건너뛴 오류("첫 번째 컬럼은 …이어야 합니다 —
+        // 시트를 건너뛰었습니다")가 '상세'에만 있고 요약은 경고 수만 말해, 시트 하나가 빠진 가져오기가
+        // 경고 몇 건짜리로 보였다. 화면 밖 고지([offscreenBodies])는 이미 둘 다 센다.
+        val issues = buildList {
+            if (result.errors.isNotEmpty()) add("⛔ ${result.errors.size}건 오류")
+            if (result.warnings.isNotEmpty()) add("⚠ ${result.warnings.size}건 경고")
         }
+        if (parts.isEmpty() && result.unchangedRows > 0 && issues.isNotEmpty()) {
+            return r.getString(
+                com.novelcharacter.app.R.string.import_result_unchanged_with_issues,
+                result.unchangedRows, issues.joinToString(", ")
+            )
+        }
+        parts.addAll(issues)
 
         // **'바뀐 것 없음'과 '데이터 없음'을 가른다 (B-111).** `updated*`가 *실제로 바뀐 행*만
         // 세게 되면서, 아무것도 고치지 않은 파일을 다시 넣으면 모든 수가 0이 된다. 그때
