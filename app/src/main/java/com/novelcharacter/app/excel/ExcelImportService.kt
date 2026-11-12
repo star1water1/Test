@@ -711,7 +711,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      *
      * 병합의 행별 "코드가 기존에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요"는 앱에서 지운
      * 항목이 옛 파일로 되살아나는 것을 잡는 고지인데, 비어 있던 범주에서는 **모든 행이 예외 없이**
-     * 걸리고 지운 것이 있을 수 없다. 덮어쓰기로 비운 범주([wipedByOverwrite])와 같은 처분으로
+     * 걸린다(휴지통까지 비어 있을 때만 — 지운 것이 있을 수 없다는 근거가 그것이다). 덮어쓰기로 비운 범주([wipedByOverwrite])와 같은 처분으로
      * 범주당 한 줄로 요약한다 — S25 실측: 빈 앱 복원 한 번에 이 문구 3836줄, 상세·이력의 길이
      * 상한에 진짜 경고가 묻혔다.
      */
@@ -908,8 +908,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         missingSheetNames.clear()
         // **어느 삭제·행보다 먼저** 센다 — 비어 있었는가는 가져오기 전의 사실이다.
         emptyBeforeImport.clear()
-        for ((category, table) in createdNewByCodeTables) {
-            if (countRows("SELECT COUNT(*) FROM $table") == 0) emptyBeforeImport.add(category)
+        // **휴지통까지 비어 있어야 '지운 적 없음'이다**(PR #439 리뷰) — 표가 비었다는 것만으로는
+        // 모른다. 앱에서 전부 지운 뒤 옛 백업을 병합하면 표는 비어 있어도 지운 항목이 휴지통에
+        // 있고, 행별 고지가 바로 그 되살아남을 잡는 자리다. 세계관을 지우면 그 아래 캐릭터는
+        // 세계관 스냅샷에만 실리므로 종류별로 가르지 않고 휴지통 전체로 본다 — 빈 앱(새 설치·
+        // 초기화 직후)이 이 요약의 대상이다.
+        if (countRows("SELECT COUNT(*) FROM trash_snapshots") == 0) {
+            for ((category, table) in createdNewByCodeTables) {
+                if (countRows("SELECT COUNT(*) FROM $table") == 0) emptyBeforeImport.add(category)
+            }
         }
         truncatedDetails.clear()
         mergedCellMaps.clear()
