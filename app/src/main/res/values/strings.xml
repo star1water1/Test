@@ -1201,8 +1201,8 @@
     <string name="graph_zoom_reset">확대/축소 초기화</string>
     <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
     <string name="graph_too_many_nodes">인물이 많아 일부를 접었습니다 — 작품·관계 유형 필터로 좁히세요. 세력으로 좁히려면 \'좁히기\'를 켜세요</string>
-    <string name="graph_too_many_nodes_narrowing">인물이 많아 일부를 접었습니다 — 작품·관계 유형·세력 필터로 좁히면 모두 보입니다</string>
-    <string name="graph_too_many_nodes_no_factions">인물이 많아 일부를 접었습니다 — 작품·관계 유형 필터로 좁히면 모두 보입니다</string>
+    <string name="graph_too_many_nodes_narrowing">인물이 많아 일부를 접었습니다 — 작품·관계 유형·세력 필터로 좁히면 접힌 인물이 보입니다</string>
+    <string name="graph_too_many_nodes_no_factions">인물이 많아 일부를 접었습니다 — 작품·관계 유형 필터로 좁히면 접힌 인물이 보입니다</string>
     <string name="graph_filter_all">전체</string>
     <string name="graph_filter_all_universes">전체 세계관</string>
     <string name="graph_filter_all_novels">전체 작품</string>

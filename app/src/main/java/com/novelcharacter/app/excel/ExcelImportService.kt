@@ -1141,6 +1141,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val existingMatches = db.duelMatchDao().countAll()
                     if (matchSource == RestoreSource.HAS_ROWS || existingMatches == 0) {
                         db.duelAxisDao().deleteAll()
+                        wipedByOverwrite.add("duelAxes")
                     } else {
                         result.warnings.add(
                             keepReason(matchSource, "'${duelMatchSpec().sheetName}'") +
@@ -1411,6 +1412,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.universeDao().deleteAll()
                             batchHistoryInvalidated = true
                             wipedByOverwrite.add("universes")
+                            // 대결 축은 세계관의 외래키 CASCADE로 함께 지워졌다 — 관계(⑱)와 같은 처분이다.
+                            // (에뮬레이터 실측: 덮어쓰기 복원에서 축마다 "기존 축에 없어 새로 생성됨"이 나왔다.)
+                            wipedByOverwrite.add("duelAxes")
                             result.warnings.add("덮어쓰기: 세계관을 삭제하면서 필드 정의와 모든 필드값이 함께 삭제되었습니다 — 백업의 '필드 정의'·'필드 데이터'·캐릭터 시트로 재구성됩니다")
                         }
                     }
