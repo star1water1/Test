@@ -308,7 +308,22 @@ class SemanticFieldSyncHelper(
         fieldKey: String,
         year: Int
     ) = syncMutex.withLock {
-        if (year == 0) return@withLock
+        // **연도 0은 '모름'이다** — 고친 것이 모름이면 옛 연도를 남기지 않고 비운다. 남기면 뒤의
+        // 필드 → 이력 동기화가 그 옛 연도로 방금 고친 이력을 도로 덮는다(PR #436 리뷰).
+        // 출생이면 연동된 나이도 함께 비운다(남은 나이가 같은 일을 한다).
+        if (year == 0) {
+            when (fieldKey) {
+                CharacterStateChange.KEY_BIRTH -> {
+                    findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+                    if (standardYearSyncHelper.isLinked(characterId)) {
+                        findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
+                    }
+                }
+                CharacterStateChange.KEY_DEATH ->
+                    findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+            }
+            return@withLock
+        }
         when (fieldKey) {
             CharacterStateChange.KEY_BIRTH -> {
                 findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { upsertFieldValue(characterId, it.id, year.toString()) }

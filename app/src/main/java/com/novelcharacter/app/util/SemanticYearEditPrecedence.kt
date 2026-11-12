@@ -14,10 +14,14 @@ package com.novelcharacter.app.util
  *
  * ## 규칙
  *
- * 필드값이 **이력의 옛 연도 그대로**(또는 비었음)면 이 파일이 고친 것은 이력뿐이다 —
+ * 필드값이 **이력의 옛 연도 그대로**(또는 비었음·연도로 읽을 수 없음)면 이 파일이 말한 연도는 이력뿐이다 —
  * 그 편집을 필드로 옮긴다([APPLY_STATE]). 필드값이 **새 연도와 같으면** 둘이 이미 맞는다
- * ([CONSISTENT]). 필드값이 **둘 다와 다르면** 두 시트가 서로 다른 연도를 말한다 — 필드가
+ * ([CONSISTENT]). 필드값이 **둘 다와 다른 연도면** 두 시트가 서로 다른 연도를 말한다 — 필드가
  * 정본이라 필드를 따르되 **조용히 덮지 않고 알린다**([FIELD_WINS_CONFLICT]).
+ *
+ * 연도로 읽을 수 없는 필드값('약 970')은 **연도를 말하지 않는다** — 그것이 이긴다고 하면 뒤
+ * 동기화가 그 칸을 건너뛰고 연동된 나이에서 옛 연도를 역산해 결국 아무도 이기지 않는다
+ * (PR #436 리뷰). 빈 값과 같이 이력의 연도를 옮긴다.
  */
 object SemanticYearEditPrecedence {
 
@@ -31,7 +35,7 @@ object SemanticYearEditPrecedence {
     fun decide(oldYear: Int, newYear: Int, fieldValue: String?): Decision {
         val fieldYear = fieldValue?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
         return when {
-            fieldValue.isNullOrBlank() -> Decision.APPLY_STATE
+            fieldYear == null -> Decision.APPLY_STATE
             fieldYear == newYear -> Decision.CONSISTENT
             fieldYear == oldYear -> Decision.APPLY_STATE
             else -> Decision.FIELD_WINS_CONFLICT
