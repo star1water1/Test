@@ -68,6 +68,7 @@ import com.novelcharacter.app.util.QuoteIndexes
 import com.novelcharacter.app.util.QuoteNaturalKey
 import com.novelcharacter.app.util.StateChangeIndexes
 import com.novelcharacter.app.util.SingletonStateChanges
+import com.novelcharacter.app.util.LifeEventYearMismatch
 import com.novelcharacter.app.util.ColorHex
 import com.novelcharacter.app.util.CharacterNameIndex
 import com.novelcharacter.app.util.RecordTimestamps
@@ -451,6 +452,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 두 시트가 다른 연도를 말하면 알린다.
      */
     private val pendingSemanticYearEdits = mutableMapOf<Long, MutableList<Pair<Int, CharacterStateChange>>>()
+
+    /**
+     * '사건 연표'의 출생·사망 사건이 고치기 **직전의** `__birth`·`__death` 행 (행 id → 가져오기 전 모습).
+     *
+     * 연표 시트가 상태 변화 시트보다 먼저 돌아, 사건 연도가 이력과 다르면 연표가 그 행을 고치고
+     * 상태 변화 시트가 도로 되돌린다. 그 되돌림을 고친 뒤 행과 견주면 **매번 '업데이트 1개'**가
+     * 되는데 DB는 가져오기 전과 같고 미리보기는 '변경 없음'이라 말한다(⑩). 상태 변화 시트는
+     * 이 겹의 행과 견줘 센다 — 미리보기가 견주는 것도 가져오기 전 DB다(R-33).
+     */
+    private val preTimelineStateChanges = mutableMapOf<Long, CharacterStateChange>()
+
+    /** 연표의 출생·사망 사건이 **새로** 만든 `__birth`·`__death` 행 id — 가져오기 전에는 없던 행이다. */
+    private val timelineInsertedStateChangeIds = mutableSetOf<Long>()
+
+    /** 연표의 출생·사망 사건이 말한 연도 (캐릭터 id → (상태 키, 연도, 사건 설명)들) — 동기화 뒤 대조용. */
+    private val lifeEventYears = mutableMapOf<Long, MutableList<Triple<String, Int, String>>>()
 
     // 이 임포트가 쓰는 단 하나의 휴지통 저장소 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다.
     // **인스턴스를 공유해야 한다**: 정리는 "이 작업이 방금 만든 스냅샷"을 보호하는데,
@@ -907,6 +924,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         pendingSyncCharacters.clear()
         pendingSyncClearedFields.clear()
         pendingSemanticYearEdits.clear()
+        preTimelineStateChanges.clear()
+        timelineInsertedStateChangeIds.clear()
+        lifeEventYears.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
@@ -1537,6 +1557,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (pendingSyncCharacters.isNotEmpty()) {
                 runPostImportSemanticSync(result)
             }
+            reportLifeEventYearMismatches(result)
         }
 
         // 값 장부를 여기서 놓는다 — **일이 끝났으면 들고 있지 않는다** (B-72 ②).
@@ -9183,14 +9204,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                     db.characterStateChangeDao().getChangesByField(character.id, stateKey),
                                     stateKey
                                 )
+                                lifeEventYears.getOrPut(character.id) { mutableListOf() }
+                                    .add(Triple(stateKey, year, r.description))
                                 if (slot == null) {
-                                    db.characterStateChangeDao().insert(CharacterStateChange(
+                                    timelineInsertedStateChangeIds += db.characterStateChangeDao().insert(CharacterStateChange(
                                         characterId = character.id, year = year, month = r.month, day = r.day,
                                         fieldKey = stateKey, newValue = year.toString()
                                     ))
                                 } else if (slot.year != year || slot.month != r.month || slot.day != r.day ||
                                     slot.newValue != year.toString()
                                 ) {
+                                    // 상태 변화 시트가 견줄 '가져오기 전' 모습 — 같은 행을 두 사건이 고쳐도 첫 모습만 쥔다.
+                                    if (slot.id !in timelineInsertedStateChangeIds) preTimelineStateChanges.putIfAbsent(slot.id, slot)
                                     // 사건이 진실이면 그 자리의 행을 **고친다**(종전에는 둘째 줄).
                                     db.characterStateChangeDao().update(
                                         slot.copy(
@@ -9336,17 +9361,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 적용도 미리보기와 **같은 함수**다(규약 R-33).
                     val mergedStateChange = mergeStateChange(existing, r, character.id, generateEntityCode())
                     db.characterStateChangeDao().update(mergedStateChange)
+                    // 견줄 상대는 **가져오기 전의 행**이다 — 앞선 연표 시트가 이 행을 고쳤으면 그 전 모습(⑩).
+                    // 연표가 새로 만든 행은 가져오기 전에 없었으므로 신규로 센다(미리보기도 그렇게 센다).
+                    val insertedByTimeline = existing.id in timelineInsertedStateChangeIds
+                    val baseline = preTimelineStateChanges[existing.id] ?: existing
                     if ((fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH) &&
-                        mergedStateChange.year != existing.year
+                        mergedStateChange.year != baseline.year
                     ) {
                         pendingSemanticYearEdits.getOrPut(character.id) { mutableListOf() }
-                            .add(existing.year to mergedStateChange)
+                            .add(baseline.year to mergedStateChange)
                     }
                     // 자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면
                     // 뒤 행이 **이미 다른 이력이 된 행**을 옛 키로 다시 잡는다(B-210).
                     changes.remember(mergedStateChange)
                     matchedStateChangeIds.add(existing.id)
-                    if (mergedStateChange != existing) result.updatedStateChanges++ else result.unchangedRows++
+                    when {
+                        // 한 번만 신규로 센다 — 같은 행을 다시 잡는 뒤 행은 중복 고지가 이미 나갔다.
+                        insertedByTimeline -> {
+                            timelineInsertedStateChangeIds.remove(existing.id)
+                            result.newStateChanges++
+                        }
+                        mergedStateChange != baseline -> result.updatedStateChanges++
+                        else -> result.unchangedRows++
+                    }
                 } else {
                     val newChange = newStateChangeFrom(
                         r, character.id, year, nowMillis,
@@ -13719,6 +13756,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "캐릭터 ${failedIds.size}명: 출생·사망연도와 상태변화를 맞추지 못했습니다 ($detail) — " +
                     "데이터는 그대로 들어왔고, 해당 캐릭터를 열어 저장하면 다시 맞춰집니다"
             )
+        }
+    }
+
+    /**
+     * 연표의 출생·사망 사건 연도와 **동기화가 끝난 뒤의** `__birth`·`__death` 연도가 다르면 알린다(⑩).
+     *
+     * 연표 시트는 사건 연도를 이력에 쓰지만, 뒤의 상태 변화 시트·필드 동기화가 다른 연도로 되돌릴 수
+     * 있다(파일 안에서 사건과 이력·연도 필드가 서로 다른 연도를 말한다). 그러면 사건과 이력이 갈린 채
+     * 남는다 — 어느 쪽이 맞는지는 사용자만 알므로 고치지 않고 말한다.
+     */
+    private suspend fun reportLifeEventYearMismatches(result: ImportResult) {
+        for ((characterId, events) in lifeEventYears) {
+            var name: String? = null
+            for ((stateKey, eventYear, description) in events.distinct()) {
+                val slot = SingletonStateChanges.pick(
+                    db.characterStateChangeDao().getChangesByField(characterId, stateKey), stateKey
+                ) ?: continue
+                if (slot.year == eventYear) continue
+                val who = name ?: (runCatching { db.characterDao().getCharacterById(characterId)?.name }.getOrNull()
+                    ?: "#$characterId").also { name = it }
+                result.warnings.add(
+                    LifeEventYearMismatch.message(
+                        characterName = who, isBirth = stateKey == CharacterStateChange.KEY_BIRTH,
+                        eventDescription = description, eventYear = eventYear, stateYear = slot.year
+                    )
+                )
+            }
         }
     }
 
