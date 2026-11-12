@@ -86,10 +86,11 @@ object StoredZipEntry {
         inMemoryLimit: Long = IN_MEMORY_LIMIT
     ) {
         if (file.length() <= inMemoryLimit) {
-            val buf = ByteArrayOutputStream(file.length().toInt().coerceAtLeast(32))
+            val buf = SnapshotBuffer(file.length().toInt().coerceAtLeast(32))
             val (size, crc) = file.inputStream().use { measure(it, buf) }
-            val bytes = buf.toByteArray()
-            writeBytesFrom(zip, name, size, crc) { ByteArrayInputStream(bytes) }
+            // `toByteArray()`는 전량을 한 벌 더 복사한다 — 상한 근처 그림이면 잠깐 두 배(≈32 MiB)를
+            // 쥐어, 워크북을 들고 있는 내보내기·자동 백업에서 힙이 모자랄 수 있다(PR #432 리뷰).
+            writeBytesFrom(zip, name, size, crc) { buf.asInputStream() }
             return
         }
         scratchDir.mkdirs()
@@ -102,6 +103,11 @@ object StoredZipEntry {
         } finally {
             copy.delete()
         }
+    }
+
+    /** 메모리 사본 — 내부 배열을 복사 없이 그대로 읽어 낸다. */
+    private class SnapshotBuffer(initial: Int) : ByteArrayOutputStream(initial) {
+        fun asInputStream(): InputStream = ByteArrayInputStream(buf, 0, count)
     }
 
     /** [open]이 내는 바이트를 STORED 엔트리로 쓴다 — 크기·CRC는 부르는 쪽이 잰 값. */
