@@ -3877,6 +3877,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (e in existingEntries) entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        // 가져오기가 건너뛸 행 — 덮어쓰기 복원이면 라이브러리를 비운 뒤라 **그 값은 잃는다**.
+        // 세지 않으면 미리보기가 그 결과를 말하지 않는다(PR #435 리뷰).
+        var skippedCount = 0
         for (i in dataRows(sheet, headerRow)) {
             val row = sheet.getRow(i) ?: continue
             val value = getCellString(row, valueCol)
@@ -3908,8 +3911,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (universeCodeCol >= 0) getCellString(row, universeCodeCol) else "",
                 universeName, analysisUniverseList
             ) { uid -> fieldDefs.find(uid, fieldKey, imported.entityType) != null }
-            // 가져오기가 건너뛸 행(동명 세계관을 못 가름)은 어느 쪽으로도 세지 않는다.
-            if (universeRef is FieldValueSheetMapper.UniverseRef.Ambiguous) continue
+            // 가져오기가 건너뛸 행(동명 세계관을 못 가름) — 신규·갱신이 아니라 '건너뜀'으로 센다.
+            if (universeRef is FieldValueSheetMapper.UniverseRef.Ambiguous) { skippedCount++; continue }
             val universe = (universeRef as? FieldValueSheetMapper.UniverseRef.Found)?.universe
             val fd = if (globalScope) {
                 fieldDefs.find(null, fieldKey, imported.entityType)
@@ -3947,7 +3950,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, label, sheet.lastRowNum)
-        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     // 세는 자리 없음(행을 먼저 모아 `sheetRows.size`로 세므로 *세기 전에 버리는* 자리가 없다 —
