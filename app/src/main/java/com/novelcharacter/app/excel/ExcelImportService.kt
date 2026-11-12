@@ -9364,12 +9364,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 견줄 상대는 **가져오기 전의 행**이다 — 앞선 연표 시트가 이 행을 고쳤으면 그 전 모습(⑩).
                     // 연표가 새로 만든 행은 가져오기 전에 없었으므로 신규로 센다(미리보기도 그렇게 센다).
                     val insertedByTimeline = existing.id in timelineInsertedStateChangeIds
-                    val baseline = preTimelineStateChanges[existing.id] ?: existing
+                    val existingBeforeImport = preTimelineStateChanges[existing.id] ?: existing
                     if ((fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH) &&
-                        mergedStateChange.year != baseline.year
+                        mergedStateChange.year != existingBeforeImport.year
                     ) {
                         pendingSemanticYearEdits.getOrPut(character.id) { mutableListOf() }
-                            .add(baseline.year to mergedStateChange)
+                            .add(existingBeforeImport.year to mergedStateChange)
                     }
                     // 자연키의 칸(연도·필드키·새 값)이 바뀌었을 수 있다 — 옛 키를 끊지 않으면
                     // 뒤 행이 **이미 다른 이력이 된 행**을 옛 키로 다시 잡는다(B-210).
@@ -9381,7 +9381,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             timelineInsertedStateChangeIds.remove(existing.id)
                             result.newStateChanges++
                         }
-                        mergedStateChange != baseline -> result.updatedStateChanges++
+                        mergedStateChange != existingBeforeImport -> result.updatedStateChanges++
                         else -> result.unchangedRows++
                     }
                 } else {
