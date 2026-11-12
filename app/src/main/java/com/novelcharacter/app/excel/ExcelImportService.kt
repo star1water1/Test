@@ -707,15 +707,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val createdAfterWipe = mutableMapOf<String, Int>()
 
     /**
-     * **가져오기 전에 하나도 없던** 범주 — 빈 앱으로 복원(병합)하는 자리다.
+     * 병합의 "코드가 기존에 없어 새로 생성됨" 고지 — **범주마다 앞 몇 줄만 행별로 싣는다.**
      *
-     * 병합의 행별 "코드가 기존에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요"는 앱에서 지운
-     * 항목이 옛 파일로 되살아나는 것을 잡는 고지인데, 비어 있던 범주에서는 **모든 행이 예외 없이**
-     * 걸린다(휴지통까지 비어 있을 때만 — 지운 것이 있을 수 없다는 근거가 그것이다). 덮어쓰기로 비운 범주([wipedByOverwrite])와 같은 처분으로
-     * 범주당 한 줄로 요약한다 — S25 실측: 빈 앱 복원 한 번에 이 문구 3836줄, 상세·이력의 길이
-     * 상한에 진짜 경고가 묻혔다.
+     * 이 고지는 앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는 자리라 버릴 수 없다 — 그러나
+     * 빈 앱 복원에서는 모든 행이 걸려 S25 실측 한 번에 3836줄이 되었고, 상세·이력의 길이 상한에
+     * 진짜 경고가 묻혔다. '지운 적이 없다'를 확정할 근거는 앱에 없다(휴지통은 비우거나 보관
+     * 기한으로 사라진다 — PR #439 리뷰). 그래서 판정하지 않고 **줄 수를 묶는다**: 범주당
+     * [CREATED_NEW_LIST_CAP]줄까지는 그대로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 나머지 건수 한 줄.
      */
-    private val emptyBeforeImport = mutableSetOf<String>()
+    private val createdNewMessages = mutableMapOf<String, MutableList<String>>()
+    private val createdNewCounts = mutableMapOf<String, Int>()
 
     /**
      * 이번 가져오기가 찾지 못한 시트 — **한 줄로** 말한다(S22 3-ㅅ-13).
@@ -723,7 +724,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 쌓여, 바뀐 것이 없는 가져오기가 "⚠ 21건 경고"로 보였고 진짜 경고가 그 속에 묻혔다.
      */
     private val missingSheetNames = LinkedHashSet<String>()
-    private val createdIntoEmpty = mutableMapOf<String, Int>()
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
     // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
     private val matchedFieldDefinitionIds = mutableSetOf<Long>()
@@ -904,22 +904,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         truncatedFieldCount = 0
         wipedByOverwrite.clear()
         createdAfterWipe.clear()
-        createdIntoEmpty.clear()
+        createdNewMessages.clear()
+        createdNewCounts.clear()
         missingSheetNames.clear()
-        // **어느 삭제·행보다 먼저** 센다 — 비어 있었는가는 가져오기 전의 사실이다.
-        emptyBeforeImport.clear()
-        // **그 범주를 담을 수 있는 휴지통 항목까지 없어야 '지운 적 없음'이다**(PR #439 리뷰) —
-        // 표가 비었다는 것만으로는 모른다. 앱에서 전부 지운 뒤 옛 백업을 병합하면 표는 비어 있어도
-        // 지운 항목이 휴지통에 있고, 행별 고지가 바로 그 되살아남을 잡는 자리다. 반대로 휴지통
-        // 전체를 보면 사건 하나 지운 흔적이 수천 행의 요약을 막는다 — 범주마다 **그것을 담는
-        // 종류**만 본다(세계관 삭제는 한 작업으로 작품·캐릭터를 각자의 스냅샷에 남긴다).
-        for ((category, table) in createdNewByCodeTables) {
-            if (countRows("SELECT COUNT(*) FROM $table") != 0) continue
-            val types = trashTypesHolding(category).joinToString(",") { "'$it'" }
-            if (countRows("SELECT COUNT(*) FROM trash_snapshots WHERE entityType IN ($types)") == 0) {
-                emptyBeforeImport.add(category)
-            }
-        }
         truncatedDetails.clear()
         mergedCellMaps.clear()
         headerRowIndexBySheet.clear()
@@ -13524,35 +13511,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     )
 
     /**
-     * 이 범주의 항목을 **담을 수 있는** 휴지통 종류 — [emptyBeforeImport]의 '지운 적 없음' 판정.
-     * 세계관 삭제는 한 작업으로 그 아래 작품·캐릭터·세력·축을 지우므로 세계관 종류는 모두에 든다.
-     */
-    private fun trashTypesHolding(category: String): List<String> {
-        val world = listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_UNIVERSE, com.novelcharacter.app.data.model.TrashSnapshot.TYPE_UNIVERSE_DATA)
-        return world + when (category) {
-            "universes" -> emptyList()
-            "novels" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_NOVEL)
-            "characters" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_CHARACTER, com.novelcharacter.app.data.model.TrashSnapshot.TYPE_NOVEL)
-            "factions" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_FACTION)
-            "duelAxes" -> listOf(com.novelcharacter.app.data.model.TrashSnapshot.TYPE_DUEL_AXIS)
-            else -> emptyList()
-        }
-    }
-
-    /** [warnCreatedNewByCode] 범주 → 표 — [emptyBeforeImport]를 세는 재료. */
-    private val createdNewByCodeTables = listOf(
-        "universes" to "universes",
-        "novels" to "novels",
-        "characters" to "characters",
-        "factions" to "factions",
-        "duelAxes" to "duel_axes"
-    )
-
-    /**
      * "코드가 기존에 없어 새로 생성됨" 고지.
      *
      * 병합에서는 **행마다** 알린다 — 앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는 자리라
-     * 어느 행·어느 코드인지가 곧 값어치다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
+     * 어느 행·어느 코드인지가 곧 값어치다. 다만 범주당 줄 수를 묶는다([createdNewMessages]) —
+     * 빈 앱 복원에서 수천 줄이 다른 경고를 묻었다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
      * [reportCreatedAfterWipe]가 범주당 한 줄로 요약한다(사유는 [wipedByOverwrite] 참조).
      */
     private fun warnCreatedNewByCode(category: String, message: String, result: ImportResult) {
@@ -13560,11 +13523,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             createdAfterWipe[category] = (createdAfterWipe[category] ?: 0) + 1
             return
         }
-        if (category in emptyBeforeImport) {
-            createdIntoEmpty[category] = (createdIntoEmpty[category] ?: 0) + 1
-            return
-        }
-        result.warnings.add(message)
+        val n = (createdNewCounts[category] ?: 0) + 1
+        createdNewCounts[category] = n
+        // 줄은 상한까지만 쥔다 — 수는 끝까지 센다([reportCreatedAfterWipe]가 접는다).
+        if (n <= CREATED_NEW_LIST_CAP) createdNewMessages.getOrPut(category) { mutableListOf() }.add(message)
     }
 
     /**
@@ -13581,12 +13543,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 "덮어쓰기가 먼저 지운 자리라 확인하실 것이 없습니다"
             )
         }
-        for ((category, count) in createdIntoEmpty) {
-            if (count <= 0) continue
-            val (label, unit, particle) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
+        for ((category, count) in createdNewCounts) {
+            val lines = createdNewMessages[category].orEmpty()
+            if (count <= CREATED_NEW_LIST_CAP) {
+                result.warnings.addAll(lines)
+                continue
+            }
+            result.warnings.addAll(lines.take(CREATED_NEW_LIST_HEAD))
+            val (label, unit, _) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
             result.warnings.add(
-                "$label $count$unit$particle 백업의 코드 그대로 새로 만들었습니다 — " +
-                "가져오기 전 앱에 ${label}이(가) 하나도 없던 상태라 확인하실 것이 없습니다"
+                "같은 이유(코드가 기존에 없어 새로 생성됨)로 만든 $label ${count - CREATED_NEW_LIST_HEAD}$unit 더 있습니다 " +
+                "(모두 $count$unit) — 빈 앱으로 복원했다면 정상이고, 아니라면 앱에서 지운 항목이 되살아난 것인지 확인하세요"
             )
         }
     }
@@ -13787,6 +13754,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     companion object {
+        /** [createdNewMessages] — 범주당 이 줄 수까지는 행별로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 요약. */
+        private const val CREATED_NEW_LIST_CAP = 20
+        private const val CREATED_NEW_LIST_HEAD = 10
+
         // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
