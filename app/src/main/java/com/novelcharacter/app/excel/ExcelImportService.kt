@@ -48,6 +48,7 @@ import com.novelcharacter.app.util.DuelAxisNameKey
 import com.novelcharacter.app.util.DuelMatchIndexes
 import com.novelcharacter.app.util.DuelVerdictMemberKey
 import com.novelcharacter.app.util.EventNaturalKey
+import com.novelcharacter.app.util.pickEventByNaturalKey
 import com.novelcharacter.app.util.FactionIdentityIndexes
 import com.novelcharacter.app.util.FactionNameKey
 import com.novelcharacter.app.util.DefaultFieldTemplateIndexes
@@ -1370,6 +1371,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedFieldDefinitionIds.clear()
             matchedGradeSystemIds.clear()
             pendingAutoRelationMemberships.clear()
+            // **어느 시트보다 먼저 뜬다** — 미리보기([analyzeTimeline])가 보는 것과 같은 시점이다.
+            // '작품' 시트가 작품을 다른 세계관으로 옮긴 뒤에 뜨면, 같은 파일의 코드 없는 사건 행을
+            // 미리보기와 가져오기가 서로 다르게 판정한다(PR #434 리뷰).
+            preImportEventNovelUniverses = eventLinkedNovelUniverses()
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
             // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
@@ -4925,6 +4930,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         // 가져오기와 **같은 재료·같은 판정**의 제목 색인이다(규약 R-33).
         val novelTitles = NovelTitleIndex(analysisNovels())
+        val eventNovelUniverses = eventLinkedNovelUniverses()
         // 사건 필드 열도 작품 시트와 같은 재료로 같은 해석기를 부른다(B-65 · B-187).
         val eventFields = if (fieldValues == null) emptyList() else analysisEntityFields(FieldDefinition.ENTITY_EVENT)
         // 세계관 표는 **한 번만 뜬다** — 이름→id와 id→이름 두 맵이 같은 목록에서 나와야
@@ -4962,7 +4968,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 매칭보다 **먼저** 푼다 — 신규 갈래도 이 값으로 사건을 짓기 때문이다(B-233).
             val links = resolveTimelineLinks(row, c, r, novelTitles, "연표 행 ${excelRow(i)}", result = null)
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val existing = eventByCode(r.fileCode) ?: eventByNaturalKey(year, r.description)
+            val existing = eventByCode(r.fileCode) ?: eventByNaturalKey(year, r.description, links.universeId, eventNovelUniverses)
             if (existing == null) {
                 newCount++
                 // 이 시트가 방금 만든 사건 — 같은 코드·같은 자연키를 든 뒷 행이 이것과 매칭된다.
@@ -8824,6 +8830,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 답한다. 아래 교체·삭제가 이 집합을 함께 옮긴다(안 옮기면 *비움 의도*를 두 번 세거나
         // 아예 못 센다).
         val eventsWithNovelLinks = db.timelineDao().getAllEventNovelCrossRefs().mapTo(HashSet()) { it.eventId }
+        // 자연키 폴백의 무소속 갈래 재료 — 미리보기와 같은 함수·같은 시점(시트를 읽기 전)이다.
+        // [importAll]이 첫 시트 전에 떠 둔 것을 쓴다(작품 시트가 그 사이 세계관을 옮겼을 수 있다).
+        val eventNovelUniverses = preImportEventNovelUniverses ?: eventLinkedNovelUniverses()
         val eventsWithParticipants = db.timelineDao().getAllCrossRefs().mapTo(HashSet()) { it.eventId }
         val eventCodesSeen = mutableSetOf<String>()
         // 정의 없는 "필드:" 열의 값 유실 고지용 — (헤더명) 단위로 1회만 경고
@@ -8884,7 +8893,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 // 매칭: 코드 우선(설명·연도 편집을 같은 사건으로 인식) → 자연키 폴백(구버전 파일 호환)
                 val eventByCodeMatch = eventByCode(fileCode)
-                val existingEvent = eventByCodeMatch ?: eventByNaturalKey(year, description)
+                val existingEvent = eventByCodeMatch ?: eventByNaturalKey(year, description, links.universeId, eventNovelUniverses)
                 // 파일 내 중복 고지는 코드 갈래만 있었다(위 줄) — 자연키 갈래도 같은 규약으로
                 // 고지한다(I2-5). 이 시트가 이미 쓴 사건을 자연키로 다시 잡으면 그 행이 앞 행을
                 // 무고지로 덮는다(형제 시트 전부가 코드 중복을 고지하는데 이 갈래만 침묵이었다).
@@ -12434,10 +12443,35 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return eventCodes.first(code)
     }
 
-    /** `getEventByNaturalKey`(LIMIT 1)의 자리. */
-    private suspend fun eventByNaturalKey(year: Int, description: String): TimelineEvent? {
+    /**
+     * `getEventByNaturalKey`(LIMIT 1)의 자리 — 행이 소속을 밝혔으면 **그 세계관 안에서만** 찾는다
+     * ([pickEventByNaturalKey]).
+     */
+    private suspend fun eventByNaturalKey(
+        year: Int, description: String, universeId: Long?, linkedNovelUniverses: Map<Long, Set<Long?>>
+    ): TimelineEvent? {
         ensureEventIndex()
-        return eventNaturalKeys.first(EventNaturalKey(year, description))
+        return pickEventByNaturalKey(eventNaturalKeys.all(EventNaturalKey(year, description)), universeId) {
+            linkedNovelUniverses[it.id] ?: emptySet()
+        }
+    }
+
+    /**
+     * 사건 → 이어진 작품들의 세계관 — [pickEventByNaturalKey]의 무소속 갈래 재료다.
+     * 가져오기와 미리보기가 **시트를 읽기 전의 DB**로 같은 답을 낸다(R-33). 이번에 만든 사건은
+     * 여기 없으므로 그 갈래의 후보가 아니다(양쪽 같다).
+     */
+    /** [importAll]이 첫 시트 전에 뜬 [eventLinkedNovelUniverses] — 가져오기 한 번의 수명이다. */
+    private var preImportEventNovelUniverses: Map<Long, Set<Long?>>? = null
+
+    private suspend fun eventLinkedNovelUniverses(): Map<Long, Set<Long?>> {
+        val novelUniverse = db.novelDao().getAllNovelsList().associate { it.id to it.universeId }
+        val out = HashMap<Long, MutableSet<Long?>>()
+        for (ref in db.timelineDao().getAllEventNovelCrossRefs()) {
+            if (!novelUniverse.containsKey(ref.novelId)) continue
+            out.getOrPut(ref.eventId) { HashSet() }.add(novelUniverse[ref.novelId])
+        }
+        return out
     }
 
     /** `getEventById`의 자리. */

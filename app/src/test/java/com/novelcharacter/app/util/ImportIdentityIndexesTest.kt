@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.TimelineEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -376,5 +377,57 @@ class ImportIdentityIndexesTest {
         assertNull(indexes.byCode.first(""))
         // 자연키 축에는 그대로 있다 — 코드가 없을 뿐 행은 실재한다.
         assertNotEquals(null, indexes.byNaturalKey.first(StateChangeNaturalKey(1L, 1993, "직업", "기사")))
+    }
+
+    // ── 사건 자연키는 행이 밝힌 세계관 안에서만 찾는다 ────────────────────────────
+    // 코드 없는 행이 **다른 세계관의 같은 연도·설명 사건**에 합쳐지던 자리다(복제 세계관이
+    // 백업 왕복 한 번에 원본 사건으로 빨려 들어갔다 — 사건 19→11).
+
+    private fun event(id: Long, universeId: Long?) =
+        TimelineEvent(id = id, year = 1200, description = "Battle", universeId = universeId, code = null)
+
+    @Test
+    fun `소속을 밝힌 행은 그 세계관의 사건만 잡는다`() {
+        val original = event(1, universeId = 10)
+        val copy = event(2, universeId = 20)
+        assertEquals(copy, pickEventByNaturalKey(listOf(original, copy), universeId = 20))
+        assertEquals(original, pickEventByNaturalKey(listOf(original, copy), universeId = 10))
+    }
+
+    @Test
+    fun `소속을 밝힌 행에 그 세계관 사건이 없으면 다른 세계관 사건에 합치지 않는다`() {
+        // 빈 앱 복원: 원본 세계관의 사건만 먼저 들어와 있고, 복제 세계관의 행이 뒤따른다.
+        val original = event(1, universeId = 10)
+        assertNull(pickEventByNaturalKey(listOf(original), universeId = 20))
+    }
+
+    @Test
+    fun `소속을 모르는 행은 종전처럼 첫 후보를 잡는다`() {
+        val first = event(1, universeId = 10)
+        val second = event(2, universeId = 20)
+        assertEquals(first, pickEventByNaturalKey(listOf(first, second), universeId = null))
+        assertNull(pickEventByNaturalKey(emptyList(), universeId = null))
+    }
+
+    @Test
+    fun `그 세계관 사건이 없으면 이 세계관 작품에만 이어진 무소속 사건을 잡는다`() {
+        // 소속 없이 작품만 이어진 사건 — 행은 그 작품에서 세계관을 유도한다(PR #434 리뷰).
+        val detached = event(1, universeId = null)
+        val other = event(2, universeId = 10)
+        val links = mapOf(1L to setOf<Long?>(20L))
+        assertEquals(detached, pickEventByNaturalKey(listOf(other, detached), universeId = 20) { links[it.id] ?: emptySet() })
+        // 같은 세계관 사건이 있으면 그것이 먼저다.
+        val own = event(3, universeId = 20)
+        assertEquals(own, pickEventByNaturalKey(listOf(detached, own), universeId = 20) { links[it.id] ?: emptySet() })
+    }
+
+    @Test
+    fun `다른 세계관 작품에 이어졌거나 연결이 없는 무소속 사건은 잡지 않는다`() {
+        // 월드패키지가 소속을 끊은 남의 사건 — 잡으면 이 세계관으로 끌고 와 연결까지 갈아 끼운다.
+        val foreign = event(1, universeId = null)
+        val unlinked = event(2, universeId = null)
+        val mixed = event(3, universeId = null)
+        val links = mapOf(1L to setOf<Long?>(10L), 3L to setOf<Long?>(10L, 20L))
+        assertNull(pickEventByNaturalKey(listOf(foreign, unlinked, mixed), universeId = 20) { links[it.id] ?: emptySet() })
     }
 }
