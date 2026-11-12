@@ -70,7 +70,14 @@ fun keepIfJsonEquivalent(existing: String?, incoming: String?): String? {
 
 private fun parseJsonOrNull(raw: String): Any? = try {
     val t = raw.trim()
-    if (t.isEmpty()) null else org.json.JSONTokener(t).nextValue().takeIf { it is JSONObject || it is JSONArray }
+    if (t.isEmpty()) null else {
+        val tokener = org.json.JSONTokener(t)
+        val value = tokener.nextValue().takeIf { it is JSONObject || it is JSONArray }
+        // **값 뒤에 남은 글자가 있으면 JSON이 아니다** — nextValue는 첫 값만 읽고 끝을 확인하지
+        // 않는다. 그대로 두면 `{"a":1} 편집` 같은 칸이 기존과 '같다'로 보여 편집이 조용히
+        // 버려진다(PR #441 리뷰). 글자 비교로 떨어뜨린다.
+        if (value != null && tokener.nextClean() == 0.toChar()) value else null
+    }
 } catch (_: Exception) {
     null
 }

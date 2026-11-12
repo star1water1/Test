@@ -102,4 +102,13 @@ class JsonTextTest {
         assertEquals("{}", keepIfJsonEquivalent(null, "{}"))
         assertEquals(null, keepIfJsonEquivalent("{}", null))
     }
+
+    @Test
+    fun `값 뒤에 글자가 남은 칸은 JSON이 아니라 들어온 글자다`() {
+        // 첫 값만 읽고 같다고 하면 편집이 조용히 버려진다(PR #441 리뷰).
+        assertEquals("""{"a":1} 편집""", keepIfJsonEquivalent("""{"a":1}""", """{"a":1} 편집"""))
+        assertEquals("""[1] [2]""", keepIfJsonEquivalent("[1]", "[1] [2]"))
+        // 뒤 공백은 끝으로 본다
+        assertEquals("""{"a":1}""", keepIfJsonEquivalent("""{"a":1}""", """{"a":1}   """))
+    }
 }
