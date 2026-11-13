@@ -365,6 +365,7 @@ $MAIN/util/SpinnerChangeGate.kt
 $MAIN/util/StateChangeFieldNames.kt
 $MAIN/util/SilhouetteRebindRule.kt
 $MAIN/util/FolderNameToken.kt
+$MAIN/util/FolderFileTags.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
 $MAIN/util/FolderExportPlanner.kt
@@ -641,6 +642,7 @@ $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/CharacterFolderResolverTest.kt
 $TEST/util/FolderRoundtripLedgerTest.kt
 $TEST/util/FolderExportPlannerTest.kt
+$TEST/util/FolderRoundtripPhase2Test.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/ui/character/InitialHydrationGuardTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt

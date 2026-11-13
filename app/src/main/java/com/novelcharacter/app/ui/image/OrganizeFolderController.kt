@@ -311,6 +311,12 @@ class OrganizeFolderController(
         if (plan.unknownTokenFiles > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_unknown_token, plan.unknownTokenFiles))
         }
+        if (plan.contentMatched > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_content_matched, plan.contentMatched))
+        }
+        if (plan.importsWithNameTags > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_name_tags, plan.importsWithNameTags))
+        }
         if (plan.deleteApprovalUnknown > 0) {
             lines.add(fragment.getString(
                 R.string.organize_folder_summary_delete_unknown, plan.deleteApprovalUnknown
@@ -566,6 +572,9 @@ class OrganizeFolderController(
         if (result.unlinked > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_unlinked, result.unlinked))
         }
+        if (result.nameTagged > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_name_tags, result.nameTagged))
+        }
         // 되돌릴 수 없는 처분은 결과에서도 수로 남긴다 — 확인창이 약속한 수와 같아야 한다.
         if (result.deleted > 0) {
             lines.add(fragment.getString(
@@ -726,6 +735,9 @@ class OrganizeFolderController(
         }
         if (plan.legacySkipped > 0) {
             lines.add(fragment.getString(R.string.organize_folder_export_summary_legacy, plan.legacySkipped))
+        }
+        if (plan.entityCount > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_export_summary_entity_copies, plan.entityCount))
         }
         if (plan.entityOnlySkipped > 0) {
             lines.add(fragment.getString(R.string.organize_folder_export_summary_entity, plan.entityOnlySkipped))

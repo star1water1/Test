@@ -86,7 +86,13 @@ object FolderExportPlanner {
          * 캐릭터 배정이 남아 있으면 **읽지 않는다** — 배정된 이미지는 그 캐릭터 폴더로 가고,
          * 서랍은 미배정 축을 가르는 것이기 때문이다.
          */
-        val isDetached: Boolean = false
+        val isDetached: Boolean = false,
+        /**
+         * 작품·세계관 전용 이미지가 나갈 하위 폴더 이름 (B-53 ③) — `작품-<제목>`·`세계관-<이름>`.
+         * 캐릭터도 라이브러리도 쥐지 않은 이미지에만 읽는다. null이면 주인을 못 찾은 것이라
+         * 종전대로 개수만 고지한다.
+         */
+        val entityFolder: String? = null
     )
 
     /** 내보낼 파일 1건 — 어디에 무슨 이름으로 쓸 것인가. */
@@ -135,7 +141,12 @@ object FolderExportPlanner {
         val legacySkipped: Int = 0,
         val entityOnlySkipped: Int = 0,
         val missingSkipped: Int = 0,
-        val blockedCharacters: List<BlockedCharacter> = emptyList()
+        val blockedCharacters: List<BlockedCharacter> = emptyList(),
+        /**
+         * `_작품·세계관/` 아래로 나가는 장수 (B-53 ③). 받아오기가 읽지 않는 사본이라 따로 센다 —
+         * 옮겨도 아무 일이 없다는 것을 요약이 말해야 한다.
+         */
+        val entityCount: Int = 0
     ) {
         val totalBytes: Long get() = files.sumOf { it.sizeBytes }
         val isEmpty: Boolean get() = files.isEmpty()
@@ -185,7 +196,8 @@ object FolderExportPlanner {
         FolderRoundtripPlanner.FOLDER_SHARED,
         FolderRoundtripPlanner.FOLDER_MISC,
         FolderRoundtripPlanner.FOLDER_DETACHED,
-        FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL
+        FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL,
+        FolderRoundtripPlanner.FOLDER_ENTITY
     )
 
     /**
@@ -252,9 +264,13 @@ object FolderExportPlanner {
             val owners = image.ownerCharacterIds.distinct().sorted()
             // 배정이 남아 있으면 서랍 판정을 하지 않는다 — 그 이미지는 캐릭터 폴더로 간다.
             val detached = owners.isEmpty() && image.isDetached
+            // 캐릭터도 라이브러리도 쥐지 않은 이미지 = 작품·세계관 전용. 「전부」에서만 사본으로 나간다
+            // (B-53 ③) — 나머지 범위는 캐릭터 배정 축을 가르는 것이라 여기 속하지 않는다.
+            val entityOnlyImage = owners.isEmpty() && !image.inLibrary
+            if (entityOnlyImage && scope != Scope.ALL) continue
             if (!scope.accepts(owners.isNotEmpty(), detached)) continue
-            // 캐릭터도 라이브러리도 쥐지 않은 이미지 = 작품·세계관 전용(v1 범위 밖).
-            if (owners.isEmpty() && !image.inLibrary) { entityOnly++; continue }
+            val entityFolder = if (entityOnlyImage) image.entityFolder?.let(FolderNameToken::sanitizeLabel) else null
+            if (entityOnlyImage && entityFolder == null) { entityOnly++; continue }
             if (existingPaths != null && image.path !in existingPaths) { missing++; continue }
             val token = tokenByPath[image.path]
             if (token == null) { legacy++; continue }
@@ -262,6 +278,11 @@ object FolderExportPlanner {
             val folders: List<String>
             val label: String
             when {
+                entityFolder != null -> {
+                    folders = listOf(FolderRoundtripPlanner.FOLDER_ENTITY, entityFolder)
+                    label = entityFolder
+                }
+
                 owners.size >= 2 -> {
                     folders = listOf(FolderRoundtripPlanner.FOLDER_SHARED)
                     // 라벨은 사람용 힌트일 뿐이라 이름을 고쳐 써도 왕복에 영향이 없다.
@@ -317,6 +338,7 @@ object FolderExportPlanner {
         var detachedCount = 0
         var setFolders = 0
         var shared = 0
+        var entityCount = 0
         for ((folders, entries) in bucketed) {
             val head = folders.firstOrNull()
             val isRootOf = { name: String -> folders.size == 1 && head == name }
@@ -326,6 +348,7 @@ object FolderExportPlanner {
                 (head == FolderRoundtripPlanner.FOLDER_UNASSIGNED ||
                     head == FolderRoundtripPlanner.FOLDER_DETACHED)
             when {
+                head == FolderRoundtripPlanner.FOLDER_ENTITY -> entityCount += entries.size
                 isRootOf(FolderRoundtripPlanner.FOLDER_SHARED) -> shared += entries.size
                 isRootOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED) -> unassigned += entries.size
                 isRootOf(FolderRoundtripPlanner.FOLDER_DETACHED) -> detachedCount += entries.size
@@ -368,7 +391,8 @@ object FolderExportPlanner {
             legacySkipped = legacy,
             entityOnlySkipped = entityOnly,
             missingSkipped = missing,
-            blockedCharacters = blocked
+            blockedCharacters = blocked,
+            entityCount = entityCount
         )
     }
 
