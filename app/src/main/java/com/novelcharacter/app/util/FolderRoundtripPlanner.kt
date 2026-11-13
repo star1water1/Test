@@ -101,6 +101,15 @@ object FolderRoundtripPlanner {
     const val FOLDER_DELETE_APPROVAL = "_삭제승인"
 
     /**
+     * 작품·세계관 전용 이미지의 사본이 나가는 자리 (B-53 ③) — `_작품·세계관/작품-<제목>/`.
+     *
+     * **받아오기는 이 폴더를 읽지 않는다.** 작품·세계관 배정은 폴더로 다루지 않는다는 불변식이
+     * 그대로이고(그쪽은 엑셀 경로다), 이 자리는 바깥에서 쓰라고 꺼내 둔 사본의 보관함이다.
+     * 나열은 한다 — 재내보내기가 이전 사본을 지우려면 보여야 한다.
+     */
+    const val FOLDER_ENTITY = "_작품·세계관"
+
+    /**
      * 예약 접두 없이도 서랍으로 읽는 이름. **캐릭터가 우선이다**(D-1) — 이 이름의 캐릭터가
      * 실재하면 캐릭터 폴더로 해석하고 [Plan.miscReadAsCharacter]로 고지한다.
      * 서랍임을 확정하고 싶은 사용자에게는 [FOLDER_MISC]가 남아 있다.
@@ -445,8 +454,16 @@ object FolderRoundtripPlanner {
          * (되돌리는 자리·`_공유/`의 편입도 배정·세트가 없다) 세어 둔다 — 사용자가 요청한 동작이
          * 실제로 그렇게 계획됐는지 확인할 유일한 수다.
          */
-        val miscImported: Int = 0
+        val miscImported: Int = 0,
+        /**
+         * 이름에서 토큰이 사라졌지만 **내용이 앱의 이미지와 같아** 그 이미지로 알아본 파일 수 (B-53 ①).
+         * 알아보지 못했다면 같은 그림이 새 이미지로 한 장 더 편입됐을 것이다.
+         */
+        val contentMatched: Int = 0
     ) {
+        /** 파일 이름의 `#태그`가 달릴 신규 편입 수 (B-53 ② — [FolderFileTags]). */
+        val importsWithNameTags: Int get() = imports.count { FolderFileTags.parse(it.item.fileName).isNotEmpty() }
+
         /** 실제로 파일을 만지는 항목 수 — 진행도 총량(규약 R-26). */
         val actionCount: Int get() =
             imports.size + moves.size + detaches.size + unlinkOnly.size + deletes.size
@@ -477,6 +494,8 @@ object FolderRoundtripPlanner {
     fun classify(folders: List<String>): Location = when {
         folders.isEmpty() -> Location.Root
         folders[0] == FOLDER_PROCESSED -> Location.Skipped
+        // 깊이 판정보다 먼저다 — 이 폴더 아래는 어떤 깊이든 읽지 않는다(고지 대상도 아니다).
+        folders[0] == FOLDER_ENTITY -> Location.Skipped
         folders.size > MAX_SCAN_DEPTH -> Location.TooDeep
         folders[0] == FOLDER_UNASSIGNED ->
             if (folders.size == 1) Location.UnassignedRoot else Location.UnassignedSet(folders[1])
@@ -522,7 +541,13 @@ object FolderRoundtripPlanner {
         characterIdsByPath: Map<String, List<Long>>,
         resolver: CharacterFolderResolver = CharacterFolderResolver(characterIdsByName),
         linkedPaths: Set<String> = emptySet(),
-        detachedPaths: Set<String> = emptySet()
+        detachedPaths: Set<String> = emptySet(),
+        /**
+         * 항목 id → 내용이 같은 앱 이미지의 경로 (B-53 ①). **토큰으로 못 찾았을 때만** 본다 —
+         * 토큰은 앱이 심은 정체성이고 내용 일치는 그것을 잃은 파일의 구제책이다.
+         * 호출부가 크기로 거르고 해시로 확인한 것만 싣는다.
+         */
+        contentPathById: Map<String, String> = emptyMap()
     ): Plan {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
@@ -541,6 +566,7 @@ object FolderRoundtripPlanner {
         val settled = ArrayList<ScanItem>()
         var deeper = 0
         var miscImported = 0
+        var contentMatched = 0
 
         /**
          * 서랍 처리 — 신규는 낱개로 들이고, 토큰 파일은 묶음만 푼다(D-2).
@@ -602,7 +628,9 @@ object FolderRoundtripPlanner {
             if (location is Location.TooDeep) { deeper++; continue }
 
             val candidate = FolderNameToken.tokenCandidateOf(item.fileName)
-            val path = candidate?.let { pathByToken[it] }
+            val tokenPath = candidate?.let { pathByToken[it] }
+            val path = tokenPath ?: contentPathById[item.id]
+            if (tokenPath == null && path != null) contentMatched++
             // **세지 않고 표시만 해 둔다 — 세는 것은 처분이 정해진 뒤다.**
             // 여기서 세면 *관찰*("토큰꼴인데 사전에 없다")을 세면서 문구는 *처분*("새 이미지로
             // 편입합니다")을 약속하게 되고, 둘이 갈리는 자리가 실제로 있다: `_삭제승인/`은
@@ -885,7 +913,8 @@ object FolderRoundtripPlanner {
             unknownReservedFolders = unknownReserved.toList(),
             aiTagFolders = aiTagFolders.mapValues { it.value.toList() },
             aiTagExistingPaths = aiTagExistingPaths.mapValues { it.value.toList() },
-            miscImported = miscImported
+            miscImported = miscImported,
+            contentMatched = contentMatched
         )
     }
 }

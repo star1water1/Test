@@ -66,7 +66,9 @@ object OrganizeFolderService {
         val files: List<ScannedFile>,
         val unreadFolders: Int = 0,
         val nonImageIgnored: Int = 0,
-        val skippedByFingerprint: Int = 0
+        val skippedByFingerprint: Int = 0,
+        /** 나열한 정리 폴더 — 계획이 파일 내용을 읽어야 할 때 쓴다(B-53 ①). */
+        val treeUri: Uri? = null
     )
 
     /** 계획 + 그 계획을 설명하는 데 필요한 부수 정보(사전 확인 다이얼로그용). */
@@ -163,6 +165,8 @@ object OrganizeFolderService {
          * 짚으려면 이것이 필요하다(D-4) — 계획은 항목 id만 알고 경로는 편입 뒤에 정해진다.
          */
         val importedPathById: Map<String, String> = emptyMap(),
+        /** 파일 이름의 `#태그`를 단 신규 편입 수 (B-53 ②). */
+        val nameTagged: Int = 0,
         val linkedSets: Int = 0,
         /**
          * 묶는 데 **실패한** 세트 수. [failed]와 단위가 다르다 — 그쪽은 파일이고 이쪽은 묶음이라
@@ -240,7 +244,7 @@ object OrganizeFolderService {
                 )
             }
         }
-        ScanResult(files, unreadFolders, nonImage, skipped)
+        ScanResult(files, unreadFolders, nonImage, skipped, treeUri)
     }
 
     private data class Child(
@@ -373,9 +377,10 @@ object OrganizeFolderService {
                 novelIdsByTitle = novelIdsByTitle,
                 choices = ambiguousChoices
             )
+            val contentPathById = matchByContent(context, scan, dictionary.pathByToken, livePaths)
             val plan = FolderRoundtripPlanner.plan(
                 items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver,
-                linkedCanonPaths, detachedCanonPaths
+                linkedCanonPaths, detachedCanonPaths, contentPathById
             )
 
             // 링크 세트가 흡수하는 기존 그룹 — 사전 확인에 한 줄로 싣는다(설계 9장 C-8).
@@ -431,6 +436,57 @@ object OrganizeFolderService {
             )
         }
 
+    /**
+     * 이름에서 토큰이 사라진 사본을 **내용으로** 알아본다 (B-53 ①).
+     *
+     * 내보낸 사본은 앱 파일의 바이트 그대로다. 바깥에서 이름을 바꿔 토큰이 지워지면 받아오기가
+     * 그것을 새 이미지로 편입해 같은 그림이 둘이 된다. 크기가 같은 앱 이미지가 있을 때만 양쪽을
+     * 해시해 견주므로, 평범한 새 파일은 대부분 읽지도 않고 지나간다.
+     *
+     * 토큰으로 이미 찾은 파일·이미 처리한 파일·받아오기가 읽지 않는 자리의 파일은 보지 않는다.
+     * `_삭제승인/`의 파일도 보지 않는다(아래 주석).
+     */
+    private fun matchByContent(
+        context: Context,
+        scan: ScanResult,
+        pathByToken: Map<String, String>,
+        livePaths: Collection<String>
+    ): Map<String, String> {
+        val pathsBySize = HashMap<Long, MutableList<String>>()
+        for (path in livePaths) {
+            val size = runCatching { File(path).length() }.getOrDefault(0L)
+            if (size > 0) pathsBySize.getOrPut(size) { mutableListOf() }.add(path)
+        }
+        if (pathsBySize.isEmpty()) return emptyMap()
+        val treeUri = scan.treeUri ?: return emptyMap()
+        val hashByPath = HashMap<String, String?>()
+        val matches = HashMap<String, String>()
+        for (file in scan.files) {
+            if (file.alreadyHandled || file.size <= 0) continue
+            val location = FolderRoundtripPlanner.classify(file.folders)
+            if (location is FolderRoundtripPlanner.Location.Skipped) continue
+            // **지우는 자리에서는 내용으로 알아보지 않는다.** `_삭제승인/`은 되돌릴 수 없는 처분이고,
+            // 그 근거는 앱이 심은 토큰이어야 한다 — 우연히 같은 그림을 넣었다고 앱의 이미지를 지우지 않는다.
+            if (location is FolderRoundtripPlanner.Location.DeleteApproval) continue
+            val token = FolderNameToken.tokenCandidateOf(file.name)
+            if (token != null && pathByToken[token] != null) continue
+            val candidates = pathsBySize[file.size] ?: continue
+            val uri = runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, file.documentId)
+            }.getOrNull() ?: continue
+            val hash = runCatching {
+                context.contentResolver.openInputStream(uri)?.use(ContentHash::sha256)
+            }.getOrNull() ?: continue
+            val same = candidates.firstOrNull { path ->
+                hashByPath.getOrPut(path) {
+                    runCatching { File(path).inputStream().use(ContentHash::sha256) }.getOrNull()
+                } == hash
+            }
+            if (same != null) matches[file.documentId] = same
+        }
+        return matches
+    }
+
     // ── 반영 ──
 
     /**
@@ -476,6 +532,7 @@ object OrganizeFolderService {
         val unmovedFingerprints = ArrayList<String>()
         // 편입 결과 — 링크 세트가 나중에 쓴다(문서 id → 내부 경로).
         val importedPathById = HashMap<String, String>()
+        var nameTagged = 0
         var cancelled = false
 
         suspend fun step() {
@@ -518,6 +575,7 @@ object OrganizeFolderService {
                 continue
             }
             val now = System.currentTimeMillis()
+            var pendingNameTagged = false
             // **트랜잭션의 성패를 반드시 본다.** 종전에는 `runCatching`의 결과를 버리고 무조건
             // 성공으로 셌는데, 이 자리의 실패는 **파일이 이미 내부 저장소에 복사된 뒤**라
             // 조용한 유실 세 가지가 한꺼번에 났다: ⓐ `image_meta` 행 없는 **고아 파일**이 용량만
@@ -526,7 +584,15 @@ object OrganizeFolderService {
             // 보고 있었고 이 루프만 빠져 있었다.
             val stored = runCatching {
                 db.withTransaction {
-                    db.imageMetaDao().insert(ImageMeta(path = path, importedAt = now))
+                    val imageId = db.imageMetaDao().insert(ImageMeta(path = path, importedAt = now))
+                    // 파일 이름의 `#태그`를 단다(B-53 ②). 행과 같은 트랜잭션이라 태그만 빠진 편입은 없다.
+                    val nameTags = FolderFileTags.parse(file.name)
+                    if (nameTags.isNotEmpty()) {
+                        db.imageTagDao().insertAll(nameTags.map {
+                            com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
+                        })
+                        pendingNameTagged = true
+                    }
                     val target = action.assignCharacterId
                     if (target != null) {
                         db.characterDao().getCharacterById(target)?.let { c ->
@@ -548,6 +614,7 @@ object OrganizeFolderService {
             }
             importedPathById[action.item.id] = path
             imported++
+            if (pendingNameTagged) nameTagged++
             processedFiles.add(file)
             step()
         }
@@ -973,6 +1040,7 @@ object OrganizeFolderService {
             deletedBytes = deletedBytes,
             scattered = scattered.size,
             importedPathById = importedPathById,
+            nameTagged = nameTagged,
             linkedSets = linkedSets,
             linkSetFailed = linkSetFailed,
             failed = failures,
@@ -1048,11 +1116,20 @@ object OrganizeFolderService {
 
         // 작품·세계관 전용 이미지는 v1 범위 밖이지만 **개수는 고지해야** 하므로 후보에 싣는다
         // (캐릭터도 라이브러리도 쥐지 않은 것만 그 부류로 남는다).
-        val entityPaths = LinkedHashSet<String>()
-        for (json in db.novelDao().getAllNovelsList().map { it.imagePaths } +
-            db.universeDao().getAllUniversesList().map { it.imagePaths }) {
-            for (stored in parsePaths(gson, json)) entityPaths.add(canonical(stored))
+        // 경로 → 나갈 하위 폴더 이름(B-53 ③). 여럿이 쥐면 먼저 읽힌 쪽 하나에만 둔다 — 사본은
+        // 한 장이면 되고, 받아오기가 읽지 않는 자리라 어느 쪽이어도 배정에 영향이 없다.
+        val entityFolderByPath = LinkedHashMap<String, String>()
+        for (novel in db.novelDao().getAllNovelsList()) {
+            for (stored in parsePaths(gson, novel.imagePaths)) {
+                entityFolderByPath.putIfAbsent(canonical(stored), "작품-" + novel.title.trim())
+            }
         }
+        for (universe in db.universeDao().getAllUniversesList()) {
+            for (stored in parsePaths(gson, universe.imagePaths)) {
+                entityFolderByPath.putIfAbsent(canonical(stored), "세계관-" + universe.name.trim())
+            }
+        }
+        val entityPaths = entityFolderByPath.keys
 
         val candidatePaths = LinkedHashSet<String>().apply {
             addAll(ownersByPath.keys)
@@ -1070,7 +1147,8 @@ object OrganizeFolderService {
                 ownerCharacterIds = ownersByPath[path].orEmpty(),
                 linkGroupId = meta?.linkGroupId,
                 inLibrary = meta != null,
-                isDetached = meta?.isDetached == true
+                isDetached = meta?.isDetached == true,
+                entityFolder = entityFolderByPath[path]
             )
         }
 
