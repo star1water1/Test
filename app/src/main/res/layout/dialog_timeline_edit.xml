@@ -180,6 +180,16 @@
             android:textAppearance="@style/TextAppearance.App.Caption"
             android:visibility="gone" />
 
+        <!-- 이 창이 그리지 않는 구역에 남은 값 (B-258 ⓑ) — 읽기 전용 안내 -->
+        <TextView
+            android:id="@+id/eventArchivedValues"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textIsSelectable="true"
+            android:visibility="gone" />
+
         <ImageButton
             android:id="@+id/btnEventFieldHelp"
             android:layout_width="wrap_content"

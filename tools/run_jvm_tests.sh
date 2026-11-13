@@ -183,6 +183,7 @@ $MAIN/data/model/EventFieldValue.kt
 $MAIN/data/model/NovelFieldValue.kt
 $MAIN/data/dao/EventFieldValueDao.kt
 $MAIN/data/repository/EventFieldValueMerge.kt
+$MAIN/data/repository/ArchivedFieldValues.kt
 $MAIN/data/dao/NovelFieldValueDao.kt
 $MAIN/data/repository/NovelFieldValueMerge.kt
 $MAIN/data/model/FactionRelationship.kt
@@ -374,6 +375,7 @@ $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/character/InitialHydrationGuard.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/util/NameBankMatch.kt
+$MAIN/util/ListNameFilter.kt
 $MAIN/util/NameBankPickOrder.kt
 $MAIN/util/GenderFieldResolver.kt
 $MAIN/excel/StreamingXlsxReader.kt
@@ -572,6 +574,7 @@ $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/RestoreModeTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/data/EventFieldValueMergeTest.kt
+$TEST/data/repository/ArchivedFieldValuesTest.kt
 $TEST/data/NovelFieldValueMergeTest.kt
 $TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/data/NovelFieldValueDaoReplaceTest.kt
@@ -645,6 +648,7 @@ $TEST/stats/FactionMemberCountKeyTest.kt
 $TEST/stats/PatternDetectionAxisTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/util/NameBankMatchTest.kt
+$TEST/util/ListNameFilterTest.kt
 $TEST/util/NameBankPickOrderTest.kt
 $TEST/util/GenderFieldResolverTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt

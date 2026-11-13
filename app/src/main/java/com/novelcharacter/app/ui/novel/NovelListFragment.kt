@@ -101,8 +101,13 @@ class NovelListFragment : Fragment() {
 
     private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
 
+    /** 이 목록에서 찾기 (B-49). 검색어가 있는 동안에는 순서를 바꾸지 못한다 — 보이는 것이 전부가 아니다. */
+    private val listSearch = com.novelcharacter.app.ui.common.ListSearchAction("novelListSearch")
+    private var allNovels: List<Novel> = emptyList()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        listSearch.restore(savedInstanceState)
         // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
         excel = com.novelcharacter.app.excel.ExcelTransferController(this)
         excel.restoreState(savedInstanceState)
@@ -167,6 +172,10 @@ class NovelListFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
+        listSearch.attach(this, binding.toolbar) {
+            if (listSearch.isActive && adapter.isReorderMode()) adapter.setReorderMode(false)
+            renderNovels()
+        }
         // 특정 세계관으로 들어온 화면에서는 숨긴다 — 여기 뜨는 작품은 전부 그 세계관
         // 소속이라 '미배정만 보기'가 걸러낼 것이 없다.
         binding.toolbar.menu.findItem(R.id.action_filter_unassigned_universe)?.isVisible =
@@ -371,14 +380,8 @@ class NovelListFragment : Fragment() {
         // 그림이 함께 갈린다 — 그것이 이 항목이 없애려던 "재방출마다 재추첨"이다.
         adapter.refreshRandomImages()
         viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
-            adapter.submitList(novels)
-            loadNovelFieldSummaries(novels)
-            binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
-            // "작품이 아예 없다"와 "미배정만 보기라 없다"는 다른 사실이다(R-17) — 필터를
-            // 켠 채 빈 화면을 보면 전자로 오해해 필터를 끌 생각을 못 할 수 있다.
-            binding.emptyText.setText(
-                if (showUnassignedUniverseOnly) R.string.no_novels_unassigned_universe else R.string.no_novels
-            )
+            allNovels = novels
+            renderNovels()
         }
 
         // Load universe border color for inheritance
@@ -413,11 +416,32 @@ class NovelListFragment : Fragment() {
         }
     }
 
+    /** 받은 목록을 검색어로 좁혀 올린다 (B-49). */
+    private fun renderNovels() {
+        val shown = com.novelcharacter.app.util.ListNameFilter.filter(allNovels, listSearch.query) {
+            listOf(it.title, it.description)
+        }
+        adapter.submitList(shown)
+        loadNovelFieldSummaries(shown)
+        binding.emptyText.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        // "작품이 아예 없다" · "미배정만 보기라 없다" · "찾는 이름이 없다"는 서로 다른 사실이다(R-17) —
+        // 필터나 검색을 켠 채 빈 화면을 보면 첫째로 오해해 끌 생각을 못 할 수 있다.
+        binding.emptyText.text = when {
+            allNovels.isNotEmpty() && listSearch.isActive ->
+                getString(R.string.list_search_empty, listSearch.query.trim())
+            showUnassignedUniverseOnly -> getString(R.string.no_novels_unassigned_universe)
+            else -> getString(R.string.no_novels)
+        }
+    }
+
     private fun toggleReorderMode() {
         if (adapter.isReorderMode()) {
             // 자동 저장이 이미 되므로 모드만 종료
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+        } else if (listSearch.isActive) {
+            // 좁혀진 목록을 끌면 안 보이는 항목의 자리가 함께 바뀐다.
+            Toast.makeText(requireContext(), R.string.list_search_reorder_blocked, Toast.LENGTH_LONG).show()
         } else {
             adapter.setReorderMode(true)
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
@@ -880,6 +904,12 @@ class NovelListFragment : Fragment() {
                 }
                 .sortedBy { it.displayOrder }
             buildNovelFieldInputs(section)
+            // 이 구역이 덮지 않는 저장 값이 있으면 있다고 말한다(B-258 ⓑ — 사건 창과 같은 안내).
+            val archived = com.novelcharacter.app.ui.common.ArchivedFieldValuesNote.load(
+                requireContext(), existing.map { it.fieldDefinitionId to it.value }, section.covered)
+            if (!isAdded || novelFieldSection !== section) return@launch
+            com.novelcharacter.app.ui.common.ArchivedFieldValuesNote
+                .bind(section.binding.novelArchivedValues, archived)
         }
     }
 
@@ -1113,6 +1143,7 @@ class NovelListFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         excel.saveState(outState)
+        listSearch.save(outState)
     }
 
     private fun exportToExcel() {

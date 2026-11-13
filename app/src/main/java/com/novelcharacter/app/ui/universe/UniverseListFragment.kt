@@ -96,8 +96,13 @@ class UniverseListFragment : Fragment() {
 
     private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
 
+    /** 이 목록에서 찾기 (B-49). 검색어가 있는 동안에는 순서를 바꾸지 못한다 — 보이는 것이 전부가 아니다. */
+    private val listSearch = com.novelcharacter.app.ui.common.ListSearchAction("universeListSearch")
+    private var allUniverses: List<Universe> = emptyList()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        listSearch.restore(savedInstanceState)
         // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
         excel = com.novelcharacter.app.excel.ExcelTransferController(this)
         excel.restoreState(savedInstanceState)
@@ -118,7 +123,24 @@ class UniverseListFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
+        listSearch.attach(this, binding.toolbar) {
+            if (listSearch.isActive && adapter.isReorderMode()) adapter.setReorderMode(false)
+            renderUniverses()
+        }
         observeData()
+    }
+
+    /** 받은 목록을 검색어로 좁혀 올린다. 개수 조회는 좁히기 전 전체로 한다(검색을 지우면 바로 보인다). */
+    private fun renderUniverses() {
+        val shown = com.novelcharacter.app.util.ListNameFilter.filter(allUniverses, listSearch.query) {
+            listOf(it.name, it.description)
+        }
+        adapter.submitList(shown)
+        binding.emptyText.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        // "세계관이 없다"와 "찾는 이름이 없다"는 다른 사실이다(R-17).
+        binding.emptyText.text = if (allUniverses.isNotEmpty() && listSearch.isActive)
+            getString(R.string.list_search_empty, listSearch.query.trim())
+        else getString(R.string.empty_universe_hint)
     }
 
     /**
@@ -764,8 +786,8 @@ class UniverseListFragment : Fragment() {
         // 같은 자리에 적어 두었다 — 관찰자 안에서 부르면 재방출마다 전 카드가 갈린다.
         adapter.refreshRandomImages()
         viewModel.allUniverses.observe(viewLifecycleOwner) { universes ->
-            adapter.submitList(universes)
-            binding.emptyText.visibility = if (universes.isEmpty()) View.VISIBLE else View.GONE
+            allUniverses = universes
+            renderUniverses()
             viewModel.loadCounts(universes)
         }
 
@@ -885,6 +907,9 @@ class UniverseListFragment : Fragment() {
             // 자동 저장이 이미 되므로 모드만 종료
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+        } else if (listSearch.isActive) {
+            // 좁혀진 목록을 끌면 안 보이는 항목의 자리가 함께 바뀐다.
+            Toast.makeText(requireContext(), R.string.list_search_reorder_blocked, Toast.LENGTH_LONG).show()
         } else {
             adapter.setReorderMode(true)
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
@@ -1440,6 +1465,7 @@ class UniverseListFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         excel.saveState(outState)
+        listSearch.save(outState)
         outState.putLong(STATE_PRESET_FIELD_PRESET_ID, presetFieldSessionPresetId)
         presetFieldSessionOriginalKey?.let { outState.putString(STATE_PRESET_FIELD_ORIGINAL_KEY, it) }
     }
