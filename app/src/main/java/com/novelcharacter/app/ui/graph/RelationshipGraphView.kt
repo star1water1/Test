@@ -26,6 +26,14 @@ data class GraphNode(
     var y: Float = 0f
 )
 
+/** 이 수를 넘으면 세력 자동 관계는 이름표·화살표 없이 선만 그린다 (B-214). */
+const val GRAPH_DETAILED_EDGE_LIMIT = 300
+
+fun simplifiesFactionEdges(edgeCount: Int): Boolean = edgeCount > GRAPH_DETAILED_EDGE_LIMIT
+
+/** 선만 그어도 잃는 것이 없는 선인가 — 세력에 묶였고 방향이 없다. 그리기와 개수 표시가 함께 쓴다. */
+fun isPlainFactionEdge(factionId: Long?, isBidirectional: Boolean): Boolean = factionId != null && isBidirectional
+
 data class GraphEdge(
     val fromId: Long,
     val toId: Long,
@@ -602,12 +610,27 @@ class RelationshipGraphView @JvmOverloads constructor(
         // Draw edges with type-based colors and intensity-based width
         // **`withIndex()`를 쓰지 않는다** — 항목마다 `IndexedValue`를 하나씩 만든다.
         // 이 루프의 할당을 없애려던 것이 이 수리라 그 자리에 다른 할당을 넣지 않는다.
+        // 선이 많으면 세력 자동 관계는 선만 긋는다(B-214). 구성원 n명의 세력은 자동 관계가
+        // n(n-1)/2개라 80명이면 3천 개를 넘고, 그 전부에 같은 이름표를 달면 읽히지도 않으면서
+        // 프레임을 다 쓴다(에뮬레이터 실측: 3,520선에서 프레임 중앙값 85ms). 지우는 것이 아니다 —
+        // 선은 그대로 있고, 어느 세력의 관계인지는 영역과 색이 말한다.
+        val plainFactionEdges = simplifiesFactionEdges(edges.size)
         for (edgeIndex in edges.indices) {
             val edge = edges[edgeIndex]
             val from = nodeById[edge.fromId] ?: continue
             val to = nodeById[edge.toId] ?: continue
 
             val edgeColor = relationshipColors[edge.label] ?: defaultEdgeColor
+            // 방향이 있는 관계는 세력에 묶여 있어도 줄이지 않는다 — 자동 관계는 늘 양방향이고,
+            // 가져온 관계가 세력 id를 든 채 한쪽 방향일 수 있다. 화살표를 지우면 방향을 잃는다.
+            if (plainFactionEdges && isPlainFactionEdge(edge.factionId, edge.isBidirectional)) {
+                val alpha = when { !edge.isActive -> 50; edge.isSecondary -> 40; else -> 110 }
+                edgePaint.color = Color.argb(alpha, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
+                edgePaint.strokeWidth = 1f
+                edgePaint.pathEffect = null
+                canvas.drawLine(from.x, from.y, to.x, to.y, edgePaint)
+                continue
+            }
 
             // isSecondary(세력 필터), isActive(시간뷰) 모두 반영
             val edgeAlpha = when {

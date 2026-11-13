@@ -1333,12 +1333,26 @@ class TrashRepository(
      * 삭제 작업 하나를 통째로 복원한다 (B-1/B-14).
      *
      * 세계관 → 작품 → 세력 → 사건 → 캐릭터 순으로 복원하므로 하위 엔티티가 붙을 자리가
-     * 먼저 생기고, 참조는 코드로 다시 이어진다(R-1). 항목별 트랜잭션이라 하나가 실패해도
-     * 나머지는 되살아나고, 실패한 항목의 스냅샷은 그대로 남는다.
+     * 먼저 생기고, 참조는 코드로 다시 이어진다(R-1).
+     *
+     * **묶음 전체가 한 트랜잭션이다**(B-18, 확정 22번 ㄱ2). 중간에 예외가 나면 앞서 되살린 것까지
+     * 전부 되돌리고 스냅샷도 그대로 남는다 — 반만 되살아난 세계관은 남지 않는다. 예외는 그대로
+     * 던진다. **막힌 항목**(상위가 없어 붙을 자리가 없는 것)은 예외가 아니라 종전대로 건너뛰고
+     * [OperationRestoreResult.failed]로 알린다.
+     *
+     * **상한을 두지 않는다.** P-9는 재고 나서 정하라고 했고, 잰 결과가 상한이 필요 없다고 답했다:
+     * 280항목이 항목별 트랜잭션으로 3.8초였는데 한 덩어리가 더 빠르다(커밋이 한 번이다).
+     * DB가 WAL이라 쓰는 동안에도 읽기는 막히지 않고, 복원 중에는 진행 창이 화면을 잡고 있어
+     * 기다릴 다른 쓰기가 없다. 값 라이브러리 수확만 트랜잭션 밖에 둔다 — 실제 값에서 다시 만드는
+     * 파생 자료라 실패해도 잃는 것이 없고, 안에서 실패를 삼키면 바깥 트랜잭션이 말없이 되돌려진다.
+     *
+     * @param onProgress 항목 하나를 처리할 때마다 (처리 수, 전체)로 불린다. IO 스레드에서,
+     *   트랜잭션 안에서 불리므로 **DB를 건드리지 말고** 화면에 넘기기만 할 것.
      */
     suspend fun restoreOperation(
         opKey: String,
-        editBackup: Boolean = false
+        editBackup: Boolean = false,
+        onProgress: ((done: Int, total: Int) -> Unit)? = null
     ): OperationRestoreResult = withContext(Dispatchers.IO) {
         val (opId, legacyId) = operationLookup(opKey)
         val items = trashDao.getByOperation(opId, legacyId)
@@ -1356,22 +1370,25 @@ class TrashRepository(
         val peerCodes = collectOperationCodes(items).peers
         val harvestTargets = ArrayList<Long>()
 
-        // ── B-18 ① 계측 ── 아래 세 구간의 **합**이 5판에서 한 트랜잭션이 될 범위다
-        // (확정 22번 ㄱ2 = 전부 한 덩어리). 지금은 항목마다 트랜잭션이 열리고 뒷정리 둘은
-        // 트랜잭션 밖이라 **잠금이 짧게 끊긴다** — 합치면 그 시간이 통째로 잠금이 되므로,
-        // 상한을 정하려면 먼저 이 셋을 따로 재야 한다(P-9: 답은 값이 아니라 순서다).
-        // **동작은 바꾸지 않는다** — 재기만 한다.
+        // 계측은 남긴다(B-18 ①) — 반복·수확·이미지 링크를 갈라 적어 규모가 커졌을 때 무엇이
+        // 시간을 쓰는지 로그 한 줄로 본다.
         val startNanos = System.nanoTime()
+        var lostImageLinks = 0
+        var afterLoopNanos = startNanos
 
-        for (item in items) {
-            val outcome = try {
-                restoreOne(item, deferredLinks, session, peerCodes, harvestTargets)
-            } catch (_: Exception) {
-                null
+        db.withTransaction {
+            items.forEachIndexed { index, item ->
+                // **예외를 삼키지 않는다** — 안쪽 트랜잭션이 실패하면 바깥은 이미 되돌려질 운명이라,
+                // 삼키고 계속하면 '복원 완료'를 말한 뒤 전부 사라진다.
+                val outcome = restoreOne(item, deferredLinks, session, peerCodes, harvestTargets)
+                if (outcome == null) failed.add(item.entityName) else restored.add(outcome)
+                onProgress?.invoke(index + 1, items.size)
             }
-            if (outcome == null) failed.add(item.entityName) else restored.add(outcome)
+            afterLoopNanos = System.nanoTime()
+            // 대표 이미지 연동은 되살린 행을 고치는 일이라 같은 트랜잭션에 든다.
+            lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
         }
-        val afterLoopNanos = System.nanoTime()
+        val afterLinksNanos = System.nanoTime()
 
         // 값 라이브러리 수확은 묶음이 끝난 뒤 세계관 단위로 한 번 — 캐릭터마다 부르면
         // 전 필드 정의와 라이브러리를 매번 다시 읽어 항목 수의 제곱이 된다.
@@ -1386,17 +1403,13 @@ class TrashRepository(
         if (harvestTargets.isNotEmpty() || restoredUniverseIds.isNotEmpty()) {
             runCatching { harvestRestoredCharacters(harvestTargets, restoredUniverseIds) }
         }
-        val afterHarvestNanos = System.nanoTime()
-
-        val lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
         logRestoreTiming(
             items = items.size,
             restored = restored.size,
             failed = failed.size,
-            startNanos = startNanos,
-            afterLoopNanos = afterLoopNanos,
-            afterHarvestNanos = afterHarvestNanos,
-            endNanos = System.nanoTime()
+            loopMs = (afterLoopNanos - startNanos) / 1_000_000,
+            imageLinkMs = (afterLinksNanos - afterLoopNanos) / 1_000_000,
+            harvestMs = (System.nanoTime() - afterLinksNanos) / 1_000_000
         )
         val withImages = if (lostImageLinks > 0 && restored.isNotEmpty()) {
             restored.toMutableList().also { list ->
@@ -1423,19 +1436,15 @@ class TrashRepository(
         items: Int,
         restored: Int,
         failed: Int,
-        startNanos: Long,
-        afterLoopNanos: Long,
-        afterHarvestNanos: Long,
-        endNanos: Long
+        loopMs: Long,
+        imageLinkMs: Long,
+        harvestMs: Long
     ) {
-        fun ms(from: Long, to: Long): Long = (to - from) / 1_000_000
         android.util.Log.i(
             RESTORE_TIMING_TAG,
             "묶음 복원 계측 — 항목 $items (복원 $restored · 실패 $failed) | " +
-                "반복 ${ms(startNanos, afterLoopNanos)}ms · " +
-                "수확 ${ms(afterLoopNanos, afterHarvestNanos)}ms · " +
-                "이미지링크 ${ms(afterHarvestNanos, endNanos)}ms | " +
-                "합계 ${ms(startNanos, endNanos)}ms"
+                "반복 ${loopMs}ms · 이미지링크 ${imageLinkMs}ms · 수확 ${harvestMs}ms | " +
+                "합계 ${loopMs + imageLinkMs + harvestMs}ms"
         )
     }
 
