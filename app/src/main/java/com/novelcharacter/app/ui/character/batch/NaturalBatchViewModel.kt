@@ -154,6 +154,9 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
     fun chooseScope(scope: NaturalBatchInput.Scope) {
         if (busy || storageFailed || options.none { it.scope == scope }) return
         val state = review ?: NaturalBatchReviewState(NaturalBatchInput.create(scope)).also { review = it }
+        // 같은 범위를 다시 고른 것은 바꾼 것이 아니다. 검토는 그대로인데 참조 문맥만 비우면 제안이
+        // 대상을 잃고, 다시 열 때 '복구하지 못했습니다'로 화면 전체가 잠긴다(에뮬레이터 실측).
+        if (state.input.scope == scope) return
         state.changeScope(scope)
         context = null; prepared = null; chunks = null
         scrollPosition = 0; expanded.clear()

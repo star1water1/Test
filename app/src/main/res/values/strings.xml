@@ -483,6 +483,15 @@
 
     <!-- GlobalSearchFragment -->
     <string name="search_empty_result">검색 결과가 없습니다</string>
+    <!-- 목록에서 찾기 (B-49) — 세계관·작품·세력 목록 공용 -->
+    <string name="list_search">이 목록에서 찾기</string>
+    <string name="archived_field_values_title">이 창에 칸이 없는 보관 값 %1$d개</string>
+    <string name="archived_field_values_line">· [%1$s] %2$s: %3$s</string>
+    <string name="archived_field_values_global">전역</string>
+    <string name="archived_field_values_note">지금 속한 구역의 필드가 아니라 여기서는 고칠 수 없습니다. 값은 지워지지 않으며, 원래 세계관으로 돌리면 다시 칸에 나타납니다.</string>
+    <string name="list_search_hint">이름·설명으로 찾기</string>
+    <string name="list_search_empty">\'%1$s\'에 맞는 항목이 없습니다</string>
+    <string name="list_search_reorder_blocked">찾는 동안에는 순서를 바꿀 수 없습니다. 검색을 닫고 다시 시도하세요.</string>
 
     <!-- ExcelImporter -->
     <string name="import_failed_retry">가져오기 실패: 잠시 후 다시 시도하세요</string>

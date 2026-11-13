@@ -9,6 +9,12 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_list_search"
+        android:title="@string/list_search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="never|collapseActionView" />
+
+    <item
         android:id="@+id/action_export"
         android:title="@string/export_excel"
         app:showAsAction="never" />

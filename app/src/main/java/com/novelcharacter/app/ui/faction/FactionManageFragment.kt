@@ -49,6 +49,20 @@ class FactionManageFragment : Fragment() {
     private var universeId: Long = -1L
     private var itemTouchHelper: ItemTouchHelper? = null
 
+    /** 이 목록에서 찾기 (B-49). 검색어가 있는 동안에는 끌어서 순서를 바꾸지 못한다. */
+    private val listSearch = com.novelcharacter.app.ui.common.ListSearchAction("factionListSearch")
+    private var allFactions: List<Faction> = emptyList()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        listSearch.restore(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        listSearch.save(outState)
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -67,6 +81,7 @@ class FactionManageFragment : Fragment() {
 
         viewModel.setUniverseId(universeId)
         setupToolbar()
+        listSearch.attach(this, binding.toolbar) { renderFactions() }
         setupRecyclerView()
         setupFab()
         observeData()
@@ -92,6 +107,10 @@ class FactionManageFragment : Fragment() {
         itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
+            // 좁혀진 목록을 끌면 안 보이는 세력의 자리가 함께 바뀐다 — 찾는 동안에는 끌기를 닫는다.
+            override fun getDragDirs(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int =
+                if (listSearch.isActive) 0 else super.getDragDirs(recyclerView, viewHolder)
+
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -131,10 +150,8 @@ class FactionManageFragment : Fragment() {
 
     private fun observeData() {
         viewModel.factions.observe(viewLifecycleOwner) { factions ->
-            adapter.submitList(factions)
-            val isEmpty = factions.isEmpty()
-            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
-            binding.factionRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            allFactions = factions
+            renderFactions()
 
             // 멤버 수 계산
             viewLifecycleOwner.lifecycleScope.launch {
@@ -150,6 +167,22 @@ class FactionManageFragment : Fragment() {
                 viewModel.clearResult()
             }
         }
+    }
+
+    /** 받은 목록을 검색어로 좁혀 올린다 (B-49). */
+    private fun renderFactions() {
+        val shown = com.novelcharacter.app.util.ListNameFilter.filter(allFactions, listSearch.query) {
+            listOf(it.name, it.description)
+        }
+        adapter.submitList(shown)
+        val isEmpty = shown.isEmpty()
+        binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        binding.factionRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+        // "세력이 없다"와 "찾는 이름이 없다"는 다른 사실이다(R-17).
+        val searching = allFactions.isNotEmpty() && listSearch.isActive
+        binding.emptyTitle.text = if (searching)
+            getString(R.string.list_search_empty, listSearch.query.trim()) else getString(R.string.faction_empty)
+        binding.emptyHint.visibility = if (searching) View.GONE else View.VISIBLE
     }
 
     // ===== 세력 편집 다이얼로그 =====

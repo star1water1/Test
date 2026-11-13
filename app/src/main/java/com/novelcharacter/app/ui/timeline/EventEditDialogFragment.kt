@@ -971,6 +971,16 @@ class EventEditDialogFragment : DialogFragment() {
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }
             buildEventFieldInputs(target)
+            // 이 구역이 덮지 않는 저장 값이 있으면 있다고 말한다(B-258 ⓑ). 작품을 바꿔 구역이
+            // 달라지면 이 함수가 다시 돌아, 저장하면 보관될 값이 저장 전에 보인다.
+            val stored = editingEvent?.let { event ->
+                requireProvider().getEventFieldValuesForEvent(event.id).map { it.fieldDefinitionId to it.value }
+            }.orEmpty()
+            val covered = coveredEventFieldIds
+            val archived = com.novelcharacter.app.ui.common.ArchivedFieldValuesNote
+                .load(requireContext(), stored, covered)
+            if (_binding == null || resolvedFieldScope != target) return@launch
+            com.novelcharacter.app.ui.common.ArchivedFieldValuesNote.bind(binding.eventArchivedValues, archived)
         }
     }
 

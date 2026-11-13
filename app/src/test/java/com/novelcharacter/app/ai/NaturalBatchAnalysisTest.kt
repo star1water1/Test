@@ -54,6 +54,54 @@ class NaturalBatchAnalysisTest {
         assertTrue(invalid is NaturalBatchAnalyzer.Outcome.Failed)
         assertTrue((invalid as NaturalBatchAnalyzer.Outcome.Failed).billedResponse != null)
     }
+    /** 실제 제공자는 "…이고 직업은 기사"처럼 이름이 빠진 구절만 인용한다 — 문단의 인물이 하나뿐일 때만 받는다. */
+    @Test fun clauseQuoteWithoutANameIsAcceptedOnlyWhenItsParagraphNamesOneCharacter() {
+        val alice = NaturalBatchContext.Character(1, 10, 7, "Alice", emptyList(), "A", "Book")
+        val bob = NaturalBatchContext.Character(2, 10, 7, "Bob", listOf("Al"), "B", "Book")
+        val context = NaturalBatchContext(mapOf("c1" to alice, "c2" to bob),
+            mapOf("f1" to NaturalBatchContext.Field(20, 7, "직업", "job", "TEXT", "{}")),
+            emptyMap(), emptyMap(), emptyMap(), emptyList(), listOf("친구"))
+        fun kept(target: String, quote: String, segment: String, ids: List<String> = listOf("s0")): Boolean {
+            val op = NaturalBatchPlan.Operation("job", NaturalBatchPlan.Kind.SET_FIELD_VALUE, target, "f1",
+                null, null, null, "기사", null, null, null, null, null, null, null,
+                NaturalBatchPlan.Origin.EXTRACTED, NaturalBatchPlan.Evidence(ids, quote, true))
+            val plan = NaturalBatchPlan("session", 0, 0, listOf(op), emptyList(), emptyList(), emptyList(),
+                emptyList(), setOf("s0"), 0)
+            return NaturalBatchEvidenceGuard.check(plan, context, mapOf("s0" to segment)).operations.isNotEmpty()
+        }
+        val one = "Alice의 거주지는 왕도이고 직업은 기사다."
+        assertTrue(kept("c1", "직업은 기사", one))
+        // 문단이 말하는 인물이 다른 사람이면 받지 않는다. 별칭 'Al'은 'Alice' 안에 묻혀 인물로 세지 않는다.
+        assertFalse(kept("c2", "직업은 기사", one))
+        // 인물이 둘이면 구절이 누구 것인지 모른다.
+        assertFalse(kept("c1", "직업은 기사", "Alice와 Bob이 만났고 직업은 기사다."))
+        // 인용이 문단에 없거나, 가리킨 문단의 원문을 모르면 종전대로 확인 불가다.
+        assertFalse(kept("c1", "직업은 마법사", one))
+        assertFalse(kept("c1", "직업은 기사", one, ids = listOf("s9")))
+        // 필드 이름은 여전히 인용 안에 있어야 한다.
+        assertFalse(kept("c1", "기사다", one))
+        // 인용에 이름이 있으면 문단을 보지 않는 종전 경로다.
+        assertTrue(kept("c1", "Alice의 직업은 기사", "Alice와 Bob. Alice의 직업은 기사다."))
+    }
+
+    /** '\/'로 나간 이름을 모델이 그대로 베끼면 인용이 원문과 어긋난다 — 요청은 '/'를 그대로 싣는다. */
+    @Test fun requestCarriesSlashesUnescapedAndStaysTheSameJson() {
+        assertEquals("""{"a":"직업/직위","b":"x\\/y","c":"\\\\"}""",
+            NaturalBatchPrompt.unescapeSlashes("""{"a":"직업\/직위","b":"x\\\/y","c":"\\\\"}"""))
+        val context = NaturalBatchContext(
+            mapOf("c1" to NaturalBatchContext.Character(1, 10, 7, "A/B", emptyList(), "A", "Book")),
+            mapOf("f1" to NaturalBatchContext.Field(20, 7, "직업/직위", "job", "TEXT", "{}")),
+            emptyMap(), emptyMap(), emptyMap(), emptyList(), listOf("친구"))
+        val text = "A/B의 직업/직위는 기사다. 경로는 C:\\temp 이다."
+        val body = NaturalBatchPrompt.request(NaturalBatchInput("session", NaturalBatchInput.Scope(
+            NaturalBatchInput.ScopeKind.WORK, 10), 0, 0, text), context, 1024)
+            .messages.single().text.substringAfter("Untrusted data block (JSON):\n")
+        assertFalse(body.contains("\\/"))
+        val parsed = org.json.JSONObject(body)
+        assertEquals(text, parsed.getJSONArray("segments").getJSONObject(0).getString("text"))
+        assertEquals("직업/직위", parsed.getJSONArray("fields").getJSONObject(0).getString("name"))
+    }
+
     @Test fun relationshipReferenceStillRequiresBothQuotedEndpoints() {
         val first = NaturalBatchContext.Character(1, 10, 7, "Alice", emptyList(), "A", "Book")
         val second = NaturalBatchContext.Character(2, 10, 7, "Bob", emptyList(), "B", "Book")

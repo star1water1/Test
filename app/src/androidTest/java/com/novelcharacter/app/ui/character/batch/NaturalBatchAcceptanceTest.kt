@@ -171,6 +171,10 @@ class NaturalBatchAcceptanceTest {
                 friend = the(Kind.ADD_RELATIONSHIP).id
                 join = the(Kind.JOIN_FACTION).id
                 guess = the(Kind.SET_FIELD_VALUE, NaturalBatchPlan.Origin.CREATIVE).id
+                // 범위 선택 창에서 지금 범위를 다시 골라도 검토와 참조 문맥은 그대로다.
+                model!!.chooseScope(model!!.snapshot!!.input.scope)
+                assertEquals(5, model!!.snapshot!!.plan!!.operations.size)
+                assertNotNull(model!!.analysisContext)
                 model!!.selectExtracted()
                 assertEquals(setOf(aliceJob, carolJob), model!!.snapshot!!.selected)
                 model!!.select(friend, true); model!!.select(join, true)

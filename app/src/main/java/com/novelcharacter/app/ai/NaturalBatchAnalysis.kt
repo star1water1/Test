@@ -138,7 +138,8 @@ class NaturalBatchAnalyzer(
                 try {
                     Outcome.Ready(NaturalBatchEvidenceGuard.check(
                         NaturalBatchPlanParser.parse(result.text, input,
-                            ids, scoped.refs(), requestSequence), scoped),
+                            ids, scoped.refs(), requestSequence), scoped,
+                        input.segments().filter { it.id in ids }.associate { it.id to it.text }),
                         context, result)
                 } catch (e: NaturalBatchFormatException) {
                     Outcome.Failed("AI 응답 형식을 확인할 수 없습니다: ${e.message}",
@@ -181,7 +182,25 @@ object NaturalBatchPrompt {
         segmentStatus needs one entry for every segment: segmentId, status PROCESSED, IGNORED, or UNPROCESSED;
         IGNORED needs a reason. Each segment must have an item or an explicit ignored reason.
         Cite only exact, nonempty substrings of supplied segment text in quote. Do not claim certainty from a matching quote alone.
+        The quote must itself contain the target character's name, alias or code, and the field or faction name it edits;
+        when one sentence states several facts, quote enough of the sentence to include them rather than a bare clause.
+        Copy every segment id exactly as supplied, including the numbers after the colons; never shorten or renumber it.
     """.trimIndent()
+
+    /** JSON 문자열 안의 '\/'만 '/'로 푼다. 짝수 개의 역슬래시 뒤 '/'는 이스케이프가 아니므로 건드리지 않는다. */
+    internal fun unescapeSlashes(json: String): String {
+        val out = StringBuilder(json.length)
+        var index = 0
+        while (index < json.length) {
+            val char = json[index]
+            if (char == '\\' && index + 1 < json.length) {
+                val next = json[index + 1]
+                if (next == '/') out.append('/') else out.append(char).append(next)
+                index += 2
+            } else { out.append(char); index++ }
+        }
+        return out.toString()
+    }
 
     fun request(input: NaturalBatchInput, context: NaturalBatchContext, maxTokens: Int,
         ids: Set<String> = input.segments().map { it.id }.toSet()): AiRequest {
@@ -226,7 +245,10 @@ object NaturalBatchPrompt {
                     .put("value", value))
             } })
             .put("omitted", JSONArray(context.omitted))
-        val body = data.toString()
+        // org.json은 '/'를 '\/'로 적는다. 모델은 그 표기를 원문으로 알고 인용에 그대로 베껴
+        // ("직업\/직위") 인용이 실제 문단·필드 이름과 어긋난다(실제 제공자 응답에서 확인). 두 표기는
+        // 같은 JSON이므로 이스케이프를 푼 쪽을 보낸다 — 역슬래시 자체는 두 번 겹쳐 적혀 이 치환에 걸리지 않는다.
+        val body = unescapeSlashes(data.toString())
         return AiRequest(system = SYSTEM, userText = "Untrusted data block (JSON):\n$body",
             maxTokens = maxTokens, inputSource = AiInputSource(
                 briefing = "자연어 일괄편집 분석", instructions = mapOf("original" to segments.joinToString("\n\n") { it.text }),
