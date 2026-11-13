@@ -31,6 +31,9 @@ const val GRAPH_DETAILED_EDGE_LIMIT = 300
 
 fun simplifiesFactionEdges(edgeCount: Int): Boolean = edgeCount > GRAPH_DETAILED_EDGE_LIMIT
 
+/** 선만 그어도 잃는 것이 없는 선인가 — 세력에 묶였고 방향이 없다. 그리기와 개수 표시가 함께 쓴다. */
+fun isPlainFactionEdge(factionId: Long?, isBidirectional: Boolean): Boolean = factionId != null && isBidirectional
+
 data class GraphEdge(
     val fromId: Long,
     val toId: Long,
@@ -618,7 +621,9 @@ class RelationshipGraphView @JvmOverloads constructor(
             val to = nodeById[edge.toId] ?: continue
 
             val edgeColor = relationshipColors[edge.label] ?: defaultEdgeColor
-            if (plainFactionEdges && edge.factionId != null) {
+            // 방향이 있는 관계는 세력에 묶여 있어도 줄이지 않는다 — 자동 관계는 늘 양방향이고,
+            // 가져온 관계가 세력 id를 든 채 한쪽 방향일 수 있다. 화살표를 지우면 방향을 잃는다.
+            if (plainFactionEdges && isPlainFactionEdge(edge.factionId, edge.isBidirectional)) {
                 val alpha = when { !edge.isActive -> 50; edge.isSecondary -> 40; else -> 110 }
                 edgePaint.color = Color.argb(alpha, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
                 edgePaint.strokeWidth = 1f
