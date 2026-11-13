@@ -556,7 +556,7 @@ class NaturalBatchFragment : Fragment() {
         val draft = NaturalBatchFactionEdits.Draft.from(operation, model.snapshot?.edits?.get(operation.id))
             ?: return "소속 제안을 직접 수정해 주세요"
         val current = active.singleOrNull()?.let { "소속 중 · 가입 ${it.joinYear?.toString() ?: "시점 불명"}" }
-            ?: if (active.size > 1) "활성 소속 여러 줄 · 이력 확인 필요" else "현재 소속 없음"
+            ?: if (active.size > 1) "활성 소속 여러 줄 · 이력 확인 필요" else "소속 없음"
         val proposed = when {
             operation.kind == NaturalBatchPlan.Kind.JOIN_FACTION -> "가입 · ${draft.joinYear?.toString() ?: "시점 불명"}"
             operation.leaveMode == NaturalBatchPlan.LeaveMode.REMOVE -> "현재 소속 제거 · 자동 관계와 변화 이력도 삭제"
