@@ -17,8 +17,10 @@ class FolderRoundtripPhase2Test {
     private val entityToken = "88ee00112233"
 
     private fun plan(items: List<ScanItem>, content: Map<String, String> = emptyMap(),
-        names: Map<String, List<Long>> = emptyMap(), owners: Map<String, List<Long>> = emptyMap()) =
-        FolderRoundtripPlanner.plan(items, names, mapOf(tokenA to pathA), owners, contentPathById = content)
+        names: Map<String, List<Long>> = emptyMap(), owners: Map<String, List<Long>> = emptyMap(),
+        ambiguous: Set<String> = emptySet()) =
+        FolderRoundtripPlanner.plan(items, names, mapOf(tokenA to pathA), owners,
+            contentPathById = content, ambiguousContentIds = ambiguous)
 
     // ── ① 내용으로 알아보기 ──
 
@@ -46,6 +48,18 @@ class FolderRoundtripPhase2Test {
             names = mapOf("가온" to listOf(7L), "나래" to listOf(8L)), owners = mapOf(pathA to listOf(3L)))
         assertEquals(2, result.holds.size)
         assertTrue(result.moves.isEmpty() && result.imports.isEmpty())
+    }
+
+    /** 같은 그림이 앱에 두 장이면 어느 쪽의 사본인지 모른다 — 고르지도 편입하지도 않고 남긴다. */
+    @Test fun fileMatchingSeveralAppImagesIsHeldInsteadOfGuessedOrImported() {
+        val result = plan(listOf(ScanItem("f1", listOf("가온"), "휴가사진.jpg")),
+            names = mapOf("가온" to listOf(7L)), ambiguous = setOf("f1"))
+        assertEquals(FolderRoundtripPlanner.HoldReason.AMBIGUOUS_CONTENT, result.holds.single().reason)
+        assertTrue(result.imports.isEmpty() && result.moves.isEmpty())
+        assertEquals(0, result.contentMatched)
+        // 토큰이 가리키는 이미지가 있으면 내용의 모호함은 묻지 않는다.
+        val tokenFile = ScanItem("f2", emptyList(), "라벨-01.$tokenA.jpg")
+        assertTrue(plan(listOf(tokenFile), owners = mapOf(pathA to listOf(3L)), ambiguous = setOf("f2")).holds.isEmpty())
     }
 
     @Test fun unmatchedPlainFileIsStillANewImport() {

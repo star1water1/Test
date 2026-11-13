@@ -377,10 +377,10 @@ object OrganizeFolderService {
                 novelIdsByTitle = novelIdsByTitle,
                 choices = ambiguousChoices
             )
-            val contentPathById = matchByContent(context, scan, dictionary.pathByToken, livePaths)
+            val content = matchByContent(context, scan, dictionary.pathByToken, livePaths)
             val plan = FolderRoundtripPlanner.plan(
                 items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver,
-                linkedCanonPaths, detachedCanonPaths, contentPathById
+                linkedCanonPaths, detachedCanonPaths, content.pathById, content.ambiguousIds
             )
 
             // 링크 세트가 흡수하는 기존 그룹 — 사전 확인에 한 줄로 싣는다(설계 9장 C-8).
@@ -446,21 +446,28 @@ object OrganizeFolderService {
      * 토큰으로 이미 찾은 파일·이미 처리한 파일·받아오기가 읽지 않는 자리의 파일은 보지 않는다.
      * `_삭제승인/`의 파일도 보지 않는다(아래 주석).
      */
+    private data class ContentMatches(
+        val pathById: Map<String, String> = emptyMap(),
+        /** 내용이 같은 앱 이미지가 둘 이상이라 정하지 못한 파일 — 임의로 고르지 않고 보류한다. */
+        val ambiguousIds: Set<String> = emptySet()
+    )
+
     private fun matchByContent(
         context: Context,
         scan: ScanResult,
         pathByToken: Map<String, String>,
         livePaths: Collection<String>
-    ): Map<String, String> {
+    ): ContentMatches {
         val pathsBySize = HashMap<Long, MutableList<String>>()
         for (path in livePaths) {
             val size = runCatching { File(path).length() }.getOrDefault(0L)
             if (size > 0) pathsBySize.getOrPut(size) { mutableListOf() }.add(path)
         }
-        if (pathsBySize.isEmpty()) return emptyMap()
-        val treeUri = scan.treeUri ?: return emptyMap()
+        if (pathsBySize.isEmpty()) return ContentMatches()
+        val treeUri = scan.treeUri ?: return ContentMatches()
         val hashByPath = HashMap<String, String?>()
         val matches = HashMap<String, String>()
+        val ambiguous = HashSet<String>()
         for (file in scan.files) {
             if (file.alreadyHandled || file.size <= 0) continue
             val location = FolderRoundtripPlanner.classify(file.folders)
@@ -477,14 +484,20 @@ object OrganizeFolderService {
             val hash = runCatching {
                 context.contentResolver.openInputStream(uri)?.use(ContentHash::sha256)
             }.getOrNull() ?: continue
-            val same = candidates.firstOrNull { path ->
+            val same = candidates.filter { path ->
                 hashByPath.getOrPut(path) {
                     runCatching { File(path).inputStream().use(ContentHash::sha256) }.getOrNull()
                 } == hash
             }
-            if (same != null) matches[file.documentId] = same
+            // **하나로 정해질 때만 받는다.** 같은 그림이 앱에 두 장이면(중복 편입 등) 이 파일이 어느
+            // 쪽의 사본인지 내용으로는 알 수 없다 — 먼저 걸린 쪽을 고르면 남의 배정을 옮긴다.
+            when (same.size) {
+                0 -> Unit
+                1 -> matches[file.documentId] = same[0]
+                else -> ambiguous.add(file.documentId)
+            }
         }
-        return matches
+        return ContentMatches(matches, ambiguous)
     }
 
     // ── 반영 ──

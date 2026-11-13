@@ -375,7 +375,12 @@ object FolderRoundtripPlanner {
         /** 캐릭터 소유자가 2명 이상 — 이동·해제를 반영하지 않는다(C-2). */
         SHARED_OWNERS,
         /** `_공유/`의 토큰 파일 — 위치 이동의 의미가 모호하다. */
-        SHARED_FOLDER
+        SHARED_FOLDER,
+        /**
+         * 토큰이 없는데 내용이 같은 앱 이미지가 **둘 이상**이다(B-53 ①) — 어느 이미지의 사본인지
+         * 알 수 없다. 하나를 임의로 고르면 남의 배정을 옮기고, 새로 편입하면 같은 그림이 또 늘어난다.
+         */
+        AMBIGUOUS_CONTENT
     }
 
     data class Hold(val item: ScanItem, val reason: HoldReason)
@@ -547,7 +552,9 @@ object FolderRoundtripPlanner {
          * 토큰은 앱이 심은 정체성이고 내용 일치는 그것을 잃은 파일의 구제책이다.
          * 호출부가 크기로 거르고 해시로 확인한 것만 싣는다.
          */
-        contentPathById: Map<String, String> = emptyMap()
+        contentPathById: Map<String, String> = emptyMap(),
+        /** 내용이 같은 앱 이미지가 둘 이상이라 하나로 정하지 못한 항목 id — 보류한다. */
+        ambiguousContentIds: Set<String> = emptySet()
     ): Plan {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
@@ -646,6 +653,11 @@ object FolderRoundtripPlanner {
         for ((item, location, path) in resolved) {
             if (path != null && (pathUseCount[path] ?: 0) > 1) {
                 holds.add(Hold(item, HoldReason.DUPLICATE_TOKEN))
+                continue
+            }
+            // 내용이 같은 앱 이미지가 여럿이면 어느 것도 고르지 않는다 — 편입도 반영도 하지 않고 남긴다.
+            if (path == null && !item.alreadyHandled && item.id in ambiguousContentIds) {
+                holds.add(Hold(item, HoldReason.AMBIGUOUS_CONTENT))
                 continue
             }
             // **이미 처리한 파일은 맥락으로만 쓴다.** 세트 정족수를 채우는 데에는 넣고(그러라고
