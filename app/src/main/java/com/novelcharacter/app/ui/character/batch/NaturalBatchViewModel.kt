@@ -46,6 +46,7 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
     private var review: NaturalBatchReviewState? = null
     private var context: NaturalBatchContext? = null
     private var prepared: NaturalBatchFieldExecutor.Prepared? = null
+        set(value) { field = value; preview = value?.items?.map { it.decision } }
     private var analyzing = false
     private var chunks: NaturalBatchChunkState? = null
     private var stopAnalysis = false
@@ -65,7 +66,8 @@ class NaturalBatchViewModel @JvmOverloads constructor(app: Application,
 
     val snapshot get() = review?.snapshot()
     val analysisContext get() = context
-    val preview get() = prepared?.items?.map { it.decision }
+    /** 한 번의 재검증에 한 목록 — 화면은 이 동일성으로 확인 창을 이미 띄웠는지 가린다. */
+    var preview: List<NaturalBatchFieldExecutor.Decision>? = null; private set
     val canUndo get() = executions.any { it.undone < it.applied }
     val undoChoices get() = executions.filter { it.undone < it.applied }
     val analysisFailures get() = chunks?.failures.orEmpty()

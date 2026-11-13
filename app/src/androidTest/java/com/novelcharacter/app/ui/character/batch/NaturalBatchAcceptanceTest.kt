@@ -28,6 +28,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -187,6 +188,8 @@ class NaturalBatchAcceptanceTest {
             await { !model!!.busy && model!!.preview != null }
             main {
                 assertEquals(4, model!!.preview!!.size)
+                // 화면은 목록의 동일성으로 확인 창을 한 번만 띄운다 — 읽을 때마다 새 목록이면 창이 겹친다.
+                assertSame(model!!.preview, model!!.preview)
                 assertTrue(model!!.preview!!.all { it.status == Status.READY })
                 assertEquals("학생", model!!.preview!!.single { it.operationId == carolJob }.before)
             }
