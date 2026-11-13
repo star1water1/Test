@@ -776,15 +776,26 @@ class TrashFragment : Fragment() {
 
     private fun restoreOperation(row: TrashListPlan.Row.Header, predicted: RestoreLossCounts) {
         viewLifecycleOwner.lifecycleScope.launch {
+            // 묶음 전체가 한 트랜잭션이라 끝날 때까지 다른 쓰기가 기다린다 — 그동안 화면이
+            // 무엇을 하는지 말한다(B-18, 확정 22번의 조건: 진행도를 잘 보여 줄 것). 취소는 없다:
+            // 한 덩어리라 '여기까지만'이 성립하지 않는다(R-26).
+            val progress = context?.let { ctx ->
+                runCatching {
+                    com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                        ctx, titleRes = R.string.trash_restore_progress_title,
+                        total = row.itemCount, stageRes = R.string.trash_restore_progress_stage)
+                }.getOrNull()
+            }
             try {
-                // **복원은 시작하면 끝까지 간다** — 항목마다 트랜잭션이 따로라, 화면 수명에서
-                // 그대로 돌면 회전 한 번에 **절반만 되살아난 채 멈춘다**(취소는 중단점마다
-                // 걸린다). 그것은 취소가 아니라 **반쪽 상태**이고, 이 저장소는 같은 이유로
-                // 엑셀 가져오기의 반영 구간을 이미 `NonCancellable`로 두었다
-                // (*"항목 단위로 완결되지 않는 작업이라 R-26이 취소를 요구하지 않는 자리"*).
+                // **복원은 시작하면 끝까지 간다** — 화면 수명에서 그대로 돌면 회전 한 번에 취소가
+                // 걸려 트랜잭션이 통째로 되돌려진다. 이 저장소는 같은 이유로 엑셀 가져오기의 반영
+                // 구간을 이미 `NonCancellable`로 두었다.
                 val result = withContext(NonCancellable) {
-                    trashRepository.restoreOperation(row.opKey, row.editBackup)
+                    trashRepository.restoreOperation(row.opKey, row.editBackup) { done, total ->
+                        activity?.runOnUiThread { if (isAdded) progress?.update(done, total) }
+                    }
                 }
+                progress?.dismiss()
                 resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 Toast.makeText(
@@ -816,11 +827,15 @@ class TrashFragment : Fragment() {
                 // (B-228이 세운 자세 — 화면 파괴를 실패로 둔갑시키지 않는다).
                 throw e
             } catch (e: Exception) {
+                // 한 트랜잭션이라 실패는 '전부 안 됨'이다 — 반만 되살아났는지 사용자가 확인하러
+                // 다니지 않게 그 사실을 말한다.
                 if (isAdded) {
-                    Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), R.string.trash_operation_restore_aborted, Toast.LENGTH_LONG).show()
                 }
                 logOperation(OpResult.failure(OpResult.CAT_TRASH,
                     getString(R.string.result_trash_restore_failed), e.message))
+            } finally {
+                progress?.dismiss()
             }
         }
     }

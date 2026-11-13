@@ -995,7 +995,12 @@ class RelationshipGraphFragment : Fragment() {
         binding.graphView.visibility = View.VISIBLE
         // 세는 것은 **그린 것**이다 — 접힌 몫은 바로 위 고지가 따로 말한다.
         binding.nodeCountText.text = getString(R.string.graph_node_count, capped.shown.size)
-        binding.edgeCountText.text = getString(R.string.graph_edge_count, shownRels.size)
+        // 선이 많아 세력 자동 관계를 선만 그렸으면 그렇다고 말한다(B-214) — 이름표가 왜 없는지
+        // 화면에 근거가 있어야 한다.
+        val plainEdges = if (simplifiesFactionEdges(shownRels.size)) shownRels.count { it.factionId != null } else 0
+        binding.edgeCountText.text = if (plainEdges > 0)
+            getString(R.string.graph_edge_count_plain, shownRels.size, plainEdges)
+        else getString(R.string.graph_edge_count, shownRels.size)
     }
 
     private fun showGraph(
