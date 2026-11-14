@@ -97,6 +97,18 @@ class JsonTextTest {
     }
 
     @Test
+    fun `빗금을 이스케이프한 경로 목록은 같은 목록이다`() {
+        // 세계관·작품 편집 창은 org.json으로 써서 `\/`가 남고, 가져오기는 `/`로 쓴다 —
+        // 글자로 견주면 고치지 않은 파일을 다시 들일 때마다 '변경'이 선다(S26).
+        val existing = """["\/data\/user\/0\/app\/files\/universe_a.jpg","\/data\/user\/0\/app\/files\/universe_b.jpg"]"""
+        val incoming = """["/data/user/0/app/files/universe_a.jpg","/data/user/0/app/files/universe_b.jpg"]"""
+        assertEquals(existing, keepIfJsonEquivalent(existing, incoming))
+        // 목록이 실제로 달라지면(복원이 새 파일명으로 채운 경우) 들어온 쪽이다
+        val remapped = """["/data/user/0/app/files/universe_c.jpg","/data/user/0/app/files/universe_b.jpg"]"""
+        assertEquals(remapped, keepIfJsonEquivalent(existing, remapped))
+    }
+
+    @Test
     fun `JSON이 아니거나 없으면 들어온 글자다`() {
         assertEquals("abc", keepIfJsonEquivalent("ABC", "abc"))
         assertEquals("{}", keepIfJsonEquivalent(null, "{}"))
