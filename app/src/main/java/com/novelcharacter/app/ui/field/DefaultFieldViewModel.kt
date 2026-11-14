@@ -51,6 +51,15 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
     }
 
     /**
+     * 전파·다시 심기 뒤에 요약을 다시 센다 — 이 둘은 **템플릿 표를 건드리지 않아**
+     * [templates]가 다시 흐르지 않는다. 그대로 두면 세 곳에 밀고 난 뒤에도 행이
+     * *"7곳 다름"*을 말하고, 화면을 나갔다 와야 맞는 수가 된다(S26 2-ㄹ-4).
+     */
+    private fun refreshCountsNow() {
+        refreshCounts(templates.value.orEmpty())
+    }
+
+    /**
      * 관리 화면의 '새로 만들기' — 만들고 곧바로 전 세계관에 심는다.
      *
      * [com.novelcharacter.app.data.repository.DefaultFieldTemplateRepository.promoteAndPlant]를
@@ -62,6 +71,7 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
     fun createFromField(field: FieldDefinition) = viewModelScope.launch {
         try {
             val r = repository.promoteAndPlant(field)
+            refreshCountsNow()
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 r.template.name, plantedText(r.planted, r.linked)))
         } catch (e: Exception) {
@@ -86,6 +96,7 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
     fun replant(template: DefaultFieldTemplate) = viewModelScope.launch {
         try {
             val r = repository.plantAll(template)
+            refreshCountsNow()
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 template.name, plantedText(r.planted, r.linked)))
         } catch (e: Exception) {
@@ -142,6 +153,7 @@ class DefaultFieldViewModel(application: Application) : AndroidViewModel(applica
     ) = viewModelScope.launch {
         try {
             val r = repository.applyPropagate(template, plan, selected)
+            refreshCountsNow()
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.default_field_propagated, r.changed)))
         } catch (e: Exception) {

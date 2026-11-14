@@ -1852,7 +1852,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         displayOrder = r.displayOrder ?: existing.displayOrder,
         borderColor = r.borderColor ?: existing.borderColor,
         borderWidthDp = r.borderWidthDp ?: existing.borderWidthDp,
-        imagePaths = r.imagePaths ?: existing.imagePaths,
+        // 경로 목록은 저장 경로마다 직렬화기가 달라 **같은 목록이 다른 글자**로 남는다 — 세계관·작품
+        // 편집 창은 org.json(`\/`)으로, 가져오기는 `/`로 쓴다. 글자로 견주면 고치지 않은 파일을
+        // 다시 들일 때마다 '변경 1'이 선다(S26 3-ㅂ-5 확인 중 발견).
+        imagePaths = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.imagePaths, r.imagePaths)
+            ?: existing.imagePaths,
         imageMode = adoptedCardImageMode(
             requested = r.imageMode ?: existing.imageMode,
             before = existing.imagePaths, after = r.imagePaths ?: existing.imagePaths
@@ -1980,7 +1984,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         borderWidthDp = r.borderWidthDp ?: existing.borderWidthDp,
         inheritUniverseBorder = if (r.hasInheritCol) r.inheritUniverseBorder else existing.inheritUniverseBorder,
         isPinned = if (r.hasPinnedCol) r.isPinned else existing.isPinned,
-        imagePaths = r.imagePaths ?: existing.imagePaths,
+        // 경로 목록은 저장 경로마다 직렬화기가 달라 **같은 목록이 다른 글자**로 남는다 — 세계관·작품
+        // 편집 창은 org.json(`\/`)으로, 가져오기는 `/`로 쓴다. 글자로 견주면 고치지 않은 파일을
+        // 다시 들일 때마다 '변경 1'이 선다(S26 3-ㅂ-5 확인 중 발견).
+        imagePaths = com.novelcharacter.app.util.keepIfJsonEquivalent(existing.imagePaths, r.imagePaths)
+            ?: existing.imagePaths,
         imageMode = adoptedCardImageMode(
             requested = r.imageMode ?: existing.imageMode,
             before = existing.imagePaths, after = r.imagePaths ?: existing.imagePaths

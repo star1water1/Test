@@ -938,7 +938,7 @@ class ExcelImporter(context: Context) {
             else parts.joinToString(", ")
         )
         val act = currentActivityRef?.get()
-        if (act == null || act.isFinishing || act.isDestroyed) {
+        if (act == null || !hasScreen()) {
             // 월드패키지도 같은 처분이다(B-56) — 알림에 건수를, 보관함에 안내 상세까지 싣는다.
             val (notice, stored) = offscreenBodies(summary, emptyList(), outcome.warnings)
             deliverOffscreen(
@@ -2361,7 +2361,11 @@ class ExcelImporter(context: Context) {
             )
         )
         val act = currentActivityRef?.get()
-        if (act == null || act.isFinishing || act.isDestroyed) {
+        // **생존이 아니라 가시성으로 가른다**([TransferScreenPresence]). 홈으로 나가면 액티비티는
+        // `onStop`일 뿐 살아 있어, 종전 판정(`isDestroyed`)은 보이지 않는 화면에 창을 세우고
+        // 알림을 건너뛰었다 — 몇 분짜리 복원이 끝나도 앱 밖의 사용자는 아무 소식도 못 받았다
+        // (S26 3-ㅂ-5). 종결 토스트([deliverTerminal])는 이미 이 잣대였고 창 셋만 빠져 있었다.
+        if (act == null || !hasScreen()) {
             // 화면이 사라진 뒤에 끝났다 — 알림 + 다음 진입 고지로 보낸다(B-56).
             // 알림에는 건수를, **보관함에는 상세까지** 싣는다 — 창을 못 띄웠어도 상세가
             // 사라지지 않고 다음 진입에서 그대로 뜬다([offscreenBodies]).
@@ -2425,7 +2429,7 @@ class ExcelImporter(context: Context) {
             )
         )
         val act = currentActivityRef?.get()
-        if (act == null || act.isFinishing || act.isDestroyed) {
+        if (act == null || !hasScreen()) {
             // **이 고지야말로 사라지면 안 된다** — 전부 아니면 전무라는 사실과 멈춘 자리를
             // 말하는 자리라, 못 보면 사용자는 반쯤 들어온 줄 알고 다시 가져온다(B-56).
             deliverOffscreen(
