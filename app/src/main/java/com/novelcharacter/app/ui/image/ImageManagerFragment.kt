@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.image
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -1705,6 +1706,8 @@ class ImageManagerFragment : Fragment() {
         val ctx = context ?: return
         viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getNovelChoices()
+            // 동명 작품은 세계관으로 구별한다 — 고른 작품이 새 캐릭터의 필드 구역을 정한다.
+            val novelLabels = ctx.novelPickerLabels(novels)
             if (!isAdded) return@launch
 
             val density = ctx.resources.displayMetrics.density
@@ -1723,7 +1726,7 @@ class ImageManagerFragment : Fragment() {
             val novelSpinner = android.widget.Spinner(ctx)
             if (novels.isNotEmpty()) {
                 val labels = mutableListOf(getString(R.string.image_assign_create_no_novel))
-                labels.addAll(novels.map { it.title })
+                labels.addAll(novelLabels)
                 novelSpinner.adapter = android.widget.ArrayAdapter(
                     ctx, android.R.layout.simple_spinner_dropdown_item, labels
                 )

@@ -610,7 +610,13 @@ class RelationshipGraphFragment : Fragment() {
 
         binding.novelFilterSpinner.visibility = View.VISIBLE
         val names = mutableListOf(getString(R.string.graph_filter_all_novels))
-        names.addAll(filteredNovels.map { it.title })
+        // 동명 작품은 세계관으로 구별한다(단일 소스 — NovelPickerLabels). 이 목록은 세계관 하나에
+        // 걸러져 있어 이름 재료가 지금 갖고 있는 세계관 목록으로 충분하다.
+        names.addAll(
+            com.novelcharacter.app.util.NovelPickerLabels.forNovels(
+                filteredNovels, cachedUniverses.associate { it.id to it.name }
+            )
+        )
 
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)

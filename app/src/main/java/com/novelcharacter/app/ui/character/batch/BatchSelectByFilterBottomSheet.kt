@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character.batch
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -37,10 +38,11 @@ class BatchSelectByFilterBottomSheet : BottomSheetDialogFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             // 작품 로드
             novels = batchViewModel.getAllNovelsList()
+            val novelLabels = requireContext().novelPickerLabels(novels)
             if (_binding == null) return@launch
 
             val novelNames = mutableListOf(getString(R.string.batch_novel_none))
-            novelNames.addAll(novels.map { it.title })
+            novelNames.addAll(novelLabels)
             val nAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
             nAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.filterNovelSpinner.adapter = nAdapter

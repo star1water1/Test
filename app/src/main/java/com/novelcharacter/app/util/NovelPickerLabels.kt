@@ -1,5 +1,7 @@
 package com.novelcharacter.app.util
 
+import com.novelcharacter.app.data.model.Novel
+
 /**
  * **고르는 목록에서 작품을 가리키는 이름표** — 제목이 겹치는 것만 세계관을 덧붙인다.
  *
@@ -41,11 +43,44 @@ object NovelPickerLabels {
      * 부르는 쪽은 고른 자리(position)로 원래 항목을 되찾는다.
      */
     fun labels(items: List<Item>): List<String> {
-        val duplicatedTitles = items.groupingBy { it.title }.eachCount()
-            .filterValues { it > 1 }.keys
+        val duplicatedTitles = duplicatedTitles(items.map { it.title })
         return items.map { item ->
             if (item.title !in duplicatedTitles) item.title
             else "${item.title} (세계관: ${item.universeName?.takeIf { it.isNotBlank() } ?: UNASSIGNED})"
         }
     }
+
+    private fun duplicatedTitles(titles: List<String>): Set<String> =
+        titles.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+
+    /** 이 목록에 같은 제목이 둘 이상 있는가 — 없으면 세계관 이름을 물을 필요가 없다. */
+    fun hasDuplicateTitle(novels: List<Novel>): Boolean =
+        duplicatedTitles(novels.map { it.title }).isNotEmpty()
+
+    /**
+     * 작품 목록의 이름표 — [universeNames]는 세계관 id → 이름이다.
+     * 무소속 작품(`universeId == null`)은 [UNASSIGNED]로 선다.
+     */
+    fun forNovels(novels: List<Novel>, universeNames: Map<Long, String>): List<String> {
+        val base = labels(novels.map { Item(it.title, it.universeId?.let { id -> universeNames[id] }) })
+        // 세계관이 있는데 그 이름을 모르면(목록이 아직 안 왔다) **제목만 둔다** — `null`은 무소속이라
+        // 그대로 넘기면 '세계관 미배정'이라는 거짓 구별을 짓는다.
+        return novels.mapIndexed { i, n ->
+            val id = n.universeId
+            if (id != null && id !in universeNames) n.title else base[i]
+        }
+    }
+
+    /**
+     * 작품 목록의 이름표 — **동명이 있을 때만** [loadUniverseNames]를 부른다.
+     *
+     * 흔한 모양(동명 없음)에서 세계관 조회를 하지 않는 것이 이 판의 비용 계약이다 — 고르는
+     * 목록이 열세 자리라 자리마다 세계관 표를 읽으면 열 때마다 질의가 하나씩 는다.
+     */
+    suspend fun forNovels(
+        novels: List<Novel>,
+        loadUniverseNames: suspend () -> Map<Long, String>
+    ): List<String> =
+        if (!hasDuplicateTitle(novels)) novels.map { it.title }
+        else forNovels(novels, loadUniverseNames())
 }

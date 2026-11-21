@@ -21,6 +21,8 @@ class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
     data class Setup(
         val count: Int,
         val novels: List<Novel>,
+        /** [novels]와 같은 순서·길이의 이름표 — 동명 작품은 세계관으로 구별한다(호스트가 짓는다). */
+        val novelLabels: List<String> = novels.map { it.title },
         val collisionsVsExisting: Int,
         val collisionsWithinSelection: Int,
         val usedCount: Int
@@ -58,7 +60,7 @@ class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
         binding.btnConfirm.text = getString(R.string.name_bank_bulk_confirm, setup.count)
 
         val names = mutableListOf(getString(R.string.batch_novel_none))
-        names.addAll(setup.novels.map { it.title })
+        names.addAll(setup.novelLabels)
         binding.novelSpinner.adapter =
             ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)

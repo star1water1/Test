@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -299,8 +300,10 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
     private fun setupNovels() {
         viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getAllNovelsList()
-            if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
+            // 동명 작품은 세계관으로 구별한다 — 칩 글자가 같으면 어느 작품을 거르는지 알 수 없다.
+            val novelLabels = ctx.novelPickerLabels(novels)
+            if (!isAdded || _binding == null) return@launch
             novelsLoaded = true  // 로드 완료(빈 목록 포함) — 이후 apply()는 칩 상태를 신뢰할 수 있음
             // "작품 미배정" — novelId 없는 캐릭터 선택 (sentinel, 수집부는 tag 기반이라 그대로 동작).
             // 작품이 0개여도 항상 생성한다 — 없으면 저장된 sentinel 필터가 '적용' 시
@@ -317,9 +320,9 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 return@launch
             }
             binding.noNovelsText.visibility = View.GONE
-            for (novel in novels) {
+            for ((idx, novel) in novels.withIndex()) {
                 val chip = Chip(ctx).apply {
-                    text = novel.title
+                    text = novelLabels[idx]
                     tag = novel.id  // 칩 → 작품 id 매핑
                     isCheckable = true
                     isChecked = novel.id in startNovelIds

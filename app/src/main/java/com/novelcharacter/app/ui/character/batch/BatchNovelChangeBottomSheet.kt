@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character.batch
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -40,10 +41,12 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
             novels = batchViewModel.getAllNovelsList()
             // 선택 캐릭터들의 현재 세계관 ID 수집 (경고 표시용)
             val currentUniverseIds = batchViewModel.getUniverseIdsForSelection().toSet()
+            // 동명 작품은 세계관으로 구별한다 — 확인 버튼 문구도 같은 이름표를 쓴다.
+            val novelLabels = requireContext().novelPickerLabels(novels)
             if (_binding == null) return@launch
 
             val names = mutableListOf(getString(R.string.batch_novel_none))
-            names.addAll(novels.map { it.title })
+            names.addAll(novelLabels)
 
             val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names)
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -52,7 +55,7 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
             binding.novelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     selectedNovelId = if (position > 0) novels[position - 1].id else null
-                    val novelTitle = if (position > 0) novels[position - 1].title else getString(R.string.batch_novel_none)
+                    val novelTitle = if (position > 0) novelLabels[position - 1] else getString(R.string.batch_novel_none)
                     binding.btnConfirm.text = getString(R.string.batch_novel_confirm, count, novelTitle)
                     binding.btnConfirm.isEnabled = true
 
