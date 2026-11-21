@@ -32,10 +32,12 @@ REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO"
 
 SRC="app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt"
-# awk의 ERE용 — 괄호를 escape한다(그대로 넘기면 "missing )"로 죽는다).
-WRITE_ERE='FieldValueCellPlan\.effectOf\('
-WARN_ERE='warnTypeMismatch\('
-# 세는 쪽은 고정 문자열로 — 같은 글자를 두 문법으로 적지 않게 한자리에 둔다.
+# **정규식이 아니라 고정 문자열로 찾는다.** 종전에는 `\(`를 escape한 정규식을 `awk -v`로
+# 넘겼는데, **`-v`는 값의 이스케이프를 먼저 처리한다** — `\(`가 `(`가 되어 정규식이 짝 없는
+# 괄호로 깨지고, awk 구현에 따라 치명적 오류로 죽는다. 로컬(mawk)은 견디고 **CI에서 죽었다**:
+# 출력이 통째로 비어 자기 시험이 *"위반 건(1 기대)"*이라는 빈 수를 찍었다(2026.11.21 실측).
+# 찾는 것이 애초에 고정 문자열이므로 `index()`로 찾아 그 부류를 없앤다.
+WARN_FIXED='warnTypeMismatch('
 WRITE_FIXED='FieldValueCellPlan.effectOf('
 # 경고 호출과 처분 사이에 끼는 주석의 최대 길이. 캐릭터 시트가 14줄이라 넉넉히 둔다 —
 # 좁히면 주석 한 줄에 검사가 빨간불이 되고, 그러면 다음 사람이 검사를 끈다.
@@ -51,7 +53,8 @@ selftest() {
                 when (FieldValueCellPlan.effectOf(value, existing?.value)) {
                 when (FieldValueCellPlan.effectOf(value, existing?.value)) {
 EOF
-  local got; got=$(scan "$f" 2>/dev/null)   # 줄 번호 출력은 자기 시험에서 잡음이다
+  # 첫 줄이 건수다. 자리 목록은 자기 시험에서 잡음이라 버린다.
+  local got; got=$(scan "$f" | head -1)
   rm -f "$f"
   # 첫 쓰기는 경고를 지나고 둘째는 아니다 → 위반 정확히 1건
   if [ "$got" != "1" ]; then
@@ -61,7 +64,11 @@ EOF
   fi
 }
 
-# 파일 하나를 훑어 **경고를 지나지 않는 쓰기 자리의 수**를 센다(줄 번호는 stderr로).
+# 파일 하나를 훑어 **경고를 지나지 않는 쓰기 자리**를 찾는다.
+#
+# 산출은 **첫 줄이 건수, 그다음이 그 자리들**이다. 종전에는 자리를 `/dev/stderr`로 냈는데,
+# 그것도 구현·환경에 기대는 자리라(리다이렉션된 stderr, 열 수 없는 `/dev/stderr`) 한 통로로
+# 모았다 — 검사 자신이 환경 차이로 죽으면 그 '통과'는 아무것도 증명하지 않는다.
 #
 # 판정 둘을 함께 쓴다 — 어느 하나만으로는 샌다:
 #   ① 경고가 **이 쓰기 자리 전용**인가(`lastWarn > lastWrite`). 없으면 쓰기 둘이
@@ -69,16 +76,16 @@ EOF
 #   ② 그 경고가 **이 자리 근처**인가(`NR - lastWarn <= window`). 없으면 한참 위
 #      다른 함수의 경고가 이 자리를 덮는다.
 scan() {
-  awk -v warn="$WARN_ERE" -v write="$WRITE_ERE" -v window="$WINDOW" '
-    $0 ~ warn { lastWarn = NR }
-    $0 ~ write {
+  awk -v warn="$WARN_FIXED" -v write="$WRITE_FIXED" -v window="$WINDOW" '
+    index($0, warn) { lastWarn = NR }
+    index($0, write) {
       if (lastWarn <= lastWrite || lastWarn == 0 || NR - lastWarn > window) {
-        printf "     %d: %s\n", NR, $0 > "/dev/stderr"
+        hits = hits sprintf("     %d: %s\n", NR, $0)
         bad++
       }
       lastWrite = NR
     }
-    END { print bad + 0 }
+    END { printf "%d\n%s", bad + 0, hits }
   ' "$1"
 }
 
@@ -90,7 +97,9 @@ if [ ! -f "$SRC" ]; then
 fi
 
 TOTAL=$(grep -cF "$WRITE_FIXED" "$SRC")
-VIOLATIONS=$(scan "$SRC")
+REPORT=$(scan "$SRC")
+VIOLATIONS=$(printf '%s\n' "$REPORT" | head -1)
+SITES=$(printf '%s\n' "$REPORT" | tail -n +2)
 
 if [ "$TOTAL" -eq 0 ]; then
   echo "❌ 쓰기 표식($WRITE_FIXED)을 한 건도 못 찾았다 — 처분의 단일 소스가 바뀌었다."
@@ -99,7 +108,7 @@ if [ "$TOTAL" -eq 0 ]; then
 fi
 
 if [ "$VIOLATIONS" -gt 0 ]; then
-  echo
+  echo "$SITES"
   echo "❌ 타입 경고를 지나지 않는 필드값 쓰기 $VIOLATIONS건 (전체 $TOTAL건)"
   echo "   그 자리 앞에 다음 한 줄을 넣을 것 — 값은 그대로 저장하고 사실만 말한다:"
   echo "     warnTypeMismatch(<행 접두>, <시트 이름>, <필드 정의>, <셀 값>)"
