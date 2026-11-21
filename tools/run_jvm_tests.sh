@@ -410,6 +410,8 @@ $MAIN/excel/FieldScopeCell.kt
 $MAIN/excel/AppSettingsKeys.kt
 $MAIN/excel/AppSettingsDiff.kt
 $MAIN/excel/TransferResultText.kt
+$MAIN/excel/ImportWarningFold.kt
+$MAIN/excel/FieldValueTypeWarning.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -428,6 +430,8 @@ $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CustomFieldDropdownOptionsTest.kt
 $TEST/excel/SheetFreezeColsTest.kt
 $TEST/excel/NumberWarningFreeColumnsTest.kt
+$TEST/excel/ImportWarningFoldTest.kt
+$TEST/excel/FieldValueTypeWarningTest.kt
 $TEST/excel/ImageSheetColumnOrderTest.kt
 $TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt
