@@ -233,7 +233,11 @@ val RESERVED_SHEET_NAMES = setOf(
  * (7장 규약: 헤더 규칙·유효값을 양쪽에 따로 두지 않는다).
  */
 fun sanitizeSheetNameBase(name: String): String {
-    val cleaned = takeSheetChars(name.replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH).trim('\'')
+    // 시트 이름에는 `_xHHHH_` 표기가 없다 — 실을 수 없는 글자는 금지 글자처럼 뺀다(R-72).
+    // 남기면 POI가 `?`로 바꿔 **앱이 배정한 이름과 파일 속 이름이 갈린다**(takeSheetChars KDoc과 같은 부류).
+    val cleaned = takeSheetChars(
+        ExcelCellText.stripXmlIllegal(name).replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH
+    ).trim('\'')
     return if (cleaned.isBlank()) "Sheet" else cleaned
 }
 
@@ -486,7 +490,21 @@ fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String =
  * (`ExcelImportService`의 `isDateField`). 판정은 내보내기 쪽 호출부가 같은
  * `SemanticRole.fromConfig` 하나로 한다.
  */
-fun numericExportValueOrNull(raw: String): Double? {
+fun numericExportValueOrNull(raw: String): Double? =
+    canonicalNumberOrNull(raw)?.takeIf { fitsSpreadsheetPrecision(it) }
+
+/**
+ * 숫자로 왕복할 글자인데 **자릿수만** 넘어 글자 칸으로 가는가([fitsSpreadsheetPrecision]).
+ *
+ * 그 칸에는 엑셀이 녹색 삼각형과 **[숫자로 변환]**을 띄우는데, 누르면 바로 그 15자리 접힘이
+ * 일어난다 — 내보내기가 그 칸만 표식을 끈다(열 전체가 아니다: 나이 칸에 글자로 적은 숫자를
+ * 알려 주는 표식은 쓸모가 있어 켜 둔다 — [numberWarningFreeColumns]).
+ */
+fun exceedsSpreadsheetPrecision(raw: String): Boolean =
+    canonicalNumberOrNull(raw)?.let { !fitsSpreadsheetPrecision(it) } ?: false
+
+/** 가져오기의 숫자 정규화가 **글자 그대로** 되돌려 줄 수인가 — 아니면 null(위 KDoc의 왕복 멱등성). */
+private fun canonicalNumberOrNull(raw: String): Double? {
     if (raw.isEmpty() || raw != raw.trim()) return null
     val d = raw.toDoubleOrNull() ?: return null
     if (!d.isFinite()) return null
@@ -497,6 +515,23 @@ fun numericExportValueOrNull(raw: String): Double? {
     }
     return if (roundTrip == raw) d else null
 }
+
+/**
+ * 숫자 칸으로 실은 수가 **외부 편집기를 지나도 같은 수로 남는가** — 유효 숫자 15자리 이하.
+ *
+ * 엑셀은 숫자를 15자리로 다룬다 — 그 칸을 고치면 16번째 자리부터 0이 되고, openpyxl은 파일을
+ * 다시 쓸 때 15자리로 적는다(2026.11.21 실측: `0.30000000000000004` → `0.3`). 앱 안에서는
+ * 멀쩡한 값이 **손대지 않은 칸까지** 바뀌는 자리라, 넘는 수는 글자 칸으로 싣는다 — 가져오기는
+ * 글자 칸도 같은 값으로 읽는다(숫자 계산이 안 되는 것이 대가이고, 그런 수는 대개 식별자다).
+ */
+fun fitsSpreadsheetPrecision(d: Double): Boolean =
+    // NaN·무한대는 십진 자릿수가 없다 — `BigDecimal.valueOf`가 던지므로 먼저 거른다(던지면 내보내기와
+    // 자동 백업이 통째로 죽는다). 그 값은 숫자 칸에 실을 수 없다는 뜻으로 false다.
+    d.isFinite() &&
+        java.math.BigDecimal.valueOf(d).stripTrailingZeros().precision() <= SPREADSHEET_PRECISION_DIGITS
+
+/** 엑셀이 숫자로 지키는 유효 숫자 자릿수. */
+const val SPREADSHEET_PRECISION_DIGITS = 15
 
 /**
  * wrap 행 높이의 상한(줄) — 접힌 데이터를 보이게 하되(원칙 04) 초장문 메모가 화면을

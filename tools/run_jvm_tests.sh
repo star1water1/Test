@@ -114,6 +114,7 @@ $MAIN/excel/CharacterFieldHeaders.kt
 $MAIN/excel/EntityFieldColumnResolver.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
+$MAIN/excel/ExcelCellText.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/TransferInterruption.kt
 $MAIN/excel/ActiveTransfers.kt
@@ -664,6 +665,7 @@ $TEST/util/NameBankPickOrderTest.kt
 $TEST/util/GenderFieldResolverTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
+$TEST/excel/ExcelCellTextTest.kt
 $TEST/excel/SheetResolverTest.kt
 $TEST/util/ResetPlanTest.kt
 $TEST/util/MembershipTimelineTest.kt

@@ -28,7 +28,11 @@ class DropdownListSheet(private val sheetName: String) {
 
     private var sheet: Sheet? = null
     private var nextRow = 0
-    private val cache = HashMap<String, String>()
+    /**
+     * 목록 → 그 구간. **열쇠는 목록 그 자체다** — 종전에는 NUL로 이어 붙인 글자였는데, NUL은
+     * 셀 값에 들어올 수 있는 글자라(붙여넣기 — [ExcelCellText]) 서로 다른 목록이 같은 열쇠가 될 수 있었다.
+     */
+    private val cache = HashMap<List<String>, String>()
 
     /** 실제로 시트를 만들었는가 — 안 만들었으면 그 워크북에는 이 시트가 없다. */
     val created: Boolean get() = sheet != null
@@ -40,9 +44,7 @@ class DropdownListSheet(private val sheetName: String) {
      * [options]를 담은 구간의 절대 참조. 같은 목록을 다시 물으면 **이미 적은 구간**을 준다.
      */
     fun referenceFor(workbook: Workbook, options: List<String>): String {
-        // 구분자는 NUL — 셀 값에 들어올 수 없는 글자라 서로 다른 목록이 같은 키가 되지
-        // 않는다(공백·쉼표로 이으면 ["가 나"]와 ["가","나"]가 한 키가 된다).
-        val key = options.joinToString("\u0000")
+        val key = options.toList()
         cache[key]?.let { return it }
         val target = sheet ?: workbook.createSheet(sheetName).also {
             sheet = it
@@ -50,7 +52,10 @@ class DropdownListSheet(private val sheetName: String) {
         }
         val first = nextRow
         for (value in options) {
-            target.createRow(nextRow).createCell(0).setCellValue(value)
+            // 데이터 칸과 **같은 쓰기 규약**이다(R-72) — 목록의 글자와 칸의 글자가 엑셀 안에서 같아야
+            // 유효성 검사가 그 값을 목록에 있다고 본다.
+            target.createRow(nextRow).createCell(0)
+                .setCellValue(ExcelCellText.encodeWithin(value, EXCEL_CELL_TEXT_LIMIT).text)
             nextRow++
         }
         val ref = DropdownListLimits.rangeFormula(sheetName, LIST_COLUMN, first, nextRow - 1)
