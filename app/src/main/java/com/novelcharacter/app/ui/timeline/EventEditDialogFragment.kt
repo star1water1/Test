@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.timeline
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.app.Dialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
@@ -108,6 +109,8 @@ class EventEditDialogFragment : DialogFragment() {
     private val selectedNovelIds = mutableSetOf<Long>()
     private var selectionsInitialized = false
     private var novels: List<Novel> = emptyList()
+    /** [novels]와 같은 순서·길이의 이름표(NovelPickerLabels). */
+    private var novelLabels: List<String> = emptyList()
     private var characters: List<Character> = emptyList()
     private var eventTypes: List<Pair<String, String>> = emptyList()
 
@@ -336,6 +339,8 @@ class EventEditDialogFragment : DialogFragment() {
         lifecycleScope.launch {
             val provider = requireProvider()
             novels = provider.getAllNovelsList()
+            // 동명 작품은 세계관으로 구별한다 — 체크박스 글자가 같으면 어느 작품에 거는지 알 수 없다.
+            novelLabels = requireContext().novelPickerLabels(novels)
             characters = provider.getAllCharactersList()
             if (!selectionsInitialized) {
                 val event = editingEvent
@@ -1478,7 +1483,7 @@ class EventEditDialogFragment : DialogFragment() {
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val novel = novels[position]
                 val checkBox = holder.itemView as CheckBox
-                checkBox.text = novel.title
+                checkBox.text = novelLabels.getOrNull(position) ?: novel.title
                 checkBox.setOnCheckedChangeListener(null)
                 checkBox.isChecked = selectedNovelIds.contains(novel.id)
                 checkBox.setOnCheckedChangeListener { _, isChecked ->

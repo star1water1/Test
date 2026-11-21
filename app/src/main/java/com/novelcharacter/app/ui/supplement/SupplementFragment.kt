@@ -197,6 +197,10 @@ class SupplementFragment : Fragment() {
         viewModel.universeList.observe(viewLifecycleOwner) { univs ->
             universes = univs
             setupUniverseSpinner(univs)
+            // 동명 작품의 이름표는 세계관 이름을 재료로 쓴다 — 세계관 목록이 바뀌면 다시 짓는다.
+            if (com.novelcharacter.app.util.NovelPickerLabels.hasDuplicateTitle(filteredNovels)) {
+                setupNovelSpinner(filteredNovels)
+            }
         }
 
         viewModel.novelList.observe(viewLifecycleOwner) { novels ->
@@ -270,7 +274,12 @@ class SupplementFragment : Fragment() {
 
     private fun setupNovelSpinner(novels: List<Novel>) {
         val items = mutableListOf(getString(R.string.supplement_filter_all_novels))
-        items.addAll(novels.map { it.title })
+        // 동명 작품은 세계관으로 구별한다(NovelPickerLabels) — 이름 재료는 이미 든 세계관 목록이다.
+        items.addAll(
+            com.novelcharacter.app.util.NovelPickerLabels.forNovels(
+                novels, universes.associate { it.id to it.name }
+            )
+        )
 
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, items)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)

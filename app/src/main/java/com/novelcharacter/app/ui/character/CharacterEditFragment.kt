@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.graphics.BitmapFactory
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.net.Uri
@@ -907,19 +908,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // **세계관 이름까지 받는다** — 제목만으로는 세계관이 다른 같은 이름 작품을 구별해 주지
         // 못했다(2026.11.07 워크스루 S25 관찰). 이 스피너의 선택은 그 캐릭터의 **동적 필드
         // 구역을 정하는 선택**이라, 잘못 고르면 폼 자체가 다른 필드로 선다.
-        val pickerItems = viewModel.getNovelPickerItems()
-        novels = pickerItems.map { it.first }
-        if (_binding == null || !isAdded) return
-        val novelNames = mutableListOf(getString(R.string.no_novel_selected))
+        novels = viewModel.getAllNovelsList()
         // 이름표는 **겹치는 제목에만** 세계관을 붙인다 — 순서·길이를 바꾸지 않는 것이 계약이고
         // (고른 자리로 `novels`를 되찾는다) 그 계약은 `NovelPickerLabelsTest`가 잠근다.
-        novelNames.addAll(
-            com.novelcharacter.app.util.NovelPickerLabels.labels(
-                pickerItems.map { (novel, universeName) ->
-                    com.novelcharacter.app.util.NovelPickerLabels.Item(novel.title, universeName)
-                }
-            )
-        )
+        // 작품을 고르는 열네 자리가 같은 경로(`novelPickerLabels`)를 지난다.
+        val labels = requireContext().novelPickerLabels(novels)
+        if (_binding == null || !isAdded) return
+        val novelNames = mutableListOf(getString(R.string.no_novel_selected))
+        novelNames.addAll(labels)
 
         val ctx = context ?: return
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)

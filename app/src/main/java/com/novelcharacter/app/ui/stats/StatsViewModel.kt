@@ -256,7 +256,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
 
                 // 작품 목록 설정
-                _novelList.value = snapshot.novels.map { it.id to it.title }
+                _novelList.value = novelChoices(snapshot.novels, snapshot)
 
                 // 삭제된 소설 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제.
                 // "작품 미배정" sentinel은 실제 작품이 아니므로 정리 대상에서 제외한다.
@@ -520,7 +520,18 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getNovelListForUniverse(universeId: Long): List<Pair<Long, String>> {
         val snapshot = cachedSnapshot ?: return emptyList()
-        return snapshot.novels.filter { it.universeId == universeId }.map { it.id to it.title }
+        return novelChoices(snapshot.novels.filter { it.universeId == universeId }, snapshot)
+    }
+
+    /** 작품 선택지 — 동명 작품은 세계관으로 구별한다(NovelPickerLabels, 재료는 스냅샷의 세계관). */
+    private fun novelChoices(
+        novels: List<com.novelcharacter.app.data.model.Novel>,
+        snapshot: StatsSnapshot
+    ): List<Pair<Long, String>> {
+        val labels = com.novelcharacter.app.util.NovelPickerLabels.forNovels(
+            novels, snapshot.universes.associate { it.id to it.name }
+        )
+        return novels.mapIndexed { i, n -> n.id to labels[i] }
     }
 
     // ===== 개선 3: 패턴 인사이트 =====

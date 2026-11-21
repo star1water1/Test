@@ -1,7 +1,11 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.util.NovelPickerLabels.Item
+import com.novelcharacter.app.data.model.Novel
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -61,5 +65,49 @@ class NovelPickerLabelsTest {
     @Test
     fun `빈 목록은 빈 목록이다`() {
         assertEquals(emptyList<String>(), NovelPickerLabels.labels(emptyList()))
+    }
+
+    // ── 작품 목록에서 바로 짓기 (고르는 자리 열네 곳의 공용 경로) ─────────────
+
+    private fun novel(id: Long, title: String, universeId: Long?) =
+        Novel(id = id, title = title, universeId = universeId)
+
+    @Test
+    fun `작품 목록의 이름표는 세계관 표에서 이름을 찾는다`() {
+        val novels = listOf(novel(1, "달", 10), novel(2, "달", null), novel(3, "검", 10))
+        assertEquals(
+            listOf("달 (세계관: A)", "달 (세계관: ${NovelPickerLabels.UNASSIGNED})", "검"),
+            NovelPickerLabels.forNovels(novels, mapOf(10L to "A"))
+        )
+    }
+
+    @Test
+    fun `이름을 모르는 세계관은 미배정으로 지어내지 않고 제목만 둔다`() {
+        // 세계관 목록이 아직 안 온 화면 — null(무소속)과 섞으면 거짓 구별이 된다.
+        val novels = listOf(novel(1, "달", 10), novel(2, "달", null))
+        assertEquals(
+            listOf("달", "달 (세계관: ${NovelPickerLabels.UNASSIGNED})"),
+            NovelPickerLabels.forNovels(novels, emptyMap())
+        )
+    }
+
+    @Test
+    fun `동명이 없으면 세계관 표를 읽지 않는다`() = runBlocking {
+        var asked = false
+        val out = NovelPickerLabels.forNovels(listOf(novel(1, "달", 10), novel(2, "검", 20))) {
+            asked = true; emptyMap()
+        }
+        assertEquals(listOf("달", "검"), out)
+        assertFalse(asked)
+    }
+
+    @Test
+    fun `동명이 있으면 세계관 표를 읽어 붙인다`() = runBlocking {
+        var asked = false
+        val out = NovelPickerLabels.forNovels(listOf(novel(1, "달", 10), novel(2, "달", 20))) {
+            asked = true; mapOf(10L to "A", 20L to "B")
+        }
+        assertEquals(listOf("달 (세계관: A)", "달 (세계관: B)"), out)
+        assertTrue(asked)
     }
 }

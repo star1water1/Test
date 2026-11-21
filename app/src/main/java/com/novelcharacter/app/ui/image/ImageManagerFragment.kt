@@ -1705,6 +1705,13 @@ class ImageManagerFragment : Fragment() {
         val ctx = context ?: return
         viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getNovelChoices()
+            // 동명 작품은 세계관으로 구별한다 — 고른 작품이 새 캐릭터의 필드 구역을 정한다.
+            // 선택지 행이 세계관 이름(빈 글자 = 무소속)을 이미 들고 와서 규칙만 부른다.
+            val novelLabels = com.novelcharacter.app.util.NovelPickerLabels.labels(
+                novels.map {
+                    com.novelcharacter.app.util.NovelPickerLabels.Item(it.title, it.subtitle.ifBlank { null })
+                }
+            )
             if (!isAdded) return@launch
 
             val density = ctx.resources.displayMetrics.density
@@ -1723,7 +1730,7 @@ class ImageManagerFragment : Fragment() {
             val novelSpinner = android.widget.Spinner(ctx)
             if (novels.isNotEmpty()) {
                 val labels = mutableListOf(getString(R.string.image_assign_create_no_novel))
-                labels.addAll(novels.map { it.title })
+                labels.addAll(novelLabels)
                 novelSpinner.adapter = android.widget.ArrayAdapter(
                     ctx, android.R.layout.simple_spinner_dropdown_item, labels
                 )

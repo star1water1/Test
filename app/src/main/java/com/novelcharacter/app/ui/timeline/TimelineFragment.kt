@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.ui.common.applyRange
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import com.novelcharacter.app.util.SliderRange
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
@@ -64,6 +65,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
 
     // Cached data for spinner filters
     private var cachedNovels: List<Novel> = emptyList()
+    /** 작품 필터 스피너를 짓는 중인 일 — 새 목록이 오면 앞선 것을 버린다. */
+    private var novelSpinnerJob: Job? = null
     private var cachedCharacters: List<Character> = emptyList()
 
     override fun onCreateView(
@@ -344,17 +347,24 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         // Observe novel data and update spinner adapter only
         viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
             cachedNovels = novels
-            val ctx = context ?: return@observe
-            val novelNames = mutableListOf(getString(R.string.all_novels_filter))
-            novelNames.addAll(novels.map { it.title })
-            val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
-            spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            binding.spinnerFilterNovel.adapter = spinnerAdapter
-            // 어댑터 교체 후 ViewModel의 현재 필터 선택을 복원 (어댑터 세팅이 리스너를 트리거하여 position 0으로 리셋되는 것 방지)
-            val currentNovelId = viewModel.filterNovelId.value
-            if (currentNovelId != null) {
-                val idx = novels.indexOfFirst { it.id == currentNovelId }
-                if (idx >= 0) binding.spinnerFilterNovel.setSelection(idx + 1)
+            // 동명 작품은 세계관으로 구별한다 — 이름 재료(세계관)를 읽는 동안 새 목록이 오면
+            // 앞선 것은 버린다(늦게 끝난 옛 목록이 새 어댑터를 덮지 않게).
+            novelSpinnerJob?.cancel()
+            novelSpinnerJob = viewLifecycleOwner.lifecycleScope.launch {
+                val ctx = context ?: return@launch
+                val labels = ctx.novelPickerLabels(novels)
+                if (_binding == null) return@launch
+                val novelNames = mutableListOf(getString(R.string.all_novels_filter))
+                novelNames.addAll(labels)
+                val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
+                spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                binding.spinnerFilterNovel.adapter = spinnerAdapter
+                // 어댑터 교체 후 ViewModel의 현재 필터 선택을 복원 (어댑터 세팅이 리스너를 트리거하여 position 0으로 리셋되는 것 방지)
+                val currentNovelId = viewModel.filterNovelId.value
+                if (currentNovelId != null) {
+                    val idx = novels.indexOfFirst { it.id == currentNovelId }
+                    if (idx >= 0) binding.spinnerFilterNovel.setSelection(idx + 1)
+                }
             }
         }
 
@@ -730,7 +740,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                 confirmSetStandardYear(novels[0], event.year)
             } else {
                 // 복수 작품 → 선택 다이얼로그
-                val names = novels.map { it.title }.toTypedArray()
+                val names = requireContext().novelPickerLabels(novels).toTypedArray()
+                if (!isAdded) return@launch
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.standard_year_select_novel)
                     .setItems(names) { _, which ->

@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.assistant
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
@@ -103,7 +104,9 @@ fun Fragment.runAssignNovel(cvm: CharacterViewModel, characterId: Long, characte
             notifyError(getString(R.string.assistant_assign_no_novels))
             return@launch
         }
-        val titles = novels.map { it.title }.toTypedArray<CharSequence>()
+        // 동명 작품은 세계관으로 구별한다 — 배정은 그 캐릭터의 필드 구역을 정한다.
+        val titles = requireContext().novelPickerLabels(novels).toTypedArray<CharSequence>()
+        if (!isAdded) return@launch
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.assistant_assign_novel_title, characterName))
             .setItems(titles) { _, which ->

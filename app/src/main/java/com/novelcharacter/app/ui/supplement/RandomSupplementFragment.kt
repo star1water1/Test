@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.supplement
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.graphics.drawable.GradientDrawable
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.net.Uri
@@ -1164,11 +1165,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
      */
     private suspend fun loadNovelsForEdit(character: Character, presetSpinnerPos: Int) {
         novels = characterViewModel.getAllNovelsList()
+        val ctx = context ?: return
+        // 동명 작품은 세계관으로 구별한다 — 이 선택이 동적 필드 구역을 정한다(편집 화면과 같은 이름표).
+        val labels = ctx.novelPickerLabels(novels)
         if (_binding == null || !isAdded) return
         val novelNames = mutableListOf(getString(R.string.no_novel_selected))
-        novelNames.addAll(novels.map { it.title })
+        novelNames.addAll(labels)
 
-        val ctx = context ?: return
         // 새 편집 회차(다른 캐릭터일 수 있다)는 폼을 처음부터 짓는다 — 같은 작품 자리라도.
         formNovelPos = -1
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)

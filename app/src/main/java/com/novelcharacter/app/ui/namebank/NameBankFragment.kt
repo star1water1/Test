@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.namebank
 
+import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
@@ -160,6 +161,7 @@ class NameBankFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val entries = viewModel.getEntriesByIds(ids)
             val novels = viewModel.getAllNovelsList()
+            val novelLabels = requireContext().novelPickerLabels(novels)
             val existingNames = viewModel.getExistingCharacterNames()
             if (_binding == null || !isAdded) return@launch
             // 백그라운드 전환 등으로 상태 저장 후면 show()가 IllegalStateException —
@@ -170,6 +172,7 @@ class NameBankFragment : Fragment() {
             sheet.setup = BulkRegisterBottomSheet.Setup(
                 count = entries.size,
                 novels = novels,
+                novelLabels = novelLabels,
                 collisionsVsExisting = vsExisting,
                 collisionsWithinSelection = withinSelection,
                 usedCount = entries.count { it.isUsed }
