@@ -392,6 +392,8 @@ $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
 $MAIN/util/FieldTypeCompatibility.kt
 $MAIN/util/FieldValueTypeMismatch.kt
+$MAIN/util/PickedImageNotices.kt
+$MAIN/util/NovelPickerLabels.kt
 $MAIN/util/FieldValueFixRoute.kt
 $MAIN/util/GlobalScopeFieldMove.kt
 $MAIN/util/UnassignedHistoryScope.kt
@@ -410,6 +412,8 @@ $MAIN/excel/FieldScopeCell.kt
 $MAIN/excel/AppSettingsKeys.kt
 $MAIN/excel/AppSettingsDiff.kt
 $MAIN/excel/TransferResultText.kt
+$MAIN/excel/ImportWarningFold.kt
+$MAIN/excel/FieldValueTypeWarning.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -428,6 +432,8 @@ $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CustomFieldDropdownOptionsTest.kt
 $TEST/excel/SheetFreezeColsTest.kt
 $TEST/excel/NumberWarningFreeColumnsTest.kt
+$TEST/excel/ImportWarningFoldTest.kt
+$TEST/excel/FieldValueTypeWarningTest.kt
 $TEST/excel/ImageSheetColumnOrderTest.kt
 $TEST/excel/CharacterExpectedHeaderTest.kt
 $TEST/excel/EntityFieldColumnResolverTest.kt
@@ -545,6 +551,8 @@ $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/CsvTokensTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
+$TEST/util/PickedImageNoticesTest.kt
+$TEST/util/NovelPickerLabelsTest.kt
 $TEST/util/MultiValueInputTest.kt
 $TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt

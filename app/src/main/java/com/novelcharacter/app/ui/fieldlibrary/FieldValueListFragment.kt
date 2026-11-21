@@ -241,9 +241,15 @@ class FieldValueListFragment : Fragment() {
                 val mode = modes[which]
                 if (mode == FieldValueLibraryConfig.MODE_RESTRICTED && allEntries.isEmpty()) {
                     // 변수 제어: 허용 값 0개인 제한 모드는 모든 입력을 막는다 — 사유를 알리고 진행은 허용
+                    //
+                    // **할 일은 `detail`로 넘긴다.** 요약 한 줄에 사유와 처방을 다 담으면
+                    // 스낵바가 두 줄에서 잘려 처방이 사라진다(같은 문구를 쓰는 형제 자리가
+                    // 토스트에서 그렇게 잘렸다 — 2026.11.07 S3 관찰). `detail`이 있으면
+                    // [상세]로 전문을 볼 수 있다(ResultNotify 규약).
                     notifyResult(com.novelcharacter.app.util.OpResult.failure(
                         com.novelcharacter.app.util.OpResult.CAT_FIELD_LIBRARY,
-                        getString(R.string.field_library_restricted_no_values)))
+                        getString(R.string.field_library_restricted_no_values),
+                        getString(R.string.field_library_restricted_no_values_how)))
                 }
                 viewModel.setInputMode(fd, mode) { updated ->
                     field = updated

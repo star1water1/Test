@@ -940,6 +940,20 @@
 
                 </LinearLayout>
 
+                <!--
+                  [기본값 복원]의 목적문 (R-25). 이 버튼이 **무엇을 되돌리고 무엇을 두는지**가
+                  화면에 없어, 순회표조차 *"S7에서 고친 축 이름을 날린다"*고 잘못 경고하고
+                  있었다(2026.11.07 S8 관찰 → 2026.11.21 코드 대조로 사실과 다름을 확인).
+                  축 이름은 사용자가 적은 이름이라 설정 복원이 말없이 지우지 않는다.
+                -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/body_restore_defaults_purpose"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="4dp" />
+
                 <!-- 체형 분류 프리셋 -->
                 <TextView
                     android:layout_width="wrap_content"

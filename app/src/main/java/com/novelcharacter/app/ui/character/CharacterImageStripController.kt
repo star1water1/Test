@@ -4,7 +4,6 @@ import android.net.Uri
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.widget.ImageView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -147,95 +146,27 @@ class CharacterImageStripController(
      */
     fun importUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val ctx = fragment.context?.applicationContext ?: return
-        val app = ctx as? com.novelcharacter.app.NovelCharacterApp ?: return
+        val app = fragment.context?.applicationContext as? com.novelcharacter.app.NovelCharacterApp ?: return
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
-            var anyFailed = false
-            // **폼이 받지 못한 파일** — 이미 디스크에 있는데 가리키는 곳이 없는 몫이다.
+            // **루프·담기·고지는 [PickedImageBatch]가 든다.** 종전에는 이 함수가 그 셋을
+            // 혼자 들고 있었고, 세계관·작품 목록이 같은 조작을 **다르게** 처리했다(그쪽은
+            // 회전 뒤의 몫을 말없이 고아로 남겼다). 같은 조작이 화면마다 다르게 굴지 않게
+            // 공용 경로로 옮겼다 — 그 파일 KDoc이 세 자리의 종전 처분을 표로 든다.
             //
-            // 종전에는 `recyclerViewGetter() == null`이면 그 자리에서 `return@launch`라
-            // ⓐ 방금 쓴 파일이 **고아**로 남고 ⓑ 남은 uri는 **말없이 버려졌다.** 회전 한 번이면
-            // 닿는다(화면 수명 스코프라 코루틴 자체가 끊긴다). 여러 장을 고른 사용자는
-            // *일부만 붙은* 결과를 받고 그 사실을 어디서도 듣지 못했다.
-            val stranded = mutableListOf<String>()
-            // **시도를 마친 장수** — `uris.size`와의 차가 곧 *손도 못 댄 몫*이다.
-            //
-            // 위 문단이 *"끝까지 가져온다"*라고 적어 놓았지만 실제로는 못 갔다: 루프의 유일한
-            // 중단점(`importImage`)이 취소를 되던지므로 회전이 들어오면 **남은 uri는 시도조차
-            // 되지 않은 채** 루프를 빠져나갔고, `stranded`에도 안 들어가 어디에도 세어지지
-            // 않았다. 열 장을 고른 사용자가 두 장만 받고 **나머지 여덟이 왜 없는지 들을 곳이
-            // 없었다**(개발 의도 2번 — 말없이 유실되지 않는다).
-            var processed = 0
-            try {
-                for (uri in uris) {
-                    val filePath = try {
-                        com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        // 취소는 실패가 아니다 — 삼키면 아래 `anyFailed` 고지가 거짓이 된다.
-                        // 이 장은 `processed`에 들지 않는다 — 시도가 끝나지 않았다.
-                        throw e
-                    } catch (e: Exception) {
-                        null
-                    }
-                    // 성공이든 실패든 **이 장의 시도는 끝났다** — `continue`보다 앞에 둔다.
-                    processed++
-                    if (filePath == null) {
-                        anyFailed = true
-                        continue
-                    }
-                    // 폼이 없어도 **끝까지 가져온다** — 사용자가 고른 것을 버리지 않는다.
-                    if (recyclerViewGetter() == null) {
-                        stranded.add(filePath)
-                        continue
-                    }
-                    imagePaths.add(filePath)
+            // 이 화면의 수명 신호는 **썸네일 목록이 살아 있는가**다. 회전 뒤의 폼은 다른
+            // 인스턴스라 거기 붙일 수 없고, 그것이 시트(`1-ㅎ7`)가 적어 둔 기대와 같다.
+            com.novelcharacter.app.util.PickedImageBatch.importAndReport(
+                app = app,
+                uris = uris,
+                prefix = "char",
+                formAlive = { recyclerViewGetter() != null },
+                onSaved = { path ->
+                    imagePaths.add(path)
                     refresh()
+                    // 첨부는 미저장 변경 — 없으면 뒤로가기가 확인 없이 이탈한다(무음 유실).
                     onChanged()
                 }
-            } finally {
-                // **지우지 않고 라이브러리에 담는다**(개발 의도 2번 — 사용자가 고른 것이다).
-                // 편집창의 제거 정책(`EditorRemovePolicy`)을 따르지 않는 것은 성질이 달라서다:
-                // 그쪽은 *붙어 있던 것을 뗀* 조작이라 사용자가 처분을 정했고, 이쪽은
-                // **붙은 적이 없는** 새 파일이다 — 지우면 방금 고른 것이 통째로 사라진다.
-                // `adoptOrphans`는 참조·보류·meta·드래프트가 보호하는 경로를 건너뛰므로
-                // 정상적으로 붙은 것은 건드리지 않는다.
-                val notAttempted = uris.size - processed
-                if (stranded.isNotEmpty() || notAttempted > 0) {
-                    withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                        val adopted = if (stranded.isEmpty()) 0 else runCatching {
-                            com.novelcharacter.app.util.ImageOwnershipGuard
-                                .adoptOrphans(app.database, ctx, stranded)
-                        }.getOrDefault(0)
-                        // **세 몫을 따로 말한다.** 종전에는 `adopted > 0`만 말했는데,
-                        // `adoptOrphans`가 예외 하나에 0을 돌려주므로(`getOrDefault(0)`)
-                        // **디스크에 쓴 파일이 주인도 meta도 없이 남은 실패**가 정확히
-                        // *담을 것이 없었다*와 같은 침묵으로 나갔다.
-                        val lines = buildList {
-                            if (adopted > 0) {
-                                add(ctx.getString(R.string.image_import_stranded_adopted, adopted))
-                            }
-                            val notAdopted = stranded.size - adopted
-                            if (notAdopted > 0) {
-                                add(ctx.getString(R.string.image_import_stranded_failed, notAdopted))
-                            }
-                            if (notAttempted > 0) {
-                                add(ctx.getString(R.string.image_import_interrupted, notAttempted))
-                            }
-                        }
-                        if (lines.isNotEmpty()) {
-                            // 화면이 사라져도 고지는 간다 — 앱 컨텍스트로, 이 블록 안에서.
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(ctx, lines.joinToString("\n"), Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                }
-            }
-            if (anyFailed && fragment.isAdded) {
-                val c = fragment.context ?: return@launch
-                Toast.makeText(c, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
-            }
+            )
         }
     }
 

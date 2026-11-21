@@ -84,7 +84,6 @@ import com.novelcharacter.app.util.normalizeFieldCell
 import com.novelcharacter.app.util.readsCellAsDate
 import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.withImagePaths
-import com.novelcharacter.app.util.GradeValueResolver
 import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.FactionRelationshipMatcher
 import org.apache.poi.ss.usermodel.CellType
@@ -745,10 +744,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 빈 앱 복원에서는 모든 행이 걸려 S25 실측 한 번에 3836줄이 되었고, 상세·이력의 길이 상한에
      * 진짜 경고가 묻혔다. '지운 적이 없다'를 확정할 근거는 앱에 없다(휴지통은 비우거나 보관
      * 기한으로 사라진다 — PR #439 리뷰). 그래서 판정하지 않고 **줄 수를 묶는다**: 범주당
-     * [CREATED_NEW_LIST_CAP]줄까지는 그대로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 나머지 건수 한 줄.
+     * [ImportWarningFold.LIST_CAP]줄까지는 그대로, 넘으면 앞 [ImportWarningFold.HEAD]줄 +
+     * 나머지 건수 한 줄. **접는 셈은 [ImportWarningFold]가 들고 꼬리 문구만 여기서 짓는다** —
+     * 같은 규칙을 접는 자리마다 적으면 범주별로 상한이 갈린다.
      */
     private val createdNewMessages = mutableMapOf<String, MutableList<String>>()
     private val createdNewCounts = mutableMapOf<String, Int>()
+
+    /**
+     * 타입과 맞지 않는 값의 고지 — **시트별로** 줄과 수를 든다([warnTypeMismatch]).
+     * 줄은 [ImportWarningFold.LIST_CAP]까지, 수는 끝까지. 접는 자리는 [reportTypeMismatches]다.
+     */
+    private val typeMismatchMessages = mutableMapOf<String, MutableList<String>>()
+    private val typeMismatchCounts = mutableMapOf<String, Int>()
 
     /**
      * 이번 가져오기가 찾지 못한 시트 — **한 줄로** 말한다(S22 3-ㅅ-13).
@@ -942,6 +950,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         createdAfterWipe.clear()
         createdNewMessages.clear()
         createdNewCounts.clear()
+        typeMismatchMessages.clear()
+        typeMismatchCounts.clear()
         missingSheetNames.clear()
         truncatedDetails.clear()
         mergedCellMaps.clear()
@@ -1566,6 +1576,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // 덮어쓰기로 비운 범주의 신규 생성은 여기서 한 줄로 요약한다(행마다 알리지 않는다).
             reportCreatedAfterWipe(result)
+            // 타입과 맞지 않는 값은 **시트별로 모아** 상한까지 싣는다 — 쓰기 경로 다섯이
+            // 각자 행마다 알리면 진짜 경고가 그 길이에 묻힌다([warnTypeMismatch]).
+            reportTypeMismatches(result)
             reportMissingSheets(result)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
@@ -1940,7 +1953,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             hasPinnedCol = c.pinned >= 0,
             isPinned = if (c.pinned >= 0) parseBoolean(getCellString(row, c.pinned)) else false,
             hasStandardYearCol = c.standardYear >= 0,
-            standardYear = if (c.standardYear >= 0) parseNumber(getCellString(row, c.standardYear))?.toInt() else null,
+            // **연도 칸은 [readYearCell] 하나가 든다** — 종전에는 이 한 자리만 맨손이었다.
+            // `표준연도`에 `abc`를 적어 들이면 경고 한 줄 없이 `null`이 되고, 열이 시트에
+            // 있으므로 [mergeNovel]의 `if (r.hasStandardYearCol) r.standardYear else …`가
+            // **DB에 있던 표준연도를 그 null로 덮었다**(S4 관찰, 2026.11.07). 매칭은 '생성일'
+            // 안정 식별자로 그대로 붙으니 행은 살고 **값만 지워진다** — 세력 가입·탈퇴연도에서
+            // 2026.08.22에 고친 것과 글자 그대로 같은 결함이고, 그 수리가 이 칸을 빠뜨렸다.
+            standardYear = readYearCell(row, c.standardYear, ctx, "표준연도", result),
             createdAt = readCreatedAtCell(row, c.createdAt, ctx, result)
         )
     }
@@ -6567,7 +6586,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                     // 소속이 이 행에서 바뀌었으면 **새 소속**의 필드가 적용 대상이다(위 val과 같은 값).
                     applyNovelFieldColumns(
-                        row, existing.id, effectiveUniverseId,
+                        row, "작품 행 ${excelRow(i)}", existing.id, effectiveUniverseId,
                         novelFieldColumns, allNovelFields, universeIdsByName,
                         droppedNovelFieldHeaders, result, novelValues
                     )
@@ -6582,7 +6601,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     entitySeen[newId] = i
                     result.newNovels++
                     applyNovelFieldColumns(
-                        row, newId, universeId,
+                        row, "작품 행 ${excelRow(i)}", newId, universeId,
                         novelFieldColumns, allNovelFields, universeIdsByName,
                         droppedNovelFieldHeaders, result, novelValues
                     )
@@ -6612,6 +6631,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private suspend fun applyNovelFieldColumns(
         row: Row,
+        /** 이 행을 사용자에게 가리키는 말 — 호출부의 오류 줄과 같은 모양이다("작품 행 7"). */
+        rowLabel: String,
         novelId: Long,
         novelUniverseId: Long?,
         columns: List<EventFieldColumn>,
@@ -6659,6 +6680,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 이 (작품, 필드)는 작품 시트가 권위 — '작품 필드값' 시트의 같은 항목은 무시된다
             importedNovelFieldPairs.add(novelId to fieldDef.id)
             val cellValue = getCellString(row, ci)
+            // 타입과 맞지 않는 값은 저장하되 말한다 — 이 자리에 그 고지가 없어 작품
+            // 숫자 필드에 글자를 적어도 아무 말이 없었다([warnTypeMismatch] KDoc).
+            warnTypeMismatch(rowLabel, "작품", fieldDef, cellValue)
             // 처분은 오버플로 시트와 **같은 함수**가 정한다(R-33) — 이 자리가 세지 못하던
             // *비움*이 그래서 세어진다.
             when (FieldValueCellPlan.effectOf(cellValue, values?.get(novelId, fieldDef.id))) {
@@ -8153,6 +8177,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 val value = if (valueCol >= 0) getCellString(row, valueCol) else ""
+                // 타입과 맞지 않는 값은 저장하되 말한다 — 이 시트에는 그 고지가 없었다
+                // ([warnTypeMismatch] KDoc). 판정은 저장 여부가 아니라 *값*이 짓는다:
+                // 바뀌지 않은 행의 값도 제 타입으로 읽히지 않으면 수식에서 0으로 섞인다.
+                warnTypeMismatch(rowLabel, "캐릭터 필드값", fd, value)
                 if (!valueLedger.isLoaded(ch.id)) {
                     valueLedger.load(ch.id, db.characterFieldValueDao().getValuesByCharacterList(ch.id))
                 }
@@ -8306,6 +8334,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 val value = if (valueCol >= 0) getCellString(row, valueCol) else ""
+                // 타입과 맞지 않는 값은 저장하되 말한다 — 이 시트에는 그 고지가 없었다
+                // ([warnTypeMismatch] KDoc). 판정은 저장 여부가 아니라 *값*이 짓는다:
+                // 바뀌지 않은 행의 값도 제 타입으로 읽히지 않으면 수식에서 0으로 섞인다.
+                warnTypeMismatch(rowLabel, "작품 필드값", fd, value)
                 val existing = db.novelFieldValueDao().getValue(nv.id, fd.id)
                 when (FieldValueCellPlan.effectOf(value, existing?.value, columnPresent = valueCol >= 0)) {
                     FieldValueCellEffect.NEW -> db.novelFieldValueDao().insertAll(listOf(
@@ -8420,6 +8452,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 val value = if (valueCol >= 0) getCellString(row, valueCol) else ""
+                // 타입과 맞지 않는 값은 저장하되 말한다 — 이 시트에는 그 고지가 없었다
+                // ([warnTypeMismatch] KDoc). 판정은 저장 여부가 아니라 *값*이 짓는다:
+                // 바뀌지 않은 행의 값도 제 타입으로 읽히지 않으면 수식에서 0으로 섞인다.
+                warnTypeMismatch(rowLabel, "사건 필드값", fd, value)
                 val existing = db.eventFieldValueDao().getValue(event.id, fd.id)
                 when (FieldValueCellPlan.effectOf(value, existing?.value, columnPresent = valueCol >= 0)) {
                     FieldValueCellEffect.NEW -> db.eventFieldValueDao().insertAll(listOf(
@@ -8809,31 +8845,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val value = normalizeFieldCell(
                         field, getCellString(row, colIndex, dateHint = readsCellAsDate(field))
                     )
-                    // 필드 타입 검증 (F1-B): 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴)
-                    if (value.isNotBlank()) {
-                        // **타입이 늘면 여기가 컴파일을 깬다** (B-55). 코틀린은 enum을 받는
-                        // `when` **문**도 전부 덮기를 요구하므로, 새 타입은 "이 값을 어떻게
-                        // 검증하는가"를 여기서 반드시 답하게 된다 — 종전(문자열 분기)에는
-                        // 아무 말 없이 검증 없는 타입이 하나 늘었다.
-                        when (field.fieldType) {
-                            FieldType.NUMBER -> if (value.toDoubleOrNull() == null) {
-                                result.warnings.add("캐릭터 행 ${excelRow(i)}: 숫자 필드 '${field.name}'에 숫자가 아닌 값 '$value'이(가) 저장됨 — 통계에서 제외될 수 있습니다")
-                            }
-                            FieldType.GRADE -> if (GradeValueResolver.resolveForDisplay(field, value) == null) {
-                                result.warnings.add("캐릭터 행 ${excelRow(i)}: 등급 필드 '${field.name}'의 값 '$value'을(를) 인식할 수 없습니다 — 통계·수식에서 제외될 수 있습니다")
-                            }
-                            FieldType.BODY_SIZE -> if (!value.any { it.isDigit() }) {
-                                result.warnings.add("캐릭터 행 ${excelRow(i)}: 신체 사이즈 필드 '${field.name}'의 값 '$value'에 숫자가 없어 통계에 반영되지 않을 수 있습니다")
-                            }
-                            // 글자·선택·복수 텍스트는 어떤 값이든 그 타입의 값이다 — 잴 것이 없다.
-                            FieldType.TEXT, FieldType.SELECT, FieldType.MULTI_TEXT -> Unit
-                            // 계산 필드는 위에서 이미 `continue`로 걸러졌다(저장 대상이 아니다).
-                            FieldType.CALCULATED -> Unit
-                            // 모르는 타입 — 잣대가 없으니 재지 않는다. 값은 그대로 저장된다
-                            // (거부가 아니라 수용·교정. 개발 의도 4번).
-                            null -> Unit
-                        }
-                    }
+                    // 필드 타입 검증 (F1-B): 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴).
+                    //
+                    // **판정과 문구는 [FieldValueTypeWarning]이 든다.** 종전에는 이 자리에 손으로
+                    // 적은 `when (field.fieldType)`이 있었고, 그 한 벌이 통계의 정본
+                    // (`FieldValueTypeMismatch`)과 **세 자리에서 갈려** 있었다 — 어긋남의 모양과
+                    // 해악은 그 파일 KDoc에 표로 적었다. B-55가 지키려던 *"타입이 늘면 컴파일이
+                    // 깨진다"*는 그대로다: 정본의 `when`과 사유별 문구의 `when`이 둘 다
+                    // exhaustive라 새 타입은 여기 대신 **그 두 자리에서** 답을 받아 간다.
+                    // 행 접두는 **같은 함수의 오류 줄과 같은 모양**이다(아래 catch의
+                    // `"$sheetLabel 행 …"`) — 캐릭터 시트는 세계관마다 하나라 *"캐릭터 행 7"*은
+                    // 어느 시트의 7행인지 말하지 않는다.
+                    warnTypeMismatch("$sheetLabel 행 ${excelRow(i)}", sheetLabel, field, value)
                     // 별칭 표기 감지 — F1-B 원문 저장 원칙 유지(무편집 왕복 불변), 치환하지 않고 고지만 한다.
                     // 정규화는 인앱 라이브러리(병합·AI 정리)가 확인 후 수행하는 교정 경로.
                     if (value.isNotBlank() && com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) {
@@ -9156,6 +9179,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // 이 (사건, 필드)는 연표 시트가 권위 — '사건 필드값' 시트의 같은 항목은 무시된다
                         importedEventFieldPairs.add(eventId to fieldDef.id)
                         val cellValue = getCellString(row, ci)
+                        // 타입과 맞지 않는 값은 저장하되 말한다 — 이 자리에 그 고지가 없어
+                        // 사건 숫자 필드에 글자를 적어도 아무 말이 없었다([warnTypeMismatch] KDoc).
+                        warnTypeMismatch("연표 행 ${excelRow(i)}", "연표", fieldDef, cellValue)
                         // 처분은 오버플로 시트와 **같은 함수**가 정한다(R-33 · B-187).
                         when (FieldValueCellPlan.effectOf(cellValue, eventValues?.get(eventId, fieldDef.id))) {
                             FieldValueCellEffect.NEW, FieldValueCellEffect.UPDATE -> {
@@ -13061,6 +13087,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * '생성일'은 [readCreatedAtCell]이 각각 경고를 실었고 **연도 두 칸만 맨손이었다.**
      *
      * 빈 칸은 경고하지 않는다 — *비움*은 사용자가 적어 넣은 뜻이라 해석 실패와 다르다.
+     *
+     * ## 이 함수를 지나는 연도 칸 — **전수다** (2026.11.21)
+     *
+     * 그때의 수리가 **`표준연도`(작품)를 빠뜨렸고**, 그 칸만 2026.11.07 워크스루 S4까지
+     * 같은 결함으로 남아 있었다(관찰: *"작품 표준연도 `abc`는 경고 없이 빈 값이 됐다"*).
+     * 지금 시트의 연도 칸은 넷이고 처분이 둘로 갈린다:
+     *
+     * | 칸 | 처분 |
+     * |---|---|
+     * | `가입연도`·`탈퇴연도`(세력 소속) · `표준연도`(작품) | **선택 칸** — 이 함수가 경고하고 빈 값으로 둔다 |
+     * | `연도`(연표·상태 변화·관계 변화) | **행의 정체** — 못 읽으면 경고가 아니라 `errors`로 행을 건너뛴다 |
+     *
+     * 아래쪽은 이 함수를 쓰지 않는 것이 맞다 — 연도가 없으면 그 행이 무엇인지 알 수 없다
+     * (R-36의 *"이름처럼 행의 정체를 이루는 열"*). `tools/check_year_cell_source.sh`가
+     * 새 연도 칸이 둘 중 어느 처분에도 들지 않은 채 늘어나는 것을 본다.
      */
     private fun readYearCell(
         row: Row,
@@ -13638,6 +13679,48 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 빈 앱 복원에서 수천 줄이 다른 경고를 묻었다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
      * [reportCreatedAfterWipe]가 범주당 한 줄로 요약한다(사유는 [wipedByOverwrite] 참조).
      */
+    /**
+     * **타입과 맞지 않는 값의 고지** — 필드값을 쓰는 **모든** 경로가 이 함수를 지난다.
+     *
+     * 종전에는 이 경고가 **캐릭터 시트 한 자리에만** 있었다(2026.11.07 워크스루 S4 관찰:
+     * *"가져오기의 숫자 아닌 값 경고는 캐릭터 시트에만 뜨고 사건·작품 시트에는 없다"*).
+     * 실제로 빠진 자리는 관찰이 센 둘보다 많아 **다섯**이었다 — 세 오버플로 시트
+     * ('캐릭터 필드값'·'작품 필드값'·'사건 필드값')와 작품·사건 시트의 필드 열이다.
+     * 사건 Casualties에 `many`를 적어 들이면 값은 저장되는데 **아무도 말하지 않았고**,
+     * 그 값은 수식에서 `0.0`으로 섞여 들어 화면 어디에도 이상이 보이지 않는다.
+     *
+     * **줄은 [ImportWarningFold.LIST_CAP]까지만 쥐고 수는 끝까지 센다** — 다섯 경로로 넓히면서
+     * 상한 없이 두면 212명 × 필드 수만큼 줄이 쏟아져, `warnCreatedNewByCode`가 S25에서 겪은
+     * 3836줄을 그대로 되풀이한다(그쪽 KDoc). 접는 자리는 [reportTypeMismatches]다.
+     *
+     * 완전성은 `tools/check_field_value_type_warning.sh`가 본다(R-43) — 새 쓰기 경로가
+     * 이 함수를 부르지 않으면 **실패가 아니라 침묵**이라 기계가 세어야 한다.
+     */
+    private fun warnTypeMismatch(
+        rowLabel: String,
+        sheetLabel: String,
+        field: FieldDefinition,
+        value: String
+    ) {
+        val reason = FieldValueTypeWarning.messageOf(field, value) ?: return
+        val n = (typeMismatchCounts[sheetLabel] ?: 0) + 1
+        typeMismatchCounts[sheetLabel] = n
+        if (n <= ImportWarningFold.LIST_CAP) {
+            typeMismatchMessages.getOrPut(sheetLabel) { mutableListOf() }.add("$rowLabel: $reason")
+        }
+    }
+
+    /** [warnTypeMismatch]가 쥔 줄을 시트별로 접어 고지한다. */
+    private fun reportTypeMismatches(result: ImportResult) {
+        for ((sheetLabel, total) in typeMismatchCounts) {
+            result.warnings.addAll(
+                ImportWarningFold.fold(typeMismatchMessages[sheetLabel].orEmpty(), total) { remaining, all ->
+                    FieldValueTypeWarning.foldTail(sheetLabel, remaining, all)
+                }
+            )
+        }
+    }
+
     private fun warnCreatedNewByCode(category: String, message: String, result: ImportResult) {
         if (category in wipedByOverwrite) {
             createdAfterWipe[category] = (createdAfterWipe[category] ?: 0) + 1
@@ -13646,7 +13729,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val n = (createdNewCounts[category] ?: 0) + 1
         createdNewCounts[category] = n
         // 줄은 상한까지만 쥔다 — 수는 끝까지 센다([reportCreatedAfterWipe]가 접는다).
-        if (n <= CREATED_NEW_LIST_CAP) createdNewMessages.getOrPut(category) { mutableListOf() }.add(message)
+        if (n <= ImportWarningFold.LIST_CAP) createdNewMessages.getOrPut(category) { mutableListOf() }.add(message)
     }
 
     /**
@@ -13664,17 +13747,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             )
         }
         for ((category, count) in createdNewCounts) {
-            val lines = createdNewMessages[category].orEmpty()
-            if (count <= CREATED_NEW_LIST_CAP) {
-                result.warnings.addAll(lines)
-                continue
+            // 접는 셈은 [ImportWarningFold]가 든다 — 꼬리 문구만 범주가 정한다(세는 단위와
+            // 처방이 범주마다 다르다). 두 벌로 적으면 같은 파일 안에서 상한이 갈린다.
+            val folded = ImportWarningFold.fold(createdNewMessages[category].orEmpty(), count) { remaining, total ->
+                val (label, unit, _) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
+                "같은 이유(코드가 기존에 없어 새로 생성됨)로 만든 $label $remaining$unit 더 있습니다 " +
+                "(모두 $total$unit) — 빈 앱으로 복원했다면 정상이고, 아니라면 앱에서 지운 항목이 되살아난 것인지 확인하세요"
             }
-            result.warnings.addAll(lines.take(CREATED_NEW_LIST_HEAD))
-            val (label, unit, _) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
-            result.warnings.add(
-                "같은 이유(코드가 기존에 없어 새로 생성됨)로 만든 $label ${count - CREATED_NEW_LIST_HEAD}$unit 더 있습니다 " +
-                "(모두 $count$unit) — 빈 앱으로 복원했다면 정상이고, 아니라면 앱에서 지운 항목이 되살아난 것인지 확인하세요"
-            )
+            result.warnings.addAll(folded)
         }
     }
 
@@ -13906,10 +13986,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     companion object {
-        /** [createdNewMessages] — 범주당 이 줄 수까지는 행별로, 넘으면 앞 [CREATED_NEW_LIST_HEAD]줄 + 요약. */
-        private const val CREATED_NEW_LIST_CAP = 20
-        private const val CREATED_NEW_LIST_HEAD = 10
-
         // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT

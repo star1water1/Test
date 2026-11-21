@@ -2699,11 +2699,14 @@ class FieldEditDialog : DialogFragment() {
             if (libraryMode == com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODE_RESTRICTED &&
                 willBeEmpty
             ) {
-                android.widget.Toast.makeText(
+                // 두 줄로 가른다 — 한 줄로는 큰 글꼴에서 잘렸다(2026.11.07 S3 관찰).
+                com.novelcharacter.app.util.MultiLineNotice.toastEachLine(
                     requireContext(),
-                    getString(R.string.field_library_restricted_no_values),
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                    listOf(
+                        getString(R.string.field_library_restricted_no_values),
+                        getString(R.string.field_library_restricted_no_values_how)
+                    )
+                )
             }
         }
 
