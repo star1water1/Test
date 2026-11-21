@@ -136,13 +136,21 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
      */
     private fun org.apache.poi.ss.usermodel.Cell.setTextSafe(value: String) {
         if (value.isEmpty()) return
-        if (value.length > XLSX_CELL_LIMIT) {
-            // 경계 처리는 truncateForCell(단일 소스)이 든다 — 서러게이트 쌍을 반쪽 내지 않는다.
-            setCellValue(truncateForCell(value, XLSX_CELL_LIMIT))
-            truncatedCellCount++
-        } else {
-            setCellValue(value)
-        }
+        // **셀 글자는 쓰기 규약을 지난다**(R-72 — [ExcelCellText]). 실을 수 없는 글자는 `?`가
+        // 되고 `_xHHHH_` 꼴은 다른 글자로 읽히므로, 표기로 바꿔 적는다. 한도는 **적은 뒤의
+        // 길이**다 — 표기가 늘면 원문이 한도 안이어도 넘을 수 있고, 그때 POI가 셀을 거절한다.
+        // 경계 처리(서러게이트 쌍·표기를 쪼개지 않는다)도 그 함수가 든다.
+        val encoded = ExcelCellText.encodeWithin(value, XLSX_CELL_LIMIT)
+        if (encoded.truncated) truncatedCellCount++
+        setCellValue(encoded.text)
+    }
+
+    /**
+     * 머리글·안내처럼 **짧은 것이 확실한** 글자 — 쓰기 규약만 지난다(R-72).
+     * 머리글에는 필드 이름이 그대로 실리므로, 규약을 건너뛰면 그 열을 가져오기가 못 알아본다.
+     */
+    private fun org.apache.poi.ss.usermodel.Cell.setLabelText(value: String) {
+        setCellValue(ExcelCellText.encode(value))
     }
 
     /**
@@ -816,7 +824,7 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
         headerRow.heightInPoints = 24f
         spec.columns.forEachIndexed { index, col ->
             val cell = headerRow.createCell(index)
-            cell.setCellValue(col.header)
+            cell.setLabelText(col.header)
             cell.cellStyle = when {
                 col.readOnly -> styles.readOnlyHeader
                 col.required -> styles.requiredHeader
@@ -1435,21 +1443,21 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
             when {
                 line.section.isNotBlank() && line.style === styles.guideSection -> {
                     row.heightInPoints = 20f
-                    row.createCell(0).apply { setCellValue(line.section); cellStyle = line.style }
-                    row.createCell(1).apply { setCellValue(line.text); cellStyle = styles.guideSection }
+                    row.createCell(0).apply { setLabelText(line.section); cellStyle = line.style }
+                    row.createCell(1).apply { setLabelText(line.text); cellStyle = styles.guideSection }
                 }
                 line.section.isNotBlank() -> {
                     // 색상 견본 행 — A칸이 실제 헤더 스타일 그대로의 견본, B칸이 설명(V-7)
                     row.heightInPoints = 18f
-                    row.createCell(0).apply { setCellValue(line.section); cellStyle = line.style }
-                    row.createCell(1).apply { setCellValue(line.text); cellStyle = styles.guideBody }
+                    row.createCell(0).apply { setLabelText(line.section); cellStyle = line.style }
+                    row.createCell(1).apply { setLabelText(line.text); cellStyle = styles.guideBody }
                 }
                 line.style === styles.guideTitle -> {
                     row.heightInPoints = 26f
-                    row.createCell(1).apply { setCellValue(line.text); cellStyle = line.style }
+                    row.createCell(1).apply { setLabelText(line.text); cellStyle = line.style }
                 }
                 else -> {
-                    row.createCell(1).apply { setCellValue(line.text); cellStyle = line.style }
+                    row.createCell(1).apply { setLabelText(line.text); cellStyle = line.style }
                     // 본문 wrap 높이 — 엑셀은 열 때 행 높이를 재계산하지 않는다(finishDataRow와 같은 근거)
                     val wrapLines = estimateWrapLines(line.text, GUIDE_BODY_WIDTH)
                     if (wrapLines > 1) row.heightInPoints = wrapLines * sheet.defaultRowHeightInPoints
@@ -1764,7 +1772,10 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
                 row.createCell(0).setTextSafe(universe?.name ?: "")
                 row.createCell(1).setTextSafe(system.name)
                 row.createCell(2).setTextSafe(label)
-                row.createCell(3).setCellValue(value)
+                // 등급 숫자 — 15자리를 넘는 수는 글자 칸으로(외부 편집기가 자르지 않게, fitsSpreadsheetPrecision).
+                // 글자는 가져오기가 숫자 칸을 읽을 때 내는 것과 같은 표기다.
+                if (fitsSpreadsheetPrecision(value)) row.createCell(3).setCellValue(value)
+                else row.createCell(3).setTextSafe(java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString())
                 row.createCell(4).setTextSafe(universe?.code ?: "")
                 row.createCell(5).setTextSafe(system.code)
                 finishDataRow(row, spec, banded)
@@ -3227,7 +3238,9 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
             val row = sheet.createRow(rowIndex++)
             row.createCell(0).setTextSafe(binding.spec.key)
             if (binding.spec.kind == AppSettingsKeys.Kind.NUMBER) {
-                val number = value.toDoubleOrNull()
+                // 숫자 칸으로는 **적은 글자 그대로 되돌아올 때만** 싣는다 — 필드값과 같은 판정이다
+                // (`"24.50"`·`"007"`·16자리 넘는 수는 글자 칸이어야 왕복에서 안 바뀐다).
+                val number = numericExportValueOrNull(value)
                 if (number != null) row.createCell(1).setCellValue(number)
                 else row.createCell(1).setTextSafe(value)
             } else {

@@ -46,7 +46,9 @@ object DropdownListLimits {
     /** 명시 목록으로 실어도 깨지지 않는가 — 길이·쉼표·따옴표 셋 다 본다. */
     fun fitsExplicitList(options: List<String>): Boolean =
         explicitFormulaLength(options) <= MAX_FORMULA_CHARS &&
-            options.none { it.contains(',') || it.contains('"') }
+            // 명시 목록은 수식이라 셀 글자의 `_xHHHH_` 표기가 없다 — 바꿔 써야 하는 값(실을 수
+            // 없는 글자·`_x` 꼴)이 있으면 셀에 적는 범위 참조로 간다(R-72).
+            options.none { it.contains(',') || it.contains('"') || ExcelCellText.needsEncoding(it) }
 
     /**
      * 숨김 목록 시트의 한 열 구간을 가리키는 절대 참조 — `'목록 데이터'!$A$3:$A$120`.

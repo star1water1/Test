@@ -233,7 +233,11 @@ val RESERVED_SHEET_NAMES = setOf(
  * (7장 규약: 헤더 규칙·유효값을 양쪽에 따로 두지 않는다).
  */
 fun sanitizeSheetNameBase(name: String): String {
-    val cleaned = takeSheetChars(name.replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH).trim('\'')
+    // 시트 이름에는 `_xHHHH_` 표기가 없다 — 실을 수 없는 글자는 금지 글자처럼 뺀다(R-72).
+    // 남기면 POI가 `?`로 바꿔 **앱이 배정한 이름과 파일 속 이름이 갈린다**(takeSheetChars KDoc과 같은 부류).
+    val cleaned = takeSheetChars(
+        ExcelCellText.stripXmlIllegal(name).replace(Regex("[\\[\\]*/\\\\?:]"), ""), MAX_SHEET_NAME_LENGTH
+    ).trim('\'')
     return if (cleaned.isBlank()) "Sheet" else cleaned
 }
 
@@ -495,8 +499,22 @@ fun numericExportValueOrNull(raw: String): Double? {
     } else {
         java.math.BigDecimal.valueOf(d).stripTrailingZeros().toPlainString()
     }
-    return if (roundTrip == raw) d else null
+    return if (roundTrip == raw && fitsSpreadsheetPrecision(d)) d else null
 }
+
+/**
+ * 숫자 칸으로 실은 수가 **외부 편집기를 지나도 같은 수로 남는가** — 유효 숫자 15자리 이하.
+ *
+ * 엑셀은 숫자를 15자리로 다룬다 — 그 칸을 고치면 16번째 자리부터 0이 되고, openpyxl은 파일을
+ * 다시 쓸 때 15자리로 적는다(2026.11.21 실측: `0.30000000000000004` → `0.3`). 앱 안에서는
+ * 멀쩡한 값이 **손대지 않은 칸까지** 바뀌는 자리라, 넘는 수는 글자 칸으로 싣는다 — 가져오기는
+ * 글자 칸도 같은 값으로 읽는다(숫자 계산이 안 되는 것이 대가이고, 그런 수는 대개 식별자다).
+ */
+fun fitsSpreadsheetPrecision(d: Double): Boolean =
+    java.math.BigDecimal.valueOf(d).stripTrailingZeros().precision() <= SPREADSHEET_PRECISION_DIGITS
+
+/** 엑셀이 숫자로 지키는 유효 숫자 자릿수. */
+const val SPREADSHEET_PRECISION_DIGITS = 15
 
 /**
  * wrap 행 높이의 상한(줄) — 접힌 데이터를 보이게 하되(원칙 04) 초장문 메모가 화면을

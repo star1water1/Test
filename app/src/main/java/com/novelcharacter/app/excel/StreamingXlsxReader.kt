@@ -319,9 +319,13 @@ class StreamingXlsxReader(file: File) : Closeable {
                     val s = try { sharedStrings.getItemAt(idx).string } catch (_: Exception) { return BLANK_CELL }
                     ExcelCellValue.Primitives(CellType.STRING, stringValue = s)
                 }
-                "inlineStr" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = inlineBuf.toString())
+                // 인라인 문자열과 수식의 문자열 결과는 **`_xHHHH_` 표기를 해석한다**(R-72) — DOM(POI)이
+                // 하는 해석이다. 종전에는 공유 문자열만 해석돼(ReadOnlySharedStringsTable이 한다) 같은
+                // 파일이 크기에 따라 다른 값이 됐다. 런이 여럿이면 **이어 붙인 뒤에** 푼다(DOM과 같다 —
+                // 표기가 런 경계에 걸려도 한 글자로 읽힌다).
+                "inlineStr" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = ExcelCellText.decode(inlineBuf.toString()))
                 "str" -> // 수식의 문자열 결과 — 캐시된 문자열. getCellString FORMULA(문자열결과)와 동일 값.
-                    ExcelCellValue.Primitives(CellType.STRING, stringValue = buf.toString())
+                    ExcelCellValue.Primitives(CellType.STRING, stringValue = ExcelCellText.decode(buf.toString()))
                 "b" -> ExcelCellValue.Primitives(CellType.BOOLEAN, booleanValue = buf.toString().trim() == "1")
                 "e" -> ExcelCellValue.Primitives(CellType.ERROR)
                 else -> { // 숫자(t 없음 또는 "n")
