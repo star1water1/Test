@@ -650,4 +650,41 @@ class BodySilhouetteSpecTest {
         }
         assertNotNull(f.scales)
     }
+
+    // ── 가로 화면 (S6·S8 관찰) ───────────────────────────────────────────
+
+    @Test
+    fun `윤곽선 굵기는 목업 정본 240x330에서 2px이다`() {
+        // 330px 높이 캔버스의 축척 k = 330 / CANVAS_HEIGHT_CM — 그 축척에서 2px.
+        val k = 330.0 / BodySilhouetteSpec.CANVAS_HEIGHT_CM
+        assertEquals(2.0, BodySilhouetteSpec.OUTLINE_WIDTH_CM * k, 1e-9)
+    }
+
+    @Test
+    fun `라벨은 겹치지 않게 벌리고 입력 순서를 지킨다`() {
+        // 붙은 셋(110·112·114)과 떨어진 하나(40) — 순서를 섞어 넣는다.
+        val out = BodySilhouetteSpec.spreadLabels(listOf(112f, 40f, 110f, 114f), gap = 10f, minY = 0f, maxY = 500f)
+        assertEquals(40f, out[1], 1e-6f)
+        assertEquals(110f, out[2], 1e-6f)
+        assertEquals(120f, out[0], 1e-6f)
+        assertEquals(130f, out[3], 1e-6f)
+    }
+
+    @Test
+    fun `아래 한계를 넘으면 위로 되민다`() {
+        val out = BodySilhouetteSpec.spreadLabels(listOf(95f, 96f, 97f), gap = 10f, minY = 0f, maxY = 100f)
+        assertEquals(listOf(80f, 90f, 100f), out)
+    }
+
+    @Test
+    fun `공간이 모자라면 겹치지 않고 아래로 넘친다`() {
+        val out = BodySilhouetteSpec.spreadLabels(listOf(5f, 6f, 7f), gap = 10f, minY = 0f, maxY = 12f)
+        assertEquals(listOf(0f, 10f, 20f), out)
+    }
+
+    @Test
+    fun `떨어진 라벨은 움직이지 않는다`() {
+        val ys = listOf(20f, 60f, 100f)
+        assertEquals(ys, BodySilhouetteSpec.spreadLabels(ys, gap = 10f, minY = 0f, maxY = 200f))
+    }
 }

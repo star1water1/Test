@@ -195,6 +195,12 @@ class FieldEditDialog : DialogFragment() {
     private var restoredType: String? = null
 
     /**
+     * 보던 탭(기본/고급). 탭 선택은 뷰 상태 저장이 들지 않아, 고급 탭에서 회전하면
+     * 창이 "기본"으로 돌아갔다(S3 관찰) — 폼 내용은 남아도 *보던 자리*를 잃는다.
+     */
+    private var restoredTab: Int = 0
+
+    /**
      * 지금 스피너가 가리키는 타입. 스피너는 [FieldType.entries] 순서로 채워지므로 위치가 곧
      * 타입이다 — 위치가 범위를 벗어나면(스피너가 아직 안 붙었을 때) [FieldType.TEXT]다.
      */
@@ -208,6 +214,7 @@ class FieldEditDialog : DialogFragment() {
         formBinding = binding
         restoredConfig = savedInstanceState?.getString(STATE_FORM_CONFIG)
         restoredType = savedInstanceState?.getString(STATE_FORM_TYPE)
+        restoredTab = savedInstanceState?.getInt(STATE_FORM_TAB, 0) ?: 0
 
         universeId = arguments?.getLong(ARG_UNIVERSE_ID) ?: 0
         // **전역 구역인가** — `universeId = 0`이 *프리셋 편집*과 *전역 구역*을 겸하지 않게
@@ -238,6 +245,8 @@ class FieldEditDialog : DialogFragment() {
         // 파트 연결 행은 칸이 다 복원된 뒤에 그린다 — 새 필드(칸 0개)에서도 안내가 뜨도록
         // populateFields 안이 아니라 여기서 부른다(그 함수는 편집·프리필이 없으면 일찍 반환한다).
         refreshPartSlotRows(binding)
+        // 보던 탭은 폼이 다 선 뒤에 되돌린다 — 선택 리스너가 두 탭의 표시를 가른다.
+        if (restoredTab != 0) binding.tabLayout.getTabAt(restoredTab)?.select()
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
@@ -2279,6 +2288,7 @@ class FieldEditDialog : DialogFragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         val b = formBinding ?: return
+        outState.putInt(STATE_FORM_TAB, b.tabLayout.selectedTabPosition.coerceAtLeast(0))
         // **저장이 쓰는 그 함수로 접는다**(R-33) — 담는 규칙과 쓰는 규칙이 갈릴 수 없다.
         val type = currentFieldType()
         runCatching { buildConfig(b, type) }.getOrNull()?.let {
@@ -3457,6 +3467,7 @@ class FieldEditDialog : DialogFragment() {
         /** 회전 너머로 폼을 나르는 키 — 담는 쪽과 꺼내는 쪽이 이 상수를 쓴다. */
         private const val STATE_FORM_CONFIG = "formConfig"
         private const val STATE_FORM_TYPE = "formType"
+        private const val STATE_FORM_TAB = "formTab"
 
         /**
          * AI 추천 경로가 **실제로 있는** 필드 종류 (R-24 — 성립하지 않는 조합의 설정은 안 보인다).

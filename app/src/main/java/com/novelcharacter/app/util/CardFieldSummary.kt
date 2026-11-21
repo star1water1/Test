@@ -2,6 +2,7 @@ package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.CardDisplayConfig
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.StructuredInputConfig
 
 /**
  * 목록 카드에 얹을 필드값 요약을 만든다 (B-5).
@@ -57,7 +58,10 @@ object CardFieldSummary {
                 .mapNotNull { (fieldId, raw) ->
                     val fd = defById[fieldId] ?: return@mapNotNull null
                     val value = raw.trim()
-                    if (value.isEmpty()) null else Triple(orderById.getValue(fieldId), fd.name, value)
+                    if (value.isEmpty()) return@mapNotNull null
+                    // 구조화 필드는 읽기 화면과 같은 모양으로 — 저장 문자열(`79--103.2-`)을 그리지 않는다.
+                    val shown = StructuredInputConfig.readDisplay(fd, value) ?: value
+                    Triple(orderById.getValue(fieldId), fd.name, shown)
                 }
                 .sortedBy { it.first }
 

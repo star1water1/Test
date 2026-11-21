@@ -50,8 +50,9 @@
         android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
-    <!-- 실루엣 -->
+    <!-- 실루엣 (가로 화면에서는 시트가 이 칸을 왼쪽 열로 옮긴다 — arrangeForLandscape) -->
     <FrameLayout
+        android:id="@+id/silhouetteFrame"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="55">

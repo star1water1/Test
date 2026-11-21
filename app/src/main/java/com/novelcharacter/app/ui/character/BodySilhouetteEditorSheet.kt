@@ -249,7 +249,33 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = BottomSheetBodySilhouetteEditorBinding.inflate(inflater, container, false)
+        arrangeForLandscape()
         return binding.root
+    }
+
+    /**
+     * 가로 화면에서는 실루엣을 **왼쪽 열에 화면 높이만큼** 세우고 나머지를 오른쪽 열로 옮긴다.
+     *
+     * 세로 배치(실루엣 55 : 조작부 45)를 그대로 쓰면 가로 화면의 낮은 높이를 둘이 나눠 가져
+     * 그림이 아주 작아지고 부위 글자가 겹쳤다(S6 관찰). 레이아웃 파일을 가로용으로 한 벌 더 두면
+     * 칸 수백 줄이 두 벌이 되므로, **같은 뷰를 옮겨 담는다** — id·바인딩·상태 저장이 그대로다.
+     */
+    private fun arrangeForLandscape() {
+        if (resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE) return
+        val root = binding.root as? LinearLayout ?: return
+        val frame = binding.silhouetteFrame
+        val others = (0 until root.childCount).map { root.getChildAt(it) }.filter { it !== frame }
+        root.removeAllViews()
+        root.orientation = LinearLayout.HORIZONTAL
+        frame.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 45f)
+        val column = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 55f)
+        }
+        // 조작부(스크롤)만 무게를 가진 칸이라 오른쪽 열의 남는 높이를 전부 받는다.
+        others.forEach { column.addView(it) }
+        root.addView(frame)
+        root.addView(column)
     }
 
     /**
@@ -628,14 +654,8 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         syncAll(editing = editing)
     }
 
-    private fun withSlot(m: Measures, slot: BodySlot, value: Double): Measures = when (slot) {
-        BodySlot.SHOULDER -> m.copy(shoulder = value)
-        BodySlot.BUST -> m.copy(bust = value)
-        BodySlot.WAIST -> m.copy(waist = value)
-        BodySlot.HIP -> m.copy(hip = value)
-        BodySlot.UNDERBUST -> m.copy(underbust = value)
-        BodySlot.NONE -> m
-    }
+    private fun withSlot(m: Measures, slot: BodySlot, value: Double): Measures =
+        BodyEditorModel.withSlot(m, slot, value)
 
     /**
      * 세 경로를 같은 값으로 맞춘다.

@@ -784,30 +784,8 @@ class DynamicFieldFormBuilder(
 
             when (fieldType) {
                 FieldType.TEXT, FieldType.BODY_SIZE -> {
-                    var structuredConfig = StructuredInputConfig.fromConfig(field.config)
-                    // BODY_SIZE 타입인데 structuredInput 설정이 없으면 기본 B-W-H 구조화 입력 자동 적용
-                    if (fieldType == FieldType.BODY_SIZE && !structuredConfig.enabled) {
-                        structuredConfig = StructuredInputConfig(
-                            enabled = true,
-                            separator = "-",
-                            parts = listOf(
-                                StructuredInputConfig.Part("B", "cm", "number"),
-                                StructuredInputConfig.Part("W", "cm", "number"),
-                                StructuredInputConfig.Part("H", "cm", "number")
-                            )
-                        )
-                    }
-                    // BIRTH_DATE semanticRole인데 structuredInput이 없으면 월/일 구조화 입력 자동 적용
-                    if (!structuredConfig.enabled && SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE) {
-                        structuredConfig = StructuredInputConfig(
-                            enabled = true,
-                            separator = "-",
-                            parts = listOf(
-                                StructuredInputConfig.Part("월", "", "number"),
-                                StructuredInputConfig.Part("일", "", "number")
-                            )
-                        )
-                    }
+                    // 기본 파트(신체 사이즈 B-W-H · 생일 월-일)는 단일 소스가 정한다 — 읽기 화면과 같은 구조.
+                    val structuredConfig = StructuredInputConfig.effectiveFor(field)
                     if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                         // 구조화 입력: 파트별 개별 입력 필드
                         val labelRow = LinearLayout(context).apply {

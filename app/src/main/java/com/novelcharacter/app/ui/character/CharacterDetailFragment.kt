@@ -263,8 +263,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             val savedField = com.google.gson.Gson()
                 .fromJson(json, com.novelcharacter.app.data.model.FieldDefinition::class.java)
             if (savedField.id == 0L) return@setFragmentResultListener   // 이 화면은 생성 경로가 없다
-            fieldViewModel.updateField(savedField)
-            cachedCharacter?.let { displayCharacter(it) }
+            // **저장이 끝난 뒤에 다시 그린다** — 종전에는 쓰기를 띄워 놓고 곧바로 다시 그려,
+            // 다시 읽은 필드가 아직 옛 config라 카드가 다시 열기 전까지 옛 설정으로 섰다
+            // (S8 관찰 · `8-ㄹ-6`). 실패도 같은 자리에서 다시 그려 화면이 DB와 어긋나지 않는다.
+            val saving = fieldViewModel.updateField(savedField)
+            viewLifecycleOwner.lifecycleScope.launch {
+                saving.join()
+                if (_binding == null) return@launch
+                cachedCharacter?.let { displayCharacter(it) }
+            }
         }
     }
 

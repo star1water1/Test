@@ -35,6 +35,47 @@ object BodySilhouetteSpec {
     /** 캔버스가 담는 키(cm). 이 키의 캐릭터가 그릴 높이를 꽉 채운다. */
     const val CANVAS_HEIGHT_CM = 205.0
 
+    /**
+     * 몸통 윤곽선 굵기(cm, 그림 축척) — 목업 정본의 "240×330 캔버스에서 2px"을 **그림 높이**에 묶은 값.
+     *
+     * 종전에는 뷰 **폭**에 비례시켰는데(`width × 2/240`), 그림 크기는 **높이**가 정한다. 세로 화면은
+     * 둘이 같이 움직여 드러나지 않았지만 가로 화면은 폭이 크고 높이가 작아, 작은 그림에 굵은 선이
+     * 그려졌다(S8 관찰). 축척에 묶으면 어떤 비율의 뷰에서도 그림과 선의 비가 같다.
+     */
+    const val OUTLINE_WIDTH_CM = 2.0 * CANVAS_HEIGHT_CM / 330.0
+
+    /**
+     * 라벨 기준선(y, px)을 겹치지 않게 벌린다 — **입력 순서대로** 돌려준다.
+     *
+     * 그림이 작아지면(가로 화면 편집기) 부위 가이드가 서로 붙어 부위 이름·수치 글자가 겹쳤다(S6 관찰).
+     * 가이드 선은 제자리에 두고 **글자만** 위에서 아래로 [gap] 이상 떨어뜨린다. 아래 한계 [maxY]를
+     * 넘으면 위로 되밀고, 공간이 모자라면 위 한계 [minY]가 이긴다 — 겹치는 것보다 넘치는 편이 읽힌다.
+     */
+    fun spreadLabels(ys: List<Float>, gap: Float, minY: Float, maxY: Float): List<Float> {
+        if (ys.size < 2) return ys
+        val order = ys.indices.sortedBy { ys[it] }
+        val placed = FloatArray(ys.size)
+        var prev = Float.NEGATIVE_INFINITY
+        for (i in order) {
+            val y = maxOf(ys[i], prev + gap)
+            placed[i] = y
+            prev = y
+        }
+        var next = Float.POSITIVE_INFINITY
+        for (i in order.asReversed()) {
+            val y = minOf(placed[i], maxY, next - gap)
+            placed[i] = y
+            next = y
+        }
+        prev = Float.NEGATIVE_INFINITY
+        for (i in order) {
+            val y = maxOf(placed[i], minY, prev + gap)
+            placed[i] = y
+            prev = y
+        }
+        return placed.toList()
+    }
+
     /** 변형의 원점이 되는 기준 몸. */
     val BASE = Measures(height = 165.0, shoulder = 38.0, bust = 86.0, waist = 62.0, hip = 90.0)
 
