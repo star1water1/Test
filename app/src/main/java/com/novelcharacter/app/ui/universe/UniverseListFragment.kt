@@ -57,40 +57,29 @@ class UniverseListFragment : Fragment() {
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@registerForActivityResult
-        val ctx = context?.applicationContext ?: return@registerForActivityResult
+        val app = context?.applicationContext as? com.novelcharacter.app.NovelCharacterApp
+            ?: return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch {
-            // 공용 유틸로 라우팅 — 압축 설정(용량↔화질) 적용. 설정은 배치당 1회 로드.
-            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
-            // **실패를 고지한다.** 종전에는 `savedPath == null`에 else가 없어 조용히 빠졌다 —
-            // 5장 골라 3장만 붙어도 아무 말이 없고, 전부 실패하면 화면이 안 변해 **취소와
-            // 구별되지 않았다.** 캐릭터 이미지 줄은 같은 유틸을 쓰면서 이미 고지하고 있었다
-            // (`CharacterImageStripController`) — 같은 조작이 화면마다 다르게 굴면 안 된다.
-            var anyFailed = false
-            for (uri in uris) {
-                val savedPath = try {
-                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "universe", settings)
-                } catch (e: Exception) {
-                    null
-                }
-                if (savedPath != null) {
-                    pendingImagePaths.add(savedPath)
-                } else {
-                    anyFailed = true
-                }
-            }
-            if (isAdded) {
-                universeImageAdapter?.notifyDataSetChanged()
-                if (pendingImagePaths.isNotEmpty()) {
+            // **루프·담기·고지는 [PickedImageBatch]가 든다** — 캐릭터 편집과 같은 경로다.
+            //
+            // 종전에는 이 자리가 `lifecycleScope`에서 직접 돌아 **회전 한 번에 루프가 끊겼고**,
+            // 쓴 파일은 죽은 폼의 `pendingImagePaths`에 담겨 주인 없이 남았다. `catch (Exception)`이
+            // `CancellationException`까지 삼켜 **취소를 저장 실패로 셌고**, 고지는 `isAdded`에
+            // 걸려 있어 그 거짓조차 나가지 않았다 — 즉 회전 뒤에는 **아무 말도 없었다.**
+            //
+            // 이 화면의 수명 신호는 `isAdded`다 — 이미지 목록 필드는 등록 창의 뷰를 들고
+            // `onDestroyView`에서 비워지지 않으므로 살아 있음의 근거가 되지 못한다.
+            com.novelcharacter.app.util.PickedImageBatch.importAndReport(
+                app = app,
+                uris = uris,
+                prefix = "universe",
+                formAlive = { isAdded },
+                onSaved = { path ->
+                    pendingImagePaths.add(path)
+                    universeImageAdapter?.notifyDataSetChanged()
                     universeImageRecyclerView?.visibility = View.VISIBLE
                 }
-                if (anyFailed) {
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        com.novelcharacter.app.R.string.image_save_failed,
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
+            )
         }
     }
 

@@ -146,127 +146,27 @@ class CharacterImageStripController(
      */
     fun importUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val ctx = fragment.context?.applicationContext ?: return
-        val app = ctx as? com.novelcharacter.app.NovelCharacterApp ?: return
+        val app = fragment.context?.applicationContext as? com.novelcharacter.app.NovelCharacterApp ?: return
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
-            // **저장하지 못한 장수** — 참/거짓이 아니라 수다. 사용자가 여섯 장을 골랐을 때
-            // *"이미지 저장에 실패했습니다"* 한 줄은 몇 장이 없는지 말하지 못한다.
-            var failed = 0
-            // **폼이 받지 못한 파일** — 이미 디스크에 있는데 가리키는 곳이 없는 몫이다.
+            // **루프·담기·고지는 [PickedImageBatch]가 든다.** 종전에는 이 함수가 그 셋을
+            // 혼자 들고 있었고, 세계관·작품 목록이 같은 조작을 **다르게** 처리했다(그쪽은
+            // 회전 뒤의 몫을 말없이 고아로 남겼다). 같은 조작이 화면마다 다르게 굴지 않게
+            // 공용 경로로 옮겼다 — 그 파일 KDoc이 세 자리의 종전 처분을 표로 든다.
             //
-            // 종전에는 `recyclerViewGetter() == null`이면 그 자리에서 `return@launch`라
-            // ⓐ 방금 쓴 파일이 **고아**로 남고 ⓑ 남은 uri는 **말없이 버려졌다.** 회전 한 번이면
-            // 닿는다(화면 수명 스코프라 코루틴 자체가 끊긴다). 여러 장을 고른 사용자는
-            // *일부만 붙은* 결과를 받고 그 사실을 어디서도 듣지 못했다.
-            val stranded = mutableListOf<String>()
-            // **시도를 마친 장수** — `uris.size`와의 차가 곧 *손도 못 댄 몫*이다.
-            //
-            // 위 문단이 *"끝까지 가져온다"*라고 적어 놓았지만 **두 번째 수리까지 못 갔다**:
-            // 루프의 유일한 중단점(`importImage`)이 취소를 되던지므로 회전이 들어오면 남은
-            // uri는 시도조차 되지 않은 채 루프를 빠져나갔고, 세 번째 갈래(`notAttempted`)로
-            // *"다시 고르세요"*가 나갔다. 20MB 여섯 장을 고르고 곧바로 돌리면 한 장만 폼에
-            // 들어가고 **다섯 장은 사용자가 다시 골라야 했다** — 시트(`1-ㅎ7`)가 적어 둔
-            // 기대는 *미배정으로 담아 둠*이고, 가져오던 한 장은 쓰다 끊긴 채 **고아 파일로
-            // 남는데 고지에 없었다**(2026.11.07 워크스루 S5).
-            //
-            // ## 수리 — **루프를 취소 밖으로 옮긴다** (2026.11.21)
-            //
-            // 종전의 수리들은 *끊긴 뒤에 무엇을 말할까*를 고쳐 왔다. 원인은 그 위에 있다:
-            // 이 루프가 **화면 수명 스코프**에 살아서 회전이 코루틴 자체를 끊는다. 고른 것을
-            // 끝까지 가져오려면 가져오는 동안은 끊기지 않아야 한다.
-            //
-            // - `NonCancellable`이라 회전·화면 종료가 루프를 중단시키지 못한다. `importImage`는
-            //   제 안에서 `Dispatchers.IO`로 내려가므로 메인 스레드를 쥐지 않는다.
-            // - 그래서 **쓰다 끊긴 파일이 생기지 않는다** — 고아의 발생 조건 자체가 없어진다.
-            // - 폼이 사라진 뒤에 들어온 몫은 종전 갈래 그대로 `stranded` → *미배정으로 담아 둠*
-            //   이다. 회전 뒤의 폼은 **다른 인스턴스**라 거기 붙일 수는 없다(시트의 기대와 같다).
-            // - `notAttempted` 갈래는 **지우지 않는다.** 프로세스가 죽는 자리는 이 함수가 막을
-            //   수 없고, 그때 말없이 비는 것보다 *다시 고르세요*가 낫다.
-            var processed = 0
-            try {
-                // **고른 것은 끝까지 가져온다.** 이 블록이 끊기지 않는 것이 `1-ㅎ7`의 수리다.
-                withContext(kotlinx.coroutines.NonCancellable) {
-                    for (uri in uris) {
-                        val filePath = try {
-                            com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            // 이 블록은 취소를 보지 않으므로 여기 닿을 길은 사실상 없다. 그래도
-                            // 삼키지 않는다 — 삼키면 `failed` 고지가 *저장 실패*라고 거짓을
-                            // 말하고, 바깥 스코프가 실제로 끊긴 경우를 숨긴다.
-                            throw e
-                        } catch (e: Exception) {
-                            null
-                        }
-                        // 성공이든 실패든 **이 장의 시도는 끝났다** — `continue`보다 앞에 둔다.
-                        processed++
-                        if (filePath == null) {
-                            failed++
-                            continue
-                        }
-                        // 폼이 없어도 **끝까지 가져온다** — 사용자가 고른 것을 버리지 않는다.
-                        if (recyclerViewGetter() == null) {
-                            stranded.add(filePath)
-                            continue
-                        }
-                        imagePaths.add(filePath)
-                        refresh()
-                        onChanged()
-                    }
+            // 이 화면의 수명 신호는 **썸네일 목록이 살아 있는가**다. 회전 뒤의 폼은 다른
+            // 인스턴스라 거기 붙일 수 없고, 그것이 시트(`1-ㅎ7`)가 적어 둔 기대와 같다.
+            com.novelcharacter.app.util.PickedImageBatch.importAndReport(
+                app = app,
+                uris = uris,
+                prefix = "char",
+                formAlive = { recyclerViewGetter() != null },
+                onSaved = { path ->
+                    imagePaths.add(path)
+                    refresh()
+                    // 첨부는 미저장 변경 — 없으면 뒤로가기가 확인 없이 이탈한다(무음 유실).
+                    onChanged()
                 }
-            } finally {
-                // **지우지 않고 라이브러리에 담는다**(개발 의도 2번 — 사용자가 고른 것이다).
-                // 편집창의 제거 정책(`EditorRemovePolicy`)을 따르지 않는 것은 성질이 달라서다:
-                // 그쪽은 *붙어 있던 것을 뗀* 조작이라 사용자가 처분을 정했고, 이쪽은
-                // **붙은 적이 없는** 새 파일이다 — 지우면 방금 고른 것이 통째로 사라진다.
-                // `adoptOrphans`는 참조·보류·meta·드래프트가 보호하는 경로를 건너뛰므로
-                // 정상적으로 붙은 것은 건드리지 않는다.
-                val notAttempted = uris.size - processed
-                // 저장 실패도 **이 블록에서** 말한다. 종전에는 아래쪽 `fragment.isAdded` 토스트가
-                // 맡았는데, 화면이 사라진 뒤에는 그 조건이 거짓이라 **실패가 통째로 조용했다** —
-                // 고지가 화면과 함께 사라지는 것은 이 함수가 세 번 고쳐 온 바로 그 결함이다.
-                if (stranded.isNotEmpty() || notAttempted > 0 || failed > 0) {
-                    withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                        val adopted = if (stranded.isEmpty()) 0 else runCatching {
-                            com.novelcharacter.app.util.ImageOwnershipGuard
-                                .adoptOrphans(app.database, ctx, stranded)
-                        }.getOrDefault(0)
-                        // **몫마다 따로 말한다 — 그 판정은 [PickedImageNotices]가 든다.**
-                        // 종전에는 `adopted > 0`만 말했고, `adoptOrphans`가 예외 하나에 0을
-                        // 돌려주므로(`getOrDefault(0)`) **디스크에 쓴 파일이 주인도 meta도 없이
-                        // 남은 실패**가 정확히 *담을 것이 없었다*와 같은 침묵으로 나갔다.
-                        // 그 판정이 이 화면 안에 있는 동안 두 번 틀렸으므로 순수 쪽으로 뺐다.
-                        val lines = com.novelcharacter.app.util.PickedImageNotices
-                            .of(adopted, stranded.size, notAttempted, failed)
-                            .map { (notice, count) ->
-                                ctx.getString(
-                                    when (notice) {
-                                        com.novelcharacter.app.util.PickedImageNotices.Notice.STRANDED_ADOPTED ->
-                                            R.string.image_import_stranded_adopted
-                                        com.novelcharacter.app.util.PickedImageNotices.Notice.STRANDED_FAILED ->
-                                            R.string.image_import_stranded_failed
-                                        com.novelcharacter.app.util.PickedImageNotices.Notice.NOT_ATTEMPTED ->
-                                            R.string.image_import_interrupted
-                                        com.novelcharacter.app.util.PickedImageNotices.Notice.SAVE_FAILED ->
-                                            R.string.image_import_failed_count
-                                    },
-                                    count
-                                )
-                            }
-                        if (lines.isNotEmpty()) {
-                            // 화면이 사라져도 고지는 간다 — 앱 컨텍스트로, 이 블록 안에서.
-                            //
-                            // **줄마다 토스트 하나다.** 종전에는 `"\n"`으로 이어 한 번에 띄웠는데
-                            // 시스템 토스트는 **두 줄에서 자르므로**, 네 몫을 말하는 이 고지는
-                            // 뒤쪽이 아예 보이지 않았다 — 말하지 않은 것과 구별되지 않는다
-                            // ([MultiLineNotice]).
-                            withContext(Dispatchers.Main) {
-                                com.novelcharacter.app.util.MultiLineNotice.toastEachLine(ctx, lines)
-                            }
-                        }
-                    }
-                }
-            }
+            )
         }
     }
 
