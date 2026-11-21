@@ -84,8 +84,25 @@ class FieldDefinitionAdapter(
                 if (com.novelcharacter.app.data.model.DefaultFieldRef.isLinked(field.config)) View.VISIBLE
                 else View.GONE
 
-            binding.dragHandle.setOnTouchListener { _, event ->
+            // **핸들을 누르는 동안 행의 롱프레스를 끈다** (2026.11.07 워크스루 S2 관찰).
+            //
+            // 종전에는 핸들을 0.5초 넘게 누른 뒤 끌면 **순서도 바뀌고 롱프레스 메뉴도 함께**
+            // 떴다. 까닭은 이 목록만 **핸들이 늘 보이고 행 롱클릭도 늘 살아 있는** 구성이기
+            // 때문이다 — 형제 목록(세계관·작품·캐릭터·연표)은 핸들을 재배치 모드에서만 띄우고
+            // 그 모드에서 행 롱클릭을 끄므로 두 조작이 겹칠 자리가 애초에 없다. 관찰은 이것을
+            // *"다섯 목록 공통"*으로 적었지만 실제로는 이 한 자리다(2026.11.21 전수 대조).
+            //
+            // **끌기 경로는 손대지 않는다.** 핸들이 터치를 삼키게 하는 쪽(`true` 반환)이 더
+            // 짧지만, 그러면 `ItemTouchHelper`가 이어지는 이벤트를 받는 경로가 달라진다 —
+            // 기기에서 확인할 수 없는 변경이라 고르지 않았다. 대신 **롱프레스 타이머가 서지
+            // 못하게** 한다: 이 리스너는 행의 `onTouchEvent`보다 **먼저** 불리므로(자식이
+            // 소비하지 않으면 그다음에 부모가 받는다), 여기서 끄면 그 DOWN은 타이머를 걸지
+            // 못한다. 되돌리기는 `post`로 — DOWN 전달이 끝난 다음 턴이라 안전하고, 탭만 하고
+            // 끌지 않은 경우에도 롱클릭이 꺼진 채 남지 않는다.
+            binding.dragHandle.setOnTouchListener { handle, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    binding.root.isLongClickable = false
+                    handle.post { binding.root.isLongClickable = true }
                     itemTouchHelper?.startDrag(this)
                 }
                 false

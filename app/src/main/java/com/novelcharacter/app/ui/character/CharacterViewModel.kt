@@ -1069,6 +1069,24 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun getAllNovelsList(): List<Novel> = novelRepository.getAllNovelsList()
 
+    /**
+     * **작품을 고르는 목록의 재료** — 작품과 그 세계관 이름.
+     *
+     * 제목만 주면 화면은 **세계관이 다른 같은 이름 작품을 구별할 재료를 못 가진다**
+     * (2026.11.07 워크스루 S25 관찰). 이름표를 짓는 규칙은
+     * [com.novelcharacter.app.util.NovelPickerLabels]가 든다.
+     *
+     * **동명이 없으면 세계관을 묻지 않는다** — 흔한 모양이 그쪽이고, 그때 세계관 조회는
+     * 쓰이지 않는 재료다. 이름표도 제목 그대로 선다.
+     */
+    suspend fun getNovelPickerItems(): List<Pair<Novel, String?>> {
+        val novels = novelRepository.getAllNovelsList()
+        val hasDuplicateTitle = novels.groupingBy { it.title }.eachCount().any { it.value > 1 }
+        if (!hasDuplicateTitle) return novels.map { it to null }
+        val universeNames = universeRepository.getAllUniversesList().associate { it.id to it.name }
+        return novels.map { it to it.universeId?.let { id -> universeNames[id] } }
+    }
+
     fun insertCharacter(character: Character) = viewModelScope.launch {
         try {
             characterRepository.insertCharacter(character)

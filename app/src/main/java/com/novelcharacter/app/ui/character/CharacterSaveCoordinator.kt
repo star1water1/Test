@@ -726,9 +726,18 @@ class CharacterSaveCoordinator(
      */
     private fun notifyKeptGlobalValues(count: Int) {
         val ctx = appContext
-        Toast.makeText(
-            ctx, ctx.getString(R.string.global_field_values_kept, count), Toast.LENGTH_LONG
-        ).show()
+        // **사실·사유·할 일을 세 줄로 가른다.** 종전에는 한 줄에 다 담아 토스트가 두 줄에서
+        // 자르고 **뒤쪽(값이 남아 있다 · 직접 옮겨 적으라)이 아예 보이지 않았다**
+        // (2026.11.07 워크스루 S2 관찰). 잘린 고지는 *값을 잃었다*로 읽히는데 사실은
+        // 반대다 — 그 오해가 이 고지에서 가장 나쁜 결말이다.
+        com.novelcharacter.app.util.MultiLineNotice.toastEachLine(
+            ctx,
+            listOf(
+                ctx.getString(R.string.global_field_values_kept, count),
+                ctx.getString(R.string.global_field_values_kept_why),
+                ctx.getString(R.string.global_field_values_kept_how)
+            )
+        )
     }
 
     /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */
