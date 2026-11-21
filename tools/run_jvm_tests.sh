@@ -392,6 +392,7 @@ $MAIN/util/PresetTemplates.kt
 $MAIN/util/PresetMerge.kt
 $MAIN/util/FieldTypeCompatibility.kt
 $MAIN/util/FieldValueTypeMismatch.kt
+$MAIN/util/PickedImageNotices.kt
 $MAIN/util/FieldValueFixRoute.kt
 $MAIN/util/GlobalScopeFieldMove.kt
 $MAIN/util/UnassignedHistoryScope.kt
@@ -549,6 +550,7 @@ $TEST/excel/ListPresetSpecColumnOrderTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/CsvTokensTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
+$TEST/util/PickedImageNoticesTest.kt
 $TEST/util/MultiValueInputTest.kt
 $TEST/util/FieldValueSorterTest.kt
 $TEST/util/FormulaDisplayTest.kt
