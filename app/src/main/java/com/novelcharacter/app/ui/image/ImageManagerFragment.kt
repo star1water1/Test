@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.image
 
-import com.novelcharacter.app.ui.common.novelPickerLabels
 import android.os.Bundle
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -1707,7 +1706,12 @@ class ImageManagerFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getNovelChoices()
             // 동명 작품은 세계관으로 구별한다 — 고른 작품이 새 캐릭터의 필드 구역을 정한다.
-            val novelLabels = ctx.novelPickerLabels(novels)
+            // 선택지 행이 세계관 이름(빈 글자 = 무소속)을 이미 들고 와서 규칙만 부른다.
+            val novelLabels = com.novelcharacter.app.util.NovelPickerLabels.labels(
+                novels.map {
+                    com.novelcharacter.app.util.NovelPickerLabels.Item(it.title, it.subtitle.ifBlank { null })
+                }
+            )
             if (!isAdded) return@launch
 
             val density = ctx.resources.displayMetrics.density
