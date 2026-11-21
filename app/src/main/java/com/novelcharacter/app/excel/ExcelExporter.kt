@@ -150,7 +150,25 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
      * 머리글에는 필드 이름이 그대로 실리므로, 규약을 건너뛰면 그 열을 가져오기가 못 알아본다.
      */
     private fun org.apache.poi.ss.usermodel.Cell.setLabelText(value: String) {
-        setCellValue(ExcelCellText.encode(value))
+        // 상한도 데이터 칸과 같다 — 표기가 늘어 한도를 넘으면 POI가 셀을 거절해 내보내기가 죽는다.
+        val encoded = ExcelCellText.encodeWithin(value, XLSX_CELL_LIMIT)
+        if (encoded.truncated) truncatedCellCount++
+        setCellValue(encoded.text)
+    }
+
+    /** 숫자 칸 — 글자는 이 길로 오지 못한다(타입이 막는다, `check_cell_text_codec.sh`가 이 이름을 본다). */
+    private fun org.apache.poi.ss.usermodel.Cell.setNumber(value: Double) = setCellValue(value)
+
+    /**
+     * 숫자로 왕복할 글자인데 15자리를 넘어 **글자 칸으로 싣는** 자리([exceedsSpreadsheetPrecision]).
+     * 그 칸만 엑셀의 "숫자가 텍스트로 저장됨" 표식을 끈다 — 표식의 [숫자로 변환]이 바로 그 접힘을 일으킨다.
+     */
+    private fun org.apache.poi.ss.usermodel.Cell.setPrecisionText(text: String) {
+        setTextSafe(text)
+        xssfSheetOf(sheet)?.addIgnoredErrors(
+            org.apache.poi.ss.util.CellRangeAddress(rowIndex, rowIndex, columnIndex, columnIndex),
+            org.apache.poi.ss.usermodel.IgnoredErrorType.NUMBER_STORED_AS_TEXT
+        )
     }
 
     /**
@@ -859,7 +877,11 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
             if (col.wrap && cell.cellType == org.apache.poi.ss.usermodel.CellType.STRING) {
                 // 줄수는 **실제로 적용될 너비**로 잰다 — 머리글 때문에 넓어진 열은
                 // 그만큼 덜 접히므로, 스펙 값으로 재면 높이가 필요보다 커진다([columnWidthFor]).
-                lines = maxOf(lines, estimateWrapLines(cell.stringCellValue, columnWidthFor(col)))
+                // 스트리밍 칸은 **적은 그대로**(`_xHHHH_` 표기)를 돌려주고 일반 칸은 해석해 돌려준다(실측) —
+                // 같은 글자를 같은 줄수로 재려면 스트리밍 쪽만 푼다(R-72).
+                val raw = cell.stringCellValue
+                val text = if (cell is org.apache.poi.xssf.streaming.SXSSFCell) ExcelCellText.decode(raw) else raw
+                lines = maxOf(lines, estimateWrapLines(text, columnWidthFor(col)))
             }
         }
         // 엑셀은 파일을 열 때 행 높이를 재계산하지 않는다 — wrap이 보이려면 여기서(행을 쓰는
@@ -882,10 +904,11 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
         if (value.isNotEmpty()) {
             if (field.fieldType == FieldType.CALCULATED) {
                 val d = value.toDoubleOrNull()
-                if (d != null && d.isFinite()) { setCellValue(d); return }
+                if (d != null && d.isFinite()) { setNumber(d); return }
             } else if (field.fieldType == FieldType.NUMBER && !isBirthDateField(field)) {
                 val d = numericExportValueOrNull(value)
-                if (d != null) { setCellValue(d); return }
+                if (d != null) { setNumber(d); return }
+                if (exceedsSpreadsheetPrecision(value)) { setPrecisionText(value); return }
             }
         }
         setTextSafe(value)
@@ -948,16 +971,18 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
      * `SXSSF`에는 이 API가 없어 `XSSF` 층으로 내려가 건다(탭 색과 같은 자리·같은 이유이며,
      * 두 구현이 같은 XML을 낸다는 것은 실측으로 확인했다).
      */
+    /** 표식(ignoredErrors)을 거는 XSSF 층 시트 — `SXSSF`에는 그 API가 없다(아래 KDoc). */
+    private fun xssfSheetOf(sheet: Sheet): org.apache.poi.xssf.usermodel.XSSFSheet? = when (val wb = sheet.workbook) {
+        is org.apache.poi.xssf.streaming.SXSSFWorkbook -> wb.xssfWorkbook.getSheet(sheet.sheetName)
+        is org.apache.poi.xssf.usermodel.XSSFWorkbook -> wb.getSheet(sheet.sheetName)
+        else -> null
+    }
+
     private fun suppressNumberStoredAsText(sheet: Sheet, spec: SheetSpec, dataRowCount: Int) {
         // 판정은 순수 계층이 든다([numberWarningFreeColumns]) — 그 함수가 사유도 함께 든다.
         val gray = spec.numberWarningFreeColumns()
         if (gray.isEmpty()) return
-        val xssf = when (val wb = sheet.workbook) {
-            is org.apache.poi.xssf.streaming.SXSSFWorkbook ->
-                wb.xssfWorkbook.getSheet(sheet.sheetName) ?: return
-            is org.apache.poi.xssf.usermodel.XSSFWorkbook -> wb.getSheet(sheet.sheetName) ?: return
-            else -> return
-        }
+        val xssf = xssfSheetOf(sheet) ?: return
         val lastRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
         for (index in gray) {
             xssf.addIgnoredErrors(
@@ -1774,8 +1799,13 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
                 row.createCell(2).setTextSafe(label)
                 // 등급 숫자 — 15자리를 넘는 수는 글자 칸으로(외부 편집기가 자르지 않게, fitsSpreadsheetPrecision).
                 // 글자는 가져오기가 숫자 칸을 읽을 때 내는 것과 같은 표기다.
-                if (fitsSpreadsheetPrecision(value)) row.createCell(3).setCellValue(value)
-                else row.createCell(3).setTextSafe(java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString())
+                val cell = row.createCell(3)
+                when {
+                    // NaN·무한대(손으로 고친 JSON 등) — 숫자 칸에 실을 수 없다. 글자로 남겨 가져오기가 같은 수로 읽는다.
+                    !value.isFinite() -> cell.setTextSafe(value.toString())
+                    fitsSpreadsheetPrecision(value) -> cell.setNumber(value)
+                    else -> cell.setPrecisionText(java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString())
+                }
                 row.createCell(4).setTextSafe(universe?.code ?: "")
                 row.createCell(5).setTextSafe(system.code)
                 finishDataRow(row, spec, banded)
@@ -3241,8 +3271,11 @@ class ExcelExporter(context: Context, private val db: AppDatabase = AppDatabase.
                 // 숫자 칸으로는 **적은 글자 그대로 되돌아올 때만** 싣는다 — 필드값과 같은 판정이다
                 // (`"24.50"`·`"007"`·16자리 넘는 수는 글자 칸이어야 왕복에서 안 바뀐다).
                 val number = numericExportValueOrNull(value)
-                if (number != null) row.createCell(1).setCellValue(number)
-                else row.createCell(1).setTextSafe(value)
+                when {
+                    number != null -> row.createCell(1).setNumber(number)
+                    exceedsSpreadsheetPrecision(value) -> row.createCell(1).setPrecisionText(value)
+                    else -> row.createCell(1).setTextSafe(value)
+                }
             } else {
                 row.createCell(1).setTextSafe(value)
             }

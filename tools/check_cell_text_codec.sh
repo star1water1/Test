@@ -14,15 +14,16 @@
 #
 # ── 무엇을 보는가 ──
 # ① **쓰는 쪽**: 앱 소스 전체의 `setCellValue(` — 글자를 싣는 호출은 규약을 지나야 한다.
-#    통과하는 모양: `ExcelCellText.`을 부르는 줄 · 규약을 지난 값(`encoded.text`) · 숫자
-#    (`.toDouble()` · 15자리 판정 `fitsSpreadsheetPrecision(`을 지난 줄 · 숫자 지역 `d`·`number`).
-#    숫자 지역 이름 둘은 손 명단이다 — 그 이름으로 글자를 싣는 날 이 검사는 못 본다(아래 한계).
+#    통과하는 모양: `ExcelCellText.`을 부르는 줄 · 규약을 지난 값(`encoded.text`) · 숫자.
+#    숫자는 **모양으로** 가린다 — 식 자체가 수를 만드는 `.toDouble())`, 그리고 매개변수 타입이
+#    `Double`인 단일 통로 `Cell.setNumber(value: Double)`의 정의 줄. 변수 이름으로 면제하지 않는다
+#    (첫 판은 `d`·`number` 손 명단이었고, 그 이름에 글자를 담으면 통과했다 — 리뷰가 잡았다).
 # ② **읽는 쪽**: `StreamingXlsxReader`가 글자 셀을 만드는 자리(`CellType.STRING, stringValue =`)는
 #    공유 문자열(POI가 이미 해석한다 — `= s)`)이 아니면 `ExcelCellText.decode(`를 지나야 한다.
 #
 # ── 이 검사가 못 보는 자리 ──
-# 변수를 거쳐 가는 글자: 숫자 지역 이름(`d`·`number`)에 글자를 담아 싣는 코드는 통과한다 —
-# 타입을 보려면 컴파일러가 필요하다. 2026.11.21 현재 두 이름은 전부 `Double?`이다.
+# `setCellValue(x.toDouble())`의 `x`가 무엇인지는 보지 않는다 — 결과가 수이므로 글자가 실릴 수 없다.
+# 그 밖의 숫자 쓰기는 `setNumber`를 지나야 하고, 그 매개변수 타입이 글자를 막는다(컴파일러가 본다).
 #
 # 사용법: tools/check_cell_text_codec.sh            # 위반 시 exit 1
 #         tools/check_cell_text_codec.sh --self-test # 판정기가 위반을 실제로 잡는지 본다
@@ -38,7 +39,7 @@ READER="$MAIN/excel/StreamingXlsxReader.kt"
 write_violations() {
   grep -HnE 'setCellValue\(' "$@" 2>/dev/null \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//)' \
-    | grep -vE 'ExcelCellText\.|setCellValue\(encoded\.text\)|\.toDouble\(\)\)|fitsSpreadsheetPrecision\(|setCellValue\((d|number)\)' \
+    | grep -vE 'ExcelCellText\.|setCellValue\(encoded\.text\)|\.toDouble\(\)\)|Cell\.setNumber\(value: Double\) = setCellValue\(value\)' \
     || true
 }
 
@@ -56,14 +57,16 @@ if [ "${1:-}" = "--self-test" ]; then
     '        cell.setCellValue(ExcelCellText.encode(x))' \
     '        cell.setCellValue(encoded.text)' \
     '        row.createCell(1).setCellValue(n.toDouble())' \
-    '        if (d != null) { setCellValue(d); return }' > "$T/W.kt"
+    '        if (d != null) { setCellValue(d); return }' \
+    '    private fun Cell.setNumber(value: Double) = setCellValue(value)' > "$T/W.kt"
   printf '%s\n' \
     '"inlineStr" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = inlineBuf.toString())' \
     '"s" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = s)' \
     '"str" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = ExcelCellText.decode(buf.toString()))' > "$T/R.kt"
   w=$(write_violations "$T/W.kt" | wc -l); r=$(read_violations "$T/R.kt" | wc -l)
-  if [ "$w" -eq 1 ] && [ "$r" -eq 1 ]; then echo "자기 시험 통과 (쓰기 위반 1 · 읽기 위반 1을 잡았다)"; exit 0; fi
-  echo "자기 시험 실패 — 쓰기 위반 $w (기대 1) · 읽기 위반 $r (기대 1)"; exit 1
+  # 기대: 쓰기 위반 2(머리글 날글자 · 이름으로 면제되지 않는 `d`) · 읽기 위반 1.
+  if [ "$w" -eq 2 ] && [ "$r" -eq 1 ]; then echo "자기 시험 통과 (쓰기 위반 2 · 읽기 위반 1을 잡았다)"; exit 0; fi
+  echo "자기 시험 실패 — 쓰기 위반 $w (기대 2) · 읽기 위반 $r (기대 1)"; exit 1
 fi
 
 echo "── 셀 글자 쓰기·읽기 규약 검사 (R-72) ──"
@@ -72,7 +75,7 @@ mapfile -t FILES < <(grep -rlE 'setCellValue\(' "$MAIN" --include='*.kt' | sort)
 W=$(write_violations "${FILES[@]}")
 if [ -n "$W" ]; then
   echo "✗ 규약을 지나지 않고 셀에 글자를 싣는 자리:"; echo "$W" | sed 's/^/    /'
-  echo "  → 데이터 칸은 setTextSafe, 머리글·안내는 setLabelText, 그 밖은 ExcelCellText.encodeWithin을 지난다."
+  echo "  → 데이터 칸은 setTextSafe, 머리글·안내는 setLabelText, 숫자는 setNumber, 그 밖은 ExcelCellText.encodeWithin을 지난다."
   fail=1
 fi
 R=$(read_violations "$READER")

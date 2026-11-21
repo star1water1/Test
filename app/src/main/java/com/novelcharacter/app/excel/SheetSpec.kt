@@ -490,7 +490,21 @@ fun truncateForCell(value: String, limit: Int = EXCEL_CELL_TEXT_LIMIT): String =
  * (`ExcelImportService`의 `isDateField`). 판정은 내보내기 쪽 호출부가 같은
  * `SemanticRole.fromConfig` 하나로 한다.
  */
-fun numericExportValueOrNull(raw: String): Double? {
+fun numericExportValueOrNull(raw: String): Double? =
+    canonicalNumberOrNull(raw)?.takeIf { fitsSpreadsheetPrecision(it) }
+
+/**
+ * 숫자로 왕복할 글자인데 **자릿수만** 넘어 글자 칸으로 가는가([fitsSpreadsheetPrecision]).
+ *
+ * 그 칸에는 엑셀이 녹색 삼각형과 **[숫자로 변환]**을 띄우는데, 누르면 바로 그 15자리 접힘이
+ * 일어난다 — 내보내기가 그 칸만 표식을 끈다(열 전체가 아니다: 나이 칸에 글자로 적은 숫자를
+ * 알려 주는 표식은 쓸모가 있어 켜 둔다 — [numberWarningFreeColumns]).
+ */
+fun exceedsSpreadsheetPrecision(raw: String): Boolean =
+    canonicalNumberOrNull(raw)?.let { !fitsSpreadsheetPrecision(it) } ?: false
+
+/** 가져오기의 숫자 정규화가 **글자 그대로** 되돌려 줄 수인가 — 아니면 null(위 KDoc의 왕복 멱등성). */
+private fun canonicalNumberOrNull(raw: String): Double? {
     if (raw.isEmpty() || raw != raw.trim()) return null
     val d = raw.toDoubleOrNull() ?: return null
     if (!d.isFinite()) return null
@@ -499,7 +513,7 @@ fun numericExportValueOrNull(raw: String): Double? {
     } else {
         java.math.BigDecimal.valueOf(d).stripTrailingZeros().toPlainString()
     }
-    return if (roundTrip == raw && fitsSpreadsheetPrecision(d)) d else null
+    return if (roundTrip == raw) d else null
 }
 
 /**
@@ -511,7 +525,10 @@ fun numericExportValueOrNull(raw: String): Double? {
  * 글자 칸도 같은 값으로 읽는다(숫자 계산이 안 되는 것이 대가이고, 그런 수는 대개 식별자다).
  */
 fun fitsSpreadsheetPrecision(d: Double): Boolean =
-    java.math.BigDecimal.valueOf(d).stripTrailingZeros().precision() <= SPREADSHEET_PRECISION_DIGITS
+    // NaN·무한대는 십진 자릿수가 없다 — `BigDecimal.valueOf`가 던지므로 먼저 거른다(던지면 내보내기와
+    // 자동 백업이 통째로 죽는다). 그 값은 숫자 칸에 실을 수 없다는 뜻으로 false다.
+    d.isFinite() &&
+        java.math.BigDecimal.valueOf(d).stripTrailingZeros().precision() <= SPREADSHEET_PRECISION_DIGITS
 
 /** 엑셀이 숫자로 지키는 유효 숫자 자릿수. */
 const val SPREADSHEET_PRECISION_DIGITS = 15

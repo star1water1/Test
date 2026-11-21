@@ -216,6 +216,28 @@ class ExcelCellTextTest {
         assertFalse(fitsSpreadsheetPrecision(0.1 + 0.2))
     }
 
+    @Test
+    fun `NaN·무한대는 던지지 않고 숫자 칸에 싣지 않는다`() {
+        // 등급 JSON의 "NaN"·"Infinity"는 toDoubleOrNull을 통과한다 — 판정이 던지면 내보내기·자동 백업이 통째로 죽는다(리뷰 반영).
+        assertFalse(fitsSpreadsheetPrecision(Double.NaN))
+        assertFalse(fitsSpreadsheetPrecision(Double.POSITIVE_INFINITY))
+        assertFalse(fitsSpreadsheetPrecision(Double.NEGATIVE_INFINITY))
+        assertNull(numericExportValueOrNull("NaN"))
+        assertNull(numericExportValueOrNull("Infinity"))
+        assertFalse(exceedsSpreadsheetPrecision("NaN"))
+    }
+
+    @Test
+    fun `자릿수만 넘은 수만 그 칸의 변환 표식을 끈다`() {
+        assertTrue(exceedsSpreadsheetPrecision("1234567890123456"))
+        assertTrue(exceedsSpreadsheetPrecision("0.30000000000000004"))
+        // 숫자 칸으로 나가는 수, 왕복하지 않는 글자(표식이 쓸모 있는 자리)는 아니다.
+        assertFalse(exceedsSpreadsheetPrecision("123456789012345"))
+        assertFalse(exceedsSpreadsheetPrecision("007"))
+        assertFalse(exceedsSpreadsheetPrecision("24.50"))
+        assertFalse(exceedsSpreadsheetPrecision("열둘"))
+    }
+
     private fun show(s: String) = s.map { c ->
         if (c.code < 0x20 || c.code == 0x7F || c.code >= 0xFFF0 || Character.isSurrogate(c)) "\\u%04X".format(c.code) else c.toString()
     }.joinToString("")
