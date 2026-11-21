@@ -810,18 +810,8 @@ class CharacterFieldAiSuggester(
             } else null
             // 구조화 입력은 폼이 실제로 파트 위젯을 렌더하는 타입(TEXT/BODY_SIZE)에만 유효 —
             // 그 외 타입(NUMBER 등)의 config 잔존 structuredInput은 힌트·검증 모두 무시한다
-            var structured = StructuredInputConfig.fromConfig(field.config)
-            if (type == FieldType.BODY_SIZE && !structured.enabled) {
-                structured = StructuredInputConfig(
-                    enabled = true,
-                    separator = "-",
-                    parts = listOf(
-                        StructuredInputConfig.Part("B", "cm", "number"),
-                        StructuredInputConfig.Part("W", "cm", "number"),
-                        StructuredInputConfig.Part("H", "cm", "number")
-                    )
-                )
-            }
+            // 기본 파트는 폼과 같은 단일 소스 — 생일 역할의 월-일은 아래 isBirth 갈래가 따로 다룬다.
+            val structured = StructuredInputConfig.effectiveFor(field)
             val structuredActive = !isBirth && type != FieldType.MULTI_TEXT &&
                 (type == FieldType.TEXT || type == FieldType.BODY_SIZE) &&
                 structured.enabled && structured.parts.isNotEmpty()

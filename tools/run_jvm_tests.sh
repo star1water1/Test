@@ -569,6 +569,7 @@ $TEST/util/DefaultFieldPlanTest.kt
 $TEST/util/GlobalScopeFieldMoveTest.kt
 $TEST/util/UnassignedHistoryScopeTest.kt
 $TEST/data/model/DefaultFieldRefTest.kt
+$TEST/data/model/StructuredInputDisplayTest.kt
 $TEST/data/model/FieldTypeBranchTest.kt
 $TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt

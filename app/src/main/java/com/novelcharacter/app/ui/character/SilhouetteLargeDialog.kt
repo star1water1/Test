@@ -68,11 +68,30 @@ class SilhouetteLargeDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NORMAL, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+        // **앱 테마로 띄운다** — 종전의 기기 기본 라이트 테마는 다크 모드에서도 상태 표시줄을 밝은
+        // 바탕·어두운 아이콘으로 세워, 어두운 화면 위에 아이콘이 보이지 않았다(S8 관찰). 앱 테마는
+        // 낮/밤에 따라 상태 표시줄 색과 아이콘 밝기를 함께 뒤집는다(values-night/themes.xml).
+        setStyle(STYLE_NORMAL, R.style.Theme_NovelCharacter)
         savedInstanceState?.let {
             sideOn = it.getBoolean(STATE_SIDE, sideOn)
             labelsOn = it.getBoolean(STATE_LABELS, labelsOn)
             overlayOn = it.getBoolean(STATE_OVERLAY, overlayOn)
+        }
+    }
+
+    /**
+     * 상태·내비게이션 표시줄 아이콘 밝기를 **지금 낮/밤에 맞춘다** — MainActivity와 같은 처분이다.
+     * 테마 플래그만으로는 안드로이드 15의 전면 표시에서 아이콘 밝기가 따라오지 않는다.
+     */
+    override fun onStart() {
+        super.onStart()
+        val window = dialog?.window ?: return
+        val night = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !night
+            isAppearanceLightNavigationBars = !night
         }
     }
 
@@ -159,7 +178,49 @@ class SilhouetteLargeDialog : DialogFragment() {
         }
 
         root.addView(buildControls(ctx, density))
+        if (resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        ) arrangeForLandscape(root, view)
+        // 안드로이드 15의 전면 표시에서는 이 창도 시스템 표시줄 밑으로 그려진다 — 닫기 ✕와
+        // 하단 토글이 가리지 않게 표시줄 몫을 안쪽 여백으로 받는다(그 밖의 판에서는 0이다).
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         return root
+    }
+
+    /**
+     * 가로 화면에서는 그림을 **왼쪽에 화면 높이만큼** 세우고 머리·목적문·토글을 오른쪽 열로 옮긴다.
+     *
+     * 세로 배치 그대로면 낮은 높이에서 머리·목적문·토글이 위아래를 먹어 그림이 작아졌다(S8 관찰).
+     * 같은 뷰를 옮겨 담을 뿐이라 토글 상태·그림 입력은 그대로다.
+     */
+    private fun arrangeForLandscape(root: LinearLayout, figure: View) {
+        val ctx = root.context
+        val children = (0 until root.childCount).map { root.getChildAt(it) }
+        if (figure !in children) return
+        root.removeAllViews()
+        root.orientation = LinearLayout.HORIZONTAL
+        val column = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+        }
+        children.forEachIndexed { i, child ->
+            if (child === figure) {
+                // 그림이 있던 자리에 빈 칸을 두어, 위(머리·목적문)와 아래(캡션·토글)가 갈라 선다.
+                column.addView(View(ctx), LinearLayout.LayoutParams(0, 0, 1f))
+            } else {
+                column.addView(child)
+            }
+        }
+        figure.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+        root.addView(figure)
+        root.addView(column)
     }
 
     /** 하단 컨트롤 바 — [정면/측면] · [라벨] · [작품 평균](재료가 있을 때만). */

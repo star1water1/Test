@@ -143,6 +143,25 @@ object BodyEditorModel {
         )
     }
 
+    /**
+     * 한 부위에 값을 앉힌다 — **그 부위는 더 이상 추정이 아니다.**
+     *
+     * 종전에는 값만 바꾸고 [Measures.estimated]를 그대로 두어, 빈 부위(점선 핸들)에 수치 칸으로
+     * 값을 적어도 핸들이 점선·비활성으로 남아 잡히지 않았다(S6 관찰). 굴리기만 추정 표시를
+     * 비웠다 — 적은 값도 굴린 값과 같은 자격의 실측이다.
+     */
+    fun withSlot(m: Measures, slot: BodySlot, value: Double): Measures {
+        val estimated = m.estimated - slot
+        return when (slot) {
+            BodySlot.SHOULDER -> m.copy(shoulder = value, estimated = estimated)
+            BodySlot.BUST -> m.copy(bust = value, estimated = estimated)
+            BodySlot.WAIST -> m.copy(waist = value, estimated = estimated)
+            BodySlot.HIP -> m.copy(hip = value, estimated = estimated)
+            BodySlot.UNDERBUST -> m.copy(underbust = value, estimated = estimated)
+            BodySlot.NONE -> m
+        }
+    }
+
     /** 편집 중인 수치를 부위별 맵으로 — 되쓰기와 변경 판정이 같은 자료를 본다. */
     fun valuesOf(m: Measures): Map<BodySlot, Double> = buildMap {
         put(BodySlot.SHOULDER, m.shoulder)

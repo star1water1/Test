@@ -98,6 +98,14 @@ class DynamicFieldRenderer(
         valueResolvers[field.id]?.display(token) ?: token
 
     /**
+     * 한 줄로 그리는 값 — 구조화 필드는 파트 이름·단위를 붙여 빈 파트까지 보이고(저장 문자열
+     * `79--103.2-`를 그대로 그리지 않는다), 그 밖은 값 라이브러리 표시 라벨을 쓴다.
+     */
+    private fun readValue(field: FieldDefinition, value: String): String =
+        com.novelcharacter.app.data.model.StructuredInputConfig.readDisplay(field, value)
+            ?: displayToken(field, value)
+
+    /**
      * 필드 한 줄을 카드에 넣는다 — 설명이 있고 설정이 켜져 있으면 ⓘ를 나란히 붙인다(B-44).
      *
      * 설명이 없는 필드는 **행 구조 자체가 종전 그대로**다(TextView 하나). 전부를 가로 행으로
@@ -301,7 +309,7 @@ class DynamicFieldRenderer(
                         percentileSuffix = "" // CALCULATED은 위에서 통합 완료
                     } else {
                         displayValue = "${field.name}: ${
-                            if (fieldValue.isEmpty()) "-" else displayToken(field, fieldValue.trim())
+                            if (fieldValue.isEmpty()) "-" else readValue(field, fieldValue.trim())
                         }"
                         // 백분위 표기 추가 (NUMBER, GRADE 등)
                         percentileSuffix = percentileData[field.id]?.let { info ->
@@ -441,7 +449,7 @@ class DynamicFieldRenderer(
 
             for (field in groupFields) {
                 val resolvedValue = resolvedState[field.key] ?: ""
-                val displayValue = resolvedValue.ifEmpty { "-" }
+                val displayValue = if (resolvedValue.isEmpty()) "-" else readValue(field, resolvedValue.trim())
 
                 val rowView = TextView(context).apply {
                     text = "${field.name}: $displayValue"

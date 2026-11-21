@@ -211,4 +211,25 @@ class BodyEditorModelTest {
         assertEquals(BodySilhouetteSpec.BASE.height, avg!!.height, 1e-9)
         assertTrue(!avg.heightKnown)
     }
+
+    // ── 값 입력과 추정 표시 (S6 관찰) ─────────────────────────────────────
+
+    @Test
+    fun `빈 부위에 값을 적으면 그 부위만 추정에서 빠진다`() {
+        val draft = BodySilhouetteSpec.measuresFrom(measurements(bust = 86.0, hip = 90.0))
+        assertNotNull(draft)
+        assertTrue(BodySlot.WAIST in draft!!.estimated)
+        assertTrue(BodySlot.SHOULDER in draft.estimated)
+        val typed = BodyEditorModel.withSlot(draft, BodySlot.WAIST, 61.0)
+        assertEquals(61.0, typed.waist, 1e-9)
+        assertTrue(BodySlot.WAIST !in typed.estimated)
+        // 다른 빈 부위는 여전히 추정이다 — 적지 않은 것을 실측으로 세우지 않는다.
+        assertTrue(BodySlot.SHOULDER in typed.estimated)
+    }
+
+    @Test
+    fun `부위가 아닌 자리는 아무것도 바꾸지 않는다`() {
+        val draft = BodySilhouetteSpec.measuresFrom(measurements(bust = 86.0))!!
+        assertEquals(draft, BodyEditorModel.withSlot(draft, BodySlot.NONE, 50.0))
+    }
 }

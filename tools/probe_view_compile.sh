@@ -127,6 +127,7 @@ class Paint(flags: Int) {
     fun measureText(text: String): Float = 0f
     fun descent(): Float = 0f
     fun ascent(): Float = 0f
+    val fontSpacing: Float get() = textSize
 }
 open class PathEffect
 class DashPathEffect(intervals: FloatArray, phase: Float) : PathEffect()

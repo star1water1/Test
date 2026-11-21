@@ -204,9 +204,12 @@ class SilhouetteView @JvmOverloads constructor(
     private fun px(xCm: Double) = cx + (xCm * k).toFloat()
     private fun py(yCm: Double) = baseY - (yCm * k).toFloat()
 
-    /** 몸통 윤곽선 굵기(px) — 240dp 폭에서 2dp가 기준이다(목업 정본과 같은 식). */
+    /**
+     * 몸통 윤곽선 굵기(px) — **그림 축척([k])에 묶는다**([BodySilhouetteSpec.OUTLINE_WIDTH_CM]).
+     * [onDraw]가 [k]를 세운 뒤에만 읽는다.
+     */
     private val outlineWidth: Float
-        get() = max(1.4f * density, width * 2f / 240f)
+        get() = max(1.4f * density, (BodySilhouetteSpec.OUTLINE_WIDTH_CM * k).toFloat())
 
     // ── 드래그 상태 ─────────────────────────────────────────────────────────
 
@@ -452,7 +455,17 @@ class SilhouetteView @JvmOverloads constructor(
 
     /** 부위 가이드라인 — 가는 수평선 + 좌측 부위명 + 우측 수치. */
     private fun drawGuides(canvas: Canvas, m: Measures) {
-        for (h in handlesCache) {
+        // 글자 기준선은 겹치지 않게 벌린다(선은 제자리) — 작은 그림에서 부위가 붙어도 읽힌다.
+        // 이름이 없는 부위는 글자를 그리지 않으므로 자리도 차지하지 않는다.
+        val named = handlesCache.indices.filter { slotName(handlesCache[it].slot) != null }
+        val spread = BodySilhouetteSpec.spreadLabels(
+            named.map { py(m.height * handlesCache[it].heightFraction) - 2f * density },
+            gap = labelPaint.fontSpacing,
+            minY = paddingTop + labelPaint.textSize,
+            maxY = height - paddingBottom.toFloat()
+        )
+        val textYAt = named.zip(spread).toMap()
+        for ((idx, h) in handlesCache.withIndex()) {
             val y = py(m.height * h.heightFraction)
             val halfPx = (h.halfCm * k).toFloat()
             val warn = h.warn
@@ -465,11 +478,12 @@ class SilhouetteView @JvmOverloads constructor(
             labelPaint.color = if (warn) warnColor else labelColor
             labelPaint.textAlign = Paint.Align.LEFT
             val name = slotName(h.slot) ?: continue
-            canvas.drawText(name, paddingLeft.toFloat(), y - 2f * density, labelPaint)
+            val textY = textYAt[idx] ?: continue
+            canvas.drawText(name, paddingLeft.toFloat(), textY, labelPaint)
             labelPaint.textAlign = Paint.Align.RIGHT
             canvas.drawText(
                 valueText(slotValue(m, h.slot)),
-                width - paddingRight.toFloat(), y - 2f * density, labelPaint
+                width - paddingRight.toFloat(), textY, labelPaint
             )
         }
     }
