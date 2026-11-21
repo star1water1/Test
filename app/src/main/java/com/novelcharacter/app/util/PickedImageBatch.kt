@@ -57,13 +57,21 @@ object PickedImageBatch {
     ) {
         if (uris.isEmpty()) return
         val ctx: Context = app
-        val settings = ImageSettingsStore(ctx).getSettings()
         val stranded = mutableListOf<String>()
         var processed = 0
         var failed = 0
         try {
             // **고른 것은 끝까지 가져온다.** 이 블록이 끊기지 않는 것이 이 함수의 요점이다.
             withContext(NonCancellable) {
+                // **압축 설정 읽기도 이 안이다.** 종전에는 `try` 앞에 있었는데, 그것은
+                // `DataStore`의 `data.first()`라 **실제 중단점**이다 — 고르고 곧바로 돌리면
+                // 거기서 취소가 들어와 `try`에 들기도 전에 함수가 빠져나가고, 가져오기도
+                // 고지도 없이 끝났다(PR #452 리뷰 지적). 고른 장수만큼 조용히 사라지는
+                // 모양이고, 이 함수가 없애려던 바로 그 결함이다.
+                //
+                // 이제 `try` 앞에는 중단점이 하나도 없다(판정 하나와 대입 넷뿐) — 취소는
+                // 중단점에서만 관측되므로 **고지 없이 빠져나갈 자리가 남지 않는다.**
+                val settings = ImageSettingsStore(ctx).getSettings()
                 for (uri in uris) {
                     val path = try {
                         ImageImportHelper.importImage(ctx, uri, prefix, settings)
