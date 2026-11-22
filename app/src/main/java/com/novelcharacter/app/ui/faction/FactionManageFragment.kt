@@ -239,6 +239,8 @@ class FactionManageFragment : Fragment() {
         val colorSize = (32 * density).toInt()
         val colorMargin = (4 * density).toInt()
         val colorViews = mutableListOf<View>()
+        // 선택 테두리는 테마 글자색 — 검정 고정은 다크 대화상자 바탕에 묻혀 무엇을 골랐는지 안 보였다.
+        val selectedStroke = androidx.core.content.ContextCompat.getColor(requireContext(), com.novelcharacter.app.R.color.on_surface)
 
         for (color in presetColors) {
             val colorView = View(requireContext()).apply {
@@ -249,7 +251,7 @@ class FactionManageFragment : Fragment() {
                     shape = GradientDrawable.OVAL
                     setColor(Color.parseColor(color))
                     if (color == selectedColor) {
-                        setStroke((3 * density).toInt(), Color.BLACK)
+                        setStroke((3 * density).toInt(), selectedStroke)
                     }
                 }
                 setOnClickListener {
@@ -260,7 +262,7 @@ class FactionManageFragment : Fragment() {
                         (v.background as? GradientDrawable)?.apply {
                             setStroke(
                                 if (presetColors[i] == color) (3 * density).toInt() else 0,
-                                Color.BLACK
+                                selectedStroke
                             )
                         }
                     }
@@ -277,7 +279,7 @@ class FactionManageFragment : Fragment() {
                 hexEdit.setText(newColor)
                 // 프리셋 테두리 모두 해제 (커스텀 색상이므로)
                 colorViews.forEachIndexed { i, v ->
-                    (v.background as? GradientDrawable)?.setStroke(0, Color.BLACK)
+                    (v.background as? GradientDrawable)?.setStroke(0, selectedStroke)
                 }
             }
         }

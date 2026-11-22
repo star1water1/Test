@@ -436,13 +436,16 @@ class AuditSupplementFragment : Fragment() {
                         setColor(color)
                     }
                     binding.completionBadge.background = bg
+                    binding.completionBadge.setTextColor(com.novelcharacter.app.util.ContrastText.on(color))
                 } else {
                     binding.completionBadge.text = ctx.getString(R.string.supplement_field_na)
+                    val naColor = ContextCompat.getColor(ctx, R.color.text_secondary)
                     val bg = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
-                        setColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+                        setColor(naColor)
                     }
                     binding.completionBadge.background = bg
+                    binding.completionBadge.setTextColor(com.novelcharacter.app.util.ContrastText.on(naColor))
                 }
 
                 itemView.setOnClickListener { onClick(target) }

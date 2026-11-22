@@ -142,8 +142,9 @@
 
                         <ImageButton
                             android:id="@+id/completionWeightButton"
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:padding="12dp"
                             android:src="@drawable/ic_tune"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:contentDescription="@string/stats_completion_weight_title"

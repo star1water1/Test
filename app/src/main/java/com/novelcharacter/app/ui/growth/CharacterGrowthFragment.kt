@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.growth
 
-import android.graphics.Color
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -58,15 +57,9 @@ class CharacterGrowthFragment : Fragment() {
     // 기준 캐릭터 세계관의 필드 정의 (key → 정의). 등급 해석·라벨 표기에 사용.
     private var fieldsByKey: Map<String, FieldDefinition> = emptyMap()
 
-    // 라인 색상 팔레트
-    private val lineColors = listOf(
-        Color.parseColor("#5C6BC0"), // primary
-        Color.parseColor("#E91E63"),
-        Color.parseColor("#4CAF50"),
-        Color.parseColor("#FF9800"),
-        Color.parseColor("#00BCD4"),
-        Color.parseColor("#9C27B0")
-    )
+    // 라인 색상 팔레트 — 앱 차트 팔레트(라이트·다크가 따로 든다). 종전의 고정 6색은 다크에서 바뀌지 않았다.
+    private val lineColors: List<Int>
+        get() = com.novelcharacter.app.ui.theme.ChartTheme.palette(requireContext())
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -99,6 +92,8 @@ class CharacterGrowthFragment : Fragment() {
 
     private fun setupChart() {
         binding.lineChart.apply {
+            // 범례·축 글자색·격자를 테마에서 — 지정하지 않으면 라이브러리 기본(검정)이라 다크에서 사라졌다.
+            com.novelcharacter.app.ui.theme.ChartTheme.apply(this)
             description.isEnabled = false
             setTouchEnabled(true)
             isDragEnabled = true

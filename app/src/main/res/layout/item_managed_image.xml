@@ -97,7 +97,7 @@
             android:text="@string/image_manager_selected_mark"
             android:textStyle="bold"
             android:textAppearance="@style/TextAppearance.App.BodySmall"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/on_primary"
             android:background="@color/overlay_selection"
             android:visibility="gone"
             tools:visibility="visible" />

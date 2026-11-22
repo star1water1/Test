@@ -1,7 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.ui.theme.ChartTheme
-import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -129,6 +128,8 @@ class StatsCharacterDetailFragment : Fragment() {
                 cornerRadius = 12 * resources.displayMetrics.density
             }
             scoreBadge.background = badgeBg
+            // 등급 색(rank_*) 위 on_primary 고정은 라이트에서 2.4~3.4:1이었다 — 바탕에서 고른다.
+            scoreBadge.setTextColor(com.novelcharacter.app.util.ContrastText.on(gradeColor))
 
             container.addView(itemView)
         }
@@ -151,9 +152,10 @@ class StatsCharacterDetailFragment : Fragment() {
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = captionSize
-            valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
+        // 조각 안 글자는 조각 색에서 고른다(흰 글자 고정은 다크 팔레트 전체에서 안 읽혔다) — 렌더러를 먼저 바꾼다.
+        ChartTheme.contrastLabels(chart, dataSet)
         chart.apply {
             data = PieData(dataSet)
             description.isEnabled = false
@@ -163,7 +165,6 @@ class StatsCharacterDetailFragment : Fragment() {
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
-            setEntryLabelColor(Color.WHITE)
             setEntryLabelTextSize(chartValueSize)
             animateY(600)
             invalidate()
@@ -317,9 +318,10 @@ class StatsCharacterDetailFragment : Fragment() {
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = captionSize
-            valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
+        // 조각 안 글자는 조각 색에서 고른다(흰 글자 고정은 다크 팔레트 전체에서 안 읽혔다) — 렌더러를 먼저 바꾼다.
+        ChartTheme.contrastLabels(chart, dataSet)
         chart.apply {
             this.data = PieData(dataSet)
             description.isEnabled = false
@@ -329,7 +331,6 @@ class StatsCharacterDetailFragment : Fragment() {
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
-            setEntryLabelColor(Color.WHITE)
             setEntryLabelTextSize(chartValueSize)
             animateY(600)
             invalidate()

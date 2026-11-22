@@ -1,7 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.ui.theme.ChartTheme
-import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -227,9 +226,10 @@ class StatsNameBankDetailFragment : Fragment() {
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
             valueTextSize = captionSize
-            valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
+        // 조각 안 글자는 조각 색에서 고른다(흰 글자 고정은 다크 팔레트 전체에서 안 읽혔다) — 렌더러를 먼저 바꾼다.
+        ChartTheme.contrastLabels(chart, dataSet)
         chart.apply {
             this.data = PieData(dataSet)
             description.isEnabled = false
@@ -239,7 +239,6 @@ class StatsNameBankDetailFragment : Fragment() {
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
-            setEntryLabelColor(Color.WHITE)
             setEntryLabelTextSize(chartValueSize)
             animateY(600)
             invalidate()

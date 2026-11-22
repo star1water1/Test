@@ -67,8 +67,11 @@
         <!-- 완성률 배지 -->
         <TextView
             android:id="@+id/completionBadge"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="4dp"
             android:gravity="center"
             android:textColor="@android:color/white"
             android:textSize="@dimen/stats_text_body_sm"

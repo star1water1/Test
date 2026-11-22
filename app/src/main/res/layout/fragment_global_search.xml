@@ -50,7 +50,8 @@
                 android:id="@+id/btnSavePreset"
                 style="@style/Widget.App.Button.Outlined"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_preset_save"
                 app:icon="@drawable/ic_save"
@@ -83,7 +84,8 @@
                 android:id="@+id/btnAddFilter"
                 style="@style/Widget.App.Button.Tonal"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_add_filter"
                 app:icon="@drawable/ic_add"
@@ -105,7 +107,8 @@
             android:id="@+id/btnAddFilterCompact"
             style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
-            android:layout_height="32dp"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:text="@string/search_add_filter"
             app:icon="@drawable/ic_add"
             app:iconSize="14dp" />
@@ -114,7 +117,8 @@
             android:id="@+id/btnSort"
             style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
-            android:layout_height="32dp"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:layout_marginStart="8dp" />
     </LinearLayout>
 

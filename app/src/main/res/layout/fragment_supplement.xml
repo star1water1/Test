@@ -61,8 +61,10 @@
 
                 <ImageButton
                     android:id="@+id/btnToggleFilter"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:padding="12dp"
+                    android:scaleType="centerInside"
                     android:src="@drawable/ic_expand_less"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/supplement_filter_toggle"

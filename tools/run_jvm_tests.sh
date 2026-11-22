@@ -311,6 +311,7 @@ $MAIN/ai/AiUsageCodec.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImagePathMatch.kt
+$MAIN/util/ContrastText.kt
 $MAIN/util/DetachedImageRule.kt
 $MAIN/util/DuelRating.kt
 $MAIN/util/DuelPairing.kt
@@ -576,6 +577,7 @@ $TEST/data/model/DuelAxisBasisTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/util/ImagePathMatchTest.kt
+$TEST/util/ContrastTextTest.kt
 $TEST/util/CharacterRepresentativeImageTest.kt
 $TEST/util/ImagePathCellTest.kt
 $TEST/util/RepresentativeImageCellTest.kt

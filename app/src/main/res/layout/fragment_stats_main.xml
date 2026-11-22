@@ -387,8 +387,9 @@
 
                         <ImageButton
                             android:id="@+id/patternSettingsButton"
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:padding="12dp"
                             android:src="@drawable/ic_tune"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:contentDescription="@string/stats_pattern_settings"
@@ -888,8 +889,9 @@
 
                     <ImageButton
                         android:id="@+id/rankingSortToggle"
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:padding="12dp"
                         android:layout_marginStart="8dp"
                         android:src="@drawable/ic_arrow_down"
                         android:background="?attr/selectableItemBackgroundBorderless"
