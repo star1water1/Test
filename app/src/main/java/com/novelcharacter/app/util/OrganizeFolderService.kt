@@ -833,7 +833,8 @@ object OrganizeFolderService {
                     owners = ownerIndex[canon] ?: ImageDeletionService.Owners.NONE,
                     linkGroupId = deleteGroups[storedPath],
                     gson = gson,
-                    recoveryDir = File(context.filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
+                    recoveryDir = File(context.filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY),
+                    filesDir = context.filesDir
                 )
                 if (freed != null) {
                     deleted++

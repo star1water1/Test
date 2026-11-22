@@ -160,4 +160,54 @@ class ImagePathMatchTest {
         assertFalse(ImagePathMatch.same("", ""))
         assertFalse(ImagePathMatch.same(null, null))
     }
+
+    // ── isDeletableImage — 이미지 삭제 문지기 ──
+    // 엑셀 '이미지' 칸의 절대경로는 그대로 저장되므로, 지우는 자리는 앱이 만든 그림만 지워야 한다.
+
+    private val pkg = "/data/user/0/com.novelcharacter.app"
+
+    @Test fun isDeletableImage_acceptsManagedImagesAtTheRoot() {
+        val root = File(dir)
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/char_1.jpg", root))
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/universe_1.png", root))
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/novel_1.webp", root))
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/img_1.jpg", root))
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/./char_1.jpg", root))
+        // 복원은 원래 확장자를 잇는다 — 접두로 판정하므로 확장자가 달라도 지운다.
+        assertTrue(ImagePathMatch.isDeletableImage("$dir/char_1.gif", root))
+    }
+
+    @Test fun isDeletableImage_rejectsAppFilesThatAreNotImages() {
+        val root = File(dir)
+        assertFalse(ImagePathMatch.isDeletableImage("$pkg/databases/novel_character_database", root))
+        assertFalse(ImagePathMatch.isDeletableImage("$pkg/shared_prefs/settings.xml", root))
+        assertFalse(ImagePathMatch.isDeletableImage("$dir/backups/char_backup.zip", root))
+        assertFalse(ImagePathMatch.isDeletableImage("$dir/crash_log.txt", root))
+        assertFalse(ImagePathMatch.isDeletableImage("$dir/../databases/char_x.db", root))
+        assertFalse(ImagePathMatch.isDeletableImage("${dir}_backup/char_1.jpg", root))
+        assertFalse(ImagePathMatch.isDeletableImage("/sdcard/DCIM/char_1.jpg", root))
+    }
+
+    @Test fun isDeletableImage_blocksWhenUnknown() {
+        assertFalse(ImagePathMatch.isDeletableImage("$dir/char_1.jpg", null))
+        assertFalse(ImagePathMatch.isDeletableImage("", File(dir)))
+        assertFalse(ImagePathMatch.isDeletableImage(null, File(dir)))
+        assertFalse(ImagePathMatch.isDeletableImage("   ", File(dir)))
+    }
+
+    @Test fun isDeletableImage_followsSymlinks() {
+        val root = Files.createTempDirectory("files").toFile()
+        val outside = Files.createTempDirectory("databases").toFile()
+        try {
+            val target = File(outside, "app.db").apply { writeText("db") }
+            val link = File(root, "char_link.jpg")
+            Files.createSymbolicLink(link.toPath(), target.toPath())
+            // 이름은 그림이지만 실체는 밖의 파일이다 — 정규화 후 판정하므로 막힌다.
+            assertFalse(ImagePathMatch.isDeletableImage(link.path, root))
+            val real = File(root, "char_real.jpg").apply { writeText("x") }
+            assertTrue(ImagePathMatch.isDeletableImage(real.path, root))
+        } finally {
+            root.deleteRecursively(); outside.deleteRecursively()
+        }
+    }
 }

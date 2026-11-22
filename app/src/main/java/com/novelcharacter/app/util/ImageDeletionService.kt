@@ -97,6 +97,9 @@ object ImageDeletionService {
      *        분기하지 않고 SQL의 `WHERE`로 그대로 흘러간다 — **판정을 코틀린이 아니라 DB가
      *        지금 상태에서 한다.** 등재가 예상한 위험(B-243 — *"겹이 필요하다"*)은 그래서 없었다.
      * @param recoveryDir 앱 filesDir 아래의 삭제 복구 기록 보관처. 캐시에 두지 않는다.
+     * @param filesDir 이미지 삭제 문지기([ImagePathMatch.isDeletableImage])의 뿌리 — **필수 인자**다.
+     *        앱이 관리하는 그림이 아닌 경로(엑셀 칸으로 들어온 `filesDir` 밖·백업·DB 경로 등)는
+     *        **참조도 파일도 건드리지 않고 null**을 돌려준다 — 호출부가 "남긴 것"으로 세어 알린다.
      * @return 확보한 바이트. **실패하면 null**이고 DB는 롤백되고 원본 파일을 복원한다. 복원 실패 시 복구 기록을 보존한다.
      */
     suspend fun delete(
@@ -105,8 +108,10 @@ object ImageDeletionService {
         owners: Owners,
         linkGroupId: String?,
         gson: Gson = Gson(),
-        recoveryDir: File
+        recoveryDir: File,
+        filesDir: File?
     ): Long? = ImageExportGate.run {
+        if (!ImagePathMatch.isDeletableImage(path, filesDir)) return@run null
         var staged: RecoverableFileDelete? = null
         try {
             val file = File(path)

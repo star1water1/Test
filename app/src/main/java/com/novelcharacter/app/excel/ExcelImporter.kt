@@ -658,6 +658,10 @@ class ExcelImporter(context: Context) {
                 }
             }
 
+            // 깨져서 건너뛴 이미지 엔트리 — 가져오기가 "패키지에 없던 장"과 갈라 세어 고지한다.
+            val corruptImageEntries =
+                (read as? com.novelcharacter.app.share.WorldPackageImporter.ReadResult.Ok)?.corruptImageEntries.orEmpty()
+
             // 충돌 3분기: 덮어쓰기 / 새로 생성 / 건너뛰기 (검증 → 알림 → 바로잡을 경로)
             enterPhase(TransferPhase.IMPORT_ASK)
             val conflict = worldPackageImporter.findConflict(contents.universe)
@@ -709,7 +713,7 @@ class ExcelImporter(context: Context) {
             enterPhase(TransferPhase.IMPORT_APPLY)
             val outcome = try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    worldPackageImporter.import(contents, mode, overwriteTarget, extractDir)
+                    worldPackageImporter.import(contents, mode, overwriteTarget, extractDir, corruptImageEntries)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "World package import failed", e)
@@ -1231,12 +1235,23 @@ class ExcelImporter(context: Context) {
         val appDir = appContext.filesDir
         for ((originalPath, zipRelPath) in originalMap) {
             val extractedFile = File(extractDir, zipRelPath)
+            // 매핑의 ZIP 쪽 경로도 해제 폴더 밖을 가리킬 수 없다 — 엔트리 이름에 거는 zip-slip
+            // 방어(B-106 ⓐ · R-39)와 같은 판정이다. 없으면 `../../shared_prefs/…` 같은 매핑이
+            // 앱 내부 파일을 그림으로 복사해 들였다. restoreImages는 이 표에 없는 항목을 건너뛴다.
+            if (!com.novelcharacter.app.util.ImagePathMatch.isInside(extractedFile.path, extractDir)) {
+                Log.w("ExcelImporter", "Skipping image_map entry outside extract dir: $zipRelPath")
+                continue
+            }
             if (!extractedFile.exists()) continue
             // 같은 기기 재복원 멱등화: 원경로 파일이 이미 있으면 자기 자신으로 매핑한다
             // (파일명이 UUID라 경로 일치 = 같은 파일). 새 UUID 발급 시 복원마다 파일·meta가
             // 복제되고 링크 그룹이 기존 멤버 합산으로 팽창하던 문제 차단. restoreImages는
             // destFile.exists()로 복사를 건너뛴다.
-            if (runCatching { File(originalPath).exists() }.getOrDefault(false)) {
+            // **앱 저장소 안의 원경로만** 자기 자신으로 잇는다 — 매핑의 원경로는 파일에 적힌 글자라
+            // `databases/…`처럼 그림이 아닌 기존 파일을 가리킬 수 있다. 그런 항목은 아래에서
+            // 새 이름의 사본으로 복원된다(그림은 살고, 엉뚱한 파일이 그림 자리에 들어오지 않는다).
+            if (com.novelcharacter.app.util.ImagePathMatch.isInside(originalPath, appDir) &&
+                runCatching { File(originalPath).exists() }.getOrDefault(false)) {
                 remap[originalPath] = originalPath
                 continue
             }
@@ -1282,6 +1297,8 @@ class ExcelImporter(context: Context) {
             processed++
             onProgress?.invoke(processed, total)
             val extractedFile = File(extractDir, zipRelPath)
+            // buildImageRemap이 이미 걸렀다 — 두 함수가 같은 매핑을 따로 읽으므로 여기서도 막는다.
+            if (!com.novelcharacter.app.util.ImagePathMatch.isInside(extractedFile.path, extractDir)) { failedCount++; continue }
             if (!extractedFile.exists()) { failedCount++; continue }
             val destFile = File(newPath)
             // 이미 있는 목적지는 건드리지 않는다 — 그래서 아래 copyTo에 닿는 것은

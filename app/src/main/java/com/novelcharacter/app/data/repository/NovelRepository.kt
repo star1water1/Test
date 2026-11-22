@@ -73,7 +73,8 @@ class NovelRepository(
         // Context 없는 저장소 계층이라 드래프트 보호는 생략된다(가드 문서 참조).
         try {
             com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(
-                db, null, imageFiles.map { it.absolutePath }
+                db, null, imageFiles.map { it.absolutePath },
+                com.novelcharacter.app.util.AppFilesRoot.dir
             )
         } catch (e: Exception) {
             Log.w("NovelRepository", "Guarded image cleanup failed", e)

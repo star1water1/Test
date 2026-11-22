@@ -53,6 +53,13 @@
     <color name="rank_c_minus">#58B767</color>
     <color name="rank_d">#8B93A1</color>
 
+    <!-- 랭킹 순위 배지 — 금·은·동은 밝은 바탕이라 숫자는 어두운 글자로 쓴다 (흰 글자는 금 1.4:1 · 은 1.8:1).
+         4위 이하는 primary 바탕 + on_primary 글자. -->
+    <color name="ranking_medal_gold">#F2C94C</color>
+    <color name="ranking_medal_silver">#C7CCD4</color>
+    <color name="ranking_medal_bronze">#D9955B</color>
+    <color name="ranking_medal_text">#2A2100</color>
+
     <!-- 생존 상태 색상 -->
     <color name="alive_color">#34A853</color>
     <color name="dead_color">#DC3D43</color>

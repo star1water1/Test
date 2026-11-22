@@ -50,6 +50,12 @@
     <color name="rank_c_minus">#8FD494</color>
     <color name="rank_d">#9AA0A6</color>
 
+    <!-- 랭킹 순위 배지 — 다크에서도 메달은 밝은 바탕 + 어두운 글자. -->
+    <color name="ranking_medal_gold">#E3C15A</color>
+    <color name="ranking_medal_silver">#AEB5C0</color>
+    <color name="ranking_medal_bronze">#C9854C</color>
+    <color name="ranking_medal_text">#2A2100</color>
+
     <!-- 생존 상태 색상 -->
     <color name="alive_color">#5BC980</color>
     <color name="dead_color">#E5726E</color>

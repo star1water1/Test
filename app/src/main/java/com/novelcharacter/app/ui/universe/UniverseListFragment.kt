@@ -572,7 +572,7 @@ class UniverseListFragment : Fragment() {
                 val nameText = TextView(ctx).apply {
                     text = field.name
                     textSize = 15f
-                    setTextColor(android.graphics.Color.parseColor("#DD000000"))
+                    setTextColor(ctx.getColor(R.color.on_surface))
                 }
                 val detailText = TextView(ctx).apply {
                     // 프리셋이 사건 필드에 이어 **작품 필드까지** 담는다 — 한 목록에 세 종류가
@@ -585,7 +585,7 @@ class UniverseListFragment : Fragment() {
                         ?.let { getString(it) + " · " } ?: ""
                     text = "$targetPrefix${field.type} · ${field.groupName} · ${field.key}"
                     textSize = 12f
-                    setTextColor(android.graphics.Color.parseColor("#88000000"))
+                    setTextColor(ctx.getColor(R.color.text_secondary))
                 }
                 infoLayout.addView(nameText)
                 infoLayout.addView(detailText)

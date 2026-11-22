@@ -151,4 +151,39 @@ object ImagePathMatch {
             File(raw).canonicalPath.startsWith(dir.canonicalPath + File.separator)
         }.getOrDefault(false)
     }
+
+    /**
+     * 앱이 관리하는 이미지 파일의 이름 접두 — `filesDir` **루트**에 `<접두><UUID>.<확장자>`로 산다.
+     * `img_`는 이미지 탭 직접 임포트. [StorageAnalyzer.IMAGE_PREFIXES]가 이 목록을 그대로 든다(단일 소스).
+     */
+    val MANAGED_IMAGE_PREFIXES = listOf("char_", "universe_", "novel_", "img_")
+
+    /**
+     * [path]를 **이미지로서 지워도 되는 파일**인가 — 지우는 모든 자리가 지나는 문지기.
+     *
+     * 조건 둘: ⓐ `filesDir`의 **직속** 파일이고 ⓑ 이름이 [MANAGED_IMAGE_PREFIXES]로 시작한다.
+     * 앱이 만드는 그림은 전부 그 모양이다(`ImageImportHelper` · 엑셀/세계관 패키지 복원).
+     *
+     * **왜 필요한가:** 캐릭터·세계관·작품의 `imagePaths`는 엑셀 '이미지' 칸으로 외부에서
+     * 들어오고, `/`가 든 칸은 절대경로로 **그대로** 저장된다(`ImagePathCell` — 버리지 않는 것이
+     * 규약이다). 표시·전송은 [isInside]로 막혀 있었지만 **지우는 자리는 아무 경로나 지웠다** —
+     * 그래서 칸 하나가 `databases/`의 DB 파일이나 `filesDir/backups/`의 백업을 가리키면 그
+     * 그림을 빼거나 휴지통을 비우는 것만으로 그 파일이 지워졌다. ⓐ만으로는 `crash_log.txt`
+     * 같은 루트의 다른 파일이 남으므로 ⓑ를 함께 본다.
+     *
+     * 실패 처분은 [isInside]와 같다 — **모르면 막는다**([filesDir]가 null · 정규화 실패).
+     * 막힌 파일은 남을 뿐이다(삭제보다 보존이 안전). 던지지 않는다.
+     */
+    fun isDeletableImage(path: String?, filesDir: File?): Boolean {
+        if (filesDir == null) return false
+        val raw = path?.trim().orEmpty()
+        if (raw.isEmpty()) return false
+        return runCatching {
+            val file = File(raw).canonicalFile
+            val parent = file.parentFile ?: return@runCatching false
+            val name = file.name.lowercase()
+            parent.path == filesDir.canonicalPath &&
+                MANAGED_IMAGE_PREFIXES.any { name.startsWith(it) }
+        }.getOrDefault(false)
+    }
 }

@@ -19,7 +19,7 @@ object StorageAnalyzer {
 
     /** filesDir 루트에 저장되는 이미지 파일 접두 규칙 (char_/universe_/novel_/img_ + UUID). img_는 이미지 탭 직접 임포트. */
     // internal: 엑셀 복원(buildImageRemap)이 파일명 프리픽스 보존에 같은 목록을 참조한다 (단일 소스)
-    internal val IMAGE_PREFIXES = listOf("char_", "universe_", "novel_", "img_")
+    internal val IMAGE_PREFIXES = ImagePathMatch.MANAGED_IMAGE_PREFIXES
     private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".webp")
 
     private const val BACKUP_DIR = "backups"

@@ -374,11 +374,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.editTags.setText(draft.tags)
         binding.editMemo.setText(draft.memo)
 
-        // 이미지 경로: 내부 저장소 경로만 수용 (회전 복원과 동일한 검증)
+        // 이미지 경로: DB 적재와 같은 목록으로 되살린다 (회전 복원과 같은 규칙 — restorablePaths KDoc)
         if (draft.imagePaths.isNotEmpty()) {
-            val validated = CharacterImageStripController.validateInternalPaths(
-                draft.imagePaths, context?.filesDir
-            )
+            val validated = CharacterImageStripController.restorablePaths(draft.imagePaths)
             imageStrip.setPaths(validated)
         }
 
@@ -387,7 +385,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         // 읽으면 그것이 새 데이터 유실이다(Draft KDoc의 계약).
         draft.pendingDeletePaths?.let { pending ->
             imageStrip.restorePendingDeletes(
-                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+                CharacterImageStripController.restorablePaths(pending)
             )
         }
         draft.representativePath?.let { imageStrip.setRepresentativePath(it) }
@@ -678,11 +676,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val restoreSource = savedInstanceState ?: pendingViewState
         pendingViewState = null
 
-        // Restore imagePaths from saved state, filtering invalid paths
+        // Restore imagePaths from saved state (빈 칸만 뺀다 — restorablePaths KDoc)
         restoreSource?.getStringArrayList("imagePaths")?.let { saved ->
-            val validated = CharacterImageStripController.validateInternalPaths(
-                saved, context?.filesDir
-            )
+            val validated = CharacterImageStripController.restorablePaths(saved)
             imageStrip.setPaths(validated)
             restoredFromSavedState = true
         }
@@ -810,7 +806,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
         state.getStringArrayList(STATE_PENDING_DELETES)?.let { pending ->
             imageStrip.restorePendingDeletes(
-                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+                CharacterImageStripController.restorablePaths(pending)
             )
         }
         state.getString(STATE_REPRESENTATIVE)?.let { imageStrip.setRepresentativePath(it) }

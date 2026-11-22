@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.adapter
 
-import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.LruCache
 import android.view.LayoutInflater
@@ -71,16 +70,19 @@ class RankingAdapter(
         fun bind(entry: RankingEntry) {
             // 순위 뱃지
             binding.rankBadge.text = entry.rank.toString()
-            val rankBg = binding.rankBadge.background
+            // 배경은 XML 드로어블을 공유하므로 mutate() 후 칠한다 — 아니면 한 배지의 색이 같은 상수 상태를 쓰는 다른 배지로 샌다.
+            val ctx = binding.root.context
+            val (bgRes, textRes) = rankColors(entry.rank)
+            val rankBg = binding.rankBadge.background?.mutate()
             if (rankBg is GradientDrawable) {
-                rankBg.setColor(getRankColor(entry.rank))
+                rankBg.setColor(ctx.getColor(bgRes))
             } else {
-                val drawable = GradientDrawable().apply {
+                binding.rankBadge.background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(getRankColor(entry.rank))
+                    setColor(ctx.getColor(bgRes))
                 }
-                binding.rankBadge.background = drawable
             }
+            binding.rankBadge.setTextColor(ctx.getColor(textRes))
 
             // 캐릭터 이름
             binding.characterName.text = "#${entry.rank} ${entry.characterName}"
@@ -130,11 +132,12 @@ class RankingAdapter(
             }
         }
 
-        private fun getRankColor(rank: Int): Int = when (rank) {
-            1 -> Color.parseColor("#FFD700")    // Gold
-            2 -> Color.parseColor("#C0C0C0")    // Silver
-            3 -> Color.parseColor("#CD7F32")    // Bronze
-            else -> Color.parseColor("#5C6BC0") // Primary-ish
+        /** 순위 배지의 (바탕, 글자) 색 — 테마별 값은 colors.xml(라이트·다크)이 든다. */
+        private fun rankColors(rank: Int): Pair<Int, Int> = when (rank) {
+            1 -> R.color.ranking_medal_gold to R.color.ranking_medal_text
+            2 -> R.color.ranking_medal_silver to R.color.ranking_medal_text
+            3 -> R.color.ranking_medal_bronze to R.color.ranking_medal_text
+            else -> R.color.primary to R.color.on_primary
         }
     }
 }
