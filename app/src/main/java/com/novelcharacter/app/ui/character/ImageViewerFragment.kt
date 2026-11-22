@@ -239,8 +239,8 @@ class ImageViewerFragment : Fragment() {
      *
      * **먼저 EXIF 태그만 고쳐 본다** — JPEG면 픽셀을 다시 쓰지 않아 화질이 한 톨도 안 준다.
      * 네 번 돌려 제자리로 와도 원본 그대로다. 태그를 못 쓰는 포맷(투명도가 있어 PNG로 인코딩된
-     * 파일 — 이 저장소는 파일명을 언제나 `.jpg`로 짓지만 실제 포맷은 내용이 정한다)일 때만
-     * 픽셀을 돌려 다시 쓴다.
+     * 파일 등 — 옛 파일은 내용과 무관하게 `.jpg` 이름이다)일 때만 픽셀을 돌려 다시 쓴다.
+     * 같은 형식으로 다시 쓸 수 없으면(GIF·HEIC 등) 확장자를 맞춘 새 이름이 된다([ImageRotation]).
      *
      * 되돌리기는 **회전 버튼 자신이다** — 세 번 더 누르면 제자리다. 그래서 확인창을 두지 않는다
      * (R-4가 요구하는 것은 *되돌릴 수 없는* 처분의 사전 고지다).
@@ -252,21 +252,34 @@ class ImageViewerFragment : Fragment() {
         if (!com.novelcharacter.app.util.ImagePathMatch.isInside(path, appDir)) return
         rotating = true
         rotateButton?.isEnabled = false
+        val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             // **빗장은 `finally`로 푼다.** 이 스코프는 뷰가 죽으면 취소되는데, 그때 아래
             // `isAdded` 검사에서 빠져나가게 두면 빗장이 걸린 채 남는다. 그 프래그먼트가
             // 백스택에서 다시 서면 **버튼은 멀쩡해 보이는데 눌러도 아무 일이 없다**
             // (새 뷰의 버튼은 enabled인데 빗장은 옛 값 그대로다).
-            val ok = try {
+            val outcome = try {
                 withContext(Dispatchers.IO) {
-                    com.novelcharacter.app.util.ImageRotation.rotate(path, 90)
+                    com.novelcharacter.app.util.ImageRotation.rotate(appContext, path, 90)
                 }
             } finally {
                 rotating = false
             }
             if (!isAdded || view == null) return@launch
             rotateButton?.isEnabled = true
-            if (ok) {
+            if (outcome.ok) {
+                // 형식을 유지할 수 없는 원본(GIF·HEIC 등)은 확장자를 맞춘 새 이름이 된다 — 들고 있는 경로도 바꾼다.
+                outcome.newPath?.let { moved ->
+                    imagePaths = imagePaths.map { if (it == path) moved else it }
+                    // 인자도 갈아 둔다 — 화면을 돌려 다시 만들면 인자에서 목록을 읽는데, 옛 경로는 지워졌을 수 있다.
+                    arguments?.let { args ->
+                        val gson = com.google.gson.Gson()
+                        val raw: List<String> = runCatching {
+                            gson.fromJson<List<String>>(args.getString("imagePaths") ?: "[]", com.novelcharacter.app.util.GsonTypes.STRING_LIST)
+                        }.getOrNull() ?: emptyList()
+                        args.putString("imagePaths", gson.toJson(raw.map { if (it == path) moved else it }))
+                    }
+                }
                 // 썸네일 캐시는 경로를 키로 들고 있어 그대로 두면 옛 방향이 목록에 남는다.
                 com.novelcharacter.app.util.CharacterImageLoader.contentChanged()
                 viewPager?.adapter?.notifyItemChanged(position)

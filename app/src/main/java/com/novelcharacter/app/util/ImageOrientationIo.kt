@@ -72,8 +72,8 @@ object ImageOrientationIo {
      * 파일의 EXIF 방향 태그를 [exifOrientation]으로 **다시 쓴다**(픽셀은 건드리지 않는다).
      *
      * 성공하면 true. JPEG가 아니면 대개 실패하므로 호출부가 픽셀 회전으로 폴백해야 한다 —
-     * 이 저장소는 파일명을 언제나 `.jpg`로 짓지만 **실제 포맷은 내용이 정하고**(투명도가 있으면
-     * PNG로 인코딩된다) 확장자로는 알 수 없다. 그래서 판정을 확장자가 아니라 **결과**로 한다.
+     * 옛 파일은 내용과 무관하게 `.jpg` 이름을 달고 있어(지금은 가져오기가 내용대로 단다 —
+     * [ImageFileFormat]) 확장자를 믿을 수 없다. 그래서 판정을 확장자가 아니라 **결과**로 한다.
      */
     fun writeOrientation(path: String, exifOrientation: Int): Boolean = runCatching {
         val file = File(path)

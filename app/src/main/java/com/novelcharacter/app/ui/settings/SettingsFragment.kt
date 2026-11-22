@@ -1650,7 +1650,7 @@ class SettingsFragment : Fragment() {
                     // 확장자 목록에 걸리지 않아 초기화 뒤에도 홀로 남았다.
                     ctx.filesDir.listFiles()?.filter {
                         it.isFile && (
-                            it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp") ||
+                            com.novelcharacter.app.util.ImageFileFormat.hasImageExtension(it.name) ||
                                 com.novelcharacter.app.util.ImageImportHelper.isTempArtifact(it.name)
                             )
                     }?.forEach { it.delete() }

@@ -130,7 +130,7 @@ object ImageImportHelper {
                     }
                 }
             }
-            file.absolutePath
+            nameByContent(file).absolutePath
         } catch (e: Exception) {
             file.delete()
             null
@@ -206,18 +206,47 @@ object ImageImportHelper {
      * 인코딩 코어를 **회전에도 빌려준다** — 알파 보존·품질 규칙이 두 벌이 되지 않게(중복 금지).
      * 회전은 사용자가 원본을 손보는 조작이라 품질을 낮추지 않는다(100).
      */
-    internal fun encodeBitmapTo(bmp: Bitmap, file: File): Boolean = encodeBitmap(bmp, file, 100)
+    internal fun encodeBitmapTo(bmp: Bitmap, file: File, keepFormat: ImageFileFormat.Kind? = null): Boolean =
+        encodeBitmap(bmp, file, 100, keepFormat)
 
-    private fun encodeBitmap(bmp: Bitmap, file: File, qualityPercent: Int): Boolean = try {
+    /**
+     * @param keepFormat 원본의 형식 — 회전처럼 **경로(=이름)를 유지한 채** 다시 쓰는 자리가 넘긴다.
+     *   PNG·WebP 원본은 그 형식 그대로 쓰여 이름과 내용이 갈리지 않는다. JPEG는 종전대로 투명도가
+     *   있으면 PNG로(투명도를 잃지 않는다). null이면 종전 규칙(투명도 → PNG, 아니면 JPEG)이다.
+     */
+    private fun encodeBitmap(
+        bmp: Bitmap, file: File, qualityPercent: Int, keepFormat: ImageFileFormat.Kind? = null
+    ): Boolean = try {
         FileOutputStream(file).use { out ->
-            if (bmp.hasAlpha()) {
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
-            } else {
-                bmp.compress(Bitmap.CompressFormat.JPEG, qualityPercent, out)
+            when {
+                keepFormat == ImageFileFormat.Kind.PNG || bmp.hasAlpha() && keepFormat != ImageFileFormat.Kind.WEBP ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                keepFormat == ImageFileFormat.Kind.WEBP ->
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        bmp.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, out)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        bmp.compress(Bitmap.CompressFormat.WEBP, 100, out)
+                    }
+                else -> bmp.compress(Bitmap.CompressFormat.JPEG, qualityPercent, out)
             }
         }
     } catch (e: Exception) {
         false
+    }
+
+    /**
+     * 막 쓴 [file]의 이름을 **실제 내용의 형식**에 맞춘다([ImageFileFormat]).
+     *
+     * 위 갈래는 어느 것이 파일에 남을지(원본 바이트 · JPEG · 투명도 있는 PNG) 끝나야 알므로
+     * `.jpg`로 쓰고 여기서 고친다. 아직 아무도 이 경로를 참조하지 않는 순간이라 개명이 안전하다.
+     * 모르는 내용이거나 개명에 실패하면 종전 이름 그대로 둔다(앱 안에서는 디코더가 내용을 본다).
+     */
+    private fun nameByContent(file: File): File {
+        val kind = ImageFileFormat.sniff(file) ?: return file
+        val fixed = File(file.parentFile, ImageFileFormat.withExtensionFor(file.name, kind))
+        if (fixed.name == file.name) return file
+        return if (runCatching { file.renameTo(fixed) }.getOrDefault(false)) fixed else file
     }
 
     /**

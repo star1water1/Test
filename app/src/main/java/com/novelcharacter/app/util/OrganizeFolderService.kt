@@ -31,7 +31,7 @@ import java.util.UUID
  */
 object OrganizeFolderService {
 
-    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+    private val IMAGE_EXTENSIONS = ImageFileFormat.EXTENSIONS
 
     /** 나열된 파일 1건. */
     data class ScannedFile(
@@ -1284,9 +1284,13 @@ object OrganizeFolderService {
             // 재내보내기가 그 자리에 같은 이름을 쓰려다 provider의 개명(`…(1).jpg`)을 유발해
             // 토큰을 깨뜨린다. `_처리됨/` 이동 폴백이 같은 이유로 이미 `discardCopy()`를 두고
             // 있었다 — **실패한 쓰기는 흔적을 남기지 않는다**가 이 파일의 규약이다.
+            // 사본 이름의 확장자는 **내용대로** 단다 — 앱 안의 옛 파일은 PNG·WebP여도 `.jpg`라는 이름을
+            // 달고 있어(가져오기가 내용과 무관하게 붙였다) 그대로 쓰면 PC의 다른 프로그램이 못 연다.
+            // 토큰은 확장자 앞 구간이라 받아오기·재내보내기 정리는 그대로 이 사본을 알아본다.
+            val outName = ImageFileFormat.withExtensionFor(file.fileName, ImageFileFormat.sniff(File(file.sourcePath)))
             val ok = parentUri != null && runCatching {
                 val created = DocumentsContract.createDocument(
-                    resolver, parentUri, mimeOf(file.fileName), file.fileName
+                    resolver, parentUri, mimeOf(outName), outName
                 ) ?: return@runCatching false
                 val written = runCatching {
                     resolver.openOutputStream(created)?.use { output ->
@@ -1439,14 +1443,8 @@ object OrganizeFolderService {
                 ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
         }.getOrNull()
 
-    private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-        "png" -> "image/png"
-        "webp" -> "image/webp"
-        "gif" -> "image/gif"
-        "bmp" -> "image/bmp"
-        "heic", "heif" -> "image/heif"
-        else -> "image/jpeg"
-    }
+    private fun mimeOf(name: String): String =
+        (ImageFileFormat.kindOfExtension(name.substringAfterLast('.', "")) ?: ImageFileFormat.Kind.JPEG).mimeType
 
     // ── 공용 유틸 ──
 
