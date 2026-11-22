@@ -74,7 +74,8 @@ object ImageRotation {
         // 표식을 단다 — 인코딩과 개명 사이에서 죽으면 이 파일이 남는데, 표식이 없으면
         // 목록·통계·쓸어내기·앱 초기화 어디에도 안 걸려 영영 남는다([ImageImportHelper.isTempArtifact]).
         val temp = File(file.parentFile, "img${ImageImportHelper.ROTATE_TEMP_MARKER}${UUID.randomUUID()}.tmp")
-        val ok = ImageImportHelper.encodeBitmapTo(rotated, temp)
+        // 원본 형식 그대로 다시 쓴다 — 경로(=이름)를 유지하므로, PNG·WebP를 JPEG로 바꾸면 이름과 내용이 갈린다.
+        val ok = ImageImportHelper.encodeBitmapTo(rotated, temp, ImageFileFormat.sniff(bytes))
         rotated.recycle()
         if (!ok) { temp.delete(); return@withContext false }
 

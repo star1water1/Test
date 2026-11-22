@@ -846,7 +846,10 @@ class ImageManagerViewModel(
             onProgress(renamed, preview.plans.size, RecompressStage.REPLACE)
             val temp = File(plan.tempPath)
             if (!temp.exists()) continue
-            val finalFile = File(filesDir, "${plan.prefix}_${UUID.randomUUID()}.jpg")
+            // 확장자는 재압축본의 실제 내용대로 — 투명도가 있으면 PNG로 쓰인다(ImageFileFormat).
+            val finalFile = File(filesDir, com.novelcharacter.app.util.ImageFileFormat.withExtensionFor(
+                "${plan.prefix}_${UUID.randomUUID()}.jpg", com.novelcharacter.app.util.ImageFileFormat.sniff(temp)
+            ))
             // 봉쇄 판정의 단일 소스 (B-106 ⓐ · R-39) — 실패하면 막는다.
             val guardOk = ImagePathMatch.isInside(finalFile.path, filesDir)
             if (!guardOk) { temp.delete(); continue }
