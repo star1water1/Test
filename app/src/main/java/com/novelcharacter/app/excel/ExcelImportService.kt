@@ -12221,7 +12221,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 )
             )
         }
-        return UniverseSheetPlan.build(rows)
+        // 엑셀 예약 이름의 평명 시트가 있으면 그 규칙 이전의 파일이다(엑셀은 그 이름을 못 만든다).
+        val legacyExcelReserved = (0 until workbook.numberOfSheets).any { idx ->
+            val n = workbook.getSheetName(idx)
+            EXCEL_RESERVED_SHEET_NAMES.any { it.equals(n, ignoreCase = true) }
+        }
+        return UniverseSheetPlan.build(rows, legacyExcelReservedNames = legacyExcelReserved)
     }
 
     /**

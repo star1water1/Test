@@ -56,6 +56,32 @@ class SheetNameAssignmentTest {
     }
 
     @Test
+    fun `엑셀 예약 이름 History는 누구도 갖지 못하고 접미사로 밀려 되찾을 수 있다`() {
+        // 엑셀은 History를 변경 내용 추적용으로 예약해 그 이름의 시트를 만들거나 바꾸지 못하게 한다.
+        for (name in listOf("History", "history", "HISTORY")) {
+            val used = mutableSetOf<String>()
+            val assigned = assignSheetName(name, used)
+            assertEquals("$name(2)", assigned)
+            assertTrue(isSuffixedVariantOf(assigned, sanitizeSheetNameBase(name)))
+        }
+        // 소유자를 자처해도 못 갖는다 — 앱에는 이 이름의 시트가 없다.
+        assertEquals("History(2)", assignSheetName("History", mutableSetOf(), ownerOf = "History"))
+        // 둘째 History 세계관은 (3)으로 — 동명 규칙과 겹쳐도 깨지지 않는다.
+        val used = mutableSetOf<String>()
+        assertEquals("History(2)", assignSheetName("History", used))
+        assertEquals("History(3)", assignSheetName("History", used))
+        // 이름에 History가 들어 있을 뿐인 세계관은 그대로다.
+        assertEquals("History of Arcadia", assignSheetName("History of Arcadia", mutableSetOf()))
+    }
+
+    @Test
+    fun `엑셀 예약 이름은 앱 예약명 목록과 겹치지 않는다`() {
+        for (excelReserved in EXCEL_RESERVED_SHEET_NAMES) {
+            assertFalse(RESERVED_SHEET_NAMES.any { it.equals(excelReserved, ignoreCase = true) })
+        }
+    }
+
+    @Test
     fun `POI의 대소문자 무시 중복 판정을 반영한다`() {
         // createSheet는 'myworld' 다음 'MyWorld'를 중복으로 보고 예외로 죽는다 —
         // 대소문자를 구분하는 집합으로는 못 걸러 내보내기 자체가 실패했다.
