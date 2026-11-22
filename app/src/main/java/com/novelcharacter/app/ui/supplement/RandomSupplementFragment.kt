@@ -799,23 +799,25 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         // 배지 — 완성도 검사 탭과 같은 색상 규칙
         b.completionBadge.visibility = View.VISIBLE
         val bg = GradientDrawable().apply { cornerRadius = 32f }
-        if (audit.issues.isEmpty()) {
+        val badgeColor = if (audit.issues.isEmpty()) {
             b.completionBadge.text = getString(R.string.random_badge_complete)
-            bg.setColor(ContextCompat.getColor(ctx, R.color.supplement_badge_low))
+            ContextCompat.getColor(ctx, R.color.supplement_badge_low)
         } else if (audit.fieldCompletion >= 0) {
             val pct = audit.fieldCompletion.toInt()
             b.completionBadge.text = "${pct}%"
-            val color = when {
+            when {
                 pct < 30 -> ContextCompat.getColor(ctx, R.color.supplement_badge_high)
                 pct < 70 -> ContextCompat.getColor(ctx, R.color.supplement_badge_mid)
                 else -> ContextCompat.getColor(ctx, R.color.supplement_badge_low)
             }
-            bg.setColor(color)
         } else {
             b.completionBadge.text = getString(R.string.supplement_field_na)
-            bg.setColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            ContextCompat.getColor(ctx, R.color.text_secondary)
         }
+        bg.setColor(badgeColor)
         b.completionBadge.background = bg
+        // 글자는 바탕에서 고른다 — on_primary 고정은 다크의 완성도 색 위에서 2.1~2.5:1이었다.
+        b.completionBadge.setTextColor(com.novelcharacter.app.util.ContrastText.on(badgeColor))
 
         // 미흡 항목 칩
         b.missingChipGroup.removeAllViews()

@@ -158,8 +158,9 @@
 
         <ImageButton
             android:id="@+id/btnSelectionClose"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/close"
             android:src="@drawable/ic_close"
@@ -177,8 +178,9 @@
 
         <ImageButton
             android:id="@+id/btnSelectionOverflow"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:layout_marginEnd="4dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/more_options"
@@ -251,8 +253,9 @@
 
             <ImageButton
                 android:id="@+id/btnToggleBirthday"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="12dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_expand_less"
                 android:scaleType="centerInside"

@@ -92,6 +92,8 @@ class RankingAdapter(
 
             // 값 뱃지
             binding.valueBadge.text = entry.displayValue
+            // 바탕은 accent(bg_score_badge) — on_primary 고정은 라이트에서 2.7:1이었다.
+            binding.valueBadge.setTextColor(com.novelcharacter.app.util.ContrastText.on(ctx.getColor(R.color.accent)))
 
             // 이미지 로딩
             binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)

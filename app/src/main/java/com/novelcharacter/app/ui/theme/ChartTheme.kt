@@ -6,7 +6,9 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.HorizontalBarChart
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.PieDataSet
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.ContrastText
 
 /**
  * MPAndroidChart 공용 테마 — 차트 팔레트·축·범례 색을 한곳에서 관리한다.
@@ -34,6 +36,22 @@ object ChartTheme {
         chart.setTransparentCircleColor(ContextCompat.getColor(ctx, R.color.surface))
         chart.legend.textColor = ContextCompat.getColor(ctx, R.color.text_secondary)
         chart.setEntryLabelColor(ContextCompat.getColor(ctx, R.color.on_surface))
+    }
+
+    /**
+     * 파이 조각 안의 값·항목 이름을 **조각 색에 맞춰 읽히는 색**으로 칠한다.
+     *
+     * 흰 글자를 고정하면 다크 팔레트의 모든 조각(1.5~3.5:1)과 라이트의 밝은 조각에서 안 읽혔다.
+     * 값은 조각마다 [ContrastText.on]으로 고르고, 이름은 [ContrastPieRenderer]가 같은 색을 따른다.
+     *
+     * **데이터셋의 색을 정한 뒤, 차트의 다른 설정(구멍 색·이름표 크기 등)보다 먼저 부른다** —
+     * 렌더러를 바꾸면 렌더러가 든 페인트가 새것이 되므로, 앞서 걸어 둔 페인트 설정이 사라진다.
+     */
+    fun contrastLabels(chart: PieChart, dataSet: PieDataSet) {
+        if (chart.renderer !is ContrastPieRenderer) {
+            chart.renderer = ContrastPieRenderer(chart, chart.animator, chart.viewPortHandler)
+        }
+        dataSet.setValueTextColors(dataSet.colors.map { ContrastText.on(it) })
     }
 
     fun apply(chart: BarChart) = applyBarLike(chart)

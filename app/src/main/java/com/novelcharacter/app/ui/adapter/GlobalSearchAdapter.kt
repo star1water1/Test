@@ -75,7 +75,10 @@ class GlobalSearchAdapter(
         }
 
         private fun setTypeBadgeColor(colorResId: Int) {
-            badgeDrawable.setColor(itemView.context.getColor(colorResId))
+            val color = itemView.context.getColor(colorResId)
+            badgeDrawable.setColor(color)
+            // 글자는 바탕에서 고른다 — on_primary 고정은 라이트의 사건·작품 색에서 2.7~3.1:1이었다.
+            typeIndicator.setTextColor(com.novelcharacter.app.util.ContrastText.on(color))
         }
 
         fun bindCharacter(character: Character) {

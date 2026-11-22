@@ -1,7 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.ui.theme.ChartTheme
-import android.graphics.Color
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.Typeface
 import android.os.Bundle
@@ -556,9 +555,10 @@ class StatsFieldInsightFragment : Fragment() {
         val dataSet = PieDataSet(pieEntries, "").apply {
             colors = chartColors()
             valueTextSize = captionSp
-            valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
+        // 조각 안 글자는 조각 색에서 고른다(흰 글자 고정은 다크 팔레트 전체에서 안 읽혔다) — 렌더러를 먼저 바꾼다.
+        ChartTheme.contrastLabels(chart, dataSet)
         chart.apply {
             data = PieData(dataSet)
             description.isEnabled = false
@@ -569,7 +569,6 @@ class StatsFieldInsightFragment : Fragment() {
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
-            setEntryLabelColor(Color.WHITE)
             animateY(600)
             invalidate()
         }
