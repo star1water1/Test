@@ -100,7 +100,7 @@ class ExportSnapshotTest {
             val deletion = async(Dispatchers.IO) {
                 deletionStarted.complete(Unit)
                 ImageDeletionService.delete(db, image.absolutePath, ImageDeletionService.Owners(characterIds = listOf(100)),
-                    null, recoveryDir = recovery)
+                    null, recoveryDir = recovery, filesDir = context.filesDir)
             }
             deletionStarted.await()
             delay(200)

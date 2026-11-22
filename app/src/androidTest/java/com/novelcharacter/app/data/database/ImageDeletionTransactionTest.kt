@@ -26,16 +26,28 @@ class ImageDeletionTransactionTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         directory = File(context.cacheDir, "image-delete-test-${java.util.UUID.randomUUID()}").apply { mkdirs() }
-        image = File(directory, "image.jpg").apply { writeText("original image bytes") }
+        // 이 폴더를 시험용 뿌리(filesDir)로 쓴다 — 삭제 문지기는 뿌리 직속의 관리 접두 파일만 지운다.
+        image = File(directory, "char_${java.util.UUID.randomUUID()}.jpg").apply { writeText("original image bytes") }
         id = db.characterDao().insert(Character(name = "Owner", code = "owner",
             imagePaths = Gson().toJson(listOf(image.absolutePath)), representativeImagePath = image.absolutePath))
         db.imageMetaDao().insert(ImageMeta(path = image.absolutePath))
         Unit
     }
     @After fun close() { db.close(); directory.deleteRecursively() }
-    private suspend fun delete() = ImageDeletionService.delete(db, image.absolutePath,
+    private suspend fun delete(path: String = image.absolutePath) = ImageDeletionService.delete(db, path,
         ImageDeletionService.Owners(characterIds = listOf(id)), null,
-        recoveryDir = File(directory, RecoverableFileDelete.DIRECTORY))
+        recoveryDir = File(directory, RecoverableFileDelete.DIRECTORY), filesDir = directory)
+
+    @Test fun refusesPathsThatAreNotAppManagedImages() = runBlocking {
+        // 엑셀 칸으로 들어온 경로가 그림이 아닌 앱 파일을 가리켜도 참조·파일 어느 것도 건드리지 않는다.
+        val notAnImage = File(directory, "settings.xml").apply { writeText("keep me") }
+        assertNull(delete(notAnImage.absolutePath))
+        assertEquals("keep me", notAnImage.readText())
+        val nested = File(File(directory, "backups").apply { mkdirs() }, "char_backup.jpg").apply { writeText("backup") }
+        assertNull(delete(nested.absolutePath))
+        assertTrue(nested.exists())
+        assertEquals(Gson().toJson(listOf(image.absolutePath)), db.characterDao().getCharacterById(id)!!.imagePaths)
+    }
 
     @Test fun successRemovesReferencesRepresentativeMetadataAndFile() = runBlocking {
         assertEquals(image.length(), delete())
