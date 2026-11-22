@@ -151,6 +151,10 @@ class CharacterAdapter(
                 character.name
             }
 
+            // 이미지 설명은 그 캐릭터의 이름이다 — XML 기본값(@string/character_name = "이름")이 남으면
+            // TalkBack이 모든 카드를 똑같이 "이름"으로 읽는다.
+            binding.characterImage.contentDescription = character.name
+
             // anotherName subtitle (aliases joined)
             if (showAnotherName && character.aliases.isNotEmpty()) {
                 binding.characterSubName.text = character.aliases.joinToString(", ")

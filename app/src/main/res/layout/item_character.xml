@@ -56,7 +56,8 @@
                 android:layout_height="48dp"
                 android:layout_gravity="top|end"
                 android:padding="12dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/bg_image_overlay_button"
+                app:tint="@android:color/white"
                 android:contentDescription="@string/more_options"
                 android:importantForAccessibility="yes" />
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 이미지 위에 얹는 아이콘 버튼의 받침 — 사진 명도와 상관없이 아이콘이 보이게 한다.
+     아이콘은 흰색으로 고정하고(받침이 늘 어둡다) 48dp 터치 영역 안에 32dp 원으로 그린다.
+     색은 이미지 개수 배지(bg_image_count_badge)와 같은 반투명 검정이다. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#33FFFFFF">
+    <item>
+        <inset android:inset="8dp">
+            <shape android:shape="oval">
+                <solid android:color="#99000000" />
+            </shape>
+        </inset>
+    </item>
+</ripple>
