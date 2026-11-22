@@ -108,6 +108,8 @@ class NovelCharacterApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 이미지 삭제 문지기의 뿌리 — Context 없는 저장소 계층이 쓴다(AppFilesRoot KDoc).
+        com.novelcharacter.app.util.AppFilesRoot.register(filesDir)
         AppLogger.init(filesDir)
         appScope.launch(Dispatchers.IO) {
             com.novelcharacter.app.util.ImageExportGate.run {

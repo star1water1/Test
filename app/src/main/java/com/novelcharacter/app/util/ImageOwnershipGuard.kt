@@ -78,14 +78,18 @@ object ImageOwnershipGuard {
     /**
      * 후보들 중 보호되지 않은 파일만 삭제한다. @return 실제 삭제 수.
      * 보호된 후보는 그대로 남는다(공유 참조 유지 또는 라이브러리 미배정으로 잔존).
+     *
+     * @param filesDir 이미지 삭제 문지기([ImagePathMatch.isDeletableImage])의 뿌리 — **필수 인자**다.
+     *        Context가 있으면 `context.filesDir`, 저장소 계층은 [AppFilesRoot.dir]. null이면 아무것도 지우지 않는다.
      */
     suspend fun deleteIfUnprotected(
         db: AppDatabase,
         context: Context?,
         candidates: Collection<String>,
+        filesDir: File?,
         excludeTrashSnapshotId: Long? = null
     ): Int = deleteIfUnprotectedBatch(
-        db, context, candidates,
+        db, context, candidates, filesDir,
         excludeTrashSnapshotIds = if (excludeTrashSnapshotId == null) emptySet() else setOf(excludeTrashSnapshotId)
     )
 
@@ -100,19 +104,26 @@ object ImageOwnershipGuard {
         db: AppDatabase,
         context: Context?,
         candidates: Collection<String>,
+        filesDir: File?,
         excludeTrashSnapshotIds: Set<Long>
     ): Int {
         if (candidates.isEmpty()) return 0
         return db.withTransaction {
             val protectedSet = collectProtectedPaths(db, context, excludeTrashSnapshotIds)
-            deleteUnprotectedIn(candidates, protectedSet)
+            deleteUnprotectedIn(candidates, protectedSet, filesDir)
         }
     }
 
-    /** 이미 계산해 둔 보호 집합으로 삭제한다 — 반복 호출에서 재계산을 피하기 위한 형태. */
-    fun deleteUnprotectedIn(candidates: Collection<String>, protectedSet: Set<String>): Int {
+    /**
+     * 이미 계산해 둔 보호 집합으로 삭제한다 — 반복 호출에서 재계산을 피하기 위한 형태.
+     *
+     * 앱이 관리하는 그림이 아닌 경로([ImagePathMatch.isDeletableImage]가 거절 — 엑셀 칸으로
+     * 들어온 `filesDir` 밖·백업·DB 경로 등)는 **지우지 않고 남긴다.**
+     */
+    fun deleteUnprotectedIn(candidates: Collection<String>, protectedSet: Set<String>, filesDir: File?): Int {
         var deleted = 0
         for (p in candidates) {
+            if (!ImagePathMatch.isDeletableImage(p, filesDir)) continue
             val canon = ImagePathMatch.canonical(p)
             if (canon in protectedSet) continue
             val f = File(p)

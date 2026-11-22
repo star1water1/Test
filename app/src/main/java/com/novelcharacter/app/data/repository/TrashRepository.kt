@@ -4557,6 +4557,7 @@ class TrashRepository(
             try {
                 com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotectedBatch(
                     db, null, candidates,
+                    com.novelcharacter.app.util.AppFilesRoot.dir,
                     excludeTrashSnapshotIds = snapshots.map { it.id }.toSet()
                 )
             } catch (_: Exception) {

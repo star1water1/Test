@@ -47,7 +47,14 @@ class WorldPackageImporter(context: Context) {
     // ── 1단계: ZIP 읽기 (JSON 엔트리 파싱 + 이미지 추출) ──
 
     sealed class ReadResult {
-        data class Ok(val contents: WorldPackageContents) : ReadResult()
+        /**
+         * @property corruptImageEntries 깨져서 건너뛴 이미지 엔트리 이름 — 이 장들은 [import]가
+         *   *"패키지에 없던 장"*과 갈라 세어 고지한다(R-39 — 사유가 다르면 따로 센다).
+         */
+        data class Ok(
+            val contents: WorldPackageContents,
+            val corruptImageEntries: Set<String> = emptySet()
+        ) : ReadResult()
 
         /** 파싱 실패 — 원인별 메시지는 호출부가 [WorldPackageParseResult]로 만든다. */
         data class Failed(val parse: WorldPackageParseResult) : ReadResult()
@@ -67,6 +74,7 @@ class WorldPackageImporter(context: Context) {
         val jsonEntries = HashMap<String, String>()
         var imageCount = 0
         var imageTotalBytes = 0L
+        val corruptImageEntries = mutableSetOf<String>()
         try {
             ZipFile(file).use { zip ->
                 for (entry in zip.entries()) {
@@ -92,10 +100,27 @@ class WorldPackageImporter(context: Context) {
                                 continue
                             }
                             target.parentFile?.mkdirs()
-                            val copied = zip.getInputStream(entry).use { input ->
-                                FileOutputStream(target).use { output ->
-                                    copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                            // **깨진 이미지 엔트리 한 장은 건너뛴다** — 엑셀 ZIP 가져오기와 같은 처분
+                            // (`ExcelImporter.importFromZip`, PR #432). 종전에는 이 예외가 아래 catch로
+                            // 가서 그림 한 장 때문에 패키지 전체가 "손상"으로 거부됐다.
+                            // ZipException(손상)·EOFException(잘림)만 — 디스크 가득 등은 종전대로 실패다.
+                            val copied = try {
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(target).use { output ->
+                                        copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                                    }
                                 }
+                            } catch (e: java.io.IOException) {
+                                if (e !is java.util.zip.ZipException && e !is java.io.EOFException) throw e
+                                // 깨지기 전에 쓴 바이트도 총량 상한에 센다 — 안 세면 깨진 엔트리를
+                                // 되풀이한 파일이 상한을 우회한다(엑셀 경로와 같은 이유).
+                                imageTotalBytes += target.length()
+                                target.delete()
+                                corruptImageEntries.add(name)
+                                Log.w(TAG, "Skipping corrupt image entry: $name", e)
+                                if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) return ReadResult.ImagesTooLarge
+                                imageCount++
+                                continue
                             }
                             imageTotalBytes += copied
                             if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) return ReadResult.ImagesTooLarge
@@ -110,7 +135,7 @@ class WorldPackageImporter(context: Context) {
             return ReadResult.Failed(WorldPackageParseResult.Malformed("ZIP"))
         }
         return when (val parsed = WorldPackageParser.parse(jsonEntries)) {
-            is WorldPackageParseResult.Success -> ReadResult.Ok(parsed.contents)
+            is WorldPackageParseResult.Success -> ReadResult.Ok(parsed.contents, corruptImageEntries)
             else -> ReadResult.Failed(parsed)
         }
     }
@@ -175,12 +200,14 @@ class WorldPackageImporter(context: Context) {
     /**
      * @param overwriteTarget [Mode.OVERWRITE]일 때 휴지통으로 보내고 교체할 기존 세계관.
      * @param extractDir [read]가 이미지를 추출해 둔 디렉토리.
+     * @param corruptImageEntries [read]가 깨져서 건너뛴 이미지 엔트리([ReadResult.Ok.corruptImageEntries]).
      */
     suspend fun import(
         contents: WorldPackageContents,
         mode: Mode,
         overwriteTarget: Universe?,
-        extractDir: File
+        extractDir: File,
+        corruptImageEntries: Set<String>
     ): Outcome {
         val warnings = mutableListOf<String>()
         val version = contents.manifest.schemaVersion
@@ -274,6 +301,7 @@ class WorldPackageImporter(context: Context) {
         var restoredImages = 0
         var missingImages = 0
         var truncatedImagesDropped = 0
+        var corruptImagesDropped = 0
         var strippedImagePaths = 0
 
         // 새 경로 목록과 함께 **옛 경로 → 새 경로**를 돌려준다. 대표 이미지(B-103)가 그것을
@@ -331,6 +359,7 @@ class WorldPackageImporter(context: Context) {
                     // 사용자가 할 일이 다르다(전자는 보낸 사람이 이미지를 빼고 내보낸 것,
                     // 후자는 보낸 기기에서 다시 내보내면 살아난다).
                     truncated -> truncatedImagesDropped++
+                    entryName in corruptImageEntries -> corruptImagesDropped++
                     includesImages -> missingImages++
                     else -> strippedImagePaths++
                 }
@@ -847,6 +876,9 @@ class WorldPackageImporter(context: Context) {
         if (missingImages > 0) warnings.add("이미지 ${missingImages}개를 패키지에서 찾지 못해 제외했습니다")
         if (truncatedImagesDropped > 0) {
             warnings.add("내보내는 중 잘린 이미지 ${truncatedImagesDropped}개를 제외했습니다 (보낸 기기에서 다시 내보내 주세요)")
+        }
+        if (corruptImagesDropped > 0) {
+            warnings.add("패키지 안에서 손상된 이미지 ${corruptImagesDropped}개를 제외했습니다 (보낸 기기에서 다시 내보내 주세요)")
         }
         if (strippedImagePaths > 0) warnings.add("이미지 미포함 패키지 — 이미지 연결 ${strippedImagePaths}개 제외")
         if (danglingRefs > 0) warnings.add("패키지 내부 참조 불일치로 제외된 항목 ${danglingRefs}건")

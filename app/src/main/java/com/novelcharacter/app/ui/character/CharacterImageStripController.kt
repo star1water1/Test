@@ -81,8 +81,8 @@ class CharacterImageStripController(
      * 같은 수명으로 만든다.
      *
      * 거른 원문을 담는다 — [pendingDeletes] 게터가 다시 붙은 경로를 매번 거르므로
-     * 여기서 거르면 두 벌이 된다. 내부 저장소 검증은 호스트가 [validateInternalPaths]로
-     * 이미 했다(imagePaths와 같은 규칙).
+     * 여기서 거르면 두 벌이 된다. 호스트는 [restorablePaths]로 빈 칸만 뺀다
+     * (imagePaths와 같은 규칙).
      */
     fun restorePendingDeletes(paths: List<String>) {
         pendingDeletePaths.clear()
@@ -103,12 +103,16 @@ class CharacterImageStripController(
 
     companion object {
         /**
-         * 내부 저장소 경로만 수용하는 검증 — 회전 복원·드래프트 복원이 같은 규칙을 공유한다.
-         * 판정은 [ImagePathMatch.isInside]가 든다 (B-106 ⓐ · R-39) — `appDir`이 null이거나
-         * 정규화가 실패하면 **막는다**(그 함수가 두 경우를 모두 false로 접는다).
+         * 회전 복원·드래프트 복원이 되살릴 경로 — **DB 적재와 같은 목록을 돌려준다**(빈 칸만 뺀다).
+         *
+         * 종전에는 `filesDir` 안의 경로만 남겼다(`validateInternalPaths`). DB 적재는 거르지 않으므로
+         * 엑셀 칸으로 들어온 `filesDir` 밖 경로를 든 캐릭터를 열고 **화면만 돌린 뒤 저장하면**, 그
+         * 경로가 "사용자가 뺀 그림"으로 읽혀 참조가 말없이 사라지고 정리가 그 파일을 지웠다.
+         * 지킬 것은 여기가 아니라 쓰는 자리가 이미 지킨다 — 표시(`CharacterImageLoader`)·확대 보기·
+         * AI 전송은 [ImagePathMatch.isInside]로, 삭제는 [ImagePathMatch.isDeletableImage]로 막는다.
          */
-        fun validateInternalPaths(paths: List<String>, appDir: File?): List<String> =
-            paths.filter { ImagePathMatch.isInside(it, appDir) }
+        fun restorablePaths(paths: List<String>): List<String> =
+            paths.filter { it.isNotBlank() }
     }
 
     /** 호스트 onViewCreated에서 호출 — 리사이클러뷰 레이아웃 매니저 설정 */

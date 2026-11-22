@@ -785,7 +785,7 @@ class CharacterSaveCoordinator(
         try {
             when (com.novelcharacter.app.util.ImageSettingsStore(appContext).getEditorRemovePolicy()) {
                 com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY ->
-                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(appDb, appContext, removed)
+                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(appDb, appContext, removed, appContext.filesDir)
                 com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT ->
                     com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(appDb, appContext, removed)
             }
@@ -858,7 +858,8 @@ class CharacterSaveCoordinator(
                     owners = com.novelcharacter.app.util.ImageDeletionService.Owners.NONE,
                     linkGroupId = groupByPath[path],
                     gson = gson,
-                    recoveryDir = java.io.File(appContext.filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
+                    recoveryDir = java.io.File(appContext.filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY),
+                    filesDir = appContext.filesDir
                 )
                 if (freed != null) deleted++ else protectedCount++
             }

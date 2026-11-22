@@ -1098,14 +1098,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         if (restoreState != null) {
             // 회전 복원 — 기본 필드는 View 상태로 자동 복원되므로 덮어쓰지 않는다
             restoreState.getStringArrayList("imagePaths")?.let { saved ->
-                val validated = CharacterImageStripController.validateInternalPaths(saved, context?.filesDir)
+                val validated = CharacterImageStripController.restorablePaths(saved)
                 imageStrip.setPaths(validated)
             }
             // 목록을 세운 **뒤에** 되살린다 — setRepresentativePath가 retain으로 현재 목록에
             // 없는 경로를 거르므로 순서가 뒤집히면 지정이 조용히 사라진다.
             restoreState.getStringArrayList(STATE_PENDING_DELETES)?.let { pending ->
                 imageStrip.restorePendingDeletes(
-                    CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+                    CharacterImageStripController.restorablePaths(pending)
                 )
             }
             restoreState.getString(STATE_REPRESENTATIVE)?.let { imageStrip.setRepresentativePath(it) }
@@ -1335,15 +1335,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         b.editMemo.setText(draft.memo)
 
         if (draft.imagePaths.isNotEmpty()) {
-            val validated = CharacterImageStripController.validateInternalPaths(
-                draft.imagePaths, context?.filesDir
-            )
+            val validated = CharacterImageStripController.restorablePaths(draft.imagePaths)
             imageStrip.setPaths(validated)
         }
         // null은 *기록되지 않았다*이지 *비우기로 했다*가 아니다 (Draft KDoc · R-2 · R-36).
         draft.pendingDeletePaths?.let { pending ->
             imageStrip.restorePendingDeletes(
-                CharacterImageStripController.validateInternalPaths(pending, context?.filesDir)
+                CharacterImageStripController.restorablePaths(pending)
             )
         }
         draft.representativePath?.let { imageStrip.setRepresentativePath(it) }

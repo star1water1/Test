@@ -640,7 +640,8 @@ class ImageManagerViewModel(
             ),
             linkGroupId = item.meta?.linkGroupId,
             gson = gson,
-            recoveryDir = File(getApplication<Application>().filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY)
+            recoveryDir = File(getApplication<Application>().filesDir, com.novelcharacter.app.util.RecoverableFileDelete.DIRECTORY),
+            filesDir = getApplication<Application>().filesDir
         )
 
     private fun removePath(json: String, path: String, canon: String): String {
