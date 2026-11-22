@@ -222,6 +222,17 @@ val RESERVED_SHEET_NAMES = setOf(
 )
 
 /**
+ * **엑셀 자신이 예약한** 시트 이름 — 대소문자 무시. 앱의 예약명([RESERVED_SHEET_NAMES])과 달리
+ * **어느 시트도 소유하지 못한다**(앱에는 이 이름을 쓰는 시트가 없다).
+ *
+ * `History`는 엑셀이 변경 내용 추적에 쓰는 이름이라 엑셀 안에서는 그 이름으로 시트를 만들거나
+ * 바꿀 수 없다("예약된 이름"). 세계관 이름이 `History`면 내보내기가 그대로 시트명으로 써서,
+ * 그 파일을 엑셀에서 손보려 할 때 걸렸다. 이제 `History(2)`로 밀리고, 가져오기는 접미사 조회
+ * ([isSuffixedVariantOf])로 그 시트를 되찾는다 — 옛 파일의 평명 `History` 시트는 정확 일치로 읽는다.
+ */
+val EXCEL_RESERVED_SHEET_NAMES = setOf("History")
+
+/**
  * 엑셀 시트명 정규화 — **내보내기·가져오기 단일 소스**.
  *
  * POI(5.2.5)의 실제 제약을 반영한다:
@@ -283,11 +294,21 @@ fun takeSheetChars(name: String, max: Int): String {
  *
  * @param ownerOf 이 시트가 소유권을 주장하는 예약명(예약 시트 자신). 세계관 시트는 null.
  */
-fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String? = null): String {
+fun assignSheetName(
+    name: String,
+    usedNames: MutableSet<String>,
+    ownerOf: String? = null,
+    /**
+     * [EXCEL_RESERVED_SHEET_NAMES]를 피하는가. **내보내기는 언제나 피한다.** `false`는 가져오기가
+     * 이 규칙 이전에 만든 파일의 배정을 되짚을 때만 쓴다([UniverseSheetPlan.build]).
+     */
+    avoidExcelReserved: Boolean = true
+): String {
     val base = sanitizeSheetNameBase(name)
 
     fun taken(candidate: String): Boolean {
         if (usedNames.any { it.equals(candidate, ignoreCase = true) }) return true
+        if (avoidExcelReserved && EXCEL_RESERVED_SHEET_NAMES.any { it.equals(candidate, ignoreCase = true) }) return true
         val reserved = RESERVED_SHEET_NAMES.any { it.equals(candidate, ignoreCase = true) }
         return reserved && !candidate.equals(ownerOf, ignoreCase = true)
     }

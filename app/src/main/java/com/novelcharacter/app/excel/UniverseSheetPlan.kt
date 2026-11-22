@@ -76,7 +76,13 @@ class UniverseSheetPlan private constructor(
          * 코드는 청구권을 걷는다** — 어느 행이 진짜인지 좁혀지지 않으므로 조용히 고르지 않고
          * (규약 4-3) 그 세계관은 휴리스틱 폴백으로 내려보낸다.
          */
-        fun build(rows: List<Row>): UniverseSheetPlan {
+        /**
+         * @param legacyExcelReservedNames 파일이 엑셀 예약 이름([EXCEL_RESERVED_SHEET_NAMES])의
+         *   시트를 **평명 그대로** 갖고 있는가. 엑셀은 그 이름의 시트를 만들지 못하므로 그런 시트는
+         *   이 규칙 전에 앱이 내보낸 것뿐이다 — 그 파일의 배정은 옛 규칙(피하지 않음)으로 되짚어야
+         *   동명 `History` 세계관 둘의 시트가 맞바뀌지 않는다.
+         */
+        fun build(rows: List<Row>, legacyExcelReservedNames: Boolean = false): UniverseSheetPlan {
             // 내보내기 정렬(displayOrder ASC, createdAt DESC)로 순서를 재구성한다 — 행 순서를
             // 믿으면 엑셀에서 정렬한 파일이 동명 세계관 둘의 배정을 맞바꾼다(클래스 KDoc).
             // 두 키가 다 있는 행이 먼저(내보내기 정렬 · 동률은 행 순서), 나머지는 뒤에 행
@@ -96,7 +102,7 @@ class UniverseSheetPlan private constructor(
             for (row in ordered) {
                 if (row.name.isBlank()) continue
                 // 청구 여부와 무관하게 먼저 배정한다 — 뒤 행의 접미사 번호가 이 배정에 걸려 있다.
-                val assigned = assignSheetName(row.name, used, ownerOf = null)
+                val assigned = assignSheetName(row.name, used, ownerOf = null, avoidExcelReserved = !legacyExcelReservedNames)
                 val code = row.code
                 if (code.isBlank()) continue
                 if (code in duplicated) continue

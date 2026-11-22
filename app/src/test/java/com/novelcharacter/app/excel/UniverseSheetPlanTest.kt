@@ -172,4 +172,22 @@ class UniverseSheetPlanTest {
         // 끼운 행은 그 뒤 번호를 받는다 — 실재하지 않는 시트명이라 폴백으로 내려간다.
         assertEquals("X(3)", plan.sheetNameFor("U-손"))
     }
+
+    @Test
+    fun `엑셀 예약 이름 History 세계관도 내보내기 배정과 회수가 같다`() {
+        assertRoundtrip(listOf("History" to "U1", "아르카디아" to "U2", "History" to "U3", "history" to "U4"))
+        val plan = planOf(listOf("History" to "U1", "History" to "U2"))
+        assertEquals("History(2)", plan.sheetNameFor("U1"))
+        assertEquals("History(3)", plan.sheetNameFor("U2"))
+    }
+
+    @Test
+    fun `규칙 이전 파일은 옛 배정으로 되짚어 동명 History 둘이 맞바뀌지 않는다`() {
+        // 옛 내보내기는 History를 피하지 않았다 — 첫째가 평명, 둘째가 (2)였다.
+        val rows = listOf(UniverseSheetPlan.Row("History", "U1"), UniverseSheetPlan.Row("History", "U2"))
+        val legacy = UniverseSheetPlan.build(rows, legacyExcelReservedNames = true)
+        assertEquals("History", legacy.sheetNameFor("U1"))
+        assertEquals("History(2)", legacy.sheetNameFor("U2"))
+        assertEquals("U2", legacy.plannedOwnerOf("History(2)"))
+    }
 }
