@@ -1735,8 +1735,12 @@ class SettingsFragment : Fragment() {
             if (_binding == null) return@launch
             binding.switchPcBridge.isChecked = settings.enabled
             binding.switchPcBridgeTetherOnly.isChecked = settings.tetherOnly
-            refreshBridgeAddress()
 
+            // **배선을 먼저 하고 주소 읽기를 맨 뒤에 둔다.** `refreshBridgeAddress`는
+            // 네트워크 인터페이스를 IO에서 읽어 **중단된다** — 그 사이 사용자가 설정 화면을
+            // 떠나면 `_binding`이 null이 되고, 이어지는 `binding.…`이 그 자리에서 죽는다
+            // (`binding`은 `_binding!!`이다). 배선은 중단하지 않으므로 순서를 뒤집으면
+            // 그 창이 사라진다.
             binding.switchPcBridge.setOnCheckedChangeListener { _, checked ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     bridgeStore.setEnabled(checked)
@@ -1762,6 +1766,9 @@ class SettingsFragment : Fragment() {
                     }
                 }
             }
+
+            binding.editPcBridgePort.setText(settings.port.toString())
+            bindPcBridgePort()
 
             binding.btnPcBridgeCopy.setOnClickListener {
                 val text = binding.pcBridgeAddressText.text?.toString().orEmpty()
@@ -1791,6 +1798,53 @@ class SettingsFragment : Fragment() {
                         }
                     }
                     .show()
+            }
+
+            // 배선이 끝난 뒤에 읽는다(위 상자의 이유).
+            refreshBridgeAddress()
+        }
+    }
+
+    /**
+     * 포트 입력칸.
+     *
+     * **포커스를 떠날 때 반영한다** — 글자마다 저장하면 `8`을 적는 순간(범위 밖) 거절되고,
+     * `87`에서 또 거절돼 사용자가 `8787`을 끝까지 적을 수 없다.
+     *
+     * **범위를 벗어나면 거절하고 되돌린다** — 조용히 깎아 넣지 않는다. 깎으면 사용자가 적은
+     * 수와 서버가 쓰는 수가 달라지는데, 그 사실이 어디에도 적히지 않는다
+     * (`BridgeSettingsStore.setPort`가 `coerceIn`을 하는 것은 **저장 계층의 마지막 방어**이고
+     * 화면의 응답이 아니다).
+     */
+    private fun bindPcBridgePort() {
+        binding.editPcBridgePort.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) return@setOnFocusChangeListener
+            viewLifecycleOwner.lifecycleScope.launch {
+                val typed = binding.editPcBridgePort.text?.toString()?.trim().orEmpty()
+                val current = bridgeStore.get()
+                val value = typed.toIntOrNull()
+                if (value == null || value < com.novelcharacter.app.pcbridge.BridgeSettingsStore.MIN_PORT ||
+                    value > com.novelcharacter.app.pcbridge.BridgeSettingsStore.MAX_PORT
+                ) {
+                    if (_binding == null) return@launch
+                    binding.layoutPcBridgePort.error = getString(
+                        R.string.pc_bridge_port_invalid,
+                        com.novelcharacter.app.pcbridge.BridgeSettingsStore.MIN_PORT,
+                        com.novelcharacter.app.pcbridge.BridgeSettingsStore.MAX_PORT
+                    )
+                    binding.editPcBridgePort.setText(current.port.toString())
+                    return@launch
+                }
+                if (_binding != null) binding.layoutPcBridgePort.error = null
+                if (value == current.port) return@launch
+                bridgeStore.setPort(value)
+                // 포트가 바뀌면 **주소도 서버도 바뀐다.** 켜져 있으면 새 포트로 다시 세운다 —
+                // 그러지 않으면 화면의 주소와 실제로 열린 포트가 갈린다.
+                if (current.enabled) {
+                    com.novelcharacter.app.pcbridge.PcBridgeService.stop(requireContext().applicationContext)
+                    com.novelcharacter.app.pcbridge.PcBridgeService.start(requireContext().applicationContext)
+                }
+                refreshBridgeAddress()
             }
         }
     }
