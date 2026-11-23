@@ -128,6 +128,67 @@ class BridgeRelationshipsTest {
         assertEquals(20, v.otherCharacterId)
     }
 
+    // ───────── 세계관을 가로지른 채 남은 관계 ─────────
+
+    /**
+     * **단추를 막지 않고 먼저 알린다.**
+     *
+     * 이 상태는 1단계의 웹 폼이 만든다 — 캐릭터의 작품을 바꾸면 세계관이 따라 바뀌고
+     * 기존 관계가 세계관을 가로지른 채 남는다. 그때 사용자가 가장 하고 싶은 일은 그 관계를
+     * **지우는 것**이라 지우는 길을 막으면 안 된다. 그래서 `readOnly`는 거짓이고
+     * `advisory`만 붙는다.
+     */
+    @Test
+    fun describe_crossUniverseRowIsAdvisedNotLocked() {
+        val v = BridgeRelationships.describe(
+            rows = listOf(rel()),
+            selfId = 10,
+            names = mapOf(20L to "상대"),
+            factionNames = emptyMap(),
+            crossUniverseOtherIds = setOf(20L)
+        ).single()
+        assertFalse(v.readOnly)
+        assertNull(v.notice)
+        assertEquals(BridgeRelationships.ADVISORY_CROSS_UNIVERSE, v.advisory)
+    }
+
+    /** 같은 세계관이면 안내가 붙지 않는다. */
+    @Test
+    fun describe_sameUniverseHasNoAdvisory() {
+        val v = BridgeRelationships.describe(
+            listOf(rel()), 10, mapOf(20L to "상대"), emptyMap(), emptySet()
+        ).single()
+        assertNull(v.advisory)
+    }
+
+    /** 부르는 쪽이 셈을 넘기지 않아도 동작은 같다 — 기본값이 빈 집합이다. */
+    @Test
+    fun describe_advisoryDefaultsToNone() {
+        val v = BridgeRelationships.describe(
+            listOf(rel()), 10, mapOf(20L to "상대"), emptyMap()
+        ).single()
+        assertNull(v.advisory)
+    }
+
+    /**
+     * **이미 사유가 있는 줄에는 겹쳐 적지 않는다.**
+     *
+     * 세력 자동 관계가 세계관까지 가로지르면 둘 다 참이지만, 두 안내를 겹쳐 놓으면
+     * *무엇을 먼저 고쳐야 하는가*가 흐려진다 — 세력 쪽이 먼저다.
+     */
+    @Test
+    fun describe_factionNoticeWinsOverTheAdvisory() {
+        val v = BridgeRelationships.describe(
+            rows = listOf(rel(factionId = 7)),
+            selfId = 10,
+            names = mapOf(20L to "상대"),
+            factionNames = mapOf(7L to "검은 장막"),
+            crossUniverseOtherIds = setOf(20L)
+        ).single()
+        assertEquals(BridgeRelationships.NOTICE_FACTION, v.notice)
+        assertNull(v.advisory)
+    }
+
     /** DAO가 준 순서를 그대로 둔다 — 여기서 다시 정렬하면 앱 목록과 순서가 갈린다. */
     @Test
     fun describe_keepsTheGivenOrder() {

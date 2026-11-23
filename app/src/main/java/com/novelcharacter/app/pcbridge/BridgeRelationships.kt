@@ -31,6 +31,20 @@ object BridgeRelationships {
     const val NOTICE_MISSING_OTHER = "missingOther"
 
     /**
+     * 상대가 **지금은 다른 세계관에 있다** — 고치면 거절되지만 지울 수는 있다.
+     *
+     * **읽기 전용으로 만들지 않는 것이 판단이다.** 이 상태는 1단계의 웹 폼이 만들 수 있다 —
+     * 캐릭터의 작품을 바꾸면 세계관이 따라 바뀌고, 그러면 기존 관계가 세계관을 가로지른
+     * 채 남는다. 그때 사용자가 가장 하고 싶은 일은 **그 관계를 지우는 것**이므로 지우는
+     * 길을 막으면 안 된다. 그래서 단추는 그대로 두고 **먼저 사실을 알린다** — 저장을
+     * 눌러 보고 거절로 알게 하지 않는 것이 검증 → 고지의 순서다.
+     *
+     * 세력 자동 관계에는 붙이지 않는다. 그쪽은 이미 사유가 있고, 둘을 겹쳐 적으면
+     * *무엇을 먼저 고쳐야 하는가*가 흐려진다.
+     */
+    const val ADVISORY_CROSS_UNIVERSE = "crossUniverse"
+
+    /**
      * 관계 저장이 막혔다는 **관문 이름**. 응답의 `gate` 값이고 웹이 이 글자로 가른다.
      *
      * **상수로 두는 이유는 짝이 두 언어에 살기 때문이다.** 서버가 적는 글자와 웹이 보는
@@ -75,7 +89,12 @@ object BridgeRelationships {
         /** 읽기 전용인 **사유 코드**. null이면 사유가 없다(=고칠 수 있다). */
         val notice: String?,
         /** [NOTICE_FACTION]일 때 어느 세력인가 — *"어디를 고치면 되는가"*를 말하기 위해 싣는다. */
-        val factionName: String?
+        val factionName: String?,
+        /**
+         * 고칠 수는 있지만 **알아 둘 것이 있다**는 사유 코드. 지금은
+         * [ADVISORY_CROSS_UNIVERSE] 하나다. [notice]와 달리 단추를 막지 않는다.
+         */
+        val advisory: String? = null
     )
 
     /**
@@ -128,12 +147,15 @@ object BridgeRelationships {
      *   빼지 않는다(앱의 관계 목록은 `mapNotNull`로 빼는데, 그러면 사용자는 그 관계가 있다는
      *   사실조차 알 수 없다).
      * @param factionNames 세력 id → 이름.
+     * @param crossUniverseOtherIds 지금 **다른 세계관에 있는** 상대의 id들. 비면 아무 줄에도
+     *   안내가 붙지 않는다(기본값이 그것이다 — 부르는 쪽이 셈을 안 해도 동작은 같다).
      */
     fun describe(
         rows: List<CharacterRelationship>,
         selfId: Long,
         names: Map<Long, String>,
-        factionNames: Map<Long, String>
+        factionNames: Map<Long, String>,
+        crossUniverseOtherIds: Set<Long> = emptySet()
     ): List<RelationshipView> {
         val out = ArrayList<RelationshipView>(rows.size)
         for (row in rows) {
@@ -159,7 +181,13 @@ object BridgeRelationships {
                     arrow = arrowFor(row.isBidirectional, row.characterId1 == selfId),
                     readOnly = notice != null,
                     notice = notice,
-                    factionName = if (automatic) row.factionId?.let(factionNames::get) else null
+                    factionName = if (automatic) row.factionId?.let(factionNames::get) else null,
+                    // 이미 사유가 있는 줄에는 겹쳐 적지 않는다(위 KDoc).
+                    advisory = if (notice == null && otherId in crossUniverseOtherIds) {
+                        ADVISORY_CROSS_UNIVERSE
+                    } else {
+                        null
+                    }
                 )
             )
         }

@@ -122,6 +122,14 @@ class BridgeWebTest {
         )
     }
 
+    /** 안내 사유 코드의 짝. 갈리면 **안내가 조용히 사라진다.** */
+    @Test
+    fun relationshipAdvisory_matchesTheDescriptor() {
+        assertTrue(
+            BridgeWeb.JS.contains("'" + BridgeRelationships.ADVISORY_CROSS_UNIVERSE + "'")
+        )
+    }
+
     /** 관문 이름의 짝. 갈리면 삭제 확인 창이 **뜨지 않고** 일반 실패로 접힌다. */
     @Test
     fun relationshipGateNames_matchTheServer() {

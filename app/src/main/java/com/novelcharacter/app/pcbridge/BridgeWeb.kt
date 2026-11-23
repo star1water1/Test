@@ -594,6 +594,11 @@ function relRow(row) {
     why = '상대 쪽 인물을 찾지 못해 PC에서 고치지 않습니다.';
   }
   if (why) who.appendChild(el('p', { class:'desc' }, why));
+  // 고칠 수는 있지만 알아 둘 것 — 단추를 막지 않고 먼저 알린다.
+  if (row.advisory === 'crossUniverse') {
+    who.appendChild(el('p', { class:'desc' },
+      '상대가 지금은 다른 세계관에 있습니다. 고치는 것은 거절되며, 지우거나 앱에서 작품을 되돌릴 수 있습니다.'));
+  }
   w.appendChild(who);
 
   if (!row.readOnly) {

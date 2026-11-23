@@ -377,10 +377,22 @@ class BridgeData(
         val novelTitles = novelList.associate { it.id to it.title }
         val selfUniverseId = self.novelId?.let { universeOf[it] }
 
-        val names = namesOf(rows.map { RelationshipRules.otherEndOf(it, characterId) })
+        val otherIds = rows.map { RelationshipRules.otherEndOf(it, characterId) }.distinct()
+        val others = if (otherIds.isEmpty()) emptyList() else characters.getCharactersByIds(otherIds)
+        val names = others.associate { it.id to it.displayName.ifBlank { it.name } }
+
+        // **세계관을 가로지른 채 남은 관계를 가린다.** 1단계의 웹 폼이 캐릭터의 작품을 바꿀
+        // 수 있으므로 실제로 생기는 상태다 — 저장을 눌러 보고 거절로 알게 하지 않는다.
+        // 셈은 이미 읽어 둔 상대들로 하므로 질의가 늘지 않는다.
+        val crossUniverse = others
+            .filter { it.novelId?.let { id -> universeOf[id] } != selfUniverseId }
+            .mapTo(HashSet()) { it.id }
+
         val factionNames = factionNamesOf(rows)
 
-        val views = BridgeRelationships.describe(rows, characterId, names, factionNames)
+        val views = BridgeRelationships.describe(
+            rows, characterId, names, factionNames, crossUniverse
+        )
         val candidates = BridgeRelationships.candidatesFor(
             all = characters.getAllCharactersList(),
             selfId = characterId,
@@ -436,6 +448,7 @@ class BridgeData(
             .put("readOnly", v.readOnly)
             .put("notice", v.notice ?: JSONObject.NULL)
             .put("factionName", v.factionName ?: JSONObject.NULL)
+            .put("advisory", v.advisory ?: JSONObject.NULL)
 
     /** 이 세계관의 관계 유형 — 세계관이 없으면 기본 유형이다(`CharacterViewModel`과 같다). */
     private suspend fun typesFor(universeId: Long?): List<String> =
