@@ -375,7 +375,7 @@ class BridgeData(
         val novelList = novels.getAllNovelsList()
         val universeOf: Map<Long, Long?> = novelList.associate { it.id to it.universeId }
         val novelTitles = novelList.associate { it.id to it.title }
-        val selfUniverseId = self.novelId?.let { universeOf[it] }
+        val selfUniverseId = universeIdOf(self, universeOf)
 
         val otherIds = rows.map { RelationshipRules.otherEndOf(it, characterId) }.distinct()
         val others = if (otherIds.isEmpty()) emptyList() else characters.getCharactersByIds(otherIds)
@@ -385,7 +385,7 @@ class BridgeData(
         // 수 있으므로 실제로 생기는 상태다 — 저장을 눌러 보고 거절로 알게 하지 않는다.
         // 셈은 이미 읽어 둔 상대들로 하므로 질의가 늘지 않는다.
         val crossUniverse = others
-            .filter { it.novelId?.let { id -> universeOf[id] } != selfUniverseId }
+            .filter { universeIdOf(it, universeOf) != selfUniverseId }
             .mapTo(HashSet()) { it.id }
 
         val factionNames = factionNamesOf(rows)
@@ -454,6 +454,16 @@ class BridgeData(
     private suspend fun typesFor(universeId: Long?): List<String> =
         universeId?.let { universes.getUniverseById(it)?.getRelationshipTypes() }
             ?: Universe.DEFAULT_RELATIONSHIP_TYPES
+
+    /**
+     * 이 캐릭터의 세계관 — 작품을 거쳐 찾는다.
+     *
+     * **두 자리에서 묻는 같은 질문이라 이름을 붙였다.** 목록은 *안내를 붙일까*를 묻고
+     * 저장은 *거절할까*를 묻는데, 두 자리가 식을 따로 적으면 **화면은 괜찮다고 하는데
+     * 저장은 거절하는** 갈림이 생긴다 — 이 저장소가 R-50에서 배운 그 모양이다.
+     */
+    private fun universeIdOf(c: Character, universeOf: Map<Long, Long?>): Long? =
+        c.novelId?.let { universeOf[it] }
 
     private suspend fun namesOf(ids: List<Long>): Map<Long, String> {
         val distinct = ids.distinct()
@@ -546,8 +556,8 @@ class BridgeData(
 
         val novelList = novels.getAllNovelsList()
         val universeOf: Map<Long, Long?> = novelList.associate { it.id to it.universeId }
-        val selfUniverseId = self.novelId?.let { universeOf[it] }
-        val otherUniverseId = other.novelId?.let { universeOf[it] }
+        val selfUniverseId = universeIdOf(self, universeOf)
+        val otherUniverseId = universeIdOf(other, universeOf)
         if (selfUniverseId != otherUniverseId) return RelationshipOutcome.DifferentUniverse
 
         val proposed = BridgeRelationships.toRow(characterId, draft, existing)
