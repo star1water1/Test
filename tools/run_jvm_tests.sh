@@ -417,6 +417,11 @@ $MAIN/excel/AppSettingsDiff.kt
 $MAIN/excel/TransferResultText.kt
 $MAIN/excel/ImportWarningFold.kt
 $MAIN/excel/FieldValueTypeWarning.kt
+$MAIN/pcbridge/BridgeToken.kt
+$MAIN/pcbridge/BridgeAccessPolicy.kt
+$MAIN/pcbridge/BridgeRoute.kt
+$MAIN/pcbridge/BridgeImageRef.kt
+$MAIN/pcbridge/BridgeForm.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
 $STUBS/AiServiceStub.kt
@@ -737,6 +742,11 @@ $TEST/data/BodyGenerationConfigTest.kt
 $TEST/data/BodyBandGapTest.kt
 $TEST/backup/BackupChunkFormatTest.kt
 $TEST/excel/CellTextLimitRoundtripTest.kt
+$TEST/pcbridge/BridgeTokenTest.kt
+$TEST/pcbridge/BridgeAccessPolicyTest.kt
+$TEST/pcbridge/BridgeRouteTest.kt
+$TEST/pcbridge/BridgeImageRefTest.kt
+$TEST/pcbridge/BridgeFormTest.kt
 "
 # 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.
 # 선택 소스: 존재하고 순수 JVM이면 추가
