@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- PC 동반 편집의 서버(docs/pc_companion_design_2026-11.md).
+         **종류가 specialUse인 것은 Android 15 때문이다** — dataSync 포그라운드 서비스는
+         24시간당 누적 6시간으로 묶이는데, PC로 하루 작업하는 용도에는 맞지 않는다.
+         specialUse는 그 상한이 없고, 이 앱은 사이드로드라 스토어 정책 심사를 지나지 않는다. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 화면이 꺼지면 Wi-Fi 칩이 절전으로 내려가 소켓이 닿지 않는다. WifiLock이 그 축을 잡는다
+         (WAKE_LOCK만으로는 덮이지 않는다). -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
@@ -33,6 +41,15 @@
 
         <service android:name=".speech.VoiceRecordingService"
             android:exported="false" android:foregroundServiceType="microphone" />
+
+        <!-- **exported="false"가 핵심이다.** 이 서비스를 다른 앱이 시작할 수 있으면
+             사용자가 끈 서버가 남의 손에 켜진다. 켜고 끄는 것은 설정 화면뿐이다. -->
+        <service android:name=".pcbridge.PcBridgeService"
+            android:exported="false" android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="pc_companion_editing_server" />
+        </service>
 
         <activity
             android:name=".MainActivity"

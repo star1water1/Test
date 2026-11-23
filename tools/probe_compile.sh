@@ -615,6 +615,28 @@ done
   # 다음 판의 기준선 재현에서 수가 어긋나 **눈에 띄고**(그 자리에서 빼면 된다), 반대로 자동으로
   # 빠지게 두면 **아무 데서도 안 보인다.** 시끄러운 쪽이 조용한 쪽보다 안전하다.
   ls "$M"/share/*.kt | grep -vE "/($(echo $SHARE_EXCLUDE | tr ' ' '|'))\.kt$"
+  # **`pcbridge/`는 2026.11.23에 들어왔다** — PC 동반 편집의 서버 계층이다. 들인 사유는
+  # `share/`·`data/maintenance/`와 같은 부류이고 **더 세다**: 이 계층은 *캐릭터 DB 전체를
+  # 네트워크로 내보내도 되는가*를 판정하고, 틀리면 결과를 되돌릴 수 없다. 그런데 순수
+  # JVM 하네스는 `Context`를 쥔 파일을 올릴 수 없고 이 환경에는 Android SDK가 없어
+  # **지역 증명이 아예 없는 상태였다.**
+  #
+  # **뺄 것은 ktor를 가리키는 파일뿐이다.** ktor는 이 프로브의 클래스패스에 없으므로 넣으면
+  # `unresolved reference 'ktor'` 그림자만 수십 줄 늘고 **진짜 결함을 덮는다** — `ai/`가
+  # 들어온 날 `AppSettingsKeys` 하나에서 신규 61건이 떴던 그 모양이다. 그래서 어댑터 한
+  # 파일만 빼고 나머지(판정·설정·데이터·서비스)는 전부 본다. **그 제외가 ktor 표면을
+  # 얇게 유지하는 압력으로도 듣는다** — 어댑터가 두꺼워지면 증명 없는 코드가 늘어난다.
+  # 명단의 뜻은 **"프로브가 모르는 바깥을 가리키는 파일"**이다 — ktor(클래스패스에 없다)와
+  # 안드로이드 `Service`·알림·`WifiManager`(이 프로브의 좁은 스텁에 없고, 넓히면 이 파일
+  # 머리가 경계한 *거짓 초록*이 된다). **그래서 이 둘에는 판정을 두지 않는다**: 라우팅·인증·
+  # 직렬화·봉쇄는 전부 명단 밖 파일이 들고, 이쪽은 start/stop과 응답 옮기기만 한다.
+  # 명단이 길어지면 증명 없는 코드가 늘어난다는 뜻이므로, 늘리기 전에 판정을 꺼낼 것.
+  PCBRIDGE_EXCLUDE="BridgeServer PcBridgeService"
+  for _x in $PCBRIDGE_EXCLUDE; do
+    [ -f "$M/pcbridge/$_x.kt" ] || {
+      echo "⚠️  pcbridge/ 제외 명단이 낡았다: $_x.kt가 없다 — 명단을 고칠 것." >&2; exit 1; }
+  done
+  ls "$M"/pcbridge/*.kt | grep -vE "/($(echo $PCBRIDGE_EXCLUDE | tr ' ' '|'))\.kt$"
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AndroidUtilStubs.kt"
   echo "$WORK/AndroidOsStubs.kt"

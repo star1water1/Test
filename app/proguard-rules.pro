@@ -82,3 +82,21 @@
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
 -dontwarn kotlinx.coroutines.**
+
+# --- Ktor 서버 (PC 동반 편집) ---
+#
+# **위 `-keep class com.novelcharacter.app.**` 두 줄은 ktor를 덮지 않는다** — 패키지가
+# `io.ktor.**`이라 R8이 처리하는 쪽에 있다. 서버는 설정에서 켜야 도는 기능이므로 릴리스에서만
+# 깨지면 발견이 늦다(그리고 이 파일 머리가 적어 둔 대로 **R8이 도는 경로를 CI가 밟지 않는다**).
+# 그래서 좁히지 않고 보존한다 — 좁히는 변경은 그 파일 머리의 조건, 즉 릴리스 조립 증명을 진다.
+-keep class io.ktor.** { *; }
+-keepclassmembers class io.ktor.** { *; }
+-dontwarn io.ktor.**
+
+# ktor가 거쳐 쓰는 것들. slf4j는 바인딩이 없으면 2.x가 NOP으로 떨어지므로 경고만 끈다.
+-dontwarn org.slf4j.**
+-dontwarn com.typesafe.config.**
+-dontwarn kotlinx.io.**
+-dontwarn kotlinx.serialization.**
+# 설정 로딩·직렬화가 리플렉션으로 집는 자리.
+-keep class kotlinx.serialization.** { *; }

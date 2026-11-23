@@ -4142,4 +4142,38 @@
     <string name="birthday_celebration_separator"> · </string>
     <string name="birthday_celebration_setting">생일 축하 창 띄우기</string>
     <string name="birthday_celebration_setting_purpose">생일인 캐릭터가 있는 날, 앱을 처음 열 때 축하 창을 한 번 띄웁니다. 꺼도 홈의 다가오는 생일 목록은 그대로 뜹니다.</string>
+
+    <!-- ===== PC 동반 편집 (docs/pc_companion_design_2026-11.md) =====
+         폰이 서버, PC 브라우저가 창구다. 기본은 꺼짐이고, 받아들이는 범위도 좁은 쪽(케이블 전용)이
+         기본이다 — 소켓을 여는 기능이라 사용자가 명시적으로 넓힌다. -->
+    <string name="pc_bridge_section">PC에서 편집</string>
+    <string name="pc_bridge_enable">PC 편집 서버 켜기</string>
+    <!-- 목적문 (R-25) — 무엇이 어디서 어떻게 -->
+    <string name="pc_bridge_enable_purpose">폰에 작은 서버를 띄워, 같은 연결에 있는 PC의 웹 브라우저에서 캐릭터를 편집합니다. 자료는 폰에만 있고 PC에는 복사되지 않습니다. 끄면 즉시 닫힙니다.</string>
+    <string name="pc_bridge_tether_only">케이블로 연결한 PC만 받기</string>
+    <!-- 목적문 (R-25) -->
+    <string name="pc_bridge_tether_only_purpose">USB 테더링으로 연결한 PC만 받고, 와이파이로 오는 접속은 거절합니다. 끄면 같은 와이파이의 다른 기기도 주소와 토큰을 알면 들어올 수 있습니다.</string>
+    <string name="pc_bridge_address">PC에서 열 주소</string>
+    <string name="pc_bridge_address_purpose">PC 브라우저 주소창에 이 주소를 한 번 적고 즐겨찾기에 넣으십시오. 주소에 접속 토큰이 들어 있어 다음부터는 바로 열립니다.</string>
+    <string name="pc_bridge_address_none">지금 붙을 수 있는 주소가 없습니다. 케이블을 연결하거나, 와이파이 접속을 허용하십시오.</string>
+    <string name="pc_bridge_copy_address">주소 복사</string>
+    <string name="pc_bridge_address_copied">주소를 복사했습니다.</string>
+    <string name="pc_bridge_regenerate">토큰 새로 발급</string>
+    <string name="pc_bridge_regenerate_confirm_title">토큰을 새로 발급하시겠습니까?</string>
+    <string name="pc_bridge_regenerate_confirm_body">새로 발급하면 PC에 저장해 둔 즐겨찾기는 더 이상 열리지 않습니다. 새 주소를 다시 적어야 합니다.</string>
+    <string name="pc_bridge_regenerated">토큰을 새로 발급했습니다. PC의 즐겨찾기를 새 주소로 바꾸십시오.</string>
+    <string name="pc_bridge_port">포트</string>
+    <string name="pc_bridge_port_purpose">서버가 쓰는 포트입니다. 다른 앱과 겹쳐 열리지 않을 때만 바꾸십시오.</string>
+    <string name="pc_bridge_port_invalid">포트는 %1$d부터 %2$d까지 적을 수 있습니다.</string>
+    <string name="pc_bridge_battery_caption">※ 제조사 절전이 서버를 끊을 수 있습니다. 끊긴다면 이 앱을 배터리 최적화 예외로 등록하십시오.</string>
+
+    <!-- 서버 알림. 포그라운드 서비스의 요건이라 뺄 수 없으므로, 대신 중요도를 낮춰
+         소리도 배너도 없이 상태만 남긴다. -->
+    <string name="pc_bridge_channel_name">PC 편집 서버</string>
+    <string name="pc_bridge_channel_desc">PC에서 편집하는 동안 서버가 켜져 있음을 알립니다</string>
+    <string name="pc_bridge_notice_title">PC 편집 서버</string>
+    <string name="pc_bridge_notice_starting">서버를 켜는 중입니다.</string>
+    <string name="pc_bridge_notice_running">PC에서 %1$s 주소로 접속하십시오.</string>
+    <string name="pc_bridge_notice_no_route">서버는 켜졌지만 지금 붙을 수 있는 주소가 없습니다. 케이블이나 와이파이를 확인하십시오.</string>
+    <string name="pc_bridge_notice_port_failed">포트 %1$d을 열지 못해 서버를 껐습니다. 설정에서 다른 포트를 적으십시오.</string>
 </resources>

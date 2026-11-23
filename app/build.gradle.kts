@@ -143,6 +143,29 @@ dependencies {
     // OkHttp (AI API 호출 — BYOK 프로바이더 공통 HTTP 계층)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // ===== Ktor 서버 (PC 동반 편집 — 폰이 서버, PC 브라우저가 창구) =====
+    //
+    // **엔진은 CIO다.** Netty·Jetty는 안드로이드에 없는 JDK API에 의존하고, Netty 4.2는
+    // D8이 API 26 미만에서 desugar하지 못하는 invoke-polymorphic 핸들을 쓴다. CIO는
+    // 순수 코틀린·코루틴이라 그 둘이 다 해당되지 않는다.
+    //
+    // **버전이 3.0.3인 것은 코틀린 때문이다 — 올리지 말 것.** 코틀린 메타데이터는 앞으로
+    // 호환되지 않으므로 라이브러리를 읽으려면 그쪽 컴파일 코틀린이 우리 것보다 낮거나 같아야
+    // 한다. 이 프로젝트는 2.0.21이고(루트 build.gradle.kts), ktor가 stdlib 2.0.21에 맞춰진
+    // 마지막 판이 3.0.3이다 — 3.1.0은 2.1.10, 3.6.1은 2.3.21이라 **컴파일 자체가 실패한다.**
+    // 올리려면 코틀린·KSP를 함께 올리는 별개 작업이어야 하고, 그것은 Room/KSP 호환까지
+    // 걸리는 일이다.
+    //
+    // 받아 오는 것 중 `kotlin-reflect`(≈3MB)가 가장 크고, `kotlinx-coroutines-core-jvm`은
+    // 1.9.0으로 **위 coroutines-android와 같은 판**이라 충돌하지 않는다.
+    //
+    // `jansi`는 콘솔 ANSI 색깔용이고 네이티브 라이브러리를 품는다 — 안드로이드에서 쓸 자리가
+    // 없으므로 뺀다. 런타임 스코프라 빼도 컴파일에 영향이 없다.
+    implementation("io.ktor:ktor-server-core:3.0.3") {
+        exclude(group = "org.fusesource.jansi", module = "jansi")
+    }
+    implementation("io.ktor:ktor-server-cio:3.0.3")
+
     // Gson (이미지 경로 JSON 처리)
     implementation("com.google.code.gson:gson:2.11.0")
 
