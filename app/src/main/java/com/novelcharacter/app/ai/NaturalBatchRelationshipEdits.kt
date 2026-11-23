@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.NaturalBatchAppliedOperation
 import com.novelcharacter.app.data.model.NaturalBatchRowChange
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.repository.RelationshipRules
 import com.novelcharacter.app.util.SqlInChunks
 
 /** Manual relationships only. The caller owns the transaction and the shared execution journal. */
@@ -25,7 +26,7 @@ class NaturalBatchRelationshipEdits(private val db: AppDatabase) {
                     val saved = Gson().fromJson(edit, SavedDraft::class.java)
                     Draft(requireNotNull(saved.type), requireNotNull(saved.description),
                         requireNotNull(saved.intensity), requireNotNull(saved.bidirectional))
-                        .takeIf { it.type.isNotBlank() && it.intensity in 1..10 }
+                        .takeIf { it.type.isNotBlank() && RelationshipRules.isValidIntensity(it.intensity) }
                 } catch (_: Exception) { null }
                 val old = op.relationshipRef?.let(context.relationships::get)
                 return Draft(op.relationshipType ?: old?.type.orEmpty(),
@@ -146,20 +147,24 @@ class NaturalBatchRelationshipEdits(private val db: AppDatabase) {
     }
 
     private fun snapshotMatches(row: CharacterRelationship, snapshot: NaturalBatchContext.Relationship) =
-        !snapshot.code.isNullOrBlank() && row.code == snapshot.code && row.factionId == null &&
+        !snapshot.code.isNullOrBlank() && row.code == snapshot.code && !RelationshipRules.isAutomatic(row) &&
             row.characterId1 == snapshot.firstId && row.characterId2 == snapshot.secondId &&
             row.relationshipType == snapshot.type && row.description == snapshot.description &&
             row.intensity == snapshot.intensity && row.isBidirectional == snapshot.bidirectional
 
+    /**
+     * 겹침·중복 판정은 [RelationshipRules]가 든다 — **이 자리에 사적 구현을 두지 않는다.**
+     *
+     * 종전에는 `overlaps`·`sameMeaning`이 여기 사적 함수로만 있었고, PC 동반 편집이 두 번째
+     * 편집 창구를 열면서 그것이 문제가 됐다: 웹에서 같은 판정을 다시 적으면 *"AI로 만들면
+     * 막히는데 PC로 만들면 통과하는"* 자리가 생긴다(R-46). 그래서 꺼냈고 **이 파일의 차례와
+     * 사유(STALE·ALREADY_SATISFIED)는 그대로다** — 공유하는 것은 판정이고 배치는 창구의 몫이다.
+     */
     private fun overlaps(left: CharacterRelationship, right: CharacterRelationship): Boolean =
-        left.relationshipType == right.relationshipType &&
-            ((left.characterId1 == right.characterId1 && left.characterId2 == right.characterId2) ||
-                (left.characterId1 == right.characterId2 && left.characterId2 == right.characterId1 &&
-                    (left.isBidirectional || right.isBidirectional)))
+        RelationshipRules.overlaps(left, right)
 
     private fun sameMeaning(left: CharacterRelationship, right: CharacterRelationship) =
-        overlaps(left, right) && left.isBidirectional == right.isBidirectional &&
-            left.description == right.description && left.intensity == right.intensity
+        RelationshipRules.sameMeaning(left, right)
 
     suspend fun evaluate(input: NaturalBatchInput, item: Item, live: Live? = null): Decision {
         val op = item.operation
@@ -178,7 +183,8 @@ class NaturalBatchRelationshipEdits(private val db: AppDatabase) {
             "관계 유형 설정이 분석 당시와 다릅니다. 다시 분석해 주세요")
         if (op.kind != NaturalBatchPlan.Kind.REMOVE_RELATIONSHIP && item.after == null)
             return result(Status.INVALID_VALUE, "관계 제안을 직접 수정해 주세요")
-        if (item.after != null && (item.after.relationshipType !in types || item.after.intensity !in 1..10))
+        if (item.after != null && (item.after.relationshipType !in types ||
+                !RelationshipRules.isValidIntensity(item.after.intensity)))
             return result(Status.INVALID_VALUE, "현재 세계관의 관계 유형과 강도를 확인해 주세요")
         if (op.kind != NaturalBatchPlan.Kind.ADD_RELATIONSHIP) {
             val original = item.original ?: return result(Status.MISSING_TARGET, "검토한 관계를 찾을 수 없습니다")
@@ -194,7 +200,7 @@ class NaturalBatchRelationshipEdits(private val db: AppDatabase) {
         if (after != null) {
             val duplicate = candidates.firstOrNull { overlaps(it, after) }
             if (duplicate != null) {
-                if (duplicate.factionId != null) return result(Status.STALE,
+                if (RelationshipRules.isAutomatic(duplicate)) return result(Status.STALE,
                     "같은 유형의 세력 자동 관계가 있습니다. 세력 화면에서 소속을 확인해 주세요")
                 if (op.kind == NaturalBatchPlan.Kind.ADD_RELATIONSHIP && sameMeaning(duplicate, after))
                     return result(Status.ALREADY_SATISFIED, "같은 관계가 이미 있습니다")

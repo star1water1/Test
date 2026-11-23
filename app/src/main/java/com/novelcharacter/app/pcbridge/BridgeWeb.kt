@@ -139,6 +139,28 @@ header select { width:auto; min-width:220px; max-width:420px; }
 button.act { padding:7px 12px; border:1px solid var(--accent); color:var(--accent);
              background:none; border-radius:6px; font:inherit; cursor:pointer; }
 button.act.primary { background:var(--accent); color:#fff; }
+/* 관계 한 줄. **단추를 flex로 떼어 둔다** — 머리말 목록에서 배운 그 자리다(긴 이름이
+   줄바꿈되면 float은 단추를 어정쩡한 데 남긴다). `min-width:0`이 없으면 flex 칸이
+   줄어들지 않아 긴 이름이 단추를 밀어낸다. */
+.rels { display:flex; flex-direction:column; gap:8px; }
+.rel { display:flex; gap:12px; align-items:flex-start; justify-content:space-between;
+       border:1px solid var(--line); border-radius:8px; padding:9px 11px; }
+.rel .who { min-width:0; flex:1; overflow-wrap:anywhere; }
+.rel .who .head { font-weight:650; }
+.rel .meta { color:var(--muted); font-size:13px; margin-top:2px; }
+.rel .acts { flex:none; display:flex; gap:6px; }
+/* 고칠 수 없는 줄은 테두리로도 드러낸다 — 읽기 전용 칸(.ro)과 같은 표기다. */
+.rel.ro { border-style:dashed; }
+/* 편집 폼에는 **너비 상한을 두지 않는다.** 1단계가 편집 폼에 900px를 박아 2000px 모니터의
+   절반을 비운 그 자리를 되풀이하지 않는다 — 칸 최소 너비가 열 수를 정한다. */
+.rel-form { border:1px solid var(--accent); border-radius:8px; padding:11px 12px; margin-top:8px; }
+.rel-form .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.rel-head { display:flex; gap:10px; align-items:baseline; justify-content:space-between;
+            flex-wrap:wrap; margin:0 0 10px; }
+.rel-msg { background:var(--warnbg); border:1px solid var(--warn); color:var(--warn);
+           border-radius:6px; padding:8px 10px; margin:0 0 10px; font-size:14px; }
+button.act.danger { border-color:var(--warn); color:var(--warn); }
+button.act[disabled] { opacity:.5; cursor:default; }
 .imgs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px; }
 .imgs img { height:140px; width:auto; border-radius:8px; border:1px solid var(--line); }
 .bar { position:fixed; bottom:0; left:0; right:0; background:var(--bg);
@@ -157,6 +179,12 @@ button.act.primary { background:var(--accent); color:#fff; }
 'use strict';
 var TOKEN = new URLSearchParams(location.search).get('t') || '';
 var state = { id:null, fields:[], novelId:null, resolve:{}, dirty:false, saving:false };
+// 관계는 **제 끝점으로 바로 저장된다** — 캐릭터 폼의 저장과 섞지 않으므로 state.dirty를
+// 건드리지 않는다. 편집 중인 줄(relEditing)은 null이면 닫힘, 0이면 '더하기', 그 밖은 그 id다.
+// `draft`는 **되돌아온 요청의 날 값**이다. 관문이 막으면 폼을 그 값으로 다시 그린다 —
+// 없으면 사유만 띄우고 적은 것을 전부 잃어, 고칠 경로가 아니라 다시 적을 경로가 된다.
+var rels = { rows:[], types:[], candidates:[], min:1, max:10, arrows:{},
+             editing:null, busy:false, draft:null };
 
 function api(path, opts) {
   var sep = path.indexOf('?') >= 0 ? '&' : '?';
@@ -212,9 +240,12 @@ function openCharacter(id) {
   }).then(function (d) {
     if (!d) return;
     state = { id:d.id, fields:d.fields, novelId:d.novelId, resolve:{}, dirty:false, saving:false };
+    rels = { rows:[], types:[], candidates:[], min:1, max:10, arrows:{},
+           editing:null, busy:false, draft:null };
     markCurrent(id);
     render(d);
     setStatus('');
+    return loadRelationships();
   });
 }
 
@@ -255,6 +286,13 @@ function render(d) {
   baseGrid.appendChild(nf);
   base.appendChild(baseGrid);
   box.appendChild(base);
+
+  // **관계를 기본 바로 뒤에 둔다.** 커스텀 필드가 90개인 표본에서 맨 아래에 두면 사실상
+  // 숨은 자리가 된다 — 일일이 확인하지 않으면 존재를 알 수 없는 데이터를 두지 않는다(원칙 04).
+  var relBox = el('fieldset', { id:'rels' });
+  relBox.appendChild(el('legend', null, '관계'));
+  relBox.appendChild(el('p', { class:'rel-empty' }, '관계를 불러오는 중입니다.'));
+  box.appendChild(relBox);
 
   var groups = {}, order = [];
   d.fields.forEach(function (f) {
@@ -451,6 +489,332 @@ function showGate(body) {
     n = noticeBox('저장하지 못했습니다.', []);
   }
   box.insertBefore(n, box.firstChild);
+  setStatus('확인이 필요합니다.', 'failed');
+}
+
+// ───── 관계 ─────
+// **판정은 여기 없다.** 겹치는가 · 같은 뜻인가 · 세력 자동 관계인가 · 강도가 범위인가는
+// 전부 폰이 가린다(RelationshipRules). 이 아래가 하는 일은 받은 기술자대로 그리고,
+// 사용자가 적은 날 값을 돌려보내고, 폰이 돌려준 사유를 띄우는 것뿐이다.
+
+function loadRelationships() {
+  if (state.id === null) return Promise.resolve();
+  // **어느 캐릭터의 요청인지 들고 간다.** 불러오는 사이에 사용자가 다른 캐릭터를 고르면
+  // 늦게 온 응답이 엉뚱한 사람의 관계를 그린다 — 가장 최근 요청의 결과만 반영한다
+  // (이 저장소가 순위·검색에서 세운 그 규칙이다).
+  var forId = state.id;
+  return api('/api/relationships/' + forId).then(function (r) {
+    if (!r.ok) return null;
+    return r.json();
+  }).then(function (d) {
+    if (state.id !== forId) return;
+    var box = document.getElementById('rels');
+    if (!box) return;
+    if (!d) { renderRelError(box); return; }
+    rels.rows = d.relationships || [];
+    rels.types = d.types || [];
+    rels.candidates = d.candidates || [];
+    rels.min = d.minIntensity;
+    rels.max = d.maxIntensity;
+    rels.arrows = d.arrows || {};
+    renderRelationships();
+  }).catch(function () {
+    if (state.id !== forId) return;
+    var box = document.getElementById('rels');
+    if (box) renderRelError(box);
+  });
+}
+
+function renderRelError(box) {
+  box.textContent = '';
+  box.appendChild(el('legend', null, '관계'));
+  box.appendChild(el('p', { class:'rel-empty' }, '관계를 읽지 못했습니다. 다시 고르면 불러옵니다.'));
+}
+
+function renderRelationships(message) {
+  var box = document.getElementById('rels');
+  if (!box) return;
+  box.textContent = '';
+  box.appendChild(el('legend', null, '관계'));
+
+  var head = el('div', { class:'rel-head' });
+  head.appendChild(el('span', { class:'meta' }, '관계 ' + rels.rows.length + '개'));
+  var add = el('button', { type:'button', class:'act' }, '관계 더하기');
+  // 고를 수 있는 상대가 없으면 **단추를 열어 두고 사유를 적는다** — 눌러 보고 알게 하지 않는다.
+  if (!rels.candidates.length) {
+    add.setAttribute('disabled', 'disabled');
+    add.setAttribute('title', '같은 세계관에 다른 인물이 없습니다.');
+  } else {
+    add.addEventListener('click', function () {
+      rels.editing = 0; rels.draft = null; renderRelationships();
+    });
+  }
+  head.appendChild(add);
+  box.appendChild(head);
+
+  if (message) box.appendChild(el('p', { class:'rel-msg' }, message));
+
+  if (rels.editing === 0) box.appendChild(relForm(null));
+
+  if (!rels.rows.length) {
+    box.appendChild(el('p', { class:'rel-empty' }, '맺은 관계가 없습니다.'));
+    return;
+  }
+
+  var list = el('div', { class:'rels' });
+  rels.rows.forEach(function (row) {
+    if (rels.editing === row.id) { list.appendChild(relForm(row)); return; }
+    list.appendChild(relRow(row));
+  });
+  box.appendChild(list);
+}
+
+function relRow(row) {
+  var w = el('div', { class:'rel' + (row.readOnly ? ' ro' : '') });
+  var who = el('div', { class:'who' });
+  var name = row.otherCharacterName || '(상대를 찾지 못했습니다)';
+  who.appendChild(el('p', { class:'head' }, row.arrow + ' ' + name));
+  var meta = row.type + ' · 강도 ' + row.intensity;
+  who.appendChild(el('p', { class:'meta' }, meta));
+  if (row.description) who.appendChild(el('p', { class:'meta' }, row.description));
+  // 고칠 수 없는 줄은 **사유를 적는다** — 단추만 빼면 왜 없는지 알 수 없다.
+  var why = null;
+  if (row.notice === 'faction') {
+    why = row.factionName
+      ? "'" + row.factionName + "' 소속에서 자동으로 생긴 관계입니다. 앱의 세력 화면에서 소속을 고칩니다."
+      : '세력 소속에서 자동으로 생긴 관계입니다. 앱의 세력 화면에서 소속을 고칩니다.';
+  } else if (row.notice === 'missingOther') {
+    why = '상대 쪽 인물을 찾지 못해 PC에서 고치지 않습니다.';
+  }
+  if (why) who.appendChild(el('p', { class:'desc' }, why));
+  w.appendChild(who);
+
+  if (!row.readOnly) {
+    var acts = el('div', { class:'acts' });
+    var edit = el('button', { type:'button', class:'act' }, '고치기');
+    edit.addEventListener('click', function () {
+      rels.editing = row.id; rels.draft = null; renderRelationships();
+    });
+    var del = el('button', { type:'button', class:'act danger' }, '지우기');
+    del.addEventListener('click', function () { relDelete(row, false); });
+    acts.appendChild(edit); acts.appendChild(del);
+    w.appendChild(acts);
+  }
+  return w;
+}
+
+// `placeholder`가 있으면 **빈 첫 자리를 둔다** — 없으면 브라우저가 첫 후보를 저절로 고르고,
+// 사용자가 아무것도 고르지 않았는데 그 사람과 관계가 맺어진다.
+function relSelect(id, label, options, selected, placeholder) {
+  var w = el('div', { class:'f' });
+  w.appendChild(el('label', { for:id }, label));
+  var sel = el('select', { id:id });
+  if (placeholder) sel.appendChild(el('option', { value:'' }, placeholder));
+  options.forEach(function (o) {
+    var op = el('option', { value:o.value }, o.label);
+    if (String(o.value) === String(selected)) op.setAttribute('selected', 'selected');
+    sel.appendChild(op);
+  });
+  w.appendChild(sel);
+  return w;
+}
+
+// 폼의 **시작 값**: 되돌아온 날 값이 있으면 그것, 없으면 저장된 행, 없으면 기본값.
+function relFormValues(row) {
+  if (rels.draft) {
+    var d = rels.draft;
+    return {
+      other: d.otherCharacterId || '',
+      type: d.type,
+      desc: d.description,
+      intensity: (d.intensity === null || d.intensity === undefined) ? '' : d.intensity,
+      dir: d.bidirectional ? 'both' : (d.outgoing ? 'out' : 'in')
+    };
+  }
+  if (row) {
+    return {
+      other: row.otherCharacterId,
+      type: row.type,
+      desc: row.description,
+      intensity: row.intensity,
+      dir: row.bidirectional ? 'both' : (row.outgoing ? 'out' : 'in')
+    };
+  }
+  return { other:'', type:'', desc:'', intensity:'5', dir:'both' };
+}
+
+function relForm(row) {
+  var editing = !!row;
+  var v0 = relFormValues(row);
+  var box = el('div', { class:'rel-form' });
+  box.appendChild(el('p', { class:'meta' }, editing ? '관계를 고칩니다.' : '관계를 더합니다.'));
+
+  var grid = el('div', { class:'grid' });
+
+  var people = rels.candidates.map(function (c) {
+    return { value:c.id, label:c.novelTitle ? c.name + ' (' + c.novelTitle + ')' : c.name };
+  });
+  // 고치는 중이고 상대가 후보에 없으면(세계관이 바뀌었다) **그 상대를 목록에 남긴다** —
+  // 없으면 첫 후보가 조용히 골라져 저장이 상대를 바꿔 버린다.
+  if (editing && !people.some(function (p) { return String(p.value) === String(row.otherCharacterId); })) {
+    people.unshift({ value:row.otherCharacterId, label:row.otherCharacterName || '(상대를 찾지 못했습니다)' });
+  }
+  grid.appendChild(relSelect(
+    'rel_other', '상대', people, v0.other, editing ? null : '고르십시오'
+  ));
+
+  var types = rels.types.map(function (t) { return { value:t, label:t }; });
+  grid.appendChild(relSelect(
+    'rel_type', '유형', types, v0.type, editing ? null : '고르십시오'
+  ));
+
+  var dir = [
+    { value:'both', label:'양방향 ' + (rels.arrows.both || '') },
+    { value:'out', label:'이 인물에서 상대로 ' + (rels.arrows.out || '') },
+    { value:'in', label:'상대에서 이 인물로 ' + (rels.arrows.in || '') }
+  ];
+  grid.appendChild(relSelect('rel_dir', '방향', dir, v0.dir));
+
+  var iw = el('div', { class:'f' });
+  iw.appendChild(el('label', { for:'rel_intensity' }, '강도 (' + rels.min + '~' + rels.max + ')'));
+  var inten = el('input', { type:'number', id:'rel_intensity', min:rels.min, max:rels.max, step:'1' });
+  inten.value = v0.intensity;
+  iw.appendChild(inten);
+  grid.appendChild(iw);
+
+  var dw = el('div', { class:'f' });
+  dw.appendChild(el('label', { for:'rel_desc' }, '설명'));
+  var desc = el('input', { type:'text', id:'rel_desc' });
+  desc.value = v0.desc;
+  dw.appendChild(desc);
+  grid.appendChild(dw);
+
+  box.appendChild(grid);
+
+  var acts = el('div', { class:'acts' });
+  var save = el('button', { type:'button', class:'act primary' }, '저장');
+  save.addEventListener('click', function () { relSubmit(editing ? row.id : null); });
+  var cancel = el('button', { type:'button', class:'act' }, '취소');
+  cancel.addEventListener('click', function () {
+    rels.editing = null; rels.draft = null; renderRelationships();
+  });
+  acts.appendChild(save); acts.appendChild(cancel);
+  box.appendChild(acts);
+  return box;
+}
+
+function relBody() {
+  function v(id) { var n = document.getElementById(id); return n ? n.value : ''; }
+  var dir = v('rel_dir');
+  var raw = v('rel_intensity');
+  return {
+    otherCharacterId: Number(v('rel_other')),
+    type: v('rel_type'),
+    description: v('rel_desc'),
+    // **빈 칸을 숫자로 메우지 않는다** — 폰이 "적지 않았다"로 읽고 사유를 돌려준다.
+    intensity: raw === '' ? null : Number(raw),
+    bidirectional: dir === 'both',
+    outgoing: dir !== 'in'
+  };
+}
+
+function relSubmit(relId) {
+  if (rels.busy || state.id === null) return;
+  rels.busy = true;
+  setStatus('관계를 저장하는 중입니다.');
+  // 보낸 날 값을 들고 있는다 — 관문이 막으면 폼을 이것으로 다시 그린다.
+  rels.draft = relBody();
+  var path = '/api/relationship/' + state.id + (relId ? '/' + relId : '');
+  api(path, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(rels.draft)
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok:r.ok, body:d }; });
+  }).then(function (res) {
+    rels.busy = false;
+    if (res.ok) {
+      rels.editing = null;
+      rels.draft = null;
+      setStatus(relId ? '관계를 고쳤습니다.' : '관계를 더했습니다.', 'saved');
+      return loadRelationships();
+    }
+    // 사유는 **적은 값을 살려 둔 채** 보여 준다(rels.draft) — 바로 고쳐 다시 보낼 수 있다.
+    setStatus('확인이 필요합니다.', 'failed');
+    renderRelationships(relMessage(res.body));
+  }).catch(function () {
+    rels.busy = false;
+    setStatus('폰과 연결이 끊겼습니다. 케이블이나 와이파이를 확인해 주십시오.', 'failed');
+  });
+}
+
+// 사유를 **고칠 자리가 보이는 문구**로 바꾼다. 폰이 보내는 `what`은 사유 코드라
+// 그대로 띄우면 개발자 표기가 화면에 나간다.
+var REL_WHAT = {
+  otherCharacterId: '상대를 골라 주십시오.',
+  type: '관계 유형을 골라 주십시오.',
+  intensity: '관계 강도를 적어 주십시오.',
+  json: '보낸 내용을 읽지 못했습니다.'
+};
+
+function relMessage(body) {
+  if (!body) return '관계를 저장하지 못했습니다.';
+  var text = (body.what && REL_WHAT[body.what]) || body.message || '관계를 저장하지 못했습니다.';
+  var b = body.blocking;
+  if (b) {
+    text = text + ' (' + b.arrow + ' ' + (b.otherCharacterName || '?') + ' · ' + b.type + ')';
+  }
+  return text;
+}
+
+function relDelete(row, confirmed) {
+  if (rels.busy || state.id === null) return;
+  rels.busy = true;
+  api('/api/relationship/' + state.id + '/' + row.id + '/delete', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ resolve:{ delete: !!confirmed } })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok:r.ok, body:d }; });
+  }).then(function (res) {
+    rels.busy = false;
+    if (res.ok) {
+      setStatus('관계를 지웠습니다.', 'saved');
+      rels.editing = null;
+      rels.draft = null;
+      return loadRelationships();
+    }
+    if (res.body && res.body.gate === 'relationshipDelete') {  // BridgeRelationships.GATE_DELETE
+      showRelDeleteConfirm(row, res.body.historyCount || 0);
+      return;
+    }
+    setStatus('확인이 필요합니다.', 'failed');
+    renderRelationships(relMessage(res.body));
+  }).catch(function () {
+    rels.busy = false;
+    setStatus('폰과 연결이 끊겼습니다. 케이블이나 와이파이를 확인해 주십시오.', 'failed');
+  });
+}
+
+// **삭제는 확인을 받는다**(설계 9-4). 관계 변화 이력은 외래키가 CASCADE라 관계를 지우면
+// 함께 사라지고, PC 화면에 되돌릴 경로가 없으므로 그 수를 먼저 보여 준다.
+function showRelDeleteConfirm(row, historyCount) {
+  var box = document.getElementById('rels');
+  if (!box) return;
+  var name = row.otherCharacterName || '(상대를 찾지 못했습니다)';
+  var text = name + ' · ' + row.type + ' 관계를 지웁니다.';
+  if (historyCount > 0) {
+    text = text + ' 관계 변화 이력 ' + historyCount + '건도 함께 사라지며 되돌릴 수 없습니다.';
+  } else {
+    text = text + ' 되돌릴 수 없습니다.';
+  }
+  var n = noticeBox(text, [
+    { label:'지웁니다', primary:true, run:function () { relDelete(row, true); } },
+    // 그대로 두면 **상태 표시도 되돌린다** — '확인이 필요합니다'가 남아 있으면
+    // 아무것도 기다리지 않는 화면이 기다리는 것처럼 보인다.
+    { label:'그대로 둡니다', run:function () { setStatus(''); renderRelationships(); } }
+  ]);
+  box.insertBefore(n, box.firstChild.nextSibling);
   setStatus('확인이 필요합니다.', 'failed');
 }
 

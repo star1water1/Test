@@ -1,6 +1,7 @@
 package com.novelcharacter.app.pcbridge
 
 import com.novelcharacter.app.data.repository.AgeLinkageConflict
+import com.novelcharacter.app.data.repository.RelationshipRules
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
@@ -94,6 +95,25 @@ internal object BridgeHandler {
             is Route.SupplementNext ->
                 BridgeResponse.Text(200, JSON, data.supplementNextJson(route.novelId, route.afterCharacterId))
 
+            is Route.RelationshipsGet -> {
+                val j = data.relationshipsJson(route.characterId)
+                if (j == null) json(404, JSONObject().put("message", "그 캐릭터가 없습니다."))
+                else BridgeResponse.Text(200, JSON, j)
+            }
+
+            is Route.RelationshipAdd ->
+                relationshipResponse(data.saveRelationship(route.characterId, null, route.body))
+
+            is Route.RelationshipUpdate ->
+                relationshipResponse(
+                    data.saveRelationship(route.characterId, route.relationshipId, route.body)
+                )
+
+            is Route.RelationshipDelete ->
+                deleteResponse(
+                    data.deleteRelationship(route.characterId, route.relationshipId, route.body)
+                )
+
             is Route.Image -> when (val r = data.image(route.characterId, route.imageId)) {
                 is BridgeData.ImageOutcome.Found ->
                     BridgeResponse.Bytes(200, contentTypeOf(r.file.name), r.file)
@@ -167,6 +187,150 @@ internal object BridgeHandler {
                     .put("summary", outcome.summary)
             )
     }
+
+    /**
+     * 관계 저장 결과를 응답으로.
+     *
+     * **막힌 것은 409다**(저장 관문들과 같은 축). 요청은 올바르고 사용자가 고쳐야 할 것이
+     * 남아 있다는 뜻이며, 화면은 `reason` 값으로 무엇을 고치면 되는지 가른다.
+     *
+     * **사유마다 문구가 다른 것이 요점이다.** 겹침과 *"세력이 그 자리를 쓰고 있다"*는 고칠
+     * 자리가 아예 다르다 — 앞은 이 화면에서 유형이나 상대를 고치면 되고, 뒤는 세력 쪽
+     * 소속을 고쳐야 한다. 한 문구로 접으면 사용자가 이 화면을 계속 두드린다(R-17과 같은 축).
+     */
+    private fun relationshipResponse(outcome: BridgeData.RelationshipOutcome): BridgeResponse =
+        when (outcome) {
+            is BridgeData.RelationshipOutcome.Saved ->
+                json(200, JSONObject().put("id", outcome.relationshipId))
+
+            BridgeData.RelationshipOutcome.CharacterNotFound ->
+                json(404, JSONObject().put("message", "그 캐릭터가 없습니다."))
+
+            BridgeData.RelationshipOutcome.RelationshipNotFound ->
+                json(404, JSONObject().put("message", "그 관계가 없습니다."))
+
+            is BridgeData.RelationshipOutcome.BadBody ->
+                json(
+                    400,
+                    JSONObject().put("message", "보낸 내용을 읽지 못했습니다.")
+                        .put("what", outcome.what)
+                )
+
+            BridgeData.RelationshipOutcome.OtherNotFound ->
+                json(404, JSONObject().put("message", "상대로 고른 인물이 없습니다."))
+
+            BridgeData.RelationshipOutcome.DifferentUniverse -> json(
+                409,
+                JSONObject().put("gate", BridgeRelationships.GATE)
+                    .put("reason", "differentUniverse")
+                    .put("message", "세계관이 다른 인물과는 관계를 맺지 않습니다.")
+            )
+
+            BridgeData.RelationshipOutcome.NotInserted -> json(
+                409,
+                JSONObject().put("gate", BridgeRelationships.GATE)
+                    .put("reason", "notInserted")
+                    .put("message", "같은 관계가 이미 있어 더하지 못했습니다.")
+            )
+
+            is BridgeData.RelationshipOutcome.Rejected -> json(
+                409,
+                JSONObject().put("gate", BridgeRelationships.GATE)
+                    .put("reason", outcome.rejection.name)
+                    .put("message", rejectionMessage(outcome))
+                    .put(
+                        "blocking",
+                        outcome.blocking?.let { blockingJson(it) } ?: JSONObject.NULL
+                    )
+            )
+        }
+
+    /** 막은 사유의 화면 문구. 고칠 자리를 말하는 것이 이 문구의 일이다. */
+    private fun rejectionMessage(outcome: BridgeData.RelationshipOutcome.Rejected): String =
+        when (outcome.rejection) {
+            RelationshipRules.Rejection.SELF_REFERENCE ->
+                "같은 인물끼리는 관계를 맺지 않습니다."
+
+            RelationshipRules.Rejection.UNKNOWN_TYPE ->
+                "이 세계관에 없는 관계 유형입니다. 목록에서 골라 주십시오."
+
+            RelationshipRules.Rejection.BAD_INTENSITY ->
+                "관계 강도는 ${RelationshipRules.MIN_INTENSITY}에서 " +
+                    "${RelationshipRules.MAX_INTENSITY} 사이로 적어 주십시오."
+
+            RelationshipRules.Rejection.AUTOMATIC_ROW -> automaticMessage(outcome.blocking?.factionName)
+
+            RelationshipRules.Rejection.AUTOMATIC_OVERLAP ->
+                automaticOverlapMessage(outcome.blocking?.factionName)
+
+            RelationshipRules.Rejection.DUPLICATE ->
+                "같은 관계가 이미 있습니다. 바뀌는 것이 없어 저장하지 않았습니다."
+
+            RelationshipRules.Rejection.OVERLAP ->
+                "같은 자리를 쓰는 관계가 이미 있습니다. 그 관계를 고치거나 유형을 바꿔 주십시오."
+        }
+
+    /**
+     * 세력 자동 관계를 손대려 할 때.
+     *
+     * **세력 이름을 아는 경우와 모르는 경우를 가른다** — 이름이 있으면 어디를 고치면 되는지
+     * 말할 수 있고, 없으면 말할 수 없는 것을 말하지 않는다.
+     */
+    private fun automaticMessage(factionName: String?): String =
+        if (factionName.isNullOrBlank()) {
+            "세력 소속에서 자동으로 생긴 관계라 PC에서 고치지 않습니다. 앱의 세력 화면에서 소속을 고쳐 주십시오."
+        } else {
+            "'" + factionName + "' 소속에서 자동으로 생긴 관계라 PC에서 고치지 않습니다. " +
+                "앱의 세력 화면에서 소속을 고쳐 주십시오."
+        }
+
+    private fun automaticOverlapMessage(factionName: String?): String =
+        if (factionName.isNullOrBlank()) {
+            "같은 자리를 세력 자동 관계가 쓰고 있습니다. 앱의 세력 화면에서 소속을 확인해 주십시오."
+        } else {
+            "같은 자리를 '" + factionName + "' 소속의 자동 관계가 쓰고 있습니다. " +
+                "앱의 세력 화면에서 소속을 확인해 주십시오."
+        }
+
+    /** 길을 막은 관계 — *"무엇이 막았는가"*를 보여 주지 않으면 사용자가 고칠 수 없다. */
+    private fun blockingJson(v: BridgeRelationships.RelationshipView): JSONObject = JSONObject()
+        .put("id", v.id)
+        .put("otherCharacterName", v.otherCharacterName)
+        .put("type", v.type)
+        .put("arrow", v.arrow)
+        .put("readOnly", v.readOnly)
+        .put("factionName", v.factionName ?: JSONObject.NULL)
+
+    /**
+     * 관계 삭제 결과를 응답으로.
+     *
+     * **확인 전에는 409다.** 삭제는 되돌리기 어렵고 관계 변화 이력이 외래키 `CASCADE`로
+     * 함께 사라지므로, 그 수를 싣고 한 번 멈춘다(설계 9-4).
+     */
+    private fun deleteResponse(outcome: BridgeData.RelationshipDeleteOutcome): BridgeResponse =
+        when (outcome) {
+            BridgeData.RelationshipDeleteOutcome.Deleted ->
+                json(200, JSONObject().put("deleted", true))
+
+            BridgeData.RelationshipDeleteOutcome.CharacterNotFound ->
+                json(404, JSONObject().put("message", "그 캐릭터가 없습니다."))
+
+            BridgeData.RelationshipDeleteOutcome.RelationshipNotFound ->
+                json(404, JSONObject().put("message", "그 관계가 없습니다."))
+
+            is BridgeData.RelationshipDeleteOutcome.Automatic -> json(
+                409,
+                JSONObject().put("gate", BridgeRelationships.GATE)
+                    .put("reason", RelationshipRules.Rejection.AUTOMATIC_ROW.name)
+                    .put("message", automaticMessage(outcome.factionName))
+            )
+
+            is BridgeData.RelationshipDeleteOutcome.NeedsConfirm -> json(
+                409,
+                JSONObject().put("gate", BridgeRelationships.GATE_DELETE)
+                    .put("historyCount", outcome.historyCount)
+            )
+        }
 
     private fun ageJson(c: AgeLinkageConflict): JSONObject = JSONObject()
         .put("inputAge", c.inputAge)

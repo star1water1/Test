@@ -52,6 +52,37 @@ sealed class Route {
      */
     data class Image(val characterId: Long, val imageId: String) : Route()
 
+    /**
+     * 관계 목록과 그 편집 기술자 — 관계 행 · 이 세계관의 유형 · 상대로 고를 수 있는 인물.
+     *
+     * **선택지를 함께 내려보내는 것이 설계다**(5-5). 상대 고르기와 유형 선택지를 웹이 따로
+     * 모으면 *"같은 세계관인가"*를 JS가 판정하게 되고, 그 판정은 이미 폰에 있다.
+     */
+    data class RelationshipsGet(val characterId: Long) : Route()
+
+    /** 관계 하나 더하기. 본문은 날 글자다 — 파싱은 저장 계층이 한다. */
+    data class RelationshipAdd(val characterId: Long, val body: String) : Route()
+
+    /** 관계 하나 고치기. */
+    data class RelationshipUpdate(
+        val characterId: Long,
+        val relationshipId: Long,
+        val body: String
+    ) : Route()
+
+    /**
+     * 관계 하나 지우기.
+     *
+     * **`DELETE`가 아니라 길 끝에 적는다.** 삭제는 확인을 받아야 하고(설계 9-4), 그 확인은
+     * 저장 관문들과 같은 모양으로 **본문에 실려 돌아온다** — `DELETE`에 본문을 싣는 것은
+     * 중간 장치마다 다루는 법이 갈리는 자리라 피했다.
+     */
+    data class RelationshipDelete(
+        val characterId: Long,
+        val relationshipId: Long,
+        val body: String
+    ) : Route()
+
     /** 없는 길. */
     object Unknown : Route()
 
@@ -117,6 +148,30 @@ sealed class Route {
                     else optionalId(query["after"]) ?: return BadRequest("after")
                     SupplementNext(novel, after)
                 } else Unknown
+
+                // 복수형은 목록, 단수형은 그 하나를 다룬다 — `characters`/`character`와 같은 꼴이다.
+                "relationships" -> if (m == "GET" && rest.size == 2) {
+                    RelationshipsGet(requiredId(rest[1]) ?: return BadRequest("characterId"))
+                } else Unknown
+
+                "relationship" -> if (m != "POST") Unknown else {
+                    val cid = requiredId(rest.getOrNull(1).orEmpty())
+                        ?: return BadRequest("characterId")
+                    when (rest.size) {
+                        2 -> RelationshipAdd(cid, body)
+                        3 -> RelationshipUpdate(
+                            cid,
+                            requiredId(rest[2]) ?: return BadRequest("relationshipId"),
+                            body
+                        )
+                        4 -> if (rest[3] != "delete") Unknown else RelationshipDelete(
+                            cid,
+                            requiredId(rest[2]) ?: return BadRequest("relationshipId"),
+                            body
+                        )
+                        else -> Unknown
+                    }
+                }
 
                 "image" -> if (m == "GET" && rest.size == 3) {
                     val cid = requiredId(rest[1]) ?: return BadRequest("characterId")

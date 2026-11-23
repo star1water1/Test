@@ -101,4 +101,59 @@ class BridgeRouteTest {
         assertEquals(Route.Novels, Route.of("GET", "/api/novels/"))
         assertEquals(Route.Novels, Route.of("GET", "//api//novels//"))
     }
+
+    // ───────── 관계 ─────────
+
+    @Test
+    fun relationships_listIsGetOnly() {
+        assertEquals(Route.RelationshipsGet(7), Route.of("GET", "/api/relationships/7"))
+        assertEquals(Route.Unknown, Route.of("POST", "/api/relationships/7"))
+        // 복수형에 id가 없으면 없는 길이다.
+        assertEquals(Route.Unknown, Route.of("GET", "/api/relationships"))
+    }
+
+    @Test
+    fun relationships_badCharacterIdIsAWrongArgumentNotAMissingPath() {
+        assertEquals(Route.BadRequest("characterId"), Route.of("GET", "/api/relationships/abc"))
+        assertEquals(Route.BadRequest("characterId"), Route.of("GET", "/api/relationships/0"))
+    }
+
+    @Test
+    fun relationship_addCarriesTheBody() {
+        assertEquals(
+            Route.RelationshipAdd(7, "{}"),
+            Route.of("POST", "/api/relationship/7", emptyMap(), "{}")
+        )
+        assertEquals(Route.Unknown, Route.of("GET", "/api/relationship/7"))
+    }
+
+    @Test
+    fun relationship_updateTakesBothIds() {
+        assertEquals(
+            Route.RelationshipUpdate(7, 12, "{}"),
+            Route.of("POST", "/api/relationship/7/12", emptyMap(), "{}")
+        )
+        assertEquals(
+            Route.BadRequest("relationshipId"),
+            Route.of("POST", "/api/relationship/7/abc", emptyMap(), "{}")
+        )
+    }
+
+    /** 삭제는 길 끝에 적는다 — 확인이 본문에 실려 돌아오기 때문이다. */
+    @Test
+    fun relationship_deleteIsItsOwnPath() {
+        assertEquals(
+            Route.RelationshipDelete(7, 12, "{}"),
+            Route.of("POST", "/api/relationship/7/12/delete", emptyMap(), "{}")
+        )
+        // 꼬리가 다른 글자면 없는 길이다 — 조용히 삭제로 읽지 않는다.
+        assertEquals(Route.Unknown, Route.of("POST", "/api/relationship/7/12/remove"))
+        assertEquals(Route.Unknown, Route.of("POST", "/api/relationship/7/12/delete/more"))
+    }
+
+    /** `DELETE`로 와도 열어 주지 않는다 — 확인을 실을 자리가 없는 길이다. */
+    @Test
+    fun relationship_deleteMethodIsNotARoute() {
+        assertEquals(Route.Unknown, Route.of("DELETE", "/api/relationship/7/12"))
+    }
 }

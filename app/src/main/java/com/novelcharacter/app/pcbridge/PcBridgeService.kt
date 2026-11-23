@@ -92,6 +92,8 @@ class PcBridgeService : Service() {
             val data = BridgeData(
                 characters = app.characterRepository,
                 novels = app.novelRepository,
+                universes = app.universeRepository,
+                factions = app.factionRepository,
                 gates = CharacterFormGates(
                     app.database, app.characterRepository, app.universeRepository,
                     app.novelRepository, app.fieldValueLibraryRepository

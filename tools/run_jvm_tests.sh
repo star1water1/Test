@@ -417,11 +417,13 @@ $MAIN/excel/AppSettingsDiff.kt
 $MAIN/excel/TransferResultText.kt
 $MAIN/excel/ImportWarningFold.kt
 $MAIN/excel/FieldValueTypeWarning.kt
+$MAIN/data/repository/RelationshipRules.kt
 $MAIN/pcbridge/BridgeToken.kt
 $MAIN/pcbridge/BridgeAccessPolicy.kt
 $MAIN/pcbridge/BridgeRoute.kt
 $MAIN/pcbridge/BridgeImageRef.kt
 $MAIN/pcbridge/BridgeForm.kt
+$MAIN/pcbridge/BridgeRelationships.kt
 $MAIN/pcbridge/BridgeWeb.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
@@ -748,6 +750,8 @@ $TEST/pcbridge/BridgeAccessPolicyTest.kt
 $TEST/pcbridge/BridgeRouteTest.kt
 $TEST/pcbridge/BridgeImageRefTest.kt
 $TEST/pcbridge/BridgeFormTest.kt
+$TEST/pcbridge/BridgeRelationshipsTest.kt
+$TEST/data/RelationshipRulesTest.kt
 $TEST/pcbridge/BridgeWebTest.kt
 "
 # 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.

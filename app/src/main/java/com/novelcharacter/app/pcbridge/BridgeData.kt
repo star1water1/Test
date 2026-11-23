@@ -2,13 +2,18 @@ package com.novelcharacter.app.pcbridge
 
 import com.google.gson.Gson
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.repository.AgeLinkageConflict
 import com.novelcharacter.app.data.repository.CharacterFormFields
 import com.novelcharacter.app.data.repository.CharacterFormGates
 import com.novelcharacter.app.data.repository.CharacterFormSaver
 import com.novelcharacter.app.data.repository.CharacterRepository
+import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.data.repository.NovelRepository
+import com.novelcharacter.app.data.repository.RelationshipRules
+import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.MultiValueInput
 import com.novelcharacter.app.util.stringOr
 import java.io.File
@@ -31,6 +36,8 @@ import org.json.JSONObject
 class BridgeData(
     private val characters: CharacterRepository,
     private val novels: NovelRepository,
+    private val universes: UniverseRepository,
+    private val factions: FactionRepository,
     private val gates: CharacterFormGates,
     private val formFields: CharacterFormFields,
     private val formSaver: CharacterFormSaver,
@@ -349,5 +356,281 @@ class BridgeData(
             }
         }
         return out
+    }
+
+    // ───────── 관계 ─────────
+
+    /**
+     * 관계 목록과 편집 기술자. 캐릭터가 없으면 null.
+     *
+     * **비용은 관계 축이 아니라 캐릭터 축에 붙는다**(설계 9-5 ②를 이 판이 확인한 것이다).
+     * 관계 행은 *이 캐릭터에 닿는 것만* 읽고(인덱스가 두 끝에 있다), 상대 이름은 행마다 묻지
+     * 않고 **한 번에 묻는다**(R-54 — 행마다 묻는 모양이 앱의 관계 목록에 그대로 있다).
+     * 남는 전량 순회는 상대 고르기 후보뿐이고 그것은 `charactersJson`이 이미 쓰는 축이다.
+     */
+    suspend fun relationshipsJson(characterId: Long): String? {
+        val self = characters.getCharacterById(characterId) ?: return null
+        val rows = characters.getRelationshipsForCharacterList(characterId)
+
+        val novelList = novels.getAllNovelsList()
+        val universeOf: Map<Long, Long?> = novelList.associate { it.id to it.universeId }
+        val novelTitles = novelList.associate { it.id to it.title }
+        val selfUniverseId = self.novelId?.let { universeOf[it] }
+
+        val names = namesOf(rows.map { RelationshipRules.otherEndOf(it, characterId) })
+        val factionNames = factionNamesOf(rows)
+
+        val views = BridgeRelationships.describe(rows, characterId, names, factionNames)
+        val candidates = BridgeRelationships.candidatesFor(
+            all = characters.getAllCharactersList(),
+            selfId = characterId,
+            selfUniverseId = selfUniverseId,
+            universeOf = universeOf,
+            novelTitles = novelTitles
+        )
+
+        val rowsArr = JSONArray()
+        for (v in views) rowsArr.put(relationshipViewJson(v))
+
+        val typesArr = JSONArray()
+        for (t in typesFor(selfUniverseId)) typesArr.put(t)
+
+        val candArr = JSONArray()
+        for (c in candidates) {
+            candArr.put(
+                JSONObject().put("id", c.id).put("name", c.name).put("novelTitle", c.novelTitle)
+            )
+        }
+
+        return JSONObject()
+            .put("characterId", characterId)
+            .put("relationships", rowsArr)
+            .put("types", typesArr)
+            .put("candidates", candArr)
+            .put("minIntensity", RelationshipRules.MIN_INTENSITY)
+            .put("maxIntensity", RelationshipRules.MAX_INTENSITY)
+            // 화살표 글자도 **코틀린이 든다.** 행마다 실어 보내는 그 글자와 방향 고르개의
+            // 글자가 갈리면 같은 뜻이 두 모양으로 보인다(5-5의 단위 괄호와 같은 축이다).
+            .put(
+                "arrows",
+                JSONObject()
+                    .put("both", BridgeRelationships.ARROW_BOTH)
+                    .put("out", BridgeRelationships.ARROW_OUT)
+                    .put("in", BridgeRelationships.ARROW_IN)
+            )
+            .toString()
+    }
+
+    private fun relationshipViewJson(v: BridgeRelationships.RelationshipView): JSONObject =
+        JSONObject()
+            .put("id", v.id)
+            .put("code", v.code ?: JSONObject.NULL)
+            .put("otherCharacterId", v.otherCharacterId)
+            .put("otherCharacterName", v.otherCharacterName)
+            .put("type", v.type)
+            .put("description", v.description)
+            .put("intensity", v.intensity)
+            .put("bidirectional", v.bidirectional)
+            .put("outgoing", v.outgoing)
+            .put("arrow", v.arrow)
+            .put("readOnly", v.readOnly)
+            .put("notice", v.notice ?: JSONObject.NULL)
+            .put("factionName", v.factionName ?: JSONObject.NULL)
+
+    /** 이 세계관의 관계 유형 — 세계관이 없으면 기본 유형이다(`CharacterViewModel`과 같다). */
+    private suspend fun typesFor(universeId: Long?): List<String> =
+        universeId?.let { universes.getUniverseById(it)?.getRelationshipTypes() }
+            ?: Universe.DEFAULT_RELATIONSHIP_TYPES
+
+    private suspend fun namesOf(ids: List<Long>): Map<Long, String> {
+        val distinct = ids.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+        return characters.getCharactersByIds(distinct)
+            .associate { it.id to it.displayName.ifBlank { it.name } }
+    }
+
+    private suspend fun factionNamesOf(rows: List<CharacterRelationship>): Map<Long, String> {
+        val out = HashMap<Long, String>()
+        for (id in rows.mapNotNull { it.factionId }.distinct()) {
+            factions.getFactionById(id)?.let { out[id] = it.name }
+        }
+        return out
+    }
+
+    /** 관계 저장 결과. 막히면 **쓰지 않고** 사유를 낸다. */
+    sealed class RelationshipOutcome {
+        data class Saved(val relationshipId: Long) : RelationshipOutcome()
+
+        object CharacterNotFound : RelationshipOutcome()
+
+        /** 고치려는 관계가 없거나 이 캐릭터의 것이 아니다. */
+        object RelationshipNotFound : RelationshipOutcome()
+
+        data class BadBody(val what: String) : RelationshipOutcome()
+
+        /** 상대로 적힌 인물이 없다. */
+        object OtherNotFound : RelationshipOutcome()
+
+        /**
+         * 상대가 **다른 세계관**이다. AI 쪽 `validEndpoints`가 마지막에 요구하는 그 조건이고,
+         * 세계관이 다른 둘을 이으면 그 관계는 어느 세계관의 관계 유형에도 속하지 않는다.
+         */
+        object DifferentUniverse : RelationshipOutcome()
+
+        /** [RelationshipRules]가 막았다. [blocking]은 길을 막은 관계(겹침 사유일 때만). */
+        data class Rejected(
+            val rejection: RelationshipRules.Rejection,
+            val blocking: BridgeRelationships.RelationshipView?
+        ) : RelationshipOutcome()
+
+        /**
+         * 유일 인덱스가 넣기를 거절했다 — [RelationshipRules]를 지난 뒤에도 남는 자리다.
+         *
+         * **조용히 성공으로 접지 않는다.** DAO의 넣기는 `OnConflictStrategy.IGNORE`라 충돌하면
+         * 예외 대신 `-1`을 돌려주므로, 그 수를 보지 않으면 *"저장했습니다"*가 거짓이 된다.
+         */
+        object NotInserted : RelationshipOutcome()
+    }
+
+    /**
+     * 관계 하나를 더하거나 고친다.
+     *
+     * 본문의 모양:
+     * ```
+     * { "otherCharacterId": 12, "type":"연인", "description":"…",
+     *   "intensity": 7, "bidirectional": true, "outgoing": true }
+     * ```
+     *
+     * @param relationshipId null이면 더하기, 있으면 그 행을 고치기.
+     */
+    suspend fun saveRelationship(
+        characterId: Long,
+        relationshipId: Long?,
+        body: String
+    ): RelationshipOutcome {
+        val self = characters.getCharacterById(characterId)
+            ?: return RelationshipOutcome.CharacterNotFound
+
+        val draft = when (val r = BridgeRelationships.parseDraft(body)) {
+            is BridgeRelationships.DraftResult.Bad -> return RelationshipOutcome.BadBody(r.what)
+            is BridgeRelationships.DraftResult.Parsed -> r.draft
+        }
+
+        // 고치는 중이면 **그 행이 이 캐릭터의 것인지** 먼저 본다. 길에 적힌 id를 그대로 믿으면
+        // 다른 캐릭터의 관계를 이 화면에서 고칠 수 있게 된다(이미지 서빙을 캐릭터로 묶은 것과
+        // 같은 판단이다 — `Route.Image`의 KDoc).
+        val existing = if (relationshipId == null) null else {
+            val row = characters.getRelationshipById(relationshipId)
+                ?: return RelationshipOutcome.RelationshipNotFound
+            if (!RelationshipRules.touches(row, characterId)) {
+                return RelationshipOutcome.RelationshipNotFound
+            }
+            row
+        }
+
+        val other = characters.getCharacterById(draft.otherCharacterId)
+            ?: return RelationshipOutcome.OtherNotFound
+
+        val novelList = novels.getAllNovelsList()
+        val universeOf: Map<Long, Long?> = novelList.associate { it.id to it.universeId }
+        val selfUniverseId = self.novelId?.let { universeOf[it] }
+        val otherUniverseId = other.novelId?.let { universeOf[it] }
+        if (selfUniverseId != otherUniverseId) return RelationshipOutcome.DifferentUniverse
+
+        val proposed = BridgeRelationships.toRow(characterId, draft, existing)
+        val others = characters.getRelationshipsForCharacterList(characterId)
+            .filter { it.id != existing?.id }
+
+        when (
+            val verdict = RelationshipRules.validate(
+                proposed = proposed,
+                existing = existing,
+                others = others,
+                allowedTypes = typesFor(selfUniverseId)
+            )
+        ) {
+            is RelationshipRules.Verdict.Rejected -> {
+                val blocking = verdict.blocking?.let { row ->
+                    BridgeRelationships.describe(
+                        rows = listOf(row),
+                        selfId = characterId,
+                        names = namesOf(listOf(RelationshipRules.otherEndOf(row, characterId))),
+                        factionNames = factionNamesOf(listOf(row))
+                    ).firstOrNull()
+                }
+                return RelationshipOutcome.Rejected(verdict.rejection, blocking)
+            }
+            RelationshipRules.Verdict.Allowed -> Unit
+        }
+
+        if (existing == null) {
+            val id = characters.insertRelationship(proposed)
+            if (id <= 0) return RelationshipOutcome.NotInserted
+            return RelationshipOutcome.Saved(id)
+        }
+        characters.updateRelationship(proposed)
+        return RelationshipOutcome.Saved(proposed.id)
+    }
+
+    /** 관계 삭제 결과. */
+    sealed class RelationshipDeleteOutcome {
+        object Deleted : RelationshipDeleteOutcome()
+
+        object CharacterNotFound : RelationshipDeleteOutcome()
+
+        object RelationshipNotFound : RelationshipDeleteOutcome()
+
+        /** 세력 자동 관계는 지우지 않는다 — 세력 쪽 소속을 고쳐야 한다. */
+        data class Automatic(val factionName: String?) : RelationshipDeleteOutcome()
+
+        /**
+         * **확인을 받기 전에는 지우지 않는다**(설계 9-4).
+         *
+         * [historyCount]는 함께 사라지는 관계 변화 이력 수다 — 그 행들은 외래키가 `CASCADE`라
+         * 관계를 지우면 **말없이 함께 지워진다.** 되돌릴 경로가 PC 화면에 없으므로 수를
+         * 먼저 보여 주는 것이 이 관문의 일이다(앱 다이얼로그도 같은 수를 보여 준다).
+         */
+        data class NeedsConfirm(val historyCount: Int) : RelationshipDeleteOutcome()
+    }
+
+    /**
+     * 관계 하나를 지운다.
+     *
+     * 본문의 모양: `{ "resolve": { "delete": true } }`
+     *
+     * `resolve.delete`가 없으면 [RelationshipDeleteOutcome.NeedsConfirm]이다 — 기본값으로
+     * 통과시키지 않는다(관문을 건너뛰는 길을 만들지 않는다).
+     */
+    suspend fun deleteRelationship(
+        characterId: Long,
+        relationshipId: Long,
+        body: String
+    ): RelationshipDeleteOutcome {
+        characters.getCharacterById(characterId)
+            ?: return RelationshipDeleteOutcome.CharacterNotFound
+
+        val row = characters.getRelationshipById(relationshipId)
+            ?: return RelationshipDeleteOutcome.RelationshipNotFound
+        if (!RelationshipRules.touches(row, characterId)) {
+            return RelationshipDeleteOutcome.RelationshipNotFound
+        }
+        if (RelationshipRules.isAutomatic(row)) {
+            return RelationshipDeleteOutcome.Automatic(
+                row.factionId?.let { factions.getFactionById(it)?.name }
+            )
+        }
+
+        val confirmed = runCatching { JSONObject(body) }.getOrNull()
+            ?.optJSONObject("resolve")
+            ?.optBoolean(BridgeRelationships.RESOLVE_DELETE) ?: false
+        if (!confirmed) {
+            // 이력 수는 **고지할 때만** 센다 — 확인이 끝난 요청에서 세면 쓰지 않을 질의다.
+            return RelationshipDeleteOutcome.NeedsConfirm(
+                characters.getRelationshipChangesList(relationshipId).size
+            )
+        }
+
+        characters.deleteRelationshipById(relationshipId)
+        return RelationshipDeleteOutcome.Deleted
     }
 }
