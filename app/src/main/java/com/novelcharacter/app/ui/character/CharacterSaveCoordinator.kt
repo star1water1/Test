@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.MultiValueInput
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.data.repository.AgeLinkageConflict
 
 /**
  * 편집 화면이 새로 적는 이름의 글자 상한.
@@ -584,7 +585,7 @@ class CharacterSaveCoordinator(
     }
 
     private fun showAgeLinkageConflictDialog(
-        conflict: CharacterViewModel.AgeLinkageConflict,
+        conflict: AgeLinkageConflict,
         character: Character,
         isUpdate: Boolean,
         targetCharacterId: Long,

@@ -66,6 +66,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.util.stringOr
+import com.novelcharacter.app.data.repository.AgeLinkageConflict
 
 /** 캐릭터 목록 정렬 사양. [kind]는 CharacterListPreset.SORT_* 상수. */
 data class CharacterSort(
@@ -113,6 +114,33 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
     private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
+
+    /**
+     * 저장 전 검증 관문 — **구현은 저장소 계층이 든다**
+     * ([com.novelcharacter.app.data.repository.CharacterFormGates]).
+     *
+     * 아래 `detectAgeLinkageConflict` · `findRestrictedViolations` 묶음은 이 객체에 위임하는
+     * 껍데기다. 꺼낸 근거는 그 클래스의 KDoc에 있다 — PC 동반 편집이 두 번째 편집 창구를
+     * 열면서 같은 판정이 화면 없이도 필요해졌고, 복붙하면 *"앱에서는 걸리는데 PC에서는
+     * 통과하는"* 자리가 생긴다(R-46).
+     */
+    private val formGates by lazy {
+        com.novelcharacter.app.data.repository.CharacterFormGates(
+            app.database, characterRepository, universeRepository, novelRepository,
+            app.fieldValueLibraryRepository
+        )
+    }
+
+    /**
+     * 폼이 그릴 필드 목록의 단일 소스 — **구현은 저장소 계층이 든다**
+     * ([com.novelcharacter.app.data.repository.CharacterFormFields], R-33).
+     * 아래 `getGlobalFieldsList` · `fieldsForNovel`은 이 객체에 위임하는 껍데기다.
+     */
+    private val formFields by lazy {
+        com.novelcharacter.app.data.repository.CharacterFormFields(
+            universeRepository, app.defaultFieldTemplateRepository
+        )
+    }
 
     /**
      * 출생·사망 사건 → 상태변화·필드 동기화의 **단일 소스** — 연표 탭과 같은 클래스다
@@ -1112,8 +1140,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 2026.08.07 사용자 확정: "전역필드라면 세계관 소속이 없더라도 가지게").
      * 템플릿은 있는데 그림자가 없으면 저장소가 심는다(마이그레이션 54 직후 한 번).
      */
-    suspend fun getGlobalFieldsList(): List<FieldDefinition> =
-        app.defaultFieldTemplateRepository.globalFields()
+    suspend fun getGlobalFieldsList(): List<FieldDefinition> = formFields.globalFields()
 
     /**
      * **캐릭터 폼이 그릴 필드 목록 — 어느 목록인가의 단일 소스** (R-33, 2026.08.22).
@@ -1133,10 +1160,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * @param novel 고른 작품. `null`이면 작품 미선택(완전 무소속)이다.
      */
-    suspend fun fieldsForNovel(novel: Novel?): List<FieldDefinition> {
-        val universeId = novel?.universeId ?: return getGlobalFieldsList()
-        return getFieldsByUniverseList(universeId)
-    }
+    suspend fun fieldsForNovel(novel: Novel?): List<FieldDefinition> = formFields.forNovel(novel)
 
     /** 세계관 밖 정의를 가리키는 보관 값을 화면에 드러내기 위한 조회 (N2) */
     suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
@@ -2034,29 +2058,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     /** restricted 입력 모드 위반 검출 — (필드, 위반 토큰) 목록 (검토 A8: 코디네이터 공통 가드용) */
     suspend fun findRestrictedViolations(
         values: List<CharacterFieldValue>
-    ): List<Pair<FieldDefinition, List<String>>> {
-        val result = mutableListOf<Pair<FieldDefinition, List<String>>>()
-        for (v in values) {
-            if (v.value.isBlank()) continue
-            val fd = app.database.fieldDefinitionDao().getFieldById(v.fieldDefinitionId) ?: continue
-            if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(fd)) continue
-            if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(fd.config).isRestricted) continue
-            val entries = app.database.fieldValueEntryDao().getByField(fd.id)
-            val violations = com.novelcharacter.app.data.repository.FieldValueLibraryRepository
-                .validateRestricted(fd, v.value, entries)
-            if (violations.isNotEmpty()) result.add(fd to violations)
-        }
-        return result
-    }
+    ): List<Pair<FieldDefinition, List<String>>> = formGates.findRestrictedViolations(values)
 
     /** restricted 위반 토큰을 라이브러리에 수동 등재 — '추가하고 저장' 교정 경로 */
-    suspend fun addRestrictedValuesToLibrary(violations: List<Pair<FieldDefinition, List<String>>>) {
-        for ((fd, tokens) in violations) {
-            for (token in tokens) {
-                app.fieldValueLibraryRepository.addEntry(fd.id, token)
-            }
-        }
-    }
+    suspend fun addRestrictedValuesToLibrary(violations: List<Pair<FieldDefinition, List<String>>>) =
+        formGates.addRestrictedValuesToLibrary(violations)
 
     // ===== 이름은행 연계 (B-124) =====
 
@@ -2242,19 +2248,6 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ===== 나이-출생연도 불일치 감지 =====
 
-    data class AgeLinkageConflict(
-        val inputAge: Int,
-        val inputBirthYear: Int,
-        val currentStdYear: Int,
-        val expectedAge: Int,
-        val suggestedBirthYear: Int,
-        val suggestedStdYear: Int,
-        val affectedCharacterCount: Int,
-        val ageFieldId: Long,
-        val birthYearFieldId: Long,
-        val novelId: Long
-    )
-
     /**
      * 저장 전 나이-출생연도 불일치를 감지한다.
      * 둘 다 값이 있고 standardYear와 맞지 않을 때만 conflict 반환.
@@ -2265,45 +2258,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         novelId: Long?,
         characterId: Long,
         fieldValues: List<CharacterFieldValue>
-    ): AgeLinkageConflict? {
-        if (novelId == null) return null
-        val novel = novelRepository.getNovelById(novelId) ?: return null
-        val stdYear = novel.standardYear ?: return null
-        val universeId = novel.universeId ?: return null
-
-        // 연동 활성 확인 (신규 캐릭터는 기본 활성)
-        if (characterId > 0 && !semanticSyncHelper.isLinked(characterId)) return null
-
-        val fields = universeRepository.getFieldsByUniverseList(universeId)
-        val ageField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.AGE } ?: return null
-        val birthYearField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BIRTH_YEAR } ?: return null
-
-        val inputAge = fieldValues.find { it.fieldDefinitionId == ageField.id }
-            ?.value?.trim()?.toIntOrNull() ?: return null
-        val inputBirthYear = fieldValues.find { it.fieldDefinitionId == birthYearField.id }
-            ?.value?.trim()?.toIntOrNull() ?: return null
-
-        val expectedAge = stdYear - inputBirthYear
-        if (inputAge == expectedAge) return null
-
-        // 기준연도 변경 시 영향받는 다른 캐릭터 수
-        val linkedCount = characterRepository.getCharactersByNovelList(novelId)
-            .filter { it.id != characterId }
-            .count { semanticSyncHelper.isLinked(it.id) }
-
-        return AgeLinkageConflict(
-            inputAge = inputAge,
-            inputBirthYear = inputBirthYear,
-            currentStdYear = stdYear,
-            expectedAge = expectedAge,
-            suggestedBirthYear = stdYear - inputAge,
-            suggestedStdYear = inputBirthYear + inputAge,
-            affectedCharacterCount = linkedCount,
-            ageFieldId = ageField.id,
-            birthYearFieldId = birthYearField.id,
-            novelId = novelId
-        )
-    }
+    ): AgeLinkageConflict? = formGates.detectAgeLinkageConflict(novelId, characterId, fieldValues)
 
     /**
      * 기준연도 변경 옵션 선택 시: novel.standardYear 업데이트 + 다른 캐릭터 일괄 재계산.
@@ -2326,11 +2281,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * 저장된 캐릭터의 나이-출생연도 모순을 라이브로 재검출한다(스냅샷이 낡았을 수 있으므로).
      * 이미 해결됐으면 null.
      */
-    suspend fun detectAgeLinkageConflictForCharacter(characterId: Long): AgeLinkageConflict? {
-        val character = characterRepository.getCharacterById(characterId) ?: return null
-        val values = characterRepository.getValuesByCharacterList(characterId)
-        return detectAgeLinkageConflict(character.novelId, characterId, values)
-    }
+    suspend fun detectAgeLinkageConflictForCharacter(characterId: Long): AgeLinkageConflict? =
+        formGates.detectAgeLinkageConflictForCharacter(characterId)
 
     /**
      * 모순을 사용자가 고른 방식으로 교정한다. 편집화면과 동일 규칙을 정규 메서드로만 반영:

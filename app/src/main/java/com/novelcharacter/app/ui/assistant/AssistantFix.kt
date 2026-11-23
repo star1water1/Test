@@ -6,6 +6,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.repository.AgeLinkageConflict
 import com.novelcharacter.app.ui.character.CharacterViewModel
 import com.novelcharacter.app.util.notifyError
 import com.novelcharacter.app.util.notifySuccess
@@ -54,7 +55,7 @@ fun Fragment.runAgeFix(cvm: CharacterViewModel, characterId: Long, onDone: () ->
 
 private fun Fragment.showAgeResolutionDialog(
     characterName: String?,
-    conflict: CharacterViewModel.AgeLinkageConflict,
+    conflict: AgeLinkageConflict,
     onApply: (CharacterViewModel.AgeResolution) -> Unit
 ) {
     val options = arrayOf<CharSequence>(

@@ -10,8 +10,9 @@ import com.novelcharacter.app.data.model.TimelineEvent
  * 변수 제어(개발 의도): 잘못된 입력을 조용히 넘기지 않고 찾아내 사용자에게 알린다.
  * 단건 DB 조회(N회)를 피하고 [StatsSnapshot] 인메모리 데이터만 사용한다.
  *
- * 검사 로직은 기존 `CharacterViewModel.detectAgeLinkageConflict`(저장 전 단건 검사)와
- * 동일한 규칙을 배치화한 것이다.
+ * 검사 로직은 `CharacterFormGates.detectAgeLinkageConflict`(저장 전 단건 검사)와
+ * 동일한 규칙을 배치화한 것이다 — 그 함수는 2026.11.23에 `CharacterViewModel`에서
+ * 저장소 계층으로 옮겨졌다(PC 동반 편집이 두 번째 창구를 열었다 — R-46).
  *
  * ## 비용 (B-251 ⓓ · 2026.08.19에 실제로 그렇게 만들었다)
  *
