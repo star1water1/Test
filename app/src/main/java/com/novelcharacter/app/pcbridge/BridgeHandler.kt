@@ -69,7 +69,7 @@ internal object BridgeHandler {
 
         // ── ③ 라우팅 ──
         return when (val route = Route.of(method, path, query, body)) {
-            Route.Shell -> BridgeResponse.Text(200, HTML, BridgeWeb.HTML)
+            Route.Shell -> BridgeResponse.Text(200, HTML, BridgeWeb.html(settings.token))
 
             is Route.Asset -> when (route.name) {
                 "app.css" -> BridgeResponse.Text(200, CSS, BridgeWeb.CSS)

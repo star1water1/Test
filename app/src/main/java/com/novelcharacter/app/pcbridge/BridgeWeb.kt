@@ -24,14 +24,31 @@ package com.novelcharacter.app.pcbridge
  */
 internal object BridgeWeb {
 
-    /** 토큰을 질의로 받는 첫 진입. 스크립트가 그 토큰을 이후 요청에 그대로 싣는다. */
-    val HTML: String = """<!doctype html>
+    /**
+     * 토큰을 질의로 받는 첫 진입. 스크립트가 그 토큰을 이후 요청에 그대로 싣는다.
+     *
+     * ## 자산 주소에도 토큰을 박는다 — 실사용에서 물린 자리다 (2026.11.23)
+     *
+     * 종전에는 이 글자가 상수였고 자산을 `href="app.css"`로 가리켰다. 그러면 브라우저가
+     * **질의 없이** `/app.css`를 부르고, [BridgeHandler]는 모든 요청에 토큰을 요구하므로
+     * **자산만 401로 막힌다.** 증상이 고약하다 — 껍데기 HTML은 그대로 오므로 화면이 뜨고,
+     * 글자도 보이고, 다만 **스타일이 없고 아무것도 동작하지 않는다.** 서버가 꺼진 것도
+     * 토큰이 틀린 것도 아니어서 어디를 봐야 할지가 드러나지 않는다.
+     *
+     * **자산을 토큰에서 면제하지 않은 것은 일부러다.** 면제는 특례를 하나 만드는 일이고,
+     * 특례가 생기면 *"어느 경로가 토큰 없이 열리는가"*를 사람이 기억해야 한다. 대신 주소에
+     * 토큰을 실어 **모든 요청이 같은 규칙을 지나게** 두었다 — 스크립트가 API와 이미지에
+     * 하던 것과 같은 모양이다.
+     *
+     * 토큰 글자 집합은 영숫자뿐이라([BridgeToken]) 질의에 그대로 담아도 탈이 없다.
+     */
+    fun html(token: String): String = """<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>캐릭터 편집</title>
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?t=TOKEN">
 </head>
 <body>
 <header>
@@ -48,10 +65,17 @@ internal object BridgeWeb {
     <p class="empty">왼쪽에서 캐릭터를 고르십시오.</p>
   </section>
 </main>
-<script src="app.js"></script>
+<script src="app.js?t=TOKEN"></script>
 </body>
 </html>
-"""
+""".replace(TOKEN_PLACEHOLDER, token)
+
+    /**
+     * 자산 주소의 토큰 자리. **보간(`${'$'}`)을 쓰지 않는 이유**는 이 파일의 다른 상수들이
+     * 자바스크립트와 CSS라 `${'$'}`가 섞여 있을 수 있고, raw 문자열에서 그것이 전부
+     * 보간으로 읽히기 때문이다. 자리 글자를 하나 두고 바꾸는 쪽이 그 함정을 피한다.
+     */
+    private const val TOKEN_PLACEHOLDER = "TOKEN"
 
     val CSS: String = """
 :root { color-scheme: light dark; --line:#d8d8dc; --bg:#fff; --fg:#1a1a1c; --muted:#6a6a70;
