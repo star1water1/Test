@@ -569,10 +569,17 @@ function renderRelationships(message) {
   box.appendChild(list);
 }
 
+// **"못 찾았다"와 "이름이 비었다"를 가른다.** 둘을 한 문구로 접으면 이름만 비어 있는
+// 인물을 사라진 것처럼 말하게 된다 — 사유는 기술자가 이미 갈라 보내 준다.
+function relName(row) {
+  if (row.otherCharacterName) return row.otherCharacterName;
+  return row.notice === 'missingOther' ? '(상대를 찾지 못했습니다)' : '(이름 없음)';
+}
+
 function relRow(row) {
   var w = el('div', { class:'rel' + (row.readOnly ? ' ro' : '') });
   var who = el('div', { class:'who' });
-  var name = row.otherCharacterName || '(상대를 찾지 못했습니다)';
+  var name = relName(row);
   who.appendChild(el('p', { class:'head' }, row.arrow + ' ' + name));
   var meta = row.type + ' · 강도 ' + row.intensity;
   who.appendChild(el('p', { class:'meta' }, meta));
@@ -657,7 +664,7 @@ function relForm(row) {
   // 고치는 중이고 상대가 후보에 없으면(세계관이 바뀌었다) **그 상대를 목록에 남긴다** —
   // 없으면 첫 후보가 조용히 골라져 저장이 상대를 바꿔 버린다.
   if (editing && !people.some(function (p) { return String(p.value) === String(row.otherCharacterId); })) {
-    people.unshift({ value:row.otherCharacterId, label:row.otherCharacterName || '(상대를 찾지 못했습니다)' });
+    people.unshift({ value:row.otherCharacterId, label:relName(row) });
   }
   grid.appendChild(relSelect(
     'rel_other', '상대', people, v0.other, editing ? null : '고르십시오'
@@ -801,8 +808,7 @@ function relDelete(row, confirmed) {
 function showRelDeleteConfirm(row, historyCount) {
   var box = document.getElementById('rels');
   if (!box) return;
-  var name = row.otherCharacterName || '(상대를 찾지 못했습니다)';
-  var text = name + ' · ' + row.type + ' 관계를 지웁니다.';
+  var text = relName(row) + ' · ' + row.type + ' 관계를 지웁니다.';
   if (historyCount > 0) {
     text = text + ' 관계 변화 이력 ' + historyCount + '건도 함께 사라지며 되돌릴 수 없습니다.';
   } else {
