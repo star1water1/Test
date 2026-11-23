@@ -97,13 +97,22 @@ header h1 { margin:0 0 8px; font-size:17px; font-weight:650; }
 main { display:grid; grid-template-columns:minmax(220px, 300px) 1fr; min-height:calc(100vh - 62px); }
 @media (max-width:760px) { main { grid-template-columns:1fr; } }
 nav { border-right:1px solid var(--line); overflow-y:auto; max-height:calc(100vh - 62px); }
-nav button { display:block; width:100%; text-align:left; padding:9px 14px; border:0;
+/* **float이 아니라 flex다.** float이면 이름이 길어 줄바꿈될 때 개수가 어정쩡한 자리에
+   남는다(`이그드라실 이르을라카샤피넬루네`가 실제로 그랬다). */
+nav button { display:flex; gap:10px; align-items:baseline; justify-content:space-between;
+             width:100%; text-align:left; padding:9px 14px; border:0;
              background:none; color:inherit; font:inherit; cursor:pointer;
              border-bottom:1px solid var(--line); }
+nav .name { min-width:0; overflow-wrap:anywhere; }
 nav button:hover { background:rgba(127,127,127,.10); }
 nav button[aria-current="true"] { background:rgba(127,127,127,.16); font-weight:650; }
-nav .count { float:right; color:var(--muted); font-size:12px; }
-#editor { padding:16px 18px 60px; max-width:900px; }
+nav .count { flex:none; color:var(--muted); font-size:12px; white-space:nowrap; }
+/* **너비 상한을 두지 않는다.** 넓은 화면을 쓰자고 시작한 일에서 한 열로 900px만 쓰면
+   앞뒤가 안 맞는다 — 커스텀 필드가 90개라 한 열이면 끝없이 스크롤한다. */
+#editor { padding:16px 18px 72px; }
+/* 화면이 넓으면 저절로 열이 늘고 좁으면 한 열이 된다. 칸 하나의 최소 너비(260px)가
+   그 판정을 하므로 폭마다 규칙을 적지 않아도 된다. */
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:0 18px; }
 .empty { color:var(--muted); }
 fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 14px; padding:12px 14px; }
 legend { padding:0 6px; font-weight:650; font-size:13px; color:var(--muted); }
@@ -115,6 +124,9 @@ input[type=text], input[type=number], select, textarea {
   width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px;
   background:var(--bg); color:var(--fg); font:inherit; }
 textarea { min-height:90px; resize:vertical; }
+/* 입력칸 공통 규칙(width:100%)이 머리말의 작품 고르개까지 먹어 화면 전체로 늘어났다.
+   거기는 한 줄에 상태 표시와 나란히 서는 자리라 제 몫만 차지해야 한다. */
+header select { width:auto; min-width:220px; max-width:420px; }
 .parts { display:flex; gap:8px; }
 .parts > div { flex:1; }
 .ro { padding:7px 9px; border:1px dashed var(--line); border-radius:6px; color:var(--muted);
@@ -178,7 +190,7 @@ function loadList(novelId) {
     if (!d.characters.length) { nav.appendChild(el('p', { class:'empty' }, '캐릭터가 없습니다.')); return; }
     d.characters.forEach(function (c) {
       var b = el('button', { type:'button', 'data-id':c.id });
-      b.appendChild(el('span', null, c.name || '(이름 없음)'));
+      b.appendChild(el('span', { class:'name' }, c.name || '(이름 없음)'));
       b.appendChild(el('span', { class:'count' }, '채운 칸 ' + c.filledCount));
       b.addEventListener('click', function () { openCharacter(c.id); });
       nav.appendChild(b);
@@ -223,11 +235,12 @@ function render(d) {
   }
 
   var base = el('fieldset'); base.appendChild(el('legend', null, '기본'));
-  base.appendChild(textField('name', '이름', d.name));
-  base.appendChild(textField('lastName', '성', d.lastName));
-  base.appendChild(textField('firstName', '이름(별도)', d.firstName));
-  base.appendChild(textField('anotherName', '이명', d.anotherName));
-  base.appendChild(textField('tags', '태그', d.tags));
+  var baseGrid = el('div', { class:'grid' });
+  baseGrid.appendChild(textField('name', '이름', d.name));
+  baseGrid.appendChild(textField('lastName', '성', d.lastName));
+  baseGrid.appendChild(textField('firstName', '이름(별도)', d.firstName));
+  baseGrid.appendChild(textField('anotherName', '이명', d.anotherName));
+  baseGrid.appendChild(textField('tags', '태그', d.tags));
   var nf = el('div', { class:'f' });
   nf.appendChild(el('label', { for:'f_novelId' }, '작품'));
   var nsel = el('select', { id:'f_novelId' });
@@ -239,7 +252,8 @@ function render(d) {
   });
   nsel.addEventListener('change', touch);
   nf.appendChild(nsel);
-  base.appendChild(nf);
+  baseGrid.appendChild(nf);
+  base.appendChild(baseGrid);
   box.appendChild(base);
 
   var groups = {}, order = [];
@@ -249,7 +263,9 @@ function render(d) {
   });
   order.forEach(function (g) {
     var fs = el('fieldset'); fs.appendChild(el('legend', null, g));
-    groups[g].forEach(function (f) { fs.appendChild(fieldNode(f)); });
+    var grid = el('div', { class:'grid' });
+    groups[g].forEach(function (f) { grid.appendChild(fieldNode(f)); });
+    fs.appendChild(grid);
     box.appendChild(fs);
   });
 
