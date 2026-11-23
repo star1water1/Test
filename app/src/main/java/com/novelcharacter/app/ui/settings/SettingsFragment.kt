@@ -45,6 +45,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import com.novelcharacter.app.util.notifySuccess
 
 class SettingsFragment : Fragment() {
 
@@ -267,6 +268,8 @@ class SettingsFragment : Fragment() {
             com.novelcharacter.app.util.BirthdayCelebrationPrefs
                 .setEnabled(requireContext(), checked)
         }
+
+        bindPcBridge()
 
         // Data management — 백업(전부 보관)과 데이터 추출(표로 뽑기)은 원하는 기본값이
         // 정반대라 행부터 갈라 둔다(설계 D1·D3)
@@ -1711,5 +1714,101 @@ class SettingsFragment : Fragment() {
          * 드는 그 자리와 같은 처분이다. 프로세스 수명이며 회차마다 코루틴 하나뿐이다.
          */
         private val transferScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
+    // ===== PC에서 편집 (docs/pc_companion_design_2026-11.md) =====
+
+    private val bridgeStore by lazy { com.novelcharacter.app.pcbridge.BridgeSettingsStore(requireContext().applicationContext) }
+
+    /**
+     * 서버 켬·끔과 접속 주소.
+     *
+     * **주소는 켜져 있을 때만 채운다.** 주소에 토큰이 들어 있고, 꺼진 상태의 주소를 보여 주면
+     * 사용자가 그것을 PC에 적어 두고 *"왜 안 되지"*를 만난다.
+     *
+     * 리스너 전에 상태를 세우는 규약은 위 스위치들과 같다 — 세우는 순서가 바뀌면 화면을 열는
+     * 것만으로 설정이 뒤집힌다.
+     */
+    private fun bindPcBridge() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val settings = bridgeStore.get()
+            if (_binding == null) return@launch
+            binding.switchPcBridge.isChecked = settings.enabled
+            binding.switchPcBridgeTetherOnly.isChecked = settings.tetherOnly
+            refreshBridgeAddress()
+
+            binding.switchPcBridge.setOnCheckedChangeListener { _, checked ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    bridgeStore.setEnabled(checked)
+                    if (checked) {
+                        // 토큰이 없으면 여기서 발급된다 — 주소를 그릴 때 이미 있어야 한다.
+                        bridgeStore.ensureToken()
+                        com.novelcharacter.app.pcbridge.PcBridgeService.start(requireContext().applicationContext)
+                    } else {
+                        com.novelcharacter.app.pcbridge.PcBridgeService.stop(requireContext().applicationContext)
+                    }
+                    refreshBridgeAddress()
+                }
+            }
+
+            binding.switchPcBridgeTetherOnly.setOnCheckedChangeListener { _, checked ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    bridgeStore.setTetherOnly(checked)
+                    // 범위가 바뀌면 **보여 줄 주소도 바뀐다** — 케이블 전용으로 좁히는 순간
+                    // 와이파이 주소는 더 이상 쓸 수 없으므로 화면에서 사라져야 한다.
+                    refreshBridgeAddress()
+                    if (bridgeStore.get().enabled) {
+                        com.novelcharacter.app.pcbridge.PcBridgeService.start(requireContext().applicationContext)
+                    }
+                }
+            }
+
+            binding.btnPcBridgeCopy.setOnClickListener {
+                val text = binding.pcBridgeAddressText.text?.toString().orEmpty()
+                if (text.isBlank()) return@setOnClickListener
+                val cm = requireContext().getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("url", text))
+                notifySuccess(getString(R.string.pc_bridge_address_copied))
+            }
+
+            // **고지하고 나서 끊는다.** 새로 발급하면 PC 즐겨찾기가 죽으므로 묻지 않고
+            // 바꾸지 않는다(개발 의도 2번 — 말없이 잃게 하지 않는다).
+            binding.btnPcBridgeRegenerate.setOnClickListener {
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.pc_bridge_regenerate_confirm_title)
+                    .setMessage(R.string.pc_bridge_regenerate_confirm_body)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            bridgeStore.regenerateToken()
+                            if (bridgeStore.get().enabled) {
+                                com.novelcharacter.app.pcbridge.PcBridgeService.start(requireContext().applicationContext)
+                            }
+                            refreshBridgeAddress()
+                            if (_binding != null) {
+                                notifySuccess(getString(R.string.pc_bridge_regenerated))
+                            }
+                        }
+                    }
+                    .show()
+            }
+        }
+    }
+
+    /** 지금 쓸 수 있는 주소 한 줄. 없으면 그 사실을 적는다 — 빈 칸으로 두지 않는다. */
+    private suspend fun refreshBridgeAddress() {
+        val settings = bridgeStore.get()
+        if (_binding == null) return
+        if (!settings.enabled || settings.token.isEmpty()) {
+            binding.pcBridgeAddressText.text = ""
+            return
+        }
+        val urls = withContext(Dispatchers.IO) {
+            com.novelcharacter.app.pcbridge.BridgeAddresses
+                .reachableUrls(settings.mode, settings.port, settings.token)
+        }
+        if (_binding == null) return
+        binding.pcBridgeAddressText.text =
+            if (urls.isEmpty()) getString(R.string.pc_bridge_address_none) else urls.joinToString("\n")
     }
 }

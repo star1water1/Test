@@ -129,6 +129,129 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
+            <!-- Section: PC에서 편집 (docs/pc_companion_design_2026-11.md)
+                 기본은 꺼짐이고 받아들이는 범위도 좁은 쪽(케이블 전용)이 기본이다 —
+                 소켓을 여는 기능이라 사용자가 명시적으로 켜고 명시적으로 넓힌다. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pc_bridge_section"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingStart="16dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchPcBridge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_enable"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <!-- 목적문 (R-25) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_enable_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchPcBridgeTetherOnly"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_tether_only"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginTop="14dp" />
+
+                <!-- 목적문 (R-25) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_tether_only_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_address"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginTop="16dp" />
+
+                <!-- 목적문 (R-25) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_address_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+                <!-- 주소는 토큰을 품으므로 **켜져 있을 때만** 채운다. 꺼진 상태에서 보여 주면
+                     사용자가 그 주소를 적어 두고 "왜 안 되지"를 만난다. -->
+                <TextView
+                    android:id="@+id/pcBridgeAddressText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textIsSelectable="true"
+                    android:layout_marginTop="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPcBridgeCopy"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/pc_bridge_copy_address" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPcBridgeRegenerate"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/pc_bridge_regenerate" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pc_bridge_battery_caption"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="12dp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOnSurfaceVariant"
+                android:alpha="0.2" />
+
             <!-- Section: AI 연동 (BYOK 프로바이더 관리) -->
             <TextView
                 android:layout_width="wrap_content"
